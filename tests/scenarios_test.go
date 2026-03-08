@@ -23,7 +23,7 @@ import (
 	"gopkg.in/yaml.v3"
 	"mvdan.cc/sh/v3/syntax"
 
-	"github.com/DataDog/datadog-agent/pkg/shell/interp"
+	"github.com/DataDog/rshell/interp"
 )
 
 const dockerBashImage = "bash:5.2"

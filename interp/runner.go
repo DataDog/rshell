@@ -17,7 +17,7 @@ import (
 	"mvdan.cc/sh/v3/expand"
 	"mvdan.cc/sh/v3/syntax"
 
-	"github.com/DataDog/datadog-agent/pkg/shell/interp/builtins"
+	"github.com/DataDog/rshell/interp/builtins"
 )
 
 func (r *Runner) fillExpandConfig(ctx context.Context) {

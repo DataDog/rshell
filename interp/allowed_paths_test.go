@@ -18,7 +18,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"mvdan.cc/sh/v3/syntax"
 
-	"github.com/DataDog/datadog-agent/pkg/shell/interp"
+	"github.com/DataDog/rshell/interp"
 )
 
 func runScript(t *testing.T, script, dir string, opts ...interp.RunnerOption) (stdout, stderr string, exitCode int) {
