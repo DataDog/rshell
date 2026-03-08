@@ -1,4 +1,4 @@
-# Builtin Commands
+# Shell Commands
 
 Short reference for builtin commands available in `pkg/shell`.
 
