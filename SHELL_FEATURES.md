@@ -66,7 +66,7 @@ Blocked features are rejected before execution with exit code 2.
 - ✅ Line continuation: `\` at end of line
 - ✅ Comments: `# text`
 - ❌ Extended globbing: `@(pat)`, `*(pat)`, etc.
-- ❌ Tilde expansion: `~`, `~/path`, `~user` — rejected at validation (exit code 2)
+- ❌ Tilde expansion: `~`, `~/path`, `~user`
 - ❌ Process substitution: `<(cmd)`, `>(cmd)`
 
 ## Execution
