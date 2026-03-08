@@ -67,10 +67,8 @@ type input struct {
 // expected holds the expected output for a scenario.
 type expected struct {
 	Stdout         string   `yaml:"stdout"`
-	StdoutWindows  *string  `yaml:"stdout_windows"`
 	StdoutContains []string `yaml:"stdout_contains"`
 	Stderr         string   `yaml:"stderr"`
-	StderrWindows  *string  `yaml:"stderr_windows"`
 	StderrContains []string `yaml:"stderr_contains"`
 	ExitCode       int      `yaml:"exit_code"`
 }
@@ -135,6 +133,15 @@ func setupTestDir(t *testing.T, sc scenario) string {
 	return dir
 }
 
+// normalizePathSeparators converts backslashes to forward slashes on Windows
+// so that test scenarios can use forward slashes uniformly across platforms.
+func normalizePathSeparators(s string) string {
+	if runtime.GOOS != "windows" {
+		return s
+	}
+	return strings.ReplaceAll(s, "\\", "/")
+}
+
 // runScenario executes a single test scenario against the shell interpreter
 // and asserts the expected output.
 func runScenario(t *testing.T, sc scenario) {
@@ -191,20 +198,13 @@ func runScenario(t *testing.T, sc scenario) {
 }
 
 // assertExpectations checks stdout, stderr, and exit code against the scenario expectations.
-// On Windows, stdout_windows/stderr_windows are used when set, falling back to stdout/stderr.
+// On Windows, backslashes in actual output are normalized to forward slashes so that
+// test scenarios can use forward slashes uniformly across all platforms.
 func assertExpectations(t *testing.T, sc scenario, stdout, stderr string, exitCode int) {
 	t.Helper()
 
-	expectedStdout := sc.Expect.Stdout
-	expectedStderr := sc.Expect.Stderr
-	if runtime.GOOS == "windows" {
-		if sc.Expect.StdoutWindows != nil {
-			expectedStdout = *sc.Expect.StdoutWindows
-		}
-		if sc.Expect.StderrWindows != nil {
-			expectedStderr = *sc.Expect.StderrWindows
-		}
-	}
+	stdout = normalizePathSeparators(stdout)
+	stderr = normalizePathSeparators(stderr)
 
 	assert.Equal(t, sc.Expect.ExitCode, exitCode, "exit code mismatch")
 	if len(sc.Expect.StdoutContains) > 0 {
@@ -212,14 +212,14 @@ func assertExpectations(t *testing.T, sc scenario, stdout, stderr string, exitCo
 			assert.Contains(t, stdout, substr, "stdout should contain %q", substr)
 		}
 	} else {
-		assert.Equal(t, expectedStdout, stdout, "stdout mismatch")
+		assert.Equal(t, sc.Expect.Stdout, stdout, "stdout mismatch")
 	}
 	if len(sc.Expect.StderrContains) > 0 {
 		for _, substr := range sc.Expect.StderrContains {
 			assert.Contains(t, stderr, substr, "stderr should contain %q", substr)
 		}
 	} else {
-		assert.Equal(t, expectedStderr, stderr, "stderr mismatch")
+		assert.Equal(t, sc.Expect.Stderr, stderr, "stderr mismatch")
 	}
 }
 
