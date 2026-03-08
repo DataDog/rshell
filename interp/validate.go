@@ -5,6 +5,7 @@ package interp
 
 import (
 	"fmt"
+	"strings"
 
 	"mvdan.cc/sh/v3/syntax"
 )
@@ -14,6 +15,7 @@ import (
 // so that disallowed features are caught early with a clear error message.
 func validateNode(node syntax.Node) error {
 	var err error
+	hdocWords := make(map[*syntax.Word]bool)
 	syntax.Walk(node, func(n syntax.Node) bool {
 		if err != nil {
 			return false
@@ -110,6 +112,21 @@ func validateNode(node syntax.Node) error {
 			if err != nil {
 				return false
 			}
+			if n.Hdoc != nil {
+				hdocWords[n.Hdoc] = true
+			}
+
+		// Blocked tilde expansion (prevents host user info disclosure via os/user.Lookup).
+		// Heredoc bodies are excluded since they don't undergo tilde expansion.
+		case *syntax.Word:
+			if !hdocWords[n] && len(n.Parts) > 0 {
+				if lit, ok := n.Parts[0].(*syntax.Lit); ok {
+					if strings.HasPrefix(lit.Value, "~") {
+						err = fmt.Errorf("tilde expansion is not supported")
+						return false
+					}
+				}
+			}
 		}
 		return true
 	})
@@ -119,9 +136,9 @@ func validateNode(node syntax.Node) error {
 // blockedSpecialParams are single-character parameter names that are not
 // supported in the safe-shell interpreter (positional params, $#, $0, $@, $*).
 var blockedSpecialParams = map[string]bool{
-	"#": true, // $# - number of positional parameters
-	"!": true, // $! - PID of the last background command
-	"0": true, // $0 - name of the shell or script
+	"#": true,                                  // $# - number of positional parameters
+	"!": true,                                  // $! - PID of the last background command
+	"0": true,                                  // $0 - name of the shell or script
 	"1": true, "2": true, "3": true, "4": true, // $1-$9 - positional parameters
 	"5": true, "6": true, "7": true, "8": true, "9": true,
 	"@": true, // $@ - all positional parameters as separate words

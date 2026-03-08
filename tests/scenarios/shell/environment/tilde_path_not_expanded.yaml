@@ -1,10 +1,10 @@
 test_against_local_shell: false
-description: Tilde with path ~/dir is not expanded.
+description: Tilde with path ~/dir is blocked at validation.
 input:
   script: |+
     echo ~/mydir
 expect:
-  stdout: |+
-    ~/mydir
-  stderr: ""
-  exit_code: 0
+  stdout: ""
+  stderr_contains:
+    - "tilde expansion is not supported"
+  exit_code: 2

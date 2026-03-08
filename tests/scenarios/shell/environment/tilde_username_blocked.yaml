@@ -1,8 +1,8 @@
 test_against_local_shell: false
-description: Tilde expansion is blocked at validation with exit code 2.
+description: Tilde with username (~root) is blocked to prevent host user info disclosure.
 input:
   script: |+
-    echo ~
+    echo ~root
 expect:
   stdout: ""
   stderr_contains:

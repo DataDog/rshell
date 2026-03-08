@@ -1,0 +1,12 @@
+test_against_local_shell: false
+description: Tilde inside quotes is not tilde expansion and should be allowed.
+input:
+  script: |+
+    echo "~root"
+    echo '~/path'
+expect:
+  stdout: |+
+    ~root
+    ~/path
+  stderr: ""
+  exit_code: 0

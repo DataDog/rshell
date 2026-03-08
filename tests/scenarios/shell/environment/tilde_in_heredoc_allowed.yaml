@@ -1,0 +1,14 @@
+test_against_local_shell: false
+description: Tilde inside heredoc body is allowed (heredocs do not undergo tilde expansion).
+input:
+  script: |+
+    cat <<EOF
+    ~root
+    ~/path
+    EOF
+expect:
+  stdout: |+
+    ~root
+    ~/path
+  stderr: ""
+  exit_code: 0
