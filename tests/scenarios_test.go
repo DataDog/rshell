@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -66,8 +67,10 @@ type input struct {
 // expected holds the expected output for a scenario.
 type expected struct {
 	Stdout         string   `yaml:"stdout"`
+	StdoutWindows  *string  `yaml:"stdout_windows"`
 	StdoutContains []string `yaml:"stdout_contains"`
 	Stderr         string   `yaml:"stderr"`
+	StderrWindows  *string  `yaml:"stderr_windows"`
 	StderrContains []string `yaml:"stderr_contains"`
 	ExitCode       int      `yaml:"exit_code"`
 }
@@ -194,6 +197,14 @@ func assertExpectations(t *testing.T, sc scenario, stdout, stderr string, exitCo
 
 	expectedStdout := sc.Expect.Stdout
 	expectedStderr := sc.Expect.Stderr
+	if runtime.GOOS == "windows" {
+		if sc.Expect.StdoutWindows != nil {
+			expectedStdout = *sc.Expect.StdoutWindows
+		}
+		if sc.Expect.StderrWindows != nil {
+			expectedStderr = *sc.Expect.StderrWindows
+		}
+	}
 
 	assert.Equal(t, sc.Expect.ExitCode, exitCode, "exit code mismatch")
 	if len(sc.Expect.StdoutContains) > 0 {

@@ -44,7 +44,7 @@ func portablePathError(err error) error {
 	}
 	return &os.PathError{
 		Op:   pe.Op,
-		Path: toSlash(pe.Path),
+		Path: pe.Path,
 		Err:  errors.New(portableErrMsg(pe.Err)),
 	}
 }
