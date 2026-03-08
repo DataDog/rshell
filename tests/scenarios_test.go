@@ -31,6 +31,7 @@ const dockerBashImage = "bash:5.2"
 // scenario represents a single test scenario.
 type scenario struct {
 	Description           string   `yaml:"description"`
+	TargetOS              []string `yaml:"target_os"`                // if set, only run on these OS (linux, darwin, windows); empty means all
 	TestAgainstLocalShell *bool    `yaml:"test_against_local_shell"` // nil = true (default); false = skip bash comparison
 	Setup                 setup    `yaml:"setup"`
 	Input                 input    `yaml:"input"`
@@ -133,19 +134,23 @@ func setupTestDir(t *testing.T, sc scenario) string {
 	return dir
 }
 
-// normalizePathSeparators converts backslashes to forward slashes on Windows
-// so that test scenarios can use forward slashes uniformly across platforms.
-func normalizePathSeparators(s string) string {
-	if runtime.GOOS != "windows" {
-		return s
-	}
-	return strings.ReplaceAll(s, "\\", "/")
-}
-
 // runScenario executes a single test scenario against the shell interpreter
 // and asserts the expected output.
 func runScenario(t *testing.T, sc scenario) {
 	t.Helper()
+
+	if len(sc.TargetOS) > 0 {
+		matched := false
+		for _, goos := range sc.TargetOS {
+			if goos == runtime.GOOS {
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			t.Skipf("skipping: scenario targets %v, current GOOS is %s", sc.TargetOS, runtime.GOOS)
+		}
+	}
 
 	dir := setupTestDir(t, sc)
 
@@ -198,13 +203,8 @@ func runScenario(t *testing.T, sc scenario) {
 }
 
 // assertExpectations checks stdout, stderr, and exit code against the scenario expectations.
-// On Windows, backslashes in actual output are normalized to forward slashes so that
-// test scenarios can use forward slashes uniformly across all platforms.
 func assertExpectations(t *testing.T, sc scenario, stdout, stderr string, exitCode int) {
 	t.Helper()
-
-	stdout = normalizePathSeparators(stdout)
-	stderr = normalizePathSeparators(stderr)
 
 	assert.Equal(t, sc.Expect.ExitCode, exitCode, "exit code mismatch")
 	if len(sc.Expect.StdoutContains) > 0 {
@@ -229,6 +229,19 @@ type dockerScenario struct {
 	testName string // e.g. "cmd/echo/basic"
 	subdir   string // e.g. "s42"
 	sc       scenario
+}
+
+// targetsLinux returns true if the scenario should run in a Linux Docker container.
+func targetsLinux(sc scenario) bool {
+	if len(sc.TargetOS) == 0 {
+		return true
+	}
+	for _, goos := range sc.TargetOS {
+		if goos == "linux" {
+			return true
+		}
+	}
+	return false
 }
 
 // setupTestDirIn creates a subdirectory named subdir inside parentDir and
@@ -313,6 +326,9 @@ func TestShellScenariosAgainstBash(t *testing.T) {
 		for _, path := range paths {
 			sc := loadScenario(t, path)
 			if sc.TestAgainstLocalShell != nil && !*sc.TestAgainstLocalShell {
+				continue
+			}
+			if !targetsLinux(sc) {
 				continue
 			}
 			name := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))

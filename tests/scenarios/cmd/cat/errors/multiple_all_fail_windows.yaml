@@ -1,6 +1,6 @@
 test_against_local_shell: false
-description: When all files are missing, cat reports errors for each file.
-target_os: [linux, darwin]
+description: When all files are missing, cat reports errors for each file (Windows).
+target_os: [windows]
 input:
   allowed_paths: ["$DIR"]
   script: |+
@@ -10,5 +10,5 @@ expect:
   stderr_contains:
     - "cat: missing1.txt:"
     - "cat: missing2.txt:"
-    - "no such file or directory"
+    - "The system cannot find the file specified."
   exit_code: 1

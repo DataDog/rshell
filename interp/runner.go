@@ -456,7 +456,6 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 			OpenFile: func(ctx context.Context, path string, flags int, mode os.FileMode) (io.ReadWriteCloser, error) {
 				return r.open(ctx, path, flags, mode, false)
 			},
-			PortableErr: portableErrMsg,
 		}
 		result := fn(ctx, call, args[1:])
 		r.exit.code = result.Code
@@ -479,7 +478,6 @@ func (r *Runner) open(ctx context.Context, path string, flags int, mode os.FileM
 	case nil:
 		return f, nil
 	case *os.PathError:
-		err = portablePathError(err)
 		if print {
 			r.errf("%v\n", err)
 		}
