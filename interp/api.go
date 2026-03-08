@@ -338,7 +338,12 @@ func (s ExitStatus) Error() string { return fmt.Sprintf("exit status %d", s) }
 // Run can be called multiple times synchronously to interpret programs
 // incrementally. To reuse a [Runner] without keeping the internal shell state,
 // call Reset.
-func (r *Runner) Run(ctx context.Context, node syntax.Node) error {
+func (r *Runner) Run(ctx context.Context, node syntax.Node) (retErr error) {
+	defer func() {
+		if rec := recover(); rec != nil {
+			retErr = fmt.Errorf("internal error: %v", rec)
+		}
+	}()
 	if !r.didReset {
 		r.Reset()
 	}

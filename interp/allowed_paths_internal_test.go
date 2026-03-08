@@ -145,6 +145,30 @@ func TestAllowedPathsExecSymlinkEscape(t *testing.T) {
 	assert.Contains(t, stderr, "command not found")
 }
 
+func TestRunRecoversPanic(t *testing.T) {
+	var outBuf, errBuf bytes.Buffer
+	runner, err := New(StdIO(nil, &outBuf, &errBuf))
+	require.NoError(t, err)
+	defer runner.Close()
+
+	// Trigger initial reset so we can override the exec handler.
+	runner.Reset()
+
+	// Install an exec handler that panics.
+	runner.execHandler = func(ctx context.Context, args []string) error {
+		panic("deliberate test panic")
+	}
+
+	parser := syntax.NewParser()
+	prog, err := parser.Parse(strings.NewReader("somecmd"), "")
+	require.NoError(t, err)
+
+	err = runner.Run(context.Background(), prog)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "internal error")
+	assert.Contains(t, err.Error(), "deliberate test panic")
+}
+
 func TestAllowedPathsExecDefaultBlocksAll(t *testing.T) {
 	dir := t.TempDir()
 	// No AllowedPaths option — default blocks all exec

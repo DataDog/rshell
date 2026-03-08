@@ -133,6 +133,9 @@ func wrapReadDirHandler(roots []*os.Root, allowedPaths []string) ReadDirHandlerF
 // for actual execution. Returns exit code 127 if not found.
 func wrapExecHandler(roots []*os.Root, allowedPaths []string, next ExecHandlerFunc) ExecHandlerFunc {
 	return func(ctx context.Context, args []string) error {
+		if len(args) == 0 {
+			return fmt.Errorf("exec handler called with no arguments")
+		}
 		hc := HandlerCtx(ctx)
 		path, err := ExecLookPathDir(hc.Dir, hc.Env, args[0])
 		if err != nil {

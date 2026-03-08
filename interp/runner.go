@@ -235,10 +235,15 @@ func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {
 			var wg sync.WaitGroup
 			wg.Add(1)
 			go func() {
+				defer func() {
+					if rec := recover(); rec != nil {
+						rLeft.exit.fatal(fmt.Errorf("internal error: %v", rec))
+					}
+					pw.Close()
+					wg.Done()
+				}()
 				rLeft.stmt(ctx, cm.X)
 				rLeft.exit.exiting = false
-				pw.Close()
-				wg.Done()
 			}()
 			rRight.stmt(ctx, cm.Y)
 			r.exit = rRight.exit

@@ -29,6 +29,9 @@ type ExecHandlerFunc func(ctx context.Context, args []string) error
 // without ever searching PATH or executing host binaries.
 func noExecHandler() ExecHandlerFunc {
 	return func(ctx context.Context, args []string) error {
+		if len(args) == 0 {
+			return fmt.Errorf("exec handler called with no arguments")
+		}
 		hc := HandlerCtx(ctx)
 		fmt.Fprintf(hc.Stderr, "%s: command not found\n", args[0])
 		return ExitStatus(127)
