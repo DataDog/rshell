@@ -1,6 +1,5 @@
 test_against_local_shell: false
 description: Symlink inside allowed dir pointing to directory outside is blocked by os.Root
-target_os: [linux, darwin]
 setup:
   files:
     - path: secret/data.txt
