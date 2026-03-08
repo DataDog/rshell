@@ -66,13 +66,15 @@ type input struct {
 
 // expected holds the expected output for a scenario.
 type expected struct {
-	Stdout         string   `yaml:"stdout"`
-	StdoutWindows  *string  `yaml:"stdout_windows"`
-	StdoutContains []string `yaml:"stdout_contains"`
-	Stderr         string   `yaml:"stderr"`
-	StderrWindows  *string  `yaml:"stderr_windows"`
-	StderrContains []string `yaml:"stderr_contains"`
-	ExitCode       int      `yaml:"exit_code"`
+	Stdout                string   `yaml:"stdout"`
+	StdoutWindows         *string  `yaml:"stdout_windows"`
+	StdoutContains        []string `yaml:"stdout_contains"`
+	StdoutContainsWindows []string `yaml:"stdout_contains_windows"`
+	Stderr                string   `yaml:"stderr"`
+	StderrWindows         *string  `yaml:"stderr_windows"`
+	StderrContains        []string `yaml:"stderr_contains"`
+	StderrContainsWindows []string `yaml:"stderr_contains_windows"`
+	ExitCode              int      `yaml:"exit_code"`
 }
 
 // discoverScenarioFiles walks the scenarios directory and returns all YAML files
@@ -207,15 +209,25 @@ func assertExpectations(t *testing.T, sc scenario, stdout, stderr string, exitCo
 	}
 
 	assert.Equal(t, sc.Expect.ExitCode, exitCode, "exit code mismatch")
-	if len(sc.Expect.StdoutContains) > 0 {
-		for _, substr := range sc.Expect.StdoutContains {
+
+	stdoutContains := sc.Expect.StdoutContains
+	if runtime.GOOS == "windows" && len(sc.Expect.StdoutContainsWindows) > 0 {
+		stdoutContains = sc.Expect.StdoutContainsWindows
+	}
+	stderrContains := sc.Expect.StderrContains
+	if runtime.GOOS == "windows" && len(sc.Expect.StderrContainsWindows) > 0 {
+		stderrContains = sc.Expect.StderrContainsWindows
+	}
+
+	if len(stdoutContains) > 0 {
+		for _, substr := range stdoutContains {
 			assert.Contains(t, stdout, substr, "stdout should contain %q", substr)
 		}
 	} else {
 		assert.Equal(t, expectedStdout, stdout, "stdout mismatch")
 	}
-	if len(sc.Expect.StderrContains) > 0 {
-		for _, substr := range sc.Expect.StderrContains {
+	if len(stderrContains) > 0 {
+		for _, substr := range stderrContains {
 			assert.Contains(t, stderr, substr, "stderr should contain %q", substr)
 		}
 	} else {
