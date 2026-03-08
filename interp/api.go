@@ -141,8 +141,8 @@ func (e *exitStatus) fatal(err error) {
 func New(opts ...RunnerOption) (*Runner, error) {
 	r := &Runner{
 		usedNew:        true,
-		openHandler:    defaultOpenHandler(),
-		readDirHandler: defaultReadDirHandler(),
+		openHandler:    wrapOpenHandler(nil, nil),
+		readDirHandler: wrapReadDirHandler(nil, nil),
 	}
 	for _, opt := range opts {
 		if err := opt(r); err != nil {

@@ -8,8 +8,6 @@ import (
 	"io"
 	"io/fs"
 	"os"
-	"path/filepath"
-	"runtime"
 
 	"mvdan.cc/sh/v3/expand"
 	"mvdan.cc/sh/v3/syntax"
@@ -67,37 +65,6 @@ type HandlerContext struct {
 // extra files and goroutines for input redirections; see [StdIO].
 type OpenHandlerFunc func(ctx context.Context, path string, flag int, perm os.FileMode) (io.ReadWriteCloser, error)
 
-// defaultOpenHandler returns the [OpenHandlerFunc] used by default.
-// It uses [os.OpenFile] to open files.
-//
-// On Windows, /dev/null is transparently mapped to NUL (the Windows
-// equivalent) so that shell scripts using /dev/null work cross-platform.
-func defaultOpenHandler() OpenHandlerFunc {
-	return func(ctx context.Context, path string, flag int, perm os.FileMode) (io.ReadWriteCloser, error) {
-		mc := HandlerCtx(ctx)
-		if runtime.GOOS == "windows" && path == "/dev/null" {
-			// /dev/null is always safe to open: it returns EOF on read
-			// and discards writes. Map it to NUL, the Windows equivalent.
-			path = "NUL"
-			// Work around https://go.dev/issue/71752, where Go 1.24 started giving
-			// "Invalid handle" errors when opening "NUL" with O_TRUNC.
-			// TODO: hopefully remove this in the future once the bug is fixed.
-			flag &^= os.O_TRUNC
-		} else if path != "" && !filepath.IsAbs(path) {
-			path = filepath.Join(mc.Dir, path)
-		}
-		return os.OpenFile(path, flag, perm)
-	}
-}
-
 // ReadDirHandlerFunc is a handler which reads directories. It is called during
 // shell globbing, if enabled.
 type ReadDirHandlerFunc func(ctx context.Context, path string) ([]fs.DirEntry, error)
-
-// defaultReadDirHandler returns the [ReadDirHandlerFunc] used by default.
-// It uses [os.ReadDir].
-func defaultReadDirHandler() ReadDirHandlerFunc {
-	return func(ctx context.Context, path string) ([]fs.DirEntry, error) {
-		return os.ReadDir(path)
-	}
-}
