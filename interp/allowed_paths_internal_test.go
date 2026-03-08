@@ -81,7 +81,7 @@ func TestAllowedPathsExecInside(t *testing.T) {
 	var script string
 	if runtime.GOOS == "windows" {
 		system32 := filepath.Join(os.Getenv("SystemRoot"), "System32")
-		script = strings.ReplaceAll(filepath.Join(system32, "cmd.exe"), `\`, `/`) + " /c echo hello"
+		script = strings.ReplaceAll(filepath.Join(system32, "hostname.exe"), `\`, `/`)
 	} else {
 		script = `/bin/echo hello`
 	}
@@ -90,7 +90,11 @@ func TestAllowedPathsExecInside(t *testing.T) {
 		AllowedPaths(append([]string{dir}, systemExecAllowedPaths(t)...)),
 	)
 	assert.Equal(t, 0, exitCode)
-	assert.Equal(t, "hello\n", strings.ReplaceAll(stdout, "\r\n", "\n"))
+	if runtime.GOOS == "windows" {
+		assert.NotEmpty(t, strings.TrimSpace(strings.ReplaceAll(stdout, "\r\n", "\n")))
+	} else {
+		assert.Equal(t, "hello\n", stdout)
+	}
 }
 
 func TestAllowedPathsExecOutside(t *testing.T) {

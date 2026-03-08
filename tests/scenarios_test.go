@@ -273,6 +273,7 @@ func setupTestDirIn(t *testing.T, parentDir, scriptsDir, subdir string, sc scena
 func buildRunnerScript(scenarios []dockerScenario) string {
 	var b strings.Builder
 	b.WriteString("#!/bin/bash\nmkdir -p /work/results\n")
+	b.WriteString("cleanup() { chmod -R 777 /work/results 2>/dev/null; }\ntrap cleanup EXIT\n")
 	for _, ds := range scenarios {
 		var envParts []string
 		for k, v := range ds.sc.Input.Envs {
