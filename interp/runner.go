@@ -207,7 +207,7 @@ func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {
 			r.setVar(name, vr)
 		}
 
-		r.call(ctx, cm.Args[0].Pos(), fields)
+		r.call(ctx, fields)
 		for _, restore := range restores {
 			r.setVar(restore.name, restore.vr)
 		}
@@ -446,7 +446,7 @@ func (r *Runner) loopStmtsBroken(ctx context.Context, stmts []*syntax.Stmt) bool
 	return false
 }
 
-func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
+func (r *Runner) call(ctx context.Context, args []string) {
 	if r.stop(ctx) {
 		return
 	}
@@ -470,11 +470,8 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 		r.contnEnclosing = result.ContinueN
 		return
 	}
-	r.exec(ctx, pos, args)
-}
-
-func (r *Runner) exec(ctx context.Context, pos syntax.Pos, args []string) {
-	r.exit.fromHandlerError(r.execHandler(r.handlerCtx(ctx, pos), args))
+	fmt.Fprintf(r.stderr, "%s: command not found\n", args[0])
+	r.exit.code = 127
 }
 
 func (r *Runner) open(ctx context.Context, path string, flags int, mode os.FileMode, print bool) (io.ReadWriteCloser, error) {

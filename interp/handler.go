@@ -37,8 +37,7 @@ type HandlerContext struct {
 	// Dir is the interpreter's current directory.
 	Dir string
 
-	// Pos is the source position which relates to the operation,
-	// such as a [syntax.CallExpr] when calling an [ExecHandlerFunc].
+	// Pos is the source position which relates to the operation.
 	// It may be invalid if the operation has no relevant position information.
 	Pos syntax.Pos
 
