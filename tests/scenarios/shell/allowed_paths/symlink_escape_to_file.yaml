@@ -13,4 +13,5 @@ input:
 expect:
   stdout: ""
   stderr: "cat: allowed/escape_link: openat escape_link: path escapes from parent\n"
+  stderr_windows: "cat: allowed\\escape_link: openat escape_link: path escapes from parent\n"
   exit_code: 1
