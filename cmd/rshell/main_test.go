@@ -2,10 +2,14 @@ package main
 
 import (
 	"bytes"
+	"os"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func runCLI(t *testing.T, args ...string) (exitCode int, stdout, stderr string) {
@@ -50,22 +54,37 @@ func TestParseError(t *testing.T) {
 	assert.Contains(t, stderr, "parse error")
 }
 
+func setupTestFile(t *testing.T) (dir, filePath string) {
+	t.Helper()
+	dir = t.TempDir()
+	filePath = filepath.Join(dir, "testfile.txt")
+	require.NoError(t, os.WriteFile(filePath, []byte("hello from testfile\n"), 0o644))
+	if runtime.GOOS == "windows" {
+		filePath = filepath.ToSlash(filePath)
+		dir = filepath.ToSlash(dir)
+	}
+	return dir, filePath
+}
+
 func TestFileAccessDeniedByDefault(t *testing.T) {
-	code, _, stderr := runCLI(t, "-s", `cat /etc/hosts`)
+	_, filePath := setupTestFile(t)
+	code, _, stderr := runCLI(t, "-s", `cat `+filePath)
 	assert.NotEqual(t, 0, code)
 	assert.Contains(t, stderr, "permission denied")
 }
 
 func TestAllowedPathGrantsAccess(t *testing.T) {
-	code, stdout, _ := runCLI(t, "-s", `cat /etc/hosts`, "-a", "/etc")
+	dir, filePath := setupTestFile(t)
+	code, stdout, _ := runCLI(t, "-s", `cat `+filePath, "-a", dir)
 	assert.Equal(t, 0, code)
-	assert.Contains(t, stdout, "localhost")
+	assert.Contains(t, stdout, "hello from testfile")
 }
 
 func TestAllowedPathCommaSeparated(t *testing.T) {
-	code, stdout, _ := runCLI(t, "-s", `cat /etc/hosts`, "--allowed-path", "/etc,/tmp")
+	dir, filePath := setupTestFile(t)
+	code, stdout, _ := runCLI(t, "-s", `cat `+filePath, "--allowed-path", dir+",/tmp")
 	assert.Equal(t, 0, code)
-	assert.Contains(t, stdout, "localhost")
+	assert.Contains(t, stdout, "hello from testfile")
 }
 
 func TestMultipleStatements(t *testing.T) {
