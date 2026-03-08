@@ -43,7 +43,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	cmd.SetOut(stdout)
 	cmd.SetErr(stderr)
 
-	cmd.Flags().StringVarP(&script, "script", "s", "", "path to the shell script to execute (use - for stdin)")
+	cmd.Flags().StringVarP(&script, "script", "s", "", "shell script to execute")
 	cmd.Flags().StringVarP(&allowedPaths, "allowed-path", "a", "", "comma-separated list of directories the shell is allowed to access")
 	_ = cmd.MarkFlagRequired("script")
 
@@ -59,21 +59,8 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 }
 
 func execute(ctx context.Context, script string, allowedPaths []string, stdin io.Reader, stdout, stderr io.Writer) error {
-	// Read script source.
-	var src io.Reader
-	if script == "-" {
-		src = stdin
-	} else {
-		f, err := os.Open(script)
-		if err != nil {
-			return err
-		}
-		defer f.Close()
-		src = f
-	}
-
 	// Parse.
-	prog, err := syntax.NewParser().Parse(src, script)
+	prog, err := syntax.NewParser().Parse(strings.NewReader(script), "")
 	if err != nil {
 		return fmt.Errorf("parse error: %w", err)
 	}
