@@ -1,6 +1,5 @@
 test_against_local_shell: false
 description: Cat on a directory fails with "is a directory" error and exits with code 1.
-target_os: [linux, darwin]
 setup:
   files:
     - path: mydir/placeholder.txt

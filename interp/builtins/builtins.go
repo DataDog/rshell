@@ -28,6 +28,9 @@ type CallContext struct {
 
 	// OpenFile opens a file within the shell's path restrictions.
 	OpenFile func(ctx context.Context, path string, flags int, mode os.FileMode) (io.ReadWriteCloser, error)
+
+	// PortableErr normalizes an OS error to a POSIX-style message.
+	PortableErr func(err error) string
 }
 
 // Out writes a string to stdout.
