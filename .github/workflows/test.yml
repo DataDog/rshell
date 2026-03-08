@@ -34,4 +34,6 @@ jobs:
         with:
           go-version-file: .go-version
       - name: Run bash comparison tests
+        env:
+          RSHELL_BASH_TEST: "1"
         run: go test -v -run TestShellScenariosAgainstBash ./tests/

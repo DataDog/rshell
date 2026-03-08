@@ -297,6 +297,9 @@ func shellQuote(s string) string {
 }
 
 func TestShellScenariosAgainstBash(t *testing.T) {
+	if os.Getenv("RSHELL_BASH_TEST") == "" {
+		t.Skip("skipping bash comparison tests (set RSHELL_BASH_TEST=1 to enable)")
+	}
 	if _, err := exec.LookPath("docker"); err != nil {
 		t.Skip("docker not found, skipping bash comparison tests")
 	}
