@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 
 	"github.com/DataDog/rshell/interp"
 	"github.com/spf13/cobra"
@@ -20,7 +21,7 @@ func main() {
 func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	var (
 		script       string
-		allowedPaths []string
+		allowedPaths string
 	)
 
 	cmd := &cobra.Command{
@@ -29,7 +30,11 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return execute(cmd.Context(), script, allowedPaths, stdin, stdout, stderr)
+			var paths []string
+			if allowedPaths != "" {
+				paths = strings.Split(allowedPaths, ",")
+			}
+			return execute(cmd.Context(), script, paths, stdin, stdout, stderr)
 		},
 	}
 
@@ -39,7 +44,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	cmd.SetErr(stderr)
 
 	cmd.Flags().StringVarP(&script, "script", "s", "", "path to the shell script to execute (use - for stdin)")
-	cmd.Flags().StringArrayVar(&allowedPaths, "allowed-path", nil, "directory the shell is allowed to access (can be repeated)")
+	cmd.Flags().StringVarP(&allowedPaths, "allowed-path", "a", "", "comma-separated list of directories the shell is allowed to access")
 	_ = cmd.MarkFlagRequired("script")
 
 	if err := cmd.Execute(); err != nil {
