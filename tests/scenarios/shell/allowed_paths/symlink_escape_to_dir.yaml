@@ -13,5 +13,4 @@ input:
 expect:
   stdout: ""
   stderr: "cat: allowed/escape_dir/data.txt: openat escape_dir/data.txt: path escapes from parent\n"
-  stderr_windows: "cat: allowed\\escape_dir\\data.txt: openat escape_dir\\data.txt: path escapes from parent\n"
   exit_code: 1

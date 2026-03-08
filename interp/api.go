@@ -319,7 +319,7 @@ func (r *Runner) Reset() {
 		usedNew: r.usedNew,
 	}
 	r.writeEnv = &overlayEnviron{parent: r.Env}
-	r.setVarString("PWD", r.Dir)
+	r.setVarString("PWD", toSlash(r.Dir))
 	r.setVarString("IFS", " \t\n")
 	r.setVarString("OPTIND", "1")
 

@@ -7,6 +7,7 @@ package interp
 
 import (
 	"errors"
+	"path/filepath"
 	"syscall"
 )
 
@@ -19,3 +20,6 @@ func isErrIsDirectory(err error) bool {
 	}
 	return false
 }
+
+// toSlash converts Windows backslash paths to forward slashes for POSIX-consistent output.
+func toSlash(s string) string { return filepath.ToSlash(s) }

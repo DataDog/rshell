@@ -12,7 +12,5 @@ input:
 expect:
   stdout: |+
     sub/x.txt sub/y.txt
-  stdout_windows: |+
-    sub\x.txt sub\y.txt
   stderr: ""
   exit_code: 0

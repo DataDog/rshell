@@ -61,6 +61,9 @@ func (r *Runner) expandErr(err error) {
 func (r *Runner) fields(words ...*syntax.Word) []string {
 	strs, err := expand.Fields(r.ecfg, words...)
 	r.expandErr(err)
+	for i, s := range strs {
+		strs[i] = toSlash(s)
+	}
 	return strs
 }
 

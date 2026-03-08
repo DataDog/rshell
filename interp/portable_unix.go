@@ -15,3 +15,6 @@ import (
 func isErrIsDirectory(err error) bool {
 	return errors.Is(err, syscall.EISDIR)
 }
+
+// toSlash is a no-op on Unix where paths already use forward slashes.
+func toSlash(s string) string { return s }
