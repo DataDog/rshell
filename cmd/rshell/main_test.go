@@ -82,7 +82,11 @@ func TestAllowedPathGrantsAccess(t *testing.T) {
 
 func TestAllowedPathCommaSeparated(t *testing.T) {
 	dir, filePath := setupTestFile(t)
-	code, stdout, _ := runCLI(t, "-s", `cat `+filePath, "--allowed-path", dir+",/tmp")
+	extraDir := t.TempDir()
+	if runtime.GOOS == "windows" {
+		extraDir = filepath.ToSlash(extraDir)
+	}
+	code, stdout, _ := runCLI(t, "-s", `cat `+filePath, "--allowed-path", dir+","+extraDir)
 	assert.Equal(t, 0, code)
 	assert.Contains(t, stdout, "hello from testfile")
 }
