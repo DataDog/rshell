@@ -26,7 +26,7 @@ import (
 	"github.com/DataDog/rshell/interp"
 )
 
-const dockerBashImage = "bash:5.2"
+const dockerBashImage = "debian:bookworm-slim"
 
 // scenario represents a single test scenario.
 type scenario struct {
