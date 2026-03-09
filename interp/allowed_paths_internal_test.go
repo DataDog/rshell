@@ -75,33 +75,11 @@ func runScriptInternal(t *testing.T, script, dir string, opts ...RunnerOption) (
 	return outBuf.String(), errBuf.String(), exitCode
 }
 
-func TestAllowedPathsExecInside(t *testing.T) {
+func TestAllowedPathsExecBlocked(t *testing.T) {
 	dir := t.TempDir()
-
-	var script string
-	if runtime.GOOS == "windows" {
-		system32 := filepath.Join(os.Getenv("SystemRoot"), "System32")
-		script = strings.ReplaceAll(filepath.Join(system32, "hostname.exe"), `\`, `/`)
-	} else {
-		script = `/bin/echo hello`
-	}
-
-	stdout, _, exitCode := runScriptInternal(t, script, dir,
-		AllowedPaths(append([]string{dir}, systemExecAllowedPaths(t)...)),
-	)
-	assert.Equal(t, 0, exitCode)
-	if runtime.GOOS == "windows" {
-		assert.NotEmpty(t, strings.TrimSpace(strings.ReplaceAll(stdout, "\r\n", "\n")))
-	} else {
-		assert.Equal(t, "hello\n", stdout)
-	}
-}
-
-func TestAllowedPathsExecOutside(t *testing.T) {
-	dir := t.TempDir()
-	// Only allow the temp dir, so /bin/echo should be blocked
+	// Exec is always blocked when AllowedPaths is set, even for commands inside allowed paths
 	_, stderr, exitCode := runScriptInternal(t, `/bin/echo hello`, dir,
-		AllowedPaths([]string{dir}),
+		AllowedPaths(append([]string{dir}, systemExecAllowedPaths(t)...)),
 	)
 	assert.Equal(t, 127, exitCode)
 	assert.Contains(t, stderr, "command not found")

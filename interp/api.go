@@ -95,7 +95,6 @@ type Runner struct {
 	origStdin  *os.File
 	origStdout io.Writer
 	origStderr io.Writer
-
 }
 
 // exitStatus holds the state of the shell after running one command.
@@ -105,7 +104,7 @@ type exitStatus struct {
 	// code is the exit status code.
 	code uint8
 
-	exiting bool // whether the current shell is exiting
+	exiting   bool // whether the current shell is exiting
 	fatalExit bool // whether the current shell is exiting due to a fatal error; err below must not be nil
 
 	// err is a fatal error if fatal is true, or a non-fatal custom error from a handler.
@@ -286,15 +285,17 @@ func (r *Runner) Reset() {
 			}
 			r.openHandler = restrictedOpenHandler(r.roots, r.allowedPaths)
 			r.readDirHandler = restrictedReadDirHandler(r.roots, r.allowedPaths)
-			r.execHandler = restrictedExecHandler(r.roots, r.allowedPaths, r.execHandler)
+			// execHandler will be implementer in the future to handle host commands execution
+			// additional safeguard will be needed like Landlock sandbox
+			r.execHandler = noExecHandler()
 		}
 	}
 	// reset the internal state
 	*r = Runner{
-		Env:             r.Env,
-		execHandler:     r.execHandler,
-		openHandler:     r.openHandler,
-		readDirHandler:  r.readDirHandler,
+		Env:            r.Env,
+		execHandler:    r.execHandler,
+		openHandler:    r.openHandler,
+		readDirHandler: r.readDirHandler,
 
 		allowedPaths: r.allowedPaths,
 		roots:        r.roots,
@@ -393,23 +394,22 @@ func (r *Runner) subshell(background bool) *Runner {
 	// Keep in sync with the Runner type. Manually copy fields, to not copy
 	// sensitive ones, and to do deep copies of slices.
 	r2 := &Runner{
-		Dir:             r.Dir,
-		Params:          r.Params,
-		execHandler:     r.execHandler,
-		openHandler:     r.openHandler,
-		readDirHandler:  r.readDirHandler,
+		Dir:            r.Dir,
+		Params:         r.Params,
+		execHandler:    r.execHandler,
+		openHandler:    r.openHandler,
+		readDirHandler: r.readDirHandler,
 
 		allowedPaths: r.allowedPaths,
 		roots:        r.roots, // safe: os.Root is goroutine-safe
 
-		stdin:          r.stdin,
-		stdout:         r.stdout,
-		stderr:         r.stderr,
-		filename:       r.filename,
-		usedNew:        r.usedNew,
-		exit:           r.exit,
-		lastExit:       r.lastExit,
-
+		stdin:    r.stdin,
+		stdout:   r.stdout,
+		stderr:   r.stderr,
+		filename: r.filename,
+		usedNew:  r.usedNew,
+		exit:     r.exit,
+		lastExit: r.lastExit,
 	}
 	r2.writeEnv = newOverlayEnviron(r.writeEnv, background)
 	r2.fillExpandConfig(r.ectx)
