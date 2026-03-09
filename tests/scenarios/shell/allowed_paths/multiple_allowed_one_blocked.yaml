@@ -1,5 +1,5 @@
 description: "Multiple allowed directories still block access outside them"
-test_against_local_shell: false
+test_against_bash: false
 setup:
   files:
     - path: "data/info.txt"

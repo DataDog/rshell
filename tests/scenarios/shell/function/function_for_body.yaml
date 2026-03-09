@@ -1,4 +1,4 @@
-test_against_local_shell: false
+test_against_bash: false
 description: Function with for loop body is blocked.
 input:
   script: |+

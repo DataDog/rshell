@@ -1,4 +1,4 @@
-test_against_local_shell: false
+test_against_bash: false
 description: Exit with multiple arguments exits the shell; subsequent commands do not run.
 input:
   script: |+

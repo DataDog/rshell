@@ -1,4 +1,4 @@
-test_against_local_shell: false
+test_against_bash: false
 description: If-else statement is blocked.
 input:
   script: |+

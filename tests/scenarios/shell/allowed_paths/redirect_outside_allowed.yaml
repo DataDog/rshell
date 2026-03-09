@@ -1,4 +1,4 @@
-test_against_local_shell: false
+test_against_bash: false
 description: Input redirect cannot read file outside allowed paths
 setup:
   files:

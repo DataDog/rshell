@@ -1,5 +1,5 @@
 # Our echo intentionally ignores all flags; bash interprets -E to disable escapes.
-test_against_local_shell: false
+test_against_bash: false
 description: Echo treats -E as a literal argument, not as an option.
 input:
   script: |+

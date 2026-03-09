@@ -1,4 +1,4 @@
-test_against_local_shell: false
+test_against_bash: false
 description: Unknown command after valid command still produces error.
 input:
   script: |+

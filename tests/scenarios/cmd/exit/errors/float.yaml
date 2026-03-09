@@ -1,4 +1,4 @@
-test_against_local_shell: false
+test_against_bash: false
 description: Exit with a floating-point argument is invalid.
 input:
   script: |+

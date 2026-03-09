@@ -1,4 +1,4 @@
-test_against_local_shell: false
+test_against_bash: false
 description: A blocked command after valid commands still causes rejection.
 input:
   script: |+

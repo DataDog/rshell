@@ -1,4 +1,4 @@
-test_against_local_shell: false
+test_against_bash: false
 description: The rm command is not a builtin and is rejected as unknown.
 input:
   script: |+

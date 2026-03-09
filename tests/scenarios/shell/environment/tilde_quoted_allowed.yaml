@@ -1,4 +1,4 @@
-test_against_local_shell: false
+test_against_bash: false
 description: Tilde inside quotes is not tilde expansion and should be allowed.
 input:
   script: |+

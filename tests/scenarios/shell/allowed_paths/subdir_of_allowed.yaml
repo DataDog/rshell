@@ -1,5 +1,5 @@
 description: "Files in nested subdirectories inside an allowed path are accessible"
-test_against_local_shell: false
+test_against_bash: false
 setup:
   files:
     - path: "allowed/sub/deep/file.txt"

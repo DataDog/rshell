@@ -1,4 +1,4 @@
-test_against_local_shell: false
+test_against_bash: false
 description: When all files are missing, cat reports errors for each file.
 input:
   allowed_paths: ["$DIR"]

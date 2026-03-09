@@ -1,4 +1,4 @@
-test_against_local_shell: false
+test_against_bash: false
 description: Tilde in the middle of a word is not tilde expansion and should be allowed.
 input:
   script: |+

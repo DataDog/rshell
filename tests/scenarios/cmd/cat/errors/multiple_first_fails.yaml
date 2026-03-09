@@ -1,4 +1,4 @@
-test_against_local_shell: false
+test_against_bash: false
 description: When the first of multiple files fails, cat continues and processes remaining files.
 setup:
   files:

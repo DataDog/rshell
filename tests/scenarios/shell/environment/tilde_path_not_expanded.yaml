@@ -1,4 +1,4 @@
-test_against_local_shell: false
+test_against_bash: false
 description: Tilde with path ~/dir is blocked at validation.
 input:
   script: |+

@@ -18,7 +18,7 @@ The shell is supported on Linux, Windows and macOS.
 ## Testing
 
 - In test scenarios, use `expect.stderr` when possible instead of `stderr_contains`.
-- `test_against_local_shell` should be enabled (the default) when the tested feature is bash/POSIX compliant. Only set `test_against_local_shell: false` for features that intentionally diverge from standard bash behavior (e.g. blocked commands, restricted redirects, readonly enforcement).
+- `test_against_bash` should be enabled (the default) when the tested feature is bash/POSIX compliant. Only set `test_against_bash: false` for features that intentionally diverge from standard bash behavior (e.g. blocked commands, restricted redirects, readonly enforcement).
 - When expected output differs on Windows (e.g. path separators `\` vs `/`), use Windows-specific assertion fields:
   - `stdout_windows` / `stderr_windows` — override `stdout` / `stderr` on Windows.
   - `stdout_contains_windows` / `stderr_contains_windows` — override `stdout_contains` / `stderr_contains` on Windows.

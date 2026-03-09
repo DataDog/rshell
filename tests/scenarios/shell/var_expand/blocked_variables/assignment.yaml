@@ -1,4 +1,4 @@
-test_against_local_shell: false
+test_against_bash: false
 description: Variables without special meaning can be assigned and used as regular variables.
 input:
   script: |+

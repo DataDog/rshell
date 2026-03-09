@@ -1,4 +1,4 @@
-test_against_local_shell: false
+test_against_bash: false
 description: Tilde inside heredoc body is allowed (heredocs do not undergo tilde expansion).
 input:
   script: |+

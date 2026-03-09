@@ -1,4 +1,4 @@
-test_against_local_shell: false
+test_against_bash: false
 description: Files with names starting with .. (e.g. ..hidden) are accessible inside allowed paths
 setup:
   files:

@@ -1,5 +1,5 @@
 description: "Variables provided via interpreter_env (Env option) are accessible"
-test_against_local_shell: false
+test_against_bash: false
 input:
   interpreter_env:
     MY_VAR: "hello"

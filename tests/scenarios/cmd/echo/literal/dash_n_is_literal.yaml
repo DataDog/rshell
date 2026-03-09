@@ -1,4 +1,4 @@
-test_against_local_shell: false
+test_against_bash: false
 description: Echo treats -n as a literal argument, not as an option.
 input:
   script: |+

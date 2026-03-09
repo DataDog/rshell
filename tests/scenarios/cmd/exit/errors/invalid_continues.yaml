@@ -1,4 +1,4 @@
-test_against_local_shell: false
+test_against_bash: false
 description: An invalid exit argument exits the shell; subsequent commands do not run.
 input:
   script: |+
