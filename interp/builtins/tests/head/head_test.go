@@ -637,3 +637,84 @@ func TestHeadNoOctalInterpretation010(t *testing.T) {
 	assert.Equal(t, 0, code)
 	assert.Equal(t, 10, strings.Count(stdout, "\n"))
 }
+
+// --- Bad UTF-8 / binary passthrough ---
+
+// TestHeadBadUTF8ByteMode verifies that invalid UTF-8 bytes are passed through
+// unchanged in byte mode.
+//
+// Derived from uutils test_head.rs::test_bad_utf8
+func TestHeadBadUTF8ByteMode(t *testing.T) {
+	dir := t.TempDir()
+	content := []byte{0xfc, 0x80, 0x80, 0x80, 0x80, 0xaf}
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "bad.bin"), content, 0644))
+	stdout, _, code := cmdRun(t, "head -c 6 bad.bin", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, string(content), stdout)
+}
+
+// TestHeadBadUTF8LineMode verifies that invalid UTF-8 bytes within lines are
+// passed through unchanged in line mode.
+//
+// Derived from uutils test_head.rs::test_bad_utf8_lines
+func TestHeadBadUTF8LineMode(t *testing.T) {
+	dir := t.TempDir()
+	// Three lines, each containing invalid UTF-8; request first 2 lines.
+	// input:    \xfc\x80\x80\x80\x80\xaf\n  b\xfc...\xaf\n  b\xfc...\xaf  (no final newline)
+	// expected: first 2 lines only, bytes preserved verbatim.
+	badSeq := []byte{0xfc, 0x80, 0x80, 0x80, 0x80, 0xaf}
+	line1 := append(append([]byte(nil), badSeq...), '\n')
+	line2 := append(append([]byte("b"), badSeq...), '\n')
+	line3 := append([]byte("b"), badSeq...)
+	input := append(append(append([]byte(nil), line1...), line2...), line3...)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "bad.bin"), input, 0644))
+
+	expected := append(append([]byte(nil), line1...), line2...)
+	stdout, _, code := cmdRun(t, "head -n 2 bad.bin", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, string(expected), stdout)
+}
+
+// --- Multi-file edge cases ---
+
+// TestHeadTwoEmptyFilesHeaders verifies that headers and the blank-line
+// separator are still emitted when both files are empty.
+//
+// Derived from uutils test_head.rs::test_multiple_files
+func TestHeadTwoEmptyFilesHeaders(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "a.txt", "")
+	writeFile(t, dir, "b.txt", "")
+	stdout, _, code := cmdRun(t, "head a.txt b.txt", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "==> a.txt <==\n\n==> b.txt <==\n", stdout)
+}
+
+// TestHeadMultipleFilesWithStdin verifies that '-' interleaved among file
+// arguments reads stdin and prints a "(standard input)" header alongside the
+// file headers.
+//
+// Derived from uutils test_head.rs::test_multiple_files_with_stdin
+func TestHeadMultipleFilesWithStdin(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "empty.txt", "")
+	writeFile(t, dir, "stdin_src.txt", "hello\n")
+	stdout, _, code := cmdRun(t, "head empty.txt - empty.txt < stdin_src.txt", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "==> empty.txt <==\n\n==> (standard input) <==\nhello\n\n==> empty.txt <==\n", stdout)
+}
+
+// TestHeadAllNonexistentFiles verifies that each nonexistent file gets its own
+// error message and no headers are printed for failed opens.
+//
+// Derived from uutils test_head.rs::test_multiple_nonexistent_files
+func TestHeadAllNonexistentFiles(t *testing.T) {
+	dir := t.TempDir()
+	stdout, stderr, code := cmdRun(t, "head missing1.txt missing2.txt", dir)
+	assert.Equal(t, 1, code)
+	assert.Empty(t, stdout)
+	assert.Contains(t, stderr, "missing1.txt")
+	assert.Contains(t, stderr, "missing2.txt")
+	assert.NotContains(t, stdout, "==> missing1.txt <==")
+	assert.NotContains(t, stdout, "==> missing2.txt <==")
+}
