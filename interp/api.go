@@ -284,9 +284,9 @@ func (r *Runner) Reset() {
 				}
 				r.roots[i] = root
 			}
-			r.openHandler = wrapOpenHandler(r.roots, r.allowedPaths)
-			r.readDirHandler = wrapReadDirHandler(r.roots, r.allowedPaths)
-			r.execHandler = wrapExecHandler(r.roots, r.allowedPaths, r.execHandler)
+			r.openHandler = restrictedOpenHandler(r.roots, r.allowedPaths)
+			r.readDirHandler = restrictedReadDirHandler(r.roots, r.allowedPaths)
+			r.execHandler = restrictedExecHandler(r.roots, r.allowedPaths, r.execHandler)
 		}
 	}
 	// reset the internal state

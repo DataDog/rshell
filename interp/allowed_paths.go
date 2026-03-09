@@ -66,9 +66,9 @@ func findMatchingRoot(absPath string, roots []*os.Root, allowedPaths []string) (
 	return nil, "", false
 }
 
-// wrapOpenHandler wraps an OpenHandlerFunc to restrict file opens to allowed paths.
+// restrictedOpenHandler returns an OpenHandlerFunc that restricts file opens to allowed paths.
 // The file is opened through os.Root for atomic path validation.
-func wrapOpenHandler(roots []*os.Root, allowedPaths []string) OpenHandlerFunc {
+func restrictedOpenHandler(roots []*os.Root, allowedPaths []string) OpenHandlerFunc {
 	return func(ctx context.Context, path string, flag int, perm os.FileMode) (io.ReadWriteCloser, error) {
 		absPath := path
 		if !filepath.IsAbs(absPath) {
@@ -89,8 +89,8 @@ func wrapOpenHandler(roots []*os.Root, allowedPaths []string) OpenHandlerFunc {
 	}
 }
 
-// wrapReadDirHandler returns a ReadDirHandlerFunc that restricts directory reads to allowed paths.
-func wrapReadDirHandler(roots []*os.Root, allowedPaths []string) ReadDirHandlerFunc {
+// restrictedReadDirHandler returns a ReadDirHandlerFunc that restricts directory reads to allowed paths.
+func restrictedReadDirHandler(roots []*os.Root, allowedPaths []string) ReadDirHandlerFunc {
 	return func(ctx context.Context, path string) ([]fs.DirEntry, error) {
 		absPath := path
 		if !filepath.IsAbs(absPath) {
@@ -127,11 +127,11 @@ func wrapReadDirHandler(roots []*os.Root, allowedPaths []string) ReadDirHandlerF
 	}
 }
 
-// wrapExecHandler wraps an ExecHandlerFunc to restrict command execution to allowed paths.
+// restrictedExecHandler returns an ExecHandlerFunc that restricts command execution to allowed paths.
 // It resolves the command to an absolute path, validates it against allowed roots
 // using os.Root.Stat for atomic symlink-safe verification, then delegates to next
 // for actual execution. Returns exit code 127 if not found.
-func wrapExecHandler(roots []*os.Root, allowedPaths []string, next ExecHandlerFunc) ExecHandlerFunc {
+func restrictedExecHandler(roots []*os.Root, allowedPaths []string, next ExecHandlerFunc) ExecHandlerFunc {
 	return func(ctx context.Context, args []string) error {
 		if len(args) == 0 {
 			return fmt.Errorf("exec handler called with no arguments")
