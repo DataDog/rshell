@@ -174,7 +174,6 @@ func TestPathSandboxOpenRejectsWriteFlags(t *testing.T) {
 
 	sb, err := newPathSandbox([]string{dir})
 	require.NoError(t, err)
-	require.NoError(t, sb.openRoots())
 	defer sb.Close()
 
 	ctx := context.WithValue(context.Background(), handlerCtxKey{}, HandlerContext{Dir: dir})
