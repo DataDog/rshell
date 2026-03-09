@@ -494,7 +494,7 @@ For any case where behaviour differs from expectation, run the equivalent `gtail
 
 **GATE CHECK**: Call TaskList. Step 8 must be `completed` before starting this step. Set this step to `in_progress` now.
 
-Update `SHELL_COMMANDS.md` in the repository root. Add a row for the new command to the reference table, following the existing format:
+Update `SHELL_FEATURES.md` in the repository root. Add a row for the new command to the reference table, following the existing format:
 
 ```
 | `$ARGUMENTS [FILE ...]` | `-x X` (desc), `-y` (desc) | One-sentence description of what the command does. |
