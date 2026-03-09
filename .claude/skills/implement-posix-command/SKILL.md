@@ -414,7 +414,17 @@ Review the implementation for standard Go best practices:
 - **Variable re-derivation**: the same logical value must not be encoded twice in different types (e.g. both a `byte` and a `string` for the line separator)
 - **Test helpers**: a test must not run the same command twice just to observe different aspects; consolidate into a single runner that captures both stdout/stderr and exit code
 
-For each issue found in either review, fix it immediately. Re-run tests after all fixes. Do not declare the implementation done until every finding is resolved.
+For each issue found in either review, fix it immediately. Re-run tests after all fixes.
+
+### Second-pass review
+
+After all findings from Parts A and B are fixed and tests are green, do a second independent review pass. Re-read the implementation file from the top as if you have never seen it before — do not reference the previous review findings. Look for:
+
+- Anything the first pass missed because it was obscured by the issues that were just fixed
+- New problems introduced by the fixes themselves (e.g., a simplification that quietly dropped a nil check or error return)
+- Any logic that is now clearly wrong with the cleaned-up code as context
+
+Fix any new findings and re-run tests. Only then declare Step 7 complete.
 
 ## Step 8: Exploratory pentest
 
