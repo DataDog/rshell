@@ -574,6 +574,17 @@ func TestHeadNilStdin(t *testing.T) {
 	assert.Equal(t, "", stderr)
 }
 
+func TestHeadNilStdinVerbose(t *testing.T) {
+	// -v must print the header for stdin even when callCtx.Stdin == nil.
+	// Previously the nil guard fired before the header block, silently
+	// skipping the "==> (standard input) <==" line.
+	dir := t.TempDir()
+	stdout, stderr, code := runScript(t, "head -v -", dir, interp.AllowedPaths([]string{dir}))
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "==> (standard input) <==\n", stdout)
+	assert.Equal(t, "", stderr)
+}
+
 func TestHeadBytesAppearsLastWithDoubleDash(t *testing.T) {
 	// pflag stops parsing at "--", so file names after "--" are never
 	// mistaken for flags. With -n and -c both set before "--", the

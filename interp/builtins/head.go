@@ -168,25 +168,33 @@ func headProcessFile(ctx context.Context, callCtx *CallContext, file string, idx
 	var rc io.ReadCloser
 	name := file
 	if file == "-" {
+		name = "(standard input)"
+		// Print the header before the nil-stdin guard so that -v always
+		// emits a header for stdin even when no input stream is present.
+		if printHeaders {
+			if idx > 0 {
+				callCtx.Out("\n")
+			}
+			callCtx.Outf("==> %s <==\n", name)
+		}
 		if callCtx.Stdin == nil {
 			return nil
 		}
 		rc = io.NopCloser(callCtx.Stdin)
-		name = "(standard input)"
 	} else {
 		f, err := callCtx.OpenFile(ctx, file, os.O_RDONLY, 0)
 		if err != nil {
 			return err
 		}
 		rc = f
-	}
-	defer rc.Close()
-
-	if printHeaders {
-		if idx > 0 {
-			callCtx.Out("\n")
+		// Header is printed after a successful open so that a file that
+		// cannot be opened produces no header (matches GNU head behaviour).
+		if printHeaders {
+			if idx > 0 {
+				callCtx.Out("\n")
+			}
+			callCtx.Outf("==> %s <==\n", name)
 		}
-		callCtx.Outf("==> %s <==\n", name)
 	}
 
 	if useBytesMode {
