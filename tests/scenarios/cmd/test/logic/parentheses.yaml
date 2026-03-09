@@ -1,0 +1,9 @@
+description: test with parentheses for grouping.
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    test '(' -n "hello" ')' && echo yes
+expect:
+  stdout: "yes\n"
+  stderr: ""
+  exit_code: 0

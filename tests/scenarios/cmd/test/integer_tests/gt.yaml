@@ -1,0 +1,9 @@
+description: test -gt returns 0 when first integer is greater than second.
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    test 5 -gt 3 && echo yes
+expect:
+  stdout: "yes\n"
+  stderr: ""
+  exit_code: 0

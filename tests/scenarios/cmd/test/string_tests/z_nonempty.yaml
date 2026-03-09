@@ -1,0 +1,9 @@
+description: test -z returns 1 for non-empty string.
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    test -z "hello" && echo yes || echo no
+expect:
+  stdout: "no\n"
+  stderr: ""
+  exit_code: 0

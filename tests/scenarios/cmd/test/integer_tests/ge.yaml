@@ -1,0 +1,9 @@
+description: test -ge returns 0 when first integer is greater than or equal.
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    test 5 -ge 5 && echo yes
+expect:
+  stdout: "yes\n"
+  stderr: ""
+  exit_code: 0

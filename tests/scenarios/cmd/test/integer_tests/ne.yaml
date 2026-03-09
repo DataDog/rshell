@@ -1,0 +1,9 @@
+description: test -ne returns 0 when integers are not equal.
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    test 5 -ne 3 && echo yes
+expect:
+  stdout: "yes\n"
+  stderr: ""
+  exit_code: 0

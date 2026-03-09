@@ -45,6 +45,28 @@ func (r *Runner) stop(ctx context.Context) bool {
 	return false
 }
 
+func (r *Runner) stat(ctx context.Context, path string) (os.FileInfo, error) {
+	fi, err := r.sandbox.stat(r.handlerCtx(ctx, todoPos), path)
+	if err != nil {
+		if pe, ok := err.(*os.PathError); ok {
+			return nil, portablePathError(pe)
+		}
+		return nil, err
+	}
+	return fi, nil
+}
+
+func (r *Runner) lstat(ctx context.Context, path string) (os.FileInfo, error) {
+	fi, err := r.sandbox.lstat(r.handlerCtx(ctx, todoPos), path)
+	if err != nil {
+		if pe, ok := err.(*os.PathError); ok {
+			return nil, portablePathError(pe)
+		}
+		return nil, err
+	}
+	return fi, nil
+}
+
 func (r *Runner) open(ctx context.Context, path string, flags int, mode os.FileMode, print bool) (io.ReadWriteCloser, error) {
 	f, err := r.openHandler(r.handlerCtx(ctx, todoPos), path, flags, mode)
 	// TODO: support wrapped PathError returned from openHandler.

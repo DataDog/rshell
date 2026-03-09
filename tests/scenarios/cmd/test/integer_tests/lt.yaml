@@ -1,0 +1,9 @@
+description: test -lt returns 0 when first integer is less than second.
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    test 3 -lt 5 && echo yes
+expect:
+  stdout: "yes\n"
+  stderr: ""
+  exit_code: 0

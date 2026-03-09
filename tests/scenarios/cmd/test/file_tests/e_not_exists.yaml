@@ -1,0 +1,9 @@
+description: test -e returns 1 when file does not exist.
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    test -e nonexistent && echo yes || echo no
+expect:
+  stdout: "no\n"
+  stderr: ""
+  exit_code: 0

@@ -1,0 +1,9 @@
+description: test with no arguments exits 1 (false).
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    test
+expect:
+  stdout: ""
+  stderr: ""
+  exit_code: 1

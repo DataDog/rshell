@@ -216,6 +216,12 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 			OpenFile: func(ctx context.Context, path string, flags int, mode os.FileMode) (io.ReadWriteCloser, error) {
 				return r.open(ctx, path, flags, mode, false)
 			},
+			StatFile: func(ctx context.Context, path string) (os.FileInfo, error) {
+				return r.stat(ctx, path)
+			},
+			LstatFile: func(ctx context.Context, path string) (os.FileInfo, error) {
+				return r.lstat(ctx, path)
+			},
 			PortableErr: portableErrMsg,
 		}
 		if r.stdin != nil { // do not assign a typed nil into the io.Reader interface

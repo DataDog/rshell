@@ -1,0 +1,9 @@
+description: test with a single empty word exits 1 (false).
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    test "" && echo yes || echo no
+expect:
+  stdout: "no\n"
+  stderr: ""
+  exit_code: 0

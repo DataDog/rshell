@@ -1,0 +1,9 @@
+description: test string equality with = operator.
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    test "abc" = "abc" && echo yes
+expect:
+  stdout: "yes\n"
+  stderr: ""
+  exit_code: 0

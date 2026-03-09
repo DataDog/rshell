@@ -1,0 +1,13 @@
+description: test -d returns 0 for a directory.
+setup:
+  files:
+    - path: subdir/placeholder.txt
+      content: ""
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    test -d subdir && echo yes
+expect:
+  stdout: "yes\n"
+  stderr: ""
+  exit_code: 0

@@ -1,0 +1,10 @@
+description: test with missing operand after binary operator exits 2.
+skip_assert_against_bash: true
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    test "a" =
+expect:
+  stdout: ""
+  stderr: "test: missing argument after '='\n"
+  exit_code: 2

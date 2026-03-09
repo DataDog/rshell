@@ -1,0 +1,9 @@
+description: test -n returns 1 for empty string.
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    test -n "" && echo yes || echo no
+expect:
+  stdout: "no\n"
+  stderr: ""
+  exit_code: 0

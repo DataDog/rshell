@@ -1,0 +1,13 @@
+description: test -e returns 0 when file exists.
+setup:
+  files:
+    - path: file.txt
+      content: "hello"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    test -e file.txt && echo yes
+expect:
+  stdout: "yes\n"
+  stderr: ""
+  exit_code: 0

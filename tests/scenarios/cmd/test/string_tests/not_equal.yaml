@@ -1,0 +1,9 @@
+description: test string inequality with != operator.
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    test "abc" != "xyz" && echo yes
+expect:
+  stdout: "yes\n"
+  stderr: ""
+  exit_code: 0

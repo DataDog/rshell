@@ -1,0 +1,9 @@
+description: test -eq returns 0 when integers are equal.
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    test 5 -eq 5 && echo yes
+expect:
+  stdout: "yes\n"
+  stderr: ""
+  exit_code: 0

@@ -1,0 +1,9 @@
+description: test -o evaluates either expression.
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    test -z "a" -o -n "b" && echo yes
+expect:
+  stdout: "yes\n"
+  stderr: ""
+  exit_code: 0

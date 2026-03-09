@@ -1,0 +1,13 @@
+description: test -f returns 1 for a directory.
+setup:
+  files:
+    - path: subdir/placeholder.txt
+      content: ""
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    test -f subdir && echo yes || echo no
+expect:
+  stdout: "no\n"
+  stderr: ""
+  exit_code: 0

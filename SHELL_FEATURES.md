@@ -10,6 +10,7 @@ Blocked features are rejected before execution with exit code 2.
 - ✅ `true` — exits with code 0
 - ✅ `false` — exits with code 1
 - ✅ `exit [N]` — exits with code N (default: last exit code)
+- ✅ `test EXPR` / `[ EXPR ]` — evaluate conditional expressions (file tests, string/integer comparisons, logical operators)
 - ✅ `break [N]` / `continue [N]` — loop control
 - ❌ All other commands — return exit code 127 with `<cmd>: not found` unless an ExecHandler is configured
 

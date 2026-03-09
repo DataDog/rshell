@@ -1,0 +1,9 @@
+description: "[ ] bracket syntax works."
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    [ -n "hello" ] && echo yes
+expect:
+  stdout: "yes\n"
+  stderr: ""
+  exit_code: 0

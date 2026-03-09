@@ -1,0 +1,13 @@
+description: test -f returns 0 for a regular file.
+setup:
+  files:
+    - path: file.txt
+      content: "hello"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    test -f file.txt && echo yes
+expect:
+  stdout: "yes\n"
+  stderr: ""
+  exit_code: 0

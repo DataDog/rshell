@@ -1,0 +1,13 @@
+description: test -s returns 0 for a file with non-zero size.
+setup:
+  files:
+    - path: file.txt
+      content: "hello"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    test -s file.txt && echo yes
+expect:
+  stdout: "yes\n"
+  stderr: ""
+  exit_code: 0

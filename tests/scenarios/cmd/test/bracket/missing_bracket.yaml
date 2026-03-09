@@ -1,0 +1,9 @@
+description: "[ without closing ] exits with code 2."
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    [ -n "hello"
+expect:
+  stdout: ""
+  stderr_contains: ["[: missing"]
+  exit_code: 2

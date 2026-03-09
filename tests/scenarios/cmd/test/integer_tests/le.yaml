@@ -1,0 +1,9 @@
+description: test -le returns 0 when first integer is less than or equal.
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    test 3 -le 3 && echo yes
+expect:
+  stdout: "yes\n"
+  stderr: ""
+  exit_code: 0

@@ -1,0 +1,9 @@
+description: test ! negates the expression.
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    test ! -z "hello" && echo yes
+expect:
+  stdout: "yes\n"
+  stderr: ""
+  exit_code: 0

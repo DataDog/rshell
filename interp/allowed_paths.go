@@ -133,6 +133,40 @@ func (s *pathSandbox) readDir(ctx context.Context, path string) ([]fs.DirEntry, 
 	return entries, nil
 }
 
+// stat returns a FileInfo for the given path. The path is resolved through the
+// sandbox the same way as open().
+func (s *pathSandbox) stat(ctx context.Context, path string) (os.FileInfo, error) {
+	absPath := toAbs(path, HandlerCtx(ctx).Dir)
+
+	root, relPath, ok := s.resolve(absPath)
+	if !ok {
+		return nil, &os.PathError{Op: "stat", Path: path, Err: os.ErrPermission}
+	}
+
+	fi, err := root.Stat(relPath)
+	if err != nil {
+		return nil, portablePathError(err)
+	}
+	return fi, nil
+}
+
+// lstat returns a FileInfo for the given path without following symlinks.
+// The path is resolved through the sandbox the same way as open().
+func (s *pathSandbox) lstat(ctx context.Context, path string) (os.FileInfo, error) {
+	absPath := toAbs(path, HandlerCtx(ctx).Dir)
+
+	root, relPath, ok := s.resolve(absPath)
+	if !ok {
+		return nil, &os.PathError{Op: "lstat", Path: path, Err: os.ErrPermission}
+	}
+
+	fi, err := root.Lstat(relPath)
+	if err != nil {
+		return nil, portablePathError(err)
+	}
+	return fi, nil
+}
+
 // Close releases all os.Root file descriptors. It is safe to call multiple times.
 func (s *pathSandbox) Close() error {
 	if s == nil {

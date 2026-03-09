@@ -31,6 +31,12 @@ type CallContext struct {
 	// OpenFile opens a file within the shell's path restrictions.
 	OpenFile func(ctx context.Context, path string, flags int, mode os.FileMode) (io.ReadWriteCloser, error)
 
+	// StatFile returns file info within the shell's path restrictions.
+	StatFile func(ctx context.Context, path string) (os.FileInfo, error)
+
+	// LstatFile returns file info without following symlinks.
+	LstatFile func(ctx context.Context, path string) (os.FileInfo, error)
+
 	// PortableErr normalizes an OS error to a POSIX-style message.
 	PortableErr func(err error) string
 }

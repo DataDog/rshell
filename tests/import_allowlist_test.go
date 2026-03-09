@@ -39,7 +39,10 @@ var builtinAllowedSymbols = []string{
 	"io.NopCloser",
 	"io.ReadCloser",
 	"io.Reader",
+	"os.FileInfo",
+	"os.ModeSymlink",
 	"os.O_RDONLY",
+	"os.SameFile",
 	"strconv.Atoi",
 	"strconv.ParseInt",
 }
