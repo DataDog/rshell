@@ -30,6 +30,7 @@ import (
 var builtinAllowedSymbols = []string{
 	"bufio.NewScanner",
 	"context.Context",
+	"errors.Is",
 	"github.com/spf13/pflag.ContinueOnError",
 	"github.com/spf13/pflag.NewFlagSet",
 	"io.Copy",

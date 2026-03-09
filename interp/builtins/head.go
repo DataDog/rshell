@@ -52,6 +52,7 @@ package builtins
 import (
 	"bufio"
 	"context"
+	"errors"
 	"io"
 	"os"
 	"strconv"
@@ -186,6 +187,7 @@ func headProcessFile(ctx context.Context, callCtx *CallContext, file string, idx
 		if err != nil {
 			return err
 		}
+		defer f.Close()
 		rc = f
 		// Header is printed after a successful open so that a file that
 		// cannot be opened produces no header (matches GNU head behaviour).
@@ -229,6 +231,9 @@ func headLines(ctx context.Context, callCtx *CallContext, r io.Reader, count int
 // count when count is smaller, avoiding unnecessary allocation for small
 // byte requests (e.g. head -c 5).
 func headBytes(ctx context.Context, callCtx *CallContext, r io.Reader, count int64) error {
+	if count == 0 {
+		return nil
+	}
 	const chunkSize = 32 * 1024
 	buf := make([]byte, min(int64(chunkSize), count))
 	remaining := count
@@ -244,7 +249,7 @@ func headBytes(ctx context.Context, callCtx *CallContext, r io.Reader, count int
 				return werr
 			}
 		}
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			return nil
 		}
 		if err != nil {
