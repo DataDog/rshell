@@ -2,6 +2,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -47,15 +48,18 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 				return execute(cmd.Context(), script, "", paths, stdin, stdout, stderr)
 			}
 
+			// Read stdin once so each execute() call gets its own
+			// reader, avoiding a data race on the shared io.Reader.
+			stdinData, err := io.ReadAll(stdin)
+			if err != nil {
+				return fmt.Errorf("reading stdin: %w", err)
+			}
+
 			for _, file := range args {
 				var src string
 				var name string
 				if file == "-" {
-					data, err := io.ReadAll(stdin)
-					if err != nil {
-						return fmt.Errorf("reading stdin: %w", err)
-					}
-					src = string(data)
+					src = string(stdinData)
 					name = ""
 				} else {
 					data, err := os.ReadFile(file)
@@ -65,7 +69,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 					src = string(data)
 					name = file
 				}
-				if err := execute(cmd.Context(), src, name, paths, stdin, stdout, stderr); err != nil {
+				if err := execute(cmd.Context(), src, name, paths, bytes.NewReader(stdinData), stdout, stderr); err != nil {
 					return err
 				}
 			}
