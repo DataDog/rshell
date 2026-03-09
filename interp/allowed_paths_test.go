@@ -1,4 +1,4 @@
-package rshell_test
+package interp_test
 
 import (
 	"bytes"
@@ -13,21 +13,21 @@ import (
 	"github.com/stretchr/testify/require"
 	"mvdan.cc/sh/v3/syntax"
 
-	"github.com/DataDog/rshell"
+	"github.com/DataDog/rshell/interp"
 )
 
-func runScript(t *testing.T, script, dir string, opts ...rshell.RunnerOption) (stdout, stderr string, exitCode int) {
+func runScript(t *testing.T, script, dir string, opts ...interp.RunnerOption) (stdout, stderr string, exitCode int) {
 	t.Helper()
 	parser := syntax.NewParser()
 	prog, err := parser.Parse(strings.NewReader(script), "")
 	require.NoError(t, err)
 
 	var outBuf, errBuf bytes.Buffer
-	allOpts := append([]rshell.RunnerOption{
-		rshell.StdIO(nil, &outBuf, &errBuf),
+	allOpts := append([]interp.RunnerOption{
+		interp.StdIO(nil, &outBuf, &errBuf),
 	}, opts...)
 
-	runner, err := rshell.New(allOpts...)
+	runner, err := interp.New(allOpts...)
 	require.NoError(t, err)
 	defer runner.Close()
 
@@ -38,7 +38,7 @@ func runScript(t *testing.T, script, dir string, opts ...rshell.RunnerOption) (s
 	err = runner.Run(context.Background(), prog)
 	exitCode = 0
 	if err != nil {
-		var es rshell.ExitStatus
+		var es interp.ExitStatus
 		if errors.As(err, &es) {
 			exitCode = int(es)
 		} else {
@@ -50,8 +50,8 @@ func runScript(t *testing.T, script, dir string, opts ...rshell.RunnerOption) (s
 
 func TestAllowedPathsOption(t *testing.T) {
 	t.Run("invalid path rejected", func(t *testing.T) {
-		_, err := rshell.New(
-			rshell.AllowedPaths([]string{"/nonexistent/path/that/does/not/exist"}),
+		_, err := interp.New(
+			interp.AllowedPaths([]string{"/nonexistent/path/that/does/not/exist"}),
 		)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "AllowedPaths")
@@ -61,8 +61,8 @@ func TestAllowedPathsOption(t *testing.T) {
 		tmpFile := filepath.Join(t.TempDir(), "file.txt")
 		require.NoError(t, os.WriteFile(tmpFile, []byte("test"), 0644))
 
-		_, err := rshell.New(
-			rshell.AllowedPaths([]string{tmpFile}),
+		_, err := interp.New(
+			interp.AllowedPaths([]string{tmpFile}),
 		)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "not a directory")
@@ -70,8 +70,8 @@ func TestAllowedPathsOption(t *testing.T) {
 
 	t.Run("valid directory accepted", func(t *testing.T) {
 		dir := t.TempDir()
-		runner, err := rshell.New(
-			rshell.AllowedPaths([]string{dir}),
+		runner, err := interp.New(
+			interp.AllowedPaths([]string{dir}),
 		)
 		require.NoError(t, err)
 		runner.Close()
@@ -83,7 +83,7 @@ func TestAllowedPathsCatInside(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "hello.txt"), []byte("hello world\n"), 0644))
 
 	stdout, _, exitCode := runScript(t, "cat hello.txt", dir,
-		rshell.AllowedPaths([]string{dir}),
+		interp.AllowedPaths([]string{dir}),
 	)
 	assert.Equal(t, 0, exitCode)
 	assert.Equal(t, "hello world\n", stdout)
@@ -96,7 +96,7 @@ func TestAllowedPathsCatOutside(t *testing.T) {
 
 	catPath := strings.ReplaceAll(filepath.Join(secret, "hidden.txt"), `\`, `/`)
 	_, stderr, exitCode := runScript(t, "cat "+catPath, allowed,
-		rshell.AllowedPaths([]string{allowed}),
+		interp.AllowedPaths([]string{allowed}),
 	)
 	assert.Equal(t, 1, exitCode)
 	assert.Contains(t, stderr, "permission denied")
@@ -107,7 +107,7 @@ func TestAllowedPathsRedirectInside(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "data.txt"), []byte("redirected"), 0644))
 
 	stdout, _, exitCode := runScript(t, "cat < data.txt", dir,
-		rshell.AllowedPaths([]string{dir}),
+		interp.AllowedPaths([]string{dir}),
 	)
 	assert.Equal(t, 0, exitCode)
 	assert.Equal(t, "redirected", stdout)
@@ -119,7 +119,7 @@ func TestAllowedPathsRedirectOutside(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(secret, "data.txt"), []byte("secret"), 0644))
 
 	_, stderr, exitCode := runScript(t, "cat < "+filepath.Join(secret, "data.txt"), allowed,
-		rshell.AllowedPaths([]string{allowed}),
+		interp.AllowedPaths([]string{allowed}),
 	)
 	assert.Equal(t, 1, exitCode)
 	assert.Contains(t, stderr, "permission denied")
@@ -131,7 +131,7 @@ func TestAllowedPathsGlobInside(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "b.txt"), []byte(""), 0644))
 
 	stdout, _, exitCode := runScript(t, `echo *.txt`, dir,
-		rshell.AllowedPaths([]string{dir}),
+		interp.AllowedPaths([]string{dir}),
 	)
 	assert.Equal(t, 0, exitCode)
 	assert.Contains(t, stdout, "a.txt")
@@ -146,7 +146,7 @@ func TestAllowedPathsGlobOutside(t *testing.T) {
 
 	// Glob on a directory outside allowed paths should return the literal pattern
 	stdout, _, exitCode := runScript(t, `echo `+filepath.Join(secret, "*.txt"), allowed,
-		rshell.AllowedPaths([]string{allowed}),
+		interp.AllowedPaths([]string{allowed}),
 	)
 	assert.Equal(t, 0, exitCode)
 	assert.Contains(t, stdout, "*.txt") // pattern not expanded
@@ -156,7 +156,7 @@ func TestAllowedPathsTraversalBlocked(t *testing.T) {
 	dir := t.TempDir()
 	// Even if we try to traverse with .., os.Root should block it
 	_, stderr, exitCode := runScript(t, `cat ../../etc/passwd`, dir,
-		rshell.AllowedPaths([]string{dir}),
+		interp.AllowedPaths([]string{dir}),
 	)
 	assert.Equal(t, 1, exitCode)
 	assert.Contains(t, stderr, "permission denied")
@@ -167,7 +167,7 @@ func TestAllowedPathsDoubleDotFilename(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "..hidden"), []byte("dotdot content\n"), 0644))
 
 	stdout, _, exitCode := runScript(t, `cat ..hidden`, dir,
-		rshell.AllowedPaths([]string{dir}),
+		interp.AllowedPaths([]string{dir}),
 	)
 	assert.Equal(t, 0, exitCode)
 	assert.Equal(t, "dotdot content\n", stdout)
@@ -178,7 +178,7 @@ func TestAllowedPathsEmptyBlocksAll(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "test.txt"), []byte("test"), 0644))
 
 	_, stderr, exitCode := runScript(t, "cat test.txt", dir,
-		rshell.AllowedPaths([]string{}),
+		interp.AllowedPaths([]string{}),
 	)
 	assert.Equal(t, 1, exitCode)
 	assert.Contains(t, stderr, "permission denied")
@@ -197,8 +197,8 @@ func TestAllowedPathsDefaultBlocksAll(t *testing.T) {
 
 func TestAllowedPathsClose(t *testing.T) {
 	dir := t.TempDir()
-	runner, err := rshell.New(
-		rshell.AllowedPaths([]string{dir}),
+	runner, err := interp.New(
+		interp.AllowedPaths([]string{dir}),
 	)
 	require.NoError(t, err)
 

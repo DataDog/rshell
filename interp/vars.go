@@ -1,4 +1,4 @@
-package rshell
+package interp
 
 import (
 	"fmt"

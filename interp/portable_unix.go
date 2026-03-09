@@ -1,6 +1,6 @@
 //go:build !windows
 
-package rshell
+package interp
 
 import (
 	"errors"

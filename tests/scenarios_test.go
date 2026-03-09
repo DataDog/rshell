@@ -18,7 +18,7 @@ import (
 	"gopkg.in/yaml.v3"
 	"mvdan.cc/sh/v3/syntax"
 
-	"github.com/DataDog/rshell"
+	"github.com/DataDog/rshell/interp"
 )
 
 const dockerBashImage = "bash:5.2"
@@ -144,15 +144,15 @@ func runScenario(t *testing.T, sc scenario) {
 	require.NoError(t, err, "failed to parse script")
 
 	var stdout, stderr bytes.Buffer
-	opts := []rshell.RunnerOption{
-		rshell.StdIO(nil, &stdout, &stderr),
+	opts := []interp.RunnerOption{
+		interp.StdIO(nil, &stdout, &stderr),
 	}
 	if len(sc.Input.InterpreterEnv) > 0 {
 		pairs := make([]string, 0, len(sc.Input.InterpreterEnv))
 		for k, v := range sc.Input.InterpreterEnv {
 			pairs = append(pairs, k+"="+v)
 		}
-		opts = append(opts, rshell.Env(pairs...))
+		opts = append(opts, interp.Env(pairs...))
 	}
 	if sc.Input.AllowedPaths != nil {
 		resolved := make([]string, len(sc.Input.AllowedPaths))
@@ -163,9 +163,9 @@ func runScenario(t *testing.T, sc scenario) {
 				resolved[i] = filepath.Join(dir, p)
 			}
 		}
-		opts = append(opts, rshell.AllowedPaths(resolved))
+		opts = append(opts, interp.AllowedPaths(resolved))
 	}
-	runner, err := rshell.New(opts...)
+	runner, err := interp.New(opts...)
 	require.NoError(t, err, "failed to create runner")
 	defer runner.Close()
 
@@ -176,7 +176,7 @@ func runScenario(t *testing.T, sc scenario) {
 	// Extract exit code from error.
 	exitCode := 0
 	if err != nil {
-		var es rshell.ExitStatus
+		var es interp.ExitStatus
 		if errors.As(err, &es) {
 			exitCode = int(es)
 		} else {

@@ -1,4 +1,4 @@
-package rshell
+package interp
 
 import (
 	"bytes"
@@ -93,7 +93,7 @@ func TestResetZeroValueRunnerSetsFatal(t *testing.T) {
 	r.Reset()
 
 	require.True(t, r.exit.fatalExit)
-	assert.Contains(t, r.exit.err.Error(), "use rshell.New to construct a Runner")
+	assert.Contains(t, r.exit.err.Error(), "use interp.New to construct a Runner")
 }
 
 func TestRunZeroValueRunnerMultipleCalls(t *testing.T) {
@@ -107,7 +107,7 @@ func TestRunZeroValueRunnerMultipleCalls(t *testing.T) {
 	for i := 0; i < 3; i++ {
 		err = r.Run(context.Background(), prog)
 		require.Error(t, err)
-		assert.Contains(t, err.Error(), "use rshell.New to construct a Runner")
+		assert.Contains(t, err.Error(), "use interp.New to construct a Runner")
 	}
 }
 
