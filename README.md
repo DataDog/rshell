@@ -62,13 +62,15 @@ Linux, macOS, and Windows.
 
 ## Testing
 
-Tests use a YAML scenario-driven framework in `tests/scenarios/`:
+**800+ YAML-driven test scenarios** cover builtins, shell features, and security restrictions.
 
 ```
 tests/scenarios/
 ├── cmd/          # builtin command tests (echo, cat, exit, ...)
 └── shell/        # shell feature tests (pipes, variables, control flow, ...)
 ```
+
+By default, each scenario is executed twice: once in rshell and once in a real bash shell, ensuring output parity with POSIX behavior. Scenarios that test rshell-specific restrictions (blocked commands, readonly enforcement, etc.) opt out of the bash comparison.
 
 ```bash
 go test ./...
