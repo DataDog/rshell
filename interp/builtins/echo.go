@@ -1,6 +1,3 @@
-// Copyright (c) Datadog, Inc.
-// See LICENSE for licensing information
-
 package builtins
 
 import "context"

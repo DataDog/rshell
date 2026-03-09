@@ -1,6 +1,3 @@
-// Copyright (c) 2017, Daniel Martí <mvdan@mvdan.cc>
-// See LICENSE for licensing information
-
 // Package interp implements a restricted shell interpreter designed for
 // safe, sandboxed execution. It supports a subset of Bash syntax with
 // many features intentionally blocked (see [validateNode]).
