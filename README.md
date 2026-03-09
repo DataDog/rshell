@@ -1,5 +1,6 @@
 # rshell
 
+[![CI](https://github.com/DataDog/rshell/actions/workflows/test.yml/badge.svg)](https://github.com/DataDog/rshell/actions/workflows/test.yml)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 
 A restricted shell interpreter for Go. Designed for AI agents that need to run shell commands safely.
