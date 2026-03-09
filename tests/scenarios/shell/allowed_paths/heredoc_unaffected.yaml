@@ -1,5 +1,5 @@
 description: "Heredocs work regardless of AllowedPaths since they do not access the filesystem"
-test_against_bash: false
+skip_assert_against_bash: true
 input:
   script: |
     cat <<EOF

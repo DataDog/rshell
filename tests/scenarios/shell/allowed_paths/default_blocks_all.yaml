@@ -1,4 +1,4 @@
-test_against_bash: false
+skip_assert_against_bash: true
 description: Default (no allowed_paths) blocks all file access
 setup:
   files:

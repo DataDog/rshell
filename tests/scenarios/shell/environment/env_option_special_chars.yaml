@@ -1,5 +1,5 @@
 description: "Env option variable with special characters in value"
-test_against_bash: false
+skip_assert_against_bash: true
 input:
   interpreter_env:
     SPECIAL: "hello world!@#"

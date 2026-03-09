@@ -1,5 +1,5 @@
 description: "PATH variable is not set in the default environment"
-test_against_bash: false
+skip_assert_against_bash: true
 input:
   script: |
     echo "path=$PATH"

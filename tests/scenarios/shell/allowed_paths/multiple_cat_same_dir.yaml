@@ -1,5 +1,5 @@
 description: "Multiple cat commands reading different files from the same allowed directory"
-test_against_bash: false
+skip_assert_against_bash: true
 setup:
   files:
     - path: "data/first.txt"

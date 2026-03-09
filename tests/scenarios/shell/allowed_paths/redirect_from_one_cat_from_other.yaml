@@ -1,5 +1,5 @@
 description: "Redirect input from one allowed path and cat from another both work"
-test_against_bash: false
+skip_assert_against_bash: true
 setup:
   files:
     - path: "source/input.txt"

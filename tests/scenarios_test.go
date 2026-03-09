@@ -31,7 +31,7 @@ const dockerBashImage = "bash:5.2"
 // scenario represents a single test scenario.
 type scenario struct {
 	Description           string   `yaml:"description"`
-	TestAgainstBash *bool    `yaml:"test_against_bash"` // nil = true (default); false = skip bash comparison
+	SkipAssertAgainstBash bool `yaml:"skip_assert_against_bash"` // true = skip bash comparison
 	Setup                 setup    `yaml:"setup"`
 	Input                 input    `yaml:"input"`
 	Expect                expected `yaml:"expect"`
@@ -324,7 +324,7 @@ func TestShellScenariosAgainstBash(t *testing.T) {
 	for group, paths := range groups {
 		for _, path := range paths {
 			sc := loadScenario(t, path)
-			if sc.TestAgainstBash != nil && !*sc.TestAgainstBash {
+			if sc.SkipAssertAgainstBash {
 				continue
 			}
 			name := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))

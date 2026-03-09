@@ -1,5 +1,5 @@
 description: "Execution continues after a blocked file access"
-test_against_bash: false
+skip_assert_against_bash: true
 setup:
   files:
     - path: "allowed/ok.txt"

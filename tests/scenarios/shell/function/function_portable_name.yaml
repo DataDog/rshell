@@ -1,4 +1,4 @@
-test_against_bash: false
+skip_assert_against_bash: true
 description: Function with underscore and alphanumeric name is blocked.
 input:
   script: |+

@@ -1,5 +1,5 @@
 description: "Glob pattern with no matches inside allowed path returns literal pattern"
-test_against_bash: false
+skip_assert_against_bash: true
 setup:
   files:
     - path: "data/file.log"

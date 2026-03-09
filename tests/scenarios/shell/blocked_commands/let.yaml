@@ -1,4 +1,4 @@
-test_against_bash: false
+skip_assert_against_bash: true
 description: let is not supported.
 input:
   script: |+

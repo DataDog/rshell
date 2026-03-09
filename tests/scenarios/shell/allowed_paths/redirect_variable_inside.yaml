@@ -1,5 +1,5 @@
 description: "Input redirect using a variable-expanded path inside allowed path"
-test_against_bash: false
+skip_assert_against_bash: true
 setup:
   files:
     - path: "data/input.txt"

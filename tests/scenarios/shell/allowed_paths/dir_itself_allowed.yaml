@@ -1,5 +1,5 @@
 description: "When $DIR is allowed, all files under the temp directory are accessible"
-test_against_bash: false
+skip_assert_against_bash: true
 setup:
   files:
     - path: "a.txt"

@@ -1,5 +1,5 @@
 # Our echo intentionally ignores all flags; bash interprets -ne, -eE, etc.
-test_against_bash: false
+skip_assert_against_bash: true
 description: Echo treats combined flag-like arguments as literal strings.
 input:
   script: |+

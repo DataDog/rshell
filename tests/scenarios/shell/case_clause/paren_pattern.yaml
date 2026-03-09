@@ -1,4 +1,4 @@
-test_against_bash: false
+skip_assert_against_bash: true
 description: Case statement with parenthesized pattern is blocked.
 input:
   script: |+

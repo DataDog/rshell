@@ -1,4 +1,4 @@
-test_against_bash: false
+skip_assert_against_bash: true
 description: Cat on a directory fails with "is a directory" error and exits with code 1.
 setup:
   files:

@@ -10,12 +10,12 @@ Notes:
 - if some tests fail, keep in mind it's possible that pkg/shell implementation is wrong, and it's fine to fix the implementation
 ```
 
-Prompt to avoid disabling test_against_bash when possible:
+Prompt to avoid disabling skip_assert_against_bash when possible:
 ```
-In tests, for each scenarios with test_against_bash is disabled,
-examine why test_against_bash is disabled.
+In tests, for each scenarios with skip_assert_against_bash is disabled,
+examine why skip_assert_against_bash is disabled.
 
-test_against_bash is usually disabled because the restricted shell doesn't behave as bash
+skip_assert_against_bash is usually disabled because the restricted shell doesn't behave as bash
 
 BUT if it's disabled because of a bug in restricted shell (making it behave differently than bash),
 then the restricted shell implementation must be fixed

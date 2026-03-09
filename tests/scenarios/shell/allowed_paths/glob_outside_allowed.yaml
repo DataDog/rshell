@@ -1,4 +1,4 @@
-test_against_bash: false
+skip_assert_against_bash: true
 description: Glob expansion on directory outside allowed paths returns literal pattern
 setup:
   files:

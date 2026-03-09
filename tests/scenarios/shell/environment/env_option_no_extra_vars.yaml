@@ -1,5 +1,5 @@
 description: "Variables from Env option do not pollute unrelated variable names"
-test_against_bash: false
+skip_assert_against_bash: true
 input:
   interpreter_env:
     DEFINED: "yes"

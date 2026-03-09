@@ -1,5 +1,5 @@
 description: "Non-existent file inside allowed directory returns an error"
-test_against_bash: false
+skip_assert_against_bash: true
 setup:
   files:
     - path: "data/exists.txt"

@@ -1,5 +1,5 @@
 description: "Piping cat output from a file in allowed path works"
-test_against_bash: false
+skip_assert_against_bash: true
 setup:
   files:
     - path: "data/msg.txt"

@@ -1,5 +1,5 @@
 description: "USER variable is not set in the default environment"
-test_against_bash: false
+skip_assert_against_bash: true
 input:
   script: |
     echo "user=$USER"

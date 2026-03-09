@@ -1,5 +1,5 @@
 description: "Path traversal from allowed dir to sibling dir is blocked"
-test_against_bash: false
+skip_assert_against_bash: true
 setup:
   files:
     - path: "allowed/ok.txt"
