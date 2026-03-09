@@ -1,0 +1,11 @@
+description: test with a single operator-like word treats it as a non-empty string (POSIX one-argument rule).
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    test -n && echo yes
+    test ! && echo bang
+    test -e && echo exists
+expect:
+  stdout: "yes\nbang\nexists\n"
+  stderr: ""
+  exit_code: 0

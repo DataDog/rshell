@@ -1,0 +1,9 @@
+description: test works with shell variable expansion.
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    X=hello; test -n "$X" && echo yes
+expect:
+  stdout: "yes\n"
+  stderr: ""
+  exit_code: 0

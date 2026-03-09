@@ -1,0 +1,9 @@
+description: test -eq returns 1 when integers are not equal.
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    test 5 -eq 3
+expect:
+  stdout: ""
+  stderr: ""
+  exit_code: 1

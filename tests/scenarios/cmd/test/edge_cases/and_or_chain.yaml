@@ -1,0 +1,13 @@
+description: test combined with && and || for control flow.
+setup:
+  files:
+    - path: file.txt
+      content: "hello"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    test -f file.txt && echo exists || echo missing
+expect:
+  stdout: "exists\n"
+  stderr: ""
+  exit_code: 0

@@ -1,0 +1,13 @@
+description: test -L returns 1 for a regular file (not a symlink).
+setup:
+  files:
+    - path: regular.txt
+      content: "hello"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    test -L regular.txt
+expect:
+  stdout: ""
+  stderr: ""
+  exit_code: 1

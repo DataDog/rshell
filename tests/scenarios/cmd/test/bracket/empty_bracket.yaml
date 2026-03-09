@@ -1,0 +1,9 @@
+description: empty bracket test [ ] returns 1 (false).
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    [ ]
+expect:
+  stdout: ""
+  stderr: ""
+  exit_code: 1

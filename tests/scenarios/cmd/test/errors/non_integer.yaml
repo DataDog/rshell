@@ -1,0 +1,9 @@
+description: test with non-integer operands for arithmetic operators reports an error and exits 2.
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    test abc -eq 3
+expect:
+  stdout: ""
+  stderr_contains: ["integer expression expected"]
+  exit_code: 2

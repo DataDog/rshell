@@ -102,11 +102,15 @@ func run(ctx context.Context, callCtx *builtins.CallContext, args []string, isBr
 		return builtins.Result{Code: 2}
 	}
 	if len(p.rem) > 0 {
-		callCtx.Errf("%s: extra argument '%s'\n", name, p.rem[0])
+		callCtx.Errf("%s: too many arguments\n", name)
 		return builtins.Result{Code: 2}
 	}
 
-	if evalTest(ctx, callCtx, expr) {
+	ok, errCode := evalTest(ctx, callCtx, name, expr)
+	if errCode != 0 {
+		return builtins.Result{Code: errCode}
+	}
+	if ok {
 		return builtins.Result{}
 	}
 	return builtins.Result{Code: 1}
@@ -211,6 +215,14 @@ func (p *testParser) testExprBase() testExpr {
 
 	s := p.peek()
 
+	// POSIX one-argument rule: when only one token remains, treat it as a
+	// plain string regardless of whether it looks like an operator.
+	// e.g. `test -n` → true (non-empty string), `test !` → true.
+	if len(p.rem) == 1 {
+		p.next()
+		return testWord{val: s}
+	}
+
 	// Negation.
 	if s == "!" {
 		p.next()
@@ -260,56 +272,66 @@ func (p *testParser) testExprBase() testExpr {
 
 // --- Evaluator ---
 
-func evalTest(ctx context.Context, callCtx *builtins.CallContext, expr testExpr) bool {
+// evalTest evaluates a test expression. It returns (result, exitCode) where
+// exitCode is non-zero only on evaluation errors (e.g. invalid integer).
+func evalTest(ctx context.Context, callCtx *builtins.CallContext, name string, expr testExpr) (bool, uint8) {
 	switch e := expr.(type) {
 	case testWord:
-		return e.val != ""
+		return e.val != "", 0
 	case testUnary:
-		return evalUnary(ctx, callCtx, e)
+		return evalUnary(ctx, callCtx, name, e)
 	case testBinary:
-		return evalBinary(ctx, callCtx, e)
+		return evalBinary(ctx, callCtx, name, e)
 	case testParen:
-		return evalTest(ctx, callCtx, e.x)
+		return evalTest(ctx, callCtx, name, e.x)
 	}
-	return false
+	return false, 0
 }
 
-func evalUnary(ctx context.Context, callCtx *builtins.CallContext, e testUnary) bool {
+func evalUnary(ctx context.Context, callCtx *builtins.CallContext, name string, e testUnary) (bool, uint8) {
 	switch e.op {
 	case "!":
-		return !evalTest(ctx, callCtx, e.x)
+		ok, code := evalTest(ctx, callCtx, name, e.x)
+		if code != 0 {
+			return false, code
+		}
+		return !ok, 0
 	case "-n":
 		if w, ok := e.x.(testWord); ok {
-			return w.val != ""
+			return w.val != "", 0
 		}
-		return evalTest(ctx, callCtx, e.x)
+		return evalTest(ctx, callCtx, name, e.x)
 	case "-z":
 		if w, ok := e.x.(testWord); ok {
-			return w.val == ""
+			return w.val == "", 0
 		}
-		return !evalTest(ctx, callCtx, e.x)
+		ok, code := evalTest(ctx, callCtx, name, e.x)
+		if code != 0 {
+			return false, code
+		}
+		return !ok, 0
 	case "-e", "-f", "-d", "-s", "-r", "-w", "-x":
 		w, ok := e.x.(testWord)
 		if !ok {
-			return false
+			return false, 0
 		}
 		fi, err := callCtx.StatFile(ctx, w.val)
 		if err != nil {
-			return false
+			return false, 0
 		}
-		return evalFileStat(e.op, fi)
+		return evalFileStat(e.op, fi), 0
 	case "-L", "-h":
 		w, ok := e.x.(testWord)
 		if !ok {
-			return false
+			return false, 0
 		}
 		fi, err := callCtx.LstatFile(ctx, w.val)
 		if err != nil {
-			return false
+			return false, 0
 		}
-		return fi.Mode()&os.ModeSymlink != 0
+		return fi.Mode()&os.ModeSymlink != 0, 0
 	}
-	return false
+	return false, 0
 }
 
 func evalFileStat(op string, fi os.FileInfo) bool {
@@ -332,26 +354,40 @@ func evalFileStat(op string, fi os.FileInfo) bool {
 	return false
 }
 
-func evalBinary(ctx context.Context, callCtx *builtins.CallContext, e testBinary) bool {
+func evalBinary(ctx context.Context, callCtx *builtins.CallContext, name string, e testBinary) (bool, uint8) {
 	switch e.op {
 	case "-a":
-		return evalTest(ctx, callCtx, e.x) && evalTest(ctx, callCtx, e.y)
+		ok, code := evalTest(ctx, callCtx, name, e.x)
+		if code != 0 {
+			return false, code
+		}
+		if !ok {
+			return false, 0
+		}
+		return evalTest(ctx, callCtx, name, e.y)
 	case "-o":
-		return evalTest(ctx, callCtx, e.x) || evalTest(ctx, callCtx, e.y)
+		ok, code := evalTest(ctx, callCtx, name, e.x)
+		if code != 0 {
+			return false, code
+		}
+		if ok {
+			return true, 0
+		}
+		return evalTest(ctx, callCtx, name, e.y)
 	case "=", "==":
-		return wordVal(e.x) == wordVal(e.y)
+		return wordVal(e.x) == wordVal(e.y), 0
 	case "!=":
-		return wordVal(e.x) != wordVal(e.y)
+		return wordVal(e.x) != wordVal(e.y), 0
 	case "-eq", "-ne", "-lt", "-gt", "-le", "-ge":
-		return evalIntCmp(e.op, wordVal(e.x), wordVal(e.y))
+		return evalIntCmp(callCtx, name, e.op, wordVal(e.x), wordVal(e.y))
 	case "-nt":
-		return evalNt(ctx, callCtx, wordVal(e.x), wordVal(e.y))
+		return evalNt(ctx, callCtx, wordVal(e.x), wordVal(e.y)), 0
 	case "-ot":
-		return evalNt(ctx, callCtx, wordVal(e.y), wordVal(e.x))
+		return evalNt(ctx, callCtx, wordVal(e.y), wordVal(e.x)), 0
 	case "-ef":
-		return evalEf(ctx, callCtx, wordVal(e.x), wordVal(e.y))
+		return evalEf(ctx, callCtx, wordVal(e.x), wordVal(e.y)), 0
 	}
-	return false
+	return false, 0
 }
 
 func wordVal(e testExpr) string {
@@ -361,27 +397,32 @@ func wordVal(e testExpr) string {
 	return ""
 }
 
-func evalIntCmp(op, a, b string) bool {
+func evalIntCmp(callCtx *builtins.CallContext, name, op, a, b string) (bool, uint8) {
 	ai, errA := strconv.ParseInt(a, 10, 64)
+	if errA != nil {
+		callCtx.Errf("%s: %s: integer expression expected\n", name, a)
+		return false, 2
+	}
 	bi, errB := strconv.ParseInt(b, 10, 64)
-	if errA != nil || errB != nil {
-		return false
+	if errB != nil {
+		callCtx.Errf("%s: %s: integer expression expected\n", name, b)
+		return false, 2
 	}
 	switch op {
 	case "-eq":
-		return ai == bi
+		return ai == bi, 0
 	case "-ne":
-		return ai != bi
+		return ai != bi, 0
 	case "-lt":
-		return ai < bi
+		return ai < bi, 0
 	case "-gt":
-		return ai > bi
+		return ai > bi, 0
 	case "-le":
-		return ai <= bi
+		return ai <= bi, 0
 	case "-ge":
-		return ai >= bi
+		return ai >= bi, 0
 	}
-	return false
+	return false, 0
 }
 
 func evalNt(ctx context.Context, callCtx *builtins.CallContext, a, b string) bool {

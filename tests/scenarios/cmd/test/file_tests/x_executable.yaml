@@ -1,0 +1,14 @@
+description: test -x returns 0 for an executable file.
+setup:
+  files:
+    - path: script.sh
+      content: "#!/bin/sh"
+      chmod: 0755
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    test -x script.sh && echo yes
+expect:
+  stdout: "yes\n"
+  stderr: ""
+  exit_code: 0

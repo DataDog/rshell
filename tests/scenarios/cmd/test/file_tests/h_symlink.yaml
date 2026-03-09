@@ -1,0 +1,15 @@
+description: test -h returns 0 for a symbolic link.
+setup:
+  files:
+    - path: target.txt
+      content: "hello"
+    - path: link.txt
+      symlink: target.txt
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    test -h link.txt && echo yes
+expect:
+  stdout: "yes\n"
+  stderr: ""
+  exit_code: 0

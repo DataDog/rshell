@@ -1,0 +1,9 @@
+description: test with extra arguments reports an error and exits 2.
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    test "a" = "b" extra
+expect:
+  stdout: ""
+  stderr_contains: ["too many arguments"]
+  exit_code: 2
