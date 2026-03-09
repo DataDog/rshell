@@ -6,12 +6,13 @@
 // many features intentionally blocked (see [validateNode]).
 //
 // The interpreter behaves like a non-interactive shell. External command
-// execution is always denied. Filesystem access is denied by default
-// and must be explicitly enabled via [RunnerOption] functions.
+// execution and filesystem access are denied by default and must be
+// explicitly enabled via [RunnerOption] functions.
 package interp
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -42,6 +43,9 @@ type Runner struct {
 	// file. Note: positional parameter expansion ($@, $*, $1, etc.) is
 	// blocked by the AST validator in this restricted interpreter.
 	Params []string
+
+	// execHandler is responsible for executing programs. It must not be nil.
+	execHandler ExecHandlerFunc
 
 	// openHandler is a function responsible for opening files. It must not be nil.
 	openHandler OpenHandlerFunc
@@ -129,6 +133,20 @@ func (e *exitStatus) fatal(err error) {
 		if e.code == 0 {
 			e.code = 1
 		}
+	}
+}
+
+func (e *exitStatus) fromHandlerError(err error) {
+	if err != nil {
+		var es ExitStatus
+		if errors.As(err, &es) {
+			e.err = err
+			e.code = uint8(es)
+		} else {
+			e.fatal(err) // handler's custom fatal error
+		}
+	} else {
+		e.code = 0
 	}
 }
 
@@ -250,6 +268,9 @@ func (r *Runner) Reset() {
 		r.origStdout = r.stdout
 		r.origStderr = r.stderr
 
+		if r.execHandler == nil {
+			r.execHandler = noExecHandler()
+		}
 		// Open os.Root handles and wrap handlers for path restriction.
 		// Default: block all file access (empty allowedPaths).
 		if r.roots == nil {
@@ -267,11 +288,13 @@ func (r *Runner) Reset() {
 			}
 			r.openHandler = wrapOpenHandler(r.roots, r.allowedPaths)
 			r.readDirHandler = wrapReadDirHandler(r.roots, r.allowedPaths)
+			r.execHandler = wrapExecHandler(r.roots, r.allowedPaths, r.execHandler)
 		}
 	}
 	// reset the internal state
 	*r = Runner{
 		Env:             r.Env,
+		execHandler:     r.execHandler,
 		openHandler:     r.openHandler,
 		readDirHandler:  r.readDirHandler,
 
@@ -374,6 +397,7 @@ func (r *Runner) subshell(background bool) *Runner {
 	r2 := &Runner{
 		Dir:             r.Dir,
 		Params:          r.Params,
+		execHandler:     r.execHandler,
 		openHandler:     r.openHandler,
 		readDirHandler:  r.readDirHandler,
 

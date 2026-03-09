@@ -12,6 +12,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 )
@@ -126,3 +127,44 @@ func wrapReadDirHandler(roots []*os.Root, allowedPaths []string) ReadDirHandlerF
 	}
 }
 
+// wrapExecHandler wraps an ExecHandlerFunc to restrict command execution to allowed paths.
+// It resolves the command to an absolute path, validates it against allowed roots
+// using os.Root.Stat for atomic symlink-safe verification, then delegates to next
+// for actual execution. Returns exit code 127 if not found.
+func wrapExecHandler(roots []*os.Root, allowedPaths []string, next ExecHandlerFunc) ExecHandlerFunc {
+	return func(ctx context.Context, args []string) error {
+		if len(args) == 0 {
+			return fmt.Errorf("exec handler called with no arguments")
+		}
+		hc := HandlerCtx(ctx)
+		path, err := ExecLookPathDir(hc.Dir, hc.Env, args[0])
+		if err != nil {
+			fmt.Fprintf(hc.Stderr, "%s: command not found\n", args[0])
+			return ExitStatus(127)
+		}
+
+		root, relPath, ok := findMatchingRoot(path, roots, allowedPaths)
+		if !ok {
+			fmt.Fprintf(hc.Stderr, "%s: command not found\n", args[0])
+			return ExitStatus(127)
+		}
+
+		// Validate via os.Root.Stat which uses openat-based resolution,
+		// atomically rejecting symlinks that escape the root directory.
+		info, err := root.Stat(relPath)
+		if err != nil {
+			fmt.Fprintf(hc.Stderr, "%s: command not found\n", args[0])
+			return ExitStatus(127)
+		}
+		if info.IsDir() {
+			fmt.Fprintf(hc.Stderr, "%s: command not found\n", args[0])
+			return ExitStatus(127)
+		}
+		if runtime.GOOS != "windows" && info.Mode()&0o111 == 0 {
+			fmt.Fprintf(hc.Stderr, "%s: command not found\n", args[0])
+			return ExitStatus(127)
+		}
+
+		return next(ctx, args)
+	}
+}

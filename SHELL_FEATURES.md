@@ -11,7 +11,7 @@ Blocked features are rejected before execution with exit code 2.
 - ✅ `false` — exits with code 1
 - ✅ `exit [N]` — exits with code N (default: last exit code)
 - ✅ `break [N]` / `continue [N]` — loop control
-- ❌ All other commands — return exit code 127 with `<cmd>: command not found`
+- ❌ All other commands — return exit code 127 with `<cmd>: not found` unless an ExecHandler is configured
 
 ## Variables
 
@@ -72,7 +72,7 @@ Blocked features are rejected before execution with exit code 2.
 ## Execution
 
 - ✅ AllowedPaths filesystem sandboxing — restricts all file access to specified directories
-- ❌ External commands — always blocked (exit code 127)
+- ❌ External commands — blocked by default; requires an ExecHandler to be configured and the binary to be within AllowedPaths
 - ❌ Background execution: `cmd &`
 - ❌ Coprocesses: `coproc`
 - ❌ `time`

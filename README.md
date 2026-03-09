@@ -13,9 +13,9 @@ Scripts are processed in two phases:
 1. **Parse & Validate** — The script is parsed into an AST, then validated against an allowlist of
    supported syntax nodes.
 
-2. **Execute** — The validated AST is interpreted. Commands are dispatched to builtins;
-   any unrecognized command returns exit code 127. File access goes through the configured
-   OpenHandler, which enforces AllowedPaths restrictions.
+2. **Execute** — The validated AST is interpreted. Commands are dispatched to builtins or to the
+   configured ExecHandler. File access goes through the configured OpenHandler, which enforces
+   AllowedPaths restrictions.
 
 ## Shell Features
 
@@ -27,12 +27,12 @@ Every access path is default-deny:
 
 | Resource             | Default                          | Opt-in                                       |
 |----------------------|----------------------------------|----------------------------------------------|
-| External commands    | Blocked (exit code 127)          | Not configurable — always blocked            |
+| External commands    | Blocked (exit code 127)          | Provide an `ExecHandler`                     |
 | Filesystem access    | Blocked                          | Configure `AllowedPaths` with directory list |
 | Environment variables| Empty (no host env inherited)    | Pass variables via the `Env` option          |
 | Output redirections  | Blocked at validation (exit code 2) | Not configurable — always blocked         |
 
-**AllowedPaths** restricts all file operations (open, read, readdir) to a set of specified
+**AllowedPaths** restricts all file operations (open, read, readdir, exec) to a set of specified
 directories. It is built on Go's `os.Root` API, which uses kernel-level `openat` syscalls
 for atomic path validation, making it immune to symlink traversal, TOCTOU races, and `..` escape attacks.
 
