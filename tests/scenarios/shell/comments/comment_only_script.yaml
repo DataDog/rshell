@@ -1,16 +1,6 @@
 description: Comment without any command is ignored.
 input:
-  script: |+
-    #
-
-    # foo
-
-    #	bar
-     #
-	#
-
-    ##foo
-    ###
+  script: "#\n\n# foo\n\n#\tbar\n #\n\t#\n\n##foo\n###\n"
 expect:
   stdout: ""
   stderr: ""
