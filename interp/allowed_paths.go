@@ -129,13 +129,7 @@ func (s *pathSandbox) readDir(ctx context.Context, path string) ([]fs.DirEntry, 
 	// os.Root's ReadDir does not guarantee sorted order like os.ReadDir.
 	// Sort to match POSIX glob expansion expectations.
 	slices.SortFunc(entries, func(a, b fs.DirEntry) int {
-		if a.Name() < b.Name() {
-			return -1
-		}
-		if a.Name() > b.Name() {
-			return 1
-		}
-		return 0
+		return strings.Compare(a.Name(), b.Name())
 	})
 	return entries, nil
 }
