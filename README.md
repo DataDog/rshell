@@ -76,6 +76,26 @@ By default, each scenario is executed twice: once in rshell and once in a real b
 go test ./...
 ```
 
+## Publishing Changes
+
+After merging changes to `main` create a release by:
+
+1. Navigate to the [Releases](https://github.com/DataDog/rshell/releases) page
+
+2. Click "Draft a new release"
+
+3. You can "Select a tag" using the dropdown or "Create a new tag"
+
+   When creating a new tag, make sure to include the `v` prefix. For example, if the last release was v0.1.29, your release should be v0.1.30.
+
+4. The release title should be the same as the version tag
+
+5. Use "Generate release notes" to fill in the release description
+
+6. Click "Publish release"
+
+   This will create a git tag that can now be referenced in other repos. This will trigger go-releaser that will add installable artifacts to the release.
+
 ## License
 
 [Apache License 2.0](LICENSE)
