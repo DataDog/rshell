@@ -7,7 +7,7 @@ Improve tests scenarios coverage by taking inspiration from yash_posix_tests
 Notes:
 - avoid duplicate test coverage, if you encounter duplicate scenarios, remove or merge them
 - create as many new scenarios as possible (no limit), of course they must be valuable
-- if some tests fail, keep in mind it's possible that pkg/shell implementation is wrong, and it's fine to fix the implementation
+- if some tests fail, keep in mind it's possible that the shell implementation is wrong, and it's fine to fix the implementation
 ```
 
 Prompt to avoid disabling skip_assert_against_bash when possible:
