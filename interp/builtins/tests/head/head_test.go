@@ -523,16 +523,29 @@ func TestHeadPipeInput(t *testing.T) {
 	assert.Equal(t, "line01\nline02\nline03\n", stdout)
 }
 
-func TestHeadLineModeOnSingleLineBeyondCap(t *testing.T) {
-	// A line exactly at the 1MiB cap should cause an error, not a crash.
+func TestHeadLineModeOnLineExactlyAtCap(t *testing.T) {
+	// A line of exactly maxHeadLineBytes (1 MiB) with no newline.
+	// bufio.Scanner.Buffer(buf, max) cannot hold a token of exactly max
+	// bytes (the limit is exclusive), so this must error like an over-cap line.
 	dir := t.TempDir()
-	// Write 1MiB + 1 bytes of 'a' with no newline.
+	content := make([]byte, 1<<20)
+	for i := range content {
+		content[i] = 'a'
+	}
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "exact.txt"), content, 0644))
+	_, _, code := cmdRun(t, "head -n 1 exact.txt", dir)
+	assert.Equal(t, 1, code)
+}
+
+func TestHeadLineModeOnSingleLineBeyondCap(t *testing.T) {
+	// A line of maxHeadLineBytes+1 (1 MiB + 1 byte) with no newline.
+	// Exceeds the scanner buffer cap and must error, not crash.
+	dir := t.TempDir()
 	oneMiBPlusOne := make([]byte, 1<<20+1)
 	for i := range oneMiBPlusOne {
 		oneMiBPlusOne[i] = 'a'
 	}
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "huge.txt"), oneMiBPlusOne, 0644))
-	// head should error with exit code 1 (line too long for scanner).
 	_, stderr, code := cmdRun(t, "head -n 1 huge.txt", dir)
 	assert.Equal(t, 1, code)
 	assert.Contains(t, stderr, "head:")
