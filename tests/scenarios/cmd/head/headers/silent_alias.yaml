@@ -1,6 +1,5 @@
 # Derived from GNU coreutils head behavior with --silent
 description: head --silent is an alias for --quiet and suppresses headers.
-skip_assert_against_bash: true  # --silent is a GNU extension; BusyBox head (bash:5.2 image) does not support it
 setup:
   files:
     - path: a.txt
