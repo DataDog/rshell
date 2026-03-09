@@ -18,28 +18,13 @@ import (
 	"mvdan.cc/sh/v3/syntax"
 )
 
-// A Runner interprets shell programs. It can be reused, but it is not safe for
-// concurrent use. Use [New] to build a new Runner.
-//
-// Runner's exported fields are meant to be configured via [RunnerOption];
-// once a Runner has been created, the fields should be treated as read-only.
-type Runner struct {
+// runnerConfig holds the immutable configuration of a [Runner].
+// These fields are set during construction ([New]) and first [Runner.Reset],
+// and never change afterwards.
+type runnerConfig struct {
 	// Env specifies the initial environment for the interpreter, which must
 	// not be nil. It can only be set via [Env].
 	Env expand.Environ
-
-	// writeEnv overlays [Runner.Env] so that we can write environment variables
-	// as an overlay.
-	writeEnv expand.WriteEnviron
-
-	// Dir specifies the working directory of the command, which must be an
-	// absolute path.
-	Dir string
-
-	// Params are the current shell parameters, e.g. from running a shell
-	// file. Note: positional parameter expansion ($@, $*, $1, etc.) is
-	// blocked by the AST validator in this restricted interpreter.
-	Params []string
 
 	// execHandler is responsible for executing programs. It must not be nil.
 	execHandler ExecHandlerFunc
@@ -50,6 +35,39 @@ type Runner struct {
 	// readDirHandler is a function responsible for reading directories during
 	// glob expansion. It must be non-nil.
 	readDirHandler ReadDirHandlerFunc
+
+	// sandbox restricts file/directory access to allowed directories.
+	// nil (default) blocks all file access; populate via AllowedPaths option.
+	sandbox *pathSandbox
+
+	// usedNew is set by New() and checked in Reset() to ensure a Runner
+	// was properly constructed rather than zero-initialized.
+	usedNew bool
+
+	// origDir, origParams, and origStd* preserve the initial values
+	// set during construction so that [Runner.Reset] can restore them.
+	origDir    string
+	origParams []string
+	origStdin  *os.File
+	origStdout io.Writer
+	origStderr io.Writer
+}
+
+// runnerState holds the per-execution mutable state of a [Runner].
+// [Runner.Reset] reinitializes this entire struct from [runnerConfig].
+type runnerState struct {
+	// writeEnv overlays [runnerConfig.Env] so that we can write environment
+	// variables as an overlay.
+	writeEnv expand.WriteEnviron
+
+	// Dir specifies the working directory of the command, which must be an
+	// absolute path.
+	Dir string
+
+	// Params are the current shell parameters, e.g. from running a shell
+	// file. Note: positional parameter expansion ($@, $*, $1, etc.) is
+	// blocked by the AST validator in this restricted interpreter.
+	Params []string
 
 	stdin  *os.File // e.g. the read end of a pipe
 	stdout io.Writer
@@ -62,10 +80,6 @@ type Runner struct {
 	// used so that Reset is automatically called when running any program
 	// or node for the first time on a Runner.
 	didReset bool
-
-	// usedNew is set by New() and checked in Reset() to ensure a Runner
-	// was properly constructed rather than zero-initialized.
-	usedNew bool
 
 	filename string // only if Node was a File
 
@@ -82,16 +96,16 @@ type Runner struct {
 	lastExit exitStatus
 
 	lastExpandExit exitStatus // used to surface exit statuses while expanding fields
+}
 
-	// sandbox restricts file/directory access to allowed directories.
-	// nil (default) blocks all file access; populate via AllowedPaths option.
-	sandbox *pathSandbox
-
-	origDir    string
-	origParams []string
-	origStdin  *os.File
-	origStdout io.Writer
-	origStderr io.Writer
+// A Runner interprets shell programs. It can be reused, but it is not safe for
+// concurrent use. Use [New] to build a new Runner.
+//
+// Runner's exported fields are meant to be configured via [RunnerOption];
+// once a Runner has been created, the fields should be treated as read-only.
+type Runner struct {
+	runnerConfig
+	runnerState
 }
 
 // exitStatus holds the state of the shell after running one command.
@@ -154,7 +168,7 @@ func (e *exitStatus) fromHandlerError(err error) {
 // supplying the standard output writer means that the output will be discarded.
 func New(opts ...RunnerOption) (*Runner, error) {
 	r := &Runner{
-		usedNew: true,
+		runnerConfig: runnerConfig{usedNew: true},
 	}
 	for _, opt := range opts {
 		if err := opt(r); err != nil {
@@ -280,31 +294,13 @@ func (r *Runner) Reset() {
 			r.execHandler = noExecHandler()
 		}
 	}
-	// reset the internal state
-	*r = Runner{
-		Env:            r.Env,
-		execHandler:    r.execHandler,
-		openHandler:    r.openHandler,
-		readDirHandler: r.readDirHandler,
-
-		sandbox: r.sandbox,
-
-		// These can be set by functions like [Dir] or [Params], but
-		// builtins can overwrite them; reset the fields to whatever the
-		// constructor set up.
+	// Reset only the mutable state; config is preserved.
+	r.runnerState = runnerState{
 		Dir:    r.origDir,
 		Params: r.origParams,
 		stdin:  r.origStdin,
 		stdout: r.origStdout,
 		stderr: r.origStderr,
-
-		origDir:    r.origDir,
-		origParams: r.origParams,
-		origStdin:  r.origStdin,
-		origStdout: r.origStdout,
-		origStderr: r.origStderr,
-
-		usedNew: r.usedNew,
 	}
 	r.writeEnv = &overlayEnviron{parent: r.Env}
 	r.setVarString("PWD", r.Dir)
@@ -379,24 +375,18 @@ func (r *Runner) subshell(background bool) *Runner {
 	if !r.didReset {
 		r.Reset()
 	}
-	// Keep in sync with the Runner type. Manually copy fields, to not copy
-	// sensitive ones, and to do deep copies of slices.
 	r2 := &Runner{
-		Dir:            r.Dir,
-		Params:         r.Params,
-		execHandler:    r.execHandler,
-		openHandler:    r.openHandler,
-		readDirHandler: r.readDirHandler,
-
-		sandbox: r.sandbox, // safe: os.Root is goroutine-safe
-
-		stdin:    r.stdin,
-		stdout:   r.stdout,
-		stderr:   r.stderr,
-		filename: r.filename,
-		usedNew:  r.usedNew,
-		exit:     r.exit,
-		lastExit: r.lastExit,
+		runnerConfig: r.runnerConfig,
+		runnerState: runnerState{
+			Dir:      r.Dir,
+			Params:   r.Params,
+			stdin:    r.stdin,
+			stdout:   r.stdout,
+			stderr:   r.stderr,
+			filename: r.filename,
+			exit:     r.exit,
+			lastExit: r.lastExit,
+		},
 	}
 	r2.writeEnv = newOverlayEnviron(r.writeEnv, background)
 	r2.fillExpandConfig(r.ectx)

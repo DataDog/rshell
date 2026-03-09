@@ -1,6 +1,7 @@
 package interp
 
 import (
+	"bytes"
 	"context"
 	"strings"
 	"testing"
@@ -108,6 +109,133 @@ func TestRunZeroValueRunnerMultipleCalls(t *testing.T) {
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "use interp.New to construct a Runner")
 	}
+}
+
+func TestResetPreservesConfig(t *testing.T) {
+	var outBuf, errBuf bytes.Buffer
+	r, err := New(
+		StdIO(nil, &outBuf, &errBuf),
+		Env("FOO=bar"),
+	)
+	require.NoError(t, err)
+	t.Cleanup(func() { r.Close() })
+	r.Dir = "/tmp"
+	r.Reset()
+
+	// Config fields should be preserved.
+	assert.Equal(t, "/tmp", r.origDir)
+	assert.NotNil(t, r.execHandler, "execHandler should be set after Reset")
+	assert.NotNil(t, r.openHandler, "openHandler should be set after Reset")
+	assert.NotNil(t, r.readDirHandler, "readDirHandler should be set after Reset")
+	assert.True(t, r.usedNew)
+
+	// State should be reinitialized from config.
+	assert.Equal(t, "/tmp", r.Dir)
+	assert.Equal(t, &outBuf, r.stdout)
+	assert.Equal(t, &errBuf, r.stderr)
+	assert.True(t, r.didReset)
+
+	// Execution state should be zero.
+	assert.Equal(t, exitStatus{}, r.exit)
+	assert.Equal(t, exitStatus{}, r.lastExit)
+	assert.False(t, r.inLoop)
+	assert.Equal(t, 0, r.breakEnclosing)
+	assert.Equal(t, 0, r.contnEnclosing)
+	assert.Equal(t, "", r.filename)
+}
+
+func TestResetReinitializesState(t *testing.T) {
+	r := newResetRunner(t)
+
+	// Mutate state fields as execution would.
+	r.Dir = "/changed"
+	r.exit = exitStatus{code: 42}
+	r.lastExit = exitStatus{code: 7}
+	r.inLoop = true
+	r.breakEnclosing = 3
+	r.contnEnclosing = 2
+	r.filename = "test.sh"
+
+	r.Reset()
+
+	// State should be reset; Dir reverts to origDir (set during first Reset).
+	assert.NotEqual(t, "/changed", r.Dir, "Dir should revert to origDir")
+	assert.Equal(t, exitStatus{}, r.exit)
+	assert.Equal(t, exitStatus{}, r.lastExit)
+	assert.False(t, r.inLoop)
+	assert.Equal(t, 0, r.breakEnclosing)
+	assert.Equal(t, 0, r.contnEnclosing)
+	assert.Equal(t, "", r.filename)
+}
+
+func TestMultipleResetsPreserveConfig(t *testing.T) {
+	var outBuf, errBuf bytes.Buffer
+	r, err := New(StdIO(nil, &outBuf, &errBuf))
+	require.NoError(t, err)
+	t.Cleanup(func() { r.Close() })
+
+	r.Reset()
+	configAfterFirstReset := r.runnerConfig
+
+	// Mutate state and reset again.
+	r.Dir = "/changed"
+	r.exit = exitStatus{code: 1}
+	r.Reset()
+
+	// Config struct should be identical across resets.
+	assert.Equal(t, configAfterFirstReset.origDir, r.runnerConfig.origDir)
+	assert.Equal(t, configAfterFirstReset.origStdout, r.runnerConfig.origStdout)
+	assert.Equal(t, configAfterFirstReset.origStderr, r.runnerConfig.origStderr)
+	assert.Equal(t, configAfterFirstReset.usedNew, r.runnerConfig.usedNew)
+	assert.Equal(t, &outBuf, r.stdout)
+	assert.Equal(t, &errBuf, r.stderr)
+}
+
+func TestSubshellInheritsConfig(t *testing.T) {
+	r := newResetRunner(t)
+	r.fillExpandConfig(context.Background())
+
+	sub := r.subshell(false)
+
+	// The entire config struct should be shared.
+	assert.Equal(t, r.runnerConfig.origDir, sub.runnerConfig.origDir)
+	assert.Equal(t, r.runnerConfig.sandbox, sub.runnerConfig.sandbox)
+	assert.True(t, sub.usedNew)
+	assert.True(t, sub.didReset)
+}
+
+func TestSubshellHasIndependentState(t *testing.T) {
+	r := newResetRunner(t)
+	r.fillExpandConfig(context.Background())
+	r.Dir = "/parent"
+
+	sub := r.subshell(false)
+	sub.Dir = "/child"
+	sub.exit = exitStatus{code: 42}
+	sub.inLoop = true
+
+	// Parent state should be unaffected.
+	assert.Equal(t, "/parent", r.Dir)
+	assert.Equal(t, exitStatus{}, r.exit)
+	assert.False(t, r.inLoop)
+}
+
+func TestSubshellBackgroundCopiesEnv(t *testing.T) {
+	r := newResetRunner(t)
+	r.setVarString("X", "parent_value")
+	r.fillExpandConfig(context.Background())
+
+	sub := r.subshell(true)
+
+	// Background subshell should have a snapshot of the environment.
+	vr := sub.writeEnv.Get("X")
+	assert.Equal(t, "parent_value", vr.Str)
+
+	// Mutating parent env should not affect the background subshell's snapshot.
+	r.setVarString("X", "changed")
+	vr = sub.writeEnv.Get("X")
+	assert.Equal(t, "parent_value", vr.Str,
+		"background subshell env should be isolated from parent mutations")
 }
 
 func TestInternalErrorStopsExecution(t *testing.T) {
