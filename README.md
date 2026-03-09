@@ -62,7 +62,7 @@ Linux, macOS, and Windows.
 
 ## Testing
 
-**800+ YAML-driven test scenarios** cover builtins, shell features, and security restrictions.
+**900+ YAML-driven test scenarios** cover builtins, shell features, and security restrictions.
 
 ```
 tests/scenarios/
