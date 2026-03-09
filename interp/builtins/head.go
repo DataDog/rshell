@@ -151,7 +151,7 @@ func builtinHead(ctx context.Context, callCtx *CallContext, args []string) Resul
 		if err := headProcessFile(ctx, callCtx, file, i, printHeaders, useBytesMode, count); err != nil {
 			name := file
 			if file == "-" {
-				name = "(standard input)"
+				name = "standard input"
 			}
 			callCtx.Errf("head: %s: %s\n", name, callCtx.PortableErr(err))
 			failed = true
@@ -169,7 +169,7 @@ func headProcessFile(ctx context.Context, callCtx *CallContext, file string, idx
 	var rc io.ReadCloser
 	name := file
 	if file == "-" {
-		name = "(standard input)"
+		name = "standard input"
 		// Print the header before the nil-stdin guard so that -v always
 		// emits a header for stdin even when no input stream is present.
 		if printHeaders {

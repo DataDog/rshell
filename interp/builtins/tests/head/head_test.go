@@ -348,7 +348,7 @@ func TestHeadStdinVerbose(t *testing.T) {
 	writeFile(t, dir, "src.txt", "hello\n")
 	stdout, _, code := cmdRun(t, "head -v - < src.txt", dir)
 	assert.Equal(t, 0, code)
-	assert.Equal(t, "==> (standard input) <==\nhello\n", stdout)
+	assert.Equal(t, "==> standard input <==\nhello\n", stdout)
 }
 
 // --- Help ---
@@ -590,11 +590,11 @@ func TestHeadNilStdin(t *testing.T) {
 func TestHeadNilStdinVerbose(t *testing.T) {
 	// -v must print the header for stdin even when callCtx.Stdin == nil.
 	// Previously the nil guard fired before the header block, silently
-	// skipping the "==> (standard input) <==" line.
+	// skipping the "==> standard input <==" line.
 	dir := t.TempDir()
 	stdout, stderr, code := runScript(t, "head -v -", dir, interp.AllowedPaths([]string{dir}))
 	assert.Equal(t, 0, code)
-	assert.Equal(t, "==> (standard input) <==\n", stdout)
+	assert.Equal(t, "==> standard input <==\n", stdout)
 	assert.Equal(t, "", stderr)
 }
 
@@ -704,7 +704,7 @@ func TestHeadTwoEmptyFilesHeaders(t *testing.T) {
 }
 
 // TestHeadMultipleFilesWithStdin verifies that '-' interleaved among file
-// arguments reads stdin and prints a "(standard input)" header alongside the
+// arguments reads stdin and prints a "standard input" header alongside the
 // file headers.
 //
 // Derived from uutils test_head.rs::test_multiple_files_with_stdin
@@ -714,7 +714,7 @@ func TestHeadMultipleFilesWithStdin(t *testing.T) {
 	writeFile(t, dir, "stdin_src.txt", "hello\n")
 	stdout, _, code := cmdRun(t, "head empty.txt - empty.txt < stdin_src.txt", dir)
 	assert.Equal(t, 0, code)
-	assert.Equal(t, "==> empty.txt <==\n\n==> (standard input) <==\nhello\n\n==> empty.txt <==\n", stdout)
+	assert.Equal(t, "==> empty.txt <==\n\n==> standard input <==\nhello\n\n==> empty.txt <==\n", stdout)
 }
 
 // TestHeadAllNonexistentFiles verifies that each nonexistent file gets its own

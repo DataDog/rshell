@@ -1,5 +1,5 @@
 # Derived from uutils test_head.rs::test_multiple_files_with_stdin
-description: Stdin interleaved with file args shows a (standard input) header alongside file headers.
+description: Stdin interleaved with file args shows a standard input header alongside file headers.
 setup:
   files:
     - path: empty.txt
@@ -11,6 +11,6 @@ input:
   script: |+
     head empty.txt - empty.txt < stdin_src.txt
 expect:
-  stdout: "==> empty.txt <==\n\n==> (standard input) <==\nhello\n\n==> empty.txt <==\n"
+  stdout: "==> empty.txt <==\n\n==> standard input <==\nhello\n\n==> empty.txt <==\n"
   stderr: ""
   exit_code: 0
