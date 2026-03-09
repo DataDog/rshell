@@ -63,6 +63,8 @@ type Runner struct {
 	// or node for the first time on a Runner.
 	didReset bool
 
+	// usedNew is set by New() and checked in Reset() to ensure a Runner
+	// was properly constructed rather than zero-initialized.
 	usedNew bool
 
 	filename string // only if Node was a File
