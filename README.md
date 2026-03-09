@@ -1,4 +1,4 @@
-# pkg/shell — Restricted Shell Interpreter
+# Restricted Shell (rshell)
 
 A restricted shell interpreter designed for AI agents performing SRE investigation tasks.
 Safety is the primary design goal: the shell defaults to denying all external command execution
