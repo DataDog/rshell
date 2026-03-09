@@ -1,0 +1,13 @@
+description: test -h returns 0 for a broken symlink (lstat sees the link itself).
+setup:
+  files:
+    - path: broken
+      symlink: nonexistent_target
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    test -h broken && echo yes
+expect:
+  stdout: "yes\n"
+  stderr: ""
+  exit_code: 0

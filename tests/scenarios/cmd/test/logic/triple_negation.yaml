@@ -1,0 +1,9 @@
+description: test ! ! ! triple negation inverts truth value.
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    test ! ! ! "" && echo yes; test ! ! ! "a" && echo bad || echo no
+expect:
+  stdout: "yes\nno\n"
+  stderr: ""
+  exit_code: 0

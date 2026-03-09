@@ -1,0 +1,9 @@
+description: test -f returns 1 for a nonexistent file.
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    test -f nosuchfile && echo yes || echo no
+expect:
+  stdout: "no\n"
+  stderr: ""
+  exit_code: 0

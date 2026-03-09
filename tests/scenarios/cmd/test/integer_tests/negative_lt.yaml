@@ -1,0 +1,9 @@
+description: test -lt works with negative integers.
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    test -3 -lt 0 && echo yes; test 0 -lt -3 && echo bad || echo no
+expect:
+  stdout: "yes\nno\n"
+  stderr: ""
+  exit_code: 0

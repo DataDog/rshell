@@ -1,0 +1,9 @@
+description: "test -- treats double dash as a non-empty string."
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    test -- && echo yes
+expect:
+  stdout: "yes\n"
+  stderr: ""
+  exit_code: 0

@@ -1,0 +1,9 @@
+description: test = handles special characters like ! and = as string values.
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    test "!" = "!" && echo eq; test "=" = "=" && echo eq2
+expect:
+  stdout: "eq\neq2\n"
+  stderr: ""
+  exit_code: 0

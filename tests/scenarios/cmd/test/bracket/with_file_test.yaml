@@ -1,0 +1,13 @@
+description: "[ ] bracket syntax works with file test operators."
+setup:
+  files:
+    - path: file.txt
+      content: "hello"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    [ -f file.txt ] && echo yes
+expect:
+  stdout: "yes\n"
+  stderr: ""
+  exit_code: 0

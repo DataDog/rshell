@@ -1,0 +1,13 @@
+description: test -e returns 1 for a broken symlink (stat follows link, target missing).
+setup:
+  files:
+    - path: broken
+      symlink: nonexistent_target
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    test -e broken && echo yes || echo no
+expect:
+  stdout: "no\n"
+  stderr: ""
+  exit_code: 0

@@ -1,0 +1,9 @@
+description: test -gt works with negative integers.
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    test 0 -gt -3 && echo yes; test -3 -gt 0 && echo bad || echo no
+expect:
+  stdout: "yes\nno\n"
+  stderr: ""
+  exit_code: 0

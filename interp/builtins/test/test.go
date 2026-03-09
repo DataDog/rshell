@@ -223,6 +223,16 @@ func (p *testParser) testExprBase() testExpr {
 		return testWord{val: s}
 	}
 
+	// POSIX three-argument rule: when exactly 3 tokens remain and the
+	// second is a binary primary, parse as binary regardless of first token.
+	// e.g. `test "!" = "!"` → binary string comparison, not negation.
+	if len(p.rem) == 3 && testBinaryOps[p.rem[1]] {
+		p.next()
+		op := p.next()
+		rhs := p.next()
+		return testBinary{op: op, x: testWord{val: s}, y: testWord{val: rhs}}
+	}
+
 	// Negation.
 	if s == "!" {
 		p.next()

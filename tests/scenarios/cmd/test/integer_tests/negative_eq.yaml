@@ -1,0 +1,9 @@
+description: test -eq works with negative integers.
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    test -3 -eq -3 && echo yes
+expect:
+  stdout: "yes\n"
+  stderr: ""
+  exit_code: 0

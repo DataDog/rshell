@@ -1,0 +1,9 @@
+description: test -ne works with negative integers.
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    test -3 -ne 90 && echo yes
+expect:
+  stdout: "yes\n"
+  stderr: ""
+  exit_code: 0

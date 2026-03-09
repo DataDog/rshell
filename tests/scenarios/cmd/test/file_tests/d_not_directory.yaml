@@ -1,0 +1,13 @@
+description: test -d returns 1 for a regular file.
+setup:
+  files:
+    - path: file.txt
+      content: "hello"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    test -d file.txt && echo yes || echo no
+expect:
+  stdout: "no\n"
+  stderr: ""
+  exit_code: 0
