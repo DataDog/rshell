@@ -83,11 +83,9 @@ type Runner struct {
 
 	lastExpandExit exitStatus // used to surface exit statuses while expanding fields
 
-	// allowedPaths restricts file/directory access to these directories.
-	// Empty (default) blocks all file access; populate via AllowedPaths option.
-	allowedPaths []string
-	// roots holds opened os.Root instances, one per allowedPaths entry.
-	roots []*os.Root
+	// sandbox restricts file/directory access to allowed directories.
+	// nil (default) blocks all file access; populate via AllowedPaths option.
+	sandbox *pathSandbox
 
 	origDir    string
 	origParams []string
@@ -268,22 +266,14 @@ func (r *Runner) Reset() {
 			r.execHandler = noExecHandler()
 		}
 		// Open os.Root handles and wrap handlers for path restriction.
-		// Default: block all file access (empty allowedPaths).
-		if r.roots == nil {
-			r.roots = make([]*os.Root, len(r.allowedPaths))
-			for i, p := range r.allowedPaths {
-				root, err := os.OpenRoot(p)
-				if err != nil {
-					for _, prev := range r.roots[:i] {
-						prev.Close()
-					}
-					r.exit.fatal(fmt.Errorf("AllowedPaths: cannot open root %q: %w", p, err))
-					return
-				}
-				r.roots[i] = root
+		// Default: block all file access (nil sandbox).
+		if r.openHandler == nil {
+			if err := r.sandbox.openRoots(); err != nil {
+				r.exit.fatal(err)
+				return
 			}
-			r.openHandler = restrictedOpenHandler(r.roots, r.allowedPaths)
-			r.readDirHandler = restrictedReadDirHandler(r.roots, r.allowedPaths)
+			r.openHandler = r.sandbox.open
+			r.readDirHandler = r.sandbox.readDir
 			// execHandler will be implementer in the future to handle host commands execution
 			// additional safeguard will be needed like Landlock sandbox
 			r.execHandler = noExecHandler()
@@ -296,8 +286,7 @@ func (r *Runner) Reset() {
 		openHandler:    r.openHandler,
 		readDirHandler: r.readDirHandler,
 
-		allowedPaths: r.allowedPaths,
-		roots:        r.roots,
+		sandbox: r.sandbox,
 
 		// These can be set by functions like [Dir] or [Params], but
 		// builtins can overwrite them; reset the fields to whatever the
@@ -376,11 +365,7 @@ func (r *Runner) Run(ctx context.Context, node syntax.Node) (retErr error) {
 // Close releases resources held by the Runner, such as os.Root file descriptors
 // opened by AllowedPaths. It is safe to call Close multiple times.
 func (r *Runner) Close() error {
-	for _, root := range r.roots {
-		root.Close()
-	}
-	r.roots = nil
-	return nil
+	return r.sandbox.Close()
 }
 
 // subshell creates a child Runner that inherits the parent's state.
@@ -399,8 +384,7 @@ func (r *Runner) subshell(background bool) *Runner {
 		openHandler:    r.openHandler,
 		readDirHandler: r.readDirHandler,
 
-		allowedPaths: r.allowedPaths,
-		roots:        r.roots, // safe: os.Root is goroutine-safe
+		sandbox: r.sandbox, // safe: os.Root is goroutine-safe
 
 		stdin:    r.stdin,
 		stdout:   r.stdout,
