@@ -253,7 +253,8 @@ func StdIO(in io.Reader, out, err io.Writer) RunnerOption {
 // current directory.
 func (r *Runner) Reset() {
 	if !r.usedNew {
-		panic("use interp.New to construct a Runner")
+		r.exit.fatal(fmt.Errorf("use interp.New to construct a Runner"))
+		return
 	}
 	if !r.didReset {
 		r.origDir = r.Dir
@@ -333,6 +334,9 @@ func (r *Runner) Run(ctx context.Context, node syntax.Node) (retErr error) {
 	}()
 	if !r.didReset {
 		r.Reset()
+		if r.exit.fatalExit {
+			return r.exit.err
+		}
 	}
 	r.fillExpandConfig(ctx)
 	if err := validateNode(node); err != nil {

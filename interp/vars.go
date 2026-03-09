@@ -85,9 +85,17 @@ func (o *overlayEnviron) Each(f func(name string, vr expand.Variable) bool) {
 	}
 }
 
+// internalErrorf records an internal assertion failure as a fatal error.
+// Use this for conditions that should be unreachable (e.g. invariants
+// enforced by AST validation).
+func (r *Runner) internalErrorf(format string, a ...any) {
+	r.exit.fatal(fmt.Errorf("internal error: "+format, a...))
+}
+
 func (r *Runner) lookupVar(name string) expand.Variable {
 	if name == "" {
-		panic("variable name must not be empty")
+		r.internalErrorf("variable name must not be empty")
+		return expand.Variable{}
 	}
 	// Only $? is supported as a special variable in safe-shell.
 	if name == "?" {
@@ -125,7 +133,8 @@ func (r *Runner) setVar(name string, vr expand.Variable) {
 // blocked by the AST validator, so we only handle simple string assignment.
 func (r *Runner) setVarWithIndex(prev expand.Variable, name string, index syntax.ArithmExpr, vr expand.Variable) {
 	if index != nil {
-		panic("setVarWithIndex: index should have been rejected by AST validation")
+		r.internalErrorf("setVarWithIndex: index should have been rejected by AST validation")
+		return
 	}
 	prev.Set = true
 	if name2, var2 := prev.Resolve(r.writeEnv); name2 != "" {
@@ -142,10 +151,12 @@ func (r *Runner) setVarWithIndex(prev expand.Variable, name string, index syntax
 func (r *Runner) assignVal(prev expand.Variable, as *syntax.Assign, _ string) expand.Variable {
 	prev.Set = true
 	if as.Append {
-		panic("assignVal: append should have been rejected by AST validation")
+		r.internalErrorf("assignVal: append should have been rejected by AST validation")
+		return expand.Variable{}
 	}
 	if as.Array != nil {
-		panic("assignVal: array assignment should have been rejected by AST validation")
+		r.internalErrorf("assignVal: array assignment should have been rejected by AST validation")
+		return expand.Variable{}
 	}
 	if as.Value != nil {
 		prev.Kind = expand.String

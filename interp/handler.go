@@ -12,7 +12,9 @@ import (
 )
 
 // HandlerCtx returns HandlerContext value stored in ctx.
-// It panics if ctx has no HandlerContext stored.
+// It panics if ctx has no HandlerContext stored; this indicates a
+// programming error by the caller (e.g. passing a context that did not
+// originate from the interpreter).
 func HandlerCtx(ctx context.Context) HandlerContext {
 	hc, ok := ctx.Value(handlerCtxKey{}).(HandlerContext)
 	if !ok {

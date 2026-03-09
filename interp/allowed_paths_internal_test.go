@@ -142,6 +142,19 @@ func TestRunRecoversPanic(t *testing.T) {
 	assert.Contains(t, err.Error(), "deliberate test panic")
 }
 
+func TestRunZeroValueRunnerReturnsError(t *testing.T) {
+	// A zero-value Runner (not created via New) should return an explicit
+	// error from Run instead of panicking.
+	var r Runner
+	parser := syntax.NewParser()
+	prog, err := parser.Parse(strings.NewReader("echo hi"), "")
+	require.NoError(t, err)
+
+	err = r.Run(context.Background(), prog)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "use interp.New to construct a Runner")
+}
+
 func TestAllowedPathsExecDefaultBlocksAll(t *testing.T) {
 	dir := t.TempDir()
 	// No AllowedPaths option — default blocks all exec
