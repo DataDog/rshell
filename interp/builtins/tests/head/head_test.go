@@ -575,9 +575,9 @@ func TestHeadNilStdin(t *testing.T) {
 }
 
 func TestHeadBytesAppearsLastWithDoubleDash(t *testing.T) {
-	// headBytesAppearsLast must stop scanning at "--" so it doesn't mistake
-	// file names like "--bytes=5" for flags. With -n and -c both set before
-	// the "--" separator, the last-flag-wins logic applies.
+	// pflag stops parsing at "--", so file names after "--" are never
+	// mistaken for flags. With -n and -c both set before "--", the
+	// last-flag-wins logic applies (bytes mode because -c appears last).
 	dir := t.TempDir()
 	writeFile(t, dir, "file.txt", fiveLines)
 	// -n 3 -c 5 -- file.txt: both set, -c appears last before --, so byte mode.

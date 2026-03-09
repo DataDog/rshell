@@ -55,7 +55,6 @@ import (
 	"io"
 	"os"
 	"strconv"
-	"strings"
 
 	"github.com/spf13/pflag"
 )
@@ -78,11 +77,19 @@ func builtinHead(ctx context.Context, callCtx *CallContext, args []string) Resul
 	fs.SetOutput(io.Discard)
 
 	help := fs.BoolP("help", "h", false, "print usage and exit")
-	lines := fs.StringP("lines", "n", "10", "print the first N lines instead of the first 10")
-	bytes_ := fs.StringP("bytes", "c", "", "print the first N bytes instead of lines")
 	quiet := fs.BoolP("quiet", "q", false, "never print file name headers")
 	_ = fs.Bool("silent", false, "alias for --quiet")
 	verbose := fs.BoolP("verbose", "v", false, "always print file name headers")
+
+	// linesFlag and bytesFlag share a sequence counter so that after parsing
+	// we can compare their pos fields to determine which appeared last on the
+	// command line. pflag calls Set() in parse order, so the last flag Set
+	// gets the highest pos value — no raw arg scanning required.
+	var modeSeq int
+	linesFlag := newHeadModeFlag(&modeSeq, "10")
+	bytesFlag := newHeadModeFlag(&modeSeq, "")
+	fs.VarP(linesFlag, "lines", "n", "print the first N lines instead of the first 10")
+	fs.VarP(bytesFlag, "bytes", "c", "print the first N bytes instead of lines")
 
 	if err := fs.Parse(args); err != nil {
 		callCtx.Errf("head: %v\n", err)
@@ -103,26 +110,16 @@ func builtinHead(ctx context.Context, callCtx *CallContext, args []string) Resul
 		*quiet = true
 	}
 
-	// Determine mode: lines vs bytes. When both flags are provided, the last
-	// one on the command line wins (matches GNU head behavior). When neither
-	// or only -n is provided, useBytesMode stays false (line mode is default).
-	linesChanged := fs.Changed("lines")
-	bytesChanged := fs.Changed("bytes")
-
-	useBytesMode := false
-	switch {
-	case linesChanged && bytesChanged:
-		useBytesMode = headBytesAppearsLast(args)
-	case bytesChanged:
-		useBytesMode = true
-	// default: line mode (useBytesMode = false already)
-	}
+	// Bytes mode wins if -c/--bytes was parsed after -n/--lines. When neither
+	// is set both pos fields are 0 (false → line mode). When only one is set
+	// the other stays 0, so the comparison selects correctly.
+	useBytesMode := bytesFlag.pos > linesFlag.pos
 
 	// Parse the count for the chosen mode.
-	countStr := *lines
+	countStr := linesFlag.val
 	modeLabel := "lines"
 	if useBytesMode {
-		countStr = *bytes_
+		countStr = bytesFlag.val
 		modeLabel = "bytes"
 	}
 
@@ -264,38 +261,29 @@ func headParseCount(s string) (int64, bool) {
 	return n, true
 }
 
-// headBytesAppearsLast reports whether the last mode-selecting flag in args
-// is -c/--bytes. This implements the GNU "last flag wins" behavior when both
-// -n and -c appear on the same command line.
-//
-// lastBytes and lastLines are initialised to -1 ("not seen"). Any valid
-// arg index is ≥ 0, so the comparison lastBytes > lastLines correctly
-// selects the flag that appeared later, and returns false when neither (or
-// only one) mode flag is present.
-func headBytesAppearsLast(args []string) bool {
-	lastBytes, lastLines := -1, -1
-	for i, arg := range args {
-		if arg == "--" {
-			break
-		}
-		if headIsModeFlag(arg, 'c', "--bytes") {
-			lastBytes = i
-		} else if headIsModeFlag(arg, 'n', "--lines") {
-			lastLines = i
-		}
-	}
-	return lastBytes > lastLines
+// headModeFlag is a pflag.Value implementation for -n/--lines and -c/--bytes.
+// Two headModeFlag values share a *seq counter; each call to Set increments
+// the counter and records the new value in pos. After pflag.Parse, comparing
+// pos fields reveals which flag appeared last on the command line — without
+// scanning raw args or inspecting individual characters of flag tokens.
+type headModeFlag struct {
+	val string
+	seq *int // shared per-invocation counter; incremented on every Set call
+	pos int  // counter value when Set was last called; 0 means never set
 }
 
-// headIsModeFlag reports whether arg is a short flag token for the given
-// short rune (e.g. 'c') or a long flag token (e.g. "--bytes" / "--bytes=N").
-// It matches: -X, -XN (value glued), --long, --long=N.
-func headIsModeFlag(arg string, short byte, long string) bool {
-	return arg == string([]byte{'-', short}) ||
-		(len(arg) > 2 && arg[0] == '-' && arg[1] == short && arg[2] != '-') ||
-		arg == long ||
-		strings.HasPrefix(arg, long+"=")
+func newHeadModeFlag(seq *int, defaultVal string) *headModeFlag {
+	return &headModeFlag{val: defaultVal, seq: seq}
 }
+
+func (f *headModeFlag) String() string { return f.val }
+func (f *headModeFlag) Set(s string) error {
+	f.val = s
+	*f.seq++
+	f.pos = *f.seq
+	return nil
+}
+func (f *headModeFlag) Type() string { return "string" }
 
 // scanLinesPreservingNewline is a bufio.SplitFunc that includes the line
 // terminator (\n) in the returned token. Unlike bufio.ScanLines, it does not

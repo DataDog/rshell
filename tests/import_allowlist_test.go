@@ -41,7 +41,6 @@ var builtinAllowedSymbols = []string{
 	"os.O_RDONLY",
 	"strconv.Atoi",
 	"strconv.ParseInt",
-	"strings.HasPrefix",
 }
 
 // permanentlyBanned lists packages that may never be imported by builtin
