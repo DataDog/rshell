@@ -23,6 +23,7 @@ import (
 	_ "github.com/DataDog/rshell/interp/builtins/exit"
 	_ "github.com/DataDog/rshell/interp/builtins/false"
 	_ "github.com/DataDog/rshell/interp/builtins/head"
+	_ "github.com/DataDog/rshell/interp/builtins/test"
 	_ "github.com/DataDog/rshell/interp/builtins/true"
 )
 

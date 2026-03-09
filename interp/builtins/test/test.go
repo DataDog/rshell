@@ -3,12 +3,11 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2026-present Datadog, Inc.
 
-// Package builtins implements safe shell builtin commands.
-//
-// test / [ — evaluate conditional expressions
+// Package test implements the test/[ builtin — evaluate conditional expressions.
 //
 // Usage: test EXPRESSION
-//        [ EXPRESSION ]
+//
+//	[ EXPRESSION ]
 //
 // Evaluate a conditional expression EXPRESSION and exit with status 0 (true)
 // or 1 (false). With no arguments, test exits with status 1.
@@ -57,58 +56,60 @@
 //	0  Expression is true.
 //	1  Expression is false or missing.
 //	2  Syntax or usage error.
-package builtins
+package test
 
 import (
 	"context"
 	"os"
 	"strconv"
+
+	"github.com/DataDog/rshell/interp/builtins"
 )
 
 func init() {
-	register("test", builtinTestCmd)
-	register("[", builtinBracket)
+	builtins.Register("test", runTest)
+	builtins.Register("[", runBracket)
 }
 
-func builtinTestCmd(ctx context.Context, callCtx *CallContext, args []string) Result {
-	return testRun(ctx, callCtx, args, false)
+func runTest(ctx context.Context, callCtx *builtins.CallContext, args []string) builtins.Result {
+	return run(ctx, callCtx, args, false)
 }
 
-func builtinBracket(ctx context.Context, callCtx *CallContext, args []string) Result {
-	return testRun(ctx, callCtx, args, true)
+func runBracket(ctx context.Context, callCtx *builtins.CallContext, args []string) builtins.Result {
+	return run(ctx, callCtx, args, true)
 }
 
-func testRun(ctx context.Context, callCtx *CallContext, args []string, isBracket bool) Result {
+func run(ctx context.Context, callCtx *builtins.CallContext, args []string, isBracket bool) builtins.Result {
 	name := "test"
 	if isBracket {
 		name = "["
 		if len(args) == 0 || args[len(args)-1] != "]" {
 			callCtx.Errf("[: missing `]'\n")
-			return Result{Code: 2}
+			return builtins.Result{Code: 2}
 		}
 		args = args[:len(args)-1]
 	}
 
 	// No arguments: false.
 	if len(args) == 0 {
-		return Result{Code: 1}
+		return builtins.Result{Code: 1}
 	}
 
 	p := &testParser{rem: args}
 	expr := p.classicTest()
 	if p.err != "" {
 		callCtx.Errf("%s: %s\n", name, p.err)
-		return Result{Code: 2}
+		return builtins.Result{Code: 2}
 	}
 	if len(p.rem) > 0 {
 		callCtx.Errf("%s: extra argument '%s'\n", name, p.rem[0])
-		return Result{Code: 2}
+		return builtins.Result{Code: 2}
 	}
 
 	if evalTest(ctx, callCtx, expr) {
-		return Result{}
+		return builtins.Result{}
 	}
-	return Result{Code: 1}
+	return builtins.Result{Code: 1}
 }
 
 // --- Expression AST ---
@@ -259,7 +260,7 @@ func (p *testParser) testExprBase() testExpr {
 
 // --- Evaluator ---
 
-func evalTest(ctx context.Context, callCtx *CallContext, expr testExpr) bool {
+func evalTest(ctx context.Context, callCtx *builtins.CallContext, expr testExpr) bool {
 	switch e := expr.(type) {
 	case testWord:
 		return e.val != ""
@@ -273,7 +274,7 @@ func evalTest(ctx context.Context, callCtx *CallContext, expr testExpr) bool {
 	return false
 }
 
-func evalUnary(ctx context.Context, callCtx *CallContext, e testUnary) bool {
+func evalUnary(ctx context.Context, callCtx *builtins.CallContext, e testUnary) bool {
 	switch e.op {
 	case "!":
 		return !evalTest(ctx, callCtx, e.x)
@@ -331,7 +332,7 @@ func evalFileStat(op string, fi os.FileInfo) bool {
 	return false
 }
 
-func evalBinary(ctx context.Context, callCtx *CallContext, e testBinary) bool {
+func evalBinary(ctx context.Context, callCtx *builtins.CallContext, e testBinary) bool {
 	switch e.op {
 	case "-a":
 		return evalTest(ctx, callCtx, e.x) && evalTest(ctx, callCtx, e.y)
@@ -383,7 +384,7 @@ func evalIntCmp(op, a, b string) bool {
 	return false
 }
 
-func evalNt(ctx context.Context, callCtx *CallContext, a, b string) bool {
+func evalNt(ctx context.Context, callCtx *builtins.CallContext, a, b string) bool {
 	fiA, errA := callCtx.StatFile(ctx, a)
 	fiB, errB := callCtx.StatFile(ctx, b)
 	if errA != nil || errB != nil {
@@ -392,7 +393,7 @@ func evalNt(ctx context.Context, callCtx *CallContext, a, b string) bool {
 	return fiA.ModTime().After(fiB.ModTime())
 }
 
-func evalEf(ctx context.Context, callCtx *CallContext, a, b string) bool {
+func evalEf(ctx context.Context, callCtx *builtins.CallContext, a, b string) bool {
 	fiA, errA := callCtx.StatFile(ctx, a)
 	fiB, errB := callCtx.StatFile(ctx, b)
 	if errA != nil || errB != nil {
