@@ -12,5 +12,7 @@ input:
 expect:
   stdout: |+
     nd/bfile
+  stdout_windows: |+
+    nd\bfile
   stderr: ""
   exit_code: 0

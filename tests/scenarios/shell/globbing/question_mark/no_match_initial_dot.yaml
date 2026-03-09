@@ -12,5 +12,7 @@ input:
 expect:
   stdout: |+
     d/ax d/bx
+  stdout_windows: |+
+    d\ax d\bx
   stderr: ""
   exit_code: 0

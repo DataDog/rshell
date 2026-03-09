@@ -12,5 +12,7 @@ input:
 expect:
   stdout: |+
     testdir/visible
+  stdout_windows: |+
+    testdir\visible
   stderr: ""
   exit_code: 0

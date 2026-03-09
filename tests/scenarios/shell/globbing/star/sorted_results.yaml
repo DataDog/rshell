@@ -14,5 +14,7 @@ input:
 expect:
   stdout: |+
     sdir/apple sdir/banana sdir/cherry
+  stdout_windows: |+
+    sdir\apple sdir\banana sdir\cherry
   stderr: ""
   exit_code: 0
