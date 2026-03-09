@@ -3,19 +3,21 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2026-present Datadog, Inc.
 
-package builtins
+package exit
 
 import (
 	"context"
 	"strconv"
+
+	"github.com/DataDog/rshell/interp/builtins"
 )
 
 func init() {
-	register("exit", builtinExit)
+	builtins.Register("exit", run)
 }
 
-func builtinExit(_ context.Context, callCtx *CallContext, args []string) Result {
-	var r Result
+func run(_ context.Context, callCtx *builtins.CallContext, args []string) builtins.Result {
+	var r builtins.Result
 	if len(args) > 0 && args[0] == "--" {
 		args = args[1:]
 	}

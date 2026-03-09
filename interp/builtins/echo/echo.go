@@ -3,15 +3,19 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2026-present Datadog, Inc.
 
-package builtins
+package echo
 
-import "context"
+import (
+	"context"
+
+	"github.com/DataDog/rshell/interp/builtins"
+)
 
 func init() {
-	register("echo", builtinEcho)
+	builtins.Register("echo", run)
 }
 
-func builtinEcho(_ context.Context, callCtx *CallContext, args []string) Result {
+func run(_ context.Context, callCtx *builtins.CallContext, args []string) builtins.Result {
 	for i, arg := range args {
 		if i > 0 {
 			callCtx.Out(" ")
@@ -19,5 +23,5 @@ func builtinEcho(_ context.Context, callCtx *CallContext, args []string) Result 
 		callCtx.Out(arg)
 	}
 	callCtx.Out("\n")
-	return Result{}
+	return builtins.Result{}
 }

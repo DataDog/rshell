@@ -16,6 +16,14 @@ import (
 	"mvdan.cc/sh/v3/syntax"
 
 	"github.com/DataDog/rshell/interp/builtins"
+	_ "github.com/DataDog/rshell/interp/builtins/break"
+	_ "github.com/DataDog/rshell/interp/builtins/cat"
+	_ "github.com/DataDog/rshell/interp/builtins/continue"
+	_ "github.com/DataDog/rshell/interp/builtins/echo"
+	_ "github.com/DataDog/rshell/interp/builtins/exit"
+	_ "github.com/DataDog/rshell/interp/builtins/false"
+	_ "github.com/DataDog/rshell/interp/builtins/head"
+	_ "github.com/DataDog/rshell/interp/builtins/true"
 )
 
 func (r *Runner) stmt(ctx context.Context, st *syntax.Stmt) {

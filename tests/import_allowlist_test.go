@@ -71,26 +71,46 @@ func TestBuiltinImportAllowlist(t *testing.T) {
 	root := repoRoot(t)
 	builtinsDir := filepath.Join(root, "interp", "builtins")
 
-	entries, err := os.ReadDir(builtinsDir)
+	// Collect all .go files in builtin sub-packages (each builtin lives
+	// in its own subdirectory, e.g. cat/cat.go, head/head.go). Internal
+	// shared packages (internal/) are also checked.
+	var goFiles []string
+	err := filepath.Walk(builtinsDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if info.IsDir() {
+			return nil
+		}
+		if !strings.HasSuffix(info.Name(), ".go") || strings.HasSuffix(info.Name(), "_test.go") {
+			return nil
+		}
+		rel, _ := filepath.Rel(builtinsDir, path)
+		// builtins.go is the package framework (CallContext, Result, Register,
+		// Lookup) and is exempt. Only command implementation files are checked.
+		if rel == "builtins.go" {
+			return nil
+		}
+		// Only check files inside subdirectories (the per-builtin packages).
+		if !strings.Contains(rel, string(filepath.Separator)) {
+			return nil
+		}
+		goFiles = append(goFiles, path)
+		return nil
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	fset := token.NewFileSet()
 	checked := 0
-	for _, entry := range entries {
-		name := entry.Name()
-		// builtins.go is the package framework (CallContext, Result, register,
-		// Lookup) and is exempt. Only command implementation files are checked.
-		if !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") || name == "builtins.go" {
-			continue
-		}
+	for _, path := range goFiles {
+		rel, _ := filepath.Rel(builtinsDir, path)
 		checked++
 
-		path := filepath.Join(builtinsDir, name)
 		f, err := parser.ParseFile(fset, path, nil, 0)
 		if err != nil {
-			t.Errorf("%s: parse error: %v", name, err)
+			t.Errorf("%s: parse error: %v", rel, err)
 			continue
 		}
 
@@ -100,7 +120,14 @@ func TestBuiltinImportAllowlist(t *testing.T) {
 			importPath := strings.Trim(imp.Path.Value, `"`)
 
 			if reason, banned := permanentlyBanned[importPath]; banned {
-				t.Errorf("%s: import of %q is permanently banned (%s)", name, importPath, reason)
+				t.Errorf("%s: import of %q is permanently banned (%s)", rel, importPath, reason)
+				continue
+			}
+
+			// The parent builtins package and sibling internal packages are
+			// always allowed — they are part of the builtins module.
+			if importPath == "github.com/DataDog/rshell/interp/builtins" ||
+				strings.HasPrefix(importPath, "github.com/DataDog/rshell/interp/builtins/internal/") {
 				continue
 			}
 
@@ -114,12 +141,12 @@ func TestBuiltinImportAllowlist(t *testing.T) {
 			}
 
 			if localName == "_" || localName == "." {
-				t.Errorf("%s: blank/dot import of %q is not allowed", name, importPath)
+				t.Errorf("%s: blank/dot import of %q is not allowed", rel, importPath)
 				continue
 			}
 
 			if !allowedPackages[importPath] {
-				t.Errorf("%s: import of %q is not in the allowlist", name, importPath)
+				t.Errorf("%s: import of %q is not in the allowlist", rel, importPath)
 				continue
 			}
 
@@ -143,12 +170,12 @@ func TestBuiltinImportAllowlist(t *testing.T) {
 			key := importPath + "." + sel.Sel.Name
 			if !allowedSymbols[key] {
 				pos := fset.Position(sel.Pos())
-				t.Errorf("%s:%d: %s is not in the allowlist", name, pos.Line, key)
+				t.Errorf("%s:%d: %s is not in the allowlist", rel, pos.Line, key)
 			}
 			return true
 		})
 	}
 	if checked == 0 {
-		t.Fatal("no command implementation files found in interp/builtins/ — builtins.go may have been moved or the directory is empty")
+		t.Fatal("no command implementation files found in interp/builtins/ sub-packages")
 	}
 }

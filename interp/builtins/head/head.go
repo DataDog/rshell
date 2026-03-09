@@ -3,7 +3,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2026-present Datadog, Inc.
 
-// Package builtins implements safe shell builtin commands.
+// Package head implements the head builtin command.
 //
 // head — output the first part of files
 //
@@ -40,14 +40,13 @@
 //
 // Memory safety:
 //
-//	Line mode uses a streaming scanner with a per-line cap of maxHeadLineBytes
+//	Line mode uses a streaming scanner with a per-line cap of MaxLineBytes
 //	(1 MiB). Lines that exceed this cap cause an error rather than an
 //	unbounded allocation. Byte mode reads in fixed-size chunks; it never
 //	allocates proportionally to user-supplied N. All loops check ctx.Err()
 //	at each iteration to honour the shell's execution timeout and to support
 //	graceful cancellation.
-
-package builtins
+package head
 
 import (
 	"bufio"
@@ -58,22 +57,24 @@ import (
 	"strconv"
 
 	"github.com/spf13/pflag"
+
+	"github.com/DataDog/rshell/interp/builtins"
 )
 
 func init() {
-	register("head", builtinHead)
+	builtins.Register("head", run)
 }
 
-// maxHeadCount is the maximum accepted line or byte count. Values above this
+// MaxCount is the maximum accepted line or byte count. Values above this
 // are clamped. This prevents huge theoretical allocations while remaining
 // larger than any practical file.
-const maxHeadCount = 1<<31 - 1 // 2 147 483 647
+const MaxCount = 1<<31 - 1 // 2 147 483 647
 
-// maxHeadLineBytes is the per-line buffer cap for the line scanner. Lines
+// MaxLineBytes is the per-line buffer cap for the line scanner. Lines
 // longer than this are reported as an error instead of being buffered.
-const maxHeadLineBytes = 1 << 20 // 1 MiB
+const MaxLineBytes = 1 << 20 // 1 MiB
 
-func builtinHead(ctx context.Context, callCtx *CallContext, args []string) Result {
+func run(ctx context.Context, callCtx *builtins.CallContext, args []string) builtins.Result {
 	fs := pflag.NewFlagSet("head", pflag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 
@@ -87,14 +88,14 @@ func builtinHead(ctx context.Context, callCtx *CallContext, args []string) Resul
 	// command line. pflag calls Set() in parse order, so the last flag Set
 	// gets the highest pos value — no raw arg scanning required.
 	var modeSeq int
-	linesFlag := newHeadModeFlag(&modeSeq, "10")
-	bytesFlag := newHeadModeFlag(&modeSeq, "")
+	linesFlag := newModeFlag(&modeSeq, "10")
+	bytesFlag := newModeFlag(&modeSeq, "")
 	fs.VarP(linesFlag, "lines", "n", "print the first N lines instead of the first 10")
 	fs.VarP(bytesFlag, "bytes", "c", "print the first N bytes instead of lines")
 
 	if err := fs.Parse(args); err != nil {
 		callCtx.Errf("head: %v\n", err)
-		return Result{Code: 1}
+		return builtins.Result{Code: 1}
 	}
 
 	if *help {
@@ -103,7 +104,7 @@ func builtinHead(ctx context.Context, callCtx *CallContext, args []string) Resul
 		callCtx.Out("With no FILE, or when FILE is -, read standard input.\n\n")
 		fs.SetOutput(callCtx.Stdout)
 		fs.PrintDefaults()
-		return Result{}
+		return builtins.Result{}
 	}
 
 	// --silent is an alias for --quiet.
@@ -124,10 +125,10 @@ func builtinHead(ctx context.Context, callCtx *CallContext, args []string) Resul
 		modeLabel = "bytes"
 	}
 
-	count, ok := headParseCount(countStr)
+	count, ok := parseCount(countStr)
 	if !ok {
 		callCtx.Errf("head: invalid number of %s: %q\n", modeLabel, countStr)
-		return Result{Code: 1}
+		return builtins.Result{Code: 1}
 	}
 
 	// Collect file arguments; default to stdin.
@@ -148,7 +149,7 @@ func builtinHead(ctx context.Context, callCtx *CallContext, args []string) Resul
 		if ctx.Err() != nil {
 			break
 		}
-		if err := headProcessFile(ctx, callCtx, file, i, printHeaders, useBytesMode, count); err != nil {
+		if err := processFile(ctx, callCtx, file, i, printHeaders, useBytesMode, count); err != nil {
 			name := file
 			if file == "-" {
 				name = "standard input"
@@ -159,13 +160,13 @@ func builtinHead(ctx context.Context, callCtx *CallContext, args []string) Resul
 	}
 
 	if failed {
-		return Result{Code: 1}
+		return builtins.Result{Code: 1}
 	}
-	return Result{}
+	return builtins.Result{}
 }
 
-// headProcessFile opens and processes one file (or stdin for "-").
-func headProcessFile(ctx context.Context, callCtx *CallContext, file string, idx int, printHeaders, useBytesMode bool, count int64) error {
+// processFile opens and processes one file (or stdin for "-").
+func processFile(ctx context.Context, callCtx *builtins.CallContext, file string, idx int, printHeaders, useBytesMode bool, count int64) error {
 	var rc io.ReadCloser
 	name := file
 	if file == "-" {
@@ -200,17 +201,17 @@ func headProcessFile(ctx context.Context, callCtx *CallContext, file string, idx
 	}
 
 	if useBytesMode {
-		return headBytes(ctx, callCtx, rc, count)
+		return readBytes(ctx, callCtx, rc, count)
 	}
-	return headLines(ctx, callCtx, rc, count)
+	return readLines(ctx, callCtx, rc, count)
 }
 
-// headLines writes the first count lines of r to callCtx.Stdout, preserving
+// readLines writes the first count lines of r to callCtx.Stdout, preserving
 // line endings exactly (including a missing final newline).
-func headLines(ctx context.Context, callCtx *CallContext, r io.Reader, count int64) error {
+func readLines(ctx context.Context, callCtx *builtins.CallContext, r io.Reader, count int64) error {
 	sc := bufio.NewScanner(r)
 	buf := make([]byte, 4096)
-	sc.Buffer(buf, maxHeadLineBytes)
+	sc.Buffer(buf, MaxLineBytes)
 	sc.Split(scanLinesPreservingNewline)
 
 	var emitted int64
@@ -226,11 +227,11 @@ func headLines(ctx context.Context, callCtx *CallContext, r io.Reader, count int
 	return sc.Err()
 }
 
-// headBytes writes the first count bytes of r to callCtx.Stdout. It reads
+// readBytes writes the first count bytes of r to callCtx.Stdout. It reads
 // in fixed-size chunks; the buffer is capped at chunkSize but shrunk to
 // count when count is smaller, avoiding unnecessary allocation for small
 // byte requests (e.g. head -c 5).
-func headBytes(ctx context.Context, callCtx *CallContext, r io.Reader, count int64) error {
+func readBytes(ctx context.Context, callCtx *builtins.CallContext, r io.Reader, count int64) error {
 	if count == 0 {
 		return nil
 	}
@@ -259,10 +260,10 @@ func headBytes(ctx context.Context, callCtx *CallContext, r io.Reader, count int
 	return nil
 }
 
-// headParseCount parses a line or byte count string. A leading '+' is
+// parseCount parses a line or byte count string. A leading '+' is
 // accepted (treated as a positive sign by strconv.ParseInt, matching GNU
 // head behavior). Returns (count, true) on success, (0, false) on failure.
-func headParseCount(s string) (int64, bool) {
+func parseCount(s string) (int64, bool) {
 	if s == "" {
 		return 0, false
 	}
@@ -270,35 +271,35 @@ func headParseCount(s string) (int64, bool) {
 	if err != nil || n < 0 {
 		return 0, false
 	}
-	if n > maxHeadCount {
-		n = maxHeadCount
+	if n > MaxCount {
+		n = MaxCount
 	}
 	return n, true
 }
 
-// headModeFlag is a pflag.Value implementation for -n/--lines and -c/--bytes.
-// Two headModeFlag values share a *seq counter; each call to Set increments
+// modeFlag is a pflag.Value implementation for -n/--lines and -c/--bytes.
+// Two modeFlag values share a *seq counter; each call to Set increments
 // the counter and records the new value in pos. After pflag.Parse, comparing
 // pos fields reveals which flag appeared last on the command line — without
 // scanning raw args or inspecting individual characters of flag tokens.
-type headModeFlag struct {
+type modeFlag struct {
 	val string
 	seq *int // shared per-invocation counter; incremented on every Set call
 	pos int  // counter value when Set was last called; 0 means never set
 }
 
-func newHeadModeFlag(seq *int, defaultVal string) *headModeFlag {
-	return &headModeFlag{val: defaultVal, seq: seq}
+func newModeFlag(seq *int, defaultVal string) *modeFlag {
+	return &modeFlag{val: defaultVal, seq: seq}
 }
 
-func (f *headModeFlag) String() string { return f.val }
-func (f *headModeFlag) Set(s string) error {
+func (f *modeFlag) String() string { return f.val }
+func (f *modeFlag) Set(s string) error {
 	f.val = s
 	*f.seq++
 	f.pos = *f.seq
 	return nil
 }
-func (f *headModeFlag) Type() string { return "string" }
+func (f *modeFlag) Type() string { return "string" }
 
 // scanLinesPreservingNewline is a bufio.SplitFunc that includes the line
 // terminator (\n) in the returned token. Unlike bufio.ScanLines, it does not
