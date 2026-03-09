@@ -86,8 +86,13 @@ func toAbs(path, cwd string) string {
 }
 
 // open implements the restricted file-open policy. The file is opened through
-// os.Root for atomic path validation.
+// os.Root for atomic path validation. Only read-only access is permitted;
+// any write flags are rejected as a defense-in-depth measure.
 func (s *pathSandbox) open(ctx context.Context, path string, flag int, perm os.FileMode) (io.ReadWriteCloser, error) {
+	if flag != os.O_RDONLY {
+		return nil, &os.PathError{Op: "open", Path: path, Err: os.ErrPermission}
+	}
+
 	absPath := toAbs(path, HandlerCtx(ctx).Dir)
 
 	root, relPath, ok := s.resolve(absPath)

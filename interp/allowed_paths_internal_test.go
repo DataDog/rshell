@@ -167,3 +167,33 @@ func TestAllowedPathsExecDefaultBlocksAll(t *testing.T) {
 	assert.Equal(t, 127, exitCode)
 	assert.Contains(t, stderr, "command not found")
 }
+
+func TestPathSandboxOpenRejectsWriteFlags(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "test.txt"), []byte("data"), 0644))
+
+	sb, err := newPathSandbox([]string{dir})
+	require.NoError(t, err)
+	defer sb.Close()
+
+	ctx := context.WithValue(context.Background(), handlerCtxKey{}, HandlerContext{Dir: dir})
+
+	writeFlags := []int{
+		os.O_WRONLY,
+		os.O_RDWR,
+		os.O_APPEND,
+		os.O_CREATE,
+		os.O_TRUNC,
+		os.O_WRONLY | os.O_CREATE | os.O_TRUNC,
+	}
+	for _, flag := range writeFlags {
+		f, err := sb.open(ctx, "test.txt", flag, 0644)
+		assert.Nil(t, f, "open with flag %d should return nil", flag)
+		assert.ErrorIs(t, err, os.ErrPermission, "open with flag %d should be denied", flag)
+	}
+
+	// Read-only should still work.
+	f, err := sb.open(ctx, "test.txt", os.O_RDONLY, 0)
+	require.NoError(t, err)
+	f.Close()
+}
