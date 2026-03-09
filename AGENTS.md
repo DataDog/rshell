@@ -1,4 +1,4 @@
-# pkg/shell — Safe Shell Interpreter
+# Restricted Shell Interpreter
 
 ## Overview
 

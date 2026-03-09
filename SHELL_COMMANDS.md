@@ -1,6 +1,6 @@
 # Shell Commands
 
-Short reference for builtin commands available in `pkg/shell`.
+Short reference for builtin commands
 
 | Command | Options | Short description |
 | --- | --- | --- |
