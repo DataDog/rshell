@@ -25,16 +25,51 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	)
 
 	cmd := &cobra.Command{
-		Use:           "rshell",
+		Use:           "rshell [file ...]",
 		Short:         "A restricted shell interpreter for AI agents",
 		SilenceUsage:  true,
 		SilenceErrors: true,
+		Args:          cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if script != "" && len(args) > 0 {
+				return fmt.Errorf("cannot use --script with file arguments")
+			}
+			if script == "" && len(args) == 0 {
+				return fmt.Errorf("requires either --script or file arguments (use \"-\" for stdin)")
+			}
+
 			var paths []string
 			if allowedPaths != "" {
 				paths = strings.Split(allowedPaths, ",")
 			}
-			return execute(cmd.Context(), script, paths, stdin, stdout, stderr)
+
+			if script != "" {
+				return execute(cmd.Context(), script, "", paths, stdin, stdout, stderr)
+			}
+
+			for _, file := range args {
+				var src string
+				var name string
+				if file == "-" {
+					data, err := io.ReadAll(stdin)
+					if err != nil {
+						return fmt.Errorf("reading stdin: %w", err)
+					}
+					src = string(data)
+					name = ""
+				} else {
+					data, err := os.ReadFile(file)
+					if err != nil {
+						return fmt.Errorf("reading %s: %w", file, err)
+					}
+					src = string(data)
+					name = file
+				}
+				if err := execute(cmd.Context(), src, name, paths, stdin, stdout, stderr); err != nil {
+					return err
+				}
+			}
+			return nil
 		},
 	}
 
@@ -45,7 +80,6 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 
 	cmd.Flags().StringVarP(&script, "script", "s", "", "shell script to execute")
 	cmd.Flags().StringVarP(&allowedPaths, "allowed-path", "a", "", "comma-separated list of directories the shell is allowed to access")
-	_ = cmd.MarkFlagRequired("script")
 
 	if err := cmd.Execute(); err != nil {
 		var status interp.ExitStatus
@@ -58,9 +92,9 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	return 0
 }
 
-func execute(ctx context.Context, script string, allowedPaths []string, stdin io.Reader, stdout, stderr io.Writer) error {
+func execute(ctx context.Context, script, name string, allowedPaths []string, stdin io.Reader, stdout, stderr io.Writer) error {
 	// Parse.
-	prog, err := syntax.NewParser().Parse(strings.NewReader(script), "")
+	prog, err := syntax.NewParser().Parse(strings.NewReader(script), name)
 	if err != nil {
 		return fmt.Errorf("parse error: %w", err)
 	}

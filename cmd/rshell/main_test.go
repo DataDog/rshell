@@ -19,6 +19,13 @@ func runCLI(t *testing.T, args ...string) (exitCode int, stdout, stderr string) 
 	return code, out.String(), errBuf.String()
 }
 
+func runCLIWithStdin(t *testing.T, stdin string, args ...string) (exitCode int, stdout, stderr string) {
+	t.Helper()
+	var out, errBuf bytes.Buffer
+	code := run(args, strings.NewReader(stdin), &out, &errBuf)
+	return code, out.String(), errBuf.String()
+}
+
 func TestEcho(t *testing.T) {
 	code, stdout, _ := runCLI(t, "-s", `echo hello world`)
 	assert.Equal(t, 0, code)
@@ -37,10 +44,10 @@ func TestLongFlag(t *testing.T) {
 	assert.Equal(t, "long\n", stdout)
 }
 
-func TestMissingScript(t *testing.T) {
+func TestMissingScriptAndFiles(t *testing.T) {
 	code, _, stderr := runCLI(t)
 	assert.NotEqual(t, 0, code)
-	assert.Contains(t, stderr, "script")
+	assert.Contains(t, stderr, "requires either --script or file arguments")
 }
 
 func TestExitCode(t *testing.T) {
@@ -108,4 +115,67 @@ func TestHelp(t *testing.T) {
 	assert.Equal(t, 0, code)
 	assert.Contains(t, stdout, "--script")
 	assert.Contains(t, stdout, "--allowed-path")
+}
+
+func TestFileArg(t *testing.T) {
+	dir := t.TempDir()
+	script := filepath.Join(dir, "test.sh")
+	require.NoError(t, os.WriteFile(script, []byte("echo from-file\n"), 0o644))
+
+	code, stdout, _ := runCLI(t, script)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "from-file\n", stdout)
+}
+
+func TestMultipleFileArgs(t *testing.T) {
+	dir := t.TempDir()
+	script1 := filepath.Join(dir, "a.sh")
+	script2 := filepath.Join(dir, "b.sh")
+	require.NoError(t, os.WriteFile(script1, []byte("echo first\n"), 0o644))
+	require.NoError(t, os.WriteFile(script2, []byte("echo second\n"), 0o644))
+
+	code, stdout, _ := runCLI(t, script1, script2)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "first\nsecond\n", stdout)
+}
+
+func TestStdinDash(t *testing.T) {
+	code, stdout, _ := runCLIWithStdin(t, "echo from-stdin\n", "-")
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "from-stdin\n", stdout)
+}
+
+func TestScriptAndFileArgsMutuallyExclusive(t *testing.T) {
+	dir := t.TempDir()
+	script := filepath.Join(dir, "test.sh")
+	require.NoError(t, os.WriteFile(script, []byte("echo hi\n"), 0o644))
+
+	code, _, stderr := runCLI(t, "-s", "echo hi", script)
+	assert.NotEqual(t, 0, code)
+	assert.Contains(t, stderr, "cannot use --script with file arguments")
+}
+
+func TestFileNotFound(t *testing.T) {
+	code, _, stderr := runCLI(t, "/nonexistent/path/script.sh")
+	assert.NotEqual(t, 0, code)
+	assert.Contains(t, stderr, "reading /nonexistent/path/script.sh")
+}
+
+func TestFileArgWithAllowedPath(t *testing.T) {
+	dir := t.TempDir()
+	dataDir := t.TempDir()
+	dataFile := filepath.Join(dataDir, "data.txt")
+	require.NoError(t, os.WriteFile(dataFile, []byte("secret data\n"), 0o644))
+
+	if runtime.GOOS == "windows" {
+		dataFile = filepath.ToSlash(dataFile)
+		dataDir = filepath.ToSlash(dataDir)
+	}
+
+	script := filepath.Join(dir, "test.sh")
+	require.NoError(t, os.WriteFile(script, []byte("cat "+dataFile+"\n"), 0o644))
+
+	code, stdout, _ := runCLI(t, "-a", dataDir, script)
+	assert.Equal(t, 0, code)
+	assert.Contains(t, stdout, "secret data")
 }
