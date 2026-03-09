@@ -28,12 +28,20 @@ import (
 // All packages not listed here are implicitly banned, including all
 // third-party packages and other internal module packages.
 var builtinAllowedSymbols = []string{
+	"bufio.NewScanner",
 	"context.Context",
+	"errors.Is",
+	"github.com/spf13/pflag.ContinueOnError",
+	"github.com/spf13/pflag.NewFlagSet",
 	"io.Copy",
+	"io.Discard",
+	"io.EOF",
 	"io.NopCloser",
 	"io.ReadCloser",
+	"io.Reader",
 	"os.O_RDONLY",
 	"strconv.Atoi",
+	"strconv.ParseInt",
 }
 
 // permanentlyBanned lists packages that may never be imported by builtin
