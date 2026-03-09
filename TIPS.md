@@ -2,7 +2,7 @@
 
 Prompt for generating test scenarios:
 ```
-Improve pkg/shell/tests scenarios coverage by taking inspiration from pkg/shell/yash_posix_tests
+Improve tests scenarios coverage by taking inspiration from yash_posix_tests
 
 Notes:
 - avoid duplicate test coverage, if you encounter duplicate scenarios, remove or merge them
@@ -12,7 +12,7 @@ Notes:
 
 Prompt to avoid disabling test_against_local_shell when possible:
 ```
-In pkg/shell/tests, for each scenarios with test_against_local_shell is disabled,
+In tests, for each scenarios with test_against_local_shell is disabled,
 examine why test_against_local_shell is disabled.
 
 test_against_local_shell is usually disabled because the restricted shell doesn't behave as bash
