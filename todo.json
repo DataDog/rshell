@@ -1,0 +1,370 @@
+{
+  "description": "Improve test scenario coverage by porting tests from yash POSIX test suite",
+  "instructions": [
+    "For each task: read the yash .tst file, read existing scenario tests in the target directory, create new YAML scenario tests that add coverage without duplicating existing tests.",
+    "Use the YAML format from tests/scenarios/. Set test_against_local_shell: true (default) for POSIX-compliant behavior, false only for rshell-specific restrictions.",
+    "If tests fail due to implementation bugs, fix the implementation in pkg/shell or interp/.",
+    "Run tests with: go test ./tests/ -run TestShellScenarios -v",
+    "After completing a task, update its status to 'done' and add a brief summary in the 'result' field.",
+    "If a yash category is not applicable (feature blocked/unsupported), set status to 'skipped' with explanation in 'result'."
+  ],
+  "tasks": [
+    {
+      "id": 1,
+      "title": "Port if-clause tests from yash if-p.tst",
+      "status": "pending",
+      "description": "Create tests/scenarios/shell/if_clause/ directory with tests for if/then/else/elif/fi. No existing dedicated if tests. Source: yash_posix_tests/tests/if-p.tst",
+      "result": ""
+    },
+    {
+      "id": 2,
+      "title": "Port case-clause tests from yash case-p.tst",
+      "status": "pending",
+      "description": "Create tests/scenarios/shell/case_clause/ directory with tests for case/esac, pattern matching, multiple patterns, fallthrough. No existing dedicated case tests. Source: yash_posix_tests/tests/case-p.tst",
+      "result": ""
+    },
+    {
+      "id": 3,
+      "title": "Port while-loop tests from yash while-p.tst",
+      "status": "pending",
+      "description": "Create tests/scenarios/shell/while_clause/ directory with tests for while loops. No existing dedicated while tests. Source: yash_posix_tests/tests/while-p.tst",
+      "result": ""
+    },
+    {
+      "id": 4,
+      "title": "Port until-loop tests from yash until-p.tst",
+      "status": "pending",
+      "description": "Create tests/scenarios/shell/until_clause/ directory with tests for until loops. No existing dedicated until tests. Source: yash_posix_tests/tests/until-p.tst",
+      "result": ""
+    },
+    {
+      "id": 5,
+      "title": "Port function tests from yash function-p.tst",
+      "status": "pending",
+      "description": "Create tests/scenarios/shell/function/ directory with tests for function definition, invocation, local variables, return values, recursion. No existing dedicated function tests. Source: yash_posix_tests/tests/function-p.tst",
+      "result": ""
+    },
+    {
+      "id": 6,
+      "title": "Port parameter expansion tests from yash param-p.tst",
+      "status": "pending",
+      "description": "Extend tests/scenarios/shell/var_expand/ with new tests inspired by yash param-p.tst. Focus on parameter expansion features not yet covered (default values, substring, length, pattern removal, etc.). Check which features are blocked vs supported. Source: yash_posix_tests/tests/param-p.tst",
+      "result": ""
+    },
+    {
+      "id": 7,
+      "title": "Port quoting tests from yash quote-p.tst",
+      "status": "pending",
+      "description": "Extend tests/scenarios/shell/var_expand/quoting/ or create new scenarios. Focus on quoting edge cases: backslash in various contexts, nested quoting, quoting in expansions. Source: yash_posix_tests/tests/quote-p.tst",
+      "result": ""
+    },
+    {
+      "id": 8,
+      "title": "Port for-loop tests from yash for-p.tst",
+      "status": "pending",
+      "description": "Extend tests/scenarios/shell/for_clause/ with new scenarios from yash. Existing: 97 tests. Focus on edge cases not yet covered. Source: yash_posix_tests/tests/for-p.tst",
+      "result": ""
+    },
+    {
+      "id": 9,
+      "title": "Port break tests from yash break-p.tst",
+      "status": "pending",
+      "description": "Extend tests/scenarios/shell/for_clause/break_cont/ with new break scenarios. Focus on break with numeric argument, break in nested loops, break in while/until. Source: yash_posix_tests/tests/break-p.tst",
+      "result": ""
+    },
+    {
+      "id": 10,
+      "title": "Port continue tests from yash continue-p.tst",
+      "status": "pending",
+      "description": "Extend tests/scenarios/shell/for_clause/break_cont/ with new continue scenarios. Focus on continue with numeric argument, continue in nested loops, continue in while/until. Source: yash_posix_tests/tests/continue-p.tst",
+      "result": ""
+    },
+    {
+      "id": 11,
+      "title": "Port pipeline tests from yash pipeline-p.tst",
+      "status": "pending",
+      "description": "Extend tests/scenarios/shell/pipe/ with new pipeline scenarios. Focus on edge cases: empty pipeline segments, pipelines with builtins, pipeline exit status. Source: yash_posix_tests/tests/pipeline-p.tst",
+      "result": ""
+    },
+    {
+      "id": 12,
+      "title": "Port and-or list tests from yash andor-p.tst",
+      "status": "pending",
+      "description": "Extend tests/scenarios/shell/logic_ops/ with new and-or scenarios. Focus on complex chaining, precedence, interaction with other features. Source: yash_posix_tests/tests/andor-p.tst",
+      "result": ""
+    },
+    {
+      "id": 13,
+      "title": "Port simple command tests from yash simple-p.tst",
+      "status": "pending",
+      "description": "Create tests/scenarios/shell/simple_command/ or extend existing tests with simple command scenarios: assignments, redirections in commands, command search order. Source: yash_posix_tests/tests/simple-p.tst",
+      "result": ""
+    },
+    {
+      "id": 14,
+      "title": "Port comment tests from yash comment-p.tst",
+      "status": "pending",
+      "description": "Extend tests/scenarios/shell/comments/ with new scenarios from yash. Focus on edge cases not already covered. Source: yash_posix_tests/tests/comment-p.tst",
+      "result": ""
+    },
+    {
+      "id": 15,
+      "title": "Port field splitting tests from yash fsplit-p.tst",
+      "status": "pending",
+      "description": "Extend tests/scenarios/shell/field_splitting/ with new scenarios. Focus on IFS edge cases, whitespace vs non-whitespace delimiters, empty fields. Source: yash_posix_tests/tests/fsplit-p.tst",
+      "result": ""
+    },
+    {
+      "id": 16,
+      "title": "Port pathname expansion tests from yash path-p.tst",
+      "status": "pending",
+      "description": "Extend tests/scenarios/shell/globbing/ with new scenarios. Focus on edge cases: dotfiles, directory matching, complex patterns. Source: yash_posix_tests/tests/path-p.tst",
+      "result": ""
+    },
+    {
+      "id": 17,
+      "title": "Port grouping tests from yash grouping-p.tst",
+      "status": "pending",
+      "description": "Extend tests/scenarios/shell/brace_group/ with new scenarios. Focus on subshells ( ), brace groups { }, nesting, exit codes. Source: yash_posix_tests/tests/grouping-p.tst",
+      "result": ""
+    },
+    {
+      "id": 18,
+      "title": "Port redirection tests from yash redir-p.tst",
+      "status": "pending",
+      "description": "Create tests/scenarios/shell/redirections/ or extend heredoc tests. Focus on >, >>, <, 2>, fd duplication, combined redirections. Source: yash_posix_tests/tests/redir-p.tst",
+      "result": ""
+    },
+    {
+      "id": 19,
+      "title": "Port exit builtin tests from yash exit-p.tst",
+      "status": "pending",
+      "description": "Extend tests/scenarios/cmd/exit/ with new scenarios. Focus on edge cases: exit in subshell, exit in function, exit with traps. Source: yash_posix_tests/tests/exit-p.tst",
+      "result": ""
+    },
+    {
+      "id": 20,
+      "title": "Port export tests from yash export-p.tst",
+      "status": "pending",
+      "description": "Extend tests/scenarios/shell/environment/ with new export scenarios. Focus on export -p, export with assignment, export behavior in subshells. Source: yash_posix_tests/tests/export-p.tst",
+      "result": ""
+    },
+    {
+      "id": 21,
+      "title": "Port readonly tests from yash readonly-p.tst",
+      "status": "pending",
+      "description": "Extend tests/scenarios/shell/readonly/ with new readonly scenarios. Focus on readonly -p, readonly in functions, error handling. Source: yash_posix_tests/tests/readonly-p.tst",
+      "result": ""
+    },
+    {
+      "id": 22,
+      "title": "Port unset tests from yash unset-p.tst",
+      "status": "pending",
+      "description": "Create tests/scenarios/shell/unset/ or extend var_expand tests. Focus on unset -v, unset -f, unset readonly errors, unset behavior. Source: yash_posix_tests/tests/unset-p.tst",
+      "result": ""
+    },
+    {
+      "id": 23,
+      "title": "Port set builtin tests from yash set-p.tst",
+      "status": "pending",
+      "description": "Create tests/scenarios/cmd/set/ with tests for set builtin: positional parameters, set --, set with options. Source: yash_posix_tests/tests/set-p.tst",
+      "result": ""
+    },
+    {
+      "id": 24,
+      "title": "Port shift tests from yash shift-p.tst",
+      "status": "pending",
+      "description": "Create tests/scenarios/cmd/shift/ with tests for shift builtin: basic shift, shift N, shift errors. Source: yash_posix_tests/tests/shift-p.tst",
+      "result": ""
+    },
+    {
+      "id": 25,
+      "title": "Port return tests from yash return-p.tst",
+      "status": "pending",
+      "description": "Create tests/scenarios/shell/return/ with tests for return builtin: return from function, return with exit code, return outside function. Source: yash_posix_tests/tests/return-p.tst",
+      "result": ""
+    },
+    {
+      "id": 26,
+      "title": "Port nop/true/false tests from yash nop-p.tst",
+      "status": "pending",
+      "description": "Extend tests/scenarios/cmd/true/ and cmd/false/ with new scenarios. Focus on colon builtin (:), true/false in various contexts. Source: yash_posix_tests/tests/nop-p.tst",
+      "result": ""
+    },
+    {
+      "id": 27,
+      "title": "Port test builtin tests from yash test-p.tst",
+      "status": "pending",
+      "description": "Create tests/scenarios/cmd/test/ with tests for test/[ builtin: file tests, string tests, integer comparisons, logical operators. Source: yash_posix_tests/tests/test-p.tst",
+      "result": ""
+    },
+    {
+      "id": 28,
+      "title": "Port read builtin tests from yash read-p.tst",
+      "status": "pending",
+      "description": "Create tests/scenarios/cmd/read/ with tests for read builtin: basic read, read with IFS, read -r, read multiple variables. Source: yash_posix_tests/tests/read-p.tst",
+      "result": ""
+    },
+    {
+      "id": 29,
+      "title": "Port command builtin tests from yash command-p.tst",
+      "status": "pending",
+      "description": "Create tests/scenarios/cmd/command/ with tests for command builtin: command -v, command with builtins. Source: yash_posix_tests/tests/command-p.tst",
+      "result": ""
+    },
+    {
+      "id": 30,
+      "title": "Port eval tests from yash eval-p.tst",
+      "status": "pending",
+      "description": "Create tests/scenarios/cmd/eval/ if eval is supported, or verify it's properly blocked. Source: yash_posix_tests/tests/eval-p.tst",
+      "result": ""
+    },
+    {
+      "id": 31,
+      "title": "Port exec tests from yash exec-p.tst",
+      "status": "pending",
+      "description": "Create tests for exec builtin behavior. May be restricted in rshell. Source: yash_posix_tests/tests/exec-p.tst",
+      "result": ""
+    },
+    {
+      "id": 32,
+      "title": "Port dot (source) tests from yash dot-p.tst",
+      "status": "pending",
+      "description": "Create tests for dot/source builtin if supported, or verify it's blocked. Source: yash_posix_tests/tests/dot-p.tst",
+      "result": ""
+    },
+    {
+      "id": 33,
+      "title": "Port errexit tests from yash errexit-p.tst",
+      "status": "pending",
+      "description": "Create tests/scenarios/shell/errexit/ with tests for set -e behavior: errexit in various contexts, errexit with functions, errexit with conditionals. Source: yash_posix_tests/tests/errexit-p.tst",
+      "result": ""
+    },
+    {
+      "id": 34,
+      "title": "Port error handling tests from yash error-p.tst",
+      "status": "pending",
+      "description": "Create tests/scenarios/shell/errors/ with tests for error conditions: syntax errors, runtime errors, error recovery. Source: yash_posix_tests/tests/error-p.tst",
+      "result": ""
+    },
+    {
+      "id": 35,
+      "title": "Port pattern matching tests from yash fnmatch-p.tst",
+      "status": "pending",
+      "description": "Extend globbing or create tests/scenarios/shell/fnmatch/ for pattern matching in case statements, bracket expressions, character classes. Source: yash_posix_tests/tests/fnmatch-p.tst",
+      "result": ""
+    },
+    {
+      "id": 36,
+      "title": "Port tilde expansion tests from yash tilde-p.tst",
+      "status": "pending",
+      "description": "Create tests/scenarios/shell/tilde_expansion/ with tests for ~ expansion if supported. Source: yash_posix_tests/tests/tilde-p.tst",
+      "result": ""
+    },
+    {
+      "id": 37,
+      "title": "Port command substitution tests from yash cmdsub-p.tst",
+      "status": "pending",
+      "description": "Verify command substitution is properly blocked or create tests if partially supported. Existing blocked_features tests may cover this. Source: yash_posix_tests/tests/cmdsub-p.tst",
+      "result": ""
+    },
+    {
+      "id": 38,
+      "title": "Port arithmetic expansion tests from yash arith-p.tst",
+      "status": "pending",
+      "description": "Verify arithmetic expansion is properly blocked or create tests if partially supported. Source: yash_posix_tests/tests/arith-p.tst",
+      "result": ""
+    },
+    {
+      "id": 39,
+      "title": "Port shell options tests from yash option-p.tst",
+      "status": "pending",
+      "description": "Create tests/scenarios/shell/options/ for shell options: -a (allexport), -e (errexit), -f (noglob), -u (nounset), -x (xtrace). Source: yash_posix_tests/tests/option-p.tst",
+      "result": ""
+    },
+    {
+      "id": 40,
+      "title": "Port input processing tests from yash input-p.tst",
+      "status": "pending",
+      "description": "Create tests for input processing edge cases: multiline input, here-string, input buffering. Source: yash_posix_tests/tests/input-p.tst",
+      "result": ""
+    },
+    {
+      "id": 41,
+      "title": "Port cd builtin tests from yash cd-p.tst",
+      "status": "pending",
+      "description": "Create tests/scenarios/cmd/cd/ with tests for cd builtin if supported. Source: yash_posix_tests/tests/cd-p.tst",
+      "result": ""
+    },
+    {
+      "id": 42,
+      "title": "Port getopts tests from yash getopts-p.tst",
+      "status": "pending",
+      "description": "Create tests for getopts builtin if supported, or verify it's blocked. Source: yash_posix_tests/tests/getopts-p.tst",
+      "result": ""
+    },
+    {
+      "id": 43,
+      "title": "Port builtins attribute tests from yash builtins-p.tst",
+      "status": "pending",
+      "description": "Create tests for builtin command attributes and behavior. Source: yash_posix_tests/tests/builtins-p.tst",
+      "result": ""
+    },
+    {
+      "id": 44,
+      "title": "Port LINENO tests from yash lineno-p.tst",
+      "status": "pending",
+      "description": "Create tests for LINENO special variable if supported. Source: yash_posix_tests/tests/lineno-p.tst",
+      "result": ""
+    },
+    {
+      "id": 45,
+      "title": "Port declaration utility tests from yash declutil-p.tst",
+      "status": "pending",
+      "description": "Create tests for declaration utilities (export, readonly combined usage). Source: yash_posix_tests/tests/declutil-p.tst",
+      "result": ""
+    },
+    {
+      "id": 46,
+      "title": "Port printf tests from yash printf-p.tst",
+      "status": "pending",
+      "description": "Create tests/scenarios/cmd/printf/ with tests for printf builtin if supported. Source: yash_posix_tests/tests/printf-p.tst",
+      "result": ""
+    },
+    {
+      "id": 47,
+      "title": "Port echo tests from yash echo-p.tst",
+      "status": "pending",
+      "description": "Extend tests/scenarios/cmd/echo/ with new echo scenarios from yash. Source: yash_posix_tests/tests/echo-p.tst",
+      "result": ""
+    },
+    {
+      "id": 48,
+      "title": "Port pwd tests from yash pwd-p.tst",
+      "status": "pending",
+      "description": "Create tests/scenarios/cmd/pwd/ with tests for pwd builtin. Source: yash_posix_tests/tests/pwd-p.tst",
+      "result": ""
+    },
+    {
+      "id": 49,
+      "title": "Port umask tests from yash umask-p.tst",
+      "status": "pending",
+      "description": "Create tests for umask builtin if supported. Source: yash_posix_tests/tests/umask-p.tst",
+      "result": ""
+    },
+    {
+      "id": 50,
+      "title": "Port hash tests from yash hash-p.tst",
+      "status": "pending",
+      "description": "Create tests for hash builtin if supported. Source: yash_posix_tests/tests/hash-p.tst",
+      "result": ""
+    },
+    {
+      "id": 51,
+      "title": "Final review: remove duplicate tests and merge overlapping scenarios",
+      "status": "pending",
+      "description": "Review all test directories for duplicate or near-duplicate scenarios. Merge overlapping tests, remove redundant ones, ensure clean organization.",
+      "result": ""
+    }
+  ]
+}
