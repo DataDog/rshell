@@ -349,7 +349,7 @@ func evalFileStat(op string, fi os.FileInfo) bool {
 	case "-w":
 		return fi.Mode().Perm()&0222 != 0
 	case "-x":
-		return fi.Mode().Perm()&0111 != 0
+		return isExecutable(fi)
 	}
 	return false
 }
