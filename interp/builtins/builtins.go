@@ -20,7 +20,7 @@ type HandlerFunc func(ctx context.Context, callCtx *CallContext, args []string) 
 type CallContext struct {
 	Stdout io.Writer
 	Stderr io.Writer
-	Stdin  *os.File
+	Stdin  io.Reader
 
 	// InLoop is true when the builtin runs inside a for loop.
 	InLoop bool
@@ -65,14 +65,15 @@ type Result struct {
 	ContinueN int
 }
 
-var registry = map[string]HandlerFunc{
-	"true":     builtinTrue,
-	"false":    builtinFalse,
-	"echo":     builtinEcho,
-	"cat":      builtinCat,
-	"exit":     builtinExit,
-	"break":    builtinBreak,
-	"continue": builtinContinue,
+var registry = map[string]HandlerFunc{}
+
+// Register adds a builtin command to the registry.
+// It panics if name is already registered, catching duplicate registrations at startup.
+func Register(name string, fn HandlerFunc) {
+	if _, exists := registry[name]; exists {
+		panic("builtin already registered: " + name)
+	}
+	registry[name] = fn
 }
 
 // Lookup returns the handler for a builtin command.

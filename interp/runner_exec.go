@@ -16,6 +16,7 @@ import (
 	"mvdan.cc/sh/v3/syntax"
 
 	"github.com/DataDog/rshell/interp/builtins"
+	_ "github.com/DataDog/rshell/interp/builtins/cmds"
 )
 
 func (r *Runner) stmt(ctx context.Context, st *syntax.Stmt) {
@@ -203,13 +204,15 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 		call := &builtins.CallContext{
 			Stdout:       r.stdout,
 			Stderr:       r.stderr,
-			Stdin:        r.stdin,
 			InLoop:       r.inLoop,
 			LastExitCode: r.lastExit.code,
 			OpenFile: func(ctx context.Context, path string, flags int, mode os.FileMode) (io.ReadWriteCloser, error) {
 				return r.open(ctx, path, flags, mode, false)
 			},
 			PortableErr: portableErrMsg,
+		}
+		if r.stdin != nil { // do not assign a typed nil into the io.Reader interface
+			call.Stdin = r.stdin
 		}
 		result := fn(ctx, call, args[1:])
 		r.exit.code = result.Code
