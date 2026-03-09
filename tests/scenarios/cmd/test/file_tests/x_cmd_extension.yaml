@@ -1,0 +1,14 @@
+description: test -x returns 0 for a .cmd file on Windows.
+setup:
+  files:
+    - path: run.cmd
+      content: "@echo off"
+      chmod: 0755
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    test -x run.cmd && echo yes
+expect:
+  stdout: "yes\n"
+  stderr: ""
+  exit_code: 0

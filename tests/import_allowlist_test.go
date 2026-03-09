@@ -43,8 +43,10 @@ var builtinAllowedSymbols = []string{
 	"os.ModeSymlink",
 	"os.O_RDONLY",
 	"os.SameFile",
+	"path/filepath.Ext",
 	"strconv.Atoi",
 	"strconv.ParseInt",
+	"strings.ToLower",
 }
 
 // permanentlyBanned lists packages that may never be imported by builtin

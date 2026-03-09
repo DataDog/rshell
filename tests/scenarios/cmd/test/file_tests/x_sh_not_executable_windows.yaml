@@ -1,0 +1,15 @@
+description: test -x returns 1 for a .sh file on Windows (not a Windows executable extension).
+setup:
+  files:
+    - path: script.sh
+      content: "#!/bin/sh"
+      chmod: 0755
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    test -x script.sh && echo yes || echo no
+expect:
+  stdout: "yes\n"
+  stdout_windows: "no\n"
+  stderr: ""
+  exit_code: 0

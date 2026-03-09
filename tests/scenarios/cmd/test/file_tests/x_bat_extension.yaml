@@ -1,0 +1,14 @@
+description: test -x returns 0 for a .bat file on Windows.
+setup:
+  files:
+    - path: run.bat
+      content: "@echo off"
+      chmod: 0755
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    test -x run.bat && echo yes
+expect:
+  stdout: "yes\n"
+  stderr: ""
+  exit_code: 0

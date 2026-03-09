@@ -1,0 +1,14 @@
+description: test -x returns 1 for a non-executable file.
+skip_assert_against_bash: true
+setup:
+  files:
+    - path: data.txt
+      content: "hello"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    test -x data.txt && echo yes || echo no
+expect:
+  stdout: "no\n"
+  stderr: ""
+  exit_code: 0

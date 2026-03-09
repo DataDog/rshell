@@ -30,4 +30,5 @@ The shell is supported on Linux, Windows and macOS.
 - When expected output differs on Windows (e.g. path separators `\` vs `/`), use Windows-specific assertion fields:
   - `stdout_windows` / `stderr_windows` — override `stdout` / `stderr` on Windows.
   - `stdout_contains_windows` / `stderr_contains_windows` — override `stdout_contains` / `stderr_contains` on Windows.
+  - `exit_code_windows` — override `exit_code` on Windows.
   - If the Windows field is not set, the non-Windows field is used as fallback.

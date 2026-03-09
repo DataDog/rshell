@@ -1,0 +1,14 @@
+description: test -x returns 0 for a .exe file on Windows (extension-based check).
+setup:
+  files:
+    - path: program.exe
+      content: "binary"
+      chmod: 0755
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    test -x program.exe && echo yes
+expect:
+  stdout: "yes\n"
+  stderr: ""
+  exit_code: 0

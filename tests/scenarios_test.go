@@ -75,6 +75,7 @@ type expected struct {
 	StderrContains        []string `yaml:"stderr_contains"`
 	StderrContainsWindows []string `yaml:"stderr_contains_windows"`
 	ExitCode              int      `yaml:"exit_code"`
+	ExitCodeWindows       *int     `yaml:"exit_code_windows"`
 }
 
 // discoverScenarioFiles walks the scenarios directory and returns all YAML files
@@ -208,7 +209,11 @@ func assertExpectations(t *testing.T, sc scenario, stdout, stderr string, exitCo
 		}
 	}
 
-	assert.Equal(t, sc.Expect.ExitCode, exitCode, "exit code mismatch")
+	expectedExitCode := sc.Expect.ExitCode
+	if runtime.GOOS == "windows" && sc.Expect.ExitCodeWindows != nil {
+		expectedExitCode = *sc.Expect.ExitCodeWindows
+	}
+	assert.Equal(t, expectedExitCode, exitCode, "exit code mismatch")
 
 	stdoutContains := sc.Expect.StdoutContains
 	if runtime.GOOS == "windows" && len(sc.Expect.StdoutContainsWindows) > 0 {

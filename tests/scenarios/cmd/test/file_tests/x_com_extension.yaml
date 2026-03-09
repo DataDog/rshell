@@ -1,0 +1,14 @@
+description: test -x returns 0 for a .com file on Windows.
+setup:
+  files:
+    - path: run.com
+      content: "binary"
+      chmod: 0755
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    test -x run.com && echo yes
+expect:
+  stdout: "yes\n"
+  stderr: ""
+  exit_code: 0
