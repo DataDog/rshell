@@ -1,5 +1,6 @@
 # Derived from GNU coreutils head.pl basic tests
 description: head --lines=N long form is equivalent to -n N.
+skip_assert_against_bash: true  # --lines= is a GNU extension; BusyBox head (bash:5.2 image) only supports -n
 setup:
   files:
     - path: file.txt

@@ -1,5 +1,6 @@
 # Derived from GNU coreutils head.pl tests
 description: head --bytes=N long form is equivalent to -c N.
+skip_assert_against_bash: true  # --bytes= is a GNU extension; BusyBox head (bash:5.2 image) only supports -c
 setup:
   files:
     - path: file.txt
