@@ -21,7 +21,9 @@ The shell is supported on Linux, Windows and macOS.
   ```
   RSHELL_BASH_TEST=1 go test ./tests/ -run TestShellScenariosAgainstBash -timeout 120s
   ```
-  The test suite runs all scenarios against `debian:bookworm-slim` (GNU bash + GNU coreutils) and compares output byte-for-byte. Only set `skip_assert_against_bash: true` in a scenario when the behavior intentionally diverges from bash (e.g. sandbox restrictions, blocked commands).
+  The test suite runs all scenarios against `debian:bookworm-slim` (GNU bash + GNU coreutils) and compares output byte-for-byte. 
+  Only set `skip_assert_against_bash: true` in a scenario when the behavior intentionally diverges from bash (e.g. sandbox restrictions, blocked commands).
+  Consider making the rshell implementation compatible with bash before setting `skip_assert_against_bash: true`.
 
 - In test scenarios, use `expect.stderr` when possible instead of `stderr_contains`.
 - Test scenarios are asserted against bash by default. Only set `skip_assert_against_bash: true` for features that intentionally diverge from standard bash behavior (e.g. blocked commands, restricted redirects, readonly enforcement).
