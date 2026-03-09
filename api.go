@@ -1,11 +1,11 @@
-// Package interp implements a restricted shell interpreter designed for
+// Package rshell implements a restricted shell interpreter designed for
 // safe, sandboxed execution. It supports a subset of Bash syntax with
 // many features intentionally blocked (see [validateNode]).
 //
 // The interpreter behaves like a non-interactive shell. External command
 // execution and filesystem access are denied by default and must be
 // explicitly enabled via [RunnerOption] functions.
-package interp
+package rshell
 
 import (
 	"context"
@@ -267,7 +267,7 @@ func StdIO(in io.Reader, out, err io.Writer) RunnerOption {
 // current directory.
 func (r *Runner) Reset() {
 	if !r.usedNew {
-		r.exit.fatal(fmt.Errorf("use interp.New to construct a Runner"))
+		r.exit.fatal(fmt.Errorf("use rshell.New to construct a Runner"))
 		return
 	}
 	if !r.didReset {

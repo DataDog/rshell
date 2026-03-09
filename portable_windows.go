@@ -1,4 +1,4 @@
-package interp
+package rshell
 
 import (
 	"errors"

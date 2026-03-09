@@ -1,4 +1,4 @@
-package interp
+package rshell
 
 import (
 	"bytes"
@@ -152,7 +152,7 @@ func TestRunZeroValueRunnerReturnsError(t *testing.T) {
 
 	err = r.Run(context.Background(), prog)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "use interp.New to construct a Runner")
+	assert.Contains(t, err.Error(), "use rshell.New to construct a Runner")
 }
 
 func TestAllowedPathsExecDefaultBlocksAll(t *testing.T) {

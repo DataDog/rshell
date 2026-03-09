@@ -1,4 +1,4 @@
-package interp
+package rshell
 
 import (
 	"context"
@@ -10,7 +10,7 @@ import (
 	"mvdan.cc/sh/v3/expand"
 	"mvdan.cc/sh/v3/syntax"
 
-	"github.com/DataDog/rshell/interp/builtins"
+	"github.com/DataDog/rshell/builtins"
 )
 
 func (r *Runner) stmt(ctx context.Context, st *syntax.Stmt) {

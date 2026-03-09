@@ -1,4 +1,4 @@
-package interp
+package rshell
 
 import (
 	"context"
@@ -18,7 +18,7 @@ import (
 func HandlerCtx(ctx context.Context) HandlerContext {
 	hc, ok := ctx.Value(handlerCtxKey{}).(HandlerContext)
 	if !ok {
-		panic("interp.HandlerCtx: no HandlerContext in ctx")
+		panic("rshell.HandlerCtx: no HandlerContext in ctx")
 	}
 	return hc
 }

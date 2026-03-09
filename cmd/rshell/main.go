@@ -10,7 +10,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/DataDog/rshell/interp"
+	"github.com/DataDog/rshell"
 	"github.com/spf13/cobra"
 	"mvdan.cc/sh/v3/syntax"
 )
@@ -86,7 +86,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	cmd.Flags().StringVarP(&allowedPaths, "allowed-path", "a", "", "comma-separated list of directories the shell is allowed to access")
 
 	if err := cmd.Execute(); err != nil {
-		var status interp.ExitStatus
+		var status rshell.ExitStatus
 		if errors.As(err, &status) {
 			return int(status)
 		}
@@ -104,14 +104,14 @@ func execute(ctx context.Context, script, name string, allowedPaths []string, st
 	}
 
 	// Build runner options.
-	opts := []interp.RunnerOption{
-		interp.StdIO(stdin, stdout, stderr),
+	opts := []rshell.RunnerOption{
+		rshell.StdIO(stdin, stdout, stderr),
 	}
 	if len(allowedPaths) > 0 {
-		opts = append(opts, interp.AllowedPaths(allowedPaths))
+		opts = append(opts, rshell.AllowedPaths(allowedPaths))
 	}
 
-	runner, err := interp.New(opts...)
+	runner, err := rshell.New(opts...)
 	if err != nil {
 		return err
 	}

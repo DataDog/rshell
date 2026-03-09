@@ -21,7 +21,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/DataDog/rshell/interp"
+	"github.com/DataDog/rshell"
 	"mvdan.cc/sh/v3/syntax"
 )
 
@@ -30,8 +30,8 @@ func main() {
 
 	prog, _ := syntax.NewParser().Parse(strings.NewReader(script), "")
 
-	runner, _ := interp.New(
-		interp.StdIO(nil, os.Stdout, os.Stderr),
+	runner, _ := rshell.New(
+		rshell.StdIO(nil, os.Stdout, os.Stderr),
 	)
 	defer runner.Close()
 
