@@ -177,6 +177,7 @@ func New(opts ...RunnerOption) (*Runner, error) {
 	}
 	for _, opt := range opts {
 		if err := opt(r); err != nil {
+			_ = r.Close()
 			return nil, err
 		}
 	}
@@ -282,13 +283,10 @@ func (r *Runner) Reset() {
 		r.origStdout = r.stdout
 		r.origStderr = r.stderr
 
-		// Open os.Root handles and wrap handlers for path restriction.
+		// Install sandbox-backed handlers. AllowedPaths opens os.Root handles
+		// eagerly during construction, so there is no filesystem race here.
 		// Default: block all file access (nil sandbox).
 		if r.openHandler == nil {
-			if err := r.sandbox.openRoots(); err != nil {
-				r.exit.fatal(err)
-				return
-			}
 			r.openHandler = r.sandbox.open
 			r.readDirHandler = r.sandbox.readDir
 			r.execHandler = noExecHandler()

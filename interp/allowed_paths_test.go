@@ -11,6 +11,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -178,6 +179,41 @@ func TestAllowedPathsDoubleDotFilename(t *testing.T) {
 	assert.Equal(t, "dotdot content\n", stdout)
 }
 
+func TestAllowedPathsPinsRootBeforeRun(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink test not applicable on Windows")
+	}
+
+	parent := t.TempDir()
+	allowed := filepath.Join(parent, "allowed")
+	secret := filepath.Join(parent, "secret")
+	require.NoError(t, os.MkdirAll(allowed, 0755))
+	require.NoError(t, os.MkdirAll(secret, 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(allowed, "data.txt"), []byte("safe\n"), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(secret, "data.txt"), []byte("secret\n"), 0644))
+
+	parser := syntax.NewParser()
+	prog, err := parser.Parse(strings.NewReader("cat "+filepath.ToSlash(filepath.Join(allowed, "data.txt"))), "")
+	require.NoError(t, err)
+
+	var outBuf, errBuf bytes.Buffer
+	runner, err := interp.New(
+		interp.StdIO(nil, &outBuf, &errBuf),
+		interp.AllowedPaths([]string{allowed}),
+	)
+	require.NoError(t, err)
+	defer runner.Close()
+
+	movedAllowed := filepath.Join(parent, "allowed-moved")
+	require.NoError(t, os.Rename(allowed, movedAllowed))
+	require.NoError(t, os.Symlink(secret, allowed))
+
+	err = runner.Run(context.Background(), prog)
+	require.NoError(t, err)
+	assert.Equal(t, "safe\n", outBuf.String())
+	assert.Empty(t, errBuf.String())
+}
+
 func TestAllowedPathsEmptyBlocksAll(t *testing.T) {
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "test.txt"), []byte("test"), 0644))
@@ -199,7 +235,6 @@ func TestAllowedPathsDefaultBlocksAll(t *testing.T) {
 	assert.Contains(t, stderr, "permission denied")
 }
 
-
 func TestAllowedPathsClose(t *testing.T) {
 	dir := t.TempDir()
 	runner, err := interp.New(
@@ -207,7 +242,7 @@ func TestAllowedPathsClose(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	// Trigger Reset to open roots
+	// Run once so Close is exercised after execution as well as before it.
 	parser := syntax.NewParser()
 	prog, _ := parser.Parse(strings.NewReader("true"), "")
 	_ = runner.Run(context.Background(), prog)
