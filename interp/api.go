@@ -158,9 +158,7 @@ func (e *exitStatus) fromHandlerError(err error) {
 // supplying the standard output writer means that the output will be discarded.
 func New(opts ...RunnerOption) (*Runner, error) {
 	r := &Runner{
-		usedNew:        true,
-		openHandler:    wrapOpenHandler(nil, nil),
-		readDirHandler: wrapReadDirHandler(nil, nil),
+		usedNew: true,
 	}
 	for _, opt := range opts {
 		if err := opt(r); err != nil {
