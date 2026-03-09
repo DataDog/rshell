@@ -1,7 +1,7 @@
 .PHONY: test test_against_bash
 
 test:
-	go test ./...
+	go test -v ./...
 
 test_against_bash:
-	RSHELL_BASH_TEST=1 go test ./tests/ -run TestShellScenariosAgainstBash -count=1
+	RSHELL_BASH_TEST=1 go test -v ./tests/ -run TestShellScenariosAgainstBash -count=1
