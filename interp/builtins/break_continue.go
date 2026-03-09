@@ -10,6 +10,11 @@ import (
 	"strconv"
 )
 
+func init() {
+	register("break", builtinBreak)
+	register("continue", builtinContinue)
+}
+
 func builtinBreak(_ context.Context, callCtx *CallContext, args []string) Result {
 	return loopControl(callCtx, "break", args)
 }

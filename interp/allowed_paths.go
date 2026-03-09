@@ -29,8 +29,9 @@ type pathSandbox struct {
 	roots []allowedRoot
 }
 
-// newPathSandbox validates paths and creates a pathSandbox without opening
-// os.Root handles. Call [pathSandbox.openRoots] to activate the sandbox.
+// newPathSandbox validates paths and eagerly opens os.Root handles so the
+// allowed directories are pinned before the caller can modify them between
+// construction and the first run.
 func newPathSandbox(paths []string) (*pathSandbox, error) {
 	roots := make([]allowedRoot, len(paths))
 	for i, p := range paths {
@@ -38,35 +39,23 @@ func newPathSandbox(paths []string) (*pathSandbox, error) {
 		if err != nil {
 			return nil, fmt.Errorf("AllowedPaths: cannot resolve %q: %w", p, err)
 		}
-		info, err := os.Stat(abs)
+		root, err := os.OpenRoot(abs)
 		if err != nil {
-			return nil, fmt.Errorf("AllowedPaths: cannot stat %q: %w", abs, err)
+			for _, prev := range roots[:i] {
+				if prev.root != nil {
+					prev.root.Close()
+				}
+			}
+
+			info, statErr := os.Stat(abs)
+			if statErr == nil && !info.IsDir() {
+				return nil, fmt.Errorf("AllowedPaths: %q is not a directory", abs)
+			}
+			return nil, fmt.Errorf("AllowedPaths: cannot open root %q: %w", abs, err)
 		}
-		if !info.IsDir() {
-			return nil, fmt.Errorf("AllowedPaths: %q is not a directory", abs)
-		}
-		roots[i] = allowedRoot{absPath: abs}
+		roots[i] = allowedRoot{absPath: abs, root: root}
 	}
 	return &pathSandbox{roots: roots}, nil
-}
-
-// openRoots opens os.Root handles for every allowed path. It is a no-op if
-// the handles are already open.
-func (s *pathSandbox) openRoots() error {
-	if s == nil || len(s.roots) == 0 || s.roots[0].root != nil {
-		return nil
-	}
-	for i := range s.roots {
-		root, err := os.OpenRoot(s.roots[i].absPath)
-		if err != nil {
-			for _, prev := range s.roots[:i] {
-				prev.root.Close()
-			}
-			return fmt.Errorf("AllowedPaths: cannot open root %q: %w", s.roots[i].absPath, err)
-		}
-		s.roots[i].root = root
-	}
-	return nil
 }
 
 // resolve returns the matching os.Root and the path relative to it for the
@@ -174,4 +163,3 @@ func AllowedPaths(paths []string) RunnerOption {
 		return nil
 	}
 }
-

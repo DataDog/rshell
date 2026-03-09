@@ -11,6 +11,10 @@ import (
 	"os"
 )
 
+func init() {
+	register("cat", builtinCat)
+}
+
 func builtinCat(ctx context.Context, callCtx *CallContext, args []string) Result {
 	if len(args) == 0 {
 		args = []string{"-"}

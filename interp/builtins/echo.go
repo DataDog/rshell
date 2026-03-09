@@ -7,6 +7,10 @@ package builtins
 
 import "context"
 
+func init() {
+	register("echo", builtinEcho)
+}
+
 func builtinEcho(_ context.Context, callCtx *CallContext, args []string) Result {
 	for i, arg := range args {
 		if i > 0 {
