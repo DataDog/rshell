@@ -7,6 +7,11 @@ package builtins
 
 import "context"
 
+func init() {
+	register("true", builtinTrue)
+	register("false", builtinFalse)
+}
+
 func builtinTrue(_ context.Context, _ *CallContext, _ []string) Result {
 	return Result{}
 }

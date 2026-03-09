@@ -10,6 +10,10 @@ import (
 	"strconv"
 )
 
+func init() {
+	register("exit", builtinExit)
+}
+
 func builtinExit(_ context.Context, callCtx *CallContext, args []string) Result {
 	var r Result
 	if len(args) > 0 && args[0] == "--" {
