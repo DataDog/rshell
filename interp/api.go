@@ -277,9 +277,6 @@ func (r *Runner) Reset() {
 		r.origStdout = r.stdout
 		r.origStderr = r.stderr
 
-		if r.execHandler == nil {
-			r.execHandler = noExecHandler()
-		}
 		// Open os.Root handles and wrap handlers for path restriction.
 		// Default: block all file access (nil sandbox).
 		if r.openHandler == nil {
@@ -289,8 +286,9 @@ func (r *Runner) Reset() {
 			}
 			r.openHandler = r.sandbox.open
 			r.readDirHandler = r.sandbox.readDir
-			// execHandler will be implementer in the future to handle host commands execution
-			// additional safeguard will be needed like Landlock sandbox
+			r.execHandler = noExecHandler()
+		}
+		if r.execHandler == nil {
 			r.execHandler = noExecHandler()
 		}
 	}
