@@ -105,18 +105,31 @@ accepted flags that will be implemented.
 
 **GATE CHECK**: Call TaskList. Step 2 must be `completed` before starting this step. Set Steps 3, 4, and 5 all to `in_progress` now — they run in parallel.
 
-Download the GNU coreutils source for reference:
+Download two reference test suites:
 
 ```bash
-# GitHub mirror is more reliable than ftp.gnu.org
+# GNU coreutils — GPL v3; use as reference for test *design*, not verbatim copy
 curl -sL https://github.com/coreutils/coreutils/archive/refs/heads/master.tar.gz | tar -xz -C /tmp
+
+# uutils/coreutils Rust rewrite — MIT license; test logic can be freely adapted
+curl -sL https://github.com/uutils/coreutils/archive/refs/heads/main.tar.gz | tar -xz -C /tmp
 ```
 
-Look in `/tmp/coreutils-master/tests/$ARGUMENTS/` for the GNU test cases. For each test file:
+**GNU coreutils**: Look in `/tmp/coreutils-master/tests/$ARGUMENTS/` for test cases. For each test file:
 
 1. **Filter**: Skip tests wholly concerned with flags we decided not to implement (e.g. `--follow`, inotify, `--pid`). Also skip tests that rely on obsolete POSIX2 syntax (e.g. `_POSIX2_VERSION` env var, combined flag+number forms like `-1l`), platform-specific kernel features (`/proc`, `/sys`), or the GNU test framework helpers (`retry_delay_`, `compare`, `framework_failure_`).
 
-2. **Translate**: For each remaining test case, create one YAML scenario file at `tests/scenarios/cmd/$ARGUMENTS/`. The YAML format is:
+**uutils/coreutils**: Look in `/tmp/coreutils-main/tests/by-util/test_$ARGUMENTS.rs` for test cases. Because uutils tests are MIT-licensed, the test logic and inputs/outputs can be adapted more freely. uutils tests tend to cover:
+- Negative count modes (`-n -N`, `-c -N`) — skip if we did not implement these
+- Obsolete positional syntax (`-1`, `-14c`)
+- Multi-file header edge cases (`-v`, `-q`, `--silent`)
+- Bad UTF-8 / binary passthrough
+- Large-value integer edge cases and overflow guards
+- Write-error handling (pipes writing to `/dev/full`)
+
+Cross-reference both sources: if a case appears in uutils but not GNU coreutils (or vice versa), it is often worth including — uutils fills gaps the GNU shell test scripts miss.
+
+2. **Translate**: For each remaining test case from either source, create one YAML scenario file at `tests/scenarios/cmd/$ARGUMENTS/`. The YAML format is:
 
 ```yaml
 description: One sentence describing what this scenario tests.
@@ -145,7 +158,7 @@ Group scenario files into subdirectories by concern (e.g. `lines/`, `bytes/`, `h
 
 **`stderr` vs `stderr_contains`**: Prefer `expect.stderr` (exact match) over `stderr_contains` (substring) unless the error message contains platform-specific text.
 
-Note the source test in a comment at the top of each YAML file (e.g. `# Derived from GNU coreutils tail.pl test n-3`).
+Note the source test in a comment at the top of each YAML file (e.g. `# Derived from GNU coreutils tail.pl test n-3` or `# Derived from uutils test_tail.rs::test_n_3`).
 
 Write scenarios covering:
 - Each implemented flag at least once
