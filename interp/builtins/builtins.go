@@ -67,9 +67,9 @@ type Result struct {
 
 var registry = map[string]HandlerFunc{}
 
-// Register adds a builtin command to the registry.
+// register adds a builtin command to the registry.
 // It panics if name is already registered, catching duplicate registrations at startup.
-func Register(name string, fn HandlerFunc) {
+func register(name string, fn HandlerFunc) {
 	if _, exists := registry[name]; exists {
 		panic("builtin already registered: " + name)
 	}

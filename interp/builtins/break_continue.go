@@ -3,32 +3,30 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2026-present Datadog, Inc.
 
-package cmds
+package builtins
 
 import (
 	"context"
 	"strconv"
-
-	"github.com/DataDog/rshell/interp/builtins"
 )
 
 func init() {
-	builtins.Register("break", builtinBreak)
-	builtins.Register("continue", builtinContinue)
+	register("break", builtinBreak)
+	register("continue", builtinContinue)
 }
 
-func builtinBreak(_ context.Context, callCtx *builtins.CallContext, args []string) builtins.Result {
+func builtinBreak(_ context.Context, callCtx *CallContext, args []string) Result {
 	return loopControl(callCtx, "break", args)
 }
 
-func builtinContinue(_ context.Context, callCtx *builtins.CallContext, args []string) builtins.Result {
+func builtinContinue(_ context.Context, callCtx *CallContext, args []string) Result {
 	return loopControl(callCtx, "continue", args)
 }
 
-func loopControl(callCtx *builtins.CallContext, name string, args []string) builtins.Result {
+func loopControl(callCtx *CallContext, name string, args []string) Result {
 	if !callCtx.InLoop {
 		callCtx.Errf("%s is only useful in a loop\n", name)
-		return builtins.Result{}
+		return Result{}
 	}
 
 	n := 1
@@ -38,19 +36,19 @@ func loopControl(callCtx *builtins.CallContext, name string, args []string) buil
 		parsed, err := strconv.Atoi(args[0])
 		if err != nil {
 			callCtx.Errf("%s: %s: numeric argument required\n", name, args[0])
-			return builtins.Result{Code: 128, Exiting: true}
+			return Result{Code: 128, Exiting: true}
 		}
 		if parsed < 1 {
 			callCtx.Errf("%s: %s: loop count out of range\n", name, args[0])
-			return builtins.Result{Code: 1, BreakN: 1}
+			return Result{Code: 1, BreakN: 1}
 		}
 		n = parsed
 	default:
 		callCtx.Errf("%s: too many arguments\n", name)
-		return builtins.Result{Code: 1, BreakN: 1}
+		return Result{Code: 1, BreakN: 1}
 	}
 
-	var r builtins.Result
+	var r Result
 	if name == "break" {
 		r.BreakN = n
 	} else {

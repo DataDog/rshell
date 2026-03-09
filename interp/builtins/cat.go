@@ -3,21 +3,19 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2026-present Datadog, Inc.
 
-package cmds
+package builtins
 
 import (
 	"context"
 	"io"
 	"os"
-
-	"github.com/DataDog/rshell/interp/builtins"
 )
 
 func init() {
-	builtins.Register("cat", builtinCat)
+	register("cat", builtinCat)
 }
 
-func builtinCat(ctx context.Context, callCtx *builtins.CallContext, args []string) builtins.Result {
+func builtinCat(ctx context.Context, callCtx *CallContext, args []string) Result {
 	if len(args) == 0 {
 		args = []string{"-"}
 	}
@@ -29,12 +27,12 @@ func builtinCat(ctx context.Context, callCtx *builtins.CallContext, args []strin
 		}
 	}
 	if failed {
-		return builtins.Result{Code: 1}
+		return Result{Code: 1}
 	}
-	return builtins.Result{}
+	return Result{}
 }
 
-func catFile(ctx context.Context, callCtx *builtins.CallContext, path string) error {
+func catFile(ctx context.Context, callCtx *CallContext, path string) error {
 	var rc io.ReadCloser
 	if path == "-" {
 		if callCtx.Stdin == nil {

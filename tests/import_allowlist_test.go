@@ -16,8 +16,8 @@ import (
 )
 
 // builtinAllowedSymbols lists every "importpath.Symbol" that may be used by
-// files in interp/builtins/cmds/. Each entry must be in "importpath.Symbol"
-// form, where importpath is the full Go import path.
+// command implementation files in interp/builtins/. Each entry must be in
+// "importpath.Symbol" form, where importpath is the full Go import path.
 //
 // To use a new symbol, add a single line here.
 //
@@ -25,13 +25,10 @@ import (
 //   - reflect  — reflection defeats static safety analysis
 //   - unsafe   — bypasses Go's type and memory safety guarantees
 //
-// All packages not listed here are implicitly banned, including third-party
-// and other internal module packages.
+// All packages not listed here are implicitly banned, including all
+// third-party packages and other internal module packages.
 var builtinAllowedSymbols = []string{
 	"context.Context",
-	"github.com/DataDog/rshell/interp/builtins.CallContext",
-	"github.com/DataDog/rshell/interp/builtins.Register",
-	"github.com/DataDog/rshell/interp/builtins.Result",
 	"io.Copy",
 	"io.NopCloser",
 	"io.ReadCloser",
@@ -39,17 +36,17 @@ var builtinAllowedSymbols = []string{
 	"strconv.Atoi",
 }
 
-// permanentlyBanned lists packages that may never be imported by builtins,
-// regardless of what symbols they export.
+// permanentlyBanned lists packages that may never be imported by builtin
+// command implementations, regardless of what symbols they export.
 var permanentlyBanned = map[string]string{
 	"reflect": "reflection defeats static safety analysis",
 	"unsafe":  "bypasses Go's type and memory safety guarantees",
 }
 
-// TestBuiltinImportAllowlist enforces symbol-level import restrictions on all
-// .go files in interp/builtins/cmds/. Every imported package must appear in
-// builtinAllowedSymbols, and every pkg.Symbol reference must be explicitly
-// listed there.
+// TestBuiltinImportAllowlist enforces symbol-level import restrictions on
+// command implementation files in interp/builtins/. builtins.go is exempt as
+// the package framework. Every other file's imports and pkg.Symbol references
+// must be explicitly listed in builtinAllowedSymbols.
 func TestBuiltinImportAllowlist(t *testing.T) {
 	// Build lookup sets from the allowlist.
 	allowedSymbols := make(map[string]bool, len(builtinAllowedSymbols))
@@ -64,20 +61,25 @@ func TestBuiltinImportAllowlist(t *testing.T) {
 	}
 
 	root := repoRoot(t)
-	cmdsDir := filepath.Join(root, "interp", "builtins", "cmds")
+	builtinsDir := filepath.Join(root, "interp", "builtins")
 
-	entries, err := os.ReadDir(cmdsDir)
+	entries, err := os.ReadDir(builtinsDir)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	fset := token.NewFileSet()
+	checked := 0
 	for _, entry := range entries {
 		name := entry.Name()
-		if !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
+		// builtins.go is the package framework (CallContext, Result, register,
+		// Lookup) and is exempt. Only command implementation files are checked.
+		if !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") || name == "builtins.go" {
 			continue
 		}
-		path := filepath.Join(cmdsDir, name)
+		checked++
+
+		path := filepath.Join(builtinsDir, name)
 		f, err := parser.ParseFile(fset, path, nil, 0)
 		if err != nil {
 			t.Errorf("%s: parse error: %v", name, err)
@@ -137,5 +139,8 @@ func TestBuiltinImportAllowlist(t *testing.T) {
 			}
 			return true
 		})
+	}
+	if checked == 0 {
+		t.Fatal("no command implementation files found in interp/builtins/ — builtins.go may have been moved or the directory is empty")
 	}
 }

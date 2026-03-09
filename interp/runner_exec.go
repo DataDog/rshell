@@ -16,7 +16,6 @@ import (
 	"mvdan.cc/sh/v3/syntax"
 
 	"github.com/DataDog/rshell/interp/builtins"
-	_ "github.com/DataDog/rshell/interp/builtins/cmds"
 )
 
 func (r *Runner) stmt(ctx context.Context, st *syntax.Stmt) {
