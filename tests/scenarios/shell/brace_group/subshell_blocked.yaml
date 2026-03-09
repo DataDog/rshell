@@ -1,0 +1,10 @@
+test_against_local_shell: false
+description: Subshell grouping is blocked.
+input:
+  script: |+
+    (echo hello; echo world)
+expect:
+  stdout: ""
+  stderr: |+
+    subshells are not supported
+  exit_code: 2

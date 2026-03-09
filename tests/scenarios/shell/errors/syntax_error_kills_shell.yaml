@@ -1,0 +1,14 @@
+test_against_local_shell: false
+description: Unknown command after valid command still produces error.
+input:
+  script: |+
+    echo before
+    no_such_cmd_abc
+    echo after
+expect:
+  stdout: |+
+    before
+    after
+  stderr: |+
+    no_such_cmd_abc: command not found
+  exit_code: 0

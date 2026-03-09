@@ -1,0 +1,10 @@
+test_against_local_shell: false
+description: Unknown command returns exit code 127.
+input:
+  script: |+
+    no_such_command_xyz
+expect:
+  stdout: ""
+  stderr: |+
+    no_such_command_xyz: command not found
+  exit_code: 127

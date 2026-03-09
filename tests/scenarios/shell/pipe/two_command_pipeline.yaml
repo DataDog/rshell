@@ -1,0 +1,9 @@
+description: Basic 2-command pipeline.
+input:
+  script: |+
+    echo foo | cat
+expect:
+  stdout: |+
+    foo
+  stderr: ""
+  exit_code: 0

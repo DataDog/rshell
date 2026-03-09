@@ -1,0 +1,17 @@
+description: Comment without any command is ignored.
+input:
+  script: |+
+    #
+
+    # foo
+
+    #	bar
+     #
+	#
+
+    ##foo
+    ###
+expect:
+  stdout: ""
+  stderr: ""
+  exit_code: 0

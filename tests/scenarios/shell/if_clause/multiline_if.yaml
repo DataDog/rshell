@@ -1,0 +1,13 @@
+test_against_local_shell: false
+description: Multi-line if statement is blocked.
+input:
+  script: |+
+    if true
+    then
+      echo yes
+    fi
+expect:
+  stdout: ""
+  stderr: |+
+    if statements are not supported
+  exit_code: 2

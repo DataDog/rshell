@@ -1,0 +1,10 @@
+test_against_local_shell: false
+description: While loop with brace group body is blocked.
+input:
+  script: |+
+    while true; do { echo foo; break; } done
+expect:
+  stdout: ""
+  stderr: |+
+    while/until loops are not supported
+  exit_code: 2

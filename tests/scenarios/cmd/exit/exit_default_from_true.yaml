@@ -1,0 +1,9 @@
+description: Default exit status uses last command status.
+input:
+  script: |+
+    true
+    exit
+expect:
+  stdout: ""
+  stderr: ""
+  exit_code: 0

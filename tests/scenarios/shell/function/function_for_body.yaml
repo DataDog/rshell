@@ -1,0 +1,10 @@
+test_against_local_shell: false
+description: Function with for loop body is blocked.
+input:
+  script: |+
+    func() for i in 1; do echo $i; done
+expect:
+  stdout: ""
+  stderr: |+
+    function declarations are not supported
+  exit_code: 2

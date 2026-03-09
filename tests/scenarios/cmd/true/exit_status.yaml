@@ -1,0 +1,10 @@
+description: True command exits with 0.
+input:
+  script: |+
+    true
+    echo $?
+expect:
+  stdout: |+
+    0
+  stderr: ""
+  exit_code: 0

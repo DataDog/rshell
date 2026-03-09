@@ -1,0 +1,14 @@
+test_against_local_shell: false
+description: Multi-line until loop is blocked.
+input:
+  script: |+
+    until false
+    do
+      echo loop
+      break
+    done
+expect:
+  stdout: ""
+  stderr: |+
+    while/until loops are not supported
+  exit_code: 2

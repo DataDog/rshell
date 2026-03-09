@@ -1,0 +1,8 @@
+description: Default exit status is 0 with no previous command.
+input:
+  script: |+
+    exit
+expect:
+  stdout: ""
+  stderr: ""
+  exit_code: 0

@@ -1,0 +1,10 @@
+test_against_local_shell: false
+description: Case statement with wildcard pattern is blocked.
+input:
+  script: |+
+    case "foo" in *) echo matched;; esac
+expect:
+  stdout: ""
+  stderr: |+
+    case statements are not supported
+  exit_code: 2
