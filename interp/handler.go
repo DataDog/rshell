@@ -2,6 +2,7 @@ package interp
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"io/fs"
 	"os"
@@ -66,3 +67,27 @@ type OpenHandlerFunc func(ctx context.Context, path string, flag int, perm os.Fi
 // ReadDirHandlerFunc is a handler which reads directories. It is called during
 // shell globbing, if enabled.
 type ReadDirHandlerFunc func(ctx context.Context, path string) ([]fs.DirEntry, error)
+
+// ExecHandlerFunc is a handler which executes simple commands.
+// It is called for all [syntax.CallExpr] nodes
+// where the first argument is not a builtin.
+//
+// Returning a nil error means a zero exit status.
+// Other exit statuses can be set by returning or wrapping an [ExitStatus] error,
+// and such an error is returned via the API if it is the last statement executed.
+// Any other error will halt the [Runner] and will be returned via the API.
+type ExecHandlerFunc func(ctx context.Context, args []string) error
+
+// noExecHandler returns an [ExecHandlerFunc] that rejects all commands.
+// It prints "<cmd>: command not found" to stderr and returns exit code 127,
+// without ever searching PATH or executing host binaries.
+func noExecHandler() ExecHandlerFunc {
+	return func(ctx context.Context, args []string) error {
+		if len(args) == 0 {
+			return fmt.Errorf("exec handler called with no arguments")
+		}
+		hc := HandlerCtx(ctx)
+		fmt.Fprintf(hc.Stderr, "%s: command not found\n", args[0])
+		return ExitStatus(127)
+	}
+}
