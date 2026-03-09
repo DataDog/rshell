@@ -225,10 +225,12 @@ func headLines(ctx context.Context, callCtx *CallContext, r io.Reader, count int
 }
 
 // headBytes writes the first count bytes of r to callCtx.Stdout. It reads
-// in fixed-size chunks and never allocates proportionally to count.
+// in fixed-size chunks; the buffer is capped at chunkSize but shrunk to
+// count when count is smaller, avoiding unnecessary allocation for small
+// byte requests (e.g. head -c 5).
 func headBytes(ctx context.Context, callCtx *CallContext, r io.Reader, count int64) error {
 	const chunkSize = 32 * 1024
-	buf := make([]byte, chunkSize)
+	buf := make([]byte, min(int64(chunkSize), count))
 	remaining := count
 	for remaining > 0 {
 		if ctx.Err() != nil {
