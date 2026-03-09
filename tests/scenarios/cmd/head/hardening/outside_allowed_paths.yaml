@@ -1,0 +1,14 @@
+# Per RULES.md: file access must be sandboxed via AllowedPaths
+description: head is blocked from reading files outside the allowed paths sandbox.
+setup:
+  files:
+    - path: local.txt
+      content: "local\n"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    head /etc/passwd
+expect:
+  stdout: ""
+  stderr_contains: ["head:"]
+  exit_code: 1
