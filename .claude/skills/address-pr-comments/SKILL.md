@@ -168,8 +168,6 @@ git commit -m "$(cat <<'EOF'
 Address review comments: <brief description>
 
 <details of what was changed and why>
-
-Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>
 EOF
 )"
 
@@ -188,7 +186,7 @@ For each comment that was addressed:
 1. **Reply** explaining what was fixed:
    ```bash
    gh api repos/{owner}/{repo}/pulls/{pr-number}/comments/{comment-id}/replies \
-     -f body="[Claude Opus 4.6] Done — <brief explanation of the change made>"
+     -f body="[<MODEL NAME> - <VERSION>] Done — <brief explanation of the change made>"
    ```
 
 2. **Resolve** the thread:
@@ -223,7 +221,7 @@ For each comment that was addressed:
    ' -f threadId="<thread-id>"
    ```
 
-For comments that were **not valid** or were **questions**, reply (prefixed with `[Claude Opus 4.6]`) with an explanation but do NOT resolve — let the reviewer decide.
+For comments that were **not valid** or were **questions**, reply (prefixed with `[<MODELL NAME - VERSION>]`) with an explanation but do NOT resolve — let the reviewer decide.
 
 ### 8. Summary
 

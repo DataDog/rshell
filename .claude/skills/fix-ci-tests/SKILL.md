@@ -176,8 +176,6 @@ git commit -m "$(cat <<'EOF'
 Fix CI failures: <brief description>
 
 <details of what was fixed>
-
-Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>
 EOF
 )"
 
