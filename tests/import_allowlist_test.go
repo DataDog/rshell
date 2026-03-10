@@ -68,6 +68,8 @@ var builtinAllowedSymbols = []string{
 	"strings.HasPrefix",
 	// io.WriteString — writes a string to a writer; no filesystem access, delegates to Write.
 	"io.WriteString",
+	// math.MaxInt64 — constant for max int64 value; pure constant, no I/O.
+	"math.MaxInt64",
 	// io.Writer — interface type for writing; no side effects.
 	"io.Writer",
 	// unicode.Cc — control character category range table; pure data, no I/O.

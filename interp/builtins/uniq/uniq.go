@@ -75,6 +75,7 @@ import (
 	"bufio"
 	"context"
 	"io"
+	"math"
 	"os"
 	"strconv"
 	"strings"
@@ -325,7 +326,9 @@ func processInput(ctx context.Context, callCtx *builtins.CallContext, r io.Reade
 		same := prevKey == curKey
 
 		if same {
-			lineCount++
+			if lineCount < math.MaxInt64 {
+				lineCount++
+			}
 			if cfg.useGroup {
 				if err := reportWrite(writeStr(w, curLine+delimStr)); err != nil {
 					return err
@@ -374,7 +377,7 @@ func processInput(ctx context.Context, callCtx *builtins.CallContext, r io.Reade
 	}
 
 	if err := sc.Err(); err != nil {
-		callCtx.Errf("uniq: %s\n", err.Error())
+		callCtx.Errf("uniq: %s\n", callCtx.PortableErr(err))
 		return err
 	}
 
@@ -498,6 +501,10 @@ func parseNonNegativeInt(s string) (int64, bool) {
 	return n, true
 }
 
+// parseAllRepeatedMethod parses the METHOD for --all-repeated.
+// Cases are ordered deliberately: first match wins for prefix abbreviation,
+// matching GNU coreutils behavior. If adding new options that share a prefix
+// with existing ones, add explicit ambiguity detection.
 func parseAllRepeatedMethod(s string) (allRepeatedMethod, error) {
 	switch {
 	case s == "":
@@ -512,6 +519,10 @@ func parseAllRepeatedMethod(s string) (allRepeatedMethod, error) {
 	return 0, &invalidArgError{arg: s, flag: "--all-repeated", valid: []string{"none", "prepend", "separate"}}
 }
 
+// parseGroupMethod parses the METHOD for --group.
+// Cases are ordered deliberately: first match wins for prefix abbreviation,
+// matching GNU coreutils behavior. If adding new options that share a prefix
+// with existing ones, add explicit ambiguity detection.
 func parseGroupMethod(s string) (groupMethod, error) {
 	switch {
 	case s == "":
