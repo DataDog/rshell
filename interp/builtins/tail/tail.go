@@ -87,10 +87,23 @@ func run(ctx context.Context, callCtx *builtins.CallContext, args []string) buil
 	fs.SetOutput(io.Discard)
 
 	help           := fs.BoolP("help", "h", false, "print usage and exit")
-	quiet          := fs.BoolP("quiet", "q", false, "never print file name headers")
-	_               = fs.Bool("silent", false, "alias for --quiet")
-	verbose        := fs.BoolP("verbose", "v", false, "always print file name headers")
 	zeroTerminated := fs.BoolP("zero-terminated", "z", false, "use NUL as line delimiter")
+
+	// quietFlag, silentFlag, and verboseFlag share a sequence counter so that
+	// after parsing we can tell which appeared last on the command line and
+	// apply last-flag-wins semantics (e.g. "-q -v" should show headers).
+	var headerSeq int
+	quietFlag   := newHeaderFlag(&headerSeq)
+	silentFlag  := newHeaderFlag(&headerSeq)
+	verboseFlag := newHeaderFlag(&headerSeq)
+	fs.VarP(quietFlag, "quiet", "q", "never print file name headers")
+	fs.Var(silentFlag, "silent", "alias for --quiet")
+	fs.VarP(verboseFlag, "verbose", "v", "always print file name headers")
+	// Mark the header flags as boolean so pflag does not consume the next
+	// positional argument as a value when the flag appears without "=…".
+	fs.Lookup("quiet").NoOptDefVal = "true"
+	fs.Lookup("silent").NoOptDefVal = "true"
+	fs.Lookup("verbose").NoOptDefVal = "true"
 
 	// linesFlag and bytesFlag share a sequence counter so that after parsing
 	// we can compare their pos fields to determine which appeared last on the
@@ -116,11 +129,6 @@ func run(ctx context.Context, callCtx *builtins.CallContext, args []string) buil
 		return builtins.Result{}
 	}
 
-	// --silent is an alias for --quiet.
-	if fs.Changed("silent") {
-		*quiet = true
-	}
-
 	// Bytes mode wins if -c/--bytes was parsed after -n/--lines.
 	useBytesMode := bytesFlag.pos > linesFlag.pos
 
@@ -142,8 +150,16 @@ func run(ctx context.Context, callCtx *builtins.CallContext, args []string) buil
 		files = []string{"-"}
 	}
 
-	printHeaders := len(files) > 1 || *verbose
-	if *quiet {
+	// Determine header printing using last-flag-wins: the highest pos among
+	// quiet/silent (suppress) vs verbose (force) controls the outcome.
+	suppressPos := quietFlag.pos
+	if silentFlag.pos > suppressPos {
+		suppressPos = silentFlag.pos
+	}
+	printHeaders := len(files) > 1
+	if verboseFlag.pos > suppressPos {
+		printHeaders = true
+	} else if suppressPos > verboseFlag.pos {
 		printHeaders = false
 	}
 
@@ -403,8 +419,23 @@ func tailBytesOffset(ctx context.Context, callCtx *builtins.CallContext, r io.Re
 			return err
 		}
 	}
-	_, err := io.Copy(callCtx.Stdout, r)
-	return err
+	for {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		n, err := r.Read(buf)
+		if n > 0 {
+			if _, werr := callCtx.Stdout.Write(buf[:n]); werr != nil {
+				return werr
+			}
+		}
+		if errors.Is(err, io.EOF) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+	}
 }
 
 // parseCount parses a tail count string and returns (count, offsetMode, ok).
@@ -455,6 +486,22 @@ func (f *modeFlag) Set(s string) error {
 	return nil
 }
 func (f *modeFlag) Type() string { return "string" }
+
+// headerFlag is a pflag.Value implementation for -q/--quiet/--silent and
+// -v/--verbose. Multiple headerFlag values share a *seq counter so that after
+// pflag.Parse the one with the highest pos was set last on the command line
+// and wins (last-flag-wins semantics).
+type headerFlag struct {
+	seq *int
+	pos int
+}
+
+func newHeaderFlag(seq *int) *headerFlag { return &headerFlag{seq: seq} }
+
+func (f *headerFlag) String() string   { return "false" }
+func (f *headerFlag) Set(string) error { *f.seq++; f.pos = *f.seq; return nil }
+func (f *headerFlag) Type() string     { return "bool" }
+func (f *headerFlag) IsBoolFlag() bool { return true }
 
 // scanLinesPreservingNewline is a bufio.SplitFunc that includes the line
 // terminator (\n) in the returned token. Unlike bufio.ScanLines, it does not
