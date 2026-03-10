@@ -325,6 +325,22 @@ func TestBracketEmpty(t *testing.T) {
 	assert.Contains(t, stderr, "missing `]'")
 }
 
+func TestTestLoneParenIsString(t *testing.T) {
+	_, _, code := runScript(t, `test "("`, "")
+	assert.Equal(t, 0, code)
+}
+
+func TestTestEmptyFileOperand(t *testing.T) {
+	_, _, code := runScript(t, `test -e ""`, "")
+	assert.Equal(t, 1, code)
+
+	_, _, code = runScript(t, `test -d ""`, "")
+	assert.Equal(t, 1, code)
+
+	_, _, code = runScript(t, `test -f ""`, "")
+	assert.Equal(t, 1, code)
+}
+
 // --- Help tests ---
 
 func TestTestHelp(t *testing.T) {

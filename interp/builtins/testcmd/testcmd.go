@@ -259,7 +259,10 @@ func (p *parser) parsePrimary() bool {
 	cur := p.peek()
 	remaining := len(p.args) - p.pos
 
-	if cur == "(" {
+	// Only treat "(" as grouping when there are enough tokens for a full
+	// parenthesized expression. A lone "(" with remaining==1 is a bare
+	// non-empty string per POSIX single-argument rules.
+	if cur == "(" && remaining > 1 {
 		p.advance()
 		if p.pos >= len(p.args) || p.peek() == ")" {
 			p.callCtx.Errf("%s: missing argument\n", p.cmdName)
@@ -388,6 +391,9 @@ func (p *parser) parseBinaryExpr() bool {
 }
 
 func (p *parser) evalFileTest(op, path string) bool {
+	if path == "" {
+		return false
+	}
 	switch op {
 	case "-h", "-L":
 		info, err := p.callCtx.LstatFile(p.ctx, path)
