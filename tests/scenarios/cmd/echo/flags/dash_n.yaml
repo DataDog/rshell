@@ -1,4 +1,4 @@
-description: Echo -n suppresses trailing newline (bash-compatible).
+description: Echo -n suppresses trailing newline.
 input:
   script: |+
     echo -n hello
