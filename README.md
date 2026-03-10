@@ -66,8 +66,8 @@ Linux, macOS, and Windows.
 
 ```
 tests/scenarios/
-├── cmd/          # builtin command tests (echo, cat, head, tail, tr, uniq, wc, ...)
-└── shell/        # shell feature tests (pipes, variables, control flow, ...)
+├── cmd/          # builtin command tests
+└── shell/        # shell feature tests
 ```
 
 By default, each scenario is executed twice: once in rshell and once in a real bash shell, ensuring output parity with POSIX behavior. Scenarios that test rshell-specific restrictions (blocked commands, readonly enforcement, etc.) opt out of the bash comparison.
