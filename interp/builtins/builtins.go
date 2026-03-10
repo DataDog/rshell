@@ -10,10 +10,29 @@ import (
 	"fmt"
 	"io"
 	"os"
+
+	"github.com/spf13/pflag"
 )
+
+// FlagSet is a type alias for pflag.FlagSet. Builtin command files that use
+// FlaggedCommand receive a *FlagSet from the framework without needing to
+// import pflag directly (the builtins package is always allowed by the import
+// allowlist, so builtins.FlagSet is accessible in command implementation files).
+type FlagSet = pflag.FlagSet
 
 // HandlerFunc is the signature for a builtin command implementation.
 type HandlerFunc func(ctx context.Context, callCtx *CallContext, args []string) Result
+
+// BoundHandlerFunc is the run function returned by a FlaggedHandlerFunc. args
+// contains only the positional (non-flag) arguments after the framework has
+// parsed the FlagSet.
+type BoundHandlerFunc func(ctx context.Context, callCtx *CallContext, args []string) Result
+
+// FlaggedHandlerFunc is called once per invocation to register flags on the
+// framework-provided FlagSet and return a BoundHandlerFunc whose flag variables
+// are captured by closure. The framework calls Parse then invokes the bound
+// handler with the remaining positional arguments.
+type FlaggedHandlerFunc func(fs *FlagSet) BoundHandlerFunc
 
 // CallContext provides the capabilities available to builtin commands.
 // It is created by the Runner for each builtin invocation.
@@ -72,6 +91,28 @@ type Command struct {
 	Run  HandlerFunc
 }
 
+// FlaggedCommand pairs a builtin name with a flag-declaring factory. Use this
+// instead of Command for builtins that accept flags. The framework creates a
+// *FlagSet, passes it to MakeFlags so the command can register its flags, then
+// calls Parse and invokes the returned handler with positional arguments only.
+type FlaggedCommand struct {
+	Name      string
+	MakeFlags FlaggedHandlerFunc
+}
+
+// Registrable is implemented by both Command and FlaggedCommand so they can be
+// collected in a single slice and registered uniformly.
+type Registrable interface {
+	Register()
+}
+
+// Register adds the Command to the builtin registry.
+func (c Command) Register() { Register(c.Name, c.Run) }
+
+// Register adds the FlaggedCommand to the builtin registry via the flagged
+// adapter, which handles FlagSet creation, Parse, and error reporting.
+func (c FlaggedCommand) Register() { RegisterFlagged(c.Name, c.MakeFlags) }
+
 var registry = map[string]HandlerFunc{}
 
 // Register adds a builtin command to the registry.
@@ -81,6 +122,23 @@ func Register(name string, fn HandlerFunc) {
 		panic("builtin already registered: " + name)
 	}
 	registry[name] = fn
+}
+
+// RegisterFlagged registers a FlaggedHandlerFunc under name. For each
+// invocation the adapter creates a fresh *FlagSet, calls factory to register
+// flags and obtain the bound handler, parses the raw args, writes any error to
+// stderr (exit 1), and then calls the handler with the positional args.
+func RegisterFlagged(name string, factory FlaggedHandlerFunc) {
+	Register(name, func(ctx context.Context, callCtx *CallContext, args []string) Result {
+		fs := pflag.NewFlagSet(name, pflag.ContinueOnError)
+		fs.SetOutput(io.Discard) // handler formats errors itself
+		handler := factory(fs)
+		if err := fs.Parse(args); err != nil {
+			callCtx.Errf("%s: %v\n", name, err)
+			return Result{Code: 1}
+		}
+		return handler(ctx, callCtx, fs.Args())
+	})
 }
 
 // Lookup returns the handler for a builtin command.

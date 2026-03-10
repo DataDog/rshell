@@ -56,13 +56,11 @@ import (
 	"os"
 	"strconv"
 
-	"github.com/spf13/pflag"
-
 	"github.com/DataDog/rshell/interp/builtins"
 )
 
 // Cmd is the head builtin command descriptor.
-var Cmd = builtins.Command{Name: "head", Run: run}
+var Cmd = builtins.FlaggedCommand{Name: "head", MakeFlags: registerFlags}
 
 // MaxCount is the maximum accepted line or byte count. Values above this
 // are clamped. This prevents huge theoretical allocations while remaining
@@ -73,10 +71,10 @@ const MaxCount = 1<<31 - 1 // 2 147 483 647
 // longer than this are reported as an error instead of being buffered.
 const MaxLineBytes = 1 << 20 // 1 MiB
 
-func run(ctx context.Context, callCtx *builtins.CallContext, args []string) builtins.Result {
-	fs := pflag.NewFlagSet("head", pflag.ContinueOnError)
-	fs.SetOutput(io.Discard)
-
+// registerFlags registers all head flags on the framework-provided FlagSet and
+// returns a bound handler whose flag variables are captured by closure. The
+// framework calls Parse and passes positional arguments to the handler.
+func registerFlags(fs *builtins.FlagSet) builtins.BoundHandlerFunc {
 	help := fs.BoolP("help", "h", false, "print usage and exit")
 	quiet := fs.BoolP("quiet", "q", false, "never print file name headers")
 	_ = fs.Bool("silent", false, "alias for --quiet")
@@ -92,76 +90,72 @@ func run(ctx context.Context, callCtx *builtins.CallContext, args []string) buil
 	fs.VarP(linesFlag, "lines", "n", "print the first N lines instead of the first 10")
 	fs.VarP(bytesFlag, "bytes", "c", "print the first N bytes instead of lines")
 
-	if err := fs.Parse(args); err != nil {
-		callCtx.Errf("head: %v\n", err)
-		return builtins.Result{Code: 1}
-	}
+	return func(ctx context.Context, callCtx *builtins.CallContext, files []string) builtins.Result {
+		if *help {
+			callCtx.Out("Usage: head [OPTION]... [FILE]...\n")
+			callCtx.Out("Print the first 10 lines of each FILE to standard output.\n")
+			callCtx.Out("With no FILE, or when FILE is -, read standard input.\n\n")
+			fs.SetOutput(callCtx.Stdout)
+			fs.PrintDefaults()
+			return builtins.Result{}
+		}
 
-	if *help {
-		callCtx.Out("Usage: head [OPTION]... [FILE]...\n")
-		callCtx.Out("Print the first 10 lines of each FILE to standard output.\n")
-		callCtx.Out("With no FILE, or when FILE is -, read standard input.\n\n")
-		fs.SetOutput(callCtx.Stdout)
-		fs.PrintDefaults()
+		// --silent is an alias for --quiet.
+		if fs.Changed("silent") {
+			*quiet = true
+		}
+
+		// Bytes mode wins if -c/--bytes was parsed after -n/--lines. When neither
+		// is set both pos fields are 0 (false → line mode). When only one is set
+		// the other stays 0, so the comparison selects correctly.
+		useBytesMode := bytesFlag.pos > linesFlag.pos
+
+		// Parse the count for the chosen mode.
+		countStr := linesFlag.val
+		modeLabel := "lines"
+		if useBytesMode {
+			countStr = bytesFlag.val
+			modeLabel = "bytes"
+		}
+
+		count, ok := parseCount(countStr)
+		if !ok {
+			callCtx.Errf("head: invalid number of %s: %q\n", modeLabel, countStr)
+			return builtins.Result{Code: 1}
+		}
+
+		// Default to stdin when no file arguments were given.
+		if len(files) == 0 {
+			files = []string{"-"}
+		}
+
+		// Header printing: on by default for multiple files, suppressed by -q,
+		// forced for a single file by -v.
+		printHeaders := len(files) > 1 || *verbose
+		if *quiet {
+			printHeaders = false
+		}
+
+		var failed bool
+		for i, file := range files {
+			if ctx.Err() != nil {
+				break
+			}
+			if err := processFile(ctx, callCtx, file, i, printHeaders, useBytesMode, count); err != nil {
+				name := file
+				if file == "-" {
+					name = "standard input"
+				}
+				callCtx.Errf("head: %s: %s\n", name, callCtx.PortableErr(err))
+				failed = true
+			}
+		}
+
+		if failed {
+			return builtins.Result{Code: 1}
+		}
 		return builtins.Result{}
 	}
-
-	// --silent is an alias for --quiet.
-	if fs.Changed("silent") {
-		*quiet = true
-	}
-
-	// Bytes mode wins if -c/--bytes was parsed after -n/--lines. When neither
-	// is set both pos fields are 0 (false → line mode). When only one is set
-	// the other stays 0, so the comparison selects correctly.
-	useBytesMode := bytesFlag.pos > linesFlag.pos
-
-	// Parse the count for the chosen mode.
-	countStr := linesFlag.val
-	modeLabel := "lines"
-	if useBytesMode {
-		countStr = bytesFlag.val
-		modeLabel = "bytes"
-	}
-
-	count, ok := parseCount(countStr)
-	if !ok {
-		callCtx.Errf("head: invalid number of %s: %q\n", modeLabel, countStr)
-		return builtins.Result{Code: 1}
-	}
-
-	// Collect file arguments; default to stdin.
-	files := fs.Args()
-	if len(files) == 0 {
-		files = []string{"-"}
-	}
-
-	// Header printing: on by default for multiple files, suppressed by -q,
-	// forced for a single file by -v.
-	printHeaders := len(files) > 1 || *verbose
-	if *quiet {
-		printHeaders = false
-	}
-
-	var failed bool
-	for i, file := range files {
-		if ctx.Err() != nil {
-			break
-		}
-		if err := processFile(ctx, callCtx, file, i, printHeaders, useBytesMode, count); err != nil {
-			name := file
-			if file == "-" {
-				name = "standard input"
-			}
-			callCtx.Errf("head: %s: %s\n", name, callCtx.PortableErr(err))
-			failed = true
-		}
-	}
-
-	if failed {
-		return builtins.Result{Code: 1}
-	}
-	return builtins.Result{}
 }
 
 // processFile opens and processes one file (or stdin for "-").

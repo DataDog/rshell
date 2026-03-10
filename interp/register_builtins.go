@@ -23,7 +23,7 @@ var registerOnce sync.Once
 
 func registerBuiltins() {
 	registerOnce.Do(func() {
-		for _, cmd := range []builtins.Command{
+		for _, cmd := range []builtins.Registrable{
 			breakcmd.Cmd,
 			cat.Cmd,
 			continuecmd.Cmd,
@@ -33,7 +33,7 @@ func registerBuiltins() {
 			head.Cmd,
 			truecmd.Cmd,
 		} {
-			builtins.Register(cmd.Name, cmd.Run)
+			cmd.Register()
 		}
 	})
 }
