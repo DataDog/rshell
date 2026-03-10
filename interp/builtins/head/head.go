@@ -60,7 +60,7 @@ import (
 )
 
 // Cmd is the head builtin command descriptor.
-var Cmd = builtins.FlaggedCommand{Name: "head", MakeFlags: registerFlags}
+var Cmd = builtins.Command{Name: "head", MakeFlags: registerFlags}
 
 // MaxCount is the maximum accepted line or byte count. Values above this
 // are clamped. This prevents huge theoretical allocations while remaining
@@ -74,7 +74,7 @@ const MaxLineBytes = 1 << 20 // 1 MiB
 // registerFlags registers all head flags on the framework-provided FlagSet and
 // returns a bound handler whose flag variables are captured by closure. The
 // framework calls Parse and passes positional arguments to the handler.
-func registerFlags(fs *builtins.FlagSet) builtins.BoundHandlerFunc {
+func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 	help := fs.BoolP("help", "h", false, "print usage and exit")
 	quiet := fs.BoolP("quiet", "q", false, "never print file name headers")
 	_ = fs.Bool("silent", false, "alias for --quiet")

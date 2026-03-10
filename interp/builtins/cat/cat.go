@@ -27,7 +27,7 @@ import (
 )
 
 // Cmd is the cat builtin command descriptor.
-var Cmd = builtins.Command{Name: "cat", Run: run}
+var Cmd = builtins.Command{Name: "cat", MakeFlags: builtins.NoFlags(run)}
 
 func run(ctx context.Context, callCtx *builtins.CallContext, args []string) builtins.Result {
 	if len(args) == 0 {

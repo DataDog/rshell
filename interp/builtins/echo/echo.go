@@ -24,7 +24,7 @@ import (
 )
 
 // Cmd is the echo builtin command descriptor.
-var Cmd = builtins.Command{Name: "echo", Run: run}
+var Cmd = builtins.Command{Name: "echo", MakeFlags: builtins.NoFlags(run)}
 
 func run(_ context.Context, callCtx *builtins.CallContext, args []string) builtins.Result {
 	for i, arg := range args {
