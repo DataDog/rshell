@@ -275,12 +275,12 @@ func processFile(ctx context.Context, callCtx *builtins.CallContext, file string
 
 	if useBytesMode {
 		if cm.offset {
-			return skipBytes(ctx, callCtx, rc, cm.n)
+			return skipBytes(ctx, callCtx, rc, cm.n, isRegularFile)
 		}
 		return readLastBytes(ctx, callCtx, rc, cm.n, isRegularFile)
 	}
 	if cm.offset {
-		return skipLines(ctx, callCtx, rc, cm.n, zeroTerm)
+		return skipLines(ctx, callCtx, rc, cm.n, zeroTerm, isRegularFile)
 	}
 	return readLastLines(ctx, callCtx, rc, cm.n, zeroTerm, isRegularFile)
 }
@@ -357,7 +357,8 @@ func readLastLines(ctx context.Context, callCtx *builtins.CallContext, r io.Read
 
 // skipLines skips the first (n-1) lines of r and writes the rest to
 // callCtx.Stdout. This implements the "+N" offset mode for -n.
-func skipLines(ctx context.Context, callCtx *builtins.CallContext, r io.Reader, n int64, nullDelim bool) error {
+// isRegularFile disables the MaxTotalReadBytes infinite-stream guard.
+func skipLines(ctx context.Context, callCtx *builtins.CallContext, r io.Reader, n int64, nullDelim bool, isRegularFile bool) error {
 	skipCount := max(n-1, 0)
 
 	sc := bufio.NewScanner(r)
@@ -370,9 +371,14 @@ func skipLines(ctx context.Context, callCtx *builtins.CallContext, r io.Reader, 
 	}
 
 	var skipped int64
+	var totalRead int64
 	for sc.Scan() {
 		if ctx.Err() != nil {
 			return ctx.Err()
+		}
+		totalRead += int64(len(sc.Bytes()))
+		if !isRegularFile && totalRead > MaxTotalReadBytes {
+			return errors.New("input too large: read limit exceeded")
 		}
 		if skipped < skipCount {
 			skipped++
@@ -452,18 +458,22 @@ func readLastBytes(ctx context.Context, callCtx *builtins.CallContext, r io.Read
 
 // skipBytes skips the first (n-1) bytes of r and writes the rest to
 // callCtx.Stdout. This implements the "+N" offset mode for -c.
-func skipBytes(ctx context.Context, callCtx *builtins.CallContext, r io.Reader, n int64) error {
+// isRegularFile disables the MaxTotalReadBytes infinite-stream guard.
+func skipBytes(ctx context.Context, callCtx *builtins.CallContext, r io.Reader, n int64, isRegularFile bool) error {
 	skipCount := max(n-1, 0)
 
 	buf := make([]byte, 32*1024)
-	var skipped int64
-	for skipped < skipCount {
+	var totalRead int64
+	for totalRead < skipCount {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		toRead := min(int64(len(buf)), skipCount-skipped)
+		toRead := min(int64(len(buf)), skipCount-totalRead)
 		nRead, err := r.Read(buf[:toRead])
-		skipped += int64(nRead)
+		totalRead += int64(nRead)
+		if !isRegularFile && totalRead > MaxTotalReadBytes {
+			return errors.New("input too large: read limit exceeded")
+		}
 		if errors.Is(err, io.EOF) {
 			return nil
 		}
@@ -477,9 +487,13 @@ func skipBytes(ctx context.Context, callCtx *builtins.CallContext, r io.Reader, 
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		n, err := r.Read(buf)
-		if n > 0 {
-			if _, werr := callCtx.Stdout.Write(buf[:n]); werr != nil {
+		nRead, err := r.Read(buf)
+		totalRead += int64(nRead)
+		if !isRegularFile && totalRead > MaxTotalReadBytes {
+			return errors.New("input too large: read limit exceeded")
+		}
+		if nRead > 0 {
+			if _, werr := callCtx.Stdout.Write(buf[:nRead]); werr != nil {
 				return werr
 			}
 		}
