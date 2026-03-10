@@ -73,7 +73,7 @@ Before writing any code:
 
 1. Read `.claude/skills/implement-posix-command/RULES.md` in full.
 2. Read the POSIX specification behavior for **$ARGUMENTS** — what flags are standard, what flags are dangerous (write/execute), and what the expected output format is.
-3. Read the associated GTFOBins recommendations, if any, which can be found at https://gtfobins.org/gtfobins/$ARGUMENTS. These contain information on unsafe flags and vulnerabilities that we will need to avoid.
+3. Read the associated GTFOBins recommendations, if any. First check if the offline resource exists at `resources/gtfobins/$ARGUMENTS.md`. If it does, read it directly. If it does not exist, fetch it from https://gtfobins.org/gtfobins/$ARGUMENTS. These contain information on unsafe flags and vulnerabilities that we will need to avoid.
 
 ## Step 2: User confirms which flags to implement
 
@@ -105,21 +105,26 @@ accepted flags that will be implemented.
 
 **GATE CHECK**: Call TaskList. Step 2 must be `completed` before starting this step. Set Steps 3, 4, and 5 all to `in_progress` now — they run in parallel.
 
-Download two reference test suites:
+Locate two reference test suites. First check if the offline resources exist in the repo (downloaded via the `/download-posix-resources` command). If the offline resources are not available, download them:
 
 ```bash
-# GNU coreutils — GPL v3; use as reference for test *design*, not verbatim copy
-curl -sL https://github.com/coreutils/coreutils/archive/refs/heads/master.tar.gz | tar -xz -C /tmp
-
-# uutils/coreutils Rust rewrite — MIT license; test logic can be freely adapted
-curl -sL https://github.com/uutils/coreutils/archive/refs/heads/main.tar.gz | tar -xz -C /tmp
+# Check for offline resources first
+if [ -d "resources/gnu-coreutils-tests" ] && [ -d "resources/uutils-tests" ]; then
+    echo "Using offline resources from resources/"
+else
+    echo "Offline resources not found, downloading..."
+    # GNU coreutils — GPL v3; use as reference for test *design*, not verbatim copy
+    curl -sL https://github.com/coreutils/coreutils/archive/refs/heads/master.tar.gz | tar -xz -C /tmp
+    # uutils/coreutils Rust rewrite — MIT license; test logic can be freely adapted
+    curl -sL https://github.com/uutils/coreutils/archive/refs/heads/main.tar.gz | tar -xz -C /tmp
+fi
 ```
 
-**GNU coreutils**: Look in `/tmp/coreutils-master/tests/$ARGUMENTS/` for test cases. For each test file:
+**GNU coreutils**: Look for test cases in the offline resources at `resources/gnu-coreutils-tests/$ARGUMENTS/`, or if downloaded to `/tmp`, at `/tmp/coreutils-master/tests/$ARGUMENTS/`. For each test file:
 
 1. **Filter**: Skip tests wholly concerned with flags we decided not to implement (e.g. `--follow`, inotify, `--pid`). Also skip tests that rely on obsolete POSIX2 syntax (e.g. `_POSIX2_VERSION` env var, combined flag+number forms like `-1l`), platform-specific kernel features (`/proc`, `/sys`), or the GNU test framework helpers (`retry_delay_`, `compare`, `framework_failure_`).
 
-**uutils/coreutils**: Look in `/tmp/coreutils-main/tests/by-util/test_$ARGUMENTS.rs` for test cases. Because uutils tests are MIT-licensed, the test logic and inputs/outputs can be adapted more freely. uutils tests tend to cover:
+**uutils/coreutils**: Look for test cases in the offline resources at `resources/uutils-tests/test_$ARGUMENTS.rs`, or if downloaded to `/tmp`, at `/tmp/coreutils-main/tests/by-util/test_$ARGUMENTS.rs`. Because uutils tests are MIT-licensed, the test logic and inputs/outputs can be adapted more freely. uutils tests tend to cover:
 - Negative count modes (`-n -N`, `-c -N`) — skip if we did not implement these
 - Obsolete positional syntax (`-1`, `-14c`)
 - Multi-file header edge cases (`-v`, `-q`, `--silent`)
