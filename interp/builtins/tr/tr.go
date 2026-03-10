@@ -59,19 +59,15 @@ import (
 	"io"
 	"strconv"
 
-	"github.com/spf13/pflag"
-
 	"github.com/DataDog/rshell/interp/builtins"
 )
 
 // Cmd is the tr builtin command descriptor.
-var Cmd = builtins.Command{Name: "tr", Run: run}
+var Cmd = builtins.Command{Name: "tr", MakeFlags: registerFlags}
 
 const readBufSize = 32 * 1024
 
-func run(ctx context.Context, callCtx *builtins.CallContext, args []string) builtins.Result {
-	fs := pflag.NewFlagSet("tr", pflag.ContinueOnError)
-	fs.SetOutput(io.Discard)
+func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 	fs.SetInterspersed(false)
 
 	help := fs.BoolP("help", "h", false, "print usage and exit")
@@ -81,91 +77,88 @@ func run(ctx context.Context, callCtx *builtins.CallContext, args []string) buil
 	bigC := fs.BoolP("COMPLEMENT", "C", false, "alias for -c/--complement")
 	truncateSet1 := fs.BoolP("truncate-set1", "t", false, "truncate SET1 to length of SET2")
 
-	if err := fs.Parse(args); err != nil {
-		callCtx.Errf("tr: %v\n", err)
-		return builtins.Result{Code: 1}
-	}
+	return func(ctx context.Context, callCtx *builtins.CallContext, args []string) builtins.Result {
+		if *help {
+			callCtx.Out("Usage: tr [OPTION]... SET1 [SET2]\n")
+			callCtx.Out("Translate, squeeze, and/or delete characters from standard input,\n")
+			callCtx.Out("writing to standard output.\n\n")
+			fs.SetOutput(callCtx.Stdout)
+			fs.PrintDefaults()
+			return builtins.Result{}
+		}
 
-	if *help {
-		callCtx.Out("Usage: tr [OPTION]... SET1 [SET2]\n")
-		callCtx.Out("Translate, squeeze, and/or delete characters from standard input,\n")
-		callCtx.Out("writing to standard output.\n\n")
-		fs.SetOutput(callCtx.Stdout)
-		fs.PrintDefaults()
-		return builtins.Result{}
-	}
+		if *bigC {
+			*complement = true
+		}
 
-	if *bigC {
-		*complement = true
-	}
+		operands := args
 
-	operands := fs.Args()
+		if len(operands) == 0 {
+			callCtx.Errf("tr: missing operand\n")
+			return builtins.Result{Code: 1}
+		}
 
-	if len(operands) == 0 {
-		callCtx.Errf("tr: missing operand\n")
-		return builtins.Result{Code: 1}
-	}
+		if *deleteFlag && !*squeeze && len(operands) > 1 {
+			callCtx.Errf("tr: extra operand %q\nOnly one string may be given when deleting without squeezing repeats.\n", operands[1])
+			return builtins.Result{Code: 1}
+		}
 
-	if *deleteFlag && !*squeeze && len(operands) > 1 {
-		callCtx.Errf("tr: extra operand %q\nOnly one string may be given when deleting without squeezing repeats.\n", operands[1])
-		return builtins.Result{Code: 1}
-	}
+		if !*deleteFlag && len(operands) < 2 && !*squeeze {
+			callCtx.Errf("tr: missing operand after %q\n", operands[0])
+			return builtins.Result{Code: 1}
+		}
 
-	if !*deleteFlag && len(operands) < 2 && !*squeeze {
-		callCtx.Errf("tr: missing operand after %q\n", operands[0])
-		return builtins.Result{Code: 1}
-	}
+		if len(operands) > 2 {
+			callCtx.Errf("tr: extra operand %q\n", operands[2])
+			return builtins.Result{Code: 1}
+		}
 
-	if len(operands) > 2 {
-		callCtx.Errf("tr: extra operand %q\n", operands[2])
-		return builtins.Result{Code: 1}
-	}
+		set1Str := operands[0]
+		var set2Str string
+		if len(operands) > 1 {
+			set2Str = operands[1]
+		}
 
-	set1Str := operands[0]
-	var set2Str string
-	if len(operands) > 1 {
-		set2Str = operands[1]
-	}
-
-	set1, err := expandSet(set1Str, false, 0, callCtx)
-	if err != nil {
-		callCtx.Errf("tr: %s\n", err)
-		return builtins.Result{Code: 1}
-	}
-
-	if *complement {
-		set1 = complementSet(set1)
-	}
-
-	var set2 []byte
-	if set2Str != "" || len(operands) > 1 {
-		set2, err = expandSet(set2Str, true, len(set1), callCtx)
+		set1, err := expandSet(set1Str, false, 0, callCtx)
 		if err != nil {
 			callCtx.Errf("tr: %s\n", err)
 			return builtins.Result{Code: 1}
 		}
-	}
 
-	if *deleteFlag {
-		if *squeeze {
-			return deleteAndSqueeze(ctx, callCtx, set1, set2)
+		if *complement {
+			set1 = complementSet(set1)
 		}
-		return deleteBytes(ctx, callCtx, set1)
-	}
 
-	if *squeeze && len(operands) == 1 {
-		return squeezeOnly(ctx, callCtx, set1)
-	}
-
-	if len(operands) >= 2 {
-		if !*truncateSet1 && set2Str == "" {
-			callCtx.Errf("tr: when not truncating set1, string2 must be non-empty\n")
-			return builtins.Result{Code: 1}
+		var set2 []byte
+		if set2Str != "" || len(operands) > 1 {
+			set2, err = expandSet(set2Str, true, len(set1), callCtx)
+			if err != nil {
+				callCtx.Errf("tr: %s\n", err)
+				return builtins.Result{Code: 1}
+			}
 		}
-		return translate(ctx, callCtx, set1, set2, *squeeze, *truncateSet1)
-	}
 
-	return builtins.Result{}
+		if *deleteFlag {
+			if *squeeze {
+				return deleteAndSqueeze(ctx, callCtx, set1, set2)
+			}
+			return deleteBytes(ctx, callCtx, set1)
+		}
+
+		if *squeeze && len(operands) == 1 {
+			return squeezeOnly(ctx, callCtx, set1)
+		}
+
+		if len(operands) >= 2 {
+			if !*truncateSet1 && set2Str == "" {
+				callCtx.Errf("tr: when not truncating set1, string2 must be non-empty\n")
+				return builtins.Result{Code: 1}
+			}
+			return translate(ctx, callCtx, set1, set2, *squeeze, *truncateSet1)
+		}
+
+		return builtins.Result{}
+	}
 }
 
 func deleteBytes(ctx context.Context, callCtx *builtins.CallContext, set1 []byte) builtins.Result {

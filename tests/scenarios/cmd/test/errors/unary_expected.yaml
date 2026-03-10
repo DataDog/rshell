@@ -1,0 +1,7 @@
+# Derived from uutils test_test.rs — -o as unary option test
+description: "test -o treats unknown option name as false"
+input:
+  script: |+
+    test -o arg
+expect:
+  exit_code: 1
