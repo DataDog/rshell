@@ -518,6 +518,12 @@ func parseCount(s string) (countMode, bool) {
 	parseStr := s
 	if isOffset {
 		parseStr = s[1:]
+		// After stripping '+', the remainder must be a plain non-negative
+		// integer. A leading '+' or '-' (e.g. "+-3", "++5") is invalid;
+		// GNU tail exits with "invalid number" for these forms.
+		if len(parseStr) == 0 || parseStr[0] == '+' || parseStr[0] == '-' {
+			return countMode{}, false
+		}
 	}
 	n, err := strconv.ParseInt(parseStr, 10, 64)
 	if err != nil {
