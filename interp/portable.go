@@ -18,14 +18,26 @@ func portableErrMsg(err error) string {
 	if err == nil {
 		return ""
 	}
+	// On Windows, os.Root operations may return nested *os.PathError values
+	// (e.g. *os.PathError{Op:"lstat", Err:*os.PathError{Op:"statat", Err:syscall.ENOENT}}).
+	// Unwrap nested PathErrors so errors.Is can reach the underlying sentinel.
+	unwrapped := err
+	for {
+		var pe *os.PathError
+		if errors.As(unwrapped, &pe) {
+			unwrapped = pe.Err
+		} else {
+			break
+		}
+	}
 	switch {
-	case errors.Is(err, fs.ErrNotExist):
+	case errors.Is(unwrapped, fs.ErrNotExist):
 		return "no such file or directory"
-	case errors.Is(err, fs.ErrPermission):
+	case errors.Is(unwrapped, fs.ErrPermission):
 		return "permission denied"
-	case errors.Is(err, fs.ErrExist):
+	case errors.Is(unwrapped, fs.ErrExist):
 		return "file exists"
-	case isErrIsDirectory(err):
+	case isErrIsDirectory(unwrapped):
 		return "is a directory"
 	}
 	return err.Error()

@@ -13,5 +13,9 @@ expect:
   stdout_contains:
     - "-rw-r--r--"
     - "tiny.txt"
+  # Windows maps chmod 0644 to -rw-rw-rw- (no granular Unix permissions).
+  stdout_contains_windows:
+    - "-rw-rw-rw-"
+    - "tiny.txt"
   stderr: ""
   exit_code: 0
