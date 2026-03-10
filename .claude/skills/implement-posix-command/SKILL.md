@@ -499,15 +499,12 @@ For any case where behaviour differs from expectation, run the equivalent `gtail
 
 **GATE CHECK**: Call TaskList. Step 8 must be `completed` before starting this step. Set this step to `in_progress` now.
 
-Update `SHELL_COMMANDS.md` in the repository root. Add a row for the new command to the reference table, following the existing format:
-
-```
-| `$ARGUMENTS [FILE ...]` | `-x X` (desc), `-y` (desc) | One-sentence description of what the command does. |
-```
+Update `SHELL_COMMANDS.md` in the repository root. Add a new section for the command, following the existing format and style used in that file.
 
 Guidelines:
-- List only the most commonly used flags in the Options column; omit rare or verbose-only flags
-- Keep the short description to one sentence that matches the command's doc comment
-- Insert the row in alphabetical order by command name
+- Insert the section in alphabetical order by command name
+- Keep the description to one or two sentences that match the command's doc comment
+- Include a **Usage** line if the command accepts arguments or options
+- Include an **Options** list if the command has flags; list only the most commonly used ones
 
 After updating, verify the file looks correct, then commit everything together if not already committed, or amend/add to the existing commit.
