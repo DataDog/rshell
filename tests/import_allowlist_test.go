@@ -40,6 +40,12 @@ var builtinAllowedSymbols = []string{
 	"errors.Is",
 	// errors.New — creates a simple error value; no I/O or side effects.
 	"errors.New",
+	// fs.FileInfo — interface for file metadata; pure type, no side effects.
+	"io/fs.FileInfo",
+	// fs.ModeNamedPipe — file mode bit constant; no side effects.
+	"io/fs.ModeNamedPipe",
+	// fs.ModeSymlink — file mode bit constant; no side effects.
+	"io/fs.ModeSymlink",
 	// io.Copy — stream data between reader and writer; builtins receive sandboxed streams.
 	"io.Copy",
 	// io.EOF — sentinel error value; pure constant.
@@ -50,6 +56,10 @@ var builtinAllowedSymbols = []string{
 	"io.ReadCloser",
 	// io.Reader — interface type; no side effects.
 	"io.Reader",
+	// math.MaxInt64 — integer constant; no side effects.
+	"math.MaxInt64",
+	// math.MinInt64 — integer constant; no side effects.
+	"math.MinInt64",
 	// os.FileInfo — file metadata interface returned by Stat; no I/O side effects.
 	"os.FileInfo",
 	// os.O_RDONLY — read-only file flag constant; cannot open files by itself.
@@ -68,10 +78,16 @@ var builtinAllowedSymbols = []string{
 	"strconv.Atoi",
 	// strconv.Itoa — int-to-string conversion; pure function, no I/O.
 	"strconv.Itoa",
+	// strconv.ErrRange — sentinel error value for overflow; pure constant.
+	"strconv.ErrRange",
+	// strconv.NumError — error type for numeric conversion failures; pure type.
+	"strconv.NumError",
 	// strconv.ParseInt — string-to-int conversion with base/bit-size; pure function, no I/O.
 	"strconv.ParseInt",
 	// strconv.FormatInt — int-to-string conversion; pure function, no I/O.
 	"strconv.FormatInt",
+	// strings.TrimSpace — removes leading/trailing whitespace; pure function.
+	"strings.TrimSpace",
 	// unicode.Cc — control character category range table; pure data, no I/O.
 	"unicode.Cc",
 	// unicode.Cf — format character category range table; pure data, no I/O.
