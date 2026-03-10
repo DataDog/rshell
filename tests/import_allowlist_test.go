@@ -38,14 +38,8 @@ var builtinAllowedSymbols = []string{
 	"context.Context",
 	// errors.Is — error comparison; pure function, no I/O.
 	"errors.Is",
-	// pflag.ContinueOnError — flag parse-error mode constant; no side effects.
-	"github.com/spf13/pflag.ContinueOnError",
-	// pflag.NewFlagSet — CLI flag parsing; operates only on string slices, no I/O.
-	"github.com/spf13/pflag.NewFlagSet",
 	// io.Copy — stream data between reader and writer; builtins receive sandboxed streams.
 	"io.Copy",
-	// io.Discard — /dev/null writer; discards all data, no side effects.
-	"io.Discard",
 	// io.EOF — sentinel error value; pure constant.
 	"io.EOF",
 	// io.NopCloser — wraps a Reader with a no-op Close; no side effects.
