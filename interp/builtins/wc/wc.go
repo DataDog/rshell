@@ -101,6 +101,10 @@ func run(ctx context.Context, callCtx *builtins.CallContext, args []string) buil
 	chars := fs.BoolP("chars", "m", false, "print the character counts")
 	maxLineLen := fs.BoolP("max-line-length", "L", false, "print the maximum display width")
 
+	// Security: --files0-from is intentionally NOT implemented.
+	// GTFOBins: this flag reads filenames from a file, enabling
+	// data exfiltration in sandboxed environments.
+
 	if err := fs.Parse(args); err != nil {
 		callCtx.Errf("wc: %v\n", err)
 		return builtins.Result{Code: 1}
@@ -263,7 +267,9 @@ func countReader(ctx context.Context, r io.Reader) (counts, error) {
 				}
 			}
 			c.chars += int64(utf8.RuneCount(chunk))
-			c.bytes -= int64(carryN)
+			// carryN bytes are subtracted here and will be re-added via
+		// n += carryN at the top of the next iteration.
+		c.bytes -= int64(carryN)
 
 			for i := 0; i < len(chunk); {
 				r, size := utf8.DecodeRune(chunk[i:])
