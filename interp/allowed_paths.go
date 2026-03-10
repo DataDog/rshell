@@ -133,8 +133,9 @@ func (s *pathSandbox) readDir(ctx context.Context, path string) ([]fs.DirEntry, 
 	return entries, nil
 }
 
-// stat implements the restricted stat policy. The file is opened through
-// os.Root for atomic path validation, stat'd, then closed immediately.
+// stat implements the restricted stat policy. It uses os.Root.Stat for
+// metadata-only access — no file descriptor is opened, so it works on
+// unreadable files and does not block on special files (e.g. FIFOs).
 func (s *pathSandbox) stat(ctx context.Context, path string) (fs.FileInfo, error) {
 	absPath := toAbs(path, HandlerCtx(ctx).Dir)
 
@@ -143,12 +144,11 @@ func (s *pathSandbox) stat(ctx context.Context, path string) (fs.FileInfo, error
 		return nil, &os.PathError{Op: "stat", Path: path, Err: os.ErrPermission}
 	}
 
-	f, err := root.Open(relPath)
+	info, err := root.Stat(relPath)
 	if err != nil {
 		return nil, portablePathError(err)
 	}
-	defer f.Close()
-	return f.Stat()
+	return info, nil
 }
 
 // Close releases all os.Root file descriptors. It is safe to call multiple times.

@@ -20,6 +20,10 @@ import (
 // package is always allowed by the import allowlist).
 type FlagSet = pflag.FlagSet
 
+// Flag is a type alias for pflag.Flag, exposed so command files can use
+// FlagSet.Visit without importing pflag directly.
+type Flag = pflag.Flag
+
 // HandlerFunc is the bound handler called by the framework after flags are
 // parsed. args contains only the positional (non-flag) arguments.
 type HandlerFunc func(ctx context.Context, callCtx *CallContext, args []string) Result

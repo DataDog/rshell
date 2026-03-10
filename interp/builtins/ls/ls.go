@@ -82,12 +82,16 @@ var errFailed = errors.New("ls: one or more errors occurred")
 var Cmd = builtins.Command{Name: "ls", MakeFlags: registerFlags}
 
 func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
+	// Preserve parse order so Visit() returns flags in the order set.
+	// This lets us determine which sort flag (-S or -t) was specified last.
+	fs.SortFlags = false
+
 	all := fs.BoolP("all", "a", false, "do not ignore entries starting with .")
 	almostAll := fs.BoolP("almost-all", "A", false, "do not ignore . and ..")
 	dirOnly := fs.BoolP("directory", "d", false, "list directories themselves, not their contents")
 	reverse := fs.BoolP("reverse", "r", false, "reverse order while sorting")
-	sortSize := fs.BoolP("sort-size", "S", false, "sort by file size, largest first")
-	sortTime := fs.BoolP("sort-time", "t", false, "sort by modification time, newest first")
+	_ = fs.BoolP("sort-size", "S", false, "sort by file size, largest first")
+	_ = fs.BoolP("sort-time", "t", false, "sort by modification time, newest first")
 	classify := fs.BoolP("classify", "F", false, "append indicator to entries")
 	appendSlash := fs.BoolP("append-slash", "p", false, "append / indicator to directories")
 	recursive := fs.BoolP("recursive", "R", false, "list subdirectories recursively")
@@ -98,13 +102,27 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 	fs.Lookup("one").Shorthand = "1"
 
 	return func(ctx context.Context, callCtx *builtins.CallContext, args []string) builtins.Result {
+		// Determine the effective sort mode. When both -S and -t are given,
+		// the last one specified wins, matching GNU ls behaviour.
+		var sortSize, sortTime bool
+		fs.Visit(func(f *builtins.Flag) {
+			switch f.Name {
+			case "sort-size":
+				sortSize = true
+				sortTime = false
+			case "sort-time":
+				sortTime = true
+				sortSize = false
+			}
+		})
+
 		opts := &options{
 			all:           *all,
 			almostAll:     *almostAll,
 			dirOnly:       *dirOnly,
 			reverse:       *reverse,
-			sortSize:      *sortSize,
-			sortTime:      *sortTime,
+			sortSize:      sortSize,
+			sortTime:      sortTime,
 			classify:      *classify,
 			appendSlash:   *appendSlash,
 			recursive:     *recursive,
@@ -252,6 +270,9 @@ func listDir(ctx context.Context, callCtx *builtins.CallContext, dir string, opt
 	}
 
 	// Recurse into subdirectories if -R.
+	// NOTE: Symlink loops are not detected because the syscall package
+	// (needed for device+inode tracking) is banned by the import allowlist.
+	// The maxRecursionDepth limit bounds total work in this case.
 	if opts.recursive {
 		for _, ei := range infoEntries {
 			if ctx.Err() != nil {
