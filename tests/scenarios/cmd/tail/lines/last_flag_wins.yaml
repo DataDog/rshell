@@ -1,0 +1,15 @@
+# Derived from GNU coreutils tail behavior: last of -n/-c wins
+description: When -c and -n are both given, the last flag wins; here -n wins.
+skip_assert_against_bash: true
+setup:
+  files:
+    - path: file.txt
+      content: "alpha\nbeta\ngamma\n"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    tail -c 5 -n 2 file.txt
+expect:
+  stdout: "beta\ngamma\n"
+  stderr: ""
+  exit_code: 0

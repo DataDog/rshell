@@ -7,6 +7,7 @@ Blocked features are rejected before execution with exit code 2.
 
 See the implementation in `interp/builtins/` for the full list of supported builtins and their options.
 
+- ✅ `tail` — output the last part of files (`-n`, `-c`, `-z`, `-q`, `-v`); `-f`/`--follow` is not supported
 - ❌ All other commands — return exit code 127 with `<cmd>: not found` unless an ExecHandler is configured
 
 ## Variables
