@@ -244,6 +244,10 @@ func countReader(ctx context.Context, r io.Reader) (counts, error) {
 			c.bytes += int64(n)
 
 			// Handle incomplete UTF-8 at end of chunk.
+			// When tail >= n (e.g., n == 1 with a single invalid byte), the
+			// condition below is false, so the byte stays in chunk and
+			// DecodeRune processes it as a replacement character — this is
+			// correct and matches utf8.DecodeRune semantics.
 			tail := 0
 			if !utf8.Valid(chunk) {
 				for tail = 1; tail <= 3 && tail < n; tail++ {
