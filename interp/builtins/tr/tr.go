@@ -126,7 +126,8 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			set2Str = operands[1]
 		}
 
-		set1, err := expandSet(set1Str, false, 0, false, callCtx)
+		var set1Classes []caseClassPos
+		set1, err := expandSet(set1Str, false, 0, false, callCtx, &set1Classes)
 		if err != nil {
 			callCtx.Errf("tr: %s\n", err)
 			return builtins.Result{Code: 1}
@@ -134,13 +135,22 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 
 		if *complement {
 			set1 = complementSet(set1)
+			set1Classes = nil // complement invalidates class positions
 		}
 
 		var set2 []byte
+		var set2Classes []caseClassPos
 		translateMode := !*deleteFlag && len(operands) >= 2
 		if set2Str != "" || len(operands) > 1 {
-			set2, err = expandSet(set2Str, true, len(set1), translateMode, callCtx)
+			set2, err = expandSet(set2Str, true, len(set1), translateMode, callCtx, &set2Classes)
 			if err != nil {
+				callCtx.Errf("tr: %s\n", err)
+				return builtins.Result{Code: 1}
+			}
+		}
+
+		if translateMode {
+			if err := validateCaseClassAlignment(set1Classes, set2Classes); err != nil {
 				callCtx.Errf("tr: %s\n", err)
 				return builtins.Result{Code: 1}
 			}
@@ -387,9 +397,30 @@ func complementSet(set []byte) []byte {
 	return result
 }
 
+func validateCaseClassAlignment(set1Classes, set2Classes []caseClassPos) error {
+	if len(set2Classes) == 0 {
+		return nil
+	}
+	s1ByOffset := make(map[int]bool)
+	for _, c := range set1Classes {
+		s1ByOffset[c.expandedOffset] = true
+	}
+	for _, c := range set2Classes {
+		if !s1ByOffset[c.expandedOffset] {
+			return &trError{"misaligned [:upper:] and/or [:lower:] construct"}
+		}
+	}
+	return nil
+}
+
 const maxSetLen = 1 << 20
 
-func expandSet(s string, isSet2 bool, set1Len int, translateSet2 bool, callCtx *builtins.CallContext) ([]byte, error) {
+type caseClassPos struct {
+	expandedOffset int
+	name           string // "upper" or "lower"
+}
+
+func expandSet(s string, isSet2 bool, set1Len int, translateSet2 bool, callCtx *builtins.CallContext, caseClasses *[]caseClassPos) ([]byte, error) {
 	var result []byte
 	data := []byte(s)
 	i := 0
@@ -410,6 +441,9 @@ func expandSet(s string, isSet2 bool, set1Len int, translateSet2 bool, callCtx *
 					if err != nil {
 						return nil, err
 					}
+					if (className == "upper" || className == "lower") && caseClasses != nil {
+						*caseClasses = append(*caseClasses, caseClassPos{expandedOffset: len(result), name: className})
+					}
 					result = append(result, chars...)
 					i = end + 2
 					continue
@@ -427,7 +461,11 @@ func expandSet(s string, isSet2 bool, set1Len int, translateSet2 bool, callCtx *
 					}
 					var eqByte byte
 					if eqChars[0] == '\\' && len(eqChars) > 1 {
-						eqByte, _ = parseBackslashEscapeSingle(eqChars, 0)
+						var adv int
+						eqByte, adv = parseBackslashEscapeSingle(eqChars, 0)
+						if adv != len(eqChars) {
+							return nil, &trError{string(eqChars) + ": equivalence class operand must be a single character"}
+						}
 					} else if len(eqChars) == 1 {
 						eqByte = eqChars[0]
 					} else {

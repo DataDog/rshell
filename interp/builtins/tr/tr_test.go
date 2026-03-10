@@ -290,6 +290,42 @@ func TestTrEquivalenceClassBackslashEscape(t *testing.T) {
 	assert.Equal(t, "aXb", stdout)
 }
 
+func TestTrEquivalenceClassMultiByteEscaped(t *testing.T) {
+	_, stderr, code := trRun(t, "", `-d '[=\na=]'`)
+	assert.Equal(t, 1, code)
+	assert.Contains(t, stderr, "equivalence class operand must be a single character")
+}
+
+func TestTrMisalignedUpperInSet2(t *testing.T) {
+	_, stderr, code := trRun(t, "abc", "abc '[:upper:]'")
+	assert.Equal(t, 1, code)
+	assert.Contains(t, stderr, "misaligned [:upper:] and/or [:lower:] construct")
+}
+
+func TestTrMisalignedLowerInSet2(t *testing.T) {
+	_, stderr, code := trRun(t, "abc", "abc '[:lower:]'")
+	assert.Equal(t, 1, code)
+	assert.Contains(t, stderr, "misaligned [:upper:] and/or [:lower:] construct")
+}
+
+func TestTrAlignedCaseClasses(t *testing.T) {
+	stdout, _, code := trRun(t, "abcABC", "'[:lower:]' '[:upper:]'")
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "ABCABC", stdout)
+}
+
+func TestTrAlignedCaseClassesWithPrefix(t *testing.T) {
+	stdout, _, code := trRun(t, "abcABC", "'a[:lower:]' 'A[:upper:]'")
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "ABCABC", stdout)
+}
+
+func TestTrMisalignedCaseClassOffset(t *testing.T) {
+	_, stderr, code := trRun(t, "abc", "'a[:lower:]' 'AB[:upper:]'")
+	assert.Equal(t, 1, code)
+	assert.Contains(t, stderr, "misaligned [:upper:] and/or [:lower:] construct")
+}
+
 func TestTrEmptyCharClassName(t *testing.T) {
 	_, stderr, code := trRun(t, "", "'[::]' x")
 	assert.Equal(t, 1, code)
