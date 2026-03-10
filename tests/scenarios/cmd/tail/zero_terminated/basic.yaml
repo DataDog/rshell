@@ -1,0 +1,13 @@
+description: tail -z uses NUL as the line delimiter; outputs last N NUL-terminated records.
+setup:
+  files:
+    - path: nul.bin
+      content: "rec1\x00rec2\x00rec3\x00"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    tail -z -n 2 nul.bin
+expect:
+  stdout: "rec2\x00rec3\x00"
+  stderr: ""
+  exit_code: 0

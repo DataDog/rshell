@@ -1,0 +1,13 @@
+description: tail -c +3 skips the first 2 bytes and outputs the rest.
+setup:
+  files:
+    - path: file.txt
+      content: "abcde"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    tail -c +3 file.txt
+expect:
+  stdout: "cde"
+  stderr: ""
+  exit_code: 0

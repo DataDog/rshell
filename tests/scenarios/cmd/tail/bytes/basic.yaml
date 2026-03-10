@@ -1,0 +1,13 @@
+description: tail -c N outputs the last N bytes of the file.
+setup:
+  files:
+    - path: file.txt
+      content: "abcdefghij"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    tail -c 4 file.txt
+expect:
+  stdout: "ghij"
+  stderr: ""
+  exit_code: 0

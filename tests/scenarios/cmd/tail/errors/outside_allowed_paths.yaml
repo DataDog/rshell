@@ -1,0 +1,14 @@
+description: tail rejects files outside AllowedPaths with an error.
+skip_assert_against_bash: true
+setup:
+  files:
+    - path: file.txt
+      content: "hello\n"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    tail ../../etc/passwd
+expect:
+  stdout: ""
+  stderr_contains: ["tail:"]
+  exit_code: 1

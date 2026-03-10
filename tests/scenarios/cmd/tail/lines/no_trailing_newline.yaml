@@ -1,0 +1,13 @@
+description: tail reproduces the last line exactly when it has no trailing newline.
+setup:
+  files:
+    - path: file.txt
+      content: "first line\nsecond line"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    tail -n 1 file.txt
+expect:
+  stdout: "second line"
+  stderr: ""
+  exit_code: 0
