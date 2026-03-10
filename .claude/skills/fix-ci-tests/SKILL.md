@@ -8,38 +8,35 @@ Diagnose and fix CI failures for **$ARGUMENTS** (or the current branch's PR if n
 
 ---
 
-## Workflow
+## Fast paths
 
-### 1. Identify the PR and failing checks
+Before following the full workflow, check for these common quick fixes after fetching CI logs:
 
-Determine the target PR:
+- **Compile error**: Fix is usually obvious from the error message. Fix, verify with `go build ./...`, push.
+- **Single test failure with clear diff**: Fix implementation or test expectation, run that one test, push.
+- **Race condition with clear report**: Add synchronization, run with `-race -count=3` on that test, push.
+
+Only follow the full workflow below for complex or ambiguous failures.
+
+---
+
+## Full Workflow
+
+### 1. Identify failing checks and fetch logs
+
+Determine the target PR and find failing checks:
 
 ```bash
 # If argument provided, use it; otherwise detect from current branch
-gh pr view $ARGUMENTS --json number,url,headRefName,statusCheckRollup
+gh pr checks $ARGUMENTS --json name,state,link
 ```
 
-If no PR is found, stop and inform the user.
+If no PR is found, stop and inform the user. If all checks pass, inform the user and stop.
 
-List all CI check runs and their statuses:
-
-```bash
-gh pr checks $ARGUMENTS --json name,state,link,completedAt
-```
-
-Identify which checks are **failing** or **pending**. If all checks pass, inform the user and stop.
-
-For each failing check, note:
-- The check name (maps to a GitHub Actions job)
-- The link to the run
-- When it completed
-
-### 2. Fetch CI logs for failing jobs
-
-For each failing check, download and analyze the logs:
+For each failing check, extract the run ID from the link and fetch logs. **Fetch logs for all failing jobs in parallel** (use parallel bash calls or the Agent tool):
 
 ```bash
-# Get the run ID from the check URL, then fetch logs
+# Get failed logs (pipe to head to avoid excessive output)
 gh run view <run-id> --log-failed 2>&1 | head -500
 ```
 
@@ -47,11 +44,6 @@ If `--log-failed` output is too large or truncated, fetch specific job logs:
 
 ```bash
 gh run view <run-id> --json jobs --jq '.jobs[] | select(.conclusion == "failure") | {name, conclusion}'
-```
-
-Then fetch logs for the specific failing job:
-
-```bash
 gh run view <run-id> --log --job <job-id> 2>&1 | tail -200
 ```
 
@@ -59,9 +51,9 @@ For each failure, extract:
 - The exact error message(s)
 - The test name and file (if a test failure)
 - Expected vs actual output (if available)
-- The step that failed (e.g. "Run tests with race detector", "Run compliance checks")
+- The step that failed
 
-### 3. Map failures to CI jobs
+### 2. Classify failures
 
 This repo has the following CI jobs (defined in `.github/workflows/`):
 
@@ -75,18 +67,34 @@ This repo has the following CI jobs (defined in `.github/workflows/`):
 
 Classify each failure:
 
-| Category | Description | Action |
-|----------|------------|--------|
-| **Test failure** | A Go test fails with wrong output or panic | Read the test, understand expected behavior, fix implementation or test |
-| **Race condition** | `-race` detector reports a data race | Read the race report, identify the shared state, add synchronization |
-| **Build failure** | Code does not compile | Read the compiler error, fix the syntax/type issue |
-| **Bash comparison failure** | YAML scenario output differs from bash | Use the `fix-tests` skill workflow (determine what bash does, then fix) |
-| **Compliance failure** | Compliance check fails | Read the compliance test to understand the rule, then fix the violation |
-| **Platform-specific failure** | Passes on some OSes but not others | Check for platform-dependent behavior (path separators, line endings, etc.) |
+| Category | Action |
+|----------|--------|
+| **Test failure** | Read the test, understand expected behavior, fix implementation or test |
+| **Race condition** | Read the race report, identify shared state, add synchronization |
+| **Build failure** | Read the compiler error, fix the syntax/type issue |
+| **Bash comparison failure** | Determine what bash does, fix implementation to match |
+| **Compliance failure** | Read the compliance test, fix the violation |
+| **Platform-specific failure** | Check for platform-dependent behavior (path separators, line endings, etc.) |
 
-### 4. Reproduce failures locally
+### 3. Analyze PR diff (only if root cause is unclear)
 
-Before making changes, reproduce the failure locally to confirm:
+Skip this step if the failure root cause is already clear from CI logs.
+
+```bash
+gh pr diff $ARGUMENTS
+```
+
+Cross-reference the failing tests with the changed files. Determine whether:
+- The failure is caused by changes in this PR
+- The failure is a pre-existing flaky test
+- The failure is in a test that was added/modified in this PR
+
+### 4. Reproduce locally (only if needed)
+
+Skip local reproduction if the CI logs clearly show the root cause (e.g., a clear test diff, compile error, or race report). Only reproduce locally when:
+- The error is ambiguous
+- The fix is non-obvious
+- You need to iterate on a solution
 
 ```bash
 # For test failures:
@@ -104,20 +112,7 @@ If the failure does **not** reproduce locally, it may be:
 - A race condition (run with `-count=10` to increase chance of reproduction)
 - An environment difference (CI uses specific Go version from `.go-version`)
 
-### 5. Analyze the PR diff
-
-Fetch the PR diff to understand what changed:
-
-```bash
-gh pr diff $ARGUMENTS
-```
-
-Cross-reference the failing tests with the changed files. Determine whether:
-- The failure is caused by changes in this PR
-- The failure is a pre-existing flaky test
-- The failure is in a test that was added/modified in this PR
-
-### 6. Fix the failures
+### 5. Fix the failures
 
 For each failure, apply the appropriate fix:
 
@@ -131,7 +126,6 @@ For each failure, apply the appropriate fix:
 1. Read the full race report — it shows two goroutines and the shared variable
 2. Identify the unprotected shared state
 3. Add appropriate synchronization (mutex, channel, atomic, or syncWriter pattern used in this repo)
-4. Run with `-race -count=5` to verify the fix
 
 **Bash comparison failures:**
 1. Run the scenario against bash to see what bash produces:
@@ -146,26 +140,21 @@ For each failure, apply the appropriate fix:
 2. Use `stdout_windows`/`stderr_windows` fields in YAML scenarios for Windows-specific output
 3. Use build tags (`//go:build unix` / `//go:build windows`) for platform-specific test files
 
-### 7. Verify all fixes
+### 6. Verify fixes and push
 
-Run the full test suite locally:
+Run ONLY the previously-failing tests to verify — do not run the full suite (CI will do that after push):
 
 ```bash
-# Core tests with race detector
-go test -race -v ./interp/... ./tests/...
-
-# Bash comparison (if YAML scenarios were touched)
-RSHELL_BASH_TEST=1 go test ./tests/ -run TestShellScenariosAgainstBash -timeout 120s
-
-# Compliance (if compliance failed)
-RSHELL_COMPLIANCE_TEST=1 go test ./tests/ -run TestCompliance -v
+go test -race ./interp/... ./tests/... -run "<failing test name>" -v
 ```
 
-Ensure no regressions were introduced. If new failures appear, repeat from step 4.
+If YAML scenarios were touched, also verify bash comparison for just those scenarios:
 
-### 8. Commit and push
+```bash
+RSHELL_BASH_TEST=1 go test ./tests/ -run TestShellScenariosAgainstBash -timeout 120s
+```
 
-After all fixes are verified, stage, commit, and push the changes:
+Then stage, commit, and push:
 
 ```bash
 # Stage the changed files (list them explicitly, never use git add -A)
@@ -183,9 +172,9 @@ EOF
 git push
 ```
 
-### 9. Reply to and resolve CI review comments
+### 7. Resolve related review comments (if any)
 
-If there are review comments on the PR related to the CI failures (e.g. a reviewer or bot flagged the failure), reply to them and mark them as resolved:
+Only check for review comments if the CI failure was flagged by a reviewer or bot. Skip this step entirely for standard CI re-runs.
 
 ```bash
 # Fetch review comments on the PR
@@ -200,9 +189,9 @@ For each comment that relates to a CI failure you just fixed:
      -f body="[Claude Opus 4.6] Fixed — <brief explanation of the fix>"
    ```
 
-2. **Resolve** the conversation thread (requires GraphQL since the REST API does not support resolving):
+2. **Resolve** the conversation thread:
    ```bash
-   # First get the GraphQL thread ID for the comment
+   # Get the GraphQL thread ID for the comment
    gh api graphql -f query='
      query($owner: String!, $repo: String!, $pr: Int!) {
        repository(owner: $owner, name: $repo) {
@@ -232,9 +221,7 @@ For each comment that relates to a CI failure you just fixed:
    ' -f threadId="<thread-id>"
    ```
 
-If there are no review comments related to CI failures, skip this step.
-
-### 10. Summary
+### 8. Summary
 
 Provide a final summary:
 
