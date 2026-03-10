@@ -46,6 +46,16 @@ func effectiveHasPerm(info fs.FileInfo, writeMask, execMask fs.FileMode, checkWr
 			ownerBits = 0070
 		default:
 			ownerBits = 0007
+			// Check supplementary groups — the process may belong to
+			// additional groups beyond the primary GID.
+			if groups, err := os.Getgroups(); err == nil {
+				for _, g := range groups {
+					if int(st.Gid) == g {
+						ownerBits = 0070
+						break
+					}
+				}
+			}
 		}
 	}
 

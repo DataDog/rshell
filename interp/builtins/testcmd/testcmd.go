@@ -250,8 +250,16 @@ func (p *parser) parseNot() bool {
 		if remaining >= 3 && isBinaryOp(p.args[p.pos+1]) {
 			return p.parsePrimary()
 		}
+		if p.depth >= maxParenDepth {
+			p.callCtx.Errf("%s: expression too deeply nested\n", p.cmdName)
+			p.err = true
+			return false
+		}
+		p.depth++
 		p.advance()
-		return !p.parseNot()
+		result := !p.parseNot()
+		p.depth--
+		return result
 	}
 	return p.parsePrimary()
 }

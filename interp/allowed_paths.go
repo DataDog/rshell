@@ -95,24 +95,35 @@ func (s *pathSandbox) access(ctx context.Context, path string, mode uint32) erro
 			continue
 		}
 
-		// Check read access by attempting to open through os.Root.
-		if mode&0x04 != 0 {
-			f, err := ar.root.Open(rel)
-			if err != nil {
-				return err
+		// Open through os.Root once. This checks read access and gives
+		// us a file descriptor for an atomic Stat (no TOCTOU window).
+		f, err := ar.root.Open(rel)
+		if err != nil {
+			if mode&0x04 != 0 {
+				return portablePathError(err)
 			}
-			f.Close()
+			// Read not requested; fall back to Stat for write/execute.
+			info, serr := ar.root.Stat(rel)
+			if serr != nil {
+				return portablePathError(serr)
+			}
+			if !effectiveHasPerm(info, 0222, 0111, mode&0x02 != 0, mode&0x01 != 0) {
+				return &os.PathError{Op: "access", Path: path, Err: os.ErrPermission}
+			}
+			return nil
 		}
+		defer f.Close()
 
-		// For write and execute, use mode bits from os.Root.Stat.
+		// For write and execute, use mode bits from f.Stat() on the
+		// open fd — atomic, no TOCTOU window.
 		// The sandbox is read-only so -w is informational only.
 		// effectiveHasPerm checks the permission class (owner/group/other)
 		// that applies to the current process's effective UID/GID on Unix,
 		// rather than the union of all classes.
 		if mode&0x03 != 0 {
-			info, err := ar.root.Stat(rel)
+			info, err := f.Stat()
 			if err != nil {
-				return err
+				return portablePathError(err)
 			}
 			if !effectiveHasPerm(info, 0222, 0111, mode&0x02 != 0, mode&0x01 != 0) {
 				return &os.PathError{Op: "access", Path: path, Err: os.ErrPermission}

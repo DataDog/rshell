@@ -29,8 +29,5 @@ func effectiveHasPerm(info fs.FileInfo, writeMask, execMask fs.FileMode, checkWr
 	if checkWrite && perm&writeMask == 0 {
 		return false
 	}
-	if checkExec && perm&execMask == 0 {
-		return false
-	}
-	return true
+	return !(checkExec && perm&execMask == 0)
 }
