@@ -6,9 +6,7 @@
 package head_test
 
 import (
-	"bytes"
 	"context"
-	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -17,46 +15,22 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"mvdan.cc/sh/v3/syntax"
 
 	"github.com/DataDog/rshell/interp"
+	"github.com/DataDog/rshell/interp/builtins/testutil"
 )
 
 // runScriptCtx runs a shell script with a context and returns stdout, stderr,
 // and the exit code.
 func runScriptCtx(ctx context.Context, t *testing.T, script, dir string, opts ...interp.RunnerOption) (string, string, int) {
 	t.Helper()
-	parser := syntax.NewParser()
-	prog, err := parser.Parse(strings.NewReader(script), "")
-	require.NoError(t, err)
-
-	var outBuf, errBuf bytes.Buffer
-	allOpts := append([]interp.RunnerOption{interp.StdIO(nil, &outBuf, &errBuf)}, opts...)
-	runner, err := interp.New(allOpts...)
-	require.NoError(t, err)
-	defer runner.Close()
-
-	if dir != "" {
-		runner.Dir = dir
-	}
-
-	err = runner.Run(ctx, prog)
-	exitCode := 0
-	if err != nil {
-		var es interp.ExitStatus
-		if errors.As(err, &es) {
-			exitCode = int(es)
-		} else if ctx.Err() == nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-	}
-	return outBuf.String(), errBuf.String(), exitCode
+	return testutil.RunScriptCtx(ctx, t, script, dir, opts...)
 }
 
 // runScript runs a shell script and returns stdout, stderr, and the exit code.
 func runScript(t *testing.T, script, dir string, opts ...interp.RunnerOption) (string, string, int) {
 	t.Helper()
-	return runScriptCtx(context.Background(), t, script, dir, opts...)
+	return testutil.RunScript(t, script, dir, opts...)
 }
 
 // cmdRun runs a head command with AllowedPaths set to dir.

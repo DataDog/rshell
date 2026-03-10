@@ -80,6 +80,10 @@ func TestBuiltinImportAllowlist(t *testing.T) {
 			return err
 		}
 		if info.IsDir() {
+			// testutil/ is a test-only helper package, not a command implementation.
+			if info.Name() == "testutil" {
+				return filepath.SkipDir
+			}
 			return nil
 		}
 		if !strings.HasSuffix(info.Name(), ".go") || strings.HasSuffix(info.Name(), "_test.go") {
