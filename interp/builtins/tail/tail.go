@@ -491,11 +491,14 @@ func parseCount(s string) (countMode, bool) {
 	if err != nil {
 		return countMode{}, false
 	}
-	// GNU tail silently treats negative counts as their absolute value.
-	// Guard against MinInt64: if n < -MaxCount it cannot be negated safely
-	// within int64, so clamp it directly (it would be capped to MaxCount
-	// by the next block anyway).
 	if n < 0 {
+		// In offset mode (leading '+') a negative value like "+-2" is
+		// malformed and must be rejected, matching GNU tail behaviour.
+		if isOffset {
+			return countMode{}, false
+		}
+		// In tail mode GNU tail silently treats negative counts as their
+		// absolute value. Guard against MinInt64 overflow before negating.
 		if n < -MaxCount {
 			n = MaxCount
 		} else {
