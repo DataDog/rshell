@@ -1,11 +1,9 @@
-# Our echo intentionally ignores all flags; bash interprets -E to disable escapes.
-skip_assert_against_bash: true
-description: Echo treats -E as a literal argument, not as an option.
+description: Echo -E disables escape interpretation (default behavior), output matches bash.
 input:
   script: |+
     echo -E hello
 expect:
   stdout: |+
-    -E hello
+    hello
   stderr: ""
   exit_code: 0
