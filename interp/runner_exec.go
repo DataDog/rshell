@@ -24,6 +24,7 @@ import (
 	_ "github.com/DataDog/rshell/interp/builtins/false"
 	_ "github.com/DataDog/rshell/interp/builtins/head"
 	_ "github.com/DataDog/rshell/interp/builtins/true"
+	_ "github.com/DataDog/rshell/interp/builtins/uniq"
 )
 
 func (r *Runner) stmt(ctx context.Context, st *syntax.Stmt) {

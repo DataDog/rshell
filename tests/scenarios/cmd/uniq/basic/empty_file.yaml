@@ -1,0 +1,14 @@
+# Derived from GNU coreutils uniq.pl test 1
+description: uniq on empty file produces empty output.
+setup:
+  files:
+    - path: f.txt
+      content: ""
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    uniq f.txt
+expect:
+  stdout: ""
+  stderr: ""
+  exit_code: 0

@@ -1,0 +1,14 @@
+# Derived from GNU coreutils uniq.pl test 141
+description: uniq --group -c is mutually exclusive.
+setup:
+  files:
+    - path: f.txt
+      content: ""
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    uniq --group -c f.txt
+expect:
+  stdout: ""
+  stderr_contains: ["mutually exclusive"]
+  exit_code: 1

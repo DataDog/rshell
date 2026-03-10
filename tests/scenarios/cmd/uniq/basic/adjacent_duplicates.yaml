@@ -1,0 +1,14 @@
+# Derived from GNU coreutils uniq.pl test 2
+description: uniq merges adjacent duplicate lines.
+setup:
+  files:
+    - path: f.txt
+      content: "a\na\n"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    uniq f.txt
+expect:
+  stdout: "a\n"
+  stderr: ""
+  exit_code: 0

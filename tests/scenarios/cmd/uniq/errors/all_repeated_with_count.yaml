@@ -1,0 +1,14 @@
+# Derived from GNU coreutils uniq.pl test 112
+description: uniq -D -c is meaningless.
+setup:
+  files:
+    - path: f.txt
+      content: ""
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    uniq -D -c f.txt
+expect:
+  stdout: ""
+  stderr_contains: ["meaningless"]
+  exit_code: 1

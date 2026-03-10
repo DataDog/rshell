@@ -1,0 +1,14 @@
+# Derived from GNU coreutils uniq.pl test 6
+description: uniq does not merge non-adjacent duplicates.
+setup:
+  files:
+    - path: f.txt
+      content: "b\na\na\n"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    uniq f.txt
+expect:
+  stdout: "b\na\n"
+  stderr: ""
+  exit_code: 0

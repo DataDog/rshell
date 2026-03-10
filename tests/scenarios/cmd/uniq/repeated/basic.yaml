@@ -1,0 +1,14 @@
+# Derived from GNU coreutils uniq.pl test 20
+description: uniq -d only prints duplicate lines.
+setup:
+  files:
+    - path: f.txt
+      content: "a\na\nb\n"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    uniq -d f.txt
+expect:
+  stdout: "a\n"
+  stderr: ""
+  exit_code: 0

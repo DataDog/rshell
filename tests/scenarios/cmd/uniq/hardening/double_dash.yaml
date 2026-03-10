@@ -1,0 +1,13 @@
+description: uniq -- separates flags from file-like filenames.
+setup:
+  files:
+    - path: "-d"
+      content: "hello\n"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    uniq -- -d
+expect:
+  stdout: "hello\n"
+  stderr: ""
+  exit_code: 0

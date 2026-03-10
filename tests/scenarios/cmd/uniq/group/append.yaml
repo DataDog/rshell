@@ -1,0 +1,14 @@
+# Derived from GNU coreutils uniq.pl test 129
+description: uniq --group=append appends blank line after each group.
+setup:
+  files:
+    - path: f.txt
+      content: "a\na\nb\n"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    uniq --group=append f.txt
+expect:
+  stdout: "a\na\n\nb\n\n"
+  stderr: ""
+  exit_code: 0

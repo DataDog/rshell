@@ -1,0 +1,14 @@
+# Derived from GNU coreutils uniq.pl test 126
+description: uniq -i ignores case when comparing.
+setup:
+  files:
+    - path: f.txt
+      content: "A\na\n"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    uniq -i f.txt
+expect:
+  stdout: "A\n"
+  stderr: ""
+  exit_code: 0

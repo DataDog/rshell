@@ -1,0 +1,14 @@
+# Derived from GNU coreutils uniq.pl test 132
+description: uniq --group=both prepends and appends blank lines around each group.
+setup:
+  files:
+    - path: f.txt
+      content: "a\na\nb\n"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    uniq --group=both f.txt
+expect:
+  stdout: "\na\na\n\nb\n\n"
+  stderr: ""
+  exit_code: 0

@@ -1,0 +1,14 @@
+# Derived from GNU coreutils uniq.pl test 31
+description: uniq -f 1 skips the first field when comparing.
+setup:
+  files:
+    - path: f.txt
+      content: "a a\nb a\n"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    uniq -f 1 f.txt
+expect:
+  stdout: "a a\n"
+  stderr: ""
+  exit_code: 0

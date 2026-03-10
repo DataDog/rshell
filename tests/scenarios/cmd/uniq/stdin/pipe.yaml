@@ -1,0 +1,13 @@
+description: uniq works with piped input.
+setup:
+  files:
+    - path: f.txt
+      content: "a\na\nb\n"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    cat f.txt | uniq
+expect:
+  stdout: "a\nb\n"
+  stderr: ""
+  exit_code: 0

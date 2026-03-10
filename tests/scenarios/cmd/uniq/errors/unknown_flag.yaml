@@ -1,0 +1,9 @@
+description: uniq rejects unknown flags.
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    uniq --no-such-flag
+expect:
+  stdout: ""
+  stderr_contains: ["uniq:"]
+  exit_code: 1

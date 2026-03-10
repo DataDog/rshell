@@ -1,0 +1,14 @@
+# Derived from GNU coreutils uniq.pl test 101
+description: uniq -c prefixes lines with count.
+setup:
+  files:
+    - path: f.txt
+      content: "a\nb\n"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    uniq -c f.txt
+expect:
+  stdout: "      1 a\n      1 b\n"
+  stderr: ""
+  exit_code: 0

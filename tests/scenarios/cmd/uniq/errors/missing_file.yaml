@@ -1,0 +1,9 @@
+description: uniq exits 1 and prints an error when a file does not exist.
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    uniq nonexistent.txt
+expect:
+  stdout: ""
+  stderr_contains: ["uniq:"]
+  exit_code: 1

@@ -1,0 +1,14 @@
+# Derived from GNU coreutils uniq.pl test 10
+description: uniq -u with all unique lines passes them through.
+setup:
+  files:
+    - path: f.txt
+      content: "a\nb\n"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    uniq -u f.txt
+expect:
+  stdout: "a\nb\n"
+  stderr: ""
+  exit_code: 0

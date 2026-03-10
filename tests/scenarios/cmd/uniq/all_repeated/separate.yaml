@@ -1,0 +1,14 @@
+# Derived from GNU coreutils uniq.pl test 113
+description: uniq --all-repeated=separate separates groups with blank lines.
+setup:
+  files:
+    - path: f.txt
+      content: "a\na\nb\nc\nc\n"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    uniq --all-repeated=separate f.txt
+expect:
+  stdout: "a\na\n\nc\nc\n"
+  stderr: ""
+  exit_code: 0

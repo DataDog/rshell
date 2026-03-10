@@ -29,6 +29,8 @@ import (
 // third-party packages and other internal module packages.
 var builtinAllowedSymbols = []string{
 	"bufio.NewScanner",
+	"bufio.Scanner",
+	"bufio.SplitFunc",
 	"context.Context",
 	"errors.Is",
 	"github.com/spf13/pflag.ContinueOnError",
@@ -39,9 +41,13 @@ var builtinAllowedSymbols = []string{
 	"io.NopCloser",
 	"io.ReadCloser",
 	"io.Reader",
+	"io.WriteString",
+	"io.Writer",
 	"os.O_RDONLY",
 	"strconv.Atoi",
+	"strconv.Itoa",
 	"strconv.ParseInt",
+	"strings.EqualFold",
 }
 
 // permanentlyBanned lists packages that may never be imported by builtin

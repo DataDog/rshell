@@ -1,0 +1,14 @@
+skip_assert_against_bash: true
+description: uniq is blocked from reading files outside the allowed paths sandbox.
+setup:
+  files:
+    - path: local.txt
+      content: "local\n"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    uniq /etc/passwd
+expect:
+  stdout: ""
+  stderr_contains: ["uniq:"]
+  exit_code: 1

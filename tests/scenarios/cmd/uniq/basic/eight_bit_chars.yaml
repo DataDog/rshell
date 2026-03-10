@@ -1,0 +1,14 @@
+# Derived from GNU coreutils uniq.pl test 8
+description: uniq preserves 8-bit characters.
+setup:
+  files:
+    - path: f.txt
+      content: "ö\nv\n"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    uniq f.txt
+expect:
+  stdout: "ö\nv\n"
+  stderr: ""
+  exit_code: 0

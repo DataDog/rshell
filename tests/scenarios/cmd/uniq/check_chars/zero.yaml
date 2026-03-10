@@ -1,0 +1,14 @@
+# Derived from GNU coreutils uniq.pl test 57
+description: uniq -w 0 treats all lines as equal.
+setup:
+  files:
+    - path: f.txt
+      content: "abc\nabcd\n"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    uniq -w 0 f.txt
+expect:
+  stdout: "abc\n"
+  stderr: ""
+  exit_code: 0

@@ -1,0 +1,14 @@
+# Derived from GNU coreutils uniq.pl test 42
+description: uniq -s 1 skips the first character when comparing.
+setup:
+  files:
+    - path: f.txt
+      content: "aaa\naaa\n"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    uniq -s 1 f.txt
+expect:
+  stdout: "aaa\n"
+  stderr: ""
+  exit_code: 0

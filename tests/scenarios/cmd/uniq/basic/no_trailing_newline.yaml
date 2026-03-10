@@ -1,0 +1,14 @@
+# Derived from GNU coreutils uniq.pl test 3
+description: uniq with no trailing newline still outputs a newline.
+setup:
+  files:
+    - path: f.txt
+      content: "a\na"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    uniq f.txt
+expect:
+  stdout: "a\n"
+  stderr: ""
+  exit_code: 0

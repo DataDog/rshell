@@ -1,0 +1,14 @@
+# Derived from GNU coreutils uniq.pl test 128
+description: uniq --group=prepend prepends blank line before each group.
+setup:
+  files:
+    - path: f.txt
+      content: "a\na\nb\n"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    uniq --group=prepend f.txt
+expect:
+  stdout: "\na\na\n\nb\n"
+  stderr: ""
+  exit_code: 0

@@ -1,0 +1,14 @@
+# Derived from GNU coreutils uniq.pl test 130
+description: uniq --group=separate separates groups with blank lines.
+setup:
+  files:
+    - path: f.txt
+      content: "a\na\nb\n"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    uniq --group=separate f.txt
+expect:
+  stdout: "a\na\n\nb\n"
+  stderr: ""
+  exit_code: 0

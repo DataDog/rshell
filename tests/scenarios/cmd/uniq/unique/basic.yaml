@@ -1,0 +1,14 @@
+# Derived from GNU coreutils uniq.pl test 9
+description: uniq -u only prints unique lines.
+setup:
+  files:
+    - path: f.txt
+      content: "a\na\nb\n"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    uniq -u f.txt
+expect:
+  stdout: "b\n"
+  stderr: ""
+  exit_code: 0
