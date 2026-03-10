@@ -15,9 +15,3 @@ import (
 func isErrIsDirectory(err error) bool {
 	return errors.Is(err, syscall.EISDIR)
 }
-
-// checkAccess uses the access(2) syscall to test real uid/gid permissions.
-// mode: 0x04 = R_OK, 0x02 = W_OK, 0x01 = X_OK.
-func checkAccess(path string, mode uint32) error {
-	return syscall.Access(path, mode)
-}

@@ -78,7 +78,8 @@ func (s *pathSandbox) resolve(absPath string) (*os.Root, string, bool) {
 }
 
 // access checks whether the resolved path is accessible with the given mode.
-// The mode uses Unix semantics: 0x04 = read, 0x02 = write, 0x01 = execute.
+// All operations go through os.Root to stay within the sandbox.
+// Mode: 0x04 = read, 0x02 = write, 0x01 = execute.
 func (s *pathSandbox) access(ctx context.Context, path string, mode uint32) error {
 	absPath := toAbs(path, HandlerCtx(ctx).Dir)
 
@@ -93,13 +94,32 @@ func (s *pathSandbox) access(ctx context.Context, path string, mode uint32) erro
 		if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
 			continue
 		}
-		// First verify the file exists through os.Root (safe resolution).
-		if _, err := ar.root.Stat(rel); err != nil {
-			return err
+
+		// Check read access by attempting to open through os.Root.
+		if mode&0x04 != 0 {
+			f, err := ar.root.Open(rel)
+			if err != nil {
+				return err
+			}
+			f.Close()
 		}
-		// Check actual access on the resolved real path.
-		realPath := filepath.Join(ar.absPath, rel)
-		return checkAccess(realPath, mode)
+
+		// For write and execute, use mode bits from os.Root.Stat.
+		// The sandbox is read-only so -w is informational only.
+		if mode&0x03 != 0 {
+			info, err := ar.root.Stat(rel)
+			if err != nil {
+				return err
+			}
+			perm := info.Mode().Perm()
+			if mode&0x02 != 0 && perm&0222 == 0 {
+				return &os.PathError{Op: "access", Path: path, Err: os.ErrPermission}
+			}
+			if mode&0x01 != 0 && perm&0111 == 0 {
+				return &os.PathError{Op: "access", Path: path, Err: os.ErrPermission}
+			}
+		}
+		return nil
 	}
 	return &os.PathError{Op: "access", Path: path, Err: os.ErrPermission}
 }
