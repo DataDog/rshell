@@ -18,6 +18,7 @@ import (
 	"github.com/DataDog/rshell/interp/builtins/head"
 	"github.com/DataDog/rshell/interp/builtins/tail"
 	truecmd "github.com/DataDog/rshell/interp/builtins/true"
+	"github.com/DataDog/rshell/interp/builtins/wc"
 )
 
 var registerOnce sync.Once
@@ -34,6 +35,7 @@ func registerBuiltins() {
 			head.Cmd,
 			tail.Cmd,
 			truecmd.Cmd,
+			wc.Cmd,
 		} {
 			builtins.Register(cmd.Name, cmd.Run)
 		}

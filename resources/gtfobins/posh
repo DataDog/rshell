@@ -1,9 +1,0 @@
----
-functions:
-  shell:
-  - code: |-
-      posh
-    contexts:
-      sudo:
-      unprivileged:
-...
