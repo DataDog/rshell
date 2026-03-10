@@ -1,5 +1,5 @@
 ---
-name: fix-tests
+name: fix-local-tests
 description: Fix failing tests by prioritising shell implementation fixes to match bash behaviour
 argument-hint: "[test filter or description of failure]"
 ---
