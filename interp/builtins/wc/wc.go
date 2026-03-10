@@ -62,6 +62,7 @@ import (
 	"strconv"
 	"unicode/utf8"
 
+	"github.com/mattn/go-runewidth"
 	"github.com/spf13/pflag"
 
 	"github.com/DataDog/rshell/interp/builtins"
@@ -260,21 +261,23 @@ func countReader(ctx context.Context, r io.Reader) (counts, error) {
 			c.chars += int64(utf8.RuneCount(chunk))
 			c.bytes -= int64(carryN)
 
-			for _, b := range buf[:n] {
-				if b == '\n' {
+			for i := 0; i < len(chunk); {
+				r, size := utf8.DecodeRune(chunk[i:])
+				i += size
+				if r == '\n' {
 					c.lines++
 					if lineLen > c.maxLineLen {
 						c.maxLineLen = lineLen
 					}
 					lineLen = 0
 					inWord = false
-				} else if b == '\r' {
+				} else if r == '\r' {
 					lineLen = 0
 					inWord = false
-				} else if b == '\t' {
+				} else if r == '\t' {
 					lineLen = (lineLen/8 + 1) * 8
 					inWord = false
-				} else if b == ' ' || b == '\v' || b == '\f' {
+				} else if r == ' ' || r == '\v' || r == '\f' {
 					lineLen++
 					inWord = false
 				} else {
@@ -282,9 +285,7 @@ func countReader(ctx context.Context, r io.Reader) (counts, error) {
 						c.words++
 						inWord = true
 					}
-					if b&0xC0 != 0x80 {
-						lineLen++
-					}
+					lineLen += int64(runewidth.RuneWidth(r))
 				}
 			}
 		}

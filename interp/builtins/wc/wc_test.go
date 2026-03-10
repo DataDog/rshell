@@ -434,3 +434,21 @@ func TestWcCharsMultibyteEmoji(t *testing.T) {
 	assert.Equal(t, 0, code)
 	assert.Equal(t, "5 file.txt\n", stdout)
 }
+
+// TestWcChunkBoundaryMultibyte verifies that a multibyte character straddling
+// the 32 KiB read-buffer boundary is not double-counted. This requires
+// programmatic file generation so it lives as a Go test rather than a scenario.
+func TestWcChunkBoundaryMultibyte(t *testing.T) {
+	dir := t.TempDir()
+	// 💐 is 4 bytes; placing it at offset 32766 means it spans bytes 32766-32769,
+	// straddling the 32768-byte chunk boundary and exercising the carry logic.
+	prefix := strings.Repeat("a", 32*1024-2)
+	content := prefix + "💐\n"
+	writeFile(t, dir, "file.txt", content)
+	stdout, _, code := cmdRun(t, "wc -mL file.txt", dir)
+	assert.Equal(t, 0, code)
+	// chars: 32766 'a' + 1 emoji + 1 newline = 32768
+	// max line length: 32766 + 2 (emoji display width) = 32768
+	assert.Equal(t, "32768 32768 file.txt\n", stdout)
+}
+
