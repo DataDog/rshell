@@ -66,7 +66,7 @@ Linux, macOS, and Windows.
 
 ```
 tests/scenarios/
-├── cmd/          # builtin command tests (echo, cat, head, tail, uniq, wc, ...)
+├── cmd/          # builtin command tests (echo, cat, head, tail, tr, uniq, wc, ...)
 └── shell/        # shell feature tests (pipes, variables, control flow, ...)
 ```
 

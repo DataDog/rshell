@@ -9,6 +9,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -241,6 +242,34 @@ func TestTrUnknownFlag(t *testing.T) {
 	_, stderr, code := runScript(t, "tr --invalid-flag a b", t.TempDir())
 	assert.Equal(t, 1, code)
 	assert.Contains(t, stderr, "tr:")
+}
+
+func TestTrDeleteSqueezeMissingSecondOperand(t *testing.T) {
+	_, stderr, code := runScript(t, "tr -ds a", t.TempDir())
+	assert.Equal(t, 1, code)
+	assert.Contains(t, stderr, "Two strings must be given when both deleting and squeezing repeats")
+}
+
+func TestTrTruncateEmptySet2Passthrough(t *testing.T) {
+	stdout, _, code := trRun(t, "abc", "-t abc ''")
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "abc", stdout)
+}
+
+func TestTrComplementLongSet1NoPanic(t *testing.T) {
+	// set1 with duplicates exceeding 256 bytes should not panic
+	dir := t.TempDir()
+	writeFile(t, dir, "in.txt", "helloaa")
+	longA := strings.Repeat("a", 300)
+	stdout, _, code := runScript(t, "cat in.txt | tr -d -c '"+longA+"'", dir, interp.AllowedPaths([]string{dir}))
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "aa", stdout) // only 'a' chars survive complement delete
+}
+
+func TestTrRepeatWithEscapedChar(t *testing.T) {
+	stdout, _, code := trRun(t, "abc", "abc '[\\n*3]'")
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "\n\n\n", stdout)
 }
 
 func TestTrEmptySet2Translation(t *testing.T) {

@@ -98,18 +98,23 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			return builtins.Result{Code: 1}
 		}
 
+		if *deleteFlag && *squeeze && len(operands) < 2 {
+			callCtx.Errf("tr: missing operand after '%s'\nTwo strings must be given when both deleting and squeezing repeats.\n", operands[0])
+			return builtins.Result{Code: 1}
+		}
+
 		if *deleteFlag && !*squeeze && len(operands) > 1 {
-			callCtx.Errf("tr: extra operand %q\nOnly one string may be given when deleting without squeezing repeats.\n", operands[1])
+			callCtx.Errf("tr: extra operand '%s'\nOnly one string may be given when deleting without squeezing repeats.\n", operands[1])
 			return builtins.Result{Code: 1}
 		}
 
 		if !*deleteFlag && len(operands) < 2 && !*squeeze {
-			callCtx.Errf("tr: missing operand after %q\n", operands[0])
+			callCtx.Errf("tr: missing operand after '%s'\n", operands[0])
 			return builtins.Result{Code: 1}
 		}
 
 		if len(operands) > 2 {
-			callCtx.Errf("tr: extra operand %q\n", operands[2])
+			callCtx.Errf("tr: extra operand '%s'\n", operands[2])
 			return builtins.Result{Code: 1}
 		}
 
@@ -302,11 +307,7 @@ func translate(ctx context.Context, callCtx *builtins.CallContext, set1, set2 []
 		set1 = set1[:len(set2)]
 	}
 
-	if len(set2) == 0 {
-		return builtins.Result{}
-	}
-
-	if !truncate && len(set1) > len(set2) {
+	if !truncate && len(set2) > 0 && len(set1) > len(set2) {
 		last := set2[len(set2)-1]
 		for len(set2) < len(set1) {
 			set2 = append(set2, last)
@@ -374,7 +375,7 @@ func complementSet(set []byte) []byte {
 	for _, b := range set {
 		inSet[b] = true
 	}
-	result := make([]byte, 0, 256-len(set))
+	var result []byte
 	for i := 0; i < 256; i++ {
 		if !inSet[byte(i)] {
 			result = append(result, byte(i))
@@ -626,20 +627,14 @@ func parseRepeat(data []byte, pos int) ([]byte, int, byte, bool) {
 	}
 
 	ch := data[pos+1]
+	charAdvance := 1
 	if ch == '\\' && pos+3 < len(data) {
-		ch, _ = parseBackslashEscapeSingle(data, pos+1)
+		var adv int
+		ch, adv = parseBackslashEscapeSingle(data, pos+1)
+		charAdvance = adv
 	}
 
-	starIdx := pos + 2
-	if data[pos+1] == '\\' {
-		end := pos + 2
-		for end < len(data) && data[end] >= '0' && data[end] <= '7' {
-			end++
-		}
-		if end > pos+2 {
-			starIdx = end
-		}
-	}
+	starIdx := pos + 1 + charAdvance
 
 	if starIdx >= len(data) || data[starIdx] != '*' {
 		return nil, 0, 0, false
@@ -705,16 +700,11 @@ func parseRepeat(data []byte, pos int) ([]byte, int, byte, bool) {
 }
 
 func rptErrMsg(data []byte, pos int) string {
-	starIdx := pos + 2
-	if data[pos+1] == '\\' {
-		end := pos + 2
-		for end < len(data) && data[end] >= '0' && data[end] <= '7' {
-			end++
-		}
-		if end > pos+2 {
-			starIdx = end
-		}
+	charAdvance := 1
+	if data[pos+1] == '\\' && pos+3 < len(data) {
+		_, charAdvance = parseBackslashEscapeSingle(data, pos+1)
 	}
+	starIdx := pos + 1 + charAdvance
 	closeIdx := -1
 	for j := starIdx + 1; j < len(data); j++ {
 		if data[j] == ']' {
