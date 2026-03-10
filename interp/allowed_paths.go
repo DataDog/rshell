@@ -99,10 +99,10 @@ func (s *pathSandbox) access(ctx context.Context, path string, mode uint32) erro
 		// us a file descriptor for an atomic Stat (no TOCTOU window).
 		f, err := ar.root.Open(rel)
 		if err != nil {
-			if mode&0x04 != 0 {
+			if mode&0x04 != 0 && !isErrIsDirectory(err) {
 				return portablePathError(err)
 			}
-			// Read not requested; fall back to Stat for write/execute.
+			// Read not requested, or target is a directory; fall back to Stat.
 			info, serr := ar.root.Stat(rel)
 			if serr != nil {
 				return portablePathError(serr)

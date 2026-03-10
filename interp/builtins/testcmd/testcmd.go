@@ -435,12 +435,18 @@ func (p *parser) evalFileTest(op, path string) bool {
 
 	switch op {
 	case "-h", "-L":
+		if p.callCtx.LstatFile == nil {
+			return false
+		}
 		info, err := p.callCtx.LstatFile(p.ctx, path)
 		if err != nil {
 			return false
 		}
 		return info.Mode()&fs.ModeSymlink != 0
 	default:
+		if p.callCtx.StatFile == nil {
+			return false
+		}
 		info, err := p.callCtx.StatFile(p.ctx, path)
 		if err != nil {
 			return false
