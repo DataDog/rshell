@@ -34,6 +34,8 @@ import (
 var builtinAllowedSymbols = []string{
 	// bufio.NewScanner — line-by-line input reading (e.g. head, cat); no write or exec capability.
 	"bufio.NewScanner",
+	// bufio.SplitFunc — type for custom scanner split functions; pure type, no I/O.
+	"bufio.SplitFunc",
 	// context.Context — deadline/cancellation plumbing; pure interface, no side effects.
 	"context.Context",
 	// errors.Is — error comparison; pure function, no I/O.
@@ -42,26 +44,24 @@ var builtinAllowedSymbols = []string{
 	"errors.New",
 	// fmt.Sprintf — string formatting; pure function, no I/O.
 	"fmt.Sprintf",
-	// io.Copy — stream data between reader and writer; builtins receive sandboxed streams.
-	"io.Copy",
 	// io/fs.DirEntry — interface type for directory entries; no side effects.
 	"io/fs.DirEntry",
 	// io/fs.FileInfo — interface type for file information; no side effects.
 	"io/fs.FileInfo",
 	// io/fs.ModeDir — file mode bit constant for directories; pure constant.
 	"io/fs.ModeDir",
-	// io/fs.ModeSymlink — file mode bit constant for symlinks; pure constant.
-	"io/fs.ModeSymlink",
 	// io/fs.ModeNamedPipe — file mode bit constant for named pipes; pure constant.
 	"io/fs.ModeNamedPipe",
-	// io/fs.ModeSocket — file mode bit constant for sockets; pure constant.
-	"io/fs.ModeSocket",
-	// io/fs.ModeSetuid — file mode bit constant for setuid; pure constant.
-	"io/fs.ModeSetuid",
 	// io/fs.ModeSetgid — file mode bit constant for setgid; pure constant.
 	"io/fs.ModeSetgid",
+	// io/fs.ModeSetuid — file mode bit constant for setuid; pure constant.
+	"io/fs.ModeSetuid",
+	// io/fs.ModeSocket — file mode bit constant for sockets; pure constant.
+	"io/fs.ModeSocket",
 	// io/fs.ModeSticky — file mode bit constant for sticky bit; pure constant.
 	"io/fs.ModeSticky",
+	// io/fs.ModeSymlink — file mode bit constant for symlinks; pure constant.
+	"io/fs.ModeSymlink",
 	// io.EOF — sentinel error value; pure constant.
 	"io.EOF",
 	// io.NopCloser — wraps a Reader with a no-op Close; no side effects.
@@ -70,6 +70,10 @@ var builtinAllowedSymbols = []string{
 	"io.ReadCloser",
 	// io.Reader — interface type; no side effects.
 	"io.Reader",
+	// math.MaxInt64 — integer constant; no side effects.
+	"math.MaxInt64",
+	// math.MinInt64 — integer constant; no side effects.
+	"math.MinInt64",
 	// os.FileInfo — file metadata interface returned by Stat; no I/O side effects.
 	"os.FileInfo",
 	// os.O_RDONLY — read-only file flag constant; cannot open files by itself.
@@ -82,10 +86,22 @@ var builtinAllowedSymbols = []string{
 	"strings.Builder",
 	// strconv.Atoi — string-to-int conversion; pure function, no I/O.
 	"strconv.Atoi",
+	// strconv.ErrRange — sentinel error value for overflow; pure constant.
+	"strconv.ErrRange",
+	// strconv.NumError — error type for numeric conversion failures; pure type.
+	"strconv.NumError",
 	// strconv.ParseInt — string-to-int conversion with base/bit-size; pure function, no I/O.
 	"strconv.ParseInt",
 	// strconv.FormatInt — int-to-string conversion; pure function, no I/O.
 	"strconv.FormatInt",
+	// strings.HasPrefix — pure function for prefix matching; no I/O.
+	"strings.HasPrefix",
+	// strings.TrimSpace — removes leading/trailing whitespace; pure function.
+	"strings.TrimSpace",
+	// io.WriteString — writes a string to a writer; no filesystem access, delegates to Write.
+	"io.WriteString",
+	// io.Writer — interface type for writing; no side effects.
+	"io.Writer",
 	// unicode.Cc — control character category range table; pure data, no I/O.
 	"unicode.Cc",
 	// unicode.Cf — format character category range table; pure data, no I/O.

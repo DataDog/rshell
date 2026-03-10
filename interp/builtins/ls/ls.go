@@ -169,7 +169,7 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 				failed = true
 				continue
 			}
-			info, err := callCtx.Lstat(ctx, p)
+			info, err := callCtx.LstatFile(ctx, p)
 			if err != nil {
 				callCtx.Errf("ls: cannot access '%s': %s\n", p, callCtx.PortableErr(err))
 				failed = true
@@ -179,7 +179,7 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			// (unless -d is set, which lists the entry itself).
 			isDir := info.IsDir()
 			if info.Mode()&iofs.ModeSymlink != 0 && !opts.dirOnly {
-				if target, err := callCtx.Stat(ctx, p); err == nil {
+				if target, err := callCtx.StatFile(ctx, p); err == nil {
 					isDir = target.IsDir()
 				}
 			}
@@ -267,7 +267,7 @@ func listDir(ctx context.Context, callCtx *builtins.CallContext, dir string, opt
 	// NOTE: ".." intentionally uses the same FileInfo as "." because the
 	// parent directory may be outside the sandbox and cannot be stat'd.
 	if opts.all {
-		if dotInfo, err := callCtx.Stat(ctx, dir); err == nil {
+		if dotInfo, err := callCtx.StatFile(ctx, dir); err == nil {
 			infoEntries = append(infoEntries, entryInfo{name: ".", info: dotInfo})
 			infoEntries = append(infoEntries, entryInfo{name: "..", info: dotInfo})
 		}

@@ -18,7 +18,9 @@ import (
 	"github.com/DataDog/rshell/interp/builtins/head"
 	"github.com/DataDog/rshell/interp/builtins/ls"
 	"github.com/DataDog/rshell/interp/builtins/tail"
+	"github.com/DataDog/rshell/interp/builtins/testcmd"
 	truecmd "github.com/DataDog/rshell/interp/builtins/true"
+	"github.com/DataDog/rshell/interp/builtins/uniq"
 	"github.com/DataDog/rshell/interp/builtins/wc"
 )
 
@@ -36,7 +38,10 @@ func registerBuiltins() {
 			head.Cmd,
 			ls.Cmd,
 			tail.Cmd,
+			testcmd.Cmd,
+			testcmd.BracketCmd,
 			truecmd.Cmd,
+			uniq.Cmd,
 			wc.Cmd,
 		} {
 			cmd.Register()

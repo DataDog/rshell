@@ -89,13 +89,15 @@ type CallContext struct {
 	// Entries are returned sorted by name.
 	ReadDir func(ctx context.Context, path string) ([]fs.DirEntry, error)
 
-	// Stat returns file information within the shell's path restrictions.
-	// It follows symbolic links (returns info about the target).
-	Stat func(ctx context.Context, path string) (fs.FileInfo, error)
+	// StatFile returns file info within the shell's path restrictions (follows symlinks).
+	StatFile func(ctx context.Context, path string) (fs.FileInfo, error)
 
-	// Lstat is like Stat but does not follow symbolic links.
-	// The returned FileInfo describes the link itself.
-	Lstat func(ctx context.Context, path string) (fs.FileInfo, error)
+	// LstatFile returns file info within the shell's path restrictions (does not follow symlinks).
+	LstatFile func(ctx context.Context, path string) (fs.FileInfo, error)
+
+	// AccessFile checks whether the file at path is accessible with the given mode
+	// within the shell's path restrictions. Mode: 0x04=read, 0x02=write, 0x01=execute.
+	AccessFile func(ctx context.Context, path string, mode uint32) error
 
 	// PortableErr normalizes an OS error to a POSIX-style message.
 	PortableErr func(err error) string

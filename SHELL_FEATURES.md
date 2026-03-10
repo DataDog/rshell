@@ -15,6 +15,7 @@ Blocked features are rejected before execution with exit code 2.
 - ✅ `ls [-1aAdFhlpRrSt] [FILE]...` — list directory contents
 - ✅ `tail [-n N|-c N] [-q|-v] [-z] [FILE]...` — output the last part of files (default: last 10 lines); supports `+N` offset mode; `-f`/`--follow` is rejected
 - ✅ `true` — return exit code 0
+- ✅ `uniq [OPTION]... [INPUT]` — report or omit repeated lines
 - ✅ `wc [-l] [-w] [-c] [-m] [FILE]...` — count lines, words, bytes, or characters in files
 - ❌ All other commands — return exit code 127 with `<cmd>: not found` unless an ExecHandler is configured
 
