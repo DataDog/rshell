@@ -19,7 +19,11 @@ import (
 // command implementation files in interp/builtins/. Each entry must be in
 // "importpath.Symbol" form, where importpath is the full Go import path.
 //
-// To use a new symbol, add a single line here.
+// Each symbol must have a comment explaining what it does and why it is safe
+// to use inside a sandboxed builtin (e.g. pure function, constant, interface,
+// no filesystem/network/exec side effects).
+//
+// To use a new symbol, add a single line here with its safety justification.
 //
 // Permanently banned (cannot be added):
 //   - reflect  — reflection defeats static safety analysis
@@ -28,19 +32,33 @@ import (
 // All packages not listed here are implicitly banned, including all
 // third-party packages and other internal module packages.
 var builtinAllowedSymbols = []string{
+	// bufio.NewScanner — line-by-line input reading (e.g. head, cat); no write or exec capability.
 	"bufio.NewScanner",
+	// context.Context — deadline/cancellation plumbing; pure interface, no side effects.
 	"context.Context",
+	// errors.Is — error comparison; pure function, no I/O.
 	"errors.Is",
+	// pflag.ContinueOnError — flag parse-error mode constant; no side effects.
 	"github.com/spf13/pflag.ContinueOnError",
+	// pflag.NewFlagSet — CLI flag parsing; operates only on string slices, no I/O.
 	"github.com/spf13/pflag.NewFlagSet",
+	// io.Copy — stream data between reader and writer; builtins receive sandboxed streams.
 	"io.Copy",
+	// io.Discard — /dev/null writer; discards all data, no side effects.
 	"io.Discard",
+	// io.EOF — sentinel error value; pure constant.
 	"io.EOF",
+	// io.NopCloser — wraps a Reader with a no-op Close; no side effects.
 	"io.NopCloser",
+	// io.ReadCloser — interface type; no side effects.
 	"io.ReadCloser",
+	// io.Reader — interface type; no side effects.
 	"io.Reader",
+	// os.O_RDONLY — read-only file flag constant; cannot open files by itself.
 	"os.O_RDONLY",
+	// strconv.Atoi — string-to-int conversion; pure function, no I/O.
 	"strconv.Atoi",
+	// strconv.ParseInt — string-to-int conversion with base/bit-size; pure function, no I/O.
 	"strconv.ParseInt",
 }
 
