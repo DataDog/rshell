@@ -56,6 +56,7 @@ package tr
 
 import (
 	"context"
+	"errors"
 	"io"
 	"strconv"
 
@@ -211,7 +212,7 @@ func deleteBytes(ctx context.Context, callCtx *builtins.CallContext, set1 []byte
 			}
 		}
 		if readErr != nil {
-			if readErr != io.EOF {
+			if !errors.Is(readErr, io.EOF) {
 				callCtx.Errf("tr: read error: %s\n", callCtx.PortableErr(readErr))
 				return builtins.Result{Code: 1}
 			}
@@ -262,7 +263,7 @@ func deleteAndSqueeze(ctx context.Context, callCtx *builtins.CallContext, set1, 
 			}
 		}
 		if readErr != nil {
-			if readErr != io.EOF {
+			if !errors.Is(readErr, io.EOF) {
 				callCtx.Errf("tr: read error: %s\n", callCtx.PortableErr(readErr))
 				return builtins.Result{Code: 1}
 			}
@@ -306,7 +307,7 @@ func squeezeOnly(ctx context.Context, callCtx *builtins.CallContext, set1 []byte
 			}
 		}
 		if readErr != nil {
-			if readErr != io.EOF {
+			if !errors.Is(readErr, io.EOF) {
 				callCtx.Errf("tr: read error: %s\n", callCtx.PortableErr(readErr))
 				return builtins.Result{Code: 1}
 			}
@@ -374,7 +375,7 @@ func translate(ctx context.Context, callCtx *builtins.CallContext, set1, set2 []
 			}
 		}
 		if readErr != nil {
-			if readErr != io.EOF {
+			if !errors.Is(readErr, io.EOF) {
 				callCtx.Errf("tr: read error: %s\n", callCtx.PortableErr(readErr))
 				return builtins.Result{Code: 1}
 			}
