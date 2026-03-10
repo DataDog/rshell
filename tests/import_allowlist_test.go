@@ -34,6 +34,8 @@ import (
 var builtinAllowedSymbols = []string{
 	// bufio.NewScanner — line-by-line input reading (e.g. head, cat); no write or exec capability.
 	"bufio.NewScanner",
+	// bufio.SplitFunc — type for custom scanner split functions; pure type, no I/O.
+	"bufio.SplitFunc",
 	// context.Context — deadline/cancellation plumbing; pure interface, no side effects.
 	"context.Context",
 	// errors.Is — error comparison; pure function, no I/O.
@@ -60,6 +62,20 @@ var builtinAllowedSymbols = []string{
 	"strconv.Atoi",
 	// strconv.ParseInt — string-to-int conversion with base/bit-size; pure function, no I/O.
 	"strconv.ParseInt",
+	// strconv.FormatInt — int-to-string conversion; pure function, no I/O.
+	"strconv.FormatInt",
+	// strconv.ErrRange — sentinel error value for overflow detection; pure constant.
+	"strconv.ErrRange",
+	// strconv.NumError — error type from strconv parse functions; pure type, no I/O.
+	"strconv.NumError",
+	// strings.HasPrefix — pure function for prefix matching; no I/O.
+	"strings.HasPrefix",
+	// strings.ToLower — pure function for case folding; no I/O.
+	"strings.ToLower",
+	// io.WriteString — writes a string to a writer; no filesystem access, delegates to Write.
+	"io.WriteString",
+	// io.Writer — interface type for writing; no side effects.
+	"io.Writer",
 }
 
 // permanentlyBanned lists packages that may never be imported by builtin
