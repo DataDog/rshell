@@ -50,6 +50,8 @@ var builtinAllowedSymbols = []string{
 	"io.Reader",
 	// os.O_RDONLY — read-only file flag constant; cannot open files by itself.
 	"os.O_RDONLY",
+	// strings.Builder — efficient string concatenation; pure in-memory buffer, no I/O.
+	"strings.Builder",
 	// strconv.Atoi — string-to-int conversion; pure function, no I/O.
 	"strconv.Atoi",
 	// strconv.ParseInt — string-to-int conversion with base/bit-size; pure function, no I/O.
