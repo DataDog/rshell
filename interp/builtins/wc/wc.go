@@ -251,7 +251,7 @@ func countReader(ctx context.Context, r io.Reader) (counts, error) {
 						break
 					}
 				}
-				if tail > 0 && tail < n {
+				if tail > 0 && tail <= 3 && tail < n {
 					carryN = copy(carry[:], chunk[n-tail:])
 					chunk = chunk[:n-tail]
 				} else {
