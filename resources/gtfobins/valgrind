@@ -1,9 +1,0 @@
----
-functions:
-  shell:
-  - code: |-
-      valgrind /bin/sh
-    contexts:
-      sudo:
-      unprivileged:
-...
