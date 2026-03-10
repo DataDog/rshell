@@ -5,13 +5,7 @@ Blocked features are rejected before execution with exit code 2.
 
 ## Builtins
 
-- ✅ `echo` — prints arguments separated by spaces, followed by a newline
-- ✅ `cat` — reads files or stdin (`-`); respects AllowedPaths
-- ✅ `true` — exits with code 0
-- ✅ `false` — exits with code 1
-- ✅ `exit [N]` — exits with code N (default: last exit code)
-- ✅ `break [N]` / `continue [N]` — loop control
-- ❌ All other commands — return exit code 127 with `<cmd>: not found` unless an ExecHandler is configured
+See [SHELL_COMMANDS.md](SHELL_COMMANDS.md) for the full list of builtin commands.
 
 ## Variables
 
