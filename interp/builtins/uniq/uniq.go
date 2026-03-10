@@ -155,13 +155,13 @@ func run(ctx context.Context, callCtx *builtins.CallContext, args []string) buil
 
 	skipFields, ok := parseNonNegativeInt(*skipFieldsStr)
 	if !ok {
-		callCtx.Errf("uniq: invalid number of fields to skip: %q\n", *skipFieldsStr)
+		callCtx.Errf("uniq: %s: invalid number of fields to skip\n", *skipFieldsStr)
 		return builtins.Result{Code: 1}
 	}
 
 	skipChars, ok := parseNonNegativeInt(*skipCharsStr)
 	if !ok {
-		callCtx.Errf("uniq: invalid number of characters to skip: %q\n", *skipCharsStr)
+		callCtx.Errf("uniq: %s: invalid number of bytes to skip\n", *skipCharsStr)
 		return builtins.Result{Code: 1}
 	}
 
@@ -169,7 +169,7 @@ func run(ctx context.Context, callCtx *builtins.CallContext, args []string) buil
 	if fs.Changed("check-chars") {
 		checkChars, ok = parseNonNegativeInt(*checkCharsStr)
 		if !ok {
-			callCtx.Errf("uniq: invalid number of characters to check: %q\n", *checkCharsStr)
+			callCtx.Errf("uniq: %s: invalid number of bytes to compare\n", *checkCharsStr)
 			return builtins.Result{Code: 1}
 		}
 	}
@@ -478,6 +478,10 @@ func parseNonNegativeInt(s string) (int64, bool) {
 	n, err := strconv.ParseInt(s, 10, 64)
 	if err != nil {
 		if ne, ok := err.(*strconv.NumError); ok && ne.Err == strconv.ErrRange {
+			// Reject negative overflow (e.g. -999999999999999999999).
+			if len(s) > 0 && s[0] == '-' {
+				return 0, false
+			}
 			return MaxCount, true
 		}
 		return 0, false
