@@ -5,5 +5,5 @@ input:
     uniq --group -c
 expect:
   stdout: ""
-  stderr: "uniq: --group is mutually exclusive with -c/-d/-D/-u\n"
+  stderr: "uniq: --group is mutually exclusive with -c/-d/-D/-u\nTry 'uniq --help' for more information.\n"
   exit_code: 1

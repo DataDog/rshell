@@ -198,10 +198,12 @@ func run(ctx context.Context, callCtx *builtins.CallContext, args []string) buil
 
 	if useGroup && (*count || *repeated || useAllRepeated || *unique) {
 		callCtx.Errf("uniq: --group is mutually exclusive with -c/-d/-D/-u\n")
+		callCtx.Errf("Try 'uniq --help' for more information.\n")
 		return builtins.Result{Code: 1}
 	}
 	if useAllRepeated && *count {
 		callCtx.Errf("uniq: printing all duplicated lines and repeat counts is meaningless\n")
+		callCtx.Errf("Try 'uniq --help' for more information.\n")
 		return builtins.Result{Code: 1}
 	}
 
