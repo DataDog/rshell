@@ -11,10 +11,59 @@ import (
 	"io"
 	"io/fs"
 	"os"
+
+	"github.com/spf13/pflag"
 )
 
-// HandlerFunc is the signature for a builtin command implementation.
+// FlagSet is a type alias for pflag.FlagSet. Command files receive a *FlagSet
+// from the framework without needing to import pflag directly (the builtins
+// package is always allowed by the import allowlist).
+type FlagSet = pflag.FlagSet
+
+// HandlerFunc is the bound handler called by the framework after flags are
+// parsed. args contains only the positional (non-flag) arguments.
 type HandlerFunc func(ctx context.Context, callCtx *CallContext, args []string) Result
+
+// Command pairs a builtin name with its flag-declaring factory. MakeFlags
+// registers any flags on the provided FlagSet and returns the bound handler.
+// Commands that accept no flags may ignore fs via NoFlags.
+type Command struct {
+	Name      string
+	MakeFlags func(*FlagSet) HandlerFunc
+}
+
+// NoFlags wraps a HandlerFunc in the MakeFlags format for commands that
+// declare no flags.
+func NoFlags(fn HandlerFunc) func(*FlagSet) HandlerFunc {
+	return func(_ *FlagSet) HandlerFunc { return fn }
+}
+
+// Register adds the Command to the builtin registry. For each invocation the
+// framework creates a fresh *FlagSet, passes it to MakeFlags so the command
+// can register its flags, parses the raw args, writes any error to stderr
+// (exit 1), and then calls the bound handler with positional args only.
+//
+// If MakeFlags registers no flags (e.g. via NoFlags), the framework skips
+// parsing entirely and passes all raw args to the handler unchanged. This
+// lets commands like echo treat flag-shaped literals (e.g. -n) correctly.
+func (c Command) Register() {
+	name := c.Name
+	factory := c.MakeFlags
+	addToRegistry(name, func(ctx context.Context, callCtx *CallContext, args []string) Result {
+		fs := pflag.NewFlagSet(name, pflag.ContinueOnError)
+		fs.SetOutput(io.Discard) // handler formats errors itself
+		handler := factory(fs)
+		if !fs.HasFlags() {
+			// No flags declared: pass all args through unchanged.
+			return handler(ctx, callCtx, args)
+		}
+		if err := fs.Parse(args); err != nil {
+			callCtx.Errf("%s: %v\n", name, err)
+			return Result{Code: 1}
+		}
+		return handler(ctx, callCtx, fs.Args())
+	})
+}
 
 // CallContext provides the capabilities available to builtin commands.
 // It is created by the Runner for each builtin invocation.
@@ -76,18 +125,9 @@ type Result struct {
 	ContinueN int
 }
 
-// Command pairs a builtin name with its handler, used for explicit
-// registration in the all package.
-type Command struct {
-	Name string
-	Run  HandlerFunc
-}
-
 var registry = map[string]HandlerFunc{}
 
-// Register adds a builtin command to the registry.
-// It panics if name is already registered, catching duplicate registrations at startup.
-func Register(name string, fn HandlerFunc) {
+func addToRegistry(name string, fn HandlerFunc) {
 	if _, exists := registry[name]; exists {
 		panic("builtin already registered: " + name)
 	}

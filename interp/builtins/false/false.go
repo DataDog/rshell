@@ -23,7 +23,7 @@ import (
 )
 
 // Cmd is the false builtin command descriptor.
-var Cmd = builtins.Command{Name: "false", Run: run}
+var Cmd = builtins.Command{Name: "false", MakeFlags: builtins.NoFlags(run)}
 
 func run(_ context.Context, _ *builtins.CallContext, _ []string) builtins.Result {
 	return builtins.Result{Code: 1}

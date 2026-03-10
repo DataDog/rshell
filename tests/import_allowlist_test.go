@@ -50,8 +50,6 @@ var builtinAllowedSymbols = []string{
 	"github.com/spf13/pflag.NewFlagSet",
 	// io.Copy — stream data between reader and writer; builtins receive sandboxed streams.
 	"io.Copy",
-	// io.Discard — /dev/null writer; discards all data, no side effects.
-	"io.Discard",
 	// io.EOF — sentinel error value; pure constant.
 	"io.EOF",
 	// io.NopCloser — wraps a Reader with a no-op Close; no side effects.
