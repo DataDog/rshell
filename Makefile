@@ -1,7 +1,7 @@
 .PHONY: test test_all test_against_bash compliance
 
 test:
-	go test -v ./...
+	go test -v -race ./...
 
 test_all:
 	$(MAKE) -j2 test test_against_bash
