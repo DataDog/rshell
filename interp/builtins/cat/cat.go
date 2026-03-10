@@ -71,13 +71,11 @@ import (
 	"io"
 	"os"
 
-	"github.com/spf13/pflag"
-
 	"github.com/DataDog/rshell/interp/builtins"
 )
 
 // Cmd is the cat builtin command descriptor.
-var Cmd = builtins.Command{Name: "cat", MakeFlags: builtins.NoFlags(run)}
+var Cmd = builtins.Command{Name: "cat", MakeFlags: registerFlags}
 
 // MaxLineBytes is the per-line buffer cap for the line scanner. Lines
 // longer than this are reported as an error instead of being buffered.
@@ -90,10 +88,7 @@ const (
 	lineNumWidth = 6         // GNU cat line-number field width
 )
 
-func run(ctx context.Context, callCtx *builtins.CallContext, args []string) builtins.Result {
-	fs := pflag.NewFlagSet("cat", pflag.ContinueOnError)
-	fs.SetOutput(io.Discard)
-
+func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 	help := fs.BoolP("help", "h", false, "print usage and exit")
 	number := fs.BoolP("number", "n", false, "number all output lines")
 	numberNonblank := fs.BoolP("number-nonblank", "b", false, "number non-blank output lines, overrides -n")
@@ -106,80 +101,76 @@ func run(ctx context.Context, callCtx *builtins.CallContext, args []string) buil
 	flagT := fs.BoolP("show-nonprinting-tabs", "t", false, "equivalent to -vT")
 	_ = fs.BoolP("unbuffered", "u", false, "ignored")
 
-	if err := fs.Parse(args); err != nil {
-		callCtx.Errf("cat: %v\n", err)
-		return builtins.Result{Code: 1}
-	}
+	return func(ctx context.Context, callCtx *builtins.CallContext, files []string) builtins.Result {
+		if *help {
+			callCtx.Out("Usage: cat [OPTION]... [FILE]...\n")
+			callCtx.Out("Concatenate FILE(s) to standard output.\n")
+			callCtx.Out("With no FILE, or when FILE is -, read standard input.\n\n")
+			fs.SetOutput(callCtx.Stdout)
+			fs.PrintDefaults()
+			return builtins.Result{}
+		}
 
-	if *help {
-		callCtx.Out("Usage: cat [OPTION]... [FILE]...\n")
-		callCtx.Out("Concatenate FILE(s) to standard output.\n")
-		callCtx.Out("With no FILE, or when FILE is -, read standard input.\n\n")
-		fs.SetOutput(callCtx.Stdout)
-		fs.PrintDefaults()
+		if *showAll {
+			*showNonprinting = true
+			*showEnds = true
+			*showTabs = true
+		}
+		if *flagE {
+			*showNonprinting = true
+			*showEnds = true
+		}
+		if *flagT {
+			*showNonprinting = true
+			*showTabs = true
+		}
+		if *numberNonblank {
+			*number = false
+		}
+
+		needsLineProcessing := *number || *numberNonblank || *squeezeBlank ||
+			*showEnds || *showTabs || *showNonprinting
+
+		if len(files) == 0 {
+			files = []string{"-"}
+		}
+
+		st := &state{
+			number:          *number,
+			numberNonblank:  *numberNonblank,
+			squeezeBlank:    *squeezeBlank,
+			showEnds:        *showEnds,
+			showTabs:        *showTabs,
+			showNonprinting: *showNonprinting,
+			lineNum:         1,
+		}
+
+		var failed bool
+		for _, file := range files {
+			if ctx.Err() != nil {
+				break
+			}
+			var err error
+			if needsLineProcessing {
+				err = catLines(ctx, callCtx, file, st)
+			} else {
+				err = catRaw(ctx, callCtx, file)
+			}
+			if err != nil {
+				name := file
+				if file == "-" {
+					name = "standard input"
+				}
+				callCtx.Errf("cat: %s: %s\n", name, callCtx.PortableErr(err))
+				failed = true
+			}
+		}
+
+		if failed {
+			return builtins.Result{Code: 1}
+		}
 		return builtins.Result{}
 	}
-
-	if *showAll {
-		*showNonprinting = true
-		*showEnds = true
-		*showTabs = true
-	}
-	if *flagE {
-		*showNonprinting = true
-		*showEnds = true
-	}
-	if *flagT {
-		*showNonprinting = true
-		*showTabs = true
-	}
-	if *numberNonblank {
-		*number = false
-	}
-
-	needsLineProcessing := *number || *numberNonblank || *squeezeBlank ||
-		*showEnds || *showTabs || *showNonprinting
-
-	files := fs.Args()
-	if len(files) == 0 {
-		files = []string{"-"}
-	}
-
-	st := &state{
-		number:          *number,
-		numberNonblank:  *numberNonblank,
-		squeezeBlank:    *squeezeBlank,
-		showEnds:        *showEnds,
-		showTabs:        *showTabs,
-		showNonprinting: *showNonprinting,
-		lineNum:         1,
-	}
-
-	var failed bool
-	for _, file := range files {
-		if ctx.Err() != nil {
-			break
-		}
-		var err error
-		if needsLineProcessing {
-			err = catLines(ctx, callCtx, file, st)
-		} else {
-			err = catRaw(ctx, callCtx, file)
-		}
-		if err != nil {
-			name := file
-			if file == "-" {
-				name = "standard input"
-			}
-			callCtx.Errf("cat: %s: %s\n", name, callCtx.PortableErr(err))
-			failed = true
-		}
-	}
-
-	if failed {
-		return builtins.Result{Code: 1}
-	}
-	return builtins.Result{}
 }
 
 type state struct {
