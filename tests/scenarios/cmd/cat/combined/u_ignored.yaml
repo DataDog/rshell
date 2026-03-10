@@ -1,0 +1,14 @@
+# Derived from uutils test_cat.rs::test_u_ignored
+description: cat -u is accepted and silently ignored (POSIX compatibility).
+setup:
+  files:
+    - path: file.txt
+      content: "hello\n"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    cat -u file.txt
+expect:
+  stdout: "hello\n"
+  stderr: ""
+  exit_code: 0

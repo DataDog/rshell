@@ -118,11 +118,15 @@ func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {
 				r.exit.fatal(err) // not being able to create a pipe is rare but critical
 				return
 			}
+			// Wrap stderr in a synchronized writer so both sides of the
+			// pipe can write to it concurrently without a data race.
+			safeStderr := &syncWriter{w: r.stderr}
 			rLeft := r.subshell(true)
 			rLeft.stdout = pw
-			rLeft.stderr = r.stderr
+			rLeft.stderr = safeStderr
 			rRight := r.subshell(true)
 			rRight.stdin = pr
+			rRight.stderr = safeStderr
 			var wg sync.WaitGroup
 			wg.Add(1)
 			go func() {
@@ -225,4 +229,17 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 
 func (r *Runner) exec(ctx context.Context, pos syntax.Pos, args []string) {
 	r.exit.fromHandlerError(r.execHandler(r.handlerCtx(ctx, pos), args))
+}
+
+// syncWriter wraps an io.Writer with a mutex so concurrent writes are safe.
+// Used to protect stderr when both sides of a pipe write to it.
+type syncWriter struct {
+	mu sync.Mutex
+	w  io.Writer
+}
+
+func (sw *syncWriter) Write(p []byte) (int, error) {
+	sw.mu.Lock()
+	defer sw.mu.Unlock()
+	return sw.w.Write(p)
 }
