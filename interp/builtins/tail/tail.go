@@ -16,12 +16,12 @@
 // Accepted flags:
 //
 //	-n N, --lines=N
-//	    Output the last N lines (default 10).  A leading '+' (e.g. +5) means
-//	    "start from line 5" — skip the first N-1 lines and emit the rest.
+//	    Output the last N lines (default 10). A leading '+' (e.g. +5) means
+//	    output starting from line N (1-based offset from the beginning).
 //
 //	-c N, --bytes=N
-//	    Output the last N bytes instead of lines.  A leading '+' (e.g. +5)
-//	    means "start from byte 5" — skip the first N-1 bytes and emit the rest.
+//	    Output the last N bytes instead of lines. A leading '+' means
+//	    output starting from byte N (1-based offset from the beginning).
 //	    If both -n and -c are specified, the last flag on the command line
 //	    takes effect.
 //
@@ -46,11 +46,23 @@
 //
 // Memory safety:
 //
-//	Line mode uses a ring buffer capped at MaxRingSize entries (1 M lines).
-//	Each line token is capped at MaxLineBytes (1 MiB). Byte mode uses a
-//	circular byte buffer capped at MaxByteBuffer (64 MiB). All loops check
-//	ctx.Err() at each iteration to honour the shell's execution timeout and
-//	support graceful cancellation.
+//	Line mode uses a ring buffer capped at min(N, MaxRingLines) slots. Each
+//	slot holds one line; lines exceeding MaxLineBytes cause an error rather
+//	than an unbounded allocation. The ring buffer's total memory footprint is
+//	additionally capped at MaxRingBytes (64 MiB); tail returns an error if a
+//	crafted input would exceed this. Byte mode uses a circular buffer of size
+//	min(N, MaxBytesBuffer); it never allocates proportionally to very large
+//	user-supplied N values. Offset (+N) modes stream without buffering.
+//	All loops check ctx.Err() at each iteration to honour the shell's
+//	execution timeout and to support graceful cancellation.
+//
+// Infinite-stream protection:
+//
+//	Both last-N-lines and last-N-bytes modes must consume the entire input
+//	before emitting output. On an infinite source (e.g. a non-terminating
+//	pipe) without a context deadline, execution would hang indefinitely.
+//	To bound this, tail returns an error once total bytes read from any single
+//	input source exceed MaxTotalReadBytes (256 MiB).
 package tail
 
 import (
@@ -69,18 +81,38 @@ import (
 // Cmd is the tail builtin command descriptor.
 var Cmd = builtins.Command{Name: "tail", Run: run}
 
-// MaxCount is the maximum accepted line or byte count. Values above this are
-// clamped to prevent huge theoretical allocations.
+// MaxCount is the maximum accepted line or byte count. Values above this
+// are clamped to prevent huge theoretical allocations.
 const MaxCount = 1<<31 - 1 // 2 147 483 647
 
 // MaxLineBytes is the per-line buffer cap for the line scanner.
 const MaxLineBytes = 1 << 20 // 1 MiB
 
-// MaxRingSize is the maximum number of ring-buffer slots in line mode.
-const MaxRingSize = 1 << 20 // 1 M entries
+// MaxRingLines is the maximum number of lines held in the ring buffer.
+const MaxRingLines = 100_000
 
-// MaxByteBuffer is the maximum circular byte buffer size in byte mode.
-const MaxByteBuffer = 1 << 26 // 64 MiB
+// MaxRingBytes is the maximum total bytes the ring buffer may hold at any
+// one time. Without this cap, MaxRingLines (100 000) × MaxLineBytes (1 MiB)
+// yields a worst-case memory envelope of ~97.6 GiB. This constant reduces
+// the bound to 64 MiB.
+const MaxRingBytes = 64 << 20 // 64 MiB
+
+// MaxBytesBuffer is the maximum size of the circular byte buffer used in
+// last-N-bytes mode.
+const MaxBytesBuffer = 32 << 20 // 32 MiB
+
+// MaxTotalReadBytes is the maximum total bytes tail will consume from a
+// single input source. Both last-N-lines and last-N-bytes modes must read
+// the entire input before emitting output, so an infinite source without a
+// context deadline would hang indefinitely. This limit bounds execution to a
+// finite amount of work regardless of whether a timeout is configured.
+const MaxTotalReadBytes = 256 << 20 // 256 MiB
+
+// countMode holds the parsed value of a -n / -c argument.
+type countMode struct {
+	n      int64
+	offset bool // true when the argument started with '+' (offset from start)
+}
 
 func run(ctx context.Context, callCtx *builtins.CallContext, args []string) builtins.Result {
 	fs := pflag.NewFlagSet("tail", pflag.ContinueOnError)
@@ -112,8 +144,8 @@ func run(ctx context.Context, callCtx *builtins.CallContext, args []string) buil
 	var modeSeq int
 	linesFlag := newModeFlag(&modeSeq, "10")
 	bytesFlag := newModeFlag(&modeSeq, "")
-	fs.VarP(linesFlag, "lines", "n", "print the last N lines instead of the last 10")
-	fs.VarP(bytesFlag, "bytes", "c", "print the last N bytes instead of lines")
+	fs.VarP(linesFlag, "lines", "n", "output the last N lines instead of the last 10")
+	fs.VarP(bytesFlag, "bytes", "c", "output the last N bytes instead of lines")
 
 	if err := fs.Parse(args); err != nil {
 		callCtx.Errf("tail: %v\n", err)
@@ -139,7 +171,7 @@ func run(ctx context.Context, callCtx *builtins.CallContext, args []string) buil
 		modeLabel = "bytes"
 	}
 
-	count, offsetMode, ok := parseCount(countStr)
+	cm, ok := parseCount(countStr)
 	if !ok {
 		callCtx.Errf("tail: invalid number of %s: %q\n", modeLabel, countStr)
 		return builtins.Result{Code: 1}
@@ -163,17 +195,12 @@ func run(ctx context.Context, callCtx *builtins.CallContext, args []string) buil
 		printHeaders = false
 	}
 
-	delim := byte('\n')
-	if *zeroTerminated {
-		delim = 0
-	}
-
 	var failed bool
 	for i, file := range files {
 		if ctx.Err() != nil {
 			break
 		}
-		if err := processFile(ctx, callCtx, file, i, printHeaders, useBytesMode, offsetMode, count, delim); err != nil {
+		if err := processFile(ctx, callCtx, file, i, printHeaders, useBytesMode, cm, *zeroTerminated); err != nil {
 			name := file
 			if file == "-" {
 				name = "standard input"
@@ -190,11 +217,13 @@ func run(ctx context.Context, callCtx *builtins.CallContext, args []string) buil
 }
 
 // processFile opens and processes one file (or stdin for "-").
-func processFile(ctx context.Context, callCtx *builtins.CallContext, file string, idx int, printHeaders, useBytesMode, offsetMode bool, count int64, delim byte) error {
+func processFile(ctx context.Context, callCtx *builtins.CallContext, file string, idx int, printHeaders, useBytesMode bool, cm countMode, zeroTerm bool) error {
 	var rc io.ReadCloser
 	name := file
 	if file == "-" {
 		name = "standard input"
+		// Print the header before the nil-stdin guard so that -v always
+		// emits a header for stdin even when no input stream is present.
 		if printHeaders {
 			if idx > 0 {
 				callCtx.Out("\n")
@@ -212,6 +241,8 @@ func processFile(ctx context.Context, callCtx *builtins.CallContext, file string
 		}
 		defer f.Close()
 		rc = f
+		// Header is printed after a successful open so that a file that
+		// cannot be opened produces no header (matches GNU tail behaviour).
 		if printHeaders {
 			if idx > 0 {
 				callCtx.Out("\n")
@@ -221,89 +252,90 @@ func processFile(ctx context.Context, callCtx *builtins.CallContext, file string
 	}
 
 	if useBytesMode {
-		if offsetMode {
-			var skipCount int64
-			if count > 0 {
-				skipCount = count - 1
-			}
-			return tailBytesOffset(ctx, callCtx, rc, skipCount)
+		if cm.offset {
+			return skipBytes(ctx, callCtx, rc, cm.n)
 		}
-		return tailBytes(ctx, callCtx, rc, count)
+		return readLastBytes(ctx, callCtx, rc, cm.n)
 	}
-
-	if offsetMode {
-		var skipCount int64
-		if count > 0 {
-			skipCount = count - 1
-		}
-		return tailLinesOffset(ctx, callCtx, rc, skipCount, delim)
+	if cm.offset {
+		return skipLines(ctx, callCtx, rc, cm.n, zeroTerm)
 	}
-	return tailLines(ctx, callCtx, rc, count, delim)
+	return readLastLines(ctx, callCtx, rc, cm.n, zeroTerm)
 }
 
-// tailLines reads r and emits the last count lines using a ring buffer.
-func tailLines(ctx context.Context, callCtx *builtins.CallContext, r io.Reader, count int64, delim byte) error {
+// readLastLines writes the last count lines of r to callCtx.Stdout.
+// It uses a ring buffer of size min(count, MaxRingLines) to avoid
+// unbounded memory use for large count values.
+func readLastLines(ctx context.Context, callCtx *builtins.CallContext, r io.Reader, count int64, nullDelim bool) error {
 	if count == 0 {
-		_, err := io.Copy(io.Discard, r)
-		return err
+		return nil
 	}
-
-	ringCap := int(count)
-	if int64(ringCap) > MaxRingSize {
-		ringCap = MaxRingSize
-	}
-
-	ring := make([][]byte, ringCap)
-	writePos := 0
-	filled := 0
 
 	sc := bufio.NewScanner(r)
 	buf := make([]byte, 4096)
 	sc.Buffer(buf, MaxLineBytes)
-	if delim == 0 {
-		sc.Split(scanNulTerminated)
+	if nullDelim {
+		sc.Split(scanNULPreservingNUL)
 	} else {
 		sc.Split(scanLinesPreservingNewline)
 	}
+
+	ringSize := int(min(count, int64(MaxRingLines)))
+	ring := make([][]byte, ringSize)
+	var ringHead int
+	var ringCount int
+	var ringBytes int64 // total bytes currently held in the ring buffer
+	var totalRead int64 // total bytes consumed from input (infinite-stream guard)
 
 	for sc.Scan() {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		token := sc.Bytes()
-		cp := make([]byte, len(token))
-		copy(cp, token)
-		ring[writePos] = cp
-		writePos = (writePos + 1) % ringCap
-		if filled < ringCap {
-			filled++
+		raw := sc.Bytes()
+		totalRead += int64(len(raw))
+		if totalRead > MaxTotalReadBytes {
+			return errors.New("input too large: read limit exceeded")
+		}
+		cp := make([]byte, len(raw))
+		copy(cp, raw)
+		// When the ring is full, evict the oldest entry before writing.
+		if ringCount == ringSize {
+			ringBytes -= int64(len(ring[ringHead]))
+		}
+		ring[ringHead] = cp
+		ringBytes += int64(len(cp))
+		if ringBytes > MaxRingBytes {
+			return errors.New("input too large: ring buffer memory limit exceeded")
+		}
+		ringHead = (ringHead + 1) % ringSize
+		if ringCount < ringSize {
+			ringCount++
 		}
 	}
 	if err := sc.Err(); err != nil {
 		return err
 	}
 
-	// Determine oldest-entry index and emit ring contents in order.
-	startIdx := 0
-	if filled == ringCap {
-		startIdx = writePos
-	}
-	for i := 0; i < filled; i++ {
-		idx := (startIdx + i) % ringCap
-		if _, err := callCtx.Stdout.Write(ring[idx]); err != nil {
+	// Emit ringCount lines in order starting from the oldest.
+	start := (ringHead - ringCount + ringSize) % ringSize
+	for i := 0; i < ringCount; i++ {
+		if _, err := callCtx.Stdout.Write(ring[(start+i)%ringSize]); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-// tailLinesOffset skips skipCount lines then emits the remainder.
-func tailLinesOffset(ctx context.Context, callCtx *builtins.CallContext, r io.Reader, skipCount int64, delim byte) error {
+// skipLines skips the first (n-1) lines of r and writes the rest to
+// callCtx.Stdout. This implements the "+N" offset mode for -n.
+func skipLines(ctx context.Context, callCtx *builtins.CallContext, r io.Reader, n int64, nullDelim bool) error {
+	skipCount := max(n-1, 0)
+
 	sc := bufio.NewScanner(r)
 	buf := make([]byte, 4096)
 	sc.Buffer(buf, MaxLineBytes)
-	if delim == 0 {
-		sc.Split(scanNulTerminated)
+	if nullDelim {
+		sc.Split(scanNULPreservingNUL)
 	} else {
 		sc.Split(scanLinesPreservingNewline)
 	}
@@ -324,94 +356,77 @@ func tailLinesOffset(ctx context.Context, callCtx *builtins.CallContext, r io.Re
 	return sc.Err()
 }
 
-// tailBytes reads r and emits the last count bytes using a circular byte buffer.
-func tailBytes(ctx context.Context, callCtx *builtins.CallContext, r io.Reader, count int64) error {
+// readLastBytes writes the last count bytes of r to callCtx.Stdout.
+// It reads the entire input into a circular buffer of size
+// min(count, MaxBytesBuffer) to bound memory use.
+func readLastBytes(ctx context.Context, callCtx *builtins.CallContext, r io.Reader, count int64) error {
 	if count == 0 {
-		_, err := io.Copy(io.Discard, r)
-		return err
+		return nil
 	}
 
-	bufCap := count
-	if bufCap > MaxByteBuffer {
-		bufCap = MaxByteBuffer
-	}
-
-	ring := make([]byte, bufCap)
+	// Allocate the circular buffer eagerly. bufSize is capped at MaxBytesBuffer
+	// (32 MiB), so this allocation is bounded regardless of the user-supplied
+	// count value.
+	bufSize := int(min(count, int64(MaxBytesBuffer)))
+	circ := make([]byte, bufSize)
 	var totalWritten int64
 
-	const chunkSize = 32 * 1024
-	chunk := make([]byte, chunkSize)
-
+	tmp := make([]byte, 32*1024)
 	for {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		n, err := r.Read(chunk)
-		if n > 0 {
-			addBytesToRing(ring, chunk[:n], bufCap, &totalWritten)
+		n, readErr := r.Read(tmp)
+		for i := 0; i < n; {
+			pos := int(totalWritten % int64(bufSize))
+			canWrite := min(bufSize-pos, n-i)
+			copy(circ[pos:pos+canWrite], tmp[i:i+canWrite])
+			totalWritten += int64(canWrite)
+			i += canWrite
 		}
-		if errors.Is(err, io.EOF) {
+		if totalWritten > MaxTotalReadBytes {
+			return errors.New("input too large: read limit exceeded")
+		}
+		if errors.Is(readErr, io.EOF) {
 			break
 		}
-		if err != nil {
-			return err
+		if readErr != nil {
+			return readErr
 		}
 	}
 
-	filled := totalWritten
-	if filled > bufCap {
-		filled = bufCap
+	if totalWritten == 0 {
+		return nil
 	}
 
-	if totalWritten <= bufCap {
-		_, err := callCtx.Stdout.Write(ring[:filled])
+	if totalWritten <= int64(bufSize) {
+		_, err := callCtx.Stdout.Write(circ[:totalWritten])
 		return err
 	}
 
-	// Ring is full; oldest byte is at totalWritten%bufCap.
-	startPos := totalWritten % bufCap
-	if _, err := callCtx.Stdout.Write(ring[startPos:]); err != nil {
+	// Circular buffer is full; emit older half then newer half.
+	start := int(totalWritten % int64(bufSize))
+	if _, err := callCtx.Stdout.Write(circ[start:]); err != nil {
 		return err
 	}
-	if startPos > 0 {
-		if _, err := callCtx.Stdout.Write(ring[:startPos]); err != nil {
-			return err
-		}
-	}
-	return nil
+	_, err := callCtx.Stdout.Write(circ[:start])
+	return err
 }
 
-// addBytesToRing copies data into the circular byte ring buffer, wrapping as
-// needed. totalWritten is updated by len(data).
-func addBytesToRing(ring []byte, data []byte, cap int64, totalWritten *int64) {
-	for len(data) > 0 {
-		pos := *totalWritten % cap
-		toEnd := cap - pos
-		n := int64(len(data))
-		if n > toEnd {
-			n = toEnd
-		}
-		copy(ring[pos:pos+n], data[:n])
-		data = data[n:]
-		*totalWritten += n
-	}
-}
+// skipBytes skips the first (n-1) bytes of r and writes the rest to
+// callCtx.Stdout. This implements the "+N" offset mode for -c.
+func skipBytes(ctx context.Context, callCtx *builtins.CallContext, r io.Reader, n int64) error {
+	skipCount := max(n-1, 0)
 
-// tailBytesOffset skips skipCount bytes then emits the remainder.
-func tailBytesOffset(ctx context.Context, callCtx *builtins.CallContext, r io.Reader, skipCount int64) error {
-	const chunkSize = 32 * 1024
-	buf := make([]byte, chunkSize)
-	remaining := skipCount
-	for remaining > 0 {
+	buf := make([]byte, 32*1024)
+	var skipped int64
+	for skipped < skipCount {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		toRead := int64(chunkSize)
-		if toRead > remaining {
-			toRead = remaining
-		}
-		n, err := r.Read(buf[:toRead])
-		remaining -= int64(n)
+		toRead := min(int64(len(buf)), skipCount-skipped)
+		nRead, err := r.Read(buf[:toRead])
+		skipped += int64(nRead)
 		if errors.Is(err, io.EOF) {
 			return nil
 		}
@@ -419,6 +434,8 @@ func tailBytesOffset(ctx context.Context, callCtx *builtins.CallContext, r io.Re
 			return err
 		}
 	}
+
+	// Stream the rest.
 	for {
 		if ctx.Err() != nil {
 			return ctx.Err()
@@ -438,30 +455,31 @@ func tailBytesOffset(ctx context.Context, callCtx *builtins.CallContext, r io.Re
 	}
 }
 
-// parseCount parses a tail count string and returns (count, offsetMode, ok).
-// A leading '+' sets offsetMode; tail then starts from line/byte count instead
-// of emitting the last count lines/bytes.
-func parseCount(s string) (int64, bool, bool) {
+// parseCount parses a line or byte count string for tail.
+// A leading '+' activates offset mode (output starting from position N,
+// 1-based). Without '+', the value is the number of trailing lines/bytes
+// to output. GNU tail silently treats negative counts as their absolute value.
+func parseCount(s string) (countMode, bool) {
 	if s == "" {
-		return 0, false, false
+		return countMode{}, false
 	}
-	offsetMode := false
-	rest := s
-	if s[0] == '+' {
-		offsetMode = true
-		rest = s[1:]
-		if rest == "" {
-			return 0, false, false
-		}
+	isOffset := s[0] == '+'
+	parseStr := s
+	if isOffset {
+		parseStr = s[1:]
 	}
-	n, err := strconv.ParseInt(rest, 10, 64)
-	if err != nil || n < 0 {
-		return 0, false, false
+	n, err := strconv.ParseInt(parseStr, 10, 64)
+	if err != nil {
+		return countMode{}, false
+	}
+	// GNU tail silently treats negative counts as their absolute value.
+	if n < 0 {
+		n = -n
 	}
 	if n > MaxCount {
 		n = MaxCount
 	}
-	return n, offsetMode, true
+	return countMode{n: n, offset: isOffset}, true
 }
 
 // modeFlag is a pflag.Value implementation for -n/--lines and -c/--bytes.
@@ -505,7 +523,8 @@ func (f *headerFlag) IsBoolFlag() bool { return true }
 
 // scanLinesPreservingNewline is a bufio.SplitFunc that includes the line
 // terminator (\n) in the returned token. Unlike bufio.ScanLines, it does not
-// strip \r\n or \n, so the caller reproduces the exact file content.
+// strip \r\n or \n, preserving exact file content. A missing final newline is
+// returned as the last token.
 func scanLinesPreservingNewline(data []byte, atEOF bool) (advance int, token []byte, err error) {
 	if atEOF && len(data) == 0 {
 		return 0, nil, nil
@@ -521,10 +540,10 @@ func scanLinesPreservingNewline(data []byte, atEOF bool) (advance int, token []b
 	return 0, nil, nil
 }
 
-// scanNulTerminated is a bufio.SplitFunc that uses NUL (0x00) as the line
-// delimiter. The NUL byte is included in the returned token, mirroring the
-// behaviour of scanLinesPreservingNewline for newlines.
-func scanNulTerminated(data []byte, atEOF bool) (advance int, token []byte, err error) {
+// scanNULPreservingNUL is a bufio.SplitFunc that splits on NUL bytes (\x00)
+// and includes the NUL in the returned token, analogous to
+// scanLinesPreservingNewline but for -z (--zero-terminated) mode.
+func scanNULPreservingNUL(data []byte, atEOF bool) (advance int, token []byte, err error) {
 	if atEOF && len(data) == 0 {
 		return 0, nil, nil
 	}

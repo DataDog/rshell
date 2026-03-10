@@ -113,7 +113,6 @@ func TestTailLinesLongForm(t *testing.T) {
 }
 
 func TestTailLinesGlued(t *testing.T) {
-	// -n3 (value glued to flag) is supported by pflag.
 	dir := t.TempDir()
 	writeFile(t, dir, "file.txt", fiveLines)
 	stdout, _, code := cmdRun(t, "tail -n3 file.txt", dir)
@@ -121,10 +120,10 @@ func TestTailLinesGlued(t *testing.T) {
 	assert.Equal(t, "gamma\ndelta\nepsilon\n", stdout)
 }
 
-// --- +N offset mode ---
+// --- +N offset mode for -n ---
 
 func TestTailLinesOffsetPlus1(t *testing.T) {
-	// +1 means start from line 1 = all lines.
+	// +1 = starting from line 1 = all lines.
 	dir := t.TempDir()
 	writeFile(t, dir, "file.txt", fiveLines)
 	stdout, _, code := cmdRun(t, "tail -n +1 file.txt", dir)
@@ -133,7 +132,7 @@ func TestTailLinesOffsetPlus1(t *testing.T) {
 }
 
 func TestTailLinesOffsetPlus2(t *testing.T) {
-	// +2 means skip line 1, start from line 2.
+	// +2 = starting from line 2 = skip 1 line.
 	dir := t.TempDir()
 	writeFile(t, dir, "file.txt", fiveLines)
 	stdout, _, code := cmdRun(t, "tail -n +2 file.txt", dir)
@@ -141,8 +140,26 @@ func TestTailLinesOffsetPlus2(t *testing.T) {
 	assert.Equal(t, "beta\ngamma\ndelta\nepsilon\n", stdout)
 }
 
+func TestTailLinesOffsetPlus5(t *testing.T) {
+	// +5 = starting from line 5 = skip 4 lines.
+	dir := t.TempDir()
+	writeFile(t, dir, "file.txt", fiveLines)
+	stdout, _, code := cmdRun(t, "tail -n +5 file.txt", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "epsilon\n", stdout)
+}
+
+func TestTailLinesOffsetBeyondFile(t *testing.T) {
+	// +6 on a 5-line file = no output.
+	dir := t.TempDir()
+	writeFile(t, dir, "file.txt", fiveLines)
+	stdout, _, code := cmdRun(t, "tail -n +6 file.txt", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "", stdout)
+}
+
 func TestTailLinesOffsetPlus0(t *testing.T) {
-	// +0 means skip 0 lines = output all (same as +1).
+	// +0 = same as +1 (output everything).
 	dir := t.TempDir()
 	writeFile(t, dir, "file.txt", fiveLines)
 	stdout, _, code := cmdRun(t, "tail -n +0 file.txt", dir)
@@ -150,21 +167,12 @@ func TestTailLinesOffsetPlus0(t *testing.T) {
 	assert.Equal(t, fiveLines, stdout)
 }
 
-func TestTailLinesOffsetBeyondFile(t *testing.T) {
-	// +N where N > line count: no output.
-	dir := t.TempDir()
-	writeFile(t, dir, "file.txt", fiveLines)
-	stdout, _, code := cmdRun(t, "tail -n +99 file.txt", dir)
-	assert.Equal(t, 0, code)
-	assert.Equal(t, "", stdout)
-}
-
 // --- No trailing newline preservation ---
 
 func TestTailNoTrailingNewline(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, dir, "file.txt", "no newline at end")
-	stdout, _, code := cmdRun(t, "tail -n 1 file.txt", dir)
+	stdout, _, code := cmdRun(t, "tail -n 2 file.txt", dir)
 	assert.Equal(t, 0, code)
 	assert.Equal(t, "no newline at end", stdout)
 }
@@ -177,22 +185,14 @@ func TestTailLastLineNoNewline(t *testing.T) {
 	assert.Equal(t, "line2", stdout)
 }
 
-func TestTailLastTwoLinesSecondNoNewline(t *testing.T) {
-	dir := t.TempDir()
-	writeFile(t, dir, "file.txt", "line1\nline2")
-	stdout, _, code := cmdRun(t, "tail -n 2 file.txt", dir)
-	assert.Equal(t, 0, code)
-	assert.Equal(t, "line1\nline2", stdout)
-}
-
 // --- -c / --bytes flag ---
 
 func TestTailBytesN5(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, dir, "file.txt", fiveLines)
-	// fiveLines = "alpha\nbeta\ngamma\ndelta\nepsilon\n"
-	// "epsilon\n" = e(1)p(2)s(3)i(4)l(5)o(6)n(7)\n(8) = 8 bytes.
-	// Last 5 bytes: i-l-o-n-\n = "ilon\n"
+	// fiveLines ends with "epsilon\n"; last 5 bytes = "lon\n" wait...
+	// "alpha\nbeta\ngamma\ndelta\nepsilon\n" = 5+1+4+1+5+1+5+1+7+1 = 31 bytes
+	// last 5 bytes = "on\n" no... "epsilon\n" is 8 bytes. last 5 = "ilon\n"
 	stdout, _, code := cmdRun(t, "tail -c 5 file.txt", dir)
 	assert.Equal(t, 0, code)
 	assert.Equal(t, "ilon\n", stdout)
@@ -216,38 +216,48 @@ func TestTailBytesLargerThanFile(t *testing.T) {
 
 func TestTailBytesLongForm(t *testing.T) {
 	dir := t.TempDir()
-	writeFile(t, dir, "file.txt", "abcde")
+	writeFile(t, dir, "file.txt", "hello\n")
 	stdout, _, code := cmdRun(t, "tail --bytes=3 file.txt", dir)
 	assert.Equal(t, 0, code)
-	assert.Equal(t, "cde", stdout)
-}
-
-func TestTailBytesOffsetPlus3(t *testing.T) {
-	// +3 means skip first 2 bytes, emit from byte 3.
-	dir := t.TempDir()
-	writeFile(t, dir, "file.txt", "abcde")
-	stdout, _, code := cmdRun(t, "tail -c +3 file.txt", dir)
-	assert.Equal(t, 0, code)
-	assert.Equal(t, "cde", stdout)
-}
-
-func TestTailBytesOffsetPlus1(t *testing.T) {
-	// +1 means skip 0 bytes = output all.
-	dir := t.TempDir()
-	writeFile(t, dir, "file.txt", "abcde")
-	stdout, _, code := cmdRun(t, "tail -c +1 file.txt", dir)
-	assert.Equal(t, 0, code)
-	assert.Equal(t, "abcde", stdout)
+	assert.Equal(t, "lo\n", stdout)
 }
 
 func TestTailBytesBinaryContent(t *testing.T) {
 	dir := t.TempDir()
-	// content = "a\x00b\x00c\x00d" = 7 bytes; last 5 = "b\x00c\x00d"
-	content := "a\x00b\x00c\x00d"
-	writeFile(t, dir, "file.bin", content)
+	// "a\x00b\x00c\x00d" = 7 bytes; last 5 = "b\x00c\x00d"
+	writeFile(t, dir, "file.bin", "a\x00b\x00c\x00d")
 	stdout, _, code := cmdRun(t, "tail -c 5 file.bin", dir)
 	assert.Equal(t, 0, code)
 	assert.Equal(t, "b\x00c\x00d", stdout)
+}
+
+// --- +N offset mode for -c ---
+
+func TestTailBytesOffsetPlus1(t *testing.T) {
+	// +1 = from byte 1 = all bytes.
+	dir := t.TempDir()
+	writeFile(t, dir, "file.txt", "hello")
+	stdout, _, code := cmdRun(t, "tail -c +1 file.txt", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "hello", stdout)
+}
+
+func TestTailBytesOffsetPlus3(t *testing.T) {
+	// +3 = from byte 3 = skip 2 bytes.
+	dir := t.TempDir()
+	writeFile(t, dir, "file.txt", "hello")
+	stdout, _, code := cmdRun(t, "tail -c +3 file.txt", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "llo", stdout)
+}
+
+func TestTailBytesOffsetBeyondFile(t *testing.T) {
+	// +10 on a 5-byte file = no output.
+	dir := t.TempDir()
+	writeFile(t, dir, "file.txt", "hello")
+	stdout, _, code := cmdRun(t, "tail -c +10 file.txt", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "", stdout)
 }
 
 // --- Last flag wins (-n vs -c) ---
@@ -255,10 +265,10 @@ func TestTailBytesBinaryContent(t *testing.T) {
 func TestTailLastFlagWinsBytes(t *testing.T) {
 	// -n 2 -c 5: last flag is -c, so byte mode with 5 bytes.
 	dir := t.TempDir()
-	writeFile(t, dir, "file.txt", "abcdefgh")
+	writeFile(t, dir, "file.txt", "hello\n")
 	stdout, _, code := cmdRun(t, "tail -n 2 -c 5 file.txt", dir)
 	assert.Equal(t, 0, code)
-	assert.Equal(t, "defgh", stdout)
+	assert.Equal(t, "ello\n", stdout)
 }
 
 func TestTailLastFlagWinsLines(t *testing.T) {
@@ -287,6 +297,15 @@ func TestTailTwoFilesDefaultHeaders(t *testing.T) {
 	stdout, _, code := cmdRun(t, "tail -n 2 a.txt b.txt", dir)
 	assert.Equal(t, 0, code)
 	assert.Equal(t, "==> a.txt <==\nalpha\nbeta\n\n==> b.txt <==\ngamma\n", stdout)
+}
+
+func TestTailTwoFilesSecondNoNewline(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "a.txt", "alpha\nbeta\n")
+	writeFile(t, dir, "b.txt", "no newline")
+	stdout, _, code := cmdRun(t, "tail -n 2 a.txt b.txt", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "==> a.txt <==\nalpha\nbeta\n\n==> b.txt <==\nno newline", stdout)
 }
 
 func TestTailQuietTwoFiles(t *testing.T) {
@@ -342,6 +361,22 @@ func TestTailStdinVerbose(t *testing.T) {
 	assert.Equal(t, "==> standard input <==\nhello\n", stdout)
 }
 
+func TestTailNilStdin(t *testing.T) {
+	dir := t.TempDir()
+	stdout, stderr, code := runScript(t, "tail -", dir, interp.AllowedPaths([]string{dir}))
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "", stdout)
+	assert.Equal(t, "", stderr)
+}
+
+func TestTailNilStdinVerbose(t *testing.T) {
+	dir := t.TempDir()
+	stdout, stderr, code := runScript(t, "tail -v -", dir, interp.AllowedPaths([]string{dir}))
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "==> standard input <==\n", stdout)
+	assert.Equal(t, "", stderr)
+}
+
 // --- Help ---
 
 func TestTailHelp(t *testing.T) {
@@ -386,7 +421,7 @@ func TestTailUnknownFlag(t *testing.T) {
 	assert.Contains(t, stderr, "tail:")
 }
 
-func TestTailUnknownShortFlag(t *testing.T) {
+func TestTailFollowFlagRejected(t *testing.T) {
 	dir := t.TempDir()
 	_, stderr, code := cmdRun(t, "tail -f file.txt", dir)
 	assert.Equal(t, 1, code)
@@ -402,11 +437,21 @@ func TestTailInvalidCountString(t *testing.T) {
 }
 
 func TestTailNegativeCount(t *testing.T) {
-	// GNU tail -n -N means "all but last N lines" — we do NOT support that.
+	// GNU tail treats -n -N as -n N (absolute value), matching coreutils behaviour.
 	dir := t.TempDir()
 	writeFile(t, dir, "file.txt", fiveLines)
-	_, _, code := cmdRun(t, "tail -n -1 file.txt", dir)
-	assert.Equal(t, 1, code)
+	stdout, _, code := cmdRun(t, "tail -n -1 file.txt", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "epsilon\n", stdout)
+}
+
+func TestTailNegativeBytesCount(t *testing.T) {
+	// GNU tail treats -c -N as -c N (absolute value), matching coreutils behaviour.
+	dir := t.TempDir()
+	writeFile(t, dir, "file.txt", fiveLines)
+	stdout, _, code := cmdRun(t, "tail -c -1 file.txt", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "\n", stdout)
 }
 
 func TestTailOutsideAllowedPaths(t *testing.T) {
@@ -510,22 +555,6 @@ func TestTailContextPreCancelled(t *testing.T) {
 	}
 }
 
-func TestTailNilStdin(t *testing.T) {
-	dir := t.TempDir()
-	stdout, stderr, code := runScript(t, "tail -", dir, interp.AllowedPaths([]string{dir}))
-	assert.Equal(t, 0, code)
-	assert.Equal(t, "", stdout)
-	assert.Equal(t, "", stderr)
-}
-
-func TestTailNilStdinVerbose(t *testing.T) {
-	dir := t.TempDir()
-	stdout, stderr, code := runScript(t, "tail -v -", dir, interp.AllowedPaths([]string{dir}))
-	assert.Equal(t, 0, code)
-	assert.Equal(t, "==> standard input <==\n", stdout)
-	assert.Equal(t, "", stderr)
-}
-
 func TestTailNoOctalInterpretation08(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, dir, "file.txt", twelveLines)
@@ -533,29 +562,6 @@ func TestTailNoOctalInterpretation08(t *testing.T) {
 	assert.Equal(t, 0, code)
 	assert.Equal(t, 8, strings.Count(stdout, "\n"))
 }
-
-// --- -z / --zero-terminated ---
-
-func TestTailZeroTerminatedBasic(t *testing.T) {
-	dir := t.TempDir()
-	// Three NUL-terminated records: "rec1\x00rec2\x00rec3\x00"
-	content := "rec1\x00rec2\x00rec3\x00"
-	writeFile(t, dir, "nul.bin", content)
-	stdout, _, code := cmdRun(t, "tail -z -n 2 nul.bin", dir)
-	assert.Equal(t, 0, code)
-	assert.Equal(t, "rec2\x00rec3\x00", stdout)
-}
-
-func TestTailZeroTerminatedOffset(t *testing.T) {
-	dir := t.TempDir()
-	content := "rec1\x00rec2\x00rec3\x00"
-	writeFile(t, dir, "nul.bin", content)
-	stdout, _, code := cmdRun(t, "tail -z -n +2 nul.bin", dir)
-	assert.Equal(t, 0, code)
-	assert.Equal(t, "rec2\x00rec3\x00", stdout)
-}
-
-// --- Bad UTF-8 / binary passthrough ---
 
 func TestTailBadUTF8ByteMode(t *testing.T) {
 	dir := t.TempDir()
@@ -571,17 +577,16 @@ func TestTailBadUTF8LineMode(t *testing.T) {
 	badSeq := []byte{0xfc, 0x80, 0x80, 0x80, 0x80, 0xaf}
 	line1 := append(append([]byte(nil), badSeq...), '\n')
 	line2 := append(append([]byte("b"), badSeq...), '\n')
-	line3 := append([]byte("c"), badSeq...)
+	line3 := append([]byte("b"), badSeq...)
 	input := append(append(append([]byte(nil), line1...), line2...), line3...)
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "bad.bin"), input, 0644))
 
+	// tail -n 2: last 2 lines = line2 + line3.
 	expected := append(append([]byte(nil), line2...), line3...)
 	stdout, _, code := cmdRun(t, "tail -n 2 bad.bin", dir)
 	assert.Equal(t, 0, code)
 	assert.Equal(t, string(expected), stdout)
 }
-
-// --- Multi-file edge cases ---
 
 func TestTailTwoEmptyFilesHeaders(t *testing.T) {
 	dir := t.TempDir()
@@ -599,4 +604,23 @@ func TestTailAllNonexistentFiles(t *testing.T) {
 	assert.Empty(t, stdout)
 	assert.Contains(t, stderr, "missing1.txt")
 	assert.Contains(t, stderr, "missing2.txt")
+}
+
+// --- -z / --zero-terminated ---
+
+func TestTailZeroTerminatedLines(t *testing.T) {
+	dir := t.TempDir()
+	// Three NUL-delimited records.
+	writeFile(t, dir, "nul.txt", "alpha\x00beta\x00gamma\x00")
+	stdout, _, code := cmdRun(t, "tail -z -n 2 nul.txt", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "beta\x00gamma\x00", stdout)
+}
+
+func TestTailZeroTerminatedOffsetMode(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "nul.txt", "alpha\x00beta\x00gamma\x00")
+	stdout, _, code := cmdRun(t, "tail -z -n +2 nul.txt", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "beta\x00gamma\x00", stdout)
 }
