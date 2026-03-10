@@ -184,7 +184,7 @@ func processEscapes(s string) (string, bool) {
 				continue
 			}
 			i += consumed
-			b.WriteRune(rune(val))
+			writeUnicodeCodepoint(&b, val)
 			continue
 		case 'U':
 			// Unicode: \UHHHHHHHH (up to 8 hex digits)
@@ -196,7 +196,7 @@ func processEscapes(s string) (string, bool) {
 				continue
 			}
 			i += consumed
-			b.WriteRune(rune(val))
+			writeUnicodeCodepoint(&b, val)
 			continue
 		default:
 			// Unrecognized escape: output backslash and the character literally.
@@ -206,6 +206,18 @@ func processEscapes(s string) (string, bool) {
 		i++
 	}
 	return b.String(), false
+}
+
+// writeUnicodeCodepoint writes a Unicode codepoint to the builder, matching
+// bash behavior: values beyond U+10FFFF are silently dropped. Surrogates
+// (U+D800-U+DFFF) are intentionally replaced with U+FFFD rather than emitting
+// invalid UTF-8 bytes as bash does — this is a security-motivated divergence.
+func writeUnicodeCodepoint(b *strings.Builder, val int) {
+	if val > 0x10FFFF {
+		// Bash silently drops codepoints beyond the Unicode maximum.
+		return
+	}
+	b.WriteRune(rune(val))
 }
 
 // parseOctal reads up to maxDigits octal digits from s and returns the
