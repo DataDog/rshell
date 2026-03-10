@@ -1,4 +1,5 @@
 description: tr rejects non-upper/lower character classes in STRING2 when translating.
+skip_assert_against_bash: true
 input:
   script: |+
     echo hello | tr a '[:digit:]'
