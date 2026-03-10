@@ -207,12 +207,13 @@ func run(ctx context.Context, callCtx *builtins.CallContext, args []string) buil
 		printHeaders = false
 	}
 
+	var headersEmitted int
 	var failed bool
-	for i, file := range files {
+	for _, file := range files {
 		if ctx.Err() != nil {
 			break
 		}
-		if err := processFile(ctx, callCtx, file, i, printHeaders, useBytesMode, cm, *zeroTerminated); err != nil {
+		if err := processFile(ctx, callCtx, file, &headersEmitted, printHeaders, useBytesMode, cm, *zeroTerminated); err != nil {
 			name := file
 			if file == "-" {
 				name = "standard input"
@@ -229,7 +230,7 @@ func run(ctx context.Context, callCtx *builtins.CallContext, args []string) buil
 }
 
 // processFile opens and processes one file (or stdin for "-").
-func processFile(ctx context.Context, callCtx *builtins.CallContext, file string, idx int, printHeaders, useBytesMode bool, cm countMode, zeroTerm bool) error {
+func processFile(ctx context.Context, callCtx *builtins.CallContext, file string, headersEmitted *int, printHeaders, useBytesMode bool, cm countMode, zeroTerm bool) error {
 	var rc io.ReadCloser
 	name := file
 	if file == "-" {
@@ -237,10 +238,11 @@ func processFile(ctx context.Context, callCtx *builtins.CallContext, file string
 		// Print the header before the nil-stdin guard so that -v always
 		// emits a header for stdin even when no input stream is present.
 		if printHeaders {
-			if idx > 0 {
+			if *headersEmitted > 0 {
 				callCtx.Out("\n")
 			}
 			callCtx.Outf("==> %s <==\n", name)
+			*headersEmitted++
 		}
 		if callCtx.Stdin == nil {
 			return nil
@@ -256,10 +258,11 @@ func processFile(ctx context.Context, callCtx *builtins.CallContext, file string
 		// Header is printed after a successful open so that a file that
 		// cannot be opened produces no header (matches GNU tail behaviour).
 		if printHeaders {
-			if idx > 0 {
+			if *headersEmitted > 0 {
 				callCtx.Out("\n")
 			}
 			callCtx.Outf("==> %s <==\n", name)
+			*headersEmitted++
 		}
 	}
 

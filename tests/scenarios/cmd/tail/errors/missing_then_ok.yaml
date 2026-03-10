@@ -1,0 +1,12 @@
+description: tail skips the header separator when the first file is missing.
+setup:
+  files:
+    - path: ok.txt
+      content: "hello\n"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    tail missing.txt ok.txt; echo "exit:$?"
+expect:
+  stdout: "==> ok.txt <==\nhello\nexit:1\n"
+  stderr_contains: ["tail:"]
