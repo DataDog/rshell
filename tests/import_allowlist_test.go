@@ -126,8 +126,6 @@ var builtinAllowedSymbols = []string{
 	"unicode/utf8.UTFMax",
 	// unicode/utf8.Valid — checks if a byte slice is valid UTF-8; pure function, no I/O.
 	"unicode/utf8.Valid",
-	// time.Now — returns current time; read-only, no filesystem or network I/O.
-	"time.Now",
 	// time.Time — time value type; pure data, no side effects.
 	"time.Time",
 }

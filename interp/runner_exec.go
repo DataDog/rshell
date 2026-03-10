@@ -12,6 +12,7 @@ import (
 	"io/fs"
 	"os"
 	"sync"
+	"time"
 
 	"mvdan.cc/sh/v3/expand"
 	"mvdan.cc/sh/v3/syntax"
@@ -226,6 +227,7 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 				return r.sandbox.access(r.handlerCtx(ctx, todoPos), path, mode)
 			},
 			PortableErr: portableErrMsg,
+			Now:         time.Now,
 		}
 		if r.stdin != nil { // do not assign a typed nil into the io.Reader interface
 			call.Stdin = r.stdin
