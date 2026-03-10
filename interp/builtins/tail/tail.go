@@ -108,6 +108,18 @@ const MaxBytesBuffer = 32 << 20 // 32 MiB
 // finite amount of work regardless of whether a timeout is configured.
 const MaxTotalReadBytes = 256 << 20 // 256 MiB
 
+// limitError is a plain string-based error type used for input-size limit
+// violations. It avoids errors.New (not in the import allowlist) while still
+// satisfying the error interface.
+type limitError string
+
+func (e limitError) Error() string { return string(e) }
+
+const (
+	errReadLimitExceeded = limitError("input too large: read limit exceeded")
+	errRingMemoryLimit   = limitError("input too large: ring buffer memory limit exceeded")
+)
+
 // countMode holds the parsed value of a -n / -c argument.
 type countMode struct {
 	n      int64
@@ -294,7 +306,7 @@ func readLastLines(ctx context.Context, callCtx *builtins.CallContext, r io.Read
 		raw := sc.Bytes()
 		totalRead += int64(len(raw))
 		if totalRead > MaxTotalReadBytes {
-			return errors.New("input too large: read limit exceeded")
+			return errReadLimitExceeded
 		}
 		cp := make([]byte, len(raw))
 		copy(cp, raw)
@@ -305,7 +317,7 @@ func readLastLines(ctx context.Context, callCtx *builtins.CallContext, r io.Read
 		ring[ringHead] = cp
 		ringBytes += int64(len(cp))
 		if ringBytes > MaxRingBytes {
-			return errors.New("input too large: ring buffer memory limit exceeded")
+			return errRingMemoryLimit
 		}
 		ringHead = (ringHead + 1) % ringSize
 		if ringCount < ringSize {
@@ -385,7 +397,7 @@ func readLastBytes(ctx context.Context, callCtx *builtins.CallContext, r io.Read
 			i += canWrite
 		}
 		if totalWritten > MaxTotalReadBytes {
-			return errors.New("input too large: read limit exceeded")
+			return errReadLimitExceeded
 		}
 		if errors.Is(readErr, io.EOF) {
 			break
