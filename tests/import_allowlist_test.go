@@ -38,12 +38,32 @@ var builtinAllowedSymbols = []string{
 	"context.Context",
 	// errors.Is — error comparison; pure function, no I/O.
 	"errors.Is",
+	// fmt.Sprintf — string formatting; pure function, no I/O.
+	"fmt.Sprintf",
 	// pflag.ContinueOnError — flag parse-error mode constant; no side effects.
 	"github.com/spf13/pflag.ContinueOnError",
 	// pflag.NewFlagSet — CLI flag parsing; operates only on string slices, no I/O.
 	"github.com/spf13/pflag.NewFlagSet",
 	// io.Copy — stream data between reader and writer; builtins receive sandboxed streams.
 	"io.Copy",
+	// io/fs.DirEntry — interface type for directory entries; no side effects.
+	"io/fs.DirEntry",
+	// io/fs.FileInfo — interface type for file information; no side effects.
+	"io/fs.FileInfo",
+	// io/fs.ModeDir — file mode bit constant for directories; pure constant.
+	"io/fs.ModeDir",
+	// io/fs.ModeSymlink — file mode bit constant for symlinks; pure constant.
+	"io/fs.ModeSymlink",
+	// io/fs.ModeNamedPipe — file mode bit constant for named pipes; pure constant.
+	"io/fs.ModeNamedPipe",
+	// io/fs.ModeSocket — file mode bit constant for sockets; pure constant.
+	"io/fs.ModeSocket",
+	// io/fs.ModeSetuid — file mode bit constant for setuid; pure constant.
+	"io/fs.ModeSetuid",
+	// io/fs.ModeSetgid — file mode bit constant for setgid; pure constant.
+	"io/fs.ModeSetgid",
+	// io/fs.ModeSticky — file mode bit constant for sticky bit; pure constant.
+	"io/fs.ModeSticky",
 	// io.Discard — /dev/null writer; discards all data, no side effects.
 	"io.Discard",
 	// io.EOF — sentinel error value; pure constant.
@@ -56,6 +76,10 @@ var builtinAllowedSymbols = []string{
 	"io.Reader",
 	// os.O_RDONLY — read-only file flag constant; cannot open files by itself.
 	"os.O_RDONLY",
+	// slices.Reverse — reverses a slice in-place; pure function, no I/O.
+	"slices.Reverse",
+	// slices.SortFunc — sorts a slice with a comparison function; pure function, no I/O.
+	"slices.SortFunc",
 	// strconv.Atoi — string-to-int conversion; pure function, no I/O.
 	"strconv.Atoi",
 	// strconv.ParseInt — string-to-int conversion with base/bit-size; pure function, no I/O.
@@ -86,6 +110,10 @@ var builtinAllowedSymbols = []string{
 	"unicode/utf8.UTFMax",
 	// unicode/utf8.Valid — checks if a byte slice is valid UTF-8; pure function, no I/O.
 	"unicode/utf8.Valid",
+	// time.Now — returns current time; read-only, no filesystem or network I/O.
+	"time.Now",
+	// time.Time — time value type; pure data, no side effects.
+	"time.Time",
 }
 
 // permanentlyBanned lists packages that may never be imported by builtin

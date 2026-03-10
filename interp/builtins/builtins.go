@@ -9,6 +9,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 )
 
@@ -30,6 +31,13 @@ type CallContext struct {
 
 	// OpenFile opens a file within the shell's path restrictions.
 	OpenFile func(ctx context.Context, path string, flags int, mode os.FileMode) (io.ReadWriteCloser, error)
+
+	// ReadDir reads a directory within the shell's path restrictions.
+	// Entries are returned sorted by name.
+	ReadDir func(ctx context.Context, path string) ([]fs.DirEntry, error)
+
+	// Stat returns file information within the shell's path restrictions.
+	Stat func(ctx context.Context, path string) (fs.FileInfo, error)
 
 	// PortableErr normalizes an OS error to a POSIX-style message.
 	PortableErr func(err error) string
