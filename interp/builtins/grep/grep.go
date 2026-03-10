@@ -8,7 +8,8 @@
 // grep — print lines that match patterns
 //
 // Usage: grep [OPTION]... PATTERN [FILE]...
-//        grep [OPTION]... -e PATTERN [-e PATTERN]... [FILE]...
+//
+//	grep [OPTION]... -e PATTERN [-e PATTERN]... [FILE]...
 //
 // Search for PATTERN in each FILE. When FILE is -, read standard input.
 // With no FILE, read standard input.
@@ -260,8 +261,8 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			quiet:             *quiet,
 			noMessages:        *noMessages,
 			maxCount:          *maxCount,
-			afterContext:       after,
-			beforeContext:      before,
+			afterContext:      after,
+			beforeContext:     before,
 			contextRequested:  contextFlagUsed,
 		}
 
@@ -292,11 +293,11 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			}
 		}
 
-		if anyMatch {
-			return builtins.Result{Code: exitMatch}
-		}
 		if anyError {
 			return builtins.Result{Code: exitError}
+		}
+		if anyMatch {
+			return builtins.Result{Code: exitMatch}
 		}
 		return builtins.Result{Code: exitNoMatch}
 	}
@@ -322,8 +323,8 @@ type grepOpts struct {
 	quiet             bool
 	noMessages        bool
 	maxCount          int
-	afterContext       int
-	beforeContext      int
+	afterContext      int
+	beforeContext     int
 	contextRequested  bool // true when any -A/-B/-C flag was used (even with 0)
 }
 

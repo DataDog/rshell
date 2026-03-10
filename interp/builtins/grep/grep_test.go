@@ -523,13 +523,22 @@ func TestGrepContextCancellation(t *testing.T) {
 // --- Multiple files with some errors ---
 
 func TestGrepMultipleFilesSomeErrors(t *testing.T) {
-	// GNU grep returns 0 if a match was found, even if some files had errors.
+	// GNU grep returns 2 when any read error occurs, even if there are matches.
 	dir := t.TempDir()
 	writeFile(t, dir, "good.txt", "foo\n")
 	stdout, stderr, code := cmdRun(t, "grep foo good.txt nonexistent.txt", dir)
-	assert.Equal(t, 0, code)
+	assert.Equal(t, 2, code)
 	assert.Contains(t, stdout, "foo")
 	assert.Contains(t, stderr, "grep:")
+}
+
+func TestGrepQuietMultipleFilesSomeErrors(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "good.txt", "foo\n")
+	stdout, stderr, code := cmdRun(t, "grep -q foo good.txt nonexistent.txt", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "", stdout)
+	assert.Equal(t, "", stderr)
 }
 
 // --- Pipe chain ---
