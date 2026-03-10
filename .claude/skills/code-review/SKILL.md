@@ -149,29 +149,48 @@ When the review includes a new or modified builtin, run through these attack vec
 
 ---
 
+## Finding Severity
+
+Use the P0–P3 priority scale. Each finding MUST be prefixed with the corresponding shields.io badge image in all inline comments and the summary table.
+
+### Priority definitions and badge images
+
+| Priority | Badge markdown | Criteria |
+|----------|---------------|----------|
+| P0 | `<sub><sub>![P0 Badge](https://img.shields.io/badge/P0-red?style=flat)</sub></sub>` | Drop everything to fix. Exploitable vulnerability with high impact (RCE, sandbox bypass, data breach). Blocking merge. |
+| P1 | `<sub><sub>![P1 Badge](https://img.shields.io/badge/P1-orange?style=flat)</sub></sub>` | Urgent. Likely exploitable or high-risk pattern — correctness bugs that produce wrong output vs bash, data races, panics. |
+| P2 | `<sub><sub>![P2 Badge](https://img.shields.io/badge/P2-yellow?style=flat)</sub></sub>` | Normal. Potential vulnerability, unintentional bash divergence, missing test coverage, missing documentation updates. |
+| P3 | `<sub><sub>![P3 Badge](https://img.shields.io/badge/P3-blue?style=flat)</sub></sub>` | Low / nice-to-have. Style inconsistency, minor simplification, hardening suggestion, nice-to-have edge case test. |
+
+Every inline comment body MUST start with the badge image followed by the finding title. For example:
+
+```
+<sub><sub>![P1 Badge](https://img.shields.io/badge/P1-orange?style=flat)</sub></sub> **Command injection via unsanitized user input**
+```
+
+---
+
 ## Output Format
 
 ### Review Summary
 - Brief overview of what was reviewed
 - Overall assessment: **safe to merge**, **needs fixes**, or **needs major rework**
-- Count of findings by severity
+- Summary table of findings with badges:
+
+```markdown
+| # | Priority | File | Finding |
+|---|----------|------|---------|
+| 1 | <sub><sub>![P0 Badge](https://img.shields.io/badge/P0-red?style=flat)</sub></sub> | `path/to/file.go:42` | Brief description |
+| 2 | <sub><sub>![P2 Badge](https://img.shields.io/badge/P2-yellow?style=flat)</sub></sub> | `path/to/other.go:15` | Brief description |
+```
 
 ### Findings
 
-Organize by severity:
-
-#### Critical
-Must be fixed before merging — security vulnerabilities, sandbox bypasses, correctness bugs that produce wrong output vs bash, data races, panics.
-
-#### Warning
-Should be fixed — unintentional bash divergences, missing test coverage, missing documentation updates, fragile code.
-
-#### Info
-Suggestions for improvement — style inconsistencies, minor simplifications, nice-to-have edge case tests.
+Organize by severity (P0 first, then P1, P2, P3).
 
 For each finding, include:
-1. **Title** — clear, descriptive name
-2. **Severity** — Critical / Warning / Info (and category, e.g. Security, Bash Compat, Correctness)
+1. **Title** — clear, descriptive name (prefixed with priority badge)
+2. **Severity** — P0–P3 (and category, e.g. Security, Bash Compat, Correctness)
 3. **Location** — file path and line number(s)
 4. **Description** — what the issue is and why it matters
 5. **Evidence** — the specific code or a proof-of-concept shell script demonstrating the issue
@@ -183,6 +202,89 @@ For security findings, also include:
 
 ### Positive Observations
 - Note security measures and good patterns already in place — this helps the team understand what's working well
+
+---
+
+## PR Review Submission
+
+When the argument is a PR number or URL, submit findings as a GitHub review with inline comments.
+
+### 0. Signal review in progress
+
+React to the PR body with an **eyes** emoji to indicate the review is underway:
+
+```bash
+gh api repos/{owner}/{repo}/issues/{pr_number}/reactions \
+  --method POST \
+  --field content=eyes \
+  --jq '.id'
+```
+
+Store the returned reaction ID so it can be removed later.
+
+### 1. Determine review event
+
+Based on findings:
+- **No P0/P1 findings** → `COMMENT`
+- **Any P0 or P1 finding** → `REQUEST_CHANGES`
+- **No findings at all** → `APPROVE`
+
+### 2. Submit the review
+
+```bash
+gh api repos/{owner}/{repo}/pulls/{pr_number}/reviews \
+  --method POST \
+  --input - \
+  --jq '{id: .id, state: .state, html_url: .html_url}' <<'EOF'
+{
+  "commit_id": "<head commit SHA>",
+  "event": "<APPROVE|COMMENT|REQUEST_CHANGES>",
+  "body": "<review summary>",
+  "comments": [
+    {
+      "path": "relative/path/to/file.go",
+      "line": 42,
+      "side": "RIGHT",
+      "body": "<sub><sub>![P1 Badge](https://img.shields.io/badge/P1-orange?style=flat)</sub></sub> **Title**\n\nExplanation.\n\n```suggestion\n// fix\n```"
+    }
+  ]
+}
+EOF
+```
+
+**Payload rules:**
+- `commit_id`: exact HEAD SHA of the PR branch.
+- `line`: must fall within a diff hunk for that file. For multi-line comments, use both `start_line` and `line`.
+- `side`: use `"RIGHT"` for comments on the new code.
+- Include GitHub suggestion blocks (```` ```suggestion ````) where a concrete fix is straightforward.
+- If the API returns an error about an invalid line position, adjust the `line` to fall within the diff hunk and retry.
+
+### 3. Post-review emoji reactions
+
+After successfully submitting the review, update the PR body reactions based on the outcome:
+
+- **If `APPROVE`**: React with a **thumbs up** (`+1`) emoji, then remove the eyes reaction.
+  ```bash
+  gh api repos/{owner}/{repo}/issues/{pr_number}/reactions \
+    --method POST --field content='+1'
+  gh api repos/{owner}/{repo}/issues/{pr_number}/reactions/{eyes_reaction_id} \
+    --method DELETE
+  ```
+
+- **If `REQUEST_CHANGES`**: Remove **all** reactions added by the current authenticated user from the PR body.
+  ```bash
+  GITHUB_USER=$(gh api user --jq '.login')
+  gh api repos/{owner}/{repo}/issues/{pr_number}/reactions --paginate \
+    --jq '.[] | select(.user.login == "'$GITHUB_USER'") | .id' | while read -r reaction_id; do
+    gh api repos/{owner}/{repo}/issues/{pr_number}/reactions/$reaction_id --method DELETE
+  done
+  ```
+
+- **If `COMMENT`** (default): Remove the eyes reaction.
+  ```bash
+  gh api repos/{owner}/{repo}/issues/{pr_number}/reactions/{eyes_reaction_id} \
+    --method DELETE
+  ```
 
 ---
 
