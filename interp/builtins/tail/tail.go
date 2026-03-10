@@ -37,6 +37,8 @@
 //	-h, --help
 //	    Print this usage message to stdout and exit 0.
 //
+// Rejected flags: -f, -F, --follow, --pid, --retry (not supported).
+//
 // Exit codes:
 //
 //	0  All files processed successfully.
@@ -116,19 +118,29 @@ func run(ctx context.Context, callCtx *builtins.CallContext, args []string) buil
 	fs := pflag.NewFlagSet("tail", pflag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 
-	help := fs.BoolP("help", "h", false, "print usage and exit")
-	quiet := fs.BoolP("quiet", "q", false, "never print file name headers")
-	_ = fs.Bool("silent", false, "alias for --quiet")
-	verbose := fs.BoolP("verbose", "v", false, "always print file name headers")
-	zeroTerm := fs.BoolP("zero-terminated", "z", false, "use NUL as line delimiter")
+	help           := fs.BoolP("help", "h", false, "print usage and exit")
+	zeroTerminated := fs.BoolP("zero-terminated", "z", false, "use NUL as line delimiter")
 
-	// SAFETY: -f/--follow is intentionally NOT defined. pflag rejects unknown
-	// flags, which prevents tail from blocking indefinitely on file-following.
-	// Do not add -f, --follow, -F, --retry, --pid, or --sleep-interval to this
-	// flag set.
+	// quietFlag, silentFlag, and verboseFlag share a sequence counter so that
+	// after parsing we can tell which appeared last on the command line and
+	// apply last-flag-wins semantics (e.g. "-q -v" should show headers).
+	var headerSeq int
+	quietFlag   := newHeaderFlag(&headerSeq)
+	silentFlag  := newHeaderFlag(&headerSeq)
+	verboseFlag := newHeaderFlag(&headerSeq)
+	fs.VarP(quietFlag, "quiet", "q", "never print file name headers")
+	fs.Var(silentFlag, "silent", "alias for --quiet")
+	fs.VarP(verboseFlag, "verbose", "v", "always print file name headers")
+	// Mark the header flags as boolean so pflag does not consume the next
+	// positional argument as a value when the flag appears without "=…".
+	fs.Lookup("quiet").NoOptDefVal = "true"
+	fs.Lookup("silent").NoOptDefVal = "true"
+	fs.Lookup("verbose").NoOptDefVal = "true"
 
-	// linesFlag and bytesFlag share a sequence counter to determine which
-	// appeared last on the command line (last flag wins).
+	// linesFlag and bytesFlag share a sequence counter so that after parsing
+	// we can compare their pos fields to determine which appeared last on the
+	// command line. pflag calls Set() in parse order, so the last flag Set
+	// gets the highest pos value.
 	var modeSeq int
 	linesFlag := newModeFlag(&modeSeq, "10")
 	bytesFlag := newModeFlag(&modeSeq, "")
@@ -149,18 +161,13 @@ func run(ctx context.Context, callCtx *builtins.CallContext, args []string) buil
 		return builtins.Result{}
 	}
 
-	// --silent is an alias for --quiet.
-	if fs.Changed("silent") {
-		*quiet = true
-	}
-
 	// Bytes mode wins if -c/--bytes was parsed after -n/--lines.
 	useBytesMode := bytesFlag.pos > linesFlag.pos
 
-	countStr := linesFlag.val
+	countStr  := linesFlag.val
 	modeLabel := "lines"
 	if useBytesMode {
-		countStr = bytesFlag.val
+		countStr  = bytesFlag.val
 		modeLabel = "bytes"
 	}
 
@@ -175,8 +182,16 @@ func run(ctx context.Context, callCtx *builtins.CallContext, args []string) buil
 		files = []string{"-"}
 	}
 
-	printHeaders := len(files) > 1 || *verbose
-	if *quiet {
+	// Determine header printing using last-flag-wins: the highest pos among
+	// quiet/silent (suppress) vs verbose (force) controls the outcome.
+	suppressPos := quietFlag.pos
+	if silentFlag.pos > suppressPos {
+		suppressPos = silentFlag.pos
+	}
+	printHeaders := len(files) > 1
+	if verboseFlag.pos > suppressPos {
+		printHeaders = true
+	} else if suppressPos > verboseFlag.pos {
 		printHeaders = false
 	}
 
@@ -185,7 +200,7 @@ func run(ctx context.Context, callCtx *builtins.CallContext, args []string) buil
 		if ctx.Err() != nil {
 			break
 		}
-		if err := processFile(ctx, callCtx, file, i, printHeaders, useBytesMode, cm, *zeroTerm); err != nil {
+		if err := processFile(ctx, callCtx, file, i, printHeaders, useBytesMode, cm, *zeroTerminated); err != nil {
 			name := file
 			if file == "-" {
 				name = "standard input"
@@ -443,7 +458,7 @@ func skipBytes(ctx context.Context, callCtx *builtins.CallContext, r io.Reader, 
 // parseCount parses a line or byte count string for tail.
 // A leading '+' activates offset mode (output starting from position N,
 // 1-based). Without '+', the value is the number of trailing lines/bytes
-// to output. Negative values are rejected.
+// to output. GNU tail silently treats negative counts as their absolute value.
 func parseCount(s string) (countMode, bool) {
 	if s == "" {
 		return countMode{}, false
@@ -468,9 +483,9 @@ func parseCount(s string) (countMode, bool) {
 }
 
 // modeFlag is a pflag.Value implementation for -n/--lines and -c/--bytes.
-// Two modeFlag values share a *seq counter; each call to Set increments
-// the counter and records the new value in pos. After pflag.Parse, comparing
-// pos fields reveals which flag appeared last on the command line.
+// Two modeFlag values share a *seq counter; each call to Set increments the
+// counter and records the new value in pos. After pflag.Parse, comparing pos
+// fields reveals which flag appeared last on the command line.
 type modeFlag struct {
 	val string
 	seq *int
@@ -489,6 +504,22 @@ func (f *modeFlag) Set(s string) error {
 	return nil
 }
 func (f *modeFlag) Type() string { return "string" }
+
+// headerFlag is a pflag.Value implementation for -q/--quiet/--silent and
+// -v/--verbose. Multiple headerFlag values share a *seq counter so that after
+// pflag.Parse the one with the highest pos was set last on the command line
+// and wins (last-flag-wins semantics).
+type headerFlag struct {
+	seq *int
+	pos int
+}
+
+func newHeaderFlag(seq *int) *headerFlag { return &headerFlag{seq: seq} }
+
+func (f *headerFlag) String() string   { return "false" }
+func (f *headerFlag) Set(string) error { *f.seq++; f.pos = *f.seq; return nil }
+func (f *headerFlag) Type() string     { return "bool" }
+func (f *headerFlag) IsBoolFlag() bool { return true }
 
 // scanLinesPreservingNewline is a bufio.SplitFunc that includes the line
 // terminator (\n) in the returned token. Unlike bufio.ScanLines, it does not
