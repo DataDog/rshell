@@ -13,8 +13,8 @@ input:
   script: |+
     ls -t
 expect:
-  stdout_contains:
-    - "old.txt"
-    - "new.txt"
+  stdout: |
+    new.txt
+    old.txt
   stderr: ""
   exit_code: 0

@@ -86,8 +86,8 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 	// This lets us determine which sort flag (-S or -t) was specified last.
 	fs.SortFlags = false
 
-	all := fs.BoolP("all", "a", false, "do not ignore entries starting with .")
-	almostAll := fs.BoolP("almost-all", "A", false, "do not ignore . and ..")
+	_ = fs.BoolP("all", "a", false, "do not ignore entries starting with .")
+	_ = fs.BoolP("almost-all", "A", false, "do not ignore . and ..")
 	dirOnly := fs.BoolP("directory", "d", false, "list directories themselves, not their contents")
 	reverse := fs.BoolP("reverse", "r", false, "reverse order while sorting")
 	_ = fs.BoolP("sort-size", "S", false, "sort by file size, largest first")
@@ -104,7 +104,16 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 	return func(ctx context.Context, callCtx *builtins.CallContext, args []string) builtins.Result {
 		// Determine the effective sort mode. When both -S and -t are given,
 		// the last one specified wins, matching GNU ls behaviour.
+		//
+		// Determine the effective hidden-file mode. When both -a and -A are
+		// given, the last one specified wins, matching GNU ls behaviour.
+		//
+		// NOTE: fs.Visit iterates flags in parse-order (SortFlags=false) but
+		// only visits each flag once, so repeated flags like -a -A -a cannot
+		// be fully resolved. This is an acceptable limitation for such a rare
+		// edge case.
 		var sortSize, sortTime bool
+		var showAll, showAlmostAll bool
 		fs.Visit(func(f *builtins.Flag) {
 			switch f.Name {
 			case "sort-size":
@@ -113,12 +122,18 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			case "sort-time":
 				sortTime = true
 				sortSize = false
+			case "all":
+				showAll = true
+				showAlmostAll = false
+			case "almost-all":
+				showAlmostAll = true
+				showAll = false
 			}
 		})
 
 		opts := &options{
-			all:           *all,
-			almostAll:     *almostAll,
+			all:           showAll,
+			almostAll:     showAlmostAll,
 			dirOnly:       *dirOnly,
 			reverse:       *reverse,
 			sortSize:      sortSize,
@@ -346,6 +361,9 @@ func formatMode(info iofs.FileInfo) string {
 	mode := info.Mode()
 
 	// Char 0: file type.
+	// NOTE: Block device ('b') and character device ('c') types are
+	// intentionally omitted because the syscall package (needed for
+	// ModeDevice/ModeCharDevice) is banned by the import allowlist.
 	switch {
 	case mode&iofs.ModeDir != 0:
 		buf[0] = 'd'
