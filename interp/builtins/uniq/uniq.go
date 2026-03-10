@@ -79,13 +79,11 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/spf13/pflag"
-
 	"github.com/DataDog/rshell/interp/builtins"
 )
 
 // Cmd is the uniq builtin command descriptor.
-var Cmd = builtins.Command{Name: "uniq", Run: run}
+var Cmd = builtins.Command{Name: "uniq", MakeFlags: registerFlags}
 
 // MaxLineBytes is the per-line buffer cap for the line scanner.
 const MaxLineBytes = 1 << 20 // 1 MiB
@@ -118,10 +116,7 @@ const (
 	allRepeatedSeparate
 )
 
-func run(ctx context.Context, callCtx *builtins.CallContext, args []string) builtins.Result {
-	fs := pflag.NewFlagSet("uniq", pflag.ContinueOnError)
-	fs.SetOutput(io.Discard)
-
+func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 	help := fs.BoolP("help", "h", false, "print usage and exit")
 	count := fs.BoolP("count", "c", false, "prefix lines by the number of occurrences")
 	repeated := fs.BoolP("repeated", "d", false, "only print duplicate lines, one for each group")
@@ -139,133 +134,129 @@ func run(ctx context.Context, callCtx *builtins.CallContext, args []string) buil
 	fs.Lookup("all-repeated").NoOptDefVal = "none"
 	fs.Lookup("group").NoOptDefVal = "separate"
 
-	if err := fs.Parse(args); err != nil {
-		callCtx.Errf("uniq: %v\n", err)
-		return builtins.Result{Code: 1}
-	}
-
-	if *help {
-		callCtx.Out("Usage: uniq [OPTION]... [INPUT]\n")
-		callCtx.Out("Filter adjacent matching lines from INPUT (or stdin),\n")
-		callCtx.Out("writing to standard output.\n\n")
-		fs.SetOutput(callCtx.Stdout)
-		fs.PrintDefaults()
-		return builtins.Result{}
-	}
-
-	skipFields, ok := parseNonNegativeInt(*skipFieldsStr)
-	if !ok {
-		callCtx.Errf("uniq: %s: invalid number of fields to skip\n", *skipFieldsStr)
-		return builtins.Result{Code: 1}
-	}
-
-	skipChars, ok := parseNonNegativeInt(*skipCharsStr)
-	if !ok {
-		callCtx.Errf("uniq: %s: invalid number of bytes to skip\n", *skipCharsStr)
-		return builtins.Result{Code: 1}
-	}
-
-	checkChars := int64(-1)
-	if fs.Changed("check-chars") {
-		checkChars, ok = parseNonNegativeInt(*checkCharsStr)
-		if !ok {
-			callCtx.Errf("uniq: %s: invalid number of bytes to compare\n", *checkCharsStr)
-			return builtins.Result{Code: 1}
-		}
-	}
-
-	useAllRepeated := fs.Changed("all-repeated")
-	arMethod := allRepeatedNone
-	if useAllRepeated {
-		var err error
-		arMethod, err = parseAllRepeatedMethod(*allRepeatedStr)
-		if err != nil {
-			callCtx.Errf("uniq: %v\n", err)
-			return builtins.Result{Code: 1}
-		}
-	}
-
-	useGroup := fs.Changed("group")
-	grpMethod := groupSeparate
-	if useGroup {
-		var err error
-		grpMethod, err = parseGroupMethod(*groupStr)
-		if err != nil {
-			callCtx.Errf("uniq: %v\n", err)
-			return builtins.Result{Code: 1}
-		}
-	}
-
-	if useGroup && (*count || *repeated || useAllRepeated || *unique) {
-		callCtx.Errf("uniq: --group is mutually exclusive with -c/-d/-D/-u\n")
-		callCtx.Errf("Try 'uniq --help' for more information.\n")
-		return builtins.Result{Code: 1}
-	}
-	if useAllRepeated && *count {
-		callCtx.Errf("uniq: printing all duplicated lines and repeat counts is meaningless\n")
-		callCtx.Errf("Try 'uniq --help' for more information.\n")
-		return builtins.Result{Code: 1}
-	}
-
-	positional := fs.Args()
-	if len(positional) > 1 {
-		callCtx.Errf("uniq: extra operand %q\n", positional[1])
-		return builtins.Result{Code: 1}
-	}
-
-	file := "-"
-	if len(positional) == 1 {
-		file = positional[0]
-	}
-
-	var rc io.ReadCloser
-	if file == "-" {
-		if callCtx.Stdin == nil {
+	return func(ctx context.Context, callCtx *builtins.CallContext, args []string) builtins.Result {
+		if *help {
+			callCtx.Out("Usage: uniq [OPTION]... [INPUT]\n")
+			callCtx.Out("Filter adjacent matching lines from INPUT (or stdin),\n")
+			callCtx.Out("writing to standard output.\n\n")
+			fs.SetOutput(callCtx.Stdout)
+			fs.PrintDefaults()
 			return builtins.Result{}
 		}
-		rc = io.NopCloser(callCtx.Stdin)
-	} else {
-		f, err := callCtx.OpenFile(ctx, file, os.O_RDONLY, 0)
-		if err != nil {
-			callCtx.Errf("uniq: %s: %s\n", file, callCtx.PortableErr(err))
+
+		skipFields, ok := parseNonNegativeInt(*skipFieldsStr)
+		if !ok {
+			callCtx.Errf("uniq: %s: invalid number of fields to skip\n", *skipFieldsStr)
 			return builtins.Result{Code: 1}
 		}
-		defer f.Close()
-		rc = f
-	}
 
-	delim := byte('\n')
-	if *zeroTerminated {
-		delim = 0
-	}
+		skipChars, ok := parseNonNegativeInt(*skipCharsStr)
+		if !ok {
+			callCtx.Errf("uniq: %s: invalid number of bytes to skip\n", *skipCharsStr)
+			return builtins.Result{Code: 1}
+		}
 
-	// GNU uniq: --all-repeated --unique collapses to -d behavior (one per
-	// duplicate group). Downgrade to the standard repeated path.
-	if useAllRepeated && *unique {
-		useAllRepeated = false
-		*repeated = true
-		*unique = false
-	}
+		checkChars := int64(-1)
+		if fs.Changed("check-chars") {
+			checkChars, ok = parseNonNegativeInt(*checkCharsStr)
+			if !ok {
+				callCtx.Errf("uniq: %s: invalid number of bytes to compare\n", *checkCharsStr)
+				return builtins.Result{Code: 1}
+			}
+		}
 
-	cfg := &uniqConfig{
-		count:          *count,
-		repeated:       *repeated,
-		unique:         *unique,
-		ignoreCase:     *ignoreCase,
-		skipFields:     skipFields,
-		skipChars:      skipChars,
-		checkChars:     checkChars,
-		delim:          delim,
-		useAllRepeated: useAllRepeated,
-		arMethod:       arMethod,
-		useGroup:       useGroup,
-		grpMethod:      grpMethod,
-	}
+		useAllRepeated := fs.Changed("all-repeated")
+		arMethod := allRepeatedNone
+		if useAllRepeated {
+			var err error
+			arMethod, err = parseAllRepeatedMethod(*allRepeatedStr)
+			if err != nil {
+				callCtx.Errf("uniq: %v\n", err)
+				return builtins.Result{Code: 1}
+			}
+		}
 
-	if err := processInput(ctx, callCtx, rc, cfg); err != nil {
-		return builtins.Result{Code: 1}
+		useGroup := fs.Changed("group")
+		grpMethod := groupSeparate
+		if useGroup {
+			var err error
+			grpMethod, err = parseGroupMethod(*groupStr)
+			if err != nil {
+				callCtx.Errf("uniq: %v\n", err)
+				return builtins.Result{Code: 1}
+			}
+		}
+
+		if useGroup && (*count || *repeated || useAllRepeated || *unique) {
+			callCtx.Errf("uniq: --group is mutually exclusive with -c/-d/-D/-u\n")
+			callCtx.Errf("Try 'uniq --help' for more information.\n")
+			return builtins.Result{Code: 1}
+		}
+		if useAllRepeated && *count {
+			callCtx.Errf("uniq: printing all duplicated lines and repeat counts is meaningless\n")
+			callCtx.Errf("Try 'uniq --help' for more information.\n")
+			return builtins.Result{Code: 1}
+		}
+
+		if len(args) > 1 {
+			callCtx.Errf("uniq: extra operand %q\n", args[1])
+			return builtins.Result{Code: 1}
+		}
+
+		file := "-"
+		if len(args) == 1 {
+			file = args[0]
+		}
+
+		var rc io.ReadCloser
+		if file == "-" {
+			if callCtx.Stdin == nil {
+				return builtins.Result{}
+			}
+			rc = io.NopCloser(callCtx.Stdin)
+		} else {
+			f, err := callCtx.OpenFile(ctx, file, os.O_RDONLY, 0)
+			if err != nil {
+				callCtx.Errf("uniq: %s: %s\n", file, callCtx.PortableErr(err))
+				return builtins.Result{Code: 1}
+			}
+			defer f.Close()
+			rc = f
+		}
+
+		delim := byte('\n')
+		if *zeroTerminated {
+			delim = 0
+		}
+
+		// GNU uniq: --all-repeated --unique collapses to -d behavior (one per
+		// duplicate group). Downgrade to the standard repeated path.
+		if useAllRepeated && *unique {
+			useAllRepeated = false
+			*repeated = true
+			*unique = false
+		}
+
+		cfg := &uniqConfig{
+			count:          *count,
+			repeated:       *repeated,
+			unique:         *unique,
+			ignoreCase:     *ignoreCase,
+			skipFields:     skipFields,
+			skipChars:      skipChars,
+			checkChars:     checkChars,
+			delim:          delim,
+			useAllRepeated: useAllRepeated,
+			arMethod:       arMethod,
+			useGroup:       useGroup,
+			grpMethod:      grpMethod,
+		}
+
+		if err := processInput(ctx, callCtx, rc, cfg); err != nil {
+			return builtins.Result{Code: 1}
+		}
+		return builtins.Result{}
 	}
-	return builtins.Result{}
 }
 
 type uniqConfig struct {
