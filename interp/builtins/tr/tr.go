@@ -128,7 +128,7 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 		}
 
 		var set1Classes []caseClassPos
-		set1, err := expandSet(set1Str, false, 0, false, callCtx, &set1Classes)
+		set1, err := expandSet(set1Str, false, 0, false, callCtx, &set1Classes, nil)
 		if err != nil {
 			callCtx.Errf("tr: %s\n", err)
 			return builtins.Result{Code: 1}
@@ -141,9 +141,10 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 
 		var set2 []byte
 		var set2Classes []caseClassPos
+		var set2EndsWithClass bool
 		translateMode := !*deleteFlag && len(operands) >= 2
 		if set2Str != "" || len(operands) > 1 {
-			set2, err = expandSet(set2Str, true, len(set1), translateMode, callCtx, &set2Classes)
+			set2, err = expandSet(set2Str, true, len(set1), translateMode, callCtx, &set2Classes, &set2EndsWithClass)
 			if err != nil {
 				callCtx.Errf("tr: %s\n", err)
 				return builtins.Result{Code: 1}
@@ -153,6 +154,10 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 		if translateMode {
 			if err := validateCaseClassAlignment(set1Classes, set2Classes); err != nil {
 				callCtx.Errf("tr: %s\n", err)
+				return builtins.Result{Code: 1}
+			}
+			if !*truncateSet1 && len(set1) > len(set2) && set2EndsWithClass {
+				callCtx.Errf("tr: when translating with string1 longer than string2,\nthe latter string must not end with a character class\n")
 				return builtins.Result{Code: 1}
 			}
 		}
@@ -421,8 +426,9 @@ type caseClassPos struct {
 	name           string // "upper" or "lower"
 }
 
-func expandSet(s string, isSet2 bool, set1Len int, translateSet2 bool, callCtx *builtins.CallContext, caseClasses *[]caseClassPos) ([]byte, error) {
+func expandSet(s string, isSet2 bool, set1Len int, translateSet2 bool, callCtx *builtins.CallContext, caseClasses *[]caseClassPos, endsWithClass *bool) ([]byte, error) {
 	var result []byte
+	lastTokenIsClass := false
 	data := []byte(s)
 	i := 0
 	for i < len(data) {
@@ -446,6 +452,7 @@ func expandSet(s string, isSet2 bool, set1Len int, translateSet2 bool, callCtx *
 						*caseClasses = append(*caseClasses, caseClassPos{expandedOffset: len(result), name: className})
 					}
 					result = append(result, chars...)
+					lastTokenIsClass = true
 					i = end + 2
 					continue
 				}
@@ -473,6 +480,7 @@ func expandSet(s string, isSet2 bool, set1Len int, translateSet2 bool, callCtx *
 						return nil, &trError{string(eqChars) + ": equivalence class operand must be a single character"}
 					}
 					result = append(result, eqByte)
+					lastTokenIsClass = false
 					i = end + 2
 					continue
 				}
@@ -490,6 +498,7 @@ func expandSet(s string, isSet2 bool, set1Len int, translateSet2 bool, callCtx *
 					} else {
 						result = append(result, rpt...)
 					}
+					lastTokenIsClass = false
 					i += advance
 					continue
 				} else if advance < 0 {
@@ -531,6 +540,7 @@ func expandSet(s string, isSet2 bool, set1Len int, translateSet2 bool, callCtx *
 						break
 					}
 				}
+				lastTokenIsClass = false
 				i = rangeEnd + endAdvance
 				continue
 			}
@@ -538,7 +548,11 @@ func expandSet(s string, isSet2 bool, set1Len int, translateSet2 bool, callCtx *
 		}
 
 		result = append(result, ch)
+		lastTokenIsClass = false
 		i += chAdvance
+	}
+	if endsWithClass != nil {
+		*endsWithClass = lastTokenIsClass
 	}
 	return result, nil
 }

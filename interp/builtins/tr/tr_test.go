@@ -326,6 +326,18 @@ func TestTrMisalignedCaseClassOffset(t *testing.T) {
 	assert.Contains(t, stderr, "misaligned [:upper:] and/or [:lower:] construct")
 }
 
+func TestTrSet1LongerSet2EndsWithClass(t *testing.T) {
+	_, stderr, code := trRun(t, "abcx", "'[:lower:]x' '[:upper:]'")
+	assert.Equal(t, 1, code)
+	assert.Contains(t, stderr, "the latter string must not end with a character class")
+}
+
+func TestTrSet1LongerSet2EndsWithClassTruncateOK(t *testing.T) {
+	stdout, _, code := trRun(t, "abcx", "-t '[:lower:]x' '[:upper:]'")
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "ABCX", stdout)
+}
+
 func TestTrEmptyCharClassName(t *testing.T) {
 	_, stderr, code := trRun(t, "", "'[::]' x")
 	assert.Equal(t, 1, code)
