@@ -38,6 +38,8 @@ var builtinAllowedSymbols = []string{
 	"context.Context",
 	// errors.Is — error comparison; pure function, no I/O.
 	"errors.Is",
+	// errors.New — creates a simple error value; no I/O or side effects.
+	"errors.New",
 	// pflag.ContinueOnError — flag parse-error mode constant; no side effects.
 	"github.com/spf13/pflag.ContinueOnError",
 	// pflag.NewFlagSet — CLI flag parsing; operates only on string slices, no I/O.

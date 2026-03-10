@@ -46,11 +46,21 @@
 //
 //	Line mode uses a ring buffer capped at min(N, MaxRingLines) slots. Each
 //	slot holds one line; lines exceeding MaxLineBytes cause an error rather
-//	than an unbounded allocation. Byte mode uses a circular buffer of size
+//	than an unbounded allocation. The ring buffer's total memory footprint is
+//	additionally capped at MaxRingBytes (64 MiB); tail returns an error if a
+//	crafted input would exceed this. Byte mode uses a circular buffer of size
 //	min(N, MaxBytesBuffer); it never allocates proportionally to very large
 //	user-supplied N values. Offset (+N) modes stream without buffering.
 //	All loops check ctx.Err() at each iteration to honour the shell's
 //	execution timeout and to support graceful cancellation.
+//
+// Infinite-stream protection:
+//
+//	Both last-N-lines and last-N-bytes modes must consume the entire input
+//	before emitting output. On an infinite source (e.g. a non-terminating
+//	pipe) without a context deadline, execution would hang indefinitely.
+//	To bound this, tail returns an error once total bytes read from any single
+//	input source exceed MaxTotalReadBytes (256 MiB).
 package tail
 
 import (
@@ -79,9 +89,22 @@ const MaxLineBytes = 1 << 20 // 1 MiB
 // MaxRingLines is the maximum number of lines held in the ring buffer.
 const MaxRingLines = 100_000
 
+// MaxRingBytes is the maximum total bytes the ring buffer may hold at any
+// one time. Without this cap, MaxRingLines (100 000) × MaxLineBytes (1 MiB)
+// yields a worst-case memory envelope of ~97.6 GiB. This constant reduces
+// the bound to 64 MiB.
+const MaxRingBytes = 64 << 20 // 64 MiB
+
 // MaxBytesBuffer is the maximum size of the circular byte buffer used in
 // last-N-bytes mode.
 const MaxBytesBuffer = 32 << 20 // 32 MiB
+
+// MaxTotalReadBytes is the maximum total bytes tail will consume from a
+// single input source. Both last-N-lines and last-N-bytes modes must read
+// the entire input before emitting output, so an infinite source without a
+// context deadline would hang indefinitely. This limit bounds execution to a
+// finite amount of work regardless of whether a timeout is configured.
+const MaxTotalReadBytes = 256 << 20 // 256 MiB
 
 // countMode holds the parsed value of a -n / -c argument.
 type countMode struct {
@@ -98,6 +121,11 @@ func run(ctx context.Context, callCtx *builtins.CallContext, args []string) buil
 	_ = fs.Bool("silent", false, "alias for --quiet")
 	verbose := fs.BoolP("verbose", "v", false, "always print file name headers")
 	zeroTerm := fs.BoolP("zero-terminated", "z", false, "use NUL as line delimiter")
+
+	// SAFETY: -f/--follow is intentionally NOT defined. pflag rejects unknown
+	// flags, which prevents tail from blocking indefinitely on file-following.
+	// Do not add -f, --follow, -F, --retry, --pid, or --sleep-interval to this
+	// flag set.
 
 	// linesFlag and bytesFlag share a sequence counter to determine which
 	// appeared last on the command line (last flag wins).
@@ -241,15 +269,29 @@ func readLastLines(ctx context.Context, callCtx *builtins.CallContext, r io.Read
 	ring := make([][]byte, ringSize)
 	var ringHead int
 	var ringCount int
+	var ringBytes int64 // total bytes currently held in the ring buffer
+	var totalRead int64 // total bytes consumed from input (infinite-stream guard)
 
 	for sc.Scan() {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
 		raw := sc.Bytes()
+		totalRead += int64(len(raw))
+		if totalRead > MaxTotalReadBytes {
+			return errors.New("input too large: read limit exceeded")
+		}
 		cp := make([]byte, len(raw))
 		copy(cp, raw)
+		// When the ring is full, evict the oldest entry before writing.
+		if ringCount == ringSize {
+			ringBytes -= int64(len(ring[ringHead]))
+		}
 		ring[ringHead] = cp
+		ringBytes += int64(len(cp))
+		if ringBytes > MaxRingBytes {
+			return errors.New("input too large: ring buffer memory limit exceeded")
+		}
 		ringHead = (ringHead + 1) % ringSize
 		if ringCount < ringSize {
 			ringCount++
@@ -307,6 +349,9 @@ func readLastBytes(ctx context.Context, callCtx *builtins.CallContext, r io.Read
 		return nil
 	}
 
+	// Allocate the circular buffer eagerly. bufSize is capped at MaxBytesBuffer
+	// (32 MiB), so this allocation is bounded regardless of the user-supplied
+	// count value.
 	bufSize := int(min(count, int64(MaxBytesBuffer)))
 	circ := make([]byte, bufSize)
 	var totalWritten int64
@@ -323,6 +368,9 @@ func readLastBytes(ctx context.Context, callCtx *builtins.CallContext, r io.Read
 			copy(circ[pos:pos+canWrite], tmp[i:i+canWrite])
 			totalWritten += int64(canWrite)
 			i += canWrite
+		}
+		if totalWritten > MaxTotalReadBytes {
+			return errors.New("input too large: read limit exceeded")
 		}
 		if errors.Is(readErr, io.EOF) {
 			break
@@ -406,8 +454,12 @@ func parseCount(s string) (countMode, bool) {
 		parseStr = s[1:]
 	}
 	n, err := strconv.ParseInt(parseStr, 10, 64)
-	if err != nil || n < 0 {
+	if err != nil {
 		return countMode{}, false
+	}
+	// GNU tail silently treats negative counts as their absolute value.
+	if n < 0 {
+		n = -n
 	}
 	if n > MaxCount {
 		n = MaxCount

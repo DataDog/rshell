@@ -437,19 +437,21 @@ func TestTailInvalidCountString(t *testing.T) {
 }
 
 func TestTailNegativeCount(t *testing.T) {
+	// GNU tail treats -n -N as -n N (absolute value), matching coreutils behaviour.
 	dir := t.TempDir()
 	writeFile(t, dir, "file.txt", fiveLines)
-	_, stderr, code := cmdRun(t, "tail -n -1 file.txt", dir)
-	assert.Equal(t, 1, code)
-	assert.Contains(t, stderr, "tail:")
+	stdout, _, code := cmdRun(t, "tail -n -1 file.txt", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "epsilon\n", stdout)
 }
 
 func TestTailNegativeBytesCount(t *testing.T) {
+	// GNU tail treats -c -N as -c N (absolute value), matching coreutils behaviour.
 	dir := t.TempDir()
 	writeFile(t, dir, "file.txt", fiveLines)
-	_, stderr, code := cmdRun(t, "tail -c -1 file.txt", dir)
-	assert.Equal(t, 1, code)
-	assert.Contains(t, stderr, "tail:")
+	stdout, _, code := cmdRun(t, "tail -c -1 file.txt", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "\n", stdout)
 }
 
 func TestTailOutsideAllowedPaths(t *testing.T) {

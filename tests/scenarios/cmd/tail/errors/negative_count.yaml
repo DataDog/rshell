@@ -1,4 +1,4 @@
-description: tail rejects negative counts (we do not implement elide-head mode).
+description: tail -n with a negative count treats the value as its absolute value, matching GNU tail behaviour.
 setup:
   files:
     - path: file.txt
@@ -8,6 +8,5 @@ input:
   script: |+
     tail -n -1 file.txt
 expect:
-  stdout: ""
-  stderr_contains: ["tail:"]
-  exit_code: 1
+  stdout: "hello\n"
+  exit_code: 0
