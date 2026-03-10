@@ -12,9 +12,8 @@ import (
 	"github.com/DataDog/rshell/interp/builtins/internal/loopctl"
 )
 
-func init() {
-	builtins.Register("break", run)
-}
+// Cmd is the break builtin command descriptor.
+var Cmd = builtins.Command{Name: "break", Run: run}
 
 func run(_ context.Context, callCtx *builtins.CallContext, args []string) builtins.Result {
 	return loopctl.LoopControl(callCtx, "break", args)

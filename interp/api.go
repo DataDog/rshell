@@ -172,6 +172,7 @@ func (e *exitStatus) fromHandlerError(err error) {
 // environment defaults to an empty environment (no host env inherited), and not
 // supplying the standard output writer means that the output will be discarded.
 func New(opts ...RunnerOption) (*Runner, error) {
+	registerBuiltins()
 	r := &Runner{
 		runnerConfig: runnerConfig{usedNew: true},
 	}

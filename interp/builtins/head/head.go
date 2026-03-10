@@ -61,9 +61,8 @@ import (
 	"github.com/DataDog/rshell/interp/builtins"
 )
 
-func init() {
-	builtins.Register("head", run)
-}
+// Cmd is the head builtin command descriptor.
+var Cmd = builtins.Command{Name: "head", Run: run}
 
 // MaxCount is the maximum accepted line or byte count. Values above this
 // are clamped. This prevents huge theoretical allocations while remaining

@@ -13,9 +13,8 @@ import (
 	"github.com/DataDog/rshell/interp/builtins"
 )
 
-func init() {
-	builtins.Register("cat", run)
-}
+// Cmd is the cat builtin command descriptor.
+var Cmd = builtins.Command{Name: "cat", Run: run}
 
 func run(ctx context.Context, callCtx *builtins.CallContext, args []string) builtins.Result {
 	if len(args) == 0 {

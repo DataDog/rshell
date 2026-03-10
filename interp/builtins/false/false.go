@@ -11,9 +11,8 @@ import (
 	"github.com/DataDog/rshell/interp/builtins"
 )
 
-func init() {
-	builtins.Register("false", run)
-}
+// Cmd is the false builtin command descriptor.
+var Cmd = builtins.Command{Name: "false", Run: run}
 
 func run(_ context.Context, _ *builtins.CallContext, _ []string) builtins.Result {
 	return builtins.Result{Code: 1}

@@ -11,9 +11,8 @@ import (
 	"github.com/DataDog/rshell/interp/builtins"
 )
 
-func init() {
-	builtins.Register("echo", run)
-}
+// Cmd is the echo builtin command descriptor.
+var Cmd = builtins.Command{Name: "echo", Run: run}
 
 func run(_ context.Context, callCtx *builtins.CallContext, args []string) builtins.Result {
 	for i, arg := range args {

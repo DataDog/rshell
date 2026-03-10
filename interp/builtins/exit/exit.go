@@ -12,9 +12,8 @@ import (
 	"github.com/DataDog/rshell/interp/builtins"
 )
 
-func init() {
-	builtins.Register("exit", run)
-}
+// Cmd is the exit builtin command descriptor.
+var Cmd = builtins.Command{Name: "exit", Run: run}
 
 func run(_ context.Context, callCtx *builtins.CallContext, args []string) builtins.Result {
 	var r builtins.Result

@@ -65,6 +65,13 @@ type Result struct {
 	ContinueN int
 }
 
+// Command pairs a builtin name with its handler, used for explicit
+// registration in the all package.
+type Command struct {
+	Name string
+	Run  HandlerFunc
+}
+
 var registry = map[string]HandlerFunc{}
 
 // Register adds a builtin command to the registry.
