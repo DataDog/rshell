@@ -42,8 +42,6 @@ var builtinAllowedSymbols = []string{
 	"errors.Is",
 	// errors.New — creates a simple error value; no I/O or side effects.
 	"errors.New",
-	// io.Copy — stream data between reader and writer; builtins receive sandboxed streams.
-	"io.Copy",
 	// io.EOF — sentinel error value; pure constant.
 	"io.EOF",
 	// io.NopCloser — wraps a Reader with a no-op Close; no side effects.
