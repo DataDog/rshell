@@ -77,13 +77,11 @@ import (
 	"os"
 	"strconv"
 
-	"github.com/spf13/pflag"
-
 	"github.com/DataDog/rshell/interp/builtins"
 )
 
 // Cmd is the tail builtin command descriptor.
-var Cmd = builtins.Command{Name: "tail", Run: run}
+var Cmd = builtins.Command{Name: "tail", MakeFlags: registerFlags}
 
 // MaxCount is the maximum accepted line or byte count. Values above this
 // are clamped to prevent huge theoretical allocations.
@@ -118,10 +116,10 @@ type countMode struct {
 	offset bool // true when the argument started with '+' (offset from start)
 }
 
-func run(ctx context.Context, callCtx *builtins.CallContext, args []string) builtins.Result {
-	fs := pflag.NewFlagSet("tail", pflag.ContinueOnError)
-	fs.SetOutput(io.Discard)
-
+// registerFlags registers all tail flags on the framework-provided FlagSet and
+// returns a bound handler whose flag variables are captured by closure. The
+// framework calls Parse and passes positional arguments to the handler.
+func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 	help           := fs.BoolP("help", "h", false, "print usage and exit")
 	zeroTerminated := fs.BoolP("zero-terminated", "z", false, "use NUL as line delimiter")
 
@@ -151,74 +149,70 @@ func run(ctx context.Context, callCtx *builtins.CallContext, args []string) buil
 	fs.VarP(linesFlag, "lines", "n", "output the last N lines instead of the last 10")
 	fs.VarP(bytesFlag, "bytes", "c", "output the last N bytes instead of lines")
 
-	if err := fs.Parse(args); err != nil {
-		callCtx.Errf("tail: %v\n", err)
-		return builtins.Result{Code: 1}
-	}
+	return func(ctx context.Context, callCtx *builtins.CallContext, files []string) builtins.Result {
+		if *help {
+			callCtx.Out("Usage: tail [OPTION]... [FILE]...\n")
+			callCtx.Out("Print the last 10 lines of each FILE to standard output.\n")
+			callCtx.Out("With no FILE, or when FILE is -, read standard input.\n\n")
+			fs.SetOutput(callCtx.Stdout)
+			fs.PrintDefaults()
+			return builtins.Result{}
+		}
 
-	if *help {
-		callCtx.Out("Usage: tail [OPTION]... [FILE]...\n")
-		callCtx.Out("Print the last 10 lines of each FILE to standard output.\n")
-		callCtx.Out("With no FILE, or when FILE is -, read standard input.\n\n")
-		fs.SetOutput(callCtx.Stdout)
-		fs.PrintDefaults()
+		// Bytes mode wins if -c/--bytes was parsed after -n/--lines.
+		useBytesMode := bytesFlag.pos > linesFlag.pos
+
+		countStr  := linesFlag.val
+		modeLabel := "lines"
+		if useBytesMode {
+			countStr  = bytesFlag.val
+			modeLabel = "bytes"
+		}
+
+		cm, ok := parseCount(countStr)
+		if !ok {
+			callCtx.Errf("tail: invalid number of %s: %q\n", modeLabel, countStr)
+			return builtins.Result{Code: 1}
+		}
+
+		if len(files) == 0 {
+			files = []string{"-"}
+		}
+
+		// Determine header printing using last-flag-wins: the highest pos among
+		// quiet/silent (suppress) vs verbose (force) controls the outcome.
+		suppressPos := quietFlag.pos
+		if silentFlag.pos > suppressPos {
+			suppressPos = silentFlag.pos
+		}
+		printHeaders := len(files) > 1
+		if verboseFlag.pos > suppressPos {
+			printHeaders = true
+		} else if suppressPos > verboseFlag.pos {
+			printHeaders = false
+		}
+
+		var failed bool
+		var headerPrinted bool
+		for _, file := range files {
+			if ctx.Err() != nil {
+				break
+			}
+			if err := processFile(ctx, callCtx, file, &headerPrinted, printHeaders, useBytesMode, cm, *zeroTerminated); err != nil {
+				name := file
+				if file == "-" {
+					name = "standard input"
+				}
+				callCtx.Errf("tail: %s: %s\n", name, callCtx.PortableErr(err))
+				failed = true
+			}
+		}
+
+		if failed {
+			return builtins.Result{Code: 1}
+		}
 		return builtins.Result{}
 	}
-
-	// Bytes mode wins if -c/--bytes was parsed after -n/--lines.
-	useBytesMode := bytesFlag.pos > linesFlag.pos
-
-	countStr  := linesFlag.val
-	modeLabel := "lines"
-	if useBytesMode {
-		countStr  = bytesFlag.val
-		modeLabel = "bytes"
-	}
-
-	cm, ok := parseCount(countStr)
-	if !ok {
-		callCtx.Errf("tail: invalid number of %s: %q\n", modeLabel, countStr)
-		return builtins.Result{Code: 1}
-	}
-
-	files := fs.Args()
-	if len(files) == 0 {
-		files = []string{"-"}
-	}
-
-	// Determine header printing using last-flag-wins: the highest pos among
-	// quiet/silent (suppress) vs verbose (force) controls the outcome.
-	suppressPos := quietFlag.pos
-	if silentFlag.pos > suppressPos {
-		suppressPos = silentFlag.pos
-	}
-	printHeaders := len(files) > 1
-	if verboseFlag.pos > suppressPos {
-		printHeaders = true
-	} else if suppressPos > verboseFlag.pos {
-		printHeaders = false
-	}
-
-	var failed bool
-	var headerPrinted bool
-	for _, file := range files {
-		if ctx.Err() != nil {
-			break
-		}
-		if err := processFile(ctx, callCtx, file, &headerPrinted, printHeaders, useBytesMode, cm, *zeroTerminated); err != nil {
-			name := file
-			if file == "-" {
-				name = "standard input"
-			}
-			callCtx.Errf("tail: %s: %s\n", name, callCtx.PortableErr(err))
-			failed = true
-		}
-	}
-
-	if failed {
-		return builtins.Result{Code: 1}
-	}
-	return builtins.Result{}
 }
 
 // processFile opens and processes one file (or stdin for "-").
