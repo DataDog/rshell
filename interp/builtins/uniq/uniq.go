@@ -239,6 +239,14 @@ func run(ctx context.Context, callCtx *builtins.CallContext, args []string) buil
 		delim = 0
 	}
 
+	// GNU uniq: --all-repeated --unique collapses to -d behavior (one per
+	// duplicate group). Downgrade to the standard repeated path.
+	if useAllRepeated && *unique {
+		useAllRepeated = false
+		*repeated = true
+		*unique = false
+	}
+
 	cfg := &uniqConfig{
 		count:          *count,
 		repeated:       *repeated,
@@ -255,10 +263,6 @@ func run(ctx context.Context, callCtx *builtins.CallContext, args []string) buil
 	}
 
 	if err := processInput(ctx, callCtx, rc, cfg); err != nil {
-		if ctx.Err() != nil {
-			return builtins.Result{Code: 1}
-		}
-		callCtx.Errf("uniq: write error\n")
 		return builtins.Result{Code: 1}
 	}
 	return builtins.Result{}
@@ -288,6 +292,13 @@ func processInput(ctx context.Context, callCtx *builtins.CallContext, r io.Reade
 	w := callCtx.Stdout
 	delimStr := string([]byte{cfg.delim})
 
+	reportWrite := func(err error) error {
+		if err != nil {
+			callCtx.Errf("uniq: write error\n")
+		}
+		return err
+	}
+
 	var prevLine string
 	var prevKey string
 	var lineCount int64
@@ -309,11 +320,11 @@ func processInput(ctx context.Context, callCtx *builtins.CallContext, r io.Reade
 
 			if cfg.useGroup {
 				if cfg.grpMethod == groupPrepend || cfg.grpMethod == groupBoth {
-					if err := writeStr(w, delimStr); err != nil {
+					if err := reportWrite(writeStr(w, delimStr)); err != nil {
 						return err
 					}
 				}
-				if err := writeStr(w, curLine+delimStr); err != nil {
+				if err := reportWrite(writeStr(w, curLine+delimStr)); err != nil {
 					return err
 				}
 			}
@@ -325,43 +336,43 @@ func processInput(ctx context.Context, callCtx *builtins.CallContext, r io.Reade
 		if same {
 			lineCount++
 			if cfg.useGroup {
-				if err := writeStr(w, curLine+delimStr); err != nil {
+				if err := reportWrite(writeStr(w, curLine+delimStr)); err != nil {
 					return err
 				}
 			} else if cfg.useAllRepeated {
 				if lineCount == 2 {
 					if groupNum > 0 && cfg.arMethod != allRepeatedNone {
-						if err := writeStr(w, delimStr); err != nil {
+						if err := reportWrite(writeStr(w, delimStr)); err != nil {
 							return err
 						}
 					}
 					if groupNum == 0 && cfg.arMethod == allRepeatedPrepend {
-						if err := writeStr(w, delimStr); err != nil {
+						if err := reportWrite(writeStr(w, delimStr)); err != nil {
 							return err
 						}
 					}
-					if err := writeStr(w, prevLine+delimStr); err != nil {
+					if err := reportWrite(writeStr(w, prevLine+delimStr)); err != nil {
 						return err
 					}
 					groupNum++
 				}
-				if err := writeStr(w, curLine+delimStr); err != nil {
+				if err := reportWrite(writeStr(w, curLine+delimStr)); err != nil {
 					return err
 				}
 			}
 		} else {
 			if cfg.useGroup {
-				if err := writeStr(w, delimStr); err != nil {
+				if err := reportWrite(writeStr(w, delimStr)); err != nil {
 					return err
 				}
-				if err := writeStr(w, curLine+delimStr); err != nil {
+				if err := reportWrite(writeStr(w, curLine+delimStr)); err != nil {
 					return err
 				}
 				groupNum++
 			} else if cfg.useAllRepeated {
 				// Nothing to do — non-repeated last group is simply dropped.
 			} else {
-				if err := emitStandard(w, cfg, prevLine, lineCount, delimStr); err != nil {
+				if err := reportWrite(emitStandard(w, cfg, prevLine, lineCount, delimStr)); err != nil {
 					return err
 				}
 			}
@@ -383,14 +394,14 @@ func processInput(ctx context.Context, callCtx *builtins.CallContext, r io.Reade
 	// Flush last group.
 	if cfg.useGroup {
 		if cfg.grpMethod == groupAppend || cfg.grpMethod == groupBoth {
-			return writeStr(w, delimStr)
+			return reportWrite(writeStr(w, delimStr))
 		}
 		return nil
 	}
 	if cfg.useAllRepeated {
 		return nil
 	}
-	return emitStandard(w, cfg, prevLine, lineCount, delimStr)
+	return reportWrite(emitStandard(w, cfg, prevLine, lineCount, delimStr))
 }
 
 func emitStandard(w io.Writer, cfg *uniqConfig, line string, count int64, delimStr string) error {
@@ -482,7 +493,9 @@ func parseNonNegativeInt(s string) (int64, bool) {
 
 func parseAllRepeatedMethod(s string) (allRepeatedMethod, error) {
 	switch {
-	case s == "" || strings.HasPrefix("none", s):
+	case s == "":
+		return 0, &invalidArgError{arg: s, flag: "--all-repeated", valid: []string{"none", "prepend", "separate"}}
+	case strings.HasPrefix("none", s):
 		return allRepeatedNone, nil
 	case strings.HasPrefix("prepend", s):
 		return allRepeatedPrepend, nil
@@ -494,7 +507,9 @@ func parseAllRepeatedMethod(s string) (allRepeatedMethod, error) {
 
 func parseGroupMethod(s string) (groupMethod, error) {
 	switch {
-	case s == "" || strings.HasPrefix("separate", s):
+	case s == "":
+		return 0, &invalidArgError{arg: s, flag: "--group", valid: []string{"prepend", "append", "separate", "both"}}
+	case strings.HasPrefix("separate", s):
 		return groupSeparate, nil
 	case strings.HasPrefix("prepend", s):
 		return groupPrepend, nil
