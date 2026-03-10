@@ -1,5 +1,5 @@
 ---
-name: review-comments
+name: address-pr-comments
 description: Read PR review comments, evaluate validity, implement fixes, push changes, and reply/resolve threads
 argument-hint: "[pr-number|pr-url]"
 ---
@@ -168,8 +168,6 @@ git commit -m "$(cat <<'EOF'
 Address review comments: <brief description>
 
 <details of what was changed and why>
-
-Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>
 EOF
 )"
 
@@ -181,12 +179,14 @@ If fixes span unrelated areas, prefer multiple focused commits over one large co
 
 ### 7. Reply to and resolve comments
 
+**All replies MUST be prefixed with `[<LLM model name>]`** (e.g. `[Claude Opus 4.6]`) so reviewers can tell the response came from an AI.
+
 For each comment that was addressed:
 
 1. **Reply** explaining what was fixed:
    ```bash
    gh api repos/{owner}/{repo}/pulls/{pr-number}/comments/{comment-id}/replies \
-     -f body="Done — <brief explanation of the change made>"
+     -f body="[<MODEL NAME> - <VERSION>] Done — <brief explanation of the change made>"
    ```
 
 2. **Resolve** the thread:
@@ -221,7 +221,7 @@ For each comment that was addressed:
    ' -f threadId="<thread-id>"
    ```
 
-For comments that were **not valid** or were **questions**, reply with an explanation but do NOT resolve — let the reviewer decide.
+For comments that were **not valid** or were **questions**, reply (prefixed with `[<MODELL NAME - VERSION>]`) with an explanation but do NOT resolve — let the reviewer decide.
 
 ### 8. Summary
 
