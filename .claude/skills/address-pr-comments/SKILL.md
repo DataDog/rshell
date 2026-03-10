@@ -1,5 +1,5 @@
 ---
-name: review-comments
+name: address-pr-comments
 description: Read PR review comments, evaluate validity, implement fixes, push changes, and reply/resolve threads
 argument-hint: "[pr-number|pr-url]"
 ---
