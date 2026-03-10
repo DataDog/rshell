@@ -135,11 +135,11 @@ var permanentlyBanned = map[string]string{
 	"unsafe":  "bypasses Go's type and memory safety guarantees",
 }
 
-// TestBuiltinImportAllowlist enforces symbol-level import restrictions on
+// TestBuiltinAllowedSymbols enforces symbol-level import restrictions on
 // command implementation files in interp/builtins/. builtins.go is exempt as
 // the package framework. Every other file's imports and pkg.Symbol references
 // must be explicitly listed in builtinAllowedSymbols.
-func TestBuiltinImportAllowlist(t *testing.T) {
+func TestBuiltinAllowedSymbols(t *testing.T) {
 	// Build lookup sets from the allowlist.
 	allowedSymbols := make(map[string]bool, len(builtinAllowedSymbols))
 	usedSymbols := make(map[string]bool, len(builtinAllowedSymbols))
