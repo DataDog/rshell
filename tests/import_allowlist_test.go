@@ -40,14 +40,8 @@ var builtinAllowedSymbols = []string{
 	"context.Context",
 	// errors.Is — error comparison; pure function, no I/O.
 	"errors.Is",
-	// pflag.ContinueOnError — flag parse-error mode constant; no side effects.
-	"github.com/spf13/pflag.ContinueOnError",
-	// pflag.NewFlagSet — CLI flag parsing; operates only on string slices, no I/O.
-	"github.com/spf13/pflag.NewFlagSet",
 	// io.Copy — stream data between reader and writer; builtins receive sandboxed streams.
 	"io.Copy",
-	// io.Discard — /dev/null writer; discards all data, no side effects.
-	"io.Discard",
 	// io.EOF — sentinel error value; pure constant.
 	"io.EOF",
 	// io.NopCloser — wraps a Reader with a no-op Close; no side effects.
@@ -58,6 +52,8 @@ var builtinAllowedSymbols = []string{
 	"io.Reader",
 	// os.O_RDONLY — read-only file flag constant; cannot open files by itself.
 	"os.O_RDONLY",
+	// strings.Builder — efficient string concatenation; pure in-memory buffer, no I/O.
+	"strings.Builder",
 	// strconv.Atoi — string-to-int conversion; pure function, no I/O.
 	"strconv.Atoi",
 	// strconv.ParseInt — string-to-int conversion with base/bit-size; pure function, no I/O.
@@ -74,6 +70,30 @@ var builtinAllowedSymbols = []string{
 	"io.WriteString",
 	// io.Writer — interface type for writing; no side effects.
 	"io.Writer",
+	// unicode.Cc — control character category range table; pure data, no I/O.
+	"unicode.Cc",
+	// unicode.Cf — format character category range table; pure data, no I/O.
+	"unicode.Cf",
+	// unicode.Is — checks if rune belongs to a range table; pure function, no I/O.
+	"unicode.Is",
+	// unicode.Me — enclosing mark category range table; pure data, no I/O.
+	"unicode.Me",
+	// unicode.Mn — nonspacing mark category range table; pure data, no I/O.
+	"unicode.Mn",
+	// unicode.Range16 — struct type for 16-bit Unicode ranges; pure data.
+	"unicode.Range16",
+	// unicode.Range32 — struct type for 32-bit Unicode ranges; pure data.
+	"unicode.Range32",
+	// unicode.RangeTable — struct type for Unicode range tables; pure data.
+	"unicode.RangeTable",
+	// unicode/utf8.DecodeRune — decodes first UTF-8 rune from a byte slice; pure function, no I/O.
+	"unicode/utf8.DecodeRune",
+	// unicode/utf8.RuneCount — counts UTF-8 runes in a byte slice; pure function, no I/O.
+	"unicode/utf8.RuneCount",
+	// unicode/utf8.UTFMax — maximum number of bytes in a UTF-8 encoding; constant, no I/O.
+	"unicode/utf8.UTFMax",
+	// unicode/utf8.Valid — checks if a byte slice is valid UTF-8; pure function, no I/O.
+	"unicode/utf8.Valid",
 }
 
 // permanentlyBanned lists packages that may never be imported by builtin
