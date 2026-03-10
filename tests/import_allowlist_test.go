@@ -64,6 +64,32 @@ var builtinAllowedSymbols = []string{
 	"strconv.Atoi",
 	// strconv.ParseInt — string-to-int conversion with base/bit-size; pure function, no I/O.
 	"strconv.ParseInt",
+	// strconv.FormatInt — int-to-string conversion; pure function, no I/O.
+	"strconv.FormatInt",
+	// unicode.Cc — control character category range table; pure data, no I/O.
+	"unicode.Cc",
+	// unicode.Cf — format character category range table; pure data, no I/O.
+	"unicode.Cf",
+	// unicode.Is — checks if rune belongs to a range table; pure function, no I/O.
+	"unicode.Is",
+	// unicode.Me — enclosing mark category range table; pure data, no I/O.
+	"unicode.Me",
+	// unicode.Mn — nonspacing mark category range table; pure data, no I/O.
+	"unicode.Mn",
+	// unicode.Range16 — struct type for 16-bit Unicode ranges; pure data.
+	"unicode.Range16",
+	// unicode.Range32 — struct type for 32-bit Unicode ranges; pure data.
+	"unicode.Range32",
+	// unicode.RangeTable — struct type for Unicode range tables; pure data.
+	"unicode.RangeTable",
+	// unicode/utf8.DecodeRune — decodes first UTF-8 rune from a byte slice; pure function, no I/O.
+	"unicode/utf8.DecodeRune",
+	// unicode/utf8.RuneCount — counts UTF-8 runes in a byte slice; pure function, no I/O.
+	"unicode/utf8.RuneCount",
+	// unicode/utf8.UTFMax — maximum number of bytes in a UTF-8 encoding; constant, no I/O.
+	"unicode/utf8.UTFMax",
+	// unicode/utf8.Valid — checks if a byte slice is valid UTF-8; pure function, no I/O.
+	"unicode/utf8.Valid",
 }
 
 // permanentlyBanned lists packages that may never be imported by builtin
