@@ -74,7 +74,9 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 	deleteFlag := fs.BoolP("delete", "d", false, "delete characters in SET1")
 	squeeze := fs.BoolP("squeeze-repeats", "s", false, "squeeze repeated characters")
 	complement := fs.BoolP("complement", "c", false, "use complement of SET1")
-	bigC := fs.BoolP("COMPLEMENT", "C", false, "alias for -c/--complement")
+	var bigC bool
+	fs.BoolVarP(&bigC, "complement-alt", "C", false, "alias for -c/--complement")
+	fs.MarkHidden("complement-alt")
 	truncateSet1 := fs.BoolP("truncate-set1", "t", false, "truncate SET1 to length of SET2")
 
 	return func(ctx context.Context, callCtx *builtins.CallContext, args []string) builtins.Result {
@@ -87,7 +89,7 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			return builtins.Result{}
 		}
 
-		if *bigC {
+		if bigC {
 			*complement = true
 		}
 
@@ -717,7 +719,7 @@ func rptErrMsg(data []byte, pos int) string {
 	}
 	countStr := string(data[starIdx+1 : closeIdx])
 	if countStr == "" {
-		return ""
+		return "invalid repeat construct"
 	}
 	return "invalid repeat count '" + countStr + "' in [c*n] construct"
 }
