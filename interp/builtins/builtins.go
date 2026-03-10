@@ -87,7 +87,10 @@ type CallContext struct {
 	OpenFile func(ctx context.Context, path string, flags int, mode os.FileMode) (io.ReadWriteCloser, error)
 
 	// ReadDir reads a directory within the shell's path restrictions.
-	// Entries are returned sorted by name.
+	// Entries are returned sorted by name. This is an intentional design
+	// choice for deterministic output, but means builtins that walk
+	// directories (ls -R, find) produce sorted output rather than the
+	// filesystem-dependent order used by GNU coreutils/findutils.
 	ReadDir func(ctx context.Context, path string) ([]fs.DirEntry, error)
 
 	// StatFile returns file info within the shell's path restrictions (follows symlinks).

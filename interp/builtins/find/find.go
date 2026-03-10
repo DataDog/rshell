@@ -276,6 +276,9 @@ func walkPath(
 
 			// Add children in reverse order so they come off the stack in
 			// alphabetical order (DFS with correct ordering).
+			// NOTE: ReadDir returns entries sorted by name (see builtins.go),
+			// so find output is always alphabetically ordered. This intentionally
+			// diverges from GNU find, which uses filesystem-dependent readdir order.
 			for j := len(entries) - 1; j >= 0; j-- {
 				if ctx.Err() != nil {
 					break
