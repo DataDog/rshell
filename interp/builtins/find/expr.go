@@ -304,6 +304,9 @@ func (p *parser) parseTypePredicate() (*expr, error) {
 		return nil, errors.New("find: missing argument for -type")
 	}
 	val := p.advance()
+	if len(val) == 0 {
+		return nil, errors.New("find: Unknown argument to -type: ")
+	}
 	// Validate type character(s). GNU find allows comma-separated types.
 	for i := 0; i < len(val); i++ {
 		switch val[i] {

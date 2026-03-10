@@ -121,6 +121,7 @@ func compareNumeric(actual, target int64, cmp int) bool {
 }
 
 // baseName returns the last element of a path.
+// Only checks for '/' since the shell normalizes all paths to use forward slashes.
 func baseName(p string) string {
 	for i := len(p) - 1; i >= 0; i-- {
 		if p[i] == '/' {

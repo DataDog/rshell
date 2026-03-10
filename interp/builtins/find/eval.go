@@ -28,7 +28,6 @@ type evalContext struct {
 	info       iofs.FileInfo  // file info (lstat or stat depending on -L)
 	depth      int            // current depth
 	printPath  string         // path to print (includes starting point prefix)
-	followLink bool           // -L flag
 }
 
 // evaluate evaluates an expression tree against a file. If e is nil, returns

@@ -1,0 +1,23 @@
+description: find -path matches full path with glob pattern.
+skip_assert_against_bash: true
+setup:
+  files:
+    - path: src/main.go
+      content: "package main"
+      chmod: 0644
+    - path: src/util.go
+      content: "package util"
+      chmod: 0644
+    - path: doc/readme.md
+      content: "# Readme"
+      chmod: 0644
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    find . -path './src/*.go' -type f
+expect:
+  stdout: |+
+    ./src/main.go
+    ./src/util.go
+  stderr: ""
+  exit_code: 0

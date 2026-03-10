@@ -107,13 +107,16 @@ func run(ctx context.Context, callCtx *builtins.CallContext, args []string) buil
 		paths = []string{"."}
 	}
 
-	// Parse -maxdepth and -mindepth from expression args (they are global
-	// options in GNU find, appearing before the expression proper).
+	// Parse -maxdepth and -mindepth from leading expression args only.
+	// GNU find requires these global options to appear before any test
+	// predicates. Parsing them from arbitrary positions would corrupt
+	// predicate arguments (e.g. find . -name -maxdepth would lose the
+	// -name argument).
 	exprArgs := args[i:]
 	maxDepth := maxTraversalDepth
 	minDepth := 0
-	var filteredArgs []string
-	for j := 0; j < len(exprArgs); j++ {
+	j := 0
+	for j < len(exprArgs) {
 		if exprArgs[j] == "-maxdepth" {
 			j++
 			if j >= len(exprArgs) {
@@ -129,6 +132,7 @@ func run(ctx context.Context, callCtx *builtins.CallContext, args []string) buil
 			if maxDepth > maxTraversalDepth {
 				maxDepth = maxTraversalDepth
 			}
+			j++
 			continue
 		}
 		if exprArgs[j] == "-mindepth" {
@@ -143,10 +147,12 @@ func run(ctx context.Context, callCtx *builtins.CallContext, args []string) buil
 				return builtins.Result{Code: 1}
 			}
 			minDepth = n
+			j++
 			continue
 		}
-		filteredArgs = append(filteredArgs, exprArgs[j])
+		break // stop at first non-depth-option
 	}
+	filteredArgs := exprArgs[j:]
 
 	// Parse expression.
 	expression, err := parseExpression(filteredArgs)
@@ -246,7 +252,6 @@ func walkPath(
 			info:       entry.info,
 			depth:      entry.depth,
 			printPath:  printPath,
-			followLink: followLinks,
 		}
 
 		// Evaluate expression at this depth.
