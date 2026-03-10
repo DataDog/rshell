@@ -394,6 +394,18 @@ func (p *parser) evalFileTest(op, path string) bool {
 	if path == "" {
 		return false
 	}
+	// For -r/-w/-x, use real access checks instead of mode bits.
+	if p.callCtx.AccessFile != nil {
+		switch op {
+		case "-r":
+			return p.callCtx.AccessFile(p.ctx, path, 0x04) == nil
+		case "-w":
+			return p.callCtx.AccessFile(p.ctx, path, 0x02) == nil
+		case "-x":
+			return p.callCtx.AccessFile(p.ctx, path, 0x01) == nil
+		}
+	}
+
 	switch op {
 	case "-h", "-L":
 		info, err := p.callCtx.LstatFile(p.ctx, path)

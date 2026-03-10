@@ -77,6 +77,33 @@ func (s *pathSandbox) resolve(absPath string) (*os.Root, string, bool) {
 	return nil, "", false
 }
 
+// access checks whether the resolved path is accessible with the given mode.
+// The mode uses Unix semantics: 0x04 = read, 0x02 = write, 0x01 = execute.
+func (s *pathSandbox) access(ctx context.Context, path string, mode uint32) error {
+	absPath := toAbs(path, HandlerCtx(ctx).Dir)
+
+	if s == nil {
+		return &os.PathError{Op: "access", Path: path, Err: os.ErrPermission}
+	}
+	for _, ar := range s.roots {
+		rel, err := filepath.Rel(ar.absPath, absPath)
+		if err != nil {
+			continue
+		}
+		if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			continue
+		}
+		// First verify the file exists through os.Root (safe resolution).
+		if _, err := ar.root.Stat(rel); err != nil {
+			return err
+		}
+		// Check actual access on the resolved real path.
+		realPath := filepath.Join(ar.absPath, rel)
+		return checkAccess(realPath, mode)
+	}
+	return &os.PathError{Op: "access", Path: path, Err: os.ErrPermission}
+}
+
 // toAbs resolves path against cwd when it is not already absolute.
 func toAbs(path, cwd string) string {
 	if filepath.IsAbs(path) {

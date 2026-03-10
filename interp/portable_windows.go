@@ -7,6 +7,7 @@ package interp
 
 import (
 	"errors"
+	"os"
 	"syscall"
 )
 
@@ -18,4 +19,11 @@ func isErrIsDirectory(err error) bool {
 		return errno == syscall.Errno(1) // ERROR_INVALID_FUNCTION
 	}
 	return false
+}
+
+// checkAccess on Windows falls back to checking file existence since Windows
+// does not have a direct equivalent of the Unix access(2) syscall.
+func checkAccess(path string, mode uint32) error {
+	_, err := os.Stat(path)
+	return err
 }

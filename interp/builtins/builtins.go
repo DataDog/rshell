@@ -38,6 +38,10 @@ type CallContext struct {
 	// LstatFile returns file info within the shell's path restrictions (does not follow symlinks).
 	LstatFile func(ctx context.Context, path string) (fs.FileInfo, error)
 
+	// AccessFile checks whether the file at path is accessible with the given mode
+	// within the shell's path restrictions. Mode: 0x04=read, 0x02=write, 0x01=execute.
+	AccessFile func(ctx context.Context, path string, mode uint32) error
+
 	// PortableErr normalizes an OS error to a POSIX-style message.
 	PortableErr func(err error) string
 }
