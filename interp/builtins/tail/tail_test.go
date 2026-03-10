@@ -7,6 +7,7 @@ package tail_test
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -17,6 +18,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/DataDog/rshell/interp"
+	tail "github.com/DataDog/rshell/interp/builtins/tail"
 	"github.com/DataDog/rshell/interp/builtins/testutil"
 )
 
@@ -623,4 +625,22 @@ func TestTailZeroTerminatedOffsetMode(t *testing.T) {
 	stdout, _, code := cmdRun(t, "tail -z -n +2 nul.txt", dir)
 	assert.Equal(t, 0, code)
 	assert.Equal(t, "beta\x00gamma\x00", stdout)
+}
+
+func TestTailRingOverflowError(t *testing.T) {
+	// Requesting MaxRingLines+1 lines from a file with that many lines must
+	// return an explicit error rather than silently truncating output.
+	dir := t.TempDir()
+	f, err := os.Create(filepath.Join(dir, "big.txt"))
+	require.NoError(t, err)
+	lineCount := tail.MaxRingLines + 1
+	for i := 0; i < lineCount; i++ {
+		_, err = f.WriteString("x\n")
+		require.NoError(t, err)
+	}
+	require.NoError(t, f.Close())
+	cmd := fmt.Sprintf("tail -n %d big.txt", lineCount)
+	_, stderr, code := cmdRun(t, cmd, dir)
+	assert.Equal(t, 1, code)
+	assert.Contains(t, stderr, "tail:")
 }

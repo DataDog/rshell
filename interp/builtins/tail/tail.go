@@ -44,25 +44,29 @@
 //	0  All files processed successfully.
 //	1  At least one error occurred (missing file, invalid argument, etc.).
 //
-// Memory safety:
+// Memory safety and correctness:
 //
-//	Line mode uses a ring buffer capped at min(N, MaxRingLines) slots. Each
-//	slot holds one line; lines exceeding MaxLineBytes cause an error rather
-//	than an unbounded allocation. The ring buffer's total memory footprint is
-//	additionally capped at MaxRingBytes (64 MiB); tail returns an error if a
-//	crafted input would exceed this. Byte mode uses a circular buffer of size
-//	min(N, MaxBytesBuffer); it never allocates proportionally to very large
-//	user-supplied N values. Offset (+N) modes stream without buffering.
-//	All loops check ctx.Err() at each iteration to honour the shell's
-//	execution timeout and to support graceful cancellation.
+//	Line mode uses a ring buffer of size min(N, MaxRingLines) slots. Each slot
+//	holds one line; lines exceeding MaxLineBytes cause a scanner error. The
+//	ring buffer's total memory footprint is additionally capped at MaxRingBytes
+//	(64 MiB). If the input has more lines than the ring can hold and N exceeds
+//	MaxRingLines, tail returns an error rather than silently truncating output.
+//
+//	Byte mode uses a circular buffer of size min(N, MaxBytesBuffer). If the
+//	input exceeds MaxBytesBuffer bytes and N exceeds MaxBytesBuffer, tail
+//	returns an error rather than silently returning fewer bytes than requested.
+//
+//	Offset (+N) modes stream without buffering. All loops check ctx.Err() at
+//	each iteration to honour the shell's execution timeout.
 //
 // Infinite-stream protection:
 //
 //	Both last-N-lines and last-N-bytes modes must consume the entire input
-//	before emitting output. On an infinite source (e.g. a non-terminating
-//	pipe) without a context deadline, execution would hang indefinitely.
-//	To bound this, tail returns an error once total bytes read from any single
-//	input source exceed MaxTotalReadBytes (256 MiB).
+//	before emitting output. For non-regular-file inputs (pipes, stdin,
+//	character devices) without a context deadline, execution would hang
+//	indefinitely. To bound this, tail returns an error once total bytes read
+//	from such a source exceed MaxTotalReadBytes (256 MiB). Regular files are
+//	not subject to this limit because the OS guarantees they are finite.
 package tail
 
 import (
@@ -257,22 +261,34 @@ func processFile(ctx context.Context, callCtx *builtins.CallContext, file string
 		}
 	}
 
+	// Detect regular files so that last-N modes can skip the infinite-stream
+	// guard (MaxTotalReadBytes): regular files are finite by OS guarantee.
+	type stater interface{ Stat() (os.FileInfo, error) }
+	isRegularFile := false
+	if sf, ok := rc.(stater); ok {
+		if fi, statErr := sf.Stat(); statErr == nil {
+			isRegularFile = fi.Mode().IsRegular()
+		}
+	}
+
 	if useBytesMode {
 		if cm.offset {
 			return skipBytes(ctx, callCtx, rc, cm.n)
 		}
-		return readLastBytes(ctx, callCtx, rc, cm.n)
+		return readLastBytes(ctx, callCtx, rc, cm.n, isRegularFile)
 	}
 	if cm.offset {
 		return skipLines(ctx, callCtx, rc, cm.n, zeroTerm)
 	}
-	return readLastLines(ctx, callCtx, rc, cm.n, zeroTerm)
+	return readLastLines(ctx, callCtx, rc, cm.n, zeroTerm, isRegularFile)
 }
 
 // readLastLines writes the last count lines of r to callCtx.Stdout.
-// It uses a ring buffer of size min(count, MaxRingLines) to avoid
-// unbounded memory use for large count values.
-func readLastLines(ctx context.Context, callCtx *builtins.CallContext, r io.Reader, count int64, nullDelim bool) error {
+// It uses a ring buffer of size min(count, MaxRingLines). If the input
+// has more lines than MaxRingLines and count > MaxRingLines, an error is
+// returned rather than silently truncating output.
+// isRegularFile disables the MaxTotalReadBytes infinite-stream guard.
+func readLastLines(ctx context.Context, callCtx *builtins.CallContext, r io.Reader, count int64, nullDelim, isRegularFile bool) error {
 	if count == 0 {
 		return nil
 	}
@@ -299,13 +315,18 @@ func readLastLines(ctx context.Context, callCtx *builtins.CallContext, r io.Read
 		}
 		raw := sc.Bytes()
 		totalRead += int64(len(raw))
-		if totalRead > MaxTotalReadBytes {
+		if !isRegularFile && totalRead > MaxTotalReadBytes {
 			return errors.New("input too large: read limit exceeded")
 		}
 		cp := make([]byte, len(raw))
 		copy(cp, raw)
 		// When the ring is full, evict the oldest entry before writing.
 		if ringCount == ringSize {
+			// If count exceeds the ring capacity, we cannot deliver the full
+			// requested window without silent truncation — return an error.
+			if int64(ringSize) < count {
+				return errors.New("input too large: line buffer limit exceeded")
+			}
 			ringBytes -= int64(len(ring[ringHead]))
 		}
 		ring[ringHead] = cp
@@ -364,8 +385,11 @@ func skipLines(ctx context.Context, callCtx *builtins.CallContext, r io.Reader, 
 
 // readLastBytes writes the last count bytes of r to callCtx.Stdout.
 // It reads the entire input into a circular buffer of size
-// min(count, MaxBytesBuffer) to bound memory use.
-func readLastBytes(ctx context.Context, callCtx *builtins.CallContext, r io.Reader, count int64) error {
+// min(count, MaxBytesBuffer). If the input exceeds MaxBytesBuffer bytes and
+// count > MaxBytesBuffer, an error is returned rather than silently returning
+// fewer bytes than requested.
+// isRegularFile disables the MaxTotalReadBytes infinite-stream guard.
+func readLastBytes(ctx context.Context, callCtx *builtins.CallContext, r io.Reader, count int64, isRegularFile bool) error {
 	if count == 0 {
 		return nil
 	}
@@ -390,7 +414,12 @@ func readLastBytes(ctx context.Context, callCtx *builtins.CallContext, r io.Read
 			totalWritten += int64(canWrite)
 			i += canWrite
 		}
-		if totalWritten > MaxTotalReadBytes {
+		// If the circular buffer has wrapped and count exceeds the buffer
+		// capacity, we cannot deliver the full requested window.
+		if totalWritten > int64(bufSize) && count > int64(bufSize) {
+			return errors.New("input too large: byte buffer limit exceeded")
+		}
+		if !isRegularFile && totalWritten > MaxTotalReadBytes {
 			return errors.New("input too large: read limit exceeded")
 		}
 		if errors.Is(readErr, io.EOF) {
