@@ -106,16 +106,15 @@ func (s *pathSandbox) access(ctx context.Context, path string, mode uint32) erro
 
 		// For write and execute, use mode bits from os.Root.Stat.
 		// The sandbox is read-only so -w is informational only.
+		// effectiveHasPerm checks the permission class (owner/group/other)
+		// that applies to the current process's effective UID/GID on Unix,
+		// rather than the union of all classes.
 		if mode&0x03 != 0 {
 			info, err := ar.root.Stat(rel)
 			if err != nil {
 				return err
 			}
-			perm := info.Mode().Perm()
-			if mode&0x02 != 0 && perm&0222 == 0 {
-				return &os.PathError{Op: "access", Path: path, Err: os.ErrPermission}
-			}
-			if mode&0x01 != 0 && perm&0111 == 0 {
+			if !effectiveHasPerm(info, 0222, 0111, mode&0x02 != 0, mode&0x01 != 0) {
 				return &os.PathError{Op: "access", Path: path, Err: os.ErrPermission}
 			}
 		}

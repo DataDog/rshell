@@ -7,6 +7,7 @@ package interp
 
 import (
 	"errors"
+	"io/fs"
 	"syscall"
 )
 
@@ -18,4 +19,18 @@ func isErrIsDirectory(err error) bool {
 		return errno == syscall.Errno(1) // ERROR_INVALID_FUNCTION
 	}
 	return false
+}
+
+// effectiveHasPerm checks whether the current process has the requested
+// permission on Windows.  Windows does not use Unix UID/GID permission classes,
+// so we fall back to checking any-class bits (0222 / 0111) as before.
+func effectiveHasPerm(info fs.FileInfo, writeMask, execMask fs.FileMode, checkWrite, checkExec bool) bool {
+	perm := info.Mode().Perm()
+	if checkWrite && perm&writeMask == 0 {
+		return false
+	}
+	if checkExec && perm&execMask == 0 {
+		return false
+	}
+	return true
 }
