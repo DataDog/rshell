@@ -11,4 +11,3 @@ input:
 expect:
   stderr_contains: ["find:"]
   exit_code: 1
-  skip_assert_against_bash: true
