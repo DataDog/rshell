@@ -1,0 +1,13 @@
+description: sort -k 2,2 sorts by the second field.
+setup:
+  files:
+    - path: file.txt
+      content: "b 1\na 2\nc 1\n"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    sort -k 2,2 file.txt
+expect:
+  stdout: "b 1\nc 1\na 2\n"
+  stderr: ""
+  exit_code: 0

@@ -1,0 +1,15 @@
+# Per RULES.md: file access must be sandboxed via AllowedPaths
+skip_assert_against_bash: true
+description: sort is blocked from reading files outside the allowed paths sandbox.
+setup:
+  files:
+    - path: local.txt
+      content: "local\n"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    sort /etc/passwd
+expect:
+  stdout: ""
+  stderr_contains: ["sort:"]
+  exit_code: 2

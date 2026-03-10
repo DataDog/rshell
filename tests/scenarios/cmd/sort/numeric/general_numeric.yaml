@@ -1,0 +1,14 @@
+# Derived from GNU coreutils sort.pl test 09a
+description: sort -g handles scientific notation (1e2 > 2e1).
+setup:
+  files:
+    - path: file.txt
+      content: "1e2\n2e1\n"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    sort -g file.txt
+expect:
+  stdout: "2e1\n1e2\n"
+  stderr: ""
+  exit_code: 0

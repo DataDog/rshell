@@ -1,0 +1,13 @@
+description: sort -k 2,2n sorts the second field numerically.
+setup:
+  files:
+    - path: file.txt
+      content: "a 20\nb 3\nc 100\n"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    sort -k 2,2n file.txt
+expect:
+  stdout: "b 3\na 20\nc 100\n"
+  stderr: ""
+  exit_code: 0

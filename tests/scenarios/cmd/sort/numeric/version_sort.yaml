@@ -1,0 +1,14 @@
+# Derived from uutils test_version
+description: sort -V sorts version numbers naturally (file2 before file10).
+setup:
+  files:
+    - path: file.txt
+      content: "file10\nfile2\nfile1\n"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    sort -V file.txt
+expect:
+  stdout: "file1\nfile2\nfile10\n"
+  stderr: ""
+  exit_code: 0

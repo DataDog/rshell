@@ -1,0 +1,9 @@
+description: sort rejects unknown flags with exit code 2.
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    sort --follow file.txt
+expect:
+  stdout: ""
+  stderr_contains: ["sort:"]
+  exit_code: 2

@@ -1,0 +1,13 @@
+description: sort preserves a file with no trailing newline by adding one.
+setup:
+  files:
+    - path: file.txt
+      content: "beta\nalpha"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    sort file.txt
+expect:
+  stdout: "alpha\nbeta\n"
+  stderr: ""
+  exit_code: 0

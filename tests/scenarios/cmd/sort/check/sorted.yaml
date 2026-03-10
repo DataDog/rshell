@@ -1,0 +1,14 @@
+# Derived from GNU coreutils sort.pl test 02a
+description: sort -c exits 0 for sorted input.
+setup:
+  files:
+    - path: file.txt
+      content: "A\nB\nC\n"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    sort -c file.txt
+expect:
+  stdout: ""
+  stderr: ""
+  exit_code: 0

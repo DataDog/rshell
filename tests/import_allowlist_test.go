@@ -34,6 +34,10 @@ import (
 var builtinAllowedSymbols = []string{
 	// bufio.NewScanner — line-by-line input reading (e.g. head, cat); no write or exec capability.
 	"bufio.NewScanner",
+	// bufio.Scanner — scanner type for line-by-line reading; no write or exec capability.
+	"bufio.Scanner",
+	// bufio.SplitFunc — function type for scanner split logic; no I/O.
+	"bufio.SplitFunc",
 	// context.Context — deadline/cancellation plumbing; pure interface, no side effects.
 	"context.Context",
 	// errors.Is — error comparison; pure function, no I/O.
@@ -60,6 +64,12 @@ var builtinAllowedSymbols = []string{
 	"strconv.Atoi",
 	// strconv.ParseInt — string-to-int conversion with base/bit-size; pure function, no I/O.
 	"strconv.ParseInt",
+	// sort.SliceStable — in-memory stable sort of slices; pure function, no I/O.
+	"sort.SliceStable",
+	// strconv.ParseFloat — string-to-float conversion; pure function, no I/O.
+	"strconv.ParseFloat",
+	// time.Now — reads system clock for random salt; no filesystem, network, or exec side effects.
+	"time.Now",
 }
 
 // permanentlyBanned lists packages that may never be imported by builtin

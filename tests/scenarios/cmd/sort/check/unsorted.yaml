@@ -1,0 +1,14 @@
+# Derived from GNU coreutils sort.pl test 02b
+description: sort -c exits 1 and prints disorder diagnostic for unsorted input.
+setup:
+  files:
+    - path: file.txt
+      content: "A\nC\nB\n"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    sort -c file.txt
+expect:
+  stdout: ""
+  stderr_contains: ["disorder"]
+  exit_code: 1

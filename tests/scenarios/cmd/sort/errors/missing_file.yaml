@@ -1,0 +1,9 @@
+description: sort exits 2 and prints error for missing file.
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    sort nonexistent.txt
+expect:
+  stdout: ""
+  stderr_contains: ["sort:"]
+  exit_code: 2

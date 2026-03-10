@@ -1,0 +1,14 @@
+# Derived from GNU coreutils sort.pl test neg-nls
+description: sort -n handles negative numbers correctly.
+setup:
+  files:
+    - path: file.txt
+      content: "-1\n-9\n"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    sort -n file.txt
+expect:
+  stdout: "-9\n-1\n"
+  stderr: ""
+  exit_code: 0

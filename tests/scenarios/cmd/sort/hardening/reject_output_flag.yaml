@@ -1,0 +1,14 @@
+skip_assert_against_bash: true
+description: sort rejects -o flag (write to filesystem is unsafe).
+setup:
+  files:
+    - path: file.txt
+      content: "b\na\n"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    sort -o out.txt file.txt
+expect:
+  stdout: ""
+  stderr_contains: ["sort:"]
+  exit_code: 2

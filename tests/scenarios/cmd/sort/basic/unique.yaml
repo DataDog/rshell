@@ -1,0 +1,14 @@
+# Derived from GNU coreutils sort.pl
+description: sort -u removes duplicate lines.
+setup:
+  files:
+    - path: file.txt
+      content: "b\na\nb\nc\na\n"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    sort -u file.txt
+expect:
+  stdout: "a\nb\nc\n"
+  stderr: ""
+  exit_code: 0

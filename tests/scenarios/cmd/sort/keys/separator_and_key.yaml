@@ -1,0 +1,14 @@
+# Derived from uutils test_keys_custom_separator
+description: "sort -t : -k 2,2 sorts by second colon-separated field."
+setup:
+  files:
+    - path: file.txt
+      content: "a:2:x\nc:1:y\nb:3:z\n"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    sort -t : -k 2,2 file.txt
+expect:
+  stdout: "c:1:y\na:2:x\nb:3:z\n"
+  stderr: ""
+  exit_code: 0

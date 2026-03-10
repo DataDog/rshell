@@ -1,0 +1,13 @@
+description: sort handles an empty file without error.
+setup:
+  files:
+    - path: empty.txt
+      content: ""
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    sort empty.txt
+expect:
+  stdout: ""
+  stderr: ""
+  exit_code: 0

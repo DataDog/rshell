@@ -1,0 +1,14 @@
+# Derived from GNU coreutils sort.pl test 02d
+description: sort -C exits 1 silently for unsorted input.
+setup:
+  files:
+    - path: file.txt
+      content: "A\nC\nB\n"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    sort -C file.txt
+expect:
+  stdout: ""
+  stderr: ""
+  exit_code: 1

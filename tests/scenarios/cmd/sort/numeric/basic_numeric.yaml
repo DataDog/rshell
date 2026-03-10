@@ -1,0 +1,14 @@
+# Derived from GNU coreutils sort.pl test 04b
+description: sort -n sorts numerically (2 before 11).
+setup:
+  files:
+    - path: file.txt
+      content: "11\n2\n"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    sort -n file.txt
+expect:
+  stdout: "2\n11\n"
+  stderr: ""
+  exit_code: 0

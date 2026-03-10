@@ -1,0 +1,14 @@
+# Derived from uutils test_month_default
+description: sort -M sorts by abbreviated month name.
+setup:
+  files:
+    - path: file.txt
+      content: "MAR\nJAN\nFEB\nDEC\n"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    sort -M file.txt
+expect:
+  stdout: "JAN\nFEB\nMAR\nDEC\n"
+  stderr: ""
+  exit_code: 0

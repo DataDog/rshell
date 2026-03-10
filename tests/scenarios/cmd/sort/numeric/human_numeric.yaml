@@ -1,0 +1,14 @@
+# Derived from uutils test_human_block_sizes
+description: sort -h sorts human-readable numbers by value.
+setup:
+  files:
+    - path: file.txt
+      content: "1G\n2K\n3M\n"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    sort -h file.txt
+expect:
+  stdout: "2K\n3M\n1G\n"
+  stderr: ""
+  exit_code: 0
