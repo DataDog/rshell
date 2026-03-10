@@ -1,0 +1,14 @@
+# Derived from uutils test_file_empty
+description: wc on an empty file shows all zeros.
+setup:
+  files:
+    - path: empty.txt
+      content: ""
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    wc empty.txt
+expect:
+  stdout: "0 0 0 empty.txt\n"
+  stderr: ""
+  exit_code: 0

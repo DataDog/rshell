@@ -60,6 +60,14 @@ var builtinAllowedSymbols = []string{
 	"strconv.Atoi",
 	// strconv.ParseInt — string-to-int conversion with base/bit-size; pure function, no I/O.
 	"strconv.ParseInt",
+	// strconv.FormatInt — int-to-string conversion; pure function, no I/O.
+	"strconv.FormatInt",
+	// unicode/utf8.RuneCount — counts UTF-8 runes in a byte slice; pure function, no I/O.
+	"unicode/utf8.RuneCount",
+	// unicode/utf8.UTFMax — maximum number of bytes in a UTF-8 encoding; constant, no I/O.
+	"unicode/utf8.UTFMax",
+	// unicode/utf8.Valid — checks if a byte slice is valid UTF-8; pure function, no I/O.
+	"unicode/utf8.Valid",
 }
 
 // permanentlyBanned lists packages that may never be imported by builtin
