@@ -54,10 +54,20 @@ var builtinAllowedSymbols = []string{
 	"os.FileInfo",
 	// os.O_RDONLY — read-only file flag constant; cannot open files by itself.
 	"os.O_RDONLY",
+	// regexp.Compile — compiles a regular expression; pure function, no I/O. Uses RE2 engine (linear-time, no backtracking).
+	"regexp.Compile",
+	// regexp.QuoteMeta — escapes all special regex characters in a string; pure function, no I/O.
+	"regexp.QuoteMeta",
+	// regexp.Regexp — compiled regular expression type; no I/O side effects. All matching methods are linear-time (RE2).
+	"regexp.Regexp",
 	// strings.Builder — efficient string concatenation; pure in-memory buffer, no I/O.
 	"strings.Builder",
+	// strings.Join — concatenates a slice of strings with a separator; pure function, no I/O.
+	"strings.Join",
 	// strconv.Atoi — string-to-int conversion; pure function, no I/O.
 	"strconv.Atoi",
+	// strconv.Itoa — int-to-string conversion; pure function, no I/O.
+	"strconv.Itoa",
 	// strconv.ParseInt — string-to-int conversion with base/bit-size; pure function, no I/O.
 	"strconv.ParseInt",
 	// strconv.FormatInt — int-to-string conversion; pure function, no I/O.
