@@ -1,0 +1,14 @@
+# Derived from GNU coreutils uniq.pl test 21
+description: uniq -d produces no output when no lines are repeated.
+setup:
+  files:
+    - path: input.txt
+      content: "a\nb\n"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    uniq -d input.txt
+expect:
+  stdout: ""
+  stderr: ""
+  exit_code: 0

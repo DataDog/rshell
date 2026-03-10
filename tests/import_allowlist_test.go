@@ -34,6 +34,8 @@ import (
 var builtinAllowedSymbols = []string{
 	// bufio.NewScanner — line-by-line input reading (e.g. head, cat); no write or exec capability.
 	"bufio.NewScanner",
+	// bufio.SplitFunc — type for custom scanner split functions; pure type, no I/O.
+	"bufio.SplitFunc",
 	// context.Context — deadline/cancellation plumbing; pure interface, no side effects.
 	"context.Context",
 	// errors.Is — error comparison; pure function, no I/O.
@@ -46,8 +48,6 @@ var builtinAllowedSymbols = []string{
 	"io/fs.ModeNamedPipe",
 	// fs.ModeSymlink — file mode bit constant; no side effects.
 	"io/fs.ModeSymlink",
-	// io.Copy — stream data between reader and writer; builtins receive sandboxed streams.
-	"io.Copy",
 	// io.EOF — sentinel error value; pure constant.
 	"io.EOF",
 	// io.NopCloser — wraps a Reader with a no-op Close; no side effects.
@@ -76,8 +76,14 @@ var builtinAllowedSymbols = []string{
 	"strconv.ParseInt",
 	// strconv.FormatInt — int-to-string conversion; pure function, no I/O.
 	"strconv.FormatInt",
+	// strings.HasPrefix — pure function for prefix matching; no I/O.
+	"strings.HasPrefix",
 	// strings.TrimSpace — removes leading/trailing whitespace; pure function.
 	"strings.TrimSpace",
+	// io.WriteString — writes a string to a writer; no filesystem access, delegates to Write.
+	"io.WriteString",
+	// io.Writer — interface type for writing; no side effects.
+	"io.Writer",
 	// unicode.Cc — control character category range table; pure data, no I/O.
 	"unicode.Cc",
 	// unicode.Cf — format character category range table; pure data, no I/O.
