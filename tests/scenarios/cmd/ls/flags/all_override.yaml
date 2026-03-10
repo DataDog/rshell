@@ -1,0 +1,18 @@
+description: ls -a -A — last flag wins, -A suppresses . and ..
+skip_assert_against_bash: true
+setup:
+  files:
+    - path: .hidden
+      content: "secret"
+    - path: visible
+      content: "visible"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    ls -a -A
+expect:
+  stdout: |
+    .hidden
+    visible
+  stderr: ""
+  exit_code: 0

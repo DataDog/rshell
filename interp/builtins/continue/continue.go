@@ -26,7 +26,7 @@ import (
 )
 
 // Cmd is the continue builtin command descriptor.
-var Cmd = builtins.Command{Name: "continue", Run: run}
+var Cmd = builtins.Command{Name: "continue", MakeFlags: builtins.NoFlags(run)}
 
 func run(_ context.Context, callCtx *builtins.CallContext, args []string) builtins.Result {
 	return loopctl.LoopControl(callCtx, "continue", args)

@@ -9,11 +9,66 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
+	"time"
+
+	"github.com/spf13/pflag"
 )
 
-// HandlerFunc is the signature for a builtin command implementation.
+// FlagSet is a type alias for pflag.FlagSet. Command files receive a *FlagSet
+// from the framework without needing to import pflag directly (the builtins
+// package is always allowed by the import allowlist).
+type FlagSet = pflag.FlagSet
+
+// Flag is a type alias for pflag.Flag, exposed so command files can use
+// FlagSet.Visit without importing pflag directly.
+type Flag = pflag.Flag
+
+// HandlerFunc is the bound handler called by the framework after flags are
+// parsed. args contains only the positional (non-flag) arguments.
 type HandlerFunc func(ctx context.Context, callCtx *CallContext, args []string) Result
+
+// Command pairs a builtin name with its flag-declaring factory. MakeFlags
+// registers any flags on the provided FlagSet and returns the bound handler.
+// Commands that accept no flags may ignore fs via NoFlags.
+type Command struct {
+	Name      string
+	MakeFlags func(*FlagSet) HandlerFunc
+}
+
+// NoFlags wraps a HandlerFunc in the MakeFlags format for commands that
+// declare no flags.
+func NoFlags(fn HandlerFunc) func(*FlagSet) HandlerFunc {
+	return func(_ *FlagSet) HandlerFunc { return fn }
+}
+
+// Register adds the Command to the builtin registry. For each invocation the
+// framework creates a fresh *FlagSet, passes it to MakeFlags so the command
+// can register its flags, parses the raw args, writes any error to stderr
+// (exit 1), and then calls the bound handler with positional args only.
+//
+// If MakeFlags registers no flags (e.g. via NoFlags), the framework skips
+// parsing entirely and passes all raw args to the handler unchanged. This
+// lets commands like echo treat flag-shaped literals (e.g. -n) correctly.
+func (c Command) Register() {
+	name := c.Name
+	factory := c.MakeFlags
+	addToRegistry(name, func(ctx context.Context, callCtx *CallContext, args []string) Result {
+		fs := pflag.NewFlagSet(name, pflag.ContinueOnError)
+		fs.SetOutput(io.Discard) // handler formats errors itself
+		handler := factory(fs)
+		if !fs.HasFlags() {
+			// No flags declared: pass all args through unchanged.
+			return handler(ctx, callCtx, args)
+		}
+		if err := fs.Parse(args); err != nil {
+			callCtx.Errf("%s: %v\n", name, err)
+			return Result{Code: 1}
+		}
+		return handler(ctx, callCtx, fs.Args())
+	})
+}
 
 // CallContext provides the capabilities available to builtin commands.
 // It is created by the Runner for each builtin invocation.
@@ -31,8 +86,27 @@ type CallContext struct {
 	// OpenFile opens a file within the shell's path restrictions.
 	OpenFile func(ctx context.Context, path string, flags int, mode os.FileMode) (io.ReadWriteCloser, error)
 
+	// ReadDir reads a directory within the shell's path restrictions.
+	// Entries are returned sorted by name.
+	ReadDir func(ctx context.Context, path string) ([]fs.DirEntry, error)
+
+	// StatFile returns file info within the shell's path restrictions (follows symlinks).
+	StatFile func(ctx context.Context, path string) (fs.FileInfo, error)
+
+	// LstatFile returns file info within the shell's path restrictions (does not follow symlinks).
+	LstatFile func(ctx context.Context, path string) (fs.FileInfo, error)
+
+	// AccessFile checks whether the file at path is accessible with the given mode
+	// within the shell's path restrictions. Mode: 0x04=read, 0x02=write, 0x01=execute.
+	AccessFile func(ctx context.Context, path string, mode uint32) error
+
 	// PortableErr normalizes an OS error to a POSIX-style message.
 	PortableErr func(err error) string
+
+	// Now returns the current time. Builtins should use this instead of
+	// calling time.Now() directly, so the time source is consistent and
+	// testable.
+	Now func() time.Time
 }
 
 // Out writes a string to stdout.
@@ -65,18 +139,9 @@ type Result struct {
 	ContinueN int
 }
 
-// Command pairs a builtin name with its handler, used for explicit
-// registration in the all package.
-type Command struct {
-	Name string
-	Run  HandlerFunc
-}
-
 var registry = map[string]HandlerFunc{}
 
-// Register adds a builtin command to the registry.
-// It panics if name is already registered, catching duplicate registrations at startup.
-func Register(name string, fn HandlerFunc) {
+func addToRegistry(name string, fn HandlerFunc) {
 	if _, exists := registry[name]; exists {
 		panic("builtin already registered: " + name)
 	}
@@ -88,4 +153,3 @@ func Lookup(name string) (HandlerFunc, bool) {
 	fn, ok := registry[name]
 	return fn, ok
 }
-

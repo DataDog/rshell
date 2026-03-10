@@ -1,0 +1,14 @@
+# Derived from uutils test_cat.rs::test_stdin_show_tabs
+description: cat -T displays TAB characters as ^I.
+setup:
+  files:
+    - path: file.txt
+      content: "a\tb\n"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    cat -T file.txt
+expect:
+  stdout: "a^Ib\n"
+  stderr: ""
+  exit_code: 0
