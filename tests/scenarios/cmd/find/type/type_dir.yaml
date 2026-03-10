@@ -1,0 +1,15 @@
+# find -type d matches directories only
+description: find -type d matches only directories
+setup:
+  files:
+    - path: file.txt
+      content: "hello"
+    - path: sub/nested.txt
+      content: "world"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    find . -type d
+expect:
+  stdout_contains: [".", "sub"]
+  exit_code: 0

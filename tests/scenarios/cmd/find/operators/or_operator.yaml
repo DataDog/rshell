@@ -1,0 +1,17 @@
+# find with logical OR
+description: find -name a.txt -o -name b.txt matches both files
+setup:
+  files:
+    - path: a.txt
+      content: "a"
+    - path: b.txt
+      content: "b"
+    - path: c.txt
+      content: "c"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    find . -name a.txt -o -name b.txt
+expect:
+  stdout_contains: ["a.txt", "b.txt"]
+  exit_code: 0

@@ -1,0 +1,15 @@
+# find -iname matches filenames case-insensitively
+description: find -iname is case-insensitive
+setup:
+  files:
+    - path: Hello.TXT
+      content: "hello"
+    - path: world.txt
+      content: "world"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    find . -iname "hello*"
+expect:
+  stdout_contains: ["Hello.TXT"]
+  exit_code: 0

@@ -9,6 +9,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"sync"
 
@@ -211,6 +212,15 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 			LastExitCode: r.lastExit.code,
 			OpenFile: func(ctx context.Context, path string, flags int, mode os.FileMode) (io.ReadWriteCloser, error) {
 				return r.open(ctx, path, flags, mode, false)
+			},
+			ReadDir: func(ctx context.Context, path string) ([]fs.DirEntry, error) {
+				return r.readDirHandler(r.handlerCtx(ctx, todoPos), path)
+			},
+			Stat: func(ctx context.Context, path string) (fs.FileInfo, error) {
+				if r.sandbox != nil {
+					return r.sandbox.stat(r.handlerCtx(ctx, todoPos), path)
+				}
+				return nil, &os.PathError{Op: "stat", Path: path, Err: os.ErrPermission}
 			},
 			PortableErr: portableErrMsg,
 		}

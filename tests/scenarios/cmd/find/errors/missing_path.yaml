@@ -1,0 +1,10 @@
+# find with missing path exits 1
+description: find reports error for non-existent path
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    find /nonexistent_path_xyz
+expect:
+  stdout: ""
+  stderr_contains: ["find:"]
+  exit_code: 1

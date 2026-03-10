@@ -1,0 +1,9 @@
+# find --help exits 0
+description: find --help prints usage and exits 0
+skip_assert_against_bash: true
+input:
+  script: |+
+    find --help
+expect:
+  stdout_contains: ["Usage:"]
+  exit_code: 0

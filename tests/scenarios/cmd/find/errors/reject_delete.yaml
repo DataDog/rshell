@@ -1,0 +1,11 @@
+# find -delete is rejected as unsafe
+description: find rejects -delete as unsafe action
+skip_assert_against_bash: true
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    find . -delete
+expect:
+  stdout: ""
+  stderr_contains: ["find:", "not permitted"]
+  exit_code: 1

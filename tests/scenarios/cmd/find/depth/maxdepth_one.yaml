@@ -1,0 +1,17 @@
+# find -maxdepth 1 limits to starting point and direct children
+description: find -maxdepth 1 only descends one level
+setup:
+  files:
+    - path: file.txt
+      content: "hello"
+    - path: sub/nested.txt
+      content: "world"
+    - path: sub/deep/deeper.txt
+      content: "deep"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    find . -maxdepth 1 -type f
+expect:
+  stdout: "./file.txt\n"
+  exit_code: 0

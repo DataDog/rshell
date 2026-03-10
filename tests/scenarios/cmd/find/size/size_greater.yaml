@@ -1,0 +1,15 @@
+# find -size +0c matches non-empty files
+description: find -size +0c finds files larger than 0 bytes
+setup:
+  files:
+    - path: empty.txt
+      content: ""
+    - path: data.txt
+      content: "some data"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    find . -type f -size +0c
+expect:
+  stdout_contains: ["data.txt"]
+  exit_code: 0

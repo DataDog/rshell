@@ -1,0 +1,15 @@
+# find -maxdepth limits traversal depth
+description: find -maxdepth 0 only tests the starting point
+setup:
+  files:
+    - path: file.txt
+      content: "hello"
+    - path: sub/nested.txt
+      content: "world"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    find . -maxdepth 0
+expect:
+  stdout: ".\n"
+  exit_code: 0

@@ -1,0 +1,15 @@
+# find with NOT operator
+description: find ! -name "*.txt" excludes .txt files
+setup:
+  files:
+    - path: a.txt
+      content: "a"
+    - path: b.log
+      content: "b"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    find . -type f ! -name "*.txt"
+expect:
+  stdout_contains: ["b.log"]
+  exit_code: 0

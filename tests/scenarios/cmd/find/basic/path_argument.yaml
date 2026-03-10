@@ -1,0 +1,15 @@
+# find with a path argument
+description: find with a path argument searches under that path
+setup:
+  files:
+    - path: dir/a.txt
+      content: "a"
+    - path: dir/b.txt
+      content: "b"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    find dir
+expect:
+  stdout_contains: ["dir", "a.txt", "b.txt"]
+  exit_code: 0

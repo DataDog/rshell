@@ -107,6 +107,18 @@ func (s *pathSandbox) open(ctx context.Context, path string, flag int, perm os.F
 	return f, nil
 }
 
+// stat implements the restricted file-stat policy.
+func (s *pathSandbox) stat(ctx context.Context, path string) (fs.FileInfo, error) {
+	absPath := toAbs(path, HandlerCtx(ctx).Dir)
+
+	root, relPath, ok := s.resolve(absPath)
+	if !ok {
+		return nil, &os.PathError{Op: "stat", Path: path, Err: os.ErrPermission}
+	}
+
+	return root.Stat(relPath)
+}
+
 // readDir implements the restricted directory-read policy.
 func (s *pathSandbox) readDir(ctx context.Context, path string) ([]fs.DirEntry, error) {
 	absPath := toAbs(path, HandlerCtx(ctx).Dir)

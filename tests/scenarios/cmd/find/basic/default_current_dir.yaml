@@ -1,0 +1,15 @@
+# find with no arguments lists current directory recursively
+description: find with no arguments defaults to current directory with -print
+setup:
+  files:
+    - path: file.txt
+      content: "hello"
+    - path: sub/nested.txt
+      content: "world"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    find
+expect:
+  stdout_contains: [".", "file.txt", "sub"]
+  exit_code: 0

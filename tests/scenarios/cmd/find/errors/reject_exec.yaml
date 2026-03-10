@@ -1,0 +1,11 @@
+# find -exec is rejected as unsafe
+description: find rejects -exec as unsafe action
+skip_assert_against_bash: true
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    find . -exec ls {} \;
+expect:
+  stdout: ""
+  stderr_contains: ["find:", "not permitted"]
+  exit_code: 1

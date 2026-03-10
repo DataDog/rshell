@@ -1,0 +1,17 @@
+# find -name matches filenames by glob pattern
+description: find -name matches basenames against a glob pattern
+setup:
+  files:
+    - path: hello.txt
+      content: "hello"
+    - path: world.log
+      content: "world"
+    - path: sub/hello.txt
+      content: "nested"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    find . -name "*.txt"
+expect:
+  stdout_contains: ["hello.txt"]
+  exit_code: 0

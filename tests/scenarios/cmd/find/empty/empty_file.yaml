@@ -1,0 +1,15 @@
+# find -empty matches empty files
+description: find -empty matches zero-length files
+setup:
+  files:
+    - path: empty.txt
+      content: ""
+    - path: nonempty.txt
+      content: "data"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    find . -empty -type f
+expect:
+  stdout_contains: ["empty.txt"]
+  exit_code: 0

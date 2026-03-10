@@ -1,0 +1,13 @@
+# find -print0 uses null separator
+description: find -print0 separates output with null bytes
+setup:
+  files:
+    - path: a.txt
+      content: "a"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    find . -name "a.txt" -print0
+expect:
+  stdout: "./a.txt\x00"
+  exit_code: 0

@@ -38,6 +38,14 @@ var builtinAllowedSymbols = []string{
 	"context.Context",
 	// errors.Is — error comparison; pure function, no I/O.
 	"errors.Is",
+	// filepath.Join — joins path elements; pure function, no I/O.
+	"path/filepath.Join",
+	// filepath.Match — shell glob matching; pure function, no I/O.
+	"path/filepath.Match",
+	// filepath.Separator — OS-specific path separator constant; no side effects.
+	"path/filepath.Separator",
+	// filepath.ToSlash — converts path separators; pure function, no I/O.
+	"path/filepath.ToSlash",
 	// pflag.ContinueOnError — flag parse-error mode constant; no side effects.
 	"github.com/spf13/pflag.ContinueOnError",
 	// pflag.NewFlagSet — CLI flag parsing; operates only on string slices, no I/O.
@@ -54,12 +62,44 @@ var builtinAllowedSymbols = []string{
 	"io.ReadCloser",
 	// io.Reader — interface type; no side effects.
 	"io.Reader",
+	// fs.DirEntry — interface for directory entries; no side effects.
+	"io/fs.DirEntry",
+	// fs.FileInfo — interface for file info; no side effects.
+	"io/fs.FileInfo",
+	// os.FileMode — type alias for file mode bits; pure type, no I/O.
+	"os.FileMode",
+	// os.ModeCharDevice — file mode bit constant; pure constant, no I/O.
+	"os.ModeCharDevice",
+	// os.ModeDevice — file mode bit constant; pure constant, no I/O.
+	"os.ModeDevice",
+	// os.ModeNamedPipe — file mode bit constant; pure constant, no I/O.
+	"os.ModeNamedPipe",
+	// os.ModeSocket — file mode bit constant; pure constant, no I/O.
+	"os.ModeSocket",
+	// os.ModeSymlink — file mode bit constant; pure constant, no I/O.
+	"os.ModeSymlink",
 	// os.O_RDONLY — read-only file flag constant; cannot open files by itself.
 	"os.O_RDONLY",
 	// strconv.Atoi — string-to-int conversion; pure function, no I/O.
 	"strconv.Atoi",
 	// strconv.ParseInt — string-to-int conversion with base/bit-size; pure function, no I/O.
 	"strconv.ParseInt",
+	// strconv.ParseUint — string-to-uint conversion; pure function, no I/O.
+	"strconv.ParseUint",
+	// strings.HasPrefix — string prefix check; pure function, no I/O.
+	"strings.HasPrefix",
+	// strings.IndexByte — byte search in string; pure function, no I/O.
+	"strings.IndexByte",
+	// strings.Split — string splitting; pure function, no I/O.
+	"strings.Split",
+	// strings.ToLower — string case conversion; pure function, no I/O.
+	"strings.ToLower",
+	// syscall.Stat_t — low-level stat struct for nlinks; read-only type, no I/O.
+	"syscall.Stat_t",
+	// time.Now — returns current time; pure observation, no I/O mutation.
+	"time.Now",
+	// time.Time — time value type; no side effects.
+	"time.Time",
 }
 
 // permanentlyBanned lists packages that may never be imported by builtin

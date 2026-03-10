@@ -1,0 +1,13 @@
+# find -mindepth 1 skips the starting point
+description: find -mindepth 1 does not print the starting point
+setup:
+  files:
+    - path: file.txt
+      content: "hello"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    find . -mindepth 1 -maxdepth 1
+expect:
+  stdout_contains: ["file.txt"]
+  exit_code: 0

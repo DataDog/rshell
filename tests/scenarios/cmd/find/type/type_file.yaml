@@ -1,0 +1,15 @@
+# find -type f matches regular files only
+description: find -type f matches only regular files
+setup:
+  files:
+    - path: file.txt
+      content: "hello"
+    - path: sub/nested.txt
+      content: "world"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    find . -type f
+expect:
+  stdout_contains: ["file.txt", "nested.txt"]
+  exit_code: 0
