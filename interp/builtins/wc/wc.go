@@ -63,13 +63,11 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/spf13/pflag"
-
 	"github.com/DataDog/rshell/interp/builtins"
 )
 
 // Cmd is the wc builtin command descriptor.
-var Cmd = builtins.Command{Name: "wc", Run: run}
+var Cmd = builtins.Command{Name: "wc", MakeFlags: registerFlags}
 
 const chunkSize = 32 * 1024 // 32 KiB read buffer
 const stdinMinWidth = 7     // GNU wc minimum column width for stdin
@@ -90,10 +88,7 @@ type options struct {
 	showMaxLineLen bool
 }
 
-func run(ctx context.Context, callCtx *builtins.CallContext, args []string) builtins.Result {
-	fs := pflag.NewFlagSet("wc", pflag.ContinueOnError)
-	fs.SetOutput(io.Discard)
-
+func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 	help := fs.BoolP("help", "h", false, "print usage and exit")
 	lines := fs.BoolP("lines", "l", false, "print the newline counts")
 	words := fs.BoolP("words", "w", false, "print the word counts")
@@ -105,106 +100,102 @@ func run(ctx context.Context, callCtx *builtins.CallContext, args []string) buil
 	// GTFOBins: this flag reads filenames from a file, enabling
 	// data exfiltration in sandboxed environments.
 
-	if err := fs.Parse(args); err != nil {
-		callCtx.Errf("wc: %v\n", err)
-		return builtins.Result{Code: 1}
-	}
+	return func(ctx context.Context, callCtx *builtins.CallContext, files []string) builtins.Result {
+		if *help {
+			callCtx.Out("Usage: wc [OPTION]... [FILE]...\n")
+			callCtx.Out("Print newline, word, and byte counts for each FILE.\n")
+			callCtx.Out("With no FILE, or when FILE is -, read standard input.\n\n")
+			fs.SetOutput(callCtx.Stdout)
+			fs.PrintDefaults()
+			return builtins.Result{}
+		}
 
-	if *help {
-		callCtx.Out("Usage: wc [OPTION]... [FILE]...\n")
-		callCtx.Out("Print newline, word, and byte counts for each FILE.\n")
-		callCtx.Out("With no FILE, or when FILE is -, read standard input.\n\n")
-		fs.SetOutput(callCtx.Stdout)
-		fs.PrintDefaults()
-		return builtins.Result{}
-	}
+		opts := options{
+			showLines:      *lines,
+			showWords:      *words,
+			showBytes:      *bytesFlag,
+			showChars:      *chars,
+			showMaxLineLen: *maxLineLen,
+		}
 
-	opts := options{
-		showLines:      *lines,
-		showWords:      *words,
-		showBytes:      *bytesFlag,
-		showChars:      *chars,
-		showMaxLineLen: *maxLineLen,
-	}
+		if !opts.showLines && !opts.showWords && !opts.showBytes && !opts.showChars && !opts.showMaxLineLen {
+			opts.showLines = true
+			opts.showWords = true
+			opts.showBytes = true
+		}
 
-	if !opts.showLines && !opts.showWords && !opts.showBytes && !opts.showChars && !opts.showMaxLineLen {
-		opts.showLines = true
-		opts.showWords = true
-		opts.showBytes = true
-	}
+		stdinImplicit := len(files) == 0
+		if stdinImplicit {
+			files = []string{"-"}
+		}
 
-	files := fs.Args()
-	stdinImplicit := len(files) == 0
-	if stdinImplicit {
-		files = []string{"-"}
-	}
+		hasStdin := stdinImplicit
+		if !hasStdin {
+			for _, f := range files {
+				if f == "-" {
+					hasStdin = true
+					break
+				}
+			}
+		}
 
-	hasStdin := stdinImplicit
-	if !hasStdin {
-		for _, f := range files {
-			if f == "-" {
-				hasStdin = true
+		var total counts
+		var failed bool
+
+		type fileResult struct {
+			name string
+			c    counts
+		}
+		results := make([]fileResult, 0, len(files))
+
+		for _, file := range files {
+			if ctx.Err() != nil {
 				break
 			}
-		}
-	}
-
-	var total counts
-	var failed bool
-
-	type fileResult struct {
-		name string
-		c    counts
-	}
-	results := make([]fileResult, 0, len(files))
-
-	for _, file := range files {
-		if ctx.Err() != nil {
-			break
-		}
-		c, err := countFile(ctx, callCtx, file)
-		if err != nil {
-			name := file
-			if file == "-" {
-				name = "standard input"
+			c, err := countFile(ctx, callCtx, file)
+			if err != nil {
+				name := file
+				if file == "-" {
+					name = "standard input"
+				}
+				callCtx.Errf("wc: %s: %s\n", name, callCtx.PortableErr(err))
+				failed = true
+				if c == (counts{}) {
+					continue
+				}
 			}
-			callCtx.Errf("wc: %s: %s\n", name, callCtx.PortableErr(err))
-			failed = true
-			if c == (counts{}) {
-				continue
+			results = append(results, fileResult{name: file, c: c})
+			total.lines += c.lines
+			total.words += c.words
+			total.chars += c.chars
+			total.bytes += c.bytes
+			if c.maxLineLen > total.maxLineLen {
+				total.maxLineLen = c.maxLineLen
 			}
 		}
-		results = append(results, fileResult{name: file, c: c})
-		total.lines += c.lines
-		total.words += c.words
-		total.chars += c.chars
-		total.bytes += c.bytes
-		if c.maxLineLen > total.maxLineLen {
-			total.maxLineLen = c.maxLineLen
+
+		width := fieldWidth(total, opts)
+		if hasStdin && width < stdinMinWidth {
+			width = stdinMinWidth
 		}
-	}
 
-	width := fieldWidth(total, opts)
-	if hasStdin && width < stdinMinWidth {
-		width = stdinMinWidth
-	}
-
-	for _, fr := range results {
-		name := fr.name
-		if name == "-" && stdinImplicit {
-			name = ""
+		for _, fr := range results {
+			name := fr.name
+			if name == "-" && stdinImplicit {
+				name = ""
+			}
+			printCounts(callCtx, fr.c, opts, width, name)
 		}
-		printCounts(callCtx, fr.c, opts, width, name)
-	}
 
-	if len(files) > 1 {
-		printCounts(callCtx, total, opts, width, "total")
-	}
+		if len(files) > 1 {
+			printCounts(callCtx, total, opts, width, "total")
+		}
 
-	if failed {
-		return builtins.Result{Code: 1}
+		if failed {
+			return builtins.Result{Code: 1}
+		}
+		return builtins.Result{}
 	}
-	return builtins.Result{}
 }
 
 func countFile(ctx context.Context, callCtx *builtins.CallContext, path string) (counts, error) {
