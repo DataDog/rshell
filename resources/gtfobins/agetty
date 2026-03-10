@@ -1,9 +1,0 @@
----
-functions:
-  shell:
-  - code: |-
-      agetty -l /bin/sh -o -p -a root tty
-    contexts:
-      suid:
-        shell: false
-...
