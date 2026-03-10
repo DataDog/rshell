@@ -60,9 +60,9 @@ import (
 	"io"
 	"os"
 	"strconv"
+	"unicode"
 	"unicode/utf8"
 
-	"github.com/mattn/go-runewidth"
 	"github.com/spf13/pflag"
 
 	"github.com/DataDog/rshell/interp/builtins"
@@ -285,7 +285,7 @@ func countReader(ctx context.Context, r io.Reader) (counts, error) {
 						c.words++
 						inWord = true
 					}
-					lineLen += int64(runewidth.RuneWidth(r))
+					lineLen += int64(runeWidth(r))
 				}
 			}
 		}
@@ -326,6 +326,52 @@ func fieldWidth(total counts, opts options) int {
 	}
 	w := len(strconv.FormatInt(max, 10))
 	return w
+}
+
+// runeWidth returns the display width of a rune following wcwidth(3) rules:
+// 0 for controls, combining marks, and format chars; 2 for East Asian
+// Wide/Fullwidth; 1 for everything else.
+func runeWidth(r rune) int {
+	if unicode.Is(unicode.Cc, r) {
+		return 0
+	}
+	if unicode.Is(unicode.Mn, r) || unicode.Is(unicode.Me, r) || unicode.Is(unicode.Cf, r) {
+		return 0
+	}
+	// Hangul Jamo medial vowels and final consonants (zero-width in syllable composition).
+	if r >= 0x1160 && r <= 0x11FF {
+		return 0
+	}
+	if unicode.Is(eastAsianWide, r) {
+		return 2
+	}
+	return 1
+}
+
+// eastAsianWide is a RangeTable covering East Asian Wide and Fullwidth
+// codepoints per UAX #11, matching the ranges used by wcwidth(3).
+var eastAsianWide = &unicode.RangeTable{
+	R16: []unicode.Range16{
+		{0x1100, 0x115F, 1},  // Hangul Jamo initials
+		{0x2329, 0x232A, 1},  // CJK angle brackets
+		{0x2E80, 0x303E, 1},  // CJK Radicals Supplement .. CJK Symbols
+		{0x3040, 0x33BF, 1},  // Hiragana .. CJK Compatibility
+		{0x33C0, 0x33FF, 1},  // CJK Compatibility (cont.)
+		{0x3400, 0x4DBF, 1},  // CJK Unified Ideographs Extension A
+		{0x4E00, 0xA4CF, 1},  // CJK Unified Ideographs .. Yi
+		{0xAC00, 0xD7A3, 1},  // Hangul Syllables
+		{0xF900, 0xFAFF, 1},  // CJK Compatibility Ideographs
+		{0xFE10, 0xFE19, 1},  // Vertical Forms
+		{0xFE30, 0xFE6F, 1},  // CJK Compatibility Forms + Small Form Variants
+		{0xFF01, 0xFF60, 1},  // Fullwidth Forms
+		{0xFFE0, 0xFFE6, 1},  // Fullwidth Signs
+	},
+	R32: []unicode.Range32{
+		{0x1F300, 0x1F64F, 1},  // Misc Symbols/Pictographs + Emoticons
+		{0x1F900, 0x1F9FF, 1},  // Supplemental Symbols and Pictographs
+		{0x20000, 0x2FFFD, 1},  // CJK Extension B..F
+		{0x30000, 0x3FFFD, 1},  // CJK Extension G+
+	},
 }
 
 func printCounts(callCtx *builtins.CallContext, c counts, opts options, width int, name string) {
