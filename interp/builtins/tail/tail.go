@@ -226,7 +226,21 @@ func run(ctx context.Context, callCtx *builtins.CallContext, args []string) buil
 // separator line is printed only when a prior header was actually output
 // (failed opens produce no header and must not cause a leading blank line).
 func processFile(ctx context.Context, callCtx *builtins.CallContext, file string, headerPrinted *bool, printHeaders, useBytesMode bool, cm countMode, zeroTerm bool) error {
+	// stater is the minimal interface needed to check whether a reader is
+	// backed by a regular file. We use it to exempt regular files from the
+	// MaxTotalReadBytes infinite-stream guard.
+	type stater interface{ Stat() (os.FileInfo, error) }
+	isRegular := func(r any) bool {
+		sf, ok := r.(stater)
+		if !ok {
+			return false
+		}
+		fi, err := sf.Stat()
+		return err == nil && fi.Mode().IsRegular()
+	}
+
 	var rc io.ReadCloser
+	var isRegularFile bool
 	name := file
 	if file == "-" {
 		name = "standard input"
@@ -242,6 +256,9 @@ func processFile(ctx context.Context, callCtx *builtins.CallContext, file string
 		if callCtx.Stdin == nil {
 			return nil
 		}
+		// Check stdin before wrapping: NopCloser strips Stat(), so we must
+		// probe the underlying reader while it still exposes its methods.
+		isRegularFile = isRegular(callCtx.Stdin)
 		rc = io.NopCloser(callCtx.Stdin)
 	} else {
 		f, err := callCtx.OpenFile(ctx, file, os.O_RDONLY, 0)
@@ -249,6 +266,7 @@ func processFile(ctx context.Context, callCtx *builtins.CallContext, file string
 			return err
 		}
 		defer f.Close()
+		isRegularFile = isRegular(f)
 		rc = f
 		// Header is printed after a successful open so that a file that
 		// cannot be opened produces no header (matches GNU tail behaviour).
@@ -258,16 +276,6 @@ func processFile(ctx context.Context, callCtx *builtins.CallContext, file string
 			}
 			callCtx.Outf("==> %s <==\n", name)
 			*headerPrinted = true
-		}
-	}
-
-	// Detect regular files so that last-N modes can skip the infinite-stream
-	// guard (MaxTotalReadBytes): regular files are finite by OS guarantee.
-	type stater interface{ Stat() (os.FileInfo, error) }
-	isRegularFile := false
-	if sf, ok := rc.(stater); ok {
-		if fi, statErr := sf.Stat(); statErr == nil {
-			isRegularFile = fi.Mode().IsRegular()
 		}
 	}
 
@@ -508,8 +516,13 @@ func parseCount(s string) (countMode, bool) {
 		return countMode{}, false
 	}
 	// GNU tail silently treats negative counts as their absolute value.
+	// Guard against MinInt64: -(-9223372036854775808) overflows back to itself.
 	if n < 0 {
 		n = -n
+		if n < 0 {
+			// Negation overflowed (was MinInt64); treat as invalid.
+			return countMode{}, false
+		}
 	}
 	if n > MaxCount {
 		n = MaxCount
