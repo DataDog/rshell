@@ -16,10 +16,10 @@ Run the relevant tests to capture the actual failures:
 
 ```bash
 # If a specific test filter was given, use it:
-go test ./interp/... ./tests/... -run "$ARGUMENTS" -v 2>&1 | head -200
+go test -race ./interp/... ./tests/... -run "$ARGUMENTS" -v 2>&1 | head -200
 
 # Otherwise run the full suite:
-go test ./interp/... ./tests/... -v 2>&1 | head -200
+go test -race ./interp/... ./tests/... -v 2>&1 | head -200
 ```
 
 If the failure involves YAML scenario tests, also run the bash comparison tests to see what bash actually produces:
@@ -76,7 +76,7 @@ For each failure classified as an implementation bug:
 3. Fix the implementation to match bash behaviour
 4. Run the failing test to verify the fix:
    ```bash
-   go test ./interp/... ./tests/... -run "<test name>" -v
+   go test -race ./interp/... ./tests/... -run "<test name>" -v
    ```
 
 ### 5. Fix test expectations (if needed)
@@ -95,7 +95,7 @@ For failures where the test expectation is wrong (not matching bash):
 After all fixes are applied, run the full test suite:
 
 ```bash
-go test ./interp/... ./tests/... -v
+go test -race ./interp/... ./tests/... -v
 ```
 
 Ensure no regressions were introduced. If new failures appear, repeat from step 1 for those failures.
