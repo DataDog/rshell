@@ -82,11 +82,11 @@ func TestGNUCompatTestIntegerWithLeadingZeros(t *testing.T) {
 
 // TestGNUCompatTestInvalidIntegerHex — 0x0 -eq 00 → error.
 //
-// GNU: test 0x0 -eq 00; echo $?  → 2 (stderr: "test: invalid integer '0x0'")
+// GNU: test 0x0 -eq 00; echo $?  → 2 (stderr: "test: 0x0: integer expression expected")
 func TestGNUCompatTestInvalidIntegerHex(t *testing.T) {
 	_, stderr, code := runScript(t, `test 0x0 -eq 00`, "")
 	assert.Equal(t, 2, code)
-	assert.Equal(t, "test: invalid integer '0x0'\n", stderr)
+	assert.Equal(t, "test: 0x0: integer expression expected\n", stderr)
 }
 
 // TestGNUCompatTestNegation — ! "" = true.
@@ -127,11 +127,11 @@ func TestGNUCompatTestParentheses(t *testing.T) {
 
 // TestGNUCompatBracketMissingClose — [ 1 -eq → exit 2 + stderr.
 //
-// GNU: [ 1 -eq; echo $?  → 2 (stderr: "[: missing ']'")
+// GNU: [ 1 -eq; echo $?  → 2 (stderr: "[: missing `]'")
 func TestGNUCompatBracketMissingClose(t *testing.T) {
 	_, stderr, code := runScript(t, `[ 1 -eq`, "")
 	assert.Equal(t, 2, code)
-	assert.Equal(t, "[: missing ']'\n", stderr)
+	assert.Equal(t, "[: missing `]'\n", stderr)
 }
 
 // TestGNUCompatTestFileExists — -f on regular file.

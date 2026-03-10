@@ -164,13 +164,13 @@ func TestTestIntWhitespace(t *testing.T) {
 func TestTestInvalidInteger(t *testing.T) {
 	_, stderr, code := runScript(t, `test 0x0 -eq 0`, "")
 	assert.Equal(t, 2, code)
-	assert.Contains(t, stderr, "invalid integer")
+	assert.Contains(t, stderr, "integer expression expected")
 }
 
 func TestTestFloatRejected(t *testing.T) {
 	_, stderr, code := runScript(t, `test 123.45 -ge 6`, "")
 	assert.Equal(t, 2, code)
-	assert.Contains(t, stderr, "invalid integer '123.45'")
+	assert.Contains(t, stderr, "123.45: integer expression expected")
 }
 
 // --- Logical operator tests ---
@@ -316,13 +316,13 @@ func TestBracketIntCompare(t *testing.T) {
 func TestBracketMissingClose(t *testing.T) {
 	_, stderr, code := runScript(t, `[ 1 -eq 1`, "")
 	assert.Equal(t, 2, code)
-	assert.Contains(t, stderr, "missing ']'")
+	assert.Contains(t, stderr, "missing `]'")
 }
 
 func TestBracketEmpty(t *testing.T) {
 	_, stderr, code := runScript(t, `[`, "")
 	assert.Equal(t, 2, code)
-	assert.Contains(t, stderr, "missing ']'")
+	assert.Contains(t, stderr, "missing `]'")
 }
 
 // --- Help tests ---

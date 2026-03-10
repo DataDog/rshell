@@ -1,8 +1,7 @@
-# Derived from uutils test_test.rs — error cases
-description: "test reports error for ambiguous -o as first of two args"
+# Derived from uutils test_test.rs — -o as unary option test
+description: "test -o treats unknown option name as false"
 input:
   script: |+
     test -o arg
 expect:
-  stderr_contains: ["test:"]
-  exit_code: 2
+  exit_code: 1

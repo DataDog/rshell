@@ -153,7 +153,7 @@ func runBracket(ctx context.Context, callCtx *builtins.CallContext, args []strin
 		return builtins.Result{}
 	}
 	if len(args) == 0 || args[len(args)-1] != "]" {
-		callCtx.Errf("[: missing ']'\n")
+		callCtx.Errf("[: missing `]'\n")
 		return builtins.Result{Code: exitSyntaxError}
 	}
 	return evaluate(ctx, callCtx, "[", args[:len(args)-1])
@@ -297,6 +297,13 @@ func (p *parser) parsePrimary() bool {
 		}
 		if cur == "-z" || cur == "-n" {
 			return p.parseUnaryStringOp()
+		}
+		// -o as unary tests whether a shell option is set.
+		// This restricted shell has no options, so always false.
+		if cur == "-o" {
+			p.advance() // consume -o
+			p.advance() // consume operand
+			return false
 		}
 	}
 
@@ -448,7 +455,7 @@ func (p *parser) evalIntCompare(left, op, right string) bool {
 func (p *parser) parseInt(s string) (int64, bool) {
 	s = strings.TrimSpace(s)
 	if s == "" {
-		p.callCtx.Errf("%s: invalid integer ''\n", p.cmdName)
+		p.callCtx.Errf("%s: : integer expression expected\n", p.cmdName)
 		p.err = true
 		return 0, false
 	}
@@ -463,7 +470,7 @@ func (p *parser) parseInt(s string) (int64, bool) {
 			}
 			return n, true
 		}
-		p.callCtx.Errf("%s: invalid integer '%s'\n", p.cmdName, s)
+		p.callCtx.Errf("%s: %s: integer expression expected\n", p.cmdName, s)
 		p.err = true
 		return 0, false
 	}
