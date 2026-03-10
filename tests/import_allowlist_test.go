@@ -40,6 +40,8 @@ var builtinAllowedSymbols = []string{
 	"context.Context",
 	// errors.Is — error comparison; pure function, no I/O.
 	"errors.Is",
+	// errors.New — creates a simple error value; no I/O or side effects.
+	"errors.New",
 	// io.Copy — stream data between reader and writer; builtins receive sandboxed streams.
 	"io.Copy",
 	// io.EOF — sentinel error value; pure constant.
@@ -50,6 +52,8 @@ var builtinAllowedSymbols = []string{
 	"io.ReadCloser",
 	// io.Reader — interface type; no side effects.
 	"io.Reader",
+	// os.FileInfo — file metadata interface returned by Stat; no I/O side effects.
+	"os.FileInfo",
 	// os.O_RDONLY — read-only file flag constant; cannot open files by itself.
 	"os.O_RDONLY",
 	// strings.Builder — efficient string concatenation; pure in-memory buffer, no I/O.
