@@ -64,114 +64,105 @@ package ls
 import (
 	"context"
 	"fmt"
-	"io"
-	"io/fs"
+	iofs "io/fs"
 	"slices"
 	"time"
-
-	"github.com/spf13/pflag"
 
 	"github.com/DataDog/rshell/interp/builtins"
 )
 
 // Cmd is the ls builtin command descriptor.
-var Cmd = builtins.Command{Name: "ls", Run: run}
+var Cmd = builtins.Command{Name: "ls", MakeFlags: registerFlags}
 
-func run(ctx context.Context, callCtx *builtins.CallContext, args []string) builtins.Result {
-	flags := pflag.NewFlagSet("ls", pflag.ContinueOnError)
-	flags.SetOutput(io.Discard)
-
-	all := flags.BoolP("all", "a", false, "do not ignore entries starting with .")
-	almostAll := flags.BoolP("almost-all", "A", false, "do not ignore . and ..")
-	dirOnly := flags.BoolP("directory", "d", false, "list directories themselves, not their contents")
-	reverse := flags.BoolP("reverse", "r", false, "reverse order while sorting")
-	sortSize := flags.BoolP("sort-size", "S", false, "sort by file size, largest first")
-	sortTime := flags.BoolP("sort-time", "t", false, "sort by modification time, newest first")
-	classify := flags.BoolP("classify", "F", false, "append indicator to entries")
-	appendSlash := flags.BoolP("append-slash", "p", false, "append / indicator to directories")
-	recursive := flags.BoolP("recursive", "R", false, "list subdirectories recursively")
-	longFmt := flags.BoolP("long", "l", false, "use a long listing format")
-	humanReadable := flags.BoolP("human-readable", "h", false, "with -l, print human-readable sizes")
+func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
+	all := fs.BoolP("all", "a", false, "do not ignore entries starting with .")
+	almostAll := fs.BoolP("almost-all", "A", false, "do not ignore . and ..")
+	dirOnly := fs.BoolP("directory", "d", false, "list directories themselves, not their contents")
+	reverse := fs.BoolP("reverse", "r", false, "reverse order while sorting")
+	sortSize := fs.BoolP("sort-size", "S", false, "sort by file size, largest first")
+	sortTime := fs.BoolP("sort-time", "t", false, "sort by modification time, newest first")
+	classify := fs.BoolP("classify", "F", false, "append indicator to entries")
+	appendSlash := fs.BoolP("append-slash", "p", false, "append / indicator to directories")
+	recursive := fs.BoolP("recursive", "R", false, "list subdirectories recursively")
+	longFmt := fs.BoolP("long", "l", false, "use a long listing format")
+	humanReadable := fs.BoolP("human-readable", "h", false, "with -l, print human-readable sizes")
 	// -1 is the default in non-terminal (always true here), accepted for compat.
-	_ = flags.Bool("one", false, "list one file per line")
-	flags.Lookup("one").Shorthand = "1"
+	_ = fs.Bool("one", false, "list one file per line")
+	fs.Lookup("one").Shorthand = "1"
 
-	if err := flags.Parse(args); err != nil {
-		callCtx.Errf("ls: %v\n", err)
-		return builtins.Result{Code: 2}
-	}
-
-	opts := &options{
-		all:           *all,
-		almostAll:     *almostAll,
-		dirOnly:       *dirOnly,
-		reverse:       *reverse,
-		sortSize:      *sortSize,
-		sortTime:      *sortTime,
-		classify:      *classify,
-		appendSlash:   *appendSlash,
-		recursive:     *recursive,
-		longFmt:       *longFmt,
-		humanReadable: *humanReadable,
-	}
-
-	paths := flags.Args()
-	if len(paths) == 0 {
-		paths = []string{"."}
-	}
-
-	failed := false
-	multipleArgs := len(paths) > 1
-
-	// Separate files and dirs (when not -d).
-	var files []pathArg
-	var dirs []pathArg
-	for _, p := range paths {
-		if ctx.Err() != nil {
-			break
+	return func(ctx context.Context, callCtx *builtins.CallContext, args []string) builtins.Result {
+		opts := &options{
+			all:           *all,
+			almostAll:     *almostAll,
+			dirOnly:       *dirOnly,
+			reverse:       *reverse,
+			sortSize:      *sortSize,
+			sortTime:      *sortTime,
+			classify:      *classify,
+			appendSlash:   *appendSlash,
+			recursive:     *recursive,
+			longFmt:       *longFmt,
+			humanReadable: *humanReadable,
 		}
-		info, err := callCtx.Stat(ctx, p)
-		if err != nil {
-			callCtx.Errf("ls: cannot access '%s': %s\n", p, callCtx.PortableErr(err))
-			failed = true
-			continue
-		}
-		if !info.IsDir() || opts.dirOnly {
-			files = append(files, pathArg{name: p, info: info})
-		} else {
-			dirs = append(dirs, pathArg{name: p, info: info})
-		}
-	}
 
-	// List individual files first.
-	if len(files) > 0 {
-		sortEntries(files, opts, func(a pathArg) fs.FileInfo { return a.info })
-		for _, f := range files {
-			printEntry(callCtx, f.name, f.info, opts)
+		paths := args
+		if len(paths) == 0 {
+			paths = []string{"."}
 		}
-	}
 
-	// List directories.
-	showHeader := multipleArgs || len(files) > 0 || opts.recursive
-	for i, d := range dirs {
-		if ctx.Err() != nil {
-			break
-		}
-		if showHeader {
-			if i > 0 || len(files) > 0 {
-				callCtx.Out("\n")
+		failed := false
+		multipleArgs := len(paths) > 1
+
+		// Separate files and dirs (when not -d).
+		var files []pathArg
+		var dirs []pathArg
+		for _, p := range paths {
+			if ctx.Err() != nil {
+				break
 			}
-			callCtx.Outf("%s:\n", d.name)
+			info, err := callCtx.Stat(ctx, p)
+			if err != nil {
+				callCtx.Errf("ls: cannot access '%s': %s\n", p, callCtx.PortableErr(err))
+				failed = true
+				continue
+			}
+			if !info.IsDir() || opts.dirOnly {
+				files = append(files, pathArg{name: p, info: info})
+			} else {
+				dirs = append(dirs, pathArg{name: p, info: info})
+			}
 		}
-		if err := listDir(ctx, callCtx, d.name, opts); err != nil {
-			failed = true
-		}
-	}
 
-	if failed {
-		return builtins.Result{Code: 1}
+		// List individual files first.
+		if len(files) > 0 {
+			sortEntries(files, opts, func(a pathArg) iofs.FileInfo { return a.info })
+			for _, f := range files {
+				printEntry(callCtx, f.name, f.info, opts)
+			}
+		}
+
+		// List directories.
+		showHeader := multipleArgs || len(files) > 0 || opts.recursive
+		for i, d := range dirs {
+			if ctx.Err() != nil {
+				break
+			}
+			if showHeader {
+				if i > 0 || len(files) > 0 {
+					callCtx.Out("\n")
+				}
+				callCtx.Outf("%s:\n", d.name)
+			}
+			if err := listDir(ctx, callCtx, d.name, opts); err != nil {
+				failed = true
+			}
+		}
+
+		if failed {
+			return builtins.Result{Code: 1}
+		}
+		return builtins.Result{}
 	}
-	return builtins.Result{}
 }
 
 type options struct {
@@ -190,7 +181,7 @@ type options struct {
 
 type pathArg struct {
 	name string
-	info fs.FileInfo
+	info iofs.FileInfo
 }
 
 func listDir(ctx context.Context, callCtx *builtins.CallContext, dir string, opts *options) error {
@@ -203,7 +194,7 @@ func listDir(ctx context.Context, callCtx *builtins.CallContext, dir string, opt
 	// Get FileInfo for sorting (if needed) and for long format.
 	type entryInfo struct {
 		name string
-		info fs.FileInfo
+		info iofs.FileInfo
 	}
 
 	var infoEntries []entryInfo
@@ -230,7 +221,7 @@ func listDir(ctx context.Context, callCtx *builtins.CallContext, dir string, opt
 	}
 
 	// Sort.
-	sortEntries(infoEntries, opts, func(a entryInfo) fs.FileInfo { return a.info })
+	sortEntries(infoEntries, opts, func(a entryInfo) iofs.FileInfo { return a.info })
 
 	// Print.
 	for _, ei := range infoEntries {
@@ -258,7 +249,7 @@ func listDir(ctx context.Context, callCtx *builtins.CallContext, dir string, opt
 	return nil
 }
 
-func printEntry(callCtx *builtins.CallContext, name string, info fs.FileInfo, opts *options) {
+func printEntry(callCtx *builtins.CallContext, name string, info iofs.FileInfo, opts *options) {
 	if opts.longFmt {
 		mode := info.Mode().String()
 		size := info.Size()
@@ -278,19 +269,19 @@ func printEntry(callCtx *builtins.CallContext, name string, info fs.FileInfo, op
 	}
 }
 
-func indicator(info fs.FileInfo, opts *options) string {
+func indicator(info iofs.FileInfo, opts *options) string {
 	mode := info.Mode()
 	if opts.classify {
 		if mode.IsDir() {
 			return "/"
 		}
-		if mode&fs.ModeSymlink != 0 {
+		if mode&iofs.ModeSymlink != 0 {
 			return "@"
 		}
-		if mode&fs.ModeNamedPipe != 0 {
+		if mode&iofs.ModeNamedPipe != 0 {
 			return "|"
 		}
-		if mode&fs.ModeSocket != 0 {
+		if mode&iofs.ModeSocket != 0 {
 			return "="
 		}
 		if mode&0111 != 0 { // executable
@@ -304,7 +295,7 @@ func indicator(info fs.FileInfo, opts *options) string {
 	return ""
 }
 
-func sortEntries[T any](entries []T, opts *options, getInfo func(T) fs.FileInfo) {
+func sortEntries[T any](entries []T, opts *options, getInfo func(T) iofs.FileInfo) {
 	if opts.sortSize {
 		slices.SortFunc(entries, func(a, b T) int {
 			sa, sb := getInfo(a).Size(), getInfo(b).Size()

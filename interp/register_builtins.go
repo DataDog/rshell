@@ -37,7 +37,7 @@ func registerBuiltins() {
 			truecmd.Cmd,
 			wc.Cmd,
 		} {
-			builtins.Register(cmd.Name, cmd.Run)
+			cmd.Register()
 		}
 	})
 }
