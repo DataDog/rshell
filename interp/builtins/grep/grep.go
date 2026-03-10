@@ -126,7 +126,7 @@ var Cmd = builtins.Command{Name: "grep", MakeFlags: registerFlags}
 const MaxLineBytes = 1 << 20 // 1 MiB
 
 // MaxContextLines caps -A/-B/-C to prevent excessive memory use.
-const MaxContextLines = 1 << 20 // 1 Mi lines
+const MaxContextLines = 10_000 // 10k lines
 
 const (
 	scanBufInit = 4096 // initial scanner buffer
