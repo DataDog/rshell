@@ -80,10 +80,10 @@ import (
 )
 
 // Cmd is the "test" builtin command registration.
-var Cmd = builtins.Command{Name: "test", Run: runTest}
+var Cmd = builtins.Command{Name: "test", MakeFlags: builtins.NoFlags(runTest)}
 
 // BracketCmd is the "[" builtin command registration.
-var BracketCmd = builtins.Command{Name: "[", Run: runBracket}
+var BracketCmd = builtins.Command{Name: "[", MakeFlags: builtins.NoFlags(runBracket)}
 
 const helpText = `Usage: test EXPRESSION
    or: [ EXPRESSION ]
