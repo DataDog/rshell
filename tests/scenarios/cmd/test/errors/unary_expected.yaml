@@ -1,0 +1,8 @@
+# Derived from uutils test_test.rs — error cases
+description: "test reports error for ambiguous -o as first of two args"
+input:
+  script: |+
+    test -o arg
+expect:
+  stderr_contains: ["test:"]
+  exit_code: 2

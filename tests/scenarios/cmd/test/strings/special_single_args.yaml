@@ -1,0 +1,21 @@
+# Derived from GNU coreutils test.pl — special single-arg cases
+description: "test treats various special tokens as non-empty strings"
+input:
+  script: |+
+    test "-"
+    echo "dash: $?"
+    test "--"
+    echo "ddash: $?"
+    test "-0"
+    echo "zero: $?"
+    test "-f"
+    echo "flag-f: $?"
+expect:
+  stdout: |
+    dash: 0
+    ddash: 0
+    zero: 0
+    flag-f: 0
+  stderr: ""
+  exit_code: 0
+skip_assert_against_bash: true

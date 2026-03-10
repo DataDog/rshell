@@ -1,0 +1,8 @@
+# Derived from GNU coreutils test.pl inv-1 — invalid integer
+description: "test rejects non-decimal integers with exit code 2"
+input:
+  script: |+
+    test 0x0 -eq 00
+expect:
+  stderr: "test: invalid integer '0x0'\n"
+  exit_code: 2

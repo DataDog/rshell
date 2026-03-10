@@ -1,0 +1,9 @@
+# Derived from uutils test_test.rs — --help for test and [
+description: "test --help prints usage and exits 0"
+input:
+  script: |+
+    test --help
+expect:
+  stdout_contains: ["Usage:"]
+  exit_code: 0
+skip_assert_against_bash: true

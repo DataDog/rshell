@@ -38,6 +38,12 @@ var builtinAllowedSymbols = []string{
 	"context.Context",
 	// errors.Is — error comparison; pure function, no I/O.
 	"errors.Is",
+	// fs.FileInfo — interface for file metadata; pure type, no side effects.
+	"io/fs.FileInfo",
+	// fs.ModeNamedPipe — file mode bit constant; no side effects.
+	"io/fs.ModeNamedPipe",
+	// fs.ModeSymlink — file mode bit constant; no side effects.
+	"io/fs.ModeSymlink",
 	// pflag.ContinueOnError — flag parse-error mode constant; no side effects.
 	"github.com/spf13/pflag.ContinueOnError",
 	// pflag.NewFlagSet — CLI flag parsing; operates only on string slices, no I/O.
@@ -54,12 +60,22 @@ var builtinAllowedSymbols = []string{
 	"io.ReadCloser",
 	// io.Reader — interface type; no side effects.
 	"io.Reader",
+	// math.MaxInt64 — integer constant; no side effects.
+	"math.MaxInt64",
+	// math.MinInt64 — integer constant; no side effects.
+	"math.MinInt64",
 	// os.O_RDONLY — read-only file flag constant; cannot open files by itself.
 	"os.O_RDONLY",
 	// strconv.Atoi — string-to-int conversion; pure function, no I/O.
 	"strconv.Atoi",
+	// strconv.ErrRange — sentinel error value for overflow; pure constant.
+	"strconv.ErrRange",
+	// strconv.NumError — error type for numeric conversion failures; pure type.
+	"strconv.NumError",
 	// strconv.ParseInt — string-to-int conversion with base/bit-size; pure function, no I/O.
 	"strconv.ParseInt",
+	// strings.TrimSpace — removes leading/trailing whitespace; pure function.
+	"strings.TrimSpace",
 }
 
 // permanentlyBanned lists packages that may never be imported by builtin

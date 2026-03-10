@@ -16,6 +16,7 @@ import (
 	"github.com/DataDog/rshell/interp/builtins/exit"
 	falsecmd "github.com/DataDog/rshell/interp/builtins/false"
 	"github.com/DataDog/rshell/interp/builtins/head"
+	"github.com/DataDog/rshell/interp/builtins/testcmd"
 	truecmd "github.com/DataDog/rshell/interp/builtins/true"
 )
 
@@ -31,6 +32,8 @@ func registerBuiltins() {
 			exit.Cmd,
 			falsecmd.Cmd,
 			head.Cmd,
+			testcmd.Cmd,
+			testcmd.BracketCmd,
 			truecmd.Cmd,
 		} {
 			builtins.Register(cmd.Name, cmd.Run)

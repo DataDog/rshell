@@ -133,6 +133,40 @@ func (s *pathSandbox) readDir(ctx context.Context, path string) ([]fs.DirEntry, 
 	return entries, nil
 }
 
+// stat implements the restricted stat policy. The file is resolved through
+// os.Root for atomic path validation, matching the open policy.
+func (s *pathSandbox) stat(ctx context.Context, path string) (fs.FileInfo, error) {
+	absPath := toAbs(path, HandlerCtx(ctx).Dir)
+
+	root, relPath, ok := s.resolve(absPath)
+	if !ok {
+		return nil, &os.PathError{Op: "stat", Path: path, Err: os.ErrPermission}
+	}
+
+	info, err := root.Stat(relPath)
+	if err != nil {
+		return nil, portablePathError(err)
+	}
+	return info, nil
+}
+
+// lstat implements the restricted lstat policy. Unlike stat, it does not
+// follow symlinks — it returns information about the link itself.
+func (s *pathSandbox) lstat(ctx context.Context, path string) (fs.FileInfo, error) {
+	absPath := toAbs(path, HandlerCtx(ctx).Dir)
+
+	root, relPath, ok := s.resolve(absPath)
+	if !ok {
+		return nil, &os.PathError{Op: "lstat", Path: path, Err: os.ErrPermission}
+	}
+
+	info, err := root.Lstat(relPath)
+	if err != nil {
+		return nil, portablePathError(err)
+	}
+	return info, nil
+}
+
 // Close releases all os.Root file descriptors. It is safe to call multiple times.
 func (s *pathSandbox) Close() error {
 	if s == nil {
