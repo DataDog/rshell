@@ -437,17 +437,17 @@ func compareKey(line string, cfg *uniqConfig) string {
 		s = skipFieldsN(s, cfg.skipFields)
 	}
 	if cfg.skipChars > 0 && len(s) > 0 {
-		skip := int(cfg.skipChars)
-		if skip > len(s) {
-			skip = len(s)
+		skip := cfg.skipChars
+		if skip > int64(len(s)) {
+			skip = int64(len(s))
 		}
 		s = s[skip:]
 	}
-	if cfg.checkChars >= 0 && int(cfg.checkChars) < len(s) {
-		s = s[:int(cfg.checkChars)]
+	if cfg.checkChars >= 0 && cfg.checkChars < int64(len(s)) {
+		s = s[:cfg.checkChars]
 	}
 	if cfg.ignoreCase {
-		s = strings.ToLower(s)
+		s = asciiToLower(s)
 	}
 	return s
 }
@@ -455,12 +455,24 @@ func compareKey(line string, cfg *uniqConfig) string {
 // skipFieldsN skips the first n blank-delimited fields and returns the
 // remainder of the string, starting immediately after the last character
 // of the n-th field (before any subsequent blanks).
+// asciiToLower folds only ASCII A-Z to a-z, matching GNU uniq behavior
+// in the default C/POSIX locale. Unlike strings.ToLower, this does not
+// apply Unicode case folding, so non-ASCII characters are left unchanged.
+func asciiToLower(s string) string {
+	b := make([]byte, len(s))
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if c >= 'A' && c <= 'Z' {
+			c += 'a' - 'A'
+		}
+		b[i] = c
+	}
+	return string(b)
+}
+
 func skipFieldsN(s string, n int64) string {
 	i := 0
-	for field := int64(0); field < n; field++ {
-		if i >= len(s) {
-			break
-		}
+	for field := int64(0); field < n && i < len(s); field++ {
 		for i < len(s) && (s[i] == ' ' || s[i] == '\t') {
 			i++
 		}

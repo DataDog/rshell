@@ -5,8 +5,15 @@ Blocked features are rejected before execution with exit code 2.
 
 ## Builtins
 
-See the implementation in `interp/builtins/` for the full list of supported builtins and their options.
-
+- ✅ `break` — exit a `for` loop
+- ✅ `cat` — concatenate and print files
+- ✅ `continue` — skip to the next iteration of a `for` loop
+- ✅ `echo` — write arguments to standard output
+- ✅ `exit` — exit the shell with a status code
+- ✅ `false` — return exit code 1
+- ✅ `head` — output the first part of files
+- ✅ `true` — return exit code 0
+- ✅ `uniq` — report or omit repeated lines
 - ❌ All other commands — return exit code 127 with `<cmd>: not found` unless an ExecHandler is configured
 
 ## Variables

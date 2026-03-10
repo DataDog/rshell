@@ -70,8 +70,6 @@ var builtinAllowedSymbols = []string{
 	"strconv.NumError",
 	// strings.HasPrefix — pure function for prefix matching; no I/O.
 	"strings.HasPrefix",
-	// strings.ToLower — pure function for case folding; no I/O.
-	"strings.ToLower",
 	// io.WriteString — writes a string to a writer; no filesystem access, delegates to Write.
 	"io.WriteString",
 	// io.Writer — interface type for writing; no side effects.
