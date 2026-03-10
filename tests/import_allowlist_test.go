@@ -70,6 +70,8 @@ var builtinAllowedSymbols = []string{
 	"io.ReadCloser",
 	// io.Reader — interface type; no side effects.
 	"io.Reader",
+	// os.FileInfo — file metadata interface returned by Stat; no I/O side effects.
+	"os.FileInfo",
 	// os.O_RDONLY — read-only file flag constant; cannot open files by itself.
 	"os.O_RDONLY",
 	// slices.Reverse — reverses a slice in-place; pure function, no I/O.
