@@ -38,6 +38,8 @@ var builtinAllowedSymbols = []string{
 	"context.Context",
 	// errors.Is — error comparison; pure function, no I/O.
 	"errors.Is",
+	// errors.New — creates a simple error value; no I/O or side effects.
+	"errors.New",
 	// fs.FileInfo — interface for file metadata; pure type, no side effects.
 	"io/fs.FileInfo",
 	// fs.ModeNamedPipe — file mode bit constant; no side effects.
@@ -62,6 +64,8 @@ var builtinAllowedSymbols = []string{
 	"math.MaxInt64",
 	// math.MinInt64 — integer constant; no side effects.
 	"math.MinInt64",
+	// os.FileInfo — file metadata interface returned by Stat; no I/O side effects.
+	"os.FileInfo",
 	// os.O_RDONLY — read-only file flag constant; cannot open files by itself.
 	"os.O_RDONLY",
 	// strings.Builder — efficient string concatenation; pure in-memory buffer, no I/O.
