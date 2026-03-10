@@ -112,7 +112,6 @@ func (s *pathSandbox) access(ctx context.Context, path string, mode uint32) erro
 			}
 			return nil
 		}
-		defer f.Close()
 
 		// For write and execute, use mode bits from f.Stat() on the
 		// open fd — atomic, no TOCTOU window.
@@ -123,12 +122,15 @@ func (s *pathSandbox) access(ctx context.Context, path string, mode uint32) erro
 		if mode&0x03 != 0 {
 			info, err := f.Stat()
 			if err != nil {
+				f.Close()
 				return portablePathError(err)
 			}
 			if !effectiveHasPerm(info, 0222, 0111, mode&0x02 != 0, mode&0x01 != 0) {
+				f.Close()
 				return &os.PathError{Op: "access", Path: path, Err: os.ErrPermission}
 			}
 		}
+		f.Close()
 		return nil
 	}
 	return &os.PathError{Op: "access", Path: path, Err: os.ErrPermission}

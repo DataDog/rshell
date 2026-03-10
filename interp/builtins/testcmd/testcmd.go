@@ -529,6 +529,9 @@ func (p *parser) parseInt(s string) (int64, bool) {
 }
 
 func (p *parser) evalFileCompare(left, op, right string) bool {
+	if p.callCtx.StatFile == nil {
+		return false
+	}
 	leftInfo, leftErr := p.callCtx.StatFile(p.ctx, left)
 	rightInfo, rightErr := p.callCtx.StatFile(p.ctx, right)
 

@@ -22,4 +22,4 @@ expect:
     missing: 1
   stderr: ""
   exit_code: 0
-skip_assert_against_bash: true
+skip_assert_against_bash: true  # uses allowed_paths which the bash harness does not support
