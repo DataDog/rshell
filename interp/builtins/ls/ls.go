@@ -149,6 +149,11 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			if ctx.Err() != nil {
 				break
 			}
+			if p == "" {
+				callCtx.Errf("ls: cannot access '': No such file or directory\n")
+				failed = true
+				continue
+			}
 			info, err := callCtx.Lstat(ctx, p)
 			if err != nil {
 				callCtx.Errf("ls: cannot access '%s': %s\n", p, callCtx.PortableErr(err))
@@ -312,7 +317,7 @@ func listDir(ctx context.Context, callCtx *builtins.CallContext, dir string, opt
 
 func printEntry(callCtx *builtins.CallContext, name string, info iofs.FileInfo, opts *options) {
 	if opts.longFmt {
-		mode := info.Mode().String()
+		mode := formatMode(info)
 		size := info.Size()
 		modTime := info.ModTime()
 
@@ -328,6 +333,71 @@ func printEntry(callCtx *builtins.CallContext, name string, info iofs.FileInfo, 
 	} else {
 		callCtx.Outf("%s%s\n", name, indicator(info, opts))
 	}
+}
+
+// formatMode returns a 10-character mode string matching GNU ls format.
+// Go's FileMode.String() uses 'L' for symlinks (ls uses 'l') and doesn't
+// render setuid/setgid/sticky in the rwx triplets.
+//
+// The function accepts FileInfo (rather than FileMode) to avoid referencing
+// the io/fs.FileMode type directly, which is not in the import allowlist.
+func formatMode(info iofs.FileInfo) string {
+	var buf [10]byte
+	mode := info.Mode()
+
+	// Char 0: file type.
+	switch {
+	case mode&iofs.ModeDir != 0:
+		buf[0] = 'd'
+	case mode&iofs.ModeSymlink != 0:
+		buf[0] = 'l'
+	case mode&iofs.ModeNamedPipe != 0:
+		buf[0] = 'p'
+	case mode&iofs.ModeSocket != 0:
+		buf[0] = 's'
+	default:
+		buf[0] = '-'
+	}
+
+	// Permission bits: extract the low 9 bits (rwxrwxrwx).
+	const rwx = "rwx"
+	perm := uint32(mode) & 0777
+	for i := 0; i < 9; i++ {
+		if perm&(1<<uint(8-i)) != 0 {
+			buf[1+i] = rwx[i%3]
+		} else {
+			buf[1+i] = '-'
+		}
+	}
+
+	// Setuid: affects owner execute (buf[3]).
+	if mode&iofs.ModeSetuid != 0 {
+		if buf[3] == 'x' {
+			buf[3] = 's'
+		} else {
+			buf[3] = 'S'
+		}
+	}
+
+	// Setgid: affects group execute (buf[6]).
+	if mode&iofs.ModeSetgid != 0 {
+		if buf[6] == 'x' {
+			buf[6] = 's'
+		} else {
+			buf[6] = 'S'
+		}
+	}
+
+	// Sticky: affects other execute (buf[9]).
+	if mode&iofs.ModeSticky != 0 {
+		if buf[9] == 'x' {
+			buf[9] = 't'
+		} else {
+			buf[9] = 'T'
+		}
+	}
+
+	return string(buf[:])
 }
 
 func indicator(info iofs.FileInfo, opts *options) string {
@@ -367,19 +437,35 @@ func sortEntries[T any](entries []T, opts *options, getInfo func(T) iofs.FileInf
 				}
 				return 1
 			}
+			// Break ties alphabetically by name.
+			na, nb := getName(a), getName(b)
+			if na < nb {
+				return -1
+			}
+			if na > nb {
+				return 1
+			}
 			return 0
 		})
 	} else if opts.sortTime {
 		slices.SortFunc(entries, func(a, b T) int {
 			ta, tb := getInfo(a).ModTime(), getInfo(b).ModTime()
-			if ta.Equal(tb) {
-				return 0
+			if !ta.Equal(tb) {
+				// Newest first.
+				if ta.After(tb) {
+					return -1
+				}
+				return 1
 			}
-			// Newest first.
-			if ta.After(tb) {
+			// Break ties alphabetically by name.
+			na, nb := getName(a), getName(b)
+			if na < nb {
 				return -1
 			}
-			return 1
+			if na > nb {
+				return 1
+			}
+			return 0
 		})
 	} else {
 		// Default: sort alphabetically by name.
