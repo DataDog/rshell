@@ -46,10 +46,6 @@ var builtinAllowedSymbols = []string{
 	"io/fs.ModeNamedPipe",
 	// fs.ModeSymlink — file mode bit constant; no side effects.
 	"io/fs.ModeSymlink",
-	// pflag.ContinueOnError — flag parse-error mode constant; no side effects.
-	"github.com/spf13/pflag.ContinueOnError",
-	// pflag.NewFlagSet — CLI flag parsing; operates only on string slices, no I/O.
-	"github.com/spf13/pflag.NewFlagSet",
 	// io.Copy — stream data between reader and writer; builtins receive sandboxed streams.
 	"io.Copy",
 	// io.EOF — sentinel error value; pure constant.
