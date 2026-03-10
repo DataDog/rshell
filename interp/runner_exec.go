@@ -219,6 +219,9 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 			Stat: func(ctx context.Context, path string) (fs.FileInfo, error) {
 				return r.sandbox.stat(r.handlerCtx(ctx, todoPos), path)
 			},
+			Lstat: func(ctx context.Context, path string) (fs.FileInfo, error) {
+				return r.sandbox.lstat(r.handlerCtx(ctx, todoPos), path)
+			},
 			PortableErr: portableErrMsg,
 		}
 		if r.stdin != nil { // do not assign a typed nil into the io.Reader interface

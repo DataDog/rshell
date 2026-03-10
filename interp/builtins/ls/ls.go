@@ -139,19 +139,31 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 		multipleArgs := len(paths) > 1
 
 		// Separate files and dirs (when not -d).
+		// Use Lstat so that symlink operands retain ModeSymlink (GNU ls default).
+		// The link target is only stat'd when needed (e.g. to decide dir vs file
+		// for a symlink-to-directory, since -d is the only case where we'd list
+		// the symlink itself rather than the target directory contents).
 		var files []pathArg
 		var dirs []pathArg
 		for _, p := range paths {
 			if ctx.Err() != nil {
 				break
 			}
-			info, err := callCtx.Stat(ctx, p)
+			info, err := callCtx.Lstat(ctx, p)
 			if err != nil {
 				callCtx.Errf("ls: cannot access '%s': %s\n", p, callCtx.PortableErr(err))
 				failed = true
 				continue
 			}
-			if !info.IsDir() || opts.dirOnly {
+			// For symlinks to directories: follow the link to list contents
+			// (unless -d is set, which lists the entry itself).
+			isDir := info.IsDir()
+			if info.Mode()&iofs.ModeSymlink != 0 && !opts.dirOnly {
+				if target, err := callCtx.Stat(ctx, p); err == nil {
+					isDir = target.IsDir()
+				}
+			}
+			if !isDir || opts.dirOnly {
 				files = append(files, pathArg{name: p, info: info})
 			} else {
 				dirs = append(dirs, pathArg{name: p, info: info})

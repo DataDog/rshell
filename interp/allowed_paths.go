@@ -151,6 +151,24 @@ func (s *pathSandbox) stat(ctx context.Context, path string) (fs.FileInfo, error
 	return info, nil
 }
 
+// lstat implements the restricted lstat policy. Like stat, it uses a
+// metadata-only call, but does not follow symbolic links — the returned
+// FileInfo describes the link itself rather than its target.
+func (s *pathSandbox) lstat(ctx context.Context, path string) (fs.FileInfo, error) {
+	absPath := toAbs(path, HandlerCtx(ctx).Dir)
+
+	root, relPath, ok := s.resolve(absPath)
+	if !ok {
+		return nil, &os.PathError{Op: "lstat", Path: path, Err: os.ErrPermission}
+	}
+
+	info, err := root.Lstat(relPath)
+	if err != nil {
+		return nil, portablePathError(err)
+	}
+	return info, nil
+}
+
 // Close releases all os.Root file descriptors. It is safe to call multiple times.
 func (s *pathSandbox) Close() error {
 	if s == nil {
