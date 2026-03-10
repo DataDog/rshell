@@ -78,6 +78,8 @@ var builtinAllowedSymbols = []string{
 	"math.MinInt64",
 	// os.FileInfo — file metadata interface returned by Stat; no I/O side effects.
 	"os.FileInfo",
+	// path.Match — pure glob matching against a pattern; no I/O.
+	"path.Match",
 	// os.O_RDONLY — read-only file flag constant; cannot open files by itself.
 	"os.O_RDONLY",
 	// slices.Reverse — reverses a slice in-place; pure function, no I/O.
@@ -102,6 +104,8 @@ var builtinAllowedSymbols = []string{
 	"strings.IndexByte",
 	// strings.Split — splits string by separator; pure function, no I/O.
 	"strings.Split",
+	// strings.ToLower — converts string to lowercase; pure function, no I/O.
+	"strings.ToLower",
 	// strings.TrimSpace — removes leading/trailing whitespace; pure function.
 	"strings.TrimSpace",
 	// io.WriteString — writes a string to a writer; no filesystem access, delegates to Write.

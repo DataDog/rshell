@@ -12,6 +12,7 @@ Blocked features are rejected before execution with exit code 2.
 - ✅ `echo [-n] [-e] [ARG]...` — write arguments to stdout
 - ✅ `exit [N]` — exit the shell with status N (default 0)
 - ✅ `false` — return exit code 1
+- ✅ `find [-L] [PATH...] [EXPRESSION]` — search for files in a directory hierarchy; supports `-name`, `-iname`, `-path`, `-ipath`, `-type`, `-size`, `-empty`, `-newer`, `-mtime`, `-mmin`, `-maxdepth`, `-mindepth`, `-print`, `-print0`, `-prune`, logical operators (`!`, `-a`, `-o`, `()`); blocks `-exec`, `-delete`, `-regex` for sandbox safety
 - ✅ `head [-n N|-c N] [-q|-v] [-z] [FILE]...` — output the first part of files (default: first 10 lines)
 - ✅ `ls [-1aAdFhlpRrSt] [FILE]...` — list directory contents
 - ✅ `tail [-n N|-c N] [-q|-v] [-z] [FILE]...` — output the last part of files (default: last 10 lines); supports `+N` offset mode; `-f`/`--follow` is rejected

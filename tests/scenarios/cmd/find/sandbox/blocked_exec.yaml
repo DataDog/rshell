@@ -1,0 +1,14 @@
+description: find -exec is blocked for sandbox safety.
+skip_assert_against_bash: true
+setup:
+  files:
+    - path: dummy.txt
+      content: "x"
+      chmod: 0644
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    find . -exec echo {} \;
+expect:
+  stderr_contains: ["blocked"]
+  exit_code: 1
