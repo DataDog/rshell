@@ -176,8 +176,6 @@ git commit -m "$(cat <<'EOF'
 Fix CI failures: <brief description>
 
 <details of what was fixed>
-
-Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>
 EOF
 )"
 
@@ -196,10 +194,10 @@ gh api repos/{owner}/{repo}/pulls/{pr-number}/comments --jq '.[] | {id, body, pa
 
 For each comment that relates to a CI failure you just fixed:
 
-1. **Reply** explaining what was fixed and how:
+1. **Reply** (prefixed with `[Claude Opus 4.6]`) explaining what was fixed and how:
    ```bash
    gh api repos/{owner}/{repo}/pulls/{pr-number}/comments/{comment-id}/replies \
-     -f body="Fixed — <brief explanation of the fix>"
+     -f body="[Claude Opus 4.6] Fixed — <brief explanation of the fix>"
    ```
 
 2. **Resolve** the conversation thread (requires GraphQL since the REST API does not support resolving):
