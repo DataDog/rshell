@@ -48,8 +48,6 @@ var builtinAllowedSymbols = []string{
 	"io/fs.ModeNamedPipe",
 	// fs.ModeSymlink — file mode bit constant; no side effects.
 	"io/fs.ModeSymlink",
-	// io.Copy — stream data between reader and writer; builtins receive sandboxed streams.
-	"io.Copy",
 	// io.EOF — sentinel error value; pure constant.
 	"io.EOF",
 	// io.NopCloser — wraps a Reader with a no-op Close; no side effects.
