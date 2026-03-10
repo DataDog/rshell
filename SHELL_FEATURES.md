@@ -5,7 +5,9 @@ Blocked features are rejected before execution with exit code 2.
 
 ## Builtins
 
-See [SHELL_COMMANDS.md](SHELL_COMMANDS.md) for the full list of builtin commands.
+See the implementation in `interp/builtins/` for the full list of supported builtins and their options.
+
+- ❌ All other commands — return exit code 127 with `<cmd>: not found` unless an ExecHandler is configured
 
 ## Variables
 

@@ -499,12 +499,6 @@ For any case where behaviour differs from expectation, run the equivalent `gtail
 
 **GATE CHECK**: Call TaskList. Step 8 must be `completed` before starting this step. Set this step to `in_progress` now.
 
-Update `SHELL_COMMANDS.md` in the repository root. Add a new section for the command, following the existing format and style used in that file.
-
-Guidelines:
-- Insert the section in alphabetical order by command name
-- Keep the description to one or two sentences that match the command's doc comment
-- Include a **Usage** line if the command accepts arguments or options
-- Include an **Options** list if the command has flags; list only the most commonly used ones
+Verify that `SHELL_FEATURES.md` in the repository root does not need updates (e.g. if a new category of feature is added).
 
 After updating, verify the file looks correct, then commit everything together if not already committed, or amend/add to the existing commit.
