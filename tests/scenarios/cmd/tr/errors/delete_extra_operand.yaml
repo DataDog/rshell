@@ -1,0 +1,9 @@
+# Per RULES.md: error paths must be tested
+description: tr -d with extra operand fails.
+input:
+  script: |+
+    tr -d a p
+expect:
+  stdout: ""
+  stderr_contains: ["tr: extra operand"]
+  exit_code: 1

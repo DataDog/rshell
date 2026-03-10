@@ -1,0 +1,9 @@
+# Per RULES.md: error paths must be tested
+description: tr with one operand in translate mode fails.
+input:
+  script: |+
+    tr foo
+expect:
+  stdout: ""
+  stderr_contains: ["tr: missing operand after"]
+  exit_code: 1

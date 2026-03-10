@@ -1,0 +1,9 @@
+# Per RULES.md: error paths must be tested
+description: tr with no arguments fails with missing operand error.
+input:
+  script: |+
+    tr
+expect:
+  stdout: ""
+  stderr_contains: ["tr: missing operand"]
+  exit_code: 1

@@ -1,0 +1,11 @@
+# Derived from GNU coreutils tr.pl — the classic word-per-line example
+description: tr -cs splits words onto separate lines.
+input:
+  script: |+
+    cat <<'EOF' | tr -cs '[:alnum:]' '\n'
+    The big black fox jumped over the fence.
+    EOF
+expect:
+  stdout: "The\nbig\nblack\nfox\njumped\nover\nthe\nfence\n"
+  stderr: ""
+  exit_code: 0
