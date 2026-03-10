@@ -126,7 +126,7 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			set2Str = operands[1]
 		}
 
-		set1, err := expandSet(set1Str, false, 0, callCtx)
+		set1, err := expandSet(set1Str, false, 0, false, callCtx)
 		if err != nil {
 			callCtx.Errf("tr: %s\n", err)
 			return builtins.Result{Code: 1}
@@ -137,8 +137,9 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 		}
 
 		var set2 []byte
+		translateMode := !*deleteFlag && len(operands) >= 2
 		if set2Str != "" || len(operands) > 1 {
-			set2, err = expandSet(set2Str, true, len(set1), callCtx)
+			set2, err = expandSet(set2Str, true, len(set1), translateMode, callCtx)
 			if err != nil {
 				callCtx.Errf("tr: %s\n", err)
 				return builtins.Result{Code: 1}
@@ -157,7 +158,7 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 		}
 
 		if len(operands) >= 2 {
-			if !*truncateSet1 && set2Str == "" {
+			if !*truncateSet1 && set2Str == "" && len(set1) > 0 {
 				callCtx.Errf("tr: when not truncating set1, string2 must be non-empty\n")
 				return builtins.Result{Code: 1}
 			}
@@ -388,7 +389,7 @@ func complementSet(set []byte) []byte {
 
 const maxSetLen = 1 << 20
 
-func expandSet(s string, isSet2 bool, set1Len int, callCtx *builtins.CallContext) ([]byte, error) {
+func expandSet(s string, isSet2 bool, set1Len int, translateSet2 bool, callCtx *builtins.CallContext) ([]byte, error) {
 	var result []byte
 	data := []byte(s)
 	i := 0
@@ -402,6 +403,9 @@ func expandSet(s string, isSet2 bool, set1Len int, callCtx *builtins.CallContext
 				end := findClosingBracket(data, i+2, ':')
 				if end >= 0 {
 					className := string(data[i+2 : end])
+					if translateSet2 && className != "upper" && className != "lower" {
+						return nil, &trError{"when translating, the only character classes that may appear in\nstring2 are 'upper' and 'lower'"}
+					}
 					chars, err := expandCharClass(className)
 					if err != nil {
 						return nil, err
@@ -414,6 +418,9 @@ func expandSet(s string, isSet2 bool, set1Len int, callCtx *builtins.CallContext
 			if i+3 < len(data) && data[i+1] == '=' {
 				end := findClosingBracket(data, i+2, '=')
 				if end >= 0 {
+					if translateSet2 {
+						return nil, &trError{"[=c=] expressions may not appear in string2 when translating"}
+					}
 					eqChars := data[i+2 : end]
 					if len(eqChars) == 0 {
 						return nil, &trError{"missing equivalence class character '" + string(data[i:end+2]) + "'"}
