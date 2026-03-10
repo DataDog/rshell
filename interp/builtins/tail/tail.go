@@ -88,18 +88,22 @@ const MaxCount = 1<<31 - 1 // 2 147 483 647
 // MaxLineBytes is the per-line buffer cap for the line scanner.
 const MaxLineBytes = 1 << 20 // 1 MiB
 
-// MaxRingLines is the maximum number of lines held in the ring buffer.
-const MaxRingLines = 100_000
+// MaxRingLines is the maximum number of line slots in the ring buffer.
+// The pointer-array overhead is MaxRingLines × 24 bytes ≈ 25 MiB; actual
+// line content is independently bounded by MaxRingBytes.
+const MaxRingLines = 1 << 20 // 1 048 576 lines
 
 // MaxRingBytes is the maximum total bytes the ring buffer may hold at any
-// one time. Without this cap, MaxRingLines (100 000) × MaxLineBytes (1 MiB)
-// yields a worst-case memory envelope of ~97.6 GiB. This constant reduces
-// the bound to 64 MiB.
+// one time. Without this cap, MaxRingLines × MaxLineBytes yields a
+// worst-case memory envelope of ~1 TiB. This constant reduces the bound
+// to 64 MiB.
 const MaxRingBytes = 64 << 20 // 64 MiB
 
 // MaxBytesBuffer is the maximum size of the circular byte buffer used in
-// last-N-bytes mode.
-const MaxBytesBuffer = 32 << 20 // 32 MiB
+// last-N-bytes mode. Setting it equal to MaxTotalReadBytes ensures that
+// any file tail will read entirely fits in the buffer, so a request for
+// the last N bytes of an M-byte file (M ≤ N) is always served correctly.
+const MaxBytesBuffer = MaxTotalReadBytes // 256 MiB
 
 // MaxTotalReadBytes is the maximum total bytes tail will consume from a
 // single input source. Both last-N-lines and last-N-bytes modes must read
@@ -488,8 +492,15 @@ func parseCount(s string) (countMode, bool) {
 		return countMode{}, false
 	}
 	// GNU tail silently treats negative counts as their absolute value.
+	// Guard against MinInt64: if n < -MaxCount it cannot be negated safely
+	// within int64, so clamp it directly (it would be capped to MaxCount
+	// by the next block anyway).
 	if n < 0 {
-		n = -n
+		if n < -MaxCount {
+			n = MaxCount
+		} else {
+			n = -n
+		}
 	}
 	if n > MaxCount {
 		n = MaxCount
