@@ -1,0 +1,10 @@
+# Derived from GTFOBins safety requirement
+description: wc rejects --files0-from flag (security risk).
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    wc --files0-from=foo
+expect:
+  stdout: ""
+  stderr_contains: ["wc:"]
+  exit_code: 1
