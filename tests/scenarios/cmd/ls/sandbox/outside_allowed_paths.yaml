@@ -11,4 +11,8 @@ input:
 expect:
   stdout: ""
   stderr: "ls: cannot access '/etc': permission denied\n"
+  # On Windows, /etc is not an absolute path (no drive letter), so it resolves
+  # to <cwd>/etc inside the sandbox — yielding "no such file or directory"
+  # instead of "permission denied".
+  stderr_windows: "ls: cannot access '/etc': no such file or directory\n"
   exit_code: 1
