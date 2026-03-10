@@ -284,6 +284,12 @@ func TestTrEmptyEquivalenceClass(t *testing.T) {
 	assert.Contains(t, stderr, "missing equivalence class character")
 }
 
+func TestTrEquivalenceClassBackslashEscape(t *testing.T) {
+	stdout, _, code := trRun(t, "a\nb", `'[=\n=]' X`)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "aXb", stdout)
+}
+
 func TestTrEmptyCharClassName(t *testing.T) {
 	_, stderr, code := trRun(t, "", "'[::]' x")
 	assert.Equal(t, 1, code)

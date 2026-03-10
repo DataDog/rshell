@@ -418,10 +418,15 @@ func expandSet(s string, isSet2 bool, set1Len int, callCtx *builtins.CallContext
 					if len(eqChars) == 0 {
 						return nil, &trError{"missing equivalence class character '" + string(data[i:end+2]) + "'"}
 					}
-					if len(eqChars) > 1 {
+					var eqByte byte
+					if eqChars[0] == '\\' && len(eqChars) > 1 {
+						eqByte, _ = parseBackslashEscapeSingle(eqChars, 0)
+					} else if len(eqChars) == 1 {
+						eqByte = eqChars[0]
+					} else {
 						return nil, &trError{string(eqChars) + ": equivalence class operand must be a single character"}
 					}
-					result = append(result, eqChars[0])
+					result = append(result, eqByte)
 					i = end + 2
 					continue
 				}
