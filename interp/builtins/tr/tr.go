@@ -714,6 +714,9 @@ func parseRepeat(data []byte, pos int) ([]byte, int, byte, bool) {
 }
 
 func rptErrMsg(data []byte, pos int) string {
+	if pos+2 >= len(data) {
+		return "invalid repeat construct"
+	}
 	charAdvance := 1
 	if data[pos+1] == '\\' && pos+3 < len(data) {
 		_, charAdvance = parseBackslashEscapeSingle(data, pos+1)
