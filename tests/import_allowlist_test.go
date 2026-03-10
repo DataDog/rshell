@@ -38,6 +38,8 @@ var builtinAllowedSymbols = []string{
 	"context.Context",
 	// errors.Is — error comparison; pure function, no I/O.
 	"errors.Is",
+	// errors.New — creates a simple error value; pure function, no I/O.
+	"errors.New",
 	// fmt.Sprintf — string formatting; pure function, no I/O.
 	"fmt.Sprintf",
 	// io.Copy — stream data between reader and writer; builtins receive sandboxed streams.

@@ -118,12 +118,12 @@ func (s *pathSandbox) readDir(ctx context.Context, path string) ([]fs.DirEntry, 
 
 	f, err := root.Open(relPath)
 	if err != nil {
-		return nil, err
+		return nil, portablePathError(err)
 	}
 	defer f.Close()
 	entries, err := f.ReadDir(-1)
 	if err != nil {
-		return nil, err
+		return nil, portablePathError(err)
 	}
 	// os.Root's ReadDir does not guarantee sorted order like os.ReadDir.
 	// Sort to match POSIX glob expansion expectations.

@@ -58,11 +58,12 @@
 //
 //	0  All entries listed successfully.
 //	1  At least one error occurred (missing file, permission denied, etc.).
-//	2  Invalid usage (unrecognised flag, etc.).
+//	1  Invalid usage (unrecognised flag, etc.).
 package ls
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	iofs "io/fs"
 	"slices"
@@ -70,6 +71,12 @@ import (
 
 	"github.com/DataDog/rshell/interp/builtins"
 )
+
+// maxRecursionDepth limits how deep -R will recurse to prevent stack overflow.
+const maxRecursionDepth = 256
+
+// errFailed is a sentinel used to signal that at least one entry had an error.
+var errFailed = errors.New("ls: one or more errors occurred")
 
 // Cmd is the ls builtin command descriptor.
 var Cmd = builtins.Command{Name: "ls", MakeFlags: registerFlags}
@@ -135,13 +142,14 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 
 		// List individual files first.
 		if len(files) > 0 {
-			sortEntries(files, opts, func(a pathArg) iofs.FileInfo { return a.info })
+			sortEntries(files, opts, func(a pathArg) iofs.FileInfo { return a.info }, func(a pathArg) string { return a.name })
 			for _, f := range files {
 				printEntry(callCtx, f.name, f.info, opts)
 			}
 		}
 
-		// List directories.
+		// Sort and list directories.
+		sortEntries(dirs, opts, func(a pathArg) iofs.FileInfo { return a.info }, func(a pathArg) string { return a.name })
 		showHeader := multipleArgs || len(files) > 0 || opts.recursive
 		for i, d := range dirs {
 			if ctx.Err() != nil {
@@ -153,7 +161,7 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 				}
 				callCtx.Outf("%s:\n", d.name)
 			}
-			if err := listDir(ctx, callCtx, d.name, opts); err != nil {
+			if err := listDir(ctx, callCtx, d.name, opts, 0); err != nil {
 				failed = true
 			}
 		}
@@ -184,7 +192,12 @@ type pathArg struct {
 	info iofs.FileInfo
 }
 
-func listDir(ctx context.Context, callCtx *builtins.CallContext, dir string, opts *options) error {
+func listDir(ctx context.Context, callCtx *builtins.CallContext, dir string, opts *options, depth int) error {
+	if depth > maxRecursionDepth {
+		callCtx.Errf("ls: recursion depth limit exceeded at '%s'\n", dir)
+		return errFailed
+	}
+
 	entries, err := callCtx.ReadDir(ctx, dir)
 	if err != nil {
 		callCtx.Errf("ls: cannot open directory '%s': %s\n", dir, callCtx.PortableErr(err))
@@ -197,9 +210,12 @@ func listDir(ctx context.Context, callCtx *builtins.CallContext, dir string, opt
 		info iofs.FileInfo
 	}
 
+	failed := false
 	var infoEntries []entryInfo
 
 	// Synthesize . and .. for -a (os.ReadDir never includes them).
+	// NOTE: ".." intentionally uses the same FileInfo as "." because the
+	// parent directory may be outside the sandbox and cannot be stat'd.
 	if opts.all {
 		if dotInfo, err := callCtx.Stat(ctx, dir); err == nil {
 			infoEntries = append(infoEntries, entryInfo{name: ".", info: dotInfo})
@@ -208,6 +224,9 @@ func listDir(ctx context.Context, callCtx *builtins.CallContext, dir string, opt
 	}
 
 	for _, e := range entries {
+		if ctx.Err() != nil {
+			break
+		}
 		name := e.Name()
 		if len(name) > 0 && name[0] == '.' && !opts.all && !opts.almostAll {
 			continue
@@ -215,16 +234,20 @@ func listDir(ctx context.Context, callCtx *builtins.CallContext, dir string, opt
 		info, infoErr := e.Info()
 		if infoErr != nil {
 			callCtx.Errf("ls: cannot access '%s': %s\n", joinPath(dir, name), callCtx.PortableErr(infoErr))
+			failed = true
 			continue
 		}
 		infoEntries = append(infoEntries, entryInfo{name: name, info: info})
 	}
 
 	// Sort.
-	sortEntries(infoEntries, opts, func(a entryInfo) iofs.FileInfo { return a.info })
+	sortEntries(infoEntries, opts, func(a entryInfo) iofs.FileInfo { return a.info }, func(a entryInfo) string { return a.name })
 
 	// Print.
 	for _, ei := range infoEntries {
+		if ctx.Err() != nil {
+			break
+		}
 		printEntry(callCtx, ei.name, ei.info, opts)
 	}
 
@@ -242,10 +265,15 @@ func listDir(ctx context.Context, callCtx *builtins.CallContext, dir string, opt
 			}
 			subdir := joinPath(dir, ei.name)
 			callCtx.Outf("\n%s:\n", subdir)
-			listDir(ctx, callCtx, subdir, opts)
+			if err := listDir(ctx, callCtx, subdir, opts, depth+1); err != nil {
+				failed = true
+			}
 		}
 	}
 
+	if failed {
+		return errFailed
+	}
 	return nil
 }
 
@@ -295,7 +323,7 @@ func indicator(info iofs.FileInfo, opts *options) string {
 	return ""
 }
 
-func sortEntries[T any](entries []T, opts *options, getInfo func(T) iofs.FileInfo) {
+func sortEntries[T any](entries []T, opts *options, getInfo func(T) iofs.FileInfo, getName func(T) string) {
 	if opts.sortSize {
 		slices.SortFunc(entries, func(a, b T) int {
 			sa, sb := getInfo(a).Size(), getInfo(b).Size()
@@ -320,9 +348,19 @@ func sortEntries[T any](entries []T, opts *options, getInfo func(T) iofs.FileInf
 			}
 			return 1
 		})
+	} else {
+		// Default: sort alphabetically by name.
+		slices.SortFunc(entries, func(a, b T) int {
+			na, nb := getName(a), getName(b)
+			if na < nb {
+				return -1
+			}
+			if na > nb {
+				return 1
+			}
+			return 0
+		})
 	}
-	// Default sort by name is already handled by ReadDir returning sorted entries.
-	// For files passed as args, they are sorted by name in the arg order.
 
 	if opts.reverse {
 		slices.Reverse(entries)
@@ -330,6 +368,9 @@ func sortEntries[T any](entries []T, opts *options, getInfo func(T) iofs.FileInf
 }
 
 func joinPath(dir, name string) string {
+	if len(dir) == 0 {
+		return name
+	}
 	if dir[len(dir)-1] == '/' {
 		return dir + name
 	}
