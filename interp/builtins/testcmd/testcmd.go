@@ -167,7 +167,10 @@ type parser struct {
 	args    []string
 	pos     int
 	err     bool
+	depth   int
 }
+
+const maxParenDepth = 128
 
 func evaluate(ctx context.Context, callCtx *builtins.CallContext, cmdName string, args []string) builtins.Result {
 	if len(args) == 0 {
@@ -233,12 +236,19 @@ func (p *parser) parseAnd() bool {
 
 // parseNot handles ! EXPR. When ! is the last remaining token, it is
 // treated as a non-empty string per POSIX single-argument rules.
+// When ! is followed by a binary operator (e.g., "! = !"), it is treated
+// as a literal string operand, not negation.
 func (p *parser) parseNot() bool {
 	if p.pos < len(p.args) && p.peek() == "!" {
 		remaining := len(p.args) - p.pos
 		if remaining == 1 {
 			p.advance()
 			return true
+		}
+		// If "!" is followed by a binary operator, treat it as a literal
+		// operand (fall through to parsePrimary for binary expression).
+		if remaining >= 3 && isBinaryOp(p.args[p.pos+1]) {
+			return p.parsePrimary()
 		}
 		p.advance()
 		return !p.parseNot()
@@ -259,10 +269,18 @@ func (p *parser) parsePrimary() bool {
 	cur := p.peek()
 	remaining := len(p.args) - p.pos
 
-	// Only treat "(" as grouping when there are enough tokens for a full
-	// parenthesized expression. A lone "(" with remaining==1 is a bare
-	// non-empty string per POSIX single-argument rules.
-	if cur == "(" && remaining > 1 {
+	// Only treat "(" as grouping when there are enough tokens and it is not
+	// used as a literal operand in a binary expression. A lone "(" with
+	// remaining==1 is a bare non-empty string per POSIX single-argument rules.
+	// When "(" is followed by a binary operator (e.g., "(" = "("), treat it
+	// as a literal string operand.
+	if cur == "(" && remaining > 1 && !(remaining >= 3 && isBinaryOp(p.args[p.pos+1])) {
+		if p.depth >= maxParenDepth {
+			p.callCtx.Errf("%s: expression too deeply nested\n", p.cmdName)
+			p.err = true
+			return false
+		}
+		p.depth++
 		p.advance()
 		if p.pos >= len(p.args) || p.peek() == ")" {
 			p.callCtx.Errf("%s: missing argument\n", p.cmdName)
@@ -270,6 +288,7 @@ func (p *parser) parsePrimary() bool {
 			return false
 		}
 		result := p.parseOr()
+		p.depth--
 		if p.err {
 			return false
 		}
