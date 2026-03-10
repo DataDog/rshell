@@ -9,8 +9,10 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"sync"
+	"time"
 
 	"mvdan.cc/sh/v3/expand"
 	"mvdan.cc/sh/v3/syntax"
@@ -212,7 +214,20 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 			OpenFile: func(ctx context.Context, path string, flags int, mode os.FileMode) (io.ReadWriteCloser, error) {
 				return r.open(ctx, path, flags, mode, false)
 			},
+			ReadDir: func(ctx context.Context, path string) ([]fs.DirEntry, error) {
+				return r.sandbox.readDir(r.handlerCtx(ctx, todoPos), path)
+			},
+			StatFile: func(ctx context.Context, path string) (fs.FileInfo, error) {
+				return r.sandbox.stat(r.handlerCtx(ctx, todoPos), path)
+			},
+			LstatFile: func(ctx context.Context, path string) (fs.FileInfo, error) {
+				return r.sandbox.lstat(r.handlerCtx(ctx, todoPos), path)
+			},
+			AccessFile: func(ctx context.Context, path string, mode uint32) error {
+				return r.sandbox.access(r.handlerCtx(ctx, todoPos), path, mode)
+			},
 			PortableErr: portableErrMsg,
+			Now:         time.Now,
 		}
 		if r.stdin != nil { // do not assign a typed nil into the io.Reader interface
 			call.Stdin = r.stdin

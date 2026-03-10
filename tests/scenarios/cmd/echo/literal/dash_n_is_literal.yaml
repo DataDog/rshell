@@ -1,10 +1,8 @@
-skip_assert_against_bash: true
-description: Echo treats -n as a literal argument, not as an option.
+description: Echo -n suppresses trailing newline (bash-compatible).
 input:
   script: |+
     echo -n hello
 expect:
-  stdout: |+
-    -n hello
+  stdout: "hello"
   stderr: ""
   exit_code: 0

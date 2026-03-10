@@ -110,13 +110,11 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/spf13/pflag"
-
 	"github.com/DataDog/rshell/interp/builtins"
 )
 
 // Cmd is the sort builtin command descriptor.
-var Cmd = builtins.Command{Name: "sort", Run: run}
+var Cmd = builtins.Command{Name: "sort", MakeFlags: registerFlags}
 
 // MaxLines caps the total number of lines that sort will buffer.
 const MaxLines = 100_000
@@ -181,10 +179,9 @@ const (
 
 var defaultNaN, _ = strconv.ParseFloat("NaN", 64)
 
-func run(ctx context.Context, callCtx *builtins.CallContext, args []string) builtins.Result {
-	fs := pflag.NewFlagSet("sort", pflag.ContinueOnError)
-	fs.SetOutput(io.Discard)
-
+// registerFlags registers all sort flags on the framework-provided FlagSet and
+// returns a bound handler whose flag variables are captured by closure.
+func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 	help := fs.Bool("help", false, "print usage and exit")
 	numericSort := fs.BoolP("numeric-sort", "n", false, "compare according to string numerical value")
 	generalNumeric := fs.BoolP("general-numeric-sort", "g", false, "compare according to general numerical value")
@@ -207,11 +204,7 @@ func run(ctx context.Context, callCtx *builtins.CallContext, args []string) buil
 	fs.BoolVarP(&checkFlag, "check", "c", false, "check for sorted input")
 	fs.BoolVarP(&checkQuietFlag, "check-quiet", "C", false, "like -c, but do not report first line")
 
-	if err := fs.Parse(args); err != nil {
-		callCtx.Errf("sort: %v\n", err)
-		return builtins.Result{Code: 2}
-	}
-
+	return func(ctx context.Context, callCtx *builtins.CallContext, args []string) builtins.Result {
 	if *help {
 		callCtx.Out("Usage: sort [OPTION]... [FILE]...\n")
 		callCtx.Out("Write sorted concatenation of all FILE(s) to standard output.\n")
@@ -353,6 +346,7 @@ func run(ctx context.Context, callCtx *builtins.CallContext, args []string) buil
 	}
 
 	return builtins.Result{}
+	}
 }
 
 // ---------------------------------------------------------------------------

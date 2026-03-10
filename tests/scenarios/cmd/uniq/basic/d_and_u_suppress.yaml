@@ -1,0 +1,14 @@
+# Derived from GNU coreutils uniq.pl test 120
+description: uniq -d -u suppresses all output.
+setup:
+  files:
+    - path: input.txt
+      content: "a\na\n"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    uniq -d -u input.txt
+expect:
+  stdout: ""
+  stderr: ""
+  exit_code: 0

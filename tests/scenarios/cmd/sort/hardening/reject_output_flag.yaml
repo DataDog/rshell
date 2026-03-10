@@ -11,4 +11,4 @@ input:
 expect:
   stdout: ""
   stderr_contains: ["sort:"]
-  exit_code: 2
+  exit_code: 1

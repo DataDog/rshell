@@ -298,7 +298,7 @@ func TestSortMissingFile(t *testing.T) {
 func TestSortUnknownFlag(t *testing.T) {
 	dir := t.TempDir()
 	_, stderr, code := cmdRun(t, "sort --follow f.txt", dir)
-	assert.Equal(t, 2, code)
+	assert.Equal(t, 1, code) // framework returns 1 for flag parse errors
 	assert.Contains(t, stderr, "sort:")
 }
 
