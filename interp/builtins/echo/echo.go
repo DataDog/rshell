@@ -3,6 +3,18 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2026-present Datadog, Inc.
 
+// Package echo implements the echo builtin command.
+//
+// echo — write arguments to standard output
+//
+// Usage: echo [ARG]...
+//
+// Write each ARG to standard output, separated by a single space,
+// followed by a newline.
+//
+// Exit codes:
+//
+//	0  Always succeeds.
 package echo
 
 import (

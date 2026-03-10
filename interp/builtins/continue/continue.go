@@ -3,6 +3,19 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2026-present Datadog, Inc.
 
+// Package continuecmd implements the continue builtin command.
+//
+// continue — resume the next iteration of a for, while, or until loop
+//
+// Usage: continue [N]
+//
+// Resume the next iteration of the innermost enclosing loop. If N is
+// specified, resume the Nth enclosing loop.
+//
+// Exit codes:
+//
+//	0  Iteration resumed successfully.
+//	1  Not inside a loop, or invalid argument.
 package continuecmd
 
 import (

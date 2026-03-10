@@ -3,6 +3,21 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2026-present Datadog, Inc.
 
+// Package exit implements the exit builtin command.
+//
+// exit — cause the shell to exit
+//
+// Usage: exit [N]
+//
+// Exit the shell with status N. If N is omitted, the exit status is
+// that of the last command executed. If N is not a valid integer, the
+// shell prints an error and exits with status 2.
+//
+// Exit codes:
+//
+//	N    The supplied exit status (truncated to uint8).
+//	2    Invalid (non-numeric) argument.
+//	1    Too many arguments.
 package exit
 
 import (

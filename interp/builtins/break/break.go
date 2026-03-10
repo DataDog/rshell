@@ -3,6 +3,19 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2026-present Datadog, Inc.
 
+// Package breakcmd implements the break builtin command.
+//
+// break — exit from a for, while, or until loop
+//
+// Usage: break [N]
+//
+// Exit from the innermost enclosing loop. If N is specified,
+// break out of N enclosing loops.
+//
+// Exit codes:
+//
+//	0  Loop exited successfully.
+//	1  Not inside a loop, or invalid argument.
 package breakcmd
 
 import (

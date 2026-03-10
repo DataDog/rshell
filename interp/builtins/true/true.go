@@ -3,6 +3,17 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2026-present Datadog, Inc.
 
+// Package truecmd implements the true builtin command.
+//
+// true — return a successful exit status
+//
+// Usage: true
+//
+// Do nothing and return an exit status of 0. All arguments are ignored.
+//
+// Exit codes:
+//
+//	0  Always succeeds.
 package truecmd
 
 import (

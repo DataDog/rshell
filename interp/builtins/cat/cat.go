@@ -3,6 +3,19 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2026-present Datadog, Inc.
 
+// Package cat implements the cat builtin command.
+//
+// cat — concatenate and print files
+//
+// Usage: cat [FILE]...
+//
+// Concatenate FILE(s) to standard output.
+// With no FILE, or when FILE is -, read standard input.
+//
+// Exit codes:
+//
+//	0  All files processed successfully.
+//	1  At least one error occurred (missing file, permission denied, etc.).
 package cat
 
 import (
