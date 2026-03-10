@@ -14,5 +14,9 @@ expect:
     - "-rw-r--r--"
     - "11"
     - "hello.txt"
+  stdout_contains_windows:
+    - "-rw-rw-rw-"
+    - "11"
+    - "hello.txt"
   stderr: ""
   exit_code: 0
