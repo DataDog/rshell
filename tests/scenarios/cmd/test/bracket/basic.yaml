@@ -1,0 +1,11 @@
+# Derived from uutils test_bracket_syntax_success and test_bracket_syntax_failure
+description: "[ ] bracket syntax basic usage"
+input:
+  script: |+
+    [ 1 -eq 1 ] && echo eq
+    [ 1 -eq 2 ] || echo neq
+    [ "hello" = "hello" ] && echo str
+expect:
+  stdout: "eq\nneq\nstr\n"
+  stderr: ""
+  exit_code: 0

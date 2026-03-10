@@ -1,0 +1,12 @@
+# Derived from GNU coreutils test.pl less-collate and greater-collate
+description: lexicographic string comparison with < and >
+input:
+  script: |+
+    test "a" \< "b" && echo lt1
+    test "a" \< "a" || echo lt2
+    test "b" \> "a" && echo gt1
+    test "a" \> "a" || echo gt2
+expect:
+  stdout: "lt1\nlt2\ngt1\ngt2\n"
+  stderr: ""
+  exit_code: 0

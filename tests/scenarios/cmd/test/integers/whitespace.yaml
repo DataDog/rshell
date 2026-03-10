@@ -1,0 +1,10 @@
+# Derived from uutils test_integer_whitespace_stripping
+description: whitespace is stripped from integer operands
+input:
+  script: |+
+    test 42 -eq " 42 " && echo ws1
+    test " 42" -eq 42 && echo ws2
+expect:
+  stdout: "ws1\nws2\n"
+  stderr: ""
+  exit_code: 0

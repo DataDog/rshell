@@ -1,0 +1,10 @@
+# Derived from uutils test_double_equal_is_string_comparison_op
+description: == operator is alias for =
+input:
+  script: |+
+    test "t" == "t" && echo eq
+    test "t" == "f" || echo neq
+expect:
+  stdout: "eq\nneq\n"
+  stderr: ""
+  exit_code: 0

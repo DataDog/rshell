@@ -1,0 +1,7 @@
+description: --help prints usage information
+input:
+  script: |+
+    test --help
+expect:
+  stdout_contains: ["Usage: test"]
+  exit_code: 0

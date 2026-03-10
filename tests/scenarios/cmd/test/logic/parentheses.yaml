@@ -1,0 +1,12 @@
+# Derived from GNU coreutils test.pl paren-1..5
+description: parenthesized expressions
+input:
+  script: |+
+    test "(" "hello" ")" && echo p1
+    test "(" "" ")" || echo p2
+    test "(" "!" ")" && echo p3
+    test "(" "-a" ")" && echo p4
+expect:
+  stdout: "p1\np2\np3\np4\n"
+  stderr: ""
+  exit_code: 0

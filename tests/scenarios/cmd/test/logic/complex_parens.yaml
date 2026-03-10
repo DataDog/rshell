@@ -1,0 +1,8 @@
+# Derived from uutils test_complicated_parenthesized_expression
+description: complex nested parenthesized expression
+input:
+  script: |+
+    test "(" "(" "!" "(" "a" "=" "b" ")" "-o" "c" "=" "d" ")" "-a" "(" "q" "!=" "r" ")" ")" && echo yes
+expect:
+  stdout: "yes\n"
+  exit_code: 0

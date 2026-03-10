@@ -1,0 +1,18 @@
+# Derived from uutils test_is_not_empty and test_empty_file_is_not_not_empty
+description: -s tests for file size greater than zero
+setup:
+  files:
+    - path: nonempty.txt
+      content: "data"
+    - path: empty.txt
+      content: ""
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    test -s nonempty.txt && echo has_size
+    test -s empty.txt || echo empty
+    test -s nonexistent || echo missing
+expect:
+  stdout: "has_size\nempty\nmissing\n"
+  stderr: ""
+  exit_code: 0

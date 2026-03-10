@@ -1,0 +1,12 @@
+# Derived from GNU coreutils test.pl 1f..1k — special strings as literals
+description: special strings treated as non-empty literals in one-arg form
+input:
+  script: |+
+    test "-" && echo dash
+    test "--" && echo ddash
+    test "-0" && echo zero
+    test "-f" && echo f
+expect:
+  stdout: "dash\nddash\nzero\nf\n"
+  stderr: ""
+  exit_code: 0

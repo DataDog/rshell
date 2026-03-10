@@ -1,0 +1,8 @@
+# Derived from uutils test_float_inequality_is_error and GNU coreutils test.pl inv-1
+description: invalid integers produce exit code 2 with error message
+input:
+  script: |+
+    test 123.45 -ge 6
+expect:
+  stderr: "test: invalid integer '123.45'\n"
+  exit_code: 2

@@ -1,0 +1,9 @@
+# Derived from GNU coreutils test.pl 1c — non-empty string is true
+description: test with non-empty string returns true
+input:
+  script: |+
+    test "any-string" && echo yes
+expect:
+  stdout: "yes\n"
+  stderr: ""
+  exit_code: 0

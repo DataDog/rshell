@@ -1,0 +1,8 @@
+# Derived from uutils test_op_precedence_and_or_1
+description: -a has higher precedence than -o
+input:
+  script: |+
+    test " " -o "" -a "" && echo yes
+expect:
+  stdout: "yes\n"
+  exit_code: 0

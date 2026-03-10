@@ -1,0 +1,8 @@
+# Derived from uutils test_erroneous_parenthesized_expression
+description: extra argument after valid expression produces error
+input:
+  script: |+
+    test "a" "!=" "(" "b" "-a" "b" ")" "!=" "c"
+expect:
+  stderr_contains: ["extra argument"]
+  exit_code: 2

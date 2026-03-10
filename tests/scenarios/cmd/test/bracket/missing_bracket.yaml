@@ -1,0 +1,8 @@
+# Derived from uutils test_bracket_syntax_missing_right_bracket
+description: "[ without closing ] produces error with exit code 2"
+input:
+  script: |+
+    [ 1 -eq 2
+expect:
+  stderr: "[: missing ']'\n"
+  exit_code: 2

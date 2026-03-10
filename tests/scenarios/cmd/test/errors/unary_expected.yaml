@@ -1,0 +1,8 @@
+# Derived from GNU coreutils test-diag.pl — unary operator expected
+description: invalid unary operator in two-arg form produces error
+input:
+  script: |+
+    test -o arg
+expect:
+  stderr: "test: '-o': unary operator expected\n"
+  exit_code: 2

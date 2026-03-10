@@ -39,9 +39,20 @@ var builtinAllowedSymbols = []string{
 	"io.NopCloser",
 	"io.ReadCloser",
 	"io.Reader",
+	"os.FileInfo",
+	"os.ModeCharDevice",
+	"os.ModeDevice",
+	"os.ModeNamedPipe",
+	"os.ModeSetgid",
+	"os.ModeSetuid",
+	"os.ModeSocket",
+	"os.ModeSticky",
+	"os.ModeSymlink",
 	"os.O_RDONLY",
+	"os.SameFile",
 	"strconv.Atoi",
 	"strconv.ParseInt",
+	"strings.TrimSpace",
 }
 
 // permanentlyBanned lists packages that may never be imported by builtin

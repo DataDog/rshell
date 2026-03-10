@@ -1,0 +1,17 @@
+# Derived from GNU coreutils test.pl eq-1..5 and uutils test_some_int_compares
+description: integer comparison operators
+input:
+  script: |+
+    test 9 -eq 9 && echo eq1
+    test 0 -eq 0 && echo eq2
+    test 0 -eq 00 && echo eq3
+    test 8 -eq 9 || echo neq
+    test 0 -ne 1 && echo ne1
+    test 421 -lt 3720 && echo lt1
+    test 0 -le 0 && echo le1
+    test 11 -gt 10 && echo gt1
+    test 1024 -ge 512 && echo ge1
+expect:
+  stdout: "eq1\neq2\neq3\nneq\nne1\nlt1\nle1\ngt1\nge1\n"
+  stderr: ""
+  exit_code: 0

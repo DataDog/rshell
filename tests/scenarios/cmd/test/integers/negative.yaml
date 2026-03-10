@@ -1,0 +1,14 @@
+# Derived from uutils test_negative_int_compare
+description: negative integer comparisons
+input:
+  script: |+
+    test -1 -eq -1 && echo eq
+    test -1 -ne -2 && echo ne
+    test -3720 -lt -421 && echo lt
+    test -10 -le -10 && echo le
+    test -21 -gt -22 && echo gt
+    test -128 -ge -256 && echo ge
+expect:
+  stdout: "eq\nne\nlt\nle\ngt\nge\n"
+  stderr: ""
+  exit_code: 0

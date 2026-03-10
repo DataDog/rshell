@@ -1,0 +1,18 @@
+# Derived from uutils test_file_exists, test_file_exists_and_is_regular, test_directory
+description: file existence and type tests
+setup:
+  files:
+    - path: regular.txt
+      content: "hello"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    test -e regular.txt && echo exists
+    test -e nonexistent || echo noexist
+    test -f regular.txt && echo regular
+    test -d . && echo dir
+    test -d regular.txt || echo notdir
+expect:
+  stdout: "exists\nnoexist\nregular\ndir\nnotdir\n"
+  stderr: ""
+  exit_code: 0

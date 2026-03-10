@@ -1,0 +1,16 @@
+# Derived from GNU coreutils test.pl and-1..4 and or-1..4
+description: logical AND and OR operators
+input:
+  script: |+
+    test "t" -a "t" && echo and1
+    test "" -a "t" || echo and2
+    test "t" -a "" || echo and3
+    test "" -a "" || echo and4
+    test "t" -o "t" && echo or1
+    test "" -o "t" && echo or2
+    test "t" -o "" && echo or3
+    test "" -o "" || echo or4
+expect:
+  stdout: "and1\nand2\nand3\nand4\nor1\nor2\nor3\nor4\n"
+  stderr: ""
+  exit_code: 0

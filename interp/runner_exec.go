@@ -9,6 +9,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"sync"
 
@@ -23,6 +24,7 @@ import (
 	_ "github.com/DataDog/rshell/interp/builtins/exit"
 	_ "github.com/DataDog/rshell/interp/builtins/false"
 	_ "github.com/DataDog/rshell/interp/builtins/head"
+	_ "github.com/DataDog/rshell/interp/builtins/test"
 	_ "github.com/DataDog/rshell/interp/builtins/true"
 )
 
@@ -215,6 +217,18 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 			LastExitCode: r.lastExit.code,
 			OpenFile: func(ctx context.Context, path string, flags int, mode os.FileMode) (io.ReadWriteCloser, error) {
 				return r.open(ctx, path, flags, mode, false)
+			},
+			StatFile: func(ctx context.Context, path string) (fs.FileInfo, error) {
+				if r.sandbox == nil {
+					return nil, &os.PathError{Op: "stat", Path: path, Err: os.ErrPermission}
+				}
+				return r.sandbox.stat(r.handlerCtx(ctx, todoPos), path)
+			},
+			LstatFile: func(ctx context.Context, path string) (fs.FileInfo, error) {
+				if r.sandbox == nil {
+					return nil, &os.PathError{Op: "lstat", Path: path, Err: os.ErrPermission}
+				}
+				return r.sandbox.lstat(r.handlerCtx(ctx, todoPos), path)
 			},
 			PortableErr: portableErrMsg,
 		}

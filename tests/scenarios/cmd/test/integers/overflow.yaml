@@ -1,0 +1,9 @@
+# Derived from uutils test_long_integer — overflow integers
+description: integer overflow values produce errors
+skip_assert_against_bash: true
+input:
+  script: |+
+    test 18446744073709551616 -eq 0
+expect:
+  stderr_contains: ["invalid integer"]
+  exit_code: 2

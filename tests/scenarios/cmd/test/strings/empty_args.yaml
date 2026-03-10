@@ -1,0 +1,9 @@
+# Derived from GNU coreutils test.pl 1a — empty args = false
+description: test with no arguments returns false
+input:
+  script: |+
+    test
+expect:
+  stdout: ""
+  stderr: ""
+  exit_code: 1

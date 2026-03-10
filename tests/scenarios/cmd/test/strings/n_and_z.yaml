@@ -1,0 +1,12 @@
+# Derived from GNU coreutils test.pl 1b, 1d — -n and -z operators
+description: -n returns true for non-empty, -z returns true for empty
+input:
+  script: |+
+    test -z "" && echo z_empty
+    test -z "abc" || echo z_notempty
+    test -n "abc" && echo n_notempty
+    test -n "" || echo n_empty
+expect:
+  stdout: "z_empty\nz_notempty\nn_notempty\nn_empty\n"
+  stderr: ""
+  exit_code: 0

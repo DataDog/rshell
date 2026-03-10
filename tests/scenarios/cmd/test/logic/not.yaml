@@ -1,0 +1,12 @@
+# Derived from yash test-p.tst negation tests
+description: logical NOT operator
+input:
+  script: |+
+    test ! "" && echo not1
+    test ! "A" || echo not2
+    test ! -n "" && echo not3
+    test ! -n "x" || echo not4
+expect:
+  stdout: "not1\nnot2\nnot3\nnot4\n"
+  stderr: ""
+  exit_code: 0

@@ -1,0 +1,9 @@
+# Derived from GNU coreutils test.pl 1e — empty string is false
+description: test with empty string returns false
+input:
+  script: |+
+    test "" && echo yes || echo no
+expect:
+  stdout: "no\n"
+  stderr: ""
+  exit_code: 0
