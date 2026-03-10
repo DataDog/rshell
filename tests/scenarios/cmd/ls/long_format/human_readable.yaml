@@ -1,0 +1,17 @@
+description: ls -lh shows human-readable sizes.
+skip_assert_against_bash: true
+setup:
+  files:
+    - path: tiny.txt
+      content: "x"
+      chmod: 0644
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    ls -lh tiny.txt
+expect:
+  stdout_contains:
+    - "-rw-r--r--"
+    - "tiny.txt"
+  stderr: ""
+  exit_code: 0

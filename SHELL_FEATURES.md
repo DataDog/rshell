@@ -12,6 +12,7 @@ Blocked features are rejected before execution with exit code 2.
 - ✅ `exit [N]` — exit the shell with status N (default 0)
 - ✅ `false` — return exit code 1
 - ✅ `head [-n N|-c N] [-q|-v] [-z] [FILE]...` — output the first part of files (default: first 10 lines)
+- ✅ `ls [-1aAdFhlpRrSt] [FILE]...` — list directory contents
 - ✅ `tail [-n N|-c N] [-q|-v] [-z] [FILE]...` — output the last part of files (default: last 10 lines); supports `+N` offset mode; `-f`/`--follow` is rejected
 - ✅ `true` — return exit code 0
 - ✅ `uniq [OPTION]... [INPUT]` — report or omit repeated lines

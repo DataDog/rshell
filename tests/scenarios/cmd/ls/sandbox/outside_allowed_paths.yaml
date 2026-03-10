@@ -1,0 +1,14 @@
+description: ls outside allowed_paths returns permission denied.
+skip_assert_against_bash: true
+setup:
+  files:
+    - path: inside.txt
+      content: "ok"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    ls /etc
+expect:
+  stdout: ""
+  stderr: "ls: cannot access '/etc': permission denied\n"
+  exit_code: 1
