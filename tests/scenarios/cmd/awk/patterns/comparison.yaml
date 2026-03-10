@@ -1,0 +1,14 @@
+# Comparison pattern
+description: awk comparison pattern matches lines.
+setup:
+  files:
+    - path: file.txt
+      content: "1\n2\n3\n4\n5\n"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    awk '$1 > 3' file.txt
+expect:
+  stdout: "4\n5\n"
+  stderr: ""
+  exit_code: 0

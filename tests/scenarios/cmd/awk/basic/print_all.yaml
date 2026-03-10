@@ -1,0 +1,14 @@
+# Basic awk: print all lines
+description: awk with no pattern prints all lines.
+setup:
+  files:
+    - path: file.txt
+      content: "alpha\nbeta\ngamma\n"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    awk '{print}' file.txt
+expect:
+  stdout: "alpha\nbeta\ngamma\n"
+  stderr: ""
+  exit_code: 0

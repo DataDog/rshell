@@ -1,0 +1,9 @@
+# While loop
+description: awk while loop iterates correctly.
+input:
+  script: |+
+    awk 'BEGIN {i=1; while (i<=3) {print i; i++}}'
+expect:
+  stdout: "1\n2\n3\n"
+  stderr: ""
+  exit_code: 0

@@ -1,0 +1,11 @@
+# Blocked: output redirection
+description: awk blocks output redirection for safety.
+skip_assert_against_bash: true
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    awk 'BEGIN {print "bad" > "/tmp/evil"}'
+expect:
+  stdout: ""
+  stderr_contains: ["awk:"]
+  exit_code: 1

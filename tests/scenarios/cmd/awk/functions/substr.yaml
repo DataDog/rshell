@@ -1,0 +1,14 @@
+# String function: substr
+description: awk substr extracts substrings.
+setup:
+  files:
+    - path: file.txt
+      content: "hello world\n"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    awk '{print substr($0, 1, 5)}' file.txt
+expect:
+  stdout: "hello\n"
+  stderr: ""
+  exit_code: 0

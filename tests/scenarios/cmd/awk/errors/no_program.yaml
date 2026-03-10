@@ -1,0 +1,9 @@
+# Error: no program text
+description: awk exits 1 with no program text.
+input:
+  script: |+
+    awk
+expect:
+  stdout: ""
+  stderr_contains: ["awk:"]
+  exit_code: 1

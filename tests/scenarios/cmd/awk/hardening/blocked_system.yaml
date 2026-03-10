@@ -1,0 +1,10 @@
+# Blocked: system() function
+description: awk blocks system() for safety.
+skip_assert_against_bash: true
+input:
+  script: |+
+    awk 'BEGIN {system("echo bad")}'
+expect:
+  stdout: ""
+  stderr_contains: ["awk:"]
+  exit_code: 1

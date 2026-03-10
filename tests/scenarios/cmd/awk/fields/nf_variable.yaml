@@ -1,0 +1,14 @@
+# NF built-in variable
+description: awk NF gives the number of fields.
+setup:
+  files:
+    - path: file.txt
+      content: "one two three\nfour five\n"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    awk '{print NF}' file.txt
+expect:
+  stdout: "3\n2\n"
+  stderr: ""
+  exit_code: 0

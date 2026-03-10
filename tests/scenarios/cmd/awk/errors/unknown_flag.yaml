@@ -1,0 +1,10 @@
+# Error: unknown flag
+description: awk exits 1 on unknown flag.
+skip_assert_against_bash: true
+input:
+  script: |+
+    awk --unknown '{print}'
+expect:
+  stdout: ""
+  stderr_contains: ["awk:"]
+  exit_code: 1

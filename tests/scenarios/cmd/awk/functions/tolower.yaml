@@ -1,0 +1,14 @@
+# String function: tolower/toupper
+description: awk tolower and toupper convert case.
+setup:
+  files:
+    - path: file.txt
+      content: "Hello World\n"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    awk '{print tolower($0)}' file.txt
+expect:
+  stdout: "hello world\n"
+  stderr: ""
+  exit_code: 0

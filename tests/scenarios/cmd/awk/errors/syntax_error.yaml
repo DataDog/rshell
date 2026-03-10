@@ -1,0 +1,9 @@
+# Error: syntax error in program
+description: awk exits 1 on syntax error.
+input:
+  script: |+
+    awk '{print' /dev/null
+expect:
+  stdout: ""
+  stderr_contains: ["awk:"]
+  exit_code: 1

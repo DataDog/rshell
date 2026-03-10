@@ -1,0 +1,14 @@
+# Basic awk: print specific fields
+description: awk prints specific fields from input.
+setup:
+  files:
+    - path: file.txt
+      content: "one two three\nfour five six\n"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    awk '{print $1, $3}' file.txt
+expect:
+  stdout: "one three\nfour six\n"
+  stderr: ""
+  exit_code: 0

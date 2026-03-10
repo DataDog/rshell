@@ -1,0 +1,14 @@
+# Empty file handling
+description: awk handles empty files without error.
+setup:
+  files:
+    - path: empty.txt
+      content: ""
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    awk '{print}' empty.txt
+expect:
+  stdout: ""
+  stderr: ""
+  exit_code: 0

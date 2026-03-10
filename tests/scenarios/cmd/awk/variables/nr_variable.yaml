@@ -1,0 +1,14 @@
+# NR built-in variable
+description: awk NR gives the record number.
+setup:
+  files:
+    - path: file.txt
+      content: "alpha\nbeta\ngamma\n"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    awk '{print NR, $0}' file.txt
+expect:
+  stdout: "1 alpha\n2 beta\n3 gamma\n"
+  stderr: ""
+  exit_code: 0

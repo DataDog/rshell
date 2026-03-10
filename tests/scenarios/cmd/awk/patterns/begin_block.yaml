@@ -1,0 +1,14 @@
+# BEGIN block
+description: awk BEGIN block executes before input processing.
+setup:
+  files:
+    - path: file.txt
+      content: "data\n"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    awk 'BEGIN {print "start"} {print $0}' file.txt
+expect:
+  stdout: "start\ndata\n"
+  stderr: ""
+  exit_code: 0

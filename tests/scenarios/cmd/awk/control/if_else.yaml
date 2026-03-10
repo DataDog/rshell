@@ -1,0 +1,14 @@
+# If-else control flow
+description: awk if-else conditional execution.
+setup:
+  files:
+    - path: file.txt
+      content: "1\n2\n3\n4\n"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    awk '{if ($1 % 2 == 0) print "even"; else print "odd"}' file.txt
+expect:
+  stdout: "odd\neven\nodd\neven\n"
+  stderr: ""
+  exit_code: 0

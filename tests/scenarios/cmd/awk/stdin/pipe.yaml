@@ -1,0 +1,14 @@
+# Stdin: awk reads from stdin when no files given
+description: awk reads from stdin by default.
+setup:
+  files:
+    - path: data.txt
+      content: "hello\nworld\n"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    cat data.txt | awk '{print toupper($0)}'
+expect:
+  stdout: "HELLO\nWORLD\n"
+  stderr: ""
+  exit_code: 0

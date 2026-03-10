@@ -1,0 +1,14 @@
+# String function: length
+description: awk length() returns string length.
+setup:
+  files:
+    - path: file.txt
+      content: "hello\nhi\n"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    awk '{print length($0)}' file.txt
+expect:
+  stdout: "5\n2\n"
+  stderr: ""
+  exit_code: 0

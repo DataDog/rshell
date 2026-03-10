@@ -1,0 +1,10 @@
+# Error: missing file
+description: awk exits 1 when file does not exist.
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    awk '{print}' nonexistent.txt
+expect:
+  stdout: ""
+  stderr_contains: ["awk:"]
+  exit_code: 1

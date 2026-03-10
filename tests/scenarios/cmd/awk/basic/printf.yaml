@@ -1,0 +1,14 @@
+# printf formatting
+description: awk printf formats output.
+setup:
+  files:
+    - path: file.txt
+      content: "hello\nworld\n"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    awk '{printf "%d: %s\n", NR, $0}' file.txt
+expect:
+  stdout: "1: hello\n2: world\n"
+  stderr: ""
+  exit_code: 0

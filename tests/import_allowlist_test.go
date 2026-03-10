@@ -32,12 +32,18 @@ import (
 // All packages not listed here are implicitly banned, including all
 // third-party packages and other internal module packages.
 var builtinAllowedSymbols = []string{
+	// bufio.NewReader — buffered reader for streaming input; no write or exec capability.
+	"bufio.NewReader",
 	// bufio.NewScanner — line-by-line input reading (e.g. head, cat); no write or exec capability.
 	"bufio.NewScanner",
 	// context.Context — deadline/cancellation plumbing; pure interface, no side effects.
 	"context.Context",
 	// errors.Is — error comparison; pure function, no I/O.
 	"errors.Is",
+	// fmt.Errorf — error formatting; pure function, no I/O.
+	"fmt.Errorf",
+	// fmt.Sprintf — string formatting; pure function, no I/O.
+	"fmt.Sprintf",
 	// pflag.ContinueOnError — flag parse-error mode constant; no side effects.
 	"github.com/spf13/pflag.ContinueOnError",
 	// pflag.NewFlagSet — CLI flag parsing; operates only on string slices, no I/O.
@@ -54,12 +60,80 @@ var builtinAllowedSymbols = []string{
 	"io.ReadCloser",
 	// io.Reader — interface type; no side effects.
 	"io.Reader",
+	// io.WriteString — writes string to writer; pure function on provided writer.
+	"io.WriteString",
+	// io.Writer — interface type; no side effects.
+	"io.Writer",
+	// math.Atan2 — arc tangent; pure math function, no I/O.
+	"math.Atan2",
+	// math.Cos — cosine; pure math function, no I/O.
+	"math.Cos",
+	// math.Exp — exponential; pure math function, no I/O.
+	"math.Exp",
+	// math.Inf — infinity constant; pure function, no I/O.
+	"math.Inf",
+	// math.IsInf — infinity check; pure function, no I/O.
+	"math.IsInf",
+	// math.Log — natural log; pure math function, no I/O.
+	"math.Log",
+	// math.Mod — modulo; pure math function, no I/O.
+	"math.Mod",
+	// math.Pow — power; pure math function, no I/O.
+	"math.Pow",
+	// math.Sin — sine; pure math function, no I/O.
+	"math.Sin",
+	// math.Sqrt — square root; pure math function, no I/O.
+	"math.Sqrt",
+	// math/rand.New — seeded random source; pure function, no I/O.
+	"math/rand.New",
+	// math/rand.NewSource — random seed source; pure function, no I/O.
+	"math/rand.NewSource",
+	// math/rand.Rand — random number generator type; pure, no I/O.
+	"math/rand.Rand",
 	// os.O_RDONLY — read-only file flag constant; cannot open files by itself.
 	"os.O_RDONLY",
+	// regexp.Compile — compiles a regex; pure function, no I/O. Uses Go RE2 (linear time, no ReDoS).
+	"regexp.Compile",
+	// regexp.Regexp — compiled regex type; pure, no I/O.
+	"regexp.Regexp",
+	// sort.Strings — sorts string slice in place; pure function, no I/O.
+	"sort.Strings",
 	// strconv.Atoi — string-to-int conversion; pure function, no I/O.
 	"strconv.Atoi",
+	// strconv.FormatFloat — float-to-string conversion; pure function, no I/O.
+	"strconv.FormatFloat",
+	// strconv.FormatInt — int-to-string conversion; pure function, no I/O.
+	"strconv.FormatInt",
+	// strconv.Itoa — int-to-string conversion; pure function, no I/O.
+	"strconv.Itoa",
+	// strconv.ParseFloat — string-to-float conversion; pure function, no I/O.
+	"strconv.ParseFloat",
 	// strconv.ParseInt — string-to-int conversion with base/bit-size; pure function, no I/O.
 	"strconv.ParseInt",
+	// strings.Builder — efficient string building; pure in-memory, no I/O.
+	"strings.Builder",
+	// strings.Contains — substring check; pure function, no I/O.
+	"strings.Contains",
+	// strings.Fields — splits on whitespace; pure function, no I/O.
+	"strings.Fields",
+	// strings.Index — finds substring position; pure function, no I/O.
+	"strings.Index",
+	// strings.IndexByte — finds byte position; pure function, no I/O.
+	"strings.IndexByte",
+	// strings.Join — joins strings; pure function, no I/O.
+	"strings.Join",
+	// strings.Replace — replaces substrings; pure function, no I/O.
+	"strings.Replace",
+	// strings.Split — splits string; pure function, no I/O.
+	"strings.Split",
+	// strings.ToLower — lowercase conversion; pure function, no I/O.
+	"strings.ToLower",
+	// strings.ToUpper — uppercase conversion; pure function, no I/O.
+	"strings.ToUpper",
+	// strings.TrimSpace — trims whitespace; pure function, no I/O.
+	"strings.TrimSpace",
+	// unicode/utf8.RuneCountInString — counts runes; pure function, no I/O.
+	"unicode/utf8.RuneCountInString",
 }
 
 // permanentlyBanned lists packages that may never be imported by builtin

@@ -1,0 +1,14 @@
+# Arrays and for-in
+description: awk arrays and for-in iteration.
+setup:
+  files:
+    - path: file.txt
+      content: "a\nb\na\nc\nb\na\n"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    awk '{count[$1]++} END {for (k in count) print k, count[k]}' file.txt
+expect:
+  stdout: "a 3\nb 2\nc 1\n"
+  stderr: ""
+  exit_code: 0

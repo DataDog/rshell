@@ -1,0 +1,16 @@
+# Multiple files
+description: awk processes multiple files.
+setup:
+  files:
+    - path: a.txt
+      content: "one\n"
+    - path: b.txt
+      content: "two\n"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    awk '{print FILENAME, $0}' a.txt b.txt
+expect:
+  stdout: "a.txt one\nb.txt two\n"
+  stderr: ""
+  exit_code: 0

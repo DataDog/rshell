@@ -1,0 +1,14 @@
+# Field separator flag
+description: awk -F sets the field separator.
+setup:
+  files:
+    - path: file.csv
+      content: "a:b:c\nd:e:f\n"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    awk -F: '{print $2}' file.csv
+expect:
+  stdout: "b\ne\n"
+  stderr: ""
+  exit_code: 0

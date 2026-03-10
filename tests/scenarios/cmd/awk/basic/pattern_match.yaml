@@ -1,0 +1,14 @@
+# Basic awk: default print action
+description: awk with pattern prints matching lines.
+setup:
+  files:
+    - path: file.txt
+      content: "hello world\nfoo bar\nhello again\n"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    awk '/hello/' file.txt
+expect:
+  stdout: "hello world\nhello again\n"
+  stderr: ""
+  exit_code: 0

@@ -1,0 +1,11 @@
+# Outside allowed paths
+description: awk rejects files outside allowed paths.
+skip_assert_against_bash: true
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    awk '{print}' /etc/passwd
+expect:
+  stdout: ""
+  stderr_contains: ["awk:"]
+  exit_code: 1

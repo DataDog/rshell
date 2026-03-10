@@ -1,0 +1,14 @@
+# Variable assignment with -v
+description: awk -v assigns variables before execution.
+setup:
+  files:
+    - path: file.txt
+      content: "hello\n"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    awk -v greeting=hi '{print greeting, $0}' file.txt
+expect:
+  stdout: "hi hello\n"
+  stderr: ""
+  exit_code: 0
