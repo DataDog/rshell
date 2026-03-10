@@ -1,9 +1,0 @@
----
-functions:
-  inherit:
-  - code: |-
-      systemd-resolve --status
-    contexts:
-      sudo:
-    from: less
-...
