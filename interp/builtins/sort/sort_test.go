@@ -190,6 +190,24 @@ func TestSortCheckUniqueSorted(t *testing.T) {
 	assert.Equal(t, 0, code)
 }
 
+func TestSortNumericLargeIntegers(t *testing.T) {
+	// sort -n should correctly order very large integers (beyond float64 precision).
+	dir := t.TempDir()
+	writeFile(t, dir, "f.txt", "100000000000000000000\n99999999999999999999\n")
+	stdout, _, code := cmdRun(t, "sort -n f.txt", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "99999999999999999999\n100000000000000000000\n", stdout)
+}
+
+func TestSortCheckInvalidValue(t *testing.T) {
+	// --check=foo should be rejected.
+	dir := t.TempDir()
+	writeFile(t, dir, "f.txt", "a\nb\n")
+	_, stderr, code := cmdRun(t, "sort --check=foo f.txt", dir)
+	assert.Equal(t, 2, code)
+	assert.Contains(t, stderr, "invalid argument")
+}
+
 func TestSortNumericDecimal(t *testing.T) {
 	// sort -n should handle decimal numbers.
 	dir := t.TempDir()
@@ -237,6 +255,18 @@ func TestSortFieldSeparatorKey(t *testing.T) {
 	stdout, _, code := cmdRun(t, "sort -t : -k 2 f.txt", dir)
 	assert.Equal(t, 0, code)
 	assert.Equal(t, "a:1\nb:2\nc:3\n", stdout)
+}
+
+func TestSortFieldSeparatorPreservedInKey(t *testing.T) {
+	// When -t is used, the separator must be preserved in multi-field keys.
+	// If we incorrectly join with space, "a b" and "a:b" would compare equal.
+	dir := t.TempDir()
+	writeFile(t, dir, "f.txt", "x:a b\ny:a:b\n")
+	stdout, _, code := cmdRun(t, "sort -t : -k 2 f.txt", dir)
+	assert.Equal(t, 0, code)
+	// "a b" (single field containing space) < "a:b" (two fields joined with :)
+	// because ' ' (0x20) < ':' (0x3a) in byte comparison.
+	assert.Equal(t, "x:a b\ny:a:b\n", stdout)
 }
 
 func TestSortNumericKey(t *testing.T) {

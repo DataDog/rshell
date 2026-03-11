@@ -163,8 +163,11 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			switch *checkFlag {
 			case "silent", "quiet":
 				checkSilent = true
-			case "diagnose", "":
+			case "diagnose", "diagnose-first", "":
 				// default: print diagnostic
+			default:
+				callCtx.Errf("sort: invalid argument %q for '--check'\n", *checkFlag)
+				return builtins.Result{Code: 2}
 			}
 		}
 		if *checkSilentShort {
@@ -216,6 +219,9 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 		disableLastResort := *stable || *unique
 		cmpFn := buildCompare(keys, globalOpts, sep, hasSep, disableLastResort)
 
+		// Shared byte counter across all files for cumulative memory tracking.
+		var totalBytes int64
+
 		// Check mode: verify the file is sorted (matches GNU).
 		// GNU sort -c rejects multiple file operands.
 		if checkEnabled {
@@ -224,7 +230,7 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 				return builtins.Result{Code: 2}
 			}
 			file := files[0]
-			lines, err := readFile(ctx, callCtx, file)
+			lines, err := readFile(ctx, callCtx, file, &totalBytes)
 			if err != nil {
 				name := file
 				if file == "-" {
@@ -242,7 +248,7 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			if ctx.Err() != nil {
 				return builtins.Result{Code: 1}
 			}
-			lines, err := readFile(ctx, callCtx, file)
+			lines, err := readFile(ctx, callCtx, file, &totalBytes)
 			if err != nil {
 				name := file
 				if file == "-" {
@@ -287,7 +293,8 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 }
 
 // readFile reads all lines from a file (or stdin for "-"), stripping trailing newlines.
-func readFile(ctx context.Context, callCtx *builtins.CallContext, file string) ([]string, error) {
+// totalBytes is a shared counter across all files for cumulative byte tracking.
+func readFile(ctx context.Context, callCtx *builtins.CallContext, file string, totalBytes *int64) ([]string, error) {
 	var rc io.ReadCloser
 	if file == "-" {
 		if callCtx.Stdin == nil {
@@ -308,14 +315,13 @@ func readFile(ctx context.Context, callCtx *builtins.CallContext, file string) (
 	sc.Buffer(buf, MaxLineBytes)
 
 	var lines []string
-	var totalBytes int64
 	for sc.Scan() {
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
 		line := sc.Text()
-		totalBytes += int64(len(line))
-		if totalBytes > MaxTotalBytes {
+		*totalBytes += int64(len(line))
+		if *totalBytes > MaxTotalBytes {
 			return nil, errors.New("input exceeds maximum total size")
 		}
 		lines = append(lines, line)
@@ -479,12 +485,14 @@ func mergeOpts(a, b keyOpts) keyOpts {
 // extractKey extracts the sort key substring from a line based on a keySpec.
 func extractKey(line string, k keySpec, sep byte, hasSep bool) string {
 	var fields []string
+	joiner := " " // default: blank-separated fields rejoin with space
 	if hasSep {
 		fields = strings.Split(line, string(sep))
+		joiner = string(sep) // preserve the actual separator
 	} else {
 		fields = splitBlankFields(line)
 	}
-	return extractKeyFromFields(fields, k)
+	return extractKeyFromFields(fields, k, joiner)
 }
 
 // splitBlankFields splits a line into fields using blank-to-non-blank transitions.
@@ -510,7 +518,9 @@ func splitBlankFields(line string) []string {
 }
 
 // extractKeyFromFields extracts a key substring from pre-split fields.
-func extractKeyFromFields(fields []string, k keySpec) string {
+// joiner is the string used to rejoin multiple fields (the actual separator
+// when -t is used, or " " for blank-separated fields).
+func extractKeyFromFields(fields []string, k keySpec, joiner string) string {
 	sf := k.startField - 1
 	if sf >= len(fields) {
 		return ""
@@ -518,7 +528,7 @@ func extractKeyFromFields(fields []string, k keySpec) string {
 
 	// Simple case: no end field specified, no char positions.
 	if k.endField == 0 && k.startChar == 0 {
-		return strings.Join(fields[sf:], " ")
+		return strings.Join(fields[sf:], joiner)
 	}
 
 	startStr := fields[sf]
@@ -535,7 +545,7 @@ func extractKeyFromFields(fields []string, k keySpec) string {
 	if k.endField == 0 {
 		// From startChar to end of line.
 		if sf+1 < len(fields) {
-			return startStr + " " + strings.Join(fields[sf+1:], " ")
+			return startStr + joiner + strings.Join(fields[sf+1:], joiner)
 		}
 		return startStr
 	}
@@ -572,10 +582,10 @@ func extractKeyFromFields(fields []string, k keySpec) string {
 	var b strings.Builder
 	b.WriteString(startStr)
 	for i := sf + 1; i < ef; i++ {
-		b.WriteString(" ")
+		b.WriteString(joiner)
 		b.WriteString(fields[i])
 	}
-	b.WriteString(" ")
+	b.WriteString(joiner)
 	endStr := fields[ef]
 	if k.endChar > 0 && k.endChar <= len(endStr) {
 		endStr = endStr[:k.endChar]
@@ -655,52 +665,142 @@ func dictFilter(s string) string {
 	return b.String()
 }
 
-// compareNumeric compares two strings as numbers. Leading whitespace and
-// optional sign are handled. Non-numeric strings compare as 0.
-// Supports decimal numbers (e.g. "1.5", "-3.14") matching GNU sort -n.
+// compareNumeric compares two strings as numbers using string-based
+// comparison to avoid float64 precision loss for large integers.
+// Handles optional leading whitespace, sign, and decimal point.
+// Non-numeric strings compare as 0. Matches GNU sort -n behavior.
 func compareNumeric(a, b string) int {
-	na := parseNum(a)
-	nb := parseNum(b)
-	if na < nb {
+	aNeg, aInt, aFrac := parseNumParts(a)
+	bNeg, bInt, bFrac := parseNumParts(b)
+
+	// Different signs: negative < positive.
+	if aNeg != bNeg {
+		if aNeg {
+			return -1
+		}
+		return 1
+	}
+
+	// Same sign — compare magnitudes, flip for negative.
+	c := compareMagnitude(aInt, aFrac, bInt, bFrac)
+	if aNeg {
+		c = -c
+	}
+	return c
+}
+
+// compareMagnitude compares two non-negative numbers represented as
+// integer and fractional digit strings.
+func compareMagnitude(aInt, aFrac, bInt, bFrac string) int {
+	// Compare integer parts: longer digit string is larger.
+	if len(aInt) != len(bInt) {
+		if len(aInt) < len(bInt) {
+			return -1
+		}
+		return 1
+	}
+	// Same length: compare digit-by-digit.
+	if aInt < bInt {
 		return -1
 	}
-	if na > nb {
+	if aInt > bInt {
 		return 1
+	}
+	// Integer parts equal: compare fractional parts.
+	// Pad shorter fraction with trailing zeros conceptually.
+	la, lb := len(aFrac), len(bFrac)
+	minLen := la
+	if lb < minLen {
+		minLen = lb
+	}
+	for i := 0; i < minLen; i++ {
+		if aFrac[i] < bFrac[i] {
+			return -1
+		}
+		if aFrac[i] > bFrac[i] {
+			return 1
+		}
+	}
+	// Check remaining digits (longer fraction with non-zero trailing digits is larger).
+	if la > lb {
+		for i := lb; i < la; i++ {
+			if aFrac[i] > '0' {
+				return 1
+			}
+		}
+	} else if lb > la {
+		for i := la; i < lb; i++ {
+			if bFrac[i] > '0' {
+				return -1
+			}
+		}
 	}
 	return 0
 }
 
-// parseNum extracts a leading numeric value from s (with optional leading
-// whitespace, sign, and decimal point), returning 0 if s is not numeric.
-// Matches GNU sort -n behavior which uses strtod-like parsing.
-func parseNum(s string) float64 {
+// parseNumParts extracts the sign, integer digit string, and fractional
+// digit string from a numeric prefix. Returns (negative, intDigits, fracDigits).
+// Non-numeric input returns (false, "", ""), which compares as zero.
+func parseNumParts(s string) (bool, string, string) {
 	s = strings.TrimSpace(s)
 	if s == "" {
-		return 0
+		return false, "", ""
 	}
-	// Find the end of the numeric prefix: optional sign, digits, optional
-	// decimal point and more digits.
+	neg := false
 	i := 0
-	if i < len(s) && (s[i] == '+' || s[i] == '-') {
+	if s[i] == '-' {
+		neg = true
+		i++
+	} else if s[i] == '+' {
 		i++
 	}
 	if i >= len(s) || (s[i] < '0' || s[i] > '9') && s[i] != '.' {
-		return 0
+		return false, "", ""
 	}
+	// Parse integer digits.
+	intStart := i
 	for i < len(s) && s[i] >= '0' && s[i] <= '9' {
 		i++
 	}
+	intPart := s[intStart:i]
+	// Strip leading zeros from integer part.
+	j := 0
+	for j < len(intPart)-1 && intPart[j] == '0' {
+		j++
+	}
+	intPart = intPart[j:]
+
+	// Parse fractional digits.
+	fracPart := ""
 	if i < len(s) && s[i] == '.' {
 		i++
+		fracStart := i
 		for i < len(s) && s[i] >= '0' && s[i] <= '9' {
 			i++
 		}
+		fracPart = s[fracStart:i]
 	}
-	n, err := strconv.ParseFloat(s[:i], 64)
-	if err != nil {
-		return 0
+
+	// Check if the value is actually zero (e.g. "-0", "-0.0").
+	if isZeroNum(intPart, fracPart) {
+		neg = false
 	}
-	return n
+	return neg, intPart, fracPart
+}
+
+// isZeroNum returns true if the integer and fractional parts represent zero.
+func isZeroNum(intPart, fracPart string) bool {
+	for _, c := range intPart {
+		if c != '0' {
+			return false
+		}
+	}
+	for _, c := range fracPart {
+		if c != '0' {
+			return false
+		}
+	}
+	return true
 }
 
 // buildCompare constructs the comparison function for sorting.
