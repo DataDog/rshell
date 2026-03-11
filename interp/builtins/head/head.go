@@ -334,8 +334,13 @@ func (f *boolSeqFlag) Set(_ string) error {
 	f.pos = *f.seq
 	return nil
 }
-func (f *boolSeqFlag) Type() string     { return "bool" }
-func (f *boolSeqFlag) IsBoolFlag() bool { return true }
+func (f *boolSeqFlag) Type() string { return "bool" }
+
+// Note: pflag does NOT use an IsBoolFlag() method for flags registered via
+// VarP/VarPF. The mechanism that makes these flags accept no value argument
+// (e.g. "--quiet" rather than "--quiet=true") is NoOptDefVal = "true", set
+// at registration time. IsBoolFlag() is intentionally absent here to avoid
+// misleading future readers into thinking it is the active mechanism.
 
 // scanLinesPreservingNewline is a bufio.SplitFunc that includes the line
 // terminator (\n) in the returned token. Unlike bufio.ScanLines, it does not
