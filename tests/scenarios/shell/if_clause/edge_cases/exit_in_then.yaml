@@ -1,4 +1,3 @@
-skip_assert_against_bash: true
 description: Exit inside if then branch terminates the shell.
 input:
   script: |+

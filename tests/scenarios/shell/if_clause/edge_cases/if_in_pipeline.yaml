@@ -1,5 +1,4 @@
-skip_assert_against_bash: true
-description: If statement as part of a pipeline (blocked - subshell needed for pipe).
+description: If statement as part of a pipeline.
 input:
   script: |+
     echo hello | if true; then cat; fi
