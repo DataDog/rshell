@@ -78,7 +78,7 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 	complement := fs.BoolP("complement", "c", false, "use complement of SET1")
 	var bigC bool
 	fs.BoolVarP(&bigC, "complement-alt", "C", false, "alias for -c/--complement")
-	fs.MarkHidden("complement-alt")
+	_ = fs.MarkHidden("complement-alt")
 	truncateSet1 := fs.BoolP("truncate-set1", "t", false, "truncate SET1 to length of SET2")
 
 	return func(ctx context.Context, callCtx *builtins.CallContext, args []string) builtins.Result {
@@ -402,7 +402,7 @@ func complementSet(set []byte) []byte {
 		inSet[b] = true
 	}
 	var result []byte
-	for i := 0; i < 256; i++ {
+	for i := range 256 {
 		if !inSet[byte(i)] {
 			result = append(result, byte(i))
 		}
@@ -496,11 +496,8 @@ func expandSet(s string, isSet2 bool, set1Len int, translateSet2 bool, callCtx *
 			if isSet2 && i+2 < len(data) {
 				if rpt, advance, fillCh, isFill := parseRepeat(data, i); advance > 0 {
 					if isFill {
-						needed := set1Len - len(result)
-						if needed > maxSetLen {
-							needed = maxSetLen
-						}
-						for j := 0; j < needed; j++ {
+						needed := min(set1Len-len(result), maxSetLen)
+						for range needed {
 							result = append(result, fillCh)
 						}
 					} else {
@@ -790,9 +787,7 @@ func parseRepeat(data []byte, pos int) ([]byte, int, byte, bool) {
 	}
 
 	const maxRepeat = 1 << 20
-	if count > maxRepeat {
-		count = maxRepeat
-	}
+	count = min(count, maxRepeat)
 
 	result := make([]byte, count)
 	for i := range result {
