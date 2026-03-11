@@ -1,0 +1,14 @@
+description: strings --radix= with empty value prints an error and exits 1.
+skip_assert_against_bash: true
+setup:
+  files:
+    - path: data.bin
+      content: "hello\n"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    strings --radix= data.bin
+expect:
+  stdout: ""
+  stderr: "strings: invalid argument \"\" for \"-t, --radix\" flag: invalid radix\n"
+  exit_code: 1

@@ -1,0 +1,22 @@
+description: strings -f prints each file's name before its strings when multiple files given.
+skip_assert_against_bash: true
+setup:
+  files:
+    - path: alpha.bin
+      content: |+
+        first
+        second
+    - path: beta.bin
+      content: |+
+        third
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    strings -f alpha.bin beta.bin
+expect:
+  stdout: |+
+    alpha.bin: first
+    alpha.bin: second
+    beta.bin: third
+  stderr: ""
+  exit_code: 0
