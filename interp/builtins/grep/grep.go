@@ -215,17 +215,28 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			args = args[1:]
 		}
 
-		// Determine regex mode.
+		// Determine regex mode. GNU grep rejects conflicting matchers.
+		matcherCount := 0
+		if *extendedRegexp {
+			matcherCount++
+		}
+		if *fixedStrings {
+			matcherCount++
+		}
+		if *basicRegexp {
+			matcherCount++
+		}
+		if matcherCount > 1 {
+			callCtx.Errf("grep: conflicting matchers specified\n")
+			return builtins.Result{Code: exitError}
+		}
+
 		mode := modeBRE
 		if *extendedRegexp {
 			mode = modeERE
 		}
 		if *fixedStrings {
 			mode = modeFixed
-		}
-		// -G is the default, but if specified explicitly after -E/-F it resets.
-		if *basicRegexp && !*extendedRegexp && !*fixedStrings {
-			mode = modeBRE
 		}
 
 		// Compile pattern(s).
@@ -292,11 +303,12 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			}
 		}
 
-		if anyMatch {
-			return builtins.Result{Code: exitMatch}
-		}
+		// GNU grep: error takes precedence over match (exit 2 > exit 0).
 		if anyError {
 			return builtins.Result{Code: exitError}
+		}
+		if anyMatch {
+			return builtins.Result{Code: exitMatch}
 		}
 		return builtins.Result{Code: exitNoMatch}
 	}
@@ -518,9 +530,15 @@ func grepFile(ctx context.Context, callCtx *builtins.CallContext, file string, o
 			}
 
 			// Print the match.
-			if opts.onlyMatching && !opts.invertMatch {
+			if opts.onlyMatching && opts.invertMatch {
+				// -o -v: line was selected by inversion (doesn't contain
+				// pattern), so there are no matching parts to print.
+			} else if opts.onlyMatching {
 				matches := opts.re.FindAllString(line, -1)
 				for _, m := range matches {
+					if m == "" {
+						continue // suppress empty matches (GNU grep behavior)
+					}
 					printMatchLine(callCtx, displayName, lineNum, m, opts)
 				}
 			} else {

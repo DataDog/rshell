@@ -523,11 +523,11 @@ func TestGrepContextCancellation(t *testing.T) {
 // --- Multiple files with some errors ---
 
 func TestGrepMultipleFilesSomeErrors(t *testing.T) {
-	// GNU grep returns 0 if a match was found, even if some files had errors.
+	// GNU grep returns 2 when errors occur, even if matches were found.
 	dir := t.TempDir()
 	writeFile(t, dir, "good.txt", "foo\n")
 	stdout, stderr, code := cmdRun(t, "grep foo good.txt nonexistent.txt", dir)
-	assert.Equal(t, 0, code)
+	assert.Equal(t, 2, code)
 	assert.Contains(t, stdout, "foo")
 	assert.Contains(t, stderr, "grep:")
 }
@@ -560,6 +560,52 @@ func TestGrepEmptyPattern(t *testing.T) {
 	stdout, _, code := cmdRun(t, `grep '' file.txt`, dir)
 	assert.Equal(t, 0, code)
 	assert.Equal(t, "foo\nbar\n", stdout)
+}
+
+// --- -o -v combination (GNU compat) ---
+
+func TestGrepOnlyMatchingInvert(t *testing.T) {
+	// GNU grep: -o -v produces no output but exits 0.
+	dir := t.TempDir()
+	writeFile(t, dir, "file.txt", "foo\nbar\n")
+	stdout, _, code := cmdRun(t, "grep -o -v foo file.txt", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "", stdout)
+}
+
+// --- -o suppresses empty matches ---
+
+func TestGrepOnlyMatchingSuppressEmpty(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "file.txt", "foo\nbar\n")
+	stdout, _, code := cmdRun(t, "grep -o -E 'o*' file.txt", dir)
+	assert.Equal(t, 0, code)
+	// Only non-empty matches should be printed
+	assert.Equal(t, "oo\n", stdout)
+}
+
+// --- Conflicting matchers ---
+
+func TestGrepConflictingMatchersEG(t *testing.T) {
+	dir := t.TempDir()
+	_, stderr, code := cmdRun(t, "grep -E -G foo", dir)
+	assert.Equal(t, 2, code)
+	assert.Contains(t, stderr, "grep: conflicting matchers specified")
+}
+
+func TestGrepConflictingMatchersFE(t *testing.T) {
+	dir := t.TempDir()
+	_, stderr, code := cmdRun(t, "grep -F -E foo", dir)
+	assert.Equal(t, 2, code)
+	assert.Contains(t, stderr, "grep: conflicting matchers specified")
+}
+
+func TestGrepSingleMatcherGNotConflict(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "file.txt", "foo\n")
+	stdout, _, code := cmdRun(t, "grep -G foo file.txt", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "foo\n", stdout)
 }
 
 // --- Stdin display name ---
