@@ -150,6 +150,9 @@ func (r *Runner) redir(ctx context.Context, rd *syntax.Redirect) (io.Closer, err
 			// default
 		case "2":
 			orig = &r.stderr
+		default:
+			r.errf("%s: unsupported fd\n", rd.N.Value)
+			return nil, fmt.Errorf("%s: unsupported fd", rd.N.Value)
 		}
 	}
 

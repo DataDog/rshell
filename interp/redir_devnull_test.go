@@ -177,10 +177,6 @@ func TestRedirDevNullPreservesFailureExitCode(t *testing.T) {
 
 func TestRedirToFileStillBlocked(t *testing.T) {
 	dir := t.TempDir()
-	parser := syntax.NewParser()
-	_, err := parser.Parse(strings.NewReader("echo hello > /tmp/output.txt"), "")
-	require.NoError(t, err)
-
 	// The validation should reject this
 	stdout, stderr, code := redirRunNoAllowed(t, "echo hello > /tmp/output.txt", dir)
 	assert.Equal(t, 2, code)
