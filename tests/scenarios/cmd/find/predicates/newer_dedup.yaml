@@ -1,4 +1,4 @@
-description: duplicate -newer refs produce only one error line.
+description: duplicate -newer refs produce error and exit code 1.
 skip_assert_against_bash: true
 setup:
   files:

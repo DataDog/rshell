@@ -23,9 +23,10 @@ func matchGlob(pattern, name string) bool {
 
 // matchGlobFold matches a name against a glob pattern case-insensitively.
 func matchGlobFold(pattern, name string) bool {
-	matched, err := path.Match(strings.ToLower(pattern), strings.ToLower(name))
+	lp, ln := strings.ToLower(pattern), strings.ToLower(name)
+	matched, err := path.Match(lp, ln)
 	if err != nil {
-		return strings.ToLower(pattern) == strings.ToLower(name)
+		return lp == ln
 	}
 	return matched
 }
@@ -181,11 +182,17 @@ func pathGlobMatch(pattern, name string) bool {
 					continue
 				}
 			case '[':
-				// Character class — delegate to path.Match for the class portion.
+				// Character class — delegate to matchClass for the class portion.
 				if nx < len(name) {
 					matched, width := matchClass(pattern[px:], name[nx])
 					if matched {
 						px += width
+						nx++
+						continue
+					}
+					// Malformed class (width==0) — treat '[' as literal.
+					if width == 0 && pattern[px] == name[nx] {
+						px++
 						nx++
 						continue
 					}
