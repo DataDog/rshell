@@ -177,6 +177,9 @@ func (r *Runner) redir(ctx context.Context, rd *syntax.Redirect) (io.Closer, err
 		return nil, nil
 
 	case syntax.RdrAll, syntax.AppAll:
+		// Note: these ops redirect both stdout and stderr, so they assign
+		// r.stdout and r.stderr directly rather than going through *orig.
+		// Bash does not allow an explicit fd prefix on &>/&>>.
 		if !isDevNull(arg) {
 			r.errf("&> %s: file redirection is only supported for /dev/null\n", arg)
 			return nil, fmt.Errorf("&> %s: file redirection is only supported for /dev/null", arg)
