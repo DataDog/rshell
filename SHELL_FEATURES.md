@@ -41,7 +41,7 @@ Blocked features are rejected before execution with exit code 2.
 - ✅ `!` — negation (inverts exit code)
 - ✅ `{ CMDS; }` — brace group
 - ✅ `;` and newline as command separators
-- ❌ `if` / `elif` / `else`
+- ✅ `if` / `elif` / `else`
 - ❌ `while` / `until`
 - ❌ `case`
 - ❌ `select`

@@ -1,0 +1,10 @@
+skip_assert_against_bash: true
+description: Exit inside if then branch terminates the shell.
+input:
+  script: |+
+    if true; then exit 42; fi
+    echo should_not_run
+expect:
+  stdout: ""
+  stderr: ""
+  exit_code: 42

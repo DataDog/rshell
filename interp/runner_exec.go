@@ -151,6 +151,19 @@ func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {
 				r.exit.fatal(rLeft.exit.err)
 			}
 		}
+	case *syntax.IfClause:
+		r.stmts(ctx, cm.Cond)
+		if r.exit.exiting || r.breakEnclosing > 0 || r.contnEnclosing > 0 {
+			break
+		}
+		if r.exit.ok() {
+			r.stmts(ctx, cm.Then)
+		} else {
+			r.exit = exitStatus{}
+			if cm.Else != nil {
+				r.cmd(ctx, cm.Else)
+			}
+		}
 	case *syntax.ForClause:
 		switch y := cm.Loop.(type) {
 		case *syntax.WordIter:
@@ -168,6 +181,12 @@ func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {
 					break
 				}
 			}
+			// Clamp excess break/continue levels at the outermost loop.
+			// Bash discards excess levels (e.g. "break 99" with 1 loop).
+			if !r.inLoop {
+				r.breakEnclosing = 0
+				r.contnEnclosing = 0
+			}
 		default:
 			r.exit.fatal(fmt.Errorf("unsupported loop type: %T", cm.Loop))
 		}
@@ -179,6 +198,9 @@ func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {
 func (r *Runner) stmts(ctx context.Context, stmts []*syntax.Stmt) {
 	for _, stmt := range stmts {
 		r.stmt(ctx, stmt)
+		if r.exit.exiting || r.breakEnclosing > 0 || r.contnEnclosing > 0 {
+			return
+		}
 	}
 }
 

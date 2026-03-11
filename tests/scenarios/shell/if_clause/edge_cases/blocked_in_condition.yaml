@@ -1,0 +1,10 @@
+skip_assert_against_bash: true
+description: Blocked features inside if condition are still rejected.
+input:
+  script: |+
+    if $(true); then echo yes; fi
+expect:
+  stdout: ""
+  stderr: |+
+    command substitution is not supported
+  exit_code: 2
