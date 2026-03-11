@@ -93,6 +93,11 @@ const MaxLines = 1_000_000
 // MaxLineBytes is the per-line buffer cap for the line scanner.
 const MaxLineBytes = 1 << 20 // 1 MiB
 
+// MaxTotalBytes is the cumulative byte cap across all input lines. This
+// prevents OOM when many lines are each below MaxLineBytes but collectively
+// consume excessive memory. 256 MiB is generous for agent workloads.
+const MaxTotalBytes = 256 * 1024 * 1024 // 256 MiB
+
 // registerFlags registers all sort flags and returns the bound handler.
 func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 	help := fs.BoolP("help", "h", false, "print usage and exit")
@@ -193,8 +198,11 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			files = []string{"-"}
 		}
 
-		// Build comparison function.
-		cmpFn := buildCompare(keys, globalOpts, sep, hasSep, *stable)
+		// Build comparison function. Disable last-resort byte comparison
+		// when -s (stable) or -u (unique) is set — both require that
+		// key-equal lines compare as equal.
+		disableLastResort := *stable || *unique
+		cmpFn := buildCompare(keys, globalOpts, sep, hasSep, disableLastResort)
 
 		// Check mode: verify each file is sorted independently (matches GNU).
 		if *check {
@@ -211,7 +219,7 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 					callCtx.Errf("sort: %s: %s\n", name, callCtx.PortableErr(err))
 					return builtins.Result{Code: 1}
 				}
-				result := checkSorted(callCtx, lines, cmpFn, *checkSilent, file)
+				result := checkSorted(callCtx, lines, cmpFn, *checkSilent, *unique, file)
 				if result.Code != 0 {
 					return result
 				}
@@ -221,6 +229,7 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 
 		// Read all lines from all files.
 		var allLines []string
+		var totalBytes int64
 		for _, file := range files {
 			if ctx.Err() != nil {
 				return builtins.Result{Code: 1}
@@ -234,9 +243,16 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 				callCtx.Errf("sort: %s: %s\n", name, callCtx.PortableErr(err))
 				return builtins.Result{Code: 1}
 			}
+			for _, l := range lines {
+				totalBytes += int64(len(l))
+			}
 			allLines = append(allLines, lines...)
 			if len(allLines) > MaxLines {
 				callCtx.Errf("sort: input exceeds maximum of %d lines\n", MaxLines)
+				return builtins.Result{Code: 1}
+			}
+			if totalBytes > MaxTotalBytes {
+				callCtx.Errf("sort: input exceeds maximum of %d bytes\n", MaxTotalBytes)
 				return builtins.Result{Code: 1}
 			}
 		}
@@ -634,6 +650,7 @@ func dictFilter(s string) string {
 
 // compareNumeric compares two strings as numbers. Leading whitespace and
 // optional sign are handled. Non-numeric strings compare as 0.
+// Supports decimal numbers (e.g. "1.5", "-3.14") matching GNU sort -n.
 func compareNumeric(a, b string) int {
 	na := parseNum(a)
 	nb := parseNum(b)
@@ -646,25 +663,33 @@ func compareNumeric(a, b string) int {
 	return 0
 }
 
-// parseNum extracts a leading integer from s (with optional leading whitespace
-// and sign), returning 0 if s is not numeric.
-func parseNum(s string) int64 {
+// parseNum extracts a leading numeric value from s (with optional leading
+// whitespace, sign, and decimal point), returning 0 if s is not numeric.
+// Matches GNU sort -n behavior which uses strtod-like parsing.
+func parseNum(s string) float64 {
 	s = strings.TrimSpace(s)
 	if s == "" {
 		return 0
 	}
-	// Find the end of the numeric prefix.
+	// Find the end of the numeric prefix: optional sign, digits, optional
+	// decimal point and more digits.
 	i := 0
 	if i < len(s) && (s[i] == '+' || s[i] == '-') {
 		i++
 	}
-	if i >= len(s) || s[i] < '0' || s[i] > '9' {
+	if i >= len(s) || (s[i] < '0' || s[i] > '9') && s[i] != '.' {
 		return 0
 	}
 	for i < len(s) && s[i] >= '0' && s[i] <= '9' {
 		i++
 	}
-	n, err := strconv.ParseInt(s[:i], 10, 64)
+	if i < len(s) && s[i] == '.' {
+		i++
+		for i < len(s) && s[i] >= '0' && s[i] <= '9' {
+			i++
+		}
+	}
+	n, err := strconv.ParseFloat(s[:i], 64)
 	if err != nil {
 		return 0
 	}
@@ -714,10 +739,13 @@ func buildCompare(keys []keySpec, globalOpts keyOpts, sep byte, hasSep bool, sta
 }
 
 // checkSorted verifies that lines are already sorted according to cmpFn.
+// When unique is true, equal adjacent lines are also treated as a disorder
+// (matching GNU sort -c -u which checks for strict ordering).
 // file is the filename used in the diagnostic message (or "-" for stdin).
-func checkSorted(callCtx *builtins.CallContext, lines []string, cmpFn func(a, b string) int, silent bool, file string) builtins.Result {
+func checkSorted(callCtx *builtins.CallContext, lines []string, cmpFn func(a, b string) int, silent bool, unique bool, file string) builtins.Result {
 	for i := 1; i < len(lines); i++ {
-		if cmpFn(lines[i-1], lines[i]) > 0 {
+		c := cmpFn(lines[i-1], lines[i])
+		if c > 0 || (unique && c == 0) {
 			if !silent {
 				callCtx.Errf("sort: %s:%d: disorder: %s\n", file, i+1, lines[i])
 			}

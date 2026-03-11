@@ -106,6 +106,8 @@ var builtinAllowedSymbols = []string{
 	"strconv.ErrRange",
 	// strconv.NumError — error type for numeric conversion failures; pure type.
 	"strconv.NumError",
+	// strconv.ParseFloat — string-to-float conversion; pure function, no I/O.
+	"strconv.ParseFloat",
 	// strconv.ParseInt — string-to-int conversion with base/bit-size; pure function, no I/O.
 	"strconv.ParseInt",
 	// strconv.FormatInt — int-to-string conversion; pure function, no I/O.

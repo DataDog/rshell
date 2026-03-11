@@ -164,6 +164,41 @@ func TestSortUniqueNumeric(t *testing.T) {
 	assert.Equal(t, "1\n2\n3\n", stdout)
 }
 
+func TestSortUniqueCaseInsensitive(t *testing.T) {
+	// sort -f -u should treat A and a as equal (no last-resort byte comparison).
+	dir := t.TempDir()
+	writeFile(t, dir, "f.txt", "A\na\nB\nb\n")
+	stdout, _, code := cmdRun(t, "sort -f -u f.txt", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "A\nB\n", stdout)
+}
+
+func TestSortCheckUniqueDuplicates(t *testing.T) {
+	// sort -c -u should fail on adjacent equal lines.
+	dir := t.TempDir()
+	writeFile(t, dir, "f.txt", "a\na\nb\n")
+	_, stderr, code := cmdRun(t, "sort -c -u f.txt", dir)
+	assert.Equal(t, 1, code)
+	assert.Contains(t, stderr, "disorder")
+}
+
+func TestSortCheckUniqueSorted(t *testing.T) {
+	// sort -c -u on strictly unique sorted input should succeed.
+	dir := t.TempDir()
+	writeFile(t, dir, "f.txt", "a\nb\nc\n")
+	_, _, code := cmdRun(t, "sort -c -u f.txt", dir)
+	assert.Equal(t, 0, code)
+}
+
+func TestSortNumericDecimal(t *testing.T) {
+	// sort -n should handle decimal numbers.
+	dir := t.TempDir()
+	writeFile(t, dir, "f.txt", "1.5\n1.3\n1.7\n1.05\n")
+	stdout, _, code := cmdRun(t, "sort -n f.txt", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "1.05\n1.3\n1.5\n1.7\n", stdout)
+}
+
 // --- Ignore case ---
 
 func TestSortIgnoreCase(t *testing.T) {
