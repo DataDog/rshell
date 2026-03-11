@@ -14,45 +14,47 @@ You MUST follow this execution protocol. Skipping steps or running them out of o
 
 ### 1. Create the full task list FIRST
 
-Your very first action — before reading ANY files, before running ANY commands — is to call TaskCreate exactly 9 times, once for each step/sub-step below. Use these exact subjects:
+Your very first action — before reading ANY files, before running ANY commands — is to call TaskCreate exactly 11 times, once for each step/sub-step below. Use these exact subjects:
 
 1. "Step 1: Identify the PR"
 2. "Step 2: Run the review-fix loop"
-3. "Step 2A: Review the PR (self-review ∥ external reviews)" ← **parallel Step 2A and Step 2B**
-4. "Step 2B: Fix review findings and CI failures (address-pr-comments ∥ fix-ci-tests)" ← **parallel Step 2A and Step 2B**
-5. "Step 2C: Verify push and resolve conflicts"
-6. "Step 2D: Check CI status"
-7. "Step 2E: Decide whether to continue"
-8. "Step 3: Verify clean state"
-9. "Step 4: Final summary"
+3. "Step 2A1: Self-review (code-review)" ← **parallel with 2A2**
+4. "Step 2A2: Request external reviews (@datadog @codex)" ← **parallel with 2A1**
+5. "Step 2B1: Address PR comments (address-pr-comments)" ← **parallel with 2B2**
+6. "Step 2B2: Fix CI failures (fix-ci-tests)" ← **parallel with 2B1**
+7. "Step 2C: Verify push and resolve conflicts"
+8. "Step 2D: Check CI status"
+9. "Step 2E: Decide whether to continue"
+10. "Step 3: Verify clean state"
+11. "Step 4: Final summary"
 
-**Note on sub-steps 2A–2E:** These are created once and reused across loop iterations. At the start of each iteration, reset 2A–2E to `pending`, then execute them in order. Sub-steps marked **parallel** launch multiple agents concurrently within that sub-step.
+**Note on sub-steps 2A–2E:** These are created once and reused across loop iterations. At the start of each iteration, reset all sub-steps to `pending`, then execute them in order. Sub-steps marked **parallel** are launched concurrently and must both complete before proceeding to the next group.
 
 ### 2. Execution order and gating
 
 Steps run strictly in this order:
 
 ```
-Step 1 → Step 2 (loop: 2A → 2B → 2C → 2D → 2E) → Step 3 → Step 4
-                    ↑                          ↓
-                    └──────── repeat ───────────┘
+Step 1 → Step 2 (loop: [2A1 ∥ 2A2] → [2B1 ∥ 2B2] → 2C → 2D → 2E) → Step 3 → Step 4
+                    ↑                                              ↓
+                    └───────────────── repeat ──────────────────────┘
 ```
 
 **Top-level steps** are sequential: before starting step N, call TaskList and verify step N-1 is `completed`. Set step N to `in_progress`.
 
-**Sub-steps within Step 2** are also sequential (2A → 2B → 2C → 2D → 2E), but **within** certain sub-steps, multiple agents run in parallel:
+**Sub-steps within Step 2** follow this execution order:
 
-| Sub-step | Internal parallelism |
-|----------|---------------------|
-| **2A** | Self-review agent **∥** external review comment — run in parallel |
-| **2B** | address-pr-comments agent **∥** fix-ci-tests agent — run in parallel |
-| **2C** | Sequential (verify & resolve conflicts) |
-| **2D** | Sequential (check CI, optionally fix) |
-| **2E** | Sequential (evaluate & decide) |
+| Phase | Sub-steps | Execution |
+|-------|-----------|-----------|
+| Review | **2A1** ∥ **2A2** | **Parallel** — launch both, wait for both |
+| Fix | **2B1** ∥ **2B2** | **Parallel** — launch both, wait for both |
+| Verify | **2C** | Sequential |
+| CI check | **2D** | Sequential |
+| Decide | **2E** | Sequential |
 
 ### 3. Never skip steps
 
-- Do NOT skip the review (Step 2A) because you think the code is fine
+- Do NOT skip the review (Step 2A1) because you think the code is fine
 - Do NOT skip verification (Step 3) because tests passed during fixes
 - Do NOT skip the external review trigger — @datadog and @codex reviews catch issues the self-review misses
 - Do NOT mark a step completed until every sub-bullet in that step is satisfied
@@ -92,57 +94,64 @@ Set `iteration = 1`. Maximum iterations: **10**. Repeat sub-steps A through E wh
 
 ---
 
-### Sub-step A — Review the PR (parallel launch)
+### Sub-step 2A1 — Self-review ← **parallel with 2A2**
 
-Launch **both** of these in parallel using the Agent tool:
+Run the **code-review** skill on the PR:
+```
+/code-review <pr-number>
+```
+This analyzes the full diff against main, posts findings as a GitHub PR review with inline comments, and classifies findings by severity (P0–P3).
 
-1. **Self-review** — Run the **code-review** skill on the PR:
-   ```
-   /code-review <pr-number>
-   ```
-   This analyzes the full diff against main, posts findings as a GitHub PR review with inline comments, and classifies findings by severity (P0–P3).
+### Sub-step 2A2 — Request external reviews ← **parallel with 2A1**
 
-2. **Request external reviews** — Post a comment to trigger @datadog and @codex reviews:
-   ```bash
-   gh pr comment <pr-number> --body "@datadog @codex make a comprehensive code and security reviews"
-   ```
+Post a comment to trigger @datadog and @codex reviews:
+```bash
+gh pr comment <pr-number> --body "@datadog @codex make a comprehensive code and security reviews"
+```
+The external reviews arrive asynchronously — their comments will be picked up by **address-pr-comments** in Sub-step 2B1.
 
-Wait for the **self-review agent** to complete before proceeding. The external reviews arrive asynchronously — their comments will be picked up by **address-pr-comments** in Sub-step B.
+### After 2A1 ∥ 2A2 complete
 
-**Record the self-review outcome:**
-- If the review result is **APPROVE** (no findings) → skip to **Sub-step D (CI check)**
-- If there are findings → continue to **Sub-step B**
+Wait for **both** to complete before proceeding.
+
+**Record the self-review outcome (from 2A1):**
+- If the review result is **APPROVE** (no findings) → skip to **Sub-step 2D (CI check)**
+- If there are findings → continue to **Sub-step 2B1 ∥ 2B2**
 
 ---
 
-### Sub-step B — Fix review findings and CI failures (parallel)
+### Pre-check before 2B
 
-**Pre-check:** Before launching fixes, ensure the working tree is clean and up to date:
+Before launching fixes, ensure the working tree is clean and up to date:
 
 ```bash
 git status
 git pull --rebase origin <head-branch>
 ```
 
-Launch **both** of these in parallel using the Agent tool:
+### Sub-step 2B1 — Address PR comments ← **parallel with 2B2**
 
-1. **Address PR comments** — Run the **address-pr-comments** skill:
-   ```
-   /address-pr-comments <pr-number>
-   ```
-   This reads all unresolved review comments, evaluates validity, implements fixes, commits, pushes, and replies/resolves threads.
+Run the **address-pr-comments** skill:
+```
+/address-pr-comments <pr-number>
+```
+This reads all unresolved review comments, evaluates validity, implements fixes, commits, pushes, and replies/resolves threads.
 
-2. **Fix CI failures** — Run the **fix-ci-tests** skill:
-   ```
-   /fix-ci-tests <pr-number>
-   ```
-   This checks for failing CI jobs, downloads logs, reproduces failures locally, fixes them, and pushes.
+### Sub-step 2B2 — Fix CI failures ← **parallel with 2B1**
+
+Run the **fix-ci-tests** skill:
+```
+/fix-ci-tests <pr-number>
+```
+This checks for failing CI jobs, downloads logs, reproduces failures locally, fixes them, and pushes.
+
+### After 2B1 ∥ 2B2 complete
 
 Wait for **both agents** to complete before proceeding.
 
 ---
 
-### Sub-step C — Verify push and resolve conflicts
+### Sub-step 2C — Verify push and resolve conflicts
 
 After both parallel tasks complete, verify the branch state:
 
@@ -169,7 +178,7 @@ git log --oneline -5
 
 ---
 
-### Sub-step D — Check CI status
+### Sub-step 2D — Check CI status
 
 ```bash
 gh pr checks <pr-number> --json name,state
@@ -179,13 +188,13 @@ gh pr checks <pr-number> --json name,state
   ```
   /fix-ci-tests <pr-number>
   ```
-  Wait for it to complete, then re-check CI status. If still failing after this second attempt, log the failure and continue to Sub-step E.
+  Wait for it to complete, then re-check CI status. If still failing after this second attempt, log the failure and continue to Sub-step 2E.
 
-- If all checks are **passing** or **pending** → continue to Sub-step E.
+- If all checks are **passing** or **pending** → continue to Sub-step 2E.
 
 ---
 
-### Sub-step E — Decide whether to continue
+### Sub-step 2E — Decide whether to continue
 
 Increment `iteration`.
 
@@ -224,9 +233,9 @@ Check **all three** review sources for remaining issues:
 | Self-review | External comments | CI | Action |
 |------------|-------------------|-----|--------|
 | APPROVE | None unresolved | Passing | **STOP — PR is clean** |
-| Any findings | Any | Any | **Continue** → go back to Sub-step A |
-| APPROVE | Unresolved threads | Any | **Continue** → go back to Sub-step A (address-pr-comments will handle them) |
-| APPROVE | None unresolved | Failing | **Continue** → go back to Sub-step A (fix-ci-tests will handle it) |
+| Any findings | Any | Any | **Continue** → go back to Sub-step 2A1 ∥ 2A2 |
+| APPROVE | Unresolved threads | Any | **Continue** → go back to Sub-step 2A1 ∥ 2A2 (address-pr-comments will handle them) |
+| APPROVE | None unresolved | Failing | **Continue** → go back to Sub-step 2A1 ∥ 2A2 (fix-ci-tests will handle it) |
 | — | — | — | If `iteration > 10` → **STOP — iteration limit reached** |
 
 Log the iteration result before continuing or stopping:
