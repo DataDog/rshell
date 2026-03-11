@@ -24,10 +24,12 @@ type evalContext struct {
 	callCtx    *builtins.CallContext
 	ctx        context.Context
 	now        time.Time
-	relPath    string         // path relative to starting point
-	info       iofs.FileInfo  // file info (lstat or stat depending on -L)
-	depth      int            // current depth
-	printPath  string         // path to print (includes starting point prefix)
+	relPath    string        // path relative to starting point
+	info       iofs.FileInfo // file info (lstat or stat depending on -L)
+	depth      int           // current depth
+	printPath  string        // path to print (includes starting point prefix)
+	newerCache map[string]time.Time // cached -newer reference file modtimes
+	newerErr   bool                 // true if a -newer reference file failed to stat
 }
 
 // evaluate evaluates an expression tree against a file. If e is nil, returns
@@ -127,12 +129,25 @@ func evalEmpty(ec *evalContext) bool {
 }
 
 // evalNewer returns true if the file is newer than the reference file.
+// The reference file's modtime is resolved once and cached in newerCache
+// to avoid redundant stat calls for every entry in the tree.
 func evalNewer(ec *evalContext, refPath string) bool {
-	refInfo, err := ec.callCtx.StatFile(ec.ctx, refPath)
-	if err != nil {
+	refTime, ok := ec.newerCache[refPath]
+	if !ok {
+		refInfo, err := ec.callCtx.StatFile(ec.ctx, refPath)
+		if err != nil {
+			ec.callCtx.Errf("find: '%s': %s\n", refPath, ec.callCtx.PortableErr(err))
+			ec.newerCache[refPath] = time.Time{}
+			ec.newerErr = true
+			return false
+		}
+		refTime = refInfo.ModTime()
+		ec.newerCache[refPath] = refTime
+	}
+	if ec.newerErr {
 		return false
 	}
-	return ec.info.ModTime().After(refInfo.ModTime())
+	return ec.info.ModTime().After(refTime)
 }
 
 // evalMtime checks modification time in days.

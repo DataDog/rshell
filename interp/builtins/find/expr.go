@@ -101,7 +101,9 @@ var blockedPredicates = map[string]string{
 }
 
 // errorf creates an error with fmt.Sprintf formatting.
-func errorf(format string, args ...any) error {
+// NOTE: fmt.Errorf is not in the builtin import allowlist, so we use
+// errors.New(fmt.Sprintf(...)) instead. This is intentional.
+func errorf(format string, args ...any) error { //nolint:goerr113
 	return errors.New(fmt.Sprintf(format, args...))
 }
 
@@ -307,13 +309,33 @@ func (p *parser) parseTypePredicate() (*expr, error) {
 	if len(val) == 0 {
 		return nil, errors.New("find: Unknown argument to -type: ")
 	}
-	// Validate type character(s). GNU find allows comma-separated types.
+	// Validate type character(s). GNU find allows comma-separated types
+	// like "f,d" but rejects malformed lists like ",", "f,", ",d", or "fd".
+	expectType := true
 	for i := 0; i < len(val); i++ {
-		switch val[i] {
-		case 'f', 'd', 'l', 'p', 's', ',':
+		c := val[i]
+		if c == ',' {
+			if expectType {
+				// Leading or consecutive comma.
+				return nil, errorf("find: Unknown argument to -type: %s", val)
+			}
+			expectType = true
+			continue
+		}
+		switch c {
+		case 'f', 'd', 'l', 'p', 's':
+			if !expectType {
+				// Adjacent type chars without comma (e.g. "fd").
+				return nil, errorf("find: Unknown argument to -type: %s", val)
+			}
+			expectType = false
 		default:
 			return nil, errorf("find: Unknown argument to -type: %s", val)
 		}
+	}
+	if expectType {
+		// Trailing comma.
+		return nil, errorf("find: Unknown argument to -type: %s", val)
 	}
 	return &expr{kind: exprType, strVal: val}, nil
 }

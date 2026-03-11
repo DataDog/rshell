@@ -62,6 +62,7 @@ import (
 	iofs "io/fs"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/DataDog/rshell/interp/builtins"
 )
@@ -209,6 +210,17 @@ func walkPath(
 ) bool {
 	now := callCtx.Now()
 	failed := false
+	newerCache := map[string]time.Time{}
+
+	// visited tracks directory paths already traversed when following
+	// symlinks (-L) to detect and break symlink loops. Without this,
+	// cyclic symlinks would expand until maxTraversalDepth, causing
+	// excessive CPU/memory usage. We use path strings because the
+	// syscall package (needed for dev+inode tracking) is banned.
+	var visited map[string]bool
+	if followLinks {
+		visited = map[string]bool{}
+	}
 
 	// Stat the starting path.
 	var startInfo iofs.FileInfo
@@ -252,6 +264,7 @@ func walkPath(
 			info:       entry.info,
 			depth:      entry.depth,
 			printPath:  printPath,
+			newerCache: newerCache,
 		}
 
 		// Evaluate expression at this depth.
@@ -259,6 +272,9 @@ func walkPath(
 		if entry.depth >= minDepth {
 			result := evaluate(ec, expression)
 			prune = result.prune
+			if ec.newerErr {
+				failed = true
+			}
 
 			if result.matched && implicitPrint {
 				callCtx.Outf("%s\n", printPath)
@@ -267,6 +283,14 @@ func walkPath(
 
 		// Descend into directories unless pruned or beyond maxdepth.
 		if entry.info.IsDir() && !prune && entry.depth < maxDepth {
+			// With -L, check for symlink loops by tracking visited directory paths.
+			if visited != nil {
+				if visited[entry.path] {
+					continue // skip already-visited directory (symlink loop)
+				}
+				visited[entry.path] = true
+			}
+
 			entries, readErr := callCtx.ReadDir(ctx, entry.path)
 			if readErr != nil {
 				callCtx.Errf("find: '%s': %s\n", entry.path, callCtx.PortableErr(readErr))
