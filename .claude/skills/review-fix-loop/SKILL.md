@@ -8,119 +8,175 @@ Self-review and iteratively fix **$ARGUMENTS** (or the current branch's PR if no
 
 ---
 
-## Overview
+## ⛔ STOP — READ THIS BEFORE DOING ANYTHING ELSE ⛔
 
-This skill orchestrates a review-fix loop:
+You MUST follow this execution protocol. Skipping steps or running them out of order has caused regressions and wasted iterations in every prior run of this skill.
 
-1. **Review** the PR (posts findings as GitHub PR comments)
-2. **Fix** all reported issues and CI failures (in parallel)
-3. **Re-review** the updated PR
-4. **Repeat** until the review is clean or the iteration limit is reached
+### 1. Create the full task list FIRST
 
-Maximum iterations: **10**
+Your very first action — before reading ANY files, before running ANY commands — is to call TaskCreate exactly 4 times, once for each step below. Use these exact subjects:
+
+1. "Step 1: Identify the PR"
+2. "Step 2: Run the review-fix loop"
+3. "Step 3: Verify clean state"
+4. "Step 4: Final summary"
+
+### 2. Execution order and gating
+
+Steps run strictly in this order:
+
+```
+Step 1 → Step 2 (loop) → Step 3 → Step 4
+```
+
+**Sequential steps:** Before starting step N, call TaskList and verify step N-1 is `completed`. Set step N to `in_progress`.
+
+Step 2 is an internal loop with sub-steps (A → B → C → D → E). Each sub-step must complete before the next begins, except where parallel execution is explicitly marked.
+
+### 3. Never skip steps
+
+- Do NOT skip the review (Step 2A) because you think the code is fine
+- Do NOT skip verification (Step 3) because tests passed during fixes
+- Do NOT skip the external review trigger — @datadog and @codex reviews catch issues the self-review misses
+- Do NOT mark a step completed until every sub-bullet in that step is satisfied
+
+If you catch yourself wanting to skip a step, STOP and do the step anyway.
 
 ---
 
-## Workflow
+## Step 1: Identify the PR
 
-### 0. Identify the PR
+**Set this step to `in_progress` immediately after creating all tasks.**
 
 ```bash
 # If argument provided, use it; otherwise detect from current branch
 gh pr view $ARGUMENTS --json number,url,headRefName,baseRefName
 ```
 
-If `$ARGUMENTS` is empty, this automatically falls back to the PR associated with the current branch. If no PR is found, stop and inform the user. Store the PR number and owner/repo for all subsequent steps.
+If `$ARGUMENTS` is empty, this automatically falls back to the PR associated with the current branch. If no PR is found, stop and inform the user.
+
+Store the PR number, head branch, and base branch for all subsequent steps.
 
 ```bash
 gh repo view --json owner,name --jq '"\(.owner.login)/\(.name)"'
 ```
 
----
+Store the owner and repo name.
 
-### 1. Start the review-fix loop
-
-Set `iteration = 1`. Repeat the following steps while `iteration <= 10`:
+**Completion check:** You have the PR number, URL, owner, repo, head branch, and base branch. Mark Step 1 as `completed`.
 
 ---
 
-#### Step A — Review the PR (in parallel)
+## Step 2: Run the review-fix loop
 
-Launch **both** of these in parallel:
+**GATE CHECK**: Call TaskList. Step 1 must be `completed`. Set Step 2 to `in_progress`.
+
+Set `iteration = 1`. Maximum iterations: **10**. Repeat sub-steps A through E while `iteration <= 10`:
+
+---
+
+### Sub-step A — Review the PR (parallel launch)
+
+Launch **both** of these in parallel using the Agent tool:
 
 1. **Self-review** — Run the **code-review** skill on the PR:
    ```
    /code-review <pr-number>
    ```
-   This will analyze the full diff against main, post findings as a GitHub PR review with inline comments, and classify findings by severity (P0–P3).
+   This analyzes the full diff against main, posts findings as a GitHub PR review with inline comments, and classifies findings by severity (P0–P3).
 
 2. **Request external reviews** — Post a comment to trigger @datadog and @codex reviews:
    ```bash
    gh pr comment <pr-number> --body "@datadog @codex make a comprehensive code and security reviews"
    ```
 
-Wait for the **self-review** to complete before proceeding. The external reviews will arrive asynchronously and their comments will be picked up by **address-pr-comments** in Step B.
+Wait for the **self-review agent** to complete before proceeding. The external reviews arrive asynchronously — their comments will be picked up by **address-pr-comments** in Sub-step B.
 
 **Record the self-review outcome:**
-- If the review result is **APPROVE** (no findings) → go to **Step D (CI check)**
-- If there are findings → continue to **Step B**
+- If the review result is **APPROVE** (no findings) → skip to **Sub-step D (CI check)**
+- If there are findings → continue to **Sub-step B**
 
 ---
 
-#### Step B — Fix review findings and CI failures (in parallel)
+### Sub-step B — Fix review findings and CI failures (parallel)
 
-Launch **both** of these in parallel:
+**Pre-check:** Before launching fixes, ensure the working tree is clean and up to date:
+
+```bash
+git status
+git pull --rebase origin <head-branch>
+```
+
+Launch **both** of these in parallel using the Agent tool:
 
 1. **Address PR comments** — Run the **address-pr-comments** skill:
    ```
    /address-pr-comments <pr-number>
    ```
-   This will read all unresolved review comments, evaluate validity, implement fixes, commit, push, and reply/resolve threads.
+   This reads all unresolved review comments, evaluates validity, implements fixes, commits, pushes, and replies/resolves threads.
 
 2. **Fix CI failures** — Run the **fix-ci-tests** skill:
    ```
    /fix-ci-tests <pr-number>
    ```
-   This will check for failing CI jobs, download logs, reproduce failures locally, fix them, and push.
+   This checks for failing CI jobs, downloads logs, reproduces failures locally, fixes them, and pushes.
 
-Wait for **both** to complete before proceeding.
+Wait for **both agents** to complete before proceeding.
 
 ---
 
-#### Step C — Verify push succeeded
+### Sub-step C — Verify push and resolve conflicts
 
-After both parallel tasks complete, confirm the branch is up to date:
+After both parallel tasks complete, verify the branch state:
 
 ```bash
+git fetch origin <head-branch>
 git status
-git log --oneline -3
+git log --oneline -5
 ```
 
-If there were merge conflicts between the two parallel fix streams, resolve them and push.
+**Conflict resolution:** If the two parallel fix streams produced divergent commits (e.g., both modified the same file), resolve the conflict:
+
+1. Pull the latest remote state:
+   ```bash
+   git pull --rebase origin <head-branch>
+   ```
+2. If rebase conflicts occur, resolve them manually, then:
+   ```bash
+   git rebase --continue
+   git push --force-with-lease
+   ```
+3. If no conflicts, confirm the branch is up to date with the remote.
+
+**Completion check:** `git status` shows a clean working tree and the branch is pushed. Only then proceed.
 
 ---
 
-#### Step D — Check CI status
-
-Check if CI is passing:
+### Sub-step D — Check CI status
 
 ```bash
 gh pr checks <pr-number> --json name,state
 ```
 
-- If any checks are **failing** → run **fix-ci-tests** one more time, then continue to re-review
-- If all checks are **passing** or **pending** → continue to re-review
+- If any checks are **failing** → run the **fix-ci-tests** skill one more time:
+  ```
+  /fix-ci-tests <pr-number>
+  ```
+  Wait for it to complete, then re-check CI status. If still failing after this second attempt, log the failure and continue to Sub-step E.
+
+- If all checks are **passing** or **pending** → continue to Sub-step E.
 
 ---
 
-#### Step E — Decide whether to continue
+### Sub-step E — Decide whether to continue
 
 Increment `iteration`.
 
-Check that **all** review sources have no remaining actionable suggestions:
+Check **all three** review sources for remaining issues:
 
-1. **Self-review** — the latest `/code-review` result was **APPROVE** (no findings)
-2. **@datadog and @codex reviews** — no unresolved PR comment threads from these reviewers:
+1. **Self-review** — Was the latest `/code-review` result **APPROVE** (no findings)?
+
+2. **External reviews** — Are there unresolved PR comment threads from @datadog or @codex?
    ```bash
    gh api graphql -f query='
      query($owner: String!, $repo: String!, $pr: Int!) {
@@ -140,18 +196,86 @@ Check that **all** review sources have no remaining actionable suggestions:
    ' -f owner="{owner}" -f repo="{repo}" -F pr={pr-number} \
      --jq '.data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved == false)'
    ```
-3. **CI** — all checks are passing
 
-**Decision:**
-- If all three conditions are met → **stop, the PR is clean**
-- If `iteration > 10` → **stop, iteration limit reached** (report remaining unresolved items)
-- Otherwise → **go back to Step A** for the next iteration
+3. **CI** — Are all checks passing?
+   ```bash
+   gh pr checks <pr-number> --json name,state
+   ```
+
+**Decision matrix:**
+
+| Self-review | External comments | CI | Action |
+|------------|-------------------|-----|--------|
+| APPROVE | None unresolved | Passing | **STOP — PR is clean** |
+| Any findings | Any | Any | **Continue** → go back to Sub-step A |
+| APPROVE | Unresolved threads | Any | **Continue** → go back to Sub-step A (address-pr-comments will handle them) |
+| APPROVE | None unresolved | Failing | **Continue** → go back to Sub-step A (fix-ci-tests will handle it) |
+| — | — | — | If `iteration > 10` → **STOP — iteration limit reached** |
+
+Log the iteration result before continuing or stopping:
+- Iteration number
+- Self-review result (APPROVE / COMMENT / REQUEST_CHANGES)
+- Number of findings by severity
+- Number of fixes applied
+- CI status
 
 ---
 
-### 2. Final summary
+**Step 2 completion check:** The loop exited because either (a) all three conditions are met (clean), or (b) the iteration limit was reached. Mark Step 2 as `completed`.
 
-After the loop ends, provide a summary:
+---
+
+## Step 3: Verify clean state
+
+**GATE CHECK**: Call TaskList. Step 2 must be `completed`. Set Step 3 to `in_progress`.
+
+Run a final verification regardless of how the loop exited:
+
+1. **Confirm branch is pushed:**
+   ```bash
+   git status
+   git log --oneline origin/<head-branch>..HEAD
+   ```
+   If there are unpushed commits, push them.
+
+2. **Confirm CI status:**
+   ```bash
+   gh pr checks <pr-number> --json name,state
+   ```
+
+3. **Confirm no unresolved threads:**
+   ```bash
+   gh api graphql -f query='
+     query($owner: String!, $repo: String!, $pr: Int!) {
+       repository(owner: $owner, name: $repo) {
+         pullRequest(number: $pr) {
+           reviewThreads(first: 100) {
+             nodes {
+               isResolved
+               comments(first: 1) {
+                 nodes { author { login } body }
+               }
+             }
+           }
+         }
+       }
+     }
+   ' -f owner="{owner}" -f repo="{repo}" -F pr={pr-number} \
+     --jq '.data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved == false) | .comments.nodes[0].body' \
+     2>&1 | head -50
+   ```
+
+Record the final state of each dimension (self-review, external reviews, CI).
+
+**Completion check:** All three verifications ran. Mark Step 3 as `completed`.
+
+---
+
+## Step 4: Final summary
+
+**GATE CHECK**: Call TaskList. Step 3 must be `completed`. Set Step 4 to `in_progress`.
+
+Provide a summary in this exact format:
 
 ```markdown
 ## Review-Fix Loop Summary
@@ -168,9 +292,18 @@ After the loop ends, provide a summary:
 | 2 | COMMENT | 1 (1×P3) | 1 fixed | Passing |
 | 3 | APPROVE | 0 | — | Passing |
 
+### Final state
+
+- **Self-review**: APPROVE / REQUEST_CHANGES / COMMENT
+- **Unresolved external comments**: <count> (list authors)
+- **CI**: Passing / Failing (list failing checks)
+
 ### Remaining issues (if any)
-- <list any unresolved findings or CI failures>
+
+- <list any unresolved findings, external comments, or CI failures>
 ```
+
+**Completion check:** Summary is output. Mark Step 4 as `completed`.
 
 ---
 
@@ -179,6 +312,8 @@ After the loop ends, provide a summary:
 - **Never skip the review step** — always re-review after fixes to catch regressions or new issues introduced by the fixes themselves.
 - **Always submit reviews to GitHub** — each iteration's review must be posted as PR comments so there's a visible trail.
 - **Parallelise fix-ci-tests and address-pr-comments** — they work on independent concerns (CI failures vs review comments) and can run simultaneously.
+- **Pull before fixing** — always `git pull --rebase` before launching parallel fix agents to avoid working on stale code.
 - **Resolve merge conflicts** — if the parallel fix streams conflict, resolve before re-reviewing.
-- **Stop early on APPROVE + CI green** — don't waste iterations if the PR is already clean.
+- **Stop early on APPROVE + CI green + no unresolved threads** — don't waste iterations if the PR is already clean.
 - **Respect the iteration limit** — hard stop at 10 to prevent infinite loops. If issues persist after 10 iterations, report what's left for the user to handle.
+- **Use gate checks** — always call TaskList and verify prerequisites before starting a step. This prevents out-of-order execution.
