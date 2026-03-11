@@ -617,6 +617,36 @@ func TestGrepSingleMatcherGNotConflict(t *testing.T) {
 	assert.Equal(t, "foo\n", stdout)
 }
 
+// --- -l/-L precedence and -c interaction ---
+
+func TestGrepFilesWithAndWithoutMatchLastFlagWins(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "a.txt", "foo\n")
+	writeFile(t, dir, "b.txt", "bar\n")
+
+	stdout, _, code := cmdRun(t, "grep -l -L foo a.txt b.txt", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "b.txt\n", stdout)
+
+	stdout, _, code = cmdRun(t, "grep -L -l foo a.txt b.txt", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "a.txt\n", stdout)
+}
+
+func TestGrepCountSuppressedByFileListModes(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "a.txt", "foo\nbar\n")
+	writeFile(t, dir, "b.txt", "bar\n")
+
+	stdout, _, code := cmdRun(t, "grep -c -l foo a.txt b.txt", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "a.txt\n", stdout)
+
+	stdout, _, code = cmdRun(t, "grep -c -L foo a.txt b.txt", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "b.txt\n", stdout)
+}
+
 // --- Stdin display name ---
 
 func TestGrepStdinDisplayName(t *testing.T) {

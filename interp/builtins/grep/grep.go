@@ -154,8 +154,13 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 
 	// Output flags.
 	count := fs.BoolP("count", "c", false, "print only a count of matching lines per file")
-	filesWithMatches := fs.BoolP("files-with-matches", "l", false, "print only names of files with matches")
-	filesWithoutMatch := fs.BoolP("files-without-match", "L", false, "print only names of files without matches")
+	var outputSeq int
+	filesWithMatches := newOrderedBoolFlag(&outputSeq)
+	filesWithoutMatch := newOrderedBoolFlag(&outputSeq)
+	fs.VarP(filesWithMatches, "files-with-matches", "l", "print only names of files with matches")
+	fs.VarP(filesWithoutMatch, "files-without-match", "L", "print only names of files without matches")
+	fs.Lookup("files-with-matches").NoOptDefVal = "true"
+	fs.Lookup("files-without-match").NoOptDefVal = "true"
 	lineNumber := fs.BoolP("line-number", "n", false, "prefix output with line numbers")
 	withFilename := fs.BoolP("with-filename", "H", false, "always print filename prefix")
 	noFilename := fs.BoolP("no-filename", "h", false, "suppress filename prefix")
@@ -260,12 +265,16 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 
 		contextFlagUsed := fs.Changed("after-context") || fs.Changed("before-context") || fs.Changed("context")
 
+		resolvedFilesWithMatches := filesWithMatches.pos > filesWithoutMatch.pos
+		resolvedFilesWithoutMatch := filesWithoutMatch.pos > filesWithMatches.pos
+		resolvedCount := *count && !resolvedFilesWithMatches && !resolvedFilesWithoutMatch
+
 		opts := &grepOpts{
 			re:                re,
 			invertMatch:       *invertMatch,
-			count:             *count,
-			filesWithMatches:  *filesWithMatches,
-			filesWithoutMatch: *filesWithoutMatch,
+			count:             resolvedCount,
+			filesWithMatches:  resolvedFilesWithMatches,
+			filesWithoutMatch: resolvedFilesWithoutMatch,
 			lineNumber:        *lineNumber,
 			showFilename:      showFilename,
 			onlyMatching:      *onlyMatching,
@@ -339,6 +348,40 @@ type grepOpts struct {
 	beforeContext     int
 	contextRequested  bool // true when any -A/-B/-C flag was used (even with 0)
 }
+
+type orderedBoolFlag struct {
+	seq *int
+	pos int
+}
+
+func newOrderedBoolFlag(seq *int) *orderedBoolFlag {
+	return &orderedBoolFlag{seq: seq}
+}
+
+func (f *orderedBoolFlag) String() string {
+	if f.pos > 0 {
+		return "true"
+	}
+	return "false"
+}
+
+func (f *orderedBoolFlag) Set(s string) error {
+	b, err := strconv.ParseBool(s)
+	if err != nil {
+		return err
+	}
+	if !b {
+		f.pos = 0
+		return nil
+	}
+	*f.seq = *f.seq + 1
+	f.pos = *f.seq
+	return nil
+}
+
+func (f *orderedBoolFlag) Type() string { return "bool" }
+
+func (f *orderedBoolFlag) IsBoolFlag() bool { return true }
 
 // patternSlice collects multiple -e PATTERN values.
 type patternSlice []string
