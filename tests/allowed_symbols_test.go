@@ -68,6 +68,8 @@ var builtinAllowedSymbols = []string{
 	"io.ReadCloser",
 	// io.Reader — interface type; no side effects.
 	"io.Reader",
+	// math.Inf — returns positive or negative infinity; pure function, no I/O.
+	"math.Inf",
 	// math.MaxInt32 — integer constant; no side effects.
 	"math.MaxInt32",
 	// math.MaxInt64 — integer constant; no side effects.
@@ -92,6 +94,10 @@ var builtinAllowedSymbols = []string{
 	"strings.Builder",
 	// strings.Join — concatenates a slice of strings with a separator; pure function, no I/O.
 	"strings.Join",
+	// strings.ToLower — converts string to lowercase; pure function, no I/O.
+	"strings.ToLower",
+	// strings.ToUpper — converts string to uppercase; pure function, no I/O.
+	"strings.ToUpper",
 	// strings.Split — splits a string by separator into a slice; pure function, no I/O.
 	"strings.Split",
 	// strconv.Atoi — string-to-int conversion; pure function, no I/O.
@@ -104,8 +110,12 @@ var builtinAllowedSymbols = []string{
 	"strconv.ErrRange",
 	// strconv.NumError — error type for numeric conversion failures; pure type.
 	"strconv.NumError",
+	// strconv.ParseFloat — string-to-float conversion; pure function, no I/O.
+	"strconv.ParseFloat",
 	// strconv.ParseInt — string-to-int conversion with base/bit-size; pure function, no I/O.
 	"strconv.ParseInt",
+	// strconv.ParseUint — string-to-unsigned-int conversion; pure function, no I/O.
+	"strconv.ParseUint",
 	// strconv.FormatInt — int-to-string conversion; pure function, no I/O.
 	"strconv.FormatInt",
 	// strings.HasPrefix — pure function for prefix matching; no I/O.
