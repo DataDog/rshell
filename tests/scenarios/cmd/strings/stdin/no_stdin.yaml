@@ -1,0 +1,9 @@
+description: strings with no args and nil stdin exits 0 with no output.
+skip_assert_against_bash: true
+input:
+  script: |+
+    strings
+expect:
+  stdout: ""
+  stderr: ""
+  exit_code: 0
