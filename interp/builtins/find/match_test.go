@@ -35,4 +35,7 @@ func TestPathGlobMatchMalformedBracket(t *testing.T) {
 	assert.False(t, pathGlobMatch("[", "a"))
 	assert.True(t, pathGlobMatch("dir/[sub/file", "dir/[sub/file"))
 	assert.False(t, pathGlobMatch("dir/[sub/file", "dir/asub/file"))
+	// Star followed by malformed bracket (backtracking interaction).
+	assert.True(t, pathGlobMatch("*/[", "dir/["))
+	assert.False(t, pathGlobMatch("*/[", "dir/a"))
 }

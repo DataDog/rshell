@@ -229,6 +229,9 @@ func (p *parser) parseUnary() (*expr, error) {
 	}
 	if tok == "(" {
 		p.advance()
+		if p.peek() == ")" {
+			return nil, errors.New("find: invalid expression; empty parentheses are not allowed.")
+		}
 		p.depth++
 		if p.depth > maxExprDepth {
 			return nil, errors.New("find: expression too deeply nested")
