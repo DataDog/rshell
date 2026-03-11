@@ -137,13 +137,18 @@ func compareNumeric(actual, target int64, cmp int) bool {
 // The shell normalises all paths to forward slashes on all platforms,
 // so hardcoding '/' is correct even on Windows.
 func baseName(p string) string {
-	// Strip trailing slashes.
+	// Strip trailing slashes (but keep at least one char for root "/").
 	for len(p) > 1 && p[len(p)-1] == '/' {
 		p = p[:len(p)-1]
 	}
 	for i := len(p) - 1; i >= 0; i-- {
 		if p[i] == '/' {
-			return p[i+1:]
+			tail := p[i+1:]
+			if len(tail) == 0 {
+				// Root path "/" — return "/" as the basename.
+				return "/"
+			}
+			return tail
 		}
 	}
 	return p

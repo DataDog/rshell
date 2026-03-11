@@ -30,6 +30,15 @@ func TestMatchGlobFoldMalformedBracket(t *testing.T) {
 	assert.False(t, matchGlobFold("[", "a"))
 }
 
+func TestBaseNameEdgeCases(t *testing.T) {
+	assert.Equal(t, "dir", baseName("dir"))
+	assert.Equal(t, "dir", baseName("dir/"))
+	assert.Equal(t, "dir", baseName("/path/to/dir"))
+	assert.Equal(t, "dir", baseName("/path/to/dir/"))
+	assert.Equal(t, "/", baseName("/"))
+	assert.Equal(t, "file", baseName("file"))
+}
+
 func TestPathGlobMatchMalformedBracket(t *testing.T) {
 	assert.True(t, pathGlobMatch("[", "["))
 	assert.False(t, pathGlobMatch("[", "a"))
