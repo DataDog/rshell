@@ -34,10 +34,14 @@ import (
 var builtinAllowedSymbols = []string{
 	// bufio.NewScanner — line-by-line input reading (e.g. head, cat); no write or exec capability.
 	"bufio.NewScanner",
+	// bufio.Scanner — scanner type for buffered input reading; no write or exec capability.
+	"bufio.Scanner",
 	// bufio.SplitFunc — type for custom scanner split functions; pure type, no I/O.
 	"bufio.SplitFunc",
 	// context.Context — deadline/cancellation plumbing; pure interface, no side effects.
 	"context.Context",
+	// errors.As — error type assertion; pure function, no I/O.
+	"errors.As",
 	// errors.Is — error comparison; pure function, no I/O.
 	"errors.Is",
 	// errors.New — creates a simple error value; pure function, no I/O.

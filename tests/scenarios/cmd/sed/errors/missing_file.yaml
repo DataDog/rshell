@@ -1,0 +1,13 @@
+description: Sed reports an error for a non-existent input file.
+setup:
+  files:
+    - path: dummy.txt
+      content: ""
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    sed 's/a/b/' nonexistent.txt
+expect:
+  stdout: ""
+  stderr_contains: ["nonexistent.txt"]
+  exit_code: 1

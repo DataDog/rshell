@@ -1,0 +1,8 @@
+description: Sed reports an error when no script is provided.
+input:
+  script: |+
+    sed
+expect:
+  stdout: ""
+  stderr: "sed: no script command has been specified\n"
+  exit_code: 1

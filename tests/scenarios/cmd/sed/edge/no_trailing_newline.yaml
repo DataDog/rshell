@@ -1,0 +1,13 @@
+description: Sed processes a file without a trailing newline.
+setup:
+  files:
+    - path: input.txt
+      content: "no newline at end"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    sed 's/end/END/' input.txt
+expect:
+  stdout: "no newline at END\n"
+  stderr: ""
+  exit_code: 0
