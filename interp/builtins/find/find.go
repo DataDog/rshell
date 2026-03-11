@@ -60,7 +60,6 @@ package find
 import (
 	"context"
 	iofs "io/fs"
-	"strconv"
 	"strings"
 	"time"
 
@@ -108,60 +107,28 @@ func run(ctx context.Context, callCtx *builtins.CallContext, args []string) buil
 		paths = []string{"."}
 	}
 
-	// Parse -maxdepth and -mindepth from leading expression args only.
-	// GNU find treats these as "global options" that should appear before
-	// test predicates (it warns: "you have used a non-option after a test").
-	// Parsing them from arbitrary positions would corrupt predicate arguments
-	// (e.g. find . -name -maxdepth would consume the -name argument).
-	// Commands like "find . -name '*.go' -maxdepth 1" are intentionally
-	// unsupported; use "find . -maxdepth 1 -name '*.go'" instead.
+	// Parse expression (includes -maxdepth/-mindepth as parser-recognized
+	// options). The recursive-descent parser naturally handles token ownership,
+	// so depth options can appear in any position without stealing arguments
+	// from other predicates.
 	exprArgs := args[i:]
-	maxDepth := maxTraversalDepth
-	minDepth := 0
-	j := 0
-	for j < len(exprArgs) {
-		if exprArgs[j] == "-maxdepth" {
-			j++
-			if j >= len(exprArgs) {
-				callCtx.Errf("find: missing argument to '-maxdepth'\n")
-				return builtins.Result{Code: 1}
-			}
-			n, err := strconv.Atoi(exprArgs[j])
-			if err != nil || n < 0 {
-				callCtx.Errf("find: invalid argument '%s' to -maxdepth\n", exprArgs[j])
-				return builtins.Result{Code: 1}
-			}
-			maxDepth = n
-			if maxDepth > maxTraversalDepth {
-				maxDepth = maxTraversalDepth
-			}
-			j++
-			continue
-		}
-		if exprArgs[j] == "-mindepth" {
-			j++
-			if j >= len(exprArgs) {
-				callCtx.Errf("find: missing argument to '-mindepth'\n")
-				return builtins.Result{Code: 1}
-			}
-			n, err := strconv.Atoi(exprArgs[j])
-			if err != nil || n < 0 {
-				callCtx.Errf("find: invalid argument '%s' to -mindepth\n", exprArgs[j])
-				return builtins.Result{Code: 1}
-			}
-			minDepth = n
-			j++
-			continue
-		}
-		break // stop at first non-depth-option
-	}
-	filteredArgs := exprArgs[j:]
-
-	// Parse expression.
-	expression, err := parseExpression(filteredArgs)
+	pr, err := parseExpression(exprArgs)
 	if err != nil {
 		callCtx.Errf("%s\n", err.Error())
 		return builtins.Result{Code: 1}
+	}
+	expression := pr.expr
+
+	maxDepth := pr.maxDepth
+	if maxDepth < 0 {
+		maxDepth = maxTraversalDepth
+	}
+	if maxDepth > maxTraversalDepth {
+		maxDepth = maxTraversalDepth
+	}
+	minDepth := pr.minDepth
+	if minDepth < 0 {
+		minDepth = 0
 	}
 
 	// If no explicit action, add implicit -print.

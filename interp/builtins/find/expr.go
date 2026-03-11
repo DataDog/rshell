@@ -79,10 +79,19 @@ func hasAction(e *expr) bool {
 
 // parser is a recursive-descent parser for find expressions.
 type parser struct {
-	args  []string
-	pos   int
-	depth int
-	nodes int
+	args     []string
+	pos      int
+	depth    int
+	nodes    int
+	maxDepth int // -1 = not specified
+	minDepth int // -1 = not specified
+}
+
+// parseResult holds the output of parseExpression.
+type parseResult struct {
+	expr     *expr
+	maxDepth int // -1 = not specified
+	minDepth int // -1 = not specified
 }
 
 // blocked predicates that are forbidden for sandbox safety.
@@ -100,22 +109,26 @@ var blockedPredicates = map[string]string{
 	"-iregex":  "regular expressions are blocked (ReDoS risk)",
 }
 
-// parseExpression parses the find expression from args. Returns nil if no
-// expression is provided (meaning match everything).
-func parseExpression(args []string) (*expr, error) {
+// parseExpression parses the find expression from args, including
+// -maxdepth/-mindepth which are integrated into the recursive-descent parser.
+// This avoids the argument-stealing problem: each predicate's own argument
+// consumption naturally prevents depth options from capturing tokens that
+// belong to other predicates (e.g. "find . -name -maxdepth" correctly treats
+// "-maxdepth" as the -name pattern, not as a depth option).
+func parseExpression(args []string) (parseResult, error) {
 	if len(args) == 0 {
-		return nil, nil
+		return parseResult{maxDepth: -1, minDepth: -1}, nil
 	}
 
-	p := &parser{args: args}
+	p := &parser{args: args, maxDepth: -1, minDepth: -1}
 	e, err := p.parseOr()
 	if err != nil {
-		return nil, err
+		return parseResult{}, err
 	}
 	if p.pos < len(p.args) {
-		return nil, fmt.Errorf("find: unexpected argument '%s'", p.args[p.pos])
+		return parseResult{}, fmt.Errorf("find: unexpected argument '%s'", p.args[p.pos])
 	}
-	return e, nil
+	return parseResult{expr: e, maxDepth: p.maxDepth, minDepth: p.minDepth}, nil
 }
 
 func (p *parser) peek() string {
@@ -277,6 +290,10 @@ func (p *parser) parsePrimary() (*expr, error) {
 		return &expr{kind: exprPrint0}, nil
 	case "-prune":
 		return &expr{kind: exprPrune}, nil
+	case "-maxdepth":
+		return p.parseDepthOption(true)
+	case "-mindepth":
+		return p.parseDepthOption(false)
 	case "-true":
 		return &expr{kind: exprTrue}, nil
 	case "-false":
@@ -364,6 +381,27 @@ func (p *parser) parseNumericPredicate(kind exprKind) (*expr, error) {
 		return nil, fmt.Errorf("find: invalid argument '%s' to %s", val, kindName(kind))
 	}
 	return &expr{kind: kind, numVal: int64(n), numCmp: cmp}, nil
+}
+
+func (p *parser) parseDepthOption(isMax bool) (*expr, error) {
+	name := "-mindepth"
+	if isMax {
+		name = "-maxdepth"
+	}
+	if p.pos >= len(p.args) {
+		return nil, fmt.Errorf("find: missing argument to '%s'", name)
+	}
+	val := p.advance()
+	n, err := strconv.Atoi(val)
+	if err != nil || n < 0 {
+		return nil, fmt.Errorf("find: invalid argument '%s' to %s", val, name)
+	}
+	if isMax {
+		p.maxDepth = n
+	} else {
+		p.minDepth = n
+	}
+	return &expr{kind: exprTrue}, nil
 }
 
 // parseSize parses a -size argument like "+10k", "-5M", "100c".
