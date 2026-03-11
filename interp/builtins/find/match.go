@@ -193,7 +193,13 @@ func pathGlobMatch(pattern, name string) bool {
 			case '\\':
 				// Escape: next character is literal.
 				px++
-				if px < len(pattern) && nx < len(name) && pattern[px] == name[nx] {
+				if px >= len(pattern) {
+					// Trailing backslash — treat as literal '\\'.
+					if nx < len(name) && name[nx] == '\\' {
+						nx++
+						continue
+					}
+				} else if nx < len(name) && pattern[px] == name[nx] {
 					px++
 					nx++
 					continue
