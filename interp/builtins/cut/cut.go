@@ -59,3 +59,632 @@
 //	rather than an unbounded allocation. All loops check ctx.Err()
 //	at each iteration to honour the shell's execution timeout.
 package cut
+
+import (
+	"bufio"
+	"context"
+	"io"
+	"math"
+	"os"
+	"sort"
+	"strconv"
+	"strings"
+	"unicode/utf8"
+
+	"github.com/DataDog/rshell/interp/builtins"
+)
+
+// Cmd is the cut builtin command descriptor.
+var Cmd = builtins.Command{Name: "cut", MakeFlags: registerFlags}
+
+// MaxLineBytes is the per-line buffer cap for the line scanner.
+const MaxLineBytes = 1 << 20 // 1 MiB
+
+// mode distinguishes the three mutually exclusive selection modes.
+type mode int
+
+const (
+	modeNone   mode = iota
+	modeBytes       // -b
+	modeChars       // -c
+	modeFields      // -f
+)
+
+// registerFlags registers all cut flags on the framework-provided FlagSet and
+// returns a bound handler whose flag variables are captured by closure.
+func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
+	help := fs.BoolP("help", "h", false, "print usage and exit")
+	bytesListStr := fs.StringP("bytes", "b", "", "select only these bytes")
+	charsListStr := fs.StringP("characters", "c", "", "select only these characters")
+	fieldsListStr := fs.StringP("fields", "f", "", "select only these fields")
+	delimiter := fs.StringP("delimiter", "d", "\t", "use DELIM instead of TAB for field delimiter")
+	onlyDelimited := fs.BoolP("only-delimited", "s", false, "do not print lines not containing delimiters")
+	noSplitMultibyte := fs.BoolP("", "n", false, "do not split multi-byte characters")
+	complement := fs.Bool("complement", false, "complement the set of selected bytes, characters, or fields")
+	outputDelimiter := fs.String("output-delimiter", "", "use STRING as the output delimiter")
+
+	return func(ctx context.Context, callCtx *builtins.CallContext, files []string) builtins.Result {
+		if *help {
+			callCtx.Out("Usage: cut OPTION... [FILE]...\n")
+			callCtx.Out("Print selected parts of lines from each FILE to standard output.\n")
+			callCtx.Out("With no FILE, or when FILE is -, read standard input.\n\n")
+			fs.SetOutput(callCtx.Stdout)
+			fs.PrintDefaults()
+			return builtins.Result{}
+		}
+
+		// Determine mode: exactly one of -b, -c, -f must be specified.
+		// Use fs.Changed() to detect whether the flag was explicitly provided,
+		// rather than comparing the value to "" (which would miss -b "").
+		var m mode
+		var listStr string
+		modeCount := 0
+		if fs.Changed("bytes") {
+			m = modeBytes
+			listStr = *bytesListStr
+			modeCount++
+		}
+		if fs.Changed("characters") {
+			m = modeChars
+			listStr = *charsListStr
+			modeCount++
+		}
+		if fs.Changed("fields") {
+			m = modeFields
+			listStr = *fieldsListStr
+			modeCount++
+		}
+		if modeCount == 0 {
+			callCtx.Errf("cut: you must specify a list of bytes, characters, or fields\n")
+			return builtins.Result{Code: 1}
+		}
+		if modeCount > 1 {
+			callCtx.Errf("cut: only one type of list may be specified\n")
+			return builtins.Result{Code: 1}
+		}
+
+		// -d and -s are only valid with -f.
+		if m != modeFields {
+			if fs.Changed("delimiter") {
+				callCtx.Errf("cut: an input delimiter may be specified only when operating on fields\n")
+				return builtins.Result{Code: 1}
+			}
+			if *onlyDelimited {
+				callCtx.Errf("cut: suppressing non-delimited lines makes sense\n\tonly when operating on fields\n")
+				return builtins.Result{Code: 1}
+			}
+		}
+
+		// Delimiter must be exactly one byte (GNU cut behavior).
+		if len(*delimiter) != 1 {
+			callCtx.Errf("cut: the delimiter must be a single character\n")
+			return builtins.Result{Code: 1}
+		}
+		delimByte := (*delimiter)[0]
+
+		// Parse the list.
+		ranges, err := parseList(listStr)
+		if err != nil {
+			callCtx.Errf("cut: %s\n", err.Error())
+			return builtins.Result{Code: 1}
+		}
+
+		// Determine output delimiter.
+		outDelim := *delimiter
+		outDelimSet := fs.Changed("output-delimiter")
+		if outDelimSet {
+			outDelim = *outputDelimiter
+		}
+
+		cfg := &cutConfig{
+			mode:             m,
+			ranges:           ranges,
+			delimByte:        delimByte,
+			onlyDelimited:    *onlyDelimited,
+			noSplitMultibyte: *noSplitMultibyte,
+			complement:       *complement,
+			outDelim:         outDelim,
+			outDelimSet:      outDelimSet,
+		}
+
+		// Default to stdin when no file arguments were given.
+		if len(files) == 0 {
+			files = []string{"-"}
+		}
+
+		var failed bool
+		for _, file := range files {
+			if ctx.Err() != nil {
+				break
+			}
+			if err := processFile(ctx, callCtx, file, cfg); err != nil {
+				name := file
+				if file == "-" {
+					name = "standard input"
+				}
+				callCtx.Errf("cut: %s: %s\n", name, callCtx.PortableErr(err))
+				failed = true
+			}
+		}
+
+		if failed {
+			return builtins.Result{Code: 1}
+		}
+		return builtins.Result{}
+	}
+}
+
+// cutConfig holds the parsed configuration for a cut invocation.
+type cutConfig struct {
+	mode             mode
+	ranges           [][2]int // sorted, merged, 1-based inclusive ranges
+	delimByte        byte
+	onlyDelimited    bool
+	noSplitMultibyte bool
+	complement       bool
+	outDelim         string
+	outDelimSet      bool
+}
+
+// parseList parses a comma-separated list of ranges/positions into sorted,
+// merged [2]int ranges (1-based inclusive). Open-ended ranges use
+// math.MaxInt32 as sentinel.
+func parseList(s string) ([][2]int, error) {
+	parts := strings.Split(s, ",")
+	var ranges [][2]int
+	for _, part := range parts {
+		if part == "" {
+			continue
+		}
+		dashIdx := strings.IndexByte(part, '-')
+		if dashIdx < 0 {
+			// Single number: N
+			n, err := strconv.Atoi(part)
+			if err != nil || n <= 0 {
+				return nil, invalidRange(part)
+			}
+			ranges = append(ranges, [2]int{n, n})
+		} else {
+			left := part[:dashIdx]
+			right := part[dashIdx+1:]
+			// A bare "-" (both sides empty) is invalid.
+			if left == "" && right == "" {
+				return nil, invalidRange(part)
+			}
+			var start, end int
+			if left == "" {
+				start = 1
+			} else {
+				var err error
+				start, err = strconv.Atoi(left)
+				if err != nil || start <= 0 {
+					return nil, invalidRange(part)
+				}
+			}
+			if right == "" {
+				end = math.MaxInt32
+			} else {
+				var err error
+				end, err = strconv.Atoi(right)
+				if err != nil || end <= 0 {
+					return nil, invalidRange(part)
+				}
+			}
+			if start > end {
+				return nil, invalidDecreasingRange(part)
+			}
+			ranges = append(ranges, [2]int{start, end})
+		}
+	}
+	if len(ranges) == 0 {
+		return nil, invalidRange(s)
+	}
+
+	// Sort by start, then merge overlapping/adjacent.
+	sort.Slice(ranges, func(i, j int) bool {
+		if ranges[i][0] != ranges[j][0] {
+			return ranges[i][0] < ranges[j][0]
+		}
+		return ranges[i][1] < ranges[j][1]
+	})
+
+	// Merge overlapping ranges (but not merely adjacent ones, so that
+	// --output-delimiter can be inserted between adjacent ranges like 1-2,3-4).
+	merged := [][2]int{ranges[0]}
+	for _, r := range ranges[1:] {
+		last := &merged[len(merged)-1]
+		if r[0] <= last[1] {
+			// Truly overlapping: extend.
+			if r[1] > last[1] {
+				last[1] = r[1]
+			}
+		} else {
+			merged = append(merged, r)
+		}
+	}
+	return merged, nil
+}
+
+func invalidRange(s string) error {
+	return cutError("invalid byte, character or field list: " + s)
+}
+
+func invalidDecreasingRange(s string) error {
+	return cutError("invalid decreasing range: " + s)
+}
+
+// cutError is a simple error type.
+type cutError string
+
+func (e cutError) Error() string { return string(e) }
+
+// processFile opens and processes one file (or stdin for "-").
+func processFile(ctx context.Context, callCtx *builtins.CallContext, file string, cfg *cutConfig) error {
+	var rc io.ReadCloser
+	if file == "-" {
+		if callCtx.Stdin == nil {
+			return nil
+		}
+		rc = io.NopCloser(callCtx.Stdin)
+	} else {
+		f, err := callCtx.OpenFile(ctx, file, os.O_RDONLY, 0)
+		if err != nil {
+			return err
+		}
+		defer f.Close()
+		rc = f
+	}
+
+	sc := bufio.NewScanner(rc)
+	buf := make([]byte, 4096)
+	sc.Buffer(buf, MaxLineBytes)
+	sc.Split(scanLinesPreservingNewline)
+
+	for sc.Scan() {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		line := sc.Bytes()
+		// Strip trailing newline for processing; we always add one back.
+		raw := stripNewline(line)
+		switch cfg.mode {
+		case modeBytes:
+			processBytes(callCtx, raw, cfg)
+		case modeChars:
+			processChars(callCtx, raw, cfg)
+		case modeFields:
+			processFields(callCtx, raw, cfg)
+		}
+	}
+	return sc.Err()
+}
+
+// stripNewline removes a trailing \n or \r\n from a byte slice.
+func stripNewline(b []byte) []byte {
+	if len(b) > 0 && b[len(b)-1] == '\n' {
+		b = b[:len(b)-1]
+	}
+	if len(b) > 0 && b[len(b)-1] == '\r' {
+		b = b[:len(b)-1]
+	}
+	return b
+}
+
+// inRanges checks whether pos (1-based) falls within any of the sorted ranges.
+func inRanges(pos int, ranges [][2]int) bool {
+	for _, r := range ranges {
+		if pos < r[0] {
+			return false // ranges are sorted, no need to continue
+		}
+		if pos <= r[1] {
+			return true
+		}
+	}
+	return false
+}
+
+// processBytes selects bytes from a line.
+func processBytes(callCtx *builtins.CallContext, raw []byte, cfg *cutConfig) {
+	n := len(raw)
+	if n == 0 {
+		callCtx.Out("\n")
+		return
+	}
+
+	if cfg.noSplitMultibyte {
+		processBytesNoSplit(callCtx, raw, cfg)
+		return
+	}
+
+	if cfg.complement {
+		// Select bytes NOT in ranges.
+		if cfg.outDelimSet {
+			processBytesComplementWithOutDelim(callCtx, raw, cfg)
+		} else {
+			var sb strings.Builder
+			for i := range n {
+				pos := i + 1
+				if !inRanges(pos, cfg.ranges) {
+					sb.WriteByte(raw[i])
+				}
+			}
+			callCtx.Out(sb.String())
+		}
+	} else {
+		if cfg.outDelimSet {
+			processBytesWithOutDelim(callCtx, raw, cfg)
+		} else {
+			var sb strings.Builder
+			for i := range n {
+				pos := i + 1
+				if inRanges(pos, cfg.ranges) {
+					sb.WriteByte(raw[i])
+				}
+			}
+			callCtx.Out(sb.String())
+		}
+	}
+	callCtx.Out("\n")
+}
+
+// processBytesWithOutDelim outputs selected byte ranges with the output
+// delimiter inserted between non-contiguous ranges.
+func processBytesWithOutDelim(callCtx *builtins.CallContext, raw []byte, cfg *cutConfig) {
+	n := len(raw)
+	first := true
+	for _, r := range cfg.ranges {
+		start := r[0]
+		end := r[1]
+		if start > n {
+			break
+		}
+		if end > n {
+			end = n
+		}
+		if !first {
+			callCtx.Out(cfg.outDelim)
+		}
+		_, _ = callCtx.Stdout.Write(raw[start-1 : end])
+		first = false
+	}
+}
+
+// processBytesComplementWithOutDelim outputs complemented byte ranges with output delimiter.
+func processBytesComplementWithOutDelim(callCtx *builtins.CallContext, raw []byte, cfg *cutConfig) {
+	compRanges := complementRanges(cfg.ranges, len(raw))
+	first := true
+	for _, r := range compRanges {
+		if !first {
+			callCtx.Out(cfg.outDelim)
+		}
+		_, _ = callCtx.Stdout.Write(raw[r[0]-1 : r[1]])
+		first = false
+	}
+}
+
+// processBytesNoSplit handles -b with -n: don't split multi-byte characters.
+func processBytesNoSplit(callCtx *builtins.CallContext, raw []byte, cfg *cutConfig) {
+	n := len(raw)
+
+	// Build a map: for each byte position, record whether it's the start of a character.
+	// Also record the character index for grouping with output delimiter.
+	// A byte is included if:
+	//   - Its position is in the selected ranges AND
+	//   - It is the first byte of a character, OR the first byte of its character is also selected
+
+	// First pass: identify character boundaries.
+	type charInfo struct {
+		startByte int // 0-based byte offset where this char starts
+		byteLen   int // number of bytes in this character
+	}
+	var chars []charInfo
+	i := 0
+	for i < n {
+		_, size := utf8.DecodeRune(raw[i:])
+		if size == 0 {
+			size = 1 // invalid byte, treat as single byte
+		}
+		chars = append(chars, charInfo{startByte: i, byteLen: size})
+		i += size
+	}
+
+	// For each character, include it if the first byte of the character is selected.
+	selected := make([]bool, len(chars))
+	for ci, ch := range chars {
+		pos := ch.startByte + 1 // 1-based
+		sel := inRanges(pos, cfg.ranges)
+		if cfg.complement {
+			sel = !sel
+		}
+		selected[ci] = sel
+	}
+
+	if cfg.outDelimSet {
+		// With output delimiter, insert it between non-contiguous selected groups.
+		first := true
+		prevEnd := -1
+		for ci, ch := range chars {
+			if !selected[ci] {
+				continue
+			}
+			if !first && ch.startByte != prevEnd {
+				callCtx.Out(cfg.outDelim)
+			}
+			_, _ = callCtx.Stdout.Write(raw[ch.startByte : ch.startByte+ch.byteLen])
+			prevEnd = ch.startByte + ch.byteLen
+			first = false
+		}
+	} else {
+		var sb strings.Builder
+		for ci, ch := range chars {
+			if selected[ci] {
+				sb.Write(raw[ch.startByte : ch.startByte+ch.byteLen])
+			}
+		}
+		callCtx.Out(sb.String())
+	}
+	callCtx.Out("\n")
+}
+
+// processChars selects characters (runes) from a line.
+func processChars(callCtx *builtins.CallContext, raw []byte, cfg *cutConfig) {
+	n := utf8.RuneCount(raw)
+	if n == 0 && len(raw) == 0 {
+		callCtx.Out("\n")
+		return
+	}
+
+	// Decode all runes with their byte positions for output delimiter support.
+	type runeInfo struct {
+		startByte int
+		byteLen   int
+	}
+	runes := make([]runeInfo, 0, n)
+	i := 0
+	for i < len(raw) {
+		_, size := utf8.DecodeRune(raw[i:])
+		if size == 0 {
+			size = 1
+		}
+		runes = append(runes, runeInfo{startByte: i, byteLen: size})
+		i += size
+	}
+
+	if cfg.outDelimSet {
+		// Determine effective ranges considering complement.
+		effectiveRanges := cfg.ranges
+		if cfg.complement {
+			effectiveRanges = complementRanges(cfg.ranges, len(runes))
+		}
+		first := true
+		for _, r := range effectiveRanges {
+			start := r[0]
+			end := r[1]
+			if start > len(runes) {
+				break
+			}
+			if end > len(runes) {
+				end = len(runes)
+			}
+			if !first {
+				callCtx.Out(cfg.outDelim)
+			}
+			// Output runes from start to end (1-based inclusive).
+			startByteOff := runes[start-1].startByte
+			lastRune := runes[end-1]
+			endByteOff := lastRune.startByte + lastRune.byteLen
+			_, _ = callCtx.Stdout.Write(raw[startByteOff:endByteOff])
+			first = false
+		}
+	} else {
+		var sb strings.Builder
+		for ri, ru := range runes {
+			pos := ri + 1
+			sel := inRanges(pos, cfg.ranges)
+			if cfg.complement {
+				sel = !sel
+			}
+			if sel {
+				sb.Write(raw[ru.startByte : ru.startByte+ru.byteLen])
+			}
+		}
+		callCtx.Out(sb.String())
+	}
+	callCtx.Out("\n")
+}
+
+// processFields selects fields from a line.
+func processFields(callCtx *builtins.CallContext, raw []byte, cfg *cutConfig) {
+	line := string(raw)
+	delimStr := string(cfg.delimByte)
+
+	// Check if line contains the delimiter.
+	if strings.IndexByte(line, cfg.delimByte) < 0 {
+		if cfg.onlyDelimited {
+			return // suppress line
+		}
+		// No delimiter: print the whole line + newline.
+		callCtx.Out(line)
+		callCtx.Out("\n")
+		return
+	}
+
+	fields := strings.Split(line, delimStr)
+	nFields := len(fields)
+
+	// Determine which fields to select.
+	var selected []int
+	if cfg.complement {
+		compRanges := complementRanges(cfg.ranges, nFields)
+		for _, r := range compRanges {
+			for i := r[0]; i <= r[1] && i <= nFields; i++ {
+				selected = append(selected, i)
+			}
+		}
+	} else {
+		for _, r := range cfg.ranges {
+			start := r[0]
+			end := r[1]
+			if start > nFields {
+				break
+			}
+			if end > nFields {
+				end = nFields
+			}
+			for i := start; i <= end; i++ {
+				selected = append(selected, i)
+			}
+		}
+	}
+
+	// Output selected fields joined by the output delimiter.
+	for i, idx := range selected {
+		if i > 0 {
+			callCtx.Out(cfg.outDelim)
+		}
+		callCtx.Out(fields[idx-1])
+	}
+	callCtx.Out("\n")
+}
+
+// complementRanges returns the complement of the given sorted, merged ranges
+// within [1, total].
+func complementRanges(ranges [][2]int, total int) [][2]int {
+	var result [][2]int
+	next := 1
+	for _, r := range ranges {
+		start := r[0]
+		end := r[1]
+		if start > total {
+			break
+		}
+		if next < start {
+			result = append(result, [2]int{next, start - 1})
+		}
+		next = end + 1
+	}
+	if next <= total {
+		result = append(result, [2]int{next, total})
+	}
+	return result
+}
+
+// scanLinesPreservingNewline is a bufio.SplitFunc that includes the line
+// terminator (\n) in the returned token. Unlike bufio.ScanLines, it does not
+// strip \r\n or \n, so the caller reproduces the exact file content. If the
+// file's last line has no terminator, the bare bytes are returned as the
+// final token.
+func scanLinesPreservingNewline(data []byte, atEOF bool) (advance int, token []byte, err error) {
+	if atEOF && len(data) == 0 {
+		return 0, nil, nil
+	}
+	for i, b := range data {
+		if b == '\n' {
+			return i + 1, data[:i+1], nil
+		}
+	}
+	if atEOF {
+		return len(data), data, nil
+	}
+	return 0, nil, nil
+}

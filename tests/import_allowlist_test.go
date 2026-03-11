@@ -70,6 +70,8 @@ var builtinAllowedSymbols = []string{
 	"io.ReadCloser",
 	// io.Reader — interface type; no side effects.
 	"io.Reader",
+	// math.MaxInt32 — integer constant; no side effects.
+	"math.MaxInt32",
 	// math.MaxInt64 — integer constant; no side effects.
 	"math.MaxInt64",
 	// math.MinInt64 — integer constant; no side effects.
@@ -78,6 +80,8 @@ var builtinAllowedSymbols = []string{
 	"os.FileInfo",
 	// os.O_RDONLY — read-only file flag constant; cannot open files by itself.
 	"os.O_RDONLY",
+	// sort.Slice — sorts a slice with a less function; pure function, no I/O.
+	"sort.Slice",
 	// slices.Reverse — reverses a slice in-place; pure function, no I/O.
 	"slices.Reverse",
 	// slices.SortFunc — sorts a slice with a comparison function; pure function, no I/O.
@@ -96,6 +100,10 @@ var builtinAllowedSymbols = []string{
 	"strconv.FormatInt",
 	// strings.HasPrefix — pure function for prefix matching; no I/O.
 	"strings.HasPrefix",
+	// strings.IndexByte — finds byte in string; pure function, no I/O.
+	"strings.IndexByte",
+	// strings.Split — splits string by separator; pure function, no I/O.
+	"strings.Split",
 	// strings.TrimSpace — removes leading/trailing whitespace; pure function.
 	"strings.TrimSpace",
 	// io.WriteString — writes a string to a writer; no filesystem access, delegates to Write.

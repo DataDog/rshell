@@ -1,0 +1,9 @@
+# Derived from uutils test_cut.rs::test_delimiter_must_be_single_char
+description: Cut rejects a multi-character delimiter.
+input:
+  script: |+
+    cut -d ab -f1
+expect:
+  stdout: ""
+  stderr_contains: ["cut:"]
+  exit_code: 1
