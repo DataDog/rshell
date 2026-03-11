@@ -288,7 +288,9 @@ Run a final verification regardless of how the loop exited:
 
 Record the final state of each dimension (self-review, external reviews, CI).
 
-**Completion check:** All three verifications ran. Mark Step 3 as `completed`.
+**If any verification fails** (CI failing, unresolved threads remain, or unpushed commits that can't be pushed), reset Step 2 and all its sub-steps to `pending`, and go back to **Step 2: Run the review-fix loop** for another iteration. Only proceed to Step 4 when all three verifications pass.
+
+**Completion check:** All three verifications passed. Mark Step 3 as `completed`.
 
 ---
 
