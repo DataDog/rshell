@@ -362,7 +362,6 @@ const maxSetLen = 1 << 20
 
 type caseClassPos struct {
 	expandedOffset int
-	name           string // "upper" or "lower"
 }
 
 func expandSet(s string, isSet2 bool, set1Len int, translateSet2 bool, callCtx *builtins.CallContext, caseClasses *[]caseClassPos, endsWithClass *bool) ([]byte, error) {
@@ -389,7 +388,7 @@ func expandSet(s string, isSet2 bool, set1Len int, translateSet2 bool, callCtx *
 						return nil, err
 					}
 					if (className == "upper" || className == "lower") && caseClasses != nil {
-						*caseClasses = append(*caseClasses, caseClassPos{expandedOffset: len(result), name: className})
+						*caseClasses = append(*caseClasses, caseClassPos{expandedOffset: len(result)})
 					}
 					result = append(result, chars...)
 					lastTokenIsClass = true
