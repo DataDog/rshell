@@ -178,6 +178,12 @@ func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {
 			for _, field := range items {
 				r.setVarString(name, field)
 				if r.loopStmtsBroken(ctx, cm.Do) {
+					// Excess continue at outermost loop: clamp and keep iterating
+					// (bash treats "continue 99" in a single loop like "continue 1").
+					if r.contnEnclosing > 0 && !r.inLoop {
+						r.contnEnclosing = 0
+						continue
+					}
 					break
 				}
 			}
