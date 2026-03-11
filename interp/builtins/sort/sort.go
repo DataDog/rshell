@@ -178,7 +178,11 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 		// Validate -t flag: must be a single byte.
 		sep := byte(0)
 		hasSep := false
-		if *fieldSep != "" {
+		if fs.Changed("field-separator") {
+			if len(*fieldSep) == 0 {
+				callCtx.Errf("sort: empty tab\n")
+				return builtins.Result{Code: 2}
+			}
 			if len(*fieldSep) != 1 {
 				callCtx.Errf("sort: multi-character tab %q\n", *fieldSep)
 				return builtins.Result{Code: 2}
@@ -313,6 +317,7 @@ func readFile(ctx context.Context, callCtx *builtins.CallContext, file string, t
 	sc := bufio.NewScanner(rc)
 	buf := make([]byte, 4096)
 	sc.Buffer(buf, MaxLineBytes)
+	sc.Split(scanLinesPreserveCR)
 
 	var lines []string
 	for sc.Scan() {
@@ -390,6 +395,9 @@ func parseKeyDef(s string) (keySpec, error) {
 
 	if k.startField < 1 {
 		return k, errors.New("invalid key: field number must be positive")
+	}
+	if k.endField != 0 && k.endField < 1 {
+		return k, errors.New("invalid key: field number is zero")
 	}
 	return k, nil
 }
@@ -756,9 +764,8 @@ func parseNumParts(s string) (bool, string, string) {
 	if s[i] == '-' {
 		neg = true
 		i++
-	} else if s[i] == '+' {
-		i++
 	}
+	// GNU sort -n does NOT accept '+' as a sign prefix — treat +N as non-numeric.
 	if i >= len(s) || (s[i] < '0' || s[i] > '9') && s[i] != '.' {
 		return false, "0", ""
 	}
@@ -774,6 +781,10 @@ func parseNumParts(s string) (bool, string, string) {
 		j++
 	}
 	intPart = intPart[j:]
+	// Canonicalize empty integer part (e.g. ".5") to "0".
+	if intPart == "" {
+		intPart = "0"
+	}
 
 	// Parse fractional digits.
 	fracPart := ""
@@ -806,6 +817,24 @@ func isZeroNum(intPart, fracPart string) bool {
 		}
 	}
 	return true
+}
+
+// scanLinesPreserveCR is a bufio.SplitFunc that splits on \n but preserves
+// \r in the token (unlike bufio.ScanLines which strips \r from \r\n).
+// This ensures CRLF data is round-tripped faithfully through sort.
+func scanLinesPreserveCR(data []byte, atEOF bool) (advance int, token []byte, err error) {
+	if atEOF && len(data) == 0 {
+		return 0, nil, nil
+	}
+	for i := 0; i < len(data); i++ {
+		if data[i] == '\n' {
+			return i + 1, data[:i], nil
+		}
+	}
+	if atEOF {
+		return len(data), data, nil
+	}
+	return 0, nil, nil
 }
 
 // buildCompare constructs the comparison function for sorting.
