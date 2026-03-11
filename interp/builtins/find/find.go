@@ -82,10 +82,12 @@ func run(ctx context.Context, callCtx *builtins.CallContext, args []string) buil
 		if args[i] == "-L" {
 			followLinks = true
 			i++
-		} else if args[i] == "-P" || args[i] == "-H" {
-			// -P is default (no follow), -H follows only for command-line args.
-			// We treat -H same as -P for simplicity.
+		} else if args[i] == "-P" {
+			// -P is default (no follow).
 			i++
+		} else if args[i] == "-H" {
+			callCtx.Errf("find: -H is not supported\n")
+			return builtins.Result{Code: 1}
 		} else {
 			break
 		}

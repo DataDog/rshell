@@ -132,9 +132,15 @@ func compareNumeric(actual, target int64, cmp int) bool {
 }
 
 // baseName returns the last element of a path.
+// Trailing slashes are stripped first so that "dir/" returns "dir",
+// matching GNU find's behavior for -name/-iname matching.
 // The shell normalises all paths to forward slashes on all platforms,
 // so hardcoding '/' is correct even on Windows.
 func baseName(p string) string {
+	// Strip trailing slashes.
+	for len(p) > 1 && p[len(p)-1] == '/' {
+		p = p[:len(p)-1]
+	}
 	for i := len(p) - 1; i >= 0; i-- {
 		if p[i] == '/' {
 			return p[i+1:]

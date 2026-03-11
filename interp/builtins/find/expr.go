@@ -395,6 +395,11 @@ func (p *parser) parseDepthOption(isMax bool) (*expr, error) {
 		return nil, fmt.Errorf("find: missing argument to '%s'", name)
 	}
 	val := p.advance()
+	// Reject non-decimal forms like "+1" or "-1" that strconv.Atoi accepts.
+	// GNU find requires a positive decimal integer.
+	if len(val) > 0 && (val[0] == '+' || val[0] == '-') {
+		return nil, fmt.Errorf("find: invalid argument '%s' to %s", val, name)
+	}
 	n, err := strconv.Atoi(val)
 	if err != nil || n < 0 {
 		return nil, fmt.Errorf("find: invalid argument '%s' to %s", val, name)
