@@ -1,0 +1,16 @@
+description: find -mmin 0 matches files modified within the last minute.
+skip_assert_against_bash: true
+setup:
+  files:
+    - path: dir/recent.txt
+      content: "just created"
+      chmod: 0644
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    find dir -type f -mmin 0
+expect:
+  stdout: |+
+    dir/recent.txt
+  stderr: ""
+  exit_code: 0

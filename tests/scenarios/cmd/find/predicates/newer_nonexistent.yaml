@@ -1,0 +1,16 @@
+description: find -newer with missing reference file produces error and exit code 1.
+skip_assert_against_bash: true
+setup:
+  files:
+    - path: dir/a.txt
+      content: "a"
+      chmod: 0644
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    find dir -type f -newer nonexistent.txt
+    echo "exit=$?"
+expect:
+  stdout_contains: ["exit=1"]
+  stderr_contains: ["find:"]
+  exit_code: 0
