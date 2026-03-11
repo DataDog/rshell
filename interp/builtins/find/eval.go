@@ -8,6 +8,7 @@ package find
 import (
 	"context"
 	iofs "io/fs"
+	"math"
 	"time"
 
 	"github.com/DataDog/rshell/interp/builtins"
@@ -21,15 +22,15 @@ type evalResult struct {
 
 // evalContext holds state needed during expression evaluation.
 type evalContext struct {
-	callCtx      *builtins.CallContext
-	ctx          context.Context
-	now          time.Time
-	relPath      string        // path relative to starting point
-	info         iofs.FileInfo // file info (lstat or stat depending on -L)
-	depth        int           // current depth
-	printPath    string        // path to print (includes starting point prefix)
-	newerCache   map[string]time.Time // cached -newer reference file modtimes
-	newerErrors  map[string]bool      // tracks which -newer reference files failed to stat
+	callCtx     *builtins.CallContext
+	ctx         context.Context
+	now         time.Time
+	relPath     string               // path relative to starting point
+	info        iofs.FileInfo        // file info (lstat or stat depending on -L)
+	depth       int                  // current depth
+	printPath   string               // path to print (includes starting point prefix)
+	newerCache  map[string]time.Time // cached -newer reference file modtimes
+	newerErrors map[string]bool      // tracks which -newer reference files failed to stat
 }
 
 // evaluate evaluates an expression tree against a file. If e is nil, returns
@@ -158,7 +159,7 @@ func evalNewer(ec *evalContext, refPath string) bool {
 func evalMtime(ec *evalContext, n int64, cmp int) bool {
 	modTime := ec.info.ModTime()
 	diff := ec.now.Sub(modTime)
-	days := int64(diff.Hours()) / 24
+	days := int64(math.Floor(diff.Hours() / 24))
 	return compareNumeric(days, n, cmp)
 }
 
@@ -166,6 +167,6 @@ func evalMtime(ec *evalContext, n int64, cmp int) bool {
 func evalMmin(ec *evalContext, n int64, cmp int) bool {
 	modTime := ec.info.ModTime()
 	diff := ec.now.Sub(modTime)
-	mins := int64(diff.Minutes())
+	mins := int64(math.Floor(diff.Minutes()))
 	return compareNumeric(mins, n, cmp)
 }

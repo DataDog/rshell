@@ -138,9 +138,11 @@ func run(ctx context.Context, callCtx *builtins.CallContext, args []string) buil
 	// GNU find always reports missing reference files even if short-circuiting
 	// or -mindepth prevents the predicate from being evaluated.
 	failed := false
+	eagerNewerErrors := map[string]bool{}
 	for _, ref := range collectNewerRefs(expression) {
 		if _, err := callCtx.StatFile(ctx, ref); err != nil {
 			callCtx.Errf("find: '%s': %s\n", ref, callCtx.PortableErr(err))
+			eagerNewerErrors[ref] = true
 			failed = true
 		}
 	}
@@ -149,7 +151,7 @@ func run(ctx context.Context, callCtx *builtins.CallContext, args []string) buil
 		if ctx.Err() != nil {
 			break
 		}
-		if walkPath(ctx, callCtx, startPath, expression, implicitPrint, followLinks, maxDepth, minDepth) {
+		if walkPath(ctx, callCtx, startPath, expression, implicitPrint, followLinks, maxDepth, minDepth, eagerNewerErrors) {
 			failed = true
 		}
 	}
@@ -186,11 +188,15 @@ func walkPath(
 	followLinks bool,
 	maxDepth int,
 	minDepth int,
+	eagerNewerErrors map[string]bool,
 ) bool {
 	now := callCtx.Now()
 	failed := false
 	newerCache := map[string]time.Time{}
 	newerErrors := map[string]bool{}
+	for k, v := range eagerNewerErrors {
+		newerErrors[k] = v
+	}
 
 	// Stat the starting path.
 	var startInfo iofs.FileInfo

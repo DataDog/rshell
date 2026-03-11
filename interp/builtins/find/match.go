@@ -231,8 +231,7 @@ func matchClass(pattern string, ch byte) (bool, int) {
 	if i < len(pattern) && pattern[i] == '^' {
 		negate = true
 		i++
-	}
-	if i < len(pattern) && pattern[i] == '!' {
+	} else if i < len(pattern) && pattern[i] == '!' {
 		negate = true
 		i++
 	}
