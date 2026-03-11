@@ -31,6 +31,7 @@ type evalContext struct {
 	printPath   string               // path to print (includes starting point prefix)
 	newerCache  map[string]time.Time // cached -newer reference file modtimes
 	newerErrors map[string]bool      // tracks which -newer reference files failed to stat
+	followLinks bool                 // true when -L is active
 }
 
 // evaluate evaluates an expression tree against a file. If e is nil, returns
@@ -142,7 +143,11 @@ func evalNewer(ec *evalContext, refPath string) bool {
 	}
 	refTime, ok := ec.newerCache[refPath]
 	if !ok {
-		refInfo, err := ec.callCtx.StatFile(ec.ctx, refPath)
+		statRef := ec.callCtx.LstatFile
+		if ec.followLinks {
+			statRef = ec.callCtx.StatFile
+		}
+		refInfo, err := statRef(ec.ctx, refPath)
 		if err != nil {
 			ec.callCtx.Errf("find: '%s': %s\n", refPath, ec.callCtx.PortableErr(err))
 			ec.newerErrors[refPath] = true

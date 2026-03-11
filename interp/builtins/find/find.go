@@ -145,7 +145,11 @@ func run(ctx context.Context, callCtx *builtins.CallContext, args []string) buil
 			continue
 		}
 		seen[ref] = true
-		if _, err := callCtx.StatFile(ctx, ref); err != nil {
+		statRef := callCtx.LstatFile
+		if followLinks {
+			statRef = callCtx.StatFile
+		}
+		if _, err := statRef(ctx, ref); err != nil {
 			callCtx.Errf("find: '%s': %s\n", ref, callCtx.PortableErr(err))
 			eagerNewerErrors[ref] = true
 			failed = true
@@ -267,6 +271,7 @@ func walkPath(
 			printPath:   printPath,
 			newerCache:  newerCache,
 			newerErrors: newerErrors,
+			followLinks: followLinks,
 		}
 
 		// Evaluate expression at this depth.

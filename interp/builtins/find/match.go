@@ -16,7 +16,7 @@ import (
 func matchGlob(pattern, name string) bool {
 	matched, err := path.Match(pattern, name)
 	if err != nil {
-		return false
+		return pattern == name
 	}
 	return matched
 }
@@ -25,7 +25,7 @@ func matchGlob(pattern, name string) bool {
 func matchGlobFold(pattern, name string) bool {
 	matched, err := path.Match(strings.ToLower(pattern), strings.ToLower(name))
 	if err != nil {
-		return false
+		return strings.ToLower(pattern) == strings.ToLower(name)
 	}
 	return matched
 }
