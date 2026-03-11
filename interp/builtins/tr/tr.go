@@ -215,6 +215,7 @@ func deleteBytes(ctx context.Context, callCtx *builtins.CallContext, set1 []byte
 			}
 			if len(out) > 0 {
 				if _, werr := callCtx.Stdout.Write(out); werr != nil {
+					callCtx.Errf("tr: write error: %s\n", callCtx.PortableErr(werr))
 					return builtins.Result{Code: 1}
 				}
 			}
@@ -266,6 +267,7 @@ func deleteAndSqueeze(ctx context.Context, callCtx *builtins.CallContext, set1, 
 			}
 			if len(out) > 0 {
 				if _, werr := callCtx.Stdout.Write(out); werr != nil {
+					callCtx.Errf("tr: write error: %s\n", callCtx.PortableErr(werr))
 					return builtins.Result{Code: 1}
 				}
 			}
@@ -310,6 +312,7 @@ func squeezeOnly(ctx context.Context, callCtx *builtins.CallContext, set1 []byte
 			}
 			if len(out) > 0 {
 				if _, werr := callCtx.Stdout.Write(out); werr != nil {
+					callCtx.Errf("tr: write error: %s\n", callCtx.PortableErr(werr))
 					return builtins.Result{Code: 1}
 				}
 			}
@@ -378,6 +381,7 @@ func translate(ctx context.Context, callCtx *builtins.CallContext, set1, set2 []
 			}
 			if len(out) > 0 {
 				if _, werr := callCtx.Stdout.Write(out); werr != nil {
+					callCtx.Errf("tr: write error: %s\n", callCtx.PortableErr(werr))
 					return builtins.Result{Code: 1}
 				}
 			}
@@ -436,6 +440,7 @@ func expandSet(s string, isSet2 bool, set1Len int, translateSet2 bool, callCtx *
 	i := 0
 	for i < len(data) {
 		if len(result) > maxSetLen {
+			callCtx.Errf("tr: warning: set expansion exceeded %d bytes, truncating\n", maxSetLen)
 			return result[:maxSetLen], nil
 		}
 
@@ -608,7 +613,12 @@ func expandCharClass(name string) ([]byte, error) {
 	return nil, &trError{"invalid character class '" + name + "'"}
 }
 
+// buildRange returns all bytes in the given inclusive ranges.
+// pairs must have even length: [start1, end1, start2, end2, ...].
 func buildRange(pairs ...byte) []byte {
+	if len(pairs)%2 != 0 {
+		panic("buildRange: pairs must have even length")
+	}
 	var result []byte
 	for i := 0; i < len(pairs); i += 2 {
 		for c := pairs[i]; ; c++ {
@@ -699,6 +709,10 @@ func parseOctal(data []byte, start int) (byte, int, string) {
 		resultEscape := fmt.Sprintf("\\0%s", string(data[start:start+count]))
 		// Safe: the loop consumed exactly 3 digits within data, so after
 		// decrementing count to 2, start+count+1 == start+3 <= len(data).
+		// Defensive check guards against future refactors breaking this invariant.
+		if start+count >= len(data) {
+			return byte(val), count + 1, ""
+		}
 		trailingChar := string(data[start+count : start+count+1])
 		warning = fmt.Sprintf("tr: warning: the ambiguous octal escape \\%s is being\n\tinterpreted as the 2-byte sequence %s, %s\n", origEscape, resultEscape, trailingChar)
 	}
@@ -743,6 +757,10 @@ func parseRepeat(data []byte, pos int) ([]byte, int, byte, bool) {
 	}
 
 	var count int64
+	// GNU-compatible heuristic: "0" alone is decimal (means fill), but a
+	// leading zero with additional digits (e.g. "010") is octal.  This
+	// matches GNU coreutils tr behaviour where [c*0] means fill and
+	// [c*010] is octal 8.
 	if len(countStr) > 1 && countStr[0] == '0' {
 		for _, c := range countStr {
 			if c < '0' || c > '7' {

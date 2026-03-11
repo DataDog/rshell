@@ -17,7 +17,6 @@ Blocked features are rejected before execution with exit code 2.
 - ✅ `ls [-1aAdFhlpRrSt] [FILE]...` — list directory contents
 - ✅ `strings [-a] [-n MIN] [-t o|d|x] [-o] [-f] [-s SEP] [FILE]...` — print printable character sequences in files (default min length 4); offsets via `-t`/`-o`; filename prefix via `-f`; custom separator via `-s`
 - ✅ `tail [-n N|-c N] [-q|-v] [-z] [FILE]...` — output the last part of files (default: last 10 lines); supports `+N` offset mode; `-f`/`--follow` is rejected
-- ✅ `test`/`[` — evaluate conditional expressions (file tests, string comparisons, integer comparisons)
 - ✅ `tr [-cdsCt] SET1 [SET2]` — translate, squeeze, and/or delete characters from stdin
 - ✅ `true` — return exit code 0
 - ✅ `uniq [OPTION]... [INPUT]` — report or omit repeated lines

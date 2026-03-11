@@ -3,6 +3,12 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2026-present Datadog, Inc.
 
+// Package tr_test contains unit tests for the tr builtin.
+//
+// Some tests here intentionally overlap with tr_gnu_compat_test.go (which
+// verifies exact GNU coreutils output literals).  The overlap is deliberate:
+// this file tests behaviour through the rshell runner, while the GNU compat
+// file serves as a regression suite anchored to captured GNU output.
 package tr_test
 
 import (
