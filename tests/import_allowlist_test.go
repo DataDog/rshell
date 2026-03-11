@@ -74,8 +74,12 @@ var builtinAllowedSymbols = []string{
 	"strings.Builder",
 	// strings.Join — concatenates a slice of strings with a separator; pure function, no I/O.
 	"strings.Join",
+	// strings.Split — splits a string by separator into a slice; pure function, no I/O.
+	"strings.Split",
 	// strconv.Atoi — string-to-int conversion; pure function, no I/O.
 	"strconv.Atoi",
+	// strconv.ParseBool — string-to-bool conversion; pure function, no I/O.
+	"strconv.ParseBool",
 	// strconv.Itoa — int-to-string conversion; pure function, no I/O.
 	"strconv.Itoa",
 	// strconv.ErrRange — sentinel error value for overflow; pure constant.

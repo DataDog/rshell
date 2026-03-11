@@ -647,6 +647,54 @@ func TestGrepCountSuppressedByFileListModes(t *testing.T) {
 	assert.Equal(t, "b.txt\n", stdout)
 }
 
+// --- -h/-H last-option precedence ---
+
+func TestGrepFilenameHhLastFlagWins(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "a.txt", "foo\n")
+	writeFile(t, dir, "b.txt", "foo\n")
+
+	// -h -H: last flag is -H, so show filenames
+	stdout, _, code := cmdRun(t, "grep -h -H foo a.txt b.txt", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "a.txt:foo\nb.txt:foo\n", stdout)
+
+	// -H -h: last flag is -h, so suppress filenames
+	stdout, _, code = cmdRun(t, "grep -H -h foo a.txt b.txt", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "foo\nfoo\n", stdout)
+}
+
+// --- -o suppresses context ---
+
+func TestGrepOnlyMatchingSuppressesContext(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "file.txt", "aaa\nbbb\nccc\nddd\neee\n")
+	// -o -A1: GNU grep outputs only matched parts, no context
+	stdout, _, code := cmdRun(t, "grep -o -A 1 bbb file.txt", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "bbb\n", stdout)
+}
+
+func TestGrepOnlyMatchingSuppressesBeforeContext(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "file.txt", "aaa\nbbb\nccc\nddd\neee\n")
+	stdout, _, code := cmdRun(t, "grep -o -B 1 ccc file.txt", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "ccc\n", stdout)
+}
+
+// --- Newline-delimited patterns ---
+
+func TestGrepNewlineDelimitedPattern(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "file.txt", "foo\nbar\nbaz\n")
+	// Pattern with embedded newline should match both
+	stdout, _, code := cmdRun(t, "grep -e $'foo\\nbar' file.txt", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "foo\nbar\n", stdout)
+}
+
 // --- Stdin display name ---
 
 func TestGrepStdinDisplayName(t *testing.T) {

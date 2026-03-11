@@ -127,7 +127,7 @@ var Cmd = builtins.Command{Name: "grep", MakeFlags: registerFlags}
 const MaxLineBytes = 1 << 20 // 1 MiB
 
 // MaxContextLines caps -A/-B/-C to prevent excessive memory use.
-const MaxContextLines = 10_000 // 10k lines
+const MaxContextLines = 1_000 // 1k lines
 
 const (
 	scanBufInit = 4096 // initial scanner buffer
@@ -162,8 +162,13 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 	fs.Lookup("files-with-matches").NoOptDefVal = "true"
 	fs.Lookup("files-without-match").NoOptDefVal = "true"
 	lineNumber := fs.BoolP("line-number", "n", false, "prefix output with line numbers")
-	withFilename := fs.BoolP("with-filename", "H", false, "always print filename prefix")
-	noFilename := fs.BoolP("no-filename", "h", false, "suppress filename prefix")
+	var filenameSeq int
+	withFilename := newOrderedBoolFlag(&filenameSeq)
+	noFilename := newOrderedBoolFlag(&filenameSeq)
+	fs.VarP(withFilename, "with-filename", "H", "always print filename prefix")
+	fs.VarP(noFilename, "no-filename", "h", "suppress filename prefix")
+	fs.Lookup("with-filename").NoOptDefVal = "true"
+	fs.Lookup("no-filename").NoOptDefVal = "true"
 	onlyMatching := fs.BoolP("only-matching", "o", false, "print only the matched parts")
 	quiet := fs.BoolP("quiet", "q", false, "suppress all output")
 	_ = fs.Bool("silent", false, "alias for --quiet")
@@ -211,13 +216,17 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 		}
 
 		// Collect patterns: from -e flags and/or first positional argument.
-		allPatterns := []string(patterns)
+		// Each pattern may contain newline-separated sub-patterns (GNU grep behavior).
+		var allPatterns []string
+		for _, p := range []string(patterns) {
+			allPatterns = append(allPatterns, strings.Split(p, "\n")...)
+		}
 		if len(allPatterns) == 0 {
 			if len(args) == 0 {
 				callCtx.Errf("grep: no pattern specified\n")
 				return builtins.Result{Code: exitError}
 			}
-			allPatterns = append(allPatterns, args[0])
+			allPatterns = append(allPatterns, strings.Split(args[0], "\n")...)
 			args = args[1:]
 		}
 
@@ -257,13 +266,20 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			files = []string{"-"}
 		}
 
-		// Determine filename printing behavior.
-		showFilename := len(files) > 1 || *withFilename
-		if *noFilename {
-			showFilename = false
+		// Determine filename printing behavior: last of -h/-H wins.
+		showFilename := len(files) > 1
+		if withFilename.pos > 0 || noFilename.pos > 0 {
+			showFilename = withFilename.pos > noFilename.pos
 		}
 
 		contextFlagUsed := fs.Changed("after-context") || fs.Changed("before-context") || fs.Changed("context")
+
+		// GNU grep: -o suppresses context output.
+		if *onlyMatching {
+			after = 0
+			before = 0
+			contextFlagUsed = false
+		}
 
 		resolvedFilesWithMatches := filesWithMatches.pos > filesWithoutMatch.pos
 		resolvedFilesWithoutMatch := filesWithoutMatch.pos > filesWithMatches.pos
