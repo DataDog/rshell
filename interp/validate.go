@@ -45,9 +45,6 @@ func validateNode(node syntax.Node) error {
 			}
 
 		// Blocked command-level nodes.
-		case *syntax.IfClause:
-			err = fmt.Errorf("if statements are not supported")
-			return false
 		case *syntax.WhileClause:
 			err = fmt.Errorf("while/until loops are not supported")
 			return false

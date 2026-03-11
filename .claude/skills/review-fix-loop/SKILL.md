@@ -115,7 +115,12 @@ The external reviews arrive asynchronously — their comments will be picked up 
 
 Wait for **both** to complete before proceeding.
 
-**Record the self-review outcome (from 2A1):**
+**Post the self-review outcome (from 2A1) as a GitHub PR comment** so it is always visible on the PR:
+```bash
+gh pr comment <pr-number> --body "<iteration N self-review result: APPROVE/COMMENT/REQUEST_CHANGES, number of findings by severity, and a brief summary>"
+```
+
+**Record the self-review outcome:**
 - If the review result is **APPROVE** (no findings) → skip to **Sub-step 2E (CI check)**
 - If there are findings → continue to **Sub-step 2B**
 
@@ -326,7 +331,12 @@ Provide a summary in this exact format:
 - <list any unresolved findings, external comments, or CI failures>
 ```
 
-**Completion check:** Summary is output. Mark Step 4 as `completed`.
+**Post the summary as a GitHub PR comment** so it is visible on the PR itself:
+```bash
+gh pr comment <pr-number> --body "<the summary markdown above>"
+```
+
+**Completion check:** Summary is output to the user AND posted as a PR comment. Mark Step 4 as `completed`.
 
 ---
 
