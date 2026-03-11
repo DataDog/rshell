@@ -26,10 +26,15 @@ Maximum iterations: **10**
 ### 0. Identify the PR
 
 ```bash
+# If argument provided, use it; otherwise detect from current branch
 gh pr view $ARGUMENTS --json number,url,headRefName,baseRefName
 ```
 
-If no PR is found, stop and inform the user. Store the PR number for all subsequent steps.
+If `$ARGUMENTS` is empty, this automatically falls back to the PR associated with the current branch. If no PR is found, stop and inform the user. Store the PR number and owner/repo for all subsequent steps.
+
+```bash
+gh repo view --json owner,name --jq '"\(.owner.login)/\(.name)"'
+```
 
 ---
 
@@ -39,20 +44,24 @@ Set `iteration = 1`. Repeat the following steps while `iteration <= 10`:
 
 ---
 
-#### Step A — Review the PR
+#### Step A — Review the PR (in parallel)
 
-Run the **code-review** skill on the PR:
+Launch **both** of these in parallel:
 
-```
-/code-review <pr-number>
-```
+1. **Self-review** — Run the **code-review** skill on the PR:
+   ```
+   /code-review <pr-number>
+   ```
+   This will analyze the full diff against main, post findings as a GitHub PR review with inline comments, and classify findings by severity (P0–P3).
 
-This will:
-- Analyze the full diff against main
-- Post findings as a GitHub PR review with inline comments
-- Classify findings by severity (P0–P3)
+2. **Request external reviews** — Post a comment to trigger @datadog and @codex reviews:
+   ```bash
+   gh pr comment <pr-number> --body "@datadog @codex make a comprehensive code and security review"
+   ```
 
-**Record the review outcome:**
+Wait for the **self-review** to complete before proceeding. The external reviews will arrive asynchronously and their comments will be picked up by **address-pr-comments** in Step B.
+
+**Record the self-review outcome:**
 - If the review result is **APPROVE** (no findings) → go to **Step D (CI check)**
 - If there are findings → continue to **Step B**
 
