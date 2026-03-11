@@ -453,11 +453,8 @@ func expandSetBytes(data []byte, isSet2 bool, set1Len int, translateSet2 bool, c
 						if err != nil {
 							return nil, err
 						}
-						needed := set1Len - (len(result) + len(tail))
-						if needed < 0 {
-							needed = 0
-						}
-						needed = max(min(needed, maxSetLen-len(result)), 0)
+						needed := max(set1Len-(len(result)+len(tail)), 0)
+						needed = min(needed, maxSetLen-len(result))
 						for range needed {
 							result = append(result, fillCh)
 						}
