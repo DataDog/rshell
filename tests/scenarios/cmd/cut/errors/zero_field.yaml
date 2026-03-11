@@ -1,0 +1,9 @@
+# Derived from GNU coreutils cut.pl zero-2 test
+description: Cut rejects field position zero in a range.
+input:
+  script: |+
+    cut -f0-2
+expect:
+  stdout: ""
+  stderr_contains: ["cut:"]
+  exit_code: 1

@@ -1,0 +1,9 @@
+# Derived from standard cut stdin usage
+description: Cut reads from stdin when input is piped.
+input:
+  script: |+
+    echo "a:b:c" | cut -d: -f2
+expect:
+  stdout: "b\n"
+  stderr: ""
+  exit_code: 0
