@@ -57,6 +57,7 @@ package tr
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"strconv"
 
@@ -470,7 +471,7 @@ func expandSet(s string, isSet2 bool, set1Len int, translateSet2 bool, callCtx *
 					var eqByte byte
 					if eqChars[0] == '\\' && len(eqChars) > 1 {
 						var adv int
-						eqByte, adv = parseBackslashEscapeSingle(eqChars, 0)
+						eqByte, adv, _ = parseBackslashEscapeSingle(eqChars, 0)
 						if adv != len(eqChars) {
 							return nil, &trError{string(eqChars) + ": equivalence class operand must be a single character"}
 						}
@@ -516,8 +517,12 @@ func expandSet(s string, isSet2 bool, set1Len int, translateSet2 bool, callCtx *
 
 		var ch byte
 		var chAdvance int
+		var octalWarn string
 		if data[i] == '\\' && i+1 < len(data) {
-			ch, chAdvance = parseBackslashEscapeSingle(data, i)
+			ch, chAdvance, octalWarn = parseBackslashEscapeSingle(data, i)
+			if octalWarn != "" {
+				callCtx.Errf("%s", octalWarn)
+			}
 		} else {
 			ch = data[i]
 			chAdvance = 1
@@ -528,7 +533,10 @@ func expandSet(s string, isSet2 bool, set1Len int, translateSet2 bool, callCtx *
 			var endCh byte
 			var endAdvance int
 			if data[rangeEnd] == '\\' && rangeEnd+1 < len(data) {
-				endCh, endAdvance = parseBackslashEscapeSingle(data, rangeEnd)
+				endCh, endAdvance, octalWarn = parseBackslashEscapeSingle(data, rangeEnd)
+				if octalWarn != "" {
+					callCtx.Errf("%s", octalWarn)
+				}
 			} else {
 				endCh = data[rangeEnd]
 				endAdvance = 1
@@ -642,36 +650,36 @@ func buildPunct() []byte {
 	return result
 }
 
-func parseBackslashEscapeSingle(data []byte, pos int) (byte, int) {
+func parseBackslashEscapeSingle(data []byte, pos int) (byte, int, string) {
 	if pos+1 >= len(data) {
-		return '\\', 1
+		return '\\', 1, ""
 	}
 	next := data[pos+1]
 	switch next {
 	case 'a':
-		return '\a', 2
+		return '\a', 2, ""
 	case 'b':
-		return '\b', 2
+		return '\b', 2, ""
 	case 'f':
-		return '\f', 2
+		return '\f', 2, ""
 	case 'n':
-		return '\n', 2
+		return '\n', 2, ""
 	case 'r':
-		return '\r', 2
+		return '\r', 2, ""
 	case 't':
-		return '\t', 2
+		return '\t', 2, ""
 	case 'v':
-		return '\v', 2
+		return '\v', 2, ""
 	case '\\':
-		return '\\', 2
+		return '\\', 2, ""
 	}
 	if next >= '0' && next <= '7' {
 		return parseOctal(data, pos+1)
 	}
-	return next, 2
+	return next, 2, ""
 }
 
-func parseOctal(data []byte, start int) (byte, int) {
+func parseOctal(data []byte, start int) (byte, int, string) {
 	val := 0
 	count := 0
 	for i := start; i < len(data) && count < 3; i++ {
@@ -681,11 +689,16 @@ func parseOctal(data []byte, start int) (byte, int) {
 		val = val*8 + int(data[i]-'0')
 		count++
 	}
+	var warning string
 	if val > 255 {
+		origEscape := string(data[start : start+count])
 		val = val / 8
 		count--
+		resultEscape := fmt.Sprintf("\\0%s", string(data[start:start+count]))
+		trailingChar := string(data[start+count : start+count+1])
+		warning = fmt.Sprintf("tr: warning: the ambiguous octal escape \\%s is being\n\tinterpreted as the 2-byte sequence %s, %s\n", origEscape, resultEscape, trailingChar)
 	}
-	return byte(val), count + 1
+	return byte(val), count + 1, warning
 }
 
 func parseRepeat(data []byte, pos int) ([]byte, int, byte, bool) {
@@ -697,7 +710,7 @@ func parseRepeat(data []byte, pos int) ([]byte, int, byte, bool) {
 	charAdvance := 1
 	if ch == '\\' && pos+3 < len(data) {
 		var adv int
-		ch, adv = parseBackslashEscapeSingle(data, pos+1)
+		ch, adv, _ = parseBackslashEscapeSingle(data, pos+1)
 		charAdvance = adv
 	}
 
@@ -772,7 +785,7 @@ func rptErrMsg(data []byte, pos int) string {
 	}
 	charAdvance := 1
 	if data[pos+1] == '\\' && pos+3 < len(data) {
-		_, charAdvance = parseBackslashEscapeSingle(data, pos+1)
+		_, charAdvance, _ = parseBackslashEscapeSingle(data, pos+1)
 	}
 	starIdx := pos + 1 + charAdvance
 	closeIdx := -1

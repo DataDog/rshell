@@ -218,6 +218,22 @@ func TestTrOctalEscape(t *testing.T) {
 	assert.Equal(t, "\r", stdout)
 }
 
+func TestTrAmbiguousOctalWarning(t *testing.T) {
+	stdout, stderr, code := trRun(t, "X", `X '\777'`)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "?", stdout) // \077 = '?'
+	assert.Contains(t, stderr, "tr: warning: the ambiguous octal escape \\777 is being")
+	assert.Contains(t, stderr, "interpreted as the 2-byte sequence \\077, 7")
+}
+
+func TestTrAmbiguousOctal400(t *testing.T) {
+	stdout, stderr, code := trRun(t, "X", `X '\400'`)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, " ", stdout) // \040 = space
+	assert.Contains(t, stderr, "tr: warning: the ambiguous octal escape \\400 is being")
+	assert.Contains(t, stderr, "interpreted as the 2-byte sequence \\040, 0")
+}
+
 // --- Error cases ---
 
 func TestTrMissingOperand(t *testing.T) {

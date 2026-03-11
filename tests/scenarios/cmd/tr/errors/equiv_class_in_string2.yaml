@@ -1,5 +1,4 @@
 description: tr rejects equivalence classes in STRING2 when translating.
-skip_assert_against_bash: true
 input:
   script: |+
     echo hello | tr a '[=a=]'
