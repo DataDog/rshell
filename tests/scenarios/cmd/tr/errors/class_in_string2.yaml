@@ -1,4 +1,3 @@
-skip_assert_against_bash: true
 description: tr rejects non-upper/lower character classes in STRING2 when translating.
 input:
   script: |+

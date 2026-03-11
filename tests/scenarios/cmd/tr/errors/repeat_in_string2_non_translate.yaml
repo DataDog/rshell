@@ -1,4 +1,3 @@
-skip_assert_against_bash: true
 description: tr rejects repeat constructs in string2 outside translate mode.
 input:
   script: |+
