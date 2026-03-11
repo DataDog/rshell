@@ -177,12 +177,12 @@ func (s *pathSandbox) readDir(ctx context.Context, path string) ([]fs.DirEntry, 
 
 	f, err := root.Open(relPath)
 	if err != nil {
-		return nil, err
+		return nil, portablePathError(err)
 	}
 	defer f.Close()
 	entries, err := f.ReadDir(-1)
 	if err != nil {
-		return nil, err
+		return nil, portablePathError(err)
 	}
 	// os.Root's ReadDir does not guarantee sorted order like os.ReadDir.
 	// Sort to match POSIX glob expansion expectations.
@@ -192,8 +192,9 @@ func (s *pathSandbox) readDir(ctx context.Context, path string) ([]fs.DirEntry, 
 	return entries, nil
 }
 
-// stat implements the restricted stat policy. The file is resolved through
-// os.Root for atomic path validation, matching the open policy.
+// stat implements the restricted stat policy. It uses os.Root.Stat for
+// metadata-only access — no file descriptor is opened, so it works on
+// unreadable files and does not block on special files (e.g. FIFOs).
 func (s *pathSandbox) stat(ctx context.Context, path string) (fs.FileInfo, error) {
 	absPath := toAbs(path, HandlerCtx(ctx).Dir)
 
@@ -209,8 +210,9 @@ func (s *pathSandbox) stat(ctx context.Context, path string) (fs.FileInfo, error
 	return info, nil
 }
 
-// lstat implements the restricted lstat policy. Unlike stat, it does not
-// follow symlinks — it returns information about the link itself.
+// lstat implements the restricted lstat policy. Like stat, it uses a
+// metadata-only call, but does not follow symbolic links — the returned
+// FileInfo describes the link itself rather than its target.
 func (s *pathSandbox) lstat(ctx context.Context, path string) (fs.FileInfo, error) {
 	absPath := toAbs(path, HandlerCtx(ctx).Dir)
 

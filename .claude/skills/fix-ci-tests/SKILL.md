@@ -1,5 +1,5 @@
 ---
-name: ci-code-review
+name: fix-ci-tests
 description: Diagnose and fix CI failures on a GitHub PR by analyzing failing checks, reading logs, and applying fixes
 argument-hint: "[pr-number|pr-url]"
 ---

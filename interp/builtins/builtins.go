@@ -11,6 +11,7 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"time"
 
 	"github.com/spf13/pflag"
 )
@@ -19,6 +20,10 @@ import (
 // from the framework without needing to import pflag directly (the builtins
 // package is always allowed by the import allowlist).
 type FlagSet = pflag.FlagSet
+
+// Flag is a type alias for pflag.Flag, exposed so command files can use
+// FlagSet.Visit without importing pflag directly.
+type Flag = pflag.Flag
 
 // HandlerFunc is the bound handler called by the framework after flags are
 // parsed. args contains only the positional (non-flag) arguments.
@@ -81,6 +86,10 @@ type CallContext struct {
 	// OpenFile opens a file within the shell's path restrictions.
 	OpenFile func(ctx context.Context, path string, flags int, mode os.FileMode) (io.ReadWriteCloser, error)
 
+	// ReadDir reads a directory within the shell's path restrictions.
+	// Entries are returned sorted by name.
+	ReadDir func(ctx context.Context, path string) ([]fs.DirEntry, error)
+
 	// StatFile returns file info within the shell's path restrictions (follows symlinks).
 	StatFile func(ctx context.Context, path string) (fs.FileInfo, error)
 
@@ -93,6 +102,11 @@ type CallContext struct {
 
 	// PortableErr normalizes an OS error to a POSIX-style message.
 	PortableErr func(err error) string
+
+	// Now returns the current time. Builtins should use this instead of
+	// calling time.Now() directly, so the time source is consistent and
+	// testable.
+	Now func() time.Time
 }
 
 // Out writes a string to stdout.

@@ -40,13 +40,27 @@ var builtinAllowedSymbols = []string{
 	"context.Context",
 	// errors.Is — error comparison; pure function, no I/O.
 	"errors.Is",
-	// errors.New — creates a simple error value; no I/O or side effects.
+	// errors.New — creates a simple error value; pure function, no I/O.
 	"errors.New",
-	// fs.FileInfo — interface for file metadata; pure type, no side effects.
+	// fmt.Sprintf — string formatting; pure function, no I/O.
+	"fmt.Sprintf",
+	// io/fs.DirEntry — interface type for directory entries; no side effects.
+	"io/fs.DirEntry",
+	// io/fs.FileInfo — interface type for file information; no side effects.
 	"io/fs.FileInfo",
-	// fs.ModeNamedPipe — file mode bit constant; no side effects.
+	// io/fs.ModeDir — file mode bit constant for directories; pure constant.
+	"io/fs.ModeDir",
+	// io/fs.ModeNamedPipe — file mode bit constant for named pipes; pure constant.
 	"io/fs.ModeNamedPipe",
-	// fs.ModeSymlink — file mode bit constant; no side effects.
+	// io/fs.ModeSetgid — file mode bit constant for setgid; pure constant.
+	"io/fs.ModeSetgid",
+	// io/fs.ModeSetuid — file mode bit constant for setuid; pure constant.
+	"io/fs.ModeSetuid",
+	// io/fs.ModeSocket — file mode bit constant for sockets; pure constant.
+	"io/fs.ModeSocket",
+	// io/fs.ModeSticky — file mode bit constant for sticky bit; pure constant.
+	"io/fs.ModeSticky",
+	// io/fs.ModeSymlink — file mode bit constant for symlinks; pure constant.
 	"io/fs.ModeSymlink",
 	// io.EOF — sentinel error value; pure constant.
 	"io.EOF",
@@ -56,6 +70,8 @@ var builtinAllowedSymbols = []string{
 	"io.ReadCloser",
 	// io.Reader — interface type; no side effects.
 	"io.Reader",
+	// math.MaxInt32 — integer constant; no side effects.
+	"math.MaxInt32",
 	// math.MaxInt64 — integer constant; no side effects.
 	"math.MaxInt64",
 	// math.MinInt64 — integer constant; no side effects.
@@ -70,6 +86,10 @@ var builtinAllowedSymbols = []string{
 	"regexp.QuoteMeta",
 	// regexp.Regexp — compiled regular expression type; no I/O side effects. All matching methods are linear-time (RE2).
 	"regexp.Regexp",
+	// slices.Reverse — reverses a slice in-place; pure function, no I/O.
+	"slices.Reverse",
+	// slices.SortFunc — sorts a slice with a comparison function; pure function, no I/O.
+	"slices.SortFunc",
 	// strings.Builder — efficient string concatenation; pure in-memory buffer, no I/O.
 	"strings.Builder",
 	// strings.Join — concatenates a slice of strings with a separator; pure function, no I/O.
@@ -92,6 +112,8 @@ var builtinAllowedSymbols = []string{
 	"strconv.FormatInt",
 	// strings.HasPrefix — pure function for prefix matching; no I/O.
 	"strings.HasPrefix",
+	// strings.IndexByte — finds byte in string; pure function, no I/O.
+	"strings.IndexByte",
 	// strings.TrimSpace — removes leading/trailing whitespace; pure function.
 	"strings.TrimSpace",
 	// io.WriteString — writes a string to a writer; no filesystem access, delegates to Write.
@@ -122,6 +144,8 @@ var builtinAllowedSymbols = []string{
 	"unicode/utf8.UTFMax",
 	// unicode/utf8.Valid — checks if a byte slice is valid UTF-8; pure function, no I/O.
 	"unicode/utf8.Valid",
+	// time.Time — time value type; pure data, no side effects.
+	"time.Time",
 }
 
 // permanentlyBanned lists packages that may never be imported by builtin
