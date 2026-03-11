@@ -326,7 +326,12 @@ Provide a summary in this exact format:
 - <list any unresolved findings, external comments, or CI failures>
 ```
 
-**Completion check:** Summary is output. Mark Step 4 as `completed`.
+**Post the summary as a GitHub PR comment** so it is visible on the PR itself:
+```bash
+gh pr comment <pr-number> --body "<the summary markdown above>"
+```
+
+**Completion check:** Summary is output to the user AND posted as a PR comment. Mark Step 4 as `completed`.
 
 ---
 
