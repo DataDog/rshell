@@ -495,20 +495,25 @@ func extractKey(line string, k keySpec, sep byte, hasSep bool) string {
 	return extractKeyFromFields(fields, k, joiner)
 }
 
-// splitBlankFields splits a line into fields using blank-to-non-blank transitions.
+// splitBlankFields splits a line into fields using blank-to-non-blank
+// transitions. Each field includes any preceding blanks (matching POSIX/GNU
+// sort behavior where leading blanks are significant unless -b is set).
+// For example, "  b  c" splits into ["  b", "  c"].
 func splitBlankFields(line string) []string {
 	var fields []string
 	i := 0
 	n := len(line)
 	for i < n {
-		// Skip leading blanks.
+		start := i
+		// Include leading blanks as part of this field.
 		for i < n && (line[i] == ' ' || line[i] == '\t') {
 			i++
 		}
 		if i >= n {
+			// Only blanks remain — not a field.
 			break
 		}
-		start := i
+		// Non-blank content of the field.
 		for i < n && line[i] != ' ' && line[i] != '\t' {
 			i++
 		}
@@ -740,11 +745,11 @@ func compareMagnitude(aInt, aFrac, bInt, bFrac string) int {
 
 // parseNumParts extracts the sign, integer digit string, and fractional
 // digit string from a numeric prefix. Returns (negative, intDigits, fracDigits).
-// Non-numeric input returns (false, "", ""), which compares as zero.
+// Non-numeric input returns (false, "0", ""), which compares as zero.
 func parseNumParts(s string) (bool, string, string) {
 	s = strings.TrimSpace(s)
 	if s == "" {
-		return false, "", ""
+		return false, "0", ""
 	}
 	neg := false
 	i := 0
@@ -755,7 +760,7 @@ func parseNumParts(s string) (bool, string, string) {
 		i++
 	}
 	if i >= len(s) || (s[i] < '0' || s[i] > '9') && s[i] != '.' {
-		return false, "", ""
+		return false, "0", ""
 	}
 	// Parse integer digits.
 	intStart := i
@@ -831,17 +836,21 @@ func buildCompare(keys []keySpec, globalOpts keyOpts, sep byte, hasSep bool, sta
 				return c
 			}
 		}
-		// Last-resort: raw byte comparison (unless stable).
+		// Last-resort: raw byte comparison (unless stable/unique).
+		// GNU sort reverses the last-resort when -r is the global option.
 		if stableSort {
 			return 0
 		}
+		c := 0
 		if a < b {
-			return -1
+			c = -1
+		} else if a > b {
+			c = 1
 		}
-		if a > b {
-			return 1
+		if globalOpts.reverse {
+			c = -c
 		}
-		return 0
+		return c
 	}
 }
 

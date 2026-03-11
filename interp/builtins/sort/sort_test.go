@@ -112,6 +112,24 @@ func TestSortReverseLong(t *testing.T) {
 	assert.Equal(t, "cherry\nbanana\napple\n", stdout)
 }
 
+func TestSortReverseLastResortTieBreaker(t *testing.T) {
+	// When -r is global and keys tie, last-resort comparison must also reverse.
+	dir := t.TempDir()
+	writeFile(t, dir, "f.txt", "a:1\na:2\nb:1\n")
+	stdout, _, code := cmdRun(t, "sort -r -t : -k 1,1 f.txt", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "b:1\na:2\na:1\n", stdout)
+}
+
+func TestSortNumericNonNumericAsZero(t *testing.T) {
+	// Non-numeric lines should compare as 0 in -n mode (matching GNU).
+	dir := t.TempDir()
+	writeFile(t, dir, "f.txt", "A\n0\nB\n")
+	stdout, _, code := cmdRun(t, "sort -n f.txt", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "0\nA\nB\n", stdout)
+}
+
 // --- Numeric sort ---
 
 func TestSortNumeric(t *testing.T) {
