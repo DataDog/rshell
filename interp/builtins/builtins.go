@@ -112,8 +112,10 @@ type CallContext struct {
 	Now func() time.Time
 
 	// FileIdentity extracts canonical file identity from FileInfo.
-	// Returns ok=false on platforms without inode support (Windows).
-	FileIdentity func(info fs.FileInfo) (FileID, bool)
+	// On Unix: dev+inode from Stat_t. On Windows: volume serial + file index
+	// via GetFileInformationByHandle. The path parameter is needed on Windows
+	// where FileInfo.Sys() lacks identity fields; Unix ignores it.
+	FileIdentity func(path string, info fs.FileInfo) (FileID, bool)
 }
 
 // Out writes a string to stdout.
@@ -132,7 +134,8 @@ func (c *CallContext) Errf(format string, a ...any) {
 }
 
 // FileID is a comparable file identity for cycle detection.
-// On Unix: device + inode. Used as map key for visited-set tracking.
+// On Unix: device + inode. On Windows: volume serial + file index.
+// Used as map key for visited-set tracking.
 type FileID struct {
 	Dev uint64
 	Ino uint64

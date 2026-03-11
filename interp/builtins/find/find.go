@@ -206,7 +206,7 @@ func walkPath(
 	useFileID := false
 	if followLinks {
 		if callCtx.FileIdentity != nil {
-			if _, ok := callCtx.FileIdentity(startInfo); ok {
+			if _, ok := callCtx.FileIdentity(startPath, startInfo); ok {
 				visitedID = map[builtins.FileID]bool{}
 				useFileID = true
 			}
@@ -267,7 +267,7 @@ func walkPath(
 		if entry.info.IsDir() && !prune && entry.depth < maxDepth {
 			// With -L, check for symlink loops.
 			if useFileID {
-				if id, ok := callCtx.FileIdentity(entry.info); ok {
+				if id, ok := callCtx.FileIdentity(entry.path, entry.info); ok {
 					if visitedID[id] {
 						continue
 					}
