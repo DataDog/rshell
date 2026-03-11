@@ -19,6 +19,7 @@ import (
 	"github.com/DataDog/rshell/interp/builtins/grep"
 	"github.com/DataDog/rshell/interp/builtins/head"
 	"github.com/DataDog/rshell/interp/builtins/ls"
+	sortcmd "github.com/DataDog/rshell/interp/builtins/sort"
 	"github.com/DataDog/rshell/interp/builtins/tail"
 	"github.com/DataDog/rshell/interp/builtins/testcmd"
 	truecmd "github.com/DataDog/rshell/interp/builtins/true"
@@ -41,6 +42,7 @@ func registerBuiltins() {
 			grep.Cmd,
 			head.Cmd,
 			ls.Cmd,
+			sortcmd.Cmd,
 			tail.Cmd,
 			testcmd.Cmd,
 			testcmd.BracketCmd,
