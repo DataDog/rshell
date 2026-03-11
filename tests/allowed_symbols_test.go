@@ -44,8 +44,6 @@ var builtinAllowedSymbols = []string{
 	"errors.New",
 	// fmt.Sprintf — string formatting; pure function, no I/O.
 	"fmt.Sprintf",
-	// io/fs.DirEntry — interface type for directory entries; no side effects.
-	"io/fs.DirEntry",
 	// io/fs.FileInfo — interface type for file information; no side effects.
 	"io/fs.FileInfo",
 	// io/fs.ModeDir — file mode bit constant for directories; pure constant.
@@ -143,13 +141,14 @@ var permanentlyBanned = map[string]string{
 	"unsafe":  "bypasses Go's type and memory safety guarantees",
 }
 
-// TestBuiltinImportAllowlist enforces symbol-level import restrictions on
+// TestBuiltinAllowedSymbols enforces symbol-level import restrictions on
 // command implementation files in interp/builtins/. builtins.go is exempt as
 // the package framework. Every other file's imports and pkg.Symbol references
 // must be explicitly listed in builtinAllowedSymbols.
-func TestBuiltinImportAllowlist(t *testing.T) {
+func TestBuiltinAllowedSymbols(t *testing.T) {
 	// Build lookup sets from the allowlist.
 	allowedSymbols := make(map[string]bool, len(builtinAllowedSymbols))
+	usedSymbols := make(map[string]bool, len(builtinAllowedSymbols))
 	allowedPackages := make(map[string]bool)
 	for _, entry := range builtinAllowedSymbols {
 		dot := strings.LastIndexByte(entry, '.')
@@ -267,11 +266,21 @@ func TestBuiltinImportAllowlist(t *testing.T) {
 			if !allowedSymbols[key] {
 				pos := fset.Position(sel.Pos())
 				t.Errorf("%s:%d: %s is not in the allowlist", rel, pos.Line, key)
+			} else {
+				usedSymbols[key] = true
 			}
 			return true
 		})
 	}
 	if checked == 0 {
 		t.Fatal("no command implementation files found in interp/builtins/ sub-packages")
+	}
+
+	// Verify every symbol in the allowlist is actually used by at least one
+	// builtin. Unused entries should be removed to keep the allowlist minimal.
+	for _, entry := range builtinAllowedSymbols {
+		if !usedSymbols[entry] {
+			t.Errorf("allowlist symbol %q is not used by any builtin — remove it from builtinAllowedSymbols", entry)
+		}
 	}
 }
