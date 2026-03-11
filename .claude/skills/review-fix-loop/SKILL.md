@@ -56,7 +56,7 @@ Launch **both** of these in parallel:
 
 2. **Request external reviews** — Post a comment to trigger @datadog and @codex reviews:
    ```bash
-   gh pr comment <pr-number> --body "@datadog @codex make a comprehensive code and security review"
+   gh pr comment <pr-number> --body "@datadog @codex make a comprehensive code and security reviews"
    ```
 
 Wait for the **self-review** to complete before proceeding. The external reviews will arrive asynchronously and their comments will be picked up by **address-pr-comments** in Step B.
@@ -117,8 +117,34 @@ gh pr checks <pr-number> --json name,state
 
 Increment `iteration`.
 
-- If the previous review was **APPROVE** and CI is passing → **stop, the PR is clean**
-- If `iteration > 10` → **stop, iteration limit reached**
+Check that **all** review sources have no remaining actionable suggestions:
+
+1. **Self-review** — the latest `/code-review` result was **APPROVE** (no findings)
+2. **@datadog and @codex reviews** — no unresolved PR comment threads from these reviewers:
+   ```bash
+   gh api graphql -f query='
+     query($owner: String!, $repo: String!, $pr: Int!) {
+       repository(owner: $owner, name: $repo) {
+         pullRequest(number: $pr) {
+           reviewThreads(first: 100) {
+             nodes {
+               isResolved
+               comments(first: 1) {
+                 nodes { author { login } body }
+               }
+             }
+           }
+         }
+       }
+     }
+   ' -f owner="{owner}" -f repo="{repo}" -F pr={pr-number} \
+     --jq '.data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved == false)'
+   ```
+3. **CI** — all checks are passing
+
+**Decision:**
+- If all three conditions are met → **stop, the PR is clean**
+- If `iteration > 10` → **stop, iteration limit reached** (report remaining unresolved items)
 - Otherwise → **go back to Step A** for the next iteration
 
 ---
