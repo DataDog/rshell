@@ -1,0 +1,9 @@
+description: grep rejects unknown flags with exit code 1.
+skip_assert_against_bash: true
+input:
+  script: |+
+    grep --recursive foo
+expect:
+  stdout: ""
+  stderr_contains: ["grep:"]
+  exit_code: 1

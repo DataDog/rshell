@@ -1,0 +1,15 @@
+description: strings prints an error and exits 1 when given a directory.
+skip_assert_against_bash: true
+setup:
+  files:
+    - path: subdir/placeholder.txt
+      content: "hello world\n"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    strings subdir
+expect:
+  stdout: ""
+  stderr_contains:
+    - "strings: subdir:"
+  exit_code: 1

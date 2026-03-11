@@ -44,8 +44,6 @@ var builtinAllowedSymbols = []string{
 	"errors.New",
 	// fmt.Sprintf — string formatting; pure function, no I/O.
 	"fmt.Sprintf",
-	// io/fs.DirEntry — interface type for directory entries; no side effects.
-	"io/fs.DirEntry",
 	// io/fs.FileInfo — interface type for file information; no side effects.
 	"io/fs.FileInfo",
 	// io/fs.ModeDir — file mode bit constant for directories; pure constant.
@@ -80,14 +78,28 @@ var builtinAllowedSymbols = []string{
 	"os.FileInfo",
 	// os.O_RDONLY — read-only file flag constant; cannot open files by itself.
 	"os.O_RDONLY",
+	// regexp.Compile — compiles a regular expression; pure function, no I/O. Uses RE2 engine (linear-time, no backtracking).
+	"regexp.Compile",
+	// regexp.QuoteMeta — escapes all special regex characters in a string; pure function, no I/O.
+	"regexp.QuoteMeta",
+	// regexp.Regexp — compiled regular expression type; no I/O side effects. All matching methods are linear-time (RE2).
+	"regexp.Regexp",
 	// slices.Reverse — reverses a slice in-place; pure function, no I/O.
 	"slices.Reverse",
 	// slices.SortFunc — sorts a slice with a comparison function; pure function, no I/O.
 	"slices.SortFunc",
 	// strings.Builder — efficient string concatenation; pure in-memory buffer, no I/O.
 	"strings.Builder",
+	// strings.Join — concatenates a slice of strings with a separator; pure function, no I/O.
+	"strings.Join",
+	// strings.Split — splits a string by separator into a slice; pure function, no I/O.
+	"strings.Split",
 	// strconv.Atoi — string-to-int conversion; pure function, no I/O.
 	"strconv.Atoi",
+	// strconv.ParseBool — string-to-bool conversion; pure function, no I/O.
+	"strconv.ParseBool",
+	// strconv.Itoa — int-to-string conversion; pure function, no I/O.
+	"strconv.Itoa",
 	// strconv.ErrRange — sentinel error value for overflow; pure constant.
 	"strconv.ErrRange",
 	// strconv.NumError — error type for numeric conversion failures; pure type.
@@ -100,8 +112,6 @@ var builtinAllowedSymbols = []string{
 	"strings.HasPrefix",
 	// strings.IndexByte — finds byte in string; pure function, no I/O.
 	"strings.IndexByte",
-	// strings.Split — splits string by separator; pure function, no I/O.
-	"strings.Split",
 	// strings.TrimSpace — removes leading/trailing whitespace; pure function.
 	"strings.TrimSpace",
 	// io.WriteString — writes a string to a writer; no filesystem access, delegates to Write.
@@ -143,13 +153,14 @@ var permanentlyBanned = map[string]string{
 	"unsafe":  "bypasses Go's type and memory safety guarantees",
 }
 
-// TestBuiltinImportAllowlist enforces symbol-level import restrictions on
+// TestBuiltinAllowedSymbols enforces symbol-level import restrictions on
 // command implementation files in interp/builtins/. builtins.go is exempt as
 // the package framework. Every other file's imports and pkg.Symbol references
 // must be explicitly listed in builtinAllowedSymbols.
-func TestBuiltinImportAllowlist(t *testing.T) {
+func TestBuiltinAllowedSymbols(t *testing.T) {
 	// Build lookup sets from the allowlist.
 	allowedSymbols := make(map[string]bool, len(builtinAllowedSymbols))
+	usedSymbols := make(map[string]bool, len(builtinAllowedSymbols))
 	allowedPackages := make(map[string]bool)
 	for _, entry := range builtinAllowedSymbols {
 		dot := strings.LastIndexByte(entry, '.')
@@ -267,11 +278,21 @@ func TestBuiltinImportAllowlist(t *testing.T) {
 			if !allowedSymbols[key] {
 				pos := fset.Position(sel.Pos())
 				t.Errorf("%s:%d: %s is not in the allowlist", rel, pos.Line, key)
+			} else {
+				usedSymbols[key] = true
 			}
 			return true
 		})
 	}
 	if checked == 0 {
 		t.Fatal("no command implementation files found in interp/builtins/ sub-packages")
+	}
+
+	// Verify every symbol in the allowlist is actually used by at least one
+	// builtin. Unused entries should be removed to keep the allowlist minimal.
+	for _, entry := range builtinAllowedSymbols {
+		if !usedSymbols[entry] {
+			t.Errorf("allowlist symbol %q is not used by any builtin — remove it from builtinAllowedSymbols", entry)
+		}
 	}
 }

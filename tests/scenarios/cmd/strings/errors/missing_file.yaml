@@ -1,0 +1,11 @@
+description: strings prints an error and exits 1 when a file does not exist.
+skip_assert_against_bash: true
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    strings nosuchfile.bin
+expect:
+  stdout: ""
+  stderr_contains:
+    - "strings: nosuchfile.bin:"
+  exit_code: 1
