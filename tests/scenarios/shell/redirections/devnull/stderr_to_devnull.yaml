@@ -1,5 +1,4 @@
 description: Redirect stderr to /dev/null suppresses error messages.
-skip_assert_against_bash: true
 input:
   script: |+
     cat nonexistent_file 2>/dev/null

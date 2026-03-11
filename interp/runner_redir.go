@@ -146,8 +146,14 @@ func (r *Runner) redir(ctx context.Context, rd *syntax.Redirect) (io.Closer, err
 	orig := &r.stdout
 	if rd.N != nil {
 		switch rd.N.Value {
+		case "0":
+			// fd 0 is stdin – only valid for input redirects.
+			if rd.Op != syntax.RdrIn {
+				r.errf("%s: unsupported fd\n", rd.N.Value)
+				return nil, fmt.Errorf("%s: unsupported fd", rd.N.Value)
+			}
 		case "1":
-			// default
+			// default (stdout)
 		case "2":
 			orig = &r.stderr
 		default:
