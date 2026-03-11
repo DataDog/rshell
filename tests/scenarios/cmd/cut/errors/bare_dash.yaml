@@ -1,0 +1,9 @@
+# Derived from GNU coreutils cut.pl inval2 test
+description: Cut rejects a bare dash as a field specification.
+input:
+  script: |+
+    cut -f -
+expect:
+  stdout: ""
+  stderr_contains: ["cut:"]
+  exit_code: 1
