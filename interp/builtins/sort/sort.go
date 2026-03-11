@@ -109,14 +109,17 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 	ignBlanks := fs.BoolP("ignore-leading-blanks", "b", false, "ignore leading blanks")
 	ignCase := fs.BoolP("ignore-case", "f", false, "fold lower case to upper case characters")
 	dictOrder := fs.BoolP("dictionary-order", "d", false, "consider only blanks and alphanumeric characters")
-	check := fs.Bool("check-ordered", false, "check for sorted input; exit 1 if unsorted")
-	checkSilent := fs.BoolP("check-silent", "C", false, "like -c, but do not report first bad line")
+	// --check accepts optional values: "diagnose" (default), "silent", "quiet".
+	// -c is shorthand for --check (diagnose mode).
+	// -C is shorthand for silent check mode.
+	checkFlag := fs.StringP("check", "c", "", "check for sorted input; optionally =silent or =quiet")
+	checkSilentShort := fs.BoolP("check-silent-short", "C", false, "like -c, but do not report first bad line")
 	stable := fs.BoolP("stable", "s", false, "stabilize sort by disabling last-resort comparison")
 
-	// -c is a shorthand that we handle manually because pflag doesn't allow
-	// a single-char shorthand to map to a different long name cleanly when
-	// we already have -C.
-	fs.BoolP("check", "c", false, "check for sorted input; do not sort")
+	// --check with no value means diagnose mode.
+	fs.Lookup("check").NoOptDefVal = "diagnose"
+	// Hide internal flag.
+	fs.MarkHidden("check-silent-short")
 
 	// Rejected flags — declare them so pflag parses them, then reject in handler.
 	fs.StringP("output", "o", "", "")
@@ -152,12 +155,21 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			return builtins.Result{Code: 1}
 		}
 
-		// Resolve -c flag.
-		if fs.Changed("check") || fs.Changed("check-ordered") {
-			*check = true
+		// Resolve check mode from --check[=VALUE] and -C flags.
+		checkEnabled := false
+		checkSilent := false
+		if fs.Changed("check") {
+			checkEnabled = true
+			switch *checkFlag {
+			case "silent", "quiet":
+				checkSilent = true
+			case "diagnose", "":
+				// default: print diagnostic
+			}
 		}
-		if *checkSilent {
-			*check = true
+		if *checkSilentShort {
+			checkEnabled = true
+			checkSilent = true
 		}
 
 		// Validate -t flag: must be a single byte.
@@ -204,32 +216,28 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 		disableLastResort := *stable || *unique
 		cmpFn := buildCompare(keys, globalOpts, sep, hasSep, disableLastResort)
 
-		// Check mode: verify each file is sorted independently (matches GNU).
-		if *check {
-			for _, file := range files {
-				if ctx.Err() != nil {
-					return builtins.Result{Code: 1}
-				}
-				lines, err := readFile(ctx, callCtx, file)
-				if err != nil {
-					name := file
-					if file == "-" {
-						name = "standard input"
-					}
-					callCtx.Errf("sort: %s: %s\n", name, callCtx.PortableErr(err))
-					return builtins.Result{Code: 1}
-				}
-				result := checkSorted(callCtx, lines, cmpFn, *checkSilent, *unique, file)
-				if result.Code != 0 {
-					return result
-				}
+		// Check mode: verify the file is sorted (matches GNU).
+		// GNU sort -c rejects multiple file operands.
+		if checkEnabled {
+			if len(files) > 1 {
+				callCtx.Errf("sort: extra operand %q not allowed with -c\n", files[1])
+				return builtins.Result{Code: 2}
 			}
-			return builtins.Result{}
+			file := files[0]
+			lines, err := readFile(ctx, callCtx, file)
+			if err != nil {
+				name := file
+				if file == "-" {
+					name = "standard input"
+				}
+				callCtx.Errf("sort: %s: %s\n", name, callCtx.PortableErr(err))
+				return builtins.Result{Code: 1}
+			}
+			return checkSorted(callCtx, lines, cmpFn, checkSilent, *unique, file)
 		}
 
 		// Read all lines from all files.
 		var allLines []string
-		var totalBytes int64
 		for _, file := range files {
 			if ctx.Err() != nil {
 				return builtins.Result{Code: 1}
@@ -243,16 +251,9 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 				callCtx.Errf("sort: %s: %s\n", name, callCtx.PortableErr(err))
 				return builtins.Result{Code: 1}
 			}
-			for _, l := range lines {
-				totalBytes += int64(len(l))
-			}
 			allLines = append(allLines, lines...)
 			if len(allLines) > MaxLines {
 				callCtx.Errf("sort: input exceeds maximum of %d lines\n", MaxLines)
-				return builtins.Result{Code: 1}
-			}
-			if totalBytes > MaxTotalBytes {
-				callCtx.Errf("sort: input exceeds maximum of %d bytes\n", MaxTotalBytes)
 				return builtins.Result{Code: 1}
 			}
 		}
@@ -307,11 +308,17 @@ func readFile(ctx context.Context, callCtx *builtins.CallContext, file string) (
 	sc.Buffer(buf, MaxLineBytes)
 
 	var lines []string
+	var totalBytes int64
 	for sc.Scan() {
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
-		lines = append(lines, sc.Text())
+		line := sc.Text()
+		totalBytes += int64(len(line))
+		if totalBytes > MaxTotalBytes {
+			return nil, errors.New("input exceeds maximum total size")
+		}
+		lines = append(lines, line)
 		if len(lines) > MaxLines {
 			return nil, errors.New("too many input lines")
 		}

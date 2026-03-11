@@ -288,6 +288,34 @@ func TestSortCheckSilentUnsorted(t *testing.T) {
 	assert.Equal(t, "", stderr)
 }
 
+func TestSortCheckSilentLongForm(t *testing.T) {
+	// --check=silent should work like -C.
+	dir := t.TempDir()
+	writeFile(t, dir, "f.txt", "b\na\nc\n")
+	_, stderr, code := cmdRun(t, "sort --check=silent f.txt", dir)
+	assert.Equal(t, 1, code)
+	assert.Equal(t, "", stderr)
+}
+
+func TestSortCheckQuietLongForm(t *testing.T) {
+	// --check=quiet should work like -C.
+	dir := t.TempDir()
+	writeFile(t, dir, "f.txt", "b\na\nc\n")
+	_, stderr, code := cmdRun(t, "sort --check=quiet f.txt", dir)
+	assert.Equal(t, 1, code)
+	assert.Equal(t, "", stderr)
+}
+
+func TestSortCheckMultipleFilesRejected(t *testing.T) {
+	// GNU sort -c rejects multiple file operands.
+	dir := t.TempDir()
+	writeFile(t, dir, "a.txt", "a\nb\n")
+	writeFile(t, dir, "b.txt", "a\nb\n")
+	_, stderr, code := cmdRun(t, "sort -c a.txt b.txt", dir)
+	assert.Equal(t, 2, code)
+	assert.Contains(t, stderr, "extra operand")
+}
+
 // --- Stable sort ---
 
 func TestSortStable(t *testing.T) {
