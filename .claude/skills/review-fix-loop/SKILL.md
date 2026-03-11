@@ -20,8 +20,8 @@ Your very first action — before reading ANY files, before running ANY commands
 2. "Step 2: Run the review-fix loop"
 3. "Step 2A1: Self-review (code-review)" ← **parallel with 2A2**
 4. "Step 2A2: Request external reviews (@datadog @codex)" ← **parallel with 2A1**
-5. "Step 2B1: Address PR comments (address-pr-comments)" ← **parallel with 2B2**
-6. "Step 2B2: Fix CI failures (fix-ci-tests)" ← **parallel with 2B1**
+5. "Step 2B1: Address PR comments (address-pr-comments)" ← **sequential, before 2B2**
+6. "Step 2B2: Fix CI failures (fix-ci-tests)" ← **sequential, after 2B1**
 7. "Step 2C: Verify push and resolve conflicts"
 8. "Step 2D: Check CI status"
 9. "Step 2E: Decide whether to continue"
@@ -35,9 +35,9 @@ Your very first action — before reading ANY files, before running ANY commands
 Steps run strictly in this order:
 
 ```
-Step 1 → Step 2 (loop: [2A1 ∥ 2A2] → [2B1 ∥ 2B2] → 2C → 2D → 2E) → Step 3 → Step 4
-                    ↑                                              ↓
-                    └───────────────── repeat ──────────────────────┘
+Step 1 → Step 2 (loop: [2A1 ∥ 2A2] → 2B1 → 2B2 → 2C → 2D → 2E) → Step 3 → Step 4
+                    ↑                                            ↓
+                    └──────────────── repeat ─────────────────────┘
 ```
 
 **Top-level steps** are sequential: before starting step N, call TaskList and verify step N-1 is `completed`. Set step N to `in_progress`.
@@ -47,7 +47,8 @@ Step 1 → Step 2 (loop: [2A1 ∥ 2A2] → [2B1 ∥ 2B2] → 2C → 2D → 2E) �
 | Phase | Sub-steps | Execution |
 |-------|-----------|-----------|
 | Review | **2A1** ∥ **2A2** | **Parallel** — launch both, wait for both |
-| Fix | **2B1** ∥ **2B2** | **Parallel** — launch both, wait for both |
+| Fix comments | **2B1** | **Sequential** — run first, wait for completion |
+| Fix CI | **2B2** | **Sequential** — run after 2B1 completes |
 | Verify | **2C** | Sequential |
 | CI check | **2D** | Sequential |
 | Decide | **2E** | Sequential |
@@ -116,7 +117,7 @@ Wait for **both** to complete before proceeding.
 
 **Record the self-review outcome (from 2A1):**
 - If the review result is **APPROVE** (no findings) → skip to **Sub-step 2D (CI check)**
-- If there are findings → continue to **Sub-step 2B1 ∥ 2B2**
+- If there are findings → continue to **Sub-step 2B1**
 
 ---
 
@@ -129,7 +130,7 @@ git status
 git pull --rebase origin <head-branch>
 ```
 
-### Sub-step 2B1 — Address PR comments ← **parallel with 2B2**
+### Sub-step 2B1 — Address PR comments ← **sequential, before 2B2**
 
 Run the **address-pr-comments** skill:
 ```
@@ -137,7 +138,9 @@ Run the **address-pr-comments** skill:
 ```
 This reads all unresolved review comments, evaluates validity, implements fixes, commits, pushes, and replies/resolves threads.
 
-### Sub-step 2B2 — Fix CI failures ← **parallel with 2B1**
+Wait for completion before proceeding to 2B2.
+
+### Sub-step 2B2 — Fix CI failures ← **sequential, after 2B1**
 
 Run the **fix-ci-tests** skill:
 ```
@@ -145,15 +148,13 @@ Run the **fix-ci-tests** skill:
 ```
 This checks for failing CI jobs, downloads logs, reproduces failures locally, fixes them, and pushes.
 
-### After 2B1 ∥ 2B2 complete
-
-Wait for **both agents** to complete before proceeding.
+Wait for completion before proceeding to 2C.
 
 ---
 
-### Sub-step 2C — Verify push and resolve conflicts
+### Sub-step 2C — Verify push and sync
 
-After both parallel tasks complete, verify the branch state:
+After 2B1 and 2B2 complete, verify the branch state:
 
 ```bash
 git fetch origin <head-branch>
@@ -161,18 +162,12 @@ git status
 git log --oneline -5
 ```
 
-**Conflict resolution:** If the two parallel fix streams produced divergent commits (e.g., both modified the same file), resolve the conflict:
-
-1. Pull the latest remote state:
+1. If there are unpushed commits, push them.
+2. Pull the latest remote state to stay in sync:
    ```bash
    git pull --rebase origin <head-branch>
    ```
-2. If rebase conflicts occur, resolve them manually, then:
-   ```bash
-   git rebase --continue
-   git push --force-with-lease
-   ```
-3. If no conflicts, confirm the branch is up to date with the remote.
+3. Confirm the branch is up to date with the remote.
 
 **Completion check:** `git status` shows a clean working tree and the branch is pushed. Only then proceed.
 
@@ -337,9 +332,8 @@ Provide a summary in this exact format:
 
 - **Never skip the review step** — always re-review after fixes to catch regressions or new issues introduced by the fixes themselves.
 - **Always submit reviews to GitHub** — each iteration's review must be posted as PR comments so there's a visible trail.
-- **Parallelise fix-ci-tests and address-pr-comments** — they work on independent concerns (CI failures vs review comments) and can run simultaneously.
-- **Pull before fixing** — always `git pull --rebase` before launching parallel fix agents to avoid working on stale code.
-- **Resolve merge conflicts** — if the parallel fix streams conflict, resolve before re-reviewing.
+- **Run address-pr-comments before fix-ci-tests** — 2B1 then 2B2, sequentially, so CI fixes run on code that already incorporates review feedback.
+- **Pull before fixing** — always `git pull --rebase` before launching fix agents to avoid working on stale code.
 - **Stop early on APPROVE + CI green + no unresolved threads** — don't waste iterations if the PR is already clean.
 - **Respect the iteration limit** — hard stop at 10 to prevent infinite loops. If issues persist after 10 iterations, report what's left for the user to handle.
 - **Use gate checks** — always call TaskList and verify prerequisites before starting a step. This prevents out-of-order execution.
