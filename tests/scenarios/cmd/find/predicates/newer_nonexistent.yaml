@@ -9,8 +9,7 @@ input:
   allowed_paths: ["$DIR"]
   script: |+
     find dir -type f -newer nonexistent.txt
-    echo "exit=$?"
 expect:
-  stdout_contains: ["exit=1"]
+  stdout: ""
   stderr_contains: ["find:"]
-  exit_code: 0
+  exit_code: 1

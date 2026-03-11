@@ -21,15 +21,15 @@ type evalResult struct {
 
 // evalContext holds state needed during expression evaluation.
 type evalContext struct {
-	callCtx    *builtins.CallContext
-	ctx        context.Context
-	now        time.Time
-	relPath    string        // path relative to starting point
-	info       iofs.FileInfo // file info (lstat or stat depending on -L)
-	depth      int           // current depth
-	printPath  string        // path to print (includes starting point prefix)
-	newerCache map[string]time.Time // cached -newer reference file modtimes
-	newerErr   bool                 // true if a -newer reference file failed to stat
+	callCtx      *builtins.CallContext
+	ctx          context.Context
+	now          time.Time
+	relPath      string        // path relative to starting point
+	info         iofs.FileInfo // file info (lstat or stat depending on -L)
+	depth        int           // current depth
+	printPath    string        // path to print (includes starting point prefix)
+	newerCache   map[string]time.Time // cached -newer reference file modtimes
+	newerErrors  map[string]bool      // tracks which -newer reference files failed to stat
 }
 
 // evaluate evaluates an expression tree against a file. If e is nil, returns
@@ -130,22 +130,25 @@ func evalEmpty(ec *evalContext) bool {
 
 // evalNewer returns true if the file is newer than the reference file.
 // The reference file's modtime is resolved once and cached in newerCache
-// to avoid redundant stat calls for every entry in the tree.
+// to avoid redundant stat calls for every entry in the tree. Errors are
+// tracked in newerErrors (shared across all entries) so a failed stat
+// consistently returns false for all subsequent entries rather than
+// matching against a zero-time sentinel.
 func evalNewer(ec *evalContext, refPath string) bool {
+	// Check if this reference path previously failed to stat.
+	if ec.newerErrors[refPath] {
+		return false
+	}
 	refTime, ok := ec.newerCache[refPath]
 	if !ok {
 		refInfo, err := ec.callCtx.StatFile(ec.ctx, refPath)
 		if err != nil {
 			ec.callCtx.Errf("find: '%s': %s\n", refPath, ec.callCtx.PortableErr(err))
-			ec.newerCache[refPath] = time.Time{}
-			ec.newerErr = true
+			ec.newerErrors[refPath] = true
 			return false
 		}
 		refTime = refInfo.ModTime()
 		ec.newerCache[refPath] = refTime
-	}
-	if ec.newerErr {
-		return false
 	}
 	return ec.info.ModTime().After(refTime)
 }

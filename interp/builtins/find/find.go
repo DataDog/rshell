@@ -109,10 +109,12 @@ func run(ctx context.Context, callCtx *builtins.CallContext, args []string) buil
 	}
 
 	// Parse -maxdepth and -mindepth from leading expression args only.
-	// GNU find requires these global options to appear before any test
-	// predicates. Parsing them from arbitrary positions would corrupt
-	// predicate arguments (e.g. find . -name -maxdepth would lose the
-	// -name argument).
+	// GNU find treats these as "global options" that should appear before
+	// test predicates (it warns: "you have used a non-option after a test").
+	// Parsing them from arbitrary positions would corrupt predicate arguments
+	// (e.g. find . -name -maxdepth would consume the -name argument).
+	// Commands like "find . -name '*.go' -maxdepth 1" are intentionally
+	// unsupported; use "find . -maxdepth 1 -name '*.go'" instead.
 	exprArgs := args[i:]
 	maxDepth := maxTraversalDepth
 	minDepth := 0
@@ -211,12 +213,19 @@ func walkPath(
 	now := callCtx.Now()
 	failed := false
 	newerCache := map[string]time.Time{}
+	newerErrors := map[string]bool{}
 
 	// visited tracks directory paths already traversed when following
 	// symlinks (-L) to detect and break symlink loops. Without this,
 	// cyclic symlinks would expand until maxTraversalDepth, causing
-	// excessive CPU/memory usage. We use path strings because the
-	// syscall package (needed for dev+inode tracking) is banned.
+	// excessive CPU/memory usage.
+	//
+	// Limitation: We use path strings because the syscall package
+	// (needed for dev+inode tracking) is banned by the import allowlist.
+	// Path-based detection can miss cycles that re-enter the same
+	// directory under different textual paths (e.g. dir/link/link/...).
+	// The maxTraversalDepth=256 cap provides the ultimate safety bound
+	// for cases the visited-set misses, consistent with ls -R.
 	var visited map[string]bool
 	if followLinks {
 		visited = map[string]bool{}
@@ -257,14 +266,15 @@ func walkPath(
 		printPath := entry.path
 
 		ec := &evalContext{
-			callCtx:    callCtx,
-			ctx:        ctx,
-			now:        now,
-			relPath:    entry.path,
-			info:       entry.info,
-			depth:      entry.depth,
-			printPath:  printPath,
-			newerCache: newerCache,
+			callCtx:     callCtx,
+			ctx:         ctx,
+			now:         now,
+			relPath:     entry.path,
+			info:        entry.info,
+			depth:       entry.depth,
+			printPath:   printPath,
+			newerCache:  newerCache,
+			newerErrors: newerErrors,
 		}
 
 		// Evaluate expression at this depth.
@@ -272,7 +282,7 @@ func walkPath(
 		if entry.depth >= minDepth {
 			result := evaluate(ec, expression)
 			prune = result.prune
-			if ec.newerErr {
+			if len(newerErrors) > 0 {
 				failed = true
 			}
 
