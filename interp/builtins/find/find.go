@@ -127,6 +127,7 @@ func run(ctx context.Context, callCtx *builtins.CallContext, args []string) buil
 		maxDepth = maxTraversalDepth
 	}
 	if maxDepth > maxTraversalDepth {
+		callCtx.Errf("find: warning: -maxdepth %d exceeds safety limit %d; clamped to %d\n", maxDepth, maxTraversalDepth, maxTraversalDepth)
 		maxDepth = maxTraversalDepth
 	}
 	minDepth := pr.minDepth

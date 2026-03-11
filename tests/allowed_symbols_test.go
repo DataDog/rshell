@@ -70,6 +70,8 @@ var builtinAllowedSymbols = []string{
 	"io.ReadCloser",
 	// io.Reader — interface type; no side effects.
 	"io.Reader",
+	// math.Ceil — pure arithmetic; no side effects.
+	"math.Ceil",
 	// math.Floor — pure arithmetic; no side effects.
 	"math.Floor",
 	// math.MaxInt32 — integer constant; no side effects.

@@ -1,4 +1,4 @@
-description: find -mmin 0 matches files modified within the last minute.
+description: find -mmin 0 does not match files that are even 1 second old (ceiling rounding).
 skip_assert_against_bash: true
 setup:
   files:
@@ -10,7 +10,6 @@ input:
   script: |+
     find dir -type f -mmin 0
 expect:
-  stdout: |+
-    dir/recent.txt
+  stdout: ""
   stderr: ""
   exit_code: 0
