@@ -153,9 +153,11 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 		}
 
 		if translateMode {
-			if err := validateCaseClassAlignment(set1Classes, set2Classes); err != nil {
-				callCtx.Errf("tr: %s\n", err)
-				return builtins.Result{Code: 1}
+			if !*complement {
+				if err := validateCaseClassAlignment(set1Classes, set2Classes); err != nil {
+					callCtx.Errf("tr: %s\n", err)
+					return builtins.Result{Code: 1}
+				}
 			}
 			if !*truncateSet1 && len(set1) > len(set2) && set2EndsWithClass {
 				callCtx.Errf("tr: when translating with string1 longer than string2,\nthe latter string must not end with a character class\n")

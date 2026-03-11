@@ -336,6 +336,12 @@ func TestTrAlignedCaseClassesWithPrefix(t *testing.T) {
 	assert.Equal(t, "ABCABC", stdout)
 }
 
+func TestTrComplementSkipsAlignment(t *testing.T) {
+	stdout, _, code := trRun(t, "ab", "-c a '[:upper:]x'")
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "ax", stdout)
+}
+
 func TestTrMisalignedCaseClassOffset(t *testing.T) {
 	_, stderr, code := trRun(t, "abc", "'a[:lower:]' 'AB[:upper:]'")
 	assert.Equal(t, 1, code)
