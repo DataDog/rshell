@@ -1,5 +1,5 @@
 description: find -ipath matches full path case-insensitively.
-skip_assert_against_bash: true
+skip_assert_against_bash: true  # intentional: case-insensitive filesystem handling may differ
 setup:
   files:
     - path: SRC/Main.go

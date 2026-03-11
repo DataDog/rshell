@@ -141,3 +141,125 @@ func baseName(p string) string {
 	}
 	return p
 }
+
+// matchPathGlob matches a full path against a glob pattern where '*' crosses
+// '/' (FNM_PATHNAME-free). This matches GNU find's -path behaviour.
+func matchPathGlob(pattern, name string) bool {
+	return pathGlobMatch(pattern, name)
+}
+
+// matchPathGlobFold is like matchPathGlob but case-insensitive.
+func matchPathGlobFold(pattern, name string) bool {
+	return pathGlobMatch(strings.ToLower(pattern), strings.ToLower(name))
+}
+
+// pathGlobMatch implements glob matching where '*' matches any character
+// including '/', '?' matches exactly one character including '/', and
+// '[...]' character classes work as in path.Match.
+func pathGlobMatch(pattern, name string) bool {
+	px, nx := 0, 0
+	// nextPx/nextNx track the position to retry when a '*' fails to match.
+	nextPx, nextNx := 0, 0
+	starActive := false
+
+	for px < len(pattern) || nx < len(name) {
+		if px < len(pattern) {
+			switch pattern[px] {
+			case '*':
+				// '*' matches zero or more of any character (including '/').
+				// Record restart point and try matching zero chars first.
+				starActive = true
+				nextPx = px
+				nextNx = nx + 1
+				px++
+				continue
+			case '?':
+				// '?' matches exactly one character (including '/').
+				if nx < len(name) {
+					px++
+					nx++
+					continue
+				}
+			case '[':
+				// Character class — delegate to path.Match for the class portion.
+				if nx < len(name) {
+					matched, width := matchClass(pattern[px:], name[nx])
+					if matched {
+						px += width
+						nx++
+						continue
+					}
+				}
+			case '\\':
+				// Escape: next character is literal.
+				px++
+				if px < len(pattern) && nx < len(name) && pattern[px] == name[nx] {
+					px++
+					nx++
+					continue
+				}
+			default:
+				if nx < len(name) && pattern[px] == name[nx] {
+					px++
+					nx++
+					continue
+				}
+			}
+		}
+		// Current characters don't match. Backtrack to last '*' if possible.
+		if starActive && nextNx <= len(name) {
+			px = nextPx + 1
+			nx = nextNx
+			nextNx++
+			continue
+		}
+		return false
+	}
+	return true
+}
+
+// matchClass tries to match a single character against a bracket expression
+// starting at pattern[0] == '['. Returns (matched, width) where width is
+// the number of bytes consumed from pattern (including the closing ']').
+// On malformed classes, returns (false, 0).
+func matchClass(pattern string, ch byte) (bool, int) {
+	if len(pattern) < 2 || pattern[0] != '[' {
+		return false, 0
+	}
+	i := 1
+	negate := false
+	if i < len(pattern) && pattern[i] == '^' {
+		negate = true
+		i++
+	}
+	if i < len(pattern) && pattern[i] == '!' {
+		negate = true
+		i++
+	}
+	matched := false
+	first := true
+	for i < len(pattern) {
+		if pattern[i] == ']' && !first {
+			i++ // consume ']'
+			if negate {
+				return !matched, i
+			}
+			return matched, i
+		}
+		first = false
+		lo := pattern[i]
+		i++
+		var hi byte
+		if i+1 < len(pattern) && pattern[i] == '-' && pattern[i+1] != ']' {
+			hi = pattern[i+1]
+			i += 2
+		} else {
+			hi = lo
+		}
+		if lo <= ch && ch <= hi {
+			matched = true
+		}
+	}
+	// Unclosed bracket — malformed.
+	return false, 0
+}

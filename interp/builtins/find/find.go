@@ -134,7 +134,17 @@ func run(ctx context.Context, callCtx *builtins.CallContext, args []string) buil
 	// If no explicit action, add implicit -print.
 	implicitPrint := expression == nil || !hasAction(expression)
 
+	// Eagerly validate -newer reference paths before walking.
+	// GNU find always reports missing reference files even if short-circuiting
+	// or -mindepth prevents the predicate from being evaluated.
 	failed := false
+	for _, ref := range collectNewerRefs(expression) {
+		if _, err := callCtx.StatFile(ctx, ref); err != nil {
+			callCtx.Errf("find: '%s': %s\n", ref, callCtx.PortableErr(err))
+			failed = true
+		}
+	}
+
 	for _, startPath := range paths {
 		if ctx.Err() != nil {
 			break
@@ -195,19 +205,18 @@ func walkPath(
 		return true
 	}
 
-	// visited tracks directories by canonical file identity (dev+inode)
-	// when following symlinks (-L) to detect cycles. This correctly
-	// detects when the same directory is reached via different textual
-	// paths (e.g., through multiple symlink chains). Falls back to
-	// path-based tracking on platforms without identity support (Windows).
+	// visited tracks directories by canonical file identity (dev+inode on
+	// Unix, volume serial+file index on Windows) when following symlinks (-L)
+	// to detect cycles. Falls back to path-based tracking if file identity
+	// extraction fails (e.g., permission denied or unsupported filesystem).
 	// The maxTraversalDepth=256 cap remains as an ultimate safety bound.
-	var visitedID map[builtins.FileID]bool
+	var visitedID map[builtins.FileID]string
 	var visitedPath map[string]bool
 	useFileID := false
 	if followLinks {
 		if callCtx.FileIdentity != nil {
 			if _, ok := callCtx.FileIdentity(startPath, startInfo); ok {
-				visitedID = map[builtins.FileID]bool{}
+				visitedID = map[builtins.FileID]string{}
 				useFileID = true
 			}
 		}
@@ -268,13 +277,18 @@ func walkPath(
 			// With -L, check for symlink loops.
 			if useFileID {
 				if id, ok := callCtx.FileIdentity(entry.path, entry.info); ok {
-					if visitedID[id] {
+					if firstPath, seen := visitedID[id]; seen {
+						callCtx.Errf("find: File system loop detected; '%s' is part of the same file system loop as '%s'.\n",
+							entry.path, firstPath)
+						failed = true
 						continue
 					}
-					visitedID[id] = true
+					visitedID[id] = entry.path
 				}
 			} else if visitedPath != nil {
 				if visitedPath[entry.path] {
+					callCtx.Errf("find: File system loop detected; '%s' has already been visited.\n", entry.path)
+					failed = true
 					continue
 				}
 				visitedPath[entry.path] = true
@@ -330,6 +344,21 @@ func walkPath(
 	}
 
 	return failed
+}
+
+// collectNewerRefs walks the expression tree and returns all -newer reference paths.
+func collectNewerRefs(e *expr) []string {
+	if e == nil {
+		return nil
+	}
+	if e.kind == exprNewer {
+		return []string{e.strVal}
+	}
+	var refs []string
+	refs = append(refs, collectNewerRefs(e.left)...)
+	refs = append(refs, collectNewerRefs(e.right)...)
+	refs = append(refs, collectNewerRefs(e.operand)...)
+	return refs
 }
 
 // joinPath joins a directory and a name with a forward slash.

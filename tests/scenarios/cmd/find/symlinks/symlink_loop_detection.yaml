@@ -14,5 +14,5 @@ input:
 expect:
   stdout: |+
     dir/a/file.txt
-  stderr: ""
-  exit_code: 0
+  stderr_contains: ["find: File system loop detected"]
+  exit_code: 1

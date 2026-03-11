@@ -68,10 +68,10 @@ func evaluate(ec *evalContext, e *expr) evalResult {
 		return evalResult{matched: matchGlobFold(e.strVal, name)}
 
 	case exprPath:
-		return evalResult{matched: matchGlob(e.strVal, ec.printPath)}
+		return evalResult{matched: matchPathGlob(e.strVal, ec.printPath)}
 
 	case exprIPath:
-		return evalResult{matched: matchGlobFold(e.strVal, ec.printPath)}
+		return evalResult{matched: matchPathGlobFold(e.strVal, ec.printPath)}
 
 	case exprType:
 		return evalResult{matched: matchType(ec.info, e.strVal)}
