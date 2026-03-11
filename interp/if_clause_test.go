@@ -295,3 +295,95 @@ func TestIfBlockedFeatureInCondition(t *testing.T) {
 	assert.Equal(t, 2, code)
 	assert.Contains(t, stderr, "command substitution is not supported")
 }
+
+// --- test / [ builtin with if/elif ---
+
+func TestIfTestStringNotEqual(t *testing.T) {
+	stdout, _, code := ifRun(t, `if [ "hello" != "world" ]; then echo diff; else echo same; fi`)
+	assert.Equal(t, "diff\n", stdout)
+	assert.Equal(t, 0, code)
+}
+
+func TestIfTestIntegerEq(t *testing.T) {
+	stdout, _, code := ifRun(t, `if [ 42 -eq 42 ]; then echo equal; else echo notequal; fi`)
+	assert.Equal(t, "equal\n", stdout)
+	assert.Equal(t, 0, code)
+}
+
+func TestIfElifIntegerComparisons(t *testing.T) {
+	stdout, _, code := ifRun(t, `
+X=5
+if [ "$X" -gt 10 ]; then echo big
+elif [ "$X" -gt 3 ]; then echo medium
+else echo small
+fi`)
+	assert.Equal(t, "medium\n", stdout)
+	assert.Equal(t, 0, code)
+}
+
+func TestIfTestEmptyNonEmptyString(t *testing.T) {
+	stdout, _, code := ifRun(t, `
+EMPTY=""
+FULL="hello"
+if [ -n "$FULL" ]; then echo nonempty; fi
+if [ -z "$EMPTY" ]; then echo zero; fi
+if [ -n "$EMPTY" ]; then echo wrong; else echo correct; fi`)
+	assert.Equal(t, "nonempty\nzero\ncorrect\n", stdout)
+	assert.Equal(t, 0, code)
+}
+
+func TestIfElifStringMatching(t *testing.T) {
+	stdout, _, code := ifRun(t, `
+VAL=banana
+if [ "$VAL" = "apple" ]; then echo a
+elif [ "$VAL" = "banana" ]; then echo b
+elif [ "$VAL" = "cherry" ]; then echo c
+else echo unknown
+fi`)
+	assert.Equal(t, "b\n", stdout)
+	assert.Equal(t, 0, code)
+}
+
+func TestIfTestCombinedAndOr(t *testing.T) {
+	stdout, _, code := ifRun(t, `
+A=1
+B=2
+if [ "$A" -eq 1 ] && [ "$B" -eq 2 ]; then echo both; else echo nope; fi
+if [ "$A" -eq 1 ] && [ "$B" -eq 9 ]; then echo both; else echo nope; fi
+if [ "$A" -eq 9 ] || [ "$B" -eq 2 ]; then echo either; else echo nope; fi
+if [ "$A" -eq 9 ] || [ "$B" -eq 9 ]; then echo either; else echo nope; fi`)
+	assert.Equal(t, "both\nnope\neither\nnope\n", stdout)
+	assert.Equal(t, 0, code)
+}
+
+func TestIfTestNegatedBracket(t *testing.T) {
+	stdout, _, code := ifRun(t, `
+if ! [ "a" = "b" ]; then echo diff; else echo same; fi
+if ! [ "a" = "a" ]; then echo diff; else echo same; fi`)
+	assert.Equal(t, "diff\nsame\n", stdout)
+	assert.Equal(t, 0, code)
+}
+
+func TestIfElifIntegerRangesInLoop(t *testing.T) {
+	stdout, _, code := ifRun(t, `
+for N in 0 5 15 25 100; do
+  if [ "$N" -lt 1 ]; then echo "$N:zero"
+  elif [ "$N" -le 10 ]; then echo "$N:low"
+  elif [ "$N" -le 20 ]; then echo "$N:mid"
+  else echo "$N:high"
+  fi
+done`)
+	assert.Equal(t, "0:zero\n5:low\n15:mid\n25:high\n100:high\n", stdout)
+	assert.Equal(t, 0, code)
+}
+
+func TestIfTestIntegerLtGe(t *testing.T) {
+	stdout, _, code := ifRun(t, `
+if [ 3 -lt 5 ]; then echo lt; fi
+if [ 5 -ge 5 ]; then echo ge; fi
+if [ 5 -le 5 ]; then echo le; fi
+if [ 7 -gt 5 ]; then echo gt; fi
+if [ 3 -ne 5 ]; then echo ne; fi`)
+	assert.Equal(t, "lt\nge\nle\ngt\nne\n", stdout)
+	assert.Equal(t, 0, code)
+}
