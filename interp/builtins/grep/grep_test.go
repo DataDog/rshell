@@ -532,6 +532,15 @@ func TestGrepMultipleFilesSomeErrors(t *testing.T) {
 	assert.Contains(t, stderr, "grep:")
 }
 
+func TestGrepQuietMultipleFilesSomeErrors(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "good.txt", "foo\n")
+	stdout, stderr, code := cmdRun(t, "grep -q foo good.txt nonexistent.txt", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "", stdout)
+	assert.Equal(t, "", stderr)
+}
+
 // --- Pipe chain ---
 
 func TestGrepPipeChain(t *testing.T) {
