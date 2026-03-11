@@ -78,14 +78,28 @@ var builtinAllowedSymbols = []string{
 	"os.FileInfo",
 	// os.O_RDONLY — read-only file flag constant; cannot open files by itself.
 	"os.O_RDONLY",
+	// regexp.Compile — compiles a regular expression; pure function, no I/O. Uses RE2 engine (linear-time, no backtracking).
+	"regexp.Compile",
+	// regexp.QuoteMeta — escapes all special regex characters in a string; pure function, no I/O.
+	"regexp.QuoteMeta",
+	// regexp.Regexp — compiled regular expression type; no I/O side effects. All matching methods are linear-time (RE2).
+	"regexp.Regexp",
 	// slices.Reverse — reverses a slice in-place; pure function, no I/O.
 	"slices.Reverse",
 	// slices.SortFunc — sorts a slice with a comparison function; pure function, no I/O.
 	"slices.SortFunc",
 	// strings.Builder — efficient string concatenation; pure in-memory buffer, no I/O.
 	"strings.Builder",
+	// strings.Join — concatenates a slice of strings with a separator; pure function, no I/O.
+	"strings.Join",
+	// strings.Split — splits a string by separator into a slice; pure function, no I/O.
+	"strings.Split",
 	// strconv.Atoi — string-to-int conversion; pure function, no I/O.
 	"strconv.Atoi",
+	// strconv.ParseBool — string-to-bool conversion; pure function, no I/O.
+	"strconv.ParseBool",
+	// strconv.Itoa — int-to-string conversion; pure function, no I/O.
+	"strconv.Itoa",
 	// strconv.ErrRange — sentinel error value for overflow; pure constant.
 	"strconv.ErrRange",
 	// strconv.NumError — error type for numeric conversion failures; pure type.
@@ -98,8 +112,6 @@ var builtinAllowedSymbols = []string{
 	"strings.HasPrefix",
 	// strings.IndexByte — finds byte in string; pure function, no I/O.
 	"strings.IndexByte",
-	// strings.Split — splits string by separator; pure function, no I/O.
-	"strings.Split",
 	// strings.TrimSpace — removes leading/trailing whitespace; pure function.
 	"strings.TrimSpace",
 	// io.WriteString — writes a string to a writer; no filesystem access, delegates to Write.
