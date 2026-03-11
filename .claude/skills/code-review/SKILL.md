@@ -114,10 +114,56 @@ For every behavioral change:
 
 ### D. Test Coverage
 
-- **Are new behaviors tested?** Every new code path should have a corresponding test
-- **Are edge cases tested?** Empty input, boundary values, error conditions
-- **YAML scenario conventions**: prefer `expect.stderr` over `stderr_contains`; tests are asserted against bash by default; use `stdout_windows`/`stderr_windows` for platform-specific output
-- **Bash comparison**: if YAML scenarios are added or modified, verify they pass against bash
+Analyze coverage of changed code from two angles: **scenario tests** (YAML) and **Go tests**. Scenario tests are preferred because they also verify bash compatibility.
+
+#### Step 1: Inventory changed code paths
+
+For each changed or added function/branch/error-path, list the code path (e.g. "cut: `-f` with `--complement` and `--output-delimiter`", "error when delimiter is multi-byte").
+
+#### Step 2: Check scenario test coverage (priority)
+
+Search `tests/scenarios/cmd/<command>/` for YAML scenarios that exercise each code path identified in Step 1.
+
+- **Covered** — a scenario exists whose `input.script` triggers the code path and `expect` asserts the output.
+- **Partially covered** — a scenario triggers the code path but doesn't assert stderr, exit code, or an important edge case.
+- **Not covered** — no scenario exercises the code path.
+
+Flag **not covered** and **partially covered** paths as findings. Suggest concrete YAML scenario(s) to add (including `description`, `input.script`, and expected `stdout`/`stderr`/`exit_code`).
+
+Scenario test conventions:
+- Prefer `expect.stderr` (exact match) over `stderr_contains`
+- Tests are asserted against bash by default — only use `skip_assert_against_bash: true` for intentional divergence
+- Use `stdout_windows`/`stderr_windows` for platform-specific output
+- If YAML scenarios are added or modified, verify they pass against bash
+
+#### Step 3: Check Go test coverage
+
+Search `interp/builtins/<command>/*_test.go` for Go tests that exercise any code paths **not already covered by scenario tests**. Go test types to check:
+
+| Test type | File pattern | What it covers |
+|-----------|-------------|----------------|
+| Functional | `<cmd>_test.go` | Core logic, argument parsing, edge cases |
+| GNU compat | `<cmd>_gnu_compat_test.go` | Byte-for-byte output equivalence with GNU coreutils |
+| Pentest | `<cmd>_pentest_test.go` | Security vectors (overflow, special files, resource exhaustion) |
+| Platform | `<cmd>_{unix,windows}_test.go` | OS-specific behavior |
+
+Only flag missing Go tests for paths that **cannot be adequately covered by scenario tests** (e.g. internal error handling, concurrency, memory limits, platform-specific behavior, performance-sensitive paths).
+
+#### Step 4: Produce coverage summary
+
+Include a coverage table in the review output:
+
+```markdown
+| Code path | Scenario test | Go test | Status |
+|-----------|:---:|:---:|--------|
+| `-f` with `--complement` | tests/scenarios/cmd/cut/complement/fields.yaml | — | Covered |
+| multi-byte delimiter error | — | — | **Missing** |
+| `/dev/zero` hang protection | skip (intentional divergence) | cut_pentest_test.go:45 | Covered |
+```
+
+Mark the overall coverage status:
+- **Adequate** — all new/changed code paths are covered (scenario or Go tests)
+- **Gaps found** — list missing coverage as P2 or P3 findings
 
 ### E. Code Quality
 

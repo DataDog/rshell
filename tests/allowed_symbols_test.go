@@ -68,6 +68,8 @@ var builtinAllowedSymbols = []string{
 	"io.ReadCloser",
 	// io.Reader — interface type; no side effects.
 	"io.Reader",
+	// math.MaxInt32 — integer constant; no side effects.
+	"math.MaxInt32",
 	// math.MaxInt64 — integer constant; no side effects.
 	"math.MaxInt64",
 	// math.MinInt64 — integer constant; no side effects.
@@ -94,6 +96,10 @@ var builtinAllowedSymbols = []string{
 	"strconv.FormatInt",
 	// strings.HasPrefix — pure function for prefix matching; no I/O.
 	"strings.HasPrefix",
+	// strings.IndexByte — finds byte in string; pure function, no I/O.
+	"strings.IndexByte",
+	// strings.Split — splits string by separator; pure function, no I/O.
+	"strings.Split",
 	// strings.TrimSpace — removes leading/trailing whitespace; pure function.
 	"strings.TrimSpace",
 	// io.WriteString — writes a string to a writer; no filesystem access, delegates to Write.
