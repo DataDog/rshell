@@ -31,8 +31,8 @@
 //	    Same list format as -b.
 //
 //	-n
-//	    Do not split multi-byte characters (used with -b). Byte ranges
-//	    are adjusted to avoid cutting in the middle of a character.
+//	    (ignored) Accepted for POSIX compatibility but has no effect,
+//	    matching GNU coreutils behavior.
 //
 //	-s, --only-delimited
 //	    Do not print lines not containing delimiters (only with -f).
@@ -234,7 +234,7 @@ func parseList(s string) ([][2]int, error) {
 	var ranges [][2]int
 	for _, part := range parts {
 		if part == "" {
-			continue
+			return nil, invalidRange(s)
 		}
 		dashIdx := strings.IndexByte(part, '-')
 		if dashIdx < 0 {
@@ -390,11 +390,6 @@ func processBytes(callCtx *builtins.CallContext, raw []byte, cfg *cutConfig) {
 		return
 	}
 
-	if cfg.noSplitMultibyte {
-		processBytesNoSplit(callCtx, raw, cfg)
-		return
-	}
-
 	if cfg.complement {
 		// Select bytes NOT in ranges.
 		if cfg.outDelimSet {
@@ -459,70 +454,6 @@ func processBytesComplementWithOutDelim(callCtx *builtins.CallContext, raw []byt
 		_, _ = callCtx.Stdout.Write(raw[r[0]-1 : r[1]])
 		first = false
 	}
-}
-
-// processBytesNoSplit handles -b with -n: don't split multi-byte characters.
-func processBytesNoSplit(callCtx *builtins.CallContext, raw []byte, cfg *cutConfig) {
-	n := len(raw)
-
-	// Build a map: for each byte position, record whether it's the start of a character.
-	// Also record the character index for grouping with output delimiter.
-	// A byte is included if:
-	//   - Its position is in the selected ranges AND
-	//   - It is the first byte of a character, OR the first byte of its character is also selected
-
-	// First pass: identify character boundaries.
-	type charInfo struct {
-		startByte int // 0-based byte offset where this char starts
-		byteLen   int // number of bytes in this character
-	}
-	var chars []charInfo
-	i := 0
-	for i < n {
-		_, size := utf8.DecodeRune(raw[i:])
-		if size == 0 {
-			size = 1 // invalid byte, treat as single byte
-		}
-		chars = append(chars, charInfo{startByte: i, byteLen: size})
-		i += size
-	}
-
-	// For each character, include it if the first byte of the character is selected.
-	selected := make([]bool, len(chars))
-	for ci, ch := range chars {
-		pos := ch.startByte + 1 // 1-based
-		sel := inRanges(pos, cfg.ranges)
-		if cfg.complement {
-			sel = !sel
-		}
-		selected[ci] = sel
-	}
-
-	if cfg.outDelimSet {
-		// With output delimiter, insert it between non-contiguous selected groups.
-		first := true
-		prevEnd := -1
-		for ci, ch := range chars {
-			if !selected[ci] {
-				continue
-			}
-			if !first && ch.startByte != prevEnd {
-				callCtx.Out(cfg.outDelim)
-			}
-			_, _ = callCtx.Stdout.Write(raw[ch.startByte : ch.startByte+ch.byteLen])
-			prevEnd = ch.startByte + ch.byteLen
-			first = false
-		}
-	} else {
-		var sb strings.Builder
-		for ci, ch := range chars {
-			if selected[ci] {
-				sb.Write(raw[ch.startByte : ch.startByte+ch.byteLen])
-			}
-		}
-		callCtx.Out(sb.String())
-	}
-	callCtx.Out("\n")
 }
 
 // processChars selects characters (runes) from a line.
@@ -659,6 +590,10 @@ func complementRanges(ranges [][2]int, total int) [][2]int {
 		}
 		if next < start {
 			result = append(result, [2]int{next, start - 1})
+		}
+		if end >= total {
+			next = total + 1
+			break
 		}
 		next = end + 1
 	}

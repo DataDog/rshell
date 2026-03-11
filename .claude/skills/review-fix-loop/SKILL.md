@@ -20,24 +20,24 @@ Your very first action — before reading ANY files, before running ANY commands
 2. "Step 2: Run the review-fix loop"
 3. "Step 2A1: Self-review (code-review)" ← **parallel with 2A2**
 4. "Step 2A2: Request external reviews (@datadog @codex)" ← **parallel with 2A1**
-5. "Step 2B1: Address PR comments (address-pr-comments)"
-6. "Step 2B2: Fix CI failures (fix-ci-tests)"
-7. "Step 2C: Verify push and resolve conflicts"
-8. "Step 2D: Check CI status"
-9. "Step 2E: Decide whether to continue"
+5. "Step 2B: Address PR comments (address-pr-comments)"
+6. "Step 2C: Fix CI failures (fix-ci-tests)"
+7. "Step 2D: Verify push and resolve conflicts"
+8. "Step 2E: Check CI status"
+9. "Step 2F: Decide whether to continue"
 10. "Step 3: Verify clean state"
 11. "Step 4: Final summary"
 
-**Note on sub-steps 2A–2E:** These are created once and reused across loop iterations. At the start of each iteration, reset all sub-steps to `pending`, then execute them in order. Sub-steps marked **parallel** are launched concurrently and must both complete before proceeding to the next group.
+**Note on sub-steps 2A–2F:** These are created once and reused across loop iterations. At the start of each iteration, reset all sub-steps to `pending`, then execute them in order. Sub-steps marked **parallel** are launched concurrently and must both complete before proceeding to the next group.
 
 ### 2. Execution order and gating
 
 Steps run strictly in this order:
 
 ```
-Step 1 → Step 2 (loop: [2A1 ∥ 2A2] → 2B1 → 2B2 → 2C → 2D → 2E) → Step 3 → Step 4
-                    ↑                                            ↓
-                    └──────────────── repeat ─────────────────────┘
+Step 1 → Step 2 (loop: [2A1 ∥ 2A2] → 2B → 2C → 2D → 2E → 2F) → Step 3 → Step 4
+                    ↑                                          ↓
+                    └──────────────── repeat ───────────────────┘
 ```
 
 **Top-level steps** are sequential: before starting step N, call TaskList and verify step N-1 is `completed`. Set step N to `in_progress`.
@@ -47,11 +47,11 @@ Step 1 → Step 2 (loop: [2A1 ∥ 2A2] → 2B1 → 2B2 → 2C → 2D → 2E) →
 | Phase | Sub-steps | Execution |
 |-------|-----------|-----------|
 | Review | **2A1** ∥ **2A2** | **Parallel** — launch both, wait for both |
-| Fix comments | **2B1** | **Sequential** — run first, wait for completion |
-| Fix CI | **2B2** | **Sequential** — run after 2B1 completes |
-| Verify | **2C** | Sequential |
-| CI check | **2D** | Sequential |
-| Decide | **2E** | Sequential |
+| Fix comments | **2B** | Sequential |
+| Fix CI | **2C** | Sequential — run after 2B completes |
+| Verify | **2D** | Sequential |
+| CI check | **2E** | Sequential |
+| Decide | **2F** | Sequential |
 
 ### 3. Never skip steps
 
@@ -116,8 +116,8 @@ The external reviews arrive asynchronously — their comments will be picked up 
 Wait for **both** to complete before proceeding.
 
 **Record the self-review outcome (from 2A1):**
-- If the review result is **APPROVE** (no findings) → skip to **Sub-step 2D (CI check)**
-- If there are findings → continue to **Sub-step 2B1**
+- If the review result is **APPROVE** (no findings) → skip to **Sub-step 2E (CI check)**
+- If there are findings → continue to **Sub-step 2B**
 
 ---
 
@@ -130,7 +130,7 @@ git status
 git pull --rebase origin <head-branch>
 ```
 
-### Sub-step 2B1 — Address PR comments ← **sequential, before 2B2**
+### Sub-step 2B — Address PR comments
 
 Run the **address-pr-comments** skill:
 ```
@@ -138,9 +138,9 @@ Run the **address-pr-comments** skill:
 ```
 This reads all unresolved review comments, evaluates validity, implements fixes, commits, pushes, and replies/resolves threads.
 
-Wait for completion before proceeding to 2B2.
+Wait for completion before proceeding to 2C.
 
-### Sub-step 2B2 — Fix CI failures ← **sequential, after 2B1**
+### Sub-step 2C — Fix CI failures
 
 Run the **fix-ci-tests** skill:
 ```
@@ -148,13 +148,13 @@ Run the **fix-ci-tests** skill:
 ```
 This checks for failing CI jobs, downloads logs, reproduces failures locally, fixes them, and pushes.
 
-Wait for completion before proceeding to 2C.
+Wait for completion before proceeding to 2D.
 
 ---
 
-### Sub-step 2C — Verify push and sync
+### Sub-step 2D — Verify push and sync
 
-After 2B1 and 2B2 complete, verify the branch state:
+After 2B and 2C complete, verify the branch state:
 
 ```bash
 git fetch origin <head-branch>
@@ -173,7 +173,7 @@ git log --oneline -5
 
 ---
 
-### Sub-step 2D — Check CI status
+### Sub-step 2E — Check CI status
 
 ```bash
 gh pr checks <pr-number> --json name,state
@@ -183,13 +183,13 @@ gh pr checks <pr-number> --json name,state
   ```
   /fix-ci-tests <pr-number>
   ```
-  Wait for it to complete, then re-check CI status. If still failing after this second attempt, log the failure and continue to Sub-step 2E.
+  Wait for it to complete, then re-check CI status. If still failing after this second attempt, log the failure and continue to Sub-step 2F.
 
-- If all checks are **passing** or **pending** → continue to Sub-step 2E.
+- If all checks are **passing** or **pending** → continue to Sub-step 2F.
 
 ---
 
-### Sub-step 2E — Decide whether to continue
+### Sub-step 2F — Decide whether to continue
 
 Increment `iteration`.
 
@@ -332,7 +332,7 @@ Provide a summary in this exact format:
 
 - **Never skip the review step** — always re-review after fixes to catch regressions or new issues introduced by the fixes themselves.
 - **Always submit reviews to GitHub** — each iteration's review must be posted as PR comments so there's a visible trail.
-- **Run address-pr-comments before fix-ci-tests** — 2B1 then 2B2, sequentially, so CI fixes run on code that already incorporates review feedback.
+- **Run address-pr-comments before fix-ci-tests** — 2B then 2C, sequentially, so CI fixes run on code that already incorporates review feedback.
 - **Pull before fixing** — always `git pull --rebase` before launching fix agents to avoid working on stale code.
 - **Stop early on APPROVE + CI green + no unresolved threads** — don't waste iterations if the PR is already clean.
 - **Respect the iteration limit** — hard stop at 10 to prevent infinite loops. If issues persist after 10 iterations, report what's left for the user to handle.

@@ -373,43 +373,43 @@ func TestCutBytesComplementNoOutDelim(t *testing.T) {
 	assert.Equal(t, "abef\n", stdout)
 }
 
-// --- Coverage: processBytesNoSplit (-b -n) ---
+// --- Coverage: -n flag (ignored, matching GNU coreutils) ---
 
-func TestCutBytesNoSplitMultibyte(t *testing.T) {
+func TestCutBytesNFlagIsNoOp(t *testing.T) {
 	dir := t.TempDir()
-	// α is 2 bytes (0xCE 0xB1), β is 2 bytes (0xCE 0xB2)
+	// α is 2 bytes (0xCE 0xB1), β is 2 bytes (0xCE 0xB2), γ is 2 bytes (0xCE 0xB3)
 	writeFile(t, dir, "input.txt", "\xce\xb1\xce\xb2\xce\xb3\n") // αβγ
-	// -b1 with -n: should include full α (bytes 1-2 since first byte starts the char)
+	// GNU cut ignores -n: -b1 -n selects only the first byte (0xCE), not the full character
 	stdout, _, code := cmdRun(t, "cut -b1 -n input.txt", dir)
 	assert.Equal(t, 0, code)
-	assert.Equal(t, "\xce\xb1\n", stdout)
+	assert.Equal(t, "\xce\n", stdout)
 }
 
-func TestCutBytesNoSplitRange(t *testing.T) {
+func TestCutBytesNFlagRangeIsNoOp(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, dir, "input.txt", "\xce\xb1\xce\xb2\xce\xb3\n") // αβγ
-	// -b1-3 with -n: first byte of α is in range, first byte of β is at position 3
+	// GNU cut ignores -n: -b1-3 -n selects bytes 1,2,3 (0xCE 0xB1 0xCE)
 	stdout, _, code := cmdRun(t, "cut -b1-3 -n input.txt", dir)
 	assert.Equal(t, 0, code)
-	assert.Equal(t, "\xce\xb1\xce\xb2\n", stdout)
+	assert.Equal(t, "\xce\xb1\xce\n", stdout)
 }
 
-func TestCutBytesNoSplitWithOutputDelim(t *testing.T) {
+func TestCutBytesNFlagWithOutputDelim(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, dir, "input.txt", "\xce\xb1\xce\xb2\xce\xb3\n") // αβγ
-	// Select bytes 1 and 5 (start of α and γ) with output delimiter
+	// GNU cut ignores -n: -b1,5 -n selects bytes 1 and 5 (0xCE and 0xCE)
 	stdout, _, code := cmdRun(t, "cut -b1,5 -n --output-delimiter=: input.txt", dir)
 	assert.Equal(t, 0, code)
-	assert.Equal(t, "\xce\xb1:\xce\xb3\n", stdout)
+	assert.Equal(t, "\xce:\xce\n", stdout)
 }
 
-func TestCutBytesNoSplitComplement(t *testing.T) {
+func TestCutBytesNFlagComplement(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, dir, "input.txt", "\xce\xb1\xce\xb2\xce\xb3\n") // αβγ
-	// Complement of byte 1 (start of α): exclude α, keep βγ
+	// GNU cut ignores -n: --complement -b1 -n removes byte 1, keeps bytes 2-6
 	stdout, _, code := cmdRun(t, "cut -b1 -n --complement input.txt", dir)
 	assert.Equal(t, 0, code)
-	assert.Equal(t, "\xce\xb2\xce\xb3\n", stdout)
+	assert.Equal(t, "\xb1\xce\xb2\xce\xb3\n", stdout)
 }
 
 // --- Coverage: CRLF line endings ---

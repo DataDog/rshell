@@ -80,12 +80,12 @@ var builtinAllowedSymbols = []string{
 	"os.FileInfo",
 	// os.O_RDONLY — read-only file flag constant; cannot open files by itself.
 	"os.O_RDONLY",
-	// sort.Slice — sorts a slice with a less function; pure function, no I/O.
-	"sort.Slice",
 	// slices.Reverse — reverses a slice in-place; pure function, no I/O.
 	"slices.Reverse",
 	// slices.SortFunc — sorts a slice with a comparison function; pure function, no I/O.
 	"slices.SortFunc",
+	// sort.Slice — sorts a slice with a less function; pure function, no I/O.
+	"sort.Slice",
 	// strings.Builder — efficient string concatenation; pure in-memory buffer, no I/O.
 	"strings.Builder",
 	// strconv.Atoi — string-to-int conversion; pure function, no I/O.
