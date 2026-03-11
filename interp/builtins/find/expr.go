@@ -100,13 +100,6 @@ var blockedPredicates = map[string]string{
 	"-iregex":  "regular expressions are blocked (ReDoS risk)",
 }
 
-// errorf creates an error with fmt.Sprintf formatting.
-// NOTE: fmt.Errorf is not in the builtin import allowlist, so we use
-// errors.New(fmt.Sprintf(...)) instead. This is intentional.
-func errorf(format string, args ...any) error { //nolint:goerr113
-	return errors.New(fmt.Sprintf(format, args...))
-}
-
 // parseExpression parses the find expression from args. Returns nil if no
 // expression is provided (meaning match everything).
 func parseExpression(args []string) (*expr, error) {
@@ -120,7 +113,7 @@ func parseExpression(args []string) (*expr, error) {
 		return nil, err
 	}
 	if p.pos < len(p.args) {
-		return nil, errorf("find: unexpected argument '%s'", p.args[p.pos])
+		return nil, fmt.Errorf("find: unexpected argument '%s'", p.args[p.pos])
 	}
 	return e, nil
 }
@@ -140,10 +133,10 @@ func (p *parser) advance() string {
 
 func (p *parser) expect(s string) error {
 	if p.pos >= len(p.args) {
-		return errorf("find: expected '%s'", s)
+		return fmt.Errorf("find: expected '%s'", s)
 	}
 	if p.args[p.pos] != s {
-		return errorf("find: expected '%s', got '%s'", s, p.args[p.pos])
+		return fmt.Errorf("find: expected '%s', got '%s'", s, p.args[p.pos])
 	}
 	p.pos++
 	return nil
@@ -254,7 +247,7 @@ func (p *parser) parsePrimary() (*expr, error) {
 
 	// Check blocked predicates.
 	if reason, blocked := blockedPredicates[tok]; blocked {
-		return nil, errorf("find: %s: %s", tok, reason)
+		return nil, fmt.Errorf("find: %s: %s", tok, reason)
 	}
 
 	switch tok {
@@ -289,13 +282,13 @@ func (p *parser) parsePrimary() (*expr, error) {
 	case "-false":
 		return &expr{kind: exprFalse}, nil
 	default:
-		return nil, errorf("find: unknown predicate '%s'", tok)
+		return nil, fmt.Errorf("find: unknown predicate '%s'", tok)
 	}
 }
 
 func (p *parser) parseStringPredicate(kind exprKind) (*expr, error) {
 	if p.pos >= len(p.args) {
-		return nil, errorf("find: missing argument for %s", kindName(kind))
+		return nil, fmt.Errorf("find: missing argument for %s", kindName(kind))
 	}
 	val := p.advance()
 	return &expr{kind: kind, strVal: val}, nil
@@ -317,7 +310,7 @@ func (p *parser) parseTypePredicate() (*expr, error) {
 		if c == ',' {
 			if expectType {
 				// Leading or consecutive comma.
-				return nil, errorf("find: Unknown argument to -type: %s", val)
+				return nil, fmt.Errorf("find: Unknown argument to -type: %s", val)
 			}
 			expectType = true
 			continue
@@ -326,16 +319,16 @@ func (p *parser) parseTypePredicate() (*expr, error) {
 		case 'f', 'd', 'l', 'p', 's':
 			if !expectType {
 				// Adjacent type chars without comma (e.g. "fd").
-				return nil, errorf("find: Unknown argument to -type: %s", val)
+				return nil, fmt.Errorf("find: Unknown argument to -type: %s", val)
 			}
 			expectType = false
 		default:
-			return nil, errorf("find: Unknown argument to -type: %s", val)
+			return nil, fmt.Errorf("find: Unknown argument to -type: %s", val)
 		}
 	}
 	if expectType {
 		// Trailing comma.
-		return nil, errorf("find: Unknown argument to -type: %s", val)
+		return nil, fmt.Errorf("find: Unknown argument to -type: %s", val)
 	}
 	return &expr{kind: exprType, strVal: val}, nil
 }
@@ -354,7 +347,7 @@ func (p *parser) parseSizePredicate() (*expr, error) {
 
 func (p *parser) parseNumericPredicate(kind exprKind) (*expr, error) {
 	if p.pos >= len(p.args) {
-		return nil, errorf("find: missing argument for %s", kindName(kind))
+		return nil, fmt.Errorf("find: missing argument for %s", kindName(kind))
 	}
 	val := p.advance()
 	cmp := 0
@@ -368,7 +361,7 @@ func (p *parser) parseNumericPredicate(kind exprKind) (*expr, error) {
 	}
 	n, err := strconv.Atoi(numStr)
 	if err != nil {
-		return nil, errorf("find: invalid argument '%s' to %s", val, kindName(kind))
+		return nil, fmt.Errorf("find: invalid argument '%s' to %s", val, kindName(kind))
 	}
 	return &expr{kind: kind, numVal: int64(n), numCmp: cmp}, nil
 }
@@ -390,7 +383,7 @@ func parseSize(s string) (sizeUnit, error) {
 	}
 
 	if len(numStr) == 0 {
-		return sizeUnit{}, errorf("find: invalid argument '%s' to -size", s)
+		return sizeUnit{}, fmt.Errorf("find: invalid argument '%s' to -size", s)
 	}
 
 	// Check for unit suffix.
@@ -403,15 +396,15 @@ func parseSize(s string) (sizeUnit, error) {
 	}
 
 	if len(numStr) == 0 {
-		return sizeUnit{}, errorf("find: invalid argument '%s' to -size", s)
+		return sizeUnit{}, fmt.Errorf("find: invalid argument '%s' to -size", s)
 	}
 
 	n, err := strconv.Atoi(numStr)
 	if err != nil {
-		return sizeUnit{}, errorf("find: invalid argument '%s' to -size", s)
+		return sizeUnit{}, fmt.Errorf("find: invalid argument '%s' to -size", s)
 	}
 	if n < 0 {
-		return sizeUnit{}, errorf("find: invalid argument '%s' to -size", s)
+		return sizeUnit{}, fmt.Errorf("find: invalid argument '%s' to -size", s)
 	}
 	su.n = int64(n)
 	return su, nil
