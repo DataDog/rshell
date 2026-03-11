@@ -14,24 +14,41 @@ You MUST follow this execution protocol. Skipping steps or running them out of o
 
 ### 1. Create the full task list FIRST
 
-Your very first action — before reading ANY files, before running ANY commands — is to call TaskCreate exactly 4 times, once for each step below. Use these exact subjects:
+Your very first action — before reading ANY files, before running ANY commands — is to call TaskCreate exactly 9 times, once for each step/sub-step below. Use these exact subjects:
 
 1. "Step 1: Identify the PR"
 2. "Step 2: Run the review-fix loop"
-3. "Step 3: Verify clean state"
-4. "Step 4: Final summary"
+3. "Step 2A: Review the PR (self-review ∥ external reviews)" ← **parallel Step 2A and Step 2B**
+4. "Step 2B: Fix review findings and CI failures (address-pr-comments ∥ fix-ci-tests)" ← **parallel Step 2A and Step 2B**
+5. "Step 2C: Verify push and resolve conflicts"
+6. "Step 2D: Check CI status"
+7. "Step 2E: Decide whether to continue"
+8. "Step 3: Verify clean state"
+9. "Step 4: Final summary"
+
+**Note on sub-steps 2A–2E:** These are created once and reused across loop iterations. At the start of each iteration, reset 2A–2E to `pending`, then execute them in order. Sub-steps marked **parallel** launch multiple agents concurrently within that sub-step.
 
 ### 2. Execution order and gating
 
 Steps run strictly in this order:
 
 ```
-Step 1 → Step 2 (loop) → Step 3 → Step 4
+Step 1 → Step 2 (loop: 2A → 2B → 2C → 2D → 2E) → Step 3 → Step 4
+                    ↑                          ↓
+                    └──────── repeat ───────────┘
 ```
 
-**Sequential steps:** Before starting step N, call TaskList and verify step N-1 is `completed`. Set step N to `in_progress`.
+**Top-level steps** are sequential: before starting step N, call TaskList and verify step N-1 is `completed`. Set step N to `in_progress`.
 
-Step 2 is an internal loop with sub-steps (A → B → C → D → E). Each sub-step must complete before the next begins, except where parallel execution is explicitly marked.
+**Sub-steps within Step 2** are also sequential (2A → 2B → 2C → 2D → 2E), but **within** certain sub-steps, multiple agents run in parallel:
+
+| Sub-step | Internal parallelism |
+|----------|---------------------|
+| **2A** | Self-review agent **∥** external review comment — run in parallel |
+| **2B** | address-pr-comments agent **∥** fix-ci-tests agent — run in parallel |
+| **2C** | Sequential (verify & resolve conflicts) |
+| **2D** | Sequential (check CI, optionally fix) |
+| **2E** | Sequential (evaluate & decide) |
 
 ### 3. Never skip steps
 
