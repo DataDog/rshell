@@ -96,8 +96,8 @@ func TestAllowedPathsExecNonexistent(t *testing.T) {
 
 func TestAllowedPathsExecViaPathLookup(t *testing.T) {
 	dir := t.TempDir()
-	// "grep" is resolved via PATH (not absolute), but /bin and /usr are not allowed
-	_, stderr, exitCode := runScriptInternal(t, `grep`, dir,
+	// "sed" is resolved via PATH (not absolute), but /bin and /usr are not allowed
+	_, stderr, exitCode := runScriptInternal(t, `sed`, dir,
 		AllowedPaths([]string{dir}),
 	)
 	assert.Equal(t, 127, exitCode)

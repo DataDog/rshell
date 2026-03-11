@@ -376,11 +376,11 @@ func (p *parser) parseNumericPredicate(kind exprKind) (*expr, error) {
 		cmp = -1
 		numStr = numStr[1:]
 	}
-	n, err := strconv.Atoi(numStr)
+	n, err := strconv.ParseInt(numStr, 10, 64)
 	if err != nil {
 		return nil, fmt.Errorf("find: invalid argument '%s' to %s", val, kindName(kind))
 	}
-	return &expr{kind: kind, numVal: int64(n), numCmp: cmp}, nil
+	return &expr{kind: kind, numVal: n, numCmp: cmp}, nil
 }
 
 func (p *parser) parseDepthOption(isMax bool) (*expr, error) {
@@ -437,14 +437,14 @@ func parseSize(s string) (sizeUnit, error) {
 		return sizeUnit{}, fmt.Errorf("find: invalid argument '%s' to -size", s)
 	}
 
-	n, err := strconv.Atoi(numStr)
+	n, err := strconv.ParseInt(numStr, 10, 64)
 	if err != nil {
 		return sizeUnit{}, fmt.Errorf("find: invalid argument '%s' to -size", s)
 	}
 	if n < 0 {
 		return sizeUnit{}, fmt.Errorf("find: invalid argument '%s' to -size", s)
 	}
-	su.n = int64(n)
+	su.n = n
 	return su, nil
 }
 

@@ -139,7 +139,12 @@ func run(ctx context.Context, callCtx *builtins.CallContext, args []string) buil
 	// or -mindepth prevents the predicate from being evaluated.
 	failed := false
 	eagerNewerErrors := map[string]bool{}
+	seen := map[string]bool{}
 	for _, ref := range collectNewerRefs(expression) {
+		if seen[ref] {
+			continue
+		}
+		seen[ref] = true
 		if _, err := callCtx.StatFile(ctx, ref); err != nil {
 			callCtx.Errf("find: '%s': %s\n", ref, callCtx.PortableErr(err))
 			eagerNewerErrors[ref] = true
