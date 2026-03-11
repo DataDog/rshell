@@ -89,12 +89,69 @@ const (
 	radixHex     radixFormat = 'x'
 )
 
+// radixFlagVal implements pflag.Value for the -t / --radix flag.
+// Validation happens in Set so pflag reports errors during parsing, which also
+// correctly rejects empty values (e.g. --radix= or -t '').
+type radixFlagVal struct{ target *radixFormat }
+
+func (r *radixFlagVal) String() string {
+	switch *r.target {
+	case radixOctal:
+		return "o"
+	case radixDecimal:
+		return "d"
+	case radixHex:
+		return "x"
+	default:
+		return ""
+	}
+}
+
+func (r *radixFlagVal) Set(s string) error {
+	switch s {
+	case "o":
+		*r.target = radixOctal
+	case "d":
+		*r.target = radixDecimal
+	case "x":
+		*r.target = radixHex
+	default:
+		return errors.New("invalid radix")
+	}
+	return nil
+}
+
+func (r *radixFlagVal) Type() string { return "string" }
+
+// octalFlagVal implements pflag.Value for the legacy -o flag (alias for -t o).
+// Both -o and -t share the same *radixFormat target so pflag's left-to-right
+// Set() calls naturally implement last-flag-wins semantics.
+type octalFlagVal struct{ target *radixFormat }
+
+func (o *octalFlagVal) String() string { return "false" }
+
+func (o *octalFlagVal) Set(s string) error {
+	if s == "true" {
+		*o.target = radixOctal
+	}
+	return nil
+}
+
+func (o *octalFlagVal) IsBoolFlag() bool { return true }
+func (o *octalFlagVal) Type() string     { return "bool" }
+
 func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 	help := fs.BoolP("help", "h", false, "print usage and exit")
 	_ = fs.BoolP("all", "a", false, "scan entire file (default; accepted for POSIX compatibility)")
 	minLen := fs.IntP("bytes", "n", defaultMinLen, "minimum string length (default 4)")
-	radix := fs.StringP("radix", "t", "", "print file offset in given radix: o=octal, d=decimal, x=hex")
-	offsetLegacy := fs.BoolP("offset-octal", "o", false, "alias for -t o (print octal offsets)")
+	// format is shared by both -t and -o; pflag calls Set() in parse order so
+	// whichever flag appears last on the command line wins (last-flag-wins).
+	var format radixFormat
+	fs.VarP(&radixFlagVal{target: &format}, "radix", "t", "print file offset in given radix: o=octal, d=decimal, x=hex")
+	// NoOptDefVal = "true" makes pflag treat -o as a no-argument boolean flag
+	// (same as BoolVarP does internally), so -o alone calls Set("true").
+	oFlag := fs.VarPF(&octalFlagVal{target: &format}, "offset-octal", "o", "alias for -t o (print octal offsets)")
+	oFlag.NoOptDefVal = "true"
 	printFileName := fs.BoolP("print-file-name", "f", false, "print file name before each string")
 	separator := fs.StringP("output-separator", "s", "\n", "output separator between strings (default newline)")
 
@@ -114,24 +171,8 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			return builtins.Result{Code: 1}
 		}
 
-		// Resolve offset format: -t takes precedence over -o.
-		var format radixFormat
-		if *offsetLegacy {
-			format = radixOctal
-		}
-		if *radix != "" {
-			switch *radix {
-			case "o":
-				format = radixOctal
-			case "d":
-				format = radixDecimal
-			case "x":
-				format = radixHex
-			default:
-				callCtx.Errf("strings: invalid radix\n")
-				return builtins.Result{Code: 1}
-			}
-		}
+		// format is already resolved: pflag called Set() on the custom flag values
+		// in parse order, so the last of -o / -t wins (same as GNU strings).
 
 		files := args
 		if len(files) == 0 {

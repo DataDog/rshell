@@ -10,5 +10,5 @@ input:
     strings -t z data.bin
 expect:
   stdout: ""
-  stderr: "strings: invalid radix\n"
+  stderr: "strings: invalid argument \"z\" for \"-t, --radix\" flag: invalid radix\n"
   exit_code: 1
