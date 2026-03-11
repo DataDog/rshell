@@ -359,12 +359,11 @@ func processFile(ctx context.Context, callCtx *builtins.CallContext, file string
 	return sc.Err()
 }
 
-// stripNewline removes a trailing \n or \r\n from a byte slice.
+// stripNewline removes a trailing \n from a byte slice.
+// Only \n is stripped — \r is preserved as a regular content byte,
+// matching GNU cut behavior where \r is not part of the line terminator.
 func stripNewline(b []byte) []byte {
 	if len(b) > 0 && b[len(b)-1] == '\n' {
-		b = b[:len(b)-1]
-	}
-	if len(b) > 0 && b[len(b)-1] == '\r' {
 		b = b[:len(b)-1]
 	}
 	return b

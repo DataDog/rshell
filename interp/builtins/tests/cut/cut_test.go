@@ -422,6 +422,24 @@ func TestCutCRLFLineEnding(t *testing.T) {
 	assert.Equal(t, "b\n", stdout)
 }
 
+func TestCutCRLFLineEndingLastField(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "input.txt", "a:b:c\r\n")
+	// GNU cut preserves \r as part of the last field content
+	stdout, _, code := cmdRun(t, "cut -d: -f3 input.txt", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "c\r\n", stdout)
+}
+
+func TestCutCRLFByteMode(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "input.txt", "ab\r\n")
+	// GNU cut treats \r as byte 3 (regular content byte)
+	stdout, _, code := cmdRun(t, "cut -b3 input.txt", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "\r\n", stdout)
+}
+
 // --- Coverage: decreasing range error ---
 
 func TestCutDecreasingRangeBytes(t *testing.T) {
