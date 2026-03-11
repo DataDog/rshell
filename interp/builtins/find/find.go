@@ -223,31 +223,29 @@ func walkPath(
 		return true
 	}
 
-	// visited tracks directories by canonical file identity (dev+inode on
-	// Unix, volume serial+file index on Windows) when following symlinks (-L)
-	// to detect cycles. Falls back to path-based tracking if file identity
-	// extraction fails (e.g., permission denied or unsupported filesystem).
-	// The maxTraversalDepth=256 cap remains as an ultimate safety bound.
-	var visitedID map[builtins.FileID]string
-	var visitedPath map[string]bool
+	// Cycle detection for -L mode: track ancestor directory identities
+	// (dev+inode on Unix, volume serial+file index on Windows) along the
+	// path from root to the current node. This correctly allows multiple
+	// symlinks to the same target (no ancestor cycle) while detecting
+	// actual loops. Falls back to path-based ancestor tracking if file
+	// identity extraction fails. The maxTraversalDepth=256 cap remains
+	// as an ultimate safety bound.
 	useFileID := false
 	if followLinks {
 		if callCtx.FileIdentity != nil {
 			if _, ok := callCtx.FileIdentity(startPath, startInfo); ok {
-				visitedID = map[builtins.FileID]string{}
 				useFileID = true
 			}
-		}
-		if !useFileID {
-			visitedPath = map[string]bool{}
 		}
 	}
 
 	// Use an explicit stack for traversal to avoid Go recursion depth issues.
 	type stackEntry struct {
-		path  string
-		info  iofs.FileInfo
-		depth int
+		path          string
+		info          iofs.FileInfo
+		depth         int
+		ancestorIDs   map[builtins.FileID]string // ancestor dir identities (root→parent)
+		ancestorPaths map[string]bool             // fallback: ancestor dir paths
 	}
 
 	stack := []stackEntry{{path: startPath, info: startInfo, depth: 0}}
@@ -293,24 +291,37 @@ func walkPath(
 
 		// Descend into directories unless pruned or beyond maxdepth.
 		if entry.info.IsDir() && !prune && entry.depth < maxDepth {
-			// With -L, check for symlink loops.
+			// With -L, check for symlink loops by inspecting the ancestor
+			// chain. A loop exists only when a directory is its own ancestor
+			// (not merely visited via a different path).
+			var childAncestorIDs map[builtins.FileID]string
+			var childAncestorPaths map[string]bool
 			if useFileID {
 				if id, ok := callCtx.FileIdentity(entry.path, entry.info); ok {
-					if firstPath, seen := visitedID[id]; seen {
+					if firstPath, seen := entry.ancestorIDs[id]; seen {
 						callCtx.Errf("find: File system loop detected; '%s' is part of the same file system loop as '%s'.\n",
 							entry.path, firstPath)
 						failed = true
 						continue
 					}
-					visitedID[id] = entry.path
+					// Build ancestor set for children: parent's ancestors + this dir.
+					childAncestorIDs = make(map[builtins.FileID]string, len(entry.ancestorIDs)+1)
+					for k, v := range entry.ancestorIDs {
+						childAncestorIDs[k] = v
+					}
+					childAncestorIDs[id] = entry.path
 				}
-			} else if visitedPath != nil {
-				if visitedPath[entry.path] {
+			} else if followLinks {
+				if entry.ancestorPaths[entry.path] {
 					callCtx.Errf("find: File system loop detected; '%s' has already been visited.\n", entry.path)
 					failed = true
 					continue
 				}
-				visitedPath[entry.path] = true
+				childAncestorPaths = make(map[string]bool, len(entry.ancestorPaths)+1)
+				for k := range entry.ancestorPaths {
+					childAncestorPaths[k] = true
+				}
+				childAncestorPaths[entry.path] = true
 			}
 
 			entries, readErr := callCtx.ReadDir(ctx, entry.path)
@@ -354,9 +365,11 @@ func walkPath(
 				}
 
 				stack = append(stack, stackEntry{
-					path:  childPath,
-					info:  childInfo,
-					depth: entry.depth + 1,
+					path:          childPath,
+					info:          childInfo,
+					depth:         entry.depth + 1,
+					ancestorIDs:   childAncestorIDs,
+					ancestorPaths: childAncestorPaths,
 				})
 			}
 		}
