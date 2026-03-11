@@ -1,5 +1,5 @@
 description: find -newer with missing reference file produces error and exit code 1.
-skip_assert_against_bash: true
+skip_assert_against_bash: true  # intentional: rshell error format differs from GNU find
 setup:
   files:
     - path: dir/a.txt

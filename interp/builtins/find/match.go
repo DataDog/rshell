@@ -7,6 +7,7 @@ package find
 
 import (
 	iofs "io/fs"
+	"math"
 	"path"
 	"strings"
 )
@@ -92,10 +93,19 @@ func sizeBlockSize(unit byte) int64 {
 // GNU find rounds up to units for exact match: a 1-byte file is +0c, 1c, -2c.
 func compareSize(fileSize int64, su sizeUnit) bool {
 	blockSz := sizeBlockSize(su.unit)
-	// Round file size up to the next block.
-	fileBlocks := (fileSize + blockSz - 1) / blockSz
-	if fileSize == 0 {
-		fileBlocks = 0
+	// Round file size up to the next block (ceiling division).
+	// Guard against overflow: (fileSize + blockSz - 1) can exceed MaxInt64
+	// when fileSize is close to MaxInt64.
+	var fileBlocks int64
+	if fileSize > 0 {
+		if blockSz == 1 {
+			fileBlocks = fileSize
+		} else if fileSize <= math.MaxInt64-blockSz+1 {
+			fileBlocks = (fileSize + blockSz - 1) / blockSz
+		} else {
+			// Overflow-safe ceiling division for very large file sizes.
+			fileBlocks = fileSize/blockSz + 1
+		}
 	}
 
 	switch su.cmp {
@@ -121,7 +131,8 @@ func compareNumeric(actual, target int64, cmp int) bool {
 }
 
 // baseName returns the last element of a path.
-// Only checks for '/' since the shell normalizes all paths to use forward slashes.
+// The shell normalises all paths to forward slashes on all platforms,
+// so hardcoding '/' is correct even on Windows.
 func baseName(p string) string {
 	for i := len(p) - 1; i >= 0; i-- {
 		if p[i] == '/' {

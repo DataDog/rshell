@@ -333,6 +333,8 @@ func walkPath(
 }
 
 // joinPath joins a directory and a name with a forward slash.
+// The shell normalises all paths to forward slashes on all platforms,
+// so hardcoding '/' is correct even on Windows.
 func joinPath(dir, name string) string {
 	if len(dir) == 0 {
 		return name
