@@ -159,9 +159,10 @@ func TestCutCharBasic(t *testing.T) {
 func TestCutCharMultibyte(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, dir, "input.txt", "\xce\xb1\xce\xb2\xce\xb3\n") // αβγ
+	// GNU cut treats -c as byte-wise (same as -b), so -c1 selects only the first byte.
 	stdout, _, code := cmdRun(t, "cut -c1 input.txt", dir)
 	assert.Equal(t, 0, code)
-	assert.Equal(t, "\xce\xb1\n", stdout) // α
+	assert.Equal(t, "\xce\n", stdout)
 }
 
 // --- Delimiter ---

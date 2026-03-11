@@ -21,7 +21,8 @@
 //	    positions and ranges (e.g. 1,3-5,7-). Positions are 1-based.
 //
 //	-c LIST, --characters=LIST
-//	    Select only these characters. Same list format as -b.
+//	    Select only these characters (treated as bytes, matching GNU cut).
+//	    Same list format as -b.
 //
 //	-d DELIM, --delimiter=DELIM
 //	    Use DELIM instead of TAB for field delimiter. Used with -f.
@@ -44,7 +45,7 @@
 //	    Use STRING as the output delimiter. The default is the input
 //	    delimiter.
 //
-//	-h, --help
+//	--help
 //	    Print this usage message to stdout and exit 0.
 //
 // Exit codes:
@@ -66,10 +67,9 @@ import (
 	"io"
 	"math"
 	"os"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
-	"unicode/utf8"
 
 	"github.com/DataDog/rshell/interp/builtins"
 )
@@ -93,13 +93,13 @@ const (
 // registerFlags registers all cut flags on the framework-provided FlagSet and
 // returns a bound handler whose flag variables are captured by closure.
 func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
-	help := fs.BoolP("help", "h", false, "print usage and exit")
+	help := fs.Bool("help", false, "print usage and exit")
 	bytesListStr := fs.StringP("bytes", "b", "", "select only these bytes")
 	charsListStr := fs.StringP("characters", "c", "", "select only these characters")
 	fieldsListStr := fs.StringP("fields", "f", "", "select only these fields")
 	delimiter := fs.StringP("delimiter", "d", "\t", "use DELIM instead of TAB for field delimiter")
 	onlyDelimited := fs.BoolP("only-delimited", "s", false, "do not print lines not containing delimiters")
-	noSplitMultibyte := fs.BoolP("", "n", false, "do not split multi-byte characters")
+	_ = fs.BoolP("", "n", false, "do not split multi-byte characters")
 	complement := fs.Bool("complement", false, "complement the set of selected bytes, characters, or fields")
 	outputDelimiter := fs.String("output-delimiter", "", "use STRING as the output delimiter")
 
@@ -177,14 +177,13 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 		}
 
 		cfg := &cutConfig{
-			mode:             m,
-			ranges:           ranges,
-			delimByte:        delimByte,
-			onlyDelimited:    *onlyDelimited,
-			noSplitMultibyte: *noSplitMultibyte,
-			complement:       *complement,
-			outDelim:         outDelim,
-			outDelimSet:      outDelimSet,
+			mode:          m,
+			ranges:        ranges,
+			delimByte:     delimByte,
+			onlyDelimited: *onlyDelimited,
+			complement:    *complement,
+			outDelim:      outDelim,
+			outDelimSet:   outDelimSet,
 		}
 
 		// Default to stdin when no file arguments were given.
@@ -216,14 +215,13 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 
 // cutConfig holds the parsed configuration for a cut invocation.
 type cutConfig struct {
-	mode             mode
-	ranges           [][2]int // sorted, merged, 1-based inclusive ranges
-	delimByte        byte
-	onlyDelimited    bool
-	noSplitMultibyte bool
-	complement       bool
-	outDelim         string
-	outDelimSet      bool
+	mode          mode
+	ranges        [][2]int // sorted, merged, 1-based inclusive ranges
+	delimByte     byte
+	onlyDelimited bool
+	complement    bool
+	outDelim      string
+	outDelimSet   bool
 }
 
 // parseList parses a comma-separated list of ranges/positions into sorted,
@@ -281,11 +279,11 @@ func parseList(s string) ([][2]int, error) {
 	}
 
 	// Sort by start, then merge overlapping/adjacent.
-	sort.Slice(ranges, func(i, j int) bool {
-		if ranges[i][0] != ranges[j][0] {
-			return ranges[i][0] < ranges[j][0]
+	slices.SortFunc(ranges, func(a, b [2]int) int {
+		if a[0] != b[0] {
+			return a[0] - b[0]
 		}
-		return ranges[i][1] < ranges[j][1]
+		return a[1] - b[1]
 	})
 
 	// Merge overlapping ranges (but not merely adjacent ones, so that
@@ -348,10 +346,9 @@ func processFile(ctx context.Context, callCtx *builtins.CallContext, file string
 		// Strip trailing newline for processing; we always add one back.
 		raw := stripNewline(line)
 		switch cfg.mode {
-		case modeBytes:
+		case modeBytes, modeChars:
+			// GNU coreutils treats -c identically to -b (byte-wise selection).
 			processBytes(callCtx, raw, cfg)
-		case modeChars:
-			processChars(callCtx, raw, cfg)
 		case modeFields:
 			processFields(callCtx, raw, cfg)
 		}
@@ -454,73 +451,6 @@ func processBytesComplementWithOutDelim(callCtx *builtins.CallContext, raw []byt
 		_, _ = callCtx.Stdout.Write(raw[r[0]-1 : r[1]])
 		first = false
 	}
-}
-
-// processChars selects characters (runes) from a line.
-func processChars(callCtx *builtins.CallContext, raw []byte, cfg *cutConfig) {
-	n := utf8.RuneCount(raw)
-	if n == 0 && len(raw) == 0 {
-		callCtx.Out("\n")
-		return
-	}
-
-	// Decode all runes with their byte positions for output delimiter support.
-	type runeInfo struct {
-		startByte int
-		byteLen   int
-	}
-	runes := make([]runeInfo, 0, n)
-	i := 0
-	for i < len(raw) {
-		_, size := utf8.DecodeRune(raw[i:])
-		if size == 0 {
-			size = 1
-		}
-		runes = append(runes, runeInfo{startByte: i, byteLen: size})
-		i += size
-	}
-
-	if cfg.outDelimSet {
-		// Determine effective ranges considering complement.
-		effectiveRanges := cfg.ranges
-		if cfg.complement {
-			effectiveRanges = complementRanges(cfg.ranges, len(runes))
-		}
-		first := true
-		for _, r := range effectiveRanges {
-			start := r[0]
-			end := r[1]
-			if start > len(runes) {
-				break
-			}
-			if end > len(runes) {
-				end = len(runes)
-			}
-			if !first {
-				callCtx.Out(cfg.outDelim)
-			}
-			// Output runes from start to end (1-based inclusive).
-			startByteOff := runes[start-1].startByte
-			lastRune := runes[end-1]
-			endByteOff := lastRune.startByte + lastRune.byteLen
-			_, _ = callCtx.Stdout.Write(raw[startByteOff:endByteOff])
-			first = false
-		}
-	} else {
-		var sb strings.Builder
-		for ri, ru := range runes {
-			pos := ri + 1
-			sel := inRanges(pos, cfg.ranges)
-			if cfg.complement {
-				sel = !sel
-			}
-			if sel {
-				sb.Write(raw[ru.startByte : ru.startByte+ru.byteLen])
-			}
-		}
-		callCtx.Out(sb.String())
-	}
-	callCtx.Out("\n")
 }
 
 // processFields selects fields from a line.
