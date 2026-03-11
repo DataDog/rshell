@@ -129,7 +129,8 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 		}
 
 		var set1Classes []caseClassPos
-		set1, err := expandSet(set1Str, false, 0, false, callCtx, &set1Classes, nil)
+		var set1ContainsCharClass bool
+		set1, err := expandSet(set1Str, false, 0, false, callCtx, &set1Classes, nil, &set1ContainsCharClass)
 		if err != nil {
 			callCtx.Errf("tr: %s\n", err)
 			return builtins.Result{Code: 1}
@@ -145,7 +146,7 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 		var set2EndsWithClass bool
 		translateMode := !*deleteFlag && len(operands) >= 2
 		if set2Str != "" || len(operands) > 1 {
-			set2, err = expandSet(set2Str, true, len(set1), translateMode, callCtx, &set2Classes, &set2EndsWithClass)
+			set2, err = expandSet(set2Str, true, len(set1), translateMode, callCtx, &set2Classes, &set2EndsWithClass, nil)
 			if err != nil {
 				callCtx.Errf("tr: %s\n", err)
 				return builtins.Result{Code: 1}
@@ -161,6 +162,10 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			}
 			if !*truncateSet1 && len(set1) > len(set2) && set2EndsWithClass {
 				callCtx.Errf("tr: when translating with string1 longer than string2,\nthe latter string must not end with a character class\n")
+				return builtins.Result{Code: 1}
+			}
+			if *complement && set1ContainsCharClass && !mapsToSingleByte(set2) {
+				callCtx.Errf("tr: when translating with complemented character classes,\nstring2 must map all characters in the domain to one\n")
 				return builtins.Result{Code: 1}
 			}
 		}
@@ -364,10 +369,13 @@ type caseClassPos struct {
 	expandedOffset int
 }
 
-func expandSet(s string, isSet2 bool, set1Len int, translateSet2 bool, callCtx *builtins.CallContext, caseClasses *[]caseClassPos, endsWithClass *bool) ([]byte, error) {
+func expandSet(s string, isSet2 bool, set1Len int, translateSet2 bool, callCtx *builtins.CallContext, caseClasses *[]caseClassPos, endsWithClass *bool, containsCharClass *bool) ([]byte, error) {
+	return expandSetBytes([]byte(s), isSet2, set1Len, translateSet2, callCtx, caseClasses, endsWithClass, containsCharClass, false)
+}
+
+func expandSetBytes(data []byte, isSet2 bool, set1Len int, translateSet2 bool, callCtx *builtins.CallContext, caseClasses *[]caseClassPos, endsWithClass *bool, containsCharClass *bool, seenFill bool) ([]byte, error) {
 	var result []byte
 	lastTokenIsClass := false
-	data := []byte(s)
 	i := 0
 	for i < len(data) {
 		if len(result) > maxSetLen {
@@ -382,6 +390,9 @@ func expandSet(s string, isSet2 bool, set1Len int, translateSet2 bool, callCtx *
 					className := string(data[i+2 : end])
 					if translateSet2 && className != "upper" && className != "lower" {
 						return nil, &trError{"when translating, the only character classes that may appear in\nstring2 are 'upper' and 'lower'"}
+					}
+					if containsCharClass != nil {
+						*containsCharClass = true
 					}
 					chars, err := expandCharClass(className)
 					if err != nil {
@@ -424,16 +435,46 @@ func expandSet(s string, isSet2 bool, set1Len int, translateSet2 bool, callCtx *
 					continue
 				}
 			}
-			if isSet2 && i+2 < len(data) {
+			if i+2 < len(data) {
 				if rpt, advance, fillCh, isFill := parseRepeat(data, i); advance > 0 {
+					if !isSet2 {
+						return nil, &trError{"the [c*] repeat construct may not appear in string1"}
+					}
+					if !translateSet2 {
+						return nil, &trError{"the [c*] construct may appear in string2 only when translating"}
+					}
 					if isFill {
-						needed := min(set1Len-len(result), maxSetLen)
+						if seenFill {
+							return nil, &trError{"only one [c*] repeat construct may appear in string2"}
+						}
+						var tailClasses []caseClassPos
+						var tailEndsWithClass bool
+						tail, err := expandSetBytes(data[i+advance:], isSet2, set1Len, translateSet2, callCtx, &tailClasses, &tailEndsWithClass, nil, true)
+						if err != nil {
+							return nil, err
+						}
+						needed := set1Len - (len(result) + len(tail))
+						if needed < 0 {
+							needed = 0
+						}
+						needed = min(needed, maxSetLen-len(result))
 						for range needed {
 							result = append(result, fillCh)
 						}
-					} else {
-						result = append(result, rpt...)
+						if caseClasses != nil {
+							shift := len(result)
+							for _, c := range tailClasses {
+								*caseClasses = append(*caseClasses, caseClassPos{expandedOffset: shift + c.expandedOffset})
+							}
+						}
+						result = append(result, tail...)
+						lastTokenIsClass = tailEndsWithClass
+						if endsWithClass != nil {
+							*endsWithClass = lastTokenIsClass
+						}
+						return result, nil
 					}
+					result = append(result, rpt...)
 					lastTokenIsClass = false
 					i += advance
 					continue
@@ -498,6 +539,19 @@ func expandSet(s string, isSet2 bool, set1Len int, translateSet2 bool, callCtx *
 		*endsWithClass = lastTokenIsClass
 	}
 	return result, nil
+}
+
+func mapsToSingleByte(set []byte) bool {
+	if len(set) <= 1 {
+		return true
+	}
+	first := set[0]
+	for _, b := range set[1:] {
+		if b != first {
+			return false
+		}
+	}
+	return true
 }
 
 func findClosingBracket(data []byte, start int, delim byte) int {
@@ -707,6 +761,9 @@ func parseRepeat(data []byte, pos int) ([]byte, int, byte, bool) {
 
 	if count == 0 {
 		return nil, advance, ch, true
+	}
+	if count < 0 {
+		return nil, -advance, 0, false
 	}
 
 	const maxRepeat = 1 << 20
