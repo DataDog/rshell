@@ -1,0 +1,10 @@
+description: strings treats - as an alias for stdin.
+skip_assert_against_bash: true
+input:
+  script: |+
+    echo "hello world" | strings -
+expect:
+  stdout: |+
+    hello world
+  stderr: ""
+  exit_code: 0

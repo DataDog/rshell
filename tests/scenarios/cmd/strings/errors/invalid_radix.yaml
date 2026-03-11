@@ -1,0 +1,14 @@
+description: strings -t with an invalid radix character prints an error and exits 1.
+skip_assert_against_bash: true
+setup:
+  files:
+    - path: data.bin
+      content: "hello\n"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    strings -t z data.bin
+expect:
+  stdout: ""
+  stderr: "strings: invalid radix\n"
+  exit_code: 1

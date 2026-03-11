@@ -1,0 +1,17 @@
+description: strings -s uses a custom output separator instead of newline.
+skip_assert_against_bash: true
+setup:
+  files:
+    - path: data.bin
+      content: |+
+        hello
+        world
+        foobar
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    strings -s '|' data.bin
+expect:
+  stdout: "hello|world|foobar|"
+  stderr: ""
+  exit_code: 0
