@@ -3,10 +3,10 @@ description: A blocked command after valid commands still causes rejection.
 input:
   script: |+
     echo before
-    if true; then echo yes; fi
+    while true; do echo yes; done
     echo after
 expect:
   stdout: ""
   stderr: |+
-    if statements are not supported
+    while/until loops are not supported
   exit_code: 2
