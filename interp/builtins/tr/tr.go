@@ -188,12 +188,14 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 	}
 }
 
-func deleteBytes(ctx context.Context, callCtx *builtins.CallContext, set1 []byte) builtins.Result {
-	var inSet [256]bool
-	for _, b := range set1 {
-		inSet[b] = true
-	}
+// chunkTransform processes input bytes and appends output to dst, returning
+// the updated dst slice.  It is called once per read chunk by processLoop.
+type chunkTransform func(dst []byte, src []byte) []byte
 
+// processLoop is the shared I/O loop for all tr modes (delete, squeeze,
+// translate, etc.).  It reads stdin in fixed-size chunks, applies transform
+// to each chunk, and writes the result to stdout.
+func processLoop(ctx context.Context, callCtx *builtins.CallContext, transform chunkTransform) builtins.Result {
 	reader := callCtx.Stdin
 	if reader == nil {
 		return builtins.Result{}
@@ -207,12 +209,7 @@ func deleteBytes(ctx context.Context, callCtx *builtins.CallContext, set1 []byte
 		}
 		n, readErr := reader.Read(buf)
 		if n > 0 {
-			out = out[:0]
-			for _, b := range buf[:n] {
-				if !inSet[b] {
-					out = append(out, b)
-				}
-			}
+			out = transform(out[:0], buf[:n])
 			if len(out) > 0 {
 				if _, werr := callCtx.Stdout.Write(out); werr != nil {
 					callCtx.Errf("tr: write error: %s\n", callCtx.PortableErr(werr))
@@ -228,6 +225,21 @@ func deleteBytes(ctx context.Context, callCtx *builtins.CallContext, set1 []byte
 			return builtins.Result{}
 		}
 	}
+}
+
+func deleteBytes(ctx context.Context, callCtx *builtins.CallContext, set1 []byte) builtins.Result {
+	var inSet [256]bool
+	for _, b := range set1 {
+		inSet[b] = true
+	}
+	return processLoop(ctx, callCtx, func(dst, src []byte) []byte {
+		for _, b := range src {
+			if !inSet[b] {
+				dst = append(dst, b)
+			}
+		}
+		return dst
+	})
 }
 
 func deleteAndSqueeze(ctx context.Context, callCtx *builtins.CallContext, set1, set2 []byte) builtins.Result {
@@ -239,47 +251,20 @@ func deleteAndSqueeze(ctx context.Context, callCtx *builtins.CallContext, set1, 
 	for _, b := range set2 {
 		squeezeSet[b] = true
 	}
-
-	reader := callCtx.Stdin
-	if reader == nil {
-		return builtins.Result{}
-	}
-
-	buf := make([]byte, readBufSize)
-	out := make([]byte, 0, readBufSize)
 	lastByte := -1
-	for {
-		if ctx.Err() != nil {
-			return builtins.Result{}
-		}
-		n, readErr := reader.Read(buf)
-		if n > 0 {
-			out = out[:0]
-			for _, b := range buf[:n] {
-				if deleteSet[b] {
-					continue
-				}
-				if squeezeSet[b] && int(b) == lastByte {
-					continue
-				}
-				out = append(out, b)
-				lastByte = int(b)
+	return processLoop(ctx, callCtx, func(dst, src []byte) []byte {
+		for _, b := range src {
+			if deleteSet[b] {
+				continue
 			}
-			if len(out) > 0 {
-				if _, werr := callCtx.Stdout.Write(out); werr != nil {
-					callCtx.Errf("tr: write error: %s\n", callCtx.PortableErr(werr))
-					return builtins.Result{Code: 1}
-				}
+			if squeezeSet[b] && int(b) == lastByte {
+				continue
 			}
+			dst = append(dst, b)
+			lastByte = int(b)
 		}
-		if readErr != nil {
-			if !errors.Is(readErr, io.EOF) {
-				callCtx.Errf("tr: read error: %s\n", callCtx.PortableErr(readErr))
-				return builtins.Result{Code: 1}
-			}
-			return builtins.Result{}
-		}
-	}
+		return dst
+	})
 }
 
 func squeezeOnly(ctx context.Context, callCtx *builtins.CallContext, set1 []byte) builtins.Result {
@@ -287,44 +272,17 @@ func squeezeOnly(ctx context.Context, callCtx *builtins.CallContext, set1 []byte
 	for _, b := range set1 {
 		squeezeSet[b] = true
 	}
-
-	reader := callCtx.Stdin
-	if reader == nil {
-		return builtins.Result{}
-	}
-
-	buf := make([]byte, readBufSize)
-	out := make([]byte, 0, readBufSize)
 	lastByte := -1
-	for {
-		if ctx.Err() != nil {
-			return builtins.Result{}
-		}
-		n, readErr := reader.Read(buf)
-		if n > 0 {
-			out = out[:0]
-			for _, b := range buf[:n] {
-				if squeezeSet[b] && int(b) == lastByte {
-					continue
-				}
-				out = append(out, b)
-				lastByte = int(b)
+	return processLoop(ctx, callCtx, func(dst, src []byte) []byte {
+		for _, b := range src {
+			if squeezeSet[b] && int(b) == lastByte {
+				continue
 			}
-			if len(out) > 0 {
-				if _, werr := callCtx.Stdout.Write(out); werr != nil {
-					callCtx.Errf("tr: write error: %s\n", callCtx.PortableErr(werr))
-					return builtins.Result{Code: 1}
-				}
-			}
+			dst = append(dst, b)
+			lastByte = int(b)
 		}
-		if readErr != nil {
-			if !errors.Is(readErr, io.EOF) {
-				callCtx.Errf("tr: read error: %s\n", callCtx.PortableErr(readErr))
-				return builtins.Result{Code: 1}
-			}
-			return builtins.Result{}
-		}
-	}
+		return dst
+	})
 }
 
 func translate(ctx context.Context, callCtx *builtins.CallContext, set1, set2 []byte, squeeze, truncate bool) builtins.Result {
@@ -356,44 +314,18 @@ func translate(ctx context.Context, callCtx *builtins.CallContext, set1, set2 []
 		}
 	}
 
-	reader := callCtx.Stdin
-	if reader == nil {
-		return builtins.Result{}
-	}
-
-	buf := make([]byte, readBufSize)
-	out := make([]byte, 0, readBufSize)
 	lastByte := -1
-	for {
-		if ctx.Err() != nil {
-			return builtins.Result{}
-		}
-		n, readErr := reader.Read(buf)
-		if n > 0 {
-			out = out[:0]
-			for _, b := range buf[:n] {
-				translated := table[b]
-				if squeeze && squeezeSet[translated] && int(translated) == lastByte {
-					continue
-				}
-				out = append(out, translated)
-				lastByte = int(translated)
+	return processLoop(ctx, callCtx, func(dst, src []byte) []byte {
+		for _, b := range src {
+			translated := table[b]
+			if squeeze && squeezeSet[translated] && int(translated) == lastByte {
+				continue
 			}
-			if len(out) > 0 {
-				if _, werr := callCtx.Stdout.Write(out); werr != nil {
-					callCtx.Errf("tr: write error: %s\n", callCtx.PortableErr(werr))
-					return builtins.Result{Code: 1}
-				}
-			}
+			dst = append(dst, translated)
+			lastByte = int(translated)
 		}
-		if readErr != nil {
-			if !errors.Is(readErr, io.EOF) {
-				callCtx.Errf("tr: read error: %s\n", callCtx.PortableErr(readErr))
-				return builtins.Result{Code: 1}
-			}
-			return builtins.Result{}
-		}
-	}
+		return dst
+	})
 }
 
 func complementSet(set []byte) []byte {
@@ -604,7 +536,9 @@ func expandCharClass(name string) ([]byte, error) {
 	}
 	for _, cc := range charClasses {
 		if cc.name == name {
-			return cc.chars, nil
+			// Return a copy to prevent callers from mutating the shared
+			// package-level charClasses slice.
+			return append([]byte(nil), cc.chars...), nil
 		}
 	}
 	return nil, &trError{"invalid character class '" + name + "'"}
@@ -759,22 +693,12 @@ func parseRepeat(data []byte, pos int) ([]byte, int, byte, bool) {
 	// matches GNU coreutils tr behaviour where [c*0] means fill and
 	// [c*010] is octal 8.
 	if len(countStr) > 1 && countStr[0] == '0' {
-		for _, c := range countStr {
-			if c < '0' || c > '7' {
-				return nil, -advance, 0, false
-			}
-		}
 		var parseErr error
 		count, parseErr = strconv.ParseInt(countStr, 8, 64)
 		if parseErr != nil {
 			return nil, -advance, 0, false
 		}
 	} else {
-		for _, c := range countStr {
-			if c < '0' || c > '9' {
-				return nil, -advance, 0, false
-			}
-		}
 		var parseErr error
 		count, parseErr = strconv.ParseInt(countStr, 10, 64)
 		if parseErr != nil {
