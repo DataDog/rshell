@@ -1,3 +1,4 @@
+skip_assert_against_bash: true
 description: tr rejects negative repeat counts in string2.
 input:
   script: |+

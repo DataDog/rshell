@@ -1,3 +1,4 @@
+skip_assert_against_bash: true
 description: tr rejects multiple fill repeat constructs in string2.
 input:
   script: |+

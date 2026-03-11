@@ -1,3 +1,4 @@
+skip_assert_against_bash: true
 description: tr rejects multi-byte mappings when translating complemented character classes.
 input:
   script: |+

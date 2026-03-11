@@ -740,6 +740,13 @@ func parseRepeat(data []byte, pos int) ([]byte, int, byte, bool) {
 		return nil, advance, ch, true
 	}
 
+	// Reject negative repeat counts (e.g. [b*-0], [b*-1]).
+	// strconv.ParseInt("-0", 10, 64) returns 0, which would
+	// incorrectly be treated as fill mode.  GNU tr rejects these.
+	if countStr[0] == '-' {
+		return nil, -advance, 0, false
+	}
+
 	var count int64
 	// GNU-compatible heuristic: "0" alone is decimal (means fill), but a
 	// leading zero with additional digits (e.g. "010") is octal.  This
