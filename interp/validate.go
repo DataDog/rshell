@@ -270,6 +270,10 @@ func redirectTargetIsFD(rd *syntax.Redirect) bool {
 }
 
 // isDevNull reports whether path is the platform's null device.
+// On Windows, only the bare "NUL" form is accepted (case-insensitive).
+// Device-path prefixes (\\.\NUL, \\?\NUL) and extension variants
+// (NUL.txt) are intentionally rejected — exact match keeps the
+// allowlist tight.
 func isDevNull(path string) bool {
 	if path == "/dev/null" {
 		return true
