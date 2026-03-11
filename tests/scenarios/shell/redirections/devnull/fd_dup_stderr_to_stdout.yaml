@@ -1,0 +1,9 @@
+description: Redirect stdout to /dev/null then dup stderr to stdout suppresses all output.
+skip_assert_against_bash: true
+input:
+  script: |+
+    cat nonexistent_file >/dev/null 2>&1
+expect:
+  stdout: ""
+  stderr: ""
+  exit_code: 1

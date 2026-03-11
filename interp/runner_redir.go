@@ -141,12 +141,57 @@ func (r *Runner) redir(ctx context.Context, rd *syntax.Redirect) (io.Closer, err
 	}
 
 	arg := r.literal(rd.Word)
+
+	// Determine which fd this redirect targets (default: stdout for output ops).
+	orig := &r.stdout
+	if rd.N != nil {
+		switch rd.N.Value {
+		case "1":
+			// default
+		case "2":
+			orig = &r.stderr
+		}
+	}
+
 	switch rd.Op {
 	case syntax.RdrIn:
 		// done further below
+
+	case syntax.RdrOut, syntax.ClbOut, syntax.AppOut:
+		// Output redirects are only allowed to /dev/null (enforced at validation).
+		// Re-check at runtime after variable expansion for defense-in-depth.
+		if !isDevNull(arg) {
+			r.errf("> %s: file redirection is only supported for /dev/null\n", arg)
+			return nil, fmt.Errorf("> %s: file redirection is only supported for /dev/null", arg)
+		}
+		*orig = io.Discard
+		return nil, nil
+
+	case syntax.RdrAll, syntax.AppAll:
+		if !isDevNull(arg) {
+			r.errf("&> %s: file redirection is only supported for /dev/null\n", arg)
+			return nil, fmt.Errorf("&> %s: file redirection is only supported for /dev/null", arg)
+		}
+		r.stdout = io.Discard
+		r.stderr = io.Discard
+		return nil, nil
+
+	case syntax.DplOut:
+		switch arg {
+		case "1":
+			*orig = r.stdout
+		case "2":
+			*orig = r.stderr
+		default:
+			r.errf(">&%s: unsupported fd\n", arg)
+			return nil, fmt.Errorf(">&%s: unsupported fd", arg)
+		}
+		return nil, nil
+
 	default:
 		return nil, fmt.Errorf("unhandled redirect op: %v", rd.Op)
 	}
+
 	f, err := r.open(ctx, arg, os.O_RDONLY, 0, true)
 	if err != nil {
 		return nil, err

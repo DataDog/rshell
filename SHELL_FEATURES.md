@@ -58,14 +58,18 @@ Blocked features are rejected before execution with exit code 2.
 - ✅ `<` — input redirection (read-only, within AllowedPaths)
 - ✅ `<<DELIM` — heredoc
 - ✅ `<<-DELIM` — heredoc with tab stripping
+- ✅ `>/dev/null`, `2>/dev/null` — redirect stdout or stderr to /dev/null (output is discarded; only `/dev/null` is allowed as target)
+- ✅ `&>/dev/null` — redirect both stdout and stderr to /dev/null
+- ✅ `>>/dev/null`, `&>>/dev/null` — append redirect to /dev/null (same effect as truncate)
+- ✅ `2>&1`, `>&2` — file descriptor duplication between stdout (1) and stderr (2)
 - ❌ `|&` — pipe stdout and stderr (bash extension)
 - ❌ `<<<` — herestring (bash extension)
-- ❌ `>` — write/truncate
-- ❌ `>>` — append
-- ❌ `&>` — redirect all
-- ❌ `&>>` — append all
+- ❌ `> FILE` — write/truncate to any file other than /dev/null
+- ❌ `>> FILE` — append to any file other than /dev/null
+- ❌ `&> FILE` — redirect all to any file other than /dev/null
+- ❌ `&>> FILE` — append all to any file other than /dev/null
 - ❌ `<>` — read-write
-- ❌ `>&N` / `<&N` — file descriptor duplication
+- ❌ `<&N` — input file descriptor duplication
 
 ## Quoting and Expansion
 
