@@ -697,6 +697,8 @@ func parseOctal(data []byte, start int) (byte, int, string) {
 		val = val / 8
 		count--
 		resultEscape := fmt.Sprintf("\\0%s", string(data[start:start+count]))
+		// Safe: the loop consumed exactly 3 digits within data, so after
+		// decrementing count to 2, start+count+1 == start+3 <= len(data).
 		trailingChar := string(data[start+count : start+count+1])
 		warning = fmt.Sprintf("tr: warning: the ambiguous octal escape \\%s is being\n\tinterpreted as the 2-byte sequence %s, %s\n", origEscape, resultEscape, trailingChar)
 	}
