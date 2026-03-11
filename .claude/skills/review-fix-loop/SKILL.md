@@ -20,8 +20,8 @@ Your very first action — before reading ANY files, before running ANY commands
 2. "Step 2: Run the review-fix loop"
 3. "Step 2A1: Self-review (code-review)" ← **parallel with 2A2**
 4. "Step 2A2: Request external reviews (@datadog @codex)" ← **parallel with 2A1**
-5. "Step 2B1: Address PR comments (address-pr-comments)" ← **sequential, before 2B2**
-6. "Step 2B2: Fix CI failures (fix-ci-tests)" ← **sequential, after 2B1**
+5. "Step 2B1: Address PR comments (address-pr-comments)"
+6. "Step 2B2: Fix CI failures (fix-ci-tests)"
 7. "Step 2C: Verify push and resolve conflicts"
 8. "Step 2D: Check CI status"
 9. "Step 2E: Decide whether to continue"
