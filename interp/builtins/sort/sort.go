@@ -396,7 +396,7 @@ func parseKeyDef(s string) (keySpec, error) {
 	if k.startField < 1 {
 		return k, errors.New("invalid key: field number must be positive")
 	}
-	if k.endField != 0 && k.endField < 1 {
+	if endPart != "" && k.endField < 1 {
 		return k, errors.New("invalid key: field number is zero")
 	}
 	return k, nil

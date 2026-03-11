@@ -464,6 +464,64 @@ func TestSortOutsideAllowedPaths(t *testing.T) {
 	assert.Contains(t, stderr, "sort:")
 }
 
+// --- Regression tests for codex review findings ---
+
+func TestSortNumericPlusPrefixNonNumeric(t *testing.T) {
+	// GNU sort -n treats +N as non-numeric (value 0), not as positive N.
+	dir := t.TempDir()
+	writeFile(t, dir, "f.txt", "+2\n1\n3\n")
+	stdout, _, code := cmdRun(t, "sort -n f.txt", dir)
+	assert.Equal(t, 0, code)
+	// +2 is non-numeric (0), sorts first via last-resort byte cmp ('+' < '1')
+	assert.Equal(t, "+2\n1\n3\n", stdout)
+}
+
+func TestSortNumericDotPrefix(t *testing.T) {
+	// .5 should compare as 0.5, not sort before 0.4.
+	dir := t.TempDir()
+	writeFile(t, dir, "f.txt", ".5\n0.4\n0.6\n")
+	stdout, _, code := cmdRun(t, "sort -n f.txt", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "0.4\n.5\n0.6\n", stdout)
+}
+
+func TestSortEmptyTabRejected(t *testing.T) {
+	// sort -t '' should be rejected with "empty tab".
+	dir := t.TempDir()
+	writeFile(t, dir, "f.txt", "a\nb\n")
+	_, stderr, code := cmdRun(t, `sort -t "" f.txt`, dir)
+	assert.Equal(t, 2, code)
+	assert.Contains(t, stderr, "empty tab")
+}
+
+func TestSortKeyEndFieldZeroRejected(t *testing.T) {
+	// -k 1,0 should be rejected (zero field number).
+	dir := t.TempDir()
+	writeFile(t, dir, "f.txt", "a\nb\n")
+	_, stderr, code := cmdRun(t, "sort -k 1,0 f.txt", dir)
+	assert.Equal(t, 2, code)
+	assert.Contains(t, stderr, "sort:")
+}
+
+func TestSortCRLFPreserved(t *testing.T) {
+	// CRLF line endings must be preserved through sort.
+	dir := t.TempDir()
+	writeFile(t, dir, "f.txt", "b\r\na\r\n")
+	stdout, _, code := cmdRun(t, "sort f.txt", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "a\r\nb\r\n", stdout)
+}
+
+func TestSortCRLFOnlyInSomeLines(t *testing.T) {
+	// Mixed line endings: \r\n and \n. CR should be preserved per line.
+	dir := t.TempDir()
+	writeFile(t, dir, "f.txt", "b\r\na\nc\r\n")
+	stdout, _, code := cmdRun(t, "sort f.txt", dir)
+	assert.Equal(t, 0, code)
+	// "a" < "b\r" < "c\r" because \r (0x0D) comes after \n but a < b < c
+	assert.Equal(t, "a\nb\r\nc\r\n", stdout)
+}
+
 // --- Context cancellation ---
 
 func TestSortContextCancellation(t *testing.T) {
