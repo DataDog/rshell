@@ -114,9 +114,9 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 	fs.BoolP("check", "c", false, "check for sorted input; do not sort")
 
 	// Rejected flags — declare them so pflag parses them, then reject in handler.
-	output := fs.StringP("output", "o", "", "")
-	tempDir := fs.String("temporary-directory", "", "")
-	compProg := fs.String("compress-program", "", "")
+	fs.StringP("output", "o", "", "")
+	fs.String("temporary-directory", "", "")
+	fs.String("compress-program", "", "")
 
 	// Hide rejected flags from help.
 	fs.MarkHidden("output")
@@ -134,15 +134,15 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 		}
 
 		// Reject dangerous flags.
-		if *output != "" {
+		if fs.Changed("output") {
 			callCtx.Errf("sort: --output/-o is not supported (writes to filesystem)\n")
 			return builtins.Result{Code: 1}
 		}
-		if *tempDir != "" {
+		if fs.Changed("temporary-directory") {
 			callCtx.Errf("sort: --temporary-directory is not supported (writes temp files)\n")
 			return builtins.Result{Code: 1}
 		}
-		if *compProg != "" {
+		if fs.Changed("compress-program") {
 			callCtx.Errf("sort: --compress-program is not supported (executes a binary)\n")
 			return builtins.Result{Code: 1}
 		}
@@ -193,6 +193,32 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			files = []string{"-"}
 		}
 
+		// Build comparison function.
+		cmpFn := buildCompare(keys, globalOpts, sep, hasSep, *stable)
+
+		// Check mode: verify each file is sorted independently (matches GNU).
+		if *check {
+			for _, file := range files {
+				if ctx.Err() != nil {
+					return builtins.Result{Code: 1}
+				}
+				lines, err := readFile(ctx, callCtx, file)
+				if err != nil {
+					name := file
+					if file == "-" {
+						name = "standard input"
+					}
+					callCtx.Errf("sort: %s: %s\n", name, callCtx.PortableErr(err))
+					return builtins.Result{Code: 1}
+				}
+				result := checkSorted(callCtx, lines, cmpFn, *checkSilent, file)
+				if result.Code != 0 {
+					return result
+				}
+			}
+			return builtins.Result{}
+		}
+
 		// Read all lines from all files.
 		var allLines []string
 		for _, file := range files {
@@ -215,18 +241,16 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			}
 		}
 
-		// Build comparison function.
-		cmpFn := buildCompare(keys, globalOpts, sep, hasSep, *stable)
-
-		// Check mode: verify input is sorted.
-		if *check {
-			return checkSorted(callCtx, allLines, cmpFn, *checkSilent)
-		}
-
 		// Sort the lines.
-		slices.SortFunc(allLines, func(a, b string) int {
-			return cmpFn(a, b)
-		})
+		if *stable {
+			slices.SortStableFunc(allLines, func(a, b string) int {
+				return cmpFn(a, b)
+			})
+		} else {
+			slices.SortFunc(allLines, func(a, b string) int {
+				return cmpFn(a, b)
+			})
+		}
 
 		// Unique: suppress consecutive equal lines.
 		if *unique {
@@ -540,8 +564,8 @@ func extractKeyFromFields(fields []string, k keySpec) string {
 // compareStrings compares two strings applying the given key options.
 func compareStrings(a, b string, opts keyOpts) int {
 	if opts.ignBlanks {
-		a = strings.TrimSpace(a)
-		b = strings.TrimSpace(b)
+		a = trimLeadingBlanks(a)
+		b = trimLeadingBlanks(b)
 	}
 	if opts.dictOrder {
 		a = dictFilter(a)
@@ -568,6 +592,17 @@ func compareStrings(a, b string, opts keyOpts) int {
 		return 1
 	}
 	return 0
+}
+
+// trimLeadingBlanks strips leading spaces and tabs from s. Unlike
+// strings.TrimSpace, it does NOT strip trailing whitespace — matching
+// GNU sort -b behavior.
+func trimLeadingBlanks(s string) string {
+	i := 0
+	for i < len(s) && (s[i] == ' ' || s[i] == '\t') {
+		i++
+	}
+	return s[i:]
 }
 
 // foldCase converts a string to uppercase for case-insensitive comparison.
@@ -679,11 +714,12 @@ func buildCompare(keys []keySpec, globalOpts keyOpts, sep byte, hasSep bool, sta
 }
 
 // checkSorted verifies that lines are already sorted according to cmpFn.
-func checkSorted(callCtx *builtins.CallContext, lines []string, cmpFn func(a, b string) int, silent bool) builtins.Result {
+// file is the filename used in the diagnostic message (or "-" for stdin).
+func checkSorted(callCtx *builtins.CallContext, lines []string, cmpFn func(a, b string) int, silent bool, file string) builtins.Result {
 	for i := 1; i < len(lines); i++ {
 		if cmpFn(lines[i-1], lines[i]) > 0 {
 			if !silent {
-				callCtx.Errf("sort: -:%d: disorder: %s\n", i+1, lines[i])
+				callCtx.Errf("sort: %s:%d: disorder: %s\n", file, i+1, lines[i])
 			}
 			return builtins.Result{Code: 1}
 		}

@@ -88,6 +88,8 @@ var builtinAllowedSymbols = []string{
 	"slices.Reverse",
 	// slices.SortFunc — sorts a slice with a comparison function; pure function, no I/O.
 	"slices.SortFunc",
+	// slices.SortStableFunc — stable sort with a comparison function; pure function, no I/O.
+	"slices.SortStableFunc",
 	// strings.Builder — efficient string concatenation; pure in-memory buffer, no I/O.
 	"strings.Builder",
 	// strings.Join — concatenates a slice of strings with a separator; pure function, no I/O.

@@ -9,6 +9,5 @@ input:
     sort -c file.txt
 expect:
   stdout: ""
-  stderr_contains: ["disorder"]
+  stderr: "sort: file.txt:2: disorder: a\n"
   exit_code: 1
-skip_assert_against_bash: true  # disorder message format differs slightly
