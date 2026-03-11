@@ -12,6 +12,7 @@ Blocked features are rejected before execution with exit code 2.
 - ✅ `echo [-n] [-e] [ARG]...` — write arguments to stdout
 - ✅ `exit [N]` — exit the shell with status N (default 0)
 - ✅ `false` — return exit code 1
+- ✅ `grep [-EFGivclLnHhoqsxw] [-e PATTERN] [-m NUM] [-A NUM] [-B NUM] [-C NUM] PATTERN [FILE]...` — print lines that match patterns; uses RE2 regex engine (linear-time, no backtracking)
 - ✅ `head [-n N|-c N] [-q|-v] [-z] [FILE]...` — output the first part of files (default: first 10 lines)
 - ✅ `ls [-1aAdFhlpRrSt] [FILE]...` — list directory contents
 - ✅ `tail [-n N|-c N] [-q|-v] [-z] [FILE]...` — output the last part of files (default: last 10 lines); supports `+N` offset mode; `-f`/`--follow` is rejected
