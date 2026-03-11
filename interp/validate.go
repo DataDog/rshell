@@ -194,6 +194,13 @@ func validateRedirect(rd *syntax.Redirect) error {
 	switch rd.Op {
 	case syntax.WordHdoc:
 		return fmt.Errorf("<<< (herestring) is not supported")
+	case syntax.RdrIn:
+		// Input redirection: only fd 0 (stdin) is supported.
+		// rd.N is nil when no explicit fd is given (defaults to 0).
+		if rd.N != nil && rd.N.Value != "0" {
+			return fmt.Errorf("%s< input fd redirection is not supported", rd.N.Value)
+		}
+		return nil
 	case syntax.RdrOut, syntax.ClbOut:
 		if redirectTargetIsDevNull(rd) {
 			return nil
@@ -235,6 +242,9 @@ func validateRedirect(rd *syntax.Redirect) error {
 func redirectTargetIsDevNull(rd *syntax.Redirect) bool {
 	// Check source fd: only 1 (stdout) and 2 (stderr) are supported.
 	// rd.N is nil when no explicit fd is given (defaults to stdout).
+	// For RdrAll/AppAll (&>/&>>), rd.N is always nil since bash does
+	// not allow an explicit fd prefix on these ops, so this check is
+	// a no-op for them.
 	if rd.N != nil && rd.N.Value != "1" && rd.N.Value != "2" {
 		return false
 	}
