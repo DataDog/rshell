@@ -12,7 +12,17 @@ import (
 	"io/fs"
 	"os"
 	"syscall"
+
+	"github.com/DataDog/rshell/interp/builtins"
 )
+
+func fileIdentity(info fs.FileInfo) (builtins.FileID, bool) {
+	st, ok := info.Sys().(*syscall.Stat_t)
+	if !ok {
+		return builtins.FileID{}, false
+	}
+	return builtins.FileID{Dev: uint64(st.Dev), Ino: uint64(st.Ino)}, true
+}
 
 func isErrIsDirectory(err error) bool {
 	return errors.Is(err, syscall.EISDIR)

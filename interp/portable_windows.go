@@ -9,7 +9,13 @@ import (
 	"errors"
 	"io/fs"
 	"syscall"
+
+	"github.com/DataDog/rshell/interp/builtins"
 )
+
+func fileIdentity(info fs.FileInfo) (builtins.FileID, bool) {
+	return builtins.FileID{}, false
+}
 
 // isErrIsDirectory checks if the error is the Windows equivalent of EISDIR.
 // On Windows, reading a directory handle returns ERROR_INVALID_FUNCTION (errno 1).

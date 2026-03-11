@@ -110,6 +110,10 @@ type CallContext struct {
 	// calling time.Now() directly, so the time source is consistent and
 	// testable.
 	Now func() time.Time
+
+	// FileIdentity extracts canonical file identity from FileInfo.
+	// Returns ok=false on platforms without inode support (Windows).
+	FileIdentity func(info fs.FileInfo) (FileID, bool)
 }
 
 // Out writes a string to stdout.
@@ -125,6 +129,13 @@ func (c *CallContext) Outf(format string, a ...any) {
 // Errf writes a formatted string to stderr.
 func (c *CallContext) Errf(format string, a ...any) {
 	fmt.Fprintf(c.Stderr, format, a...)
+}
+
+// FileID is a comparable file identity for cycle detection.
+// On Unix: device + inode. Used as map key for visited-set tracking.
+type FileID struct {
+	Dev uint64
+	Ino uint64
 }
 
 // Result captures the outcome of executing a builtin command.

@@ -182,22 +182,6 @@ func walkPath(
 	newerCache := map[string]time.Time{}
 	newerErrors := map[string]bool{}
 
-	// visited tracks directory paths already traversed when following
-	// symlinks (-L) to detect and break symlink loops. Without this,
-	// cyclic symlinks would expand until maxTraversalDepth, causing
-	// excessive CPU/memory usage.
-	//
-	// Limitation: We use path strings because the syscall package
-	// (needed for dev+inode tracking) is banned by the import allowlist.
-	// Path-based detection can miss cycles that re-enter the same
-	// directory under different textual paths (e.g. dir/link/link/...).
-	// The maxTraversalDepth=256 cap provides the ultimate safety bound
-	// for cases the visited-set misses, consistent with ls -R.
-	var visited map[string]bool
-	if followLinks {
-		visited = map[string]bool{}
-	}
-
 	// Stat the starting path.
 	var startInfo iofs.FileInfo
 	var err error
@@ -209,6 +193,27 @@ func walkPath(
 	if err != nil {
 		callCtx.Errf("find: '%s': %s\n", startPath, callCtx.PortableErr(err))
 		return true
+	}
+
+	// visited tracks directories by canonical file identity (dev+inode)
+	// when following symlinks (-L) to detect cycles. This correctly
+	// detects when the same directory is reached via different textual
+	// paths (e.g., through multiple symlink chains). Falls back to
+	// path-based tracking on platforms without identity support (Windows).
+	// The maxTraversalDepth=256 cap remains as an ultimate safety bound.
+	var visitedID map[builtins.FileID]bool
+	var visitedPath map[string]bool
+	useFileID := false
+	if followLinks {
+		if callCtx.FileIdentity != nil {
+			if _, ok := callCtx.FileIdentity(startInfo); ok {
+				visitedID = map[builtins.FileID]bool{}
+				useFileID = true
+			}
+		}
+		if !useFileID {
+			visitedPath = map[string]bool{}
+		}
 	}
 
 	// Use an explicit stack for traversal to avoid Go recursion depth issues.
@@ -260,12 +265,19 @@ func walkPath(
 
 		// Descend into directories unless pruned or beyond maxdepth.
 		if entry.info.IsDir() && !prune && entry.depth < maxDepth {
-			// With -L, check for symlink loops by tracking visited directory paths.
-			if visited != nil {
-				if visited[entry.path] {
-					continue // skip already-visited directory (symlink loop)
+			// With -L, check for symlink loops.
+			if useFileID {
+				if id, ok := callCtx.FileIdentity(entry.info); ok {
+					if visitedID[id] {
+						continue
+					}
+					visitedID[id] = true
 				}
-				visited[entry.path] = true
+			} else if visitedPath != nil {
+				if visitedPath[entry.path] {
+					continue
+				}
+				visitedPath[entry.path] = true
 			}
 
 			entries, readErr := callCtx.ReadDir(ctx, entry.path)
