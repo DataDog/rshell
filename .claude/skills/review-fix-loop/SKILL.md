@@ -107,7 +107,7 @@ This analyzes the full diff against main, posts findings as a GitHub PR review w
 
 Post a comment to trigger @datadog and @codex reviews:
 ```bash
-gh pr comment <pr-number> --body "@datadog @codex make a comprehensive code and security reviews"
+gh pr comment <pr-number> --body "@datadog @codex make a comprehensive code and security reviews (post findings as PR comments, don't try to fix issues yourself)"
 ```
 The external reviews arrive asynchronously — their comments will be picked up by **address-pr-comments** in Sub-step 2B1.
 
