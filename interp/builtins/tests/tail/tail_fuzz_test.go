@@ -14,15 +14,7 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/DataDog/rshell/interp"
-	"github.com/DataDog/rshell/interp/builtins/testutil"
 )
-
-func cmdRunCtx(ctx context.Context, t *testing.T, script, dir string) (string, string, int) {
-	t.Helper()
-	return testutil.RunScriptCtx(ctx, t, script, dir, interp.AllowedPaths([]string{dir}))
-}
 
 // FuzzTailLines fuzzes tail -n N with arbitrary file content.
 func FuzzTailLines(f *testing.F) {
@@ -225,4 +217,3 @@ func FuzzTailBytesOffset(f *testing.F) {
 		}
 	})
 }
-

@@ -14,15 +14,7 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/DataDog/rshell/interp"
-	"github.com/DataDog/rshell/interp/builtins/testutil"
 )
-
-func cmdRunCtx(ctx context.Context, t *testing.T, script, dir string) (string, string, int) {
-	t.Helper()
-	return testutil.RunScriptCtx(ctx, t, script, dir, interp.AllowedPaths([]string{dir}))
-}
 
 // FuzzHeadLines fuzzes head -n N with arbitrary file content.
 func FuzzHeadLines(f *testing.F) {
