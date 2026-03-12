@@ -406,6 +406,14 @@ func TestWcMaxLineLenCR(t *testing.T) {
 	assert.Equal(t, "5 file.txt\n", stdout)
 }
 
+func TestWcMaxLineLenCRLongerPrefix(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "file.txt", "abcdef\rxy\n")
+	stdout, _, code := cmdRun(t, "wc -L file.txt", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "6 file.txt\n", stdout)
+}
+
 func TestWcCRLFLineCount(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, dir, "file.txt", "a\r\nb\r\n")

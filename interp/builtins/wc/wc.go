@@ -294,6 +294,9 @@ func countReader(ctx context.Context, r io.Reader) (counts, error) {
 					lineLen = 0
 					inWord = false
 				} else if r == '\r' {
+					if lineLen > c.maxLineLen {
+						c.maxLineLen = lineLen
+					}
 					lineLen = 0
 					inWord = false
 				} else if r == '\t' {
