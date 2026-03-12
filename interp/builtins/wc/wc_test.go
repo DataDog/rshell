@@ -451,4 +451,3 @@ func TestWcChunkBoundaryMultibyte(t *testing.T) {
 	// max line length: 32766 + 2 (emoji display width) = 32768
 	assert.Equal(t, "32768 32768 file.txt\n", stdout)
 }
-

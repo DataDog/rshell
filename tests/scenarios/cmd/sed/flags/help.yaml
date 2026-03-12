@@ -1,0 +1,9 @@
+description: The -h flag prints usage information and exits 0.
+skip_assert_against_bash: true
+input:
+  script: |+
+    sed -h
+expect:
+  stdout_contains: ["Usage: sed"]
+  stderr: ""
+  exit_code: 0

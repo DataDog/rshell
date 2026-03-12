@@ -1,0 +1,9 @@
+description: The -i flag is blocked for safety.
+skip_assert_against_bash: true
+input:
+  script: |+
+    echo "test" | sed -i 's/test/replaced/'
+expect:
+  stdout: ""
+  stderr_contains: ["unknown shorthand flag"]
+  exit_code: 1

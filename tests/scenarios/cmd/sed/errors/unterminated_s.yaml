@@ -1,0 +1,14 @@
+description: Unterminated s command is rejected.
+setup:
+  files:
+    - path: input.txt
+      content: "abc\n"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    sed 's/a/b' input.txt
+skip_assert_against_bash: true
+expect:
+  stdout: ""
+  stderr_contains: ["unterminated"]
+  exit_code: 1
