@@ -245,8 +245,8 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 			ReadDir: func(ctx context.Context, path string) ([]fs.DirEntry, error) {
 				return r.sandbox.readDir(r.handlerCtx(ctx, todoPos), path)
 			},
-			CountDirEntries: func(ctx context.Context, path string, limit int) (int, bool, error) {
-				return r.sandbox.countDirEntries(r.handlerCtx(ctx, todoPos), path, limit)
+			ReadDirLimited: func(ctx context.Context, path string, maxRead int) ([]fs.DirEntry, bool, error) {
+				return r.sandbox.readDirLimited(r.handlerCtx(ctx, todoPos), path, maxRead)
 			},
 			StatFile: func(ctx context.Context, path string) (fs.FileInfo, error) {
 				return r.sandbox.stat(r.handlerCtx(ctx, todoPos), path)

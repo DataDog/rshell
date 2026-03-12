@@ -199,7 +199,7 @@ func TestPathSandboxOpenRejectsWriteFlags(t *testing.T) {
 	f.Close()
 }
 
-func TestCountDirEntries(t *testing.T) {
+func TestReadDirLimited(t *testing.T) {
 	dir := t.TempDir()
 
 	// Create 10 files.
@@ -213,33 +213,37 @@ func TestCountDirEntries(t *testing.T) {
 
 	ctx := context.WithValue(context.Background(), handlerCtxKey{}, HandlerContext{Dir: dir})
 
-	t.Run("limit below count returns exceeded", func(t *testing.T) {
-		count, exceeded, err := sb.countDirEntries(ctx, ".", 5)
+	t.Run("maxRead below count returns truncated with first N entries", func(t *testing.T) {
+		entries, truncated, err := sb.readDirLimited(ctx, ".", 5)
 		require.NoError(t, err)
-		assert.True(t, exceeded)
-		assert.Greater(t, count, 5)
+		assert.True(t, truncated)
+		assert.Len(t, entries, 5)
+		// Should be the lexicographically first 5: f00..f04.
+		for i, e := range entries {
+			assert.Equal(t, fmt.Sprintf("f%02d", i), e.Name())
+		}
 	})
 
-	t.Run("limit above count returns not exceeded", func(t *testing.T) {
-		count, exceeded, err := sb.countDirEntries(ctx, ".", 20)
+	t.Run("maxRead above count returns all entries not truncated", func(t *testing.T) {
+		entries, truncated, err := sb.readDirLimited(ctx, ".", 20)
 		require.NoError(t, err)
-		assert.False(t, exceeded)
-		assert.Equal(t, 10, count)
+		assert.False(t, truncated)
+		assert.Len(t, entries, 10)
 	})
 
 	t.Run("empty directory", func(t *testing.T) {
 		emptyDir := filepath.Join(dir, "empty")
 		require.NoError(t, os.Mkdir(emptyDir, 0755))
 
-		count, exceeded, err := sb.countDirEntries(ctx, "empty", 10)
+		entries, truncated, err := sb.readDirLimited(ctx, "empty", 10)
 		require.NoError(t, err)
-		assert.False(t, exceeded)
-		assert.Equal(t, 0, count)
+		assert.False(t, truncated)
+		assert.Empty(t, entries)
 	})
 
 	t.Run("path outside sandbox returns permission error", func(t *testing.T) {
 		outsideDir := t.TempDir()
-		_, _, err := sb.countDirEntries(ctx, outsideDir, 10)
+		_, _, err := sb.readDirLimited(ctx, outsideDir, 10)
 		require.Error(t, err)
 		assert.ErrorIs(t, err, os.ErrPermission)
 	})

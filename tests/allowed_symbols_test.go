@@ -44,6 +44,8 @@ var builtinAllowedSymbols = []string{
 	"errors.New",
 	// fmt.Sprintf — string formatting; pure function, no I/O.
 	"fmt.Sprintf",
+	// io/fs.DirEntry — interface type for directory entries; no side effects.
+	"io/fs.DirEntry",
 	// io/fs.FileInfo — interface type for file information; no side effects.
 	"io/fs.FileInfo",
 	// io/fs.ModeDir — file mode bit constant for directories; pure constant.
