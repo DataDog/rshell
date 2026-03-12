@@ -668,8 +668,12 @@ func expandReplacement(repl string) string {
 				sb.WriteString("${0}")
 				i++
 			} else if next >= '1' && next <= '9' {
-				sb.WriteByte('$')
+				// Use braced form ${N} so that a following digit is not
+				// swallowed by Go's regexp replacement parser.
+				// e.g. sed's \10 means group-1 then literal '0', not group-10.
+				sb.WriteString("${")
 				sb.WriteByte(next)
+				sb.WriteString("}")
 				i++
 			} else if next == '&' {
 				sb.WriteByte('&')
