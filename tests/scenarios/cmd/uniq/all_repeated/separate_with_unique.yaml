@@ -1,0 +1,13 @@
+description: uniq --all-repeated=separate --unique suppresses one occurrence per group with blank-line separators.
+setup:
+  files:
+    - path: input.txt
+      content: "a\na\na\nb\nb\nc\n"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    uniq --all-repeated=separate --unique input.txt
+expect:
+  stdout: "a\na\n\nb\n"
+  stderr: ""
+  exit_code: 0

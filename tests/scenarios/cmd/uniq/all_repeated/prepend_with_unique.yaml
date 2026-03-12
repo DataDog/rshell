@@ -1,0 +1,13 @@
+description: uniq --all-repeated=prepend --unique prepends blank line and suppresses one occurrence per group.
+setup:
+  files:
+    - path: input.txt
+      content: "a\na\na\nb\nb\nc\n"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    uniq --all-repeated=prepend --unique input.txt
+expect:
+  stdout: "\na\na\n\nb\n"
+  stderr: ""
+  exit_code: 0
