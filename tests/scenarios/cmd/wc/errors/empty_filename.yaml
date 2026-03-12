@@ -1,0 +1,8 @@
+description: wc exits 1 and prints error for empty filename argument.
+input:
+  script: |+
+    wc ""
+expect:
+  stdout: ""
+  stderr: "wc: invalid zero-length file name\n"
+  exit_code: 1

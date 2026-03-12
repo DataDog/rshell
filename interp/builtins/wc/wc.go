@@ -57,6 +57,7 @@ package wc
 
 import (
 	"context"
+	"errors"
 	"io"
 	"os"
 	"strconv"
@@ -158,7 +159,11 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 				if file == "-" {
 					name = "standard input"
 				}
-				callCtx.Errf("wc: %s: %s\n", name, callCtx.PortableErr(err))
+				if name == "" {
+					callCtx.Errf("wc: %s\n", callCtx.PortableErr(err))
+				} else {
+					callCtx.Errf("wc: %s: %s\n", name, callCtx.PortableErr(err))
+				}
 				failed = true
 				// GNU wc prints a zero count line for directories but not
 				// for missing files or other open errors.
@@ -207,7 +212,7 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 
 func countFile(ctx context.Context, callCtx *builtins.CallContext, path string) (counts, error) {
 	if path == "" {
-		return counts{}, &os.PathError{Op: "open", Path: path, Err: os.ErrNotExist}
+		return counts{}, errors.New("invalid zero-length file name")
 	}
 	var rc io.ReadCloser
 	if path == "-" {
