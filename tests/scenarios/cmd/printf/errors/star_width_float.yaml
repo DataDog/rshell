@@ -1,4 +1,4 @@
-description: Float argument for star width is invalid.
+description: Float argument for star width uses numeric prefix (bash compat).
 input:
   script: |+
     printf "%*s\n" 3.14 hello

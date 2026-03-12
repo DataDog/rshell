@@ -435,6 +435,23 @@ func processSpecifier(callCtx *builtins.CallContext, s string, args []string, ar
 		return false, i, true
 	}
 
+	// Skip C-style length modifiers (l, ll, h, hh, j, t, z, q).
+	// Bash accepts and effectively ignores them.
+	for i < len(s) {
+		switch s[i] {
+		case 'l', 'h', 'j', 't', 'z', 'q':
+			i++
+			continue
+		}
+		break
+	}
+
+	if i >= len(s) {
+		// Incomplete specifier after length modifiers.
+		callCtx.Errf("printf: `%s': missing format character\n", s[:i])
+		return false, i, true
+	}
+
 	verb := s[i]
 	i++ // consume verb
 
@@ -499,8 +516,7 @@ func processSpecifier(callCtx *builtins.CallContext, s string, args []string, ar
 		val, err := parseIntArg(arg)
 		if err != nil && arg != "" {
 			callCtx.Errf("printf: '%s': invalid number\n", arg)
-			// Bash continues with value 0 and sets exit code.
-			val = 0
+			// Bash uses the numeric prefix value (e.g. "3.14" → 3) and sets exit code.
 			goFmt.WriteByte('d')
 			callCtx.Out(fmt.Sprintf(goFmt.String(), val))
 			return false, i, true
@@ -513,7 +529,6 @@ func processSpecifier(callCtx *builtins.CallContext, s string, args []string, ar
 		val, err := parseUintArg(arg)
 		if err != nil && arg != "" {
 			callCtx.Errf("printf: '%s': invalid number\n", arg)
-			val = 0
 			goFmt.WriteByte('o')
 			callCtx.Out(fmt.Sprintf(goFmt.String(), val))
 			return false, i, true
@@ -526,7 +541,6 @@ func processSpecifier(callCtx *builtins.CallContext, s string, args []string, ar
 		val, err := parseUintArg(arg)
 		if err != nil && arg != "" {
 			callCtx.Errf("printf: '%s': invalid number\n", arg)
-			val = 0
 			goFmt.WriteByte('d')
 			callCtx.Out(fmt.Sprintf(goFmt.String(), val))
 			return false, i, true
@@ -539,7 +553,6 @@ func processSpecifier(callCtx *builtins.CallContext, s string, args []string, ar
 		val, err := parseUintArg(arg)
 		if err != nil && arg != "" {
 			callCtx.Errf("printf: '%s': invalid number\n", arg)
-			val = 0
 			goFmt.WriteByte('x')
 			callCtx.Out(fmt.Sprintf(goFmt.String(), val))
 			return false, i, true
@@ -552,7 +565,6 @@ func processSpecifier(callCtx *builtins.CallContext, s string, args []string, ar
 		val, err := parseUintArg(arg)
 		if err != nil && arg != "" {
 			callCtx.Errf("printf: '%s': invalid number\n", arg)
-			val = 0
 			goFmt.WriteByte('X')
 			callCtx.Out(fmt.Sprintf(goFmt.String(), val))
 			return false, i, true
@@ -706,6 +718,14 @@ func getIntArg(args []string, idx *int, callCtx *builtins.CallContext) (int, boo
 	}
 	v, err := strconv.ParseInt(s, 0, strconv.IntSize)
 	if err != nil {
+		// Bash extracts the leading numeric prefix (e.g. "3.14" → 3, "10abc" → 10).
+		if prefix := extractIntPrefix(s); prefix != "" {
+			pv, perr := strconv.ParseInt(prefix, 0, strconv.IntSize)
+			if perr == nil {
+				callCtx.Errf("printf: '%s': invalid number\n", s)
+				return int(pv), true
+			}
+		}
 		callCtx.Errf("printf: '%s': invalid number\n", s)
 		return 0, true
 	}
@@ -730,6 +750,13 @@ func parseIntArg(s string) (int64, error) {
 	// Try parsing with automatic base detection.
 	val, err := strconv.ParseInt(s, 0, 64)
 	if err != nil {
+		// Bash extracts the leading numeric prefix (e.g. "3.14" → 3, "123abc" → 123).
+		if prefix := extractIntPrefix(s); prefix != "" {
+			pv, perr := strconv.ParseInt(prefix, 0, 64)
+			if perr == nil {
+				return pv, err // return value from prefix but still report original error
+			}
+		}
 		return 0, err
 	}
 	return val, nil
@@ -753,6 +780,13 @@ func parseUintArg(s string) (uint64, error) {
 	if len(s) > 0 && s[0] == '-' {
 		val, err := strconv.ParseInt(s, 0, 64)
 		if err != nil {
+			// Bash extracts the leading numeric prefix for unsigned too.
+			if prefix := extractIntPrefix(s); prefix != "" {
+				pv, perr := strconv.ParseInt(prefix, 0, 64)
+				if perr == nil {
+					return uint64(pv), err
+				}
+			}
 			return 0, err
 		}
 		// Bash wraps negatives as unsigned.
@@ -763,12 +797,69 @@ func parseUintArg(s string) (uint64, error) {
 	if err != nil {
 		// Try signed parse for large hex values that may be negative in two's complement.
 		sval, serr := strconv.ParseInt(s, 0, 64)
-		if serr != nil {
-			return 0, err
+		if serr == nil {
+			return uint64(sval), nil
 		}
-		return uint64(sval), nil
+		// Bash extracts the leading numeric prefix for unsigned too.
+		if prefix := extractIntPrefix(s); prefix != "" {
+			pv, perr := strconv.ParseUint(prefix, 0, 64)
+			if perr == nil {
+				return pv, err
+			}
+		}
+		return 0, err
 	}
 	return val, nil
+}
+
+// extractIntPrefix returns the longest leading substring of s that is a valid
+// integer literal (optional sign, then decimal digits, or 0x hex, or 0-octal).
+// Bash uses this prefix when the full string is not a valid integer
+// (e.g. "3.14" → "3", "123abc" → "123", "0x1G" → "0x1").
+// Returns "" if no valid numeric prefix can be extracted.
+func extractIntPrefix(s string) string {
+	if len(s) == 0 {
+		return ""
+	}
+	i := 0
+	// Optional sign.
+	if s[i] == '+' || s[i] == '-' {
+		i++
+	}
+	if i >= len(s) || s[i] < '0' || s[i] > '9' {
+		return ""
+	}
+	// Hex prefix.
+	if s[i] == '0' && i+1 < len(s) && (s[i+1] == 'x' || s[i+1] == 'X') {
+		i += 2
+		start := i
+		for i < len(s) && isHexDigit(s[i]) {
+			i++
+		}
+		if i == start {
+			return "" // "0x" with no hex digits is not valid
+		}
+		if i == len(s) {
+			return "" // full string is already valid — no prefix extraction needed
+		}
+		return s[:i]
+	}
+	// Decimal/octal digits.
+	for i < len(s) && s[i] >= '0' && s[i] <= '9' {
+		i++
+	}
+	if i == len(s) {
+		return "" // full string is already all digits — no prefix extraction needed
+	}
+	if i == 0 || (i == 1 && (s[0] == '+' || s[0] == '-')) {
+		return "" // sign-only or empty
+	}
+	return s[:i]
+}
+
+// isHexDigit returns true if ch is a valid hex digit.
+func isHexDigit(ch byte) bool {
+	return (ch >= '0' && ch <= '9') || (ch >= 'a' && ch <= 'f') || (ch >= 'A' && ch <= 'F')
 }
 
 // floatArg holds the result of parsing a float argument. For integer inputs,
@@ -796,15 +887,17 @@ func parseFloatArg(s string) (floatArg, error) {
 		return floatArg{}, nil
 	}
 
-	// Handle hex/octal integers used as float args (0xff, -0xff, 0755, etc).
-	// Bash accepts these for %f/%e/%g and converts them to float.
+	// Handle hex integers used as float args (0xff, -0xff, etc).
+	// Bash accepts hex for %f/%e/%g and converts to float.
+	// NOTE: Bash treats leading-zero args as DECIMAL for float verbs,
+	// so 0755 → 755.0, NOT octal 493.0. Only 0x/0X triggers integer parsing.
 	prefix := s
 	isNeg := false
 	if len(prefix) > 0 && (prefix[0] == '-' || prefix[0] == '+') {
 		isNeg = prefix[0] == '-'
 		prefix = prefix[1:]
 	}
-	if len(prefix) > 1 && prefix[0] == '0' && (prefix[1] == 'x' || prefix[1] == 'X' || (prefix[1] >= '0' && prefix[1] <= '7')) {
+	if len(prefix) > 1 && prefix[0] == '0' && (prefix[1] == 'x' || prefix[1] == 'X') {
 		if isNeg {
 			val, err := strconv.ParseInt(s, 0, 64)
 			if err != nil {
