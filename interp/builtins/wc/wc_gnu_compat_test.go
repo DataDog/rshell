@@ -148,16 +148,16 @@ func TestGNUCompatCharsMultibyte(t *testing.T) {
 	assert.Equal(t, "5 file.txt\n", stdout)
 }
 
-// TestGNUCompatControlCharIsWord — control byte \x01 counts as a word.
+// TestGNUCompatControlCharIsNotWord — control byte \x01 is transparent to word counting.
 //
 // GNU command: printf '\x01\n' | gwc -w
-// Expected: "1\n"
-func TestGNUCompatControlCharIsWord(t *testing.T) {
+// Expected: "0\n"
+func TestGNUCompatControlCharIsNotWord(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, dir, "file.txt", "\x01\n")
 	stdout, _, code := cmdRun(t, "wc -w file.txt", dir)
 	assert.Equal(t, 0, code)
-	assert.Equal(t, "1 file.txt\n", stdout)
+	assert.Equal(t, "0 file.txt\n", stdout)
 }
 
 // TestGNUCompatMaxLineLenVerticalTab — -L with \v (zero display width).

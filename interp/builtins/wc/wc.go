@@ -287,6 +287,10 @@ func countReader(ctx context.Context, r io.Reader) (counts, error) {
 				} else if ch == '\v' {
 					// vertical tab: zero display width, but breaks words
 					inWord = false
+				} else if unicode.Is(unicode.Cc, ch) {
+					// Control characters are transparent to word counting:
+					// they don't start or end words, matching GNU wc.
+					lineLen += int64(runeWidth(ch))
 				} else {
 					if !inWord {
 						c.words++
