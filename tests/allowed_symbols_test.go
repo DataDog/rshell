@@ -128,6 +128,8 @@ var builtinAllowedSymbols = []string{
 	"unicode.Cf",
 	// unicode.Is — checks if rune belongs to a range table; pure function, no I/O.
 	"unicode.Is",
+	// unicode.IsControl — reports whether rune is a control character; pure function, no I/O.
+	"unicode.IsControl",
 	// unicode.Me — enclosing mark category range table; pure data, no I/O.
 	"unicode.Me",
 	// unicode.Mn — nonspacing mark category range table; pure data, no I/O.

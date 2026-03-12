@@ -281,6 +281,9 @@ func countReader(ctx context.Context, r io.Reader) (counts, error) {
 				} else if r == ' ' || r == '\v' || r == '\f' {
 					lineLen++
 					inWord = false
+				} else if unicode.IsControl(r) {
+					// Non-whitespace control chars (C0, DEL, C1) are transparent:
+					// they do not start or end words, matching GNU wc in POSIX locale.
 				} else {
 					if !inWord {
 						c.words++
