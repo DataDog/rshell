@@ -107,7 +107,7 @@ This analyzes the full diff against main, posts findings as a GitHub PR review w
 
 Post a comment to trigger @datadog and @codex reviews:
 ```bash
-gh pr comment <pr-number> --body "@datadog @codex make a comprehensive code and security reviews. ONLY post findings as inline PR comments attached to specific code lines. DON'T run a code session to fix the issues."
+gh pr comment <pr-number> --body "@datadog @codex review"
 ```
 The external reviews arrive asynchronously — their comments will be picked up by **address-pr-comments** in Sub-step 2B1.
 
@@ -309,7 +309,7 @@ Run a final verification regardless of how the loop exited:
    - Compare the two timestamps. If @codex's latest review `submitted_at` is **before** the latest request's `created_at`, then @codex has NOT yet replied to the current request — **this verification fails**.
    - If @codex has no reviews at all, the verification also fails.
 
-   **If @codex hasn't replied yet**, fail this verification.
+   **If @codex hasn't replied yet**, fail this verification and go back to **Step 2: Run the review-fix loop**.
 
 Record the final state of each dimension (self-review, external reviews, CI, @codex response).
 
