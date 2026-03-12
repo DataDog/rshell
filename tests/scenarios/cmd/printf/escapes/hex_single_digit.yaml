@@ -1,0 +1,8 @@
+description: Single hex digit escape in format string.
+input:
+  script: |+
+    printf '\xF'
+expect:
+  stdout: "\x0f"
+  exit_code: 0
+skip_assert_against_bash: true

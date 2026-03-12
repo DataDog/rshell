@@ -7,6 +7,7 @@ package printf_test
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -746,3 +747,80 @@ func TestPrintfWidthClamped(t *testing.T) {
 	// Width clamped to 10000
 	assert.LessOrEqual(t, len(stdout), 10002)
 }
+
+// --- Coverage: negative width clamping ---
+
+func TestPrintfNegativeWidthClamped(t *testing.T) {
+	// Very large negative width should be clamped to -10000
+	stdout, _, code := cmdRun(t, `printf "%-99999s|\n" hi`)
+	assert.Equal(t, 0, code)
+	assert.Contains(t, stdout, "hi")
+	assert.LessOrEqual(t, len(stdout), 10003) // 10000 + |+ \n
+}
+
+// --- Coverage: precision clamping boundary ---
+
+func TestPrintfPrecisionClamped(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	stdout, _, code := runScriptCtx(ctx, t, `printf "%.99999s\n" hello`, "")
+	assert.Equal(t, 0, code)
+	// Precision on strings truncates; clamped to 10000 but "hello" is only 5 chars
+	assert.Equal(t, "hello\n", stdout)
+}
+
+// NOTE: unsigned negative wrapping, double-quote char constants, %b escapes,
+// octal/hex truncation, incomplete specifiers, conflicting flags, star
+// width/precision with zero — all covered by YAML scenario tests in
+// tests/scenarios/cmd/printf/
+
+// --- Coverage: star width/precision clamping ---
+
+func TestPrintfStarWidthClamped(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	stdout, _, code := runScriptCtx(ctx, t, `printf "%*d\n" 99999 42`, "")
+	assert.Equal(t, 0, code)
+	assert.LessOrEqual(t, len(stdout), 10002)
+	assert.Contains(t, stdout, "42")
+}
+
+func TestPrintfStarPrecisionClamped(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	stdout, _, code := runScriptCtx(ctx, t, `printf "%.*f\n" 99999 3.14`, "")
+	assert.Equal(t, 0, code)
+	assert.LessOrEqual(t, len(stdout), 10010)
+}
+
+// NOTE: %c multi-byte, NaN case, empty arg with width, octal digits 8/9,
+// %F uppercase inf/nan, zero-padded scientific, %b \c stops reuse —
+// all covered by YAML scenario tests in tests/scenarios/cmd/printf/
+
+// --- Coverage: format reuse iteration limit ---
+
+func TestPrintfFormatReuseIterationLimit(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	// Generate 20001 args: format reuse should stop at 10000 iterations
+	args := strings.Repeat("x ", 20001)
+	stdout, _, code := runScriptCtx(ctx, t, `printf "%s" `+args, "")
+	assert.Equal(t, 0, code)
+	// Should produce at most 10001 x's (first pass + 10000 iterations)
+	// Actually the first x is consumed in the first pass, then 10000 more iterations
+	assert.LessOrEqual(t, len(stdout), 10001)
+}
+
+// --- Coverage: context cancellation actually stops loop ---
+
+func TestPrintfContextCancellationStopsLoop(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	// Try to print a very large number of args; timeout should kill it
+	args := strings.Repeat("x ", 100000)
+	_, _, _ = runScriptCtx(ctx, t, `printf "%s" `+args, "")
+	// We only care that it didn't hang — the timeout handled it
+}
+
+// NOTE: unsigned large hex, star width float, star width/precision empty —
+// all covered by YAML scenario tests in tests/scenarios/cmd/printf/

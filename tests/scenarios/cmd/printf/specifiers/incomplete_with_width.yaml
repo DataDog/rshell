@@ -1,0 +1,7 @@
+description: Incomplete specifier with width outputs literally.
+input:
+  script: |+
+    printf "%10"
+expect:
+  stdout: "%10"
+  exit_code: 0

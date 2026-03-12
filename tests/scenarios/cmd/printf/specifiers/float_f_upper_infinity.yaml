@@ -1,0 +1,7 @@
+description: "%F uppercases infinity to INF."
+input:
+  script: |+
+    printf "%F\n" inf
+expect:
+  stdout_contains: ["INF"]
+  exit_code: 0

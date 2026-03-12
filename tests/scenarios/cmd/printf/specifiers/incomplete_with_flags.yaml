@@ -1,0 +1,7 @@
+description: Incomplete specifier with flags outputs literally.
+input:
+  script: |+
+    printf "%-"
+expect:
+  stdout: "%-"
+  exit_code: 0
