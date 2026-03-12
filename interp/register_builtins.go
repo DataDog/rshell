@@ -10,7 +10,6 @@ import (
 
 	"github.com/DataDog/rshell/interp/builtins"
 	breakcmd "github.com/DataDog/rshell/interp/builtins/break"
-	"github.com/DataDog/rshell/interp/builtins/cat"
 	"github.com/DataDog/rshell/interp/builtins/cut"
 	continuecmd "github.com/DataDog/rshell/interp/builtins/continue"
 	"github.com/DataDog/rshell/interp/builtins/echo"
@@ -26,7 +25,6 @@ import (
 	"github.com/DataDog/rshell/interp/builtins/tr"
 	truecmd "github.com/DataDog/rshell/interp/builtins/true"
 	"github.com/DataDog/rshell/interp/builtins/uniq"
-	"github.com/DataDog/rshell/interp/builtins/wc"
 )
 
 var registerOnce sync.Once
@@ -35,7 +33,6 @@ func registerBuiltins() {
 	registerOnce.Do(func() {
 		for _, cmd := range []builtins.Command{
 			breakcmd.Cmd,
-			cat.Cmd,
 			cut.Cmd,
 			continuecmd.Cmd,
 			echo.Cmd,
@@ -52,7 +49,6 @@ func registerBuiltins() {
 			tr.Cmd,
 			truecmd.Cmd,
 			uniq.Cmd,
-			wc.Cmd,
 		} {
 			cmd.Register()
 		}
