@@ -1,0 +1,19 @@
+description: -name with [!a]* negated bracket class excludes files starting with a.
+skip_assert_against_bash: true  # rshell find output order may differ
+setup:
+  files:
+    - path: dir/apple
+      content: "a"
+    - path: dir/banana
+      content: "b"
+    - path: dir/cherry
+      content: "c"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    find dir -name '[!a]*' -type f
+expect:
+  stdout: |+
+    dir/banana
+    dir/cherry
+  exit_code: 0

@@ -34,6 +34,8 @@ func portableErrMsg(err error) string {
 // portablePathError returns a *os.PathError with a normalized error message.
 // If the error is not a *os.PathError, it is returned as-is.
 // Only the Err field is normalized; the Path and Op fields are preserved as-is.
+// Sentinel errors (fs.ErrNotExist, fs.ErrPermission, fs.ErrExist) are preserved
+// so that errors.Is checks continue to work through the normalized error.
 func portablePathError(err error) error {
 	if err == nil {
 		return nil
@@ -45,6 +47,35 @@ func portablePathError(err error) error {
 	return &os.PathError{
 		Op:   pe.Op,
 		Path: pe.Path,
-		Err:  errors.New(portableErrMsg(pe.Err)),
+		Err:  portableSentinelErr(pe.Err),
 	}
 }
+
+// portableSentinelErr normalizes the error message while preserving sentinel
+// wrapping so that errors.Is checks work through portablePathError.
+func portableSentinelErr(err error) error {
+	if err == nil {
+		return nil
+	}
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+		return &wrappedSentinel{"no such file or directory", fs.ErrNotExist}
+	case errors.Is(err, fs.ErrPermission):
+		return &wrappedSentinel{"permission denied", fs.ErrPermission}
+	case errors.Is(err, fs.ErrExist):
+		return &wrappedSentinel{"file exists", fs.ErrExist}
+	case isErrIsDirectory(err):
+		return errors.New("is a directory")
+	}
+	return errors.New(err.Error())
+}
+
+// wrappedSentinel is an error that displays a portable message but preserves
+// the original sentinel for errors.Is matching.
+type wrappedSentinel struct {
+	msg      string
+	sentinel error
+}
+
+func (e *wrappedSentinel) Error() string { return e.msg }
+func (e *wrappedSentinel) Unwrap() error { return e.sentinel }

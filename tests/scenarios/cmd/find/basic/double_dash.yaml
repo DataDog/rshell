@@ -1,0 +1,15 @@
+description: find -- terminates global options, remaining args are paths.
+skip_assert_against_bash: true  # rshell output order may differ
+setup:
+  files:
+    - path: dir/file.txt
+      content: "hello"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    find -- dir -type f
+expect:
+  stdout: |+
+    dir/file.txt
+  stderr: ""
+  exit_code: 0

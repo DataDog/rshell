@@ -59,6 +59,7 @@ package find
 
 import (
 	"context"
+	"errors"
 	iofs "io/fs"
 	"strings"
 	"time"
@@ -89,6 +90,9 @@ func run(ctx context.Context, callCtx *builtins.CallContext, args []string) buil
 		} else if args[i] == "-H" {
 			callCtx.Errf("find: -H is not supported\n")
 			return builtins.Result{Code: 1}
+		} else if args[i] == "--" {
+			i++ // consume --; stop option parsing
+			break
 		} else {
 			break
 		}
@@ -215,6 +219,10 @@ func walkPath(
 	var err error
 	if followLinks {
 		startInfo, err = callCtx.StatFile(ctx, startPath)
+		if err != nil && errors.Is(err, iofs.ErrNotExist) {
+			// Dangling symlink root: fall back to lstat like child entries.
+			startInfo, err = callCtx.LstatFile(ctx, startPath)
+		}
 	} else {
 		startInfo, err = callCtx.LstatFile(ctx, startPath)
 	}
@@ -355,8 +363,11 @@ func walkPath(
 				if followLinks {
 					childInfo, err = callCtx.StatFile(ctx, childPath)
 					if err != nil {
-						// If stat fails on a symlink target, fall back to lstat.
-						childInfo, err = callCtx.LstatFile(ctx, childPath)
+						// Only fall back to lstat for broken symlinks (target missing).
+						// Permission denied, sandbox blocked, etc. should be reported as-is.
+						if errors.Is(err, iofs.ErrNotExist) {
+							childInfo, err = callCtx.LstatFile(ctx, childPath)
+						}
 						if err != nil {
 							callCtx.Errf("find: '%s': %s\n", childPath, callCtx.PortableErr(err))
 							failed = true

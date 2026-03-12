@@ -1,0 +1,16 @@
+description: -name with malformed bracket treats [ as literal.
+skip_assert_against_bash: true  # file names with [ are tricky to set up portably
+setup:
+  files:
+    - path: dir/normal.txt
+      content: "n"
+    - path: "dir/a[b.txt"
+      content: "x"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    find dir -name '*[*' -type f
+expect:
+  stdout: |+
+    dir/a[b.txt
+  exit_code: 0

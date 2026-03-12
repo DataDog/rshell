@@ -46,6 +46,8 @@ var builtinAllowedSymbols = []string{
 	"fmt.Errorf",
 	// fmt.Sprintf — string formatting; pure function, no I/O.
 	"fmt.Sprintf",
+	// io/fs.ErrNotExist — sentinel error for "not exist" checks; pure constant.
+	"io/fs.ErrNotExist",
 	// io/fs.FileInfo — interface type for file information; no side effects.
 	"io/fs.FileInfo",
 	// io/fs.ModeDir — file mode bit constant for directories; pure constant.
@@ -86,8 +88,6 @@ var builtinAllowedSymbols = []string{
 	"math.MinInt64",
 	// os.FileInfo — file metadata interface returned by Stat; no I/O side effects.
 	"os.FileInfo",
-	// path.Match — pure glob matching against a pattern; no I/O.
-	"path.Match",
 	// os.O_RDONLY — read-only file flag constant; cannot open files by itself.
 	"os.O_RDONLY",
 	// regexp.Compile — compiles a regular expression; pure function, no I/O. Uses RE2 engine (linear-time, no backtracking).

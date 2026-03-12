@@ -8,27 +8,20 @@ package find
 import (
 	iofs "io/fs"
 	"math"
-	"path"
 	"strings"
 )
 
-// matchGlob matches a name against a glob pattern using path.Match.
+// matchGlob matches a name against a glob pattern.
+// Uses pathGlobMatch which correctly handles [!...] negated character classes
+// and treats malformed brackets (e.g. unclosed '[') as literal characters,
+// matching GNU find's fnmatch() behaviour.
 func matchGlob(pattern, name string) bool {
-	matched, err := path.Match(pattern, name)
-	if err != nil {
-		return pattern == name
-	}
-	return matched
+	return pathGlobMatch(pattern, name)
 }
 
 // matchGlobFold matches a name against a glob pattern case-insensitively.
 func matchGlobFold(pattern, name string) bool {
-	lp, ln := strings.ToLower(pattern), strings.ToLower(name)
-	matched, err := path.Match(lp, ln)
-	if err != nil {
-		return lp == ln
-	}
-	return matched
+	return pathGlobMatch(strings.ToLower(pattern), strings.ToLower(name))
 }
 
 // matchType checks if a file's type matches the -type argument.
