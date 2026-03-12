@@ -315,7 +315,7 @@ Record the final state of each dimension (self-review, external reviews, CI, @co
 
 **If any verification fails** (CI failing, unresolved threads remain, unpushed commits that can't be pushed, or @codex hasn't responded to the latest review request), reset Step 2 and all its sub-steps to `pending`, and go back to **Step 2: Run the review-fix loop** for another iteration. Only proceed to Step 4 when all verifications pass.
 
-**Completion check:** All three verifications passed. Mark Step 3 as `completed`.
+**Completion check:** All four verifications passed. Mark Step 3 as `completed`.
 
 ---
 

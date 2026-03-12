@@ -565,8 +565,14 @@ func (p *parser) readSubstPart(delim byte, isPattern bool) (string, error) {
 				p.pos += 2
 				continue
 			}
-			sb.WriteByte('\\')
-			sb.WriteByte(next)
+			if isPattern && !isSpecialPatternEscape(next) {
+				// In patterns, GNU sed drops the backslash for non-special
+				// escapes (for example, \q behaves like q).
+				sb.WriteByte(next)
+			} else {
+				sb.WriteByte('\\')
+				sb.WriteByte(next)
+			}
 			p.pos += 2
 			continue
 		}
@@ -578,6 +584,28 @@ func (p *parser) readSubstPart(delim byte, isPattern bool) (string, error) {
 		p.pos++
 	}
 	return sb.String(), errors.New("unterminated delimiter")
+}
+
+func isSpecialPatternEscape(ch byte) bool {
+	if ch >= '1' && ch <= '9' {
+		// BRE backreferences (unsupported by RE2 but intentionally preserved
+		// so they fail as invalid regex rather than changing meaning).
+		return true
+	}
+
+	switch ch {
+	case '\\', '.', '^', '$', '*', '[', ']', '(', ')', '{', '}', '+', '?', '|':
+		// Common regex/BRE escapes and BRE-special operators.
+		return true
+	case '<', '>', 'B', 'A', 'Z', 'z':
+		// RE2 zero-width assertions.
+		return true
+	case 'w', 'W', 's', 'S', 'd', 'D':
+		// RE2 character classes.
+		return true
+	default:
+		return false
+	}
 }
 
 func (p *parser) parseTransliterate(cmd *sedCmd) (*sedCmd, error) {
