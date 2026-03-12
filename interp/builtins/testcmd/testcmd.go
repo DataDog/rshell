@@ -49,6 +49,7 @@
 // String comparison (binary):
 //
 //	S1 = S2     strings are equal
+//	S1 == S2    strings are equal (synonym for =)
 //	S1 != S2    strings are not equal
 //	S1 < S2     S1 sorts before S2 (lexicographic)
 //	S1 > S2     S1 sorts after S2 (lexicographic)
@@ -119,6 +120,7 @@ String tests:
 
 String comparison:
   S1 = S2    strings are equal
+  S1 == S2   strings are equal (synonym for =)
   S1 != S2   strings are not equal
   S1 < S2    S1 sorts before S2
   S1 > S2    S1 sorts after S2
@@ -253,8 +255,15 @@ func (p *parser) parseAnd() bool {
 // as a literal string operand, not negation.
 func (p *parser) parseNot() bool {
 	if p.pos < len(p.args) && p.peek() == "!" {
-		remaining := len(p.args) - p.pos
-		if remaining == 1 {
+		// When "!" is the only token in the current subexpression, treat
+		// it as a non-empty string per POSIX single-argument rules.
+		// We use subexpression bounds (not global remaining count) so
+		// that "!" after -a/-o in a larger expression is still treated
+		// as negation requiring an operand. e.g.:
+		//   test !          → "!" is non-empty string → exit 0
+		//   test -n x -a !  → "!" is negation, missing arg → exit 2
+		//   test x -a !     → 3-arg rule handles it as binary -a
+		if p.subexprEnd-p.subexprStart == 1 {
 			p.advance()
 			return true
 		}
@@ -296,7 +305,11 @@ func (p *parser) parsePrimary() bool {
 	}
 
 	cur := p.peek()
-	remaining := len(p.args) - p.pos
+	// Use the subexpression boundary (not len(args)) so that lookahead
+	// inside parenthesized groups does not read past the closing ')'.
+	// At the top level subexprEnd == len(args); inside (...) it points
+	// to the position of the matching ')'.
+	remaining := p.subexprEnd - p.pos
 
 	// POSIX 3-arg rule: when the subexpression is exactly "( X )" and X is
 	// NOT a binary operator, treat the middle token as a string non-emptiness
