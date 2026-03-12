@@ -282,6 +282,9 @@ func listDir(ctx context.Context, callCtx *builtins.CallContext, dir string, opt
 	if opts.limit < 0 {
 		opts.limit = 0
 	}
+	if opts.offset > MaxDirEntries {
+		opts.offset = MaxDirEntries
+	}
 
 	// Pagination applies only to single-directory, non-recursive listings.
 	// Silently ignore --offset/--limit when used with -R.
@@ -292,9 +295,8 @@ func listDir(ctx context.Context, callCtx *builtins.CallContext, dir string, opt
 	if opts.limit > 0 {
 		effectiveLimit = min(opts.limit, MaxDirEntries)
 	}
-	maxRead := opts.offset + effectiveLimit
 
-	entries, truncated, err := readDir(ctx, callCtx, dir, maxRead)
+	entries, truncated, err := readDir(ctx, callCtx, dir, MaxDirEntries)
 	if err != nil {
 		callCtx.Errf("ls: cannot open directory '%s': %s\n", dir, callCtx.PortableErr(err))
 		return err
