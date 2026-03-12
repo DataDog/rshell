@@ -154,6 +154,9 @@ func (eng *engine) runCycle(ctx context.Context, lr *lineReader) error {
 			eng.appendQueue = eng.appendQueue[:0]
 			continue
 		}
+		if action == actionBranch {
+			action = actionContinue
+		}
 		if action != actionDelete && !eng.suppressPrint {
 			eng.callCtx.Outf("%s\n", eng.patternSpace)
 		}
@@ -379,17 +382,28 @@ func findLabelRecursive(cmds []*sedCmd, label string, prefix []int) labelLocatio
 }
 
 // branchTo resolves a label and continues execution from the command after it.
-// An empty label branches to end of script (returns actionContinue).
+// An empty label branches to end of script (returns actionBranch).
 func (eng *engine) branchTo(ctx context.Context, label string, lr *lineReader, depth int) (actionType, error) {
 	if label == "" {
-		return actionContinue, nil
+		// Branch to end of script. Return actionBranch so that a branch
+		// inside a group properly skips commands after the group.
+		return actionBranch, nil
 	}
 	loc := findLabel(eng.prog, label)
 	if !loc.found() {
 		// This should not happen — labels are validated at parse time.
 		return actionContinue, errors.New("undefined label '" + label + "'")
 	}
-	return eng.branchToPath(ctx, eng.prog, loc.path, lr, depth)
+	action, err := eng.branchToPath(ctx, eng.prog, loc.path, lr, depth)
+	if err != nil {
+		return action, err
+	}
+	// Wrap actionContinue as actionBranch so callers (e.g. group execution)
+	// know a non-local jump occurred and don't fall through.
+	if action == actionContinue {
+		return actionBranch, nil
+	}
+	return action, nil
 }
 
 // branchToPath executes commands starting from the label described by path.
@@ -524,6 +538,12 @@ func (eng *engine) execSubstitute(cmd *sedCmd) error {
 	}
 	eng.lastRe = re
 
+	// Validate backreferences in the replacement against the number of
+	// capture groups in the regex. GNU sed rejects invalid references.
+	if err := validateBackrefs(cmd.subReplacement, re.NumSubexp()); err != nil {
+		return err
+	}
+
 	var result string
 	var matched bool
 	if cmd.subGlobal && cmd.subNth > 0 {
@@ -577,6 +597,25 @@ func (eng *engine) execSubstitute(cmd *sedCmd) error {
 	return nil
 }
 
+// validateBackrefs checks that all \N backreferences in the replacement string
+// refer to capture groups that exist in the regex. GNU sed errors on invalid
+// references like \1 when there are no capture groups.
+func validateBackrefs(repl string, numGroups int) error {
+	for i := 0; i < len(repl); i++ {
+		if repl[i] == '\\' && i+1 < len(repl) {
+			next := repl[i+1]
+			if next >= '1' && next <= '9' {
+				ref := int(next - '0')
+				if ref > numGroups {
+					return errors.New("invalid reference \\" + string(next) + " on `s' command's RHS")
+				}
+			}
+			i++ // skip next
+		}
+	}
+	return nil
+}
+
 // expandReplacement converts sed replacement syntax to Go regexp replacement.
 // In sed, & means the whole match. In Go regexp, that's ${0} or $0.
 // Sed uses \1-\9 for groups, Go uses $1-$9.
@@ -607,7 +646,8 @@ func expandReplacement(repl string) string {
 				sb.WriteByte('\\')
 				i++
 			} else {
-				sb.WriteByte('\\')
+				// GNU sed drops the backslash for non-special escapes
+				// (e.g. \q becomes q).
 				sb.WriteByte(next)
 				i++
 			}

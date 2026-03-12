@@ -119,4 +119,5 @@ const (
 	actionContinue actionType = iota
 	actionDelete              // d/D command: skip auto-print, start next cycle
 	actionRestart             // D command: restart the cycle (used internally)
+	actionBranch              // b/t/T command completed a non-local jump
 )
