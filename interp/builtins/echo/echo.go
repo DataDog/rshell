@@ -208,13 +208,15 @@ func processEscapes(s string) (string, bool) {
 	return b.String(), false
 }
 
-// writeUnicodeCodepoint writes a Unicode codepoint to the builder, matching
-// bash behavior: values beyond U+10FFFF are silently dropped. Surrogates
-// (U+D800-U+DFFF) are intentionally replaced with U+FFFD rather than emitting
-// invalid UTF-8 bytes as bash does — this is a security-motivated divergence.
+// writeUnicodeCodepoint writes a Unicode codepoint to the builder.
+// Bash drops values >= 0x80000000 but emits raw bytes for 0x10FFFF < val < 0x80000000.
+// We intentionally drop anything beyond U+10FFFF to avoid emitting invalid UTF-8.
+// Surrogates (U+D800-U+DFFF) are replaced with U+FFFD rather than emitting
+// invalid UTF-8 bytes — this is a security-motivated divergence from bash.
 func writeUnicodeCodepoint(b *strings.Builder, val int) {
 	if val > 0x10FFFF {
-		// Bash silently drops codepoints beyond the Unicode maximum.
+		// Intentional divergence: bash emits raw bytes for values up to 0x7FFFFFFF,
+		// but we drop them to avoid producing invalid UTF-8.
 		return
 	}
 	b.WriteRune(rune(val))
