@@ -16,7 +16,6 @@ input:
   script: |+
     ls | wc -l
 expect:
-  stdout: |2+
-          3
+  stdout: "3\n"
   stderr: ""
   exit_code: 0
