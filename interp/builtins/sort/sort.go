@@ -417,7 +417,7 @@ func parseKeyDef(s string) (keySpec, error) {
 	}
 	// Validate incompatible per-key options: -d and -n cannot coexist.
 	if k.hasOpts && k.opts.dictOrder && k.opts.numeric {
-		return k, fmt.Errorf("options '-dn' are incompatible")
+		return k, errors.New("options '-dn' are incompatible")
 	}
 	return k, nil
 }
