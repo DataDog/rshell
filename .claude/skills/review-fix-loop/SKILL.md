@@ -143,6 +143,8 @@ Run the **address-pr-comments** skill:
 ```
 This reads all unresolved review comments, evaluates validity, implements fixes, commits, pushes, and replies/resolves threads.
 
+**Commit message prefix:** All commits created in this sub-step MUST be prefixed with the current loop iteration number, e.g. `[iter 3] Fix null check in parser`.
+
 Wait for completion before proceeding to 2C.
 
 ### Sub-step 2C — Fix CI failures
@@ -152,6 +154,8 @@ Run the **fix-ci-tests** skill:
 /fix-ci-tests <pr-number>
 ```
 This checks for failing CI jobs, downloads logs, reproduces failures locally, fixes them, and pushes.
+
+**Commit message prefix:** All commits created in this sub-step MUST be prefixed with the current loop iteration number, e.g. `[iter 3] Fix flaky test timeout`.
 
 Wait for completion before proceeding to 2D.
 
