@@ -350,7 +350,7 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 
 		// Unique: suppress consecutive equal lines.
 		if *unique {
-			allLines = dedup(allLines, cmpFn)
+			allLines = dedup(ctx, allLines, cmpFn)
 		}
 
 		// Output.
@@ -385,7 +385,7 @@ func readFile(ctx context.Context, callCtx *builtins.CallContext, file string, t
 
 	sc := bufio.NewScanner(rc)
 	buf := make([]byte, 4096)
-	sc.Buffer(buf, MaxLineBytes)
+	sc.Buffer(buf, MaxLineBytes+1)
 	sc.Split(scanLinesPreserveCR)
 
 	var lines []string
@@ -1003,12 +1003,15 @@ func checkSorted(ctx context.Context, callCtx *builtins.CallContext, lines []str
 }
 
 // dedup removes consecutive equal lines (per cmpFn).
-func dedup(lines []string, cmpFn func(a, b string) int) []string {
+func dedup(ctx context.Context, lines []string, cmpFn func(a, b string) int) []string {
 	if len(lines) == 0 {
 		return lines
 	}
 	result := []string{lines[0]}
 	for i := 1; i < len(lines); i++ {
+		if i&1023 == 0 && ctx.Err() != nil {
+			return result
+		}
 		if cmpFn(lines[i-1], lines[i]) != 0 {
 			result = append(result, lines[i])
 		}
