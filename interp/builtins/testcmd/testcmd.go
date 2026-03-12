@@ -205,7 +205,7 @@ func evaluate(ctx context.Context, callCtx *builtins.CallContext, cmdName string
 		return builtins.Result{Code: exitSyntaxError}
 	}
 	if p.pos < len(p.args) {
-		p.callCtx.Errf("%s: extra argument '%s'\n", p.cmdName, p.args[p.pos])
+		p.callCtx.Errf("%s: too many arguments\n", p.cmdName)
 		return builtins.Result{Code: exitSyntaxError}
 	}
 	if result {

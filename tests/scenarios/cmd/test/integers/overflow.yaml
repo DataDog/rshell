@@ -1,5 +1,4 @@
 description: "test rejects integer overflow with exit code 2 (matches bash)"
-skip_assert_against_bash: true  # bash stderr includes scriptname:line prefix
 input:
   script: |+
     test 99999999999999999999 -gt 0
@@ -10,7 +9,5 @@ expect:
   stdout: |
     pos-overflow: 2
     neg-overflow: 2
-  stderr: |
-    test: 99999999999999999999: integer expression expected
-    test: -99999999999999999999: integer expression expected
+  stderr_contains: ["integer expression expected"]
   exit_code: 0

@@ -360,7 +360,7 @@ func TestBracketHelp(t *testing.T) {
 func TestTestExtraArgument(t *testing.T) {
 	_, stderr, code := runScript(t, `test "a" "b" "c" "d" "e"`, "")
 	assert.Equal(t, 2, code)
-	assert.Contains(t, stderr, "extra argument")
+	assert.Contains(t, stderr, "too many arguments")
 }
 
 // --- File comparison -nt / -ot tests ---
