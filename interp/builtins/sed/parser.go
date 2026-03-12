@@ -283,11 +283,27 @@ func (p *parser) parseOptionalExitCode() (uint8, error) {
 		}
 	}
 	if start == p.pos {
+		// No digits found — still reject trailing non-separator characters.
+		// GNU sed reports "extra characters after command" for inputs like "qp".
+		if p.pos < len(p.input) {
+			ch := p.input[p.pos]
+			if ch != ';' && ch != '\n' && ch != '\r' && ch != '}' && ch != ' ' && ch != '\t' {
+				return 0, errors.New("extra characters after command")
+			}
+		}
 		return 0, nil
 	}
 	n, err := strconv.Atoi(p.input[start:p.pos])
 	if err != nil {
 		return 0, errors.New("invalid exit code for q/Q command")
+	}
+	// GNU sed rejects extra characters after q/Q exit code — the next
+	// character must be a command separator or EOF.
+	if p.pos < len(p.input) {
+		ch := p.input[p.pos]
+		if ch != ';' && ch != '\n' && ch != '\r' && ch != '}' && ch != ' ' && ch != '\t' {
+			return 0, errors.New("extra characters after command")
+		}
 	}
 	// GNU sed truncates large exit codes modulo 256.
 	return uint8(n % 256), nil
