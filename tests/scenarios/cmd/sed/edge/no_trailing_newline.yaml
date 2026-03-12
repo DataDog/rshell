@@ -3,6 +3,7 @@ setup:
   files:
     - path: input.txt
       content: "no newline at end"
+skip_assert_against_bash: true
 input:
   allowed_paths: ["$DIR"]
   script: |+

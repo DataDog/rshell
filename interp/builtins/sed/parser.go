@@ -455,7 +455,7 @@ func (p *parser) readSubstPart(delim byte) (string, error) {
 		sb.WriteByte(ch)
 		p.pos++
 	}
-	return sb.String(), nil
+	return sb.String(), errors.New("unterminated delimiter")
 }
 
 func (p *parser) parseTransliterate(cmd *sedCmd) (*sedCmd, error) {

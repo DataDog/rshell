@@ -227,6 +227,11 @@ func (eng *engine) execCmds(ctx context.Context, cmds []*sedCmd, startIdx int, l
 			eng.callCtx.Outf("%s\n", cmd.text)
 
 		case cmdChange:
+			// For range addresses, only output text at the end of the range.
+			if cmd.addr2 != nil && cmd.inRange {
+				// Still inside the range — delete silently without output.
+				return actionDelete, nil
+			}
 			eng.callCtx.Outf("%s\n", cmd.text)
 			return actionDelete, nil
 
@@ -253,8 +258,9 @@ func (eng *engine) execCmds(ctx context.Context, cmds []*sedCmd, startIdx int, l
 				eng.patternSpace = line
 				eng.lastLine = lr.isLast()
 			} else {
+				// n already printed the pattern space; suppress auto-print.
 				eng.lastLine = true
-				return actionContinue, nil
+				return actionDelete, nil
 			}
 
 		case cmdNextAppend:
@@ -310,6 +316,7 @@ func (eng *engine) execCmds(ctx context.Context, cmds []*sedCmd, startIdx int, l
 			if !eng.subMade {
 				return eng.branchTo(ctx, cmd.label, lr, depth)
 			}
+			eng.subMade = false
 
 		case cmdGroup:
 			action, err := eng.execCmds(ctx, cmd.children, 0, lr, depth)
@@ -325,20 +332,46 @@ func (eng *engine) execCmds(ctx context.Context, cmds []*sedCmd, startIdx int, l
 	return actionContinue, nil
 }
 
-func findLabel(cmds []*sedCmd, label string) int {
+// labelLocation describes where a label was found.
+type labelLocation struct {
+	outerIdx int // index in top-level command list
+	innerIdx int // index inside group's children (-1 if at top level)
+}
+
+func findLabel(cmds []*sedCmd, label string) labelLocation {
 	for i, cmd := range cmds {
 		if cmd.kind == cmdLabel && cmd.label == label {
-			return i
+			return labelLocation{outerIdx: i, innerIdx: -1}
 		}
 		if cmd.kind == cmdGroup {
-			// Labels inside groups are visible from the top level in GNU sed.
-			if idx := findLabel(cmd.children, label); idx >= 0 {
-				// Return the group's index since we can't index into children from here.
-				return i
+			for j, child := range cmd.children {
+				if child.kind == cmdLabel && child.label == label {
+					return labelLocation{outerIdx: i, innerIdx: j}
+				}
+			}
+			// Also check nested groups (one level deep is sufficient for most scripts).
+			if loc := findLabelNested(cmd.children, label); loc.outerIdx >= 0 {
+				return labelLocation{outerIdx: i, innerIdx: loc.outerIdx}
 			}
 		}
 	}
-	return -1
+	return labelLocation{outerIdx: -1, innerIdx: -1}
+}
+
+func findLabelNested(cmds []*sedCmd, label string) labelLocation {
+	for i, cmd := range cmds {
+		if cmd.kind == cmdLabel && cmd.label == label {
+			return labelLocation{outerIdx: i, innerIdx: -1}
+		}
+		if cmd.kind == cmdGroup {
+			for j, child := range cmd.children {
+				if child.kind == cmdLabel && child.label == label {
+					return labelLocation{outerIdx: i, innerIdx: j}
+				}
+			}
+		}
+	}
+	return labelLocation{outerIdx: -1, innerIdx: -1}
 }
 
 // branchTo resolves a label and continues execution from the command after it.
@@ -347,11 +380,21 @@ func (eng *engine) branchTo(ctx context.Context, label string, lr *lineReader, d
 	if label == "" {
 		return actionContinue, nil
 	}
-	target := findLabel(eng.prog, label)
-	if target < 0 {
+	loc := findLabel(eng.prog, label)
+	if loc.outerIdx < 0 {
 		return actionContinue, errors.New("undefined label '" + label + "'")
 	}
-	return eng.execCmds(ctx, eng.prog, target+1, lr, depth+1)
+	if loc.innerIdx >= 0 {
+		// Label is inside a group. Execute the group's children from label+1,
+		// then continue with commands after the group.
+		group := eng.prog[loc.outerIdx]
+		action, err := eng.execCmds(ctx, group.children, loc.innerIdx+1, lr, depth+1)
+		if err != nil || action != actionContinue {
+			return action, err
+		}
+		return eng.execCmds(ctx, eng.prog, loc.outerIdx+1, lr, depth+1)
+	}
+	return eng.execCmds(ctx, eng.prog, loc.outerIdx+1, lr, depth+1)
 }
 
 // --- Address matching ---
@@ -421,28 +464,34 @@ func (eng *engine) matchRange(cmd *sedCmd) bool {
 
 func (eng *engine) execSubstitute(cmd *sedCmd) error {
 	var result string
+	var matched bool
 	if cmd.subGlobal {
-		result = cmd.subRe.ReplaceAllString(eng.patternSpace, expandReplacement(cmd.subReplacement))
+		expanded := expandReplacement(cmd.subReplacement)
+		matched = cmd.subRe.MatchString(eng.patternSpace)
+		result = cmd.subRe.ReplaceAllString(eng.patternSpace, expanded)
 	} else if cmd.subNth > 0 {
 		count := 0
+		expanded := expandReplacement(cmd.subReplacement)
 		result = cmd.subRe.ReplaceAllStringFunc(eng.patternSpace, func(match string) string {
 			count++
 			if count == cmd.subNth {
-				return cmd.subRe.ReplaceAllString(match, expandReplacement(cmd.subReplacement))
+				matched = true
+				return cmd.subRe.ReplaceAllString(match, expanded)
 			}
 			return match
 		})
 	} else {
 		loc := cmd.subRe.FindStringIndex(eng.patternSpace)
 		if loc != nil {
-			matched := eng.patternSpace[loc[0]:loc[1]]
-			replacement := cmd.subRe.ReplaceAllString(matched, expandReplacement(cmd.subReplacement))
+			matched = true
+			m := eng.patternSpace[loc[0]:loc[1]]
+			replacement := cmd.subRe.ReplaceAllString(m, expandReplacement(cmd.subReplacement))
 			result = eng.patternSpace[:loc[0]] + replacement + eng.patternSpace[loc[1]:]
 		} else {
 			return nil
 		}
 	}
-	if result != eng.patternSpace {
+	if matched {
 		if len(result) > MaxSpaceBytes {
 			return errors.New("pattern space exceeded size limit")
 		}
@@ -465,6 +514,9 @@ func expandReplacement(repl string) string {
 		ch := repl[i]
 		if ch == '&' {
 			sb.WriteString("${0}")
+		} else if ch == '$' {
+			// Escape literal $ so Go's regexp engine doesn't interpret $1, $2, etc.
+			sb.WriteString("$$")
 		} else if ch == '\\' && i+1 < len(repl) {
 			next := repl[i+1]
 			if next >= '1' && next <= '9' {
@@ -476,12 +528,6 @@ func expandReplacement(repl string) string {
 				i++
 			} else if next == '\\' {
 				sb.WriteByte('\\')
-				i++
-			} else if next == 'n' {
-				sb.WriteByte('\n')
-				i++
-			} else if next == 't' {
-				sb.WriteByte('\t')
 				i++
 			} else {
 				sb.WriteByte('\\')

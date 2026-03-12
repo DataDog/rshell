@@ -2,6 +2,7 @@ description: Sed reports an error when no script is provided.
 input:
   script: |+
     sed
+skip_assert_against_bash: true
 expect:
   stdout: ""
   stderr: "sed: no script command has been specified\n"

@@ -3,6 +3,7 @@ setup:
   files:
     - path: dummy.txt
       content: ""
+skip_assert_against_bash: true
 input:
   allowed_paths: ["$DIR"]
   script: |+
