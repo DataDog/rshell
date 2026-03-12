@@ -218,6 +218,7 @@ func writeUnicodeCodepoint(b *strings.Builder, val int64) {
 		// but we drop them to avoid producing invalid UTF-8.
 		return
 	}
+	// Go's WriteRune replaces surrogates (U+D800-U+DFFF) with U+FFFD automatically.
 	b.WriteRune(rune(val))
 }
 
