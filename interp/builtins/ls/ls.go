@@ -75,6 +75,9 @@ import (
 // maxRecursionDepth limits how deep -R will recurse to prevent stack overflow.
 const maxRecursionDepth = 256
 
+// MaxDirEntries is the maximum number of entries ls will process per directory.
+const MaxDirEntries = 100_000
+
 // errFailed is a sentinel used to signal that at least one entry had an error.
 var errFailed = errors.New("ls: one or more errors occurred")
 
@@ -256,10 +259,16 @@ func listDir(ctx context.Context, callCtx *builtins.CallContext, dir string, opt
 		return err
 	}
 
+	if len(entries) > MaxDirEntries {
+		callCtx.Errf("ls: directory '%s': too many entries (%d > %d)\n", dir, len(entries), MaxDirEntries)
+		return errFailed
+	}
+
 	// Get FileInfo for sorting (if needed) and for long format.
 	type entryInfo struct {
-		name string
-		info iofs.FileInfo
+		name      string
+		info      iofs.FileInfo
+		isSymlink bool
 	}
 
 	failed := false
@@ -289,7 +298,11 @@ func listDir(ctx context.Context, callCtx *builtins.CallContext, dir string, opt
 			failed = true
 			continue
 		}
-		infoEntries = append(infoEntries, entryInfo{name: name, info: info})
+		infoEntries = append(infoEntries, entryInfo{
+			name:      name,
+			info:      info,
+			isSymlink: e.Type()&iofs.ModeSymlink != 0,
+		})
 	}
 
 	// Sort.
@@ -304,15 +317,16 @@ func listDir(ctx context.Context, callCtx *builtins.CallContext, dir string, opt
 	}
 
 	// Recurse into subdirectories if -R.
-	// NOTE: Symlink loops are not detected because the syscall package
-	// (needed for device+inode tracking) is banned by the import allowlist.
-	// The maxRecursionDepth limit bounds total work in this case.
+	// Symlinks are skipped to match GNU ls default behaviour (which does
+	// not follow symlinks during -R traversal) and to prevent symlink-loop
+	// denial-of-service attacks. The maxRecursionDepth limit provides an
+	// additional safety bound.
 	if opts.recursive {
 		for _, ei := range infoEntries {
 			if ctx.Err() != nil {
 				break
 			}
-			if !ei.info.IsDir() {
+			if ei.isSymlink || !ei.info.IsDir() {
 				continue
 			}
 			if ei.name == "." || ei.name == ".." {
