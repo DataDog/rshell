@@ -638,7 +638,9 @@ func extractKey(line string, k keySpec, sep byte, hasSep bool, ignBlanksStart, i
 	}
 	endFieldStart := bounds[ef].start
 	if ignBlanksEnd {
-		for endFieldStart < bounds[ef].end && (line[endFieldStart] == ' ' || line[endFieldStart] == '\t') {
+		// GNU sort skips blanks past the field boundary for -b,
+		// matching the start-position behavior.
+		for endFieldStart < len(line) && (line[endFieldStart] == ' ' || line[endFieldStart] == '\t') {
 			endFieldStart++
 		}
 	}
