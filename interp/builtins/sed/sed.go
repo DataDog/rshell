@@ -132,6 +132,10 @@ const MaxBranchIterations = 10_000
 // non-regular-file input source.
 const MaxTotalReadBytes = 256 << 20 // 256 MiB
 
+// MaxAppendQueueBytes is the maximum total bytes that can be accumulated
+// in the append queue within a single cycle.
+const MaxAppendQueueBytes = 1 << 20 // 1 MiB
+
 // expressionSlice collects multiple -e values.
 type expressionSlice []string
 

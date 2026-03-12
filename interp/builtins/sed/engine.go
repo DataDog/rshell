@@ -27,9 +27,11 @@ type engine struct {
 	lastLine      bool
 	patternSpace  string
 	holdSpace     string
-	appendQueue   []string // text queued by 'a' command, flushed after auto-print
+	appendQueue      []string // text queued by 'a' command, flushed after auto-print
+	appendQueueBytes int      // total bytes in appendQueue for limit checking
 	subMade       bool           // set when s/// succeeds (cleared on new input line)
 	lastRe        *regexp.Regexp // last regex used (for empty pattern in s///)
+	emptyReErr    bool           // set when // address has no previous regex
 	isRegularFile bool
 	isLastFile    bool // whether we are processing the last file in the argument list
 }
@@ -146,6 +148,7 @@ func (eng *engine) processFile(ctx context.Context, callCtx *builtins.CallContex
 func (eng *engine) runCycle(ctx context.Context, lr *lineReader) error {
 	eng.subMade = false
 	eng.appendQueue = eng.appendQueue[:0]
+	eng.appendQueueBytes = 0
 	for {
 		action, err := eng.execCommandsFrom(ctx, 0, lr, 0)
 		if err != nil {
@@ -155,6 +158,7 @@ func (eng *engine) runCycle(ctx context.Context, lr *lineReader) error {
 			// D command requested a cycle restart with the remaining
 			// pattern space. subMade is intentionally preserved.
 			eng.appendQueue = eng.appendQueue[:0]
+			eng.appendQueueBytes = 0
 			continue
 		}
 		if action == actionBranch {
@@ -195,7 +199,15 @@ func (eng *engine) execCmds(ctx context.Context, cmds []*sedCmd, startIdx int, l
 		}
 
 		if !eng.addressMatch(cmd) {
+			if eng.emptyReErr {
+				eng.emptyReErr = false
+				return actionContinue, errors.New("no previous regular expression")
+			}
 			continue
+		}
+		if eng.emptyReErr {
+			eng.emptyReErr = false
+			return actionContinue, errors.New("no previous regular expression")
 		}
 
 		switch cmd.kind {
@@ -224,6 +236,7 @@ func (eng *engine) execCmds(ctx context.Context, cmds []*sedCmd, startIdx int, l
 				// Note: subMade is intentionally preserved across D restarts
 				// (GNU sed behaviour — t/T branching state survives D).
 				eng.appendQueue = eng.appendQueue[:0]
+				eng.appendQueueBytes = 0
 				return actionRestart, nil
 			}
 			return actionDelete, nil
@@ -244,6 +257,10 @@ func (eng *engine) execCmds(ctx context.Context, cmds []*sedCmd, startIdx int, l
 			eng.patternSpace = eng.transliterate(eng.patternSpace, cmd.transFrom, cmd.transTo)
 
 		case cmdAppend:
+			eng.appendQueueBytes += len(cmd.text)
+			if eng.appendQueueBytes > MaxAppendQueueBytes {
+				return actionContinue, errors.New("append queue exceeded size limit")
+			}
 			eng.appendQueue = append(eng.appendQueue, cmd.text)
 
 		case cmdInsert:
@@ -272,6 +289,7 @@ func (eng *engine) execCmds(ctx context.Context, cmds []*sedCmd, startIdx int, l
 				eng.callCtx.Outf("%s\n", text)
 			}
 			eng.appendQueue = eng.appendQueue[:0]
+			eng.appendQueueBytes = 0
 			line, ok := lr.readLine()
 			if ok {
 				if err := lr.checkLimit(); err != nil {
@@ -470,7 +488,10 @@ func (eng *engine) matchAddr(addr *address) bool {
 		if re == nil {
 			// Empty pattern: reuse last regex.
 			if eng.lastRe == nil {
-				return false // no previous regex — cannot match
+				// GNU sed fails with "no previous regular expression".
+				// Store a sentinel so the caller can detect and report this.
+				eng.emptyReErr = true
+				return false
 			}
 			re = eng.lastRe
 		} else {
@@ -662,13 +683,18 @@ func expandReplacement(repl string) string {
 }
 
 func (eng *engine) transliterate(s string, from, to []rune) string {
+	// Build a lookup map for O(n) transliteration instead of O(n*m).
+	mapping := make(map[rune]rune, len(from))
+	for i, fr := range from {
+		// First occurrence wins (matches GNU sed behaviour).
+		if _, exists := mapping[fr]; !exists {
+			mapping[fr] = to[i]
+		}
+	}
 	runes := []rune(s)
 	for i, r := range runes {
-		for j, fr := range from {
-			if r == fr {
-				runes[i] = to[j]
-				break
-			}
+		if replacement, ok := mapping[r]; ok {
+			runes[i] = replacement
 		}
 	}
 	return string(runes)

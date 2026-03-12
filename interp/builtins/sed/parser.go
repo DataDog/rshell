@@ -276,6 +276,11 @@ func (p *parser) parseOptionalExitCode() (uint8, error) {
 	start := p.pos
 	for p.pos < len(p.input) && p.input[p.pos] >= '0' && p.input[p.pos] <= '9' {
 		p.pos++
+		// Cap digit scanning to avoid allocating huge substrings before
+		// strconv.Atoi rejects them.
+		if p.pos-start > 20 {
+			return 0, errors.New("invalid exit code for q/Q command")
+		}
 	}
 	if start == p.pos {
 		return 0, nil
@@ -507,6 +512,11 @@ flagsDone:
 			}
 		}
 		cmd.subRe = re
+		// Validate backreferences at parse time. GNU sed rejects invalid
+		// references regardless of whether the command address matches.
+		if err := validateBackrefs(replacement, re.NumSubexp()); err != nil {
+			return nil, err
+		}
 	}
 	return cmd, nil
 }
