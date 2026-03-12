@@ -398,6 +398,9 @@ func (p *parser) parseSubstitute(cmd *sedCmd) (*sedCmd, error) {
 		case 'e':
 			return nil, errors.New("'e' flag in 's' command is blocked: command execution is not allowed")
 		default:
+			if ch == '0' {
+				return nil, errors.New("number option to 's' command may not be zero")
+			}
 			if ch >= '1' && ch <= '9' {
 				start := p.pos
 				for p.pos < len(p.input) && p.input[p.pos] >= '0' && p.input[p.pos] <= '9' {

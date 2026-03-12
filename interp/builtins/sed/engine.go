@@ -213,6 +213,9 @@ func (eng *engine) execCmds(ctx context.Context, cmds []*sedCmd, startIdx int, l
 			if !eng.suppressPrint {
 				eng.callCtx.Outf("%s\n", eng.patternSpace)
 			}
+			for _, text := range eng.appendQueue {
+				eng.callCtx.Outf("%s\n", text)
+			}
 			return actionContinue, &quitError{code: cmd.quitCode}
 
 		case cmdQuitNoprint:

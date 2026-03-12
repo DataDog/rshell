@@ -1,5 +1,4 @@
 description: Replacement strings support escape sequences like \n, \t, \\, and \&.
-skip_assert_against_bash: true
 setup:
   files:
     - path: input.txt
