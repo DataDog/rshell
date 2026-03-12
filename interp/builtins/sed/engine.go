@@ -382,8 +382,6 @@ type labelLocation struct {
 	path []int // indices at each nesting level; nil means not found
 }
 
-func (l labelLocation) found() bool { return l.path != nil }
-
 // buildLabelMap precomputes the location of every label in the program
 // for O(1) branch resolution instead of linear scanning on every branch.
 func buildLabelMap(cmds []*sedCmd) map[string]labelLocation {
@@ -405,25 +403,6 @@ func buildLabelMapRecursive(cmds []*sedCmd, prefix []int, m map[string]labelLoca
 			buildLabelMapRecursive(cmd.children, currentPath, m)
 		}
 	}
-}
-
-func findLabel(cmds []*sedCmd, label string) labelLocation {
-	return findLabelRecursive(cmds, label, nil)
-}
-
-func findLabelRecursive(cmds []*sedCmd, label string, prefix []int) labelLocation {
-	for i, cmd := range cmds {
-		currentPath := append(append([]int{}, prefix...), i)
-		if cmd.kind == cmdLabel && cmd.label == label {
-			return labelLocation{path: currentPath}
-		}
-		if cmd.kind == cmdGroup {
-			if loc := findLabelRecursive(cmd.children, label, currentPath); loc.found() {
-				return loc
-			}
-		}
-	}
-	return labelLocation{}
 }
 
 // branchTo resolves a label and continues execution from the command after it.
