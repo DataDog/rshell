@@ -1,0 +1,10 @@
+description: Echo -e with surrogate codepoint replaces with U+FFFD (intentional security divergence from bash).
+skip_assert_against_bash: true
+input:
+  script: |+
+    echo -e '\uD800'
+expect:
+  stdout_contains:
+    - "\uFFFD"
+  stderr: ""
+  exit_code: 0
