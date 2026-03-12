@@ -23,20 +23,21 @@ Your very first action — before reading ANY files, before running ANY commands
 5. "Step 2C: Fix issues found"
 6. "Step 2D: Run tests"
 7. "Step 2E: Commit and push fixes"
-8. "Step 2F: Decide whether to continue"
-9. "Step 3: Full sweep re-review"
-10. "Step 4: Final summary"
+8. "Step 2F: Post iteration summary as PR comment"
+9. "Step 2G: Decide whether to continue"
+10. "Step 3: Full sweep re-review"
+11. "Step 4: Final summary"
 
-**Note on sub-steps 2A–2F:** These are created once and reused across loop iterations. At the start of each iteration, reset all sub-steps to `pending`, then execute them in order.
+**Note on sub-steps 2A–2G:** These are created once and reused across loop iterations. At the start of each iteration, reset all sub-steps to `pending`, then execute them in order.
 
 ### 2. Execution order and gating
 
 Steps run strictly in this order:
 
 ```
-Step 1 → Step 2 (loop: 2A → 2B → 2C → 2D → 2E → 2F) → Step 3 → Step 4
-                   ↑                                ↓
-                   └────────── repeat ──────────────┘
+Step 1 → Step 2 (loop: 2A → 2B → 2C → 2D → 2E → 2F → 2G) → Step 3 → Step 4
+                   ↑                                      ↓
+                   └──────────────── repeat ──────────────┘
 ```
 
 **Top-level steps** are sequential: before starting step N, call TaskList and verify step N-1 is `completed`. Set step N to `in_progress`.
@@ -75,7 +76,7 @@ Store the owner and repo name.
 
 ### 1B. Enumerate review targets
 
-Build the review target list by combining **builtin commands** and **shell features**. Each target is reviewed independently.
+Build the review target list by combining **builtin commands** and **shell features**, then **shuffle the combined list into a random order**. Each target is reviewed independently.
 
 **Builtin commands** — list all directories under `interp/builtins/` (excluding `internal`, `tests`, `testutil`):
 ```bash
@@ -87,7 +88,14 @@ ls -d interp/builtins/*/ | grep -v -E '(internal|tests|testutil)' | xargs -I{} b
 ls -d tests/scenarios/shell/*/  | xargs -I{} basename {}
 ```
 
-Create a checklist of all targets. Example:
+**Randomize the order** — combine both lists and shuffle:
+```bash
+{ ls -d interp/builtins/*/ | grep -v -E '(internal|tests|testutil)' | xargs -I{} basename {}; ls -d tests/scenarios/shell/*/ | xargs -I{} basename {}; } | sort -R
+```
+
+The randomized order ensures that each run of the improve loop covers targets in a different sequence, avoiding systematic bias toward alphabetically early targets.
+
+Create a checklist of all targets in the shuffled order. Example:
 
 ```
 REVIEW TARGETS:
@@ -97,7 +105,27 @@ Shell features: allowed_paths, allowed_redirects, blocked_commands, blocked_redi
 
 Mark each target as `pending`. This list will be tracked as you work through them.
 
-**Completion check:** You have the PR details and the full target list. Mark Step 1 as `completed`.
+**Post the plan as a PR comment** so reviewers can see the full scope upfront:
+
+```bash
+gh pr comment <pr-number> --body "$(cat <<'EOF'
+### Improve Loop — Review Plan
+
+Starting systematic review of **<total>** targets in randomized order.
+
+#### Review order
+| # | Target | Type |
+|---|--------|------|
+| 1 | <target> | command/feature |
+| 2 | <target> | command/feature |
+| ... | ... | ... |
+
+Each target will be reviewed for security, bash compatibility, correctness, test coverage, and platform compatibility. Progress updates will be posted after each iteration.
+EOF
+)"
+```
+
+**Completion check:** You have the PR details, the full target list, and the plan comment is posted. Mark Step 1 as `completed`.
 
 ---
 
@@ -105,15 +133,13 @@ Mark each target as `pending`. This list will be tracked as you work through the
 
 **GATE CHECK**: Call TaskList. Step 1 must be `completed`. Set Step 2 to `in_progress`.
 
-Set `iteration = 1`. Maximum iterations: **50**. Repeat sub-steps A through F:
+Set `iteration = 1`. Maximum iterations: **50**. Repeat sub-steps A through G:
 
 ---
 
 ### Sub-step 2A — Pick next review target
 
-Select the next `pending` target from the list. Prioritize:
-1. **Builtin commands** before shell features (builtins have more attack surface)
-2. Within commands, prioritize by complexity (commands with more flags/features first)
+Select the next `pending` target from the randomized list (in the order established in Step 1B).
 
 If all targets are `done`, proceed to Step 3.
 
@@ -250,7 +276,29 @@ If no changes (target was clean), skip.
 
 ---
 
-### Sub-step 2F — Decide whether to continue
+### Sub-step 2F — Post iteration summary as PR comment
+
+Post a concise summary of this iteration's results as a GitHub PR comment so that progress is visible to reviewers.
+
+```bash
+gh pr comment <pr-number> --body "$(cat <<'EOF'
+### Improve Loop — Iteration <iteration>: `<target>`
+
+- **Type**: <command|feature>
+- **Status**: <CLEAN (no issues found) | FIXED (N issues found and fixed)>
+- **Findings**: <N> (breakdown by priority if any, e.g. 1xP1, 2xP2)
+- **Fixes applied**: <brief list of fixes, or "None — target was clean">
+- **Tests**: <PASS | FAIL (details)>
+- **Progress**: <done>/<total> targets reviewed
+EOF
+)"
+```
+
+**Completion check:** PR comment posted. Proceed.
+
+---
+
+### Sub-step 2G — Decide whether to continue
 
 Mark the current target as `done`.
 
