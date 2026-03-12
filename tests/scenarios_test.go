@@ -31,7 +31,7 @@ const dockerBashImage = "debian:bookworm-slim"
 // scenario represents a single test scenario.
 type scenario struct {
 	Description           string   `yaml:"description"`
-	SkipAssertAgainstBash bool `yaml:"skip_assert_against_bash"` // true = skip bash comparison
+	SkipAssertAgainstBash bool     `yaml:"skip_assert_against_bash"` // true = skip bash comparison
 	Setup                 setup    `yaml:"setup"`
 	Input                 input    `yaml:"input"`
 	Expect                expected `yaml:"expect"`

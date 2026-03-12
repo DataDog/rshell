@@ -156,11 +156,11 @@ func TestComplianceLicense3rdPartyFormat(t *testing.T) {
 	// Known SPDX identifiers (extend as needed).
 	knownSPDX := map[string]bool{
 		"MIT":                true,
-		"Apache-2.0":        true,
-		"BSD-2-Clause":      true,
-		"BSD-3-Clause":      true,
-		"ISC":               true,
-		"MPL-2.0":           true,
+		"Apache-2.0":         true,
+		"BSD-2-Clause":       true,
+		"BSD-3-Clause":       true,
+		"ISC":                true,
+		"MPL-2.0":            true,
 		"MIT AND Apache-2.0": true,
 	}
 
