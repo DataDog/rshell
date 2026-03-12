@@ -298,7 +298,7 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 					name = "standard input"
 				}
 				callCtx.Errf("sort: %s: %s\n", name, callCtx.PortableErr(err))
-				return builtins.Result{Code: 1}
+				return builtins.Result{Code: 2}
 			}
 			return checkSorted(ctx, callCtx, lines, cmpFn, checkSilent, *unique, file)
 		}
@@ -327,10 +327,17 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 
 		// Sort the lines. Check ctx.Err() periodically during sorting
 		// so that context cancellation can interrupt long sort operations.
+		// Once cancelled, all subsequent comparisons return 0 so the sort
+		// finishes as quickly as possible without doing real work.
 		var sortCmps int
+		var sortCancelled bool
 		sortCmp := func(a, b string) int {
+			if sortCancelled {
+				return 0
+			}
 			sortCmps++
 			if sortCmps&1023 == 0 && ctx.Err() != nil {
+				sortCancelled = true
 				return 0
 			}
 			return cmpFn(a, b)
