@@ -19,11 +19,6 @@ import (
 	"github.com/DataDog/rshell/interp/builtins/testutil"
 )
 
-func cmdRun(t *testing.T, script, dir string) (string, string, int) {
-	t.Helper()
-	return testutil.RunScript(t, script, dir, interp.AllowedPaths([]string{dir}))
-}
-
 func cmdRunCtx(ctx context.Context, t *testing.T, script, dir string) (string, string, int) {
 	t.Helper()
 	return testutil.RunScriptCtx(ctx, t, script, dir, interp.AllowedPaths([]string{dir}))
@@ -154,3 +149,80 @@ func FuzzTailStdin(f *testing.F) {
 		}
 	})
 }
+
+// FuzzTailLinesOffset fuzzes tail -n +N (skip-first-N-lines offset mode).
+func FuzzTailLinesOffset(f *testing.F) {
+	f.Add([]byte("line1\nline2\nline3\n"), int64(1))
+	f.Add([]byte("line1\nline2\nline3\n"), int64(2))
+	f.Add([]byte{}, int64(1))
+	f.Add([]byte("no newline"), int64(1))
+	f.Add([]byte("a\x00b\nc\n"), int64(2))
+	f.Add(bytes.Repeat([]byte("x"), 4097), int64(1))
+	f.Add([]byte("\n\n\n"), int64(5))
+	f.Add([]byte("hello\nworld\n"), int64(100))
+
+	f.Fuzz(func(t *testing.T, input []byte, n int64) {
+		if len(input) > 1<<20 {
+			return
+		}
+		if n < 1 {
+			return
+		}
+		if n > 10000 {
+			n = 10000
+		}
+
+		dir := t.TempDir()
+		err := os.WriteFile(filepath.Join(dir, "input.txt"), input, 0644)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		_, _, code := cmdRunCtx(ctx, t, fmt.Sprintf("tail -n +%d input.txt", n), dir)
+		if code != 0 && code != 1 {
+			t.Errorf("tail -n +%d unexpected exit code %d", n, code)
+		}
+	})
+}
+
+// FuzzTailBytesOffset fuzzes tail -c +N (skip-first-N-bytes offset mode).
+func FuzzTailBytesOffset(f *testing.F) {
+	f.Add([]byte("hello\nworld\n"), int64(1))
+	f.Add([]byte("hello\nworld\n"), int64(6))
+	f.Add([]byte{}, int64(1))
+	f.Add([]byte("no newline"), int64(3))
+	f.Add([]byte("a\x00b\nc\n"), int64(2))
+	f.Add(bytes.Repeat([]byte("x"), 4097), int64(4096))
+	f.Add([]byte("\n\n\n"), int64(2))
+	f.Add([]byte("hello\nworld\n"), int64(100))
+
+	f.Fuzz(func(t *testing.T, input []byte, n int64) {
+		if len(input) > 1<<20 {
+			return
+		}
+		if n < 1 {
+			return
+		}
+		if n > 10000 {
+			n = 10000
+		}
+
+		dir := t.TempDir()
+		err := os.WriteFile(filepath.Join(dir, "input.txt"), input, 0644)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		_, _, code := cmdRunCtx(ctx, t, fmt.Sprintf("tail -c +%d input.txt", n), dir)
+		if code != 0 && code != 1 {
+			t.Errorf("tail -c +%d unexpected exit code %d", n, code)
+		}
+	})
+}
+
