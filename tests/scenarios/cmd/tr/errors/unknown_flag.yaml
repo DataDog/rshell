@@ -1,0 +1,10 @@
+# Per RULES.md: unknown flags must be rejected
+description: tr with unknown flag exits 1 with error.
+skip_assert_against_bash: true
+input:
+  script: |+
+    tr --invalid-flag a b
+expect:
+  stdout: ""
+  stderr_contains: ["tr:"]
+  exit_code: 1

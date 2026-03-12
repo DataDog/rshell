@@ -47,7 +47,7 @@
 //	    Ignored (output is already unbuffered). Accepted for POSIX
 //	    compatibility.
 //
-//	-h, --help
+//	--help
 //	    Print usage to stdout and exit 0.
 //
 // Exit codes:
@@ -57,11 +57,12 @@
 //
 // Memory safety:
 //
-//	All processing is streaming: input is read line-by-line with a per-line
-//	cap of MaxLineBytes (1 MiB). Lines exceeding this cap cause an error
-//	rather than an unbounded allocation. All read loops check ctx.Err() at
-//	each iteration to honour the shell's execution timeout and support
-//	graceful cancellation.
+//	When line-processing flags are active (-n, -b, -s, -E, -T, -v), input
+//	is read line-by-line with a per-line cap of MaxLineBytes (1 MiB). Lines
+//	exceeding this cap cause an error rather than an unbounded allocation.
+//	Without flags, input is streamed in fixed-size chunks (no per-line cap).
+//	All read loops check ctx.Err() at each iteration to honour the shell's
+//	execution timeout and support graceful cancellation.
 package cat
 
 import (
@@ -89,7 +90,7 @@ const (
 )
 
 func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
-	help := fs.BoolP("help", "h", false, "print usage and exit")
+	help := fs.Bool("help", false, "print usage and exit")
 	number := fs.BoolP("number", "n", false, "number all output lines")
 	numberNonblank := fs.BoolP("number-nonblank", "b", false, "number non-blank output lines, overrides -n")
 	squeezeBlank := fs.BoolP("squeeze-blank", "s", false, "suppress repeated empty output lines")
@@ -239,7 +240,7 @@ func catLines(ctx context.Context, callCtx *builtins.CallContext, file string, s
 
 	sc := bufio.NewScanner(rc)
 	buf := make([]byte, scanBufInit)
-	sc.Buffer(buf, MaxLineBytes)
+	sc.Buffer(buf, MaxLineBytes+1)
 	sc.Split(scanLinesPreservingNewline)
 
 	out := make([]byte, 0, lineBufInit)

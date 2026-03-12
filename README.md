@@ -48,7 +48,7 @@ Every access path is default-deny:
 | External commands    | Blocked (exit code 127)             | Provide an `ExecHandler`                     |
 | Filesystem access    | Blocked                             | Configure `AllowedPaths` with directory list |
 | Environment variables| Empty (no host env inherited)       | Pass variables via the `Env` option          |
-| Output redirections  | Blocked at validation (exit code 2) | Not configurable — always blocked            |
+| Output redirections  | Only `/dev/null` allowed (exit code 2 for other targets) | `>/dev/null`, `2>/dev/null`, `&>/dev/null`, `2>&1` |
 
 **AllowedPaths** restricts all file operations to specified directories using Go's `os.Root` API (`openat` syscalls), making it immune to symlink traversal, TOCTOU races, and `..` escape attacks.
 
@@ -66,7 +66,7 @@ Linux, macOS, and Windows.
 
 ```
 tests/scenarios/
-├── cmd/          # builtin command tests (echo, cat, grep, head, tail, uniq, wc, ...)
+├── cmd/          # builtin command tests (echo, cat, grep, head, tail, test, uniq, wc, ...)
 └── shell/        # shell feature tests (pipes, variables, control flow, ...)
 ```
 

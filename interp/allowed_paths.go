@@ -196,6 +196,13 @@ func (s *pathSandbox) readDir(ctx context.Context, path string) ([]fs.DirEntry, 
 // metadata-only access — no file descriptor is opened, so it works on
 // unreadable files and does not block on special files (e.g. FIFOs).
 func (s *pathSandbox) stat(ctx context.Context, path string) (fs.FileInfo, error) {
+	// The null device (/dev/null on Unix, NUL on Windows) is always
+	// allowed and must be stat-ed directly because os.Root.Stat cannot
+	// resolve platform device names (e.g. NUL on Windows).
+	if isDevNull(path) {
+		return os.Stat(os.DevNull)
+	}
+
 	absPath := toAbs(path, HandlerCtx(ctx).Dir)
 
 	root, relPath, ok := s.resolve(absPath)
@@ -214,6 +221,11 @@ func (s *pathSandbox) stat(ctx context.Context, path string) (fs.FileInfo, error
 // metadata-only call, but does not follow symbolic links — the returned
 // FileInfo describes the link itself rather than its target.
 func (s *pathSandbox) lstat(ctx context.Context, path string) (fs.FileInfo, error) {
+	// The null device is never a symlink, so lstat behaves like stat.
+	if isDevNull(path) {
+		return os.Stat(os.DevNull)
+	}
+
 	absPath := toAbs(path, HandlerCtx(ctx).Dir)
 
 	root, relPath, ok := s.resolve(absPath)

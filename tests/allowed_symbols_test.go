@@ -32,12 +32,18 @@ import (
 // All packages not listed here are implicitly banned, including all
 // third-party packages and other internal module packages.
 var builtinAllowedSymbols = []string{
+	// bytes.IndexByte — finds a byte in a byte slice; pure function, no I/O.
+	"bytes.IndexByte",
 	// bufio.NewScanner — line-by-line input reading (e.g. head, cat); no write or exec capability.
 	"bufio.NewScanner",
+	// bufio.Scanner — scanner type for buffered input reading; no write or exec capability.
+	"bufio.Scanner",
 	// bufio.SplitFunc — type for custom scanner split functions; pure type, no I/O.
 	"bufio.SplitFunc",
 	// context.Context — deadline/cancellation plumbing; pure interface, no side effects.
 	"context.Context",
+	// errors.As — error type assertion; pure function, no I/O.
+	"errors.As",
 	// errors.Is — error comparison; pure function, no I/O.
 	"errors.Is",
 	// errors.New — creates a simple error value; pure function, no I/O.
@@ -80,12 +86,16 @@ var builtinAllowedSymbols = []string{
 	"io.ReadSeeker",
 	// io.SeekCurrent — whence constant for Seek(offset, SeekCurrent); pure constant.
 	"io.SeekCurrent",
+	// math.Inf — returns positive or negative infinity; pure function, no I/O.
+	"math.Inf",
 	// math.MaxInt32 — integer constant; no side effects.
 	"math.MaxInt32",
 	// math.MaxInt64 — integer constant; no side effects.
 	"math.MaxInt64",
-	// math.MinInt64 — integer constant; no side effects.
-	"math.MinInt64",
+	// math.MaxUint64 — integer constant; no side effects.
+	"math.MaxUint64",
+	// math.NaN — returns IEEE 754 NaN value; pure function, no I/O.
+	"math.NaN",
 	// os.FileInfo — file metadata interface returned by Stat; no I/O side effects.
 	"os.FileInfo",
 	// os.O_RDONLY — read-only file flag constant; cannot open files by itself.
@@ -102,8 +112,16 @@ var builtinAllowedSymbols = []string{
 	"slices.SortFunc",
 	// strings.Builder — efficient string concatenation; pure in-memory buffer, no I/O.
 	"strings.Builder",
+	// strings.ContainsRune — checks if a rune is in a string; pure function, no I/O.
+	"strings.ContainsRune",
 	// strings.Join — concatenates a slice of strings with a separator; pure function, no I/O.
 	"strings.Join",
+	// strings.ReplaceAll — replaces all occurrences of a substring; pure function, no I/O.
+	"strings.ReplaceAll",
+	// strings.ToLower — converts string to lowercase; pure function, no I/O.
+	"strings.ToLower",
+	// strconv.IntSize — platform int size constant (32 or 64); pure constant, no I/O.
+	"strconv.IntSize",
 	// strings.Split — splits a string by separator into a slice; pure function, no I/O.
 	"strings.Split",
 	// strconv.Atoi — string-to-int conversion; pure function, no I/O.
@@ -116,8 +134,12 @@ var builtinAllowedSymbols = []string{
 	"strconv.ErrRange",
 	// strconv.NumError — error type for numeric conversion failures; pure type.
 	"strconv.NumError",
+	// strconv.ParseFloat — string-to-float conversion; pure function, no I/O.
+	"strconv.ParseFloat",
 	// strconv.ParseInt — string-to-int conversion with base/bit-size; pure function, no I/O.
 	"strconv.ParseInt",
+	// strconv.ParseUint — string-to-unsigned-int conversion; pure function, no I/O.
+	"strconv.ParseUint",
 	// strconv.FormatInt — int-to-string conversion; pure function, no I/O.
 	"strconv.FormatInt",
 	// strings.HasPrefix — pure function for prefix matching; no I/O.
