@@ -155,16 +155,21 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			if ctx.Err() != nil {
 				break
 			}
-			if err := processFile(ctx, callCtx, file, printedHeader, printHeaders, useBytesMode, count); err != nil {
+			hp, err := processFile(ctx, callCtx, file, printedHeader, printHeaders, useBytesMode, count)
+			if err != nil {
 				name := file
 				if file == "-" {
 					name = "standard input"
 				}
 				callCtx.Errf("head: %s: %s\n", name, callCtx.PortableErr(err))
 				failed = true
-			} else if printHeaders {
-				// A header was successfully printed for this file; subsequent
-				// files should emit a blank-line separator before their header.
+			}
+			if hp {
+				// A header was printed for this file; subsequent files should
+				// emit a blank-line separator before their header. This is set
+				// regardless of whether a read error occurred so that the
+				// separator is not lost when a file opens successfully (header
+				// printed) but reading later fails.
 				printedHeader = true
 			}
 		}
@@ -179,8 +184,9 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 // processFile opens and processes one file (or stdin for "-").
 // prevHeaderPrinted reports whether a header was already emitted for a previous
 // file; when true, a blank-line separator is printed before this file's header.
-func processFile(ctx context.Context, callCtx *builtins.CallContext, file string, prevHeaderPrinted bool, printHeaders, useBytesMode bool, count int64) error {
-	var rc io.ReadCloser
+// It returns (headerPrinted, err): headerPrinted is true whenever a header line
+// was actually written to output, regardless of whether a read error follows.
+func processFile(ctx context.Context, callCtx *builtins.CallContext, file string, prevHeaderPrinted bool, printHeaders, useBytesMode bool, count int64) (headerPrinted bool, err error) {
 	name := file
 	if file == "-" {
 		name = "standard input"
@@ -191,53 +197,106 @@ func processFile(ctx context.Context, callCtx *builtins.CallContext, file string
 				callCtx.Out("\n")
 			}
 			callCtx.Outf("==> %s <==\n", name)
+			headerPrinted = true
 		}
 		if callCtx.Stdin == nil {
-			return nil
+			return headerPrinted, nil
 		}
-		rc = io.NopCloser(callCtx.Stdin)
-	} else {
-		f, err := callCtx.OpenFile(ctx, file, os.O_RDONLY, 0)
-		if err != nil {
-			return err
+		// Pass callCtx.Stdin directly (not wrapped in NopCloser) so that
+		// readLines can seek back buffered bytes when stdin is seekable
+		// (e.g. redirected from a file). This allows a second '-' operand
+		// to continue reading from the correct stream position, matching
+		// GNU head behaviour.
+		r := callCtx.Stdin
+		if useBytesMode {
+			return headerPrinted, readBytes(ctx, callCtx, r, count)
 		}
-		defer f.Close()
-		rc = f
-		// Header is printed after a successful open so that a file that
-		// cannot be opened produces no header (matches GNU head behaviour).
-		if printHeaders {
-			if prevHeaderPrinted {
-				callCtx.Out("\n")
-			}
-			callCtx.Outf("==> %s <==\n", name)
-		}
+		return headerPrinted, readLines(ctx, callCtx, r, count)
 	}
-
+	f, ferr := callCtx.OpenFile(ctx, file, os.O_RDONLY, 0)
+	if ferr != nil {
+		return false, ferr
+	}
+	defer f.Close()
+	// Header is printed after a successful open so that a file that
+	// cannot be opened produces no header (matches GNU head behaviour).
+	if printHeaders {
+		if prevHeaderPrinted {
+			callCtx.Out("\n")
+		}
+		callCtx.Outf("==> %s <==\n", name)
+		headerPrinted = true
+	}
 	if useBytesMode {
-		return readBytes(ctx, callCtx, rc, count)
+		return headerPrinted, readBytes(ctx, callCtx, f, count)
 	}
-	return readLines(ctx, callCtx, rc, count)
+	return headerPrinted, readLines(ctx, callCtx, f, count)
 }
 
 // readLines writes the first count lines of r to callCtx.Stdout, preserving
 // line endings exactly (including a missing final newline).
+//
+// When r implements io.ReadSeeker (e.g. stdin redirected from a file), readLines
+// seeks back any bytes the internal scanner read ahead but did not include in
+// the N-line output. This allows a subsequent read on the same stream (e.g. a
+// second '-' operand) to start from the correct position, matching GNU head.
 func readLines(ctx context.Context, callCtx *builtins.CallContext, r io.Reader, count int64) error {
-	sc := bufio.NewScanner(r)
+	// Wrap r in a byte counter so we can compute how many bytes the scanner
+	// consumed from the underlying source — needed for the seek-back below.
+	cr := &byteCountReader{r: r}
+	sc := bufio.NewScanner(cr)
 	buf := make([]byte, 4096)
 	sc.Buffer(buf, MaxLineBytes)
 	sc.Split(scanLinesPreservingNewline)
 
 	var emitted int64
+	var bytesEmitted int64
 	for emitted < count && sc.Scan() {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		if _, err := callCtx.Stdout.Write(sc.Bytes()); err != nil {
+		token := sc.Bytes()
+		if _, err := callCtx.Stdout.Write(token); err != nil {
 			return err
 		}
 		emitted++
+		bytesEmitted += int64(len(token))
 	}
-	return sc.Err()
+	if err := sc.Err(); err != nil {
+		return err
+	}
+	// If the underlying reader supports seeking, rewind any bytes the scanner
+	// read ahead from the source but did not include in the N-line output.
+	// excess = bytes pulled from r by the scanner − bytes returned as tokens.
+	//
+	// *os.File always satisfies io.ReadSeeker but Seek fails at runtime for
+	// non-seekable fds (pipes, sockets). We probe with a no-op Seek(0, Current)
+	// first; if it fails the stream is non-seekable and we skip the rewind
+	// (pipe read-ahead is accepted as consumed, matching OS behaviour).
+	if rs, ok := r.(io.ReadSeeker); ok {
+		if excess := cr.total - bytesEmitted; excess > 0 {
+			if _, err := rs.Seek(0, io.SeekCurrent); err == nil {
+				if _, err := rs.Seek(-excess, io.SeekCurrent); err != nil {
+					return err
+				}
+			}
+		}
+	}
+	return nil
+}
+
+// byteCountReader is an io.Reader wrapper that counts the total bytes read
+// from the underlying reader. Used by readLines to calculate scanner read-ahead
+// so that seekable streams can be rewound to the correct position.
+type byteCountReader struct {
+	r     io.Reader
+	total int64
+}
+
+func (c *byteCountReader) Read(p []byte) (int, error) {
+	n, err := c.r.Read(p)
+	c.total += int64(n)
+	return n, err
 }
 
 // readBytes writes the first count bytes of r to callCtx.Stdout. It reads
@@ -329,7 +388,14 @@ func newBoolSeqFlag(seq *int) *boolSeqFlag {
 }
 
 func (f *boolSeqFlag) String() string { return "false" }
-func (f *boolSeqFlag) Set(_ string) error {
+func (f *boolSeqFlag) Set(s string) error {
+	// GNU head rejects --quiet=<value> and --verbose=<value> with an error.
+	// With NoOptDefVal = "true", pflag calls Set("true") for bare --quiet and
+	// Set("<value>") when an explicit =<value> is given. We accept only "true"
+	// (the NoOptDefVal) and reject any other value to match GNU head behaviour.
+	if s != "true" {
+		return errors.New("option doesn't allow an argument")
+	}
 	*f.seq++
 	f.pos = *f.seq
 	return nil
