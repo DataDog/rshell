@@ -1,9 +1,0 @@
-description: cat --help prints usage to stdout and exits 0.
-skip_assert_against_bash: true
-input:
-  script: |+
-    cat --help
-expect:
-  stdout_contains: ["Usage:"]
-  stderr: ""
-  exit_code: 0

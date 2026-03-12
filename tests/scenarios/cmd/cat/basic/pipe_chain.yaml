@@ -1,9 +1,0 @@
-description: Cat piped through cat produces the same output.
-input:
-  script: |+
-    echo "double cat" | cat | cat
-expect:
-  stdout: |+
-    double cat
-  stderr: ""
-  exit_code: 0
