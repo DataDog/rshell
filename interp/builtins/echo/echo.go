@@ -184,7 +184,7 @@ func processEscapes(s string) (string, bool) {
 				continue
 			}
 			i += consumed
-			writeUnicodeCodepoint(&b, val)
+			writeUnicodeCodepoint(&b, int64(val))
 			continue
 		case 'U':
 			// Unicode: \UHHHHHHHH (up to 8 hex digits)
