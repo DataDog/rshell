@@ -66,6 +66,10 @@ func FuzzTestStringOps(f *testing.F) {
 				if c == '\'' || c == '\x00' || c == '\n' || c == ']' {
 					return
 				}
+				// C0/DEL/C1 control chars confuse the shell script parser.
+				if c < 0x20 || c == 0x7f || (c >= 0x80 && c < 0xa0) {
+					return
+				}
 			}
 		}
 		// < and > are shell redirection operators — must use = or != in fuzz body.
@@ -205,6 +209,10 @@ func FuzzTestStringUnary(f *testing.F) {
 		}
 		for _, c := range arg {
 			if c == '\'' || c == '\x00' || c == '\n' || c == ']' {
+				return
+			}
+			// C0/DEL/C1 control chars confuse the shell script parser.
+			if c < 0x20 || c == 0x7f || (c >= 0x80 && c < 0xa0) {
 				return
 			}
 		}

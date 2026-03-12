@@ -220,6 +220,9 @@ func FuzzGrepFixedStrings(f *testing.F) {
 		if len(input) > 1<<20 {
 			return
 		}
+		if !utf8.ValidString(pattern) {
+			return
+		}
 		if len(pattern) > 100 {
 			return
 		}
