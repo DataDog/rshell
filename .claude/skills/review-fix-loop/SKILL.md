@@ -291,9 +291,29 @@ Run a final verification regardless of how the loop exited:
      2>&1 | head -50
    ```
 
-Record the final state of each dimension (self-review, external reviews, CI).
+4. **Confirm @codex has replied to the LATEST review request:**
 
-**If any verification fails** (CI failing, unresolved threads remain, or unpushed commits that can't be pushed), reset Step 2 and all its sub-steps to `pending`, and go back to **Step 2: Run the review-fix loop** for another iteration. Only proceed to Step 4 when all three verifications pass.
+   The review request comment posted in Step 2A2 triggers @codex asynchronously. You must verify that @codex has actually responded to **the most recent** request, not a previous iteration's request. Replies from earlier iterations do NOT count.
+
+   To check this:
+   - Find the timestamp of the **last** `@codex` review request comment (the one posted in Step 2A2 of the final iteration). You can identify it by looking for comments authored by the current user containing "@codex" in the body:
+     ```bash
+     gh api repos/{owner}/{repo}/issues/{pr-number}/comments --jq '
+       [.[] | select(.body | test("@codex")) | select(.user.login != "codex")] | last | .created_at'
+     ```
+   - Then check whether @codex has posted a review **after** that timestamp:
+     ```bash
+     gh api repos/{owner}/{repo}/pulls/{pr-number}/reviews --jq '
+       [.[] | select(.user.login == "codex")] | last | {submitted_at, state}'
+     ```
+   - Compare the two timestamps. If @codex's latest review `submitted_at` is **before** the latest request's `created_at`, then @codex has NOT yet replied to the current request — **this verification fails**.
+   - If @codex has no reviews at all, the verification also fails.
+
+   **If @codex hasn't replied yet**, fail this verification.
+
+Record the final state of each dimension (self-review, external reviews, CI, @codex response).
+
+**If any verification fails** (CI failing, unresolved threads remain, unpushed commits that can't be pushed, or @codex hasn't responded to the latest review request), reset Step 2 and all its sub-steps to `pending`, and go back to **Step 2: Run the review-fix loop** for another iteration. Only proceed to Step 4 when all verifications pass.
 
 **Completion check:** All three verifications passed. Mark Step 3 as `completed`.
 
