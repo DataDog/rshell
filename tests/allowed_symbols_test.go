@@ -48,6 +48,8 @@ var builtinAllowedSymbols = []string{
 	"errors.Is",
 	// errors.New — creates a simple error value; pure function, no I/O.
 	"errors.New",
+	// fmt.Errorf — creates a formatted error value; pure function, no I/O.
+	"fmt.Errorf",
 	// fmt.Sprintf — string formatting; pure function, no I/O.
 	"fmt.Sprintf",
 	// io/fs.FileInfo — interface type for file information; no side effects.

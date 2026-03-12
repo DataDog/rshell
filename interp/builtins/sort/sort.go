@@ -524,7 +524,7 @@ func parseFieldSpec(s string) (fieldPos, parsedOpts, error) {
 		case 'd':
 			po.ko.dictOrder = true
 		default:
-			return fp, po, errors.New(fmt.Sprintf("invalid key option: %c", c))
+			return fp, po, fmt.Errorf("invalid key option: %c", c)
 		}
 	}
 
