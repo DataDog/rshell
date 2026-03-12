@@ -1,0 +1,9 @@
+# Derived from uutils test_test.rs — missing closing bracket
+description: "[ without closing ] gives exit code 2 and error"
+skip_assert_against_bash: true  # bash prefixes error with scriptname:line
+input:
+  script: |+
+    [ 1 -eq 1
+expect:
+  stderr: "[: missing `]'\n"
+  exit_code: 2

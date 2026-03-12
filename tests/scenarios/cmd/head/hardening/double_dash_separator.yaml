@@ -1,6 +1,5 @@
 # Standard POSIX -- end-of-flags behavior
 description: head treats arguments after -- as file names, even if they look like flags.
-skip_assert_against_bash: true
 setup:
   files:
     - path: -n

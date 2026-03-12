@@ -77,6 +77,65 @@ func (s *pathSandbox) resolve(absPath string) (*os.Root, string, bool) {
 	return nil, "", false
 }
 
+// access checks whether the resolved path is accessible with the given mode.
+// All operations go through os.Root to stay within the sandbox.
+// Mode: 0x04 = read, 0x02 = write, 0x01 = execute.
+func (s *pathSandbox) access(ctx context.Context, path string, mode uint32) error {
+	absPath := toAbs(path, HandlerCtx(ctx).Dir)
+
+	if s == nil {
+		return &os.PathError{Op: "access", Path: path, Err: os.ErrPermission}
+	}
+	for _, ar := range s.roots {
+		rel, err := filepath.Rel(ar.absPath, absPath)
+		if err != nil {
+			continue
+		}
+		if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			continue
+		}
+
+		// Open through os.Root once. This checks read access and gives
+		// us a file descriptor for an atomic Stat (no TOCTOU window).
+		f, err := ar.root.Open(rel)
+		if err != nil {
+			if mode&0x04 != 0 && !isErrIsDirectory(err) {
+				return portablePathError(err)
+			}
+			// Read not requested, or target is a directory; fall back to Stat.
+			info, serr := ar.root.Stat(rel)
+			if serr != nil {
+				return portablePathError(serr)
+			}
+			if !effectiveHasPerm(info, 0222, 0111, mode&0x02 != 0, mode&0x01 != 0) {
+				return &os.PathError{Op: "access", Path: path, Err: os.ErrPermission}
+			}
+			return nil
+		}
+
+		// For write and execute, use mode bits from f.Stat() on the
+		// open fd — atomic, no TOCTOU window.
+		// The sandbox is read-only so -w is informational only.
+		// effectiveHasPerm checks the permission class (owner/group/other)
+		// that applies to the current process's effective UID/GID on Unix,
+		// rather than the union of all classes.
+		if mode&0x03 != 0 {
+			info, err := f.Stat()
+			if err != nil {
+				f.Close()
+				return portablePathError(err)
+			}
+			if !effectiveHasPerm(info, 0222, 0111, mode&0x02 != 0, mode&0x01 != 0) {
+				f.Close()
+				return &os.PathError{Op: "access", Path: path, Err: os.ErrPermission}
+			}
+		}
+		f.Close()
+		return nil
+	}
+	return &os.PathError{Op: "access", Path: path, Err: os.ErrPermission}
+}
+
 // toAbs resolves path against cwd when it is not already absolute.
 func toAbs(path, cwd string) string {
 	if filepath.IsAbs(path) {
@@ -118,12 +177,12 @@ func (s *pathSandbox) readDir(ctx context.Context, path string) ([]fs.DirEntry, 
 
 	f, err := root.Open(relPath)
 	if err != nil {
-		return nil, err
+		return nil, portablePathError(err)
 	}
 	defer f.Close()
 	entries, err := f.ReadDir(-1)
 	if err != nil {
-		return nil, err
+		return nil, portablePathError(err)
 	}
 	// os.Root's ReadDir does not guarantee sorted order like os.ReadDir.
 	// Sort to match POSIX glob expansion expectations.
@@ -131,6 +190,42 @@ func (s *pathSandbox) readDir(ctx context.Context, path string) ([]fs.DirEntry, 
 		return strings.Compare(a.Name(), b.Name())
 	})
 	return entries, nil
+}
+
+// stat implements the restricted stat policy. It uses os.Root.Stat for
+// metadata-only access — no file descriptor is opened, so it works on
+// unreadable files and does not block on special files (e.g. FIFOs).
+func (s *pathSandbox) stat(ctx context.Context, path string) (fs.FileInfo, error) {
+	absPath := toAbs(path, HandlerCtx(ctx).Dir)
+
+	root, relPath, ok := s.resolve(absPath)
+	if !ok {
+		return nil, &os.PathError{Op: "stat", Path: path, Err: os.ErrPermission}
+	}
+
+	info, err := root.Stat(relPath)
+	if err != nil {
+		return nil, portablePathError(err)
+	}
+	return info, nil
+}
+
+// lstat implements the restricted lstat policy. Like stat, it uses a
+// metadata-only call, but does not follow symbolic links — the returned
+// FileInfo describes the link itself rather than its target.
+func (s *pathSandbox) lstat(ctx context.Context, path string) (fs.FileInfo, error) {
+	absPath := toAbs(path, HandlerCtx(ctx).Dir)
+
+	root, relPath, ok := s.resolve(absPath)
+	if !ok {
+		return nil, &os.PathError{Op: "lstat", Path: path, Err: os.ErrPermission}
+	}
+
+	info, err := root.Lstat(relPath)
+	if err != nil {
+		return nil, portablePathError(err)
+	}
+	return info, nil
 }
 
 // Close releases all os.Root file descriptors. It is safe to call multiple times.

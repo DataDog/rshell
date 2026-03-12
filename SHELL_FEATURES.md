@@ -8,12 +8,17 @@ Blocked features are rejected before execution with exit code 2.
 - ✅ `break` — exit the innermost `for` loop
 - ✅ `cat [-n] [FILE]...` — concatenate files to stdout; `-n` numbers output lines
 - ✅ `continue` — skip to the next iteration of the innermost `for` loop
+- ✅ `cut [-b LIST|-c LIST|-f LIST] [-d DELIM] [-s] [-n] [--complement] [--output-delimiter=STRING] [FILE]...` — remove sections from each line of files
 - ✅ `echo [-n] [-e] [ARG]...` — write arguments to stdout
 - ✅ `exit [N]` — exit the shell with status N (default 0)
 - ✅ `false` — return exit code 1
-- ✅ `head [-n N|-c N] [-q|-v] [-z] [FILE]...` — output the first part of files (default: first 10 lines)
+- ✅ `grep [-EFGivclLnHhoqsxw] [-e PATTERN] [-m NUM] [-A NUM] [-B NUM] [-C NUM] PATTERN [FILE]...` — print lines that match patterns; uses RE2 regex engine (linear-time, no backtracking)
+- ✅ `head [-n N|-c N] [-q|-v] [FILE]...` — output the first part of files (default: first 10 lines); `-z`/`--zero-terminated` and `--follow` are rejected
+- ✅ `ls [-1aAdFhlpRrSt] [FILE]...` — list directory contents
+- ✅ `strings [-a] [-n MIN] [-t o|d|x] [-o] [-f] [-s SEP] [FILE]...` — print printable character sequences in files (default min length 4); offsets via `-t`/`-o`; filename prefix via `-f`; custom separator via `-s`
 - ✅ `tail [-n N|-c N] [-q|-v] [-z] [FILE]...` — output the last part of files (default: last 10 lines); supports `+N` offset mode; `-f`/`--follow` is rejected
 - ✅ `true` — return exit code 0
+- ✅ `uniq [OPTION]... [INPUT]` — report or omit repeated lines
 - ✅ `wc [-l] [-w] [-c] [-m] [FILE]...` — count lines, words, bytes, or characters in files
 - ❌ All other commands — return exit code 127 with `<cmd>: not found` unless an ExecHandler is configured
 
@@ -39,7 +44,7 @@ Blocked features are rejected before execution with exit code 2.
 - ✅ `!` — negation (inverts exit code)
 - ✅ `{ CMDS; }` — brace group
 - ✅ `;` and newline as command separators
-- ❌ `if` / `elif` / `else`
+- ✅ `if` / `elif` / `else`
 - ❌ `while` / `until`
 - ❌ `case`
 - ❌ `select`

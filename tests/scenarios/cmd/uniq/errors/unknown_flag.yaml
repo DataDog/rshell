@@ -1,0 +1,9 @@
+# Test unknown flag rejection
+description: uniq rejects unknown flags with exit code 1.
+skip_assert_against_bash: true
+input:
+  script: |+
+    uniq --definitely-invalid
+expect:
+  stderr_contains: ["unknown flag"]
+  exit_code: 1

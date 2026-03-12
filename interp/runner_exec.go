@@ -9,8 +9,10 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"sync"
+	"time"
 
 	"mvdan.cc/sh/v3/expand"
 	"mvdan.cc/sh/v3/syntax"
@@ -149,6 +151,19 @@ func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {
 				r.exit.fatal(rLeft.exit.err)
 			}
 		}
+	case *syntax.IfClause:
+		r.stmts(ctx, cm.Cond)
+		if r.exit.exiting || r.breakEnclosing > 0 || r.contnEnclosing > 0 {
+			break
+		}
+		if r.exit.ok() {
+			r.stmts(ctx, cm.Then)
+		} else {
+			r.exit = exitStatus{}
+			if cm.Else != nil {
+				r.cmd(ctx, cm.Else)
+			}
+		}
 	case *syntax.ForClause:
 		switch y := cm.Loop.(type) {
 		case *syntax.WordIter:
@@ -163,8 +178,20 @@ func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {
 			for _, field := range items {
 				r.setVarString(name, field)
 				if r.loopStmtsBroken(ctx, cm.Do) {
+					// Excess continue at outermost loop: clamp and keep iterating
+					// (bash treats "continue 99" in a single loop like "continue 1").
+					if r.contnEnclosing > 0 && !r.inLoop {
+						r.contnEnclosing = 0
+						continue
+					}
 					break
 				}
+			}
+			// Clamp excess break/continue levels at the outermost loop.
+			// Bash discards excess levels (e.g. "break 99" with 1 loop).
+			if !r.inLoop {
+				r.breakEnclosing = 0
+				r.contnEnclosing = 0
 			}
 		default:
 			r.exit.fatal(fmt.Errorf("unsupported loop type: %T", cm.Loop))
@@ -177,6 +204,9 @@ func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {
 func (r *Runner) stmts(ctx context.Context, stmts []*syntax.Stmt) {
 	for _, stmt := range stmts {
 		r.stmt(ctx, stmt)
+		if r.exit.exiting || r.breakEnclosing > 0 || r.contnEnclosing > 0 {
+			return
+		}
 	}
 }
 
@@ -212,7 +242,20 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 			OpenFile: func(ctx context.Context, path string, flags int, mode os.FileMode) (io.ReadWriteCloser, error) {
 				return r.open(ctx, path, flags, mode, false)
 			},
+			ReadDir: func(ctx context.Context, path string) ([]fs.DirEntry, error) {
+				return r.sandbox.readDir(r.handlerCtx(ctx, todoPos), path)
+			},
+			StatFile: func(ctx context.Context, path string) (fs.FileInfo, error) {
+				return r.sandbox.stat(r.handlerCtx(ctx, todoPos), path)
+			},
+			LstatFile: func(ctx context.Context, path string) (fs.FileInfo, error) {
+				return r.sandbox.lstat(r.handlerCtx(ctx, todoPos), path)
+			},
+			AccessFile: func(ctx context.Context, path string, mode uint32) error {
+				return r.sandbox.access(r.handlerCtx(ctx, todoPos), path, mode)
+			},
 			PortableErr: portableErrMsg,
+			Now:         time.Now,
 		}
 		if r.stdin != nil { // do not assign a typed nil into the io.Reader interface
 			call.Stdin = r.stdin
