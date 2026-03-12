@@ -34,7 +34,7 @@
 //	-L, --max-line-length
 //	    Print the length of the longest line.
 //
-//	-h, --help
+//	--help
 //	    Print this usage message to stdout and exit 0.
 //
 // Output columns always appear in a fixed order: lines, words, chars,
@@ -89,7 +89,7 @@ type options struct {
 }
 
 func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
-	help := fs.BoolP("help", "h", false, "print usage and exit")
+	help := fs.Bool("help", false, "print usage and exit")
 	lines := fs.BoolP("lines", "l", false, "print the newline counts")
 	words := fs.BoolP("words", "w", false, "print the word counts")
 	bytesFlag := fs.BoolP("bytes", "c", false, "print the byte counts")
@@ -160,7 +160,9 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 				}
 				callCtx.Errf("wc: %s: %s\n", name, callCtx.PortableErr(err))
 				failed = true
-				if c == (counts{}) {
+				// GNU wc prints a zero count line for directories but not
+				// for missing files or other open errors.
+				if !isErrIsDir(err) {
 					continue
 				}
 			}

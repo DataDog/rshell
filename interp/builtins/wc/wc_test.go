@@ -292,11 +292,12 @@ func TestWcHelp(t *testing.T) {
 	assert.Contains(t, stdout, "Usage:")
 }
 
-func TestWcHelpShort(t *testing.T) {
+func TestWcHelpShortRejected(t *testing.T) {
+	// GNU wc does not support -h; it's an invalid option.
 	dir := t.TempDir()
-	stdout, _, code := cmdRun(t, "wc -h", dir)
-	assert.Equal(t, 0, code)
-	assert.Contains(t, stdout, "Usage:")
+	_, stderr, code := cmdRun(t, "wc -h", dir)
+	assert.Equal(t, 1, code)
+	assert.Contains(t, stderr, "wc:")
 }
 
 // --- Error cases ---
@@ -325,9 +326,11 @@ func TestWcFiles0FromRejected(t *testing.T) {
 
 func TestWcDirectory(t *testing.T) {
 	dir := t.TempDir()
-	_, stderr, code := cmdRun(t, "wc .", dir)
+	stdout, stderr, code := cmdRun(t, "wc .", dir)
 	assert.Equal(t, 1, code)
 	assert.Contains(t, stderr, "wc:")
+	// GNU wc prints a zero count line alongside the error
+	assert.Equal(t, "0 0 0 .\n", stdout)
 }
 
 // --- Hardening ---
