@@ -259,8 +259,8 @@ func countReader(ctx context.Context, r io.Reader) (counts, error) {
 			}
 			c.chars += int64(utf8.RuneCount(chunk))
 			// carryN bytes are subtracted here and will be re-added via
-		// n += carryN at the top of the next iteration.
-		c.bytes -= int64(carryN)
+			// n += carryN at the top of the next iteration.
+			c.bytes -= int64(carryN)
 
 			for i := 0; i < len(chunk); {
 				r, size := utf8.DecodeRune(chunk[i:])
@@ -278,11 +278,21 @@ func countReader(ctx context.Context, r io.Reader) (counts, error) {
 				} else if r == '\t' {
 					lineLen = (lineLen/8 + 1) * 8
 					inWord = false
-				} else if r == ' ' || r == '\v' || r == '\f' {
+				} else if r == '\f' {
+					if lineLen > c.maxLineLen {
+						c.maxLineLen = lineLen
+					}
+					lineLen = 0
+					inWord = false
+				} else if r == ' ' {
 					lineLen++
 					inWord = false
+				} else if r == '\v' {
+					// vertical tab: zero display width, breaks words
+					inWord = false
 				} else {
-					if !inWord {
+					isControl := unicode.Is(unicode.Cc, r)
+					if !inWord && !isControl {
 						c.words++
 						inWord = true
 					}

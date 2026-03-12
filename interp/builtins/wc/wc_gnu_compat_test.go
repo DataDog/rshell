@@ -86,7 +86,7 @@ func TestGNUCompatWordsMulti(t *testing.T) {
 // TestGNUCompatBytesCount — -c on "x".
 //
 // GNU command: printf 'x' | gwc -c
-// Expected: "1\n"
+// Expected: "0\n"
 func TestGNUCompatBytesCount(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, dir, "file.txt", "x")
@@ -148,16 +148,16 @@ func TestGNUCompatCharsMultibyte(t *testing.T) {
 	assert.Equal(t, "5 file.txt\n", stdout)
 }
 
-// TestGNUCompatControlCharIsWord — control byte \x01 counts as a word.
+// TestGNUCompatControlCharIsWord — control byte \x01 does NOT count as a word.
 //
 // GNU command: printf '\x01\n' | gwc -w
-// Expected: "1\n"
+// Expected: "0\n"
 func TestGNUCompatControlCharIsWord(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, dir, "file.txt", "\x01\n")
 	stdout, _, code := cmdRun(t, "wc -w file.txt", dir)
 	assert.Equal(t, 0, code)
-	assert.Equal(t, "1 file.txt\n", stdout)
+	assert.Equal(t, "0 file.txt\n", stdout)
 }
 
 // TestGNUCompatRejectedFlag — unknown flag exits 1.
