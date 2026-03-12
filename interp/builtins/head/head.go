@@ -76,9 +76,19 @@ const MaxLineBytes = 1 << 20 // 1 MiB
 // framework calls Parse and passes positional arguments to the handler.
 func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 	help := fs.BoolP("help", "h", false, "print usage and exit")
-	quiet := fs.BoolP("quiet", "q", false, "never print file name headers")
-	_ = fs.Bool("silent", false, "alias for --quiet")
-	verbose := fs.BoolP("verbose", "v", false, "always print file name headers")
+
+	// quietFlag, silentFlag, and verboseFlag share a sequence counter so that
+	// after parsing we can determine which of -q/--quiet/--silent/-v/--verbose
+	// appeared last on the command line — the last flag wins, matching GNU head.
+	// NoOptDefVal is set to "true" so pflag treats these as boolean flags that
+	// can be given without a "=value" argument (e.g. "--quiet" not "--quiet=true").
+	var headerSeq int
+	quietFlag := newBoolSeqFlag(&headerSeq)
+	silentFlag := newBoolSeqFlag(&headerSeq)
+	verboseFlag := newBoolSeqFlag(&headerSeq)
+	fs.VarPF(quietFlag, "quiet", "q", "never print file name headers").NoOptDefVal = "true"
+	fs.VarPF(silentFlag, "silent", "", "alias for --quiet").NoOptDefVal = "true"
+	fs.VarPF(verboseFlag, "verbose", "v", "always print file name headers").NoOptDefVal = "true"
 
 	// linesFlag and bytesFlag share a sequence counter so that after parsing
 	// we can compare their pos fields to determine which appeared last on the
@@ -100,9 +110,20 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			return builtins.Result{}
 		}
 
-		// --silent is an alias for --quiet.
-		if fs.Changed("silent") {
-			*quiet = true
+		// Validate all explicitly set mode flags upfront. GNU head rejects
+		// invalid values even for flags that are overridden by a later mode
+		// flag on the command line (e.g. "head -n xyz -c 1" fails).
+		if linesFlag.pos > 0 {
+			if _, ok := parseCount(linesFlag.val); !ok {
+				callCtx.Errf("head: invalid number of lines: %q\n", linesFlag.val)
+				return builtins.Result{Code: 1}
+			}
+		}
+		if bytesFlag.pos > 0 {
+			if _, ok := parseCount(bytesFlag.val); !ok {
+				callCtx.Errf("head: invalid number of bytes: %q\n", bytesFlag.val)
+				return builtins.Result{Code: 1}
+			}
 		}
 
 		// Bytes mode wins if -c/--bytes was parsed after -n/--lines. When neither
@@ -110,7 +131,8 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 		// the other stays 0, so the comparison selects correctly.
 		useBytesMode := bytesFlag.pos > linesFlag.pos
 
-		// Parse the count for the chosen mode.
+		// Parse the count for the chosen mode (handles the default "10" for
+		// linesFlag when neither flag was explicitly given).
 		countStr := linesFlag.val
 		modeLabel := "lines"
 		if useBytesMode {
@@ -129,25 +151,43 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			files = []string{"-"}
 		}
 
-		// Header printing: on by default for multiple files, suppressed by -q,
-		// forced for a single file by -v.
-		printHeaders := len(files) > 1 || *verbose
-		if *quiet {
-			printHeaders = false
+		// Header printing: the last of -q/--quiet/--silent and -v/--verbose wins
+		// (matching GNU head). --silent is an alias for --quiet and shares the
+		// same sequence counter. If none are specified, print headers only when
+		// multiple files are given.
+		lastQuietPos := max(quietFlag.pos, silentFlag.pos)
+		var printHeaders bool
+		switch {
+		case verboseFlag.pos > lastQuietPos:
+			printHeaders = true // -v was specified last
+		case lastQuietPos > verboseFlag.pos:
+			printHeaders = false // -q or --silent was specified last
+		default:
+			printHeaders = len(files) > 1 // neither: default multi-file behaviour
 		}
 
 		var failed bool
-		for i, file := range files {
+		var printedHeader bool
+		for _, file := range files {
 			if ctx.Err() != nil {
 				break
 			}
-			if err := processFile(ctx, callCtx, file, i, printHeaders, useBytesMode, count); err != nil {
+			hp, err := processFile(ctx, callCtx, file, printedHeader, printHeaders, useBytesMode, count)
+			if err != nil {
 				name := file
 				if file == "-" {
 					name = "standard input"
 				}
 				callCtx.Errf("head: %s: %s\n", name, callCtx.PortableErr(err))
 				failed = true
+			}
+			if hp {
+				// A header was printed for this file; subsequent files should
+				// emit a blank-line separator before their header. This is set
+				// regardless of whether a read error occurred so that the
+				// separator is not lost when a file opens successfully (header
+				// printed) but reading later fails.
+				printedHeader = true
 			}
 		}
 
@@ -159,65 +199,121 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 }
 
 // processFile opens and processes one file (or stdin for "-").
-func processFile(ctx context.Context, callCtx *builtins.CallContext, file string, idx int, printHeaders, useBytesMode bool, count int64) error {
-	var rc io.ReadCloser
+// prevHeaderPrinted reports whether a header was already emitted for a previous
+// file; when true, a blank-line separator is printed before this file's header.
+// It returns (headerPrinted, err): headerPrinted is true whenever a header line
+// was actually written to output, regardless of whether a read error follows.
+func processFile(ctx context.Context, callCtx *builtins.CallContext, file string, prevHeaderPrinted bool, printHeaders, useBytesMode bool, count int64) (headerPrinted bool, err error) {
 	name := file
 	if file == "-" {
 		name = "standard input"
 		// Print the header before the nil-stdin guard so that -v always
 		// emits a header for stdin even when no input stream is present.
 		if printHeaders {
-			if idx > 0 {
+			if prevHeaderPrinted {
 				callCtx.Out("\n")
 			}
 			callCtx.Outf("==> %s <==\n", name)
+			headerPrinted = true
 		}
 		if callCtx.Stdin == nil {
-			return nil
+			return headerPrinted, nil
 		}
-		rc = io.NopCloser(callCtx.Stdin)
-	} else {
-		f, err := callCtx.OpenFile(ctx, file, os.O_RDONLY, 0)
-		if err != nil {
-			return err
+		// Pass callCtx.Stdin directly (not wrapped in NopCloser) so that
+		// readLines can seek back buffered bytes when stdin is seekable
+		// (e.g. redirected from a file). This allows a second '-' operand
+		// to continue reading from the correct stream position, matching
+		// GNU head behaviour.
+		r := callCtx.Stdin
+		if useBytesMode {
+			return headerPrinted, readBytes(ctx, callCtx, r, count)
 		}
-		defer f.Close()
-		rc = f
-		// Header is printed after a successful open so that a file that
-		// cannot be opened produces no header (matches GNU head behaviour).
-		if printHeaders {
-			if idx > 0 {
-				callCtx.Out("\n")
-			}
-			callCtx.Outf("==> %s <==\n", name)
-		}
+		return headerPrinted, readLines(ctx, callCtx, r, count)
 	}
-
+	f, ferr := callCtx.OpenFile(ctx, file, os.O_RDONLY, 0)
+	if ferr != nil {
+		return false, ferr
+	}
+	defer f.Close()
+	// Header is printed after a successful open so that a file that
+	// cannot be opened produces no header (matches GNU head behaviour).
+	if printHeaders {
+		if prevHeaderPrinted {
+			callCtx.Out("\n")
+		}
+		callCtx.Outf("==> %s <==\n", name)
+		headerPrinted = true
+	}
 	if useBytesMode {
-		return readBytes(ctx, callCtx, rc, count)
+		return headerPrinted, readBytes(ctx, callCtx, f, count)
 	}
-	return readLines(ctx, callCtx, rc, count)
+	return headerPrinted, readLines(ctx, callCtx, f, count)
 }
 
 // readLines writes the first count lines of r to callCtx.Stdout, preserving
 // line endings exactly (including a missing final newline).
+//
+// When r implements io.ReadSeeker (e.g. stdin redirected from a file), readLines
+// seeks back any bytes the internal scanner read ahead but did not include in
+// the N-line output. This allows a subsequent read on the same stream (e.g. a
+// second '-' operand) to start from the correct position, matching GNU head.
 func readLines(ctx context.Context, callCtx *builtins.CallContext, r io.Reader, count int64) error {
-	sc := bufio.NewScanner(r)
+	// Wrap r in a byte counter so we can compute how many bytes the scanner
+	// consumed from the underlying source — needed for the seek-back below.
+	cr := &byteCountReader{r: r}
+	sc := bufio.NewScanner(cr)
 	buf := make([]byte, 4096)
 	sc.Buffer(buf, MaxLineBytes)
 	sc.Split(scanLinesPreservingNewline)
 
 	var emitted int64
+	var bytesEmitted int64
 	for emitted < count && sc.Scan() {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		if _, err := callCtx.Stdout.Write(sc.Bytes()); err != nil {
+		token := sc.Bytes()
+		if _, err := callCtx.Stdout.Write(token); err != nil {
 			return err
 		}
 		emitted++
+		bytesEmitted += int64(len(token))
 	}
-	return sc.Err()
+	if err := sc.Err(); err != nil {
+		return err
+	}
+	// If the underlying reader supports seeking, rewind any bytes the scanner
+	// read ahead from the source but did not include in the N-line output.
+	// excess = bytes pulled from r by the scanner − bytes returned as tokens.
+	//
+	// *os.File always satisfies io.ReadSeeker but Seek fails at runtime for
+	// non-seekable fds (pipes, sockets). We probe with a no-op Seek(0, Current)
+	// first; if it fails the stream is non-seekable and we skip the rewind
+	// (pipe read-ahead is accepted as consumed, matching OS behaviour).
+	if rs, ok := r.(io.ReadSeeker); ok {
+		if excess := cr.total - bytesEmitted; excess > 0 {
+			if _, err := rs.Seek(0, io.SeekCurrent); err == nil {
+				if _, err := rs.Seek(-excess, io.SeekCurrent); err != nil {
+					return err
+				}
+			}
+		}
+	}
+	return nil
+}
+
+// byteCountReader is an io.Reader wrapper that counts the total bytes read
+// from the underlying reader. Used by readLines to calculate scanner read-ahead
+// so that seekable streams can be rewound to the correct position.
+type byteCountReader struct {
+	r     io.Reader
+	total int64
+}
+
+func (c *byteCountReader) Read(p []byte) (int, error) {
+	n, err := c.r.Read(p)
+	c.total += int64(n)
+	return n, err
 }
 
 // readBytes writes the first count bytes of r to callCtx.Stdout. It reads
@@ -293,6 +389,41 @@ func (f *modeFlag) Set(s string) error {
 	return nil
 }
 func (f *modeFlag) Type() string { return "string" }
+
+// boolSeqFlag is a pflag.Value implementation for boolean flags that share a
+// sequence counter with other flags. After pflag.Parse, comparing the pos
+// fields of flags that share a counter reveals which was specified last.
+// This is used to implement last-flag-wins semantics for -q/--quiet/--silent
+// versus -v/--verbose.
+type boolSeqFlag struct {
+	seq *int
+	pos int
+}
+
+func newBoolSeqFlag(seq *int) *boolSeqFlag {
+	return &boolSeqFlag{seq: seq}
+}
+
+func (f *boolSeqFlag) String() string { return "false" }
+func (f *boolSeqFlag) Set(s string) error {
+	// GNU head rejects --quiet=<value> and --verbose=<value> with an error.
+	// With NoOptDefVal = "true", pflag calls Set("true") for bare --quiet and
+	// Set("<value>") when an explicit =<value> is given. We accept only "true"
+	// (the NoOptDefVal) and reject any other value to match GNU head behaviour.
+	if s != "true" {
+		return errors.New("option doesn't allow an argument")
+	}
+	*f.seq++
+	f.pos = *f.seq
+	return nil
+}
+func (f *boolSeqFlag) Type() string { return "bool" }
+
+// Note: pflag does NOT use an IsBoolFlag() method for flags registered via
+// VarP/VarPF. The mechanism that makes these flags accept no value argument
+// (e.g. "--quiet" rather than "--quiet=true") is NoOptDefVal = "true", set
+// at registration time. IsBoolFlag() is intentionally absent here to avoid
+// misleading future readers into thinking it is the active mechanism.
 
 // scanLinesPreservingNewline is a bufio.SplitFunc that includes the line
 // terminator (\n) in the returned token. Unlike bufio.ScanLines, it does not

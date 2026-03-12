@@ -1,5 +1,4 @@
-# Derived from GNU coreutils head behavior: last of -n/-c wins
-description: When -c and -n are both given, the last flag wins; here -n wins.
+description: When stdin is redirected from a file (seekable), repeated - operands each read independently from the current stream position.
 setup:
   files:
     - path: file.txt
@@ -7,7 +6,7 @@ setup:
 input:
   allowed_paths: ["$DIR"]
   script: |+
-    head -c 5 -n 2 file.txt
+    head -q -n 1 - - < file.txt
 expect:
   stdout: "alpha\nbeta\n"
   stderr: ""

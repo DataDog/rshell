@@ -68,6 +68,10 @@ var builtinAllowedSymbols = []string{
 	"io.ReadCloser",
 	// io.Reader — interface type; no side effects.
 	"io.Reader",
+	// io.ReadSeeker — interface type combining Reader and Seeker; no side effects.
+	"io.ReadSeeker",
+	// io.SeekCurrent — whence constant for Seek(offset, SeekCurrent); pure constant.
+	"io.SeekCurrent",
 	// math.MaxInt32 — integer constant; no side effects.
 	"math.MaxInt32",
 	// math.MaxInt64 — integer constant; no side effects.

@@ -1,6 +1,5 @@
 # Derived from GNU coreutils head behavior: last of -n/-c wins
 description: When -n and -c are both given, the last flag wins; here -c wins.
-skip_assert_against_bash: true
 setup:
   files:
     - path: file.txt
