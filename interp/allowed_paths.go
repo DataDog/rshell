@@ -241,14 +241,16 @@ func (s *pathSandbox) readDirLimited(ctx context.Context, path string, offset, m
 			}
 			entries = append(entries, e)
 		}
+		// Capture non-EOF errors before checking truncation, since
+		// ReadDir can return partial entries alongside an error.
+		if err != nil && err != io.EOF {
+			lastErr = err
+		}
 		if len(entries) > maxRead {
 			truncated = true
 			break
 		}
 		if err != nil {
-			if err != io.EOF {
-				lastErr = err
-			}
 			break
 		}
 	}
