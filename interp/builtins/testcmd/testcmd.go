@@ -327,12 +327,41 @@ func (p *parser) parsePrimary() bool {
 		return s != ""
 	}
 
-	// Only treat "(" as grouping when there are enough tokens and it is not
-	// used as a literal operand in a binary expression. A lone "(" with
-	// remaining==1 is a bare non-empty string per POSIX single-argument rules.
-	// When "(" is followed by a binary operator (e.g., "(" = "("), treat it
-	// as a literal string operand.
-	if cur == "(" && remaining > 1 && !p.isThreeArgBinary(p.pos) {
+	// POSIX 4-arg rule: when the subexpression is exactly "( X Y )" where
+	// the first token is "(" and the last is ")", evaluate the inner 2 tokens
+	// as a 2-arg expression. This prevents findMatchingParen from incorrectly
+	// matching a literal ")" in the data. e.g.,
+	//   test "(" "!" ")" ")" → inner "! )" → NOT non-empty ")" → false → exit 1
+	//   test "(" "-n" "x" ")" → inner "-n x" → true → exit 0
+	if cur == "(" && subexprLen == 4 && p.pos+3 < len(p.args) && p.args[p.pos+3] == ")" {
+		p.advance() // skip "("
+		savedStart := p.subexprStart
+		savedEnd := p.subexprEnd
+		p.subexprStart = p.pos
+		p.subexprEnd = p.pos + 2 // inner 2 tokens
+		result := p.parseOr()
+		p.subexprStart = savedStart
+		p.subexprEnd = savedEnd
+		if p.err {
+			return false
+		}
+		if p.pos >= len(p.args) || p.peek() != ")" {
+			p.callCtx.Errf("%s: missing ')'\n", p.cmdName)
+			p.err = true
+			return false
+		}
+		p.advance() // skip ")"
+		return result
+	}
+
+	// Treat "(" as grouping when there are tokens after it, or when it
+	// appears as the last token inside a compound expression (subexprLen > 1).
+	// A lone "(" as the only argument (subexprLen == 1) is a bare non-empty
+	// string per POSIX single-argument rules. When "(" is followed by a
+	// binary operator (e.g., "(" = "("), treat it as a literal string operand.
+	// In compound expressions like "test -f x -o (", the lone "(" triggers
+	// grouping which correctly fails with a missing argument error.
+	if cur == "(" && (remaining > 1 || subexprLen > 1) && !p.isThreeArgBinary(p.pos) {
 		if p.depth >= maxParenDepth {
 			p.callCtx.Errf("%s: expression too deeply nested\n", p.cmdName)
 			p.err = true
