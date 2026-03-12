@@ -342,17 +342,26 @@ func processInput(ctx context.Context, callCtx *builtins.CallContext, r io.Reade
 							return err
 						}
 					}
-					// With -D -u, suppress one occurrence per group (the
-					// first/"unique" representative) to match GNU behavior.
-					if !cfg.unique {
+					if err := reportWrite(writeStr(w, prevLine+delimStr)); err != nil {
+						return err
+					}
+					groupNum++
+				}
+				// With -D -u, emit the previous line and buffer the
+				// current one; the last occurrence in each group is
+				// suppressed when the group boundary is reached (GNU
+				// drops the last, not the first).
+				if cfg.unique {
+					if lineCount > 2 {
 						if err := reportWrite(writeStr(w, prevLine+delimStr)); err != nil {
 							return err
 						}
 					}
-					groupNum++
-				}
-				if err := reportWrite(writeStr(w, curLine+delimStr)); err != nil {
-					return err
+					prevLine = curLine
+				} else {
+					if err := reportWrite(writeStr(w, curLine+delimStr)); err != nil {
+						return err
+					}
 				}
 			}
 		} else {
@@ -429,7 +438,7 @@ func writeStr(w io.Writer, s string) error {
 func compareKey(line string, cfg *uniqConfig) string {
 	s := line
 	if cfg.skipFields > 0 {
-		s = skipFieldsN(s, cfg.skipFields)
+		s = skipFieldsN(s, cfg.skipFields, cfg.delim == 0)
 	}
 	if cfg.skipChars > 0 && len(s) > 0 {
 		skip := cfg.skipChars
@@ -472,13 +481,19 @@ func asciiToLower(s string) string {
 // skipFieldsN skips the first n blank-delimited fields and returns the
 // remainder of the string, starting immediately after the last character
 // of the n-th field (before any subsequent blanks).
-func skipFieldsN(s string, n int64) string {
+// When zeroTerminated is true, embedded newlines ('\n') are treated as
+// blanks in addition to spaces and tabs, matching GNU coreutils behavior
+// in NUL-delimited mode.
+func skipFieldsN(s string, n int64, zeroTerminated bool) string {
+	isBlank := func(c byte) bool {
+		return c == ' ' || c == '\t' || (zeroTerminated && c == '\n')
+	}
 	i := 0
 	for field := int64(0); field < n && i < len(s); field++ {
-		for i < len(s) && (s[i] == ' ' || s[i] == '\t') {
+		for i < len(s) && isBlank(s[i]) {
 			i++
 		}
-		for i < len(s) && s[i] != ' ' && s[i] != '\t' {
+		for i < len(s) && !isBlank(s[i]) {
 			i++
 		}
 	}

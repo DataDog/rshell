@@ -1,0 +1,13 @@
+description: uniq -D -u with comparison flags keeps first N-1 lines, dropping the last.
+setup:
+  files:
+    - path: input.txt
+      content: "x\ny\nz\n"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    uniq -D -u -w0 input.txt
+expect:
+  stdout: "x\ny\n"
+  stderr: ""
+  exit_code: 0
