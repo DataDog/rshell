@@ -57,11 +57,12 @@
 //
 // Memory safety:
 //
-//	All processing is streaming: input is read line-by-line with a per-line
-//	cap of MaxLineBytes (1 MiB). Lines exceeding this cap cause an error
-//	rather than an unbounded allocation. All read loops check ctx.Err() at
-//	each iteration to honour the shell's execution timeout and support
-//	graceful cancellation.
+//	When line-processing flags are active (-n, -b, -s, -E, -T, -v), input
+//	is read line-by-line with a per-line cap of MaxLineBytes (1 MiB). Lines
+//	exceeding this cap cause an error rather than an unbounded allocation.
+//	Without flags, input is streamed in fixed-size chunks (no per-line cap).
+//	All read loops check ctx.Err() at each iteration to honour the shell's
+//	execution timeout and support graceful cancellation.
 package cat
 
 import (
