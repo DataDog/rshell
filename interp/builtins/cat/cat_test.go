@@ -377,12 +377,12 @@ func TestCatHelp(t *testing.T) {
 	assert.Empty(t, stderr)
 }
 
-func TestCatHelpShort(t *testing.T) {
+func TestCatHelpShortH(t *testing.T) {
+	// GNU cat does not have -h; it should be treated as an unknown option.
 	dir := t.TempDir()
-	stdout, stderr, code := cmdRun(t, "cat -h", dir)
-	assert.Equal(t, 0, code)
-	assert.Contains(t, stdout, "Usage:")
-	assert.Empty(t, stderr)
+	_, stderr, code := cmdRun(t, "cat -h", dir)
+	assert.Equal(t, 1, code)
+	assert.Contains(t, stderr, "cat:")
 }
 
 // --- Error cases ---

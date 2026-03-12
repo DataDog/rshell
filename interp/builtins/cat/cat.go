@@ -47,7 +47,7 @@
 //	    Ignored (output is already unbuffered). Accepted for POSIX
 //	    compatibility.
 //
-//	-h, --help
+//	--help
 //	    Print usage to stdout and exit 0.
 //
 // Exit codes:
@@ -90,7 +90,7 @@ const (
 )
 
 func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
-	help := fs.BoolP("help", "h", false, "print usage and exit")
+	help := fs.Bool("help", false, "print usage and exit")
 	number := fs.BoolP("number", "n", false, "number all output lines")
 	numberNonblank := fs.BoolP("number-nonblank", "b", false, "number non-blank output lines, overrides -n")
 	squeezeBlank := fs.BoolP("squeeze-blank", "s", false, "suppress repeated empty output lines")
@@ -240,7 +240,7 @@ func catLines(ctx context.Context, callCtx *builtins.CallContext, file string, s
 
 	sc := bufio.NewScanner(rc)
 	buf := make([]byte, scanBufInit)
-	sc.Buffer(buf, MaxLineBytes)
+	sc.Buffer(buf, MaxLineBytes+1)
 	sc.Split(scanLinesPreservingNewline)
 
 	out := make([]byte, 0, lineBufInit)
