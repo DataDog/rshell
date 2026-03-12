@@ -351,25 +351,25 @@ func listDir(ctx context.Context, callCtx *builtins.CallContext, dir string, opt
 		})
 	}
 
-	// Sort real entries.
+	// Synthesize . and .. for -a (os.ReadDir never includes them).
+	// Added before sorting so they participate in sort modifiers (-r, -S, -t),
+	// matching bash behavior. They do not consume offset/limit slots because
+	// pagination is handled at the read level.
+	// NOTE: ".." intentionally uses the same FileInfo as "." because the
+	// parent directory may be outside the sandbox and cannot be stat'd.
+	if opts.all {
+		if dotInfo, err := callCtx.StatFile(ctx, dir); err == nil {
+			infoEntries = append(infoEntries, entryInfo{name: ".", info: dotInfo})
+			infoEntries = append(infoEntries, entryInfo{name: "..", info: dotInfo})
+		}
+	}
+
+	// Sort all entries (including . and ..) so sort modifiers apply uniformly.
 	sortEntries(infoEntries, opts, func(a entryInfo) iofs.FileInfo { return a.info }, func(a entryInfo) string { return a.name })
 
 	// Offset is handled at the read level (streaming skip in readDir),
 	// so no post-sort slicing is needed. The effectiveLimit is already
 	// enforced by readDir's maxRead parameter.
-
-	// Synthesize . and .. for -a (os.ReadDir never includes them).
-	// Prepended after offset/limit so they never consume limit slots.
-	// NOTE: ".." intentionally uses the same FileInfo as "." because the
-	// parent directory may be outside the sandbox and cannot be stat'd.
-	if opts.all {
-		if dotInfo, err := callCtx.StatFile(ctx, dir); err == nil {
-			infoEntries = append([]entryInfo{
-				{name: ".", info: dotInfo},
-				{name: "..", info: dotInfo},
-			}, infoEntries...)
-		}
-	}
 
 	// Print.
 	for _, ei := range infoEntries {
@@ -380,9 +380,10 @@ func listDir(ctx context.Context, callCtx *builtins.CallContext, dir string, opt
 	}
 
 	// Only warn on implicit truncation (no explicit --offset/--limit).
+	// Do not return early — recursion (-R) must still descend into listed subdirs.
 	if truncated && !paginationActive {
 		callCtx.Errf("ls: warning: directory '%s': too many entries (exceeded %d limit), output truncated\n", dir, MaxDirEntries)
-		return errFailed
+		failed = true
 	}
 
 	// Recurse into subdirectories if -R.
