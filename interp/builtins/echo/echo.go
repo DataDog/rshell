@@ -159,7 +159,7 @@ func processEscapes(s string) (string, bool) {
 			i++
 			val, consumed := parseOctal(s[i:], 3)
 			i += consumed
-			b.WriteByte(byte(val))
+			b.WriteByte(byte(val)) // Intentional: wraps values > 255 (matches bash)
 			continue
 		case 'x':
 			// Hex: \xHH (up to 2 hex digits)
