@@ -83,7 +83,10 @@ func (lr *lineReader) checkLimit() error {
 }
 
 // processFile reads a single file and runs the sed script on each line.
-func (eng *engine) processFile(ctx context.Context, callCtx *builtins.CallContext, file string) error {
+// isLastFile indicates whether this is the last file in the argument list;
+// the $ address only matches when it is the last line of the last file
+// (GNU sed treats multiple files as one continuous stream).
+func (eng *engine) processFile(ctx context.Context, callCtx *builtins.CallContext, file string, isLastFile bool) error {
 	var rc io.ReadCloser
 	if file == "-" {
 		if callCtx.Stdin == nil {
@@ -122,7 +125,7 @@ func (eng *engine) processFile(ctx context.Context, callCtx *builtins.CallContex
 
 		eng.lineNum++
 		eng.patternSpace = line
-		eng.lastLine = lr.isLast()
+		eng.lastLine = lr.isLast() && isLastFile
 
 		err := eng.runCycle(ctx, lr)
 		if err != nil {
@@ -130,7 +133,7 @@ func (eng *engine) processFile(ctx context.Context, callCtx *builtins.CallContex
 		}
 	}
 
-	if err := sc.Err(); err != nil {
+	if err := lr.sc.Err(); err != nil {
 		return err
 	}
 	return nil
@@ -435,6 +438,13 @@ func (eng *engine) rawAddressMatch(cmd *sedCmd) bool {
 func (eng *engine) matchAddr(addr *address) bool {
 	switch addr.kind {
 	case addrLine:
+		// Line 0 is special: it only makes sense as the start of a 0,/re/
+		// range. It matches on line 1 (the range starts "before line 1")
+		// so the regex addr2 can close on line 1. After line 1, it no
+		// longer matches so the range doesn't reopen.
+		if addr.line == 0 {
+			return eng.lineNum == 1
+		}
 		return eng.lineNum == addr.line
 	case addrLast:
 		return eng.lastLine
@@ -470,10 +480,16 @@ func (eng *engine) matchRange(cmd *sedCmd) bool {
 	}
 	// Not in range — check if addr1 opens it.
 	if eng.matchAddr(cmd.addr1) {
+		// Special case: addr1 is line 0 (the GNU 0,/re/ form).
+		// Unlike normal ranges, check addr2 on the very first line so the
+		// range can close immediately on line 1.
+		addr1IsZero := cmd.addr1.kind == addrLine && cmd.addr1.line == 0
+
 		// For regex addr2, GNU sed does not check it on the opening line —
 		// the range always extends to at least the next line.
+		// Exception: 0,/re/ DOES check addr2 on line 1.
 		// For line-number/$ addr2, check immediately for degenerate range.
-		if cmd.addr2.kind != addrRegexp {
+		if cmd.addr2.kind != addrRegexp || addr1IsZero {
 			// Descending numeric range (e.g. 4,2): treat as one-line range.
 			if cmd.addr2.kind == addrLine && cmd.addr2.line < eng.lineNum {
 				return true // one-line range

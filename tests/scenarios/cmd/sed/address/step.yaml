@@ -1,5 +1,4 @@
 description: The first~step address matches every step-th line starting from first.
-skip_assert_against_bash: true
 setup:
   files:
     - path: input.txt

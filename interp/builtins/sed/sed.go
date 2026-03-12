@@ -205,11 +205,12 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 		}
 
 		var failed bool
-		for _, file := range files {
+		for i, file := range files {
 			if ctx.Err() != nil {
 				break
 			}
-			if err := eng.processFile(ctx, callCtx, file); err != nil {
+			isLastFile := i == len(files)-1
+			if err := eng.processFile(ctx, callCtx, file, isLastFile); err != nil {
 				var qe *quitError
 				if errors.As(err, &qe) {
 					// q command: print pattern space if requested, then exit.
