@@ -31,18 +31,18 @@ type fakeDirEntry struct {
 }
 
 func (f fakeDirEntry) Name() string               { return f.name }
-func (f fakeDirEntry) IsDir() bool                 { return false }
-func (f fakeDirEntry) Type() fs.FileMode           { return 0 }
-func (f fakeDirEntry) Info() (fs.FileInfo, error)  { return fakeFileInfo{name: f.name}, nil }
+func (f fakeDirEntry) IsDir() bool                { return false }
+func (f fakeDirEntry) Type() fs.FileMode          { return 0 }
+func (f fakeDirEntry) Info() (fs.FileInfo, error) { return fakeFileInfo{name: f.name}, nil }
 
 type fakeFileInfo struct{ name string }
 
-func (f fakeFileInfo) Name() string      { return f.name }
-func (f fakeFileInfo) Size() int64       { return 0 }
-func (f fakeFileInfo) Mode() fs.FileMode { return 0644 }
+func (f fakeFileInfo) Name() string       { return f.name }
+func (f fakeFileInfo) Size() int64        { return 0 }
+func (f fakeFileInfo) Mode() fs.FileMode  { return 0644 }
 func (f fakeFileInfo) ModTime() time.Time { return time.Time{} }
-func (f fakeFileInfo) IsDir() bool       { return false }
-func (f fakeFileInfo) Sys() any          { return nil }
+func (f fakeFileInfo) IsDir() bool        { return false }
+func (f fakeFileInfo) Sys() any           { return nil }
 
 func systemExecAllowedPaths(t *testing.T) []string {
 	t.Helper()
