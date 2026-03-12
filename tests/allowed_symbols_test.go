@@ -82,9 +82,7 @@ var builtinAllowedSymbols = []string{
 	"math.MaxInt64",
 	// math.MaxUint64 — integer constant; no side effects.
 	"math.MaxUint64",
-	// math.MinInt64 — integer constant; no side effects.
-	"math.MinInt64",
-	// math.NaN — returns IEEE 754 NaN value; pure function, no I/O.
+// math.NaN — returns IEEE 754 NaN value; pure function, no I/O.
 	"math.NaN",
 	// os.FileInfo — file metadata interface returned by Stat; no I/O side effects.
 	"os.FileInfo",
