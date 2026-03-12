@@ -687,93 +687,6 @@ func splitBlankFields(line string) []string {
 	return fields
 }
 
-// extractKeyFromFields extracts a key substring from pre-split fields.
-// joiner is the string used to rejoin multiple fields (the actual separator
-// when -t is used, or " " for blank-separated fields).
-func extractKeyFromFields(fields []string, k keySpec, joiner string) string {
-	sf := k.startField - 1
-	if sf >= len(fields) {
-		return ""
-	}
-
-	// Simple case: no end field specified, no char positions.
-	if k.endField == 0 && k.startChar == 0 {
-		return strings.Join(fields[sf:], joiner)
-	}
-
-	startStr := fields[sf]
-	sc := k.startChar
-	if sc > 0 {
-		sc-- // convert to 0-based
-		if sc >= len(startStr) {
-			startStr = ""
-		} else {
-			startStr = startStr[sc:]
-		}
-	}
-
-	if k.endField == 0 {
-		// From startChar to end of line.
-		if sf+1 < len(fields) {
-			return startStr + joiner + strings.Join(fields[sf+1:], joiner)
-		}
-		return startStr
-	}
-
-	ef := k.endField - 1
-	if ef >= len(fields) {
-		// End field is beyond available fields — treat as end-of-line.
-		if sf+1 < len(fields) {
-			return startStr + joiner + strings.Join(fields[sf+1:], joiner)
-		}
-		return startStr
-	}
-
-	// GNU sort treats end-before-start (e.g. -k 2,1) as a zero-width key,
-	// which falls back to whole-line comparison during tie-breaking.
-	if ef < sf {
-		return ""
-	}
-
-	if sf == ef {
-		// Same field.
-		s := fields[sf]
-		start := 0
-		if k.startChar > 0 {
-			start = k.startChar - 1
-		}
-		end := len(s)
-		if k.endChar > 0 && k.endChar <= len(s) {
-			end = k.endChar
-		}
-		if start >= len(s) {
-			return ""
-		}
-		if end > len(s) {
-			end = len(s)
-		}
-		if start > end {
-			return ""
-		}
-		return s[start:end]
-	}
-
-	// Multiple fields.
-	var b strings.Builder
-	b.WriteString(startStr)
-	for i := sf + 1; i < ef; i++ {
-		b.WriteString(joiner)
-		b.WriteString(fields[i])
-	}
-	b.WriteString(joiner)
-	endStr := fields[ef]
-	if k.endChar > 0 && k.endChar <= len(endStr) {
-		endStr = endStr[:k.endChar]
-	}
-	b.WriteString(endStr)
-	return b.String()
-}
-
 // compareStrings compares two strings applying the given key options.
 func compareStrings(a, b string, opts keyOpts) int {
 	if opts.ignBlanks {
@@ -924,14 +837,16 @@ func compareMagnitude(aInt, aFrac, bInt, bFrac string) int {
 func parseNumParts(s string) (bool, string, string) {
 	// GNU sort -n only skips leading blanks (space/tab), not all
 	// Unicode whitespace. Use manual skip instead of TrimSpace.
-	for len(s) > 0 && (s[0] == ' ' || s[0] == '\t') {
-		s = s[1:]
+	i := 0
+	for i < len(s) && (s[i] == ' ' || s[i] == '\t') {
+		i++
 	}
+	s = s[i:]
 	if s == "" {
 		return false, "0", ""
 	}
 	neg := false
-	i := 0
+	i = 0
 	if s[i] == '-' {
 		neg = true
 		i++
