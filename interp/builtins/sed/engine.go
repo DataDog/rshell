@@ -7,6 +7,7 @@ package sed
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -113,6 +114,10 @@ func (eng *engine) processFile(ctx context.Context, callCtx *builtins.CallContex
 	sc := bufio.NewScanner(rc)
 	buf := make([]byte, 4096)
 	sc.Buffer(buf, MaxLineBytes)
+	// Use a custom split function that only splits on \n (not \r\n).
+	// The default bufio.ScanLines strips \r from \r\n endings, but GNU sed
+	// preserves \r as part of the pattern space.
+	sc.Split(scanLinesPreserveCR)
 
 	lr := newLineReader(sc, eng.isRegularFile)
 
@@ -307,6 +312,12 @@ func (eng *engine) execCmds(ctx context.Context, cmds []*sedCmd, startIdx int, l
 			}
 
 		case cmdNextAppend:
+			// Flush queued 'a' text before reading the next line (GNU sed behaviour).
+			for _, text := range eng.appendQueue {
+				eng.callCtx.Outf("%s\n", text)
+			}
+			eng.appendQueue = eng.appendQueue[:0]
+			eng.appendQueueBytes = 0
 			line, ok := lr.readLine()
 			if ok {
 				if err := lr.checkLimit(); err != nil {
@@ -747,6 +758,25 @@ func (eng *engine) printUnambiguous() {
 	sb.WriteByte('$')
 	sb.WriteByte('\n')
 	eng.callCtx.Out(sb.String())
+}
+
+// scanLinesPreserveCR is like bufio.ScanLines but does NOT strip trailing \r
+// from \r\n endings. GNU sed treats \r as an ordinary character that is part
+// of the pattern space, so we must preserve it.
+func scanLinesPreserveCR(data []byte, atEOF bool) (advance int, token []byte, err error) {
+	if atEOF && len(data) == 0 {
+		return 0, nil, nil
+	}
+	if i := bytes.IndexByte(data, '\n'); i >= 0 {
+		// Return the line up to (but not including) the \n.
+		return i + 1, data[:i], nil
+	}
+	// At EOF, deliver the last line without a trailing newline.
+	if atEOF {
+		return len(data), data, nil
+	}
+	// Request more data.
+	return 0, nil, nil
 }
 
 // isRegularFile checks whether an io.Reader is backed by a regular file.
