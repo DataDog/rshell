@@ -306,8 +306,10 @@ func processFormatEscape(s string) (string, int) {
 	case '"':
 		return "\"", 2
 	case '0':
-		// \0NNN — octal (0 + up to 3 digits)
-		val, consumed := parseOctal(s[2:], 3)
+		// \0NN — octal (0 counts as first digit, up to 2 more).
+		// Bash treats the leading 0 as the first of 3 octal digits,
+		// so \0123 = \012 (newline) + literal '3'.
+		val, consumed := parseOctal(s[2:], 2)
 		return string([]byte{byte(val)}), 2 + consumed
 	case 'x':
 		// \xHH — hex (up to 2 digits)
@@ -316,6 +318,10 @@ func processFormatEscape(s string) (string, int) {
 			return "\\x", 2
 		}
 		return string([]byte{byte(val)}), 2 + consumed
+	// TODO: \uHHHH (4-digit Unicode) and \UHHHHHHHH (8-digit Unicode) escapes
+	// are supported by bash but not yet implemented here. Low priority since
+	// most printf usage by AI agents doesn't need Unicode escapes.
+
 	default:
 		if s[1] >= '1' && s[1] <= '7' {
 			// \NNN — octal without leading 0 (1-3 digits)
@@ -449,14 +455,20 @@ func processSpecifier(callCtx *builtins.CallContext, s string, args []string, ar
 		// We use %s with a single-byte string instead of Go's %c, because
 		// Go's %c treats the byte as a rune and UTF-8 encodes values >= 0x80.
 		// Empty arg produces a NUL byte (bash behavior).
+		// Bash ignores precision for %c — always emits exactly one byte.
 		var charStr string
 		if len(arg) > 0 {
 			charStr = string([]byte{arg[0]})
 		} else {
 			charStr = "\x00"
 		}
-		goFmt.WriteByte('s')
-		callCtx.Out(fmt.Sprintf(goFmt.String(), charStr))
+		// Build a format without precision — bash ignores precision for %c.
+		var cFmt strings.Builder
+		cFmt.WriteByte('%')
+		cFmt.WriteString(flagStr)
+		cFmt.WriteString(width)
+		cFmt.WriteByte('s')
+		callCtx.Out(fmt.Sprintf(cFmt.String(), charStr))
 
 	case 'd', 'i':
 		arg := getStringArg(args, argIdx)
@@ -653,11 +665,19 @@ func getStringArg(args []string, idx *int) string {
 }
 
 // getIntArg returns the next argument parsed as an int (for * width/precision), or 0.
-// Like bash, it accepts decimal, octal (0-prefix), and hex (0x-prefix) forms.
+// Like bash, it accepts decimal, octal (0-prefix), hex (0x-prefix), and
+// character constants ('X or "X).
 // The second return value is true if parsing failed.
 func getIntArg(args []string, idx *int, callCtx *builtins.CallContext) (int, bool) {
 	s := getStringArg(args, idx)
 	if s == "" {
+		return 0, false
+	}
+	// Character constant: 'X or "X — bare quote with no following char yields 0.
+	if s[0] == '\'' || s[0] == '"' {
+		if len(s) >= 2 {
+			return int(s[1]), false
+		}
 		return 0, false
 	}
 	v, err := strconv.ParseInt(s, 0, strconv.IntSize)

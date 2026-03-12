@@ -70,6 +70,10 @@ var builtinAllowedSymbols = []string{
 	"io.Reader",
 	// math.Inf — returns positive or negative infinity; pure function, no I/O.
 	"math.Inf",
+	// math/big.Int — arbitrary-precision integer type; pure data, no I/O.
+	"math/big.Int",
+	// math/big.NewInt — creates a big.Int from int64; pure function, no I/O.
+	"math/big.NewInt",
 	// math.MaxInt32 — integer constant; no side effects.
 	"math.MaxInt32",
 	// math.MaxInt64 — integer constant; no side effects.
@@ -92,8 +96,12 @@ var builtinAllowedSymbols = []string{
 	"slices.SortFunc",
 	// strings.Builder — efficient string concatenation; pure in-memory buffer, no I/O.
 	"strings.Builder",
+	// strings.ContainsRune — checks if a rune is in a string; pure function, no I/O.
+	"strings.ContainsRune",
 	// strings.Join — concatenates a slice of strings with a separator; pure function, no I/O.
 	"strings.Join",
+	// strings.Repeat — repeats a string n times; pure function, no I/O.
+	"strings.Repeat",
 	// strings.ReplaceAll — replaces all occurrences of a substring; pure function, no I/O.
 	"strings.ReplaceAll",
 	// strings.ToLower — converts string to lowercase; pure function, no I/O.

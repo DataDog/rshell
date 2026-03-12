@@ -478,10 +478,12 @@ func TestPrintfDoubleDash(t *testing.T) {
 // --- Octal escape edge cases ---
 
 func TestPrintfEscapeOctalZeroPrefix(t *testing.T) {
-	// \0101 = octal 101 = 65 = 'A' (format string uses \0NNN)
+	// \0101: the leading 0 counts as the first of 3 octal digits,
+	// so \010 = backspace (octal 010 = 8), then literal '1'.
+	// This matches bash behavior.
 	stdout, _, code := cmdRun(t, `printf "\0101\n"`)
 	assert.Equal(t, 0, code)
-	assert.Equal(t, "A\n", stdout)
+	assert.Equal(t, "\x081\n", stdout)
 }
 
 func TestPrintfEscapeOctalNulByte(t *testing.T) {
