@@ -169,6 +169,14 @@ type parser struct {
 	pos     int
 	err     bool
 	depth   int
+	// subexprStart marks the beginning of the current subexpression for
+	// POSIX disambiguation. It is set to 0 initially and updated when
+	// entering a new subexpression boundary (after ! negation or inside
+	// parentheses). The 3-arg disambiguation rule fires when the
+	// subexpression length (len(args) - subexprStart) is exactly 3,
+	// preventing it from triggering inside parseAnd/parseOr chains while
+	// still allowing it inside nested ! or (...) contexts.
+	subexprStart int
 }
 
 const maxParenDepth = 128
@@ -246,12 +254,14 @@ func (p *parser) parseNot() bool {
 			p.advance()
 			return true
 		}
-		// POSIX 3-arg rule: if the total argument count is exactly 3 and
-		// "!" is followed by a binary operator, treat it as a literal
-		// string operand (fall through to parsePrimary for binary expression).
-		// We check len(p.args) (total args) not remaining, because this rule
-		// must not fire inside recursive parseAnd/parseOr calls.
-		if len(p.args) == 3 && isBinaryOpOrLogical(p.args[p.pos+1]) {
+		// POSIX 3-arg rule: if the current subexpression has exactly 3
+		// tokens and "!" is followed by a binary operator, treat "!" as a
+		// literal string operand (fall through to parsePrimary for binary
+		// expression). We use subexprStart to scope this to the current
+		// subexpression, so it fires for both top-level 3-arg forms and
+		// nested ones (e.g., "test ! ! = !") but not inside -a/-o chains.
+		subexprLen := len(p.args) - p.subexprStart
+		if subexprLen == 3 && isBinaryOpOrLogical(p.args[p.pos+1]) {
 			return p.parsePrimary()
 		}
 		if p.depth >= maxParenDepth {
@@ -261,7 +271,10 @@ func (p *parser) parseNot() bool {
 		}
 		p.depth++
 		p.advance()
+		saved := p.subexprStart
+		p.subexprStart = p.pos // new subexpression after !
 		result := !p.parseNot()
+		p.subexprStart = saved
 		p.depth--
 		return result
 	}
@@ -286,7 +299,7 @@ func (p *parser) parsePrimary() bool {
 	// remaining==1 is a bare non-empty string per POSIX single-argument rules.
 	// When "(" is followed by a binary operator (e.g., "(" = "("), treat it
 	// as a literal string operand.
-	if cur == "(" && remaining > 1 && !isThreeArgBinary(p.args, p.pos) {
+	if cur == "(" && remaining > 1 && !p.isThreeArgBinary(p.pos) {
 		if p.depth >= maxParenDepth {
 			p.callCtx.Errf("%s: expression too deeply nested\n", p.cmdName)
 			p.err = true
@@ -322,12 +335,13 @@ func (p *parser) parsePrimary() bool {
 		if isBinaryOp(op) {
 			return p.parseBinaryExpr()
 		}
-		// POSIX 3-arg rule: when the total argument count is exactly 3
-		// and the middle token is -a/-o, treat as binary AND/OR with
-		// string operands. e.g., "test -f -a -d" → "-f" AND "-d".
-		// We check len(p.args) (total args) not remaining, because this
-		// rule must not fire inside recursive parseAnd/parseOr calls.
-		if len(p.args) == 3 && (op == "-a" || op == "-o") {
+		// POSIX 3-arg rule: when the current subexpression has exactly 3
+		// tokens and the middle token is -a/-o, treat as binary AND/OR
+		// with string operands. e.g., "test -f -a -d" → "-f" AND "-d".
+		// We use subexprStart (not remaining) so this fires for nested
+		// subexpressions after ! but not inside -a/-o chains.
+		subexprLen := len(p.args) - p.subexprStart
+		if subexprLen == 3 && (op == "-a" || op == "-o") {
 			return p.parseBinaryExpr()
 		}
 	}
@@ -371,13 +385,15 @@ func isBinaryOpOrLogical(op string) bool {
 	return isBinaryOp(op) || op == "-a" || op == "-o"
 }
 
-// isThreeArgBinary returns true when the total argument count is exactly 3
-// and the token at pos+1 is a binary or logical operator. This implements
-// the POSIX 3-argument disambiguation rule, which must only fire at the
-// top level (total args == 3), never inside recursive descent calls where
-// remaining == 3 but total args > 3.
-func isThreeArgBinary(args []string, pos int) bool {
-	return len(args) == 3 && pos+1 < len(args) && isBinaryOpOrLogical(args[pos+1])
+// isThreeArgBinary returns true when the current subexpression has exactly 3
+// tokens and the token at pos+1 is a binary or logical operator. This
+// implements the POSIX 3-argument disambiguation rule. The subexpression
+// length is computed from p.subexprStart (set at the top level and updated
+// when entering ! negation), so the rule fires for both top-level 3-arg
+// forms and nested ones (e.g., "test ! ! = !") but not inside -a/-o chains.
+func (p *parser) isThreeArgBinary(pos int) bool {
+	subexprLen := len(p.args) - p.subexprStart
+	return subexprLen == 3 && pos+1 < len(p.args) && isBinaryOpOrLogical(p.args[pos+1])
 }
 
 func isUnaryFileOp(op string) bool {

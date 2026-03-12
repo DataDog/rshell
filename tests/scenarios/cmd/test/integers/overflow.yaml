@@ -9,5 +9,7 @@ expect:
   stdout: |
     pos-overflow: 2
     neg-overflow: 2
-  stderr_contains: ["integer expression expected"]
+  stderr: |
+    test: 99999999999999999999: integer expression expected
+    test: -99999999999999999999: integer expression expected
   exit_code: 0
