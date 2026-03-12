@@ -258,6 +258,47 @@ func walkPath(
 		// Build the print path — this is what gets printed and matched.
 		printPath := entry.path
 
+		// With -L, detect symlink loops BEFORE evaluating predicates.
+		// GNU find does not print or evaluate a directory that forms a loop;
+		// it only reports the error and skips the entry entirely.
+		var childAncestorIDs map[builtins.FileID]string
+		var childAncestorPaths map[string]bool
+		isLoop := false
+		if entry.info.IsDir() && followLinks {
+			if useFileID {
+				if id, ok := callCtx.FileIdentity(entry.path, entry.info); ok {
+					if firstPath, seen := entry.ancestorIDs[id]; seen {
+						callCtx.Errf("find: File system loop detected; '%s' is part of the same file system loop as '%s'.\n",
+							entry.path, firstPath)
+						failed = true
+						isLoop = true
+					} else {
+						// Build ancestor set for children: parent's ancestors + this dir.
+						childAncestorIDs = make(map[builtins.FileID]string, len(entry.ancestorIDs)+1)
+						for k, v := range entry.ancestorIDs {
+							childAncestorIDs[k] = v
+						}
+						childAncestorIDs[id] = entry.path
+					}
+				}
+			} else {
+				if entry.ancestorPaths[entry.path] {
+					callCtx.Errf("find: File system loop detected; '%s' has already been visited.\n", entry.path)
+					failed = true
+					isLoop = true
+				} else {
+					childAncestorPaths = make(map[string]bool, len(entry.ancestorPaths)+1)
+					for k := range entry.ancestorPaths {
+						childAncestorPaths[k] = true
+					}
+					childAncestorPaths[entry.path] = true
+				}
+			}
+		}
+		if isLoop {
+			continue
+		}
+
 		ec := &evalContext{
 			callCtx:     callCtx,
 			ctx:         ctx,
@@ -287,38 +328,6 @@ func walkPath(
 
 		// Descend into directories unless pruned or beyond maxdepth.
 		if entry.info.IsDir() && !prune && entry.depth < maxDepth {
-			// With -L, check for symlink loops by inspecting the ancestor
-			// chain. A loop exists only when a directory is its own ancestor
-			// (not merely visited via a different path).
-			var childAncestorIDs map[builtins.FileID]string
-			var childAncestorPaths map[string]bool
-			if useFileID {
-				if id, ok := callCtx.FileIdentity(entry.path, entry.info); ok {
-					if firstPath, seen := entry.ancestorIDs[id]; seen {
-						callCtx.Errf("find: File system loop detected; '%s' is part of the same file system loop as '%s'.\n",
-							entry.path, firstPath)
-						failed = true
-						continue
-					}
-					// Build ancestor set for children: parent's ancestors + this dir.
-					childAncestorIDs = make(map[builtins.FileID]string, len(entry.ancestorIDs)+1)
-					for k, v := range entry.ancestorIDs {
-						childAncestorIDs[k] = v
-					}
-					childAncestorIDs[id] = entry.path
-				}
-			} else if followLinks {
-				if entry.ancestorPaths[entry.path] {
-					callCtx.Errf("find: File system loop detected; '%s' has already been visited.\n", entry.path)
-					failed = true
-					continue
-				}
-				childAncestorPaths = make(map[string]bool, len(entry.ancestorPaths)+1)
-				for k := range entry.ancestorPaths {
-					childAncestorPaths[k] = true
-				}
-				childAncestorPaths[entry.path] = true
-			}
 
 			entries, readErr := callCtx.ReadDir(ctx, entry.path)
 			if readErr != nil {
