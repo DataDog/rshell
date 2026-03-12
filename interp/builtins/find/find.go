@@ -246,7 +246,7 @@ func walkPath(
 		info          iofs.FileInfo
 		depth         int
 		ancestorIDs   map[builtins.FileID]string // ancestor dir identities (root→parent)
-		ancestorPaths map[string]bool             // fallback: ancestor dir paths
+		ancestorPaths map[string]bool            // fallback: ancestor dir paths
 	}
 
 	stack := []stackEntry{{path: startPath, info: startInfo, depth: 0}}

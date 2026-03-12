@@ -22,24 +22,24 @@ const (
 type exprKind int
 
 const (
-	exprName    exprKind = iota // -name pattern
-	exprIName                   // -iname pattern
-	exprPath                    // -path pattern
-	exprIPath                   // -ipath pattern
-	exprType                    // -type c
-	exprSize                    // -size n[cwbkMG]
-	exprEmpty                   // -empty
-	exprNewer                   // -newer file
-	exprMtime                   // -mtime n
-	exprMmin                    // -mmin n
-	exprPrint                   // -print
-	exprPrint0                  // -print0
-	exprPrune                   // -prune
-	exprTrue                    // -true
-	exprFalse                   // -false
-	exprAnd                     // expr -a expr  or  expr expr (implicit)
-	exprOr                      // expr -o expr
-	exprNot                     // ! expr  or  -not expr
+	exprName   exprKind = iota // -name pattern
+	exprIName                  // -iname pattern
+	exprPath                   // -path pattern
+	exprIPath                  // -ipath pattern
+	exprType                   // -type c
+	exprSize                   // -size n[cwbkMG]
+	exprEmpty                  // -empty
+	exprNewer                  // -newer file
+	exprMtime                  // -mtime n
+	exprMmin                   // -mmin n
+	exprPrint                  // -print
+	exprPrint0                 // -print0
+	exprPrune                  // -prune
+	exprTrue                   // -true
+	exprFalse                  // -false
+	exprAnd                    // expr -a expr  or  expr expr (implicit)
+	exprOr                     // expr -o expr
+	exprNot                    // ! expr  or  -not expr
 )
 
 // sizeUnit holds a parsed -size predicate value.
