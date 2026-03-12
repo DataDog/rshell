@@ -7,8 +7,8 @@ input:
   allowed_paths: ["$DIR"]
   script: |+
     sort -k 1nd data.txt
+skip_assert_against_bash: true
 expect:
   stdout: ""
   stderr: "sort: options '-dn' are incompatible\n"
   exit_code: 2
-  skip_assert_against_bash: true

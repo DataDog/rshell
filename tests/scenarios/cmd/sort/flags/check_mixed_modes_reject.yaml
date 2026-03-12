@@ -7,8 +7,8 @@ input:
   allowed_paths: ["$DIR"]
   script: |+
     sort -c --check=silent data.txt
+skip_assert_against_bash: true
 expect:
   stdout: ""
   stderr: "sort: options '-cC' are incompatible\n"
   exit_code: 2
-  skip_assert_against_bash: true

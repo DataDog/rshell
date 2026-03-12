@@ -7,8 +7,8 @@ input:
   allowed_paths: ["$DIR"]
   script: |+
     sort --check= data.txt
+skip_assert_against_bash: true
 expect:
   stdout: ""
   stderr_contains: ["invalid argument"]
   exit_code: 2
-  skip_assert_against_bash: true

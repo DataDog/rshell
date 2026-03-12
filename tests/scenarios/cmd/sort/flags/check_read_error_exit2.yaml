@@ -3,8 +3,8 @@ input:
   allowed_paths: ["$DIR"]
   script: |+
     sort -c nonexistent.txt
+skip_assert_against_bash: true
 expect:
   stdout: ""
   stderr_contains: ["nonexistent.txt"]
   exit_code: 2
-  skip_assert_against_bash: true
