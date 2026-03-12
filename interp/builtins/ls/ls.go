@@ -76,7 +76,7 @@ import (
 const maxRecursionDepth = 256
 
 // MaxDirEntries is the maximum number of entries ls will process per directory.
-const MaxDirEntries = 100_000
+const MaxDirEntries = 10_000
 
 // errFailed is a sentinel used to signal that at least one entry had an error.
 var errFailed = errors.New("ls: one or more errors occurred")
@@ -264,8 +264,8 @@ func listDir(ctx context.Context, callCtx *builtins.CallContext, dir string, opt
 	// the initial allocation. It does, however, prevent expensive downstream
 	// processing (sorting, stat calls, recursion) on absurdly large directories.
 	if len(entries) > MaxDirEntries {
-		callCtx.Errf("ls: directory '%s': too many entries (%d > %d)\n", dir, len(entries), MaxDirEntries)
-		return errFailed
+		callCtx.Errf("ls: warning: directory '%s': too many entries (%d > %d), output suppressed\n", dir, len(entries), MaxDirEntries)
+		return nil
 	}
 
 	// Get FileInfo for sorting (if needed) and for long format.
