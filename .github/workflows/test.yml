@@ -39,3 +39,14 @@ jobs:
         env:
           RSHELL_BASH_TEST: "1"
         run: go test -v -run TestShellScenariosAgainstBash ./tests/
+      - name: Fuzz differential tests against GNU tools
+        env:
+          RSHELL_BASH_TEST: "1"
+        run: |
+          for PKG in ./interp/builtins/tests/cat/ ./interp/builtins/tests/head/ ./interp/builtins/tests/tail/ ./interp/builtins/tests/wc/; do
+            FUZZ_FUNCS=$(grep -r '^func Fuzz.*Differential' $PKG 2>/dev/null | sed 's/.*func \(Fuzz[^(]*\).*/\1/' | sort -u)
+            for FUNC in $FUZZ_FUNCS; do
+              echo "Fuzzing $FUNC in $PKG..."
+              go test -fuzz="^${FUNC}$" -fuzztime=30s $PKG -timeout 300s
+            done
+          done

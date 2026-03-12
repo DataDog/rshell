@@ -60,7 +60,7 @@ jobs:
           # Find all Fuzz* functions in the package (excluding differential ones that need RSHELL_BASH_TEST)
           FUZZ_FUNCS=$(grep -r '^func Fuzz' ${{ matrix.pkg }} 2>/dev/null | grep -v 'Differential' | sed 's/.*func \(Fuzz[^(]*\).*/\1/' | sort -u | tr '\n' '|' | sed 's/|$//')
           if [ -n "$FUZZ_FUNCS" ]; then
-            go test -run "^(${FUZZ_FUNCS})$" -fuzztime=0s ${{ matrix.pkg }} -timeout 120s
+            go test -run "^(${FUZZ_FUNCS})$" ${{ matrix.pkg }} -timeout 120s
           else
             echo "No non-differential fuzz functions found in ${{ matrix.pkg }}, skipping"
           fi
