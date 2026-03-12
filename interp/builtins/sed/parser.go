@@ -463,6 +463,26 @@ func (p *parser) readSubstPart(delim byte) (string, error) {
 				p.pos += 2
 				continue
 			}
+			if next == 'a' {
+				sb.WriteByte('\a')
+				p.pos += 2
+				continue
+			}
+			if next == 'b' {
+				sb.WriteByte('\b')
+				p.pos += 2
+				continue
+			}
+			if next == 'f' {
+				sb.WriteByte('\f')
+				p.pos += 2
+				continue
+			}
+			if next == 'r' {
+				sb.WriteByte('\r')
+				p.pos += 2
+				continue
+			}
 			sb.WriteByte('\\')
 			sb.WriteByte(next)
 			p.pos += 2

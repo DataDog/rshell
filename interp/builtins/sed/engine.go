@@ -53,7 +53,8 @@ func newLineReader(sc *bufio.Scanner, isRegular bool) *lineReader {
 func (lr *lineReader) advance() bool {
 	if lr.sc.Scan() {
 		lr.nextLine = lr.sc.Text()
-		lr.totalRead += int64(len(lr.sc.Bytes()))
+		// Add +1 to account for the newline delimiter stripped by Scanner.
+		lr.totalRead += int64(len(lr.sc.Bytes())) + 1
 		lr.hasNext = true
 		return true
 	}
@@ -613,7 +614,14 @@ func (eng *engine) printUnambiguous() {
 		case r < 32 || r == 127:
 			s = fmt.Sprintf("\\%03o", r)
 		default:
-			s = string(r)
+			if r > 127 {
+				// Output non-ASCII bytes as octal escapes like GNU sed.
+				for _, b := range []byte(string(r)) {
+					s += fmt.Sprintf("\\%03o", b)
+				}
+			} else {
+				s = string(r)
+			}
 		}
 		if col+len(s) >= 70 {
 			sb.WriteString("\\\n")
