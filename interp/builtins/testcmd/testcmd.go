@@ -246,14 +246,12 @@ func (p *parser) parseNot() bool {
 			p.advance()
 			return true
 		}
-		// POSIX 3-arg rule: if exactly 3 tokens remain and "!" is followed
-		// by a binary operator, treat it as a literal string operand
-		// (fall through to parsePrimary for binary expression).
-		// With more than 3 tokens, "!" is always negation.
-		if remaining == 3 && isBinaryOp(p.args[p.pos+1]) {
-			return p.parsePrimary()
-		}
-		if remaining == 3 && (p.args[p.pos+1] == "-a" || p.args[p.pos+1] == "-o") {
+		// POSIX 3-arg rule: if the total argument count is exactly 3 and
+		// "!" is followed by a binary operator, treat it as a literal
+		// string operand (fall through to parsePrimary for binary expression).
+		// We check len(p.args) (total args) not remaining, because this rule
+		// must not fire inside recursive parseAnd/parseOr calls.
+		if len(p.args) == 3 && isBinaryOpOrLogical(p.args[p.pos+1]) {
 			return p.parsePrimary()
 		}
 		if p.depth >= maxParenDepth {
@@ -288,7 +286,7 @@ func (p *parser) parsePrimary() bool {
 	// remaining==1 is a bare non-empty string per POSIX single-argument rules.
 	// When "(" is followed by a binary operator (e.g., "(" = "("), treat it
 	// as a literal string operand.
-	if cur == "(" && remaining > 1 && !(remaining == 3 && isBinaryOp(p.args[p.pos+1])) && !(remaining == 3 && (p.args[p.pos+1] == "-a" || p.args[p.pos+1] == "-o")) {
+	if cur == "(" && remaining > 1 && !isThreeArgBinary(p.args, p.pos) {
 		if p.depth >= maxParenDepth {
 			p.callCtx.Errf("%s: expression too deeply nested\n", p.cmdName)
 			p.err = true
@@ -324,12 +322,12 @@ func (p *parser) parsePrimary() bool {
 		if isBinaryOp(op) {
 			return p.parseBinaryExpr()
 		}
-		// POSIX 3-arg rule: when exactly 3 tokens remain and the middle
-		// one is -a/-o, treat as binary AND/OR with string operands.
-		// e.g., "test -f -a -d" → "-f" (non-empty) AND "-d" (non-empty).
-		// Only when exactly 3 remain — with more tokens, -a/-o are handled
-		// by parseAnd/parseOr at their proper precedence level.
-		if remaining == 3 && (op == "-a" || op == "-o") {
+		// POSIX 3-arg rule: when the total argument count is exactly 3
+		// and the middle token is -a/-o, treat as binary AND/OR with
+		// string operands. e.g., "test -f -a -d" → "-f" AND "-d".
+		// We check len(p.args) (total args) not remaining, because this
+		// rule must not fire inside recursive parseAnd/parseOr calls.
+		if len(p.args) == 3 && (op == "-a" || op == "-o") {
 			return p.parseBinaryExpr()
 		}
 	}
@@ -364,6 +362,22 @@ func isBinaryOp(op string) bool {
 		return true
 	}
 	return false
+}
+
+// isBinaryOpOrLogical returns true if op is a binary comparison operator
+// or a logical operator (-a/-o) that can act as a binary operator in the
+// POSIX 3-argument form.
+func isBinaryOpOrLogical(op string) bool {
+	return isBinaryOp(op) || op == "-a" || op == "-o"
+}
+
+// isThreeArgBinary returns true when the total argument count is exactly 3
+// and the token at pos+1 is a binary or logical operator. This implements
+// the POSIX 3-argument disambiguation rule, which must only fire at the
+// top level (total args == 3), never inside recursive descent calls where
+// remaining == 3 but total args > 3.
+func isThreeArgBinary(args []string, pos int) bool {
+	return len(args) == 3 && pos+1 < len(args) && isBinaryOpOrLogical(args[pos+1])
 }
 
 func isUnaryFileOp(op string) bool {
