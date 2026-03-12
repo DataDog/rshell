@@ -1,5 +1,4 @@
-skip_assert_against_bash: true
-description: Multi-line if statement is blocked.
+description: Multi-line if statement format.
 input:
   script: |+
     if true
@@ -7,7 +6,7 @@ input:
       echo yes
     fi
 expect:
-  stdout: ""
-  stderr: |+
-    if statements are not supported
-  exit_code: 2
+  stdout: |+
+    yes
+  stderr: ""
+  exit_code: 0
