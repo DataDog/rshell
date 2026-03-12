@@ -160,6 +160,10 @@ var builtinAllowedSymbols = []string{
 	"unicode/utf8.UTFMax",
 	// unicode/utf8.Valid — checks if a byte slice is valid UTF-8; pure function, no I/O.
 	"unicode/utf8.Valid",
+	// time.Duration — duration type; pure integer alias, no I/O.
+	"time.Duration",
+	// time.Minute — constant representing one minute; no side effects.
+	"time.Minute",
 	// time.Time — time value type; pure data, no side effects.
 	"time.Time",
 }
