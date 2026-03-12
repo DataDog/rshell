@@ -578,6 +578,12 @@ func extractKeyFromFields(fields []string, k keySpec, joiner string) string {
 		ef = len(fields) - 1
 	}
 
+	// GNU sort treats end-before-start (e.g. -k 2,1) as a zero-width key,
+	// which falls back to whole-line comparison during tie-breaking.
+	if ef < sf {
+		return ""
+	}
+
 	if sf == ef {
 		// Same field.
 		s := fields[sf]
