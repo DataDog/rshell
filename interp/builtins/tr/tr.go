@@ -38,7 +38,7 @@
 //	                    [:digit:], [:graph:], [:lower:], [:upper:],
 //	                    [:print:], [:punct:], [:space:], [:xdigit:]
 //	Equivalence class:  [=c=]  (matches the literal character c)
-//	Repeat (SET2 only): [c*n]  (repeat char c, n times; [c*] fills)
+//	Repeat:             [c*n]  (repeat char c, n times; [c*] fills, SET2 only)
 //	Backslash escapes:  \a \b \f \n \r \t \v \\ \NNN (octal)
 //
 // Exit codes:
@@ -164,7 +164,10 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 				callCtx.Errf("tr: when translating with string1 longer than string2,\nthe latter string must not end with a character class\n")
 				return builtins.Result{Code: 1}
 			}
-			if *complement && set1ContainsCharClass && !mapsToSingleByte(set2) {
+				// GNU tr rejects complemented-class translation when STRING2 doesn't
+			// map to a single byte, or when -t is used (truncation makes the
+			// full-domain mapping impossible).
+			if *complement && set1ContainsCharClass && (*truncateSet1 || !mapsToSingleByte(set2)) {
 				callCtx.Errf("tr: when translating with complemented character classes,\nstring2 must map all characters in the domain to one\n")
 				return builtins.Result{Code: 1}
 			}
@@ -437,10 +440,15 @@ func expandSetBytes(data []byte, isSet2 bool, set1Len int, translateSet2 bool, c
 			}
 			if i+2 < len(data) {
 				if rpt, advance, fillCh, isFill := parseRepeat(data, i); advance > 0 {
-					if !isSet2 {
+					if !isSet2 && isFill {
+						// GNU tr rejects [c*] (fill) in STRING1, but accepts
+						// explicit repeat counts like [c*3] (expands to "ccc").
 						return nil, &trError{"the [c*] repeat construct may not appear in string1"}
 					}
-					if !translateSet2 {
+					if isFill && !translateSet2 {
+						// Fill repeats are only meaningful when translating (they
+						// pad STRING2 to match STRING1 length).  Explicit counts
+						// are accepted in all modes (e.g. -ds squeeze set).
 						return nil, &trError{"the [c*] construct may appear in string2 only when translating"}
 					}
 					if isFill {
