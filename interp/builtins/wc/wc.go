@@ -206,6 +206,9 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 }
 
 func countFile(ctx context.Context, callCtx *builtins.CallContext, path string) (counts, error) {
+	if path == "" {
+		return counts{}, &os.PathError{Op: "open", Path: path, Err: os.ErrNotExist}
+	}
 	var rc io.ReadCloser
 	if path == "-" {
 		if callCtx.Stdin == nil {
