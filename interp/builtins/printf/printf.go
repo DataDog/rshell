@@ -1049,7 +1049,6 @@ func parseFloatArg(s string) (floatArg, error) {
 	return floatArg{f: val}, nil
 }
 
-
 // processBEscapes handles backslash escapes for %b (like echo -e).
 // Returns the processed string, whether \c was seen (stop all output),
 // and any warning messages to emit to stderr.
