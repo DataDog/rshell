@@ -136,7 +136,7 @@ func TestExtractKeyCharOffsetIncludesBlanks(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := extractKey(tt.line, tt.key, 0, false, false)
+			got := extractKey(tt.line, tt.key, 0, false, false, false)
 			assert.Equal(t, tt.expect, got)
 		})
 	}
@@ -173,7 +173,7 @@ func TestExtractKeyEndBeforeStartIsZeroWidth(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := extractKey(tt.line, tt.key, 0, false, false)
+			got := extractKey(tt.line, tt.key, 0, false, false, false)
 			assert.Equal(t, tt.expect, got)
 		})
 	}

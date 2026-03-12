@@ -367,12 +367,14 @@ type keyOpts struct {
 
 // keySpec represents a parsed -k KEYDEF.
 type keySpec struct {
-	startField int // 1-based
-	startChar  int // 1-based, 0 means whole field
-	endField   int // 1-based, 0 means end of line
-	endChar    int // 1-based, 0 means end of field
-	opts       keyOpts
-	hasOpts    bool // true if modifiers were specified on this key
+	startField     int // 1-based
+	startChar      int // 1-based, 0 means whole field
+	endField       int // 1-based, 0 means end of line
+	endChar        int // 1-based, 0 means end of field
+	opts           keyOpts
+	hasOpts        bool // true if modifiers were specified on this key
+	startIgnBlanks bool // -b on start position (skip leading blanks for start offset)
+	endIgnBlanks   bool // -b on end position (skip leading blanks for end offset)
 }
 
 // parseKeyDef parses a KEYDEF string like "2,2" or "1.2n,1.3" or "2nr".
@@ -400,6 +402,7 @@ func parseKeyDef(s string) (keySpec, error) {
 	if opts.hasAny {
 		k.opts = opts.ko
 		k.hasOpts = true
+		k.startIgnBlanks = opts.ko.ignBlanks
 	}
 
 	if endPart != "" {
@@ -410,6 +413,7 @@ func parseKeyDef(s string) (keySpec, error) {
 		k.endField = end.field
 		k.endChar = end.char
 		if endOpts.hasAny {
+			k.endIgnBlanks = endOpts.ko.ignBlanks
 			k.opts = mergeOpts(k.opts, endOpts.ko)
 			k.hasOpts = true
 		}
@@ -521,9 +525,9 @@ func mergeOpts(a, b keyOpts) keyOpts {
 // extractKey extracts the sort key substring from a line based on a keySpec.
 // It works with byte positions in the original line to avoid reconstruction
 // artifacts (e.g. synthetic joiners doubling blanks in blank-separated mode).
-// When ignBlanks is true, character offsets are computed after skipping
-// leading blanks in the field (matching GNU sort -b behavior).
-func extractKey(line string, k keySpec, sep byte, hasSep bool, ignBlanks bool) string {
+// ignBlanksStart/ignBlanksEnd control whether leading blanks are skipped
+// when computing the start/end byte positions respectively (GNU sort -b).
+func extractKey(line string, k keySpec, sep byte, hasSep bool, ignBlanksStart, ignBlanksEnd bool) string {
 	// Compute field start/end byte positions in the original line.
 	type fieldBound struct{ start, end int }
 	var bounds []fieldBound
@@ -555,7 +559,7 @@ func extractKey(line string, k keySpec, sep byte, hasSep bool, ignBlanks bool) s
 
 	// Compute start byte position.
 	keyStart := bounds[sf].start
-	if ignBlanks {
+	if ignBlanksStart {
 		for keyStart < bounds[sf].end && (line[keyStart] == ' ' || line[keyStart] == '\t') {
 			keyStart++
 		}
@@ -583,7 +587,7 @@ func extractKey(line string, k keySpec, sep byte, hasSep bool, ignBlanks bool) s
 	}
 
 	endFieldStart := bounds[ef].start
-	if ignBlanks {
+	if ignBlanksEnd {
 		for endFieldStart < bounds[ef].end && (line[endFieldStart] == ' ' || line[endFieldStart] == '\t') {
 			endFieldStart++
 		}
@@ -957,9 +961,22 @@ func buildCompare(keys []keySpec, globalOpts keyOpts, sep byte, hasSep bool, sta
 				if k.hasOpts {
 					opts = k.opts
 				}
-				ka := extractKey(a, k, sep, hasSep, opts.ignBlanks)
-				kb := extractKey(b, k, sep, hasSep, opts.ignBlanks)
-				c := compareStrings(ka, kb, opts)
+				// Determine start/end blank-skipping independently.
+				// GNU sort applies -b per-position: start-b and end-b
+				// are tracked separately on the key spec.
+				startB := opts.ignBlanks
+				endB := opts.ignBlanks
+				if k.hasOpts {
+					startB = k.startIgnBlanks
+					endB = k.endIgnBlanks
+				}
+				ka := extractKey(a, k, sep, hasSep, startB, endB)
+				kb := extractKey(b, k, sep, hasSep, startB, endB)
+				// Don't apply -b again in compareStrings — extractKey
+				// already handled blank-skipping during position computation.
+				compOpts := opts
+				compOpts.ignBlanks = false
+				c := compareStrings(ka, kb, compOpts)
 				if opts.reverse {
 					c = -c
 				}
