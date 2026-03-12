@@ -252,6 +252,9 @@ func (p *parser) parseNot() bool {
 		if remaining >= 3 && isBinaryOp(p.args[p.pos+1]) {
 			return p.parsePrimary()
 		}
+		if remaining == 3 && (p.args[p.pos+1] == "-a" || p.args[p.pos+1] == "-o") {
+			return p.parsePrimary()
+		}
 		if p.depth >= maxParenDepth {
 			p.callCtx.Errf("%s: expression too deeply nested\n", p.cmdName)
 			p.err = true
@@ -284,7 +287,7 @@ func (p *parser) parsePrimary() bool {
 	// remaining==1 is a bare non-empty string per POSIX single-argument rules.
 	// When "(" is followed by a binary operator (e.g., "(" = "("), treat it
 	// as a literal string operand.
-	if cur == "(" && remaining > 1 && !(remaining >= 3 && isBinaryOp(p.args[p.pos+1])) {
+	if cur == "(" && remaining > 1 && !(remaining >= 3 && isBinaryOp(p.args[p.pos+1])) && !(remaining == 3 && (p.args[p.pos+1] == "-a" || p.args[p.pos+1] == "-o")) {
 		if p.depth >= maxParenDepth {
 			p.callCtx.Errf("%s: expression too deeply nested\n", p.cmdName)
 			p.err = true
@@ -318,6 +321,14 @@ func (p *parser) parsePrimary() bool {
 	if remaining >= 3 {
 		op := p.args[p.pos+1]
 		if isBinaryOp(op) {
+			return p.parseBinaryExpr()
+		}
+		// POSIX 3-arg rule: when exactly 3 tokens remain and the middle
+		// one is -a/-o, treat as binary AND/OR with string operands.
+		// e.g., "test -f -a -d" → "-f" (non-empty) AND "-d" (non-empty).
+		// Only when exactly 3 remain — with more tokens, -a/-o are handled
+		// by parseAnd/parseOr at their proper precedence level.
+		if remaining == 3 && (op == "-a" || op == "-o") {
 			return p.parseBinaryExpr()
 		}
 	}
@@ -412,6 +423,10 @@ func (p *parser) parseBinaryExpr() bool {
 		return p.evalIntCompare(left, op, right)
 	case "-nt", "-ot":
 		return p.evalFileCompare(left, op, right)
+	case "-a":
+		return left != "" && right != ""
+	case "-o":
+		return left != "" || right != ""
 	default:
 		p.callCtx.Errf("%s: unknown binary operator '%s'\n", p.cmdName, op)
 		p.err = true
