@@ -114,56 +114,10 @@ For every behavioral change:
 
 ### D. Test Coverage
 
-Analyze coverage of changed code from two angles: **scenario tests** (YAML) and **Go tests**. Scenario tests are preferred because they also verify bash compatibility.
-
-#### Step 1: Inventory changed code paths
-
-For each changed or added function/branch/error-path, list the code path (e.g. "cut: `-f` with `--complement` and `--output-delimiter`", "error when delimiter is multi-byte").
-
-#### Step 2: Check scenario test coverage (priority)
-
-Search `tests/scenarios/cmd/<command>/` for YAML scenarios that exercise each code path identified in Step 1.
-
-- **Covered** — a scenario exists whose `input.script` triggers the code path and `expect` asserts the output.
-- **Partially covered** — a scenario triggers the code path but doesn't assert stderr, exit code, or an important edge case.
-- **Not covered** — no scenario exercises the code path.
-
-Flag **not covered** and **partially covered** paths as findings. Suggest concrete YAML scenario(s) to add (including `description`, `input.script`, and expected `stdout`/`stderr`/`exit_code`).
-
-Scenario test conventions:
-- Prefer `expect.stderr` (exact match) over `stderr_contains`
-- Tests are asserted against bash by default — only use `skip_assert_against_bash: true` for intentional divergence
-- Use `stdout_windows`/`stderr_windows` for platform-specific output
-- If YAML scenarios are added or modified, verify they pass against bash
-
-#### Step 3: Check Go test coverage
-
-Search `interp/builtins/<command>/*_test.go` for Go tests that exercise any code paths **not already covered by scenario tests**. Go test types to check:
-
-| Test type | File pattern | What it covers |
-|-----------|-------------|----------------|
-| Functional | `<cmd>_test.go` | Core logic, argument parsing, edge cases |
-| GNU compat | `<cmd>_gnu_compat_test.go` | Byte-for-byte output equivalence with GNU coreutils |
-| Pentest | `<cmd>_pentest_test.go` | Security vectors (overflow, special files, resource exhaustion) |
-| Platform | `<cmd>_{unix,windows}_test.go` | OS-specific behavior |
-
-Only flag missing Go tests for paths that **cannot be adequately covered by scenario tests** (e.g. internal error handling, concurrency, memory limits, platform-specific behavior, performance-sensitive paths).
-
-#### Step 4: Produce coverage summary
-
-Include a coverage table in the review output:
-
-```markdown
-| Code path | Scenario test | Go test | Status |
-|-----------|:---:|:---:|--------|
-| `-f` with `--complement` | tests/scenarios/cmd/cut/complement/fields.yaml | — | Covered |
-| multi-byte delimiter error | — | — | **Missing** |
-| `/dev/zero` hang protection | skip (intentional divergence) | cut_pentest_test.go:45 | Covered |
-```
-
-Mark the overall coverage status:
-- **Adequate** — all new/changed code paths are covered (scenario or Go tests)
-- **Gaps found** — list missing coverage as P2 or P3 findings
+- **Are new behaviors tested?** Every new code path should have a corresponding test
+- **Are edge cases tested?** Empty input, boundary values, error conditions
+- **YAML scenario conventions**: prefer `expect.stderr` over `stderr_contains`; tests are asserted against bash by default; use `stdout_windows`/`stderr_windows` for platform-specific output
+- **Bash comparison**: if YAML scenarios are added or modified, verify they pass against bash
 
 ### E. Code Quality
 
@@ -178,48 +132,6 @@ Mark the overall coverage status:
 - Path separators, line endings, OS-specific APIs?
 - Platform-aware path handling (not string concatenation)?
 - Are platform-specific test assertions using the correct fields?
-
-### G. Unnecessary `skip_assert_against_bash: true`
-
-Every YAML scenario in `tests/scenarios/` is validated against bash by default. The `skip_assert_against_bash: true` flag must **only** be set when the shell intentionally diverges from bash (e.g. sandbox restrictions, blocked commands, readonly enforcement, different help/usage text).
-
-#### How to check
-
-1. **Find all scenarios with `skip_assert_against_bash: true`** in the changed or added YAML files:
-   ```bash
-   grep -rl 'skip_assert_against_bash: true' tests/scenarios/cmd/<command>/
-   ```
-
-2. **For each flagged scenario**, run its script against GNU bash + coreutils to see what bash actually produces:
-   ```bash
-   docker run --rm debian:bookworm-slim bash -c '<script from the scenario>'
-   ```
-
-3. **Compare** the bash output (stdout, stderr, exit code) against the scenario's `expect` block.
-
-4. **Classify**:
-
-| Bash output vs scenario expect | Action |
-|-------------------------------|--------|
-| **Matches exactly** | Flag as **unnecessary skip** — the flag must be removed so the scenario is validated against bash |
-| **Differs** and divergence is intentional (sandbox, blocked command, different help text) | Keep the flag — no finding |
-| **Differs** and divergence is unintentional | Flag as a **bash compatibility bug** — fix the implementation to match bash, then remove the flag |
-
-#### What to flag
-
-- **Unnecessary `skip_assert_against_bash: true`** — scenario output matches bash exactly but the flag prevents this from being verified. Severity: **P2** (missing bash validation weakens the test suite).
-- **Unintentional divergence hidden by the flag** — the flag masks a real bash compatibility bug. Severity: **P1** (correctness).
-
-#### Coverage table
-
-Include a table in the review output for all scenarios with the flag:
-
-```markdown
-| Scenario file | Bash matches? | Flag needed? | Status |
-|--------------|:---:|:---:|--------|
-| errors/missing_operand.yaml | No (bash adds "Try 'tr --help'") | Yes | OK |
-| errors/class_in_string2.yaml | Yes | No | **Remove flag** |
-```
 
 ---
 
