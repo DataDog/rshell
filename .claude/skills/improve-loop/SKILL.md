@@ -105,7 +105,7 @@ Mark each target as `pending`. This list will be tracked as you work through the
 
 **GATE CHECK**: Call TaskList. Step 1 must be `completed`. Set Step 2 to `in_progress`.
 
-Set `iteration = 1`. Maximum iterations: **3 full passes** (one pass = reviewing all pending targets). Repeat sub-steps A through F:
+Set `iteration = 1`. Maximum iterations: **50**. Repeat sub-steps A through F:
 
 ---
 
@@ -265,7 +265,7 @@ Check progress:
 |----------------|-----------|--------|
 | > 0 | <= limit | **Continue** → go back to Sub-step 2A |
 | 0 | Any | **All targets reviewed** → proceed to Step 3 |
-| Any | > limit | **STOP — iteration limit reached** → proceed to Step 3 |
+| Any | > 50 | **STOP — iteration limit reached** → proceed to Step 3 |
 
 Log the progress:
 ```
@@ -385,7 +385,7 @@ gh pr comment <pr-number> --body "<the summary markdown above>"
 - **Run tests after every fix** — don't accumulate fixes without testing.
 - **One target at a time** — complete the full review-fix cycle for each target before moving to the next.
 - **Use gate checks** — always call TaskList and verify prerequisites before starting a step.
-- **Respect the iteration limit** — hard stop at 3 full passes to prevent infinite loops.
+- **Respect the iteration limit** — hard stop at 50 iterations to prevent infinite loops.
 - **Format code** — run `gofmt -w .` before every commit.
 - **Stream, don't buffer** — when fixing builtins, ensure they stream output for large inputs.
 - **Sandbox first** — all filesystem access must go through the sandbox wrapper, never direct `os.*` calls.
