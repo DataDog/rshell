@@ -20,6 +20,7 @@ import (
 	"github.com/DataDog/rshell/interp/builtins/head"
 	"github.com/DataDog/rshell/interp/builtins/ls"
 	printfcmd "github.com/DataDog/rshell/interp/builtins/printf"
+	"github.com/DataDog/rshell/interp/builtins/sed"
 	"github.com/DataDog/rshell/interp/builtins/strings_cmd"
 	"github.com/DataDog/rshell/interp/builtins/tail"
 	"github.com/DataDog/rshell/interp/builtins/testcmd"
@@ -45,6 +46,7 @@ func registerBuiltins() {
 			head.Cmd,
 			ls.Cmd,
 			printfcmd.Cmd,
+			sed.Cmd,
 			strings_cmd.Cmd,
 			tail.Cmd,
 			testcmd.Cmd,
