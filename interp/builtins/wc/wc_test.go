@@ -354,7 +354,7 @@ func TestWcPipeInput(t *testing.T) {
 	writeFile(t, dir, "file.txt", "alpha\nbeta\ngamma\n")
 	stdout, _, code := cmdRun(t, "cat file.txt | wc -l", dir)
 	assert.Equal(t, 0, code)
-	assert.Equal(t, "      3\n", stdout)
+	assert.Equal(t, "3\n", stdout)
 }
 
 // --- Combined flags ---

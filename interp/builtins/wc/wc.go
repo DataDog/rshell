@@ -175,7 +175,12 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 		}
 
 		width := fieldWidth(total, opts)
-		if hasStdin && width < stdinMinWidth {
+		// GNU wc uses a minimum column width of 7 for stdin, but only
+		// in default mode (all three columns: lines, words, bytes).
+		// When explicit flags are given (e.g. wc -l), the width is
+		// determined solely by the count values.
+		defaultMode := !*lines && !*words && !*bytesFlag && !*chars && !*maxLineLen
+		if hasStdin && defaultMode && width < stdinMinWidth {
 			width = stdinMinWidth
 		}
 
@@ -273,6 +278,9 @@ func countReader(ctx context.Context, r io.Reader) (counts, error) {
 					lineLen = 0
 					inWord = false
 				} else if ch == '\r' {
+					if lineLen > c.maxLineLen {
+						c.maxLineLen = lineLen
+					}
 					lineLen = 0
 					inWord = false
 				} else if ch == '\t' {
@@ -282,6 +290,9 @@ func countReader(ctx context.Context, r io.Reader) (counts, error) {
 					lineLen++
 					inWord = false
 				} else if ch == '\f' {
+					if lineLen > c.maxLineLen {
+						c.maxLineLen = lineLen
+					}
 					lineLen = 0
 					inWord = false
 				} else if ch == '\v' {

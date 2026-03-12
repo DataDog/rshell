@@ -184,6 +184,30 @@ func TestGNUCompatMaxLineLenFormFeed(t *testing.T) {
 	assert.Equal(t, "3 file.txt\n", stdout)
 }
 
+// TestGNUCompatMaxLineLenCRAsymmetric — -L with \r where text before \r is longer.
+//
+// GNU command: printf 'abcdef\rxy\n' | wc -L
+// Expected: "6\n" — max(6, 2) = 6; \r resets position but preserves max.
+func TestGNUCompatMaxLineLenCRAsymmetric(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "file.txt", "abcdef\rxy\n")
+	stdout, _, code := cmdRun(t, "wc -L file.txt", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "6 file.txt\n", stdout)
+}
+
+// TestGNUCompatMaxLineLenFFAsymmetric — -L with \f where text before \f is longer.
+//
+// GNU command: printf 'abcdef\fxy\n' | wc -L
+// Expected: "6\n" — max(6, 2) = 6; \f resets position but preserves max.
+func TestGNUCompatMaxLineLenFFAsymmetric(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "file.txt", "abcdef\fxy\n")
+	stdout, _, code := cmdRun(t, "wc -L file.txt", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "6 file.txt\n", stdout)
+}
+
 // TestGNUCompatRejectedFlag — unknown flag exits 1.
 //
 // GNU command: gwc --follow
