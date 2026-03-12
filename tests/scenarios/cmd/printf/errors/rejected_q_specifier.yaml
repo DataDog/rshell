@@ -1,0 +1,12 @@
+description: printf rejects the %q format specifier with a clear error message.
+skip_assert_against_bash: true
+input:
+  script: |+
+    printf "%q\n" "hello world"
+expect:
+  stdout: "\n"
+  stderr_contains:
+    - "printf"
+    - "%q"
+    - "not supported"
+  exit_code: 1

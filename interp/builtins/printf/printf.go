@@ -444,11 +444,11 @@ func processSpecifier(callCtx *builtins.CallContext, s string, args []string, ar
 		return false, i, true
 	}
 
-	// Skip C-style length modifiers (l, ll, h, hh, j, t, z, q).
+	// Skip C-style length modifiers (l, ll, h, hh, j, t, z).
 	// Bash accepts and effectively ignores them.
 	for i < len(s) {
 		switch s[i] {
-		case 'l', 'h', 'j', 't', 'z', 'q':
+		case 'l', 'h', 'j', 't', 'z':
 			i++
 			continue
 		}
