@@ -1,10 +1,9 @@
-skip_assert_against_bash: true
-description: If-else statement is blocked.
+description: If-else takes else branch when condition is false.
 input:
   script: |+
     if false; then echo yes; else echo no; fi
 expect:
-  stdout: ""
-  stderr: |+
-    if statements are not supported
-  exit_code: 2
+  stdout: |+
+    no
+  stderr: ""
+  exit_code: 0

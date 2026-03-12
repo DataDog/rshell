@@ -1,0 +1,10 @@
+skip_assert_against_bash: true
+description: Variable expansion in redirect target is blocked (even if it resolves to /dev/null).
+input:
+  script: |+
+    TARGET=/dev/null; echo hello > $TARGET
+expect:
+  stdout: ""
+  stderr: |+
+    > file redirection is not supported
+  exit_code: 2

@@ -1,8 +1,8 @@
 skip_assert_against_bash: true
-description: Output fd duplication (>&N) is blocked.
+description: Output fd duplication (>&N) with unsupported fd is blocked.
 input:
   script: |+
-    echo hello 2>&1
+    echo hello 3>&1
 expect:
   stdout: ""
   stderr: |+

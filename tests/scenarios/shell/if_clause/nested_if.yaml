@@ -1,10 +1,13 @@
-skip_assert_against_bash: true
-description: Nested if statement is blocked.
+description: Nested if inside then branch.
 input:
   script: |+
-    if if true; then true; fi; then echo yes; fi
+    if true; then
+      if true; then
+        echo inner
+      fi
+    fi
 expect:
-  stdout: ""
-  stderr: |+
-    if statements are not supported
-  exit_code: 2
+  stdout: |+
+    inner
+  stderr: ""
+  exit_code: 0

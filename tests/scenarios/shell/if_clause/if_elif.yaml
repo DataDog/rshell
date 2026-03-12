@@ -1,10 +1,9 @@
-skip_assert_against_bash: true
-description: If-elif statement is blocked.
+description: If-elif takes elif branch when first condition fails and elif succeeds.
 input:
   script: |+
     if false; then echo a; elif true; then echo b; fi
 expect:
-  stdout: ""
-  stderr: |+
-    if statements are not supported
-  exit_code: 2
+  stdout: |+
+    b
+  stderr: ""
+  exit_code: 0
