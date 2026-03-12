@@ -19,6 +19,7 @@ Blocked features are rejected before execution with exit code 2.
 - ✅ `sed [-n] [-e SCRIPT] [-E|-r] [SCRIPT] [FILE]...` — stream editor for filtering and transforming text; uses RE2 regex engine; `-i`/`-f` rejected; `e`/`w`/`W`/`r`/`R` commands blocked
 - ✅ `strings [-a] [-n MIN] [-t o|d|x] [-o] [-f] [-s SEP] [FILE]...` — print printable character sequences in files (default min length 4); offsets via `-t`/`-o`; filename prefix via `-f`; custom separator via `-s`
 - ✅ `tail [-n N|-c N] [-q|-v] [-z] [FILE]...` — output the last part of files (default: last 10 lines); supports `+N` offset mode; `-f`/`--follow` is rejected
+- ✅ `test EXPRESSION` / `[ EXPRESSION ]` — evaluate conditional expression (file tests, string/integer comparison, logical operators)
 - ✅ `tr [-cdsCt] SET1 [SET2]` — translate, squeeze, and/or delete characters from stdin
 - ✅ `true` — return exit code 0
 - ✅ `uniq [OPTION]... [INPUT]` — report or omit repeated lines
@@ -92,7 +93,7 @@ Blocked features are rejected before execution with exit code 2.
 - ❌ Background execution: `cmd &`
 - ❌ Coprocesses: `coproc`
 - ❌ `time`
-- ❌ `[[ ... ]]` test expressions
+- ❌ `[[ ... ]]` extended test expressions (bash extension)
 - ❌ `(( ... ))` arithmetic commands
 - ❌ `declare`, `export`, `local`, `readonly`, `let`
 
