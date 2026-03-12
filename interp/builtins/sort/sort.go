@@ -514,16 +514,90 @@ func mergeOpts(a, b keyOpts) keyOpts {
 }
 
 // extractKey extracts the sort key substring from a line based on a keySpec.
-func extractKey(line string, k keySpec, sep byte, hasSep bool) string {
-	var fields []string
-	joiner := " " // default: blank-separated fields rejoin with space
+// It works with byte positions in the original line to avoid reconstruction
+// artifacts (e.g. synthetic joiners doubling blanks in blank-separated mode).
+// When ignBlanks is true, character offsets are computed after skipping
+// leading blanks in the field (matching GNU sort -b behavior).
+func extractKey(line string, k keySpec, sep byte, hasSep bool, ignBlanks bool) string {
+	// Compute field start/end byte positions in the original line.
+	type fieldBound struct{ start, end int }
+	var bounds []fieldBound
+
 	if hasSep {
-		fields = strings.Split(line, string(sep))
-		joiner = string(sep) // preserve the actual separator
+		pos := 0
+		for {
+			idx := strings.IndexByte(line[pos:], sep)
+			if idx < 0 {
+				bounds = append(bounds, fieldBound{pos, len(line)})
+				break
+			}
+			bounds = append(bounds, fieldBound{pos, pos + idx})
+			pos = pos + idx + 1
+		}
 	} else {
-		fields = splitBlankFields(line)
+		// Blank-separated: fields are contiguous substrings of line.
+		pos := 0
+		for _, f := range splitBlankFields(line) {
+			bounds = append(bounds, fieldBound{pos, pos + len(f)})
+			pos += len(f)
+		}
 	}
-	return extractKeyFromFields(fields, k, joiner)
+
+	sf := k.startField - 1
+	if sf >= len(bounds) {
+		return ""
+	}
+
+	// Compute start byte position.
+	keyStart := bounds[sf].start
+	if ignBlanks {
+		for keyStart < bounds[sf].end && (line[keyStart] == ' ' || line[keyStart] == '\t') {
+			keyStart++
+		}
+	}
+	if k.startChar > 0 {
+		keyStart += k.startChar - 1
+	}
+	if keyStart >= len(line) {
+		return ""
+	}
+
+	// Compute end byte position.
+	if k.endField == 0 {
+		return line[keyStart:]
+	}
+
+	ef := k.endField - 1
+	if ef >= len(bounds) {
+		// End field beyond available fields — treat as end-of-line.
+		return line[keyStart:]
+	}
+	if ef < sf {
+		// GNU sort treats end-before-start (e.g. -k 2,1) as zero-width.
+		return ""
+	}
+
+	endFieldStart := bounds[ef].start
+	if ignBlanks {
+		for endFieldStart < bounds[ef].end && (line[endFieldStart] == ' ' || line[endFieldStart] == '\t') {
+			endFieldStart++
+		}
+	}
+
+	keyEnd := bounds[ef].end
+	if k.endChar > 0 {
+		keyEnd = endFieldStart + k.endChar
+		if keyEnd > bounds[ef].end {
+			keyEnd = bounds[ef].end
+		}
+	}
+	if keyEnd > len(line) {
+		keyEnd = len(line)
+	}
+	if keyStart >= keyEnd {
+		return ""
+	}
+	return line[keyStart:keyEnd]
 }
 
 // splitBlankFields splits a line into fields using blank-to-non-blank
@@ -877,12 +951,12 @@ func buildCompare(keys []keySpec, globalOpts keyOpts, sep byte, hasSep bool, sta
 	return func(a, b string) int {
 		if len(keys) > 0 {
 			for _, k := range keys {
-				ka := extractKey(a, k, sep, hasSep)
-				kb := extractKey(b, k, sep, hasSep)
 				opts := globalOpts
 				if k.hasOpts {
 					opts = k.opts
 				}
+				ka := extractKey(a, k, sep, hasSep, opts.ignBlanks)
+				kb := extractKey(b, k, sep, hasSep, opts.ignBlanks)
 				c := compareStrings(ka, kb, opts)
 				if opts.reverse {
 					c = -c

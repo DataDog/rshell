@@ -129,14 +129,14 @@ func TestExtractKeyCharOffsetIncludesBlanks(t *testing.T) {
 			name: "end field beyond fields multi-field: 'a b' k1.1,3.1 extracts 'a b'",
 			line: "a b",
 			key:  keySpec{startField: 1, startChar: 1, endField: 3, endChar: 1},
-			// 2 blank-split fields: ["a", " b"]; end field 3 out of range → end-of-line
-			// rejoined with " " joiner: "a" + " " + " b" = "a  b"
-			expect: "a  b",
+			// 2 blank-split fields; end field 3 out of range → end-of-line
+			// position-based: returns line[0:] = "a b"
+			expect: "a b",
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := extractKey(tt.line, tt.key, 0, false)
+			got := extractKey(tt.line, tt.key, 0, false, false)
 			assert.Equal(t, tt.expect, got)
 		})
 	}
@@ -173,7 +173,7 @@ func TestExtractKeyEndBeforeStartIsZeroWidth(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := extractKey(tt.line, tt.key, 0, false)
+			got := extractKey(tt.line, tt.key, 0, false, false)
 			assert.Equal(t, tt.expect, got)
 		})
 	}
