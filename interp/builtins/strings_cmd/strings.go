@@ -91,7 +91,7 @@ const (
 
 // radixFlagVal implements pflag.Value for the -t / --radix flag.
 // Validation happens in Set so pflag reports errors during parsing, which also
-// correctly rejects empty values (e.g. --radix= or -t '').
+// correctly rejects empty values (e.g. --radix= or -t ”).
 type radixFlagVal struct{ target *radixFormat }
 
 func (r *radixFlagVal) String() string {
