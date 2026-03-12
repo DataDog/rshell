@@ -410,13 +410,18 @@ func processSpecifier(callCtx *builtins.CallContext, s string, args []string, ar
 
 	case 'c':
 		arg := getStringArg(args, argIdx)
-		// %c prints the first byte of the argument, or NUL for empty.
-		var ch byte
+		// %c prints the first byte of the argument as a raw byte.
+		// We use %s with a single-byte string instead of Go's %c, because
+		// Go's %c treats the byte as a rune and UTF-8 encodes values >= 0x80.
+		// Empty arg produces a NUL byte (bash behavior).
+		var charStr string
 		if len(arg) > 0 {
-			ch = arg[0]
+			charStr = string([]byte{arg[0]})
+		} else {
+			charStr = "\x00"
 		}
-		goFmt.WriteByte('c')
-		callCtx.Out(fmt.Sprintf(goFmt.String(), ch))
+		goFmt.WriteByte('s')
+		callCtx.Out(fmt.Sprintf(goFmt.String(), charStr))
 
 	case 'd', 'i':
 		arg := getStringArg(args, argIdx)
