@@ -176,18 +176,13 @@ func run(ctx context.Context, callCtx *builtins.CallContext, args []string) buil
 }
 
 // isExpressionStart returns true if the argument starts a find expression.
+// GNU find treats any dash-prefixed token with length > 1 as an expression
+// token (not a path), so `-1` is an unknown predicate, not a path argument.
 func isExpressionStart(arg string) bool {
 	if arg == "!" || arg == "(" || arg == ")" {
 		return true
 	}
-	if strings.HasPrefix(arg, "-") && len(arg) > 1 {
-		// Distinguish expression predicates from paths like "-" or paths
-		// that happen to start with "-" (unlikely but possible).
-		// All find predicates start with a letter after the dash.
-		c := arg[1]
-		return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
-	}
-	return false
+	return strings.HasPrefix(arg, "-") && len(arg) > 1
 }
 
 // walkPath walks the directory tree rooted at startPath, evaluating the

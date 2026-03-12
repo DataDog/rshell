@@ -169,11 +169,23 @@ func evalMtime(ec *evalContext, n int64, cmp int) bool {
 }
 
 // evalMmin checks modification time in minutes.
-// GNU find rounds up fractional minutes, so a file 5 seconds old is in
-// minute bucket 1, not 0. This uses math.Ceil to match that behavior.
+// GNU find uses different comparison strategies:
+//   - Exact (N): ceiling-bucketed comparison — a 5s-old file is in bucket 1.
+//   - +N: raw second comparison — delta_seconds > N*60.
+//   - -N: raw second comparison — delta_seconds < N*60.
+//
+// This matches GNU findutils behavior where +N/-N compare against raw
+// seconds while exact N uses a window check.
 func evalMmin(ec *evalContext, n int64, cmp int) bool {
 	modTime := ec.info.ModTime()
 	diff := ec.now.Sub(modTime)
-	mins := int64(math.Ceil(diff.Minutes()))
-	return compareNumeric(mins, n, cmp)
+	switch cmp {
+	case 1: // +N: strictly older than N minutes
+		return int64(diff.Seconds()) > n*60
+	case -1: // -N: strictly newer than N minutes
+		return int64(diff.Seconds()) < n*60
+	default: // N: ceiling-bucketed exact match
+		mins := int64(math.Ceil(diff.Minutes()))
+		return mins == n
+	}
 }

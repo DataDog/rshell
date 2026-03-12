@@ -26,37 +26,50 @@ func TestEvalMminCeiling(t *testing.T) {
 		cmp     int // -1 = less, 0 = exact, +1 = greater
 		matched bool
 	}{
+		// Exact match uses ceiling bucketing: ceil(delta_sec / 60)
+		// +N/-N use raw second comparison: delta_sec > N*60 / delta_sec < N*60
+
 		// 0 seconds old → ceil(0) = 0 → bucket 0
 		{"0s exact 0", 0, 0, 0, true},
-		{"0s gt 0", 0, 0, 1, false},
+		{"0s gt 0", 0, 0, 1, false},   // 0 > 0 = false
+		{"0s lt 1", 0, 1, -1, true},   // 0 < 60 = true
 
 		// 1 second old → ceil(1/60) = 1 → bucket 1
 		{"1s exact 0", 1 * time.Second, 0, 0, false},
 		{"1s exact 1", 1 * time.Second, 1, 0, true},
-		{"1s gt 0", 1 * time.Second, 0, 1, true},
-		{"1s lt 1", 1 * time.Second, 1, -1, false},
+		{"1s gt 0", 1 * time.Second, 0, 1, true},   // 1 > 0 = true
+		{"1s lt 1", 1 * time.Second, 1, -1, true},   // 1 < 60 = true (GNU find matches)
 
 		// 5 seconds old → ceil(5/60) = 1 → bucket 1
 		{"5s exact 0", 5 * time.Second, 0, 0, false},
 		{"5s exact 1", 5 * time.Second, 1, 0, true},
-		{"5s gt 0", 5 * time.Second, 0, 1, true},
+		{"5s gt 0", 5 * time.Second, 0, 1, true},    // 5 > 0 = true
+		{"5s lt 1", 5 * time.Second, 1, -1, true},    // 5 < 60 = true (key regression test)
+
+		// 30 seconds old — the specific case from codex P1
+		{"30s lt 1", 30 * time.Second, 1, -1, true},  // 30 < 60 = true
 
 		// 59 seconds old → ceil(59/60) = 1 → bucket 1
 		{"59s exact 1", 59 * time.Second, 1, 0, true},
 		{"59s exact 0", 59 * time.Second, 0, 0, false},
+		{"59s lt 1", 59 * time.Second, 1, -1, true},  // 59 < 60 = true
 
 		// 60 seconds old → ceil(60/60) = 1 → bucket 1
 		{"60s exact 1", 60 * time.Second, 1, 0, true},
 		{"60s exact 2", 60 * time.Second, 2, 0, false},
+		{"60s gt 1", 60 * time.Second, 1, 1, false},  // 60 > 60 = false
+		{"60s lt 1", 60 * time.Second, 1, -1, false},  // 60 < 60 = false
 
 		// 61 seconds old → ceil(61/60) = 2 → bucket 2
 		{"61s exact 1", 61 * time.Second, 1, 0, false},
 		{"61s exact 2", 61 * time.Second, 2, 0, true},
+		{"61s gt 1", 61 * time.Second, 1, 1, true},   // 61 > 60 = true
+		{"61s lt 2", 61 * time.Second, 2, -1, true},   // 61 < 120 = true
 
 		// 5 minutes old → ceil(300/60) = 5 → bucket 5
 		{"5m exact 5", 5 * time.Minute, 5, 0, true},
-		{"5m gt 4", 5 * time.Minute, 4, 1, true},
-		{"5m lt 6", 5 * time.Minute, 6, -1, true},
+		{"5m gt 4", 5 * time.Minute, 4, 1, true},     // 300 > 240 = true
+		{"5m lt 6", 5 * time.Minute, 6, -1, true},     // 300 < 360 = true
 
 		// 5 minutes 1 second old → ceil(301/60) = 6 → bucket 6
 		{"5m1s exact 6", 5*time.Minute + 1*time.Second, 6, 0, true},
