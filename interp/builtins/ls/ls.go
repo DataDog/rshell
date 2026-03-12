@@ -275,6 +275,14 @@ func listDir(ctx context.Context, callCtx *builtins.CallContext, dir string, opt
 		return errFailed
 	}
 
+	// Clamp negative values to zero so they become no-ops.
+	if opts.offset < 0 {
+		opts.offset = 0
+	}
+	if opts.limit < 0 {
+		opts.limit = 0
+	}
+
 	// Pagination applies only to single-directory, non-recursive listings.
 	// Silently ignore --offset/--limit when used with -R.
 	paginationActive := !opts.recursive && (opts.offset > 0 || opts.limit > 0)
@@ -302,16 +310,6 @@ func listDir(ctx context.Context, callCtx *builtins.CallContext, dir string, opt
 	failed := false
 	var infoEntries []entryInfo
 
-	// Synthesize . and .. for -a (os.ReadDir never includes them).
-	// NOTE: ".." intentionally uses the same FileInfo as "." because the
-	// parent directory may be outside the sandbox and cannot be stat'd.
-	if opts.all {
-		if dotInfo, err := callCtx.StatFile(ctx, dir); err == nil {
-			infoEntries = append(infoEntries, entryInfo{name: ".", info: dotInfo})
-			infoEntries = append(infoEntries, entryInfo{name: "..", info: dotInfo})
-		}
-	}
-
 	for _, e := range entries {
 		if ctx.Err() != nil {
 			break
@@ -333,10 +331,10 @@ func listDir(ctx context.Context, callCtx *builtins.CallContext, dir string, opt
 		})
 	}
 
-	// Sort.
+	// Sort real entries.
 	sortEntries(infoEntries, opts, func(a entryInfo) iofs.FileInfo { return a.info }, func(a entryInfo) string { return a.name })
 
-	// Apply offset: skip first opts.offset entries.
+	// Apply offset: skip first opts.offset entries (real entries only).
 	if opts.offset > 0 && !opts.recursive {
 		if opts.offset >= len(infoEntries) {
 			infoEntries = nil
@@ -344,9 +342,22 @@ func listDir(ctx context.Context, callCtx *builtins.CallContext, dir string, opt
 			infoEntries = infoEntries[opts.offset:]
 		}
 	}
-	// Apply effective limit.
+	// Apply effective limit (real entries only).
 	if len(infoEntries) > effectiveLimit {
 		infoEntries = infoEntries[:effectiveLimit]
+	}
+
+	// Synthesize . and .. for -a (os.ReadDir never includes them).
+	// Prepended after offset/limit so they never consume limit slots.
+	// NOTE: ".." intentionally uses the same FileInfo as "." because the
+	// parent directory may be outside the sandbox and cannot be stat'd.
+	if opts.all {
+		if dotInfo, err := callCtx.StatFile(ctx, dir); err == nil {
+			infoEntries = append([]entryInfo{
+				{name: ".", info: dotInfo},
+				{name: "..", info: dotInfo},
+			}, infoEntries...)
+		}
 	}
 
 	// Print.

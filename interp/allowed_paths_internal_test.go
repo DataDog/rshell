@@ -247,4 +247,29 @@ func TestReadDirLimited(t *testing.T) {
 		require.Error(t, err)
 		assert.ErrorIs(t, err, os.ErrPermission)
 	})
+
+	t.Run("io.EOF is not returned as error", func(t *testing.T) {
+		// Use a fresh directory to avoid interference from other subtests.
+		eofDir := filepath.Join(dir, "eoftest")
+		require.NoError(t, os.Mkdir(eofDir, 0755))
+		for i := range 5 {
+			require.NoError(t, os.WriteFile(filepath.Join(eofDir, fmt.Sprintf("g%02d", i)), nil, 0644))
+		}
+		entries, truncated, err := sb.readDirLimited(ctx, "eoftest", 1000)
+		require.NoError(t, err, "io.EOF should not be returned as error")
+		assert.False(t, truncated)
+		assert.Len(t, entries, 5)
+	})
+
+	t.Run("non-positive maxRead returns empty", func(t *testing.T) {
+		entries, truncated, err := sb.readDirLimited(ctx, ".", 0)
+		require.NoError(t, err)
+		assert.False(t, truncated)
+		assert.Empty(t, entries)
+
+		entries, truncated, err = sb.readDirLimited(ctx, ".", -5)
+		require.NoError(t, err)
+		assert.False(t, truncated)
+		assert.Empty(t, entries)
+	})
 }

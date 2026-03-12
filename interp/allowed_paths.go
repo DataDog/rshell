@@ -207,9 +207,15 @@ func (s *pathSandbox) readDirLimited(ctx context.Context, path string, maxRead i
 	}
 	defer f.Close()
 
+	// Defense-in-depth: if maxRead is non-positive, return immediately.
+	if maxRead <= 0 {
+		return nil, false, nil
+	}
+
 	const batchSize = 256
 	var entries []fs.DirEntry
 	truncated := false
+	var lastErr error
 	for {
 		batch, err := f.ReadDir(batchSize)
 		entries = append(entries, batch...)
@@ -217,7 +223,10 @@ func (s *pathSandbox) readDirLimited(ctx context.Context, path string, maxRead i
 			truncated = true
 			break
 		}
-		if err != nil { // io.EOF means done
+		if err != nil {
+			if err != io.EOF {
+				lastErr = err
+			}
 			break
 		}
 	}
@@ -232,6 +241,9 @@ func (s *pathSandbox) readDirLimited(ctx context.Context, path string, maxRead i
 		entries = entries[:maxRead]
 	}
 
+	if lastErr != nil {
+		return entries, truncated, portablePathError(lastErr)
+	}
 	return entries, truncated, nil
 }
 
