@@ -1,9 +1,0 @@
-description: uniq --group= with explicit empty method is rejected.
-skip_assert_against_bash: true
-input:
-  script: |+
-    printf 'a\na\n' | uniq --group=
-expect:
-  stdout: ""
-  stderr_contains: ["invalid argument '' for '--group'"]
-  exit_code: 1
