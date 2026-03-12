@@ -380,10 +380,12 @@ func listDir(ctx context.Context, callCtx *builtins.CallContext, dir string, opt
 	}
 
 	// Only warn on implicit truncation (no explicit --offset/--limit).
-	// Do not return early — recursion (-R) must still descend into listed subdirs.
+	// Return immediately — do not recurse into subdirectories after hitting
+	// the MaxDirEntries cap. The cap exists to bound total work; continuing
+	// traversal would defeat that purpose.
 	if truncated && !paginationActive {
 		callCtx.Errf("ls: warning: directory '%s': too many entries (exceeded %d limit), output truncated\n", dir, MaxDirEntries)
-		failed = true
+		return errFailed
 	}
 
 	// Recurse into subdirectories if -R.
