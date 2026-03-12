@@ -209,7 +209,7 @@ func processEscapes(s string) (string, bool) {
 }
 
 // writeUnicodeCodepoint writes a Unicode codepoint to the builder.
-// Bash outputs surrogates (U+D800-U+DFFF) literally (e.g. prints "\uD800" as text)
+// Bash emits raw bytes for surrogates (U+D800-U+DFFF), producing invalid UTF-8,
 // and drops values above a certain threshold. We replace surrogates with U+FFFD
 // and drop anything beyond U+10FFFF to avoid emitting invalid UTF-8.
 func writeUnicodeCodepoint(b *strings.Builder, val int64) {
