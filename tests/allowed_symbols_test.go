@@ -90,12 +90,8 @@ var builtinAllowedSymbols = []string{
 	"math.NaN",
 	// os.FileInfo — file metadata interface returned by Stat; no I/O side effects.
 	"os.FileInfo",
-	// os.ErrNotExist — sentinel error for "file does not exist"; pure constant, no I/O.
-	"os.ErrNotExist",
 	// os.O_RDONLY — read-only file flag constant; cannot open files by itself.
 	"os.O_RDONLY",
-	// os.PathError — error type for path-related OS errors; pure type, no I/O.
-	"os.PathError",
 	// regexp.Compile — compiles a regular expression; pure function, no I/O. Uses RE2 engine (linear-time, no backtracking).
 	"regexp.Compile",
 	// regexp.QuoteMeta — escapes all special regex characters in a string; pure function, no I/O.
