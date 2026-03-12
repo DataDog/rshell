@@ -206,7 +206,7 @@ Check **all three** review sources for remaining issues:
 
 1. **Self-review** — Was the latest `/code-review` result **APPROVE** (no findings)?
 
-2. **External reviews** — Are there unresolved PR comment threads from @datadog or @codex?
+2. **External reviews** — Are there unresolved PR comment threads from @datadog, @codex, or @chatgpt-codex-connector?
    ```bash
    gh api graphql -f query='
      query($owner: String!, $repo: String!, $pr: Int!) {
@@ -297,32 +297,37 @@ Run a final verification regardless of how the loop exited:
 
 4. **Confirm @codex has replied to the LATEST review request (with polling):**
 
-   The review request comment posted in Step 2A2 triggers @codex asynchronously. @codex can take **15+ minutes** to respond. You must verify that @codex has actually responded to **the most recent** request, not a previous iteration's request. Replies from earlier iterations do NOT count.
+   The review request comment posted in Step 2A2 triggers @codex asynchronously. The bot may respond as either `codex` or `chatgpt-codex-connector` (the GitHub App). It can take **15+ minutes** to respond. You must verify that the bot has actually responded to **the most recent** request, not a previous iteration's request. Replies from earlier iterations do NOT count.
 
    **How to check:**
    - Find the timestamp of the **last** `@codex` review request comment (the one posted in Step 2A2 of the final iteration). You can identify it by looking for comments authored by the current user containing "@codex" in the body:
      ```bash
-     gh api repos/{owner}/{repo}/issues/{pr-number}/comments --jq '
-       [.[] | select(.body | test("@codex")) | select(.user.login != "codex")] | last | .created_at'
+     gh api repos/{owner}/{repo}/issues/{pr-number}/comments --paginate --jq '
+       [.[] | select(.body | test("@codex")) | select(.user.login != "codex") | select(.user.login != "chatgpt-codex-connector")] | last | .created_at'
      ```
-   - Then check whether @codex has posted a review **after** that timestamp:
+   - Then check whether the codex bot has posted a review **after** that timestamp. Check both possible bot logins (`codex` and `chatgpt-codex-connector`):
      ```bash
-     gh api repos/{owner}/{repo}/pulls/{pr-number}/reviews --jq '
-       [.[] | select(.user.login == "codex")] | last | {submitted_at, state}'
+     gh api repos/{owner}/{repo}/pulls/{pr-number}/reviews --paginate --jq '
+       [.[] | select(.user.login == "codex" or .user.login == "chatgpt-codex-connector")] | last | {submitted_at, state, user: .user.login}'
      ```
-   - Compare the two timestamps. If @codex's latest review `submitted_at` is **after** the latest request's `created_at`, @codex has replied — **verification passes**.
+   - Also check issue comments (the bot may reply as a comment instead of a review):
+     ```bash
+     gh api repos/{owner}/{repo}/issues/{pr-number}/comments --paginate --jq '
+       [.[] | select(.user.login == "codex" or .user.login == "chatgpt-codex-connector")] | last | {created_at, user: .user.login}'
+     ```
+   - Compare timestamps. If the bot's latest review `submitted_at` (or comment `created_at`) is **after** the latest request's `created_at`, the bot has replied — **verification passes**. Use whichever response (review or comment) has the most recent timestamp.
 
-   **Polling wait if @codex hasn't replied yet:**
+   **Polling wait if the bot hasn't replied yet:**
 
    Do NOT immediately fail. Instead, poll and wait:
    - **Poll interval:** 1 minute (use `sleep 60` between checks)
    - **Maximum wait:** 10 minutes (up to 10 poll attempts)
-   - On each poll iteration, re-run both `gh api` commands above and compare timestamps
+   - On each poll iteration, re-run the `gh api` commands above and compare timestamps
    - Log each poll attempt: `"Waiting for @codex reply... (attempt N/10, elapsed Xm)"`
 
-   **Only fail this verification** if @codex has still not replied after the full 10-minute wait. Then go back to **Step 2: Run the review-fix loop**.
+   **Only fail this verification** if the bot has still not replied after the full 10-minute wait. Then go back to **Step 2: Run the review-fix loop**.
 
-   **If @codex has no reviews at all** after the 20-minute wait, the verification also fails.
+   **If the bot has no reviews or comments at all** after the 10-minute wait, the verification also fails.
 
 Record the final state of each dimension (self-review, external reviews, CI, @codex response).
 
