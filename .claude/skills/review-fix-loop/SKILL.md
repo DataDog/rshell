@@ -291,11 +291,11 @@ Run a final verification regardless of how the loop exited:
      2>&1 | head -50
    ```
 
-4. **Confirm @codex has replied to the LATEST review request:**
+4. **Confirm @codex has replied to the LATEST review request (with polling):**
 
-   The review request comment posted in Step 2A2 triggers @codex asynchronously. You must verify that @codex has actually responded to **the most recent** request, not a previous iteration's request. Replies from earlier iterations do NOT count.
+   The review request comment posted in Step 2A2 triggers @codex asynchronously. @codex can take **15+ minutes** to respond. You must verify that @codex has actually responded to **the most recent** request, not a previous iteration's request. Replies from earlier iterations do NOT count.
 
-   To check this:
+   **How to check:**
    - Find the timestamp of the **last** `@codex` review request comment (the one posted in Step 2A2 of the final iteration). You can identify it by looking for comments authored by the current user containing "@codex" in the body:
      ```bash
      gh api repos/{owner}/{repo}/issues/{pr-number}/comments --jq '
@@ -306,10 +306,19 @@ Run a final verification regardless of how the loop exited:
      gh api repos/{owner}/{repo}/pulls/{pr-number}/reviews --jq '
        [.[] | select(.user.login == "codex")] | last | {submitted_at, state}'
      ```
-   - Compare the two timestamps. If @codex's latest review `submitted_at` is **before** the latest request's `created_at`, then @codex has NOT yet replied to the current request — **this verification fails**.
-   - If @codex has no reviews at all, the verification also fails.
+   - Compare the two timestamps. If @codex's latest review `submitted_at` is **after** the latest request's `created_at`, @codex has replied — **verification passes**.
 
-   **If @codex hasn't replied yet**, fail this verification and go back to **Step 2: Run the review-fix loop**.
+   **Polling wait if @codex hasn't replied yet:**
+
+   Do NOT immediately fail. Instead, poll and wait:
+   - **Poll interval:** 1 minute (use `sleep 60` between checks)
+   - **Maximum wait:** 10 minutes (up to 10 poll attempts)
+   - On each poll iteration, re-run both `gh api` commands above and compare timestamps
+   - Log each poll attempt: `"Waiting for @codex reply... (attempt N/10, elapsed Xm)"`
+
+   **Only fail this verification** if @codex has still not replied after the full 10-minute wait. Then go back to **Step 2: Run the review-fix loop**.
+
+   **If @codex has no reviews at all** after the 20-minute wait, the verification also fails.
 
 Record the final state of each dimension (self-review, external reviews, CI, @codex response).
 
