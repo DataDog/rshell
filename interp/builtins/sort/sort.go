@@ -91,10 +91,11 @@ var Cmd = builtins.Command{Name: "sort", MakeFlags: registerFlags}
 // be detected. GNU sort rejects mixed modes with "options '-cC' are
 // incompatible".
 type checkTracker struct {
-	last      string // last mode set
-	sawDiag   bool   // saw diagnose/diagnose-first/""
-	sawSilent bool   // saw silent/quiet
-	invalid   string // first unrecognized value, if any
+	last       string // last mode set
+	sawDiag    bool   // saw diagnose/diagnose-first
+	sawSilent  bool   // saw silent/quiet
+	hasInvalid bool   // true if an unrecognized value was seen
+	invalid    string // first unrecognized value
 }
 
 func (ct *checkTracker) String() string { return ct.last }
@@ -105,10 +106,13 @@ func (ct *checkTracker) Set(s string) error {
 	switch s {
 	case "silent", "quiet":
 		ct.sawSilent = true
-	case "diagnose", "diagnose-first", "":
+	case "diagnose", "diagnose-first":
 		ct.sawDiag = true
 	default:
-		ct.invalid = s
+		if !ct.hasInvalid {
+			ct.invalid = s
+		}
+		ct.hasInvalid = true
 	}
 	return nil
 }
@@ -189,7 +193,7 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 		checkEnabled := false
 		checkSilent := false
 		if fs.Changed("check") {
-			if checkFlag.invalid != "" {
+			if checkFlag.hasInvalid {
 				callCtx.Errf("sort: invalid argument %q for '--check'\n", checkFlag.invalid)
 				return builtins.Result{Code: 2}
 			}
