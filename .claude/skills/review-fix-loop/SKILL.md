@@ -295,12 +295,12 @@ Run a final verification regardless of how the loop exited:
      2>&1 | head -50
    ```
 
-4. **Confirm @codex has replied to the LATEST review request (with polling):**
+4. **Confirm Codex has replied to the LATEST review request (with polling):**
 
-   The review request comment posted in Step 2A2 triggers @codex asynchronously. The bot may respond as either `codex` or `chatgpt-codex-connector[bot]` (the GitHub App). It can take **15+ minutes** to respond. You must verify that the bot has actually responded to **the most recent** request, not a previous iteration's request. Replies from earlier iterations do NOT count.
+   The review request comment posted in Step 2A2 triggers Codex asynchronously. The bot may respond as either `codex` or `chatgpt-codex-connector[bot]` (the GitHub App). It can take **15+ minutes** to respond. You must verify that the bot has actually responded to **the most recent** request, not a previous iteration's request. Replies from earlier iterations do NOT count.
 
    **How to check:**
-   - Find the timestamp of the **last** `@codex` review request comment (the one posted in Step 2A2 of the final iteration). You can identify it by looking for comments authored by the current user containing "@codex" in the body:
+   - Find the timestamp of the **last** Codex review request comment (the one posted in Step 2A2 of the final iteration). You can identify it by looking for comments authored by the current user containing "@codex" in the body:
      ```bash
      gh api repos/{owner}/{repo}/issues/{pr-number}/comments --paginate --jq '
        [.[] | select(.body | test("@codex")) | select(.user.login != "codex") | select(.user.login != "chatgpt-codex-connector[bot]")] | last | .created_at'
@@ -323,15 +323,15 @@ Run a final verification regardless of how the loop exited:
    - **Poll interval:** 1 minute (use `sleep 60` between checks)
    - **Maximum wait:** 10 minutes (up to 10 poll attempts)
    - On each poll iteration, re-run the `gh api` commands above and compare timestamps
-   - Log each poll attempt: `"Waiting for @codex reply... (attempt N/10, elapsed Xm)"`
+   - Log each poll attempt: `"Waiting for Codex reply... (attempt N/10, elapsed Xm)"`
 
    **Only fail this verification** if the bot has still not replied after the full 10-minute wait. Then go back to **Step 2: Run the review-fix loop**.
 
    **If the bot has no reviews or comments at all** after the 10-minute wait, the verification also fails.
 
-Record the final state of each dimension (self-review, external reviews, CI, @codex response).
+Record the final state of each dimension (self-review, external reviews, CI, Codex response).
 
-**If any verification fails** (CI failing, unresolved threads remain, unpushed commits that can't be pushed, or @codex hasn't responded to the latest review request), reset Step 2 and all its sub-steps to `pending`, and go back to **Step 2: Run the review-fix loop** for another iteration. Only proceed to Step 4 when all verifications pass.
+**If any verification fails** (CI failing, unresolved threads remain, unpushed commits that can't be pushed, or Codex hasn't responded to the latest review request), reset Step 2 and all its sub-steps to `pending`, and go back to **Step 2: Run the review-fix loop** for another iteration. Only proceed to Step 4 when all verifications pass.
 
 **Completion check:** All four verifications passed. Mark Step 3 as `completed`.
 
