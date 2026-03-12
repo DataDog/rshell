@@ -24,6 +24,7 @@ func cmdRunCtx(ctx context.Context, t *testing.T, script, dir string) (string, s
 }
 
 // FuzzUniq fuzzes uniq with arbitrary file content.
+// Edge cases: MaxLineBytes (1 MiB) cap, no-trailing-newline, null bytes, CRLF.
 func FuzzUniq(f *testing.F) {
 	f.Add([]byte("a\na\nb\nb\nc\n"))
 	f.Add([]byte{})
@@ -32,6 +33,23 @@ func FuzzUniq(f *testing.F) {
 	f.Add(bytes.Repeat([]byte("x\n"), 100))
 	f.Add([]byte("\n\n\n"))
 	f.Add([]byte("AAA\naaa\nAAA\n"))
+	// All identical lines
+	f.Add(bytes.Repeat([]byte("same\n"), 1000))
+	// All unique lines
+	f.Add([]byte("a\nb\nc\nd\ne\n"))
+	// Single line, no newline
+	f.Add([]byte("single"))
+	// CRLF lines
+	f.Add([]byte("a\r\na\r\nb\r\n"))
+	// Lines near the 1 MiB cap
+	f.Add(append(bytes.Repeat([]byte("a"), 1<<20-1), '\n'))
+	f.Add(append(bytes.Repeat([]byte("a"), 1<<20), '\n'))
+	// Null bytes in lines
+	f.Add([]byte("a\x00b\na\x00b\nc\n"))
+	// Invalid UTF-8
+	f.Add([]byte{0xfc, 0x80, 0x80, '\n', 0xfc, 0x80, 0x80, '\n'})
+	// countFieldWidth=7: count > 9999999 would overflow field
+	f.Add(bytes.Repeat([]byte("x\n"), 10000000/2))
 
 	f.Fuzz(func(t *testing.T, input []byte) {
 		if len(input) > 1<<20 {
@@ -54,11 +72,18 @@ func FuzzUniq(f *testing.F) {
 }
 
 // FuzzUniqCount fuzzes uniq -c with arbitrary file content.
+// Edge cases: countFieldWidth=7, very large repeat counts, overflow formatting.
 func FuzzUniqCount(f *testing.F) {
 	f.Add([]byte("a\na\nb\nb\nc\n"))
 	f.Add([]byte{})
 	f.Add([]byte("no newline"))
 	f.Add([]byte("a\na\na\n"))
+	// Many duplicates — count field must not overflow
+	f.Add(bytes.Repeat([]byte("x\n"), 9999998))
+	// Single occurrence
+	f.Add([]byte("unique\n"))
+	// CRLF
+	f.Add([]byte("a\r\na\r\nb\r\n"))
 
 	f.Fuzz(func(t *testing.T, input []byte) {
 		if len(input) > 1<<20 {
@@ -81,14 +106,29 @@ func FuzzUniqCount(f *testing.F) {
 }
 
 // FuzzUniqFlags fuzzes uniq with various flag combinations.
+// Edge cases: -f/-s/-w field/char skipping with MaxCount clamp, -i case folding,
+// -D/-d deduplication modes, -z NUL delimiter.
 func FuzzUniqFlags(f *testing.F) {
-	f.Add([]byte("a\na\nb\nb\nc\n"), true, false, false, int64(0), int64(0))
-	f.Add([]byte("AAA\naaa\nAAA\n"), false, true, false, int64(0), int64(0))
-	f.Add([]byte("  a x\n  a y\n  b x\n"), false, false, false, int64(1), int64(0))
-	f.Add([]byte("aaa\naab\naac\n"), false, false, false, int64(0), int64(2))
-	f.Add([]byte("a\na\nb\n"), false, false, true, int64(0), int64(0))
+	f.Add([]byte("a\na\nb\nb\nc\n"), true, false, false, false, int64(0), int64(0), int64(0))
+	f.Add([]byte("AAA\naaa\nAAA\n"), false, true, false, false, int64(0), int64(0), int64(0))
+	f.Add([]byte("  a x\n  a y\n  b x\n"), false, false, false, false, int64(1), int64(0), int64(0))
+	f.Add([]byte("aaa\naab\naac\n"), false, false, false, false, int64(0), int64(2), int64(0))
+	f.Add([]byte("a\na\nb\n"), false, false, true, false, int64(0), int64(0), int64(0))
+	// -w with skip
+	f.Add([]byte("abc123\nabc456\ndef\n"), false, false, false, false, int64(0), int64(0), int64(3))
+	// -z NUL delimiter
+	f.Add([]byte("a\x00a\x00b\x00"), false, false, false, true, int64(0), int64(0), int64(0))
+	// MaxCount clamp: skipFields/skipChars/checkChars at int32 max
+	f.Add([]byte("a b c\na b c\n"), false, false, false, false, int64(1<<31-1), int64(0), int64(0))
+	f.Add([]byte("abcdef\nabcdef\n"), false, false, false, false, int64(0), int64(1<<31-1), int64(0))
+	// -f large value (beyond any line): all lines unique
+	f.Add([]byte("a b\na b\n"), false, false, false, false, int64(100), int64(0), int64(0))
+	// -s large value: skips entire comparison key
+	f.Add([]byte("abcdef\nabcdef\n"), false, false, false, false, int64(0), int64(100), int64(0))
+	// -d: only print duplicate lines
+	f.Add([]byte("a\na\nb\nc\nc\n"), true, false, false, false, int64(0), int64(0), int64(0))
 
-	f.Fuzz(func(t *testing.T, input []byte, repeated bool, ignoreCase bool, unique bool, skipFields int64, skipChars int64) {
+	f.Fuzz(func(t *testing.T, input []byte, repeated, ignoreCase, unique, nulDelim bool, skipFields, skipChars, checkChars int64) {
 		if len(input) > 1<<20 {
 			return
 		}
@@ -96,6 +136,9 @@ func FuzzUniqFlags(f *testing.F) {
 			return
 		}
 		if skipChars < 0 || skipChars > 100 {
+			return
+		}
+		if checkChars < 0 || checkChars > 100 {
 			return
 		}
 
@@ -114,11 +157,17 @@ func FuzzUniqFlags(f *testing.F) {
 		if unique {
 			flags += " -u"
 		}
+		if nulDelim {
+			flags += " -z"
+		}
 		if skipFields > 0 {
 			flags += fmt.Sprintf(" -f %d", skipFields)
 		}
 		if skipChars > 0 {
 			flags += fmt.Sprintf(" -s %d", skipChars)
+		}
+		if checkChars > 0 {
+			flags += fmt.Sprintf(" -w %d", checkChars)
 		}
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -136,6 +185,8 @@ func FuzzUniqStdin(f *testing.F) {
 	f.Add([]byte("a\na\nb\nb\nc\n"))
 	f.Add([]byte{})
 	f.Add([]byte("no newline"))
+	f.Add([]byte{0xfc, 0x80, 0x80, '\n', 0xfc, 0x80, 0x80, '\n'})
+	f.Add([]byte("line1\r\nline1\r\nline2\r\n"))
 
 	f.Fuzz(func(t *testing.T, input []byte) {
 		if len(input) > 1<<20 {

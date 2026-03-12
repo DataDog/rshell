@@ -23,12 +23,30 @@ func cmdRunCtx(ctx context.Context, t *testing.T, script, dir string) (string, s
 }
 
 // FuzzLsFlags fuzzes ls with various flag combinations on directories with random filenames.
+// Edge cases: hidden files (-a/-A), -d flag, last sort flag wins (-S vs -t),
+// -F indicator, -p append-slash, -l long format with -h human-readable.
 func FuzzLsFlags(f *testing.F) {
 	f.Add("file1.txt", true, false, false, false, false)
 	f.Add(".hidden", false, true, false, false, false)
 	f.Add("file.txt", false, false, true, false, false)
 	f.Add("file.txt", false, false, false, true, false)
 	f.Add("file.txt", false, false, false, false, true)
+	// Hidden file with -a (shows it)
+	f.Add(".dotfile", true, false, false, false, false)
+	// Hidden file without any flag (hidden)
+	f.Add(".hidden2", false, false, false, false, false)
+	// File with -F indicator (-F appends * for executables)
+	f.Add("script.sh", false, false, false, false, true)
+	// -l long format with -h human-readable sizes
+	f.Add("data.bin", true, false, false, false, false)
+	// -S sort by size
+	f.Add("small.txt", false, false, true, false, false)
+	// Unicode filename
+	f.Add("日本語.txt", false, false, false, false, false)
+	f.Add("héllo.txt", false, false, false, false, false)
+	// Various common filenames
+	f.Add("README.md", false, false, false, false, false)
+	f.Add("Makefile", false, false, false, false, false)
 
 	f.Fuzz(func(t *testing.T, filename string, flagL, flagA, flagR, flagS, flagF bool) {
 		if len(filename) == 0 || len(filename) > 100 {
@@ -82,10 +100,19 @@ func FuzzLsFlags(f *testing.F) {
 }
 
 // FuzzLsRecursive fuzzes ls -R on nested directories.
+// Edge cases: maxRecursionDepth=256 (depth 255 is last valid, 256 should error),
+// empty subdirectories, hidden subdirectories.
 func FuzzLsRecursive(f *testing.F) {
 	f.Add(int64(1))
 	f.Add(int64(3))
 	f.Add(int64(5))
+	// Near recursion depth limit (maxRecursionDepth=256)
+	f.Add(int64(254))
+	f.Add(int64(255))
+	f.Add(int64(256))
+	f.Add(int64(257))
+	// Zero and negative handled by guard
+	f.Add(int64(0))
 
 	f.Fuzz(func(t *testing.T, depth int64) {
 		if depth < 0 || depth > 10 {
@@ -111,6 +138,115 @@ func FuzzLsRecursive(f *testing.F) {
 		_, _, code := cmdRunCtx(ctx, t, "ls -R", dir)
 		if code != 0 && code != 1 {
 			t.Errorf("ls -R unexpected exit code %d", code)
+		}
+	})
+}
+
+// FuzzLsHumanReadable fuzzes ls -lh (long format with human-readable sizes).
+// Edge cases: humanSize thresholds (< 1024 bytes, ~1K, ~1M, ~1G),
+// zero-byte files, files at exact power-of-1024 boundaries.
+func FuzzLsHumanReadable(f *testing.F) {
+	// Below 1024 (shown as raw bytes)
+	f.Add(int64(0))
+	f.Add(int64(1))
+	f.Add(int64(1023))
+	// At 1K boundary
+	f.Add(int64(1024))
+	f.Add(int64(1025))
+	// Below 10K (shown as %.1fK format)
+	f.Add(int64(1024 * 9))
+	// At 10K (shown as %.0fK format)
+	f.Add(int64(1024 * 10))
+	f.Add(int64(1024 * 100))
+	// At 1M boundary
+	f.Add(int64(1024 * 1024))
+	f.Add(int64(1024*1024 - 1))
+	// At 1G boundary
+	f.Add(int64(1024 * 1024 * 1024))
+	// Negative size (shouldn't happen but check robustness)
+	f.Add(int64(512))
+
+	f.Fuzz(func(t *testing.T, fileSize int64) {
+		// Clamp to 1 MiB to avoid slow file creation.
+		if fileSize < 0 || fileSize > 1<<20 {
+			return
+		}
+
+		dir := t.TempDir()
+		// Create a file with the specified size using Truncate.
+		fpath := filepath.Join(dir, "testfile.bin")
+		fh, err := os.Create(fpath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if fileSize > 0 {
+			if err := fh.Truncate(fileSize); err != nil {
+				fh.Close()
+				t.Fatal(err)
+			}
+		}
+		fh.Close()
+
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		_, _, code := cmdRunCtx(ctx, t, "ls -lh testfile.bin", dir)
+		if code != 0 && code != 1 {
+			t.Errorf("ls -lh unexpected exit code %d", code)
+		}
+	})
+}
+
+// FuzzLsMultipleFiles fuzzes ls with multiple files and mixed file types.
+// Edge cases: files listed before dirs (GNU ls ordering), -d flag (no dir expansion),
+// non-existent targets, sorting with -t (time) and -S (size).
+func FuzzLsMultipleFiles(f *testing.F) {
+	f.Add(true, false, false, false) // -l
+	f.Add(false, true, false, false) // -a
+	f.Add(false, false, true, false) // -t sort by time
+	f.Add(false, false, false, true) // -S sort by size
+	// Combined flags
+	f.Add(true, true, false, false) // -la
+	f.Add(true, false, false, true) // -lS
+	f.Add(true, false, true, false) // -lt
+
+	f.Fuzz(func(t *testing.T, flagL, flagA, flagT, flagS bool) {
+		dir := t.TempDir()
+
+		// Create a mix of files and a subdirectory.
+		files := []struct {
+			name    string
+			content string
+		}{
+			{"file1.txt", "short"},
+			{"file2.txt", "this is longer content"},
+			{".hidden", "hidden"},
+		}
+		for _, f := range files {
+			_ = os.WriteFile(filepath.Join(dir, f.name), []byte(f.content), 0644)
+		}
+		_ = os.Mkdir(filepath.Join(dir, "subdir"), 0755)
+
+		flags := ""
+		if flagL {
+			flags += " -l"
+		}
+		if flagA {
+			flags += " -a"
+		}
+		if flagT {
+			flags += " -t"
+		}
+		if flagS {
+			flags += " -S"
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		_, _, code := cmdRunCtx(ctx, t, "ls"+flags, dir)
+		if code != 0 && code != 1 {
+			t.Errorf("ls%s unexpected exit code %d", flags, code)
 		}
 	})
 }

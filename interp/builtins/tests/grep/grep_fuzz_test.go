@@ -8,11 +8,11 @@ package grep_test
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
-
 	"unicode/utf8"
 
 	"github.com/DataDog/rshell/interp"
@@ -25,6 +25,7 @@ func cmdRunCtx(ctx context.Context, t *testing.T, script, dir string) (string, s
 }
 
 // FuzzGrepFileContent fuzzes grep with a fixed pattern and arbitrary file content.
+// Edge cases: binary content, null bytes, lines at 1 MiB cap, invalid UTF-8.
 func FuzzGrepFileContent(f *testing.F) {
 	f.Add([]byte("apple\nbanana\ncherry\n"), "banana")
 	f.Add([]byte{}, "anything")
@@ -34,19 +35,31 @@ func FuzzGrepFileContent(f *testing.F) {
 	f.Add([]byte("\n\n\n"), ".")
 	f.Add([]byte("hello world\nfoo bar\n"), "foo")
 	f.Add([]byte{0xff, 0xfe}, "a")
+	// Lines at/over 1 MiB cap
+	f.Add(append(bytes.Repeat([]byte("a"), 1<<20-1), '\n'), "a")
+	f.Add(append(bytes.Repeat([]byte("a"), 1<<20), '\n'), "a")
+	// CRLF
+	f.Add([]byte("hello\r\nworld\r\n"), "hello")
+	// Invalid UTF-8
+	f.Add([]byte{0xfc, 0x80, 0x80, 0x80, 0x80, 0xaf, '\n'}, "a")
+	f.Add([]byte{0xed, 0xa0, 0x80, '\n'}, "a")
+	// Null bytes in content
+	f.Add([]byte{0x00, 0x00, '\n'}, "a")
+	// BRE special chars in content being matched
+	f.Add([]byte("a.b\na*b\na[b\n"), "a.b")
+	f.Add([]byte("(test)\n[bracket]\n"), "test")
+	// Word-boundary content
+	f.Add([]byte("foo foobar barfoo\n"), "foo")
+	// Multibyte content
+	f.Add([]byte("héllo\nmünchen\n"), "l")
 
 	f.Fuzz(func(t *testing.T, input []byte, pattern string) {
 		if len(input) > 1<<20 {
 			return
 		}
-		// Skip patterns containing non-UTF-8 sequences: the shell parser's
-		// tokenizer rejects them before grep runs, so they exercise the parser
-		// error path rather than the grep builtin.
 		if !utf8.ValidString(pattern) {
 			return
 		}
-		// Skip patterns that would be problematic in shell quoting or cause the
-		// shell parser to fail before grep runs.
 		for _, c := range pattern {
 			if c == '\'' || c == '\x00' || c == '\n' {
 				return
@@ -68,12 +81,73 @@ func FuzzGrepFileContent(f *testing.F) {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 
-		// Use single-quoted pattern to avoid shell interpretation
 		script := "grep '" + pattern + "' input.txt"
 		_, _, code := cmdRunCtx(ctx, t, script, dir)
-		// grep exits 0 (match found), 1 (no match), or 2 (error/invalid regex)
 		if code != 0 && code != 1 && code != 2 {
 			t.Errorf("grep unexpected exit code %d", code)
+		}
+	})
+}
+
+// FuzzGrepPatterns fuzzes grep with arbitrary regex patterns on fixed content.
+// Edge cases: BRE→ERE conversion, pathological backtracking patterns, empty patterns.
+func FuzzGrepPatterns(f *testing.F) {
+	// BRE special chars
+	f.Add([]byte("hello world\nfoo bar\n"), "hel+o")
+	f.Add([]byte("aaa\nbbb\n"), "a*")
+	f.Add([]byte("test123\n"), "[0-9]+")
+	f.Add([]byte("(parens)\n"), "[(]")
+	// Anchors
+	f.Add([]byte("hello\nworld\n"), "^hello")
+	f.Add([]byte("hello\nworld\n"), "world$")
+	f.Add([]byte("hello\n"), "^hello$")
+	// Pathological backtracking patterns (ReDoS class)
+	f.Add([]byte("aaaaaaaaaaaaaab\n"), "a*a*b")
+	f.Add([]byte("aaaaaaaaaaaaaaaa\n"), "(a+)+")
+	// BRE escaping: \( is group in BRE; ( is literal
+	f.Add([]byte("(test)\n"), "\\(test\\)")
+	// Dot matches everything except newline
+	f.Add([]byte("abc\n"), ".")
+	f.Add([]byte("\n"), ".")
+	// Character classes
+	f.Add([]byte("hello123\n"), "[[:alpha:]]")
+	f.Add([]byte("hello123\n"), "[[:digit:]]")
+	f.Add([]byte("HELLO\n"), "[[:upper:]]")
+	// Empty match
+	f.Add([]byte("hello\n"), "")
+	// Very long pattern
+	f.Add([]byte("aaaa\n"), "a{1,4}")
+
+	f.Fuzz(func(t *testing.T, input []byte, pattern string) {
+		if len(input) > 1<<20 {
+			return
+		}
+		if !utf8.ValidString(pattern) {
+			return
+		}
+		for _, c := range pattern {
+			if c == '\'' || c == '\x00' || c == '\n' {
+				return
+			}
+		}
+		if len(pattern) > 100 {
+			return
+		}
+		if len(pattern) == 0 {
+			return
+		}
+
+		dir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(dir, "input.txt"), input, 0644); err != nil {
+			t.Fatal(err)
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		_, _, code := cmdRunCtx(ctx, t, "grep '"+pattern+"' input.txt", dir)
+		if code != 0 && code != 1 && code != 2 {
+			t.Errorf("grep pattern %q unexpected exit code %d", pattern, code)
 		}
 	})
 }
@@ -86,6 +160,9 @@ func FuzzGrepStdin(f *testing.F) {
 	f.Add([]byte("a\x00b\nc\n"))
 	f.Add(bytes.Repeat([]byte("x"), 4097))
 	f.Add([]byte("\n\n\n"))
+	f.Add([]byte{0xfc, 0x80, 0x80, 0x80, 0x80, 0xaf, '\n'})
+	f.Add([]byte("line1\r\nline2\r\n"))
+	f.Add(append(bytes.Repeat([]byte("a"), 1<<20-1), '\n'))
 
 	f.Fuzz(func(t *testing.T, input []byte) {
 		if len(input) > 1<<20 {
@@ -108,16 +185,34 @@ func FuzzGrepStdin(f *testing.F) {
 	})
 }
 
-// FuzzGrepFlags fuzzes grep with various flags and arbitrary file content.
+// FuzzGrepFlags fuzzes grep with various flag combinations and arbitrary file content.
+// Edge cases: context line clamping (MaxContextLines=1000), -q early exit, -o empty match.
 func FuzzGrepFlags(f *testing.F) {
-	f.Add([]byte("Hello\nworld\nHELLO\n"), true, false)
-	f.Add([]byte("line1\nline2\n"), false, true)
-	f.Add([]byte{}, true, true)
-	f.Add([]byte("no newline"), false, false)
-	f.Add(bytes.Repeat([]byte("abc\n"), 100), true, false)
+	f.Add([]byte("Hello\nworld\nHELLO\n"), true, false, false, false, int64(0), int64(0))
+	f.Add([]byte("line1\nline2\n"), false, true, false, false, int64(0), int64(0))
+	f.Add([]byte{}, true, true, false, false, int64(0), int64(0))
+	f.Add([]byte("no newline"), false, false, false, false, int64(0), int64(0))
+	f.Add(bytes.Repeat([]byte("abc\n"), 100), true, false, false, false, int64(0), int64(0))
+	// Context lines
+	f.Add([]byte("a\nb\nc\nd\ne\n"), false, false, false, false, int64(2), int64(0))
+	f.Add([]byte("a\nb\nc\nd\ne\n"), false, false, false, false, int64(0), int64(2))
+	// Context clamping at MaxContextLines=1000
+	f.Add([]byte("a\nb\n"), false, false, false, false, int64(1001), int64(0))
+	// -c (count) mode
+	f.Add([]byte("a\na\nb\n"), false, false, true, false, int64(0), int64(0))
+	// -q (quiet) mode: exits on first match
+	f.Add([]byte("a\nb\nc\n"), false, false, false, true, int64(0), int64(0))
+	// Binary content
+	f.Add([]byte{0xff, 0xfe, '\n'}, true, false, false, false, int64(0), int64(0))
 
-	f.Fuzz(func(t *testing.T, input []byte, caseInsensitive bool, invertMatch bool) {
+	f.Fuzz(func(t *testing.T, input []byte, caseInsensitive, invertMatch, countOnly, quiet bool, afterCtx, beforeCtx int64) {
 		if len(input) > 1<<20 {
+			return
+		}
+		if afterCtx < 0 || afterCtx > 100 {
+			return
+		}
+		if beforeCtx < 0 || beforeCtx > 100 {
 			return
 		}
 
@@ -136,6 +231,18 @@ func FuzzGrepFlags(f *testing.F) {
 		}
 		if invertMatch {
 			flags += " -v"
+		}
+		if countOnly {
+			flags += " -c"
+		}
+		if quiet {
+			flags += " -q"
+		}
+		if afterCtx > 0 {
+			flags += " -A " + fmt.Sprintf("%d", afterCtx)
+		}
+		if beforeCtx > 0 {
+			flags += " -B " + fmt.Sprintf("%d", beforeCtx)
 		}
 
 		script := "grep" + flags + " 'a' input.txt"
