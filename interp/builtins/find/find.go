@@ -160,12 +160,16 @@ func run(ctx context.Context, callCtx *builtins.CallContext, args []string) buil
 		}
 	}
 
-	for _, startPath := range paths {
-		if ctx.Err() != nil {
-			break
-		}
-		if walkPath(ctx, callCtx, startPath, expression, implicitPrint, followLinks, maxDepth, minDepth, eagerNewerErrors) {
-			failed = true
+	// GNU find treats a missing -newer reference as a fatal argument error
+	// and produces no result set, so skip the walk entirely.
+	if !failed {
+		for _, startPath := range paths {
+			if ctx.Err() != nil {
+				break
+			}
+			if walkPath(ctx, callCtx, startPath, expression, implicitPrint, followLinks, maxDepth, minDepth, eagerNewerErrors) {
+				failed = true
+			}
 		}
 	}
 

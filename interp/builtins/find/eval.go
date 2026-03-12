@@ -181,9 +181,9 @@ func evalMmin(ec *evalContext, n int64, cmp int) bool {
 	diff := ec.now.Sub(modTime)
 	switch cmp {
 	case 1: // +N: strictly older than N minutes
-		return int64(diff.Seconds()) > n*60
+		return diff.Seconds() > float64(n*60)
 	case -1: // -N: strictly newer than N minutes
-		return int64(diff.Seconds()) < n*60
+		return diff.Seconds() < float64(n*60)
 	default: // N: ceiling-bucketed exact match
 		mins := int64(math.Ceil(diff.Minutes()))
 		return mins == n
