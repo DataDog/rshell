@@ -383,11 +383,17 @@ func parseKeyDef(s string) (keySpec, error) {
 	if ci := strings.IndexByte(s, ','); ci >= 0 {
 		startPart = s[:ci]
 		endPart = s[ci+1:]
+		if endPart == "" {
+			return k, errors.New("invalid number after ','")
+		}
 	}
 
 	start, opts, err := parseFieldSpec(startPart)
 	if err != nil {
 		return k, err
+	}
+	if start.hasDot && start.char == 0 {
+		return k, errors.New("character offset is zero")
 	}
 	k.startField = start.field
 	k.startChar = start.char
@@ -423,8 +429,9 @@ func parseKeyDef(s string) (keySpec, error) {
 }
 
 type fieldPos struct {
-	field int
-	char  int
+	field  int
+	char   int
+	hasDot bool
 }
 
 type parsedOpts struct {
@@ -476,10 +483,8 @@ func parseFieldSpec(s string) (fieldPos, parsedOpts, error) {
 		if err != nil {
 			return fp, po, errors.New("invalid character position in key")
 		}
-		if c == 0 {
-			return fp, po, errors.New("character offset is zero")
-		}
 		fp.char = c
+		fp.hasDot = true
 	} else {
 		if numPart == "" {
 			return fp, po, errors.New("empty field specification")
@@ -587,9 +592,6 @@ func extractKey(line string, k keySpec, sep byte, hasSep bool, ignBlanks bool) s
 	keyEnd := bounds[ef].end
 	if k.endChar > 0 {
 		keyEnd = endFieldStart + k.endChar
-		if keyEnd > bounds[ef].end {
-			keyEnd = bounds[ef].end
-		}
 	}
 	if keyEnd > len(line) {
 		keyEnd = len(line)
