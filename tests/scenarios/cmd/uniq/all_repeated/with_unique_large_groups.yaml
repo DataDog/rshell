@@ -1,13 +1,13 @@
-description: uniq --all-repeated --unique suppresses one occurrence per duplicate group.
+description: uniq --all-repeated --unique with groups larger than 2 prints count-1 lines per group.
 setup:
   files:
     - path: input.txt
-      content: "a\na\nb\nb\nc\n"
+      content: "a\na\na\nb\nb\nc\n"
 input:
   allowed_paths: ["$DIR"]
   script: |+
     uniq --all-repeated --unique input.txt
 expect:
-  stdout: "a\nb\n"
+  stdout: "a\na\nb\n"
   stderr: ""
   exit_code: 0

@@ -93,6 +93,7 @@ const MaxLineBytes = 1 << 20 // 1 MiB
 const MaxCount = 1<<31 - 1 // 2 147 483 647
 
 // countFieldWidth is the width of the count prefix produced by -c.
+// Matches GNU coreutils. Counts >= 10,000,000 naturally widen the field.
 const countFieldWidth = 7
 
 // initialBufSize is the starting buffer size for the scanner.
@@ -200,7 +201,7 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 		}
 
 		if len(args) > 1 {
-			callCtx.Errf("uniq: extra operand %q\n", args[1])
+			callCtx.Errf("uniq: output file argument is not supported: %q\n", args[1])
 			return builtins.Result{Code: 1}
 		}
 
@@ -230,13 +231,9 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			delim = 0
 		}
 
-		// GNU uniq: --all-repeated --unique collapses to -d behavior (one per
-		// duplicate group). Downgrade to the standard repeated path.
-		if useAllRepeated && *unique {
-			useAllRepeated = false
-			*repeated = true
-			*unique = false
-		}
+		// GNU uniq -D -u: print all duplicate lines but suppress one
+		// occurrence per group (the "unique" representative). Handled in
+		// the allRepeated output path; keep both flags in the config.
 
 		cfg := &uniqConfig{
 			count:          *count,
@@ -345,8 +342,12 @@ func processInput(ctx context.Context, callCtx *builtins.CallContext, r io.Reade
 							return err
 						}
 					}
-					if err := reportWrite(writeStr(w, prevLine+delimStr)); err != nil {
-						return err
+					// With -D -u, suppress one occurrence per group (the
+					// first/"unique" representative) to match GNU behavior.
+					if !cfg.unique {
+						if err := reportWrite(writeStr(w, prevLine+delimStr)); err != nil {
+							return err
+						}
 					}
 					groupNum++
 				}
