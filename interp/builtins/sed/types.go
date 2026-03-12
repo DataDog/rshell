@@ -96,6 +96,7 @@ type sedCmd struct {
 	// For y command:
 	transFrom []rune
 	transTo   []rune
+	transMap  map[rune]rune // precomputed mapping for O(1) lookup
 
 	// For a, i, c commands:
 	text string

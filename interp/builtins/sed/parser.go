@@ -295,6 +295,7 @@ func (p *parser) parseOptionalExitCode() (uint8, error) {
 
 func (p *parser) parseTextArg() string {
 	// GNU sed allows: a\text, a text, or a\<newline>text
+	// Multi-line continuation: lines ending with \ before \n are joined.
 	if p.pos < len(p.input) && p.input[p.pos] == '\\' {
 		p.pos++
 		if p.pos < len(p.input) && p.input[p.pos] == '\n' {
@@ -303,11 +304,26 @@ func (p *parser) parseTextArg() string {
 	} else {
 		p.skipSpaces()
 	}
-	start := p.pos
-	for p.pos < len(p.input) && p.input[p.pos] != '\n' {
-		p.pos++
+
+	var sb strings.Builder
+	for {
+		start := p.pos
+		for p.pos < len(p.input) && p.input[p.pos] != '\n' {
+			p.pos++
+		}
+		line := p.input[start:p.pos]
+
+		// Check if the line ends with a backslash (continuation).
+		if len(line) > 0 && line[len(line)-1] == '\\' && p.pos < len(p.input) && p.input[p.pos] == '\n' {
+			sb.WriteString(line[:len(line)-1])
+			sb.WriteByte('\n')
+			p.pos++ // consume the newline
+			continue
+		}
+		sb.WriteString(line)
+		break
 	}
-	return p.input[start:p.pos]
+	return sb.String()
 }
 
 func (p *parser) parseLabelArg() string {
@@ -643,6 +659,14 @@ func (p *parser) parseTransliterate(cmd *sedCmd) (*sedCmd, error) {
 	cmd.kind = cmdTransliterate
 	cmd.transFrom = src
 	cmd.transTo = dst
+	// Precompute the rune mapping at parse time for O(n) transliteration.
+	cmd.transMap = make(map[rune]rune, len(src))
+	for i, fr := range src {
+		// First occurrence wins (matches GNU sed behaviour).
+		if _, exists := cmd.transMap[fr]; !exists {
+			cmd.transMap[fr] = dst[i]
+		}
+	}
 	return cmd, nil
 }
 

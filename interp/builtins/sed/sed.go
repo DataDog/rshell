@@ -205,6 +205,7 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 		eng := &engine{
 			callCtx:       callCtx,
 			prog:          prog,
+			labelMap:      buildLabelMap(prog),
 			suppressPrint: suppressPrint,
 		}
 

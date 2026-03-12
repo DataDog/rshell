@@ -22,6 +22,7 @@ import (
 type engine struct {
 	callCtx       *builtins.CallContext
 	prog          []*sedCmd
+	labelMap      map[string]labelLocation // precomputed label locations for O(1) branch lookup
 	suppressPrint bool
 	lineNum       int64
 	lastLine      bool
@@ -254,7 +255,7 @@ func (eng *engine) execCmds(ctx context.Context, cmds []*sedCmd, startIdx int, l
 			return actionContinue, &quitError{code: cmd.quitCode}
 
 		case cmdTransliterate:
-			eng.patternSpace = eng.transliterate(eng.patternSpace, cmd.transFrom, cmd.transTo)
+			eng.patternSpace = eng.transliterate(eng.patternSpace, cmd.transMap)
 
 		case cmdAppend:
 			eng.appendQueueBytes += len(cmd.text)
@@ -383,6 +384,29 @@ type labelLocation struct {
 
 func (l labelLocation) found() bool { return l.path != nil }
 
+// buildLabelMap precomputes the location of every label in the program
+// for O(1) branch resolution instead of linear scanning on every branch.
+func buildLabelMap(cmds []*sedCmd) map[string]labelLocation {
+	m := make(map[string]labelLocation)
+	buildLabelMapRecursive(cmds, nil, m)
+	return m
+}
+
+func buildLabelMapRecursive(cmds []*sedCmd, prefix []int, m map[string]labelLocation) {
+	for i, cmd := range cmds {
+		currentPath := append(append([]int{}, prefix...), i)
+		if cmd.kind == cmdLabel && cmd.label != "" {
+			// First definition wins (consistent with GNU sed / validateLabels).
+			if _, exists := m[cmd.label]; !exists {
+				m[cmd.label] = labelLocation{path: currentPath}
+			}
+		}
+		if cmd.kind == cmdGroup {
+			buildLabelMapRecursive(cmd.children, currentPath, m)
+		}
+	}
+}
+
 func findLabel(cmds []*sedCmd, label string) labelLocation {
 	return findLabelRecursive(cmds, label, nil)
 }
@@ -410,8 +434,8 @@ func (eng *engine) branchTo(ctx context.Context, label string, lr *lineReader, d
 		// inside a group properly skips commands after the group.
 		return actionBranch, nil
 	}
-	loc := findLabel(eng.prog, label)
-	if !loc.found() {
+	loc, ok := eng.labelMap[label]
+	if !ok {
 		// This should not happen — labels are validated at parse time.
 		return actionContinue, errors.New("undefined label '" + label + "'")
 	}
@@ -564,8 +588,13 @@ func (eng *engine) execSubstitute(cmd *sedCmd) error {
 
 	// Validate backreferences in the replacement against the number of
 	// capture groups in the regex. GNU sed rejects invalid references.
-	if err := validateBackrefs(cmd.subReplacement, re.NumSubexp()); err != nil {
-		return err
+	// Skip when cmd.subRe is non-nil — validation was already done at parse time.
+	// Only needed for empty-pattern reuse (cmd.subRe == nil), since the
+	// previous regex may have a different number of capture groups.
+	if cmd.subRe == nil {
+		if err := validateBackrefs(cmd.subReplacement, re.NumSubexp()); err != nil {
+			return err
+		}
 	}
 
 	var result string
@@ -682,15 +711,7 @@ func expandReplacement(repl string) string {
 	return sb.String()
 }
 
-func (eng *engine) transliterate(s string, from, to []rune) string {
-	// Build a lookup map for O(n) transliteration instead of O(n*m).
-	mapping := make(map[rune]rune, len(from))
-	for i, fr := range from {
-		// First occurrence wins (matches GNU sed behaviour).
-		if _, exists := mapping[fr]; !exists {
-			mapping[fr] = to[i]
-		}
-	}
+func (eng *engine) transliterate(s string, mapping map[rune]rune) string {
 	runes := []rune(s)
 	for i, r := range runes {
 		if replacement, ok := mapping[r]; ok {
