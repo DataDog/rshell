@@ -1,4 +1,5 @@
 description: "test rejects integer overflow with exit code 2 (matches bash)"
+skip_assert_against_bash: true  # bash stderr includes scriptname:line prefix
 input:
   script: |+
     test 99999999999999999999 -gt 0

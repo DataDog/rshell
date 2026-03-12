@@ -172,11 +172,14 @@ type parser struct {
 	// subexprStart marks the beginning of the current subexpression for
 	// POSIX disambiguation. It is set to 0 initially and updated when
 	// entering a new subexpression boundary (after ! negation or inside
-	// parentheses). The 3-arg disambiguation rule fires when the
-	// subexpression length (len(args) - subexprStart) is exactly 3,
-	// preventing it from triggering inside parseAnd/parseOr chains while
-	// still allowing it inside nested ! or (...) contexts.
+	// parentheses). subexprEnd marks the exclusive end of the current
+	// subexpression (defaults to len(args), set to the position of ")"
+	// inside parenthesized groups). The 3-arg disambiguation rule fires
+	// when the subexpression length (subexprEnd - subexprStart) is exactly
+	// 3, preventing it from triggering inside parseAnd/parseOr chains
+	// while still allowing it inside nested ! or (...) contexts.
 	subexprStart int
+	subexprEnd   int
 }
 
 const maxParenDepth = 128
@@ -187,10 +190,11 @@ func evaluate(ctx context.Context, callCtx *builtins.CallContext, cmdName string
 	}
 
 	p := &parser{
-		ctx:     ctx,
-		callCtx: callCtx,
-		cmdName: cmdName,
-		args:    args,
+		ctx:        ctx,
+		callCtx:    callCtx,
+		cmdName:    cmdName,
+		args:       args,
+		subexprEnd: len(args),
 	}
 
 	result := p.parseOr()
@@ -260,7 +264,7 @@ func (p *parser) parseNot() bool {
 		// expression). We use subexprStart to scope this to the current
 		// subexpression, so it fires for both top-level 3-arg forms and
 		// nested ones (e.g., "test ! ! = !") but not inside -a/-o chains.
-		subexprLen := len(p.args) - p.subexprStart
+		subexprLen := p.subexprEnd - p.subexprStart
 		if subexprLen == 3 && isBinaryOpOrLogical(p.args[p.pos+1]) {
 			return p.parsePrimary()
 		}
@@ -312,7 +316,16 @@ func (p *parser) parsePrimary() bool {
 			p.err = true
 			return false
 		}
+		savedStart := p.subexprStart
+		savedEnd := p.subexprEnd
+		p.subexprStart = p.pos // new subexpression inside parens
+		// Find matching ')' to set the subexpression end boundary.
+		// This allows the 3-arg disambiguation rule to correctly
+		// count only tokens between '(' and ')'.
+		p.subexprEnd = p.findMatchingParen(p.pos)
 		result := p.parseOr()
+		p.subexprStart = savedStart
+		p.subexprEnd = savedEnd
 		p.depth--
 		if p.err {
 			return false
@@ -340,7 +353,7 @@ func (p *parser) parsePrimary() bool {
 		// with string operands. e.g., "test -f -a -d" → "-f" AND "-d".
 		// We use subexprStart (not remaining) so this fires for nested
 		// subexpressions after ! but not inside -a/-o chains.
-		subexprLen := len(p.args) - p.subexprStart
+		subexprLen := p.subexprEnd - p.subexprStart
 		if subexprLen == 3 && (op == "-a" || op == "-o") {
 			return p.parseBinaryExpr()
 		}
@@ -392,8 +405,28 @@ func isBinaryOpOrLogical(op string) bool {
 // when entering ! negation), so the rule fires for both top-level 3-arg
 // forms and nested ones (e.g., "test ! ! = !") but not inside -a/-o chains.
 func (p *parser) isThreeArgBinary(pos int) bool {
-	subexprLen := len(p.args) - p.subexprStart
+	subexprLen := p.subexprEnd - p.subexprStart
 	return subexprLen == 3 && pos+1 < len(p.args) && isBinaryOpOrLogical(p.args[pos+1])
+}
+
+// findMatchingParen scans forward from start to find the position of the
+// matching ')' token, accounting for nested '(' ... ')' groups. If no
+// matching ')' is found, it returns len(p.args) as a fallback (the parse
+// will later report a "missing ')'" error).
+func (p *parser) findMatchingParen(start int) int {
+	depth := 1
+	for i := start; i < len(p.args); i++ {
+		switch p.args[i] {
+		case "(":
+			depth++
+		case ")":
+			depth--
+			if depth == 0 {
+				return i
+			}
+		}
+	}
+	return len(p.args)
 }
 
 func isUnaryFileOp(op string) bool {
