@@ -73,7 +73,6 @@ package testcmd
 import (
 	"context"
 	"io/fs"
-	"math"
 	"strconv"
 	"strings"
 
@@ -247,9 +246,11 @@ func (p *parser) parseNot() bool {
 			p.advance()
 			return true
 		}
-		// If "!" is followed by a binary operator, treat it as a literal
-		// operand (fall through to parsePrimary for binary expression).
-		if remaining >= 3 && isBinaryOp(p.args[p.pos+1]) {
+		// POSIX 3-arg rule: if exactly 3 tokens remain and "!" is followed
+		// by a binary operator, treat it as a literal string operand
+		// (fall through to parsePrimary for binary expression).
+		// With more than 3 tokens, "!" is always negation.
+		if remaining == 3 && isBinaryOp(p.args[p.pos+1]) {
 			return p.parsePrimary()
 		}
 		if remaining == 3 && (p.args[p.pos+1] == "-a" || p.args[p.pos+1] == "-o") {
@@ -287,7 +288,7 @@ func (p *parser) parsePrimary() bool {
 	// remaining==1 is a bare non-empty string per POSIX single-argument rules.
 	// When "(" is followed by a binary operator (e.g., "(" = "("), treat it
 	// as a literal string operand.
-	if cur == "(" && remaining > 1 && !(remaining >= 3 && isBinaryOp(p.args[p.pos+1])) && !(remaining == 3 && (p.args[p.pos+1] == "-a" || p.args[p.pos+1] == "-o")) {
+	if cur == "(" && remaining > 1 && !(remaining == 3 && isBinaryOp(p.args[p.pos+1])) && !(remaining == 3 && (p.args[p.pos+1] == "-a" || p.args[p.pos+1] == "-o")) {
 		if p.depth >= maxParenDepth {
 			p.callCtx.Errf("%s: expression too deeply nested\n", p.cmdName)
 			p.err = true
@@ -532,15 +533,6 @@ func (p *parser) parseInt(s string) (int64, bool) {
 	}
 	n, err := strconv.ParseInt(s, 10, 64)
 	if err != nil {
-		// Check for overflow — clamp to boundaries like GNU test.
-		if numErr, ok := err.(*strconv.NumError); ok && numErr.Err == strconv.ErrRange {
-			if s[0] == '-' {
-				n = math.MinInt64
-			} else {
-				n = math.MaxInt64
-			}
-			return n, true
-		}
 		p.callCtx.Errf("%s: %s: integer expression expected\n", p.cmdName, s)
 		p.err = true
 		return 0, false

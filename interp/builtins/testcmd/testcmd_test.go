@@ -467,18 +467,20 @@ func TestTestFileOutsideSandbox(t *testing.T) {
 	assert.Equal(t, 1, code)
 }
 
-// --- Integer overflow clamping ---
+// --- Integer overflow rejection (matches bash: exit 2) ---
 
 func TestTestIntOverflow(t *testing.T) {
-	stdout, _, code := runScript(t, `test 99999999999999999999 -gt 0; echo $?`, "")
+	stdout, stderr, code := runScript(t, `test 99999999999999999999 -gt 0; echo $?`, "")
 	assert.Equal(t, 0, code)
-	assert.Equal(t, "0\n", stdout)
+	assert.Equal(t, "2\n", stdout)
+	assert.Contains(t, stderr, "integer expression expected")
 }
 
 func TestTestIntNegOverflow(t *testing.T) {
-	stdout, _, code := runScript(t, `test -99999999999999999999 -lt 0; echo $?`, "")
+	stdout, stderr, code := runScript(t, `test -99999999999999999999 -lt 0; echo $?`, "")
 	assert.Equal(t, 0, code)
-	assert.Equal(t, "0\n", stdout)
+	assert.Equal(t, "2\n", stdout)
+	assert.Contains(t, stderr, "integer expression expected")
 }
 
 // --- Shell integration tests ---

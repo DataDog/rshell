@@ -1,5 +1,4 @@
-description: "test clamps integer overflow to int64 boundaries"
-skip_assert_against_bash: true  # bash rejects overflow with exit code 2; rshell intentionally clamps to MaxInt64/MinInt64 matching GNU test
+description: "test rejects integer overflow with exit code 2 (matches bash)"
 input:
   script: |+
     test 99999999999999999999 -gt 0
@@ -8,7 +7,7 @@ input:
     echo "neg-overflow: $?"
 expect:
   stdout: |
-    pos-overflow: 0
-    neg-overflow: 0
-  stderr: ""
+    pos-overflow: 2
+    neg-overflow: 2
+  stderr_contains: ["integer expression expected"]
   exit_code: 0
