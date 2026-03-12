@@ -140,18 +140,26 @@ func (eng *engine) processFile(ctx context.Context, callCtx *builtins.CallContex
 func (eng *engine) runCycle(ctx context.Context, lr *lineReader) error {
 	eng.subMade = false
 	eng.appendQueue = eng.appendQueue[:0]
-	action, err := eng.execCommandsFrom(ctx, 0, lr, 0)
-	if err != nil {
-		return err
+	for {
+		action, err := eng.execCommandsFrom(ctx, 0, lr, 0)
+		if err != nil {
+			return err
+		}
+		if action == actionRestart {
+			// D command requested a cycle restart with the remaining
+			// pattern space. subMade is intentionally preserved.
+			eng.appendQueue = eng.appendQueue[:0]
+			continue
+		}
+		if action != actionDelete && !eng.suppressPrint {
+			eng.callCtx.Outf("%s\n", eng.patternSpace)
+		}
+		// Flush queued 'a' text after auto-print (even if auto-print was suppressed or deleted).
+		for _, text := range eng.appendQueue {
+			eng.callCtx.Outf("%s\n", text)
+		}
+		return nil
 	}
-	if action != actionDelete && !eng.suppressPrint {
-		eng.callCtx.Outf("%s\n", eng.patternSpace)
-	}
-	// Flush queued 'a' text after auto-print (even if auto-print was suppressed or deleted).
-	for _, text := range eng.appendQueue {
-		eng.callCtx.Outf("%s\n", text)
-	}
-	return nil
 }
 
 // execCommandsFrom executes commands starting from index startIdx in the given
@@ -204,9 +212,10 @@ func (eng *engine) execCmds(ctx context.Context, cmds []*sedCmd, startIdx int, l
 			if idx := strings.IndexByte(eng.patternSpace, '\n'); idx >= 0 {
 				eng.patternSpace = eng.patternSpace[idx+1:]
 				// Restart the cycle with the remaining pattern space.
-				eng.subMade = false
+				// Note: subMade is intentionally preserved across D restarts
+				// (GNU sed behaviour — t/T branching state survives D).
 				eng.appendQueue = eng.appendQueue[:0]
-				return eng.execCommandsFrom(ctx, 0, lr, depth+1)
+				return actionRestart, nil
 			}
 			return actionDelete, nil
 
@@ -262,6 +271,7 @@ func (eng *engine) execCmds(ctx context.Context, cmds []*sedCmd, startIdx int, l
 				eng.lineNum++
 				eng.patternSpace = line
 				eng.lastLine = lr.isLast()
+				eng.subMade = false // n loads a new input line; reset substitution state
 			} else {
 				// n already printed the pattern space; suppress auto-print.
 				eng.lastLine = true
@@ -428,11 +438,8 @@ func (eng *engine) matchAddr(addr *address) bool {
 	case addrLast:
 		return eng.lastLine
 	case addrRegexp:
-		if addr.re.MatchString(eng.patternSpace) {
-			eng.lastRe = addr.re
-			return true
-		}
-		return false
+		eng.lastRe = addr.re // Always record the most recently used regex.
+		return addr.re.MatchString(eng.patternSpace)
 	case addrStep:
 		if addr.first == 0 {
 			return eng.lineNum%addr.step == 0
@@ -457,6 +464,10 @@ func (eng *engine) matchRange(cmd *sedCmd) bool {
 		// the range always extends to at least the next line.
 		// For line-number/$ addr2, check immediately for degenerate range.
 		if cmd.addr2.kind != addrRegexp {
+			// Descending numeric range (e.g. 4,2): treat as one-line range.
+			if cmd.addr2.kind == addrLine && cmd.addr2.line < eng.lineNum {
+				return true // one-line range
+			}
 			if eng.matchAddr(cmd.addr2) {
 				return true // one-line range, don't enter inRange state
 			}
