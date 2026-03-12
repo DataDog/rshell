@@ -103,11 +103,6 @@ func FuzzTailDifferential(f *testing.F) {
 			t.Skip("skipping: sandbox restriction")
 		}
 
-		// Skip if rshell reports an internal limit was exceeded (ring buffer overflow etc.)
-		if strings.Contains(rshellErr, "too large") || strings.Contains(rshellErr, "exceeds") {
-			t.Skip("skipping: rshell internal limit exceeded")
-		}
-
 		gnuOut, gnuCode := runGNUInDir(t, dir, []string{"tail", "-n", nStr, "input.txt"})
 		if gnuCode == -1 {
 			return
