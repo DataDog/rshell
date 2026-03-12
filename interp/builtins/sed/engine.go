@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"regexp"
 	"strings"
 
 	"github.com/DataDog/rshell/interp/builtins"
@@ -27,8 +28,8 @@ type engine struct {
 	patternSpace  string
 	holdSpace     string
 	appendQueue   []string // text queued by 'a' command, flushed after auto-print
-	subMade       bool     // set when s/// succeeds (cleared on new input line)
-	totalRead     int64
+	subMade       bool           // set when s/// succeeds (cleared on new input line)
+	lastRe        *regexp.Regexp // last regex used (for empty pattern in s///)
 	isRegularFile bool
 }
 
@@ -332,46 +333,32 @@ func (eng *engine) execCmds(ctx context.Context, cmds []*sedCmd, startIdx int, l
 	return actionContinue, nil
 }
 
-// labelLocation describes where a label was found.
+// labelLocation describes where a label was found as a path through the
+// command tree. path[0] is the index in the top-level command list,
+// path[1] is the index inside the first-level group's children, etc.
 type labelLocation struct {
-	outerIdx int // index in top-level command list
-	innerIdx int // index inside group's children (-1 if at top level)
+	path []int // indices at each nesting level; nil means not found
 }
+
+func (l labelLocation) found() bool { return l.path != nil }
 
 func findLabel(cmds []*sedCmd, label string) labelLocation {
-	for i, cmd := range cmds {
-		if cmd.kind == cmdLabel && cmd.label == label {
-			return labelLocation{outerIdx: i, innerIdx: -1}
-		}
-		if cmd.kind == cmdGroup {
-			for j, child := range cmd.children {
-				if child.kind == cmdLabel && child.label == label {
-					return labelLocation{outerIdx: i, innerIdx: j}
-				}
-			}
-			// Also check nested groups (one level deep is sufficient for most scripts).
-			if loc := findLabelNested(cmd.children, label); loc.outerIdx >= 0 {
-				return labelLocation{outerIdx: i, innerIdx: loc.outerIdx}
-			}
-		}
-	}
-	return labelLocation{outerIdx: -1, innerIdx: -1}
+	return findLabelRecursive(cmds, label, nil)
 }
 
-func findLabelNested(cmds []*sedCmd, label string) labelLocation {
+func findLabelRecursive(cmds []*sedCmd, label string, prefix []int) labelLocation {
 	for i, cmd := range cmds {
+		currentPath := append(append([]int{}, prefix...), i)
 		if cmd.kind == cmdLabel && cmd.label == label {
-			return labelLocation{outerIdx: i, innerIdx: -1}
+			return labelLocation{path: currentPath}
 		}
 		if cmd.kind == cmdGroup {
-			for j, child := range cmd.children {
-				if child.kind == cmdLabel && child.label == label {
-					return labelLocation{outerIdx: i, innerIdx: j}
-				}
+			if loc := findLabelRecursive(cmd.children, label, currentPath); loc.found() {
+				return loc
 			}
 		}
 	}
-	return labelLocation{outerIdx: -1, innerIdx: -1}
+	return labelLocation{}
 }
 
 // branchTo resolves a label and continues execution from the command after it.
@@ -381,20 +368,28 @@ func (eng *engine) branchTo(ctx context.Context, label string, lr *lineReader, d
 		return actionContinue, nil
 	}
 	loc := findLabel(eng.prog, label)
-	if loc.outerIdx < 0 {
+	if !loc.found() {
 		return actionContinue, errors.New("undefined label '" + label + "'")
 	}
-	if loc.innerIdx >= 0 {
-		// Label is inside a group. Execute the group's children from label+1,
-		// then continue with commands after the group.
-		group := eng.prog[loc.outerIdx]
-		action, err := eng.execCmds(ctx, group.children, loc.innerIdx+1, lr, depth+1)
-		if err != nil || action != actionContinue {
-			return action, err
-		}
-		return eng.execCmds(ctx, eng.prog, loc.outerIdx+1, lr, depth+1)
+	return eng.branchToPath(ctx, eng.prog, loc.path, lr, depth)
+}
+
+// branchToPath executes commands starting from the label described by path.
+// path[0] is the index in cmds; if len(path) > 1, cmds[path[0]] is a group
+// and we recurse into its children with path[1:].
+func (eng *engine) branchToPath(ctx context.Context, cmds []*sedCmd, path []int, lr *lineReader, depth int) (actionType, error) {
+	if len(path) == 1 {
+		// Label is at this level — continue from path[0]+1.
+		return eng.execCmds(ctx, cmds, path[0]+1, lr, depth+1)
 	}
-	return eng.execCmds(ctx, eng.prog, loc.outerIdx+1, lr, depth+1)
+	// Label is inside a nested group at cmds[path[0]].
+	group := cmds[path[0]]
+	action, err := eng.branchToPath(ctx, group.children, path[1:], lr, depth)
+	if err != nil || action != actionContinue {
+		return action, err
+	}
+	// After the nested group finishes, continue with commands after it.
+	return eng.execCmds(ctx, cmds, path[0]+1, lr, depth+1)
 }
 
 // --- Address matching ---
@@ -429,7 +424,11 @@ func (eng *engine) matchAddr(addr *address) bool {
 	case addrLast:
 		return eng.lastLine
 	case addrRegexp:
-		return addr.re.MatchString(eng.patternSpace)
+		if addr.re.MatchString(eng.patternSpace) {
+			eng.lastRe = addr.re
+			return true
+		}
+		return false
 	case addrStep:
 		if addr.first == 0 {
 			return eng.lineNum%addr.step == 0
@@ -450,9 +449,13 @@ func (eng *engine) matchRange(cmd *sedCmd) bool {
 	}
 	// Not in range — check if addr1 opens it.
 	if eng.matchAddr(cmd.addr1) {
-		// Check if addr2 also matches on the same line (degenerate range).
-		if eng.matchAddr(cmd.addr2) {
-			return true // one-line range, don't enter inRange state
+		// For regex addr2, GNU sed does not check it on the opening line —
+		// the range always extends to at least the next line.
+		// For line-number/$ addr2, check immediately for degenerate range.
+		if cmd.addr2.kind != addrRegexp {
+			if eng.matchAddr(cmd.addr2) {
+				return true // one-line range, don't enter inRange state
+			}
 		}
 		cmd.inRange = true
 		return true
@@ -463,29 +466,58 @@ func (eng *engine) matchRange(cmd *sedCmd) bool {
 // --- Command implementations ---
 
 func (eng *engine) execSubstitute(cmd *sedCmd) error {
+	// Resolve the regex: nil means "reuse last regex".
+	re := cmd.subRe
+	if re == nil {
+		if eng.lastRe == nil {
+			return errors.New("no previous regular expression")
+		}
+		re = eng.lastRe
+		if cmd.subCaseInsensitive {
+			var err error
+			re, err = regexp.Compile("(?i)" + re.String())
+			if err != nil {
+				return errors.New("invalid regex with case-insensitive flag: " + err.Error())
+			}
+		}
+	}
+	eng.lastRe = re
+
 	var result string
 	var matched bool
-	if cmd.subGlobal {
+	if cmd.subGlobal && cmd.subNth > 0 {
+		// Combined Nth + global: replace from the Nth match onward.
+		count := 0
 		expanded := expandReplacement(cmd.subReplacement)
-		matched = cmd.subRe.MatchString(eng.patternSpace)
-		result = cmd.subRe.ReplaceAllString(eng.patternSpace, expanded)
+		result = re.ReplaceAllStringFunc(eng.patternSpace, func(match string) string {
+			count++
+			if count >= cmd.subNth {
+				matched = true
+				return re.ReplaceAllString(match, expanded)
+			}
+			return match
+		})
+	} else if cmd.subGlobal {
+		expanded := expandReplacement(cmd.subReplacement)
+		matched = re.MatchString(eng.patternSpace)
+		result = re.ReplaceAllString(eng.patternSpace, expanded)
 	} else if cmd.subNth > 0 {
 		count := 0
 		expanded := expandReplacement(cmd.subReplacement)
-		result = cmd.subRe.ReplaceAllStringFunc(eng.patternSpace, func(match string) string {
+		result = re.ReplaceAllStringFunc(eng.patternSpace, func(match string) string {
 			count++
 			if count == cmd.subNth {
 				matched = true
-				return cmd.subRe.ReplaceAllString(match, expanded)
+				return re.ReplaceAllString(match, expanded)
 			}
 			return match
 		})
 	} else {
-		loc := cmd.subRe.FindStringIndex(eng.patternSpace)
+		loc := re.FindStringIndex(eng.patternSpace)
 		if loc != nil {
 			matched = true
 			m := eng.patternSpace[loc[0]:loc[1]]
-			replacement := cmd.subRe.ReplaceAllString(m, expandReplacement(cmd.subReplacement))
+			replacement := re.ReplaceAllString(m, expandReplacement(cmd.subReplacement))
 			result = eng.patternSpace[:loc[0]] + replacement + eng.patternSpace[loc[1]:]
 		} else {
 			return nil

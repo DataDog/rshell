@@ -86,11 +86,12 @@ type sedCmd struct {
 	kind     cmdType
 
 	// For s command:
-	subRe          *regexp.Regexp
-	subReplacement string
-	subGlobal      bool
-	subPrint       bool
-	subNth         int
+	subRe               *regexp.Regexp // nil means "reuse last regex"
+	subReplacement      string
+	subGlobal           bool
+	subPrint            bool
+	subNth              int
+	subCaseInsensitive  bool // deferred case-insensitive flag (when pattern is empty)
 
 	// For y command:
 	transFrom []rune

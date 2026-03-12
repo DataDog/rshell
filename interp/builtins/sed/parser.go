@@ -14,10 +14,14 @@ import (
 
 // parser holds state during sed script parsing.
 type parser struct {
-	input  string
-	pos    int
-	useERE bool
+	input      string
+	pos        int
+	useERE     bool
+	groupDepth int
 }
+
+// maxGroupDepth is the maximum nesting depth for {...} groups.
+const maxGroupDepth = 256
 
 func parseScript(script string, useERE bool) ([]*sedCmd, error) {
 	p := &parser{input: script, useERE: useERE}
@@ -183,7 +187,12 @@ func (p *parser) parseOneCommand() (*sedCmd, error) {
 			return nil, errors.New("missing label name for ':'")
 		}
 	case '{':
+		if p.groupDepth >= maxGroupDepth {
+			return nil, errors.New("group nesting depth limit exceeded")
+		}
+		p.groupDepth++
 		children, err := p.parseCommands(true)
+		p.groupDepth--
 		if err != nil {
 			return nil, err
 		}
@@ -233,7 +242,7 @@ func (p *parser) parseTextArg() string {
 		p.skipSpaces()
 	}
 	start := p.pos
-	for p.pos < len(p.input) && p.input[p.pos] != '\n' && p.input[p.pos] != ';' {
+	for p.pos < len(p.input) && p.input[p.pos] != '\n' {
 		p.pos++
 	}
 	return p.input[start:p.pos]
@@ -407,18 +416,26 @@ func (p *parser) parseSubstitute(cmd *sedCmd) (*sedCmd, error) {
 	}
 flagsDone:
 
-	re, err := p.compileRegex(pattern)
-	if err != nil {
-		return nil, err
-	}
-	// Apply case-insensitive flag after BRE-to-ERE conversion so (?i) isn't mangled.
-	if caseInsensitive {
-		re, err = regexp.Compile("(?i)" + re.String())
-		if err != nil {
-			return nil, errors.New("invalid regex with case-insensitive flag: " + err.Error())
+	if pattern == "" {
+		// Empty pattern means "reuse last regex" — defer to runtime.
+		// cmd.subRe stays nil to signal this.
+		if caseInsensitive {
+			cmd.subCaseInsensitive = true
 		}
+	} else {
+		re, err := p.compileRegex(pattern)
+		if err != nil {
+			return nil, err
+		}
+		// Apply case-insensitive flag after BRE-to-ERE conversion so (?i) isn't mangled.
+		if caseInsensitive {
+			re, err = regexp.Compile("(?i)" + re.String())
+			if err != nil {
+				return nil, errors.New("invalid regex with case-insensitive flag: " + err.Error())
+			}
+		}
+		cmd.subRe = re
 	}
-	cmd.subRe = re
 	return cmd, nil
 }
 
