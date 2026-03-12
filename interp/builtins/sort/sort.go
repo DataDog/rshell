@@ -278,7 +278,7 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			}
 			return cmpFn(a, b)
 		}
-		if *stable {
+		if *stable || *unique {
 			slices.SortStableFunc(allLines, sortCmp)
 		} else {
 			slices.SortFunc(allLines, sortCmp)
@@ -526,11 +526,9 @@ func splitBlankFields(line string) []string {
 			i++
 		}
 		if i >= n {
-			// Only blanks remain — preserve as a field so whitespace-only
-			// lines get a non-empty key (matching GNU sort behavior).
-			if start == 0 {
-				fields = append(fields, line[start:])
-			}
+			// Only blanks remain — preserve as a field so trailing
+			// blank fields are kept (matching GNU sort behavior).
+			fields = append(fields, line[start:])
 			break
 		}
 		// Non-blank content of the field.

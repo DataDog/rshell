@@ -541,6 +541,28 @@ func TestSortKeyCharOffsetZeroRejected(t *testing.T) {
 	assert.Contains(t, stderr, "sort:")
 }
 
+// --- Trailing blank field preservation ---
+
+func TestSortTrailingBlankFieldPreserved(t *testing.T) {
+	dir := t.TempDir()
+	// "a\n" and "a \n" differ in field 2 (empty vs blank), so -u -k2 keeps both.
+	writeFile(t, dir, "f.txt", "a\na \n")
+	stdout, _, code := cmdRun(t, "sort -u -k2 f.txt", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "a\na \n", stdout)
+}
+
+// --- Unique keeps first of equal ---
+
+func TestSortUniqueKeepsFirstOfEqual(t *testing.T) {
+	dir := t.TempDir()
+	// All lines are numerically zero; -u must keep the first input line.
+	writeFile(t, dir, "f.txt", "B\nA\nC\n")
+	stdout, _, code := cmdRun(t, "sort -n -u f.txt", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "B\n", stdout)
+}
+
 // --- Context cancellation ---
 
 func TestSortContextCancellation(t *testing.T) {
