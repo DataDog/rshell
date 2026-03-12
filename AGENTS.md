@@ -15,6 +15,14 @@ The shell is supported on Linux, Windows and macOS.
 
 - `README.md` and `SHELL_FEATURES.md` must be kept up to date with the implementation.
 
+## Code Style
+
+- **All Go files must be formatted with `gofmt` before committing.** Run `gofmt -w .` from the repo root and verify with `gofmt -l .` (no output means clean). CI enforces this and will fail if any file is not properly formatted.
+
+## Pull Requests
+
+- **Always open pull requests in draft mode.** Use `gh pr create --draft` (or the GitHub UI's "Draft pull request" option). Only mark a PR ready for review once all CI checks pass and the work is complete.
+
 ## CRITICAL: Bug Fixes and Bash Compatibility
 
 - **ALWAYS prioritise fixing the shell implementation to match bash behaviour over changing tests to match the current (incorrect) shell output.** Never "fix" a failing test by updating its expected output to match broken shell behaviour — fix the shell instead.

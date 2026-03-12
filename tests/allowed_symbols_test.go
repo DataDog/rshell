@@ -32,8 +32,12 @@ import (
 // All packages not listed here are implicitly banned, including all
 // third-party packages and other internal module packages.
 var builtinAllowedSymbols = []string{
+	// bytes.IndexByte — finds a byte in a byte slice; pure function, no I/O.
+	"bytes.IndexByte",
 	// bufio.NewScanner — line-by-line input reading (e.g. head, cat); no write or exec capability.
 	"bufio.NewScanner",
+	// bufio.Scanner — scanner type for buffered input reading; no write or exec capability.
+	"bufio.Scanner",
 	// bufio.SplitFunc — type for custom scanner split functions; pure type, no I/O.
 	"bufio.SplitFunc",
 	// context.Context — deadline/cancellation plumbing; pure interface, no side effects.
