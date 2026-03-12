@@ -86,6 +86,35 @@ import (
 // Cmd is the sort builtin command descriptor.
 var Cmd = builtins.Command{Name: "sort", MakeFlags: registerFlags}
 
+// checkTracker is a pflag.Value that tracks all --check/-c modes set
+// during argument parsing so conflicting modes (diagnose vs silent) can
+// be detected. GNU sort rejects mixed modes with "options '-cC' are
+// incompatible".
+type checkTracker struct {
+	last      string // last mode set
+	sawDiag   bool   // saw diagnose/diagnose-first/""
+	sawSilent bool   // saw silent/quiet
+	invalid   string // first unrecognized value, if any
+}
+
+func (ct *checkTracker) String() string { return ct.last }
+func (ct *checkTracker) Type() string   { return "string" }
+
+func (ct *checkTracker) Set(s string) error {
+	ct.last = s
+	switch s {
+	case "silent", "quiet":
+		ct.sawSilent = true
+	case "diagnose", "diagnose-first", "":
+		ct.sawDiag = true
+	default:
+		ct.invalid = s
+	}
+	return nil
+}
+
+func (ct *checkTracker) conflict() bool { return ct.sawDiag && ct.sawSilent }
+
 // MaxLines is the maximum number of lines sort will buffer. Beyond this
 // the command errors out to prevent unbounded memory growth.
 const MaxLines = 1_000_000
@@ -112,7 +141,8 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 	// --check accepts optional values: "diagnose" (default), "silent", "quiet".
 	// -c is shorthand for --check (diagnose mode).
 	// -C is shorthand for silent check mode.
-	checkFlag := fs.StringP("check", "c", "", "check for sorted input; optionally =silent or =quiet")
+	var checkFlag checkTracker
+	fs.VarP(&checkFlag, "check", "c", "check for sorted input; optionally =silent or =quiet")
 	checkSilentShort := fs.BoolP("check-silent-short", "C", false, "like -c, but do not report first bad line")
 	stable := fs.BoolP("stable", "s", false, "stabilize sort by disabling last-resort comparison")
 
@@ -159,21 +189,22 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 		checkEnabled := false
 		checkSilent := false
 		if fs.Changed("check") {
-			checkEnabled = true
-			switch *checkFlag {
-			case "silent", "quiet":
-				checkSilent = true
-			case "diagnose", "diagnose-first", "":
-				// default: print diagnostic
-			default:
-				callCtx.Errf("sort: invalid argument %q for '--check'\n", *checkFlag)
+			if checkFlag.invalid != "" {
+				callCtx.Errf("sort: invalid argument %q for '--check'\n", checkFlag.invalid)
 				return builtins.Result{Code: 2}
 			}
+			// Reject mixed diagnose/silent modes across repeated --check flags.
+			if checkFlag.conflict() {
+				callCtx.Errf("sort: options '-cC' are incompatible\n")
+				return builtins.Result{Code: 2}
+			}
+			checkEnabled = true
+			checkSilent = checkFlag.sawSilent
 		}
 		if *checkSilentShort {
 			// -C is equivalent to --check=silent. Reject only when
-			// --check is set to a non-silent mode (GNU compat).
-			if fs.Changed("check") && !checkSilent {
+			// --check was set to a diagnose mode (GNU compat).
+			if fs.Changed("check") && checkFlag.sawDiag {
 				callCtx.Errf("sort: options '-cC' are incompatible\n")
 				return builtins.Result{Code: 2}
 			}
@@ -206,12 +237,6 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			dictOrder:  *dictOrder,
 		}
 
-		// Validate incompatible global flags: -d and -n cannot coexist.
-		if globalOpts.dictOrder && globalOpts.numeric {
-			callCtx.Errf("sort: options '-dn' are incompatible\n")
-			return builtins.Result{Code: 2}
-		}
-
 		var keys []keySpec
 		if keyDefs != nil {
 			for _, kd := range *keyDefs {
@@ -221,6 +246,22 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 					return builtins.Result{Code: 2}
 				}
 				keys = append(keys, k)
+			}
+		}
+
+		// Validate incompatible global flags: -d and -n cannot coexist
+		// unless every key has per-key opts that override the globals.
+		if globalOpts.dictOrder && globalOpts.numeric {
+			globalsUsed := len(keys) == 0
+			for _, k := range keys {
+				if !k.hasOpts {
+					globalsUsed = true
+					break
+				}
+			}
+			if globalsUsed {
+				callCtx.Errf("sort: options '-dn' are incompatible\n")
+				return builtins.Result{Code: 2}
 			}
 		}
 
