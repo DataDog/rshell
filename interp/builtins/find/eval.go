@@ -166,7 +166,7 @@ func evalNewer(ec *evalContext, refPath string) bool {
 
 // evalMtime checks modification time in days.
 // -mtime n: file was last modified n*24 hours ago.
-func evalMtime(ec *evalContext, n int64, cmp int) bool {
+func evalMtime(ec *evalContext, n int64, cmp cmpOp) bool {
 	modTime := ec.info.ModTime()
 	diff := ec.now.Sub(modTime)
 	days := int64(math.Floor(diff.Hours() / 24))
@@ -181,14 +181,14 @@ func evalMtime(ec *evalContext, n int64, cmp int) bool {
 //
 // This matches GNU findutils behavior where +N/-N compare against raw
 // seconds while exact N uses a window check.
-func evalMmin(ec *evalContext, n int64, cmp int) bool {
+func evalMmin(ec *evalContext, n int64, cmp cmpOp) bool {
 	modTime := ec.info.ModTime()
 	diff := ec.now.Sub(modTime)
 	switch cmp {
-	case 1: // +N: strictly older than N minutes
-		return diff.Seconds() > float64(n)*60.0
-	case -1: // -N: strictly newer than N minutes
-		return diff.Seconds() < float64(n)*60.0
+	case cmpMore: // +N: strictly older than N minutes
+		return diff > time.Duration(n)*time.Minute
+	case cmpLess: // -N: strictly newer than N minutes
+		return diff < time.Duration(n)*time.Minute
 	default: // N: ceiling-bucketed exact match
 		mins := int64(math.Ceil(diff.Minutes()))
 		return mins == n

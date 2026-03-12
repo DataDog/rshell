@@ -92,18 +92,18 @@ func TestMatchClassEdgeCases(t *testing.T) {
 
 func TestCompareNumeric(t *testing.T) {
 	// Exact match
-	assert.True(t, compareNumeric(5, 5, 0))
-	assert.False(t, compareNumeric(5, 6, 0))
+	assert.True(t, compareNumeric(5, 5, cmpExact))
+	assert.False(t, compareNumeric(5, 6, cmpExact))
 
 	// Greater than
-	assert.True(t, compareNumeric(6, 5, 1))
-	assert.False(t, compareNumeric(5, 5, 1))
-	assert.False(t, compareNumeric(4, 5, 1))
+	assert.True(t, compareNumeric(6, 5, cmpMore))
+	assert.False(t, compareNumeric(5, 5, cmpMore))
+	assert.False(t, compareNumeric(4, 5, cmpMore))
 
 	// Less than
-	assert.True(t, compareNumeric(4, 5, -1))
-	assert.False(t, compareNumeric(5, 5, -1))
-	assert.False(t, compareNumeric(6, 5, -1))
+	assert.True(t, compareNumeric(4, 5, cmpLess))
+	assert.False(t, compareNumeric(5, 5, cmpLess))
+	assert.False(t, compareNumeric(6, 5, cmpLess))
 }
 
 func TestPathGlobMatchMalformedBracket(t *testing.T) {

@@ -79,22 +79,24 @@ func run(ctx context.Context, callCtx *builtins.CallContext, args []string) buil
 	i := 0
 
 	// Parse leading global options.
+optLoop:
 	for i < len(args) {
-		if args[i] == "-L" {
+		switch args[i] {
+		case "-L":
 			followLinks = true
 			i++
-		} else if args[i] == "-P" {
+		case "-P":
 			// -P overrides any earlier -L (last option wins).
 			followLinks = false
 			i++
-		} else if args[i] == "-H" {
+		case "-H":
 			callCtx.Errf("find: -H is not supported\n")
 			return builtins.Result{Code: 1}
-		} else if args[i] == "--" {
+		case "--":
 			i++ // consume --; stop option parsing
-			break
-		} else {
-			break
+			break optLoop
+		default:
+			break optLoop
 		}
 	}
 
@@ -171,7 +173,14 @@ func run(ctx context.Context, callCtx *builtins.CallContext, args []string) buil
 			if ctx.Err() != nil {
 				break
 			}
-			if walkPath(ctx, callCtx, startPath, expression, implicitPrint, followLinks, maxDepth, minDepth, eagerNewerErrors) {
+			if walkPath(ctx, callCtx, startPath, walkOptions{
+				expression:       expression,
+				implicitPrint:    implicitPrint,
+				followLinks:      followLinks,
+				maxDepth:         maxDepth,
+				minDepth:         minDepth,
+				eagerNewerErrors: eagerNewerErrors,
+			}) {
 				failed = true
 			}
 		}
@@ -193,31 +202,36 @@ func isExpressionStart(arg string) bool {
 	return strings.HasPrefix(arg, "-") && len(arg) > 1
 }
 
+// walkOptions holds configuration for a single walkPath invocation.
+type walkOptions struct {
+	expression       *expr
+	implicitPrint    bool
+	followLinks      bool
+	maxDepth         int
+	minDepth         int
+	eagerNewerErrors map[string]bool
+}
+
 // walkPath walks the directory tree rooted at startPath, evaluating the
 // expression for each entry. Returns true if any error occurred.
 func walkPath(
 	ctx context.Context,
 	callCtx *builtins.CallContext,
 	startPath string,
-	expression *expr,
-	implicitPrint bool,
-	followLinks bool,
-	maxDepth int,
-	minDepth int,
-	eagerNewerErrors map[string]bool,
+	opts walkOptions,
 ) bool {
 	now := callCtx.Now()
 	failed := false
 	newerCache := map[string]time.Time{}
 	newerErrors := map[string]bool{}
-	for k, v := range eagerNewerErrors {
+	for k, v := range opts.eagerNewerErrors {
 		newerErrors[k] = v
 	}
 
 	// Stat the starting path.
 	var startInfo iofs.FileInfo
 	var err error
-	if followLinks {
+	if opts.followLinks {
 		startInfo, err = callCtx.StatFile(ctx, startPath)
 		if err != nil && errors.Is(err, iofs.ErrNotExist) {
 			// Dangling symlink root: fall back to lstat like child entries.
@@ -269,7 +283,7 @@ func walkPath(
 		var childAncestorIDs map[builtins.FileID]string
 		var childAncestorPaths map[string]bool
 		isLoop := false
-		if entry.info.IsDir() && followLinks {
+		if entry.info.IsDir() && opts.followLinks {
 			idOK := false
 			if callCtx.FileIdentity != nil {
 				if id, ok := callCtx.FileIdentity(entry.path, entry.info); ok {
@@ -320,25 +334,25 @@ func walkPath(
 			printPath:   printPath,
 			newerCache:  newerCache,
 			newerErrors: newerErrors,
-			followLinks: followLinks,
+			followLinks: opts.followLinks,
 		}
 
 		// Evaluate expression at this depth.
 		prune := false
-		if entry.depth >= minDepth {
-			result := evaluate(ec, expression)
+		if entry.depth >= opts.minDepth {
+			result := evaluate(ec, opts.expression)
 			prune = result.prune
 			if len(newerErrors) > 0 || ec.failed {
 				failed = true
 			}
 
-			if result.matched && implicitPrint {
+			if result.matched && opts.implicitPrint {
 				callCtx.Outf("%s\n", printPath)
 			}
 		}
 
 		// Descend into directories unless pruned or beyond maxdepth.
-		if entry.info.IsDir() && !prune && entry.depth < maxDepth {
+		if entry.info.IsDir() && !prune && entry.depth < opts.maxDepth {
 
 			entries, readErr := callCtx.ReadDir(ctx, entry.path)
 			if readErr != nil {
@@ -360,7 +374,7 @@ func walkPath(
 				childPath := joinPath(entry.path, child.Name())
 
 				var childInfo iofs.FileInfo
-				if followLinks {
+				if opts.followLinks {
 					childInfo, err = callCtx.StatFile(ctx, childPath)
 					if err != nil {
 						// Only fall back to lstat for broken symlinks (target missing).

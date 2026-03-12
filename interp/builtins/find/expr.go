@@ -42,10 +42,19 @@ const (
 	exprNot                    // ! expr  or  -not expr
 )
 
+// cmpOp represents a comparison operator for numeric predicates.
+type cmpOp int
+
+const (
+	cmpLess  cmpOp = -1
+	cmpExact cmpOp = 0
+	cmpMore  cmpOp = 1
+)
+
 // sizeUnit holds a parsed -size predicate value.
 type sizeUnit struct {
 	n    int64 // magnitude (always positive)
-	cmp  int   // -1 = less than, 0 = exact, +1 = greater than
+	cmp  cmpOp // comparison operator
 	unit byte  // one of: c w b k M G (default 'b' if omitted)
 }
 
@@ -55,7 +64,7 @@ type expr struct {
 	strVal  string   // pattern for name/iname/path/ipath, type char, file path for newer
 	sizeVal sizeUnit // for -size
 	numVal  int64    // for -mtime, -mmin
-	numCmp  int      // -1/0/+1 for numeric comparisons
+	numCmp  cmpOp    // comparison operator for numeric predicates
 	left    *expr    // for and/or
 	right   *expr    // for and/or
 	operand *expr    // for not
@@ -308,7 +317,7 @@ func (p *parser) parsePrimary() (*expr, error) {
 
 func (p *parser) parseStringPredicate(kind exprKind) (*expr, error) {
 	if p.pos >= len(p.args) {
-		return nil, fmt.Errorf("find: missing argument for %s", kindName(kind))
+		return nil, fmt.Errorf("find: missing argument for %s", kind.String())
 	}
 	val := p.advance()
 	return &expr{kind: kind, strVal: val}, nil
@@ -367,21 +376,21 @@ func (p *parser) parseSizePredicate() (*expr, error) {
 
 func (p *parser) parseNumericPredicate(kind exprKind) (*expr, error) {
 	if p.pos >= len(p.args) {
-		return nil, fmt.Errorf("find: missing argument for %s", kindName(kind))
+		return nil, fmt.Errorf("find: missing argument for %s", kind.String())
 	}
 	val := p.advance()
-	cmp := 0
+	cmp := cmpExact
 	numStr := val
 	if strings.HasPrefix(numStr, "+") {
-		cmp = 1
+		cmp = cmpMore
 		numStr = numStr[1:]
 	} else if strings.HasPrefix(numStr, "-") {
-		cmp = -1
+		cmp = cmpLess
 		numStr = numStr[1:]
 	}
 	n, err := strconv.ParseInt(numStr, 10, 64)
 	if err != nil {
-		return nil, fmt.Errorf("find: invalid argument '%s' to %s", val, kindName(kind))
+		return nil, fmt.Errorf("find: invalid argument '%s' to %s", val, kind.String())
 	}
 	return &expr{kind: kind, numVal: n, numCmp: cmp}, nil
 }
@@ -421,10 +430,10 @@ func parseSize(s string) (sizeUnit, error) {
 
 	numStr := s
 	if s[0] == '+' {
-		su.cmp = 1
+		su.cmp = cmpMore
 		numStr = s[1:]
 	} else if s[0] == '-' {
-		su.cmp = -1
+		su.cmp = cmpLess
 		numStr = s[1:]
 	}
 
@@ -456,7 +465,7 @@ func parseSize(s string) (sizeUnit, error) {
 	return su, nil
 }
 
-func kindName(k exprKind) string {
+func (k exprKind) String() string {
 	switch k {
 	case exprName:
 		return "-name"

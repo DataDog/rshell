@@ -66,22 +66,22 @@ func TestParseSizeEdgeCases(t *testing.T) {
 		input   string
 		wantErr bool
 		n       int64
-		cmp     int
+		cmp     cmpOp
 		unit    byte
 	}{
-		{"simple bytes", "10c", false, 10, 0, 'c'},
-		{"plus kilobytes", "+5k", false, 5, 1, 'k'},
-		{"minus megabytes", "-3M", false, 3, -1, 'M'},
-		{"default 512-byte blocks", "100", false, 100, 0, 'b'},
-		{"zero bytes", "0c", false, 0, 0, 'c'},
-		{"gigabytes", "1G", false, 1, 0, 'G'},
-		{"word units", "10w", false, 10, 0, 'w'},
+		{"simple bytes", "10c", false, 10, cmpExact, 'c'},
+		{"plus kilobytes", "+5k", false, 5, cmpMore, 'k'},
+		{"minus megabytes", "-3M", false, 3, cmpLess, 'M'},
+		{"default 512-byte blocks", "100", false, 100, cmpExact, 'b'},
+		{"zero bytes", "0c", false, 0, cmpExact, 'c'},
+		{"gigabytes", "1G", false, 1, cmpExact, 'G'},
+		{"word units", "10w", false, 10, cmpExact, 'w'},
 		{"empty string", "", true, 0, 0, 0},
 		{"just plus", "+", true, 0, 0, 0},
 		{"just minus", "-", true, 0, 0, 0},
 		{"just unit", "c", true, 0, 0, 0},
 		{"invalid chars", "abc", true, 0, 0, 0},
-		{"negative number", "-5c", false, 5, -1, 'c'},
+		{"negative number", "-5c", false, 5, cmpLess, 'c'},
 	}
 
 	for _, tt := range tests {

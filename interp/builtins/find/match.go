@@ -31,12 +31,8 @@ func matchType(info iofs.FileInfo, typeArg string) bool {
 	fileType := fileTypeChar(info)
 
 	// Handle comma-separated types.
-	for i := 0; i < len(typeArg); i++ {
-		c := typeArg[i]
-		if c == ',' {
-			continue
-		}
-		if c == fileType {
+	for _, c := range typeArg {
+		if c != ',' && byte(c) == fileType {
 			return true
 		}
 	}
@@ -104,9 +100,9 @@ func compareSize(fileSize int64, su sizeUnit) bool {
 	}
 
 	switch su.cmp {
-	case 1: // +n: strictly greater than n units
+	case cmpMore: // +n: strictly greater than n units
 		return fileBlocks > su.n
-	case -1: // -n: strictly less than n units
+	case cmpLess: // -n: strictly less than n units
 		return fileBlocks < su.n
 	default: // exactly n units
 		return fileBlocks == su.n
@@ -114,11 +110,11 @@ func compareSize(fileSize int64, su sizeUnit) bool {
 }
 
 // compareNumeric compares a value with the cmp operator.
-func compareNumeric(actual, target int64, cmp int) bool {
+func compareNumeric(actual, target int64, cmp cmpOp) bool {
 	switch cmp {
-	case 1: // +n: strictly greater
+	case cmpMore: // +n: strictly greater
 		return actual > target
-	case -1: // -n: strictly less
+	case cmpLess: // -n: strictly less
 		return actual < target
 	default: // exactly n
 		return actual == target
