@@ -136,6 +136,18 @@ func bashFloatUpper(s string) string {
 // maxWidthOrPrec caps width/precision values to prevent huge allocations.
 const maxWidthOrPrec = 10_000
 
+// stripSignFlags removes '+' and ' ' from a flag string.
+// Bash ignores these flags for unsigned conversions (%o, %u, %x, %X).
+func stripSignFlags(flags string) string {
+	var b strings.Builder
+	for i := 0; i < len(flags); i++ {
+		if flags[i] != '+' && flags[i] != ' ' {
+			b.WriteByte(flags[i])
+		}
+	}
+	return b.String()
+}
+
 func run(ctx context.Context, callCtx *builtins.CallContext, args []string) builtins.Result {
 	// Manual flag handling: only --help, -v, and -- are recognised.
 	// Any other flag starting with - is rejected (bash compat).
@@ -383,9 +395,15 @@ func processSpecifier(callCtx *builtins.CallContext, s string, args []string, ar
 	i++ // consume verb
 
 	// Build Go format string.
+	// For unsigned verbs (o, u, x, X), strip '+' and ' ' sign flags
+	// because bash ignores them for unsigned conversions.
+	flagStr := flags.String()
+	if verb == 'o' || verb == 'u' || verb == 'x' || verb == 'X' {
+		flagStr = stripSignFlags(flagStr)
+	}
 	var goFmt strings.Builder
 	goFmt.WriteByte('%')
-	goFmt.WriteString(flags.String())
+	goFmt.WriteString(flagStr)
 	goFmt.WriteString(width)
 	if hasPrecision {
 		goFmt.WriteByte('.')
