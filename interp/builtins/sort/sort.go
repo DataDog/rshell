@@ -606,7 +606,9 @@ func extractKey(line string, k keySpec, sep byte, hasSep bool, ignBlanksStart, i
 	// Compute start byte position.
 	keyStart := bounds[sf].start
 	if ignBlanksStart {
-		for keyStart < bounds[sf].end && (line[keyStart] == ' ' || line[keyStart] == '\t') {
+		// GNU sort skips blanks past the field boundary (e.g. past
+		// an empty field into separator characters) when -b is set.
+		for keyStart < len(line) && (line[keyStart] == ' ' || line[keyStart] == '\t') {
 			keyStart++
 		}
 	}
@@ -627,11 +629,6 @@ func extractKey(line string, k keySpec, sep byte, hasSep bool, ignBlanksStart, i
 		// End field beyond available fields — treat as end-of-line.
 		return line[keyStart:]
 	}
-	if ef < sf {
-		// GNU sort treats end-before-start (e.g. -k 2,1) as zero-width.
-		return ""
-	}
-
 	endFieldStart := bounds[ef].start
 	if ignBlanksEnd {
 		for endFieldStart < bounds[ef].end && (line[endFieldStart] == ' ' || line[endFieldStart] == '\t') {
