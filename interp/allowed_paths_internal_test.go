@@ -10,17 +10,39 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"mvdan.cc/sh/v3/syntax"
 )
+
+// fakeDirEntry is a minimal fs.DirEntry for testing collectDirEntries.
+type fakeDirEntry struct {
+	name string
+}
+
+func (f fakeDirEntry) Name() string               { return f.name }
+func (f fakeDirEntry) IsDir() bool                 { return false }
+func (f fakeDirEntry) Type() fs.FileMode           { return 0 }
+func (f fakeDirEntry) Info() (fs.FileInfo, error)  { return fakeFileInfo{name: f.name}, nil }
+
+type fakeFileInfo struct{ name string }
+
+func (f fakeFileInfo) Name() string      { return f.name }
+func (f fakeFileInfo) Size() int64       { return 0 }
+func (f fakeFileInfo) Mode() fs.FileMode { return 0644 }
+func (f fakeFileInfo) ModTime() time.Time { return time.Time{} }
+func (f fakeFileInfo) IsDir() bool       { return false }
+func (f fakeFileInfo) Sys() any          { return nil }
 
 func systemExecAllowedPaths(t *testing.T) []string {
 	t.Helper()
@@ -317,5 +339,99 @@ func TestReadDirLimited(t *testing.T) {
 		require.NoError(t, err)
 		assert.False(t, truncated)
 		assert.Len(t, entries, 10, "negative offset should be treated as 0")
+	})
+}
+
+func TestCollectDirEntries(t *testing.T) {
+	makeEntries := func(names ...string) []fs.DirEntry {
+		out := make([]fs.DirEntry, len(names))
+		for i, n := range names {
+			out[i] = fakeDirEntry{name: n}
+		}
+		return out
+	}
+
+	t.Run("error in same batch as truncation is preserved", func(t *testing.T) {
+		ioErr := errors.New("disk I/O error")
+		callCount := 0
+		reader := func(n int) ([]fs.DirEntry, error) {
+			callCount++
+			// First batch: 5 entries, no error.
+			// Second batch: 3 entries + I/O error.
+			// With maxRead=6, the second batch pushes us to 8 > 6, triggering truncation.
+			// The error must still be preserved.
+			if callCount == 1 {
+				return makeEntries("f01", "f02", "f03", "f04", "f05"), nil
+			}
+			return makeEntries("f06", "f07", "f08"), ioErr
+		}
+
+		entries, truncated, err := collectDirEntries(reader, 10, 0, 6)
+		assert.True(t, truncated, "should be truncated")
+		assert.Len(t, entries, 6, "should trim to maxRead")
+		assert.ErrorIs(t, err, ioErr, "I/O error must be preserved even when truncation occurs")
+	})
+
+	t.Run("EOF is not returned as error", func(t *testing.T) {
+		callCount := 0
+		reader := func(n int) ([]fs.DirEntry, error) {
+			callCount++
+			if callCount == 1 {
+				return makeEntries("f01", "f02"), io.EOF
+			}
+			return nil, io.EOF
+		}
+
+		entries, truncated, err := collectDirEntries(reader, 10, 0, 100)
+		assert.False(t, truncated)
+		assert.Len(t, entries, 2)
+		assert.NoError(t, err, "io.EOF should not be returned as error")
+	})
+
+	t.Run("offset skips entries across batches", func(t *testing.T) {
+		callCount := 0
+		reader := func(n int) ([]fs.DirEntry, error) {
+			callCount++
+			if callCount == 1 {
+				return makeEntries("f01", "f02", "f03"), nil
+			}
+			if callCount == 2 {
+				return makeEntries("f04", "f05"), io.EOF
+			}
+			return nil, io.EOF
+		}
+
+		entries, truncated, err := collectDirEntries(reader, 10, 2, 100)
+		assert.False(t, truncated)
+		assert.NoError(t, err)
+		assert.Len(t, entries, 3, "should skip first 2, return remaining 3")
+		assert.Equal(t, "f03", entries[0].Name())
+		assert.Equal(t, "f04", entries[1].Name())
+		assert.Equal(t, "f05", entries[2].Name())
+	})
+
+	t.Run("error without truncation is preserved", func(t *testing.T) {
+		ioErr := errors.New("permission denied")
+		reader := func(n int) ([]fs.DirEntry, error) {
+			return makeEntries("f01", "f02"), ioErr
+		}
+
+		entries, truncated, err := collectDirEntries(reader, 10, 0, 100)
+		assert.False(t, truncated)
+		assert.Len(t, entries, 2)
+		assert.ErrorIs(t, err, ioErr)
+	})
+
+	t.Run("entries are sorted by name", func(t *testing.T) {
+		reader := func(n int) ([]fs.DirEntry, error) {
+			return makeEntries("cherry", "apple", "banana"), io.EOF
+		}
+
+		entries, truncated, err := collectDirEntries(reader, 10, 0, 100)
+		assert.False(t, truncated)
+		assert.NoError(t, err)
+		assert.Equal(t, "apple", entries[0].Name())
+		assert.Equal(t, "banana", entries[1].Name())
+		assert.Equal(t, "cherry", entries[2].Name())
 	})
 }

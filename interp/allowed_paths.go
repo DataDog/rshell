@@ -222,18 +222,34 @@ func (s *pathSandbox) readDirLimited(ctx context.Context, path string, offset, m
 	}
 
 	const batchSize = 256
+	entries, truncated, lastErr := collectDirEntries(func(n int) ([]fs.DirEntry, error) {
+		return f.ReadDir(n)
+	}, batchSize, offset, maxRead)
+
+	if lastErr != nil {
+		return entries, truncated, portablePathError(lastErr)
+	}
+	return entries, truncated, nil
+}
+
+// collectDirEntries reads directory entries in batches using readBatch,
+// skipping the first offset entries and collecting up to maxRead entries.
+// Returns (entries, truncated, lastErr). Entries are sorted by name.
+//
+// NOTE: We intentionally truncate before reading all entries. For directories
+// larger than maxRead, the returned entries are sorted within the read window
+// but may not be the globally-smallest names. Reading all entries to get
+// globally-correct sorting would defeat the DoS protection — a directory with
+// millions of files would OOM or stall. The truncation warning communicates
+// that output is incomplete.
+func collectDirEntries(readBatch func(n int) ([]fs.DirEntry, error), batchSize, offset, maxRead int) ([]fs.DirEntry, bool, error) {
 	var entries []fs.DirEntry
 	truncated := false
 	skipped := 0
 	var lastErr error
-	// NOTE: We intentionally truncate before reading all entries. For directories
-	// larger than maxRead, the returned entries are sorted within the read window
-	// but may not be the globally-smallest names. Reading all entries to get
-	// globally-correct sorting would defeat the DoS protection — a directory with
-	// millions of files would OOM or stall. The truncation warning communicates
-	// that output is incomplete.
+
 	for {
-		batch, err := f.ReadDir(batchSize)
+		batch, err := readBatch(batchSize)
 		for _, e := range batch {
 			if skipped < offset {
 				skipped++
@@ -265,10 +281,7 @@ func (s *pathSandbox) readDirLimited(ctx context.Context, path string, offset, m
 		entries = entries[:maxRead]
 	}
 
-	if lastErr != nil {
-		return entries, truncated, portablePathError(lastErr)
-	}
-	return entries, truncated, nil
+	return entries, truncated, lastErr
 }
 
 // stat implements the restricted stat policy. It uses os.Root.Stat for
