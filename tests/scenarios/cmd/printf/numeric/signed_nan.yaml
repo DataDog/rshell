@@ -1,0 +1,8 @@
+description: Signed NaN forms +nan and -nan are accepted (bash compat).
+skip_assert_against_bash: true  # Go's math.NaN() doesn't preserve sign; bash outputs -nan for -nan
+input:
+  script: |+
+    printf "%f %f %f\n" nan +nan -nan
+expect:
+  stdout: "nan nan nan\n"
+  exit_code: 0

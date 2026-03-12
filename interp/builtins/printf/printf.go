@@ -614,7 +614,7 @@ func processSpecifier(callCtx *builtins.CallContext, s string, args []string, ar
 			}
 			callCtx.Errf("printf: '%s': invalid number\n", arg)
 			goFmt.WriteByte('e')
-			callCtx.Out(bashFloat(fmt.Sprintf(goFmt.String(), 0.0), flagStr))
+			callCtx.Out(bashFloat(fmt.Sprintf(goFmt.String(), fa.f), flagStr))
 			return false, i, true
 		}
 		goFmt.WriteByte('e')
@@ -632,7 +632,7 @@ func processSpecifier(callCtx *builtins.CallContext, s string, args []string, ar
 			}
 			callCtx.Errf("printf: '%s': invalid number\n", arg)
 			goFmt.WriteByte('E')
-			callCtx.Out(bashFloatUpper(fmt.Sprintf(goFmt.String(), 0.0), flagStr))
+			callCtx.Out(bashFloatUpper(fmt.Sprintf(goFmt.String(), fa.f), flagStr))
 			return false, i, true
 		}
 		goFmt.WriteByte('E')
@@ -650,7 +650,7 @@ func processSpecifier(callCtx *builtins.CallContext, s string, args []string, ar
 			}
 			callCtx.Errf("printf: '%s': invalid number\n", arg)
 			goFmt.WriteByte('f')
-			callCtx.Out(bashFloat(fmt.Sprintf(goFmt.String(), 0.0), flagStr))
+			callCtx.Out(bashFloat(fmt.Sprintf(goFmt.String(), fa.f), flagStr))
 			return false, i, true
 		}
 		goFmt.WriteByte('f')
@@ -667,7 +667,6 @@ func processSpecifier(callCtx *builtins.CallContext, s string, args []string, ar
 				return false, i, false
 			}
 			callCtx.Errf("printf: '%s': invalid number\n", arg)
-			fa = floatArg{}
 		}
 		// Go doesn't have %F; use %f and fix Inf/NaN casing to match bash.
 		goFmt.WriteByte('f')
@@ -689,7 +688,7 @@ func processSpecifier(callCtx *builtins.CallContext, s string, args []string, ar
 			}
 			callCtx.Errf("printf: '%s': invalid number\n", arg)
 			goFmt.WriteByte('g')
-			callCtx.Out(bashFloat(fmt.Sprintf(goFmt.String(), 0.0), flagStr))
+			callCtx.Out(bashFloat(fmt.Sprintf(goFmt.String(), fa.f), flagStr))
 			return false, i, true
 		}
 		goFmt.WriteByte('g')
@@ -707,7 +706,7 @@ func processSpecifier(callCtx *builtins.CallContext, s string, args []string, ar
 			}
 			callCtx.Errf("printf: '%s': invalid number\n", arg)
 			goFmt.WriteByte('G')
-			callCtx.Out(bashFloatUpper(fmt.Sprintf(goFmt.String(), 0.0), flagStr))
+			callCtx.Out(bashFloatUpper(fmt.Sprintf(goFmt.String(), fa.f), flagStr))
 			return false, i, true
 		}
 		goFmt.WriteByte('G')
@@ -834,7 +833,8 @@ func parseUintArg(s string) (uint64, error) {
 		val, err := strconv.ParseInt(s, 0, 64)
 		if err != nil {
 			if isRangeErr(err) {
-				return uint64(val), err
+				// For unsigned, any out-of-range negative clamps to MaxUint64 (bash compat).
+				return math.MaxUint64, err
 			}
 			// Bash extracts the leading numeric prefix for unsigned too.
 			if prefix := extractIntPrefix(s); prefix != "" {
@@ -876,6 +876,53 @@ func parseUintArg(s string) (uint64, error) {
 // Bash uses this prefix when the full string is not a valid integer
 // (e.g. "3.14" → "3", "123abc" → "123", "0x1G" → "0x1").
 // Returns "" if no valid numeric prefix can be extracted.
+// extractFloatPrefix extracts the longest leading valid float literal from s.
+// Returns "" if s is already a valid float or has no numeric prefix.
+func extractFloatPrefix(s string) string {
+	if len(s) == 0 {
+		return ""
+	}
+	i := 0
+	// Optional sign.
+	if s[i] == '+' || s[i] == '-' {
+		i++
+	}
+	if i >= len(s) || (s[i] < '0' && s[i] != '.') || s[i] > '9' {
+		return ""
+	}
+	// Integer part.
+	for i < len(s) && s[i] >= '0' && s[i] <= '9' {
+		i++
+	}
+	// Decimal part.
+	if i < len(s) && s[i] == '.' {
+		i++
+		for i < len(s) && s[i] >= '0' && s[i] <= '9' {
+			i++
+		}
+	}
+	// Exponent part.
+	if i < len(s) && (s[i] == 'e' || s[i] == 'E') {
+		j := i + 1
+		if j < len(s) && (s[j] == '+' || s[j] == '-') {
+			j++
+		}
+		if j < len(s) && s[j] >= '0' && s[j] <= '9' {
+			i = j
+			for i < len(s) && s[i] >= '0' && s[i] <= '9' {
+				i++
+			}
+		}
+	}
+	if i == len(s) {
+		return "" // full string is already valid
+	}
+	if i == 0 || (i == 1 && (s[0] == '+' || s[0] == '-')) {
+		return ""
+	}
+	return s[:i]
+}
+
 func extractIntPrefix(s string) string {
 	if len(s) == 0 {
 		return ""
@@ -971,7 +1018,7 @@ func parseFloatArg(s string) (floatArg, error) {
 		return floatArg{f: float64(uval)}, nil
 	}
 
-	// Handle infinity and NaN.
+	// Handle infinity and NaN (including signed forms like +nan, -nan).
 	lower := strings.ToLower(s)
 	if lower == "inf" || lower == "infinity" || lower == "+inf" || lower == "+infinity" {
 		return floatArg{f: math.Inf(1)}, nil
@@ -979,11 +1026,24 @@ func parseFloatArg(s string) (floatArg, error) {
 	if lower == "-inf" || lower == "-infinity" {
 		return floatArg{f: math.Inf(-1)}, nil
 	}
+	if lower == "nan" || lower == "+nan" || lower == "-nan" {
+		return floatArg{f: math.NaN()}, nil
+	}
 
 	val, err := strconv.ParseFloat(s, 64)
 	if err != nil {
 		// For range overflow, ParseFloat returns +Inf/-Inf with ErrRange.
 		// Return the value so the caller can output it (matching bash).
+		if isRangeErr(err) {
+			return floatArg{f: val}, err
+		}
+		// Bash extracts the leading numeric prefix for float args too (e.g. "1abc" → 1.0).
+		if pfx := extractFloatPrefix(s); pfx != "" {
+			pv, perr := strconv.ParseFloat(pfx, 64)
+			if perr == nil {
+				return floatArg{f: pv}, err
+			}
+		}
 		return floatArg{f: val}, err
 	}
 	return floatArg{f: val}, nil
