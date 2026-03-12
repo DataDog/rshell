@@ -97,6 +97,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"math/big"
 	"strconv"
 	"strings"
 
@@ -114,9 +115,17 @@ const maxFormatIterations = 10_000
 // bashFloat fixes Go's NaN/Inf casing to match bash's lowercase output
 // for lowercase format verbs (f, e, g). Go outputs "NaN" and "+Inf"/"-Inf"
 // but bash outputs "nan", "inf", "-inf".
-func bashFloat(s string) string {
+// The flags parameter is the parsed format flags string, used to determine
+// whether the + sign should be preserved for positive infinity.
+func bashFloat(s string, flags string) string {
 	s = strings.ReplaceAll(s, "NaN", "nan")
-	s = strings.ReplaceAll(s, "+Inf", "inf")
+	if strings.ContainsRune(flags, '+') {
+		s = strings.ReplaceAll(s, "+Inf", "+inf")
+	} else if strings.ContainsRune(flags, ' ') {
+		s = strings.ReplaceAll(s, "+Inf", " inf")
+	} else {
+		s = strings.ReplaceAll(s, "+Inf", "inf")
+	}
 	s = strings.ReplaceAll(s, "-Inf", "-inf")
 	s = strings.ReplaceAll(s, "Inf", "inf")
 	return s
@@ -125,9 +134,17 @@ func bashFloat(s string) string {
 // bashFloatUpper fixes Go's NaN/Inf casing to match bash's uppercase output
 // for uppercase format verbs (F, E, G). Go outputs "NaN" and "+Inf"/"-Inf"
 // but bash outputs "NAN", "INF", "-INF".
-func bashFloatUpper(s string) string {
+// The flags parameter is the parsed format flags string, used to determine
+// whether the + sign should be preserved for positive infinity.
+func bashFloatUpper(s string, flags string) string {
 	s = strings.ReplaceAll(s, "NaN", "NAN")
-	s = strings.ReplaceAll(s, "+Inf", "INF")
+	if strings.ContainsRune(flags, '+') {
+		s = strings.ReplaceAll(s, "+Inf", "+INF")
+	} else if strings.ContainsRune(flags, ' ') {
+		s = strings.ReplaceAll(s, "+Inf", " INF")
+	} else {
+		s = strings.ReplaceAll(s, "+Inf", "INF")
+	}
 	s = strings.ReplaceAll(s, "-Inf", "-INF")
 	s = strings.ReplaceAll(s, "Inf", "INF")
 	return s
@@ -509,86 +526,96 @@ func processSpecifier(callCtx *builtins.CallContext, s string, args []string, ar
 
 	case 'e':
 		arg := getStringArg(args, argIdx)
-		val, err := parseFloatArg(arg)
+		fa, err := parseFloatArg(arg)
 		if err != nil && arg != "" {
 			callCtx.Errf("printf: '%s': invalid number\n", arg)
-			val = 0
 			goFmt.WriteByte('e')
-			callCtx.Out(bashFloat(fmt.Sprintf(goFmt.String(), val)))
+			callCtx.Out(bashFloat(fmt.Sprintf(goFmt.String(), 0.0), flagStr))
 			return false, i, true
 		}
 		goFmt.WriteByte('e')
-		callCtx.Out(bashFloat(fmt.Sprintf(goFmt.String(), val)))
+		callCtx.Out(bashFloat(fmt.Sprintf(goFmt.String(), fa.f), flagStr))
 
 	case 'E':
 		arg := getStringArg(args, argIdx)
-		val, err := parseFloatArg(arg)
+		fa, err := parseFloatArg(arg)
 		if err != nil && arg != "" {
 			callCtx.Errf("printf: '%s': invalid number\n", arg)
-			val = 0
 			goFmt.WriteByte('E')
-			callCtx.Out(bashFloatUpper(fmt.Sprintf(goFmt.String(), val)))
+			callCtx.Out(bashFloatUpper(fmt.Sprintf(goFmt.String(), 0.0), flagStr))
 			return false, i, true
 		}
 		goFmt.WriteByte('E')
-		callCtx.Out(bashFloatUpper(fmt.Sprintf(goFmt.String(), val)))
+		callCtx.Out(bashFloatUpper(fmt.Sprintf(goFmt.String(), fa.f), flagStr))
 
 	case 'f':
 		arg := getStringArg(args, argIdx)
-		val, err := parseFloatArg(arg)
+		fa, err := parseFloatArg(arg)
 		if err != nil && arg != "" {
 			callCtx.Errf("printf: '%s': invalid number\n", arg)
-			val = 0
 			goFmt.WriteByte('f')
-			callCtx.Out(bashFloat(fmt.Sprintf(goFmt.String(), val)))
+			callCtx.Out(bashFloat(fmt.Sprintf(goFmt.String(), 0.0), flagStr))
 			return false, i, true
 		}
-		goFmt.WriteByte('f')
-		callCtx.Out(bashFloat(fmt.Sprintf(goFmt.String(), val)))
+		if fa.exact != nil {
+			// Use big.Int for exact integer formatting to avoid float64 precision loss.
+			prec := -1 // default
+			if hasPrecision {
+				prec, _ = strconv.Atoi(precision)
+			}
+			callCtx.Out(formatBigIntAsFloat(fa.exact, flagStr, width, prec))
+		} else {
+			goFmt.WriteByte('f')
+			callCtx.Out(bashFloat(fmt.Sprintf(goFmt.String(), fa.f), flagStr))
+		}
 
 	case 'F':
 		arg := getStringArg(args, argIdx)
-		val, err := parseFloatArg(arg)
+		fa, err := parseFloatArg(arg)
 		if err != nil && arg != "" {
 			callCtx.Errf("printf: '%s': invalid number\n", arg)
-			val = 0
+			fa = floatArg{}
 		}
-		// Go doesn't have %F; use %f and fix Inf/NaN casing to match bash.
-		// Bash %F outputs digits normally (same as %f) but uses INF/NAN for
-		// special values. We cannot simply strings.ToUpper the whole output
-		// because that would uppercase hex digits in scientific notation.
-		goFmt.WriteByte('f')
-		out := bashFloatUpper(fmt.Sprintf(goFmt.String(), val))
-		callCtx.Out(out)
+		if fa.exact != nil {
+			// Use big.Int for exact integer formatting.
+			prec := -1
+			if hasPrecision {
+				prec, _ = strconv.Atoi(precision)
+			}
+			callCtx.Out(formatBigIntAsFloat(fa.exact, flagStr, width, prec))
+		} else {
+			// Go doesn't have %F; use %f and fix Inf/NaN casing to match bash.
+			goFmt.WriteByte('f')
+			out := bashFloatUpper(fmt.Sprintf(goFmt.String(), fa.f), flagStr)
+			callCtx.Out(out)
+		}
 		if err != nil && arg != "" {
 			return false, i, true
 		}
 
 	case 'g':
 		arg := getStringArg(args, argIdx)
-		val, err := parseFloatArg(arg)
+		fa, err := parseFloatArg(arg)
 		if err != nil && arg != "" {
 			callCtx.Errf("printf: '%s': invalid number\n", arg)
-			val = 0
 			goFmt.WriteByte('g')
-			callCtx.Out(bashFloat(fmt.Sprintf(goFmt.String(), val)))
+			callCtx.Out(bashFloat(fmt.Sprintf(goFmt.String(), 0.0), flagStr))
 			return false, i, true
 		}
 		goFmt.WriteByte('g')
-		callCtx.Out(bashFloat(fmt.Sprintf(goFmt.String(), val)))
+		callCtx.Out(bashFloat(fmt.Sprintf(goFmt.String(), fa.f), flagStr))
 
 	case 'G':
 		arg := getStringArg(args, argIdx)
-		val, err := parseFloatArg(arg)
+		fa, err := parseFloatArg(arg)
 		if err != nil && arg != "" {
 			callCtx.Errf("printf: '%s': invalid number\n", arg)
-			val = 0
 			goFmt.WriteByte('G')
-			callCtx.Out(bashFloatUpper(fmt.Sprintf(goFmt.String(), val)))
+			callCtx.Out(bashFloatUpper(fmt.Sprintf(goFmt.String(), 0.0), flagStr))
 			return false, i, true
 		}
 		goFmt.WriteByte('G')
-		callCtx.Out(bashFloatUpper(fmt.Sprintf(goFmt.String(), val)))
+		callCtx.Out(bashFloatUpper(fmt.Sprintf(goFmt.String(), fa.f), flagStr))
 
 	case 'n':
 		callCtx.Errf("printf: %%n: not supported (security risk)\n")
@@ -700,49 +727,163 @@ func parseUintArg(s string) (uint64, error) {
 	return val, nil
 }
 
+// floatArg holds the result of parsing a float argument. For integer inputs,
+// exact holds the exact big.Int value to avoid float64 precision loss when
+// formatting with %f/%F.
+type floatArg struct {
+	f     float64
+	exact *big.Int // non-nil when the input was an exact integer
+}
+
 // parseFloatArg parses a string as a float64, supporting hex/octal integer prefixes
-// and character constants.
-func parseFloatArg(s string) (float64, error) {
+// and character constants. When the input is a pure integer, exact is set to preserve
+// full precision for %f/%F formatting (float64 only has 53 bits of mantissa).
+func parseFloatArg(s string) (floatArg, error) {
 	if s == "" {
-		return 0, nil
+		return floatArg{}, nil
 	}
 
 	// Character constant: 'X or "X — bare quote with no following char yields 0.
 	if s[0] == '\'' || s[0] == '"' {
 		if len(s) >= 2 {
-			return float64(s[1]), nil
+			v := int64(s[1])
+			return floatArg{f: float64(v), exact: big.NewInt(v)}, nil
 		}
-		return 0, nil
+		return floatArg{}, nil
 	}
 
 	// Handle hex/octal integers used as float args (0xff, -0xff, 0755, etc).
 	// Bash accepts these for %f/%e/%g and converts them to float.
 	prefix := s
+	isNeg := false
 	if len(prefix) > 0 && (prefix[0] == '-' || prefix[0] == '+') {
+		isNeg = prefix[0] == '-'
 		prefix = prefix[1:]
 	}
 	if len(prefix) > 1 && prefix[0] == '0' && (prefix[1] == 'x' || prefix[1] == 'X' || (prefix[1] >= '0' && prefix[1] <= '7')) {
-		val, err := strconv.ParseInt(s, 0, 64)
-		if err != nil {
-			return 0, err
+		if isNeg {
+			val, err := strconv.ParseInt(s, 0, 64)
+			if err != nil {
+				return floatArg{}, err
+			}
+			return floatArg{f: float64(val), exact: big.NewInt(val)}, nil
 		}
-		return float64(val), nil
+		// Try unsigned first to handle values > math.MaxInt64 (e.g. 0xffffffffffffffff).
+		uval, err := strconv.ParseUint(prefix, 0, 64)
+		if err != nil {
+			val, serr := strconv.ParseInt(s, 0, 64)
+			if serr != nil {
+				return floatArg{}, err
+			}
+			return floatArg{f: float64(val), exact: big.NewInt(val)}, nil
+		}
+		bi := new(big.Int).SetUint64(uval)
+		return floatArg{f: float64(uval), exact: bi}, nil
 	}
 
 	// Handle infinity and NaN.
 	lower := strings.ToLower(s)
 	if lower == "inf" || lower == "infinity" || lower == "+inf" || lower == "+infinity" {
-		return math.Inf(1), nil
+		return floatArg{f: math.Inf(1)}, nil
 	}
 	if lower == "-inf" || lower == "-infinity" {
-		return math.Inf(-1), nil
+		return floatArg{f: math.Inf(-1)}, nil
+	}
+
+	// Try parsing as a plain decimal integer for exact precision.
+	if isDecimalInteger(s) {
+		bi, ok := new(big.Int).SetString(s, 10)
+		if ok {
+			val, _ := strconv.ParseFloat(s, 64)
+			return floatArg{f: val, exact: bi}, nil
+		}
 	}
 
 	val, err := strconv.ParseFloat(s, 64)
 	if err != nil {
-		return 0, err
+		return floatArg{}, err
 	}
-	return val, nil
+	return floatArg{f: val}, nil
+}
+
+// isDecimalInteger returns true if s is a plain decimal integer (optional leading sign, all digits).
+func isDecimalInteger(s string) bool {
+	if len(s) == 0 {
+		return false
+	}
+	start := 0
+	if s[0] == '-' || s[0] == '+' {
+		start = 1
+	}
+	if start >= len(s) {
+		return false
+	}
+	for i := start; i < len(s); i++ {
+		if s[i] < '0' || s[i] > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+// formatBigIntAsFloat formats a big.Int as a decimal float string with the given
+// precision (number of decimal places). This preserves full integer precision
+// that would be lost with float64 formatting.
+func formatBigIntAsFloat(bi *big.Int, flags string, width string, prec int) string {
+	intStr := bi.String()
+	// Build decimal part.
+	var decPart string
+	if prec > 0 {
+		decPart = "." + strings.Repeat("0", prec)
+	} else if prec == 0 {
+		// No decimal point unless # flag.
+		if strings.ContainsRune(flags, '#') {
+			decPart = "."
+		}
+	} else {
+		// Default precision is 6.
+		decPart = ".000000"
+	}
+
+	// Handle sign/flags.
+	sign := ""
+	num := intStr
+	if num[0] == '-' {
+		sign = "-"
+		num = num[1:]
+	} else if strings.ContainsRune(flags, '+') {
+		sign = "+"
+	} else if strings.ContainsRune(flags, ' ') {
+		sign = " "
+	}
+
+	result := sign + num + decPart
+
+	// Handle width.
+	if width != "" {
+		w, err := strconv.Atoi(width)
+		if err == nil && len(result) < abs(w) {
+			pad := abs(w) - len(result)
+			if strings.ContainsRune(flags, '-') {
+				// Left-aligned.
+				result = result + strings.Repeat(" ", pad)
+			} else if strings.ContainsRune(flags, '0') {
+				// Zero-padded (pad between sign and digits).
+				result = sign + strings.Repeat("0", pad) + num + decPart
+			} else {
+				result = strings.Repeat(" ", pad) + result
+			}
+		}
+	}
+
+	return result
+}
+
+func abs(x int) int {
+	if x < 0 {
+		return -x
+	}
+	return x
 }
 
 // processBEscapes handles backslash escapes for %b (like echo -e).
