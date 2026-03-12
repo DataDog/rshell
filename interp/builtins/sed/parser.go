@@ -680,8 +680,6 @@ func (p *parser) parseTransliterate(cmd *sedCmd) (*sedCmd, error) {
 	}
 
 	cmd.kind = cmdTransliterate
-	cmd.transFrom = src
-	cmd.transTo = dst
 	// Precompute the rune mapping at parse time for O(n) transliteration.
 	cmd.transMap = make(map[rune]rune, len(src))
 	for i, fr := range src {

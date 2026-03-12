@@ -94,9 +94,7 @@ type sedCmd struct {
 	subCaseInsensitive  bool // deferred case-insensitive flag (when pattern is empty)
 
 	// For y command:
-	transFrom []rune
-	transTo   []rune
-	transMap  map[rune]rune // precomputed mapping for O(1) lookup
+	transMap map[rune]rune // precomputed rune mapping for O(1) lookup
 
 	// For a, i, c commands:
 	text string
