@@ -97,14 +97,23 @@ package printf
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
-	"math/big"
 	"strconv"
 	"strings"
 
 	"github.com/DataDog/rshell/interp/builtins"
 )
+
+// isRangeErr returns true if err is a strconv range overflow error.
+func isRangeErr(err error) bool {
+	var ne *strconv.NumError
+	if errors.As(err, &ne) {
+		return ne.Err == strconv.ErrRange
+	}
+	return false
+}
 
 // Cmd is the printf builtin command descriptor.
 // printf uses NoFlags because its arguments (format string and data) can look
@@ -515,11 +524,16 @@ func processSpecifier(callCtx *builtins.CallContext, s string, args []string, ar
 		arg := getStringArg(args, argIdx)
 		val, err := parseIntArg(arg)
 		if err != nil && arg != "" {
-			callCtx.Errf("printf: '%s': invalid number\n", arg)
-			// Bash uses the numeric prefix value (e.g. "3.14" → 3) and sets exit code.
+			if isRangeErr(err) {
+				// Bash treats overflow as a warning, not an error: exit code stays 0.
+				callCtx.Errf("printf: warning: %s: Result too large\n", arg)
+			} else {
+				callCtx.Errf("printf: '%s': invalid number\n", arg)
+			}
+			// Bash uses the clamped/prefix value and sets exit code only for non-overflow.
 			goFmt.WriteByte('d')
 			callCtx.Out(fmt.Sprintf(goFmt.String(), val))
-			return false, i, true
+			return false, i, !isRangeErr(err)
 		}
 		goFmt.WriteByte('d')
 		callCtx.Out(fmt.Sprintf(goFmt.String(), val))
@@ -528,10 +542,14 @@ func processSpecifier(callCtx *builtins.CallContext, s string, args []string, ar
 		arg := getStringArg(args, argIdx)
 		val, err := parseUintArg(arg)
 		if err != nil && arg != "" {
-			callCtx.Errf("printf: '%s': invalid number\n", arg)
+			if isRangeErr(err) {
+				callCtx.Errf("printf: warning: %s: Result too large\n", arg)
+			} else {
+				callCtx.Errf("printf: '%s': invalid number\n", arg)
+			}
 			goFmt.WriteByte('o')
 			callCtx.Out(fmt.Sprintf(goFmt.String(), val))
-			return false, i, true
+			return false, i, !isRangeErr(err)
 		}
 		goFmt.WriteByte('o')
 		callCtx.Out(fmt.Sprintf(goFmt.String(), val))
@@ -540,10 +558,14 @@ func processSpecifier(callCtx *builtins.CallContext, s string, args []string, ar
 		arg := getStringArg(args, argIdx)
 		val, err := parseUintArg(arg)
 		if err != nil && arg != "" {
-			callCtx.Errf("printf: '%s': invalid number\n", arg)
+			if isRangeErr(err) {
+				callCtx.Errf("printf: warning: %s: Result too large\n", arg)
+			} else {
+				callCtx.Errf("printf: '%s': invalid number\n", arg)
+			}
 			goFmt.WriteByte('d')
 			callCtx.Out(fmt.Sprintf(goFmt.String(), val))
-			return false, i, true
+			return false, i, !isRangeErr(err)
 		}
 		goFmt.WriteByte('d')
 		callCtx.Out(fmt.Sprintf(goFmt.String(), val))
@@ -552,10 +574,14 @@ func processSpecifier(callCtx *builtins.CallContext, s string, args []string, ar
 		arg := getStringArg(args, argIdx)
 		val, err := parseUintArg(arg)
 		if err != nil && arg != "" {
-			callCtx.Errf("printf: '%s': invalid number\n", arg)
+			if isRangeErr(err) {
+				callCtx.Errf("printf: warning: %s: Result too large\n", arg)
+			} else {
+				callCtx.Errf("printf: '%s': invalid number\n", arg)
+			}
 			goFmt.WriteByte('x')
 			callCtx.Out(fmt.Sprintf(goFmt.String(), val))
-			return false, i, true
+			return false, i, !isRangeErr(err)
 		}
 		goFmt.WriteByte('x')
 		callCtx.Out(fmt.Sprintf(goFmt.String(), val))
@@ -564,10 +590,14 @@ func processSpecifier(callCtx *builtins.CallContext, s string, args []string, ar
 		arg := getStringArg(args, argIdx)
 		val, err := parseUintArg(arg)
 		if err != nil && arg != "" {
-			callCtx.Errf("printf: '%s': invalid number\n", arg)
+			if isRangeErr(err) {
+				callCtx.Errf("printf: warning: %s: Result too large\n", arg)
+			} else {
+				callCtx.Errf("printf: '%s': invalid number\n", arg)
+			}
 			goFmt.WriteByte('X')
 			callCtx.Out(fmt.Sprintf(goFmt.String(), val))
-			return false, i, true
+			return false, i, !isRangeErr(err)
 		}
 		goFmt.WriteByte('X')
 		callCtx.Out(fmt.Sprintf(goFmt.String(), val))
@@ -576,6 +606,12 @@ func processSpecifier(callCtx *builtins.CallContext, s string, args []string, ar
 		arg := getStringArg(args, argIdx)
 		fa, err := parseFloatArg(arg)
 		if err != nil && arg != "" {
+			if isRangeErr(err) {
+				callCtx.Errf("printf: warning: %s: Result too large\n", arg)
+				goFmt.WriteByte('e')
+				callCtx.Out(bashFloat(fmt.Sprintf(goFmt.String(), fa.f), flagStr))
+				return false, i, false
+			}
 			callCtx.Errf("printf: '%s': invalid number\n", arg)
 			goFmt.WriteByte('e')
 			callCtx.Out(bashFloat(fmt.Sprintf(goFmt.String(), 0.0), flagStr))
@@ -588,6 +624,12 @@ func processSpecifier(callCtx *builtins.CallContext, s string, args []string, ar
 		arg := getStringArg(args, argIdx)
 		fa, err := parseFloatArg(arg)
 		if err != nil && arg != "" {
+			if isRangeErr(err) {
+				callCtx.Errf("printf: warning: %s: Result too large\n", arg)
+				goFmt.WriteByte('E')
+				callCtx.Out(bashFloatUpper(fmt.Sprintf(goFmt.String(), fa.f), flagStr))
+				return false, i, false
+			}
 			callCtx.Errf("printf: '%s': invalid number\n", arg)
 			goFmt.WriteByte('E')
 			callCtx.Out(bashFloatUpper(fmt.Sprintf(goFmt.String(), 0.0), flagStr))
@@ -600,43 +642,37 @@ func processSpecifier(callCtx *builtins.CallContext, s string, args []string, ar
 		arg := getStringArg(args, argIdx)
 		fa, err := parseFloatArg(arg)
 		if err != nil && arg != "" {
+			if isRangeErr(err) {
+				callCtx.Errf("printf: warning: %s: Result too large\n", arg)
+				goFmt.WriteByte('f')
+				callCtx.Out(bashFloat(fmt.Sprintf(goFmt.String(), fa.f), flagStr))
+				return false, i, false
+			}
 			callCtx.Errf("printf: '%s': invalid number\n", arg)
 			goFmt.WriteByte('f')
 			callCtx.Out(bashFloat(fmt.Sprintf(goFmt.String(), 0.0), flagStr))
 			return false, i, true
 		}
-		if fa.exact != nil {
-			// Use big.Int for exact integer formatting to avoid float64 precision loss.
-			prec := -1 // default
-			if hasPrecision {
-				prec, _ = strconv.Atoi(precision)
-			}
-			callCtx.Out(formatBigIntAsFloat(fa.exact, flagStr, width, prec))
-		} else {
-			goFmt.WriteByte('f')
-			callCtx.Out(bashFloat(fmt.Sprintf(goFmt.String(), fa.f), flagStr))
-		}
+		goFmt.WriteByte('f')
+		callCtx.Out(bashFloat(fmt.Sprintf(goFmt.String(), fa.f), flagStr))
 
 	case 'F':
 		arg := getStringArg(args, argIdx)
 		fa, err := parseFloatArg(arg)
 		if err != nil && arg != "" {
+			if isRangeErr(err) {
+				callCtx.Errf("printf: warning: %s: Result too large\n", arg)
+				goFmt.WriteByte('f')
+				callCtx.Out(bashFloatUpper(fmt.Sprintf(goFmt.String(), fa.f), flagStr))
+				return false, i, false
+			}
 			callCtx.Errf("printf: '%s': invalid number\n", arg)
 			fa = floatArg{}
 		}
-		if fa.exact != nil {
-			// Use big.Int for exact integer formatting.
-			prec := -1
-			if hasPrecision {
-				prec, _ = strconv.Atoi(precision)
-			}
-			callCtx.Out(formatBigIntAsFloat(fa.exact, flagStr, width, prec))
-		} else {
-			// Go doesn't have %F; use %f and fix Inf/NaN casing to match bash.
-			goFmt.WriteByte('f')
-			out := bashFloatUpper(fmt.Sprintf(goFmt.String(), fa.f), flagStr)
-			callCtx.Out(out)
-		}
+		// Go doesn't have %F; use %f and fix Inf/NaN casing to match bash.
+		goFmt.WriteByte('f')
+		out := bashFloatUpper(fmt.Sprintf(goFmt.String(), fa.f), flagStr)
+		callCtx.Out(out)
 		if err != nil && arg != "" {
 			return false, i, true
 		}
@@ -645,6 +681,12 @@ func processSpecifier(callCtx *builtins.CallContext, s string, args []string, ar
 		arg := getStringArg(args, argIdx)
 		fa, err := parseFloatArg(arg)
 		if err != nil && arg != "" {
+			if isRangeErr(err) {
+				callCtx.Errf("printf: warning: %s: Result too large\n", arg)
+				goFmt.WriteByte('g')
+				callCtx.Out(bashFloat(fmt.Sprintf(goFmt.String(), fa.f), flagStr))
+				return false, i, false
+			}
 			callCtx.Errf("printf: '%s': invalid number\n", arg)
 			goFmt.WriteByte('g')
 			callCtx.Out(bashFloat(fmt.Sprintf(goFmt.String(), 0.0), flagStr))
@@ -657,6 +699,12 @@ func processSpecifier(callCtx *builtins.CallContext, s string, args []string, ar
 		arg := getStringArg(args, argIdx)
 		fa, err := parseFloatArg(arg)
 		if err != nil && arg != "" {
+			if isRangeErr(err) {
+				callCtx.Errf("printf: warning: %s: Result too large\n", arg)
+				goFmt.WriteByte('G')
+				callCtx.Out(bashFloatUpper(fmt.Sprintf(goFmt.String(), fa.f), flagStr))
+				return false, i, false
+			}
 			callCtx.Errf("printf: '%s': invalid number\n", arg)
 			goFmt.WriteByte('G')
 			callCtx.Out(bashFloatUpper(fmt.Sprintf(goFmt.String(), 0.0), flagStr))
@@ -750,6 +798,11 @@ func parseIntArg(s string) (int64, error) {
 	// Try parsing with automatic base detection.
 	val, err := strconv.ParseInt(s, 0, 64)
 	if err != nil {
+		// For range overflow, strconv.ParseInt returns the clamped value
+		// (MaxInt64 or MinInt64). Return it so the caller can emit it.
+		if isRangeErr(err) {
+			return val, err
+		}
 		// Bash extracts the leading numeric prefix (e.g. "3.14" → 3, "123abc" → 123).
 		if prefix := extractIntPrefix(s); prefix != "" {
 			pv, perr := strconv.ParseInt(prefix, 0, 64)
@@ -780,6 +833,9 @@ func parseUintArg(s string) (uint64, error) {
 	if len(s) > 0 && s[0] == '-' {
 		val, err := strconv.ParseInt(s, 0, 64)
 		if err != nil {
+			if isRangeErr(err) {
+				return uint64(val), err
+			}
 			// Bash extracts the leading numeric prefix for unsigned too.
 			if prefix := extractIntPrefix(s); prefix != "" {
 				pv, perr := strconv.ParseInt(prefix, 0, 64)
@@ -795,6 +851,9 @@ func parseUintArg(s string) (uint64, error) {
 
 	val, err := strconv.ParseUint(s, 0, 64)
 	if err != nil {
+		if isRangeErr(err) {
+			return val, err
+		}
 		// Try signed parse for large hex values that may be negative in two's complement.
 		sval, serr := strconv.ParseInt(s, 0, 64)
 		if serr == nil {
@@ -862,17 +921,13 @@ func isHexDigit(ch byte) bool {
 	return (ch >= '0' && ch <= '9') || (ch >= 'a' && ch <= 'f') || (ch >= 'A' && ch <= 'F')
 }
 
-// floatArg holds the result of parsing a float argument. For integer inputs,
-// exact holds the exact big.Int value to avoid float64 precision loss when
-// formatting with %f/%F.
+// floatArg holds the result of parsing a float argument.
 type floatArg struct {
-	f     float64
-	exact *big.Int // non-nil when the input was an exact integer
+	f float64
 }
 
 // parseFloatArg parses a string as a float64, supporting hex/octal integer prefixes
-// and character constants. When the input is a pure integer, exact is set to preserve
-// full precision for %f/%F formatting (float64 only has 53 bits of mantissa).
+// and character constants. Uses float64 for all formatting (matching bash behavior).
 func parseFloatArg(s string) (floatArg, error) {
 	if s == "" {
 		return floatArg{}, nil
@@ -881,8 +936,7 @@ func parseFloatArg(s string) (floatArg, error) {
 	// Character constant: 'X or "X — bare quote with no following char yields 0.
 	if s[0] == '\'' || s[0] == '"' {
 		if len(s) >= 2 {
-			v := int64(s[1])
-			return floatArg{f: float64(v), exact: big.NewInt(v)}, nil
+			return floatArg{f: float64(s[1])}, nil
 		}
 		return floatArg{}, nil
 	}
@@ -903,7 +957,7 @@ func parseFloatArg(s string) (floatArg, error) {
 			if err != nil {
 				return floatArg{}, err
 			}
-			return floatArg{f: float64(val), exact: big.NewInt(val)}, nil
+			return floatArg{f: float64(val)}, nil
 		}
 		// Try unsigned first to handle values > math.MaxInt64 (e.g. 0xffffffffffffffff).
 		uval, err := strconv.ParseUint(prefix, 0, 64)
@@ -912,10 +966,9 @@ func parseFloatArg(s string) (floatArg, error) {
 			if serr != nil {
 				return floatArg{}, err
 			}
-			return floatArg{f: float64(val), exact: big.NewInt(val)}, nil
+			return floatArg{f: float64(val)}, nil
 		}
-		bi := new(big.Int).SetUint64(uval)
-		return floatArg{f: float64(uval), exact: bi}, nil
+		return floatArg{f: float64(uval)}, nil
 	}
 
 	// Handle infinity and NaN.
@@ -927,101 +980,15 @@ func parseFloatArg(s string) (floatArg, error) {
 		return floatArg{f: math.Inf(-1)}, nil
 	}
 
-	// Try parsing as a plain decimal integer for exact precision.
-	if isDecimalInteger(s) {
-		bi, ok := new(big.Int).SetString(s, 10)
-		if ok {
-			val, _ := strconv.ParseFloat(s, 64)
-			return floatArg{f: val, exact: bi}, nil
-		}
-	}
-
 	val, err := strconv.ParseFloat(s, 64)
 	if err != nil {
-		return floatArg{}, err
+		// For range overflow, ParseFloat returns +Inf/-Inf with ErrRange.
+		// Return the value so the caller can output it (matching bash).
+		return floatArg{f: val}, err
 	}
 	return floatArg{f: val}, nil
 }
 
-// isDecimalInteger returns true if s is a plain decimal integer (optional leading sign, all digits).
-func isDecimalInteger(s string) bool {
-	if len(s) == 0 {
-		return false
-	}
-	start := 0
-	if s[0] == '-' || s[0] == '+' {
-		start = 1
-	}
-	if start >= len(s) {
-		return false
-	}
-	for i := start; i < len(s); i++ {
-		if s[i] < '0' || s[i] > '9' {
-			return false
-		}
-	}
-	return true
-}
-
-// formatBigIntAsFloat formats a big.Int as a decimal float string with the given
-// precision (number of decimal places). This preserves full integer precision
-// that would be lost with float64 formatting.
-func formatBigIntAsFloat(bi *big.Int, flags string, width string, prec int) string {
-	intStr := bi.String()
-	// Build decimal part.
-	var decPart string
-	if prec > 0 {
-		decPart = "." + strings.Repeat("0", prec)
-	} else if prec == 0 {
-		// No decimal point unless # flag.
-		if strings.ContainsRune(flags, '#') {
-			decPart = "."
-		}
-	} else {
-		// Default precision is 6.
-		decPart = ".000000"
-	}
-
-	// Handle sign/flags.
-	sign := ""
-	num := intStr
-	if num[0] == '-' {
-		sign = "-"
-		num = num[1:]
-	} else if strings.ContainsRune(flags, '+') {
-		sign = "+"
-	} else if strings.ContainsRune(flags, ' ') {
-		sign = " "
-	}
-
-	result := sign + num + decPart
-
-	// Handle width.
-	if width != "" {
-		w, err := strconv.Atoi(width)
-		if err == nil && len(result) < abs(w) {
-			pad := abs(w) - len(result)
-			if strings.ContainsRune(flags, '-') {
-				// Left-aligned.
-				result = result + strings.Repeat(" ", pad)
-			} else if strings.ContainsRune(flags, '0') {
-				// Zero-padded (pad between sign and digits).
-				result = sign + strings.Repeat("0", pad) + num + decPart
-			} else {
-				result = strings.Repeat(" ", pad) + result
-			}
-		}
-	}
-
-	return result
-}
-
-func abs(x int) int {
-	if x < 0 {
-		return -x
-	}
-	return x
-}
 
 // processBEscapes handles backslash escapes for %b (like echo -e).
 // Returns the processed string, whether \c was seen (stop all output),

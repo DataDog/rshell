@@ -38,6 +38,8 @@ var builtinAllowedSymbols = []string{
 	"bufio.SplitFunc",
 	// context.Context — deadline/cancellation plumbing; pure interface, no side effects.
 	"context.Context",
+	// errors.As — error type assertion; pure function, no I/O.
+	"errors.As",
 	// errors.Is — error comparison; pure function, no I/O.
 	"errors.Is",
 	// errors.New — creates a simple error value; pure function, no I/O.
@@ -70,10 +72,6 @@ var builtinAllowedSymbols = []string{
 	"io.Reader",
 	// math.Inf — returns positive or negative infinity; pure function, no I/O.
 	"math.Inf",
-	// math/big.Int — arbitrary-precision integer type; pure data, no I/O.
-	"math/big.Int",
-	// math/big.NewInt — creates a big.Int from int64; pure function, no I/O.
-	"math/big.NewInt",
 	// math.MaxInt32 — integer constant; no side effects.
 	"math.MaxInt32",
 	// math.MaxInt64 — integer constant; no side effects.
@@ -100,8 +98,6 @@ var builtinAllowedSymbols = []string{
 	"strings.ContainsRune",
 	// strings.Join — concatenates a slice of strings with a separator; pure function, no I/O.
 	"strings.Join",
-	// strings.Repeat — repeats a string n times; pure function, no I/O.
-	"strings.Repeat",
 	// strings.ReplaceAll — replaces all occurrences of a substring; pure function, no I/O.
 	"strings.ReplaceAll",
 	// strings.ToLower — converts string to lowercase; pure function, no I/O.

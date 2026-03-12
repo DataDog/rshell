@@ -3,5 +3,5 @@ input:
   script: |+
     printf "%f\n" 0xffffffffffffffff
 expect:
-  stdout: "18446744073709551615.000000\n"
+  stdout: "18446744073709551616.000000\n"
   exit_code: 0
