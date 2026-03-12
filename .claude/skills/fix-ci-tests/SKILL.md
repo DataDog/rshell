@@ -72,6 +72,7 @@ This repo has the following CI jobs (defined in `.github/workflows/`):
 | `test.yml` | `Test (windows-latest)` | `go test -race -v ./...` on Windows |
 | `test.yml` | `Test against Bash (Docker)` | `RSHELL_BASH_TEST=1 go test -v -run TestShellScenariosAgainstBash ./tests/` |
 | `compliance.yml` | `compliance` | `RSHELL_COMPLIANCE_TEST=1 go test -v -run TestCompliance ./tests/` |
+| `fuzz.yml` | `Fuzz (<name>)` | Runs each `Fuzz*` function for 30 s per function; matrix across all builtin packages |
 
 Classify each failure:
 
@@ -83,6 +84,7 @@ Classify each failure:
 | **Bash comparison failure** | YAML scenario output differs from bash | Use the `fix-tests` skill workflow (determine what bash does, then fix) |
 | **Compliance failure** | Compliance check fails | Read the compliance test to understand the rule, then fix the violation |
 | **Platform-specific failure** | Passes on some OSes but not others | Check for platform-dependent behavior (path separators, line endings, etc.) |
+| **Fuzz failure** | A `Fuzz*` test found an input that caused an unexpected exit code or error | See fuzz fix workflow below |
 
 ### 4. Reproduce failures locally
 
@@ -145,6 +147,23 @@ For each failure, apply the appropriate fix:
 1. Check if the test uses platform-dependent assertions
 2. Use `stdout_windows`/`stderr_windows` fields in YAML scenarios for Windows-specific output
 3. Use build tags (`//go:build unix` / `//go:build windows`) for platform-specific test files
+
+**Fuzz failures:**
+
+The CI logs will contain the failing input inline, e.g.:
+```
+--- FAIL: FuzzGrepFixedStrings
+    grep_fuzz_test.go:240: grep -F unexpected exit code 2
+    Failing input written to testdata/fuzz/FuzzGrepFixedStrings/abc123
+    To re-run: go test -run=FuzzGrepFixedStrings/abc123
+```
+
+1. Read the failing input from the log (it is printed as a `go test fuzz v1` file)
+2. Create the corpus file manually at `interp/builtins/tests/<pkg>/testdata/fuzz/<FuzzFuncName>/<hash>` with that content
+3. Reproduce locally: `go test -run=FuzzFuncName/hash ./interp/builtins/tests/<pkg>/`
+4. Fix the bug in the implementation (never weaken the fuzz filter to hide the bug)
+5. Verify the corpus entry now passes: `go test -run=FuzzFuncName/hash ./interp/builtins/tests/<pkg>/`
+6. **Commit the corpus file** — it becomes a permanent regression test
 
 ### 7. Verify all fixes
 
