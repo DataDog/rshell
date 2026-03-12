@@ -1,4 +1,5 @@
 description: "%f handles large unsigned hex values like 0xffffffffffffffff."
+skip_assert_against_bash: true  # Go float64 rounds 2^64-1 to 2^64; C printf preserves exact value
 input:
   script: |+
     printf "%f\n" 0xffffffffffffffff

@@ -4,5 +4,5 @@ input:
     printf "%u\n" 99999999999999999999
 expect:
   stdout: "18446744073709551615\n"
-  stderr_contains: ["Result too large"]
+  stderr_contains: ["Numerical result out of range"]
   exit_code: 0
