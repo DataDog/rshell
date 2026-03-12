@@ -262,12 +262,22 @@ func matchClass(pattern string, ch rune) (bool, int) {
 			return matched, i
 		}
 		first = false
+		// Handle backslash escaping inside bracket classes:
+		// \] matches literal ], \\ matches literal \, etc.
 		lo, loW := utf8.DecodeRuneInString(pattern[i:])
+		if lo == '\\' && i+loW < len(pattern) {
+			lo, loW = utf8.DecodeRuneInString(pattern[i+loW:])
+			i += loW // skip the backslash
+		}
 		i += loW
 		hi := lo
 		if i+1 < len(pattern) && pattern[i] == '-' && pattern[i+1] != ']' {
 			var hiW int
 			hi, hiW = utf8.DecodeRuneInString(pattern[i+1:])
+			if hi == '\\' && i+1+hiW < len(pattern) {
+				hi, hiW = utf8.DecodeRuneInString(pattern[i+1+hiW:])
+				i += hiW // skip the backslash
+			}
 			i += 1 + hiW
 		}
 		if lo <= ch && ch <= hi {

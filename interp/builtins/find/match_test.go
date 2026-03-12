@@ -88,6 +88,37 @@ func TestMatchClassEdgeCases(t *testing.T) {
 	matched, width = matchClass("[]abc]", ']')
 	assert.True(t, matched)
 	assert.Equal(t, 6, width)
+
+	// Backslash escape inside class: [\]] matches literal ]
+	matched, width = matchClass("[\\]]", ']')
+	assert.True(t, matched)
+	assert.Equal(t, 4, width)
+
+	matched, width = matchClass("[\\]]", 'a')
+	assert.False(t, matched)
+	assert.Equal(t, 4, width)
+
+	// Backslash escape: [a\]] matches a or ]
+	matched, width = matchClass("[a\\]]", ']')
+	assert.True(t, matched)
+	assert.Equal(t, 5, width)
+
+	matched, width = matchClass("[a\\]]", 'a')
+	assert.True(t, matched)
+	assert.Equal(t, 5, width)
+
+	// Backslash escape: [\\a] matches \ or a
+	matched, width = matchClass("[\\\\a]", '\\')
+	assert.True(t, matched)
+	assert.Equal(t, 5, width)
+
+	matched, width = matchClass("[\\\\a]", 'a')
+	assert.True(t, matched)
+	assert.Equal(t, 5, width)
+
+	matched, width = matchClass("[\\\\a]", 'z')
+	assert.False(t, matched)
+	assert.Equal(t, 5, width)
 }
 
 func TestCompareNumeric(t *testing.T) {
