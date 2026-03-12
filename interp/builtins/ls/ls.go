@@ -292,10 +292,14 @@ func listDir(ctx context.Context, callCtx *builtins.CallContext, dir string, opt
 
 	// Determine effective read limit.
 	effectiveLimit := MaxDirEntries
-	if opts.limit > 0 {
+	if opts.limit > 0 && !opts.recursive {
 		effectiveLimit = min(opts.limit, MaxDirEntries)
 	}
 
+	// NOTE: MaxDirEntries caps raw directory reads (before hidden-file filtering)
+	// intentionally. Applying the cap after filtering would allow DoS via
+	// directories with many dotfiles — the shell would have to read unbounded
+	// entries to find visible ones.
 	entries, truncated, err := readDir(ctx, callCtx, dir, MaxDirEntries)
 	if err != nil {
 		callCtx.Errf("ls: cannot open directory '%s': %s\n", dir, callCtx.PortableErr(err))

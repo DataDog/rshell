@@ -216,6 +216,12 @@ func (s *pathSandbox) readDirLimited(ctx context.Context, path string, maxRead i
 	var entries []fs.DirEntry
 	truncated := false
 	var lastErr error
+	// NOTE: We intentionally truncate before reading all entries. For directories
+	// larger than maxRead, the returned entries are sorted within the read window
+	// but may not be the globally-smallest names. Reading all entries to get
+	// globally-correct sorting would defeat the DoS protection — a directory with
+	// millions of files would OOM or stall. The truncation warning communicates
+	// that output is incomplete.
 	for {
 		batch, err := f.ReadDir(batchSize)
 		entries = append(entries, batch...)
