@@ -268,15 +268,20 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			}
 		}
 
-		// Sort the lines.
+		// Sort the lines. Check ctx.Err() periodically during sorting
+		// so that context cancellation can interrupt long sort operations.
+		var sortCmps int
+		sortCmp := func(a, b string) int {
+			sortCmps++
+			if sortCmps&1023 == 0 && ctx.Err() != nil {
+				return 0
+			}
+			return cmpFn(a, b)
+		}
 		if *stable {
-			slices.SortStableFunc(allLines, func(a, b string) int {
-				return cmpFn(a, b)
-			})
+			slices.SortStableFunc(allLines, sortCmp)
 		} else {
-			slices.SortFunc(allLines, func(a, b string) int {
-				return cmpFn(a, b)
-			})
+			slices.SortFunc(allLines, sortCmp)
 		}
 
 		// Unique: suppress consecutive equal lines.
@@ -456,6 +461,9 @@ func parseFieldSpec(s string) (fieldPos, parsedOpts, error) {
 		if err != nil {
 			return fp, po, errors.New("invalid character position in key")
 		}
+		if c == 0 {
+			return fp, po, errors.New("character offset is zero")
+		}
 		fp.char = c
 	} else {
 		if numPart == "" {
@@ -518,7 +526,11 @@ func splitBlankFields(line string) []string {
 			i++
 		}
 		if i >= n {
-			// Only blanks remain — not a field.
+			// Only blanks remain — preserve as a field so whitespace-only
+			// lines get a non-empty key (matching GNU sort behavior).
+			if start == 0 {
+				fields = append(fields, line[start:])
+			}
 			break
 		}
 		// Non-blank content of the field.

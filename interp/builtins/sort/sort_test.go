@@ -522,6 +522,25 @@ func TestSortCRLFOnlyInSomeLines(t *testing.T) {
 	assert.Equal(t, "a\nb\r\nc\r\n", stdout)
 }
 
+func TestSortWhitespaceOnlyLinePreservedAsField(t *testing.T) {
+	// A whitespace-only line should get a non-empty key for -k sorting.
+	dir := t.TempDir()
+	writeFile(t, dir, "f.txt", "\ta\n \n")
+	stdout, _, code := cmdRun(t, "sort -k 1 f.txt", dir)
+	assert.Equal(t, 0, code)
+	// "\ta" (tab+a) before " " (space) — tab (0x09) < space (0x20)
+	assert.Equal(t, "\ta\n \n", stdout)
+}
+
+func TestSortKeyCharOffsetZeroRejected(t *testing.T) {
+	// -k1.0 should be rejected (character offset must be >= 1).
+	dir := t.TempDir()
+	writeFile(t, dir, "f.txt", "a\nb\n")
+	_, stderr, code := cmdRun(t, "sort -k 1.0 f.txt", dir)
+	assert.Equal(t, 2, code)
+	assert.Contains(t, stderr, "sort:")
+}
+
 // --- Context cancellation ---
 
 func TestSortContextCancellation(t *testing.T) {
