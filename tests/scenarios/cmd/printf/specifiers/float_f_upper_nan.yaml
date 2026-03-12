@@ -3,6 +3,5 @@ input:
   script: |+
     printf "%F\n" nan
 expect:
-  stdout_contains: ["NAN"]
+  stdout: "NAN\n"
   exit_code: 0
-skip_assert_against_bash: true

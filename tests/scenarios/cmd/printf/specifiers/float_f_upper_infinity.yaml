@@ -3,5 +3,5 @@ input:
   script: |+
     printf "%F\n" inf
 expect:
-  stdout_contains: ["INF"]
+  stdout: "INF\n"
   exit_code: 0

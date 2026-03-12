@@ -122,6 +122,17 @@ func bashFloat(s string) string {
 	return s
 }
 
+// bashFloatUpper fixes Go's NaN/Inf casing to match bash's uppercase output
+// for uppercase format verbs (F, E, G). Go outputs "NaN" and "+Inf"/"-Inf"
+// but bash outputs "NAN", "INF", "-INF".
+func bashFloatUpper(s string) string {
+	s = strings.ReplaceAll(s, "NaN", "NAN")
+	s = strings.ReplaceAll(s, "+Inf", "INF")
+	s = strings.ReplaceAll(s, "-Inf", "-INF")
+	s = strings.ReplaceAll(s, "Inf", "INF")
+	return s
+}
+
 // maxWidthOrPrec caps width/precision values to prevent huge allocations.
 const maxWidthOrPrec = 10_000
 
@@ -256,19 +267,19 @@ func processFormatEscape(s string) (string, int) {
 	case '0':
 		// \0NNN — octal (0 + up to 3 digits)
 		val, consumed := parseOctal(s[2:], 3)
-		return string(rune(val)), 2 + consumed
+		return string([]byte{byte(val)}), 2 + consumed
 	case 'x':
 		// \xHH — hex (up to 2 digits)
 		val, consumed := parseHex(s[2:], 2)
 		if consumed == 0 {
 			return "\\x", 2
 		}
-		return string(rune(val)), 2 + consumed
+		return string([]byte{byte(val)}), 2 + consumed
 	default:
 		if s[1] >= '1' && s[1] <= '7' {
 			// \NNN — octal without leading 0 (1-3 digits)
 			val, consumed := parseOctal(s[1:], 3)
-			return string(rune(val)), 1 + consumed
+			return string([]byte{byte(val)}), 1 + consumed
 		}
 		// Unknown escape: output backslash and character.
 		return string([]byte{'\\', s[1]}), 2
@@ -387,14 +398,13 @@ func processSpecifier(callCtx *builtins.CallContext, s string, args []string, ar
 
 	case 'c':
 		arg := getStringArg(args, argIdx)
+		// %c prints the first byte of the argument, or NUL for empty.
+		var ch byte
 		if len(arg) > 0 {
-			// %c prints the first character (byte).
-			goFmt.WriteByte('c')
-			callCtx.Out(fmt.Sprintf(goFmt.String(), arg[0]))
-		} else {
-			// Empty argument produces a NUL byte (bash behavior).
-			callCtx.Out("\x00")
+			ch = arg[0]
 		}
+		goFmt.WriteByte('c')
+		callCtx.Out(fmt.Sprintf(goFmt.String(), ch))
 
 	case 'd', 'i':
 		arg := getStringArg(args, argIdx)
@@ -482,11 +492,11 @@ func processSpecifier(callCtx *builtins.CallContext, s string, args []string, ar
 			callCtx.Errf("printf: '%s': invalid number\n", arg)
 			val = 0
 			goFmt.WriteByte('E')
-			callCtx.Out(fmt.Sprintf(goFmt.String(), val))
+			callCtx.Out(bashFloatUpper(fmt.Sprintf(goFmt.String(), val)))
 			return false, i, true
 		}
 		goFmt.WriteByte('E')
-		callCtx.Out(fmt.Sprintf(goFmt.String(), val))
+		callCtx.Out(bashFloatUpper(fmt.Sprintf(goFmt.String(), val)))
 
 	case 'f':
 		arg := getStringArg(args, argIdx)
@@ -508,10 +518,12 @@ func processSpecifier(callCtx *builtins.CallContext, s string, args []string, ar
 			callCtx.Errf("printf: '%s': invalid number\n", arg)
 			val = 0
 		}
-		// Go doesn't have %F; use %f and uppercase manually.
+		// Go doesn't have %F; use %f and fix Inf/NaN casing to match bash.
+		// Bash %F outputs digits normally (same as %f) but uses INF/NAN for
+		// special values. We cannot simply strings.ToUpper the whole output
+		// because that would uppercase hex digits in scientific notation.
 		goFmt.WriteByte('f')
-		out := fmt.Sprintf(goFmt.String(), val)
-		out = strings.ToUpper(out)
+		out := bashFloatUpper(fmt.Sprintf(goFmt.String(), val))
 		callCtx.Out(out)
 		if err != nil && arg != "" {
 			return false, i, true
@@ -537,11 +549,11 @@ func processSpecifier(callCtx *builtins.CallContext, s string, args []string, ar
 			callCtx.Errf("printf: '%s': invalid number\n", arg)
 			val = 0
 			goFmt.WriteByte('G')
-			callCtx.Out(fmt.Sprintf(goFmt.String(), val))
+			callCtx.Out(bashFloatUpper(fmt.Sprintf(goFmt.String(), val)))
 			return false, i, true
 		}
 		goFmt.WriteByte('G')
-		callCtx.Out(fmt.Sprintf(goFmt.String(), val))
+		callCtx.Out(bashFloatUpper(fmt.Sprintf(goFmt.String(), val)))
 
 	case 'n':
 		callCtx.Errf("printf: %%n: not supported (security risk)\n")
@@ -578,18 +590,19 @@ func getStringArg(args []string, idx *int) string {
 }
 
 // getIntArg returns the next argument parsed as an int (for * width/precision), or 0.
+// Like bash, it accepts decimal, octal (0-prefix), and hex (0x-prefix) forms.
 // The second return value is true if parsing failed.
 func getIntArg(args []string, idx *int, callCtx *builtins.CallContext) (int, bool) {
 	s := getStringArg(args, idx)
 	if s == "" {
 		return 0, false
 	}
-	v, err := strconv.Atoi(s)
+	v, err := strconv.ParseInt(s, 0, strconv.IntSize)
 	if err != nil {
 		callCtx.Errf("printf: '%s': invalid number\n", s)
 		return 0, true
 	}
-	return v, false
+	return int(v), false
 }
 
 // parseIntArg parses a string as a signed integer, supporting decimal, octal (0-prefix),

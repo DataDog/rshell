@@ -98,8 +98,8 @@ var builtinAllowedSymbols = []string{
 	"strings.ReplaceAll",
 	// strings.ToLower — converts string to lowercase; pure function, no I/O.
 	"strings.ToLower",
-	// strings.ToUpper — converts string to uppercase; pure function, no I/O.
-	"strings.ToUpper",
+	// strconv.IntSize — platform int size constant (32 or 64); pure constant, no I/O.
+	"strconv.IntSize",
 	// strings.Split — splits a string by separator into a slice; pure function, no I/O.
 	"strings.Split",
 	// strconv.Atoi — string-to-int conversion; pure function, no I/O.
