@@ -13,25 +13,15 @@ import (
 	"testing"
 	"time"
 
+	"unicode/utf8"
+
 	"github.com/DataDog/rshell/interp"
 	"github.com/DataDog/rshell/interp/builtins/testutil"
 )
 
-func cmdRun(t *testing.T, script, dir string) (string, string, int) {
-	t.Helper()
-	return testutil.RunScript(t, script, dir, interp.AllowedPaths([]string{dir}))
-}
-
 func cmdRunCtx(ctx context.Context, t *testing.T, script, dir string) (string, string, int) {
 	t.Helper()
 	return testutil.RunScriptCtx(ctx, t, script, dir, interp.AllowedPaths([]string{dir}))
-}
-
-// safePattern escapes a byte slice into a shell-safe single-quoted string.
-// Single-quoted strings in bash cannot contain single quotes, so we use
-// a simple fixed pattern approach instead.
-func fixedPatterns() []string {
-	return []string{".", "a", "foo", "^$", "[a-z]", ".*"}
 }
 
 // FuzzGrepFileContent fuzzes grep with a fixed pattern and arbitrary file content.
@@ -49,7 +39,14 @@ func FuzzGrepFileContent(f *testing.F) {
 		if len(input) > 1<<20 {
 			return
 		}
-		// Skip patterns that would be problematic in shell quoting
+		// Skip patterns containing non-UTF-8 sequences: the shell parser's
+		// tokenizer rejects them before grep runs, so they exercise the parser
+		// error path rather than the grep builtin.
+		if !utf8.ValidString(pattern) {
+			return
+		}
+		// Skip patterns that would be problematic in shell quoting or cause the
+		// shell parser to fail before grep runs.
 		for _, c := range pattern {
 			if c == '\'' || c == '\x00' || c == '\n' {
 				return

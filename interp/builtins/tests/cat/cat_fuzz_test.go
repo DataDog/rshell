@@ -17,11 +17,6 @@ import (
 	"github.com/DataDog/rshell/interp/builtins/testutil"
 )
 
-func cmdRun(t *testing.T, script, dir string) (string, string, int) {
-	t.Helper()
-	return testutil.RunScript(t, script, dir, interp.AllowedPaths([]string{dir}))
-}
-
 func cmdRunCtx(ctx context.Context, t *testing.T, script, dir string) (string, string, int) {
 	t.Helper()
 	return testutil.RunScriptCtx(ctx, t, script, dir, interp.AllowedPaths([]string{dir}))
