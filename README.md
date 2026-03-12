@@ -26,7 +26,7 @@ import (
 )
 
 func main() {
-	script := `echo "hello from rshell"`
+	script := `true`
 
 	prog, _ := syntax.NewParser().Parse(strings.NewReader(script), "")
 
@@ -66,7 +66,7 @@ Linux, macOS, and Windows.
 
 ```
 tests/scenarios/
-├── cmd/          # builtin command tests (echo, cat, grep, head, tail, uniq, wc, ...)
+├── cmd/          # builtin command tests (cat, grep, head, tail, uniq, wc, ...)
 └── shell/        # shell feature tests (pipes, variables, control flow, ...)
 ```
 

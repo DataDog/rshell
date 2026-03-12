@@ -1,9 +1,0 @@
-description: Echo -E disables escape interpretation (default behavior), output matches bash.
-input:
-  script: |+
-    echo -E hello
-expect:
-  stdout: |+
-    hello
-  stderr: ""
-  exit_code: 0
