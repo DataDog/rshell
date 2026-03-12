@@ -223,17 +223,10 @@ func walkPath(
 	// (dev+inode on Unix, volume serial+file index on Windows) along the
 	// path from root to the current node. This correctly allows multiple
 	// symlinks to the same target (no ancestor cycle) while detecting
-	// actual loops. Falls back to path-based ancestor tracking if file
-	// identity extraction fails. The maxTraversalDepth=256 cap remains
-	// as an ultimate safety bound.
-	useFileID := false
-	if followLinks {
-		if callCtx.FileIdentity != nil {
-			if _, ok := callCtx.FileIdentity(startPath, startInfo); ok {
-				useFileID = true
-			}
-		}
-	}
+	// actual loops. File identity is attempted per-entry; if it fails for
+	// a specific directory, we fall back to path-based ancestor tracking
+	// for that subtree. The maxTraversalDepth=256 cap remains as an
+	// ultimate safety bound.
 
 	// Use an explicit stack for traversal to avoid Go recursion depth issues.
 	type stackEntry struct {
@@ -265,8 +258,10 @@ func walkPath(
 		var childAncestorPaths map[string]bool
 		isLoop := false
 		if entry.info.IsDir() && followLinks {
-			if useFileID {
+			idOK := false
+			if callCtx.FileIdentity != nil {
 				if id, ok := callCtx.FileIdentity(entry.path, entry.info); ok {
+					idOK = true
 					if firstPath, seen := entry.ancestorIDs[id]; seen {
 						callCtx.Errf("find: File system loop detected; '%s' is part of the same file system loop as '%s'.\n",
 							entry.path, firstPath)
@@ -281,7 +276,11 @@ func walkPath(
 						childAncestorIDs[id] = entry.path
 					}
 				}
-			} else {
+			}
+			if !idOK && !isLoop {
+				// Fall back to path-based tracking. Lexical paths cannot
+				// detect symlink cycles perfectly, but maxTraversalDepth=256
+				// provides the ultimate safety bound.
 				if entry.ancestorPaths[entry.path] {
 					callCtx.Errf("find: File system loop detected; '%s' has already been visited.\n", entry.path)
 					failed = true
