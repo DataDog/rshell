@@ -259,6 +259,10 @@ func listDir(ctx context.Context, callCtx *builtins.CallContext, dir string, opt
 		return err
 	}
 
+	// NOTE: ReadDir has already loaded all entries into memory at this point.
+	// Go's os.ReadDir does not support streaming, so this check does not prevent
+	// the initial allocation. It does, however, prevent expensive downstream
+	// processing (sorting, stat calls, recursion) on absurdly large directories.
 	if len(entries) > MaxDirEntries {
 		callCtx.Errf("ls: directory '%s': too many entries (%d > %d)\n", dir, len(entries), MaxDirEntries)
 		return errFailed
