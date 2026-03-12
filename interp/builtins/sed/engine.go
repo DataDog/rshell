@@ -21,21 +21,21 @@ import (
 
 // engine holds the state for executing a sed script.
 type engine struct {
-	callCtx       *builtins.CallContext
-	prog          []*sedCmd
-	labelMap      map[string]labelLocation // precomputed label locations for O(1) branch lookup
-	suppressPrint bool
-	lineNum       int64
-	lastLine      bool
-	patternSpace  string
-	holdSpace     string
-	appendQueue      []string // text queued by 'a' command, flushed after auto-print
-	appendQueueBytes int      // total bytes in appendQueue for limit checking
-	subMade       bool           // set when s/// succeeds (cleared on new input line)
-	lastRe        *regexp.Regexp // last regex used (for empty pattern in s///)
-	emptyReErr    bool           // set when // address has no previous regex
-	isRegularFile bool
-	isLastFile    bool // whether we are processing the last file in the argument list
+	callCtx          *builtins.CallContext
+	prog             []*sedCmd
+	labelMap         map[string]labelLocation // precomputed label locations for O(1) branch lookup
+	suppressPrint    bool
+	lineNum          int64
+	lastLine         bool
+	patternSpace     string
+	holdSpace        string
+	appendQueue      []string       // text queued by 'a' command, flushed after auto-print
+	appendQueueBytes int            // total bytes in appendQueue for limit checking
+	subMade          bool           // set when s/// succeeds (cleared on new input line)
+	lastRe           *regexp.Regexp // last regex used (for empty pattern in s///)
+	emptyReErr       bool           // set when // address has no previous regex
+	isRegularFile    bool
+	isLastFile       bool // whether we are processing the last file in the argument list
 }
 
 // lineReader wraps a scanner with one-line look-ahead so we can determine
@@ -405,10 +405,9 @@ func buildLabelMapRecursive(cmds []*sedCmd, prefix []int, m map[string]labelLoca
 	for i, cmd := range cmds {
 		currentPath := append(append([]int{}, prefix...), i)
 		if cmd.kind == cmdLabel && cmd.label != "" {
-			// First definition wins (consistent with GNU sed / validateLabels).
-			if _, exists := m[cmd.label]; !exists {
-				m[cmd.label] = labelLocation{path: currentPath}
-			}
+			// Last definition wins — GNU sed branches to the most recently
+			// defined label when duplicates exist.
+			m[cmd.label] = labelLocation{path: currentPath}
 		}
 		if cmd.kind == cmdGroup {
 			buildLabelMapRecursive(cmd.children, currentPath, m)
@@ -560,19 +559,14 @@ func (eng *engine) matchRange(cmd *sedCmd) bool {
 
 func (eng *engine) execSubstitute(cmd *sedCmd) error {
 	// Resolve the regex: nil means "reuse last regex".
+	// Note: case-insensitive flag (i/I) on empty regexp is rejected at parse
+	// time, so we don't need to handle it here.
 	re := cmd.subRe
 	if re == nil {
 		if eng.lastRe == nil {
 			return errors.New("no previous regular expression")
 		}
 		re = eng.lastRe
-		if cmd.subCaseInsensitive {
-			var err error
-			re, err = regexp.Compile("(?i)" + re.String())
-			if err != nil {
-				return errors.New("invalid regex with case-insensitive flag: " + err.Error())
-			}
-		}
 	}
 	eng.lastRe = re
 

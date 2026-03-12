@@ -127,6 +127,22 @@ func (p *parser) skipSpaces() {
 	}
 }
 
+// requireSeparator checks that the next non-space character is a valid command
+// separator (;, newline, }, #, or EOF). GNU sed rejects extra characters after
+// zero-argument commands like p, d, n, etc.
+func (p *parser) requireSeparator() error {
+	// Skip optional trailing spaces/tabs (GNU sed allows "p  ; d").
+	p.skipSpaces()
+	if p.pos >= len(p.input) {
+		return nil // EOF is fine
+	}
+	ch := p.input[p.pos]
+	if ch == ';' || ch == '\n' || ch == '\r' || ch == '}' || ch == '#' {
+		return nil
+	}
+	return errors.New("extra characters after command")
+}
+
 func (p *parser) parseOneCommand() (*sedCmd, error) {
 	cmd := &sedCmd{}
 
@@ -268,6 +284,17 @@ func (p *parser) parseOneCommand() (*sedCmd, error) {
 		return nil, errors.New("unknown command: '" + string(ch) + "'")
 	}
 
+	// Enforce command separators after zero-arg commands.
+	// GNU sed rejects "pp", "dp", etc. with "extra characters after command".
+	switch cmd.kind {
+	case cmdPrint, cmdPrintFirstLine, cmdDelete, cmdDeleteFirstLine,
+		cmdLineNum, cmdPrintUnambig, cmdNext, cmdNextAppend,
+		cmdHoldCopy, cmdHoldAppend, cmdGetCopy, cmdGetAppend, cmdExchange:
+		if err := p.requireSeparator(); err != nil {
+			return nil, err
+		}
+	}
+
 	return cmd, nil
 }
 
@@ -287,7 +314,7 @@ func (p *parser) parseOptionalExitCode() (uint8, error) {
 		// GNU sed reports "extra characters after command" for inputs like "qp".
 		if p.pos < len(p.input) {
 			ch := p.input[p.pos]
-			if ch != ';' && ch != '\n' && ch != '\r' && ch != '}' && ch != ' ' && ch != '\t' {
+			if ch != ';' && ch != '\n' && ch != '\r' && ch != '}' && ch != ' ' && ch != '\t' && ch != '#' {
 				return 0, errors.New("extra characters after command")
 			}
 		}
@@ -298,10 +325,10 @@ func (p *parser) parseOptionalExitCode() (uint8, error) {
 		return 0, errors.New("invalid exit code for q/Q command")
 	}
 	// GNU sed rejects extra characters after q/Q exit code — the next
-	// character must be a command separator or EOF.
+	// character must be a command separator, '#' (inline comment), or EOF.
 	if p.pos < len(p.input) {
 		ch := p.input[p.pos]
-		if ch != ';' && ch != '\n' && ch != '\r' && ch != '}' && ch != ' ' && ch != '\t' {
+		if ch != ';' && ch != '\n' && ch != '\r' && ch != '}' && ch != ' ' && ch != '\t' && ch != '#' {
 			return 0, errors.New("extra characters after command")
 		}
 	}
@@ -504,6 +531,9 @@ func (p *parser) parseSubstitute(cmd *sedCmd) (*sedCmd, error) {
 				return nil, errors.New("number option to 's' command may not be zero")
 			}
 			if ch >= '1' && ch <= '9' {
+				if cmd.subNth > 0 {
+					return nil, errors.New("multiple number options to 's' command")
+				}
 				start := p.pos
 				for p.pos < len(p.input) && p.input[p.pos] >= '0' && p.input[p.pos] <= '9' {
 					p.pos++
@@ -535,8 +565,10 @@ flagsDone:
 	if pattern == "" {
 		// Empty pattern means "reuse last regex" — defer to runtime.
 		// cmd.subRe stays nil to signal this.
+		// GNU sed rejects modifiers (i/I) on empty regexp:
+		// "cannot specify modifiers on empty regexp".
 		if caseInsensitive {
-			cmd.subCaseInsensitive = true
+			return nil, errors.New("cannot specify modifiers on empty regexp")
 		}
 	} else {
 		re, err := p.compileRegex(pattern)
@@ -619,6 +651,8 @@ func (p *parser) readSubstPart(delim byte, isPattern bool) (string, error) {
 				// escapes (for example, \q behaves like q).
 				sb.WriteByte(next)
 			} else {
+				// Preserve \+next; expandReplacement will strip the
+				// backslash for non-special escapes (e.g. \q -> q).
 				sb.WriteByte('\\')
 				sb.WriteByte(next)
 			}

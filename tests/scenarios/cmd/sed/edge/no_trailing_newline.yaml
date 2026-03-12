@@ -1,4 +1,8 @@
-description: Sed processes a file without a trailing newline.
+description: >-
+  Sed processes a file without a trailing newline.
+  Intentional divergence: rshell sed always adds a trailing newline for
+  consistent output for AI agent consumers. GNU sed preserves the absence
+  of a trailing newline.
 setup:
   files:
     - path: input.txt

@@ -27,11 +27,11 @@ func (e *quitError) Error() string {
 type addrType int
 
 const (
-	addrNone    addrType = iota
-	addrLine             // specific line number
-	addrLast             // $ (last line)
-	addrRegexp           // /regex/
-	addrStep             // first~step (GNU extension)
+	addrNone   addrType = iota
+	addrLine            // specific line number
+	addrLast            // $ (last line)
+	addrRegexp          // /regex/
+	addrStep            // first~step (GNU extension)
 )
 
 // address represents a sed address (line number, regex, or $).
@@ -79,19 +79,20 @@ const (
 
 // sedCmd represents a single parsed sed command.
 type sedCmd struct {
-	addr1    *address
-	addr2    *address
-	negated  bool
-	inRange  bool // stateful: tracks whether we're inside a two-address range
-	kind     cmdType
+	addr1   *address
+	addr2   *address
+	negated bool
+	inRange bool // stateful: tracks whether we're inside a two-address range
+	kind    cmdType
 
 	// For s command:
-	subRe               *regexp.Regexp // nil means "reuse last regex"
-	subReplacement      string
-	subGlobal           bool
-	subPrint            bool
-	subNth              int
-	subCaseInsensitive  bool // deferred case-insensitive flag (when pattern is empty)
+	subRe          *regexp.Regexp // nil means "reuse last regex"
+	subReplacement string
+	subGlobal      bool
+	subPrint       bool
+	subNth         int
+	// Note: case-insensitive flag (i/I) on empty regexp is rejected at parse time
+	// (GNU sed: "cannot specify modifiers on empty regexp"), so no deferred flag is needed.
 
 	// For y command:
 	transMap map[rune]rune // precomputed rune mapping for O(1) lookup
