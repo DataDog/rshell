@@ -133,7 +133,7 @@ EOF
 
 **GATE CHECK**: Call TaskList. Step 1 must be `completed`. Set Step 2 to `in_progress`.
 
-Set `batch = 1`. **Batch size: 5 targets** (or fewer if fewer remain). Maximum total iterations (batches): **20**. Repeat sub-steps A through G.
+Set `batch = 1`. **Batch size: 5 targets** (or fewer if fewer remain). Maximum total iterations (batches): **50**. Repeat sub-steps A through G.
 
 **At the start of each batch**, update the Step 2 task subject to include the batch number, e.g. `"Step 2: Run the improve loop (batch 3)"`. This makes progress visible in the task list.
 
@@ -413,9 +413,9 @@ Check progress:
 
 | Pending targets | Batch | Action |
 |----------------|-------|--------|
-| > 0 | <= 20 | **Continue** → go back to Sub-step 2A |
-| 0 | Any | **All targets reviewed** → proceed to Step 3 |
-| Any | > 20 | **STOP — batch limit reached** → proceed to Step 3 |
+| > 0 | <= 50  | **Continue** → go back to Sub-step 2A |
+| 0 | Any   | **All targets reviewed** → proceed to Step 3 |
+| Any | > 50   | **STOP — batch limit reached** → proceed to Step 3 |
 
 Log the progress:
 ```
@@ -535,7 +535,7 @@ gh pr comment <pr-number> --body "<the summary markdown above>"
 - **Run tests after every fix** — don't accumulate fixes without testing.
 - **Batch reviews in parallel** — launch Agent subagents for all targets in a batch simultaneously. Fixes are sequential.
 - **Use gate checks** — always call TaskList and verify prerequisites before starting a step.
-- **Respect the batch limit** — hard stop at 20 batches to prevent infinite loops.
+- **Respect the batch limit** — hard stop at 50 batches to prevent infinite loops.
 - **Format code** — run `gofmt -w .` before every commit.
 - **Stream, don't buffer** — when fixing builtins, ensure they stream output for large inputs.
 - **Sandbox first** — all filesystem access must go through the sandbox wrapper, never direct `os.*` calls.
