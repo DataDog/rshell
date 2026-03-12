@@ -1,0 +1,11 @@
+# Derived from uutils test_set1_longer_than_set2
+description: tr pads set2 with last character when set1 is longer (BSD behavior).
+input:
+  script: |+
+    cat <<'EOF' | tr abcd xy
+    abcde
+    EOF
+expect:
+  stdout: "xyyye\n"
+  stderr: ""
+  exit_code: 0
