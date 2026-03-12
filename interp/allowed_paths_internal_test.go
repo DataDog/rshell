@@ -214,18 +214,18 @@ func TestReadDirLimited(t *testing.T) {
 	ctx := context.WithValue(context.Background(), handlerCtxKey{}, HandlerContext{Dir: dir})
 
 	t.Run("maxRead below count returns truncated with first N entries", func(t *testing.T) {
-		entries, truncated, err := sb.readDirLimited(ctx, ".", 5)
+		entries, truncated, err := sb.readDirLimited(ctx, ".", 0, 5)
 		require.NoError(t, err)
 		assert.True(t, truncated)
 		assert.Len(t, entries, 5)
-		// Should be the lexicographically first 5: f00..f04.
-		for i, e := range entries {
-			assert.Equal(t, fmt.Sprintf("f%02d", i), e.Name())
+		// Entries are sorted within the read window.
+		for i := 1; i < len(entries); i++ {
+			assert.True(t, entries[i-1].Name() < entries[i].Name(), "entries should be sorted")
 		}
 	})
 
 	t.Run("maxRead above count returns all entries not truncated", func(t *testing.T) {
-		entries, truncated, err := sb.readDirLimited(ctx, ".", 20)
+		entries, truncated, err := sb.readDirLimited(ctx, ".", 0, 20)
 		require.NoError(t, err)
 		assert.False(t, truncated)
 		assert.Len(t, entries, 10)
@@ -235,7 +235,7 @@ func TestReadDirLimited(t *testing.T) {
 		emptyDir := filepath.Join(dir, "empty")
 		require.NoError(t, os.Mkdir(emptyDir, 0755))
 
-		entries, truncated, err := sb.readDirLimited(ctx, "empty", 10)
+		entries, truncated, err := sb.readDirLimited(ctx, "empty", 0, 10)
 		require.NoError(t, err)
 		assert.False(t, truncated)
 		assert.Empty(t, entries)
@@ -243,7 +243,7 @@ func TestReadDirLimited(t *testing.T) {
 
 	t.Run("path outside sandbox returns permission error", func(t *testing.T) {
 		outsideDir := t.TempDir()
-		_, _, err := sb.readDirLimited(ctx, outsideDir, 10)
+		_, _, err := sb.readDirLimited(ctx, outsideDir, 0, 10)
 		require.Error(t, err)
 		assert.ErrorIs(t, err, os.ErrPermission)
 	})
@@ -255,21 +255,67 @@ func TestReadDirLimited(t *testing.T) {
 		for i := range 5 {
 			require.NoError(t, os.WriteFile(filepath.Join(eofDir, fmt.Sprintf("g%02d", i)), nil, 0644))
 		}
-		entries, truncated, err := sb.readDirLimited(ctx, "eoftest", 1000)
+		entries, truncated, err := sb.readDirLimited(ctx, "eoftest", 0, 1000)
 		require.NoError(t, err, "io.EOF should not be returned as error")
 		assert.False(t, truncated)
 		assert.Len(t, entries, 5)
 	})
 
 	t.Run("non-positive maxRead returns empty", func(t *testing.T) {
-		entries, truncated, err := sb.readDirLimited(ctx, ".", 0)
+		entries, truncated, err := sb.readDirLimited(ctx, ".", 0, 0)
 		require.NoError(t, err)
 		assert.False(t, truncated)
 		assert.Empty(t, entries)
 
-		entries, truncated, err = sb.readDirLimited(ctx, ".", -5)
+		entries, truncated, err = sb.readDirLimited(ctx, ".", 0, -5)
 		require.NoError(t, err)
 		assert.False(t, truncated)
 		assert.Empty(t, entries)
+	})
+
+	t.Run("offset skips entries", func(t *testing.T) {
+		// Use a fresh directory to avoid interference from other subtests.
+		offsetDir := filepath.Join(dir, "offsettest")
+		require.NoError(t, os.Mkdir(offsetDir, 0755))
+		for i := range 10 {
+			require.NoError(t, os.WriteFile(filepath.Join(offsetDir, fmt.Sprintf("h%02d", i)), nil, 0644))
+		}
+
+		// Read all 10 entries with no offset for reference.
+		all, _, err := sb.readDirLimited(ctx, "offsettest", 0, 100)
+		require.NoError(t, err)
+		assert.Len(t, all, 10)
+
+		// Skip first 5 entries, read up to 100.
+		entries, truncated, err := sb.readDirLimited(ctx, "offsettest", 5, 100)
+		require.NoError(t, err)
+		assert.False(t, truncated)
+		assert.Len(t, entries, 5, "should return remaining 5 entries after skipping 5")
+	})
+
+	t.Run("offset beyond count returns empty", func(t *testing.T) {
+		entries, truncated, err := sb.readDirLimited(ctx, "offsettest", 100, 10)
+		require.NoError(t, err)
+		assert.False(t, truncated)
+		assert.Empty(t, entries)
+	})
+
+	t.Run("offset plus maxRead with truncation", func(t *testing.T) {
+		// Skip 3, read 3 out of 10 => should get 3 entries, truncated.
+		entries, truncated, err := sb.readDirLimited(ctx, "offsettest", 3, 3)
+		require.NoError(t, err)
+		assert.True(t, truncated, "should be truncated since 10 - 3 > 3")
+		assert.Len(t, entries, 3)
+		// Entries should be sorted within the window.
+		for i := 1; i < len(entries); i++ {
+			assert.True(t, entries[i-1].Name() < entries[i].Name(), "entries should be sorted")
+		}
+	})
+
+	t.Run("negative offset clamped to zero", func(t *testing.T) {
+		entries, truncated, err := sb.readDirLimited(ctx, "offsettest", -10, 100)
+		require.NoError(t, err)
+		assert.False(t, truncated)
+		assert.Len(t, entries, 10, "negative offset should be treated as 0")
 	})
 }

@@ -55,8 +55,12 @@
 //	    With -l, print sizes in human-readable format (e.g. 1K, 234M).
 //
 //	--offset N  (non-standard)
-//	    Skip the first N entries (pagination). Applies to single-directory
-//	    listings only; silently ignored with -R or multiple arguments.
+//	    Skip the first N raw directory entries before collecting results.
+//	    NOTE: offset operates on filesystem order, not sorted order —
+//	    entries are sorted only within each page. For predictable
+//	    pagination of large directories, use consistent offset/limit
+//	    pairs. Applies to single-directory listings only; silently
+//	    ignored with -R or multiple arguments.
 //
 //	--limit N  (non-standard)
 //	    Show at most N entries, capped at MaxDirEntries (1,000) per call.
@@ -178,6 +182,12 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 		failed := false
 		multipleArgs := len(paths) > 1
 
+		// Pagination applies only to single-directory listings.
+		if multipleArgs {
+			opts.offset = 0
+			opts.limit = 0
+		}
+
 		// Separate files and dirs (when not -d).
 		// Use Lstat so that symlink operands retain ModeSymlink (GNU ls default).
 		// The link target is only stat'd when needed (e.g. to decide dir vs file
@@ -282,9 +292,6 @@ func listDir(ctx context.Context, callCtx *builtins.CallContext, dir string, opt
 	if opts.limit < 0 {
 		opts.limit = 0
 	}
-	if opts.offset > MaxDirEntries {
-		opts.offset = MaxDirEntries
-	}
 
 	// Pagination applies only to single-directory, non-recursive listings.
 	// Silently ignore --offset/--limit when used with -R.
@@ -300,7 +307,14 @@ func listDir(ctx context.Context, callCtx *builtins.CallContext, dir string, opt
 	// intentionally. Applying the cap after filtering would allow DoS via
 	// directories with many dotfiles — the shell would have to read unbounded
 	// entries to find visible ones.
-	entries, truncated, err := readDir(ctx, callCtx, dir, MaxDirEntries)
+	//
+	// When pagination is active, offset is passed to readDir so skipping happens
+	// at the read level (O(n) memory regardless of offset). Otherwise offset=0.
+	readOffset := 0
+	if paginationActive {
+		readOffset = opts.offset
+	}
+	entries, truncated, err := readDir(ctx, callCtx, dir, readOffset, effectiveLimit)
 	if err != nil {
 		callCtx.Errf("ls: cannot open directory '%s': %s\n", dir, callCtx.PortableErr(err))
 		return err
@@ -340,18 +354,9 @@ func listDir(ctx context.Context, callCtx *builtins.CallContext, dir string, opt
 	// Sort real entries.
 	sortEntries(infoEntries, opts, func(a entryInfo) iofs.FileInfo { return a.info }, func(a entryInfo) string { return a.name })
 
-	// Apply offset: skip first opts.offset entries (real entries only).
-	if opts.offset > 0 && !opts.recursive {
-		if opts.offset >= len(infoEntries) {
-			infoEntries = nil
-		} else {
-			infoEntries = infoEntries[opts.offset:]
-		}
-	}
-	// Apply effective limit (real entries only).
-	if len(infoEntries) > effectiveLimit {
-		infoEntries = infoEntries[:effectiveLimit]
-	}
+	// Offset is handled at the read level (streaming skip in readDir),
+	// so no post-sort slicing is needed. The effectiveLimit is already
+	// enforced by readDir's maxRead parameter.
 
 	// Synthesize . and .. for -a (os.ReadDir never includes them).
 	// Prepended after offset/limit so they never consume limit slots.
@@ -411,11 +416,10 @@ func listDir(ctx context.Context, callCtx *builtins.CallContext, dir string, opt
 }
 
 // readDir dispatches to ReadDirLimited when available, falling back to ReadDir.
-// The return type is inferred from callCtx.ReadDir to avoid referencing
-// io/fs.DirEntry directly (which is not in the import allowlist).
-func readDir(ctx context.Context, callCtx *builtins.CallContext, dir string, maxRead int) (entries []iofs.DirEntry, truncated bool, err error) {
+// The offset parameter skips raw directory entries at the read level (before sorting).
+func readDir(ctx context.Context, callCtx *builtins.CallContext, dir string, offset, maxRead int) (entries []iofs.DirEntry, truncated bool, err error) {
 	if callCtx.ReadDirLimited != nil {
-		return callCtx.ReadDirLimited(ctx, dir, maxRead)
+		return callCtx.ReadDirLimited(ctx, dir, offset, maxRead)
 	}
 	entries, err = callCtx.ReadDir(ctx, dir)
 	return entries, false, err

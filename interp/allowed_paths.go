@@ -192,10 +192,16 @@ func (s *pathSandbox) readDir(ctx context.Context, path string) ([]fs.DirEntry, 
 	return entries, nil
 }
 
-// readDirLimited reads up to maxRead directory entries, sorted by name.
+// readDirLimited reads directory entries, skipping the first offset entries
+// and returning up to maxRead entries sorted by name within the read window.
 // Returns (entries, truncated, error). When truncated is true, the directory
-// contained more than maxRead entries; only the first maxRead (sorted) are returned.
-func (s *pathSandbox) readDirLimited(ctx context.Context, path string, maxRead int) ([]fs.DirEntry, bool, error) {
+// contained more entries beyond the returned set.
+//
+// The offset skips raw directory entries during reading (before sorting).
+// This means offset does NOT correspond to positions in a sorted listing —
+// pages may overlap or miss entries. This is an acceptable tradeoff to achieve
+// O(n) memory regardless of offset value, where n = min(maxRead, entries).
+func (s *pathSandbox) readDirLimited(ctx context.Context, path string, offset, maxRead int) ([]fs.DirEntry, bool, error) {
 	absPath := toAbs(path, HandlerCtx(ctx).Dir)
 	root, relPath, ok := s.resolve(absPath)
 	if !ok {
@@ -207,7 +213,10 @@ func (s *pathSandbox) readDirLimited(ctx context.Context, path string, maxRead i
 	}
 	defer f.Close()
 
-	// Defense-in-depth: if maxRead is non-positive, return immediately.
+	// Defense-in-depth: clamp non-positive values.
+	if offset < 0 {
+		offset = 0
+	}
 	if maxRead <= 0 {
 		return nil, false, nil
 	}
@@ -215,6 +224,7 @@ func (s *pathSandbox) readDirLimited(ctx context.Context, path string, maxRead i
 	const batchSize = 256
 	var entries []fs.DirEntry
 	truncated := false
+	skipped := 0
 	var lastErr error
 	// NOTE: We intentionally truncate before reading all entries. For directories
 	// larger than maxRead, the returned entries are sorted within the read window
@@ -224,7 +234,13 @@ func (s *pathSandbox) readDirLimited(ctx context.Context, path string, maxRead i
 	// that output is incomplete.
 	for {
 		batch, err := f.ReadDir(batchSize)
-		entries = append(entries, batch...)
+		for _, e := range batch {
+			if skipped < offset {
+				skipped++
+				continue
+			}
+			entries = append(entries, e)
+		}
 		if len(entries) > maxRead {
 			truncated = true
 			break
@@ -242,7 +258,7 @@ func (s *pathSandbox) readDirLimited(ctx context.Context, path string, maxRead i
 		return strings.Compare(a.Name(), b.Name())
 	})
 
-	// Trim to exactly maxRead if truncated.
+	// Trim to exactly maxRead if we overshot.
 	if truncated && len(entries) > maxRead {
 		entries = entries[:maxRead]
 	}

@@ -90,10 +90,11 @@ type CallContext struct {
 	// Entries are returned sorted by name.
 	ReadDir func(ctx context.Context, path string) ([]fs.DirEntry, error)
 
-	// ReadDirLimited reads up to maxRead directory entries, sorted by name.
+	// ReadDirLimited reads directory entries, skipping the first offset entries
+	// and returning up to maxRead entries sorted by name within the read window.
 	// Returns (entries, truncated, error). When truncated is true, the directory
-	// contained more than maxRead entries; only the first maxRead (sorted) are returned.
-	ReadDirLimited func(ctx context.Context, path string, maxRead int) ([]fs.DirEntry, bool, error)
+	// contained more entries beyond the returned set.
+	ReadDirLimited func(ctx context.Context, path string, offset, maxRead int) ([]fs.DirEntry, bool, error)
 
 	// StatFile returns file info within the shell's path restrictions (follows symlinks).
 	StatFile func(ctx context.Context, path string) (fs.FileInfo, error)
