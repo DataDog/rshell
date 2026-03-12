@@ -84,7 +84,7 @@ func TestEvalMminCeiling(t *testing.T) {
 				info: &fakeFileInfo{modTime: modTime},
 			}
 			got := evalMmin(ec, tt.n, tt.cmp)
-			assert.Equal(t, tt.matched, got, "evalMmin(age=%v, n=%d, cmp=%d)", tt.age, tt.n, tt.cmp)
+			assert.Equal(t, tt.matched, got, "evalMmin(age=%v, n=%d, cmp=%s)", tt.age, tt.n, tt.cmp)
 		})
 	}
 }
@@ -132,7 +132,7 @@ func TestEvalMtimeFloor(t *testing.T) {
 				info: &fakeFileInfo{modTime: modTime},
 			}
 			got := evalMtime(ec, tt.n, tt.cmp)
-			assert.Equal(t, tt.matched, got, "evalMtime(age=%v, n=%d, cmp=%d)", tt.age, tt.n, tt.cmp)
+			assert.Equal(t, tt.matched, got, "evalMtime(age=%v, n=%d, cmp=%s)", tt.age, tt.n, tt.cmp)
 		})
 	}
 }
@@ -173,7 +173,6 @@ func TestCompareSizeOverflow(t *testing.T) {
 type fakeFileInfo struct {
 	modTime time.Time
 	size    int64
-	mode    uint32
 	isDir   bool
 }
 
@@ -186,7 +185,7 @@ func (f *fakeFileInfo) Sys() any           { return nil }
 // Mode returns a basic file mode for testing.
 func (f *fakeFileInfo) Mode() iofs.FileMode {
 	if f.isDir {
-		return iofs.ModeDir | 0755
+		return iofs.ModeDir | 0o755
 	}
-	return 0644
+	return 0o644
 }

@@ -51,6 +51,19 @@ const (
 	cmpMore  cmpOp = 1
 )
 
+func (c cmpOp) String() string {
+	switch c {
+	case cmpLess:
+		return "-N"
+	case cmpExact:
+		return "N"
+	case cmpMore:
+		return "+N"
+	default:
+		return "unknown"
+	}
+}
+
 // sizeUnit holds a parsed -size predicate value.
 type sizeUnit struct {
 	n    int64 // magnitude (always positive)
@@ -475,12 +488,34 @@ func (k exprKind) String() string {
 		return "-path"
 	case exprIPath:
 		return "-ipath"
+	case exprType:
+		return "-type"
+	case exprSize:
+		return "-size"
+	case exprEmpty:
+		return "-empty"
+	case exprNewer:
+		return "-newer"
 	case exprMtime:
 		return "-mtime"
 	case exprMmin:
 		return "-mmin"
-	case exprNewer:
-		return "-newer"
+	case exprPrint:
+		return "-print"
+	case exprPrint0:
+		return "-print0"
+	case exprPrune:
+		return "-prune"
+	case exprTrue:
+		return "-true"
+	case exprFalse:
+		return "-false"
+	case exprAnd:
+		return "-and"
+	case exprOr:
+		return "-or"
+	case exprNot:
+		return "-not"
 	default:
 		return "unknown"
 	}
