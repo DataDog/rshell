@@ -4,5 +4,6 @@ input:
     printf "%n" foo
 expect:
   stdout: ""
-  stderr_contains: ["printf:"]
+  stderr: "printf: %n: not supported (security risk)\n"
   exit_code: 1
+skip_assert_against_bash: true

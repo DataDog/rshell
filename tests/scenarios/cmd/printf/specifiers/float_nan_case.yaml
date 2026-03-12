@@ -3,5 +3,5 @@ input:
   script: |+
     printf "%f\n" NaN
 expect:
-  stdout_contains: ["NaN"]
+  stdout: "nan\n"
   exit_code: 0

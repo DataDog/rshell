@@ -82,7 +82,8 @@
 // Exit codes:
 //
 //	0  Successful completion (conversion warnings may still be emitted).
-//	1  Usage error or format string missing.
+//	1  Format error (invalid number, unknown specifier, incomplete specifier).
+//	2  Usage error (no format string provided).
 //
 // Memory safety:
 //
@@ -110,6 +111,17 @@ var Cmd = builtins.Command{Name: "printf", MakeFlags: builtins.NoFlags(run)}
 // maxFormatIterations bounds the format-reuse loop to prevent runaway output.
 const maxFormatIterations = 10_000
 
+// bashFloat fixes Go's NaN/Inf casing to match bash's lowercase output
+// for lowercase format verbs (f, e, g). Go outputs "NaN" and "+Inf"/"-Inf"
+// but bash outputs "nan", "inf", "-inf".
+func bashFloat(s string) string {
+	s = strings.ReplaceAll(s, "NaN", "nan")
+	s = strings.ReplaceAll(s, "+Inf", "inf")
+	s = strings.ReplaceAll(s, "-Inf", "-inf")
+	s = strings.ReplaceAll(s, "Inf", "inf")
+	return s
+}
+
 // maxWidthOrPrec caps width/precision values to prevent huge allocations.
 const maxWidthOrPrec = 10_000
 
@@ -132,7 +144,7 @@ func run(ctx context.Context, callCtx *builtins.CallContext, args []string) buil
 
 	if len(args) == 0 {
 		callCtx.Errf("printf: usage: printf [-v var] format [arguments]\n")
-		return builtins.Result{Code: 1}
+		return builtins.Result{Code: 2}
 	}
 
 	format := args[0]
@@ -213,9 +225,12 @@ func processFormat(callCtx *builtins.CallContext, format string, args []string, 
 			continue
 		}
 
-		// Literal character.
-		callCtx.Out(string(ch))
-		i++
+		// Batch consecutive literal characters into a single write.
+		start := i
+		for i < len(format) && format[i] != '\\' && format[i] != '%' {
+			i++
+		}
+		callCtx.Out(format[start:i])
 	}
 	return false, *hadError
 }
@@ -314,7 +329,12 @@ func processSpecifier(callCtx *builtins.CallContext, s string, args []string, ar
 			if err {
 				hadError = true
 			}
-			precision = strconv.Itoa(p)
+			if p < 0 {
+				// Negative precision from * means "no precision specified" in bash.
+				hasPrecision = false
+			} else {
+				precision = strconv.Itoa(p)
+			}
 			i++
 		} else {
 			start := i
@@ -338,9 +358,9 @@ func processSpecifier(callCtx *builtins.CallContext, s string, args []string, ar
 	}
 
 	if i >= len(s) {
-		// Incomplete specifier — print what we have.
-		callCtx.Out(s[:i])
-		return false, i, hadError
+		// Incomplete specifier — bash errors on this.
+		callCtx.Errf("printf: `%s': missing format character\n", s[:i])
+		return false, i, true
 	}
 
 	verb := s[i]
@@ -456,11 +476,11 @@ func processSpecifier(callCtx *builtins.CallContext, s string, args []string, ar
 			callCtx.Errf("printf: %s: invalid number\n", arg)
 			val = 0
 			goFmt.WriteByte('e')
-			callCtx.Out(fmt.Sprintf(goFmt.String(), val))
+			callCtx.Out(bashFloat(fmt.Sprintf(goFmt.String(), val)))
 			return false, i, true
 		}
 		goFmt.WriteByte('e')
-		callCtx.Out(fmt.Sprintf(goFmt.String(), val))
+		callCtx.Out(bashFloat(fmt.Sprintf(goFmt.String(), val)))
 
 	case 'E':
 		arg := getStringArg(args, argIdx)
@@ -482,11 +502,11 @@ func processSpecifier(callCtx *builtins.CallContext, s string, args []string, ar
 			callCtx.Errf("printf: %s: invalid number\n", arg)
 			val = 0
 			goFmt.WriteByte('f')
-			callCtx.Out(fmt.Sprintf(goFmt.String(), val))
+			callCtx.Out(bashFloat(fmt.Sprintf(goFmt.String(), val)))
 			return false, i, true
 		}
 		goFmt.WriteByte('f')
-		callCtx.Out(fmt.Sprintf(goFmt.String(), val))
+		callCtx.Out(bashFloat(fmt.Sprintf(goFmt.String(), val)))
 
 	case 'F':
 		arg := getStringArg(args, argIdx)
@@ -511,11 +531,11 @@ func processSpecifier(callCtx *builtins.CallContext, s string, args []string, ar
 			callCtx.Errf("printf: %s: invalid number\n", arg)
 			val = 0
 			goFmt.WriteByte('g')
-			callCtx.Out(fmt.Sprintf(goFmt.String(), val))
+			callCtx.Out(bashFloat(fmt.Sprintf(goFmt.String(), val)))
 			return false, i, true
 		}
 		goFmt.WriteByte('g')
-		callCtx.Out(fmt.Sprintf(goFmt.String(), val))
+		callCtx.Out(bashFloat(fmt.Sprintf(goFmt.String(), val)))
 
 	case 'G':
 		arg := getStringArg(args, argIdx)
@@ -546,8 +566,9 @@ func processSpecifier(callCtx *builtins.CallContext, s string, args []string, ar
 		return false, i, true
 
 	default:
-		// Unknown specifier — print literally.
-		callCtx.Outf("%%%c", verb)
+		// Unknown specifier — bash treats this as an error.
+		callCtx.Errf("printf: %%%c: invalid format character\n", verb)
+		return false, i, true
 	}
 
 	return false, i, hadError

@@ -46,7 +46,7 @@ func TestPrintfSimpleString(t *testing.T) {
 
 func TestPrintfNoArgs(t *testing.T) {
 	_, stderr, code := cmdRun(t, `printf`)
-	assert.Equal(t, 1, code)
+	assert.Equal(t, 2, code)
 	assert.Contains(t, stderr, "printf:")
 }
 
@@ -521,9 +521,10 @@ func TestPrintfRejectedA(t *testing.T) {
 // --- Coverage: unknown specifier ---
 
 func TestPrintfUnknownSpecifier(t *testing.T) {
-	stdout, _, code := cmdRun(t, `printf "%z\n"`)
-	assert.Equal(t, 0, code)
-	assert.Equal(t, "%z\n", stdout)
+	stdout, stderr, code := cmdRun(t, `printf "%z\n"`)
+	assert.Equal(t, 1, code)
+	assert.Equal(t, "\n", stdout)
+	assert.Contains(t, stderr, "invalid format character")
 }
 
 // --- Coverage: escape edge cases ---
@@ -626,13 +627,13 @@ func TestPrintfFloatHexInput(t *testing.T) {
 func TestPrintfFloatInfinity(t *testing.T) {
 	stdout, _, code := cmdRun(t, `printf "%f\n" inf`)
 	assert.Equal(t, 0, code)
-	assert.Contains(t, stdout, "Inf")
+	assert.Contains(t, stdout, "inf")
 }
 
 func TestPrintfFloatNegInfinity(t *testing.T) {
-	stdout, _, code := cmdRun(t, `printf "%f\n" -- -inf`)
+	stdout, _, code := cmdRun(t, `printf "%f\n" -inf`)
 	assert.Equal(t, 0, code)
-	assert.Contains(t, stdout, "-Inf")
+	assert.Contains(t, stdout, "-inf")
 }
 
 func TestPrintfFloatCharConstant(t *testing.T) {
@@ -724,9 +725,10 @@ func TestPrintfFloatFUpperInvalid(t *testing.T) {
 // --- Coverage: incomplete specifier ---
 
 func TestPrintfIncompleteSpecifier(t *testing.T) {
-	stdout, _, code := cmdRun(t, `printf "%"`)
-	assert.Equal(t, 0, code)
-	assert.Equal(t, "%", stdout)
+	stdout, stderr, code := cmdRun(t, `printf "%"`)
+	assert.Equal(t, 1, code)
+	assert.Equal(t, "", stdout)
+	assert.Contains(t, stderr, "missing format character")
 }
 
 // --- Coverage: hex escape in format with no valid digits ---

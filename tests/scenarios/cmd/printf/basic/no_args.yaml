@@ -4,5 +4,5 @@ input:
     printf
 expect:
   stdout: ""
-  stderr_contains: ["printf:"]
-  exit_code: 1
+  stderr_contains: ["printf: usage: printf"]
+  exit_code: 2
