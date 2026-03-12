@@ -298,6 +298,22 @@ func (p *parser) parsePrimary() bool {
 	cur := p.peek()
 	remaining := len(p.args) - p.pos
 
+	// POSIX 3-arg rule: when the subexpression is exactly "( X )" and X is
+	// NOT a binary operator, treat the middle token as a string non-emptiness
+	// test. This prevents bash-compat issues where X is "!", "-n", etc. that
+	// would be misinterpreted as operators inside a group. e.g.,
+	//   test "(" "!" ")" → 0 (non-empty string "!")
+	//   test "(" "" ")" → 1 (empty string)
+	// When X IS a binary operator (e.g., "="), the isThreeArgBinary check
+	// below handles it as "(" = ")" (string comparison).
+	subexprLen := p.subexprEnd - p.subexprStart
+	if cur == "(" && subexprLen == 3 && p.pos+2 < len(p.args) && p.args[p.pos+2] == ")" && !isBinaryOpOrLogical(p.args[p.pos+1]) {
+		p.advance() // skip "("
+		s := p.advance()
+		p.advance() // skip ")"
+		return s != ""
+	}
+
 	// Only treat "(" as grouping when there are enough tokens and it is not
 	// used as a literal operand in a binary expression. A lone "(" with
 	// remaining==1 is a bare non-empty string per POSIX single-argument rules.

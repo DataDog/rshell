@@ -1,0 +1,31 @@
+name: "test: POSIX 3-arg ( X ) disambiguation"
+tests:
+  - name: "( ! ) treats ! as non-empty string"
+    command: 'test "(" "!" ")"; echo $?'
+    expect:
+      stdout: "0\n"
+
+  - name: "( empty ) treats empty as false"
+    command: 'test "(" "" ")"; echo $?'
+    expect:
+      stdout: "1\n"
+
+  - name: "( -n ) treats -n as non-empty string"
+    command: 'test "(" -n ")"; echo $?'
+    expect:
+      stdout: "0\n"
+
+  - name: "( -e ) treats -e as non-empty string"
+    command: 'test "(" -e ")"; echo $?'
+    expect:
+      stdout: "0\n"
+
+  - name: "( = ) applies binary = rule: ( equals )"
+    command: 'test "(" "=" ")"; echo $?'
+    expect:
+      stdout: "1\n"
+
+  - name: "( != ) applies binary != rule: ( not-equals )"
+    command: 'test "(" "!=" ")"; echo $?'
+    expect:
+      stdout: "0\n"
