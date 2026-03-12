@@ -160,6 +160,30 @@ func TestGNUCompatControlCharIsWord(t *testing.T) {
 	assert.Equal(t, "1 file.txt\n", stdout)
 }
 
+// TestGNUCompatMaxLineLenVerticalTab — -L with \v (zero display width).
+//
+// GNU command: printf 'a\vb\n' | wc -L
+// Expected: "2\n" — \v has zero width, so a(1) + b(1) = 2.
+func TestGNUCompatMaxLineLenVerticalTab(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "file.txt", "a\vb\n")
+	stdout, _, code := cmdRun(t, "wc -L file.txt", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "2 file.txt\n", stdout)
+}
+
+// TestGNUCompatMaxLineLenFormFeed — -L with \f (resets line position).
+//
+// GNU command: printf 'abc\fdef\n' | wc -L
+// Expected: "3\n" — \f resets position, so def = 3.
+func TestGNUCompatMaxLineLenFormFeed(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "file.txt", "abc\fdef\n")
+	stdout, _, code := cmdRun(t, "wc -L file.txt", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "3 file.txt\n", stdout)
+}
+
 // TestGNUCompatRejectedFlag — unknown flag exits 1.
 //
 // GNU command: gwc --follow

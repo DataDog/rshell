@@ -263,30 +263,36 @@ func countReader(ctx context.Context, r io.Reader) (counts, error) {
 			c.bytes -= int64(carryN)
 
 			for i := 0; i < len(chunk); {
-				r, size := utf8.DecodeRune(chunk[i:])
+				ch, size := utf8.DecodeRune(chunk[i:])
 				i += size
-				if r == '\n' {
+				if ch == '\n' {
 					c.lines++
 					if lineLen > c.maxLineLen {
 						c.maxLineLen = lineLen
 					}
 					lineLen = 0
 					inWord = false
-				} else if r == '\r' {
+				} else if ch == '\r' {
 					lineLen = 0
 					inWord = false
-				} else if r == '\t' {
+				} else if ch == '\t' {
 					lineLen = (lineLen/8 + 1) * 8
 					inWord = false
-				} else if r == ' ' || r == '\v' || r == '\f' {
+				} else if ch == ' ' {
 					lineLen++
+					inWord = false
+				} else if ch == '\f' {
+					lineLen = 0
+					inWord = false
+				} else if ch == '\v' {
+					// vertical tab: zero display width, but breaks words
 					inWord = false
 				} else {
 					if !inWord {
 						c.words++
 						inWord = true
 					}
-					lineLen += int64(runeWidth(r))
+					lineLen += int64(runeWidth(ch))
 				}
 			}
 		}
