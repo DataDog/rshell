@@ -14,8 +14,9 @@ Blocked features are rejected before execution with exit code 2.
 - ✅ `false` — return exit code 1
 - ✅ `find [-L] [PATH...] [EXPRESSION]` — search for files in a directory hierarchy; supports `-name`, `-iname`, `-path`, `-ipath`, `-type`, `-size`, `-empty`, `-newer`, `-mtime`, `-mmin`, `-maxdepth`, `-mindepth`, `-print`, `-print0`, `-prune`, logical operators (`!`, `-a`, `-o`, `()`); blocks `-exec`, `-delete`, `-regex` for sandbox safety
 - ✅ `grep [-EFGivclLnHhoqsxw] [-e PATTERN] [-m NUM] [-A NUM] [-B NUM] [-C NUM] PATTERN [FILE]...` — print lines that match patterns; uses RE2 regex engine (linear-time, no backtracking)
-- ✅ `head [-n N|-c N] [-q|-v] [-z] [FILE]...` — output the first part of files (default: first 10 lines)
+- ✅ `head [-n N|-c N] [-q|-v] [FILE]...` — output the first part of files (default: first 10 lines); `-z`/`--zero-terminated` and `--follow` are rejected
 - ✅ `ls [-1aAdFhlpRrSt] [FILE]...` — list directory contents
+- ✅ `strings [-a] [-n MIN] [-t o|d|x] [-o] [-f] [-s SEP] [FILE]...` — print printable character sequences in files (default min length 4); offsets via `-t`/`-o`; filename prefix via `-f`; custom separator via `-s`
 - ✅ `tail [-n N|-c N] [-q|-v] [-z] [FILE]...` — output the last part of files (default: last 10 lines); supports `+N` offset mode; `-f`/`--follow` is rejected
 - ✅ `true` — return exit code 0
 - ✅ `uniq [OPTION]... [INPUT]` — report or omit repeated lines
@@ -44,7 +45,7 @@ Blocked features are rejected before execution with exit code 2.
 - ✅ `!` — negation (inverts exit code)
 - ✅ `{ CMDS; }` — brace group
 - ✅ `;` and newline as command separators
-- ❌ `if` / `elif` / `else`
+- ✅ `if` / `elif` / `else`
 - ❌ `while` / `until`
 - ❌ `case`
 - ❌ `select`

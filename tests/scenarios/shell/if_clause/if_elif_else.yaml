@@ -1,10 +1,9 @@
-skip_assert_against_bash: true
-description: If-elif-else statement is blocked.
+description: If-elif-else falls through to else when all conditions fail.
 input:
   script: |+
     if false; then echo a; elif false; then echo b; else echo c; fi
 expect:
-  stdout: ""
-  stderr: |+
-    if statements are not supported
-  exit_code: 2
+  stdout: |+
+    c
+  stderr: ""
+  exit_code: 0

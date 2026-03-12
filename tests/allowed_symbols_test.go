@@ -74,6 +74,10 @@ var builtinAllowedSymbols = []string{
 	"math.Ceil",
 	// math.Floor — pure arithmetic; no side effects.
 	"math.Floor",
+	// io.ReadSeeker — interface type combining Reader and Seeker; no side effects.
+	"io.ReadSeeker",
+	// io.SeekCurrent — whence constant for Seek(offset, SeekCurrent); pure constant.
+	"io.SeekCurrent",
 	// math.MaxInt32 — integer constant; no side effects.
 	"math.MaxInt32",
 	// math.MaxInt64 — integer constant; no side effects.

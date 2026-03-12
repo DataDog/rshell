@@ -1,0 +1,18 @@
+description: strings -f prints file name before each string.
+skip_assert_against_bash: true
+setup:
+  files:
+    - path: data.bin
+      content: |+
+        hello
+        world
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    strings -f data.bin
+expect:
+  stdout: |+
+    data.bin: hello
+    data.bin: world
+  stderr: ""
+  exit_code: 0
