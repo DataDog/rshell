@@ -309,7 +309,7 @@ Run a final verification regardless of how the loop exited:
    - Compare the two timestamps. If @codex's latest review `submitted_at` is **before** the latest request's `created_at`, then @codex has NOT yet replied to the current request — **this verification fails**.
    - If @codex has no reviews at all, the verification also fails.
 
-   **If @codex hasn't replied yet**, fail this verification.
+   **If @codex hasn't replied yet**, fail this verification and go back to **Step 2: Run the review-fix loop**.
 
 Record the final state of each dimension (self-review, external reviews, CI, @codex response).
 
