@@ -1,4 +1,7 @@
-.PHONY: test test_all test_against_bash compliance
+.PHONY: build test test_all test_against_bash compliance
+
+build:
+	go build -o rshell ./cmd/rshell
 
 test:
 	go test -v -race ./...
