@@ -108,6 +108,7 @@ package grep
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"errors"
 	"io"
@@ -130,8 +131,15 @@ const MaxLineBytes = 1 << 20 // 1 MiB
 const MaxContextLines = 1_000 // 1k lines
 
 const (
-	scanBufInit = 4096 // initial scanner buffer
+	scanBufInit     = 4096 // initial scanner buffer
+	binaryChunkSize = 8192 // bytes read to detect binary content
 )
+
+// containsNUL reports whether p contains a NUL byte, which is the
+// heuristic GNU grep uses to detect binary files.
+func containsNUL(p []byte) bool {
+	return bytes.IndexByte(p, 0) >= 0
+}
 
 // Exit code constants matching POSIX grep convention.
 const (
@@ -141,6 +149,9 @@ const (
 )
 
 func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
+	// Binary mode flag.
+	textMode := fs.BoolP("text", "a", false, "process binary file as if it were text")
+
 	// Pattern mode flags.
 	extendedRegexp := fs.BoolP("extended-regexp", "E", false, "use extended regular expressions")
 	fixedStrings := fs.BoolP("fixed-strings", "F", false, "interpret pattern as fixed strings")
@@ -312,6 +323,7 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			afterContext:      after,
 			beforeContext:     before,
 			contextRequested:  contextFlagUsed,
+			textMode:          *textMode,
 		}
 
 		anyMatch := false
@@ -375,6 +387,7 @@ type grepOpts struct {
 	afterContext      int
 	beforeContext     int
 	contextRequested  bool // true when any -A/-B/-C flag was used (even with 0)
+	textMode          bool // -a/--text: treat binary files as text
 }
 
 type orderedBoolFlag struct {
@@ -542,7 +555,29 @@ func grepFile(ctx context.Context, callCtx *builtins.CallContext, file string, o
 		displayName = "(standard input)"
 	}
 
-	sc := bufio.NewScanner(rc)
+	// Binary detection: pre-read up to binaryChunkSize bytes to detect NUL bytes.
+	// GNU grep treats files containing NUL bytes as binary unless -a/--text is set.
+	isBinary := false
+	var reader io.Reader = rc
+	if !opts.textMode {
+		chunk := make([]byte, binaryChunkSize)
+		n, readErr := io.ReadFull(rc, chunk)
+		chunk = chunk[:n]
+		if containsNUL(chunk) {
+			isBinary = true
+		}
+		// Reconstruct reader with the pre-read bytes prepended.
+		if readErr == nil || readErr == io.ErrUnexpectedEOF {
+			reader = io.MultiReader(bytes.NewReader(chunk), rc)
+		} else if readErr == io.EOF {
+			// File was entirely within the chunk.
+			reader = bytes.NewReader(chunk)
+		} else {
+			return false, readErr
+		}
+	}
+
+	sc := bufio.NewScanner(reader)
 	buf := make([]byte, scanBufInit)
 	sc.Buffer(buf, MaxLineBytes)
 
@@ -579,6 +614,11 @@ func grepFile(ctx context.Context, callCtx *builtins.CallContext, file string, o
 
 			if opts.quiet {
 				return true, nil
+			}
+
+			if isBinary {
+				// For binary files, just count matches; don't print lines.
+				continue
 			}
 
 			if opts.count || opts.filesWithMatches || opts.filesWithoutMatch {
@@ -624,14 +664,14 @@ func grepFile(ctx context.Context, callCtx *builtins.CallContext, file string, o
 			beforeBuf = beforeBuf[:0]
 		} else {
 			// Non-matching line: might be after-context or before-context.
-			if afterRemaining > 0 && !opts.quiet && !opts.count && !opts.filesWithMatches && !opts.filesWithoutMatch {
+			if !isBinary && afterRemaining > 0 && !opts.quiet && !opts.count && !opts.filesWithMatches && !opts.filesWithoutMatch {
 				printContextLine(callCtx, displayName, lineNum, lineBytes, opts, '-')
 				lastPrintedLine = lineNum
 				afterRemaining--
 			}
 
 			// Add to before-context ring buffer.
-			if opts.beforeContext > 0 {
+			if !isBinary && opts.beforeContext > 0 {
 				if len(beforeBuf) >= opts.beforeContext {
 					beforeBuf = beforeBuf[1:]
 				}
@@ -644,6 +684,14 @@ func grepFile(ctx context.Context, callCtx *builtins.CallContext, file string, o
 
 	if err := sc.Err(); err != nil {
 		return matchCount > 0, err
+	}
+
+	// For binary files, emit the "binary file matches" message if there were matches.
+	if isBinary {
+		if matchCount > 0 && !opts.quiet {
+			callCtx.Errf("grep: %s: binary file matches\n", displayName)
+		}
+		return matchCount > 0, nil
 	}
 
 	// Handle -c, -l, -L output.
