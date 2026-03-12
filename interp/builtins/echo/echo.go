@@ -213,7 +213,7 @@ func processEscapes(s string) (string, bool) {
 // We intentionally drop anything beyond U+10FFFF to avoid emitting invalid UTF-8.
 // Surrogates (U+D800-U+DFFF) are replaced with U+FFFD rather than emitting
 // invalid UTF-8 bytes — this is a security-motivated divergence from bash.
-func writeUnicodeCodepoint(b *strings.Builder, val int) {
+func writeUnicodeCodepoint(b *strings.Builder, val int64) {
 	if val > 0x10FFFF {
 		// Intentional divergence: bash emits raw bytes for values up to 0x7FFFFFFF,
 		// but we drop them to avoid producing invalid UTF-8.
@@ -236,18 +236,20 @@ func parseOctal(s string, maxDigits int) (int, int) {
 
 // parseHex reads up to maxDigits hexadecimal digits from s and returns
 // the accumulated value and the number of bytes consumed.
-func parseHex(s string, maxDigits int) (int, int) {
-	val := 0
+// Returns int64 to avoid overflow on 32-bit architectures when parsing
+// up to 8 hex digits for \U escape sequences.
+func parseHex(s string, maxDigits int) (int64, int) {
+	var val int64
 	n := 0
 	for n < maxDigits && n < len(s) {
 		ch := s[n]
 		switch {
 		case ch >= '0' && ch <= '9':
-			val = val*16 + int(ch-'0')
+			val = val*16 + int64(ch-'0')
 		case ch >= 'a' && ch <= 'f':
-			val = val*16 + int(ch-'a') + 10
+			val = val*16 + int64(ch-'a') + 10
 		case ch >= 'A' && ch <= 'F':
-			val = val*16 + int(ch-'A') + 10
+			val = val*16 + int64(ch-'A') + 10
 		default:
 			return val, n
 		}
