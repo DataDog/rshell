@@ -922,7 +922,11 @@ func compareMagnitude(aInt, aFrac, bInt, bFrac string) int {
 // digit string from a numeric prefix. Returns (negative, intDigits, fracDigits).
 // Non-numeric input returns (false, "0", ""), which compares as zero.
 func parseNumParts(s string) (bool, string, string) {
-	s = strings.TrimSpace(s)
+	// GNU sort -n only skips leading blanks (space/tab), not all
+	// Unicode whitespace. Use manual skip instead of TrimSpace.
+	for len(s) > 0 && (s[0] == ' ' || s[0] == '\t') {
+		s = s[1:]
+	}
 	if s == "" {
 		return false, "0", ""
 	}
