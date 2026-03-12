@@ -171,8 +171,9 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			}
 		}
 		if *checkSilentShort {
-			// Reject conflicting -c and -C flags (GNU compat).
-			if fs.Changed("check") {
+			// -C is equivalent to --check=silent. Reject only when
+			// --check is set to a non-silent mode (GNU compat).
+			if fs.Changed("check") && !checkSilent {
 				callCtx.Errf("sort: options '-cC' are incompatible\n")
 				return builtins.Result{Code: 2}
 			}
@@ -254,7 +255,7 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 				callCtx.Errf("sort: %s: %s\n", name, callCtx.PortableErr(err))
 				return builtins.Result{Code: 1}
 			}
-			return checkSorted(callCtx, lines, cmpFn, checkSilent, *unique, file)
+			return checkSorted(ctx, callCtx, lines, cmpFn, checkSilent, *unique, file)
 		}
 
 		// Read all lines from all files.
@@ -1015,8 +1016,11 @@ func buildCompare(keys []keySpec, globalOpts keyOpts, sep byte, hasSep bool, sta
 // When unique is true, equal adjacent lines are also treated as a disorder
 // (matching GNU sort -c -u which checks for strict ordering).
 // file is the filename used in the diagnostic message (or "-" for stdin).
-func checkSorted(callCtx *builtins.CallContext, lines []string, cmpFn func(a, b string) int, silent bool, unique bool, file string) builtins.Result {
+func checkSorted(ctx context.Context, callCtx *builtins.CallContext, lines []string, cmpFn func(a, b string) int, silent bool, unique bool, file string) builtins.Result {
 	for i := 1; i < len(lines); i++ {
+		if i&1023 == 0 && ctx.Err() != nil {
+			return builtins.Result{Code: 1}
+		}
 		c := cmpFn(lines[i-1], lines[i])
 		if c > 0 || (unique && c == 0) {
 			if !silent {
