@@ -17,7 +17,7 @@ You MUST follow this execution protocol. Skipping steps or running them out of o
 Your very first action — before reading ANY files, before running ANY commands — is to call TaskCreate for each step below. Use these exact subjects:
 
 1. "Step 1: Identify PR and enumerate review targets"
-2. "Step 2: Run the improve loop"
+2. "Step 2: Run the improve loop (<target name>)" — update the subject each iteration with the current target name
 3. "Step 2A: Pick next review target"
 4. "Step 2B: Focused review of target"
 5. "Step 2C: Fix issues found"
@@ -133,7 +133,9 @@ EOF
 
 **GATE CHECK**: Call TaskList. Step 1 must be `completed`. Set Step 2 to `in_progress`.
 
-Set `iteration = 1`. Maximum iterations: **50**. Repeat sub-steps A through G:
+Set `iteration = 1`. Maximum iterations: **50**. Repeat sub-steps A through G.
+
+**At the start of each iteration**, update the Step 2 task subject to include the current target name, e.g. `"Step 2: Run the improve loop (cat)"`. This makes progress visible in the task list.
 
 ---
 
