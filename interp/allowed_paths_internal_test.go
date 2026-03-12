@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -196,4 +197,50 @@ func TestPathSandboxOpenRejectsWriteFlags(t *testing.T) {
 	f, err := sb.open(ctx, "test.txt", os.O_RDONLY, 0)
 	require.NoError(t, err)
 	f.Close()
+}
+
+func TestCountDirEntries(t *testing.T) {
+	dir := t.TempDir()
+
+	// Create 10 files.
+	for i := range 10 {
+		require.NoError(t, os.WriteFile(filepath.Join(dir, fmt.Sprintf("f%02d", i)), nil, 0644))
+	}
+
+	sb, err := newPathSandbox([]string{dir})
+	require.NoError(t, err)
+	defer sb.Close()
+
+	ctx := context.WithValue(context.Background(), handlerCtxKey{}, HandlerContext{Dir: dir})
+
+	t.Run("limit below count returns exceeded", func(t *testing.T) {
+		count, exceeded, err := sb.countDirEntries(ctx, ".", 5)
+		require.NoError(t, err)
+		assert.True(t, exceeded)
+		assert.Greater(t, count, 5)
+	})
+
+	t.Run("limit above count returns not exceeded", func(t *testing.T) {
+		count, exceeded, err := sb.countDirEntries(ctx, ".", 20)
+		require.NoError(t, err)
+		assert.False(t, exceeded)
+		assert.Equal(t, 10, count)
+	})
+
+	t.Run("empty directory", func(t *testing.T) {
+		emptyDir := filepath.Join(dir, "empty")
+		require.NoError(t, os.Mkdir(emptyDir, 0755))
+
+		count, exceeded, err := sb.countDirEntries(ctx, "empty", 10)
+		require.NoError(t, err)
+		assert.False(t, exceeded)
+		assert.Equal(t, 0, count)
+	})
+
+	t.Run("path outside sandbox returns permission error", func(t *testing.T) {
+		outsideDir := t.TempDir()
+		_, _, err := sb.countDirEntries(ctx, outsideDir, 10)
+		require.Error(t, err)
+		assert.ErrorIs(t, err, os.ErrPermission)
+	})
 }

@@ -253,19 +253,24 @@ func listDir(ctx context.Context, callCtx *builtins.CallContext, dir string, opt
 		return errFailed
 	}
 
+	// Pre-check: count entries without full materialization to prevent OOM
+	// on directories with millions of entries.
+	if callCtx.CountDirEntries != nil {
+		count, exceeded, err := callCtx.CountDirEntries(ctx, dir, MaxDirEntries)
+		if err != nil {
+			callCtx.Errf("ls: cannot open directory '%s': %s\n", dir, callCtx.PortableErr(err))
+			return err
+		}
+		if exceeded {
+			callCtx.Errf("ls: warning: directory '%s': too many entries (%d > %d), output suppressed\n", dir, count, MaxDirEntries)
+			return nil
+		}
+	}
+
 	entries, err := callCtx.ReadDir(ctx, dir)
 	if err != nil {
 		callCtx.Errf("ls: cannot open directory '%s': %s\n", dir, callCtx.PortableErr(err))
 		return err
-	}
-
-	// NOTE: ReadDir has already loaded all entries into memory at this point.
-	// Go's os.ReadDir does not support streaming, so this check does not prevent
-	// the initial allocation. It does, however, prevent expensive downstream
-	// processing (sorting, stat calls, recursion) on absurdly large directories.
-	if len(entries) > MaxDirEntries {
-		callCtx.Errf("ls: warning: directory '%s': too many entries (%d > %d), output suppressed\n", dir, len(entries), MaxDirEntries)
-		return nil
 	}
 
 	// Get FileInfo for sorting (if needed) and for long format.

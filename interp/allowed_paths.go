@@ -192,6 +192,37 @@ func (s *pathSandbox) readDir(ctx context.Context, path string) ([]fs.DirEntry, 
 	return entries, nil
 }
 
+// countDirEntries counts entries in a directory without materializing them all.
+// Reads in batches and returns early once count exceeds limit.
+// Returns (count, exceeded, error). When exceeded is true, count is the
+// number read so far (at least limit+1) but not necessarily the total.
+func (s *pathSandbox) countDirEntries(ctx context.Context, path string, limit int) (int, bool, error) {
+	absPath := toAbs(path, HandlerCtx(ctx).Dir)
+	root, relPath, ok := s.resolve(absPath)
+	if !ok {
+		return 0, false, &os.PathError{Op: "readdir", Path: path, Err: os.ErrPermission}
+	}
+	f, err := root.Open(relPath)
+	if err != nil {
+		return 0, false, portablePathError(err)
+	}
+	defer f.Close()
+
+	const batchSize = 256
+	count := 0
+	for {
+		batch, err := f.ReadDir(batchSize)
+		count += len(batch)
+		if count > limit {
+			return count, true, nil
+		}
+		if err != nil { // io.EOF means done
+			break
+		}
+	}
+	return count, false, nil
+}
+
 // stat implements the restricted stat policy. It uses os.Root.Stat for
 // metadata-only access — no file descriptor is opened, so it works on
 // unreadable files and does not block on special files (e.g. FIFOs).

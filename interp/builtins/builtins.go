@@ -90,6 +90,10 @@ type CallContext struct {
 	// Entries are returned sorted by name.
 	ReadDir func(ctx context.Context, path string) ([]fs.DirEntry, error)
 
+	// CountDirEntries counts entries in a directory up to limit without
+	// materializing all entries. Returns (count, exceeded, error).
+	CountDirEntries func(ctx context.Context, path string, limit int) (int, bool, error)
+
 	// StatFile returns file info within the shell's path restrictions (follows symlinks).
 	StatFile func(ctx context.Context, path string) (fs.FileInfo, error)
 
