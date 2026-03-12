@@ -29,7 +29,49 @@ func parseScript(script string, useERE bool) ([]*sedCmd, error) {
 	if err != nil {
 		return nil, err
 	}
+	// Validate that all branch/conditional labels are defined — GNU sed
+	// rejects undefined labels at compile time.
+	if err := validateLabels(cmds); err != nil {
+		return nil, err
+	}
 	return cmds, nil
+}
+
+// validateLabels checks that every b/t/T label referenced in cmds exists.
+func validateLabels(cmds []*sedCmd) error {
+	labels := collectLabels(cmds)
+	return checkBranches(cmds, labels)
+}
+
+func collectLabels(cmds []*sedCmd) map[string]bool {
+	m := make(map[string]bool)
+	for _, cmd := range cmds {
+		if cmd.kind == cmdLabel {
+			m[cmd.label] = true
+		}
+		if cmd.kind == cmdGroup {
+			for k, v := range collectLabels(cmd.children) {
+				m[k] = v
+			}
+		}
+	}
+	return m
+}
+
+func checkBranches(cmds []*sedCmd, labels map[string]bool) error {
+	for _, cmd := range cmds {
+		if (cmd.kind == cmdBranch || cmd.kind == cmdBranchIfSub || cmd.kind == cmdBranchIfNoSub) && cmd.label != "" {
+			if !labels[cmd.label] {
+				return errors.New("undefined label '" + cmd.label + "'")
+			}
+		}
+		if cmd.kind == cmdGroup {
+			if err := checkBranches(cmd.children, labels); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 func (p *parser) parseCommands(inGroup bool) ([]*sedCmd, error) {
@@ -109,6 +151,12 @@ func (p *parser) parseOneCommand() (*sedCmd, error) {
 		cmd.addr2 = addr2
 	}
 
+	// Reject line address 0 as a standalone address. GNU sed allows 0 only
+	// as the first address in a range (0,/re/).
+	if cmd.addr1 != nil && cmd.addr1.kind == addrLine && cmd.addr1.line == 0 && cmd.addr2 == nil {
+		return nil, errors.New("invalid usage of line address 0")
+	}
+
 	p.skipSpaces()
 
 	// Check for negation.
@@ -140,10 +188,18 @@ func (p *parser) parseOneCommand() (*sedCmd, error) {
 		cmd.kind = cmdDeleteFirstLine
 	case 'q':
 		cmd.kind = cmdQuit
-		cmd.quitCode = p.parseOptionalExitCode()
+		code, err := p.parseOptionalExitCode()
+		if err != nil {
+			return nil, err
+		}
+		cmd.quitCode = code
 	case 'Q':
 		cmd.kind = cmdQuitNoprint
-		cmd.quitCode = p.parseOptionalExitCode()
+		code, err := p.parseOptionalExitCode()
+		if err != nil {
+			return nil, err
+		}
+		cmd.quitCode = code
 	case 'a':
 		cmd.kind = cmdAppend
 		cmd.text = p.parseTextArg()
@@ -215,20 +271,21 @@ func (p *parser) parseOneCommand() (*sedCmd, error) {
 	return cmd, nil
 }
 
-func (p *parser) parseOptionalExitCode() uint8 {
+func (p *parser) parseOptionalExitCode() (uint8, error) {
 	p.skipSpaces()
 	start := p.pos
 	for p.pos < len(p.input) && p.input[p.pos] >= '0' && p.input[p.pos] <= '9' {
 		p.pos++
 	}
 	if start == p.pos {
-		return 0
+		return 0, nil
 	}
 	n, err := strconv.Atoi(p.input[start:p.pos])
-	if err != nil || n < 0 || n > 255 {
-		return 0
+	if err != nil {
+		return 0, errors.New("invalid exit code for q/Q command")
 	}
-	return uint8(n)
+	// GNU sed truncates large exit codes modulo 256.
+	return uint8(n % 256), nil
 }
 
 func (p *parser) parseTextArg() string {
@@ -292,6 +349,9 @@ func (p *parser) parseAddress() (*address, error) {
 		if err != nil {
 			return nil, errors.New("invalid line number: " + p.input[start:p.pos])
 		}
+		// Line address 0 is only valid as the first address of a range (0,/re/).
+		// As a standalone address, GNU sed rejects it. We defer the check to
+		// parseOneCommand after we know whether a second address follows.
 		return &address{kind: addrLine, line: n}, nil
 	}
 
@@ -317,6 +377,11 @@ func (p *parser) parseAddress() (*address, error) {
 		pattern, err := p.readUntilDelimiter(delim)
 		if err != nil {
 			return nil, err
+		}
+		if pattern == "" {
+			// Empty pattern means "reuse last regex" — defer to runtime.
+			// re stays nil to signal this.
+			return &address{kind: addrRegexp, re: nil}, nil
 		}
 		re, err := p.compileRegex(pattern)
 		if err != nil {
@@ -364,14 +429,14 @@ func (p *parser) parseSubstitute(cmd *sedCmd) (*sedCmd, error) {
 	}
 	p.pos++ // consume delimiter
 
-	// Read pattern.
-	pattern, err := p.readSubstPart(delim)
+	// Read pattern (isPattern=true: preserve \b as word boundary for RE2).
+	pattern, err := p.readSubstPart(delim, true)
 	if err != nil {
 		return nil, errors.New("unterminated 's' command: " + err.Error())
 	}
 
-	// Read replacement.
-	replacement, err := p.readSubstPart(delim)
+	// Read replacement (isPattern=false: convert \b to backspace).
+	replacement, err := p.readSubstPart(delim, false)
 	if err != nil {
 		return nil, errors.New("unterminated 's' command: " + err.Error())
 	}
@@ -446,7 +511,12 @@ flagsDone:
 	return cmd, nil
 }
 
-func (p *parser) readSubstPart(delim byte) (string, error) {
+// readSubstPart reads one delimited part of an s/// command.
+// isPattern controls how certain escapes are handled: when true (reading the
+// regex pattern), \b is preserved as the two-character sequence \b so that
+// RE2 interprets it as a word boundary assertion. When false (reading the
+// replacement), \b is converted to a literal backspace (0x08).
+func (p *parser) readSubstPart(delim byte, isPattern bool) (string, error) {
 	var sb strings.Builder
 	for p.pos < len(p.input) {
 		ch := p.input[p.pos]
@@ -473,7 +543,15 @@ func (p *parser) readSubstPart(delim byte) (string, error) {
 				continue
 			}
 			if next == 'b' {
-				sb.WriteByte('\b')
+				if isPattern {
+					// In the pattern part, \b is a word boundary in RE2 —
+					// pass through as the literal two-character sequence \b.
+					sb.WriteByte('\\')
+					sb.WriteByte('b')
+				} else {
+					// In the replacement part, \b is a literal backspace.
+					sb.WriteByte('\b')
+				}
 				p.pos += 2
 				continue
 			}
@@ -509,11 +587,11 @@ func (p *parser) parseTransliterate(cmd *sedCmd) (*sedCmd, error) {
 	delim := p.input[p.pos]
 	p.pos++
 
-	srcStr, err := p.readSubstPart(delim)
+	srcStr, err := p.readSubstPart(delim, false)
 	if err != nil {
 		return nil, err
 	}
-	dstStr, err := p.readSubstPart(delim)
+	dstStr, err := p.readSubstPart(delim, false)
 	if err != nil {
 		return nil, err
 	}

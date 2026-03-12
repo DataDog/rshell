@@ -383,6 +383,7 @@ func (eng *engine) branchTo(ctx context.Context, label string, lr *lineReader, d
 	}
 	loc := findLabel(eng.prog, label)
 	if !loc.found() {
+		// This should not happen — labels are validated at parse time.
 		return actionContinue, errors.New("undefined label '" + label + "'")
 	}
 	return eng.branchToPath(ctx, eng.prog, loc.path, lr, depth)
@@ -438,8 +439,17 @@ func (eng *engine) matchAddr(addr *address) bool {
 	case addrLast:
 		return eng.lastLine
 	case addrRegexp:
-		eng.lastRe = addr.re // Always record the most recently used regex.
-		return addr.re.MatchString(eng.patternSpace)
+		re := addr.re
+		if re == nil {
+			// Empty pattern: reuse last regex.
+			if eng.lastRe == nil {
+				return false // no previous regex — cannot match
+			}
+			re = eng.lastRe
+		} else {
+			eng.lastRe = re // Record the most recently used regex.
+		}
+		return re.MatchString(eng.patternSpace)
 	case addrStep:
 		if addr.first == 0 {
 			return eng.lineNum%addr.step == 0
@@ -566,7 +576,11 @@ func expandReplacement(repl string) string {
 			sb.WriteString("$$")
 		} else if ch == '\\' && i+1 < len(repl) {
 			next := repl[i+1]
-			if next >= '1' && next <= '9' {
+			if next == '0' {
+				// \0 is equivalent to & (entire match) in GNU sed.
+				sb.WriteString("${0}")
+				i++
+			} else if next >= '1' && next <= '9' {
 				sb.WriteByte('$')
 				sb.WriteByte(next)
 				i++
