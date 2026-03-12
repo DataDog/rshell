@@ -4,7 +4,6 @@ input:
   script: |+
     echo -e '\uD800'
 expect:
-  stdout_contains:
-    - "\uFFFD"
+  stdout: "\uFFFD\n"
   stderr: ""
   exit_code: 0
