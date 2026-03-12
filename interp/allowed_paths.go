@@ -7,6 +7,7 @@ package interp
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -243,7 +244,7 @@ func (s *pathSandbox) readDirLimited(ctx context.Context, path string, offset, m
 // millions of files would OOM or stall. The truncation warning communicates
 // that output is incomplete.
 func collectDirEntries(readBatch func(n int) ([]fs.DirEntry, error), batchSize, offset, maxRead int) ([]fs.DirEntry, bool, error) {
-	var entries []fs.DirEntry
+	entries := make([]fs.DirEntry, 0, maxRead)
 	truncated := false
 	skipped := 0
 	var lastErr error
@@ -259,7 +260,7 @@ func collectDirEntries(readBatch func(n int) ([]fs.DirEntry, error), batchSize, 
 		}
 		// Capture non-EOF errors before checking truncation, since
 		// ReadDir can return partial entries alongside an error.
-		if err != nil && err != io.EOF {
+		if err != nil && !errors.Is(err, io.EOF) {
 			lastErr = err
 		}
 		if len(entries) > maxRead {
