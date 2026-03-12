@@ -110,12 +110,29 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			return builtins.Result{}
 		}
 
+		// Validate all explicitly set mode flags upfront. GNU head rejects
+		// invalid values even for flags that are overridden by a later mode
+		// flag on the command line (e.g. "head -n xyz -c 1" fails).
+		if linesFlag.pos > 0 {
+			if _, ok := parseCount(linesFlag.val); !ok {
+				callCtx.Errf("head: invalid number of lines: %q\n", linesFlag.val)
+				return builtins.Result{Code: 1}
+			}
+		}
+		if bytesFlag.pos > 0 {
+			if _, ok := parseCount(bytesFlag.val); !ok {
+				callCtx.Errf("head: invalid number of bytes: %q\n", bytesFlag.val)
+				return builtins.Result{Code: 1}
+			}
+		}
+
 		// Bytes mode wins if -c/--bytes was parsed after -n/--lines. When neither
 		// is set both pos fields are 0 (false → line mode). When only one is set
 		// the other stays 0, so the comparison selects correctly.
 		useBytesMode := bytesFlag.pos > linesFlag.pos
 
-		// Parse the count for the chosen mode.
+		// Parse the count for the chosen mode (handles the default "10" for
+		// linesFlag when neither flag was explicitly given).
 		countStr := linesFlag.val
 		modeLabel := "lines"
 		if useBytesMode {
