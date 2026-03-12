@@ -62,8 +62,10 @@
 //	\v    vertical tab
 //	\"    double quote
 //	\NNN  octal byte value (1-3 digits)
-//	\0NNN octal byte value (0 + 1-3 digits)
-//	\xHH  hexadecimal byte value (1-2 digits)
+//	\0NNN     octal byte value (0 + 1-3 digits)
+//	\xHH     hexadecimal byte value (1-2 digits)
+//	\uHHHH   Unicode code point (1-4 hex digits)
+//	\UHHHHHHHH Unicode code point (1-8 hex digits)
 //
 // Numeric argument extensions:
 //
@@ -247,8 +249,11 @@ func processFormat(callCtx *builtins.CallContext, format string, args []string, 
 
 		if ch == '\\' {
 			// Process escape sequence in format string.
-			s, advance := processFormatEscape(format[i:])
+			s, advance, errMsg := processFormatEscape(format[i:])
 			callCtx.Out(s)
+			if errMsg != "" {
+				callCtx.Errf("%s", errMsg)
+			}
 			i += advance
 			continue
 		}
@@ -281,55 +286,71 @@ func processFormat(callCtx *builtins.CallContext, format string, args []string, 
 }
 
 // processFormatEscape handles a backslash escape in the format string (not in %b arguments).
-// Returns the replacement string and the number of bytes consumed from s.
-func processFormatEscape(s string) (string, int) {
+// Returns the replacement string, the number of bytes consumed from s, and an optional
+// error message to emit to stderr (empty string if no error).
+func processFormatEscape(s string) (string, int, string) {
 	if len(s) < 2 {
-		return "\\", 1
+		return "\\", 1, ""
 	}
 	switch s[1] {
 	case '\\':
-		return "\\", 2
+		return "\\", 2, ""
 	case 'a':
-		return "\a", 2
+		return "\a", 2, ""
 	case 'b':
-		return "\b", 2
+		return "\b", 2, ""
 	case 'f':
-		return "\f", 2
+		return "\f", 2, ""
 	case 'n':
-		return "\n", 2
+		return "\n", 2, ""
 	case 'r':
-		return "\r", 2
+		return "\r", 2, ""
 	case 't':
-		return "\t", 2
+		return "\t", 2, ""
 	case 'v':
-		return "\v", 2
+		return "\v", 2, ""
 	case '"':
-		return "\"", 2
+		return "\"", 2, ""
 	case '0':
 		// \0NN — octal (0 counts as first digit, up to 2 more).
 		// Bash treats the leading 0 as the first of 3 octal digits,
 		// so \0123 = \012 (newline) + literal '3'.
 		val, consumed := parseOctal(s[2:], 2)
-		return string([]byte{byte(val)}), 2 + consumed
+		return string([]byte{byte(val)}), 2 + consumed, ""
 	case 'x':
 		// \xHH — hex (up to 2 digits)
 		val, consumed := parseHex(s[2:], 2)
 		if consumed == 0 {
-			return "\\x", 2
+			return "\\x", 2, ""
 		}
-		return string([]byte{byte(val)}), 2 + consumed
-	// TODO: \uHHHH (4-digit Unicode) and \UHHHHHHHH (8-digit Unicode) escapes
-	// are supported by bash but not yet implemented here. Low priority since
-	// most printf usage by AI agents doesn't need Unicode escapes.
+		return string([]byte{byte(val)}), 2 + consumed, ""
+	case 'u':
+		// \uHHHH — 4-digit Unicode code point
+		val, consumed := parseHex(s[2:], 4)
+		if consumed == 0 {
+			return "\\u", 2, "printf: missing unicode digit for \\u\n"
+		}
+		return string(rune(val)), 2 + consumed, ""
+	case 'U':
+		// \UHHHHHHHH — 8-digit Unicode code point
+		val, consumed := parseHex(s[2:], 8)
+		if consumed == 0 {
+			return "\\U", 2, "printf: missing unicode digit for \\U\n"
+		}
+		// Clamp to max valid Unicode code point.
+		if val > 0x10FFFF {
+			val = 0xFFFD // Unicode replacement character
+		}
+		return string(rune(val)), 2 + consumed, ""
 
 	default:
 		if s[1] >= '1' && s[1] <= '7' {
 			// \NNN — octal without leading 0 (1-3 digits)
 			val, consumed := parseOctal(s[1:], 3)
-			return string([]byte{byte(val)}), 1 + consumed
+			return string([]byte{byte(val)}), 1 + consumed, ""
 		}
 		// Unknown escape: output backslash and character.
-		return string([]byte{'\\', s[1]}), 2
+		return string([]byte{'\\', s[1]}), 2, ""
 	}
 }
 
@@ -441,7 +462,10 @@ func processSpecifier(callCtx *builtins.CallContext, s string, args []string, ar
 
 	case 'b':
 		arg := getStringArg(args, argIdx)
-		processed, stop := processBEscapes(arg)
+		processed, stop, warns := processBEscapes(arg)
+		if warns != "" {
+			callCtx.Errf("%s", warns)
+		}
 		// Apply width/precision formatting to the processed string.
 		goFmt.WriteByte('s')
 		callCtx.Out(fmt.Sprintf(goFmt.String(), processed))
@@ -907,9 +931,11 @@ func abs(x int) int {
 }
 
 // processBEscapes handles backslash escapes for %b (like echo -e).
-// Returns the processed string and whether \c was seen (stop all output).
-func processBEscapes(s string) (string, bool) {
+// Returns the processed string, whether \c was seen (stop all output),
+// and any warning messages to emit to stderr.
+func processBEscapes(s string) (string, bool, string) {
 	var b strings.Builder
+	var warns strings.Builder
 	b.Grow(len(s))
 	i := 0
 	for i < len(s) {
@@ -927,7 +953,7 @@ func processBEscapes(s string) (string, bool) {
 		case 'b':
 			b.WriteByte('\b')
 		case 'c':
-			return b.String(), true
+			return b.String(), true, warns.String()
 		case 'f':
 			b.WriteByte('\f')
 		case 'n':
@@ -957,6 +983,35 @@ func processBEscapes(s string) (string, bool) {
 			i += consumed
 			b.WriteByte(byte(val))
 			continue
+		case 'u':
+			// Unicode: \uHHHH (up to 4 hex digits)
+			i++
+			val, consumed := parseHex(s[i:], 4)
+			if consumed == 0 {
+				b.WriteByte('\\')
+				b.WriteByte('u')
+				warns.WriteString("printf: missing unicode digit for \\u\n")
+				continue
+			}
+			i += consumed
+			b.WriteString(string(rune(val)))
+			continue
+		case 'U':
+			// Unicode: \UHHHHHHHH (up to 8 hex digits)
+			i++
+			val, consumed := parseHex(s[i:], 8)
+			if consumed == 0 {
+				b.WriteByte('\\')
+				b.WriteByte('U')
+				warns.WriteString("printf: missing unicode digit for \\U\n")
+				continue
+			}
+			i += consumed
+			if val > 0x10FFFF {
+				val = 0xFFFD // Unicode replacement character
+			}
+			b.WriteString(string(rune(val)))
+			continue
 		default:
 			if s[i] >= '1' && s[i] <= '7' {
 				// \NNN — octal without leading 0 (1-3 digits).
@@ -972,7 +1027,7 @@ func processBEscapes(s string) (string, bool) {
 		}
 		i++
 	}
-	return b.String(), false
+	return b.String(), false, warns.String()
 }
 
 // parseOctal reads up to maxDigits octal digits from s and returns the
