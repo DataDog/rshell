@@ -1,0 +1,14 @@
+description: "sort rejects --check= (empty value) as invalid argument."
+setup:
+  files:
+    - path: data.txt
+      content: "a\n"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    sort --check= data.txt
+expect:
+  stdout: ""
+  stderr_contains: ["invalid argument"]
+  exit_code: 2
+  skip_assert_against_bash: true
