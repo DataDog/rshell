@@ -88,6 +88,26 @@ type options struct {
 	showMaxLineLen bool
 }
 
+func (o options) columnCount() int {
+	n := 0
+	if o.showLines {
+		n++
+	}
+	if o.showWords {
+		n++
+	}
+	if o.showChars {
+		n++
+	}
+	if o.showBytes {
+		n++
+	}
+	if o.showMaxLineLen {
+		n++
+	}
+	return n
+}
+
 func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 	help := fs.BoolP("help", "h", false, "print usage and exit")
 	lines := fs.BoolP("lines", "l", false, "print the newline counts")
@@ -175,7 +195,8 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 		}
 
 		width := fieldWidth(total, opts)
-		if hasStdin && width < stdinMinWidth {
+		nCols := opts.columnCount()
+		if hasStdin && nCols >= 2 && width < stdinMinWidth {
 			width = stdinMinWidth
 		}
 
