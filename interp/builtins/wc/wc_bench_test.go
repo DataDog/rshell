@@ -15,29 +15,6 @@ import (
 	"github.com/DataDog/rshell/interp/builtins/testutil"
 )
 
-// repeatReaderWc yields a repeating line pattern indefinitely.
-type repeatReaderWc struct {
-	line []byte
-	pos  int
-}
-
-func newRepeatReaderWc(line string) *repeatReaderWc {
-	return &repeatReaderWc{line: []byte(line)}
-}
-
-func (r *repeatReaderWc) Read(p []byte) (int, error) {
-	n := 0
-	for n < len(p) {
-		if r.pos >= len(r.line) {
-			r.pos = 0
-		}
-		copied := copy(p[n:], r.line[r.pos:])
-		r.pos += copied
-		n += copied
-	}
-	return n, nil
-}
-
 // createLargeFileWc writes totalBytes of repeating content to dir/filename.
 func createLargeFileWc(tb testing.TB, dir, filename, line string, totalBytes int) string {
 	tb.Helper()
@@ -47,7 +24,7 @@ func createLargeFileWc(tb testing.TB, dir, filename, line string, totalBytes int
 		tb.Fatal(err)
 	}
 	defer f.Close()
-	if _, err := io.Copy(f, io.LimitReader(newRepeatReaderWc(line), int64(totalBytes))); err != nil {
+	if _, err := io.Copy(f, io.LimitReader(testutil.NewRepeatReader(line), int64(totalBytes))); err != nil {
 		tb.Fatal(err)
 	}
 	return path

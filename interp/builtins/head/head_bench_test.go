@@ -15,29 +15,6 @@ import (
 	"github.com/DataDog/rshell/interp/builtins/testutil"
 )
 
-// repeatReader yields a repeating line pattern indefinitely.
-type repeatReader struct {
-	line []byte
-	pos  int
-}
-
-func newRepeatReader(line string) *repeatReader {
-	return &repeatReader{line: []byte(line)}
-}
-
-func (r *repeatReader) Read(p []byte) (int, error) {
-	n := 0
-	for n < len(p) {
-		if r.pos >= len(r.line) {
-			r.pos = 0
-		}
-		copied := copy(p[n:], r.line[r.pos:])
-		r.pos += copied
-		n += copied
-	}
-	return n, nil
-}
-
 // createLargeFile writes totalBytes of repeating line content to dir/filename.
 func createLargeFile(tb testing.TB, dir, filename, line string, totalBytes int) string {
 	tb.Helper()
@@ -47,7 +24,7 @@ func createLargeFile(tb testing.TB, dir, filename, line string, totalBytes int) 
 		tb.Fatal(err)
 	}
 	defer f.Close()
-	if _, err := io.Copy(f, io.LimitReader(newRepeatReader(line), int64(totalBytes))); err != nil {
+	if _, err := io.Copy(f, io.LimitReader(testutil.NewRepeatReader(line), int64(totalBytes))); err != nil {
 		tb.Fatal(err)
 	}
 	return path
@@ -82,18 +59,26 @@ func BenchmarkHeadBytes(b *testing.B) {
 	}
 }
 
-// BenchmarkHeadSingleLongLine measures head -n 1 on a 10MB file with one huge line.
-func BenchmarkHeadSingleLongLine(b *testing.B) {
+// BenchmarkHeadSingleLineNearCap measures head -n 1 on a file with one line
+// just below MaxLineBytes (1MiB). Lines exceeding MaxLineBytes trigger an
+// error path; this benchmark exercises the successful large-line path.
+func BenchmarkHeadSingleLineNearCap(b *testing.B) {
 	dir := b.TempDir()
-	// One 10MB line (no embedded newlines)
-	createLargeFile(b, dir, "input.txt", "x", 10<<20)
-	// Append a newline so it's a valid line
+	// 900KB line -- safely below MaxLineBytes (1MiB) so head succeeds.
+	createLargeFile(b, dir, "input.txt", "x", 900<<10)
+	// Append a newline to complete the line.
 	f, err := os.OpenFile(filepath.Join(dir, "input.txt"), os.O_APPEND|os.O_WRONLY, 0)
 	if err != nil {
 		b.Fatal(err)
 	}
-	_, _ = f.WriteString("\n")
-	f.Close()
+	defer func() {
+		if err := f.Close(); err != nil {
+			b.Errorf("close input.txt: %v", err)
+		}
+	}()
+	if _, err := f.WriteString("\n"); err != nil {
+		b.Fatal(err)
+	}
 	b.ResetTimer()
 	b.ReportAllocs()
 	for b.Loop() {

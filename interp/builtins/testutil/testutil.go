@@ -10,6 +10,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"io"
 	"strings"
 	"testing"
 
@@ -18,6 +19,33 @@ import (
 
 	"github.com/DataDog/rshell/interp"
 )
+
+// repeatReader is an io.Reader that repeats a fixed line pattern indefinitely.
+type repeatReader struct {
+	line []byte
+	pos  int
+}
+
+func (r *repeatReader) Read(p []byte) (int, error) {
+	n := 0
+	for n < len(p) {
+		if r.pos >= len(r.line) {
+			r.pos = 0
+		}
+		copied := copy(p[n:], r.line[r.pos:])
+		r.pos += copied
+		n += copied
+	}
+	return n, nil
+}
+
+// NewRepeatReader returns an io.Reader that yields the given line pattern
+// indefinitely. Use io.LimitReader to cap the total bytes produced.
+// It is intended for benchmark setup — generating large synthetic files
+// without keeping the full content in memory.
+func NewRepeatReader(line string) io.Reader {
+	return &repeatReader{line: []byte(line)}
+}
 
 // RunScriptCtx runs a shell script with a context and returns stdout, stderr,
 // and the exit code. It accepts testing.TB so it can be used in both tests

@@ -15,29 +15,6 @@ import (
 	"github.com/DataDog/rshell/interp/builtins/testutil"
 )
 
-// repeatReaderTail yields a repeating line pattern indefinitely.
-type repeatReaderTail struct {
-	line []byte
-	pos  int
-}
-
-func newRepeatReaderTail(line string) *repeatReaderTail {
-	return &repeatReaderTail{line: []byte(line)}
-}
-
-func (r *repeatReaderTail) Read(p []byte) (int, error) {
-	n := 0
-	for n < len(p) {
-		if r.pos >= len(r.line) {
-			r.pos = 0
-		}
-		copied := copy(p[n:], r.line[r.pos:])
-		r.pos += copied
-		n += copied
-	}
-	return n, nil
-}
-
 // createLargeFileTail writes totalBytes of repeating content to dir/filename.
 func createLargeFileTail(tb testing.TB, dir, filename, line string, totalBytes int) string {
 	tb.Helper()
@@ -47,7 +24,7 @@ func createLargeFileTail(tb testing.TB, dir, filename, line string, totalBytes i
 		tb.Fatal(err)
 	}
 	defer f.Close()
-	if _, err := io.Copy(f, io.LimitReader(newRepeatReaderTail(line), int64(totalBytes))); err != nil {
+	if _, err := io.Copy(f, io.LimitReader(testutil.NewRepeatReader(line), int64(totalBytes))); err != nil {
 		tb.Fatal(err)
 	}
 	return path
@@ -82,12 +59,23 @@ func BenchmarkTailBytes(b *testing.B) {
 }
 
 // TestTailMemoryBounded asserts that tail -n 10 allocation is bounded.
-// Note: tail reads the whole file to find the last N lines, so total
-// allocations are O(n), but live heap (the ring buffer) is O(K).
-// This test checks that the ceiling doesn't grow unboundedly.
+//
+// tail must scan the entire input to find the last N lines, so total
+// allocations are O(input size): one []byte copy per scanned line goes into
+// the ring buffer, and old entries are evicted as new ones arrive. Live heap
+// is O(K) (the ring size), but the GC has not necessarily freed evicted
+// entries by the time AllocedBytesPerOp is sampled.
+//
+// With a 1MB input of 44-byte lines (~23 300 lines) the expected total
+// allocation is roughly 1MB (one copy per line x line length). A 4MB ceiling
+// allows 4x headroom for Go runtime and test-harness overhead while still
+// catching regressions that accumulate all lines in memory.
 func TestTailMemoryBounded(t *testing.T) {
+	const line = "the quick brown fox jumps over the lazy dog\n" // 44 bytes
+	const inputSize = 1 << 20                                    // 1 MB -> ~23 300 lines
+
 	dir := t.TempDir()
-	createLargeFileTail(t, dir, "input.txt", "the quick brown fox jumps over the lazy dog\n", 10<<20)
+	createLargeFileTail(t, dir, "input.txt", line, inputSize)
 
 	result := testing.Benchmark(func(b *testing.B) {
 		b.ReportAllocs()
@@ -96,10 +84,9 @@ func TestTailMemoryBounded(t *testing.T) {
 		}
 	})
 
-	// tail reads line-by-line through a scanner; each line is allocated then
-	// discarded from the ring buffer — total allocs are O(n) but capped here.
-	const maxBytesPerOp = 32 << 20 // 32MB ceiling for a 10MB input
+	// 4MB ceiling for a 1MB input (4x multiplier for runtime/harness overhead).
+	const maxBytesPerOp = 4 << 20
 	if bpo := result.AllocedBytesPerOp(); bpo > maxBytesPerOp {
-		t.Errorf("tail -n 10 allocated %d bytes/op on 10MB input; want < %d", bpo, maxBytesPerOp)
+		t.Errorf("tail -n 10 allocated %d bytes/op on %d-byte input; want < %d", bpo, inputSize, maxBytesPerOp)
 	}
 }
