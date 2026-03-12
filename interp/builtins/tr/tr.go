@@ -164,7 +164,7 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 				callCtx.Errf("tr: when translating with string1 longer than string2,\nthe latter string must not end with a character class\n")
 				return builtins.Result{Code: 1}
 			}
-				// GNU tr rejects complemented-class translation when STRING2 doesn't
+			// GNU tr rejects complemented-class translation when STRING2 doesn't
 			// map to a single byte, or when -t is used (truncation makes the
 			// full-domain mapping impossible).
 			if *complement && set1ContainsCharClass && (*truncateSet1 || !mapsToSingleByte(set2)) {
