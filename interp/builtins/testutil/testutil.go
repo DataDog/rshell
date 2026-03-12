@@ -20,8 +20,9 @@ import (
 )
 
 // RunScriptCtx runs a shell script with a context and returns stdout, stderr,
-// and the exit code.
-func RunScriptCtx(ctx context.Context, t *testing.T, script, dir string, opts ...interp.RunnerOption) (string, string, int) {
+// and the exit code. It accepts testing.TB so it can be used in both tests
+// and benchmarks.
+func RunScriptCtx(ctx context.Context, t testing.TB, script, dir string, opts ...interp.RunnerOption) (string, string, int) {
 	t.Helper()
 	parser := syntax.NewParser()
 	prog, err := parser.Parse(strings.NewReader(script), "")
@@ -51,7 +52,8 @@ func RunScriptCtx(ctx context.Context, t *testing.T, script, dir string, opts ..
 }
 
 // RunScript runs a shell script and returns stdout, stderr, and the exit code.
-func RunScript(t *testing.T, script, dir string, opts ...interp.RunnerOption) (string, string, int) {
+// It accepts testing.TB so it can be used in both tests and benchmarks.
+func RunScript(t testing.TB, script, dir string, opts ...interp.RunnerOption) (string, string, int) {
 	t.Helper()
 	return RunScriptCtx(context.Background(), t, script, dir, opts...)
 }
