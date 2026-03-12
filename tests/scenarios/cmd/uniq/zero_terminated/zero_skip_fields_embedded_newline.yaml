@@ -1,0 +1,13 @@
+description: uniq -z -f1 treats embedded newlines as blanks for field skipping.
+setup:
+  files:
+    - path: input.txt
+      content: "1\0c\na\0"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    uniq -z -f1 input.txt
+expect:
+  stdout: "1\0c\na\0"
+  stderr: ""
+  exit_code: 0
