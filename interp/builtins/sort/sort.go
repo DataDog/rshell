@@ -171,6 +171,11 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			}
 		}
 		if *checkSilentShort {
+			// Reject conflicting -c and -C flags (GNU compat).
+			if fs.Changed("check") {
+				callCtx.Errf("sort: options '-cC' are incompatible\n")
+				return builtins.Result{Code: 2}
+			}
 			checkEnabled = true
 			checkSilent = true
 		}
@@ -198,6 +203,12 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			ignBlanks:  *ignBlanks,
 			ignCase:    *ignCase,
 			dictOrder:  *dictOrder,
+		}
+
+		// Validate incompatible global flags: -d and -n cannot coexist.
+		if globalOpts.dictOrder && globalOpts.numeric {
+			callCtx.Errf("sort: options '-dn' are incompatible\n")
+			return builtins.Result{Code: 2}
 		}
 
 		var keys []keySpec
@@ -404,6 +415,10 @@ func parseKeyDef(s string) (keySpec, error) {
 	if endPart != "" && k.endField < 1 {
 		return k, errors.New("invalid key: field number is zero")
 	}
+	// Validate incompatible per-key options: -d and -n cannot coexist.
+	if k.hasOpts && k.opts.dictOrder && k.opts.numeric {
+		return k, fmt.Errorf("options '-dn' are incompatible")
+	}
 	return k, nil
 }
 
@@ -575,7 +590,11 @@ func extractKeyFromFields(fields []string, k keySpec, joiner string) string {
 
 	ef := k.endField - 1
 	if ef >= len(fields) {
-		ef = len(fields) - 1
+		// End field is beyond available fields — treat as end-of-line.
+		if sf+1 < len(fields) {
+			return startStr + joiner + strings.Join(fields[sf+1:], joiner)
+		}
+		return startStr
 	}
 
 	// GNU sort treats end-before-start (e.g. -k 2,1) as a zero-width key,

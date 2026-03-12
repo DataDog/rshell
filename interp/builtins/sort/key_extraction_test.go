@@ -118,6 +118,21 @@ func TestExtractKeyCharOffsetIncludesBlanks(t *testing.T) {
 			// field 2 = " b", char 2 = 'b'
 			expect: "b",
 		},
+		{
+			name: "end field beyond fields: 'abc' k1.2,2.1 extracts 'bc'",
+			line: "abc",
+			key:  keySpec{startField: 1, startChar: 2, endField: 2, endChar: 1},
+			// Only 1 field; end field 2 is out of range → treat as end-of-line
+			expect: "bc",
+		},
+		{
+			name: "end field beyond fields multi-field: 'a b' k1.1,3.1 extracts 'a b'",
+			line: "a b",
+			key:  keySpec{startField: 1, startChar: 1, endField: 3, endChar: 1},
+			// 2 blank-split fields: ["a", " b"]; end field 3 out of range → end-of-line
+			// rejoined with " " joiner: "a" + " " + " b" = "a  b"
+			expect: "a  b",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
