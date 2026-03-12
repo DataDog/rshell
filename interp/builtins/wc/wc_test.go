@@ -329,8 +329,8 @@ func TestWcDirectory(t *testing.T) {
 	stdout, stderr, code := cmdRun(t, "wc .", dir)
 	assert.Equal(t, 1, code)
 	assert.Contains(t, stderr, "wc:")
-	// GNU wc prints a zero count line alongside the error
-	assert.Equal(t, "0 0 0 .\n", stdout)
+	// GNU wc prints a zero count line with width-7 padding (non-regular file)
+	assert.Equal(t, "      0       0       0 .\n", stdout)
 }
 
 // --- Hardening ---

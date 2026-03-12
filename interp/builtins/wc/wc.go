@@ -70,8 +70,8 @@ import (
 // Cmd is the wc builtin command descriptor.
 var Cmd = builtins.Command{Name: "wc", MakeFlags: registerFlags}
 
-const chunkSize = 32 * 1024 // 32 KiB read buffer
-const stdinMinWidth = 7     // GNU wc minimum column width for stdin
+const chunkSize = 32 * 1024  // 32 KiB read buffer
+const nonRegularMinWidth = 7 // GNU wc minimum column width for non-regular files
 
 type counts struct {
 	lines      int64
@@ -148,6 +148,7 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			c    counts
 		}
 		results := make([]fileResult, 0, len(files))
+		hasNonRegular := hasStdin // stdin (pipe) is non-regular
 
 		for _, file := range files {
 			if ctx.Err() != nil {
@@ -170,6 +171,7 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 				if !isErrIsDir(err) {
 					continue
 				}
+				hasNonRegular = true
 			}
 			results = append(results, fileResult{name: file, c: c})
 			total.lines += c.lines
@@ -182,13 +184,14 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 		}
 
 		width := fieldWidth(total, opts)
-		// GNU wc uses a minimum column width of 7 for stdin, but only
-		// in default mode (all three columns: lines, words, bytes).
-		// When explicit flags are given (e.g. wc -l), the width is
-		// determined solely by the count values.
+		// GNU wc uses a minimum column width of 7 for non-regular files
+		// (stdin pipes, directories, devices, etc.), but only in default
+		// mode (all three columns: lines, words, bytes). When explicit
+		// flags are given (e.g. wc -l), the width is determined solely
+		// by the count values.
 		defaultMode := !*lines && !*words && !*bytesFlag && !*chars && !*maxLineLen
-		if hasStdin && defaultMode && width < stdinMinWidth {
-			width = stdinMinWidth
+		if hasNonRegular && defaultMode && width < nonRegularMinWidth {
+			width = nonRegularMinWidth
 		}
 
 		for _, fr := range results {

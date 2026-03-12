@@ -208,6 +208,54 @@ func TestGNUCompatMaxLineLenFFAsymmetric(t *testing.T) {
 	assert.Equal(t, "6 file.txt\n", stdout)
 }
 
+// TestGNUCompatDirectoryDefaultWidth — directory gets width-7 padding in default mode.
+//
+// GNU command: mkdir /tmp/d && wc /tmp/d
+// Expected: "      0       0       0 .\n" (width 7, non-regular file)
+func TestGNUCompatDirectoryDefaultWidth(t *testing.T) {
+	dir := t.TempDir()
+	stdout, stderr, code := cmdRun(t, "wc .", dir)
+	assert.Equal(t, 1, code)
+	assert.Contains(t, stderr, "wc:")
+	assert.Equal(t, "      0       0       0 .\n", stdout)
+}
+
+// TestGNUCompatDirectoryExplicitFlag — directory with explicit flag uses width 1.
+//
+// GNU command: mkdir /tmp/d && wc -l /tmp/d
+// Expected: "0 .\n" (width 1, explicit flag)
+func TestGNUCompatDirectoryExplicitFlag(t *testing.T) {
+	dir := t.TempDir()
+	stdout, stderr, code := cmdRun(t, "wc -l .", dir)
+	assert.Equal(t, 1, code)
+	assert.Contains(t, stderr, "wc:")
+	assert.Equal(t, "0 .\n", stdout)
+}
+
+// TestGNUCompatVerticalTabWordsBreak — \v breaks words for wc -w.
+//
+// GNU command: printf 'a\vb\n' | wc -w
+// Expected: "2\n" — \v is a word delimiter.
+func TestGNUCompatVerticalTabWordsBreak(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "file.txt", "a\vb\n")
+	stdout, _, code := cmdRun(t, "wc -w file.txt", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "2 file.txt\n", stdout)
+}
+
+// TestGNUCompatVerticalTabThreeWords — \v separates three words.
+//
+// GNU command: printf 'a\vb\vc\n' | wc -w
+// Expected: "3\n"
+func TestGNUCompatVerticalTabThreeWords(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "file.txt", "a\vb\vc\n")
+	stdout, _, code := cmdRun(t, "wc -w file.txt", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "3 file.txt\n", stdout)
+}
+
 // TestGNUCompatRejectedFlag — unknown flag exits 1.
 //
 // GNU command: gwc --follow
