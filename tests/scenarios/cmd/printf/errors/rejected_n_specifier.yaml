@@ -1,0 +1,9 @@
+description: Printf rejects the %n specifier for safety.
+input:
+  script: |+
+    printf "%n" foo
+expect:
+  stdout: ""
+  stderr: "printf: %n: not supported (security risk)\n"
+  exit_code: 1
+skip_assert_against_bash: true

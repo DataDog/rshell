@@ -159,7 +159,7 @@ func processEscapes(s string) (string, bool) {
 			i++
 			val, consumed := parseOctal(s[i:], 3)
 			i += consumed
-			b.WriteByte(byte(val))
+			b.WriteByte(byte(val)) // Intentional: wraps values > 255 (matches bash)
 			continue
 		case 'x':
 			// Hex: \xHH (up to 2 hex digits)
@@ -184,7 +184,7 @@ func processEscapes(s string) (string, bool) {
 				continue
 			}
 			i += consumed
-			writeUnicodeCodepoint(&b, val)
+			writeUnicodeCodepoint(&b, int64(val))
 			continue
 		case 'U':
 			// Unicode: \UHHHHHHHH (up to 8 hex digits)
@@ -208,15 +208,17 @@ func processEscapes(s string) (string, bool) {
 	return b.String(), false
 }
 
-// writeUnicodeCodepoint writes a Unicode codepoint to the builder, matching
-// bash behavior: values beyond U+10FFFF are silently dropped. Surrogates
-// (U+D800-U+DFFF) are intentionally replaced with U+FFFD rather than emitting
-// invalid UTF-8 bytes as bash does — this is a security-motivated divergence.
-func writeUnicodeCodepoint(b *strings.Builder, val int) {
+// writeUnicodeCodepoint writes a Unicode codepoint to the builder.
+// Bash emits raw bytes for surrogates (U+D800-U+DFFF), producing invalid UTF-8,
+// and drops values above a certain threshold. We replace surrogates with U+FFFD
+// and drop anything beyond U+10FFFF to avoid emitting invalid UTF-8.
+func writeUnicodeCodepoint(b *strings.Builder, val int64) {
 	if val > 0x10FFFF {
-		// Bash silently drops codepoints beyond the Unicode maximum.
+		// Intentional divergence: bash emits raw bytes for values up to 0x7FFFFFFF,
+		// but we drop them to avoid producing invalid UTF-8.
 		return
 	}
+	// Go's WriteRune replaces surrogates (U+D800-U+DFFF) with U+FFFD automatically.
 	b.WriteRune(rune(val))
 }
 
@@ -234,18 +236,20 @@ func parseOctal(s string, maxDigits int) (int, int) {
 
 // parseHex reads up to maxDigits hexadecimal digits from s and returns
 // the accumulated value and the number of bytes consumed.
-func parseHex(s string, maxDigits int) (int, int) {
-	val := 0
+// Returns int64 to avoid overflow on 32-bit architectures when parsing
+// up to 8 hex digits for \U escape sequences.
+func parseHex(s string, maxDigits int) (int64, int) {
+	var val int64
 	n := 0
 	for n < maxDigits && n < len(s) {
 		ch := s[n]
 		switch {
 		case ch >= '0' && ch <= '9':
-			val = val*16 + int(ch-'0')
+			val = val*16 + int64(ch-'0')
 		case ch >= 'a' && ch <= 'f':
-			val = val*16 + int(ch-'a') + 10
+			val = val*16 + int64(ch-'a') + 10
 		case ch >= 'A' && ch <= 'F':
-			val = val*16 + int(ch-'A') + 10
+			val = val*16 + int64(ch-'A') + 10
 		default:
 			return val, n
 		}

@@ -1,0 +1,11 @@
+# Derived from GNU coreutils tr.pl test 1 and uutils test_to_upper
+description: tr translates lowercase to uppercase using ranges.
+input:
+  script: |+
+    cat <<'EOF' | tr a-z A-Z
+    !abcd!
+    EOF
+expect:
+  stdout: "!ABCD!\n"
+  stderr: ""
+  exit_code: 0

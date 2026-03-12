@@ -1,4 +1,3 @@
-skip_assert_against_bash: true
 description: Backslash escape sequences in double-quoted echo are passed literally.
 input:
   script: |+

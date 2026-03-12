@@ -120,15 +120,15 @@ type countMode struct {
 // returns a bound handler whose flag variables are captured by closure. The
 // framework calls Parse and passes positional arguments to the handler.
 func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
-	help           := fs.BoolP("help", "h", false, "print usage and exit")
+	help := fs.BoolP("help", "h", false, "print usage and exit")
 	zeroTerminated := fs.BoolP("zero-terminated", "z", false, "use NUL as line delimiter")
 
 	// quietFlag, silentFlag, and verboseFlag share a sequence counter so that
 	// after parsing we can tell which appeared last on the command line and
 	// apply last-flag-wins semantics (e.g. "-q -v" should show headers).
 	var headerSeq int
-	quietFlag   := newHeaderFlag(&headerSeq)
-	silentFlag  := newHeaderFlag(&headerSeq)
+	quietFlag := newHeaderFlag(&headerSeq)
+	silentFlag := newHeaderFlag(&headerSeq)
 	verboseFlag := newHeaderFlag(&headerSeq)
 	fs.VarP(quietFlag, "quiet", "q", "never print file name headers")
 	fs.Var(silentFlag, "silent", "alias for --quiet")
@@ -162,10 +162,10 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 		// Bytes mode wins if -c/--bytes was parsed after -n/--lines.
 		useBytesMode := bytesFlag.pos > linesFlag.pos
 
-		countStr  := linesFlag.val
+		countStr := linesFlag.val
 		modeLabel := "lines"
 		if useBytesMode {
-			countStr  = bytesFlag.val
+			countStr = bytesFlag.val
 			modeLabel = "bytes"
 		}
 
