@@ -1,4 +1,3 @@
-skip_assert_against_bash: true
 description: Echo outputs special characters verbatim without interpreting escape sequences.
 input:
   script: |+
