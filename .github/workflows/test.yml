@@ -25,7 +25,7 @@ jobs:
       - name: Run tests with race detector
         run: go test -race -v ./...
       - name: Run fuzz seed corpus (regression test)
-        run: go test -run '^Fuzz' -fuzztime=0s ./interp/builtins/... -timeout 120s
+        run: go test -run '^Fuzz' ./interp/builtins/... -timeout 120s
 
   test-against-bash:
     name: Test against Bash (Docker)
