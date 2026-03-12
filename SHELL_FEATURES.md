@@ -9,7 +9,7 @@ Blocked features are rejected before execution with exit code 2.
 - ✅ `cat [-n] [FILE]...` — concatenate files to stdout; `-n` numbers output lines
 - ✅ `continue` — skip to the next iteration of the innermost `for` loop
 - ✅ `cut [-b LIST|-c LIST|-f LIST] [-d DELIM] [-s] [-n] [--complement] [--output-delimiter=STRING] [FILE]...` — remove sections from each line of files
-- ✅ `echo [-n] [-e] [ARG]...` — write arguments to stdout
+- ✅ `echo [-neE] [ARG]...` — write arguments to stdout; `-n` suppresses trailing newline, `-e` enables backslash escapes, `-E` disables them (default)
 - ✅ `exit [N]` — exit the shell with status N (default 0)
 - ✅ `false` — return exit code 1
 - ✅ `grep [-EFGivclLnHhoqsxw] [-e PATTERN] [-m NUM] [-A NUM] [-B NUM] [-C NUM] PATTERN [FILE]...` — print lines that match patterns; uses RE2 regex engine (linear-time, no backtracking)
