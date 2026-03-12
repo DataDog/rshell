@@ -1,0 +1,14 @@
+description: grep on a file containing NUL bytes matches lines that contain the pattern and skips lines that do not.
+setup:
+  files:
+    - path: file.txt
+      content: "found\x00here\nskipline\n"
+      chmod: 0644
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    grep found file.txt
+expect:
+  stdout: "found\x00here\n"
+  stderr: ""
+  exit_code: 0
