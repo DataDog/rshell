@@ -44,6 +44,17 @@ func FuzzCat(f *testing.F) {
 	f.Add([]byte{0x01, 0x1f, 0x7f, '\n'})
 	// Mixed binary and text
 	f.Add([]byte("text\x00\x01\x02more text\n"))
+	// ANSI/terminal escape sequences (terminal injection class — cat passes through unchanged)
+	f.Add([]byte("\x1b[31mRED\x1b[0m\n"))         // ANSI color codes
+	f.Add([]byte("\x1b]2;malicious title\x07\n")) // OSC 2: terminal title injection
+	f.Add([]byte("\x1b[2J\n"))                    // clear screen
+	f.Add([]byte("\x1b[9D\n"))                    // cursor back 9 columns
+	f.Add([]byte("\x1bP...string...\x1b\\\n"))    // DCS device control sequence
+	f.Add([]byte("\x1b]50;fontname\x07\n"))       // OSC 50 font query (xterm CVE class)
+	// Bare CR (old Mac line endings)
+	f.Add([]byte("a\rb\rc\r"))
+	// ELF magic bytes (binary format detection)
+	f.Add([]byte{0x7f, 'E', 'L', 'F', 0x02, 0x01, 0x01, 0x00})
 
 	f.Fuzz(func(t *testing.T, input []byte) {
 		if len(input) > 1<<20 {

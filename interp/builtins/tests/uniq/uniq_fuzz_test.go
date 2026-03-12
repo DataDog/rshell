@@ -50,6 +50,13 @@ func FuzzUniq(f *testing.F) {
 	f.Add([]byte{0xfc, 0x80, 0x80, '\n', 0xfc, 0x80, 0x80, '\n'})
 	// countFieldWidth=7: count > 9999999 would overflow field
 	f.Add(bytes.Repeat([]byte("x\n"), 10000000/2))
+	// CVE-2013-0222 pattern: long line with embedded null bytes followed by CRLF.
+	// The SUSE i18n patch used alloca() sized by line length → stack overflow at 50MB.
+	// Our implementation uses fixed buffers; test at our MaxLineBytes (1 MiB) boundary.
+	f.Add(append(append([]byte("1"), bytes.Repeat([]byte{0x00}, 1<<19)...), '\n'))
+	// CRLF duplicate detection: lines identical except for trailing \r
+	f.Add([]byte("a\r\na\r\n"))
+	f.Add([]byte("a\r\na\n")) // CRLF vs LF — how are these compared?
 
 	f.Fuzz(func(t *testing.T, input []byte) {
 		if len(input) > 1<<20 {

@@ -185,6 +185,65 @@ func FuzzGrepStdin(f *testing.F) {
 	})
 }
 
+// FuzzGrepFixedStrings fuzzes grep -F (fixed string mode) with arbitrary content and patterns.
+// CVE-2015-1345 affected bmexec_trans in kwset.c when using -F; out-of-bounds heap read
+// triggered by crafted input+pattern combinations in Boyer-Moore-Horspool matching.
+// CVE-2012-5667 was an integer overflow triggered by lines >= 2^31 bytes (we cap at 1 MiB).
+func FuzzGrepFixedStrings(f *testing.F) {
+	f.Add([]byte("hello world\nfoo bar\n"), "hello")
+	f.Add([]byte{}, "pattern")
+	f.Add([]byte("no newline"), "no")
+	f.Add([]byte("a\x00b\nc\n"), "a")
+	// Patterns that look like regex metacharacters (treated as literals with -F)
+	f.Add([]byte("(parens)\n[bracket]\na.b\na*b\n"), "(parens)")
+	f.Add([]byte("(parens)\n[bracket]\na.b\na*b\n"), "[bracket]")
+	f.Add([]byte("a.b\naab\n"), "a.b")  // dot is literal, not wildcard
+	f.Add([]byte("a*b\nab\n"), "a*b")   // star is literal, not quantifier
+	f.Add([]byte("a+b\nab\n"), "a+b")   // plus is literal
+	f.Add([]byte("a?b\nab\n"), "a?b")   // question mark is literal
+	f.Add([]byte("^start\n"), "^start") // caret is literal
+	f.Add([]byte("end$\n"), "end$")     // dollar is literal
+	// Backslash in pattern (treated as literal with -F)
+	f.Add([]byte("a\\b\nab\n"), "a\\b")
+	// Empty pattern match
+	f.Add([]byte("hello\nworld\n"), "")
+	// Binary content with printable pattern
+	f.Add([]byte{0xff, 0xfe, 'h', 'i', '\n'}, "hi")
+	// CRLF
+	f.Add([]byte("hello\r\nworld\r\n"), "hello")
+	// Invalid UTF-8
+	f.Add([]byte{0xfc, 0x80, 0x80, 'h', 'i', '\n'}, "hi")
+	// Near 1 MiB line cap (CVE-2012-5667 was 2^31; we test our 1 MiB boundary)
+	f.Add(append(bytes.Repeat([]byte("a"), 1<<20-1), '\n'), "a")
+
+	f.Fuzz(func(t *testing.T, input []byte, pattern string) {
+		if len(input) > 1<<20 {
+			return
+		}
+		if len(pattern) > 100 {
+			return
+		}
+		for _, c := range pattern {
+			if c == '\'' || c == '\x00' || c == '\n' {
+				return
+			}
+		}
+
+		dir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(dir, "input.txt"), input, 0644); err != nil {
+			t.Fatal(err)
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		_, _, code := cmdRunCtx(ctx, t, "grep -F '"+pattern+"' input.txt", dir)
+		if code != 0 && code != 1 && code != 2 {
+			t.Errorf("grep -F unexpected exit code %d", code)
+		}
+	})
+}
+
 // FuzzGrepFlags fuzzes grep with various flag combinations and arbitrary file content.
 // Edge cases: context line clamping (MaxContextLines=1000), -q early exit, -o empty match.
 func FuzzGrepFlags(f *testing.F) {

@@ -65,6 +65,16 @@ func FuzzStrings(f *testing.F) {
 	f.Add([]byte{0x00, 'h', 'e', 'l', 'l', 'o', 0x00})
 	// Mixed printable sequences of various lengths
 	f.Add([]byte("ab\x00abc\x00abcd\x00abcde\x00"))
+	// ELF magic bytes (CVE-2014-8485: crafted ELF triggers libbfd on old binutils;
+	// our implementation scans raw bytes without libbfd, so no CVE exposure,
+	// but good to confirm graceful handling of binary format magic numbers)
+	f.Add([]byte{0x7f, 'E', 'L', 'F', 0x02, 0x01, 0x01, 0x00, 0x00, 0x00})
+	// PE/COFF magic (Windows executables)
+	f.Add([]byte{'M', 'Z', 0x90, 0x00, 0x03, 0x00, 0x00, 0x00})
+	// ZIP magic
+	f.Add([]byte{'P', 'K', 0x03, 0x04})
+	// PDF magic with printable sequences inside
+	f.Add([]byte("%PDF-1.4\x00\x00\x00binary\x00more text here\x00"))
 
 	f.Fuzz(func(t *testing.T, input []byte) {
 		if len(input) > 1<<20 {

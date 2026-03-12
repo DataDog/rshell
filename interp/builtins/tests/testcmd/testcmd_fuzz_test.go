@@ -102,9 +102,11 @@ func FuzzTestIntegerOps(f *testing.F) {
 	// int32 boundaries
 	f.Add(int64(1<<31-1), int64(1<<31-1), "-eq")
 	f.Add(int64(-(1 << 31)), int64(-(1 << 31)), "-eq")
-	// Values near int64 max
+	// Values near int64 max/min
 	f.Add(int64(1<<31), int64(1<<31), "-eq")
 	f.Add(int64(-(1<<31 + 1)), int64(0), "-lt")
+	// int64 max (clamped on overflow per GNU test behavior)
+	f.Add(int64(1<<31-1), int64(1<<31-1), "-ge")
 
 	f.Fuzz(func(t *testing.T, left, right int64, op string) {
 		switch op {
