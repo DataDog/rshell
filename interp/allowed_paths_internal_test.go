@@ -96,12 +96,35 @@ func TestAllowedPathsExecNonexistent(t *testing.T) {
 
 func TestAllowedPathsExecViaPathLookup(t *testing.T) {
 	dir := t.TempDir()
-	// "sed" is resolved via PATH (not absolute), but /bin and /usr are not allowed
-	_, stderr, exitCode := runScriptInternal(t, `sed`, dir,
+	// "sed" exists on PATH but /bin and /usr are not in AllowedPaths.
+	// The default noExecHandler (installed by AllowedPaths) must reject it.
+	// We intentionally avoid runScriptInternal here because its overridden
+	// execHandler would bypass the sandbox and actually execute sed.
+	parser := syntax.NewParser()
+	prog, err := parser.Parse(strings.NewReader("sed"), "")
+	require.NoError(t, err)
+
+	var outBuf, errBuf bytes.Buffer
+	runner, err := New(
+		StdIO(nil, &outBuf, &errBuf),
 		AllowedPaths([]string{dir}),
 	)
+	require.NoError(t, err)
+	defer runner.Close()
+	runner.Dir = dir
+
+	err = runner.Run(context.Background(), prog)
+	exitCode := 0
+	if err != nil {
+		var es ExitStatus
+		if errors.As(err, &es) {
+			exitCode = int(es)
+		} else {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	}
 	assert.Equal(t, 127, exitCode)
-	assert.Contains(t, stderr, "command not found")
+	assert.Contains(t, errBuf.String(), "command not found")
 }
 
 func TestAllowedPathsExecSymlinkEscape(t *testing.T) {
