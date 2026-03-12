@@ -342,7 +342,7 @@ func TestPrintfFlagHashOctal(t *testing.T) {
 // --- Numeric argument formats ---
 
 func TestPrintfNumericNegative(t *testing.T) {
-	stdout, _, code := cmdRun(t, `printf "%d\n" -- -42`)
+	stdout, _, code := cmdRun(t, `printf "%d\n" -42`)
 	assert.Equal(t, 0, code)
 	assert.Equal(t, "-42\n", stdout)
 }
@@ -395,15 +395,16 @@ func TestPrintfRejectedVFlag(t *testing.T) {
 // --- Help ---
 
 func TestPrintfHelp(t *testing.T) {
-	stdout, _, code := cmdRun(t, `printf --help`)
-	assert.Equal(t, 0, code)
-	assert.Contains(t, stdout, "Usage:")
+	_, stderr, code := cmdRun(t, `printf --help`)
+	assert.Equal(t, 2, code)
+	assert.Contains(t, stderr, "printf: usage:")
 }
 
 func TestPrintfHelpShort(t *testing.T) {
+	// -h is not a valid flag in bash; it's treated as a format string
 	stdout, _, code := cmdRun(t, `printf -h`)
 	assert.Equal(t, 0, code)
-	assert.Contains(t, stdout, "Usage:")
+	assert.Equal(t, "-h", stdout)
 }
 
 // --- Format reuse edge cases ---

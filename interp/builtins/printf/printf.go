@@ -22,8 +22,8 @@
 //
 // Accepted flags:
 //
-//	-h, --help
-//	    Print this usage message to stdout and exit 0.
+//	--help
+//	    Print a usage message to stderr and exit 2.
 //
 // Rejected flags:
 //
@@ -130,10 +130,9 @@ func run(ctx context.Context, callCtx *builtins.CallContext, args []string) buil
 	// -- terminates options (allows format strings starting with -).
 	if len(args) > 0 {
 		switch args[0] {
-		case "--help", "-h":
-			callCtx.Out("Usage: printf FORMAT [ARGUMENT]...\n")
-			callCtx.Out("Write formatted output to standard output.\n")
-			return builtins.Result{}
+		case "--help":
+			callCtx.Errf("printf: usage: printf [-v var] format [arguments]\n")
+			return builtins.Result{Code: 2}
 		case "-v":
 			callCtx.Errf("printf: -v: not supported in restricted shell\n")
 			return builtins.Result{Code: 1}
@@ -149,12 +148,6 @@ func run(ctx context.Context, callCtx *builtins.CallContext, args []string) buil
 
 	format := args[0]
 	fmtArgs := args[1:]
-
-	// Strip a leading "--" from format arguments (allows negative numbers
-	// after the format string: printf "%d" -- -42).
-	if len(fmtArgs) > 0 && fmtArgs[0] == "--" {
-		fmtArgs = fmtArgs[1:]
-	}
 
 	argIdx := 0
 	hadError := false
@@ -407,7 +400,7 @@ func processSpecifier(callCtx *builtins.CallContext, s string, args []string, ar
 		arg := getStringArg(args, argIdx)
 		val, err := parseIntArg(arg)
 		if err != nil && arg != "" {
-			callCtx.Errf("printf: %s: invalid number\n", arg)
+			callCtx.Errf("printf: '%s': invalid number\n", arg)
 			// Bash continues with value 0 and sets exit code.
 			val = 0
 			goFmt.WriteByte('d')
@@ -421,7 +414,7 @@ func processSpecifier(callCtx *builtins.CallContext, s string, args []string, ar
 		arg := getStringArg(args, argIdx)
 		val, err := parseUintArg(arg)
 		if err != nil && arg != "" {
-			callCtx.Errf("printf: %s: invalid number\n", arg)
+			callCtx.Errf("printf: '%s': invalid number\n", arg)
 			val = 0
 			goFmt.WriteByte('o')
 			callCtx.Out(fmt.Sprintf(goFmt.String(), val))
@@ -434,7 +427,7 @@ func processSpecifier(callCtx *builtins.CallContext, s string, args []string, ar
 		arg := getStringArg(args, argIdx)
 		val, err := parseUintArg(arg)
 		if err != nil && arg != "" {
-			callCtx.Errf("printf: %s: invalid number\n", arg)
+			callCtx.Errf("printf: '%s': invalid number\n", arg)
 			val = 0
 			goFmt.WriteByte('d')
 			callCtx.Out(fmt.Sprintf(goFmt.String(), val))
@@ -447,7 +440,7 @@ func processSpecifier(callCtx *builtins.CallContext, s string, args []string, ar
 		arg := getStringArg(args, argIdx)
 		val, err := parseUintArg(arg)
 		if err != nil && arg != "" {
-			callCtx.Errf("printf: %s: invalid number\n", arg)
+			callCtx.Errf("printf: '%s': invalid number\n", arg)
 			val = 0
 			goFmt.WriteByte('x')
 			callCtx.Out(fmt.Sprintf(goFmt.String(), val))
@@ -460,7 +453,7 @@ func processSpecifier(callCtx *builtins.CallContext, s string, args []string, ar
 		arg := getStringArg(args, argIdx)
 		val, err := parseUintArg(arg)
 		if err != nil && arg != "" {
-			callCtx.Errf("printf: %s: invalid number\n", arg)
+			callCtx.Errf("printf: '%s': invalid number\n", arg)
 			val = 0
 			goFmt.WriteByte('X')
 			callCtx.Out(fmt.Sprintf(goFmt.String(), val))
@@ -473,7 +466,7 @@ func processSpecifier(callCtx *builtins.CallContext, s string, args []string, ar
 		arg := getStringArg(args, argIdx)
 		val, err := parseFloatArg(arg)
 		if err != nil && arg != "" {
-			callCtx.Errf("printf: %s: invalid number\n", arg)
+			callCtx.Errf("printf: '%s': invalid number\n", arg)
 			val = 0
 			goFmt.WriteByte('e')
 			callCtx.Out(bashFloat(fmt.Sprintf(goFmt.String(), val)))
@@ -486,7 +479,7 @@ func processSpecifier(callCtx *builtins.CallContext, s string, args []string, ar
 		arg := getStringArg(args, argIdx)
 		val, err := parseFloatArg(arg)
 		if err != nil && arg != "" {
-			callCtx.Errf("printf: %s: invalid number\n", arg)
+			callCtx.Errf("printf: '%s': invalid number\n", arg)
 			val = 0
 			goFmt.WriteByte('E')
 			callCtx.Out(fmt.Sprintf(goFmt.String(), val))
@@ -499,7 +492,7 @@ func processSpecifier(callCtx *builtins.CallContext, s string, args []string, ar
 		arg := getStringArg(args, argIdx)
 		val, err := parseFloatArg(arg)
 		if err != nil && arg != "" {
-			callCtx.Errf("printf: %s: invalid number\n", arg)
+			callCtx.Errf("printf: '%s': invalid number\n", arg)
 			val = 0
 			goFmt.WriteByte('f')
 			callCtx.Out(bashFloat(fmt.Sprintf(goFmt.String(), val)))
@@ -512,7 +505,7 @@ func processSpecifier(callCtx *builtins.CallContext, s string, args []string, ar
 		arg := getStringArg(args, argIdx)
 		val, err := parseFloatArg(arg)
 		if err != nil && arg != "" {
-			callCtx.Errf("printf: %s: invalid number\n", arg)
+			callCtx.Errf("printf: '%s': invalid number\n", arg)
 			val = 0
 		}
 		// Go doesn't have %F; use %f and uppercase manually.
@@ -528,7 +521,7 @@ func processSpecifier(callCtx *builtins.CallContext, s string, args []string, ar
 		arg := getStringArg(args, argIdx)
 		val, err := parseFloatArg(arg)
 		if err != nil && arg != "" {
-			callCtx.Errf("printf: %s: invalid number\n", arg)
+			callCtx.Errf("printf: '%s': invalid number\n", arg)
 			val = 0
 			goFmt.WriteByte('g')
 			callCtx.Out(bashFloat(fmt.Sprintf(goFmt.String(), val)))
@@ -541,7 +534,7 @@ func processSpecifier(callCtx *builtins.CallContext, s string, args []string, ar
 		arg := getStringArg(args, argIdx)
 		val, err := parseFloatArg(arg)
 		if err != nil && arg != "" {
-			callCtx.Errf("printf: %s: invalid number\n", arg)
+			callCtx.Errf("printf: '%s': invalid number\n", arg)
 			val = 0
 			goFmt.WriteByte('G')
 			callCtx.Out(fmt.Sprintf(goFmt.String(), val))
@@ -593,7 +586,7 @@ func getIntArg(args []string, idx *int, callCtx *builtins.CallContext) (int, boo
 	}
 	v, err := strconv.Atoi(s)
 	if err != nil {
-		callCtx.Errf("printf: %s: invalid number\n", s)
+		callCtx.Errf("printf: '%s': invalid number\n", s)
 		return 0, true
 	}
 	return v, false

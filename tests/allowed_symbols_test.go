@@ -94,6 +94,8 @@ var builtinAllowedSymbols = []string{
 	"strings.Builder",
 	// strings.Join — concatenates a slice of strings with a separator; pure function, no I/O.
 	"strings.Join",
+	// strings.ReplaceAll — replaces all occurrences of a substring; pure function, no I/O.
+	"strings.ReplaceAll",
 	// strings.ToLower — converts string to lowercase; pure function, no I/O.
 	"strings.ToLower",
 	// strings.ToUpper — converts string to uppercase; pure function, no I/O.
