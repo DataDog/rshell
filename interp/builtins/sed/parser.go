@@ -515,9 +515,16 @@ func (p *parser) parseSubstitute(cmd *sedCmd) (*sedCmd, error) {
 				cmd.subNth = n
 				continue
 			}
-			// Whitespace, semicolons, newlines, and closing braces end the flag list
-			// (they are command separators). Any other character is an invalid flag.
+			// Whitespace, semicolons, newlines, closing braces, and '#' end the flag list
+			// (they are command separators). '#' begins a comment that runs to end of line.
 			if ch == ';' || ch == '\n' || ch == '}' || ch == ' ' || ch == '\t' || ch == '\r' {
+				goto flagsDone
+			}
+			if ch == '#' {
+				// '#' starts a comment — skip to end of line.
+				for p.pos < len(p.input) && p.input[p.pos] != '\n' {
+					p.pos++
+				}
 				goto flagsDone
 			}
 			return nil, errors.New("unknown option to 's' command")
