@@ -1,0 +1,8 @@
+description: "test reports error for unconsumed extra arguments"
+skip_assert_against_bash: true  # bash error message format differs (includes scriptname:line prefix)
+input:
+  script: |+
+    test "a" "b" "c" "d" "e"
+expect:
+  stderr_contains: ["extra argument"]
+  exit_code: 2

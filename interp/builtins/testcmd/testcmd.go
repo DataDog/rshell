@@ -466,6 +466,9 @@ func evalFileInfo(op string, info fs.FileInfo) bool {
 	case "-s":
 		return info.Size() > 0
 	case "-r":
+		// NOTE: This fallback checks any permission bit (user/group/other) and does not
+		// account for file ownership. In production AccessFile is always set and this path
+		// is not reached; actual file access still goes through the sandbox.
 		return info.Mode().Perm()&0444 != 0
 	case "-w":
 		return info.Mode().Perm()&0222 != 0
