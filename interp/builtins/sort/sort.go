@@ -234,11 +234,11 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 
 		// Parse key definitions.
 		globalOpts := keyOpts{
-			numeric:    *numeric,
-			reverse:    *reverse,
-			ignBlanks:  *ignBlanks,
-			ignCase:    *ignCase,
-			dictOrder:  *dictOrder,
+			numeric:   *numeric,
+			reverse:   *reverse,
+			ignBlanks: *ignBlanks,
+			ignCase:   *ignCase,
+			dictOrder: *dictOrder,
 		}
 
 		var keys []keySpec
