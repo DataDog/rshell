@@ -328,7 +328,7 @@ func walkPath(
 		if entry.depth >= minDepth {
 			result := evaluate(ec, expression)
 			prune = result.prune
-			if len(newerErrors) > 0 {
+			if len(newerErrors) > 0 || ec.failed {
 				failed = true
 			}
 

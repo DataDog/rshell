@@ -8,32 +8,28 @@ package interp
 import (
 	"errors"
 	"io/fs"
+	"os"
 	"syscall"
 
 	"github.com/DataDog/rshell/interp/builtins"
 )
 
-func fileIdentity(path string, _ fs.FileInfo) (builtins.FileID, bool) {
-	pathp, err := syscall.UTF16PtrFromString(path)
+func fileIdentity(absPath string, _ fs.FileInfo, sandbox *pathSandbox) (builtins.FileID, bool) {
+	// Open through the sandbox to enforce the allowlist. The sandbox's
+	// resolve validates the absolute path against the allowed roots and
+	// returns an os.Root + relative path. os.Root.OpenFile on Windows
+	// already uses FILE_FLAG_BACKUP_SEMANTICS for directories.
+	root, relPath, ok := sandbox.resolve(absPath)
+	if !ok {
+		return builtins.FileID{}, false
+	}
+	f, err := root.OpenFile(relPath, os.O_RDONLY, 0)
 	if err != nil {
 		return builtins.FileID{}, false
 	}
-	// FILE_FLAG_BACKUP_SEMANTICS is required to open directory handles.
-	// dwDesiredAccess=0 queries metadata only, minimising permission requirements.
-	h, err := syscall.CreateFile(
-		pathp,
-		0,
-		syscall.FILE_SHARE_READ|syscall.FILE_SHARE_WRITE|syscall.FILE_SHARE_DELETE,
-		nil,
-		syscall.OPEN_EXISTING,
-		syscall.FILE_FLAG_BACKUP_SEMANTICS,
-		0,
-	)
-	if err != nil {
-		return builtins.FileID{}, false
-	}
-	defer syscall.CloseHandle(h)
+	defer f.Close()
 
+	h := syscall.Handle(f.Fd())
 	var d syscall.ByHandleFileInformation
 	if err := syscall.GetFileInformationByHandle(h, &d); err != nil {
 		return builtins.FileID{}, false

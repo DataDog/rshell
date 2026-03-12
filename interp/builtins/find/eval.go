@@ -32,6 +32,7 @@ type evalContext struct {
 	newerCache  map[string]time.Time // cached -newer reference file modtimes
 	newerErrors map[string]bool      // tracks which -newer reference files failed to stat
 	followLinks bool                 // true when -L is active
+	failed      bool                 // set by predicates that encounter errors
 }
 
 // evaluate evaluates an expression tree against a file. If e is nil, returns
@@ -116,10 +117,14 @@ func evaluate(ec *evalContext, e *expr) evalResult {
 }
 
 // evalEmpty returns true if the file is an empty regular file or empty directory.
+// If ReadDir fails on a directory, the error is reported to stderr and
+// ec.failed is set so that find exits non-zero, matching GNU find behaviour.
 func evalEmpty(ec *evalContext) bool {
 	if ec.info.IsDir() {
 		entries, err := ec.callCtx.ReadDir(ec.ctx, ec.printPath)
 		if err != nil {
+			ec.callCtx.Errf("find: '%s': %s\n", ec.printPath, ec.callCtx.PortableErr(err))
+			ec.failed = true
 			return false
 		}
 		return len(entries) == 0
@@ -181,9 +186,9 @@ func evalMmin(ec *evalContext, n int64, cmp int) bool {
 	diff := ec.now.Sub(modTime)
 	switch cmp {
 	case 1: // +N: strictly older than N minutes
-		return diff.Seconds() > float64(n*60)
+		return diff.Seconds() > float64(n)*60.0
 	case -1: // -N: strictly newer than N minutes
-		return diff.Seconds() < float64(n*60)
+		return diff.Seconds() < float64(n)*60.0
 	default: // N: ceiling-bucketed exact match
 		mins := int64(math.Ceil(diff.Minutes()))
 		return mins == n

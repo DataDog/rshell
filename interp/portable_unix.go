@@ -16,7 +16,7 @@ import (
 	"github.com/DataDog/rshell/interp/builtins"
 )
 
-func fileIdentity(_ string, info fs.FileInfo) (builtins.FileID, bool) {
+func fileIdentity(_ string, info fs.FileInfo, _ *pathSandbox) (builtins.FileID, bool) {
 	st, ok := info.Sys().(*syscall.Stat_t)
 	if !ok {
 		return builtins.FileID{}, false

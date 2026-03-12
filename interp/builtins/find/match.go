@@ -9,6 +9,7 @@ import (
 	iofs "io/fs"
 	"math"
 	"strings"
+	"unicode/utf8"
 )
 
 // matchGlob matches a name against a glob pattern.
@@ -159,8 +160,8 @@ func matchPathGlobFold(pattern, name string) bool {
 }
 
 // pathGlobMatch implements glob matching where '*' matches any character
-// including '/', '?' matches exactly one character including '/', and
-// '[...]' character classes work as in path.Match.
+// including '/', '?' matches exactly one rune including '/', and
+// '[...]' character classes match runes as in path.Match.
 func pathGlobMatch(pattern, name string) bool {
 	px, nx := 0, 0
 	// nextPx/nextNx track the position to retry when a '*' fails to match.
@@ -179,23 +180,25 @@ func pathGlobMatch(pattern, name string) bool {
 				px++
 				continue
 			case '?':
-				// '?' matches exactly one character (including '/').
+				// '?' matches exactly one rune (including '/').
 				if nx < len(name) {
+					_, w := utf8.DecodeRuneInString(name[nx:])
 					px++
-					nx++
+					nx += w
 					continue
 				}
 			case '[':
 				// Character class — delegate to matchClass for the class portion.
 				if nx < len(name) {
-					matched, width := matchClass(pattern[px:], name[nx])
+					r, w := utf8.DecodeRuneInString(name[nx:])
+					matched, patWidth := matchClass(pattern[px:], r)
 					if matched {
-						px += width
-						nx++
+						px += patWidth
+						nx += w
 						continue
 					}
-					// Malformed class (width==0) — treat '[' as literal.
-					if width == 0 && pattern[px] == name[nx] {
+					// Malformed class (patWidth==0) — treat '[' as literal.
+					if patWidth == 0 && pattern[px] == name[nx] {
 						px++
 						nx++
 						continue
@@ -235,11 +238,11 @@ func pathGlobMatch(pattern, name string) bool {
 	return true
 }
 
-// matchClass tries to match a single character against a bracket expression
+// matchClass tries to match a single rune against a bracket expression
 // starting at pattern[0] == '['. Returns (matched, width) where width is
 // the number of bytes consumed from pattern (including the closing ']').
 // On malformed classes, returns (false, 0).
-func matchClass(pattern string, ch byte) (bool, int) {
+func matchClass(pattern string, ch rune) (bool, int) {
 	if len(pattern) < 2 || pattern[0] != '[' {
 		return false, 0
 	}
@@ -263,14 +266,13 @@ func matchClass(pattern string, ch byte) (bool, int) {
 			return matched, i
 		}
 		first = false
-		lo := pattern[i]
-		i++
-		var hi byte
+		lo, loW := utf8.DecodeRuneInString(pattern[i:])
+		i += loW
+		hi := lo
 		if i+1 < len(pattern) && pattern[i] == '-' && pattern[i+1] != ']' {
-			hi = pattern[i+1]
-			i += 2
-		} else {
-			hi = lo
+			var hiW int
+			hi, hiW = utf8.DecodeRuneInString(pattern[i+1:])
+			i += 1 + hiW
 		}
 		if lo <= ch && ch <= hi {
 			matched = true
