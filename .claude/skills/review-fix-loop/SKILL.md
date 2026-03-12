@@ -206,7 +206,7 @@ Check **all three** review sources for remaining issues:
 
 1. **Self-review** — Was the latest `/code-review` result **APPROVE** (no findings)?
 
-2. **External reviews** — Are there unresolved PR comment threads from @datadog, @codex, or @chatgpt-codex-connector?
+2. **External reviews** — Are there unresolved PR comment threads from @datadog, @codex, or @chatgpt-codex-connector[bot]?
    ```bash
    gh api graphql -f query='
      query($owner: String!, $repo: String!, $pr: Int!) {
@@ -297,23 +297,23 @@ Run a final verification regardless of how the loop exited:
 
 4. **Confirm @codex has replied to the LATEST review request (with polling):**
 
-   The review request comment posted in Step 2A2 triggers @codex asynchronously. The bot may respond as either `codex` or `chatgpt-codex-connector` (the GitHub App). It can take **15+ minutes** to respond. You must verify that the bot has actually responded to **the most recent** request, not a previous iteration's request. Replies from earlier iterations do NOT count.
+   The review request comment posted in Step 2A2 triggers @codex asynchronously. The bot may respond as either `codex` or `chatgpt-codex-connector[bot]` (the GitHub App). It can take **15+ minutes** to respond. You must verify that the bot has actually responded to **the most recent** request, not a previous iteration's request. Replies from earlier iterations do NOT count.
 
    **How to check:**
    - Find the timestamp of the **last** `@codex` review request comment (the one posted in Step 2A2 of the final iteration). You can identify it by looking for comments authored by the current user containing "@codex" in the body:
      ```bash
      gh api repos/{owner}/{repo}/issues/{pr-number}/comments --paginate --jq '
-       [.[] | select(.body | test("@codex")) | select(.user.login != "codex") | select(.user.login != "chatgpt-codex-connector")] | last | .created_at'
+       [.[] | select(.body | test("@codex")) | select(.user.login != "codex") | select(.user.login != "chatgpt-codex-connector[bot]")] | last | .created_at'
      ```
-   - Then check whether the codex bot has posted a review **after** that timestamp. Check both possible bot logins (`codex` and `chatgpt-codex-connector`):
+   - Then check whether the codex bot has posted a review **after** that timestamp. Check both possible bot logins (`codex` and `chatgpt-codex-connector[bot]`):
      ```bash
      gh api repos/{owner}/{repo}/pulls/{pr-number}/reviews --paginate --jq '
-       [.[] | select(.user.login == "codex" or .user.login == "chatgpt-codex-connector")] | last | {submitted_at, state, user: .user.login}'
+       [.[] | select(.user.login == "codex" or .user.login == "chatgpt-codex-connector[bot]")] | last | {submitted_at, state, user: .user.login}'
      ```
    - Also check issue comments (the bot may reply as a comment instead of a review):
      ```bash
      gh api repos/{owner}/{repo}/issues/{pr-number}/comments --paginate --jq '
-       [.[] | select(.user.login == "codex" or .user.login == "chatgpt-codex-connector")] | last | {created_at, user: .user.login}'
+       [.[] | select(.user.login == "codex" or .user.login == "chatgpt-codex-connector[bot]")] | last | {created_at, user: .user.login}'
      ```
    - Compare timestamps. If the bot's latest review `submitted_at` (or comment `created_at`) is **after** the latest request's `created_at`, the bot has replied — **verification passes**. Use whichever response (review or comment) has the most recent timestamp.
 
