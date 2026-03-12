@@ -23,6 +23,7 @@
 //
 // File tests (unary):
 //
+//	-a FILE    FILE exists (deprecated POSIX synonym for -e)
 //	-e FILE    FILE exists
 //	-f FILE    FILE exists and is a regular file
 //	-d FILE    FILE exists and is a directory
@@ -96,6 +97,7 @@ Exit status:
   2  if an error occurred.
 
 File tests:
+  -a FILE   FILE exists (deprecated synonym for -e)
   -e FILE   FILE exists
   -f FILE   FILE is a regular file
   -d FILE   FILE is a directory
@@ -354,7 +356,7 @@ func isBinaryOp(op string) bool {
 
 func isUnaryFileOp(op string) bool {
 	switch op {
-	case "-e", "-f", "-d", "-s", "-r", "-w", "-x", "-h", "-L", "-p":
+	case "-a", "-e", "-f", "-d", "-s", "-r", "-w", "-x", "-h", "-L", "-p":
 		return true
 	}
 	return false
@@ -457,7 +459,7 @@ func (p *parser) evalFileTest(op, path string) bool {
 
 func evalFileInfo(op string, info fs.FileInfo) bool {
 	switch op {
-	case "-e":
+	case "-a", "-e":
 		return true
 	case "-f":
 		return info.Mode().IsRegular()
