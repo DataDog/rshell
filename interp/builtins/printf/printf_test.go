@@ -401,10 +401,10 @@ func TestPrintfHelp(t *testing.T) {
 }
 
 func TestPrintfHelpShort(t *testing.T) {
-	// -h is not a valid flag in bash; it's treated as a format string
-	stdout, _, code := cmdRun(t, `printf -h`)
-	assert.Equal(t, 0, code)
-	assert.Equal(t, "-h", stdout)
+	// -h is not a valid flag in bash; it's rejected with exit 2
+	_, stderr, code := cmdRun(t, `printf -h`)
+	assert.Equal(t, 2, code)
+	assert.Contains(t, stderr, "invalid option")
 }
 
 // --- Format reuse edge cases ---
@@ -522,9 +522,10 @@ func TestPrintfRejectedA(t *testing.T) {
 // --- Coverage: unknown specifier ---
 
 func TestPrintfUnknownSpecifier(t *testing.T) {
+	// Bash stops processing format string after unknown specifier — no \n output.
 	stdout, stderr, code := cmdRun(t, `printf "%z\n"`)
 	assert.Equal(t, 1, code)
-	assert.Equal(t, "\n", stdout)
+	assert.Equal(t, "", stdout)
 	assert.Contains(t, stderr, "invalid format character")
 }
 

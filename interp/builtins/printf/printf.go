@@ -137,18 +137,30 @@ func bashFloatUpper(s string) string {
 const maxWidthOrPrec = 10_000
 
 func run(ctx context.Context, callCtx *builtins.CallContext, args []string) builtins.Result {
-	// Manual flag handling: only --help/-h is accepted; -v is rejected.
-	// -- terminates options (allows format strings starting with -).
+	// Manual flag handling: only --help, -v, and -- are recognised.
+	// Any other flag starting with - is rejected (bash compat).
 	if len(args) > 0 {
-		switch args[0] {
-		case "--help":
+		switch {
+		case args[0] == "--help":
 			callCtx.Errf("printf: usage: printf [-v var] format [arguments]\n")
 			return builtins.Result{Code: 2}
-		case "-v":
+		case args[0] == "-v":
 			callCtx.Errf("printf: -v: not supported in restricted shell\n")
 			return builtins.Result{Code: 1}
-		case "--":
+		case args[0] == "--":
 			args = args[1:] // skip --
+		case len(args[0]) > 1 && args[0][0] == '-' && args[0][1] != '-':
+			// Unknown single-dash flag (e.g. -h, -f, -z).
+			// Bash rejects these with "invalid option" and exit 2.
+			callCtx.Errf("printf: %c%c: invalid option\n", args[0][0], args[0][1])
+			callCtx.Errf("printf: usage: printf [-v var] format [arguments]\n")
+			return builtins.Result{Code: 2}
+		case len(args[0]) > 2 && args[0][0] == '-' && args[0][1] == '-':
+			// Unknown long flag (e.g. --follow, --foo).
+			// Bash rejects these with "--: invalid option" and exit 2.
+			callCtx.Errf("printf: --: invalid option\n")
+			callCtx.Errf("printf: usage: printf [-v var] format [arguments]\n")
+			return builtins.Result{Code: 2}
 		}
 	}
 
@@ -571,9 +583,10 @@ func processSpecifier(callCtx *builtins.CallContext, s string, args []string, ar
 		return false, i, true
 
 	default:
-		// Unknown specifier — bash treats this as an error.
+		// Unknown specifier — bash treats this as an error and stops processing
+		// the rest of the format string.
 		callCtx.Errf("printf: %%%c: invalid format character\n", verb)
-		return false, i, true
+		return true, i, true
 	}
 
 	return false, i, hadError
@@ -612,9 +625,12 @@ func parseIntArg(s string) (int64, error) {
 		return 0, nil
 	}
 
-	// Character constant: 'X or "X
-	if len(s) >= 2 && (s[0] == '\'' || s[0] == '"') {
-		return int64(s[1]), nil
+	// Character constant: 'X or "X — bare quote with no following char yields 0.
+	if s[0] == '\'' || s[0] == '"' {
+		if len(s) >= 2 {
+			return int64(s[1]), nil
+		}
+		return 0, nil
 	}
 
 	// Try parsing with automatic base detection.
@@ -631,9 +647,12 @@ func parseUintArg(s string) (uint64, error) {
 		return 0, nil
 	}
 
-	// Character constant: 'X or "X
-	if len(s) >= 2 && (s[0] == '\'' || s[0] == '"') {
-		return uint64(s[1]), nil
+	// Character constant: 'X or "X — bare quote with no following char yields 0.
+	if s[0] == '\'' || s[0] == '"' {
+		if len(s) >= 2 {
+			return uint64(s[1]), nil
+		}
+		return 0, nil
 	}
 
 	// Handle negative numbers: parse as signed, then interpret as unsigned.
@@ -665,13 +684,21 @@ func parseFloatArg(s string) (float64, error) {
 		return 0, nil
 	}
 
-	// Character constant.
-	if len(s) >= 2 && (s[0] == '\'' || s[0] == '"') {
-		return float64(s[1]), nil
+	// Character constant: 'X or "X — bare quote with no following char yields 0.
+	if s[0] == '\'' || s[0] == '"' {
+		if len(s) >= 2 {
+			return float64(s[1]), nil
+		}
+		return 0, nil
 	}
 
-	// Handle hex integers used as float args (0xff etc).
-	if len(s) > 2 && s[0] == '0' && (s[1] == 'x' || s[1] == 'X') {
+	// Handle hex/octal integers used as float args (0xff, -0xff, 0755, etc).
+	// Bash accepts these for %f/%e/%g and converts them to float.
+	prefix := s
+	if len(prefix) > 0 && (prefix[0] == '-' || prefix[0] == '+') {
+		prefix = prefix[1:]
+	}
+	if len(prefix) > 1 && prefix[0] == '0' && (prefix[1] == 'x' || prefix[1] == 'X' || (prefix[1] >= '0' && prefix[1] <= '7')) {
 		val, err := strconv.ParseInt(s, 0, 64)
 		if err != nil {
 			return 0, err
@@ -747,6 +774,14 @@ func processBEscapes(s string) (string, bool) {
 			b.WriteByte(byte(val))
 			continue
 		default:
+			if s[i] >= '1' && s[i] <= '7' {
+				// \NNN — octal without leading 0 (1-3 digits).
+				// Bash %b supports both \0NNN and \NNN.
+				val, consumed := parseOctal(s[i:], 3)
+				i += consumed
+				b.WriteByte(byte(val))
+				continue
+			}
 			// Unrecognized: output backslash and character.
 			b.WriteByte('\\')
 			b.WriteByte(s[i])
