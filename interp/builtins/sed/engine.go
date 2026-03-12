@@ -31,6 +31,7 @@ type engine struct {
 	subMade       bool           // set when s/// succeeds (cleared on new input line)
 	lastRe        *regexp.Regexp // last regex used (for empty pattern in s///)
 	isRegularFile bool
+	isLastFile    bool // whether we are processing the last file in the argument list
 }
 
 // lineReader wraps a scanner with one-line look-ahead so we can determine
@@ -103,6 +104,8 @@ func (eng *engine) processFile(ctx context.Context, callCtx *builtins.CallContex
 		eng.isRegularFile = isRegularFile(f)
 		rc = f
 	}
+
+	eng.isLastFile = isLastFile
 
 	sc := bufio.NewScanner(rc)
 	buf := make([]byte, 4096)
@@ -276,11 +279,11 @@ func (eng *engine) execCmds(ctx context.Context, cmds []*sedCmd, startIdx int, l
 				}
 				eng.lineNum++
 				eng.patternSpace = line
-				eng.lastLine = lr.isLast()
+				eng.lastLine = lr.isLast() && eng.isLastFile
 				eng.subMade = false // n loads a new input line; reset substitution state
 			} else {
 				// n already printed the pattern space; suppress auto-print.
-				eng.lastLine = true
+				eng.lastLine = eng.isLastFile
 				return actionDelete, nil
 			}
 
@@ -295,7 +298,7 @@ func (eng *engine) execCmds(ctx context.Context, cmds []*sedCmd, startIdx int, l
 					return actionContinue, errors.New("pattern space exceeded size limit")
 				}
 				eng.patternSpace += "\n" + line
-				eng.lastLine = lr.isLast()
+				eng.lastLine = lr.isLast() && eng.isLastFile
 			} else {
 				if !eng.suppressPrint {
 					eng.callCtx.Outf("%s\n", eng.patternSpace)

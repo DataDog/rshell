@@ -1,5 +1,4 @@
 description: "q with exit code > 255 wraps modulo 256."
-skip_assert_against_bash: true
 setup:
   files:
     - path: input.txt
