@@ -131,6 +131,20 @@ var builtinPerCommandSymbols = map[string][]string{
 		"strings.ReplaceAll",   // replaces all occurrences of a substring; pure function, no I/O.
 		"strings.ToLower",      // converts string to lowercase; pure function, no I/O.
 	},
+	"sort": {
+		"bufio.NewScanner",        // line-by-line input reading (e.g. head, cat); no write or exec capability.
+		"context.Context",         // deadline/cancellation plumbing; pure interface, no side effects.
+		"errors.New",              // creates a simple error value; pure function, no I/O.
+		"fmt.Errorf",              // error formatting; pure function, no I/O.
+		"io.NopCloser",            // wraps a Reader with a no-op Close; no side effects.
+		"io.ReadCloser",           // interface type; no side effects.
+		"os.O_RDONLY",             // read-only file flag constant; cannot open files by itself.
+		"slices.SortFunc",         // sorts a slice with a comparison function; pure function, no I/O.
+		"slices.SortStableFunc",   // stable sort with a comparison function; pure function, no I/O.
+		"strconv.Atoi",            // string-to-int conversion; pure function, no I/O.
+		"strings.Builder",         // efficient string concatenation; pure in-memory buffer, no I/O.
+		"strings.IndexByte",       // finds byte in string; pure function, no I/O.
+	},
 	"sed": {
 		"bufio.NewScanner",  // line-by-line input reading (e.g. head, cat); no write or exec capability.
 		"bufio.Scanner",     // scanner type for buffered input reading; no write or exec capability.
@@ -241,6 +255,7 @@ var builtinAllowedSymbols = []string{
 	"errors.As",               // error type assertion; pure function, no I/O.
 	"errors.Is",               // error comparison; pure function, no I/O.
 	"errors.New",              // creates a simple error value; pure function, no I/O.
+	"fmt.Errorf",              // error formatting; pure function, no I/O.
 	"fmt.Sprintf",             // string formatting; pure function, no I/O.
 	"io.EOF",                  // sentinel error value; pure constant.
 	"io.NopCloser",            // wraps a Reader with a no-op Close; no side effects.
@@ -271,6 +286,7 @@ var builtinAllowedSymbols = []string{
 	"regexp.Regexp",           // compiled regular expression type; no I/O side effects. All matching methods are linear-time (RE2).
 	"slices.Reverse",          // reverses a slice in-place; pure function, no I/O.
 	"slices.SortFunc",         // sorts a slice with a comparison function; pure function, no I/O.
+	"slices.SortStableFunc",   // stable sort with a comparison function; pure function, no I/O.
 	"strconv.Atoi",            // string-to-int conversion; pure function, no I/O.
 	"strconv.ErrRange",        // sentinel error value for overflow; pure constant.
 	"strconv.FormatInt",       // int-to-string conversion; pure function, no I/O.
