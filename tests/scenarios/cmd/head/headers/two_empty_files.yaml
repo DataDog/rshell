@@ -1,4 +1,3 @@
-# Derived from uutils test_head.rs::test_multiple_files
 description: Two empty files still get headers and a blank-line separator between them.
 setup:
   files:

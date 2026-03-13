@@ -1,4 +1,3 @@
-# Derived from standard POSIX wc -m behavior
 description: wc -m counts characters (bytes for ASCII).
 setup:
   files:

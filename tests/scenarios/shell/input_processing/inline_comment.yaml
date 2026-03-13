@@ -1,4 +1,3 @@
-# Derived from yash input-p.tst - inline comments
 description: Inline comment after a command is ignored.
 input:
   script: |+

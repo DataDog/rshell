@@ -1,4 +1,3 @@
-# Derived from uutils test_cat.rs::test_stdin_squeeze_blank
 description: cat -s squeezes consecutive blank lines into one.
 setup:
   files:

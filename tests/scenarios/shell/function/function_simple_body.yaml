@@ -1,4 +1,3 @@
-# Derived from yash function-p.tst - simple function definition
 skip_assert_against_bash: true
 description: Simple function definition with parentheses is blocked.
 input:

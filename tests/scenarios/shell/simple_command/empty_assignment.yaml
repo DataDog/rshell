@@ -1,4 +1,3 @@
-# Derived from yash simple-p.tst - empty value assignment
 description: Variable assigned empty string is set but empty.
 input:
   script: |+

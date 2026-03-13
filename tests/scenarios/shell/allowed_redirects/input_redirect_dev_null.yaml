@@ -1,0 +1,10 @@
+skip_assert_against_bash: true
+description: Input redirection from /dev/null is blocked without allowed_paths.
+input:
+  script: |+
+    cat < /dev/null
+expect:
+  stdout: ""
+  stderr: |+
+    open /dev/null: permission denied
+  exit_code: 1

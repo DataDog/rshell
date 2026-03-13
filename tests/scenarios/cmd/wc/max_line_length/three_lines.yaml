@@ -1,4 +1,3 @@
-# Derived from GNU coreutils wc.pl test c1
 description: wc -L picks the max among multiple lines.
 setup:
   files:

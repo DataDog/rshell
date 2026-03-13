@@ -1,4 +1,3 @@
-# Derived from yash simple-p.tst - exit status of command substitution in assignment
 skip_assert_against_bash: true
 description: Assignment with command substitution is blocked.
 input:

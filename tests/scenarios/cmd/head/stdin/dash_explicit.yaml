@@ -1,4 +1,3 @@
-# Derived from standard POSIX head behavior
 description: head - explicitly reads from standard input.
 setup:
   files:

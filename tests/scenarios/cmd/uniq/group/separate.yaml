@@ -1,4 +1,3 @@
-# Derived from GNU coreutils uniq.pl test 130
 description: uniq --group=separate inserts blank lines between groups.
 setup:
   files:

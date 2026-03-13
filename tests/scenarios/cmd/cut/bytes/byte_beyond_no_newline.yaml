@@ -1,4 +1,3 @@
-# Derived from GNU coreutils cut.pl test 7
 description: Cut outputs a newline even when input has no trailing newline and byte is beyond line.
 setup:
   files:

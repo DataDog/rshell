@@ -1,4 +1,3 @@
-# Derived from yash input-p.tst - line-wise shell input
 description: Commands on separate lines are executed sequentially.
 input:
   script: |+

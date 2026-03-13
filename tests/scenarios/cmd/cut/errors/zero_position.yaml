@@ -1,4 +1,3 @@
-# Derived from GNU coreutils cut.pl zero-1 test
 description: Cut rejects byte position zero.
 input:
   script: |+

@@ -1,4 +1,3 @@
-# Derived from GNU coreutils cut.pl test e
 description: Cut with -s selects field range from a line with trailing delimiter.
 setup:
   files:

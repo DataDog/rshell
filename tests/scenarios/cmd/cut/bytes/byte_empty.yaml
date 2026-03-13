@@ -1,4 +1,3 @@
-# Derived from GNU coreutils cut.pl test 9
 description: Cut on empty input produces no output for byte selection.
 setup:
   files:

@@ -1,4 +1,3 @@
-# Derived from uutils test_test.rs — --help for [
 description: "[ --help prints usage and exits 0"
 input:
   script: |+

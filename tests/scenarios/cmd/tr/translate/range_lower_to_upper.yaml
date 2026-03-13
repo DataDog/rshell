@@ -1,4 +1,3 @@
-# Derived from GNU coreutils tr.pl test 1 and uutils test_to_upper
 description: tr translates lowercase to uppercase using ranges.
 input:
   script: |+

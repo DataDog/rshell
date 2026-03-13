@@ -1,4 +1,3 @@
-# Derived from GNU coreutils uniq.pl test 60
 description: uniq -w 1 compares only first character.
 setup:
   files:

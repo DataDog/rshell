@@ -1,4 +1,3 @@
-# Derived from yash case-p.tst - simple case match
 skip_assert_against_bash: true
 description: Simple case statement with exact match is blocked.
 input:

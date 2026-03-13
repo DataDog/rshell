@@ -1,4 +1,3 @@
-# Derived from GNU coreutils cut.pl test 4
 description: Cut outputs empty line when requested field is beyond the number of fields.
 setup:
   files:

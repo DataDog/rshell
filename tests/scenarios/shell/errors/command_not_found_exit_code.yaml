@@ -1,4 +1,3 @@
-# Derived from yash builtins-p.tst - command not found handling
 skip_assert_against_bash: true
 description: Multiple unknown commands each produce errors, last exit code wins.
 input:

@@ -1,0 +1,11 @@
+skip_assert_against_bash: true
+description: Append redirection with variable filename is blocked.
+input:
+  script: |+
+    F=file.txt
+    echo hello >> "$F"
+expect:
+  stdout: ""
+  stderr: |+
+    >> file redirection is not supported
+  exit_code: 2

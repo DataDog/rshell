@@ -1,4 +1,3 @@
-# Derived from yash while-p.tst - nested while loops
 skip_assert_against_bash: true
 description: Nested while loops are blocked at the outer loop.
 input:

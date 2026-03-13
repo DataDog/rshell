@@ -1,4 +1,3 @@
-# Derived from yash readonly-p.tst - readonly without arguments
 skip_assert_against_bash: true
 description: Readonly without arguments is blocked.
 input:

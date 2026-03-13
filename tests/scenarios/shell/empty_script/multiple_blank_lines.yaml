@@ -1,4 +1,3 @@
-# Derived from yash input-p.tst - blank lines input
 description: Script with multiple blank lines exits successfully.
 input:
   script: |+

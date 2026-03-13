@@ -1,4 +1,3 @@
-# Derived from yash simple-p.tst - special characters in assignment
 description: Assignment values can contain special characters when quoted.
 input:
   script: |+

@@ -1,4 +1,3 @@
-# Derived from yash function-y.tst - function keyword syntax
 skip_assert_against_bash: true
 description: Function declaration with function keyword is blocked.
 input:

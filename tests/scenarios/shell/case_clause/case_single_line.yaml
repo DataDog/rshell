@@ -1,4 +1,3 @@
-# Derived from yash case-p.tst - single line case
 skip_assert_against_bash: true
 description: Single-line case statement is blocked.
 input:

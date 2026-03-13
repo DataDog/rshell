@@ -1,4 +1,3 @@
-# Derived from GNU coreutils cut.pl out-delim2 test
 description: Cut merges overlapping byte ranges and inserts output delimiter at gaps.
 setup:
   files:

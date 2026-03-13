@@ -1,4 +1,3 @@
-# Derived from GNU coreutils uniq.pl test 57
 description: uniq -w 0 treats all lines as identical.
 setup:
   files:

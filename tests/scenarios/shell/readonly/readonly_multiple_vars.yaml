@@ -1,4 +1,3 @@
-# Derived from yash readonly-p.tst - readonly multiple variables
 skip_assert_against_bash: true
 description: Readonly with multiple variables is blocked.
 input:

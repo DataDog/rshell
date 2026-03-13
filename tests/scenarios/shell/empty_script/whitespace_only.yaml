@@ -1,4 +1,3 @@
-# Derived from yash input-p.tst - blank input handling
 description: Script containing only whitespace exits successfully.
 input:
   script: "   \t  "

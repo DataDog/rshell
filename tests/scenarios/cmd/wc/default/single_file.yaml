@@ -1,4 +1,3 @@
-# Derived from uutils test_single_default
 description: wc with a single file shows lines words bytes and filename.
 setup:
   files:

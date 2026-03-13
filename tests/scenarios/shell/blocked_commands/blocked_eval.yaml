@@ -1,0 +1,10 @@
+skip_assert_against_bash: true
+description: Eval command is not available.
+input:
+  script: |+
+    eval echo hello
+expect:
+  stdout: ""
+  stderr: |+
+    eval: command not found
+  exit_code: 127

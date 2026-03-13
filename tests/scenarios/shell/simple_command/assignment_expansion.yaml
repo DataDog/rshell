@@ -1,4 +1,3 @@
-# Derived from yash simple-p.tst - assignments subject to expansion
 description: Variable expansion works in assignment values.
 input:
   script: |+

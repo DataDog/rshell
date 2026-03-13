@@ -1,4 +1,3 @@
-# Derived from yash error recovery patterns
 skip_assert_against_bash: true
 description: Valid commands execute normally after a command-not-found error.
 input:

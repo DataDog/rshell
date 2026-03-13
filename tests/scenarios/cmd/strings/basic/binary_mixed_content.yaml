@@ -1,0 +1,12 @@
+description: strings extracts printable sequences from content with non-printable characters.
+skip_assert_against_bash: true
+input:
+  script: |+
+    printf '\x01\x02hello\x00\x03world\x04test\x00' | strings
+expect:
+  stdout: |+
+    hello
+    world
+    test
+  stderr: ""
+  exit_code: 0

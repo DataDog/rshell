@@ -1,4 +1,3 @@
-# Derived from GNU coreutils head.pl idem-1 test
 description: head preserves a file's missing trailing newline exactly.
 skip_assert_against_bash: false
 setup:

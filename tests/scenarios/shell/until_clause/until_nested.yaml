@@ -1,4 +1,3 @@
-# Derived from yash until-p.tst - nested loops
 skip_assert_against_bash: true
 description: Nested until loops are blocked at the outer loop.
 input:

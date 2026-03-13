@@ -1,4 +1,3 @@
-# Derived from yash input-p.tst - comments-only input
 description: Script containing only a comment exits successfully with no output.
 input:
   script: |+

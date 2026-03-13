@@ -1,4 +1,3 @@
-# Derived from yash exit status propagation patterns
 skip_assert_against_bash: true
 description: Exit code from failed command is available in $?.
 input:

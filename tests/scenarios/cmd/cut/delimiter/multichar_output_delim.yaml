@@ -1,4 +1,3 @@
-# Derived from GNU coreutils cut.pl multichar-od test
 description: Cut supports multi-character output delimiters.
 setup:
   files:

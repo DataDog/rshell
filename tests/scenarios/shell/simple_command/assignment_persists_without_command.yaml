@@ -1,4 +1,3 @@
-# Derived from yash simple-p.tst - assignment persistent for empty command
 description: Assignments without a command persist in the shell environment.
 input:
   script: |+

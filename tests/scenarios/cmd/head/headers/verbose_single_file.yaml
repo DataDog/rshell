@@ -1,4 +1,3 @@
-# Derived from GNU coreutils head behavior with -v
 description: head -v prints a header even for a single file.
 setup:
   files:

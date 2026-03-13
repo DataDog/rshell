@@ -1,4 +1,3 @@
-# Derived from GNU coreutils cut.pl test d
 description: Cut with -s selects non-adjacent fields from a line with trailing delimiter.
 setup:
   files:

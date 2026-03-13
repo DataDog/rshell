@@ -1,4 +1,3 @@
-# Derived from yash pipeline error handling patterns
 skip_assert_against_bash: true
 description: Unknown command in a pipeline produces error but pipeline continues.
 input:
