@@ -1,5 +1,3 @@
-# skip: wc column width formatting differs from GNU coreutils
-skip_assert_against_bash: true
 description: wc -l from stdin does not show a filename.
 input:
   script: |+
