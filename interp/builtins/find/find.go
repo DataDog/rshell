@@ -183,6 +183,7 @@ optLoop:
 	if !failed {
 		for _, startPath := range paths {
 			if ctx.Err() != nil {
+				failed = true
 				break
 			}
 			// Reject empty path operands — GNU find treats "" as a
@@ -374,6 +375,7 @@ func walkPath(
 
 	for len(iterStack) > 0 {
 		if ctx.Err() != nil {
+			failed = true
 			break
 		}
 

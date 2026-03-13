@@ -199,10 +199,10 @@ func evalMtime(ec *evalContext, n int64, cmp cmpOp) bool {
 		diff := ec.now.Truncate(time.Second).Sub(modTime)
 		return diff < time.Duration(n)*24*time.Hour
 	default: // N: day-bucketed exact match
+		// Do not clamp negative diff — future-dated files must produce
+		// negative day buckets so they never match non-negative N,
+		// matching GNU find behavior.
 		diff := ec.now.Sub(modTime)
-		if diff < 0 {
-			diff = 0
-		}
 		days := int64(math.Floor(diff.Hours() / 24))
 		return days == n
 	}
