@@ -37,10 +37,11 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		SilenceErrors: true,
 		Args:          cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if script != "" && len(args) > 0 {
+			scriptSet := cmd.Flags().Changed("script")
+			if scriptSet && len(args) > 0 {
 				return fmt.Errorf("cannot use --script with file arguments")
 			}
-			if script == "" && len(args) == 0 {
+			if !scriptSet && len(args) == 0 {
 				return fmt.Errorf("requires either --script or file arguments (use \"-\" for stdin)")
 			}
 
@@ -49,7 +50,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 				paths = strings.Split(allowedPaths, ",")
 			}
 
-			if script != "" {
+			if scriptSet {
 				return execute(cmd.Context(), script, "", paths, stdin, stdout, stderr)
 			}
 
@@ -105,7 +106,9 @@ func execute(ctx context.Context, script, name string, allowedPaths []string, st
 	// Parse.
 	prog, err := syntax.NewParser().Parse(strings.NewReader(script), name)
 	if err != nil {
-		return fmt.Errorf("parse error: %w", err)
+		// Bash returns exit code 2 for syntax/parse errors.
+		fmt.Fprintf(stderr, "%v\n", err)
+		return interp.ExitStatus(2)
 	}
 
 	// Build runner options.

@@ -23,7 +23,7 @@
 // Accepted flags:
 //
 //	--help
-//	    Print a usage message to stderr and exit 2.
+//	    Print a usage message to stdout and exit 2.
 //
 // Rejected flags:
 //
@@ -182,7 +182,7 @@ func run(ctx context.Context, callCtx *builtins.CallContext, args []string) buil
 	if len(args) > 0 {
 		switch {
 		case args[0] == "--help":
-			callCtx.Errf("printf: usage: printf [-v var] format [arguments]\n")
+			callCtx.Out("printf: usage: printf [-v var] format [arguments]\n")
 			return builtins.Result{Code: 2}
 		case args[0] == "-v":
 			callCtx.Errf("printf: -v: not supported in restricted shell\n")
@@ -444,11 +444,11 @@ func processSpecifier(callCtx *builtins.CallContext, s string, args []string, ar
 		return false, i, true
 	}
 
-	// Skip C-style length modifiers (l, ll, h, hh, j, t, z, q).
+	// Skip C-style length modifiers (l, ll, h, hh, j, t, z).
 	// Bash accepts and effectively ignores them.
 	for i < len(s) {
 		switch s[i] {
-		case 'l', 'h', 'j', 't', 'z', 'q':
+		case 'l', 'h', 'j', 't', 'z':
 			i++
 			continue
 		}

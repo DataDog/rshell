@@ -107,6 +107,7 @@ var builtinPerCommandSymbols = map[string][]string{
 		"io/fs.ModeSocket",    // file mode bit constant for sockets; pure constant.
 		"io/fs.ModeSticky",    // file mode bit constant for sticky bit; pure constant.
 		"io/fs.ModeSymlink",   // file mode bit constant for symlinks; pure constant.
+		"runtime.GOOS",        // current OS name constant; pure constant, no I/O.
 		"slices.Reverse",      // reverses a slice in-place; pure function, no I/O.
 		"slices.SortFunc",     // sorts a slice with a comparison function; pure function, no I/O.
 		"time.Time",           // time value type; pure data, no side effects.
@@ -288,6 +289,7 @@ var builtinAllowedSymbols = []string{
 	"regexp.Compile",          // compiles a regular expression; pure function, no I/O. Uses RE2 engine (linear-time, no backtracking).
 	"regexp.QuoteMeta",        // escapes all special regex characters in a string; pure function, no I/O.
 	"regexp.Regexp",           // compiled regular expression type; no I/O side effects. All matching methods are linear-time (RE2).
+	"runtime.GOOS",            // current OS name constant; pure constant, no I/O.
 	"slices.Reverse",          // reverses a slice in-place; pure function, no I/O.
 	"slices.SortFunc",         // sorts a slice with a comparison function; pure function, no I/O.
 	"slices.SortStableFunc",   // stable sort with a comparison function; pure function, no I/O.

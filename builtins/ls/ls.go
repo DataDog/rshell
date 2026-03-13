@@ -85,6 +85,7 @@ import (
 	"errors"
 	"fmt"
 	iofs "io/fs"
+	"runtime"
 	"slices"
 	"time"
 
@@ -126,7 +127,19 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 	offset := fs.Int("offset", 0, "skip first N entries (pagination)")
 	limit := fs.Int("limit", 0, "show at most N entries (capped at MaxDirEntries)")
 
+	// Help flag (long-only; -h is taken by --human-readable).
+	help := fs.Bool("help", false, "print usage and exit")
+
 	return func(ctx context.Context, callCtx *builtins.CallContext, args []string) builtins.Result {
+		if *help {
+			callCtx.Out("Usage: ls [OPTION]... [FILE]...\n")
+			callCtx.Out("List directory contents.\n")
+			callCtx.Out("List information about the FILEs (the current directory by default).\n\n")
+			fs.SetOutput(callCtx.Stdout)
+			fs.PrintDefaults()
+			return builtins.Result{}
+		}
+
 		now := callCtx.Now()
 
 		// Determine the effective sort mode. When both -S and -t are given,
@@ -608,7 +621,8 @@ func joinPath(dir, name string) string {
 	if len(dir) == 0 {
 		return name
 	}
-	if dir[len(dir)-1] == '/' {
+	last := dir[len(dir)-1]
+	if last == '/' || (runtime.GOOS == "windows" && last == '\\') {
 		return dir + name
 	}
 	return dir + "/" + name
