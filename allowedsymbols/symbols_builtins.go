@@ -21,352 +21,284 @@ package allowedsymbols
 //
 // All packages not listed here are implicitly banned, including all
 // third-party packages and other internal module packages.
+
 // builtinPerCommandSymbols maps each builtin command name (matching its
 // subdirectory under builtins/) to the symbols it is allowed to use.
 // Every symbol listed here must also appear in builtinAllowedSymbols
 // (which acts as the global ceiling).
 var builtinPerCommandSymbols = map[string][]string{
 	"break": {
-		"context.Context",
+		"context.Context", // deadline/cancellation plumbing; pure interface, no side effects.
 	},
 	"cat": {
-		"bufio.NewScanner",
-		"context.Context",
-		"errors.Is",
-		"io.EOF",
-		"io.NopCloser",
-		"io.ReadCloser",
-		"os.O_RDONLY",
+		"bufio.NewScanner", // line-by-line input reading (e.g. head, cat); no write or exec capability.
+		"context.Context",  // deadline/cancellation plumbing; pure interface, no side effects.
+		"errors.Is",        // error comparison; pure function, no I/O.
+		"io.EOF",           // sentinel error value; pure constant.
+		"io.NopCloser",     // wraps a Reader with a no-op Close; no side effects.
+		"io.ReadCloser",    // interface type; no side effects.
+		"os.O_RDONLY",      // read-only file flag constant; cannot open files by itself.
 	},
 	"continue": {
-		"context.Context",
+		"context.Context", // deadline/cancellation plumbing; pure interface, no side effects.
 	},
 	"cut": {
-		"bufio.NewScanner",
-		"context.Context",
-		"io.NopCloser",
-		"io.ReadCloser",
-		"math.MaxInt32",
-		"os.O_RDONLY",
-		"slices.SortFunc",
-		"strconv.Atoi",
-		"strings.Builder",
-		"strings.IndexByte",
-		"strings.Split",
+		"bufio.NewScanner",  // line-by-line input reading (e.g. head, cat); no write or exec capability.
+		"context.Context",   // deadline/cancellation plumbing; pure interface, no side effects.
+		"io.NopCloser",      // wraps a Reader with a no-op Close; no side effects.
+		"io.ReadCloser",     // interface type; no side effects.
+		"math.MaxInt32",     // integer constant; no side effects.
+		"os.O_RDONLY",       // read-only file flag constant; cannot open files by itself.
+		"slices.SortFunc",   // sorts a slice with a comparison function; pure function, no I/O.
+		"strconv.Atoi",      // string-to-int conversion; pure function, no I/O.
+		"strings.Builder",   // efficient string concatenation; pure in-memory buffer, no I/O.
+		"strings.IndexByte", // finds byte in string; pure function, no I/O.
+		"strings.Split",     // splits a string by separator into a slice; pure function, no I/O.
 	},
 	"echo": {
-		"context.Context",
-		"strings.Builder",
+		"context.Context", // deadline/cancellation plumbing; pure interface, no side effects.
+		"strings.Builder", // efficient string concatenation; pure in-memory buffer, no I/O.
 	},
 	"exit": {
-		"context.Context",
-		"strconv.Atoi",
+		"context.Context", // deadline/cancellation plumbing; pure interface, no side effects.
+		"strconv.Atoi",    // string-to-int conversion; pure function, no I/O.
 	},
 	"false": {
-		"context.Context",
+		"context.Context", // deadline/cancellation plumbing; pure interface, no side effects.
 	},
 	"grep": {
-		"bufio.NewScanner",
-		"context.Context",
-		"errors.New",
-		"io.NopCloser",
-		"io.ReadCloser",
-		"os.O_RDONLY",
-		"regexp.Compile",
-		"regexp.QuoteMeta",
-		"regexp.Regexp",
-		"strconv.Itoa",
-		"strconv.ParseBool",
-		"strings.Builder",
-		"strings.Join",
-		"strings.Split",
+		"bufio.NewScanner",  // line-by-line input reading (e.g. head, cat); no write or exec capability.
+		"context.Context",   // deadline/cancellation plumbing; pure interface, no side effects.
+		"errors.New",        // creates a simple error value; pure function, no I/O.
+		"io.NopCloser",      // wraps a Reader with a no-op Close; no side effects.
+		"io.ReadCloser",     // interface type; no side effects.
+		"os.O_RDONLY",       // read-only file flag constant; cannot open files by itself.
+		"regexp.Compile",    // compiles a regular expression; pure function, no I/O. Uses RE2 engine (linear-time, no backtracking).
+		"regexp.QuoteMeta",  // escapes all special regex characters in a string; pure function, no I/O.
+		"regexp.Regexp",     // compiled regular expression type; no I/O side effects. All matching methods are linear-time (RE2).
+		"strconv.Itoa",      // int-to-string conversion; pure function, no I/O.
+		"strconv.ParseBool", // string-to-bool conversion; pure function, no I/O.
+		"strings.Builder",   // efficient string concatenation; pure in-memory buffer, no I/O.
+		"strings.Join",      // concatenates a slice of strings with a separator; pure function, no I/O.
+		"strings.Split",     // splits a string by separator into a slice; pure function, no I/O.
 	},
 	"head": {
-		"bufio.NewScanner",
-		"context.Context",
-		"errors.Is",
-		"errors.New",
-		"io.EOF",
-		"io.ReadSeeker",
-		"io.Reader",
-		"io.SeekCurrent",
-		"os.O_RDONLY",
-		"strconv.ParseInt",
+		"bufio.NewScanner", // line-by-line input reading (e.g. head, cat); no write or exec capability.
+		"context.Context",  // deadline/cancellation plumbing; pure interface, no side effects.
+		"errors.Is",        // error comparison; pure function, no I/O.
+		"errors.New",       // creates a simple error value; pure function, no I/O.
+		"io.EOF",           // sentinel error value; pure constant.
+		"io.ReadSeeker",    // interface type combining Reader and Seeker; no side effects.
+		"io.Reader",        // interface type; no side effects.
+		"io.SeekCurrent",   // whence constant for Seek(offset, SeekCurrent); pure constant.
+		"os.O_RDONLY",      // read-only file flag constant; cannot open files by itself.
+		"strconv.ParseInt", // string-to-int conversion with base/bit-size; pure function, no I/O.
 	},
 	"ls": {
-		"context.Context",
-		"errors.New",
-		"fmt.Sprintf",
-		"io/fs.FileInfo",
-		"io/fs.ModeDir",
-		"io/fs.ModeNamedPipe",
-		"io/fs.ModeSetgid",
-		"io/fs.ModeSetuid",
-		"io/fs.ModeSocket",
-		"io/fs.ModeSticky",
-		"io/fs.ModeSymlink",
-		"slices.Reverse",
-		"slices.SortFunc",
-		"time.Time",
+		"context.Context",     // deadline/cancellation plumbing; pure interface, no side effects.
+		"errors.New",          // creates a simple error value; pure function, no I/O.
+		"fmt.Sprintf",         // string formatting; pure function, no I/O.
+		"io/fs.FileInfo",      // interface type for file information; no side effects.
+		"io/fs.ModeDir",       // file mode bit constant for directories; pure constant.
+		"io/fs.ModeNamedPipe", // file mode bit constant for named pipes; pure constant.
+		"io/fs.ModeSetgid",    // file mode bit constant for setgid; pure constant.
+		"io/fs.ModeSetuid",    // file mode bit constant for setuid; pure constant.
+		"io/fs.ModeSocket",    // file mode bit constant for sockets; pure constant.
+		"io/fs.ModeSticky",    // file mode bit constant for sticky bit; pure constant.
+		"io/fs.ModeSymlink",   // file mode bit constant for symlinks; pure constant.
+		"slices.Reverse",      // reverses a slice in-place; pure function, no I/O.
+		"slices.SortFunc",     // sorts a slice with a comparison function; pure function, no I/O.
+		"time.Time",           // time value type; pure data, no side effects.
 	},
 	"printf": {
-		"context.Context",
-		"errors.As",
-		"fmt.Sprintf",
-		"math.Inf",
-		"math.MaxUint64",
-		"math.NaN",
-		"strconv.Atoi",
-		"strconv.ErrRange",
-		"strconv.IntSize",
-		"strconv.Itoa",
-		"strconv.NumError",
-		"strconv.ParseFloat",
-		"strconv.ParseInt",
-		"strconv.ParseUint",
-		"strings.Builder",
-		"strings.ContainsRune",
-		"strings.ReplaceAll",
-		"strings.ToLower",
+		"context.Context",      // deadline/cancellation plumbing; pure interface, no side effects.
+		"errors.As",            // error type assertion; pure function, no I/O.
+		"fmt.Sprintf",          // string formatting; pure function, no I/O.
+		"math.Inf",             // returns positive or negative infinity; pure function, no I/O.
+		"math.MaxUint64",       // integer constant; no side effects.
+		"math.NaN",             // returns IEEE 754 NaN value; pure function, no I/O.
+		"strconv.Atoi",         // string-to-int conversion; pure function, no I/O.
+		"strconv.ErrRange",     // sentinel error value for overflow; pure constant.
+		"strconv.IntSize",      // platform int size constant (32 or 64); pure constant, no I/O.
+		"strconv.Itoa",         // int-to-string conversion; pure function, no I/O.
+		"strconv.NumError",     // error type for numeric conversion failures; pure type.
+		"strconv.ParseFloat",   // string-to-float conversion; pure function, no I/O.
+		"strconv.ParseInt",     // string-to-int conversion with base/bit-size; pure function, no I/O.
+		"strconv.ParseUint",    // string-to-unsigned-int conversion; pure function, no I/O.
+		"strings.Builder",      // efficient string concatenation; pure in-memory buffer, no I/O.
+		"strings.ContainsRune", // checks if a rune is in a string; pure function, no I/O.
+		"strings.ReplaceAll",   // replaces all occurrences of a substring; pure function, no I/O.
+		"strings.ToLower",      // converts string to lowercase; pure function, no I/O.
 	},
 	"sed": {
-		"bufio.NewScanner",
-		"bufio.Scanner",
-		"bytes.IndexByte",
-		"context.Context",
-		"errors.As",
-		"errors.New",
-		"fmt.Sprintf",
-		"io.NopCloser",
-		"io.ReadCloser",
-		"os.FileInfo",
-		"os.O_RDONLY",
-		"regexp.Compile",
-		"regexp.Regexp",
-		"strconv.Atoi",
-		"strconv.ParseInt",
-		"strings.Builder",
-		"strings.IndexByte",
-		"strings.Join",
+		"bufio.NewScanner",  // line-by-line input reading (e.g. head, cat); no write or exec capability.
+		"bufio.Scanner",     // scanner type for buffered input reading; no write or exec capability.
+		"bytes.IndexByte",   // finds a byte in a byte slice; pure function, no I/O.
+		"context.Context",   // deadline/cancellation plumbing; pure interface, no side effects.
+		"errors.As",         // error type assertion; pure function, no I/O.
+		"errors.New",        // creates a simple error value; pure function, no I/O.
+		"fmt.Sprintf",       // string formatting; pure function, no I/O.
+		"io.NopCloser",      // wraps a Reader with a no-op Close; no side effects.
+		"io.ReadCloser",     // interface type; no side effects.
+		"os.FileInfo",       // file metadata interface returned by Stat; no I/O side effects.
+		"os.O_RDONLY",       // read-only file flag constant; cannot open files by itself.
+		"regexp.Compile",    // compiles a regular expression; pure function, no I/O. Uses RE2 engine (linear-time, no backtracking).
+		"regexp.Regexp",     // compiled regular expression type; no I/O side effects. All matching methods are linear-time (RE2).
+		"strconv.Atoi",      // string-to-int conversion; pure function, no I/O.
+		"strconv.ParseInt",  // string-to-int conversion with base/bit-size; pure function, no I/O.
+		"strings.Builder",   // efficient string concatenation; pure in-memory buffer, no I/O.
+		"strings.IndexByte", // finds byte in string; pure function, no I/O.
+		"strings.Join",      // concatenates a slice of strings with a separator; pure function, no I/O.
 	},
 	"strings_cmd": {
-		"context.Context",
-		"errors.Is",
-		"errors.New",
-		"io.EOF",
-		"io.NopCloser",
-		"io.ReadCloser",
-		"os.O_RDONLY",
-		"strconv.FormatInt",
+		"context.Context",   // deadline/cancellation plumbing; pure interface, no side effects.
+		"errors.Is",         // error comparison; pure function, no I/O.
+		"errors.New",        // creates a simple error value; pure function, no I/O.
+		"io.EOF",            // sentinel error value; pure constant.
+		"io.NopCloser",      // wraps a Reader with a no-op Close; no side effects.
+		"io.ReadCloser",     // interface type; no side effects.
+		"os.O_RDONLY",       // read-only file flag constant; cannot open files by itself.
+		"strconv.FormatInt", // int-to-string conversion; pure function, no I/O.
 	},
 	"tail": {
-		"bufio.NewScanner",
-		"context.Context",
-		"errors.Is",
-		"errors.New",
-		"io.EOF",
-		"io.NopCloser",
-		"io.ReadCloser",
-		"io.Reader",
-		"os.FileInfo",
-		"os.O_RDONLY",
-		"strconv.ParseInt",
+		"bufio.NewScanner", // line-by-line input reading (e.g. head, cat); no write or exec capability.
+		"context.Context",  // deadline/cancellation plumbing; pure interface, no side effects.
+		"errors.Is",        // error comparison; pure function, no I/O.
+		"errors.New",       // creates a simple error value; pure function, no I/O.
+		"io.EOF",           // sentinel error value; pure constant.
+		"io.NopCloser",     // wraps a Reader with a no-op Close; no side effects.
+		"io.ReadCloser",    // interface type; no side effects.
+		"io.Reader",        // interface type; no side effects.
+		"os.FileInfo",      // file metadata interface returned by Stat; no I/O side effects.
+		"os.O_RDONLY",      // read-only file flag constant; cannot open files by itself.
+		"strconv.ParseInt", // string-to-int conversion with base/bit-size; pure function, no I/O.
 	},
 	"testcmd": {
-		"context.Context",
-		"io/fs.FileInfo",
-		"io/fs.ModeNamedPipe",
-		"io/fs.ModeSymlink",
-		"strconv.ParseInt",
-		"strings.TrimSpace",
+		"context.Context",     // deadline/cancellation plumbing; pure interface, no side effects.
+		"io/fs.FileInfo",      // interface type for file information; no side effects.
+		"io/fs.ModeNamedPipe", // file mode bit constant for named pipes; pure constant.
+		"io/fs.ModeSymlink",   // file mode bit constant for symlinks; pure constant.
+		"strconv.ParseInt",    // string-to-int conversion with base/bit-size; pure function, no I/O.
+		"strings.TrimSpace",   // removes leading/trailing whitespace; pure function.
 	},
 	"tr": {
-		"context.Context",
-		"errors.Is",
-		"fmt.Sprintf",
-		"io.EOF",
-		"strconv.ParseInt",
+		"context.Context",  // deadline/cancellation plumbing; pure interface, no side effects.
+		"errors.Is",        // error comparison; pure function, no I/O.
+		"fmt.Sprintf",      // string formatting; pure function, no I/O.
+		"io.EOF",           // sentinel error value; pure constant.
+		"strconv.ParseInt", // string-to-int conversion with base/bit-size; pure function, no I/O.
 	},
 	"true": {
-		"context.Context",
+		"context.Context", // deadline/cancellation plumbing; pure interface, no side effects.
 	},
 	"uniq": {
-		"bufio.NewScanner",
-		"bufio.SplitFunc",
-		"context.Context",
-		"io.NopCloser",
-		"io.ReadCloser",
-		"io.Reader",
-		"io.WriteString",
-		"io.Writer",
-		"math.MaxInt64",
-		"os.O_RDONLY",
-		"strconv.ErrRange",
-		"strconv.FormatInt",
-		"strconv.NumError",
-		"strconv.ParseInt",
-		"strings.HasPrefix",
+		"bufio.NewScanner",  // line-by-line input reading (e.g. head, cat); no write or exec capability.
+		"bufio.SplitFunc",   // type for custom scanner split functions; pure type, no I/O.
+		"context.Context",   // deadline/cancellation plumbing; pure interface, no side effects.
+		"io.NopCloser",      // wraps a Reader with a no-op Close; no side effects.
+		"io.ReadCloser",     // interface type; no side effects.
+		"io.Reader",         // interface type; no side effects.
+		"io.WriteString",    // writes a string to a writer; no filesystem access, delegates to Write.
+		"io.Writer",         // interface type for writing; no side effects.
+		"math.MaxInt64",     // integer constant; no side effects.
+		"os.O_RDONLY",       // read-only file flag constant; cannot open files by itself.
+		"strconv.ErrRange",  // sentinel error value for overflow; pure constant.
+		"strconv.FormatInt", // int-to-string conversion; pure function, no I/O.
+		"strconv.NumError",  // error type for numeric conversion failures; pure type.
+		"strconv.ParseInt",  // string-to-int conversion with base/bit-size; pure function, no I/O.
+		"strings.HasPrefix", // pure function for prefix matching; no I/O.
 	},
 	"wc": {
-		"context.Context",
-		"io.EOF",
-		"io.NopCloser",
-		"io.ReadCloser",
-		"io.Reader",
-		"os.O_RDONLY",
-		"strconv.FormatInt",
-		"unicode.Cc",
-		"unicode.Cf",
-		"unicode.Is",
-		"unicode.Me",
-		"unicode.Mn",
-		"unicode.Range16",
-		"unicode.Range32",
-		"unicode.RangeTable",
-		"unicode/utf8.DecodeRune",
-		"unicode/utf8.RuneCount",
-		"unicode/utf8.UTFMax",
-		"unicode/utf8.Valid",
+		"context.Context",         // deadline/cancellation plumbing; pure interface, no side effects.
+		"io.EOF",                  // sentinel error value; pure constant.
+		"io.NopCloser",            // wraps a Reader with a no-op Close; no side effects.
+		"io.ReadCloser",           // interface type; no side effects.
+		"io.Reader",               // interface type; no side effects.
+		"os.O_RDONLY",             // read-only file flag constant; cannot open files by itself.
+		"strconv.FormatInt",       // int-to-string conversion; pure function, no I/O.
+		"unicode.Cc",              // control character category range table; pure data, no I/O.
+		"unicode.Cf",              // format character category range table; pure data, no I/O.
+		"unicode.Is",              // checks if rune belongs to a range table; pure function, no I/O.
+		"unicode.Me",              // enclosing mark category range table; pure data, no I/O.
+		"unicode.Mn",              // nonspacing mark category range table; pure data, no I/O.
+		"unicode.Range16",         // struct type for 16-bit Unicode ranges; pure data.
+		"unicode.Range32",         // struct type for 32-bit Unicode ranges; pure data.
+		"unicode.RangeTable",      // struct type for Unicode range tables; pure data.
+		"unicode/utf8.DecodeRune", // decodes first UTF-8 rune from a byte slice; pure function, no I/O.
+		"unicode/utf8.RuneCount",  // counts UTF-8 runes in a byte slice; pure function, no I/O.
+		"unicode/utf8.UTFMax",     // maximum number of bytes in a UTF-8 encoding; constant, no I/O.
+		"unicode/utf8.Valid",      // checks if a byte slice is valid UTF-8; pure function, no I/O.
 	},
 }
 
 var builtinAllowedSymbols = []string{
-	// bytes.IndexByte — finds a byte in a byte slice; pure function, no I/O.
-	"bytes.IndexByte",
-	// bufio.NewScanner — line-by-line input reading (e.g. head, cat); no write or exec capability.
-	"bufio.NewScanner",
-	// bufio.Scanner — scanner type for buffered input reading; no write or exec capability.
-	"bufio.Scanner",
-	// bufio.SplitFunc — type for custom scanner split functions; pure type, no I/O.
-	"bufio.SplitFunc",
-	// context.Context — deadline/cancellation plumbing; pure interface, no side effects.
-	"context.Context",
-	// errors.As — error type assertion; pure function, no I/O.
-	"errors.As",
-	// errors.Is — error comparison; pure function, no I/O.
-	"errors.Is",
-	// errors.New — creates a simple error value; pure function, no I/O.
-	"errors.New",
-	// fmt.Sprintf — string formatting; pure function, no I/O.
-	"fmt.Sprintf",
-	// io/fs.FileInfo — interface type for file information; no side effects.
-	"io/fs.FileInfo",
-	// io/fs.ModeDir — file mode bit constant for directories; pure constant.
-	"io/fs.ModeDir",
-	// io/fs.ModeNamedPipe — file mode bit constant for named pipes; pure constant.
-	"io/fs.ModeNamedPipe",
-	// io/fs.ModeSetgid — file mode bit constant for setgid; pure constant.
-	"io/fs.ModeSetgid",
-	// io/fs.ModeSetuid — file mode bit constant for setuid; pure constant.
-	"io/fs.ModeSetuid",
-	// io/fs.ModeSocket — file mode bit constant for sockets; pure constant.
-	"io/fs.ModeSocket",
-	// io/fs.ModeSticky — file mode bit constant for sticky bit; pure constant.
-	"io/fs.ModeSticky",
-	// io/fs.ModeSymlink — file mode bit constant for symlinks; pure constant.
-	"io/fs.ModeSymlink",
-	// io.EOF — sentinel error value; pure constant.
-	"io.EOF",
-	// io.NopCloser — wraps a Reader with a no-op Close; no side effects.
-	"io.NopCloser",
-	// io.ReadCloser — interface type; no side effects.
-	"io.ReadCloser",
-	// io.Reader — interface type; no side effects.
-	"io.Reader",
-	// io.ReadSeeker — interface type combining Reader and Seeker; no side effects.
-	"io.ReadSeeker",
-	// io.SeekCurrent — whence constant for Seek(offset, SeekCurrent); pure constant.
-	"io.SeekCurrent",
-	// math.Inf — returns positive or negative infinity; pure function, no I/O.
-	"math.Inf",
-	// math.MaxInt32 — integer constant; no side effects.
-	"math.MaxInt32",
-	// math.MaxInt64 — integer constant; no side effects.
-	"math.MaxInt64",
-	// math.MaxUint64 — integer constant; no side effects.
-	"math.MaxUint64",
-	// math.NaN — returns IEEE 754 NaN value; pure function, no I/O.
-	"math.NaN",
-	// os.FileInfo — file metadata interface returned by Stat; no I/O side effects.
-	"os.FileInfo",
-	// os.O_RDONLY — read-only file flag constant; cannot open files by itself.
-	"os.O_RDONLY",
-	// regexp.Compile — compiles a regular expression; pure function, no I/O. Uses RE2 engine (linear-time, no backtracking).
-	"regexp.Compile",
-	// regexp.QuoteMeta — escapes all special regex characters in a string; pure function, no I/O.
-	"regexp.QuoteMeta",
-	// regexp.Regexp — compiled regular expression type; no I/O side effects. All matching methods are linear-time (RE2).
-	"regexp.Regexp",
-	// slices.Reverse — reverses a slice in-place; pure function, no I/O.
-	"slices.Reverse",
-	// slices.SortFunc — sorts a slice with a comparison function; pure function, no I/O.
-	"slices.SortFunc",
-	// strings.Builder — efficient string concatenation; pure in-memory buffer, no I/O.
-	"strings.Builder",
-	// strings.ContainsRune — checks if a rune is in a string; pure function, no I/O.
-	"strings.ContainsRune",
-	// strings.Join — concatenates a slice of strings with a separator; pure function, no I/O.
-	"strings.Join",
-	// strings.ReplaceAll — replaces all occurrences of a substring; pure function, no I/O.
-	"strings.ReplaceAll",
-	// strings.ToLower — converts string to lowercase; pure function, no I/O.
-	"strings.ToLower",
-	// strconv.IntSize — platform int size constant (32 or 64); pure constant, no I/O.
-	"strconv.IntSize",
-	// strings.Split — splits a string by separator into a slice; pure function, no I/O.
-	"strings.Split",
-	// strconv.Atoi — string-to-int conversion; pure function, no I/O.
-	"strconv.Atoi",
-	// strconv.ParseBool — string-to-bool conversion; pure function, no I/O.
-	"strconv.ParseBool",
-	// strconv.Itoa — int-to-string conversion; pure function, no I/O.
-	"strconv.Itoa",
-	// strconv.ErrRange — sentinel error value for overflow; pure constant.
-	"strconv.ErrRange",
-	// strconv.NumError — error type for numeric conversion failures; pure type.
-	"strconv.NumError",
-	// strconv.ParseFloat — string-to-float conversion; pure function, no I/O.
-	"strconv.ParseFloat",
-	// strconv.ParseInt — string-to-int conversion with base/bit-size; pure function, no I/O.
-	"strconv.ParseInt",
-	// strconv.ParseUint — string-to-unsigned-int conversion; pure function, no I/O.
-	"strconv.ParseUint",
-	// strconv.FormatInt — int-to-string conversion; pure function, no I/O.
-	"strconv.FormatInt",
-	// strings.HasPrefix — pure function for prefix matching; no I/O.
-	"strings.HasPrefix",
-	// strings.IndexByte — finds byte in string; pure function, no I/O.
-	"strings.IndexByte",
-	// strings.TrimSpace — removes leading/trailing whitespace; pure function.
-	"strings.TrimSpace",
-	// io.WriteString — writes a string to a writer; no filesystem access, delegates to Write.
-	"io.WriteString",
-	// io.Writer — interface type for writing; no side effects.
-	"io.Writer",
-	// unicode.Cc — control character category range table; pure data, no I/O.
-	"unicode.Cc",
-	// unicode.Cf — format character category range table; pure data, no I/O.
-	"unicode.Cf",
-	// unicode.Is — checks if rune belongs to a range table; pure function, no I/O.
-	"unicode.Is",
-	// unicode.Me — enclosing mark category range table; pure data, no I/O.
-	"unicode.Me",
-	// unicode.Mn — nonspacing mark category range table; pure data, no I/O.
-	"unicode.Mn",
-	// unicode.Range16 — struct type for 16-bit Unicode ranges; pure data.
-	"unicode.Range16",
-	// unicode.Range32 — struct type for 32-bit Unicode ranges; pure data.
-	"unicode.Range32",
-	// unicode.RangeTable — struct type for Unicode range tables; pure data.
-	"unicode.RangeTable",
-	// unicode/utf8.DecodeRune — decodes first UTF-8 rune from a byte slice; pure function, no I/O.
-	"unicode/utf8.DecodeRune",
-	// unicode/utf8.RuneCount — counts UTF-8 runes in a byte slice; pure function, no I/O.
-	"unicode/utf8.RuneCount",
-	// unicode/utf8.UTFMax — maximum number of bytes in a UTF-8 encoding; constant, no I/O.
-	"unicode/utf8.UTFMax",
-	// unicode/utf8.Valid — checks if a byte slice is valid UTF-8; pure function, no I/O.
-	"unicode/utf8.Valid",
-	// time.Time — time value type; pure data, no side effects.
-	"time.Time",
+	"bytes.IndexByte",         // finds a byte in a byte slice; pure function, no I/O.
+	"bufio.NewScanner",        // line-by-line input reading (e.g. head, cat); no write or exec capability.
+	"bufio.Scanner",           // scanner type for buffered input reading; no write or exec capability.
+	"bufio.SplitFunc",         // type for custom scanner split functions; pure type, no I/O.
+	"context.Context",         // deadline/cancellation plumbing; pure interface, no side effects.
+	"errors.As",               // error type assertion; pure function, no I/O.
+	"errors.Is",               // error comparison; pure function, no I/O.
+	"errors.New",              // creates a simple error value; pure function, no I/O.
+	"fmt.Sprintf",             // string formatting; pure function, no I/O.
+	"io/fs.FileInfo",          // interface type for file information; no side effects.
+	"io/fs.ModeDir",           // file mode bit constant for directories; pure constant.
+	"io/fs.ModeNamedPipe",     // file mode bit constant for named pipes; pure constant.
+	"io/fs.ModeSetgid",        // file mode bit constant for setgid; pure constant.
+	"io/fs.ModeSetuid",        // file mode bit constant for setuid; pure constant.
+	"io/fs.ModeSocket",        // file mode bit constant for sockets; pure constant.
+	"io/fs.ModeSticky",        // file mode bit constant for sticky bit; pure constant.
+	"io/fs.ModeSymlink",       // file mode bit constant for symlinks; pure constant.
+	"io.EOF",                  // sentinel error value; pure constant.
+	"io.NopCloser",            // wraps a Reader with a no-op Close; no side effects.
+	"io.ReadCloser",           // interface type; no side effects.
+	"io.Reader",               // interface type; no side effects.
+	"io.ReadSeeker",           // interface type combining Reader and Seeker; no side effects.
+	"io.SeekCurrent",          // whence constant for Seek(offset, SeekCurrent); pure constant.
+	"math.Inf",                // returns positive or negative infinity; pure function, no I/O.
+	"math.MaxInt32",           // integer constant; no side effects.
+	"math.MaxInt64",           // integer constant; no side effects.
+	"math.MaxUint64",          // integer constant; no side effects.
+	"math.NaN",                // returns IEEE 754 NaN value; pure function, no I/O.
+	"os.FileInfo",             // file metadata interface returned by Stat; no I/O side effects.
+	"os.O_RDONLY",             // read-only file flag constant; cannot open files by itself.
+	"regexp.Compile",          // compiles a regular expression; pure function, no I/O. Uses RE2 engine (linear-time, no backtracking).
+	"regexp.QuoteMeta",        // escapes all special regex characters in a string; pure function, no I/O.
+	"regexp.Regexp",           // compiled regular expression type; no I/O side effects. All matching methods are linear-time (RE2).
+	"slices.Reverse",          // reverses a slice in-place; pure function, no I/O.
+	"slices.SortFunc",         // sorts a slice with a comparison function; pure function, no I/O.
+	"strings.Builder",         // efficient string concatenation; pure in-memory buffer, no I/O.
+	"strings.ContainsRune",    // checks if a rune is in a string; pure function, no I/O.
+	"strings.Join",            // concatenates a slice of strings with a separator; pure function, no I/O.
+	"strings.ReplaceAll",      // replaces all occurrences of a substring; pure function, no I/O.
+	"strings.ToLower",         // converts string to lowercase; pure function, no I/O.
+	"strconv.IntSize",         // platform int size constant (32 or 64); pure constant, no I/O.
+	"strings.Split",           // splits a string by separator into a slice; pure function, no I/O.
+	"strconv.Atoi",            // string-to-int conversion; pure function, no I/O.
+	"strconv.ParseBool",       // string-to-bool conversion; pure function, no I/O.
+	"strconv.Itoa",            // int-to-string conversion; pure function, no I/O.
+	"strconv.ErrRange",        // sentinel error value for overflow; pure constant.
+	"strconv.NumError",        // error type for numeric conversion failures; pure type.
+	"strconv.ParseFloat",      // string-to-float conversion; pure function, no I/O.
+	"strconv.ParseInt",        // string-to-int conversion with base/bit-size; pure function, no I/O.
+	"strconv.ParseUint",       // string-to-unsigned-int conversion; pure function, no I/O.
+	"strconv.FormatInt",       // int-to-string conversion; pure function, no I/O.
+	"strings.HasPrefix",       // pure function for prefix matching; no I/O.
+	"strings.IndexByte",       // finds byte in string; pure function, no I/O.
+	"strings.TrimSpace",       // removes leading/trailing whitespace; pure function.
+	"io.WriteString",          // writes a string to a writer; no filesystem access, delegates to Write.
+	"io.Writer",               // interface type for writing; no side effects.
+	"unicode.Cc",              // control character category range table; pure data, no I/O.
+	"unicode.Cf",              // format character category range table; pure data, no I/O.
+	"unicode.Is",              // checks if rune belongs to a range table; pure function, no I/O.
+	"unicode.Me",              // enclosing mark category range table; pure data, no I/O.
+	"unicode.Mn",              // nonspacing mark category range table; pure data, no I/O.
+	"unicode.Range16",         // struct type for 16-bit Unicode ranges; pure data.
+	"unicode.Range32",         // struct type for 32-bit Unicode ranges; pure data.
+	"unicode.RangeTable",      // struct type for Unicode range tables; pure data.
+	"unicode/utf8.DecodeRune", // decodes first UTF-8 rune from a byte slice; pure function, no I/O.
+	"unicode/utf8.RuneCount",  // counts UTF-8 runes in a byte slice; pure function, no I/O.
+	"unicode/utf8.UTFMax",     // maximum number of bytes in a UTF-8 encoding; constant, no I/O.
+	"unicode/utf8.Valid",      // checks if a byte slice is valid UTF-8; pure function, no I/O.
+	"time.Time",               // time value type; pure data, no side effects.
 }
