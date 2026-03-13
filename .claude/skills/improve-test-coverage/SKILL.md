@@ -14,7 +14,7 @@ You MUST follow this execution protocol. Skipping steps causes missed coverage g
 
 ### 1. Create the full task list FIRST
 
-Your very first action — before reading ANY files, before writing ANY code — is to call TaskCreate exactly 11 times, once for each step below (Steps 1–11). Use these exact subjects:
+Your very first action — before reading ANY files, before writing ANY code — is to call TaskCreate exactly 12 times, once for each step below (Steps 1–12). Use these exact subjects:
 
 1. "Step 1: Determine scope"
 2. "Step 2: Download and read reference test suites"
@@ -26,11 +26,12 @@ Your very first action — before reading ANY files, before writing ANY code —
 8. "Step 8: Review unnecessary Windows-specific assertions"
 9. "Step 9: Verify all tests pass"
 10. "Step 10: Run bash comparison tests"
-11. "Step 11: Post report as PR comment"
+11. "Step 11: Commit and push changes"
+12. "Step 12: Post report as PR comment"
 
 ### 2. Execution order
 
-Steps run strictly sequentially: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 → 9 → 10 → 11.
+Steps run strictly sequentially: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 → 9 → 10 → 11 → 12.
 
 Before starting step N, call TaskList and verify step N-1 is `completed`. Set step N to `in_progress`.
 
@@ -416,7 +417,33 @@ For any failures:
    - If the divergence is a bug, note it as a finding and either fix the test expectation to match bash or leave it as a failing test that documents the bug
 3. Re-run until all tests pass
 
-## Step 11: Post report as PR comment
+## Step 11: Commit and push changes
+
+After all tests pass, commit and push the new and modified test files.
+
+```bash
+# Stage all new and modified test scenario files
+git add tests/scenarios/
+
+# Commit with a descriptive message
+git commit -m "test: improve coverage for <target>
+
+Add scenario tests derived from reference test suites (GNU coreutils,
+uutils/coreutils, yash). See PR comment for full coverage report.
+
+Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>"
+
+# Push to the current branch
+git push
+```
+
+If the push fails (e.g. no upstream branch), set the upstream:
+
+```bash
+git push -u origin "$(git branch --show-current)"
+```
+
+## Step 12: Post report as PR comment
 
 After all tests pass, produce a summary report and post it as a comment on the current PR.
 
