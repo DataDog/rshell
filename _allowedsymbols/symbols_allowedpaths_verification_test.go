@@ -11,21 +11,13 @@ import (
 	"testing"
 )
 
-func allowedpathsCfg(tempRoot string, errs *[]string) allowedSymbolsConfig {
-	return allowedSymbolsConfig{
-		Symbols:   allowedpathsAllowedSymbols,
-		TargetDir: "allowedpaths",
-		CollectFiles: func(dir string) ([]string, error) {
-			return collectFlatGoFiles(dir)
-		},
-		ExemptImport: func(importPath string) bool {
-			return strings.HasPrefix(importPath, "github.com/DataDog/rshell/")
-		},
-		ListName:         "allowedpathsAllowedSymbols",
-		MinFiles:         1,
-		RepoRootOverride: tempRoot,
-		Errors:           errs,
-	}
+// allowedpathsVerifyCfg returns an allowedpathsCheckConfig with
+// RepoRootOverride and Errors set for verification testing.
+func allowedpathsVerifyCfg(tempRoot string, errs *[]string) allowedSymbolsConfig {
+	cfg := allowedpathsCheckConfig()
+	cfg.RepoRootOverride = tempRoot
+	cfg.Errors = errs
+	return cfg
 }
 
 func TestVerificationAllowedpathsCleanPass(t *testing.T) {
@@ -34,7 +26,7 @@ func TestVerificationAllowedpathsCleanPass(t *testing.T) {
 	copyDir(t, filepath.Join(root, "allowedpaths"), filepath.Join(tmp, "allowedpaths"))
 
 	var errs []string
-	checkAllowedSymbols(t, allowedpathsCfg(tmp, &errs))
+	checkAllowedSymbols(t, allowedpathsVerifyCfg(tmp, &errs))
 
 	if len(errs) > 0 {
 		t.Errorf("expected no errors on clean copy, got:\n%s", strings.Join(errs, "\n"))
@@ -50,7 +42,7 @@ func TestVerificationAllowedpathsUnlistedSymbol(t *testing.T) {
 	injectUnlistedSymbol(t, target)
 
 	var errs []string
-	checkAllowedSymbols(t, allowedpathsCfg(tmp, &errs))
+	checkAllowedSymbols(t, allowedpathsVerifyCfg(tmp, &errs))
 
 	if !errContains(errs, "os.Setenv") || !errContains(errs, "not in the allowlist") {
 		t.Errorf("expected 'not in the allowlist' error for os.Setenv, got: %v", errs)
@@ -67,7 +59,7 @@ func TestVerificationAllowedpathsExemptImport(t *testing.T) {
 	injectImport(t, target, `fakepkg "github.com/DataDog/rshell/fakepkg"`, "var _ = fakepkg.Foo")
 
 	var errs []string
-	checkAllowedSymbols(t, allowedpathsCfg(tmp, &errs))
+	checkAllowedSymbols(t, allowedpathsVerifyCfg(tmp, &errs))
 
 	if errContains(errs, "github.com/DataDog/rshell/fakepkg") {
 		t.Errorf("exempt import should not be flagged, got: %v", errs)

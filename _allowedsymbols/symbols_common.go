@@ -10,10 +10,10 @@ package allowedsymbols
 // Keys ending with "/" are treated as prefix bans (any import path starting
 // with that prefix is banned); all other keys are exact-match bans.
 var permanentlyBanned = map[string]string{
-	"reflect":  "reflection defeats static safety analysis",
-	"unsafe":   "bypasses Go's type and memory safety guarantees",
-	"os/exec":  "spawns arbitrary host processes, bypassing all shell restrictions",
-	"net":      "raw network access enables data exfiltration and reverse shells",
-	"net/":     "network sub-packages enable data exfiltration and C2 communication",
-	"plugin":   "dynamically loads Go shared libraries, enabling arbitrary code execution",
+	"reflect": "reflection defeats static safety analysis",
+	"unsafe":  "bypasses Go's type and memory safety guarantees",
+	"os/exec": "spawns arbitrary host processes, bypassing all shell restrictions",
+	"net":     "raw network access enables data exfiltration and reverse shells",
+	"net/":    "network sub-packages enable data exfiltration and C2 communication",
+	"plugin":  "dynamically loads Go shared libraries, enabling arbitrary code execution",
 }

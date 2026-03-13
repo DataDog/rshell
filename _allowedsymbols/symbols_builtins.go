@@ -161,4 +161,3 @@ var builtinAllowedSymbols = []string{
 	// time.Time — time value type; pure data, no side effects.
 	"time.Time",
 }
-

@@ -10,12 +10,11 @@ import (
 	"testing"
 )
 
-// TestInterpAllowedSymbols enforces symbol-level import restrictions on
-// non-test Go files in interp/. Every imported symbol must be explicitly
-// listed in interpAllowedSymbols. Internal module imports
-// (github.com/DataDog/rshell/*) are auto-allowed.
-func TestInterpAllowedSymbols(t *testing.T) {
-	checkAllowedSymbols(t, allowedSymbolsConfig{
+// interpCheckConfig returns the allowedSymbolsConfig used to enforce
+// symbol-level import restrictions on interp/. Verification tests reuse
+// this function to ensure they test the exact same configuration.
+func interpCheckConfig() allowedSymbolsConfig {
+	return allowedSymbolsConfig{
 		Symbols:   interpAllowedSymbols,
 		TargetDir: "interp",
 		CollectFiles: func(dir string) ([]string, error) {
@@ -26,5 +25,13 @@ func TestInterpAllowedSymbols(t *testing.T) {
 		},
 		ListName: "interpAllowedSymbols",
 		MinFiles: 1,
-	})
+	}
+}
+
+// TestInterpAllowedSymbols enforces symbol-level import restrictions on
+// non-test Go files in interp/. Every imported symbol must be explicitly
+// listed in interpAllowedSymbols. Internal module imports
+// (github.com/DataDog/rshell/*) are auto-allowed.
+func TestInterpAllowedSymbols(t *testing.T) {
+	checkAllowedSymbols(t, interpCheckConfig())
 }

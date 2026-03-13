@@ -11,24 +11,13 @@ import (
 	"testing"
 )
 
-func builtinsCfg(tempRoot string, errs *[]string) allowedSymbolsConfig {
-	return allowedSymbolsConfig{
-		Symbols:   builtinAllowedSymbols,
-		TargetDir: "builtins",
-		CollectFiles: func(dir string) ([]string, error) {
-			return collectSubdirGoFiles(dir, map[string]bool{"testutil": true}, func(rel string) bool {
-				return rel == "builtins.go"
-			})
-		},
-		ExemptImport: func(importPath string) bool {
-			return importPath == "github.com/DataDog/rshell/builtins" ||
-				strings.HasPrefix(importPath, "github.com/DataDog/rshell/builtins/internal/")
-		},
-		ListName:         "builtinAllowedSymbols",
-		MinFiles:         1,
-		RepoRootOverride: tempRoot,
-		Errors:           errs,
-	}
+// builtinsVerifyCfg returns a builtinsCheckConfig with RepoRootOverride and
+// Errors set for verification testing.
+func builtinsVerifyCfg(tempRoot string, errs *[]string) allowedSymbolsConfig {
+	cfg := builtinsCheckConfig()
+	cfg.RepoRootOverride = tempRoot
+	cfg.Errors = errs
+	return cfg
 }
 
 func TestVerificationBuiltinsCleanPass(t *testing.T) {
@@ -37,7 +26,7 @@ func TestVerificationBuiltinsCleanPass(t *testing.T) {
 	copyDir(t, filepath.Join(root, "builtins"), filepath.Join(tmp, "builtins"))
 
 	var errs []string
-	checkAllowedSymbols(t, builtinsCfg(tmp, &errs))
+	checkAllowedSymbols(t, builtinsVerifyCfg(tmp, &errs))
 
 	if len(errs) > 0 {
 		t.Errorf("expected no errors on clean copy, got:\n%s", strings.Join(errs, "\n"))
@@ -53,7 +42,7 @@ func TestVerificationBuiltinsBannedPackageExact(t *testing.T) {
 	injectImport(t, target, `"os/exec"`, "var _ = exec.Command")
 
 	var errs []string
-	checkAllowedSymbols(t, builtinsCfg(tmp, &errs))
+	checkAllowedSymbols(t, builtinsVerifyCfg(tmp, &errs))
 
 	if !errContains(errs, "permanently banned") {
 		t.Errorf("expected 'permanently banned' error for os/exec, got: %v", errs)
@@ -69,7 +58,7 @@ func TestVerificationBuiltinsBannedPackagePrefix(t *testing.T) {
 	injectImport(t, target, `"net/http"`, "var _ = http.Get")
 
 	var errs []string
-	checkAllowedSymbols(t, builtinsCfg(tmp, &errs))
+	checkAllowedSymbols(t, builtinsVerifyCfg(tmp, &errs))
 
 	if !errContains(errs, "permanently banned") {
 		t.Errorf("expected 'permanently banned' error for net/http, got: %v", errs)
@@ -85,7 +74,7 @@ func TestVerificationBuiltinsUnlistedSymbol(t *testing.T) {
 	injectUnlistedSymbol(t, target)
 
 	var errs []string
-	checkAllowedSymbols(t, builtinsCfg(tmp, &errs))
+	checkAllowedSymbols(t, builtinsVerifyCfg(tmp, &errs))
 
 	if !errContains(errs, "os.Setenv") || !errContains(errs, "not in the allowlist") {
 		t.Errorf("expected 'not in the allowlist' error for os.Setenv, got: %v", errs)
@@ -101,7 +90,7 @@ func TestVerificationBuiltinsUnlistedPackage(t *testing.T) {
 	injectImport(t, target, `"crypto/rand"`, "var _ = rand.Read")
 
 	var errs []string
-	checkAllowedSymbols(t, builtinsCfg(tmp, &errs))
+	checkAllowedSymbols(t, builtinsVerifyCfg(tmp, &errs))
 
 	if !errContains(errs, "not in the allowlist") {
 		t.Errorf("expected 'not in the allowlist' error for crypto/rand, got: %v", errs)
@@ -117,7 +106,7 @@ func TestVerificationBuiltinsBlankImport(t *testing.T) {
 	injectImport(t, target, `_ "encoding/json"`, "")
 
 	var errs []string
-	checkAllowedSymbols(t, builtinsCfg(tmp, &errs))
+	checkAllowedSymbols(t, builtinsVerifyCfg(tmp, &errs))
 
 	if !errContains(errs, "blank/dot import") {
 		t.Errorf("expected 'blank/dot import' error, got: %v", errs)
@@ -134,7 +123,7 @@ func TestVerificationBuiltinsExemptImport(t *testing.T) {
 	injectImport(t, target, `internalfoo "github.com/DataDog/rshell/builtins/internal/fakepkg"`, "var _ = internalfoo.Foo")
 
 	var errs []string
-	checkAllowedSymbols(t, builtinsCfg(tmp, &errs))
+	checkAllowedSymbols(t, builtinsVerifyCfg(tmp, &errs))
 
 	if errContains(errs, "github.com/DataDog/rshell/builtins/internal/fakepkg") {
 		t.Errorf("exempt import should not be flagged, got: %v", errs)
@@ -151,7 +140,7 @@ func TestVerificationBuiltinsSkipsTopLevel(t *testing.T) {
 	injectImport(t, target, `"os/exec"`, "var _ = exec.Command")
 
 	var errs []string
-	checkAllowedSymbols(t, builtinsCfg(tmp, &errs))
+	checkAllowedSymbols(t, builtinsVerifyCfg(tmp, &errs))
 
 	if errContains(errs, "os/exec") {
 		t.Errorf("builtins.go should be skipped, but got error: %v", errs)
@@ -172,7 +161,7 @@ func TestVerificationBuiltinsSkipsTestutilDir(t *testing.T) {
 	)
 
 	var errs []string
-	checkAllowedSymbols(t, builtinsCfg(tmp, &errs))
+	checkAllowedSymbols(t, builtinsVerifyCfg(tmp, &errs))
 
 	if errContains(errs, "os/exec") {
 		t.Errorf("testutil/ should be skipped, but got error: %v", errs)

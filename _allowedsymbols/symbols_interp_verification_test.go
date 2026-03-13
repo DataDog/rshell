@@ -11,21 +11,13 @@ import (
 	"testing"
 )
 
-func interpCfg(tempRoot string, errs *[]string) allowedSymbolsConfig {
-	return allowedSymbolsConfig{
-		Symbols:   interpAllowedSymbols,
-		TargetDir: "interp",
-		CollectFiles: func(dir string) ([]string, error) {
-			return collectFlatGoFiles(dir)
-		},
-		ExemptImport: func(importPath string) bool {
-			return strings.HasPrefix(importPath, "github.com/DataDog/rshell/")
-		},
-		ListName:         "interpAllowedSymbols",
-		MinFiles:         1,
-		RepoRootOverride: tempRoot,
-		Errors:           errs,
-	}
+// interpVerifyCfg returns an interpCheckConfig with RepoRootOverride and
+// Errors set for verification testing.
+func interpVerifyCfg(tempRoot string, errs *[]string) allowedSymbolsConfig {
+	cfg := interpCheckConfig()
+	cfg.RepoRootOverride = tempRoot
+	cfg.Errors = errs
+	return cfg
 }
 
 func TestVerificationInterpCleanPass(t *testing.T) {
@@ -34,7 +26,7 @@ func TestVerificationInterpCleanPass(t *testing.T) {
 	copyDir(t, filepath.Join(root, "interp"), filepath.Join(tmp, "interp"))
 
 	var errs []string
-	checkAllowedSymbols(t, interpCfg(tmp, &errs))
+	checkAllowedSymbols(t, interpVerifyCfg(tmp, &errs))
 
 	if len(errs) > 0 {
 		t.Errorf("expected no errors on clean copy, got:\n%s", strings.Join(errs, "\n"))
@@ -50,7 +42,7 @@ func TestVerificationInterpUnlistedSymbol(t *testing.T) {
 	injectUnlistedSymbol(t, target)
 
 	var errs []string
-	checkAllowedSymbols(t, interpCfg(tmp, &errs))
+	checkAllowedSymbols(t, interpVerifyCfg(tmp, &errs))
 
 	if !errContains(errs, "os.Setenv") || !errContains(errs, "not in the allowlist") {
 		t.Errorf("expected 'not in the allowlist' error for os.Setenv, got: %v", errs)
@@ -67,7 +59,7 @@ func TestVerificationInterpExemptImport(t *testing.T) {
 	injectImport(t, target, `fakepkg "github.com/DataDog/rshell/fakepkg"`, "var _ = fakepkg.Foo")
 
 	var errs []string
-	checkAllowedSymbols(t, interpCfg(tmp, &errs))
+	checkAllowedSymbols(t, interpVerifyCfg(tmp, &errs))
 
 	if errContains(errs, "github.com/DataDog/rshell/fakepkg") {
 		t.Errorf("exempt import should not be flagged, got: %v", errs)
@@ -89,7 +81,7 @@ func TestVerificationInterpIgnoresSubdirs(t *testing.T) {
 	)
 
 	var errs []string
-	checkAllowedSymbols(t, interpCfg(tmp, &errs))
+	checkAllowedSymbols(t, interpVerifyCfg(tmp, &errs))
 
 	if errContains(errs, "os/exec") {
 		t.Errorf("subdirectory files should be ignored by collectFlatGoFiles, but got error: %v", errs)

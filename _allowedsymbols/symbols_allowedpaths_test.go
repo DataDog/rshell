@@ -10,12 +10,11 @@ import (
 	"testing"
 )
 
-// TestAllowedPathsAllowedSymbols enforces symbol-level import restrictions on
-// non-test Go files in allowedpaths/. Every imported symbol must be explicitly
-// listed in allowedpathsAllowedSymbols. Internal module imports
-// (github.com/DataDog/rshell/*) are auto-allowed.
-func TestAllowedPathsAllowedSymbols(t *testing.T) {
-	checkAllowedSymbols(t, allowedSymbolsConfig{
+// allowedpathsCheckConfig returns the allowedSymbolsConfig used to enforce
+// symbol-level import restrictions on allowedpaths/. Verification tests reuse
+// this function to ensure they test the exact same configuration.
+func allowedpathsCheckConfig() allowedSymbolsConfig {
+	return allowedSymbolsConfig{
 		Symbols:   allowedpathsAllowedSymbols,
 		TargetDir: "allowedpaths",
 		CollectFiles: func(dir string) ([]string, error) {
@@ -26,5 +25,13 @@ func TestAllowedPathsAllowedSymbols(t *testing.T) {
 		},
 		ListName: "allowedpathsAllowedSymbols",
 		MinFiles: 1,
-	})
+	}
+}
+
+// TestAllowedPathsAllowedSymbols enforces symbol-level import restrictions on
+// non-test Go files in allowedpaths/. Every imported symbol must be explicitly
+// listed in allowedpathsAllowedSymbols. Internal module imports
+// (github.com/DataDog/rshell/*) are auto-allowed.
+func TestAllowedPathsAllowedSymbols(t *testing.T) {
+	checkAllowedSymbols(t, allowedpathsCheckConfig())
 }

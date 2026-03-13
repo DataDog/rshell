@@ -10,12 +10,11 @@ import (
 	"testing"
 )
 
-// TestBuiltinAllowedSymbols enforces symbol-level import restrictions on
-// command implementation files in builtins/. builtins.go is exempt as
-// the package framework. Every other file's imports and pkg.Symbol references
-// must be explicitly listed in builtinAllowedSymbols.
-func TestBuiltinAllowedSymbols(t *testing.T) {
-	checkAllowedSymbols(t, allowedSymbolsConfig{
+// builtinsCheckConfig returns the allowedSymbolsConfig used to enforce
+// symbol-level import restrictions on builtins/. Verification tests reuse
+// this function to ensure they test the exact same configuration.
+func builtinsCheckConfig() allowedSymbolsConfig {
+	return allowedSymbolsConfig{
 		Symbols:   builtinAllowedSymbols,
 		TargetDir: "builtins",
 		CollectFiles: func(dir string) ([]string, error) {
@@ -30,5 +29,13 @@ func TestBuiltinAllowedSymbols(t *testing.T) {
 		},
 		ListName: "builtinAllowedSymbols",
 		MinFiles: 1,
-	})
+	}
+}
+
+// TestBuiltinAllowedSymbols enforces symbol-level import restrictions on
+// command implementation files in builtins/. builtins.go is exempt as
+// the package framework. Every other file's imports and pkg.Symbol references
+// must be explicitly listed in builtinAllowedSymbols.
+func TestBuiltinAllowedSymbols(t *testing.T) {
+	checkAllowedSymbols(t, builtinsCheckConfig())
 }
