@@ -243,16 +243,16 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 				return r.open(ctx, path, flags, mode, false)
 			},
 			ReadDir: func(ctx context.Context, path string) ([]fs.DirEntry, error) {
-				return r.sandbox.readDir(r.handlerCtx(ctx, todoPos), path)
+				return r.sandbox.ReadDir(path, HandlerCtx(r.handlerCtx(ctx, todoPos)).Dir)
 			},
 			StatFile: func(ctx context.Context, path string) (fs.FileInfo, error) {
-				return r.sandbox.stat(r.handlerCtx(ctx, todoPos), path)
+				return r.sandbox.Stat(path, HandlerCtx(r.handlerCtx(ctx, todoPos)).Dir)
 			},
 			LstatFile: func(ctx context.Context, path string) (fs.FileInfo, error) {
-				return r.sandbox.lstat(r.handlerCtx(ctx, todoPos), path)
+				return r.sandbox.Lstat(path, HandlerCtx(r.handlerCtx(ctx, todoPos)).Dir)
 			},
 			AccessFile: func(ctx context.Context, path string, mode uint32) error {
-				return r.sandbox.access(r.handlerCtx(ctx, todoPos), path, mode)
+				return r.sandbox.Access(path, HandlerCtx(r.handlerCtx(ctx, todoPos)).Dir, mode)
 			},
 			PortableErr: portableErrMsg,
 			Now:         time.Now,

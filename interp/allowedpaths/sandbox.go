@@ -3,10 +3,11 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2026-present Datadog, Inc.
 
-package interp
+// Package allowedpaths implements a filesystem sandbox that restricts access
+// to a set of allowed directories using os.Root (Go 1.24+).
+package allowedpaths
 
 import (
-	"context"
 	"fmt"
 	"io"
 	"io/fs"
@@ -16,24 +17,24 @@ import (
 	"strings"
 )
 
-// allowedRoot pairs an absolute directory path with its opened os.Root handle.
-type allowedRoot struct {
+// Root pairs an absolute directory path with its opened os.Root handle.
+type Root struct {
 	absPath string
 	root    *os.Root
 }
 
-// pathSandbox restricts filesystem access to a set of allowed directories.
+// Sandbox restricts filesystem access to a set of allowed directories.
 // The restriction is enforced using os.Root (Go 1.24+), which uses openat
 // syscalls for atomic path validation — immune to symlink and ".." traversal attacks.
-type pathSandbox struct {
-	roots []allowedRoot
+type Sandbox struct {
+	roots []Root
 }
 
-// newPathSandbox validates paths and eagerly opens os.Root handles so the
+// New validates paths and eagerly opens os.Root handles so the
 // allowed directories are pinned before the caller can modify them between
 // construction and the first run.
-func newPathSandbox(paths []string) (*pathSandbox, error) {
-	roots := make([]allowedRoot, len(paths))
+func New(paths []string) (*Sandbox, error) {
+	roots := make([]Root, len(paths))
 	for i, p := range paths {
 		abs, err := filepath.Abs(p)
 		if err != nil {
@@ -53,14 +54,14 @@ func newPathSandbox(paths []string) (*pathSandbox, error) {
 			}
 			return nil, fmt.Errorf("AllowedPaths: cannot open root %q: %w", abs, err)
 		}
-		roots[i] = allowedRoot{absPath: abs, root: root}
+		roots[i] = Root{absPath: abs, root: root}
 	}
-	return &pathSandbox{roots: roots}, nil
+	return &Sandbox{roots: roots}, nil
 }
 
 // resolve returns the matching os.Root and the path relative to it for the
 // given absolute path. It returns false if no root matches.
-func (s *pathSandbox) resolve(absPath string) (*os.Root, string, bool) {
+func (s *Sandbox) resolve(absPath string) (*os.Root, string, bool) {
 	if s == nil {
 		return nil, "", false
 	}
@@ -77,11 +78,11 @@ func (s *pathSandbox) resolve(absPath string) (*os.Root, string, bool) {
 	return nil, "", false
 }
 
-// access checks whether the resolved path is accessible with the given mode.
+// Access checks whether the resolved path is accessible with the given mode.
 // All operations go through os.Root to stay within the sandbox.
 // Mode: 0x04 = read, 0x02 = write, 0x01 = execute.
-func (s *pathSandbox) access(ctx context.Context, path string, mode uint32) error {
-	absPath := toAbs(path, HandlerCtx(ctx).Dir)
+func (s *Sandbox) Access(path string, cwd string, mode uint32) error {
+	absPath := ToAbs(path, cwd)
 
 	if s == nil {
 		return &os.PathError{Op: "access", Path: path, Err: os.ErrPermission}
@@ -136,23 +137,35 @@ func (s *pathSandbox) access(ctx context.Context, path string, mode uint32) erro
 	return &os.PathError{Op: "access", Path: path, Err: os.ErrPermission}
 }
 
-// toAbs resolves path against cwd when it is not already absolute.
-func toAbs(path, cwd string) string {
+// ToAbs resolves path against cwd when it is not already absolute.
+func ToAbs(path, cwd string) string {
 	if filepath.IsAbs(path) {
 		return path
 	}
 	return filepath.Join(cwd, path)
 }
 
-// open implements the restricted file-open policy. The file is opened through
+// isDevNull reports whether path refers to the platform's null device.
+func isDevNull(path string) bool {
+	if path == "/dev/null" {
+		return true
+	}
+	// On Windows, os.DevNull is "NUL". Accept it case-insensitively.
+	if os.DevNull != "/dev/null" && strings.EqualFold(path, os.DevNull) {
+		return true
+	}
+	return false
+}
+
+// Open implements the restricted file-open policy. The file is opened through
 // os.Root for atomic path validation. Only read-only access is permitted;
 // any write flags are rejected as a defense-in-depth measure.
-func (s *pathSandbox) open(ctx context.Context, path string, flag int, perm os.FileMode) (io.ReadWriteCloser, error) {
+func (s *Sandbox) Open(path string, cwd string, flag int, perm os.FileMode) (io.ReadWriteCloser, error) {
 	if flag != os.O_RDONLY {
 		return nil, &os.PathError{Op: "open", Path: path, Err: os.ErrPermission}
 	}
 
-	absPath := toAbs(path, HandlerCtx(ctx).Dir)
+	absPath := ToAbs(path, cwd)
 
 	root, relPath, ok := s.resolve(absPath)
 	if !ok {
@@ -166,9 +179,9 @@ func (s *pathSandbox) open(ctx context.Context, path string, flag int, perm os.F
 	return f, nil
 }
 
-// readDir implements the restricted directory-read policy.
-func (s *pathSandbox) readDir(ctx context.Context, path string) ([]fs.DirEntry, error) {
-	absPath := toAbs(path, HandlerCtx(ctx).Dir)
+// ReadDir implements the restricted directory-read policy.
+func (s *Sandbox) ReadDir(path string, cwd string) ([]fs.DirEntry, error) {
+	absPath := ToAbs(path, cwd)
 
 	root, relPath, ok := s.resolve(absPath)
 	if !ok {
@@ -192,10 +205,10 @@ func (s *pathSandbox) readDir(ctx context.Context, path string) ([]fs.DirEntry, 
 	return entries, nil
 }
 
-// stat implements the restricted stat policy. It uses os.Root.Stat for
+// Stat implements the restricted stat policy. It uses os.Root.Stat for
 // metadata-only access — no file descriptor is opened, so it works on
 // unreadable files and does not block on special files (e.g. FIFOs).
-func (s *pathSandbox) stat(ctx context.Context, path string) (fs.FileInfo, error) {
+func (s *Sandbox) Stat(path string, cwd string) (fs.FileInfo, error) {
 	// The null device (/dev/null on Unix, NUL on Windows) is always
 	// allowed and must be stat-ed directly because os.Root.Stat cannot
 	// resolve platform device names (e.g. NUL on Windows).
@@ -203,7 +216,7 @@ func (s *pathSandbox) stat(ctx context.Context, path string) (fs.FileInfo, error
 		return os.Stat(os.DevNull)
 	}
 
-	absPath := toAbs(path, HandlerCtx(ctx).Dir)
+	absPath := ToAbs(path, cwd)
 
 	root, relPath, ok := s.resolve(absPath)
 	if !ok {
@@ -217,16 +230,16 @@ func (s *pathSandbox) stat(ctx context.Context, path string) (fs.FileInfo, error
 	return info, nil
 }
 
-// lstat implements the restricted lstat policy. Like stat, it uses a
+// Lstat implements the restricted lstat policy. Like stat, it uses a
 // metadata-only call, but does not follow symbolic links — the returned
 // FileInfo describes the link itself rather than its target.
-func (s *pathSandbox) lstat(ctx context.Context, path string) (fs.FileInfo, error) {
+func (s *Sandbox) Lstat(path string, cwd string) (fs.FileInfo, error) {
 	// The null device is never a symlink, so lstat behaves like stat.
 	if isDevNull(path) {
 		return os.Stat(os.DevNull)
 	}
 
-	absPath := toAbs(path, HandlerCtx(ctx).Dir)
+	absPath := ToAbs(path, cwd)
 
 	root, relPath, ok := s.resolve(absPath)
 	if !ok {
@@ -241,7 +254,7 @@ func (s *pathSandbox) lstat(ctx context.Context, path string) (fs.FileInfo, erro
 }
 
 // Close releases all os.Root file descriptors. It is safe to call multiple times.
-func (s *pathSandbox) Close() error {
+func (s *Sandbox) Close() error {
 	if s == nil {
 		return nil
 	}
@@ -252,21 +265,4 @@ func (s *pathSandbox) Close() error {
 		}
 	}
 	return nil
-}
-
-// AllowedPaths restricts file and directory access to the specified directories.
-// Paths must be absolute directories that exist. When set, only files within
-// these directories can be opened, read, or executed.
-//
-// When not set (default), all file access is blocked.
-// An empty slice also blocks all file access.
-func AllowedPaths(paths []string) RunnerOption {
-	return func(r *Runner) error {
-		sb, err := newPathSandbox(paths)
-		if err != nil {
-			return err
-		}
-		r.sandbox = sb
-		return nil
-	}
 }
