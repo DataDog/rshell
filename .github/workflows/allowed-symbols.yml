@@ -1,0 +1,53 @@
+name: Allowed Symbols Verification
+
+# Use pull_request_target so the workflow definition always comes from the
+# base branch (main).  This prevents a PR from editing the workflow file to
+# bypass the label gate.  The checkout step below fetches the PR head for
+# the diff comparison, but the enforcement logic itself is trusted.
+on:
+  pull_request_target:
+    branches: [main]
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  check-allowed-symbols:
+    name: Allowed Symbols Label Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          # Fetch the base branch and the PR head so we can diff them.
+          ref: ${{ github.event.pull_request.base.ref }}
+          fetch-depth: 0
+
+      - name: Fetch PR head
+        run: git fetch origin "refs/pull/${{ github.event.pull_request.number }}/head"
+
+      - name: Check for allowedsymbols changes
+        id: changes
+        run: |
+          changed=$(git diff --name-only "${{ github.event.pull_request.base.sha }}...${{ github.event.pull_request.head.sha }}" -- 'allowedsymbols/')
+          if [ -n "$changed" ]; then
+            echo "modified=true" >> "$GITHUB_OUTPUT"
+            echo "Changed allowedsymbols files:"
+            echo "$changed"
+          else
+            echo "modified=false" >> "$GITHUB_OUTPUT"
+            echo "No allowedsymbols files changed."
+          fi
+
+      - name: Require verified/allowed_symbols label
+        if: steps.changes.outputs.modified == 'true'
+        env:
+          PR_LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
+        run: |
+          if echo "$PR_LABELS" | jq -e 'index("verified/allowed_symbols")' > /dev/null 2>&1; then
+            echo "Label 'verified/allowed_symbols' is present. Check passed."
+          else
+            echo "::error::Files in allowedsymbols/ have been modified. A human must review the changes and add the 'verified/allowed_symbols' label to this PR before it can be merged."
+            exit 1
+          fi

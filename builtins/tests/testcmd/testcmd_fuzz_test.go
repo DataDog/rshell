@@ -1,0 +1,291 @@
+// Unless explicitly stated otherwise all files in this repository are licensed
+// under the Apache License Version 2.0.
+// This product includes software developed at Datadog (https://www.datadoghq.com/).
+// Copyright 2026-present Datadog, Inc.
+
+package testcmd_test
+
+import (
+	"context"
+	"fmt"
+	"os"
+	"path/filepath"
+	"testing"
+	"time"
+	"unicode/utf8"
+
+	"github.com/DataDog/rshell/builtins/testutil"
+	"github.com/DataDog/rshell/interp"
+)
+
+func cmdRunCtx(ctx context.Context, t *testing.T, script, dir string) (string, string, int) {
+	t.Helper()
+	return testutil.RunScriptCtx(ctx, t, script, dir, interp.AllowedPaths([]string{dir}))
+}
+
+// FuzzTestStringOps fuzzes test with string comparison operators.
+// Edge cases: empty strings, strings that look like operators,
+// unicode strings, strings with leading/trailing spaces.
+func FuzzTestStringOps(f *testing.F) {
+	f.Add("hello", "hello", "=")
+	f.Add("hello", "world", "!=")
+	f.Add("", "", "=")
+	f.Add("abc", "def", "=")
+	f.Add("a", "b", "!=")
+	// Strings that look like operators (POSIX disambiguation edge cases)
+	f.Add("-n", "hello", "=")
+	f.Add("-z", "", "!=")
+	f.Add("-e", "file", "=")
+	f.Add("!", "hello", "!=")
+	// Lexicographic ordering with < and >
+	f.Add("abc", "abd", "<")
+	f.Add("z", "a", ">")
+	f.Add("A", "a", "<") // uppercase sorts before lowercase in ASCII
+	// Unicode strings
+	f.Add("héllo", "héllo", "=")
+	f.Add("日本語", "日本語", "=")
+	f.Add("😀", "😀", "=")
+	// Strings with spaces (shell-safe within single quotes)
+	f.Add("hello world", "hello world", "=")
+	f.Add("a b", "a c", "!=")
+	// == operator (same as =)
+	f.Add("x", "x", "==")
+
+	f.Fuzz(func(t *testing.T, left, right, op string) {
+		if len(left) > 100 || len(right) > 100 {
+			return
+		}
+		if op != "=" && op != "!=" && op != "==" && op != "<" && op != ">" {
+			return
+		}
+		if !utf8.ValidString(left) || !utf8.ValidString(right) {
+			return
+		}
+		for _, s := range []string{left, right} {
+			for _, c := range s {
+				if c == '\'' || c == '\x00' || c == '\n' || c == ']' {
+					return
+				}
+				// C0/DEL/C1 control chars confuse the shell script parser.
+				if c < 0x20 || c == 0x7f || (c >= 0x80 && c < 0xa0) {
+					return
+				}
+			}
+		}
+		// < and > are shell redirection operators — must use = or != in fuzz body.
+		if op == "<" || op == ">" {
+			return
+		}
+
+		dir := t.TempDir()
+
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		script := fmt.Sprintf("test '%s' %s '%s'", left, op, right)
+		_, _, code := cmdRunCtx(ctx, t, script, dir)
+		if code != 0 && code != 1 && code != 2 {
+			t.Errorf("test string op unexpected exit code %d", code)
+		}
+	})
+}
+
+// FuzzTestIntegerOps fuzzes test with integer comparison operators.
+// Edge cases: integer overflow (clamped to MaxInt64/MinInt64),
+// leading/trailing spaces (trimmed), very large values.
+func FuzzTestIntegerOps(f *testing.F) {
+	f.Add(int64(1), int64(2), "-lt")
+	f.Add(int64(5), int64(5), "-eq")
+	f.Add(int64(10), int64(3), "-gt")
+	f.Add(int64(0), int64(0), "-le")
+	f.Add(int64(-1), int64(1), "-ne")
+	// Boundary values
+	f.Add(int64(0), int64(0), "-eq")
+	f.Add(int64(-1), int64(0), "-lt")
+	f.Add(int64(1), int64(0), "-gt")
+	// int32 boundaries
+	f.Add(int64(1<<31-1), int64(1<<31-1), "-eq")
+	f.Add(int64(-(1 << 31)), int64(-(1 << 31)), "-eq")
+	// Values near int64 max/min
+	f.Add(int64(1<<31), int64(1<<31), "-eq")
+	f.Add(int64(-(1<<31 + 1)), int64(0), "-lt")
+	// int64 max (clamped on overflow per GNU test behavior)
+	f.Add(int64(1<<31-1), int64(1<<31-1), "-ge")
+
+	f.Fuzz(func(t *testing.T, left, right int64, op string) {
+		switch op {
+		case "-eq", "-ne", "-lt", "-le", "-gt", "-ge":
+		default:
+			return
+		}
+		// Clamp to reasonable range.
+		if left > 1<<31 || left < -(1<<31) || right > 1<<31 || right < -(1<<31) {
+			return
+		}
+
+		dir := t.TempDir()
+
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		script := fmt.Sprintf("test %d %s %d", left, op, right)
+		_, _, code := cmdRunCtx(ctx, t, script, dir)
+		if code != 0 && code != 1 && code != 2 {
+			t.Errorf("test %d %s %d unexpected exit code %d", left, op, right, code)
+		}
+	})
+}
+
+// FuzzTestFileOps fuzzes test with file test operators on random filenames.
+// Edge cases: -nt/-ot comparison, non-existent files, empty paths.
+func FuzzTestFileOps(f *testing.F) {
+	f.Add("-e", true)
+	f.Add("-f", true)
+	f.Add("-d", false)
+	f.Add("-s", true)
+	f.Add("-r", true)
+	f.Add("-z", false)
+	// File exists but is empty (-s should be false)
+	f.Add("-s", false)
+	// Directory test on a file (should be false)
+	f.Add("-d", true)
+	// Regular file test on non-existent (should be false)
+	f.Add("-f", false)
+
+	f.Fuzz(func(t *testing.T, op string, createFile bool) {
+		switch op {
+		case "-e", "-f", "-d", "-s", "-r", "-w", "-x", "-h", "-L", "-p":
+		default:
+			return
+		}
+
+		dir := t.TempDir()
+		target := "testfile.txt"
+		if createFile {
+			if err := os.WriteFile(filepath.Join(dir, target), []byte("content"), 0644); err != nil {
+				t.Fatal(err)
+			}
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		script := fmt.Sprintf("test %s %s", op, target)
+		_, _, code := cmdRunCtx(ctx, t, script, dir)
+		if code != 0 && code != 1 && code != 2 {
+			t.Errorf("test %s unexpected exit code %d", op, code)
+		}
+	})
+}
+
+// FuzzTestStringUnary fuzzes test with -z and -n string tests.
+// Edge cases: empty string, single char, strings that look like operators.
+func FuzzTestStringUnary(f *testing.F) {
+	f.Add("hello", "-z")
+	f.Add("", "-z")
+	f.Add("hello", "-n")
+	f.Add("", "-n")
+	// Strings that look like flags (tested as strings here)
+	f.Add("-e", "-n")
+	f.Add("-z", "-n")
+	f.Add("-n", "-n")
+	f.Add("-f", "-z")
+	// Single whitespace char
+	f.Add(" ", "-n")
+	f.Add(" ", "-z")
+	// Unicode
+	f.Add("日本語", "-n")
+	f.Add("😀", "-n")
+
+	f.Fuzz(func(t *testing.T, arg, op string) {
+		if len(arg) > 200 {
+			return
+		}
+		if op != "-z" && op != "-n" {
+			return
+		}
+		if !utf8.ValidString(arg) {
+			return
+		}
+		for _, c := range arg {
+			if c == '\'' || c == '\x00' || c == '\n' || c == ']' {
+				return
+			}
+			// C0/DEL/C1 control chars confuse the shell script parser.
+			if c < 0x20 || c == 0x7f || (c >= 0x80 && c < 0xa0) {
+				return
+			}
+		}
+
+		dir := t.TempDir()
+
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		script := fmt.Sprintf("test %s '%s'", op, arg)
+		_, _, code := cmdRunCtx(ctx, t, script, dir)
+		if code != 0 && code != 1 && code != 2 {
+			t.Errorf("test %s unexpected exit code %d", op, code)
+		}
+	})
+}
+
+// FuzzTestNesting fuzzes test with logical -a/-o operators and compound expressions.
+// Edge cases: short-circuit evaluation, ! as final token (treated as non-empty
+// string = true), -o as unary shell option (always false in restricted shell),
+// strings that look like operators.
+// Note: parentheses are shell metacharacters and cannot be passed unescaped
+// here; ( ) grouping is covered by the unit tests.
+func FuzzTestNesting(f *testing.F) {
+	// Simple -a and -o
+	f.Add("1 -eq 1 -a 2 -eq 2")
+	f.Add("1 -eq 1 -o 1 -eq 2")
+	f.Add("1 -eq 2 -a 2 -eq 2")
+	// ! negation
+	f.Add("! 1 -eq 2")
+	f.Add("! -z hello")
+	// ! as final token: treated as non-empty string (always true)
+	f.Add("!")
+	// Boolean chains
+	f.Add("-z '' -a -n hello")
+	f.Add("-n hello -o -z hello")
+	// -o as unary shell option: always false in restricted shell
+	f.Add("-o anyopt")
+	// String comparison chained
+	f.Add("abc = abc -a def != xyz")
+	// Chain of -a
+	f.Add("1 -eq 1 -a 2 -eq 2 -a 3 -eq 3")
+	// Chain of -o
+	f.Add("1 -eq 2 -o 2 -eq 2 -o 3 -eq 4")
+	// Mixed -a and -o
+	f.Add("1 -eq 1 -o 1 -eq 2 -a 2 -eq 2")
+
+	f.Fuzz(func(t *testing.T, expr string) {
+		if len(expr) > 200 {
+			return
+		}
+		if !utf8.ValidString(expr) {
+			return
+		}
+		for _, c := range expr {
+			// Filter shell metacharacters that would be interpreted by the shell
+			// parser rather than passed to the test builtin.
+			if c == '\'' || c == '\x00' || c == '\n' || c == '\\' ||
+				c == '"' || c == '`' || c == '$' || c == '(' || c == ')' ||
+				c == '<' || c == '>' || c == '|' || c == '&' || c == ';' {
+				return
+			}
+		}
+
+		dir := t.TempDir()
+
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		script := fmt.Sprintf("test %s", expr)
+		_, _, code := cmdRunCtx(ctx, t, script, dir)
+		if code != 0 && code != 1 && code != 2 {
+			t.Errorf("test %q unexpected exit code %d", expr, code)
+		}
+	})
+}

@@ -12,6 +12,8 @@ import (
 	"os"
 
 	"mvdan.cc/sh/v3/syntax"
+
+	"github.com/DataDog/rshell/allowedpaths"
 )
 
 var todoPos syntax.Pos // for handlerCtx callers where we don't yet have a position
@@ -52,7 +54,7 @@ func (r *Runner) open(ctx context.Context, path string, flags int, mode os.FileM
 	case nil:
 		return f, nil
 	case *os.PathError:
-		err = portablePathError(err)
+		err = allowedpaths.PortablePathError(err)
 		if print {
 			r.errf("%v\n", err)
 		}

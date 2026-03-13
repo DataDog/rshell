@@ -16,27 +16,27 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - pkg: ./interp/builtins/tests/head/
+          - pkg: ./builtins/tests/head/
             name: head
-          - pkg: ./interp/builtins/tests/cat/
+          - pkg: ./builtins/tests/cat/
             name: cat
-          - pkg: ./interp/builtins/tests/wc/
+          - pkg: ./builtins/tests/wc/
             name: wc
-          - pkg: ./interp/builtins/tests/tail/
+          - pkg: ./builtins/tests/tail/
             name: tail
-          - pkg: ./interp/builtins/tests/grep/
+          - pkg: ./builtins/tests/grep/
             name: grep
-          - pkg: ./interp/builtins/tests/cut/
+          - pkg: ./builtins/tests/cut/
             name: cut
-          - pkg: ./interp/builtins/tests/echo/
+          - pkg: ./builtins/tests/echo/
             name: echo
-          - pkg: ./interp/builtins/tests/uniq/
+          - pkg: ./builtins/tests/uniq/
             name: uniq
-          - pkg: ./interp/builtins/tests/strings_cmd/
+          - pkg: ./builtins/tests/strings_cmd/
             name: strings_cmd
-          - pkg: ./interp/builtins/tests/testcmd/
+          - pkg: ./builtins/tests/testcmd/
             name: testcmd
-          - pkg: ./interp/builtins/tests/ls/
+          - pkg: ./builtins/tests/ls/
             name: ls
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -49,7 +49,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: |
-            interp/builtins/tests/${{ matrix.name }}/testdata/fuzz/
+            builtins/tests/${{ matrix.name }}/testdata/fuzz/
           key: fuzz-corpus-${{ matrix.name }}-${{ github.sha }}
           restore-keys: |
             fuzz-corpus-${{ matrix.name }}-
@@ -84,5 +84,5 @@ jobs:
         if: always()
         with:
           path: |
-            interp/builtins/tests/${{ matrix.name }}/testdata/fuzz/
+            builtins/tests/${{ matrix.name }}/testdata/fuzz/
           key: fuzz-corpus-${{ matrix.name }}-${{ github.sha }}
