@@ -8,4 +8,4 @@ expect:
   stdout: ""
   stderr_contains:
     - "continue: abc: numeric argument required"
-  exit_code: 2
+  exit_code: 128

@@ -55,6 +55,13 @@ func TestMissingScriptAndFiles(t *testing.T) {
 	assert.Contains(t, stderr, "requires either --script or file arguments")
 }
 
+func TestEmptyScript(t *testing.T) {
+	code, stdout, stderr := runCLI(t, "-s", "")
+	assert.Equal(t, 0, code, "empty script should exit 0 (matching bash -c '')")
+	assert.Empty(t, stdout)
+	assert.Empty(t, stderr)
+}
+
 func TestExitCode(t *testing.T) {
 	code, _, _ := runCLI(t, "-s", `exit 42`)
 	assert.Equal(t, 42, code)
