@@ -6,6 +6,7 @@
 package allowedsymbols
 
 import (
+	"fmt"
 	"go/ast"
 	"go/parser"
 	"go/token"
@@ -14,7 +15,6 @@ import (
 	"strings"
 	"testing"
 )
-
 
 // allowedSymbolsConfig configures a single run of the allowed-symbols check.
 type allowedSymbolsConfig struct {
@@ -32,6 +32,13 @@ type allowedSymbolsConfig struct {
 	ListName string
 	// MinFiles is the minimum number of files expected (sanity check).
 	MinFiles int
+	// RepoRootOverride, if set, is used instead of auto-detecting the repo
+	// root from os.Getwd(). Used by verification tests that operate on a
+	// temp copy.
+	RepoRootOverride string
+	// Errors, if non-nil, collects error messages instead of calling t.Errorf.
+	// Used by verification tests to inspect specific errors.
+	Errors *[]string
 }
 
 // checkAllowedSymbols enforces symbol-level import restrictions on a set of
@@ -54,12 +61,28 @@ func checkAllowedSymbols(t *testing.T, cfg allowedSymbolsConfig) {
 		allowedPackages[entry[:dot]] = true
 	}
 
-	// This package lives in _allowedsymbols/, so the repo root is one level up.
-	dir, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
+	// reportErr collects errors into cfg.Errors when set, otherwise calls t.Errorf.
+	reportErr := func(format string, args ...any) {
+		msg := fmt.Sprintf(format, args...)
+		if cfg.Errors != nil {
+			*cfg.Errors = append(*cfg.Errors, msg)
+		} else {
+			t.Errorf("%s", msg)
+		}
 	}
-	root := filepath.Dir(dir)
+
+	// Determine the repo root.
+	var root string
+	if cfg.RepoRootOverride != "" {
+		root = cfg.RepoRootOverride
+	} else {
+		// This package lives in _allowedsymbols/, so the repo root is one level up.
+		dir, err := os.Getwd()
+		if err != nil {
+			t.Fatal(err)
+		}
+		root = filepath.Dir(dir)
+	}
 	targetDir := filepath.Join(root, cfg.TargetDir)
 
 	goFiles, err := cfg.CollectFiles(targetDir)
@@ -75,7 +98,7 @@ func checkAllowedSymbols(t *testing.T, cfg allowedSymbolsConfig) {
 
 		f, err := parser.ParseFile(fset, path, nil, 0)
 		if err != nil {
-			t.Errorf("%s: parse error: %v", rel, err)
+			reportErr("%s: parse error: %v", rel, err)
 			continue
 		}
 
@@ -88,12 +111,12 @@ func checkAllowedSymbols(t *testing.T, cfg allowedSymbolsConfig) {
 			for key, reason := range permanentlyBanned {
 				if strings.HasSuffix(key, "/") {
 					if strings.HasPrefix(importPath, key) {
-						t.Errorf("%s: import of %q is permanently banned (%s)", rel, importPath, reason)
+						reportErr("%s: import of %q is permanently banned (%s)", rel, importPath, reason)
 						banned = true
 						break
 					}
 				} else if importPath == key {
-					t.Errorf("%s: import of %q is permanently banned (%s)", rel, importPath, reason)
+					reportErr("%s: import of %q is permanently banned (%s)", rel, importPath, reason)
 					banned = true
 					break
 				}
@@ -116,12 +139,12 @@ func checkAllowedSymbols(t *testing.T, cfg allowedSymbolsConfig) {
 			}
 
 			if localName == "_" || localName == "." {
-				t.Errorf("%s: blank/dot import of %q is not allowed", rel, importPath)
+				reportErr("%s: blank/dot import of %q is not allowed", rel, importPath)
 				continue
 			}
 
 			if !allowedPackages[importPath] {
-				t.Errorf("%s: import of %q is not in the allowlist", rel, importPath)
+				reportErr("%s: import of %q is not in the allowlist", rel, importPath)
 				continue
 			}
 
@@ -145,7 +168,7 @@ func checkAllowedSymbols(t *testing.T, cfg allowedSymbolsConfig) {
 			key := importPath + "." + sel.Sel.Name
 			if !allowedSymbols[key] {
 				pos := fset.Position(sel.Pos())
-				t.Errorf("%s:%d: %s is not in the allowlist", rel, pos.Line, key)
+				reportErr("%s:%d: %s is not in the allowlist", rel, pos.Line, key)
 			} else {
 				usedSymbols[key] = true
 			}
@@ -160,7 +183,7 @@ func checkAllowedSymbols(t *testing.T, cfg allowedSymbolsConfig) {
 	// file. Unused entries should be removed to keep the allowlist minimal.
 	for _, entry := range cfg.Symbols {
 		if !usedSymbols[entry] {
-			t.Errorf("allowlist symbol %q is not used by any file in %s — remove it from %s", entry, cfg.TargetDir, cfg.ListName)
+			reportErr("allowlist symbol %q is not used by any file in %s — remove it from %s", entry, cfg.TargetDir, cfg.ListName)
 		}
 	}
 }
@@ -216,4 +239,3 @@ func collectFlatGoFiles(dir string) ([]string, error) {
 	}
 	return files, nil
 }
-
