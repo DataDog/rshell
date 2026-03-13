@@ -14,24 +14,20 @@ You MUST follow this execution protocol. Skipping steps causes missed coverage g
 
 ### 1. Create the full task list FIRST
 
-Your very first action — before reading ANY files, before writing ANY code — is to call TaskCreate exactly 12 times, once for each step below (Steps 1–12). Use these exact subjects:
+Your very first action — before reading ANY files, before writing ANY code — is to create the task list. Call TaskCreate for each step:
 
-1. "Step 1: Determine scope"
-2. "Step 2: Download and read reference test suites"
-3. "Step 3: Audit existing coverage"
-4. "Step 4: Identify coverage gaps"
-5. "Step 5: Write new scenario tests"
-6. "Step 6: Check for duplicate tests"
-7. "Step 7: Review skip_assert_against_bash flags"
-8. "Step 8: Review unnecessary Windows-specific assertions"
-9. "Step 9: Verify all tests pass"
-10. "Step 10: Run bash comparison tests"
-11. "Step 11: Commit and push changes"
-12. "Step 12: Post report as PR comment"
+1. "Step 1: Enumerate all targets"
+2. "Step 2: Download reference test suites"
+
+Then for each target discovered in Step 1, you will dynamically create tasks for Steps 3–11 (see "Per-target loop" below).
 
 ### 2. Execution order
 
-Steps run strictly sequentially: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 → 9 → 10 → 11 → 12.
+The workflow has two phases:
+
+**Phase A — Setup (once):** Step 1 → Step 2
+
+**Phase B — Per-target loop:** For each target, run Steps 3 → 4 → 5 → 6 → 7 → 8 → 9 → 10 → 11 sequentially.
 
 Before starting step N, call TaskList and verify step N-1 is `completed`. Set step N to `in_progress`.
 
@@ -76,21 +72,53 @@ Three external test suites serve as coverage references:
 
 ---
 
-## Step 1: Determine scope
+## Phase A — Setup
 
-Based on the argument (`$ARGUMENTS`), determine what to improve coverage for:
+### Step 1: Enumerate all targets
 
-- **A specific command** (e.g. `cat`, `head`, `grep`): Focus on that command's scenario tests in `tests/scenarios/cmd/<command>/`
-- **A shell feature** (e.g. `var_expand`, `globbing`, `pipe`): Focus on that feature's scenario tests in `tests/scenarios/shell/<feature>/`
-- **`all`**: Scan all commands and shell features, prioritize the ones with the fewest tests relative to their complexity
+Based on the argument (`$ARGUMENTS`), build the ordered list of targets to process:
 
-If `$ARGUMENTS` is a command, verify it exists as an implemented builtin by checking `interp/builtins/`. If it is a shell feature, verify the directory exists in `tests/scenarios/shell/`.
+- **A specific command** (e.g. `cat`, `head`, `grep`): The target list is just that one command. Verify it exists as an implemented builtin by checking `interp/builtins/`.
+- **A shell feature** (e.g. `var_expand`, `globbing`, `pipe`): The target list is just that one feature. Verify the directory exists in `tests/scenarios/shell/`.
+- **`all`**: Enumerate **every** command and shell feature:
 
-List the current test count for the target and note which subdirectories/categories exist.
+```bash
+# List all implemented builtin commands
+ls interp/builtins/ | grep -v _test.go | sed 's/\.go$//' | sort
 
-## Step 2: Download and read reference test suites
+# List all shell feature test directories
+ls tests/scenarios/shell/ | sort
 
-### For builtin commands
+# List all command test directories
+ls tests/scenarios/cmd/ | sort
+```
+
+For each target, count its current scenario tests and note the count. Sort targets by test count ascending (fewest tests first) to prioritize the least-covered targets.
+
+Present the full target list to the user as a table:
+
+| # | Target | Type | Current tests | Reference suites |
+|---|--------|------|--------------|-----------------|
+| 1 | ... | cmd/shell | N | GNU+uutils / yash |
+
+After building the list, create tasks for the per-target loop. For each target, call TaskCreate for:
+- "Step 3: Audit existing coverage — <target>"
+- "Step 4: Identify coverage gaps — <target>"
+- "Step 5: Write new scenario tests — <target>"
+- "Step 6: Check for duplicate tests — <target>"
+- "Step 7: Review skip_assert_against_bash flags — <target>"
+- "Step 8: Review unnecessary Windows-specific assertions — <target>"
+- "Step 9: Verify all tests pass — <target>"
+- "Step 10: Run bash comparison tests — <target>"
+- "Step 11: Commit, push, and post report — <target>"
+
+Set up blockedBy dependencies so each target's Step 3 is blocked by the previous target's Step 11 (and by Step 2 for the first target).
+
+### Step 2: Download reference test suites
+
+Download all reference suites once, before starting the per-target loop.
+
+#### For builtin commands
 
 First check if offline resources exist:
 
@@ -111,12 +139,7 @@ curl -sL https://github.com/uutils/coreutils/archive/refs/heads/main.tar.gz | ta
 # Tests are at: /tmp/coreutils-main/tests/by-util/test_<command>.rs
 ```
 
-Read the relevant test files for the target command. For each test suite:
-- List all test files/functions
-- Note what each test covers (flags, edge cases, error conditions)
-- Pay special attention to tests that exercise flag combinations, boundary conditions, and error paths
-
-### For shell features
+#### For shell features
 
 Download the yash test suite:
 
@@ -125,24 +148,24 @@ curl -sL https://github.com/magicant/yash/archive/refs/heads/trunk.tar.gz | tar 
 # Tests are at: /tmp/yash-trunk/tests/
 ```
 
-Read the relevant yash test files. yash tests are shell scripts organized by feature (e.g. `if-y.tst`, `for-y.tst`, `quote-y.tst`, `param-y.tst`, `expand-y.tst`). For each test:
-- Note the test description and what behavior it validates
-- Pay attention to POSIX edge cases and corner cases in expansion, quoting, and control flow
+Only download the suites needed for the targets in the list. If all targets are commands, skip yash (unless needed for integration patterns). If all targets are shell features, skip GNU/uutils.
 
-### For commands: also check yash for integration patterns
+---
 
-Even when targeting a command, skim yash tests for integration patterns — e.g. how commands interact with pipes, redirections, subshells, and variable expansion.
+## Phase B — Per-target loop
 
-## Step 3: Audit existing coverage
+For each target in the ordered list from Step 1, execute Steps 3–11 sequentially. Replace `<target>` below with the current command or shell feature name.
 
-Read all existing scenario tests for the target:
+### Step 3: Audit existing coverage
+
+Read all existing scenario tests for the current target:
 
 ```bash
 # For a command:
-find tests/scenarios/cmd/<command>/ -name "*.yaml" | sort
+find tests/scenarios/cmd/<target>/ -name "*.yaml" | sort
 
 # For a shell feature:
-find tests/scenarios/shell/<feature>/ -name "*.yaml" | sort
+find tests/scenarios/shell/<target>/ -name "*.yaml" | sort
 ```
 
 Read each YAML file and build a coverage matrix. For each test, note:
@@ -154,17 +177,21 @@ Also read the Go test files if they exist:
 
 ```bash
 # For a command:
-find interp/builtins/ -path "*<command>*_test.go" | sort
-find interp/ -name "builtin_<command>*_test.go" | sort
+find interp/builtins/ -path "*<target>*_test.go" | sort
+find interp/ -name "builtin_<target>*_test.go" | sort
 ```
+
+Read the relevant reference test files for this specific target (from the suites downloaded in Step 2):
+- For commands: read GNU coreutils and uutils test files for `<target>`, plus skim yash for integration patterns
+- For shell features: read the relevant yash test files
 
 Build a summary table of what is currently tested.
 
-## Step 4: Identify coverage gaps
+### Step 4: Identify coverage gaps
 
-Cross-reference the reference test suites (Step 2) against existing coverage (Step 3) to find gaps.
+Cross-reference the reference test suites against existing coverage (Step 3) to find gaps.
 
-### Gap categories to look for
+#### Gap categories to look for
 
 **For commands:**
 
@@ -191,7 +218,7 @@ Cross-reference the reference test suites (Step 2) against existing coverage (St
 | **Word splitting** | IFS variations, empty fields, splitting with special characters |
 | **Globbing** | No matches, dot files, special patterns, escaped glob characters |
 
-### Filtering
+#### Filtering
 
 Skip reference tests that:
 - Test flags we intentionally do not implement (check the builtin's doc comment or `--help` output)
@@ -200,7 +227,7 @@ Skip reference tests that:
 - Test GNU-specific extensions beyond POSIX that we don't support
 - Rely on external commands we don't implement
 
-### Priority
+#### Priority
 
 Rank gaps by importance:
 1. **P1 — Missing basic coverage**: A flag or feature has zero scenario tests
@@ -214,11 +241,11 @@ Present the gap analysis to the user as a summary table before proceeding to wri
 - The priority level
 - Whether it needs `skip_assert_against_bash: true`
 
-## Step 5: Write new scenario tests
+### Step 5: Write new scenario tests
 
 For each identified gap, create a YAML scenario test file. Follow the project conventions:
 
-### File organization
+#### File organization
 
 ```
 tests/scenarios/cmd/<command>/<category>/<test_name>.yaml
@@ -235,7 +262,7 @@ Group into subdirectories by concern:
 - `multifile/` — multi-file argument behavior
 - `integration/` — interactions with other shell features
 
-### YAML format
+#### YAML format
 
 ```yaml
 # Derived from <suite> <test-name/function>
@@ -256,7 +283,7 @@ expect:
   exit_code: 0
 ```
 
-### Rules
+#### Rules
 
 - **Source attribution**: Include a comment at the top of each YAML file noting which reference test it was derived from (e.g. `# Derived from GNU coreutils head/head-elide-tail.sh` or `# Derived from uutils test_head.rs::test_head_big_n` or `# Derived from yash if-y.tst case 3`)
 - **`stdout_contains` and `stderr_contains` must be YAML lists**, not scalar strings
@@ -268,7 +295,7 @@ expect:
 - Do **not** use `echo -n` — the echo builtin does not support `-n` and will emit `-n ` literally. Use `printf` instead for newline-free output
 - When testing error messages from our builtins, the error format is typically `<command>: <message>` — verify by running the command in the shell first
 
-### Determining expected output
+#### Determining expected output
 
 For each new test, determine the correct expected output:
 
@@ -289,26 +316,26 @@ bash -c '<script>'
 
 Always verify that our shell output matches bash for tests without `skip_assert_against_bash: true`.
 
-### Batch size
+#### Batch size
 
 Write tests in batches of 10-15 files, then run verification (Step 9) before writing more. This catches format errors early.
 
-## Step 6: Check for duplicate tests
+### Step 6: Check for duplicate tests
 
 Scan all scenario tests for the target (including newly written ones) and identify duplicates — tests that exercise the same behavior with the same or nearly identical scripts and expected output.
 
-### How to detect duplicates
+#### How to detect duplicates
 
 1. **Exact duplicates**: Two YAML files with identical `input.script` and `expect` sections (possibly different descriptions or filenames)
 2. **Near duplicates**: Tests with functionally equivalent scripts that test the same behavior (e.g. same command with same flags, just different variable names or file content that doesn't change the behavior being tested)
 3. **Subset duplicates**: A test that is a strict subset of another test — everything it validates is already covered by a more comprehensive test
 
-### Process
+#### Process
 
 ```bash
 # For each pair of YAML files, compare the script and expected output
 # Look for files with identical or near-identical scripts
-find tests/scenarios/cmd/<command>/ -name "*.yaml" -exec grep -l "script:" {} \; | sort
+find tests/scenarios/cmd/<target>/ -name "*.yaml" -exec grep -l "script:" {} \; | sort
 ```
 
 For each duplicate found:
@@ -318,13 +345,13 @@ For each duplicate found:
 
 If no duplicates are found, note that and move on.
 
-## Step 7: Review skip_assert_against_bash flags
+### Step 7: Review skip_assert_against_bash flags
 
 Scan all scenario tests for the target that have `skip_assert_against_bash: true` and evaluate whether the flag is still needed.
 
 ```bash
-grep -rl "skip_assert_against_bash: true" tests/scenarios/cmd/<command>/ 2>/dev/null
-grep -rl "skip_assert_against_bash: true" tests/scenarios/shell/<feature>/ 2>/dev/null
+grep -rl "skip_assert_against_bash: true" tests/scenarios/cmd/<target>/ 2>/dev/null
+grep -rl "skip_assert_against_bash: true" tests/scenarios/shell/<target>/ 2>/dev/null
 ```
 
 For each flagged test:
@@ -351,13 +378,13 @@ For each test where the flag is removed, verify it passes against bash:
 RSHELL_BASH_TEST=1 go test ./tests/ -run "TestShellScenariosAgainstBash/<scenario_name>" -timeout 120s -v
 ```
 
-## Step 8: Review unnecessary Windows-specific assertions
+### Step 8: Review unnecessary Windows-specific assertions
 
 Scan all scenario tests for the target that use Windows-specific assertion fields and evaluate whether they are actually needed.
 
 ```bash
-grep -rl "stdout_windows\|stderr_windows\|stdout_contains_windows\|stderr_contains_windows" tests/scenarios/cmd/<command>/ 2>/dev/null
-grep -rl "stdout_windows\|stderr_windows\|stdout_contains_windows\|stderr_contains_windows" tests/scenarios/shell/<feature>/ 2>/dev/null
+grep -rl "stdout_windows\|stderr_windows\|stdout_contains_windows\|stderr_contains_windows" tests/scenarios/cmd/<target>/ 2>/dev/null
+grep -rl "stdout_windows\|stderr_windows\|stdout_contains_windows\|stderr_contains_windows" tests/scenarios/shell/<target>/ 2>/dev/null
 ```
 
 For each test with Windows-specific assertions:
@@ -379,7 +406,7 @@ For each test with Windows-specific assertions:
 
 For each unnecessary Windows-specific assertion removed, the non-Windows assertion serves as the fallback and will be used on all platforms.
 
-## Step 9: Verify all tests pass
+### Step 9: Verify all tests pass
 
 After writing each batch of tests, run:
 
@@ -402,9 +429,9 @@ Also run Go tests to ensure no regressions:
 go test -race ./interp/... -timeout 120s
 ```
 
-## Step 10: Run bash comparison tests
+### Step 10: Run bash comparison tests
 
-After all new tests are written and passing, run the full bash comparison suite:
+After all new tests for this target are written and passing, run the full bash comparison suite:
 
 ```bash
 RSHELL_BASH_TEST=1 go test ./tests/ -run TestShellScenariosAgainstBash -timeout 120s
@@ -417,9 +444,11 @@ For any failures:
    - If the divergence is a bug, note it as a finding and either fix the test expectation to match bash or leave it as a failing test that documents the bug
 3. Re-run until all tests pass
 
-## Step 11: Commit and push changes
+### Step 11: Commit, push, and post report
 
-After all tests pass, commit and push the new and modified test files.
+After all tests pass for the current target, commit, push, and post a coverage report.
+
+#### 1. Commit and push
 
 ```bash
 # Stage all new and modified test scenario files
@@ -443,24 +472,20 @@ If the push fails (e.g. no upstream branch), set the upstream:
 git push -u origin "$(git branch --show-current)"
 ```
 
-## Step 12: Post report as PR comment
-
-After all tests pass, produce a summary report and post it as a comment on the current PR.
-
-### 1. Determine the PR number
+#### 2. Determine the PR number
 
 ```bash
 gh pr view --json number --jq '.number'
 ```
 
-If no PR exists for the current branch, skip this step and print the report to the console instead.
+If no PR exists for the current branch, skip posting and print the report to the console instead.
 
-### 2. Build the report
+#### 3. Build and post the report
 
-Compose the report in the following format:
+Compose the report and post it as a PR comment:
 
 ```markdown
-## Coverage Improvement Summary
+## Coverage Improvement Summary — `<target>`
 
 **Target**: <command or feature>
 **Reference suites consulted**: <list>
@@ -488,8 +513,6 @@ Compose the report in the following format:
 🤖 Generated with [Claude Code](https://claude.com/claude-code)
 ```
 
-### 3. Post the comment
-
 ```bash
 gh pr comment <PR_NUMBER> --body "$(cat <<'EOF'
 <report content here>
@@ -498,3 +521,7 @@ EOF
 ```
 
 If posting fails (e.g. permissions), print the report to the console as a fallback.
+
+#### 4. Proceed to next target
+
+After posting, move to the next target in the list and start its Step 3. Continue until all targets are processed.
