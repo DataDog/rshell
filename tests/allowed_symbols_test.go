@@ -98,6 +98,8 @@ var builtinAllowedSymbols = []string{
 	"math.MaxUint64",
 	// math.NaN — returns IEEE 754 NaN value; pure function, no I/O.
 	"math.NaN",
+	// os.File — open file handle; used by find's streaming directory iterator via OpenDir.
+	"os.File",
 	// os.FileInfo — file metadata interface returned by Stat; no I/O side effects.
 	"os.FileInfo",
 	// os.O_RDONLY — read-only file flag constant; cannot open files by itself.
@@ -188,8 +190,6 @@ var builtinAllowedSymbols = []string{
 	"unicode/utf8.DecodeRune",
 	// unicode/utf8.DecodeRuneInString — decodes first UTF-8 rune from a string; pure function, no I/O.
 	"unicode/utf8.DecodeRuneInString",
-	// unicode/utf8.RuneCount — counts UTF-8 runes in a byte slice; pure function, no I/O.
-	"unicode/utf8.RuneCount",
 	// unicode/utf8.RuneError — replacement character returned for invalid UTF-8; constant, no I/O.
 	"unicode/utf8.RuneError",
 	// unicode/utf8.UTFMax — maximum number of bytes in a UTF-8 encoding; constant, no I/O.
