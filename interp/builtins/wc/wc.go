@@ -289,6 +289,14 @@ func countReader(ctx context.Context, r io.Reader) (counts, error) {
 				} else if unicode.IsControl(r) {
 					// Non-whitespace control chars (C0, DEL, C1) are transparent:
 					// they do not start or end words, matching GNU wc in POSIX locale.
+				} else if unicode.Is(unicode.Zs, r) {
+					// Unicode space separators (NBSP, thin space, etc.) end words,
+					// matching GNU wc behaviour under C.UTF-8 locale.
+					lineLen++
+					inWord = false
+				} else if !unicode.IsGraphic(r) && !unicode.Is(unicode.Cf, r) && !unicode.Is(unicode.Co, r) {
+					// Cn (unassigned codepoints): transparent like control chars --
+					// they do not start or end words, matching GNU wc under C.UTF-8.
 				} else {
 					if !inWord {
 						c.words++
