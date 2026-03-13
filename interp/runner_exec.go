@@ -122,7 +122,6 @@ func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {
 				r.exit.fatal(err) // not being able to create a pipe is rare but critical
 				return
 			}
-			defer pr.Close()
 			// Wrap stderr in a synchronized writer so both sides of the
 			// pipe can write to it concurrently without a data race.
 			safeStderr := &syncWriter{w: r.stderr}
@@ -148,6 +147,7 @@ func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {
 			rRight.stmt(ctx, cm.Y)
 			r.exit = rRight.exit
 			r.exit.exiting = false
+			pr.Close()
 			wg.Wait()
 			if rLeft.exit.fatalExit {
 				r.exit.fatal(rLeft.exit.err)
