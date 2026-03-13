@@ -343,16 +343,18 @@ func countReader(ctx context.Context, r io.Reader) (counts, error) {
 					// matching GNU wc behaviour under C.UTF-8 locale.
 					lineLen++
 					inWord = false
-				} else if unicode.IsGraphic(ch) || unicode.Is(unicode.Co, ch) || unicode.Is(unicode151Print, ch) {
+				} else if unicode.IsGraphic(ch) || unicode.Is(unicode.Co, ch) || unicode.Is(unicode.Cf, ch) || unicode.Is(unicode151Print, ch) {
 					// Printable characters start or continue a word,
 					// matching GNU wc which gates word counting on
 					// iswprint() in C.UTF-8 locale. IsGraphic covers
 					// letters, marks, numbers, punctuation, and
-					// symbols from Unicode 15.0; Co adds private-use
-					// characters; unicode151Print adds characters
-					// assigned in Unicode 15.1 (e.g. new Ideographic
-					// Description Characters) that Go's tables don't
-					// yet include (Go ships Unicode 15.0).
+					// symbols; Co adds private-use characters; Cf adds
+					// format characters (e.g. U+06DD ARABIC END OF
+					// AYAH, U+200B ZERO WIDTH SPACE) which glibc's
+					// iswprint considers printable; unicode151Print
+					// adds characters assigned in Unicode 15.1 that
+					// Go's tables don't yet include (Go ships
+					// Unicode 15.0).
 					if !inWord {
 						c.words++
 						inWord = true
@@ -360,9 +362,9 @@ func countReader(ctx context.Context, r io.Reader) (counts, error) {
 					lineLen += int64(runeWidth(ch))
 				} else {
 					// Non-printable, non-whitespace, non-control chars
-					// (e.g. unassigned Cn, format Cf not caught above)
-					// are transparent to word counting — they neither
-					// start nor end words, matching GNU wc behaviour.
+					// (e.g. unassigned Cn codepoints) are transparent
+					// to word counting — they neither start nor end
+					// words, matching GNU wc behaviour.
 					lineLen += int64(runeWidth(ch))
 				}
 			}
