@@ -274,6 +274,7 @@ Check if the command has known exploitation vectors. First look for offline data
 - Are integration tests present (pipes, for-loops, shell variable expansion)?
 - Are platform-specific edge cases tested with build tags?
 - Missing tests = findings that must be fixed
+- **Avoid `skip_assert_against_bash: true`** — scenario tests are validated against bash by default. Only set `skip_assert_against_bash: true` when behavior **intentionally** diverges from bash (e.g., sandbox restrictions, blocked commands, readonly enforcement). If a test has `skip_assert_against_bash: true` but the behavior could match bash, that is a finding — either fix the shell implementation to match bash, or rewrite the test so it passes against bash. Unnecessary `skip_assert_against_bash` flags hide real compatibility bugs.
 
 **K. Pentest-style checks** (verify these are tested or the code handles them):
 - Integer edge cases: `0`, `1`, `MaxInt32`, `MaxInt64`, `MaxInt64+1`, huge values, negative values, empty/whitespace strings
