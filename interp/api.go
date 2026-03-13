@@ -328,7 +328,11 @@ func (s ExitStatus) Error() string { return fmt.Sprintf("exit status %d", s) }
 func (r *Runner) Run(ctx context.Context, node syntax.Node) (retErr error) {
 	defer func() {
 		if rec := recover(); rec != nil {
-			fmt.Fprintf(os.Stderr, "rshell: internal panic: %v\n%s\n", rec, debug.Stack())
+			panicOut := r.stderr
+			if panicOut == nil {
+				panicOut = os.Stderr
+			}
+			fmt.Fprintf(panicOut, "rshell: internal panic: %v\n%s\n", rec, debug.Stack())
 			retErr = fmt.Errorf("internal error")
 		}
 	}()

@@ -146,9 +146,10 @@ func TestRunRecoversPanic(t *testing.T) {
 	// The error returned to the caller must be generic — it must not include
 	// the panic value to avoid leaking internal state to untrusted callers.
 	assert.Equal(t, "internal error", err.Error())
-	// Panic details are written to os.Stderr (checked via the stack-trace
-	// path in the defer/recover handler in api.go), not returned to callers.
 	assert.NotContains(t, err.Error(), "deliberate test panic")
+	// Panic details are written to the runner's stderr (not os.Stderr), so
+	// they stay within the configured I/O boundary.
+	assert.Contains(t, errBuf.String(), "deliberate test panic")
 }
 
 func TestRunZeroValueRunnerReturnsError(t *testing.T) {

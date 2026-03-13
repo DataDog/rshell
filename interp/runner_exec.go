@@ -135,7 +135,11 @@ func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {
 			go func() {
 				defer func() {
 					if rec := recover(); rec != nil {
-						fmt.Fprintf(os.Stderr, "rshell: internal panic: %v\n%s\n", rec, debug.Stack())
+						panicOut := rLeft.stderr
+						if panicOut == nil {
+							panicOut = os.Stderr
+						}
+						fmt.Fprintf(panicOut, "rshell: internal panic: %v\n%s\n", rec, debug.Stack())
 						rLeft.exit.fatal(fmt.Errorf("internal error"))
 					}
 					pw.Close()
