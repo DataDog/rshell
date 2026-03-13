@@ -482,7 +482,7 @@ func processFields(callCtx *builtins.CallContext, raw []byte, cfg *cutConfig) {
 		if cfg.onlyDelimited {
 			return
 		}
-		callCtx.Stdout.Write(raw)         //nolint:errcheck
+		callCtx.Stdout.Write(raw)          //nolint:errcheck
 		callCtx.Stdout.Write([]byte{'\n'}) //nolint:errcheck
 		return
 	}

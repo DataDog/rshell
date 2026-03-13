@@ -678,7 +678,7 @@ func printMatchLine(callCtx *builtins.CallContext, filename string, lineNum int,
 		callCtx.Stdout.Write([]byte(strconv.Itoa(lineNum))) //nolint:errcheck
 		callCtx.Stdout.Write([]byte{':'})                   //nolint:errcheck
 	}
-	callCtx.Stdout.Write(line)      //nolint:errcheck
+	callCtx.Stdout.Write(line)         //nolint:errcheck
 	callCtx.Stdout.Write([]byte{'\n'}) //nolint:errcheck
 }
 
