@@ -18,16 +18,24 @@ func TestPathGlobMatchTrailingBackslash(t *testing.T) {
 }
 
 func TestMatchGlobMalformedBracket(t *testing.T) {
-	// Malformed bracket patterns should fall back to literal comparison.
+	// Unclosed bracket patterns fall back to literal comparison.
 	assert.True(t, matchGlob("[", "["))
 	assert.False(t, matchGlob("[", "a"))
 	assert.True(t, matchGlob("[abc", "[abc"))
 	assert.False(t, matchGlob("[abc", "a"))
+
+	// Incomplete range (trailing dash) — non-matching per GNU fnmatch.
+	assert.False(t, matchGlob("[a-", "[a-"))
+	assert.False(t, matchGlob("[a-", "a"))
+	assert.False(t, matchGlob("[ab-", "[ab-"))
 }
 
 func TestMatchGlobFoldMalformedBracket(t *testing.T) {
 	assert.True(t, matchGlobFold("[", "["))
 	assert.False(t, matchGlobFold("[", "a"))
+
+	// Incomplete range — non-matching.
+	assert.False(t, matchGlobFold("[a-", "[a-"))
 }
 
 func TestBaseNameEdgeCases(t *testing.T) {
@@ -119,6 +127,22 @@ func TestMatchClassEdgeCases(t *testing.T) {
 	matched, width = matchClass("[\\\\a]", 'z')
 	assert.False(t, matched)
 	assert.Equal(t, 5, width)
+
+	// Escaped multi-byte character inside class: [\é] matches é
+	matched, width = matchClass(`[\é]`, 'é')
+	assert.True(t, matched)
+	assert.Equal(t, 5, width) // [ + \ + é(2 bytes) + ] = 5
+
+	matched, width = matchClass(`[\é]`, 'a')
+	assert.False(t, matched)
+	assert.Equal(t, 5, width)
+
+	// Escaped multi-byte range endpoints: [\é-\ü]
+	matched, width = matchClass(`[\é-\ü]`, 'ö') // ö is between é and ü
+	assert.True(t, matched)
+
+	matched, _ = matchClass(`[\é-\ü]`, 'a')
+	assert.False(t, matched)
 }
 
 func TestCompareNumeric(t *testing.T) {
@@ -138,6 +162,7 @@ func TestCompareNumeric(t *testing.T) {
 }
 
 func TestPathGlobMatchMalformedBracket(t *testing.T) {
+	// Unclosed bracket patterns fall back to literal comparison.
 	assert.True(t, pathGlobMatch("[", "["))
 	assert.False(t, pathGlobMatch("[", "a"))
 	assert.True(t, pathGlobMatch("dir/[sub/file", "dir/[sub/file"))
@@ -145,4 +170,12 @@ func TestPathGlobMatchMalformedBracket(t *testing.T) {
 	// Star followed by malformed bracket (backtracking interaction).
 	assert.True(t, pathGlobMatch("*/[", "dir/["))
 	assert.False(t, pathGlobMatch("*/[", "dir/a"))
+
+	// Incomplete range (trailing dash) — non-matching per GNU fnmatch.
+	assert.False(t, pathGlobMatch("[a-", "[a-"))
+	assert.False(t, pathGlobMatch("dir/[a-", "dir/[a-"))
+
+	// Escaped multi-byte character in bracket class.
+	assert.True(t, pathGlobMatch(`[\é]`, "é"))
+	assert.False(t, pathGlobMatch(`[\é]`, "a"))
 }

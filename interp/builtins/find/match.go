@@ -14,7 +14,7 @@ import (
 
 // matchGlob matches a name against a glob pattern.
 // Uses pathGlobMatch which correctly handles [!...] negated character classes
-// and treats malformed brackets (e.g. unclosed '[') as literal characters,
+// and treats malformed brackets (e.g. unclosed '[') as literal characters (or non-matching for incomplete ranges),
 // matching GNU find's fnmatch() behaviour.
 func matchGlob(pattern, name string) bool {
 	return pathGlobMatch(pattern, name)
@@ -193,11 +193,15 @@ func pathGlobMatch(pattern, name string) bool {
 						nx += w
 						continue
 					}
-					// Malformed class (patWidth==0) — treat '[' as literal.
+					// Malformed class (patWidth==0): fall back to literal or fail.
 					if patWidth == 0 && pattern[px] == name[nx] {
 						px++
 						nx++
 						continue
+					}
+					// Fatally malformed (patWidth==-1): pattern cannot match.
+					if patWidth == -1 {
+						return false
 					}
 				}
 			case '\\':
@@ -237,7 +241,10 @@ func pathGlobMatch(pattern, name string) bool {
 // matchClass tries to match a single rune against a bracket expression
 // starting at pattern[0] == '['. Returns (matched, width) where width is
 // the number of bytes consumed from pattern (including the closing ']').
-// On malformed classes, returns (false, 0).
+// On malformed classes returns (false, 0) for benign unclosed brackets
+// (caller falls back to literal '[') or (false, -1) for incomplete ranges
+// like "[a-" where the dash has no following character (caller treats as
+// non-matching, per GNU fnmatch behavior).
 func matchClass(pattern string, ch rune) (bool, int) {
 	if len(pattern) < 2 || pattern[0] != '[' {
 		return false, 0
@@ -267,7 +274,7 @@ func matchClass(pattern string, ch rune) (bool, int) {
 		lo, loW := utf8.DecodeRuneInString(pattern[i:])
 		if lo == '\\' && i+loW < len(pattern) {
 			lo, loW = utf8.DecodeRuneInString(pattern[i+loW:])
-			i += loW // skip the backslash
+			i++ // skip the 1-byte backslash
 		}
 		i += loW
 		hi := lo
@@ -276,9 +283,14 @@ func matchClass(pattern string, ch rune) (bool, int) {
 			hi, hiW = utf8.DecodeRuneInString(pattern[i+1:])
 			if hi == '\\' && i+1+hiW < len(pattern) {
 				hi, hiW = utf8.DecodeRuneInString(pattern[i+1+hiW:])
-				i += hiW // skip the backslash
+				i++ // skip the 1-byte backslash
 			}
 			i += 1 + hiW
+		} else if i < len(pattern) && pattern[i] == '-' && i+1 >= len(pattern) {
+			// Incomplete range: dash at end of pattern with no range-end
+			// character. GNU fnmatch treats this as non-matching rather
+			// than falling back to literal '['.
+			return false, -1
 		}
 		if lo <= ch && ch <= hi {
 			matched = true

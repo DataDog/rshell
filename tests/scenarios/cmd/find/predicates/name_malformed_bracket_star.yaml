@@ -1,5 +1,4 @@
 description: -name with malformed bracket treats [ as literal.
-skip_assert_against_bash: true  # file names with [ are tricky to set up portably
 setup:
   files:
     - path: dir/normal.txt

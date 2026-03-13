@@ -119,6 +119,14 @@ optLoop:
 		i++
 	}
 
+	// Reject empty path operands — GNU find treats "" as a non-existent path.
+	for _, p := range paths {
+		if p == "" {
+			callCtx.Errf("find: '': No such file or directory\n")
+			return builtins.Result{Code: 1}
+		}
+	}
+
 	if len(paths) == 0 {
 		paths = []string{"."}
 	}
@@ -162,6 +170,12 @@ optLoop:
 			continue
 		}
 		seen[ref] = true
+		if ref == "" {
+			callCtx.Errf("find: '': No such file or directory\n")
+			eagerNewerErrors[ref] = true
+			failed = true
+			continue
+		}
 		statRef := callCtx.LstatFile
 		if followLinks {
 			statRef = callCtx.StatFile
