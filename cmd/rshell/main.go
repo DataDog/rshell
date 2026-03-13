@@ -94,8 +94,8 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	cmd.SetErr(stderr)
 
 	cmd.Flags().StringVarP(&script, "script", "s", "", "shell script to execute")
-	cmd.Flags().StringVarP(&allowedPaths, "allowed-path", "a", "", "comma-separated list of directories the shell is allowed to access")
-	cmd.Flags().StringVarP(&allowedCommands, "allowed-command", "c", "", "comma-separated list of commands the shell is allowed to execute")
+	cmd.Flags().StringVarP(&allowedPaths, "allowed-paths", "a", "", "comma-separated list of directories the shell is allowed to access")
+	cmd.Flags().StringVarP(&allowedCommands, "allowed-commands", "c", "", "comma-separated list of commands the shell is allowed to execute")
 
 	if err := cmd.Execute(); err != nil {
 		var status interp.ExitStatus
@@ -124,7 +124,7 @@ func execute(ctx context.Context, script, name string, allowedPaths, allowedComm
 	if len(allowedPaths) > 0 {
 		opts = append(opts, interp.AllowedPaths(allowedPaths))
 	}
-	if len(allowedCommands) == 1 && allowedCommands[0] == "ALL" {
+	if len(allowedCommands) == 1 && allowedCommands[0] == "all" {
 		opts = append(opts, interp.AllowAllCommands())
 	} else if len(allowedCommands) > 0 {
 		opts = append(opts, interp.AllowedCommands(allowedCommands))
