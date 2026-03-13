@@ -16,8 +16,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/DataDog/rshell/interp"
 	"github.com/DataDog/rshell/builtins/testutil"
+	"github.com/DataDog/rshell/interp"
 )
 
 func runScript(t *testing.T, script, dir string, opts ...interp.RunnerOption) (string, string, int) {

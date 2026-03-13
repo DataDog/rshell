@@ -13,8 +13,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/DataDog/rshell/interp"
 	"github.com/DataDog/rshell/builtins/testutil"
+	"github.com/DataDog/rshell/interp"
 )
 
 // runScriptCtx runs a shell script with a context and returns stdout, stderr,
