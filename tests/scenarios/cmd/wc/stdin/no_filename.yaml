@@ -1,10 +1,8 @@
-# skip: wc column width formatting differs from GNU coreutils
-skip_assert_against_bash: true
 description: wc -l from stdin does not show a filename.
 input:
   script: |+
     printf "one\ntwo\nthree\n" | wc -l
 expect:
-  stdout: "      3\n"
+  stdout: "3\n"
   stderr: ""
   exit_code: 0
