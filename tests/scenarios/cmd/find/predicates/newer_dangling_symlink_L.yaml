@@ -11,6 +11,7 @@ setup:
     - path: dir/new.txt
       content: "new"
       chmod: 0644
+      mod_time: "2030-01-01T00:00:00Z"
 input:
   allowed_paths: ["$DIR"]
   script: |+
