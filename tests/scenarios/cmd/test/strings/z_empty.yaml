@@ -1,4 +1,3 @@
-# Derived from GNU coreutils test.pl test 1b — -z on empty string
 description: "test -z on empty string returns true"
 input:
   script: |+

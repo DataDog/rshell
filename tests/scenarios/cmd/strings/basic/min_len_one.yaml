@@ -1,5 +1,4 @@
 description: strings -n 1 reports all single-char printable sequences.
-skip_assert_against_bash: true
 setup:
   files:
     - path: data.bin

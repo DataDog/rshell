@@ -1,4 +1,3 @@
-# Derived from GNU coreutils uniq.pl test 126
 description: uniq -i ignores case when comparing.
 setup:
   files:

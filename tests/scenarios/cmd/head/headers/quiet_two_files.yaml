@@ -1,4 +1,3 @@
-# Derived from GNU coreutils head behavior with -q
 description: head -q suppresses file name headers even for multiple files.
 setup:
   files:

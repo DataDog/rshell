@@ -1,4 +1,3 @@
-# Derived from GNU coreutils uniq.pl test 120
 description: uniq -d -u suppresses all output.
 setup:
   files:

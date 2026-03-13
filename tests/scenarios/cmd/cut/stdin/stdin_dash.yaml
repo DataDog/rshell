@@ -1,4 +1,3 @@
-# Derived from standard cut stdin usage with explicit dash
 description: Cut reads from stdin when dash is given as the file argument.
 input:
   script: |+

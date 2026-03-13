@@ -1,4 +1,3 @@
-# Derived from GNU coreutils uniq.pl test 102
 description: uniq -c shows count of 2 for duplicate lines.
 setup:
   files:

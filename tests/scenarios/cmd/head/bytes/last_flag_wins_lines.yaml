@@ -1,4 +1,3 @@
-# Derived from GNU coreutils head behavior: last of -n/-c wins
 description: When -c and -n are both given, the last flag wins; here -n wins.
 setup:
   files:

@@ -1,4 +1,3 @@
-# Derived from GNU coreutils cut.pl test y
 description: Cut rejects -s flag when used with byte mode instead of field mode.
 setup:
   files:

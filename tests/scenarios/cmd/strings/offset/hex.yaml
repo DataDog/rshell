@@ -1,5 +1,4 @@
 description: strings -t x prints hexadecimal byte offset before each string, right-justified in 7 chars.
-skip_assert_against_bash: true
 setup:
   files:
     - path: data.bin

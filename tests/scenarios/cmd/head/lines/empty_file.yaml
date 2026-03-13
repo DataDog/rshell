@@ -1,4 +1,3 @@
-# Derived from GNU coreutils head.pl idem-0 test
 description: head on an empty file produces no output and exits 0.
 setup:
   files:

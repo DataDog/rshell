@@ -1,4 +1,3 @@
-# Derived from GNU coreutils uniq.pl test 1
 description: uniq with empty input produces no output.
 setup:
   files:

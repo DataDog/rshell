@@ -1,5 +1,4 @@
 description: strings reads from stdin when no file arguments are given.
-skip_assert_against_bash: true
 input:
   script: |+
     echo "hello world" | strings

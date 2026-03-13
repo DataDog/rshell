@@ -1,4 +1,3 @@
-# Derived from GNU coreutils cut.pl zero-2 test
 description: Cut rejects field position zero in a range.
 input:
   script: |+

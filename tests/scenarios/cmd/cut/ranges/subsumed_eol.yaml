@@ -1,4 +1,3 @@
-# Derived from GNU coreutils cut.pl EOL-subsumed-1 test
 description: Cut merges ranges where later ranges are subsumed by an unbounded range.
 setup:
   files:

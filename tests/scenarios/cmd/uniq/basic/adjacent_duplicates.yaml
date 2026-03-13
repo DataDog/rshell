@@ -1,4 +1,3 @@
-# Derived from GNU coreutils uniq.pl test 2
 description: uniq deduplicates adjacent identical lines.
 setup:
   files:

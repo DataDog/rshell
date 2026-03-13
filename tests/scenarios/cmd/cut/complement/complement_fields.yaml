@@ -1,4 +1,3 @@
-# Derived from uutils test_cut.rs::test_complement
 description: Cut with --complement excludes the specified field.
 setup:
   files:

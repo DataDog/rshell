@@ -1,4 +1,3 @@
-# Derived from GNU coreutils uniq.pl test 10
 description: uniq -u prints all lines when all are unique.
 setup:
   files:

@@ -1,4 +1,3 @@
-# Derived from uutils test_cat.rs::test_stdin_show_all
 description: cat -A is equivalent to -vET (shows all non-printing, tabs, and ends).
 setup:
   files:

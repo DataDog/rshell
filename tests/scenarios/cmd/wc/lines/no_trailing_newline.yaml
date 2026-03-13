@@ -1,4 +1,3 @@
-# Derived from GNU coreutils wc.pl test a7
 description: wc -l counts newline bytes; text with no newline counts as 0 lines.
 setup:
   files:

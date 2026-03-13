@@ -393,21 +393,61 @@ func countReader(ctx context.Context, r io.Reader) (counts, error) {
 }
 
 func fieldWidth(total counts, opts options) int {
-	max := int64(0)
-	if opts.showLines && total.lines > max {
+	// GNU wc behaviour:
+	//   - When multiple columns are displayed, the field width is derived
+	//     from the largest count across ALL categories (lines, words,
+	//     chars, bytes) — even hidden ones. This keeps columns aligned
+	//     when only a subset is printed (e.g. "wc -lw").
+	//   - When only a single column is displayed, the field width equals
+	//     that column's own digit count (no padding from hidden counters).
+	//   - maxLineLen is only considered when -L is explicitly requested.
+	numCols := 0
+	if opts.showLines {
+		numCols++
+	}
+	if opts.showWords {
+		numCols++
+	}
+	if opts.showChars {
+		numCols++
+	}
+	if opts.showBytes {
+		numCols++
+	}
+	if opts.showMaxLineLen {
+		numCols++
+	}
+
+	var max int64
+	if numCols > 1 {
+		// Multi-column: use all standard categories for alignment.
 		max = total.lines
-	}
-	if opts.showWords && total.words > max {
-		max = total.words
-	}
-	if opts.showChars && total.chars > max {
-		max = total.chars
-	}
-	if opts.showBytes && total.bytes > max {
-		max = total.bytes
-	}
-	if opts.showMaxLineLen && total.maxLineLen > max {
-		max = total.maxLineLen
+		if total.words > max {
+			max = total.words
+		}
+		if total.chars > max {
+			max = total.chars
+		}
+		if total.bytes > max {
+			max = total.bytes
+		}
+		if opts.showMaxLineLen && total.maxLineLen > max {
+			max = total.maxLineLen
+		}
+	} else {
+		// Single column: width is just that column's value.
+		switch {
+		case opts.showLines:
+			max = total.lines
+		case opts.showWords:
+			max = total.words
+		case opts.showChars:
+			max = total.chars
+		case opts.showBytes:
+			max = total.bytes
+		case opts.showMaxLineLen:
+			max = total.maxLineLen
+		}
 	}
 	w := len(strconv.FormatInt(max, 10))
 	return w

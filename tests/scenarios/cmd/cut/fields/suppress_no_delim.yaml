@@ -1,4 +1,3 @@
-# Derived from GNU coreutils cut.pl test a
 description: Cut with -s suppresses lines without the delimiter and selects field range.
 setup:
   files:

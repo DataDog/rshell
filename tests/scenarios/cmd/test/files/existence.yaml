@@ -1,4 +1,3 @@
-# Derived from uutils test_test.rs — file existence and type tests
 description: "test -e, -f, -d on existing files and directories"
 setup:
   files:

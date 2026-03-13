@@ -1,4 +1,3 @@
-# Derived from uutils test_file_empty
 description: wc on an empty file shows all zeros.
 setup:
   files:
