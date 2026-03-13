@@ -15,11 +15,6 @@ import (
 	"github.com/DataDog/rshell/interp"
 )
 
-func cmdRunCtx(ctx context.Context, t *testing.T, script, dir string) (string, string, int) {
-	t.Helper()
-	return testutil.RunScriptCtx(ctx, t, script, dir, interp.AllowedPaths([]string{dir}))
-}
-
 func tryCmdRunCtx(ctx context.Context, t *testing.T, script, dir string) (string, string, int, error) {
 	t.Helper()
 	return testutil.TryRunScriptCtx(ctx, t, script, dir, interp.AllowedPaths([]string{dir}))

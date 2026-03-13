@@ -79,25 +79,39 @@ func RunScriptCtx(ctx context.Context, t testing.TB, script, dir string, opts ..
 	return outBuf.String(), errBuf.String(), exitCode
 }
 
-// TryRunScriptCtx is like RunScriptCtx but returns an error instead of calling
-// t.Fatal when the script cannot be parsed or the runner returns an internal
-// error. This is intended for fuzz tests where arbitrary inputs may produce
-// unparseable scripts or trigger internal errors in the shell — callers should
-// skip such inputs rather than marking them as test failures.
+// ParseError is returned by TryRunScriptCtx when the shell script cannot be
+// parsed. Fuzz tests should skip inputs that produce parse errors since they
+// indicate an unparseable script, not a bug in the builtin being tested.
+type ParseError struct {
+	Err error
+}
+
+func (e *ParseError) Error() string { return e.Err.Error() }
+func (e *ParseError) Unwrap() error { return e.Err }
+
+// TryRunScriptCtx is like RunScriptCtx but returns a *ParseError instead of
+// calling t.Fatal when the script cannot be parsed. Runtime errors from the
+// interpreter (non-ExitStatus, non-context-cancellation) still call t.Fatal
+// so that real execution regressions are not silently swallowed.
+//
+// Fuzz tests should check for *ParseError and skip those inputs:
+//
+//	_, _, code, err := TryRunScriptCtx(...)
+//	if err != nil {
+//	    return // skip unparseable scripts
+//	}
 func TryRunScriptCtx(ctx context.Context, t testing.TB, script, dir string, opts ...interp.RunnerOption) (string, string, int, error) {
 	t.Helper()
 	parser := syntax.NewParser()
 	prog, err := parser.Parse(strings.NewReader(script), "")
 	if err != nil {
-		return "", "", 0, err
+		return "", "", 0, &ParseError{Err: err}
 	}
 
 	var outBuf, errBuf bytes.Buffer
 	allOpts := append([]interp.RunnerOption{interp.StdIO(nil, &outBuf, &errBuf)}, opts...)
 	runner, err := interp.New(allOpts...)
-	if err != nil {
-		return "", "", 0, err
-	}
+	require.NoError(t, err)
 	defer runner.Close()
 
 	if dir != "" {
@@ -111,7 +125,7 @@ func TryRunScriptCtx(ctx context.Context, t testing.TB, script, dir string, opts
 		if errors.As(err, &es) {
 			exitCode = int(es)
 		} else if ctx.Err() == nil {
-			return outBuf.String(), errBuf.String(), 0, err
+			t.Fatalf("unexpected error: %v", err)
 		}
 	}
 	return outBuf.String(), errBuf.String(), exitCode, nil
