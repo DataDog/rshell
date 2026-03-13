@@ -16,7 +16,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/DataDog/rshell/interp"
-	"github.com/DataDog/rshell/interp/builtins/testutil"
+	"github.com/DataDog/rshell/builtins/testutil"
 )
 
 // cmdRunCtxFuzz provides the test helper for fuzz tests.

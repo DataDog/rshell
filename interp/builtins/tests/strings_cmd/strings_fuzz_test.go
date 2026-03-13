@@ -15,7 +15,7 @@ import (
 	"time"
 
 	"github.com/DataDog/rshell/interp"
-	"github.com/DataDog/rshell/interp/builtins/testutil"
+	"github.com/DataDog/rshell/builtins/testutil"
 )
 
 func cmdRunCtx(ctx context.Context, t *testing.T, script, dir string) (string, string, int) {

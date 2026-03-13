@@ -313,7 +313,10 @@ var builtinAllowedSymbols = []string{
 	"time.Time",               // time value type; pure data, no side effects.
 	"unicode.Cc",              // control character category range table; pure data, no I/O.
 	"unicode.Cf",              // format character category range table; pure data, no I/O.
+	"unicode.Co",              // private-use character category range table; pure data, no I/O.
 	"unicode.Is",              // checks if rune belongs to a range table; pure function, no I/O.
+	"unicode.IsControl",       // reports whether rune is a control character; pure function, no I/O.
+	"unicode.IsGraphic",       // reports whether rune is defined as a graphic character; pure function, no I/O.
 	"unicode.Me",              // enclosing mark category range table; pure data, no I/O.
 	"unicode.Mn",              // nonspacing mark category range table; pure data, no I/O.
 	"unicode.Range16",         // struct type for 16-bit Unicode ranges; pure data.
