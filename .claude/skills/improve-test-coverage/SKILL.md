@@ -252,16 +252,6 @@ tests/scenarios/cmd/<command>/<category>/<test_name>.yaml
 tests/scenarios/shell/<feature>/<category>/<test_name>.yaml
 ```
 
-Group into subdirectories by concern:
-- `basic/` — core functionality, default behavior
-- `flags/` — individual flag behavior
-- `combinations/` — flag combinations
-- `edge_cases/` — boundary conditions, special inputs
-- `errors/` — error conditions, invalid inputs
-- `stdin/` — pipe and stdin behavior
-- `multifile/` — multi-file argument behavior
-- `integration/` — interactions with other shell features
-
 #### YAML format
 
 ```yaml
