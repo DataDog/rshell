@@ -343,14 +343,16 @@ func countReader(ctx context.Context, r io.Reader) (counts, error) {
 					// matching GNU wc behaviour under C.UTF-8 locale.
 					lineLen++
 					inWord = false
-				} else if glibcIswprint(ch) {
+				} else if unicode.IsGraphic(ch) || unicode.Is(unicode.Co, ch) || unicode.Is(unicode151Print, ch) {
 					// Printable characters start or continue a word,
-					// matching GNU wc 8.32 which gates word counting
-					// on iswprint() in C.UTF-8 locale. We use
-					// glibcIswprint to match glibc's permissive
-					// definition: everything except controls (Cc),
-					// surrogates, and Unicode noncharacters is
-					// considered printable.
+					// matching GNU wc which gates word counting on
+					// iswprint() in C.UTF-8 locale. IsGraphic covers
+					// letters, marks, numbers, punctuation, and
+					// symbols from Unicode 15.0; Co adds private-use
+					// characters; unicode151Print adds characters
+					// assigned in Unicode 15.1 (e.g. new Ideographic
+					// Description Characters) that Go's tables don't
+					// yet include (Go ships Unicode 15.0).
 					if !inWord {
 						c.words++
 						inWord = true
@@ -358,10 +360,9 @@ func countReader(ctx context.Context, r io.Reader) (counts, error) {
 					lineLen += int64(runeWidth(ch))
 				} else {
 					// Non-printable, non-whitespace, non-control chars
-					// (Unicode noncharacters like U+FDD0..U+FDEF,
-					// U+xFFFE, U+xFFFF) are transparent to word
-					// counting — they neither start nor end words,
-					// matching GNU wc behaviour.
+					// (e.g. unassigned Cn, format Cf not caught above)
+					// are transparent to word counting — they neither
+					// start nor end words, matching GNU wc behaviour.
 					lineLen += int64(runeWidth(ch))
 				}
 			}
@@ -405,30 +406,23 @@ func fieldWidth(total counts, opts options) int {
 	return w
 }
 
-// glibcIswprint reports whether r is considered printable by glibc's
-// iswprint() in the C.UTF-8 locale. This is much more permissive than
-// Go's unicode.IsPrint or unicode.IsGraphic: glibc treats everything as
-// printable EXCEPT control characters (Cc), surrogates (U+D800..U+DFFF),
-// and Unicode noncharacters (U+FDD0..U+FDEF, U+xFFFE, U+xFFFF).
-// In particular, unassigned codepoints (Cn) that are not noncharacters
-// ARE considered printable.
-func glibcIswprint(r rune) bool {
-	// Control characters are not printable.
-	if unicode.Is(unicode.Cc, r) {
-		return false
-	}
-	// Surrogates are not valid runes in Go, but guard anyway.
-	if r >= 0xD800 && r <= 0xDFFF {
-		return false
-	}
-	// Unicode noncharacters are not printable.
-	if r >= 0xFDD0 && r <= 0xFDEF {
-		return false
-	}
-	if r&0xFFFF == 0xFFFE || r&0xFFFF == 0xFFFF {
-		return false
-	}
-	return true
+// unicode151Print covers characters assigned in Unicode 15.1 that are
+// printable (graphic) but absent from Go's unicode package (Unicode 15.0).
+// CI runs GNU wc linked against glibc ≥ 2.39 (Ubuntu 24.04) which uses
+// Unicode 15.1+ character data, so these codepoints must be treated as
+// word characters to match GNU wc output.
+//
+// This table can be removed once Go's unicode package is updated to
+// Unicode 15.1 or later (tracked in https://github.com/golang/go/issues/65141,
+// expected in Go 1.27).
+var unicode151Print = &unicode.RangeTable{
+	R16: []unicode.Range16{
+		{0x2FFC, 0x2FFF, 1}, // Ideographic Description Characters (4 new IDCs)
+		{0x31EF, 0x31EF, 1}, // Ideographic Description Character OVERLAID
+	},
+	R32: []unicode.Range32{
+		{0x2EBF0, 0x2EE5D, 1}, // CJK Unified Ideographs Extension I
+	},
 }
 
 // runeWidth returns the display width of a rune following wcwidth(3) rules:
