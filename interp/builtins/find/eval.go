@@ -117,17 +117,19 @@ func evaluate(ec *evalContext, e *expr) evalResult {
 }
 
 // evalEmpty returns true if the file is an empty regular file or empty directory.
-// If ReadDir fails on a directory, the error is reported to stderr and
-// ec.failed is set so that find exits non-zero, matching GNU find behaviour.
+// For directories, uses IsDirEmpty which reads at most one entry rather than
+// materializing the full listing. If the check fails, the error is reported
+// to stderr and ec.failed is set so that find exits non-zero, matching GNU
+// find behaviour.
 func evalEmpty(ec *evalContext) bool {
 	if ec.info.IsDir() {
-		entries, err := ec.callCtx.ReadDir(ec.ctx, ec.printPath)
+		empty, err := ec.callCtx.IsDirEmpty(ec.ctx, ec.printPath)
 		if err != nil {
 			ec.callCtx.Errf("find: '%s': %s\n", ec.printPath, ec.callCtx.PortableErr(err))
 			ec.failed = true
 			return false
 		}
-		return len(entries) == 0
+		return empty
 	}
 	if ec.info.Mode().IsRegular() {
 		return ec.info.Size() == 0

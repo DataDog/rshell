@@ -10,6 +10,7 @@ import (
 	"io"
 	iofs "io/fs"
 	"math"
+	"strings"
 	"testing"
 	"time"
 
@@ -216,23 +217,26 @@ func TestCompareSizeOverflow(t *testing.T) {
 	}
 }
 
-// TestEvalEmptyDirectory verifies that -empty matches a truly empty directory.
-// Scenario tests cannot create empty dirs (setup.files requires a file), so
-// this must be a Go unit test exercising evalEmpty directly.
-func TestEvalEmptyDirectory(t *testing.T) {
+// TestEvalEmpty verifies the -empty predicate for directories, regular files,
+// and other file types. Scenario tests cannot create empty dirs (setup.files
+// requires a file), so directory emptiness must be tested here.
+func TestEvalEmpty(t *testing.T) {
 	t.Run("empty directory matches", func(t *testing.T) {
+		called := false
 		ec := &evalContext{
 			ctx:       context.Background(),
 			info:      &fakeFileInfo{isDir: true},
 			printPath: "emptydir",
 			callCtx: &builtins.CallContext{
 				Stderr: io.Discard,
-				ReadDir: func(_ context.Context, _ string) ([]iofs.DirEntry, error) {
-					return nil, nil // empty directory
+				IsDirEmpty: func(_ context.Context, _ string) (bool, error) {
+					called = true
+					return true, nil
 				},
 			},
 		}
 		assert.True(t, evalEmpty(ec), "empty directory should match -empty")
+		assert.True(t, called, "IsDirEmpty must be called for directories")
 	})
 
 	t.Run("non-empty directory does not match", func(t *testing.T) {
@@ -242,12 +246,89 @@ func TestEvalEmptyDirectory(t *testing.T) {
 			printPath: "nonemptydir",
 			callCtx: &builtins.CallContext{
 				Stderr: io.Discard,
-				ReadDir: func(_ context.Context, _ string) ([]iofs.DirEntry, error) {
-					return []iofs.DirEntry{fakeDirEntry{}}, nil
+				IsDirEmpty: func(_ context.Context, _ string) (bool, error) {
+					return false, nil
 				},
 			},
 		}
 		assert.False(t, evalEmpty(ec), "non-empty directory should not match -empty")
+	})
+
+	t.Run("IsDirEmpty receives correct path", func(t *testing.T) {
+		var gotPath string
+		ec := &evalContext{
+			ctx:       context.Background(),
+			info:      &fakeFileInfo{isDir: true},
+			printPath: "some/nested/dir",
+			callCtx: &builtins.CallContext{
+				Stderr: io.Discard,
+				IsDirEmpty: func(_ context.Context, path string) (bool, error) {
+					gotPath = path
+					return true, nil
+				},
+			},
+		}
+		evalEmpty(ec)
+		assert.Equal(t, "some/nested/dir", gotPath, "IsDirEmpty should receive printPath")
+	})
+
+	t.Run("IsDirEmpty error sets failed and returns false", func(t *testing.T) {
+		var stderr strings.Builder
+		ec := &evalContext{
+			ctx:       context.Background(),
+			info:      &fakeFileInfo{isDir: true},
+			printPath: "baddir",
+			callCtx: &builtins.CallContext{
+				Stderr: &stderr,
+				IsDirEmpty: func(_ context.Context, _ string) (bool, error) {
+					return false, &iofs.PathError{Op: "readdir", Path: "baddir", Err: iofs.ErrPermission}
+				},
+				PortableErr: func(err error) string { return err.Error() },
+			},
+		}
+		assert.False(t, evalEmpty(ec), "error should return false")
+		assert.True(t, ec.failed, "error should set failed flag")
+		assert.Contains(t, stderr.String(), "baddir", "error should mention the path on stderr")
+	})
+
+	t.Run("empty regular file matches", func(t *testing.T) {
+		ec := &evalContext{
+			ctx:  context.Background(),
+			info: &fakeFileInfo{size: 0, isDir: false},
+		}
+		assert.True(t, evalEmpty(ec), "zero-byte regular file should match -empty")
+	})
+
+	t.Run("non-empty regular file does not match", func(t *testing.T) {
+		ec := &evalContext{
+			ctx:  context.Background(),
+			info: &fakeFileInfo{size: 42, isDir: false},
+		}
+		assert.False(t, evalEmpty(ec), "non-empty regular file should not match -empty")
+	})
+
+	t.Run("symlink does not match", func(t *testing.T) {
+		ec := &evalContext{
+			ctx:  context.Background(),
+			info: &fakeFileInfo{mode: iofs.ModeSymlink},
+		}
+		assert.False(t, evalEmpty(ec), "symlink should not match -empty")
+	})
+
+	t.Run("IsDirEmpty not called for regular files", func(t *testing.T) {
+		called := false
+		ec := &evalContext{
+			ctx:  context.Background(),
+			info: &fakeFileInfo{size: 0, isDir: false},
+			callCtx: &builtins.CallContext{
+				IsDirEmpty: func(_ context.Context, _ string) (bool, error) {
+					called = true
+					return true, nil
+				},
+			},
+		}
+		evalEmpty(ec)
+		assert.False(t, called, "IsDirEmpty should not be called for regular files")
 	})
 }
 
@@ -264,6 +345,7 @@ type fakeFileInfo struct {
 	modTime time.Time
 	size    int64
 	isDir   bool
+	mode    iofs.FileMode // when set, Mode() returns this directly
 }
 
 func (f *fakeFileInfo) Name() string       { return "fake" }
@@ -272,8 +354,12 @@ func (f *fakeFileInfo) ModTime() time.Time { return f.modTime }
 func (f *fakeFileInfo) IsDir() bool        { return f.isDir }
 func (f *fakeFileInfo) Sys() any           { return nil }
 
-// Mode returns a basic file mode for testing.
+// Mode returns a basic file mode for testing. If mode is explicitly set,
+// it is returned directly; otherwise a default is derived from isDir.
 func (f *fakeFileInfo) Mode() iofs.FileMode {
+	if f.mode != 0 {
+		return f.mode
+	}
 	if f.isDir {
 		return iofs.ModeDir | 0o755
 	}

@@ -60,7 +60,9 @@ package find
 import (
 	"context"
 	"errors"
+	"io"
 	iofs "io/fs"
+	"os"
 	"strings"
 	"time"
 
@@ -259,156 +261,183 @@ func walkPath(
 	// for that subtree. The maxTraversalDepth=256 cap remains as an
 	// ultimate safety bound.
 
-	// Use an explicit stack for traversal to avoid Go recursion depth issues.
-	type stackEntry struct {
-		path          string
-		info          iofs.FileInfo
+	// dirIterator streams directory entries one at a time via ReadDir(1),
+	// keeping memory usage proportional to tree depth, not directory width.
+	type dirIterator struct {
+		dir           *os.File
+		parentPath    string
 		depth         int
-		ancestorIDs   map[builtins.FileID]string // ancestor dir identities (root→parent)
-		ancestorPaths map[string]bool            // fallback: ancestor dir paths
+		ancestorIDs   map[builtins.FileID]string
+		ancestorPaths map[string]bool
+		done          bool
 	}
 
-	stack := []stackEntry{{path: startPath, info: startInfo, depth: 0}}
-
-	for len(stack) > 0 {
-		if ctx.Err() != nil {
-			break
-		}
-
-		// Pop from the end (DFS).
-		entry := stack[len(stack)-1]
-		stack = stack[:len(stack)-1]
-
-		// Build the print path — this is what gets printed and matched.
-		printPath := entry.path
-
+	// processEntry evaluates the expression for a single file entry.
+	// Returns (prune, isLoop).
+	processEntry := func(path string, info iofs.FileInfo, depth int, ancestorIDs map[builtins.FileID]string, ancestorPaths map[string]bool) (bool, bool, map[builtins.FileID]string, map[string]bool) {
 		// With -L, detect symlink loops BEFORE evaluating predicates.
-		// GNU find does not print or evaluate a directory that forms a loop;
-		// it only reports the error and skips the entry entirely.
 		var childAncestorIDs map[builtins.FileID]string
 		var childAncestorPaths map[string]bool
-		isLoop := false
-		if entry.info.IsDir() && opts.followLinks {
+		if info.IsDir() && opts.followLinks {
 			idOK := false
 			if callCtx.FileIdentity != nil {
-				if id, ok := callCtx.FileIdentity(entry.path, entry.info); ok {
+				if id, ok := callCtx.FileIdentity(path, info); ok {
 					idOK = true
-					if firstPath, seen := entry.ancestorIDs[id]; seen {
+					if firstPath, seen := ancestorIDs[id]; seen {
 						callCtx.Errf("find: File system loop detected; '%s' is part of the same file system loop as '%s'.\n",
-							entry.path, firstPath)
+							path, firstPath)
 						failed = true
-						isLoop = true
-					} else {
-						// Build ancestor set for children: parent's ancestors + this dir.
-						childAncestorIDs = make(map[builtins.FileID]string, len(entry.ancestorIDs)+1)
-						for k, v := range entry.ancestorIDs {
-							childAncestorIDs[k] = v
-						}
-						childAncestorIDs[id] = entry.path
+						return false, true, nil, nil
 					}
+					childAncestorIDs = make(map[builtins.FileID]string, len(ancestorIDs)+1)
+					for k, v := range ancestorIDs {
+						childAncestorIDs[k] = v
+					}
+					childAncestorIDs[id] = path
 				}
 			}
-			if !idOK && !isLoop {
-				// Fall back to path-based tracking. Lexical paths cannot
-				// detect symlink cycles perfectly, but maxTraversalDepth=256
-				// provides the ultimate safety bound.
-				if entry.ancestorPaths[entry.path] {
-					callCtx.Errf("find: File system loop detected; '%s' has already been visited.\n", entry.path)
+			if !idOK {
+				if ancestorPaths[path] {
+					callCtx.Errf("find: File system loop detected; '%s' has already been visited.\n", path)
 					failed = true
-					isLoop = true
-				} else {
-					childAncestorPaths = make(map[string]bool, len(entry.ancestorPaths)+1)
-					for k := range entry.ancestorPaths {
-						childAncestorPaths[k] = true
-					}
-					childAncestorPaths[entry.path] = true
+					return false, true, nil, nil
 				}
+				childAncestorPaths = make(map[string]bool, len(ancestorPaths)+1)
+				for k := range ancestorPaths {
+					childAncestorPaths[k] = true
+				}
+				childAncestorPaths[path] = true
 			}
-		}
-		if isLoop {
-			continue
 		}
 
 		ec := &evalContext{
 			callCtx:     callCtx,
 			ctx:         ctx,
 			now:         now,
-			relPath:     entry.path,
-			info:        entry.info,
-			depth:       entry.depth,
-			printPath:   printPath,
+			relPath:     path,
+			info:        info,
+			depth:       depth,
+			printPath:   path,
 			newerCache:  newerCache,
 			newerErrors: newerErrors,
 			followLinks: opts.followLinks,
 		}
 
-		// Evaluate expression at this depth.
 		prune := false
-		if entry.depth >= opts.minDepth {
+		if depth >= opts.minDepth {
 			result := evaluate(ec, opts.expression)
 			prune = result.prune
 			if len(newerErrors) > 0 || ec.failed {
 				failed = true
 			}
-
 			if result.matched && opts.implicitPrint {
-				callCtx.Outf("%s\n", printPath)
+				callCtx.Outf("%s\n", path)
 			}
 		}
 
-		// Descend into directories unless pruned or beyond maxdepth.
-		if entry.info.IsDir() && !prune && entry.depth < opts.maxDepth {
+		return prune, false, childAncestorIDs, childAncestorPaths
+	}
 
-			entries, readErr := callCtx.ReadDirUnsorted(ctx, entry.path)
-			if readErr != nil {
-				callCtx.Errf("find: '%s': %s\n", entry.path, callCtx.PortableErr(readErr))
+	// Process the starting path.
+	prune, isLoop, childAncIDs, childAncPaths := processEntry(startPath, startInfo, 0, nil, nil)
+
+	// Set up the iterator stack. Each open directory keeps a file handle
+	// that reads one entry at a time, so memory is O(depth) not O(width).
+	var iterStack []*dirIterator
+
+	if !isLoop && !prune && startInfo.IsDir() && 0 < opts.maxDepth {
+		dir, openErr := callCtx.OpenDir(ctx, startPath)
+		if openErr != nil {
+			callCtx.Errf("find: '%s': %s\n", startPath, callCtx.PortableErr(openErr))
+			return true
+		}
+		iterStack = append(iterStack, &dirIterator{
+			dir:           dir,
+			parentPath:    startPath,
+			depth:         1,
+			ancestorIDs:   childAncIDs,
+			ancestorPaths: childAncPaths,
+		})
+	}
+
+	for len(iterStack) > 0 {
+		if ctx.Err() != nil {
+			break
+		}
+
+		top := iterStack[len(iterStack)-1]
+		if top.done {
+			top.dir.Close()
+			iterStack = iterStack[:len(iterStack)-1]
+			continue
+		}
+
+		// Read one entry at a time from the directory.
+		dirEntries, readErr := top.dir.ReadDir(1)
+		if readErr != nil {
+			if readErr != io.EOF {
+				callCtx.Errf("find: '%s': %s\n", top.parentPath, callCtx.PortableErr(readErr))
+				failed = true
+			}
+			top.done = true
+			continue
+		}
+		if len(dirEntries) == 0 {
+			top.done = true
+			continue
+		}
+
+		child := dirEntries[0]
+		childPath := joinPath(top.parentPath, child.Name())
+
+		var childInfo iofs.FileInfo
+		if opts.followLinks {
+			childInfo, err = callCtx.StatFile(ctx, childPath)
+			if err != nil {
+				if errors.Is(err, iofs.ErrNotExist) {
+					childInfo, err = callCtx.LstatFile(ctx, childPath)
+				}
+				if err != nil {
+					callCtx.Errf("find: '%s': %s\n", childPath, callCtx.PortableErr(err))
+					failed = true
+					continue
+				}
+			}
+		} else {
+			childInfo, err = callCtx.LstatFile(ctx, childPath)
+			if err != nil {
+				callCtx.Errf("find: '%s': %s\n", childPath, callCtx.PortableErr(err))
 				failed = true
 				continue
 			}
-
-			// Add children in reverse order so they come off the stack in
-			// the original readdir order (DFS). ReadDirUnsorted returns
-			// entries in filesystem-dependent order, matching GNU find.
-			for j := len(entries) - 1; j >= 0; j-- {
-				if ctx.Err() != nil {
-					break
-				}
-				child := entries[j]
-				childPath := joinPath(entry.path, child.Name())
-
-				var childInfo iofs.FileInfo
-				if opts.followLinks {
-					childInfo, err = callCtx.StatFile(ctx, childPath)
-					if err != nil {
-						// Only fall back to lstat for broken symlinks (target missing).
-						// Permission denied, sandbox blocked, etc. should be reported as-is.
-						if errors.Is(err, iofs.ErrNotExist) {
-							childInfo, err = callCtx.LstatFile(ctx, childPath)
-						}
-						if err != nil {
-							callCtx.Errf("find: '%s': %s\n", childPath, callCtx.PortableErr(err))
-							failed = true
-							continue
-						}
-					}
-				} else {
-					childInfo, err = callCtx.LstatFile(ctx, childPath)
-					if err != nil {
-						callCtx.Errf("find: '%s': %s\n", childPath, callCtx.PortableErr(err))
-						failed = true
-						continue
-					}
-				}
-
-				stack = append(stack, stackEntry{
-					path:          childPath,
-					info:          childInfo,
-					depth:         entry.depth + 1,
-					ancestorIDs:   childAncestorIDs,
-					ancestorPaths: childAncestorPaths,
-				})
-			}
 		}
+
+		prune, isLoop, cAncIDs, cAncPaths := processEntry(childPath, childInfo, top.depth, top.ancestorIDs, top.ancestorPaths)
+		if isLoop {
+			continue
+		}
+
+		// Descend into child directories unless pruned or beyond maxdepth.
+		if childInfo.IsDir() && !prune && top.depth < opts.maxDepth {
+			dir, openErr := callCtx.OpenDir(ctx, childPath)
+			if openErr != nil {
+				callCtx.Errf("find: '%s': %s\n", childPath, callCtx.PortableErr(openErr))
+				failed = true
+				continue
+			}
+			iterStack = append(iterStack, &dirIterator{
+				dir:           dir,
+				parentPath:    childPath,
+				depth:         top.depth + 1,
+				ancestorIDs:   cAncIDs,
+				ancestorPaths: cAncPaths,
+			})
+		}
+	}
+
+	// Close any remaining open directory handles (e.g. on context cancellation).
+	for _, it := range iterStack {
+		it.dir.Close()
 	}
 
 	return failed

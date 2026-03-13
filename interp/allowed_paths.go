@@ -194,27 +194,45 @@ func (s *pathSandbox) readDir(ctx context.Context, path string) ([]fs.DirEntry, 
 	return entries, nil
 }
 
-// readDirUnsorted implements the restricted directory-read policy without
-// sorting. Entries are returned in filesystem-dependent order, matching
-// the behaviour of GNU find's readdir traversal.
-func (s *pathSandbox) readDirUnsorted(ctx context.Context, path string) ([]fs.DirEntry, error) {
+// openDir opens a directory within the sandbox and returns the underlying
+// *os.File handle. The caller can then call ReadDir(n) incrementally and
+// must close the handle when done.
+func (s *pathSandbox) openDir(ctx context.Context, path string) (*os.File, error) {
 	absPath := toAbs(path, HandlerCtx(ctx).Dir)
 
 	root, relPath, ok := s.resolve(absPath)
 	if !ok {
-		return nil, &os.PathError{Op: "readdir", Path: path, Err: os.ErrPermission}
+		return nil, &os.PathError{Op: "opendir", Path: path, Err: os.ErrPermission}
 	}
 
 	f, err := root.Open(relPath)
 	if err != nil {
 		return nil, portablePathError(err)
 	}
-	defer f.Close()
-	entries, err := f.ReadDir(-1)
-	if err != nil {
-		return nil, portablePathError(err)
+	return f, nil
+}
+
+// isDirEmpty checks whether a directory is empty by reading at most one
+// entry. This is more efficient than reading all entries when only
+// emptiness needs to be determined.
+func (s *pathSandbox) isDirEmpty(ctx context.Context, path string) (bool, error) {
+	absPath := toAbs(path, HandlerCtx(ctx).Dir)
+
+	root, relPath, ok := s.resolve(absPath)
+	if !ok {
+		return false, &os.PathError{Op: "readdir", Path: path, Err: os.ErrPermission}
 	}
-	return entries, nil
+
+	f, err := root.Open(relPath)
+	if err != nil {
+		return false, portablePathError(err)
+	}
+	defer f.Close()
+	entries, err := f.ReadDir(1)
+	if err != nil && err != io.EOF {
+		return false, portablePathError(err)
+	}
+	return len(entries) == 0, nil
 }
 
 // readDirLimited reads directory entries, skipping the first offset entries

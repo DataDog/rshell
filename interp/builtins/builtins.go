@@ -91,10 +91,13 @@ type CallContext struct {
 	// that need deterministic sorted output.
 	ReadDir func(ctx context.Context, path string) ([]fs.DirEntry, error)
 
-	// ReadDirUnsorted reads a directory within the shell's path restrictions.
-	// Entries are returned in filesystem-dependent order, matching the
-	// behaviour of GNU find's readdir traversal.
-	ReadDirUnsorted func(ctx context.Context, path string) ([]fs.DirEntry, error)
+	// OpenDir opens a directory within the shell's path restrictions for
+	// incremental reading via ReadDir(n). Caller must close the handle.
+	OpenDir func(ctx context.Context, path string) (*os.File, error)
+
+	// IsDirEmpty checks whether a directory is empty by reading at most
+	// one entry. More efficient than reading all entries.
+	IsDirEmpty func(ctx context.Context, path string) (bool, error)
 
 	// ReadDirLimited reads directory entries, skipping the first offset entries
 	// and returning up to maxRead entries sorted by name within the read window.
