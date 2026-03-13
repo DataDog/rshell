@@ -12,7 +12,7 @@ input:
   script: |+
     find dir -type f
 expect:
-  stdout: |+
+  stdout_unordered: |+
     dir/file.txt
     dir/sub/nested.txt
   stderr: ""

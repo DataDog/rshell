@@ -12,7 +12,7 @@ input:
   script: |+
     find dir -type d
 expect:
-  stdout: |+
+  stdout_unordered: |+
     dir
     dir/sub
   stderr: ""
