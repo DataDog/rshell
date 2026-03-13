@@ -84,8 +84,21 @@ func checkAllowedSymbols(t *testing.T, cfg allowedSymbolsConfig) {
 		for _, imp := range f.Imports {
 			importPath := strings.Trim(imp.Path.Value, `"`)
 
-			if reason, banned := permanentlyBanned[importPath]; banned {
-				t.Errorf("%s: import of %q is permanently banned (%s)", rel, importPath, reason)
+			banned := false
+			for key, reason := range permanentlyBanned {
+				if strings.HasSuffix(key, "/") {
+					if strings.HasPrefix(importPath, key) {
+						t.Errorf("%s: import of %q is permanently banned (%s)", rel, importPath, reason)
+						banned = true
+						break
+					}
+				} else if importPath == key {
+					t.Errorf("%s: import of %q is permanently banned (%s)", rel, importPath, reason)
+					banned = true
+					break
+				}
+			}
+			if banned {
 				continue
 			}
 
