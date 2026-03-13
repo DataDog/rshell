@@ -17,6 +17,7 @@ import (
 	"mvdan.cc/sh/v3/expand"
 	"mvdan.cc/sh/v3/syntax"
 
+	"github.com/DataDog/rshell/allowedpaths"
 	"github.com/DataDog/rshell/builtins"
 )
 
@@ -263,7 +264,7 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 			AccessFile: func(ctx context.Context, path string, mode uint32) error {
 				return r.sandbox.Access(path, HandlerCtx(r.handlerCtx(ctx, todoPos)).Dir, mode)
 			},
-			PortableErr: portableErrMsg,
+			PortableErr: allowedpaths.PortableErrMsg,
 			Now:         time.Now,
 		}
 		if r.stdin != nil { // do not assign a typed nil into the io.Reader interface
