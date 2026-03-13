@@ -148,19 +148,115 @@ func TestGNUCompatCharsMultibyte(t *testing.T) {
 	assert.Equal(t, "5 file.txt\n", stdout)
 }
 
-// TestGNUCompatControlCharIsWord — control byte \x01 does not count as a word.
+// TestGNUCompatControlCharIsNotWord — control byte \x01 is transparent to word counting.
 //
 // GNU wc in POSIX locale treats C0 control characters as transparent:
 // they neither start nor end words. Only printable chars form words.
 //
-// GNU command (Debian/Ubuntu POSIX locale): printf '\x01\n' | wc -w
+// GNU command: printf '\x01\n' | gwc -w
 // Expected: "0\n"
-func TestGNUCompatControlCharIsWord(t *testing.T) {
+func TestGNUCompatControlCharIsNotWord(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, dir, "file.txt", "\x01\n")
 	stdout, _, code := cmdRun(t, "wc -w file.txt", dir)
 	assert.Equal(t, 0, code)
 	assert.Equal(t, "0 file.txt\n", stdout)
+}
+
+// TestGNUCompatMaxLineLenVerticalTab — -L with \v (zero display width).
+//
+// GNU command: printf 'a\vb\n' | wc -L
+// Expected: "2\n" — \v has zero width, so a(1) + b(1) = 2.
+func TestGNUCompatMaxLineLenVerticalTab(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "file.txt", "a\vb\n")
+	stdout, _, code := cmdRun(t, "wc -L file.txt", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "2 file.txt\n", stdout)
+}
+
+// TestGNUCompatMaxLineLenFormFeed — -L with \f (resets line position).
+//
+// GNU command: printf 'abc\fdef\n' | wc -L
+// Expected: "3\n" — \f resets position, so def = 3.
+func TestGNUCompatMaxLineLenFormFeed(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "file.txt", "abc\fdef\n")
+	stdout, _, code := cmdRun(t, "wc -L file.txt", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "3 file.txt\n", stdout)
+}
+
+// TestGNUCompatMaxLineLenCRAsymmetric — -L with \r where text before \r is longer.
+//
+// GNU command: printf 'abcdef\rxy\n' | wc -L
+// Expected: "6\n" — max(6, 2) = 6; \r resets position but preserves max.
+func TestGNUCompatMaxLineLenCRAsymmetric(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "file.txt", "abcdef\rxy\n")
+	stdout, _, code := cmdRun(t, "wc -L file.txt", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "6 file.txt\n", stdout)
+}
+
+// TestGNUCompatMaxLineLenFFAsymmetric — -L with \f where text before \f is longer.
+//
+// GNU command: printf 'abcdef\fxy\n' | wc -L
+// Expected: "6\n" — max(6, 2) = 6; \f resets position but preserves max.
+func TestGNUCompatMaxLineLenFFAsymmetric(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "file.txt", "abcdef\fxy\n")
+	stdout, _, code := cmdRun(t, "wc -L file.txt", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "6 file.txt\n", stdout)
+}
+
+// TestGNUCompatDirectoryDefaultWidth — directory gets width-7 padding in default mode.
+//
+// GNU command: mkdir /tmp/d && wc /tmp/d
+// Expected: "      0       0       0 .\n" (width 7, non-regular file)
+func TestGNUCompatDirectoryDefaultWidth(t *testing.T) {
+	dir := t.TempDir()
+	stdout, stderr, code := cmdRun(t, "wc .", dir)
+	assert.Equal(t, 1, code)
+	assert.Contains(t, stderr, "wc:")
+	assert.Equal(t, "      0       0       0 .\n", stdout)
+}
+
+// TestGNUCompatDirectoryExplicitFlag — directory with explicit flag uses width 1.
+//
+// GNU command: mkdir /tmp/d && wc -l /tmp/d
+// Expected: "0 .\n" (width 1, explicit flag)
+func TestGNUCompatDirectoryExplicitFlag(t *testing.T) {
+	dir := t.TempDir()
+	stdout, stderr, code := cmdRun(t, "wc -l .", dir)
+	assert.Equal(t, 1, code)
+	assert.Contains(t, stderr, "wc:")
+	assert.Equal(t, "0 .\n", stdout)
+}
+
+// TestGNUCompatVerticalTabWordsBreak — \v breaks words for wc -w.
+//
+// GNU command: printf 'a\vb\n' | wc -w
+// Expected: "2\n" — \v is a word delimiter.
+func TestGNUCompatVerticalTabWordsBreak(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "file.txt", "a\vb\n")
+	stdout, _, code := cmdRun(t, "wc -w file.txt", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "2 file.txt\n", stdout)
+}
+
+// TestGNUCompatVerticalTabThreeWords — \v separates three words.
+//
+// GNU command: printf 'a\vb\vc\n' | wc -w
+// Expected: "3\n"
+func TestGNUCompatVerticalTabThreeWords(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "file.txt", "a\vb\vc\n")
+	stdout, _, code := cmdRun(t, "wc -w file.txt", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "3 file.txt\n", stdout)
 }
 
 // TestGNUCompatRejectedFlag — unknown flag exits 1.

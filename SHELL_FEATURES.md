@@ -24,7 +24,7 @@ Blocked features are rejected before execution with exit code 2.
 - ✅ `tr [-cdsCt] SET1 [SET2]` — translate, squeeze, and/or delete characters from stdin
 - ✅ `true` — return exit code 0
 - ✅ `uniq [OPTION]... [INPUT]` — report or omit repeated lines
-- ✅ `wc [-l] [-w] [-c] [-m] [FILE]...` — count lines, words, bytes, or characters in files
+- ✅ `wc [-l] [-w] [-c] [-m] [-L] [FILE]...` — count lines, words, bytes, characters, or max line length
 - ❌ All other commands — return exit code 127 with `<cmd>: not found` unless an ExecHandler is configured
 
 ## Variables

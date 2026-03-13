@@ -34,7 +34,7 @@
 //	-L, --max-line-length
 //	    Print the length of the longest line.
 //
-//	-h, --help
+//	--help
 //	    Print this usage message to stdout and exit 0.
 //
 // Output columns always appear in a fixed order: lines, words, chars,
@@ -57,6 +57,7 @@ package wc
 
 import (
 	"context"
+	"errors"
 	"io"
 	"os"
 	"strconv"
@@ -69,8 +70,8 @@ import (
 // Cmd is the wc builtin command descriptor.
 var Cmd = builtins.Command{Name: "wc", MakeFlags: registerFlags}
 
-const chunkSize = 32 * 1024 // 32 KiB read buffer
-const stdinMinWidth = 7     // GNU wc minimum column width for stdin
+const chunkSize = 32 * 1024  // 32 KiB read buffer
+const nonRegularMinWidth = 7 // GNU wc minimum column width for non-regular files
 
 type counts struct {
 	lines      int64
@@ -88,8 +89,29 @@ type options struct {
 	showMaxLineLen bool
 }
 
+// numCols returns the number of output columns that will be printed.
+func (o options) numCols() int {
+	n := 0
+	if o.showLines {
+		n++
+	}
+	if o.showWords {
+		n++
+	}
+	if o.showChars {
+		n++
+	}
+	if o.showBytes {
+		n++
+	}
+	if o.showMaxLineLen {
+		n++
+	}
+	return n
+}
+
 func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
-	help := fs.BoolP("help", "h", false, "print usage and exit")
+	help := fs.Bool("help", false, "print usage and exit")
 	lines := fs.BoolP("lines", "l", false, "print the newline counts")
 	words := fs.BoolP("words", "w", false, "print the word counts")
 	bytesFlag := fs.BoolP("bytes", "c", false, "print the byte counts")
@@ -147,6 +169,7 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			c    counts
 		}
 		results := make([]fileResult, 0, len(files))
+		hasNonRegular := hasStdin // stdin (pipe) is non-regular
 
 		for _, file := range files {
 			if ctx.Err() != nil {
@@ -158,11 +181,18 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 				if file == "-" {
 					name = "standard input"
 				}
-				callCtx.Errf("wc: %s: %s\n", name, callCtx.PortableErr(err))
+				if name == "" {
+					callCtx.Errf("wc: %s\n", callCtx.PortableErr(err))
+				} else {
+					callCtx.Errf("wc: %s: %s\n", name, callCtx.PortableErr(err))
+				}
 				failed = true
-				if c == (counts{}) {
+				// GNU wc prints a zero count line for directories but not
+				// for missing files or other open errors.
+				if !isErrIsDir(err) {
 					continue
 				}
+				hasNonRegular = true
 			}
 			results = append(results, fileResult{name: file, c: c})
 			total.lines += c.lines
@@ -175,8 +205,16 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 		}
 
 		width := fieldWidth(total, opts)
-		if hasStdin && width < stdinMinWidth {
-			width = stdinMinWidth
+		// GNU wc uses a minimum column width of 7 for non-regular files
+		// (stdin pipes, directories, devices, etc.) when two or more
+		// columns are printed — whether in default mode or with explicit
+		// multi-column flags (e.g. wc -lw). GNU also applies this minimum
+		// when multiple files are processed (a total line is printed), even
+		// with a single column (e.g. wc -l dir file). When only a single
+		// column is active with a single file, the width is determined
+		// solely by the count values.
+		if hasNonRegular && (opts.numCols() >= 2 || len(files) > 1) && width < nonRegularMinWidth {
+			width = nonRegularMinWidth
 		}
 
 		for _, fr := range results {
@@ -199,6 +237,9 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 }
 
 func countFile(ctx context.Context, callCtx *builtins.CallContext, path string) (counts, error) {
+	if path == "" {
+		return counts{}, errors.New("invalid zero-length file name")
+	}
 	var rc io.ReadCloser
 	if path == "-" {
 		if callCtx.Stdin == nil {
@@ -262,47 +303,74 @@ func countReader(ctx context.Context, r io.Reader) (counts, error) {
 			c.bytes -= int64(carryN)
 
 			for i := 0; i < len(chunk); {
-				r, size := utf8.DecodeRune(chunk[i:])
+				ch, size := utf8.DecodeRune(chunk[i:])
 				i += size
 				// Invalid UTF-8 byte: not a character in C.UTF-8 locale.
 				// Skip entirely — no char count, no word effect.
-				if r == utf8.RuneError && size == 1 {
+				if ch == utf8.RuneError && size == 1 {
 					continue
 				}
 				c.chars++
-				if r == '\n' {
+				if ch == '\n' {
 					c.lines++
 					if lineLen > c.maxLineLen {
 						c.maxLineLen = lineLen
 					}
 					lineLen = 0
 					inWord = false
-				} else if r == '\r' {
+				} else if ch == '\r' {
+					if lineLen > c.maxLineLen {
+						c.maxLineLen = lineLen
+					}
 					lineLen = 0
 					inWord = false
-				} else if r == '\t' {
+				} else if ch == '\t' {
 					lineLen = (lineLen/8 + 1) * 8
 					inWord = false
-				} else if r == ' ' || r == '\v' || r == '\f' {
+				} else if ch == ' ' {
 					lineLen++
 					inWord = false
-				} else if unicode.IsControl(r) {
-					// Non-whitespace control chars (C0, DEL, C1) are transparent:
-					// they do not start or end words, matching GNU wc in POSIX locale.
-				} else if unicode.Is(unicode.Zs, r) {
+				} else if ch == '\f' {
+					if lineLen > c.maxLineLen {
+						c.maxLineLen = lineLen
+					}
+					lineLen = 0
+					inWord = false
+				} else if ch == '\v' {
+					// vertical tab: zero display width, but breaks words
+					inWord = false
+				} else if unicode.Is(unicode.Cc, ch) {
+					// Control characters are transparent to word counting:
+					// they don't start or end words, matching GNU wc.
+					lineLen += int64(runeWidth(ch))
+				} else if unicode.Is(unicode.Zs, ch) {
 					// Unicode space separators (NBSP, thin space, etc.) end words,
 					// matching GNU wc behaviour under C.UTF-8 locale.
 					lineLen++
 					inWord = false
-				} else if !unicode.IsGraphic(r) && !unicode.Is(unicode.Cf, r) && !unicode.Is(unicode.Co, r) {
-					// Cn (unassigned codepoints): transparent like control chars --
-					// they do not start or end words, matching GNU wc under C.UTF-8.
-				} else {
+				} else if unicode.IsGraphic(ch) || unicode.Is(unicode.Co, ch) || unicode.Is(unicode.Cf, ch) || unicode.Is(unicode151Print, ch) {
+					// Printable characters start or continue a word,
+					// matching GNU wc which gates word counting on
+					// iswprint() in C.UTF-8 locale. IsGraphic covers
+					// letters, marks, numbers, punctuation, and
+					// symbols; Co adds private-use characters; Cf adds
+					// format characters (e.g. U+06DD ARABIC END OF
+					// AYAH, U+200B ZERO WIDTH SPACE) which glibc's
+					// iswprint considers printable; unicode151Print
+					// adds characters assigned in Unicode 15.1 that
+					// Go's tables don't yet include (Go ships
+					// Unicode 15.0).
 					if !inWord {
 						c.words++
 						inWord = true
 					}
-					lineLen += int64(runeWidth(r))
+					lineLen += int64(runeWidth(ch))
+				} else {
+					// Non-printable, non-whitespace, non-control chars
+					// (e.g. unassigned Cn codepoints) are transparent
+					// to both word counting and line length — they
+					// neither start nor end words, and GNU wc treats
+					// them as non-printable (wcwidth=-1, width 0).
 				}
 			}
 		}
@@ -343,6 +411,25 @@ func fieldWidth(total counts, opts options) int {
 	}
 	w := len(strconv.FormatInt(max, 10))
 	return w
+}
+
+// unicode151Print covers characters assigned in Unicode 15.1 that are
+// printable (graphic) but absent from Go's unicode package (Unicode 15.0).
+// CI runs GNU wc linked against glibc ≥ 2.39 (Ubuntu 24.04) which uses
+// Unicode 15.1+ character data, so these codepoints must be treated as
+// word characters to match GNU wc output.
+//
+// This table can be removed once Go's unicode package is updated to
+// Unicode 15.1 or later (tracked in https://github.com/golang/go/issues/65141,
+// expected in Go 1.27).
+var unicode151Print = &unicode.RangeTable{
+	R16: []unicode.Range16{
+		{0x2FFC, 0x2FFF, 1}, // Ideographic Description Characters (4 new IDCs)
+		{0x31EF, 0x31EF, 1}, // Ideographic Description Character OVERLAID
+	},
+	R32: []unicode.Range32{
+		{0x2EBF0, 0x2EE5D, 1}, // CJK Unified Ideographs Extension I
+	},
 }
 
 // runeWidth returns the display width of a rune following wcwidth(3) rules:
