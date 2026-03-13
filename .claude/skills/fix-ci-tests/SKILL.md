@@ -119,7 +119,7 @@ Cross-reference the failing tests with the changed files. Determine whether:
 
 ### 6. Fix the failures
 
-Important note: **Never add the `verified/allowed_symbols` GitHub label to the PR.** This label is reserved for human manual approval only. Don't try to fix CI failures relaed to this.
+Important note: **Never add the `verified/allowed_symbols` GitHub label to the PR.** This label is reserved for human manual approval only. Don't try to fix CI failures related to this.
 
 For each failure, apply the appropriate fix:
 

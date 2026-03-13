@@ -25,7 +25,7 @@ jobs:
           fetch-depth: 0
 
       - name: Fetch PR head
-        run: git fetch origin "${{ github.event.pull_request.head.sha }}"
+        run: git fetch origin "refs/pull/${{ github.event.pull_request.number }}/head"
 
       - name: Check for allowedsymbols changes
         id: changes
