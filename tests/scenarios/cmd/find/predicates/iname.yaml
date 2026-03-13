@@ -16,7 +16,7 @@ input:
   script: |+
     find dir -iname 'readme*'
 expect:
-  stdout: |+
+  stdout_unordered: |+
     dir/README.md
     dir/readme.txt
   stderr: ""

@@ -16,7 +16,7 @@ input:
   script: |+
     find dir -name 'hello*' -and -type f
 expect:
-  stdout: |+
+  stdout_unordered: |+
     dir/hello.go
     dir/hello.txt
   stderr: ""

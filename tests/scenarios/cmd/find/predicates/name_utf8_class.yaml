@@ -1,4 +1,5 @@
 description: -name character class matches multibyte UTF-8 characters.
+skip_assert_against_bash: true  # Docker bash cannot match é in character class
 setup:
   files:
     - path: dir/a

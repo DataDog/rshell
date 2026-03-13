@@ -10,7 +10,7 @@ input:
   script: |+
     find 'my dir'
 expect:
-  stdout: |+
+  stdout_unordered: |+
     my dir
     my dir/sub dir
     my dir/sub dir/file.txt

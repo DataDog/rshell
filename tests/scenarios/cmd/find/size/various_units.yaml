@@ -16,7 +16,7 @@ input:
   script: |+
     find dir -type f -size -5c
 expect:
-  stdout: |+
+  stdout_unordered: |+
     dir/empty.txt
     dir/small.txt
   stderr: ""

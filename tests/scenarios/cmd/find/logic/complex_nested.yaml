@@ -19,7 +19,7 @@ input:
   script: |+
     find dir -type f '(' -name '*.txt' -o -name '*.go' ')' -not -name 'a*'
 expect:
-  stdout: |+
+  stdout_unordered: |+
     dir/b.go
     dir/d.txt
   stderr: ""

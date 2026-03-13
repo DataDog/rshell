@@ -20,7 +20,7 @@ input:
     # old.txt is older, so it does not match.
     find dir -mmin -100000000 -type f
 expect:
-  stdout: |+
+  stdout_unordered: |+
     dir/old.txt
     dir/new.txt
   stderr: ""

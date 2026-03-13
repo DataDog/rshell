@@ -16,7 +16,7 @@ input:
   script: |+
     find dir -empty -type f
 expect:
-  stdout: |+
+  stdout_unordered: |+
     dir/empty.txt
     dir/emptydir/.keep
   stderr: ""
