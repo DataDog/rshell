@@ -13,7 +13,7 @@ setup:
 input:
   allowed_paths: ["$DIR"]
   script: |+
-    find dir -mindepth 2 -name skip -prune -o -type f -print
+    find dir -mindepth 2 -name skip -prune -o -type f -print | sort
 expect:
   stdout: |+
     dir/keep/c.txt
