@@ -1,6 +1,6 @@
-skip_assert_against_bash: true
 description: An unknown command after a successful echo still fails.
 input:
+  allowed_commands: ["echo"]
   script: |+
     echo hello
     foo

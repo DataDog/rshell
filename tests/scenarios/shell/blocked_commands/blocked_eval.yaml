@@ -2,6 +2,7 @@
 skip_assert_against_bash: true
 description: Eval command is not available.
 input:
+  allowed_commands: ["echo"]
   script: |+
     eval echo hello
 expect:

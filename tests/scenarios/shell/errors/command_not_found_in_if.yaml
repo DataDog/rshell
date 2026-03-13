@@ -2,6 +2,7 @@
 skip_assert_against_bash: true
 description: Command not found in if condition causes else branch to execute.
 input:
+  allowed_commands: ["echo"]
   script: |+
     if notacmd; then echo yes; else echo no; fi
 expect:

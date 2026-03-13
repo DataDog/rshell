@@ -1,6 +1,7 @@
 skip_assert_against_bash: true
 description: The cp command is not a builtin and is rejected as not allowed.
 input:
+  allowed_commands: []
   script: |+
     cp source.txt dest.txt
 expect:

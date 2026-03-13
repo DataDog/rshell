@@ -1,6 +1,6 @@
-skip_assert_against_bash: true
 description: An unknown command before echo on the next line does not stop execution.
 input:
+  allowed_commands: ["echo"]
   script: |+
     foo
     echo hello

@@ -1,6 +1,6 @@
-skip_assert_against_bash: true
 description: Unknown command error goes to stderr while stdout remains clean.
 input:
+  allowed_commands: ["echo"]
   script: |+
     echo before
     nonexistent_cmd

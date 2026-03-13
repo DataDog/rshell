@@ -1,6 +1,7 @@
 skip_assert_against_bash: true
 description: Unknown command returns exit code 1.
 input:
+  allowed_commands: []
   script: |+
     no_such_command_xyz
 expect:

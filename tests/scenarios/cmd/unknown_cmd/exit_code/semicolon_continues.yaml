@@ -1,6 +1,6 @@
-skip_assert_against_bash: true
 description: A semicolon separator allows execution to continue after an unknown command.
 input:
+  allowed_commands: ["echo"]
   script: |+
     foo; echo after
 expect:

@@ -1,6 +1,7 @@
 skip_assert_against_bash: true
 description: Unknown command after valid command still produces error.
 input:
+  allowed_commands: ["echo"]
   script: |+
     echo before
     no_such_cmd_abc

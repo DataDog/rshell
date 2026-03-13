@@ -1,6 +1,7 @@
 skip_assert_against_bash: true
 description: The rm command is not a builtin and is rejected as not allowed.
 input:
+  allowed_commands: []
   script: |+
     rm file.txt
 expect:

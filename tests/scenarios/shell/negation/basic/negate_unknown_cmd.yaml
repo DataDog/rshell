@@ -1,6 +1,6 @@
-skip_assert_against_bash: true
 description: Negating a command-not-allowed (exit 1) produces exit code 0.
 input:
+  allowed_commands: []
   script: |+
     ! nonexistent_command_xyz
 expect:

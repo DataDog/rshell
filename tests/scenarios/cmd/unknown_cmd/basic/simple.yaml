@@ -1,6 +1,6 @@
-skip_assert_against_bash: true
 description: A simple unknown command prints "command not allowed" to stderr.
 input:
+  allowed_commands: []
   script: |+
     foo
 expect:

@@ -2,6 +2,7 @@
 skip_assert_against_bash: true
 description: Multiple unknown commands each produce errors, last exit code wins.
 input:
+  allowed_commands: []
   script: |+
     unknown_cmd_1
     unknown_cmd_2

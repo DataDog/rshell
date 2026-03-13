@@ -1,6 +1,6 @@
-skip_assert_against_bash: true
 description: An unknown command with flag-like arguments still prints "command not allowed".
 input:
+  allowed_commands: []
   script: |+
     foo --verbose -n 5
 expect:

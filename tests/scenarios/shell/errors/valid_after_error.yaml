@@ -2,6 +2,7 @@
 skip_assert_against_bash: true
 description: Valid commands execute normally after a command-not-allowed error.
 input:
+  allowed_commands: ["echo"]
   script: |+
     echo first
     nonexistent_cmd

@@ -2,6 +2,7 @@
 skip_assert_against_bash: true
 description: Multiple unknown commands each produce command-not-allowed errors.
 input:
+  allowed_commands: []
   script: |+
     notacmd1
     notacmd2

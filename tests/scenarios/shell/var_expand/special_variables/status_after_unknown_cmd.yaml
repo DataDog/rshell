@@ -1,6 +1,6 @@
-skip_assert_against_bash: true
 description: The $? variable is 1 after an unknown command.
 input:
+  allowed_commands: ["echo"]
   script: |+
     nonexistent_cmd
     echo $?

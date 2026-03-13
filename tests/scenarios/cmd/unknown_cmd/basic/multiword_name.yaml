@@ -1,6 +1,6 @@
-skip_assert_against_bash: true
 description: An unknown command with a multi-word-like name (with hyphens) prints "command not allowed".
 input:
+  allowed_commands: []
   script: |+
     my-unknown-command
 expect:

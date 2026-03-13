@@ -1,6 +1,6 @@
-skip_assert_against_bash: true
 description: A chain of unknown commands with || reaches the first valid command.
 input:
+  allowed_commands: ["echo"]
   script: |+
     foo || bar || echo reached
 expect:

@@ -1,6 +1,6 @@
-skip_assert_against_bash: true
 description: The exit code of an unknown command is captured by $? when using semicolons.
 input:
+  allowed_commands: ["echo"]
   script: |+
     nonexistent; echo $?
 expect:

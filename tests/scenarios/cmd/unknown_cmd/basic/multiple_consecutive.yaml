@@ -1,6 +1,6 @@
-skip_assert_against_bash: true
 description: Multiple unknown commands on separate lines all execute and report errors.
 input:
+  allowed_commands: []
   script: |+
     foo
     bar

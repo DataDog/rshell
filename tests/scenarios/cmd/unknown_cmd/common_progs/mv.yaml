@@ -1,6 +1,7 @@
 skip_assert_against_bash: true
 description: The mv command is not a builtin and is rejected as not allowed.
 input:
+  allowed_commands: []
   script: |+
     mv old.txt new.txt
 expect:

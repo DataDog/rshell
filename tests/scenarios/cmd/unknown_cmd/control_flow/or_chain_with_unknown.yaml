@@ -1,6 +1,6 @@
-skip_assert_against_bash: true
 description: Unknown command in logical OR chain falls through to the next command.
 input:
+  allowed_commands: ["echo"]
   script: |+
     nonexistent_cmd || echo "recovered"
     echo $?

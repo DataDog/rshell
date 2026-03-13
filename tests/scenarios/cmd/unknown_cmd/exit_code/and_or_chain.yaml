@@ -1,6 +1,6 @@
-skip_assert_against_bash: true
 description: Mixed && and || operators work correctly with unknown commands.
 input:
+  allowed_commands: ["echo"]
   script: |+
     foo && echo no || echo yes
 expect:

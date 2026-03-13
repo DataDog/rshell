@@ -1,6 +1,6 @@
-skip_assert_against_bash: true
 description: The || operator runs the next command after an unknown command.
 input:
+  allowed_commands: ["echo"]
   script: |+
     foo || echo fallback
 expect:

@@ -1,6 +1,6 @@
-skip_assert_against_bash: true
 description: Unknown command on right side of pipe sets exit code 1.
 input:
+  allowed_commands: ["echo"]
   script: |+
     echo ok | foo
 expect:

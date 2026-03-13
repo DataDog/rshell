@@ -1,6 +1,6 @@
-skip_assert_against_bash: true
 description: Unknown command on left side of pipe sends error to stderr; right side still runs.
 input:
+  allowed_commands: ["echo"]
   script: |+
     foo | echo ok
 expect:

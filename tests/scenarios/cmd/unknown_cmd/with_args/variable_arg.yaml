@@ -1,6 +1,6 @@
-skip_assert_against_bash: true
 description: An unknown command with a variable-expanded argument still prints "command not allowed".
 input:
+  allowed_commands: []
   script: |+
     MY_VAR=hello
     foo $MY_VAR
