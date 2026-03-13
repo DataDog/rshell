@@ -325,19 +325,10 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			}
 		}
 
-		// Sort the lines. Check ctx.Err() periodically during sorting
-		// so that context cancellation can interrupt long sort operations.
-		// Once cancelled, all subsequent comparisons return 0 so the sort
-		// finishes as quickly as possible without doing real work.
-		var sortCmps int
-		var sortCancelled bool
+		// Sort the lines. Check ctx.Err() on each comparison so that
+		// context cancellation can interrupt sort operations promptly.
 		sortCmp := func(a, b string) int {
-			if sortCancelled {
-				return 0
-			}
-			sortCmps++
-			if sortCmps&1023 == 0 && ctx.Err() != nil {
-				sortCancelled = true
+			if ctx.Err() != nil {
 				return 0
 			}
 			return cmpFn(a, b)
@@ -987,11 +978,8 @@ func buildCompare(keys []keySpec, globalOpts keyOpts, sep byte, hasSep bool, sta
 // (matching GNU sort -c -u which checks for strict ordering).
 // file is the filename used in the diagnostic message (or "-" for stdin).
 func checkSorted(ctx context.Context, callCtx *builtins.CallContext, lines []string, cmpFn func(a, b string) int, silent bool, unique bool, file string) builtins.Result {
-	if ctx.Err() != nil {
-		return builtins.Result{Code: 1}
-	}
 	for i := 1; i < len(lines); i++ {
-		if i&1023 == 0 && ctx.Err() != nil {
+		if ctx.Err() != nil {
 			return builtins.Result{Code: 1}
 		}
 		c := cmpFn(lines[i-1], lines[i])
@@ -1012,7 +1000,7 @@ func dedup(ctx context.Context, lines []string, cmpFn func(a, b string) int) []s
 	}
 	result := []string{lines[0]}
 	for i := 1; i < len(lines); i++ {
-		if i&1023 == 0 && ctx.Err() != nil {
+		if ctx.Err() != nil {
 			return result
 		}
 		if cmpFn(lines[i-1], lines[i]) != 0 {

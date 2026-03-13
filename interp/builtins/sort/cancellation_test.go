@@ -16,12 +16,9 @@ import (
 )
 
 func TestCheckSortedRespectsContextCancellation(t *testing.T) {
-	// Generate enough lines that the cancellation check (every 1024
-	// iterations) fires before the loop finishes.
-	lines := make([]string, 3000)
-	for i := range lines {
-		lines[i] = "a" // all equal — no disorder
-	}
+	// A cancelled context should be detected on the first iteration,
+	// even for small inputs.
+	lines := []string{"a", "b", "c"}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // cancel immediately
@@ -38,7 +35,6 @@ func TestCheckSortedRespectsContextCancellation(t *testing.T) {
 
 	result := checkSorted(ctx, callCtx, lines, cmpFn, false, false, "-")
 
-	// Should return non-zero exit code due to context cancellation.
 	assert.Equal(t, uint8(1), result.Code,
 		"checkSorted should return exit code 1 when context is cancelled")
 }
@@ -63,13 +59,8 @@ func TestCheckSortedCompletesWithoutCancellation(t *testing.T) {
 		"checkSorted should return exit code 0 for sorted input")
 }
 
-func TestCheckSortedDetectsDisorderBeforeCancellation(t *testing.T) {
-	// Disorder at position 2 should be caught before the 1024th
-	// iteration cancellation check.
+func TestCheckSortedDetectsDisorder(t *testing.T) {
 	lines := []string{"b", "a", "c"}
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
 
 	var stderr bytes.Buffer
 	callCtx := &builtins.CallContext{
@@ -81,32 +72,8 @@ func TestCheckSortedDetectsDisorderBeforeCancellation(t *testing.T) {
 		return strings.Compare(a, b)
 	}
 
-	result := checkSorted(ctx, callCtx, lines, cmpFn, false, false, "-")
+	result := checkSorted(context.Background(), callCtx, lines, cmpFn, false, false, "-")
 
 	assert.Equal(t, uint8(1), result.Code)
 	assert.Contains(t, stderr.String(), "disorder")
-}
-
-func TestCheckSortedRespectsContextCancellationSmallInput(t *testing.T) {
-	// Pre-cancelled context should be detected even for inputs under
-	// the 1024-iteration periodic check threshold.
-	lines := []string{"a", "b", "c"}
-
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel() // cancel immediately
-
-	var stderr bytes.Buffer
-	callCtx := &builtins.CallContext{
-		Stdout: &bytes.Buffer{},
-		Stderr: &stderr,
-	}
-
-	cmpFn := func(a, b string) int {
-		return strings.Compare(a, b)
-	}
-
-	result := checkSorted(ctx, callCtx, lines, cmpFn, false, false, "-")
-
-	assert.Equal(t, uint8(1), result.Code,
-		"checkSorted should return exit code 1 for small input with cancelled context")
 }
