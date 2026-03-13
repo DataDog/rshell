@@ -213,6 +213,10 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 	}
 }
 
+// newline is a package-level buffer reused for every line-terminator Write,
+// avoiding a heap allocation per line.
+var newline = []byte{'\n'}
+
 // cutConfig holds the parsed configuration for a cut invocation.
 type cutConfig struct {
 	mode          mode
@@ -392,30 +396,46 @@ func processBytes(callCtx *builtins.CallContext, raw []byte, cfg *cutConfig) {
 		if cfg.outDelimSet {
 			processBytesComplementWithOutDelim(callCtx, raw, cfg)
 		} else {
-			var sb strings.Builder
+			start := -1
 			for i := range n {
-				pos := i + 1
-				if !inRanges(pos, cfg.ranges) {
-					sb.WriteByte(raw[i])
+				if !inRanges(i+1, cfg.ranges) {
+					if start < 0 {
+						start = i
+					}
+				} else {
+					if start >= 0 {
+						callCtx.Stdout.Write(raw[start:i]) //nolint:errcheck
+						start = -1
+					}
 				}
 			}
-			callCtx.Out(sb.String())
+			if start >= 0 {
+				callCtx.Stdout.Write(raw[start:]) //nolint:errcheck
+			}
 		}
 	} else {
 		if cfg.outDelimSet {
 			processBytesWithOutDelim(callCtx, raw, cfg)
 		} else {
-			var sb strings.Builder
+			start := -1
 			for i := range n {
-				pos := i + 1
-				if inRanges(pos, cfg.ranges) {
-					sb.WriteByte(raw[i])
+				if inRanges(i+1, cfg.ranges) {
+					if start < 0 {
+						start = i
+					}
+				} else {
+					if start >= 0 {
+						callCtx.Stdout.Write(raw[start:i]) //nolint:errcheck
+						start = -1
+					}
 				}
 			}
-			callCtx.Out(sb.String())
+			if start >= 0 {
+				callCtx.Stdout.Write(raw[start:]) //nolint:errcheck
+			}
 		}
 	}
-	callCtx.Out("\n")
+	callCtx.Stdout.Write(newline) //nolint:errcheck
 }
 
 // processBytesWithOutDelim outputs selected byte ranges with the output
@@ -455,56 +475,58 @@ func processBytesComplementWithOutDelim(callCtx *builtins.CallContext, raw []byt
 
 // processFields selects fields from a line.
 func processFields(callCtx *builtins.CallContext, raw []byte, cfg *cutConfig) {
-	line := string(raw)
-	delimStr := string(cfg.delimByte)
-
-	// Check if line contains the delimiter.
-	if strings.IndexByte(line, cfg.delimByte) < 0 {
-		if cfg.onlyDelimited {
-			return // suppress line
+	hasDelim := false
+	for _, b := range raw {
+		if b == cfg.delimByte {
+			hasDelim = true
+			break
 		}
-		// No delimiter: print the whole line + newline.
-		callCtx.Out(line)
-		callCtx.Out("\n")
+	}
+	if !hasDelim {
+		if cfg.onlyDelimited {
+			return
+		}
+		callCtx.Stdout.Write(raw)     //nolint:errcheck
+		callCtx.Stdout.Write(newline) //nolint:errcheck
 		return
 	}
 
-	fields := strings.Split(line, delimStr)
-	nFields := len(fields)
-
-	// Determine which fields to select.
-	var selected []int
-	if cfg.complement {
-		compRanges := complementRanges(cfg.ranges, nFields)
-		for _, r := range compRanges {
-			for i := r[0]; i <= r[1] && i <= nFields; i++ {
-				selected = append(selected, i)
-			}
-		}
-	} else {
-		for _, r := range cfg.ranges {
-			start := r[0]
-			end := r[1]
-			if start > nFields {
-				break
-			}
-			if end > nFields {
-				end = nFields
-			}
-			for i := start; i <= end; i++ {
-				selected = append(selected, i)
-			}
+	nFields := 1
+	for _, b := range raw {
+		if b == cfg.delimByte {
+			nFields++
 		}
 	}
 
-	// Output selected fields joined by the output delimiter.
-	for i, idx := range selected {
-		if i > 0 {
-			callCtx.Out(cfg.outDelim)
+	fieldIdx := 0
+	fieldStart := 0
+	firstOutput := true
+
+	for i := 0; i <= len(raw); i++ {
+		if i < len(raw) && raw[i] != cfg.delimByte {
+			continue
 		}
-		callCtx.Out(fields[idx-1])
+		fieldIdx++
+		fieldNum := fieldIdx
+
+		selected := false
+		if cfg.complement {
+			selected = !inRanges(fieldNum, cfg.ranges)
+		} else {
+			selected = inRanges(fieldNum, cfg.ranges)
+		}
+
+		if selected {
+			if !firstOutput {
+				callCtx.Out(cfg.outDelim)
+			}
+			callCtx.Stdout.Write(raw[fieldStart:i]) //nolint:errcheck
+			firstOutput = false
+		}
+
+		fieldStart = i + 1
 	}
-	callCtx.Out("\n")
+	callCtx.Stdout.Write(newline) //nolint:errcheck
 }
 
 // complementRanges returns the complement of the given sorted, merged ranges

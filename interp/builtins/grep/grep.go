@@ -562,9 +562,9 @@ func grepFile(ctx context.Context, callCtx *builtins.CallContext, file string, o
 			return matchCount > 0, ctx.Err()
 		}
 		lineNum++
-		line := sc.Text()
+		lineBytes := sc.Bytes()
 
-		matched := opts.re.MatchString(line)
+		matched := opts.re.Match(lineBytes)
 		if opts.invertMatch {
 			matched = !matched
 		}
@@ -606,15 +606,15 @@ func grepFile(ctx context.Context, callCtx *builtins.CallContext, file string, o
 				// -o -v: line was selected by inversion (doesn't contain
 				// pattern), so there are no matching parts to print.
 			} else if opts.onlyMatching {
-				matches := opts.re.FindAllString(line, -1)
-				for _, m := range matches {
-					if m == "" {
+				indices := opts.re.FindAllIndex(lineBytes, -1)
+				for _, idx := range indices {
+					if idx[0] == idx[1] {
 						continue // suppress empty matches (GNU grep behavior)
 					}
-					printMatchLine(callCtx, displayName, lineNum, m, opts)
+					printMatchLine(callCtx, displayName, lineNum, lineBytes[idx[0]:idx[1]], opts)
 				}
 			} else {
-				printMatchLine(callCtx, displayName, lineNum, line, opts)
+				printMatchLine(callCtx, displayName, lineNum, lineBytes, opts)
 			}
 			lastPrintedLine = lineNum
 			printedSeparator = true
@@ -625,7 +625,7 @@ func grepFile(ctx context.Context, callCtx *builtins.CallContext, file string, o
 		} else {
 			// Non-matching line: might be after-context or before-context.
 			if afterRemaining > 0 && !opts.quiet && !opts.count && !opts.filesWithMatches && !opts.filesWithoutMatch {
-				printContextLine(callCtx, displayName, lineNum, line, opts, '-')
+				printContextLine(callCtx, displayName, lineNum, lineBytes, opts, '-')
 				lastPrintedLine = lineNum
 				afterRemaining--
 			}
@@ -635,7 +635,9 @@ func grepFile(ctx context.Context, callCtx *builtins.CallContext, file string, o
 				if len(beforeBuf) >= opts.beforeContext {
 					beforeBuf = beforeBuf[1:]
 				}
-				beforeBuf = append(beforeBuf, contextLine{num: lineNum, text: line})
+				cp := make([]byte, len(lineBytes))
+				copy(cp, lineBytes)
+				beforeBuf = append(beforeBuf, contextLine{num: lineNum, text: cp})
 			}
 		}
 	}
@@ -664,31 +666,31 @@ func grepFile(ctx context.Context, callCtx *builtins.CallContext, file string, o
 
 type contextLine struct {
 	num  int
-	text string
+	text []byte
 }
 
-func printMatchLine(callCtx *builtins.CallContext, filename string, lineNum int, line string, opts *grepOpts) {
-	var prefix strings.Builder
+func printMatchLine(callCtx *builtins.CallContext, filename string, lineNum int, line []byte, opts *grepOpts) {
 	if opts.showFilename {
-		prefix.WriteString(filename)
-		prefix.WriteByte(':')
+		callCtx.Stdout.Write([]byte(filename)) //nolint:errcheck
+		callCtx.Stdout.Write([]byte{':'})      //nolint:errcheck
 	}
 	if opts.lineNumber {
-		prefix.WriteString(strconv.Itoa(lineNum))
-		prefix.WriteByte(':')
+		callCtx.Stdout.Write([]byte(strconv.Itoa(lineNum))) //nolint:errcheck
+		callCtx.Stdout.Write([]byte{':'})                   //nolint:errcheck
 	}
-	callCtx.Outf("%s%s\n", prefix.String(), line)
+	callCtx.Stdout.Write(line)         //nolint:errcheck
+	callCtx.Stdout.Write([]byte{'\n'}) //nolint:errcheck
 }
 
-func printContextLine(callCtx *builtins.CallContext, filename string, lineNum int, line string, opts *grepOpts, sep byte) {
-	var prefix strings.Builder
+func printContextLine(callCtx *builtins.CallContext, filename string, lineNum int, line []byte, opts *grepOpts, sep byte) {
 	if opts.showFilename {
-		prefix.WriteString(filename)
-		prefix.WriteByte(sep)
+		callCtx.Stdout.Write([]byte(filename)) //nolint:errcheck
+		callCtx.Stdout.Write([]byte{sep})      //nolint:errcheck
 	}
 	if opts.lineNumber {
-		prefix.WriteString(strconv.Itoa(lineNum))
-		prefix.WriteByte(sep)
+		callCtx.Stdout.Write([]byte(strconv.Itoa(lineNum))) //nolint:errcheck
+		callCtx.Stdout.Write([]byte{sep})                   //nolint:errcheck
 	}
-	callCtx.Outf("%s%s\n", prefix.String(), line)
+	callCtx.Stdout.Write(line)         //nolint:errcheck
+	callCtx.Stdout.Write([]byte{'\n'}) //nolint:errcheck
 }

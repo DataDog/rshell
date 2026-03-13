@@ -73,6 +73,7 @@ package uniq
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"io"
 	"math"
@@ -282,7 +283,6 @@ func processInput(ctx context.Context, callCtx *builtins.CallContext, r io.Reade
 	sc.Split(makeSplitFunc(cfg.delim))
 
 	w := callCtx.Stdout
-	delimStr := string([]byte{cfg.delim})
 
 	reportWrite := func(err error) error {
 		if err != nil {
@@ -291,8 +291,16 @@ func processInput(ctx context.Context, callCtx *builtins.CallContext, r io.Reade
 		return err
 	}
 
-	var prevLine string
-	var prevKey string
+	writeLine := func(line []byte) error {
+		if _, err := w.Write(line); err != nil {
+			return err
+		}
+		_, err := w.Write([]byte{cfg.delim})
+		return err
+	}
+
+	var prevLine []byte
+	var prevKey []byte
 	var lineCount int64
 	first := true
 	groupNum := 0
@@ -301,77 +309,77 @@ func processInput(ctx context.Context, callCtx *builtins.CallContext, r io.Reade
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		curLine := sc.Text()
-		curKey := compareKey(curLine, cfg)
+		curBytes := sc.Bytes()
+		curKey := compareKeyBytes(curBytes, cfg)
 
 		if first {
-			prevLine = curLine
-			prevKey = curKey
+			prevLine = append(prevLine[:0], curBytes...)
+			prevKey = append(prevKey[:0], curKey...)
 			lineCount = 1
 			first = false
 
 			if cfg.useGroup {
 				if cfg.grpMethod == groupPrepend || cfg.grpMethod == groupBoth {
-					if err := reportWrite(writeStr(w, delimStr)); err != nil {
+					if err := reportWrite(writeLine(nil)); err != nil {
 						return err
 					}
 				}
-				if err := reportWrite(writeStr(w, curLine+delimStr)); err != nil {
+				if err := reportWrite(writeLine(prevLine)); err != nil {
 					return err
 				}
 			}
 			continue
 		}
 
-		same := prevKey == curKey
+		same := bytes.Equal(prevKey, curKey)
 
 		if same {
 			if lineCount < math.MaxInt64 {
 				lineCount++
 			}
 			if cfg.useGroup {
-				if err := reportWrite(writeStr(w, curLine+delimStr)); err != nil {
+				if err := reportWrite(writeLine(curBytes)); err != nil {
 					return err
 				}
 			} else if cfg.useAllRepeated {
 				if lineCount == 2 {
 					if groupNum > 0 && cfg.arMethod != allRepeatedNone {
-						if err := reportWrite(writeStr(w, delimStr)); err != nil {
+						if err := reportWrite(writeLine(nil)); err != nil {
 							return err
 						}
 					}
 					if groupNum == 0 && cfg.arMethod == allRepeatedPrepend {
-						if err := reportWrite(writeStr(w, delimStr)); err != nil {
+						if err := reportWrite(writeLine(nil)); err != nil {
 							return err
 						}
 					}
-					if err := reportWrite(writeStr(w, prevLine+delimStr)); err != nil {
+					if err := reportWrite(writeLine(prevLine)); err != nil {
 						return err
 					}
 					groupNum++
 				}
-				if err := reportWrite(writeStr(w, curLine+delimStr)); err != nil {
+				if err := reportWrite(writeLine(curBytes)); err != nil {
 					return err
 				}
 			}
 		} else {
 			if cfg.useGroup {
-				if err := reportWrite(writeStr(w, delimStr)); err != nil {
+				if err := reportWrite(writeLine(nil)); err != nil {
 					return err
 				}
-				if err := reportWrite(writeStr(w, curLine+delimStr)); err != nil {
+				if err := reportWrite(writeLine(curBytes)); err != nil {
 					return err
 				}
 				groupNum++
 			} else if cfg.useAllRepeated {
 				// Nothing to do — non-repeated last group is simply dropped.
 			} else {
-				if err := reportWrite(emitStandard(w, cfg, prevLine, lineCount, delimStr)); err != nil {
+				if err := reportWrite(emitStandard(w, cfg, prevLine, lineCount)); err != nil {
 					return err
 				}
 			}
-			prevLine = curLine
-			prevKey = curKey
+			prevLine = append(prevLine[:0], curBytes...)
+			prevKey = append(prevKey[:0], curKey...)
 			lineCount = 1
 		}
 	}
@@ -388,17 +396,17 @@ func processInput(ctx context.Context, callCtx *builtins.CallContext, r io.Reade
 	// Flush last group.
 	if cfg.useGroup {
 		if cfg.grpMethod == groupAppend || cfg.grpMethod == groupBoth {
-			return reportWrite(writeStr(w, delimStr))
+			return reportWrite(writeLine(nil))
 		}
 		return nil
 	}
 	if cfg.useAllRepeated {
 		return nil
 	}
-	return reportWrite(emitStandard(w, cfg, prevLine, lineCount, delimStr))
+	return reportWrite(emitStandard(w, cfg, prevLine, lineCount))
 }
 
-func emitStandard(w io.Writer, cfg *uniqConfig, line string, count int64, delimStr string) error {
+func emitStandard(w io.Writer, cfg *uniqConfig, line []byte, count int64) error {
 	if cfg.repeated && cfg.unique {
 		return nil
 	}
@@ -413,22 +421,30 @@ func emitStandard(w io.Writer, cfg *uniqConfig, line string, count int64, delimS
 		for len(s) < countFieldWidth {
 			s = " " + s
 		}
-		return writeStr(w, s+" "+line+delimStr)
+		if _, err := io.WriteString(w, s+" "); err != nil {
+			return err
+		}
+		if _, err := w.Write(line); err != nil {
+			return err
+		}
+		_, err := w.Write([]byte{cfg.delim})
+		return err
 	}
-	return writeStr(w, line+delimStr)
-}
-
-func writeStr(w io.Writer, s string) error {
-	_, err := io.WriteString(w, s)
+	if _, err := w.Write(line); err != nil {
+		return err
+	}
+	_, err := w.Write([]byte{cfg.delim})
 	return err
 }
 
-// compareKey extracts the portion of line used for comparison, applying
+// compareKeyBytes extracts the portion of line used for comparison, applying
 // field skipping, char skipping, check-chars, and case folding.
-func compareKey(line string, cfg *uniqConfig) string {
+// For the ignore-case path it returns a newly allocated lowercased copy;
+// otherwise it returns a subslice of line (no allocation).
+func compareKeyBytes(line []byte, cfg *uniqConfig) []byte {
 	s := line
 	if cfg.skipFields > 0 {
-		s = skipFieldsN(s, cfg.skipFields)
+		s = skipFieldsBytesN(s, cfg.skipFields)
 	}
 	if cfg.skipChars > 0 && len(s) > 0 {
 		skip := cfg.skipChars
@@ -441,37 +457,28 @@ func compareKey(line string, cfg *uniqConfig) string {
 		s = s[:cfg.checkChars]
 	}
 	if cfg.ignoreCase {
-		s = asciiToLower(s)
+		s = asciiToLowerBytes(s)
 	}
 	return s
 }
 
-// asciiToLower folds only ASCII A-Z to a-z, matching GNU uniq behavior
-// in the default C/POSIX locale. Unlike strings.ToLower, this does not
-// apply Unicode case folding, so non-ASCII characters are left unchanged.
-func asciiToLower(s string) string {
-	for i := 0; i < len(s); i++ {
-		if s[i] >= 'A' && s[i] <= 'Z' {
-			b := make([]byte, len(s))
-			copy(b, s[:i])
-			b[i] = s[i] + ('a' - 'A')
-			for j := i + 1; j < len(s); j++ {
-				c := s[j]
-				if c >= 'A' && c <= 'Z' {
-					c += 'a' - 'A'
-				}
-				b[j] = c
-			}
-			return string(b)
+// asciiToLowerBytes folds only ASCII A-Z to a-z in a byte slice, matching GNU
+// uniq behavior in the default C/POSIX locale. It always returns a new copy.
+func asciiToLowerBytes(s []byte) []byte {
+	b := make([]byte, len(s))
+	for i, c := range s {
+		if c >= 'A' && c <= 'Z' {
+			c += 'a' - 'A'
 		}
+		b[i] = c
 	}
-	return s
+	return b
 }
 
-// skipFieldsN skips the first n blank-delimited fields and returns the
-// remainder of the string, starting immediately after the last character
+// skipFieldsBytesN skips the first n blank-delimited fields in a byte slice
+// and returns the remainder, starting immediately after the last character
 // of the n-th field (before any subsequent blanks).
-func skipFieldsN(s string, n int64) string {
+func skipFieldsBytesN(s []byte, n int64) []byte {
 	i := 0
 	for field := int64(0); field < n && i < len(s); field++ {
 		for i < len(s) && (s[i] == ' ' || s[i] == '\t') {
