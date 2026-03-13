@@ -58,22 +58,21 @@ func BenchmarkCatNumbered(b *testing.B) {
 	}
 }
 
-// TestCatMemoryBounded asserts that cat's allocation scales reasonably with
-// file size (output buffering is expected, but should not be pathological).
+// TestCatMemoryBounded asserts that cat uses O(1) memory regardless of input
+// size. cat streams input to output in fixed chunks with no per-line allocation.
 func TestCatMemoryBounded(t *testing.T) {
 	dir := t.TempDir()
-	createLargeFileCat(t, dir, "input.txt", "the quick brown fox jumps over the lazy dog\n", 1<<20)
+	createLargeFileCat(t, dir, "input.txt", "the quick brown fox jumps over the lazy dog\n", 10<<20)
 
 	result := testing.Benchmark(func(b *testing.B) {
 		b.ReportAllocs()
 		for b.Loop() {
-			cmdRunBCat(b, "cat input.txt", dir)
+			testutil.RunScriptDiscard(b, "cat input.txt", dir, interp.AllowedPaths([]string{dir}))
 		}
 	})
 
-	// cat buffers output through the test harness, so we allow up to 6x file size
-	const maxBytesPerOp = 6 << 20 // 6MB ceiling for a 1MB input
+	const maxBytesPerOp = 4 << 20
 	if bpo := result.AllocedBytesPerOp(); bpo > maxBytesPerOp {
-		t.Errorf("cat allocated %d bytes/op on 1MB input; want < %d", bpo, maxBytesPerOp)
+		t.Errorf("cat allocated %d bytes/op on 10MB input; want < %d", bpo, maxBytesPerOp)
 	}
 }

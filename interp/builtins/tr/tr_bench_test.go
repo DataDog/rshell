@@ -72,27 +72,20 @@ func BenchmarkTrSqueeze(b *testing.B) {
 // TestTrMemoryBounded asserts that tr uses O(1) memory regardless of input
 // size. tr operates on a 256-entry lookup table built once at startup. Input
 // is read in fixed 32 KiB chunks and translated in-place; no allocation is
-// proportional to input length. Output is buffered through the test harness,
-// so total allocations are O(input size) due to output buffering — using 1MB
-// input keeps the ceiling manageable.
-//
-// With 1MB of input, output is also ~1MB; a 6MB ceiling provides ~3x headroom
-// over the expected ~2–3MB (output buffer doublings + runtime overhead) while
-// still catching regressions such as accumulating the entire translated output
-// in a pre-allocated slice.
+// proportional to input length.
 func TestTrMemoryBounded(t *testing.T) {
 	dir := t.TempDir()
-	createLargeFileTr(t, dir, "input.txt", "the quick brown fox jumps over the lazy dog\n", 1<<20)
+	createLargeFileTr(t, dir, "input.txt", "the quick brown fox jumps over the lazy dog\n", 10<<20)
 
 	result := testing.Benchmark(func(b *testing.B) {
 		b.ReportAllocs()
 		for b.Loop() {
-			cmdRunBTr(b, "cat input.txt | tr 'a-z' 'A-Z'", dir)
+			testutil.RunScriptDiscard(b, "cat input.txt | tr 'a-z' 'A-Z'", dir, interp.AllowedPaths([]string{dir}))
 		}
 	})
 
-	const maxBytesPerOp = 6 << 20 // 6MB ceiling for a 1MB input with output buffering
+	const maxBytesPerOp = 4 << 20
 	if bpo := result.AllocedBytesPerOp(); bpo > maxBytesPerOp {
-		t.Errorf("tr allocated %d bytes/op on 1MB input; want < %d", bpo, maxBytesPerOp)
+		t.Errorf("tr allocated %d bytes/op on 10MB input; want < %d", bpo, maxBytesPerOp)
 	}
 }

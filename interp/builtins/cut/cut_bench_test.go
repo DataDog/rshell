@@ -68,15 +68,9 @@ func BenchmarkCutFieldsMultiple(b *testing.B) {
 	}
 }
 
-// TestCutMemoryBounded asserts that cut -b allocation is bounded relative to
-// input size. cut is a streaming command: it reads one line at a time (up to
-// MaxLineBytes = 1 MiB per line). Total allocations are O(input size) because
-// bufio.Scanner copies each line into a new buffer, but live heap stays O(1).
-//
-// With 10MB of 44-byte lines (~227k lines), scanning allocates ~10MB of line
-// data, plus output buffering for the 10-byte selections (~2.3MB). A 48MB
-// ceiling provides ~3x headroom over the observed ~16.8MB while still catching
-// regressions such as accumulating all lines before emitting.
+// TestCutMemoryBounded asserts that cut -b uses O(1) memory regardless of
+// input size. cut is a streaming command that writes selected byte ranges
+// directly to Stdout with no per-line string allocation.
 func TestCutMemoryBounded(t *testing.T) {
 	dir := t.TempDir()
 	createLargeFileCut(t, dir, "input.txt", "the quick brown fox jumps over the lazy dog\n", 10<<20)
@@ -84,35 +78,32 @@ func TestCutMemoryBounded(t *testing.T) {
 	result := testing.Benchmark(func(b *testing.B) {
 		b.ReportAllocs()
 		for b.Loop() {
-			cmdRunBCut(b, "cut -b 1-10 input.txt", dir)
+			testutil.RunScriptDiscard(b, "cut -b 1-10 input.txt", dir, interp.AllowedPaths([]string{dir}))
 		}
 	})
 
-	const maxBytesPerOp = 48 << 20 // 48MB ceiling (~3x observed ~16.8MB)
+	const maxBytesPerOp = 4 << 20
 	if bpo := result.AllocedBytesPerOp(); bpo > maxBytesPerOp {
 		t.Errorf("cut -b 1-10 allocated %d bytes/op on 10MB input; want < %d", bpo, maxBytesPerOp)
 	}
 }
 
-// TestCutFieldsMemoryBounded asserts that cut -f allocation is bounded.
-// Field mode calls strings.Split on each line, allocating a []string per line.
-// This is O(input size) in total allocations. Using 1MB input keeps the
-// expected allocation manageable (~5.5MB observed) while still validating
-// that no additional unbounded growth occurs.
+// TestCutFieldsMemoryBounded asserts that cut -f uses O(1) memory regardless
+// of input size. Field mode scans raw bytes for the delimiter without
+// converting to string or allocating a []string per line.
 func TestCutFieldsMemoryBounded(t *testing.T) {
 	dir := t.TempDir()
-	// 1MB (not 10MB) because strings.Split allocates O(fields) per line.
-	createLargeFileCut(t, dir, "input.txt", "alpha\tbeta\tgamma\tdelta\n", 1<<20)
+	createLargeFileCut(t, dir, "input.txt", "alpha\tbeta\tgamma\tdelta\n", 10<<20)
 
 	result := testing.Benchmark(func(b *testing.B) {
 		b.ReportAllocs()
 		for b.Loop() {
-			cmdRunBCut(b, "cut -f 1 input.txt", dir)
+			testutil.RunScriptDiscard(b, "cut -f 1 input.txt", dir, interp.AllowedPaths([]string{dir}))
 		}
 	})
 
-	const maxBytesPerOp = 16 << 20 // 16MB ceiling (~3x observed ~5.5MB on 1MB input)
+	const maxBytesPerOp = 4 << 20
 	if bpo := result.AllocedBytesPerOp(); bpo > maxBytesPerOp {
-		t.Errorf("cut -f 1 allocated %d bytes/op on 1MB input; want < %d", bpo, maxBytesPerOp)
+		t.Errorf("cut -f 1 allocated %d bytes/op on 10MB input; want < %d", bpo, maxBytesPerOp)
 	}
 }

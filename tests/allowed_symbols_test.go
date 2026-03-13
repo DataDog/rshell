@@ -38,6 +38,8 @@ var builtinAllowedSymbols = []string{
 	"bufio.NewScanner",
 	// bufio.Scanner — scanner type for buffered input reading; no write or exec capability.
 	"bufio.Scanner",
+	// bytes.Equal — compares two byte slices for equality; pure function, no I/O.
+	"bytes.Equal",
 	// bufio.SplitFunc — type for custom scanner split functions; pure type, no I/O.
 	"bufio.SplitFunc",
 	// context.Context — deadline/cancellation plumbing; pure interface, no side effects.

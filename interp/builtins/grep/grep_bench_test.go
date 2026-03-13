@@ -78,17 +78,10 @@ func BenchmarkGrepCount(b *testing.B) {
 	}
 }
 
-// TestGrepMemoryBounded asserts that grep allocation is bounded relative to
-// input size. grep is a streaming command: it reads one line at a time (up to
-// MaxLineBytes = 1 MiB per line). Total allocations are O(input size) because
-// bufio.Scanner.Text() allocates a new string per line, but live heap stays
-// O(1). When every line matches, the output buffer also scales with input size;
-// using -c avoids that second O(n) factor and isolates the scanner overhead.
-//
-// With 10MB of 44-byte lines (~227k lines) the scanner allocates roughly 1
-// string per line ≈ 10MB of string data. A 32MB ceiling allows 3x headroom for
-// runtime, output buffering, and test-harness overhead while still catching
-// regressions such as accidentally storing all lines in a slice.
+// TestGrepMemoryBounded asserts that grep uses O(1) memory when processing
+// large files. grep is a streaming command that reads one line at a time via
+// sc.Bytes() (no per-line string allocation). Total allocations are dominated
+// by the shell/runner overhead, not input size.
 func TestGrepMemoryBounded(t *testing.T) {
 	dir := t.TempDir()
 	createLargeFileGrep(t, dir, "input.txt", "the quick brown fox jumps over the lazy dog\n", 10<<20)
@@ -96,13 +89,12 @@ func TestGrepMemoryBounded(t *testing.T) {
 	result := testing.Benchmark(func(b *testing.B) {
 		b.ReportAllocs()
 		for b.Loop() {
-			// Use -c to avoid output scaling O(n) with match count.
-			cmdRunBGrep(b, "grep -c fox input.txt", dir)
+			testutil.RunScriptDiscard(b, "grep fox input.txt", dir, interp.AllowedPaths([]string{dir}))
 		}
 	})
 
-	const maxBytesPerOp = 32 << 20 // 32MB ceiling (~3x observed ~11.5MB)
+	const maxBytesPerOp = 4 << 20
 	if bpo := result.AllocedBytesPerOp(); bpo > maxBytesPerOp {
-		t.Errorf("grep -c allocated %d bytes/op on 10MB input; want < %d", bpo, maxBytesPerOp)
+		t.Errorf("grep allocated %d bytes/op on 10MB input; want < %d", bpo, maxBytesPerOp)
 	}
 }

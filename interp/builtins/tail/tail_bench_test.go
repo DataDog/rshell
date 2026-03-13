@@ -58,21 +58,12 @@ func BenchmarkTailBytes(b *testing.B) {
 	}
 }
 
-// TestTailMemoryBounded asserts that tail -n 10 allocation is bounded.
-//
-// tail must scan the entire input to find the last N lines, so total
-// allocations are O(input size): one []byte copy per scanned line goes into
-// the ring buffer, and old entries are evicted as new ones arrive. Live heap
-// is O(K) (the ring size), but the GC has not necessarily freed evicted
-// entries by the time AllocedBytesPerOp is sampled.
-//
-// With a 1MB input of 44-byte lines (~23 300 lines) the expected total
-// allocation is roughly 1MB (one copy per line x line length). A 4MB ceiling
-// allows 4x headroom for Go runtime and test-harness overhead while still
-// catching regressions that accumulate all lines in memory.
+// TestTailMemoryBounded asserts that tail -n 10 uses O(1) memory regardless of
+// input size. The ring buffer slots are reused via append(slot[:0], raw...),
+// so no per-line allocation occurs after the first pass fills the ring.
 func TestTailMemoryBounded(t *testing.T) {
 	const line = "the quick brown fox jumps over the lazy dog\n" // 44 bytes
-	const inputSize = 1 << 20                                    // 1 MB -> ~23 300 lines
+	const inputSize = 10 << 20                                   // 10 MB
 
 	dir := t.TempDir()
 	createLargeFileTail(t, dir, "input.txt", line, inputSize)
@@ -80,11 +71,10 @@ func TestTailMemoryBounded(t *testing.T) {
 	result := testing.Benchmark(func(b *testing.B) {
 		b.ReportAllocs()
 		for b.Loop() {
-			cmdRunBTail(b, "tail -n 10 input.txt", dir)
+			testutil.RunScriptDiscard(b, "tail -n 10 input.txt", dir, interp.AllowedPaths([]string{dir}))
 		}
 	})
 
-	// 4MB ceiling for a 1MB input (4x multiplier for runtime/harness overhead).
 	const maxBytesPerOp = 4 << 20
 	if bpo := result.AllocedBytesPerOp(); bpo > maxBytesPerOp {
 		t.Errorf("tail -n 10 allocated %d bytes/op on %d-byte input; want < %d", bpo, inputSize, maxBytesPerOp)

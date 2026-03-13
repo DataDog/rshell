@@ -56,16 +56,10 @@ func BenchmarkUniqCount(b *testing.B) {
 	}
 }
 
-// TestUniqMemoryBounded asserts that uniq allocation is bounded relative to
-// input size. uniq is a streaming command: only the current and previous lines
-// are kept in memory at any time (live heap is O(1)), but total allocations are
-// O(input size) because bufio.Scanner.Text() allocates a new string per line.
-//
-// With 10MB of 44-byte identical lines (~227k lines) the scanner allocates
-// roughly one 44-byte string per line ≈ 10MB of string data total. Output is
-// just a single deduplicated line (~44 bytes), so output buffering is trivial.
-// A 32MB ceiling provides 3x headroom for runtime overhead while still catching
-// regressions such as accumulating all lines in a slice before deduplicating.
+// TestUniqMemoryBounded asserts that uniq uses O(1) memory when processing
+// large files. uniq is a streaming command: only the current and previous lines
+// are kept in memory at any time (live heap is O(1)) and sc.Bytes() avoids
+// per-line string allocations.
 func TestUniqMemoryBounded(t *testing.T) {
 	dir := t.TempDir()
 	createLargeFileUniq(t, dir, "input.txt", "the quick brown fox jumps over the lazy dog\n", 10<<20)
@@ -73,11 +67,11 @@ func TestUniqMemoryBounded(t *testing.T) {
 	result := testing.Benchmark(func(b *testing.B) {
 		b.ReportAllocs()
 		for b.Loop() {
-			cmdRunBUniq(b, "uniq input.txt", dir)
+			testutil.RunScriptDiscard(b, "uniq input.txt", dir, interp.AllowedPaths([]string{dir}))
 		}
 	})
 
-	const maxBytesPerOp = 32 << 20 // 32MB ceiling (~3x observed ~11.5MB)
+	const maxBytesPerOp = 4 << 20
 	if bpo := result.AllocedBytesPerOp(); bpo > maxBytesPerOp {
 		t.Errorf("uniq allocated %d bytes/op on 10MB input; want < %d", bpo, maxBytesPerOp)
 	}

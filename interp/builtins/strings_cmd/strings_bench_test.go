@@ -61,24 +61,23 @@ func BenchmarkStringsPrintableOnly(b *testing.B) {
 	}
 }
 
-// TestStringsMemoryBounded asserts that strings uses bounded memory regardless
+// TestStringsMemoryBounded asserts that strings uses O(1) memory regardless
 // of input size. strings reads in 32 KiB chunks and caps individual string
 // accumulation at maxStringLen (1 MiB). With short printable sequences
 // separated by non-printable bytes the current string buffer stays small.
-// A 6MB ceiling allows for output buffering and test-harness overhead.
 func TestStringsMemoryBounded(t *testing.T) {
 	dir := t.TempDir()
-	createLargeFileStrings(t, dir, "input.bin", "the quick brown fox jumps over lazy\x00", 1<<20)
+	createLargeFileStrings(t, dir, "input.bin", "the quick brown fox jumps over lazy\x00", 10<<20)
 
 	result := testing.Benchmark(func(b *testing.B) {
 		b.ReportAllocs()
 		for b.Loop() {
-			cmdRunBStrings(b, "strings input.bin", dir)
+			testutil.RunScriptDiscard(b, "strings input.bin", dir, interp.AllowedPaths([]string{dir}))
 		}
 	})
 
-	const maxBytesPerOp = 6 << 20 // 6MB ceiling for a 1MB input with output buffering
+	const maxBytesPerOp = 4 << 20
 	if bpo := result.AllocedBytesPerOp(); bpo > maxBytesPerOp {
-		t.Errorf("strings allocated %d bytes/op on 1MB input; want < %d", bpo, maxBytesPerOp)
+		t.Errorf("strings allocated %d bytes/op on 10MB input; want < %d", bpo, maxBytesPerOp)
 	}
 }

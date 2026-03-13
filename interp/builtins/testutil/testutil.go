@@ -85,3 +85,41 @@ func RunScript(t testing.TB, script, dir string, opts ...interp.RunnerOption) (s
 	t.Helper()
 	return RunScriptCtx(context.Background(), t, script, dir, opts...)
 }
+
+// RunScriptDiscard runs a shell script and returns stderr and the exit code.
+// Stdout is discarded (io.Discard). Use this in memory-allocation tests to
+// prevent output buffering from dominating the AllocedBytesPerOp measurement.
+func RunScriptDiscard(t testing.TB, script, dir string, opts ...interp.RunnerOption) (string, int) {
+	t.Helper()
+	return RunScriptDiscardCtx(context.Background(), t, script, dir, opts...)
+}
+
+// RunScriptDiscardCtx is RunScriptDiscard with an explicit context.
+func RunScriptDiscardCtx(ctx context.Context, t testing.TB, script, dir string, opts ...interp.RunnerOption) (string, int) {
+	t.Helper()
+	parser := syntax.NewParser()
+	prog, err := parser.Parse(strings.NewReader(script), "")
+	require.NoError(t, err)
+
+	var errBuf bytes.Buffer
+	allOpts := append([]interp.RunnerOption{interp.StdIO(nil, io.Discard, &errBuf)}, opts...)
+	runner, err := interp.New(allOpts...)
+	require.NoError(t, err)
+	defer runner.Close()
+
+	if dir != "" {
+		runner.Dir = dir
+	}
+
+	err = runner.Run(ctx, prog)
+	exitCode := 0
+	if err != nil {
+		var es interp.ExitStatus
+		if errors.As(err, &es) {
+			exitCode = int(es)
+		} else if ctx.Err() == nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	}
+	return errBuf.String(), exitCode
+}
