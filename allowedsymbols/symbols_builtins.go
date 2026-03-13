@@ -67,10 +67,14 @@ var builtinPerCommandSymbols = map[string][]string{
 	},
 	"grep": {
 		"bufio.NewScanner",  // line-by-line input reading (e.g. head, cat); no write or exec capability.
+		"bytes.IndexByte",   // finds a byte in a byte slice; pure function, no I/O.
+		"bytes.NewReader",   // wraps a byte slice as an io.Reader; pure in-memory, no I/O.
 		"context.Context",   // deadline/cancellation plumbing; pure interface, no side effects.
 		"errors.New",        // creates a simple error value; pure function, no I/O.
+		"io.MultiReader",    // combines multiple Readers into one sequential Reader; no I/O side effects.
 		"io.NopCloser",      // wraps a Reader with a no-op Close; no side effects.
 		"io.ReadCloser",     // interface type; no side effects.
+		"io.Reader",         // interface type; no side effects.
 		"os.O_RDONLY",       // read-only file flag constant; cannot open files by itself.
 		"regexp.Compile",    // compiles a regular expression; pure function, no I/O. Uses RE2 engine (linear-time, no backtracking).
 		"regexp.QuoteMeta",  // escapes all special regex characters in a string; pure function, no I/O.
@@ -264,6 +268,7 @@ var builtinAllowedSymbols = []string{
 	"bufio.SplitFunc",         // type for custom scanner split functions; pure type, no I/O.
 	"bytes.Equal",             // compares two byte slices for equality; pure function, no I/O.
 	"bytes.IndexByte",         // finds a byte in a byte slice; pure function, no I/O.
+	"bytes.NewReader",         // wraps a byte slice as an io.Reader; pure in-memory, no I/O.
 	"context.Context",         // deadline/cancellation plumbing; pure interface, no side effects.
 	"errors.As",               // error type assertion; pure function, no I/O.
 	"errors.Is",               // error comparison; pure function, no I/O.
@@ -271,6 +276,7 @@ var builtinAllowedSymbols = []string{
 	"fmt.Errorf",              // error formatting; pure function, no I/O.
 	"fmt.Sprintf",             // string formatting; pure function, no I/O.
 	"io.EOF",                  // sentinel error value; pure constant.
+	"io.MultiReader",          // combines multiple Readers into one sequential Reader; no I/O side effects.
 	"io.NopCloser",            // wraps a Reader with a no-op Close; no side effects.
 	"io.ReadCloser",           // interface type; no side effects.
 	"io.ReadSeeker",           // interface type combining Reader and Seeker; no side effects.
