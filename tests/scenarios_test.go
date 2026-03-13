@@ -270,8 +270,22 @@ func setupTestDirIn(t *testing.T, parentDir, scriptsDir, subdir string, sc scena
 // writes results (stdout, stderr, exit code) to /work/results/<subdir>.
 // Scripts live in /work/scripts/<subdir>.sh, separate from the working dirs.
 func buildRunnerScript(scenarios []dockerScenario) string {
+	// Check if any scenario needs the strings command (part of binutils,
+	// not included in debian:bookworm-slim by default).
+	needsBinutils := false
+	for _, ds := range scenarios {
+		if strings.Contains(ds.sc.Input.Script, "strings") {
+			needsBinutils = true
+			break
+		}
+	}
+
 	var b strings.Builder
-	b.WriteString("#!/bin/bash\napt-get update -qq && apt-get install -y -qq binutils >/dev/null 2>&1\nmkdir -p /work/results\n")
+	b.WriteString("#!/bin/bash\n")
+	if needsBinutils {
+		b.WriteString("apt-get update -qq && apt-get install -y -qq binutils >/dev/null 2>&1\n")
+	}
+	b.WriteString("mkdir -p /work/results\n")
 	b.WriteString("cleanup() { chmod -R 777 /work/results 2>/dev/null; }\ntrap cleanup EXIT\n")
 	for _, ds := range scenarios {
 		var envParts []string

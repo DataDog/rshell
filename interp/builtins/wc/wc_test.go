@@ -403,7 +403,7 @@ func TestWcMaxLineLenCR(t *testing.T) {
 	writeFile(t, dir, "file.txt", "hello\rworld\n")
 	stdout, _, code := cmdRun(t, "wc -L file.txt", dir)
 	assert.Equal(t, 0, code)
-	assert.Equal(t, " 5 file.txt\n", stdout)
+	assert.Equal(t, "5 file.txt\n", stdout)
 }
 
 func TestWcCRLFLineCount(t *testing.T) {
