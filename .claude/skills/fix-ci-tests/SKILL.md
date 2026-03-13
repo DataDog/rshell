@@ -119,6 +119,8 @@ Cross-reference the failing tests with the changed files. Determine whether:
 
 ### 6. Fix the failures
 
+Important note: **Never add the `verified/allowed_symbols` GitHub label to the PR.** This label is reserved for human manual approval only. Don't try to fix CI failures relaed to this.
+
 For each failure, apply the appropriate fix:
 
 **Test failures in implementation code:**
@@ -163,11 +165,7 @@ RSHELL_COMPLIANCE_TEST=1 go test ./tests/ -run TestCompliance -v
 
 Ensure no regressions were introduced. If new failures appear, repeat from step 4.
 
-### 8. Important: Do not add the `verified/allowed_symbols` label
-
-**Never add the `verified/allowed_symbols` GitHub label to the PR.** This label is reserved for human manual approval only.
-
-### 9. Commit and push
+### 8. Commit and push
 
 After all fixes are verified, stage, commit, and push the changes:
 
@@ -187,7 +185,7 @@ EOF
 git push
 ```
 
-### 10. Reply to and resolve CI review comments
+### 9. Reply to and resolve CI review comments
 
 If there are review comments on the PR related to the CI failures (e.g. a reviewer or bot flagged the failure), reply to them and mark them as resolved:
 
@@ -238,7 +236,7 @@ For each comment that relates to a CI failure you just fixed:
 
 If there are no review comments related to CI failures, skip this step.
 
-### 11. Summary
+### 10. Summary
 
 Provide a final summary:
 
