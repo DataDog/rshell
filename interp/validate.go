@@ -128,6 +128,22 @@ func validateNode(node syntax.Node) error {
 					}
 				}
 			}
+
+		// Explicitly allowed command-level nodes. These are the only
+		// syntax.Command implementations that safe-shell permits.
+		// Listing them here ensures any new Command type added by a future
+		// version of mvdan.cc/sh/v3 is caught by the catch-all below.
+		// NOTE: *syntax.BinaryCmd and *syntax.ForClause are handled by their
+		// own cases above (with partial restrictions) and must not appear here.
+		case *syntax.CallExpr, *syntax.IfClause, *syntax.Block:
+			// allowed — no action
+
+		// Catch-all for unknown Command types not explicitly listed above.
+		// This guards against new command node types added by upstream
+		// library upgrades silently bypassing validation.
+		case syntax.Command:
+			err = fmt.Errorf("unsupported command type: %T", n)
+			return false
 		}
 		return true
 	})

@@ -14,7 +14,7 @@ You MUST follow this execution protocol. Skipping steps has caused defects in ev
 
 ### 1. Create the full task list FIRST
 
-Your very first action — before reading ANY files, before writing ANY code — is to call TaskCreate exactly 9 times, once for each step below (Steps 1–9). Use these exact subjects:
+Your very first action — before reading ANY files, before writing ANY code — is to call TaskCreate exactly 10 times, once for each step below (Steps 1–10). Use these exact subjects:
 
 1. "Step 1: Research the command"
 2. "Step 2: User confirms which flags to implement"
@@ -24,7 +24,8 @@ Your very first action — before reading ANY files, before writing ANY code —
 6. "Step 6: Verify and Harden"
 7. "Step 7: Code review"
 8. "Step 8: Exploratory pentest"
-9. "Step 9: Update documentation"
+9. "Step 9: Write fuzz tests"
+10. "Step 10: Update documentation"
 
 ### 2. Execution order and gating
 
@@ -38,7 +39,7 @@ Step 1 → Step 2 → Steps 3 + 4 + 5 (parallel) → Step 6 → Step 7 → Step 
 
 **Parallel steps (3, 4, 5):** Once Step 2 is `completed`, set Steps 3, 4, and 5 all to `in_progress` at the same time and work on all three concurrently. The implementation (Step 5) and the tests (Steps 3, 4) are all guided by the approved spec from Step 2 — they do not need to wait for each other.
 
-**Convergence (6 → 7 → 8 → 9):** Before starting Step 6, call TaskList and verify Steps 3, 4, AND 5 are all `completed`. Then proceed sequentially through 6 → 7 → 8 → 9.
+**Convergence (6 → 7 → 8 → 9 → 10):** Before starting Step 6, call TaskList and verify Steps 3, 4, AND 5 are all `completed`. Then proceed sequentially through 6 → 7 → 8 → 9 → 10.
 
 Before marking any step as `completed`:
 - Re-read the step description and verify every sub-bullet is satisfied
@@ -495,9 +496,103 @@ For any case where behaviour differs from expectation, run the equivalent `gtail
 2. **Safer than GNU** — document; generally keep our behaviour
 3. **Worse than GNU** — fix it
 
-## Step 9: Update documentation
+## Step 9: Write fuzz tests
 
 **GATE CHECK**: Call TaskList. Step 8 must be `completed` before starting this step. Set this step to `in_progress` now.
+
+Create `interp/builtins/tests/$ARGUMENTS/$ARGUMENTS_fuzz_test.go` (`package $ARGUMENTS_test`).
+
+Fuzz tests run seed corpus entries as normal tests (without `-fuzz=`), making them free to run in CI. Their job is to verify that the implementation never panics, crashes, or returns unexpected exit codes across a wide variety of inputs. Exit codes 0 and 1 are always acceptable; exit code 2 (usage error) is acceptable for commands that use it (e.g. `test`); any other code or a panic is a failure.
+
+### Structure
+
+Each `Fuzz*` function follows this pattern:
+
+```go
+func FuzzCmdSomething(f *testing.F) {
+    // Seed corpus entries — each f.Add() is a test case run in non-fuzz mode
+    f.Add([]byte("normal input\n"))
+    f.Add([]byte{})
+    // ... more seeds ...
+
+    f.Fuzz(func(t *testing.T, input []byte /* + any extra args */) {
+        if len(input) > 1<<20 { return } // cap at 1 MiB
+        // filter out inputs that would cause shell parse errors
+        // create temp dir, write input file
+        // run the command with a 5-second timeout
+        ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+        defer cancel()
+        _, _, code := cmdRunCtxFuzz(ctx, t, "...", dir)
+        if code != 0 && code != 1 {
+            t.Errorf("unexpected exit code %d", code)
+        }
+    })
+}
+```
+
+Define `cmdRunCtxFuzz` (not `cmdRunCtx`, to avoid redeclaration conflicts with any existing test file in the package) at the top of the fuzz test file:
+
+```go
+func cmdRunCtxFuzz(ctx context.Context, t *testing.T, script, dir string) (string, string, int) {
+    t.Helper()
+    return testutil.RunScriptCtx(ctx, t, script, dir, interp.AllowedPaths([]string{dir}))
+}
+```
+
+Write one `Fuzz*` function per distinct mode of the command (e.g. `FuzzCmdLines`, `FuzzCmdBytes`, `FuzzCmdStdin`, `FuzzCmdFlags`). For commands with multiple flags, write one fuzz function per mode rather than jamming all flags into a single function — this keeps the seed corpus focused and makes failures easier to reproduce.
+
+### Seed corpus sources
+
+Build the seed corpus from **all three** of these sources. Do not skip any source — each catches different classes of bugs.
+
+**Source A: Implementation edge cases.** Read `interp/builtins/$ARGUMENTS.go` and identify every named constant, boundary check, special case, and clamp. Each one needs at least one seed:
+- Memory safety constants (e.g. `MaxLineBytes = 1 << 20`, `maxStringLen = 1 << 20`)
+- Counter/allocation clamps (e.g. `MaxCount = 1<<31-1`)
+- Buffer sizes and chunk boundaries (e.g. scanner init=4096, read chunks=32KiB)
+- Input encoding edge cases the implementation handles (CRLF, null bytes, invalid UTF-8, bare CR)
+- Boundary values: exactly at a limit, one below, one above
+- Degenerate inputs: empty, single byte, no trailing newline, all-identical lines, all-unique lines
+
+**Source B: CVE and security history.** Research which CVEs and security issues have affected the GNU implementation of `$ARGUMENTS` (and related tools like binutils for `strings`). For each vulnerability, add a seed that exercises the same class of input — even though our implementation may not share the same code path, these are the inputs real attackers will try:
+- Integer overflow inputs (very large `-n`/`-c` values: `MaxInt32`, `MaxInt64`, `MaxInt64+1`, `UINT64_MAX`)
+- Long-line inputs near and past historical buffer limits (4KB, 64KB, 1 MiB)
+- Null bytes embedded in content (triggered stack overflows in distro-patched versions of `uniq`, `sort`, `join`)
+- CRLF line endings (many CVEs involve incorrect line-ending handling)
+- Invalid UTF-8 sequences (surrogates, overlong encodings, bare continuation bytes)
+- Binary format magic bytes (ELF `\x7fELF`, PE `MZ`, ZIP `PK\x03\x04`) for commands that process file content
+- ANSI/terminal escape sequences in content (for commands that output filenames or text to a terminal)
+- ReDoS-class regex patterns for `grep` (e.g. `(a+)+`, `a*a*b`, `([a-z]+)*`)
+
+**Source C: Existing test coverage.** Read through `interp/builtins/tests/$ARGUMENTS/$ARGUMENTS_test.go` and `tests/scenarios/cmd/$ARGUMENTS/`. Every distinct input value, file content, or flag combination that appears in those tests should also appear as a seed corpus entry. This ensures that known-good cases are always in the fuzz corpus baseline, and that regressions found by the unit tests cannot escape fuzz coverage.
+
+### Verify
+
+Run all fuzz seed tests before committing:
+
+```bash
+go test ./interp/builtins/tests/$ARGUMENTS/ -run 'Fuzz' -count=1
+```
+
+All seeds must pass. Also run gofmt:
+
+```bash
+gofmt -l interp/builtins/tests/$ARGUMENTS/
+```
+
+No output means clean. Fix any formatting issues with `gofmt -w`.
+
+### CI integration
+
+Add an entry for the new fuzz package to `.github/workflows/fuzz.yml` under the `matrix.package` list so the fuzzer runs in CI:
+
+```yaml
+- package: interp/builtins/tests/$ARGUMENTS
+  fuzz: Fuzz$ARGUMENTS  # use the most broadly applicable fuzz function
+```
+
+## Step 10: Update documentation
+
+**GATE CHECK**: Call TaskList. Step 9 must be `completed` before starting this step. Set this step to `in_progress` now.
 
 Verify that `SHELL_FEATURES.md` in the repository root does not need updates (e.g. if a new category of feature is added).
 

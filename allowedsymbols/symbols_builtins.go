@@ -233,14 +233,18 @@ var builtinPerCommandSymbols = map[string][]string{
 		"strconv.FormatInt",       // int-to-string conversion; pure function, no I/O.
 		"unicode.Cc",              // control character category range table; pure data, no I/O.
 		"unicode.Cf",              // format character category range table; pure data, no I/O.
+		"unicode.Co",              // private-use character category range table; pure data, no I/O.
 		"unicode.Is",              // checks if rune belongs to a range table; pure function, no I/O.
+		"unicode.IsControl",       // reports whether rune is a control character; pure function, no I/O.
+		"unicode.IsGraphic",       // reports whether rune is defined as a graphic character; pure function, no I/O.
 		"unicode.Me",              // enclosing mark category range table; pure data, no I/O.
 		"unicode.Mn",              // nonspacing mark category range table; pure data, no I/O.
 		"unicode.Range16",         // struct type for 16-bit Unicode ranges; pure data.
 		"unicode.Range32",         // struct type for 32-bit Unicode ranges; pure data.
 		"unicode.RangeTable",      // struct type for Unicode range tables; pure data.
+		"unicode.Zs",              // Unicode space separator category range table; pure data, no I/O.
 		"unicode/utf8.DecodeRune", // decodes first UTF-8 rune from a byte slice; pure function, no I/O.
-		"unicode/utf8.RuneCount",  // counts UTF-8 runes in a byte slice; pure function, no I/O.
+		"unicode/utf8.RuneError",  // replacement character returned for invalid UTF-8; constant, no I/O.
 		"unicode/utf8.UTFMax",     // maximum number of bytes in a UTF-8 encoding; constant, no I/O.
 		"unicode/utf8.Valid",      // checks if a byte slice is valid UTF-8; pure function, no I/O.
 	},
@@ -315,8 +319,9 @@ var builtinAllowedSymbols = []string{
 	"unicode.Range16",         // struct type for 16-bit Unicode ranges; pure data.
 	"unicode.Range32",         // struct type for 32-bit Unicode ranges; pure data.
 	"unicode.RangeTable",      // struct type for Unicode range tables; pure data.
+	"unicode.Zs",              // Unicode space separator category range table; pure data, no I/O.
 	"unicode/utf8.DecodeRune", // decodes first UTF-8 rune from a byte slice; pure function, no I/O.
-	"unicode/utf8.RuneCount",  // counts UTF-8 runes in a byte slice; pure function, no I/O.
+	"unicode/utf8.RuneError",  // replacement character returned for invalid UTF-8; constant, no I/O.
 	"unicode/utf8.UTFMax",     // maximum number of bytes in a UTF-8 encoding; constant, no I/O.
 	"unicode/utf8.Valid",      // checks if a byte slice is valid UTF-8; pure function, no I/O.
 }

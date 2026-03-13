@@ -257,7 +257,6 @@ func countReader(ctx context.Context, r io.Reader) (counts, error) {
 					tail = 0
 				}
 			}
-			c.chars += int64(utf8.RuneCount(chunk))
 			// carryN bytes are subtracted here and will be re-added via
 			// n += carryN at the top of the next iteration.
 			c.bytes -= int64(carryN)
@@ -265,6 +264,12 @@ func countReader(ctx context.Context, r io.Reader) (counts, error) {
 			for i := 0; i < len(chunk); {
 				r, size := utf8.DecodeRune(chunk[i:])
 				i += size
+				// Invalid UTF-8 byte: not a character in C.UTF-8 locale.
+				// Skip entirely — no char count, no word effect.
+				if r == utf8.RuneError && size == 1 {
+					continue
+				}
+				c.chars++
 				if r == '\n' {
 					c.lines++
 					if lineLen > c.maxLineLen {
@@ -281,6 +286,17 @@ func countReader(ctx context.Context, r io.Reader) (counts, error) {
 				} else if r == ' ' || r == '\v' || r == '\f' {
 					lineLen++
 					inWord = false
+				} else if unicode.IsControl(r) {
+					// Non-whitespace control chars (C0, DEL, C1) are transparent:
+					// they do not start or end words, matching GNU wc in POSIX locale.
+				} else if unicode.Is(unicode.Zs, r) {
+					// Unicode space separators (NBSP, thin space, etc.) end words,
+					// matching GNU wc behaviour under C.UTF-8 locale.
+					lineLen++
+					inWord = false
+				} else if !unicode.IsGraphic(r) && !unicode.Is(unicode.Cf, r) && !unicode.Is(unicode.Co, r) {
+					// Cn (unassigned codepoints): transparent like control chars --
+					// they do not start or end words, matching GNU wc under C.UTF-8.
 				} else {
 					if !inWord {
 						c.words++
@@ -292,7 +308,7 @@ func countReader(ctx context.Context, r io.Reader) (counts, error) {
 		}
 		if err == io.EOF {
 			if carryN > 0 {
-				c.chars += int64(utf8.RuneCount(carry[:carryN]))
+				// Incomplete UTF-8 sequence at EOF: counts as bytes but not chars.
 				c.bytes += int64(carryN)
 				carryN = 0
 			}
