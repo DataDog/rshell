@@ -7,5 +7,5 @@ input:
 expect:
   stdout: ""
   stderr_contains:
-    - "invalid exit status code"
+    - "numeric argument required"
   exit_code: 2
