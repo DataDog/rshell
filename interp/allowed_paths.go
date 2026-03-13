@@ -186,7 +186,7 @@ func (s *pathSandbox) readDir(ctx context.Context, path string) ([]fs.DirEntry, 
 	}
 	defer f.Close()
 	entries, err := f.ReadDir(MaxGlobEntries + 1)
-	if err != nil {
+	if err != nil && err != io.EOF {
 		return nil, portablePathError(err)
 	}
 	if len(entries) > MaxGlobEntries {
