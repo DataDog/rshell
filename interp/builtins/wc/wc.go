@@ -343,16 +343,16 @@ func countReader(ctx context.Context, r io.Reader) (counts, error) {
 					// matching GNU wc behaviour under C.UTF-8 locale.
 					lineLen++
 					inWord = false
-				} else if unicode.IsGraphic(ch) {
+				} else {
+					// Any character that is not whitespace or control
+					// starts or continues a word, matching GNU wc which
+					// uses iswspace() in C.UTF-8 locale. This includes
+					// graphic characters, unassigned code points (Cn),
+					// and any other non-space, non-control runes.
 					if !inWord {
 						c.words++
 						inWord = true
 					}
-					lineLen += int64(runeWidth(ch))
-				} else {
-					// Non-graphic, non-control, non-space characters
-					// (e.g. unassigned code points) are transparent to
-					// word counting, matching GNU wc in C.UTF-8 locale.
 					lineLen += int64(runeWidth(ch))
 				}
 			}
