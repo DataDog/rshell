@@ -48,8 +48,9 @@ type runnerConfig struct {
 	sandbox *allowedpaths.Sandbox
 
 	// allowedCommands restricts which commands (builtins and external) may execute.
-	// nil (default) allows all commands; when set, only listed commands may run.
-	allowedCommands map[string]struct{}
+	// nil (default) blocks all commands; populate via AllowedCommands option.
+	allowedCommands  map[string]struct{}
+	allowAllCommands bool // when true, all commands are allowed (overrides allowedCommands)
 
 	// usedNew is set by New() and checked in Reset() to ensure a Runner
 	// was properly constructed rather than zero-initialized.
@@ -388,15 +389,24 @@ func (r *Runner) Close() error {
 
 // AllowedCommands restricts which commands (builtins and external) may execute.
 // Only commands in the provided list are allowed to run. When not set (default),
-// all commands are allowed. An empty list blocks all commands.
-// Shell keywords and control flow (if/else, for, pipes, &&/||, variable
-// assignment) are unaffected.
+// all commands are blocked. Shell keywords and control flow (if/else, for,
+// pipes, &&/||, variable assignment) are unaffected.
 func AllowedCommands(cmds []string) RunnerOption {
 	return func(r *Runner) error {
 		r.allowedCommands = make(map[string]struct{}, len(cmds))
 		for _, cmd := range cmds {
 			r.allowedCommands[cmd] = struct{}{}
 		}
+		return nil
+	}
+}
+
+// AllowAllCommands permits all commands (builtins and external) to execute,
+// overriding the default-deny behavior. This is equivalent to allowing every
+// possible command name.
+func AllowAllCommands() RunnerOption {
+	return func(r *Runner) error {
+		r.allowAllCommands = true
 		return nil
 	}
 }

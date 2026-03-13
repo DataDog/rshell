@@ -15,10 +15,17 @@ import (
 	"os"
 	"strings"
 
+	"github.com/DataDog/rshell/builtins"
 	"github.com/DataDog/rshell/interp"
 	"github.com/spf13/cobra"
 	"mvdan.cc/sh/v3/syntax"
 )
+
+func init() {
+	// Trigger builtin registration so builtins.Names() is available.
+	r, _ := interp.New()
+	r.Close()
+}
 
 func main() {
 	os.Exit(run(os.Args[1:], os.Stdin, os.Stdout, os.Stderr))
@@ -51,7 +58,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 				paths = strings.Split(allowedPaths, ",")
 			}
 			var cmds []string
-			if allowedCommands != "" && allowedCommands != "ALL" {
+			if allowedCommands != "" {
 				cmds = strings.Split(allowedCommands, ",")
 			}
 
@@ -123,6 +130,10 @@ func execute(ctx context.Context, script, name string, allowedPaths, allowedComm
 	}
 	if len(allowedPaths) > 0 {
 		opts = append(opts, interp.AllowedPaths(allowedPaths))
+	}
+	// Resolve "ALL" to the full list of registered builtins.
+	if len(allowedCommands) == 1 && allowedCommands[0] == "ALL" {
+		allowedCommands = builtins.Names()
 	}
 	if len(allowedCommands) > 0 {
 		opts = append(opts, interp.AllowedCommands(allowedCommands))

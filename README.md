@@ -45,7 +45,7 @@ Every access path is default-deny:
 
 | Resource             | Default                             | Opt-in                                       |
 |----------------------|-------------------------------------|----------------------------------------------|
-| Commands (builtins)  | All allowed                         | Restrict with `AllowedCommands` list         |
+| Commands (builtins)  | Blocked                             | Allow with `AllowedCommands` list            |
 | External commands    | Blocked (exit code 127)             | Provide an `ExecHandler`                     |
 | Filesystem access    | Blocked                             | Configure `AllowedPaths` with directory list |
 | Environment variables| Empty (no host env inherited)       | Pass variables via the `Env` option          |

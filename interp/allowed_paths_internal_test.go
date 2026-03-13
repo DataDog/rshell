@@ -45,6 +45,10 @@ func runScriptInternal(t *testing.T, script, dir string, opts ...RunnerOption) (
 	require.NoError(t, err)
 	defer runner.Close()
 
+	// Allow the command used in the script so the exec handler check passes.
+	// Extract the first word as the command name.
+	cmdName := strings.Fields(script)[0]
+	runner.allowedCommands = map[string]struct{}{cmdName: {}}
 	if dir != "" {
 		runner.Dir = dir
 	}
@@ -132,6 +136,7 @@ func TestRunRecoversPanic(t *testing.T) {
 
 	// Trigger initial reset so we can override the exec handler.
 	runner.Reset()
+	runner.allowedCommands = map[string]struct{}{"somecmd": {}}
 
 	// Install an exec handler that panics.
 	runner.execHandler = func(ctx context.Context, args []string) error {

@@ -57,7 +57,10 @@ func RunScriptCtx(ctx context.Context, t testing.TB, script, dir string, opts ..
 	require.NoError(t, err)
 
 	var outBuf, errBuf bytes.Buffer
-	allOpts := append([]interp.RunnerOption{interp.StdIO(nil, &outBuf, &errBuf)}, opts...)
+	allOpts := append([]interp.RunnerOption{
+		interp.StdIO(nil, &outBuf, &errBuf),
+		interp.AllowAllCommands(),
+	}, opts...)
 	runner, err := interp.New(allOpts...)
 	require.NoError(t, err)
 	defer runner.Close()
@@ -102,7 +105,10 @@ func RunScriptDiscardCtx(ctx context.Context, t testing.TB, script, dir string, 
 	require.NoError(t, err)
 
 	var errBuf bytes.Buffer
-	allOpts := append([]interp.RunnerOption{interp.StdIO(nil, io.Discard, &errBuf)}, opts...)
+	allOpts := append([]interp.RunnerOption{
+		interp.StdIO(nil, io.Discard, &errBuf),
+		interp.AllowAllCommands(),
+	}, opts...)
 	runner, err := interp.New(allOpts...)
 	require.NoError(t, err)
 	defer runner.Close()

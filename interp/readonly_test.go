@@ -28,6 +28,7 @@ func TestReadonlyVariableBlocksReassignment(t *testing.T) {
 
 	// Mark RO_VAR as readonly via the environment overlay.
 	r.Reset()
+	r.allowedCommands = map[string]struct{}{"echo": {}}
 	r.writeEnv.Set("RO_VAR", expand.Variable{
 		Set:      true,
 		Kind:     expand.String,
