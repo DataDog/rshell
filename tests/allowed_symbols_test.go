@@ -162,8 +162,6 @@ var builtinAllowedSymbols = []string{
 	"unicode.Co",
 	// unicode.Is — checks if rune belongs to a range table; pure function, no I/O.
 	"unicode.Is",
-	// unicode.IsControl — reports whether rune is a control character; pure function, no I/O.
-	"unicode.IsControl",
 	// unicode.IsGraphic — reports whether rune is defined as a graphic character; pure function, no I/O.
 	"unicode.IsGraphic",
 	// unicode.Zs — Unicode space separator category range table; pure data, no I/O.
