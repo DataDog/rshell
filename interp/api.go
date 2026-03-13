@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"runtime/debug"
 
 	"mvdan.cc/sh/v3/expand"
 	"mvdan.cc/sh/v3/syntax"
@@ -327,7 +328,8 @@ func (s ExitStatus) Error() string { return fmt.Sprintf("exit status %d", s) }
 func (r *Runner) Run(ctx context.Context, node syntax.Node) (retErr error) {
 	defer func() {
 		if rec := recover(); rec != nil {
-			retErr = fmt.Errorf("internal error: %v", rec)
+			fmt.Fprintf(os.Stderr, "rshell: internal panic: %v\n%s\n", rec, debug.Stack())
+			retErr = fmt.Errorf("internal error")
 		}
 	}()
 	if !r.didReset {
