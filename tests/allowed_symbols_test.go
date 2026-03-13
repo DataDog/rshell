@@ -98,6 +98,8 @@ var builtinAllowedSymbols = []string{
 	"os.O_RDONLY",
 	// regexp.Compile — compiles a regular expression; pure function, no I/O. Uses RE2 engine (linear-time, no backtracking).
 	"regexp.Compile",
+	// runtime.GOOS — string constant identifying the operating system; pure constant, no I/O.
+	"runtime.GOOS",
 	// regexp.QuoteMeta — escapes all special regex characters in a string; pure function, no I/O.
 	"regexp.QuoteMeta",
 	// regexp.Regexp — compiled regular expression type; no I/O side effects. All matching methods are linear-time (RE2).
