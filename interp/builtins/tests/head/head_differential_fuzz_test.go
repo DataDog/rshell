@@ -3,7 +3,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2026-present Datadog, Inc.
 
-//go:build !windows
+//go:build linux
 
 package head_test
 
@@ -14,31 +14,22 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 	"time"
 )
 
-func gnuCmd(name string) string {
-	if runtime.GOOS == "darwin" {
-		return "g" + name
-	}
-	return name
-}
-
-// runGNUInDir runs a GNU command with its working directory set to dir.
-// args[0] is the command name (without the "g" prefix on darwin).
-// args[1:] are the arguments.
+// runGNUInDir runs a GNU command under LC_ALL=C.UTF-8 with its working
+// directory set to dir. args[0] is the command name; args[1:] are arguments.
 func runGNUInDir(t *testing.T, dir string, args []string) (stdout string, exitCode int) {
 	t.Helper()
-	gnuName := gnuCmd(args[0])
-	if _, err := exec.LookPath(gnuName); err != nil {
-		t.Skipf("%s not found: %v", gnuName, err)
+	if _, err := exec.LookPath(args[0]); err != nil {
+		t.Skipf("%s not found: %v", args[0], err)
 	}
 
-	cmd := exec.Command(gnuName, args[1:]...)
+	cmd := exec.Command(args[0], args[1:]...)
 	cmd.Dir = dir
+	cmd.Env = append(os.Environ(), "LC_ALL=C.UTF-8")
 
 	var outBuf bytes.Buffer
 	cmd.Stdout = &outBuf
