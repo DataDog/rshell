@@ -1,7 +1,11 @@
 name: Allowed Symbols Verification
 
+# Use pull_request_target so the workflow definition always comes from the
+# base branch (main).  This prevents a PR from editing the workflow file to
+# bypass the label gate.  The checkout step below fetches the PR head for
+# the diff comparison, but the enforcement logic itself is trusted.
 on:
-  pull_request:
+  pull_request_target:
     branches: [main]
     types: [opened, synchronize, reopened, labeled, unlabeled]
 
@@ -16,12 +20,17 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
+          # Fetch the base branch and the PR head so we can diff them.
+          ref: ${{ github.event.pull_request.base.ref }}
           fetch-depth: 0
+
+      - name: Fetch PR head
+        run: git fetch origin "${{ github.event.pull_request.head.sha }}"
 
       - name: Check for allowedsymbols changes
         id: changes
         run: |
-          changed=$(git diff --name-only origin/${{ github.base_ref }}...HEAD -- 'allowedsymbols/')
+          changed=$(git diff --name-only "${{ github.event.pull_request.base.sha }}...${{ github.event.pull_request.head.sha }}" -- 'allowedsymbols/')
           if [ -n "$changed" ]; then
             echo "modified=true" >> "$GITHUB_OUTPUT"
             echo "Changed allowedsymbols files:"

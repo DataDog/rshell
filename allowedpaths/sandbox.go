@@ -100,13 +100,13 @@ func (s *Sandbox) Access(path string, cwd string, mode uint32) error {
 		// us a file descriptor for an atomic Stat (no TOCTOU window).
 		f, err := ar.root.Open(rel)
 		if err != nil {
-			if mode&0x04 != 0 && !isErrIsDirectory(err) {
-				return portablePathError(err)
+			if mode&0x04 != 0 && !IsErrIsDirectory(err) {
+				return PortablePathError(err)
 			}
 			// Read not requested, or target is a directory; fall back to Stat.
 			info, serr := ar.root.Stat(rel)
 			if serr != nil {
-				return portablePathError(serr)
+				return PortablePathError(serr)
 			}
 			if !effectiveHasPerm(info, 0222, 0111, mode&0x02 != 0, mode&0x01 != 0) {
 				return &os.PathError{Op: "access", Path: path, Err: os.ErrPermission}
@@ -124,7 +124,7 @@ func (s *Sandbox) Access(path string, cwd string, mode uint32) error {
 			info, err := f.Stat()
 			if err != nil {
 				f.Close()
-				return portablePathError(err)
+				return PortablePathError(err)
 			}
 			if !effectiveHasPerm(info, 0222, 0111, mode&0x02 != 0, mode&0x01 != 0) {
 				f.Close()
@@ -145,8 +145,8 @@ func ToAbs(path, cwd string) string {
 	return filepath.Join(cwd, path)
 }
 
-// isDevNull reports whether path refers to the platform's null device.
-func isDevNull(path string) bool {
+// IsDevNull reports whether path refers to the platform's null device.
+func IsDevNull(path string) bool {
 	if path == "/dev/null" {
 		return true
 	}
@@ -174,7 +174,7 @@ func (s *Sandbox) Open(path string, cwd string, flag int, perm os.FileMode) (io.
 
 	f, err := root.OpenFile(relPath, flag, perm)
 	if err != nil {
-		return nil, portablePathError(err)
+		return nil, PortablePathError(err)
 	}
 	return f, nil
 }
@@ -190,12 +190,12 @@ func (s *Sandbox) ReadDir(path string, cwd string) ([]fs.DirEntry, error) {
 
 	f, err := root.Open(relPath)
 	if err != nil {
-		return nil, portablePathError(err)
+		return nil, PortablePathError(err)
 	}
 	defer f.Close()
 	entries, err := f.ReadDir(-1)
 	if err != nil {
-		return nil, portablePathError(err)
+		return nil, PortablePathError(err)
 	}
 	// os.Root's ReadDir does not guarantee sorted order like os.ReadDir.
 	// Sort to match POSIX glob expansion expectations.
@@ -212,7 +212,7 @@ func (s *Sandbox) Stat(path string, cwd string) (fs.FileInfo, error) {
 	// The null device (/dev/null on Unix, NUL on Windows) is always
 	// allowed and must be stat-ed directly because os.Root.Stat cannot
 	// resolve platform device names (e.g. NUL on Windows).
-	if isDevNull(path) {
+	if IsDevNull(path) {
 		return os.Stat(os.DevNull)
 	}
 
@@ -225,7 +225,7 @@ func (s *Sandbox) Stat(path string, cwd string) (fs.FileInfo, error) {
 
 	info, err := root.Stat(relPath)
 	if err != nil {
-		return nil, portablePathError(err)
+		return nil, PortablePathError(err)
 	}
 	return info, nil
 }
@@ -235,7 +235,7 @@ func (s *Sandbox) Stat(path string, cwd string) (fs.FileInfo, error) {
 // FileInfo describes the link itself rather than its target.
 func (s *Sandbox) Lstat(path string, cwd string) (fs.FileInfo, error) {
 	// The null device is never a symlink, so lstat behaves like stat.
-	if isDevNull(path) {
+	if IsDevNull(path) {
 		return os.Stat(os.DevNull)
 	}
 
@@ -248,7 +248,7 @@ func (s *Sandbox) Lstat(path string, cwd string) (fs.FileInfo, error) {
 
 	info, err := root.Lstat(relPath)
 	if err != nil {
-		return nil, portablePathError(err)
+		return nil, PortablePathError(err)
 	}
 	return info, nil
 }

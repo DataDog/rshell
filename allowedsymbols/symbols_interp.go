@@ -21,8 +21,6 @@ var interpAllowedSymbols = []string{
 	"context.Context",      // deadline/cancellation plumbing; pure interface, no side effects.
 	"context.WithValue",    // derives a context carrying a key-value pair; pure function.
 	"errors.As",            // error type assertion; pure function, no I/O.
-	"errors.Is",            // error comparison; pure function, no I/O.
-	"errors.New",           // creates a simple error value; pure function, no I/O.
 	"fmt.Errorf",           // formatted error creation; pure function, no I/O.
 	"fmt.Fprintf",          // formatted write to an io.Writer; delegates to Write, no filesystem access.
 	"fmt.Fprintln",         // writes to an io.Writer with newline; delegates to Write, no filesystem access.
@@ -34,12 +32,8 @@ var interpAllowedSymbols = []string{
 	"io.ReadWriteCloser",   // combined interface type; no side effects.
 	"io.Writer",            // interface type for writing; no side effects.
 	"io/fs.DirEntry",       // interface type for directory entries; no side effects.
-	"io/fs.ErrExist",       // sentinel error for "already exists"; pure constant.
-	"io/fs.ErrNotExist",    // sentinel error for "does not exist"; pure constant.
-	"io/fs.ErrPermission",  // sentinel error for permission denied; pure constant.
 	"io/fs.FileInfo",       // interface type for file metadata; no side effects.
 	"maps.Insert",          // inserts all key-value pairs from one map into another; pure function.
-	"os.DevNull",           // platform null device path constant; pure constant.
 	"os.DirEntry",          // type alias for fs.DirEntry; no side effects.
 	"os.File",              // file handle type; interpreter needs file I/O for redirects and pipes.
 	"os.FileMode",          // file permission bits type; pure type.
@@ -51,7 +45,6 @@ var interpAllowedSymbols = []string{
 	"strconv.Itoa",         // int-to-string conversion; pure function, no I/O.
 	"strings.Builder",      // efficient string concatenation; pure in-memory buffer, no I/O.
 	"strings.ContainsRune", // checks if a rune is in a string; pure function, no I/O.
-	"strings.EqualFold",    // case-insensitive string comparison; pure function, no I/O.
 	"strings.HasPrefix",    // pure function for prefix matching; no I/O.
 	"strings.HasSuffix",    // pure function for suffix matching; no I/O.
 	"strings.Split",        // splits a string by separator; pure function, no I/O.
@@ -60,8 +53,6 @@ var interpAllowedSymbols = []string{
 	"sync.Mutex",           // mutual exclusion lock; concurrency primitive, no I/O.
 	"sync.Once",            // ensures a function runs exactly once; concurrency primitive, no I/O.
 	"sync.WaitGroup",       // waits for goroutines to finish; concurrency primitive, no I/O.
-	"syscall.EISDIR",       // "is a directory" errno constant; pure constant.
-	"syscall.Errno",        // system call error number type; pure type.
 	"time.Now",             // returns current time; read-only, no mutation.
 
 	// --- mvdan.cc/sh/v3/expand --- (shell word expansion library)

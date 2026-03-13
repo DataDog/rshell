@@ -14,7 +14,8 @@ import (
 	"syscall"
 )
 
-func isErrIsDirectory(err error) bool {
+// IsErrIsDirectory reports whether err is an "is a directory" error.
+func IsErrIsDirectory(err error) bool {
 	return errors.Is(err, syscall.EISDIR)
 }
 

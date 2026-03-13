@@ -7,11 +7,8 @@
 
 package interp
 
-import (
-	"errors"
-	"syscall"
-)
+import "github.com/DataDog/rshell/allowedpaths"
 
 func isErrIsDirectory(err error) bool {
-	return errors.Is(err, syscall.EISDIR)
+	return allowedpaths.IsErrIsDirectory(err)
 }

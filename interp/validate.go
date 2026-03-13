@@ -7,10 +7,11 @@ package interp
 
 import (
 	"fmt"
-	"os"
 	"strings"
 
 	"mvdan.cc/sh/v3/syntax"
+
+	"github.com/DataDog/rshell/allowedpaths"
 )
 
 // validateNode walks the AST and rejects shell constructs that are not
@@ -276,18 +277,7 @@ func redirectTargetIsFD(rd *syntax.Redirect) bool {
 	return lit.Value == "1" || lit.Value == "2"
 }
 
-// isDevNull reports whether path is the platform's null device.
-// On Windows, only the bare "NUL" form is accepted (case-insensitive).
-// Device-path prefixes (\\.\NUL, \\?\NUL) and extension variants
-// (NUL.txt) are intentionally rejected — exact match keeps the
-// allowlist tight.
+// isDevNull delegates to allowedpaths.IsDevNull.
 func isDevNull(path string) bool {
-	if path == "/dev/null" {
-		return true
-	}
-	// On Windows, os.DevNull is "NUL". Accept it case-insensitively.
-	if os.DevNull != "/dev/null" && strings.EqualFold(path, os.DevNull) {
-		return true
-	}
-	return false
+	return allowedpaths.IsDevNull(path)
 }

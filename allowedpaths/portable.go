@@ -11,10 +11,10 @@ import (
 	"os"
 )
 
-// portableErrMsg returns a POSIX-style error message for the given error,
+// PortableErrMsg returns a POSIX-style error message for the given error,
 // normalizing platform-specific syscall messages to consistent strings.
 // This ensures shell error output is identical across Linux, macOS, and Windows.
-func portableErrMsg(err error) string {
+func PortableErrMsg(err error) string {
 	if err == nil {
 		return ""
 	}
@@ -25,16 +25,16 @@ func portableErrMsg(err error) string {
 		return "permission denied"
 	case errors.Is(err, fs.ErrExist):
 		return "file exists"
-	case isErrIsDirectory(err):
+	case IsErrIsDirectory(err):
 		return "is a directory"
 	}
 	return err.Error()
 }
 
-// portablePathError returns a *os.PathError with a normalized error message.
+// PortablePathError returns a *os.PathError with a normalized error message.
 // If the error is not a *os.PathError, it is returned as-is.
 // Only the Err field is normalized; the Path and Op fields are preserved as-is.
-func portablePathError(err error) error {
+func PortablePathError(err error) error {
 	if err == nil {
 		return nil
 	}
@@ -45,6 +45,6 @@ func portablePathError(err error) error {
 	return &os.PathError{
 		Op:   pe.Op,
 		Path: pe.Path,
-		Err:  errors.New(portableErrMsg(pe.Err)),
+		Err:  errors.New(PortableErrMsg(pe.Err)),
 	}
 }
