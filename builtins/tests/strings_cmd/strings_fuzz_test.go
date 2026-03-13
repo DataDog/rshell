@@ -77,6 +77,7 @@ func FuzzStrings(f *testing.F) {
 	f.Add([]byte("%PDF-1.4\x00\x00\x00binary\x00more text here\x00"))
 
 	f.Fuzz(func(t *testing.T, input []byte) {
+		t.Parallel()
 		if len(input) > 1<<20 {
 			return
 		}
@@ -121,6 +122,7 @@ func FuzzStringsMinLen(f *testing.F) {
 	f.Add([]byte("ab\tcd\x00"), int64(4))
 
 	f.Fuzz(func(t *testing.T, input []byte, minLen int64) {
+		t.Parallel()
 		if len(input) > 1<<20 {
 			return
 		}
@@ -165,6 +167,7 @@ func FuzzStringsRadix(f *testing.F) {
 	f.Add([]byte("hello\x00world\x00foo\x00bar\x00"), "d")
 
 	f.Fuzz(func(t *testing.T, input []byte, radix string) {
+		t.Parallel()
 		if len(input) > 1<<20 {
 			return
 		}
@@ -201,6 +204,7 @@ func FuzzStringsStdin(f *testing.F) {
 	f.Add(append(bytes.Repeat([]byte("a"), 32*1024-1), 0x00))
 
 	f.Fuzz(func(t *testing.T, input []byte) {
+		t.Parallel()
 		if len(input) > 1<<20 {
 			return
 		}

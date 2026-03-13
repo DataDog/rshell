@@ -57,6 +57,7 @@ func FuzzCat(f *testing.F) {
 	f.Add([]byte{0x7f, 'E', 'L', 'F', 0x02, 0x01, 0x01, 0x00})
 
 	f.Fuzz(func(t *testing.T, input []byte) {
+		t.Parallel()
 		if len(input) > 1<<20 {
 			return
 		}
@@ -103,6 +104,7 @@ func FuzzCatNumberLines(f *testing.F) {
 	f.Add([]byte{0x80, 0x81, '\n'})
 
 	f.Fuzz(func(t *testing.T, input []byte) {
+		t.Parallel()
 		if len(input) > 1<<20 {
 			return
 		}
@@ -147,6 +149,7 @@ func FuzzCatDisplayFlags(f *testing.F) {
 	f.Add([]byte{0xed, 0xa0, 0x80, '\n'}, true, false, false)
 
 	f.Fuzz(func(t *testing.T, input []byte, flagV, flagE, flagT bool) {
+		t.Parallel()
 		if len(input) > 1<<20 {
 			return
 		}
@@ -193,6 +196,7 @@ func FuzzCatStdin(f *testing.F) {
 	f.Add([]byte("line1\r\nline2\r\n"))
 
 	f.Fuzz(func(t *testing.T, input []byte) {
+		t.Parallel()
 		if len(input) > 1<<20 {
 			return
 		}

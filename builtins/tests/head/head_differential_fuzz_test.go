@@ -70,6 +70,7 @@ func FuzzHeadDifferentialLines(f *testing.F) {
 	f.Add([]byte("a\nb\nc\nd\ne\n"), int64(3))
 
 	f.Fuzz(func(t *testing.T, input []byte, n int64) {
+		t.Parallel()
 		if len(input) > 64*1024 {
 			return
 		}
@@ -122,6 +123,7 @@ func FuzzHeadDifferentialBytes(f *testing.F) {
 	f.Add([]byte("abcdef\n"), int64(6))
 
 	f.Fuzz(func(t *testing.T, input []byte, n int64) {
+		t.Parallel()
 		if len(input) > 64*1024 {
 			return
 		}

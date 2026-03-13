@@ -50,6 +50,7 @@ func FuzzHeadLines(f *testing.F) {
 	f.Add([]byte("line1\nline2"), int64(2))
 
 	f.Fuzz(func(t *testing.T, input []byte, n int64) {
+		t.Parallel()
 		if len(input) > 1<<20 {
 			return
 		}
@@ -109,6 +110,7 @@ func FuzzHeadBytes(f *testing.F) {
 	f.Add([]byte("a\r\nb\r\n"), int64(3))
 
 	f.Fuzz(func(t *testing.T, input []byte, n int64) {
+		t.Parallel()
 		if len(input) > 1<<20 {
 			return
 		}
@@ -155,6 +157,7 @@ func FuzzHeadStdin(f *testing.F) {
 	f.Add([]byte("line1\r\nline2\r\n"), int64(1))
 
 	f.Fuzz(func(t *testing.T, input []byte, n int64) {
+		t.Parallel()
 		if len(input) > 1<<20 {
 			return
 		}

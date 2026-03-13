@@ -36,6 +36,7 @@ func FuzzEcho(f *testing.F) {
 	f.Add("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
 
 	f.Fuzz(func(t *testing.T, arg string) {
+		t.Parallel()
 		if len(arg) > 1000 {
 			return
 		}
@@ -103,6 +104,7 @@ func FuzzEchoEscapes(f *testing.F) {
 	f.Add("\\n\\n\\n\\n\\n\\n\\n\\n\\n\\n")
 
 	f.Fuzz(func(t *testing.T, arg string) {
+		t.Parallel()
 		if len(arg) > 1000 {
 			return
 		}
@@ -140,6 +142,7 @@ func FuzzEchoFlagInteraction(f *testing.F) {
 	f.Add("hi\\n", true, true, false)     // -n -e
 
 	f.Fuzz(func(t *testing.T, arg string, flagN, flagE, flagBigE bool) {
+		t.Parallel()
 		if len(arg) > 500 {
 			return
 		}

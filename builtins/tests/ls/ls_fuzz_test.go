@@ -49,6 +49,7 @@ func FuzzLsFlags(f *testing.F) {
 	f.Add("Makefile", false, false, false, false, false)
 
 	f.Fuzz(func(t *testing.T, filename string, flagL, flagA, flagR, flagS, flagF bool) {
+		t.Parallel()
 		if len(filename) == 0 || len(filename) > 100 {
 			return
 		}
@@ -115,6 +116,7 @@ func FuzzLsRecursive(f *testing.F) {
 	f.Add(int64(0))
 
 	f.Fuzz(func(t *testing.T, depth int64) {
+		t.Parallel()
 		if depth < 0 || depth > 10 {
 			return
 		}
@@ -167,6 +169,7 @@ func FuzzLsHumanReadable(f *testing.F) {
 	f.Add(int64(512))
 
 	f.Fuzz(func(t *testing.T, fileSize int64) {
+		t.Parallel()
 		// Clamp to 1 MiB to avoid slow file creation.
 		if fileSize < 0 || fileSize > 1<<20 {
 			return
@@ -211,6 +214,7 @@ func FuzzLsMultipleFiles(f *testing.F) {
 	f.Add(true, false, true, false) // -lt
 
 	f.Fuzz(func(t *testing.T, flagL, flagA, flagT, flagS bool) {
+		t.Parallel()
 		dir := t.TempDir()
 
 		// Create a mix of files and a subdirectory.

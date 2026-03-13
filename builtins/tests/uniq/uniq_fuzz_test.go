@@ -59,6 +59,7 @@ func FuzzUniq(f *testing.F) {
 	f.Add([]byte("a\r\na\n")) // CRLF vs LF — how are these compared?
 
 	f.Fuzz(func(t *testing.T, input []byte) {
+		t.Parallel()
 		if len(input) > 1<<20 {
 			return
 		}
@@ -93,6 +94,7 @@ func FuzzUniqCount(f *testing.F) {
 	f.Add([]byte("a\r\na\r\nb\r\n"))
 
 	f.Fuzz(func(t *testing.T, input []byte) {
+		t.Parallel()
 		if len(input) > 1<<20 {
 			return
 		}
@@ -136,6 +138,7 @@ func FuzzUniqFlags(f *testing.F) {
 	f.Add([]byte("a\na\nb\nc\nc\n"), true, false, false, false, int64(0), int64(0), int64(0))
 
 	f.Fuzz(func(t *testing.T, input []byte, repeated, ignoreCase, unique, nulDelim bool, skipFields, skipChars, checkChars int64) {
+		t.Parallel()
 		if len(input) > 1<<20 {
 			return
 		}
@@ -196,6 +199,7 @@ func FuzzUniqStdin(f *testing.F) {
 	f.Add([]byte("line1\r\nline1\r\nline2\r\n"))
 
 	f.Fuzz(func(t *testing.T, input []byte) {
+		t.Parallel()
 		if len(input) > 1<<20 {
 			return
 		}
