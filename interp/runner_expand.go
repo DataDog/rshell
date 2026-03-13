@@ -29,14 +29,7 @@ func (r *Runner) fillExpandConfig(ctx context.Context) {
 
 func (r *Runner) updateExpandOpts() {
 	r.ecfg.ReadDir2 = func(s string) ([]fs.DirEntry, error) {
-		entries, err := r.readDirHandler(r.handlerCtx(r.ectx, todoPos), s)
-		if err != nil {
-			return nil, err
-		}
-		if len(entries) > MaxGlobEntries {
-			return nil, fmt.Errorf("readdir %s: too many entries (limit %d)", s, MaxGlobEntries)
-		}
-		return entries, nil
+		return r.sandbox.readDirForGlob(r.handlerCtx(r.ectx, todoPos), s)
 	}
 }
 
