@@ -6,11 +6,14 @@
 package find
 
 import (
+	"context"
+	"io"
 	iofs "io/fs"
 	"math"
 	"testing"
 	"time"
 
+	"github.com/DataDog/rshell/interp/builtins"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -212,6 +215,49 @@ func TestCompareSizeOverflow(t *testing.T) {
 		})
 	}
 }
+
+// TestEvalEmptyDirectory verifies that -empty matches a truly empty directory.
+// Scenario tests cannot create empty dirs (setup.files requires a file), so
+// this must be a Go unit test exercising evalEmpty directly.
+func TestEvalEmptyDirectory(t *testing.T) {
+	t.Run("empty directory matches", func(t *testing.T) {
+		ec := &evalContext{
+			ctx:       context.Background(),
+			info:      &fakeFileInfo{isDir: true},
+			printPath: "emptydir",
+			callCtx: &builtins.CallContext{
+				Stderr: io.Discard,
+				ReadDir: func(_ context.Context, _ string) ([]iofs.DirEntry, error) {
+					return nil, nil // empty directory
+				},
+			},
+		}
+		assert.True(t, evalEmpty(ec), "empty directory should match -empty")
+	})
+
+	t.Run("non-empty directory does not match", func(t *testing.T) {
+		ec := &evalContext{
+			ctx:       context.Background(),
+			info:      &fakeFileInfo{isDir: true},
+			printPath: "nonemptydir",
+			callCtx: &builtins.CallContext{
+				Stderr: io.Discard,
+				ReadDir: func(_ context.Context, _ string) ([]iofs.DirEntry, error) {
+					return []iofs.DirEntry{fakeDirEntry{}}, nil
+				},
+			},
+		}
+		assert.False(t, evalEmpty(ec), "non-empty directory should not match -empty")
+	})
+}
+
+// fakeDirEntry implements a minimal fs.DirEntry for testing.
+type fakeDirEntry struct{}
+
+func (fakeDirEntry) Name() string                 { return "file.txt" }
+func (fakeDirEntry) IsDir() bool                  { return false }
+func (fakeDirEntry) Type() iofs.FileMode          { return 0 }
+func (fakeDirEntry) Info() (iofs.FileInfo, error) { return nil, nil }
 
 // fakeFileInfo implements the minimal fs.FileInfo interface for testing.
 type fakeFileInfo struct {

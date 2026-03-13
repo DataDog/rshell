@@ -122,13 +122,32 @@ func TestParseBlockedPredicates(t *testing.T) {
 
 // TestParseExpressionLimits verifies AST depth and node limits.
 func TestParseExpressionLimits(t *testing.T) {
-	// Build a deeply nested expression: ! ! ! ! ... -true
-	args := make([]string, 0, maxExprDepth+2)
-	for i := 0; i < maxExprDepth+1; i++ {
-		args = append(args, "!")
-	}
-	args = append(args, "-true")
-	_, err := parseExpression(args)
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "too deeply nested")
+	t.Run("depth limit", func(t *testing.T) {
+		// Build a deeply nested expression: ! ! ! ! ... -true
+		args := make([]string, 0, maxExprDepth+2)
+		for i := 0; i < maxExprDepth+1; i++ {
+			args = append(args, "!")
+		}
+		args = append(args, "-true")
+		_, err := parseExpression(args)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "too deeply nested")
+	})
+
+	t.Run("node limit", func(t *testing.T) {
+		// Build a wide flat expression: -true -o -true -o -true ...
+		// Each "-true -o" pair adds nodes without increasing depth.
+		// We need maxExprNodes+1 leaf nodes to exceed the limit.
+		count := maxExprNodes + 1
+		args := make([]string, 0, count*2)
+		for i := 0; i < count; i++ {
+			if i > 0 {
+				args = append(args, "-o")
+			}
+			args = append(args, "-true")
+		}
+		_, err := parseExpression(args)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "too many nodes")
+	})
 }
