@@ -987,6 +987,9 @@ func buildCompare(keys []keySpec, globalOpts keyOpts, sep byte, hasSep bool, sta
 // (matching GNU sort -c -u which checks for strict ordering).
 // file is the filename used in the diagnostic message (or "-" for stdin).
 func checkSorted(ctx context.Context, callCtx *builtins.CallContext, lines []string, cmpFn func(a, b string) int, silent bool, unique bool, file string) builtins.Result {
+	if ctx.Err() != nil {
+		return builtins.Result{Code: 1}
+	}
 	for i := 1; i < len(lines); i++ {
 		if i&1023 == 0 && ctx.Err() != nil {
 			return builtins.Result{Code: 1}

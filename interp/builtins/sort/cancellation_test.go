@@ -86,3 +86,27 @@ func TestCheckSortedDetectsDisorderBeforeCancellation(t *testing.T) {
 	assert.Equal(t, uint8(1), result.Code)
 	assert.Contains(t, stderr.String(), "disorder")
 }
+
+func TestCheckSortedRespectsContextCancellationSmallInput(t *testing.T) {
+	// Pre-cancelled context should be detected even for inputs under
+	// the 1024-iteration periodic check threshold.
+	lines := []string{"a", "b", "c"}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // cancel immediately
+
+	var stderr bytes.Buffer
+	callCtx := &builtins.CallContext{
+		Stdout: &bytes.Buffer{},
+		Stderr: &stderr,
+	}
+
+	cmpFn := func(a, b string) int {
+		return strings.Compare(a, b)
+	}
+
+	result := checkSorted(ctx, callCtx, lines, cmpFn, false, false, "-")
+
+	assert.Equal(t, uint8(1), result.Code,
+		"checkSorted should return exit code 1 for small input with cancelled context")
+}
