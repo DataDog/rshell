@@ -101,7 +101,19 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 	_ = fs.Bool("one", false, "list one file per line")
 	fs.Lookup("one").Shorthand = "1"
 
+	// Help flag (long-only; -h is taken by --human-readable).
+	help := fs.Bool("help", false, "print usage and exit")
+
 	return func(ctx context.Context, callCtx *builtins.CallContext, args []string) builtins.Result {
+		if *help {
+			callCtx.Out("Usage: ls [OPTION]... [FILE]...\n")
+			callCtx.Out("List directory contents.\n")
+			callCtx.Out("List information about the FILEs (the current directory by default).\n\n")
+			fs.SetOutput(callCtx.Stdout)
+			fs.PrintDefaults()
+			return builtins.Result{}
+		}
+
 		now := callCtx.Now()
 
 		// Determine the effective sort mode. When both -S and -t are given,
