@@ -188,6 +188,130 @@ func checkAllowedSymbols(t *testing.T, cfg allowedSymbolsConfig) {
 	}
 }
 
+// perBuiltinConfig holds the configuration for checkPerBuiltinAllowedSymbols.
+type perBuiltinConfig struct {
+	// CommonSymbols is the global ceiling list (e.g. builtinAllowedSymbols).
+	CommonSymbols []string
+	// PerCommandSymbols maps each builtin name to its per-command allowlist.
+	PerCommandSymbols map[string][]string
+	// TargetDir is the directory containing builtin subdirectories.
+	TargetDir string
+	// ExemptImport returns true for import paths that are auto-allowed.
+	ExemptImport func(importPath string) bool
+	// SkipDirs is the set of subdirectory names to skip entirely.
+	SkipDirs map[string]bool
+	// RepoRootOverride, if set, overrides auto-detection of the repo root.
+	RepoRootOverride string
+	// Errors, if non-nil, collects error messages instead of calling t.Errorf.
+	Errors *[]string
+}
+
+// checkPerBuiltinAllowedSymbols enforces two-layer symbol restrictions:
+//  1. Every symbol in each per-command list must be in the common list.
+//  2. Each builtin subdirectory's files may only use symbols from its per-command list.
+//  3. Every symbol in a per-command list must be used by at least one file in that builtin.
+//  4. Every symbol in the common list must appear in at least one per-command list.
+//  5. Every builtin subdirectory must have an entry in the per-command map.
+func checkPerBuiltinAllowedSymbols(t *testing.T, cfg perBuiltinConfig) {
+	t.Helper()
+
+	reportErr := func(format string, args ...any) {
+		msg := fmt.Sprintf(format, args...)
+		if cfg.Errors != nil {
+			*cfg.Errors = append(*cfg.Errors, msg)
+		} else {
+			t.Errorf("%s", msg)
+		}
+	}
+
+	// Build common set for quick lookup.
+	commonSet := make(map[string]bool, len(cfg.CommonSymbols))
+	for _, s := range cfg.CommonSymbols {
+		commonSet[s] = true
+	}
+
+	// Track which common symbols appear in at least one per-command list.
+	commonUsed := make(map[string]bool)
+
+	// 1. Validate per-command lists are subsets of the common list.
+	for cmd, symbols := range cfg.PerCommandSymbols {
+		for _, s := range symbols {
+			if !commonSet[s] {
+				reportErr("builtinPerCommandSymbols[%q]: symbol %q is not in builtinAllowedSymbols", cmd, s)
+			}
+			commonUsed[s] = true
+		}
+	}
+
+	// Determine repo root.
+	var root string
+	if cfg.RepoRootOverride != "" {
+		root = cfg.RepoRootOverride
+	} else {
+		dir, err := os.Getwd()
+		if err != nil {
+			t.Fatal(err)
+		}
+		root = filepath.Dir(dir)
+	}
+	targetDir := filepath.Join(root, cfg.TargetDir)
+
+	// 2 & 3. Per-builtin file check + unused check.
+	for cmd, symbols := range cfg.PerCommandSymbols {
+		cmdDir := filepath.Join(targetDir, cmd)
+		info, err := os.Stat(cmdDir)
+		if err != nil || !info.IsDir() {
+			reportErr("builtinPerCommandSymbols[%q]: directory %s does not exist", cmd, cmd)
+			continue
+		}
+
+		goFiles, err := collectFlatGoFiles(cmdDir)
+		if err != nil {
+			t.Fatalf("builtinPerCommandSymbols[%q]: %v", cmd, err)
+		}
+
+		// Run checkAllowedSymbols scoped to this builtin's per-command list.
+		var cmdErrs []string
+		checkAllowedSymbols(t, allowedSymbolsConfig{
+			Symbols:   symbols,
+			TargetDir: filepath.Join(cfg.TargetDir, cmd),
+			CollectFiles: func(dir string) ([]string, error) {
+				return goFiles, nil
+			},
+			ExemptImport:     cfg.ExemptImport,
+			ListName:         fmt.Sprintf("builtinPerCommandSymbols[%q]", cmd),
+			MinFiles:         0,
+			RepoRootOverride: root,
+			Errors:           &cmdErrs,
+		})
+
+		for _, e := range cmdErrs {
+			reportErr("%s", e)
+		}
+	}
+
+	// 4. Common list coverage: every common symbol must appear in at least one per-command list.
+	for _, s := range cfg.CommonSymbols {
+		if !commonUsed[s] {
+			reportErr("builtinAllowedSymbols symbol %q is not in any builtin's per-command list — remove it from builtinAllowedSymbols or add it to the appropriate builtin", s)
+		}
+	}
+
+	// 5. Missing builtin check: every builtin subdirectory must have an entry.
+	entries, err := os.ReadDir(targetDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range entries {
+		if !e.IsDir() || cfg.SkipDirs[e.Name()] {
+			continue
+		}
+		if _, ok := cfg.PerCommandSymbols[e.Name()]; !ok {
+			reportErr("builtin subdirectory %q has no entry in builtinPerCommandSymbols", e.Name())
+		}
+	}
+}
+
 // collectSubdirGoFiles walks a directory tree and returns all non-test .go
 // files that are inside subdirectories (not at the top level). Optionally
 // skips directories by name.

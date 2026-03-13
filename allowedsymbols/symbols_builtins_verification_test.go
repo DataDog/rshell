@@ -20,6 +20,15 @@ func builtinsVerifyCfg(tempRoot string, errs *[]string) allowedSymbolsConfig {
 	return cfg
 }
 
+// builtinsPerCmdVerifyCfg returns a perBuiltinConfig with overrides for
+// verification testing.
+func builtinsPerCmdVerifyCfg(tempRoot string, errs *[]string) perBuiltinConfig {
+	cfg := builtinsPerCommandCheckConfig()
+	cfg.RepoRootOverride = tempRoot
+	cfg.Errors = errs
+	return cfg
+}
+
 func TestVerificationBuiltinsCleanPass(t *testing.T) {
 	root := repoRoot(t)
 	tmp := t.TempDir()
@@ -166,4 +175,118 @@ func TestVerificationBuiltinsSkipsTestutilDir(t *testing.T) {
 	if errContains(errs, "os/exec") {
 		t.Errorf("testutil/ should be skipped, but got error: %v", errs)
 	}
+}
+
+// ---------------------------------------------------------------------------
+// Per-command verification tests
+// ---------------------------------------------------------------------------
+
+func TestVerificationPerCmdCleanPass(t *testing.T) {
+	root := repoRoot(t)
+	tmp := t.TempDir()
+	copyDir(t, filepath.Join(root, "builtins"), filepath.Join(tmp, "builtins"))
+
+	var errs []string
+	checkPerBuiltinAllowedSymbols(t, builtinsPerCmdVerifyCfg(tmp, &errs))
+
+	if len(errs) > 0 {
+		t.Errorf("expected no errors on clean copy, got:\n%s", strings.Join(errs, "\n"))
+	}
+}
+
+func TestVerificationPerCmdSymbolNotInCommonList(t *testing.T) {
+	root := repoRoot(t)
+	tmp := t.TempDir()
+	copyDir(t, filepath.Join(root, "builtins"), filepath.Join(tmp, "builtins"))
+
+	// Override the per-command config to inject a symbol not in the common list.
+	cfg := builtinsPerCmdVerifyCfg(tmp, nil)
+	cfg.PerCommandSymbols = copyPerCommandMap(cfg.PerCommandSymbols)
+	cfg.PerCommandSymbols["echo"] = append(cfg.PerCommandSymbols["echo"], "os.Remove")
+
+	var errs []string
+	cfg.Errors = &errs
+	checkPerBuiltinAllowedSymbols(t, cfg)
+
+	if !errContains(errs, "os.Remove") || !errContains(errs, "not in builtinAllowedSymbols") {
+		t.Errorf("expected error about os.Remove not in common list, got: %v", errs)
+	}
+}
+
+func TestVerificationPerCmdSymbolNotInPerCommandList(t *testing.T) {
+	root := repoRoot(t)
+	tmp := t.TempDir()
+	copyDir(t, filepath.Join(root, "builtins"), filepath.Join(tmp, "builtins"))
+
+	// Find a builtin that uses fmt.Sprintf (e.g. "ls") and remove it from its per-command list.
+	cfg := builtinsPerCmdVerifyCfg(tmp, nil)
+	cfg.PerCommandSymbols = copyPerCommandMap(cfg.PerCommandSymbols)
+	// Remove "fmt.Sprintf" from ls's list.
+	filtered := make([]string, 0, len(cfg.PerCommandSymbols["ls"]))
+	for _, s := range cfg.PerCommandSymbols["ls"] {
+		if s != "fmt.Sprintf" {
+			filtered = append(filtered, s)
+		}
+	}
+	cfg.PerCommandSymbols["ls"] = filtered
+
+	var errs []string
+	cfg.Errors = &errs
+	checkPerBuiltinAllowedSymbols(t, cfg)
+
+	// When fmt.Sprintf is the only fmt symbol, removing it makes the entire
+	// fmt package unlisted, so the error may mention the package or the symbol.
+	if !errContains(errs, "fmt") || !errContains(errs, "not in the allowlist") {
+		t.Errorf("expected error about fmt not allowed for ls, got: %v", errs)
+	}
+}
+
+func TestVerificationPerCmdUnusedSymbolFlagged(t *testing.T) {
+	root := repoRoot(t)
+	tmp := t.TempDir()
+	copyDir(t, filepath.Join(root, "builtins"), filepath.Join(tmp, "builtins"))
+
+	// Add an unused (but common-list-valid) symbol to echo's per-command list.
+	cfg := builtinsPerCmdVerifyCfg(tmp, nil)
+	cfg.PerCommandSymbols = copyPerCommandMap(cfg.PerCommandSymbols)
+	cfg.PerCommandSymbols["echo"] = append(cfg.PerCommandSymbols["echo"], "regexp.Compile")
+
+	var errs []string
+	cfg.Errors = &errs
+	checkPerBuiltinAllowedSymbols(t, cfg)
+
+	if !errContains(errs, "regexp.Compile") || !errContains(errs, "not used") {
+		t.Errorf("expected error about unused regexp.Compile in echo, got: %v", errs)
+	}
+}
+
+func TestVerificationPerCmdMissingBuiltinEntry(t *testing.T) {
+	root := repoRoot(t)
+	tmp := t.TempDir()
+	copyDir(t, filepath.Join(root, "builtins"), filepath.Join(tmp, "builtins"))
+
+	// Remove "echo" from the per-command map.
+	cfg := builtinsPerCmdVerifyCfg(tmp, nil)
+	cfg.PerCommandSymbols = copyPerCommandMap(cfg.PerCommandSymbols)
+	delete(cfg.PerCommandSymbols, "echo")
+
+	var errs []string
+	cfg.Errors = &errs
+	checkPerBuiltinAllowedSymbols(t, cfg)
+
+	if !errContains(errs, "echo") || !errContains(errs, "no entry in builtinPerCommandSymbols") {
+		t.Errorf("expected error about missing echo entry, got: %v", errs)
+	}
+}
+
+// copyPerCommandMap returns a shallow copy of a per-command symbols map so
+// that verification tests can mutate it without affecting the original.
+func copyPerCommandMap(m map[string][]string) map[string][]string {
+	cp := make(map[string][]string, len(m))
+	for k, v := range m {
+		dup := make([]string, len(v))
+		copy(dup, v)
+		cp[k] = dup
+	}
+	return cp
 }

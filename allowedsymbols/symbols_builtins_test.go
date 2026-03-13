@@ -39,3 +39,26 @@ func builtinsCheckConfig() allowedSymbolsConfig {
 func TestBuiltinAllowedSymbols(t *testing.T) {
 	checkAllowedSymbols(t, builtinsCheckConfig())
 }
+
+// builtinsPerCommandCheckConfig returns the perBuiltinConfig for testing
+// per-command symbol restrictions. Verification tests reuse this function.
+func builtinsPerCommandCheckConfig() perBuiltinConfig {
+	return perBuiltinConfig{
+		CommonSymbols:     builtinAllowedSymbols,
+		PerCommandSymbols: builtinPerCommandSymbols,
+		TargetDir:         "builtins",
+		ExemptImport: func(importPath string) bool {
+			return importPath == "github.com/DataDog/rshell/builtins" ||
+				strings.HasPrefix(importPath, "github.com/DataDog/rshell/builtins/internal/")
+		},
+		SkipDirs: map[string]bool{"testutil": true, "tests": true, "internal": true},
+	}
+}
+
+// TestBuiltinPerCommandSymbols enforces per-builtin symbol restrictions.
+// Each builtin subdirectory may only use the symbols declared in its
+// builtinPerCommandSymbols entry, which must be a subset of
+// builtinAllowedSymbols.
+func TestBuiltinPerCommandSymbols(t *testing.T) {
+	checkPerBuiltinAllowedSymbols(t, builtinsPerCommandCheckConfig())
+}
