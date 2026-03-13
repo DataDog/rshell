@@ -132,18 +132,18 @@ var builtinPerCommandSymbols = map[string][]string{
 		"strings.ToLower",      // converts string to lowercase; pure function, no I/O.
 	},
 	"sort": {
-		"bufio.NewScanner",        // line-by-line input reading (e.g. head, cat); no write or exec capability.
-		"context.Context",         // deadline/cancellation plumbing; pure interface, no side effects.
-		"errors.New",              // creates a simple error value; pure function, no I/O.
-		"fmt.Errorf",              // error formatting; pure function, no I/O.
-		"io.NopCloser",            // wraps a Reader with a no-op Close; no side effects.
-		"io.ReadCloser",           // interface type; no side effects.
-		"os.O_RDONLY",             // read-only file flag constant; cannot open files by itself.
-		"slices.SortFunc",         // sorts a slice with a comparison function; pure function, no I/O.
-		"slices.SortStableFunc",   // stable sort with a comparison function; pure function, no I/O.
-		"strconv.Atoi",            // string-to-int conversion; pure function, no I/O.
-		"strings.Builder",         // efficient string concatenation; pure in-memory buffer, no I/O.
-		"strings.IndexByte",       // finds byte in string; pure function, no I/O.
+		"bufio.NewScanner",      // line-by-line input reading (e.g. head, cat); no write or exec capability.
+		"context.Context",       // deadline/cancellation plumbing; pure interface, no side effects.
+		"errors.New",            // creates a simple error value; pure function, no I/O.
+		"fmt.Errorf",            // error formatting; pure function, no I/O.
+		"io.NopCloser",          // wraps a Reader with a no-op Close; no side effects.
+		"io.ReadCloser",         // interface type; no side effects.
+		"os.O_RDONLY",           // read-only file flag constant; cannot open files by itself.
+		"slices.SortFunc",       // sorts a slice with a comparison function; pure function, no I/O.
+		"slices.SortStableFunc", // stable sort with a comparison function; pure function, no I/O.
+		"strconv.Atoi",          // string-to-int conversion; pure function, no I/O.
+		"strings.Builder",       // efficient string concatenation; pure in-memory buffer, no I/O.
+		"strings.IndexByte",     // finds byte in string; pure function, no I/O.
 	},
 	"sed": {
 		"bufio.NewScanner",  // line-by-line input reading (e.g. head, cat); no write or exec capability.

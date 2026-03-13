@@ -18,8 +18,8 @@ import (
 	"strings"
 )
 
-// Root pairs an absolute directory path with its opened os.Root handle.
-type Root struct {
+// root pairs an absolute directory path with its opened os.Root handle.
+type root struct {
 	absPath string
 	root    *os.Root
 }
@@ -28,20 +28,20 @@ type Root struct {
 // The restriction is enforced using os.Root (Go 1.24+), which uses openat
 // syscalls for atomic path validation — immune to symlink and ".." traversal attacks.
 type Sandbox struct {
-	roots []Root
+	roots []root
 }
 
 // New validates paths and eagerly opens os.Root handles so the
 // allowed directories are pinned before the caller can modify them between
 // construction and the first run.
 func New(paths []string) (*Sandbox, error) {
-	roots := make([]Root, len(paths))
+	roots := make([]root, len(paths))
 	for i, p := range paths {
 		abs, err := filepath.Abs(p)
 		if err != nil {
 			return nil, fmt.Errorf("AllowedPaths: cannot resolve %q: %w", p, err)
 		}
-		root, err := os.OpenRoot(abs)
+		r, err := os.OpenRoot(abs)
 		if err != nil {
 			for _, prev := range roots[:i] {
 				if prev.root != nil {
@@ -55,7 +55,7 @@ func New(paths []string) (*Sandbox, error) {
 			}
 			return nil, fmt.Errorf("AllowedPaths: cannot open root %q: %w", abs, err)
 		}
-		roots[i] = Root{absPath: abs, root: root}
+		roots[i] = root{absPath: abs, root: r}
 	}
 	return &Sandbox{roots: roots}, nil
 }
