@@ -16,6 +16,10 @@ import (
 	"mvdan.cc/sh/v3/syntax"
 )
 
+// MaxVarBytes is the maximum size in bytes of a single variable value.
+// Assignments that exceed this limit are rejected with an error.
+const MaxVarBytes = 1 << 20 // 1 MiB
+
 func newOverlayEnviron(parent expand.Environ, background bool) *overlayEnviron {
 	oenv := &overlayEnviron{}
 	if !background {
@@ -127,10 +131,26 @@ func (r *Runner) setVarString(name, value string) {
 }
 
 func (r *Runner) setVar(name string, vr expand.Variable) {
+	if vr.IsSet() && len(vr.Str) > MaxVarBytes {
+		r.errf("%s: value too large (limit %d bytes)\n", name, MaxVarBytes)
+		r.exit.code = 1
+		return
+	}
 	if err := r.writeEnv.Set(name, vr); err != nil {
 		r.errf("%s: %v\n", name, err)
 		r.exit.code = 1
 		return
+	}
+}
+
+// setVarRestore writes a variable back without enforcing the size limit.
+// Used to restore inline command variables (e.g. FOO=val cmd) to their
+// original values after the command returns, so that inherited variables
+// larger than MaxVarBytes can be restored correctly.
+func (r *Runner) setVarRestore(name string, vr expand.Variable) {
+	if err := r.writeEnv.Set(name, vr); err != nil {
+		r.errf("%s: %v\n", name, err)
+		r.exit.code = 1
 	}
 }
 
