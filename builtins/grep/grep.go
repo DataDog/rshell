@@ -78,6 +78,10 @@
 //	    Use PATTERN as the pattern. If this option is used multiple
 //	    times, search for all patterns given.
 //
+//	-a, --text
+//	    Process a binary file as if it were text; all lines (including
+//	    those containing NUL bytes) are treated as text and may match.
+//
 //	-m NUM, --max-count=NUM
 //	    Stop reading a file after NUM matching lines.
 //
@@ -108,6 +112,7 @@ package grep
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"errors"
 	"io"
@@ -129,9 +134,13 @@ const MaxLineBytes = 1 << 20 // 1 MiB
 // MaxContextLines caps -A/-B/-C to prevent excessive memory use.
 const MaxContextLines = 1_000 // 1k lines
 
-const (
-	scanBufInit = 4096 // initial scanner buffer
-)
+const scanBufInit = 4096 // initial scanner buffer
+
+// containsNUL reports whether p contains a NUL byte, which is the
+// heuristic GNU grep uses to detect binary files.
+func containsNUL(p []byte) bool {
+	return bytes.IndexByte(p, 0) >= 0
+}
 
 // Exit code constants matching POSIX grep convention.
 const (
@@ -141,6 +150,9 @@ const (
 )
 
 func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
+	// Binary mode flag.
+	textMode := fs.BoolP("text", "a", false, "process binary file as if it were text")
+
 	// Pattern mode flags.
 	extendedRegexp := fs.BoolP("extended-regexp", "E", false, "use extended regular expressions")
 	fixedStrings := fs.BoolP("fixed-strings", "F", false, "interpret pattern as fixed strings")
@@ -312,6 +324,7 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			afterContext:      after,
 			beforeContext:     before,
 			contextRequested:  contextFlagUsed,
+			textMode:          *textMode,
 		}
 
 		anyMatch := false
@@ -375,6 +388,7 @@ type grepOpts struct {
 	afterContext      int
 	beforeContext     int
 	contextRequested  bool // true when any -A/-B/-C flag was used (even with 0)
+	textMode          bool // -a/--text: treat binary files as text
 }
 
 type orderedBoolFlag struct {
@@ -542,7 +556,29 @@ func grepFile(ctx context.Context, callCtx *builtins.CallContext, file string, o
 		displayName = "(standard input)"
 	}
 
-	sc := bufio.NewScanner(rc)
+	// Binary detection: probe the first binaryProbeSize bytes before scanning
+	// so that binary status is known before any lines are emitted to stdout.
+	// GNU grep reads an initial chunk (≥32 KiB) for the same reason; we match
+	// that window so binary status is determined for the vast majority of
+	// real-world binary files before any output is produced. We use a single
+	// Read() (not ReadFull) so we never block waiting for a full buffer — on
+	// a pipe we get whatever bytes are immediately available.
+	const binaryProbeSize = 32 * 1024
+	isBinary := false
+	var reader io.Reader = rc
+	if !opts.textMode {
+		probeBuf := make([]byte, binaryProbeSize)
+		n, _ := rc.Read(probeBuf) //nolint:errcheck — EOF is fine; err handled by scanner
+		probeBuf = probeBuf[:n]
+		if containsNUL(probeBuf) {
+			isBinary = true
+		}
+		if n > 0 {
+			reader = io.MultiReader(bytes.NewReader(probeBuf), rc)
+		}
+	}
+
+	sc := bufio.NewScanner(reader)
 	buf := make([]byte, scanBufInit)
 	sc.Buffer(buf, MaxLineBytes)
 
@@ -564,6 +600,12 @@ func grepFile(ctx context.Context, callCtx *builtins.CallContext, file string, o
 		lineNum++
 		lineBytes := sc.Bytes()
 
+		// Detect NUL bytes in this line. Catches NULs beyond the initial
+		// probe window. Once set, isBinary stays true for the file.
+		if !opts.textMode && !isBinary && containsNUL(lineBytes) {
+			isBinary = true
+		}
+
 		matched := opts.re.Match(lineBytes)
 		if opts.invertMatch {
 			matched = !matched
@@ -579,6 +621,11 @@ func grepFile(ctx context.Context, callCtx *builtins.CallContext, file string, o
 
 			if opts.quiet {
 				return true, nil
+			}
+
+			if isBinary {
+				// For binary files, just count matches; don't print lines.
+				continue
 			}
 
 			if opts.count || opts.filesWithMatches || opts.filesWithoutMatch {
@@ -624,14 +671,14 @@ func grepFile(ctx context.Context, callCtx *builtins.CallContext, file string, o
 			beforeBuf = beforeBuf[:0]
 		} else {
 			// Non-matching line: might be after-context or before-context.
-			if afterRemaining > 0 && !opts.quiet && !opts.count && !opts.filesWithMatches && !opts.filesWithoutMatch {
+			if !isBinary && afterRemaining > 0 && !opts.quiet && !opts.count && !opts.filesWithMatches && !opts.filesWithoutMatch {
 				printContextLine(callCtx, displayName, lineNum, lineBytes, opts, '-')
 				lastPrintedLine = lineNum
 				afterRemaining--
 			}
 
 			// Add to before-context ring buffer.
-			if opts.beforeContext > 0 {
+			if !isBinary && opts.beforeContext > 0 {
 				if len(beforeBuf) >= opts.beforeContext {
 					beforeBuf = beforeBuf[1:]
 				}
@@ -644,6 +691,18 @@ func grepFile(ctx context.Context, callCtx *builtins.CallContext, file string, o
 
 	if err := sc.Err(); err != nil {
 		return matchCount > 0, err
+	}
+
+	// For binary files: emit "binary file matches" in line-printing mode only.
+	// For -c/-l/-L modes, GNU grep still emits aggregate output without the
+	// binary message — fall through to the aggregate block below.
+	if isBinary {
+		if matchCount > 0 && !opts.quiet && !opts.count && !opts.filesWithMatches && !opts.filesWithoutMatch {
+			callCtx.Errf("grep: %s: binary file matches\n", displayName)
+		}
+		if !opts.count && !opts.filesWithMatches && !opts.filesWithoutMatch {
+			return matchCount > 0, nil
+		}
 	}
 
 	// Handle -c, -l, -L output.
