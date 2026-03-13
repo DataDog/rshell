@@ -67,6 +67,7 @@ var builtinPerCommandSymbols = map[string][]string{
 	},
 	"grep": {
 		"bufio.NewScanner",  // line-by-line input reading (e.g. head, cat); no write or exec capability.
+		"bytes.IndexByte",   // finds a byte in a byte slice; pure function, no I/O.
 		"bytes.NewReader",   // wraps a byte slice as an io.Reader; pure in-memory, no I/O.
 		"context.Context",   // deadline/cancellation plumbing; pure interface, no side effects.
 		"errors.New",        // creates a simple error value; pure function, no I/O.
