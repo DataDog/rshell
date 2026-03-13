@@ -100,9 +100,11 @@ func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {
 			r.setVar(name, vr)
 		}
 
-		r.call(ctx, cm.Args[0].Pos(), fields)
+		if r.exit.ok() {
+			r.call(ctx, cm.Args[0].Pos(), fields)
+		}
 		for _, restore := range restores {
-			r.setVar(restore.name, restore.vr)
+			r.setVarRestore(restore.name, restore.vr)
 		}
 	case *syntax.BinaryCmd:
 		switch cm.Op {
