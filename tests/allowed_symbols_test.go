@@ -198,8 +198,12 @@ var builtinAllowedSymbols = []string{
 	"unicode/utf8.Valid",
 	// time.Duration — duration type; pure integer alias, no I/O.
 	"time.Duration",
+	// time.Hour — constant representing one hour; no side effects.
+	"time.Hour",
 	// time.Minute — constant representing one minute; no side effects.
 	"time.Minute",
+	// time.Second — constant representing one second; no side effects.
+	"time.Second",
 	// time.Time — time value type; pure data, no side effects.
 	"time.Time",
 }
