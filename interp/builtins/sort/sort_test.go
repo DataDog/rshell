@@ -564,6 +564,10 @@ func TestSortUniqueKeepsFirstOfEqual(t *testing.T) {
 }
 
 // --- Context cancellation ---
+// Note: builtin-level cancellation (checkSorted, sortCmp, dedup) is tested
+// via unit tests in cancellation_test.go. Integration tests through the
+// runner cannot test pre-cancelled contexts because the runner's shouldStop
+// method catches context cancellation before dispatching to the builtin.
 
 func TestSortContextCancellation(t *testing.T) {
 	dir := t.TempDir()
