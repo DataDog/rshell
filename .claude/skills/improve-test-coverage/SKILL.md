@@ -12,6 +12,8 @@ Improve test coverage for **$ARGUMENTS** by mining reference test suites from ya
 
 You MUST follow this execution protocol. Skipping steps causes missed coverage gaps or broken tests.
 
+**IMPORTANT: Never ask the user questions or wait for confirmation. Always process ALL targets autonomously from start to finish.**
+
 ### 1. Create the full task list FIRST
 
 Your very first action — before reading ANY files, before writing ANY code — is to create the task list. Call TaskCreate for each step:
@@ -95,13 +97,13 @@ ls tests/scenarios/cmd/ | sort
 
 For each target, count its current scenario tests and note the count. Sort targets by test count ascending (fewest tests first) to prioritize the least-covered targets.
 
-Present the full target list to the user as a table:
+Log the full target list as a table (do NOT ask for confirmation — always process all targets):
 
 | # | Target | Type | Current tests | Reference suites |
 |---|--------|------|--------------|-----------------|
 | 1 | ... | cmd/shell | N | GNU+uutils / yash |
 
-After building the list, create tasks for the per-target loop. For each target, call TaskCreate for:
+Then immediately create tasks for the per-target loop. For each target, call TaskCreate for:
 - "Step 3: Audit existing coverage — <target>"
 - "Step 4: Identify coverage gaps — <target>"
 - "Step 5: Write new scenario tests — <target>"
@@ -235,7 +237,7 @@ Rank gaps by importance:
 3. **P3 — Missing error paths**: Error conditions referenced in test suites are not covered
 4. **P4 — Missing combinations**: Flag combinations or integration scenarios are not covered
 
-Present the gap analysis to the user as a summary table before proceeding to write tests. Include:
+Log the gap analysis as a summary table (do NOT ask for confirmation — proceed directly to writing tests). Include:
 - The gap description
 - The reference test it was derived from (suite + test name/function)
 - The priority level
