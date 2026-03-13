@@ -397,7 +397,7 @@ For each unnecessary Windows-specific assertion removed, the non-Windows asserti
 
 ### Step 9: Fix failing tests
 
-Run the `/fix-local-tests` skill to verify all tests pass and fix any failures. This will:
+Run the `/fix-ci-tests` skill to verify all tests pass and fix any failures. This will:
 - Run scenario tests and Go tests
 - Run bash comparison tests
 - Fix test expectations or shell implementation as needed
