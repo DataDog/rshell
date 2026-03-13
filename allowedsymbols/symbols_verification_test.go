@@ -56,7 +56,7 @@ func copyFile(src, dst string) error {
 }
 
 // repoRoot returns the repo root by going one level up from the test's working
-// directory (_allowedsymbols/).
+// directory (allowedsymbols/).
 func repoRoot(t *testing.T) string {
 	t.Helper()
 	dir, err := os.Getwd()

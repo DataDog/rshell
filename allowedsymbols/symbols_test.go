@@ -76,7 +76,7 @@ func checkAllowedSymbols(t *testing.T, cfg allowedSymbolsConfig) {
 	if cfg.RepoRootOverride != "" {
 		root = cfg.RepoRootOverride
 	} else {
-		// This package lives in _allowedsymbols/, so the repo root is one level up.
+		// This package lives in allowedsymbols/, so the repo root is one level up.
 		dir, err := os.Getwd()
 		if err != nil {
 			t.Fatal(err)
