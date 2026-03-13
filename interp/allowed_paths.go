@@ -7,6 +7,7 @@ package interp
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -190,6 +191,98 @@ func (s *pathSandbox) readDir(ctx context.Context, path string) ([]fs.DirEntry, 
 		return strings.Compare(a.Name(), b.Name())
 	})
 	return entries, nil
+}
+
+// readDirLimited reads directory entries, skipping the first offset entries
+// and returning up to maxRead entries sorted by name within the read window.
+// Returns (entries, truncated, error). When truncated is true, the directory
+// contained more entries beyond the returned set.
+//
+// The offset skips raw directory entries during reading (before sorting).
+// This means offset does NOT correspond to positions in a sorted listing —
+// pages may overlap or miss entries. This is an acceptable tradeoff to achieve
+// O(n) memory regardless of offset value, where n = min(maxRead, entries).
+func (s *pathSandbox) readDirLimited(ctx context.Context, path string, offset, maxRead int) ([]fs.DirEntry, bool, error) {
+	absPath := toAbs(path, HandlerCtx(ctx).Dir)
+	root, relPath, ok := s.resolve(absPath)
+	if !ok {
+		return nil, false, &os.PathError{Op: "readdir", Path: path, Err: os.ErrPermission}
+	}
+	f, err := root.Open(relPath)
+	if err != nil {
+		return nil, false, portablePathError(err)
+	}
+	defer f.Close()
+
+	// Defense-in-depth: clamp non-positive values.
+	if offset < 0 {
+		offset = 0
+	}
+	if maxRead <= 0 {
+		return nil, false, nil
+	}
+
+	const batchSize = 256
+	entries, truncated, lastErr := collectDirEntries(func(n int) ([]fs.DirEntry, error) {
+		return f.ReadDir(n)
+	}, batchSize, offset, maxRead)
+
+	if lastErr != nil {
+		return entries, truncated, portablePathError(lastErr)
+	}
+	return entries, truncated, nil
+}
+
+// collectDirEntries reads directory entries in batches using readBatch,
+// skipping the first offset entries and collecting up to maxRead entries.
+// Returns (entries, truncated, lastErr). Entries are sorted by name.
+//
+// NOTE: We intentionally truncate before reading all entries. For directories
+// larger than maxRead, the returned entries are sorted within the read window
+// but may not be the globally-smallest names. Reading all entries to get
+// globally-correct sorting would defeat the DoS protection — a directory with
+// millions of files would OOM or stall. The truncation warning communicates
+// that output is incomplete.
+func collectDirEntries(readBatch func(n int) ([]fs.DirEntry, error), batchSize, offset, maxRead int) ([]fs.DirEntry, bool, error) {
+	entries := make([]fs.DirEntry, 0, maxRead)
+	truncated := false
+	skipped := 0
+	var lastErr error
+
+	for {
+		batch, err := readBatch(batchSize)
+		for _, e := range batch {
+			if skipped < offset {
+				skipped++
+				continue
+			}
+			entries = append(entries, e)
+		}
+		// Capture non-EOF errors before checking truncation, since
+		// ReadDir can return partial entries alongside an error.
+		if err != nil && !errors.Is(err, io.EOF) {
+			lastErr = err
+		}
+		if len(entries) > maxRead {
+			truncated = true
+			break
+		}
+		if err != nil {
+			break
+		}
+	}
+
+	// Sort collected entries by name.
+	slices.SortFunc(entries, func(a, b fs.DirEntry) int {
+		return strings.Compare(a.Name(), b.Name())
+	})
+
+	// Trim to exactly maxRead if we overshot.
+	if truncated && len(entries) > maxRead {
+		entries = entries[:maxRead]
+	}
+
+	return entries, truncated, lastErr
 }
 
 // stat implements the restricted stat policy. It uses os.Root.Stat for
