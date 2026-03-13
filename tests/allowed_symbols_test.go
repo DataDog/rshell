@@ -16,7 +16,7 @@ import (
 )
 
 // builtinAllowedSymbols lists every "importpath.Symbol" that may be used by
-// command implementation files in interp/builtins/. Each entry must be in
+// command implementation files in builtins/. Each entry must be in
 // "importpath.Symbol" form, where importpath is the full Go import path.
 //
 // Each symbol must have a comment explaining what it does and why it is safe
@@ -180,7 +180,7 @@ var permanentlyBanned = map[string]string{
 }
 
 // TestBuiltinAllowedSymbols enforces symbol-level import restrictions on
-// command implementation files in interp/builtins/. builtins.go is exempt as
+// command implementation files in builtins/. builtins.go is exempt as
 // the package framework. Every other file's imports and pkg.Symbol references
 // must be explicitly listed in builtinAllowedSymbols.
 func TestBuiltinAllowedSymbols(t *testing.T) {
@@ -198,7 +198,7 @@ func TestBuiltinAllowedSymbols(t *testing.T) {
 	}
 
 	root := repoRoot(t)
-	builtinsDir := filepath.Join(root, "interp", "builtins")
+	builtinsDir := filepath.Join(root, "builtins")
 
 	// Collect all .go files in builtin sub-packages (each builtin lives
 	// in its own subdirectory, e.g. cat/cat.go, head/head.go). Internal
@@ -259,8 +259,8 @@ func TestBuiltinAllowedSymbols(t *testing.T) {
 
 			// The parent builtins package and sibling internal packages are
 			// always allowed — they are part of the builtins module.
-			if importPath == "github.com/DataDog/rshell/interp/builtins" ||
-				strings.HasPrefix(importPath, "github.com/DataDog/rshell/interp/builtins/internal/") {
+			if importPath == "github.com/DataDog/rshell/builtins" ||
+				strings.HasPrefix(importPath, "github.com/DataDog/rshell/builtins/internal/") {
 				continue
 			}
 
@@ -311,7 +311,7 @@ func TestBuiltinAllowedSymbols(t *testing.T) {
 		})
 	}
 	if checked == 0 {
-		t.Fatal("no command implementation files found in interp/builtins/ sub-packages")
+		t.Fatal("no command implementation files found in builtins/ sub-packages")
 	}
 
 	// Verify every symbol in the allowlist is actually used by at least one

@@ -22,7 +22,7 @@ import (
 	"mvdan.cc/sh/v3/expand"
 	"mvdan.cc/sh/v3/syntax"
 
-	"github.com/DataDog/rshell/interp/allowedpaths"
+	"github.com/DataDog/rshell/allowedpaths"
 )
 
 // runnerConfig holds the immutable configuration of a [Runner].
