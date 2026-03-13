@@ -306,6 +306,12 @@ func (r *Runner) Reset() {
 	}
 	r.writeEnv = &overlayEnviron{parent: r.Env}
 	r.setVarString("PWD", r.Dir)
+	// IFS is intentionally mutable: scripts may set it to customise field splitting,
+	// which is standard POSIX behaviour. Callers that provide a custom ExecHandler
+	// should be aware that a script can set IFS to a non-whitespace value (e.g.
+	// IFS=/) to manipulate how unquoted variable expansions are split before being
+	// passed to executed commands (argument smuggling). The default noExecHandler
+	// blocks all external execution, limiting the practical impact of this vector.
 	r.setVarString("IFS", " \t\n")
 	r.setVarString("OPTIND", "1")
 
