@@ -3,7 +3,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2026-present Datadog, Inc.
 
-package tests
+package allowedsymbols_test
 
 import (
 	"go/ast"
@@ -197,7 +197,12 @@ func TestBuiltinAllowedSymbols(t *testing.T) {
 		allowedPackages[entry[:dot]] = true
 	}
 
-	root := repoRoot(t)
+	// This package lives in allowedsymbols/, so the repo root is one level up.
+	dir, err2 := os.Getwd()
+	if err2 != nil {
+		t.Fatal(err2)
+	}
+	root := filepath.Dir(dir)
 	builtinsDir := filepath.Join(root, "builtins")
 
 	// Collect all .go files in builtin sub-packages (each builtin lives
