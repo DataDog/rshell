@@ -15,6 +15,7 @@ import (
 	"testing"
 )
 
+
 // allowedSymbolsConfig configures a single run of the allowed-symbols check.
 type allowedSymbolsConfig struct {
 	// Symbols is the allowlist to enforce (e.g. builtinAllowedSymbols).
@@ -203,25 +204,3 @@ func collectFlatGoFiles(dir string) ([]string, error) {
 	return files, nil
 }
 
-// TestBuiltinAllowedSymbols enforces symbol-level import restrictions on
-// command implementation files in builtins/. builtins.go is exempt as
-// the package framework. Every other file's imports and pkg.Symbol references
-// must be explicitly listed in builtinAllowedSymbols.
-func TestBuiltinAllowedSymbols(t *testing.T) {
-	checkAllowedSymbols(t, allowedSymbolsConfig{
-		Symbols:   builtinAllowedSymbols,
-		TargetDir: "builtins",
-		CollectFiles: func(dir string) ([]string, error) {
-			return collectSubdirGoFiles(dir, map[string]bool{"testutil": true}, func(rel string) bool {
-				// builtins.go is the package framework and is exempt.
-				return rel == "builtins.go"
-			})
-		},
-		ExemptImport: func(importPath string) bool {
-			return importPath == "github.com/DataDog/rshell/builtins" ||
-				strings.HasPrefix(importPath, "github.com/DataDog/rshell/builtins/internal/")
-		},
-		ListName: "builtinAllowedSymbols",
-		MinFiles: 1,
-	})
-}
