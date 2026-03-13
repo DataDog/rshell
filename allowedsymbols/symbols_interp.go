@@ -57,17 +57,18 @@ var interpAllowedSymbols = []string{
 
 	// --- mvdan.cc/sh/v3/expand --- (shell word expansion library)
 
-	"mvdan.cc/sh/v3/expand.Config",              // configuration for word expansion; pure type.
-	"mvdan.cc/sh/v3/expand.Document",            // expands a here-document; pure function.
-	"mvdan.cc/sh/v3/expand.Environ",             // interface for environment variable access; pure interface.
-	"mvdan.cc/sh/v3/expand.Fields",              // expands words into fields (splitting, globbing); core expansion.
-	"mvdan.cc/sh/v3/expand.KeepValue",           // sentinel for variable expansion; pure constant.
-	"mvdan.cc/sh/v3/expand.ListEnviron",         // converts string slice to Environ; pure function.
-	"mvdan.cc/sh/v3/expand.Literal",             // expands a word to a single literal string; pure function.
-	"mvdan.cc/sh/v3/expand.String",              // expands a word to a string; pure function.
-	"mvdan.cc/sh/v3/expand.UnsetParameterError", // error for unset parameter expansion; pure type.
-	"mvdan.cc/sh/v3/expand.Variable",            // represents a shell variable; pure type.
-	"mvdan.cc/sh/v3/expand.WriteEnviron",        // interface for setting environment variables; pure interface.
+	"mvdan.cc/sh/v3/expand.Config",                 // configuration for word expansion; pure type.
+	"mvdan.cc/sh/v3/expand.Document",               // expands a here-document; pure function.
+	"mvdan.cc/sh/v3/expand.Environ",                // interface for environment variable access; pure interface.
+	"mvdan.cc/sh/v3/expand.Fields",                 // expands words into fields (splitting, globbing); core expansion.
+	"mvdan.cc/sh/v3/expand.KeepValue",              // sentinel for variable expansion; pure constant.
+	"mvdan.cc/sh/v3/expand.ListEnviron",            // converts string slice to Environ; pure function.
+	"mvdan.cc/sh/v3/expand.Literal",                // expands a word to a single literal string; pure function.
+	"mvdan.cc/sh/v3/expand.String",                 // expands a word to a string; pure function.
+	"mvdan.cc/sh/v3/expand.UnexpectedCommandError", // error for unexpected command substitution in restricted mode; pure type.
+	"mvdan.cc/sh/v3/expand.UnsetParameterError",    // error for unset parameter expansion; pure type.
+	"mvdan.cc/sh/v3/expand.Variable",               // represents a shell variable; pure type.
+	"mvdan.cc/sh/v3/expand.WriteEnviron",           // interface for setting environment variables; pure interface.
 
 	// --- mvdan.cc/sh/v3/syntax --- (shell AST types and utilities)
 
