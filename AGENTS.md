@@ -22,6 +22,7 @@ The shell is supported on Linux, Windows and macOS.
 ## Pull Requests
 
 - **Always open pull requests in draft mode.** Use `gh pr create --draft` (or the GitHub UI's "Draft pull request" option). Only mark a PR ready for review once all CI checks pass and the work is complete.
+- **Never add the `verified/allowed_symbols` GitHub label.** This label is reserved for human manual approval only.
 
 ## CRITICAL: Bug Fixes and Bash Compatibility
 
