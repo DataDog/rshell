@@ -213,6 +213,10 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 	}
 }
 
+// newline is a package-level buffer reused for every line-terminator Write,
+// avoiding a heap allocation per line.
+var newline = []byte{'\n'}
+
 // cutConfig holds the parsed configuration for a cut invocation.
 type cutConfig struct {
 	mode          mode
@@ -431,7 +435,7 @@ func processBytes(callCtx *builtins.CallContext, raw []byte, cfg *cutConfig) {
 			}
 		}
 	}
-	callCtx.Stdout.Write([]byte{'\n'}) //nolint:errcheck
+	callCtx.Stdout.Write(newline) //nolint:errcheck
 }
 
 // processBytesWithOutDelim outputs selected byte ranges with the output
@@ -482,8 +486,8 @@ func processFields(callCtx *builtins.CallContext, raw []byte, cfg *cutConfig) {
 		if cfg.onlyDelimited {
 			return
 		}
-		callCtx.Stdout.Write(raw)          //nolint:errcheck
-		callCtx.Stdout.Write([]byte{'\n'}) //nolint:errcheck
+		callCtx.Stdout.Write(raw)     //nolint:errcheck
+		callCtx.Stdout.Write(newline) //nolint:errcheck
 		return
 	}
 
@@ -522,7 +526,7 @@ func processFields(callCtx *builtins.CallContext, raw []byte, cfg *cutConfig) {
 
 		fieldStart = i + 1
 	}
-	callCtx.Stdout.Write([]byte{'\n'}) //nolint:errcheck
+	callCtx.Stdout.Write(newline) //nolint:errcheck
 }
 
 // complementRanges returns the complement of the given sorted, merged ranges

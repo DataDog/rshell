@@ -109,3 +109,23 @@ func TestCutFieldsMemoryBounded(t *testing.T) {
 		t.Errorf("cut -f 1 allocated %d bytes/op on 10MB input; want < %d", bpo, maxBytesPerOp)
 	}
 }
+
+func BenchmarkCutBytesDiscard(b *testing.B) {
+	dir := b.TempDir()
+	createLargeFileCut(b, dir, "input.txt", "the quick brown fox jumps over the lazy dog\n", 10<<20)
+	b.ResetTimer()
+	b.ReportAllocs()
+	for b.Loop() {
+		testutil.RunScriptDiscard(b, "cut -b 1-10 input.txt", dir, interp.AllowedPaths([]string{dir}))
+	}
+}
+
+func BenchmarkCutFieldsDiscard(b *testing.B) {
+	dir := b.TempDir()
+	createLargeFileCut(b, dir, "input.txt", "alpha\tbeta\tgamma\tdelta\n", 10<<20)
+	b.ResetTimer()
+	b.ReportAllocs()
+	for b.Loop() {
+		testutil.RunScriptDiscard(b, "cut -f 1 input.txt", dir, interp.AllowedPaths([]string{dir}))
+	}
+}

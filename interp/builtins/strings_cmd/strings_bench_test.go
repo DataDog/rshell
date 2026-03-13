@@ -83,3 +83,13 @@ func TestStringsMemoryBounded(t *testing.T) {
 		t.Errorf("strings allocated %d bytes/op on 10MB input; want < %d", bpo, maxBytesPerOp)
 	}
 }
+
+func BenchmarkStringsDiscard(b *testing.B) {
+	dir := b.TempDir()
+	createLargeFileStrings(b, dir, "input.bin", "the quick brown fox jumps over lazy\x00", 10<<20)
+	b.ResetTimer()
+	b.ReportAllocs()
+	for b.Loop() {
+		testutil.RunScriptDiscard(b, "strings input.bin", dir, interp.AllowedPaths([]string{dir}))
+	}
+}
