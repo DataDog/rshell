@@ -64,6 +64,10 @@ func FuzzGrepFileContent(f *testing.F) {
 			if c == '\'' || c == '\x00' || c == '\n' {
 				return
 			}
+			// C0/DEL/C1 control chars confuse the shell script parser.
+			if c < 0x20 || c == 0x7f || (c >= 0x80 && c < 0xa0) {
+				return
+			}
 		}
 		if len(pattern) == 0 {
 			return
@@ -127,6 +131,10 @@ func FuzzGrepPatterns(f *testing.F) {
 		}
 		for _, c := range pattern {
 			if c == '\'' || c == '\x00' || c == '\n' {
+				return
+			}
+			// C0/DEL/C1 control chars confuse the shell script parser.
+			if c < 0x20 || c == 0x7f || (c >= 0x80 && c < 0xa0) {
 				return
 			}
 		}
@@ -228,6 +236,10 @@ func FuzzGrepFixedStrings(f *testing.F) {
 		}
 		for _, c := range pattern {
 			if c == '\'' || c == '\x00' || c == '\n' {
+				return
+			}
+			// C0/DEL/C1 control chars confuse the shell script parser.
+			if c < 0x20 || c == 0x7f || (c >= 0x80 && c < 0xa0) {
 				return
 			}
 		}
