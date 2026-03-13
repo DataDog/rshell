@@ -130,10 +130,7 @@ const MaxLineBytes = 1 << 20 // 1 MiB
 // MaxContextLines caps -A/-B/-C to prevent excessive memory use.
 const MaxContextLines = 1_000 // 1k lines
 
-const (
-	scanBufInit     = 4096 // initial scanner buffer
-	binaryChunkSize = 8192 // bytes read to detect binary content
-)
+const scanBufInit = 4096 // initial scanner buffer
 
 // containsNUL reports whether p contains a NUL byte, which is the
 // heuristic GNU grep uses to detect binary files.
@@ -555,29 +552,13 @@ func grepFile(ctx context.Context, callCtx *builtins.CallContext, file string, o
 		displayName = "(standard input)"
 	}
 
-	// Binary detection: pre-read up to binaryChunkSize bytes to detect NUL bytes.
-	// GNU grep treats files containing NUL bytes as binary unless -a/--text is set.
+	// isBinary is set lazily during the scan loop when a NUL byte is found in
+	// any line. GNU grep treats files containing NUL bytes as binary unless
+	// -a/--text is set. Checking line-by-line (rather than pre-reading a fixed
+	// chunk) means detection is not limited to the first N bytes of the file.
 	isBinary := false
-	var reader io.Reader = rc
-	if !opts.textMode {
-		chunk := make([]byte, binaryChunkSize)
-		n, readErr := io.ReadFull(rc, chunk)
-		chunk = chunk[:n]
-		if containsNUL(chunk) {
-			isBinary = true
-		}
-		// Reconstruct reader with the pre-read bytes prepended.
-		if readErr == nil || readErr == io.ErrUnexpectedEOF {
-			reader = io.MultiReader(bytes.NewReader(chunk), rc)
-		} else if readErr == io.EOF {
-			// File was entirely within the chunk.
-			reader = bytes.NewReader(chunk)
-		} else {
-			return false, readErr
-		}
-	}
 
-	sc := bufio.NewScanner(reader)
+	sc := bufio.NewScanner(rc)
 	buf := make([]byte, scanBufInit)
 	sc.Buffer(buf, MaxLineBytes)
 
@@ -598,6 +579,12 @@ func grepFile(ctx context.Context, callCtx *builtins.CallContext, file string, o
 		}
 		lineNum++
 		lineBytes := sc.Bytes()
+
+		// Detect NUL bytes in this line. Once set, isBinary stays true for
+		// the remainder of the file.
+		if !opts.textMode && !isBinary && containsNUL(lineBytes) {
+			isBinary = true
+		}
 
 		matched := opts.re.Match(lineBytes)
 		if opts.invertMatch {
@@ -686,12 +673,16 @@ func grepFile(ctx context.Context, callCtx *builtins.CallContext, file string, o
 		return matchCount > 0, err
 	}
 
-	// For binary files, emit the "binary file matches" message if there were matches.
+	// For binary files: emit "binary file matches" in line-printing mode only.
+	// For -c/-l/-L modes, GNU grep still emits aggregate output without the
+	// binary message — fall through to the aggregate block below.
 	if isBinary {
-		if matchCount > 0 && !opts.quiet {
+		if matchCount > 0 && !opts.quiet && !opts.count && !opts.filesWithMatches && !opts.filesWithoutMatch {
 			callCtx.Errf("grep: %s: binary file matches\n", displayName)
 		}
-		return matchCount > 0, nil
+		if !opts.count && !opts.filesWithMatches && !opts.filesWithoutMatch {
+			return matchCount > 0, nil
+		}
 	}
 
 	// Handle -c, -l, -L output.
