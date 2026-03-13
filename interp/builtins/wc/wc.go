@@ -343,9 +343,6 @@ func countReader(ctx context.Context, r io.Reader) (counts, error) {
 					// matching GNU wc behaviour under C.UTF-8 locale.
 					lineLen++
 					inWord = false
-				} else if !unicode.IsGraphic(ch) && !unicode.Is(unicode.Cf, ch) && !unicode.Is(unicode.Co, ch) {
-					// Cn (unassigned codepoints): transparent like control chars --
-					// they do not start or end words, matching GNU wc under C.UTF-8.
 				} else {
 					if !inWord {
 						c.words++
