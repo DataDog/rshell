@@ -119,14 +119,6 @@ optLoop:
 		i++
 	}
 
-	// Reject empty path operands — GNU find treats "" as a non-existent path.
-	for _, p := range paths {
-		if p == "" {
-			callCtx.Errf("find: '': No such file or directory\n")
-			return builtins.Result{Code: 1}
-		}
-	}
-
 	if len(paths) == 0 {
 		paths = []string{"."}
 	}
@@ -193,6 +185,13 @@ optLoop:
 		for _, startPath := range paths {
 			if ctx.Err() != nil {
 				break
+			}
+			// Reject empty path operands — GNU find treats "" as a
+			// non-existent path but continues walking remaining paths.
+			if startPath == "" {
+				callCtx.Errf("find: '': No such file or directory\n")
+				failed = true
+				continue
 			}
 			if walkPath(ctx, callCtx, startPath, walkOptions{
 				expression:       expression,
