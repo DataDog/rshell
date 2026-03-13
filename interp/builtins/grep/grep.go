@@ -184,7 +184,19 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 	var patterns patternSlice
 	fs.VarP(&patterns, "regexp", "e", "use PATTERN as the pattern")
 
+	// Help flag (long-only; -h is taken by --no-filename).
+	help := fs.Bool("help", false, "print usage and exit")
+
 	return func(ctx context.Context, callCtx *builtins.CallContext, args []string) builtins.Result {
+		if *help {
+			callCtx.Out("Usage: grep [OPTION]... PATTERN [FILE]...\n")
+			callCtx.Out("Search for PATTERN in each FILE.\n")
+			callCtx.Out("When FILE is -, read standard input. With no FILE, read standard input.\n\n")
+			fs.SetOutput(callCtx.Stdout)
+			fs.PrintDefaults()
+			return builtins.Result{}
+		}
+
 		// --silent is an alias for --quiet.
 		if fs.Changed("silent") {
 			*quiet = true
