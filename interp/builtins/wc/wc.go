@@ -207,12 +207,8 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 		width := fieldWidth(total, opts)
 		// GNU wc uses a minimum column width of 7 for non-regular files
 		// (stdin pipes, directories, devices, etc.) when two or more
-		// columns are printed — whether in default mode or with explicit
-		// multi-column flags (e.g. wc -lw). GNU also applies this minimum
-		// when multiple files are processed (a total line is printed), even
-		// with a single column (e.g. wc -l dir file). When only a single
-		// column is active with a single file, the width is determined
-		// solely by the count values.
+		// columns are printed or when multiple files are processed.
+		// With a single column and single file, no minimum is applied.
 		if hasNonRegular && (opts.numCols() >= 2 || len(files) > 1) && width < nonRegularMinWidth {
 			width = nonRegularMinWidth
 		}
