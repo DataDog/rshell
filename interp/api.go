@@ -47,6 +47,10 @@ type runnerConfig struct {
 	// nil (default) blocks all file access; populate via AllowedPaths option.
 	sandbox *allowedpaths.Sandbox
 
+	// allowedCommands restricts which commands (builtins and external) may execute.
+	// nil (default) allows all commands; when set, only listed commands may run.
+	allowedCommands map[string]struct{}
+
 	// usedNew is set by New() and checked in Reset() to ensure a Runner
 	// was properly constructed rather than zero-initialized.
 	usedNew bool
@@ -380,6 +384,21 @@ func (r *Runner) Run(ctx context.Context, node syntax.Node) (retErr error) {
 // opened by AllowedPaths. It is safe to call Close multiple times.
 func (r *Runner) Close() error {
 	return r.sandbox.Close()
+}
+
+// AllowedCommands restricts which commands (builtins and external) may execute.
+// Only commands in the provided list are allowed to run. When not set (default),
+// all commands are allowed. An empty list blocks all commands.
+// Shell keywords and control flow (if/else, for, pipes, &&/||, variable
+// assignment) are unaffected.
+func AllowedCommands(cmds []string) RunnerOption {
+	return func(r *Runner) error {
+		r.allowedCommands = make(map[string]struct{}, len(cmds))
+		for _, cmd := range cmds {
+			r.allowedCommands[cmd] = struct{}{}
+		}
+		return nil
+	}
 }
 
 // AllowedPaths restricts file and directory access to the specified directories.

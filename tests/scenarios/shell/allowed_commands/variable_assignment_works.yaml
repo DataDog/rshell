@@ -1,0 +1,11 @@
+skip_assert_against_bash: true
+description: Variable assignment works without needing to be in allowed commands
+input:
+  allowed_commands: ["echo"]
+  script: |+
+    FOO=bar
+    echo $FOO
+expect:
+  stdout: "bar\n"
+  stderr: ""
+  exit_code: 0

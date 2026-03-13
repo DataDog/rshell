@@ -59,9 +59,10 @@ type input struct {
 	Envs map[string]string `yaml:"envs"`
 	// InterpreterEnv sets initial environment variables for the restricted
 	// interpreter via the Env RunnerOption. These are passed as "KEY=value" pairs.
-	InterpreterEnv map[string]string `yaml:"interpreter_env"`
-	Script         string            `yaml:"script"`
-	AllowedPaths   []string          `yaml:"allowed_paths"` // relative to test temp dir; "$DIR" resolves to temp dir itself
+	InterpreterEnv  map[string]string `yaml:"interpreter_env"`
+	Script          string            `yaml:"script"`
+	AllowedPaths    []string          `yaml:"allowed_paths"`    // relative to test temp dir; "$DIR" resolves to temp dir itself
+	AllowedCommands []string          `yaml:"allowed_commands"` // restrict which commands may execute
 }
 
 // expected holds the expected output for a scenario.
@@ -158,6 +159,9 @@ func runScenario(t *testing.T, sc scenario) {
 			pairs = append(pairs, k+"="+v)
 		}
 		opts = append(opts, interp.Env(pairs...))
+	}
+	if sc.Input.AllowedCommands != nil {
+		opts = append(opts, interp.AllowedCommands(sc.Input.AllowedCommands))
 	}
 	if sc.Input.AllowedPaths != nil {
 		resolved := make([]string, len(sc.Input.AllowedPaths))

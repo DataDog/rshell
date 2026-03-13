@@ -1,0 +1,10 @@
+skip_assert_against_bash: true
+description: Command in allowlist runs successfully
+input:
+  allowed_commands: ["echo"]
+  script: |+
+    echo hello
+expect:
+  stdout: "hello\n"
+  stderr: ""
+  exit_code: 0

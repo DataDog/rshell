@@ -1,0 +1,10 @@
+skip_assert_against_bash: true
+description: Command not in allowlist returns exit 1 with error message
+input:
+  allowed_commands: ["echo"]
+  script: |+
+    cat foo
+expect:
+  stdout: ""
+  stderr: "command not allowed: cat\n"
+  exit_code: 1
