@@ -11,7 +11,8 @@
 //
 // Exit the shell with status N. If N is omitted, the exit status is
 // that of the last command executed. If N is not a valid integer, the
-// shell prints an error and exits with status 2.
+// shell prints an error and returns status 2 without exiting (matching
+// bash behavior).
 //
 // Exit codes:
 //
