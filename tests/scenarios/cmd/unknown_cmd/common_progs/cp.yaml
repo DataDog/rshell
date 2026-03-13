@@ -1,10 +1,10 @@
 skip_assert_against_bash: true
-description: The cp command is not a builtin and is rejected as unknown.
+description: The cp command is not a builtin and is rejected as not allowed.
 input:
   script: |+
     cp source.txt dest.txt
 expect:
   stdout: ""
   stderr: |+
-    cp: command not found
-  exit_code: 127
+    command not allowed: cp
+  exit_code: 1

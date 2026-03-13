@@ -7,7 +7,7 @@ input:
     echo "$?"
 expect:
   stdout: |+
-    127
+    1
   stderr: |+
-    nonexistent_cmd_xyz: command not found
+    command not allowed: nonexistent_cmd_xyz
   exit_code: 0

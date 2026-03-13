@@ -1,3 +1,4 @@
+skip_assert_against_bash: true
 description: Unknown command error goes to stderr while stdout remains clean.
 input:
   script: |+
@@ -8,7 +9,6 @@ expect:
   stdout: |+
     before
     after
-  stderr_contains:
-    - "nonexistent_cmd"
-    - "command not found"
+  stderr: |+
+    command not allowed: nonexistent_cmd
   exit_code: 0

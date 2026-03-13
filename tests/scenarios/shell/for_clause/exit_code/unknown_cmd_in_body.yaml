@@ -1,8 +1,10 @@
+skip_assert_against_bash: true
 description: Unknown command in for loop body produces error on stderr.
 input:
   script: |+
     for i in a; do nonexistent_cmd; done
 expect:
   stdout: ""
-  stderr_contains: ["nonexistent_cmd", "command not found"]
-  exit_code: 127
+  stderr: |+
+    command not allowed: nonexistent_cmd
+  exit_code: 1

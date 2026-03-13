@@ -23,6 +23,7 @@ import (
 	"mvdan.cc/sh/v3/syntax"
 
 	"github.com/DataDog/rshell/allowedpaths"
+	"github.com/DataDog/rshell/builtins"
 )
 
 // runnerConfig holds the immutable configuration of a [Runner].
@@ -49,8 +50,7 @@ type runnerConfig struct {
 
 	// allowedCommands restricts which commands (builtins and external) may execute.
 	// nil (default) blocks all commands; populate via AllowedCommands option.
-	allowedCommands  map[string]struct{}
-	allowAllCommands bool // when true, all commands are allowed (overrides allowedCommands)
+	allowedCommands map[string]struct{}
 
 	// usedNew is set by New() and checked in Reset() to ensure a Runner
 	// was properly constructed rather than zero-initialized.
@@ -402,11 +402,15 @@ func AllowedCommands(cmds []string) RunnerOption {
 }
 
 // AllowAllCommands permits all commands (builtins and external) to execute,
-// overriding the default-deny behavior. This is equivalent to allowing every
-// possible command name.
+// overriding the default-deny behavior. It populates the allowed commands
+// map with all registered builtin names.
 func AllowAllCommands() RunnerOption {
 	return func(r *Runner) error {
-		r.allowAllCommands = true
+		names := builtins.Names()
+		r.allowedCommands = make(map[string]struct{}, len(names))
+		for _, name := range names {
+			r.allowedCommands[name] = struct{}{}
+		}
 		return nil
 	}
 }

@@ -242,12 +242,10 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 		return
 	}
 	name := args[0]
-	if !r.allowAllCommands {
-		if _, ok := r.allowedCommands[name]; !ok {
-			fmt.Fprintf(r.stderr, "command not allowed: %s\n", name)
-			r.exit.code = 1
-			return
-		}
+	if _, ok := r.allowedCommands[name]; !ok {
+		fmt.Fprintf(r.stderr, "command not allowed: %s\n", name)
+		r.exit.code = 1
+		return
 	}
 	if fn, ok := builtins.Lookup(name); ok {
 		call := &builtins.CallContext{

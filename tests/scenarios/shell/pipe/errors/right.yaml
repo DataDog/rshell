@@ -1,8 +1,10 @@
-description: Unknown command on right side of pipe sets exit code 127.
+skip_assert_against_bash: true
+description: Unknown command on right side of pipe sets exit code 1.
 input:
   script: |+
     echo ok | foo
 expect:
   stdout: ""
-  stderr_contains: ["foo", "command not found"]
-  exit_code: 127
+  stderr: |+
+    command not allowed: foo
+  exit_code: 1

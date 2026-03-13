@@ -1,8 +1,10 @@
-description: An unknown command with underscores in the name prints "command not found".
+skip_assert_against_bash: true
+description: An unknown command with underscores in the name prints "command not allowed".
 input:
   script: |+
     my_unknown_command
 expect:
   stdout: ""
-  stderr_contains: ["my_unknown_command", "command not found"]
-  exit_code: 127
+  stderr: |+
+    command not allowed: my_unknown_command
+  exit_code: 1

@@ -1,10 +1,10 @@
 skip_assert_against_bash: true
-description: Unknown command returns exit code 127.
+description: Unknown command returns exit code 1.
 input:
   script: |+
     no_such_command_xyz
 expect:
   stdout: ""
   stderr: |+
-    no_such_command_xyz: command not found
-  exit_code: 127
+    command not allowed: no_such_command_xyz
+  exit_code: 1

@@ -1,3 +1,4 @@
+skip_assert_against_bash: true
 description: A chain of unknown commands with || reaches the first valid command.
 input:
   script: |+
@@ -5,5 +6,7 @@ input:
 expect:
   stdout: |+
     reached
-  stderr_contains: ["foo", "bar", "command not found"]
+  stderr: |+
+    command not allowed: foo
+    command not allowed: bar
   exit_code: 0

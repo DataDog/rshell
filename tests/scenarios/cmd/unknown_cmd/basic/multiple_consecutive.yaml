@@ -1,3 +1,4 @@
+skip_assert_against_bash: true
 description: Multiple unknown commands on separate lines all execute and report errors.
 input:
   script: |+
@@ -6,5 +7,8 @@ input:
     baz
 expect:
   stdout: ""
-  stderr_contains: ["foo", "bar", "baz", "command not found"]
-  exit_code: 127
+  stderr: |+
+    command not allowed: foo
+    command not allowed: bar
+    command not allowed: baz
+  exit_code: 1

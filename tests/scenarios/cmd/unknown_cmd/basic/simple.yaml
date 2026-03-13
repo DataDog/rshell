@@ -1,8 +1,10 @@
-description: A simple unknown command prints "command not found" to stderr.
+skip_assert_against_bash: true
+description: A simple unknown command prints "command not allowed" to stderr.
 input:
   script: |+
     foo
 expect:
   stdout: ""
-  stderr_contains: ["foo", "command not found"]
-  exit_code: 127
+  stderr: |+
+    command not allowed: foo
+  exit_code: 1

@@ -8,6 +8,6 @@ input:
 expect:
   stdout: ""
   stderr: |+
-    unknown_cmd_1: command not found
-    unknown_cmd_2: command not found
-  exit_code: 127
+    command not allowed: unknown_cmd_1
+    command not allowed: unknown_cmd_2
+  exit_code: 1

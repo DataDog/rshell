@@ -1,3 +1,4 @@
+skip_assert_against_bash: true
 description: An unknown command does not prevent subsequent commands from running.
 input:
   script: |+
@@ -5,5 +6,6 @@ input:
 expect:
   stdout: |+
     after
-  stderr_contains: ["nonexistent_cmd", "command not found"]
+  stderr: |+
+    command not allowed: nonexistent_cmd
   exit_code: 0

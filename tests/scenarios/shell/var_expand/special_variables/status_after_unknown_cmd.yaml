@@ -1,11 +1,12 @@
-description: The $? variable is 127 after an unknown command.
+skip_assert_against_bash: true
+description: The $? variable is 1 after an unknown command.
 input:
   script: |+
     nonexistent_cmd
     echo $?
 expect:
   stdout: |+
-    127
+    1
   stderr_contains:
-    - "not found"
+    - "command not allowed"
   exit_code: 0

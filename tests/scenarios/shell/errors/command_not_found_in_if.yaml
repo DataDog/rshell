@@ -6,5 +6,5 @@ input:
     if notacmd; then echo yes; else echo no; fi
 expect:
   stdout: "no\n"
-  stderr: "notacmd: command not found\n"
+  stderr: "command not allowed: notacmd\n"
   exit_code: 0

@@ -1,6 +1,6 @@
 # skip: error message format differs from bash
 skip_assert_against_bash: true
-description: Multiple unknown commands each produce command-not-found errors.
+description: Multiple unknown commands each produce command-not-allowed errors.
 input:
   script: |+
     notacmd1
@@ -9,7 +9,7 @@ input:
 expect:
   stdout: ""
   stderr: |+
-    notacmd1: command not found
-    notacmd2: command not found
-    notacmd3: command not found
-  exit_code: 127
+    command not allowed: notacmd1
+    command not allowed: notacmd2
+    command not allowed: notacmd3
+  exit_code: 1

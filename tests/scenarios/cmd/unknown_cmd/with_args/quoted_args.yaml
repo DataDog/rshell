@@ -1,8 +1,10 @@
-description: An unknown command with quoted arguments still prints "command not found".
+skip_assert_against_bash: true
+description: An unknown command with quoted arguments still prints "command not allowed".
 input:
   script: |+
     foo "hello world" 'single quoted'
 expect:
   stdout: ""
-  stderr_contains: ["foo", "command not found"]
-  exit_code: 127
+  stderr: |+
+    command not allowed: foo
+  exit_code: 1

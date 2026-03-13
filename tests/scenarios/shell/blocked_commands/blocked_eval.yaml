@@ -7,5 +7,5 @@ input:
 expect:
   stdout: ""
   stderr: |+
-    eval: command not found
-  exit_code: 127
+    command not allowed: eval
+  exit_code: 1

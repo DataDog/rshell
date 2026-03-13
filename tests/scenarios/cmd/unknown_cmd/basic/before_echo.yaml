@@ -1,3 +1,4 @@
+skip_assert_against_bash: true
 description: An unknown command before echo on the next line does not stop execution.
 input:
   script: |+
@@ -6,5 +7,6 @@ input:
 expect:
   stdout: |+
     hello
-  stderr_contains: ["foo", "command not found"]
+  stderr: |+
+    command not allowed: foo
   exit_code: 0

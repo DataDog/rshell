@@ -1,8 +1,10 @@
-description: An unknown command with a multi-word-like name (with hyphens) prints "command not found".
+skip_assert_against_bash: true
+description: An unknown command with a multi-word-like name (with hyphens) prints "command not allowed".
 input:
   script: |+
     my-unknown-command
 expect:
   stdout: ""
-  stderr_contains: ["my-unknown-command", "command not found"]
-  exit_code: 127
+  stderr: |+
+    command not allowed: my-unknown-command
+  exit_code: 1

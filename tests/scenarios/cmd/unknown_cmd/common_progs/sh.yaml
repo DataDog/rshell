@@ -1,10 +1,10 @@
 skip_assert_against_bash: true
-description: The sh command is not a builtin and is rejected as unknown.
+description: The sh command is not a builtin and is rejected as not allowed.
 input:
   script: |+
     sh -c "echo hello"
 expect:
   stdout: ""
   stderr: |+
-    sh: command not found
-  exit_code: 127
+    command not allowed: sh
+  exit_code: 1

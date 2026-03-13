@@ -1,3 +1,4 @@
+skip_assert_against_bash: true
 description: Unknown command in logical OR chain falls through to the next command.
 input:
   script: |+
@@ -7,7 +8,6 @@ expect:
   stdout: |+
     recovered
     0
-  stderr_contains:
-    - "nonexistent_cmd"
-    - "command not found"
+  stderr: |+
+    command not allowed: nonexistent_cmd
   exit_code: 0

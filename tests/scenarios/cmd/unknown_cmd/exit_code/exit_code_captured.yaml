@@ -1,9 +1,11 @@
+skip_assert_against_bash: true
 description: The exit code of an unknown command is captured by $? when using semicolons.
 input:
   script: |+
     nonexistent; echo $?
 expect:
   stdout: |+
-    127
-  stderr_contains: ["nonexistent", "command not found"]
+    1
+  stderr: |+
+    command not allowed: nonexistent
   exit_code: 0

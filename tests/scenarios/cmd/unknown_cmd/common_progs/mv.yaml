@@ -1,10 +1,10 @@
 skip_assert_against_bash: true
-description: The mv command is not a builtin and is rejected as unknown.
+description: The mv command is not a builtin and is rejected as not allowed.
 input:
   script: |+
     mv old.txt new.txt
 expect:
   stdout: ""
   stderr: |+
-    mv: command not found
-  exit_code: 127
+    command not allowed: mv
+  exit_code: 1
