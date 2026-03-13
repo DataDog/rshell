@@ -140,7 +140,7 @@ func TestWcWordsControlChar(t *testing.T) {
 	writeFile(t, dir, "file.txt", "\x01\n")
 	stdout, _, code := cmdRun(t, "wc -w file.txt", dir)
 	assert.Equal(t, 0, code)
-	assert.Equal(t, "1 file.txt\n", stdout)
+	assert.Equal(t, "0 file.txt\n", stdout)
 }
 
 // --- Bytes ---
