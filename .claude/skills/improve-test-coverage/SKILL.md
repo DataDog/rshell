@@ -279,7 +279,7 @@ expect:
 - **`stdout_contains` and `stderr_contains` must be YAML lists**, not scalar strings
 - **Prefer `expect.stderr`** (exact match) over `stderr_contains` unless the error message is platform-specific
 - **Prefer `expect.stdout`** (exact match) over `stdout_contains` whenever possible
-- Tests are asserted against bash by default — only set `skip_assert_against_bash: true` for features that intentionally diverge from bash
+- Tests are asserted against bash by default — only set `skip_assert_against_bash: true` for features that intentionally diverge from bash. When using this flag, **always add a YAML comment explaining why** (e.g. `# skip: sandbox blocks write operations`, `# skip: intentionally restricts redirections`)
 - Use `stdout_windows`/`stderr_windows` for platform-specific output differences
 - Use `|+` for multi-line content to preserve trailing newlines
 - Do **not** use `echo -n` — the echo builtin does not support `-n` and will emit `-n ` literally. Use `printf` instead for newline-free output
@@ -359,7 +359,7 @@ For each flagged test:
 |--------|--------|
 | Our shell now matches bash | Remove `skip_assert_against_bash: true` |
 | Divergence is a bug in our shell | Note the bug, keep the flag for now, add to findings |
-| Divergence is intentional (sandbox, blocked commands, readonly) | Keep the flag, verify the comment explains why |
+| Divergence is intentional (sandbox, blocked commands, readonly) | Keep the flag, ensure a YAML comment explains why (add one if missing) |
 | Test scenario is wrong (neither matches bash nor tests intentional divergence) | Fix the test expectations |
 
 For each test where the flag is removed, verify it passes against bash:
@@ -430,7 +430,7 @@ RSHELL_BASH_TEST=1 go test ./tests/ -run TestShellScenariosAgainstBash -timeout 
 For any failures:
 1. Check what bash actually produces
 2. If our shell diverges from bash:
-   - If the divergence is intentional (sandbox restriction), add `skip_assert_against_bash: true`
+   - If the divergence is intentional (sandbox restriction), add `skip_assert_against_bash: true` with a comment explaining why
    - If the divergence is a bug, note it as a finding and either fix the test expectation to match bash or leave it as a failing test that documents the bug
 3. Re-run until all tests pass
 
@@ -480,9 +480,9 @@ Compose the report and post it as a PR comment:
 **Reference suites consulted**: <list>
 
 ### New tests added
-| File | Category | Derived from | Description |
-|------|----------|-------------|-------------|
-| ... | ... | ... | ... |
+| File | Category | Description |
+|------|----------|-------------|
+| ... | ... | ... |
 
 ### Coverage before/after
 - Before: N scenario tests
