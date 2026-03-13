@@ -83,7 +83,7 @@ func (s *Sandbox) resolve(absPath string) (*os.Root, string, bool) {
 // All operations go through os.Root to stay within the sandbox.
 // Mode: 0x04 = read, 0x02 = write, 0x01 = execute.
 func (s *Sandbox) Access(path string, cwd string, mode uint32) error {
-	absPath := ToAbs(path, cwd)
+	absPath := toAbs(path, cwd)
 
 	if s == nil {
 		return &os.PathError{Op: "access", Path: path, Err: os.ErrPermission}
@@ -138,8 +138,8 @@ func (s *Sandbox) Access(path string, cwd string, mode uint32) error {
 	return &os.PathError{Op: "access", Path: path, Err: os.ErrPermission}
 }
 
-// ToAbs resolves path against cwd when it is not already absolute.
-func ToAbs(path, cwd string) string {
+// toAbs resolves path against cwd when it is not already absolute.
+func toAbs(path, cwd string) string {
 	if filepath.IsAbs(path) {
 		return path
 	}
@@ -166,7 +166,7 @@ func (s *Sandbox) Open(path string, cwd string, flag int, perm os.FileMode) (io.
 		return nil, &os.PathError{Op: "open", Path: path, Err: os.ErrPermission}
 	}
 
-	absPath := ToAbs(path, cwd)
+	absPath := toAbs(path, cwd)
 
 	root, relPath, ok := s.resolve(absPath)
 	if !ok {
@@ -182,7 +182,7 @@ func (s *Sandbox) Open(path string, cwd string, flag int, perm os.FileMode) (io.
 
 // ReadDir implements the restricted directory-read policy.
 func (s *Sandbox) ReadDir(path string, cwd string) ([]fs.DirEntry, error) {
-	absPath := ToAbs(path, cwd)
+	absPath := toAbs(path, cwd)
 
 	root, relPath, ok := s.resolve(absPath)
 	if !ok {
@@ -216,7 +216,7 @@ func (s *Sandbox) ReadDir(path string, cwd string) ([]fs.DirEntry, error) {
 // pages may overlap or miss entries. This is an acceptable tradeoff to achieve
 // O(n) memory regardless of offset value, where n = min(maxRead, entries).
 func (s *Sandbox) ReadDirLimited(path string, cwd string, offset, maxRead int) ([]fs.DirEntry, bool, error) {
-	absPath := ToAbs(path, cwd)
+	absPath := toAbs(path, cwd)
 	root, relPath, ok := s.resolve(absPath)
 	if !ok {
 		return nil, false, &os.PathError{Op: "readdir", Path: path, Err: os.ErrPermission}
@@ -309,7 +309,7 @@ func (s *Sandbox) Stat(path string, cwd string) (fs.FileInfo, error) {
 		return os.Stat(os.DevNull)
 	}
 
-	absPath := ToAbs(path, cwd)
+	absPath := toAbs(path, cwd)
 
 	root, relPath, ok := s.resolve(absPath)
 	if !ok {
@@ -332,7 +332,7 @@ func (s *Sandbox) Lstat(path string, cwd string) (fs.FileInfo, error) {
 		return os.Stat(os.DevNull)
 	}
 
-	absPath := ToAbs(path, cwd)
+	absPath := toAbs(path, cwd)
 
 	root, relPath, ok := s.resolve(absPath)
 	if !ok {
