@@ -1,0 +1,244 @@
+// Unless explicitly stated otherwise all files in this repository are licensed
+// under the Apache License Version 2.0.
+// This product includes software developed at Datadog (https://www.datadoghq.com/).
+// Copyright 2026-present Datadog, Inc.
+
+package allowedsymbols
+
+// interpAllowedSymbols lists every "importpath.Symbol" that may be used by
+// non-test Go files in interp/. Each entry must be in "importpath.Symbol"
+// form, where importpath is the full Go import path.
+//
+// Each symbol must have a comment explaining what it does and why it is safe
+// to use inside the interpreter core.
+//
+// Internal module imports (github.com/DataDog/rshell/*) are auto-allowed
+// and do not appear here.
+//
+// The permanently banned packages (reflect, unsafe) apply here too.
+var interpAllowedSymbols = []string{
+	// bytes.Buffer — in-memory byte buffer; pure data structure, no I/O.
+	"bytes.Buffer",
+	// context.Context — deadline/cancellation plumbing; pure interface, no side effects.
+	"context.Context",
+	// context.WithValue — derives a context carrying a key-value pair; pure function.
+	"context.WithValue",
+	// errors.As — error type assertion; pure function, no I/O.
+	"errors.As",
+	// errors.Is — error comparison; pure function, no I/O.
+	"errors.Is",
+	// errors.New — creates a simple error value; pure function, no I/O.
+	"errors.New",
+	// fmt.Errorf — formatted error creation; pure function, no I/O.
+	"fmt.Errorf",
+	// fmt.Fprintf — formatted write to an io.Writer; delegates to Write, no filesystem access.
+	"fmt.Fprintf",
+	// fmt.Fprintln — writes to an io.Writer with newline; delegates to Write, no filesystem access.
+	"fmt.Fprintln",
+	// fmt.Sprintf — string formatting; pure function, no I/O.
+	"fmt.Sprintf",
+	// io.Closer — interface type for closing; no side effects.
+	"io.Closer",
+	// io.Copy — copies from Reader to Writer; no filesystem access, delegates to Read/Write.
+	"io.Copy",
+	// io.Discard — write sink that discards all data; no side effects.
+	"io.Discard",
+	// io.Reader — interface type for reading; no side effects.
+	"io.Reader",
+	// io.ReadWriteCloser — combined interface type; no side effects.
+	"io.ReadWriteCloser",
+	// io.Writer — interface type for writing; no side effects.
+	"io.Writer",
+	// io/fs.DirEntry — interface type for directory entries; no side effects.
+	"io/fs.DirEntry",
+	// io/fs.ErrExist — sentinel error for "already exists"; pure constant.
+	"io/fs.ErrExist",
+	// io/fs.ErrNotExist — sentinel error for "does not exist"; pure constant.
+	"io/fs.ErrNotExist",
+	// io/fs.ErrPermission — sentinel error for permission denied; pure constant.
+	"io/fs.ErrPermission",
+	// io/fs.FileInfo — interface type for file metadata; no side effects.
+	"io/fs.FileInfo",
+	// maps.Insert — inserts all key-value pairs from one map into another; pure function.
+	"maps.Insert",
+	// os.DevNull — platform null device path constant; pure constant.
+	"os.DevNull",
+	// os.DirEntry — type alias for fs.DirEntry; no side effects.
+	"os.DirEntry",
+	// os.File — file handle type; interpreter needs file I/O for redirects and pipes.
+	"os.File",
+	// os.FileMode — file permission bits type; pure type.
+	"os.FileMode",
+	// os.Getwd — returns current working directory; read-only.
+	"os.Getwd",
+	// os.O_RDONLY — read-only file flag constant; pure constant.
+	"os.O_RDONLY",
+	// os.PathError — error type wrapping path and operation; pure type.
+	"os.PathError",
+	// os.Pipe — creates an OS pipe pair; needed for shell pipelines.
+	"os.Pipe",
+	// runtime.GOOS — current OS name constant; pure constant, no I/O.
+	"runtime.GOOS",
+	// strconv.Itoa — int-to-string conversion; pure function, no I/O.
+	"strconv.Itoa",
+	// strings.Builder — efficient string concatenation; pure in-memory buffer, no I/O.
+	"strings.Builder",
+	// strings.ContainsRune — checks if a rune is in a string; pure function, no I/O.
+	"strings.ContainsRune",
+	// strings.EqualFold — case-insensitive string comparison; pure function, no I/O.
+	"strings.EqualFold",
+	// strings.HasPrefix — pure function for prefix matching; no I/O.
+	"strings.HasPrefix",
+	// strings.HasSuffix — pure function for suffix matching; no I/O.
+	"strings.HasSuffix",
+	// strings.Split — splits a string by separator; pure function, no I/O.
+	"strings.Split",
+	// strings.ToUpper — converts string to uppercase; pure function, no I/O.
+	"strings.ToUpper",
+	// strings.TrimLeft — trims leading characters; pure function, no I/O.
+	"strings.TrimLeft",
+	// sync.Mutex — mutual exclusion lock; concurrency primitive, no I/O.
+	"sync.Mutex",
+	// sync.Once — ensures a function runs exactly once; concurrency primitive, no I/O.
+	"sync.Once",
+	// sync.WaitGroup — waits for goroutines to finish; concurrency primitive, no I/O.
+	"sync.WaitGroup",
+	// syscall.EISDIR — "is a directory" errno constant; pure constant.
+	"syscall.EISDIR",
+	// syscall.Errno — system call error number type; pure type.
+	"syscall.Errno",
+	// time.Now — returns current time; read-only, no mutation.
+	"time.Now",
+
+	// --- mvdan.cc/sh/v3/expand --- (shell word expansion library)
+
+	// mvdan.cc/sh/v3/expand.Config — configuration for word expansion; pure type.
+	"mvdan.cc/sh/v3/expand.Config",
+	// mvdan.cc/sh/v3/expand.Document — expands a here-document; pure function.
+	"mvdan.cc/sh/v3/expand.Document",
+	// mvdan.cc/sh/v3/expand.Environ — interface for environment variable access; pure interface.
+	"mvdan.cc/sh/v3/expand.Environ",
+	// mvdan.cc/sh/v3/expand.Fields — expands words into fields (splitting, globbing); core expansion.
+	"mvdan.cc/sh/v3/expand.Fields",
+	// mvdan.cc/sh/v3/expand.KeepValue — sentinel for variable expansion; pure constant.
+	"mvdan.cc/sh/v3/expand.KeepValue",
+	// mvdan.cc/sh/v3/expand.ListEnviron — converts string slice to Environ; pure function.
+	"mvdan.cc/sh/v3/expand.ListEnviron",
+	// mvdan.cc/sh/v3/expand.Literal — expands a word to a single literal string; pure function.
+	"mvdan.cc/sh/v3/expand.Literal",
+	// mvdan.cc/sh/v3/expand.String — expands a word to a string; pure function.
+	"mvdan.cc/sh/v3/expand.String",
+	// mvdan.cc/sh/v3/expand.UnsetParameterError — error for unset parameter expansion; pure type.
+	"mvdan.cc/sh/v3/expand.UnsetParameterError",
+	// mvdan.cc/sh/v3/expand.Variable — represents a shell variable; pure type.
+	"mvdan.cc/sh/v3/expand.Variable",
+	// mvdan.cc/sh/v3/expand.WriteEnviron — interface for setting environment variables; pure interface.
+	"mvdan.cc/sh/v3/expand.WriteEnviron",
+
+	// --- mvdan.cc/sh/v3/syntax --- (shell AST types and utilities)
+
+	// mvdan.cc/sh/v3/syntax.AndStmt — AST node for && operator; pure type.
+	"mvdan.cc/sh/v3/syntax.AndStmt",
+	// mvdan.cc/sh/v3/syntax.AppAll — redirect operator constant (&>>); pure constant.
+	"mvdan.cc/sh/v3/syntax.AppAll",
+	// mvdan.cc/sh/v3/syntax.AppOut — redirect operator constant (>>); pure constant.
+	"mvdan.cc/sh/v3/syntax.AppOut",
+	// mvdan.cc/sh/v3/syntax.ArithmCmd — AST node for (( )) arithmetic command; pure type.
+	"mvdan.cc/sh/v3/syntax.ArithmCmd",
+	// mvdan.cc/sh/v3/syntax.ArithmExp — AST node for $(( )) arithmetic expansion; pure type.
+	"mvdan.cc/sh/v3/syntax.ArithmExp",
+	// mvdan.cc/sh/v3/syntax.ArithmExpr — AST interface for arithmetic expressions; pure interface.
+	"mvdan.cc/sh/v3/syntax.ArithmExpr",
+	// mvdan.cc/sh/v3/syntax.Assign — AST node for variable assignment; pure type.
+	"mvdan.cc/sh/v3/syntax.Assign",
+	// mvdan.cc/sh/v3/syntax.BinaryCmd — AST node for binary command (&&, ||, |); pure type.
+	"mvdan.cc/sh/v3/syntax.BinaryCmd",
+	// mvdan.cc/sh/v3/syntax.Block — AST node for { } command group; pure type.
+	"mvdan.cc/sh/v3/syntax.Block",
+	// mvdan.cc/sh/v3/syntax.CallExpr — AST node for simple command call; pure type.
+	"mvdan.cc/sh/v3/syntax.CallExpr",
+	// mvdan.cc/sh/v3/syntax.CaseClause — AST node for case statement; pure type.
+	"mvdan.cc/sh/v3/syntax.CaseClause",
+	// mvdan.cc/sh/v3/syntax.ClbOut — redirect operator constant (>|); pure constant.
+	"mvdan.cc/sh/v3/syntax.ClbOut",
+	// mvdan.cc/sh/v3/syntax.CmdSubst — AST node for $() command substitution; pure type.
+	"mvdan.cc/sh/v3/syntax.CmdSubst",
+	// mvdan.cc/sh/v3/syntax.Command — AST interface for all command types; pure interface.
+	"mvdan.cc/sh/v3/syntax.Command",
+	// mvdan.cc/sh/v3/syntax.CoprocClause — AST node for coproc command; pure type.
+	"mvdan.cc/sh/v3/syntax.CoprocClause",
+	// mvdan.cc/sh/v3/syntax.DashHdoc — here-doc operator constant (<<-); pure constant.
+	"mvdan.cc/sh/v3/syntax.DashHdoc",
+	// mvdan.cc/sh/v3/syntax.DblQuoted — AST node for double-quoted string; pure type.
+	"mvdan.cc/sh/v3/syntax.DblQuoted",
+	// mvdan.cc/sh/v3/syntax.DeclClause — AST node for declare/local/export; pure type.
+	"mvdan.cc/sh/v3/syntax.DeclClause",
+	// mvdan.cc/sh/v3/syntax.DplIn — redirect operator constant (<&); pure constant.
+	"mvdan.cc/sh/v3/syntax.DplIn",
+	// mvdan.cc/sh/v3/syntax.DplOut — redirect operator constant (>&); pure constant.
+	"mvdan.cc/sh/v3/syntax.DplOut",
+	// mvdan.cc/sh/v3/syntax.ExtGlob — AST node for extended glob pattern; pure type.
+	"mvdan.cc/sh/v3/syntax.ExtGlob",
+	// mvdan.cc/sh/v3/syntax.File — AST root node for a parsed shell script; pure type.
+	"mvdan.cc/sh/v3/syntax.File",
+	// mvdan.cc/sh/v3/syntax.ForClause — AST node for for loop; pure type.
+	"mvdan.cc/sh/v3/syntax.ForClause",
+	// mvdan.cc/sh/v3/syntax.FuncDecl — AST node for function declaration; pure type.
+	"mvdan.cc/sh/v3/syntax.FuncDecl",
+	// mvdan.cc/sh/v3/syntax.Hdoc — here-doc operator constant (<<); pure constant.
+	"mvdan.cc/sh/v3/syntax.Hdoc",
+	// mvdan.cc/sh/v3/syntax.IfClause — AST node for if statement; pure type.
+	"mvdan.cc/sh/v3/syntax.IfClause",
+	// mvdan.cc/sh/v3/syntax.LetClause — AST node for let command; pure type.
+	"mvdan.cc/sh/v3/syntax.LetClause",
+	// mvdan.cc/sh/v3/syntax.Lit — AST node for literal string; pure type.
+	"mvdan.cc/sh/v3/syntax.Lit",
+	// mvdan.cc/sh/v3/syntax.Node — AST interface for all nodes; pure interface.
+	"mvdan.cc/sh/v3/syntax.Node",
+	// mvdan.cc/sh/v3/syntax.OrStmt — AST node for || operator; pure type.
+	"mvdan.cc/sh/v3/syntax.OrStmt",
+	// mvdan.cc/sh/v3/syntax.ParamExp — AST node for ${} parameter expansion; pure type.
+	"mvdan.cc/sh/v3/syntax.ParamExp",
+	// mvdan.cc/sh/v3/syntax.Pipe — AST node for pipeline; pure type.
+	"mvdan.cc/sh/v3/syntax.Pipe",
+	// mvdan.cc/sh/v3/syntax.PipeAll — redirect operator constant (|&); pure constant.
+	"mvdan.cc/sh/v3/syntax.PipeAll",
+	// mvdan.cc/sh/v3/syntax.Pos — source position type; pure type.
+	"mvdan.cc/sh/v3/syntax.Pos",
+	// mvdan.cc/sh/v3/syntax.ProcSubst — AST node for process substitution; pure type.
+	"mvdan.cc/sh/v3/syntax.ProcSubst",
+	// mvdan.cc/sh/v3/syntax.RdrAll — redirect operator constant (&>); pure constant.
+	"mvdan.cc/sh/v3/syntax.RdrAll",
+	// mvdan.cc/sh/v3/syntax.RdrIn — redirect operator constant (<); pure constant.
+	"mvdan.cc/sh/v3/syntax.RdrIn",
+	// mvdan.cc/sh/v3/syntax.RdrInOut — redirect operator constant (<>); pure constant.
+	"mvdan.cc/sh/v3/syntax.RdrInOut",
+	// mvdan.cc/sh/v3/syntax.RdrOut — redirect operator constant (>); pure constant.
+	"mvdan.cc/sh/v3/syntax.RdrOut",
+	// mvdan.cc/sh/v3/syntax.Redirect — AST node for I/O redirection; pure type.
+	"mvdan.cc/sh/v3/syntax.Redirect",
+	// mvdan.cc/sh/v3/syntax.SglQuoted — AST node for single-quoted string; pure type.
+	"mvdan.cc/sh/v3/syntax.SglQuoted",
+	// mvdan.cc/sh/v3/syntax.Stmt — AST node for a complete statement; pure type.
+	"mvdan.cc/sh/v3/syntax.Stmt",
+	// mvdan.cc/sh/v3/syntax.Subshell — AST node for ( ) subshell; pure type.
+	"mvdan.cc/sh/v3/syntax.Subshell",
+	// mvdan.cc/sh/v3/syntax.TestClause — AST node for [[ ]] test command; pure type.
+	"mvdan.cc/sh/v3/syntax.TestClause",
+	// mvdan.cc/sh/v3/syntax.TestDecl — AST node for test declaration; pure type.
+	"mvdan.cc/sh/v3/syntax.TestDecl",
+	// mvdan.cc/sh/v3/syntax.TimeClause — AST node for time command; pure type.
+	"mvdan.cc/sh/v3/syntax.TimeClause",
+	// mvdan.cc/sh/v3/syntax.Walk — traverses the AST; pure function, no I/O.
+	"mvdan.cc/sh/v3/syntax.Walk",
+	// mvdan.cc/sh/v3/syntax.WhileClause — AST node for while/until loop; pure type.
+	"mvdan.cc/sh/v3/syntax.WhileClause",
+	// mvdan.cc/sh/v3/syntax.Word — AST node for a shell word; pure type.
+	"mvdan.cc/sh/v3/syntax.Word",
+	// mvdan.cc/sh/v3/syntax.WordHdoc — redirect operator constant (<<<); pure constant.
+	"mvdan.cc/sh/v3/syntax.WordHdoc",
+	// mvdan.cc/sh/v3/syntax.WordIter — AST node for word iteration (for-in); pure type.
+	"mvdan.cc/sh/v3/syntax.WordIter",
+	// mvdan.cc/sh/v3/syntax.WordPart — AST interface for word components; pure interface.
+	"mvdan.cc/sh/v3/syntax.WordPart",
+}

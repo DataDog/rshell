@@ -15,16 +15,36 @@ import (
 	"testing"
 )
 
-// TestBuiltinAllowedSymbols enforces symbol-level import restrictions on
-// command implementation files in builtins/. builtins.go is exempt as
-// the package framework. Every other file's imports and pkg.Symbol references
-// must be explicitly listed in builtinAllowedSymbols.
-func TestBuiltinAllowedSymbols(t *testing.T) {
+// allowedSymbolsConfig configures a single run of the allowed-symbols check.
+type allowedSymbolsConfig struct {
+	// Symbols is the allowlist to enforce (e.g. builtinAllowedSymbols).
+	Symbols []string
+	// TargetDir is the directory to scan, relative to the repo root.
+	TargetDir string
+	// CollectFiles walks TargetDir and returns the absolute paths of Go files
+	// to check. It receives the absolute path to TargetDir.
+	CollectFiles func(dir string) ([]string, error)
+	// ExemptImport returns true for import paths that are auto-allowed and
+	// should not be checked against the allowlist.
+	ExemptImport func(importPath string) bool
+	// ListName is used in error messages (e.g. "builtinAllowedSymbols").
+	ListName string
+	// MinFiles is the minimum number of files expected (sanity check).
+	MinFiles int
+}
+
+// checkAllowedSymbols enforces symbol-level import restrictions on a set of
+// Go source files. It verifies that every imported symbol is in the allowlist,
+// that no permanently banned packages are imported, and that every symbol in
+// the allowlist is actually used.
+func checkAllowedSymbols(t *testing.T, cfg allowedSymbolsConfig) {
+	t.Helper()
+
 	// Build lookup sets from the allowlist.
-	allowedSymbols := make(map[string]bool, len(builtinAllowedSymbols))
-	usedSymbols := make(map[string]bool, len(builtinAllowedSymbols))
+	allowedSymbols := make(map[string]bool, len(cfg.Symbols))
+	usedSymbols := make(map[string]bool, len(cfg.Symbols))
 	allowedPackages := make(map[string]bool)
-	for _, entry := range builtinAllowedSymbols {
+	for _, entry := range cfg.Symbols {
 		dot := strings.LastIndexByte(entry, '.')
 		if dot <= 0 {
 			t.Fatalf("malformed allowlist entry (no dot): %q", entry)
@@ -33,45 +53,15 @@ func TestBuiltinAllowedSymbols(t *testing.T) {
 		allowedPackages[entry[:dot]] = true
 	}
 
-	// This package lives in allowedsymbols/, so the repo root is one level up.
-	dir, err2 := os.Getwd()
-	if err2 != nil {
-		t.Fatal(err2)
+	// This package lives in _allowedsymbols/, so the repo root is one level up.
+	dir, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
 	}
 	root := filepath.Dir(dir)
-	builtinsDir := filepath.Join(root, "builtins")
+	targetDir := filepath.Join(root, cfg.TargetDir)
 
-	// Collect all .go files in builtin sub-packages (each builtin lives
-	// in its own subdirectory, e.g. cat/cat.go, head/head.go). Internal
-	// shared packages (internal/) are also checked.
-	var goFiles []string
-	err := filepath.Walk(builtinsDir, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-		if info.IsDir() {
-			// testutil/ is a test-only helper package, not a command implementation.
-			if info.Name() == "testutil" {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-		if !strings.HasSuffix(info.Name(), ".go") || strings.HasSuffix(info.Name(), "_test.go") {
-			return nil
-		}
-		rel, _ := filepath.Rel(builtinsDir, path)
-		// builtins.go is the package framework (CallContext, Result, Register,
-		// Lookup) and is exempt. Only command implementation files are checked.
-		if rel == "builtins.go" {
-			return nil
-		}
-		// Only check files inside subdirectories (the per-builtin packages).
-		if !strings.Contains(rel, string(filepath.Separator)) {
-			return nil
-		}
-		goFiles = append(goFiles, path)
-		return nil
-	})
+	goFiles, err := cfg.CollectFiles(targetDir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -79,7 +69,7 @@ func TestBuiltinAllowedSymbols(t *testing.T) {
 	fset := token.NewFileSet()
 	checked := 0
 	for _, path := range goFiles {
-		rel, _ := filepath.Rel(builtinsDir, path)
+		rel, _ := filepath.Rel(targetDir, path)
 		checked++
 
 		f, err := parser.ParseFile(fset, path, nil, 0)
@@ -98,10 +88,7 @@ func TestBuiltinAllowedSymbols(t *testing.T) {
 				continue
 			}
 
-			// The parent builtins package and sibling internal packages are
-			// always allowed — they are part of the builtins module.
-			if importPath == "github.com/DataDog/rshell/builtins" ||
-				strings.HasPrefix(importPath, "github.com/DataDog/rshell/builtins/internal/") {
+			if cfg.ExemptImport(importPath) {
 				continue
 			}
 
@@ -151,15 +138,90 @@ func TestBuiltinAllowedSymbols(t *testing.T) {
 			return true
 		})
 	}
-	if checked == 0 {
-		t.Fatal("no command implementation files found in builtins/ sub-packages")
+	if checked < cfg.MinFiles {
+		t.Fatalf("expected at least %d files in %s, found %d", cfg.MinFiles, cfg.TargetDir, checked)
 	}
 
 	// Verify every symbol in the allowlist is actually used by at least one
-	// builtin. Unused entries should be removed to keep the allowlist minimal.
-	for _, entry := range builtinAllowedSymbols {
+	// file. Unused entries should be removed to keep the allowlist minimal.
+	for _, entry := range cfg.Symbols {
 		if !usedSymbols[entry] {
-			t.Errorf("allowlist symbol %q is not used by any builtin — remove it from builtinAllowedSymbols", entry)
+			t.Errorf("allowlist symbol %q is not used by any file in %s — remove it from %s", entry, cfg.TargetDir, cfg.ListName)
 		}
 	}
+}
+
+// collectSubdirGoFiles walks a directory tree and returns all non-test .go
+// files that are inside subdirectories (not at the top level). Optionally
+// skips directories by name.
+func collectSubdirGoFiles(dir string, skipDirs map[string]bool, skipTopLevel func(rel string) bool) ([]string, error) {
+	var files []string
+	err := filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if info.IsDir() {
+			if skipDirs[info.Name()] {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if !strings.HasSuffix(info.Name(), ".go") || strings.HasSuffix(info.Name(), "_test.go") {
+			return nil
+		}
+		rel, _ := filepath.Rel(dir, path)
+		if skipTopLevel != nil && skipTopLevel(rel) {
+			return nil
+		}
+		// Only check files inside subdirectories.
+		if !strings.Contains(rel, string(filepath.Separator)) {
+			return nil
+		}
+		files = append(files, path)
+		return nil
+	})
+	return files, err
+}
+
+// collectFlatGoFiles returns all non-test .go files directly in dir (not
+// in subdirectories).
+func collectFlatGoFiles(dir string) ([]string, error) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, err
+	}
+	var files []string
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		if !strings.HasSuffix(e.Name(), ".go") || strings.HasSuffix(e.Name(), "_test.go") {
+			continue
+		}
+		files = append(files, filepath.Join(dir, e.Name()))
+	}
+	return files, nil
+}
+
+// TestBuiltinAllowedSymbols enforces symbol-level import restrictions on
+// command implementation files in builtins/. builtins.go is exempt as
+// the package framework. Every other file's imports and pkg.Symbol references
+// must be explicitly listed in builtinAllowedSymbols.
+func TestBuiltinAllowedSymbols(t *testing.T) {
+	checkAllowedSymbols(t, allowedSymbolsConfig{
+		Symbols:   builtinAllowedSymbols,
+		TargetDir: "builtins",
+		CollectFiles: func(dir string) ([]string, error) {
+			return collectSubdirGoFiles(dir, map[string]bool{"testutil": true}, func(rel string) bool {
+				// builtins.go is the package framework and is exempt.
+				return rel == "builtins.go"
+			})
+		},
+		ExemptImport: func(importPath string) bool {
+			return importPath == "github.com/DataDog/rshell/builtins" ||
+				strings.HasPrefix(importPath, "github.com/DataDog/rshell/builtins/internal/")
+		},
+		ListName: "builtinAllowedSymbols",
+		MinFiles: 1,
+	})
 }
