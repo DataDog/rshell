@@ -56,15 +56,22 @@ func (o *overlayEnviron) Set(name string, vr expand.Variable) error {
 	if o.values == nil {
 		o.values = make(map[string]expand.Variable)
 	}
+	if prev.ReadOnly && vr.Kind != expand.KeepValue {
+		return fmt.Errorf("readonly variable")
+	}
 	if vr.Kind == expand.KeepValue {
+		if prev.ReadOnly {
+			return fmt.Errorf("readonly variable")
+		}
 		vr.Kind = prev.Kind
 		vr.Str = prev.Str
 		vr.List = prev.List
 		vr.Map = prev.Map
-	} else if prev.ReadOnly {
-		return fmt.Errorf("readonly variable")
 	}
 	if !vr.IsSet() { // unsetting
+		if prev.ReadOnly {
+			return fmt.Errorf("readonly variable")
+		}
 		if prev.Local {
 			vr.Local = true
 			o.values[name] = vr

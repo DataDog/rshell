@@ -105,7 +105,9 @@ func execute(ctx context.Context, script, name string, allowedPaths []string, st
 	// Parse.
 	prog, err := syntax.NewParser().Parse(strings.NewReader(script), name)
 	if err != nil {
-		return fmt.Errorf("parse error: %w", err)
+		// Bash returns exit code 2 for syntax/parse errors.
+		fmt.Fprintf(stderr, "%v\n", err)
+		return interp.ExitStatus(2)
 	}
 
 	// Build runner options.

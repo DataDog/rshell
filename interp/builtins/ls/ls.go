@@ -522,7 +522,8 @@ func joinPath(dir, name string) string {
 	if len(dir) == 0 {
 		return name
 	}
-	if dir[len(dir)-1] == '/' {
+	last := dir[len(dir)-1]
+	if last == '/' || last == '\\' {
 		return dir + name
 	}
 	return dir + "/" + name

@@ -62,8 +62,20 @@ func TestExitCode(t *testing.T) {
 
 func TestParseError(t *testing.T) {
 	code, _, stderr := runCLI(t, "-s", `echo "unterminated`)
-	assert.NotEqual(t, 0, code)
-	assert.Contains(t, stderr, "parse error")
+	assert.Equal(t, 2, code, "parse errors should return exit code 2 (matching bash)")
+	assert.Contains(t, stderr, "without closing quote")
+}
+
+func TestParseErrorSyntax(t *testing.T) {
+	code, _, stderr := runCLI(t, "-s", `if; then`)
+	assert.Equal(t, 2, code, "syntax errors should return exit code 2 (matching bash)")
+	assert.Contains(t, stderr, "must be followed by")
+}
+
+func TestParseErrorUnclosed(t *testing.T) {
+	code, _, stderr := runCLI(t, "-s", "if true; then\n  echo hello")
+	assert.Equal(t, 2, code, "unclosed blocks should return exit code 2 (matching bash)")
+	assert.Contains(t, stderr, "must end with")
 }
 
 func setupTestFile(t *testing.T) (dir, filePath string) {

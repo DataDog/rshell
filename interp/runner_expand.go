@@ -41,6 +41,9 @@ func (r *Runner) expandErr(err error) {
 	fmt.Fprintln(r.stderr, errMsg)
 	switch {
 	case errors.As(err, &expand.UnsetParameterError{}):
+	case errors.As(err, &expand.UnexpectedCommandError{}):
+		// Defense in depth: command substitution is blocked at AST validation,
+		// but if it leaks through, treat it as fatal.
 	case errMsg == "invalid indirect expansion":
 		// TODO: These errors are treated as fatal by bash.
 		// Make the error type reflect that.
