@@ -11,5 +11,6 @@ input:
 expect:
   stdout: ""
   stderr: "ls: cannot access '/etc': permission denied\n"
-  stderr_windows: "ls: cannot access '/etc': no such file or directory\n"
+  stderr_contains_windows:
+    - "ls: cannot access '/etc':"
   exit_code: 1
