@@ -25,7 +25,7 @@ func LoopControl(callCtx *builtins.CallContext, name string, args []string) buil
 		parsed, err := strconv.Atoi(args[0])
 		if err != nil {
 			callCtx.Errf("%s: %s: numeric argument required\n", name, args[0])
-			return builtins.Result{Code: 2, Exiting: true}
+			return builtins.Result{Code: 128, Exiting: true}
 		}
 		if parsed < 1 {
 			callCtx.Errf("%s: %s: loop count out of range\n", name, args[0])
