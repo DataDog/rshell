@@ -1,4 +1,3 @@
-# Derived from standard POSIX error behavior
 description: head exits 1 and prints an error when a file does not exist.
 input:
   allowed_paths: ["$DIR"]

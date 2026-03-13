@@ -243,6 +243,13 @@ func TestSubshellBackgroundCopiesEnv(t *testing.T) {
 		"background subshell env should be isolated from parent mutations")
 }
 
+func TestExpandErrUnexpectedCommand(t *testing.T) {
+	r := newResetRunner(t)
+	r.expandErr(expand.UnexpectedCommandError{Node: &syntax.CmdSubst{}})
+	assert.True(t, r.exit.exiting)
+	assert.Equal(t, uint8(1), r.exit.code)
+}
+
 func TestInternalErrorStopsExecution(t *testing.T) {
 	// After an internal error, the runner's stop() check should halt
 	// further statement execution, surfacing the error via Run.

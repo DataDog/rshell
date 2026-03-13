@@ -1,4 +1,3 @@
-# Derived from GNU coreutils cut.pl EOL-subsumed-3 test
 description: Cut with --complement on bytes excludes the specified byte positions.
 setup:
   files:

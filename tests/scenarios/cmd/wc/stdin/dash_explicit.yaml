@@ -1,4 +1,3 @@
-# Derived from uutils test_stdin_explicit
 description: wc with explicit - reads stdin and shows filename -.
 setup:
   files:

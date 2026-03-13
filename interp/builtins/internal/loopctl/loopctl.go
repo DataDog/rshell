@@ -34,7 +34,7 @@ func LoopControl(callCtx *builtins.CallContext, name string, args []string) buil
 		n = parsed
 	default:
 		callCtx.Errf("%s: too many arguments\n", name)
-		return builtins.Result{Code: 1, BreakN: 1}
+		return builtins.Result{Code: 1, Exiting: true}
 	}
 
 	var r builtins.Result

@@ -1,4 +1,3 @@
-# Derived from uutils test_invalid_arg
 description: wc rejects unknown flags with exit code 1.
 input:
   allowed_paths: ["$DIR"]

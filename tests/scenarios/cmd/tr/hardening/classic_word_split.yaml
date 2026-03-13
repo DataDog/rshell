@@ -1,4 +1,3 @@
-# Derived from GNU coreutils tr.pl — the classic word-per-line example
 description: tr -cs splits words onto separate lines.
 input:
   script: |+

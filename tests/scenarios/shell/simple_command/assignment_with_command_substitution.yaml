@@ -1,0 +1,11 @@
+# skip: command substitution is intentionally blocked in the restricted shell
+skip_assert_against_bash: true
+description: Variable assignment using command substitution is blocked.
+input:
+  script: |+
+    a=$(echo hello)
+    echo "$a"
+expect:
+  stdout: ""
+  stderr: "command substitution is not supported\n"
+  exit_code: 2

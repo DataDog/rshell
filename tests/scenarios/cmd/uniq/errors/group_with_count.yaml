@@ -1,4 +1,3 @@
-# Derived from GNU coreutils uniq.pl test 141
 description: uniq --group -c is mutually exclusive and fails.
 input:
   script: |+

@@ -1,5 +1,4 @@
 description: strings -f prints each file's name before its strings when multiple files given.
-skip_assert_against_bash: true
 setup:
   files:
     - path: alpha.bin

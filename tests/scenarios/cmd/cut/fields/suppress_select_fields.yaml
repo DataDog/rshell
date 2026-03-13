@@ -1,4 +1,3 @@
-# Derived from GNU coreutils cut.pl test b
 description: Cut with -s selects multiple fields from a delimited line.
 setup:
   files:

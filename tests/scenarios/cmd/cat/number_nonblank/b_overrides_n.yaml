@@ -1,4 +1,3 @@
-# Derived from uutils test_cat.rs::test_non_blank_overrides_number
 description: cat -b overrides -n (only non-blank lines are numbered).
 setup:
   files:

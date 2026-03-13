@@ -1,4 +1,3 @@
-# Derived from GNU coreutils test.pl eq/gt/lt tests
 description: "test integer equality and comparison operators"
 input:
   script: |+

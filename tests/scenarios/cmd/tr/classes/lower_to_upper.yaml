@@ -1,4 +1,3 @@
-# Derived from GNU coreutils tr.pl and uutils check_against_gnu_tr_tests_upcase
 description: tr translates [:lower:] to [:upper:] character class.
 input:
   script: |+

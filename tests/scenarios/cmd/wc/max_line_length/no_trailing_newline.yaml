@@ -1,4 +1,3 @@
-# Derived from GNU coreutils wc.pl test c2
 description: wc -L counts a final line with no trailing newline.
 setup:
   files:

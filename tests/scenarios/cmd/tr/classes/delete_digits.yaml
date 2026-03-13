@@ -1,4 +1,3 @@
-# Derived from GNU coreutils tr.pl test k
 description: tr -d with [:digit:] class deletes all digits.
 input:
   script: |+

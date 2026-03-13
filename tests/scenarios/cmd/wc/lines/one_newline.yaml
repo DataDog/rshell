@@ -1,4 +1,3 @@
-# Derived from GNU coreutils wc.pl test a8
 description: wc -l counts 1 for a single newline-terminated line.
 setup:
   files:

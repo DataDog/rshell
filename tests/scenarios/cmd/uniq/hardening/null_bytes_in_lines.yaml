@@ -1,4 +1,3 @@
-# Derived from GNU coreutils uniq.pl test 90
 description: uniq preserves null bytes within lines.
 setup:
   files:

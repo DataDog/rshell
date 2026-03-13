@@ -1,0 +1,487 @@
+---
+name: improve-test-coverage
+description: Improve test coverage for shell features and commands using reference test suites from yash, GNU coreutils, and uutils/coreutils
+argument-hint: "[command-name|shell-feature|all]"
+---
+
+Improve test coverage for **$ARGUMENTS** by mining reference test suites from yash, GNU coreutils, and uutils/coreutils for gaps in our scenario tests.
+
+---
+
+## ⛔ STOP — READ THIS BEFORE DOING ANYTHING ELSE ⛔
+
+You MUST follow this execution protocol. Skipping steps causes missed coverage gaps or broken tests.
+
+**IMPORTANT: Never ask the user questions or wait for confirmation. Always process ALL targets autonomously from start to finish.**
+
+### 1. Create the full task list FIRST
+
+Your very first action — before reading ANY files, before writing ANY code — is to create the task list. Call TaskCreate for each step:
+
+1. "Step 1: Enumerate all targets"
+2. "Step 2: Download reference test suites"
+
+Then for each target discovered in Step 1, you will dynamically create tasks for Steps 3–11 (see "Per-target loop" below).
+
+### 2. Execution order
+
+The workflow has two phases:
+
+**Phase A — Setup (once):** Step 1 → Step 2
+
+**Phase B — Per-target loop:** Process targets ONE AT A TIME, in sequence. For each target, run Steps 3 → 4 → 5 → 6 → 7 → 8 → 9 → 10 sequentially. Complete ALL steps for one target before starting the next. Do NOT process multiple targets in parallel.
+
+Before starting step N, call TaskList and verify step N-1 is `completed`. Set step N to `in_progress`.
+
+Before marking any step as `completed`:
+- Re-read the step description and verify every sub-bullet is satisfied
+- If any sub-bullet is not done, keep working — do NOT mark it completed
+
+---
+
+## Context
+
+The safe shell interpreter (`interp/`) implements all commands as Go builtins — it never executes host binaries. Test scenarios are YAML files in `tests/scenarios/` that are automatically validated against both the shell and bash (via Docker).
+
+### Reference test suites
+
+Three external test suites serve as coverage references:
+
+1. **yash** — a POSIX-compliant shell with thorough tests for shell language features (control flow, expansion, quoting, redirections, etc.)
+   - Repository: https://github.com/magicant/yash/tree/trunk/tests
+   - License: GPL v2; use for test **design** reference only, not verbatim copy
+   - Strengths: POSIX shell language edge cases, quoting, expansion, control flow
+
+2. **GNU coreutils** — reference implementation tests for command-line utilities
+   - Repository: https://github.com/coreutils/coreutils/tree/master/tests
+   - License: GPL v3; use for test **design** reference only
+   - Offline: `resources/gnu-coreutils-tests/`
+   - Strengths: flag combinations, edge cases, error handling, multi-file behavior
+
+3. **uutils/coreutils** — Rust rewrite of coreutils with MIT-licensed tests
+   - Repository: https://github.com/uutils/coreutils/tree/main/tests
+   - License: MIT; test logic can be freely adapted
+   - Offline: `resources/uutils-tests/`
+   - Strengths: integer edge cases, Unicode, binary input, overflow guards, cross-platform
+
+### How to decide which suite to consult
+
+| Target | Primary suite | Secondary suite |
+|--------|--------------|-----------------|
+| Shell language features (control flow, expansion, quoting, redirections, etc.) | yash | — |
+| Builtin commands (cat, head, grep, etc.) | GNU coreutils + uutils | yash (for piping/integration) |
+| Both | All three | — |
+
+---
+
+## Phase A — Setup
+
+### Step 1: Enumerate all targets
+
+Based on the argument (`$ARGUMENTS`), build the ordered list of targets to process:
+
+- **A specific command** (e.g. `cat`, `head`, `grep`): The target list is just that one command. Verify it exists as an implemented builtin by checking `interp/builtins/`.
+- **A shell feature** (e.g. `var_expand`, `globbing`, `pipe`): The target list is just that one feature. Verify the directory exists in `tests/scenarios/shell/`.
+- **`all`**: Enumerate **every** command and shell feature:
+
+```bash
+# List all implemented builtin commands
+ls interp/builtins/ | grep -v _test.go | sed 's/\.go$//' | sort
+
+# List all shell feature test directories
+ls tests/scenarios/shell/ | sort
+
+# List all command test directories
+ls tests/scenarios/cmd/ | sort
+```
+
+For each target, count its current scenario tests and note the count. Sort targets by test count ascending (fewest tests first) to prioritize the least-covered targets.
+
+Log the full target list as a table (do NOT ask for confirmation — always process all targets):
+
+| # | Target | Type | Current tests | Reference suites |
+|---|--------|------|--------------|-----------------|
+| 1 | ... | cmd/shell | N | GNU+uutils / yash |
+
+Then immediately create tasks for the per-target loop. For each target, call TaskCreate for:
+- "Step 3: Audit existing coverage — <target>"
+- "Step 4: Identify coverage gaps — <target>"
+- "Step 5: Write new scenario tests — <target>"
+- "Step 6: Check for duplicate tests — <target>"
+- "Step 7: Review skip_assert_against_bash flags — <target>"
+- "Step 8: Review unnecessary Windows-specific assertions — <target>"
+- "Step 9: Fix failing tests — <target>"
+- "Step 10: Commit, push, and post report — <target>"
+
+Set up blockedBy dependencies so each target's Step 3 is blocked by the previous target's Step 10 (and by Step 2 for the first target).
+
+### Step 2: Download reference test suites
+
+Download all reference suites once, before starting the per-target loop.
+
+#### For builtin commands
+
+First check if offline resources exist:
+
+```bash
+ls resources/gnu-coreutils-tests/ 2>/dev/null | head -5
+ls resources/uutils-tests/ 2>/dev/null | head -5
+```
+
+If offline resources are available, use them. Otherwise download:
+
+```bash
+# GNU coreutils tests
+curl -sL https://github.com/coreutils/coreutils/archive/refs/heads/master.tar.gz | tar -xz -C /tmp
+# Tests are at: /tmp/coreutils-master/tests/<command>/
+
+# uutils tests
+curl -sL https://github.com/uutils/coreutils/archive/refs/heads/main.tar.gz | tar -xz -C /tmp
+# Tests are at: /tmp/coreutils-main/tests/by-util/test_<command>.rs
+```
+
+#### For shell features
+
+Download the yash test suite:
+
+```bash
+curl -sL https://github.com/magicant/yash/archive/refs/heads/trunk.tar.gz | tar -xz -C /tmp
+# Tests are at: /tmp/yash-trunk/tests/
+```
+
+Only download the suites needed for the targets in the list. If all targets are commands, skip yash (unless needed for integration patterns). If all targets are shell features, skip GNU/uutils.
+
+---
+
+## Phase B — Per-target loop
+
+For each target in the ordered list from Step 1, execute Steps 3–11 sequentially. Replace `<target>` below with the current command or shell feature name.
+
+### Step 3: Audit existing coverage
+
+Read all existing scenario tests for the current target:
+
+```bash
+# For a command:
+find tests/scenarios/cmd/<target>/ -name "*.yaml" | sort
+
+# For a shell feature:
+find tests/scenarios/shell/<target>/ -name "*.yaml" | sort
+```
+
+Read each YAML file and build a coverage matrix. For each test, note:
+- What flag/feature/behavior it exercises
+- Whether it covers happy path, edge cases, or error cases
+- Whether it has `skip_assert_against_bash: true`
+
+Also read the Go test files if they exist:
+
+```bash
+# For a command:
+find interp/builtins/ -path "*<target>*_test.go" | sort
+find interp/ -name "builtin_<target>*_test.go" | sort
+```
+
+Read the relevant reference test files for this specific target (from the suites downloaded in Step 2):
+- For commands: read GNU coreutils and uutils test files for `<target>`, plus skim yash for integration patterns
+- For shell features: read the relevant yash test files
+
+Build a summary table of what is currently tested.
+
+### Step 4: Identify coverage gaps
+
+Cross-reference the reference test suites against existing coverage (Step 3) to find gaps.
+
+#### Gap categories to look for
+
+**For commands:**
+
+| Category | What to check |
+|----------|--------------|
+| **Untested flags** | Flags that are implemented but have no scenario test exercising them |
+| **Flag combinations** | Pairs/triples of flags used together (reference suites often test these) |
+| **Edge case inputs** | Empty file, single-line file, no trailing newline, binary input, very long lines |
+| **Error conditions** | Missing file, directory as argument, permission denied, invalid flag values |
+| **stdin behavior** | Command reading from pipe vs file, `-` as filename, interactive vs non-interactive |
+| **Multi-file behavior** | Multiple file arguments, mix of valid and invalid files, header formatting |
+| **Numeric boundaries** | Zero, one, large values, negative values (where applicable) |
+| **Special characters** | Filenames with spaces, newlines, Unicode, glob characters |
+
+**For shell features:**
+
+| Category | What to check |
+|----------|--------------|
+| **Quoting edge cases** | Nested quotes, escaped characters in different quoting contexts |
+| **Expansion edge cases** | Unset variables, empty variables, special parameters ($?, $#, $@, $*) |
+| **Control flow edge cases** | Empty bodies, nested loops, break/continue with counts |
+| **Redirection edge cases** | Multiple redirections, fd duplication, here-documents with expansion |
+| **Error handling** | Syntax errors, failed commands in pipelines, exit codes from control structures |
+| **Word splitting** | IFS variations, empty fields, splitting with special characters |
+| **Globbing** | No matches, dot files, special patterns, escaped glob characters |
+
+#### Filtering
+
+Skip reference tests that:
+- Test flags we intentionally do not implement (check the builtin's doc comment or `--help` output)
+- Test write/execute operations that our sandbox blocks
+- Test platform-specific kernel features (`/proc`, `/sys`, inotify)
+- Test GNU-specific extensions beyond POSIX that we don't support
+- Rely on external commands we don't implement
+
+#### Priority
+
+Rank gaps by importance:
+1. **P1 — Missing basic coverage**: A flag or feature has zero scenario tests
+2. **P2 — Missing edge cases**: Basic behavior is tested but edge cases from reference suites are not
+3. **P3 — Missing error paths**: Error conditions referenced in test suites are not covered
+4. **P4 — Missing combinations**: Flag combinations or integration scenarios are not covered
+
+Log the gap analysis as a summary table (do NOT ask for confirmation — proceed directly to writing tests). Include:
+- The gap description
+- The priority level
+- Whether it needs `skip_assert_against_bash: true`
+
+### Step 5: Write new scenario tests
+
+For each identified gap, create a YAML scenario test file. Follow the project conventions:
+
+#### File organization
+
+```
+tests/scenarios/cmd/<command>/<category>/<test_name>.yaml
+tests/scenarios/shell/<feature>/<category>/<test_name>.yaml
+```
+
+#### YAML format
+
+```yaml
+description: One sentence describing what this scenario tests.
+setup:
+  files:
+    - path: relative/path/in/tempdir
+      content: "file content here"
+      chmod: 0644           # optional
+      symlink: target/path  # optional
+input:
+  allowed_paths: ["$DIR"]   # "$DIR" resolves to the temp dir
+  script: |+
+    command arguments
+expect:
+  stdout: "expected output\n"
+  stderr: ""
+  exit_code: 0
+```
+
+#### Rules
+
+- **No source attribution**: Do NOT include comments referencing external test suites in YAML test files
+- **`stdout_contains` and `stderr_contains` must be YAML lists**, not scalar strings
+- **Prefer `expect.stderr`** (exact match) over `stderr_contains` unless the error message is platform-specific
+- **Prefer `expect.stdout`** (exact match) over `stdout_contains` whenever possible
+- Tests are asserted against bash by default — only set `skip_assert_against_bash: true` for features that intentionally diverge from bash. When using this flag, **always add a YAML comment explaining why** (e.g. `# skip: sandbox blocks write operations`, `# skip: intentionally restricts redirections`)
+- Use `stdout_windows`/`stderr_windows` for platform-specific output differences
+- Use `|+` for multi-line content to preserve trailing newlines
+- Do **not** use `echo -n` — the echo builtin does not support `-n` and will emit `-n ` literally. Use `printf` instead for newline-free output
+- When testing error messages from our builtins, the error format is typically `<command>: <message>` — verify by running the command in the shell first
+
+#### Determining expected output
+
+For each new test, determine the correct expected output:
+
+**Method A — Run in our shell first:**
+```bash
+go run . -c '<script>'
+```
+
+**Method B — Run in bash (Docker):**
+```bash
+docker run --rm debian:bookworm-slim bash -c '<script>'
+```
+
+**Method C — Run locally with bash:**
+```bash
+bash -c '<script>'
+```
+
+Always verify that our shell output matches bash for tests without `skip_assert_against_bash: true`.
+
+#### Batch size
+
+Write tests in batches of 10-15 files, then run verification (Step 9) before writing more. This catches format errors early.
+
+### Step 6: Check for duplicate tests
+
+Scan all scenario tests for the target (including newly written ones) and identify duplicates — tests that exercise the same behavior with the same or nearly identical scripts and expected output.
+
+#### How to detect duplicates
+
+1. **Exact duplicates**: Two YAML files with identical `input.script` and `expect` sections (possibly different descriptions or filenames)
+2. **Near duplicates**: Tests with functionally equivalent scripts that test the same behavior (e.g. same command with same flags, just different variable names or file content that doesn't change the behavior being tested)
+3. **Subset duplicates**: A test that is a strict subset of another test — everything it validates is already covered by a more comprehensive test
+
+#### Process
+
+```bash
+# For each pair of YAML files, compare the script and expected output
+# Look for files with identical or near-identical scripts
+find tests/scenarios/cmd/<target>/ -name "*.yaml" -exec grep -l "script:" {} \; | sort
+```
+
+For each duplicate found:
+- Note which files are duplicates and why
+- Recommend which one to keep (prefer the one with better description, more complete assertions, or better file organization)
+- Remove the duplicate file
+
+If no duplicates are found, note that and move on.
+
+### Step 7: Review skip_assert_against_bash flags
+
+Scan all scenario tests for the target that have `skip_assert_against_bash: true` and evaluate whether the flag is still needed.
+
+```bash
+grep -rl "skip_assert_against_bash: true" tests/scenarios/cmd/<target>/ 2>/dev/null
+grep -rl "skip_assert_against_bash: true" tests/scenarios/shell/<target>/ 2>/dev/null
+```
+
+For each flagged test:
+
+1. **Read the test** to understand what behavior it tests
+2. **Determine if the divergence is still intentional**: Run the script in bash to see what bash produces
+   ```bash
+   bash -c '<script from test>'
+   # or
+   docker run --rm debian:bookworm-slim bash -c '<script>'
+   ```
+3. **Classify the result**:
+
+| Result | Action |
+|--------|--------|
+| Our shell now matches bash | Remove `skip_assert_against_bash: true` |
+| Divergence is a bug in our shell | Note the bug, keep the flag for now, add to findings |
+| Divergence is intentional (sandbox, blocked commands, readonly) | Keep the flag, ensure a YAML comment explains why (add one if missing) |
+| Test scenario is wrong (neither matches bash nor tests intentional divergence) | Fix the test expectations |
+
+For each test where the flag is removed, verify it passes against bash:
+
+```bash
+RSHELL_BASH_TEST=1 go test ./tests/ -run "TestShellScenariosAgainstBash/<scenario_name>" -timeout 120s -v
+```
+
+### Step 8: Review unnecessary Windows-specific assertions
+
+Scan all scenario tests for the target that use Windows-specific assertion fields and evaluate whether they are actually needed.
+
+```bash
+grep -rl "stdout_windows\|stderr_windows\|stdout_contains_windows\|stderr_contains_windows" tests/scenarios/cmd/<target>/ 2>/dev/null
+grep -rl "stdout_windows\|stderr_windows\|stdout_contains_windows\|stderr_contains_windows" tests/scenarios/shell/<target>/ 2>/dev/null
+```
+
+For each test with Windows-specific assertions:
+
+1. **Read the test** and compare the Windows-specific field value against the non-Windows field value
+2. **Evaluate whether the difference is genuine**: Windows-specific assertions are only needed when output genuinely differs on Windows — typically:
+   - Path separators (`\` vs `/`)
+   - Line endings (`\r\n` vs `\n`)
+   - OS-specific error messages
+   - Windows reserved filenames (CON, PRN, NUL, etc.)
+3. **Classify the result**:
+
+| Result | Action |
+|--------|--------|
+| Windows value is identical to non-Windows value | Remove the Windows-specific field (redundant) |
+| Windows value differs only due to path separators or line endings | Keep — this is a valid platform difference |
+| Windows value differs for unclear reasons | Investigate further; if no genuine platform difference exists, remove |
+| Windows field exists but non-Windows field is missing | Check if both should have the same value and consolidate |
+
+For each unnecessary Windows-specific assertion removed, the non-Windows assertion serves as the fallback and will be used on all platforms.
+
+### Step 9: Fix failing tests
+
+Run the `/fix-ci-tests` skill to verify all tests pass and fix any failures. This will:
+- Run scenario tests and Go tests
+- Run bash comparison tests
+- Fix test expectations or shell implementation as needed
+- Re-run until all tests pass
+
+If `skip_assert_against_bash: true` is added to any test, ensure a YAML comment explains why.
+
+### Step 10: Commit, push, and post report
+
+After all tests pass for the current target, commit, push, and post a coverage report.
+
+#### 1. Commit and push
+
+```bash
+# Stage all new and modified test scenario files
+git add tests/scenarios/
+
+# Commit with a descriptive message
+git commit -m "test: improve coverage for <target>
+
+Add scenario tests to improve coverage. See PR comment for full report.
+
+Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>"
+
+# Push to the current branch
+git push
+```
+
+If the push fails (e.g. no upstream branch), set the upstream:
+
+```bash
+git push -u origin "$(git branch --show-current)"
+```
+
+#### 2. Determine the PR number
+
+```bash
+gh pr view --json number --jq '.number'
+```
+
+If no PR exists for the current branch, skip posting and print the report to the console instead.
+
+#### 3. Build and post the report
+
+Compose the report and post it as a PR comment:
+
+```markdown
+## Coverage Improvement Summary — `<target>`
+
+**Target**: <command or feature>
+**Reference suites consulted**: <list>
+
+### New tests added
+| File | Category | Description |
+|------|----------|-------------|
+| ... | ... | ... |
+
+### Coverage before/after
+- Before: N scenario tests
+- After: M scenario tests (+X new)
+- New categories covered: <list>
+
+### Cleanup
+- Duplicate tests removed: <count>
+- `skip_assert_against_bash` flags removed: <count>
+- Unnecessary Windows-specific assertions removed: <count>
+
+### Findings
+- <any shell bugs discovered>
+- <any intentional divergences noted>
+
+---
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+```
+
+```bash
+gh pr comment <PR_NUMBER> --body "$(cat <<'EOF'
+<report content here>
+EOF
+)"
+```
+
+If posting fails (e.g. permissions), print the report to the console as a fallback.
+
+#### 4. Proceed to next target
+
+After posting, move to the next target in the list and start its Step 3. Continue until all targets are processed.

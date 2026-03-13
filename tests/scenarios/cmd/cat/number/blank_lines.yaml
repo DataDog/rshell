@@ -1,4 +1,3 @@
-# Derived from uutils test_cat.rs::test_numbered_lines_no_trailing_newline
 description: cat -n numbers blank lines too.
 setup:
   files:

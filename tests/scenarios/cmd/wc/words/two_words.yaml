@@ -1,4 +1,3 @@
-# Derived from GNU coreutils wc.pl test a5
 description: wc -w counts 2 words on a line with two tokens.
 setup:
   files:

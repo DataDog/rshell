@@ -1,4 +1,3 @@
-# Derived from GNU coreutils head.pl basic tests
 description: head -n 3 outputs the first 3 lines of a file.
 setup:
   files:

@@ -1,4 +1,3 @@
-# Derived from uutils test_translate_and_squeeze
 description: tr -s translates then squeezes output.
 input:
   script: |+

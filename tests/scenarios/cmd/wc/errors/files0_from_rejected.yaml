@@ -1,5 +1,5 @@
-# Derived from GTFOBins safety requirement
 description: wc rejects --files0-from flag (security risk).
+skip_assert_against_bash: true  # intentionally rejects --files0-from (GTFOBins mitigation)
 input:
   allowed_paths: ["$DIR"]
   script: |+

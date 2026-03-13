@@ -63,6 +63,7 @@ package strings_cmd
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"strconv"
@@ -196,7 +197,7 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 				if file == "-" {
 					name = "standard input"
 				}
-				callCtx.Errf("strings: %s: %s\n", name, callCtx.PortableErr(err))
+				callCtx.Errf("%s", fmtFileError(name, err))
 				failed = true
 			}
 		}
@@ -216,6 +217,12 @@ type options struct {
 }
 
 func processFile(ctx context.Context, callCtx *builtins.CallContext, file string, opts options) error {
+	// Check for directories before opening, matching GNU strings behavior.
+	if file != "-" {
+		if info, err := callCtx.StatFile(ctx, file); err == nil && info.IsDir() {
+			return errIsDirectory
+		}
+	}
 	rc, err := openReader(ctx, callCtx, file)
 	if err != nil {
 		return err
@@ -305,6 +312,36 @@ func fmtOffset(offset int64, format radixFormat) []byte {
 	out = append(out, s...)
 	out = append(out, ' ')
 	return out
+}
+
+// errIsDirectory is a sentinel indicating the path is a directory.
+var errIsDirectory = errors.New("is a directory")
+
+// fmtFileError formats a file error message matching GNU strings output.
+// GNU strings uses:
+//
+//	strings: 'file': No such file         (for missing files)
+//	strings: Warning: 'dir' is a directory (for directories)
+func fmtFileError(name string, err error) string {
+	if errors.Is(err, errIsDirectory) {
+		return fmt.Sprintf("strings: Warning: '%s' is a directory\n", name)
+	}
+	// The sandbox normalizes OS errors via portablePathError, so check
+	// the inner error string for portable "no such file or directory".
+	msg := innerErrMsg(err)
+	if msg == "no such file or directory" {
+		return fmt.Sprintf("strings: '%s': No such file\n", name)
+	}
+	return fmt.Sprintf("strings: '%s': %s\n", name, msg)
+}
+
+// innerErrMsg extracts the innermost error message, unwrapping PathError.
+func innerErrMsg(err error) string {
+	var pe *os.PathError
+	if errors.As(err, &pe) {
+		return pe.Err.Error()
+	}
+	return err.Error()
 }
 
 func openReader(ctx context.Context, callCtx *builtins.CallContext, file string) (io.ReadCloser, error) {

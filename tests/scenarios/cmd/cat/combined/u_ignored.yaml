@@ -1,4 +1,3 @@
-# Derived from uutils test_cat.rs::test_u_ignored
 description: cat -u is accepted and silently ignored (POSIX compatibility).
 setup:
   files:

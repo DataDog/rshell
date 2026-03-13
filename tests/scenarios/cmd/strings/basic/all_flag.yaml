@@ -1,5 +1,4 @@
 description: strings -a is accepted for POSIX compatibility and behaves identically to default.
-skip_assert_against_bash: true
 setup:
   files:
     - path: data.bin

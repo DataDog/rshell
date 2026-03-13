@@ -38,6 +38,8 @@ var builtinAllowedSymbols = []string{
 	"bufio.NewScanner",
 	// bufio.Scanner — scanner type for buffered input reading; no write or exec capability.
 	"bufio.Scanner",
+	// bytes.Equal — compares two byte slices for equality; pure function, no I/O.
+	"bytes.Equal",
 	// bufio.SplitFunc — type for custom scanner split functions; pure type, no I/O.
 	"bufio.SplitFunc",
 	// context.Context — deadline/cancellation plumbing; pure interface, no side effects.
@@ -102,10 +104,14 @@ var builtinAllowedSymbols = []string{
 	"math.NaN",
 	// os.FileInfo — file metadata interface returned by Stat; no I/O side effects.
 	"os.FileInfo",
+	// os.PathError — error type for path operations; used for error inspection.
+	"os.PathError",
 	// os.O_RDONLY — read-only file flag constant; cannot open files by itself.
 	"os.O_RDONLY",
 	// regexp.Compile — compiles a regular expression; pure function, no I/O. Uses RE2 engine (linear-time, no backtracking).
 	"regexp.Compile",
+	// runtime.GOOS — string constant identifying the operating system; pure constant, no I/O.
+	"runtime.GOOS",
 	// regexp.QuoteMeta — escapes all special regex characters in a string; pure function, no I/O.
 	"regexp.QuoteMeta",
 	// regexp.Regexp — compiled regular expression type; no I/O side effects. All matching methods are linear-time (RE2).
@@ -126,20 +132,20 @@ var builtinAllowedSymbols = []string{
 	"strings.ReplaceAll",
 	// strings.ToLower — converts string to lowercase; pure function, no I/O.
 	"strings.ToLower",
-	// strconv.IntSize — platform int size constant (32 or 64); pure constant, no I/O.
-	"strconv.IntSize",
 	// strings.Split — splits a string by separator into a slice; pure function, no I/O.
 	"strings.Split",
 	// strconv.Atoi — string-to-int conversion; pure function, no I/O.
 	"strconv.Atoi",
-	// strconv.ParseBool — string-to-bool conversion; pure function, no I/O.
-	"strconv.ParseBool",
-	// strconv.Itoa — int-to-string conversion; pure function, no I/O.
-	"strconv.Itoa",
 	// strconv.ErrRange — sentinel error value for overflow; pure constant.
 	"strconv.ErrRange",
+	// strconv.IntSize — platform int size constant (32 or 64); pure constant, no I/O.
+	"strconv.IntSize",
+	// strconv.Itoa — int-to-string conversion; pure function, no I/O.
+	"strconv.Itoa",
 	// strconv.NumError — error type for numeric conversion failures; pure type.
 	"strconv.NumError",
+	// strconv.ParseBool — string-to-bool conversion; pure function, no I/O.
+	"strconv.ParseBool",
 	// strconv.ParseFloat — string-to-float conversion; pure function, no I/O.
 	"strconv.ParseFloat",
 	// strconv.ParseInt — string-to-int conversion with base/bit-size; pure function, no I/O.
@@ -148,6 +154,10 @@ var builtinAllowedSymbols = []string{
 	"strconv.ParseUint",
 	// strconv.FormatInt — int-to-string conversion; pure function, no I/O.
 	"strconv.FormatInt",
+	// syscall.EISDIR — errno constant for "is a directory"; pure constant, no I/O.
+	"syscall.EISDIR",
+	// syscall.Errno — error type wrapping an OS errno value; pure type, no I/O.
+	"syscall.Errno",
 	// strings.HasPrefix — pure function for prefix matching; no I/O.
 	"strings.HasPrefix",
 	// strings.IndexByte — finds byte in string; pure function, no I/O.
@@ -166,13 +176,11 @@ var builtinAllowedSymbols = []string{
 	"unicode.Cc",
 	// unicode.Cf — format character category range table; pure data, no I/O.
 	"unicode.Cf",
-	// unicode.Co — private-use character category range table; pure data, no I/O.
+	// unicode.Co — private use area category range table; pure data, no I/O.
 	"unicode.Co",
 	// unicode.Is — checks if rune belongs to a range table; pure function, no I/O.
 	"unicode.Is",
-	// unicode.IsControl — reports whether rune is a control character; pure function, no I/O.
-	"unicode.IsControl",
-	// unicode.IsGraphic — reports whether rune is defined as a graphic character; pure function, no I/O.
+	// unicode.IsGraphic — checks if rune is a graphic character; pure function, no I/O.
 	"unicode.IsGraphic",
 	// unicode.Zs — Unicode space separator category range table; pure data, no I/O.
 	"unicode.Zs",

@@ -1,4 +1,3 @@
-# Derived from uutils test_cat.rs::test_stdin_number_non_blank
 description: cat -b numbers only non-blank output lines.
 setup:
   files:
