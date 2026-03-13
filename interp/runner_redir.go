@@ -90,6 +90,7 @@ func (r *Runner) hdocReader(rd *syntax.Redirect) (*os.File, error) {
 		if len(hdoc) > MaxHeredocBytes {
 			pr.Close()
 			pw.Close()
+			r.errf("heredoc: content exceeds maximum size (%d bytes)\n", MaxHeredocBytes)
 			return nil, fmt.Errorf("heredoc: content exceeds maximum size (%d bytes)", MaxHeredocBytes)
 		}
 		go func() {
@@ -139,6 +140,7 @@ func (r *Runner) hdocReader(rd *syntax.Redirect) (*os.File, error) {
 	if hdocErr != nil {
 		pr.Close()
 		pw.Close()
+		r.errf("%s\n", hdocErr)
 		return nil, hdocErr
 	}
 	go func() {
