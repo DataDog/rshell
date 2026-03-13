@@ -257,7 +257,6 @@ tests/scenarios/shell/<feature>/<category>/<test_name>.yaml
 #### YAML format
 
 ```yaml
-# Derived from <suite> <test-name/function>
 description: One sentence describing what this scenario tests.
 setup:
   files:
@@ -277,7 +276,7 @@ expect:
 
 #### Rules
 
-- **Source attribution**: Include a comment at the top of each YAML file noting which reference test it was derived from (e.g. `# Derived from GNU coreutils head/head-elide-tail.sh` or `# Derived from uutils test_head.rs::test_head_big_n` or `# Derived from yash if-y.tst case 3`)
+- **No source attribution**: Do NOT include comments referencing external test suites in YAML test files
 - **`stdout_contains` and `stderr_contains` must be YAML lists**, not scalar strings
 - **Prefer `expect.stderr`** (exact match) over `stderr_contains` unless the error message is platform-specific
 - **Prefer `expect.stdout`** (exact match) over `stdout_contains` whenever possible
