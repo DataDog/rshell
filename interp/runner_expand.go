@@ -48,7 +48,11 @@ func (r *Runner) expandErr(err error) {
 		// TODO: This "has suffix" is a temporary measure until the expand
 		// package supports all syntax nodes like extended globbing.
 	default:
-		return // other cases do not exit
+		// Non-fatal expansion errors (e.g. assignment to a readonly variable):
+		// set non-zero exit status so the failure is visible, but do not exit
+		// the script — bash continues execution in this case.
+		r.exit.code = 1
+		return
 	}
 	r.exit.code = 1
 	r.exit.exiting = true
