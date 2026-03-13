@@ -1,6 +1,6 @@
-description: Script containing only whitespace exits successfully.
+description: A whitespace-only script produces no output and exits successfully.
 input:
-  script: "   \t  "
+  script: "   \t  \n  "
 expect:
   stdout: ""
   stderr: ""

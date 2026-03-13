@@ -1,7 +1,8 @@
-description: Script containing only a comment exits successfully with no output.
+description: A comment-only script produces no output and exits successfully.
 input:
   script: |+
     # this is a comment
+    # another comment
 expect:
   stdout: ""
   stderr: ""

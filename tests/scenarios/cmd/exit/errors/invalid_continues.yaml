@@ -1,10 +1,11 @@
-skip_assert_against_bash: true
-description: An invalid exit argument exits the shell; subsequent commands do not run.
+description: >
+  exit with a non-numeric argument prints an error and exits the shell
+  with code 2 (matching bash behavior). Subsequent commands do not run.
 input:
   script: |+
     exit abc; echo still running
 expect:
   stdout: ""
-  stderr: |+
-    invalid exit status code: "abc"
+  stderr_contains:
+    - "abc: numeric argument required"
   exit_code: 2

@@ -1,7 +1,6 @@
-description: Script with a single newline exits cleanly.
+description: A newline-only script produces no output and exits successfully.
 input:
-  script: |+
-
+  script: "\n\n\n"
 expect:
   stdout: ""
   stderr: ""
