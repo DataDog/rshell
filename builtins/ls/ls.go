@@ -54,10 +54,29 @@
 //	-h, --human-readable
 //	    With -l, print sizes in human-readable format (e.g. 1K, 234M).
 //
+//	--offset N  (non-standard)
+//	    Skip the first N raw directory entries before collecting results.
+//	    NOTE: offset operates on filesystem order, not sorted order —
+//	    entries are sorted only within each page. For predictable
+//	    pagination of large directories, use consistent offset/limit
+//	    pairs. Applies to single-directory listings only; silently
+//	    ignored with -R or multiple arguments.
+//
+//	--limit N  (non-standard)
+//	    Show at most N entries, capped at MaxDirEntries (1,000) per call.
+//	    Applies to single-directory listings only; silently ignored with -R
+//	    or multiple arguments.
+//
+// When a directory exceeds MaxDirEntries (1,000) and no explicit --offset/
+// --limit is given, ls prints the first 1,000 entries, emits a warning to
+// stderr, and exits 1. Use --offset/--limit to paginate through larger
+// directories.
+//
 // Exit codes:
 //
 //	0  All entries listed successfully.
 //	1  At least one error occurred (missing file, permission denied, etc.).
+//	1  Directory truncated (exceeded MaxDirEntries without --offset/--limit).
 //	1  Invalid usage (unrecognised flag, etc.).
 package ls
 
@@ -74,6 +93,9 @@ import (
 
 // maxRecursionDepth limits how deep -R will recurse to prevent stack overflow.
 const maxRecursionDepth = 256
+
+// MaxDirEntries is the maximum number of entries ls will process per directory.
+const MaxDirEntries = 1_000
 
 // errFailed is a sentinel used to signal that at least one entry had an error.
 var errFailed = errors.New("ls: one or more errors occurred")
@@ -100,6 +122,9 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 	// -1 is the default in non-terminal (always true here), accepted for compat.
 	_ = fs.Bool("one", false, "list one file per line")
 	fs.Lookup("one").Shorthand = "1"
+	// Pagination flags (long-only, non-standard).
+	offset := fs.Int("offset", 0, "skip first N entries (pagination)")
+	limit := fs.Int("limit", 0, "show at most N entries (capped at MaxDirEntries)")
 
 	return func(ctx context.Context, callCtx *builtins.CallContext, args []string) builtins.Result {
 		now := callCtx.Now()
@@ -145,6 +170,8 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			recursive:     *recursive,
 			longFmt:       *longFmt,
 			humanReadable: *humanReadable,
+			offset:        *offset,
+			limit:         *limit,
 		}
 
 		paths := args
@@ -154,6 +181,12 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 
 		failed := false
 		multipleArgs := len(paths) > 1
+
+		// Pagination applies only to single-directory listings.
+		if multipleArgs {
+			opts.offset = 0
+			opts.limit = 0
+		}
 
 		// Separate files and dirs (when not -d).
 		// Use Lstat so that symlink operands retain ModeSymlink (GNU ls default).
@@ -237,6 +270,8 @@ type options struct {
 	recursive     bool
 	longFmt       bool
 	humanReadable bool
+	offset        int
+	limit         int
 }
 
 type pathArg struct {
@@ -250,7 +285,36 @@ func listDir(ctx context.Context, callCtx *builtins.CallContext, dir string, opt
 		return errFailed
 	}
 
-	entries, err := callCtx.ReadDir(ctx, dir)
+	// Clamp negative values to zero so they become no-ops.
+	if opts.offset < 0 {
+		opts.offset = 0
+	}
+	if opts.limit < 0 {
+		opts.limit = 0
+	}
+
+	// Pagination applies only to single-directory, non-recursive listings.
+	// Silently ignore --offset/--limit when used with -R.
+	paginationActive := !opts.recursive && (opts.offset > 0 || opts.limit > 0)
+
+	// Determine effective read limit.
+	effectiveLimit := MaxDirEntries
+	if opts.limit > 0 && !opts.recursive {
+		effectiveLimit = min(opts.limit, MaxDirEntries)
+	}
+
+	// NOTE: MaxDirEntries caps raw directory reads (before hidden-file filtering)
+	// intentionally. Applying the cap after filtering would allow DoS via
+	// directories with many dotfiles — the shell would have to read unbounded
+	// entries to find visible ones.
+	//
+	// When pagination is active, offset is passed to readDir so skipping happens
+	// at the read level (O(n) memory regardless of offset). Otherwise offset=0.
+	readOffset := 0
+	if paginationActive {
+		readOffset = opts.offset
+	}
+	entries, truncated, err := readDir(ctx, callCtx, dir, readOffset, effectiveLimit)
 	if err != nil {
 		callCtx.Errf("ls: cannot open directory '%s': %s\n", dir, callCtx.PortableErr(err))
 		return err
@@ -258,22 +322,13 @@ func listDir(ctx context.Context, callCtx *builtins.CallContext, dir string, opt
 
 	// Get FileInfo for sorting (if needed) and for long format.
 	type entryInfo struct {
-		name string
-		info iofs.FileInfo
+		name      string
+		info      iofs.FileInfo
+		isSymlink bool
 	}
 
 	failed := false
 	var infoEntries []entryInfo
-
-	// Synthesize . and .. for -a (os.ReadDir never includes them).
-	// NOTE: ".." intentionally uses the same FileInfo as "." because the
-	// parent directory may be outside the sandbox and cannot be stat'd.
-	if opts.all {
-		if dotInfo, err := callCtx.StatFile(ctx, dir); err == nil {
-			infoEntries = append(infoEntries, entryInfo{name: ".", info: dotInfo})
-			infoEntries = append(infoEntries, entryInfo{name: "..", info: dotInfo})
-		}
-	}
 
 	for _, e := range entries {
 		if ctx.Err() != nil {
@@ -289,11 +344,32 @@ func listDir(ctx context.Context, callCtx *builtins.CallContext, dir string, opt
 			failed = true
 			continue
 		}
-		infoEntries = append(infoEntries, entryInfo{name: name, info: info})
+		infoEntries = append(infoEntries, entryInfo{
+			name:      name,
+			info:      info,
+			isSymlink: e.Type()&iofs.ModeSymlink != 0,
+		})
 	}
 
-	// Sort.
+	// Synthesize . and .. for -a (os.ReadDir never includes them).
+	// Added before sorting so they participate in sort modifiers (-r, -S, -t),
+	// matching bash behavior. They do not consume offset/limit slots because
+	// pagination is handled at the read level.
+	// NOTE: ".." intentionally uses the same FileInfo as "." because the
+	// parent directory may be outside the sandbox and cannot be stat'd.
+	if opts.all {
+		if dotInfo, err := callCtx.StatFile(ctx, dir); err == nil {
+			infoEntries = append(infoEntries, entryInfo{name: ".", info: dotInfo})
+			infoEntries = append(infoEntries, entryInfo{name: "..", info: dotInfo})
+		}
+	}
+
+	// Sort all entries (including . and ..) so sort modifiers apply uniformly.
 	sortEntries(infoEntries, opts, func(a entryInfo) iofs.FileInfo { return a.info }, func(a entryInfo) string { return a.name })
+
+	// Offset is handled at the read level (streaming skip in readDir),
+	// so no post-sort slicing is needed. The effectiveLimit is already
+	// enforced by readDir's maxRead parameter.
 
 	// Print.
 	for _, ei := range infoEntries {
@@ -303,16 +379,28 @@ func listDir(ctx context.Context, callCtx *builtins.CallContext, dir string, opt
 		printEntry(callCtx, ei.name, ei.info, opts, now)
 	}
 
+	// Only warn on implicit truncation (no explicit --offset/--limit).
+	// Return immediately — do not recurse (-R) into subdirectories after
+	// hitting the MaxDirEntries cap. This intentionally diverges from bash,
+	// which would continue recursion. The cap exists to bound total work;
+	// allowing recursion after truncation would let an adversarial tree
+	// (e.g. 1000 subdirs × 1000 subdirs × ...) trigger unbounded traversal.
+	if truncated && !paginationActive {
+		callCtx.Errf("ls: warning: directory '%s': too many entries (exceeded %d limit), output truncated\n", dir, MaxDirEntries)
+		return errFailed
+	}
+
 	// Recurse into subdirectories if -R.
-	// NOTE: Symlink loops are not detected because the syscall package
-	// (needed for device+inode tracking) is banned by the import allowlist.
-	// The maxRecursionDepth limit bounds total work in this case.
+	// Symlinks are skipped to match GNU ls default behaviour (which does
+	// not follow symlinks during -R traversal) and to prevent symlink-loop
+	// denial-of-service attacks. The maxRecursionDepth limit provides an
+	// additional safety bound.
 	if opts.recursive {
 		for _, ei := range infoEntries {
 			if ctx.Err() != nil {
 				break
 			}
-			if !ei.info.IsDir() {
+			if ei.isSymlink || !ei.info.IsDir() {
 				continue
 			}
 			if ei.name == "." || ei.name == ".." {
@@ -330,6 +418,16 @@ func listDir(ctx context.Context, callCtx *builtins.CallContext, dir string, opt
 		return errFailed
 	}
 	return nil
+}
+
+// readDir dispatches to ReadDirLimited when available, falling back to ReadDir.
+// The offset parameter skips raw directory entries at the read level (before sorting).
+func readDir(ctx context.Context, callCtx *builtins.CallContext, dir string, offset, maxRead int) (entries []iofs.DirEntry, truncated bool, err error) {
+	if callCtx.ReadDirLimited != nil {
+		return callCtx.ReadDirLimited(ctx, dir, offset, maxRead)
+	}
+	entries, err = callCtx.ReadDir(ctx, dir)
+	return entries, false, err
 }
 
 func printEntry(callCtx *builtins.CallContext, name string, info iofs.FileInfo, opts *options, now time.Time) {

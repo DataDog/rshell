@@ -21,6 +21,7 @@ var allowedpathsAllowedSymbols = []string{
 	"errors.Is",               // error comparison; pure function, no I/O.
 	"errors.New",              // creates a simple error value; pure function, no I/O.
 	"fmt.Errorf",              // formatted error creation; pure function, no I/O.
+	"io.EOF",                  // sentinel error value; pure constant.
 	"io.ReadWriteCloser",      // combined interface type; no side effects.
 	"io/fs.DirEntry",          // interface type for directory entries; no side effects.
 	"io/fs.ErrExist",          // sentinel error for "already exists"; pure constant.

@@ -98,6 +98,7 @@ var builtinPerCommandSymbols = map[string][]string{
 		"context.Context",     // deadline/cancellation plumbing; pure interface, no side effects.
 		"errors.New",          // creates a simple error value; pure function, no I/O.
 		"fmt.Sprintf",         // string formatting; pure function, no I/O.
+		"io/fs.DirEntry",      // interface type for directory entries; no side effects.
 		"io/fs.FileInfo",      // interface type for file information; no side effects.
 		"io/fs.ModeDir",       // file mode bit constant for directories; pure constant.
 		"io/fs.ModeNamedPipe", // file mode bit constant for named pipes; pure constant.
@@ -249,6 +250,7 @@ var builtinAllowedSymbols = []string{
 	"io.SeekCurrent",          // whence constant for Seek(offset, SeekCurrent); pure constant.
 	"io.WriteString",          // writes a string to a writer; no filesystem access, delegates to Write.
 	"io.Writer",               // interface type for writing; no side effects.
+	"io/fs.DirEntry",          // interface type for directory entries; no side effects.
 	"io/fs.FileInfo",          // interface type for file information; no side effects.
 	"io/fs.ModeDir",           // file mode bit constant for directories; pure constant.
 	"io/fs.ModeNamedPipe",     // file mode bit constant for named pipes; pure constant.
