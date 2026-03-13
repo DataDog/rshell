@@ -172,6 +172,13 @@ optLoop:
 			statRef = callCtx.StatFile
 		}
 		if _, err := statRef(ctx, ref); err != nil {
+			// With -L, a dangling symlink reference is not fatal —
+			// fall back to lstat like GNU find does.
+			if followLinks && errors.Is(err, iofs.ErrNotExist) {
+				if _, lerr := callCtx.LstatFile(ctx, ref); lerr == nil {
+					continue
+				}
+			}
 			callCtx.Errf("find: '%s': %s\n", ref, callCtx.PortableErr(err))
 			eagerNewerErrors[ref] = true
 			failed = true

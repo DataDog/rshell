@@ -7,6 +7,7 @@ package find
 
 import (
 	"context"
+	"errors"
 	iofs "io/fs"
 	"math"
 	"time"
@@ -156,9 +157,16 @@ func evalNewer(ec *evalContext, refPath string) bool {
 		}
 		refInfo, err := statRef(ec.ctx, refPath)
 		if err != nil {
-			ec.callCtx.Errf("find: '%s': %s\n", refPath, ec.callCtx.PortableErr(err))
-			ec.newerErrors[refPath] = true
-			return false
+			// With -L, a dangling symlink reference is not fatal —
+			// fall back to lstat like GNU find does.
+			if ec.followLinks && errors.Is(err, iofs.ErrNotExist) {
+				refInfo, err = ec.callCtx.LstatFile(ec.ctx, refPath)
+			}
+			if err != nil {
+				ec.callCtx.Errf("find: '%s': %s\n", refPath, ec.callCtx.PortableErr(err))
+				ec.newerErrors[refPath] = true
+				return false
+			}
 		}
 		refTime = refInfo.ModTime()
 		ec.newerCache[refPath] = refTime
