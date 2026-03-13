@@ -26,13 +26,13 @@ func TestIsExpressionStart(t *testing.T) {
 		{"-name", true},
 		{"-type", true},
 		{"-maxdepth", true},
-		{"-1", true},   // unknown predicate, but still expression
-		{"-a", true},   // short flag-like token
-		{"--", true},   // double dash, length > 1 and starts with -
+		{"-1", true}, // unknown predicate, but still expression
+		{"-a", true}, // short flag-like token
+		{"--", true}, // double dash, length > 1 and starts with -
 
 		// Path operands (NOT expression starters)
-		{")", false},      // closing paren is a path, not expression
-		{"-", false},      // single dash is a path (length 1)
+		{")", false},       // closing paren is a path, not expression
+		{"-", false},       // single dash is a path (length 1)
 		{".", false},       // current dir
 		{"..", false},      // parent dir
 		{"foo", false},     // plain word
