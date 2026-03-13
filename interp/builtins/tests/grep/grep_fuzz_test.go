@@ -15,8 +15,8 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/DataDog/rshell/interp"
 	"github.com/DataDog/rshell/builtins/testutil"
+	"github.com/DataDog/rshell/interp"
 )
 
 func cmdRunCtx(ctx context.Context, t *testing.T, script, dir string) (string, string, int) {
