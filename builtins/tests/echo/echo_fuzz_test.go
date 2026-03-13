@@ -54,7 +54,7 @@ func FuzzEcho(f *testing.F) {
 
 		_, _, code, err := tryCmdRunCtx(ctx, t, "echo '"+arg+"'", dir)
 		if err != nil {
-			return // skip unparseable scripts or internal errors
+			return // skip unparseable scripts
 		}
 		if code != 0 {
 			t.Errorf("echo unexpected exit code %d", code)
@@ -120,7 +120,7 @@ func FuzzEchoEscapes(f *testing.F) {
 
 		_, _, code, err := tryCmdRunCtx(ctx, t, "echo -e '"+arg+"'", dir)
 		if err != nil {
-			return // skip unparseable scripts or internal errors
+			return // skip unparseable scripts
 		}
 		if code != 0 {
 			t.Errorf("echo -e unexpected exit code %d", code)
@@ -170,7 +170,7 @@ func FuzzEchoFlagInteraction(f *testing.F) {
 
 		_, _, code, err := tryCmdRunCtx(ctx, t, "echo"+flags+" '"+arg+"'", dir)
 		if err != nil {
-			return // skip unparseable scripts or internal errors
+			return // skip unparseable scripts
 		}
 		if code != 0 {
 			t.Errorf("echo%s unexpected exit code %d", flags, code)
