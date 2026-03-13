@@ -29,7 +29,7 @@ The workflow has two phases:
 
 **Phase A — Setup (once):** Step 1 → Step 2
 
-**Phase B — Per-target loop:** For each target, run Steps 3 → 4 → 5 → 6 → 7 → 8 → 9 → 10 → 11 sequentially.
+**Phase B — Per-target loop:** Process targets ONE AT A TIME, in sequence. For each target, run Steps 3 → 4 → 5 → 6 → 7 → 8 → 9 → 10 sequentially. Complete ALL steps for one target before starting the next. Do NOT process multiple targets in parallel.
 
 Before starting step N, call TaskList and verify step N-1 is `completed`. Set step N to `in_progress`.
 
@@ -110,11 +110,10 @@ Then immediately create tasks for the per-target loop. For each target, call Tas
 - "Step 6: Check for duplicate tests — <target>"
 - "Step 7: Review skip_assert_against_bash flags — <target>"
 - "Step 8: Review unnecessary Windows-specific assertions — <target>"
-- "Step 9: Verify all tests pass — <target>"
-- "Step 10: Run bash comparison tests — <target>"
-- "Step 11: Commit, push, and post report — <target>"
+- "Step 9: Fix failing tests — <target>"
+- "Step 10: Commit, push, and post report — <target>"
 
-Set up blockedBy dependencies so each target's Step 3 is blocked by the previous target's Step 11 (and by Step 2 for the first target).
+Set up blockedBy dependencies so each target's Step 3 is blocked by the previous target's Step 10 (and by Step 2 for the first target).
 
 ### Step 2: Download reference test suites
 
@@ -396,45 +395,17 @@ For each test with Windows-specific assertions:
 
 For each unnecessary Windows-specific assertion removed, the non-Windows assertion serves as the fallback and will be used on all platforms.
 
-### Step 9: Verify all tests pass
+### Step 9: Fix failing tests
 
-After writing each batch of tests, run:
+Run the `/fix-local-tests` skill to verify all tests pass and fix any failures. This will:
+- Run scenario tests and Go tests
+- Run bash comparison tests
+- Fix test expectations or shell implementation as needed
+- Re-run until all tests pass
 
-```bash
-# Run all scenario tests
-go test ./tests/ -run TestShellScenarios -timeout 120s -v 2>&1 | tail -50
-```
+If `skip_assert_against_bash: true` is added to any test, ensure a YAML comment explains why.
 
-If any test fails:
-1. Read the failure output carefully
-2. Determine if the issue is in the test expectation or the shell implementation
-3. **Default assumption: fix the test to match actual bash behavior** (for coverage improvement, we're adding tests for existing behavior, not finding bugs)
-4. If you discover a genuine shell bug, note it but still write the test with the correct (bash) expected output — the test will fail and serve as a regression target
-
-Fix all failures before proceeding to the next batch or to Step 10.
-
-Also run Go tests to ensure no regressions:
-
-```bash
-go test -race ./interp/... -timeout 120s
-```
-
-### Step 10: Run bash comparison tests
-
-After all new tests for this target are written and passing, run the full bash comparison suite:
-
-```bash
-RSHELL_BASH_TEST=1 go test ./tests/ -run TestShellScenariosAgainstBash -timeout 120s
-```
-
-For any failures:
-1. Check what bash actually produces
-2. If our shell diverges from bash:
-   - If the divergence is intentional (sandbox restriction), add `skip_assert_against_bash: true` with a comment explaining why
-   - If the divergence is a bug, note it as a finding and either fix the test expectation to match bash or leave it as a failing test that documents the bug
-3. Re-run until all tests pass
-
-### Step 11: Commit, push, and post report
+### Step 10: Commit, push, and post report
 
 After all tests pass for the current target, commit, push, and post a coverage report.
 
