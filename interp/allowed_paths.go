@@ -16,6 +16,11 @@ import (
 	"strings"
 )
 
+// MaxGlobEntries is the maximum number of directory entries returned per glob
+// expansion step. Patterns that expand over directories with more entries are
+// rejected with a "too many entries" error to prevent memory exhaustion.
+const MaxGlobEntries = 100_000
+
 // allowedRoot pairs an absolute directory path with its opened os.Root handle.
 type allowedRoot struct {
 	absPath string
@@ -183,6 +188,9 @@ func (s *pathSandbox) readDir(ctx context.Context, path string) ([]fs.DirEntry, 
 	entries, err := f.ReadDir(-1)
 	if err != nil {
 		return nil, portablePathError(err)
+	}
+	if len(entries) > MaxGlobEntries {
+		return nil, &os.PathError{Op: "readdir", Path: path, Err: fmt.Errorf("too many entries (limit %d)", MaxGlobEntries)}
 	}
 	// os.Root's ReadDir does not guarantee sorted order like os.ReadDir.
 	// Sort to match POSIX glob expansion expectations.
