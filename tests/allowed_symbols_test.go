@@ -142,8 +142,8 @@ var builtinAllowedSymbols = []string{
 	"unicode.RangeTable",
 	// unicode/utf8.DecodeRune — decodes first UTF-8 rune from a byte slice; pure function, no I/O.
 	"unicode/utf8.DecodeRune",
-	// unicode/utf8.RuneCount — counts UTF-8 runes in a byte slice; pure function, no I/O.
-	"unicode/utf8.RuneCount",
+	// unicode/utf8.RuneError — replacement character returned for invalid UTF-8; constant, no I/O.
+	"unicode/utf8.RuneError",
 	// unicode/utf8.UTFMax — maximum number of bytes in a UTF-8 encoding; constant, no I/O.
 	"unicode/utf8.UTFMax",
 	// unicode/utf8.Valid — checks if a byte slice is valid UTF-8; pure function, no I/O.

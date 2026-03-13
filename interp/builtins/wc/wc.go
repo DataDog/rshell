@@ -257,7 +257,6 @@ func countReader(ctx context.Context, r io.Reader) (counts, error) {
 					tail = 0
 				}
 			}
-			c.chars += int64(utf8.RuneCount(chunk))
 			// carryN bytes are subtracted here and will be re-added via
 		// n += carryN at the top of the next iteration.
 		c.bytes -= int64(carryN)
@@ -265,6 +264,12 @@ func countReader(ctx context.Context, r io.Reader) (counts, error) {
 			for i := 0; i < len(chunk); {
 				r, size := utf8.DecodeRune(chunk[i:])
 				i += size
+				// Invalid UTF-8 byte: not a character in C.UTF-8 locale.
+				// Skip entirely — no char count, no word effect.
+				if r == utf8.RuneError && size == 1 {
+					continue
+				}
+				c.chars++
 				if r == '\n' {
 					c.lines++
 					if lineLen > c.maxLineLen {
@@ -295,7 +300,7 @@ func countReader(ctx context.Context, r io.Reader) (counts, error) {
 		}
 		if err == io.EOF {
 			if carryN > 0 {
-				c.chars += int64(utf8.RuneCount(carry[:carryN]))
+				// Incomplete UTF-8 sequence at EOF: counts as bytes but not chars.
 				c.bytes += int64(carryN)
 				carryN = 0
 			}
