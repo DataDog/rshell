@@ -1,0 +1,12 @@
+# skip: while/until loops are intentionally blocked in the restricted shell
+skip_assert_against_bash: true
+description: While loop with pipeline condition is blocked.
+input:
+  script: |+
+    while echo test | grep -q test; do
+      break
+    done
+expect:
+  stdout: ""
+  stderr: "while/until loops are not supported\n"
+  exit_code: 2
