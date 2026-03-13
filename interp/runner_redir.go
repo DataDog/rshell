@@ -16,6 +16,10 @@ import (
 	"mvdan.cc/sh/v3/syntax"
 )
 
+// MaxHeredocBytes is the maximum size of a heredoc body in bytes.
+// Heredocs exceeding this limit are rejected to prevent memory exhaustion.
+const MaxHeredocBytes = 10 << 20 // 10 MiB
+
 // isQuotedHdoc reports whether the heredoc delimiter contains any quoting.
 // Per POSIX, if any part of the delimiter is quoted, the heredoc body
 // must not undergo expansion or backslash processing.
@@ -114,6 +118,11 @@ func (r *Runner) hdocReader(rd *syntax.Redirect) (*os.File, error) {
 		}
 	}
 	flushLine()
+	if buf.Len() > MaxHeredocBytes {
+		pr.Close()
+		pw.Close()
+		return nil, fmt.Errorf("heredoc: content exceeds maximum size (%d bytes)", MaxHeredocBytes)
+	}
 	go func() {
 		pw.Write(buf.Bytes())
 		pw.Close()
