@@ -558,10 +558,12 @@ func grepFile(ctx context.Context, callCtx *builtins.CallContext, file string, o
 
 	// Binary detection: probe the first binaryProbeSize bytes before scanning
 	// so that binary status is known before any lines are emitted to stdout.
-	// GNU grep reads an initial chunk for the same reason. We use a single
+	// GNU grep reads an initial chunk (≥32 KiB) for the same reason; we match
+	// that window so binary status is determined for the vast majority of
+	// real-world binary files before any output is produced. We use a single
 	// Read() (not ReadFull) so we never block waiting for a full buffer — on
 	// a pipe we get whatever bytes are immediately available.
-	const binaryProbeSize = 512
+	const binaryProbeSize = 32 * 1024
 	isBinary := false
 	var reader io.Reader = rc
 	if !opts.textMode {
