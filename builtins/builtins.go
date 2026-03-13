@@ -87,8 +87,17 @@ type CallContext struct {
 	OpenFile func(ctx context.Context, path string, flags int, mode os.FileMode) (io.ReadWriteCloser, error)
 
 	// ReadDir reads a directory within the shell's path restrictions.
-	// Entries are returned sorted by name.
+	// Entries are returned sorted by name. Used by builtins like ls
+	// that need deterministic sorted output.
 	ReadDir func(ctx context.Context, path string) ([]fs.DirEntry, error)
+
+	// OpenDir opens a directory within the shell's path restrictions for
+	// incremental reading via ReadDir(n). Caller must close the handle.
+	OpenDir func(ctx context.Context, path string) (fs.ReadDirFile, error)
+
+	// IsDirEmpty checks whether a directory is empty by reading at most
+	// one entry. More efficient than reading all entries.
+	IsDirEmpty func(ctx context.Context, path string) (bool, error)
 
 	// ReadDirLimited reads directory entries, skipping the first offset entries
 	// and returning up to maxRead entries sorted by name within the read window.
@@ -113,6 +122,12 @@ type CallContext struct {
 	// calling time.Now() directly, so the time source is consistent and
 	// testable.
 	Now func() time.Time
+
+	// FileIdentity extracts canonical file identity from FileInfo.
+	// On Unix: dev+inode from Stat_t. On Windows: volume serial + file index
+	// via GetFileInformationByHandle. The path parameter is needed on Windows
+	// where FileInfo.Sys() lacks identity fields; Unix ignores it.
+	FileIdentity func(path string, info fs.FileInfo) (FileID, bool)
 }
 
 // Out writes a string to stdout.
@@ -128,6 +143,14 @@ func (c *CallContext) Outf(format string, a ...any) {
 // Errf writes a formatted string to stderr.
 func (c *CallContext) Errf(format string, a ...any) {
 	fmt.Fprintf(c.Stderr, format, a...)
+}
+
+// FileID is a comparable file identity for cycle detection.
+// On Unix: device + inode. On Windows: volume serial + file index.
+// Used as map key for visited-set tracking.
+type FileID struct {
+	Dev uint64
+	Ino uint64
 }
 
 // Result captures the outcome of executing a builtin command.

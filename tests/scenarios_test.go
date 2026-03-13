@@ -17,6 +17,9 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
+
+	"slices"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -48,7 +51,8 @@ type setupFile struct {
 	Path    string      `yaml:"path"`
 	Content string      `yaml:"content"`
 	Chmod   os.FileMode `yaml:"chmod"`
-	Symlink string      `yaml:"symlink"` // if set, create a symlink pointing to this target (relative to test dir)
+	Symlink string      `yaml:"symlink"`  // if set, create a symlink pointing to this target (relative to test dir)
+	ModTime string      `yaml:"mod_time"` // if set, override the file's modification time (RFC 3339 format)
 }
 
 // input holds the shell script to execute.
@@ -67,6 +71,7 @@ type input struct {
 // expected holds the expected output for a scenario.
 type expected struct {
 	Stdout                string   `yaml:"stdout"`
+	StdoutUnordered       string   `yaml:"stdout_unordered"`
 	StdoutWindows         *string  `yaml:"stdout_windows"`
 	StdoutContains        []string `yaml:"stdout_contains"`
 	StdoutContainsWindows []string `yaml:"stdout_contains_windows"`
@@ -132,6 +137,11 @@ func setupTestDir(t *testing.T, sc scenario) string {
 			if f.Chmod != 0 {
 				require.NoError(t, os.Chmod(fullPath, f.Chmod), "failed to chmod file %s", f.Path)
 			}
+		}
+		if f.ModTime != "" {
+			mt, err := time.Parse(time.RFC3339, f.ModTime)
+			require.NoError(t, err, "failed to parse mod_time for %s", f.Path)
+			require.NoError(t, os.Chtimes(fullPath, mt, mt), "failed to set mod_time for %s", f.Path)
 		}
 	}
 	return dir
@@ -223,6 +233,12 @@ func assertExpectations(t *testing.T, sc scenario, stdout, stderr string, exitCo
 		for _, substr := range stdoutContains {
 			assert.Contains(t, stdout, substr, "stdout should contain %q", substr)
 		}
+	} else if sc.Expect.StdoutUnordered != "" {
+		wantLines := strings.Split(sc.Expect.StdoutUnordered, "\n")
+		gotLines := strings.Split(stdout, "\n")
+		slices.Sort(wantLines)
+		slices.Sort(gotLines)
+		assert.Equal(t, wantLines, gotLines, "stdout mismatch (unordered)")
 	} else {
 		assert.Equal(t, expectedStdout, stdout, "stdout mismatch")
 	}
@@ -261,6 +277,11 @@ func setupTestDirIn(t *testing.T, parentDir, scriptsDir, subdir string, sc scena
 			if f.Chmod != 0 {
 				require.NoError(t, os.Chmod(fullPath, f.Chmod), "failed to chmod file %s", f.Path)
 			}
+		}
+		if f.ModTime != "" {
+			mt, err := time.Parse(time.RFC3339, f.ModTime)
+			require.NoError(t, err, "failed to parse mod_time for %s", f.Path)
+			require.NoError(t, os.Chtimes(fullPath, mt, mt), "failed to set mod_time for %s", f.Path)
 		}
 	}
 	require.NoError(t, os.WriteFile(filepath.Join(scriptsDir, subdir+".sh"), []byte(sc.Input.Script), 0644))
