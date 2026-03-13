@@ -90,7 +90,24 @@ For failures where the test expectation is wrong (not matching bash):
    RSHELL_BASH_TEST=1 go test ./tests/ -run TestShellScenariosAgainstBash/<scenario> -timeout 120s -v
    ```
 
-### 6. Verify all fixes
+### 6. Fix fuzz failures
+
+If a `Fuzz*` test is failing (either a fuzzer-discovered corpus entry or a seed):
+
+1. Run it to see the error: `go test -v -run FuzzFuncName/corpushash ./interp/builtins/tests/<pkg>/`
+2. Fix the **implementation** — never weaken the fuzz input filter to hide the bug
+3. If the fix is to the input filter (e.g. the input is legitimately unsupported), that is also acceptable, but the reason must be clear from a comment
+4. **Always commit the failing corpus file** at `testdata/fuzz/<FuzzFuncName>/<hash>` — it becomes a permanent regression test
+
+To reproduce a fuzzer-found crash from a log message, create the corpus file manually:
+```
+go test fuzz v1
+[]byte("...")
+string("...")
+```
+Place it at `interp/builtins/tests/<pkg>/testdata/fuzz/<FuzzFuncName>/<hash>` and re-run.
+
+### 7. Verify all fixes
 
 After all fixes are applied, run the full test suite:
 
