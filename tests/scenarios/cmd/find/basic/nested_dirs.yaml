@@ -1,5 +1,4 @@
 description: find recurses into nested directories.
-skip_assert_against_bash: true
 setup:
   files:
     - path: a/b/c.txt
@@ -13,7 +12,7 @@ input:
   script: |+
     find a
 expect:
-  stdout: |+
+  stdout_unordered: |+
     a
     a/b
     a/b/c.txt

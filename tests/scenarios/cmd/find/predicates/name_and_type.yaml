@@ -1,5 +1,4 @@
 description: find -name combined with -type (implicit AND).
-skip_assert_against_bash: true
 setup:
   files:
     - path: src/main.go
@@ -16,7 +15,7 @@ input:
   script: |+
     find src -name '*.go' -type f
 expect:
-  stdout: |+
+  stdout_unordered: |+
     src/main.go
     src/util.go
   stderr: ""

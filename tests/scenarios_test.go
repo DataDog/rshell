@@ -19,6 +19,8 @@ import (
 	"testing"
 	"time"
 
+	"slices"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
@@ -69,6 +71,7 @@ type input struct {
 // expected holds the expected output for a scenario.
 type expected struct {
 	Stdout                string   `yaml:"stdout"`
+	StdoutUnordered       string   `yaml:"stdout_unordered"`
 	StdoutWindows         *string  `yaml:"stdout_windows"`
 	StdoutContains        []string `yaml:"stdout_contains"`
 	StdoutContainsWindows []string `yaml:"stdout_contains_windows"`
@@ -230,6 +233,12 @@ func assertExpectations(t *testing.T, sc scenario, stdout, stderr string, exitCo
 		for _, substr := range stdoutContains {
 			assert.Contains(t, stdout, substr, "stdout should contain %q", substr)
 		}
+	} else if sc.Expect.StdoutUnordered != "" {
+		wantLines := strings.Split(sc.Expect.StdoutUnordered, "\n")
+		gotLines := strings.Split(stdout, "\n")
+		slices.Sort(wantLines)
+		slices.Sort(gotLines)
+		assert.Equal(t, wantLines, gotLines, "stdout mismatch (unordered)")
 	} else {
 		assert.Equal(t, expectedStdout, stdout, "stdout mismatch")
 	}

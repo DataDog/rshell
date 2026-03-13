@@ -13,7 +13,7 @@ input:
     find dir -type f -size +1G
     find dir -type f -size -2G
 expect:
-  stdout: |+
+  stdout_unordered: |+
     dir/small.txt
     dir/tiny.txt
   stderr: ""

@@ -1,5 +1,4 @@
 description: find -path matches full path with glob pattern.
-skip_assert_against_bash: true  # intentional: rshell sorts output alphabetically, GNU find uses readdir order
 setup:
   files:
     - path: src/main.go
@@ -16,7 +15,7 @@ input:
   script: |+
     find . -path './src/*.go' -type f
 expect:
-  stdout: |+
+  stdout_unordered: |+
     ./src/main.go
     ./src/util.go
   stderr: ""

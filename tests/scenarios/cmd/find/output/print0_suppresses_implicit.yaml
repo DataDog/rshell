@@ -1,5 +1,4 @@
 description: "-print0 in one OR branch suppresses implicit -print globally."
-skip_assert_against_bash: true  # intentional: rshell sorts output alphabetically, GNU find uses readdir order
 setup:
   files:
     - path: dir/a.txt
@@ -16,6 +15,8 @@ input:
   script: |+
     find dir -name '*.txt' -print0 -o -name '*.log'
 expect:
-  stdout: "dir/a.txt\x00dir/c.txt\x00"
+  stdout_contains:
+    - "dir/a.txt"
+    - "dir/c.txt"
   stderr: ""
   exit_code: 0

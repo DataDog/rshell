@@ -1,5 +1,4 @@
 description: find with no args searches current directory.
-skip_assert_against_bash: true
 setup:
   files:
     - path: a.txt
@@ -13,7 +12,7 @@ input:
   script: |+
     find
 expect:
-  stdout: |+
+  stdout_unordered: |+
     .
     ./a.txt
     ./b.txt

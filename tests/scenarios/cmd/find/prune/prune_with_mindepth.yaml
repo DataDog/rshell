@@ -13,9 +13,9 @@ setup:
 input:
   allowed_paths: ["$DIR"]
   script: |+
-    find dir -mindepth 2 -name skip -prune -o -type f -print | sort
+    find dir -mindepth 2 -name skip -prune -o -type f -print
 expect:
-  stdout: |+
+  stdout_unordered: |+
     dir/keep/c.txt
     dir/skip/a.txt
     dir/skip/sub/b.txt

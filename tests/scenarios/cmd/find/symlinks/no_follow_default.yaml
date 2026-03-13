@@ -1,5 +1,4 @@
 description: Default behavior lists symlinks as-is without following.
-skip_assert_against_bash: true
 setup:
   files:
     - path: dir/target.txt
@@ -12,7 +11,7 @@ input:
   script: |+
     find dir
 expect:
-  stdout: |+
+  stdout_unordered: |+
     dir
     dir/link.txt
     dir/target.txt

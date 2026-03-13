@@ -1,5 +1,4 @@
 description: Explicit -print inside OR branches prints only matching entries.
-skip_assert_against_bash: true
 setup:
   files:
     - path: dir/a.txt
@@ -16,7 +15,7 @@ input:
   script: |+
     find dir -name '*.txt' -print -o -name '*.go' -print
 expect:
-  stdout: |+
+  stdout_unordered: |+
     dir/a.txt
     dir/b.go
   stderr: ""

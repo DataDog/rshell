@@ -15,9 +15,8 @@ input:
   script: |+
     find dir -name '*.txt' -o -name '*.go'
 expect:
-  stdout: |+
+  stdout_unordered: |+
     dir/a.txt
     dir/b.go
   stderr: ""
   exit_code: 0
-skip_assert_against_bash: true

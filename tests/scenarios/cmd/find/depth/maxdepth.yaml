@@ -1,5 +1,4 @@
 description: find -maxdepth limits traversal depth.
-skip_assert_against_bash: true
 setup:
   files:
     - path: a/b/c/deep.txt
@@ -13,7 +12,7 @@ input:
   script: |+
     find a -maxdepth 1
 expect:
-  stdout: |+
+  stdout_unordered: |+
     a
     a/b
     a/top.txt

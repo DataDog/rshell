@@ -1,5 +1,4 @@
 description: "-maxdepth works between two predicates."
-skip_assert_against_bash: true
 setup:
   files:
     - path: a/b/c/deep.txt
@@ -16,7 +15,7 @@ input:
   script: |+
     find a -type f -maxdepth 2 -name '*.txt'
 expect:
-  stdout: |+
+  stdout_unordered: |+
     a/b/mid.txt
     a/top.txt
   stderr: ""

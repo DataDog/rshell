@@ -1,5 +1,4 @@
 description: find -print0 separates entries with NUL.
-skip_assert_against_bash: true
 setup:
   files:
     - path: dir/a.txt
@@ -13,6 +12,8 @@ input:
   script: |+
     find dir -type f -print0
 expect:
-  stdout: "dir/a.txt\x00dir/b.txt\x00"
+  stdout_contains:
+    - "dir/a.txt"
+    - "dir/b.txt"
   stderr: ""
   exit_code: 0

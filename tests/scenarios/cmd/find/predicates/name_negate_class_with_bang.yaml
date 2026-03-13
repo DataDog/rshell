@@ -1,5 +1,4 @@
 description: "find -name with [^!...] negated character class treats ! as literal after ^"
-skip_assert_against_bash: true  # filesystem setup differs
 setup:
   files:
     - path: dir/a.txt
@@ -16,7 +15,7 @@ input:
   script: |+
     find dir -type f -name '[^!]*'
 expect:
-  stdout: |+
+  stdout_unordered: |+
     dir/a.txt
     dir/b.txt
   stderr: ""

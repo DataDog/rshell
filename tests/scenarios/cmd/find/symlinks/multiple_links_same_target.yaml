@@ -1,5 +1,4 @@
 description: -L traverses multiple symlinks to the same target without false loop errors.
-skip_assert_against_bash: true
 setup:
   files:
     - path: shared/file.txt
@@ -14,7 +13,7 @@ input:
   script: |+
     find -L dir -type f
 expect:
-  stdout: |+
+  stdout_unordered: |+
     dir/link1/file.txt
     dir/link2/file.txt
   stderr: ""

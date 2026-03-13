@@ -1,5 +1,4 @@
 description: find with parentheses for grouping.
-skip_assert_against_bash: true
 setup:
   files:
     - path: dir/a.txt
@@ -16,7 +15,7 @@ input:
   script: |+
     find dir -type f '(' -name '*.txt' -o -name '*.go' ')'
 expect:
-  stdout: |+
+  stdout_unordered: |+
     dir/a.txt
     dir/b.go
   stderr: ""

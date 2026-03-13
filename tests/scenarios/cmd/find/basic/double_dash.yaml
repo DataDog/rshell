@@ -1,5 +1,4 @@
 description: find -- terminates global options, remaining args are paths.
-skip_assert_against_bash: true  # rshell output order may differ
 setup:
   files:
     - path: dir/file.txt
@@ -9,7 +8,7 @@ input:
   script: |+
     find -- dir -type f
 expect:
-  stdout: |+
+  stdout_unordered: |+
     dir/file.txt
   stderr: ""
   exit_code: 0

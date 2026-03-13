@@ -1,5 +1,4 @@
 description: -name with [!a]* negated bracket class excludes files starting with a.
-skip_assert_against_bash: true  # rshell find output order may differ
 setup:
   files:
     - path: dir/apple
@@ -13,7 +12,7 @@ input:
   script: |+
     find dir -name '[!a]*' -type f
 expect:
-  stdout: |+
+  stdout_unordered: |+
     dir/banana
     dir/cherry
   exit_code: 0

@@ -245,6 +245,9 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 			ReadDir: func(ctx context.Context, path string) ([]fs.DirEntry, error) {
 				return r.sandbox.readDir(r.handlerCtx(ctx, todoPos), path)
 			},
+			ReadDirUnsorted: func(ctx context.Context, path string) ([]fs.DirEntry, error) {
+				return r.sandbox.readDirUnsorted(r.handlerCtx(ctx, todoPos), path)
+			},
 			ReadDirLimited: func(ctx context.Context, path string, offset, maxRead int) ([]fs.DirEntry, bool, error) {
 				return r.sandbox.readDirLimited(r.handlerCtx(ctx, todoPos), path, offset, maxRead)
 			},

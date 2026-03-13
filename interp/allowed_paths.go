@@ -168,6 +168,7 @@ func (s *pathSandbox) open(ctx context.Context, path string, flag int, perm os.F
 }
 
 // readDir implements the restricted directory-read policy.
+// Entries are returned sorted by name for deterministic output (used by ls).
 func (s *pathSandbox) readDir(ctx context.Context, path string) ([]fs.DirEntry, error) {
 	absPath := toAbs(path, HandlerCtx(ctx).Dir)
 
@@ -190,6 +191,29 @@ func (s *pathSandbox) readDir(ctx context.Context, path string) ([]fs.DirEntry, 
 	slices.SortFunc(entries, func(a, b fs.DirEntry) int {
 		return strings.Compare(a.Name(), b.Name())
 	})
+	return entries, nil
+}
+
+// readDirUnsorted implements the restricted directory-read policy without
+// sorting. Entries are returned in filesystem-dependent order, matching
+// the behaviour of GNU find's readdir traversal.
+func (s *pathSandbox) readDirUnsorted(ctx context.Context, path string) ([]fs.DirEntry, error) {
+	absPath := toAbs(path, HandlerCtx(ctx).Dir)
+
+	root, relPath, ok := s.resolve(absPath)
+	if !ok {
+		return nil, &os.PathError{Op: "readdir", Path: path, Err: os.ErrPermission}
+	}
+
+	f, err := root.Open(relPath)
+	if err != nil {
+		return nil, portablePathError(err)
+	}
+	defer f.Close()
+	entries, err := f.ReadDir(-1)
+	if err != nil {
+		return nil, portablePathError(err)
+	}
 	return entries, nil
 }
 

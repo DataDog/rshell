@@ -359,7 +359,7 @@ func walkPath(
 		// Descend into directories unless pruned or beyond maxdepth.
 		if entry.info.IsDir() && !prune && entry.depth < opts.maxDepth {
 
-			entries, readErr := callCtx.ReadDir(ctx, entry.path)
+			entries, readErr := callCtx.ReadDirUnsorted(ctx, entry.path)
 			if readErr != nil {
 				callCtx.Errf("find: '%s': %s\n", entry.path, callCtx.PortableErr(readErr))
 				failed = true
@@ -367,10 +367,8 @@ func walkPath(
 			}
 
 			// Add children in reverse order so they come off the stack in
-			// alphabetical order (DFS with correct ordering).
-			// NOTE: ReadDir returns entries sorted by name (see builtins.go),
-			// so find output is always alphabetically ordered. This intentionally
-			// diverges from GNU find, which uses filesystem-dependent readdir order.
+			// the original readdir order (DFS). ReadDirUnsorted returns
+			// entries in filesystem-dependent order, matching GNU find.
 			for j := len(entries) - 1; j >= 0; j-- {
 				if ctx.Err() != nil {
 					break

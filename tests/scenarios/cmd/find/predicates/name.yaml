@@ -1,5 +1,4 @@
 description: find -name matches basename glob pattern.
-skip_assert_against_bash: true
 setup:
   files:
     - path: dir/hello.txt
@@ -16,7 +15,7 @@ input:
   script: |+
     find dir -name '*.txt'
 expect:
-  stdout: |+
+  stdout_unordered: |+
     dir/hello.txt
     dir/sub/test.txt
   stderr: ""

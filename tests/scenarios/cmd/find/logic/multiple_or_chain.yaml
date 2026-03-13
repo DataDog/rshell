@@ -1,5 +1,4 @@
 description: Chained OR with three alternatives.
-skip_assert_against_bash: true
 setup:
   files:
     - path: dir/a.txt
@@ -19,7 +18,7 @@ input:
   script: |+
     find dir -type f '(' -name '*.txt' -o -name '*.go' -o -name '*.md' ')'
 expect:
-  stdout: |+
+  stdout_unordered: |+
     dir/a.txt
     dir/b.go
     dir/c.md

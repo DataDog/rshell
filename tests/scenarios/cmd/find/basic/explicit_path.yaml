@@ -1,5 +1,4 @@
 description: find with an explicit path lists the tree rooted at that path.
-skip_assert_against_bash: true
 setup:
   files:
     - path: mydir/file1.txt
@@ -13,7 +12,7 @@ input:
   script: |+
     find mydir
 expect:
-  stdout: |+
+  stdout_unordered: |+
     mydir
     mydir/file1.txt
     mydir/file2.txt

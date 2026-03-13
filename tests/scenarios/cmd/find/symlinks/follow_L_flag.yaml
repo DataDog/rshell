@@ -1,5 +1,4 @@
 description: find -L follows symlinks so -type f matches through links.
-skip_assert_against_bash: true
 setup:
   files:
     - path: dir/target.txt
@@ -12,7 +11,7 @@ input:
   script: |+
     find -L dir -type f
 expect:
-  stdout: |+
+  stdout_unordered: |+
     dir/link.txt
     dir/target.txt
   stderr: ""

@@ -1,5 +1,4 @@
 description: -name character class matches multibyte UTF-8 characters.
-skip_assert_against_bash: true # filesystem encoding may differ
 setup:
   files:
     - path: dir/a
@@ -13,7 +12,7 @@ input:
   script: |+
     find dir -name '[aé]' -type f
 expect:
-  stdout: |+
+  stdout_unordered: |+
     dir/a
     dir/é
   stderr: ""

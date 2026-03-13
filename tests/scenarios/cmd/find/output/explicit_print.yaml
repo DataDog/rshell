@@ -1,5 +1,4 @@
 description: Explicit -print suppresses implicit print.
-skip_assert_against_bash: true
 setup:
   files:
     - path: dir/a.txt
@@ -13,7 +12,7 @@ input:
   script: |+
     find dir -name '*.txt' -print
 expect:
-  stdout: |+
+  stdout_unordered: |+
     dir/a.txt
     dir/b.txt
   stderr: ""
