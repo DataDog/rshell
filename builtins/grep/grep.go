@@ -78,6 +78,10 @@
 //	    Use PATTERN as the pattern. If this option is used multiple
 //	    times, search for all patterns given.
 //
+//	-a, --text
+//	    Process a binary file as if it were text; all lines (including
+//	    those containing NUL bytes) are treated as text and may match.
+//
 //	-m NUM, --max-count=NUM
 //	    Stop reading a file after NUM matching lines.
 //
@@ -552,13 +556,27 @@ func grepFile(ctx context.Context, callCtx *builtins.CallContext, file string, o
 		displayName = "(standard input)"
 	}
 
-	// isBinary is set lazily during the scan loop when a NUL byte is found in
-	// any line. GNU grep treats files containing NUL bytes as binary unless
-	// -a/--text is set. Checking line-by-line (rather than pre-reading a fixed
-	// chunk) means detection is not limited to the first N bytes of the file.
+	// Binary detection: probe the first binaryProbeSize bytes before scanning
+	// so that binary status is known before any lines are emitted to stdout.
+	// GNU grep reads an initial chunk for the same reason. We use a single
+	// Read() (not ReadFull) so we never block waiting for a full buffer — on
+	// a pipe we get whatever bytes are immediately available.
+	const binaryProbeSize = 512
 	isBinary := false
+	var reader io.Reader = rc
+	if !opts.textMode {
+		probeBuf := make([]byte, binaryProbeSize)
+		n, _ := rc.Read(probeBuf) //nolint:errcheck — EOF is fine; err handled by scanner
+		probeBuf = probeBuf[:n]
+		if containsNUL(probeBuf) {
+			isBinary = true
+		}
+		if n > 0 {
+			reader = io.MultiReader(bytes.NewReader(probeBuf), rc)
+		}
+	}
 
-	sc := bufio.NewScanner(rc)
+	sc := bufio.NewScanner(reader)
 	buf := make([]byte, scanBufInit)
 	sc.Buffer(buf, MaxLineBytes)
 
@@ -580,8 +598,8 @@ func grepFile(ctx context.Context, callCtx *builtins.CallContext, file string, o
 		lineNum++
 		lineBytes := sc.Bytes()
 
-		// Detect NUL bytes in this line. Once set, isBinary stays true for
-		// the remainder of the file.
+		// Detect NUL bytes in this line. Catches NULs beyond the initial
+		// probe window. Once set, isBinary stays true for the file.
 		if !opts.textMode && !isBinary && containsNUL(lineBytes) {
 			isBinary = true
 		}
