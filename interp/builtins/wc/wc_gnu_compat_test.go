@@ -150,6 +150,9 @@ func TestGNUCompatCharsMultibyte(t *testing.T) {
 
 // TestGNUCompatControlCharIsNotWord — control byte \x01 is transparent to word counting.
 //
+// GNU wc in POSIX locale treats C0 control characters as transparent:
+// they neither start nor end words. Only printable chars form words.
+//
 // GNU command: printf '\x01\n' | gwc -w
 // Expected: "0\n"
 func TestGNUCompatControlCharIsNotWord(t *testing.T) {

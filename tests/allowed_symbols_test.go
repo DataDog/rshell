@@ -48,8 +48,12 @@ var builtinAllowedSymbols = []string{
 	"errors.Is",
 	// errors.New — creates a simple error value; pure function, no I/O.
 	"errors.New",
+	// fmt.Errorf — creates a formatted error value; pure function, no I/O.
+	"fmt.Errorf",
 	// fmt.Sprintf — string formatting; pure function, no I/O.
 	"fmt.Sprintf",
+	// io/fs.DirEntry — interface type for directory entries; no side effects.
+	"io/fs.DirEntry",
 	// io/fs.FileInfo — interface type for file information; no side effects.
 	"io/fs.FileInfo",
 	// io/fs.ModeDir — file mode bit constant for directories; pure constant.
@@ -102,6 +106,8 @@ var builtinAllowedSymbols = []string{
 	"slices.Reverse",
 	// slices.SortFunc — sorts a slice with a comparison function; pure function, no I/O.
 	"slices.SortFunc",
+	// slices.SortStableFunc — stable sort with a comparison function; pure function, no I/O.
+	"slices.SortStableFunc",
 	// strings.Builder — efficient string concatenation; pure in-memory buffer, no I/O.
 	"strings.Builder",
 	// strings.ContainsRune — checks if a rune is in a string; pure function, no I/O.
@@ -152,8 +158,16 @@ var builtinAllowedSymbols = []string{
 	"unicode.Cc",
 	// unicode.Cf — format character category range table; pure data, no I/O.
 	"unicode.Cf",
+	// unicode.Co — private-use character category range table; pure data, no I/O.
+	"unicode.Co",
 	// unicode.Is — checks if rune belongs to a range table; pure function, no I/O.
 	"unicode.Is",
+	// unicode.IsControl — reports whether rune is a control character; pure function, no I/O.
+	"unicode.IsControl",
+	// unicode.IsGraphic — reports whether rune is defined as a graphic character; pure function, no I/O.
+	"unicode.IsGraphic",
+	// unicode.Zs — Unicode space separator category range table; pure data, no I/O.
+	"unicode.Zs",
 	// unicode.Me — enclosing mark category range table; pure data, no I/O.
 	"unicode.Me",
 	// unicode.Mn — nonspacing mark category range table; pure data, no I/O.
@@ -166,8 +180,8 @@ var builtinAllowedSymbols = []string{
 	"unicode.RangeTable",
 	// unicode/utf8.DecodeRune — decodes first UTF-8 rune from a byte slice; pure function, no I/O.
 	"unicode/utf8.DecodeRune",
-	// unicode/utf8.RuneCount — counts UTF-8 runes in a byte slice; pure function, no I/O.
-	"unicode/utf8.RuneCount",
+	// unicode/utf8.RuneError — replacement character returned for invalid UTF-8; constant, no I/O.
+	"unicode/utf8.RuneError",
 	// unicode/utf8.UTFMax — maximum number of bytes in a UTF-8 encoding; constant, no I/O.
 	"unicode/utf8.UTFMax",
 	// unicode/utf8.Valid — checks if a byte slice is valid UTF-8; pure function, no I/O.
