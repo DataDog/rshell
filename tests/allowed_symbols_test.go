@@ -118,30 +118,30 @@ var builtinAllowedSymbols = []string{
 	"strings.ReplaceAll",
 	// strings.ToLower — converts string to lowercase; pure function, no I/O.
 	"strings.ToLower",
-	// syscall.EISDIR — errno constant for "is a directory"; pure constant, no I/O.
-	"syscall.EISDIR",
-	// syscall.Errno — error type wrapping an OS errno value; pure type, no I/O.
-	"syscall.Errno",
-	// strconv.IntSize — platform int size constant (32 or 64); pure constant, no I/O.
-	"strconv.IntSize",
 	// strings.Split — splits a string by separator into a slice; pure function, no I/O.
 	"strings.Split",
 	// strconv.Atoi — string-to-int conversion; pure function, no I/O.
 	"strconv.Atoi",
-	// strconv.ParseBool — string-to-bool conversion; pure function, no I/O.
-	"strconv.ParseBool",
-	// strconv.Itoa — int-to-string conversion; pure function, no I/O.
-	"strconv.Itoa",
 	// strconv.ErrRange — sentinel error value for overflow; pure constant.
 	"strconv.ErrRange",
+	// strconv.IntSize — platform int size constant (32 or 64); pure constant, no I/O.
+	"strconv.IntSize",
+	// strconv.Itoa — int-to-string conversion; pure function, no I/O.
+	"strconv.Itoa",
 	// strconv.NumError — error type for numeric conversion failures; pure type.
 	"strconv.NumError",
+	// strconv.ParseBool — string-to-bool conversion; pure function, no I/O.
+	"strconv.ParseBool",
 	// strconv.ParseFloat — string-to-float conversion; pure function, no I/O.
 	"strconv.ParseFloat",
 	// strconv.ParseInt — string-to-int conversion with base/bit-size; pure function, no I/O.
 	"strconv.ParseInt",
 	// strconv.ParseUint — string-to-unsigned-int conversion; pure function, no I/O.
 	"strconv.ParseUint",
+	// syscall.EISDIR — errno constant for "is a directory"; pure constant, no I/O.
+	"syscall.EISDIR",
+	// syscall.Errno — error type wrapping an OS errno value; pure type, no I/O.
+	"syscall.Errno",
 	// strconv.FormatInt — int-to-string conversion; pure function, no I/O.
 	"strconv.FormatInt",
 	// strings.HasPrefix — pure function for prefix matching; no I/O.
