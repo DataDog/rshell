@@ -66,6 +66,7 @@ import (
 	"errors"
 	"fmt"
 	iofs "io/fs"
+	"runtime"
 	"slices"
 	"time"
 
@@ -523,7 +524,7 @@ func joinPath(dir, name string) string {
 		return name
 	}
 	last := dir[len(dir)-1]
-	if last == '/' || last == '\\' {
+	if last == '/' || (runtime.GOOS == "windows" && last == '\\') {
 		return dir + name
 	}
 	return dir + "/" + name
