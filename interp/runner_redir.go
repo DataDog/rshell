@@ -87,6 +87,11 @@ func (r *Runner) hdocReader(rd *syntax.Redirect) (*os.File, error) {
 	}
 	if rd.Op != syntax.DashHdoc {
 		hdoc := expandWord(rd.Hdoc)
+		if len(hdoc) > MaxHeredocBytes {
+			pr.Close()
+			pw.Close()
+			return nil, fmt.Errorf("heredoc: content exceeds maximum size (%d bytes)", MaxHeredocBytes)
+		}
 		go func() {
 			pw.WriteString(hdoc)
 			pw.Close()
