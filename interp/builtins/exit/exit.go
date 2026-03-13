@@ -11,14 +11,13 @@
 //
 // Exit the shell with status N. If N is omitted, the exit status is
 // that of the last command executed. If N is not a valid integer, the
-// shell prints an error and returns status 2 without exiting (matching
-// bash behavior).
+// shell prints an error and exits with status 2 (matching bash behavior).
 //
 // Exit codes:
 //
 //	N    The supplied exit status (truncated to uint8).
-//	2    Invalid (non-numeric) argument.
-//	1    Too many arguments.
+//	2    Invalid (non-numeric) argument (shell exits).
+//	1    Too many arguments (shell exits).
 package exit
 
 import (
@@ -44,8 +43,9 @@ func run(_ context.Context, callCtx *builtins.CallContext, args []string) builti
 		if err != nil {
 			callCtx.Errf("%s: numeric argument required\n", args[0])
 			r.Code = 2
-			// In bash, exit with a non-numeric arg prints an error but
-			// does NOT exit the shell — execution continues.
+			// In bash, exit with a non-numeric arg prints an error and
+			// exits the shell with code 2.
+			r.Exiting = true
 			return r
 		}
 		r.Code = uint8(n)

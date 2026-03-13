@@ -69,6 +69,8 @@ func (o *overlayEnviron) Set(name string, vr expand.Variable) error {
 		vr.Map = prev.Map
 	}
 	if !vr.IsSet() { // unsetting
+		// Note: prev.ReadOnly is always false here (guarded by the checks above),
+		// but we keep this as defense-in-depth in case future refactors change the flow.
 		if prev.ReadOnly {
 			return fmt.Errorf("readonly variable")
 		}
