@@ -78,3 +78,13 @@ func TestCatMemoryBounded(t *testing.T) {
 		t.Errorf("cat allocated %d bytes/op on 10MB input; want < %d", bpo, maxBytesPerOp)
 	}
 }
+
+func BenchmarkCatDiscard(b *testing.B) {
+	dir := b.TempDir()
+	createLargeFileCat(b, dir, "input.txt", "the quick brown fox jumps over the lazy dog\n", 10<<20)
+	b.ResetTimer()
+	b.ReportAllocs()
+	for b.Loop() {
+		testutil.RunScriptDiscard(b, "cat input.txt", dir, interp.AllowedPaths([]string{dir}))
+	}
+}

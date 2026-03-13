@@ -100,3 +100,13 @@ func TestGrepMemoryBounded(t *testing.T) {
 		t.Errorf("grep allocated %d bytes/op on 10MB input; want < %d", bpo, maxBytesPerOp)
 	}
 }
+
+func BenchmarkGrepMatchDiscard(b *testing.B) {
+	dir := b.TempDir()
+	createLargeFileGrep(b, dir, "input.txt", "the quick brown fox jumps over the lazy dog\n", 10<<20)
+	b.ResetTimer()
+	b.ReportAllocs()
+	for b.Loop() {
+		testutil.RunScriptDiscard(b, "grep fox input.txt", dir, interp.AllowedPaths([]string{dir}))
+	}
+}

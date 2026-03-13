@@ -36,6 +36,19 @@ func cmdRunBTr(b *testing.B, script, dir string) (string, string, int) {
 	return testutil.RunScript(b, script, dir, interp.AllowedPaths([]string{dir}))
 }
 
+// BenchmarkTrTranslateDiscard measures tr with stdout discarded to isolate
+// tr's own allocations from output buffering. Used to calibrate the ceiling
+// in TestTrMemoryBounded.
+func BenchmarkTrTranslateDiscard(b *testing.B) {
+	dir := b.TempDir()
+	createLargeFileTr(b, dir, "input.txt", "the quick brown fox jumps over the lazy dog\n", 10<<20)
+	b.ResetTimer()
+	b.ReportAllocs()
+	for b.Loop() {
+		testutil.RunScriptDiscard(b, "cat input.txt | tr 'a-z' 'A-Z'", dir, interp.AllowedPaths([]string{dir}))
+	}
+}
+
 // BenchmarkTrTranslate measures tr 'a-z' 'A-Z' on a 1MB file piped through tr.
 // tr reads input from stdin in fixed 32 KiB chunks and translates byte-by-byte
 // using a pre-built 256-entry lookup table.
