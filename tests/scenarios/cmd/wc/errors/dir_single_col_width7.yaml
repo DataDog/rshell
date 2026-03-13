@@ -1,7 +1,7 @@
 # GNU wc applies width-7 padding for non-regular files (directories) even
 # with a single column flag, when multiple files produce a total line.
 description: wc -l with directory and file uses width-7 padding.
-skip_assert_against_bash: true
+skip_assert_against_bash: true  # stderr format differs from GNU wc (PortableErr normalization)
 setup:
   files:
     - path: f.txt

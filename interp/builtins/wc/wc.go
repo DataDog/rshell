@@ -89,6 +89,27 @@ type options struct {
 	showMaxLineLen bool
 }
 
+// numCols returns the number of output columns that will be printed.
+func (o options) numCols() int {
+	n := 0
+	if o.showLines {
+		n++
+	}
+	if o.showWords {
+		n++
+	}
+	if o.showChars {
+		n++
+	}
+	if o.showBytes {
+		n++
+	}
+	if o.showMaxLineLen {
+		n++
+	}
+	return n
+}
+
 func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 	help := fs.Bool("help", false, "print usage and exit")
 	lines := fs.BoolP("lines", "l", false, "print the newline counts")
@@ -192,23 +213,7 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 		// with a single column (e.g. wc -l dir file). When only a single
 		// column is active with a single file, the width is determined
 		// solely by the count values.
-		numCols := 0
-		if opts.showLines {
-			numCols++
-		}
-		if opts.showWords {
-			numCols++
-		}
-		if opts.showChars {
-			numCols++
-		}
-		if opts.showBytes {
-			numCols++
-		}
-		if opts.showMaxLineLen {
-			numCols++
-		}
-		if hasNonRegular && (numCols >= 2 || len(files) > 1) && width < nonRegularMinWidth {
+		if hasNonRegular && (opts.numCols() >= 2 || len(files) > 1) && width < nonRegularMinWidth {
 			width = nonRegularMinWidth
 		}
 
@@ -363,9 +368,9 @@ func countReader(ctx context.Context, r io.Reader) (counts, error) {
 				} else {
 					// Non-printable, non-whitespace, non-control chars
 					// (e.g. unassigned Cn codepoints) are transparent
-					// to word counting — they neither start nor end
-					// words, matching GNU wc behaviour.
-					lineLen += int64(runeWidth(ch))
+					// to both word counting and line length — they
+					// neither start nor end words, and GNU wc treats
+					// them as non-printable (wcwidth=-1, width 0).
 				}
 			}
 		}
