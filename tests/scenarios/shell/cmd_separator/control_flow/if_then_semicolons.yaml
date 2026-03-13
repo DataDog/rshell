@@ -1,4 +1,4 @@
-description: Semicolons used as separators in if/then/else/fi constructs.
+description: Semicolons used as separators in if/then/fi constructs.
 input:
   script: |+
     if true; then echo yes; fi; echo after
