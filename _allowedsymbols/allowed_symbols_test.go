@@ -24,6 +24,9 @@ type allowedSymbolsConfig struct {
 	// CollectFiles walks TargetDir and returns the absolute paths of Go files
 	// to check. It receives the absolute path to TargetDir.
 	CollectFiles func(dir string) ([]string, error)
+	// ExemptImport returns true for import paths that are auto-allowed and
+	// should not be checked against the allowlist.
+	ExemptImport func(importPath string) bool
 	// ListName is used in error messages (e.g. "builtinAllowedSymbols").
 	ListName string
 	// MinFiles is the minimum number of files expected (sanity check).
@@ -85,8 +88,7 @@ func checkAllowedSymbols(t *testing.T, cfg allowedSymbolsConfig) {
 				continue
 			}
 
-			// Internal module imports are always allowed.
-			if strings.HasPrefix(importPath, "github.com/DataDog/rshell/") {
+			if cfg.ExemptImport(importPath) {
 				continue
 			}
 
@@ -214,6 +216,10 @@ func TestBuiltinAllowedSymbols(t *testing.T) {
 				// builtins.go is the package framework and is exempt.
 				return rel == "builtins.go"
 			})
+		},
+		ExemptImport: func(importPath string) bool {
+			return importPath == "github.com/DataDog/rshell/builtins" ||
+				strings.HasPrefix(importPath, "github.com/DataDog/rshell/builtins/internal/")
 		},
 		ListName: "builtinAllowedSymbols",
 		MinFiles: 1,

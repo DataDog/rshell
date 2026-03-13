@@ -6,6 +6,7 @@
 package allowedsymbols
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -19,6 +20,9 @@ func TestAllowedPathsAllowedSymbols(t *testing.T) {
 		TargetDir: "allowedpaths",
 		CollectFiles: func(dir string) ([]string, error) {
 			return collectFlatGoFiles(dir)
+		},
+		ExemptImport: func(importPath string) bool {
+			return strings.HasPrefix(importPath, "github.com/DataDog/rshell/")
 		},
 		ListName: "allowedpathsAllowedSymbols",
 		MinFiles: 1,
