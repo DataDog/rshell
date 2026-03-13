@@ -5,6 +5,7 @@ setup:
     - path: dir/recent.txt
       content: "just created"
       chmod: 0644
+      mod_time: "2020-01-01T00:00:00Z"  # explicit past time to ensure file is > 0 minutes old
 input:
   allowed_paths: ["$DIR"]
   script: |+
