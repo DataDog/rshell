@@ -3,6 +3,14 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2026-present Datadog, Inc.
 
+// The verification tests serve two purposes: they validate that the core
+// allowed-symbols checking logic is correct, and they test each per-config
+// allowed-symbols configuration to ensure it catches real violations. They work
+// by copying the repo into a temp directory, injecting disallowed imports or
+// symbols, and asserting the checker detects them. These helpers factor out the
+// repetitive plumbing (copying trees, rewriting Go source, locating files) so
+// each per-config test file stays focused on the specific violation it tests.
+
 package allowedsymbols
 
 import (
