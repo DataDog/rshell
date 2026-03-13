@@ -1,4 +1,3 @@
-# Derived from GNU coreutils cut.pl o-delim test
 description: Cut replaces the input delimiter with the output delimiter between fields.
 setup:
   files:

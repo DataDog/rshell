@@ -1,4 +1,3 @@
-# Derived from uutils test_squeeze
 description: tr -s squeezes repeated characters in set.
 input:
   script: |+

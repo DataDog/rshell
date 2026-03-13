@@ -1,4 +1,3 @@
-# Derived from GNU coreutils test.pl — empty test returns false
 description: "test with no arguments returns false (exit 1)"
 input:
   script: |+

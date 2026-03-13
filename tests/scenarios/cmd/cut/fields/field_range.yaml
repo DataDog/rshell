@@ -1,4 +1,3 @@
-# Derived from GNU coreutils cut.pl test 3
 description: Cut selects fields from a given position to end of line.
 setup:
   files:

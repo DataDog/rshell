@@ -1,4 +1,3 @@
-# Derived from GNU coreutils uniq.pl test 124
 description: uniq -z uses NUL as line delimiter.
 setup:
   files:

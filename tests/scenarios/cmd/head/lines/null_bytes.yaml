@@ -1,4 +1,3 @@
-# Derived from GNU coreutils head.pl null-1 test
 description: head handles null bytes in file content without crashing.
 setup:
   files:

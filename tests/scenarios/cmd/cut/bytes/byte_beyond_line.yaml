@@ -1,4 +1,3 @@
-# Derived from GNU coreutils cut.pl test 6
 description: Cut outputs empty line when byte position is beyond line length.
 setup:
   files:

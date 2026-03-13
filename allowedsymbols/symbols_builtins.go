@@ -51,7 +51,6 @@ var builtinPerCommandSymbols = map[string][]string{
 		"os.O_RDONLY",       // read-only file flag constant; cannot open files by itself.
 		"slices.SortFunc",   // sorts a slice with a comparison function; pure function, no I/O.
 		"strconv.Atoi",      // string-to-int conversion; pure function, no I/O.
-		"strings.Builder",   // efficient string concatenation; pure in-memory buffer, no I/O.
 		"strings.IndexByte", // finds byte in string; pure function, no I/O.
 		"strings.Split",     // splits a string by separator into a slice; pure function, no I/O.
 	},
@@ -168,12 +167,15 @@ var builtinPerCommandSymbols = map[string][]string{
 	},
 	"strings_cmd": {
 		"context.Context",   // deadline/cancellation plumbing; pure interface, no side effects.
+		"errors.As",         // error type assertion; pure function, no I/O.
 		"errors.Is",         // error comparison; pure function, no I/O.
 		"errors.New",        // creates a simple error value; pure function, no I/O.
+		"fmt.Sprintf",       // string formatting; pure function, no I/O.
 		"io.EOF",            // sentinel error value; pure constant.
 		"io.NopCloser",      // wraps a Reader with a no-op Close; no side effects.
 		"io.ReadCloser",     // interface type; no side effects.
 		"os.O_RDONLY",       // read-only file flag constant; cannot open files by itself.
+		"os.PathError",      // error type for filesystem path errors; pure type, no I/O.
 		"strconv.FormatInt", // int-to-string conversion; pure function, no I/O.
 	},
 	"tail": {
@@ -210,6 +212,7 @@ var builtinPerCommandSymbols = map[string][]string{
 	"uniq": {
 		"bufio.NewScanner",  // line-by-line input reading (e.g. head, cat); no write or exec capability.
 		"bufio.SplitFunc",   // type for custom scanner split functions; pure type, no I/O.
+		"bytes.Equal",       // compares two byte slices for equality; pure function, no I/O.
 		"context.Context",   // deadline/cancellation plumbing; pure interface, no side effects.
 		"io.NopCloser",      // wraps a Reader with a no-op Close; no side effects.
 		"io.ReadCloser",     // interface type; no side effects.
@@ -226,17 +229,21 @@ var builtinPerCommandSymbols = map[string][]string{
 	},
 	"wc": {
 		"context.Context",         // deadline/cancellation plumbing; pure interface, no side effects.
+		"errors.As",               // error type assertion; pure function, no I/O.
+		"errors.Is",               // error comparison; pure function, no I/O.
+		"errors.New",              // creates a simple error value; pure function, no I/O.
 		"io.EOF",                  // sentinel error value; pure constant.
 		"io.NopCloser",            // wraps a Reader with a no-op Close; no side effects.
 		"io.ReadCloser",           // interface type; no side effects.
 		"io.Reader",               // interface type; no side effects.
 		"os.O_RDONLY",             // read-only file flag constant; cannot open files by itself.
 		"strconv.FormatInt",       // int-to-string conversion; pure function, no I/O.
+		"syscall.EISDIR",          // error number constant for "is a directory"; pure constant, no I/O.
+		"syscall.Errno",           // error type for system call error numbers; pure type, no I/O.
 		"unicode.Cc",              // control character category range table; pure data, no I/O.
 		"unicode.Cf",              // format character category range table; pure data, no I/O.
 		"unicode.Co",              // private-use character category range table; pure data, no I/O.
 		"unicode.Is",              // checks if rune belongs to a range table; pure function, no I/O.
-		"unicode.IsControl",       // reports whether rune is a control character; pure function, no I/O.
 		"unicode.IsGraphic",       // reports whether rune is defined as a graphic character; pure function, no I/O.
 		"unicode.Me",              // enclosing mark category range table; pure data, no I/O.
 		"unicode.Mn",              // nonspacing mark category range table; pure data, no I/O.
@@ -255,6 +262,7 @@ var builtinAllowedSymbols = []string{
 	"bufio.NewScanner",        // line-by-line input reading (e.g. head, cat); no write or exec capability.
 	"bufio.Scanner",           // scanner type for buffered input reading; no write or exec capability.
 	"bufio.SplitFunc",         // type for custom scanner split functions; pure type, no I/O.
+	"bytes.Equal",             // compares two byte slices for equality; pure function, no I/O.
 	"bytes.IndexByte",         // finds a byte in a byte slice; pure function, no I/O.
 	"context.Context",         // deadline/cancellation plumbing; pure interface, no side effects.
 	"errors.As",               // error type assertion; pure function, no I/O.
@@ -286,6 +294,7 @@ var builtinAllowedSymbols = []string{
 	"math.NaN",                // returns IEEE 754 NaN value; pure function, no I/O.
 	"os.FileInfo",             // file metadata interface returned by Stat; no I/O side effects.
 	"os.O_RDONLY",             // read-only file flag constant; cannot open files by itself.
+	"os.PathError",            // error type for filesystem path errors; pure type, no I/O.
 	"regexp.Compile",          // compiles a regular expression; pure function, no I/O. Uses RE2 engine (linear-time, no backtracking).
 	"regexp.QuoteMeta",        // escapes all special regex characters in a string; pure function, no I/O.
 	"regexp.Regexp",           // compiled regular expression type; no I/O side effects. All matching methods are linear-time (RE2).
@@ -312,12 +321,13 @@ var builtinAllowedSymbols = []string{
 	"strings.Split",           // splits a string by separator into a slice; pure function, no I/O.
 	"strings.ToLower",         // converts string to lowercase; pure function, no I/O.
 	"strings.TrimSpace",       // removes leading/trailing whitespace; pure function.
+	"syscall.EISDIR",          // error number constant for "is a directory"; pure constant, no I/O.
+	"syscall.Errno",           // error type for system call error numbers; pure type, no I/O.
 	"time.Time",               // time value type; pure data, no side effects.
 	"unicode.Cc",              // control character category range table; pure data, no I/O.
 	"unicode.Cf",              // format character category range table; pure data, no I/O.
 	"unicode.Co",              // private-use character category range table; pure data, no I/O.
 	"unicode.Is",              // checks if rune belongs to a range table; pure function, no I/O.
-	"unicode.IsControl",       // reports whether rune is a control character; pure function, no I/O.
 	"unicode.IsGraphic",       // reports whether rune is defined as a graphic character; pure function, no I/O.
 	"unicode.Me",              // enclosing mark category range table; pure data, no I/O.
 	"unicode.Mn",              // nonspacing mark category range table; pure data, no I/O.

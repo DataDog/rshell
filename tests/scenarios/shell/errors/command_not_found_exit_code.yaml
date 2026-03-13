@@ -1,0 +1,13 @@
+# skip: command-not-found error format differs from bash (no script:line prefix)
+skip_assert_against_bash: true
+description: Multiple unknown commands each produce errors, last exit code wins.
+input:
+  script: |+
+    unknown_cmd_1
+    unknown_cmd_2
+expect:
+  stdout: ""
+  stderr: |+
+    unknown_cmd_1: command not found
+    unknown_cmd_2: command not found
+  exit_code: 127

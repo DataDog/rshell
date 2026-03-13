@@ -1,4 +1,3 @@
-# Derived from uutils test_head.rs::test_multiple_nonexistent_files
 description: All nonexistent files each produce an error message; no headers are printed.
 input:
   allowed_paths: ["$DIR"]

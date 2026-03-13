@@ -1,4 +1,3 @@
-# Derived from uutils test_cat.rs::test_squeeze_blank_before_numbering
 description: cat -sn squeezes blank lines before numbering.
 setup:
   files:

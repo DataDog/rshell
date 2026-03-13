@@ -1,4 +1,3 @@
-# Derived from uutils test_truncate
 description: tr -t truncates set1 to set2 length.
 input:
   script: |+

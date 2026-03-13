@@ -1,4 +1,3 @@
-# Derived from GNU coreutils test.pl paren tests
 description: "test parenthesized expressions"
 input:
   script: |+

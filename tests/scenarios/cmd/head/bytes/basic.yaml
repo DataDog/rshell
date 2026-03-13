@@ -1,4 +1,3 @@
-# Derived from GNU coreutils head.pl obs-2 and obs-3 tests
 description: head -c N outputs exactly the first N bytes.
 setup:
   files:

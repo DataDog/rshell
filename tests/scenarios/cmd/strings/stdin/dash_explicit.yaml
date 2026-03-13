@@ -1,5 +1,5 @@
 description: strings treats - as an alias for stdin.
-skip_assert_against_bash: true
+skip_assert_against_bash: true  # GNU strings treats - as a filename, not stdin
 input:
   script: |+
     echo "hello world" | strings -

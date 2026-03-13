@@ -320,8 +320,6 @@ func readLastLines(ctx context.Context, callCtx *builtins.CallContext, r io.Read
 		if !isRegularFile && totalRead > MaxTotalReadBytes {
 			return errors.New("input too large: read limit exceeded")
 		}
-		cp := make([]byte, len(raw))
-		copy(cp, raw)
 		// When the ring is full, evict the oldest entry before writing.
 		if ringCount == ringSize {
 			// If count exceeds the ring capacity, we cannot deliver the full
@@ -331,8 +329,8 @@ func readLastLines(ctx context.Context, callCtx *builtins.CallContext, r io.Read
 			}
 			ringBytes -= int64(len(ring[ringHead]))
 		}
-		ring[ringHead] = cp
-		ringBytes += int64(len(cp))
+		ring[ringHead] = append(ring[ringHead][:0], raw...)
+		ringBytes += int64(len(ring[ringHead]))
 		if ringBytes > MaxRingBytes {
 			return errors.New("input too large: ring buffer memory limit exceeded")
 		}

@@ -1,4 +1,3 @@
-# Derived from GNU coreutils uniq.pl test 129
 description: uniq --group=append adds blank line after last group too.
 setup:
   files:

@@ -1,4 +1,3 @@
-# Derived from GNU coreutils test.pl — negative integer tests
 description: "test integer comparison with negative numbers"
 input:
   script: |+

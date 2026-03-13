@@ -1,4 +1,3 @@
-# Derived from GNU coreutils cut.pl error handling
 description: Cut with no arguments exits with error.
 input:
   script: |+

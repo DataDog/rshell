@@ -1,4 +1,3 @@
-# Derived from GNU coreutils wc.pl test a9
 description: wc -l counts 2 for two newline-terminated lines.
 setup:
   files:

@@ -1,4 +1,3 @@
-# Derived from GNU coreutils wc.pl test b0
 description: wc with no args and empty stdin outputs all zeros.
 setup:
   files:

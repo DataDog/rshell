@@ -1,4 +1,3 @@
-# Derived from GNU coreutils cut.pl inval1 test
 description: Cut rejects a decreasing range specification.
 input:
   script: |+

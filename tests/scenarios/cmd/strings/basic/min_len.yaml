@@ -1,5 +1,4 @@
 description: strings -n 2 reports sequences of 2 or more printable chars.
-skip_assert_against_bash: true
 setup:
   files:
     - path: data.bin

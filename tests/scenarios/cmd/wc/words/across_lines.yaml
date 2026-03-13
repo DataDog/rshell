@@ -1,4 +1,3 @@
-# Derived from GNU coreutils wc.pl test a6
 description: wc -w counts words across lines including a line without trailing newline.
 setup:
   files:

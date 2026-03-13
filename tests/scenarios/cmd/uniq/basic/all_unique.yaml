@@ -1,4 +1,3 @@
-# Derived from GNU coreutils uniq.pl test 7
 description: uniq preserves all unique lines.
 setup:
   files:

@@ -1,4 +1,3 @@
-# Derived from GNU coreutils head.pl basic tests
 description: head --lines=N long form is equivalent to -n N.
 setup:
   files:

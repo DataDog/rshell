@@ -1,5 +1,4 @@
 description: strings -s uses a custom output separator instead of newline.
-skip_assert_against_bash: true
 setup:
   files:
     - path: data.bin
