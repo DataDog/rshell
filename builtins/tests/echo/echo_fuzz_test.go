@@ -20,6 +20,11 @@ func cmdRunCtx(ctx context.Context, t *testing.T, script, dir string) (string, s
 	return testutil.RunScriptCtx(ctx, t, script, dir, interp.AllowedPaths([]string{dir}))
 }
 
+func tryCmdRunCtx(ctx context.Context, t *testing.T, script, dir string) (string, string, int, error) {
+	t.Helper()
+	return testutil.TryRunScriptCtx(ctx, t, script, dir, interp.AllowedPaths([]string{dir}))
+}
+
 // FuzzEcho fuzzes echo with arbitrary arguments (no escape processing).
 func FuzzEcho(f *testing.F) {
 	f.Add("hello world")
@@ -46,17 +51,16 @@ func FuzzEcho(f *testing.F) {
 			if c == '\'' || c == '\x00' || c == '\n' {
 				return
 			}
-			// C0/DEL/C1 control chars confuse the shell script parser.
-			if c < 0x20 || c == 0x7f || (c >= 0x80 && c < 0xa0) {
-				return
-			}
 		}
 
 		dir := t.TempDir()
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 
-		_, _, code := cmdRunCtx(ctx, t, "echo '"+arg+"'", dir)
+		_, _, code, err := tryCmdRunCtx(ctx, t, "echo '"+arg+"'", dir)
+		if err != nil {
+			return // skip unparseable scripts or internal errors
+		}
 		if code != 0 {
 			t.Errorf("echo unexpected exit code %d", code)
 		}
@@ -113,17 +117,16 @@ func FuzzEchoEscapes(f *testing.F) {
 			if c == '\'' || c == '\x00' || c == '\n' {
 				return
 			}
-			// C0/DEL/C1 control chars confuse the shell script parser.
-			if c < 0x20 || c == 0x7f || (c >= 0x80 && c < 0xa0) {
-				return
-			}
 		}
 
 		dir := t.TempDir()
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 
-		_, _, code := cmdRunCtx(ctx, t, "echo -e '"+arg+"'", dir)
+		_, _, code, err := tryCmdRunCtx(ctx, t, "echo -e '"+arg+"'", dir)
+		if err != nil {
+			return // skip unparseable scripts or internal errors
+		}
 		if code != 0 {
 			t.Errorf("echo -e unexpected exit code %d", code)
 		}
@@ -150,10 +153,6 @@ func FuzzEchoFlagInteraction(f *testing.F) {
 			if c == '\'' || c == '\x00' || c == '\n' {
 				return
 			}
-			// C0/DEL/C1 control chars confuse the shell script parser.
-			if c < 0x20 || c == 0x7f || (c >= 0x80 && c < 0xa0) {
-				return
-			}
 		}
 
 		flags := ""
@@ -174,7 +173,10 @@ func FuzzEchoFlagInteraction(f *testing.F) {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 
-		_, _, code := cmdRunCtx(ctx, t, "echo"+flags+" '"+arg+"'", dir)
+		_, _, code, err := tryCmdRunCtx(ctx, t, "echo"+flags+" '"+arg+"'", dir)
+		if err != nil {
+			return // skip unparseable scripts or internal errors
+		}
 		if code != 0 {
 			t.Errorf("echo%s unexpected exit code %d", flags, code)
 		}

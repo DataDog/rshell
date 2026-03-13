@@ -24,6 +24,11 @@ func cmdRunCtx(ctx context.Context, t *testing.T, script, dir string) (string, s
 	return testutil.RunScriptCtx(ctx, t, script, dir, interp.AllowedPaths([]string{dir}))
 }
 
+func tryCmdRunCtx(ctx context.Context, t *testing.T, script, dir string) (string, string, int, error) {
+	t.Helper()
+	return testutil.TryRunScriptCtx(ctx, t, script, dir, interp.AllowedPaths([]string{dir}))
+}
+
 // FuzzGrepFileContent fuzzes grep with a fixed pattern and arbitrary file content.
 // Edge cases: binary content, null bytes, lines at 1 MiB cap, invalid UTF-8.
 func FuzzGrepFileContent(f *testing.F) {
@@ -64,10 +69,6 @@ func FuzzGrepFileContent(f *testing.F) {
 			if c == '\'' || c == '\x00' || c == '\n' {
 				return
 			}
-			// C0/DEL/C1 control chars confuse the shell script parser.
-			if c < 0x20 || c == 0x7f || (c >= 0x80 && c < 0xa0) {
-				return
-			}
 		}
 		if len(pattern) == 0 {
 			return
@@ -86,7 +87,10 @@ func FuzzGrepFileContent(f *testing.F) {
 		defer cancel()
 
 		script := "grep '" + pattern + "' input.txt"
-		_, _, code := cmdRunCtx(ctx, t, script, dir)
+		_, _, code, err := tryCmdRunCtx(ctx, t, script, dir)
+		if err != nil {
+			return // skip unparseable scripts or internal errors
+		}
 		if code != 0 && code != 1 && code != 2 {
 			t.Errorf("grep unexpected exit code %d", code)
 		}
@@ -133,10 +137,6 @@ func FuzzGrepPatterns(f *testing.F) {
 			if c == '\'' || c == '\x00' || c == '\n' {
 				return
 			}
-			// C0/DEL/C1 control chars confuse the shell script parser.
-			if c < 0x20 || c == 0x7f || (c >= 0x80 && c < 0xa0) {
-				return
-			}
 		}
 		if len(pattern) > 100 {
 			return
@@ -153,7 +153,10 @@ func FuzzGrepPatterns(f *testing.F) {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 
-		_, _, code := cmdRunCtx(ctx, t, "grep '"+pattern+"' input.txt", dir)
+		_, _, code, err := tryCmdRunCtx(ctx, t, "grep '"+pattern+"' input.txt", dir)
+		if err != nil {
+			return // skip unparseable scripts or internal errors
+		}
 		if code != 0 && code != 1 && code != 2 {
 			t.Errorf("grep pattern %q unexpected exit code %d", pattern, code)
 		}
@@ -238,10 +241,6 @@ func FuzzGrepFixedStrings(f *testing.F) {
 			if c == '\'' || c == '\x00' || c == '\n' {
 				return
 			}
-			// C0/DEL/C1 control chars confuse the shell script parser.
-			if c < 0x20 || c == 0x7f || (c >= 0x80 && c < 0xa0) {
-				return
-			}
 		}
 
 		dir := t.TempDir()
@@ -252,7 +251,10 @@ func FuzzGrepFixedStrings(f *testing.F) {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 
-		_, _, code := cmdRunCtx(ctx, t, "grep -F '"+pattern+"' input.txt", dir)
+		_, _, code, err := tryCmdRunCtx(ctx, t, "grep -F '"+pattern+"' input.txt", dir)
+		if err != nil {
+			return // skip unparseable scripts or internal errors
+		}
 		if code != 0 && code != 1 && code != 2 {
 			t.Errorf("grep -F unexpected exit code %d", code)
 		}

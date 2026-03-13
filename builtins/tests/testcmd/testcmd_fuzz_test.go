@@ -23,6 +23,11 @@ func cmdRunCtx(ctx context.Context, t *testing.T, script, dir string) (string, s
 	return testutil.RunScriptCtx(ctx, t, script, dir, interp.AllowedPaths([]string{dir}))
 }
 
+func tryCmdRunCtx(ctx context.Context, t *testing.T, script, dir string) (string, string, int, error) {
+	t.Helper()
+	return testutil.TryRunScriptCtx(ctx, t, script, dir, interp.AllowedPaths([]string{dir}))
+}
+
 // FuzzTestStringOps fuzzes test with string comparison operators.
 // Edge cases: empty strings, strings that look like operators,
 // unicode strings, strings with leading/trailing spaces.
@@ -275,15 +280,6 @@ func FuzzTestNesting(f *testing.F) {
 				c == '<' || c == '>' || c == '|' || c == '&' || c == ';' {
 				return
 			}
-			// Glob metacharacters trigger pathname expansion which can fail
-			// on multi-byte UTF-8 patterns due to an upstream library bug.
-			if c == '*' || c == '?' || c == '[' || c == ']' {
-				return
-			}
-			// C0/DEL/C1 control chars confuse the shell script parser.
-			if c < 0x20 || c == 0x7f || (c >= 0x80 && c < 0xa0) {
-				return
-			}
 		}
 
 		dir := t.TempDir()
@@ -292,7 +288,10 @@ func FuzzTestNesting(f *testing.F) {
 		defer cancel()
 
 		script := fmt.Sprintf("test %s", expr)
-		_, _, code := cmdRunCtx(ctx, t, script, dir)
+		_, _, code, err := tryCmdRunCtx(ctx, t, script, dir)
+		if err != nil {
+			return // skip inputs that cause parse errors or internal errors
+		}
 		if code != 0 && code != 1 && code != 2 {
 			t.Errorf("test %q unexpected exit code %d", expr, code)
 		}

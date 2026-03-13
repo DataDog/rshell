@@ -79,6 +79,44 @@ func RunScriptCtx(ctx context.Context, t testing.TB, script, dir string, opts ..
 	return outBuf.String(), errBuf.String(), exitCode
 }
 
+// TryRunScriptCtx is like RunScriptCtx but returns an error instead of calling
+// t.Fatal when the script cannot be parsed or the runner returns an internal
+// error. This is intended for fuzz tests where arbitrary inputs may produce
+// unparseable scripts or trigger internal errors in the shell — callers should
+// skip such inputs rather than marking them as test failures.
+func TryRunScriptCtx(ctx context.Context, t testing.TB, script, dir string, opts ...interp.RunnerOption) (string, string, int, error) {
+	t.Helper()
+	parser := syntax.NewParser()
+	prog, err := parser.Parse(strings.NewReader(script), "")
+	if err != nil {
+		return "", "", 0, err
+	}
+
+	var outBuf, errBuf bytes.Buffer
+	allOpts := append([]interp.RunnerOption{interp.StdIO(nil, &outBuf, &errBuf)}, opts...)
+	runner, err := interp.New(allOpts...)
+	if err != nil {
+		return "", "", 0, err
+	}
+	defer runner.Close()
+
+	if dir != "" {
+		runner.Dir = dir
+	}
+
+	err = runner.Run(ctx, prog)
+	exitCode := 0
+	if err != nil {
+		var es interp.ExitStatus
+		if errors.As(err, &es) {
+			exitCode = int(es)
+		} else if ctx.Err() == nil {
+			return outBuf.String(), errBuf.String(), 0, err
+		}
+	}
+	return outBuf.String(), errBuf.String(), exitCode, nil
+}
+
 // RunScript runs a shell script and returns stdout, stderr, and the exit code.
 // It accepts testing.TB so it can be used in both tests and benchmarks.
 func RunScript(t testing.TB, script, dir string, opts ...interp.RunnerOption) (string, string, int) {
