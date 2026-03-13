@@ -138,12 +138,12 @@ var builtinAllowedSymbols = []string{
 	"strconv.ParseInt",
 	// strconv.ParseUint — string-to-unsigned-int conversion; pure function, no I/O.
 	"strconv.ParseUint",
+	// strconv.FormatInt — int-to-string conversion; pure function, no I/O.
+	"strconv.FormatInt",
 	// syscall.EISDIR — errno constant for "is a directory"; pure constant, no I/O.
 	"syscall.EISDIR",
 	// syscall.Errno — error type wrapping an OS errno value; pure type, no I/O.
 	"syscall.Errno",
-	// strconv.FormatInt — int-to-string conversion; pure function, no I/O.
-	"strconv.FormatInt",
 	// strings.HasPrefix — pure function for prefix matching; no I/O.
 	"strings.HasPrefix",
 	// strings.IndexByte — finds byte in string; pure function, no I/O.
