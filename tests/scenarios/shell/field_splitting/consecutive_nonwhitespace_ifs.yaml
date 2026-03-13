@@ -2,15 +2,16 @@ description: >
   Consecutive non-whitespace IFS delimiters should produce empty fields.
   In bash, "a::b" with IFS=: produces three fields: "a", "", "b".
   The upstream mvdan.cc/sh library does not produce the empty middle field.
+  skip_assert_against_bash because of this known upstream limitation.
 skip_assert_against_bash: true
-cases:
-  - name: consecutive colon delimiters
-    script: |
-      IFS=:
-      A="a::b"
-      for w in $A; do echo "[$w]"; done
-    # bash produces: [a]\n[]\n[b]
-    # rshell currently produces: [a]\n[b] (upstream library limitation)
-    stdout: |
-      [a]
-      [b]
+input:
+  script: |+
+    IFS=:
+    A="a::b"
+    for w in $A; do echo "[$w]"; done
+expect:
+  # bash produces: [a]\n[]\n[b]
+  # rshell currently produces: [a]\n[b] (upstream library limitation)
+  stdout: "[a]\n[b]\n"
+  stderr: ""
+  exit_code: 0

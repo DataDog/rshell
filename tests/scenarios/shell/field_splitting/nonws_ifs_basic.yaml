@@ -1,4 +1,4 @@
-description: Field splitting with non-whitespace IFS produces empty fields.
+description: Field splitting with non-whitespace IFS delimiter splits correctly.
 input:
   script: |+
     IFS='-'

@@ -182,8 +182,8 @@ func run(ctx context.Context, callCtx *builtins.CallContext, args []string) buil
 	if len(args) > 0 {
 		switch {
 		case args[0] == "--help":
-			callCtx.Errf("printf: usage: printf [-v var] format [arguments]\n")
-			return builtins.Result{Code: 2}
+			callCtx.Out("printf: usage: printf [-v var] format [arguments]\n")
+			return builtins.Result{Code: 0}
 		case args[0] == "-v":
 			callCtx.Errf("printf: -v: not supported in restricted shell\n")
 			return builtins.Result{Code: 1}

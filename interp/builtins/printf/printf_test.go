@@ -395,9 +395,9 @@ func TestPrintfRejectedVFlag(t *testing.T) {
 // --- Help ---
 
 func TestPrintfHelp(t *testing.T) {
-	_, stderr, code := cmdRun(t, `printf --help`)
-	assert.Equal(t, 2, code)
-	assert.Contains(t, stderr, "printf: usage:")
+	stdout, _, code := cmdRun(t, `printf --help`)
+	assert.Equal(t, 0, code)
+	assert.Contains(t, stdout, "printf: usage:")
 }
 
 func TestPrintfHelpShort(t *testing.T) {
