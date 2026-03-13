@@ -1,3 +1,4 @@
+# skip: command-not-found error format differs from bash (no script:line prefix)
 skip_assert_against_bash: true
 description: Multiple unknown commands each produce errors, last exit code wins.
 input:

@@ -1,3 +1,4 @@
+# skip: case statements are intentionally blocked in the restricted shell
 skip_assert_against_bash: true
 description: Simple case statement with exact match is blocked.
 input:

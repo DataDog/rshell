@@ -1,3 +1,4 @@
+# skip: eval/select are intentionally blocked in the restricted shell
 skip_assert_against_bash: true
 description: Eval command is not available.
 input:

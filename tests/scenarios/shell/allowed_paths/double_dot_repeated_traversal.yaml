@@ -1,4 +1,5 @@
 description: Repeated .. segments attempting deep traversal are blocked.
+# skip: uses allowed_paths which the bash harness does not support
 skip_assert_against_bash: true
 setup:
   files:

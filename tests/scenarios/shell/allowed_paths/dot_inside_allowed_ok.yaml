@@ -1,4 +1,5 @@
 description: Using . within the allowed path still resolves correctly.
+# skip: uses allowed_paths which the bash harness does not support
 skip_assert_against_bash: true
 setup:
   files:

@@ -1,3 +1,4 @@
+# skip: file redirection is intentionally blocked in the restricted shell
 skip_assert_against_bash: true
 description: Input redirection from /dev/null is blocked without allowed_paths.
 input:

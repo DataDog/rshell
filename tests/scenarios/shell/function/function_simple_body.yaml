@@ -1,3 +1,4 @@
+# skip: function declarations are intentionally blocked in the restricted shell
 skip_assert_against_bash: true
 description: Simple function definition with parentheses is blocked.
 input:

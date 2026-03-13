@@ -1,3 +1,4 @@
+# skip: while/until loops are intentionally blocked in the restricted shell
 skip_assert_against_bash: true
 description: Single-line while loop is blocked.
 input:

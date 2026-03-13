@@ -23,4 +23,5 @@ expect:
     nowrite: 1
   stderr: ""
   exit_code: 0
+# skip: uses allowed_paths which the bash harness does not support
 skip_assert_against_bash: true

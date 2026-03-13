@@ -1,3 +1,4 @@
+# skip: command-not-found error format differs from bash (no script:line prefix)
 skip_assert_against_bash: true
 description: Unknown command in a pipeline produces error but pipeline continues.
 input:
