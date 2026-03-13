@@ -14,7 +14,7 @@ You MUST follow this execution protocol. Skipping steps causes missed coverage g
 
 ### 1. Create the full task list FIRST
 
-Your very first action — before reading ANY files, before writing ANY code — is to call TaskCreate exactly 10 times, once for each step below (Steps 1–10). Use these exact subjects:
+Your very first action — before reading ANY files, before writing ANY code — is to call TaskCreate exactly 11 times, once for each step below (Steps 1–11). Use these exact subjects:
 
 1. "Step 1: Determine scope"
 2. "Step 2: Download and read reference test suites"
@@ -26,10 +26,11 @@ Your very first action — before reading ANY files, before writing ANY code —
 8. "Step 8: Review unnecessary Windows-specific assertions"
 9. "Step 9: Verify all tests pass"
 10. "Step 10: Run bash comparison tests"
+11. "Step 11: Post report as PR comment"
 
 ### 2. Execution order
 
-Steps run strictly sequentially: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 → 9 → 10.
+Steps run strictly sequentially: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 → 9 → 10 → 11.
 
 Before starting step N, call TaskList and verify step N-1 is `completed`. Set step N to `in_progress`.
 
@@ -415,9 +416,21 @@ For any failures:
    - If the divergence is a bug, note it as a finding and either fix the test expectation to match bash or leave it as a failing test that documents the bug
 3. Re-run until all tests pass
 
-### Final report
+## Step 11: Post report as PR comment
 
-After all tests pass, produce a summary:
+After all tests pass, produce a summary report and post it as a comment on the current PR.
+
+### 1. Determine the PR number
+
+```bash
+gh pr view --json number --jq '.number'
+```
+
+If no PR exists for the current branch, skip this step and print the report to the console instead.
+
+### 2. Build the report
+
+Compose the report in the following format:
 
 ```markdown
 ## Coverage Improvement Summary
@@ -443,4 +456,18 @@ After all tests pass, produce a summary:
 ### Findings
 - <any shell bugs discovered>
 - <any intentional divergences noted>
+
+---
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
 ```
+
+### 3. Post the comment
+
+```bash
+gh pr comment <PR_NUMBER> --body "$(cat <<'EOF'
+<report content here>
+EOF
+)"
+```
+
+If posting fails (e.g. permissions), print the report to the console as a fallback.
