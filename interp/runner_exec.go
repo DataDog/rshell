@@ -251,7 +251,7 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 			ReadDir: func(ctx context.Context, path string) ([]fs.DirEntry, error) {
 				return r.sandbox.readDir(r.handlerCtx(ctx, todoPos), path)
 			},
-			OpenDir: func(ctx context.Context, path string) (*os.File, error) {
+			OpenDir: func(ctx context.Context, path string) (fs.ReadDirFile, error) {
 				return r.sandbox.openDir(r.handlerCtx(ctx, todoPos), path)
 			},
 			IsDirEmpty: func(ctx context.Context, path string) (bool, error) {

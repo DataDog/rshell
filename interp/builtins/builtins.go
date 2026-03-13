@@ -93,7 +93,7 @@ type CallContext struct {
 
 	// OpenDir opens a directory within the shell's path restrictions for
 	// incremental reading via ReadDir(n). Caller must close the handle.
-	OpenDir func(ctx context.Context, path string) (*os.File, error)
+	OpenDir func(ctx context.Context, path string) (fs.ReadDirFile, error)
 
 	// IsDirEmpty checks whether a directory is empty by reading at most
 	// one entry. More efficient than reading all entries.

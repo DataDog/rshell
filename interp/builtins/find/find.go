@@ -62,7 +62,6 @@ import (
 	"errors"
 	"io"
 	iofs "io/fs"
-	"os"
 	"strings"
 	"time"
 
@@ -277,7 +276,7 @@ func walkPath(
 	// dirIterator streams directory entries one at a time via ReadDir(1),
 	// keeping memory usage proportional to tree depth, not directory width.
 	type dirIterator struct {
-		dir           *os.File
+		dir           iofs.ReadDirFile
 		parentPath    string
 		depth         int
 		ancestorIDs   map[builtins.FileID]string

@@ -58,6 +58,8 @@ var builtinAllowedSymbols = []string{
 	"io/fs.DirEntry",
 	// io/fs.FileInfo — interface type for file information; no side effects.
 	"io/fs.FileInfo",
+	// io/fs.ReadDirFile — read-only directory handle interface (ReadDir + Close); no write capability.
+	"io/fs.ReadDirFile",
 	// io/fs.ModeDir — file mode bit constant for directories; pure constant.
 	"io/fs.ModeDir",
 	// io/fs.ModeNamedPipe — file mode bit constant for named pipes; pure constant.
@@ -98,8 +100,6 @@ var builtinAllowedSymbols = []string{
 	"math.MaxUint64",
 	// math.NaN — returns IEEE 754 NaN value; pure function, no I/O.
 	"math.NaN",
-	// os.File — open file handle; used by find's streaming directory iterator via OpenDir.
-	"os.File",
 	// os.FileInfo — file metadata interface returned by Stat; no I/O side effects.
 	"os.FileInfo",
 	// os.O_RDONLY — read-only file flag constant; cannot open files by itself.

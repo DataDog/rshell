@@ -197,7 +197,7 @@ func (s *pathSandbox) readDir(ctx context.Context, path string) ([]fs.DirEntry, 
 // openDir opens a directory within the sandbox and returns the underlying
 // *os.File handle. The caller can then call ReadDir(n) incrementally and
 // must close the handle when done.
-func (s *pathSandbox) openDir(ctx context.Context, path string) (*os.File, error) {
+func (s *pathSandbox) openDir(ctx context.Context, path string) (fs.ReadDirFile, error) {
 	absPath := toAbs(path, HandlerCtx(ctx).Dir)
 
 	root, relPath, ok := s.resolve(absPath)
