@@ -1,0 +1,14 @@
+description: sed on a file with no trailing newline still produces correct substituted output with a trailing newline (GNU sed normalizes line endings).
+setup:
+  files:
+    - path: file.txt
+      content: "hello world"
+      chmod: 0644
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    sed 's/hello/goodbye/' file.txt
+expect:
+  stdout: "goodbye world\n"
+  stderr: ""
+  exit_code: 0
