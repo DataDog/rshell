@@ -1,5 +1,5 @@
 description: strings prints an error and exits 1 when given a directory.
-skip_assert_against_bash: true
+skip_assert_against_bash: true  # GNU strings uses different error format for directories
 setup:
   files:
     - path: subdir/placeholder.txt

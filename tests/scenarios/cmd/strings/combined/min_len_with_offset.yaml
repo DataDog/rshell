@@ -1,5 +1,4 @@
 description: strings -n 6 -t d combines minimum length filter with decimal offset.
-skip_assert_against_bash: true
 setup:
   files:
     - path: data.bin

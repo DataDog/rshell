@@ -1,5 +1,5 @@
 description: strings prints an error and exits 1 when a file does not exist.
-skip_assert_against_bash: true
+skip_assert_against_bash: true  # GNU strings uses different error message format
 input:
   allowed_paths: ["$DIR"]
   script: |+
