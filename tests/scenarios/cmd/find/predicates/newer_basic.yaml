@@ -5,20 +5,22 @@ setup:
     - path: dir/old.txt
       content: "old"
       chmod: 0644
+      mod_time: "2024-01-01T00:00:00Z"
     - path: dir/ref.txt
       content: "reference"
       chmod: 0644
+      mod_time: "2024-01-02T00:00:00Z"
     - path: dir/new.txt
       content: "new"
       chmod: 0644
+      mod_time: "2024-01-03T00:00:00Z"
 input:
   allowed_paths: ["$DIR"]
   script: |+
     find dir -newer dir/old.txt -type f
 expect:
-  # On most filesystems ref.txt and new.txt have strictly newer mtimes
-  # than old.txt, but on coarse-mtime systems they may share timestamps.
-  # Use stdout_contains for robustness against timing differences.
-  stdout_contains: ["new.txt"]
+  stdout_unordered: |+
+    dir/ref.txt
+    dir/new.txt
   stderr: ""
   exit_code: 0
