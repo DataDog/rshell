@@ -15,9 +15,9 @@ import (
 	"github.com/DataDog/rshell/interp"
 )
 
-func tryCmdRunCtx(ctx context.Context, t *testing.T, script, dir string) (string, string, int, error) {
+func cmdRunCtx(ctx context.Context, t *testing.T, script, dir string) (string, string, int) {
 	t.Helper()
-	return testutil.TryRunScriptCtx(ctx, t, script, dir, interp.AllowedPaths([]string{dir}))
+	return testutil.RunScriptCtx(ctx, t, script, dir, interp.AllowedPaths([]string{dir}))
 }
 
 // FuzzEcho fuzzes echo with arbitrary arguments (no escape processing).
@@ -52,10 +52,7 @@ func FuzzEcho(f *testing.F) {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 
-		_, _, code, err := tryCmdRunCtx(ctx, t, "echo '"+arg+"'", dir)
-		if err != nil {
-			return // skip unparseable scripts
-		}
+		_, _, code := cmdRunCtx(ctx, t, "echo '"+arg+"'", dir)
 		if code != 0 {
 			t.Errorf("echo unexpected exit code %d", code)
 		}
@@ -118,10 +115,7 @@ func FuzzEchoEscapes(f *testing.F) {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 
-		_, _, code, err := tryCmdRunCtx(ctx, t, "echo -e '"+arg+"'", dir)
-		if err != nil {
-			return // skip unparseable scripts
-		}
+		_, _, code := cmdRunCtx(ctx, t, "echo -e '"+arg+"'", dir)
 		if code != 0 {
 			t.Errorf("echo -e unexpected exit code %d", code)
 		}
@@ -168,10 +162,7 @@ func FuzzEchoFlagInteraction(f *testing.F) {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 
-		_, _, code, err := tryCmdRunCtx(ctx, t, "echo"+flags+" '"+arg+"'", dir)
-		if err != nil {
-			return // skip unparseable scripts
-		}
+		_, _, code := cmdRunCtx(ctx, t, "echo"+flags+" '"+arg+"'", dir)
 		if code != 0 {
 			t.Errorf("echo%s unexpected exit code %d", flags, code)
 		}
