@@ -52,6 +52,8 @@ var builtinAllowedSymbols = []string{
 	"fmt.Errorf",
 	// fmt.Sprintf — string formatting; pure function, no I/O.
 	"fmt.Sprintf",
+	// io/fs.DirEntry — interface type for directory entries; no side effects.
+	"io/fs.DirEntry",
 	// io/fs.FileInfo — interface type for file information; no side effects.
 	"io/fs.FileInfo",
 	// io/fs.ModeDir — file mode bit constant for directories; pure constant.
@@ -88,8 +90,6 @@ var builtinAllowedSymbols = []string{
 	"math.MaxInt64",
 	// math.MaxUint64 — integer constant; no side effects.
 	"math.MaxUint64",
-	// math.MinInt64 — integer constant; no side effects.
-	"math.MinInt64",
 	// math.NaN — returns IEEE 754 NaN value; pure function, no I/O.
 	"math.NaN",
 	// os.FileInfo — file metadata interface returned by Stat; no I/O side effects.

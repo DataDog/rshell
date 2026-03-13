@@ -23,6 +23,7 @@
 //
 // File tests (unary):
 //
+//	-a FILE    FILE exists (deprecated POSIX synonym for -e)
 //	-e FILE    FILE exists
 //	-f FILE    FILE exists and is a regular file
 //	-d FILE    FILE exists and is a directory
@@ -48,6 +49,7 @@
 // String comparison (binary):
 //
 //	S1 = S2     strings are equal
+//	S1 == S2    strings are equal (synonym for =)
 //	S1 != S2    strings are not equal
 //	S1 < S2     S1 sorts before S2 (lexicographic)
 //	S1 > S2     S1 sorts after S2 (lexicographic)
@@ -72,7 +74,6 @@ package testcmd
 import (
 	"context"
 	"io/fs"
-	"math"
 	"strconv"
 	"strings"
 
@@ -96,6 +97,7 @@ Exit status:
   2  if an error occurred.
 
 File tests:
+  -a FILE   FILE exists (deprecated synonym for -e)
   -e FILE   FILE exists
   -f FILE   FILE is a regular file
   -d FILE   FILE is a directory
@@ -118,6 +120,7 @@ String tests:
 
 String comparison:
   S1 = S2    strings are equal
+  S1 == S2   strings are equal (synonym for =)
   S1 != S2   strings are not equal
   S1 < S2    S1 sorts before S2
   S1 > S2    S1 sorts after S2
@@ -168,6 +171,17 @@ type parser struct {
 	pos     int
 	err     bool
 	depth   int
+	// subexprStart marks the beginning of the current subexpression for
+	// POSIX disambiguation. It is set to 0 initially and updated when
+	// entering a new subexpression boundary (after ! negation or inside
+	// parentheses). subexprEnd marks the exclusive end of the current
+	// subexpression (defaults to len(args), set to the position of ")"
+	// inside parenthesized groups). The 3-arg disambiguation rule fires
+	// when the subexpression length (subexprEnd - subexprStart) is exactly
+	// 3, preventing it from triggering inside parseAnd/parseOr chains
+	// while still allowing it inside nested ! or (...) contexts.
+	subexprStart int
+	subexprEnd   int
 }
 
 const maxParenDepth = 128
@@ -178,10 +192,11 @@ func evaluate(ctx context.Context, callCtx *builtins.CallContext, cmdName string
 	}
 
 	p := &parser{
-		ctx:     ctx,
-		callCtx: callCtx,
-		cmdName: cmdName,
-		args:    args,
+		ctx:        ctx,
+		callCtx:    callCtx,
+		cmdName:    cmdName,
+		args:       args,
+		subexprEnd: len(args),
 	}
 
 	result := p.parseOr()
@@ -190,7 +205,7 @@ func evaluate(ctx context.Context, callCtx *builtins.CallContext, cmdName string
 		return builtins.Result{Code: exitSyntaxError}
 	}
 	if p.pos < len(p.args) {
-		p.callCtx.Errf("%s: extra argument '%s'\n", p.cmdName, p.args[p.pos])
+		p.callCtx.Errf("%s: too many arguments\n", p.cmdName)
 		return builtins.Result{Code: exitSyntaxError}
 	}
 	if result {
@@ -240,14 +255,26 @@ func (p *parser) parseAnd() bool {
 // as a literal string operand, not negation.
 func (p *parser) parseNot() bool {
 	if p.pos < len(p.args) && p.peek() == "!" {
-		remaining := len(p.args) - p.pos
-		if remaining == 1 {
+		// When "!" is the only token in the current subexpression, treat
+		// it as a non-empty string per POSIX single-argument rules.
+		// We use subexpression bounds (not global remaining count) so
+		// that "!" after -a/-o in a larger expression is still treated
+		// as negation requiring an operand. e.g.:
+		//   test !          → "!" is non-empty string → exit 0
+		//   test -n x -a !  → "!" is negation, missing arg → exit 2
+		//   test x -a !     → 3-arg rule handles it as binary -a
+		if p.subexprEnd-p.subexprStart == 1 {
 			p.advance()
 			return true
 		}
-		// If "!" is followed by a binary operator, treat it as a literal
-		// operand (fall through to parsePrimary for binary expression).
-		if remaining >= 3 && isBinaryOp(p.args[p.pos+1]) {
+		// POSIX 3-arg rule: if the current subexpression has exactly 3
+		// tokens and "!" is followed by a binary operator, treat "!" as a
+		// literal string operand (fall through to parsePrimary for binary
+		// expression). We use subexprStart to scope this to the current
+		// subexpression, so it fires for both top-level 3-arg forms and
+		// nested ones (e.g., "test ! ! = !") but not inside -a/-o chains.
+		subexprLen := p.subexprEnd - p.subexprStart
+		if subexprLen == 3 && isBinaryOpOrLogical(p.args[p.pos+1]) {
 			return p.parsePrimary()
 		}
 		if p.depth >= maxParenDepth {
@@ -257,7 +284,10 @@ func (p *parser) parseNot() bool {
 		}
 		p.depth++
 		p.advance()
+		saved := p.subexprStart
+		p.subexprStart = p.pos // new subexpression after !
 		result := !p.parseNot()
+		p.subexprStart = saved
 		p.depth--
 		return result
 	}
@@ -275,14 +305,63 @@ func (p *parser) parsePrimary() bool {
 	}
 
 	cur := p.peek()
-	remaining := len(p.args) - p.pos
+	// Use the subexpression boundary (not len(args)) so that lookahead
+	// inside parenthesized groups does not read past the closing ')'.
+	// At the top level subexprEnd == len(args); inside (...) it points
+	// to the position of the matching ')'.
+	remaining := p.subexprEnd - p.pos
 
-	// Only treat "(" as grouping when there are enough tokens and it is not
-	// used as a literal operand in a binary expression. A lone "(" with
-	// remaining==1 is a bare non-empty string per POSIX single-argument rules.
-	// When "(" is followed by a binary operator (e.g., "(" = "("), treat it
-	// as a literal string operand.
-	if cur == "(" && remaining > 1 && !(remaining >= 3 && isBinaryOp(p.args[p.pos+1])) {
+	// POSIX 3-arg rule: when the subexpression is exactly "( X )" and X is
+	// NOT a binary operator, treat the middle token as a string non-emptiness
+	// test. This prevents bash-compat issues where X is "!", "-n", etc. that
+	// would be misinterpreted as operators inside a group. e.g.,
+	//   test "(" "!" ")" → 0 (non-empty string "!")
+	//   test "(" "" ")" → 1 (empty string)
+	// When X IS a binary operator (e.g., "="), the isThreeArgBinary check
+	// below handles it as "(" = ")" (string comparison).
+	subexprLen := p.subexprEnd - p.subexprStart
+	if cur == "(" && subexprLen == 3 && p.pos+2 < len(p.args) && p.args[p.pos+2] == ")" && !isBinaryOpOrLogical(p.args[p.pos+1]) {
+		p.advance() // skip "("
+		s := p.advance()
+		p.advance() // skip ")"
+		return s != ""
+	}
+
+	// POSIX 4-arg rule: when the subexpression is exactly "( X Y )" where
+	// the first token is "(" and the last is ")", evaluate the inner 2 tokens
+	// as a 2-arg expression. This prevents findMatchingParen from incorrectly
+	// matching a literal ")" in the data. e.g.,
+	//   test "(" "!" ")" ")" → inner "! )" → NOT non-empty ")" → false → exit 1
+	//   test "(" "-n" "x" ")" → inner "-n x" → true → exit 0
+	if cur == "(" && subexprLen == 4 && p.pos+3 < len(p.args) && p.args[p.pos+3] == ")" {
+		p.advance() // skip "("
+		savedStart := p.subexprStart
+		savedEnd := p.subexprEnd
+		p.subexprStart = p.pos
+		p.subexprEnd = p.pos + 2 // inner 2 tokens
+		result := p.parseOr()
+		p.subexprStart = savedStart
+		p.subexprEnd = savedEnd
+		if p.err {
+			return false
+		}
+		if p.pos >= len(p.args) || p.peek() != ")" {
+			p.callCtx.Errf("%s: missing ')'\n", p.cmdName)
+			p.err = true
+			return false
+		}
+		p.advance() // skip ")"
+		return result
+	}
+
+	// Treat "(" as grouping when there are tokens after it, or when it
+	// appears as the last token inside a compound expression (subexprLen > 1).
+	// A lone "(" as the only argument (subexprLen == 1) is a bare non-empty
+	// string per POSIX single-argument rules. When "(" is followed by a
+	// binary operator (e.g., "(" = "("), treat it as a literal string operand.
+	// In compound expressions like "test -f x -o (", the lone "(" triggers
+	// grouping which correctly fails with a missing argument error.
+	if cur == "(" && (remaining > 1 || subexprLen > 1) && !p.isThreeArgBinary(p.pos) {
 		if p.depth >= maxParenDepth {
 			p.callCtx.Errf("%s: expression too deeply nested\n", p.cmdName)
 			p.err = true
@@ -295,7 +374,16 @@ func (p *parser) parsePrimary() bool {
 			p.err = true
 			return false
 		}
+		savedStart := p.subexprStart
+		savedEnd := p.subexprEnd
+		p.subexprStart = p.pos // new subexpression inside parens
+		// Find matching ')' to set the subexpression end boundary.
+		// This allows the 3-arg disambiguation rule to correctly
+		// count only tokens between '(' and ')'.
+		p.subexprEnd = p.findMatchingParen(p.pos)
 		result := p.parseOr()
+		p.subexprStart = savedStart
+		p.subexprEnd = savedEnd
 		p.depth--
 		if p.err {
 			return false
@@ -316,6 +404,15 @@ func (p *parser) parsePrimary() bool {
 	if remaining >= 3 {
 		op := p.args[p.pos+1]
 		if isBinaryOp(op) {
+			return p.parseBinaryExpr()
+		}
+		// POSIX 3-arg rule: when the current subexpression has exactly 3
+		// tokens and the middle token is -a/-o, treat as binary AND/OR
+		// with string operands. e.g., "test -f -a -d" → "-f" AND "-d".
+		// We use subexprStart (not remaining) so this fires for nested
+		// subexpressions after ! but not inside -a/-o chains.
+		subexprLen := p.subexprEnd - p.subexprStart
+		if subexprLen == 3 && (op == "-a" || op == "-o") {
 			return p.parseBinaryExpr()
 		}
 	}
@@ -352,9 +449,47 @@ func isBinaryOp(op string) bool {
 	return false
 }
 
+// isBinaryOpOrLogical returns true if op is a binary comparison operator
+// or a logical operator (-a/-o) that can act as a binary operator in the
+// POSIX 3-argument form.
+func isBinaryOpOrLogical(op string) bool {
+	return isBinaryOp(op) || op == "-a" || op == "-o"
+}
+
+// isThreeArgBinary returns true when the current subexpression has exactly 3
+// tokens and the token at pos+1 is a binary or logical operator. This
+// implements the POSIX 3-argument disambiguation rule. The subexpression
+// length is computed from p.subexprStart (set at the top level and updated
+// when entering ! negation), so the rule fires for both top-level 3-arg
+// forms and nested ones (e.g., "test ! ! = !") but not inside -a/-o chains.
+func (p *parser) isThreeArgBinary(pos int) bool {
+	subexprLen := p.subexprEnd - p.subexprStart
+	return subexprLen == 3 && pos+1 < len(p.args) && isBinaryOpOrLogical(p.args[pos+1])
+}
+
+// findMatchingParen scans forward from start to find the position of the
+// matching ')' token, accounting for nested '(' ... ')' groups. If no
+// matching ')' is found, it returns len(p.args) as a fallback (the parse
+// will later report a "missing ')'" error).
+func (p *parser) findMatchingParen(start int) int {
+	depth := 1
+	for i := start; i < len(p.args); i++ {
+		switch p.args[i] {
+		case "(":
+			depth++
+		case ")":
+			depth--
+			if depth == 0 {
+				return i
+			}
+		}
+	}
+	return len(p.args)
+}
+
 func isUnaryFileOp(op string) bool {
 	switch op {
-	case "-e", "-f", "-d", "-s", "-r", "-w", "-x", "-h", "-L", "-p":
+	case "-a", "-e", "-f", "-d", "-s", "-r", "-w", "-x", "-h", "-L", "-p":
 		return true
 	}
 	return false
@@ -410,6 +545,10 @@ func (p *parser) parseBinaryExpr() bool {
 		return p.evalIntCompare(left, op, right)
 	case "-nt", "-ot":
 		return p.evalFileCompare(left, op, right)
+	case "-a":
+		return left != "" && right != ""
+	case "-o":
+		return left != "" || right != ""
 	default:
 		p.callCtx.Errf("%s: unknown binary operator '%s'\n", p.cmdName, op)
 		p.err = true
@@ -457,7 +596,7 @@ func (p *parser) evalFileTest(op, path string) bool {
 
 func evalFileInfo(op string, info fs.FileInfo) bool {
 	switch op {
-	case "-e":
+	case "-a", "-e":
 		return true
 	case "-f":
 		return info.Mode().IsRegular()
@@ -466,6 +605,9 @@ func evalFileInfo(op string, info fs.FileInfo) bool {
 	case "-s":
 		return info.Size() > 0
 	case "-r":
+		// NOTE: This fallback checks any permission bit (user/group/other) and does not
+		// account for file ownership. In production AccessFile is always set and this path
+		// is not reached; actual file access still goes through the sandbox.
 		return info.Mode().Perm()&0444 != 0
 	case "-w":
 		return info.Mode().Perm()&0222 != 0
@@ -512,15 +654,6 @@ func (p *parser) parseInt(s string) (int64, bool) {
 	}
 	n, err := strconv.ParseInt(s, 10, 64)
 	if err != nil {
-		// Check for overflow — clamp to boundaries like GNU test.
-		if numErr, ok := err.(*strconv.NumError); ok && numErr.Err == strconv.ErrRange {
-			if s[0] == '-' {
-				n = math.MinInt64
-			} else {
-				n = math.MaxInt64
-			}
-			return n, true
-		}
 		p.callCtx.Errf("%s: %s: integer expression expected\n", p.cmdName, s)
 		p.err = true
 		return 0, false
