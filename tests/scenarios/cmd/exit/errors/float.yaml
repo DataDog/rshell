@@ -1,11 +1,10 @@
-skip_assert_against_bash: true
 description: >
-  Exit with a floating-point argument is invalid; does not exit the shell.
-  skip_assert_against_bash because error message format differs.
+  Exit with a floating-point argument is invalid and exits the shell with code 2.
 input:
   script: |+
     exit 1.5
 expect:
   stdout: ""
-  stderr: "1.5: numeric argument required\n"
+  stderr_contains:
+    - "1.5: numeric argument required"
   exit_code: 2

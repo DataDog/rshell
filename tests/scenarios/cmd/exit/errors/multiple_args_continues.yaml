@@ -1,11 +1,10 @@
-skip_assert_against_bash: true
 description: >
   Exit with multiple arguments exits the shell; subsequent commands do not run.
-  skip_assert_against_bash because error message format differs (bash prefixes with "bash: line N: exit:").
 input:
   script: |+
     exit 1 2; echo still running
 expect:
   stdout: ""
-  stderr: "too many arguments\n"
+  stderr_contains:
+    - "too many arguments"
   exit_code: 1
