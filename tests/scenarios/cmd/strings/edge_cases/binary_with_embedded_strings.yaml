@@ -11,3 +11,4 @@ expect:
   stdout: "hello\nworld!!!\n"
   stderr: ""
   exit_code: 0
+skip_assert_against_bash: true

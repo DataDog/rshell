@@ -21,6 +21,10 @@ expect:
     exec: 0
     noexec: 1
     missing: 1
+  stdout_windows: |
+    exec: 1
+    noexec: 1
+    missing: 1
   stderr: ""
   exit_code: 0
 skip_assert_against_bash: true

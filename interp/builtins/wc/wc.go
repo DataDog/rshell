@@ -309,17 +309,18 @@ func countReader(ctx context.Context, r io.Reader) (counts, error) {
 }
 
 func fieldWidth(total counts, opts options) int {
-	max := int64(0)
-	if opts.showLines && total.lines > max {
-		max = total.lines
-	}
-	if opts.showWords && total.words > max {
+	// GNU wc derives the column width from the largest count across ALL
+	// categories (lines, words, chars, bytes, max-line-length) — not just
+	// the ones being displayed.  This ensures columns stay aligned even
+	// when only a subset of counters is printed (e.g. "wc -lw").
+	max := total.lines
+	if total.words > max {
 		max = total.words
 	}
-	if opts.showChars && total.chars > max {
+	if total.chars > max {
 		max = total.chars
 	}
-	if opts.showBytes && total.bytes > max {
+	if total.bytes > max {
 		max = total.bytes
 	}
 	if opts.showMaxLineLen && total.maxLineLen > max {

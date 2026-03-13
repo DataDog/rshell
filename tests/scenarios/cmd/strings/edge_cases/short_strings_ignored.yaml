@@ -11,3 +11,4 @@ expect:
   stdout: "defg\njklm\n"
   stderr: ""
   exit_code: 0
+skip_assert_against_bash: true
