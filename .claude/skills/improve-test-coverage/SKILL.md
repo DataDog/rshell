@@ -239,7 +239,6 @@ Rank gaps by importance:
 
 Log the gap analysis as a summary table (do NOT ask for confirmation — proceed directly to writing tests). Include:
 - The gap description
-- The reference test it was derived from (suite + test name/function)
 - The priority level
 - Whether it needs `skip_assert_against_bash: true`
 
@@ -448,8 +447,7 @@ git add tests/scenarios/
 # Commit with a descriptive message
 git commit -m "test: improve coverage for <target>
 
-Add scenario tests derived from reference test suites (GNU coreutils,
-uutils/coreutils, yash). See PR comment for full coverage report.
+Add scenario tests to improve coverage. See PR comment for full report.
 
 Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>"
 
