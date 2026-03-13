@@ -54,6 +54,8 @@ var builtinAllowedSymbols = []string{
 	"fmt.Sprintf",
 	// io/fs.ErrNotExist — sentinel error for "not exist" checks; pure constant.
 	"io/fs.ErrNotExist",
+	// io/fs.DirEntry — interface type for directory entries; no side effects.
+	"io/fs.DirEntry",
 	// io/fs.FileInfo — interface type for file information; no side effects.
 	"io/fs.FileInfo",
 	// io/fs.ModeDir — file mode bit constant for directories; pure constant.

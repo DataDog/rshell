@@ -93,6 +93,12 @@ type CallContext struct {
 	// filesystem-dependent order used by GNU coreutils/findutils.
 	ReadDir func(ctx context.Context, path string) ([]fs.DirEntry, error)
 
+	// ReadDirLimited reads directory entries, skipping the first offset entries
+	// and returning up to maxRead entries sorted by name within the read window.
+	// Returns (entries, truncated, error). When truncated is true, the directory
+	// contained more entries beyond the returned set.
+	ReadDirLimited func(ctx context.Context, path string, offset, maxRead int) ([]fs.DirEntry, bool, error)
+
 	// StatFile returns file info within the shell's path restrictions (follows symlinks).
 	StatFile func(ctx context.Context, path string) (fs.FileInfo, error)
 
