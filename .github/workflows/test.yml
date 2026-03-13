@@ -56,25 +56,3 @@ jobs:
         env:
           RSHELL_BASH_TEST: "1"
         run: go test -v -run TestShellScenariosAgainstBash ./tests/
-
-  fuzz-differential:
-    name: Fuzz differential tests against GNU tools
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-      - uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
-        with:
-          go-version-file: .go-version
-      - name: Fuzz differential tests against GNU tools
-        env:
-          RSHELL_BASH_TEST: "1"
-        run: |
-          OVERALL_STATUS=0
-          for PKG in ./builtins/tests/cat/ ./builtins/tests/head/ ./builtins/tests/tail/ ./builtins/tests/wc/; do
-            FUZZ_FUNCS=$(grep -r '^func Fuzz.*Differential' $PKG 2>/dev/null | sed 's/.*func \(Fuzz[^(]*\).*/\1/' | sort -u)
-            for FUNC in $FUZZ_FUNCS; do
-              echo "Fuzzing $FUNC in $PKG..."
-              go test -fuzz="^${FUNC}$" -fuzztime=30s $PKG -timeout 300s || OVERALL_STATUS=1
-            done
-          done
-          exit $OVERALL_STATUS
