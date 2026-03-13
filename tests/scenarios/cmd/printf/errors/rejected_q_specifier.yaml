@@ -5,8 +5,5 @@ input:
     printf "%q\n" "hello world"
 expect:
   stdout: "\n"
-  stderr_contains:
-    - "printf"
-    - "%q"
-    - "not supported"
+  stderr: "printf: %q: not supported\n"
   exit_code: 1
