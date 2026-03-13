@@ -95,12 +95,19 @@ func (r *Runner) hdocReader(rd *syntax.Redirect) (*os.File, error) {
 	}
 	var buf bytes.Buffer
 	var cur []syntax.WordPart
+	var hdocErr error
 	flushLine := func() {
+		if hdocErr != nil {
+			return
+		}
 		if buf.Len() > 0 {
 			buf.WriteByte('\n')
 		}
 		buf.WriteString(expandWord(&syntax.Word{Parts: cur}))
 		cur = cur[:0]
+		if buf.Len() > MaxHeredocBytes {
+			hdocErr = fmt.Errorf("heredoc: content exceeds maximum size (%d bytes)", MaxHeredocBytes)
+		}
 	}
 	for _, wp := range rd.Hdoc.Parts {
 		lit, ok := wp.(*syntax.Lit)
@@ -118,10 +125,10 @@ func (r *Runner) hdocReader(rd *syntax.Redirect) (*os.File, error) {
 		}
 	}
 	flushLine()
-	if buf.Len() > MaxHeredocBytes {
+	if hdocErr != nil {
 		pr.Close()
 		pw.Close()
-		return nil, fmt.Errorf("heredoc: content exceeds maximum size (%d bytes)", MaxHeredocBytes)
+		return nil, hdocErr
 	}
 	go func() {
 		pw.Write(buf.Bytes())
