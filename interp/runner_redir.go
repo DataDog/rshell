@@ -100,14 +100,20 @@ func (r *Runner) hdocReader(rd *syntax.Redirect) (*os.File, error) {
 		if hdocErr != nil {
 			return
 		}
+		expanded := expandWord(&syntax.Word{Parts: cur})
+		cur = cur[:0]
+		newLen := buf.Len() + len(expanded)
+		if buf.Len() > 0 {
+			newLen++ // account for the '\n' separator
+		}
+		if newLen > MaxHeredocBytes {
+			hdocErr = fmt.Errorf("heredoc: content exceeds maximum size (%d bytes)", MaxHeredocBytes)
+			return
+		}
 		if buf.Len() > 0 {
 			buf.WriteByte('\n')
 		}
-		buf.WriteString(expandWord(&syntax.Word{Parts: cur}))
-		cur = cur[:0]
-		if buf.Len() > MaxHeredocBytes {
-			hdocErr = fmt.Errorf("heredoc: content exceeds maximum size (%d bytes)", MaxHeredocBytes)
-		}
+		buf.WriteString(expanded)
 	}
 	for _, wp := range rd.Hdoc.Parts {
 		lit, ok := wp.(*syntax.Lit)
