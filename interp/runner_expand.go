@@ -29,7 +29,7 @@ func (r *Runner) fillExpandConfig(ctx context.Context) {
 
 func (r *Runner) updateExpandOpts() {
 	r.ecfg.ReadDir2 = func(s string) ([]fs.DirEntry, error) {
-		return r.readDirHandler(r.handlerCtx(r.ectx, todoPos), s)
+		return r.sandbox.readDirForGlob(r.handlerCtx(r.ectx, todoPos), s)
 	}
 }
 

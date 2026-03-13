@@ -17,6 +17,11 @@ import (
 	"strings"
 )
 
+// MaxGlobEntries is the maximum number of directory entries returned per glob
+// expansion step. Patterns that expand over directories with more entries are
+// rejected with a "too many entries" error to prevent memory exhaustion.
+const MaxGlobEntries = 100_000
+
 // allowedRoot pairs an absolute directory path with its opened os.Root handle.
 type allowedRoot struct {
 	absPath string
@@ -169,6 +174,22 @@ func (s *pathSandbox) open(ctx context.Context, path string, flag int, perm os.F
 
 // readDir implements the restricted directory-read policy.
 func (s *pathSandbox) readDir(ctx context.Context, path string) ([]fs.DirEntry, error) {
+	return s.readDirN(ctx, path, -1)
+}
+
+// readDirForGlob reads at most MaxGlobEntries directory entries for glob
+// expansion. It caps the underlying ReadDir call at MaxGlobEntries+1 so the
+// kernel never materialises more entries than needed; if the directory exceeds
+// the limit a "too many entries" error is returned before any expensive pattern
+// matching or sorting can occur.
+func (s *pathSandbox) readDirForGlob(ctx context.Context, path string) ([]fs.DirEntry, error) {
+	return s.readDirN(ctx, path, MaxGlobEntries)
+}
+
+// readDirN is the common implementation for readDir and readDirForGlob.
+// maxEntries <= 0 means unlimited; otherwise at most maxEntries entries are
+// returned and a "too many entries" error is returned if the directory has more.
+func (s *pathSandbox) readDirN(ctx context.Context, path string, maxEntries int) ([]fs.DirEntry, error) {
 	absPath := toAbs(path, HandlerCtx(ctx).Dir)
 
 	root, relPath, ok := s.resolve(absPath)
@@ -181,9 +202,18 @@ func (s *pathSandbox) readDir(ctx context.Context, path string) ([]fs.DirEntry, 
 		return nil, portablePathError(err)
 	}
 	defer f.Close()
-	entries, err := f.ReadDir(-1)
-	if err != nil {
+
+	var entries []fs.DirEntry
+	if maxEntries <= 0 {
+		entries, err = f.ReadDir(-1)
+	} else {
+		entries, err = f.ReadDir(maxEntries + 1)
+	}
+	if err != nil && err != io.EOF {
 		return nil, portablePathError(err)
+	}
+	if maxEntries > 0 && len(entries) > maxEntries {
+		return nil, &os.PathError{Op: "readdir", Path: path, Err: fmt.Errorf("too many entries (limit %d)", maxEntries)}
 	}
 	// os.Root's ReadDir does not guarantee sorted order like os.ReadDir.
 	// Sort to match POSIX glob expansion expectations.
