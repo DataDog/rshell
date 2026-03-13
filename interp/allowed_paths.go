@@ -185,12 +185,9 @@ func (s *pathSandbox) readDir(ctx context.Context, path string) ([]fs.DirEntry, 
 		return nil, portablePathError(err)
 	}
 	defer f.Close()
-	entries, err := f.ReadDir(MaxGlobEntries + 1)
-	if err != nil && err != io.EOF {
+	entries, err := f.ReadDir(-1)
+	if err != nil {
 		return nil, portablePathError(err)
-	}
-	if len(entries) > MaxGlobEntries {
-		return nil, &os.PathError{Op: "readdir", Path: path, Err: fmt.Errorf("too many entries (limit %d)", MaxGlobEntries)}
 	}
 	// os.Root's ReadDir does not guarantee sorted order like os.ReadDir.
 	// Sort to match POSIX glob expansion expectations.
