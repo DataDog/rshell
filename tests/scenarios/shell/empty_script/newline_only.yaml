@@ -1,0 +1,8 @@
+description: Script with a single newline exits cleanly.
+input:
+  script: |+
+
+expect:
+  stdout: ""
+  stderr: ""
+  exit_code: 0
