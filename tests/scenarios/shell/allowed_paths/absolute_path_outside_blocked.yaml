@@ -1,0 +1,15 @@
+description: Absolute path outside allowed directory is blocked.
+skip_assert_against_bash: true
+setup:
+  files:
+    - path: allowed/ok.txt
+      content: "ok"
+input:
+  allowed_paths: ["allowed"]
+  script: |+
+    cat /etc/hostname
+expect:
+  stdout: ""
+  stderr_contains:
+    - "permission denied"
+  exit_code: 1

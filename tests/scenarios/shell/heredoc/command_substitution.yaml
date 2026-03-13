@@ -1,0 +1,11 @@
+description: Heredoc with command substitution fails because command substitution is not supported.
+skip_assert_against_bash: true
+input:
+  script: |+
+    cat <<EOF
+    today is $(printf hello)
+    EOF
+expect:
+  stdout: ""
+  stderr: "command substitution is not supported\n"
+  exit_code: 2

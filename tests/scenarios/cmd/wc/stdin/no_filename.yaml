@@ -4,6 +4,6 @@ input:
   script: |+
     printf "one\ntwo\nthree\n" | wc -l
 expect:
-  stdout: "3\n"
+  stdout: "      3\n"
   stderr: ""
   exit_code: 0
