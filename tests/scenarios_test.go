@@ -17,6 +17,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -48,7 +49,8 @@ type setupFile struct {
 	Path    string      `yaml:"path"`
 	Content string      `yaml:"content"`
 	Chmod   os.FileMode `yaml:"chmod"`
-	Symlink string      `yaml:"symlink"` // if set, create a symlink pointing to this target (relative to test dir)
+	Symlink string      `yaml:"symlink"`  // if set, create a symlink pointing to this target (relative to test dir)
+	ModTime string      `yaml:"mod_time"` // if set, override the file's modification time (RFC 3339 format)
 }
 
 // input holds the shell script to execute.
@@ -132,6 +134,11 @@ func setupTestDir(t *testing.T, sc scenario) string {
 			if f.Chmod != 0 {
 				require.NoError(t, os.Chmod(fullPath, f.Chmod), "failed to chmod file %s", f.Path)
 			}
+		}
+		if f.ModTime != "" {
+			mt, err := time.Parse(time.RFC3339, f.ModTime)
+			require.NoError(t, err, "failed to parse mod_time for %s", f.Path)
+			require.NoError(t, os.Chtimes(fullPath, mt, mt), "failed to set mod_time for %s", f.Path)
 		}
 	}
 	return dir
@@ -261,6 +268,11 @@ func setupTestDirIn(t *testing.T, parentDir, scriptsDir, subdir string, sc scena
 			if f.Chmod != 0 {
 				require.NoError(t, os.Chmod(fullPath, f.Chmod), "failed to chmod file %s", f.Path)
 			}
+		}
+		if f.ModTime != "" {
+			mt, err := time.Parse(time.RFC3339, f.ModTime)
+			require.NoError(t, err, "failed to parse mod_time for %s", f.Path)
+			require.NoError(t, os.Chtimes(fullPath, mt, mt), "failed to set mod_time for %s", f.Path)
 		}
 	}
 	require.NoError(t, os.WriteFile(filepath.Join(scriptsDir, subdir+".sh"), []byte(sc.Input.Script), 0644))

@@ -7,6 +7,7 @@ package find
 
 import (
 	iofs "io/fs"
+	"math"
 	"testing"
 	"time"
 
@@ -85,6 +86,49 @@ func TestEvalMminCeiling(t *testing.T) {
 			}
 			got := evalMmin(ec, tt.n, tt.cmp)
 			assert.Equal(t, tt.matched, got, "evalMmin(age=%v, n=%d, cmp=%s)", tt.age, tt.n, tt.cmp)
+		})
+	}
+}
+
+// TestEvalMminOverflow verifies that evalMmin handles values exceeding
+// maxMminN without integer overflow. For +N (cmpMore), overflow values
+// should return false (nothing qualifies). For -N (cmpLess), overflow
+// values should return true (everything qualifies).
+func TestEvalMminOverflow(t *testing.T) {
+	now := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
+	// File is 1 hour old — a normal age for testing overflow thresholds.
+	modTime := now.Add(-1 * time.Hour)
+	ec := &evalContext{
+		now:  now,
+		info: &fakeFileInfo{modTime: modTime},
+	}
+
+	tests := []struct {
+		name    string
+		n       int64
+		cmp     cmpOp
+		matched bool
+	}{
+		// At the overflow boundary: maxMminN is the largest safe value.
+		{"maxMminN +N", maxMminN, cmpMore, false},     // threshold is ~292K years; 1h file is newer
+		{"maxMminN -N", maxMminN, cmpLess, true},      // 1h < ~292K years
+		{"maxMminN exact", maxMminN, cmpExact, false}, // exact match impossible
+
+		// Just past the boundary: these would overflow without the guard.
+		{"maxMminN+1 +N", maxMminN + 1, cmpMore, false}, // overflow guard → false
+		{"maxMminN+1 -N", maxMminN + 1, cmpLess, true},  // overflow guard → true
+
+		// Very large values that would definitely overflow.
+		{"huge +N", math.MaxInt64 / 2, cmpMore, false},
+		{"huge -N", math.MaxInt64 / 2, cmpLess, true},
+		{"maxint64 +N", math.MaxInt64, cmpMore, false},
+		{"maxint64 -N", math.MaxInt64, cmpLess, true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := evalMmin(ec, tt.n, tt.cmp)
+			assert.Equal(t, tt.matched, got, "evalMmin(n=%d, cmp=%s)", tt.n, tt.cmp)
 		})
 	}
 }

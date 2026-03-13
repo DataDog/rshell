@@ -8,6 +8,7 @@ package find
 import (
 	"errors"
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 )
@@ -403,7 +404,17 @@ func (p *parser) parseNumericPredicate(kind exprKind) (*expr, error) {
 	}
 	n, err := strconv.ParseInt(numStr, 10, 64)
 	if err != nil {
-		return nil, fmt.Errorf("find: invalid argument '%s' to %s", val, kind.String())
+		// If the number overflows int64 but is otherwise valid, clamp to
+		// MaxInt64. The evaluation functions handle huge values correctly:
+		// +huge → nothing matches, -huge → everything matches, exact → no
+		// match. This matches GNU find behavior for very large arguments.
+		if errors.Is(err, strconv.ErrRange) {
+			n = math.MaxInt64
+			err = nil
+		}
+		if err != nil {
+			return nil, fmt.Errorf("find: invalid argument '%s' to %s", val, kind.String())
+		}
 	}
 	return &expr{kind: kind, numVal: n, numCmp: cmp}, nil
 }
