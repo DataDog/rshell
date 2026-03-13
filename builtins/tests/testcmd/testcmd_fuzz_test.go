@@ -275,6 +275,15 @@ func FuzzTestNesting(f *testing.F) {
 				c == '<' || c == '>' || c == '|' || c == '&' || c == ';' {
 				return
 			}
+			// Glob metacharacters trigger pathname expansion which can fail
+			// on multi-byte UTF-8 patterns due to an upstream library bug.
+			if c == '*' || c == '?' || c == '[' || c == ']' {
+				return
+			}
+			// C0/DEL/C1 control chars confuse the shell script parser.
+			if c < 0x20 || c == 0x7f || (c >= 0x80 && c < 0xa0) {
+				return
+			}
 		}
 
 		dir := t.TempDir()
