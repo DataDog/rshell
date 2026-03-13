@@ -393,6 +393,12 @@ func AllowedPaths(paths []string) RunnerOption {
 	}
 }
 
+// SetExecHandler overrides the Runner's command execution handler.
+// This must be called after Reset. It is intended for testing.
+func (r *Runner) SetExecHandler(fn ExecHandlerFunc) {
+	r.execHandler = fn
+}
+
 // subshell creates a child Runner that inherits the parent's state.
 // If background is false, the child shares the parent's environment overlay
 // without copying, which is more efficient but must not be used concurrently.
