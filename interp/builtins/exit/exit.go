@@ -41,15 +41,15 @@ func run(_ context.Context, callCtx *builtins.CallContext, args []string) builti
 	case 1:
 		n, err := strconv.Atoi(args[0])
 		if err != nil {
-			callCtx.Errf("invalid exit status code: %q\n", args[0])
+			callCtx.Errf("%s: numeric argument required\n", args[0])
 			r.Code = 2
-			// In bash, exit with invalid args still terminates the shell.
-			r.Exiting = true
+			// In bash, exit with a non-numeric arg prints an error but
+			// does NOT exit the shell — execution continues.
 			return r
 		}
 		r.Code = uint8(n)
 	default:
-		callCtx.Errf("exit cannot take multiple arguments\n")
+		callCtx.Errf("too many arguments\n")
 		r.Code = 1
 		// In bash, exit with too many args still terminates the shell.
 		r.Exiting = true

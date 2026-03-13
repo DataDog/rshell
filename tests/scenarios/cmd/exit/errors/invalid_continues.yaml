@@ -1,10 +1,12 @@
 skip_assert_against_bash: true
-description: An invalid exit argument exits the shell; subsequent commands do not run.
+description: >
+  An invalid exit argument does NOT exit the shell; subsequent commands run.
+  This matches bash behavior where exit with a bad arg is not fatal.
+  skip_assert_against_bash because error message format differs.
 input:
   script: |+
     exit abc; echo still running
 expect:
-  stdout: ""
-  stderr: |+
-    invalid exit status code: "abc"
-  exit_code: 2
+  stdout: "still running\n"
+  stderr: "abc: numeric argument required\n"
+  exit_code: 0

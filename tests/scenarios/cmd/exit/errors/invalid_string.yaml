@@ -1,10 +1,11 @@
 skip_assert_against_bash: true
-description: Exit with a non-numeric string argument produces an error and exits.
+description: >
+  Exit with a non-numeric string argument produces an error but does not exit.
+  skip_assert_against_bash because error message format differs (bash prefixes with "bash: line N: exit:").
 input:
   script: |+
     exit abc
 expect:
   stdout: ""
-  stderr: |+
-    invalid exit status code: "abc"
+  stderr: "abc: numeric argument required\n"
   exit_code: 2
