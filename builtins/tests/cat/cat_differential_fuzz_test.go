@@ -69,7 +69,6 @@ func FuzzCatDifferential(f *testing.F) {
 	f.Add([]byte("line1\nline2\nline3\n"))
 
 	f.Fuzz(func(t *testing.T, input []byte) {
-		t.Parallel()
 		if len(input) > 64*1024 {
 			return
 		}

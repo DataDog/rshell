@@ -52,7 +52,6 @@ func FuzzTestStringOps(f *testing.F) {
 	f.Add("x", "x", "==")
 
 	f.Fuzz(func(t *testing.T, left, right, op string) {
-		t.Parallel()
 		if len(left) > 100 || len(right) > 100 {
 			return
 		}
@@ -114,7 +113,6 @@ func FuzzTestIntegerOps(f *testing.F) {
 	f.Add(int64(1<<31-1), int64(1<<31-1), "-ge")
 
 	f.Fuzz(func(t *testing.T, left, right int64, op string) {
-		t.Parallel()
 		switch op {
 		case "-eq", "-ne", "-lt", "-le", "-gt", "-ge":
 		default:
@@ -155,7 +153,6 @@ func FuzzTestFileOps(f *testing.F) {
 	f.Add("-f", false)
 
 	f.Fuzz(func(t *testing.T, op string, createFile bool) {
-		t.Parallel()
 		switch op {
 		case "-e", "-f", "-d", "-s", "-r", "-w", "-x", "-h", "-L", "-p":
 		default:
@@ -201,7 +198,6 @@ func FuzzTestStringUnary(f *testing.F) {
 	f.Add("😀", "-n")
 
 	f.Fuzz(func(t *testing.T, arg, op string) {
-		t.Parallel()
 		if len(arg) > 200 {
 			return
 		}
@@ -265,7 +261,6 @@ func FuzzTestNesting(f *testing.F) {
 	f.Add("1 -eq 1 -o 1 -eq 2 -a 2 -eq 2")
 
 	f.Fuzz(func(t *testing.T, expr string) {
-		t.Parallel()
 		if len(expr) > 200 {
 			return
 		}

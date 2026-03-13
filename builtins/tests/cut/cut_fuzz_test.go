@@ -70,7 +70,6 @@ func FuzzCutFields(f *testing.F) {
 	f.Add([]byte("a\tb\nc\td\n"), "2")
 
 	f.Fuzz(func(t *testing.T, input []byte, fieldSpec string) {
-		t.Parallel()
 		if len(input) > 1<<20 {
 			return
 		}
@@ -135,7 +134,6 @@ func FuzzCutBytes(f *testing.F) {
 	f.Add([]byte("abc\n"), "1234567890")
 
 	f.Fuzz(func(t *testing.T, input []byte, byteSpec string) {
-		t.Parallel()
 		if len(input) > 1<<20 {
 			return
 		}
@@ -189,7 +187,6 @@ func FuzzCutDelimiter(f *testing.F) {
 	f.Add([]byte("a b c\n"), " ", "2")
 
 	f.Fuzz(func(t *testing.T, input []byte, delim string, fieldSpec string) {
-		t.Parallel()
 		if len(input) > 1<<20 {
 			return
 		}
@@ -252,7 +249,6 @@ func FuzzCutComplement(f *testing.F) {
 	f.Add(append(bytes.Repeat([]byte("a"), 1<<20-1), '\n'), "1")
 
 	f.Fuzz(func(t *testing.T, input []byte, byteSpec string) {
-		t.Parallel()
 		if len(input) > 1<<20 {
 			return
 		}
@@ -300,7 +296,6 @@ func FuzzCutStdin(f *testing.F) {
 	f.Add(append(bytes.Repeat([]byte("x"), 1<<20-1), '\n'))
 
 	f.Fuzz(func(t *testing.T, input []byte) {
-		t.Parallel()
 		if len(input) > 1<<20 {
 			return
 		}

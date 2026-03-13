@@ -52,7 +52,6 @@ func FuzzWc(f *testing.F) {
 	f.Add(append(bytes.Repeat([]byte("a"), 1000), '\n'))
 
 	f.Fuzz(func(t *testing.T, input []byte) {
-		t.Parallel()
 		if len(input) > 1<<20 {
 			return
 		}
@@ -86,7 +85,6 @@ func FuzzWcLines(f *testing.F) {
 	f.Add(bytes.Repeat([]byte("a\n"), 10000))
 
 	f.Fuzz(func(t *testing.T, input []byte) {
-		t.Parallel()
 		if len(input) > 1<<20 {
 			return
 		}
@@ -118,7 +116,6 @@ func FuzzWcBytes(f *testing.F) {
 	f.Add([]byte{0xfc, 0x80, 0x80, 0x80, 0x80, 0xaf})
 
 	f.Fuzz(func(t *testing.T, input []byte) {
-		t.Parallel()
 		if len(input) > 1<<20 {
 			return
 		}
@@ -157,7 +154,6 @@ func FuzzWcChars(f *testing.F) {
 	f.Add([]byte("no newline"))
 
 	f.Fuzz(func(t *testing.T, input []byte) {
-		t.Parallel()
 		if len(input) > 1<<20 {
 			return
 		}
@@ -190,7 +186,6 @@ func FuzzWcStdin(f *testing.F) {
 	f.Add([]byte{0xfc, 0x80, 0x80, 0x80, 0x80, 0xaf, '\n'})
 
 	f.Fuzz(func(t *testing.T, input []byte) {
-		t.Parallel()
 		if len(input) > 1<<20 {
 			return
 		}

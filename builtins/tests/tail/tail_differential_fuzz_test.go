@@ -71,7 +71,6 @@ func FuzzTailDifferential(f *testing.F) {
 	f.Add(bytes.Repeat([]byte("line\n"), 20), int64(5))
 
 	f.Fuzz(func(t *testing.T, input []byte, n int64) {
-		t.Parallel()
 		if len(input) > 64*1024 {
 			return
 		}

@@ -50,7 +50,6 @@ func FuzzTailLines(f *testing.F) {
 	f.Add(bytes.Repeat([]byte("\n"), 1000), int64(5))
 
 	f.Fuzz(func(t *testing.T, input []byte, n int64) {
-		t.Parallel()
 		if len(input) > 1<<20 {
 			return
 		}
@@ -108,7 +107,6 @@ func FuzzTailBytes(f *testing.F) {
 	f.Add(bytes.Repeat([]byte("z"), 32*1024+1), int64(1))
 
 	f.Fuzz(func(t *testing.T, input []byte, n int64) {
-		t.Parallel()
 		if len(input) > 1<<20 {
 			return
 		}
@@ -156,7 +154,6 @@ func FuzzTailStdin(f *testing.F) {
 	f.Add([]byte("line1\r\nline2\r\n"), int64(1))
 
 	f.Fuzz(func(t *testing.T, input []byte, n int64) {
-		t.Parallel()
 		if len(input) > 1<<20 {
 			return
 		}
@@ -204,7 +201,6 @@ func FuzzTailLinesOffset(f *testing.F) {
 	f.Add([]byte("a\r\nb\r\nc\r\n"), int64(2))
 
 	f.Fuzz(func(t *testing.T, input []byte, n int64) {
-		t.Parallel()
 		if len(input) > 1<<20 {
 			return
 		}
@@ -249,7 +245,6 @@ func FuzzTailBytesOffset(f *testing.F) {
 	f.Add([]byte{0x00, 0x01, 0x02, 0xff, 0xfe}, int64(2))
 
 	f.Fuzz(func(t *testing.T, input []byte, n int64) {
-		t.Parallel()
 		if len(input) > 1<<20 {
 			return
 		}

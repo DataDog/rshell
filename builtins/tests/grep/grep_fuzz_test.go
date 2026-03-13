@@ -54,7 +54,6 @@ func FuzzGrepFileContent(f *testing.F) {
 	f.Add([]byte("héllo\nmünchen\n"), "l")
 
 	f.Fuzz(func(t *testing.T, input []byte, pattern string) {
-		t.Parallel()
 		if len(input) > 1<<20 {
 			return
 		}
@@ -124,7 +123,6 @@ func FuzzGrepPatterns(f *testing.F) {
 	f.Add([]byte("aaaa\n"), "a{1,4}")
 
 	f.Fuzz(func(t *testing.T, input []byte, pattern string) {
-		t.Parallel()
 		if len(input) > 1<<20 {
 			return
 		}
@@ -175,7 +173,6 @@ func FuzzGrepStdin(f *testing.F) {
 	f.Add(append(bytes.Repeat([]byte("a"), 1<<20-1), '\n'))
 
 	f.Fuzz(func(t *testing.T, input []byte) {
-		t.Parallel()
 		if len(input) > 1<<20 {
 			return
 		}
@@ -228,7 +225,6 @@ func FuzzGrepFixedStrings(f *testing.F) {
 	f.Add(append(bytes.Repeat([]byte("a"), 1<<20-1), '\n'), "a")
 
 	f.Fuzz(func(t *testing.T, input []byte, pattern string) {
-		t.Parallel()
 		if len(input) > 1<<20 {
 			return
 		}
@@ -284,7 +280,6 @@ func FuzzGrepFlags(f *testing.F) {
 	f.Add([]byte{0xff, 0xfe, '\n'}, true, false, false, false, int64(0), int64(0))
 
 	f.Fuzz(func(t *testing.T, input []byte, caseInsensitive, invertMatch, countOnly, quiet bool, afterCtx, beforeCtx int64) {
-		t.Parallel()
 		if len(input) > 1<<20 {
 			return
 		}

@@ -69,7 +69,6 @@ func FuzzWcDifferentialLines(f *testing.F) {
 	f.Add(bytes.Repeat([]byte("x\n"), 100))
 
 	f.Fuzz(func(t *testing.T, input []byte) {
-		t.Parallel()
 		if len(input) > 64*1024 {
 			return
 		}
@@ -118,7 +117,6 @@ func FuzzWcDifferentialWords(f *testing.F) {
 	f.Add(bytes.Repeat([]byte("a b "), 50))
 
 	f.Fuzz(func(t *testing.T, input []byte) {
-		t.Parallel()
 		if len(input) > 64*1024 {
 			return
 		}
@@ -166,7 +164,6 @@ func FuzzWcDifferentialBytes(f *testing.F) {
 	f.Add([]byte("\n\n\n"))
 
 	f.Fuzz(func(t *testing.T, input []byte) {
-		t.Parallel()
 		if len(input) > 64*1024 {
 			return
 		}
