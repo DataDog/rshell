@@ -1,0 +1,43 @@
+name: Allowed Symbols Verification
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  check-allowed-symbols:
+    name: Allowed Symbols Label Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+
+      - name: Check for allowedsymbols changes
+        id: changes
+        run: |
+          changed=$(git diff --name-only origin/${{ github.base_ref }}...HEAD -- 'allowedsymbols/')
+          if [ -n "$changed" ]; then
+            echo "modified=true" >> "$GITHUB_OUTPUT"
+            echo "Changed allowedsymbols files:"
+            echo "$changed"
+          else
+            echo "modified=false" >> "$GITHUB_OUTPUT"
+            echo "No allowedsymbols files changed."
+          fi
+
+      - name: Require verified/allowed_symbols label
+        if: steps.changes.outputs.modified == 'true'
+        run: |
+          labels='${{ toJSON(github.event.pull_request.labels.*.name) }}'
+          if echo "$labels" | jq -e 'index("verified/allowed_symbols")' > /dev/null 2>&1; then
+            echo "Label 'verified/allowed_symbols' is present. Check passed."
+          else
+            echo "::error::Files in allowedsymbols/ have been modified. A human must review the changes and add the 'verified/allowed_symbols' label to this PR before it can be merged."
+            exit 1
+          fi
