@@ -181,13 +181,23 @@ func evalMtime(ec *evalContext, n int64, cmp cmpOp) bool {
 //
 // This matches GNU findutils behavior where +N/-N compare against raw
 // seconds while exact N uses a window check.
+// maxMminN is the largest N for which time.Duration(N)*time.Minute
+// does not overflow int64 nanoseconds.
+const maxMminN = int64(math.MaxInt64 / int64(time.Minute))
+
 func evalMmin(ec *evalContext, n int64, cmp cmpOp) bool {
 	modTime := ec.info.ModTime()
 	diff := ec.now.Sub(modTime)
 	switch cmp {
 	case cmpMore: // +N: strictly older than N minutes
+		if n > maxMminN {
+			return false // threshold is beyond representable duration; nothing qualifies
+		}
 		return diff > time.Duration(n)*time.Minute
 	case cmpLess: // -N: strictly newer than N minutes
+		if n > maxMminN {
+			return true // threshold is beyond representable duration; everything qualifies
+		}
 		return diff < time.Duration(n)*time.Minute
 	default: // N: ceiling-bucketed exact match
 		mins := int64(math.Ceil(diff.Minutes()))

@@ -67,7 +67,12 @@ import (
 	"github.com/DataDog/rshell/interp/builtins"
 )
 
-// maxTraversalDepth limits directory recursion depth to prevent exhaustion.
+// maxTraversalDepth limits directory recursion depth to prevent resource
+// exhaustion. This is an intentional safety divergence from GNU find (which
+// has no depth limit): the shell is designed for AI agent use where safety
+// is the primary goal. When the user provides -maxdepth exceeding this
+// limit, a warning is emitted and the value is clamped. Without -maxdepth,
+// this cap applies silently as a defense-in-depth measure.
 const maxTraversalDepth = 256
 
 // Cmd is the find builtin command descriptor.
@@ -196,7 +201,7 @@ optLoop:
 // GNU find treats any dash-prefixed token with length > 1 as an expression
 // token (not a path), so `-1` is an unknown predicate, not a path argument.
 func isExpressionStart(arg string) bool {
-	if arg == "!" || arg == "(" || arg == ")" {
+	if arg == "!" || arg == "(" {
 		return true
 	}
 	return strings.HasPrefix(arg, "-") && len(arg) > 1
