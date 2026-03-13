@@ -84,8 +84,10 @@ func (e expandEnv) Get(name string) expand.Variable {
 }
 
 func (e expandEnv) Set(name string, vr expand.Variable) error {
-	e.r.setVar(name, vr)
-	return nil // TODO: return any errors
+	if err := e.r.setVarErr(name, vr); err != nil {
+		return fmt.Errorf("%s: %w", name, err)
+	}
+	return nil
 }
 
 func (e expandEnv) Each(fn func(name string, vr expand.Variable) bool) {
