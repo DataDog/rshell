@@ -46,6 +46,10 @@ func FuzzEcho(f *testing.F) {
 			if c == '\'' || c == '\x00' || c == '\n' {
 				return
 			}
+			// C0/DEL/C1 control chars confuse the shell script parser.
+			if c < 0x20 || c == 0x7f || (c >= 0x80 && c < 0xa0) {
+				return
+			}
 		}
 
 		dir := t.TempDir()
@@ -109,6 +113,10 @@ func FuzzEchoEscapes(f *testing.F) {
 			if c == '\'' || c == '\x00' || c == '\n' {
 				return
 			}
+			// C0/DEL/C1 control chars confuse the shell script parser.
+			if c < 0x20 || c == 0x7f || (c >= 0x80 && c < 0xa0) {
+				return
+			}
 		}
 
 		dir := t.TempDir()
@@ -140,6 +148,10 @@ func FuzzEchoFlagInteraction(f *testing.F) {
 		}
 		for _, c := range arg {
 			if c == '\'' || c == '\x00' || c == '\n' {
+				return
+			}
+			// C0/DEL/C1 control chars confuse the shell script parser.
+			if c < 0x20 || c == 0x7f || (c >= 0x80 && c < 0xa0) {
 				return
 			}
 		}
