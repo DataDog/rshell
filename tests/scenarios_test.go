@@ -274,7 +274,7 @@ func buildRunnerScript(scenarios []dockerScenario) string {
 	// not included in debian:bookworm-slim by default).
 	needsBinutils := false
 	for _, ds := range scenarios {
-		if strings.Contains(ds.sc.Input.Script, "strings") {
+		if strings.Contains(ds.testName, "cmd/strings/") {
 			needsBinutils = true
 			break
 		}
