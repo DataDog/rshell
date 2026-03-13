@@ -16,6 +16,10 @@ import (
 	"mvdan.cc/sh/v3/syntax"
 )
 
+// MaxVarBytes is the maximum size in bytes of a single variable value.
+// Assignments that exceed this limit are rejected with an error.
+const MaxVarBytes = 1 << 20 // 1 MiB
+
 func newOverlayEnviron(parent expand.Environ, background bool) *overlayEnviron {
 	oenv := &overlayEnviron{}
 	if !background {
@@ -74,6 +78,9 @@ func (o *overlayEnviron) Set(name string, vr expand.Variable) error {
 		return nil
 	}
 	// modifying the entire variable
+	if len(vr.Str) > MaxVarBytes {
+		return fmt.Errorf("value too large (limit %d bytes)", MaxVarBytes)
+	}
 	vr.Local = prev.Local || vr.Local
 	o.values[name] = vr
 	return nil
