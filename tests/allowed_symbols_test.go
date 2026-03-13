@@ -48,6 +48,8 @@ var builtinAllowedSymbols = []string{
 	"errors.Is",
 	// errors.New — creates a simple error value; pure function, no I/O.
 	"errors.New",
+	// fmt.Errorf — creates a formatted error value; pure function, no I/O.
+	"fmt.Errorf",
 	// fmt.Sprintf — string formatting; pure function, no I/O.
 	"fmt.Sprintf",
 	// io/fs.DirEntry — interface type for directory entries; no side effects.
@@ -104,6 +106,8 @@ var builtinAllowedSymbols = []string{
 	"slices.Reverse",
 	// slices.SortFunc — sorts a slice with a comparison function; pure function, no I/O.
 	"slices.SortFunc",
+	// slices.SortStableFunc — stable sort with a comparison function; pure function, no I/O.
+	"slices.SortStableFunc",
 	// strings.Builder — efficient string concatenation; pure in-memory buffer, no I/O.
 	"strings.Builder",
 	// strings.ContainsRune — checks if a rune is in a string; pure function, no I/O.
