@@ -1,0 +1,14 @@
+# Derived from yash simple-p.tst - assignment persistent for empty command
+description: Assignments without a command persist in the shell environment.
+input:
+  script: |+
+    X=persist
+    echo "$X"
+    Y=also Z=persists
+    echo "$Y $Z"
+expect:
+  stdout: |+
+    persist
+    also persists
+  stderr: ""
+  exit_code: 0

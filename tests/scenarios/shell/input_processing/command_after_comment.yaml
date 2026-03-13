@@ -1,0 +1,14 @@
+# Derived from yash input-p.tst - mixed comments and commands
+description: Commands after comment lines execute correctly.
+input:
+  script: |+
+    # this is a comment
+    echo hello
+    # another comment
+    echo world
+expect:
+  stdout: |+
+    hello
+    world
+  stderr: ""
+  exit_code: 0

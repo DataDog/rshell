@@ -1,0 +1,14 @@
+# Derived from yash until-p.tst - nested loops
+skip_assert_against_bash: true
+description: Nested until loops are blocked at the outer loop.
+input:
+  script: |+
+    until false
+    do
+      until true; do echo inner; done
+    done
+expect:
+  stdout: ""
+  stderr: |+
+    while/until loops are not supported
+  exit_code: 2

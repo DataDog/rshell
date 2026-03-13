@@ -1,0 +1,9 @@
+# Derived from yash input-p.tst - comments-only input
+description: Script containing only a comment exits successfully with no output.
+input:
+  script: |+
+    # this is a comment
+expect:
+  stdout: ""
+  stderr: ""
+  exit_code: 0

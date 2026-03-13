@@ -1,0 +1,13 @@
+# Derived from yash case-p.tst - simple case match
+skip_assert_against_bash: true
+description: Simple case statement with exact match is blocked.
+input:
+  script: |+
+    case hello in
+      hello) echo matched;;
+    esac
+expect:
+  stdout: ""
+  stderr: |+
+    case statements are not supported
+  exit_code: 2

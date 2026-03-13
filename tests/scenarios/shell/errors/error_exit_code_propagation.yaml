@@ -1,0 +1,13 @@
+# Derived from yash exit status propagation patterns
+skip_assert_against_bash: true
+description: Exit code from failed command is available in $?.
+input:
+  script: |+
+    nonexistent_cmd_xyz
+    echo "$?"
+expect:
+  stdout: |+
+    127
+  stderr: |+
+    nonexistent_cmd_xyz: command not found
+  exit_code: 0

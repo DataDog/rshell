@@ -1,0 +1,11 @@
+# Derived from yash while-p.tst - single line while
+skip_assert_against_bash: true
+description: Single-line while loop is blocked.
+input:
+  script: |+
+    while true; do echo loop; done
+expect:
+  stdout: ""
+  stderr: |+
+    while/until loops are not supported
+  exit_code: 2
