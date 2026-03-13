@@ -1,5 +1,4 @@
 description: strings prints an error and exits 1 when given a directory.
-skip_assert_against_bash: true  # GNU strings uses different error format for directories
 setup:
   files:
     - path: subdir/placeholder.txt
@@ -10,6 +9,5 @@ input:
     strings subdir
 expect:
   stdout: ""
-  stderr_contains:
-    - "strings: subdir:"
+  stderr: "strings: Warning: 'subdir' is a directory\n"
   exit_code: 1
