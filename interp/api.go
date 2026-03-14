@@ -390,9 +390,11 @@ func (r *Runner) Close() error {
 }
 
 // AllowedCommands restricts which commands (builtins and external) may execute.
-// Only commands in the provided list are allowed to run. When not set (default),
-// all commands are allowed. Shell keywords and control flow (if/else, for,
-// pipes, &&/||, variable assignment) are unaffected.
+// Only commands in the provided list are allowed to run; passing an empty slice
+// blocks all commands. When this option is not used (default), all commands are
+// allowed for backward compatibility — use [AllowAllCommands] to be explicit.
+// Shell keywords and control flow (if/else, for, pipes, &&/||, variable
+// assignment) are unaffected.
 //
 // Duplicate command names in the list are silently deduplicated (the map
 // insertion is idempotent), so callers do not need to pre-filter.
