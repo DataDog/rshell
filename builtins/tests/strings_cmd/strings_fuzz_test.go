@@ -86,7 +86,7 @@ func FuzzStrings(f *testing.F) {
 			t.Fatal(err)
 		}
 
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		defer cancel()
 
 		_, _, code := cmdRunCtx(ctx, t, "strings input.bin", dir)
@@ -133,7 +133,7 @@ func FuzzStringsMinLen(f *testing.F) {
 			t.Fatal(err)
 		}
 
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		defer cancel()
 
 		_, _, code := cmdRunCtx(ctx, t, fmt.Sprintf("strings -n %d input.bin", minLen), dir)
@@ -177,7 +177,7 @@ func FuzzStringsRadix(f *testing.F) {
 			t.Fatal(err)
 		}
 
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		defer cancel()
 
 		_, _, code := cmdRunCtx(ctx, t, fmt.Sprintf("strings -t %s input.bin", radix), dir)
@@ -210,7 +210,7 @@ func FuzzStringsStdin(f *testing.F) {
 			t.Fatal(err)
 		}
 
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		defer cancel()
 
 		_, _, code := cmdRunCtx(ctx, t, "strings < stdin.bin", dir)

@@ -1,0 +1,11 @@
+skip_assert_against_bash: true
+description: When allow_all_commands is false and no allowed_commands are set, all commands are blocked.
+input:
+  allow_all_commands: false
+  script: |+
+    echo hello
+expect:
+  stdout: ""
+  stderr: |+
+    echo: command not allowed
+  exit_code: 127

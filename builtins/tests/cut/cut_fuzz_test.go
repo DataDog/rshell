@@ -91,7 +91,7 @@ func FuzzCutFields(f *testing.F) {
 			t.Fatal(err)
 		}
 
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		defer cancel()
 
 		_, _, code := cmdRunCtxFuzz(ctx, t, fmt.Sprintf("cut -f %s input.txt", fieldSpec), dir)
@@ -154,7 +154,7 @@ func FuzzCutBytes(f *testing.F) {
 			t.Fatal(err)
 		}
 
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		defer cancel()
 
 		_, _, code := cmdRunCtxFuzz(ctx, t, fmt.Sprintf("cut -b %s input.txt", byteSpec), dir)
@@ -215,7 +215,7 @@ func FuzzCutDelimiter(f *testing.F) {
 			t.Fatal(err)
 		}
 
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		defer cancel()
 
 		script := fmt.Sprintf("cut -d '%s' -f %s input.txt", delim, fieldSpec)
@@ -269,7 +269,7 @@ func FuzzCutComplement(f *testing.F) {
 			t.Fatal(err)
 		}
 
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		defer cancel()
 
 		_, _, code := cmdRunCtxFuzz(ctx, t, fmt.Sprintf("cut --complement -b %s input.txt", byteSpec), dir)
@@ -305,7 +305,7 @@ func FuzzCutStdin(f *testing.F) {
 			t.Fatal(err)
 		}
 
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		defer cancel()
 
 		_, _, code := cmdRunCtxFuzz(ctx, t, "cut -f 1 < stdin.txt", dir)

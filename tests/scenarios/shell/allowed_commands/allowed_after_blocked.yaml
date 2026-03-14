@@ -1,0 +1,14 @@
+skip_assert_against_bash: true
+description: Execution continues after a blocked command (non-fatal).
+input:
+  allowed_commands:
+    - echo
+  script: |+
+    cat /dev/null
+    echo after
+expect:
+  stdout: |+
+    after
+  stderr: |+
+    cat: command not allowed
+  exit_code: 0

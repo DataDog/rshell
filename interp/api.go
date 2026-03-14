@@ -47,6 +47,15 @@ type runnerConfig struct {
 	// nil (default) blocks all file access; populate via AllowedPaths option.
 	sandbox *allowedpaths.Sandbox
 
+	// allowedCommands is the set of command names (builtins or external) that
+	// the interpreter is permitted to execute. If nil and allowAllCommands is
+	// false, no commands are allowed.
+	allowedCommands map[string]bool
+
+	// allowAllCommands bypasses the allowedCommands check and permits any
+	// command. Intended for testing convenience.
+	allowAllCommands bool
+
 	// usedNew is set by New() and checked in Reset() to ensure a Runner
 	// was properly constructed rather than zero-initialized.
 	usedNew bool
@@ -395,6 +404,41 @@ func AllowedPaths(paths []string) RunnerOption {
 			return err
 		}
 		r.sandbox = sb
+		return nil
+	}
+}
+
+// AllowedCommands restricts command execution to the specified command names.
+// Names may refer to builtin commands or external/host commands. Only commands
+// whose name appears in the list may be executed; all others are rejected with
+// "<cmd>: command not allowed".
+//
+// Names are matched exactly against the command name (args[0]) at execution
+// time. Path-containing names (e.g. "/bin/bash") will not match bare command
+// names and vice versa. Empty strings are rejected.
+//
+// When not set (default), no commands are allowed unless [AllowAllCommands] is
+// used.
+func AllowedCommands(names []string) RunnerOption {
+	return func(r *Runner) error {
+		m := make(map[string]bool, len(names))
+		for _, n := range names {
+			if n == "" {
+				return fmt.Errorf("AllowedCommands: empty command name")
+			}
+			m[n] = true
+		}
+		r.allowedCommands = m
+		return nil
+	}
+}
+
+// AllowAllCommands permits execution of any command (builtin or external),
+// bypassing the [AllowedCommands] restriction. This is intended for testing
+// convenience.
+func AllowAllCommands() RunnerOption {
+	return func(r *Runner) error {
+		r.allowAllCommands = true
 		return nil
 	}
 }
