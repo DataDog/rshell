@@ -7,3 +7,5 @@ expect:
   stdout: "hello\n"
   stderr: ""
   exit_code: 0
+  stdout_windows: ""
+  stderr_contains_windows: ["process substitution is not supported on this platform"]

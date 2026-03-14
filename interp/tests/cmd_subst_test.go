@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -203,33 +204,45 @@ func TestSubshellForLoop(t *testing.T) {
 	assert.Equal(t, "a\nb\nc\n", stdout)
 }
 
-// --- Process Substitution ---
+// --- Process Substitution (Unix only — requires /dev/fd) ---
+
+func skipIfWindows(t *testing.T) {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("process substitution requires /dev/fd (Unix only)")
+	}
+}
 
 func TestProcSubstBasicInput(t *testing.T) {
+	skipIfWindows(t)
 	stdout, _, code := substRun(t, `cat <(echo hello)`)
 	assert.Equal(t, 0, code)
 	assert.Equal(t, "hello\n", stdout)
 }
 
 func TestProcSubstMultiple(t *testing.T) {
+	skipIfWindows(t)
 	stdout, _, code := substRun(t, `cat <(echo first) <(echo second)`)
 	assert.Equal(t, 0, code)
 	assert.Equal(t, "first\nsecond\n", stdout)
 }
 
 func TestProcSubstWithPipeInside(t *testing.T) {
+	skipIfWindows(t)
 	stdout, _, code := substRun(t, `cat <(echo "hello world" | cat)`)
 	assert.Equal(t, 0, code)
 	assert.Equal(t, "hello world\n", stdout)
 }
 
 func TestProcSubstWithCmdSubst(t *testing.T) {
+	skipIfWindows(t)
 	stdout, _, code := substRun(t, `X=$(cat <(echo from_proc)); echo "$X"`)
 	assert.Equal(t, 0, code)
 	assert.Equal(t, "from_proc\n", stdout)
 }
 
 func TestProcSubstOutputMode(t *testing.T) {
+	skipIfWindows(t)
 	// >(cmd) creates a write-end pipe. The outer command receives /dev/fd/N
 	// as a string argument. Since builtins only open files for reading,
 	// >(cmd) has limited utility in the restricted shell, but the pipe
