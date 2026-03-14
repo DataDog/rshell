@@ -1,3 +1,5 @@
+# stderr_contains (not stderr) because bash prefixes errors with "bash: line N:"
+# while rshell uses a simpler format. This enables bash comparison testing.
 description: Exit code from failed command is available in $?.
 input:
   allowed_commands: ["echo", "nonexistent_cmd_xyz"]

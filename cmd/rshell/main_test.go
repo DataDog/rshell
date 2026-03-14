@@ -219,6 +219,17 @@ func TestAllowedCommandsAllInMixedList(t *testing.T) {
 	assert.Equal(t, "hello\n", stdout)
 }
 
+func TestAllowedCommandsAllCaseInsensitive(t *testing.T) {
+	// "ALL", "All", "aLl" should also disable filtering (case-insensitive).
+	for _, keyword := range []string{"ALL", "All", "aLl"} {
+		t.Run(keyword, func(t *testing.T) {
+			code, stdout, _ := runCLI(t, "--allowed-commands", keyword, "-s", `echo hello`)
+			assert.Equal(t, 0, code)
+			assert.Equal(t, "hello\n", stdout)
+		})
+	}
+}
+
 func TestNoAllowedCommandsFlagAllowsAll(t *testing.T) {
 	code, stdout, _ := runCLI(t, "-s", `echo hello`)
 	assert.Equal(t, 0, code)

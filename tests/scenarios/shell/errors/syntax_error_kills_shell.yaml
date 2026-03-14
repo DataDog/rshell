@@ -1,3 +1,5 @@
+# stderr_contains (not stderr) because bash prefixes errors with "bash: line N:"
+# while rshell uses a simpler format. This enables bash comparison testing.
 description: Unknown command after valid command still produces error.
 input:
   allowed_commands: ["echo", "no_such_cmd_abc"]
