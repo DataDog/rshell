@@ -52,7 +52,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 				paths = splitAndTrim(allowedPaths)
 			}
 			var cmds []string
-			allowedCommandsSet := cmd.Flags().Changed("allowed-commands")
+			allowedCommandsSet := cmd.Flags().Changed("allowed-command")
 			if allowedCommands != "" {
 				cmds = splitAndTrim(allowedCommands)
 				if cmds == nil && allowedCommandsSet {
@@ -61,7 +61,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 					cmds = []string{}
 				}
 			} else if allowedCommandsSet {
-				// Explicitly passing an empty --allowed-commands means deny-all.
+				// Explicitly passing an empty --allowed-command means deny-all.
 				cmds = []string{}
 			}
 
@@ -105,8 +105,8 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 
 	cmd.Flags().StringVarP(&script, "script", "s", "", "shell script to execute")
 	cmd.Flags().StringVarP(&allowedPaths, "allowed-path", "a", "", "comma-separated list of directories the shell is allowed to access")
-	cmd.Flags().StringVar(&allowedCommands, "allowed-commands", "", "comma-separated list of allowed commands (omit to block all; use --allow-all-commands to allow everything)")
-	cmd.Flags().BoolVar(&allowAllCmds, "allow-all-commands", false, "allow all commands (overrides --allowed-commands)")
+	cmd.Flags().StringVar(&allowedCommands, "allowed-command", "", "comma-separated list of allowed commands (omit to block all; use --allow-all-commands to allow everything)")
+	cmd.Flags().BoolVar(&allowAllCmds, "allow-all-commands", false, "allow all commands (overrides --allowed-command)")
 
 	if err := cmd.Execute(); err != nil {
 		var status interp.ExitStatus

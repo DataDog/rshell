@@ -139,7 +139,7 @@ func TestHelp(t *testing.T) {
 	assert.Equal(t, 0, code)
 	assert.Contains(t, stdout, "--script")
 	assert.Contains(t, stdout, "--allowed-path")
-	assert.Contains(t, stdout, "--allowed-commands")
+	assert.Contains(t, stdout, "--allowed-command")
 	assert.Contains(t, stdout, "--allow-all-commands")
 }
 
@@ -188,33 +188,33 @@ func TestFileNotFound(t *testing.T) {
 }
 
 func TestAllowedCommandsRestriction(t *testing.T) {
-	code, _, stderr := runCLI(t, "--allowed-commands", "echo", "-s", `cat /dev/null`)
+	code, _, stderr := runCLI(t, "--allowed-command", "echo", "-s", `cat /dev/null`)
 	assert.Equal(t, 1, code)
 	assert.Contains(t, stderr, "cat: command not allowed")
 }
 
 func TestAllowedCommandsTrimsWhitespace(t *testing.T) {
 	// "echo, true" with spaces around entries should still allow both commands.
-	code, stdout, _ := runCLI(t, "--allowed-commands", "echo, true", "-s", `echo hello`)
+	code, stdout, _ := runCLI(t, "--allowed-command", "echo, true", "-s", `echo hello`)
 	assert.Equal(t, 0, code)
 	assert.Equal(t, "hello\n", stdout)
 }
 
 func TestAllowedCommandsEmpty(t *testing.T) {
-	code, _, stderr := runCLI(t, "--allowed-commands", "", "-s", `echo hello`)
+	code, _, stderr := runCLI(t, "--allowed-command", "", "-s", `echo hello`)
 	assert.Equal(t, 1, code)
 	assert.Contains(t, stderr, "echo: command not allowed")
 }
 
 func TestAllowedCommandsSeparatorOnlyDeniesAll(t *testing.T) {
-	// "--allowed-commands ', ,'" should deny all commands, not silently allow all.
-	code, _, stderr := runCLI(t, "--allowed-commands", ", ,", "-s", `echo hello`)
+	// "--allowed-command ', ,'" should deny all commands, not silently allow all.
+	code, _, stderr := runCLI(t, "--allowed-command", ", ,", "-s", `echo hello`)
 	assert.Equal(t, 1, code)
 	assert.Contains(t, stderr, "echo: command not allowed")
 }
 
 func TestDefaultNoFlagBlocksAll(t *testing.T) {
-	// When neither --allowed-commands nor --allow-all-commands is set,
+	// When neither --allowed-command nor --allow-all-commands is set,
 	// the default is deny-all per spec.
 	code, _, stderr := runCLI(t, "-s", `echo hello`)
 	assert.Equal(t, 1, code)
@@ -229,8 +229,8 @@ func TestAllowAllCommandsFlag(t *testing.T) {
 }
 
 func TestAllowAllCommandsOverridesAllowedCommands(t *testing.T) {
-	// --allow-all-commands should override --allowed-commands.
-	code, stdout, _ := runCLI(t, "--allowed-commands", "cat", "--allow-all-commands", "-s", `echo hello`)
+	// --allow-all-commands should override --allowed-command.
+	code, stdout, _ := runCLI(t, "--allowed-command", "cat", "--allow-all-commands", "-s", `echo hello`)
 	assert.Equal(t, 0, code)
 	assert.Equal(t, "hello\n", stdout)
 }
