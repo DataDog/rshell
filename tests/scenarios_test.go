@@ -163,8 +163,9 @@ func runScenario(t *testing.T, sc scenario) {
 	if sc.Input.AllowedCommands != nil {
 		opts = append(opts, interp.AllowedCommands(sc.Input.AllowedCommands))
 	} else {
-		// Default: allow all commands, matching production default
-		// where no AllowedCommands option means all commands are permitted.
+		// Default: allow all commands for test convenience so that
+		// existing scenarios (without allowed_commands) keep working.
+		// Note: the production default (no option) blocks all commands.
 		opts = append(opts, interp.AllowAllCommands())
 	}
 	if sc.Input.AllowedPaths != nil {

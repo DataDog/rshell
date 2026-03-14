@@ -11,7 +11,6 @@ import (
 	"io"
 	"io/fs"
 	"os"
-	"slices"
 	"time"
 
 	"github.com/spf13/pflag"
@@ -159,15 +158,4 @@ func addToRegistry(name string, fn HandlerFunc) {
 func Lookup(name string) (HandlerFunc, bool) {
 	fn, ok := registry[name]
 	return fn, ok
-}
-
-// Names returns the names of all registered builtin commands, sorted
-// alphabetically for deterministic output.
-func Names() []string {
-	names := make([]string, 0, len(registry))
-	for name := range registry {
-		names = append(names, name)
-	}
-	slices.Sort(names)
-	return names
 }
