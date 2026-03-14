@@ -91,7 +91,7 @@ Store the owner and repo name.
 
 **GATE CHECK**: Call TaskList. Step 1 must be `completed`. Set Step 2 to `in_progress`.
 
-Set `iteration = 1`. Maximum iterations: **20**. Repeat sub-steps A through E while `iteration <= 20`:
+Set `iteration = 1`. Maximum iterations: **30**. Repeat sub-steps A through E while `iteration <= 20`:
 
 ---
 
@@ -240,7 +240,7 @@ Check **all three** review sources for remaining issues:
 | Any findings | Any | Any | **Continue** → go back to Sub-step 2A1 ∥ 2A2 |
 | APPROVE | Unresolved threads | Any | **Continue** → go back to Sub-step 2A1 ∥ 2A2 (address-pr-comments will handle them) |
 | APPROVE | None unresolved | Failing | **Continue** → go back to Sub-step 2A1 ∥ 2A2 (fix-ci-tests will handle it) |
-| — | — | — | If `iteration > 20` → **STOP — iteration limit reached** |
+| — | — | — | If `iteration > 30` → **STOP — iteration limit reached** |
 
 Log the iteration result before continuing or stopping:
 - Iteration number
@@ -389,5 +389,5 @@ gh pr comment <pr-number> --body "<the summary markdown above>"
 - **Run address-pr-comments before fix-ci-tests** — 2B then 2C, sequentially, so CI fixes run on code that already incorporates review feedback.
 - **Pull before fixing** — always `git pull --rebase` before launching fix agents to avoid working on stale code.
 - **Stop early on APPROVE + CI green + no unresolved threads** — don't waste iterations if the PR is already clean.
-- **Respect the iteration limit** — hard stop at 20 to prevent infinite loops. If issues persist after 20 iterations, report what's left for the user to handle.
+- **Respect the iteration limit** — hard stop at 30 to prevent infinite loops. If issues persist after 30 iterations, report what's left for the user to handle.
 - **Use gate checks** — always call TaskList and verify prerequisites before starting a step. This prevents out-of-order execution.
