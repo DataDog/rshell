@@ -192,6 +192,13 @@ func TestAllowedCommandsRestriction(t *testing.T) {
 	assert.Contains(t, stderr, "cat: command not allowed")
 }
 
+func TestAllowedCommandsTrimsWhitespace(t *testing.T) {
+	// "echo, true" with spaces around entries should still allow both commands.
+	code, stdout, _ := runCLI(t, "--allowed-commands", "echo, true", "-s", `echo hello`)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "hello\n", stdout)
+}
+
 func TestAllowedCommandsEmpty(t *testing.T) {
 	code, _, stderr := runCLI(t, "--allowed-commands", "", "-s", `echo hello`)
 	assert.Equal(t, 1, code)

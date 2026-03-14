@@ -48,12 +48,12 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 
 			var paths []string
 			if allowedPaths != "" {
-				paths = strings.Split(allowedPaths, ",")
+				paths = splitAndTrim(allowedPaths)
 			}
 			var cmds []string
 			allowedCommandsSet := cmd.Flags().Changed("allowed-commands")
 			if allowedCommands != "" {
-				cmds = strings.Split(allowedCommands, ",")
+				cmds = splitAndTrim(allowedCommands)
 			} else if allowedCommandsSet {
 				// Explicitly passing an empty --allowed-commands means deny-all.
 				cmds = []string{}
@@ -141,4 +141,13 @@ func execute(ctx context.Context, script, name string, allowedPaths, allowedComm
 	defer runner.Close()
 
 	return runner.Run(ctx, prog)
+}
+
+// splitAndTrim splits s on commas and trims whitespace from each element.
+func splitAndTrim(s string) []string {
+	parts := strings.Split(s, ",")
+	for i, p := range parts {
+		parts[i] = strings.TrimSpace(p)
+	}
+	return parts
 }
