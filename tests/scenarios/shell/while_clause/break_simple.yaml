@@ -1,0 +1,11 @@
+skip_assert_against_bash: true
+description: Break in while loop is blocked because while loops are not supported.
+input:
+  script: |+
+    while true; do
+      break
+    done
+expect:
+  stdout: ""
+  stderr: "while/until loops are not supported\n"
+  exit_code: 2

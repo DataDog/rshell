@@ -4,6 +4,5 @@ input:
     nosuchcommand
 expect:
   stdout: ""
-  stderr_contains:
-    - "not found"
+  stderr: "nosuchcommand: command not found\n"
   exit_code: 127

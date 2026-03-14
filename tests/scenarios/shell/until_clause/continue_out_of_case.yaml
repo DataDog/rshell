@@ -1,0 +1,13 @@
+skip_assert_against_bash: true
+description: Continue inside case statement within until loop is blocked.
+input:
+  script: |+
+    until false; do
+      case x in
+        x) continue;;
+      esac
+    done
+expect:
+  stdout: ""
+  stderr: "while/until loops are not supported\n"
+  exit_code: 2

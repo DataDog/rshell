@@ -1,0 +1,13 @@
+skip_assert_against_bash: true
+description: Break inside case statement within while loop is blocked.
+input:
+  script: |+
+    while true; do
+      case x in
+        x) break;;
+      esac
+    done
+expect:
+  stdout: ""
+  stderr: "while/until loops are not supported\n"
+  exit_code: 2
