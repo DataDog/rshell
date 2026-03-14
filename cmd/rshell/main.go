@@ -159,7 +159,7 @@ func splitAndTrim(s string) []string {
 		return nil
 	}
 	parts := strings.Split(s, ",")
-	result := parts[:0]
+	result := make([]string, 0, len(parts))
 	for _, p := range parts {
 		p = strings.TrimSpace(p)
 		if p != "" {
