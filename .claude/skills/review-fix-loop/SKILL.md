@@ -337,9 +337,9 @@ Track how many times Step 3 has **succeeded** (all four verifications passed) ac
 
 **If any verification fails** (CI failing, unresolved threads remain, unpushed commits that can't be pushed, or Codex hasn't responded to the latest review request), reset the success counter to 0, reset Step 2 and all its sub-steps to `pending`, and go back to **Step 2: Run the review-fix loop** for another iteration.
 
-**If all verifications pass**, increment the success counter. If this is the **3rd consecutive success** of Step 3 → proceed to **Step 4**. Otherwise → reset Step 2 and all its sub-steps to `pending`, and go back to **Step 2: Run the review-fix loop** for another iteration to re-confirm stability.
+**If all verifications pass**, increment the success counter. If this is the **5th consecutive success** of Step 3 → proceed to **Step 4**. Otherwise → reset Step 2 and all its sub-steps to `pending`, and go back to **Step 2: Run the review-fix loop** for another iteration to re-confirm stability.
 
-**Completion check:** Step 3 has succeeded 3 consecutive times. Mark Step 3 as `completed`.
+**Completion check:** Step 3 has succeeded 5 consecutive times. Mark Step 3 as `completed`.
 
 ---
 
