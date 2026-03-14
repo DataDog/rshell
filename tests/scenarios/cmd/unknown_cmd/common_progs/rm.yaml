@@ -6,5 +6,5 @@ input:
     rm file.txt
 expect:
   stdout: ""
-  stderr_contains: ["rm: command not found"]
+  stderr: "rm: command not found\n"
   exit_code: 127

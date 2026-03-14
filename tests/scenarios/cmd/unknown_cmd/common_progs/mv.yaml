@@ -6,5 +6,5 @@ input:
     mv old.txt new.txt
 expect:
   stdout: ""
-  stderr_contains: ["mv: command not found"]
+  stderr: "mv: command not found\n"
   exit_code: 127
