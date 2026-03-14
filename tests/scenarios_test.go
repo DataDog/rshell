@@ -62,6 +62,16 @@ type input struct {
 	InterpreterEnv map[string]string `yaml:"interpreter_env"`
 	Script         string            `yaml:"script"`
 	AllowedPaths   []string          `yaml:"allowed_paths"` // relative to test temp dir; "$DIR" resolves to temp dir itself
+	// AllowedCommands lists the command names (builtin or external) that the
+	// interpreter is permitted to execute. If nil and AllowAllCommands is not
+	// explicitly set to true, the test defaults to allowing all commands for
+	// backward compatibility.
+	AllowedCommands []string `yaml:"allowed_commands"`
+	// AllowAllCommands permits any command to be executed, bypassing the
+	// AllowedCommands restriction. When explicitly set to false in a
+	// scenario, no commands are allowed. When omitted, the test harness
+	// defaults to allowing all commands for backward compatibility.
+	AllowAllCommands *bool `yaml:"allow_all_commands"`
 }
 
 // expected holds the expected output for a scenario.
@@ -170,6 +180,18 @@ func runScenario(t *testing.T, sc scenario) {
 		}
 		opts = append(opts, interp.AllowedPaths(resolved))
 	}
+	if len(sc.Input.AllowedCommands) > 0 {
+		opts = append(opts, interp.AllowedCommands(sc.Input.AllowedCommands))
+	} else if sc.Input.AllowAllCommands == nil {
+		// Default: allow all commands for backward compatibility with
+		// existing scenarios that predate the allowedCommands feature.
+		opts = append(opts, interp.AllowAllCommands())
+	} else if *sc.Input.AllowAllCommands {
+		opts = append(opts, interp.AllowAllCommands())
+	}
+	// When allow_all_commands is explicitly false and allowed_commands is
+	// empty, no AllowedCommands/AllowAllCommands option is added, so the
+	// interpreter defaults to blocking all commands.
 	runner, err := interp.New(opts...)
 	require.NoError(t, err, "failed to create runner")
 	defer runner.Close()
