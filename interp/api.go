@@ -412,7 +412,8 @@ func AllowedCommands(cmds []string) RunnerOption {
 
 // AllowAllBuiltinCommands permits all registered builtin commands to execute.
 // It populates the allowed commands map with all registered builtin names.
-// External commands not in the builtin list will still be blocked.
+// External commands will be blocked even if an [ExecHandler] is configured,
+// because the allowed commands map only contains builtin names.
 //
 // This option replaces the allowed commands map entirely. It is mutually
 // exclusive with [AllowedCommands]: whichever is applied last wins.
