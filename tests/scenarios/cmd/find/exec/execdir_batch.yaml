@@ -1,0 +1,16 @@
+# Test -execdir with batch mode (+)
+description: find -execdir with + batches files per directory.
+skip_assert_against_bash: true  # rshell -execdir only runs builtins
+setup:
+  files:
+    - path: sub/a.txt
+      content: "alpha"
+    - path: sub/b.txt
+      content: "beta"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    find . -name "*.txt" -execdir echo {} + | tr ' ' '\n' | sort
+expect:
+  stdout: "./a.txt\n./b.txt\n"
+  exit_code: 0

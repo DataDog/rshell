@@ -1,0 +1,16 @@
+# Test basic -exec with echo
+description: find -exec runs a command for each matched file.
+skip_assert_against_bash: true  # rshell -exec only runs builtins
+setup:
+  files:
+    - path: a.txt
+      content: "alpha"
+    - path: b.txt
+      content: "beta"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    find . -name "*.txt" -exec echo {} \; | sort
+expect:
+  stdout: "./a.txt\n./b.txt\n"
+  exit_code: 0

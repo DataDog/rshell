@@ -7,8 +7,11 @@ package find
 
 import (
 	"context"
+	"io"
 	iofs "io/fs"
 	"math"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/DataDog/rshell/builtins"
@@ -20,19 +23,24 @@ type evalResult struct {
 	prune   bool // skip descending into this directory
 }
 
+// execCommandFunc is the signature for executing a builtin command.
+type execCommandFunc func(ctx context.Context, args []string, dir string, stdout, stderr io.Writer) (uint8, error)
+
 // evalContext holds state needed during expression evaluation.
 type evalContext struct {
 	callCtx     *builtins.CallContext
 	ctx         context.Context
 	now         time.Time
-	relPath     string               // path relative to starting point
-	info        iofs.FileInfo        // file info (lstat or stat depending on -L)
-	depth       int                  // current depth
-	printPath   string               // path to print (includes starting point prefix)
-	newerCache  map[string]time.Time // cached -newer reference file modtimes
-	newerErrors map[string]bool      // tracks which -newer reference files failed to stat
-	followLinks bool                 // true when -L is active
-	failed      bool                 // set by predicates that encounter errors
+	relPath     string                 // path relative to starting point
+	info        iofs.FileInfo          // file info (lstat or stat depending on -L)
+	depth       int                    // current depth
+	printPath   string                 // path to print (includes starting point prefix)
+	newerCache  map[string]time.Time   // cached -newer reference file modtimes
+	newerErrors map[string]bool        // tracks which -newer reference files failed to stat
+	followLinks bool                   // true when -L is active
+	failed      bool                   // set by predicates that encounter errors
+	execCommand execCommandFunc        // callback for -exec/-execdir
+	batchAccum  map[*expr][]batchEntry // accumulated paths for batch exec (+)
 }
 
 // evaluate evaluates an expression tree against a file. If e is nil, returns
@@ -104,6 +112,12 @@ func evaluate(ec *evalContext, e *expr) evalResult {
 
 	case exprPrune:
 		return evalResult{matched: true, prune: true}
+
+	case exprExec:
+		return evalExec(ec, e, false)
+
+	case exprExecDir:
+		return evalExec(ec, e, true)
 
 	case exprTrue:
 		return evalResult{matched: true}
@@ -245,4 +259,75 @@ func evalMmin(ec *evalContext, n int64, cmp cmpOp) bool {
 		mins := int64(math.Ceil(diff.Minutes()))
 		return mins == n
 	}
+}
+
+// evalExec evaluates a -exec or -execdir predicate.
+// For `;` mode: executes the command immediately, returns matched=true if exit 0.
+// For `+` mode: accumulates the path for later batch execution, returns matched=true.
+func evalExec(ec *evalContext, e *expr, isExecDir bool) evalResult {
+	if ec.execCommand == nil {
+		ec.callCtx.Errf("find: -exec/-execdir: command execution not available\n")
+		ec.failed = true
+		return evalResult{matched: false}
+	}
+
+	var filePath string
+	var dir string
+	if isExecDir {
+		dir = filepath.Dir(ec.printPath)
+		if dir == "." {
+			dir = ""
+		}
+		filePath = "./" + filepath.Base(ec.printPath)
+	} else {
+		filePath = ec.printPath
+	}
+
+	// Batch mode: accumulate path for later execution.
+	if e.execBatch {
+		if ec.batchAccum != nil {
+			entries := ec.batchAccum[e]
+			if len(entries) >= maxExecArgs {
+				ec.callCtx.Errf("find: %s: too many results for batch mode (limit %d)\n", e.kind.String(), maxExecArgs)
+				ec.failed = true
+				return evalResult{matched: true}
+			}
+			ec.batchAccum[e] = append(entries, batchEntry{filePath: filePath, dir: dir})
+		}
+		return evalResult{matched: true}
+	}
+
+	// Single mode (;): execute immediately.
+	args := buildExecArgs(e.execArgs, filePath)
+	code, err := ec.execCommand(ec.ctx, args, dir, ec.callCtx.Stdout, ec.callCtx.Stderr)
+	if err != nil {
+		ec.callCtx.Errf("find: %s: %s\n", args[0], err.Error())
+		ec.failed = true
+		return evalResult{matched: false}
+	}
+	return evalResult{matched: code == 0}
+}
+
+// buildExecArgs replaces {} with filePath in exec arguments.
+func buildExecArgs(template []string, filePath string) []string {
+	args := make([]string, len(template))
+	for i, arg := range template {
+		args[i] = strings.ReplaceAll(arg, "{}", filePath)
+	}
+	return args
+}
+
+// collectExecExprs finds all -exec/-execdir batch mode expressions in the tree.
+func collectExecExprs(e *expr) []*expr {
+	if e == nil {
+		return nil
+	}
+	var result []*expr
+	if (e.kind == exprExec || e.kind == exprExecDir) && e.execBatch {
+		result = append(result, e)
+	}
+	result = append(result, collectExecExprs(e.left)...)
+	result = append(result, collectExecExprs(e.right)...)
+	result = append(result, collectExecExprs(e.operand)...)
+	return result
 }

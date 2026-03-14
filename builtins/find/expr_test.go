@@ -102,7 +102,7 @@ func TestParseSizeEdgeCases(t *testing.T) {
 // TestParseBlockedPredicates verifies all dangerous predicates are blocked.
 func TestParseBlockedPredicates(t *testing.T) {
 	blocked := []string{
-		"-exec", "-execdir", "-delete", "-ok", "-okdir",
+		"-delete", "-ok", "-okdir",
 		"-fls", "-fprint", "-fprint0", "-fprintf",
 		"-regex", "-iregex",
 	}
@@ -110,12 +110,48 @@ func TestParseBlockedPredicates(t *testing.T) {
 		t.Run(pred, func(t *testing.T) {
 			// Blocked predicates that take an argument need one to not fail with "missing argument".
 			args := []string{pred}
-			if pred == "-exec" || pred == "-execdir" || pred == "-ok" || pred == "-okdir" {
+			if pred == "-ok" || pred == "-okdir" {
 				args = append(args, "cmd", ";")
 			}
 			_, err := parseExpression(args)
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), "blocked")
+		})
+	}
+}
+
+// TestParseExec verifies -exec/-execdir parsing.
+func TestParseExec(t *testing.T) {
+	tests := []struct {
+		name        string
+		args        []string
+		wantErr     bool
+		errContains string
+		wantBatch   bool
+	}{
+		{"exec single", []string{"-exec", "echo", "{}", ";"}, false, "", false},
+		{"exec batch", []string{"-exec", "echo", "{}", "+"}, false, "", true},
+		{"execdir single", []string{"-execdir", "echo", "{}", ";"}, false, "", false},
+		{"execdir batch", []string{"-execdir", "echo", "{}", "+"}, false, "", true},
+		{"exec missing command", []string{"-exec"}, true, "missing command", false},
+		{"exec missing terminator", []string{"-exec", "echo", "{}"}, true, "missing terminator", false},
+		{"exec without placeholder", []string{"-exec", "echo", ";"}, false, "", false},
+		{"exec empty command", []string{"-exec", ";"}, true, "missing command", false},
+		{"exec with extra args", []string{"-exec", "grep", "-l", "{}", ";"}, false, "", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			pr, err := parseExpression(tt.args)
+			if tt.wantErr {
+				require.Error(t, err)
+				if tt.errContains != "" {
+					assert.Contains(t, err.Error(), tt.errContains)
+				}
+			} else {
+				require.NoError(t, err)
+				require.NotNil(t, pr.expr)
+				assert.Equal(t, tt.wantBatch, pr.expr.execBatch)
+			}
 		})
 	}
 }

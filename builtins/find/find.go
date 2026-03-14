@@ -35,6 +35,10 @@
 //	-print           — print path followed by newline
 //	-print0          — print path followed by NUL
 //	-prune           — skip directory subtree
+//	-exec cmd {} ;   — execute cmd for each matched file (builtins only)
+//	-exec cmd {} +   — like -exec but batches files into fewer invocations
+//	-execdir cmd {} ; — like -exec but runs from the file's parent directory
+//	-execdir cmd {} + — batched version of -execdir
 //	-true            — always true
 //	-false           — always false
 //
@@ -47,7 +51,7 @@
 //
 // Blocked predicates (sandbox safety):
 //
-//	-exec, -execdir, -delete, -ok, -okdir — execution/deletion
+//	-delete, -ok, -okdir — deletion/interactive execution
 //	-fls, -fprint, -fprint0, -fprintf — file writes
 //	-regex, -iregex — ReDoS risk
 //
@@ -188,6 +192,13 @@ optLoop:
 	// consistent reference across all root paths (matches GNU find).
 	now := callCtx.Now()
 
+	// Initialize batch accumulators for -exec/-execdir with + terminator.
+	batchExprs := collectExecExprs(expression)
+	var batchAccum map[*expr][]batchEntry
+	if len(batchExprs) > 0 {
+		batchAccum = make(map[*expr][]batchEntry, len(batchExprs))
+	}
+
 	// GNU find treats a missing -newer reference as a fatal argument error
 	// and produces no result set, so skip the walk entirely.
 	if !failed {
@@ -211,7 +222,26 @@ optLoop:
 				minDepth:         minDepth,
 				now:              now,
 				eagerNewerErrors: eagerNewerErrors,
+				execCommand:      callCtx.ExecCommand,
+				batchAccum:       batchAccum,
 			}) {
+				failed = true
+			}
+		}
+	}
+
+	// Execute accumulated batch commands (-exec ... {} + / -execdir ... {} +).
+	if !failed || len(batchAccum) > 0 {
+		for _, e := range batchExprs {
+			entries := batchAccum[e]
+			if len(entries) == 0 {
+				continue
+			}
+			if ctx.Err() != nil {
+				failed = true
+				break
+			}
+			if executeBatch(ctx, callCtx, e, entries) {
 				failed = true
 			}
 		}
@@ -233,6 +263,12 @@ func isExpressionStart(arg string) bool {
 	return strings.HasPrefix(arg, "-") && len(arg) > 1
 }
 
+// batchEntry holds a file path accumulated for -exec/-execdir batch mode.
+type batchEntry struct {
+	filePath string // the path (printPath for -exec, ./basename for -execdir)
+	dir      string // parent directory (used by -execdir, empty for -exec)
+}
+
 // walkOptions holds configuration for a single walkPath invocation.
 type walkOptions struct {
 	expression       *expr
@@ -242,6 +278,8 @@ type walkOptions struct {
 	minDepth         int
 	now              time.Time
 	eagerNewerErrors map[string]bool
+	execCommand      execCommandFunc
+	batchAccum       map[*expr][]batchEntry // accumulated paths for batch exec
 }
 
 // walkPath walks the directory tree rooted at startPath, evaluating the
@@ -346,6 +384,8 @@ func walkPath(
 			newerCache:  newerCache,
 			newerErrors: newerErrors,
 			followLinks: opts.followLinks,
+			execCommand: opts.execCommand,
+			batchAccum:  opts.batchAccum,
 		}
 
 		prune := false
@@ -481,6 +521,69 @@ func collectNewerRefs(e *expr) []string {
 	refs = append(refs, collectNewerRefs(e.right)...)
 	refs = append(refs, collectNewerRefs(e.operand)...)
 	return refs
+}
+
+// executeBatch runs a batch -exec/-execdir command with all accumulated paths.
+// Returns true if any error occurred.
+func executeBatch(ctx context.Context, callCtx *builtins.CallContext, e *expr, entries []batchEntry) bool {
+	if callCtx.ExecCommand == nil {
+		callCtx.Errf("find: -exec/-execdir: command execution not available\n")
+		return true
+	}
+
+	// Group entries by directory for -execdir (each directory gets its own invocation).
+	// For -exec, all entries share the same (empty) dir.
+	type group struct {
+		dir   string
+		paths []string
+	}
+	var groups []group
+	if e.kind == exprExecDir {
+		// Group by directory.
+		dirMap := make(map[string]int)
+		for _, entry := range entries {
+			idx, ok := dirMap[entry.dir]
+			if !ok {
+				idx = len(groups)
+				dirMap[entry.dir] = idx
+				groups = append(groups, group{dir: entry.dir})
+			}
+			groups[idx].paths = append(groups[idx].paths, entry.filePath)
+		}
+	} else {
+		// All in one group.
+		paths := make([]string, len(entries))
+		for i, entry := range entries {
+			paths[i] = entry.filePath
+		}
+		groups = append(groups, group{paths: paths})
+	}
+
+	failed := false
+	for _, g := range groups {
+		if ctx.Err() != nil {
+			return true
+		}
+		// Build args: command [fixed-args] file1 file2 ...
+		// The {} placeholder in execArgs is at the end (before +), so replace
+		// that position with the accumulated paths.
+		var args []string
+		for _, arg := range e.execArgs {
+			if arg == "{}" {
+				args = append(args, g.paths...)
+			} else {
+				args = append(args, arg)
+			}
+		}
+		code, err := callCtx.ExecCommand(ctx, args, g.dir, callCtx.Stdout, callCtx.Stderr)
+		if err != nil {
+			callCtx.Errf("find: %s: %s\n", args[0], err.Error())
+			failed = true
+		} else if code != 0 {
+			failed = true
+		}
+	}
+	return failed
 }
 
 // joinPath joins a directory and a name with a forward slash.

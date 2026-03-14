@@ -71,6 +71,7 @@ var builtinPerCommandSymbols = map[string][]string{
 		"errors.New",                      // creates a simple error value; pure function, no I/O.
 		"fmt.Errorf",                      // error formatting; pure function, no I/O.
 		"io.EOF",                          // sentinel error value; pure constant.
+		"io.Writer",                       // interface type for writing; no side effects by itself.
 		"io/fs.FileInfo",                  // interface type for file information; no side effects.
 		"io/fs.ModeDir",                   // file mode bit constant for directories; pure constant.
 		"io/fs.ModeNamedPipe",             // file mode bit constant for named pipes; pure constant.
@@ -80,10 +81,13 @@ var builtinPerCommandSymbols = map[string][]string{
 		"math.Ceil",                       // pure arithmetic; no side effects.
 		"math.Floor",                      // pure arithmetic; no side effects.
 		"math.MaxInt64",                   // integer constant; no side effects.
+		"path/filepath.Base",              // extracts last element of path; pure function, no I/O.
+		"path/filepath.Dir",               // extracts directory from path; pure function, no I/O.
 		"strconv.Atoi",                    // string-to-int conversion; pure function, no I/O.
 		"strconv.ErrRange",                // sentinel error value for overflow; pure constant.
 		"strconv.ParseInt",                // string-to-int conversion; pure function, no I/O.
 		"strings.HasPrefix",               // pure function for prefix matching; no I/O.
+		"strings.ReplaceAll",              // replaces all occurrences of a substring; pure function, no I/O.
 		"strings.ToLower",                 // converts string to lowercase; pure function, no I/O.
 		"time.Duration",                   // duration type; pure integer alias, no I/O.
 		"time.Hour",                       // constant representing one hour; no side effects.
@@ -331,6 +335,8 @@ var builtinAllowedSymbols = []string{
 	"os.FileInfo",                     // file metadata interface returned by Stat; no I/O side effects.
 	"os.O_RDONLY",                     // read-only file flag constant; cannot open files by itself.
 	"os.PathError",                    // error type for filesystem path errors; pure type, no I/O.
+	"path/filepath.Base",              // extracts last element of a path; pure function, no I/O.
+	"path/filepath.Dir",               // extracts directory part of a path; pure function, no I/O.
 	"regexp.Compile",                  // compiles a regular expression; pure function, no I/O. Uses RE2 engine (linear-time, no backtracking).
 	"regexp.QuoteMeta",                // escapes all special regex characters in a string; pure function, no I/O.
 	"regexp.Regexp",                   // compiled regular expression type; no I/O side effects. All matching methods are linear-time (RE2).

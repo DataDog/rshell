@@ -1,5 +1,5 @@
-description: find -execdir is blocked for sandbox safety.
-skip_assert_against_bash: true  # intentional: bash allows -execdir; rshell blocks it
+description: find -execdir executes commands from the file's parent directory.
+skip_assert_against_bash: true  # rshell -execdir only runs builtins, not external binaries
 setup:
   files:
     - path: dummy.txt
@@ -8,7 +8,7 @@ setup:
 input:
   allowed_paths: ["$DIR"]
   script: |+
-    find . -execdir echo {} \;
+    find . -name "dummy.txt" -execdir echo found {} \;
 expect:
-  stderr_contains: ["blocked"]
-  exit_code: 1
+  stdout: "found ./dummy.txt\n"
+  exit_code: 0

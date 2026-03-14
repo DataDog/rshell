@@ -23,24 +23,26 @@ const (
 type exprKind int
 
 const (
-	exprName   exprKind = iota // -name pattern
-	exprIName                  // -iname pattern
-	exprPath                   // -path pattern
-	exprIPath                  // -ipath pattern
-	exprType                   // -type c
-	exprSize                   // -size n[cwbkMG]
-	exprEmpty                  // -empty
-	exprNewer                  // -newer file
-	exprMtime                  // -mtime n
-	exprMmin                   // -mmin n
-	exprPrint                  // -print
-	exprPrint0                 // -print0
-	exprPrune                  // -prune
-	exprTrue                   // -true
-	exprFalse                  // -false
-	exprAnd                    // expr -a expr  or  expr expr (implicit)
-	exprOr                     // expr -o expr
-	exprNot                    // ! expr  or  -not expr
+	exprName    exprKind = iota // -name pattern
+	exprIName                   // -iname pattern
+	exprPath                    // -path pattern
+	exprIPath                   // -ipath pattern
+	exprType                    // -type c
+	exprSize                    // -size n[cwbkMG]
+	exprEmpty                   // -empty
+	exprNewer                   // -newer file
+	exprMtime                   // -mtime n
+	exprMmin                    // -mmin n
+	exprPrint                   // -print
+	exprPrint0                  // -print0
+	exprPrune                   // -prune
+	exprExec                    // -exec command {} ;
+	exprExecDir                 // -execdir command {} ;
+	exprTrue                    // -true
+	exprFalse                   // -false
+	exprAnd                     // expr -a expr  or  expr expr (implicit)
+	exprOr                      // expr -o expr
+	exprNot                     // ! expr  or  -not expr
 )
 
 // cmpOp represents a comparison operator for numeric predicates.
@@ -72,21 +74,28 @@ type sizeUnit struct {
 	unit byte  // one of: c w b k M G (default 'b' if omitted)
 }
 
+// maxExecArgs limits the number of arguments that can be accumulated in
+// -exec/-execdir batch mode (+) to prevent memory exhaustion.
+const maxExecArgs = 10000
+
 // expr is a node in the find expression AST.
 type expr struct {
-	kind    exprKind
-	strVal  string   // pattern for name/iname/path/ipath, type char, file path for newer
-	sizeVal sizeUnit // for -size
-	numVal  int64    // for -mtime, -mmin
-	numCmp  cmpOp    // comparison operator for numeric predicates
-	left    *expr    // for and/or
-	right   *expr    // for and/or
-	operand *expr    // for not
+	kind      exprKind
+	strVal    string   // pattern for name/iname/path/ipath, type char, file path for newer
+	sizeVal   sizeUnit // for -size
+	numVal    int64    // for -mtime, -mmin
+	numCmp    cmpOp    // comparison operator for numeric predicates
+	left      *expr    // for and/or
+	right     *expr    // for and/or
+	operand   *expr    // for not
+	execArgs  []string // for -exec/-execdir: command and arguments (with {} placeholder)
+	execBatch bool     // for -exec/-execdir: true if terminated by + (batch mode)
 }
 
 // isAction returns true if this expression is an output action.
 func (e *expr) isAction() bool {
-	return e.kind == exprPrint || e.kind == exprPrint0
+	return e.kind == exprPrint || e.kind == exprPrint0 ||
+		e.kind == exprExec || e.kind == exprExecDir
 }
 
 // hasAction checks if any node in the expression tree is an action.
@@ -119,8 +128,6 @@ type parseResult struct {
 
 // blocked predicates that are forbidden for sandbox safety.
 var blockedPredicates = map[string]string{
-	"-exec":    "arbitrary command execution is blocked",
-	"-execdir": "arbitrary command execution is blocked",
 	"-delete":  "file deletion is blocked",
 	"-ok":      "interactive execution is blocked",
 	"-okdir":   "interactive execution is blocked",
@@ -310,6 +317,10 @@ func (p *parser) parsePrimary() (*expr, error) {
 		return p.parseNumericPredicate(exprMtime)
 	case "-mmin":
 		return p.parseNumericPredicate(exprMmin)
+	case "-exec":
+		return p.parseExecPredicate(exprExec)
+	case "-execdir":
+		return p.parseExecPredicate(exprExecDir)
 	case "-print":
 		return &expr{kind: exprPrint}, nil
 	case "-print0":
@@ -445,6 +456,49 @@ func (p *parser) parseDepthOption(isMax bool) (*expr, error) {
 	return &expr{kind: exprTrue}, nil
 }
 
+// parseExecPredicate parses -exec/-execdir arguments.
+// Syntax: -exec command [args...] ;
+//
+//	-exec command [args...] {} +
+//
+// The `;` terminator must be a separate argument (the shell handles `\;`).
+// The `+` terminator enables batch mode (multiple files per invocation);
+// in batch mode `{}` must be the last argument before `+`.
+// `{}` is optional in `;` mode — when absent, the command runs without
+// the matched path in its arguments (matching GNU find behaviour).
+func (p *parser) parseExecPredicate(kind exprKind) (*expr, error) {
+	name := "-exec"
+	if kind == exprExecDir {
+		name = "-execdir"
+	}
+	if p.pos >= len(p.args) {
+		return nil, fmt.Errorf("find: %s: missing command", name)
+	}
+
+	var cmdArgs []string
+	hasPlaceholder := false
+	for p.pos < len(p.args) {
+		tok := p.args[p.pos]
+		p.pos++
+
+		if tok == ";" {
+			if len(cmdArgs) == 0 {
+				return nil, fmt.Errorf("find: %s: missing command", name)
+			}
+			return &expr{kind: kind, execArgs: cmdArgs, execBatch: false}, nil
+		}
+		if tok == "+" && hasPlaceholder && len(cmdArgs) > 0 && cmdArgs[len(cmdArgs)-1] == "{}" {
+			// Batch mode: {} must be the last arg before +.
+			return &expr{kind: kind, execArgs: cmdArgs, execBatch: true}, nil
+		}
+		if tok == "{}" {
+			hasPlaceholder = true
+		}
+		cmdArgs = append(cmdArgs, tok)
+	}
+	return nil, fmt.Errorf("find: missing terminator for %s (expected ';' or '+')", name)
+}
+
 // parseSize parses a -size argument like "+10k", "-5M", "100c".
 func parseSize(s string) (sizeUnit, error) {
 	if len(s) == 0 {
@@ -527,6 +581,10 @@ func (k exprKind) String() string {
 		return "-or"
 	case exprNot:
 		return "-not"
+	case exprExec:
+		return "-exec"
+	case exprExecDir:
+		return "-execdir"
 	default:
 		return "unknown"
 	}
