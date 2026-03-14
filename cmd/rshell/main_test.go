@@ -205,6 +205,13 @@ func TestAllowedCommandsEmpty(t *testing.T) {
 	assert.Contains(t, stderr, "echo: command not allowed")
 }
 
+func TestAllowedCommandsSeparatorOnlyDeniesAll(t *testing.T) {
+	// "--allowed-commands ', ,'" should deny all commands, not silently allow all.
+	code, _, stderr := runCLI(t, "--allowed-commands", ", ,", "-s", `echo hello`)
+	assert.Equal(t, 1, code)
+	assert.Contains(t, stderr, "echo: command not allowed")
+}
+
 func TestNoAllowedCommandsFlagAllowsAll(t *testing.T) {
 	code, stdout, _ := runCLI(t, "-s", `echo hello`)
 	assert.Equal(t, 0, code)

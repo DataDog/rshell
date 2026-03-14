@@ -54,6 +54,11 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			allowedCommandsSet := cmd.Flags().Changed("allowed-commands")
 			if allowedCommands != "" {
 				cmds = splitAndTrim(allowedCommands)
+				if cmds == nil && allowedCommandsSet {
+					// Flag was set but splitAndTrim returned nil (e.g. ", ,").
+					// Treat as explicit deny-all, not "unset".
+					cmds = []string{}
+				}
 			} else if allowedCommandsSet {
 				// Explicitly passing an empty --allowed-commands means deny-all.
 				cmds = []string{}
@@ -99,7 +104,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 
 	cmd.Flags().StringVarP(&script, "script", "s", "", "shell script to execute")
 	cmd.Flags().StringVarP(&allowedPaths, "allowed-path", "a", "", "comma-separated list of directories the shell is allowed to access")
-	cmd.Flags().StringVar(&allowedCommands, "allowed-commands", "", "comma-separated list of commands the shell is allowed to execute")
+	cmd.Flags().StringVar(&allowedCommands, "allowed-commands", "", "comma-separated list of commands the shell is allowed to execute (use 'all' to allow everything)")
 
 	if err := cmd.Execute(); err != nil {
 		var status interp.ExitStatus
