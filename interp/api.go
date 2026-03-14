@@ -49,8 +49,10 @@ type runnerConfig struct {
 	sandbox *allowedpaths.Sandbox
 
 	// allowedCommands restricts which commands (builtins and external) may execute.
-	// nil (default) blocks all commands; populate via AllowedCommands option.
-	allowedCommands map[string]struct{}
+	// nil (default) allows all commands; populate via AllowedCommands to restrict.
+	// When allowAllCommands is true, the map is ignored and all commands are permitted.
+	allowedCommands  map[string]struct{}
+	allowAllCommands bool
 
 	// usedNew is set by New() and checked in Reset() to ensure a Runner
 	// was properly constructed rather than zero-initialized.
@@ -397,12 +399,14 @@ func AllowedCommands(cmds []string) RunnerOption {
 		for _, cmd := range cmds {
 			r.allowedCommands[cmd] = struct{}{}
 		}
+		r.allowAllCommands = false
 		return nil
 	}
 }
 
 // AllowAllBuiltinCommands permits all registered builtin commands to execute.
 // It populates the allowed commands map with all registered builtin names.
+// External commands not in the builtin list will still be blocked.
 func AllowAllBuiltinCommands() RunnerOption {
 	return func(r *Runner) error {
 		names := builtins.Names()
@@ -410,6 +414,18 @@ func AllowAllBuiltinCommands() RunnerOption {
 		for _, name := range names {
 			r.allowedCommands[name] = struct{}{}
 		}
+		r.allowAllCommands = false
+		return nil
+	}
+}
+
+// AllowAllCommands disables command filtering entirely, permitting any command
+// (builtin or external) to execute. This is equivalent to the default behavior
+// when no AllowedCommands option is set.
+func AllowAllCommands() RunnerOption {
+	return func(r *Runner) error {
+		r.allowAllCommands = true
+		r.allowedCommands = nil
 		return nil
 	}
 }

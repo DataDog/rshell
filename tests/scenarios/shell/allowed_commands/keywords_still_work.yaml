@@ -1,13 +1,13 @@
 skip_assert_against_bash: true
 description: Shell keywords (if/else, pipes, &&/||) still work with restricted commands
 input:
-  allowed_commands: ["echo", "true", "false"]
+  allowed_commands: ["echo", "true", "false", "cat"]
   script: |+
     if true; then echo yes; else echo no; fi
     false || echo fallback
     true && echo chained
-    echo piped | echo end
+    echo piped | cat
 expect:
-  stdout: "yes\nfallback\nchained\nend\n"
+  stdout: "yes\nfallback\nchained\npiped\n"
   stderr: ""
   exit_code: 0

@@ -136,7 +136,6 @@ func TestRunRecoversPanic(t *testing.T) {
 
 	// Trigger initial reset so we can override the exec handler.
 	runner.Reset()
-	runner.allowedCommands = map[string]struct{}{"somecmd": {}}
 
 	// Install an exec handler that panics.
 	runner.execHandler = func(ctx context.Context, args []string) error {
