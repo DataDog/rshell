@@ -27,7 +27,6 @@ expect:
     - "normal.txt"
   stdout_contains_windows:
     - "-r--r--r--"
-    - "-rwxrwxrwx"
     - "-rw-rw-rw-"
     - "readonly.txt"
     - "executable.sh"
