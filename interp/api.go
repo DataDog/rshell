@@ -396,6 +396,9 @@ func (r *Runner) Close() error {
 // Shell keywords and control flow (if/else, for, pipes, &&/||, variable
 // assignment) are unaffected.
 //
+// If [AllowAllCommands] is also set, it takes precedence regardless of option
+// ordering — the allowlist is stored but ignored at runtime.
+//
 // Duplicate command names in the list are silently deduplicated (the map
 // insertion is idempotent), so callers do not need to pre-filter.
 func AllowedCommands(cmds []string) RunnerOption {
@@ -404,7 +407,6 @@ func AllowedCommands(cmds []string) RunnerOption {
 		for _, cmd := range cmds {
 			r.allowedCommands[cmd] = struct{}{}
 		}
-		r.allowAllCommands = false
 		return nil
 	}
 }
