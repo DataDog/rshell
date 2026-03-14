@@ -228,3 +228,14 @@ func TestProcSubstWithCmdSubst(t *testing.T) {
 	assert.Equal(t, 0, code)
 	assert.Equal(t, "from_proc\n", stdout)
 }
+
+func TestProcSubstOutputMode(t *testing.T) {
+	// >(cmd) creates a write-end pipe. The outer command receives /dev/fd/N
+	// as a string argument. Since builtins only open files for reading,
+	// >(cmd) has limited utility in the restricted shell, but the pipe
+	// mechanism itself should work. Test that the path is generated.
+	stdout, _, code := substRun(t, `echo >(true)`)
+	assert.Equal(t, 0, code)
+	// The output should be a /dev/fd/N path
+	assert.Contains(t, stdout, "/dev/fd/")
+}

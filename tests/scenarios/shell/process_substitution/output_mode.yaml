@@ -1,0 +1,8 @@
+description: Output process substitution >(cmd) returns a /dev/fd/N path.
+skip_assert_against_bash: true
+input:
+  script: |+
+    echo >(true)
+expect:
+  stdout_contains: ["/dev/fd/"]
+  exit_code: 0
