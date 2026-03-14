@@ -1,0 +1,10 @@
+# yash: pipeline-p.tst - 2-command pipeline
+description: Basic two-command pipeline.
+input:
+  script: |+
+    echo foo | cat
+expect:
+  stdout: |+
+    foo
+  stderr: ""
+  exit_code: 0

@@ -1,0 +1,14 @@
+# yash: pipeline-p.tst - exit status of pipeline is from last command
+description: Pipeline exit status comes from the last command.
+input:
+  script: |+
+    echo a | true
+    echo a $?
+    echo b | false
+    echo b $?
+expect:
+  stdout: |+
+    a 0
+    b 1
+  stderr: ""
+  exit_code: 0

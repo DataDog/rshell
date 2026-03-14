@@ -1,0 +1,9 @@
+# yash: andor-p.tst - 2-command list, failure && success
+description: First command fails so second is skipped in && list.
+input:
+  script: |+
+    false && echo 2
+expect:
+  stdout: ""
+  stderr: ""
+  exit_code: 1

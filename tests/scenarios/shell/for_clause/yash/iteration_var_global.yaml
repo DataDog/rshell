@@ -1,0 +1,11 @@
+# yash: for-p.tst - iteration variable is global
+description: For loop iteration variable persists after loop completion.
+input:
+  script: |+
+    for myvar in a b c; do true; done
+    echo $myvar
+expect:
+  stdout: |+
+    c
+  stderr: ""
+  exit_code: 0

@@ -1,0 +1,11 @@
+# yash: if-p.tst - exit status of if, true condition, false body
+description: Exit status of if reflects the body command when condition is true.
+input:
+  script: |+
+    if true; then false; fi
+    echo $?
+expect:
+  stdout: |+
+    1
+  stderr: ""
+  exit_code: 0

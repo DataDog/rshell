@@ -1,0 +1,10 @@
+# yash: if-p.tst - execution path of if-else, true
+description: Then branch executes when if condition is true.
+input:
+  script: |+
+    if true; then echo then; else echo else; fi
+expect:
+  stdout: |+
+    then
+  stderr: ""
+  exit_code: 0

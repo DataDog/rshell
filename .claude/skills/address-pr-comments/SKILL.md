@@ -16,18 +16,32 @@ Determine the target PR:
 
 ```bash
 # If argument provided, use it; otherwise detect from current branch
-gh pr view $ARGUMENTS --json number,url,headRefName,baseRefName
+gh pr view $ARGUMENTS --json number,url,headRefName,baseRefName,author
 ```
 
 If no PR is found, stop and inform the user.
 
-Extract owner, repo, and PR number for subsequent API calls:
+Extract owner, repo, PR number, and **PR author login** for subsequent API calls:
 
 ```bash
 gh repo view --json owner,name --jq '"\(.owner.login)/\(.name)"'
 ```
 
-### 2. Fetch all review comments
+### 2. Fetch review comments and summaries
+
+#### 2a. Determine the latest review round
+
+Find the timestamp of the most recent push to the PR branch — this marks the boundary of the current review round:
+
+```bash
+# Get the most recent push event (last commit pushed)
+gh api repos/{owner}/{repo}/pulls/{pr-number}/commits \
+  --jq '.[-1].commit.committer.date'
+```
+
+Store this as `$LAST_PUSH_DATE`. Comments created **after** this timestamp are from the current (latest) review round. If no filtering by round is desired (e.g., first review), process all unresolved comments.
+
+#### 2b. Fetch inline review comments
 
 Retrieve all review comments (inline code comments) on the PR:
 
@@ -38,18 +52,28 @@ gh api repos/{owner}/{repo}/pulls/{pr-number}/comments \
   2>&1 | head -500
 ```
 
-Also fetch top-level review comments (review bodies):
+#### 2c. Fetch review summaries
+
+Fetch top-level review comments (review bodies/summaries). These often contain high-level feedback and action items:
 
 ```bash
 gh api repos/{owner}/{repo}/pulls/{pr-number}/reviews \
-  --jq '.[] | select(.body != "" and .body != null) | {id: .id, user: .user.login, state: .state, body: .body}' \
+  --jq '.[] | select(.body != "" and .body != null) | {id: .id, user: .user.login, state: .state, body: .body, submitted_at: .submitted_at}' \
   2>&1 | head -200
 ```
 
-Filter out:
-- Comments authored by the PR author (self-comments, unless they contain a TODO/action item)
+**Pay special attention to review summaries** — they often list multiple action items in a single review body. Parse each action item from the summary as a separate work item.
+
+#### 2d. Filter comments
+
+**Include** comments from:
+- **Reviewers** (anyone who is not the PR author) — standard review feedback
+- **The PR author themselves** — self-comments are treated as actionable TODOs/notes-to-self that should be addressed
+- **@codex** and other AI reviewers — treat their comments with the same weight as human reviewer comments
+
+**Exclude**:
 - Already-resolved threads
-- Bot comments that are purely informational
+- Bot comments that are purely informational (CI status, auto-generated labels, etc.) — but NOT @codex or other AI reviewer comments, which are substantive
 
 Check which threads are already resolved:
 
@@ -78,6 +102,13 @@ gh api graphql -f query='
 ```
 
 Only process **unresolved** threads with actionable comments.
+
+#### 2e. Prioritize latest comments
+
+When there are many unresolved comments, prioritize:
+1. Comments from the **latest review round** (after `$LAST_PUSH_DATE`)
+2. Comments from review summaries (they represent the reviewer's consolidated view)
+3. Older unresolved comments that are still relevant
 
 ### 2b. Read the PR specs
 
@@ -205,7 +236,11 @@ If fixes span unrelated areas, prefer multiple focused commits over one large co
 
 **All replies MUST be prefixed with `[<LLM model name>]`** (e.g. `[Claude Opus 4.6]`) so reviewers can tell the response came from an AI.
 
-For each comment that was addressed:
+Handle comments differently based on who authored them:
+
+#### Reviewer comments (not the PR author)
+
+For each reviewer comment that was addressed:
 
 1. **Reply** explaining what was fixed:
    ```bash
@@ -245,18 +280,57 @@ For each comment that was addressed:
    ' -f threadId="<thread-id>"
    ```
 
-For comments that were **not valid** or were **questions**, reply (prefixed with `[<MODELL NAME - VERSION>]`) with an explanation but do NOT resolve — let the reviewer decide.
+#### PR author self-comments
+
+For comments authored by the PR author (self-notes/TODOs):
+
+1. **Fix the issue** described in the comment (these are actionable items the author left for themselves)
+2. **Resolve** the thread (the PR author can resolve their own threads)
+3. **Do NOT reply** to self-comments — just fix and resolve. No need for the AI to narrate back to the same person who wrote the note.
+
+#### Review summary action items
+
+For action items extracted from review summaries (step 2c):
+
+1. **Fix each action item** as if it were an inline comment
+2. **Reply to the review** with a summary of all action items addressed:
+   ```bash
+   gh api repos/{owner}/{repo}/pulls/{pr-number}/reviews/{review-id}/comments \
+     -f body="[<MODEL NAME> - <VERSION>] Addressed the following from this review:
+   - <action item 1>: <what was done>
+   - <action item 2>: <what was done>"
+   ```
+   If the `comments` endpoint doesn't work for review-level replies, use an issue comment instead:
+   ```bash
+   gh api repos/{owner}/{repo}/issues/{pr-number}/comments \
+     -f body="[<MODEL NAME> - <VERSION>] Addressed review feedback from @{reviewer}:
+   - <action item 1>: <what was done>
+   - <action item 2>: <what was done>"
+   ```
+
+#### Invalid or question comments
+
+For comments that were **not valid** or were **questions**, reply (prefixed with `[<MODEL NAME> - <VERSION>]`) with an explanation but do NOT resolve — let the reviewer decide.
 
 **IMPORTANT: Never resolve a thread where the reviewer's comment aligns with a PR spec but the implementation doesn't match.** These are valid spec violations — fix the code instead. If you cannot fix it, leave the thread unresolved and explain the blocker.
 
 ### 8. Summary
 
-Provide a final summary:
+Provide a final summary organized by source:
 
-- List each review comment that was addressed with:
-  - The comment (abbreviated)
-  - The classification (bug, style, suggestion, etc.)
-  - What was changed
-- List any comments that were replied to but not fixed (with reason)
-- List any comments that could not be addressed (with explanation)
-- Confirm the commit(s) pushed and threads resolved
+**Reviewer inline comments addressed:**
+- List each comment with: the comment (abbreviated), classification (bug, style, suggestion, etc.), what was changed
+
+**Review summary action items addressed:**
+- List each action item from review summaries that was implemented
+
+**PR author self-comments addressed:**
+- List each self-note/TODO that was fixed and resolved
+
+**Not fixed (with reason):**
+- List any comments replied to but not fixed, with explanation
+
+**Could not be addressed:**
+- List any comments that could not be addressed, with explanation
+
+Confirm the commit(s) pushed and threads resolved.

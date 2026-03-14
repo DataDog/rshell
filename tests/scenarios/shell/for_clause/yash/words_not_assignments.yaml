@@ -1,0 +1,13 @@
+# yash: for-p.tst - words are not treated as assignments
+description: For loop words are not evaluated as variable assignments.
+input:
+  script: |+
+    for i in a=1 b=2; do echo $i; done
+    echo $a $b
+expect:
+  stdout: |+
+    a=1
+    b=2
+
+  stderr: ""
+  exit_code: 0

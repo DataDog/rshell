@@ -1,0 +1,12 @@
+# yash: if-p.tst - nested if in then
+description: If statement nested inside then branch.
+input:
+  script: |+
+    if true; then
+      if true; then echo inner; fi
+    fi
+expect:
+  stdout: |+
+    inner
+  stderr: ""
+  exit_code: 0

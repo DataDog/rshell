@@ -1,0 +1,9 @@
+# yash: pipeline-p.tst - redirection overrides pipeline
+description: Explicit redirection to /dev/null overrides pipeline stdout.
+input:
+  script: |+
+    echo foo >/dev/null | cat
+expect:
+  stdout: ""
+  stderr: ""
+  exit_code: 0

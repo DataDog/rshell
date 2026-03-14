@@ -1,0 +1,11 @@
+# yash: if-p.tst - execution path of if, false
+description: If block is skipped when condition is false.
+input:
+  script: |+
+    if false; then echo not reached; fi
+    echo $?
+expect:
+  stdout: |+
+    0
+  stderr: ""
+  exit_code: 0

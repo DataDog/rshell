@@ -1,0 +1,12 @@
+# yash: andor-p.tst - 3-command list
+description: Three-command and-or list with mixed && and ||.
+input:
+  script: |+
+    false && echo foo || echo bar
+    true || echo foo && echo bar
+expect:
+  stdout: |+
+    bar
+    bar
+  stderr: ""
+  exit_code: 0

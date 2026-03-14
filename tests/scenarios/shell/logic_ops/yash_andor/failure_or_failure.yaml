@@ -1,0 +1,9 @@
+# yash: andor-p.tst - 2-command list, failure || failure
+description: Both commands fail in || list, exit status is from last.
+input:
+  script: |+
+    false || false
+expect:
+  stdout: ""
+  stderr: ""
+  exit_code: 1

@@ -1,0 +1,10 @@
+# yash: if-p.tst - execution path of if-elif-else, false-false
+description: Else branch executes when both if and elif fail.
+input:
+  script: |+
+    if false; then echo 1; elif false; then echo 2; else echo 3; fi
+expect:
+  stdout: |+
+    3
+  stderr: ""
+  exit_code: 0

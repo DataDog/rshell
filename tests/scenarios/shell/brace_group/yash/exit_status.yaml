@@ -1,0 +1,14 @@
+# yash: grouping-p.tst - exit status of brace grouping
+description: Brace group exit status reflects the last command.
+input:
+  script: |+
+    { true; false; }
+    echo $?
+    { false; true; }
+    echo $?
+expect:
+  stdout: |+
+    1
+    0
+  stderr: ""
+  exit_code: 0

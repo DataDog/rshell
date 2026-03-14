@@ -1,0 +1,14 @@
+# yash: andor-p.tst - linebreak after &&
+description: Linebreak after && operator continues the and-or list.
+input:
+  script: |+
+    echo 1 &&
+    echo 2 &&
+    echo 3
+expect:
+  stdout: |+
+    1
+    2
+    3
+  stderr: ""
+  exit_code: 0
