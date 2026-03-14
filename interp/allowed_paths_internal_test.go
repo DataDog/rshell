@@ -168,3 +168,66 @@ func TestAllowedPathsExecDefaultBlocksAll(t *testing.T) {
 	assert.Equal(t, 127, exitCode)
 	assert.Contains(t, stderr, "command not found")
 }
+
+func TestAllowedCommandsWithExecHandler(t *testing.T) {
+	// Test that AllowedCommands gates execution before the ExecHandler is reached.
+	t.Run("allowed external command reaches ExecHandler", func(t *testing.T) {
+		var outBuf, errBuf bytes.Buffer
+		runner, err := New(
+			StdIO(nil, &outBuf, &errBuf),
+			AllowedCommands([]string{"echo", "myextcmd"}),
+		)
+		require.NoError(t, err)
+		defer runner.Close()
+
+		// Trigger initial reset so we can override the exec handler.
+		runner.Reset()
+
+		var execHandlerCalled bool
+		runner.execHandler = func(ctx context.Context, args []string) error {
+			execHandlerCalled = true
+			hc := HandlerCtx(ctx)
+			_, _ = hc.Stdout.Write([]byte("exec:" + args[0] + "\n"))
+			return nil
+		}
+
+		parser := syntax.NewParser()
+		prog, err := parser.Parse(strings.NewReader("myextcmd"), "")
+		require.NoError(t, err)
+
+		err = runner.Run(context.Background(), prog)
+		require.NoError(t, err)
+		assert.True(t, execHandlerCalled, "ExecHandler should be called for allowed external command")
+		assert.Equal(t, "exec:myextcmd\n", outBuf.String())
+	})
+
+	t.Run("disallowed external command blocked before ExecHandler", func(t *testing.T) {
+		var outBuf, errBuf bytes.Buffer
+		runner, err := New(
+			StdIO(nil, &outBuf, &errBuf),
+			AllowedCommands([]string{"echo"}),
+		)
+		require.NoError(t, err)
+		defer runner.Close()
+
+		// Trigger initial reset so we can override the exec handler.
+		runner.Reset()
+
+		var execHandlerCalled bool
+		runner.execHandler = func(ctx context.Context, args []string) error {
+			execHandlerCalled = true
+			return nil
+		}
+
+		parser := syntax.NewParser()
+		prog, err := parser.Parse(strings.NewReader("blockedcmd"), "")
+		require.NoError(t, err)
+
+		err = runner.Run(context.Background(), prog)
+		var es ExitStatus
+		require.True(t, errors.As(err, &es))
+		assert.Equal(t, 1, int(es))
+		assert.False(t, execHandlerCalled, "ExecHandler should NOT be called for disallowed command")
+		assert.Contains(t, errBuf.String(), "command not allowed")
+	})
+}

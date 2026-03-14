@@ -31,7 +31,7 @@ func runScript(t *testing.T, script, dir string, opts ...interp.RunnerOption) (s
 	var outBuf, errBuf bytes.Buffer
 	allOpts := append([]interp.RunnerOption{
 		interp.StdIO(nil, &outBuf, &errBuf),
-		interp.AllowAllBuiltinCommands(),
+		interp.AllowAllCommands(),
 	}, opts...)
 
 	runner, err := interp.New(allOpts...)
@@ -265,7 +265,9 @@ func TestAllowAllBuiltinCommandsPermitsBuiltins(t *testing.T) {
 func TestAllowAllBuiltinCommandsBlocksExternal(t *testing.T) {
 	// AllowAllBuiltinCommands only allows builtins; a non-builtin command
 	// should be rejected with "command not allowed" and exit code 1.
-	_, stderr, exitCode := runScript(t, `nonexistent_external_cmd`, "")
+	_, stderr, exitCode := runScript(t, `nonexistent_external_cmd`, "",
+		interp.AllowAllBuiltinCommands(),
+	)
 	assert.Equal(t, 1, exitCode)
 	assert.Contains(t, stderr, "command not allowed")
 }
