@@ -1,0 +1,14 @@
+# Test -exec with unknown command
+description: find -exec with unknown command reports error.
+skip_assert_against_bash: true  # rshell has different error messages
+setup:
+  files:
+    - path: a.txt
+      content: "alpha"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    find . -name "a.txt" -exec nonexistent {} \;
+expect:
+  stderr_contains: ["command not found"]
+  exit_code: 1

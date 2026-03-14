@@ -128,6 +128,13 @@ type CallContext struct {
 	// via GetFileInformationByHandle. The path parameter is needed on Windows
 	// where FileInfo.Sys() lacks identity fields; Unix ignores it.
 	FileIdentity func(path string, info fs.FileInfo) (FileID, bool)
+
+	// ExecCommand executes a builtin command within the shell interpreter.
+	// Used by find -exec/-execdir to invoke other builtins. The command
+	// runs with the same sandbox restrictions as the calling builtin.
+	// dir overrides the working directory for the command (empty = inherit).
+	// Returns the command's exit code.
+	ExecCommand func(ctx context.Context, args []string, dir string, stdout, stderr io.Writer) (uint8, error)
 }
 
 // Out writes a string to stdout.

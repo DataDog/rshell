@@ -1,14 +1,13 @@
-description: find -exec is blocked for sandbox safety.
-skip_assert_against_bash: true  # intentional: bash allows -exec; rshell blocks it
+description: find -exec executes commands for matched files.
 setup:
   files:
-    - path: dummy.txt
-      content: "x"
+    - path: hello.txt
+      content: "hello world"
       chmod: 0644
 input:
   allowed_paths: ["$DIR"]
   script: |+
-    find . -exec echo {} \;
+    find . -name "hello.txt" -exec echo found {} \;
 expect:
-  stderr_contains: ["blocked"]
-  exit_code: 1
+  stdout: "found ./hello.txt\n"
+  exit_code: 0

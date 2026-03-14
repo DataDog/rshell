@@ -1,0 +1,13 @@
+# Test -exec with no matching files
+description: find -exec with no matches produces no output.
+setup:
+  files:
+    - path: a.txt
+      content: "alpha"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    find . -name "*.xyz" -exec echo {} \;
+expect:
+  stdout: ""
+  exit_code: 0

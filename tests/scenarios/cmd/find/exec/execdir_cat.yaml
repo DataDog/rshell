@@ -1,0 +1,13 @@
+# Test -execdir with file I/O command (cat)
+description: find -execdir cat reads file from the file's parent directory.
+setup:
+  files:
+    - path: sub/hello.txt
+      content: "hello world\n"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    find . -name "hello.txt" -execdir cat {} \;
+expect:
+  stdout: "hello world\n"
+  exit_code: 0

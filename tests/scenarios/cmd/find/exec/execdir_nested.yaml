@@ -1,0 +1,13 @@
+# Test -execdir with deeply nested paths
+description: find -execdir passes ./basename even for deeply nested files.
+setup:
+  files:
+    - path: a/b/c/deep.txt
+      content: "deep"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    find . -name "deep.txt" -execdir echo {} \;
+expect:
+  stdout: "./deep.txt\n"
+  exit_code: 0

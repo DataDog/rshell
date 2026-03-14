@@ -1,0 +1,17 @@
+# Test -exec combined with other predicates
+description: find -exec works when combined with -name and -type predicates.
+setup:
+  files:
+    - path: dir1/a.txt
+      content: "alpha"
+    - path: dir1/b.log
+      content: "beta"
+    - path: dir2/c.txt
+      content: "gamma"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    find . -type f -name "*.txt" -exec echo found {} \; | sort
+expect:
+  stdout: "found ./dir1/a.txt\nfound ./dir2/c.txt\n"
+  exit_code: 0

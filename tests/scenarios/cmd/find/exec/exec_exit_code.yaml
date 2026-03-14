@@ -1,0 +1,14 @@
+# Test -exec returns false when command fails, suppressing implicit print
+description: find -exec returns false when the executed command exits non-zero.
+setup:
+  files:
+    - path: a.txt
+      content: "alpha"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    find . -name "a.txt" -exec false \;
+    echo "exit: $?"
+expect:
+  stdout_contains: ["exit: 0"]
+  exit_code: 0

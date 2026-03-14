@@ -1,0 +1,15 @@
+# Test -exec with batch mode (+)
+description: find -exec with + batches files into a single command invocation.
+setup:
+  files:
+    - path: a.txt
+      content: "alpha"
+    - path: b.txt
+      content: "beta"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    find . -name "*.txt" -exec echo {} + | tr ' ' '\n' | sort
+expect:
+  stdout: "./a.txt\n./b.txt\n"
+  exit_code: 0
