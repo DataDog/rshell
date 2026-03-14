@@ -298,11 +298,13 @@ func evalExec(ec *evalContext, e *expr, isExecDir bool) evalResult {
 	}
 
 	// Single mode (;): execute immediately.
+	// GNU find treats per-file -exec failures as a false predicate result
+	// (continuing traversal) rather than a global fatal error. Only batch
+	// mode (+) propagates errors to the global exit code.
 	args := buildExecArgs(e.execArgs, filePath)
 	code, err := ec.execCommand(ec.ctx, args, dir, ec.callCtx.Stdout, ec.callCtx.Stderr)
 	if err != nil {
 		ec.callCtx.Errf("find: %s: %s\n", args[0], err.Error())
-		ec.failed = true
 		return evalResult{matched: false}
 	}
 	return evalResult{matched: code == 0}

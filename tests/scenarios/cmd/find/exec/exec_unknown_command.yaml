@@ -11,4 +11,4 @@ input:
     find . -name "a.txt" -exec nonexistent {} \;
 expect:
   stderr_contains: ["command not found"]
-  exit_code: 1
+  exit_code: 0
