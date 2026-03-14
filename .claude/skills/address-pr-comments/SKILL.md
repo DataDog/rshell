@@ -79,6 +79,21 @@ gh api graphql -f query='
 
 Only process **unresolved** threads with actionable comments.
 
+### 2b. Read the PR specs
+
+Before evaluating any comment, read the PR description to check for a **SPECS** section:
+
+```bash
+gh pr view $ARGUMENTS --json body --jq '.body'
+```
+
+If a SPECS section is present, **it defines the authoritative requirements for this PR**. Specs override:
+- Your assumptions about backward compatibility or design intent
+- Inline code comments
+- Conventions from other parts of the codebase
+
+Store the specs for use in step 4 (validity evaluation). If a reviewer comment aligns with a spec, the comment is **valid by definition** — even if you think the current implementation is reasonable.
+
 ### 3. Understand each comment
 
 For each unresolved review comment:
@@ -99,36 +114,45 @@ For each unresolved review comment:
 | **Nitpick** | Minor optional suggestion | Evaluate — fix if trivial, otherwise reply explaining the tradeoff |
 | **Invalid/outdated** | Comment doesn't apply or is based on a misunderstanding | Reply politely explaining why |
 
-### 4. Evaluate validity — bash behavior is the source of truth
+### 4. Evaluate validity — specs and bash behavior are the sources of truth
 
-**The shell must match bash behavior unless it intentionally diverges** (e.g., sandbox restrictions, blocked commands, readonly enforcement). This principle overrides reviewer suggestions.
+There are two sources of truth, checked in this order:
+
+1. **PR specs** (from step 2b) — if present, specs are the highest authority for what this PR should do
+2. **Bash behavior** — the shell must match bash unless it intentionally diverges (sandbox restrictions, blocked commands, readonly enforcement)
+
+**CRITICAL: Never invent justifications for dismissing a comment.** If a reviewer says "the spec requires X" and the spec does require X, the comment is valid — even if you think the current implementation is a reasonable alternative. Do not fabricate reasons like "backward compatibility" or "design intent" unless those reasons are explicitly stated in the specs or CLAUDE.md.
 
 For each comment, determine if it is **valid and actionable**:
 
-1. **Verify against bash** — always check what bash actually does:
+1. **Check against PR specs first** — if a SPECS section exists and the comment aligns with a spec, the comment is **valid by definition**. Do not dismiss it.
+2. **Verify against bash** — for comments about shell behavior, check what bash actually does:
    ```bash
    docker run --rm debian:bookworm-slim bash -c '<relevant script>'
    ```
-2. **Read the relevant code** in full — not just the diff, but the surrounding implementation
-3. **Check project conventions** in `CLAUDE.md` and `AGENTS.md`
-4. **Consider side effects** — will the change break other tests or behaviors?
-5. **Check for duplicates** — is the same issue raised in multiple comments? Group them
+3. **Read the relevant code** in full — not just the diff, but the surrounding implementation
+4. **Check project conventions** in `CLAUDE.md` and `AGENTS.md`
+5. **Consider side effects** — will the change break other tests or behaviors?
+6. **Check for duplicates** — is the same issue raised in multiple comments? Group them
 
 Decision matrix:
 
-| Reviewer says | Bash does | Shell intentionally diverges? | Action |
-|--------------|-----------|-------------------------------|--------|
-| "This is wrong" | Reviewer is right | No | **Fix the implementation** to match bash |
-| "This is wrong" | Current code matches bash | No | **Reply** explaining it matches bash, with proof |
-| "This is wrong" | N/A | Yes (sandbox/security) | **Reply** explaining the intentional divergence |
-| "Do it differently" | Suggestion matches bash better | No | **Fix the implementation** to match bash |
-| "Do it differently" | Current code already matches bash | No | **Reply** — bash compatibility takes priority |
+| Reviewer says | Spec says | Bash does | Action |
+|--------------|-----------|-----------|--------|
+| "Spec requires X" | Spec does require X | N/A | **Fix the implementation** to match the spec |
+| "Spec requires X" | No such spec exists | N/A | **Reply** noting the spec doesn't mention this |
+| "This is wrong" | No spec relevant | Reviewer is right | **Fix the implementation** to match bash |
+| "This is wrong" | No spec relevant | Current code matches bash | **Reply** explaining it matches bash, with proof |
+| "This is wrong" | No spec relevant | N/A (sandbox/security) | **Reply** explaining the intentional divergence |
+| "Do it differently" | No spec relevant | Suggestion matches bash better | **Fix the implementation** to match bash |
+| "Do it differently" | No spec relevant | Current code already matches bash | **Reply** — bash compatibility takes priority |
 
 If a comment is **not valid**:
 - Prepare a polite reply with proof (e.g., "This matches bash behavior — verified with `docker run --rm debian:bookworm-slim bash -c '...'`")
 - If the divergence is intentional, explain why (sandbox restriction, security, etc.)
+- **Never claim "backward compatibility" or "design intent" unless you can point to a specific line in the specs or CLAUDE.md that says so**
 
-If a comment is **valid** (i.e., fixing it brings the shell closer to bash, or addresses a real bug):
+If a comment is **valid** (i.e., it aligns with a spec, brings the shell closer to bash, or addresses a real bug):
 - Proceed to step 5
 
 ### 5. Implement fixes
@@ -222,6 +246,8 @@ For each comment that was addressed:
    ```
 
 For comments that were **not valid** or were **questions**, reply (prefixed with `[<MODELL NAME - VERSION>]`) with an explanation but do NOT resolve — let the reviewer decide.
+
+**IMPORTANT: Never resolve a thread where the reviewer's comment aligns with a PR spec but the implementation doesn't match.** These are valid spec violations — fix the code instead. If you cannot fix it, leave the thread unresolved and explain the blocker.
 
 ### 8. Summary
 
