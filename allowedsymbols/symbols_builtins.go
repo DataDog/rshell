@@ -81,8 +81,8 @@ var builtinPerCommandSymbols = map[string][]string{
 		"math.Ceil",                       // pure arithmetic; no side effects.
 		"math.Floor",                      // pure arithmetic; no side effects.
 		"math.MaxInt64",                   // integer constant; no side effects.
-		"path/filepath.Base",              // extracts last element of path; pure function, no I/O.
-		"path/filepath.Dir",               // extracts directory from path; pure function, no I/O.
+		"path.Base",                       // extracts last element of path (always uses /); pure function, no I/O.
+		"path.Dir",                        // extracts directory from path (always uses /); pure function, no I/O.
 		"strconv.Atoi",                    // string-to-int conversion; pure function, no I/O.
 		"strconv.ErrRange",                // sentinel error value for overflow; pure constant.
 		"strconv.ParseInt",                // string-to-int conversion; pure function, no I/O.
@@ -335,8 +335,8 @@ var builtinAllowedSymbols = []string{
 	"os.FileInfo",                     // file metadata interface returned by Stat; no I/O side effects.
 	"os.O_RDONLY",                     // read-only file flag constant; cannot open files by itself.
 	"os.PathError",                    // error type for filesystem path errors; pure type, no I/O.
-	"path/filepath.Base",              // extracts last element of a path; pure function, no I/O.
-	"path/filepath.Dir",               // extracts directory part of a path; pure function, no I/O.
+	"path.Base",                       // extracts last element of a path (always uses /); pure function, no I/O.
+	"path.Dir",                        // extracts directory part of a path (always uses /); pure function, no I/O.
 	"regexp.Compile",                  // compiles a regular expression; pure function, no I/O. Uses RE2 engine (linear-time, no backtracking).
 	"regexp.QuoteMeta",                // escapes all special regex characters in a string; pure function, no I/O.
 	"regexp.Regexp",                   // compiled regular expression type; no I/O side effects. All matching methods are linear-time (RE2).

@@ -10,7 +10,7 @@ import (
 	"io"
 	iofs "io/fs"
 	"math"
-	"path/filepath"
+	"path"
 	"strings"
 	"time"
 
@@ -274,11 +274,11 @@ func evalExec(ec *evalContext, e *expr, isExecDir bool) evalResult {
 	var filePath string
 	var dir string
 	if isExecDir {
-		dir = filepath.Dir(ec.printPath)
+		dir = path.Dir(ec.printPath)
 		if dir == "." {
 			dir = ""
 		}
-		filePath = "./" + filepath.Base(ec.printPath)
+		filePath = "./" + path.Base(ec.printPath)
 	} else {
 		filePath = ec.printPath
 	}

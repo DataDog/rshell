@@ -565,8 +565,9 @@ func executeBatch(ctx context.Context, callCtx *builtins.CallContext, e *expr, e
 			return true
 		}
 		// Build args: command [fixed-args] file1 file2 ...
-		// The {} placeholder in execArgs is at the end (before +), so replace
-		// that position with the accumulated paths.
+		// In batch mode, only standalone {} is expanded (replaced with accumulated
+		// paths). This differs from `;` mode where {} is replaced even inside
+		// larger strings via strings.ReplaceAll — matching GNU find behaviour.
 		var args []string
 		for _, arg := range e.execArgs {
 			if arg == "{}" {

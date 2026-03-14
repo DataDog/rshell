@@ -1,0 +1,16 @@
+# Test -exec combined with -o (OR operator)
+description: find -exec with -o evaluates correctly with short-circuit logic.
+skip_assert_against_bash: true  # rshell -exec only runs builtins
+setup:
+  files:
+    - path: a.txt
+      content: "alpha"
+    - path: b.log
+      content: "beta"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    find . -name "*.txt" -exec echo txt {} \; -o -name "*.log" -exec echo log {} \; | sort
+expect:
+  stdout: "log ./b.log\ntxt ./a.txt\n"
+  exit_code: 0
