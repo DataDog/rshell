@@ -1,10 +1,10 @@
 description: Unknown command on right side of pipe sets exit code 1.
 input:
-  allowed_commands: ["echo"]
+  allowed_commands: ["echo", "foo"]
   script: |+
     echo ok | foo
 expect:
   stdout: ""
-  stderr: |+
-    command not allowed: foo
-  exit_code: 1
+  stderr_contains:
+    - "foo: command not found"
+  exit_code: 127

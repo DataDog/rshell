@@ -1,11 +1,11 @@
 description: Mixed && and || operators work correctly with unknown commands.
 input:
-  allowed_commands: ["echo"]
+  allowed_commands: ["echo", "foo"]
   script: |+
     foo && echo no || echo yes
 expect:
   stdout: |+
     yes
-  stderr: |+
-    command not allowed: foo
+  stderr_contains:
+    - "foo: command not found"
   exit_code: 0

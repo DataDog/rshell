@@ -1,10 +1,10 @@
 description: Unknown command in for loop body produces error on stderr.
 input:
-  allowed_commands: []
+  allowed_commands: ["nonexistent_cmd"]
   script: |+
     for i in a; do nonexistent_cmd; done
 expect:
   stdout: ""
-  stderr: |+
-    command not allowed: nonexistent_cmd
-  exit_code: 1
+  stderr_contains:
+    - "nonexistent_cmd: command not found"
+  exit_code: 127

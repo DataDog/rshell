@@ -11,5 +11,5 @@ expect:
     before
     after
   stderr: |+
-    command not allowed: no_such_cmd_abc
+    no_such_cmd_abc: command not allowed
   exit_code: 0

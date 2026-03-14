@@ -8,5 +8,5 @@ input:
 expect:
   stdout: ""
   stderr: |+
-    command not allowed: eval
+    eval: command not allowed
   exit_code: 1

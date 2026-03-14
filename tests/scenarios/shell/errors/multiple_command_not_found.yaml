@@ -10,7 +10,7 @@ input:
 expect:
   stdout: ""
   stderr: |+
-    command not allowed: notacmd1
-    command not allowed: notacmd2
-    command not allowed: notacmd3
+    notacmd1: command not allowed
+    notacmd2: command not allowed
+    notacmd3: command not allowed
   exit_code: 1

@@ -1,12 +1,12 @@
 description: An unknown command after a successful echo still fails.
 input:
-  allowed_commands: ["echo"]
+  allowed_commands: ["echo", "foo"]
   script: |+
     echo hello
     foo
 expect:
   stdout: |+
     hello
-  stderr: |+
-    command not allowed: foo
-  exit_code: 1
+  stderr_contains:
+    - "foo: command not found"
+  exit_code: 127

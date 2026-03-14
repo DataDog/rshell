@@ -9,6 +9,6 @@ input:
 expect:
   stdout: ""
   stderr: |+
-    command not allowed: unknown_cmd_1
-    command not allowed: unknown_cmd_2
+    unknown_cmd_1: command not allowed
+    unknown_cmd_2: command not allowed
   exit_code: 1

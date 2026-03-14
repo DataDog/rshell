@@ -1,12 +1,12 @@
-description: The $? variable is 1 after an unknown command.
+description: The $? variable is 127 after an unknown command.
 input:
-  allowed_commands: ["echo"]
+  allowed_commands: ["echo", "nonexistent_cmd"]
   script: |+
     nonexistent_cmd
     echo $?
 expect:
   stdout: |+
-    1
+    127
   stderr_contains:
-    - "command not allowed"
+    - "command not found"
   exit_code: 0

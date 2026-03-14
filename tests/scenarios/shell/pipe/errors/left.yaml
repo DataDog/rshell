@@ -1,11 +1,11 @@
 description: Unknown command on left side of pipe sends error to stderr; right side still runs.
 input:
-  allowed_commands: ["echo"]
+  allowed_commands: ["echo", "foo"]
   script: |+
     foo | echo ok
 expect:
   stdout: |+
     ok
-  stderr: |+
-    command not allowed: foo
+  stderr_contains:
+    - "foo: command not found"
   exit_code: 0

@@ -6,5 +6,5 @@ input:
     echo hello
 expect:
   stdout: ""
-  stderr: "command not allowed: echo\n"
+  stderr: "echo: command not allowed\n"
   exit_code: 1

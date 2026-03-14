@@ -1,11 +1,11 @@
 description: The exit code of an unknown command is captured by $? when using semicolons.
 input:
-  allowed_commands: ["echo"]
+  allowed_commands: ["echo", "nonexistent"]
   script: |+
     nonexistent; echo $?
 expect:
   stdout: |+
-    1
-  stderr: |+
-    command not allowed: nonexistent
+    127
+  stderr_contains:
+    - "nonexistent: command not found"
   exit_code: 0

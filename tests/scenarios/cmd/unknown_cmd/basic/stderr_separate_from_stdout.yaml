@@ -1,6 +1,6 @@
 description: Unknown command error goes to stderr while stdout remains clean.
 input:
-  allowed_commands: ["echo"]
+  allowed_commands: ["echo", "nonexistent_cmd"]
   script: |+
     echo before
     nonexistent_cmd
@@ -9,6 +9,6 @@ expect:
   stdout: |+
     before
     after
-  stderr: |+
-    command not allowed: nonexistent_cmd
+  stderr_contains:
+    - "nonexistent_cmd: command not found"
   exit_code: 0

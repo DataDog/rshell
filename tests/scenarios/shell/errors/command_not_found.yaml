@@ -7,5 +7,5 @@ input:
 expect:
   stdout: ""
   stderr: |+
-    command not allowed: no_such_command_xyz
+    no_such_command_xyz: command not allowed
   exit_code: 1

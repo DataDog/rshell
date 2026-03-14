@@ -1,10 +1,10 @@
-description: A simple unknown command prints "command not allowed" to stderr.
+description: A simple unknown command prints "command not found" to stderr.
 input:
-  allowed_commands: []
+  allowed_commands: ["foo"]
   script: |+
     foo
 expect:
   stdout: ""
-  stderr: |+
-    command not allowed: foo
-  exit_code: 1
+  stderr_contains:
+    - "foo: command not found"
+  exit_code: 127

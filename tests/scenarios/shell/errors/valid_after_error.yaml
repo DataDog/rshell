@@ -12,5 +12,5 @@ expect:
     first
     third
   stderr: |+
-    command not allowed: nonexistent_cmd
+    nonexistent_cmd: command not allowed
   exit_code: 0

@@ -1,10 +1,10 @@
-description: An unknown command sets exit code 1.
+description: An unknown command sets exit code 127.
 input:
-  allowed_commands: []
+  allowed_commands: ["nonexistent"]
   script: |+
     nonexistent
 expect:
   stdout: ""
-  stderr: |+
-    command not allowed: nonexistent
-  exit_code: 1
+  stderr_contains:
+    - "nonexistent: command not found"
+  exit_code: 127

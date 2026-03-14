@@ -7,5 +7,5 @@ input:
 expect:
   stdout: ""
   stderr: |+
-    command not allowed: wget
+    wget: command not allowed
   exit_code: 1

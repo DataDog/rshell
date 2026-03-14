@@ -1,6 +1,6 @@
 description: Unknown command in logical OR chain falls through to the next command.
 input:
-  allowed_commands: ["echo"]
+  allowed_commands: ["echo", "nonexistent_cmd"]
   script: |+
     nonexistent_cmd || echo "recovered"
     echo $?
@@ -8,6 +8,6 @@ expect:
   stdout: |+
     recovered
     0
-  stderr: |+
-    command not allowed: nonexistent_cmd
+  stderr_contains:
+    - "nonexistent_cmd: command not found"
   exit_code: 0

@@ -1,11 +1,11 @@
 description: A semicolon separator allows execution to continue after an unknown command.
 input:
-  allowed_commands: ["echo"]
+  allowed_commands: ["echo", "foo"]
   script: |+
     foo; echo after
 expect:
   stdout: |+
     after
-  stderr: |+
-    command not allowed: foo
+  stderr_contains:
+    - "foo: command not found"
   exit_code: 0

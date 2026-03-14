@@ -1,10 +1,10 @@
-description: An unknown command with quoted arguments still prints "command not allowed".
+description: An unknown command with quoted arguments still prints "command not found".
 input:
-  allowed_commands: []
+  allowed_commands: ["foo"]
   script: |+
     foo "hello world" 'single quoted'
 expect:
   stdout: ""
-  stderr: |+
-    command not allowed: foo
-  exit_code: 1
+  stderr_contains:
+    - "foo: command not found"
+  exit_code: 127

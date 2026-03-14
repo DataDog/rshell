@@ -1,10 +1,10 @@
 description: The && operator skips the next command after an unknown command.
 input:
-  allowed_commands: ["echo"]
+  allowed_commands: ["echo", "foo"]
   script: |+
     foo && echo should_not_run
 expect:
   stdout: ""
-  stderr: |+
-    command not allowed: foo
-  exit_code: 1
+  stderr_contains:
+    - "foo: command not found"
+  exit_code: 127

@@ -1,11 +1,11 @@
-description: An unknown command with a variable-expanded argument still prints "command not allowed".
+description: An unknown command with a variable-expanded argument still prints "command not found".
 input:
-  allowed_commands: []
+  allowed_commands: ["foo"]
   script: |+
     MY_VAR=hello
     foo $MY_VAR
 expect:
   stdout: ""
-  stderr: |+
-    command not allowed: foo
-  exit_code: 1
+  stderr_contains:
+    - "foo: command not found"
+  exit_code: 127

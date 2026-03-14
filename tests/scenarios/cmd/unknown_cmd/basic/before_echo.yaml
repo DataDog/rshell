@@ -1,12 +1,12 @@
 description: An unknown command before echo on the next line does not stop execution.
 input:
-  allowed_commands: ["echo"]
+  allowed_commands: ["echo", "foo"]
   script: |+
     foo
     echo hello
 expect:
   stdout: |+
     hello
-  stderr: |+
-    command not allowed: foo
+  stderr_contains:
+    - "foo: command not found"
   exit_code: 0

@@ -1,14 +1,14 @@
 description: Multiple unknown commands on separate lines all execute and report errors.
 input:
-  allowed_commands: []
+  allowed_commands: ["foo", "bar", "baz"]
   script: |+
     foo
     bar
     baz
 expect:
   stdout: ""
-  stderr: |+
-    command not allowed: foo
-    command not allowed: bar
-    command not allowed: baz
-  exit_code: 1
+  stderr_contains:
+    - "foo: command not found"
+    - "bar: command not found"
+    - "baz: command not found"
+  exit_code: 127

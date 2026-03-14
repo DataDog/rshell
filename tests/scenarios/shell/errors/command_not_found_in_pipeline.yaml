@@ -8,5 +8,5 @@ input:
 expect:
   stdout: ""
   stderr_contains:
-    - "command not allowed: unknown_filter_cmd"
+    - "unknown_filter_cmd: command not allowed"
   exit_code: 1

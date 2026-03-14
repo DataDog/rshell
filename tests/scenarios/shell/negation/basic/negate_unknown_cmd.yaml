@@ -1,10 +1,10 @@
-description: Negating a command-not-allowed (exit 1) produces exit code 0.
+description: Negating a command-not-found (exit 127) produces exit code 0.
 input:
-  allowed_commands: []
+  allowed_commands: ["nonexistent_command_xyz"]
   script: |+
     ! nonexistent_command_xyz
 expect:
   stdout: ""
   stderr_contains:
-    - "command not allowed"
+    - "command not found"
   exit_code: 0

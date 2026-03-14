@@ -1,10 +1,10 @@
-description: An unknown command with a multi-word-like name (with hyphens) prints "command not allowed".
+description: An unknown command with a multi-word-like name (with hyphens) prints "command not found".
 input:
-  allowed_commands: []
+  allowed_commands: ["my-unknown-command"]
   script: |+
     my-unknown-command
 expect:
   stdout: ""
-  stderr: |+
-    command not allowed: my-unknown-command
-  exit_code: 1
+  stderr_contains:
+    - "my-unknown-command: command not found"
+  exit_code: 127

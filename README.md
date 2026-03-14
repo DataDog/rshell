@@ -51,7 +51,7 @@ Every access path is default-deny:
 | Environment variables| Empty (no host env inherited)       | Pass variables via the `Env` option          |
 | Output redirections  | Only `/dev/null` allowed (exit code 2 for other targets) | `>/dev/null`, `2>/dev/null`, `&>/dev/null`, `2>&1` |
 
-**AllowedCommands** restricts which commands (builtins and external) may execute. When set, only listed commands are allowed; disallowed commands return exit code 1 with `command not allowed: <name>`. Shell keywords and control flow (if/else, for, pipes, `&&`/`||`, variable assignment) are unaffected.
+**AllowedCommands** restricts which commands (builtins and external) may execute. When set, only listed commands are allowed; disallowed commands return exit code 1 with `<name>: command not allowed`. Shell keywords and control flow (if/else, for, pipes, `&&`/`||`, variable assignment) are unaffected.
 
 **AllowedPaths** restricts all file operations to specified directories using Go's `os.Root` API (`openat` syscalls), making it immune to symlink traversal, TOCTOU races, and `..` escape attacks.
 

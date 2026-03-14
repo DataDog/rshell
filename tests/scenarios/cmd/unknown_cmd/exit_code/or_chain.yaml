@@ -1,12 +1,12 @@
 description: A chain of unknown commands with || reaches the first valid command.
 input:
-  allowed_commands: ["echo"]
+  allowed_commands: ["echo", "foo", "bar"]
   script: |+
     foo || bar || echo reached
 expect:
   stdout: |+
     reached
-  stderr: |+
-    command not allowed: foo
-    command not allowed: bar
+  stderr_contains:
+    - "foo: command not found"
+    - "bar: command not found"
   exit_code: 0
