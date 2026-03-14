@@ -138,6 +138,7 @@ func TestParseExec(t *testing.T) {
 		{"exec without placeholder", []string{"-exec", "echo", ";"}, false, "", false},
 		{"exec empty command", []string{"-exec", ";"}, true, "missing command", false},
 		{"exec with extra args", []string{"-exec", "grep", "-l", "{}", ";"}, false, "", false},
+		{"exec batch multiple placeholders", []string{"-exec", "echo", "{}", "x", "{}", "+"}, true, "only one instance", false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

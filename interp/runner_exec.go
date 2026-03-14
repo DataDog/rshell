@@ -307,7 +307,11 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 					Stderr: stderr,
 					Stdin:  strings.NewReader(""),
 					OpenFile: func(ctx context.Context, path string, flags int, mode os.FileMode) (io.ReadWriteCloser, error) {
-						return r.open(ctx, path, flags, mode, false)
+						f, err := r.sandbox.Open(path, execDir(), flags, mode)
+						if err != nil {
+							return nil, allowedpaths.PortablePathError(err)
+						}
+						return f, nil
 					},
 					ReadDir: func(ctx context.Context, path string) ([]fs.DirEntry, error) {
 						return r.sandbox.ReadDir(path, execDir())

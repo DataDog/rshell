@@ -476,7 +476,7 @@ func (p *parser) parseExecPredicate(kind exprKind) (*expr, error) {
 	}
 
 	var cmdArgs []string
-	hasPlaceholder := false
+	placeholderCount := 0
 	for p.pos < len(p.args) {
 		tok := p.args[p.pos]
 		p.pos++
@@ -487,12 +487,16 @@ func (p *parser) parseExecPredicate(kind exprKind) (*expr, error) {
 			}
 			return &expr{kind: kind, execArgs: cmdArgs, execBatch: false}, nil
 		}
-		if tok == "+" && hasPlaceholder && len(cmdArgs) > 0 && cmdArgs[len(cmdArgs)-1] == "{}" {
+		if tok == "+" && placeholderCount > 0 && len(cmdArgs) > 0 && cmdArgs[len(cmdArgs)-1] == "{}" {
 			// Batch mode: {} must be the last arg before +.
+			// GNU find rejects multiple {} in batch mode.
+			if placeholderCount > 1 {
+				return nil, fmt.Errorf("find: %s: only one instance of '{}' is supported with -exec ... +", name)
+			}
 			return &expr{kind: kind, execArgs: cmdArgs, execBatch: true}, nil
 		}
 		if tok == "{}" {
-			hasPlaceholder = true
+			placeholderCount++
 		}
 		cmdArgs = append(cmdArgs, tok)
 	}
