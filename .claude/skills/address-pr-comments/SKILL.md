@@ -16,18 +16,32 @@ Determine the target PR:
 
 ```bash
 # If argument provided, use it; otherwise detect from current branch
-gh pr view $ARGUMENTS --json number,url,headRefName,baseRefName
+gh pr view $ARGUMENTS --json number,url,headRefName,baseRefName,author
 ```
 
 If no PR is found, stop and inform the user.
 
-Extract owner, repo, and PR number for subsequent API calls:
+Extract owner, repo, PR number, and **PR author login** for subsequent API calls:
 
 ```bash
 gh repo view --json owner,name --jq '"\(.owner.login)/\(.name)"'
 ```
 
-### 2. Fetch all review comments
+### 2. Fetch review comments and summaries
+
+#### 2a. Determine the latest review round
+
+Find the timestamp of the most recent push to the PR branch — this marks the boundary of the current review round:
+
+```bash
+# Get the most recent push event (last commit pushed)
+gh api repos/{owner}/{repo}/pulls/{pr-number}/commits \
+  --jq '.[-1].commit.committer.date'
+```
+
+Store this as `$LAST_PUSH_DATE`. Comments created **after** this timestamp are from the current (latest) review round. If no filtering by round is desired (e.g., first review), process all unresolved comments.
+
+#### 2b. Fetch inline review comments
 
 Retrieve all review comments (inline code comments) on the PR:
 
@@ -38,18 +52,28 @@ gh api repos/{owner}/{repo}/pulls/{pr-number}/comments \
   2>&1 | head -500
 ```
 
-Also fetch top-level review comments (review bodies):
+#### 2c. Fetch review summaries
+
+Fetch top-level review comments (review bodies/summaries). These often contain high-level feedback and action items:
 
 ```bash
 gh api repos/{owner}/{repo}/pulls/{pr-number}/reviews \
-  --jq '.[] | select(.body != "" and .body != null) | {id: .id, user: .user.login, state: .state, body: .body}' \
+  --jq '.[] | select(.body != "" and .body != null) | {id: .id, user: .user.login, state: .state, body: .body, submitted_at: .submitted_at}' \
   2>&1 | head -200
 ```
 
-Filter out:
-- Comments authored by the PR author (self-comments, unless they contain a TODO/action item)
+**Pay special attention to review summaries** — they often list multiple action items in a single review body. Parse each action item from the summary as a separate work item.
+
+#### 2d. Filter comments
+
+**Include** comments from:
+- **Reviewers** (anyone who is not the PR author) — standard review feedback
+- **The PR author themselves** — self-comments are treated as actionable TODOs/notes-to-self that should be addressed
+- **@codex** and other AI reviewers — treat their comments with the same weight as human reviewer comments
+
+**Exclude**:
 - Already-resolved threads
-- Bot comments that are purely informational
+- Bot comments that are purely informational (CI status, auto-generated labels, etc.) — but NOT @codex or other AI reviewer comments, which are substantive
 
 Check which threads are already resolved:
 
@@ -79,6 +103,28 @@ gh api graphql -f query='
 
 Only process **unresolved** threads with actionable comments.
 
+#### 2e. Prioritize latest comments
+
+When there are many unresolved comments, prioritize:
+1. Comments from the **latest review round** (after `$LAST_PUSH_DATE`)
+2. Comments from review summaries (they represent the reviewer's consolidated view)
+3. Older unresolved comments that are still relevant
+
+### 2b. Read the PR specs
+
+Before evaluating any comment, read the PR description to check for a **SPECS** section:
+
+```bash
+gh pr view $ARGUMENTS --json body --jq '.body'
+```
+
+If a SPECS section is present, **it defines the authoritative requirements for this PR**. Specs override:
+- Your assumptions about backward compatibility or design intent
+- Inline code comments
+- Conventions from other parts of the codebase
+
+Store the specs for use in step 4 (validity evaluation). If a reviewer comment aligns with a spec, the comment is **valid by definition** — even if you think the current implementation is reasonable.
+
 ### 3. Understand each comment
 
 For each unresolved review comment:
@@ -99,36 +145,45 @@ For each unresolved review comment:
 | **Nitpick** | Minor optional suggestion | Evaluate — fix if trivial, otherwise reply explaining the tradeoff |
 | **Invalid/outdated** | Comment doesn't apply or is based on a misunderstanding | Reply politely explaining why |
 
-### 4. Evaluate validity — bash behavior is the source of truth
+### 4. Evaluate validity — specs and bash behavior are the sources of truth
 
-**The shell must match bash behavior unless it intentionally diverges** (e.g., sandbox restrictions, blocked commands, readonly enforcement). This principle overrides reviewer suggestions.
+There are two sources of truth, checked in this order:
+
+1. **PR specs** (from step 2b) — if present, specs are the highest authority for what this PR should do
+2. **Bash behavior** — the shell must match bash unless it intentionally diverges (sandbox restrictions, blocked commands, readonly enforcement)
+
+**CRITICAL: Never invent justifications for dismissing a comment.** If a reviewer says "the spec requires X" and the spec does require X, the comment is valid — even if you think the current implementation is a reasonable alternative. Do not fabricate reasons like "backward compatibility" or "design intent" unless those reasons are explicitly stated in the specs or CLAUDE.md.
 
 For each comment, determine if it is **valid and actionable**:
 
-1. **Verify against bash** — always check what bash actually does:
+1. **Check against PR specs first** — if a SPECS section exists and the comment aligns with a spec, the comment is **valid by definition**. Do not dismiss it.
+2. **Verify against bash** — for comments about shell behavior, check what bash actually does:
    ```bash
    docker run --rm debian:bookworm-slim bash -c '<relevant script>'
    ```
-2. **Read the relevant code** in full — not just the diff, but the surrounding implementation
-3. **Check project conventions** in `CLAUDE.md` and `AGENTS.md`
-4. **Consider side effects** — will the change break other tests or behaviors?
-5. **Check for duplicates** — is the same issue raised in multiple comments? Group them
+3. **Read the relevant code** in full — not just the diff, but the surrounding implementation
+4. **Check project conventions** in `CLAUDE.md` and `AGENTS.md`
+5. **Consider side effects** — will the change break other tests or behaviors?
+6. **Check for duplicates** — is the same issue raised in multiple comments? Group them
 
 Decision matrix:
 
-| Reviewer says | Bash does | Shell intentionally diverges? | Action |
-|--------------|-----------|-------------------------------|--------|
-| "This is wrong" | Reviewer is right | No | **Fix the implementation** to match bash |
-| "This is wrong" | Current code matches bash | No | **Reply** explaining it matches bash, with proof |
-| "This is wrong" | N/A | Yes (sandbox/security) | **Reply** explaining the intentional divergence |
-| "Do it differently" | Suggestion matches bash better | No | **Fix the implementation** to match bash |
-| "Do it differently" | Current code already matches bash | No | **Reply** — bash compatibility takes priority |
+| Reviewer says | Spec says | Bash does | Action |
+|--------------|-----------|-----------|--------|
+| "Spec requires X" | Spec does require X | N/A | **Fix the implementation** to match the spec |
+| "Spec requires X" | No such spec exists | N/A | **Reply** noting the spec doesn't mention this |
+| "This is wrong" | No spec relevant | Reviewer is right | **Fix the implementation** to match bash |
+| "This is wrong" | No spec relevant | Current code matches bash | **Reply** explaining it matches bash, with proof |
+| "This is wrong" | No spec relevant | N/A (sandbox/security) | **Reply** explaining the intentional divergence |
+| "Do it differently" | No spec relevant | Suggestion matches bash better | **Fix the implementation** to match bash |
+| "Do it differently" | No spec relevant | Current code already matches bash | **Reply** — bash compatibility takes priority |
 
 If a comment is **not valid**:
 - Prepare a polite reply with proof (e.g., "This matches bash behavior — verified with `docker run --rm debian:bookworm-slim bash -c '...'`")
 - If the divergence is intentional, explain why (sandbox restriction, security, etc.)
+- **Never claim "backward compatibility" or "design intent" unless you can point to a specific line in the specs or CLAUDE.md that says so**
 
-If a comment is **valid** (i.e., fixing it brings the shell closer to bash, or addresses a real bug):
+If a comment is **valid** (i.e., it aligns with a spec, brings the shell closer to bash, or addresses a real bug):
 - Proceed to step 5
 
 ### 5. Implement fixes
@@ -181,7 +236,11 @@ If fixes span unrelated areas, prefer multiple focused commits over one large co
 
 **All replies MUST be prefixed with `[<LLM model name>]`** (e.g. `[Claude Opus 4.6]`) so reviewers can tell the response came from an AI.
 
-For each comment that was addressed:
+Handle comments differently based on who authored them:
+
+#### Reviewer comments (not the PR author)
+
+For each reviewer comment that was addressed:
 
 1. **Reply** explaining what was fixed:
    ```bash
@@ -221,16 +280,57 @@ For each comment that was addressed:
    ' -f threadId="<thread-id>"
    ```
 
-For comments that were **not valid** or were **questions**, reply (prefixed with `[<MODELL NAME - VERSION>]`) with an explanation but do NOT resolve — let the reviewer decide.
+#### PR author self-comments
+
+For comments authored by the PR author (self-notes/TODOs):
+
+1. **Fix the issue** described in the comment (these are actionable items the author left for themselves)
+2. **Resolve** the thread (the PR author can resolve their own threads)
+3. **Do NOT reply** to self-comments — just fix and resolve. No need for the AI to narrate back to the same person who wrote the note.
+
+#### Review summary action items
+
+For action items extracted from review summaries (step 2c):
+
+1. **Fix each action item** as if it were an inline comment
+2. **Reply to the review** with a summary of all action items addressed:
+   ```bash
+   gh api repos/{owner}/{repo}/pulls/{pr-number}/reviews/{review-id}/comments \
+     -f body="[<MODEL NAME> - <VERSION>] Addressed the following from this review:
+   - <action item 1>: <what was done>
+   - <action item 2>: <what was done>"
+   ```
+   If the `comments` endpoint doesn't work for review-level replies, use an issue comment instead:
+   ```bash
+   gh api repos/{owner}/{repo}/issues/{pr-number}/comments \
+     -f body="[<MODEL NAME> - <VERSION>] Addressed review feedback from @{reviewer}:
+   - <action item 1>: <what was done>
+   - <action item 2>: <what was done>"
+   ```
+
+#### Invalid or question comments
+
+For comments that were **not valid** or were **questions**, reply (prefixed with `[<MODEL NAME> - <VERSION>]`) with an explanation but do NOT resolve — let the reviewer decide.
+
+**IMPORTANT: Never resolve a thread where the reviewer's comment aligns with a PR spec but the implementation doesn't match.** These are valid spec violations — fix the code instead. If you cannot fix it, leave the thread unresolved and explain the blocker.
 
 ### 8. Summary
 
-Provide a final summary:
+Provide a final summary organized by source:
 
-- List each review comment that was addressed with:
-  - The comment (abbreviated)
-  - The classification (bug, style, suggestion, etc.)
-  - What was changed
-- List any comments that were replied to but not fixed (with reason)
-- List any comments that could not be addressed (with explanation)
-- Confirm the commit(s) pushed and threads resolved
+**Reviewer inline comments addressed:**
+- List each comment with: the comment (abbreviated), classification (bug, style, suggestion, etc.), what was changed
+
+**Review summary action items addressed:**
+- List each action item from review summaries that was implemented
+
+**PR author self-comments addressed:**
+- List each self-note/TODO that was fixed and resolved
+
+**Not fixed (with reason):**
+- List any comments replied to but not fixed, with explanation
+
+**Could not be addressed:**
+- List any comments that could not be addressed, with explanation
+
+Confirm the commit(s) pushed and threads resolved.
