@@ -1,5 +1,4 @@
 description: find -execdir executes commands from the file's parent directory.
-skip_assert_against_bash: true  # rshell -execdir only runs builtins, not external binaries
 setup:
   files:
     - path: dummy.txt
