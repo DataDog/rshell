@@ -99,7 +99,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 
 	cmd.Flags().StringVarP(&script, "script", "s", "", "shell script to execute")
 	cmd.Flags().StringVarP(&allowedPaths, "allowed-path", "a", "", "comma-separated list of directories the shell is allowed to access")
-	cmd.Flags().StringVarP(&allowedCommands, "allowed-commands", "", "", "comma-separated list of commands the shell is allowed to execute")
+	cmd.Flags().StringVar(&allowedCommands, "allowed-commands", "", "comma-separated list of commands the shell is allowed to execute")
 
 	if err := cmd.Execute(); err != nil {
 		var status interp.ExitStatus

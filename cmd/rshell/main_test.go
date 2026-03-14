@@ -186,6 +186,24 @@ func TestFileNotFound(t *testing.T) {
 	assert.Contains(t, stderr, "reading /nonexistent/path/script.sh")
 }
 
+func TestAllowedCommandsRestriction(t *testing.T) {
+	code, _, stderr := runCLI(t, "--allowed-commands", "echo", "-s", `cat /dev/null`)
+	assert.Equal(t, 1, code)
+	assert.Contains(t, stderr, "cat: command not allowed")
+}
+
+func TestAllowedCommandsEmpty(t *testing.T) {
+	code, _, stderr := runCLI(t, "--allowed-commands", "", "-s", `echo hello`)
+	assert.Equal(t, 1, code)
+	assert.Contains(t, stderr, "echo: command not allowed")
+}
+
+func TestNoAllowedCommandsFlagAllowsAll(t *testing.T) {
+	code, stdout, _ := runCLI(t, "-s", `echo hello`)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "hello\n", stdout)
+}
+
 func TestFileArgWithAllowedPath(t *testing.T) {
 	dir := t.TempDir()
 	dataDir := t.TempDir()
