@@ -164,7 +164,7 @@ func runScenario(t *testing.T, sc scenario) {
 		opts = append(opts, interp.AllowedCommands(sc.Input.AllowedCommands))
 	} else {
 		// Default: allow all commands so existing tests keep working.
-		opts = append(opts, interp.AllowAllBuiltinsCommands())
+		opts = append(opts, interp.AllowAllBuiltinCommands())
 	}
 	if sc.Input.AllowedPaths != nil {
 		resolved := make([]string, len(sc.Input.AllowedPaths))

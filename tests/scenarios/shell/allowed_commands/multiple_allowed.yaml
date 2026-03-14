@@ -1,15 +1,11 @@
 skip_assert_against_bash: true
 description: Multiple allowed commands work
 input:
-  allowed_commands: ["echo", "cat"]
-  allowed_paths: ["$DIR"]
+  allowed_commands: ["echo", "true"]
   script: |+
     echo hello
+    true
     echo world
-setup:
-  files:
-    - path: data.txt
-      content: "from file\n"
 expect:
   stdout: "hello\nworld\n"
   stderr: ""

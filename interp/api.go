@@ -401,9 +401,9 @@ func AllowedCommands(cmds []string) RunnerOption {
 	}
 }
 
-// AllowAllBuiltinsCommands permits all registered builtin commands to execute.
+// AllowAllBuiltinCommands permits all registered builtin commands to execute.
 // It populates the allowed commands map with all registered builtin names.
-func AllowAllBuiltinsCommands() RunnerOption {
+func AllowAllBuiltinCommands() RunnerOption {
 	return func(r *Runner) error {
 		names := builtins.Names()
 		r.allowedCommands = make(map[string]struct{}, len(names))

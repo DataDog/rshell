@@ -31,7 +31,7 @@ func runScript(t *testing.T, script, dir string, opts ...interp.RunnerOption) (s
 	var outBuf, errBuf bytes.Buffer
 	allOpts := append([]interp.RunnerOption{
 		interp.StdIO(nil, &outBuf, &errBuf),
-		interp.AllowAllBuiltinsCommands(),
+		interp.AllowAllBuiltinCommands(),
 	}, opts...)
 
 	runner, err := interp.New(allOpts...)
@@ -201,7 +201,7 @@ func TestAllowedPathsPinsRootBeforeRun(t *testing.T) {
 	runner, err := interp.New(
 		interp.StdIO(nil, &outBuf, &errBuf),
 		interp.AllowedPaths([]string{allowed}),
-		interp.AllowAllBuiltinsCommands(),
+		interp.AllowAllBuiltinCommands(),
 	)
 	require.NoError(t, err)
 	defer runner.Close()
@@ -241,7 +241,7 @@ func TestAllowedPathsClose(t *testing.T) {
 	dir := t.TempDir()
 	runner, err := interp.New(
 		interp.AllowedPaths([]string{dir}),
-		interp.AllowAllBuiltinsCommands(),
+		interp.AllowAllBuiltinCommands(),
 	)
 	require.NoError(t, err)
 

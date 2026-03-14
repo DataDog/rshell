@@ -1,0 +1,10 @@
+skip_assert_against_bash: true
+description: External command in allowlist with no ExecHandler produces command not found exit 127
+input:
+  allowed_commands: ["echo", "nonexistent_external_cmd"]
+  script: |+
+    nonexistent_external_cmd
+expect:
+  stdout: ""
+  stderr: "nonexistent_external_cmd: command not found\n"
+  exit_code: 127
