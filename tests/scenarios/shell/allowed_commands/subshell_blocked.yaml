@@ -1,0 +1,10 @@
+skip_assert_against_bash: true
+description: Subshell is blocked by the shell itself, not by AllowedCommands
+input:
+  allowed_commands: ["echo"]
+  script: |+
+    (cat /dev/null)
+expect:
+  stdout: ""
+  stderr: "subshells are not supported\n"
+  exit_code: 2
