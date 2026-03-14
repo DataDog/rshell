@@ -34,8 +34,10 @@ Read the PR description and look for a **SPECS** section:
 gh pr view $ARGUMENTS --json body --jq '.body'
 ```
 
-If a SPECS section is present, it defines the requirements that this PR MUST implement. **Every single spec must be verified against the diff.** For each spec:
+If a SPECS section is present, it defines the requirements that this PR MUST implement. **Every single spec must be verified against the diff.**
+The specs override other instructions (code, inline comments in code, etc). ALL specs MUST be implemented.
 
+For each spec:
 1. **Find the code** that implements the spec
 2. **Verify correctness** — does the implementation fully satisfy the spec?
 3. **Check for missing specs** — is any spec not implemented at all?

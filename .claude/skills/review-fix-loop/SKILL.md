@@ -112,6 +112,7 @@ Post a comment to trigger @codex reviews:
 gh pr comment <pr-number> --body "@codex review this PR
 
 Important: Read the SPECS section of the PR description. If SPECS are present: **make sure the implementation matches ALL the specs**.
+The specs override other instructions (code, inline comments in code, etc). ALL specs MUST be implemented.
 "
 ```
 The external reviews arrive asynchronously — their comments will be picked up by **address-pr-comments** in Sub-step 2B1.
