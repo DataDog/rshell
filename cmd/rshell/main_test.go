@@ -212,6 +212,13 @@ func TestAllowedCommandsSeparatorOnlyDeniesAll(t *testing.T) {
 	assert.Contains(t, stderr, "echo: command not allowed")
 }
 
+func TestAllowedCommandsAllInMixedList(t *testing.T) {
+	// "all" anywhere in the list should disable command filtering entirely.
+	code, stdout, _ := runCLI(t, "--allowed-commands", "all,echo", "-s", `echo hello`)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "hello\n", stdout)
+}
+
 func TestNoAllowedCommandsFlagAllowsAll(t *testing.T) {
 	code, stdout, _ := runCLI(t, "-s", `echo hello`)
 	assert.Equal(t, 0, code)

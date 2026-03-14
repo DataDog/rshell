@@ -133,7 +133,7 @@ func execute(ctx context.Context, script, name string, allowedPaths, allowedComm
 	if len(allowedPaths) > 0 {
 		opts = append(opts, interp.AllowedPaths(allowedPaths))
 	}
-	if len(allowedCommands) == 1 && strings.EqualFold(allowedCommands[0], "all") {
+	if containsAll(allowedCommands) {
 		opts = append(opts, interp.AllowAllCommands())
 	} else if allowedCommands != nil {
 		opts = append(opts, interp.AllowedCommands(allowedCommands))
@@ -148,8 +148,22 @@ func execute(ctx context.Context, script, name string, allowedPaths, allowedComm
 	return runner.Run(ctx, prog)
 }
 
+// containsAll reports whether the command list includes the "all" wildcard.
+// This allows "all" to appear anywhere in a comma-separated list
+// (e.g. "--allowed-commands all,echo") and still disable filtering.
+func containsAll(cmds []string) bool {
+	for _, c := range cmds {
+		if strings.EqualFold(c, "all") {
+			return true
+		}
+	}
+	return false
+}
+
 // splitAndTrim splits s on commas and trims whitespace from each element.
-// Returns nil for empty input.
+// It returns nil (not an empty slice) when the input is empty or contains
+// only whitespace/separators, so callers can distinguish "unset" from
+// "explicitly empty".
 func splitAndTrim(s string) []string {
 	if s == "" {
 		return nil

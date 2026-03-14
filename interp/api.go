@@ -394,6 +394,9 @@ func (r *Runner) Close() error {
 // all commands are allowed. Shell keywords and control flow (if/else, for,
 // pipes, &&/||, variable assignment) are unaffected.
 //
+// Duplicate command names in the list are silently deduplicated (the map
+// insertion is idempotent), so callers do not need to pre-filter.
+//
 // This option replaces the allowed commands map entirely. It is mutually
 // exclusive with [AllowAllBuiltinCommands]: whichever is applied last wins.
 func AllowedCommands(cmds []string) RunnerOption {

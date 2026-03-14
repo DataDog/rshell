@@ -254,3 +254,27 @@ func TestAllowedPathsClose(t *testing.T) {
 	require.NoError(t, runner.Close())
 	require.NoError(t, runner.Close())
 }
+
+func TestAllowAllBuiltinCommandsPermitsBuiltins(t *testing.T) {
+	// AllowAllBuiltinCommands should allow any registered builtin to run.
+	stdout, _, exitCode := runScript(t, `echo hello; printf "world\n"`, "")
+	assert.Equal(t, 0, exitCode)
+	assert.Equal(t, "hello\nworld\n", stdout)
+}
+
+func TestAllowAllBuiltinCommandsBlocksExternal(t *testing.T) {
+	// AllowAllBuiltinCommands only allows builtins; a non-builtin command
+	// should be rejected with "command not allowed" and exit code 1.
+	_, stderr, exitCode := runScript(t, `nonexistent_external_cmd`, "")
+	assert.Equal(t, 1, exitCode)
+	assert.Contains(t, stderr, "command not allowed")
+}
+
+func TestAllowedCommandsDuplicatesIgnored(t *testing.T) {
+	// Passing duplicate command names should work fine (map deduplicates).
+	stdout, _, exitCode := runScript(t, `echo hello`, "",
+		interp.AllowedCommands([]string{"echo", "echo"}),
+	)
+	assert.Equal(t, 0, exitCode)
+	assert.Equal(t, "hello\n", stdout)
+}
