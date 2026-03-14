@@ -51,12 +51,13 @@ func FuzzWc(f *testing.F) {
 	// Long line (tests -L max-line-length tracking)
 	f.Add(append(bytes.Repeat([]byte("a"), 1000), '\n'))
 
+	dir := f.TempDir()
+
 	f.Fuzz(func(t *testing.T, input []byte) {
 		if len(input) > 1<<20 {
 			return
 		}
 
-		dir := t.TempDir()
 		err := os.WriteFile(filepath.Join(dir, "input.txt"), input, 0644)
 		if err != nil {
 			t.Fatal(err)
@@ -84,12 +85,13 @@ func FuzzWcLines(f *testing.F) {
 	f.Add([]byte{0xfc, 0x80, 0x80, 0x80, 0x80, 0xaf, '\n'})
 	f.Add(bytes.Repeat([]byte("a\n"), 10000))
 
+	dir := f.TempDir()
+
 	f.Fuzz(func(t *testing.T, input []byte) {
 		if len(input) > 1<<20 {
 			return
 		}
 
-		dir := t.TempDir()
 		err := os.WriteFile(filepath.Join(dir, "input.txt"), input, 0644)
 		if err != nil {
 			t.Fatal(err)
@@ -115,12 +117,13 @@ func FuzzWcBytes(f *testing.F) {
 	f.Add([]byte{0x00, 0x01, 0x02, 0xff, 0xfe})
 	f.Add([]byte{0xfc, 0x80, 0x80, 0x80, 0x80, 0xaf})
 
+	dir := f.TempDir()
+
 	f.Fuzz(func(t *testing.T, input []byte) {
 		if len(input) > 1<<20 {
 			return
 		}
 
-		dir := t.TempDir()
 		err := os.WriteFile(filepath.Join(dir, "input.txt"), input, 0644)
 		if err != nil {
 			t.Fatal(err)
@@ -153,12 +156,13 @@ func FuzzWcChars(f *testing.F) {
 	f.Add([]byte{})
 	f.Add([]byte("no newline"))
 
+	dir := f.TempDir()
+
 	f.Fuzz(func(t *testing.T, input []byte) {
 		if len(input) > 1<<20 {
 			return
 		}
 
-		dir := t.TempDir()
 		err := os.WriteFile(filepath.Join(dir, "input.txt"), input, 0644)
 		if err != nil {
 			t.Fatal(err)
@@ -185,12 +189,13 @@ func FuzzWcStdin(f *testing.F) {
 	f.Add([]byte("héllo\n"))
 	f.Add([]byte{0xfc, 0x80, 0x80, 0x80, 0x80, 0xaf, '\n'})
 
+	dir := f.TempDir()
+
 	f.Fuzz(func(t *testing.T, input []byte) {
 		if len(input) > 1<<20 {
 			return
 		}
 
-		dir := t.TempDir()
 		err := os.WriteFile(filepath.Join(dir, "stdin.txt"), input, 0644)
 		if err != nil {
 			t.Fatal(err)

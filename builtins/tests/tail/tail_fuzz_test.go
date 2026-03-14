@@ -49,6 +49,8 @@ func FuzzTailLines(f *testing.F) {
 	// Many blank lines (stress ring buffer)
 	f.Add(bytes.Repeat([]byte("\n"), 1000), int64(5))
 
+	dir := f.TempDir()
+
 	f.Fuzz(func(t *testing.T, input []byte, n int64) {
 		if len(input) > 1<<20 {
 			return
@@ -60,7 +62,6 @@ func FuzzTailLines(f *testing.F) {
 			n = 10000
 		}
 
-		dir := t.TempDir()
 		err := os.WriteFile(filepath.Join(dir, "input.txt"), input, 0644)
 		if err != nil {
 			t.Fatal(err)
@@ -106,6 +107,8 @@ func FuzzTailBytes(f *testing.F) {
 	// Chunk boundary (32 KiB)
 	f.Add(bytes.Repeat([]byte("z"), 32*1024+1), int64(1))
 
+	dir := f.TempDir()
+
 	f.Fuzz(func(t *testing.T, input []byte, n int64) {
 		if len(input) > 1<<20 {
 			return
@@ -117,7 +120,6 @@ func FuzzTailBytes(f *testing.F) {
 			n = 10000
 		}
 
-		dir := t.TempDir()
 		err := os.WriteFile(filepath.Join(dir, "input.txt"), input, 0644)
 		if err != nil {
 			t.Fatal(err)
@@ -153,6 +155,8 @@ func FuzzTailStdin(f *testing.F) {
 	f.Add([]byte{0xfc, 0x80, 0x80, 0x80, 0x80, 0xaf, '\n'}, int64(1))
 	f.Add([]byte("line1\r\nline2\r\n"), int64(1))
 
+	dir := f.TempDir()
+
 	f.Fuzz(func(t *testing.T, input []byte, n int64) {
 		if len(input) > 1<<20 {
 			return
@@ -164,7 +168,6 @@ func FuzzTailStdin(f *testing.F) {
 			n = 10000
 		}
 
-		dir := t.TempDir()
 		err := os.WriteFile(filepath.Join(dir, "stdin.txt"), input, 0644)
 		if err != nil {
 			t.Fatal(err)
@@ -200,6 +203,8 @@ func FuzzTailLinesOffset(f *testing.F) {
 	// CRLF
 	f.Add([]byte("a\r\nb\r\nc\r\n"), int64(2))
 
+	dir := f.TempDir()
+
 	f.Fuzz(func(t *testing.T, input []byte, n int64) {
 		if len(input) > 1<<20 {
 			return
@@ -211,7 +216,6 @@ func FuzzTailLinesOffset(f *testing.F) {
 			n = 10000
 		}
 
-		dir := t.TempDir()
 		err := os.WriteFile(filepath.Join(dir, "input.txt"), input, 0644)
 		if err != nil {
 			t.Fatal(err)
@@ -244,6 +248,8 @@ func FuzzTailBytesOffset(f *testing.F) {
 	// Binary content
 	f.Add([]byte{0x00, 0x01, 0x02, 0xff, 0xfe}, int64(2))
 
+	dir := f.TempDir()
+
 	f.Fuzz(func(t *testing.T, input []byte, n int64) {
 		if len(input) > 1<<20 {
 			return
@@ -255,7 +261,6 @@ func FuzzTailBytesOffset(f *testing.F) {
 			n = 10000
 		}
 
-		dir := t.TempDir()
 		err := os.WriteFile(filepath.Join(dir, "input.txt"), input, 0644)
 		if err != nil {
 			t.Fatal(err)

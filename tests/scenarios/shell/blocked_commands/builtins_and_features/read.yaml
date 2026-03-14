@@ -1,0 +1,10 @@
+skip_assert_against_bash: true
+description: Read builtin is intentionally blocked in the restricted shell.
+input:
+  script: |+
+    echo hello | read var
+expect:
+  stdout: ""
+  stderr: |+
+    read: command not found
+  exit_code: 127

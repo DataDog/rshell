@@ -1,0 +1,14 @@
+skip_assert_against_bash: true
+description: Continue in until loop is blocked because until loops are not supported.
+input:
+  script: |+
+    i=0
+    until [ $i -gt 5 ]; do
+      i=$((i+1))
+      continue
+      echo unreachable
+    done
+expect:
+  stdout: ""
+  stderr: "while/until loops are not supported\n"
+  exit_code: 2

@@ -1,0 +1,15 @@
+skip_assert_against_bash: true
+description: Continue inside else branch within until loop is blocked.
+input:
+  script: |+
+    until false; do
+      if false; then
+        :
+      else
+        continue
+      fi
+    done
+expect:
+  stdout: ""
+  stderr: "while/until loops are not supported\n"
+  exit_code: 2

@@ -35,6 +35,8 @@ func FuzzEcho(f *testing.F) {
 	// Long argument
 	f.Add("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
 
+	dir := f.TempDir()
+
 	f.Fuzz(func(t *testing.T, arg string) {
 		if len(arg) > 1000 {
 			return
@@ -52,7 +54,6 @@ func FuzzEcho(f *testing.F) {
 			}
 		}
 
-		dir := t.TempDir()
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 
@@ -102,6 +103,8 @@ func FuzzEchoEscapes(f *testing.F) {
 	// Long sequence to stress output buffering
 	f.Add("\\n\\n\\n\\n\\n\\n\\n\\n\\n\\n")
 
+	dir := f.TempDir()
+
 	f.Fuzz(func(t *testing.T, arg string) {
 		if len(arg) > 1000 {
 			return
@@ -119,7 +122,6 @@ func FuzzEchoEscapes(f *testing.F) {
 			}
 		}
 
-		dir := t.TempDir()
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 
@@ -138,6 +140,8 @@ func FuzzEchoFlagInteraction(f *testing.F) {
 	f.Add("hello\\n", false, false, true) // -E (disables escapes)
 	f.Add("hi\\n", false, true, true)     // -e -E: -E wins (last)
 	f.Add("hi\\n", true, true, false)     // -n -e
+
+	dir := f.TempDir()
 
 	f.Fuzz(func(t *testing.T, arg string, flagN, flagE, flagBigE bool) {
 		if len(arg) > 500 {
@@ -170,7 +174,6 @@ func FuzzEchoFlagInteraction(f *testing.F) {
 			return
 		}
 
-		dir := t.TempDir()
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 

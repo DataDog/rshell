@@ -1,0 +1,11 @@
+skip_assert_against_bash: true
+description: Unset builtin is intentionally blocked in the restricted shell.
+input:
+  script: |+
+    a=hello
+    unset a
+expect:
+  stdout: ""
+  stderr: |+
+    unset: command not found
+  exit_code: 127

@@ -1,0 +1,11 @@
+skip_assert_against_bash: true
+description: Break with numeric argument in until loop is blocked.
+input:
+  script: |+
+    until false; do
+      break 1
+    done
+expect:
+  stdout: ""
+  stderr: "while/until loops are not supported\n"
+  exit_code: 2

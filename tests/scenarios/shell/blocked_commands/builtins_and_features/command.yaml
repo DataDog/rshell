@@ -1,0 +1,10 @@
+skip_assert_against_bash: true
+description: Command builtin is intentionally blocked in the restricted shell.
+input:
+  script: |+
+    command echo hello
+expect:
+  stdout: ""
+  stderr: |+
+    command: command not found
+  exit_code: 127
