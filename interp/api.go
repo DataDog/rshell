@@ -391,7 +391,7 @@ func (r *Runner) Close() error {
 
 // AllowedCommands restricts which commands (builtins and external) may execute.
 // Only commands in the provided list are allowed to run. When not set (default),
-// all commands are blocked. Shell keywords and control flow (if/else, for,
+// all commands are allowed. Shell keywords and control flow (if/else, for,
 // pipes, &&/||, variable assignment) are unaffected.
 func AllowedCommands(cmds []string) RunnerOption {
 	return func(r *Runner) error {

@@ -1,5 +1,5 @@
 skip_assert_against_bash: true
-description: Default (no AllowedCommands set) blocks all commands
+description: Empty AllowedCommands list blocks all commands
 input:
   allowed_commands: []
   script: |+
