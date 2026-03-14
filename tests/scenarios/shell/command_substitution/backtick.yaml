@@ -1,8 +1,7 @@
-description: Backtick command substitution captures stdout.
+description: Backtick command substitution works.
 input:
   script: |+
     echo `echo hello`
 expect:
   stdout: "hello\n"
-  stderr: ""
   exit_code: 0

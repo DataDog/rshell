@@ -51,6 +51,8 @@ func (r *Runner) stmtSync(ctx context.Context, st *syntax.Stmt) {
 		r.exit.oneIf(wasOk)
 	}
 	r.stdin, r.stdout, r.stderr = oldIn, oldOut, oldErr
+	// Clean up process substitution pipes and goroutines.
+	r.cleanupProcSubst()
 }
 
 func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {
@@ -59,6 +61,11 @@ func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {
 	}
 
 	switch cm := cm.(type) {
+	case *syntax.Subshell:
+		r2 := r.subshell(false)
+		r2.stmts(ctx, cm.Stmts)
+		r.exit = r2.exit
+		r.exit.exiting = false // subshell exit does not exit parent
 	case *syntax.Block:
 		r.stmts(ctx, cm.Stmts)
 	case *syntax.CallExpr:

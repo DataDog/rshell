@@ -1,0 +1,7 @@
+description: Pipes work inside subshells.
+input:
+  script: |+
+    (echo "hello world" | cat)
+expect:
+  stdout: "hello world\n"
+  exit_code: 0

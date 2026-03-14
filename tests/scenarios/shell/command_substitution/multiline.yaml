@@ -1,0 +1,8 @@
+description: Command substitution preserves multiple lines (except trailing newlines).
+input:
+  script: |+
+    result=$(printf "line1\nline2\nline3\n")
+    echo "$result"
+expect:
+  stdout: "line1\nline2\nline3\n"
+  exit_code: 0

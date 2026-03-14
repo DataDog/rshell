@@ -1,0 +1,8 @@
+description: Multiple process substitutions in one command.
+skip_assert_against_bash: true
+input:
+  script: |+
+    cat <(echo first) <(echo second)
+expect:
+  stdout: "first\nsecond\n"
+  exit_code: 0

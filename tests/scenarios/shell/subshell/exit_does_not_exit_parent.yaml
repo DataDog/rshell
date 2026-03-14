@@ -1,0 +1,8 @@
+description: Exit in subshell does not exit the parent shell.
+input:
+  script: |+
+    (exit 1)
+    echo "still running"
+expect:
+  stdout: "still running\n"
+  exit_code: 0

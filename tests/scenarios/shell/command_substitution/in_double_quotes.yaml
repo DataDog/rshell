@@ -1,0 +1,7 @@
+description: Command substitution works inside double quotes.
+input:
+  script: |+
+    echo "result is $(echo hello)"
+expect:
+  stdout: "result is hello\n"
+  exit_code: 0

@@ -103,6 +103,11 @@ type runnerState struct {
 	lastExit exitStatus
 
 	lastExpandExit exitStatus // used to surface exit statuses while expanding fields
+
+	// procSubsts tracks process substitution state: pipe file handles,
+	// goroutines, and a path→file mapping so builtins can open /dev/fd/N.
+	// Cleaned up after each statement finishes.
+	procSubsts []*procSubstEntry
 }
 
 // A Runner interprets shell programs. It can be reused, but it is not safe for

@@ -18,6 +18,16 @@ import (
 
 var todoPos syntax.Pos // for handlerCtx callers where we don't yet have a position
 
+// procSubstFileWrapper wraps an *os.File for process substitution.
+// Close is a no-op because the file is owned by cleanupProcSubst.
+type procSubstFileWrapper struct {
+	f *os.File
+}
+
+func (w procSubstFileWrapper) Read(p []byte) (int, error)  { return w.f.Read(p) }
+func (w procSubstFileWrapper) Write(p []byte) (int, error) { return w.f.Write(p) }
+func (w procSubstFileWrapper) Close() error                { return nil } // no-op
+
 func (r *Runner) handlerCtx(ctx context.Context, pos syntax.Pos) context.Context {
 	hc := HandlerContext{
 		Env:    &overlayEnviron{parent: r.writeEnv},
@@ -48,6 +58,11 @@ func (r *Runner) stop(ctx context.Context) bool {
 }
 
 func (r *Runner) open(ctx context.Context, path string, flags int, mode os.FileMode, print bool) (io.ReadWriteCloser, error) {
+	// Check if the path matches a process substitution pipe (/dev/fd/N).
+	// These files are already open and must bypass the sandbox.
+	if pf := r.lookupProcSubstFile(path); pf != nil {
+		return procSubstFileWrapper{pf}, nil
+	}
 	f, err := r.openHandler(r.handlerCtx(ctx, todoPos), path, flags, mode)
 	// TODO: support wrapped PathError returned from openHandler.
 	switch err.(type) {

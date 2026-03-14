@@ -1,10 +1,8 @@
-skip_assert_against_bash: true
-description: Subshell after subshell is blocked.
+description: Chained subshells with && run sequentially.
 input:
   script: |+
     (echo hello) && (echo world)
 expect:
-  stdout: ""
-  stderr: |+
-    subshells are not supported
-  exit_code: 2
+  stdout: "hello\nworld\n"
+  stderr: ""
+  exit_code: 0

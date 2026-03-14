@@ -84,6 +84,7 @@ var interpAllowedSymbols = []string{
 	"mvdan.cc/sh/v3/syntax.CallExpr",     // AST node for simple command call; pure type.
 	"mvdan.cc/sh/v3/syntax.CaseClause",   // AST node for case statement; pure type.
 	"mvdan.cc/sh/v3/syntax.ClbOut",       // redirect operator constant (>|); pure constant.
+	"mvdan.cc/sh/v3/syntax.CmdIn",        // process substitution operator <(; pure constant.
 	"mvdan.cc/sh/v3/syntax.CmdSubst",     // AST node for $() command substitution; pure type.
 	"mvdan.cc/sh/v3/syntax.Command",      // AST interface for all command types; pure interface.
 	"mvdan.cc/sh/v3/syntax.CoprocClause", // AST node for coproc command; pure type.

@@ -1,0 +1,7 @@
+description: Unquoted command substitution undergoes word splitting.
+input:
+  script: |+
+    for word in $(echo "a b c"); do echo "$word"; done
+expect:
+  stdout: "a\nb\nc\n"
+  exit_code: 0

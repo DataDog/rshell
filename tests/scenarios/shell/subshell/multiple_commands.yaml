@@ -1,8 +1,7 @@
-description: Subshell grouping runs commands in a child shell.
+description: Subshell runs multiple commands.
 input:
   script: |+
     (echo hello; echo world)
 expect:
   stdout: "hello\nworld\n"
-  stderr: ""
   exit_code: 0

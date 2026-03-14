@@ -1,0 +1,9 @@
+description: Variables set in a subshell do not affect the parent.
+input:
+  script: |+
+    X=before
+    (X=inside; echo "$X")
+    echo "$X"
+expect:
+  stdout: "inside\nbefore\n"
+  exit_code: 0

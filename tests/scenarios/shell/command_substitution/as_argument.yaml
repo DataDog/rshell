@@ -1,0 +1,7 @@
+description: Command substitution can be used as a command argument.
+input:
+  script: |+
+    printf "%s\n" $(echo hello)
+expect:
+  stdout: "hello\n"
+  exit_code: 0

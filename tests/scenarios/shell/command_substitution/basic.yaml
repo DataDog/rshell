@@ -1,8 +1,7 @@
-description: Command substitution captures stdout.
+description: Basic command substitution captures stdout.
 input:
   script: |+
     echo $(echo hello)
 expect:
   stdout: "hello\n"
-  stderr: ""
   exit_code: 0

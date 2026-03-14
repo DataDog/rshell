@@ -1,0 +1,8 @@
+description: Command substitution exit code is available via $?.
+input:
+  script: |+
+    result=$(exit 5)
+    echo "$?"
+expect:
+  stdout: "5\n"
+  exit_code: 0

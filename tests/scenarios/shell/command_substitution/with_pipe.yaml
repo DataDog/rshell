@@ -1,0 +1,8 @@
+description: Command substitution with pipe inside.
+input:
+  script: |+
+    result=$(echo "hello world" | cat)
+    echo "$result"
+expect:
+  stdout: "hello world\n"
+  exit_code: 0

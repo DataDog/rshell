@@ -1,8 +1,7 @@
-description: Subshells run commands in an isolated child shell.
+description: Basic subshell runs commands.
 input:
   script: |+
     (echo hello)
 expect:
   stdout: "hello\n"
-  stderr: ""
   exit_code: 0

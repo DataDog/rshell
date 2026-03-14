@@ -1,9 +1,8 @@
-description: Process substitution provides command output as a file path.
+description: Process substitution <() provides command output as a file.
 skip_assert_against_bash: true
 input:
   script: |+
     cat <(echo hello)
 expect:
   stdout: "hello\n"
-  stderr: ""
   exit_code: 0

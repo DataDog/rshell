@@ -1,0 +1,8 @@
+description: Process substitution with pipe inside.
+skip_assert_against_bash: true
+input:
+  script: |+
+    cat <(echo "hello world" | cat)
+expect:
+  stdout: "hello world\n"
+  exit_code: 0

@@ -33,7 +33,7 @@ Blocked features are rejected before execution with exit code 2.
 - ✅ Expansion: `$VAR`, `${VAR}`
 - ✅ `$?` — last exit code (the only supported special variable)
 - ✅ Inline assignment: `VAR=value command` (scoped to that command)
-- ❌ Command substitution: `$(cmd)`, `` `cmd` ``
+- ✅ Command substitution: `$(cmd)`, `` `cmd` `` — captures stdout of the command; trailing newlines are stripped; output capped at 1 MiB
 - ❌ Arithmetic expansion: `$(( expr ))`
 - ❌ Array assignment: `arr=(a b c)`, `arr[0]=x`
 - ❌ Append assignment: `VAR+=value`
@@ -50,12 +50,12 @@ Blocked features are rejected before execution with exit code 2.
 - ✅ `{ CMDS; }` — brace group
 - ✅ `;` and newline as command separators
 - ✅ `if` / `elif` / `else`
+- ✅ Subshells: `( CMDS )` — runs commands in an isolated child shell; variable changes do not affect the parent
 - ❌ `while` / `until`
 - ❌ `case`
 - ❌ `select`
 - ❌ C-style for loop: `for (( i=0; i<N; i++ ))`
 - ❌ Functions: `fname() { ... }`
-- ❌ Subshells: `( CMDS )`
 
 ## Pipes and Redirections
 
@@ -83,9 +83,9 @@ Blocked features are rejected before execution with exit code 2.
 - ✅ Globbing: `*`, `?`, `[abc]`, `[a-z]`, `[!a]`
 - ✅ Line continuation: `\` at end of line
 - ✅ Comments: `# text`
+- ✅ Process substitution: `<(cmd)`, `>(cmd)` — provides command I/O as `/dev/fd/N` file paths; Unix only (blocked on Windows)
 - ❌ Extended globbing: `@(pat)`, `*(pat)`, etc.
 - ❌ Tilde expansion: `~`, `~/path`, `~user`
-- ❌ Process substitution: `<(cmd)`, `>(cmd)`
 
 ## Execution
 

@@ -1,0 +1,7 @@
+description: Nested subshells work correctly.
+input:
+  script: |+
+    ( (echo nested) )
+expect:
+  stdout: "nested\n"
+  exit_code: 0

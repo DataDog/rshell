@@ -1,0 +1,8 @@
+description: Command substitution result can be assigned to a variable.
+input:
+  script: |+
+    result=$(echo hello)
+    echo "$result"
+expect:
+  stdout: "hello\n"
+  exit_code: 0

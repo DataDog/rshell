@@ -30,11 +30,11 @@ func validateNode(node syntax.Node) error {
 			err = fmt.Errorf("arithmetic expansion is not supported")
 			return false
 		case *syntax.CmdSubst:
-			err = fmt.Errorf("command substitution is not supported")
-			return false
+			// Command substitution is supported — the expand CmdSubst
+			// handler runs the substitution in a subshell.
 		case *syntax.ProcSubst:
-			err = fmt.Errorf("process substitution is not supported")
-			return false
+			// Process substitution is supported — the expand ProcSubst
+			// handler creates a pipe and exposes /dev/fd/N.
 		case *syntax.ParamExp:
 			err = validateParamExp(n)
 			if err != nil {
@@ -52,9 +52,6 @@ func validateNode(node syntax.Node) error {
 			return false
 		case *syntax.CaseClause:
 			err = fmt.Errorf("case statements are not supported")
-			return false
-		case *syntax.Subshell:
-			err = fmt.Errorf("subshells are not supported")
 			return false
 		case *syntax.FuncDecl:
 			err = fmt.Errorf("function declarations are not supported")
@@ -135,7 +132,7 @@ func validateNode(node syntax.Node) error {
 		// version of mvdan.cc/sh/v3 is caught by the catch-all below.
 		// NOTE: *syntax.BinaryCmd and *syntax.ForClause are handled by their
 		// own cases above (with partial restrictions) and must not appear here.
-		case *syntax.CallExpr, *syntax.IfClause, *syntax.Block:
+		case *syntax.CallExpr, *syntax.IfClause, *syntax.Block, *syntax.Subshell:
 			// allowed — no action
 
 		// Catch-all for unknown Command types not explicitly listed above.

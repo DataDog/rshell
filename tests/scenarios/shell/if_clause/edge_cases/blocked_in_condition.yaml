@@ -1,10 +1,8 @@
-skip_assert_against_bash: true
-description: Blocked features inside if condition are still rejected.
+description: Command substitution works inside if condition.
 input:
   script: |+
     if $(true); then echo yes; fi
 expect:
-  stdout: ""
-  stderr: |+
-    command substitution is not supported
-  exit_code: 2
+  stdout: "yes\n"
+  stderr: ""
+  exit_code: 0

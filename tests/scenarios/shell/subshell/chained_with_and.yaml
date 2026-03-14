@@ -1,0 +1,8 @@
+description: Subshells can be chained with && and ||.
+input:
+  script: |+
+    (true) && echo "first ok"
+    (false) || echo "second failed"
+expect:
+  stdout: "first ok\nsecond failed\n"
+  exit_code: 0

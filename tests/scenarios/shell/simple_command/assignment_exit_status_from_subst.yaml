@@ -1,11 +1,9 @@
-# skip: command substitution is intentionally blocked in the restricted shell
-skip_assert_against_bash: true
-description: Assignment with command substitution is blocked.
+description: Assignment with command substitution preserves exit status.
 input:
   script: |+
     a=$(exit 3)
     echo "$?"
 expect:
-  stdout: ""
-  stderr: "command substitution is not supported\n"
-  exit_code: 2
+  stdout: "3\n"
+  stderr: ""
+  exit_code: 0

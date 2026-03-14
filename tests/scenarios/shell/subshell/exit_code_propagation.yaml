@@ -1,0 +1,8 @@
+description: Subshell exit code propagates to parent.
+input:
+  script: |+
+    (exit 42)
+    echo "$?"
+expect:
+  stdout: "42\n"
+  exit_code: 0
