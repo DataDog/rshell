@@ -29,6 +29,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		script          string
 		allowedPaths    string
 		allowedCommands string
+		allowAllCmds    bool
 	)
 
 	cmd := &cobra.Command{
@@ -65,7 +66,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			}
 
 			if scriptSet {
-				return execute(cmd.Context(), script, "", paths, cmds, stdin, stdout, stderr)
+				return execute(cmd.Context(), script, "", paths, cmds, allowAllCmds, stdin, stdout, stderr)
 			}
 
 			// Read stdin once so each execute() call gets its own
@@ -89,7 +90,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 					src = string(data)
 					name = file
 				}
-				if err := execute(cmd.Context(), src, name, paths, cmds, bytes.NewReader(stdinData), stdout, stderr); err != nil {
+				if err := execute(cmd.Context(), src, name, paths, cmds, allowAllCmds, bytes.NewReader(stdinData), stdout, stderr); err != nil {
 					return err
 				}
 			}
@@ -104,7 +105,8 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 
 	cmd.Flags().StringVarP(&script, "script", "s", "", "shell script to execute")
 	cmd.Flags().StringVarP(&allowedPaths, "allowed-path", "a", "", "comma-separated list of directories the shell is allowed to access")
-	cmd.Flags().StringVar(&allowedCommands, "allowed-commands", "", "comma-separated list of allowed commands ('all' to allow everything; omit to allow all)")
+	cmd.Flags().StringVar(&allowedCommands, "allowed-commands", "", "comma-separated list of allowed commands (omit to block all; use --allow-all-commands to allow everything)")
+	cmd.Flags().BoolVar(&allowAllCmds, "allow-all-commands", false, "allow all commands (overrides --allowed-commands)")
 
 	if err := cmd.Execute(); err != nil {
 		var status interp.ExitStatus
@@ -117,7 +119,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	return 0
 }
 
-func execute(ctx context.Context, script, name string, allowedPaths, allowedCommands []string, stdin io.Reader, stdout, stderr io.Writer) error {
+func execute(ctx context.Context, script, name string, allowedPaths, allowedCommands []string, allowAllCmds bool, stdin io.Reader, stdout, stderr io.Writer) error {
 	// Parse.
 	prog, err := syntax.NewParser().Parse(strings.NewReader(script), name)
 	if err != nil {
@@ -133,7 +135,7 @@ func execute(ctx context.Context, script, name string, allowedPaths, allowedComm
 	if len(allowedPaths) > 0 {
 		opts = append(opts, interp.AllowedPaths(allowedPaths))
 	}
-	if containsAll(allowedCommands) {
+	if allowAllCmds {
 		opts = append(opts, interp.AllowAllCommands())
 	} else if allowedCommands != nil {
 		opts = append(opts, interp.AllowedCommands(allowedCommands))
@@ -146,18 +148,6 @@ func execute(ctx context.Context, script, name string, allowedPaths, allowedComm
 	defer runner.Close()
 
 	return runner.Run(ctx, prog)
-}
-
-// containsAll reports whether the command list includes the "all" wildcard.
-// This allows "all" to appear anywhere in a comma-separated list
-// (e.g. "--allowed-commands all,echo") and still disable filtering.
-func containsAll(cmds []string) bool {
-	for _, c := range cmds {
-		if strings.EqualFold(c, "all") {
-			return true
-		}
-	}
-	return false
 }
 
 // splitAndTrim splits s on commas and trims whitespace from each element.

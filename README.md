@@ -45,13 +45,13 @@ Every access path is default-deny:
 
 | Resource             | Default                             | Opt-in                                       |
 |----------------------|-------------------------------------|----------------------------------------------|
-| Commands (builtins)  | Allowed                             | Restrict with `AllowedCommands` list         |
+| Commands (builtins)  | Blocked (exit code 1)               | Allow with `AllowedCommands` list or `AllowAllCommands` |
 | External commands    | Blocked (exit code 127)             | Provide an `ExecHandler`                     |
 | Filesystem access    | Blocked                             | Configure `AllowedPaths` with directory list |
 | Environment variables| Empty (no host env inherited)       | Pass variables via the `Env` option          |
 | Output redirections  | Only `/dev/null` allowed (exit code 2 for other targets) | `>/dev/null`, `2>/dev/null`, `&>/dev/null`, `2>&1` |
 
-**AllowedCommands** restricts which commands (builtins and external) may execute. When set, only listed commands are allowed; disallowed commands return exit code 1 with `<name>: command not allowed` (distinct from exit code 127 used for unknown commands). Shell keywords and control flow (if/else, for, pipes, `&&`/`||`, variable assignment) are unaffected. The CLI flag `--allowed-commands all` (case-insensitive) disables command filtering entirely, allowing all commands.
+**AllowedCommands** restricts which commands (builtins and external) may execute. When set, only listed commands are allowed; disallowed commands return exit code 1 with `<name>: command not allowed` (distinct from exit code 127 used for unknown commands). Shell keywords and control flow (if/else, for, pipes, `&&`/`||`, variable assignment) are unaffected. Use the CLI flag `--allow-all-commands` to permit all commands, or `--allowed-commands echo,cat,...` to allow specific commands.
 
 **AllowedPaths** restricts all file operations to specified directories using Go's `os.Root` API (`openat` syscalls), making it immune to symlink traversal, TOCTOU races, and `..` escape attacks.
 

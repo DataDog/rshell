@@ -242,7 +242,13 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 		return
 	}
 	name := args[0]
-	if !r.allowAllCommands && r.allowedCommands != nil {
+	if !r.allowAllCommands {
+		if r.allowedCommands == nil {
+			// No allowedCommands set and allowAllCommands is false: deny all.
+			fmt.Fprintf(r.stderr, "%s: command not allowed\n", name)
+			r.exit.code = 1
+			return
+		}
 		if _, ok := r.allowedCommands[name]; !ok {
 			fmt.Fprintf(r.stderr, "%s: command not allowed\n", name)
 			r.exit.code = 1

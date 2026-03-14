@@ -89,7 +89,7 @@ Blocked features are rejected before execution with exit code 2.
 
 ## Execution
 
-- ✅ AllowedCommands command restriction — when set, only listed commands (builtins and external) may execute; disallowed commands return exit code 1 with `<name>: command not allowed` (distinct from exit code 127 used for unknown commands)
+- ✅ AllowedCommands command restriction — by default all commands are blocked; use AllowedCommands to permit specific commands or AllowAllCommands to permit everything; disallowed commands return exit code 1 with `<name>: command not allowed` (distinct from exit code 127 used for unknown commands)
 - ✅ AllowedPaths filesystem sandboxing — restricts all file access to specified directories
 - ❌ External commands — blocked by default; requires an ExecHandler to be configured and the binary to be within AllowedPaths
 - ❌ Background execution: `cmd &`

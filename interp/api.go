@@ -23,7 +23,6 @@ import (
 	"mvdan.cc/sh/v3/syntax"
 
 	"github.com/DataDog/rshell/allowedpaths"
-	"github.com/DataDog/rshell/builtins"
 )
 
 // runnerConfig holds the immutable configuration of a [Runner].
@@ -49,7 +48,8 @@ type runnerConfig struct {
 	sandbox *allowedpaths.Sandbox
 
 	// allowedCommands restricts which commands (builtins and external) may execute.
-	// nil (default) allows all commands; populate via AllowedCommands to restrict.
+	// nil (default) blocks all commands; populate via AllowedCommands to restrict
+	// to specific commands, or set allowAllCommands to permit everything.
 	// When allowAllCommands is true, the map is ignored and all commands are permitted.
 	allowedCommands  map[string]struct{}
 	allowAllCommands bool
@@ -392,15 +392,12 @@ func (r *Runner) Close() error {
 // AllowedCommands restricts which commands (builtins and external) may execute.
 // Only commands in the provided list are allowed to run; passing an empty slice
 // blocks all commands. When this option is not used (default), all commands are
-// allowed for backward compatibility — use [AllowAllCommands] to be explicit.
+// blocked — use [AllowAllCommands] to permit everything.
 // Shell keywords and control flow (if/else, for, pipes, &&/||, variable
 // assignment) are unaffected.
 //
 // Duplicate command names in the list are silently deduplicated (the map
 // insertion is idempotent), so callers do not need to pre-filter.
-//
-// This option replaces the allowed commands map entirely. It is mutually
-// exclusive with [AllowAllBuiltinCommands]: whichever is applied last wins.
 func AllowedCommands(cmds []string) RunnerOption {
 	return func(r *Runner) error {
 		r.allowedCommands = make(map[string]struct{}, len(cmds))
@@ -412,28 +409,8 @@ func AllowedCommands(cmds []string) RunnerOption {
 	}
 }
 
-// AllowAllBuiltinCommands permits all registered builtin commands to execute.
-// It populates the allowed commands map with all registered builtin names.
-// External commands will be blocked even if an [ExecHandler] is configured,
-// because the allowed commands map only contains builtin names.
-//
-// This option replaces the allowed commands map entirely. It is mutually
-// exclusive with [AllowedCommands]: whichever is applied last wins.
-func AllowAllBuiltinCommands() RunnerOption {
-	return func(r *Runner) error {
-		names := builtins.Names()
-		r.allowedCommands = make(map[string]struct{}, len(names))
-		for _, name := range names {
-			r.allowedCommands[name] = struct{}{}
-		}
-		r.allowAllCommands = false
-		return nil
-	}
-}
-
 // AllowAllCommands disables command filtering entirely, permitting any command
-// (builtin or external) to execute. This is equivalent to the default behavior
-// when no AllowedCommands option is set.
+// (builtin or external) to execute. This overrides any [AllowedCommands] list.
 func AllowAllCommands() RunnerOption {
 	return func(r *Runner) error {
 		r.allowAllCommands = true

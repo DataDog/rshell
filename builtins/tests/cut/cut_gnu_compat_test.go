@@ -31,7 +31,7 @@ func cutRun(t *testing.T, script, dir string) (string, string, int) {
 	opts := []interp.RunnerOption{
 		interp.StdIO(nil, &outBuf, &errBuf),
 		interp.AllowedPaths([]string{dir}),
-		interp.AllowAllBuiltinCommands(),
+		interp.AllowAllCommands(),
 	}
 
 	runner, err := interp.New(opts...)

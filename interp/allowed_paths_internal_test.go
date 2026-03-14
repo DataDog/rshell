@@ -126,7 +126,7 @@ func TestAllowedPathsExecSymlinkEscape(t *testing.T) {
 
 func TestRunRecoversPanic(t *testing.T) {
 	var outBuf, errBuf bytes.Buffer
-	runner, err := New(StdIO(nil, &outBuf, &errBuf))
+	runner, err := New(StdIO(nil, &outBuf, &errBuf), AllowAllCommands())
 	require.NoError(t, err)
 	defer runner.Close()
 

@@ -201,7 +201,7 @@ func TestAllowedPathsPinsRootBeforeRun(t *testing.T) {
 	runner, err := interp.New(
 		interp.StdIO(nil, &outBuf, &errBuf),
 		interp.AllowedPaths([]string{allowed}),
-		interp.AllowAllBuiltinCommands(),
+		interp.AllowAllCommands(),
 	)
 	require.NoError(t, err)
 	defer runner.Close()
@@ -241,7 +241,7 @@ func TestAllowedPathsClose(t *testing.T) {
 	dir := t.TempDir()
 	runner, err := interp.New(
 		interp.AllowedPaths([]string{dir}),
-		interp.AllowAllBuiltinCommands(),
+		interp.AllowAllCommands(),
 	)
 	require.NoError(t, err)
 
@@ -255,21 +255,32 @@ func TestAllowedPathsClose(t *testing.T) {
 	require.NoError(t, runner.Close())
 }
 
-func TestAllowAllBuiltinCommandsPermitsBuiltins(t *testing.T) {
-	// AllowAllBuiltinCommands should allow any registered builtin to run.
+func TestAllowAllCommandsPermitsBuiltins(t *testing.T) {
+	// AllowAllCommands should allow any registered builtin to run.
 	stdout, _, exitCode := runScript(t, `echo hello; printf "world\n"`, "")
 	assert.Equal(t, 0, exitCode)
 	assert.Equal(t, "hello\nworld\n", stdout)
 }
 
-func TestAllowAllBuiltinCommandsBlocksExternal(t *testing.T) {
-	// AllowAllBuiltinCommands only allows builtins; a non-builtin command
-	// should be rejected with "command not allowed" and exit code 1.
-	_, stderr, exitCode := runScript(t, `nonexistent_external_cmd`, "",
-		interp.AllowAllBuiltinCommands(),
+func TestDefaultBlocksAllCommands(t *testing.T) {
+	// When no AllowedCommands or AllowAllCommands option is set,
+	// the default is to block all commands.
+	var outBuf, errBuf bytes.Buffer
+	runner, err := interp.New(
+		interp.StdIO(nil, &outBuf, &errBuf),
 	)
-	assert.Equal(t, 1, exitCode)
-	assert.Contains(t, stderr, "command not allowed")
+	require.NoError(t, err)
+	defer runner.Close()
+
+	parser := syntax.NewParser()
+	prog, err := parser.Parse(strings.NewReader("echo hello"), "")
+	require.NoError(t, err)
+
+	err = runner.Run(context.Background(), prog)
+	var es interp.ExitStatus
+	require.True(t, errors.As(err, &es))
+	assert.Equal(t, 1, int(es))
+	assert.Contains(t, errBuf.String(), "echo: command not allowed")
 }
 
 func TestAllowedCommandsDuplicatesIgnored(t *testing.T) {

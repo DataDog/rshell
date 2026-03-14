@@ -31,7 +31,7 @@ func runScriptCtx(ctx context.Context, t *testing.T, script, dir string, opts ..
 	prog, err := parser.Parse(strings.NewReader(script), "")
 	require.NoError(t, err)
 	var outBuf, errBuf bytes.Buffer
-	allOpts := append([]interp.RunnerOption{interp.StdIO(nil, &outBuf, &errBuf), interp.AllowAllBuiltinCommands()}, opts...)
+	allOpts := append([]interp.RunnerOption{interp.StdIO(nil, &outBuf, &errBuf), interp.AllowAllCommands()}, opts...)
 	runner, err := interp.New(allOpts...)
 	require.NoError(t, err)
 	defer runner.Close()
