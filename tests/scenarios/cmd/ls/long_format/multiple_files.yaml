@@ -1,0 +1,27 @@
+description: ls -l on multiple files shows each file in long format sorted alphabetically.
+skip_assert_against_bash: true
+setup:
+  files:
+    - path: bravo.txt
+      content: "bravo"
+      chmod: 0644
+    - path: alpha.txt
+      content: "alpha content"
+      chmod: 0644
+    - path: charlie.txt
+      content: "c"
+      chmod: 0644
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    ls -l
+expect:
+  stdout_contains:
+    - "alpha.txt"
+    - "bravo.txt"
+    - "charlie.txt"
+    - "13"
+    - "5"
+    - "1"
+  stderr: ""
+  exit_code: 0

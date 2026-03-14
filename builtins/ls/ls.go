@@ -384,6 +384,23 @@ func listDir(ctx context.Context, callCtx *builtins.CallContext, dir string, opt
 	// so no post-sort slicing is needed. The effectiveLimit is already
 	// enforced by readDir's maxRead parameter.
 
+	// Print total line for long format (matching GNU ls behaviour).
+	// GNU ls prints "total <blocks>" where blocks are 1024-byte (1K) blocks
+	// by default. Since syscall.Stat_t is not available (import restriction),
+	// we approximate using file sizes: blocks = ceil(size / 1024) per file,
+	// with directories counting as 0 blocks (matching GNU ls on most FSes
+	// where directory size varies).
+	if opts.longFmt {
+		var totalBlocks int64
+		for _, ei := range infoEntries {
+			if !ei.info.IsDir() {
+				sz := ei.info.Size()
+				totalBlocks += (sz + 1023) / 1024
+			}
+		}
+		callCtx.Outf("total %d\n", totalBlocks)
+	}
+
 	// Print.
 	for _, ei := range infoEntries {
 		if ctx.Err() != nil {

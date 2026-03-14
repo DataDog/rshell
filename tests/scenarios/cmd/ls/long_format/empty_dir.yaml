@@ -1,0 +1,12 @@
+description: ls -l on an empty directory shows only the total line.
+skip_assert_against_bash: true  # total value may differ from GNU ls (approximated without syscall)
+setup:
+  files: []
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    ls -l
+expect:
+  stdout: "total 0\n"
+  stderr: ""
+  exit_code: 0

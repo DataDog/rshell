@@ -1,0 +1,14 @@
+description: ls -l on a nonexistent file produces an error.
+skip_assert_against_bash: true  # stderr format differs from GNU ls (PortableErr normalization)
+setup:
+  files: []
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    ls -l nosuchfile
+expect:
+  stdout: ""
+  stderr_contains:
+    - "nosuchfile"
+    - "no such file or directory"
+  exit_code: 1

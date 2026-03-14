@@ -14,5 +14,5 @@ input:
     cat allowed/start
 expect:
   stdout: ""
-  stderr: "cat: allowed/start: openat start: path escapes from parent\n"
+  stderr: "cat: allowed/start: path escapes from parent\n"
   exit_code: 1

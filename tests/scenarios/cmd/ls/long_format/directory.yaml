@@ -1,0 +1,21 @@
+description: ls -l on a directory shows its contents in long format.
+skip_assert_against_bash: true
+setup:
+  files:
+    - path: subdir/file1.txt
+      content: "hello"
+      chmod: 0644
+    - path: subdir/file2.txt
+      content: "world"
+      chmod: 0644
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    ls -l subdir
+expect:
+  stdout_contains:
+    - "file1.txt"
+    - "file2.txt"
+    - "5"
+  stderr: ""
+  exit_code: 0

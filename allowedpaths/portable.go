@@ -18,6 +18,14 @@ func PortableErrMsg(err error) string {
 	if err == nil {
 		return ""
 	}
+	// Unwrap *os.PathError so we normalise the inner Err rather than
+	// returning the full "op path: msg" string. This handles the case
+	// where the error has already been wrapped by PortablePathError
+	// (which replaces the inner Err with a plain errors.New string).
+	var pe *os.PathError
+	if errors.As(err, &pe) {
+		return PortableErrMsg(pe.Err)
+	}
 	switch {
 	case errors.Is(err, fs.ErrNotExist):
 		return "no such file or directory"

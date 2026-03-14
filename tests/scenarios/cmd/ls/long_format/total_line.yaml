@@ -1,0 +1,21 @@
+description: ls -l on a directory shows a total line at the top.
+skip_assert_against_bash: true
+setup:
+  files:
+    - path: a.txt
+      content: "aaa"
+      chmod: 0644
+    - path: b.txt
+      content: "bbb"
+      chmod: 0644
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    ls -l
+expect:
+  stdout_contains:
+    - "total "
+    - "a.txt"
+    - "b.txt"
+  stderr: ""
+  exit_code: 0

@@ -2,8 +2,9 @@ name: Fuzz Tests
 
 on:
   push:
-    branches: ['**']
+    branches: [main]
   pull_request:
+    branches: [main]
 
 permissions:
   contents: read
@@ -75,7 +76,7 @@ jobs:
           fi
           for FUNC in $FUZZ_FUNCS; do
             echo "Fuzzing $FUNC..."
-            go test -fuzz="^${FUNC}$" -fuzztime=30s ${{ matrix.pkg }} -timeout 300s
+            go test -fuzz="^${FUNC}$" -fuzztime=60s ${{ matrix.pkg }} -timeout 300s
           done
 
       # Save corpus

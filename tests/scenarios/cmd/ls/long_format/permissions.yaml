@@ -1,0 +1,36 @@
+description: ls -l shows correct permission bits for different file modes.
+skip_assert_against_bash: true
+setup:
+  files:
+    - path: readonly.txt
+      content: "read only"
+      chmod: 0444
+    - path: executable.sh
+      content: "#!/bin/sh"
+      chmod: 0755
+    - path: normal.txt
+      content: "normal"
+      chmod: 0644
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    ls -l readonly.txt
+    ls -l executable.sh
+    ls -l normal.txt
+expect:
+  stdout_contains:
+    - "-r--r--r--"
+    - "-rwxr-xr-x"
+    - "-rw-r--r--"
+    - "readonly.txt"
+    - "executable.sh"
+    - "normal.txt"
+  stdout_contains_windows:
+    - "-r--r--r--"
+    - "-rwxrwxrwx"
+    - "-rw-rw-rw-"
+    - "readonly.txt"
+    - "executable.sh"
+    - "normal.txt"
+  stderr: ""
+  exit_code: 0
