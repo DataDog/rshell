@@ -511,10 +511,11 @@ func parseSize(s string) (sizeUnit, error) {
 	var su sizeUnit
 
 	numStr := s
-	if s[0] == '+' {
+	switch s[0] {
+	case '+':
 		su.cmp = cmpMore
 		numStr = s[1:]
-	} else if s[0] == '-' {
+	case '-':
 		su.cmp = cmpLess
 		numStr = s[1:]
 	}
