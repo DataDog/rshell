@@ -6,6 +6,5 @@ input:
     cp source.txt dest.txt
 expect:
   stdout: ""
-  stderr: |+
-    cp: command not found
+  stderr_contains: ["cp: command not found"]
   exit_code: 127

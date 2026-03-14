@@ -6,6 +6,5 @@ input:
     chmod 755 file.txt
 expect:
   stdout: ""
-  stderr: |+
-    chmod: command not found
+  stderr_contains: ["chmod: command not found"]
   exit_code: 127

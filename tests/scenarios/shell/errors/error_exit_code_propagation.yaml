@@ -1,5 +1,3 @@
-# skip: command-not-found error format differs from bash (no script:line prefix)
-skip_assert_against_bash: true
 description: Exit code from failed command is available in $?.
 input:
   allowed_commands: ["echo", "nonexistent_cmd_xyz"]
@@ -9,6 +7,5 @@ input:
 expect:
   stdout: |+
     127
-  stderr: |+
-    nonexistent_cmd_xyz: command not found
+  stderr_contains: ["nonexistent_cmd_xyz: command not found"]
   exit_code: 0

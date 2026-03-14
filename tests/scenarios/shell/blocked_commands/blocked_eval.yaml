@@ -7,6 +7,5 @@ input:
     eval echo hello
 expect:
   stdout: ""
-  stderr: |+
-    eval: command not found
+  stderr_contains: ["eval: command not found"]
   exit_code: 127

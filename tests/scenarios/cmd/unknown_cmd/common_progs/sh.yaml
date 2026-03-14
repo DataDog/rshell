@@ -6,6 +6,5 @@ input:
     sh -c "echo hello"
 expect:
   stdout: ""
-  stderr: |+
-    sh: command not found
+  stderr_contains: ["sh: command not found"]
   exit_code: 127
