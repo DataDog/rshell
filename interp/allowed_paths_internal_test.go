@@ -39,16 +39,12 @@ func runScriptInternal(t *testing.T, script, dir string, opts ...RunnerOption) (
 	var outBuf, errBuf bytes.Buffer
 	allOpts := append([]RunnerOption{
 		StdIO(nil, &outBuf, &errBuf),
+		AllowAllCommands(),
 	}, opts...)
 
 	runner, err := New(allOpts...)
 	require.NoError(t, err)
 	defer runner.Close()
-
-	// Allow the command used in the script so the exec handler check passes.
-	// Extract the first word as the command name.
-	cmdName := strings.Fields(script)[0]
-	runner.allowedCommands = map[string]struct{}{cmdName: {}}
 	if dir != "" {
 		runner.Dir = dir
 	}
