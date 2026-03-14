@@ -144,7 +144,11 @@ func execute(ctx context.Context, script, name string, allowedPaths, allowedComm
 }
 
 // splitAndTrim splits s on commas and trims whitespace from each element.
+// Returns nil for empty input.
 func splitAndTrim(s string) []string {
+	if s == "" {
+		return nil
+	}
 	parts := strings.Split(s, ",")
 	for i, p := range parts {
 		parts[i] = strings.TrimSpace(p)

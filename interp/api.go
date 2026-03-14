@@ -393,6 +393,9 @@ func (r *Runner) Close() error {
 // Only commands in the provided list are allowed to run. When not set (default),
 // all commands are allowed. Shell keywords and control flow (if/else, for,
 // pipes, &&/||, variable assignment) are unaffected.
+//
+// This option replaces the allowed commands map entirely. It is mutually
+// exclusive with [AllowAllBuiltinCommands]: whichever is applied last wins.
 func AllowedCommands(cmds []string) RunnerOption {
 	return func(r *Runner) error {
 		r.allowedCommands = make(map[string]struct{}, len(cmds))
@@ -407,6 +410,9 @@ func AllowedCommands(cmds []string) RunnerOption {
 // AllowAllBuiltinCommands permits all registered builtin commands to execute.
 // It populates the allowed commands map with all registered builtin names.
 // External commands not in the builtin list will still be blocked.
+//
+// This option replaces the allowed commands map entirely. It is mutually
+// exclusive with [AllowedCommands]: whichever is applied last wins.
 func AllowAllBuiltinCommands() RunnerOption {
 	return func(r *Runner) error {
 		names := builtins.Names()
