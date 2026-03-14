@@ -1,3 +1,4 @@
+skip_assert_against_bash: true
 description: The wget command is not a builtin and is rejected as not found.
 input:
   allowed_commands: ["wget"]

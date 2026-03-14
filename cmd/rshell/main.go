@@ -150,8 +150,15 @@ func splitAndTrim(s string) []string {
 		return nil
 	}
 	parts := strings.Split(s, ",")
-	for i, p := range parts {
-		parts[i] = strings.TrimSpace(p)
+	result := parts[:0]
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			result = append(result, p)
+		}
 	}
-	return parts
+	if len(result) == 0 {
+		return nil
+	}
+	return result
 }
