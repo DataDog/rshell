@@ -106,7 +106,7 @@ func TestFileAccessDeniedByDefault(t *testing.T) {
 
 func TestAllowedPathGrantsAccess(t *testing.T) {
 	dir, filePath := setupTestFile(t)
-	code, stdout, _ := runCLI(t, "--allowed-commands", "all", "-s", `cat `+filePath, "--allowed-paths", dir)
+	code, stdout, _ := runCLI(t, "--allowed-commands", "all", "-s", `cat `+filePath, "--allowed-path", dir)
 	assert.Equal(t, 0, code)
 	assert.Contains(t, stdout, "hello from testfile")
 }
@@ -117,7 +117,7 @@ func TestAllowedPathCommaSeparated(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		extraDir = filepath.ToSlash(extraDir)
 	}
-	code, stdout, _ := runCLI(t, "--allowed-commands", "all", "-s", `cat `+filePath, "--allowed-paths", dir+","+extraDir)
+	code, stdout, _ := runCLI(t, "--allowed-commands", "all", "-s", `cat `+filePath, "--allowed-path", dir+","+extraDir)
 	assert.Equal(t, 0, code)
 	assert.Contains(t, stdout, "hello from testfile")
 }
@@ -138,7 +138,7 @@ func TestHelp(t *testing.T) {
 	code, stdout, _ := runCLI(t, "--help")
 	assert.Equal(t, 0, code)
 	assert.Contains(t, stdout, "--script")
-	assert.Contains(t, stdout, "--allowed-paths")
+	assert.Contains(t, stdout, "--allowed-path")
 	assert.Contains(t, stdout, "--allowed-commands")
 }
 
@@ -200,7 +200,7 @@ func TestFileArgWithAllowedPath(t *testing.T) {
 	script := filepath.Join(dir, "test.sh")
 	require.NoError(t, os.WriteFile(script, []byte("cat "+dataFile+"\n"), 0o644))
 
-	code, stdout, _ := runCLI(t, "--allowed-commands", "all", "--allowed-paths", dataDir, script)
+	code, stdout, _ := runCLI(t, "--allowed-commands", "all", "--allowed-path", dataDir, script)
 	assert.Equal(t, 0, code)
 	assert.Contains(t, stdout, "secret data")
 }
