@@ -1,6 +1,5 @@
 # Test -exec with grep to search file contents
 description: find -exec grep searches within matched files.
-skip_assert_against_bash: true  # rshell -exec only runs builtins
 setup:
   files:
     - path: a.txt

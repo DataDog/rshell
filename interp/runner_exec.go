@@ -298,10 +298,16 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 				}
 				execDir := func() string {
 					if dir != "" {
-						return dir
+						if filepath.IsAbs(dir) {
+							return dir
+						}
+						return filepath.Join(r.Dir, dir)
 					}
 					return r.Dir
 				}
+				// NOTE: subcall intentionally does not set ExecCommand. This prevents
+				// nested find -exec from spawning further -exec subprocesses, avoiding
+				// unbounded recursion (e.g. find . -exec find {} -exec echo {} \; \;).
 				subcall := &builtins.CallContext{
 					Stdout: stdout,
 					Stderr: stderr,

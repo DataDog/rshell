@@ -1,6 +1,5 @@
 # Test -execdir with batch mode (+)
 description: find -execdir with + batches files per directory.
-skip_assert_against_bash: true  # rshell -execdir only runs builtins
 setup:
   files:
     - path: sub/a.txt

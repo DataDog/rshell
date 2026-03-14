@@ -1,6 +1,5 @@
 # Test basic -execdir
 description: find -execdir runs command from the file's parent directory with ./basename.
-skip_assert_against_bash: true  # rshell -execdir only runs builtins
 setup:
   files:
     - path: sub/file.txt

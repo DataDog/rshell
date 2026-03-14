@@ -1,6 +1,5 @@
 # Test -exec combined with other predicates
 description: find -exec works when combined with -name and -type predicates.
-skip_assert_against_bash: true  # rshell -exec only runs builtins
 setup:
   files:
     - path: dir1/a.txt

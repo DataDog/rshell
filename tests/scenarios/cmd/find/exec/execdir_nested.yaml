@@ -1,6 +1,5 @@
 # Test -execdir with deeply nested paths
 description: find -execdir passes ./basename even for deeply nested files.
-skip_assert_against_bash: true  # rshell -execdir only runs builtins
 setup:
   files:
     - path: a/b/c/deep.txt

@@ -1,6 +1,5 @@
 # Test -exec with cat to read file contents
 description: find -exec cat reads matched file contents.
-skip_assert_against_bash: true  # rshell -exec only runs builtins
 setup:
   files:
     - path: hello.txt

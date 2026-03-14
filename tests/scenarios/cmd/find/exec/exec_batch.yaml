@@ -1,6 +1,5 @@
 # Test -exec with batch mode (+)
 description: find -exec with + batches files into a single command invocation.
-skip_assert_against_bash: true  # rshell -exec only runs builtins
 setup:
   files:
     - path: a.txt

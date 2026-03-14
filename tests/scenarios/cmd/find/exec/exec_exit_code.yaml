@@ -1,6 +1,5 @@
 # Test -exec returns false when command fails, suppressing implicit print
 description: find -exec returns false when the executed command exits non-zero.
-skip_assert_against_bash: true  # rshell -exec only runs builtins
 setup:
   files:
     - path: a.txt

@@ -1,6 +1,5 @@
 # Test -exec with no matching files
 description: find -exec with no matches produces no output.
-skip_assert_against_bash: true  # rshell -exec only runs builtins
 setup:
   files:
     - path: a.txt
