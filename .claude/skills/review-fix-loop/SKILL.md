@@ -17,7 +17,7 @@ You MUST follow this execution protocol. Skipping steps or running them out of o
 Your very first action — before reading ANY files, before running ANY commands — is to call TaskCreate exactly 11 times, once for each step/sub-step below. Use these exact subjects:
 
 1. "Step 1: Identify the PR"
-2. "Step 2: Run the review-fix loop"
+2. "Step 2: Run the review-fix loop" ← **Update subject with iteration number each loop** (e.g. "Step 2: Run the review-fix loop (iteration 1)")
 3. "Step 2A1: Self-review (code-review)" ← **parallel with 2A2**
 4. "Step 2A2: Request external reviews (@codex)" ← **parallel with 2A1**
 5. "Step 2B: Address PR comments (address-pr-comments)"
@@ -91,7 +91,9 @@ Store the owner and repo name.
 
 **GATE CHECK**: Call TaskList. Step 1 must be `completed`. Set Step 2 to `in_progress`.
 
-Set `iteration = 1`. Maximum iterations: **30**. Repeat sub-steps A through E while `iteration <= 30`:
+Set `iteration = 1`. Maximum iterations: **30**. Repeat sub-steps A through E while `iteration <= 30`.
+
+**At the start of each iteration**, update the Step 2 task subject to include the current iteration number using TaskUpdate, e.g. `"Step 2: Run the review-fix loop (iteration 3)"`.
 
 ---
 
