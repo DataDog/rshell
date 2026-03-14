@@ -164,7 +164,7 @@ func TestParseExpressionLimits(t *testing.T) {
 	t.Run("depth limit", func(t *testing.T) {
 		// Build a deeply nested expression: ! ! ! ! ... -true
 		args := make([]string, 0, maxExprDepth+2)
-		for i := 0; i < maxExprDepth+1; i++ {
+		for range maxExprDepth + 1 {
 			args = append(args, "!")
 		}
 		args = append(args, "-true")
@@ -179,7 +179,7 @@ func TestParseExpressionLimits(t *testing.T) {
 		// We need maxExprNodes+1 leaf nodes to exceed the limit.
 		count := maxExprNodes + 1
 		args := make([]string, 0, count*2)
-		for i := 0; i < count; i++ {
+		for i := range count {
 			if i > 0 {
 				args = append(args, "-o")
 			}
