@@ -32,19 +32,19 @@ func runCLIWithStdin(t *testing.T, stdin string, args ...string) (exitCode int, 
 }
 
 func TestEcho(t *testing.T) {
-	code, stdout, _ := runCLI(t, "--allowed-commands", "all", "-c", `echo hello world`)
+	code, stdout, _ := runCLI(t, "-c", "all", "-s", `echo hello world`)
 	assert.Equal(t, 0, code)
 	assert.Equal(t, "hello world\n", stdout)
 }
 
 func TestShortFlag(t *testing.T) {
-	code, stdout, _ := runCLI(t, "--allowed-commands", "all", "-c", `echo short`)
+	code, stdout, _ := runCLI(t, "-c", "all", "-s", `echo short`)
 	assert.Equal(t, 0, code)
 	assert.Equal(t, "short\n", stdout)
 }
 
 func TestLongFlag(t *testing.T) {
-	code, stdout, _ := runCLI(t, "--allowed-commands", "all", "--script", `echo long`)
+	code, stdout, _ := runCLI(t, "-c", "all", "--script", `echo long`)
 	assert.Equal(t, 0, code)
 	assert.Equal(t, "long\n", stdout)
 }
@@ -56,31 +56,31 @@ func TestMissingScriptAndFiles(t *testing.T) {
 }
 
 func TestEmptyScript(t *testing.T) {
-	code, stdout, stderr := runCLI(t, "-c", "")
+	code, stdout, stderr := runCLI(t, "-s", "")
 	assert.Equal(t, 0, code, "empty script should exit 0 (matching bash -c '')")
 	assert.Empty(t, stdout)
 	assert.Empty(t, stderr)
 }
 
 func TestExitCode(t *testing.T) {
-	code, _, _ := runCLI(t, "--allowed-commands", "all", "-c", `exit 42`)
+	code, _, _ := runCLI(t, "-c", "all", "-s", `exit 42`)
 	assert.Equal(t, 42, code)
 }
 
 func TestParseError(t *testing.T) {
-	code, _, stderr := runCLI(t, "-c", `echo "unterminated`)
+	code, _, stderr := runCLI(t, "-s", `echo "unterminated`)
 	assert.Equal(t, 2, code, "parse errors should return exit code 2 (matching bash)")
 	assert.Contains(t, stderr, "without closing quote")
 }
 
 func TestParseErrorSyntax(t *testing.T) {
-	code, _, stderr := runCLI(t, "-c", `if; then`)
+	code, _, stderr := runCLI(t, "-s", `if; then`)
 	assert.Equal(t, 2, code, "syntax errors should return exit code 2 (matching bash)")
 	assert.Contains(t, stderr, "must be followed by")
 }
 
 func TestParseErrorUnclosed(t *testing.T) {
-	code, _, stderr := runCLI(t, "-c", "if true; then\n  echo hello")
+	code, _, stderr := runCLI(t, "-s", "if true; then\n  echo hello")
 	assert.Equal(t, 2, code, "unclosed blocks should return exit code 2 (matching bash)")
 	assert.Contains(t, stderr, "must end with")
 }
@@ -99,14 +99,14 @@ func setupTestFile(t *testing.T) (dir, filePath string) {
 
 func TestFileAccessDeniedByDefault(t *testing.T) {
 	_, filePath := setupTestFile(t)
-	code, _, stderr := runCLI(t, "--allowed-commands", "all", "-c", `cat `+filePath)
+	code, _, stderr := runCLI(t, "-c", "all", "-s", `cat `+filePath)
 	assert.NotEqual(t, 0, code)
 	assert.Contains(t, stderr, "permission denied")
 }
 
 func TestAllowedPathGrantsAccess(t *testing.T) {
 	dir, filePath := setupTestFile(t)
-	code, stdout, _ := runCLI(t, "--allowed-commands", "all", "-c", `cat `+filePath, "--allowed-paths", dir)
+	code, stdout, _ := runCLI(t, "-c", "all", "-s", `cat `+filePath, "-a", dir)
 	assert.Equal(t, 0, code)
 	assert.Contains(t, stdout, "hello from testfile")
 }
@@ -117,19 +117,19 @@ func TestAllowedPathCommaSeparated(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		extraDir = filepath.ToSlash(extraDir)
 	}
-	code, stdout, _ := runCLI(t, "--allowed-commands", "all", "-c", `cat `+filePath, "--allowed-paths", dir+","+extraDir)
+	code, stdout, _ := runCLI(t, "-c", "all", "-s", `cat `+filePath, "--allowed-paths", dir+","+extraDir)
 	assert.Equal(t, 0, code)
 	assert.Contains(t, stdout, "hello from testfile")
 }
 
 func TestMultipleStatements(t *testing.T) {
-	code, stdout, _ := runCLI(t, "--allowed-commands", "all", "-c", "echo first\necho second")
+	code, stdout, _ := runCLI(t, "-c", "all", "-s", "echo first\necho second")
 	assert.Equal(t, 0, code)
 	assert.Equal(t, "first\nsecond\n", stdout)
 }
 
 func TestVariableExpansion(t *testing.T) {
-	code, stdout, _ := runCLI(t, "--allowed-commands", "all", "-c", `FOO=bar; echo $FOO`)
+	code, stdout, _ := runCLI(t, "-c", "all", "-s", `FOO=bar; echo $FOO`)
 	assert.Equal(t, 0, code)
 	assert.Equal(t, "bar\n", stdout)
 }
@@ -147,7 +147,7 @@ func TestFileArg(t *testing.T) {
 	script := filepath.Join(dir, "test.sh")
 	require.NoError(t, os.WriteFile(script, []byte("echo from-file\n"), 0o644))
 
-	code, stdout, _ := runCLI(t, "--allowed-commands", "all", script)
+	code, stdout, _ := runCLI(t, "-c", "all", script)
 	assert.Equal(t, 0, code)
 	assert.Equal(t, "from-file\n", stdout)
 }
@@ -159,13 +159,13 @@ func TestMultipleFileArgs(t *testing.T) {
 	require.NoError(t, os.WriteFile(script1, []byte("echo first\n"), 0o644))
 	require.NoError(t, os.WriteFile(script2, []byte("echo second\n"), 0o644))
 
-	code, stdout, _ := runCLI(t, "--allowed-commands", "all", script1, script2)
+	code, stdout, _ := runCLI(t, "-c", "all", script1, script2)
 	assert.Equal(t, 0, code)
 	assert.Equal(t, "first\nsecond\n", stdout)
 }
 
 func TestStdinDash(t *testing.T) {
-	code, stdout, _ := runCLIWithStdin(t, "echo from-stdin\n", "--allowed-commands", "all", "-")
+	code, stdout, _ := runCLIWithStdin(t, "echo from-stdin\n", "-c", "all", "-")
 	assert.Equal(t, 0, code)
 	assert.Equal(t, "from-stdin\n", stdout)
 }
@@ -175,7 +175,7 @@ func TestScriptAndFileArgsMutuallyExclusive(t *testing.T) {
 	script := filepath.Join(dir, "test.sh")
 	require.NoError(t, os.WriteFile(script, []byte("echo hi\n"), 0o644))
 
-	code, _, stderr := runCLI(t, "-c", "echo hi", script)
+	code, _, stderr := runCLI(t, "-s", "echo hi", script)
 	assert.NotEqual(t, 0, code)
 	assert.Contains(t, stderr, "cannot use --script with file arguments")
 }
@@ -200,7 +200,7 @@ func TestFileArgWithAllowedPath(t *testing.T) {
 	script := filepath.Join(dir, "test.sh")
 	require.NoError(t, os.WriteFile(script, []byte("cat "+dataFile+"\n"), 0o644))
 
-	code, stdout, _ := runCLI(t, "--allowed-commands", "all", "--allowed-paths", dataDir, script)
+	code, stdout, _ := runCLI(t, "-c", "all", "-a", dataDir, script)
 	assert.Equal(t, 0, code)
 	assert.Contains(t, stdout, "secret data")
 }
