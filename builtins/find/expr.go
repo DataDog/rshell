@@ -495,7 +495,7 @@ func (p *parser) parseExecPredicate(kind exprKind) (*expr, error) {
 			}
 			return &expr{kind: kind, execArgs: cmdArgs, execBatch: true}, nil
 		}
-		if tok == "{}" {
+		if strings.Contains(tok, "{}") {
 			placeholderCount++
 		}
 		cmdArgs = append(cmdArgs, tok)

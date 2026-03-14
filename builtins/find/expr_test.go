@@ -139,6 +139,8 @@ func TestParseExec(t *testing.T) {
 		{"exec empty command", []string{"-exec", ";"}, true, "missing command", false},
 		{"exec with extra args", []string{"-exec", "grep", "-l", "{}", ";"}, false, "", false},
 		{"exec batch multiple placeholders", []string{"-exec", "echo", "{}", "x", "{}", "+"}, true, "only one instance", false},
+		{"exec batch embedded placeholder rejected", []string{"-exec", "echo", "foo{}", "{}", "+"}, true, "only one instance", false},
+		{"exec batch only embedded placeholder rejected", []string{"-exec", "echo", "foo{}", "+"}, true, "missing terminator", false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
