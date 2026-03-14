@@ -51,8 +51,12 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 				paths = strings.Split(allowedPaths, ",")
 			}
 			var cmds []string
+			allowedCommandsSet := cmd.Flags().Changed("allowed-commands")
 			if allowedCommands != "" {
 				cmds = strings.Split(allowedCommands, ",")
+			} else if allowedCommandsSet {
+				// Explicitly passing an empty --allowed-commands means deny-all.
+				cmds = []string{}
 			}
 
 			if scriptSet {
@@ -126,7 +130,7 @@ func execute(ctx context.Context, script, name string, allowedPaths, allowedComm
 	}
 	if len(allowedCommands) == 1 && allowedCommands[0] == "all" {
 		opts = append(opts, interp.AllowAllCommands())
-	} else if len(allowedCommands) > 0 {
+	} else if allowedCommands != nil {
 		opts = append(opts, interp.AllowedCommands(allowedCommands))
 	}
 
