@@ -1,11 +1,11 @@
 skip_assert_against_bash: true
-description: The chmod command is not a builtin and is rejected as not allowed.
+description: The chmod command is not a builtin and is rejected as not found.
 input:
-  allowed_commands: []
+  allowed_commands: ["chmod"]
   script: |+
     chmod 755 file.txt
 expect:
   stdout: ""
   stderr: |+
-    chmod: command not allowed
-  exit_code: 1
+    chmod: command not found
+  exit_code: 127

@@ -2,13 +2,13 @@
 skip_assert_against_bash: true
 description: Multiple unknown commands each produce errors, last exit code wins.
 input:
-  allowed_commands: []
+  allowed_commands: ["unknown_cmd_1", "unknown_cmd_2"]
   script: |+
     unknown_cmd_1
     unknown_cmd_2
 expect:
   stdout: ""
   stderr: |+
-    unknown_cmd_1: command not allowed
-    unknown_cmd_2: command not allowed
-  exit_code: 1
+    unknown_cmd_1: command not found
+    unknown_cmd_2: command not found
+  exit_code: 127

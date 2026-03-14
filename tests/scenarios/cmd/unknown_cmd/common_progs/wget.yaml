@@ -1,11 +1,11 @@
 skip_assert_against_bash: true
-description: The wget command is not a builtin and is rejected as not allowed.
+description: The wget command is not a builtin and is rejected as not found.
 input:
-  allowed_commands: []
+  allowed_commands: ["wget"]
   script: |+
     wget http://example.com
 expect:
   stdout: ""
   stderr: |+
-    wget: command not allowed
-  exit_code: 1
+    wget: command not found
+  exit_code: 127

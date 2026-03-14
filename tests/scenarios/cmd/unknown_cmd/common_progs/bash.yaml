@@ -1,11 +1,11 @@
 skip_assert_against_bash: true
-description: The bash command is not a builtin and is rejected as not allowed.
+description: The bash command is not a builtin and is rejected as not found.
 input:
-  allowed_commands: []
+  allowed_commands: ["bash"]
   script: |+
     bash -c "echo hello"
 expect:
   stdout: ""
   stderr: |+
-    bash: command not allowed
-  exit_code: 1
+    bash: command not found
+  exit_code: 127

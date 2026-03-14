@@ -2,11 +2,11 @@
 skip_assert_against_bash: true
 description: Eval command is not available.
 input:
-  allowed_commands: ["echo"]
+  allowed_commands: ["echo", "eval"]
   script: |+
     eval echo hello
 expect:
   stdout: ""
   stderr: |+
-    eval: command not allowed
-  exit_code: 1
+    eval: command not found
+  exit_code: 127

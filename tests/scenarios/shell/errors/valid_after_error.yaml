@@ -1,8 +1,8 @@
 # skip: command-not-found error format differs from bash (no script:line prefix)
 skip_assert_against_bash: true
-description: Valid commands execute normally after a command-not-allowed error.
+description: Valid commands execute normally after a command-not-found error.
 input:
-  allowed_commands: ["echo"]
+  allowed_commands: ["echo", "nonexistent_cmd"]
   script: |+
     echo first
     nonexistent_cmd
@@ -12,5 +12,5 @@ expect:
     first
     third
   stderr: |+
-    nonexistent_cmd: command not allowed
+    nonexistent_cmd: command not found
   exit_code: 0

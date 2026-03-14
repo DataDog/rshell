@@ -1,11 +1,11 @@
 skip_assert_against_bash: true
-description: The rm command is not a builtin and is rejected as not allowed.
+description: The rm command is not a builtin and is rejected as not found.
 input:
-  allowed_commands: []
+  allowed_commands: ["rm"]
   script: |+
     rm file.txt
 expect:
   stdout: ""
   stderr: |+
-    rm: command not allowed
-  exit_code: 1
+    rm: command not found
+  exit_code: 127

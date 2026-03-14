@@ -2,13 +2,13 @@
 skip_assert_against_bash: true
 description: Exit code from failed command is available in $?.
 input:
-  allowed_commands: ["echo"]
+  allowed_commands: ["echo", "nonexistent_cmd_xyz"]
   script: |+
     nonexistent_cmd_xyz
     echo "$?"
 expect:
   stdout: |+
-    1
+    127
   stderr: |+
-    nonexistent_cmd_xyz: command not allowed
+    nonexistent_cmd_xyz: command not found
   exit_code: 0

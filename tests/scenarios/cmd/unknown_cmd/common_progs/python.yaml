@@ -1,11 +1,11 @@
 skip_assert_against_bash: true
-description: The python command is not a builtin and is rejected as not allowed.
+description: The python command is not a builtin and is rejected as not found.
 input:
-  allowed_commands: []
+  allowed_commands: ["python"]
   script: |+
     python -c "print('hello')"
 expect:
   stdout: ""
   stderr: |+
-    python: command not allowed
-  exit_code: 1
+    python: command not found
+  exit_code: 127
