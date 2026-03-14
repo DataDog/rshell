@@ -1,3 +1,4 @@
+# skip: while loops are intentionally blocked in the restricted shell
 skip_assert_against_bash: true
 description: Continue in while loop nested inside until loop is blocked.
 input:

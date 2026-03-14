@@ -6,4 +6,5 @@ expect:
   stdout: ""
   stderr: "printf: %n: not supported (security risk)\n"
   exit_code: 1
+# skip: feature is intentionally blocked in rshell for security
 skip_assert_against_bash: true

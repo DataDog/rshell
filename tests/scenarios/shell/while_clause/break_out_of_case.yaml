@@ -1,3 +1,4 @@
+# skip: while loops are intentionally blocked in the restricted shell
 skip_assert_against_bash: true
 description: Break inside case statement within while loop is blocked.
 input:

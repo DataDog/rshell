@@ -1,3 +1,4 @@
+# skip: variable expansion feature is intentionally blocked in the restricted shell
 skip_assert_against_bash: true
 description: Suffix removal ${var%pattern} is not supported.
 input:

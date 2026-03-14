@@ -1,4 +1,5 @@
 description: "Env option with PATH-like value containing colons"
+# skip: rshell uses an isolated environment that does not inherit from the parent process
 skip_assert_against_bash: true
 input:
   interpreter_env:

@@ -1,3 +1,4 @@
+# skip: rshell builtin error/output format differs from GNU coreutils
 skip_assert_against_bash: true
 description: When the first of multiple files fails, cat continues and processes remaining files.
 setup:

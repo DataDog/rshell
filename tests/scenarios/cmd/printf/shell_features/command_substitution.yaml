@@ -1,4 +1,5 @@
 description: Printf output can be captured via command substitution.
+# skip: command substitution is intentionally blocked in the restricted shell
 skip_assert_against_bash: true
 input:
   script: |+

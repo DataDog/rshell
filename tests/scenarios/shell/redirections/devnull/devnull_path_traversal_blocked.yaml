@@ -1,3 +1,4 @@
+# skip: redirect restrictions are an rshell-specific security feature
 skip_assert_against_bash: true
 description: Path traversal via /dev/null/../../etc is blocked (not literal /dev/null).
 input:

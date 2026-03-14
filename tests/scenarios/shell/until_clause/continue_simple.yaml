@@ -1,3 +1,4 @@
+# skip: until loops are intentionally blocked in the restricted shell
 skip_assert_against_bash: true
 description: Continue in until loop is blocked because until loops are not supported.
 input:

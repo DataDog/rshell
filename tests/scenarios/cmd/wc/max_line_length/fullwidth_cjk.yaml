@@ -1,4 +1,5 @@
 description: wc -L counts display columns, CJK characters are width 2.
+# skip: rshell builtin error/output format differs from GNU coreutils
 skip_assert_against_bash: true  # display width depends on locale; we always use Unicode width
 setup:
   files:

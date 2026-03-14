@@ -1,3 +1,4 @@
+# skip: rshell uses an isolated environment that does not inherit from the parent process
 skip_assert_against_bash: true
 description: $HOME is not automatically set by the interpreter.
 input:

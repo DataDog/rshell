@@ -1,4 +1,5 @@
 description: "Path traversal from allowed dir to sibling dir is blocked"
+# skip: allowed_paths sandbox restriction is an rshell-specific feature not present in bash
 skip_assert_against_bash: true
 setup:
   files:
