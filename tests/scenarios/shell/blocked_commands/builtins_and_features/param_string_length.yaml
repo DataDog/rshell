@@ -6,6 +6,6 @@ input:
     echo ${#a}
 expect:
   stdout: ""
-  stderr_contains:
-    - "not supported"
+  stderr: |+
+    ${#var} is not supported
   exit_code: 2

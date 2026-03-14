@@ -5,6 +5,6 @@ input:
     command echo hello
 expect:
   stdout: ""
-  stderr_contains:
-    - "not found"
+  stderr: |+
+    command: command not found
   exit_code: 127

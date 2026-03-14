@@ -5,6 +5,6 @@ input:
     cd /tmp
 expect:
   stdout: ""
-  stderr_contains:
-    - "not found"
+  stderr: |+
+    cd: command not found
   exit_code: 127

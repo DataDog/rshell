@@ -5,6 +5,6 @@ input:
     umask
 expect:
   stdout: ""
-  stderr_contains:
-    - "not found"
+  stderr: |+
+    umask: command not found
   exit_code: 127

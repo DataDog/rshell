@@ -5,6 +5,6 @@ input:
     set -- a b c
 expect:
   stdout: ""
-  stderr_contains:
-    - "not found"
+  stderr: |+
+    set: command not found
   exit_code: 127

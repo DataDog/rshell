@@ -5,6 +5,6 @@ input:
     return 0
 expect:
   stdout: ""
-  stderr_contains:
-    - "not found"
+  stderr: |+
+    return: command not found
   exit_code: 127

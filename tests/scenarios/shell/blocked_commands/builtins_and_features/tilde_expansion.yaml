@@ -5,6 +5,6 @@ input:
     echo ~
 expect:
   stdout: ""
-  stderr_contains:
-    - "not supported"
+  stderr: |+
+    tilde expansion is not supported
   exit_code: 2

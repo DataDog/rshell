@@ -6,6 +6,6 @@ input:
     unset a
 expect:
   stdout: ""
-  stderr_contains:
-    - "not found"
+  stderr: |+
+    unset: command not found
   exit_code: 127

@@ -5,6 +5,6 @@ input:
     getopts abc opt
 expect:
   stdout: ""
-  stderr_contains:
-    - "not found"
+  stderr: |+
+    getopts: command not found
   exit_code: 127

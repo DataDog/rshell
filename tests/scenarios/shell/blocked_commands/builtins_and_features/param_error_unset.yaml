@@ -5,6 +5,6 @@ input:
     echo ${a?error message}
 expect:
   stdout: ""
-  stderr_contains:
-    - "not supported"
+  stderr: |+
+    ${var} operations (defaults, pattern removal, case conversion) are not supported
   exit_code: 2
