@@ -180,13 +180,13 @@ func runScenario(t *testing.T, sc scenario) {
 		}
 		opts = append(opts, interp.AllowedPaths(resolved))
 	}
-	if len(sc.Input.AllowedCommands) > 0 {
+	if sc.Input.AllowAllCommands != nil && *sc.Input.AllowAllCommands {
+		opts = append(opts, interp.AllowAllCommands())
+	} else if len(sc.Input.AllowedCommands) > 0 {
 		opts = append(opts, interp.AllowedCommands(sc.Input.AllowedCommands))
 	} else if sc.Input.AllowAllCommands == nil {
 		// Default: allow all commands for backward compatibility with
 		// existing scenarios that predate the allowedCommands feature.
-		opts = append(opts, interp.AllowAllCommands())
-	} else if *sc.Input.AllowAllCommands {
 		opts = append(opts, interp.AllowAllCommands())
 	}
 	// When allow_all_commands is explicitly false and allowed_commands is
