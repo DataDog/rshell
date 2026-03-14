@@ -1,0 +1,10 @@
+skip_assert_against_bash: true
+description: Command names in allowlist are case-sensitive
+input:
+  allowed_commands: ["echo"]
+  script: |+
+    Echo hello
+expect:
+  stdout: ""
+  stderr: "Echo: command not allowed\n"
+  exit_code: 1

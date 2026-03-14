@@ -1,0 +1,10 @@
+skip_assert_against_bash: true
+description: Disallowed command in for-loop body is blocked
+input:
+  allowed_commands: ["echo"]
+  script: |+
+    for i in a b; do cat /dev/null; done
+expect:
+  stdout: ""
+  stderr: "cat: command not allowed\ncat: command not allowed\n"
+  exit_code: 1
