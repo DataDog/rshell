@@ -1,3 +1,5 @@
+# skip: error message format differs from bash (rshell omits script path prefix)
+skip_assert_against_bash: true
 description: Unknown command produces not found error.
 input:
   script: |+
