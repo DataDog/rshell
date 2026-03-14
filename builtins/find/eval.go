@@ -274,11 +274,12 @@ func evalExec(ec *evalContext, e *expr, isExecDir bool) evalResult {
 	var filePath string
 	var dir string
 	if isExecDir {
-		dir = path.Dir(ec.printPath)
+		clean := path.Clean(ec.printPath)
+		dir = path.Dir(clean)
 		if dir == "." {
 			dir = ""
 		}
-		filePath = "./" + path.Base(ec.printPath)
+		filePath = "./" + path.Base(clean)
 	} else {
 		filePath = ec.printPath
 	}

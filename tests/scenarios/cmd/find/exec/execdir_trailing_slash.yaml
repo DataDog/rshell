@@ -1,0 +1,13 @@
+# Test -execdir with trailing slash in start path
+description: find sub/ -execdir correctly computes cwd when start path has trailing slash.
+setup:
+  files:
+    - path: sub/hello.txt
+      content: "hello world\n"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    find sub/ -name "hello.txt" -execdir echo {} \;
+expect:
+  stdout: "./hello.txt\n"
+  exit_code: 0
