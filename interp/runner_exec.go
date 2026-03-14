@@ -245,11 +245,13 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 	if !r.allowAllCommands {
 		if r.allowedCommands == nil {
 			// No allowedCommands set and allowAllCommands is false: deny all.
+			// Exit code 1 (not 127) to distinguish "restricted" from "not found".
 			fmt.Fprintf(r.stderr, "%s: command not allowed\n", name)
 			r.exit.code = 1
 			return
 		}
 		if _, ok := r.allowedCommands[name]; !ok {
+			// Exit code 1 (not 127) to distinguish "restricted" from "not found".
 			fmt.Fprintf(r.stderr, "%s: command not allowed\n", name)
 			r.exit.code = 1
 			return
