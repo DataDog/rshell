@@ -1,4 +1,3 @@
-# yash: grouping-p.tst - redirection on brace grouping
 description: Brace group output can be piped.
 input:
   script: |+

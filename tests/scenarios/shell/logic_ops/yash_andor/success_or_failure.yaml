@@ -1,4 +1,3 @@
-# yash: andor-p.tst - 2-command list, success || failure
 description: First succeeds so second is skipped in || list.
 input:
   script: |+

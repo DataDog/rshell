@@ -1,0 +1,10 @@
+skip_assert_against_bash: true
+description: Arithmetic expansion is intentionally blocked in the restricted shell.
+input:
+  script: |+
+    echo $((1+2))
+expect:
+  stdout: ""
+  stderr_contains:
+    - "arithmetic"
+  exit_code: 2

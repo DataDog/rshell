@@ -1,0 +1,12 @@
+skip_assert_against_bash: true
+description: Case statements are intentionally blocked in the restricted shell.
+input:
+  script: |+
+    case hello in
+      hello) echo matched;;
+    esac
+expect:
+  stdout: ""
+  stderr_contains:
+    - "case"
+  exit_code: 2

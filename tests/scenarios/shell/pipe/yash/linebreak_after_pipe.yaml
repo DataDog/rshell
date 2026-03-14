@@ -1,4 +1,3 @@
-# yash: pipeline-p.tst - linebreak after |
 description: Linebreak after pipe operator continues the pipeline.
 input:
   script: |+

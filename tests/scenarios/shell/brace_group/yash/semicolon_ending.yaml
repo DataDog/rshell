@@ -1,4 +1,3 @@
-# yash: grouping-p.tst - brace grouping ending with semicolon
 description: Brace group ending with semicolon before closing brace.
 input:
   script: |+

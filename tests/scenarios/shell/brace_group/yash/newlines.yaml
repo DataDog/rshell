@@ -1,4 +1,3 @@
-# yash: grouping-p.tst - newlines in brace grouping
 description: Brace group with newline-separated commands.
 input:
   script: |+

@@ -1,4 +1,3 @@
-# yash: for-p.tst - iteration variable is global
 description: For loop iteration variable persists after loop completion.
 input:
   script: |+

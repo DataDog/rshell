@@ -1,4 +1,3 @@
-# yash: if-p.tst - nested if in else
 description: If statement nested inside else branch.
 input:
   script: |+

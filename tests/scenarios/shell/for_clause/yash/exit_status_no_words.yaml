@@ -1,4 +1,3 @@
-# yash: for-p.tst - exit status with no words
 description: For loop with empty word list has exit status 0.
 input:
   script: |+

@@ -1,4 +1,3 @@
-# yash: if-p.tst - execution path of if, false
 description: If block is skipped when condition is false.
 input:
   script: |+

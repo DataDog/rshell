@@ -1,0 +1,11 @@
+skip_assert_against_bash: true
+description: Parameter expansion alternative operation is intentionally blocked.
+input:
+  script: |+
+    a=foo
+    echo ${a+bar}
+expect:
+  stdout: ""
+  stderr_contains:
+    - "not supported"
+  exit_code: 2

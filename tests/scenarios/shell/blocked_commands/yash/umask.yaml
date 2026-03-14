@@ -1,0 +1,10 @@
+skip_assert_against_bash: true
+description: Umask builtin is intentionally blocked in the restricted shell.
+input:
+  script: |+
+    umask
+expect:
+  stdout: ""
+  stderr_contains:
+    - "not found"
+  exit_code: 127

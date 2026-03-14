@@ -1,4 +1,3 @@
-# yash: andor-p.tst - 2-command list, success && success
 description: Both commands in && list succeed and produce output.
 input:
   script: |+

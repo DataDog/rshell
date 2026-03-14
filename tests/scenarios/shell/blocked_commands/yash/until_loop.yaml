@@ -1,0 +1,10 @@
+skip_assert_against_bash: true
+description: Until loops are intentionally blocked in the restricted shell.
+input:
+  script: |+
+    until false; do echo x; break; done
+expect:
+  stdout: ""
+  stderr_contains:
+    - "until"
+  exit_code: 2

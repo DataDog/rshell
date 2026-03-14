@@ -1,0 +1,10 @@
+skip_assert_against_bash: true
+description: Positional parameters are intentionally blocked.
+input:
+  script: |+
+    echo $1
+expect:
+  stdout: ""
+  stderr_contains:
+    - "not supported"
+  exit_code: 2

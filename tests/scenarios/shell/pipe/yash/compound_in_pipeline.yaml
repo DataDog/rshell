@@ -1,4 +1,3 @@
-# yash: pipeline-p.tst - compound commands in pipeline
 description: Brace groups and if statements can appear in a pipeline.
 input:
   script: |+

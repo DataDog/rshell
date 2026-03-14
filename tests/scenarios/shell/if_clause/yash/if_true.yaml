@@ -1,4 +1,3 @@
-# yash: if-p.tst - execution path of if, true
 description: If block executes when condition is true.
 input:
   script: |+

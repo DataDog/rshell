@@ -1,0 +1,10 @@
+skip_assert_against_bash: true
+description: While loops are intentionally blocked in the restricted shell.
+input:
+  script: |+
+    while true; do echo x; break; done
+expect:
+  stdout: ""
+  stderr_contains:
+    - "while"
+  exit_code: 2

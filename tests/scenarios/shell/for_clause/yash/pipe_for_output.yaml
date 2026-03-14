@@ -1,4 +1,3 @@
-# yash: for-p.tst - redirection on for loop
 description: For loop output can be piped.
 input:
   script: |+

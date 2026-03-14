@@ -1,4 +1,3 @@
-# yash: pipeline-p.tst - 2-command pipeline
 description: Basic two-command pipeline.
 input:
   script: |+

@@ -1,4 +1,3 @@
-# yash: break-p.tst - breaking one for loop, nested in for loop
 description: Break exits only the inner for loop.
 input:
   script: |+

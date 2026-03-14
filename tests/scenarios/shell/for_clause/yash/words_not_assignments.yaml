@@ -1,4 +1,3 @@
-# yash: for-p.tst - words are not treated as assignments
 description: For loop words are not evaluated as variable assignments.
 input:
   script: |+

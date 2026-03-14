@@ -1,4 +1,3 @@
-# yash: for-p.tst - semicolon-separated commands
 description: Semicolon can separate the word list from do.
 input:
   script: |+

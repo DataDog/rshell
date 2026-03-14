@@ -1,0 +1,10 @@
+skip_assert_against_bash: true
+description: Background execution is intentionally blocked in the restricted shell.
+input:
+  script: |+
+    echo hello &
+expect:
+  stdout: ""
+  stderr_contains:
+    - "background"
+  exit_code: 2

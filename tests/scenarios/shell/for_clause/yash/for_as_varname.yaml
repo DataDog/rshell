@@ -1,4 +1,3 @@
-# yash: for-p.tst - for as variable name
 description: The word "for" can be used as the iteration variable name.
 input:
   script: |+

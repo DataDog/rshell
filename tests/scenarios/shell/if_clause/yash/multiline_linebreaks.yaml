@@ -1,4 +1,3 @@
-# yash: if-p.tst - linebreaks in if statement
 description: Linebreaks are allowed in various positions within if statement.
 input:
   script: |+

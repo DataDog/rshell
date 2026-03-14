@@ -1,0 +1,10 @@
+skip_assert_against_bash: true
+description: Tilde expansion is intentionally not supported in the restricted shell.
+input:
+  script: |+
+    echo ~
+expect:
+  stdout: ""
+  stderr_contains:
+    - "not supported"
+  exit_code: 2

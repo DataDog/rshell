@@ -1,0 +1,10 @@
+skip_assert_against_bash: true
+description: Function declarations are intentionally blocked in the restricted shell.
+input:
+  script: |+
+    f() { echo hello; }
+expect:
+  stdout: ""
+  stderr_contains:
+    - "function declarations are not supported"
+  exit_code: 2

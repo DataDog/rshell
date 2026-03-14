@@ -1,0 +1,10 @@
+skip_assert_against_bash: true
+description: Backtick command substitution is intentionally blocked in the restricted shell.
+input:
+  script: |+
+    echo `echo hello`
+expect:
+  stdout: ""
+  stderr_contains:
+    - "command substitution"
+  exit_code: 2

@@ -1,4 +1,3 @@
-# yash: if-p.tst - exit status of if, true condition, true body
 description: Exit status of if reflects the body command.
 input:
   script: |+

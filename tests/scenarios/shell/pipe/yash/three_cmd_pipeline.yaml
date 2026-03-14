@@ -1,4 +1,3 @@
-# yash: pipeline-p.tst - 3-command pipeline
 description: Three-command pipeline passes data through.
 input:
   script: |+

@@ -1,4 +1,3 @@
-# yash: break-p.tst - default operand is 1
 description: Break without operand defaults to break 1.
 input:
   script: |+

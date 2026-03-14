@@ -1,0 +1,10 @@
+skip_assert_against_bash: true
+description: Readonly builtin is intentionally blocked in the restricted shell.
+input:
+  script: |+
+    readonly FOO=bar
+expect:
+  stdout: ""
+  stderr_contains:
+    - "not supported"
+  exit_code: 2

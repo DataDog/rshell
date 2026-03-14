@@ -1,4 +1,3 @@
-# yash: if-p.tst - redirection on if
 description: If statement output can be piped.
 input:
   script: |+

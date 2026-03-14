@@ -1,0 +1,10 @@
+skip_assert_against_bash: true
+description: Getopts builtin is intentionally blocked in the restricted shell.
+input:
+  script: |+
+    getopts abc opt
+expect:
+  stdout: ""
+  stderr_contains:
+    - "not found"
+  exit_code: 127

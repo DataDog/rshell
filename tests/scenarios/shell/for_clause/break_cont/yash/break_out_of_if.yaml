@@ -1,4 +1,3 @@
-# yash: break-p.tst - breaking out of then
 description: Break inside an if-then exits the enclosing for loop.
 input:
   script: |+

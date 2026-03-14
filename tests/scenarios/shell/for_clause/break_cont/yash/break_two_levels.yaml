@@ -1,4 +1,3 @@
-# yash: break-p.tst - breaking two for loops, outermost
 description: Break 2 exits both nested for loops.
 input:
   script: |+

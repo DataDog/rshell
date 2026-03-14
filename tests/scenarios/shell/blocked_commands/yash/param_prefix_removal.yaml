@@ -1,0 +1,11 @@
+skip_assert_against_bash: true
+description: Prefix removal parameter expansion is intentionally blocked.
+input:
+  script: |+
+    a=foobar
+    echo ${a#foo}
+expect:
+  stdout: ""
+  stderr_contains:
+    - "not supported"
+  exit_code: 2
