@@ -78,10 +78,16 @@ func FuzzWcDifferentialLines(f *testing.F) {
 			t.Fatal(err)
 		}
 
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		defer cancel()
 
 		rshellOut, rshellErr, rshellCode := cmdRunCtx(ctx, t, "wc -l input.txt", dir)
+
+		// If the fuzz engine cancelled us (fuzztime expired), bail out
+		// without comparing — partial output would cause false failures.
+		if t.Context().Err() != nil {
+			return
+		}
 
 		if isSandboxError(rshellErr) {
 			t.Skip("skipping: sandbox restriction")
@@ -126,10 +132,14 @@ func FuzzWcDifferentialWords(f *testing.F) {
 			t.Fatal(err)
 		}
 
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		defer cancel()
 
 		rshellOut, rshellErr, rshellCode := cmdRunCtx(ctx, t, "wc -w input.txt", dir)
+
+		if t.Context().Err() != nil {
+			return
+		}
 
 		if isSandboxError(rshellErr) {
 			t.Skip("skipping: sandbox restriction")
@@ -173,10 +183,14 @@ func FuzzWcDifferentialBytes(f *testing.F) {
 			t.Fatal(err)
 		}
 
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		defer cancel()
 
 		rshellOut, rshellErr, rshellCode := cmdRunCtx(ctx, t, "wc -c input.txt", dir)
+
+		if t.Context().Err() != nil {
+			return
+		}
 
 		if isSandboxError(rshellErr) {
 			t.Skip("skipping: sandbox restriction")

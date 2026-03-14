@@ -67,7 +67,7 @@ func FuzzCat(f *testing.F) {
 			t.Fatal(err)
 		}
 
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		defer cancel()
 
 		stdout, _, code := cmdRunCtx(ctx, t, "cat input.txt", dir)
@@ -113,7 +113,7 @@ func FuzzCatNumberLines(f *testing.F) {
 			t.Fatal(err)
 		}
 
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		defer cancel()
 
 		_, _, code := cmdRunCtx(ctx, t, "cat -n input.txt", dir)
@@ -170,7 +170,7 @@ func FuzzCatDisplayFlags(f *testing.F) {
 			flags += " -T"
 		}
 
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		defer cancel()
 
 		_, _, code := cmdRunCtx(ctx, t, "cat"+flags+" input.bin", dir)
@@ -203,7 +203,7 @@ func FuzzCatStdin(f *testing.F) {
 			t.Fatal(err)
 		}
 
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		defer cancel()
 
 		stdout, _, code := cmdRunCtx(ctx, t, "cat < stdin.txt", dir)

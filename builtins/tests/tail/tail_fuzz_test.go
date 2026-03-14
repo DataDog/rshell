@@ -66,7 +66,7 @@ func FuzzTailLines(f *testing.F) {
 			t.Fatal(err)
 		}
 
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		defer cancel()
 
 		stdout, _, code := cmdRunCtx(ctx, t, fmt.Sprintf("tail -n %d input.txt", n), dir)
@@ -123,7 +123,7 @@ func FuzzTailBytes(f *testing.F) {
 			t.Fatal(err)
 		}
 
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		defer cancel()
 
 		stdout, _, code := cmdRunCtx(ctx, t, fmt.Sprintf("tail -c %d input.txt", n), dir)
@@ -170,7 +170,7 @@ func FuzzTailStdin(f *testing.F) {
 			t.Fatal(err)
 		}
 
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		defer cancel()
 
 		_, _, code := cmdRunCtx(ctx, t, fmt.Sprintf("tail -n %d < stdin.txt", n), dir)
@@ -217,7 +217,7 @@ func FuzzTailLinesOffset(f *testing.F) {
 			t.Fatal(err)
 		}
 
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		defer cancel()
 
 		_, _, code := cmdRunCtx(ctx, t, fmt.Sprintf("tail -n +%d input.txt", n), dir)
@@ -261,7 +261,7 @@ func FuzzTailBytesOffset(f *testing.F) {
 			t.Fatal(err)
 		}
 
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		defer cancel()
 
 		_, _, code := cmdRunCtx(ctx, t, fmt.Sprintf("tail -c +%d input.txt", n), dir)
