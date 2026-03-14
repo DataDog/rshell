@@ -1,0 +1,10 @@
+skip_assert_against_bash: true
+description: Disallowed command in right side of pipe is blocked
+input:
+  allowed_commands: ["echo"]
+  script: |+
+    echo hello | cat
+expect:
+  stdout: ""
+  stderr: "cat: command not allowed\n"
+  exit_code: 1
