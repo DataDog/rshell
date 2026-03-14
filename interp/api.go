@@ -401,10 +401,9 @@ func AllowedCommands(cmds []string) RunnerOption {
 	}
 }
 
-// AllowAllCommands permits all commands (builtins and external) to execute,
-// overriding the default-deny behavior. It populates the allowed commands
-// map with all registered builtin names.
-func AllowAllCommands() RunnerOption {
+// AllowAllBuiltinsCommands permits all registered builtin commands to execute.
+// It populates the allowed commands map with all registered builtin names.
+func AllowAllBuiltinsCommands() RunnerOption {
 	return func(r *Runner) error {
 		names := builtins.Names()
 		r.allowedCommands = make(map[string]struct{}, len(names))

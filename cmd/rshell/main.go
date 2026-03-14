@@ -125,7 +125,7 @@ func execute(ctx context.Context, script, name string, allowedPaths, allowedComm
 		opts = append(opts, interp.AllowedPaths(allowedPaths))
 	}
 	if len(allowedCommands) == 1 && allowedCommands[0] == "all" {
-		opts = append(opts, interp.AllowAllCommands())
+		opts = append(opts, interp.AllowAllBuiltinsCommands())
 	} else if len(allowedCommands) > 0 {
 		opts = append(opts, interp.AllowedCommands(allowedCommands))
 	}
