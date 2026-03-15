@@ -70,6 +70,13 @@ func FuzzCmdSubstNested(f *testing.F) {
 			if c == '\'' || c == '\x00' || c == '`' || c == '$' || c == '\\' || c == ')' || c == '(' {
 				return
 			}
+			// Glob metacharacters trigger pathname expansion in the
+			// unquoted $(…) result, which can hit an upstream UTF-8
+			// bug in the pattern library. Filter them out since this
+			// fuzz target tests command substitution, not globbing.
+			if c == '*' || c == '?' || c == '[' {
+				return
+			}
 			if c < 0x20 || c == 0x7f || (c >= 0x80 && c < 0xa0) {
 				return
 			}
