@@ -1,4 +1,3 @@
-# Derived from GNU coreutils wc.pl test a2
 description: wc -w on empty file outputs 0.
 setup:
   files:

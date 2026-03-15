@@ -1,0 +1,12 @@
+# skip: while/until loops are intentionally blocked in the restricted shell
+skip_assert_against_bash: true
+description: While loop with false condition (zero iterations) is blocked.
+input:
+  script: |+
+    while false; do
+      echo should not print
+    done
+expect:
+  stdout: ""
+  stderr: "while/until loops are not supported\n"
+  exit_code: 2

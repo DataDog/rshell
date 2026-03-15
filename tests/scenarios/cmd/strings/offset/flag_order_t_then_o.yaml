@@ -1,5 +1,4 @@
 description: strings -t d -o uses last flag wins; -o appears last so output is octal.
-skip_assert_against_bash: true
 setup:
   files:
     - path: data.bin

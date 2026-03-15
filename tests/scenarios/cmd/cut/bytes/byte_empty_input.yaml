@@ -1,4 +1,3 @@
-# Derived from GNU coreutils cut.pl test w
 description: Cut -b1 on empty input produces no output.
 setup:
   files:

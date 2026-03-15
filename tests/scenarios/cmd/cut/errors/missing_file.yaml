@@ -1,4 +1,3 @@
-# Derived from GNU coreutils cut error handling
 description: Cut reports error when input file does not exist.
 input:
   allowed_paths: ["$DIR"]

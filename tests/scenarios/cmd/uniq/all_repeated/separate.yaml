@@ -1,4 +1,3 @@
-# Derived from GNU coreutils uniq.pl test 114
 description: uniq --all-repeated=separate separates groups with blank lines.
 setup:
   files:

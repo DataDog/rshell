@@ -1,4 +1,3 @@
-# Derived from GNU coreutils wc.pl test a3
 description: wc -c on single byte input outputs 1.
 setup:
   files:

@@ -1,4 +1,3 @@
-# Derived from uutils test_cat.rs::test_stdin_show_tabs
 description: cat -T displays TAB characters as ^I.
 setup:
   files:

@@ -1,5 +1,4 @@
 description: strings -n 0 is invalid and prints an error message, exits 1.
-skip_assert_against_bash: true
 setup:
   files:
     - path: data.bin

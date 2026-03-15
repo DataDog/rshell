@@ -29,7 +29,8 @@ func (r *Runner) fillExpandConfig(ctx context.Context) {
 
 func (r *Runner) updateExpandOpts() {
 	r.ecfg.ReadDir2 = func(s string) ([]fs.DirEntry, error) {
-		return r.sandbox.readDirForGlob(r.handlerCtx(r.ectx, todoPos), s)
+		ctx := r.handlerCtx(r.ectx, todoPos)
+		return r.sandbox.ReadDirForGlob(s, HandlerCtx(ctx).Dir)
 	}
 }
 
@@ -41,6 +42,9 @@ func (r *Runner) expandErr(err error) {
 	fmt.Fprintln(r.stderr, errMsg)
 	switch {
 	case errors.As(err, &expand.UnsetParameterError{}):
+	case errors.As(err, &expand.UnexpectedCommandError{}):
+		// Defense in depth: command substitution is blocked at AST validation,
+		// but if it leaks through, treat it as fatal.
 	case errMsg == "invalid indirect expansion":
 		// TODO: These errors are treated as fatal by bash.
 		// Make the error type reflect that.
@@ -48,7 +52,11 @@ func (r *Runner) expandErr(err error) {
 		// TODO: This "has suffix" is a temporary measure until the expand
 		// package supports all syntax nodes like extended globbing.
 	default:
-		return // other cases do not exit
+		// Non-fatal expansion errors (e.g. assignment to a readonly variable):
+		// set non-zero exit status so the failure is visible, but do not exit
+		// the script — bash continues execution in this case.
+		r.exit.code = 1
+		return
 	}
 	r.exit.code = 1
 	r.exit.exiting = true
@@ -84,8 +92,10 @@ func (e expandEnv) Get(name string) expand.Variable {
 }
 
 func (e expandEnv) Set(name string, vr expand.Variable) error {
-	e.r.setVar(name, vr)
-	return nil // TODO: return any errors
+	if err := e.r.setVarErr(name, vr); err != nil {
+		return fmt.Errorf("%s: %w", name, err)
+	}
+	return nil
 }
 
 func (e expandEnv) Each(fn func(name string, vr expand.Variable) bool) {

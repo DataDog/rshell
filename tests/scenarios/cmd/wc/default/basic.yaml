@@ -1,4 +1,3 @@
-# Derived from GNU coreutils wc.pl test b1
 description: wc default counts lines, words, bytes.
 setup:
   files:

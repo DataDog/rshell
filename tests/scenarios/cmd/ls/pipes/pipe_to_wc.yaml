@@ -1,5 +1,4 @@
 description: ls piped to wc -l counts the number of entries.
-skip_assert_against_bash: true
 setup:
   files:
     - path: a.txt
@@ -16,7 +15,6 @@ input:
   script: |+
     ls | wc -l
 expect:
-  stdout: |2+
-          3
+  stdout: "3\n"
   stderr: ""
   exit_code: 0

@@ -1,4 +1,3 @@
-# Derived from standard POSIX -- convention
 description: wc accepts -- to end flag parsing.
 setup:
   files:

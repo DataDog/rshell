@@ -1,4 +1,3 @@
-# Derived from GNU coreutils uniq.pl test 128
 description: uniq --group=prepend adds blank line before first group too.
 setup:
   files:

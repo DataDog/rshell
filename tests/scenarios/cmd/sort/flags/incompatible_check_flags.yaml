@@ -1,0 +1,14 @@
+description: "sort rejects conflicting -c and -C check flags."
+setup:
+  files:
+    - path: data.txt
+      content: "a\n"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    sort -c -C data.txt
+skip_assert_against_bash: true
+expect:
+  stdout: ""
+  stderr: "sort: options '-cC' are incompatible\n"
+  exit_code: 2

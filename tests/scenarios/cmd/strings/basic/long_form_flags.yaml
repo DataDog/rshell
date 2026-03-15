@@ -1,5 +1,4 @@
 description: strings --bytes and --output-separator long-form flags work correctly.
-skip_assert_against_bash: true
 setup:
   files:
     - path: data.bin

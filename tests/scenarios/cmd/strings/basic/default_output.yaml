@@ -1,5 +1,4 @@
 description: strings outputs printable sequences of 4+ chars; newlines act as separators.
-skip_assert_against_bash: true
 setup:
   files:
     - path: data.bin

@@ -1,4 +1,3 @@
-# Derived from standard POSIX head behavior in pipelines
 description: head works correctly in a pipeline receiving input from cat.
 setup:
   files:

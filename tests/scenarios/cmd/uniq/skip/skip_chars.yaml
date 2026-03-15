@@ -1,4 +1,3 @@
-# Derived from GNU coreutils uniq.pl test 42
 description: uniq -s 1 skips first character when comparing.
 setup:
   files:

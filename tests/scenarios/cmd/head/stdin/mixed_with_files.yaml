@@ -1,4 +1,3 @@
-# Derived from uutils test_head.rs::test_multiple_files_with_stdin
 description: Stdin interleaved with file args shows a standard input header alongside file headers.
 setup:
   files:

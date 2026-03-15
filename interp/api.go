@@ -18,9 +18,12 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"runtime/debug"
 
 	"mvdan.cc/sh/v3/expand"
 	"mvdan.cc/sh/v3/syntax"
+
+	"github.com/DataDog/rshell/allowedpaths"
 )
 
 // runnerConfig holds the immutable configuration of a [Runner].
@@ -43,7 +46,7 @@ type runnerConfig struct {
 
 	// sandbox restricts file/directory access to allowed directories.
 	// nil (default) blocks all file access; populate via AllowedPaths option.
-	sandbox *pathSandbox
+	sandbox *allowedpaths.Sandbox
 
 	// usedNew is set by New() and checked in Reset() to ensure a Runner
 	// was properly constructed rather than zero-initialized.
@@ -288,8 +291,12 @@ func (r *Runner) Reset() {
 		// eagerly during construction, so there is no filesystem race here.
 		// Default: block all file access (nil sandbox).
 		if r.openHandler == nil {
-			r.openHandler = r.sandbox.open
-			r.readDirHandler = r.sandbox.readDir
+			r.openHandler = func(ctx context.Context, path string, flag int, perm os.FileMode) (io.ReadWriteCloser, error) {
+				return r.sandbox.Open(path, HandlerCtx(ctx).Dir, flag, perm)
+			}
+			r.readDirHandler = func(ctx context.Context, path string) ([]os.DirEntry, error) {
+				return r.sandbox.ReadDir(path, HandlerCtx(ctx).Dir)
+			}
 			r.execHandler = noExecHandler()
 		}
 		if r.execHandler == nil {
@@ -306,6 +313,12 @@ func (r *Runner) Reset() {
 	}
 	r.writeEnv = &overlayEnviron{parent: r.Env}
 	r.setVarString("PWD", r.Dir)
+	// IFS is intentionally mutable: scripts may set it to customise field splitting,
+	// which is standard POSIX behaviour. Callers that provide a custom ExecHandler
+	// should be aware that a script can set IFS to a non-whitespace value (e.g.
+	// IFS=/) to manipulate how unquoted variable expansions are split before being
+	// passed to executed commands (argument smuggling). The default noExecHandler
+	// blocks all external execution, limiting the practical impact of this vector.
 	r.setVarString("IFS", " \t\n")
 	r.setVarString("OPTIND", "1")
 
@@ -327,7 +340,18 @@ func (s ExitStatus) Error() string { return fmt.Sprintf("exit status %d", s) }
 func (r *Runner) Run(ctx context.Context, node syntax.Node) (retErr error) {
 	defer func() {
 		if rec := recover(); rec != nil {
-			retErr = fmt.Errorf("internal error: %v", rec)
+			var panicOut io.Writer
+			if r != nil {
+				panicOut = r.stderr
+			}
+			if panicOut == nil {
+				panicOut = os.Stderr
+			}
+			func() {
+				defer func() { recover() }()
+				fmt.Fprintf(panicOut, "rshell: internal panic: %v\n%s\n", rec, debug.Stack())
+			}()
+			retErr = fmt.Errorf("internal error")
 		}
 	}()
 	if !r.didReset {
@@ -368,6 +392,23 @@ func (r *Runner) Run(ctx context.Context, node syntax.Node) (retErr error) {
 // opened by AllowedPaths. It is safe to call Close multiple times.
 func (r *Runner) Close() error {
 	return r.sandbox.Close()
+}
+
+// AllowedPaths restricts file and directory access to the specified directories.
+// Paths must be absolute directories that exist. When set, only files within
+// these directories can be opened, read, or executed.
+//
+// When not set (default), all file access is blocked.
+// An empty slice also blocks all file access.
+func AllowedPaths(paths []string) RunnerOption {
+	return func(r *Runner) error {
+		sb, err := allowedpaths.New(paths)
+		if err != nil {
+			return err
+		}
+		r.sandbox = sb
+		return nil
+	}
 }
 
 // subshell creates a child Runner that inherits the parent's state.

@@ -1,4 +1,3 @@
-# Derived from GNU coreutils uniq.pl test 101
 description: uniq -c prefixes lines with occurrence count.
 setup:
   files:

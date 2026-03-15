@@ -1,5 +1,4 @@
 description: strings -o -t d uses last flag wins; -t d appears last so output is decimal.
-skip_assert_against_bash: true
 setup:
   files:
     - path: data.bin

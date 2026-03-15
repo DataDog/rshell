@@ -1,4 +1,3 @@
-# Derived from GNU coreutils test.pl — negation with !
 description: "test negation operator !"
 input:
   script: |+

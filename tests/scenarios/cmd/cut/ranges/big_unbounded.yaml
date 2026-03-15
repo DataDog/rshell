@@ -1,4 +1,3 @@
-# Derived from GNU coreutils cut.pl big-unbounded-b test
 description: Cut handles very large start position in unbounded byte range on empty input.
 setup:
   files:

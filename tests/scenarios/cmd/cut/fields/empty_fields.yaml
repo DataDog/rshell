@@ -1,4 +1,3 @@
-# Derived from GNU coreutils cut.pl test i
 description: Cut handles lines with consecutive delimiters producing empty fields.
 setup:
   files:

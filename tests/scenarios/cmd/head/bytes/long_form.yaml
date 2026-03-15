@@ -1,4 +1,3 @@
-# Derived from GNU coreutils head.pl tests
 description: head --bytes=N long form is equivalent to -c N.
 setup:
   files:

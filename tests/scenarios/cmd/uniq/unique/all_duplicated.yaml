@@ -1,4 +1,3 @@
-# Derived from GNU coreutils uniq.pl test 9
 description: uniq -u produces no output when all lines are duplicated.
 setup:
   files:

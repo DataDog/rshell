@@ -1,4 +1,3 @@
-# Derived from standard POSIX wc behavior
 description: wc reads stdin implicitly when no files are given.
 setup:
   files:

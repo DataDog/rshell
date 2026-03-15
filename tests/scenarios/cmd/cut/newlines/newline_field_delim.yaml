@@ -1,4 +1,3 @@
-# Derived from GNU coreutils cut.pl newline-3 test
 description: Cut extracts first field from each line of a multiline delimited file.
 setup:
   files:

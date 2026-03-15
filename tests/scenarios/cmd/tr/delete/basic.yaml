@@ -1,4 +1,3 @@
-# Derived from uutils test_delete
 description: tr -d deletes characters matching set1.
 input:
   script: |+
