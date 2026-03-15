@@ -85,6 +85,11 @@ func (r *Runner) cmdSubst(w io.Writer, cs *syntax.CmdSubst) error {
 	r.lastExpandExit = r2.exit
 	r.lastExit = r.lastExpandExit
 	if r2.exit.fatalExit {
+		// Propagate the fatal state to the parent runner so that
+		// callers (e.g. for loops iterating over $(…)) cannot
+		// silently continue after a context cancellation or other
+		// fatal error in the subshell.
+		r.exit.fatal(r2.exit.err)
 		return r2.exit.err
 	}
 	_, err := w.Write(buf.Bytes())
