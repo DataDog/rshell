@@ -1,4 +1,4 @@
-description: Command substitution with $() works.
+description: Basic command substitution captures stdout.
 input:
   script: |+
     echo $(echo hello)

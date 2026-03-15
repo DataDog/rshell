@@ -1,7 +1,7 @@
-description: Backtick command substitution works.
+description: Basic subshell executes commands.
 input:
   script: |+
-    echo `echo hello`
+    (echo hello)
 expect:
   stdout: |+
     hello

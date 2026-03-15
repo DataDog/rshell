@@ -1,4 +1,4 @@
-description: Subshell grouping executes commands.
+description: Subshell runs multiple commands.
 input:
   script: |+
     (echo hello; echo world)
