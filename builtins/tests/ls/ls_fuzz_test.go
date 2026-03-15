@@ -113,20 +113,21 @@ func FuzzLsFlags(f *testing.F) {
 // Edge cases: maxRecursionDepth=256 (depth 255 is last valid, 256 should error),
 // empty subdirectories, hidden subdirectories.
 func FuzzLsRecursive(f *testing.F) {
+	f.Add(int64(0))
 	f.Add(int64(1))
 	f.Add(int64(3))
 	f.Add(int64(5))
-	// Near recursion depth limit (maxRecursionDepth=256)
-	f.Add(int64(254))
-	f.Add(int64(255))
-	f.Add(int64(256))
-	f.Add(int64(257))
-	// Zero and negative handled by guard
-	f.Add(int64(0))
+	f.Add(int64(10))
+	// Note: maxRecursionDepth=256 boundary is tested in ls_pentest_test.go.
+	// Fuzz seeds above 10 are excluded because nested "sub" directories
+	// exceed OS max path length well before reaching depth 256.
 
 	tmpRoot := f.TempDir()
 
 	f.Fuzz(func(t *testing.T, depth int64) {
+		// Cap at 10 to avoid hitting OS max path length (creating 256+ nested
+		// "sub" directories exceeds filesystem limits on most platforms).
+		// The maxRecursionDepth=256 limit is tested in ls_pentest_test.go instead.
 		if depth < 0 || depth > 10 {
 			return
 		}

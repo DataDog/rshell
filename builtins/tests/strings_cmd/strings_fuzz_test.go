@@ -195,7 +195,8 @@ func FuzzStringsRadix(f *testing.F) {
 	var counter atomic.Int64
 
 	f.Fuzz(func(t *testing.T, input []byte, radix string) {
-		if len(input) > 1<<20 {
+		// Allow up to 12 MiB so the large-offset corpus seeds (8-10 MiB) execute.
+		if len(input) > 12<<20 {
 			return
 		}
 		if radix != "o" && radix != "d" && radix != "x" {
