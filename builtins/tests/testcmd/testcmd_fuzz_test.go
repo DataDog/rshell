@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
 	"time"
 	"unicode/utf8"
@@ -152,7 +153,8 @@ func FuzzTestFileOps(f *testing.F) {
 	// Regular file test on non-existent (should be false)
 	f.Add("-f", false)
 
-	dir := f.TempDir()
+	baseDir := f.TempDir()
+	var counter atomic.Int64
 
 	f.Fuzz(func(t *testing.T, op string, createFile bool) {
 		switch op {
@@ -160,14 +162,23 @@ func FuzzTestFileOps(f *testing.F) {
 		default:
 			return
 		}
+		// Each iteration gets its own subdirectory to avoid races between
+		// parallel fuzz workers operating on the same file. We use a manual
+		// counter instead of t.TempDir() to avoid the per-iteration cleanup
+		// overhead that causes "context deadline exceeded" on CI.
+		n := counter.Add(1)
+		dir := filepath.Join(baseDir, fmt.Sprintf("iter%d", n))
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			t.Fatal(err)
+		}
+		defer os.RemoveAll(dir)
+
 		target := "testfile.txt"
 		targetPath := filepath.Join(dir, target)
 		if createFile {
 			if err := os.WriteFile(targetPath, []byte("content"), 0644); err != nil {
 				t.Fatal(err)
 			}
-		} else {
-			os.Remove(targetPath) // ensure clean state from prior iterations
 		}
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
