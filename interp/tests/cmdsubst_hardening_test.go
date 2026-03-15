@@ -32,12 +32,14 @@ func TestCmdSubstOutputCapped(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	// Using $(<file) shortcut with a large file
-	stdout, _, code := cmdSubstRunCtx(ctx, t, `x=$(<big.txt); printf "%d" ${#x}`, dir)
-	// Note: ${#x} is not supported, so let's use a different approach
-	_ = stdout
-	_ = code
-	// Just verify it doesn't hang or OOM — the output is truncated internally
+	// Using $(<file) shortcut with a large file — verify truncation via wc -c.
+	// The substitution captures at most 1 MiB (1048576 bytes). Trailing newline
+	// stripping does not apply here because the content has no trailing newlines.
+	// echo adds a newline, so wc -c sees 1048576 + 1 = 1048577.
+	stdout, _, code := cmdSubstRunCtx(ctx, t, `x=$(<big.txt); echo "$x" | wc -c`, dir)
+	assert.Equal(t, 0, code)
+	// wc -c output may have leading whitespace on some platforms
+	assert.Equal(t, "1048577", strings.TrimSpace(stdout))
 }
 
 func TestCmdSubstOutputCappedEcho(t *testing.T) {

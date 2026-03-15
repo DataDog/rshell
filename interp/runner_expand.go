@@ -54,11 +54,13 @@ func (r *Runner) cmdSubst(w io.Writer, cs *syntax.CmdSubst) error {
 			// r.open already printed the error; set exit status and
 			// return nil so the expand layer does not double-report.
 			r.lastExpandExit = exitStatus{code: 1}
+			r.lastExit = r.lastExpandExit
 			return nil
 		}
 		defer f.Close()
 		_, err = io.Copy(w, io.LimitReader(f, maxCmdSubstOutput))
 		r.lastExpandExit = exitStatus{code: 0}
+		r.lastExit = r.lastExpandExit
 		return err
 	}
 
@@ -69,6 +71,7 @@ func (r *Runner) cmdSubst(w io.Writer, cs *syntax.CmdSubst) error {
 	r2.stmts(r.ectx, cs.Stmts)
 	r2.exit.exiting = false
 	r.lastExpandExit = r2.exit
+	r.lastExit = r.lastExpandExit
 	if r2.exit.fatalExit {
 		return r2.exit.err
 	}
