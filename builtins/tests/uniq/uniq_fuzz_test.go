@@ -19,12 +19,11 @@ import (
 )
 
 // fuzzRunCtx runs a script without AllowedPaths to avoid coverage-
-// instrumentation overhead on the os.Root sandbox code paths. This overhead
-// causes Go fuzz workers to stall, leading to "context deadline exceeded"
-// failures when the fuzz coordinator tries to shut down after fuzztime.
+// instrumentation overhead on the os.Root sandbox code paths.
+// Delegates to the shared testutil.FuzzRunScriptCtx helper.
 func fuzzRunCtx(ctx context.Context, t *testing.T, script, dir string) (string, string, int) {
 	t.Helper()
-	return testutil.RunScriptCtx(ctx, t, script, dir)
+	return testutil.FuzzRunScriptCtx(ctx, t, script, dir)
 }
 
 // FuzzUniq fuzzes uniq with arbitrary file content.

@@ -14,6 +14,7 @@ import (
 
 	"mvdan.cc/sh/v3/syntax"
 
+	"github.com/DataDog/rshell/builtins/testutil"
 	"github.com/DataDog/rshell/interp"
 )
 
@@ -56,7 +57,8 @@ func cmdRunCtx(ctx context.Context, t *testing.T, script, dir string) (string, s
 // instrumentation overhead on the os.Root sandbox code paths. This overhead
 // causes Go fuzz workers to stall, leading to "context deadline exceeded"
 // failures when the fuzz coordinator tries to shut down after fuzztime.
+// Delegates to the shared testutil.FuzzRunScriptCtx helper.
 func fuzzRunCtx(ctx context.Context, t *testing.T, script, dir string) (string, string, int) {
 	t.Helper()
-	return runScriptCtx(ctx, t, script, dir)
+	return testutil.FuzzRunScriptCtx(ctx, t, script, dir)
 }

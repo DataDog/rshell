@@ -118,7 +118,7 @@ func FuzzLsRecursive(f *testing.F) {
 	// exceed OS max path length well before reaching depth 256.
 
 	tmpRoot := f.TempDir()
-	var counter2 atomic.Int64
+	var counter atomic.Int64
 
 	f.Fuzz(func(t *testing.T, depth int64) {
 		// Cap at 10 to avoid hitting OS max path length (creating 256+ nested
@@ -128,7 +128,7 @@ func FuzzLsRecursive(f *testing.F) {
 			return
 		}
 
-		dir, cleanup := testutil.FuzzIterDir(t, tmpRoot, &counter2)
+		dir, cleanup := testutil.FuzzIterDir(t, tmpRoot, &counter)
 		defer cleanup()
 		current := dir
 		for i := int64(0); i < depth; i++ {
@@ -177,7 +177,7 @@ func FuzzLsHumanReadable(f *testing.F) {
 	f.Add(int64(512))
 
 	tmpRoot := f.TempDir()
-	var counter3 atomic.Int64
+	var counter atomic.Int64
 
 	f.Fuzz(func(t *testing.T, fileSize int64) {
 		// Clamp to 1 MiB to avoid slow file creation.
@@ -185,7 +185,7 @@ func FuzzLsHumanReadable(f *testing.F) {
 			return
 		}
 
-		dir, cleanup := testutil.FuzzIterDir(t, tmpRoot, &counter3)
+		dir, cleanup := testutil.FuzzIterDir(t, tmpRoot, &counter)
 		defer cleanup()
 		// Create a file with the specified size using Truncate.
 		fpath := filepath.Join(dir, "testfile.bin")
@@ -225,10 +225,10 @@ func FuzzLsMultipleFiles(f *testing.F) {
 	f.Add(true, false, true, false) // -lt
 
 	tmpRoot := f.TempDir()
-	var counter4 atomic.Int64
+	var counter atomic.Int64
 
 	f.Fuzz(func(t *testing.T, flagL, flagA, flagT, flagS bool) {
-		dir, cleanup := testutil.FuzzIterDir(t, tmpRoot, &counter4)
+		dir, cleanup := testutil.FuzzIterDir(t, tmpRoot, &counter)
 		defer cleanup()
 
 		// Create a mix of files and a subdirectory.
