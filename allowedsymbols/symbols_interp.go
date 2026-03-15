@@ -50,7 +50,6 @@ var interpAllowedSymbols = []string{
 	"strings.ContainsRune", // checks if a rune is in a string; pure function, no I/O.
 	"strings.HasPrefix",    // pure function for prefix matching; no I/O.
 	"strings.HasSuffix",    // pure function for suffix matching; no I/O.
-	"strings.NewReader",    // wraps a string as an io.Reader; pure in-memory, no I/O.
 	"strings.Split",        // splits a string by separator; pure function, no I/O.
 	"strings.ToUpper",      // converts string to uppercase; pure function, no I/O.
 	"strings.TrimLeft",     // trims leading characters; pure function, no I/O.
