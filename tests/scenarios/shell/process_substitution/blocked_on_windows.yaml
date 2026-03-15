@@ -1,4 +1,4 @@
-description: Process substitution provides command output as a file path.
+description: Process substitution is blocked on Windows (no /dev/fd support).
 skip_assert_against_bash: true
 input:
   script: |+
