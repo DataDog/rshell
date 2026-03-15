@@ -58,6 +58,7 @@ func (r *Runner) cmdSubst(w io.Writer, cs *syntax.CmdSubst) error {
 		}
 		defer f.Close()
 		_, err = io.Copy(w, io.LimitReader(f, maxCmdSubstOutput))
+		r.lastExpandExit = exitStatus{code: 0}
 		return err
 	}
 
@@ -105,7 +106,9 @@ func (lw *limitWriter) Write(p []byte) (int, error) {
 	}
 	remaining := lw.limit - lw.n
 	if int64(len(p)) > remaining {
-		p = p[:remaining]
+		lw.w.Write(p[:remaining])
+		lw.n = lw.limit
+		return len(p), nil // report all bytes consumed to avoid short-write errors
 	}
 	n, err := lw.w.Write(p)
 	lw.n += int64(n)
