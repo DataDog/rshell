@@ -7,6 +7,7 @@ package echo_test
 
 import (
 	"context"
+	"sync/atomic"
 	"testing"
 	"time"
 	"unicode/utf8"
@@ -35,7 +36,8 @@ func FuzzEcho(f *testing.F) {
 	// Long argument
 	f.Add("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
 
-	dir := f.TempDir()
+	baseDir := f.TempDir()
+	var counter atomic.Int64
 
 	f.Fuzz(func(t *testing.T, arg string) {
 		if len(arg) > 1000 {
@@ -53,6 +55,9 @@ func FuzzEcho(f *testing.F) {
 				return
 			}
 		}
+
+		dir, cleanup := testutil.FuzzIterDir(t, baseDir, &counter)
+		defer cleanup()
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
@@ -103,7 +108,8 @@ func FuzzEchoEscapes(f *testing.F) {
 	// Long sequence to stress output buffering
 	f.Add("\\n\\n\\n\\n\\n\\n\\n\\n\\n\\n")
 
-	dir := f.TempDir()
+	baseDir2 := f.TempDir()
+	var counter2 atomic.Int64
 
 	f.Fuzz(func(t *testing.T, arg string) {
 		if len(arg) > 1000 {
@@ -121,6 +127,9 @@ func FuzzEchoEscapes(f *testing.F) {
 				return
 			}
 		}
+
+		dir, cleanup := testutil.FuzzIterDir(t, baseDir2, &counter2)
+		defer cleanup()
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
@@ -141,7 +150,8 @@ func FuzzEchoFlagInteraction(f *testing.F) {
 	f.Add("hi\\n", false, true, true)     // -e -E: -E wins (last)
 	f.Add("hi\\n", true, true, false)     // -n -e
 
-	dir := f.TempDir()
+	baseDir3 := f.TempDir()
+	var counter3 atomic.Int64
 
 	f.Fuzz(func(t *testing.T, arg string, flagN, flagE, flagBigE bool) {
 		if len(arg) > 500 {
@@ -173,6 +183,9 @@ func FuzzEchoFlagInteraction(f *testing.F) {
 		if flags == "" {
 			return
 		}
+
+		dir, cleanup := testutil.FuzzIterDir(t, baseDir3, &counter3)
+		defer cleanup()
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()

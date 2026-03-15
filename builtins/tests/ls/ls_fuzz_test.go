@@ -9,6 +9,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
 	"time"
 	"unicode/utf8"
@@ -49,6 +50,7 @@ func FuzzLsFlags(f *testing.F) {
 	f.Add("Makefile", false, false, false, false, false)
 
 	tmpRoot := f.TempDir()
+	var counter atomic.Int64
 
 	f.Fuzz(func(t *testing.T, filename string, flagL, flagA, flagR, flagS, flagF bool) {
 		if len(filename) == 0 || len(filename) > 100 {
@@ -68,15 +70,8 @@ func FuzzLsFlags(f *testing.F) {
 			return
 		}
 
-		dir, err := os.MkdirTemp(tmpRoot, "iter")
-		if err != nil {
-			t.Fatal(err)
-		}
-		defer func() {
-			if err := os.RemoveAll(dir); err != nil && !os.IsNotExist(err) {
-				t.Logf("cleanup %s: %v", dir, err)
-			}
-		}()
+		dir, cleanup := testutil.FuzzIterDir(t, tmpRoot, &counter)
+		defer cleanup()
 		if err := os.WriteFile(filepath.Join(dir, filename), []byte("content"), 0644); err != nil {
 			// Some filenames may be invalid on the OS.
 			return
@@ -123,6 +118,7 @@ func FuzzLsRecursive(f *testing.F) {
 	// exceed OS max path length well before reaching depth 256.
 
 	tmpRoot := f.TempDir()
+	var counter2 atomic.Int64
 
 	f.Fuzz(func(t *testing.T, depth int64) {
 		// Cap at 10 to avoid hitting OS max path length (creating 256+ nested
@@ -132,15 +128,8 @@ func FuzzLsRecursive(f *testing.F) {
 			return
 		}
 
-		dir, err := os.MkdirTemp(tmpRoot, "iter")
-		if err != nil {
-			t.Fatal(err)
-		}
-		defer func() {
-			if err := os.RemoveAll(dir); err != nil && !os.IsNotExist(err) {
-				t.Logf("cleanup %s: %v", dir, err)
-			}
-		}()
+		dir, cleanup := testutil.FuzzIterDir(t, tmpRoot, &counter2)
+		defer cleanup()
 		current := dir
 		for i := int64(0); i < depth; i++ {
 			subdir := filepath.Join(current, "sub")
@@ -188,6 +177,7 @@ func FuzzLsHumanReadable(f *testing.F) {
 	f.Add(int64(512))
 
 	tmpRoot := f.TempDir()
+	var counter3 atomic.Int64
 
 	f.Fuzz(func(t *testing.T, fileSize int64) {
 		// Clamp to 1 MiB to avoid slow file creation.
@@ -195,15 +185,8 @@ func FuzzLsHumanReadable(f *testing.F) {
 			return
 		}
 
-		dir, err := os.MkdirTemp(tmpRoot, "iter")
-		if err != nil {
-			t.Fatal(err)
-		}
-		defer func() {
-			if err := os.RemoveAll(dir); err != nil && !os.IsNotExist(err) {
-				t.Logf("cleanup %s: %v", dir, err)
-			}
-		}()
+		dir, cleanup := testutil.FuzzIterDir(t, tmpRoot, &counter3)
+		defer cleanup()
 		// Create a file with the specified size using Truncate.
 		fpath := filepath.Join(dir, "testfile.bin")
 		fh, err := os.Create(fpath)
@@ -242,17 +225,11 @@ func FuzzLsMultipleFiles(f *testing.F) {
 	f.Add(true, false, true, false) // -lt
 
 	tmpRoot := f.TempDir()
+	var counter4 atomic.Int64
 
 	f.Fuzz(func(t *testing.T, flagL, flagA, flagT, flagS bool) {
-		dir, err := os.MkdirTemp(tmpRoot, "iter")
-		if err != nil {
-			t.Fatal(err)
-		}
-		defer func() {
-			if err := os.RemoveAll(dir); err != nil && !os.IsNotExist(err) {
-				t.Logf("cleanup %s: %v", dir, err)
-			}
-		}()
+		dir, cleanup := testutil.FuzzIterDir(t, tmpRoot, &counter4)
+		defer cleanup()
 
 		// Create a mix of files and a subdirectory.
 		files := []struct {
