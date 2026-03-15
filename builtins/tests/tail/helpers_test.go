@@ -51,3 +51,12 @@ func cmdRunCtx(ctx context.Context, t *testing.T, script, dir string) (string, s
 	t.Helper()
 	return runScriptCtx(ctx, t, script, dir, interp.AllowedPaths([]string{dir}))
 }
+
+// fuzzRunCtx is like cmdRunCtx but omits AllowedPaths to avoid coverage-
+// instrumentation overhead on the os.Root sandbox code paths. This overhead
+// causes Go fuzz workers to stall, leading to "context deadline exceeded"
+// failures when the fuzz coordinator tries to shut down after fuzztime.
+func fuzzRunCtx(ctx context.Context, t *testing.T, script, dir string) (string, string, int) {
+	t.Helper()
+	return runScriptCtx(ctx, t, script, dir)
+}
