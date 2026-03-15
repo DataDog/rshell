@@ -293,6 +293,11 @@ func evalExec(ec *evalContext, e *expr, isExecDir bool) evalResult {
 				ec.failed = true
 				return evalResult{matched: true}
 			}
+			// Pre-allocate on first entry to reduce slice growth overhead.
+			if entries == nil {
+				const initialBatchCap = 64
+				entries = make([]batchEntry, 0, initialBatchCap)
+			}
 			ec.batchAccum[e] = append(entries, batchEntry{filePath: filePath, dir: dir})
 		}
 		return evalResult{matched: true}

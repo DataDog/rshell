@@ -12,7 +12,6 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"strings"
 	"sync"
 	"time"
 
@@ -296,14 +295,15 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 				if !ok {
 					return 127, fmt.Errorf("exec: command not found: %s", cmdName)
 				}
-				execDir := func() string {
-					if dir != "" {
-						if filepath.IsAbs(dir) {
-							return dir
-						}
-						return filepath.Join(r.Dir, dir)
+				// Resolve the effective working directory once up front rather
+				// than recomputing filepath.Join in every sandbox callback.
+				resolvedDir := r.Dir
+				if dir != "" {
+					if filepath.IsAbs(dir) {
+						resolvedDir = dir
+					} else {
+						resolvedDir = filepath.Join(r.Dir, dir)
 					}
-					return r.Dir
 				}
 				// NOTE: subcall intentionally does not set ExecCommand. This prevents
 				// nested find -exec from spawning further -exec subprocesses, avoiding
@@ -311,41 +311,41 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 				subcall := &builtins.CallContext{
 					Stdout: stdout,
 					Stderr: stderr,
-					Stdin:  strings.NewReader(""),
+					Stdin:  r.stdin,
 					OpenFile: func(ctx context.Context, path string, flags int, mode os.FileMode) (io.ReadWriteCloser, error) {
-						f, err := r.sandbox.Open(path, execDir(), flags, mode)
+						f, err := r.sandbox.Open(path, resolvedDir, flags, mode)
 						if err != nil {
 							return nil, allowedpaths.PortablePathError(err)
 						}
 						return f, nil
 					},
 					ReadDir: func(ctx context.Context, path string) ([]fs.DirEntry, error) {
-						return r.sandbox.ReadDir(path, execDir())
+						return r.sandbox.ReadDir(path, resolvedDir)
 					},
 					OpenDir: func(ctx context.Context, path string) (fs.ReadDirFile, error) {
-						return r.sandbox.OpenDir(path, execDir())
+						return r.sandbox.OpenDir(path, resolvedDir)
 					},
 					IsDirEmpty: func(ctx context.Context, path string) (bool, error) {
-						return r.sandbox.IsDirEmpty(path, execDir())
+						return r.sandbox.IsDirEmpty(path, resolvedDir)
 					},
 					ReadDirLimited: func(ctx context.Context, path string, offset, maxRead int) ([]fs.DirEntry, bool, error) {
-						return r.sandbox.ReadDirLimited(path, execDir(), offset, maxRead)
+						return r.sandbox.ReadDirLimited(path, resolvedDir, offset, maxRead)
 					},
 					StatFile: func(ctx context.Context, path string) (fs.FileInfo, error) {
-						return r.sandbox.Stat(path, execDir())
+						return r.sandbox.Stat(path, resolvedDir)
 					},
 					LstatFile: func(ctx context.Context, path string) (fs.FileInfo, error) {
-						return r.sandbox.Lstat(path, execDir())
+						return r.sandbox.Lstat(path, resolvedDir)
 					},
 					AccessFile: func(ctx context.Context, path string, mode uint32) error {
-						return r.sandbox.Access(path, execDir(), mode)
+						return r.sandbox.Access(path, resolvedDir, mode)
 					},
 					PortableErr: allowedpaths.PortableErrMsg,
 					Now:         time.Now,
 					FileIdentity: func(path string, info fs.FileInfo) (builtins.FileID, bool) {
 						absPath := path
 						if !filepath.IsAbs(absPath) {
-							absPath = filepath.Join(execDir(), absPath)
+							absPath = filepath.Join(resolvedDir, absPath)
 						}
 						dev, ino, ok := allowedpaths.FileIdentity(absPath, info, r.sandbox)
 						if !ok {
