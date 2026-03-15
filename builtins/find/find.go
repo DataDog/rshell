@@ -132,7 +132,7 @@ optLoop:
 	exprArgs := args[i:]
 	pr, err := parseExpression(exprArgs)
 	if err != nil {
-		callCtx.Errf("%s\n", err.Error())
+		callCtx.Errf("%v\n", err)
 		return builtins.Result{Code: 1}
 	}
 	expression := pr.expr
@@ -527,6 +527,8 @@ func collectNewerRefs(e *expr) []string {
 }
 
 // executeBatch runs a batch -exec/-execdir command with all accumulated paths.
+// When a group exceeds maxExecArgs paths, it is chunked into multiple
+// invocations of at most maxExecArgs paths each, matching GNU find behaviour.
 // Returns true if any error occurred.
 func executeBatch(ctx context.Context, callCtx *builtins.CallContext, e *expr, entries []batchEntry) bool {
 	if callCtx.ExecCommand == nil {
@@ -570,21 +572,36 @@ func executeBatch(ctx context.Context, callCtx *builtins.CallContext, e *expr, e
 		// Build args: command [fixed-args] file1 file2 ...
 		// In batch mode, only standalone {} is expanded (replaced with accumulated
 		// paths). This differs from `;` mode where {} is replaced even inside
-		// larger strings via strings.ReplaceAll — matching GNU find behaviour.
-		var args []string
-		for _, arg := range e.execArgs {
-			if arg == "{}" {
-				args = append(args, g.paths...)
-			} else {
-				args = append(args, arg)
+		// larger strings via strings.ReplaceAll — matching GNU find behaviour
+		// where batch mode only expands the terminal {} placeholder.
+
+		// Chunk the paths into batches of maxExecArgs to avoid excessively
+		// long argument lists while still processing all matched files.
+		for start := 0; start < len(g.paths); start += maxExecArgs {
+			if ctx.Err() != nil {
+				return true
 			}
-		}
-		code, err := callCtx.ExecCommand(ctx, args, g.dir, callCtx.Stdout, callCtx.Stderr)
-		if err != nil {
-			callCtx.Errf("find: %s: %s\n", args[0], err.Error())
-			failed = true
-		} else if code != 0 {
-			failed = true
+			end := start + maxExecArgs
+			if end > len(g.paths) {
+				end = len(g.paths)
+			}
+			chunk := g.paths[start:end]
+
+			var args []string
+			for _, arg := range e.execArgs {
+				if arg == "{}" {
+					args = append(args, chunk...)
+				} else {
+					args = append(args, arg)
+				}
+			}
+			code, err := callCtx.ExecCommand(ctx, args, g.dir, callCtx.Stdout, callCtx.Stderr)
+			if err != nil {
+				callCtx.Errf("find: %s: %v\n", args[0], err)
+				failed = true
+			} else if code != 0 {
+				failed = true
+			}
 		}
 	}
 	return failed

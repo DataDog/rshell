@@ -475,6 +475,10 @@ func (p *parser) parseExecPredicate(kind exprKind) (*expr, error) {
 		return nil, fmt.Errorf("find: %s: missing command", name)
 	}
 
+	// maxExecCmdArgs limits the number of fixed arguments in an -exec/-execdir
+	// command template to prevent pathological parser inputs.
+	const maxExecCmdArgs = 1024
+
 	var cmdArgs []string
 	placeholderCount := 0
 	for p.pos < len(p.args) {
@@ -499,6 +503,9 @@ func (p *parser) parseExecPredicate(kind exprKind) (*expr, error) {
 			placeholderCount++
 		}
 		cmdArgs = append(cmdArgs, tok)
+		if len(cmdArgs) > maxExecCmdArgs {
+			return nil, fmt.Errorf("find: %s: too many arguments (limit %d)", name, maxExecCmdArgs)
+		}
 	}
 	return nil, fmt.Errorf("find: missing terminator for %s (expected ';' or '+')", name)
 }

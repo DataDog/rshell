@@ -285,14 +285,12 @@ func evalExec(ec *evalContext, e *expr, isExecDir bool) evalResult {
 	}
 
 	// Batch mode: accumulate path for later execution.
+	// Paths are collected without limit here; executeBatch chunks them into
+	// groups of maxExecArgs to match GNU find behaviour (process all matches
+	// in multiple invocations rather than silently dropping entries).
 	if e.execBatch {
 		if ec.batchAccum != nil {
 			entries := ec.batchAccum[e]
-			if len(entries) >= maxExecArgs {
-				ec.callCtx.Errf("find: %s: too many results for batch mode (limit %d)\n", e.kind.String(), maxExecArgs)
-				ec.failed = true
-				return evalResult{matched: true}
-			}
 			// Pre-allocate on first entry to reduce slice growth overhead.
 			if entries == nil {
 				const initialBatchCap = 64
