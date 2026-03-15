@@ -16,12 +16,15 @@ import (
 	"time"
 
 	"github.com/DataDog/rshell/builtins/testutil"
-	"github.com/DataDog/rshell/interp"
 )
 
-func cmdRunCtx(ctx context.Context, t *testing.T, script, dir string) (string, string, int) {
+// fuzzRunCtx runs a script without AllowedPaths to avoid coverage-
+// instrumentation overhead on the os.Root sandbox code paths. This overhead
+// causes Go fuzz workers to stall, leading to "context deadline exceeded"
+// failures when the fuzz coordinator tries to shut down after fuzztime.
+func fuzzRunCtx(ctx context.Context, t *testing.T, script, dir string) (string, string, int) {
 	t.Helper()
-	return testutil.RunScriptCtx(ctx, t, script, dir, interp.AllowedPaths([]string{dir}))
+	return testutil.RunScriptCtx(ctx, t, script, dir)
 }
 
 // FuzzUniq fuzzes uniq with arbitrary file content.
@@ -77,7 +80,7 @@ func FuzzUniq(f *testing.F) {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 
-		_, _, code := cmdRunCtx(ctx, t, "uniq input.txt", dir)
+		_, _, code := fuzzRunCtx(ctx, t, "uniq input.txt", dir)
 		if code != 0 && code != 1 {
 			t.Errorf("uniq unexpected exit code %d", code)
 		}
@@ -116,7 +119,7 @@ func FuzzUniqCount(f *testing.F) {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 
-		_, _, code := cmdRunCtx(ctx, t, "uniq -c input.txt", dir)
+		_, _, code := fuzzRunCtx(ctx, t, "uniq -c input.txt", dir)
 		if code != 0 && code != 1 {
 			t.Errorf("uniq -c unexpected exit code %d", code)
 		}
@@ -196,7 +199,7 @@ func FuzzUniqFlags(f *testing.F) {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 
-		_, _, code := cmdRunCtx(ctx, t, "uniq"+flags+" input.txt", dir)
+		_, _, code := fuzzRunCtx(ctx, t, "uniq"+flags+" input.txt", dir)
 		if code != 0 && code != 1 {
 			t.Errorf("uniq%s unexpected exit code %d", flags, code)
 		}
@@ -229,7 +232,7 @@ func FuzzUniqStdin(f *testing.F) {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 
-		_, _, code := cmdRunCtx(ctx, t, "uniq < stdin.txt", dir)
+		_, _, code := fuzzRunCtx(ctx, t, "uniq < stdin.txt", dir)
 		if code != 0 && code != 1 {
 			t.Errorf("uniq stdin unexpected exit code %d", code)
 		}
