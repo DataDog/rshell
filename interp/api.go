@@ -295,7 +295,7 @@ func (r *Runner) Reset() {
 				return r.sandbox.Open(path, HandlerCtx(ctx).Dir, flag, perm)
 			}
 			r.readDirHandler = func(ctx context.Context, path string) ([]os.DirEntry, error) {
-				return r.sandbox.ReadDir(path, HandlerCtx(ctx).Dir)
+				return r.sandbox.ReadDirForGlob(path, HandlerCtx(ctx).Dir)
 			}
 			r.execHandler = noExecHandler()
 		}

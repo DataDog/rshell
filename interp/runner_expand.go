@@ -30,6 +30,10 @@ func (r *Runner) fillExpandConfig(ctx context.Context) {
 func (r *Runner) updateExpandOpts() {
 	r.ecfg.ReadDir2 = func(s string) ([]fs.DirEntry, error) {
 		ctx := r.handlerCtx(r.ectx, todoPos)
+		if r.readDirHandler != nil {
+			return r.readDirHandler(ctx, s)
+		}
+		// Fallback when a custom openHandler was set without a readDirHandler.
 		return r.sandbox.ReadDirForGlob(s, HandlerCtx(ctx).Dir)
 	}
 }
