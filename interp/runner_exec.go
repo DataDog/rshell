@@ -11,6 +11,7 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"runtime/debug"
 	"sync"
 	"time"
 
@@ -139,7 +140,15 @@ func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {
 			go func() {
 				defer func() {
 					if rec := recover(); rec != nil {
-						rLeft.exit.fatal(fmt.Errorf("internal error: %v", rec))
+						panicOut := rLeft.stderr
+						if panicOut == nil {
+							panicOut = os.Stderr
+						}
+						func() {
+							defer func() { recover() }()
+							fmt.Fprintf(panicOut, "rshell: internal panic: %v\n%s\n", rec, debug.Stack())
+						}()
+						rLeft.exit.fatal(fmt.Errorf("internal error"))
 					}
 					pw.Close()
 					wg.Done()
