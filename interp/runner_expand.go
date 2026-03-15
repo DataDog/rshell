@@ -58,8 +58,20 @@ func (r *Runner) cmdSubst(w io.Writer, cs *syntax.CmdSubst) error {
 			return nil
 		}
 		defer f.Close()
+		// If the path is a directory, silently produce empty output (matches bash).
+		if st, ok := f.(interface{ Stat() (fs.FileInfo, error) }); ok {
+			if fi, serr := st.Stat(); serr == nil && fi.IsDir() {
+				r.lastExpandExit = exitStatus{code: 0}
+				r.lastExit = r.lastExpandExit
+				return nil
+			}
+		}
 		_, err = io.Copy(w, io.LimitReader(f, maxCmdSubstOutput))
-		r.lastExpandExit = exitStatus{code: 0}
+		var exitCode uint8
+		if err != nil {
+			exitCode = 1
+		}
+		r.lastExpandExit = exitStatus{code: exitCode}
 		r.lastExit = r.lastExpandExit
 		return err
 	}
