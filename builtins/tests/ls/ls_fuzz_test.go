@@ -48,6 +48,8 @@ func FuzzLsFlags(f *testing.F) {
 	f.Add("README.md", false, false, false, false, false)
 	f.Add("Makefile", false, false, false, false, false)
 
+	tmpRoot := f.TempDir()
+
 	f.Fuzz(func(t *testing.T, filename string, flagL, flagA, flagR, flagS, flagF bool) {
 		if len(filename) == 0 || len(filename) > 100 {
 			return
@@ -66,7 +68,11 @@ func FuzzLsFlags(f *testing.F) {
 			return
 		}
 
-		dir := t.TempDir()
+		dir, err := os.MkdirTemp(tmpRoot, "iter")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer os.RemoveAll(dir)
 		if err := os.WriteFile(filepath.Join(dir, filename), []byte("content"), 0644); err != nil {
 			// Some filenames may be invalid on the OS.
 			return
@@ -114,12 +120,18 @@ func FuzzLsRecursive(f *testing.F) {
 	// Zero and negative handled by guard
 	f.Add(int64(0))
 
+	tmpRoot := f.TempDir()
+
 	f.Fuzz(func(t *testing.T, depth int64) {
 		if depth < 0 || depth > 10 {
 			return
 		}
 
-		dir := t.TempDir()
+		dir, err := os.MkdirTemp(tmpRoot, "iter")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer os.RemoveAll(dir)
 		current := dir
 		for i := int64(0); i < depth; i++ {
 			subdir := filepath.Join(current, "sub")
@@ -166,13 +178,19 @@ func FuzzLsHumanReadable(f *testing.F) {
 	// Negative size (shouldn't happen but check robustness)
 	f.Add(int64(512))
 
+	tmpRoot := f.TempDir()
+
 	f.Fuzz(func(t *testing.T, fileSize int64) {
 		// Clamp to 1 MiB to avoid slow file creation.
 		if fileSize < 0 || fileSize > 1<<20 {
 			return
 		}
 
-		dir := t.TempDir()
+		dir, err := os.MkdirTemp(tmpRoot, "iter")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer os.RemoveAll(dir)
 		// Create a file with the specified size using Truncate.
 		fpath := filepath.Join(dir, "testfile.bin")
 		fh, err := os.Create(fpath)
@@ -210,8 +228,14 @@ func FuzzLsMultipleFiles(f *testing.F) {
 	f.Add(true, false, false, true) // -lS
 	f.Add(true, false, true, false) // -lt
 
+	tmpRoot := f.TempDir()
+
 	f.Fuzz(func(t *testing.T, flagL, flagA, flagT, flagS bool) {
-		dir := t.TempDir()
+		dir, err := os.MkdirTemp(tmpRoot, "iter")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer os.RemoveAll(dir)
 
 		// Create a mix of files and a subdirectory.
 		files := []struct {

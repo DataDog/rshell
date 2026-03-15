@@ -70,6 +70,8 @@ func FuzzTailDifferential(f *testing.F) {
 	f.Add([]byte("a\nb\nc\nd\ne\n"), int64(3))
 	f.Add(bytes.Repeat([]byte("line\n"), 20), int64(5))
 
+	dir := f.TempDir()
+
 	f.Fuzz(func(t *testing.T, input []byte, n int64) {
 		if len(input) > 64*1024 {
 			return
@@ -77,8 +79,6 @@ func FuzzTailDifferential(f *testing.F) {
 		if n < 0 || n > 10000 {
 			return
 		}
-
-		dir := t.TempDir()
 		if err := os.WriteFile(filepath.Join(dir, "input.txt"), input, 0644); err != nil {
 			t.Fatal(err)
 		}

@@ -76,12 +76,12 @@ func FuzzStrings(f *testing.F) {
 	// PDF magic with printable sequences inside
 	f.Add([]byte("%PDF-1.4\x00\x00\x00binary\x00more text here\x00"))
 
+	dir := f.TempDir()
+
 	f.Fuzz(func(t *testing.T, input []byte) {
 		if len(input) > 1<<20 {
 			return
 		}
-
-		dir := t.TempDir()
 		if err := os.WriteFile(filepath.Join(dir, "input.bin"), input, 0644); err != nil {
 			t.Fatal(err)
 		}
@@ -120,6 +120,8 @@ func FuzzStringsMinLen(f *testing.F) {
 	// Tab as printable (contributes to sequence length)
 	f.Add([]byte("ab\tcd\x00"), int64(4))
 
+	dir := f.TempDir()
+
 	f.Fuzz(func(t *testing.T, input []byte, minLen int64) {
 		if len(input) > 1<<20 {
 			return
@@ -127,8 +129,6 @@ func FuzzStringsMinLen(f *testing.F) {
 		if minLen < 1 || minLen > 1000 {
 			return
 		}
-
-		dir := t.TempDir()
 		if err := os.WriteFile(filepath.Join(dir, "input.bin"), input, 0644); err != nil {
 			t.Fatal(err)
 		}
@@ -164,6 +164,8 @@ func FuzzStringsRadix(f *testing.F) {
 	// Multiple strings with increasing offsets
 	f.Add([]byte("hello\x00world\x00foo\x00bar\x00"), "d")
 
+	dir := f.TempDir()
+
 	f.Fuzz(func(t *testing.T, input []byte, radix string) {
 		if len(input) > 1<<20 {
 			return
@@ -171,8 +173,6 @@ func FuzzStringsRadix(f *testing.F) {
 		if radix != "o" && radix != "d" && radix != "x" {
 			return
 		}
-
-		dir := t.TempDir()
 		if err := os.WriteFile(filepath.Join(dir, "input.bin"), input, 0644); err != nil {
 			t.Fatal(err)
 		}
@@ -200,12 +200,12 @@ func FuzzStringsStdin(f *testing.F) {
 	// Chunk boundary
 	f.Add(append(bytes.Repeat([]byte("a"), 32*1024-1), 0x00))
 
+	dir := f.TempDir()
+
 	f.Fuzz(func(t *testing.T, input []byte) {
 		if len(input) > 1<<20 {
 			return
 		}
-
-		dir := t.TempDir()
 		if err := os.WriteFile(filepath.Join(dir, "stdin.bin"), input, 0644); err != nil {
 			t.Fatal(err)
 		}

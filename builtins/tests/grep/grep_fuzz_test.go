@@ -53,6 +53,8 @@ func FuzzGrepFileContent(f *testing.F) {
 	// Multibyte content
 	f.Add([]byte("héllo\nmünchen\n"), "l")
 
+	dir := f.TempDir()
+
 	f.Fuzz(func(t *testing.T, input []byte, pattern string) {
 		if len(input) > 1<<20 {
 			return
@@ -76,7 +78,6 @@ func FuzzGrepFileContent(f *testing.F) {
 			return
 		}
 
-		dir := t.TempDir()
 		err := os.WriteFile(filepath.Join(dir, "input.txt"), input, 0644)
 		if err != nil {
 			t.Fatal(err)
@@ -122,6 +123,8 @@ func FuzzGrepPatterns(f *testing.F) {
 	// Very long pattern
 	f.Add([]byte("aaaa\n"), "a{1,4}")
 
+	dir := f.TempDir()
+
 	f.Fuzz(func(t *testing.T, input []byte, pattern string) {
 		if len(input) > 1<<20 {
 			return
@@ -144,8 +147,6 @@ func FuzzGrepPatterns(f *testing.F) {
 		if len(pattern) == 0 {
 			return
 		}
-
-		dir := t.TempDir()
 		if err := os.WriteFile(filepath.Join(dir, "input.txt"), input, 0644); err != nil {
 			t.Fatal(err)
 		}
@@ -172,12 +173,13 @@ func FuzzGrepStdin(f *testing.F) {
 	f.Add([]byte("line1\r\nline2\r\n"))
 	f.Add(append(bytes.Repeat([]byte("a"), 1<<20-1), '\n'))
 
+	dir := f.TempDir()
+
 	f.Fuzz(func(t *testing.T, input []byte) {
 		if len(input) > 1<<20 {
 			return
 		}
 
-		dir := t.TempDir()
 		err := os.WriteFile(filepath.Join(dir, "stdin.txt"), input, 0644)
 		if err != nil {
 			t.Fatal(err)
@@ -224,6 +226,8 @@ func FuzzGrepFixedStrings(f *testing.F) {
 	// Near 1 MiB line cap (CVE-2012-5667 was 2^31; we test our 1 MiB boundary)
 	f.Add(append(bytes.Repeat([]byte("a"), 1<<20-1), '\n'), "a")
 
+	dir := f.TempDir()
+
 	f.Fuzz(func(t *testing.T, input []byte, pattern string) {
 		if len(input) > 1<<20 {
 			return
@@ -243,8 +247,6 @@ func FuzzGrepFixedStrings(f *testing.F) {
 				return
 			}
 		}
-
-		dir := t.TempDir()
 		if err := os.WriteFile(filepath.Join(dir, "input.txt"), input, 0644); err != nil {
 			t.Fatal(err)
 		}
@@ -279,6 +281,8 @@ func FuzzGrepFlags(f *testing.F) {
 	// Binary content
 	f.Add([]byte{0xff, 0xfe, '\n'}, true, false, false, false, int64(0), int64(0))
 
+	dir := f.TempDir()
+
 	f.Fuzz(func(t *testing.T, input []byte, caseInsensitive, invertMatch, countOnly, quiet bool, afterCtx, beforeCtx int64) {
 		if len(input) > 1<<20 {
 			return
@@ -290,7 +294,6 @@ func FuzzGrepFlags(f *testing.F) {
 			return
 		}
 
-		dir := t.TempDir()
 		err := os.WriteFile(filepath.Join(dir, "input.txt"), input, 0644)
 		if err != nil {
 			t.Fatal(err)

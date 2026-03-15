@@ -51,6 +51,8 @@ func FuzzTestStringOps(f *testing.F) {
 	// == operator (same as =)
 	f.Add("x", "x", "==")
 
+	dir := f.TempDir()
+
 	f.Fuzz(func(t *testing.T, left, right, op string) {
 		if len(left) > 100 || len(right) > 100 {
 			return
@@ -76,8 +78,6 @@ func FuzzTestStringOps(f *testing.F) {
 		if op == "<" || op == ">" {
 			return
 		}
-
-		dir := t.TempDir()
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
@@ -112,6 +112,8 @@ func FuzzTestIntegerOps(f *testing.F) {
 	// int64 max (clamped on overflow per GNU test behavior)
 	f.Add(int64(1<<31-1), int64(1<<31-1), "-ge")
 
+	dir := f.TempDir()
+
 	f.Fuzz(func(t *testing.T, left, right int64, op string) {
 		switch op {
 		case "-eq", "-ne", "-lt", "-le", "-gt", "-ge":
@@ -122,8 +124,6 @@ func FuzzTestIntegerOps(f *testing.F) {
 		if left > 1<<31 || left < -(1<<31) || right > 1<<31 || right < -(1<<31) {
 			return
 		}
-
-		dir := t.TempDir()
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
@@ -152,19 +152,22 @@ func FuzzTestFileOps(f *testing.F) {
 	// Regular file test on non-existent (should be false)
 	f.Add("-f", false)
 
+	dir := f.TempDir()
+
 	f.Fuzz(func(t *testing.T, op string, createFile bool) {
 		switch op {
 		case "-e", "-f", "-d", "-s", "-r", "-w", "-x", "-h", "-L", "-p":
 		default:
 			return
 		}
-
-		dir := t.TempDir()
 		target := "testfile.txt"
+		targetPath := filepath.Join(dir, target)
 		if createFile {
-			if err := os.WriteFile(filepath.Join(dir, target), []byte("content"), 0644); err != nil {
+			if err := os.WriteFile(targetPath, []byte("content"), 0644); err != nil {
 				t.Fatal(err)
 			}
+		} else {
+			os.Remove(targetPath) // ensure clean state from prior iterations
 		}
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -197,6 +200,8 @@ func FuzzTestStringUnary(f *testing.F) {
 	f.Add("日本語", "-n")
 	f.Add("😀", "-n")
 
+	dir := f.TempDir()
+
 	f.Fuzz(func(t *testing.T, arg, op string) {
 		if len(arg) > 200 {
 			return
@@ -216,8 +221,6 @@ func FuzzTestStringUnary(f *testing.F) {
 				return
 			}
 		}
-
-		dir := t.TempDir()
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
@@ -260,6 +263,8 @@ func FuzzTestNesting(f *testing.F) {
 	// Mixed -a and -o
 	f.Add("1 -eq 1 -o 1 -eq 2 -a 2 -eq 2")
 
+	dir := f.TempDir()
+
 	f.Fuzz(func(t *testing.T, expr string) {
 		if len(expr) > 200 {
 			return
@@ -285,8 +290,6 @@ func FuzzTestNesting(f *testing.F) {
 				return
 			}
 		}
-
-		dir := t.TempDir()
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
