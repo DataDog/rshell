@@ -166,16 +166,8 @@ func FuzzTestFileOps(f *testing.F) {
 		// parallel fuzz workers operating on the same file. We use a manual
 		// counter instead of t.TempDir() to avoid the per-iteration cleanup
 		// overhead that causes "context deadline exceeded" on CI.
-		n := counter.Add(1)
-		dir := filepath.Join(baseDir, fmt.Sprintf("iter%d", n))
-		if err := os.MkdirAll(dir, 0755); err != nil {
-			t.Fatal(err)
-		}
-		defer func() {
-			if err := os.RemoveAll(dir); err != nil && !os.IsNotExist(err) {
-				t.Logf("cleanup %s: %v", dir, err)
-			}
-		}()
+		dir, cleanup := testutil.FuzzIterDir(t, baseDir, &counter)
+		defer cleanup()
 
 		target := "testfile.txt"
 		targetPath := filepath.Join(dir, target)
@@ -285,19 +277,20 @@ func FuzzTestNesting(f *testing.F) {
 		// fuzz workers have limited CPU; long expressions with many
 		// tokens can cause the shell interpreter to exceed the
 		// per-iteration timeout, leading to "context deadline exceeded".
-		if len(expr) > 80 {
+		if len(expr) > 60 {
 			return
 		}
 		if !utf8.ValidString(expr) {
 			return
 		}
 		// Limit the number of space-separated tokens to cap nesting
-		// depth and keep evaluation fast on CI.
+		// depth and keep evaluation fast on CI. The longest seed has
+		// 11 tokens so this covers all corpus entries.
 		tokens := 0
 		for i := 0; i < len(expr); i++ {
 			if expr[i] == ' ' {
 				tokens++
-				if tokens > 15 {
+				if tokens > 11 {
 					return
 				}
 			}

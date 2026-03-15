@@ -15,6 +15,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/DataDog/rshell/builtins/testutil"
 )
 
 // FuzzHeadLines fuzzes head -n N with arbitrary file content.
@@ -64,16 +66,8 @@ func FuzzHeadLines(f *testing.F) {
 			n = 10000
 		}
 
-		iter := counter.Add(1)
-		dir := filepath.Join(baseDir, fmt.Sprintf("iter%d", iter))
-		if err := os.MkdirAll(dir, 0755); err != nil {
-			t.Fatal(err)
-		}
-		defer func() {
-			if err := os.RemoveAll(dir); err != nil && !os.IsNotExist(err) {
-				t.Logf("cleanup %s: %v", dir, err)
-			}
-		}()
+		dir, cleanup := testutil.FuzzIterDir(t, baseDir, &counter)
+		defer cleanup()
 
 		err := os.WriteFile(filepath.Join(dir, "input.txt"), input, 0644)
 		if err != nil {
@@ -136,16 +130,8 @@ func FuzzHeadBytes(f *testing.F) {
 			n = 10000
 		}
 
-		iter := counter.Add(1)
-		dir := filepath.Join(baseDir, fmt.Sprintf("iter%d", iter))
-		if err := os.MkdirAll(dir, 0755); err != nil {
-			t.Fatal(err)
-		}
-		defer func() {
-			if err := os.RemoveAll(dir); err != nil && !os.IsNotExist(err) {
-				t.Logf("cleanup %s: %v", dir, err)
-			}
-		}()
+		dir, cleanup := testutil.FuzzIterDir(t, baseDir, &counter)
+		defer cleanup()
 
 		err := os.WriteFile(filepath.Join(dir, "input.txt"), input, 0644)
 		if err != nil {
@@ -195,16 +181,8 @@ func FuzzHeadStdin(f *testing.F) {
 			n = 10000
 		}
 
-		iter := counter.Add(1)
-		dir := filepath.Join(baseDir, fmt.Sprintf("iter%d", iter))
-		if err := os.MkdirAll(dir, 0755); err != nil {
-			t.Fatal(err)
-		}
-		defer func() {
-			if err := os.RemoveAll(dir); err != nil && !os.IsNotExist(err) {
-				t.Logf("cleanup %s: %v", dir, err)
-			}
-		}()
+		dir, cleanup := testutil.FuzzIterDir(t, baseDir, &counter)
+		defer cleanup()
 
 		err := os.WriteFile(filepath.Join(dir, "stdin.txt"), input, 0644)
 		if err != nil {

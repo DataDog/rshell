@@ -10,7 +10,6 @@ package wc_test
 import (
 	"bytes"
 	"context"
-	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -18,6 +17,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/DataDog/rshell/builtins/testutil"
 )
 
 // runGNUInDir runs a GNU command under LC_ALL=C.UTF-8 with its working
@@ -78,16 +79,8 @@ func FuzzWcDifferentialLines(f *testing.F) {
 			return
 		}
 
-		n := counter.Add(1)
-		dir := filepath.Join(baseDir, fmt.Sprintf("iter%d", n))
-		if err := os.MkdirAll(dir, 0755); err != nil {
-			t.Fatal(err)
-		}
-		defer func() {
-			if err := os.RemoveAll(dir); err != nil && !os.IsNotExist(err) {
-				t.Logf("cleanup %s: %v", dir, err)
-			}
-		}()
+		dir, cleanup := testutil.FuzzIterDir(t, baseDir, &counter)
+		defer cleanup()
 
 		if err := os.WriteFile(filepath.Join(dir, "input.txt"), input, 0644); err != nil {
 			t.Fatal(err)
@@ -139,16 +132,8 @@ func FuzzWcDifferentialWords(f *testing.F) {
 			return
 		}
 
-		n := counter.Add(1)
-		dir := filepath.Join(baseDir, fmt.Sprintf("iter%d", n))
-		if err := os.MkdirAll(dir, 0755); err != nil {
-			t.Fatal(err)
-		}
-		defer func() {
-			if err := os.RemoveAll(dir); err != nil && !os.IsNotExist(err) {
-				t.Logf("cleanup %s: %v", dir, err)
-			}
-		}()
+		dir, cleanup := testutil.FuzzIterDir(t, baseDir, &counter)
+		defer cleanup()
 
 		if err := os.WriteFile(filepath.Join(dir, "input.txt"), input, 0644); err != nil {
 			t.Fatal(err)
@@ -199,16 +184,8 @@ func FuzzWcDifferentialBytes(f *testing.F) {
 			return
 		}
 
-		n := counter.Add(1)
-		dir := filepath.Join(baseDir, fmt.Sprintf("iter%d", n))
-		if err := os.MkdirAll(dir, 0755); err != nil {
-			t.Fatal(err)
-		}
-		defer func() {
-			if err := os.RemoveAll(dir); err != nil && !os.IsNotExist(err) {
-				t.Logf("cleanup %s: %v", dir, err)
-			}
-		}()
+		dir, cleanup := testutil.FuzzIterDir(t, baseDir, &counter)
+		defer cleanup()
 
 		if err := os.WriteFile(filepath.Join(dir, "input.txt"), input, 0644); err != nil {
 			t.Fatal(err)

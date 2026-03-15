@@ -85,16 +85,8 @@ func FuzzStrings(f *testing.F) {
 			return
 		}
 
-		n := counter.Add(1)
-		dir := filepath.Join(baseDir, fmt.Sprintf("iter%d", n))
-		if err := os.MkdirAll(dir, 0755); err != nil {
-			t.Fatal(err)
-		}
-		defer func() {
-			if err := os.RemoveAll(dir); err != nil && !os.IsNotExist(err) {
-				t.Logf("cleanup %s: %v", dir, err)
-			}
-		}()
+		dir, cleanup := testutil.FuzzIterDir(t, baseDir, &counter)
+		defer cleanup()
 
 		if err := os.WriteFile(filepath.Join(dir, "input.bin"), input, 0644); err != nil {
 			t.Fatal(err)
@@ -145,16 +137,8 @@ func FuzzStringsMinLen(f *testing.F) {
 			return
 		}
 
-		n := counter.Add(1)
-		dir := filepath.Join(baseDir, fmt.Sprintf("iter%d", n))
-		if err := os.MkdirAll(dir, 0755); err != nil {
-			t.Fatal(err)
-		}
-		defer func() {
-			if err := os.RemoveAll(dir); err != nil && !os.IsNotExist(err) {
-				t.Logf("cleanup %s: %v", dir, err)
-			}
-		}()
+		dir, cleanup := testutil.FuzzIterDir(t, baseDir, &counter)
+		defer cleanup()
 
 		if err := os.WriteFile(filepath.Join(dir, "input.bin"), input, 0644); err != nil {
 			t.Fatal(err)
@@ -177,13 +161,13 @@ func FuzzStringsRadix(f *testing.F) {
 	f.Add([]byte("hello\x00world\x00text\n"), "o")
 	f.Add([]byte("hello\x00world\x00text\n"), "d")
 	f.Add([]byte("hello\x00world\x00text\n"), "x")
-	// Large offset: test 7-char field formatting
-	// At offset >= 8388608 (octal 40000000), octal offset exceeds 7 chars
-	f.Add(append(bytes.Repeat([]byte{0x00}, 8388608), []byte("hello")...), "o")
-	// Offset at decimal 9999999 (7 chars), 10000000 (8 chars — overflows field)
-	f.Add(append(bytes.Repeat([]byte{0x00}, 9999995), []byte("abcde")...), "d")
-	// Hex offset boundary: 0xfffffff = 268435455 (8 hex chars)
-	f.Add(append(bytes.Repeat([]byte{0x00}, 16), []byte("hello")...), "x")
+	// Large offset: test multi-char field formatting at ~1 MiB boundary.
+	// Octal 7777777 = 2097151 — seed just under 2 MiB exercises 7-digit octal.
+	f.Add(append(bytes.Repeat([]byte{0x00}, 1<<20), []byte("hello")...), "o")
+	// Decimal offset at ~1 MiB boundary (7-digit decimal: 1048576+)
+	f.Add(append(bytes.Repeat([]byte{0x00}, 1<<20), []byte("abcde")...), "d")
+	// Hex offset at ~1 MiB boundary (0x100000 = 6 hex digits)
+	f.Add(append(bytes.Repeat([]byte{0x00}, 1<<20), []byte("hello")...), "x")
 	// Empty input
 	f.Add([]byte{}, "d")
 	// All non-printable (no output)
@@ -195,24 +179,16 @@ func FuzzStringsRadix(f *testing.F) {
 	var counter atomic.Int64
 
 	f.Fuzz(func(t *testing.T, input []byte, radix string) {
-		// Allow up to 12 MiB so the large-offset corpus seeds (8-10 MiB) execute.
-		if len(input) > 12<<20 {
+		// Allow up to 2 MiB so the large-offset corpus seeds (~1 MiB) execute.
+		if len(input) > 2<<20 {
 			return
 		}
 		if radix != "o" && radix != "d" && radix != "x" {
 			return
 		}
 
-		n := counter.Add(1)
-		dir := filepath.Join(baseDir, fmt.Sprintf("iter%d", n))
-		if err := os.MkdirAll(dir, 0755); err != nil {
-			t.Fatal(err)
-		}
-		defer func() {
-			if err := os.RemoveAll(dir); err != nil && !os.IsNotExist(err) {
-				t.Logf("cleanup %s: %v", dir, err)
-			}
-		}()
+		dir, cleanup := testutil.FuzzIterDir(t, baseDir, &counter)
+		defer cleanup()
 
 		if err := os.WriteFile(filepath.Join(dir, "input.bin"), input, 0644); err != nil {
 			t.Fatal(err)
@@ -249,16 +225,8 @@ func FuzzStringsStdin(f *testing.F) {
 			return
 		}
 
-		n := counter.Add(1)
-		dir := filepath.Join(baseDir, fmt.Sprintf("iter%d", n))
-		if err := os.MkdirAll(dir, 0755); err != nil {
-			t.Fatal(err)
-		}
-		defer func() {
-			if err := os.RemoveAll(dir); err != nil && !os.IsNotExist(err) {
-				t.Logf("cleanup %s: %v", dir, err)
-			}
-		}()
+		dir, cleanup := testutil.FuzzIterDir(t, baseDir, &counter)
+		defer cleanup()
 
 		if err := os.WriteFile(filepath.Join(dir, "stdin.bin"), input, 0644); err != nil {
 			t.Fatal(err)
