@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -76,12 +77,21 @@ func FuzzStrings(f *testing.F) {
 	// PDF magic with printable sequences inside
 	f.Add([]byte("%PDF-1.4\x00\x00\x00binary\x00more text here\x00"))
 
-	dir := f.TempDir()
+	baseDir := f.TempDir()
+	var counter atomic.Int64
 
 	f.Fuzz(func(t *testing.T, input []byte) {
 		if len(input) > 1<<20 {
 			return
 		}
+
+		n := counter.Add(1)
+		dir := filepath.Join(baseDir, fmt.Sprintf("iter%d", n))
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			t.Fatal(err)
+		}
+		defer os.RemoveAll(dir)
+
 		if err := os.WriteFile(filepath.Join(dir, "input.bin"), input, 0644); err != nil {
 			t.Fatal(err)
 		}
@@ -120,7 +130,8 @@ func FuzzStringsMinLen(f *testing.F) {
 	// Tab as printable (contributes to sequence length)
 	f.Add([]byte("ab\tcd\x00"), int64(4))
 
-	dir := f.TempDir()
+	baseDir := f.TempDir()
+	var counter atomic.Int64
 
 	f.Fuzz(func(t *testing.T, input []byte, minLen int64) {
 		if len(input) > 1<<20 {
@@ -129,6 +140,14 @@ func FuzzStringsMinLen(f *testing.F) {
 		if minLen < 1 || minLen > 1000 {
 			return
 		}
+
+		n := counter.Add(1)
+		dir := filepath.Join(baseDir, fmt.Sprintf("iter%d", n))
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			t.Fatal(err)
+		}
+		defer os.RemoveAll(dir)
+
 		if err := os.WriteFile(filepath.Join(dir, "input.bin"), input, 0644); err != nil {
 			t.Fatal(err)
 		}
@@ -164,7 +183,8 @@ func FuzzStringsRadix(f *testing.F) {
 	// Multiple strings with increasing offsets
 	f.Add([]byte("hello\x00world\x00foo\x00bar\x00"), "d")
 
-	dir := f.TempDir()
+	baseDir := f.TempDir()
+	var counter atomic.Int64
 
 	f.Fuzz(func(t *testing.T, input []byte, radix string) {
 		if len(input) > 1<<20 {
@@ -173,6 +193,14 @@ func FuzzStringsRadix(f *testing.F) {
 		if radix != "o" && radix != "d" && radix != "x" {
 			return
 		}
+
+		n := counter.Add(1)
+		dir := filepath.Join(baseDir, fmt.Sprintf("iter%d", n))
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			t.Fatal(err)
+		}
+		defer os.RemoveAll(dir)
+
 		if err := os.WriteFile(filepath.Join(dir, "input.bin"), input, 0644); err != nil {
 			t.Fatal(err)
 		}
@@ -200,12 +228,21 @@ func FuzzStringsStdin(f *testing.F) {
 	// Chunk boundary
 	f.Add(append(bytes.Repeat([]byte("a"), 32*1024-1), 0x00))
 
-	dir := f.TempDir()
+	baseDir := f.TempDir()
+	var counter atomic.Int64
 
 	f.Fuzz(func(t *testing.T, input []byte) {
 		if len(input) > 1<<20 {
 			return
 		}
+
+		n := counter.Add(1)
+		dir := filepath.Join(baseDir, fmt.Sprintf("iter%d", n))
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			t.Fatal(err)
+		}
+		defer os.RemoveAll(dir)
+
 		if err := os.WriteFile(filepath.Join(dir, "stdin.bin"), input, 0644); err != nil {
 			t.Fatal(err)
 		}

@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -49,7 +50,8 @@ func FuzzHeadLines(f *testing.F) {
 	// No trailing newline on last output line
 	f.Add([]byte("line1\nline2"), int64(2))
 
-	dir := f.TempDir()
+	baseDir := f.TempDir()
+	var counter atomic.Int64
 
 	f.Fuzz(func(t *testing.T, input []byte, n int64) {
 		if len(input) > 1<<20 {
@@ -61,6 +63,13 @@ func FuzzHeadLines(f *testing.F) {
 		if n > 10000 {
 			n = 10000
 		}
+
+		iter := counter.Add(1)
+		dir := filepath.Join(baseDir, fmt.Sprintf("iter%d", iter))
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			t.Fatal(err)
+		}
+		defer os.RemoveAll(dir)
 
 		err := os.WriteFile(filepath.Join(dir, "input.txt"), input, 0644)
 		if err != nil {
@@ -109,7 +118,8 @@ func FuzzHeadBytes(f *testing.F) {
 	// CRLF
 	f.Add([]byte("a\r\nb\r\n"), int64(3))
 
-	dir := f.TempDir()
+	baseDir := f.TempDir()
+	var counter atomic.Int64
 
 	f.Fuzz(func(t *testing.T, input []byte, n int64) {
 		if len(input) > 1<<20 {
@@ -121,6 +131,13 @@ func FuzzHeadBytes(f *testing.F) {
 		if n > 10000 {
 			n = 10000
 		}
+
+		iter := counter.Add(1)
+		dir := filepath.Join(baseDir, fmt.Sprintf("iter%d", iter))
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			t.Fatal(err)
+		}
+		defer os.RemoveAll(dir)
 
 		err := os.WriteFile(filepath.Join(dir, "input.txt"), input, 0644)
 		if err != nil {
@@ -156,7 +173,8 @@ func FuzzHeadStdin(f *testing.F) {
 	f.Add([]byte{0xfc, 0x80, 0x80, 0x80, 0x80, 0xaf, '\n'}, int64(1))
 	f.Add([]byte("line1\r\nline2\r\n"), int64(1))
 
-	dir := f.TempDir()
+	baseDir := f.TempDir()
+	var counter atomic.Int64
 
 	f.Fuzz(func(t *testing.T, input []byte, n int64) {
 		if len(input) > 1<<20 {
@@ -168,6 +186,13 @@ func FuzzHeadStdin(f *testing.F) {
 		if n > 10000 {
 			n = 10000
 		}
+
+		iter := counter.Add(1)
+		dir := filepath.Join(baseDir, fmt.Sprintf("iter%d", iter))
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			t.Fatal(err)
+		}
+		defer os.RemoveAll(dir)
 
 		err := os.WriteFile(filepath.Join(dir, "stdin.txt"), input, 0644)
 		if err != nil {

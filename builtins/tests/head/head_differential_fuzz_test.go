@@ -15,6 +15,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -69,7 +70,8 @@ func FuzzHeadDifferentialLines(f *testing.F) {
 	f.Add([]byte("single line\n"), int64(1))
 	f.Add([]byte("a\nb\nc\nd\ne\n"), int64(3))
 
-	dir := f.TempDir()
+	baseDir := f.TempDir()
+	var counter atomic.Int64
 
 	f.Fuzz(func(t *testing.T, input []byte, n int64) {
 		if len(input) > 64*1024 {
@@ -78,6 +80,14 @@ func FuzzHeadDifferentialLines(f *testing.F) {
 		if n < 0 || n > 10000 {
 			return
 		}
+
+		iter := counter.Add(1)
+		dir := filepath.Join(baseDir, fmt.Sprintf("iter%d", iter))
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			t.Fatal(err)
+		}
+		defer os.RemoveAll(dir)
+
 		if err := os.WriteFile(filepath.Join(dir, "input.txt"), input, 0644); err != nil {
 			t.Fatal(err)
 		}
@@ -121,7 +131,8 @@ func FuzzHeadDifferentialBytes(f *testing.F) {
 	f.Add([]byte("hello world\n"), int64(5))
 	f.Add([]byte("abcdef\n"), int64(6))
 
-	dir := f.TempDir()
+	baseDir := f.TempDir()
+	var counter atomic.Int64
 
 	f.Fuzz(func(t *testing.T, input []byte, n int64) {
 		if len(input) > 64*1024 {
@@ -130,6 +141,14 @@ func FuzzHeadDifferentialBytes(f *testing.F) {
 		if n < 0 || n > 10000 {
 			return
 		}
+
+		iter := counter.Add(1)
+		dir := filepath.Join(baseDir, fmt.Sprintf("iter%d", iter))
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			t.Fatal(err)
+		}
+		defer os.RemoveAll(dir)
+
 		if err := os.WriteFile(filepath.Join(dir, "input.txt"), input, 0644); err != nil {
 			t.Fatal(err)
 		}

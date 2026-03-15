@@ -8,8 +8,10 @@ package wc_test
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -51,12 +53,20 @@ func FuzzWc(f *testing.F) {
 	// Long line (tests -L max-line-length tracking)
 	f.Add(append(bytes.Repeat([]byte("a"), 1000), '\n'))
 
-	dir := f.TempDir()
+	baseDir := f.TempDir()
+	var counter atomic.Int64
 
 	f.Fuzz(func(t *testing.T, input []byte) {
 		if len(input) > 1<<20 {
 			return
 		}
+
+		n := counter.Add(1)
+		dir := filepath.Join(baseDir, fmt.Sprintf("iter%d", n))
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			t.Fatal(err)
+		}
+		defer os.RemoveAll(dir)
 
 		err := os.WriteFile(filepath.Join(dir, "input.txt"), input, 0644)
 		if err != nil {
@@ -85,12 +95,20 @@ func FuzzWcLines(f *testing.F) {
 	f.Add([]byte{0xfc, 0x80, 0x80, 0x80, 0x80, 0xaf, '\n'})
 	f.Add(bytes.Repeat([]byte("a\n"), 10000))
 
-	dir := f.TempDir()
+	baseDir := f.TempDir()
+	var counter atomic.Int64
 
 	f.Fuzz(func(t *testing.T, input []byte) {
 		if len(input) > 1<<20 {
 			return
 		}
+
+		n := counter.Add(1)
+		dir := filepath.Join(baseDir, fmt.Sprintf("iter%d", n))
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			t.Fatal(err)
+		}
+		defer os.RemoveAll(dir)
 
 		err := os.WriteFile(filepath.Join(dir, "input.txt"), input, 0644)
 		if err != nil {
@@ -117,12 +135,20 @@ func FuzzWcBytes(f *testing.F) {
 	f.Add([]byte{0x00, 0x01, 0x02, 0xff, 0xfe})
 	f.Add([]byte{0xfc, 0x80, 0x80, 0x80, 0x80, 0xaf})
 
-	dir := f.TempDir()
+	baseDir := f.TempDir()
+	var counter atomic.Int64
 
 	f.Fuzz(func(t *testing.T, input []byte) {
 		if len(input) > 1<<20 {
 			return
 		}
+
+		n := counter.Add(1)
+		dir := filepath.Join(baseDir, fmt.Sprintf("iter%d", n))
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			t.Fatal(err)
+		}
+		defer os.RemoveAll(dir)
 
 		err := os.WriteFile(filepath.Join(dir, "input.txt"), input, 0644)
 		if err != nil {
@@ -156,12 +182,20 @@ func FuzzWcChars(f *testing.F) {
 	f.Add([]byte{})
 	f.Add([]byte("no newline"))
 
-	dir := f.TempDir()
+	baseDir := f.TempDir()
+	var counter atomic.Int64
 
 	f.Fuzz(func(t *testing.T, input []byte) {
 		if len(input) > 1<<20 {
 			return
 		}
+
+		n := counter.Add(1)
+		dir := filepath.Join(baseDir, fmt.Sprintf("iter%d", n))
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			t.Fatal(err)
+		}
+		defer os.RemoveAll(dir)
 
 		err := os.WriteFile(filepath.Join(dir, "input.txt"), input, 0644)
 		if err != nil {
@@ -189,12 +223,20 @@ func FuzzWcStdin(f *testing.F) {
 	f.Add([]byte("héllo\n"))
 	f.Add([]byte{0xfc, 0x80, 0x80, 0x80, 0x80, 0xaf, '\n'})
 
-	dir := f.TempDir()
+	baseDir := f.TempDir()
+	var counter atomic.Int64
 
 	f.Fuzz(func(t *testing.T, input []byte) {
 		if len(input) > 1<<20 {
 			return
 		}
+
+		n := counter.Add(1)
+		dir := filepath.Join(baseDir, fmt.Sprintf("iter%d", n))
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			t.Fatal(err)
+		}
+		defer os.RemoveAll(dir)
 
 		err := os.WriteFile(filepath.Join(dir, "stdin.txt"), input, 0644)
 		if err != nil {

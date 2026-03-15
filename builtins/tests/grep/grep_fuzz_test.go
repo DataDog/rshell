@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
 	"time"
 	"unicode/utf8"
@@ -53,7 +54,8 @@ func FuzzGrepFileContent(f *testing.F) {
 	// Multibyte content
 	f.Add([]byte("héllo\nmünchen\n"), "l")
 
-	dir := f.TempDir()
+	baseDir := f.TempDir()
+	var counter atomic.Int64
 
 	f.Fuzz(func(t *testing.T, input []byte, pattern string) {
 		if len(input) > 1<<20 {
@@ -77,6 +79,13 @@ func FuzzGrepFileContent(f *testing.F) {
 		if len(pattern) > 100 {
 			return
 		}
+
+		n := counter.Add(1)
+		dir := filepath.Join(baseDir, fmt.Sprintf("iter%d", n))
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			t.Fatal(err)
+		}
+		defer os.RemoveAll(dir)
 
 		err := os.WriteFile(filepath.Join(dir, "input.txt"), input, 0644)
 		if err != nil {
@@ -123,7 +132,8 @@ func FuzzGrepPatterns(f *testing.F) {
 	// Very long pattern
 	f.Add([]byte("aaaa\n"), "a{1,4}")
 
-	dir := f.TempDir()
+	baseDir := f.TempDir()
+	var counter atomic.Int64
 
 	f.Fuzz(func(t *testing.T, input []byte, pattern string) {
 		if len(input) > 1<<20 {
@@ -147,6 +157,14 @@ func FuzzGrepPatterns(f *testing.F) {
 		if len(pattern) == 0 {
 			return
 		}
+
+		n := counter.Add(1)
+		dir := filepath.Join(baseDir, fmt.Sprintf("iter%d", n))
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			t.Fatal(err)
+		}
+		defer os.RemoveAll(dir)
+
 		if err := os.WriteFile(filepath.Join(dir, "input.txt"), input, 0644); err != nil {
 			t.Fatal(err)
 		}
@@ -173,12 +191,20 @@ func FuzzGrepStdin(f *testing.F) {
 	f.Add([]byte("line1\r\nline2\r\n"))
 	f.Add(append(bytes.Repeat([]byte("a"), 1<<20-1), '\n'))
 
-	dir := f.TempDir()
+	baseDir := f.TempDir()
+	var counter atomic.Int64
 
 	f.Fuzz(func(t *testing.T, input []byte) {
 		if len(input) > 1<<20 {
 			return
 		}
+
+		n := counter.Add(1)
+		dir := filepath.Join(baseDir, fmt.Sprintf("iter%d", n))
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			t.Fatal(err)
+		}
+		defer os.RemoveAll(dir)
 
 		err := os.WriteFile(filepath.Join(dir, "stdin.txt"), input, 0644)
 		if err != nil {
@@ -226,7 +252,8 @@ func FuzzGrepFixedStrings(f *testing.F) {
 	// Near 1 MiB line cap (CVE-2012-5667 was 2^31; we test our 1 MiB boundary)
 	f.Add(append(bytes.Repeat([]byte("a"), 1<<20-1), '\n'), "a")
 
-	dir := f.TempDir()
+	baseDir := f.TempDir()
+	var counter atomic.Int64
 
 	f.Fuzz(func(t *testing.T, input []byte, pattern string) {
 		if len(input) > 1<<20 {
@@ -247,6 +274,14 @@ func FuzzGrepFixedStrings(f *testing.F) {
 				return
 			}
 		}
+
+		n := counter.Add(1)
+		dir := filepath.Join(baseDir, fmt.Sprintf("iter%d", n))
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			t.Fatal(err)
+		}
+		defer os.RemoveAll(dir)
+
 		if err := os.WriteFile(filepath.Join(dir, "input.txt"), input, 0644); err != nil {
 			t.Fatal(err)
 		}
@@ -281,7 +316,8 @@ func FuzzGrepFlags(f *testing.F) {
 	// Binary content
 	f.Add([]byte{0xff, 0xfe, '\n'}, true, false, false, false, int64(0), int64(0))
 
-	dir := f.TempDir()
+	baseDir := f.TempDir()
+	var counter atomic.Int64
 
 	f.Fuzz(func(t *testing.T, input []byte, caseInsensitive, invertMatch, countOnly, quiet bool, afterCtx, beforeCtx int64) {
 		if len(input) > 1<<20 {
@@ -293,6 +329,13 @@ func FuzzGrepFlags(f *testing.F) {
 		if beforeCtx < 0 || beforeCtx > 100 {
 			return
 		}
+
+		n := counter.Add(1)
+		dir := filepath.Join(baseDir, fmt.Sprintf("iter%d", n))
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			t.Fatal(err)
+		}
+		defer os.RemoveAll(dir)
 
 		err := os.WriteFile(filepath.Join(dir, "input.txt"), input, 0644)
 		if err != nil {

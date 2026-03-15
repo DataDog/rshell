@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -58,12 +59,20 @@ func FuzzUniq(f *testing.F) {
 	f.Add([]byte("a\r\na\r\n"))
 	f.Add([]byte("a\r\na\n")) // CRLF vs LF — how are these compared?
 
-	dir := f.TempDir()
+	baseDir := f.TempDir()
+	var counter atomic.Int64
 
 	f.Fuzz(func(t *testing.T, input []byte) {
 		if len(input) > 1<<20 {
 			return
 		}
+
+		n := counter.Add(1)
+		dir := filepath.Join(baseDir, fmt.Sprintf("iter%d", n))
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			t.Fatal(err)
+		}
+		defer os.RemoveAll(dir)
 
 		if err := os.WriteFile(filepath.Join(dir, "input.txt"), input, 0644); err != nil {
 			t.Fatal(err)
@@ -93,12 +102,20 @@ func FuzzUniqCount(f *testing.F) {
 	// CRLF
 	f.Add([]byte("a\r\na\r\nb\r\n"))
 
-	dir := f.TempDir()
+	baseDir := f.TempDir()
+	var counter atomic.Int64
 
 	f.Fuzz(func(t *testing.T, input []byte) {
 		if len(input) > 1<<20 {
 			return
 		}
+
+		n := counter.Add(1)
+		dir := filepath.Join(baseDir, fmt.Sprintf("iter%d", n))
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			t.Fatal(err)
+		}
+		defer os.RemoveAll(dir)
 
 		if err := os.WriteFile(filepath.Join(dir, "input.txt"), input, 0644); err != nil {
 			t.Fatal(err)
@@ -137,7 +154,8 @@ func FuzzUniqFlags(f *testing.F) {
 	// -d: only print duplicate lines
 	f.Add([]byte("a\na\nb\nc\nc\n"), true, false, false, false, int64(0), int64(0), int64(0))
 
-	dir := f.TempDir()
+	baseDir := f.TempDir()
+	var counter atomic.Int64
 
 	f.Fuzz(func(t *testing.T, input []byte, repeated, ignoreCase, unique, nulDelim bool, skipFields, skipChars, checkChars int64) {
 		if len(input) > 1<<20 {
@@ -152,6 +170,14 @@ func FuzzUniqFlags(f *testing.F) {
 		if checkChars < 0 || checkChars > 100 {
 			return
 		}
+
+		n := counter.Add(1)
+		dir := filepath.Join(baseDir, fmt.Sprintf("iter%d", n))
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			t.Fatal(err)
+		}
+		defer os.RemoveAll(dir)
+
 		if err := os.WriteFile(filepath.Join(dir, "input.txt"), input, 0644); err != nil {
 			t.Fatal(err)
 		}
@@ -197,12 +223,20 @@ func FuzzUniqStdin(f *testing.F) {
 	f.Add([]byte{0xfc, 0x80, 0x80, '\n', 0xfc, 0x80, 0x80, '\n'})
 	f.Add([]byte("line1\r\nline1\r\nline2\r\n"))
 
-	dir := f.TempDir()
+	baseDir := f.TempDir()
+	var counter atomic.Int64
 
 	f.Fuzz(func(t *testing.T, input []byte) {
 		if len(input) > 1<<20 {
 			return
 		}
+
+		n := counter.Add(1)
+		dir := filepath.Join(baseDir, fmt.Sprintf("iter%d", n))
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			t.Fatal(err)
+		}
+		defer os.RemoveAll(dir)
 
 		if err := os.WriteFile(filepath.Join(dir, "stdin.txt"), input, 0644); err != nil {
 			t.Fatal(err)

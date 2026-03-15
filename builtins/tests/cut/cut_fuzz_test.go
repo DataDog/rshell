@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
 	"time"
 	"unicode/utf8"
@@ -69,7 +70,8 @@ func FuzzCutFields(f *testing.F) {
 	f.Add([]byte("a\tb\nc\td\n"), "1")
 	f.Add([]byte("a\tb\nc\td\n"), "2")
 
-	dir := f.TempDir()
+	baseDir := f.TempDir()
+	var counter atomic.Int64
 
 	f.Fuzz(func(t *testing.T, input []byte, fieldSpec string) {
 		if len(input) > 1<<20 {
@@ -87,6 +89,13 @@ func FuzzCutFields(f *testing.F) {
 				return
 			}
 		}
+
+		n := counter.Add(1)
+		dir := filepath.Join(baseDir, fmt.Sprintf("iter%d", n))
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			t.Fatal(err)
+		}
+		defer os.RemoveAll(dir)
 
 		if err := os.WriteFile(filepath.Join(dir, "input.txt"), input, 0644); err != nil {
 			t.Fatal(err)
@@ -134,7 +143,8 @@ func FuzzCutBytes(f *testing.F) {
 	// Large position well beyond line
 	f.Add([]byte("abc\n"), "1234567890")
 
-	dir := f.TempDir()
+	baseDir := f.TempDir()
+	var counter atomic.Int64
 
 	f.Fuzz(func(t *testing.T, input []byte, byteSpec string) {
 		if len(input) > 1<<20 {
@@ -151,6 +161,13 @@ func FuzzCutBytes(f *testing.F) {
 				return
 			}
 		}
+
+		n := counter.Add(1)
+		dir := filepath.Join(baseDir, fmt.Sprintf("iter%d", n))
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			t.Fatal(err)
+		}
+		defer os.RemoveAll(dir)
 
 		if err := os.WriteFile(filepath.Join(dir, "input.txt"), input, 0644); err != nil {
 			t.Fatal(err)
@@ -188,7 +205,8 @@ func FuzzCutDelimiter(f *testing.F) {
 	// Space as delimiter
 	f.Add([]byte("a b c\n"), " ", "2")
 
-	dir := f.TempDir()
+	baseDir := f.TempDir()
+	var counter atomic.Int64
 
 	f.Fuzz(func(t *testing.T, input []byte, delim string, fieldSpec string) {
 		if len(input) > 1<<20 {
@@ -213,6 +231,14 @@ func FuzzCutDelimiter(f *testing.F) {
 				return
 			}
 		}
+
+		n := counter.Add(1)
+		dir := filepath.Join(baseDir, fmt.Sprintf("iter%d", n))
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			t.Fatal(err)
+		}
+		defer os.RemoveAll(dir)
+
 		if err := os.WriteFile(filepath.Join(dir, "input.txt"), input, 0644); err != nil {
 			t.Fatal(err)
 		}
@@ -250,7 +276,8 @@ func FuzzCutComplement(f *testing.F) {
 	// Lines at 1 MiB cap
 	f.Add(append(bytes.Repeat([]byte("a"), 1<<20-1), '\n'), "1")
 
-	dir := f.TempDir()
+	baseDir := f.TempDir()
+	var counter atomic.Int64
 
 	f.Fuzz(func(t *testing.T, input []byte, byteSpec string) {
 		if len(input) > 1<<20 {
@@ -267,6 +294,13 @@ func FuzzCutComplement(f *testing.F) {
 				return
 			}
 		}
+
+		n := counter.Add(1)
+		dir := filepath.Join(baseDir, fmt.Sprintf("iter%d", n))
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			t.Fatal(err)
+		}
+		defer os.RemoveAll(dir)
 
 		if err := os.WriteFile(filepath.Join(dir, "input.txt"), input, 0644); err != nil {
 			t.Fatal(err)
@@ -298,12 +332,20 @@ func FuzzCutStdin(f *testing.F) {
 	// Lines at 1 MiB
 	f.Add(append(bytes.Repeat([]byte("x"), 1<<20-1), '\n'))
 
-	dir := f.TempDir()
+	baseDir := f.TempDir()
+	var counter atomic.Int64
 
 	f.Fuzz(func(t *testing.T, input []byte) {
 		if len(input) > 1<<20 {
 			return
 		}
+
+		n := counter.Add(1)
+		dir := filepath.Join(baseDir, fmt.Sprintf("iter%d", n))
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			t.Fatal(err)
+		}
+		defer os.RemoveAll(dir)
 
 		if err := os.WriteFile(filepath.Join(dir, "stdin.txt"), input, 0644); err != nil {
 			t.Fatal(err)

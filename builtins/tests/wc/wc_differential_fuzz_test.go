@@ -10,10 +10,12 @@ package wc_test
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -68,12 +70,20 @@ func FuzzWcDifferentialLines(f *testing.F) {
 	f.Add([]byte("single line\n"))
 	f.Add(bytes.Repeat([]byte("x\n"), 100))
 
-	dir := f.TempDir()
+	baseDir := f.TempDir()
+	var counter atomic.Int64
 
 	f.Fuzz(func(t *testing.T, input []byte) {
 		if len(input) > 64*1024 {
 			return
 		}
+
+		n := counter.Add(1)
+		dir := filepath.Join(baseDir, fmt.Sprintf("iter%d", n))
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			t.Fatal(err)
+		}
+		defer os.RemoveAll(dir)
 
 		if err := os.WriteFile(filepath.Join(dir, "input.txt"), input, 0644); err != nil {
 			t.Fatal(err)
@@ -117,12 +127,20 @@ func FuzzWcDifferentialWords(f *testing.F) {
 	f.Add([]byte("word"))
 	f.Add(bytes.Repeat([]byte("a b "), 50))
 
-	dir := f.TempDir()
+	baseDir := f.TempDir()
+	var counter atomic.Int64
 
 	f.Fuzz(func(t *testing.T, input []byte) {
 		if len(input) > 64*1024 {
 			return
 		}
+
+		n := counter.Add(1)
+		dir := filepath.Join(baseDir, fmt.Sprintf("iter%d", n))
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			t.Fatal(err)
+		}
+		defer os.RemoveAll(dir)
 
 		if err := os.WriteFile(filepath.Join(dir, "input.txt"), input, 0644); err != nil {
 			t.Fatal(err)
@@ -165,12 +183,20 @@ func FuzzWcDifferentialBytes(f *testing.F) {
 	f.Add(bytes.Repeat([]byte("x"), 100))
 	f.Add([]byte("\n\n\n"))
 
-	dir := f.TempDir()
+	baseDir := f.TempDir()
+	var counter atomic.Int64
 
 	f.Fuzz(func(t *testing.T, input []byte) {
 		if len(input) > 64*1024 {
 			return
 		}
+
+		n := counter.Add(1)
+		dir := filepath.Join(baseDir, fmt.Sprintf("iter%d", n))
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			t.Fatal(err)
+		}
+		defer os.RemoveAll(dir)
 
 		if err := os.WriteFile(filepath.Join(dir, "input.txt"), input, 0644); err != nil {
 			t.Fatal(err)
