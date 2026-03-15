@@ -82,10 +82,12 @@ var builtinPerCommandSymbols = map[string][]string{
 		"math.Floor",                      // pure arithmetic; no side effects.
 		"math.MaxInt64",                   // integer constant; no side effects.
 		"path.Base",                       // extracts last element of path (always uses /); pure function, no I/O.
+		"path.Clean",                      // cleans a path (removes trailing slashes, double slashes); pure function, no I/O.
 		"path.Dir",                        // extracts directory from path (always uses /); pure function, no I/O.
 		"strconv.Atoi",                    // string-to-int conversion; pure function, no I/O.
 		"strconv.ErrRange",                // sentinel error value for overflow; pure constant.
 		"strconv.ParseInt",                // string-to-int conversion; pure function, no I/O.
+		"strings.Contains",                // checks if a substring is present; pure function, no I/O.
 		"strings.HasPrefix",               // pure function for prefix matching; no I/O.
 		"strings.ReplaceAll",              // replaces all occurrences of a substring; pure function, no I/O.
 		"strings.ToLower",                 // converts string to lowercase; pure function, no I/O.
@@ -336,6 +338,7 @@ var builtinAllowedSymbols = []string{
 	"os.O_RDONLY",                     // read-only file flag constant; cannot open files by itself.
 	"os.PathError",                    // error type for filesystem path errors; pure type, no I/O.
 	"path.Base",                       // extracts last element of a path (always uses /); pure function, no I/O.
+	"path.Clean",                      // cleans a path (removes trailing slashes, double slashes); pure function, no I/O.
 	"path.Dir",                        // extracts directory part of a path (always uses /); pure function, no I/O.
 	"regexp.Compile",                  // compiles a regular expression; pure function, no I/O. Uses RE2 engine (linear-time, no backtracking).
 	"regexp.QuoteMeta",                // escapes all special regex characters in a string; pure function, no I/O.
@@ -355,6 +358,7 @@ var builtinAllowedSymbols = []string{
 	"strconv.ParseInt",                // string-to-int conversion with base/bit-size; pure function, no I/O.
 	"strconv.ParseUint",               // string-to-unsigned-int conversion; pure function, no I/O.
 	"strings.Builder",                 // efficient string concatenation; pure in-memory buffer, no I/O.
+	"strings.Contains",                // checks if a substring is present; pure function, no I/O.
 	"strings.ContainsRune",            // checks if a rune is in a string; pure function, no I/O.
 	"strings.HasPrefix",               // pure function for prefix matching; no I/O.
 	"strings.IndexByte",               // finds byte in string; pure function, no I/O.
