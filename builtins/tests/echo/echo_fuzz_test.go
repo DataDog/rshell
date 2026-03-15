@@ -21,6 +21,16 @@ func cmdRunCtx(ctx context.Context, t *testing.T, script, dir string) (string, s
 	return testutil.RunScriptCtx(ctx, t, script, dir, interp.AllowedPaths([]string{dir}))
 }
 
+// fuzzRunCtx is like cmdRunCtx but omits AllowedPaths to avoid coverage-
+// instrumentation overhead on the os.Root sandbox code paths. This overhead
+// causes Go fuzz workers to stall, leading to "context deadline exceeded"
+// failures when the fuzz coordinator tries to shut down after fuzztime.
+// Delegates to the shared testutil.FuzzRunScriptCtx helper.
+func fuzzRunCtx(ctx context.Context, t *testing.T, script, dir string) (string, string, int) {
+	t.Helper()
+	return testutil.FuzzRunScriptCtx(ctx, t, script, dir)
+}
+
 // FuzzEcho fuzzes echo with arbitrary arguments (no escape processing).
 func FuzzEcho(f *testing.F) {
 	f.Add("hello world")
@@ -62,7 +72,7 @@ func FuzzEcho(f *testing.F) {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 
-		_, _, code := cmdRunCtx(ctx, t, "echo '"+arg+"'", dir)
+		_, _, code := fuzzRunCtx(ctx, t, "echo '"+arg+"'", dir)
 		if code != 0 {
 			t.Errorf("echo unexpected exit code %d", code)
 		}
@@ -134,7 +144,7 @@ func FuzzEchoEscapes(f *testing.F) {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 
-		_, _, code := cmdRunCtx(ctx, t, "echo -e '"+arg+"'", dir)
+		_, _, code := fuzzRunCtx(ctx, t, "echo -e '"+arg+"'", dir)
 		if code != 0 {
 			t.Errorf("echo -e unexpected exit code %d", code)
 		}
@@ -190,7 +200,7 @@ func FuzzEchoFlagInteraction(f *testing.F) {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 
-		_, _, code := cmdRunCtx(ctx, t, "echo"+flags+" '"+arg+"'", dir)
+		_, _, code := fuzzRunCtx(ctx, t, "echo"+flags+" '"+arg+"'", dir)
 		if code != 0 {
 			t.Errorf("echo%s unexpected exit code %d", flags, code)
 		}
