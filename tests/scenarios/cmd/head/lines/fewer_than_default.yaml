@@ -1,4 +1,3 @@
-# Derived from GNU coreutils head.pl test basic-09
 description: head outputs all lines when file has fewer than 10.
 setup:
   files:

@@ -1,4 +1,3 @@
-# Derived from GNU coreutils test.pl test 1d — -n on non-empty string
 description: "test -n on a non-empty string returns true"
 input:
   script: |+

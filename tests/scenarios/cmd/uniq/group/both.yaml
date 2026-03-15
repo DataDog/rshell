@@ -1,4 +1,3 @@
-# Derived from GNU coreutils uniq.pl test 132
 description: uniq --group=both adds blank lines before and after groups.
 setup:
   files:

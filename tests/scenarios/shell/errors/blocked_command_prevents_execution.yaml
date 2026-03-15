@@ -1,0 +1,12 @@
+# skip: blocked commands are specific to the restricted shell
+skip_assert_against_bash: true
+description: A blocked command prevents all execution including prior valid commands.
+input:
+  script: |+
+    echo before
+    while true; do echo x; done
+    echo after
+expect:
+  stdout: ""
+  stderr: "while/until loops are not supported\n"
+  exit_code: 2

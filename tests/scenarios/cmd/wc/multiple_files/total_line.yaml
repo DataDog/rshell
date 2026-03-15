@@ -1,4 +1,3 @@
-# Derived from GNU coreutils wc-total.sh
 description: wc prints a total line when given multiple files.
 setup:
   files:

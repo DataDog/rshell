@@ -19,7 +19,7 @@ Your very first action — before reading ANY files, before running ANY commands
 1. "Step 1: Identify the PR"
 2. "Step 2: Run the review-fix loop"
 3. "Step 2A1: Self-review (code-review)" ← **parallel with 2A2**
-4. "Step 2A2: Request external reviews (@datadog @codex)" ← **parallel with 2A1**
+4. "Step 2A2: Request external reviews (@codex)" ← **parallel with 2A1**
 5. "Step 2B: Address PR comments (address-pr-comments)"
 6. "Step 2C: Fix CI failures (fix-ci-tests)"
 7. "Step 2D: Verify push and resolve conflicts"
@@ -57,7 +57,7 @@ Step 1 → Step 2 (loop: [2A1 ∥ 2A2] → 2B → 2C → 2D → 2E → 2F) → S
 
 - Do NOT skip the review (Step 2A1) because you think the code is fine
 - Do NOT skip verification (Step 3) because tests passed during fixes
-- Do NOT skip the external review trigger — @datadog and @codex reviews catch issues the self-review misses
+- Do NOT skip the external review trigger — @codex reviews catch issues the self-review misses
 - Do NOT mark a step completed until every sub-bullet in that step is satisfied
 
 If you catch yourself wanting to skip a step, STOP and do the step anyway.
@@ -105,9 +105,9 @@ This analyzes the full diff against main, posts findings as a GitHub PR review w
 
 ### Sub-step 2A2 — Request external reviews ← **parallel with 2A1**
 
-Post a comment to trigger @datadog and @codex reviews:
+Post a comment to trigger @codex reviews:
 ```bash
-gh pr comment <pr-number> --body "@datadog @codex review"
+gh pr comment <pr-number> --body "@codex review"
 ```
 The external reviews arrive asynchronously — their comments will be picked up by **address-pr-comments** in Sub-step 2B1.
 
@@ -206,7 +206,7 @@ Check **all three** review sources for remaining issues:
 
 1. **Self-review** — Was the latest `/code-review` result **APPROVE** (no findings)?
 
-2. **External reviews** — Are there unresolved PR comment threads from @datadog, @codex, or @chatgpt-codex-connector[bot]?
+2. **External reviews** — Are there unresolved PR comment threads from @codex or @chatgpt-codex-connector[bot]?
    ```bash
    gh api graphql -f query='
      query($owner: String!, $repo: String!, $pr: Int!) {

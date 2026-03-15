@@ -1,4 +1,3 @@
-# Derived from standard POSIX head behavior
 description: head with no file arguments reads from standard input.
 setup:
   files:

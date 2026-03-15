@@ -1,4 +1,3 @@
-# Derived from GNU coreutils test.pl test 1c — bare string is true
 description: "test with a non-empty string returns true"
 input:
   script: |+

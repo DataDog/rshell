@@ -1,0 +1,13 @@
+description: Unknown command in logical OR chain falls through to the next command.
+input:
+  script: |+
+    nonexistent_cmd || echo "recovered"
+    echo $?
+expect:
+  stdout: |+
+    recovered
+    0
+  stderr_contains:
+    - "nonexistent_cmd"
+    - "command not found"
+  exit_code: 0

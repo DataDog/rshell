@@ -1,5 +1,4 @@
 description: strings on an empty file produces no output and exits 0.
-skip_assert_against_bash: true
 setup:
   files:
     - path: empty.bin

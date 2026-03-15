@@ -1,4 +1,3 @@
-# Derived from GNU coreutils test.pl less-collate and greater-collate tests
 description: "test string lexicographic comparison with < and >"
 input:
   script: |+

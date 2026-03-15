@@ -7,10 +7,11 @@ package interp
 
 import (
 	"fmt"
-	"os"
 	"strings"
 
 	"mvdan.cc/sh/v3/syntax"
+
+	"github.com/DataDog/rshell/allowedpaths"
 )
 
 // validateNode walks the AST and rejects shell constructs that are not
@@ -127,6 +128,22 @@ func validateNode(node syntax.Node) error {
 					}
 				}
 			}
+
+		// Explicitly allowed command-level nodes. These are the only
+		// syntax.Command implementations that safe-shell permits.
+		// Listing them here ensures any new Command type added by a future
+		// version of mvdan.cc/sh/v3 is caught by the catch-all below.
+		// NOTE: *syntax.BinaryCmd and *syntax.ForClause are handled by their
+		// own cases above (with partial restrictions) and must not appear here.
+		case *syntax.CallExpr, *syntax.IfClause, *syntax.Block:
+			// allowed — no action
+
+		// Catch-all for unknown Command types not explicitly listed above.
+		// This guards against new command node types added by upstream
+		// library upgrades silently bypassing validation.
+		case syntax.Command:
+			err = fmt.Errorf("unsupported command type: %T", n)
+			return false
 		}
 		return true
 	})
@@ -276,18 +293,7 @@ func redirectTargetIsFD(rd *syntax.Redirect) bool {
 	return lit.Value == "1" || lit.Value == "2"
 }
 
-// isDevNull reports whether path is the platform's null device.
-// On Windows, only the bare "NUL" form is accepted (case-insensitive).
-// Device-path prefixes (\\.\NUL, \\?\NUL) and extension variants
-// (NUL.txt) are intentionally rejected — exact match keeps the
-// allowlist tight.
+// isDevNull delegates to allowedpaths.IsDevNull.
 func isDevNull(path string) bool {
-	if path == "/dev/null" {
-		return true
-	}
-	// On Windows, os.DevNull is "NUL". Accept it case-insensitively.
-	if os.DevNull != "/dev/null" && strings.EqualFold(path, os.DevNull) {
-		return true
-	}
-	return false
+	return allowedpaths.IsDevNull(path)
 }

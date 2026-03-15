@@ -1,4 +1,3 @@
-# Derived from standard POSIX error behavior
 description: head continues processing remaining files even after one fails, and exits 1.
 setup:
   files:

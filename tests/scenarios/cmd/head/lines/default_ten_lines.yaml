@@ -1,4 +1,3 @@
-# Derived from GNU coreutils head.pl test basic-11
 description: head outputs exactly 10 lines by default when file has more than 10.
 setup:
   files:

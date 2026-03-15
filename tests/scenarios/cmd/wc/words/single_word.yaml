@@ -1,4 +1,3 @@
-# Derived from GNU coreutils wc.pl test a4
 description: wc -w counts 1 word for a single non-whitespace token.
 setup:
   files:

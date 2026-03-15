@@ -1,5 +1,4 @@
 description: strings processes valid files and reports errors for missing ones; exits 1.
-skip_assert_against_bash: true
 setup:
   files:
     - path: good.bin
@@ -12,6 +11,5 @@ input:
 expect:
   stdout: |+
     hello
-  stderr_contains:
-    - "strings: missing.bin:"
+  stderr: "strings: 'missing.bin': No such file\n"
   exit_code: 1

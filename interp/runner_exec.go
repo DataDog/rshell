@@ -17,7 +17,8 @@ import (
 	"mvdan.cc/sh/v3/expand"
 	"mvdan.cc/sh/v3/syntax"
 
-	"github.com/DataDog/rshell/interp/builtins"
+	"github.com/DataDog/rshell/allowedpaths"
+	"github.com/DataDog/rshell/builtins"
 )
 
 func (r *Runner) stmt(ctx context.Context, st *syntax.Stmt) {
@@ -100,9 +101,13 @@ func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {
 			r.setVar(name, vr)
 		}
 
-		r.call(ctx, cm.Args[0].Pos(), fields)
-		for _, restore := range restores {
-			r.setVar(restore.name, restore.vr)
+		defer func() {
+			for _, restore := range restores {
+				r.setVarRestore(restore.name, restore.vr)
+			}
+		}()
+		if r.exit.ok() {
+			r.call(ctx, cm.Args[0].Pos(), fields)
 		}
 	case *syntax.BinaryCmd:
 		switch cm.Op {
@@ -176,6 +181,10 @@ func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {
 			}
 
 			for _, field := range items {
+				if err := ctx.Err(); err != nil {
+					r.exit.fatal(err)
+					break
+				}
 				r.setVarString(name, field)
 				if r.loopStmtsBroken(ctx, cm.Do) {
 					// Excess continue at outermost loop: clamp and keep iterating
@@ -243,18 +252,21 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 				return r.open(ctx, path, flags, mode, false)
 			},
 			ReadDir: func(ctx context.Context, path string) ([]fs.DirEntry, error) {
-				return r.sandbox.readDir(r.handlerCtx(ctx, todoPos), path)
+				return r.sandbox.ReadDir(path, HandlerCtx(r.handlerCtx(ctx, todoPos)).Dir)
+			},
+			ReadDirLimited: func(ctx context.Context, path string, offset, maxRead int) ([]fs.DirEntry, bool, error) {
+				return r.sandbox.ReadDirLimited(path, HandlerCtx(r.handlerCtx(ctx, todoPos)).Dir, offset, maxRead)
 			},
 			StatFile: func(ctx context.Context, path string) (fs.FileInfo, error) {
-				return r.sandbox.stat(r.handlerCtx(ctx, todoPos), path)
+				return r.sandbox.Stat(path, HandlerCtx(r.handlerCtx(ctx, todoPos)).Dir)
 			},
 			LstatFile: func(ctx context.Context, path string) (fs.FileInfo, error) {
-				return r.sandbox.lstat(r.handlerCtx(ctx, todoPos), path)
+				return r.sandbox.Lstat(path, HandlerCtx(r.handlerCtx(ctx, todoPos)).Dir)
 			},
 			AccessFile: func(ctx context.Context, path string, mode uint32) error {
-				return r.sandbox.access(r.handlerCtx(ctx, todoPos), path, mode)
+				return r.sandbox.Access(path, HandlerCtx(r.handlerCtx(ctx, todoPos)).Dir, mode)
 			},
-			PortableErr: portableErrMsg,
+			PortableErr: allowedpaths.PortableErrMsg,
 			Now:         time.Now,
 		}
 		if r.stdin != nil { // do not assign a typed nil into the io.Reader interface

@@ -1,4 +1,3 @@
-# Derived from uutils test_test.rs — test -s (size greater than zero)
 description: "test -s on empty and non-empty files"
 setup:
   files:

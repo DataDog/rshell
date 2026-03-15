@@ -1,4 +1,3 @@
-# Derived from GNU coreutils cut.pl od-abut test
 description: Cut inserts output delimiter between adjacent but separate byte ranges.
 setup:
   files:

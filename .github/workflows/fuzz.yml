@@ -1,0 +1,141 @@
+name: Fuzz Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  fuzz:
+    name: Fuzz (${{ matrix.name }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - pkg: ./builtins/tests/head/
+            name: head
+          - pkg: ./builtins/tests/cat/
+            name: cat
+          - pkg: ./builtins/tests/wc/
+            name: wc
+          - pkg: ./builtins/tests/tail/
+            name: tail
+          - pkg: ./builtins/tests/grep/
+            name: grep
+          - pkg: ./builtins/tests/cut/
+            name: cut
+          - pkg: ./builtins/tests/echo/
+            name: echo
+          - pkg: ./builtins/tests/uniq/
+            name: uniq
+          - pkg: ./builtins/tests/strings_cmd/
+            name: strings_cmd
+          - pkg: ./builtins/tests/testcmd/
+            name: testcmd
+          - pkg: ./builtins/tests/ls/
+            name: ls
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
+        with:
+          go-version-file: .go-version
+
+      # Restore corpus from previous runs
+      - name: Restore fuzz corpus
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: |
+            builtins/tests/${{ matrix.name }}/testdata/fuzz/
+          key: fuzz-corpus-${{ matrix.name }}-${{ github.sha }}
+          restore-keys: |
+            fuzz-corpus-${{ matrix.name }}-
+
+      # Run seed corpus as normal tests (fast, deterministic)
+      - name: Run fuzz seed corpus
+        run: |
+          # Find all Fuzz* functions in the package (excluding differential ones that need RSHELL_BASH_TEST)
+          FUZZ_FUNCS=$(grep -r '^func Fuzz' ${{ matrix.pkg }} 2>/dev/null | grep -v 'Differential' | sed 's/.*func \(Fuzz[^(]*\).*/\1/' | sort -u | tr '\n' '|' | sed 's/|$//')
+          if [ -n "$FUZZ_FUNCS" ]; then
+            go test -run "^(${FUZZ_FUNCS})$" ${{ matrix.pkg }} -timeout 120s
+          else
+            echo "No non-differential fuzz functions found in ${{ matrix.pkg }}, skipping"
+          fi
+
+      # Run actual fuzzing for a short duration
+      - name: Fuzz (${{ matrix.name }})
+        run: |
+          FUZZ_FUNCS=$(grep -r '^func Fuzz' ${{ matrix.pkg }} 2>/dev/null | grep -v 'Differential' | sed 's/.*func \(Fuzz[^(]*\).*/\1/' | sort -u)
+          if [ -z "$FUZZ_FUNCS" ]; then
+            echo "No fuzz targets found in ${{ matrix.pkg }}, skipping"
+            exit 0
+          fi
+          for FUNC in $FUZZ_FUNCS; do
+            echo "Fuzzing $FUNC..."
+            go test -fuzz="^${FUNC}$" -fuzztime=30s ${{ matrix.pkg }} -timeout 300s
+          done
+
+      # Save corpus
+      - name: Save fuzz corpus
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        if: always()
+        with:
+          path: |
+            builtins/tests/${{ matrix.name }}/testdata/fuzz/
+          key: fuzz-corpus-${{ matrix.name }}-${{ github.sha }}
+
+  fuzz-differential:
+    name: Fuzz Differential (${{ matrix.name }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - pkg: ./builtins/tests/head/
+            name: head
+          - pkg: ./builtins/tests/cat/
+            name: cat
+          - pkg: ./builtins/tests/wc/
+            name: wc
+          - pkg: ./builtins/tests/tail/
+            name: tail
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
+        with:
+          go-version-file: .go-version
+
+      - name: Restore fuzz corpus
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: |
+            builtins/tests/${{ matrix.name }}/testdata/fuzz/
+          key: fuzz-differential-corpus-${{ matrix.name }}-${{ github.sha }}
+          restore-keys: |
+            fuzz-differential-corpus-${{ matrix.name }}-
+
+      - name: Fuzz Differential (${{ matrix.name }})
+        env:
+          RSHELL_BASH_TEST: "1"
+        run: |
+          FUZZ_FUNCS=$(grep -r '^func Fuzz.*Differential' ${{ matrix.pkg }} 2>/dev/null | sed 's/.*func \(Fuzz[^(]*\).*/\1/' | sort -u)
+          if [ -z "$FUZZ_FUNCS" ]; then
+            echo "No differential fuzz targets found in ${{ matrix.pkg }}, skipping"
+            exit 0
+          fi
+          for FUNC in $FUZZ_FUNCS; do
+            echo "Fuzzing $FUNC..."
+            go test -fuzz="^${FUNC}$" -fuzztime=30s ${{ matrix.pkg }} -timeout 300s
+          done
+
+      - name: Save fuzz corpus
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        if: always()
+        with:
+          path: |
+            builtins/tests/${{ matrix.name }}/testdata/fuzz/
+          key: fuzz-differential-corpus-${{ matrix.name }}-${{ github.sha }}

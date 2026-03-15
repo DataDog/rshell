@@ -1,4 +1,3 @@
-# Derived from GNU coreutils cut.pl test h
 description: Cut with -s skips lines that do not contain the delimiter.
 setup:
   files:

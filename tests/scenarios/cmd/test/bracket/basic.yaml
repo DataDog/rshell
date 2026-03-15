@@ -1,4 +1,3 @@
-# Derived from uutils test_test.rs — bracket syntax tests
 description: "[ ] bracket syntax with closing bracket requirement"
 input:
   script: |+

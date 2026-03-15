@@ -1,4 +1,3 @@
-# Derived from standard cut stdin usage
 description: Cut reads from stdin when input is piped.
 input:
   script: |+

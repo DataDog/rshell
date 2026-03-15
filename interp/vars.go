@@ -16,6 +16,10 @@ import (
 	"mvdan.cc/sh/v3/syntax"
 )
 
+// MaxVarBytes is the maximum size in bytes of a single variable value.
+// Assignments that exceed this limit are rejected with an error.
+const MaxVarBytes = 1 << 20 // 1 MiB
+
 func newOverlayEnviron(parent expand.Environ, background bool) *overlayEnviron {
 	oenv := &overlayEnviron{}
 	if !background {
@@ -56,15 +60,24 @@ func (o *overlayEnviron) Set(name string, vr expand.Variable) error {
 	if o.values == nil {
 		o.values = make(map[string]expand.Variable)
 	}
+	if prev.ReadOnly && vr.Kind != expand.KeepValue {
+		return fmt.Errorf("readonly variable")
+	}
 	if vr.Kind == expand.KeepValue {
+		if prev.ReadOnly {
+			return fmt.Errorf("readonly variable")
+		}
 		vr.Kind = prev.Kind
 		vr.Str = prev.Str
 		vr.List = prev.List
 		vr.Map = prev.Map
-	} else if prev.ReadOnly {
-		return fmt.Errorf("readonly variable")
 	}
 	if !vr.IsSet() { // unsetting
+		// Note: prev.ReadOnly is always false here (guarded by the checks above),
+		// but we keep this as defense-in-depth in case future refactors change the flow.
+		if prev.ReadOnly {
+			return fmt.Errorf("readonly variable")
+		}
 		if prev.Local {
 			vr.Local = true
 			o.values[name] = vr
@@ -127,10 +140,26 @@ func (r *Runner) setVarString(name, value string) {
 }
 
 func (r *Runner) setVar(name string, vr expand.Variable) {
+	if vr.IsSet() && len(vr.Str) > MaxVarBytes {
+		r.errf("%s: value too large (limit %d bytes)\n", name, MaxVarBytes)
+		r.exit.code = 1
+		return
+	}
 	if err := r.writeEnv.Set(name, vr); err != nil {
 		r.errf("%s: %v\n", name, err)
 		r.exit.code = 1
 		return
+	}
+}
+
+// setVarRestore writes a variable back without enforcing the size limit.
+// Used to restore inline command variables (e.g. FOO=val cmd) to their
+// original values after the command returns, so that inherited variables
+// larger than MaxVarBytes can be restored correctly.
+func (r *Runner) setVarRestore(name string, vr expand.Variable) {
+	if err := r.writeEnv.Set(name, vr); err != nil {
+		r.errf("%s: %v\n", name, err)
+		r.exit.code = 1
 	}
 }
 

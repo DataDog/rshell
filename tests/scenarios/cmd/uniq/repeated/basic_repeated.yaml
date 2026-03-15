@@ -1,4 +1,3 @@
-# Derived from GNU coreutils uniq.pl test 20
 description: uniq -d prints only repeated lines.
 setup:
   files:
