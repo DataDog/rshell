@@ -1,0 +1,13 @@
+# Test -exec combined with -print
+description: find -exec followed by -print outputs both exec output and path.
+setup:
+  files:
+    - path: a.txt
+      content: "alpha"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    find . -name "a.txt" -exec echo found {} \; -print
+expect:
+  stdout: "found ./a.txt\n./a.txt\n"
+  exit_code: 0

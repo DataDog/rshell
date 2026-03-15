@@ -1,0 +1,13 @@
+# Test multiple {} placeholders in ; mode
+description: find -exec replaces all {} occurrences in ; mode.
+setup:
+  files:
+    - path: a.txt
+      content: "alpha"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    find . -name "a.txt" -exec echo {} and {} \;
+expect:
+  stdout: "./a.txt and ./a.txt\n"
+  exit_code: 0

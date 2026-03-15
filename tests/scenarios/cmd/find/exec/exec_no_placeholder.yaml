@@ -1,0 +1,15 @@
+# Test -exec without {} placeholder
+description: find -exec without {} runs the command once per match without substitution.
+setup:
+  files:
+    - path: a.txt
+      content: "alpha"
+    - path: b.txt
+      content: "beta"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    find . -name "*.txt" -exec echo hello \; | sort
+expect:
+  stdout: "hello\nhello\n"
+  exit_code: 0

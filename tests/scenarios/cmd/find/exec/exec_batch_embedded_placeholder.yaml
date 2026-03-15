@@ -1,0 +1,14 @@
+# Test that embedded {} in batch mode is rejected
+description: find -exec with embedded {} in batch mode reports an error.
+skip_assert_against_bash: true  # error message format differs
+setup:
+  files:
+    - path: a.txt
+      content: "alpha"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    find . -exec echo foo{} {} +
+expect:
+  stderr_contains: ["only one instance"]
+  exit_code: 1

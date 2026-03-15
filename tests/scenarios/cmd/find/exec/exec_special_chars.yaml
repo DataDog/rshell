@@ -1,0 +1,13 @@
+# Test -exec with filenames containing spaces
+description: find -exec handles filenames with spaces correctly.
+setup:
+  files:
+    - path: "hello world.txt"
+      content: "greeting"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    find . -name "hello world.txt" -exec echo found {} \;
+expect:
+  stdout: "found ./hello world.txt\n"
+  exit_code: 0

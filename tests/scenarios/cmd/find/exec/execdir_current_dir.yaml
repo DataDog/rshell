@@ -1,0 +1,15 @@
+# Test -execdir with files only in current directory
+description: find -execdir works correctly when files are in the start directory.
+setup:
+  files:
+    - path: a.txt
+      content: "alpha"
+    - path: b.txt
+      content: "beta"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    find . -maxdepth 1 -name "*.txt" -execdir echo {} \; | sort
+expect:
+  stdout: "./a.txt\n./b.txt\n"
+  exit_code: 0

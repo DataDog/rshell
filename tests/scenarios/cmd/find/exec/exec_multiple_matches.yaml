@@ -1,0 +1,17 @@
+# Test -exec with multiple matching files
+description: find -exec runs the command once per matched file with correct paths.
+setup:
+  files:
+    - path: dir1/a.txt
+      content: "alpha"
+    - path: dir2/b.txt
+      content: "beta"
+    - path: dir2/c.txt
+      content: "gamma"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    find . -name "*.txt" -exec echo {} \; | sort
+expect:
+  stdout: "./dir1/a.txt\n./dir2/b.txt\n./dir2/c.txt\n"
+  exit_code: 0

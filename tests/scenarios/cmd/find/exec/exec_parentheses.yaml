@@ -1,0 +1,17 @@
+# Test -exec within parentheses with OR logic
+description: find -exec within parenthesized groups with -o works correctly.
+setup:
+  files:
+    - path: a.txt
+      content: "alpha"
+    - path: b.log
+      content: "beta"
+    - path: c.dat
+      content: "gamma"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    find . \( -name "*.txt" -exec echo txt {} \; \) -o \( -name "*.log" -exec echo log {} \; \) | sort
+expect:
+  stdout: "log ./b.log\ntxt ./a.txt\n"
+  exit_code: 0

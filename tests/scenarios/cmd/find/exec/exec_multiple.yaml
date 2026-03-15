@@ -1,0 +1,13 @@
+# Test chaining multiple -exec predicates
+description: find with multiple -exec predicates runs each command for matched files.
+setup:
+  files:
+    - path: a.txt
+      content: "alpha"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    find . -name "a.txt" -exec echo first {} \; -exec echo second {} \;
+expect:
+  stdout: "first ./a.txt\nsecond ./a.txt\n"
+  exit_code: 0

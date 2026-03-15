@@ -1,0 +1,15 @@
+# Test -exec combined with -not
+description: find -not with -exec only executes for non-matching files.
+setup:
+  files:
+    - path: a.txt
+      content: "alpha"
+    - path: b.log
+      content: "beta"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    find . -maxdepth 1 -type f -not -name "*.txt" -exec echo {} \;
+expect:
+  stdout: "./b.log\n"
+  exit_code: 0

@@ -1,0 +1,21 @@
+# Test batch mode with many files
+description: find -exec with + batches many files into a single invocation.
+setup:
+  files:
+    - path: a.txt
+      content: "a"
+    - path: b.txt
+      content: "b"
+    - path: c.txt
+      content: "c"
+    - path: d.txt
+      content: "d"
+    - path: e.txt
+      content: "e"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    find . -name "*.txt" -exec echo {} + | tr ' ' '\n' | sort
+expect:
+  stdout: "./a.txt\n./b.txt\n./c.txt\n./d.txt\n./e.txt\n"
+  exit_code: 0

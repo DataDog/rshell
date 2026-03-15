@@ -1,0 +1,13 @@
+# Test -exec with -type f to only match files
+description: find -type f -exec only processes files, not directories.
+setup:
+  files:
+    - path: sub/a.txt
+      content: "alpha"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    find . -type f -exec echo {} \;
+expect:
+  stdout: "./sub/a.txt\n"
+  exit_code: 0

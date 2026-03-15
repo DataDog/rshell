@@ -1,0 +1,15 @@
+# Test -exec as a boolean filter (false suppresses, true passes)
+description: find -exec acts as boolean filter where command exit code determines match.
+setup:
+  files:
+    - path: a.txt
+      content: "hello"
+    - path: b.txt
+      content: "world"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    find . -name "*.txt" -exec grep -q hello {} \; -print | sort
+expect:
+  stdout: "./a.txt\n"
+  exit_code: 0

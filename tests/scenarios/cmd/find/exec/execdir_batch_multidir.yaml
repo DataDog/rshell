@@ -1,0 +1,17 @@
+# Test -execdir batch mode with files in multiple directories
+description: find -execdir with + groups files by parent directory.
+setup:
+  files:
+    - path: dir1/a.txt
+      content: "a"
+    - path: dir2/b.txt
+      content: "b"
+    - path: dir3/c.txt
+      content: "c"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    find . -name "*.txt" -execdir echo {} + | sort
+expect:
+  stdout: "./a.txt\n./b.txt\n./c.txt\n"
+  exit_code: 0

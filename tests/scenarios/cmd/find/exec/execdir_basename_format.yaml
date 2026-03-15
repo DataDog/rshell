@@ -1,0 +1,13 @@
+# Test -execdir uses ./basename format not full path
+description: find -execdir passes ./basename to the command, not the full path.
+setup:
+  files:
+    - path: sub/deep/file.txt
+      content: "data"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    find . -name "file.txt" -execdir echo {} \;
+expect:
+  stdout: "./file.txt\n"
+  exit_code: 0
