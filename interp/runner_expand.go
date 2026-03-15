@@ -106,7 +106,9 @@ func (lw *limitWriter) Write(p []byte) (int, error) {
 	}
 	remaining := lw.limit - lw.n
 	if int64(len(p)) > remaining {
-		lw.w.Write(p[:remaining])
+		if _, err := lw.w.Write(p[:remaining]); err != nil {
+			return int(remaining), err
+		}
 		lw.n = lw.limit
 		return len(p), nil // report all bytes consumed to avoid short-write errors
 	}
