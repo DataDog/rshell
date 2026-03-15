@@ -6,5 +6,7 @@ input:
 expect:
   stdout_contains: ["/dev/fd/"]
   exit_code: 0
-  stdout_windows: ""
+  # On Windows, process substitution is not supported, so the error is printed
+  # and stdout is empty. stdout_contains_windows overrides stdout_contains.
+  stdout_contains_windows: [""]
   stderr_contains_windows: ["process substitution is not supported on this platform"]
