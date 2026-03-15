@@ -231,6 +231,9 @@ optLoop:
 	}
 
 	// Execute accumulated batch commands (-exec ... {} + / -execdir ... {} +).
+	// Run batches if no errors occurred, or if entries were accumulated despite
+	// per-file errors — GNU find always runs pending batches regardless of
+	// individual file evaluation failures.
 	if !failed || len(batchAccum) > 0 {
 		for _, e := range batchExprs {
 			entries := batchAccum[e]
