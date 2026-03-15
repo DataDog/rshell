@@ -18,9 +18,9 @@ import (
 	"strings"
 )
 
-// MaxGlobEntries is the maximum number of directory entries read per glob
-// expansion step. ReadDirForGlob rejects directories with more entries to
-// prevent memory exhaustion during pattern matching.
+// MaxGlobEntries is the maximum number of directory entries read per single
+// glob expansion step. ReadDirForGlob returns an error for directories that
+// exceed this limit to prevent memory exhaustion during pattern matching.
 const MaxGlobEntries = 100_000
 
 // root pairs an absolute directory path with its opened os.Root handle.
@@ -190,11 +190,12 @@ func (s *Sandbox) ReadDir(path string, cwd string) ([]fs.DirEntry, error) {
 	return s.readDirN(path, cwd, -1)
 }
 
-// ReadDirForGlob reads at most MaxGlobEntries directory entries for glob
-// expansion. It caps the underlying ReadDir call at MaxGlobEntries+1 so the
-// kernel never materialises more entries than needed; if the directory exceeds
-// the limit a "too many entries" error is returned before any expensive pattern
-// matching or sorting can occur.
+// ReadDirForGlob reads directory entries for glob expansion, capped at
+// MaxGlobEntries. The underlying ReadDir call is limited to MaxGlobEntries+1
+// so the kernel never materialises more entries than needed. If the directory
+// exceeds the limit an error is returned before any pattern matching or
+// sorting can occur, making the failure explicit rather than silently returning
+// a partial listing that could miss valid matches.
 func (s *Sandbox) ReadDirForGlob(path string, cwd string) ([]fs.DirEntry, error) {
 	return s.readDirN(path, cwd, MaxGlobEntries)
 }
@@ -202,14 +203,7 @@ func (s *Sandbox) ReadDirForGlob(path string, cwd string) ([]fs.DirEntry, error)
 // readDirN is the shared implementation for ReadDir and ReadDirForGlob.
 // maxEntries <= 0 means unlimited. Otherwise f.ReadDir is called with
 // maxEntries+1 to cap the read at the OS level; if the directory has more
-// entries than the limit, the slice is silently truncated to maxEntries.
-// Truncating without error (rather than returning an error) is intentional:
-// ReadDir2 is called by mvdan.cc/sh/expand both to check whether a literal
-// path component is a directory (error → path silently dropped) and to list
-// entries for wildcard matching. Returning an error for the existence check
-// causes huge parent directories to be treated as non-existent, so patterns
-// like "echo /huge/*.txt" return the literal instead of expanding. Truncating
-// bounds memory while letting both call sites succeed.
+// entries than the limit an error is returned.
 func (s *Sandbox) readDirN(path string, cwd string, maxEntries int) ([]fs.DirEntry, error) {
 	absPath := toAbs(path, cwd)
 
@@ -233,9 +227,12 @@ func (s *Sandbox) readDirN(path string, cwd string, maxEntries int) ([]fs.DirEnt
 	if err != nil && err != io.EOF {
 		return nil, PortablePathError(err)
 	}
-	// Silently truncate to maxEntries: see the function comment above.
 	if maxEntries > 0 && len(entries) > maxEntries {
-		entries = entries[:maxEntries]
+		return nil, &os.PathError{
+			Op:   "readdir",
+			Path: path,
+			Err:  fmt.Errorf("directory has too many entries (cap: %d)", maxEntries),
+		}
 	}
 	// os.Root's ReadDir does not guarantee sorted order like os.ReadDir.
 	// Sort to match POSIX glob expansion expectations.
