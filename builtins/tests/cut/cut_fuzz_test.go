@@ -95,7 +95,11 @@ func FuzzCutFields(f *testing.F) {
 		if err := os.MkdirAll(dir, 0755); err != nil {
 			t.Fatal(err)
 		}
-		defer os.RemoveAll(dir)
+		defer func() {
+			if err := os.RemoveAll(dir); err != nil && !os.IsNotExist(err) {
+				t.Logf("cleanup %s: %v", dir, err)
+			}
+		}()
 
 		if err := os.WriteFile(filepath.Join(dir, "input.txt"), input, 0644); err != nil {
 			t.Fatal(err)
@@ -167,7 +171,11 @@ func FuzzCutBytes(f *testing.F) {
 		if err := os.MkdirAll(dir, 0755); err != nil {
 			t.Fatal(err)
 		}
-		defer os.RemoveAll(dir)
+		defer func() {
+			if err := os.RemoveAll(dir); err != nil && !os.IsNotExist(err) {
+				t.Logf("cleanup %s: %v", dir, err)
+			}
+		}()
 
 		if err := os.WriteFile(filepath.Join(dir, "input.txt"), input, 0644); err != nil {
 			t.Fatal(err)
@@ -237,7 +245,11 @@ func FuzzCutDelimiter(f *testing.F) {
 		if err := os.MkdirAll(dir, 0755); err != nil {
 			t.Fatal(err)
 		}
-		defer os.RemoveAll(dir)
+		defer func() {
+			if err := os.RemoveAll(dir); err != nil && !os.IsNotExist(err) {
+				t.Logf("cleanup %s: %v", dir, err)
+			}
+		}()
 
 		if err := os.WriteFile(filepath.Join(dir, "input.txt"), input, 0644); err != nil {
 			t.Fatal(err)
@@ -300,7 +312,11 @@ func FuzzCutComplement(f *testing.F) {
 		if err := os.MkdirAll(dir, 0755); err != nil {
 			t.Fatal(err)
 		}
-		defer os.RemoveAll(dir)
+		defer func() {
+			if err := os.RemoveAll(dir); err != nil && !os.IsNotExist(err) {
+				t.Logf("cleanup %s: %v", dir, err)
+			}
+		}()
 
 		if err := os.WriteFile(filepath.Join(dir, "input.txt"), input, 0644); err != nil {
 			t.Fatal(err)
@@ -345,7 +361,11 @@ func FuzzCutStdin(f *testing.F) {
 		if err := os.MkdirAll(dir, 0755); err != nil {
 			t.Fatal(err)
 		}
-		defer os.RemoveAll(dir)
+		defer func() {
+			if err := os.RemoveAll(dir); err != nil && !os.IsNotExist(err) {
+				t.Logf("cleanup %s: %v", dir, err)
+			}
+		}()
 
 		if err := os.WriteFile(filepath.Join(dir, "stdin.txt"), input, 0644); err != nil {
 			t.Fatal(err)

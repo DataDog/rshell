@@ -72,7 +72,11 @@ func FuzzLsFlags(f *testing.F) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		defer os.RemoveAll(dir)
+		defer func() {
+			if err := os.RemoveAll(dir); err != nil && !os.IsNotExist(err) {
+				t.Logf("cleanup %s: %v", dir, err)
+			}
+		}()
 		if err := os.WriteFile(filepath.Join(dir, filename), []byte("content"), 0644); err != nil {
 			// Some filenames may be invalid on the OS.
 			return
@@ -131,7 +135,11 @@ func FuzzLsRecursive(f *testing.F) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		defer os.RemoveAll(dir)
+		defer func() {
+			if err := os.RemoveAll(dir); err != nil && !os.IsNotExist(err) {
+				t.Logf("cleanup %s: %v", dir, err)
+			}
+		}()
 		current := dir
 		for i := int64(0); i < depth; i++ {
 			subdir := filepath.Join(current, "sub")
@@ -190,7 +198,11 @@ func FuzzLsHumanReadable(f *testing.F) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		defer os.RemoveAll(dir)
+		defer func() {
+			if err := os.RemoveAll(dir); err != nil && !os.IsNotExist(err) {
+				t.Logf("cleanup %s: %v", dir, err)
+			}
+		}()
 		// Create a file with the specified size using Truncate.
 		fpath := filepath.Join(dir, "testfile.bin")
 		fh, err := os.Create(fpath)
@@ -235,7 +247,11 @@ func FuzzLsMultipleFiles(f *testing.F) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		defer os.RemoveAll(dir)
+		defer func() {
+			if err := os.RemoveAll(dir); err != nil && !os.IsNotExist(err) {
+				t.Logf("cleanup %s: %v", dir, err)
+			}
+		}()
 
 		// Create a mix of files and a subdirectory.
 		files := []struct {
