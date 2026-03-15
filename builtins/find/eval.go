@@ -305,7 +305,7 @@ func evalExec(ec *evalContext, e *expr, isExecDir bool) evalResult {
 	args := buildExecArgs(e.execArgs, filePath)
 	code, err := ec.execCommand(ec.ctx, args, dir, ec.callCtx.Stdout, ec.callCtx.Stderr)
 	if err != nil {
-		ec.callCtx.Errf("find: %s: %s\n", args[0], err.Error())
+		ec.callCtx.Errf("find: %s: %v\n", args[0], err)
 		return evalResult{matched: false}
 	}
 	return evalResult{matched: code == 0}

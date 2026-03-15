@@ -10,5 +10,5 @@ input:
     find . -name "a.txt" -exec false \;
     echo "exit: $?"
 expect:
-  stdout_contains: ["exit: 0"]
+  stdout: "exit: 0\n"
   exit_code: 0
