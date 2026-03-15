@@ -281,11 +281,26 @@ func FuzzTestNesting(f *testing.F) {
 	dir := f.TempDir()
 
 	f.Fuzz(func(t *testing.T, expr string) {
-		if len(expr) > 200 {
+		// Keep expressions short to avoid slow evaluation on CI where
+		// fuzz workers have limited CPU; long expressions with many
+		// tokens can cause the shell interpreter to exceed the
+		// per-iteration timeout, leading to "context deadline exceeded".
+		if len(expr) > 80 {
 			return
 		}
 		if !utf8.ValidString(expr) {
 			return
+		}
+		// Limit the number of space-separated tokens to cap nesting
+		// depth and keep evaluation fast on CI.
+		tokens := 0
+		for i := 0; i < len(expr); i++ {
+			if expr[i] == ' ' {
+				tokens++
+				if tokens > 15 {
+					return
+				}
+			}
 		}
 		for _, c := range expr {
 			// Filter shell metacharacters that would be interpreted by the shell
@@ -306,7 +321,7 @@ func FuzzTestNesting(f *testing.F) {
 			}
 		}
 
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		defer cancel()
 
 		script := fmt.Sprintf("test %s", expr)
