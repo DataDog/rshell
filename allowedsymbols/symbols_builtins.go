@@ -132,23 +132,23 @@ var builtinPerCommandSymbols = map[string][]string{
 		"strconv.ParseInt", // string-to-int conversion with base/bit-size; pure function, no I/O.
 	},
 	"ls": {
-		"context.Context",       // deadline/cancellation plumbing; pure interface, no side effects.
-		"errors.New",            // creates a simple error value; pure function, no I/O.
-		"fmt.Sprintf",           // string formatting; pure function, no I/O.
-		"io/fs.DirEntry",        // interface type for directory entries; no side effects.
-		"io/fs.FileInfo",        // interface type for file information; no side effects.
-		"io/fs.ModeDir",         // file mode bit constant for directories; pure constant.
-		"io/fs.ModeNamedPipe",   // file mode bit constant for named pipes; pure constant.
-		"io/fs.ModeSetgid",      // file mode bit constant for setgid; pure constant.
-		"io/fs.ModeSetuid",      // file mode bit constant for setuid; pure constant.
-		"io/fs.ModeSocket",      // file mode bit constant for sockets; pure constant.
-		"io/fs.ModeSticky",      // file mode bit constant for sticky bit; pure constant.
-		"io/fs.ModeSymlink",     // file mode bit constant for symlinks; pure constant.
-		"runtime.GOOS",          // current OS name constant; pure constant, no I/O.
-		"slices.Reverse",        // reverses a slice in-place; pure function, no I/O.
-		"slices.SortFunc",       // sorts a slice with a comparison function; pure function, no I/O.
-		"syscall.Stat_t",        // file stat struct for extracting UID/GID/nlink; read-only type, no I/O.
-		"time.Time",             // time value type; pure data, no side effects.
+		"context.Context",     // deadline/cancellation plumbing; pure interface, no side effects.
+		"errors.New",          // creates a simple error value; pure function, no I/O.
+		"fmt.Sprintf",         // string formatting; pure function, no I/O.
+		"io/fs.DirEntry",      // interface type for directory entries; no side effects.
+		"io/fs.FileInfo",      // interface type for file information; no side effects.
+		"io/fs.ModeDir",       // file mode bit constant for directories; pure constant.
+		"io/fs.ModeNamedPipe", // file mode bit constant for named pipes; pure constant.
+		"io/fs.ModeSetgid",    // file mode bit constant for setgid; pure constant.
+		"io/fs.ModeSetuid",    // file mode bit constant for setuid; pure constant.
+		"io/fs.ModeSocket",    // file mode bit constant for sockets; pure constant.
+		"io/fs.ModeSticky",    // file mode bit constant for sticky bit; pure constant.
+		"io/fs.ModeSymlink",   // file mode bit constant for symlinks; pure constant.
+		"runtime.GOOS",        // current OS name constant; pure constant, no I/O.
+		"slices.Reverse",      // reverses a slice in-place; pure function, no I/O.
+		"slices.SortFunc",     // sorts a slice with a comparison function; pure function, no I/O.
+		"syscall.Stat_t",      // file stat struct for extracting UID/GID/nlink; read-only type, no I/O.
+		"time.Time",           // time value type; pure data, no side effects.
 	},
 	"printf": {
 		"context.Context",      // deadline/cancellation plumbing; pure interface, no side effects.
