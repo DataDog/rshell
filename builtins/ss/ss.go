@@ -143,11 +143,14 @@ type socketEntry struct {
 
 // options holds the resolved flag values after pflag parsing.
 type options struct {
-	showTCP      bool
-	showUDP      bool
-	showUnix     bool
-	showAll      bool // -a: listening + non-listening
-	listenOnly   bool // -l: listening only
+	showTCP    bool
+	showUDP    bool
+	showUnix   bool
+	showAll    bool // -a: listening + non-listening
+	listenOnly bool // -l: listening only
+	// numericAddrs is accepted for compatibility (-n/--numeric) but has no
+	// runtime effect: this implementation never performs DNS or service-name
+	// lookups, so output is always in numeric form.
 	numericAddrs bool // -n
 	ipv4Only     bool // -4
 	ipv6Only     bool // -6

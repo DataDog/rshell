@@ -10,9 +10,10 @@ package ss
 import (
 	"context"
 	"fmt"
-	"golang.org/x/sys/unix"
 	"strconv"
 	"strings"
+
+	"golang.org/x/sys/unix"
 
 	"github.com/DataDog/rshell/builtins"
 )

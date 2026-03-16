@@ -272,12 +272,19 @@ func collectUDP(af uintptr) ([]SocketEntry, error) {
 			localPort = winPortToHost(binary.LittleEndian.Uint32(data[off+20:])) // dwLocalPort at offset 20
 		}
 
+		// UDP sockets are connectionless and have no remote address.  Use the
+		// correct unspecified address sentinel for the address family: "::" for
+		// IPv6, "0.0.0.0" for IPv4.
+		remoteIP := "0.0.0.0"
+		if af == afINET6 {
+			remoteIP = "::"
+		}
 		out = append(out, SocketEntry{
 			Proto:     proto,
 			State:     "UNCONN",
 			LocalIP:   localIP,
 			LocalPort: localPort,
-			RemoteIP:  "0.0.0.0",
+			RemoteIP:  remoteIP,
 		})
 	}
 	return out, nil
