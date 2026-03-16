@@ -53,7 +53,26 @@ func FuzzPingFlags(f *testing.F) {
 		// special characters that create multi-command scripts, etc.).
 		// This ensures we fuzz ping flag handling, not the shell parser.
 		parser := syntax.NewParser()
-		if _, err := parser.Parse(strings.NewReader(script), ""); err != nil {
+		file, err := parser.Parse(strings.NewReader(script), "")
+		if err != nil {
+			return
+		}
+
+		// Skip inputs that produce anything other than a single simple
+		// command. Pipes (e.g. "ping |0"), background jobs ("ping &cmd"),
+		// and multi-statement scripts are valid shell syntax but test
+		// the shell runtime, not ping's flag parsing.
+		if len(file.Stmts) != 1 {
+			return
+		}
+		stmt := file.Stmts[0]
+		if stmt.Background || stmt.Coprocess || stmt.Negated {
+			return
+		}
+		if _, ok := stmt.Cmd.(*syntax.CallExpr); !ok {
+			return
+		}
+		if len(stmt.Redirs) > 0 {
 			return
 		}
 
