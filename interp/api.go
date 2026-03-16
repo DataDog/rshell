@@ -18,7 +18,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"runtime/debug"
 
 	"mvdan.cc/sh/v3/expand"
 	"mvdan.cc/sh/v3/syntax"
@@ -349,7 +348,7 @@ func (r *Runner) Run(ctx context.Context, node syntax.Node) (retErr error) {
 			}
 			func() {
 				defer func() { recover() }()
-				fmt.Fprintf(panicOut, "rshell: internal panic: %v\n%s\n", rec, debug.Stack())
+				fmt.Fprintf(panicOut, "rshell: internal panic: %v\n", rec)
 			}()
 			retErr = fmt.Errorf("internal error")
 		}
