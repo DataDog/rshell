@@ -533,21 +533,19 @@ func (p *parser) parseExecPredicate(isDir bool) (*expr, error) {
 		return nil, fmt.Errorf("find: %s: no command specified", predName)
 	}
 
-	// Count standalone {} placeholders.
-	placeholderCount := 0
-	for _, a := range cmdArgs {
-		if a == "{}" {
-			placeholderCount++
+	// In batch mode, GNU find requires exactly one {} across all arguments
+	// (including embedded occurrences like "prefix{}suffix"). Count all occurrences.
+	if batch {
+		totalPlaceholders := 0
+		for _, a := range cmdArgs {
+			totalPlaceholders += strings.Count(a, "{}")
 		}
-	}
-
-	// In batch mode, GNU find requires exactly one {} (the last arg before +).
-	// Multiple {} placeholders are rejected with an error matching GNU find behaviour.
-	if batch && placeholderCount > 1 {
-		return nil, fmt.Errorf("find: only one instance of '{}' is supported with %s ... +", predName)
-	}
-	if batch && placeholderCount == 0 {
-		return nil, fmt.Errorf("find: %s: '{}' must appear before '+'", predName)
+		if totalPlaceholders > 1 {
+			return nil, fmt.Errorf("find: only one instance of '{}' is supported with %s ... +", predName)
+		}
+		if totalPlaceholders == 0 {
+			return nil, fmt.Errorf("find: %s: '{}' must appear before '+'", predName)
+		}
 	}
 
 	var kind exprKind
