@@ -166,7 +166,7 @@ func TestHelpColumnsAligned(t *testing.T) {
 
 func TestHelpRestrictedShowsOnlyAllowed(t *testing.T) {
 	stdout, stderr, code := runScript(t, "help", "",
-		interp.AllowedCommands([]string{"echo"}))
+		interp.AllowedCommands([]string{"rshell:echo"}))
 	assert.Equal(t, 0, code)
 	assert.Empty(t, stderr)
 	assert.Contains(t, stdout, "echo")
@@ -179,7 +179,7 @@ func TestHelpRestrictedShowsOnlyAllowed(t *testing.T) {
 func TestHelpRestrictedSingleCommand(t *testing.T) {
 	// Only "ls" is explicitly allowed; help should still appear.
 	stdout, _, code := runScript(t, "help", "",
-		interp.AllowedCommands([]string{"ls"}))
+		interp.AllowedCommands([]string{"rshell:ls"}))
 	assert.Equal(t, 0, code)
 	assert.Contains(t, stdout, "help")
 	assert.Contains(t, stdout, "ls")
@@ -190,7 +190,7 @@ func TestHelpRestrictedAlignmentAdjusts(t *testing.T) {
 	// With "wc" (2-char) and "strings" (7-char) plus implicit "help" (4-char),
 	// the column width should match the longest allowed name.
 	stdout, _, code := runScript(t, "help", "",
-		interp.AllowedCommands([]string{"wc", "strings"}))
+		interp.AllowedCommands([]string{"rshell:wc", "rshell:strings"}))
 	assert.Equal(t, 0, code)
 
 	lines := strings.Split(strings.TrimSpace(stdout), "\n")
@@ -212,7 +212,7 @@ func TestHelpRestrictedAlignmentAdjusts(t *testing.T) {
 func TestHelpAlwaysAvailable(t *testing.T) {
 	// help is not in the allowed list, but should still run.
 	stdout, stderr, code := runScript(t, "help", "",
-		interp.AllowedCommands([]string{"echo", "ls"}))
+		interp.AllowedCommands([]string{"rshell:echo", "rshell:ls"}))
 	assert.Equal(t, 0, code)
 	assert.Empty(t, stderr)
 	assert.Contains(t, stdout, "help")

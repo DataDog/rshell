@@ -1,7 +1,7 @@
 description: Help is available even when not in the allowed commands list.
 skip_assert_against_bash: true
 input:
-  allowed_commands: ["echo"]
+  allowed_commands: ["rshell:echo"]
   script: |+
     help
 expect:
