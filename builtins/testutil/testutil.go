@@ -97,7 +97,7 @@ func FuzzIterDir(t testing.TB, baseDir string, counter *atomic.Int64) (string, f
 	}
 	return dir, func() {
 		if err := os.RemoveAll(dir); err != nil && !os.IsNotExist(err) {
-			t.Logf("cleanup %s: %v", dir, err)
+			t.Errorf("cleanup %s: %v", dir, err)
 		}
 	}
 }
