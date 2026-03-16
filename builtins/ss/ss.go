@@ -135,9 +135,13 @@ type socketEntry struct {
 	localPort string
 	peerAddr  string
 	peerPort  string
-	// Extended fields (populated when -e is set).
-	uid   uint32
-	inode uint64
+	// Extended fields — uid and inode are only populated by the Linux
+	// collector (read from /proc/net columns); hasExtended is true only
+	// when those fields carry real values so that non-Linux platforms do
+	// not emit misleading uid:0 inode:0 output when -e is requested.
+	uid         uint32
+	inode       uint64
+	hasExtended bool
 	// Timer info (populated when -o is set).
 	timer string
 }
@@ -305,7 +309,7 @@ func printEntry(callCtx *builtins.CallContext, opts options, e socketEntry) {
 		e.recvQ, e.sendQ,
 		local, peer)
 
-	if opts.extended {
+	if opts.extended && e.hasExtended {
 		line += fmt.Sprintf("  uid:%d inode:%d", e.uid, e.inode)
 	}
 	if opts.showOptions {

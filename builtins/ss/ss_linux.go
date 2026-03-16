@@ -305,16 +305,17 @@ func parseProcNetIP(
 		inode, _ := strconv.ParseUint(fields[9], 10, 64)
 
 		*out = append(*out, socketEntry{
-			kind:      kind,
-			state:     state,
-			recvQ:     recvQ,
-			sendQ:     sendQ,
-			localAddr: localAddr,
-			localPort: localPort,
-			peerAddr:  remAddr,
-			peerPort:  remPort,
-			uid:       uint32(uid64),
-			inode:     inode,
+			kind:        kind,
+			state:       state,
+			recvQ:       recvQ,
+			sendQ:       sendQ,
+			localAddr:   localAddr,
+			localPort:   localPort,
+			peerAddr:    remAddr,
+			peerPort:    remPort,
+			uid:         uint32(uid64),
+			inode:       inode,
+			hasExtended: true,
 		})
 	}
 	return sc.Err()
@@ -368,13 +369,14 @@ func parseProcNetUnix(ctx context.Context, callCtx *builtins.CallContext, path s
 		peerPort := ""
 
 		*out = append(*out, socketEntry{
-			kind:      sockUnix,
-			state:     state,
-			localAddr: socketPath,
-			localPort: "",
-			peerAddr:  peerAddr,
-			peerPort:  peerPort,
-			inode:     inode,
+			kind:        sockUnix,
+			state:       state,
+			localAddr:   socketPath,
+			localPort:   "",
+			peerAddr:    peerAddr,
+			peerPort:    peerPort,
+			inode:       inode,
+			hasExtended: true,
 		})
 	}
 	return sc.Err()

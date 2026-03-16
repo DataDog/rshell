@@ -89,19 +89,21 @@ const (
 )
 
 // macOS TCP state values from the XNU tcp_fsm.h TCPS_* enum.
+// TCPS_CLOSED=0, TCPS_LISTEN=1, TCPS_SYN_SENT=2, TCPS_SYN_RECEIVED=3,
+// TCPS_ESTABLISHED=4, TCPS_CLOSE_WAIT=5, TCPS_FIN_WAIT_1=6,
+// TCPS_CLOSING=7, TCPS_LAST_ACK=8, TCPS_FIN_WAIT_2=9, TCPS_TIME_WAIT=10.
 var darwinTCPStates = map[int32]string{
 	0:  "CLOSE",
 	1:  "LISTEN",
 	2:  "SYN-SENT",
 	3:  "SYN-RECV",
 	4:  "ESTAB",
-	5:  "FIN-WAIT-1",
-	6:  "FIN-WAIT-2",
-	7:  "TIME-WAIT",
-	8:  "CLOSE",
-	9:  "CLOSE-WAIT",
-	10: "LAST-ACK",
-	11: "CLOSING",
+	5:  "CLOSE-WAIT",
+	6:  "FIN-WAIT-1",
+	7:  "CLOSING",
+	8:  "LAST-ACK",
+	9:  "FIN-WAIT-2",
+	10: "TIME-WAIT",
 }
 
 // readU16BE reads a big-endian uint16 from data at offset off, returning 0 if

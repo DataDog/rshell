@@ -115,6 +115,9 @@ func callExtendedTable(proc *syscall.Proc, af, tableClass uintptr) ([]byte, erro
 		)
 		switch syscall.Errno(r1) {
 		case 0:
+			if int(size) > len(buf) {
+				return nil, fmt.Errorf("DLL reported size %d larger than buffer %d", size, len(buf))
+			}
 			return buf[:size], nil
 		case errInsufficientBuffer:
 			// size was updated by the call; retry with larger buffer.
