@@ -426,8 +426,9 @@ func AllowedPaths(paths []string) RunnerOption {
 // Only commands whose name appears in the list may be executed; all others are
 // rejected with "<cmd>: command not allowed".
 //
-// Path-containing names (e.g. "/bin/bash") will not match bare command names
-// and vice versa. Empty strings and empty command names are rejected.
+// After prefix stripping, path-containing names (e.g. "rshell:/bin/bash")
+// will not match bare command names and vice versa. Empty strings and empty
+// command names are rejected.
 //
 // When not set (default), no commands are allowed unless [AllowAllCommands] is
 // used.
