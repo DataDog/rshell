@@ -5,5 +5,6 @@ input:
 expect:
   stdout: ""
   stderr_contains:
+    - "unknown_filter_cmd"
     - "command not found"
   exit_code: 127

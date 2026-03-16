@@ -102,14 +102,12 @@ func FuzzIterDir(t testing.TB, baseDir string, counter *atomic.Int64) (string, f
 	}
 }
 
-// FuzzRunScriptCtx is like RunScriptCtx but omits AllowedPaths to avoid
-// coverage-instrumentation overhead on the os.Root sandbox code paths.
-// This overhead causes Go fuzz workers to stall, leading to
-// "context deadline exceeded" failures when the fuzz coordinator tries
-// to shut down after fuzztime.
+// FuzzRunScriptCtx runs a script in fuzz mode with AllowedPaths set to [dir].
+// This ensures fuzz iterations can actually read/write files inside their
+// iteration directory rather than silently failing with permission errors.
 func FuzzRunScriptCtx(ctx context.Context, t testing.TB, script, dir string) (string, string, int) {
 	t.Helper()
-	return RunScriptCtx(ctx, t, script, dir)
+	return RunScriptCtx(ctx, t, script, dir, interp.AllowedPaths([]string{dir}))
 }
 
 // RunScript runs a shell script and returns stdout, stderr, and the exit code.

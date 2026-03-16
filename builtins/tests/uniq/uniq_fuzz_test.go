@@ -18,9 +18,8 @@ import (
 	"github.com/DataDog/rshell/builtins/testutil"
 )
 
-// fuzzRunCtx runs a script without AllowedPaths to avoid coverage-
-// instrumentation overhead on the os.Root sandbox code paths.
-// Delegates to the shared testutil.FuzzRunScriptCtx helper.
+// fuzzRunCtx delegates to testutil.FuzzRunScriptCtx which runs the script
+// with AllowedPaths set to [dir] for proper file access in fuzz iterations.
 func fuzzRunCtx(ctx context.Context, t *testing.T, script, dir string) (string, string, int) {
 	t.Helper()
 	return testutil.FuzzRunScriptCtx(ctx, t, script, dir)
