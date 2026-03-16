@@ -240,7 +240,10 @@ func processFile(ctx context.Context, callCtx *builtins.CallContext, file string
 		name = "standard input"
 		// Print the header before the nil-stdin guard so that -v always
 		// emits a header for stdin even when no input stream is present.
-		if printHeaders {
+		// Suppress headers when the count is zero and not in offset mode:
+		// "tail -n 0" and "tail -c 0" produce no output, so no header
+		// should appear (GNU tail behaviour).
+		if printHeaders && (cm.offset || cm.n > 0) {
 			if *headerPrinted {
 				callCtx.Out("\n")
 			}
@@ -264,7 +267,10 @@ func processFile(ctx context.Context, callCtx *builtins.CallContext, file string
 		rc = f
 		// Header is printed after a successful open so that a file that
 		// cannot be opened produces no header (matches GNU tail behaviour).
-		if printHeaders {
+		// Suppress headers when the count is zero and not in offset mode:
+		// "tail -n 0" and "tail -c 0" produce no output, so no header
+		// should appear (GNU tail behaviour).
+		if printHeaders && (cm.offset || cm.n > 0) {
 			if *headerPrinted {
 				callCtx.Out("\n")
 			}
@@ -581,8 +587,15 @@ type headerFlag struct {
 
 func newHeaderFlag(seq *int) *headerFlag { return &headerFlag{seq: seq} }
 
-func (f *headerFlag) String() string   { return "false" }
-func (f *headerFlag) Set(string) error { *f.seq++; f.pos = *f.seq; return nil }
+func (f *headerFlag) String() string { return "false" }
+func (f *headerFlag) Set(s string) error {
+	if s != "true" {
+		return errors.New("does not take a value")
+	}
+	*f.seq++
+	f.pos = *f.seq
+	return nil
+}
 func (f *headerFlag) Type() string     { return "bool" }
 func (f *headerFlag) IsBoolFlag() bool { return true }
 
