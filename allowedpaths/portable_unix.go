@@ -19,6 +19,16 @@ func IsErrIsDirectory(err error) bool {
 	return errors.Is(err, syscall.EISDIR)
 }
 
+// FileIdentity extracts canonical file identity (dev+inode) from FileInfo.
+// On Unix, this is extracted directly from Stat_t via info.Sys().
+func FileIdentity(_ string, info fs.FileInfo, _ *Sandbox) (uint64, uint64, bool) {
+	st, ok := info.Sys().(*syscall.Stat_t)
+	if !ok {
+		return 0, 0, false
+	}
+	return uint64(st.Dev), uint64(st.Ino), true
+}
+
 // effectiveHasPerm checks whether the current process has the requested
 // permission (writeMask or execMask, each a 3-bit pattern like 0222 or 0111)
 // by inspecting the file's owner/group/other permission class that applies to

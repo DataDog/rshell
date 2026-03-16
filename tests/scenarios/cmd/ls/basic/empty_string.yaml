@@ -1,4 +1,5 @@
 description: ls with an empty string operand prints an error and exits 1.
+# skip: rshell builtin error/output format differs from GNU coreutils
 skip_assert_against_bash: true
 input:
   allowed_paths: ["$DIR"]

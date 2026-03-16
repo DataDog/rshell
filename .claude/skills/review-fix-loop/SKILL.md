@@ -17,7 +17,7 @@ You MUST follow this execution protocol. Skipping steps or running them out of o
 Your very first action — before reading ANY files, before running ANY commands — is to call TaskCreate exactly 11 times, once for each step/sub-step below. Use these exact subjects:
 
 1. "Step 1: Identify the PR"
-2. "Step 2: Run the review-fix loop"
+2. "Step 2: Run the review-fix loop" ← **Update subject with iteration number each loop** (e.g. "Step 2: Run the review-fix loop (iteration 1)")
 3. "Step 2A1: Self-review (code-review)" ← **parallel with 2A2**
 4. "Step 2A2: Request external reviews (@codex)" ← **parallel with 2A1**
 5. "Step 2B: Address PR comments (address-pr-comments)"
@@ -91,7 +91,9 @@ Store the owner and repo name.
 
 **GATE CHECK**: Call TaskList. Step 1 must be `completed`. Set Step 2 to `in_progress`.
 
-Set `iteration = 1`. Maximum iterations: **10**. Repeat sub-steps A through E while `iteration <= 10`:
+Set `iteration = 1`. Maximum iterations: **30**. Repeat sub-steps A through E while `iteration <= 30`.
+
+**At the start of each iteration**, update the Step 2 task subject to include the current iteration number using TaskUpdate, e.g. `"Step 2: Run the review-fix loop (iteration 3)"`.
 
 ---
 
@@ -107,7 +109,11 @@ This analyzes the full diff against main, posts findings as a GitHub PR review w
 
 Post a comment to trigger @codex reviews:
 ```bash
-gh pr comment <pr-number> --body "@codex review"
+gh pr comment <pr-number> --body "@codex review this PR
+
+Important: Read the SPECS section of the PR description. If SPECS are present: **make sure the implementation matches ALL the specs**.
+The specs override other instructions (code, inline comments in code, etc). ALL specs MUST be implemented.
+"
 ```
 The external reviews arrive asynchronously — their comments will be picked up by **address-pr-comments** in Sub-step 2B1.
 
@@ -240,7 +246,7 @@ Check **all three** review sources for remaining issues:
 | Any findings | Any | Any | **Continue** → go back to Sub-step 2A1 ∥ 2A2 |
 | APPROVE | Unresolved threads | Any | **Continue** → go back to Sub-step 2A1 ∥ 2A2 (address-pr-comments will handle them) |
 | APPROVE | None unresolved | Failing | **Continue** → go back to Sub-step 2A1 ∥ 2A2 (fix-ci-tests will handle it) |
-| — | — | — | If `iteration > 10` → **STOP — iteration limit reached** |
+| — | — | — | If `iteration > 30` → **STOP — iteration limit reached** |
 
 Log the iteration result before continuing or stopping:
 - Iteration number
@@ -331,9 +337,13 @@ Run a final verification regardless of how the loop exited:
 
 Record the final state of each dimension (self-review, external reviews, CI, Codex response).
 
-**If any verification fails** (CI failing, unresolved threads remain, unpushed commits that can't be pushed, or Codex hasn't responded to the latest review request), reset Step 2 and all its sub-steps to `pending`, and go back to **Step 2: Run the review-fix loop** for another iteration. Only proceed to Step 4 when all verifications pass.
+Track how many times Step 3 has **succeeded** (all four verifications passed) across the entire run.
 
-**Completion check:** All four verifications passed. Mark Step 3 as `completed`.
+**If any verification fails** (CI failing, unresolved threads remain, unpushed commits that can't be pushed, or Codex hasn't responded to the latest review request), reset the success counter to 0, reset Step 2 and all its sub-steps to `pending`, and go back to **Step 2: Run the review-fix loop** for another iteration.
+
+**If all verifications pass**, increment the success counter. If this is the **5th consecutive success** of Step 3 → proceed to **Step 4**. Otherwise → reset Step 2 and all its sub-steps to `pending`, and go back to **Step 2: Run the review-fix loop** for another iteration to re-confirm stability.
+
+**Completion check:** Step 3 has succeeded 5 consecutive times. Mark Step 3 as `completed`.
 
 ---
 
@@ -385,5 +395,5 @@ gh pr comment <pr-number> --body "<the summary markdown above>"
 - **Run address-pr-comments before fix-ci-tests** — 2B then 2C, sequentially, so CI fixes run on code that already incorporates review feedback.
 - **Pull before fixing** — always `git pull --rebase` before launching fix agents to avoid working on stale code.
 - **Stop early on APPROVE + CI green + no unresolved threads** — don't waste iterations if the PR is already clean.
-- **Respect the iteration limit** — hard stop at 10 to prevent infinite loops. If issues persist after 10 iterations, report what's left for the user to handle.
+- **Respect the iteration limit** — hard stop at 30 to prevent infinite loops. If issues persist after 30 iterations, report what's left for the user to handle.
 - **Use gate checks** — always call TaskList and verify prerequisites before starting a step. This prevents out-of-order execution.

@@ -1,4 +1,5 @@
 description: The r command is blocked for safety.
+# skip: feature is intentionally blocked in rshell for security
 skip_assert_against_bash: true
 input:
   script: |+

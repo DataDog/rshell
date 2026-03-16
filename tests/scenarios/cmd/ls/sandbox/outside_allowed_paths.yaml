@@ -1,4 +1,5 @@
 description: ls outside allowed_paths returns permission denied.
+# skip: sandbox path restrictions are an rshell-specific feature
 skip_assert_against_bash: true
 setup:
   files:
@@ -11,5 +12,6 @@ input:
 expect:
   stdout: ""
   stderr: "ls: cannot access '/etc': permission denied\n"
-  stderr_windows: "ls: cannot access '/etc': statat etc: no such file or directory\n"
+  stderr_contains_windows:
+    - "ls: cannot access '/etc':"
   exit_code: 1

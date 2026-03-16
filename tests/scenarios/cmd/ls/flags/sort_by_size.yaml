@@ -1,4 +1,5 @@
 description: ls -S sorts by file size, largest first.
+# skip: rshell builtin error/output format differs from GNU coreutils
 skip_assert_against_bash: true
 setup:
   files:

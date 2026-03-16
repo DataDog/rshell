@@ -11,4 +11,5 @@ expect:
   stdout: "a:1\nb:20\nc:30\n"
   stderr: ""
   exit_code: 0
+# skip: rshell builtin error/output format differs from GNU coreutils
 skip_assert_against_bash: true  # -k 2n glued syntax may differ

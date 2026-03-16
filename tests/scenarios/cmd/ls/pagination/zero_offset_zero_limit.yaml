@@ -1,4 +1,5 @@
 description: --offset 0 --limit 0 behaves like no pagination.
+# skip: pagination flags are an rshell-specific extension not present in GNU coreutils
 skip_assert_against_bash: true
 setup:
   files:

@@ -10,8 +10,11 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/DataDog/rshell/builtins/testutil"
 )
 
 // FuzzWc fuzzes wc (default mode: lines, words, bytes) with arbitrary file content.
@@ -51,18 +54,23 @@ func FuzzWc(f *testing.F) {
 	// Long line (tests -L max-line-length tracking)
 	f.Add(append(bytes.Repeat([]byte("a"), 1000), '\n'))
 
+	baseDir := f.TempDir()
+	var counter atomic.Int64
+
 	f.Fuzz(func(t *testing.T, input []byte) {
 		if len(input) > 1<<20 {
 			return
 		}
 
-		dir := t.TempDir()
+		dir, cleanup := testutil.FuzzIterDir(t, baseDir, &counter)
+		defer cleanup()
+
 		err := os.WriteFile(filepath.Join(dir, "input.txt"), input, 0644)
 		if err != nil {
 			t.Fatal(err)
 		}
 
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		defer cancel()
 
 		_, _, code := cmdRunCtx(ctx, t, "wc input.txt", dir)
@@ -84,18 +92,23 @@ func FuzzWcLines(f *testing.F) {
 	f.Add([]byte{0xfc, 0x80, 0x80, 0x80, 0x80, 0xaf, '\n'})
 	f.Add(bytes.Repeat([]byte("a\n"), 10000))
 
+	baseDir := f.TempDir()
+	var counter atomic.Int64
+
 	f.Fuzz(func(t *testing.T, input []byte) {
 		if len(input) > 1<<20 {
 			return
 		}
 
-		dir := t.TempDir()
+		dir, cleanup := testutil.FuzzIterDir(t, baseDir, &counter)
+		defer cleanup()
+
 		err := os.WriteFile(filepath.Join(dir, "input.txt"), input, 0644)
 		if err != nil {
 			t.Fatal(err)
 		}
 
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		defer cancel()
 
 		_, _, code := cmdRunCtx(ctx, t, "wc -l input.txt", dir)
@@ -115,18 +128,23 @@ func FuzzWcBytes(f *testing.F) {
 	f.Add([]byte{0x00, 0x01, 0x02, 0xff, 0xfe})
 	f.Add([]byte{0xfc, 0x80, 0x80, 0x80, 0x80, 0xaf})
 
+	baseDir := f.TempDir()
+	var counter atomic.Int64
+
 	f.Fuzz(func(t *testing.T, input []byte) {
 		if len(input) > 1<<20 {
 			return
 		}
 
-		dir := t.TempDir()
+		dir, cleanup := testutil.FuzzIterDir(t, baseDir, &counter)
+		defer cleanup()
+
 		err := os.WriteFile(filepath.Join(dir, "input.txt"), input, 0644)
 		if err != nil {
 			t.Fatal(err)
 		}
 
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		defer cancel()
 
 		_, _, code := cmdRunCtx(ctx, t, "wc -c input.txt", dir)
@@ -153,18 +171,23 @@ func FuzzWcChars(f *testing.F) {
 	f.Add([]byte{})
 	f.Add([]byte("no newline"))
 
+	baseDir := f.TempDir()
+	var counter atomic.Int64
+
 	f.Fuzz(func(t *testing.T, input []byte) {
 		if len(input) > 1<<20 {
 			return
 		}
 
-		dir := t.TempDir()
+		dir, cleanup := testutil.FuzzIterDir(t, baseDir, &counter)
+		defer cleanup()
+
 		err := os.WriteFile(filepath.Join(dir, "input.txt"), input, 0644)
 		if err != nil {
 			t.Fatal(err)
 		}
 
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		defer cancel()
 
 		_, _, code := cmdRunCtx(ctx, t, "wc -m input.txt", dir)
@@ -185,18 +208,27 @@ func FuzzWcStdin(f *testing.F) {
 	f.Add([]byte("héllo\n"))
 	f.Add([]byte{0xfc, 0x80, 0x80, 0x80, 0x80, 0xaf, '\n'})
 
+	baseDir := f.TempDir()
+	var counter atomic.Int64
+
 	f.Fuzz(func(t *testing.T, input []byte) {
-		if len(input) > 1<<20 {
+		// Keep the limit modest: stdin redirection goes through the full
+		// shell interpreter pipeline, which is slower than direct file
+		// reads. A 64 KiB cap prevents CI timeouts on resource-constrained
+		// runners while still exercising interesting edge cases.
+		if len(input) > 64*1024 {
 			return
 		}
 
-		dir := t.TempDir()
+		dir, cleanup := testutil.FuzzIterDir(t, baseDir, &counter)
+		defer cleanup()
+
 		err := os.WriteFile(filepath.Join(dir, "stdin.txt"), input, 0644)
 		if err != nil {
 			t.Fatal(err)
 		}
 
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		defer cancel()
 
 		_, _, code := cmdRunCtx(ctx, t, "wc < stdin.txt", dir)

@@ -1,3 +1,4 @@
+# skip: redirect type is intentionally blocked in the restricted shell
 skip_assert_against_bash: true
 description: Output redirection (>) is not supported.
 input:

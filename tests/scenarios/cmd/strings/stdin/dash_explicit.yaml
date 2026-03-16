@@ -1,4 +1,5 @@
 description: strings treats - as an alias for stdin.
+# skip: rshell builtin error/output format differs from GNU coreutils
 skip_assert_against_bash: true  # GNU strings treats - as a filename, not stdin
 input:
   script: |+

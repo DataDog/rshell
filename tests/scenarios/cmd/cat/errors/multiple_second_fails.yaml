@@ -1,3 +1,4 @@
+# skip: rshell builtin error/output format differs from GNU coreutils
 skip_assert_against_bash: true
 description: When the second of multiple files fails, the first file is output before the error.
 setup:

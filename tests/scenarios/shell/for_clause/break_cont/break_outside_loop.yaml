@@ -1,3 +1,4 @@
+# skip: error message format differs from bash
 skip_assert_against_bash: true
 description: Break outside a loop produces an error message.
 input:

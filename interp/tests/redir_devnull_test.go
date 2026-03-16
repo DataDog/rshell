@@ -24,13 +24,13 @@ import (
 // redirRun runs a script with the given dir as working directory and allowed path.
 func redirRun(t *testing.T, script, dir string) (string, string, int) {
 	t.Helper()
-	return redirRunWithOpts(t, script, dir, interp.AllowedPaths([]string{dir}))
+	return redirRunWithOpts(t, script, dir, interp.AllowedPaths([]string{dir}), interp.AllowAllCommands())
 }
 
 // redirRunNoAllowed runs a script with no allowed paths.
 func redirRunNoAllowed(t *testing.T, script, dir string) (string, string, int) {
 	t.Helper()
-	return redirRunWithOpts(t, script, dir)
+	return redirRunWithOpts(t, script, dir, interp.AllowAllCommands())
 }
 
 func redirRunWithOpts(t *testing.T, script, dir string, opts ...interp.RunnerOption) (string, string, int) {
