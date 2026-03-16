@@ -7,6 +7,7 @@ package ping_test
 
 import (
 	"context"
+	"os"
 	"testing"
 	"time"
 
@@ -134,8 +135,8 @@ func TestPingUnknownShortFlag(t *testing.T) {
 // --- Context cancellation ---
 
 func TestPingContextTimeout(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping timeout test in short mode")
+	if os.Getenv("RSHELL_PING_TEST") == "" {
+		t.Skip("skipping ping integration test; set RSHELL_PING_TEST=1 and run with sudo on Linux")
 	}
 	dir := t.TempDir()
 	// Use a very short timeout to ensure the command gets interrupted.
@@ -150,8 +151,8 @@ func TestPingContextTimeout(t *testing.T) {
 // --- Hardening: count clamping ---
 
 func TestPingCountClampedToMax(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test in short mode")
+	if os.Getenv("RSHELL_PING_TEST") == "" {
+		t.Skip("skipping ping integration test; set RSHELL_PING_TEST=1 and run with sudo on Linux")
 	}
 	dir := t.TempDir()
 	// Count exceeding MaxCount should be clamped, not rejected.
@@ -165,8 +166,8 @@ func TestPingCountClampedToMax(t *testing.T) {
 }
 
 func TestPingTimeoutClampedToMax(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test in short mode")
+	if os.Getenv("RSHELL_PING_TEST") == "" {
+		t.Skip("skipping ping integration test; set RSHELL_PING_TEST=1 and run with sudo on Linux")
 	}
 	dir := t.TempDir()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -228,18 +229,15 @@ func TestPingHelpWithInvalidArgs(t *testing.T) {
 // --- Integration test (requires network + ICMP privileges) ---
 
 func TestPingLocalhostIntegration(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test in short mode")
+	if os.Getenv("RSHELL_PING_TEST") == "" {
+		t.Skip("skipping ping integration test; set RSHELL_PING_TEST=1 and run with sudo on Linux")
 	}
 	dir := t.TempDir()
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	stdout, _, code := runScriptCtx(ctx, t, "ping -c 1 -W 5 127.0.0.1", dir)
-	// This test may fail without root/ICMP privileges — that's expected.
-	// When it succeeds, verify output format.
-	if code == 0 {
-		assert.Contains(t, stdout, "PING 127.0.0.1")
-		assert.Contains(t, stdout, "ping statistics")
-		assert.Contains(t, stdout, "packets transmitted")
-	}
+	stdout, stderr, code := runScriptCtx(ctx, t, "ping -c 1 -W 5 127.0.0.1", dir)
+	assert.Equal(t, 0, code, "ping failed: %s", stderr)
+	assert.Contains(t, stdout, "PING 127.0.0.1")
+	assert.Contains(t, stdout, "ping statistics")
+	assert.Contains(t, stdout, "packets transmitted")
 }
