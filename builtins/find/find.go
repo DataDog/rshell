@@ -146,15 +146,7 @@ optLoop:
 		paths = []string{"."}
 	}
 
-	// GNU find accepts --help anywhere (even after paths), so check
-	// for it in the expression args before parsing.
 	exprArgs := args[i:]
-	for _, arg := range exprArgs {
-		if arg == "--help" {
-			printHelp(callCtx)
-			return builtins.Result{}
-		}
-	}
 
 	// Parse expression (includes -maxdepth/-mindepth as parser-recognized
 	// options). The recursive-descent parser naturally handles token ownership,

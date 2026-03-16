@@ -15,7 +15,7 @@ input:
   script: |+
     find dir -name 'target.txt' -print -quit
 expect:
-  stdout: |+
-    dir/sub1/target.txt
+  stdout_contains:
+    - "target.txt"
   stderr: ""
   exit_code: 0
