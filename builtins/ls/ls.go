@@ -384,6 +384,13 @@ func listDir(ctx context.Context, callCtx *builtins.CallContext, dir string, opt
 
 	// Print.
 	cw := computeColWidths(infoEntries, func(e entryInfo) iofs.FileInfo { return e.info }, opts)
+	if opts.longFmt {
+		var totalBlocks int64
+		for _, ei := range infoEntries {
+			totalBlocks += fileBlocks(ei.info)
+		}
+		callCtx.Outf("total %d\n", totalBlocks)
+	}
 	for _, ei := range infoEntries {
 		if ctx.Err() != nil {
 			break
@@ -497,7 +504,7 @@ func printEntry(callCtx *builtins.CallContext, name string, info iofs.FileInfo, 
 		}
 
 		timeStr := formatTime(modTime, now)
-		callCtx.Outf("%s %*d %-*s  %-*s  %*s %s %s%s\n",
+		callCtx.Outf("%s %*d %-*s %-*s %*s %s %s%s\n",
 			mode, cw.nlink, nlink,
 			cw.owner, owner, cw.group, group,
 			cw.size, sizeStr, timeStr,

@@ -13,3 +13,9 @@ import iofs "io/fs"
 func fileOwner(info iofs.FileInfo) (owner, group string, nlink uint64) {
 	return "", "", 0
 }
+
+// fileBlocks returns the number of 512-byte blocks allocated for the file.
+// On Windows, this information is not available, so we return 0.
+func fileBlocks(info iofs.FileInfo) int64 {
+	return 0
+}

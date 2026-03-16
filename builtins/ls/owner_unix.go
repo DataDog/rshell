@@ -43,3 +43,12 @@ func lookupGID(gid uint32) string {
 	}
 	return g.Name
 }
+
+// fileBlocks returns the number of 512-byte blocks allocated for the file.
+func fileBlocks(info iofs.FileInfo) int64 {
+	st, ok := info.Sys().(*syscall.Stat_t)
+	if !ok {
+		return 0
+	}
+	return st.Blocks
+}
