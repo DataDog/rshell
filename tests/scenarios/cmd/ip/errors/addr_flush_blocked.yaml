@@ -5,6 +5,6 @@ input:
   script: |+
     ip addr flush dev lo
 expect:
-  stderr_contains: ["not supported", "blocked"]
+  stderr: "ip: 'ip addr flush' is not supported (write operations are blocked for safety)\n"
   exit_code: 1
 skip_assert_against_bash: true

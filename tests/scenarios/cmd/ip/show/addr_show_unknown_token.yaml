@@ -1,0 +1,14 @@
+# Unknown tokens after the command keyword are silently skipped.
+# This intentionally diverges from real ip behavior: real ip would reject
+# unknown modifiers (e.g. "ip addr shw dev lo" fails; "ip addr show type veth"
+# filters by type). Our builtin ignores unrecognised tokens and shows all
+# interfaces, since we do not implement type/scope/other filters.
+# skip_assert_against_bash: true because real ip rejects unknown tokens.
+description: "unknown tokens after 'show' are silently ignored (intentional divergence from real ip)"
+input:
+  script: |+
+    ip addr show type anytoken
+expect:
+  stdout_contains: ["inet "]
+  exit_code: 0
+skip_assert_against_bash: true
