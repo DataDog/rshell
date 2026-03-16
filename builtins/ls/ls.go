@@ -87,7 +87,6 @@ import (
 	"time"
 
 	"github.com/DataDog/rshell/builtins"
-	"github.com/DataDog/rshell/builtins/internal/fileowner"
 )
 
 // maxRecursionDepth limits how deep -R will recurse to prevent stack overflow.
@@ -457,7 +456,7 @@ func computeColWidths[T any](entries []T, getInfo func(T) iofs.FileInfo, opts *o
 	var w colWidths
 	for _, e := range entries {
 		info := getInfo(e)
-		owner, group, nlink := fileowner.Lookup(info)
+		owner, group, nlink := fileOwner(info)
 
 		nlinkStr := fmt.Sprintf("%d", nlink)
 		if n := len(nlinkStr); n > w.nlink {
@@ -488,7 +487,7 @@ func printEntry(callCtx *builtins.CallContext, name string, info iofs.FileInfo, 
 		mode := formatMode(info)
 		size := info.Size()
 		modTime := info.ModTime()
-		owner, group, nlink := fileowner.Lookup(info)
+		owner, group, nlink := fileOwner(info)
 
 		var sizeStr string
 		if opts.humanReadable {

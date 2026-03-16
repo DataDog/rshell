@@ -144,9 +144,12 @@ var builtinPerCommandSymbols = map[string][]string{
 		"io/fs.ModeSocket",    // file mode bit constant for sockets; pure constant.
 		"io/fs.ModeSticky",    // file mode bit constant for sticky bit; pure constant.
 		"io/fs.ModeSymlink",   // file mode bit constant for symlinks; pure constant.
+		"os/user.LookupGroupId", // resolves GID to group name; read-only lookup, no filesystem or exec side effects.
+		"os/user.LookupId",     // resolves UID to username; read-only lookup, no filesystem or exec side effects.
 		"runtime.GOOS",        // current OS name constant; pure constant, no I/O.
 		"slices.Reverse",      // reverses a slice in-place; pure function, no I/O.
 		"slices.SortFunc",     // sorts a slice with a comparison function; pure function, no I/O.
+		"syscall.Stat_t",      // file stat struct for extracting UID/GID/nlink; read-only type, no I/O.
 		"time.Time",           // time value type; pure data, no side effects.
 	},
 	"printf": {
@@ -339,6 +342,8 @@ var builtinAllowedSymbols = []string{
 	"os.IsNotExist",                   // checks if error is "not exist"; pure function, no I/O.
 	"os.O_RDONLY",                     // read-only file flag constant; cannot open files by itself.
 	"os.PathError",                    // error type for filesystem path errors; pure type, no I/O.
+	"os/user.LookupGroupId",           // resolves GID to group name; read-only lookup, no filesystem or exec side effects.
+	"os/user.LookupId",                // resolves UID to username; read-only lookup, no filesystem or exec side effects.
 	"path/filepath.ToSlash",           // converts OS path separators to forward slashes; pure function, no I/O.
 	"regexp.Compile",                  // compiles a regular expression; pure function, no I/O. Uses RE2 engine (linear-time, no backtracking).
 	"regexp.QuoteMeta",                // escapes all special regex characters in a string; pure function, no I/O.
@@ -368,6 +373,7 @@ var builtinAllowedSymbols = []string{
 	"strings.TrimSpace",               // removes leading/trailing whitespace; pure function.
 	"syscall.EISDIR",                  // error number constant for "is a directory"; pure constant, no I/O.
 	"syscall.Errno",                   // error type for system call error numbers; pure type, no I/O.
+	"syscall.Stat_t",                  // file stat struct for extracting UID/GID/nlink; read-only type, no I/O.
 	"time.Duration",                   // duration type; pure integer alias, no I/O.
 	"time.Hour",                       // constant representing one hour; no side effects.
 	"time.Minute",                     // constant representing one minute; no side effects.

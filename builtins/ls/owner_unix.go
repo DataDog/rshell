@@ -5,20 +5,18 @@
 
 //go:build !windows
 
-package fileowner
+package ls
 
 import (
 	"fmt"
-	"io/fs"
+	iofs "io/fs"
 	"os/user"
 	"syscall"
 )
 
-// Lookup returns the owner name, group name, and hard link count for the
-// given FileInfo. On Unix this extracts UID/GID from Stat_t and resolves
-// them to names via os/user. If name resolution fails, the numeric ID is
-// returned as a string.
-func Lookup(info fs.FileInfo) (owner, group string, nlink uint64) {
+// fileOwner returns the owner name, group name, and hard link count for the
+// given FileInfo by extracting UID/GID from Stat_t and resolving via os/user.
+func fileOwner(info iofs.FileInfo) (owner, group string, nlink uint64) {
 	st, ok := info.Sys().(*syscall.Stat_t)
 	if !ok {
 		return "?", "?", 0
@@ -31,21 +29,17 @@ func Lookup(info fs.FileInfo) (owner, group string, nlink uint64) {
 }
 
 func lookupUID(uid uint32) string {
-	u, err := user.LookupId(uintString(uid))
+	u, err := user.LookupId(fmt.Sprintf("%d", uid))
 	if err != nil {
-		return uintString(uid)
+		return fmt.Sprintf("%d", uid)
 	}
 	return u.Username
 }
 
 func lookupGID(gid uint32) string {
-	g, err := user.LookupGroupId(uintString(gid))
+	g, err := user.LookupGroupId(fmt.Sprintf("%d", gid))
 	if err != nil {
-		return uintString(gid)
+		return fmt.Sprintf("%d", gid)
 	}
 	return g.Name
-}
-
-func uintString(v uint32) string {
-	return fmt.Sprintf("%d", v)
 }
