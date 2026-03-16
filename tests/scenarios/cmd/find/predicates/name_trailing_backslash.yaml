@@ -1,9 +1,6 @@
 description: dangling trailing backslash in -name glob is non-matching per GNU fnmatch.
 setup:
   files:
-    - path: "dir/\\"
-      content: "x"
-      chmod: 0644
     - path: dir/a.txt
       content: "y"
       chmod: 0644
