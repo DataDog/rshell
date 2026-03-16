@@ -1,0 +1,14 @@
+description: "find -exec with unknown command reports error"
+skip_assert_against_bash: true  # error message format differs
+setup:
+  files:
+    - path: a.txt
+      content: "a"
+      chmod: 0644
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    find . -name 'a.txt' -exec nonexistent_command {} \;
+expect:
+  stderr_contains: ["not found"]
+  exit_code: 0

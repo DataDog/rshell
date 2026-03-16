@@ -12,7 +12,7 @@ Blocked features are rejected before execution with exit code 2.
 - ✅ `echo [-neE] [ARG]...` — write arguments to stdout; `-n` suppresses trailing newline, `-e` enables backslash escapes, `-E` disables them (default)
 - ✅ `exit [N]` — exit the shell with status N (default 0)
 - ✅ `false` — return exit code 1
-- ✅ `find [-L] [PATH...] [EXPRESSION]` — search for files in a directory hierarchy; supports `-name`, `-iname`, `-path`, `-ipath`, `-type`, `-size`, `-empty`, `-newer`, `-mtime`, `-mmin`, `-maxdepth`, `-mindepth`, `-print`, `-print0`, `-prune`, logical operators (`!`, `-a`, `-o`, `()`); blocks `-exec`, `-delete`, `-regex` for sandbox safety
+- ✅ `find [-L] [PATH...] [EXPRESSION]` — search for files in a directory hierarchy; supports `-name`, `-iname`, `-path`, `-ipath`, `-type`, `-size`, `-empty`, `-newer`, `-mtime`, `-mmin`, `-maxdepth`, `-mindepth`, `-print`, `-print0`, `-prune`, `-exec cmd {} \;`, `-exec cmd {} +`, `-execdir cmd {} \;`, `-execdir cmd {} +`, logical operators (`!`, `-a`, `-o`, `()`); `-exec`/`-execdir` execute through the shell pipeline respecting allowed commands; blocks `-delete`, `-regex`, `-ok` for sandbox safety
 - ✅ `grep [-EFGivclLnHhoqsxw] [-e PATTERN] [-m NUM] [-A NUM] [-B NUM] [-C NUM] PATTERN [FILE]...` — print lines that match patterns; uses RE2 regex engine (linear-time, no backtracking)
 - ✅ `head [-n N|-c N] [-q|-v] [FILE]...` — output the first part of files (default: first 10 lines); `-z`/`--zero-terminated` and `--follow` are rejected
 - ✅ `sort [-rnubfds] [-k KEYDEF] [-t SEP] [-c|-C] [FILE]...` — sort lines of text files; `-o`, `--compress-program`, and `-T` are rejected (filesystem write / exec)

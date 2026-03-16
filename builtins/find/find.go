@@ -35,8 +35,16 @@
 //	-print           — print path followed by newline
 //	-print0          — print path followed by NUL
 //	-prune           — skip directory subtree
+//	-exec cmd {} ;   — run cmd for each file; {} replaced with path
+//	-exec cmd {} +   — batch mode: accumulate paths, run cmd once
+//	-execdir cmd {} ; — like -exec but {} is ./basename
+//	-execdir cmd {} + — batch -execdir grouped by directory
 //	-true            — always true
 //	-false           — always false
+//
+// -exec and -execdir execute commands through the shell's pipeline,
+// respecting allowed commands and builtins. They do not spawn host
+// binaries directly.
 //
 // Operators:
 //
@@ -47,7 +55,7 @@
 //
 // Blocked predicates (sandbox safety):
 //
-//	-exec, -execdir, -delete, -ok, -okdir — execution/deletion
+//	-delete, -ok, -okdir — deletion/interactive execution
 //	-fls, -fprint, -fprint0, -fprintf — file writes
 //	-regex, -iregex — ReDoS risk
 //

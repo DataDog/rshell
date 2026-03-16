@@ -100,6 +100,10 @@ func (bdc *batchDirCollector) add(ctx context.Context, execCommand func(context.
 // flush executes accumulated batches, one per directory.
 func (bdc *batchDirCollector) flush(ctx context.Context, execCommand func(context.Context, []string) (uint8, error)) {
 	for _, dir := range bdc.dirOrder {
+		if ctx.Err() != nil {
+			bdc.failed = true
+			break
+		}
 		bases := bdc.byDir[dir]
 		if len(bases) == 0 {
 			continue

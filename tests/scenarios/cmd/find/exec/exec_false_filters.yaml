@@ -1,5 +1,4 @@
 description: "find -exec filters when command exits non-zero"
-skip_assert_against_bash: true  # rshell false builtin
 setup:
   files:
     - path: a.txt

@@ -1,5 +1,4 @@
 description: "find -exec returns true when command exits 0, false otherwise"
-skip_assert_against_bash: true  # rshell test builtin may differ
 setup:
   files:
     - path: a.txt

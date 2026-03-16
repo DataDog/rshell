@@ -1,5 +1,4 @@
 description: "find -execdir {} + batches basenames per directory"
-skip_assert_against_bash: true  # execdir batching order may differ
 setup:
   files:
     - path: a.txt
