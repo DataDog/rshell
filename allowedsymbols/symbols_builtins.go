@@ -89,6 +89,7 @@ var builtinPerCommandSymbols = map[string][]string{
 		"strconv.Atoi",                    // string-to-int conversion; pure function, no I/O.
 		"strconv.ErrRange",                // sentinel error value for overflow; pure constant.
 		"strconv.ParseInt",                // string-to-int conversion; pure function, no I/O.
+		"strings.Count",                   // counts non-overlapping substring occurrences; pure function, no I/O.
 		"strings.HasPrefix",               // pure function for prefix matching; no I/O.
 		"strings.ReplaceAll",              // replaces all occurrences of a substring; pure function, no I/O.
 		"strings.ToLower",                 // converts string to lowercase; pure function, no I/O.
@@ -361,6 +362,7 @@ var builtinAllowedSymbols = []string{
 	"strconv.ParseUint",               // string-to-unsigned-int conversion; pure function, no I/O.
 	"strings.Builder",                 // efficient string concatenation; pure in-memory buffer, no I/O.
 	"strings.ContainsRune",            // checks if a rune is in a string; pure function, no I/O.
+	"strings.Count",                   // counts non-overlapping substring occurrences; pure function, no I/O.
 	"strings.HasPrefix",               // pure function for prefix matching; no I/O.
 	"strings.IndexByte",               // finds byte in string; pure function, no I/O.
 	"strings.Join",                    // concatenates a slice of strings with a separator; pure function, no I/O.
