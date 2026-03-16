@@ -110,8 +110,9 @@ var Cmd = builtins.Command{Name: "ss", MakeFlags: registerFlags}
 const MaxLineBytes = 1 << 20 // 1 MiB
 
 // MaxWinBufSize is the maximum buffer size used by the Windows grow-loop
-// when calling GetExtendedTcpTable / GetExtendedUdpTable.
-const MaxWinBufSize = 64 << 20 // 64 MiB
+// when calling GetExtendedTcpTable / GetExtendedUdpTable. This must match
+// winnet.MaxBufSize; the winnet package owns the authoritative value.
+const MaxWinBufSize = 64 << 20 // 64 MiB — keep in sync with winnet.MaxBufSize
 
 // socketType identifies the protocol family of a socket entry.
 type socketType int
@@ -247,11 +248,12 @@ func filterEntry(opts options, e socketEntry) bool {
 		}
 	}
 
-	// IP version filter (TCP/UDP only).
-	if opts.ipv4Only && (e.kind == sockTCP6 || e.kind == sockUDP6) {
+	// IP version filter (TCP/UDP only). When both -4 and -6 are given they
+	// act as an inclusive OR: both families are shown (matching ss behaviour).
+	if opts.ipv4Only && !opts.ipv6Only && (e.kind == sockTCP6 || e.kind == sockUDP6) {
 		return false
 	}
-	if opts.ipv6Only && (e.kind == sockTCP4 || e.kind == sockUDP4) {
+	if opts.ipv6Only && !opts.ipv4Only && (e.kind == sockTCP4 || e.kind == sockUDP4) {
 		return false
 	}
 

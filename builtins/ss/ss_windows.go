@@ -43,17 +43,23 @@ func run(ctx context.Context, callCtx *builtins.CallContext, opts options) built
 			continue
 		}
 
-		// Apply per-type protocol filters.
+		// Apply per-type protocol and IP-version filters here, before building
+		// the socketEntry slice. This differs from the Linux/macOS approach where
+		// all entries are collected first and filterEntry() handles all filtering
+		// in the print loop. The behaviour is identical; the early skip here
+		// avoids allocating socketEntry values for entries that will never be
+		// printed. filterEntry() is still called in the print loop below for
+		// the state/listening filters that this path does not handle.
 		if (kind == sockTCP4 || kind == sockTCP6) && !opts.showTCP {
 			continue
 		}
 		if (kind == sockUDP4 || kind == sockUDP6) && !opts.showUDP {
 			continue
 		}
-		if opts.ipv4Only && (kind == sockTCP6 || kind == sockUDP6) {
+		if opts.ipv4Only && !opts.ipv6Only && (kind == sockTCP6 || kind == sockUDP6) {
 			continue
 		}
-		if opts.ipv6Only && (kind == sockTCP4 || kind == sockUDP4) {
+		if opts.ipv6Only && !opts.ipv4Only && (kind == sockTCP4 || kind == sockUDP4) {
 			continue
 		}
 

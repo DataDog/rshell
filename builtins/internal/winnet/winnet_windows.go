@@ -29,6 +29,12 @@ const (
 	udpTableOwnerPid = 1
 
 	errInsufficientBuffer = syscall.Errno(122)
+
+	// MaxBufSize is the maximum buffer size allowed in the grow-loop when
+	// calling GetExtendedTcpTable / GetExtendedUdpTable. This cap is
+	// intentionally defined here (where the DLL calls live) so that the limit
+	// stays co-located with the code that enforces it.
+	MaxBufSize = 64 << 20 // 64 MiB
 )
 
 var (
@@ -93,7 +99,7 @@ func Collect() ([]SocketEntry, error) {
 func callExtendedTable(proc *syscall.Proc, af, tableClass uintptr) ([]byte, error) {
 	size := uint32(4096)
 	for {
-		if int(size) > 64<<20 { // MaxWinBufSize = 64 MiB
+		if int(size) > MaxBufSize {
 			return nil, fmt.Errorf("buffer size limit exceeded")
 		}
 		buf := make([]byte, size)

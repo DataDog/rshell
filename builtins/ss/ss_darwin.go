@@ -392,6 +392,13 @@ func readSunPath(data []byte, off int) string {
 
 // formatIPv6FromBytes formats 16 bytes starting at data[off] as an IPv6
 // address in network byte order.
+//
+// NOTE: This function implements the same RFC 5952 longest-run "::" compression
+// algorithm as formatIPv6 in ss_linux.go. The two differ only in their input
+// type: formatIPv6 takes a [16]byte value (from /proc/net parsing), while this
+// function takes a []byte slice with an offset (for sysctl record parsing). A
+// shared helper is possible but would require a platform-neutral file; fuzz
+// coverage on both functions makes the duplication low-risk.
 func formatIPv6FromBytes(data []byte, off int) string {
 	if off+16 > len(data) {
 		return "::"
