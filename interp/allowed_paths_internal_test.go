@@ -127,7 +127,7 @@ func TestAllowedPathsExecViaPathLookup(t *testing.T) {
 		}
 	}
 	assert.Equal(t, 127, exitCode)
-	assert.Contains(t, errBuf.String(), "command not found")
+	assert.Contains(t, errBuf.String(), "command not allowed")
 }
 
 func TestAllowedPathsExecSymlinkEscape(t *testing.T) {
