@@ -87,6 +87,7 @@ func callExtendedTable(proc *syscall.Proc, af, tableClass uintptr) ([]byte, erro
 			return nil, fmt.Errorf("buffer size limit exceeded")
 		}
 		buf := make([]byte, size)
+		prevSize := size
 		// Narrow unsafe exception: pass &buf[0] as PVOID and &size as PDWORD.
 		r1, _, _ := proc.Call(
 			uintptr(unsafe.Pointer(&buf[0])), //nolint:govet
@@ -101,6 +102,10 @@ func callExtendedTable(proc *syscall.Proc, af, tableClass uintptr) ([]byte, erro
 			return buf[:size], nil
 		case errInsufficientBuffer:
 			// size was updated by the call; retry with larger buffer.
+			// Guard against a misbehaving DLL that doesn't increase size.
+			if size <= prevSize {
+				return nil, fmt.Errorf("DLL did not increase buffer size on retry")
+			}
 			continue
 		default:
 			return nil, fmt.Errorf("DLL call error: %w", syscall.Errno(r1))
@@ -124,14 +129,26 @@ func winPortToHost(raw uint32) uint16 {
 }
 
 // collectTCP retrieves TCP socket entries for the given address family.
-// Each MIB_TCPROW_OWNER_PID is 24 bytes:
 //
-//	[0..3]  dwState        (LE uint32)
-//	[4..7]  dwLocalAddr    (BE uint32 for IPv4; first 4 bytes for IPv6)
-//	[8..11] dwLocalPort    (network byte order uint16 in LE DWORD)
-//	[12..15] dwRemoteAddr  (BE uint32 for IPv4)
-//	[16..19] dwRemotePort  (network byte order uint16 in LE DWORD)
-//	[20..23] dwOwningPid   (not used)
+// MIB_TCPROW_OWNER_PID (IPv4, 24 bytes):
+//
+//	[0..3]   dwState        (LE uint32)
+//	[4..7]   dwLocalAddr    (BE uint32)
+//	[8..11]  dwLocalPort    (network byte order uint16 in LE DWORD)
+//	[12..15] dwRemoteAddr   (BE uint32)
+//	[16..19] dwRemotePort   (network byte order uint16 in LE DWORD)
+//	[20..23] dwOwningPid    (not used)
+//
+// MIB_TCP6ROW_OWNER_PID (IPv6, 56 bytes):
+//
+//	[0..15]  ucLocalAddr[16]    (network byte order)
+//	[16..19] dwLocalScopeId     (not used)
+//	[20..23] dwLocalPort        (network byte order uint16 in LE DWORD)
+//	[24..39] ucRemoteAddr[16]   (network byte order)
+//	[40..43] dwRemoteScopeId    (not used)
+//	[44..47] dwRemotePort       (network byte order uint16 in LE DWORD)
+//	[48..51] dwState            (LE uint32)
+//	[52..55] dwOwningPid        (not used)
 func collectTCP(af uintptr) ([]SocketEntry, error) {
 	data, err := callExtendedTable(getExtendedTcpTable, af, tcpTableOwnerPidAll)
 	if err != nil {
@@ -154,27 +171,34 @@ func collectTCP(af uintptr) ([]SocketEntry, error) {
 			break
 		}
 
-		state := binary.LittleEndian.Uint32(data[off:])
-		stateName, ok := tcpStateNames[state]
-		if !ok {
-			stateName = "CLOSE"
-		}
-
 		proto := "tcp4"
 		localIP, remoteIP := "", ""
 		var localPort, remotePort uint16
+		var stateName string
 
 		if af == afINET {
+			state := binary.LittleEndian.Uint32(data[off:]) // dwState at offset 0
+			var ok bool
+			stateName, ok = tcpStateNames[state]
+			if !ok {
+				stateName = "CLOSE"
+			}
 			localIP = formatIPv4Win(data, int(off+4))
 			localPort = winPortToHost(binary.LittleEndian.Uint32(data[off+8:]))
 			remoteIP = formatIPv4Win(data, int(off+12))
 			remotePort = winPortToHost(binary.LittleEndian.Uint32(data[off+16:]))
 		} else {
 			proto = "tcp6"
-			localIP = formatIPv6Win(data, int(off+4))
+			state := binary.LittleEndian.Uint32(data[off+48:]) // dwState at offset 48
+			var ok bool
+			stateName, ok = tcpStateNames[state]
+			if !ok {
+				stateName = "CLOSE"
+			}
+			localIP = formatIPv6Win(data, int(off)) // ucLocalAddr at offset 0
 			localPort = winPortToHost(binary.LittleEndian.Uint32(data[off+20:]))
-			remoteIP = formatIPv6Win(data, int(off+24))
-			remotePort = winPortToHost(binary.LittleEndian.Uint32(data[off+40:]))
+			remoteIP = formatIPv6Win(data, int(off+24))                           // ucRemoteAddr at offset 24
+			remotePort = winPortToHost(binary.LittleEndian.Uint32(data[off+44:])) // dwRemotePort at offset 44
 		}
 
 		out = append(out, SocketEntry{
@@ -190,11 +214,19 @@ func collectTCP(af uintptr) ([]SocketEntry, error) {
 }
 
 // collectUDP retrieves UDP socket entries for the given address family.
-// MIB_UDPROW_OWNER_PID is 12 bytes:
 //
-//	[0..3]  dwLocalAddr (BE uint32)
-//	[4..7]  dwLocalPort (network order uint16 in LE DWORD)
-//	[8..11] dwOwningPid (not used)
+// MIB_UDPROW_OWNER_PID (IPv4, 12 bytes):
+//
+//	[0..3]  dwLocalAddr  (BE uint32)
+//	[4..7]  dwLocalPort  (network byte order uint16 in LE DWORD)
+//	[8..11] dwOwningPid  (not used)
+//
+// MIB_UDP6ROW_OWNER_PID (IPv6, 28 bytes):
+//
+//	[0..15]  ucLocalAddr[16]  (network byte order)
+//	[16..19] dwLocalScopeId  (not used)
+//	[20..23] dwLocalPort     (network byte order uint16 in LE DWORD)
+//	[24..27] dwOwningPid     (not used)
 func collectUDP(af uintptr) ([]SocketEntry, error) {
 	data, err := callExtendedTable(getExtendedUdpTable, af, udpTableOwnerPid)
 	if err != nil {
@@ -226,8 +258,8 @@ func collectUDP(af uintptr) ([]SocketEntry, error) {
 			localPort = winPortToHost(binary.LittleEndian.Uint32(data[off+4:]))
 		} else {
 			proto = "udp6"
-			localIP = formatIPv6Win(data, int(off))
-			localPort = winPortToHost(binary.LittleEndian.Uint32(data[off+16:]))
+			localIP = formatIPv6Win(data, int(off))                              // ucLocalAddr at offset 0
+			localPort = winPortToHost(binary.LittleEndian.Uint32(data[off+20:])) // dwLocalPort at offset 20
 		}
 
 		out = append(out, SocketEntry{
