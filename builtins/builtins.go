@@ -128,6 +128,12 @@ type CallContext struct {
 	// via GetFileInformationByHandle. The path parameter is needed on Windows
 	// where FileInfo.Sys() lacks identity fields; Unix ignores it.
 	FileIdentity func(path string, info fs.FileInfo) (FileID, bool)
+
+	// ExecCommand runs a command through the shell's execution pipeline.
+	// It respects allowed commands and builtins. The command's stdout and
+	// stderr are written to the caller's Stdout and Stderr writers.
+	// Returns the exit code of the command.
+	ExecCommand func(ctx context.Context, args []string) (uint8, error)
 }
 
 // Out writes a string to stdout.

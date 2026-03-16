@@ -1,0 +1,13 @@
+description: "find -exec with cat reads file contents"
+setup:
+  files:
+    - path: hello.txt
+      content: "hello world"
+      chmod: 0644
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    find . -name 'hello.txt' -exec cat {} \;
+expect:
+  stdout: "hello world"
+  exit_code: 0

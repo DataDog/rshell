@@ -1,0 +1,19 @@
+description: "find -execdir {} + batches basenames per directory"
+skip_assert_against_bash: true  # execdir batching order may differ
+setup:
+  files:
+    - path: a.txt
+      content: "a"
+      chmod: 0644
+    - path: b.txt
+      content: "b"
+      chmod: 0644
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    find . -name '*.txt' -execdir echo {} + | tr ' ' '\n' | sort
+expect:
+  stdout: |
+    ./a.txt
+    ./b.txt
+  exit_code: 0

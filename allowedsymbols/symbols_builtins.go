@@ -83,6 +83,8 @@ var builtinPerCommandSymbols = map[string][]string{
 		"math.MaxInt64",                   // integer constant; no side effects.
 		"os.IsNotExist",                   // checks if error is "not exist"; pure function, no I/O.
 		"os.PathError",                    // error type for path operations; pure type.
+		"path.Base",                       // extracts last element of path; pure function, no I/O.
+		"path.Dir",                        // extracts directory from path; pure function, no I/O.
 		"path/filepath.ToSlash",           // converts OS path separators to forward slashes; pure function, no I/O.
 		"strconv.Atoi",                    // string-to-int conversion; pure function, no I/O.
 		"strconv.ErrRange",                // sentinel error value for overflow; pure constant.
@@ -336,6 +338,8 @@ var builtinAllowedSymbols = []string{
 	"os.IsNotExist",                   // checks if error is "not exist"; pure function, no I/O.
 	"os.O_RDONLY",                     // read-only file flag constant; cannot open files by itself.
 	"os.PathError",                    // error type for filesystem path errors; pure type, no I/O.
+	"path.Base",                       // extracts last element of path; pure function, no I/O.
+	"path.Dir",                        // extracts directory from path; pure function, no I/O.
 	"path/filepath.ToSlash",           // converts OS path separators to forward slashes; pure function, no I/O.
 	"regexp.Compile",                  // compiles a regular expression; pure function, no I/O. Uses RE2 engine (linear-time, no backtracking).
 	"regexp.QuoteMeta",                // escapes all special regex characters in a string; pure function, no I/O.

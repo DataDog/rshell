@@ -1,5 +1,5 @@
-description: find -exec is blocked for sandbox safety.
-skip_assert_against_bash: true  # intentional: bash allows -exec; rshell blocks it
+description: "find -ok remains blocked for sandbox safety"
+skip_assert_against_bash: true  # intentional divergence
 setup:
   files:
     - path: dummy.txt
@@ -8,7 +8,7 @@ setup:
 input:
   allowed_paths: ["$DIR"]
   script: |+
-    find . -exec echo {} \;
+    find . -ok echo {} \;
 expect:
   stderr_contains: ["blocked"]
   exit_code: 1

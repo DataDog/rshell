@@ -181,7 +181,7 @@ func TestParsePathPredicateUsesParsePathPredicate(t *testing.T) {
 // TestParseBlockedPredicates verifies all dangerous predicates are blocked.
 func TestParseBlockedPredicates(t *testing.T) {
 	blocked := []string{
-		"-exec", "-execdir", "-delete", "-ok", "-okdir",
+		"-delete", "-ok", "-okdir",
 		"-fls", "-fprint", "-fprint0", "-fprintf",
 		"-regex", "-iregex",
 	}

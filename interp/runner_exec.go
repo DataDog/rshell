@@ -307,6 +307,13 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 				}
 				return builtins.FileID{Dev: dev, Ino: ino}, true
 			},
+			ExecCommand: func(ctx context.Context, execArgs []string) (uint8, error) {
+				r2 := r.subshell(false)
+				r2.stdout = r.stdout
+				r2.stderr = r.stderr
+				r2.call(ctx, todoPos, execArgs)
+				return r2.exit.code, nil
+			},
 		}
 		if r.stdin != nil { // do not assign a typed nil into the io.Reader interface
 			call.Stdin = r.stdin

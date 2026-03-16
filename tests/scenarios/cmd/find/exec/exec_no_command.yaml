@@ -1,0 +1,14 @@
+description: "find -exec with no command before terminator produces an error"
+skip_assert_against_bash: true  # error message format differs
+setup:
+  files:
+    - path: dummy.txt
+      content: "x"
+      chmod: 0644
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    find . -exec \;
+expect:
+  stderr_contains: ["no command"]
+  exit_code: 1

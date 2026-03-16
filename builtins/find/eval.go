@@ -9,6 +9,7 @@ import (
 	"context"
 	iofs "io/fs"
 	"math"
+	"path"
 	"time"
 
 	"github.com/DataDog/rshell/builtins"
@@ -22,17 +23,111 @@ type evalResult struct {
 
 // evalContext holds state needed during expression evaluation.
 type evalContext struct {
-	callCtx     *builtins.CallContext
-	ctx         context.Context
-	now         time.Time
-	relPath     string               // path relative to starting point
-	info        iofs.FileInfo        // file info (lstat or stat depending on -L)
-	depth       int                  // current depth
-	printPath   string               // path to print (includes starting point prefix)
-	newerCache  map[string]time.Time // cached -newer reference file modtimes
-	newerErrors map[string]bool      // tracks which -newer reference files failed to stat
-	followLinks bool                 // true when -L is active
-	failed      bool                 // set by predicates that encounter errors
+	callCtx      *builtins.CallContext
+	ctx          context.Context
+	now          time.Time
+	relPath      string               // path relative to starting point
+	info         iofs.FileInfo        // file info (lstat or stat depending on -L)
+	depth        int                  // current depth
+	printPath    string               // path to print (includes starting point prefix)
+	newerCache   map[string]time.Time // cached -newer reference file modtimes
+	newerErrors  map[string]bool      // tracks which -newer reference files failed to stat
+	followLinks  bool                 // true when -L is active
+	failed       bool                 // set by predicates that encounter errors
+	execCommand  func(ctx context.Context, args []string) (uint8, error)
+	batchExec    *batchCollector    // shared batch collector for -exec {} +
+	batchExecDir *batchDirCollector // shared batch collector for -execdir {} +
+}
+
+// maxBatchArgs is the maximum number of accumulated paths before a
+// batch -exec + or -execdir + invocation is flushed.
+const maxBatchArgs = 4096
+
+// batchCollector accumulates paths for -exec {} + mode.
+type batchCollector struct {
+	template []string // command template (with {} placeholder)
+	paths    []string // accumulated file paths
+	failed   bool     // true if any invocation returned non-zero
+}
+
+// add appends a path and flushes if the batch limit is reached.
+func (bc *batchCollector) add(ctx context.Context, execCommand func(context.Context, []string) (uint8, error), filePath string) {
+	bc.paths = append(bc.paths, filePath)
+	if len(bc.paths) >= maxBatchArgs {
+		bc.flush(ctx, execCommand)
+	}
+}
+
+// flush executes the accumulated batch.
+func (bc *batchCollector) flush(ctx context.Context, execCommand func(context.Context, []string) (uint8, error)) {
+	if len(bc.paths) == 0 {
+		return
+	}
+	args := buildBatchArgs(bc.template, bc.paths)
+	code, _ := execCommand(ctx, args)
+	if code != 0 {
+		bc.failed = true
+	}
+	bc.paths = bc.paths[:0]
+}
+
+// batchDirCollector accumulates paths grouped by parent directory for -execdir {} +.
+type batchDirCollector struct {
+	template []string            // command template (with {} placeholder)
+	byDir    map[string][]string // parent dir -> list of basenames
+	dirOrder []string            // insertion order for deterministic flushing
+	total    int                 // total accumulated paths across all dirs
+	failed   bool
+}
+
+// add appends a path grouped by its parent directory.
+func (bdc *batchDirCollector) add(ctx context.Context, execCommand func(context.Context, []string) (uint8, error), filePath string) {
+	dir := path.Dir(filePath)
+	base := "./" + path.Base(filePath)
+	if bdc.byDir == nil {
+		bdc.byDir = make(map[string][]string)
+	}
+	if _, ok := bdc.byDir[dir]; !ok {
+		bdc.dirOrder = append(bdc.dirOrder, dir)
+	}
+	bdc.byDir[dir] = append(bdc.byDir[dir], base)
+	bdc.total++
+	if bdc.total >= maxBatchArgs {
+		bdc.flush(ctx, execCommand)
+	}
+}
+
+// flush executes accumulated batches, one per directory.
+func (bdc *batchDirCollector) flush(ctx context.Context, execCommand func(context.Context, []string) (uint8, error)) {
+	for _, dir := range bdc.dirOrder {
+		bases := bdc.byDir[dir]
+		if len(bases) == 0 {
+			continue
+		}
+		_ = dir // -execdir conceptually runs from this dir, but our builtins don't support cwd changes
+		args := buildBatchArgs(bdc.template, bases)
+		code, _ := execCommand(ctx, args)
+		if code != 0 {
+			bdc.failed = true
+		}
+	}
+	bdc.byDir = nil
+	bdc.dirOrder = nil
+	bdc.total = 0
+}
+
+// buildBatchArgs constructs the command arguments for batch mode.
+// It replaces the {} placeholder in the template with the accumulated paths.
+func buildBatchArgs(template, paths []string) []string {
+	args := make([]string, 0, len(template)+len(paths))
+	for _, t := range template {
+		if t == "{}" {
+			args = append(args, paths...)
+		} else {
+			args = append(args, t)
+		}
+	}
+	return args
 }
 
 // evaluate evaluates an expression tree against a file. If e is nil, returns
@@ -102,6 +197,24 @@ func evaluate(ec *evalContext, e *expr) evalResult {
 		ec.callCtx.Outf("%s\x00", ec.printPath)
 		return evalResult{matched: true}
 
+	case exprExec:
+		return evalExec(ec, e.execArgs, ec.printPath)
+
+	case exprExecDir:
+		return evalExecDir(ec, e.execArgs, ec.printPath)
+
+	case exprExecPlus:
+		if ec.batchExec != nil {
+			ec.batchExec.add(ec.ctx, ec.execCommand, ec.printPath)
+		}
+		return evalResult{matched: true}
+
+	case exprExecDirPlus:
+		if ec.batchExecDir != nil {
+			ec.batchExecDir.add(ec.ctx, ec.execCommand, ec.printPath)
+		}
+		return evalResult{matched: true}
+
 	case exprPrune:
 		return evalResult{matched: true, prune: true}
 
@@ -114,6 +227,56 @@ func evaluate(ec *evalContext, e *expr) evalResult {
 	default:
 		return evalResult{matched: false}
 	}
+}
+
+// substituteExecArgs replaces standalone {} in the template with the given path.
+func substituteExecArgs(template []string, replacement string) []string {
+	args := make([]string, len(template))
+	for i, a := range template {
+		if a == "{}" {
+			args[i] = replacement
+		} else {
+			args[i] = a
+		}
+	}
+	return args
+}
+
+// evalExec runs the command template with {} replaced by the file path.
+// Returns matched=true if the command exits with code 0.
+func evalExec(ec *evalContext, cmdTemplate []string, filePath string) evalResult {
+	if ec.execCommand == nil {
+		ec.callCtx.Errf("find: -exec: command execution not available\n")
+		ec.failed = true
+		return evalResult{}
+	}
+	args := substituteExecArgs(cmdTemplate, filePath)
+	code, err := ec.execCommand(ec.ctx, args)
+	if err != nil {
+		ec.callCtx.Errf("find: -exec: %s\n", err)
+		ec.failed = true
+		return evalResult{}
+	}
+	return evalResult{matched: code == 0}
+}
+
+// evalExecDir runs the command template with {} replaced by ./basename.
+// -execdir conceptually runs from the file's parent directory.
+func evalExecDir(ec *evalContext, cmdTemplate []string, filePath string) evalResult {
+	if ec.execCommand == nil {
+		ec.callCtx.Errf("find: -execdir: command execution not available\n")
+		ec.failed = true
+		return evalResult{}
+	}
+	base := "./" + path.Base(filePath)
+	args := substituteExecArgs(cmdTemplate, base)
+	code, err := ec.execCommand(ec.ctx, args)
+	if err != nil {
+		ec.callCtx.Errf("find: -execdir: %s\n", err)
+		ec.failed = true
+		return evalResult{}
+	}
+	return evalResult{matched: code == 0}
 }
 
 // evalEmpty returns true if the file is an empty regular file or empty directory.

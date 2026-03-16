@@ -234,6 +234,7 @@ optLoop:
 				minDepth:         minDepth,
 				now:              now,
 				eagerNewerErrors: eagerNewerErrors,
+				execCommand:      callCtx.ExecCommand,
 			}) {
 				failed = true
 			}
@@ -265,6 +266,7 @@ type walkOptions struct {
 	minDepth         int
 	now              time.Time
 	eagerNewerErrors map[string]bool
+	execCommand      func(ctx context.Context, args []string) (uint8, error)
 }
 
 // walkPath walks the directory tree rooted at startPath, evaluating the
@@ -281,6 +283,16 @@ func walkPath(
 	newerErrors := map[string]bool{}
 	for k, v := range opts.eagerNewerErrors {
 		newerErrors[k] = v
+	}
+
+	// Set up batch collectors for -exec {} + and -execdir {} +.
+	var batchExec *batchCollector
+	var batchExecDir *batchDirCollector
+	if hasBatchExec(opts.expression) {
+		batchExec = &batchCollector{template: getBatchTemplate(opts.expression, exprExecPlus)}
+	}
+	if hasBatchExecDir(opts.expression) {
+		batchExecDir = &batchDirCollector{template: getBatchTemplate(opts.expression, exprExecDirPlus)}
 	}
 
 	// Stat the starting path.
@@ -360,16 +372,19 @@ func walkPath(
 		}
 
 		ec := &evalContext{
-			callCtx:     callCtx,
-			ctx:         ctx,
-			now:         now,
-			relPath:     path,
-			info:        info,
-			depth:       depth,
-			printPath:   path,
-			newerCache:  newerCache,
-			newerErrors: newerErrors,
-			followLinks: opts.followLinks,
+			callCtx:      callCtx,
+			ctx:          ctx,
+			now:          now,
+			relPath:      path,
+			info:         info,
+			depth:        depth,
+			printPath:    path,
+			newerCache:   newerCache,
+			newerErrors:  newerErrors,
+			followLinks:  opts.followLinks,
+			execCommand:  opts.execCommand,
+			batchExec:    batchExec,
+			batchExecDir: batchExecDir,
 		}
 
 		prune := false
@@ -490,7 +505,59 @@ func walkPath(
 		it.dir.Close()
 	}
 
+	// Flush any remaining batch exec paths.
+	if batchExec != nil && opts.execCommand != nil {
+		batchExec.flush(ctx, opts.execCommand)
+		if batchExec.failed {
+			failed = true
+		}
+	}
+	if batchExecDir != nil && opts.execCommand != nil {
+		batchExecDir.flush(ctx, opts.execCommand)
+		if batchExecDir.failed {
+			failed = true
+		}
+	}
+
 	return failed
+}
+
+// hasBatchExec returns true if the expression tree contains a -exec {} + node.
+func hasBatchExec(e *expr) bool {
+	return hasExprKind(e, exprExecPlus)
+}
+
+// hasBatchExecDir returns true if the expression tree contains a -execdir {} + node.
+func hasBatchExecDir(e *expr) bool {
+	return hasExprKind(e, exprExecDirPlus)
+}
+
+// hasExprKind returns true if the expression tree contains a node of the given kind.
+func hasExprKind(e *expr, kind exprKind) bool {
+	if e == nil {
+		return false
+	}
+	if e.kind == kind {
+		return true
+	}
+	return hasExprKind(e.left, kind) || hasExprKind(e.right, kind) || hasExprKind(e.operand, kind)
+}
+
+// getBatchTemplate returns the command template for the first batch exec/execdir node found.
+func getBatchTemplate(e *expr, kind exprKind) []string {
+	if e == nil {
+		return nil
+	}
+	if e.kind == kind {
+		return e.execArgs
+	}
+	if t := getBatchTemplate(e.left, kind); t != nil {
+		return t
+	}
+	if t := getBatchTemplate(e.right, kind); t != nil {
+		return t
+	}
+	return getBatchTemplate(e.operand, kind)
 }
 
 // collectNewerRefs walks the expression tree and returns all -newer reference paths.

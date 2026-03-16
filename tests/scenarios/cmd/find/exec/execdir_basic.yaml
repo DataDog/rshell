@@ -1,0 +1,14 @@
+description: "find -execdir uses basename with ./ prefix"
+skip_assert_against_bash: true  # execdir path format may differ slightly
+setup:
+  files:
+    - path: sub/file.txt
+      content: "data"
+      chmod: 0644
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    find . -name 'file.txt' -execdir echo {} \;
+expect:
+  stdout: "./file.txt\n"
+  exit_code: 0

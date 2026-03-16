@@ -1,0 +1,14 @@
+description: "find -exec filters when command exits non-zero"
+skip_assert_against_bash: true  # rshell false builtin
+setup:
+  files:
+    - path: a.txt
+      content: "a"
+      chmod: 0644
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    find . -name 'a.txt' -exec false \; -print
+expect:
+  stdout: ""
+  exit_code: 0
