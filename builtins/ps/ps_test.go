@@ -133,6 +133,36 @@ func TestPSNegativePIDExits1(t *testing.T) {
 	}
 }
 
+// TestPSZeroPIDExits1 ensures PID 0 is rejected (not a valid process PID).
+func TestPSZeroPIDExits1(t *testing.T) {
+	_, stderr, code := runScript(t, "ps -p 0")
+	if code != 1 {
+		t.Errorf("expected exit code 1 for PID 0, got %d", code)
+	}
+	if !strings.Contains(stderr, "invalid PID") {
+		t.Errorf("expected 'invalid PID' in stderr, got: %s", stderr)
+	}
+}
+
+// TestPSEmptyPIDListExits1 ensures an all-comma PID list is rejected.
+func TestPSEmptyPIDListExits1(t *testing.T) {
+	_, _, code := runScript(t, "ps -p ','")
+	if code != 1 {
+		t.Errorf("expected exit code 1 for empty PID list, got %d", code)
+	}
+}
+
+// TestPSPositionalArgExits1 ensures extra positional args are rejected.
+func TestPSPositionalArgExits1(t *testing.T) {
+	_, stderr, code := runScript(t, "ps foo")
+	if code != 1 {
+		t.Errorf("expected exit code 1 for positional arg, got %d", code)
+	}
+	if !strings.Contains(stderr, "ps:") {
+		t.Errorf("expected error in stderr, got: %s", stderr)
+	}
+}
+
 // TestPSHelp ensures -h prints usage and exits 0.
 func TestPSHelp(t *testing.T) {
 	stdout, _, code := runScript(t, "ps -h")

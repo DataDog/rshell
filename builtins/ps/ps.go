@@ -69,6 +69,12 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			return builtins.Result{}
 		}
 
+		// ps accepts no positional operands.
+		if len(args) > 0 {
+			callCtx.Errf("ps: too many arguments\n")
+			return builtins.Result{Code: 1}
+		}
+
 		// -A is an alias for -e.
 		showAll := *allProcs
 		if f := fs.Lookup("All"); f != nil && f.Changed {
@@ -110,6 +116,7 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 }
 
 // parsePIDs parses a comma- or whitespace-separated list of PIDs.
+// Each PID must be a positive integer (> 0).
 func parsePIDs(s string) ([]int, error) {
 	// Replace commas with spaces for uniform splitting.
 	s = strings.ReplaceAll(s, ",", " ")
@@ -121,10 +128,13 @@ func parsePIDs(s string) ([]int, error) {
 			continue
 		}
 		pid, err := strconv.Atoi(f)
-		if err != nil || pid < 0 {
+		if err != nil || pid <= 0 {
 			return nil, fmt.Errorf("invalid PID: %s", f)
 		}
 		pids = append(pids, pid)
+	}
+	if len(pids) == 0 {
+		return nil, fmt.Errorf("invalid PID: %s", s)
 	}
 	return pids, nil
 }
