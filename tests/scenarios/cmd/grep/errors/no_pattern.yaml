@@ -1,3 +1,4 @@
+# skip: rshell builtin error/output format differs from GNU coreutils
 skip_assert_against_bash: true
 description: grep with no pattern exits 2.
 input:

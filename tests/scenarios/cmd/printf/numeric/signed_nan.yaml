@@ -1,4 +1,5 @@
 description: Signed NaN forms +nan and -nan are accepted (bash compat).
+# skip: rshell builtin error/output format differs from GNU coreutils
 skip_assert_against_bash: true  # Go's math.NaN() doesn't preserve sign; bash outputs -nan for -nan
 input:
   script: |+

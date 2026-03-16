@@ -3,6 +3,7 @@ description: >
   In bash, "a::b" with IFS=: produces three fields: "a", "", "b".
   The upstream mvdan.cc/sh library does not produce the empty middle field.
   skip_assert_against_bash because of this known upstream limitation.
+# skip: known upstream library limitation with consecutive non-whitespace IFS delimiters
 skip_assert_against_bash: true
 input:
   script: |+

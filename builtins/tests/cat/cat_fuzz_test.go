@@ -10,8 +10,11 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/DataDog/rshell/builtins/testutil"
 )
 
 // FuzzCat fuzzes cat with arbitrary file content and verifies output equals input.
@@ -56,12 +59,17 @@ func FuzzCat(f *testing.F) {
 	// ELF magic bytes (binary format detection)
 	f.Add([]byte{0x7f, 'E', 'L', 'F', 0x02, 0x01, 0x01, 0x00})
 
+	baseDir := f.TempDir()
+	var counter atomic.Int64
+
 	f.Fuzz(func(t *testing.T, input []byte) {
 		if len(input) > 1<<20 {
 			return
 		}
 
-		dir := t.TempDir()
+		dir, cleanup := testutil.FuzzIterDir(t, baseDir, &counter)
+		defer cleanup()
+
 		err := os.WriteFile(filepath.Join(dir, "input.txt"), input, 0644)
 		if err != nil {
 			t.Fatal(err)
@@ -102,12 +110,17 @@ func FuzzCatNumberLines(f *testing.F) {
 	// High bytes in line
 	f.Add([]byte{0x80, 0x81, '\n'})
 
+	baseDir := f.TempDir()
+	var counter atomic.Int64
+
 	f.Fuzz(func(t *testing.T, input []byte) {
 		if len(input) > 1<<20 {
 			return
 		}
 
-		dir := t.TempDir()
+		dir, cleanup := testutil.FuzzIterDir(t, baseDir, &counter)
+		defer cleanup()
+
 		err := os.WriteFile(filepath.Join(dir, "input.txt"), input, 0644)
 		if err != nil {
 			t.Fatal(err)
@@ -146,6 +159,9 @@ func FuzzCatDisplayFlags(f *testing.F) {
 	// Surrogate / bad UTF-8 with -v
 	f.Add([]byte{0xed, 0xa0, 0x80, '\n'}, true, false, false)
 
+	baseDir := f.TempDir()
+	var counter atomic.Int64
+
 	f.Fuzz(func(t *testing.T, input []byte, flagV, flagE, flagT bool) {
 		if len(input) > 1<<20 {
 			return
@@ -154,7 +170,9 @@ func FuzzCatDisplayFlags(f *testing.F) {
 			return // plain cat is covered by FuzzCat
 		}
 
-		dir := t.TempDir()
+		dir, cleanup := testutil.FuzzIterDir(t, baseDir, &counter)
+		defer cleanup()
+
 		if err := os.WriteFile(filepath.Join(dir, "input.bin"), input, 0644); err != nil {
 			t.Fatal(err)
 		}
@@ -192,12 +210,17 @@ func FuzzCatStdin(f *testing.F) {
 	f.Add([]byte{0xfc, 0x80, 0x80, 0x80, 0x80, 0xaf, '\n'})
 	f.Add([]byte("line1\r\nline2\r\n"))
 
+	baseDir := f.TempDir()
+	var counter atomic.Int64
+
 	f.Fuzz(func(t *testing.T, input []byte) {
 		if len(input) > 1<<20 {
 			return
 		}
 
-		dir := t.TempDir()
+		dir, cleanup := testutil.FuzzIterDir(t, baseDir, &counter)
+		defer cleanup()
+
 		err := os.WriteFile(filepath.Join(dir, "stdin.txt"), input, 0644)
 		if err != nil {
 			t.Fatal(err)

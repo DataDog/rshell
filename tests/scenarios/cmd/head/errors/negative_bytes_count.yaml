@@ -1,5 +1,6 @@
 # We intentionally reject negative byte counts (we do not implement -c -N elide-tail mode)
 description: head exits 1 when -c is given a negative count.
+# skip: rshell builtin error/output format differs from GNU coreutils
 skip_assert_against_bash: true
 setup:
   files:

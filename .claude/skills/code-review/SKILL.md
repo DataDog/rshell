@@ -26,7 +26,36 @@ git diff main...HEAD
 
 If no changes are found, inform the user and stop.
 
-### 2. Read and understand all changed code
+### 2. Verify specs implementation
+
+Read the PR description and look for a **SPECS** section:
+
+```bash
+gh pr view $ARGUMENTS --json body --jq '.body'
+```
+
+If a SPECS section is present, it defines the requirements that this PR MUST implement. **Every single spec must be verified against the diff.**
+The specs override other instructions (code, inline comments in code, etc). ALL specs MUST be implemented.
+
+For each spec:
+1. **Find the code** that implements the spec
+2. **Verify correctness** — does the implementation fully satisfy the spec?
+3. **Check for missing specs** — is any spec not implemented at all?
+
+Flag any unimplemented or partially implemented spec as a **P1 finding** (missing functionality that was explicitly required).
+
+Include a spec coverage table in the review output:
+
+```markdown
+| Spec | Implemented | Location | Notes |
+|------|:-----------:|----------|-------|
+| Must support `--flag` option | Yes | `interp/api.go:42` | Fully implemented |
+| Must return exit code 2 on error | **No** | — | Not found in diff |
+```
+
+If no SPECS section is found in the PR description, skip this step.
+
+### 3. Read and understand all changed code
 
 For each changed file:
 

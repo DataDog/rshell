@@ -5,4 +5,5 @@ input:
 expect:
   stdout: "\0x"
   exit_code: 0
+# skip: rshell builtin error/output format differs from GNU coreutils
 skip_assert_against_bash: true
