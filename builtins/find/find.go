@@ -169,8 +169,10 @@ optLoop:
 	implicitPrint := expression == nil || !hasAction(expression)
 
 	// Eagerly validate -newer reference paths before walking.
-	// GNU find always reports missing reference files even if short-circuiting
+	// GNU find reports missing reference files even if short-circuiting
 	// or -mindepth prevents the predicate from being evaluated.
+	// With -L, stat the reference (following symlinks) to get the target
+	// mtime; fall back to lstat for dangling symlinks.
 	failed := false
 	eagerNewerErrors := map[string]bool{}
 	seen := map[string]bool{}
@@ -185,7 +187,20 @@ optLoop:
 			failed = true
 			continue
 		}
-		if _, err := callCtx.LstatFile(ctx, ref); err != nil {
+		statRef := callCtx.LstatFile
+		if followLinks {
+			statRef = callCtx.StatFile
+		}
+		if _, err := statRef(ctx, ref); err != nil {
+			// With -L, stat fails on dangling symlinks — fall back to
+			// lstat so the symlink's own mtime can be used. Only fall
+			// back for "not found" errors; permission/sandbox errors
+			// must be reported.
+			if followLinks && isNotExist(err) {
+				if _, lerr := callCtx.LstatFile(ctx, ref); lerr == nil {
+					continue
+				}
+			}
 			callCtx.Errf("find: '%s': %s\n", ref, callCtx.PortableErr(err))
 			eagerNewerErrors[ref] = true
 			failed = true

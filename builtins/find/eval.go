@@ -150,11 +150,24 @@ func evalNewer(ec *evalContext, refPath string) bool {
 	}
 	refTime, ok := ec.newerCache[refPath]
 	if !ok {
-		refInfo, err := ec.callCtx.LstatFile(ec.ctx, refPath)
+		statRef := ec.callCtx.LstatFile
+		if ec.followLinks {
+			statRef = ec.callCtx.StatFile
+		}
+		refInfo, err := statRef(ec.ctx, refPath)
 		if err != nil {
-			ec.callCtx.Errf("find: '%s': %s\n", refPath, ec.callCtx.PortableErr(err))
-			ec.newerErrors[refPath] = true
-			return false
+			// With -L, stat fails on dangling symlinks — fall back to
+			// lstat so the symlink's own mtime can be used. Only fall
+			// back for "not found" errors; permission/sandbox errors
+			// must be reported.
+			if ec.followLinks && isNotExist(err) {
+				refInfo, err = ec.callCtx.LstatFile(ec.ctx, refPath)
+			}
+			if err != nil {
+				ec.callCtx.Errf("find: '%s': %s\n", refPath, ec.callCtx.PortableErr(err))
+				ec.newerErrors[refPath] = true
+				return false
+			}
 		}
 		refTime = refInfo.ModTime()
 		ec.newerCache[refPath] = refTime
