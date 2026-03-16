@@ -1,0 +1,9 @@
+description: Help prints usage when arguments are provided.
+skip_assert_against_bash: true
+input:
+  script: |+
+    help foo
+expect:
+  stdout_contains: ["Usage: help"]
+  stderr: ""
+  exit_code: 1

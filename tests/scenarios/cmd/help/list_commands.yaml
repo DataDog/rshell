@@ -1,0 +1,9 @@
+description: Help lists all available builtin commands.
+skip_assert_against_bash: true
+input:
+  script: |+
+    help
+expect:
+  stdout_contains: ["cat", "echo", "grep", "help", "ls", "test", "true", "false"]
+  stderr: ""
+  exit_code: 0

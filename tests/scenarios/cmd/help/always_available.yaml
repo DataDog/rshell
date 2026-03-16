@@ -1,0 +1,10 @@
+description: Help is available even when not in the allowed commands list.
+skip_assert_against_bash: true
+input:
+  allowed_commands: ["echo"]
+  script: |+
+    help
+expect:
+  stdout_contains: ["echo", "help"]
+  stderr: ""
+  exit_code: 0
