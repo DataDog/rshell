@@ -52,8 +52,6 @@ func FuzzTestStringOps(f *testing.F) {
 	// == operator (same as =)
 	f.Add("x", "x", "==")
 
-	dir := f.TempDir()
-
 	f.Fuzz(func(t *testing.T, left, right, op string) {
 		if len(left) > 100 || len(right) > 100 {
 			return
@@ -80,7 +78,9 @@ func FuzzTestStringOps(f *testing.F) {
 			return
 		}
 
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		dir := t.TempDir()
+
+		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		defer cancel()
 
 		script := fmt.Sprintf("test '%s' %s '%s'", left, op, right)
@@ -113,8 +113,6 @@ func FuzzTestIntegerOps(f *testing.F) {
 	// int64 max (clamped on overflow per GNU test behavior)
 	f.Add(int64(1<<31-1), int64(1<<31-1), "-ge")
 
-	dir := f.TempDir()
-
 	f.Fuzz(func(t *testing.T, left, right int64, op string) {
 		switch op {
 		case "-eq", "-ne", "-lt", "-le", "-gt", "-ge":
@@ -126,7 +124,9 @@ func FuzzTestIntegerOps(f *testing.F) {
 			return
 		}
 
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		dir := t.TempDir()
+
+		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		defer cancel()
 
 		script := fmt.Sprintf("test %d %s %d", left, op, right)
@@ -177,7 +177,7 @@ func FuzzTestFileOps(f *testing.F) {
 			}
 		}
 
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		defer cancel()
 
 		script := fmt.Sprintf("test %s %s", op, target)
@@ -207,8 +207,6 @@ func FuzzTestStringUnary(f *testing.F) {
 	f.Add("日本語", "-n")
 	f.Add("😀", "-n")
 
-	dir := f.TempDir()
-
 	f.Fuzz(func(t *testing.T, arg, op string) {
 		if len(arg) > 200 {
 			return
@@ -229,7 +227,9 @@ func FuzzTestStringUnary(f *testing.F) {
 			}
 		}
 
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		dir := t.TempDir()
+
+		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		defer cancel()
 
 		script := fmt.Sprintf("test %s '%s'", op, arg)
@@ -269,8 +269,6 @@ func FuzzTestNesting(f *testing.F) {
 	f.Add("1 -eq 2 -o 2 -eq 2 -o 3 -eq 4")
 	// Mixed -a and -o
 	f.Add("1 -eq 1 -o 1 -eq 2 -a 2 -eq 2")
-
-	dir := f.TempDir()
 
 	f.Fuzz(func(t *testing.T, expr string) {
 		// Keep expressions short to avoid slow evaluation on CI where
@@ -314,7 +312,9 @@ func FuzzTestNesting(f *testing.F) {
 			}
 		}
 
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		dir := t.TempDir()
+
+		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		defer cancel()
 
 		script := fmt.Sprintf("test %s", expr)

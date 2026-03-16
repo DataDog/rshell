@@ -139,6 +139,13 @@ func (r *Runner) setVarString(name, value string) {
 	r.setVar(name, expand.Variable{Set: true, Kind: expand.String, Str: value})
 }
 
+// setVarErr is like setVar but returns the error instead of recording it as a
+// side-effect. Use this when the caller needs to propagate the error (e.g. in
+// the expand package's WriteEnviron.Set callback).
+func (r *Runner) setVarErr(name string, vr expand.Variable) error {
+	return r.writeEnv.Set(name, vr)
+}
+
 func (r *Runner) setVar(name string, vr expand.Variable) {
 	if vr.IsSet() && len(vr.Str) > MaxVarBytes {
 		r.errf("%s: value too large (limit %d bytes)\n", name, MaxVarBytes)
