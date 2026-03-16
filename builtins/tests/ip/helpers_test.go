@@ -31,7 +31,7 @@ func runScriptCtx(ctx context.Context, t *testing.T, script, dir string, opts ..
 		t.Fatal(err)
 	}
 	var outBuf, errBuf bytes.Buffer
-	allOpts := append([]interp.RunnerOption{interp.StdIO(nil, &outBuf, &errBuf)}, opts...)
+	allOpts := append([]interp.RunnerOption{interp.StdIO(nil, &outBuf, &errBuf), interp.AllowAllCommands()}, opts...)
 	runner, err := interp.New(allOpts...)
 	if err != nil {
 		t.Fatal(err)
