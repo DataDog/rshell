@@ -67,6 +67,7 @@ var builtinPerCommandSymbols = map[string][]string{
 	},
 	"find": {
 		"context.Context",                 // deadline/cancellation plumbing; pure interface, no side effects.
+		"errors.As",                       // error type assertion; pure function, no I/O.
 		"errors.Is",                       // error comparison; pure function, no I/O.
 		"errors.New",                      // creates a simple error value; pure function, no I/O.
 		"fmt.Errorf",                      // error formatting; pure function, no I/O.
@@ -80,9 +81,12 @@ var builtinPerCommandSymbols = map[string][]string{
 		"math.Ceil",                       // pure arithmetic; no side effects.
 		"math.Floor",                      // pure arithmetic; no side effects.
 		"math.MaxInt64",                   // integer constant; no side effects.
+		"os.IsNotExist",                   // checks if error is "not exist"; pure function, no I/O.
+		"os.PathError",                    // error type for path operations; pure type.
 		"strconv.Atoi",                    // string-to-int conversion; pure function, no I/O.
 		"strconv.ErrRange",                // sentinel error value for overflow; pure constant.
 		"strconv.ParseInt",                // string-to-int conversion; pure function, no I/O.
+		"strings.Contains",                // checks if string contains substring; pure function, no I/O.
 		"strings.HasPrefix",               // pure function for prefix matching; no I/O.
 		"strings.ToLower",                 // converts string to lowercase; pure function, no I/O.
 		"time.Duration",                   // duration type; pure integer alias, no I/O.
@@ -329,6 +333,7 @@ var builtinAllowedSymbols = []string{
 	"math.MaxUint64",                  // integer constant; no side effects.
 	"math.NaN",                        // returns IEEE 754 NaN value; pure function, no I/O.
 	"os.FileInfo",                     // file metadata interface returned by Stat; no I/O side effects.
+	"os.IsNotExist",                   // checks if error is "not exist"; pure function, no I/O.
 	"os.O_RDONLY",                     // read-only file flag constant; cannot open files by itself.
 	"os.PathError",                    // error type for filesystem path errors; pure type, no I/O.
 	"regexp.Compile",                  // compiles a regular expression; pure function, no I/O. Uses RE2 engine (linear-time, no backtracking).
@@ -349,6 +354,7 @@ var builtinAllowedSymbols = []string{
 	"strconv.ParseInt",                // string-to-int conversion with base/bit-size; pure function, no I/O.
 	"strconv.ParseUint",               // string-to-unsigned-int conversion; pure function, no I/O.
 	"strings.Builder",                 // efficient string concatenation; pure in-memory buffer, no I/O.
+	"strings.Contains",                // checks if string contains substring; pure function, no I/O.
 	"strings.ContainsRune",            // checks if a rune is in a string; pure function, no I/O.
 	"strings.HasPrefix",               // pure function for prefix matching; no I/O.
 	"strings.IndexByte",               // finds byte in string; pure function, no I/O.

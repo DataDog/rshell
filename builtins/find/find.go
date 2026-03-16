@@ -59,13 +59,31 @@ package find
 
 import (
 	"context"
+	"errors"
 	"io"
 	iofs "io/fs"
+	"os"
 	"strings"
 	"time"
 
 	"github.com/DataDog/rshell/builtins"
 )
+
+// isNotExist checks whether an error represents a "not found" condition.
+// The sandbox's PortablePathError wraps errors with errors.New(), stripping
+// the fs.ErrNotExist sentinel, so we check both errors.Is and the string.
+func isNotExist(err error) bool {
+	if os.IsNotExist(err) {
+		return true
+	}
+	// PortablePathError rewrites the inner error as a plain string;
+	// check for the canonical portable message.
+	var pe *os.PathError
+	if errors.As(err, &pe) {
+		return pe.Err.Error() == "no such file or directory"
+	}
+	return strings.Contains(err.Error(), "no such file or directory")
+}
 
 // maxTraversalDepth limits directory recursion depth to prevent resource
 // exhaustion. This is an intentional safety divergence from GNU find (which
@@ -172,8 +190,10 @@ optLoop:
 		}
 		if _, err := statRef(ctx, ref); err != nil {
 			// With -L, a dangling symlink reference is not fatal —
-			// fall back to lstat like GNU find does.
-			if followLinks {
+			// fall back to lstat like GNU find does. Only fall back
+			// for "not found" errors; other errors (permission denied,
+			// sandbox escape) must be reported.
+			if followLinks && isNotExist(err) {
 				if _, lerr := callCtx.LstatFile(ctx, ref); lerr == nil {
 					continue
 				}
@@ -265,8 +285,9 @@ func walkPath(
 	var err error
 	if opts.followLinks {
 		startInfo, err = callCtx.StatFile(ctx, startPath)
-		if err != nil {
+		if err != nil && isNotExist(err) {
 			// Dangling symlink root: fall back to lstat like child entries.
+			// Only for "not found" — permission/sandbox errors are real.
 			startInfo, err = callCtx.LstatFile(ctx, startPath)
 		}
 	} else {
@@ -419,8 +440,9 @@ func walkPath(
 		var childInfo iofs.FileInfo
 		if opts.followLinks {
 			childInfo, err = callCtx.StatFile(ctx, childPath)
-			if err != nil {
+			if err != nil && isNotExist(err) {
 				// Dangling symlink: stat fails but lstat succeeds.
+				// Only for "not found" — permission/sandbox errors are real.
 				childInfo, err = callCtx.LstatFile(ctx, childPath)
 			}
 			if err != nil {
