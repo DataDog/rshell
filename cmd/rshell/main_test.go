@@ -49,6 +49,13 @@ func TestStdin(t *testing.T) {
 	assert.Equal(t, "from-stdin\n", stdout)
 }
 
+func TestEmptyStdin(t *testing.T) {
+	code, stdout, stderr := runCLIWithStdin(t, "", "--allow-all-commands")
+	assert.Equal(t, 0, code)
+	assert.Empty(t, stdout)
+	assert.Empty(t, stderr)
+}
+
 func TestEmptyCommand(t *testing.T) {
 	code, stdout, stderr := runCLI(t, "-c", "")
 	assert.Equal(t, 0, code, "empty command should exit 0 (matching bash -c '')")
@@ -134,6 +141,7 @@ func TestHelp(t *testing.T) {
 	assert.Contains(t, stdout, "--allowed-path")
 	assert.Contains(t, stdout, "--allowed-commands")
 	assert.Contains(t, stdout, "--allow-all-commands")
+	assert.NotContains(t, stdout, "--command", "-c/--command should be hidden from help")
 }
 
 func TestFileArg(t *testing.T) {
