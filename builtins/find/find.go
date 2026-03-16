@@ -110,43 +110,7 @@ optLoop:
 	for i < len(args) {
 		switch args[i] {
 		case "--help":
-			callCtx.Out("Usage: find [-L] [-P] [path...] [expression]\n\n")
-			callCtx.Out("Search directory trees, evaluating an expression for each file found.\n")
-			callCtx.Out("Default path is the current directory; default expression is -print.\n\n")
-			callCtx.Out("Options:\n")
-			callCtx.Out("  -L                         Follow symbolic links.\n")
-			callCtx.Out("  -P                         Never follow symbolic links (default).\n\n")
-			callCtx.Out("Tests:\n")
-			callCtx.Out("  -name PATTERN              Base name matches shell glob PATTERN.\n")
-			callCtx.Out("  -iname PATTERN             Like -name but case-insensitive.\n")
-			callCtx.Out("  -path PATTERN              Full path matches shell glob PATTERN.\n")
-			callCtx.Out("  -ipath PATTERN             Like -path but case-insensitive.\n")
-			callCtx.Out("  -type TYPE                 File type: b,c,d,f,l,p,s. Comma-separated for OR.\n")
-			callCtx.Out("  -size N[cwbkMG]            File size (+N=greater, -N=less, N=exact).\n")
-			callCtx.Out("  -empty                     Empty regular file or directory.\n")
-			callCtx.Out("  -newer FILE                Modified more recently than FILE.\n")
-			callCtx.Out("  -mtime N                   Modified N days ago (+N=more, -N=less).\n")
-			callCtx.Out("  -mmin N                    Modified N minutes ago (+N=more, -N=less).\n")
-			callCtx.Out("  -readable                  File is readable by the current user.\n")
-			callCtx.Out("  -perm MODE                 Permission bits match MODE (octal or symbolic).\n")
-			callCtx.Out("  -maxdepth N                Descend at most N levels.\n")
-			callCtx.Out("  -mindepth N                Apply tests only at depth >= N.\n")
-			callCtx.Out("  -true                      Always true.\n")
-			callCtx.Out("  -false                     Always false.\n\n")
-			callCtx.Out("Actions:\n")
-			callCtx.Out("  -print                     Print path followed by newline.\n")
-			callCtx.Out("  -print0                    Print path followed by NUL.\n")
-			callCtx.Out("  -prune                     Skip directory subtree.\n")
-			callCtx.Out("  -quit                      Exit immediately.\n\n")
-			callCtx.Out("Operators:\n")
-			callCtx.Out("  ( EXPR )                   Grouping.\n")
-			callCtx.Out("  ! EXPR / -not EXPR         Negation.\n")
-			callCtx.Out("  EXPR -a EXPR / EXPR -and EXPR  Conjunction (implicit).\n")
-			callCtx.Out("  EXPR -o EXPR / EXPR -or EXPR   Disjunction.\n\n")
-			callCtx.Out("Blocked predicates [sandbox]:\n")
-			callCtx.Out("  -exec, -execdir, -delete, -ok, -okdir          Execution/deletion.\n")
-			callCtx.Out("  -fls, -fprint, -fprint0, -fprintf              File writes.\n")
-			callCtx.Out("  -regex, -iregex                                ReDoS risk.\n")
+			printHelp(callCtx)
 			return builtins.Result{}
 		case "-L":
 			followLinks = true
@@ -182,11 +146,20 @@ optLoop:
 		paths = []string{"."}
 	}
 
+	// GNU find accepts --help anywhere (even after paths), so check
+	// for it in the expression args before parsing.
+	exprArgs := args[i:]
+	for _, arg := range exprArgs {
+		if arg == "--help" {
+			printHelp(callCtx)
+			return builtins.Result{}
+		}
+	}
+
 	// Parse expression (includes -maxdepth/-mindepth as parser-recognized
 	// options). The recursive-descent parser naturally handles token ownership,
 	// so depth options can appear in any position without stealing arguments
 	// from other predicates.
-	exprArgs := args[i:]
 	pr, err := parseExpression(exprArgs)
 	if err != nil {
 		callCtx.Errf("%s\n", err.Error())
@@ -300,6 +273,47 @@ func isExpressionStart(arg string) bool {
 		return true
 	}
 	return strings.HasPrefix(arg, "-") && len(arg) > 1
+}
+
+// printHelp outputs the find usage information.
+func printHelp(callCtx *builtins.CallContext) {
+	callCtx.Out("Usage: find [-L] [-P] [path...] [expression]\n\n")
+	callCtx.Out("Search directory trees, evaluating an expression for each file found.\n")
+	callCtx.Out("Default path is the current directory; default expression is -print.\n\n")
+	callCtx.Out("Options:\n")
+	callCtx.Out("  -L                         Follow symbolic links.\n")
+	callCtx.Out("  -P                         Never follow symbolic links (default).\n\n")
+	callCtx.Out("Tests:\n")
+	callCtx.Out("  -name PATTERN              Base name matches shell glob PATTERN.\n")
+	callCtx.Out("  -iname PATTERN             Like -name but case-insensitive.\n")
+	callCtx.Out("  -path PATTERN              Full path matches shell glob PATTERN.\n")
+	callCtx.Out("  -ipath PATTERN             Like -path but case-insensitive.\n")
+	callCtx.Out("  -type TYPE                 File type: b,c,d,f,l,p,s. Comma-separated for OR.\n")
+	callCtx.Out("  -size N[cwbkMG]            File size (+N=greater, -N=less, N=exact).\n")
+	callCtx.Out("  -empty                     Empty regular file or directory.\n")
+	callCtx.Out("  -newer FILE                Modified more recently than FILE.\n")
+	callCtx.Out("  -mtime N                   Modified N days ago (+N=more, -N=less).\n")
+	callCtx.Out("  -mmin N                    Modified N minutes ago (+N=more, -N=less).\n")
+	callCtx.Out("  -readable                  File is readable by the current user.\n")
+	callCtx.Out("  -perm MODE                 Permission bits match MODE (octal or symbolic).\n")
+	callCtx.Out("  -maxdepth N                Descend at most N levels.\n")
+	callCtx.Out("  -mindepth N                Apply tests only at depth >= N.\n")
+	callCtx.Out("  -true                      Always true.\n")
+	callCtx.Out("  -false                     Always false.\n\n")
+	callCtx.Out("Actions:\n")
+	callCtx.Out("  -print                     Print path followed by newline.\n")
+	callCtx.Out("  -print0                    Print path followed by NUL.\n")
+	callCtx.Out("  -prune                     Skip directory subtree.\n")
+	callCtx.Out("  -quit                      Exit immediately.\n\n")
+	callCtx.Out("Operators:\n")
+	callCtx.Out("  ( EXPR )                   Grouping.\n")
+	callCtx.Out("  ! EXPR / -not EXPR         Negation.\n")
+	callCtx.Out("  EXPR -a EXPR / EXPR -and EXPR  Conjunction (implicit).\n")
+	callCtx.Out("  EXPR -o EXPR / EXPR -or EXPR   Disjunction.\n\n")
+	callCtx.Out("Blocked predicates [sandbox]:\n")
+	callCtx.Out("  -exec, -execdir, -delete, -ok, -okdir          Execution/deletion.\n")
+	callCtx.Out("  -fls, -fprint, -fprint0, -fprintf              File writes.\n")
+	callCtx.Out("  -regex, -iregex                                ReDoS risk.\n")
 }
 
 // walkOptions holds configuration for a single walkPath invocation.

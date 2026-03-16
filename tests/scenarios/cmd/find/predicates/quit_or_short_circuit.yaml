@@ -1,5 +1,4 @@
 description: find with -quit in OR stops after the quit-triggering match.
-skip_assert_against_bash: true
 setup:
   files:
     - path: dir/target.txt
