@@ -141,13 +141,13 @@ func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {
 			go func() {
 				defer func() {
 					if rec := recover(); rec != nil {
-						panicOut := rLeft.stderr
-						if panicOut == nil {
-							panicOut = os.Stderr
+						panicOut := io.Writer(io.Discard)
+						if rLeft.stderr != nil {
+							panicOut = rLeft.stderr
 						}
 						func() {
 							defer func() { recover() }()
-							fmt.Fprintf(panicOut, "rshell: internal panic: %v\n%s\n", rec, debug.Stack())
+							fmt.Fprintf(panicOut, "rshell: internal panic: %v\n", rec)
 						}()
 						rLeft.exit.fatal(fmt.Errorf("internal error"))
 					}
