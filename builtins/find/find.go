@@ -82,7 +82,7 @@ func isNotExist(err error) bool {
 	if errors.As(err, &pe) {
 		return pe.Err.Error() == "no such file or directory"
 	}
-	return strings.Contains(err.Error(), "no such file or directory")
+	return false
 }
 
 // maxTraversalDepth limits directory recursion depth to prevent resource
@@ -184,20 +184,7 @@ optLoop:
 			failed = true
 			continue
 		}
-		statRef := callCtx.LstatFile
-		if followLinks {
-			statRef = callCtx.StatFile
-		}
-		if _, err := statRef(ctx, ref); err != nil {
-			// With -L, a dangling symlink reference is not fatal —
-			// fall back to lstat like GNU find does. Only fall back
-			// for "not found" errors; other errors (permission denied,
-			// sandbox escape) must be reported.
-			if followLinks && isNotExist(err) {
-				if _, lerr := callCtx.LstatFile(ctx, ref); lerr == nil {
-					continue
-				}
-			}
+		if _, err := callCtx.LstatFile(ctx, ref); err != nil {
 			callCtx.Errf("find: '%s': %s\n", ref, callCtx.PortableErr(err))
 			eagerNewerErrors[ref] = true
 			failed = true
