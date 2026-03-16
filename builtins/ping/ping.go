@@ -119,7 +119,7 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 		}
 
 		// Validate interval.
-		if *interval <= 0 {
+		if *interval <= 0 || *interval != *interval { // NaN != NaN
 			callCtx.Errf("ping: invalid interval: %g\n", *interval)
 			return builtins.Result{Code: 1}
 		}
@@ -160,6 +160,9 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 		for i, rtt := range probe.RTTs {
 			if ctx.Err() != nil {
 				break
+			}
+			if rtt <= 0 {
+				continue // skip failed probes (library records 0.0 for failures)
 			}
 			callCtx.Outf("64 bytes from %s: icmp_seq=%d time=%.3f ms\n",
 				results.Destination.Hostname, i, rtt)

@@ -8,8 +8,11 @@ package ping_test
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
+
+	"mvdan.cc/sh/v3/syntax"
 )
 
 // FuzzPingFlags fuzzes the flag parsing of the ping command.
@@ -46,8 +49,14 @@ func FuzzPingFlags(f *testing.F) {
 
 		script := fmt.Sprintf("ping %s", args)
 
-		// Filter out shell-unparseable inputs.
-		// The shell parser will reject some inputs, which is fine.
+		// Skip inputs that the shell parser cannot parse (unmatched quotes,
+		// special characters that create multi-command scripts, etc.).
+		// This ensures we fuzz ping flag handling, not the shell parser.
+		parser := syntax.NewParser()
+		if _, err := parser.Parse(strings.NewReader(script), ""); err != nil {
+			return
+		}
+
 		_, _, code := runScriptCtx(ctx, t, script, t.TempDir())
 
 		// Exit codes 0 and 1 are acceptable.
