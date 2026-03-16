@@ -50,6 +50,9 @@ jobs:
           - pkg: ./builtins/tests/ls/
             name: ls
             corpus_path: builtins/tests/ls
+          - pkg: ./builtins/ping/
+            name: ping
+            corpus_path: builtins/ping
           - pkg: ./interp/tests/
             name: interp
             corpus_path: interp/tests

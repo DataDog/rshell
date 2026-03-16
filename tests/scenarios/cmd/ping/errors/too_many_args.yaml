@@ -1,0 +1,10 @@
+# ping is not a bash builtin — skip bash comparison
+skip_assert_against_bash: true
+description: ping with multiple host arguments prints error and exits 1.
+input:
+  script: |+
+    ping host1 host2
+expect:
+  stdout: ""
+  stderr_contains: ["ping: too many arguments"]
+  exit_code: 1

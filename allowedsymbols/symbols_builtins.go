@@ -149,6 +149,13 @@ var builtinPerCommandSymbols = map[string][]string{
 		"slices.SortFunc",     // sorts a slice with a comparison function; pure function, no I/O.
 		"time.Time",           // time value type; pure data, no side effects.
 	},
+	"ping": {
+		"context.Context", // deadline/cancellation plumbing; pure interface, no side effects.
+		"github.com/DataDog/datadog-traceroute/traceroute.NewTraceroute",    // creates a traceroute runner for ICMP probes; network I/O (authorized for ping).
+		"github.com/DataDog/datadog-traceroute/traceroute.TracerouteParams", // parameter struct for traceroute configuration; pure data type.
+		"time.Duration", // duration type; pure integer alias, no I/O.
+		"time.Second",   // constant representing one second; no side effects.
+	},
 	"printf": {
 		"context.Context",      // deadline/cancellation plumbing; pure interface, no side effects.
 		"errors.As",            // error type assertion; pure function, no I/O.
@@ -297,18 +304,20 @@ var builtinPerCommandSymbols = map[string][]string{
 }
 
 var builtinAllowedSymbols = []string{
-	"bufio.NewScanner",                // line-by-line input reading (e.g. head, cat); no write or exec capability.
-	"bufio.Scanner",                   // scanner type for buffered input reading; no write or exec capability.
-	"bufio.SplitFunc",                 // type for custom scanner split functions; pure type, no I/O.
-	"bytes.Equal",                     // compares two byte slices for equality; pure function, no I/O.
-	"bytes.IndexByte",                 // finds a byte in a byte slice; pure function, no I/O.
-	"bytes.NewReader",                 // wraps a byte slice as an io.Reader; pure in-memory, no I/O.
-	"context.Context",                 // deadline/cancellation plumbing; pure interface, no side effects.
-	"errors.As",                       // error type assertion; pure function, no I/O.
-	"errors.Is",                       // error comparison; pure function, no I/O.
-	"errors.New",                      // creates a simple error value; pure function, no I/O.
-	"fmt.Errorf",                      // error formatting; pure function, no I/O.
-	"fmt.Sprintf",                     // string formatting; pure function, no I/O.
+	"bufio.NewScanner", // line-by-line input reading (e.g. head, cat); no write or exec capability.
+	"bufio.Scanner",    // scanner type for buffered input reading; no write or exec capability.
+	"bufio.SplitFunc",  // type for custom scanner split functions; pure type, no I/O.
+	"bytes.Equal",      // compares two byte slices for equality; pure function, no I/O.
+	"bytes.IndexByte",  // finds a byte in a byte slice; pure function, no I/O.
+	"bytes.NewReader",  // wraps a byte slice as an io.Reader; pure in-memory, no I/O.
+	"context.Context",  // deadline/cancellation plumbing; pure interface, no side effects.
+	"errors.As",        // error type assertion; pure function, no I/O.
+	"errors.Is",        // error comparison; pure function, no I/O.
+	"errors.New",       // creates a simple error value; pure function, no I/O.
+	"fmt.Errorf",       // error formatting; pure function, no I/O.
+	"fmt.Sprintf",      // string formatting; pure function, no I/O.
+	"github.com/DataDog/datadog-traceroute/traceroute.NewTraceroute",    // creates a traceroute runner for ICMP probes; network I/O (authorized for ping builtin).
+	"github.com/DataDog/datadog-traceroute/traceroute.TracerouteParams", // parameter struct for traceroute configuration; pure data type.
 	"io.EOF",                          // sentinel error value; pure constant.
 	"io.MultiReader",                  // combines multiple Readers into one sequential Reader; no I/O side effects.
 	"io.NopCloser",                    // wraps a Reader with a no-op Close; no side effects.

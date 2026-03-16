@@ -1,0 +1,10 @@
+# ping is not a bash builtin — skip bash comparison
+skip_assert_against_bash: true
+description: ping --help prints usage to stdout and exits 0.
+input:
+  script: |+
+    ping --help
+expect:
+  stdout_contains: ["Usage:"]
+  stderr: ""
+  exit_code: 0

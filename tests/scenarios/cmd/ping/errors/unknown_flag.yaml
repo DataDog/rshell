@@ -1,0 +1,10 @@
+# ping is not a bash builtin — skip bash comparison
+skip_assert_against_bash: true
+description: ping rejects unknown flags.
+input:
+  script: |+
+    ping --follow localhost
+expect:
+  stdout: ""
+  stderr_contains: ["unknown flag"]
+  exit_code: 1
