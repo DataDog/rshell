@@ -519,6 +519,10 @@ func (p *parser) parsePermPredicate() (*expr, error) {
 
 // parseSymbolicMode parses a symbolic permission string like "u=rwx,g=rx,o=rx"
 // or "a=r" into an octal permission value.
+//
+// Supports: who (u/g/o/a), operators (=/+/-), perms (r/w/x/s/t).
+// Does NOT support GNU extensions: copying bits from another class (g=u),
+// conditional execute (X), or reference-based modes. These may be added later.
 func parseSymbolicMode(s string) (uint64, error) {
 	var mode uint64
 	for _, clause := range strings.Split(s, ",") {
