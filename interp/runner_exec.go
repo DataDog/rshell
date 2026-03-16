@@ -11,6 +11,7 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -267,6 +268,12 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 			ReadDir: func(ctx context.Context, path string) ([]fs.DirEntry, error) {
 				return r.sandbox.ReadDir(path, HandlerCtx(r.handlerCtx(ctx, todoPos)).Dir)
 			},
+			OpenDir: func(ctx context.Context, path string) (fs.ReadDirFile, error) {
+				return r.sandbox.OpenDir(path, HandlerCtx(r.handlerCtx(ctx, todoPos)).Dir)
+			},
+			IsDirEmpty: func(ctx context.Context, path string) (bool, error) {
+				return r.sandbox.IsDirEmpty(path, HandlerCtx(r.handlerCtx(ctx, todoPos)).Dir)
+			},
 			ReadDirLimited: func(ctx context.Context, path string, offset, maxRead int) ([]fs.DirEntry, bool, error) {
 				return r.sandbox.ReadDirLimited(path, HandlerCtx(r.handlerCtx(ctx, todoPos)).Dir, offset, maxRead)
 			},
@@ -281,6 +288,17 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 			},
 			PortableErr: allowedpaths.PortableErrMsg,
 			Now:         time.Now,
+			FileIdentity: func(path string, info fs.FileInfo) (builtins.FileID, bool) {
+				absPath := path
+				if !filepath.IsAbs(absPath) {
+					absPath = filepath.Join(r.Dir, absPath)
+				}
+				dev, ino, ok := allowedpaths.FileIdentity(absPath, info, r.sandbox)
+				if !ok {
+					return builtins.FileID{}, false
+				}
+				return builtins.FileID{Dev: dev, Ino: ino}, true
+			},
 		}
 		if r.stdin != nil { // do not assign a typed nil into the io.Reader interface
 			call.Stdin = r.stdin

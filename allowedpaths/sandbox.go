@@ -242,6 +242,47 @@ func (s *Sandbox) readDirN(path string, cwd string, maxEntries int) ([]fs.DirEnt
 	return entries, nil
 }
 
+// OpenDir opens a directory within the sandbox for incremental reading
+// via ReadDir(n). The caller must close the returned handle when done.
+// Returns fs.ReadDirFile to expose only read-only directory methods.
+func (s *Sandbox) OpenDir(path string, cwd string) (fs.ReadDirFile, error) {
+	absPath := toAbs(path, cwd)
+
+	root, relPath, ok := s.resolve(absPath)
+	if !ok {
+		return nil, &os.PathError{Op: "opendir", Path: path, Err: os.ErrPermission}
+	}
+
+	f, err := root.Open(relPath)
+	if err != nil {
+		return nil, PortablePathError(err)
+	}
+	return f, nil
+}
+
+// IsDirEmpty checks whether a directory is empty by reading at most one
+// entry. More efficient than reading all entries when only emptiness
+// needs to be determined.
+func (s *Sandbox) IsDirEmpty(path string, cwd string) (bool, error) {
+	absPath := toAbs(path, cwd)
+
+	root, relPath, ok := s.resolve(absPath)
+	if !ok {
+		return false, &os.PathError{Op: "readdir", Path: path, Err: os.ErrPermission}
+	}
+
+	f, err := root.Open(relPath)
+	if err != nil {
+		return false, PortablePathError(err)
+	}
+	defer f.Close()
+	entries, err := f.ReadDir(1)
+	if err != nil && err != io.EOF {
+		return false, PortablePathError(err)
+	}
+	return len(entries) == 0, nil
+}
+
 // ReadDirLimited reads directory entries, skipping the first offset entries
 // and returning up to maxRead entries sorted by name within the read window.
 // Returns (entries, truncated, error). When truncated is true, the directory
