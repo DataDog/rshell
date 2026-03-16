@@ -1,0 +1,13 @@
+description: When -n is given twice, the last value wins entirely, including clearing any + offset.
+setup:
+  files:
+    - path: file.txt
+      content: "alpha\nbeta\ngamma\ndelta\nepsilon\n"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    tail -n +2 -n 2 file.txt
+expect:
+  stdout: "delta\nepsilon\n"
+  stderr: ""
+  exit_code: 0
