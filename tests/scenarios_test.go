@@ -184,10 +184,12 @@ func runScenario(t *testing.T, sc scenario) {
 		for _, p := range sc.Input.AllowedPaths {
 			if p == "$DIR" {
 				resolved = append(resolved, dir)
-			} else if filepath.IsAbs(p) {
+			} else if filepath.IsAbs(p) || strings.HasPrefix(p, "/") {
 				// Absolute paths (e.g. /proc/net) are used as-is to allow access
 				// to kernel virtual filesystems that live outside the test temp dir.
-				// Skip if the path does not exist on this OS (e.g. /proc/net on macOS).
+				// Also handle Unix-style paths starting with "/" on Windows, where
+				// filepath.IsAbs only recognises drive-letter paths like C:\...
+				// Skip if the path does not exist on this OS (e.g. /proc/net on macOS/Windows).
 				if _, err := os.Stat(p); err == nil {
 					resolved = append(resolved, p)
 				}

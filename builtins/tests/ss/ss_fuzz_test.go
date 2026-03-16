@@ -19,8 +19,11 @@ package ss_test
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
+
+	"mvdan.cc/sh/v3/syntax"
 
 	"github.com/DataDog/rshell/builtins/testutil"
 )
@@ -100,10 +103,19 @@ func FuzzSSFlags(f *testing.F) {
 			return
 		}
 
+		script := fmt.Sprintf("ss %s", flags)
+
+		// Skip inputs that produce invalid shell syntax — we are fuzzing ss flag
+		// parsing, not the shell parser. Inputs with unmatched quotes produce
+		// parse errors that would cause require.NoError to fail the test.
+		if _, err := syntax.NewParser().Parse(strings.NewReader(script), ""); err != nil {
+			return
+		}
+
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 
-		_, _, code := cmdRunCtxFuzzSS(ctx, t, fmt.Sprintf("ss %s", flags))
+		_, _, code := cmdRunCtxFuzzSS(ctx, t, script)
 		if code != 0 && code != 1 {
 			t.Errorf("unexpected exit code %d for flags %q", code, flags)
 		}
