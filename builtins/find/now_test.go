@@ -70,8 +70,12 @@ func TestMatchMminCalledConsistently(t *testing.T) {
 	result := run(context.Background(), callCtx, []string{"a", "b", "-mmin", "-60"})
 
 	assert.Equal(t, uint8(0), result.Code, "find should succeed")
-	assert.Greater(t, matchMminCalls.Load(), int32(0),
-		"MatchMmin should be called at least once via CallContext")
+	// MatchMmin must be called for each file evaluated across both root paths.
+	// Timestamp consistency across roots is guaranteed by construction: the
+	// runner captures time.Now() once in NewCallbacks() and passes the same
+	// closures for the entire command invocation.
+	assert.GreaterOrEqual(t, matchMminCalls.Load(), int32(2),
+		"MatchMmin should be called at least once per file (one in each root)")
 	assert.Contains(t, stdout.String(), "f1.txt")
 	assert.Contains(t, stdout.String(), "f2.txt")
 }

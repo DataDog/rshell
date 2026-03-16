@@ -160,6 +160,22 @@ func TestMatchMtimeFloor(t *testing.T) {
 	}
 }
 
+// TestNewCallbacks verifies that NewCallbacks returns working closures
+// that delegate to MatchMtime, MatchMmin, and IsRecentEnough with a
+// captured invocation timestamp.
+func TestNewCallbacks(t *testing.T) {
+	matchMtime, matchMmin, isRecentEnough := NewCallbacks()
+	// Use a time safely in the past (NewCallbacks captures time.Now()
+	// internally, so modTime must not be after the captured instant).
+	recent := time.Now().Add(-30 * time.Second)
+	// 30s ago should be in day bucket 0
+	assert.True(t, matchMtime(recent, 0, CmpExact))
+	// 30s ago → ceil(30/60) = 1 → minute bucket 1
+	assert.True(t, matchMmin(recent, 1, CmpExact))
+	// 30s ago is well within 6 months
+	assert.True(t, isRecentEnough(recent, 6))
+}
+
 // TestIsRecentEnough verifies the ls time-format decision logic.
 func TestIsRecentEnough(t *testing.T) {
 	now := time.Date(2026, 7, 15, 12, 0, 0, 0, time.UTC)
