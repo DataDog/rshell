@@ -6,14 +6,10 @@
 package interp_test
 
 import (
-	"bytes"
-	"context"
-	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"mvdan.cc/sh/v3/syntax"
 
 	"github.com/DataDog/rshell/interp"
 )
@@ -41,21 +37,19 @@ func TestAllowedCommandsValidPrefix(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestAllowedCommandsTrimsWhitespace(t *testing.T) {
-	// Verify parse succeeds with whitespace-padded entries.
-	var stdout bytes.Buffer
-	runner, err := interp.New(
-		interp.AllowedCommands([]string{" rshell:echo ", " rshell: cat "}),
-		interp.StdIO(nil, &stdout, nil),
+func TestAllowedCommandsRejectsWhitespace(t *testing.T) {
+	// Whitespace in entries is not trimmed (by design per specs).
+	_, err := interp.New(
+		interp.AllowedCommands([]string{" rshell:echo "}),
 	)
-	require.NoError(t, err)
-	defer runner.Close()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "unknown namespace")
+}
 
-	// Verify the trimmed command is executable at runtime.
-	prog, _ := syntax.NewParser().Parse(strings.NewReader("echo hello"), "")
-	err = runner.Run(context.Background(), prog)
-	require.NoError(t, err)
-	assert.Equal(t, "hello\n", stdout.String())
+func TestAllowedCommandsMultipleColons(t *testing.T) {
+	_, err := interp.New(interp.AllowedCommands([]string{"rshell:foo:bar"}))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "multiple colons")
 }
 
 func TestAllowedCommandsDuplicateEntries(t *testing.T) {

@@ -445,6 +445,9 @@ func AllowedCommands(names []string) RunnerOption {
 			}
 			ns := n[:idx]
 			cmd := n[idx+1:]
+			if strings.Index(cmd, ":") >= 0 {
+				return fmt.Errorf("AllowedCommands: %q contains multiple colons; expected format \"rshell:<command>\"", n)
+			}
 			if ns != "rshell" {
 				return fmt.Errorf("AllowedCommands: %q has unknown namespace %q (only \"rshell\" is supported)", n, ns)
 			}
