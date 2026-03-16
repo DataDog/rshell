@@ -241,8 +241,9 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 		// List individual files first.
 		if len(files) > 0 {
 			sortEntries(files, opts, func(a pathArg) iofs.FileInfo { return a.info }, func(a pathArg) string { return a.name })
+			sizeW := maxSizeStrWidth(files, func(a pathArg) iofs.FileInfo { return a.info }, opts)
 			for _, f := range files {
-				printEntry(callCtx, f.name, f.info, opts, now)
+				printEntry(callCtx, f.name, f.info, opts, now, sizeW)
 			}
 		}
 
@@ -385,11 +386,12 @@ func listDir(ctx context.Context, callCtx *builtins.CallContext, dir string, opt
 	// enforced by readDir's maxRead parameter.
 
 	// Print.
+	sizeW := maxSizeStrWidth(infoEntries, func(e entryInfo) iofs.FileInfo { return e.info }, opts)
 	for _, ei := range infoEntries {
 		if ctx.Err() != nil {
 			break
 		}
-		printEntry(callCtx, ei.name, ei.info, opts, now)
+		printEntry(callCtx, ei.name, ei.info, opts, now, sizeW)
 	}
 
 	// Only warn on implicit truncation (no explicit --offset/--limit).
@@ -443,7 +445,24 @@ func readDir(ctx context.Context, callCtx *builtins.CallContext, dir string, off
 	return entries, false, err
 }
 
-func printEntry(callCtx *builtins.CallContext, name string, info iofs.FileInfo, opts *options, now time.Time) {
+// maxSizeStrWidth computes the maximum formatted size string width across a slice of entries.
+func maxSizeStrWidth[T any](entries []T, getInfo func(T) iofs.FileInfo, opts *options) int {
+	maxW := 0
+	for _, e := range entries {
+		var s string
+		if opts.humanReadable {
+			s = humanSize(getInfo(e).Size())
+		} else {
+			s = fmt.Sprintf("%d", getInfo(e).Size())
+		}
+		if len(s) > maxW {
+			maxW = len(s)
+		}
+	}
+	return maxW
+}
+
+func printEntry(callCtx *builtins.CallContext, name string, info iofs.FileInfo, opts *options, now time.Time, sizeWidth int) {
 	if opts.longFmt {
 		mode := formatMode(info)
 		size := info.Size()
@@ -457,7 +476,7 @@ func printEntry(callCtx *builtins.CallContext, name string, info iofs.FileInfo, 
 		}
 
 		timeStr := formatTime(modTime, now)
-		callCtx.Outf("%s %s %s %s%s\n", mode, sizeStr, timeStr, name, indicator(info, opts))
+		callCtx.Outf("%s %*s %s %s%s\n", mode, sizeWidth, sizeStr, timeStr, name, indicator(info, opts))
 	} else {
 		callCtx.Outf("%s%s\n", name, indicator(info, opts))
 	}
