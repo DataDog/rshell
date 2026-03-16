@@ -59,8 +59,10 @@ func FuzzPingFlags(f *testing.F) {
 
 		_, _, code := runScriptCtx(ctx, t, script, t.TempDir())
 
-		// Exit codes 0 and 1 are acceptable.
-		if code != 0 && code != 1 {
+		// Exit codes 0, 1, and 2 are acceptable.
+		// Code 2 can occur when the shell rejects a syntactically valid
+		// but unsupported construct at runtime (e.g., background operator &).
+		if code != 0 && code != 1 && code != 2 {
 			t.Errorf("unexpected exit code %d for args %q", code, args)
 		}
 	})

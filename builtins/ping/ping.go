@@ -153,6 +153,11 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 
 		// Run traceroute in a goroutine so we can enforce context
 		// cancellation even when the library blocks in time.Sleep.
+		// Note: When ctx is cancelled, the goroutine running RunTraceroute
+		// continues until the library returns. The buffered channel prevents
+		// a permanent goroutine leak, but the goroutine may hold resources
+		// briefly until the library's internal operations complete. This is
+		// a known limitation of the library's cancellation support.
 		type trResult struct {
 			results *result.Results
 			err     error
