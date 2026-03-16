@@ -30,31 +30,12 @@
 //	-newer FILE      — modified more recently than FILE
 //	-mtime N         — modified N days ago (+N = more, -N = less)
 //	-mmin N          — modified N minutes ago (+N = more, -N = less)
-//	-atime N         — accessed N days ago (+N = more, -N = less)
-//	-amin N          — accessed N minutes ago (+N = more, -N = less)
-//	-ctime N         — status changed N days ago (+N = more, -N = less)
-//	-cmin N          — status changed N minutes ago (+N = more, -N = less)
 //	-readable        — file is readable by the current user
-//	-writable        — file is writable by the current user
-//	-executable      — file is executable by the current user
 //	-perm MODE       — permission bits match MODE (octal or symbolic)
-//	-user NAME       — file owned by user NAME (name or numeric UID)
-//	-group NAME      — file belongs to group NAME (name or numeric GID)
-//	-uid N           — file's numeric user ID matches N
-//	-gid N           — file's numeric group ID matches N
-//	-nouser          — no user corresponds to file's numeric user ID
-//	-nogroup         — no group corresponds to file's numeric group ID
-//	-links N         — file has N hard links
-//	-inum N          — file has inode number N
-//	-samefile FILE   — file refers to the same inode as FILE
 //	-maxdepth N      — descend at most N levels
 //	-mindepth N      — apply tests only at depth >= N
-//	-daystart        — measure times from start of today
-//	-depth           — process directory contents before directory itself
-//	-mount / -xdev   — don't descend into other filesystems
 //	-print           — print path followed by newline
 //	-print0          — print path followed by NUL
-//	-ls              — print file details in ls -dils format
 //	-printf FORMAT   — print formatted output
 //	-prune           — skip directory subtree
 //	-quit            — exit immediately
@@ -87,7 +68,6 @@ import (
 	iofs "io/fs"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
 
@@ -148,34 +128,15 @@ optLoop:
 			callCtx.Out("  -newer FILE                Modified more recently than FILE.\n")
 			callCtx.Out("  -mtime N                   Modified N days ago (+N=more, -N=less).\n")
 			callCtx.Out("  -mmin N                    Modified N minutes ago (+N=more, -N=less).\n")
-			callCtx.Out("  -atime N                   Accessed N days ago (+N=more, -N=less).\n")
-			callCtx.Out("  -amin N                    Accessed N minutes ago (+N=more, -N=less).\n")
-			callCtx.Out("  -ctime N                   Status changed N days ago (+N=more, -N=less).\n")
-			callCtx.Out("  -cmin N                    Status changed N minutes ago (+N=more, -N=less).\n")
 			callCtx.Out("  -readable                  File is readable by the current user.\n")
-			callCtx.Out("  -writable                  File is writable by the current user.\n")
-			callCtx.Out("  -executable                File is executable by the current user.\n")
 			callCtx.Out("  -perm MODE                 Permission bits match MODE (octal or symbolic).\n")
-			callCtx.Out("  -user NAME                 File is owned by user NAME (name or numeric UID).\n")
-			callCtx.Out("  -group NAME                File belongs to group NAME (name or numeric GID).\n")
-			callCtx.Out("  -uid N                     File's numeric user ID is N.\n")
-			callCtx.Out("  -gid N                     File's numeric group ID is N.\n")
-			callCtx.Out("  -nouser                    No user corresponds to file's numeric user ID.\n")
-			callCtx.Out("  -nogroup                   No group corresponds to file's numeric group ID.\n")
-			callCtx.Out("  -links N                   File has N hard links.\n")
-			callCtx.Out("  -inum N                    File has inode number N.\n")
-			callCtx.Out("  -samefile FILE             File refers to the same inode as FILE.\n")
 			callCtx.Out("  -maxdepth N                Descend at most N levels.\n")
 			callCtx.Out("  -mindepth N                Apply tests only at depth >= N.\n")
-			callCtx.Out("  -daystart                  Measure times from start of today.\n")
-			callCtx.Out("  -depth                     Process directory contents before directory itself.\n")
-			callCtx.Out("  -mount / -xdev             Don't descend into other filesystems.\n")
 			callCtx.Out("  -true                      Always true.\n")
 			callCtx.Out("  -false                     Always false.\n\n")
 			callCtx.Out("Actions:\n")
 			callCtx.Out("  -print                     Print path followed by newline.\n")
 			callCtx.Out("  -print0                    Print path followed by NUL.\n")
-			callCtx.Out("  -ls                        Print file details in ls -dils format.\n")
 			callCtx.Out("  -printf FORMAT             Print formatted output.\n")
 			callCtx.Out("  -prune                     Skip directory subtree.\n")
 			callCtx.Out("  -quit                      Exit immediately.\n\n")
@@ -248,11 +209,6 @@ optLoop:
 		minDepth = 0
 	}
 
-	// -depth + -prune: warn like GNU find.
-	if pr.depthFirst && expression != nil && hasPrune(expression) {
-		callCtx.Errf("find: warning: -prune is ignored when -depth is given\n")
-	}
-
 	// If no explicit action, add implicit -print.
 	implicitPrint := expression == nil || !hasAction(expression)
 
@@ -295,36 +251,9 @@ optLoop:
 		}
 	}
 
-	// Eagerly validate -user/-group names before walking.
-	// GNU find treats unknown user/group names as fatal argument errors.
-	for _, name := range collectUserRefs(expression) {
-		if _, err := strconv.ParseUint(name, 10, 32); err == nil {
-			continue // numeric UID, always valid
-		}
-		if _, ok := lookupUidByName(name); !ok {
-			callCtx.Errf("find: '%s' is not the name of a known user\n", name)
-			failed = true
-		}
-	}
-	for _, name := range collectGroupRefs(expression) {
-		if _, err := strconv.ParseUint(name, 10, 32); err == nil {
-			continue // numeric GID, always valid
-		}
-		if _, ok := lookupGidByName(name); !ok {
-			callCtx.Errf("find: '%s' is not the name of a known group\n", name)
-			failed = true
-		}
-	}
-
 	// Capture invocation time once so -mtime/-mmin predicates use a
 	// consistent reference across all root paths (matches GNU find).
 	now := callCtx.Now()
-
-	// -daystart: shift time reference to start of today (midnight local).
-	if pr.daystart {
-		y, m, d := now.Date()
-		now = time.Date(y, m, d, 0, 0, 0, 0, now.Location())
-	}
 
 	// GNU find treats a missing -newer reference as a fatal argument error
 	// and produces no result set, so skip the walk entirely.
@@ -349,8 +278,6 @@ optLoop:
 				minDepth:         minDepth,
 				now:              now,
 				eagerNewerErrors: eagerNewerErrors,
-				depthFirst:       pr.depthFirst,
-				mount:            pr.mount,
 			})
 			if wr.failed {
 				failed = true
@@ -386,8 +313,6 @@ type walkOptions struct {
 	minDepth         int
 	now              time.Time
 	eagerNewerErrors map[string]bool
-	depthFirst       bool // -depth: post-order traversal
-	mount            bool // -mount/-xdev: don't cross filesystems
 }
 
 // walkResult holds the outcome of a walk operation.
@@ -412,12 +337,6 @@ func walkPath(
 	for k, v := range opts.eagerNewerErrors {
 		newerErrors[k] = v
 	}
-	samefileCache := map[string]builtins.FileID{}
-	samefileErrs := map[string]bool{}
-	userCache := map[string]uint32{}
-	userErrors := map[string]bool{}
-	groupCache := map[string]uint32{}
-	groupErrors := map[string]bool{}
 
 	// Stat the starting path.
 	var startInfo iofs.FileInfo
@@ -435,26 +354,19 @@ func walkPath(
 		return walkResult{failed: true}
 	}
 
-	// -mount/-xdev: record device ID of starting path.
-	var startDevID uint64
-	if opts.mount && callCtx.FileIdentity != nil {
-		if id, ok := callCtx.FileIdentity(startPath, startInfo); ok {
-			startDevID = id.Dev
-		}
-	}
+	// Cycle detection for -L mode: track ancestor directory identities
+	// (dev+inode on Unix, volume serial+file index on Windows) along the
+	// path from root to the current node.
 
-	// Cycle detection for -L mode: track ancestor directory identities.
-
-	// dirIterator streams directory entries one at a time via ReadDir(1).
+	// dirIterator streams directory entries one at a time via ReadDir(1),
+	// keeping memory usage proportional to tree depth, not directory width.
 	type dirIterator struct {
 		dir           iofs.ReadDirFile
 		parentPath    string
-		parentInfo    iofs.FileInfo // for -depth deferred eval
 		depth         int
 		ancestorIDs   map[builtins.FileID]string
 		ancestorPaths map[string]bool
 		done          bool
-		isStartDir    bool // true for the starting path's iterator (handled separately in -depth)
 	}
 
 	// checkLoop detects symlink loops for -L mode.
@@ -499,23 +411,17 @@ func walkPath(
 	// Returns (prune, quit).
 	processEntry := func(path string, info iofs.FileInfo, depth int) (bool, bool) {
 		ec := &evalContext{
-			callCtx:       callCtx,
-			ctx:           ctx,
-			now:           now,
-			relPath:       path,
-			info:          info,
-			depth:         depth,
-			printPath:     path,
-			startPath:     startPath,
-			newerCache:    newerCache,
-			newerErrors:   newerErrors,
-			samefileCache: samefileCache,
-			samefileErrs:  samefileErrs,
-			userCache:     userCache,
-			userErrors:    userErrors,
-			groupCache:    groupCache,
-			groupErrors:   groupErrors,
-			followLinks:   opts.followLinks,
+			callCtx:     callCtx,
+			ctx:         ctx,
+			now:         now,
+			relPath:     path,
+			info:        info,
+			depth:       depth,
+			printPath:   path,
+			startPath:   startPath,
+			newerCache:  newerCache,
+			newerErrors: newerErrors,
+			followLinks: opts.followLinks,
 		}
 
 		prune := false
@@ -536,22 +442,11 @@ func walkPath(
 		return prune, false
 	}
 
-	// isCrossDevice checks if a file is on a different filesystem than the start.
-	isCrossDevice := func(path string, info iofs.FileInfo) bool {
-		if !opts.mount || callCtx.FileIdentity == nil {
-			return false
-		}
-		if id, ok := callCtx.FileIdentity(path, info); ok {
-			return id.Dev != startDevID
-		}
-		return false
-	}
-
-	// Process the starting path (pre-order unless -depth).
+	// Process the starting path.
 	isLoop, childAncIDs, childAncPaths := checkLoop(startPath, startInfo, nil, nil)
 
 	startPrune := false
-	if !opts.depthFirst && !isLoop {
+	if !isLoop {
 		var q bool
 		startPrune, q = processEntry(startPath, startInfo, 0)
 		if q {
@@ -559,7 +454,8 @@ func walkPath(
 		}
 	}
 
-	// Set up the iterator stack.
+	// Set up the iterator stack. Each open directory keeps a file handle
+	// that reads one entry at a time, so memory is O(depth) not O(width).
 	var iterStack []*dirIterator
 
 	if !isLoop && !startPrune && startInfo.IsDir() && 0 < opts.maxDepth {
@@ -571,11 +467,9 @@ func walkPath(
 		iterStack = append(iterStack, &dirIterator{
 			dir:           dir,
 			parentPath:    startPath,
-			parentInfo:    startInfo,
 			depth:         1,
 			ancestorIDs:   childAncIDs,
 			ancestorPaths: childAncPaths,
-			isStartDir:    true,
 		})
 	}
 
@@ -588,15 +482,6 @@ func walkPath(
 		top := iterStack[len(iterStack)-1]
 		if top.done {
 			top.dir.Close()
-			// -depth: evaluate the parent directory AFTER its children.
-			// Skip the starting dir here; it's handled at the end.
-			if opts.depthFirst && !quit && !top.isStartDir {
-				parentDepth := top.depth - 1
-				_, q := processEntry(top.parentPath, top.parentInfo, parentDepth)
-				if q {
-					quit = true
-				}
-			}
 			iterStack = iterStack[:len(iterStack)-1]
 			continue
 		}
@@ -638,30 +523,19 @@ func walkPath(
 			}
 		}
 
-		// -mount/-xdev: evaluate cross-device entries but don't descend.
-		// GNU find says "Don't descend directories on other filesystems" —
-		// the entry itself is still evaluated, just not descended into.
-		crossDevice := isCrossDevice(childPath, childInfo)
-
 		isLoop, cAncIDs, cAncPaths := checkLoop(childPath, childInfo, top.ancestorIDs, top.ancestorPaths)
 		if isLoop {
 			continue
 		}
 
-		// Evaluate the entry (pre-order, unless -depth defers directories).
-		prune := false
-		if !opts.depthFirst || !childInfo.IsDir() {
-			var q bool
-			prune, q = processEntry(childPath, childInfo, top.depth)
-			if q {
-				quit = true
-				break
-			}
+		prune, q := processEntry(childPath, childInfo, top.depth)
+		if q {
+			quit = true
+			break
 		}
 
-		// Descend into child directories unless pruned, beyond maxdepth,
-		// or on a different filesystem (-mount/-xdev).
-		if childInfo.IsDir() && !prune && !crossDevice && top.depth < opts.maxDepth {
+		// Descend into child directories unless pruned or beyond maxdepth.
+		if childInfo.IsDir() && !prune && top.depth < opts.maxDepth {
 			dir, openErr := callCtx.OpenDir(ctx, childPath)
 			if openErr != nil {
 				callCtx.Errf("find: '%s': %s\n", childPath, callCtx.PortableErr(openErr))
@@ -671,32 +545,16 @@ func walkPath(
 			iterStack = append(iterStack, &dirIterator{
 				dir:           dir,
 				parentPath:    childPath,
-				parentInfo:    childInfo,
 				depth:         top.depth + 1,
 				ancestorIDs:   cAncIDs,
 				ancestorPaths: cAncPaths,
 			})
-		} else if opts.depthFirst && childInfo.IsDir() {
-			// -depth + pruned or maxdepth: still need to evaluate the dir itself.
-			_, q := processEntry(childPath, childInfo, top.depth)
-			if q {
-				quit = true
-				break
-			}
 		}
 	}
 
-	// Close any remaining open directory handles.
+	// Close any remaining open directory handles (e.g. on context cancellation).
 	for _, it := range iterStack {
 		it.dir.Close()
-	}
-
-	// -depth: evaluate the starting path last.
-	if opts.depthFirst && !quit && !isLoop {
-		_, q := processEntry(startPath, startInfo, 0)
-		if q {
-			quit = true
-		}
 	}
 
 	return walkResult{failed: failed, quit: quit}
@@ -714,36 +572,6 @@ func collectNewerRefs(e *expr) []string {
 	refs = append(refs, collectNewerRefs(e.left)...)
 	refs = append(refs, collectNewerRefs(e.right)...)
 	refs = append(refs, collectNewerRefs(e.operand)...)
-	return refs
-}
-
-// collectUserRefs walks the expression tree and returns all -user name arguments.
-func collectUserRefs(e *expr) []string {
-	if e == nil {
-		return nil
-	}
-	if e.kind == exprUser {
-		return []string{e.strVal}
-	}
-	var refs []string
-	refs = append(refs, collectUserRefs(e.left)...)
-	refs = append(refs, collectUserRefs(e.right)...)
-	refs = append(refs, collectUserRefs(e.operand)...)
-	return refs
-}
-
-// collectGroupRefs walks the expression tree and returns all -group name arguments.
-func collectGroupRefs(e *expr) []string {
-	if e == nil {
-		return nil
-	}
-	if e.kind == exprGroup {
-		return []string{e.strVal}
-	}
-	var refs []string
-	refs = append(refs, collectGroupRefs(e.left)...)
-	refs = append(refs, collectGroupRefs(e.right)...)
-	refs = append(refs, collectGroupRefs(e.operand)...)
 	return refs
 }
 

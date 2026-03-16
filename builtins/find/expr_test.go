@@ -270,7 +270,7 @@ func TestParsePermPredicate(t *testing.T) {
 	}
 }
 
-// TestParseNewPredicates verifies all new predicates parse correctly.
+// TestParseNewPredicates verifies the new predicates parse correctly.
 func TestParseNewPredicates(t *testing.T) {
 	// No-arg predicates.
 	noArgTests := []struct {
@@ -278,12 +278,7 @@ func TestParseNewPredicates(t *testing.T) {
 		kind exprKind
 	}{
 		{"-readable", exprReadable},
-		{"-writable", exprWritable},
-		{"-executable", exprExecutable},
-		{"-nouser", exprNouser},
-		{"-nogroup", exprNogroup},
 		{"-quit", exprQuit},
-		{"-ls", exprLs},
 	}
 	for _, tt := range noArgTests {
 		t.Run(tt.arg, func(t *testing.T) {
@@ -294,84 +289,13 @@ func TestParseNewPredicates(t *testing.T) {
 		})
 	}
 
-	// Numeric predicates.
-	numTests := []struct {
-		arg  string
-		kind exprKind
-	}{
-		{"-atime", exprAtime},
-		{"-amin", exprAmin},
-		{"-ctime", exprCtime},
-		{"-cmin", exprCmin},
-		{"-uid", exprUid},
-		{"-gid", exprGid},
-		{"-links", exprLinks},
-		{"-inum", exprInum},
-	}
-	for _, tt := range numTests {
-		t.Run(tt.arg, func(t *testing.T) {
-			pr, err := parseExpression([]string{tt.arg, "+5"})
-			require.NoError(t, err)
-			require.NotNil(t, pr.expr)
-			assert.Equal(t, tt.kind, pr.expr.kind)
-			assert.Equal(t, int64(5), pr.expr.numVal)
-			assert.Equal(t, cmpMore, pr.expr.numCmp)
-		})
-	}
-
-	// String predicates.
-	strTests := []struct {
-		arg  string
-		kind exprKind
-	}{
-		{"-user", exprUser},
-		{"-group", exprGroup},
-		{"-printf", exprPrintf},
-	}
-	for _, tt := range strTests {
-		t.Run(tt.arg, func(t *testing.T) {
-			pr, err := parseExpression([]string{tt.arg, "test"})
-			require.NoError(t, err)
-			require.NotNil(t, pr.expr)
-			assert.Equal(t, tt.kind, pr.expr.kind)
-			assert.Equal(t, "test", pr.expr.strVal)
-		})
-	}
-
-	// Path predicate: -samefile
-	t.Run("-samefile", func(t *testing.T) {
-		pr, err := parseExpression([]string{"-samefile", "ref.txt"})
+	// String predicate: -printf
+	t.Run("-printf", func(t *testing.T) {
+		pr, err := parseExpression([]string{"-printf", "%p\\n"})
 		require.NoError(t, err)
 		require.NotNil(t, pr.expr)
-		assert.Equal(t, exprSamefile, pr.expr.kind)
-		assert.Equal(t, "ref.txt", pr.expr.strVal)
-	})
-}
-
-// TestParseGlobalOptions verifies -daystart, -depth, -mount/-xdev parsing.
-func TestParseGlobalOptions(t *testing.T) {
-	t.Run("daystart", func(t *testing.T) {
-		pr, err := parseExpression([]string{"-daystart", "-mtime", "0"})
-		require.NoError(t, err)
-		assert.True(t, pr.daystart)
-	})
-
-	t.Run("depth", func(t *testing.T) {
-		pr, err := parseExpression([]string{"-depth"})
-		require.NoError(t, err)
-		assert.True(t, pr.depthFirst)
-	})
-
-	t.Run("mount", func(t *testing.T) {
-		pr, err := parseExpression([]string{"-mount"})
-		require.NoError(t, err)
-		assert.True(t, pr.mount)
-	})
-
-	t.Run("xdev", func(t *testing.T) {
-		pr, err := parseExpression([]string{"-xdev"})
-		require.NoError(t, err)
-		assert.True(t, pr.mount)
+		assert.Equal(t, exprPrintf, pr.expr.kind)
+		assert.Equal(t, "%p\\n", pr.expr.strVal)
 	})
 }
 

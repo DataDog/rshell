@@ -87,30 +87,21 @@ var builtinPerCommandSymbols = map[string][]string{
 		"math.MaxInt64",                   // integer constant; no side effects.
 		"os.IsNotExist",                   // checks if error is "not exist"; pure function, no I/O.
 		"os.PathError",                    // error type for path operations; pure type.
-		"os/user.Lookup",                  // looks up user by name; read-only passwd query, no mutation.
-		"os/user.LookupGroup",             // looks up group by name; read-only group query, no mutation.
-		"os/user.LookupGroupId",           // looks up group by GID; read-only group query, no mutation.
-		"os/user.LookupId",                // looks up user by UID; read-only passwd query, no mutation.
 		"path/filepath.ToSlash",           // converts OS path separators to forward slashes; pure function, no I/O.
 		"strconv.Atoi",                    // string-to-int conversion; pure function, no I/O.
 		"strconv.ErrRange",                // sentinel error value for overflow; pure constant.
 		"strconv.FormatInt",               // int-to-string conversion; pure function, no I/O.
-		"strconv.FormatUint",              // uint-to-string conversion; pure function, no I/O.
 		"strconv.Itoa",                    // int-to-string conversion; pure function, no I/O.
 		"strconv.ParseInt",                // string-to-int conversion; pure function, no I/O.
 		"strconv.ParseUint",               // string-to-unsigned-int conversion; pure function, no I/O.
 		"strings.HasPrefix",               // pure function for prefix matching; no I/O.
 		"strings.Split",                   // splits a string by separator; pure function, no I/O.
 		"strings.ToLower",                 // converts string to lowercase; pure function, no I/O.
-		"syscall.Stat_t",                  // OS file stat structure; read-only type for extracting file metadata.
-		"syscall.Win32FileAttributeData",  // Windows file attribute structure; read-only type for file metadata.
-		"time.Date",                       // constructs a time value; pure function, no I/O.
 		"time.Duration",                   // duration type; pure integer alias, no I/O.
 		"time.Hour",                       // constant representing one hour; no side effects.
 		"time.Minute",                     // constant representing one minute; no side effects.
 		"time.Second",                     // constant representing one second; no side effects.
 		"time.Time",                       // time value type; pure data, no side effects.
-		"time.Unix",                       // constructs time from Unix timestamp; pure function, no I/O.
 		"unicode/utf8.DecodeRuneInString", // decodes first UTF-8 rune from a string; pure function, no I/O.
 	},
 	"grep": {
@@ -359,10 +350,6 @@ var builtinAllowedSymbols = []string{
 	"os.IsNotExist",                   // checks if error is "not exist"; pure function, no I/O.
 	"os.O_RDONLY",                     // read-only file flag constant; cannot open files by itself.
 	"os.PathError",                    // error type for filesystem path errors; pure type, no I/O.
-	"os/user.Lookup",                  // looks up user by name; read-only passwd query, no mutation.
-	"os/user.LookupGroup",             // looks up group by name; read-only group query, no mutation.
-	"os/user.LookupGroupId",           // looks up group by GID; read-only group query, no mutation.
-	"os/user.LookupId",                // looks up user by UID; read-only passwd query, no mutation.
 	"path/filepath.ToSlash",           // converts OS path separators to forward slashes; pure function, no I/O.
 	"regexp.Compile",                  // compiles a regular expression; pure function, no I/O. Uses RE2 engine (linear-time, no backtracking).
 	"regexp.QuoteMeta",                // escapes all special regex characters in a string; pure function, no I/O.
@@ -374,7 +361,6 @@ var builtinAllowedSymbols = []string{
 	"strconv.Atoi",                    // string-to-int conversion; pure function, no I/O.
 	"strconv.ErrRange",                // sentinel error value for overflow; pure constant.
 	"strconv.FormatInt",               // int-to-string conversion; pure function, no I/O.
-	"strconv.FormatUint",              // uint-to-string conversion; pure function, no I/O.
 	"strconv.IntSize",                 // platform int size constant (32 or 64); pure constant, no I/O.
 	"strconv.Itoa",                    // int-to-string conversion; pure function, no I/O.
 	"strconv.NumError",                // error type for numeric conversion failures; pure type.
@@ -393,15 +379,11 @@ var builtinAllowedSymbols = []string{
 	"strings.TrimSpace",               // removes leading/trailing whitespace; pure function.
 	"syscall.EISDIR",                  // error number constant for "is a directory"; pure constant, no I/O.
 	"syscall.Errno",                   // error type for system call error numbers; pure type, no I/O.
-	"syscall.Stat_t",                  // OS file stat structure; read-only type for extracting file metadata.
-	"syscall.Win32FileAttributeData",  // Windows file attribute structure; read-only type for file metadata.
-	"time.Date",                       // constructs a time value from components; pure function, no I/O.
 	"time.Duration",                   // duration type; pure integer alias, no I/O.
 	"time.Hour",                       // constant representing one hour; no side effects.
 	"time.Minute",                     // constant representing one minute; no side effects.
 	"time.Second",                     // constant representing one second; no side effects.
 	"time.Time",                       // time value type; pure data, no side effects.
-	"time.Unix",                       // constructs time from Unix timestamp; pure function, no I/O.
 	"unicode.Cc",                      // control character category range table; pure data, no I/O.
 	"unicode.Cf",                      // format character category range table; pure data, no I/O.
 	"unicode.Co",                      // private-use character category range table; pure data, no I/O.

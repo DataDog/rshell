@@ -23,24 +23,18 @@ type evalResult struct {
 
 // evalContext holds state needed during expression evaluation.
 type evalContext struct {
-	callCtx       *builtins.CallContext
-	ctx           context.Context
-	now           time.Time
-	relPath       string                     // path relative to starting point
-	info          iofs.FileInfo              // file info (lstat or stat depending on -L)
-	depth         int                        // current depth
-	printPath     string                     // path to print (includes starting point prefix)
-	startPath     string                     // starting path for -printf %H
-	newerCache    map[string]time.Time       // cached -newer reference file modtimes
-	newerErrors   map[string]bool            // tracks which -newer reference files failed to stat
-	samefileCache map[string]builtins.FileID // cached -samefile reference file identities
-	samefileErrs  map[string]bool            // tracks which -samefile references failed
-	userCache     map[string]uint32          // cached user name → UID lookups
-	userErrors    map[string]bool            // tracks which user names failed lookup
-	groupCache    map[string]uint32          // cached group name → GID lookups
-	groupErrors   map[string]bool            // tracks which group names failed lookup
-	followLinks   bool                       // true when -L is active
-	failed        bool                       // set by predicates that encounter errors
+	callCtx     *builtins.CallContext
+	ctx         context.Context
+	now         time.Time
+	relPath     string               // path relative to starting point
+	info        iofs.FileInfo        // file info (lstat or stat depending on -L)
+	depth       int                  // current depth
+	printPath   string               // path to print (includes starting point prefix)
+	startPath   string               // starting path for -printf %H
+	newerCache  map[string]time.Time // cached -newer reference file modtimes
+	newerErrors map[string]bool      // tracks which -newer reference files failed to stat
+	followLinks bool                 // true when -L is active
+	failed      bool                 // set by predicates that encounter errors
 }
 
 // evaluate evaluates an expression tree against a file. If e is nil, returns
@@ -108,64 +102,15 @@ func evaluate(ec *evalContext, e *expr) evalResult {
 	case exprMmin:
 		return evalResult{matched: evalMmin(ec, e.numVal, e.numCmp)}
 
-	case exprAtime:
-		return evalResult{matched: evalAtime(ec, e.numVal, e.numCmp)}
-
-	case exprAmin:
-		return evalResult{matched: evalAmin(ec, e.numVal, e.numCmp)}
-
-	case exprCtime:
-		return evalResult{matched: evalCtime(ec, e.numVal, e.numCmp)}
-
-	case exprCmin:
-		return evalResult{matched: evalCmin(ec, e.numVal, e.numCmp)}
-
 	case exprReadable:
 		return evalResult{matched: ec.callCtx.AccessFile(ec.ctx, ec.printPath, 0x04) == nil}
-
-	case exprWritable:
-		return evalResult{matched: ec.callCtx.AccessFile(ec.ctx, ec.printPath, 0x02) == nil}
-
-	case exprExecutable:
-		return evalResult{matched: ec.callCtx.AccessFile(ec.ctx, ec.printPath, 0x01) == nil}
 
 	case exprPerm:
 		// Use full 12-bit mode (including setuid/setgid/sticky), not just Perm() which is only 9 bits.
 		return evalResult{matched: matchPerm(ec.info.Mode(), e.permVal, e.permCmp)}
 
-	case exprUser:
-		return evalResult{matched: evalUser(ec, e.strVal)}
-
-	case exprGroup:
-		return evalResult{matched: evalGroup(ec, e.strVal)}
-
-	case exprUid:
-		return evalResult{matched: evalUid(ec, e.numVal, e.numCmp)}
-
-	case exprGid:
-		return evalResult{matched: evalGid(ec, e.numVal, e.numCmp)}
-
-	case exprNouser:
-		return evalResult{matched: evalNouser(ec)}
-
-	case exprNogroup:
-		return evalResult{matched: evalNogroup(ec)}
-
-	case exprLinks:
-		return evalResult{matched: evalLinks(ec, e.numVal, e.numCmp)}
-
-	case exprInum:
-		return evalResult{matched: evalInum(ec, e.numVal, e.numCmp)}
-
-	case exprSamefile:
-		return evalResult{matched: evalSamefile(ec, e.strVal)}
-
 	case exprQuit:
 		return evalResult{matched: true, quit: true}
-
-	case exprLs:
-		evalLs(ec)
-		return evalResult{matched: true}
 
 	case exprPrintf:
 		evalPrintf(ec, e.strVal)

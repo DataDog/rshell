@@ -24,44 +24,28 @@ const (
 type exprKind int
 
 const (
-	exprName       exprKind = iota // -name pattern
-	exprIName                      // -iname pattern
-	exprPath                       // -path pattern
-	exprIPath                      // -ipath pattern
-	exprType                       // -type c
-	exprSize                       // -size n[cwbkMG]
-	exprEmpty                      // -empty
-	exprNewer                      // -newer file
-	exprMtime                      // -mtime n
-	exprMmin                       // -mmin n
-	exprAtime                      // -atime n
-	exprAmin                       // -amin n
-	exprCtime                      // -ctime n
-	exprCmin                       // -cmin n
-	exprReadable                   // -readable
-	exprWritable                   // -writable
-	exprExecutable                 // -executable
-	exprPerm                       // -perm mode
-	exprUser                       // -user name
-	exprGroup                      // -group name
-	exprUid                        // -uid n
-	exprGid                        // -gid n
-	exprNouser                     // -nouser
-	exprNogroup                    // -nogroup
-	exprLinks                      // -links n
-	exprInum                       // -inum n
-	exprSamefile                   // -samefile path
-	exprQuit                       // -quit
-	exprLs                         // -ls
-	exprPrintf                     // -printf format
-	exprPrint                      // -print
-	exprPrint0                     // -print0
-	exprPrune                      // -prune
-	exprTrue                       // -true
-	exprFalse                      // -false
-	exprAnd                        // expr -a expr  or  expr expr (implicit)
-	exprOr                         // expr -o expr
-	exprNot                        // ! expr  or  -not expr
+	exprName     exprKind = iota // -name pattern
+	exprIName                    // -iname pattern
+	exprPath                     // -path pattern
+	exprIPath                    // -ipath pattern
+	exprType                     // -type c
+	exprSize                     // -size n[cwbkMG]
+	exprEmpty                    // -empty
+	exprNewer                    // -newer file
+	exprMtime                    // -mtime n
+	exprMmin                     // -mmin n
+	exprReadable                 // -readable
+	exprPerm                     // -perm mode
+	exprQuit                     // -quit
+	exprPrintf                   // -printf format
+	exprPrint                    // -print
+	exprPrint0                   // -print0
+	exprPrune                    // -prune
+	exprTrue                     // -true
+	exprFalse                    // -false
+	exprAnd                      // expr -a expr  or  expr expr (implicit)
+	exprOr                       // expr -o expr
+	exprNot                      // ! expr  or  -not expr
 )
 
 // cmpOp represents a comparison operator for numeric predicates.
@@ -111,7 +95,7 @@ type expr struct {
 // -quit is included because GNU find treats it as an action that
 // suppresses implicit -print (find . -quit should not print anything).
 func (e *expr) isAction() bool {
-	return e.kind == exprPrint || e.kind == exprPrint0 || e.kind == exprLs || e.kind == exprPrintf || e.kind == exprQuit
+	return e.kind == exprPrint || e.kind == exprPrint0 || e.kind == exprPrintf || e.kind == exprQuit
 }
 
 // hasAction checks if any node in the expression tree is an action.
@@ -125,38 +109,21 @@ func hasAction(e *expr) bool {
 	return hasAction(e.left) || hasAction(e.right) || hasAction(e.operand)
 }
 
-// hasPrune checks if any node in the expression tree is -prune.
-func hasPrune(e *expr) bool {
-	if e == nil {
-		return false
-	}
-	if e.kind == exprPrune {
-		return true
-	}
-	return hasPrune(e.left) || hasPrune(e.right) || hasPrune(e.operand)
-}
-
 // parser is a recursive-descent parser for find expressions.
 type parser struct {
-	args       []string
-	pos        int
-	depth      int
-	nodes      int
-	maxDepth   int  // -1 = not specified
-	minDepth   int  // -1 = not specified
-	daystart   bool // -daystart: shift time reference to start of today
-	depthFirst bool // -depth: post-order traversal
-	mount      bool // -mount/-xdev: don't descend into other filesystems
+	args     []string
+	pos      int
+	depth    int
+	nodes    int
+	maxDepth int // -1 = not specified
+	minDepth int // -1 = not specified
 }
 
 // parseResult holds the output of parseExpression.
 type parseResult struct {
-	expr       *expr
-	maxDepth   int  // -1 = not specified
-	minDepth   int  // -1 = not specified
-	daystart   bool // -daystart
-	depthFirst bool // -depth
-	mount      bool // -mount/-xdev
+	expr     *expr
+	maxDepth int // -1 = not specified
+	minDepth int // -1 = not specified
 }
 
 // blocked predicates that are forbidden for sandbox safety.
@@ -193,14 +160,7 @@ func parseExpression(args []string) (parseResult, error) {
 	if p.pos < len(p.args) {
 		return parseResult{}, fmt.Errorf("find: unexpected argument '%s'", p.args[p.pos])
 	}
-	return parseResult{
-		expr:       e,
-		maxDepth:   p.maxDepth,
-		minDepth:   p.minDepth,
-		daystart:   p.daystart,
-		depthFirst: p.depthFirst,
-		mount:      p.mount,
-	}, nil
+	return parseResult{expr: e, maxDepth: p.maxDepth, minDepth: p.minDepth}, nil
 }
 
 func (p *parser) peek() string {
@@ -359,44 +319,12 @@ func (p *parser) parsePrimary() (*expr, error) {
 		return p.parseNumericPredicate(exprMtime)
 	case "-mmin":
 		return p.parseNumericPredicate(exprMmin)
-	case "-atime":
-		return p.parseNumericPredicate(exprAtime)
-	case "-amin":
-		return p.parseNumericPredicate(exprAmin)
-	case "-ctime":
-		return p.parseNumericPredicate(exprCtime)
-	case "-cmin":
-		return p.parseNumericPredicate(exprCmin)
 	case "-readable":
 		return &expr{kind: exprReadable}, nil
-	case "-writable":
-		return &expr{kind: exprWritable}, nil
-	case "-executable":
-		return &expr{kind: exprExecutable}, nil
 	case "-perm":
 		return p.parsePermPredicate()
-	case "-user":
-		return p.parseStringPredicate(exprUser)
-	case "-group":
-		return p.parseStringPredicate(exprGroup)
-	case "-uid":
-		return p.parseNumericPredicate(exprUid)
-	case "-gid":
-		return p.parseNumericPredicate(exprGid)
-	case "-nouser":
-		return &expr{kind: exprNouser}, nil
-	case "-nogroup":
-		return &expr{kind: exprNogroup}, nil
-	case "-links":
-		return p.parseNumericPredicate(exprLinks)
-	case "-inum":
-		return p.parseNumericPredicate(exprInum)
-	case "-samefile":
-		return p.parsePathPredicate(exprSamefile)
 	case "-quit":
 		return &expr{kind: exprQuit}, nil
-	case "-ls":
-		return &expr{kind: exprLs}, nil
 	case "-printf":
 		return p.parseStringPredicate(exprPrintf)
 	case "-print":
@@ -409,15 +337,6 @@ func (p *parser) parsePrimary() (*expr, error) {
 		return p.parseDepthOption(true)
 	case "-mindepth":
 		return p.parseDepthOption(false)
-	case "-daystart":
-		p.daystart = true
-		return &expr{kind: exprTrue}, nil
-	case "-depth":
-		p.depthFirst = true
-		return &expr{kind: exprTrue}, nil
-	case "-mount", "-xdev":
-		p.mount = true
-		return &expr{kind: exprTrue}, nil
 	case "-true":
 		return &expr{kind: exprTrue}, nil
 	case "-false":
@@ -760,44 +679,12 @@ func (k exprKind) String() string {
 		return "-mtime"
 	case exprMmin:
 		return "-mmin"
-	case exprAtime:
-		return "-atime"
-	case exprAmin:
-		return "-amin"
-	case exprCtime:
-		return "-ctime"
-	case exprCmin:
-		return "-cmin"
 	case exprReadable:
 		return "-readable"
-	case exprWritable:
-		return "-writable"
-	case exprExecutable:
-		return "-executable"
 	case exprPerm:
 		return "-perm"
-	case exprUser:
-		return "-user"
-	case exprGroup:
-		return "-group"
-	case exprUid:
-		return "-uid"
-	case exprGid:
-		return "-gid"
-	case exprNouser:
-		return "-nouser"
-	case exprNogroup:
-		return "-nogroup"
-	case exprLinks:
-		return "-links"
-	case exprInum:
-		return "-inum"
-	case exprSamefile:
-		return "-samefile"
 	case exprQuit:
 		return "-quit"
-	case exprLs:
-		return "-ls"
 	case exprPrintf:
 		return "-printf"
 	case exprPrint:
