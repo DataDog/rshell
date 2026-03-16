@@ -58,6 +58,11 @@ func TestAllowedCommandsTrimsWhitespace(t *testing.T) {
 	assert.Equal(t, "hello\n", stdout.String())
 }
 
+func TestAllowedCommandsDuplicateEntries(t *testing.T) {
+	_, err := interp.New(interp.AllowedCommands([]string{"rshell:echo", "rshell:echo"}))
+	require.NoError(t, err, "duplicate entries should be accepted (idempotent)")
+}
+
 func TestAllowedCommandsEmpty(t *testing.T) {
 	_, err := interp.New(interp.AllowedCommands([]string{""}))
 	require.Error(t, err)
