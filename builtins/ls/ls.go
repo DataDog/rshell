@@ -238,7 +238,10 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 		// List individual files first.
 		if len(files) > 0 {
 			sortEntries(files, opts, func(a pathArg) iofs.FileInfo { return a.info }, func(a pathArg) string { return a.name })
-			cw := computeColWidths(files, func(a pathArg) iofs.FileInfo { return a.info }, opts)
+			var cw colWidths
+			if opts.longFmt {
+				cw = computeColWidths(files, func(a pathArg) iofs.FileInfo { return a.info }, opts)
+			}
 			for _, f := range files {
 				printEntry(callCtx, f.name, f.info, opts, now, cw)
 			}
@@ -383,8 +386,9 @@ func listDir(ctx context.Context, callCtx *builtins.CallContext, dir string, opt
 	// enforced by readDir's maxRead parameter.
 
 	// Print.
-	cw := computeColWidths(infoEntries, func(e entryInfo) iofs.FileInfo { return e.info }, opts)
+	var cw colWidths
 	if opts.longFmt {
+		cw = computeColWidths(infoEntries, func(e entryInfo) iofs.FileInfo { return e.info }, opts)
 		var totalBlocks int64
 		for _, ei := range infoEntries {
 			totalBlocks += fileBlocks(ei.info)
