@@ -18,7 +18,11 @@ func builtinsCheckConfig() allowedSymbolsConfig {
 		Symbols:   builtinAllowedSymbols,
 		TargetDir: "builtins",
 		CollectFiles: func(dir string) ([]string, error) {
-			return collectSubdirGoFiles(dir, map[string]bool{"testutil": true}, func(rel string) bool {
+			// "internal" is skipped: it may use unsafe.Pointer for OS-level DLL
+			// calls (e.g. Windows iphlpapi.dll) that cannot be expressed within
+			// the safe symbol allowlist. This is consistent with the per-command
+			// check which already skips "internal".
+			return collectSubdirGoFiles(dir, map[string]bool{"testutil": true, "internal": true}, func(rel string) bool {
 				// builtins.go is the package framework and is exempt.
 				return rel == "builtins.go"
 			})

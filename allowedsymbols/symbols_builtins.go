@@ -270,6 +270,21 @@ var builtinPerCommandSymbols = map[string][]string{
 		"strconv.ParseInt",  // string-to-int conversion with base/bit-size; pure function, no I/O.
 		"strings.HasPrefix", // pure function for prefix matching; no I/O.
 	},
+	"ss": {
+		"bufio.NewScanner",                // line-by-line /proc/net/ file reading; no write or exec capability.
+		"context.Context",                 // deadline/cancellation plumbing; pure interface, no side effects.
+		"fmt.Errorf",                      // error formatting; pure function, no I/O.
+		"fmt.Sprintf",                     // string formatting; pure function, no I/O.
+		"os.O_RDONLY",                     // read-only file flag constant; cannot open files by itself.
+		"strconv.FormatUint",              // uint-to-string conversion; pure function, no I/O.
+		"strconv.Itoa",                    // int-to-string conversion; pure function, no I/O.
+		"strconv.ParseUint",               // string-to-unsigned-int conversion; pure function, no I/O.
+		"strings.Builder",                 // efficient string concatenation; pure in-memory buffer, no I/O.
+		"strings.Fields",                  // splits a string on whitespace; pure function, no I/O.
+		"strings.Split",                   // splits a string by separator; pure function, no I/O.
+		"strings.ToUpper",                 // converts string to uppercase; pure function, no I/O.
+		"golang.org/x/sys/unix.SysctlRaw", // macOS: reads kernel socket tables (read-only, no exec, no filesystem).
+	},
 	"wc": {
 		"context.Context",         // deadline/cancellation plumbing; pure interface, no side effects.
 		"errors.As",               // error type assertion; pure function, no I/O.
@@ -331,6 +346,7 @@ var builtinAllowedSymbols = []string{
 	"errors.New",                         // creates a simple error value; pure function, no I/O.
 	"fmt.Errorf",                         // error formatting; pure function, no I/O.
 	"fmt.Sprintf",                        // string formatting; pure function, no I/O.
+	"golang.org/x/sys/unix.SysctlRaw",   // macOS: reads kernel socket tables (read-only, no exec, no filesystem).
 	"io.EOF",                             // sentinel error value; pure constant.
 	"io.MultiReader",                     // combines multiple Readers into one sequential Reader; no I/O side effects.
 	"io.NopCloser",                       // wraps a Reader with a no-op Close; no side effects.
@@ -383,6 +399,7 @@ var builtinAllowedSymbols = []string{
 	"strconv.Atoi",                       // string-to-int conversion; pure function, no I/O.
 	"strconv.ErrRange",                   // sentinel error value for overflow; pure constant.
 	"strconv.FormatInt",                  // int-to-string conversion; pure function, no I/O.
+	"strconv.FormatUint",                 // uint-to-string conversion; pure function, no I/O.
 	"strconv.IntSize",                    // platform int size constant (32 or 64); pure constant, no I/O.
 	"strconv.Itoa",                       // int-to-string conversion; pure function, no I/O.
 	"strconv.NumError",                   // error type for numeric conversion failures; pure type.
@@ -392,12 +409,14 @@ var builtinAllowedSymbols = []string{
 	"strconv.ParseUint",                  // string-to-unsigned-int conversion; pure function, no I/O.
 	"strings.Builder",                    // efficient string concatenation; pure in-memory buffer, no I/O.
 	"strings.ContainsRune",               // checks if a rune is in a string; pure function, no I/O.
+	"strings.Fields",                     // splits a string on whitespace into a slice; pure function, no I/O.
 	"strings.HasPrefix",                  // pure function for prefix matching; no I/O.
 	"strings.IndexByte",                  // finds byte in string; pure function, no I/O.
 	"strings.Join",                       // concatenates a slice of strings with a separator; pure function, no I/O.
 	"strings.ReplaceAll",                 // replaces all occurrences of a substring; pure function, no I/O.
 	"strings.Split",                      // splits a string by separator into a slice; pure function, no I/O.
 	"strings.ToLower",                    // converts string to lowercase; pure function, no I/O.
+	"strings.ToUpper",                    // converts string to uppercase; pure function, no I/O.
 	"strings.TrimSpace",                  // removes leading/trailing whitespace; pure function.
 	"syscall.ByHandleFileInformation",    // Windows file info struct for extracting nlink; read-only type, no I/O.
 	"syscall.EISDIR",                     // error number constant for "is a directory"; pure constant, no I/O.

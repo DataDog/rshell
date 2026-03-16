@@ -1,0 +1,12 @@
+description: ss with -an prints a header line containing Netid and State columns.
+# skip: output depends on live kernel socket state which differs between hosts.
+skip_assert_against_bash: true
+input:
+  script: |+
+    ss -an
+expect:
+  stdout_contains:
+    - "Netid"
+    - "State"
+  stderr: ""
+  exit_code: 0
