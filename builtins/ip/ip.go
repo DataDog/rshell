@@ -69,6 +69,13 @@
 //	Uses Go's net.Interfaces() for read-only enumeration of OS network
 //	interfaces and their addresses. No files are opened; the AllowedPaths
 //	sandbox is not involved.
+//
+// Output differences from real ip:
+//
+//	The qdisc field is omitted from interface header lines. Go's net package
+//	does not expose the queue discipline and hardcoding "noqueue" would
+//	produce incorrect output for physical NICs (which typically use
+//	pfifo_fast, fq_codel, or mq). All other fields match real ip output.
 package ip
 
 import (
@@ -431,7 +438,7 @@ func printAddrEntry(callCtx *builtins.CallContext, do displayOpts, iface net.Int
 	}
 
 	// Normal multi-line output.
-	callCtx.Outf("%d: %s: %s mtu %d qdisc noqueue state %s group default qlen 1000\n",
+	callCtx.Outf("%d: %s: %s mtu %d state %s group default qlen 1000\n",
 		iface.Index, iface.Name, flags, iface.MTU, state)
 	if brdMAC != "" {
 		callCtx.Outf("    link/%s %s brd %s\n", ltype, mac, brdMAC)
@@ -482,7 +489,7 @@ func printLinkEntry(callCtx *builtins.CallContext, do displayOpts, iface net.Int
 	}
 
 	headerLine := fmt.Sprintf(
-		"%d: %s: %s mtu %d qdisc noqueue state %s mode DEFAULT group default qlen 1000",
+		"%d: %s: %s mtu %d state %s mode DEFAULT group default qlen 1000",
 		iface.Index, iface.Name, flags, iface.MTU, state)
 
 	var linkLine string
