@@ -1,5 +1,4 @@
 description: "find -exec without terminator produces an error"
-skip_assert_against_bash: true  # error message format differs
 setup:
   files:
     - path: dummy.txt
