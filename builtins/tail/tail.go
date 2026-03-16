@@ -594,37 +594,55 @@ func parseCount(s string) (countMode, bool) {
 // countMultiplier returns the byte multiplier for a GNU tail suffix and
 // whether the suffix is recognised.
 //
-// Suffixes match those documented in the GNU coreutils tail manual:
+// Suffixes match those documented in GNU coreutils tail(1):
 //
-//	b    512
-//	kB   1 000
-//	K    1 024
-//	MB   1 000 000
-//	M    1 048 576
-//	GB   1 000 000 000
-//	G    1 073 741 824
-//	TB   1 000 000 000 000  (clamped to MaxCount in practice)
-//	T    1 099 511 627 776  (clamped to MaxCount in practice)
+//	b        512
+//	kB / KB  1 000
+//	K / KiB  1 024
+//	MB       1 000²
+//	M / MiB  1 024²
+//	GB       1 000³
+//	G / GiB  1 024³
+//	TB       1 000⁴   (always clamped to MaxCount in practice)
+//	T / TiB  1 024⁴   (always clamped to MaxCount in practice)
+//	PB       1 000⁵   (always clamped to MaxCount in practice)
+//	P / PiB  1 024⁵   (always clamped to MaxCount in practice)
+//	EB       1 000⁶   (always clamped to MaxCount in practice)
+//	E / EiB  1 024⁶   (always clamped to MaxCount in practice)
+//	ZB/Z/ZiB 1 000⁷ / 1 024⁷  (overflow int64; represented as MaxCount)
+//	YB/Y/YiB 1 000⁸ / 1 024⁸  (overflow int64; represented as MaxCount)
 func countMultiplier(s string) (int64, bool) {
 	switch s {
 	case "b":
 		return 512, true
 	case "kB", "KB":
 		return 1_000, true
-	case "K":
+	case "K", "KiB":
 		return 1_024, true
 	case "MB":
 		return 1_000_000, true
-	case "M":
+	case "M", "MiB":
 		return 1_048_576, true
 	case "GB":
 		return 1_000_000_000, true
-	case "G":
+	case "G", "GiB":
 		return 1_073_741_824, true
 	case "TB":
 		return 1_000_000_000_000, true
-	case "T":
+	case "T", "TiB":
 		return 1_099_511_627_776, true
+	case "PB":
+		return 1_000_000_000_000_000, true
+	case "P", "PiB":
+		return 1_125_899_906_842_624, true // 1024^5
+	case "EB":
+		return 1_000_000_000_000_000_000, true
+	case "E", "EiB":
+		return 1_152_921_504_606_846_976, true // 1024^6
+	case "ZB", "Z", "ZiB", "YB", "Y", "YiB":
+		// 1000^7 and 1024^7 and above overflow int64; any n≥1 will be
+		// clamped to MaxCount, so return MaxCount as the multiplier.
+		return MaxCount, true
 	default:
 		return 0, false
 	}
