@@ -289,14 +289,6 @@ func TestParseNewPredicates(t *testing.T) {
 		})
 	}
 
-	// String predicate: -printf
-	t.Run("-printf", func(t *testing.T) {
-		pr, err := parseExpression([]string{"-printf", "%p\\n"})
-		require.NoError(t, err)
-		require.NotNil(t, pr.expr)
-		assert.Equal(t, exprPrintf, pr.expr.kind)
-		assert.Equal(t, "%p\\n", pr.expr.strVal)
-	})
 }
 
 // TestParseExpressionLimits verifies AST depth and node limits.

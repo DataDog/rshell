@@ -36,7 +36,6 @@
 //	-mindepth N      — apply tests only at depth >= N
 //	-print           — print path followed by newline
 //	-print0          — print path followed by NUL
-//	-printf FORMAT   — print formatted output
 //	-prune           — skip directory subtree
 //	-quit            — exit immediately
 //	-true            — always true
@@ -137,7 +136,6 @@ optLoop:
 			callCtx.Out("Actions:\n")
 			callCtx.Out("  -print                     Print path followed by newline.\n")
 			callCtx.Out("  -print0                    Print path followed by NUL.\n")
-			callCtx.Out("  -printf FORMAT             Print formatted output.\n")
 			callCtx.Out("  -prune                     Skip directory subtree.\n")
 			callCtx.Out("  -quit                      Exit immediately.\n\n")
 			callCtx.Out("Operators:\n")
@@ -418,7 +416,6 @@ func walkPath(
 			info:        info,
 			depth:       depth,
 			printPath:   path,
-			startPath:   startPath,
 			newerCache:  newerCache,
 			newerErrors: newerErrors,
 			followLinks: opts.followLinks,

@@ -30,7 +30,6 @@ type evalContext struct {
 	info        iofs.FileInfo        // file info (lstat or stat depending on -L)
 	depth       int                  // current depth
 	printPath   string               // path to print (includes starting point prefix)
-	startPath   string               // starting path for -printf %H
 	newerCache  map[string]time.Time // cached -newer reference file modtimes
 	newerErrors map[string]bool      // tracks which -newer reference files failed to stat
 	followLinks bool                 // true when -L is active
@@ -111,10 +110,6 @@ func evaluate(ec *evalContext, e *expr) evalResult {
 
 	case exprQuit:
 		return evalResult{matched: true, quit: true}
-
-	case exprPrintf:
-		evalPrintf(ec, e.strVal)
-		return evalResult{matched: true}
 
 	case exprPrint:
 		ec.callCtx.Outf("%s\n", ec.printPath)

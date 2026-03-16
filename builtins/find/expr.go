@@ -37,7 +37,6 @@ const (
 	exprReadable                 // -readable
 	exprPerm                     // -perm mode
 	exprQuit                     // -quit
-	exprPrintf                   // -printf format
 	exprPrint                    // -print
 	exprPrint0                   // -print0
 	exprPrune                    // -prune
@@ -95,7 +94,7 @@ type expr struct {
 // -quit is included because GNU find treats it as an action that
 // suppresses implicit -print (find . -quit should not print anything).
 func (e *expr) isAction() bool {
-	return e.kind == exprPrint || e.kind == exprPrint0 || e.kind == exprPrintf || e.kind == exprQuit
+	return e.kind == exprPrint || e.kind == exprPrint0 || e.kind == exprQuit
 }
 
 // hasAction checks if any node in the expression tree is an action.
@@ -325,8 +324,6 @@ func (p *parser) parsePrimary() (*expr, error) {
 		return p.parsePermPredicate()
 	case "-quit":
 		return &expr{kind: exprQuit}, nil
-	case "-printf":
-		return p.parseStringPredicate(exprPrintf)
 	case "-print":
 		return &expr{kind: exprPrint}, nil
 	case "-print0":
@@ -685,8 +682,6 @@ func (k exprKind) String() string {
 		return "-perm"
 	case exprQuit:
 		return "-quit"
-	case exprPrintf:
-		return "-printf"
 	case exprPrint:
 		return "-print"
 	case exprPrint0:

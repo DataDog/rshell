@@ -71,7 +71,6 @@ var builtinPerCommandSymbols = map[string][]string{
 		"errors.Is",                       // error comparison; pure function, no I/O.
 		"errors.New",                      // creates a simple error value; pure function, no I/O.
 		"fmt.Errorf",                      // error formatting; pure function, no I/O.
-		"fmt.Sprintf",                     // string formatting; pure function, no I/O.
 		"io.EOF",                          // sentinel error value; pure constant.
 		"io/fs.FileInfo",                  // interface type for file information; no side effects.
 		"io/fs.FileMode",                  // file mode type for permission checks; pure type, no I/O.
@@ -90,8 +89,6 @@ var builtinPerCommandSymbols = map[string][]string{
 		"path/filepath.ToSlash",           // converts OS path separators to forward slashes; pure function, no I/O.
 		"strconv.Atoi",                    // string-to-int conversion; pure function, no I/O.
 		"strconv.ErrRange",                // sentinel error value for overflow; pure constant.
-		"strconv.FormatInt",               // int-to-string conversion; pure function, no I/O.
-		"strconv.Itoa",                    // int-to-string conversion; pure function, no I/O.
 		"strconv.ParseInt",                // string-to-int conversion; pure function, no I/O.
 		"strconv.ParseUint",               // string-to-unsigned-int conversion; pure function, no I/O.
 		"strings.HasPrefix",               // pure function for prefix matching; no I/O.
