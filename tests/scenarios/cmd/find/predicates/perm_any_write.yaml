@@ -14,6 +14,5 @@ input:
 expect:
   stdout: |+
     dir/rw.txt
-  stdout_windows: ""
   stderr: ""
   exit_code: 0
