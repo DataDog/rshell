@@ -444,7 +444,7 @@ func AllowedCommands(names []string) RunnerOption {
 			if idx < 0 {
 				return fmt.Errorf("AllowedCommands: %q missing namespace prefix (expected \"rshell:<command>\")", n)
 			}
-			ns := n[:idx]
+			ns := strings.TrimSpace(n[:idx])
 			cmd := strings.TrimSpace(n[idx+1:])
 			if ns != "rshell" {
 				return fmt.Errorf("AllowedCommands: %q has unknown namespace %q (only \"rshell\" is supported)", n, ns)
