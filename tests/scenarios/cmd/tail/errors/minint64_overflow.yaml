@@ -1,0 +1,14 @@
+description: tail rejects MinInt64 (-9223372036854775808) without panicking; negating it overflows.
+setup:
+  files:
+    - path: file.txt
+      content: "hello\n"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    tail -n -9223372036854775808 file.txt
+expect:
+  stdout: ""
+  stderr_contains: ["tail:"]
+  exit_code: 1
+skip_assert_against_bash: true
