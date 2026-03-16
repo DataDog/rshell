@@ -7,6 +7,7 @@ package ip_test
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -38,7 +39,7 @@ func TestIPAddrShowContainsInetLine(t *testing.T) {
 // TestIPAddrShowDevLoopback verifies filtering by loopback interface name.
 func TestIPAddrShowDevLoopback(t *testing.T) {
 	lo := loopbackName(t)
-	stdout, stderr, code := cmdRun(t, "ip addr show dev "+lo)
+	stdout, stderr, code := cmdRun(t, fmt.Sprintf(`ip addr show dev "%s"`, lo))
 	require.Equal(t, 0, code, "stderr: %s", stderr)
 	assert.Contains(t, stdout, lo)
 	assert.Contains(t, stdout, "127.0.0.1")
@@ -47,7 +48,7 @@ func TestIPAddrShowDevLoopback(t *testing.T) {
 // TestIPAddrShowIPv4Only verifies -4 restricts output to IPv4 (inet lines).
 func TestIPAddrShowIPv4Only(t *testing.T) {
 	lo := loopbackName(t)
-	stdout, _, code := cmdRun(t, "ip -4 addr show dev "+lo)
+	stdout, _, code := cmdRun(t, fmt.Sprintf(`ip -4 addr show dev "%s"`, lo))
 	assert.Equal(t, 0, code)
 	assert.Contains(t, stdout, "inet 127.0.0.1")
 }
@@ -55,7 +56,7 @@ func TestIPAddrShowIPv4Only(t *testing.T) {
 // TestIPAddrShowIPv6Only verifies -6 restricts output to IPv6 lines.
 func TestIPAddrShowIPv6Only(t *testing.T) {
 	lo := loopbackName(t)
-	stdout, _, code := cmdRun(t, "ip -6 addr show dev "+lo)
+	stdout, _, code := cmdRun(t, fmt.Sprintf(`ip -6 addr show dev "%s"`, lo))
 	assert.Equal(t, 0, code)
 	// May have inet6 ::1 or nothing if IPv6 is not configured, but no inet4 lines.
 	assert.NotContains(t, stdout, "    inet ")
@@ -64,7 +65,7 @@ func TestIPAddrShowIPv6Only(t *testing.T) {
 // TestIPAddrShowBothFiltersCancel verifies -4 -6 together cancel both filters.
 func TestIPAddrShowBothFiltersCancel(t *testing.T) {
 	lo := loopbackName(t)
-	stdout, _, code := cmdRun(t, "ip -4 -6 addr show dev "+lo)
+	stdout, _, code := cmdRun(t, fmt.Sprintf(`ip -4 -6 addr show dev "%s"`, lo))
 	assert.Equal(t, 0, code)
 	// Both filters cancelled: all families shown.
 	assert.Contains(t, stdout, "inet ")
@@ -73,8 +74,8 @@ func TestIPAddrShowBothFiltersCancel(t *testing.T) {
 // TestIPAddrShowDefaultCmdOmitted verifies "ip addr" (no "show") works the same.
 func TestIPAddrShowDefaultCmdOmitted(t *testing.T) {
 	lo := loopbackName(t)
-	stdout1, _, code1 := cmdRun(t, "ip addr show dev "+lo)
-	stdout2, _, code2 := cmdRun(t, "ip addr dev "+lo)
+	stdout1, _, code1 := cmdRun(t, fmt.Sprintf(`ip addr show dev "%s"`, lo))
+	stdout2, _, code2 := cmdRun(t, fmt.Sprintf(`ip addr dev "%s"`, lo))
 	assert.Equal(t, 0, code1)
 	assert.Equal(t, 0, code2)
 	assert.Equal(t, stdout1, stdout2)
@@ -83,17 +84,17 @@ func TestIPAddrShowDefaultCmdOmitted(t *testing.T) {
 // TestIPAddrObjectAliases verifies "address" is an alias for "addr".
 func TestIPAddrObjectAliases(t *testing.T) {
 	lo := loopbackName(t)
-	stdout1, _, _ := cmdRun(t, "ip addr show dev "+lo)
-	stdout2, _, _ := cmdRun(t, "ip address show dev "+lo)
+	stdout1, _, _ := cmdRun(t, fmt.Sprintf(`ip addr show dev "%s"`, lo))
+	stdout2, _, _ := cmdRun(t, fmt.Sprintf(`ip address show dev "%s"`, lo))
 	assert.Equal(t, stdout1, stdout2)
 }
 
 // TestIPAddrListAliases verifies "list" and "lst" are aliases for "show".
 func TestIPAddrListAliases(t *testing.T) {
 	lo := loopbackName(t)
-	base, _, _ := cmdRun(t, "ip addr show dev "+lo)
-	list, _, _ := cmdRun(t, "ip addr list dev "+lo)
-	lst, _, _ := cmdRun(t, "ip addr lst dev "+lo)
+	base, _, _ := cmdRun(t, fmt.Sprintf(`ip addr show dev "%s"`, lo))
+	list, _, _ := cmdRun(t, fmt.Sprintf(`ip addr list dev "%s"`, lo))
+	lst, _, _ := cmdRun(t, fmt.Sprintf(`ip addr lst dev "%s"`, lo))
 	assert.Equal(t, base, list)
 	assert.Equal(t, base, lst)
 }
@@ -101,7 +102,7 @@ func TestIPAddrListAliases(t *testing.T) {
 // TestIPAddrShowNormalFormat verifies the standard multi-line output format.
 func TestIPAddrShowNormalFormat(t *testing.T) {
 	lo := loopbackName(t)
-	stdout, _, code := cmdRun(t, "ip addr show dev "+lo)
+	stdout, _, code := cmdRun(t, fmt.Sprintf(`ip addr show dev "%s"`, lo))
 	assert.Equal(t, 0, code)
 	// Interface header line: "N: lo0: <...> mtu ... state ... group default qlen 1000"
 	assert.Contains(t, stdout, lo+":")
@@ -120,7 +121,7 @@ func TestIPAddrShowNormalFormat(t *testing.T) {
 // TestIPAddrShowBrief verifies --brief produces a compact tabular format.
 func TestIPAddrShowBrief(t *testing.T) {
 	lo := loopbackName(t)
-	stdout, _, code := cmdRun(t, "ip --brief addr show dev "+lo)
+	stdout, _, code := cmdRun(t, fmt.Sprintf(`ip --brief addr show dev "%s"`, lo))
 	assert.Equal(t, 0, code)
 	// Brief format: "lo0              UNKNOWN        127.0.0.1/8 ..."
 	assert.Contains(t, stdout, lo)
@@ -133,7 +134,7 @@ func TestIPAddrShowBrief(t *testing.T) {
 // TestIPAddrShowOneline verifies -o produces one line per address with backslash continuation.
 func TestIPAddrShowOneline(t *testing.T) {
 	lo := loopbackName(t)
-	stdout, _, code := cmdRun(t, "ip -o addr show dev "+lo)
+	stdout, _, code := cmdRun(t, fmt.Sprintf(`ip -o addr show dev "%s"`, lo))
 	assert.Equal(t, 0, code)
 	assert.Contains(t, stdout, "inet 127.0.0.1")
 	assert.Contains(t, stdout, "valid_lft forever")
@@ -156,7 +157,7 @@ func TestIPLinkShowExitsZero(t *testing.T) {
 // TestIPLinkShowDevLoopback verifies link show filtered by loopback interface.
 func TestIPLinkShowDevLoopback(t *testing.T) {
 	lo := loopbackName(t)
-	stdout, stderr, code := cmdRun(t, "ip link show dev "+lo)
+	stdout, stderr, code := cmdRun(t, fmt.Sprintf(`ip link show dev "%s"`, lo))
 	require.Equal(t, 0, code, "stderr: %s", stderr)
 	assert.Contains(t, stdout, lo)
 	assert.Contains(t, stdout, "LOOPBACK")
@@ -166,7 +167,7 @@ func TestIPLinkShowDevLoopback(t *testing.T) {
 // TestIPLinkShowNormalFormat verifies the standard multi-line link output format.
 func TestIPLinkShowNormalFormat(t *testing.T) {
 	lo := loopbackName(t)
-	stdout, _, code := cmdRun(t, "ip link show dev "+lo)
+	stdout, _, code := cmdRun(t, fmt.Sprintf(`ip link show dev "%s"`, lo))
 	assert.Equal(t, 0, code)
 	// Header: "1: lo: <LOOPBACK,...> mtu ... state UNKNOWN mode DEFAULT group default qlen 1000"
 	assert.Contains(t, stdout, lo+":")
@@ -182,7 +183,7 @@ func TestIPLinkShowNormalFormat(t *testing.T) {
 // TestIPLinkShowBrief verifies --brief produces tabular link format.
 func TestIPLinkShowBrief(t *testing.T) {
 	lo := loopbackName(t)
-	stdout, _, code := cmdRun(t, "ip --brief link show dev "+lo)
+	stdout, _, code := cmdRun(t, fmt.Sprintf(`ip --brief link show dev "%s"`, lo))
 	assert.Equal(t, 0, code)
 	assert.Contains(t, stdout, lo)
 	assert.Contains(t, stdout, "UNKNOWN")
@@ -192,7 +193,7 @@ func TestIPLinkShowBrief(t *testing.T) {
 // TestIPLinkShowOneline verifies -o produces single-line link output with backslash.
 func TestIPLinkShowOneline(t *testing.T) {
 	lo := loopbackName(t)
-	stdout, _, code := cmdRun(t, "ip -o link show dev "+lo)
+	stdout, _, code := cmdRun(t, fmt.Sprintf(`ip -o link show dev "%s"`, lo))
 	assert.Equal(t, 0, code)
 	assert.Contains(t, stdout, lo)
 	assert.Contains(t, stdout, "link/loopback")
