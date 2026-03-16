@@ -1,5 +1,4 @@
 description: find -perm /0111 matches files with any execute bit set.
-skip_assert_against_bash: true
 setup:
   files:
     - path: dir/a.sh

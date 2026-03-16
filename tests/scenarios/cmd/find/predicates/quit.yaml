@@ -1,5 +1,4 @@
 description: find -quit stops after the first match.
-skip_assert_against_bash: true
 setup:
   files:
     - path: dir/a.txt

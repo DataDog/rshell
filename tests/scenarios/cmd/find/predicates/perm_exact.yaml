@@ -1,5 +1,4 @@
 description: find -perm 644 matches files with exact mode 0644.
-skip_assert_against_bash: true
 setup:
   files:
     - path: dir/a.txt

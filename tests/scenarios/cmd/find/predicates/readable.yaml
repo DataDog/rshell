@@ -1,5 +1,4 @@
 description: find -readable matches files readable by the current user.
-skip_assert_against_bash: true
 setup:
   files:
     - path: dir/a.txt

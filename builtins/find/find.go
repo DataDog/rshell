@@ -110,7 +110,7 @@ optLoop:
 	for i < len(args) {
 		switch args[i] {
 		case "--help":
-			callCtx.Out("Usage: find [-H] [-L] [-P] [path...] [expression]\n\n")
+			callCtx.Out("Usage: find [-L] [-P] [path...] [expression]\n\n")
 			callCtx.Out("Search directory trees, evaluating an expression for each file found.\n")
 			callCtx.Out("Default path is the current directory; default expression is -print.\n\n")
 			callCtx.Out("Options:\n")

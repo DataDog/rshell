@@ -1,5 +1,4 @@
 description: find -type b, -type c, and -type b,c are accepted by the parser.
-skip_assert_against_bash: true
 setup:
   files:
     - path: dummy.txt
