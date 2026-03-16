@@ -273,6 +273,7 @@ var builtinPerCommandSymbols = map[string][]string{
 	"ss": {
 		"bufio.NewScanner",                // line-by-line /proc/net/ file reading; no write or exec capability.
 		"context.Context",                 // deadline/cancellation plumbing; pure interface, no side effects.
+		"errors.Is",                       // error comparison; used to distinguish syscall.ENOENT from unexpected errors.
 		"fmt.Errorf",                      // error formatting; pure function, no I/O.
 		"fmt.Sprintf",                     // string formatting; pure function, no I/O.
 		"os.O_RDONLY",                     // read-only file flag constant; cannot open files by itself.
@@ -283,6 +284,7 @@ var builtinPerCommandSymbols = map[string][]string{
 		"strings.Fields",                  // splits a string on whitespace; pure function, no I/O.
 		"strings.Split",                   // splits a string by separator; pure function, no I/O.
 		"strings.ToUpper",                 // converts string to uppercase; pure function, no I/O.
+		"syscall.ENOENT",                  // error constant for "no such file or directory"; used to distinguish IPv6-unavailable from genuine sysctl errors.
 		"golang.org/x/sys/unix.SysctlRaw", // macOS: reads kernel socket tables (read-only, no exec, no filesystem).
 	},
 	"wc": {
@@ -420,6 +422,7 @@ var builtinAllowedSymbols = []string{
 	"strings.TrimSpace",                  // removes leading/trailing whitespace; pure function.
 	"syscall.ByHandleFileInformation",    // Windows file info struct for extracting nlink; read-only type, no I/O.
 	"syscall.EISDIR",                     // error number constant for "is a directory"; pure constant, no I/O.
+	"syscall.ENOENT",                     // error constant for "no such file or directory"; pure constant, no I/O.
 	"syscall.Errno",                      // error type for system call error numbers; pure type, no I/O.
 	"syscall.GetFileInformationByHandle", // Windows API to query file metadata by handle; read-only, no I/O side effects.
 	"syscall.Handle",                     // Windows file handle type; pure type alias, no I/O.

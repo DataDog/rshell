@@ -9,9 +9,11 @@ package ss
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
+	"syscall"
 
 	"golang.org/x/sys/unix"
 
@@ -34,8 +36,12 @@ func run(ctx context.Context, callCtx *builtins.CallContext, opts options) built
 		}
 		if !opts.ipv4Only {
 			if err := collectSysctlTCP("net.inet6.tcp6.pcblist_n", sockTCP6, &entries); err != nil {
-				// IPv6 sysctl may not be available; treat as empty rather than error.
-				_ = err
+				// IPv6 sysctl is absent on IPv4-only hosts (ENOENT); silently
+				// skip. Log unexpected errors (e.g. permission denied) so
+				// genuine failures are visible to the caller.
+				if !errors.Is(err, syscall.ENOENT) {
+					callCtx.Errf("ss: tcp6 (partial): %v\n", err)
+				}
 			}
 		}
 	}
@@ -51,7 +57,12 @@ func run(ctx context.Context, callCtx *builtins.CallContext, opts options) built
 		}
 		if !opts.ipv4Only {
 			if err := collectSysctlUDP("net.inet6.udp6.pcblist_n", sockUDP6, &entries); err != nil {
-				_ = err
+				// IPv6 sysctl is absent on IPv4-only hosts (ENOENT); silently
+				// skip. Log unexpected errors (e.g. permission denied) so
+				// genuine failures are visible to the caller.
+				if !errors.Is(err, syscall.ENOENT) {
+					callCtx.Errf("ss: udp6 (partial): %v\n", err)
+				}
 			}
 		}
 	}

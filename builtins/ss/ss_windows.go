@@ -29,6 +29,9 @@ func run(ctx context.Context, callCtx *builtins.CallContext, opts options) built
 	// Convert winnet.SocketEntry → socketEntry.
 	entries := make([]socketEntry, 0, len(raw))
 	for _, r := range raw {
+		if ctx.Err() != nil {
+			return builtins.Result{Code: 1}
+		}
 		var kind socketType
 		switch r.Proto {
 		case "tcp4":
