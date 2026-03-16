@@ -30,15 +30,14 @@ func FileIdentity(_ string, info fs.FileInfo, _ *Sandbox) (uint64, uint64, bool)
 }
 
 // effectiveHasPerm checks whether the current process has the requested
-// permission (writeMask or execMask, each a 3-bit pattern like 0222 or 0111)
-// by inspecting the file's owner/group/other permission class that applies to
-// the effective UID and GID of the running process.
+// permission by inspecting the file's owner/group/other permission class
+// that applies to the effective UID and GID of the running process.
 //
 // On Unix this uses the Stat_t from info.Sys() to determine the owning
 // UID/GID and then selects the owner, group, or other permission bits
 // accordingly.  If the type assertion fails (should not happen in practice),
 // it falls back to checking any-class bits.
-func effectiveHasPerm(info fs.FileInfo, writeMask, execMask fs.FileMode, checkWrite, checkExec bool) bool {
+func effectiveHasPerm(info fs.FileInfo, checkRead, checkWrite, checkExec bool) bool {
 	perm := info.Mode().Perm()
 
 	// Determine which permission class applies to the current process.
@@ -70,14 +69,18 @@ func effectiveHasPerm(info fs.FileInfo, writeMask, execMask fs.FileMode, checkWr
 		}
 	}
 
+	if checkRead {
+		if perm&0444&ownerBits == 0 {
+			return false
+		}
+	}
 	if checkWrite {
-		// Intersect the write mask with the applicable owner bits.
-		if perm&writeMask&ownerBits == 0 {
+		if perm&0222&ownerBits == 0 {
 			return false
 		}
 	}
 	if checkExec {
-		if perm&execMask&ownerBits == 0 {
+		if perm&0111&ownerBits == 0 {
 			return false
 		}
 	}

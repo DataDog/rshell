@@ -46,11 +46,14 @@ func FileIdentity(absPath string, _ fs.FileInfo, sandbox *Sandbox) (uint64, uint
 
 // effectiveHasPerm checks whether the current process has the requested
 // permission on Windows.  Windows does not use Unix UID/GID permission classes,
-// so we fall back to checking any-class bits (0222 / 0111) as before.
-func effectiveHasPerm(info fs.FileInfo, writeMask, execMask fs.FileMode, checkWrite, checkExec bool) bool {
+// so we fall back to checking any-class bits (0444 / 0222 / 0111).
+func effectiveHasPerm(info fs.FileInfo, checkRead, checkWrite, checkExec bool) bool {
 	perm := info.Mode().Perm()
-	if checkWrite && perm&writeMask == 0 {
+	if checkRead && perm&0444 == 0 {
 		return false
 	}
-	return !(checkExec && perm&execMask == 0)
+	if checkWrite && perm&0222 == 0 {
+		return false
+	}
+	return !(checkExec && perm&0111 == 0)
 }

@@ -87,6 +87,10 @@ func (s *Sandbox) resolve(absPath string) (*os.Root, string, bool) {
 // Access checks whether the resolved path is accessible with the given mode.
 // All operations go through os.Root to stay within the sandbox.
 // Mode: 0x04 = read, 0x02 = write, 0x01 = execute.
+//
+// The check uses Stat (metadata-only) rather than Open so it never blocks on
+// special files like FIFOs that have no writer — matching the POSIX access(2)
+// semantics that GNU find relies on for -readable/-writable/-executable.
 func (s *Sandbox) Access(path string, cwd string, mode uint32) error {
 	absPath := toAbs(path, cwd)
 
@@ -102,42 +106,15 @@ func (s *Sandbox) Access(path string, cwd string, mode uint32) error {
 			continue
 		}
 
-		// Open through os.Root once. This checks read access and gives
-		// us a file descriptor for an atomic Stat (no TOCTOU window).
-		f, err := ar.root.Open(rel)
+		// Use Stat (metadata-only) instead of Open to avoid blocking on
+		// special files like FIFOs that have no writer.
+		info, err := ar.root.Stat(rel)
 		if err != nil {
-			if mode&0x04 != 0 && !IsErrIsDirectory(err) {
-				return PortablePathError(err)
-			}
-			// Read not requested, or target is a directory; fall back to Stat.
-			info, serr := ar.root.Stat(rel)
-			if serr != nil {
-				return PortablePathError(serr)
-			}
-			if !effectiveHasPerm(info, 0222, 0111, mode&0x02 != 0, mode&0x01 != 0) {
-				return &os.PathError{Op: "access", Path: path, Err: os.ErrPermission}
-			}
-			return nil
+			return PortablePathError(err)
 		}
-
-		// For write and execute, use mode bits from f.Stat() on the
-		// open fd — atomic, no TOCTOU window.
-		// The sandbox is read-only so -w is informational only.
-		// effectiveHasPerm checks the permission class (owner/group/other)
-		// that applies to the current process's effective UID/GID on Unix,
-		// rather than the union of all classes.
-		if mode&0x03 != 0 {
-			info, err := f.Stat()
-			if err != nil {
-				f.Close()
-				return PortablePathError(err)
-			}
-			if !effectiveHasPerm(info, 0222, 0111, mode&0x02 != 0, mode&0x01 != 0) {
-				f.Close()
-				return &os.PathError{Op: "access", Path: path, Err: os.ErrPermission}
-			}
+		if !effectiveHasPerm(info, mode&0x04 != 0, mode&0x02 != 0, mode&0x01 != 0) {
+			return &os.PathError{Op: "access", Path: path, Err: os.ErrPermission}
 		}
-		f.Close()
 		return nil
 	}
 	return &os.PathError{Op: "access", Path: path, Err: os.ErrPermission}
