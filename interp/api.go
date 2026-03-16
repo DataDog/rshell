@@ -435,7 +435,8 @@ func AllowedPaths(paths []string) RunnerOption {
 func AllowedCommands(names []string) RunnerOption {
 	return func(r *Runner) error {
 		m := make(map[string]bool, len(names))
-		for _, n := range names {
+		for _, raw := range names {
+			n := strings.TrimSpace(raw)
 			if n == "" {
 				return fmt.Errorf("AllowedCommands: empty command name")
 			}

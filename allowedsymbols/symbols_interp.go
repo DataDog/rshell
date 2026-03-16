@@ -55,6 +55,7 @@ var interpAllowedSymbols = []string{
 	"strings.Split",        // splits a string by separator; pure function, no I/O.
 	"strings.ToUpper",      // converts string to uppercase; pure function, no I/O.
 	"strings.TrimLeft",     // trims leading characters; pure function, no I/O.
+	"strings.TrimSpace",    // trims leading/trailing whitespace; pure function, no I/O.
 	"sync.Mutex",           // mutual exclusion lock; concurrency primitive, no I/O.
 	"sync.Once",            // ensures a function runs exactly once; concurrency primitive, no I/O.
 	"sync.WaitGroup",       // waits for goroutines to finish; concurrency primitive, no I/O.

@@ -37,6 +37,11 @@ func TestAllowedCommandsValidPrefix(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestAllowedCommandsTrimsWhitespace(t *testing.T) {
+	_, err := interp.New(interp.AllowedCommands([]string{" rshell:echo ", "  rshell:cat"}))
+	require.NoError(t, err)
+}
+
 func TestAllowedCommandsEmpty(t *testing.T) {
 	_, err := interp.New(interp.AllowedCommands([]string{""}))
 	require.Error(t, err)
