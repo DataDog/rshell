@@ -78,8 +78,6 @@ var builtinPerCommandSymbols = map[string][]string{
 		"io/fs.ModeSocket",                // file mode bit constant for sockets; pure constant.
 		"io/fs.ModeSymlink",               // file mode bit constant for symlinks; pure constant.
 		"io/fs.ReadDirFile",               // read-only directory handle interface; no write capability.
-		"math.Ceil",                       // pure arithmetic; no side effects.
-		"math.Floor",                      // pure arithmetic; no side effects.
 		"math.MaxInt64",                   // integer constant; no side effects.
 		"os.IsNotExist",                   // checks if error is "not exist"; pure function, no I/O.
 		"os.PathError",                    // error type for path operations; pure type.
@@ -89,10 +87,6 @@ var builtinPerCommandSymbols = map[string][]string{
 		"strconv.ParseInt",                // string-to-int conversion; pure function, no I/O.
 		"strings.HasPrefix",               // pure function for prefix matching; no I/O.
 		"strings.ToLower",                 // converts string to lowercase; pure function, no I/O.
-		"time.Duration",                   // duration type; pure integer alias, no I/O.
-		"time.Hour",                       // constant representing one hour; no side effects.
-		"time.Minute",                     // constant representing one minute; no side effects.
-		"time.Second",                     // constant representing one second; no side effects.
 		"time.Time",                       // time value type; pure data, no side effects.
 		"unicode/utf8.DecodeRuneInString", // decodes first UTF-8 rune from a string; pure function, no I/O.
 	},
@@ -328,8 +322,6 @@ var builtinAllowedSymbols = []string{
 	"io/fs.ModeSticky",                // file mode bit constant for sticky bit; pure constant.
 	"io/fs.ModeSymlink",               // file mode bit constant for symlinks; pure constant.
 	"io/fs.ReadDirFile",               // read-only directory handle interface; no write capability.
-	"math.Ceil",                       // pure arithmetic; no side effects.
-	"math.Floor",                      // pure arithmetic; no side effects.
 	"math.Inf",                        // returns positive or negative infinity; pure function, no I/O.
 	"math.MaxInt32",                   // integer constant; no side effects.
 	"math.MaxInt64",                   // integer constant; no side effects.
@@ -368,10 +360,6 @@ var builtinAllowedSymbols = []string{
 	"strings.TrimSpace",               // removes leading/trailing whitespace; pure function.
 	"syscall.EISDIR",                  // error number constant for "is a directory"; pure constant, no I/O.
 	"syscall.Errno",                   // error type for system call error numbers; pure type, no I/O.
-	"time.Duration",                   // duration type; pure integer alias, no I/O.
-	"time.Hour",                       // constant representing one hour; no side effects.
-	"time.Minute",                     // constant representing one minute; no side effects.
-	"time.Second",                     // constant representing one second; no side effects.
 	"time.Time",                       // time value type; pure data, no side effects.
 	"unicode.Cc",                      // control character category range table; pure data, no I/O.
 	"unicode.Cf",                      // format character category range table; pure data, no I/O.

@@ -140,8 +140,6 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			return builtins.Result{}
 		}
 
-		now := callCtx.Now()
-
 		// Determine the effective sort mode. When both -S and -t are given,
 		// the last one specified wins, matching GNU ls behaviour.
 		//
@@ -242,7 +240,7 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 		if len(files) > 0 {
 			sortEntries(files, opts, func(a pathArg) iofs.FileInfo { return a.info }, func(a pathArg) string { return a.name })
 			for _, f := range files {
-				printEntry(callCtx, f.name, f.info, opts, now)
+				printEntry(callCtx, f.name, f.info, opts)
 			}
 		}
 
@@ -259,7 +257,7 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 				}
 				callCtx.Outf("%s:\n", d.name)
 			}
-			if err := listDir(ctx, callCtx, d.name, opts, 0, now); err != nil {
+			if err := listDir(ctx, callCtx, d.name, opts, 0); err != nil {
 				failed = true
 			}
 		}
@@ -292,7 +290,7 @@ type pathArg struct {
 	info iofs.FileInfo
 }
 
-func listDir(ctx context.Context, callCtx *builtins.CallContext, dir string, opts *options, depth int, now time.Time) error {
+func listDir(ctx context.Context, callCtx *builtins.CallContext, dir string, opts *options, depth int) error {
 	if depth > maxRecursionDepth {
 		callCtx.Errf("ls: recursion depth limit exceeded at '%s'\n", dir)
 		return errFailed
@@ -389,7 +387,7 @@ func listDir(ctx context.Context, callCtx *builtins.CallContext, dir string, opt
 		if ctx.Err() != nil {
 			break
 		}
-		printEntry(callCtx, ei.name, ei.info, opts, now)
+		printEntry(callCtx, ei.name, ei.info, opts)
 	}
 
 	// Only warn on implicit truncation (no explicit --offset/--limit).
@@ -421,7 +419,7 @@ func listDir(ctx context.Context, callCtx *builtins.CallContext, dir string, opt
 			}
 			subdir := joinPath(dir, ei.name)
 			callCtx.Outf("\n%s:\n", subdir)
-			if err := listDir(ctx, callCtx, subdir, opts, depth+1, now); err != nil {
+			if err := listDir(ctx, callCtx, subdir, opts, depth+1); err != nil {
 				failed = true
 			}
 		}
@@ -443,7 +441,7 @@ func readDir(ctx context.Context, callCtx *builtins.CallContext, dir string, off
 	return entries, false, err
 }
 
-func printEntry(callCtx *builtins.CallContext, name string, info iofs.FileInfo, opts *options, now time.Time) {
+func printEntry(callCtx *builtins.CallContext, name string, info iofs.FileInfo, opts *options) {
 	if opts.longFmt {
 		mode := formatMode(info)
 		size := info.Size()
@@ -456,7 +454,7 @@ func printEntry(callCtx *builtins.CallContext, name string, info iofs.FileInfo, 
 			sizeStr = fmt.Sprintf("%d", size)
 		}
 
-		timeStr := formatTime(modTime, now)
+		timeStr := formatTime(callCtx, modTime)
 		callCtx.Outf("%s %s %s %s%s\n", mode, sizeStr, timeStr, name, indicator(info, opts))
 	} else {
 		callCtx.Outf("%s%s\n", name, indicator(info, opts))
@@ -646,11 +644,10 @@ func humanSize(size int64) string {
 	return fmt.Sprintf("%.0fP", val)
 }
 
-func formatTime(t time.Time, now time.Time) string {
-	sixMonthsAgo := now.AddDate(0, -6, 0)
-	if t.Before(sixMonthsAgo) || t.After(now) {
-		// Old or future: show year instead of time.
-		return t.Format("Jan _2  2006")
+func formatTime(callCtx *builtins.CallContext, t time.Time) string {
+	if callCtx.IsRecentEnough(t, 6) {
+		return t.Format("Jan _2 15:04")
 	}
-	return t.Format("Jan _2 15:04")
+	// Old or future: show year instead of time.
+	return t.Format("Jan _2  2006")
 }

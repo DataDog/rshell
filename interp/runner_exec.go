@@ -20,6 +20,7 @@ import (
 
 	"github.com/DataDog/rshell/allowedpaths"
 	"github.com/DataDog/rshell/builtins"
+	"github.com/DataDog/rshell/internal/timecomp"
 )
 
 func (r *Runner) stmt(ctx context.Context, st *syntax.Stmt) {
@@ -266,6 +267,7 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 	}
 
 	if fn, ok := builtins.Lookup(name); ok {
+		invocationNow := time.Now()
 		call := &builtins.CallContext{
 			Stdout:       r.stdout,
 			Stderr:       r.stderr,
@@ -296,7 +298,15 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 				return r.sandbox.Access(path, HandlerCtx(r.handlerCtx(ctx, todoPos)).Dir, mode)
 			},
 			PortableErr: allowedpaths.PortableErrMsg,
-			Now:         time.Now,
+			MatchMtime: func(modTime time.Time, n int64, cmp int) bool {
+				return timecomp.MatchMtime(invocationNow, modTime, n, cmp)
+			},
+			MatchMmin: func(modTime time.Time, n int64, cmp int) bool {
+				return timecomp.MatchMmin(invocationNow, modTime, n, cmp)
+			},
+			IsRecentEnough: func(modTime time.Time, months int) bool {
+				return timecomp.IsRecentEnough(invocationNow, modTime, months)
+			},
 			FileIdentity: func(path string, info fs.FileInfo) (builtins.FileID, bool) {
 				absPath := path
 				if !filepath.IsAbs(absPath) {

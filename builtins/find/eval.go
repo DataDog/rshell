@@ -8,7 +8,6 @@ package find
 import (
 	"context"
 	iofs "io/fs"
-	"math"
 	"time"
 
 	"github.com/DataDog/rshell/builtins"
@@ -24,7 +23,6 @@ type evalResult struct {
 type evalContext struct {
 	callCtx     *builtins.CallContext
 	ctx         context.Context
-	now         time.Time
 	relPath     string               // path relative to starting point
 	info        iofs.FileInfo        // file info (lstat or stat depending on -L)
 	depth       int                  // current depth
@@ -175,76 +173,14 @@ func evalNewer(ec *evalContext, refPath string) bool {
 	return ec.info.ModTime().After(refTime)
 }
 
-// evalMtime checks modification time in days.
-// GNU find uses different comparison strategies for -mtime:
-//   - Exact (N): day-bucketed comparison — N*86400 <= delta < (N+1)*86400.
-//   - +N: raw second comparison — delta > (N+1)*86400.
-//   - -N: raw second comparison — delta < N*86400.
-//
-// GNU find captures 'now' via time() (second precision) but gets file mtime
-// from stat() (nanosecond precision). This means for very fresh files,
-// delta can be slightly negative, causing -mtime -0 to match files created
-// within the same second. We replicate this by truncating now to seconds
-// for +N/-N comparisons.
-//
-// maxMtimeN is the largest N for which (N+1)*24*time.Hour does not overflow.
-const maxMtimeN = int64(math.MaxInt64/(int64(24*time.Hour))) - 1
-
+// evalMtime delegates to CallContext.MatchMtime which encapsulates
+// the GNU find day-bucketing logic without exposing wall-clock time.
 func evalMtime(ec *evalContext, n int64, cmp cmpOp) bool {
-	modTime := ec.info.ModTime()
-	switch cmp {
-	case cmpMore: // +N: strictly older than (N+1) days
-		if n > maxMtimeN {
-			return false // threshold beyond representable duration
-		}
-		// Truncate now to second precision to match GNU find's time().
-		diff := ec.now.Truncate(time.Second).Sub(modTime)
-		return diff >= time.Duration(n+1)*24*time.Hour
-	case cmpLess: // -N: strictly newer than N days
-		if n > maxMtimeN {
-			return true // threshold beyond representable duration
-		}
-		// Truncate now to second precision to match GNU find's time().
-		diff := ec.now.Truncate(time.Second).Sub(modTime)
-		return diff < time.Duration(n)*24*time.Hour
-	default: // N: day-bucketed exact match
-		// Do not clamp negative diff — future-dated files must produce
-		// negative day buckets so they never match non-negative N,
-		// matching GNU find behavior.
-		diff := ec.now.Sub(modTime)
-		days := int64(math.Floor(diff.Hours() / 24))
-		return days == n
-	}
+	return ec.callCtx.MatchMtime(ec.info.ModTime(), n, int(cmp))
 }
 
-// evalMmin checks modification time in minutes.
-// GNU find uses different comparison strategies:
-//   - Exact (N): ceiling-bucketed comparison — a 5s-old file is in bucket 1.
-//   - +N: raw second comparison — delta_seconds > N*60.
-//   - -N: raw second comparison — delta_seconds < N*60.
-//
-// This matches GNU findutils behavior where +N/-N compare against raw
-// seconds while exact N uses a window check.
-// maxMminN is the largest N for which time.Duration(N)*time.Minute
-// does not overflow int64 nanoseconds.
-const maxMminN = int64(math.MaxInt64 / int64(time.Minute))
-
+// evalMmin delegates to CallContext.MatchMmin which encapsulates
+// the GNU find minute-bucketing logic without exposing wall-clock time.
 func evalMmin(ec *evalContext, n int64, cmp cmpOp) bool {
-	modTime := ec.info.ModTime()
-	diff := ec.now.Sub(modTime)
-	switch cmp {
-	case cmpMore: // +N: strictly older than N minutes
-		if n > maxMminN {
-			return false // threshold is beyond representable duration; nothing qualifies
-		}
-		return diff > time.Duration(n)*time.Minute
-	case cmpLess: // -N: strictly newer than N minutes
-		if n > maxMminN {
-			return true // threshold is beyond representable duration; everything qualifies
-		}
-		return diff < time.Duration(n)*time.Minute
-	default: // N: ceiling-bucketed exact match
-		mins := int64(math.Ceil(diff.Minutes()))
-		return mins == n
-	}
+	return ec.callCtx.MatchMmin(ec.info.ModTime(), n, int(cmp))
 }

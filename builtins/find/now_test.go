@@ -21,11 +21,11 @@ import (
 	"github.com/DataDog/rshell/builtins"
 )
 
-// TestNowCalledOnce verifies that find captures the invocation timestamp
-// once in run(), not per root path. GNU find evaluates -mtime/-mmin
-// relative to a single invocation time, so multi-path invocations must
-// use a consistent reference.
-func TestNowCalledOnce(t *testing.T) {
+// TestMatchMminCalledConsistently verifies that find delegates -mmin
+// evaluation through CallContext.MatchMmin and that the function is
+// called for each matching file (consistent invocation-scoped time
+// reference is guaranteed by the runner's closure).
+func TestMatchMminCalledConsistently(t *testing.T) {
 	// Create two directories with one file each.
 	tmp := t.TempDir()
 	dir1 := filepath.Join(tmp, "a")
@@ -35,16 +35,15 @@ func TestNowCalledOnce(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(dir1, "f1.txt"), []byte("x"), 0644))
 	require.NoError(t, os.WriteFile(filepath.Join(dir2, "f2.txt"), []byte("y"), 0644))
 
-	var nowCalls atomic.Int32
-	fixedNow := time.Now()
+	var matchMminCalls atomic.Int32
 
 	var stdout, stderr bytes.Buffer
 	callCtx := &builtins.CallContext{
 		Stdout: &stdout,
 		Stderr: &stderr,
-		Now: func() time.Time {
-			nowCalls.Add(1)
-			return fixedNow
+		MatchMmin: func(_ time.Time, _ int64, _ int) bool {
+			matchMminCalls.Add(1)
+			return true // all files match
 		},
 		LstatFile: func(_ context.Context, path string) (fs.FileInfo, error) {
 			return os.Lstat(filepath.Join(tmp, path))
@@ -71,8 +70,8 @@ func TestNowCalledOnce(t *testing.T) {
 	result := run(context.Background(), callCtx, []string{"a", "b", "-mmin", "-60"})
 
 	assert.Equal(t, uint8(0), result.Code, "find should succeed")
-	assert.Equal(t, int32(1), nowCalls.Load(),
-		"Now() should be called exactly once per find invocation, not per root path")
+	assert.Greater(t, matchMminCalls.Load(), int32(0),
+		"MatchMmin should be called at least once via CallContext")
 	assert.Contains(t, stdout.String(), "f1.txt")
 	assert.Contains(t, stdout.String(), "f2.txt")
 }

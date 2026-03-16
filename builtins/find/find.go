@@ -207,10 +207,6 @@ optLoop:
 		}
 	}
 
-	// Capture invocation time once so -mtime/-mmin predicates use a
-	// consistent reference across all root paths (matches GNU find).
-	now := callCtx.Now()
-
 	// GNU find treats a missing -newer reference as a fatal argument error
 	// and produces no result set, so skip the walk entirely.
 	if !failed {
@@ -232,7 +228,6 @@ optLoop:
 				followLinks:      followLinks,
 				maxDepth:         maxDepth,
 				minDepth:         minDepth,
-				now:              now,
 				eagerNewerErrors: eagerNewerErrors,
 			}) {
 				failed = true
@@ -263,7 +258,6 @@ type walkOptions struct {
 	followLinks      bool
 	maxDepth         int
 	minDepth         int
-	now              time.Time
 	eagerNewerErrors map[string]bool
 }
 
@@ -275,7 +269,6 @@ func walkPath(
 	startPath string,
 	opts walkOptions,
 ) bool {
-	now := opts.now
 	failed := false
 	newerCache := map[string]time.Time{}
 	newerErrors := map[string]bool{}
@@ -362,7 +355,6 @@ func walkPath(
 		ec := &evalContext{
 			callCtx:     callCtx,
 			ctx:         ctx,
-			now:         now,
 			relPath:     path,
 			info:        info,
 			depth:       depth,

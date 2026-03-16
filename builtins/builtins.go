@@ -121,10 +121,17 @@ type CallContext struct {
 	// PortableErr normalizes an OS error to a POSIX-style message.
 	PortableErr func(err error) string
 
-	// Now returns the current time. Builtins should use this instead of
-	// calling time.Now() directly, so the time source is consistent and
-	// testable.
-	Now func() time.Time
+	// MatchMtime checks whether a file's modification time satisfies a
+	// -mtime predicate (day-granularity). cmp: -1 = less, 0 = exact, 1 = more.
+	MatchMtime func(modTime time.Time, n int64, cmp int) bool
+
+	// MatchMmin checks whether a file's modification time satisfies a
+	// -mmin predicate (minute-granularity). cmp: -1 = less, 0 = exact, 1 = more.
+	MatchMmin func(modTime time.Time, n int64, cmp int) bool
+
+	// IsRecentEnough reports whether modTime is within the given number of
+	// months before the invocation time and not in the future.
+	IsRecentEnough func(modTime time.Time, months int) bool
 
 	// FileIdentity extracts canonical file identity from FileInfo.
 	// On Unix: dev+inode from Stat_t. On Windows: volume serial + file index
