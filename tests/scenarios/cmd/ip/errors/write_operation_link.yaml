@@ -1,0 +1,10 @@
+# Write operations (link set, link del) must be rejected with exit 1.
+# ip is not a standard coreutils command; scenarios test behavior unique to this builtin.
+description: "ip link set is blocked (write operation)"
+input:
+  script: |+
+    ip link set lo up
+expect:
+  stderr_contains: ["not supported", "blocked"]
+  exit_code: 1
+skip_assert_against_bash: true

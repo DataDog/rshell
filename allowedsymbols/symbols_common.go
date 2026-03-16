@@ -13,7 +13,12 @@ var permanentlyBanned = map[string]string{
 	"reflect": "reflection defeats static safety analysis",
 	"unsafe":  "bypasses Go's type and memory safety guarantees",
 	"os/exec": "spawns arbitrary host processes, bypassing all shell restrictions",
-	"net":     "raw network access enables data exfiltration and reverse shells",
-	"net/":    "network sub-packages enable data exfiltration and C2 communication",
-	"plugin":  "dynamically loads Go shared libraries, enabling arbitrary code execution",
+	// NOTE: "net" (the base package) is intentionally NOT banned here so that the
+	// ip builtin can use read-only interface enumeration (net.Interfaces, net.Interface,
+	// net.IPNet, etc.) via the symbol-level allowlist. Only the safe, non-networking
+	// symbols are permitted; connection-oriented symbols (net.Dial, net.Listen, etc.)
+	// are not in builtinAllowedSymbols and therefore cannot be used. All net/ sub-packages
+	// (net/http, net/smtp, etc.) remain permanently banned below.
+	"net/":   "network sub-packages enable data exfiltration and C2 communication",
+	"plugin": "dynamically loads Go shared libraries, enabling arbitrary code execution",
 }

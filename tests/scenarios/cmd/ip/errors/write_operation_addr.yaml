@@ -1,0 +1,10 @@
+# Write operations (addr add, addr del, addr flush) must be rejected with exit 1.
+# ip is not a standard coreutils command; scenarios test behavior unique to this builtin.
+description: "ip addr add is blocked (write operation)"
+input:
+  script: |+
+    ip addr add 10.0.0.1/24 dev lo
+expect:
+  stderr_contains: ["not supported", "blocked"]
+  exit_code: 1
+skip_assert_against_bash: true

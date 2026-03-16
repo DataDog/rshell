@@ -291,6 +291,23 @@ var builtinPerCommandSymbols = map[string][]string{
 		"unicode/utf8.UTFMax",     // maximum number of bytes in a UTF-8 encoding; constant, no I/O.
 		"unicode/utf8.Valid",      // checks if a byte slice is valid UTF-8; pure function, no I/O.
 	},
+	"ip": {
+		"context.Context",      // deadline/cancellation plumbing; pure interface, no side effects.
+		"fmt.Errorf",           // error formatting; pure function, no I/O.
+		"fmt.Sprintf",          // string formatting; pure function, no I/O.
+		"net.FlagBroadcast",    // interface flag: supports broadcast; pure constant, no network connections.
+		"net.FlagLoopback",     // interface flag: is loopback; pure constant, no network connections.
+		"net.FlagMulticast",    // interface flag: supports multicast; pure constant, no network connections.
+		"net.FlagPointToPoint", // interface flag: point-to-point link; pure constant, no network connections.
+		"net.FlagRunning",      // interface flag: running state (Go 1.20+); pure constant, no network connections.
+		"net.FlagUp",           // interface flag: administratively up; pure constant, no network connections.
+		"net.Flags",            // interface flags type (uint); pure type, no network connections.
+		"net.IP",               // IP address type ([]byte); pure type, no network connections.
+		"net.IPNet",            // IP network struct (IP + Mask); pure type, no network connections.
+		"net.Interface",        // network interface descriptor (read-only OS struct); no network connections.
+		"net.Interfaces",       // read-only OS interface enumeration; no network connections or I/O.
+		"strings.Join",         // concatenates a slice of strings with a separator; pure function, no I/O.
+	},
 }
 
 var builtinAllowedSymbols = []string{
@@ -336,6 +353,17 @@ var builtinAllowedSymbols = []string{
 	"os.IsNotExist",                   // checks if error is "not exist"; pure function, no I/O.
 	"os.O_RDONLY",                     // read-only file flag constant; cannot open files by itself.
 	"os.PathError",                    // error type for filesystem path errors; pure type, no I/O.
+	"net.FlagBroadcast",               // interface flag constant: broadcast capability; pure constant, no network connections.
+	"net.FlagLoopback",                // interface flag constant: is loopback; pure constant, no network connections.
+	"net.FlagMulticast",               // interface flag constant: multicast capability; pure constant, no network connections.
+	"net.FlagPointToPoint",            // interface flag constant: point-to-point link; pure constant, no network connections.
+	"net.FlagRunning",                 // interface flag constant: running state (Go 1.20+); pure constant, no network connections.
+	"net.FlagUp",                      // interface flag constant: administratively up; pure constant, no network connections.
+	"net.Flags",                       // network interface flags type (uint); pure type, no network connections.
+	"net.IP",                          // IP address type ([]byte); pure type, no network connections.
+	"net.IPNet",                       // IP network struct (IP + Mask); pure type, no network connections.
+	"net.Interface",                   // OS network interface descriptor; read-only struct, no network connections.
+	"net.Interfaces",                  // read-only OS interface enumeration function; no network connections or writes.
 	"path/filepath.ToSlash",           // converts OS path separators to forward slashes; pure function, no I/O.
 	"regexp.Compile",                  // compiles a regular expression; pure function, no I/O. Uses RE2 engine (linear-time, no backtracking).
 	"regexp.QuoteMeta",                // escapes all special regex characters in a string; pure function, no I/O.
