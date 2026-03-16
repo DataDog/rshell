@@ -166,34 +166,31 @@ func TestHelpColumnsAligned(t *testing.T) {
 
 func TestHelpRestrictedShowsOnlyAllowed(t *testing.T) {
 	stdout, stderr, code := runScript(t, "help", "",
-		interp.AllowedCommands([]string{"help", "echo"}))
+		interp.AllowedCommands([]string{"echo"}))
 	assert.Equal(t, 0, code)
 	assert.Empty(t, stderr)
 	assert.Contains(t, stdout, "echo")
-	assert.Contains(t, stdout, "help")
+	assert.Contains(t, stdout, "help") // help is always listed
 	assert.NotContains(t, stdout, "cat")
 	assert.NotContains(t, stdout, "grep")
 	assert.NotContains(t, stdout, "ls")
 }
 
 func TestHelpRestrictedSingleCommand(t *testing.T) {
+	// Only "ls" is explicitly allowed; help should still appear.
 	stdout, _, code := runScript(t, "help", "",
-		interp.AllowedCommands([]string{"help"}))
+		interp.AllowedCommands([]string{"ls"}))
 	assert.Equal(t, 0, code)
 	assert.Contains(t, stdout, "help")
+	assert.Contains(t, stdout, "ls")
 	assert.NotContains(t, stdout, "echo")
-
-	// With only one command the name column should be tight — no extra padding.
-	lines := strings.Split(strings.TrimSpace(stdout), "\n")
-	assert.True(t, strings.HasPrefix(lines[0], "help  "),
-		"single-command output should start with 'help  ', got: %q", lines[0])
 }
 
 func TestHelpRestrictedAlignmentAdjusts(t *testing.T) {
-	// With "wc" (2-char) and "strings" (7-char) the column width should match
-	// the longest allowed name.
+	// With "wc" (2-char) and "strings" (7-char) plus implicit "help" (4-char),
+	// the column width should match the longest allowed name.
 	stdout, _, code := runScript(t, "help", "",
-		interp.AllowedCommands([]string{"help", "wc", "strings"}))
+		interp.AllowedCommands([]string{"wc", "strings"}))
 	assert.Equal(t, 0, code)
 
 	lines := strings.Split(strings.TrimSpace(stdout), "\n")
@@ -206,10 +203,33 @@ func TestHelpRestrictedAlignmentAdjusts(t *testing.T) {
 		fields := strings.Fields(line)
 		if len(fields) >= 2 && fields[0] == "wc" {
 			// "wc" should be padded to the same width as "strings".
-			assert.True(t, strings.HasPrefix(line, "wc      "),
+			assert.True(t, strings.HasPrefix(line, "wc       "),
 				"short name should be padded, got: %q", line)
 		}
 	}
+}
+
+func TestHelpAlwaysAvailable(t *testing.T) {
+	// help is not in the allowed list, but should still run.
+	stdout, stderr, code := runScript(t, "help", "",
+		interp.AllowedCommands([]string{"echo", "ls"}))
+	assert.Equal(t, 0, code)
+	assert.Empty(t, stderr)
+	assert.Contains(t, stdout, "help")
+	assert.Contains(t, stdout, "echo")
+	assert.Contains(t, stdout, "ls")
+	assert.NotContains(t, stdout, "cat")
+}
+
+func TestHelpAlwaysAvailableNoCommands(t *testing.T) {
+	// Even with an empty allowed list, help should work.
+	stdout, stderr, code := runScript(t, "help", "",
+		interp.AllowedCommands([]string{}))
+	assert.Equal(t, 0, code)
+	assert.Empty(t, stderr)
+	// Only help itself should be listed.
+	assert.Contains(t, stdout, "help")
+	assert.NotContains(t, stdout, "echo")
 }
 
 // --- Error handling ---

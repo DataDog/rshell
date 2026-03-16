@@ -257,8 +257,9 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 	}
 	name := args[0]
 
-	// Check whether the command is allowed.
-	if !r.allowAllCommands && !r.allowedCommands[name] {
+	// Check whether the command is allowed. "help" is always permitted so
+	// users can discover available commands regardless of the active policy.
+	if !r.allowAllCommands && name != "help" && !r.allowedCommands[name] {
 		r.errf("%s: command not allowed\n", name)
 		r.exit.code = 127
 		return
@@ -308,7 +309,7 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 				return builtins.FileID{Dev: dev, Ino: ino}, true
 			},
 			CommandAllowed: func(cmdName string) bool {
-				return r.allowAllCommands || r.allowedCommands[cmdName]
+				return r.allowAllCommands || cmdName == "help" || r.allowedCommands[cmdName]
 			},
 		}
 		if r.stdin != nil { // do not assign a typed nil into the io.Reader interface

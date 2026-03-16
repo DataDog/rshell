@@ -1,7 +1,7 @@
-description: Help lists only commands allowed by the active policy.
+description: Help lists only commands allowed by the active policy, plus itself.
 skip_assert_against_bash: true
 input:
-  allowed_commands: ["help", "echo"]
+  allowed_commands: ["echo"]
   script: |+
     help
 expect:
