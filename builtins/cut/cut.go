@@ -75,7 +75,7 @@ import (
 )
 
 // Cmd is the cut builtin command descriptor.
-var Cmd = builtins.Command{Name: "cut", MakeFlags: registerFlags}
+var Cmd = builtins.Command{Name: "cut", Description: "remove sections from each line", MakeFlags: registerFlags}
 
 // MaxLineBytes is the per-line buffer cap for the line scanner.
 const MaxLineBytes = 1 << 20 // 1 MiB

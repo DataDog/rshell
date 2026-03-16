@@ -11,6 +11,7 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"sort"
 	"time"
 
 	"github.com/spf13/pflag"
@@ -33,8 +34,9 @@ type HandlerFunc func(ctx context.Context, callCtx *CallContext, args []string) 
 // registers any flags on the provided FlagSet and returns the bound handler.
 // Commands that accept no flags may ignore fs via NoFlags.
 type Command struct {
-	Name      string
-	MakeFlags func(*FlagSet) HandlerFunc
+	Name        string
+	Description string
+	MakeFlags   func(*FlagSet) HandlerFunc
 }
 
 // NoFlags wraps a HandlerFunc in the MakeFlags format for commands that
@@ -54,6 +56,7 @@ func NoFlags(fn HandlerFunc) func(*FlagSet) HandlerFunc {
 func (c Command) Register() {
 	name := c.Name
 	factory := c.MakeFlags
+	metaRegistry[name] = CommandMeta{Name: name, Description: c.Description}
 	addToRegistry(name, func(ctx context.Context, callCtx *CallContext, args []string) Result {
 		fs := pflag.NewFlagSet(name, pflag.ContinueOnError)
 		fs.SetOutput(io.Discard) // handler formats errors itself
@@ -170,6 +173,14 @@ type Result struct {
 
 var registry = map[string]HandlerFunc{}
 
+// CommandMeta holds metadata about a registered builtin command.
+type CommandMeta struct {
+	Name        string
+	Description string
+}
+
+var metaRegistry = map[string]CommandMeta{}
+
 func addToRegistry(name string, fn HandlerFunc) {
 	if _, exists := registry[name]; exists {
 		panic("builtin already registered: " + name)
@@ -181,4 +192,20 @@ func addToRegistry(name string, fn HandlerFunc) {
 func Lookup(name string) (HandlerFunc, bool) {
 	fn, ok := registry[name]
 	return fn, ok
+}
+
+// Names returns a sorted list of all registered builtin command names.
+func Names() []string {
+	names := make([]string, 0, len(metaRegistry))
+	for name := range metaRegistry {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
+}
+
+// Meta returns the metadata for a registered builtin command.
+func Meta(name string) (CommandMeta, bool) {
+	m, ok := metaRegistry[name]
+	return m, ok
 }

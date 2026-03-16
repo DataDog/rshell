@@ -54,7 +54,7 @@ import (
 )
 
 // Cmd is the echo builtin command descriptor.
-var Cmd = builtins.Command{Name: "echo", MakeFlags: builtins.NoFlags(run)}
+var Cmd = builtins.Command{Name: "echo", Description: "write arguments to stdout", MakeFlags: builtins.NoFlags(run)}
 
 func run(_ context.Context, callCtx *builtins.CallContext, args []string) builtins.Result {
 	// Parse flags: bash treats leading args matching -[neE]+ as flags.

@@ -14,6 +14,7 @@ The shell is supported on Linux, Windows and macOS.
 ## Documentation
 
 - `README.md` and `SHELL_FEATURES.md` must be kept up to date with the implementation.
+- When adding or modifying a builtin, set or update the `Description` field on its `builtins.Command` struct and verify the command appears correctly in `help` output.
 
 ## Code Style
 

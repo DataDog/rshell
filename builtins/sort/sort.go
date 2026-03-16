@@ -84,7 +84,7 @@ import (
 )
 
 // Cmd is the sort builtin command descriptor.
-var Cmd = builtins.Command{Name: "sort", MakeFlags: registerFlags}
+var Cmd = builtins.Command{Name: "sort", Description: "sort lines of text files", MakeFlags: registerFlags}
 
 // checkTracker is a pflag.Value that tracks all --check/-c modes set
 // during argument parsing so conflicting modes (diagnose vs silent) can
