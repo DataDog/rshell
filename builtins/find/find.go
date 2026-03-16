@@ -37,7 +37,8 @@
 //	-prune           — skip directory subtree
 //	-exec cmd {} ;   — run cmd for each file; {} replaced with path
 //	-exec cmd {} +   — batch mode: accumulate paths, run cmd once
-//	-execdir cmd {} ; — like -exec but {} is ./basename
+//	-execdir cmd {} ; — like -exec but {} is ./basename (note: does not change
+//	                   working directory to file's parent, unlike GNU find)
 //	-execdir cmd {} + — batch -execdir grouped by directory
 //	-true            — always true
 //	-false           — always false

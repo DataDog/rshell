@@ -159,6 +159,17 @@ func parseExpression(args []string) (parseResult, error) {
 	if p.pos < len(p.args) {
 		return parseResult{}, fmt.Errorf("find: unexpected argument '%s'", p.args[p.pos])
 	}
+
+	// Reject expressions with multiple -exec {} + or -execdir {} + nodes.
+	// Each batch variant uses a single shared collector, so multiple nodes
+	// of the same kind would silently share one template producing wrong results.
+	if countExprKind(e, exprExecPlus) > 1 {
+		return parseResult{}, errors.New("find: multiple -exec ... {} + actions are not supported")
+	}
+	if countExprKind(e, exprExecDirPlus) > 1 {
+		return parseResult{}, errors.New("find: multiple -execdir ... {} + actions are not supported")
+	}
+
 	return parseResult{expr: e, maxDepth: p.maxDepth, minDepth: p.minDepth}, nil
 }
 
@@ -549,6 +560,18 @@ func (p *parser) parseExecPredicate(isDir bool) (*expr, error) {
 	}
 
 	return &expr{kind: kind, execArgs: cmdArgs}, nil
+}
+
+// countExprKind counts the number of nodes of the given kind in the expression tree.
+func countExprKind(e *expr, kind exprKind) int {
+	if e == nil {
+		return 0
+	}
+	n := 0
+	if e.kind == kind {
+		n = 1
+	}
+	return n + countExprKind(e.left, kind) + countExprKind(e.right, kind) + countExprKind(e.operand, kind)
 }
 
 // parseSize parses a -size argument like "+10k", "-5M", "100c".

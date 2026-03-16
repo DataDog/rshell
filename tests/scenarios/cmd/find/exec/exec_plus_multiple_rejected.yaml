@@ -1,0 +1,15 @@
+description: "find rejects multiple -exec {} + actions in a single expression"
+setup:
+  files:
+    - path: a.txt
+      content: "a"
+      chmod: 0644
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    find . -name '*.txt' -exec echo GO {} + -o -exec echo PY {} +
+expect:
+  stderr: |
+    find: multiple -exec ... {} + actions are not supported
+  exit_code: 1
+  skip_assert_against_bash: true

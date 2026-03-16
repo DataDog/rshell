@@ -9,7 +9,7 @@ import (
 	"context"
 	iofs "io/fs"
 	"math"
-	"path"
+	"path" // path (not path/filepath) is intentional: the shell normalizes all paths to forward slashes internally
 	"time"
 
 	"github.com/DataDog/rshell/builtins"
@@ -64,8 +64,8 @@ func (bc *batchCollector) flush(ctx context.Context, execCommand func(context.Co
 		return
 	}
 	args := buildBatchArgs(bc.template, bc.paths)
-	code, _ := execCommand(ctx, args)
-	if code != 0 {
+	code, err := execCommand(ctx, args)
+	if err != nil || code != 0 {
 		bc.failed = true
 	}
 	bc.paths = bc.paths[:0]
@@ -110,8 +110,8 @@ func (bdc *batchDirCollector) flush(ctx context.Context, execCommand func(contex
 		}
 		_ = dir // -execdir conceptually runs from this dir, but our builtins don't support cwd changes
 		args := buildBatchArgs(bdc.template, bases)
-		code, _ := execCommand(ctx, args)
-		if code != 0 {
+		code, err := execCommand(ctx, args)
+		if err != nil || code != 0 {
 			bdc.failed = true
 		}
 	}
