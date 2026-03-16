@@ -55,6 +55,10 @@ func fileTypeChar(info iofs.FileInfo) byte {
 		return 'p'
 	case mode&iofs.ModeSocket != 0:
 		return 's'
+	case mode&iofs.ModeCharDevice != 0:
+		return 'c'
+	case mode&iofs.ModeDevice != 0:
+		return 'b'
 	default:
 		return '?'
 	}

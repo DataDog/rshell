@@ -73,6 +73,8 @@ var builtinPerCommandSymbols = map[string][]string{
 		"fmt.Errorf",                      // error formatting; pure function, no I/O.
 		"io.EOF",                          // sentinel error value; pure constant.
 		"io/fs.FileInfo",                  // interface type for file information; no side effects.
+		"io/fs.ModeCharDevice",            // file mode bit constant for character devices; pure constant.
+		"io/fs.ModeDevice",                // file mode bit constant for block devices; pure constant.
 		"io/fs.ModeDir",                   // file mode bit constant for directories; pure constant.
 		"io/fs.ModeNamedPipe",             // file mode bit constant for named pipes; pure constant.
 		"io/fs.ModeSocket",                // file mode bit constant for sockets; pure constant.
@@ -320,6 +322,8 @@ var builtinAllowedSymbols = []string{
 	"io.Writer",                       // interface type for writing; no side effects.
 	"io/fs.DirEntry",                  // interface type for directory entries; no side effects.
 	"io/fs.FileInfo",                  // interface type for file information; no side effects.
+	"io/fs.ModeCharDevice",            // file mode bit constant for character devices; pure constant.
+	"io/fs.ModeDevice",                // file mode bit constant for block devices; pure constant.
 	"io/fs.ModeDir",                   // file mode bit constant for directories; pure constant.
 	"io/fs.ModeNamedPipe",             // file mode bit constant for named pipes; pure constant.
 	"io/fs.ModeSetgid",                // file mode bit constant for setgid; pure constant.

@@ -373,7 +373,7 @@ func (p *parser) parseTypePredicate() (*expr, error) {
 			continue
 		}
 		switch c {
-		case 'f', 'd', 'l', 'p', 's':
+		case 'b', 'c', 'f', 'd', 'l', 'p', 's':
 			if !expectType {
 				// Adjacent type chars without comma (e.g. "fd").
 				return nil, fmt.Errorf("find: Unknown argument to -type: %s", val)
