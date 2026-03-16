@@ -1,0 +1,10 @@
+description: ps -h prints usage information and exits with code 0.
+skip_assert_against_bash: true
+input:
+  script: |+
+    ps -h
+expect:
+  stdout_contains:
+    - "Usage: ps"
+    - "PIDLIST"
+  exit_code: 0

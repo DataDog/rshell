@@ -115,6 +115,14 @@ var builtinPerCommandSymbols = map[string][]string{
 		"slices.SortFunc",     // sorts a slice with a comparison function; pure function, no I/O.
 		"time.Time",           // time value type; pure data, no side effects.
 	},
+	"ps": {
+		"context.Context",   // deadline/cancellation plumbing; pure interface, no side effects.
+		"fmt.Errorf",        // error formatting; pure function, no I/O.
+		"strconv.Atoi",      // string-to-int conversion; pure function, no I/O.
+		"strings.ReplaceAll", // replaces all occurrences of a substring; pure function, no I/O.
+		"strings.Split",     // splits a string by separator into a slice; pure function, no I/O.
+		"strings.TrimSpace", // removes leading/trailing whitespace; pure function.
+	},
 	"printf": {
 		"context.Context",      // deadline/cancellation plumbing; pure interface, no side effects.
 		"errors.As",            // error type assertion; pure function, no I/O.

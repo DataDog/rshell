@@ -11,6 +11,7 @@ import (
 	"github.com/DataDog/rshell/builtins"
 	breakcmd "github.com/DataDog/rshell/builtins/break"
 	"github.com/DataDog/rshell/builtins/cat"
+	pscmd "github.com/DataDog/rshell/builtins/ps"
 	continuecmd "github.com/DataDog/rshell/builtins/continue"
 	"github.com/DataDog/rshell/builtins/cut"
 	"github.com/DataDog/rshell/builtins/echo"
@@ -48,6 +49,7 @@ func registerBuiltins() {
 			ls.Cmd,
 			sortcmd.Cmd,
 			printfcmd.Cmd,
+			pscmd.Cmd,
 			sed.Cmd,
 			strings_cmd.Cmd,
 			tail.Cmd,

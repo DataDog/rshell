@@ -1,0 +1,9 @@
+description: ps -p 1 shows PID header and exits 0 (PID 1 may or may not exist).
+skip_assert_against_bash: true
+input:
+  script: |+
+    ps -p 1
+expect:
+  stdout_contains:
+    - "PID"
+  exit_code: 0
