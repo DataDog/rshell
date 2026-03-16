@@ -10,28 +10,28 @@ import (
 	"testing"
 )
 
-// timecompCheckConfig returns the allowedSymbolsConfig used to enforce
-// symbol-level import restrictions on timecomp/. Verification tests reuse
+// restrictedtimeCheckConfig returns the allowedSymbolsConfig used to enforce
+// symbol-level import restrictions on restrictedtime/. Verification tests reuse
 // this function to ensure they test the exact same configuration.
-func timecompCheckConfig() allowedSymbolsConfig {
+func restrictedtimeCheckConfig() allowedSymbolsConfig {
 	return allowedSymbolsConfig{
-		Symbols:   timecompAllowedSymbols,
-		TargetDir: "timecomp",
+		Symbols:   restrictedtimeAllowedSymbols,
+		TargetDir: "restrictedtime",
 		CollectFiles: func(dir string) ([]string, error) {
 			return collectFlatGoFiles(dir)
 		},
 		ExemptImport: func(importPath string) bool {
 			return strings.HasPrefix(importPath, "github.com/DataDog/rshell/")
 		},
-		ListName: "timecompAllowedSymbols",
+		ListName: "restrictedtimeAllowedSymbols",
 		MinFiles: 1,
 	}
 }
 
 // TestTimecompAllowedSymbols enforces symbol-level import restrictions on
-// non-test Go files in timecomp/. Every imported symbol must be explicitly
-// listed in timecompAllowedSymbols. Internal module imports
+// non-test Go files in restrictedtime/. Every imported symbol must be explicitly
+// listed in restrictedtimeAllowedSymbols. Internal module imports
 // (github.com/DataDog/rshell/*) are auto-allowed.
 func TestTimecompAllowedSymbols(t *testing.T) {
-	checkAllowedSymbols(t, timecompCheckConfig())
+	checkAllowedSymbols(t, restrictedtimeCheckConfig())
 }

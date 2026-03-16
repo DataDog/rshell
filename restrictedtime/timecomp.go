@@ -3,10 +3,10 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2026-present Datadog, Inc.
 
-// Package timecomp provides time-comparison helpers for the shell interpreter.
+// Package restrictedtime provides time-comparison helpers for the shell interpreter.
 // Builtins never import this package directly — they receive boolean-returning
 // closures via CallContext, so they cannot obtain raw time values.
-package timecomp
+package restrictedtime
 
 import (
 	"math"

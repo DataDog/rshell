@@ -5,8 +5,8 @@
 
 package allowedsymbols
 
-// timecompAllowedSymbols lists every "importpath.Symbol" that may be used by
-// non-test Go files in timecomp/. Each entry must be in "importpath.Symbol"
+// restrictedtimeAllowedSymbols lists every "importpath.Symbol" that may be used by
+// non-test Go files in restrictedtime/. Each entry must be in "importpath.Symbol"
 // form, where importpath is the full Go import path.
 //
 // Each symbol must have a comment explaining what it does and why it is safe
@@ -16,7 +16,7 @@ package allowedsymbols
 // and do not appear here.
 //
 // The permanently banned packages (reflect, unsafe) apply here too.
-var timecompAllowedSymbols = []string{
+var restrictedtimeAllowedSymbols = []string{
 	"math.Ceil",     // pure arithmetic; rounds up fractional minutes for ceiling bucketing.
 	"math.Floor",    // pure arithmetic; rounds down fractional days for floor bucketing.
 	"math.MaxInt64", // integer constant; used for overflow guards.
