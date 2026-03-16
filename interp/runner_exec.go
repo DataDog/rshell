@@ -13,7 +13,6 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
-	"time"
 
 	"mvdan.cc/sh/v3/expand"
 	"mvdan.cc/sh/v3/syntax"
@@ -267,7 +266,7 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 	}
 
 	if fn, ok := builtins.Lookup(name); ok {
-		invocationNow := time.Now()
+		matchMtime, matchMmin, isRecentEnough := restrictedtime.NewCallbacks()
 		call := &builtins.CallContext{
 			Stdout:       r.stdout,
 			Stderr:       r.stderr,
@@ -298,15 +297,9 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 				return r.sandbox.Access(path, HandlerCtx(r.handlerCtx(ctx, todoPos)).Dir, mode)
 			},
 			PortableErr: allowedpaths.PortableErrMsg,
-			MatchMtime: func(modTime time.Time, n int64, cmp int) bool {
-				return restrictedtime.MatchMtime(invocationNow, modTime, n, cmp)
-			},
-			MatchMmin: func(modTime time.Time, n int64, cmp int) bool {
-				return restrictedtime.MatchMmin(invocationNow, modTime, n, cmp)
-			},
-			IsRecentEnough: func(modTime time.Time, months int) bool {
-				return restrictedtime.IsRecentEnough(invocationNow, modTime, months)
-			},
+			MatchMtime:     matchMtime,
+			MatchMmin:      matchMmin,
+			IsRecentEnough: isRecentEnough,
 			FileIdentity: func(path string, info fs.FileInfo) (builtins.FileID, bool) {
 				absPath := path
 				if !filepath.IsAbs(absPath) {

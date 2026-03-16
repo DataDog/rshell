@@ -23,6 +23,7 @@ var restrictedtimeAllowedSymbols = []string{
 	"time.Duration", // duration type; pure integer alias, no I/O.
 	"time.Hour",     // constant representing one hour; no side effects.
 	"time.Minute",   // constant representing one minute; no side effects.
+	"time.Now",      // captures invocation timestamp once; read-only, no mutation.
 	"time.Second",   // constant representing one second; no side effects.
 	"time.Time",     // time value type; pure data, no side effects.
 }

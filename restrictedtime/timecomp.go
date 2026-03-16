@@ -88,3 +88,24 @@ func IsRecentEnough(now, modTime time.Time, months int) bool {
 	cutoff := now.AddDate(0, -months, 0)
 	return !modTime.Before(cutoff) && !modTime.After(now)
 }
+
+// NewCallbacks returns MatchMtime, MatchMmin, and IsRecentEnough closures
+// that capture a single invocation timestamp internally via time.Now().
+// This allows the caller to wire time-comparison callbacks without importing
+// the time package directly.
+func NewCallbacks() (
+	matchMtime func(time.Time, int64, int) bool,
+	matchMmin func(time.Time, int64, int) bool,
+	isRecentEnough func(time.Time, int) bool,
+) {
+	now := time.Now()
+	return func(modTime time.Time, n int64, cmp int) bool {
+			return MatchMtime(now, modTime, n, cmp)
+		},
+		func(modTime time.Time, n int64, cmp int) bool {
+			return MatchMmin(now, modTime, n, cmp)
+		},
+		func(modTime time.Time, months int) bool {
+			return IsRecentEnough(now, modTime, months)
+		}
+}
