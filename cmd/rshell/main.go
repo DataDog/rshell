@@ -101,16 +101,9 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	cmd.SetOut(stdout)
 	cmd.SetErr(stderr)
 
-<<<<<<< Updated upstream
 	cmd.Flags().StringVarP(&script, "script", "s", "", "shell script to execute")
 	cmd.Flags().StringVarP(&allowedPaths, "allowed-path", "a", "", "comma-separated list of directories the shell is allowed to access")
-	cmd.Flags().StringVar(&allowedCommands, "allowed-commands", "", "comma-separated list of commands the shell is allowed to execute")
-=======
-	cmd.Flags().StringVarP(&command, "command", "c", "", "shell command string to execute")
-	cmd.Flags().Lookup("command").Hidden = true // only expose -c short flag
-	cmd.Flags().StringVarP(&allowedPaths, "allowed-path", "p", "", "comma-separated list of directories the shell is allowed to access")
 	cmd.Flags().StringVar(&allowedCommands, "allowed-commands", "", "comma-separated list of namespaced commands (e.g. rshell:cat,rshell:find)")
->>>>>>> Stashed changes
 	cmd.Flags().BoolVar(&allowAllCmds, "allow-all-commands", false, "allow execution of all commands (builtins and external)")
 
 	if err := cmd.Execute(); err != nil {

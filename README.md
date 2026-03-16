@@ -32,7 +32,7 @@ func main() {
 
 	runner, _ := interp.New(
 		interp.StdIO(nil, os.Stdout, os.Stderr),
-		interp.AllowedCommands([]string{"echo"}),
+		interp.AllowedCommands([]string{"rshell:echo"}),
 	)
 	defer runner.Close()
 
