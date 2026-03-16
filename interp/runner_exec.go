@@ -20,7 +20,7 @@ import (
 
 	"github.com/DataDog/rshell/allowedpaths"
 	"github.com/DataDog/rshell/builtins"
-	"github.com/DataDog/rshell/internal/timecomp"
+	"github.com/DataDog/rshell/timecomp"
 )
 
 func (r *Runner) stmt(ctx context.Context, st *syntax.Stmt) {
