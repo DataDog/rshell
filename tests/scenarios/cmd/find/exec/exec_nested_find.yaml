@@ -1,0 +1,15 @@
+# Nested find -exec find without inner -exec works, but inner -exec is unavailable.
+# The subcall intentionally omits ExecCommand to prevent unbounded recursion.
+description: nested find -exec find works but inner -exec is not available
+skip_assert_against_bash: true
+setup:
+  files:
+    - path: dir/file.txt
+      content: "hello"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    find . -name "*.txt" -exec find {} -print \;
+expect:
+  exit_code: 0
+  stdout: "./dir/file.txt\n"

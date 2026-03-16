@@ -312,6 +312,10 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 					return 1, fmt.Errorf("exec: empty command")
 				}
 				cmdName := cmdArgs[0]
+				// Enforce the same command allowlist as the shell's call() path.
+				if !r.allowAllCommands && !r.allowedCommands[cmdName] {
+					return 127, fmt.Errorf("exec: command not allowed: %s", cmdName)
+				}
 				handler, ok := builtins.Lookup(cmdName)
 				if !ok {
 					return 127, fmt.Errorf("exec: command not found: %s", cmdName)

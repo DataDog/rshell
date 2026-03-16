@@ -1,0 +1,15 @@
+# -exec combined with -prune skips subdirectories
+description: find -exec combined with -prune to skip directories
+setup:
+  files:
+    - path: skip/sub/a.txt
+      content: "hidden"
+    - path: keep/b.txt
+      content: "visible"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    find . -name skip -prune -o -name "*.txt" -exec echo {} \; | sort
+expect:
+  exit_code: 0
+  stdout: "./keep/b.txt\n"

@@ -1,0 +1,13 @@
+# -execdir on start directory itself produces "." not "./."
+description: find -execdir on start directory outputs correct path
+setup:
+  files:
+    - path: dummy.txt
+      content: ""
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    find . -maxdepth 0 -execdir echo {} \;
+expect:
+  exit_code: 0
+  stdout: ".\n"

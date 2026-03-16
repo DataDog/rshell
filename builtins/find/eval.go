@@ -277,11 +277,16 @@ func evalExec(ec *evalContext, e *expr, isExecDir bool) evalResult {
 	var dir string
 	if isExecDir {
 		clean := path.Clean(ec.printPath)
-		dir = path.Dir(clean)
-		if dir == "." {
-			dir = ""
+		if clean == "." {
+			// Start directory itself: GNU find outputs "." not "./.".
+			filePath = "."
+		} else {
+			dir = path.Dir(clean)
+			if dir == "." {
+				dir = ""
+			}
+			filePath = "./" + path.Base(clean)
 		}
-		filePath = "./" + path.Base(clean)
 	} else {
 		filePath = ec.printPath
 	}
