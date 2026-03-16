@@ -44,6 +44,29 @@ jobs:
             exit 1
           fi
 
+  test-ping:
+    name: Test ping integration (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
+        with:
+          go-version-file: .go-version
+      - name: Run ping integration tests (Linux)
+        if: runner.os == 'Linux'
+        env:
+          RSHELL_PING_TEST: "1"
+        run: sudo -E go test -race -v -run 'TestPing.*Integration|TestPingPentest' ./builtins/ping/ -timeout 120s
+      - name: Run ping integration tests (non-Linux)
+        if: runner.os != 'Linux'
+        env:
+          RSHELL_PING_TEST: "1"
+        run: go test -race -v -run 'TestPing.*Integration|TestPingPentest' ./builtins/ping/ -timeout 120s
+
   test-against-bash:
     name: Test against Bash (Docker)
     runs-on: ubuntu-latest

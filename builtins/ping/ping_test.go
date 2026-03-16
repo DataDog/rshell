@@ -7,7 +7,9 @@ package ping_test
 
 import (
 	"context"
+	"fmt"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -232,12 +234,33 @@ func TestPingLocalhostIntegration(t *testing.T) {
 	if os.Getenv("RSHELL_PING_TEST") == "" {
 		t.Skip("skipping ping integration test; set RSHELL_PING_TEST=1 and run with sudo on Linux")
 	}
-	dir := t.TempDir()
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-	stdout, stderr, code := runScriptCtx(ctx, t, "ping -c 1 -W 5 127.0.0.1", dir)
-	assert.Equal(t, 0, code, "ping failed: %s", stderr)
-	assert.Contains(t, stdout, "PING 127.0.0.1")
-	assert.Contains(t, stdout, "ping statistics")
-	assert.Contains(t, stdout, "packets transmitted")
+
+	tests := []struct {
+		name  string
+		count int
+	}{
+		{"single ping", 1},
+		{"three pings", 3},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			cmd := fmt.Sprintf("ping -c %d -W 5 127.0.0.1", tt.count)
+			stdout, stderr, code := runScriptCtx(ctx, t, cmd, dir)
+			assert.Equal(t, 0, code, "ping failed: %s", stderr)
+			assert.Contains(t, stdout, "PING 127.0.0.1")
+			assert.Contains(t, stdout, "ping statistics")
+
+			// Verify we got at least the requested number of reply lines.
+			replyCount := strings.Count(stdout, "64 bytes from")
+			assert.GreaterOrEqual(t, replyCount, tt.count,
+				"expected at least %d replies, got %d\nstdout:\n%s", tt.count, replyCount, stdout)
+
+			// Verify the summary reports the correct number of packets transmitted.
+			assert.Contains(t, stdout, fmt.Sprintf("%d packets transmitted", tt.count))
+		})
+	}
 }
