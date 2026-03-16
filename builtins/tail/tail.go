@@ -304,11 +304,10 @@ func readLastLines(ctx context.Context, callCtx *builtins.CallContext, r io.Read
 		sc.Split(scanLinesPreservingNewline)
 	}
 
-	ringCount64 := count
-	if ringCount64 > MaxRingLines {
-		ringCount64 = MaxRingLines
+	ringSize := MaxRingLines
+	if count < MaxRingLines {
+		ringSize = int(count) // count < MaxRingLines (100_000) fits safely in int
 	}
-	ringSize := int(ringCount64)
 	ring := make([][]byte, ringSize)
 	var ringHead int
 	var ringCount int
@@ -407,11 +406,10 @@ func readLastBytes(ctx context.Context, callCtx *builtins.CallContext, r io.Read
 	// Allocate the circular buffer eagerly. bufSize is capped at MaxBytesBuffer
 	// (32 MiB), so this allocation is bounded regardless of the user-supplied
 	// count value.
-	byteCount64 := count
-	if byteCount64 > MaxBytesBuffer {
-		byteCount64 = MaxBytesBuffer
+	bufSize := MaxBytesBuffer
+	if count < MaxBytesBuffer {
+		bufSize = int(count) // count < MaxBytesBuffer (32 MiB) fits safely in int
 	}
-	bufSize := int(byteCount64)
 	circ := make([]byte, bufSize)
 	var totalWritten int64
 
