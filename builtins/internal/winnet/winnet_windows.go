@@ -179,6 +179,9 @@ func collectTCP(af uintptr) ([]SocketEntry, error) {
 	if af == afINET6 {
 		entrySize = 56 // MIB_TCP6ROW_OWNER_PID
 	}
+	if maxPossible := uint32(MaxBufSize) / entrySize; numEntries > maxPossible {
+		numEntries = maxPossible
+	}
 
 	var out []SocketEntry
 	for i := uint32(0); i < numEntries; i++ {
@@ -256,6 +259,9 @@ func collectUDP(af uintptr) ([]SocketEntry, error) {
 	entrySize := uint32(12)
 	if af == afINET6 {
 		entrySize = 28 // MIB_UDP6ROW_OWNER_PID
+	}
+	if maxPossible := uint32(MaxBufSize) / entrySize; numEntries > maxPossible {
+		numEntries = maxPossible
 	}
 
 	var out []SocketEntry
