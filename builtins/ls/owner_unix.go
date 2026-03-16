@@ -10,38 +10,22 @@ package ls
 import (
 	"fmt"
 	iofs "io/fs"
-	"os/user"
 	"syscall"
 )
 
-// fileOwner returns the owner name, group name, and hard link count for the
-// given FileInfo by extracting UID/GID from Stat_t and resolving via os/user.
+// fileOwner returns the numeric UID, GID, and hard link count for the given
+// FileInfo. Names are not resolved to avoid reading /etc/passwd or triggering
+// NSS/LDAP lookups outside the sandbox.
 func fileOwner(info iofs.FileInfo) (owner, group string, nlink uint64) {
 	st, ok := info.Sys().(*syscall.Stat_t)
 	if !ok {
 		return "?", "?", 0
 	}
 
-	owner = lookupUID(st.Uid)
-	group = lookupGID(st.Gid)
+	owner = fmt.Sprintf("%d", st.Uid)
+	group = fmt.Sprintf("%d", st.Gid)
 	nlink = uint64(st.Nlink)
 	return owner, group, nlink
-}
-
-func lookupUID(uid uint32) string {
-	u, err := user.LookupId(fmt.Sprintf("%d", uid))
-	if err != nil {
-		return fmt.Sprintf("%d", uid)
-	}
-	return u.Username
-}
-
-func lookupGID(gid uint32) string {
-	g, err := user.LookupGroupId(fmt.Sprintf("%d", gid))
-	if err != nil {
-		return fmt.Sprintf("%d", gid)
-	}
-	return g.Name
 }
 
 // fileBlocks returns the number of 512-byte blocks allocated for the file.
