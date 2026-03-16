@@ -519,6 +519,9 @@ func skipBytes(ctx context.Context, callCtx *builtins.CallContext, r io.Reader, 
 // A leading '+' activates offset mode (output starting from position N,
 // 1-based). Without '+', the value is the number of trailing lines/bytes
 // to output. GNU tail silently treats negative counts as their absolute value.
+//
+// GNU multiplier suffixes are accepted after the digits (e.g. "1K" = 1024,
+// "2MB" = 2_000_000). See countMultiplier for the full list.
 func parseCount(s string) (countMode, bool) {
 	if s == "" {
 		return countMode{}, false
@@ -527,17 +530,50 @@ func parseCount(s string) (countMode, bool) {
 	parseStr := s
 	if isOffset {
 		parseStr = s[1:]
-		// After stripping '+', the remainder must be a plain non-negative
-		// integer. A leading '+' or '-' (e.g. "+-3", "++5") is invalid;
-		// GNU tail exits with "invalid number" for these forms.
+		// After stripping '+', the remainder must start with a digit (not
+		// another '+' or '-'). GNU tail exits with "invalid number" for
+		// forms like "+-3" or "++5".
 		if len(parseStr) == 0 || parseStr[0] == '+' || parseStr[0] == '-' {
 			return countMode{}, false
 		}
 	}
-	n, err := strconv.ParseInt(parseStr, 10, 64)
+
+	// Split numeric digits from an optional GNU multiplier suffix.
+	// Allow an optional leading '-' for negative counts.
+	numEnd := 0
+	if numEnd < len(parseStr) && parseStr[numEnd] == '-' {
+		numEnd++
+	}
+	for numEnd < len(parseStr) && parseStr[numEnd] >= '0' && parseStr[numEnd] <= '9' {
+		numEnd++
+	}
+	if numEnd == 0 || (numEnd == 1 && parseStr[0] == '-') {
+		return countMode{}, false // no digits
+	}
+	suffix := parseStr[numEnd:]
+
+	n, err := strconv.ParseInt(parseStr[:numEnd], 10, 64)
 	if err != nil {
 		return countMode{}, false
 	}
+
+	// Apply GNU multiplier suffix if present.
+	if suffix != "" {
+		mult, ok := countMultiplier(suffix)
+		if !ok {
+			return countMode{}, false
+		}
+		// Take absolute value before multiplying so clamping is symmetric.
+		if n < 0 {
+			n = -n
+		}
+		if n > MaxCount/mult {
+			n = MaxCount
+		} else {
+			n *= mult
+		}
+	}
+
 	// GNU tail silently treats negative counts as their absolute value.
 	// Guard against MinInt64 overflow: -(-9223372036854775808) overflows back
 	// to itself. Clamp to MaxCount (like any other out-of-range value) so that
@@ -553,6 +589,45 @@ func parseCount(s string) (countMode, bool) {
 		n = MaxCount
 	}
 	return countMode{n: n, offset: isOffset}, true
+}
+
+// countMultiplier returns the byte multiplier for a GNU tail suffix and
+// whether the suffix is recognised.
+//
+// Suffixes match those documented in the GNU coreutils tail manual:
+//
+//	b    512
+//	kB   1 000
+//	K    1 024
+//	MB   1 000 000
+//	M    1 048 576
+//	GB   1 000 000 000
+//	G    1 073 741 824
+//	TB   1 000 000 000 000  (clamped to MaxCount in practice)
+//	T    1 099 511 627 776  (clamped to MaxCount in practice)
+func countMultiplier(s string) (int64, bool) {
+	switch s {
+	case "b":
+		return 512, true
+	case "kB", "KB":
+		return 1_000, true
+	case "K":
+		return 1_024, true
+	case "MB":
+		return 1_000_000, true
+	case "M":
+		return 1_048_576, true
+	case "GB":
+		return 1_000_000_000, true
+	case "G":
+		return 1_073_741_824, true
+	case "TB":
+		return 1_000_000_000_000, true
+	case "T":
+		return 1_099_511_627_776, true
+	default:
+		return 0, false
+	}
 }
 
 // modeFlag is a pflag.Value implementation for -n/--lines and -c/--bytes.
