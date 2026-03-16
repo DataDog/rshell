@@ -10,6 +10,7 @@ import (
 	iofs "io/fs"
 	"math"
 	"path" // path (not path/filepath) is intentional: the shell normalizes all paths to forward slashes internally
+	"strings"
 	"time"
 
 	"github.com/DataDog/rshell/builtins"
@@ -60,7 +61,7 @@ func (bc *batchCollector) add(ctx context.Context, execCommand func(context.Cont
 
 // flush executes the accumulated batch.
 func (bc *batchCollector) flush(ctx context.Context, execCommand func(context.Context, []string) (uint8, error)) {
-	if len(bc.paths) == 0 {
+	if len(bc.paths) == 0 || execCommand == nil {
 		return
 	}
 	args := buildBatchArgs(bc.template, bc.paths)
@@ -99,6 +100,9 @@ func (bdc *batchDirCollector) add(ctx context.Context, execCommand func(context.
 
 // flush executes accumulated batches, one per directory.
 func (bdc *batchDirCollector) flush(ctx context.Context, execCommand func(context.Context, []string) (uint8, error)) {
+	if execCommand == nil {
+		return
+	}
 	for _, dir := range bdc.dirOrder {
 		if ctx.Err() != nil {
 			bdc.failed = true
@@ -233,15 +237,13 @@ func evaluate(ec *evalContext, e *expr) evalResult {
 	}
 }
 
-// substituteExecArgs replaces standalone {} in the template with the given path.
+// substituteExecArgs replaces all occurrences of {} in the template arguments
+// with the given path, including when {} is embedded inside a larger token
+// (e.g. "prefix{}suffix" becomes "prefix./file.txtsuffix"), matching GNU find behaviour.
 func substituteExecArgs(template []string, replacement string) []string {
 	args := make([]string, len(template))
 	for i, a := range template {
-		if a == "{}" {
-			args[i] = replacement
-		} else {
-			args[i] = a
-		}
+		args[i] = strings.ReplaceAll(a, "{}", replacement)
 	}
 	return args
 }

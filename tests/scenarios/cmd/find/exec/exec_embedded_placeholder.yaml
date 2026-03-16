@@ -1,0 +1,13 @@
+description: "find -exec replaces {} embedded within argument tokens"
+setup:
+  files:
+    - path: file.txt
+      content: "data"
+      chmod: 0644
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    find . -name 'file.txt' -exec echo prefix{}suffix \;
+expect:
+  stdout: "prefix./file.txtsuffix\n"
+  exit_code: 0

@@ -1,4 +1,5 @@
 description: "find rejects multiple -exec {} + actions in a single expression"
+skip_assert_against_bash: true
 setup:
   files:
     - path: a.txt
@@ -12,4 +13,3 @@ expect:
   stderr: |
     find: multiple -exec ... {} + actions are not supported
   exit_code: 1
-  skip_assert_against_bash: true
