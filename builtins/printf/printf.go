@@ -118,7 +118,7 @@ func isRangeErr(err error) bool {
 // Cmd is the printf builtin command descriptor.
 // printf uses NoFlags because its arguments (format string and data) can look
 // like flags (e.g. printf "%d" -42). Manual pre-parsing handles --help and -v.
-var Cmd = builtins.Command{Name: "printf", MakeFlags: builtins.NoFlags(run)}
+var Cmd = builtins.Command{Name: "printf", Description: "format and print data", MakeFlags: builtins.NoFlags(run)}
 
 // maxFormatIterations bounds the format-reuse loop to prevent runaway output.
 const maxFormatIterations = 10_000

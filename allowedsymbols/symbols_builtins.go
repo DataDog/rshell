@@ -116,6 +116,9 @@ var builtinPerCommandSymbols = map[string][]string{
 		"strings.Join",      // concatenates a slice of strings with a separator; pure function, no I/O.
 		"strings.Split",     // splits a string by separator into a slice; pure function, no I/O.
 	},
+	"help": {
+		"context.Context", // deadline/cancellation plumbing; pure interface, no side effects.
+	},
 	"head": {
 		"bufio.NewScanner", // line-by-line input reading (e.g. head, cat); no write or exec capability.
 		"context.Context",  // deadline/cancellation plumbing; pure interface, no side effects.
