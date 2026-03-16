@@ -296,7 +296,7 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 			AccessFile: func(ctx context.Context, path string, mode uint32) error {
 				return r.sandbox.Access(path, HandlerCtx(r.handlerCtx(ctx, todoPos)).Dir, mode)
 			},
-			PortableErr: allowedpaths.PortableErrMsg,
+			PortableErr:    allowedpaths.PortableErrMsg,
 			MatchMtime:     matchMtime,
 			MatchMmin:      matchMmin,
 			IsRecentEnough: isRecentEnough,
