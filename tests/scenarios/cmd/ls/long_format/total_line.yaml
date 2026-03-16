@@ -1,8 +1,8 @@
 description: ls -l prints a total line in 1024-byte block units matching GNU ls.
 # The total line value depends on filesystem block allocation, so we only
 # assert that it starts with "total " and is followed by a number. The
-# skip_assert_against_bash flag is set because our format omits owner/group
-# columns which differ from GNU ls, but the total line itself matches.
+# skip_assert_against_bash flag is set because owner/group columns will
+# differ between rshell (test runner user) and bash (root in Docker).
 skip_assert_against_bash: true
 setup:
   files:
