@@ -390,6 +390,12 @@ func walkPath(
 	for k, v := range opts.eagerNewerErrors {
 		newerErrors[k] = v
 	}
+	samefileCache := map[string]builtins.FileID{}
+	samefileErrs := map[string]bool{}
+	userCache := map[string]uint32{}
+	userErrors := map[string]bool{}
+	groupCache := map[string]uint32{}
+	groupErrors := map[string]bool{}
 
 	// Stat the starting path.
 	var startInfo iofs.FileInfo
@@ -471,16 +477,23 @@ func walkPath(
 	// Returns (prune, quit).
 	processEntry := func(path string, info iofs.FileInfo, depth int) (bool, bool) {
 		ec := &evalContext{
-			callCtx:     callCtx,
-			ctx:         ctx,
-			now:         now,
-			relPath:     path,
-			info:        info,
-			depth:       depth,
-			printPath:   path,
-			newerCache:  newerCache,
-			newerErrors: newerErrors,
-			followLinks: opts.followLinks,
+			callCtx:       callCtx,
+			ctx:           ctx,
+			now:           now,
+			relPath:       path,
+			info:          info,
+			depth:         depth,
+			printPath:     path,
+			startPath:     startPath,
+			newerCache:    newerCache,
+			newerErrors:   newerErrors,
+			samefileCache: samefileCache,
+			samefileErrs:  samefileErrs,
+			userCache:     userCache,
+			userErrors:    userErrors,
+			groupCache:    groupCache,
+			groupErrors:   groupErrors,
+			followLinks:   opts.followLinks,
 		}
 
 		prune := false

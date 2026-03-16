@@ -610,6 +610,7 @@ func parseSymbolicMode(s string) (uint64, error) {
 		// Parse who: u, g, o, a (default: a)
 		i := 0
 		who := byte(0) // bitmask: 4=u, 2=g, 1=o
+	whoLoop:
 		for i < len(clause) {
 			switch clause[i] {
 			case 'u':
@@ -621,11 +622,10 @@ func parseSymbolicMode(s string) (uint64, error) {
 			case 'a':
 				who |= 7
 			default:
-				goto doneWho
+				break whoLoop
 			}
 			i++
 		}
-	doneWho:
 		if who == 0 {
 			who = 7 // default: a (all)
 		}

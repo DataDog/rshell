@@ -23,17 +23,24 @@ type evalResult struct {
 
 // evalContext holds state needed during expression evaluation.
 type evalContext struct {
-	callCtx     *builtins.CallContext
-	ctx         context.Context
-	now         time.Time
-	relPath     string               // path relative to starting point
-	info        iofs.FileInfo        // file info (lstat or stat depending on -L)
-	depth       int                  // current depth
-	printPath   string               // path to print (includes starting point prefix)
-	newerCache  map[string]time.Time // cached -newer reference file modtimes
-	newerErrors map[string]bool      // tracks which -newer reference files failed to stat
-	followLinks bool                 // true when -L is active
-	failed      bool                 // set by predicates that encounter errors
+	callCtx       *builtins.CallContext
+	ctx           context.Context
+	now           time.Time
+	relPath       string                     // path relative to starting point
+	info          iofs.FileInfo              // file info (lstat or stat depending on -L)
+	depth         int                        // current depth
+	printPath     string                     // path to print (includes starting point prefix)
+	startPath     string                     // starting path for -printf %H
+	newerCache    map[string]time.Time       // cached -newer reference file modtimes
+	newerErrors   map[string]bool            // tracks which -newer reference files failed to stat
+	samefileCache map[string]builtins.FileID // cached -samefile reference file identities
+	samefileErrs  map[string]bool            // tracks which -samefile references failed
+	userCache     map[string]uint32          // cached user name → UID lookups
+	userErrors    map[string]bool            // tracks which user names failed lookup
+	groupCache    map[string]uint32          // cached group name → GID lookups
+	groupErrors   map[string]bool            // tracks which group names failed lookup
+	followLinks   bool                       // true when -L is active
+	failed        bool                       // set by predicates that encounter errors
 }
 
 // evaluate evaluates an expression tree against a file. If e is nil, returns

@@ -94,13 +94,27 @@ func evalUser(ec *evalContext, name string) bool {
 		}
 		return fileUID == uint32(uid)
 	}
+	// Check cached error (only report unknown user once).
+	if ec.userErrors[name] {
+		return false
+	}
+	// Check cached result.
+	if targetUID, ok := ec.userCache[name]; ok {
+		fileUID, ok := fileUid(ec.info)
+		if !ok {
+			return false
+		}
+		return fileUID == targetUID
+	}
 	// Lookup by name.
 	targetUID, ok := lookupUidByName(name)
 	if !ok {
 		ec.callCtx.Errf("find: '%s' is not the name of a known user\n", name)
 		ec.failed = true
+		ec.userErrors[name] = true
 		return false
 	}
+	ec.userCache[name] = targetUID
 	fileUID, ok := fileUid(ec.info)
 	if !ok {
 		return false
@@ -117,13 +131,27 @@ func evalGroup(ec *evalContext, name string) bool {
 		}
 		return fileGID == uint32(gid)
 	}
+	// Check cached error (only report unknown group once).
+	if ec.groupErrors[name] {
+		return false
+	}
+	// Check cached result.
+	if targetGID, ok := ec.groupCache[name]; ok {
+		fileGID, ok := fileGid(ec.info)
+		if !ok {
+			return false
+		}
+		return fileGID == targetGID
+	}
 	// Lookup by name.
 	targetGID, ok := lookupGidByName(name)
 	if !ok {
 		ec.callCtx.Errf("find: '%s' is not the name of a known group\n", name)
 		ec.failed = true
+		ec.groupErrors[name] = true
 		return false
 	}
+	ec.groupCache[name] = targetGID
 	fileGID, ok := fileGid(ec.info)
 	if !ok {
 		return false
@@ -190,23 +218,35 @@ func evalSamefile(ec *evalContext, refPath string) bool {
 	if !ok {
 		return false
 	}
-	// Stat the reference file.
-	statRef := ec.callCtx.LstatFile
-	if ec.followLinks {
-		statRef = ec.callCtx.StatFile
+	// Check if this reference path previously failed.
+	if ec.samefileErrs[refPath] {
+		return false
 	}
-	refInfo, err := statRef(ec.ctx, refPath)
-	if err != nil {
-		if ec.followLinks && isNotExist(err) {
-			refInfo, err = ec.callCtx.LstatFile(ec.ctx, refPath)
+	// Check cache for reference file identity.
+	refID, ok := ec.samefileCache[refPath]
+	if !ok {
+		// Stat the reference file and cache the result.
+		statRef := ec.callCtx.LstatFile
+		if ec.followLinks {
+			statRef = ec.callCtx.StatFile
 		}
+		refInfo, err := statRef(ec.ctx, refPath)
 		if err != nil {
+			if ec.followLinks && isNotExist(err) {
+				refInfo, err = ec.callCtx.LstatFile(ec.ctx, refPath)
+			}
+			if err != nil {
+				ec.samefileErrs[refPath] = true
+				return false
+			}
+		}
+		var idOK bool
+		refID, idOK = ec.callCtx.FileIdentity(refPath, refInfo)
+		if !idOK {
+			ec.samefileErrs[refPath] = true
 			return false
 		}
-	}
-	refID, ok := ec.callCtx.FileIdentity(refPath, refInfo)
-	if !ok {
-		return false
+		ec.samefileCache[refPath] = refID
 	}
 	return curID == refID
 }
@@ -224,9 +264,9 @@ func evalLs(ec *evalContext) {
 		nlink = 1
 	}
 
-	// Size in 1K blocks (ceiling).
+	// Size in 512-byte blocks (ceiling), matching GNU find -ls.
 	size := info.Size()
-	blocks := (size + 1023) / 1024
+	blocks := (size + 511) / 512
 	if size == 0 {
 		blocks = 0
 	}
@@ -318,6 +358,20 @@ func evalPrintf(ec *evalContext, format string) {
 			switch format[i] {
 			case 'p': // path
 				out = append(out, ec.printPath...)
+			case 'P': // path with starting-point prefix removed
+				rel := ec.printPath
+				if len(ec.startPath) > 0 && len(rel) > len(ec.startPath) {
+					trimmed := rel[len(ec.startPath):]
+					if len(trimmed) > 0 && trimmed[0] == '/' {
+						trimmed = trimmed[1:]
+					}
+					rel = trimmed
+				} else if rel == ec.startPath {
+					rel = ""
+				}
+				out = append(out, rel...)
+			case 'H': // starting-point under which file was found
+				out = append(out, ec.startPath...)
 			case 'f': // filename (basename)
 				out = append(out, baseName(ec.printPath)...)
 			case 'h': // dirname
@@ -325,6 +379,12 @@ func evalPrintf(ec *evalContext, format string) {
 				out = append(out, dir...)
 			case 's': // size in bytes
 				out = append(out, strconv.FormatInt(ec.info.Size(), 10)...)
+			case 'k': // size in 1K blocks
+				kblocks := (ec.info.Size() + 1023) / 1024
+				if ec.info.Size() == 0 {
+					kblocks = 0
+				}
+				out = append(out, strconv.FormatInt(kblocks, 10)...)
 			case 'd': // depth
 				out = append(out, strconv.Itoa(ec.depth)...)
 			case 'm': // octal permissions
