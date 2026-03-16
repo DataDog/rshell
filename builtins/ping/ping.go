@@ -129,7 +129,7 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 
 		params := traceroute.TracerouteParams{
 			Hostname:          host,
-			Protocol:          "ICMP",
+			Protocol:          "icmp",
 			MaxTTL:            64,
 			Timeout:           time.Duration(*timeout) * time.Second,
 			Delay:             int(*interval * 1000), // milliseconds
