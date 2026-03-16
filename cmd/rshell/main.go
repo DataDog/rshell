@@ -26,7 +26,7 @@ func main() {
 
 func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	var (
-		script          string
+		command         string
 		allowedPaths    string
 		allowedCommands string
 		allowAllCmds    bool
@@ -38,13 +38,14 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		Args:          cobra.ArbitraryArgs,
+		// Reject the hidden --command long form: -c is short-only (bash convention).
+		PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
+			return rejectLongCommand(args)
+		},
 		RunE: func(cmd *cobra.Command, args []string) error {
-			scriptSet := cmd.Flags().Changed("script")
-			if scriptSet && len(args) > 0 {
-				return fmt.Errorf("cannot use --script with file arguments")
-			}
-			if !scriptSet && len(args) == 0 {
-				return fmt.Errorf("requires either --script or file arguments (use \"-\" for stdin)")
+			commandSet := cmd.Flags().Changed("command")
+			if commandSet && len(args) > 0 {
+				return fmt.Errorf("cannot use -c with file arguments")
 			}
 
 			var paths []string
@@ -63,36 +64,36 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 				allowAllCommands: allowAllCmds,
 			}
 
-			if scriptSet {
-				return execute(cmd.Context(), script, "", execOpts, stdin, stdout, stderr)
+			if commandSet {
+				return execute(cmd.Context(), command, "", execOpts, stdin, stdout, stderr)
 			}
 
-			// Read stdin once so each execute() call gets its own
-			// reader, avoiding a data race on the shared io.Reader.
-			stdinData, err := io.ReadAll(stdin)
-			if err != nil {
-				return fmt.Errorf("reading stdin: %w", err)
-			}
+			if len(args) > 0 {
+				// Read stdin once so each execute() call gets its own
+				// reader, avoiding a data race on the shared io.Reader.
+				stdinData, err := io.ReadAll(stdin)
+				if err != nil {
+					return fmt.Errorf("reading stdin: %w", err)
+				}
 
-			for _, file := range args {
-				var src string
-				var name string
-				if file == "-" {
-					src = string(stdinData)
-					name = ""
-				} else {
+				for _, file := range args {
 					data, err := os.ReadFile(file)
 					if err != nil {
 						return fmt.Errorf("reading %s: %w", file, err)
 					}
-					src = string(data)
-					name = file
+					if err := execute(cmd.Context(), string(data), file, execOpts, bytes.NewReader(stdinData), stdout, stderr); err != nil {
+						return err
+					}
 				}
-				if err := execute(cmd.Context(), src, name, execOpts, bytes.NewReader(stdinData), stdout, stderr); err != nil {
-					return err
-				}
+				return nil
 			}
-			return nil
+
+			// No -c and no file args: read from stdin.
+			stdinData, err := io.ReadAll(stdin)
+			if err != nil {
+				return fmt.Errorf("reading stdin: %w", err)
+			}
+			return execute(cmd.Context(), string(stdinData), "", execOpts, strings.NewReader(""), stdout, stderr)
 		},
 	}
 
@@ -101,8 +102,9 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	cmd.SetOut(stdout)
 	cmd.SetErr(stderr)
 
-	cmd.Flags().StringVarP(&script, "script", "s", "", "shell script to execute")
-	cmd.Flags().StringVarP(&allowedPaths, "allowed-path", "a", "", "comma-separated list of directories the shell is allowed to access")
+	cmd.Flags().StringVarP(&command, "command", "c", "", "shell command string to execute")
+	cmd.Flags().MarkHidden("command") //nolint:errcheck // flag is guaranteed to exist
+	cmd.Flags().StringVarP(&allowedPaths, "allowed-path", "p", "", "comma-separated list of directories the shell is allowed to access")
 	cmd.Flags().StringVar(&allowedCommands, "allowed-commands", "", "comma-separated list of namespaced commands (e.g. rshell:cat,rshell:find)")
 	cmd.Flags().BoolVar(&allowAllCmds, "allow-all-commands", false, "allow execution of all commands (builtins and external)")
 
@@ -115,6 +117,22 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return 1
 	}
 	return 0
+}
+
+// rejectLongCommand scans raw CLI args for "--command" or "--command=..." and
+// returns an error if found. The flag is registered with a long name so that
+// cobra/pflag help formatting works correctly, but only the -c shorthand is
+// intended to be user-facing.
+func rejectLongCommand(rawArgs []string) error {
+	for _, a := range rawArgs {
+		if a == "--" {
+			break // everything after "--" is a positional arg
+		}
+		if a == "--command" || strings.HasPrefix(a, "--command=") {
+			return fmt.Errorf("unknown flag: --command")
+		}
+	}
+	return nil
 }
 
 // executeOpts holds options for the execute function.
