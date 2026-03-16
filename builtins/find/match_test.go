@@ -6,6 +6,7 @@
 package find
 
 import (
+	iofs "io/fs"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -153,6 +154,66 @@ func TestMatchClassEdgeCases(t *testing.T) {
 
 	matched, _ = matchClass(`[\é-\ü]`, 'a')
 	assert.False(t, matched)
+}
+
+// TestFileTypeChar verifies fileTypeChar returns the correct character for each file mode.
+func TestFileTypeChar(t *testing.T) {
+	tests := []struct {
+		name string
+		mode iofs.FileMode
+		want byte
+	}{
+		{"regular file", 0o644, 'f'},
+		{"directory", iofs.ModeDir, 'd'},
+		{"symlink", iofs.ModeSymlink, 'l'},
+		{"named pipe", iofs.ModeNamedPipe, 'p'},
+		{"socket", iofs.ModeSocket, 's'},
+		{"char device", iofs.ModeCharDevice, 'c'},
+		{"block device", iofs.ModeDevice, 'b'},
+		{"both device bits set", iofs.ModeDevice | iofs.ModeCharDevice, 'c'},
+		{"irregular", iofs.ModeIrregular, '?'},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			info := &fakeFileInfo{mode: tt.mode}
+			got := fileTypeChar(info)
+			assert.Equal(t, tt.want, got, "fileTypeChar(mode=%v)", tt.mode)
+		})
+	}
+}
+
+// TestMatchType verifies matchType with block and char device types.
+func TestMatchType(t *testing.T) {
+	blockDev := &fakeFileInfo{mode: iofs.ModeDevice}
+	charDev := &fakeFileInfo{mode: iofs.ModeCharDevice}
+	regular := &fakeFileInfo{mode: 0o644}
+
+	tests := []struct {
+		name    string
+		info    iofs.FileInfo
+		typeArg string
+		want    bool
+	}{
+		{"block matches -type b", blockDev, "b", true},
+		{"block no match -type c", blockDev, "c", false},
+		{"char matches -type c", charDev, "c", true},
+		{"char no match -type b", charDev, "b", false},
+		{"block matches -type b,c", blockDev, "b,c", true},
+		{"char matches -type b,c", charDev, "b,c", true},
+		{"regular no match -type b", regular, "b", false},
+		{"regular no match -type c", regular, "c", false},
+		{"regular no match -type b,c", regular, "b,c", false},
+		{"regular matches -type f", regular, "f", true},
+		{"block no match -type f", blockDev, "f", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := matchType(tt.info, tt.typeArg)
+			assert.Equal(t, tt.want, got)
+		})
+	}
 }
 
 func TestCompareNumeric(t *testing.T) {

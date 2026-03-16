@@ -178,6 +178,36 @@ func TestParsePathPredicateUsesParsePathPredicate(t *testing.T) {
 	}
 }
 
+// TestParseTypePredicate validates the parser accepts b and c type characters.
+func TestParseTypePredicate(t *testing.T) {
+	tests := []struct {
+		name    string
+		arg     string
+		wantErr bool
+	}{
+		{"b valid", "b", false},
+		{"c valid", "c", false},
+		{"b,c valid", "b,c", false},
+		{"f,b,c valid", "f,b,c", false},
+		{"all types", "b,c,f,d,l,p,s", false},
+		{"x invalid", "x", true},
+		{"trailing comma", "b,", true},
+		{"leading comma", ",c", true},
+		{"no comma separator", "bc", true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := parseExpression([]string{"-type", tt.arg})
+			if tt.wantErr {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
+}
+
 // TestParseBlockedPredicates verifies all dangerous predicates are blocked.
 func TestParseBlockedPredicates(t *testing.T) {
 	blocked := []string{
