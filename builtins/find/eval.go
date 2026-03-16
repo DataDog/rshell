@@ -18,6 +18,7 @@ import (
 type evalResult struct {
 	matched bool
 	prune   bool // skip descending into this directory
+	quit    bool // stop all iteration immediately (-quit)
 }
 
 // evalContext holds state needed during expression evaluation.
@@ -44,23 +45,29 @@ func evaluate(ec *evalContext, e *expr) evalResult {
 	switch e.kind {
 	case exprAnd:
 		left := evaluate(ec, e.left)
+		if left.quit {
+			return left
+		}
 		if !left.matched {
 			return evalResult{prune: left.prune}
 		}
 		right := evaluate(ec, e.right)
-		return evalResult{matched: right.matched, prune: left.prune || right.prune}
+		return evalResult{matched: right.matched, prune: left.prune || right.prune, quit: right.quit}
 
 	case exprOr:
 		left := evaluate(ec, e.left)
+		if left.quit {
+			return left
+		}
 		if left.matched {
 			return evalResult{matched: true, prune: left.prune}
 		}
 		right := evaluate(ec, e.right)
-		return evalResult{matched: right.matched, prune: left.prune || right.prune}
+		return evalResult{matched: right.matched, prune: left.prune || right.prune, quit: right.quit}
 
 	case exprNot:
 		r := evaluate(ec, e.operand)
-		return evalResult{matched: !r.matched, prune: r.prune}
+		return evalResult{matched: !r.matched, prune: r.prune, quit: r.quit}
 
 	case exprName:
 		name := baseName(ec.relPath)
@@ -93,6 +100,68 @@ func evaluate(ec *evalContext, e *expr) evalResult {
 
 	case exprMmin:
 		return evalResult{matched: evalMmin(ec, e.numVal, e.numCmp)}
+
+	case exprAtime:
+		return evalResult{matched: evalAtime(ec, e.numVal, e.numCmp)}
+
+	case exprAmin:
+		return evalResult{matched: evalAmin(ec, e.numVal, e.numCmp)}
+
+	case exprCtime:
+		return evalResult{matched: evalCtime(ec, e.numVal, e.numCmp)}
+
+	case exprCmin:
+		return evalResult{matched: evalCmin(ec, e.numVal, e.numCmp)}
+
+	case exprReadable:
+		return evalResult{matched: ec.callCtx.AccessFile(ec.ctx, ec.printPath, 0x04) == nil}
+
+	case exprWritable:
+		return evalResult{matched: ec.callCtx.AccessFile(ec.ctx, ec.printPath, 0x02) == nil}
+
+	case exprExecutable:
+		return evalResult{matched: ec.callCtx.AccessFile(ec.ctx, ec.printPath, 0x01) == nil}
+
+	case exprPerm:
+		return evalResult{matched: matchPerm(ec.info.Mode().Perm(), e.permVal, e.permCmp)}
+
+	case exprUser:
+		return evalResult{matched: evalUser(ec, e.strVal)}
+
+	case exprGroup:
+		return evalResult{matched: evalGroup(ec, e.strVal)}
+
+	case exprUid:
+		return evalResult{matched: evalUid(ec, e.numVal, e.numCmp)}
+
+	case exprGid:
+		return evalResult{matched: evalGid(ec, e.numVal, e.numCmp)}
+
+	case exprNouser:
+		return evalResult{matched: evalNouser(ec)}
+
+	case exprNogroup:
+		return evalResult{matched: evalNogroup(ec)}
+
+	case exprLinks:
+		return evalResult{matched: evalLinks(ec, e.numVal, e.numCmp)}
+
+	case exprInum:
+		return evalResult{matched: evalInum(ec, e.numVal, e.numCmp)}
+
+	case exprSamefile:
+		return evalResult{matched: evalSamefile(ec, e.strVal)}
+
+	case exprQuit:
+		return evalResult{matched: true, quit: true}
+
+	case exprLs:
+		evalLs(ec)
+		return evalResult{matched: true}
+
+	case exprPrintf:
+		evalPrintf(ec, e.strVal)
+		return evalResult{matched: true}
 
 	case exprPrint:
 		ec.callCtx.Outf("%s\n", ec.printPath)

@@ -12,6 +12,27 @@ import (
 	"unicode/utf8"
 )
 
+// matchPerm checks whether filePerm matches the target permission bits
+// according to the comparison mode:
+//
+//	'=' exact: filePerm == target
+//	'-' all bits: filePerm & target == target
+//	'/' any bit: filePerm & target != 0 (special: if target==0, always true)
+func matchPerm(filePerm iofs.FileMode, target uint32, cmpMode byte) bool {
+	fp := uint32(filePerm & 0o7777)
+	switch cmpMode {
+	case '-':
+		return fp&target == target
+	case '/':
+		if target == 0 {
+			return true // GNU find: -perm /0 matches everything
+		}
+		return fp&target != 0
+	default: // '='
+		return fp == target
+	}
+}
+
 // matchGlob matches a name against a glob pattern.
 // Uses pathGlobMatch which correctly handles [!...] negated character classes
 // and treats malformed brackets (e.g. unclosed '[') as literal characters (or non-matching for incomplete ranges),

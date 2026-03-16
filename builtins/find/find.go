@@ -24,19 +24,40 @@
 //	-iname PATTERN   — like -name but case-insensitive
 //	-path PATTERN    — full path matches shell glob PATTERN
 //	-ipath PATTERN   — like -path but case-insensitive
-//	-type TYPE       — file type: b (block device), c (char device),
-//	                   d (directory), f (regular), l (symlink),
-//	                   p (named pipe), s (socket). Comma-separated for OR.
+//	-type TYPE       — file type: b,c,d,f,l,p,s. Comma-separated for OR.
 //	-size N[cwbkMG]  — file size. +N = greater, -N = less, N = exact.
 //	-empty           — empty regular file or directory
 //	-newer FILE      — modified more recently than FILE
 //	-mtime N         — modified N days ago (+N = more, -N = less)
 //	-mmin N          — modified N minutes ago (+N = more, -N = less)
+//	-atime N         — accessed N days ago (+N = more, -N = less)
+//	-amin N          — accessed N minutes ago (+N = more, -N = less)
+//	-ctime N         — status changed N days ago (+N = more, -N = less)
+//	-cmin N          — status changed N minutes ago (+N = more, -N = less)
+//	-readable        — file is readable by the current user
+//	-writable        — file is writable by the current user
+//	-executable      — file is executable by the current user
+//	-perm MODE       — permission bits match MODE (octal or symbolic)
+//	-user NAME       — file owned by user NAME (name or numeric UID)
+//	-group NAME      — file belongs to group NAME (name or numeric GID)
+//	-uid N           — file's numeric user ID matches N
+//	-gid N           — file's numeric group ID matches N
+//	-nouser          — no user corresponds to file's numeric user ID
+//	-nogroup         — no group corresponds to file's numeric group ID
+//	-links N         — file has N hard links
+//	-inum N          — file has inode number N
+//	-samefile FILE   — file refers to the same inode as FILE
 //	-maxdepth N      — descend at most N levels
 //	-mindepth N      — apply tests only at depth >= N
+//	-daystart        — measure times from start of today
+//	-depth           — process directory contents before directory itself
+//	-mount / -xdev   — don't descend into other filesystems
 //	-print           — print path followed by newline
 //	-print0          — print path followed by NUL
+//	-ls              — print file details in ls -dils format
+//	-printf FORMAT   — print formatted output
 //	-prune           — skip directory subtree
+//	-quit            — exit immediately
 //	-true            — always true
 //	-false           — always false
 //
@@ -126,14 +147,37 @@ optLoop:
 			callCtx.Out("  -newer FILE                Modified more recently than FILE.\n")
 			callCtx.Out("  -mtime N                   Modified N days ago (+N=more, -N=less).\n")
 			callCtx.Out("  -mmin N                    Modified N minutes ago (+N=more, -N=less).\n")
+			callCtx.Out("  -atime N                   Accessed N days ago (+N=more, -N=less).\n")
+			callCtx.Out("  -amin N                    Accessed N minutes ago (+N=more, -N=less).\n")
+			callCtx.Out("  -ctime N                   Status changed N days ago (+N=more, -N=less).\n")
+			callCtx.Out("  -cmin N                    Status changed N minutes ago (+N=more, -N=less).\n")
+			callCtx.Out("  -readable                  File is readable by the current user.\n")
+			callCtx.Out("  -writable                  File is writable by the current user.\n")
+			callCtx.Out("  -executable                File is executable by the current user.\n")
+			callCtx.Out("  -perm MODE                 Permission bits match MODE (octal or symbolic).\n")
+			callCtx.Out("  -user NAME                 File is owned by user NAME (name or numeric UID).\n")
+			callCtx.Out("  -group NAME                File belongs to group NAME (name or numeric GID).\n")
+			callCtx.Out("  -uid N                     File's numeric user ID is N.\n")
+			callCtx.Out("  -gid N                     File's numeric group ID is N.\n")
+			callCtx.Out("  -nouser                    No user corresponds to file's numeric user ID.\n")
+			callCtx.Out("  -nogroup                   No group corresponds to file's numeric group ID.\n")
+			callCtx.Out("  -links N                   File has N hard links.\n")
+			callCtx.Out("  -inum N                    File has inode number N.\n")
+			callCtx.Out("  -samefile FILE             File refers to the same inode as FILE.\n")
 			callCtx.Out("  -maxdepth N                Descend at most N levels.\n")
 			callCtx.Out("  -mindepth N                Apply tests only at depth >= N.\n")
+			callCtx.Out("  -daystart                  Measure times from start of today.\n")
+			callCtx.Out("  -depth                     Process directory contents before directory itself.\n")
+			callCtx.Out("  -mount / -xdev             Don't descend into other filesystems.\n")
 			callCtx.Out("  -true                      Always true.\n")
 			callCtx.Out("  -false                     Always false.\n\n")
 			callCtx.Out("Actions:\n")
 			callCtx.Out("  -print                     Print path followed by newline.\n")
 			callCtx.Out("  -print0                    Print path followed by NUL.\n")
-			callCtx.Out("  -prune                     Skip directory subtree.\n\n")
+			callCtx.Out("  -ls                        Print file details in ls -dils format.\n")
+			callCtx.Out("  -printf FORMAT             Print formatted output.\n")
+			callCtx.Out("  -prune                     Skip directory subtree.\n")
+			callCtx.Out("  -quit                      Exit immediately.\n\n")
 			callCtx.Out("Operators:\n")
 			callCtx.Out("  ( EXPR )                   Grouping.\n")
 			callCtx.Out("  ! EXPR / -not EXPR         Negation.\n")
@@ -203,6 +247,11 @@ optLoop:
 		minDepth = 0
 	}
 
+	// -depth + -prune: warn like GNU find.
+	if pr.depthFirst && expression != nil && hasPrune(expression) {
+		callCtx.Errf("find: warning: -prune is ignored when -depth is given\n")
+	}
+
 	// If no explicit action, add implicit -print.
 	implicitPrint := expression == nil || !hasAction(expression)
 
@@ -249,6 +298,12 @@ optLoop:
 	// consistent reference across all root paths (matches GNU find).
 	now := callCtx.Now()
 
+	// -daystart: shift time reference to start of today (midnight local).
+	if pr.daystart {
+		y, m, d := now.Date()
+		now = time.Date(y, m, d, 0, 0, 0, 0, now.Location())
+	}
+
 	// GNU find treats a missing -newer reference as a fatal argument error
 	// and produces no result set, so skip the walk entirely.
 	if !failed {
@@ -264,7 +319,7 @@ optLoop:
 				failed = true
 				continue
 			}
-			if walkPath(ctx, callCtx, startPath, walkOptions{
+			wr := walkPath(ctx, callCtx, startPath, walkOptions{
 				expression:       expression,
 				implicitPrint:    implicitPrint,
 				followLinks:      followLinks,
@@ -272,8 +327,14 @@ optLoop:
 				minDepth:         minDepth,
 				now:              now,
 				eagerNewerErrors: eagerNewerErrors,
-			}) {
+				depthFirst:       pr.depthFirst,
+				mount:            pr.mount,
+			})
+			if wr.failed {
 				failed = true
+			}
+			if wr.quit {
+				break
 			}
 		}
 	}
@@ -303,18 +364,27 @@ type walkOptions struct {
 	minDepth         int
 	now              time.Time
 	eagerNewerErrors map[string]bool
+	depthFirst       bool // -depth: post-order traversal
+	mount            bool // -mount/-xdev: don't cross filesystems
+}
+
+// walkResult holds the outcome of a walk operation.
+type walkResult struct {
+	failed bool // at least one error occurred
+	quit   bool // -quit was triggered
 }
 
 // walkPath walks the directory tree rooted at startPath, evaluating the
-// expression for each entry. Returns true if any error occurred.
+// expression for each entry.
 func walkPath(
 	ctx context.Context,
 	callCtx *builtins.CallContext,
 	startPath string,
 	opts walkOptions,
-) bool {
+) walkResult {
 	now := opts.now
 	failed := false
+	quit := false
 	newerCache := map[string]time.Time{}
 	newerErrors := map[string]bool{}
 	for k, v := range opts.eagerNewerErrors {
@@ -327,8 +397,6 @@ func walkPath(
 	if opts.followLinks {
 		startInfo, err = callCtx.StatFile(ctx, startPath)
 		if err != nil && isNotExist(err) {
-			// Dangling symlink root: fall back to lstat like child entries.
-			// Only for "not found" — permission/sandbox errors are real.
 			startInfo, err = callCtx.LstatFile(ctx, startPath)
 		}
 	} else {
@@ -336,33 +404,33 @@ func walkPath(
 	}
 	if err != nil {
 		callCtx.Errf("find: '%s': %s\n", startPath, callCtx.PortableErr(err))
-		return true
+		return walkResult{failed: true}
 	}
 
-	// Cycle detection for -L mode: track ancestor directory identities
-	// (dev+inode on Unix, volume serial+file index on Windows) along the
-	// path from root to the current node. This correctly allows multiple
-	// symlinks to the same target (no ancestor cycle) while detecting
-	// actual loops. File identity is attempted per-entry; if it fails for
-	// a specific directory, we fall back to path-based ancestor tracking
-	// for that subtree. The maxTraversalDepth=256 cap remains as an
-	// ultimate safety bound.
+	// -mount/-xdev: record device ID of starting path.
+	var startDevID uint64
+	if opts.mount && callCtx.FileIdentity != nil {
+		if id, ok := callCtx.FileIdentity(startPath, startInfo); ok {
+			startDevID = id.Dev
+		}
+	}
 
-	// dirIterator streams directory entries one at a time via ReadDir(1),
-	// keeping memory usage proportional to tree depth, not directory width.
+	// Cycle detection for -L mode: track ancestor directory identities.
+
+	// dirIterator streams directory entries one at a time via ReadDir(1).
 	type dirIterator struct {
 		dir           iofs.ReadDirFile
 		parentPath    string
+		parentInfo    iofs.FileInfo // for -depth deferred eval
 		depth         int
 		ancestorIDs   map[builtins.FileID]string
 		ancestorPaths map[string]bool
 		done          bool
+		isStartDir    bool // true for the starting path's iterator (handled separately in -depth)
 	}
 
-	// processEntry evaluates the expression for a single file entry.
-	// Returns (prune, isLoop).
-	processEntry := func(path string, info iofs.FileInfo, depth int, ancestorIDs map[builtins.FileID]string, ancestorPaths map[string]bool) (bool, bool, map[builtins.FileID]string, map[string]bool) {
-		// With -L, detect symlink loops BEFORE evaluating predicates.
+	// checkLoop detects symlink loops for -L mode.
+	checkLoop := func(path string, info iofs.FileInfo, ancestorIDs map[builtins.FileID]string, ancestorPaths map[string]bool) (bool, map[builtins.FileID]string, map[string]bool) {
 		var childAncestorIDs map[builtins.FileID]string
 		var childAncestorPaths map[string]bool
 		if info.IsDir() && opts.followLinks {
@@ -374,7 +442,7 @@ func walkPath(
 						callCtx.Errf("find: File system loop detected; '%s' is part of the same file system loop as '%s'.\n",
 							path, firstPath)
 						failed = true
-						return false, true, nil, nil
+						return true, nil, nil
 					}
 					childAncestorIDs = make(map[builtins.FileID]string, len(ancestorIDs)+1)
 					for k, v := range ancestorIDs {
@@ -387,7 +455,7 @@ func walkPath(
 				if ancestorPaths[path] {
 					callCtx.Errf("find: File system loop detected; '%s' has already been visited.\n", path)
 					failed = true
-					return false, true, nil, nil
+					return true, nil, nil
 				}
 				childAncestorPaths = make(map[string]bool, len(ancestorPaths)+1)
 				for k := range ancestorPaths {
@@ -396,7 +464,12 @@ func walkPath(
 				childAncestorPaths[path] = true
 			}
 		}
+		return false, childAncestorIDs, childAncestorPaths
+	}
 
+	// processEntry evaluates the expression for a single file entry.
+	// Returns (prune, quit).
+	processEntry := func(path string, info iofs.FileInfo, depth int) (bool, bool) {
 		ec := &evalContext{
 			callCtx:     callCtx,
 			ctx:         ctx,
@@ -420,47 +493,79 @@ func walkPath(
 			if result.matched && opts.implicitPrint {
 				callCtx.Outf("%s\n", path)
 			}
+			if result.quit {
+				return prune, true
+			}
 		}
 
-		return prune, false, childAncestorIDs, childAncestorPaths
+		return prune, false
 	}
 
-	// Process the starting path.
-	prune, isLoop, childAncIDs, childAncPaths := processEntry(startPath, startInfo, 0, nil, nil)
+	// isCrossDevice checks if a file is on a different filesystem than the start.
+	isCrossDevice := func(path string, info iofs.FileInfo) bool {
+		if !opts.mount || callCtx.FileIdentity == nil {
+			return false
+		}
+		if id, ok := callCtx.FileIdentity(path, info); ok {
+			return id.Dev != startDevID
+		}
+		return false
+	}
 
-	// Set up the iterator stack. Each open directory keeps a file handle
-	// that reads one entry at a time, so memory is O(depth) not O(width).
+	// Process the starting path (pre-order unless -depth).
+	isLoop, childAncIDs, childAncPaths := checkLoop(startPath, startInfo, nil, nil)
+
+	startPrune := false
+	if !opts.depthFirst && !isLoop {
+		var q bool
+		startPrune, q = processEntry(startPath, startInfo, 0)
+		if q {
+			return walkResult{failed: failed, quit: true}
+		}
+	}
+
+	// Set up the iterator stack.
 	var iterStack []*dirIterator
 
-	if !isLoop && !prune && startInfo.IsDir() && 0 < opts.maxDepth {
+	if !isLoop && !startPrune && startInfo.IsDir() && 0 < opts.maxDepth {
 		dir, openErr := callCtx.OpenDir(ctx, startPath)
 		if openErr != nil {
 			callCtx.Errf("find: '%s': %s\n", startPath, callCtx.PortableErr(openErr))
-			return true
+			return walkResult{failed: true}
 		}
 		iterStack = append(iterStack, &dirIterator{
 			dir:           dir,
 			parentPath:    startPath,
+			parentInfo:    startInfo,
 			depth:         1,
 			ancestorIDs:   childAncIDs,
 			ancestorPaths: childAncPaths,
+			isStartDir:    true,
 		})
 	}
 
 	for len(iterStack) > 0 {
-		if ctx.Err() != nil {
-			failed = true
+		if ctx.Err() != nil || quit {
+			failed = failed || ctx.Err() != nil
 			break
 		}
 
 		top := iterStack[len(iterStack)-1]
 		if top.done {
 			top.dir.Close()
+			// -depth: evaluate the parent directory AFTER its children.
+			// Skip the starting dir here; it's handled at the end.
+			if opts.depthFirst && !quit && !top.isStartDir {
+				parentDepth := top.depth - 1
+				_, q := processEntry(top.parentPath, top.parentInfo, parentDepth)
+				if q {
+					quit = true
+				}
+			}
 			iterStack = iterStack[:len(iterStack)-1]
 			continue
 		}
 
-		// Read one entry at a time from the directory.
 		dirEntries, readErr := top.dir.ReadDir(1)
 		if readErr != nil {
 			if readErr != io.EOF {
@@ -482,8 +587,6 @@ func walkPath(
 		if opts.followLinks {
 			childInfo, err = callCtx.StatFile(ctx, childPath)
 			if err != nil && isNotExist(err) {
-				// Dangling symlink: stat fails but lstat succeeds.
-				// Only for "not found" — permission/sandbox errors are real.
 				childInfo, err = callCtx.LstatFile(ctx, childPath)
 			}
 			if err != nil {
@@ -500,9 +603,25 @@ func walkPath(
 			}
 		}
 
-		prune, isLoop, cAncIDs, cAncPaths := processEntry(childPath, childInfo, top.depth, top.ancestorIDs, top.ancestorPaths)
+		// -mount/-xdev: skip entries on different filesystems.
+		if isCrossDevice(childPath, childInfo) {
+			continue
+		}
+
+		isLoop, cAncIDs, cAncPaths := checkLoop(childPath, childInfo, top.ancestorIDs, top.ancestorPaths)
 		if isLoop {
 			continue
+		}
+
+		// Evaluate the entry (pre-order, unless -depth defers directories).
+		prune := false
+		if !opts.depthFirst || !childInfo.IsDir() {
+			var q bool
+			prune, q = processEntry(childPath, childInfo, top.depth)
+			if q {
+				quit = true
+				break
+			}
 		}
 
 		// Descend into child directories unless pruned or beyond maxdepth.
@@ -516,19 +635,35 @@ func walkPath(
 			iterStack = append(iterStack, &dirIterator{
 				dir:           dir,
 				parentPath:    childPath,
+				parentInfo:    childInfo,
 				depth:         top.depth + 1,
 				ancestorIDs:   cAncIDs,
 				ancestorPaths: cAncPaths,
 			})
+		} else if opts.depthFirst && childInfo.IsDir() {
+			// -depth + pruned or maxdepth: still need to evaluate the dir itself.
+			_, q := processEntry(childPath, childInfo, top.depth)
+			if q {
+				quit = true
+				break
+			}
 		}
 	}
 
-	// Close any remaining open directory handles (e.g. on context cancellation).
+	// Close any remaining open directory handles.
 	for _, it := range iterStack {
 		it.dir.Close()
 	}
 
-	return failed
+	// -depth: evaluate the starting path last.
+	if opts.depthFirst && !quit && !isLoop {
+		_, q := processEntry(startPath, startInfo, 0)
+		if q {
+			quit = true
+		}
+	}
+
+	return walkResult{failed: failed, quit: quit}
 }
 
 // collectNewerRefs walks the expression tree and returns all -newer reference paths.

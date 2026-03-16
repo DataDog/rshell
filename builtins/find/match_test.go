@@ -232,6 +232,45 @@ func TestCompareNumeric(t *testing.T) {
 	assert.False(t, compareNumeric(6, 5, cmpLess))
 }
 
+func TestMatchPerm(t *testing.T) {
+	tests := []struct {
+		name     string
+		filePerm iofs.FileMode
+		target   uint32
+		cmpMode  byte
+		want     bool
+	}{
+		// Exact match
+		{"exact 644 match", 0o644, 0o644, '=', true},
+		{"exact 644 no match 755", 0o755, 0o644, '=', false},
+		{"exact 0 match", 0, 0, '=', true},
+		{"exact 777 match", 0o777, 0o777, '=', true},
+
+		// All bits set (-)
+		{"all bits 0111 on 755", 0o755, 0o111, '-', true},
+		{"all bits 0111 on 644", 0o644, 0o111, '-', false},
+		{"all bits 0444 on 644", 0o644, 0o444, '-', true},
+		{"all bits 0 always true", 0o644, 0, '-', true},
+		{"all bits 0777 on 755", 0o755, 0o777, '-', false},
+		{"all bits 0777 on 777", 0o777, 0o777, '-', true},
+
+		// Any bit set (/)
+		{"any bit 0111 on 755", 0o755, 0o111, '/', true},
+		{"any bit 0111 on 644", 0o644, 0o111, '/', false},
+		{"any bit 0222 on 644", 0o644, 0o222, '/', true},
+		{"any bit 0 always true", 0o644, 0, '/', true},
+		{"any bit 0001 on 644", 0o644, 0o001, '/', false},
+		{"any bit 0100 on 755", 0o755, 0o100, '/', true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := matchPerm(tt.filePerm, tt.target, tt.cmpMode)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
 func TestPathGlobMatchMalformedBracket(t *testing.T) {
 	// Unclosed bracket patterns fall back to literal comparison.
 	assert.True(t, pathGlobMatch("[", "["))

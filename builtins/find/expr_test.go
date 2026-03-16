@@ -229,6 +229,150 @@ func TestParseBlockedPredicates(t *testing.T) {
 	}
 }
 
+// TestParsePermPredicate verifies -perm parsing for octal and symbolic modes.
+func TestParsePermPredicate(t *testing.T) {
+	tests := []struct {
+		name    string
+		args    []string
+		wantErr bool
+		permVal uint32
+		permCmp byte
+	}{
+		{"exact octal 644", []string{"-perm", "644"}, false, 0o644, '='},
+		{"exact octal 0755", []string{"-perm", "0755"}, false, 0o755, '='},
+		{"all bits 0111", []string{"-perm", "-0111"}, false, 0o111, '-'},
+		{"any bit 0222", []string{"-perm", "/0222"}, false, 0o222, '/'},
+		{"exact 0", []string{"-perm", "0"}, false, 0, '='},
+		{"symbolic u=rwx", []string{"-perm", "u=rwx"}, false, 0o700, '='},
+		{"symbolic a=r", []string{"-perm", "a=r"}, false, 0o444, '='},
+		{"symbolic u=rw,g=r,o=r", []string{"-perm", "u=rw,g=r,o=r"}, false, 0o644, '='},
+		{"all bits symbolic", []string{"-perm", "-u=x"}, false, 0o100, '-'},
+		{"missing arg", []string{"-perm"}, true, 0, 0},
+		{"invalid octal", []string{"-perm", "xyz"}, true, 0, 0},
+		{"invalid mode 99999", []string{"-perm", "99999"}, true, 0, 0},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			pr, err := parseExpression(tt.args)
+			if tt.wantErr {
+				assert.Error(t, err)
+			} else {
+				require.NoError(t, err)
+				require.NotNil(t, pr.expr)
+				assert.Equal(t, exprPerm, pr.expr.kind)
+				assert.Equal(t, tt.permVal, pr.expr.permVal)
+				assert.Equal(t, tt.permCmp, pr.expr.permCmp)
+			}
+		})
+	}
+}
+
+// TestParseNewPredicates verifies all new predicates parse correctly.
+func TestParseNewPredicates(t *testing.T) {
+	// No-arg predicates.
+	noArgTests := []struct {
+		arg  string
+		kind exprKind
+	}{
+		{"-readable", exprReadable},
+		{"-writable", exprWritable},
+		{"-executable", exprExecutable},
+		{"-nouser", exprNouser},
+		{"-nogroup", exprNogroup},
+		{"-quit", exprQuit},
+		{"-ls", exprLs},
+	}
+	for _, tt := range noArgTests {
+		t.Run(tt.arg, func(t *testing.T) {
+			pr, err := parseExpression([]string{tt.arg})
+			require.NoError(t, err)
+			require.NotNil(t, pr.expr)
+			assert.Equal(t, tt.kind, pr.expr.kind)
+		})
+	}
+
+	// Numeric predicates.
+	numTests := []struct {
+		arg  string
+		kind exprKind
+	}{
+		{"-atime", exprAtime},
+		{"-amin", exprAmin},
+		{"-ctime", exprCtime},
+		{"-cmin", exprCmin},
+		{"-uid", exprUid},
+		{"-gid", exprGid},
+		{"-links", exprLinks},
+		{"-inum", exprInum},
+	}
+	for _, tt := range numTests {
+		t.Run(tt.arg, func(t *testing.T) {
+			pr, err := parseExpression([]string{tt.arg, "+5"})
+			require.NoError(t, err)
+			require.NotNil(t, pr.expr)
+			assert.Equal(t, tt.kind, pr.expr.kind)
+			assert.Equal(t, int64(5), pr.expr.numVal)
+			assert.Equal(t, cmpMore, pr.expr.numCmp)
+		})
+	}
+
+	// String predicates.
+	strTests := []struct {
+		arg  string
+		kind exprKind
+	}{
+		{"-user", exprUser},
+		{"-group", exprGroup},
+		{"-printf", exprPrintf},
+	}
+	for _, tt := range strTests {
+		t.Run(tt.arg, func(t *testing.T) {
+			pr, err := parseExpression([]string{tt.arg, "test"})
+			require.NoError(t, err)
+			require.NotNil(t, pr.expr)
+			assert.Equal(t, tt.kind, pr.expr.kind)
+			assert.Equal(t, "test", pr.expr.strVal)
+		})
+	}
+
+	// Path predicate: -samefile
+	t.Run("-samefile", func(t *testing.T) {
+		pr, err := parseExpression([]string{"-samefile", "ref.txt"})
+		require.NoError(t, err)
+		require.NotNil(t, pr.expr)
+		assert.Equal(t, exprSamefile, pr.expr.kind)
+		assert.Equal(t, "ref.txt", pr.expr.strVal)
+	})
+}
+
+// TestParseGlobalOptions verifies -daystart, -depth, -mount/-xdev parsing.
+func TestParseGlobalOptions(t *testing.T) {
+	t.Run("daystart", func(t *testing.T) {
+		pr, err := parseExpression([]string{"-daystart", "-mtime", "0"})
+		require.NoError(t, err)
+		assert.True(t, pr.daystart)
+	})
+
+	t.Run("depth", func(t *testing.T) {
+		pr, err := parseExpression([]string{"-depth"})
+		require.NoError(t, err)
+		assert.True(t, pr.depthFirst)
+	})
+
+	t.Run("mount", func(t *testing.T) {
+		pr, err := parseExpression([]string{"-mount"})
+		require.NoError(t, err)
+		assert.True(t, pr.mount)
+	})
+
+	t.Run("xdev", func(t *testing.T) {
+		pr, err := parseExpression([]string{"-xdev"})
+		require.NoError(t, err)
+		assert.True(t, pr.mount)
+	})
+}
+
 // TestParseExpressionLimits verifies AST depth and node limits.
 func TestParseExpressionLimits(t *testing.T) {
 	t.Run("depth limit", func(t *testing.T) {

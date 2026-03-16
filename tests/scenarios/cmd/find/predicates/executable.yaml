@@ -1,0 +1,19 @@
+description: find -executable matches only files with execute permission.
+skip_assert_against_bash: true
+setup:
+  files:
+    - path: dir/script.sh
+      content: "#!/bin/sh"
+      chmod: 0755
+    - path: dir/data.txt
+      content: "data"
+      chmod: 0644
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    find dir -type f -executable
+expect:
+  stdout: |+
+    dir/script.sh
+  stderr: ""
+  exit_code: 0

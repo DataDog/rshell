@@ -1,0 +1,16 @@
+description: find -readable matches files readable by the current user.
+skip_assert_against_bash: true
+setup:
+  files:
+    - path: dir/a.txt
+      content: "readable"
+      chmod: 0644
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    find dir -type f -readable
+expect:
+  stdout: |+
+    dir/a.txt
+  stderr: ""
+  exit_code: 0
