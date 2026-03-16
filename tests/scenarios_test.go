@@ -195,9 +195,11 @@ func runScenario(t *testing.T, sc scenario) {
 				resolved = append(resolved, filepath.Join(dir, p))
 			}
 		}
-		if len(resolved) > 0 {
-			opts = append(opts, interp.AllowedPaths(resolved))
-		}
+		// Always apply AllowedPaths when the scenario specifies it, even
+		// if resolved is empty (e.g. all paths are /proc/net on macOS).
+		// An empty list enforces a closed sandbox rather than leaving the
+		// runner unrestricted.
+		opts = append(opts, interp.AllowedPaths(resolved))
 	}
 	if sc.Input.AllowAllCommands != nil && *sc.Input.AllowAllCommands {
 		opts = append(opts, interp.AllowAllCommands())

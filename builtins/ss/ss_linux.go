@@ -369,14 +369,15 @@ func parseProcNetUnix(ctx context.Context, callCtx *builtins.CallContext, path s
 		peerPort := ""
 
 		*out = append(*out, socketEntry{
-			kind:        sockUnix,
-			state:       state,
-			localAddr:   socketPath,
-			localPort:   "",
-			peerAddr:    peerAddr,
-			peerPort:    peerPort,
-			inode:       inode,
-			hasExtended: true,
+			kind:      sockUnix,
+			state:     state,
+			localAddr: socketPath,
+			localPort: "",
+			peerAddr:  peerAddr,
+			peerPort:  peerPort,
+			inode:     inode,
+			// /proc/net/unix has no uid column; hasExtended stays false
+			// to avoid emitting a fabricated uid:0 with -e.
 		})
 	}
 	return sc.Err()
