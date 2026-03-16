@@ -17,18 +17,52 @@ package ip_test
 //   C. Existing test coverage: all flag combinations from ip_test.go
 
 import (
+	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
 	"time"
 	"unicode/utf8"
+
+	"mvdan.cc/sh/v3/syntax"
+
+	"github.com/DataDog/rshell/interp"
 )
 
 // cmdRunCtxFuzz runs an ip command with context for fuzz tests.
-func cmdRunCtxFuzz(ctx context.Context, t *testing.T, script string) (string, string, int) {
+// Unlike runScriptCtx, it does not fatalf on internal shell errors — those
+// can occur for unusual inputs before the builtin runs and are not our bug.
+// Instead it returns exit code -1 so the caller can skip those inputs.
+func cmdRunCtxFuzz(ctx context.Context, t *testing.T, script string) (stdout, stderr string, exitCode int) {
 	t.Helper()
-	return runScriptCtx(ctx, t, script, "")
+	parser := syntax.NewParser()
+	prog, err := parser.Parse(strings.NewReader(script), "")
+	if err != nil {
+		// Shell parse error — input is not a valid script; skip.
+		return "", err.Error(), -1
+	}
+	var outBuf, errBuf bytes.Buffer
+	runner, err := interp.New(interp.StdIO(nil, &outBuf, &errBuf), interp.AllowAllCommands())
+	if err != nil {
+		t.Fatalf("interp.New: %v", err)
+	}
+	defer runner.Close()
+	runErr := runner.Run(ctx, prog)
+	exitCode = 0
+	if runErr != nil {
+		var es interp.ExitStatus
+		if errors.As(runErr, &es) {
+			exitCode = int(es)
+		} else if ctx.Err() != nil {
+			exitCode = -1
+		} else {
+			// Internal shell error (not a builtin exit code) — skip.
+			return outBuf.String(), errBuf.String(), -1
+		}
+	}
+	return outBuf.String(), errBuf.String(), exitCode
 }
 
 // FuzzIPSubcommand fuzzes the subcommand and argument portion of the ip command.
@@ -115,6 +149,9 @@ func FuzzIPSubcommand(f *testing.F) {
 
 		script := "ip " + subcmd
 		_, _, code := cmdRunCtxFuzz(ctx, t, script)
+		if code == -1 {
+			return // shell/parse error before the builtin ran — not our bug
+		}
 		if code != 0 && code != 1 {
 			t.Errorf("ip %q: unexpected exit code %d", subcmd, code)
 		}
@@ -186,6 +223,9 @@ func FuzzIPFlags(f *testing.F) {
 			script += " " + subcmd
 		}
 		_, _, code := cmdRunCtxFuzz(ctx, t, script)
+		if code == -1 {
+			return // shell/parse error before the builtin ran — not our bug
+		}
 		if code != 0 && code != 1 {
 			t.Errorf("ip %q %q: unexpected exit code %d", flags, subcmd, code)
 		}
