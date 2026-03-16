@@ -1,8 +1,8 @@
-description: Help prints usage when arguments are provided.
+description: Help --help prints usage.
 skip_assert_against_bash: true
 input:
   script: |+
-    help foo
+    help --help
 expect:
   stdout_contains: ["Usage: help"]
   stderr: ""
