@@ -1,4 +1,5 @@
 description: uniq --all-repeated= with explicit empty method is rejected.
+# skip: rshell builtin error/output format differs from GNU coreutils
 skip_assert_against_bash: true
 input:
   script: |+

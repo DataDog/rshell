@@ -1,3 +1,4 @@
+# skip: rshell builtin error format differs from GNU coreutils (includes Go "openat" prefix, lowercase)
 skip_assert_against_bash: true
 description: Cat on a nonexistent file prints an error to stderr and exits with code 1.
 input:

@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
 	"time"
 	"unicode/utf8"
@@ -69,6 +70,9 @@ func FuzzCutFields(f *testing.F) {
 	f.Add([]byte("a\tb\nc\td\n"), "1")
 	f.Add([]byte("a\tb\nc\td\n"), "2")
 
+	baseDir := f.TempDir()
+	var counter atomic.Int64
+
 	f.Fuzz(func(t *testing.T, input []byte, fieldSpec string) {
 		if len(input) > 1<<20 {
 			return
@@ -86,12 +90,14 @@ func FuzzCutFields(f *testing.F) {
 			}
 		}
 
-		dir := t.TempDir()
+		dir, cleanup := testutil.FuzzIterDir(t, baseDir, &counter)
+		defer cleanup()
+
 		if err := os.WriteFile(filepath.Join(dir, "input.txt"), input, 0644); err != nil {
 			t.Fatal(err)
 		}
 
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		defer cancel()
 
 		_, _, code := cmdRunCtxFuzz(ctx, t, fmt.Sprintf("cut -f %s input.txt", fieldSpec), dir)
@@ -133,6 +139,9 @@ func FuzzCutBytes(f *testing.F) {
 	// Large position well beyond line
 	f.Add([]byte("abc\n"), "1234567890")
 
+	baseDir := f.TempDir()
+	var counter atomic.Int64
+
 	f.Fuzz(func(t *testing.T, input []byte, byteSpec string) {
 		if len(input) > 1<<20 {
 			return
@@ -149,12 +158,14 @@ func FuzzCutBytes(f *testing.F) {
 			}
 		}
 
-		dir := t.TempDir()
+		dir, cleanup := testutil.FuzzIterDir(t, baseDir, &counter)
+		defer cleanup()
+
 		if err := os.WriteFile(filepath.Join(dir, "input.txt"), input, 0644); err != nil {
 			t.Fatal(err)
 		}
 
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		defer cancel()
 
 		_, _, code := cmdRunCtxFuzz(ctx, t, fmt.Sprintf("cut -b %s input.txt", byteSpec), dir)
@@ -186,6 +197,9 @@ func FuzzCutDelimiter(f *testing.F) {
 	// Space as delimiter
 	f.Add([]byte("a b c\n"), " ", "2")
 
+	baseDir := f.TempDir()
+	var counter atomic.Int64
+
 	f.Fuzz(func(t *testing.T, input []byte, delim string, fieldSpec string) {
 		if len(input) > 1<<20 {
 			return
@@ -210,12 +224,14 @@ func FuzzCutDelimiter(f *testing.F) {
 			}
 		}
 
-		dir := t.TempDir()
+		dir, cleanup := testutil.FuzzIterDir(t, baseDir, &counter)
+		defer cleanup()
+
 		if err := os.WriteFile(filepath.Join(dir, "input.txt"), input, 0644); err != nil {
 			t.Fatal(err)
 		}
 
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		defer cancel()
 
 		script := fmt.Sprintf("cut -d '%s' -f %s input.txt", delim, fieldSpec)
@@ -248,6 +264,9 @@ func FuzzCutComplement(f *testing.F) {
 	// Lines at 1 MiB cap
 	f.Add(append(bytes.Repeat([]byte("a"), 1<<20-1), '\n'), "1")
 
+	baseDir := f.TempDir()
+	var counter atomic.Int64
+
 	f.Fuzz(func(t *testing.T, input []byte, byteSpec string) {
 		if len(input) > 1<<20 {
 			return
@@ -264,12 +283,14 @@ func FuzzCutComplement(f *testing.F) {
 			}
 		}
 
-		dir := t.TempDir()
+		dir, cleanup := testutil.FuzzIterDir(t, baseDir, &counter)
+		defer cleanup()
+
 		if err := os.WriteFile(filepath.Join(dir, "input.txt"), input, 0644); err != nil {
 			t.Fatal(err)
 		}
 
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		defer cancel()
 
 		_, _, code := cmdRunCtxFuzz(ctx, t, fmt.Sprintf("cut --complement -b %s input.txt", byteSpec), dir)
@@ -295,17 +316,22 @@ func FuzzCutStdin(f *testing.F) {
 	// Lines at 1 MiB
 	f.Add(append(bytes.Repeat([]byte("x"), 1<<20-1), '\n'))
 
+	baseDir := f.TempDir()
+	var counter atomic.Int64
+
 	f.Fuzz(func(t *testing.T, input []byte) {
 		if len(input) > 1<<20 {
 			return
 		}
 
-		dir := t.TempDir()
+		dir, cleanup := testutil.FuzzIterDir(t, baseDir, &counter)
+		defer cleanup()
+
 		if err := os.WriteFile(filepath.Join(dir, "stdin.txt"), input, 0644); err != nil {
 			t.Fatal(err)
 		}
 
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		defer cancel()
 
 		_, _, code := cmdRunCtxFuzz(ctx, t, "cut -f 1 < stdin.txt", dir)

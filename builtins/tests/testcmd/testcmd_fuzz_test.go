@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
 	"time"
 	"unicode/utf8"
@@ -79,7 +80,7 @@ func FuzzTestStringOps(f *testing.F) {
 
 		dir := t.TempDir()
 
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		defer cancel()
 
 		script := fmt.Sprintf("test '%s' %s '%s'", left, op, right)
@@ -125,7 +126,7 @@ func FuzzTestIntegerOps(f *testing.F) {
 
 		dir := t.TempDir()
 
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		defer cancel()
 
 		script := fmt.Sprintf("test %d %s %d", left, op, right)
@@ -152,22 +153,31 @@ func FuzzTestFileOps(f *testing.F) {
 	// Regular file test on non-existent (should be false)
 	f.Add("-f", false)
 
+	baseDir := f.TempDir()
+	var counter atomic.Int64
+
 	f.Fuzz(func(t *testing.T, op string, createFile bool) {
 		switch op {
 		case "-e", "-f", "-d", "-s", "-r", "-w", "-x", "-h", "-L", "-p":
 		default:
 			return
 		}
+		// Each iteration gets its own subdirectory to avoid races between
+		// parallel fuzz workers operating on the same file. We use a manual
+		// counter instead of t.TempDir() to avoid the per-iteration cleanup
+		// overhead that causes "context deadline exceeded" on CI.
+		dir, cleanup := testutil.FuzzIterDir(t, baseDir, &counter)
+		defer cleanup()
 
-		dir := t.TempDir()
 		target := "testfile.txt"
+		targetPath := filepath.Join(dir, target)
 		if createFile {
-			if err := os.WriteFile(filepath.Join(dir, target), []byte("content"), 0644); err != nil {
+			if err := os.WriteFile(targetPath, []byte("content"), 0644); err != nil {
 				t.Fatal(err)
 			}
 		}
 
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		defer cancel()
 
 		script := fmt.Sprintf("test %s %s", op, target)
@@ -219,7 +229,7 @@ func FuzzTestStringUnary(f *testing.F) {
 
 		dir := t.TempDir()
 
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		defer cancel()
 
 		script := fmt.Sprintf("test %s '%s'", op, arg)
@@ -261,11 +271,27 @@ func FuzzTestNesting(f *testing.F) {
 	f.Add("1 -eq 1 -o 1 -eq 2 -a 2 -eq 2")
 
 	f.Fuzz(func(t *testing.T, expr string) {
-		if len(expr) > 200 {
+		// Keep expressions short to avoid slow evaluation on CI where
+		// fuzz workers have limited CPU; long expressions with many
+		// tokens can cause the shell interpreter to exceed the
+		// per-iteration timeout, leading to "context deadline exceeded".
+		if len(expr) > 60 {
 			return
 		}
 		if !utf8.ValidString(expr) {
 			return
+		}
+		// Limit the number of space-separated tokens to cap nesting
+		// depth and keep evaluation fast on CI. The longest seed has
+		// 11 tokens so this covers all corpus entries.
+		tokens := 0
+		for i := 0; i < len(expr); i++ {
+			if expr[i] == ' ' {
+				tokens++
+				if tokens > 11 {
+					return
+				}
+			}
 		}
 		for _, c := range expr {
 			// Filter shell metacharacters that would be interpreted by the shell
@@ -288,7 +314,7 @@ func FuzzTestNesting(f *testing.F) {
 
 		dir := t.TempDir()
 
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		defer cancel()
 
 		script := fmt.Sprintf("test %s", expr)

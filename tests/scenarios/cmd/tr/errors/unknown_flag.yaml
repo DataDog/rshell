@@ -1,5 +1,6 @@
 # Per RULES.md: unknown flags must be rejected
 description: tr with unknown flag exits 1 with error.
+# skip: rshell builtin error/output format differs from GNU coreutils
 skip_assert_against_bash: true
 input:
   script: |+

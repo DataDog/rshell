@@ -1,3 +1,4 @@
+# skip: error message format differs from bash (rshell uses different command-not-found format)
 skip_assert_against_bash: true
 description: Unknown command after valid command still produces error.
 input:

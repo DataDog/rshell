@@ -26,8 +26,10 @@ func main() {
 
 func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	var (
-		command      string
-		allowedPaths string
+		command         string
+		allowedPaths    string
+		allowedCommands string
+		allowAllCmds    bool
 	)
 
 	cmd := &cobra.Command{
@@ -47,8 +49,19 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 				paths = strings.Split(allowedPaths, ",")
 			}
 
+			var cmds []string
+			if allowedCommands != "" {
+				cmds = strings.Split(allowedCommands, ",")
+			}
+
+			execOpts := executeOpts{
+				allowedPaths:     paths,
+				allowedCommands:  cmds,
+				allowAllCommands: allowAllCmds,
+			}
+
 			if commandSet {
-				return execute(cmd.Context(), command, "", paths, stdin, stdout, stderr)
+				return execute(cmd.Context(), command, "", execOpts, stdin, stdout, stderr)
 			}
 
 			if len(args) > 0 {
@@ -64,7 +77,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 					if err != nil {
 						return fmt.Errorf("reading %s: %w", file, err)
 					}
-					if err := execute(cmd.Context(), string(data), file, paths, bytes.NewReader(stdinData), stdout, stderr); err != nil {
+					if err := execute(cmd.Context(), string(data), file, execOpts, bytes.NewReader(stdinData), stdout, stderr); err != nil {
 						return err
 					}
 				}
@@ -76,7 +89,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			if err != nil {
 				return fmt.Errorf("reading stdin: %w", err)
 			}
-			return execute(cmd.Context(), string(stdinData), "", paths, strings.NewReader(""), stdout, stderr)
+			return execute(cmd.Context(), string(stdinData), "", execOpts, strings.NewReader(""), stdout, stderr)
 		},
 	}
 
@@ -88,6 +101,8 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	cmd.Flags().StringVarP(&command, "command", "c", "", "shell command string to execute")
 	cmd.Flags().Lookup("command").Hidden = true // only expose -c short flag
 	cmd.Flags().StringVarP(&allowedPaths, "allowed-path", "p", "", "comma-separated list of directories the shell is allowed to access")
+	cmd.Flags().StringVar(&allowedCommands, "allowed-commands", "", "comma-separated list of commands the shell is allowed to execute")
+	cmd.Flags().BoolVar(&allowAllCmds, "allow-all-commands", false, "allow execution of all commands (builtins and external)")
 
 	if err := cmd.Execute(); err != nil {
 		var status interp.ExitStatus
@@ -100,7 +115,14 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	return 0
 }
 
-func execute(ctx context.Context, script, name string, allowedPaths []string, stdin io.Reader, stdout, stderr io.Writer) error {
+// executeOpts holds options for the execute function.
+type executeOpts struct {
+	allowedPaths     []string
+	allowedCommands  []string
+	allowAllCommands bool
+}
+
+func execute(ctx context.Context, script, name string, opts executeOpts, stdin io.Reader, stdout, stderr io.Writer) error {
 	// Parse.
 	prog, err := syntax.NewParser().Parse(strings.NewReader(script), name)
 	if err != nil {
@@ -110,14 +132,19 @@ func execute(ctx context.Context, script, name string, allowedPaths []string, st
 	}
 
 	// Build runner options.
-	opts := []interp.RunnerOption{
+	runOpts := []interp.RunnerOption{
 		interp.StdIO(stdin, stdout, stderr),
 	}
-	if len(allowedPaths) > 0 {
-		opts = append(opts, interp.AllowedPaths(allowedPaths))
+	if len(opts.allowedPaths) > 0 {
+		runOpts = append(runOpts, interp.AllowedPaths(opts.allowedPaths))
+	}
+	if opts.allowAllCommands {
+		runOpts = append(runOpts, interp.AllowAllCommands())
+	} else if len(opts.allowedCommands) > 0 {
+		runOpts = append(runOpts, interp.AllowedCommands(opts.allowedCommands))
 	}
 
-	runner, err := interp.New(opts...)
+	runner, err := interp.New(runOpts...)
 	if err != nil {
 		return err
 	}

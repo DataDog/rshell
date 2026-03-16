@@ -1,4 +1,5 @@
 description: Echo -e with out-of-range Unicode \UFFFFFFFF silently drops the codepoint (intentional divergence from bash).
+# skip: rshell builtin error/output format differs from GNU coreutils
 skip_assert_against_bash: true
 input:
   script: |+

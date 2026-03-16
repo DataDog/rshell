@@ -1,4 +1,5 @@
 description: The -h flag prints usage information and exits 0.
+# skip: rshell builtin help output differs from GNU coreutils
 skip_assert_against_bash: true
 input:
   script: |+

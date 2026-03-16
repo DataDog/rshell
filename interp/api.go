@@ -18,7 +18,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"runtime/debug"
 
 	"mvdan.cc/sh/v3/expand"
 	"mvdan.cc/sh/v3/syntax"
@@ -47,6 +46,15 @@ type runnerConfig struct {
 	// sandbox restricts file/directory access to allowed directories.
 	// nil (default) blocks all file access; populate via AllowedPaths option.
 	sandbox *allowedpaths.Sandbox
+
+	// allowedCommands is the set of command names (builtins or external) that
+	// the interpreter is permitted to execute. If nil and allowAllCommands is
+	// false, no commands are allowed.
+	allowedCommands map[string]bool
+
+	// allowAllCommands bypasses the allowedCommands check and permits any
+	// command. Intended for testing convenience.
+	allowAllCommands bool
 
 	// usedNew is set by New() and checked in Reset() to ensure a Runner
 	// was properly constructed rather than zero-initialized.
@@ -295,7 +303,7 @@ func (r *Runner) Reset() {
 				return r.sandbox.Open(path, HandlerCtx(ctx).Dir, flag, perm)
 			}
 			r.readDirHandler = func(ctx context.Context, path string) ([]os.DirEntry, error) {
-				return r.sandbox.ReadDir(path, HandlerCtx(ctx).Dir)
+				return r.sandbox.ReadDirForGlob(path, HandlerCtx(ctx).Dir)
 			}
 			r.execHandler = noExecHandler()
 		}
@@ -340,16 +348,13 @@ func (s ExitStatus) Error() string { return fmt.Sprintf("exit status %d", s) }
 func (r *Runner) Run(ctx context.Context, node syntax.Node) (retErr error) {
 	defer func() {
 		if rec := recover(); rec != nil {
-			var panicOut io.Writer
-			if r != nil {
+			panicOut := io.Writer(io.Discard)
+			if r != nil && r.stderr != nil {
 				panicOut = r.stderr
-			}
-			if panicOut == nil {
-				panicOut = os.Stderr
 			}
 			func() {
 				defer func() { recover() }()
-				fmt.Fprintf(panicOut, "rshell: internal panic: %v\n%s\n", rec, debug.Stack())
+				fmt.Fprintf(panicOut, "rshell: internal panic: %v\n", rec)
 			}()
 			retErr = fmt.Errorf("internal error")
 		}
@@ -407,6 +412,41 @@ func AllowedPaths(paths []string) RunnerOption {
 			return err
 		}
 		r.sandbox = sb
+		return nil
+	}
+}
+
+// AllowedCommands restricts command execution to the specified command names.
+// Names may refer to builtin commands or external/host commands. Only commands
+// whose name appears in the list may be executed; all others are rejected with
+// "<cmd>: command not allowed".
+//
+// Names are matched exactly against the command name (args[0]) at execution
+// time. Path-containing names (e.g. "/bin/bash") will not match bare command
+// names and vice versa. Empty strings are rejected.
+//
+// When not set (default), no commands are allowed unless [AllowAllCommands] is
+// used.
+func AllowedCommands(names []string) RunnerOption {
+	return func(r *Runner) error {
+		m := make(map[string]bool, len(names))
+		for _, n := range names {
+			if n == "" {
+				return fmt.Errorf("AllowedCommands: empty command name")
+			}
+			m[n] = true
+		}
+		r.allowedCommands = m
+		return nil
+	}
+}
+
+// AllowAllCommands permits execution of any command (builtin or external),
+// bypassing the [AllowedCommands] restriction. This is intended for testing
+// convenience.
+func AllowAllCommands() RunnerOption {
+	return func(r *Runner) error {
+		r.allowAllCommands = true
 		return nil
 	}
 }

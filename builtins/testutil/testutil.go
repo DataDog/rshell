@@ -10,8 +10,12 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
+	"os"
+	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -57,7 +61,7 @@ func RunScriptCtx(ctx context.Context, t testing.TB, script, dir string, opts ..
 	require.NoError(t, err)
 
 	var outBuf, errBuf bytes.Buffer
-	allOpts := append([]interp.RunnerOption{interp.StdIO(nil, &outBuf, &errBuf)}, opts...)
+	allOpts := append([]interp.RunnerOption{interp.StdIO(nil, &outBuf, &errBuf), interp.AllowAllCommands()}, opts...)
 	runner, err := interp.New(allOpts...)
 	require.NoError(t, err)
 	defer runner.Close()
@@ -77,6 +81,33 @@ func RunScriptCtx(ctx context.Context, t testing.TB, script, dir string, opts ..
 		}
 	}
 	return outBuf.String(), errBuf.String(), exitCode
+}
+
+// FuzzIterDir creates an isolated per-iteration subdirectory under baseDir,
+// using counter to generate a unique name. It returns the directory path and
+// a cleanup function that removes the directory. This replaces the ~12-line
+// boilerplate pattern (atomic counter + MkdirAll + defer RemoveAll) that was
+// previously duplicated across 30+ fuzz functions.
+func FuzzIterDir(t testing.TB, baseDir string, counter *atomic.Int64) (string, func()) {
+	t.Helper()
+	n := counter.Add(1)
+	dir := filepath.Join(baseDir, fmt.Sprintf("iter%d", n))
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	return dir, func() {
+		if err := os.RemoveAll(dir); err != nil && !os.IsNotExist(err) {
+			t.Errorf("cleanup %s: %v", dir, err)
+		}
+	}
+}
+
+// FuzzRunScriptCtx runs a script in fuzz mode with AllowedPaths set to [dir].
+// This ensures fuzz iterations can actually read/write files inside their
+// iteration directory rather than silently failing with permission errors.
+func FuzzRunScriptCtx(ctx context.Context, t testing.TB, script, dir string) (string, string, int) {
+	t.Helper()
+	return RunScriptCtx(ctx, t, script, dir, interp.AllowedPaths([]string{dir}))
 }
 
 // RunScript runs a shell script and returns stdout, stderr, and the exit code.
@@ -102,7 +133,7 @@ func RunScriptDiscardCtx(ctx context.Context, t testing.TB, script, dir string, 
 	require.NoError(t, err)
 
 	var errBuf bytes.Buffer
-	allOpts := append([]interp.RunnerOption{interp.StdIO(nil, io.Discard, &errBuf)}, opts...)
+	allOpts := append([]interp.RunnerOption{interp.StdIO(nil, io.Discard, &errBuf), interp.AllowAllCommands()}, opts...)
 	runner, err := interp.New(allOpts...)
 	require.NoError(t, err)
 	defer runner.Close()

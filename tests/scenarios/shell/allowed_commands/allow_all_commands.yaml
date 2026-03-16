@@ -1,0 +1,11 @@
+skip_assert_against_bash: true
+description: allow_all_commands permits any command to run.
+input:
+  allow_all_commands: true
+  script: |+
+    echo hello
+expect:
+  stdout: |+
+    hello
+  stderr: ""
+  exit_code: 0

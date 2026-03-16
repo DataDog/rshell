@@ -1,4 +1,5 @@
 description: Undefined branch labels are rejected at parse time.
+# skip: rshell builtin error/output format differs from GNU coreutils
 skip_assert_against_bash: true
 input:
   script: |+

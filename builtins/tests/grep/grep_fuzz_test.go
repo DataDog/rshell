@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
 	"time"
 	"unicode/utf8"
@@ -53,6 +54,9 @@ func FuzzGrepFileContent(f *testing.F) {
 	// Multibyte content
 	f.Add([]byte("héllo\nmünchen\n"), "l")
 
+	baseDir := f.TempDir()
+	var counter atomic.Int64
+
 	f.Fuzz(func(t *testing.T, input []byte, pattern string) {
 		if len(input) > 1<<20 {
 			return
@@ -76,13 +80,15 @@ func FuzzGrepFileContent(f *testing.F) {
 			return
 		}
 
-		dir := t.TempDir()
+		dir, cleanup := testutil.FuzzIterDir(t, baseDir, &counter)
+		defer cleanup()
+
 		err := os.WriteFile(filepath.Join(dir, "input.txt"), input, 0644)
 		if err != nil {
 			t.Fatal(err)
 		}
 
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		defer cancel()
 
 		script := "grep '" + pattern + "' input.txt"
@@ -122,6 +128,9 @@ func FuzzGrepPatterns(f *testing.F) {
 	// Very long pattern
 	f.Add([]byte("aaaa\n"), "a{1,4}")
 
+	baseDir := f.TempDir()
+	var counter atomic.Int64
+
 	f.Fuzz(func(t *testing.T, input []byte, pattern string) {
 		if len(input) > 1<<20 {
 			return
@@ -145,12 +154,14 @@ func FuzzGrepPatterns(f *testing.F) {
 			return
 		}
 
-		dir := t.TempDir()
+		dir, cleanup := testutil.FuzzIterDir(t, baseDir, &counter)
+		defer cleanup()
+
 		if err := os.WriteFile(filepath.Join(dir, "input.txt"), input, 0644); err != nil {
 			t.Fatal(err)
 		}
 
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		defer cancel()
 
 		_, _, code := cmdRunCtx(ctx, t, "grep '"+pattern+"' input.txt", dir)
@@ -172,18 +183,23 @@ func FuzzGrepStdin(f *testing.F) {
 	f.Add([]byte("line1\r\nline2\r\n"))
 	f.Add(append(bytes.Repeat([]byte("a"), 1<<20-1), '\n'))
 
+	baseDir := f.TempDir()
+	var counter atomic.Int64
+
 	f.Fuzz(func(t *testing.T, input []byte) {
 		if len(input) > 1<<20 {
 			return
 		}
 
-		dir := t.TempDir()
+		dir, cleanup := testutil.FuzzIterDir(t, baseDir, &counter)
+		defer cleanup()
+
 		err := os.WriteFile(filepath.Join(dir, "stdin.txt"), input, 0644)
 		if err != nil {
 			t.Fatal(err)
 		}
 
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		defer cancel()
 
 		_, _, code := cmdRunCtx(ctx, t, "grep '.' < stdin.txt", dir)
@@ -224,6 +240,9 @@ func FuzzGrepFixedStrings(f *testing.F) {
 	// Near 1 MiB line cap (CVE-2012-5667 was 2^31; we test our 1 MiB boundary)
 	f.Add(append(bytes.Repeat([]byte("a"), 1<<20-1), '\n'), "a")
 
+	baseDir := f.TempDir()
+	var counter atomic.Int64
+
 	f.Fuzz(func(t *testing.T, input []byte, pattern string) {
 		if len(input) > 1<<20 {
 			return
@@ -244,12 +263,14 @@ func FuzzGrepFixedStrings(f *testing.F) {
 			}
 		}
 
-		dir := t.TempDir()
+		dir, cleanup := testutil.FuzzIterDir(t, baseDir, &counter)
+		defer cleanup()
+
 		if err := os.WriteFile(filepath.Join(dir, "input.txt"), input, 0644); err != nil {
 			t.Fatal(err)
 		}
 
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		defer cancel()
 
 		_, _, code := cmdRunCtx(ctx, t, "grep -F '"+pattern+"' input.txt", dir)
@@ -279,6 +300,9 @@ func FuzzGrepFlags(f *testing.F) {
 	// Binary content
 	f.Add([]byte{0xff, 0xfe, '\n'}, true, false, false, false, int64(0), int64(0))
 
+	baseDir := f.TempDir()
+	var counter atomic.Int64
+
 	f.Fuzz(func(t *testing.T, input []byte, caseInsensitive, invertMatch, countOnly, quiet bool, afterCtx, beforeCtx int64) {
 		if len(input) > 1<<20 {
 			return
@@ -290,13 +314,15 @@ func FuzzGrepFlags(f *testing.F) {
 			return
 		}
 
-		dir := t.TempDir()
+		dir, cleanup := testutil.FuzzIterDir(t, baseDir, &counter)
+		defer cleanup()
+
 		err := os.WriteFile(filepath.Join(dir, "input.txt"), input, 0644)
 		if err != nil {
 			t.Fatal(err)
 		}
 
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		defer cancel()
 
 		flags := ""

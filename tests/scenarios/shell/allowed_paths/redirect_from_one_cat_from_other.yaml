@@ -1,4 +1,5 @@
 description: "Redirect input from one allowed path and cat from another both work"
+# skip: allowed_paths sandbox restriction is an rshell-specific feature not present in bash
 skip_assert_against_bash: true
 setup:
   files:

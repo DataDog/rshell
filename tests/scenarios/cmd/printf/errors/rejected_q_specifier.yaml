@@ -1,4 +1,5 @@
 description: printf rejects the %q format specifier with a clear error message.
+# skip: feature is intentionally blocked in rshell for security
 skip_assert_against_bash: true
 input:
   script: |+

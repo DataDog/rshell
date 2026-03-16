@@ -39,6 +39,7 @@ func runScriptInternal(t *testing.T, script, dir string, opts ...RunnerOption) (
 	var outBuf, errBuf bytes.Buffer
 	allOpts := append([]RunnerOption{
 		StdIO(nil, &outBuf, &errBuf),
+		AllowAllCommands(),
 	}, opts...)
 
 	runner, err := New(allOpts...)
@@ -97,12 +98,36 @@ func TestAllowedPathsExecNonexistent(t *testing.T) {
 
 func TestAllowedPathsExecViaPathLookup(t *testing.T) {
 	dir := t.TempDir()
-	// "find" is resolved via PATH (not absolute), but /bin and /usr are not allowed
-	_, stderr, exitCode := runScriptInternal(t, `find`, dir,
+	// "date" exists on PATH but /bin and /usr are not in AllowedPaths.
+	// The default noExecHandler must reject it. We avoid runScriptInternal
+	// because it overrides execHandler with a real exec.Command, bypassing
+	// the sandbox. We also cannot use a builtin name (find, grep, sed, etc.)
+	// because builtins are resolved before the exec handler is consulted.
+	parser := syntax.NewParser()
+	prog, err := parser.Parse(strings.NewReader("date"), "")
+	require.NoError(t, err)
+
+	var outBuf, errBuf bytes.Buffer
+	runner, err := New(
+		StdIO(nil, &outBuf, &errBuf),
 		AllowedPaths([]string{dir}),
 	)
+	require.NoError(t, err)
+	defer runner.Close()
+	runner.Dir = dir
+
+	err = runner.Run(context.Background(), prog)
+	exitCode := 0
+	if err != nil {
+		var es ExitStatus
+		if errors.As(err, &es) {
+			exitCode = int(es)
+		} else {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	}
 	assert.Equal(t, 127, exitCode)
-	assert.Contains(t, stderr, "command not found")
+	assert.Contains(t, errBuf.String(), "command not found")
 }
 
 func TestAllowedPathsExecSymlinkEscape(t *testing.T) {
@@ -126,7 +151,7 @@ func TestAllowedPathsExecSymlinkEscape(t *testing.T) {
 
 func TestRunRecoversPanic(t *testing.T) {
 	var outBuf, errBuf bytes.Buffer
-	runner, err := New(StdIO(nil, &outBuf, &errBuf))
+	runner, err := New(StdIO(nil, &outBuf, &errBuf), AllowAllCommands())
 	require.NoError(t, err)
 	defer runner.Close()
 
@@ -168,7 +193,9 @@ func TestRunZeroValueRunnerReturnsError(t *testing.T) {
 
 func TestAllowedPathsExecDefaultBlocksAll(t *testing.T) {
 	dir := t.TempDir()
-	// No AllowedPaths option — default blocks all exec
+	// No AllowedPaths option — default noExecHandler blocks all external commands.
+	// With AllowAllCommands (set by runScriptInternal), the command reaches the
+	// exec handler which returns "command not found" via noExecHandler.
 	_, stderr, exitCode := runScriptInternal(t, `/bin/echo hello`, dir)
 	assert.Equal(t, 127, exitCode)
 	assert.Contains(t, stderr, "command not found")

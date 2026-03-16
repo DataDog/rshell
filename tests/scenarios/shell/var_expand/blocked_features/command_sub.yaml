@@ -1,10 +1,9 @@
-skip_assert_against_bash: true
-description: Command substitution is not supported.
+description: Command substitution with $() works.
 input:
   script: |+
     echo $(echo hello)
 expect:
-  stdout: ""
-  stderr: |+
-    command substitution is not supported
-  exit_code: 2
+  stdout: |+
+    hello
+  stderr: ""
+  exit_code: 0

@@ -1,0 +1,9 @@
+description: Unknown command produces not found error.
+input:
+  script: |+
+    nosuchcommand
+expect:
+  stdout: ""
+  stderr_contains:
+    - "command not found"
+  exit_code: 127
