@@ -213,15 +213,35 @@ func TestDefaultNoCommandsAllowed(t *testing.T) {
 }
 
 func TestAllowedCommandsFlag(t *testing.T) {
+<<<<<<< Updated upstream
 	code, stdout, _ := runCLI(t, "--allowed-commands", "echo", "-s", `echo hello`)
+=======
+	code, stdout, _ := runCLI(t, "--allowed-commands", "rshell:echo", "-c", `echo hello`)
+>>>>>>> Stashed changes
 	assert.Equal(t, 0, code)
 	assert.Equal(t, "hello\n", stdout)
 }
 
 func TestAllowedCommandsBlocksOther(t *testing.T) {
+<<<<<<< Updated upstream
 	code, _, stderr := runCLI(t, "--allowed-commands", "echo", "-s", `cat /dev/null`)
+=======
+	code, _, stderr := runCLI(t, "--allowed-commands", "rshell:echo", "-c", `cat /dev/null`)
+>>>>>>> Stashed changes
 	assert.Equal(t, 127, code)
 	assert.Contains(t, stderr, "command not allowed")
+}
+
+func TestAllowedCommandsMissingNamespace(t *testing.T) {
+	code, _, stderr := runCLI(t, "--allowed-commands", "echo", "-c", `echo hello`)
+	assert.Equal(t, 1, code)
+	assert.Contains(t, stderr, "missing namespace prefix")
+}
+
+func TestAllowedCommandsUnknownNamespace(t *testing.T) {
+	code, _, stderr := runCLI(t, "--allowed-commands", "host:echo", "-c", `echo hello`)
+	assert.Equal(t, 1, code)
+	assert.Contains(t, stderr, "unknown namespace")
 }
 
 func TestAllowAllCommandsFlag(t *testing.T) {

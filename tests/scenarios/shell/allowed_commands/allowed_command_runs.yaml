@@ -2,7 +2,7 @@ skip_assert_against_bash: true
 description: A command listed in allowed_commands can be executed.
 input:
   allowed_commands:
-    - echo
+    - rshell:echo
   script: |+
     echo hello
 expect:
