@@ -556,7 +556,8 @@ func parseSymbolicMode(s string) (uint64, error) {
 		}
 		i++
 		// Parse perms: r, w, x, s, t
-		var bits uint64
+		var bits uint64    // rwx bits (applied per-class)
+		var special uint64 // special bits (setuid/setgid/sticky, applied globally)
 		for i < len(clause) {
 			switch clause[i] {
 			case 'r':
@@ -565,12 +566,22 @@ func parseSymbolicMode(s string) (uint64, error) {
 				bits |= 2
 			case 'x':
 				bits |= 1
+			case 's':
+				// setuid for user, setgid for group
+				if who&4 != 0 {
+					special |= 0o4000
+				}
+				if who&2 != 0 {
+					special |= 0o2000
+				}
+			case 't':
+				special |= 0o1000 // sticky
 			default:
 				return 0, fmt.Errorf("invalid permission '%c'", clause[i])
 			}
 			i++
 		}
-		// Apply bits to the appropriate positions.
+		// Apply rwx bits to the appropriate class positions.
 		// '=' clears all bits for the class first, then sets the new ones.
 		// '+' only sets bits (OR). '-' only clears bits (AND NOT).
 		if who&4 != 0 { // user
@@ -605,6 +616,13 @@ func parseSymbolicMode(s string) (uint64, error) {
 			case '-':
 				mode &^= bits
 			}
+		}
+		// Apply special bits (setuid/setgid/sticky).
+		switch op {
+		case '=', '+':
+			mode |= special
+		case '-':
+			mode &^= special
 		}
 	}
 	return mode, nil

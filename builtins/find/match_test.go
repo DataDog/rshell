@@ -259,6 +259,13 @@ func TestMatchPerm(t *testing.T) {
 		{"any bit 0111 on 644", 0o644, 0o111, '/', false},
 		{"any bit 0222 on 644", 0o644, 0o222, '/', true},
 		{"any bit 0 always true", 0o644, 0, '/', true},
+
+		// Special bits (setuid/setgid/sticky) — Go uses high flag bits
+		{"setuid exact", 0o755 | iofs.ModeSetuid, 0o4755, '=', true},
+		{"setuid all bits", 0o755 | iofs.ModeSetuid, 0o4000, '-', true},
+		{"setuid not set", 0o755, 0o4000, '-', false},
+		{"setgid any bit", 0o755 | iofs.ModeSetgid, 0o2000, '/', true},
+		{"sticky exact", 0o755 | iofs.ModeSticky, 0o1755, '=', true},
 		{"any bit 0001 on 644", 0o644, 0o001, '/', false},
 		{"any bit 0100 on 755", 0o755, 0o100, '/', true},
 	}

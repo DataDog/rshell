@@ -19,7 +19,18 @@ import (
 //	'-' all bits: filePerm & target == target
 //	'/' any bit: filePerm & target != 0 (special: if target==0, always true)
 func matchPerm(filePerm iofs.FileMode, target uint32, cmpMode byte) bool {
-	fp := uint32(filePerm & 0o7777)
+	// Go stores setuid/setgid/sticky as high flag bits (ModeSetuid, etc.),
+	// not in the Unix 12-bit position. Convert to Unix-style 12-bit mode.
+	fp := uint32(filePerm.Perm()) // bits 8-0 (rwxrwxrwx)
+	if filePerm&iofs.ModeSetuid != 0 {
+		fp |= 0o4000
+	}
+	if filePerm&iofs.ModeSetgid != 0 {
+		fp |= 0o2000
+	}
+	if filePerm&iofs.ModeSticky != 0 {
+		fp |= 0o1000
+	}
 	switch cmpMode {
 	case '-':
 		return fp&target == target

@@ -78,7 +78,10 @@ var builtinPerCommandSymbols = map[string][]string{
 		"io/fs.ModeDevice",                // file mode bit constant for block devices; pure constant.
 		"io/fs.ModeDir",                   // file mode bit constant for directories; pure constant.
 		"io/fs.ModeNamedPipe",             // file mode bit constant for named pipes; pure constant.
+		"io/fs.ModeSetgid",                // file mode bit constant for setgid; pure constant.
+		"io/fs.ModeSetuid",                // file mode bit constant for setuid; pure constant.
 		"io/fs.ModeSocket",                // file mode bit constant for sockets; pure constant.
+		"io/fs.ModeSticky",                // file mode bit constant for sticky bit; pure constant.
 		"io/fs.ModeSymlink",               // file mode bit constant for symlinks; pure constant.
 		"io/fs.ReadDirFile",               // read-only directory handle interface; no write capability.
 		"math.Ceil",                       // pure arithmetic; no side effects.
