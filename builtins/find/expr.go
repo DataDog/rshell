@@ -543,6 +543,8 @@ func (p *parser) parseExecPredicate(isDir bool) (*expr, error) {
 	}
 
 	// In batch mode, {} must be present (it's the last arg before +).
+	// Note: this is defensive — batch mode detection above already requires
+	// cmdArgs to end with {}, so hasPlaceholder is always true when batch is true.
 	if batch && !hasPlaceholder {
 		return nil, fmt.Errorf("find: %s: '{}' must appear before '+'", predName)
 	}
