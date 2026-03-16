@@ -2,3 +2,4 @@
 schema-version: v1
 kind: mergequeue
 enable: true
+merge_method: squash
