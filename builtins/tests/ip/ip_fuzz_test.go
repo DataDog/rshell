@@ -22,6 +22,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 )
 
 // cmdRunCtxFuzz runs an ip command with context for fuzz tests.
@@ -96,6 +97,10 @@ func FuzzIPSubcommand(f *testing.F) {
 		if len(subcmd) > 1024 {
 			return
 		}
+		// Reject invalid UTF-8 — the shell parser rejects it before the builtin runs.
+		if !utf8.ValidString(subcmd) {
+			return
+		}
 		// Reject inputs with shell metacharacters — they would parse as shell
 		// syntax, not as ip arguments, and are not valid ip subcommands.
 		for _, ch := range []string{"\n", "\r", ";", "|", "&", "`", "$", "\"", "'", "(", ")", "{", "}", "<", ">"} {
@@ -159,6 +164,10 @@ func FuzzIPFlags(f *testing.F) {
 
 	f.Fuzz(func(t *testing.T, flags, subcmd string) {
 		if len(flags)+len(subcmd) > 512 {
+			return
+		}
+		// Reject invalid UTF-8 — the shell parser rejects it before the builtin runs.
+		if !utf8.ValidString(flags) || !utf8.ValidString(subcmd) {
 			return
 		}
 		// Reject shell metacharacters.
