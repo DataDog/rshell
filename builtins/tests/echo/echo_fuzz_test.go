@@ -13,13 +13,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/DataDog/rshell/builtins/testutil"
-	"github.com/DataDog/rshell/interp"
 )
-
-func cmdRunCtx(ctx context.Context, t *testing.T, script, dir string) (string, string, int) {
-	t.Helper()
-	return testutil.RunScriptCtx(ctx, t, script, dir, interp.AllowedPaths([]string{dir}))
-}
 
 // fuzzRunCtx delegates to testutil.FuzzRunScriptCtx which runs the script
 // with AllowedPaths set to [dir] for proper file access in fuzz iterations.
