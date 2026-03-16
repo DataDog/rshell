@@ -6,6 +6,7 @@
 package find
 
 import (
+	"runtime"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -136,6 +137,45 @@ func TestParsePathPredicateUsesParsePathPredicate(t *testing.T) {
 		assert.Equal(t, exprName, pr.expr.kind)
 		assert.Equal(t, "*.txt", pr.expr.strVal)
 	})
+
+	// On Windows, filepath.ToSlash converts '\' to '/'. Verify that
+	// parsePathPredicate actually normalizes backslashes. This subtest
+	// is skipped on Unix where '\' is a valid filename character and
+	// filepath.ToSlash is a no-op.
+	if runtime.GOOS == "windows" {
+		windowsTests := []struct {
+			name string
+			args []string
+			kind exprKind
+			want string
+		}{
+			{"path backslash", []string{"-path", `dir\sub\*.go`}, exprPath, "dir/sub/*.go"},
+			{"ipath backslash", []string{"-ipath", `Dir\Sub\*.Go`}, exprIPath, "Dir/Sub/*.Go"},
+			{"newer backslash", []string{"-newer", `dir\ref.txt`}, exprNewer, "dir/ref.txt"},
+			{"wholename backslash", []string{"-wholename", `src\main.go`}, exprPath, "src/main.go"},
+			{"iwholename backslash", []string{"-iwholename", `Src\Main.go`}, exprIPath, "Src/Main.go"},
+			{"mixed separators", []string{"-path", `dir/sub\file.go`}, exprPath, "dir/sub/file.go"},
+			{"multiple backslashes", []string{"-path", `a\b\c\d`}, exprPath, "a/b/c/d"},
+		}
+
+		for _, tt := range windowsTests {
+			t.Run("windows/"+tt.name, func(t *testing.T) {
+				pr, err := parseExpression(tt.args)
+				require.NoError(t, err)
+				require.NotNil(t, pr.expr)
+				assert.Equal(t, tt.kind, pr.expr.kind)
+				assert.Equal(t, tt.want, pr.expr.strVal)
+			})
+		}
+
+		// -name should NOT normalize backslashes even on Windows
+		// (basenames never contain path separators).
+		t.Run("windows/name not normalized", func(t *testing.T) {
+			pr, err := parseExpression([]string{"-name", `file\name`})
+			require.NoError(t, err)
+			assert.Equal(t, `file\name`, pr.expr.strVal)
+		})
+	}
 }
 
 // TestParseBlockedPredicates verifies all dangerous predicates are blocked.
