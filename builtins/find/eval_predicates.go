@@ -236,6 +236,8 @@ func evalSamefile(ec *evalContext, refPath string) bool {
 				refInfo, err = ec.callCtx.LstatFile(ec.ctx, refPath)
 			}
 			if err != nil {
+				ec.callCtx.Errf("find: '%s': %s\n", refPath, ec.callCtx.PortableErr(err))
+				ec.failed = true
 				ec.samefileErrs[refPath] = true
 				return false
 			}

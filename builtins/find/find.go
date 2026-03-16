@@ -638,10 +638,10 @@ func walkPath(
 			}
 		}
 
-		// -mount/-xdev: skip entries on different filesystems.
-		if isCrossDevice(childPath, childInfo) {
-			continue
-		}
+		// -mount/-xdev: evaluate cross-device entries but don't descend.
+		// GNU find says "Don't descend directories on other filesystems" —
+		// the entry itself is still evaluated, just not descended into.
+		crossDevice := isCrossDevice(childPath, childInfo)
 
 		isLoop, cAncIDs, cAncPaths := checkLoop(childPath, childInfo, top.ancestorIDs, top.ancestorPaths)
 		if isLoop {
@@ -659,8 +659,9 @@ func walkPath(
 			}
 		}
 
-		// Descend into child directories unless pruned or beyond maxdepth.
-		if childInfo.IsDir() && !prune && top.depth < opts.maxDepth {
+		// Descend into child directories unless pruned, beyond maxdepth,
+		// or on a different filesystem (-mount/-xdev).
+		if childInfo.IsDir() && !prune && !crossDevice && top.depth < opts.maxDepth {
 			dir, openErr := callCtx.OpenDir(ctx, childPath)
 			if openErr != nil {
 				callCtx.Errf("find: '%s': %s\n", childPath, callCtx.PortableErr(openErr))

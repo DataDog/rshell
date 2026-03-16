@@ -655,9 +655,14 @@ func parseSymbolicMode(s string) (uint64, error) {
 			i++
 		}
 		// Apply bits to the appropriate positions.
+		// '=' clears all bits for the class first, then sets the new ones.
+		// '+' only sets bits (OR). '-' only clears bits (AND NOT).
 		if who&4 != 0 { // user
 			switch op {
-			case '=', '+':
+			case '=':
+				mode &^= 7 << 6   // clear user bits
+				mode |= bits << 6 // set new bits
+			case '+':
 				mode |= bits << 6
 			case '-':
 				mode &^= bits << 6
@@ -665,7 +670,10 @@ func parseSymbolicMode(s string) (uint64, error) {
 		}
 		if who&2 != 0 { // group
 			switch op {
-			case '=', '+':
+			case '=':
+				mode &^= 7 << 3
+				mode |= bits << 3
+			case '+':
 				mode |= bits << 3
 			case '-':
 				mode &^= bits << 3
@@ -673,7 +681,10 @@ func parseSymbolicMode(s string) (uint64, error) {
 		}
 		if who&1 != 0 { // other
 			switch op {
-			case '=', '+':
+			case '=':
+				mode &^= 7
+				mode |= bits
+			case '+':
 				mode |= bits
 			case '-':
 				mode &^= bits

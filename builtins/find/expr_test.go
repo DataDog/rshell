@@ -246,6 +246,8 @@ func TestParsePermPredicate(t *testing.T) {
 		{"symbolic u=rwx", []string{"-perm", "u=rwx"}, false, 0o700, '='},
 		{"symbolic a=r", []string{"-perm", "a=r"}, false, 0o444, '='},
 		{"symbolic u=rw,g=r,o=r", []string{"-perm", "u=rw,g=r,o=r"}, false, 0o644, '='},
+		{"symbolic = overwrites", []string{"-perm", "u=rw,u=x"}, false, 0o100, '='},
+		{"symbolic + adds", []string{"-perm", "u=rw,u+x"}, false, 0o700, '='},
 		{"all bits symbolic", []string{"-perm", "-u=x"}, false, 0o100, '-'},
 		{"missing arg", []string{"-perm"}, true, 0, 0},
 		{"invalid octal", []string{"-perm", "xyz"}, true, 0, 0},
