@@ -39,6 +39,7 @@ func runScriptInternal(t *testing.T, script, dir string, opts ...RunnerOption) (
 	var outBuf, errBuf bytes.Buffer
 	allOpts := append([]RunnerOption{
 		StdIO(nil, &outBuf, &errBuf),
+		AllowAllCommands(),
 	}, opts...)
 
 	runner, err := New(allOpts...)
@@ -150,7 +151,7 @@ func TestAllowedPathsExecSymlinkEscape(t *testing.T) {
 
 func TestRunRecoversPanic(t *testing.T) {
 	var outBuf, errBuf bytes.Buffer
-	runner, err := New(StdIO(nil, &outBuf, &errBuf))
+	runner, err := New(StdIO(nil, &outBuf, &errBuf), AllowAllCommands())
 	require.NoError(t, err)
 	defer runner.Close()
 
@@ -192,7 +193,9 @@ func TestRunZeroValueRunnerReturnsError(t *testing.T) {
 
 func TestAllowedPathsExecDefaultBlocksAll(t *testing.T) {
 	dir := t.TempDir()
-	// No AllowedPaths option — default blocks all exec
+	// No AllowedPaths option — default noExecHandler blocks all external commands.
+	// With AllowAllCommands (set by runScriptInternal), the command reaches the
+	// exec handler which returns "command not found" via noExecHandler.
 	_, stderr, exitCode := runScriptInternal(t, `/bin/echo hello`, dir)
 	assert.Equal(t, 127, exitCode)
 	assert.Contains(t, stderr, "command not found")

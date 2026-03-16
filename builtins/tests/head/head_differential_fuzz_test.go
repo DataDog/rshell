@@ -92,10 +92,16 @@ func FuzzHeadDifferentialLines(f *testing.F) {
 
 		nStr := fmt.Sprintf("%d", n)
 
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		defer cancel()
 
 		rshellOut, rshellErr, rshellCode := cmdRunCtx(ctx, t, fmt.Sprintf("head -n %s input.txt", nStr), dir)
+
+		// If the fuzz engine cancelled us (fuzztime expired), bail out
+		// without comparing — partial output would cause false failures.
+		if t.Context().Err() != nil {
+			return
+		}
 
 		if isSandboxError(rshellErr) {
 			t.Skip("skipping: sandbox restriction")
@@ -149,10 +155,16 @@ func FuzzHeadDifferentialBytes(f *testing.F) {
 
 		nStr := fmt.Sprintf("%d", n)
 
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		defer cancel()
 
 		rshellOut, rshellErr, rshellCode := cmdRunCtx(ctx, t, fmt.Sprintf("head -c %s input.txt", nStr), dir)
+
+		// If the fuzz engine cancelled us (fuzztime expired), bail out
+		// without comparing — partial output would cause false failures.
+		if t.Context().Err() != nil {
+			return
+		}
 
 		if isSandboxError(rshellErr) {
 			t.Skip("skipping: sandbox restriction")

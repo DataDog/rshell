@@ -256,6 +256,14 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 		return
 	}
 	name := args[0]
+
+	// Check whether the command is allowed.
+	if !r.allowAllCommands && !r.allowedCommands[name] {
+		r.errf("%s: command not allowed\n", name)
+		r.exit.code = 127
+		return
+	}
+
 	if fn, ok := builtins.Lookup(name); ok {
 		call := &builtins.CallContext{
 			Stdout:       r.stdout,
