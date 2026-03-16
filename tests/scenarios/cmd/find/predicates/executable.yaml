@@ -15,5 +15,6 @@ input:
 expect:
   stdout: |+
     dir/script.sh
+  stdout_windows: ""
   stderr: ""
   exit_code: 0

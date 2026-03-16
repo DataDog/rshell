@@ -15,5 +15,6 @@ input:
 expect:
   stdout: |+
     dir/a.sh
+  stdout_windows: ""
   stderr: ""
   exit_code: 0
