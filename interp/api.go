@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 
 	"mvdan.cc/sh/v3/expand"
 	"mvdan.cc/sh/v3/syntax"
@@ -417,13 +418,17 @@ func AllowedPaths(paths []string) RunnerOption {
 }
 
 // AllowedCommands restricts command execution to the specified command names.
-// Names may refer to builtin commands or external/host commands. Only commands
-// whose name appears in the list may be executed; all others are rejected with
-// "<cmd>: command not allowed".
+// Names must use the "rshell:" namespace prefix (e.g. "rshell:cat",
+// "rshell:find"). Names without a colon separator or with an unknown namespace
+// are rejected. The bare command name (after the prefix) is stored internally
+// and matched exactly against the command name (args[0]) at execution time.
 //
-// Names are matched exactly against the command name (args[0]) at execution
-// time. Path-containing names (e.g. "/bin/bash") will not match bare command
-// names and vice versa. Empty strings are rejected.
+// Only commands whose name appears in the list may be executed; all others are
+// rejected with "<cmd>: command not allowed".
+//
+// After prefix stripping, path-containing names (e.g. "rshell:/bin/bash")
+// will not match bare command names and vice versa. Empty strings and empty
+// command names are rejected.
 //
 // When not set (default), no commands are allowed unless [AllowAllCommands] is
 // used.
@@ -434,7 +439,22 @@ func AllowedCommands(names []string) RunnerOption {
 			if n == "" {
 				return fmt.Errorf("AllowedCommands: empty command name")
 			}
-			m[n] = true
+			idx := strings.Index(n, ":")
+			if idx < 0 {
+				return fmt.Errorf("AllowedCommands: %q missing namespace prefix (expected \"rshell:<command>\")", n)
+			}
+			ns := n[:idx]
+			cmd := n[idx+1:]
+			if strings.Index(cmd, ":") >= 0 {
+				return fmt.Errorf("AllowedCommands: %q contains multiple colons; expected format \"rshell:<command>\"", n)
+			}
+			if ns != "rshell" {
+				return fmt.Errorf("AllowedCommands: %q has unknown namespace %q (only \"rshell\" is supported)", n, ns)
+			}
+			if cmd == "" {
+				return fmt.Errorf("AllowedCommands: %q has empty command name", n)
+			}
+			m[cmd] = true
 		}
 		r.allowedCommands = m
 		return nil
