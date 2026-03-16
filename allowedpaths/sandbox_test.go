@@ -185,6 +185,38 @@ func TestReadDirLimited(t *testing.T) {
 	})
 }
 
+func TestReadDirNCapExceeded(t *testing.T) {
+	dir := t.TempDir()
+
+	// Create 4 files so the directory exceeds a cap of 3.
+	for i := range 4 {
+		require.NoError(t, os.WriteFile(filepath.Join(dir, fmt.Sprintf("f%02d", i)), nil, 0644))
+	}
+
+	sb, err := New([]string{dir})
+	require.NoError(t, err)
+	defer sb.Close()
+
+	t.Run("returns error when entries exceed cap", func(t *testing.T) {
+		entries, err := sb.readDirN(".", dir, 3)
+		assert.Nil(t, entries)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "too many entries")
+	})
+
+	t.Run("returns entries when count equals cap", func(t *testing.T) {
+		entries, err := sb.readDirN(".", dir, 4)
+		require.NoError(t, err)
+		assert.Len(t, entries, 4)
+	})
+
+	t.Run("returns entries when count is below cap", func(t *testing.T) {
+		entries, err := sb.readDirN(".", dir, 10)
+		require.NoError(t, err)
+		assert.Len(t, entries, 4)
+	})
+}
+
 func TestCollectDirEntries(t *testing.T) {
 	makeEntries := func(names ...string) []fs.DirEntry {
 		out := make([]fs.DirEntry, len(names))
