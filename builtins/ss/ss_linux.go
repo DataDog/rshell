@@ -145,11 +145,13 @@ func parseIPv6Proc(s string) (string, error) {
 			return "", fmt.Errorf("invalid IPv6 group: %w", err)
 		}
 		// Little-endian: LSB of word is the first byte of this group in
-		// network (big-endian) order.
-		b[i*4+0] = byte(word)
-		b[i*4+1] = byte(word >> 8)
-		b[i*4+2] = byte(word >> 16)
-		b[i*4+3] = byte(word >> 24)
+		// network (big-endian) order. Mask each octet explicitly so that
+		// CodeQL can verify the values are bounded to [0, 255] before the
+		// byte conversion and any subsequent widening to uint16.
+		b[i*4+0] = byte(word & 0xFF)
+		b[i*4+1] = byte((word >> 8) & 0xFF)
+		b[i*4+2] = byte((word >> 16) & 0xFF)
+		b[i*4+3] = byte((word >> 24) & 0xFF)
 	}
 	return formatIPv6(b), nil
 }
