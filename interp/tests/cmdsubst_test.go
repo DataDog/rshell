@@ -25,12 +25,12 @@ import (
 // cmdSubstRun runs a script with the given dir as working directory and allowed path.
 func cmdSubstRun(t *testing.T, script, dir string) (string, string, int) {
 	t.Helper()
-	return cmdSubstRunWithOpts(t, script, dir, interp.AllowedPaths([]string{dir}))
+	return cmdSubstRunWithOpts(t, script, dir, interp.AllowedPaths([]string{dir}), interp.AllowAllCommands())
 }
 
 func cmdSubstRunCtx(ctx context.Context, t *testing.T, script, dir string) (string, string, int) {
 	t.Helper()
-	return cmdSubstRunCtxWithOpts(ctx, t, script, dir, interp.AllowedPaths([]string{dir}))
+	return cmdSubstRunCtxWithOpts(ctx, t, script, dir, interp.AllowedPaths([]string{dir}), interp.AllowAllCommands())
 }
 
 func cmdSubstRunWithOpts(t *testing.T, script, dir string, opts ...interp.RunnerOption) (string, string, int) {

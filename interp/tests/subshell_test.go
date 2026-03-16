@@ -18,12 +18,12 @@ import (
 // subshellRun runs a script with the given dir as working directory and allowed path.
 func subshellRun(t *testing.T, script, dir string) (string, string, int) {
 	t.Helper()
-	return cmdSubstRunWithOpts(t, script, dir, interp.AllowedPaths([]string{dir}))
+	return cmdSubstRunWithOpts(t, script, dir, interp.AllowedPaths([]string{dir}), interp.AllowAllCommands())
 }
 
 func subshellRunCtx(ctx context.Context, t *testing.T, script, dir string) (string, string, int) {
 	t.Helper()
-	return cmdSubstRunCtxWithOpts(ctx, t, script, dir, interp.AllowedPaths([]string{dir}))
+	return cmdSubstRunCtxWithOpts(ctx, t, script, dir, interp.AllowedPaths([]string{dir}), interp.AllowAllCommands())
 }
 
 // --- Basic subshell ---
