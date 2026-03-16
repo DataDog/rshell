@@ -46,10 +46,7 @@
 //	    List subdirectories recursively.
 //
 //	-l
-//	    Use a long listing format. Simplified: mode, size, date, name.
-//	    NOTE: This is a simplified format compared to GNU ls — no
-//	    owner/group/link-count columns because syscall and os/user
-//	    packages are banned by the import allowlist.
+//	    Use a long listing format: mode, hard links, owner, group, size, date, name.
 //
 //	-h, --human-readable
 //	    With -l, print sizes in human-readable format (e.g. 1K, 234M).
@@ -90,6 +87,7 @@ import (
 	"time"
 
 	"github.com/DataDog/rshell/builtins"
+	"github.com/DataDog/rshell/builtins/internal/fileowner"
 )
 
 // maxRecursionDepth limits how deep -R will recurse to prevent stack overflow.
@@ -241,9 +239,9 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 		// List individual files first.
 		if len(files) > 0 {
 			sortEntries(files, opts, func(a pathArg) iofs.FileInfo { return a.info }, func(a pathArg) string { return a.name })
-			sizeW := maxSizeStrWidth(files, func(a pathArg) iofs.FileInfo { return a.info }, opts)
+			cw := computeColWidths(files, func(a pathArg) iofs.FileInfo { return a.info }, opts)
 			for _, f := range files {
-				printEntry(callCtx, f.name, f.info, opts, now, sizeW)
+				printEntry(callCtx, f.name, f.info, opts, now, cw)
 			}
 		}
 
@@ -386,12 +384,12 @@ func listDir(ctx context.Context, callCtx *builtins.CallContext, dir string, opt
 	// enforced by readDir's maxRead parameter.
 
 	// Print.
-	sizeW := maxSizeStrWidth(infoEntries, func(e entryInfo) iofs.FileInfo { return e.info }, opts)
+	cw := computeColWidths(infoEntries, func(e entryInfo) iofs.FileInfo { return e.info }, opts)
 	for _, ei := range infoEntries {
 		if ctx.Err() != nil {
 			break
 		}
-		printEntry(callCtx, ei.name, ei.info, opts, now, sizeW)
+		printEntry(callCtx, ei.name, ei.info, opts, now, cw)
 	}
 
 	// Only warn on implicit truncation (no explicit --offset/--limit).
@@ -445,28 +443,52 @@ func readDir(ctx context.Context, callCtx *builtins.CallContext, dir string, off
 	return entries, false, err
 }
 
-// maxSizeStrWidth computes the maximum formatted size string width across a slice of entries.
-func maxSizeStrWidth[T any](entries []T, getInfo func(T) iofs.FileInfo, opts *options) int {
-	maxW := 0
-	for _, e := range entries {
-		var s string
-		if opts.humanReadable {
-			s = humanSize(getInfo(e).Size())
-		} else {
-			s = fmt.Sprintf("%d", getInfo(e).Size())
-		}
-		if len(s) > maxW {
-			maxW = len(s)
-		}
-	}
-	return maxW
+// colWidths holds the computed column widths for long-format output.
+type colWidths struct {
+	nlink int
+	owner int
+	group int
+	size  int
 }
 
-func printEntry(callCtx *builtins.CallContext, name string, info iofs.FileInfo, opts *options, now time.Time, sizeWidth int) {
+// computeColWidths computes the maximum column widths across a slice of entries
+// for long-format output alignment.
+func computeColWidths[T any](entries []T, getInfo func(T) iofs.FileInfo, opts *options) colWidths {
+	var w colWidths
+	for _, e := range entries {
+		info := getInfo(e)
+		owner, group, nlink := fileowner.Lookup(info)
+
+		nlinkStr := fmt.Sprintf("%d", nlink)
+		if n := len(nlinkStr); n > w.nlink {
+			w.nlink = n
+		}
+		if n := len(owner); n > w.owner {
+			w.owner = n
+		}
+		if n := len(group); n > w.group {
+			w.group = n
+		}
+
+		var sizeStr string
+		if opts.humanReadable {
+			sizeStr = humanSize(info.Size())
+		} else {
+			sizeStr = fmt.Sprintf("%d", info.Size())
+		}
+		if n := len(sizeStr); n > w.size {
+			w.size = n
+		}
+	}
+	return w
+}
+
+func printEntry(callCtx *builtins.CallContext, name string, info iofs.FileInfo, opts *options, now time.Time, cw colWidths) {
 	if opts.longFmt {
 		mode := formatMode(info)
 		size := info.Size()
 		modTime := info.ModTime()
+		owner, group, nlink := fileowner.Lookup(info)
 
 		var sizeStr string
 		if opts.humanReadable {
@@ -476,7 +498,11 @@ func printEntry(callCtx *builtins.CallContext, name string, info iofs.FileInfo, 
 		}
 
 		timeStr := formatTime(modTime, now)
-		callCtx.Outf("%s %*s %s %s%s\n", mode, sizeWidth, sizeStr, timeStr, name, indicator(info, opts))
+		callCtx.Outf("%s %*d %-*s  %-*s  %*s %s %s%s\n",
+			mode, cw.nlink, nlink,
+			cw.owner, owner, cw.group, group,
+			cw.size, sizeStr, timeStr,
+			name, indicator(info, opts))
 	} else {
 		callCtx.Outf("%s%s\n", name, indicator(info, opts))
 	}
