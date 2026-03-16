@@ -1,5 +1,5 @@
 description: -newer with dangling symlink ref succeeds under -L (falls back to lstat).
-skip_assert_against_bash: true  # sandbox symlink restrictions prevent bash comparison
+skip_assert_against_bash: false
 setup:
   files:
     - path: dir/old.txt

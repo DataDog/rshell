@@ -1,5 +1,5 @@
 description: find -L -newer with truly nonexistent reference (not a symlink) is fatal.
-skip_assert_against_bash: true
+skip_assert_against_bash: false
 setup:
   files:
     - path: dir/a.txt

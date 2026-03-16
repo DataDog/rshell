@@ -1,5 +1,5 @@
 description: -newer with broken symlink ref succeeds in default -P mode (lstat).
-skip_assert_against_bash: true
+skip_assert_against_bash: false
 setup:
   files:
     - path: dir/a.txt
