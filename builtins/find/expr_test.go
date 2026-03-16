@@ -99,6 +99,37 @@ func TestParseSizeEdgeCases(t *testing.T) {
 	}
 }
 
+// TestParsePathPredicateNormalizesSlashes verifies that -path, -ipath, and
+// -newer normalize backslashes to forward slashes via filepath.ToSlash.
+// On Unix this is a no-op; on Windows it converts '\' to '/'.
+func TestParsePathPredicateNormalizesSlashes(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+		kind exprKind
+		want string
+	}{
+		{"path forward slash", []string{"-path", "dir/file"}, exprPath, "dir/file"},
+		{"ipath forward slash", []string{"-ipath", "dir/file"}, exprIPath, "dir/file"},
+		{"newer forward slash", []string{"-newer", "dir/ref.txt"}, exprNewer, "dir/ref.txt"},
+		// On Windows, backslashes would be converted to forward slashes.
+		// On Unix, filepath.ToSlash is a no-op so these remain unchanged.
+		{"path already normalized", []string{"-path", "./a/b/c"}, exprPath, "./a/b/c"},
+		{"wholename alias", []string{"-wholename", "dir/file"}, exprPath, "dir/file"},
+		{"iwholename alias", []string{"-iwholename", "dir/file"}, exprIPath, "dir/file"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			pr, err := parseExpression(tt.args)
+			require.NoError(t, err)
+			require.NotNil(t, pr.expr)
+			assert.Equal(t, tt.kind, pr.expr.kind)
+			assert.Equal(t, tt.want, pr.expr.strVal)
+		})
+	}
+}
+
 // TestParseBlockedPredicates verifies all dangerous predicates are blocked.
 func TestParseBlockedPredicates(t *testing.T) {
 	blocked := []string{

@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"path/filepath"
 	"strconv"
 	"strings"
 )
@@ -295,9 +296,9 @@ func (p *parser) parsePrimary() (*expr, error) {
 	case "-iname":
 		return p.parseStringPredicate(exprIName)
 	case "-path", "-wholename":
-		return p.parseStringPredicate(exprPath)
+		return p.parsePathPredicate(exprPath)
 	case "-ipath", "-iwholename":
-		return p.parseStringPredicate(exprIPath)
+		return p.parsePathPredicate(exprIPath)
 	case "-type":
 		return p.parseTypePredicate()
 	case "-size":
@@ -305,7 +306,7 @@ func (p *parser) parsePrimary() (*expr, error) {
 	case "-empty":
 		return &expr{kind: exprEmpty}, nil
 	case "-newer":
-		return p.parseStringPredicate(exprNewer)
+		return p.parsePathPredicate(exprNewer)
 	case "-mtime":
 		return p.parseNumericPredicate(exprMtime)
 	case "-mmin":
@@ -334,6 +335,19 @@ func (p *parser) parseStringPredicate(kind exprKind) (*expr, error) {
 		return nil, fmt.Errorf("find: missing argument for %s", kind.String())
 	}
 	val := p.advance()
+	return &expr{kind: kind, strVal: val}, nil
+}
+
+// parsePathPredicate is like parseStringPredicate but normalizes the value
+// with filepath.ToSlash so that backslash path separators on Windows are
+// converted to forward slashes, matching the internal path representation.
+// Used for -path, -ipath, and -newer (all of which take filesystem paths
+// or path-glob patterns as arguments).
+func (p *parser) parsePathPredicate(kind exprKind) (*expr, error) {
+	if p.pos >= len(p.args) {
+		return nil, fmt.Errorf("find: missing argument for %s", kind.String())
+	}
+	val := filepath.ToSlash(p.advance())
 	return &expr{kind: kind, strVal: val}, nil
 }
 

@@ -63,6 +63,7 @@ import (
 	"io"
 	iofs "io/fs"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -131,7 +132,7 @@ optLoop:
 		if isExpressionStart(arg) {
 			break
 		}
-		paths = append(paths, arg)
+		paths = append(paths, filepath.ToSlash(arg))
 		i++
 	}
 
