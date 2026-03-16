@@ -253,6 +253,7 @@ func TestParsePermPredicate(t *testing.T) {
 		{"symbolic setgid", []string{"-perm", "-g=s"}, false, 0o2000, '-'},
 		{"symbolic sticky", []string{"-perm", "-o=t"}, false, 0o1000, '-'},
 		{"symbolic setuid+exec", []string{"-perm", "u=xs"}, false, 0o4100, '='},
+		{"symbolic = clears special", []string{"-perm", "u=s,u=rwx"}, false, 0o700, '='},
 		{"missing arg", []string{"-perm"}, true, 0, 0},
 		{"invalid octal", []string{"-perm", "xyz"}, true, 0, 0},
 		{"invalid mode 99999", []string{"-perm", "99999"}, true, 0, 0},

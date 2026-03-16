@@ -618,6 +618,20 @@ func parseSymbolicMode(s string) (uint64, error) {
 			}
 		}
 		// Apply special bits (setuid/setgid/sticky).
+		// For '=', clear the class's special bits first so that e.g.
+		// "u=s,u=rwx" correctly drops setuid on the second clause.
+		if op == '=' {
+			if who&4 != 0 {
+				mode &^= 0o4000 // clear setuid
+			}
+			if who&2 != 0 {
+				mode &^= 0o2000 // clear setgid
+			}
+			// sticky is associated with 'other' or 'all'
+			if who&1 != 0 {
+				mode &^= 0o1000 // clear sticky
+			}
+		}
 		switch op {
 		case '=', '+':
 			mode |= special
