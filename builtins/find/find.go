@@ -87,6 +87,7 @@ import (
 	iofs "io/fs"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -290,6 +291,27 @@ optLoop:
 			}
 			callCtx.Errf("find: '%s': %s\n", ref, callCtx.PortableErr(err))
 			eagerNewerErrors[ref] = true
+			failed = true
+		}
+	}
+
+	// Eagerly validate -user/-group names before walking.
+	// GNU find treats unknown user/group names as fatal argument errors.
+	for _, name := range collectUserRefs(expression) {
+		if _, err := strconv.ParseUint(name, 10, 32); err == nil {
+			continue // numeric UID, always valid
+		}
+		if _, ok := lookupUidByName(name); !ok {
+			callCtx.Errf("find: '%s' is not the name of a known user\n", name)
+			failed = true
+		}
+	}
+	for _, name := range collectGroupRefs(expression) {
+		if _, err := strconv.ParseUint(name, 10, 32); err == nil {
+			continue // numeric GID, always valid
+		}
+		if _, ok := lookupGidByName(name); !ok {
+			callCtx.Errf("find: '%s' is not the name of a known group\n", name)
 			failed = true
 		}
 	}
@@ -691,6 +713,36 @@ func collectNewerRefs(e *expr) []string {
 	refs = append(refs, collectNewerRefs(e.left)...)
 	refs = append(refs, collectNewerRefs(e.right)...)
 	refs = append(refs, collectNewerRefs(e.operand)...)
+	return refs
+}
+
+// collectUserRefs walks the expression tree and returns all -user name arguments.
+func collectUserRefs(e *expr) []string {
+	if e == nil {
+		return nil
+	}
+	if e.kind == exprUser {
+		return []string{e.strVal}
+	}
+	var refs []string
+	refs = append(refs, collectUserRefs(e.left)...)
+	refs = append(refs, collectUserRefs(e.right)...)
+	refs = append(refs, collectUserRefs(e.operand)...)
+	return refs
+}
+
+// collectGroupRefs walks the expression tree and returns all -group name arguments.
+func collectGroupRefs(e *expr) []string {
+	if e == nil {
+		return nil
+	}
+	if e.kind == exprGroup {
+		return []string{e.strVal}
+	}
+	var refs []string
+	refs = append(refs, collectGroupRefs(e.left)...)
+	refs = append(refs, collectGroupRefs(e.right)...)
+	refs = append(refs, collectGroupRefs(e.operand)...)
 	return refs
 }
 

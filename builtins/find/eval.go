@@ -130,7 +130,8 @@ func evaluate(ec *evalContext, e *expr) evalResult {
 		return evalResult{matched: ec.callCtx.AccessFile(ec.ctx, ec.printPath, 0x01) == nil}
 
 	case exprPerm:
-		return evalResult{matched: matchPerm(ec.info.Mode().Perm(), e.permVal, e.permCmp)}
+		// Use full 12-bit mode (including setuid/setgid/sticky), not just Perm() which is only 9 bits.
+		return evalResult{matched: matchPerm(ec.info.Mode(), e.permVal, e.permCmp)}
 
 	case exprUser:
 		return evalResult{matched: evalUser(ec, e.strVal)}
