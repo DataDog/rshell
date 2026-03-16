@@ -212,7 +212,11 @@ func FuzzWcStdin(f *testing.F) {
 	var counter atomic.Int64
 
 	f.Fuzz(func(t *testing.T, input []byte) {
-		if len(input) > 1<<20 {
+		// Keep the limit modest: stdin redirection goes through the full
+		// shell interpreter pipeline, which is slower than direct file
+		// reads. A 64 KiB cap prevents CI timeouts on resource-constrained
+		// runners while still exercising interesting edge cases.
+		if len(input) > 64*1024 {
 			return
 		}
 

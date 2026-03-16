@@ -1,7 +1,7 @@
-description: Assignment with command substitution preserves exit status.
+description: Command substitution propagates exit status via $?.
 input:
   script: |+
-    a=$(exit 3)
+    x=$(exit 3)
     echo "$?"
 expect:
   stdout: |+

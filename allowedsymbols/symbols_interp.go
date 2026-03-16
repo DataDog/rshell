@@ -28,6 +28,7 @@ var interpAllowedSymbols = []string{
 	"io.Closer",            // interface type for closing; no side effects.
 	"io.Copy",              // copies from Reader to Writer; no filesystem access, delegates to Read/Write.
 	"io.Discard",           // write sink that discards all data; no side effects.
+	"io.LimitReader",       // wraps a Reader with a byte cap; pure function, no I/O.
 	"io.Reader",            // interface type for reading; no side effects.
 	"io.ReadWriteCloser",   // combined interface type; no side effects.
 	"io.Writer",            // interface type for writing; no side effects.

@@ -1,11 +1,9 @@
-# skip: tests blocked feature interaction with if clause (rshell-specific behavior)
-skip_assert_against_bash: true
-description: Blocked features inside if condition are still rejected.
+description: Command substitution in if condition works correctly.
 input:
   script: |+
     if $(true); then echo yes; fi
 expect:
-  stdout: ""
-  stderr: |+
-    command substitution is not supported
-  exit_code: 2
+  stdout: |+
+    yes
+  stderr: ""
+  exit_code: 0

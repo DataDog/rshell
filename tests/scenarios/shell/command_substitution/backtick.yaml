@@ -1,4 +1,4 @@
-description: Backtick command substitution works.
+description: Backtick command substitution captures stdout.
 input:
   script: |+
     echo `echo hello`

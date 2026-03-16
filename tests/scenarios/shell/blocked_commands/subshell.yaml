@@ -1,11 +1,9 @@
-# skip: feature is intentionally blocked in the restricted shell
-skip_assert_against_bash: true
-description: Subshells are not supported.
+description: Subshells execute commands in an isolated environment.
 input:
   script: |+
     (echo hello)
 expect:
-  stdout: ""
-  stderr: |+
-    subshells are not supported
-  exit_code: 2
+  stdout: |+
+    hello
+  stderr: ""
+  exit_code: 0
