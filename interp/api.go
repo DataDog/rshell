@@ -435,8 +435,7 @@ func AllowedPaths(paths []string) RunnerOption {
 func AllowedCommands(names []string) RunnerOption {
 	return func(r *Runner) error {
 		m := make(map[string]bool, len(names))
-		for _, raw := range names {
-			n := strings.TrimSpace(raw)
+		for _, n := range names {
 			if n == "" {
 				return fmt.Errorf("AllowedCommands: empty command name")
 			}
@@ -444,8 +443,8 @@ func AllowedCommands(names []string) RunnerOption {
 			if idx < 0 {
 				return fmt.Errorf("AllowedCommands: %q missing namespace prefix (expected \"rshell:<command>\")", n)
 			}
-			ns := strings.TrimSpace(n[:idx])   // handle "rshell :echo"
-			cmd := strings.TrimSpace(n[idx+1:]) // handle "rshell: echo"
+			ns := n[:idx]
+			cmd := n[idx+1:]
 			if ns != "rshell" {
 				return fmt.Errorf("AllowedCommands: %q has unknown namespace %q (only \"rshell\" is supported)", n, ns)
 			}
