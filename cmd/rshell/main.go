@@ -38,8 +38,12 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		Args:          cobra.ArbitraryArgs,
+		// Reject the hidden --command long form: -c is short-only (bash convention).
+		PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
+			return rejectLongCommand(args)
+		},
 		RunE: func(cmd *cobra.Command, args []string) error {
-			commandSet := cmd.Flags().Changed("")
+			commandSet := cmd.Flags().Changed("command")
 			if commandSet && len(args) > 0 {
 				return fmt.Errorf("cannot use -c with file arguments")
 			}
@@ -98,7 +102,8 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	cmd.SetOut(stdout)
 	cmd.SetErr(stderr)
 
-	cmd.Flags().StringVarP(&command, "", "c", "", "shell command string to execute")
+	cmd.Flags().StringVarP(&command, "command", "c", "", "shell command string to execute")
+	cmd.Flags().MarkHidden("command") //nolint:errcheck // flag is guaranteed to exist
 	cmd.Flags().StringVarP(&allowedPaths, "allowed-path", "p", "", "comma-separated list of directories the shell is allowed to access")
 	cmd.Flags().StringVar(&allowedCommands, "allowed-commands", "", "comma-separated list of commands the shell is allowed to execute")
 	cmd.Flags().BoolVar(&allowAllCmds, "allow-all-commands", false, "allow execution of all commands (builtins and external)")
@@ -112,6 +117,22 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return 1
 	}
 	return 0
+}
+
+// rejectLongCommand scans raw CLI args for "--command" or "--command=..." and
+// returns an error if found. The flag is registered with a long name so that
+// cobra/pflag help formatting works correctly, but only the -c shorthand is
+// intended to be user-facing.
+func rejectLongCommand(rawArgs []string) error {
+	for _, a := range rawArgs {
+		if a == "--" {
+			break // everything after "--" is a positional arg
+		}
+		if a == "--command" || strings.HasPrefix(a, "--command=") {
+			return fmt.Errorf("unknown flag: --command")
+		}
+	}
+	return nil
 }
 
 // executeOpts holds options for the execute function.
