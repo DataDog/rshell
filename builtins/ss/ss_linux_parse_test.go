@@ -174,7 +174,7 @@ func TestFormatIPv6LongestZeroRunPicked(t *testing.T) {
 	b[6], b[7] = 0x00, 0x01 // 0001
 	// groups 4-6: zero (3 groups)
 	b[14], b[15] = 0x00, 0x01 // 0001
-	assert.Equal(t, "2001::1:0:0:1", formatIPv6(b))
+	assert.Equal(t, "2001:0:0:1::1", formatIPv6(b))
 }
 
 func TestFormatIPv6IPv4Mapped(t *testing.T) {

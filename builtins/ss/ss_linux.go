@@ -97,10 +97,11 @@ var udpStateMap = map[string]string{
 	"07": "UNCONN",
 }
 
-// unixStateMap translates the decimal state field from /proc/net/unix.
+// unixStateMap translates the hex state field from /proc/net/unix.
+// The kernel prints sk_state as %02X; values are TCP state enum entries.
 var unixStateMap = map[string]string{
-	"1":  "ESTAB",
-	"10": "LISTEN",
+	"01": "ESTAB",  // TCP_ESTABLISHED = 1
+	"0A": "LISTEN", // TCP_LISTEN = 10
 }
 
 // parseIPv4Proc decodes an 8-hex-digit little-endian IPv4 address from

@@ -55,26 +55,36 @@ var tcpStateNames = map[uint32]string{
 
 // Collect enumerates all TCP and UDP sockets on Windows via iphlpapi.dll.
 // The narrow use of unsafe.Pointer is limited to two DLL call sites only.
+// If every sub-collection fails, the first error is returned so callers can
+// distinguish a real API failure from an empty socket table.
 func Collect() ([]SocketEntry, error) {
 	var out []SocketEntry
+	var firstErr error
 
-	// TCP IPv4
-	if e, err := collectTCP(afINET); err == nil {
+	collect := func(e []SocketEntry, err error) {
+		if err != nil {
+			if firstErr == nil {
+				firstErr = err
+			}
+			return
+		}
 		out = append(out, e...)
 	}
+
+	// TCP IPv4
+	collect(collectTCP(afINET))
 	// TCP IPv6
-	if e, err := collectTCP(afINET6); err == nil {
-		out = append(out, e...)
-	}
+	collect(collectTCP(afINET6))
 	// UDP IPv4
-	if e, err := collectUDP(afINET); err == nil {
-		out = append(out, e...)
-	}
+	collect(collectUDP(afINET))
 	// UDP IPv6
-	if e, err := collectUDP(afINET6); err == nil {
-		out = append(out, e...)
-	}
+	collect(collectUDP(afINET6))
 
+	// Return an error only when every collection failed and nothing was returned.
+	// Partial results (e.g. IPv6 unavailable) are still returned without error.
+	if len(out) == 0 && firstErr != nil {
+		return nil, firstErr
+	}
 	return out, nil
 }
 
