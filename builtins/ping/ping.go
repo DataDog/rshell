@@ -57,6 +57,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/DataDog/datadog-traceroute/result"
 	"github.com/DataDog/datadog-traceroute/traceroute"
 
 	"github.com/DataDog/rshell/builtins"
@@ -148,8 +149,29 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			E2eQueries:        *count,
 		}
 
-		t := traceroute.NewTraceroute()
-		results, err := t.RunTraceroute(ctx, params)
+		tr := traceroute.NewTraceroute()
+
+		// Run traceroute in a goroutine so we can enforce context
+		// cancellation even when the library blocks in time.Sleep.
+		type trResult struct {
+			results *result.Results
+			err     error
+		}
+		ch := make(chan trResult, 1)
+		go func() {
+			res, err := tr.RunTraceroute(ctx, params)
+			ch <- trResult{res, err}
+		}()
+
+		var results *result.Results
+		var err error
+		select {
+		case <-ctx.Done():
+			callCtx.Errf("ping: %s: %s\n", host, ctx.Err().Error())
+			return builtins.Result{Code: 1}
+		case r := <-ch:
+			results, err = r.results, r.err
+		}
 		if err != nil {
 			callCtx.Errf("ping: %s: %s\n", host, err.Error())
 			return builtins.Result{Code: 1}
