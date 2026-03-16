@@ -263,6 +263,11 @@ func processFile(ctx context.Context, callCtx *builtins.CallContext, file string
 		isRegularFile = isRegular(callCtx.Stdin)
 		rc = io.NopCloser(callCtx.Stdin)
 	} else {
+		// GNU tail skips files entirely in zero-count non-offset mode:
+		// "tail -n 0 missing.txt" exits 0 with no output or error.
+		if cm.n == 0 && !cm.offset {
+			return nil
+		}
 		f, err := callCtx.OpenFile(ctx, file, os.O_RDONLY, 0)
 		if err != nil {
 			return err
