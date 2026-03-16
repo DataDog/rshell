@@ -131,6 +131,11 @@ type CallContext struct {
 	// via GetFileInformationByHandle. The path parameter is needed on Windows
 	// where FileInfo.Sys() lacks identity fields; Unix ignores it.
 	FileIdentity func(path string, info fs.FileInfo) (FileID, bool)
+
+	// CommandAllowed reports whether a command name is permitted under the
+	// current shell policy. Used by the help builtin to list only executable
+	// commands.
+	CommandAllowed func(name string) bool
 }
 
 // Out writes a string to stdout.

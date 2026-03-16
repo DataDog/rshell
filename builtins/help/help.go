@@ -42,7 +42,15 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			return builtins.Result{Code: 1}
 		}
 
-		names := builtins.Names()
+		// Filter to only commands allowed under the current policy.
+		allNames := builtins.Names()
+		var names []string
+		for _, name := range allNames {
+			if callCtx.CommandAllowed != nil && !callCtx.CommandAllowed(name) {
+				continue
+			}
+			names = append(names, name)
+		}
 
 		// Find the longest command name for alignment.
 		maxLen := 0
@@ -53,10 +61,7 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 		}
 
 		for _, name := range names {
-			meta, ok := builtins.Meta(name)
-			if !ok {
-				continue
-			}
+			meta, _ := builtins.Meta(name)
 			callCtx.Outf("%-*s  %s\n", maxLen, name, meta.Description)
 		}
 
