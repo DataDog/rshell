@@ -56,13 +56,13 @@ jobs:
       - uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
         with:
           go-version-file: .go-version
-      - name: Run ping integration tests (Linux)
-        if: runner.os == 'Linux'
+      - name: Run ping integration tests (Linux/macOS)
+        if: runner.os == 'Linux' || runner.os == 'macOS'
         env:
           RSHELL_PING_TEST: "1"
-        run: sudo -E go test -race -v -run 'TestPing.*Integration|TestPingPentest' ./builtins/ping/ -timeout 120s
-      - name: Run ping integration tests (non-Linux)
-        if: runner.os != 'Linux'
+        run: sudo -E env "PATH=$PATH" go test -race -v -run 'TestPing.*Integration|TestPingPentest' ./builtins/ping/ -timeout 120s
+      - name: Run ping integration tests (Windows)
+        if: runner.os == 'Windows'
         env:
           RSHELL_PING_TEST: "1"
         run: go test -race -v -run 'TestPing.*Integration|TestPingPentest' ./builtins/ping/ -timeout 120s
