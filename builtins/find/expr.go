@@ -533,19 +533,20 @@ func (p *parser) parseExecPredicate(isDir bool) (*expr, error) {
 		return nil, fmt.Errorf("find: %s: no command specified", predName)
 	}
 
-	// Validate that {} appears as a standalone argument.
-	hasPlaceholder := false
+	// Count standalone {} placeholders.
+	placeholderCount := 0
 	for _, a := range cmdArgs {
 		if a == "{}" {
-			hasPlaceholder = true
-			break
+			placeholderCount++
 		}
 	}
 
-	// In batch mode, {} must be present (it's the last arg before +).
-	// Note: this is defensive — batch mode detection above already requires
-	// cmdArgs to end with {}, so hasPlaceholder is always true when batch is true.
-	if batch && !hasPlaceholder {
+	// In batch mode, GNU find requires exactly one {} (the last arg before +).
+	// Multiple {} placeholders are rejected with an error matching GNU find behaviour.
+	if batch && placeholderCount > 1 {
+		return nil, fmt.Errorf("find: only one instance of '{}' is supported with %s ... +", predName)
+	}
+	if batch && placeholderCount == 0 {
 		return nil, fmt.Errorf("find: %s: '{}' must appear before '+'", predName)
 	}
 

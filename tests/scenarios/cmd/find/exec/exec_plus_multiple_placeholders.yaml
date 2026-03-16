@@ -1,0 +1,14 @@
+description: "find rejects multiple {} placeholders in -exec ... {} + mode"
+skip_assert_against_bash: true
+setup:
+  files:
+    - path: a.txt
+      content: "a"
+      chmod: 0644
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    find . -exec echo {} x {} +
+expect:
+  stderr_contains: ["only one instance of '{}'"]
+  exit_code: 1
