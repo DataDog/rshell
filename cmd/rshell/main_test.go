@@ -224,3 +224,9 @@ func TestAllowAllCommandsFlag(t *testing.T) {
 	assert.Equal(t, 0, code)
 	assert.Equal(t, "hello\n", stdout)
 }
+
+func TestCommandLongFormRejected(t *testing.T) {
+	code, _, stderr := runCLI(t, "--command", "echo hi")
+	assert.NotEqual(t, 0, code)
+	assert.Contains(t, stderr, "unknown flag: --command")
+}

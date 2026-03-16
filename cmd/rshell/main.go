@@ -39,7 +39,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		SilenceErrors: true,
 		Args:          cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			commandSet := cmd.Flags().Changed("command")
+			commandSet := cmd.Flags().Changed("")
 			if commandSet && len(args) > 0 {
 				return fmt.Errorf("cannot use -c with file arguments")
 			}
@@ -98,8 +98,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	cmd.SetOut(stdout)
 	cmd.SetErr(stderr)
 
-	cmd.Flags().StringVarP(&command, "command", "c", "", "shell command string to execute")
-	cmd.Flags().Lookup("command").Hidden = true // only expose -c short flag
+	cmd.Flags().StringVarP(&command, "", "c", "", "shell command string to execute")
 	cmd.Flags().StringVarP(&allowedPaths, "allowed-path", "p", "", "comma-separated list of directories the shell is allowed to access")
 	cmd.Flags().StringVar(&allowedCommands, "allowed-commands", "", "comma-separated list of commands the shell is allowed to execute")
 	cmd.Flags().BoolVar(&allowAllCmds, "allow-all-commands", false, "allow execution of all commands (builtins and external)")
