@@ -6,6 +6,6 @@ input:
   script: |+
     ip -b /tmp/cmds addr show
 expect:
-  stderr_contains: ["ip:"]
+  stderr: "ip: unknown shorthand flag: 'b' in -b\n"
   exit_code: 1
 skip_assert_against_bash: true

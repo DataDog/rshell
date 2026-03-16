@@ -6,6 +6,6 @@ input:
   script: |+
     ip -n mynamespace addr show
 expect:
-  stderr_contains: ["ip:"]
+  stderr: "ip: unknown shorthand flag: 'n' in -n\n"
   exit_code: 1
 skip_assert_against_bash: true

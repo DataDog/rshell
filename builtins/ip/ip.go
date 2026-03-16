@@ -169,18 +169,18 @@ func parseShowArgs(object string, args []string) (string, error) {
 		return "", fmt.Errorf("'ip %s %s' is not supported (write operations are blocked for safety)", object, args[0])
 	}
 
-	// Parse optional "dev IFNAME" filter.
+	// Parse optional "dev IFNAME" filter; any other token is an error.
 	var devFilter string
 	for len(args) > 0 {
-		if args[0] == "dev" {
+		switch args[0] {
+		case "dev":
 			if len(args) < 2 {
 				return "", fmt.Errorf("'dev' requires an interface name argument")
 			}
 			devFilter = args[1]
 			args = args[2:]
-		} else {
-			// Skip unknown tokens (mirrors real ip leniency for unknown modifiers).
-			args = args[1:]
+		default:
+			return "", fmt.Errorf("unknown token %q after 'ip %s show'", args[0], object)
 		}
 	}
 	return devFilter, nil

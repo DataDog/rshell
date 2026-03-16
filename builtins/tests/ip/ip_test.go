@@ -216,18 +216,20 @@ func TestIPLinkShowAllInterfacesContainsState(t *testing.T) {
 	assert.True(t, hasState, "expected at least one state line in: %q", stdout)
 }
 
-// TestIPAddrShowUnknownTokenIgnored verifies that unknown modifier tokens
-// after "show" are silently skipped (mirrors real ip leniency).
-func TestIPAddrShowUnknownTokenIgnored(t *testing.T) {
-	_, _, code := cmdRun(t, "ip addr show type veth")
-	assert.Equal(t, 0, code)
+// TestIPAddrShowUnknownTokenRejected verifies that unknown tokens after "show"
+// are rejected with exit 1 (prevents silently ignoring mistyped commands).
+func TestIPAddrShowUnknownTokenRejected(t *testing.T) {
+	_, stderr, code := cmdRun(t, "ip addr show type veth")
+	assert.Equal(t, 1, code)
+	assert.Contains(t, stderr, "unknown token")
 }
 
-// TestIPLinkShowUnknownTokenIgnored verifies that unknown modifier tokens
-// after "show" are silently skipped for link subcommand.
-func TestIPLinkShowUnknownTokenIgnored(t *testing.T) {
-	_, _, code := cmdRun(t, "ip link show type ether")
-	assert.Equal(t, 0, code)
+// TestIPLinkShowUnknownTokenRejected verifies that unknown tokens after "show"
+// are rejected with exit 1 for the link subcommand.
+func TestIPLinkShowUnknownTokenRejected(t *testing.T) {
+	_, stderr, code := cmdRun(t, "ip link show type ether")
+	assert.Equal(t, 1, code)
+	assert.Contains(t, stderr, "unknown token")
 }
 
 // ============================================================================
