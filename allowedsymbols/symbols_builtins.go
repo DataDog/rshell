@@ -316,7 +316,7 @@ var builtinAllowedSymbols = []string{
 	"errors.New",       // creates a simple error value; pure function, no I/O.
 	"fmt.Errorf",       // error formatting; pure function, no I/O.
 	"fmt.Sprintf",      // string formatting; pure function, no I/O.
-	"github.com/DataDog/datadog-traceroute/traceroute.NewTraceroute",    // creates a traceroute runner for ICMP probes; network I/O (authorized for ping builtin).
+	"github.com/DataDog/datadog-traceroute/traceroute.NewTraceroute",    // creates a traceroute runner for ICMP probes; network I/O (authorized for ping builtin only via per-command allowlist).
 	"github.com/DataDog/datadog-traceroute/traceroute.TracerouteParams", // parameter struct for traceroute configuration; pure data type.
 	"io.EOF",                          // sentinel error value; pure constant.
 	"io.MultiReader",                  // combines multiple Readers into one sequential Reader; no I/O side effects.

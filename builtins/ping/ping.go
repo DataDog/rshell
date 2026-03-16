@@ -71,6 +71,9 @@ const MaxCount = 1000
 // MaxTimeout is the maximum per-probe timeout in seconds.
 const MaxTimeout = 60
 
+// MaxInterval is the maximum interval between probes in seconds.
+const MaxInterval = 60
+
 func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 	count := fs.IntP("count", "c", 4, "stop after sending N probes")
 	timeout := fs.IntP("timeout", "W", 2, "timeout in seconds per probe")
@@ -119,6 +122,9 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 		if *interval <= 0 {
 			callCtx.Errf("ping: invalid interval: %g\n", *interval)
 			return builtins.Result{Code: 1}
+		}
+		if *interval > MaxInterval {
+			*interval = MaxInterval
 		}
 
 		if ctx.Err() != nil {
