@@ -6,6 +6,6 @@ input:
     select x in a b c; do echo $x; break; done
 expect:
   stdout: ""
-  stderr_contains:
-    - "not supported"
+  stderr: |+
+    select statements are not supported
   exit_code: 2

@@ -9,6 +9,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
 	"time"
 	"unicode/utf8"
@@ -48,6 +49,9 @@ func FuzzLsFlags(f *testing.F) {
 	f.Add("README.md", false, false, false, false, false)
 	f.Add("Makefile", false, false, false, false, false)
 
+	tmpRoot := f.TempDir()
+	var counter atomic.Int64
+
 	f.Fuzz(func(t *testing.T, filename string, flagL, flagA, flagR, flagS, flagF bool) {
 		if len(filename) == 0 || len(filename) > 100 {
 			return
@@ -66,7 +70,8 @@ func FuzzLsFlags(f *testing.F) {
 			return
 		}
 
-		dir := t.TempDir()
+		dir, cleanup := testutil.FuzzIterDir(t, tmpRoot, &counter)
+		defer cleanup()
 		if err := os.WriteFile(filepath.Join(dir, filename), []byte("content"), 0644); err != nil {
 			// Some filenames may be invalid on the OS.
 			return
@@ -103,23 +108,28 @@ func FuzzLsFlags(f *testing.F) {
 // Edge cases: maxRecursionDepth=256 (depth 255 is last valid, 256 should error),
 // empty subdirectories, hidden subdirectories.
 func FuzzLsRecursive(f *testing.F) {
+	f.Add(int64(0))
 	f.Add(int64(1))
 	f.Add(int64(3))
 	f.Add(int64(5))
-	// Near recursion depth limit (maxRecursionDepth=256)
-	f.Add(int64(254))
-	f.Add(int64(255))
-	f.Add(int64(256))
-	f.Add(int64(257))
-	// Zero and negative handled by guard
-	f.Add(int64(0))
+	f.Add(int64(10))
+	// Note: maxRecursionDepth=256 boundary is tested in ls_pentest_test.go.
+	// Fuzz seeds above 10 are excluded because nested "sub" directories
+	// exceed OS max path length well before reaching depth 256.
+
+	tmpRoot := f.TempDir()
+	var counter atomic.Int64
 
 	f.Fuzz(func(t *testing.T, depth int64) {
+		// Cap at 10 to avoid hitting OS max path length (creating 256+ nested
+		// "sub" directories exceeds filesystem limits on most platforms).
+		// The maxRecursionDepth=256 limit is tested in ls_pentest_test.go instead.
 		if depth < 0 || depth > 10 {
 			return
 		}
 
-		dir := t.TempDir()
+		dir, cleanup := testutil.FuzzIterDir(t, tmpRoot, &counter)
+		defer cleanup()
 		current := dir
 		for i := int64(0); i < depth; i++ {
 			subdir := filepath.Join(current, "sub")
@@ -166,13 +176,17 @@ func FuzzLsHumanReadable(f *testing.F) {
 	// Negative size (shouldn't happen but check robustness)
 	f.Add(int64(512))
 
+	tmpRoot := f.TempDir()
+	var counter atomic.Int64
+
 	f.Fuzz(func(t *testing.T, fileSize int64) {
 		// Clamp to 1 MiB to avoid slow file creation.
 		if fileSize < 0 || fileSize > 1<<20 {
 			return
 		}
 
-		dir := t.TempDir()
+		dir, cleanup := testutil.FuzzIterDir(t, tmpRoot, &counter)
+		defer cleanup()
 		// Create a file with the specified size using Truncate.
 		fpath := filepath.Join(dir, "testfile.bin")
 		fh, err := os.Create(fpath)
@@ -210,8 +224,12 @@ func FuzzLsMultipleFiles(f *testing.F) {
 	f.Add(true, false, false, true) // -lS
 	f.Add(true, false, true, false) // -lt
 
+	tmpRoot := f.TempDir()
+	var counter atomic.Int64
+
 	f.Fuzz(func(t *testing.T, flagL, flagA, flagT, flagS bool) {
-		dir := t.TempDir()
+		dir, cleanup := testutil.FuzzIterDir(t, tmpRoot, &counter)
+		defer cleanup()
 
 		// Create a mix of files and a subdirectory.
 		files := []struct {

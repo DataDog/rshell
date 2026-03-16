@@ -1,4 +1,5 @@
 description: Echo -e with surrogate codepoint replaces with U+FFFD (intentional security divergence from bash).
+# skip: rshell builtin error/output format differs from GNU coreutils
 skip_assert_against_bash: true
 input:
   script: |+

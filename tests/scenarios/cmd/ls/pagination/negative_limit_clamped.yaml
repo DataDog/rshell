@@ -1,4 +1,5 @@
 description: Negative --limit is clamped to zero (shows all entries).
+# skip: pagination flags are an rshell-specific extension not present in GNU coreutils
 skip_assert_against_bash: true
 setup:
   files:

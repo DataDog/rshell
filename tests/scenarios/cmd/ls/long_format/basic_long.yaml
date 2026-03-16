@@ -1,4 +1,5 @@
 description: ls -l shows long format with mode, size, date, and name.
+# skip: rshell ls output format differs from GNU coreutils
 skip_assert_against_bash: true
 setup:
   files:

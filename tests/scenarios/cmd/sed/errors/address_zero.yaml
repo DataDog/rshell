@@ -1,4 +1,5 @@
 description: Line address 0 as standalone address is rejected.
+# skip: rshell builtin error/output format differs from GNU coreutils
 skip_assert_against_bash: true
 input:
   script: |+

@@ -12,8 +12,11 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/DataDog/rshell/builtins/testutil"
 )
 
 // FuzzHeadLines fuzzes head -n N with arbitrary file content.
@@ -49,6 +52,9 @@ func FuzzHeadLines(f *testing.F) {
 	// No trailing newline on last output line
 	f.Add([]byte("line1\nline2"), int64(2))
 
+	baseDir := f.TempDir()
+	var counter atomic.Int64
+
 	f.Fuzz(func(t *testing.T, input []byte, n int64) {
 		if len(input) > 1<<20 {
 			return
@@ -60,7 +66,9 @@ func FuzzHeadLines(f *testing.F) {
 			n = 10000
 		}
 
-		dir := t.TempDir()
+		dir, cleanup := testutil.FuzzIterDir(t, baseDir, &counter)
+		defer cleanup()
+
 		err := os.WriteFile(filepath.Join(dir, "input.txt"), input, 0644)
 		if err != nil {
 			t.Fatal(err)
@@ -108,6 +116,9 @@ func FuzzHeadBytes(f *testing.F) {
 	// CRLF
 	f.Add([]byte("a\r\nb\r\n"), int64(3))
 
+	baseDir := f.TempDir()
+	var counter atomic.Int64
+
 	f.Fuzz(func(t *testing.T, input []byte, n int64) {
 		if len(input) > 1<<20 {
 			return
@@ -119,7 +130,9 @@ func FuzzHeadBytes(f *testing.F) {
 			n = 10000
 		}
 
-		dir := t.TempDir()
+		dir, cleanup := testutil.FuzzIterDir(t, baseDir, &counter)
+		defer cleanup()
+
 		err := os.WriteFile(filepath.Join(dir, "input.txt"), input, 0644)
 		if err != nil {
 			t.Fatal(err)
@@ -154,6 +167,9 @@ func FuzzHeadStdin(f *testing.F) {
 	f.Add([]byte{0xfc, 0x80, 0x80, 0x80, 0x80, 0xaf, '\n'}, int64(1))
 	f.Add([]byte("line1\r\nline2\r\n"), int64(1))
 
+	baseDir := f.TempDir()
+	var counter atomic.Int64
+
 	f.Fuzz(func(t *testing.T, input []byte, n int64) {
 		if len(input) > 1<<20 {
 			return
@@ -165,7 +181,9 @@ func FuzzHeadStdin(f *testing.F) {
 			n = 10000
 		}
 
-		dir := t.TempDir()
+		dir, cleanup := testutil.FuzzIterDir(t, baseDir, &counter)
+		defer cleanup()
+
 		err := os.WriteFile(filepath.Join(dir, "stdin.txt"), input, 0644)
 		if err != nil {
 			t.Fatal(err)

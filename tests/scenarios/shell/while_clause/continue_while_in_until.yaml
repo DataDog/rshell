@@ -1,0 +1,14 @@
+# skip: while loops are intentionally blocked in the restricted shell
+skip_assert_against_bash: true
+description: Continue in while loop nested inside until loop is blocked.
+input:
+  script: |+
+    until false; do
+      while true; do
+        continue 2
+      done
+    done
+expect:
+  stdout: ""
+  stderr: "while/until loops are not supported\n"
+  exit_code: 2

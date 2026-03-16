@@ -1,4 +1,5 @@
 description: Echo -e with non-ASCII unicode is locale-independent (intentional divergence from bash which is locale-dependent).
+# skip: rshell builtin error/output format differs from GNU coreutils
 skip_assert_against_bash: true
 input:
   script: |+

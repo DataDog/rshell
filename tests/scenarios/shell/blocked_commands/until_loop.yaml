@@ -1,3 +1,4 @@
+# skip: feature is intentionally blocked in the restricted shell
 skip_assert_against_bash: true
 description: Until loops are not supported.
 input:

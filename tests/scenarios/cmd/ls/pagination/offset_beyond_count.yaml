@@ -1,4 +1,5 @@
 description: ls --offset beyond entry count returns empty output.
+# skip: pagination flags are an rshell-specific extension not present in GNU coreutils
 skip_assert_against_bash: true
 setup:
   files:

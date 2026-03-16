@@ -7,6 +7,6 @@ input:
     select x in a b; do echo "$x"; done
 expect:
   stdout: ""
-  stderr_contains:
-    - "not supported"
+  stderr: |+
+    select statements are not supported
   exit_code: 2
