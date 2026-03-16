@@ -90,6 +90,7 @@ var builtinPerCommandSymbols = map[string][]string{
 		"strconv.ErrRange",                // sentinel error value for overflow; pure constant.
 		"strconv.ParseInt",                // string-to-int conversion; pure function, no I/O.
 		"strings.HasPrefix",               // pure function for prefix matching; no I/O.
+		"strings.ReplaceAll",              // replaces all occurrences of a substring; pure function, no I/O.
 		"strings.ToLower",                 // converts string to lowercase; pure function, no I/O.
 		"time.Duration",                   // duration type; pure integer alias, no I/O.
 		"time.Hour",                       // constant representing one hour; no side effects.
