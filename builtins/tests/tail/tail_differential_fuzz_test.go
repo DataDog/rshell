@@ -15,8 +15,11 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/DataDog/rshell/builtins/testutil"
 )
 
 // runGNUInDir runs a GNU command under LC_ALL=C.UTF-8 with its working
@@ -70,6 +73,9 @@ func FuzzTailDifferential(f *testing.F) {
 	f.Add([]byte("a\nb\nc\nd\ne\n"), int64(3))
 	f.Add(bytes.Repeat([]byte("line\n"), 20), int64(5))
 
+	baseDir := f.TempDir()
+	var counter atomic.Int64
+
 	f.Fuzz(func(t *testing.T, input []byte, n int64) {
 		if len(input) > 64*1024 {
 			return
@@ -78,7 +84,9 @@ func FuzzTailDifferential(f *testing.F) {
 			return
 		}
 
-		dir := t.TempDir()
+		dir, cleanup := testutil.FuzzIterDir(t, baseDir, &counter)
+		defer cleanup()
+
 		if err := os.WriteFile(filepath.Join(dir, "input.txt"), input, 0644); err != nil {
 			t.Fatal(err)
 		}

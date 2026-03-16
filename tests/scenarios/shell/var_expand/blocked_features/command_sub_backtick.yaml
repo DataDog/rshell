@@ -1,10 +1,9 @@
-skip_assert_against_bash: true
-description: Backtick command substitution is not supported.
+description: Backtick command substitution works.
 input:
   script: |+
     echo `echo hello`
 expect:
-  stdout: ""
-  stderr: |+
-    command substitution is not supported
-  exit_code: 2
+  stdout: |+
+    hello
+  stderr: ""
+  exit_code: 0

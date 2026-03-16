@@ -1,4 +1,5 @@
 description: Printf interprets \u for multi-byte Unicode characters.
+# skip: rshell builtin error/output format differs from GNU coreutils
 skip_assert_against_bash: true  # bash outputs literal \u in POSIX locale; rshell always emits UTF-8
 input:
   script: |+

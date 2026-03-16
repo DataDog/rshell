@@ -1,4 +1,5 @@
 description: ls -a shows hidden files including . and ..
+# skip: rshell builtin error/output format differs from GNU coreutils
 skip_assert_against_bash: true
 setup:
   files:

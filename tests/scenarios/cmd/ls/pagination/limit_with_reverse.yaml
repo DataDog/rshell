@@ -1,4 +1,5 @@
 description: ls -r --limit returns the correct number of entries in reverse sort order.
+# skip: pagination flags are an rshell-specific extension not present in GNU coreutils
 skip_assert_against_bash: true
 setup:
   files:

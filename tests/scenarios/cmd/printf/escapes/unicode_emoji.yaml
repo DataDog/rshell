@@ -1,4 +1,5 @@
 description: Printf interprets \U for emoji Unicode code points.
+# skip: rshell builtin error/output format differs from GNU coreutils
 skip_assert_against_bash: true  # bash outputs literal \U in POSIX locale; rshell always emits UTF-8
 input:
   script: |+

@@ -303,7 +303,7 @@ func (r *Runner) Reset() {
 				return r.sandbox.Open(path, HandlerCtx(ctx).Dir, flag, perm)
 			}
 			r.readDirHandler = func(ctx context.Context, path string) ([]os.DirEntry, error) {
-				return r.sandbox.ReadDir(path, HandlerCtx(ctx).Dir)
+				return r.sandbox.ReadDirForGlob(path, HandlerCtx(ctx).Dir)
 			}
 			r.execHandler = noExecHandler()
 		}
@@ -348,7 +348,15 @@ func (s ExitStatus) Error() string { return fmt.Sprintf("exit status %d", s) }
 func (r *Runner) Run(ctx context.Context, node syntax.Node) (retErr error) {
 	defer func() {
 		if rec := recover(); rec != nil {
-			retErr = fmt.Errorf("internal error: %v", rec)
+			panicOut := io.Writer(io.Discard)
+			if r != nil && r.stderr != nil {
+				panicOut = r.stderr
+			}
+			func() {
+				defer func() { recover() }()
+				fmt.Fprintf(panicOut, "rshell: internal panic: %v\n", rec)
+			}()
+			retErr = fmt.Errorf("internal error")
 		}
 	}()
 	if !r.didReset {

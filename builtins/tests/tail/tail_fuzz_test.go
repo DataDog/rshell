@@ -12,8 +12,11 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/DataDog/rshell/builtins/testutil"
 )
 
 // FuzzTailLines fuzzes tail -n N with arbitrary file content.
@@ -49,6 +52,9 @@ func FuzzTailLines(f *testing.F) {
 	// Many blank lines (stress ring buffer)
 	f.Add(bytes.Repeat([]byte("\n"), 1000), int64(5))
 
+	baseDir := f.TempDir()
+	var counter atomic.Int64
+
 	f.Fuzz(func(t *testing.T, input []byte, n int64) {
 		if len(input) > 1<<20 {
 			return
@@ -60,7 +66,9 @@ func FuzzTailLines(f *testing.F) {
 			n = 10000
 		}
 
-		dir := t.TempDir()
+		dir, cleanup := testutil.FuzzIterDir(t, baseDir, &counter)
+		defer cleanup()
+
 		err := os.WriteFile(filepath.Join(dir, "input.txt"), input, 0644)
 		if err != nil {
 			t.Fatal(err)
@@ -69,7 +77,7 @@ func FuzzTailLines(f *testing.F) {
 		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		defer cancel()
 
-		stdout, _, code := cmdRunCtx(ctx, t, fmt.Sprintf("tail -n %d input.txt", n), dir)
+		stdout, _, code := fuzzRunCtx(ctx, t, fmt.Sprintf("tail -n %d input.txt", n), dir)
 		if code != 0 && code != 1 {
 			t.Errorf("tail -n %d unexpected exit code %d", n, code)
 		}
@@ -106,6 +114,9 @@ func FuzzTailBytes(f *testing.F) {
 	// Chunk boundary (32 KiB)
 	f.Add(bytes.Repeat([]byte("z"), 32*1024+1), int64(1))
 
+	baseDir := f.TempDir()
+	var counter atomic.Int64
+
 	f.Fuzz(func(t *testing.T, input []byte, n int64) {
 		if len(input) > 1<<20 {
 			return
@@ -117,7 +128,9 @@ func FuzzTailBytes(f *testing.F) {
 			n = 10000
 		}
 
-		dir := t.TempDir()
+		dir, cleanup := testutil.FuzzIterDir(t, baseDir, &counter)
+		defer cleanup()
+
 		err := os.WriteFile(filepath.Join(dir, "input.txt"), input, 0644)
 		if err != nil {
 			t.Fatal(err)
@@ -126,7 +139,7 @@ func FuzzTailBytes(f *testing.F) {
 		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		defer cancel()
 
-		stdout, _, code := cmdRunCtx(ctx, t, fmt.Sprintf("tail -c %d input.txt", n), dir)
+		stdout, _, code := fuzzRunCtx(ctx, t, fmt.Sprintf("tail -c %d input.txt", n), dir)
 		if code != 0 && code != 1 {
 			t.Errorf("tail -c %d unexpected exit code %d", n, code)
 		}
@@ -153,6 +166,9 @@ func FuzzTailStdin(f *testing.F) {
 	f.Add([]byte{0xfc, 0x80, 0x80, 0x80, 0x80, 0xaf, '\n'}, int64(1))
 	f.Add([]byte("line1\r\nline2\r\n"), int64(1))
 
+	baseDir := f.TempDir()
+	var counter atomic.Int64
+
 	f.Fuzz(func(t *testing.T, input []byte, n int64) {
 		if len(input) > 1<<20 {
 			return
@@ -164,7 +180,9 @@ func FuzzTailStdin(f *testing.F) {
 			n = 10000
 		}
 
-		dir := t.TempDir()
+		dir, cleanup := testutil.FuzzIterDir(t, baseDir, &counter)
+		defer cleanup()
+
 		err := os.WriteFile(filepath.Join(dir, "stdin.txt"), input, 0644)
 		if err != nil {
 			t.Fatal(err)
@@ -173,7 +191,7 @@ func FuzzTailStdin(f *testing.F) {
 		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		defer cancel()
 
-		_, _, code := cmdRunCtx(ctx, t, fmt.Sprintf("tail -n %d < stdin.txt", n), dir)
+		_, _, code := fuzzRunCtx(ctx, t, fmt.Sprintf("tail -n %d < stdin.txt", n), dir)
 		if code != 0 && code != 1 {
 			t.Errorf("tail stdin unexpected exit code %d", code)
 		}
@@ -200,6 +218,9 @@ func FuzzTailLinesOffset(f *testing.F) {
 	// CRLF
 	f.Add([]byte("a\r\nb\r\nc\r\n"), int64(2))
 
+	baseDir := f.TempDir()
+	var counter atomic.Int64
+
 	f.Fuzz(func(t *testing.T, input []byte, n int64) {
 		if len(input) > 1<<20 {
 			return
@@ -211,7 +232,9 @@ func FuzzTailLinesOffset(f *testing.F) {
 			n = 10000
 		}
 
-		dir := t.TempDir()
+		dir, cleanup := testutil.FuzzIterDir(t, baseDir, &counter)
+		defer cleanup()
+
 		err := os.WriteFile(filepath.Join(dir, "input.txt"), input, 0644)
 		if err != nil {
 			t.Fatal(err)
@@ -220,7 +243,7 @@ func FuzzTailLinesOffset(f *testing.F) {
 		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		defer cancel()
 
-		_, _, code := cmdRunCtx(ctx, t, fmt.Sprintf("tail -n +%d input.txt", n), dir)
+		_, _, code := fuzzRunCtx(ctx, t, fmt.Sprintf("tail -n +%d input.txt", n), dir)
 		if code != 0 && code != 1 {
 			t.Errorf("tail -n +%d unexpected exit code %d", n, code)
 		}
@@ -244,6 +267,9 @@ func FuzzTailBytesOffset(f *testing.F) {
 	// Binary content
 	f.Add([]byte{0x00, 0x01, 0x02, 0xff, 0xfe}, int64(2))
 
+	baseDir := f.TempDir()
+	var counter atomic.Int64
+
 	f.Fuzz(func(t *testing.T, input []byte, n int64) {
 		if len(input) > 1<<20 {
 			return
@@ -255,7 +281,9 @@ func FuzzTailBytesOffset(f *testing.F) {
 			n = 10000
 		}
 
-		dir := t.TempDir()
+		dir, cleanup := testutil.FuzzIterDir(t, baseDir, &counter)
+		defer cleanup()
+
 		err := os.WriteFile(filepath.Join(dir, "input.txt"), input, 0644)
 		if err != nil {
 			t.Fatal(err)
@@ -264,7 +292,7 @@ func FuzzTailBytesOffset(f *testing.F) {
 		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		defer cancel()
 
-		_, _, code := cmdRunCtx(ctx, t, fmt.Sprintf("tail -c +%d input.txt", n), dir)
+		_, _, code := fuzzRunCtx(ctx, t, fmt.Sprintf("tail -c +%d input.txt", n), dir)
 		if code != 0 && code != 1 {
 			t.Errorf("tail -c +%d unexpected exit code %d", n, code)
 		}

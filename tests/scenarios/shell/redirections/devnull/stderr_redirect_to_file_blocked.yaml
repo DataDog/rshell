@@ -1,3 +1,4 @@
+# skip: redirect restrictions are an rshell-specific security feature
 skip_assert_against_bash: true
 description: Stderr redirection to a real file (not /dev/null) is still blocked.
 input:

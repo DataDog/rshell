@@ -19,26 +19,40 @@ jobs:
         include:
           - pkg: ./builtins/tests/head/
             name: head
+            corpus_path: builtins/tests/head
           - pkg: ./builtins/tests/cat/
             name: cat
+            corpus_path: builtins/tests/cat
           - pkg: ./builtins/tests/wc/
             name: wc
+            corpus_path: builtins/tests/wc
           - pkg: ./builtins/tests/tail/
             name: tail
+            corpus_path: builtins/tests/tail
           - pkg: ./builtins/tests/grep/
             name: grep
+            corpus_path: builtins/tests/grep
           - pkg: ./builtins/tests/cut/
             name: cut
+            corpus_path: builtins/tests/cut
           - pkg: ./builtins/tests/echo/
             name: echo
+            corpus_path: builtins/tests/echo
           - pkg: ./builtins/tests/uniq/
             name: uniq
+            corpus_path: builtins/tests/uniq
           - pkg: ./builtins/tests/strings_cmd/
             name: strings_cmd
+            corpus_path: builtins/tests/strings_cmd
           - pkg: ./builtins/tests/testcmd/
             name: testcmd
+            corpus_path: builtins/tests/testcmd
           - pkg: ./builtins/tests/ls/
             name: ls
+            corpus_path: builtins/tests/ls
+          - pkg: ./interp/tests/
+            name: interp
+            corpus_path: interp/tests
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
@@ -47,10 +61,10 @@ jobs:
 
       # Restore corpus from previous runs
       - name: Restore fuzz corpus
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
         with:
           path: |
-            builtins/tests/${{ matrix.name }}/testdata/fuzz/
+            ${{ matrix.corpus_path }}/testdata/fuzz/
           key: fuzz-corpus-${{ matrix.name }}-${{ github.sha }}
           restore-keys: |
             fuzz-corpus-${{ matrix.name }}-
@@ -81,11 +95,11 @@ jobs:
 
       # Save corpus
       - name: Save fuzz corpus
-        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        uses: actions/cache/save@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
         if: always()
         with:
           path: |
-            builtins/tests/${{ matrix.name }}/testdata/fuzz/
+            ${{ matrix.corpus_path }}/testdata/fuzz/
           key: fuzz-corpus-${{ matrix.name }}-${{ github.sha }}
 
   fuzz-differential:
@@ -110,7 +124,7 @@ jobs:
           go-version-file: .go-version
 
       - name: Restore fuzz corpus
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
         with:
           path: |
             builtins/tests/${{ matrix.name }}/testdata/fuzz/
@@ -133,7 +147,7 @@ jobs:
           done
 
       - name: Save fuzz corpus
-        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        uses: actions/cache/save@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
         if: always()
         with:
           path: |

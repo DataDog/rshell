@@ -14,8 +14,11 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/DataDog/rshell/builtins/testutil"
 )
 
 // runGNUInDir runs a GNU command under LC_ALL=C.UTF-8 with its working
@@ -68,12 +71,17 @@ func FuzzWcDifferentialLines(f *testing.F) {
 	f.Add([]byte("single line\n"))
 	f.Add(bytes.Repeat([]byte("x\n"), 100))
 
+	baseDir := f.TempDir()
+	var counter atomic.Int64
+
 	f.Fuzz(func(t *testing.T, input []byte) {
 		if len(input) > 64*1024 {
 			return
 		}
 
-		dir := t.TempDir()
+		dir, cleanup := testutil.FuzzIterDir(t, baseDir, &counter)
+		defer cleanup()
+
 		if err := os.WriteFile(filepath.Join(dir, "input.txt"), input, 0644); err != nil {
 			t.Fatal(err)
 		}
@@ -122,12 +130,17 @@ func FuzzWcDifferentialWords(f *testing.F) {
 	f.Add([]byte("word"))
 	f.Add(bytes.Repeat([]byte("a b "), 50))
 
+	baseDir := f.TempDir()
+	var counter atomic.Int64
+
 	f.Fuzz(func(t *testing.T, input []byte) {
 		if len(input) > 64*1024 {
 			return
 		}
 
-		dir := t.TempDir()
+		dir, cleanup := testutil.FuzzIterDir(t, baseDir, &counter)
+		defer cleanup()
+
 		if err := os.WriteFile(filepath.Join(dir, "input.txt"), input, 0644); err != nil {
 			t.Fatal(err)
 		}
@@ -173,12 +186,17 @@ func FuzzWcDifferentialBytes(f *testing.F) {
 	f.Add(bytes.Repeat([]byte("x"), 100))
 	f.Add([]byte("\n\n\n"))
 
+	baseDir := f.TempDir()
+	var counter atomic.Int64
+
 	f.Fuzz(func(t *testing.T, input []byte) {
 		if len(input) > 64*1024 {
 			return
 		}
 
-		dir := t.TempDir()
+		dir, cleanup := testutil.FuzzIterDir(t, baseDir, &counter)
+		defer cleanup()
+
 		if err := os.WriteFile(filepath.Join(dir, "input.txt"), input, 0644); err != nil {
 			t.Fatal(err)
 		}

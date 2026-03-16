@@ -1,3 +1,4 @@
+# skip: readonly is intentionally blocked in the restricted shell
 skip_assert_against_bash: true
 description: The readonly keyword is not supported and is blocked at parse validation.
 input:
