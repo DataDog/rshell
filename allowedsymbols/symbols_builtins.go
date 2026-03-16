@@ -67,6 +67,7 @@ var builtinPerCommandSymbols = map[string][]string{
 	},
 	"find": {
 		"context.Context",                 // deadline/cancellation plumbing; pure interface, no side effects.
+		"errors.As",                       // error type assertion; pure function, no I/O.
 		"errors.Is",                       // error comparison; pure function, no I/O.
 		"errors.New",                      // creates a simple error value; pure function, no I/O.
 		"fmt.Errorf",                      // error formatting; pure function, no I/O.
@@ -81,9 +82,12 @@ var builtinPerCommandSymbols = map[string][]string{
 		"math.Ceil",                       // pure arithmetic; no side effects.
 		"math.Floor",                      // pure arithmetic; no side effects.
 		"math.MaxInt64",                   // integer constant; no side effects.
+		"os.IsNotExist",                   // checks if error is "not exist"; pure function, no I/O.
+		"os.PathError",                    // error type for path operations; pure type.
 		"path.Base",                       // extracts last element of path (always uses /); pure function, no I/O.
 		"path.Clean",                      // cleans a path (removes trailing slashes, double slashes); pure function, no I/O.
 		"path.Dir",                        // extracts directory from path (always uses /); pure function, no I/O.
+		"path/filepath.ToSlash",           // converts OS path separators to forward slashes; pure function, no I/O.
 		"strconv.Atoi",                    // string-to-int conversion; pure function, no I/O.
 		"strconv.ErrRange",                // sentinel error value for overflow; pure constant.
 		"strconv.ParseInt",                // string-to-int conversion; pure function, no I/O.
@@ -335,11 +339,13 @@ var builtinAllowedSymbols = []string{
 	"math.MaxUint64",                  // integer constant; no side effects.
 	"math.NaN",                        // returns IEEE 754 NaN value; pure function, no I/O.
 	"os.FileInfo",                     // file metadata interface returned by Stat; no I/O side effects.
+	"os.IsNotExist",                   // checks if error is "not exist"; pure function, no I/O.
 	"os.O_RDONLY",                     // read-only file flag constant; cannot open files by itself.
 	"os.PathError",                    // error type for filesystem path errors; pure type, no I/O.
 	"path.Base",                       // extracts last element of a path (always uses /); pure function, no I/O.
 	"path.Clean",                      // cleans a path (removes trailing slashes, double slashes); pure function, no I/O.
 	"path.Dir",                        // extracts directory part of a path (always uses /); pure function, no I/O.
+	"path/filepath.ToSlash",           // converts OS path separators to forward slashes; pure function, no I/O.
 	"regexp.Compile",                  // compiles a regular expression; pure function, no I/O. Uses RE2 engine (linear-time, no backtracking).
 	"regexp.QuoteMeta",                // escapes all special regex characters in a string; pure function, no I/O.
 	"regexp.Regexp",                   // compiled regular expression type; no I/O side effects. All matching methods are linear-time (RE2).

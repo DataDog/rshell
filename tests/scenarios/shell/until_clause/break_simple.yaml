@@ -1,0 +1,12 @@
+# skip: until loops are intentionally blocked in the restricted shell
+skip_assert_against_bash: true
+description: Break in until loop is blocked because until loops are not supported.
+input:
+  script: |+
+    until false; do
+      break
+    done
+expect:
+  stdout: ""
+  stderr: "while/until loops are not supported\n"
+  exit_code: 2

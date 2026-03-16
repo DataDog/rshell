@@ -60,6 +60,11 @@ func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {
 	}
 
 	switch cm := cm.(type) {
+	case *syntax.Subshell:
+		r2 := r.subshell(false)
+		r2.stmts(ctx, cm.Stmts)
+		r.exit = r2.exit
+		r.exit.exiting = false
 	case *syntax.Block:
 		r.stmts(ctx, cm.Stmts)
 	case *syntax.CallExpr:
@@ -140,7 +145,15 @@ func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {
 			go func() {
 				defer func() {
 					if rec := recover(); rec != nil {
-						rLeft.exit.fatal(fmt.Errorf("internal error: %v", rec))
+						panicOut := io.Writer(io.Discard)
+						if rLeft.stderr != nil {
+							panicOut = rLeft.stderr
+						}
+						func() {
+							defer func() { recover() }()
+							fmt.Fprintf(panicOut, "rshell: internal panic: %v\n", rec)
+						}()
+						rLeft.exit.fatal(fmt.Errorf("internal error"))
 					}
 					pw.Close()
 					wg.Done()
@@ -243,6 +256,14 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 		return
 	}
 	name := args[0]
+
+	// Check whether the command is allowed.
+	if !r.allowAllCommands && !r.allowedCommands[name] {
+		r.errf("%s: command not allowed\n", name)
+		r.exit.code = 127
+		return
+	}
+
 	if fn, ok := builtins.Lookup(name); ok {
 		call := &builtins.CallContext{
 			Stdout:       r.stdout,

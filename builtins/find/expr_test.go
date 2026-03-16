@@ -6,6 +6,7 @@
 package find
 
 import (
+	"runtime"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -99,6 +100,84 @@ func TestParseSizeEdgeCases(t *testing.T) {
 	}
 }
 
+// TestParsePathPredicateUsesParsePathPredicate verifies that -path, -ipath,
+// -newer, -wholename, and -iwholename are routed through parsePathPredicate
+// (which applies filepath.ToSlash). On Unix filepath.ToSlash is a no-op so
+// we can only verify correct parsing here; actual backslash→slash conversion
+// is exercised on Windows CI.
+func TestParsePathPredicateUsesParsePathPredicate(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+		kind exprKind
+		want string
+	}{
+		{"path", []string{"-path", "dir/file"}, exprPath, "dir/file"},
+		{"ipath", []string{"-ipath", "dir/file"}, exprIPath, "dir/file"},
+		{"newer", []string{"-newer", "dir/ref.txt"}, exprNewer, "dir/ref.txt"},
+		{"wholename alias", []string{"-wholename", "dir/file"}, exprPath, "dir/file"},
+		{"iwholename alias", []string{"-iwholename", "dir/file"}, exprIPath, "dir/file"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			pr, err := parseExpression(tt.args)
+			require.NoError(t, err)
+			require.NotNil(t, pr.expr)
+			assert.Equal(t, tt.kind, pr.expr.kind)
+			assert.Equal(t, tt.want, pr.expr.strVal)
+		})
+	}
+
+	// Verify -name and -iname do NOT go through parsePathPredicate
+	// (they match basenames only, no path separators to normalize).
+	t.Run("name is not path-normalized", func(t *testing.T) {
+		pr, err := parseExpression([]string{"-name", "*.txt"})
+		require.NoError(t, err)
+		assert.Equal(t, exprName, pr.expr.kind)
+		assert.Equal(t, "*.txt", pr.expr.strVal)
+	})
+
+	// On Windows, filepath.ToSlash converts '\' to '/'. Verify that
+	// parsePathPredicate actually normalizes backslashes. This subtest
+	// is skipped on Unix where '\' is a valid filename character and
+	// filepath.ToSlash is a no-op.
+	if runtime.GOOS == "windows" {
+		windowsTests := []struct {
+			name string
+			args []string
+			kind exprKind
+			want string
+		}{
+			{"path backslash", []string{"-path", `dir\sub\*.go`}, exprPath, "dir/sub/*.go"},
+			{"ipath backslash", []string{"-ipath", `Dir\Sub\*.Go`}, exprIPath, "Dir/Sub/*.Go"},
+			{"newer backslash", []string{"-newer", `dir\ref.txt`}, exprNewer, "dir/ref.txt"},
+			{"wholename backslash", []string{"-wholename", `src\main.go`}, exprPath, "src/main.go"},
+			{"iwholename backslash", []string{"-iwholename", `Src\Main.go`}, exprIPath, "Src/Main.go"},
+			{"mixed separators", []string{"-path", `dir/sub\file.go`}, exprPath, "dir/sub/file.go"},
+			{"multiple backslashes", []string{"-path", `a\b\c\d`}, exprPath, "a/b/c/d"},
+		}
+
+		for _, tt := range windowsTests {
+			t.Run("windows/"+tt.name, func(t *testing.T) {
+				pr, err := parseExpression(tt.args)
+				require.NoError(t, err)
+				require.NotNil(t, pr.expr)
+				assert.Equal(t, tt.kind, pr.expr.kind)
+				assert.Equal(t, tt.want, pr.expr.strVal)
+			})
+		}
+
+		// -name should NOT normalize backslashes even on Windows
+		// (basenames never contain path separators).
+		t.Run("windows/name not normalized", func(t *testing.T) {
+			pr, err := parseExpression([]string{"-name", `file\name`})
+			require.NoError(t, err)
+			assert.Equal(t, `file\name`, pr.expr.strVal)
+		})
+	}
+}
+
 // TestParseBlockedPredicates verifies all dangerous predicates are blocked.
 func TestParseBlockedPredicates(t *testing.T) {
 	blocked := []string{
@@ -164,7 +243,7 @@ func TestParseExpressionLimits(t *testing.T) {
 	t.Run("depth limit", func(t *testing.T) {
 		// Build a deeply nested expression: ! ! ! ! ... -true
 		args := make([]string, 0, maxExprDepth+2)
-		for range maxExprDepth + 1 {
+		for i := 0; i < maxExprDepth+1; i++ {
 			args = append(args, "!")
 		}
 		args = append(args, "-true")
@@ -179,7 +258,7 @@ func TestParseExpressionLimits(t *testing.T) {
 		// We need maxExprNodes+1 leaf nodes to exceed the limit.
 		count := maxExprNodes + 1
 		args := make([]string, 0, count*2)
-		for i := range count {
+		for i := 0; i < count; i++ {
 			if i > 0 {
 				args = append(args, "-o")
 			}

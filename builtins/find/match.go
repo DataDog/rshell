@@ -124,8 +124,9 @@ func compareNumeric(actual, target int64, cmp cmpOp) bool {
 // baseName returns the last element of a path.
 // Trailing slashes are stripped first so that "dir/" returns "dir",
 // matching GNU find's behavior for -name/-iname matching.
-// The shell normalises all paths to forward slashes on all platforms,
-// so hardcoding '/' is correct even on Windows.
+// Only '/' is checked because the find builtin normalizes all input
+// paths and predicate arguments to forward slashes via filepath.ToSlash
+// at parse time, and joinPath produces '/'-separated child paths.
 func baseName(p string) string {
 	// Strip trailing slashes (but keep at least one char for root "/").
 	for len(p) > 1 && p[len(p)-1] == '/' {
@@ -208,11 +209,9 @@ func pathGlobMatch(pattern, name string) bool {
 				// Escape: next character is literal.
 				px++
 				if px >= len(pattern) {
-					// Trailing backslash — treat as literal '\\'.
-					if nx < len(name) && name[nx] == '\\' {
-						nx++
-						continue
-					}
+					// Trailing backslash with no character to escape
+					// (dangling escape). GNU find's fnmatch treats this
+					// as non-matching, so fall through to backtrack/fail.
 				} else if nx < len(name) && pattern[px] == name[nx] {
 					px++
 					nx++

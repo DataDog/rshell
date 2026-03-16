@@ -18,6 +18,11 @@ import (
 	"strings"
 )
 
+// MaxGlobEntries is the maximum number of directory entries read per single
+// glob expansion step. ReadDirForGlob returns an error for directories that
+// exceed this limit to prevent memory exhaustion during pattern matching.
+const MaxGlobEntries = 100_000
+
 // root pairs an absolute directory path with its opened os.Root handle.
 type root struct {
 	absPath string
@@ -182,6 +187,24 @@ func (s *Sandbox) Open(path string, cwd string, flag int, perm os.FileMode) (io.
 
 // ReadDir implements the restricted directory-read policy.
 func (s *Sandbox) ReadDir(path string, cwd string) ([]fs.DirEntry, error) {
+	return s.readDirN(path, cwd, -1)
+}
+
+// ReadDirForGlob reads directory entries for glob expansion, capped at
+// MaxGlobEntries. The underlying ReadDir call is limited to MaxGlobEntries+1
+// so the kernel never materialises more entries than needed. If the directory
+// exceeds the limit an error is returned before any pattern matching or
+// sorting can occur, making the failure explicit rather than silently returning
+// a partial listing that could miss valid matches.
+func (s *Sandbox) ReadDirForGlob(path string, cwd string) ([]fs.DirEntry, error) {
+	return s.readDirN(path, cwd, MaxGlobEntries)
+}
+
+// readDirN is the shared implementation for ReadDir and ReadDirForGlob.
+// maxEntries <= 0 means unlimited. Otherwise f.ReadDir is called with
+// maxEntries+1 to cap the read at the OS level; if the directory has more
+// entries than the limit an error is returned.
+func (s *Sandbox) readDirN(path string, cwd string, maxEntries int) ([]fs.DirEntry, error) {
 	absPath := toAbs(path, cwd)
 
 	root, relPath, ok := s.resolve(absPath)
@@ -194,9 +217,22 @@ func (s *Sandbox) ReadDir(path string, cwd string) ([]fs.DirEntry, error) {
 		return nil, PortablePathError(err)
 	}
 	defer f.Close()
-	entries, err := f.ReadDir(-1)
-	if err != nil {
+
+	var entries []fs.DirEntry
+	if maxEntries <= 0 {
+		entries, err = f.ReadDir(-1)
+	} else {
+		entries, err = f.ReadDir(maxEntries + 1)
+	}
+	if err != nil && err != io.EOF {
 		return nil, PortablePathError(err)
+	}
+	if maxEntries > 0 && len(entries) > maxEntries {
+		return nil, &os.PathError{
+			Op:   "readdir",
+			Path: path,
+			Err:  fmt.Errorf("directory has too many entries (cap: %d)", maxEntries),
+		}
 	}
 	// os.Root's ReadDir does not guarantee sorted order like os.ReadDir.
 	// Sort to match POSIX glob expansion expectations.

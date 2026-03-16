@@ -7,17 +7,19 @@ package echo_test
 
 import (
 	"context"
+	"sync/atomic"
 	"testing"
 	"time"
 	"unicode/utf8"
 
 	"github.com/DataDog/rshell/builtins/testutil"
-	"github.com/DataDog/rshell/interp"
 )
 
-func cmdRunCtx(ctx context.Context, t *testing.T, script, dir string) (string, string, int) {
+// fuzzRunCtx delegates to testutil.FuzzRunScriptCtx which runs the script
+// with AllowedPaths set to [dir] for proper file access in fuzz iterations.
+func fuzzRunCtx(ctx context.Context, t *testing.T, script, dir string) (string, string, int) {
 	t.Helper()
-	return testutil.RunScriptCtx(ctx, t, script, dir, interp.AllowedPaths([]string{dir}))
+	return testutil.FuzzRunScriptCtx(ctx, t, script, dir)
 }
 
 // FuzzEcho fuzzes echo with arbitrary arguments (no escape processing).
@@ -35,6 +37,9 @@ func FuzzEcho(f *testing.F) {
 	// Long argument
 	f.Add("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
 
+	baseDir := f.TempDir()
+	var counter atomic.Int64
+
 	f.Fuzz(func(t *testing.T, arg string) {
 		if len(arg) > 1000 {
 			return
@@ -46,13 +51,19 @@ func FuzzEcho(f *testing.F) {
 			if c == '\'' || c == '\x00' || c == '\n' {
 				return
 			}
+			// C0/DEL/C1 control chars confuse the shell script parser.
+			if c < 0x20 || c == 0x7f || (c >= 0x80 && c < 0xa0) {
+				return
+			}
 		}
 
-		dir := t.TempDir()
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		dir, cleanup := testutil.FuzzIterDir(t, baseDir, &counter)
+		defer cleanup()
+
+		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		defer cancel()
 
-		_, _, code := cmdRunCtx(ctx, t, "echo '"+arg+"'", dir)
+		_, _, code := fuzzRunCtx(ctx, t, "echo '"+arg+"'", dir)
 		if code != 0 {
 			t.Errorf("echo unexpected exit code %d", code)
 		}
@@ -98,6 +109,9 @@ func FuzzEchoEscapes(f *testing.F) {
 	// Long sequence to stress output buffering
 	f.Add("\\n\\n\\n\\n\\n\\n\\n\\n\\n\\n")
 
+	baseDir := f.TempDir()
+	var counter atomic.Int64
+
 	f.Fuzz(func(t *testing.T, arg string) {
 		if len(arg) > 1000 {
 			return
@@ -109,13 +123,19 @@ func FuzzEchoEscapes(f *testing.F) {
 			if c == '\'' || c == '\x00' || c == '\n' {
 				return
 			}
+			// C0/DEL/C1 control chars confuse the shell script parser.
+			if c < 0x20 || c == 0x7f || (c >= 0x80 && c < 0xa0) {
+				return
+			}
 		}
 
-		dir := t.TempDir()
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		dir, cleanup := testutil.FuzzIterDir(t, baseDir, &counter)
+		defer cleanup()
+
+		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		defer cancel()
 
-		_, _, code := cmdRunCtx(ctx, t, "echo -e '"+arg+"'", dir)
+		_, _, code := fuzzRunCtx(ctx, t, "echo -e '"+arg+"'", dir)
 		if code != 0 {
 			t.Errorf("echo -e unexpected exit code %d", code)
 		}
@@ -131,6 +151,9 @@ func FuzzEchoFlagInteraction(f *testing.F) {
 	f.Add("hi\\n", false, true, true)     // -e -E: -E wins (last)
 	f.Add("hi\\n", true, true, false)     // -n -e
 
+	baseDir := f.TempDir()
+	var counter atomic.Int64
+
 	f.Fuzz(func(t *testing.T, arg string, flagN, flagE, flagBigE bool) {
 		if len(arg) > 500 {
 			return
@@ -140,6 +163,10 @@ func FuzzEchoFlagInteraction(f *testing.F) {
 		}
 		for _, c := range arg {
 			if c == '\'' || c == '\x00' || c == '\n' {
+				return
+			}
+			// C0/DEL/C1 control chars confuse the shell script parser.
+			if c < 0x20 || c == 0x7f || (c >= 0x80 && c < 0xa0) {
 				return
 			}
 		}
@@ -158,11 +185,13 @@ func FuzzEchoFlagInteraction(f *testing.F) {
 			return
 		}
 
-		dir := t.TempDir()
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		dir, cleanup := testutil.FuzzIterDir(t, baseDir, &counter)
+		defer cleanup()
+
+		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		defer cancel()
 
-		_, _, code := cmdRunCtx(ctx, t, "echo"+flags+" '"+arg+"'", dir)
+		_, _, code := fuzzRunCtx(ctx, t, "echo"+flags+" '"+arg+"'", dir)
 		if code != 0 {
 			t.Errorf("echo%s unexpected exit code %d", flags, code)
 		}

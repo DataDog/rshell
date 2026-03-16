@@ -63,13 +63,32 @@ package find
 
 import (
 	"context"
+	"errors"
 	"io"
 	iofs "io/fs"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/DataDog/rshell/builtins"
 )
+
+// isNotExist checks whether an error represents a "not found" condition.
+// The sandbox's PortablePathError wraps errors with errors.New(), stripping
+// the fs.ErrNotExist sentinel, so we check both errors.Is and the string.
+func isNotExist(err error) bool {
+	if os.IsNotExist(err) {
+		return true
+	}
+	// PortablePathError rewrites the inner error as a plain string;
+	// check for the canonical portable message.
+	var pe *os.PathError
+	if errors.As(err, &pe) {
+		return pe.Err.Error() == "no such file or directory"
+	}
+	return false
+}
 
 // maxTraversalDepth limits directory recursion depth to prevent resource
 // exhaustion. This is an intentional safety divergence from GNU find (which
@@ -117,7 +136,7 @@ optLoop:
 		if isExpressionStart(arg) {
 			break
 		}
-		paths = append(paths, arg)
+		paths = append(paths, filepath.ToSlash(arg))
 		i++
 	}
 
@@ -154,8 +173,10 @@ optLoop:
 	implicitPrint := expression == nil || !hasAction(expression)
 
 	// Eagerly validate -newer reference paths before walking.
-	// GNU find always reports missing reference files even if short-circuiting
+	// GNU find reports missing reference files even if short-circuiting
 	// or -mindepth prevents the predicate from being evaluated.
+	// With -L, stat the reference (following symlinks) to get the target
+	// mtime; fall back to lstat for dangling symlinks.
 	failed := false
 	eagerNewerErrors := map[string]bool{}
 	seen := map[string]bool{}
@@ -175,9 +196,11 @@ optLoop:
 			statRef = callCtx.StatFile
 		}
 		if _, err := statRef(ctx, ref); err != nil {
-			// With -L, a dangling symlink reference is not fatal —
-			// fall back to lstat like GNU find does.
-			if followLinks {
+			// With -L, stat fails on dangling symlinks — fall back to
+			// lstat so the symlink's own mtime can be used. Only fall
+			// back for "not found" errors; permission/sandbox errors
+			// must be reported.
+			if followLinks && isNotExist(err) {
 				if _, lerr := callCtx.LstatFile(ctx, ref); lerr == nil {
 					continue
 				}
@@ -306,8 +329,9 @@ func walkPath(
 	var err error
 	if opts.followLinks {
 		startInfo, err = callCtx.StatFile(ctx, startPath)
-		if err != nil {
+		if err != nil && isNotExist(err) {
 			// Dangling symlink root: fall back to lstat like child entries.
+			// Only for "not found" — permission/sandbox errors are real.
 			startInfo, err = callCtx.LstatFile(ctx, startPath)
 		}
 	} else {
@@ -462,8 +486,9 @@ func walkPath(
 		var childInfo iofs.FileInfo
 		if opts.followLinks {
 			childInfo, err = callCtx.StatFile(ctx, childPath)
-			if err != nil {
+			if err != nil && isNotExist(err) {
 				// Dangling symlink: stat fails but lstat succeeds.
+				// Only for "not found" — permission/sandbox errors are real.
 				childInfo, err = callCtx.LstatFile(ctx, childPath)
 			}
 			if err != nil {

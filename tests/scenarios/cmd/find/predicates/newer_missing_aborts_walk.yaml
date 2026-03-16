@@ -1,5 +1,5 @@
 description: find -newer with missing reference aborts walk — no stdout even with -o -true fallback.
-skip_assert_against_bash: true  # intentional: rshell error format differs from GNU find
+skip_assert_against_bash: false
 setup:
   files:
     - path: dir/a.txt

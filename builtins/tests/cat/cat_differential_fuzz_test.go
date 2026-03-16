@@ -14,8 +14,11 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/DataDog/rshell/builtins/testutil"
 )
 
 // runGNUInDir runs a GNU command under LC_ALL=C.UTF-8 with its working
@@ -68,20 +71,31 @@ func FuzzCatDifferential(f *testing.F) {
 	f.Add([]byte{0xff, 0xfe, 0x00, 0x01})
 	f.Add([]byte("line1\nline2\nline3\n"))
 
+	baseDir := f.TempDir()
+	var counter atomic.Int64
+
 	f.Fuzz(func(t *testing.T, input []byte) {
 		if len(input) > 64*1024 {
 			return
 		}
 
-		dir := t.TempDir()
+		dir, cleanup := testutil.FuzzIterDir(t, baseDir, &counter)
+		defer cleanup()
+
 		if err := os.WriteFile(filepath.Join(dir, "input.txt"), input, 0644); err != nil {
 			t.Fatal(err)
 		}
 
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		defer cancel()
 
 		rshellOut, rshellErr, rshellCode := cmdRunCtx(ctx, t, "cat input.txt", dir)
+
+		// If the fuzz engine cancelled us (fuzztime expired), bail out
+		// without comparing — partial output would cause false failures.
+		if t.Context().Err() != nil {
+			return
+		}
 
 		if isSandboxError(rshellErr) {
 			t.Skip("skipping: sandbox restriction")

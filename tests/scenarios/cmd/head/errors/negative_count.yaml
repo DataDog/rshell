@@ -1,5 +1,6 @@
 # We intentionally reject negative counts (we do not implement -n -N elide-tail mode)
 description: head exits 1 when -n is given a negative count.
+# skip: rshell builtin error/output format differs from GNU coreutils
 skip_assert_against_bash: true
 setup:
   files:

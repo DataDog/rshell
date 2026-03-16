@@ -16,6 +16,10 @@ import (
 	"mvdan.cc/sh/v3/syntax"
 )
 
+// MaxHeredocBytes is the maximum size of a heredoc body in bytes.
+// Heredocs exceeding this limit are rejected to prevent memory exhaustion.
+const MaxHeredocBytes = 10 << 20 // 10 MiB
+
 // isQuotedHdoc reports whether the heredoc delimiter contains any quoting.
 // Per POSIX, if any part of the delimiter is quoted, the heredoc body
 // must not undergo expansion or backslash processing.
@@ -83,6 +87,12 @@ func (r *Runner) hdocReader(rd *syntax.Redirect) (*os.File, error) {
 	}
 	if rd.Op != syntax.DashHdoc {
 		hdoc := expandWord(rd.Hdoc)
+		if len(hdoc) > MaxHeredocBytes {
+			pr.Close()
+			pw.Close()
+			r.errf("heredoc: content exceeds maximum size (%d bytes)\n", MaxHeredocBytes)
+			return nil, fmt.Errorf("heredoc: content exceeds maximum size (%d bytes)", MaxHeredocBytes)
+		}
 		go func() {
 			pw.WriteString(hdoc)
 			pw.Close()
@@ -91,12 +101,25 @@ func (r *Runner) hdocReader(rd *syntax.Redirect) (*os.File, error) {
 	}
 	var buf bytes.Buffer
 	var cur []syntax.WordPart
+	var hdocErr error
 	flushLine := func() {
+		if hdocErr != nil {
+			return
+		}
+		expanded := expandWord(&syntax.Word{Parts: cur})
+		cur = cur[:0]
+		newLen := buf.Len() + len(expanded)
+		if buf.Len() > 0 {
+			newLen++ // account for the '\n' separator
+		}
+		if newLen > MaxHeredocBytes {
+			hdocErr = fmt.Errorf("heredoc: content exceeds maximum size (%d bytes)", MaxHeredocBytes)
+			return
+		}
 		if buf.Len() > 0 {
 			buf.WriteByte('\n')
 		}
-		buf.WriteString(expandWord(&syntax.Word{Parts: cur}))
-		cur = cur[:0]
+		buf.WriteString(expanded)
 	}
 	for _, wp := range rd.Hdoc.Parts {
 		lit, ok := wp.(*syntax.Lit)
@@ -114,6 +137,12 @@ func (r *Runner) hdocReader(rd *syntax.Redirect) (*os.File, error) {
 		}
 	}
 	flushLine()
+	if hdocErr != nil {
+		pr.Close()
+		pw.Close()
+		r.errf("%s\n", hdocErr)
+		return nil, hdocErr
+	}
 	go func() {
 		pw.Write(buf.Bytes())
 		pw.Close()

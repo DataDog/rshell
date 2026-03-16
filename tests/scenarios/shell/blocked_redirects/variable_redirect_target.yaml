@@ -1,3 +1,4 @@
+# skip: redirect type is intentionally blocked in the restricted shell
 skip_assert_against_bash: true
 description: Variable expansion in redirect target is blocked (even if it resolves to /dev/null).
 input:

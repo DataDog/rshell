@@ -1,4 +1,5 @@
 description: ls -lh shows human-readable sizes.
+# skip: rshell ls output format differs from GNU coreutils
 skip_assert_against_bash: true
 setup:
   files:

@@ -1,4 +1,5 @@
 description: ls with a mix of valid and invalid args lists valid ones and reports errors.
+# skip: rshell builtin error/output format differs from GNU coreutils
 skip_assert_against_bash: true
 setup:
   files:

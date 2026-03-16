@@ -39,6 +39,7 @@ func runScriptInternal(t *testing.T, script, dir string, opts ...RunnerOption) (
 	var outBuf, errBuf bytes.Buffer
 	allOpts := append([]RunnerOption{
 		StdIO(nil, &outBuf, &errBuf),
+		AllowAllCommands(),
 	}, opts...)
 
 	runner, err := New(allOpts...)
@@ -150,7 +151,7 @@ func TestAllowedPathsExecSymlinkEscape(t *testing.T) {
 
 func TestRunRecoversPanic(t *testing.T) {
 	var outBuf, errBuf bytes.Buffer
-	runner, err := New(StdIO(nil, &outBuf, &errBuf))
+	runner, err := New(StdIO(nil, &outBuf, &errBuf), AllowAllCommands())
 	require.NoError(t, err)
 	defer runner.Close()
 
@@ -168,8 +169,13 @@ func TestRunRecoversPanic(t *testing.T) {
 
 	err = runner.Run(context.Background(), prog)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "internal error")
-	assert.Contains(t, err.Error(), "deliberate test panic")
+	// The error returned to the caller must be generic — it must not include
+	// the panic value to avoid leaking internal state to untrusted callers.
+	assert.Equal(t, "internal error", err.Error())
+	assert.NotContains(t, err.Error(), "deliberate test panic")
+	// Panic details are written to the runner's stderr (not os.Stderr), so
+	// they stay within the configured I/O boundary.
+	assert.Contains(t, errBuf.String(), "deliberate test panic")
 }
 
 func TestRunZeroValueRunnerReturnsError(t *testing.T) {
@@ -187,7 +193,9 @@ func TestRunZeroValueRunnerReturnsError(t *testing.T) {
 
 func TestAllowedPathsExecDefaultBlocksAll(t *testing.T) {
 	dir := t.TempDir()
-	// No AllowedPaths option — default blocks all exec
+	// No AllowedPaths option — default noExecHandler blocks all external commands.
+	// With AllowAllCommands (set by runScriptInternal), the command reaches the
+	// exec handler which returns "command not found" via noExecHandler.
 	_, stderr, exitCode := runScriptInternal(t, `/bin/echo hello`, dir)
 	assert.Equal(t, 127, exitCode)
 	assert.Contains(t, stderr, "command not found")

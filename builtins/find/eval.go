@@ -170,9 +170,11 @@ func evalNewer(ec *evalContext, refPath string) bool {
 		}
 		refInfo, err := statRef(ec.ctx, refPath)
 		if err != nil {
-			// With -L, a dangling symlink reference is not fatal —
-			// fall back to lstat like GNU find does.
-			if ec.followLinks {
+			// With -L, stat fails on dangling symlinks — fall back to
+			// lstat so the symlink's own mtime can be used. Only fall
+			// back for "not found" errors; permission/sandbox errors
+			// must be reported.
+			if ec.followLinks && isNotExist(err) {
 				refInfo, err = ec.callCtx.LstatFile(ec.ctx, refPath)
 			}
 			if err != nil {

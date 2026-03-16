@@ -34,7 +34,7 @@ Blocked features are rejected before execution with exit code 2.
 - ✅ Expansion: `$VAR`, `${VAR}`
 - ✅ `$?` — last exit code (the only supported special variable)
 - ✅ Inline assignment: `VAR=value command` (scoped to that command)
-- ❌ Command substitution: `$(cmd)`, `` `cmd` ``
+- ✅ Command substitution: `$(cmd)`, `` `cmd` `` — captures stdout; trailing newlines stripped; `$(<file)` shortcut reads file directly; output capped at 1 MiB
 - ❌ Arithmetic expansion: `$(( expr ))`
 - ❌ Array assignment: `arr=(a b c)`, `arr[0]=x`
 - ❌ Append assignment: `VAR+=value`
@@ -51,12 +51,12 @@ Blocked features are rejected before execution with exit code 2.
 - ✅ `{ CMDS; }` — brace group
 - ✅ `;` and newline as command separators
 - ✅ `if` / `elif` / `else`
+- ✅ Subshells: `( CMDS )` — runs commands in an isolated child environment; variable changes do not propagate to the parent; exit does not terminate the parent
 - ❌ `while` / `until`
 - ❌ `case`
 - ❌ `select`
 - ❌ C-style for loop: `for (( i=0; i<N; i++ ))`
 - ❌ Functions: `fname() { ... }`
-- ❌ Subshells: `( CMDS )`
 
 ## Pipes and Redirections
 
@@ -90,6 +90,8 @@ Blocked features are rejected before execution with exit code 2.
 
 ## Execution
 
+- ✅ AllowedCommands — restricts which commands (builtins or external) may be executed; if not set, no commands are allowed
+- ✅ AllowAllCommands — permits any command (testing convenience)
 - ✅ AllowedPaths filesystem sandboxing — restricts all file access to specified directories
 - ❌ External commands — blocked by default; requires an ExecHandler to be configured and the binary to be within AllowedPaths
 - ❌ Background execution: `cmd &`

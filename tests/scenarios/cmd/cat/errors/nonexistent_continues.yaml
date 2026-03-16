@@ -1,3 +1,4 @@
+# skip: rshell builtin error/output format differs from GNU coreutils
 skip_assert_against_bash: true
 description: Cat failure does not stop script execution; the exit code is from the last command.
 input:

@@ -1,3 +1,4 @@
+# skip: special variable is intentionally blocked in the restricted shell
 skip_assert_against_bash: true
 description: Variables without special meaning expand to empty but execution continues.
 input:

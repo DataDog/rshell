@@ -1,5 +1,5 @@
 description: find -newer matches files newer than reference.
-skip_assert_against_bash: true
+skip_assert_against_bash: false
 setup:
   files:
     - path: dir/old.txt
