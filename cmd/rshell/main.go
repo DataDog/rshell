@@ -26,7 +26,7 @@ func main() {
 
 func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	var (
-		script       string
+		command      string
 		allowedPaths string
 	)
 
@@ -37,12 +37,9 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		SilenceErrors: true,
 		Args:          cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			scriptSet := cmd.Flags().Changed("script")
-			if scriptSet && len(args) > 0 {
-				return fmt.Errorf("cannot use --script with file arguments")
-			}
-			if !scriptSet && len(args) == 0 {
-				return fmt.Errorf("requires either --script or file arguments (use \"-\" for stdin)")
+			commandSet := cmd.Flags().Changed("command")
+			if commandSet && len(args) > 0 {
+				return fmt.Errorf("cannot use -c with file arguments")
 			}
 
 			var paths []string
@@ -50,36 +47,36 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 				paths = strings.Split(allowedPaths, ",")
 			}
 
-			if scriptSet {
-				return execute(cmd.Context(), script, "", paths, stdin, stdout, stderr)
+			if commandSet {
+				return execute(cmd.Context(), command, "", paths, stdin, stdout, stderr)
 			}
 
-			// Read stdin once so each execute() call gets its own
-			// reader, avoiding a data race on the shared io.Reader.
-			stdinData, err := io.ReadAll(stdin)
-			if err != nil {
-				return fmt.Errorf("reading stdin: %w", err)
-			}
+			if len(args) > 0 {
+				// Read stdin once so each execute() call gets its own
+				// reader, avoiding a data race on the shared io.Reader.
+				stdinData, err := io.ReadAll(stdin)
+				if err != nil {
+					return fmt.Errorf("reading stdin: %w", err)
+				}
 
-			for _, file := range args {
-				var src string
-				var name string
-				if file == "-" {
-					src = string(stdinData)
-					name = ""
-				} else {
+				for _, file := range args {
 					data, err := os.ReadFile(file)
 					if err != nil {
 						return fmt.Errorf("reading %s: %w", file, err)
 					}
-					src = string(data)
-					name = file
+					if err := execute(cmd.Context(), string(data), file, paths, bytes.NewReader(stdinData), stdout, stderr); err != nil {
+						return err
+					}
 				}
-				if err := execute(cmd.Context(), src, name, paths, bytes.NewReader(stdinData), stdout, stderr); err != nil {
-					return err
-				}
+				return nil
 			}
-			return nil
+
+			// No -c and no file args: read from stdin.
+			stdinData, err := io.ReadAll(stdin)
+			if err != nil {
+				return fmt.Errorf("reading stdin: %w", err)
+			}
+			return execute(cmd.Context(), string(stdinData), "", paths, strings.NewReader(""), stdout, stderr)
 		},
 	}
 
@@ -88,8 +85,9 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	cmd.SetOut(stdout)
 	cmd.SetErr(stderr)
 
-	cmd.Flags().StringVarP(&script, "script", "s", "", "shell script to execute")
-	cmd.Flags().StringVarP(&allowedPaths, "allowed-path", "a", "", "comma-separated list of directories the shell is allowed to access")
+	cmd.Flags().StringVarP(&command, "command", "c", "", "shell command string to execute")
+	cmd.Flags().Lookup("command").Hidden = true // only expose -c short flag
+	cmd.Flags().StringVarP(&allowedPaths, "allowed-path", "p", "", "comma-separated list of directories the shell is allowed to access")
 
 	if err := cmd.Execute(); err != nil {
 		var status interp.ExitStatus
