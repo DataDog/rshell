@@ -133,6 +133,11 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 
 		callCtx.Outf("PING %s: 56 data bytes\n", host)
 
+		// Note: The Delay field is used as SendDelay for traceroute hops only.
+		// For E2E probes (TracerouteQueries=0), the inter-probe delay is computed
+		// internally by the library as min(MaxTTL*Timeout/E2eQueries, 1s).
+		// We still accept and validate -i for forward compatibility with future
+		// library versions that may support configurable E2E probe delays.
 		params := traceroute.TracerouteParams{
 			Hostname:          host,
 			Protocol:          "icmp",
@@ -163,7 +168,7 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 		// Print summary statistics.
 		callCtx.Outf("\n--- %s ping statistics ---\n", host)
 		callCtx.Outf("%d packets transmitted, %d packets received, %.1f%% packet loss\n",
-			probe.PacketsSent, probe.PacketsReceived, probe.PacketLossPercentage)
+			probe.PacketsSent, probe.PacketsReceived, float64(probe.PacketLossPercentage)*100)
 
 		if probe.PacketsReceived > 0 {
 			callCtx.Outf("round-trip min/avg/max = %.3f/%.3f/%.3f ms\n",
