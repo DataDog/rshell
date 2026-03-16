@@ -152,6 +152,15 @@ func TestPSEmptyPIDListExits1(t *testing.T) {
 	}
 }
 
+// TestPSEmptyStringPIDExits1 ensures an explicit empty -p value is rejected
+// rather than falling through to the default session view.
+func TestPSEmptyStringPIDExits1(t *testing.T) {
+	_, _, code := runScript(t, "ps -p ''")
+	if code != 1 {
+		t.Errorf("expected exit code 1 for empty -p value, got %d", code)
+	}
+}
+
 // TestPSPositionalArgExits1 ensures extra positional args are rejected.
 func TestPSPositionalArgExits1(t *testing.T) {
 	_, stderr, code := runScript(t, "ps foo")

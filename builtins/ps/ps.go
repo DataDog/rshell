@@ -86,8 +86,11 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 		var procs []procinfo.ProcInfo
 		var err error
 
+		// Detect whether -p was explicitly set (even to empty string).
+		pidFlagChanged := fs.Lookup("pid") != nil && fs.Lookup("pid").Changed
+
 		switch {
-		case *pidList != "":
+		case pidFlagChanged || *pidList != "":
 			// -p: select specific PIDs.
 			pids, parseErr := parsePIDs(*pidList)
 			if parseErr != nil {

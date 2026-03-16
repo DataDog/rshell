@@ -11,22 +11,21 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"syscall"
-	"unsafe"
+
+	"golang.org/x/sys/windows"
 )
 
 func listAll(ctx context.Context) ([]ProcInfo, error) {
-	snapshot, err := syscall.CreateToolhelp32Snapshot(syscall.TH32CS_SNAPPROCESS, 0)
+	snapshot, err := windows.CreateToolhelp32Snapshot(windows.TH32CS_SNAPPROCESS, 0)
 	if err != nil {
 		return nil, fmt.Errorf("ps: CreateToolhelp32Snapshot: %w", err)
 	}
-	defer syscall.CloseHandle(snapshot)
+	defer windows.CloseHandle(snapshot)
 
 	var procs []ProcInfo
-	var entry syscall.ProcessEntry32
-	entry.Size = uint32(unsafe.Sizeof(entry))
-
-	if err := syscall.Process32First(snapshot, &entry); err != nil {
+	var entry windows.ProcessEntry32
+	// Process32First sets entry.Size internally — no unsafe.Sizeof needed.
+	if err := windows.Process32First(snapshot, &entry); err != nil {
 		return nil, fmt.Errorf("ps: Process32First: %w", err)
 	}
 
@@ -40,7 +39,7 @@ func listAll(ctx context.Context) ([]ProcInfo, error) {
 		info := processEntryToProc(&entry)
 		procs = append(procs, info)
 
-		if err := syscall.Process32Next(snapshot, &entry); err != nil {
+		if err := windows.Process32Next(snapshot, &entry); err != nil {
 			break // ERROR_NO_MORE_FILES
 		}
 	}
@@ -106,7 +105,7 @@ func getByPIDs(ctx context.Context, pids []int) ([]ProcInfo, error) {
 	return result, nil
 }
 
-func processEntryToProc(e *syscall.ProcessEntry32) ProcInfo {
+func processEntryToProc(e *windows.ProcessEntry32) ProcInfo {
 	pid := int(e.ProcessID)
 	ppid := int(e.ParentProcessID)
 
@@ -115,7 +114,7 @@ func processEntryToProc(e *syscall.ProcessEntry32) ProcInfo {
 	for n < len(e.ExeFile) && e.ExeFile[n] != 0 {
 		n++
 	}
-	cmd := syscall.UTF16ToString(e.ExeFile[:n])
+	cmd := windows.UTF16ToString(e.ExeFile[:n])
 	if len(cmd) > MaxCmdLen {
 		cmd = cmd[:MaxCmdLen]
 	}
