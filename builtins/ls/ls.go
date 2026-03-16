@@ -393,7 +393,8 @@ func listDir(ctx context.Context, callCtx *builtins.CallContext, dir string, opt
 		for _, ei := range infoEntries {
 			totalBlocks += fileBlocks(ei.info)
 		}
-		callCtx.Outf("total %d\n", totalBlocks)
+		// Stat_t.Blocks is in 512-byte units; GNU ls displays in 1024-byte blocks.
+		callCtx.Outf("total %d\n", totalBlocks/2)
 	}
 	for _, ei := range infoEntries {
 		if ctx.Err() != nil {
