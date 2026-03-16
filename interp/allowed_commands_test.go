@@ -6,10 +6,14 @@
 package interp_test
 
 import (
+	"bytes"
+	"context"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"mvdan.cc/sh/v3/syntax"
 
 	"github.com/DataDog/rshell/interp"
 )
@@ -38,8 +42,20 @@ func TestAllowedCommandsValidPrefix(t *testing.T) {
 }
 
 func TestAllowedCommandsTrimsWhitespace(t *testing.T) {
-	_, err := interp.New(interp.AllowedCommands([]string{" rshell:echo ", "  rshell:cat"}))
+	// Verify parse succeeds with whitespace-padded entries.
+	var stdout bytes.Buffer
+	runner, err := interp.New(
+		interp.AllowedCommands([]string{" rshell:echo ", " rshell: cat "}),
+		interp.StdIO(nil, &stdout, nil),
+	)
 	require.NoError(t, err)
+	defer runner.Close()
+
+	// Verify the trimmed command is executable at runtime.
+	prog, _ := syntax.NewParser().Parse(strings.NewReader("echo hello"), "")
+	err = runner.Run(context.Background(), prog)
+	require.NoError(t, err)
+	assert.Equal(t, "hello\n", stdout.String())
 }
 
 func TestAllowedCommandsEmpty(t *testing.T) {
