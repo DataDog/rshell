@@ -154,6 +154,10 @@ optLoop:
 	// from other predicates.
 	pr, err := parseExpression(exprArgs)
 	if err != nil {
+		if errors.Is(err, errHelpRequested) {
+			printHelp(callCtx)
+			return builtins.Result{}
+		}
 		callCtx.Errf("%s\n", err.Error())
 		return builtins.Result{Code: 1}
 	}

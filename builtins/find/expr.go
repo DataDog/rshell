@@ -125,6 +125,11 @@ type parseResult struct {
 	minDepth int // -1 = not specified
 }
 
+// errHelpRequested is a sentinel error returned by parsePrimary when --help
+// appears as a standalone predicate token (not consumed as an argument by
+// another predicate like -name).
+var errHelpRequested = errors.New("find: help requested")
+
 // blocked predicates that are forbidden for sandbox safety.
 var blockedPredicates = map[string]string{
 	"-exec":    "arbitrary command execution is blocked",
@@ -291,6 +296,11 @@ func (p *parser) parsePrimary() (*expr, error) {
 	}
 
 	tok := p.advance()
+
+	// --help as a standalone predicate triggers help output.
+	if tok == "--help" {
+		return nil, errHelpRequested
+	}
 
 	// Check blocked predicates.
 	if reason, blocked := blockedPredicates[tok]; blocked {

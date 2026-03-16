@@ -296,6 +296,26 @@ func TestParseNewPredicates(t *testing.T) {
 
 }
 
+// TestParseHelpRequested verifies that --help as a standalone predicate
+// returns errHelpRequested, and that -name --help consumes it as a pattern.
+func TestParseHelpRequested(t *testing.T) {
+	t.Run("standalone --help", func(t *testing.T) {
+		_, err := parseExpression([]string{"--help"})
+		assert.ErrorIs(t, err, errHelpRequested)
+	})
+	t.Run("--help after other predicate", func(t *testing.T) {
+		_, err := parseExpression([]string{"-true", "--help"})
+		assert.ErrorIs(t, err, errHelpRequested)
+	})
+	t.Run("-name consumes --help as pattern", func(t *testing.T) {
+		pr, err := parseExpression([]string{"-name", "--help"})
+		require.NoError(t, err)
+		require.NotNil(t, pr.expr)
+		assert.Equal(t, exprName, pr.expr.kind)
+		assert.Equal(t, "--help", pr.expr.strVal)
+	})
+}
+
 // TestParseExpressionLimits verifies AST depth and node limits.
 func TestParseExpressionLimits(t *testing.T) {
 	t.Run("depth limit", func(t *testing.T) {
