@@ -12,11 +12,10 @@
 // List all available builtin commands with a brief description.
 // For detailed information on a specific command, run '<command> --help'.
 //
-// Any arguments are ignored.
-//
 // Exit codes:
 //
-//	0  Always succeeds.
+//	0  Success.
+//	1  Arguments were provided.
 package help
 
 import (
@@ -28,7 +27,12 @@ import (
 // Cmd is the help builtin command descriptor.
 var Cmd = builtins.Command{Name: "help", Description: "display available commands", MakeFlags: builtins.NoFlags(run)}
 
-func run(_ context.Context, callCtx *builtins.CallContext, _ []string) builtins.Result {
+func run(_ context.Context, callCtx *builtins.CallContext, args []string) builtins.Result {
+	if len(args) > 0 {
+		callCtx.Errf("help: too many arguments\n")
+		return builtins.Result{Code: 1}
+	}
+
 	names := builtins.Names()
 
 	// Find the longest command name for alignment.

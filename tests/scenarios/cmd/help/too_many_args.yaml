@@ -1,0 +1,9 @@
+description: Help rejects arguments.
+skip_assert_against_bash: true
+input:
+  script: |+
+    help foo
+expect:
+  stdout: ""
+  stderr: "help: too many arguments\n"
+  exit_code: 1
