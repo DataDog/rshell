@@ -135,9 +135,14 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 	fs.VarP(verboseFlag, "verbose", "v", "always print file name headers")
 	// Mark the header flags as boolean so pflag does not consume the next
 	// positional argument as a value when the flag appears without "=…".
-	fs.Lookup("quiet").NoOptDefVal = "true"
-	fs.Lookup("silent").NoOptDefVal = "true"
-	fs.Lookup("verbose").NoOptDefVal = "true"
+	// Use a non-printable sentinel (headerFlagSentinel) so that Set can
+	// distinguish "flag appeared without a value" (pflag passes the sentinel)
+	// from "flag appeared with an explicit =value" (pflag passes the typed
+	// string). This lets us reject --quiet=true and --quiet=false alike,
+	// matching GNU tail which does not allow any argument for these flags.
+	fs.Lookup("quiet").NoOptDefVal = headerFlagSentinel
+	fs.Lookup("silent").NoOptDefVal = headerFlagSentinel
+	fs.Lookup("verbose").NoOptDefVal = headerFlagSentinel
 
 	// linesFlag and bytesFlag share a sequence counter so that after parsing
 	// we can compare their pos fields to determine which appeared last on the
@@ -585,11 +590,17 @@ type headerFlag struct {
 	pos int
 }
 
+// headerFlagSentinel is the NoOptDefVal used for --quiet/--silent/--verbose.
+// pflag passes this value to Set when the flag appears without "=…" on the
+// command line. Any other value means the user supplied an explicit argument
+// (e.g. --quiet=false or --quiet=true), which GNU tail does not allow.
+const headerFlagSentinel = "\x01"
+
 func newHeaderFlag(seq *int) *headerFlag { return &headerFlag{seq: seq} }
 
 func (f *headerFlag) String() string { return "false" }
 func (f *headerFlag) Set(s string) error {
-	if s != "true" {
+	if s != headerFlagSentinel {
 		return errors.New("does not take a value")
 	}
 	*f.seq++
