@@ -20,10 +20,10 @@ import (
 // is a no-op on Unix where '\' is a valid filename character.
 func TestParsePathPredicateNormalizesBackslashesWindows(t *testing.T) {
 	tests := []struct {
-		name  string
-		args  []string
-		kind  exprKind
-		want  string
+		name string
+		args []string
+		kind exprKind
+		want string
 	}{
 		{"path backslash", []string{"-path", `dir\sub\*.go`}, exprPath, "dir/sub/*.go"},
 		{"ipath backslash", []string{"-ipath", `Dir\Sub\*.Go`}, exprIPath, "Dir/Sub/*.Go"},
