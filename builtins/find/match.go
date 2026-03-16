@@ -209,11 +209,9 @@ func pathGlobMatch(pattern, name string) bool {
 				// Escape: next character is literal.
 				px++
 				if px >= len(pattern) {
-					// Trailing backslash — treat as literal '\\'.
-					if nx < len(name) && name[nx] == '\\' {
-						nx++
-						continue
-					}
+					// Trailing backslash with no character to escape
+					// (dangling escape). GNU find's fnmatch treats this
+					// as non-matching, so fall through to backtrack/fail.
 				} else if nx < len(name) && pattern[px] == name[nx] {
 					px++
 					nx++

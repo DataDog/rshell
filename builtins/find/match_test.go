@@ -12,9 +12,19 @@ import (
 )
 
 func TestPathGlobMatchTrailingBackslash(t *testing.T) {
-	assert.True(t, pathGlobMatch(`abc\`, `abc\`))
+	// A trailing backslash is a dangling escape (no character to escape).
+	// GNU find's fnmatch treats this as non-matching for any input,
+	// including a literal backslash character.
+	assert.False(t, pathGlobMatch(`abc\`, `abc\`))
 	assert.False(t, pathGlobMatch(`abc\`, `abcd`))
 	assert.False(t, pathGlobMatch(`abc\`, `abc`))
+	assert.False(t, pathGlobMatch(`\`, `\`))
+	assert.False(t, pathGlobMatch(`*\`, `abc\`))
+
+	// Properly escaped backslash (\\) DOES match a literal backslash.
+	assert.True(t, pathGlobMatch(`abc\\`, `abc\`))
+	assert.True(t, pathGlobMatch(`\\`, `\`))
+	assert.True(t, pathGlobMatch(`*\\`, `abc\`))
 }
 
 func TestMatchGlobMalformedBracket(t *testing.T) {
