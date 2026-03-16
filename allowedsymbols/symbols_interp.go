@@ -41,7 +41,6 @@ var interpAllowedSymbols = []string{
 	"os.O_RDONLY",          // read-only file flag constant; pure constant.
 	"os.PathError",         // error type wrapping path and operation; pure type.
 	"os.Pipe",              // creates an OS pipe pair; needed for shell pipelines.
-	"os.Stderr",            // standard error file; fallback output for panic recovery when runner stderr is nil.
 	"runtime.GOOS",         // current OS name constant; pure constant, no I/O.
 	"strconv.Itoa",         // int-to-string conversion; pure function, no I/O.
 	"strings.Builder",      // efficient string concatenation; pure in-memory buffer, no I/O.

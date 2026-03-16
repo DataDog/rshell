@@ -339,12 +339,9 @@ func (s ExitStatus) Error() string { return fmt.Sprintf("exit status %d", s) }
 func (r *Runner) Run(ctx context.Context, node syntax.Node) (retErr error) {
 	defer func() {
 		if rec := recover(); rec != nil {
-			var panicOut io.Writer
-			if r != nil {
+			panicOut := io.Writer(io.Discard)
+			if r != nil && r.stderr != nil {
 				panicOut = r.stderr
-			}
-			if panicOut == nil {
-				panicOut = os.Stderr
 			}
 			func() {
 				defer func() { recover() }()

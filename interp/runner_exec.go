@@ -139,9 +139,9 @@ func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {
 			go func() {
 				defer func() {
 					if rec := recover(); rec != nil {
-						panicOut := rLeft.stderr
-						if panicOut == nil {
-							panicOut = os.Stderr
+						panicOut := io.Writer(io.Discard)
+						if rLeft.stderr != nil {
+							panicOut = rLeft.stderr
 						}
 						func() {
 							defer func() { recover() }()
