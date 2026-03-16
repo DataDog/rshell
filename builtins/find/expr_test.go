@@ -99,22 +99,21 @@ func TestParseSizeEdgeCases(t *testing.T) {
 	}
 }
 
-// TestParsePathPredicateNormalizesSlashes verifies that -path, -ipath, and
-// -newer normalize backslashes to forward slashes via filepath.ToSlash.
-// On Unix this is a no-op; on Windows it converts '\' to '/'.
-func TestParsePathPredicateNormalizesSlashes(t *testing.T) {
+// TestParsePathPredicateUsesParsePathPredicate verifies that -path, -ipath,
+// -newer, -wholename, and -iwholename are routed through parsePathPredicate
+// (which applies filepath.ToSlash). On Unix filepath.ToSlash is a no-op so
+// we can only verify correct parsing here; actual backslash→slash conversion
+// is exercised on Windows CI.
+func TestParsePathPredicateUsesParsePathPredicate(t *testing.T) {
 	tests := []struct {
 		name string
 		args []string
 		kind exprKind
 		want string
 	}{
-		{"path forward slash", []string{"-path", "dir/file"}, exprPath, "dir/file"},
-		{"ipath forward slash", []string{"-ipath", "dir/file"}, exprIPath, "dir/file"},
-		{"newer forward slash", []string{"-newer", "dir/ref.txt"}, exprNewer, "dir/ref.txt"},
-		// On Windows, backslashes would be converted to forward slashes.
-		// On Unix, filepath.ToSlash is a no-op so these remain unchanged.
-		{"path already normalized", []string{"-path", "./a/b/c"}, exprPath, "./a/b/c"},
+		{"path", []string{"-path", "dir/file"}, exprPath, "dir/file"},
+		{"ipath", []string{"-ipath", "dir/file"}, exprIPath, "dir/file"},
+		{"newer", []string{"-newer", "dir/ref.txt"}, exprNewer, "dir/ref.txt"},
 		{"wholename alias", []string{"-wholename", "dir/file"}, exprPath, "dir/file"},
 		{"iwholename alias", []string{"-iwholename", "dir/file"}, exprIPath, "dir/file"},
 	}
@@ -128,6 +127,15 @@ func TestParsePathPredicateNormalizesSlashes(t *testing.T) {
 			assert.Equal(t, tt.want, pr.expr.strVal)
 		})
 	}
+
+	// Verify -name and -iname do NOT go through parsePathPredicate
+	// (they match basenames only, no path separators to normalize).
+	t.Run("name is not path-normalized", func(t *testing.T) {
+		pr, err := parseExpression([]string{"-name", "*.txt"})
+		require.NoError(t, err)
+		assert.Equal(t, exprName, pr.expr.kind)
+		assert.Equal(t, "*.txt", pr.expr.strVal)
+	})
 }
 
 // TestParseBlockedPredicates verifies all dangerous predicates are blocked.
