@@ -103,7 +103,8 @@ func FuzzIPSubcommand(f *testing.F) {
 		}
 		// Reject inputs with shell metacharacters — they would parse as shell
 		// syntax, not as ip arguments, and are not valid ip subcommands.
-		for _, ch := range []string{"\n", "\r", ";", "|", "&", "`", "$", "\"", "'", "(", ")", "{", "}", "<", ">"} {
+		// Also reject ~ (tilde expansion is not supported and returns exit 2).
+		for _, ch := range []string{"\n", "\r", ";", "|", "&", "`", "$", "\"", "'", "(", ")", "{", "}", "<", ">", "~"} {
 			if strings.Contains(subcmd, ch) {
 				return
 			}
@@ -170,8 +171,8 @@ func FuzzIPFlags(f *testing.F) {
 		if !utf8.ValidString(flags) || !utf8.ValidString(subcmd) {
 			return
 		}
-		// Reject shell metacharacters.
-		for _, ch := range []string{"\n", "\r", ";", "|", "&", "`", "$", "\"", "'", "(", ")", "{", "}", "<", ">"} {
+		// Reject shell metacharacters and ~ (tilde expansion returns exit 2).
+		for _, ch := range []string{"\n", "\r", ";", "|", "&", "`", "$", "\"", "'", "(", ")", "{", "}", "<", ">", "~"} {
 			if strings.Contains(flags, ch) || strings.Contains(subcmd, ch) {
 				return
 			}
