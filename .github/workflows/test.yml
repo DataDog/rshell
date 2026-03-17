@@ -60,12 +60,12 @@ jobs:
         if: runner.os == 'Linux' || runner.os == 'macOS'
         env:
           RSHELL_PING_TEST: "1"
-        run: sudo -E env "PATH=$PATH" go test -race -v -run 'TestPing.*Integration|TestPingPentest' ./builtins/ping/ -timeout 120s
+        run: sudo -E env "PATH=$PATH" go test -race -v -run 'TestPing.*Integration|TestPingPentest|TestPingContextTimeout|TestPingCountClampedToMax|TestPingTimeoutClampedToMax' ./builtins/ping/ -timeout 120s
       - name: Run ping integration tests (Windows)
         if: runner.os == 'Windows'
         env:
           RSHELL_PING_TEST: "1"
-        run: go test -race -v -run 'TestPing.*Integration|TestPingPentest' ./builtins/ping/ -timeout 120s
+        run: go test -race -v -run 'TestPing.*Integration|TestPingPentest|TestPingContextTimeout|TestPingCountClampedToMax|TestPingTimeoutClampedToMax' ./builtins/ping/ -timeout 120s
 
   test-against-bash:
     name: Test against Bash (Docker)

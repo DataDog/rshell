@@ -246,23 +246,31 @@ func TestPingLocalhostIntegration(t *testing.T) {
 
 	if runtime.GOOS == "windows" {
 		// Windows CI runners may or may not allow unprivileged ICMP;
-		// the result is non-deterministic.  We only verify the output
-		// format (header + summary) and accept either exit code 0 or 1.
+		// the result is non-deterministic.  When ICMP is denied, the
+		// traceroute library returns an error before statistics are
+		// printed, so we cannot assert on summary lines in that case.
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
 				dir := t.TempDir()
 				ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 				defer cancel()
 				cmd := fmt.Sprintf("ping -c %d -W 5 127.0.0.1", tt.count)
-				stdout, _, code := runScriptCtx(ctx, t, cmd, dir)
-				// Accept both success (0) and packet-loss (1).
+				stdout, stderr, code := runScriptCtx(ctx, t, cmd, dir)
+				// Accept both success (0) and failure (1).
 				assert.True(t, code == 0 || code == 1,
 					"expected exit code 0 or 1 on Windows, got %d", code)
-				// Verify output format: header and summary are still printed.
-				assert.Contains(t, stdout, "PING 127.0.0.1")
-				assert.Contains(t, stdout, "ping statistics")
-				assert.Contains(t, stdout, fmt.Sprintf("%d packets transmitted", tt.count))
-				assert.Contains(t, stdout, "packet loss")
+
+				if code == 0 || strings.Contains(stdout, "ping statistics") {
+					// ICMP succeeded — verify full output format.
+					assert.Contains(t, stdout, "PING 127.0.0.1")
+					assert.Contains(t, stdout, "ping statistics")
+					assert.Contains(t, stdout, fmt.Sprintf("%d packets transmitted", tt.count))
+					assert.Contains(t, stdout, "packet loss")
+				} else {
+					// ICMP was denied — only the header and an error are expected.
+					assert.Contains(t, stdout, "PING 127.0.0.1")
+					assert.NotEmpty(t, stderr, "expected an error message when ICMP is denied")
+				}
 			})
 		}
 		return
