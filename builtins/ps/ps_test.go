@@ -27,7 +27,7 @@ func runScript(t *testing.T, script string) (stdout, stderr string, code int) {
 		t.Fatal(err)
 	}
 	var outBuf, errBuf bytes.Buffer
-	runner, err := interp.New(interp.StdIO(nil, &outBuf, &errBuf))
+	runner, err := interp.New(interp.StdIO(nil, &outBuf, &errBuf), interp.AllowAllCommands())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -169,6 +169,15 @@ func TestPSEmptyStringPIDExits1(t *testing.T) {
 	_, _, code := runScript(t, "ps -p ''")
 	if code != 1 {
 		t.Errorf("expected exit code 1 for empty -p value, got %d", code)
+	}
+}
+
+// TestPSAllWithInvalidPIDExits1 ensures -e -p with a malformed PID is rejected.
+// GNU ps validates the -p argument even when -e is also set.
+func TestPSAllWithInvalidPIDExits1(t *testing.T) {
+	_, _, code := runScript(t, "ps -e -p notapid")
+	if code != 1 {
+		t.Errorf("expected exit code 1 for ps -e -p notapid, got %d", code)
 	}
 }
 

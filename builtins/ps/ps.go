@@ -98,23 +98,30 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			pidFlagChanged = true
 		}
 
+		// Validate and parse -p upfront. GNU ps rejects malformed -p input
+		// even when combined with -e/-A (verified against debian:bookworm-slim).
+		var parsedPIDs []int
+		if pidFlagChanged || effectivePIDList != "" {
+			var parseErr error
+			parsedPIDs, parseErr = parsePIDs(effectivePIDList)
+			if parseErr != nil {
+				callCtx.Errf("ps: %v\n", parseErr)
+				return builtins.Result{Code: 1}
+			}
+		}
+
 		pidMode := false
 		switch {
 		case showAll:
 			// -e / -A: all processes. Takes priority over -p because it is a
 			// superset; GNU ps treats selection options as additive (union), so
-			// -e -p <missing> still returns all processes and exits 0.
+			// -e -p <valid_or_missing> still returns all processes and exits 0.
 			procs, err = procinfo.ListAll(ctx)
 
-		case pidFlagChanged || effectivePIDList != "":
+		case len(parsedPIDs) > 0:
 			// -p only (no -e/-A): select specific PIDs.
 			pidMode = true
-			pids, parseErr := parsePIDs(effectivePIDList)
-			if parseErr != nil {
-				callCtx.Errf("ps: %v\n", parseErr)
-				return builtins.Result{Code: 1}
-			}
-			procs, err = procinfo.GetByPIDs(ctx, pids)
+			procs, err = procinfo.GetByPIDs(ctx, parsedPIDs)
 
 		default:
 			// Default: current session processes.
