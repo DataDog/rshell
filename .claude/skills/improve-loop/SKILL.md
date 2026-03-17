@@ -69,7 +69,7 @@ If `$ARGUMENTS` is empty, this automatically falls back to the PR associated wit
 Store the PR number, head branch, and base branch for all subsequent steps.
 
 ```bash
-gh repo view --json owner,name --jq '"\(.owner.login)/\(.name)"'
+gh repo view --json owner,name --jq '.owner.login + "/" + .name'
 ```
 
 Store the owner and repo name.

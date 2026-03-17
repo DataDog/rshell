@@ -2,8 +2,6 @@
   "sandbox": {
     "enabled": true,
     "autoAllowBashIfSandboxed": true,
-    "_excludedCommands_comment": "These commands need network access and must run outside the sandbox, but are explicitly allowed in the permissions list so they won't prompt.",
-    "excludedCommands": ["git", "gh", "docker"],
     "filesystem": {
       "read": {
         "allow": ["~/go/pkg"]

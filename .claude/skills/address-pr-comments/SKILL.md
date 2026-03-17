@@ -24,7 +24,7 @@ If no PR is found, stop and inform the user.
 Extract owner, repo, PR number, and **PR author login** for subsequent API calls:
 
 ```bash
-gh repo view --json owner,name --jq '"\(.owner.login)/\(.name)"'
+gh repo view --json owner,name --jq '.owner.login + "/" + .name'
 ```
 
 ### 2. Fetch review comments and summaries

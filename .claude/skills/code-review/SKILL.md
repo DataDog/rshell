@@ -350,7 +350,7 @@ After successfully submitting the review, update the PR body reactions based on 
   ```bash
   GITHUB_USER=$(gh api user --jq '.login')
   gh api repos/{owner}/{repo}/issues/{pr_number}/reactions --paginate \
-    --jq '.[] | select(.user.login == "'$GITHUB_USER'") | .id' | while read -r reaction_id; do
+    --jq --arg user "$GITHUB_USER" '.[] | select(.user.login == $user) | .id' | while read -r reaction_id; do
     gh api repos/{owner}/{repo}/issues/{pr_number}/reactions/$reaction_id --method DELETE
   done
   ```
