@@ -1,0 +1,9 @@
+skip_assert_against_bash: true
+description: ping --interval 0 rejects zero interval via long form flag with exit code 1.
+input:
+  script: |+
+    ping --interval 0 localhost
+expect:
+  stdout: ""
+  stderr_contains: ["ping: invalid interval"]
+  exit_code: 1

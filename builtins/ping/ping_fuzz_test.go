@@ -29,6 +29,28 @@ func FuzzPingFlags(f *testing.F) {
 	f.Add("-i 0 localhost")
 	f.Add("-i -1 localhost")
 	f.Add("-i 0.5 localhost")
+	f.Add("-s 0 localhost")
+	f.Add("-s -1 localhost")
+	f.Add("-s 24 localhost")
+	f.Add("-s 56 localhost")
+	f.Add("-s 65507 localhost")
+	f.Add("-s 65508 localhost")
+	f.Add("-s abc localhost")
+	f.Add("-s 99999999999999999999 localhost")
+	f.Add("-4 localhost")
+	f.Add("-6 localhost")
+	f.Add("-4 -6 localhost")
+	// Integer overflow / CVE-class inputs for -c and -W.
+	f.Add("-c 2147483647 localhost")          // MaxInt32
+	f.Add("-c 9223372036854775807 localhost") // MaxInt64
+	f.Add("-W 2147483647 localhost")          // MaxInt32 timeout
+	// Long-form flags with new options.
+	f.Add("--size 24 localhost")
+	f.Add("--size 65507 localhost")
+	f.Add("--size -1 localhost")
+	// Combined valid flags.
+	f.Add("-c 1 -s 56 -4 localhost")
+	f.Add("-c 1 -s 56 -6 localhost")
 	f.Add("--help")
 	f.Add("-h")
 	f.Add("-f localhost")
@@ -40,6 +62,7 @@ func FuzzPingFlags(f *testing.F) {
 	f.Add("--count 0 localhost")
 	f.Add("--timeout 0 localhost")
 	f.Add("--interval 0 localhost")
+	f.Add("--size 0 localhost")
 	f.Add("-c")
 
 	f.Fuzz(func(t *testing.T, args string) {

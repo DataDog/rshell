@@ -1,0 +1,9 @@
+skip_assert_against_bash: true
+description: ping -s abc rejects non-numeric size with exit code 1.
+input:
+  script: |+
+    ping -s abc localhost
+expect:
+  stdout: ""
+  stderr_contains: ["ping:"]
+  exit_code: 1

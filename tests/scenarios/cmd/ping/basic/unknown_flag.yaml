@@ -1,0 +1,9 @@
+skip_assert_against_bash: true
+description: ping -f rejects the unknown flood flag with exit code 1.
+input:
+  script: |+
+    ping -f localhost
+expect:
+  stdout: ""
+  stderr_contains: ["unknown shorthand flag"]
+  exit_code: 1

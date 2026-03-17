@@ -30,6 +30,16 @@
 //	    Wait N seconds between sending each probe (default 1). Must be
 //	    a positive number (fractional seconds allowed).
 //
+//	-s, --size N
+//	    ICMP payload size in bytes (default 56). Must be at least 24
+//	    (pro-bing internal minimum for tracking). Clamped to a maximum
+//	    of 65507 (IPv4 ICMP maximum payload).
+//
+//	-4  Force IPv4: resolve the host as an IPv4 address only.
+//
+//	-6  Force IPv6: resolve the host as an IPv6 address only.
+//	    -4 and -6 are mutually exclusive.
+//
 //	--help
 //	    Print usage to stdout and exit 0.
 //
@@ -78,10 +88,20 @@ const MaxTimeout = 60
 // MaxInterval is the maximum interval between probes in seconds.
 const MaxInterval = 60
 
+// MaxSize is the maximum ICMP payload size in bytes (IPv4 ICMP maximum).
+const MaxSize = 65507
+
+// MinSize is the minimum ICMP payload size required by pro-bing for internal
+// tracking (8 bytes timestamp + 16 bytes UUID tracker).
+const MinSize = 24
+
 func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 	count := fs.IntP("count", "c", 4, "stop after sending N probes")
 	timeout := fs.IntP("timeout", "W", 2, "time to wait for a response, in seconds")
 	interval := fs.Float64P("interval", "i", 1.0, "interval in seconds between probes")
+	size := fs.IntP("size", "s", 56, "ICMP payload size in bytes")
+	forceV4 := fs.BoolP("ipv4", "4", false, "force IPv4")
+	forceV6 := fs.BoolP("ipv6", "6", false, "force IPv6")
 	help := fs.BoolP("help", "h", false, "print usage and exit")
 
 	return func(ctx context.Context, callCtx *builtins.CallContext, args []string) builtins.Result {
@@ -131,6 +151,21 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			*interval = MaxInterval
 		}
 
+		// Validate size.
+		if *size < MinSize {
+			callCtx.Errf("ping: invalid size: %d (minimum %d)\n", *size, MinSize)
+			return builtins.Result{Code: 1}
+		}
+		if *size > MaxSize {
+			*size = MaxSize
+		}
+
+		// -4 and -6 are mutually exclusive.
+		if *forceV4 && *forceV6 {
+			callCtx.Errf("ping: -4 and -6 are mutually exclusive\n")
+			return builtins.Result{Code: 1}
+		}
+
 		if ctx.Err() != nil {
 			return builtins.Result{Code: 1}
 		}
@@ -143,8 +178,25 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			return builtins.Result{Code: 1}
 		}
 
+		if *forceV4 {
+			pinger.SetNetwork("ip4")
+			// Re-resolve so IPAddr() reflects the forced address family.
+			if err = pinger.Resolve(); err != nil {
+				callCtx.Errf("ping: %s: %s\n", host, err)
+				return builtins.Result{Code: 1}
+			}
+		} else if *forceV6 {
+			pinger.SetNetwork("ip6")
+			// Re-resolve so IPAddr() reflects the forced address family.
+			if err = pinger.Resolve(); err != nil {
+				callCtx.Errf("ping: %s: %s\n", host, err)
+				return builtins.Result{Code: 1}
+			}
+		}
+		pinger.Size = *size
+
 		ip := pinger.IPAddr().String()
-		callCtx.Outf("PING %s (%s): 56 data bytes\n", host, ip)
+		callCtx.Outf("PING %s (%s): %d data bytes\n", host, ip, *size)
 
 		intervalDur := time.Duration(*interval * float64(time.Second))
 		// Total timeout accommodates all probes: each probe may wait up to
@@ -180,6 +232,13 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 					runErr = err
 					break
 				}
+				// Apply network and size settings to the fallback pinger.
+				if *forceV4 {
+					p.SetNetwork("ip4")
+				} else if *forceV6 {
+					p.SetNetwork("ip6")
+				}
+				p.Size = *size
 			}
 			p.Count = *count
 			p.Interval = intervalDur

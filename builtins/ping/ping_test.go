@@ -119,6 +119,45 @@ func TestPingIntervalNegative(t *testing.T) {
 	assert.Contains(t, stderr, "ping: invalid interval")
 }
 
+// --- Size validation ---
+
+func TestPingSizeBelowMin(t *testing.T) {
+	dir := t.TempDir()
+	_, stderr, code := cmdRun(t, "ping -s 0 localhost", dir)
+	assert.Equal(t, 1, code)
+	assert.Contains(t, stderr, "ping: invalid size")
+}
+
+func TestPingSizeNegative(t *testing.T) {
+	dir := t.TempDir()
+	_, stderr, code := cmdRun(t, "ping -s -1 localhost", dir)
+	assert.Equal(t, 1, code)
+	assert.Contains(t, stderr, "ping: invalid size")
+}
+
+func TestPingSizeNonNumeric(t *testing.T) {
+	dir := t.TempDir()
+	_, stderr, code := cmdRun(t, "ping -s abc localhost", dir)
+	assert.Equal(t, 1, code)
+	assert.Contains(t, stderr, "ping:")
+}
+
+func TestPingLongFormSize(t *testing.T) {
+	dir := t.TempDir()
+	_, stderr, code := cmdRun(t, "ping --size 0 localhost", dir)
+	assert.Equal(t, 1, code)
+	assert.Contains(t, stderr, "ping: invalid size")
+}
+
+// --- IPv4/IPv6 flags ---
+
+func TestPingBothIPv4IPv6(t *testing.T) {
+	dir := t.TempDir()
+	_, stderr, code := cmdRun(t, "ping -4 -6 localhost", dir)
+	assert.Equal(t, 1, code)
+	assert.Contains(t, stderr, "ping: -4 and -6 are mutually exclusive")
+}
+
 // --- Unknown flags ---
 
 func TestPingUnknownFlag(t *testing.T) {

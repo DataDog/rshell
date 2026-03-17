@@ -1,0 +1,9 @@
+skip_assert_against_bash: true
+description: ping -c -1 rejects negative count with exit code 1.
+input:
+  script: |+
+    ping -c -1 localhost
+expect:
+  stdout: ""
+  stderr_contains: ["ping: invalid count"]
+  exit_code: 1

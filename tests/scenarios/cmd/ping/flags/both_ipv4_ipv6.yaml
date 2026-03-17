@@ -1,0 +1,9 @@
+skip_assert_against_bash: true
+description: ping -4 -6 rejects mutually exclusive IPv4/IPv6 flags with exit code 1.
+input:
+  script: |+
+    ping -4 -6 localhost
+expect:
+  stdout: ""
+  stderr_contains: ["ping: -4 and -6 are mutually exclusive"]
+  exit_code: 1

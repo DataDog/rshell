@@ -1,0 +1,9 @@
+skip_assert_against_bash: true
+description: ping -s -1 rejects negative size with exit code 1.
+input:
+  script: |+
+    ping -s -1 localhost
+expect:
+  stdout: ""
+  stderr_contains: ["ping: invalid size"]
+  exit_code: 1

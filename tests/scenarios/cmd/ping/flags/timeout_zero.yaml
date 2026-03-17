@@ -1,0 +1,9 @@
+skip_assert_against_bash: true
+description: ping -W 0 rejects zero timeout with exit code 1.
+input:
+  script: |+
+    ping -W 0 localhost
+expect:
+  stdout: ""
+  stderr_contains: ["ping: invalid timeout"]
+  exit_code: 1

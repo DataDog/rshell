@@ -1,0 +1,9 @@
+skip_assert_against_bash: true
+description: ping -c with a value exceeding int64 range is rejected with exit code 1.
+input:
+  script: |+
+    ping -c 99999999999999999999 localhost
+expect:
+  stdout: ""
+  stderr_contains: ["ping:"]
+  exit_code: 1

@@ -1,0 +1,9 @@
+skip_assert_against_bash: true
+description: ping -c abc rejects non-numeric count with exit code 1.
+input:
+  script: |+
+    ping -c abc localhost
+expect:
+  stdout: ""
+  stderr_contains: ["ping:"]
+  exit_code: 1

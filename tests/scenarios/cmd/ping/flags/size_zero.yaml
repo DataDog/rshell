@@ -1,0 +1,9 @@
+skip_assert_against_bash: true
+description: ping -s 0 rejects size below minimum (24) with exit code 1.
+input:
+  script: |+
+    ping -s 0 localhost
+expect:
+  stdout: ""
+  stderr_contains: ["ping: invalid size"]
+  exit_code: 1
