@@ -11,7 +11,6 @@ import (
 	"errors"
 	"io/fs"
 	"os"
-	"path/filepath"
 	"syscall"
 )
 
@@ -30,38 +29,35 @@ func FileIdentity(_ string, info fs.FileInfo, _ *Sandbox) (uint64, uint64, bool)
 	return uint64(st.Dev), uint64(st.Ino), true
 }
 
-// POSIX access(2) mode constants. Go's syscall package exports
-// Access but not the mode constants, so we define them here.
-const (
-	accessR = 0x04 // R_OK — test for read permission
-	accessW = 0x02 // W_OK — test for write permission
-	accessX = 0x01 // X_OK — test for execute permission
-)
-
-// accessCheck verifies the path is inside the sandbox via os.Root.Stat
-// (atomic, symlink-safe), then performs a kernel-level permission check
-// using access(2). Unlike Open, access(2) never blocks on FIFOs and
-// correctly handles POSIX ACLs.
-//
-// The sandbox verification and the syscall are co-located so that
-// syscall.Access can never be reached without passing the sandbox guard.
 func (r *root) accessCheck(rel string, checkRead, checkWrite, checkExec bool) (fs.FileInfo, error) {
 	info, err := r.root.Stat(rel)
 	if err != nil {
 		return nil, err
 	}
 
-	var mode uint32
-	if checkRead {
-		mode |= accessR
+	// For read checks on regular files, attempt to open through os.Root.
+	// This is fd-relative (openat) and respects POSIX ACLs. FIFOs and
+	// directories are excluded: OpenFile blocks on FIFOs without a
+	// writer, and directories return a handle rather than a permission
+	// error.
+	if checkRead && info.Mode().IsRegular() {
+		f, err := r.root.OpenFile(rel, os.O_RDONLY, 0)
+		if err != nil {
+			return info, os.ErrPermission
+		}
+		f.Close()
+		if !checkWrite && !checkExec {
+			return info, nil
+		}
 	}
-	if checkWrite {
-		mode |= accessW
+
+	// For write, execute, directory read, and FIFO read checks, fall
+	// back to mode-bit inspection on the Stat result (which came from
+	// the fd-relative fstatat, so no TOCTOU).
+	if !effectiveHasPerm(info, checkRead && !info.Mode().IsRegular(), checkWrite, checkExec) {
+		return info, os.ErrPermission
 	}
-	if checkExec {
-		mode |= accessX
-	}
-	return info, syscall.Access(filepath.Join(r.absPath, rel), mode)
+	return info, nil
 }
 
 // effectiveHasPerm checks whether the current process has the requested

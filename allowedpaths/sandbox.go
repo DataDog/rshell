@@ -88,14 +88,15 @@ func (s *Sandbox) resolve(absPath string) (*os.Root, string, bool) {
 // All operations go through os.Root to stay within the sandbox.
 // Mode: 0x04 = read, 0x02 = write, 0x01 = execute.
 //
-// On Unix, the check uses the kernel's access(2) syscall which never blocks
-// on special files (FIFOs) and correctly handles POSIX ACLs. On Windows,
-// read access is verified by attempting to open the file through os.Root
-// (which respects NTFS ACLs); write and execute checks are not performed
-// because Windows does not enforce these via file permission bits.
+// On Unix, read permission for regular files is verified by attempting
+// to open through os.Root (fd-relative openat, respects POSIX ACLs).
+// For special files, directories, write, and execute, mode-bit
+// inspection is used on the fd-relative Stat result. On Windows, the
+// same OpenFile approach is used for read checks; write and execute
+// checks are not performed.
 //
-// The path passed to the kernel access check is always reconstructed from
-// the trusted sandbox root + validated relative path, never from raw user input.
+// All operations are fd-relative through os.Root — no filesystem path is
+// re-resolved through the mutable namespace after initial validation.
 func (s *Sandbox) Access(path string, cwd string, mode uint32) error {
 	absPath := toAbs(path, cwd)
 
@@ -112,8 +113,9 @@ func (s *Sandbox) Access(path string, cwd string, mode uint32) error {
 		}
 
 		// accessCheck verifies the path is inside the sandbox via
-		// os.Root.Stat, then performs the permission check (kernel
-		// access(2) on Unix, mode-bit inspection on Windows).
+		// os.Root.Stat, then performs the permission check (fd-relative
+		// OpenFile for regular-file reads on Unix, mode-bit inspection
+		// for everything else).
 		_, err = ar.accessCheck(rel, mode&0x04 != 0, mode&0x02 != 0, mode&0x01 != 0)
 		if err != nil {
 			return &os.PathError{Op: "access", Path: path, Err: os.ErrPermission}

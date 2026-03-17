@@ -226,3 +226,142 @@ func TestAccessCombinedModes(t *testing.T) {
 	// Read+write should fail on 0555 file.
 	assert.ErrorIs(t, sb.Access("rx.sh", dir, 0x04|0x02), os.ErrPermission)
 }
+
+// TestAccessReadRegularFileOpenFile verifies that read access on a
+// regular file uses the fd-relative OpenFile path (not syscall.Access).
+// A file with 0200 (write-only) should be denied.
+func TestAccessReadRegularFileOpenFile(t *testing.T) {
+	if os.Getuid() == 0 {
+		t.Skip("root bypasses permission checks")
+	}
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "writeonly.txt"), []byte("data"), 0200))
+	sb, err := New([]string{dir})
+	require.NoError(t, err)
+	defer sb.Close()
+	assert.ErrorIs(t, sb.Access("writeonly.txt", dir, 0x04), os.ErrPermission)
+}
+
+// TestAccessReadRegularFileAllowed verifies read succeeds on a
+// readable regular file via the OpenFile path.
+func TestAccessReadRegularFileAllowed(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "readable.txt"), []byte("data"), 0644))
+	sb, err := New([]string{dir})
+	require.NoError(t, err)
+	defer sb.Close()
+	assert.NoError(t, sb.Access("readable.txt", dir, 0x04))
+}
+
+// TestAccessFIFOReadFallsBackToModeBits verifies that FIFOs do NOT
+// use OpenFile (which would block) and instead use effectiveHasPerm.
+// A readable FIFO (0644) should pass the mode-bit check.
+func TestAccessFIFOReadFallsBackToModeBits(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, syscall.Mkfifo(filepath.Join(dir, "pipe"), 0644))
+	sb, err := New([]string{dir})
+	require.NoError(t, err)
+	defer sb.Close()
+
+	done := make(chan error, 1)
+	go func() { done <- sb.Access("pipe", dir, 0x04) }()
+	select {
+	case err := <-done:
+		assert.NoError(t, err) // readable FIFO should pass mode-bit check
+	case <-time.After(2 * time.Second):
+		t.Fatal("Access blocked on FIFO")
+	}
+}
+
+// TestAccessFIFOReadDeniedModeBits verifies that a non-readable FIFO
+// (0200) is correctly denied via mode-bit fallback.
+func TestAccessFIFOReadDeniedModeBits(t *testing.T) {
+	if os.Getuid() == 0 {
+		t.Skip("root bypasses permission checks")
+	}
+	dir := t.TempDir()
+	require.NoError(t, syscall.Mkfifo(filepath.Join(dir, "pipe"), 0200))
+	sb, err := New([]string{dir})
+	require.NoError(t, err)
+	defer sb.Close()
+
+	done := make(chan error, 1)
+	go func() { done <- sb.Access("pipe", dir, 0x04) }()
+	select {
+	case err := <-done:
+		assert.ErrorIs(t, err, os.ErrPermission)
+	case <-time.After(2 * time.Second):
+		t.Fatal("Access blocked on FIFO")
+	}
+}
+
+// TestAccessDirectoryReadUsesModeBits verifies that directory read
+// checks use mode-bit fallback (not OpenFile, which returns a handle).
+func TestAccessDirectoryReadUsesModeBits(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.Mkdir(filepath.Join(dir, "subdir"), 0755))
+	sb, err := New([]string{dir})
+	require.NoError(t, err)
+	defer sb.Close()
+	assert.NoError(t, sb.Access("subdir", dir, 0x04))
+}
+
+// TestAccessDirectoryReadDenied verifies that a non-readable directory
+// (0300) is denied via mode-bit inspection.
+func TestAccessDirectoryReadDenied(t *testing.T) {
+	if os.Getuid() == 0 {
+		t.Skip("root bypasses permission checks")
+	}
+	dir := t.TempDir()
+	require.NoError(t, os.Mkdir(filepath.Join(dir, "noread"), 0300))
+	sb, err := New([]string{dir})
+	require.NoError(t, err)
+	defer sb.Close()
+	assert.ErrorIs(t, sb.Access("noread", dir, 0x04), os.ErrPermission)
+}
+
+// TestAccessReadWriteCombined verifies combined read+write checks.
+// Read uses OpenFile (ACL-accurate), write uses effectiveHasPerm.
+func TestAccessReadWriteCombined(t *testing.T) {
+	if os.Getuid() == 0 {
+		t.Skip("root bypasses permission checks")
+	}
+	dir := t.TempDir()
+	// 0444 = readable but not writable
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "readonly.txt"), []byte("data"), 0444))
+	sb, err := New([]string{dir})
+	require.NoError(t, err)
+	defer sb.Close()
+	// Read-only succeeds
+	assert.NoError(t, sb.Access("readonly.txt", dir, 0x04))
+	// Write fails
+	assert.ErrorIs(t, sb.Access("readonly.txt", dir, 0x02), os.ErrPermission)
+	// Read+write fails (write component fails)
+	assert.ErrorIs(t, sb.Access("readonly.txt", dir, 0x04|0x02), os.ErrPermission)
+}
+
+// TestAccessFdRelativeSymlink verifies that the permission check stays
+// fd-relative. Access through a symlink within the sandbox works because
+// both Stat and OpenFile resolve through os.Root's fd.
+func TestAccessFdRelativeSymlink(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "target.txt"), []byte("data"), 0644))
+	require.NoError(t, os.Symlink("target.txt", filepath.Join(dir, "link.txt")))
+	sb, err := New([]string{dir})
+	require.NoError(t, err)
+	defer sb.Close()
+	assert.NoError(t, sb.Access("link.txt", dir, 0x04))
+}
+
+// TestAccessFdRelativeEscapeBlocked verifies that symlink escapes
+// are blocked at the os.Root level for both Stat and OpenFile.
+func TestAccessFdRelativeEscapeBlocked(t *testing.T) {
+	dir := t.TempDir()
+	outside := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(outside, "secret.txt"), []byte("secret"), 0644))
+	require.NoError(t, os.Symlink(filepath.Join(outside, "secret.txt"), filepath.Join(dir, "escape.txt")))
+	sb, err := New([]string{dir})
+	require.NoError(t, err)
+	defer sb.Close()
+	assert.Error(t, sb.Access("escape.txt", dir, 0x04))
+}
