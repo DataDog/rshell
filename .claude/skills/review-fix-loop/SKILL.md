@@ -2,21 +2,6 @@
 name: review-fix-loop
 description: "Self-review a PR, fix all issues, and re-review in a loop until clean. Coordinates code-review, address-pr-comments, and fix-ci-tests skills."
 argument-hint: "[pr-number|pr-url]"
-allowedTools:
-  - Read
-  - Write
-  - Edit
-  - Glob
-  - Grep
-  - Agent
-  - Skill
-  - WebFetch
-  - WebSearch
-  - "Bash(git *)"
-  - "Bash(gh *)"
-  - "Bash(sleep *)"
-  - "Bash(docker *)"
-  - "Bash(RSHELL_BASH_TEST=1 go test *)"
 ---
 
 Self-review and iteratively fix **$ARGUMENTS** (or the current branch's PR if no argument is given) until the review is clean.

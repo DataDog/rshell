@@ -2,22 +2,6 @@
 name: improve-test-coverage
 description: Improve test coverage for shell features and commands using reference test suites from yash, GNU coreutils, and uutils/coreutils
 argument-hint: "[command-name|shell-feature|all]"
-allowedTools:
-  - Read
-  - Write
-  - Edit
-  - Glob
-  - Grep
-  - Agent
-  - Skill
-  - WebFetch
-  - "Bash(go test *)"
-  - "Bash(go run *)"
-  - "Bash(git *)"
-  - "Bash(gh *)"
-  - "Bash(docker *)"
-  - "Bash(curl *)"
-  - "Bash(RSHELL_BASH_TEST=1 go test *)"
 ---
 
 Improve test coverage for **$ARGUMENTS** by mining reference test suites from yash, GNU coreutils, and uutils/coreutils for gaps in our scenario tests.
