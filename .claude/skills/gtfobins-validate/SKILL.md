@@ -11,12 +11,7 @@ allowedTools:
   - Agent
   - WebFetch
   - "Bash(go test *)"
-  - "Bash(go build *)"
-  - "Bash(go vet *)"
-  - "Bash(gofmt *)"
   - "Bash(git *)"
-  - "Bash(curl *)"
-  - "Bash(RSHELL_BASH_TEST=1 go test *)"
 ---
 
 Validate that the shell's builtins are protected against known GTFOBins exploitation techniques. If **$ARGUMENTS** is provided, validate only that command. Otherwise, validate all registered builtins.

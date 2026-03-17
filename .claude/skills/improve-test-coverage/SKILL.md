@@ -12,13 +12,12 @@ allowedTools:
   - Skill
   - WebFetch
   - "Bash(go test *)"
-  - "Bash(go build *)"
-  - "Bash(go vet *)"
-  - "Bash(gofmt *)"
+  - "Bash(go run *)"
   - "Bash(git *)"
   - "Bash(gh *)"
   - "Bash(docker *)"
   - "Bash(curl *)"
+  - "Bash(bash -c *)"
   - "Bash(RSHELL_BASH_TEST=1 go test *)"
 ---
 

@@ -13,8 +13,7 @@ allowedTools:
   - WebFetch
   - WebSearch
   - "Bash(go test *)"
-  - "Bash(go build *)"
-  - "Bash(go vet *)"
+  - "Bash(go run *)"
   - "Bash(gofmt *)"
   - "Bash(git *)"
   - "Bash(gh *)"
@@ -312,12 +311,6 @@ once, reviewed by the author, and committed.
 
 How to get GNU $ARGUMENTS depends on what is available:
 
-- **macOS with Homebrew coreutils** (most common on a developer Mac):
-  ```bash
-  brew install coreutils          # one-time
-  g$ARGUMENTS --version           # verify it is GNU, not BSD
-  # then run: g$ARGUMENTS [flags] [file] | cat -A   to see exact bytes
-  ```
 - **Docker** (works everywhere, guaranteed to be Linux GNU coreutils):
   ```bash
   echo "alpha\nbeta\ngamma" > /tmp/testfile.txt

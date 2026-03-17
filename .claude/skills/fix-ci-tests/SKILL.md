@@ -10,13 +10,11 @@ allowedTools:
   - Grep
   - Agent
   - "Bash(go test *)"
-  - "Bash(go build *)"
-  - "Bash(go vet *)"
-  - "Bash(gofmt *)"
   - "Bash(git *)"
   - "Bash(gh *)"
   - "Bash(docker *)"
   - "Bash(RSHELL_BASH_TEST=1 go test *)"
+  - "Bash(RSHELL_COMPLIANCE_TEST=1 go test *)"
 ---
 
 Diagnose and fix CI failures for **$ARGUMENTS** (or the current branch's PR if no argument is given).

@@ -13,8 +13,6 @@ allowedTools:
   - WebFetch
   - WebSearch
   - "Bash(go test *)"
-  - "Bash(go build *)"
-  - "Bash(go vet *)"
   - "Bash(gofmt *)"
   - "Bash(git *)"
   - "Bash(gh *)"

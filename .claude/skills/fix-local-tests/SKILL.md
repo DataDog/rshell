@@ -10,11 +10,9 @@ allowedTools:
   - Grep
   - Agent
   - "Bash(go test *)"
-  - "Bash(go build *)"
-  - "Bash(go vet *)"
-  - "Bash(gofmt *)"
   - "Bash(git *)"
   - "Bash(docker *)"
+  - "Bash(bash -c *)"
   - "Bash(RSHELL_BASH_TEST=1 go test *)"
 ---
 
