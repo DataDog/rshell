@@ -369,12 +369,17 @@ func listDir(ctx context.Context, callCtx *builtins.CallContext, dir string, opt
 	// Added before sorting so they participate in sort modifiers (-r, -S, -t),
 	// matching bash behavior. They do not consume offset/limit slots because
 	// pagination is handled at the read level.
-	// NOTE: ".." intentionally uses the same FileInfo as "." because the
-	// parent directory may be outside the sandbox and cannot be stat'd.
 	if opts.all {
 		if dotInfo, err := callCtx.StatFile(ctx, dir); err == nil {
 			infoEntries = append(infoEntries, entryInfo{name: ".", info: dotInfo})
-			infoEntries = append(infoEntries, entryInfo{name: "..", info: dotInfo})
+			// Try to stat the real parent so .. has correct metadata (size,
+			// blocks, etc.). Fall back to . info if the parent is outside
+			// the sandbox.
+			dotdotInfo := dotInfo
+			if parentInfo, err := callCtx.StatFile(ctx, joinPath(dir, "..")); err == nil {
+				dotdotInfo = parentInfo
+			}
+			infoEntries = append(infoEntries, entryInfo{name: "..", info: dotdotInfo})
 		}
 	}
 
