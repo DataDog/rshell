@@ -200,7 +200,7 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 		// Print summary statistics.
 		callCtx.Outf("\n--- %s ping statistics ---\n", host)
 		callCtx.Outf("%d packets transmitted, %d packets received, %.1f%% packet loss\n",
-			probe.PacketsSent, probe.PacketsReceived, float64(probe.PacketLossPercentage)*100)
+			probe.PacketsSent, probe.PacketsReceived, float64(probe.PacketLossPercentage*100))
 
 		if probe.PacketsReceived > 0 {
 			callCtx.Outf("round-trip min/avg/max = %.3f/%.3f/%.3f ms\n",

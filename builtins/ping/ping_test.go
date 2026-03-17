@@ -246,9 +246,25 @@ func TestPingLocalhostIntegration(t *testing.T) {
 
 	if runtime.GOOS == "windows" {
 		// Windows CI runners do not allow unprivileged ICMP: even a single
-		// ping to 127.0.0.1 reports 100% packet loss. Skip the entire
-		// integration test on Windows.
-		t.Skip("skipping ping integration test on Windows: ICMP is unreliable on CI runners")
+		// ping to 127.0.0.1 reports 100% packet loss. We still verify
+		// the output format (header + summary) with exit code 1.
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				dir := t.TempDir()
+				ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+				defer cancel()
+				cmd := fmt.Sprintf("ping -c %d -W 5 127.0.0.1", tt.count)
+				stdout, _, code := runScriptCtx(ctx, t, cmd, dir)
+				// Expect exit code 1 (packet loss) on Windows CI.
+				assert.Equal(t, 1, code, "expected exit code 1 on Windows due to ICMP limitations")
+				// Verify output format: header and summary are still printed.
+				assert.Contains(t, stdout, "PING 127.0.0.1")
+				assert.Contains(t, stdout, "ping statistics")
+				assert.Contains(t, stdout, fmt.Sprintf("%d packets transmitted", tt.count))
+				assert.Contains(t, stdout, "packet loss")
+			})
+		}
+		return
 	}
 
 	for _, tt := range tests {
