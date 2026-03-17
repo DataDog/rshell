@@ -53,12 +53,19 @@ func FileIdentity(absPath string, _ fs.FileInfo, sandbox *Sandbox) (uint64, uint
 // Write and execute checks are not performed:
 //   - Write: the sandbox blocks write-flag opens, so we cannot test
 //     write access without side effects.
-//   - Execute: Windows determines executability by file extension, not
-//     by permission bits.
-func (r *root) accessCheck(rel string, checkRead, _, _ bool) (fs.FileInfo, error) {
+//   - Execute: Windows has no POSIX execute bits. The check always
+//     returns ErrPermission so that test -x behaves like a POSIX shell
+//     (files are not executable unless the OS marks them as such, which
+//     the sandbox cannot detect without side effects).
+func (r *root) accessCheck(rel string, checkRead, _, checkExec bool) (fs.FileInfo, error) {
 	info, err := r.root.Stat(rel)
 	if err != nil {
 		return nil, err
+	}
+
+	// Windows has no POSIX execute bits — always deny execute checks.
+	if checkExec {
+		return info, os.ErrPermission
 	}
 
 	if checkRead && !info.IsDir() {
