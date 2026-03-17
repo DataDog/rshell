@@ -103,6 +103,14 @@ func FuzzSSFlags(f *testing.F) {
 			return
 		}
 
+		// Skip inputs containing shell control operators (&, |, ;, <, >) that
+		// the shell would interpret as job control or redirection rather than
+		// passing them to ss as flags. We are fuzzing ss flag parsing, not
+		// shell operator handling.
+		if strings.ContainsAny(flags, "&|;<>") {
+			return
+		}
+
 		script := fmt.Sprintf("ss %s", flags)
 
 		// Skip inputs that produce invalid shell syntax — we are fuzzing ss flag
