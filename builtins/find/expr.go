@@ -530,9 +530,8 @@ func (p *parser) parsePermPredicate() (*expr, error) {
 // parseSymbolicMode parses a symbolic permission string like "u=rwx,g=rx,o=rx"
 // or "a=r" into an octal permission value.
 //
-// Supports: who (u/g/o/a), operators (=/+/-), perms (r/w/x/s/t).
-// Does NOT support GNU extensions: copying bits from another class (g=u),
-// conditional execute (X), or reference-based modes. These may be added later.
+// Supports: who (u/g/o/a), operators (=/+/-), perms (r/w/x/X/s/t),
+// copy-bits (g=u, o=g, etc.), and conditional execute (X).
 func parseSymbolicMode(s string) (uint64, error) {
 	var mode uint64
 	for _, clause := range strings.Split(s, ",") {
@@ -569,31 +568,55 @@ func parseSymbolicMode(s string) (uint64, error) {
 			return 0, fmt.Errorf("invalid operator '%c'", op)
 		}
 		i++
-		// Parse perms: r, w, x, s, t
+		// Parse perms: r, w, x, X, s, t, or copy-bits (u/g/o).
 		var bits uint64    // rwx bits (applied per-class)
 		var special uint64 // special bits (setuid/setgid/sticky, applied globally)
-		for i < len(clause) {
+
+		// Check for copy-bits source (u/g/o). Copy-bits must be the
+		// sole perm token — no mixing with rwxXst (GNU rejects "g=ur").
+		if i < len(clause) && (clause[i] == 'u' || clause[i] == 'g' || clause[i] == 'o') {
 			switch clause[i] {
-			case 'r':
-				bits |= 4
-			case 'w':
-				bits |= 2
-			case 'x':
-				bits |= 1
-			case 's':
-				// setuid for user, setgid for group
-				if who&4 != 0 {
-					special |= 0o4000
-				}
-				if who&2 != 0 {
-					special |= 0o2000
-				}
-			case 't':
-				special |= 0o1000 // sticky
-			default:
-				return 0, fmt.Errorf("invalid permission '%c'", clause[i])
+			case 'u':
+				bits = uint64((mode >> 6) & 7)
+			case 'g':
+				bits = uint64((mode >> 3) & 7)
+			case 'o':
+				bits = uint64(mode & 7)
 			}
 			i++
+			if i < len(clause) {
+				return 0, fmt.Errorf("invalid permission '%c'", clause[i])
+			}
+		} else {
+			for i < len(clause) {
+				switch clause[i] {
+				case 'r':
+					bits |= 4
+				case 'w':
+					bits |= 2
+				case 'x':
+					bits |= 1
+				case 'X':
+					// Conditional execute: set x only if the mode
+					// being built already has any execute bit set.
+					if mode&0111 != 0 {
+						bits |= 1
+					}
+				case 's':
+					// setuid for user, setgid for group
+					if who&4 != 0 {
+						special |= 0o4000
+					}
+					if who&2 != 0 {
+						special |= 0o2000
+					}
+				case 't':
+					special |= 0o1000 // sticky
+				default:
+					return 0, fmt.Errorf("invalid permission '%c'", clause[i])
+				}
+				i++
+			}
 		}
 		// Apply rwx bits to the appropriate class positions.
 		// '=' clears all bits for the class first, then sets the new ones.

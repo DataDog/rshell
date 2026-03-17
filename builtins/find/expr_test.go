@@ -254,6 +254,33 @@ func TestParsePermPredicate(t *testing.T) {
 		{"symbolic sticky", []string{"-perm", "-o=t"}, false, 0o1000, '-'},
 		{"symbolic setuid+exec", []string{"-perm", "u=xs"}, false, 0o4100, '='},
 		{"symbolic = clears special", []string{"-perm", "u=s,u=rwx"}, false, 0o700, '='},
+		// Copy-bits: basic
+		{"copy g=u from empty", []string{"-perm", "g=u"}, false, 0o000, '='},
+		{"copy u=rwx,g=u", []string{"-perm", "u=rwx,g=u"}, false, 0o770, '='},
+		{"copy u=rw,o=u", []string{"-perm", "u=rw,o=u"}, false, 0o606, '='},
+		{"copy o=r,g=o", []string{"-perm", "o=r,g=o"}, false, 0o044, '='},
+		{"copy u=rwx,g=u,o=g cascade", []string{"-perm", "u=rwx,g=u,o=g"}, false, 0o777, '='},
+		{"copy g=o from empty", []string{"-perm", "g=o"}, false, 0o000, '='},
+		{"copy u=g", []string{"-perm", "g=rx,u=g"}, false, 0o550, '='},
+		{"copy o=g", []string{"-perm", "g=rx,o=g"}, false, 0o055, '='},
+		// Copy-bits: with + and - operators
+		{"copy g+u adds", []string{"-perm", "u=rwx,g=r,g+u"}, false, 0o770, '='},
+		{"copy g-u removes", []string{"-perm", "u=rx,g=rwx,g-u"}, false, 0o520, '='},
+		// Copy-bits: special bits NOT copied
+		{"copy g=u does not copy setuid", []string{"-perm", "u=s,g=u"}, false, 0o4000, '='},
+		// Copy-bits: invalid mixing
+		{"copy g=ur invalid", []string{"-perm", "g=ur"}, true, 0, 0},
+		{"copy g=uo invalid", []string{"-perm", "g=uo"}, true, 0, 0},
+		// Conditional execute X
+		{"X from zero no-op", []string{"-perm", "a+X"}, false, 0o000, '='},
+		{"X with existing x", []string{"-perm", "u=x,a+X"}, false, 0o111, '='},
+		{"X with = from zero", []string{"-perm", "u=X"}, false, 0o000, '='},
+		{"X with = and existing x", []string{"-perm", "u=rx,g=X"}, false, 0o510, '='},
+		{"a=rX from zero", []string{"-perm", "a=rX"}, false, 0o444, '='},
+		{"u=rwx,a=rX", []string{"-perm", "u=rwx,a=rX"}, false, 0o555, '='},
+		{"a+rX from zero", []string{"-perm", "a+rX"}, false, 0o444, '='},
+		{"u=x,a+rX", []string{"-perm", "u=x,a+rX"}, false, 0o555, '='},
+		// Errors
 		{"missing arg", []string{"-perm"}, true, 0, 0},
 		{"invalid octal", []string{"-perm", "xyz"}, true, 0, 0},
 		{"invalid mode 99999", []string{"-perm", "99999"}, true, 0, 0},
