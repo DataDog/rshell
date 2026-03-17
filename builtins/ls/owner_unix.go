@@ -21,15 +21,15 @@ import (
 // NSS/LDAP lookups outside the sandbox.
 // The ctx, callCtx, and path parameters are used on Windows to open files
 // through the sandbox for GetFileInformationByHandle; on Unix they are ignored.
-func fileOwner(_ context.Context, _ *builtins.CallContext, _ string, info iofs.FileInfo) (owner, group string, nlink uint64) {
+func fileOwner(_ context.Context, _ *builtins.CallContext, _ string, info iofs.FileInfo) (owner, group, nlink string) {
 	st, ok := info.Sys().(*syscall.Stat_t)
 	if !ok {
-		return "?", "?", 0
+		return "?", "?", "?"
 	}
 
 	owner = fmt.Sprintf("%d", st.Uid)
 	group = fmt.Sprintf("%d", st.Gid)
-	nlink = uint64(st.Nlink)
+	nlink = fmt.Sprintf("%d", st.Nlink)
 	return owner, group, nlink
 }
 

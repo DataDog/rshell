@@ -483,8 +483,7 @@ func computeColWidths[T any](ctx context.Context, callCtx *builtins.CallContext,
 		info := getInfo(e)
 		owner, group, nlink := fileOwner(ctx, callCtx, getName(e), info)
 
-		nlinkStr := fmt.Sprintf("%d", nlink)
-		if n := len(nlinkStr); n > w.nlink {
+		if n := len(nlink); n > w.nlink {
 			w.nlink = n
 		}
 		if n := len(owner); n > w.owner {
@@ -522,7 +521,7 @@ func printEntry(ctx context.Context, callCtx *builtins.CallContext, name, path s
 		}
 
 		timeStr := formatTime(modTime, now)
-		callCtx.Outf("%s %*d %-*s %-*s %*s %s %s%s\n",
+		callCtx.Outf("%s %*s %-*s %-*s %*s %s %s%s\n",
 			mode, cw.nlink, nlink,
 			cw.owner, owner, cw.group, group,
 			cw.size, sizeStr, timeStr,

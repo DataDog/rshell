@@ -7,6 +7,7 @@ package ls
 
 import (
 	"context"
+	"fmt"
 	iofs "io/fs"
 	"os"
 	"syscall"
@@ -18,12 +19,12 @@ import (
 // On Windows, UID/GID do not exist so owner and group are returned as "?".
 // Hard link count is resolved through the sandbox via
 // GetFileInformationByHandle.
-func fileOwner(ctx context.Context, callCtx *builtins.CallContext, path string, info iofs.FileInfo) (owner, group string, nlink uint64) {
+func fileOwner(ctx context.Context, callCtx *builtins.CallContext, path string, info iofs.FileInfo) (owner, group, nlink string) {
 	owner = "?"
 	group = "?"
-	nlink = 1
+	nlink = "?"
 	if n, ok := getNlink(ctx, callCtx, path); ok {
-		nlink = n
+		nlink = fmt.Sprintf("%d", n)
 	}
 	return owner, group, nlink
 }

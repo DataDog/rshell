@@ -54,7 +54,7 @@ func TestLsLongTotalLineSuppressedOnWindows(t *testing.T) {
 		"total line should be suppressed on Windows, got: %s", lines[0])
 }
 
-func TestLsLongNlinkIsNonZero(t *testing.T) {
+func TestLsLongNlinkIsValid(t *testing.T) {
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(dir+"/a.txt", []byte("hello"), 0o644))
 
@@ -63,13 +63,16 @@ func TestLsLongNlinkIsNonZero(t *testing.T) {
 	assert.Empty(t, stderr)
 
 	// Long format: mode nlink owner group size date name
-	// Nlink must be at least 1 for any existing file.
+	// Nlink must be either a positive integer or "?" (unknown).
+	// It must never be "0" — that's impossible for an existing file.
 	fields := strings.Fields(stdout)
 	require.True(t, len(fields) >= 2, "expected at least 2 fields, got: %s", stdout)
 	nlink := fields[1]
 	assert.NotEqual(t, "0", nlink, "nlink should not be 0 for an existing file")
 
-	nlinkVal := 0
-	fmt.Sscanf(nlink, "%d", &nlinkVal)
-	assert.GreaterOrEqual(t, nlinkVal, 1, "nlink should be >= 1")
+	if nlink != "?" {
+		nlinkVal := 0
+		fmt.Sscanf(nlink, "%d", &nlinkVal)
+		assert.GreaterOrEqual(t, nlinkVal, 1, "nlink should be >= 1")
+	}
 }
