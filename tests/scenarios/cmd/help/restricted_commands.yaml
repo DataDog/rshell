@@ -1,0 +1,14 @@
+description: Help lists only commands allowed by the active policy, plus itself.
+skip_assert_against_bash: true
+input:
+  allowed_commands: ["rshell:echo"]
+  script: |+
+    help
+expect:
+  stdout: |
+    echo  write arguments to stdout
+    help  display available commands
+
+    Run '<command> --help' for more information on a specific command.
+  stderr: ""
+  exit_code: 0

@@ -2,8 +2,8 @@ skip_assert_against_bash: true
 description: Multiple commands can be listed in allowed_commands.
 input:
   allowed_commands:
-    - echo
-    - printf
+    - rshell:echo
+    - rshell:printf
   script: |+
     echo hello
     printf "world\n"

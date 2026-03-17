@@ -1,0 +1,9 @@
+description: Help --help prints usage.
+skip_assert_against_bash: true
+input:
+  script: |+
+    help --help
+expect:
+  stdout_contains: ["Usage: help"]
+  stderr: ""
+  exit_code: 1

@@ -367,6 +367,7 @@ the existing builtins (e.g. `cat.go`):
 4. **Return values**: Return `Result{}` for success and `Result{Code: 1}` for failure. Do not panic or return Go errors for user-facing failures.
 5. **Flag parsing**: Use pflag. Any unregistered flag is automatically rejected. Register `-h`/`--help` and handle it per RULES.md. For string flags that may receive an empty value or a special prefix (e.g. `+N` offset syntax), detect whether the flag was explicitly provided using `fs.Changed("flagname")` rather than comparing the value to `""`. Using `*flagStr != ""` is wrong in these cases — an explicit `cmd -n ""` would silently fall through to the default instead of being rejected.
 6. **Bounded reads**: Cap all buffer allocations; never allocate based on unclamped user input.
+7. **Description**: Every new command must set the `Description` field on its `builtins.Command` struct with a short one-line description (e.g. `Description: "concatenate and print files"`).
 
 Register the command in `interp/builtins/builtins.go`:
 - Add an entry to the `registry` map: `"$ARGUMENTS": builtin$ARGUMENTS`
@@ -595,5 +596,7 @@ Add an entry for the new fuzz package to `.github/workflows/fuzz.yml` under the 
 **GATE CHECK**: Call TaskList. Step 9 must be `completed` before starting this step. Set this step to `in_progress` now.
 
 Verify that `SHELL_FEATURES.md` in the repository root does not need updates (e.g. if a new category of feature is added).
+
+Verify that `help` lists the new command with the correct description by running `go run ./cmd/rshell --allow-all-commands -c 'help'`.
 
 After updating, verify the file looks correct, then commit everything together if not already committed, or amend/add to the existing commit.

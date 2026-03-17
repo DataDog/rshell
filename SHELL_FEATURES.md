@@ -15,6 +15,7 @@ Blocked features are rejected before execution with exit code 2.
 - ✅ `find [-L] [PATH...] [EXPRESSION]` — search for files in a directory hierarchy; supports `-name`, `-iname`, `-path`, `-ipath`, `-type`, `-size`, `-empty`, `-newer`, `-mtime`, `-mmin`, `-maxdepth`, `-mindepth`, `-print`, `-print0`, `-prune`, logical operators (`!`, `-a`, `-o`, `()`); blocks `-exec`, `-delete`, `-regex` for sandbox safety
 - ✅ `grep [-EFGivclLnHhoqsxw] [-e PATTERN] [-m NUM] [-A NUM] [-B NUM] [-C NUM] PATTERN [FILE]...` — print lines that match patterns; uses RE2 regex engine (linear-time, no backtracking)
 - ✅ `head [-n N|-c N] [-q|-v] [FILE]...` — output the first part of files (default: first 10 lines); `-z`/`--zero-terminated` and `--follow` are rejected
+- ✅ `help` — display all available builtin commands with brief descriptions; for detailed flag info, use `<command> --help`
 - ✅ `sort [-rnubfds] [-k KEYDEF] [-t SEP] [-c|-C] [FILE]...` — sort lines of text files; `-o`, `--compress-program`, and `-T` are rejected (filesystem write / exec)
 - ✅ `ls [-1aAdFhlpRrSt] [--offset N] [--limit N] [FILE]...` — list directory contents; `--offset`/`--limit` are non-standard pagination flags (single-directory only, silently ignored with `-R` or multiple arguments, capped at 1,000 entries per call); offset operates on filesystem order (not sorted order) for O(n) memory
 - ✅ `printf FORMAT [ARGUMENT]...` — format and print data to stdout; supports `%s`, `%b`, `%c`, `%d`, `%i`, `%o`, `%u`, `%x`, `%X`, `%e`, `%E`, `%f`, `%F`, `%g`, `%G`, `%%`; format reuse for excess arguments; `%n` rejected (security risk); `-v` rejected
@@ -90,7 +91,7 @@ Blocked features are rejected before execution with exit code 2.
 
 ## Execution
 
-- ✅ AllowedCommands — restricts which commands (builtins or external) may be executed; if not set, no commands are allowed
+- ✅ AllowedCommands — restricts which commands (builtins or external) may be executed; commands require the `rshell:` namespace prefix (e.g. `rshell:cat`); if not set, no commands are allowed
 - ✅ AllowAllCommands — permits any command (testing convenience)
 - ✅ AllowedPaths filesystem sandboxing — restricts all file access to specified directories
 - ❌ External commands — blocked by default; requires an ExecHandler to be configured and the binary to be within AllowedPaths
