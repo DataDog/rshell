@@ -91,10 +91,11 @@ type expr struct {
 }
 
 // isAction returns true if this expression is an output action.
-// -quit is included because GNU find treats it as an action that
-// suppresses implicit -print (find . -quit should not print anything).
+// Only actual output actions suppress implicit -print; -quit is
+// control flow (handled at evaluation time by checking quit before
+// implicit print) and does not affect the implicit-print decision.
 func (e *expr) isAction() bool {
-	return e.kind == exprPrint || e.kind == exprPrint0 || e.kind == exprQuit
+	return e.kind == exprPrint || e.kind == exprPrint0
 }
 
 // hasAction checks if any node in the expression tree is an action.

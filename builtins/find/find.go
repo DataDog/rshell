@@ -439,11 +439,11 @@ func walkPath(
 			if len(newerErrors) > 0 || ec.failed {
 				failed = true
 			}
-			if result.matched && opts.implicitPrint {
-				callCtx.Outf("%s\n", path)
-			}
 			if result.quit {
 				return prune, true
+			}
+			if result.matched && opts.implicitPrint {
+				callCtx.Outf("%s\n", path)
 			}
 		}
 
