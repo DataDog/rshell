@@ -221,6 +221,22 @@ var builtinPerCommandSymbols = map[string][]string{
 		"os.PathError",      // error type for filesystem path errors; pure type, no I/O.
 		"strconv.FormatInt", // int-to-string conversion; pure function, no I/O.
 	},
+	"tail": {
+		"bufio.NewScanner",  // line-by-line input reading (e.g. head, cat); no write or exec capability.
+		"context.Context",   // deadline/cancellation plumbing; pure interface, no side effects.
+		"errors.Is",         // error comparison; pure function, no I/O.
+		"errors.New",        // creates a simple error value; pure function, no I/O.
+		"io.EOF",            // sentinel error value; pure constant.
+		"io.NopCloser",      // wraps a Reader with a no-op Close; no side effects.
+		"io.ReadCloser",     // interface type; no side effects.
+		"io.Reader",         // interface type; no side effects.
+		"math.MinInt64",     // integer constant; no side effects.
+		"os.FileInfo",       // file metadata interface returned by Stat; no I/O side effects.
+		"os.O_RDONLY",       // read-only file flag constant; cannot open files by itself.
+		"strconv.ErrRange",  // sentinel error value for overflow; pure constant.
+		"strconv.ParseInt",  // string-to-int conversion with base/bit-size; pure function, no I/O.
+		"strconv.ParseUint", // string-to-unsigned-int conversion; pure function, no I/O.
+	},
 	"testcmd": {
 		"context.Context",     // deadline/cancellation plumbing; pure interface, no side effects.
 		"io/fs.FileInfo",      // interface type for file information; no side effects.
@@ -343,6 +359,7 @@ var builtinAllowedSymbols = []string{
 	"math.MaxInt32",                      // integer constant; no side effects.
 	"math.MaxInt64",                      // integer constant; no side effects.
 	"math.MaxUint64",                     // integer constant; no side effects.
+	"math.MinInt64",                      // integer constant; no side effects.
 	"math.NaN",                           // returns IEEE 754 NaN value; pure function, no I/O.
 	"net.FlagBroadcast",                  // interface flag constant: broadcast capability; pure constant, no network connections.
 	"net.FlagLoopback",                   // interface flag constant: is loopback; pure constant, no network connections.

@@ -1,7 +1,7 @@
 description: Three-command pipeline passes data through.
 input:
   script: |+
-    printf '%s\n' foo bar | grep bar | cat
+    printf '%s\n' foo bar | tail -n 1 | cat
 expect:
   stdout: |+
     bar
