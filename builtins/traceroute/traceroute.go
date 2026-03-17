@@ -28,6 +28,7 @@
 //	    --tcp-method METHOD  TCP method: syn, sack, prefer_sack (default: syn)
 //	    --skip-private-hops  Remove private IP hops from results
 //	    --e2e-queries N      Number of end-to-end probes (default: 50)
+//	    --collect-source-public-ip  Collect source public IP (calls external service)
 //	-h, --help               Show usage information
 //
 // Exit codes:
@@ -70,6 +71,9 @@ const maxDelay = 60000
 // maxTimeout caps the per-probe timeout in seconds.
 const maxTimeout = 300
 
+// maxHostnameLen is the maximum FQDN length per RFC 1035.
+const maxHostnameLen = 253
+
 func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 	maxHopsFlag := fs.IntP("max-hops", "m", 30, "maximum number of hops")
 	firstTTL := fs.IntP("first-ttl", "f", 1, "start from the given TTL")
@@ -84,6 +88,7 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 	tcpMethod := fs.String("tcp-method", "syn", "TCP method: syn, sack, prefer_sack")
 	skipPrivate := fs.Bool("skip-private-hops", false, "remove private IP hops from results")
 	e2eQueriesFlag := fs.Int("e2e-queries", 50, "number of end-to-end probes")
+	collectSourcePublicIP := fs.Bool("collect-source-public-ip", false, "collect source public IP (calls external service)")
 	help := fs.BoolP("help", "h", false, "show usage information")
 
 	return func(ctx context.Context, callCtx *builtins.CallContext, args []string) builtins.Result {
@@ -108,6 +113,10 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 		hostname := args[0]
 		if hostname == "" {
 			callCtx.Errf("traceroute: empty hostname\n")
+			return builtins.Result{Code: 1}
+		}
+		if len(hostname) > maxHostnameLen {
+			callCtx.Errf("traceroute: hostname too long (max %d characters)\n", maxHostnameLen)
 			return builtins.Result{Code: 1}
 		}
 
@@ -167,19 +176,20 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 		}
 
 		params := traceroutelib.Params{
-			Hostname:        hostname,
-			Port:            *port,
-			Protocol:        proto,
-			MinTTL:          *firstTTL,
-			MaxTTL:          *maxHopsFlag,
-			Delay:           *delay,
-			Timeout:         time.Duration(*wait) * time.Second,
-			TCPMethod:       tcpMeth,
-			WantV6:          *ipv6,
-			ReverseDns:      !*noDns,
-			Queries:         *queries,
-			E2eQueries:      *e2eQueriesFlag,
-			SkipPrivateHops: *skipPrivate,
+			Hostname:              hostname,
+			Port:                  *port,
+			Protocol:              proto,
+			MinTTL:                *firstTTL,
+			MaxTTL:                *maxHopsFlag,
+			Delay:                 *delay,
+			Timeout:               time.Duration(*wait) * time.Second,
+			TCPMethod:             tcpMeth,
+			WantV6:                *ipv6,
+			ReverseDns:            !*noDns,
+			Queries:               *queries,
+			E2eQueries:            *e2eQueriesFlag,
+			SkipPrivateHops:       *skipPrivate,
+			CollectSourcePublicIP: *collectSourcePublicIP,
 		}
 
 		results, err := traceroutelib.Run(ctx, params)

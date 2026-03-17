@@ -70,7 +70,7 @@ Linux, macOS, and Windows.
 
 ```
 tests/scenarios/
-├── cmd/          # builtin command tests (echo, cat, grep, head, tail, test, uniq, wc, ...)
+├── cmd/          # builtin command tests (echo, cat, grep, head, tail, test, traceroute, uniq, wc, ...)
 └── shell/        # shell feature tests (pipes, variables, control flow, ...)
 ```
 

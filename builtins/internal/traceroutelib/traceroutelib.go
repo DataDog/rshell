@@ -22,19 +22,20 @@ import (
 
 // Params holds the user-facing parameters for a traceroute invocation.
 type Params struct {
-	Hostname        string
-	Port            int
-	Protocol        string
-	MinTTL          int
-	MaxTTL          int
-	Delay           int
-	Timeout         time.Duration
-	TCPMethod       string
-	WantV6          bool
-	ReverseDns      bool
-	Queries         int
-	E2eQueries      int
-	SkipPrivateHops bool
+	Hostname              string
+	Port                  int
+	Protocol              string
+	MinTTL                int
+	MaxTTL                int
+	Delay                 int
+	Timeout               time.Duration
+	TCPMethod             string
+	WantV6                bool
+	ReverseDns            bool
+	Queries               int
+	E2eQueries            int
+	SkipPrivateHops       bool
+	CollectSourcePublicIP bool
 }
 
 // Run executes a traceroute with the given parameters and returns the results.
@@ -42,19 +43,20 @@ func Run(ctx context.Context, p Params) (*result.Results, error) {
 	tr := traceroute.NewTraceroute()
 
 	params := traceroute.TracerouteParams{
-		Hostname:          p.Hostname,
-		Port:              p.Port,
-		Protocol:          strings.ToUpper(p.Protocol),
-		MinTTL:            p.MinTTL,
-		MaxTTL:            p.MaxTTL,
-		Delay:             p.Delay,
-		Timeout:           p.Timeout,
-		TCPMethod:         traceroute.TCPMethod(p.TCPMethod),
-		WantV6:            p.WantV6,
-		ReverseDns:        p.ReverseDns,
-		TracerouteQueries: p.Queries,
-		E2eQueries:        p.E2eQueries,
-		SkipPrivateHops:   p.SkipPrivateHops,
+		Hostname:              p.Hostname,
+		Port:                  p.Port,
+		Protocol:              strings.ToLower(p.Protocol),
+		MinTTL:                p.MinTTL,
+		MaxTTL:                p.MaxTTL,
+		Delay:                 p.Delay,
+		Timeout:               p.Timeout,
+		TCPMethod:             traceroute.TCPMethod(p.TCPMethod),
+		WantV6:                p.WantV6,
+		ReverseDns:            p.ReverseDns,
+		TracerouteQueries:     p.Queries,
+		E2eQueries:            p.E2eQueries,
+		SkipPrivateHops:       p.SkipPrivateHops,
+		CollectSourcePublicIP: p.CollectSourcePublicIP,
 	}
 
 	return tr.RunTraceroute(ctx, params)

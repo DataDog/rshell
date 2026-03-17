@@ -1,0 +1,9 @@
+description: traceroute rejects hostnames longer than 253 characters
+skip_assert_against_bash: true
+input:
+  script: |+
+    traceroute aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+expect:
+  stdout: ""
+  stderr: "traceroute: hostname too long (max 253 characters)\n"
+  exit_code: 1

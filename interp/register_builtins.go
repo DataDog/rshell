@@ -26,9 +26,9 @@ import (
 	sortcmd "github.com/DataDog/rshell/builtins/sort"
 	"github.com/DataDog/rshell/builtins/strings_cmd"
 	"github.com/DataDog/rshell/builtins/tail"
-	"github.com/DataDog/rshell/builtins/traceroute"
 	"github.com/DataDog/rshell/builtins/testcmd"
 	"github.com/DataDog/rshell/builtins/tr"
+	"github.com/DataDog/rshell/builtins/traceroute"
 	truecmd "github.com/DataDog/rshell/builtins/true"
 	"github.com/DataDog/rshell/builtins/uniq"
 	"github.com/DataDog/rshell/builtins/wc"
@@ -56,10 +56,10 @@ func registerBuiltins() {
 			sed.Cmd,
 			strings_cmd.Cmd,
 			tail.Cmd,
-			traceroute.Cmd,
 			testcmd.Cmd,
 			testcmd.BracketCmd,
 			tr.Cmd,
+			traceroute.Cmd,
 			truecmd.Cmd,
 			uniq.Cmd,
 			wc.Cmd,
