@@ -579,6 +579,14 @@ func parseCount(s string) (countMode, bool) {
 			}
 			n = -n
 		}
+		if mult == 0 {
+			// Z/Y overflow sentinel: the multiplier itself overflows int64.
+			// GNU tail rejects any non-zero count with these suffixes.
+			if n != 0 {
+				return countMode{}, false
+			}
+			return countMode{n: 0, offset: isOffset}, true
+		}
 		if n > MaxCount/mult {
 			n = MaxCount
 		} else {
@@ -606,13 +614,17 @@ func parseCount(s string) (countMode, bool) {
 // countMultiplier returns the byte multiplier for a GNU tail suffix and
 // whether the suffix is recognised.
 //
-// Suffixes match those documented in GNU coreutils tail(1):
+// A return value of (0, true) is an overflow sentinel for Z/Y suffixes whose
+// multiplier cannot be represented as int64. The caller must handle this case
+// specially (0*N=0 is valid; N>0 with these suffixes is rejected by GNU tail).
+//
+// Suffixes match those accepted by GNU coreutils tail(1):
 //
 //	b        512
 //	kB / KB  1 000
-//	K / KiB  1 024
+//	k / K / KiB  1 024   (k is an undocumented GNU alias for K)
 //	MB       1 000²
-//	M / MiB  1 024²
+//	m / M / MiB  1 024²  (m is an undocumented GNU alias for M)
 //	GB       1 000³
 //	G / GiB  1 024³
 //	TB       1 000⁴   (always clamped to MaxCount in practice)
@@ -621,19 +633,19 @@ func parseCount(s string) (countMode, bool) {
 //	P / PiB  1 024⁵   (always clamped to MaxCount in practice)
 //	EB       1 000⁶   (always clamped to MaxCount in practice)
 //	E / EiB  1 024⁶   (always clamped to MaxCount in practice)
-//	ZB/Z/ZiB 1 000⁷ / 1 024⁷  (overflow int64; represented as MaxCount)
-//	YB/Y/YiB 1 000⁸ / 1 024⁸  (overflow int64; represented as MaxCount)
+//	ZB/Z/ZiB 1 000⁷ / 1 024⁷  (overflow int64; sentinel 0 returned)
+//	YB/Y/YiB 1 000⁸ / 1 024⁸  (overflow int64; sentinel 0 returned)
 func countMultiplier(s string) (int64, bool) {
 	switch s {
 	case "b":
 		return 512, true
 	case "kB", "KB":
 		return 1_000, true
-	case "K", "KiB":
+	case "k", "K", "KiB":
 		return 1_024, true
 	case "MB":
 		return 1_000_000, true
-	case "M", "MiB":
+	case "m", "M", "MiB":
 		return 1_048_576, true
 	case "GB":
 		return 1_000_000_000, true
@@ -652,9 +664,10 @@ func countMultiplier(s string) (int64, bool) {
 	case "E", "EiB":
 		return 1_152_921_504_606_846_976, true // 1024^6
 	case "ZB", "Z", "ZiB", "YB", "Y", "YiB":
-		// 1000^7 and 1024^7 and above overflow int64; any n≥1 will be
-		// clamped to MaxCount, so return MaxCount as the multiplier.
-		return MaxCount, true
+		// 1000^7 and 1024^7 and above overflow int64.
+		// Return sentinel 0; caller rejects n>0 (matching GNU tail's
+		// "Value too large" error) and accepts n=0 as a no-op.
+		return 0, true
 	default:
 		return 0, false
 	}
