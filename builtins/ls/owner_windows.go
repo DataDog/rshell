@@ -55,9 +55,15 @@ func getNlink(ctx context.Context, callCtx *builtins.CallContext, path string) (
 	return uint64(d.NumberOfLinks), true
 }
 
-// fileBlocks returns the number of 512-byte blocks allocated for the file.
-// On Windows this information is not available through standard Go APIs,
-// so we return -1 to signal that the total line should be suppressed.
+// fileBlocks estimates the number of 512-byte blocks allocated for the file.
+// Windows does not expose block allocation through standard Go APIs, so we
+// estimate using the NTFS default cluster size of 4096 bytes. This may be
+// inaccurate for sparse, compressed, or non-default cluster-size volumes.
 func fileBlocks(info iofs.FileInfo) int64 {
-	return -1
+	size := info.Size()
+	if size <= 0 {
+		return 0
+	}
+	// Round up to nearest 4096-byte cluster, convert to 512-byte blocks.
+	return ((size + 4095) / 4096) * 8
 }
