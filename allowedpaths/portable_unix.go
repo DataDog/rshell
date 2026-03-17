@@ -45,11 +45,16 @@ func effectiveHasPerm(info fs.FileInfo, checkRead, checkWrite, checkExec bool) b
 	ownerBits := fs.FileMode(0007) // other bits by default
 	if st, ok := info.Sys().(*syscall.Stat_t); ok {
 		uid := os.Getuid()
+		if uid == 0 {
+			// Root bypasses read/write permission checks (CAP_DAC_OVERRIDE).
+			// Execute still requires at least one x bit to be set.
+			if checkExec && perm&0111 == 0 {
+				return false
+			}
+			return true
+		}
 		gid := os.Getgid()
 		switch {
-		case uid == 0:
-			// root can read/write anything; for execute, any x bit suffices.
-			ownerBits = 0777
 		case int(st.Uid) == uid:
 			ownerBits = 0700
 		case int(st.Gid) == gid:
