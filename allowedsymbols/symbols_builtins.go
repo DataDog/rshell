@@ -144,7 +144,7 @@ var builtinPerCommandSymbols = map[string][]string{
 		"io/fs.ModeSocket",                    // file mode bit constant for sockets; pure constant.
 		"io/fs.ModeSticky",                    // file mode bit constant for sticky bit; pure constant.
 		"io/fs.ModeSymlink",                   // file mode bit constant for symlinks; pure constant.
-		"os.Open",                             // opens a file read-only; used on Windows for GetFileInformationByHandle.
+		"os.O_RDONLY",                         // read-only file flag constant; used on Windows for sandbox-aware file open.
 		"runtime.GOOS",                        // current OS name constant; pure constant, no I/O.
 		"slices.Reverse",                      // reverses a slice in-place; pure function, no I/O.
 		"slices.SortFunc",                     // sorts a slice with a comparison function; pure function, no I/O.
@@ -343,7 +343,6 @@ var builtinAllowedSymbols = []string{
 	"os.FileInfo",                     // file metadata interface returned by Stat; no I/O side effects.
 	"os.IsNotExist",                   // checks if error is "not exist"; pure function, no I/O.
 	"os.O_RDONLY",                     // read-only file flag constant; cannot open files by itself.
-	"os.Open",                         // opens a file read-only; used on Windows for GetFileInformationByHandle.
 	"os.PathError",                    // error type for filesystem path errors; pure type, no I/O.
 	"path/filepath.ToSlash",           // converts OS path separators to forward slashes; pure function, no I/O.
 	"regexp.Compile",                  // compiles a regular expression; pure function, no I/O. Uses RE2 engine (linear-time, no backtracking).

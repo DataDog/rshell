@@ -8,15 +8,20 @@
 package ls
 
 import (
+	"context"
 	"fmt"
 	iofs "io/fs"
 	"syscall"
+
+	"github.com/DataDog/rshell/builtins"
 )
 
 // fileOwner returns the numeric UID, GID, and hard link count for the given
 // FileInfo. Names are not resolved to avoid reading /etc/passwd or triggering
 // NSS/LDAP lookups outside the sandbox.
-func fileOwner(path string, info iofs.FileInfo) (owner, group string, nlink uint64) {
+// The ctx, callCtx, and path parameters are used on Windows to open files
+// through the sandbox for GetFileInformationByHandle; on Unix they are ignored.
+func fileOwner(_ context.Context, _ *builtins.CallContext, _ string, info iofs.FileInfo) (owner, group string, nlink uint64) {
 	st, ok := info.Sys().(*syscall.Stat_t)
 	if !ok {
 		return "?", "?", 0
