@@ -4,7 +4,11 @@ gopkg.in/yaml.v3,https://github.com/go-yaml/yaml,MIT AND Apache-2.0,"Copyright (
 mvdan.cc/sh/v3,https://github.com/mvdan/sh,BSD-3-Clause,"Copyright (c) 2016, Daniel Marti"
 github.com/davecgh/go-spew,https://github.com/davecgh/go-spew,ISC,Copyright (c) 2012-2016 Dave Collins
 github.com/inconshreveable/mousetrap,https://github.com/inconshreveable/mousetrap,Apache-2.0,Copyright 2014 Alan Shreve
+github.com/google/uuid,https://github.com/google/uuid,BSD-3-Clause,Copyright (c) 2018 Google Inc.
 github.com/pmezard/go-difflib,https://github.com/pmezard/go-difflib,BSD-3-Clause,"Copyright (c) 2013, Patrick Mezard"
+github.com/prometheus-community/pro-bing,https://github.com/prometheus-community/pro-bing,MIT,"Copyright 2022 The Prometheus Authors; Copyright 2016 Cameron Sparr and contributors"
 github.com/spf13/cobra,https://github.com/spf13/cobra,Apache-2.0,Copyright 2013-2023 The Cobra Authors
 github.com/spf13/pflag,https://github.com/spf13/pflag,BSD-3-Clause,"Copyright (c) 2012 Alex Ogier, The Go Authors"
+golang.org/x/net,https://github.com/golang/net,BSD-3-Clause,Copyright (c) 2009 The Go Authors. All rights reserved.
+golang.org/x/sync,https://github.com/golang/sync,BSD-3-Clause,Copyright (c) 2009 The Go Authors. All rights reserved.
 golang.org/x/sys,https://github.com/golang/sys,BSD-3-Clause,Copyright (c) 2009 The Go Authors. All rights reserved.

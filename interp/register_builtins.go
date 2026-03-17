@@ -54,7 +54,7 @@ func registerBuiltins() {
 			help.Cmd,
 			ip.Cmd,
 			ls.Cmd,
-		ping.Cmd,
+			ping.Cmd,
 			sortcmd.Cmd,
 			printfcmd.Cmd,
 			sed.Cmd,

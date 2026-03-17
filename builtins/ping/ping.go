@@ -156,12 +156,16 @@ func execPing(ctx context.Context, callCtx *builtins.CallContext, host string, c
 
 	if err != nil && isPermissionErr(err) {
 		// Retry with raw socket privileges.
+		// buildPinger calls probing.NewPinger which does a DNS lookup internally.
+		// The SetIPAddr call below overwrites that result with the already-resolved
+		// IP from the first run, making the second DNS lookup wasted. This is a
+		// minor inefficiency: pro-bing has no NewPingerWithoutResolve API to skip it.
 		p2, err2 := buildPinger(host, count, wait, interval, ipv4, ipv6)
 		if err2 != nil {
 			callCtx.Errf("ping: %v\n", err2)
 			return builtins.Result{Code: 1}
 		}
-		p2.SetIPAddr(pinger.IPAddr()) // reuse already-resolved IP
+		p2.SetIPAddr(pinger.IPAddr()) // reuse already-resolved IP; avoids a third lookup
 		p2.OnRecv = onRecv
 		p2.SetPrivileged(true)
 		err = p2.RunWithContext(ctx)

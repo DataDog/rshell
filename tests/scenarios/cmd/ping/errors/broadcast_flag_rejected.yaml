@@ -4,6 +4,6 @@ input:
   script: |+
     ping -b 255.255.255.255
 expect:
-  stderr_contains: ["ping:"]
+  stderr: "ping: unknown shorthand flag: 'b' in -b\n"
   exit_code: 1
 skip_assert_against_bash: true
