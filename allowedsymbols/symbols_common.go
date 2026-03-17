@@ -11,7 +11,6 @@ package allowedsymbols
 // with that prefix is banned); all other keys are exact-match bans.
 var permanentlyBanned = map[string]string{
 	"reflect": "reflection defeats static safety analysis",
-	"unsafe":  "bypasses Go's type and memory safety guarantees",
 	"os/exec": "spawns arbitrary host processes, bypassing all shell restrictions",
 	// NOTE: "net" (the base package) is intentionally NOT banned here so that the
 	// ip builtin can use read-only interface enumeration (net.Interfaces, net.Interface,

@@ -18,10 +18,7 @@ func builtinsCheckConfig() allowedSymbolsConfig {
 		Symbols:   builtinAllowedSymbols,
 		TargetDir: "builtins",
 		CollectFiles: func(dir string) ([]string, error) {
-			// "internal" is skipped: it may use unsafe.Pointer for OS-level DLL
-			// calls (e.g. Windows iphlpapi.dll) that cannot be expressed within
-			// the safe symbol allowlist. This is consistent with the per-command
-			// check which already skips "internal".
+			// "internal" has its own dedicated check (TestInternalAllowedSymbols).
 			return collectSubdirGoFiles(dir, map[string]bool{"testutil": true, "internal": true}, func(rel string) bool {
 				// builtins.go is the package framework and is exempt.
 				return rel == "builtins.go"
@@ -65,4 +62,28 @@ func builtinsPerCommandCheckConfig() perBuiltinConfig {
 // builtinAllowedSymbols.
 func TestBuiltinPerCommandSymbols(t *testing.T) {
 	checkPerBuiltinAllowedSymbols(t, builtinsPerCommandCheckConfig())
+}
+
+// internalCheckConfig returns the allowedSymbolsConfig used to enforce
+// symbol-level import restrictions on builtins/internal/ helper packages.
+func internalCheckConfig() allowedSymbolsConfig {
+	return allowedSymbolsConfig{
+		Symbols:   internalAllowedSymbols,
+		TargetDir: "builtins/internal",
+		CollectFiles: func(dir string) ([]string, error) {
+			return collectSubdirGoFiles(dir, nil, nil)
+		},
+		ExemptImport: func(importPath string) bool {
+			return importPath == "github.com/DataDog/rshell/builtins"
+		},
+		ListName: "internalAllowedSymbols",
+		MinFiles: 1,
+	}
+}
+
+// TestInternalAllowedSymbols enforces symbol-level import restrictions on
+// builtins/internal/ helper packages. unsafe.Pointer is explicitly permitted
+// here for the narrow iphlpapi.dll DLL call in winnet/winnet_windows.go.
+func TestInternalAllowedSymbols(t *testing.T) {
+	checkAllowedSymbols(t, internalCheckConfig())
 }
