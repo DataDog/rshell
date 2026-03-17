@@ -229,6 +229,12 @@ var builtinPerCommandSymbols = map[string][]string{
 		"os.O_RDONLY",      // read-only file flag constant; cannot open files by itself.
 		"strconv.ParseInt", // string-to-int conversion with base/bit-size; pure function, no I/O.
 	},
+	"traceroute": {
+		"context.Context",   // deadline/cancellation plumbing; pure interface, no side effects.
+		"strings.ToLower",   // converts string to lowercase; pure function, no I/O.
+		"time.Duration",     // duration type; pure integer alias, no I/O.
+		"time.Second",       // constant representing one second; no side effects.
+	},
 	"testcmd": {
 		"context.Context",     // deadline/cancellation plumbing; pure interface, no side effects.
 		"io/fs.FileInfo",      // interface type for file information; no side effects.

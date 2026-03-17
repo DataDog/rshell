@@ -1,0 +1,9 @@
+description: traceroute with no arguments prints error and exits 1
+skip_assert_against_bash: true
+input:
+  script: |+
+    traceroute
+expect:
+  stdout: ""
+  stderr: "traceroute: missing host operand\n"
+  exit_code: 1

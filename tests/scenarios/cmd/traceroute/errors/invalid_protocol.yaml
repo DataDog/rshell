@@ -1,0 +1,9 @@
+description: traceroute rejects invalid protocol
+skip_assert_against_bash: true
+input:
+  script: |+
+    traceroute --protocol invalid example.com
+expect:
+  stdout: ""
+  stderr: "traceroute: unknown protocol \"invalid\" (must be udp, tcp, or icmp)\n"
+  exit_code: 1

@@ -1,0 +1,9 @@
+description: traceroute rejects queries out of range
+skip_assert_against_bash: true
+input:
+  script: |+
+    traceroute -q 0 example.com
+expect:
+  stdout: ""
+  stderr: "traceroute: --queries must be between 1 and 100\n"
+  exit_code: 1

@@ -1,0 +1,9 @@
+description: traceroute --help prints usage to stdout and exits 0
+skip_assert_against_bash: true
+input:
+  script: |+
+    traceroute --help
+expect:
+  stdout_contains: ["Usage: traceroute", "Print the route packets take"]
+  stderr: ""
+  exit_code: 0

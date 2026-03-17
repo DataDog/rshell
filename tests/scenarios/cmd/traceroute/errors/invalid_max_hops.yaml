@@ -1,0 +1,9 @@
+description: traceroute rejects max-hops out of range
+skip_assert_against_bash: true
+input:
+  script: |+
+    traceroute -m 0 example.com
+expect:
+  stdout: ""
+  stderr: "traceroute: --max-hops must be between 1 and 255\n"
+  exit_code: 1

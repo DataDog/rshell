@@ -1,0 +1,9 @@
+description: traceroute with multiple hosts prints error and exits 1
+skip_assert_against_bash: true
+input:
+  script: |+
+    traceroute host1 host2
+expect:
+  stdout: ""
+  stderr: "traceroute: too many arguments\n"
+  exit_code: 1

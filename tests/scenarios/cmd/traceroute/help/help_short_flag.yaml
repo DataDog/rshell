@@ -1,0 +1,9 @@
+description: traceroute -h prints usage to stdout and exits 0
+skip_assert_against_bash: true
+input:
+  script: |+
+    traceroute -h
+expect:
+  stdout_contains: ["Usage: traceroute"]
+  stderr: ""
+  exit_code: 0

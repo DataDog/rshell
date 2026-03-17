@@ -1,0 +1,9 @@
+description: traceroute rejects invalid TCP method
+skip_assert_against_bash: true
+input:
+  script: |+
+    traceroute --tcp-method bogus example.com
+expect:
+  stdout: ""
+  stderr: "traceroute: unknown TCP method \"bogus\" (must be syn, sack, or prefer_sack)\n"
+  exit_code: 1

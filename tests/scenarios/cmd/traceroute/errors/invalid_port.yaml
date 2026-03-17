@@ -1,0 +1,9 @@
+description: traceroute rejects port out of range
+skip_assert_against_bash: true
+input:
+  script: |+
+    traceroute -p 99999 example.com
+expect:
+  stdout: ""
+  stderr: "traceroute: --port must be between 1 and 65535\n"
+  exit_code: 1

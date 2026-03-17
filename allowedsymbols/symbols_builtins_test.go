@@ -18,7 +18,7 @@ func builtinsCheckConfig() allowedSymbolsConfig {
 		Symbols:   builtinAllowedSymbols,
 		TargetDir: "builtins",
 		CollectFiles: func(dir string) ([]string, error) {
-			return collectSubdirGoFiles(dir, map[string]bool{"testutil": true}, func(rel string) bool {
+			return collectSubdirGoFiles(dir, map[string]bool{"testutil": true, "internal": true}, func(rel string) bool {
 				// builtins.go is the package framework and is exempt.
 				return rel == "builtins.go"
 			})

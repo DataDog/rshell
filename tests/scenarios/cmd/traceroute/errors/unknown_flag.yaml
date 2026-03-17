@@ -1,0 +1,9 @@
+description: traceroute rejects unknown flags
+skip_assert_against_bash: true
+input:
+  script: |+
+    traceroute --follow example.com
+expect:
+  stdout: ""
+  stderr_contains: ["traceroute:"]
+  exit_code: 1
