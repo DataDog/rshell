@@ -348,7 +348,7 @@ var builtinAllowedSymbols = []string{
 	"errors.New",                         // creates a simple error value; pure function, no I/O.
 	"fmt.Errorf",                         // error formatting; pure function, no I/O.
 	"fmt.Sprintf",                        // string formatting; pure function, no I/O.
-	"golang.org/x/sys/unix.SysctlRaw",   // macOS: reads kernel socket tables (read-only, no exec, no filesystem).
+	"golang.org/x/sys/unix.SysctlRaw",    // macOS: reads kernel socket tables (read-only, no exec, no filesystem).
 	"io.EOF",                             // sentinel error value; pure constant.
 	"io.MultiReader",                     // combines multiple Readers into one sequential Reader; no I/O side effects.
 	"io.NopCloser",                       // wraps a Reader with a no-op Close; no side effects.
