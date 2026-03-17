@@ -72,7 +72,9 @@ func TestLsLongNlinkIsValid(t *testing.T) {
 
 	if nlink != "?" {
 		nlinkVal := 0
-		fmt.Sscanf(nlink, "%d", &nlinkVal)
+		n, err := fmt.Sscanf(nlink, "%d", &nlinkVal)
+		require.NoError(t, err, "nlink should be a valid integer")
+		require.Equal(t, 1, n, "expected exactly one parsed value")
 		assert.GreaterOrEqual(t, nlinkVal, 1, "nlink should be >= 1")
 	}
 }

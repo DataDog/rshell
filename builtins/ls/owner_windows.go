@@ -19,7 +19,7 @@ import (
 // On Windows, UID/GID do not exist so owner and group are returned as "?".
 // Hard link count is resolved through the sandbox via
 // GetFileInformationByHandle.
-func fileOwner(ctx context.Context, callCtx *builtins.CallContext, path string, info iofs.FileInfo) (owner, group, nlink string) {
+func fileOwner(ctx context.Context, callCtx *builtins.CallContext, path string, _ iofs.FileInfo) (owner, group, nlink string) {
 	owner = "?"
 	group = "?"
 	nlink = "?"
@@ -56,11 +56,10 @@ func getNlink(ctx context.Context, callCtx *builtins.CallContext, path string) (
 	return uint64(d.NumberOfLinks), true
 }
 
-// fileBlocks returns the number of 512-byte blocks allocated for the file.
-// On Windows, GetFileInformationByHandle does not expose allocation size
-// and GetFileInformationByHandleEx requires the unsafe package which is
-// permanently banned. Returns -1 to signal that the total line should be
-// suppressed.
-func fileBlocks(_ context.Context, _ *builtins.CallContext, _ string, info iofs.FileInfo) int64 {
-	return -1
+// fileBlocks returns the number of 512-byte blocks allocated for the file
+// and whether the value is available. On Windows, GetFileInformationByHandle
+// does not expose allocation size and GetFileInformationByHandleEx requires
+// the unsafe package which is permanently banned.
+func fileBlocks(_ context.Context, _ *builtins.CallContext, _ string, _ iofs.FileInfo) (int64, bool) {
+	return 0, false
 }

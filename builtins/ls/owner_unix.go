@@ -33,13 +33,13 @@ func fileOwner(_ context.Context, _ *builtins.CallContext, _ string, info iofs.F
 	return owner, group, nlink
 }
 
-// fileBlocks returns the number of 512-byte blocks allocated for the file.
-// The ctx, callCtx, and path parameters are used on Windows; on Unix they
-// are ignored (Stat_t has everything).
-func fileBlocks(_ context.Context, _ *builtins.CallContext, _ string, info iofs.FileInfo) int64 {
+// fileBlocks returns the number of 512-byte blocks allocated for the file
+// and whether the value is available. The ctx, callCtx, and path parameters
+// are used on Windows; on Unix they are ignored (Stat_t has everything).
+func fileBlocks(_ context.Context, _ *builtins.CallContext, _ string, info iofs.FileInfo) (int64, bool) {
 	st, ok := info.Sys().(*syscall.Stat_t)
 	if !ok {
-		return 0
+		return 0, false
 	}
-	return st.Blocks
+	return st.Blocks, true
 }
