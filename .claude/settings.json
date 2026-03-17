@@ -6,7 +6,7 @@
       "allowWrite": ["/private/tmp", "~/go/src/github.com/DataDog/rshell"]
     },
     "network": {
-      "allowedDomains": ["*.datadoghq.com", "*.github.com"]
+      "allowedDomains": ["*.datadoghq.com", "*.github.com", "*.ddbuild.io"]
     }
   },
   "permissions": {
