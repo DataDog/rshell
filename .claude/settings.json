@@ -30,7 +30,9 @@
       "Bash(tar *)",
       "Bash(RSHELL_BASH_TEST=1 go *)",
       "Bash(RSHELL_COMPLIANCE_TEST=1 go *)",
-      "Bash(cat *)"
+      "Bash(cat *)",
+      "Bash(grep *)",
+      "Bash(sed *)"
     ]
   }
 }
