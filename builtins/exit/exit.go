@@ -48,7 +48,7 @@ func run(_ context.Context, callCtx *builtins.CallContext, args []string) builti
 			r.Exiting = true
 			return r
 		}
-		r.Code = uint8(n)
+		r.Code = uint8(n & 0xff) // bash wraps exit codes mod 256
 	default:
 		callCtx.Errf("too many arguments\n")
 		r.Code = 1
