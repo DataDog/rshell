@@ -394,12 +394,23 @@ func listDir(ctx context.Context, callCtx *builtins.CallContext, dir string, opt
 	var cw colWidths
 	if opts.longFmt {
 		cw = computeColWidths(infoEntries, func(e entryInfo) iofs.FileInfo { return e.info }, func(e entryInfo) string { return joinPath(dir, e.name) }, opts)
+		// Compute total blocks for the "total" line. fileBlocks returns -1
+		// on platforms where block allocation is unavailable (e.g. Windows);
+		// in that case, suppress the total line rather than printing a lie.
 		var totalBlocks int64
+		blocksAvailable := true
 		for _, ei := range infoEntries {
-			totalBlocks += fileBlocks(ei.info)
+			b := fileBlocks(ei.info)
+			if b < 0 {
+				blocksAvailable = false
+				break
+			}
+			totalBlocks += b
 		}
-		// Stat_t.Blocks is in 512-byte units; GNU ls displays in 1024-byte blocks.
-		callCtx.Outf("total %d\n", totalBlocks/2)
+		if blocksAvailable {
+			// Stat_t.Blocks is in 512-byte units; GNU ls displays in 1024-byte blocks.
+			callCtx.Outf("total %d\n", totalBlocks/2)
+		}
 	}
 	for _, ei := range infoEntries {
 		if ctx.Err() != nil {

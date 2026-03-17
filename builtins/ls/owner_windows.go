@@ -41,7 +41,8 @@ func getNlink(path string) uint64 {
 }
 
 // fileBlocks returns the number of 512-byte blocks allocated for the file.
-// On Windows this information is not available, so we return 0.
+// On Windows this information is not available, so we return -1 to signal
+// that the total line should be suppressed.
 func fileBlocks(info iofs.FileInfo) int64 {
-	return 0
+	return -1
 }
