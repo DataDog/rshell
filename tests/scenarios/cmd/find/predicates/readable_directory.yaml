@@ -1,0 +1,14 @@
+description: "find -readable matches readable directories."
+skip_assert_against_bash: true
+setup:
+  files:
+    - path: dir/subdir/.keep
+      content: ""
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    find dir -name subdir -readable
+expect:
+  stdout: "dir/subdir\n"
+  stderr: ""
+  exit_code: 0

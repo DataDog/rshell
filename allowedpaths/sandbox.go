@@ -88,9 +88,12 @@ func (s *Sandbox) resolve(absPath string) (*os.Root, string, bool) {
 // All operations go through os.Root to stay within the sandbox.
 // Mode: 0x04 = read, 0x02 = write, 0x01 = execute.
 //
-// The check uses Stat (metadata-only) rather than Open so it never blocks on
-// special files like FIFOs that have no writer — matching the POSIX access(2)
-// semantics that GNU find relies on for -readable/-writable/-executable.
+// On Unix, the check uses the kernel's access(2) syscall which never blocks
+// on special files (FIFOs) and correctly handles POSIX ACLs. On Windows,
+// it falls back to mode-bit inspection.
+//
+// The path passed to the kernel access check is always reconstructed from
+// the trusted sandbox root + validated relative path, never from raw user input.
 func (s *Sandbox) Access(path string, cwd string, mode uint32) error {
 	absPath := toAbs(path, cwd)
 
@@ -106,13 +109,19 @@ func (s *Sandbox) Access(path string, cwd string, mode uint32) error {
 			continue
 		}
 
-		// Use Stat (metadata-only) instead of Open to avoid blocking on
-		// special files like FIFOs that have no writer.
+		// Verify the path exists within the sandbox (atomic via os.Root,
+		// which uses openat/fstatat to prevent symlink-based escapes).
 		info, err := ar.root.Stat(rel)
 		if err != nil {
 			return PortablePathError(err)
 		}
-		if !effectiveHasPerm(info, mode&0x04 != 0, mode&0x02 != 0, mode&0x01 != 0) {
+
+		// Check permissions using the kernel's access check (Unix) or
+		// mode-bit inspection (Windows). The path is reconstructed from
+		// the trusted sandbox root + validated relative path, never from
+		// raw user input.
+		safePath := filepath.Join(ar.absPath, rel)
+		if err := accessCheck(safePath, info, mode&0x04 != 0, mode&0x02 != 0, mode&0x01 != 0); err != nil {
 			return &os.PathError{Op: "access", Path: path, Err: os.ErrPermission}
 		}
 		return nil

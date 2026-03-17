@@ -44,6 +44,16 @@ func FileIdentity(absPath string, _ fs.FileInfo, sandbox *Sandbox) (uint64, uint
 	return uint64(d.VolumeSerialNumber), uint64(d.FileIndexHigh)<<32 | uint64(d.FileIndexLow), true
 }
 
+// accessCheck checks permissions using mode bits.
+// Windows does not support access(2); mode-bit inspection is the best
+// available approximation.
+func accessCheck(_ string, info fs.FileInfo, checkRead, checkWrite, checkExec bool) error {
+	if !effectiveHasPerm(info, checkRead, checkWrite, checkExec) {
+		return os.ErrPermission
+	}
+	return nil
+}
+
 // effectiveHasPerm checks whether the current process has the requested
 // permission on Windows.  Windows does not use Unix UID/GID permission classes,
 // so we fall back to checking any-class bits (0444 / 0222 / 0111).

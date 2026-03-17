@@ -1,0 +1,17 @@
+description: "test -w fails on read-only file."
+skip_assert_against_bash: true
+setup:
+  files:
+    - path: readonly.txt
+      content: "data"
+      chmod: 0444
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    test -w readonly.txt
+    echo $?
+expect:
+  stdout: "1\n"
+  stdout_windows: "0\n"
+  stderr: ""
+  exit_code: 0

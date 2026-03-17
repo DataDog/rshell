@@ -29,6 +29,35 @@ func FileIdentity(_ string, info fs.FileInfo, _ *Sandbox) (uint64, uint64, bool)
 	return uint64(st.Dev), uint64(st.Ino), true
 }
 
+// POSIX access(2) mode constants. Go's syscall package exports
+// Access but not the mode constants, so we define them here.
+const (
+	accessR = 0x04 // R_OK — test for read permission
+	accessW = 0x02 // W_OK — test for write permission
+	accessX = 0x01 // X_OK — test for execute permission
+)
+
+// accessCheck performs a kernel-level access check using access(2).
+// Unlike Open, access(2) never blocks on FIFOs — it is a pure
+// permission query. It also respects POSIX ACLs.
+//
+// absPath MUST be a sandbox-validated path (constructed from a trusted
+// root + validated relative path). This function does NOT perform
+// sandbox enforcement — the caller must do that first via os.Root.
+func accessCheck(absPath string, _ fs.FileInfo, checkRead, checkWrite, checkExec bool) error {
+	var mode uint32
+	if checkRead {
+		mode |= accessR
+	}
+	if checkWrite {
+		mode |= accessW
+	}
+	if checkExec {
+		mode |= accessX
+	}
+	return syscall.Access(absPath, mode)
+}
+
 // effectiveHasPerm checks whether the current process has the requested
 // permission by inspecting the file's owner/group/other permission class
 // that applies to the effective UID and GID of the running process.

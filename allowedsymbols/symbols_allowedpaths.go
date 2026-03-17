@@ -50,6 +50,7 @@ var allowedpathsAllowedSymbols = []string{
 	"strings.Compare",                    // compares two strings lexicographically; pure function, no I/O.
 	"strings.EqualFold",                  // case-insensitive string comparison; pure function, no I/O.
 	"strings.HasPrefix",                  // pure function for prefix matching; no I/O.
+	"syscall.Access",                     // access(2) permission check; does not open files or block on FIFOs.
 	"syscall.ByHandleFileInformation",    // Windows file identity structure; pure type for file metadata.
 	"syscall.EISDIR",                     // "is a directory" errno constant; pure constant.
 	"syscall.Errno",                      // system call error number type; pure type.
