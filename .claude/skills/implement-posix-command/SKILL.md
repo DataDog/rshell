@@ -115,9 +115,9 @@ if [ -d "resources/gnu-coreutils-tests" ] && [ -d "resources/uutils-tests" ]; th
 else
     echo "Offline resources not found, downloading..."
     # GNU coreutils — GPL v3; use as reference for test *design*, not verbatim copy
-    curl -sL https://github.com/coreutils/coreutils/archive/refs/heads/master.tar.gz | tar -xz -C /tmp
+    gh api repos/coreutils/coreutils/tarball/master > /tmp/coreutils.tar.gz && tar -xzf /tmp/coreutils.tar.gz -C /tmp
     # uutils/coreutils Rust rewrite — MIT license; test logic can be freely adapted
-    curl -sL https://github.com/uutils/coreutils/archive/refs/heads/main.tar.gz | tar -xz -C /tmp
+    gh api repos/uutils/coreutils/tarball/main > /tmp/uutils.tar.gz && tar -xzf /tmp/uutils.tar.gz -C /tmp
 fi
 ```
 

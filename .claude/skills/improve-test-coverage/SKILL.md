@@ -132,11 +132,11 @@ If offline resources are available, use them. Otherwise download:
 
 ```bash
 # GNU coreutils tests
-curl -sL https://github.com/coreutils/coreutils/archive/refs/heads/master.tar.gz | tar -xz -C /tmp
+gh api repos/coreutils/coreutils/tarball/master > /tmp/coreutils.tar.gz && tar -xzf /tmp/coreutils.tar.gz -C /tmp
 # Tests are at: /tmp/coreutils-master/tests/<command>/
 
 # uutils tests
-curl -sL https://github.com/uutils/coreutils/archive/refs/heads/main.tar.gz | tar -xz -C /tmp
+gh api repos/uutils/coreutils/tarball/main > /tmp/uutils.tar.gz && tar -xzf /tmp/uutils.tar.gz -C /tmp
 # Tests are at: /tmp/coreutils-main/tests/by-util/test_<command>.rs
 ```
 
@@ -145,7 +145,7 @@ curl -sL https://github.com/uutils/coreutils/archive/refs/heads/main.tar.gz | ta
 Download the yash test suite:
 
 ```bash
-curl -sL https://github.com/magicant/yash/archive/refs/heads/trunk.tar.gz | tar -xz -C /tmp
+gh api repos/magicant/yash/tarball/trunk > /tmp/yash.tar.gz && tar -xzf /tmp/yash.tar.gz -C /tmp
 # Tests are at: /tmp/yash-trunk/tests/
 ```
 
