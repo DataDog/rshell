@@ -61,10 +61,16 @@ func FuzzPingFlags(f *testing.F) {
 	f.Add("-h", "")
 
 	f.Fuzz(func(t *testing.T, flag, value string) {
-		// Skip inputs that contain shell metacharacters that would cause
-		// parse errors or inject unrelated commands.
-		if strings.ContainsAny(flag+value, "`$;&|><\n\r\"'\\ ") {
-			return
+		// Only allow characters that are safe to pass unquoted in a shell script.
+		// Using an allowlist is more robust than a denylist: any character not
+		// explicitly permitted here could cause shell parse errors or command
+		// injection, so we skip instead of risk a spurious test failure.
+		for _, r := range flag + value {
+			safe := (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') ||
+				(r >= '0' && r <= '9') || r == '-' || r == '.'
+			if !safe {
+				return
+			}
 		}
 		if len(flag)+len(value) > 256 {
 			return
