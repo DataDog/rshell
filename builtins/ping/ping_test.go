@@ -260,16 +260,29 @@ func TestPingLocalhostIntegration(t *testing.T) {
 				assert.True(t, code == 0 || code == 1,
 					"expected exit code 0 or 1 on Windows, got %d", code)
 
+				// The PING header must always be present — it is printed
+				// before any ICMP work begins, proving flag parsing succeeded.
+				assert.Contains(t, stdout, "PING 127.0.0.1")
+
 				if code == 0 || strings.Contains(stdout, "ping statistics") {
-					// ICMP succeeded — verify full output format.
-					assert.Contains(t, stdout, "PING 127.0.0.1")
+					// ICMP succeeded — verify full output format including
+					// the exact ping count requested via -c.
 					assert.Contains(t, stdout, "ping statistics")
 					assert.Contains(t, stdout, fmt.Sprintf("%d packets transmitted", tt.count))
 					assert.Contains(t, stdout, "packet loss")
+
+					replyCount := strings.Count(stdout, "64 bytes from")
+					assert.Equal(t, tt.count, replyCount,
+						"expected exactly %d replies, got %d\nstdout:\n%s", tt.count, replyCount, stdout)
 				} else {
-					// ICMP was denied — only the header and an error are expected.
-					assert.Contains(t, stdout, "PING 127.0.0.1")
+					// ICMP was denied — the library errors out before any
+					// probes are sent, so no statistics are printed.  We
+					// still verify the error message references the host,
+					// proving the -c flag was accepted and execution reached
+					// the network layer.
 					assert.NotEmpty(t, stderr, "expected an error message when ICMP is denied")
+					assert.Contains(t, stderr, "127.0.0.1",
+						"error message should reference the target host")
 				}
 			})
 		}
