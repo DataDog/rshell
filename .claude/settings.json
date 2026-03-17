@@ -4,6 +4,11 @@
     "autoAllowBashIfSandboxed": true,
     "_excludedCommands_comment": "These commands need network access and must run outside the sandbox, but are explicitly allowed in the permissions list so they won't prompt.",
     "excludedCommands": ["git", "gh", "docker"],
+    "filesystem": {
+      "read": {
+        "allow": ["/Users/alexandre.yang/go/pkg"]
+      }
+    },
     "network": {
       "allowedDomains": ["*.datadoghq.com", "*.github.com", "github.com"]
     }
