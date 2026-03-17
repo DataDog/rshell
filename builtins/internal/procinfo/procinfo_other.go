@@ -12,7 +12,7 @@ import (
 	"errors"
 )
 
-var errUnsupported = errors.New("ps: not supported on this platform")
+var errUnsupported = errors.New("not supported on this platform")
 
 func listAll(_ context.Context) ([]ProcInfo, error) {
 	return nil, errUnsupported

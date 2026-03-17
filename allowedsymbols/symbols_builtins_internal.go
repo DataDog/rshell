@@ -18,25 +18,25 @@ package allowedsymbols
 // golang.org/x/sys/windows) are exempted entirely via the ExemptImport
 // function in the test config — their symbols are not listed here.
 var builtinInternalAllowedSymbols = []string{
-	"bufio.NewScanner",   // line-by-line reading of /proc files; no write capability.
-	"bytes.NewReader",    // wraps a byte slice as an in-memory io.Reader; no I/O side effects.
-	"context.Context",    // deadline/cancellation interface; no side effects.
-	"errors.New",         // creates a sentinel error value; pure function, no I/O.
-	"fmt.Errorf",         // formats an error with context; pure function, no I/O.
-	"fmt.Sprintf",        // string formatting; pure function, no I/O.
-	"os.Getpid",          // returns the current process ID; read-only, no side effects.
-	"os.Open",            // opens a file read-only; needed to stream /proc/stat line-by-line.
-	"os.ReadDir",         // reads a directory listing; needed to enumerate /proc entries.
-	"os.ReadFile",        // reads a whole file into memory; needed to read /proc/[pid]/{stat,cmdline,status}.
-	"strconv.Atoi",       // converts a string to int; pure function, no I/O.
-	"strconv.ParseInt",   // converts a string to int64 with base/bit-size; pure function, no I/O.
-	"strings.Fields",     // splits a string on whitespace; pure function, no I/O.
-	"strings.HasPrefix",  // checks string prefix; pure function, no I/O.
-	"strings.Index",      // finds first occurrence of a substring; pure function, no I/O.
-	"strings.LastIndex",  // finds last occurrence of a substring; pure function, no I/O.
-	"strings.TrimRight",  // trims trailing characters from a set; pure function, no I/O.
-	"strings.TrimSpace",  // removes leading/trailing whitespace; pure function, no I/O.
-	"syscall.Getsid",     // returns the session ID of a process; read-only syscall, no write/exec capability.
-	"time.Now",           // returns the current wall-clock time; read-only, no side effects.
-	"time.Unix",          // constructs a Time from Unix seconds; pure function, no I/O.
+	"bufio.NewScanner",  // line-by-line reading of /proc files; no write capability.
+	"bytes.NewReader",   // wraps a byte slice as an in-memory io.Reader; no I/O side effects.
+	"context.Context",   // deadline/cancellation interface; no side effects.
+	"errors.New",        // creates a sentinel error value; pure function, no I/O.
+	"fmt.Errorf",        // formats an error with context; pure function, no I/O.
+	"fmt.Sprintf",       // string formatting; pure function, no I/O.
+	"os.Getpid",         // returns the current process ID; read-only, no side effects.
+	"os.Open",           // opens a file read-only; needed to stream /proc/stat line-by-line.
+	"os.ReadDir",        // reads a directory listing; needed to enumerate /proc entries.
+	"os.ReadFile",       // reads a whole file into memory; needed to read /proc/[pid]/{stat,cmdline,status}.
+	"strconv.Atoi",      // converts a string to int; pure function, no I/O.
+	"strconv.ParseInt",  // converts a string to int64 with base/bit-size; pure function, no I/O.
+	"strings.Fields",    // splits a string on whitespace; pure function, no I/O.
+	"strings.HasPrefix", // checks string prefix; pure function, no I/O.
+	"strings.Index",     // finds first occurrence of a substring; pure function, no I/O.
+	"strings.LastIndex", // finds last occurrence of a substring; pure function, no I/O.
+	"strings.TrimRight", // trims trailing characters from a set; pure function, no I/O.
+	"strings.TrimSpace", // removes leading/trailing whitespace; pure function, no I/O.
+	"syscall.Getsid",    // returns the session ID of a process; read-only syscall, no write/exec capability.
+	"time.Now",          // returns the current wall-clock time; read-only, no side effects.
+	"time.Unix",         // constructs a Time from Unix seconds; pure function, no I/O.
 }
