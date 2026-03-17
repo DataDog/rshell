@@ -277,6 +277,7 @@ func printHelp(callCtx *builtins.CallContext) {
 	callCtx.Out("Search directory trees, evaluating an expression for each file found.\n")
 	callCtx.Out("Default path is the current directory; default expression is -print.\n\n")
 	callCtx.Out("Options:\n")
+	callCtx.Out("  --help                     Print this help and exit.\n")
 	callCtx.Out("  -L                         Follow symbolic links.\n")
 	callCtx.Out("  -P                         Never follow symbolic links (default).\n\n")
 	callCtx.Out("Tests:\n")

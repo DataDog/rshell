@@ -14,5 +14,6 @@ input:
     find dir -type f -perm u=rwx,a=rX | sort
 expect:
   stdout: "dir/f555\n"
+  stdout_windows: ""
   stderr: ""
   exit_code: 0
