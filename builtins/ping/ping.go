@@ -78,7 +78,7 @@ const MaxInterval = 60
 func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 	count := fs.IntP("count", "c", 4, "stop after sending N probes")
 	timeout := fs.IntP("timeout", "W", 2, "timeout in seconds per probe")
-	interval := fs.Float64P("interval", "i", 1.0, "interval in seconds between probes")
+	interval := fs.Float64P("interval", "i", 1.0, "interval in seconds between probes (note: may not be effective with current library)")
 	help := fs.BoolP("help", "h", false, "print usage and exit")
 
 	return func(ctx context.Context, callCtx *builtins.CallContext, args []string) builtins.Result {
@@ -153,11 +153,13 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 
 		// Run traceroute in a goroutine so we can enforce context
 		// cancellation even when the library blocks in time.Sleep.
-		// Note: When ctx is cancelled, the goroutine running RunTraceroute
-		// continues until the library returns. The buffered channel prevents
-		// a permanent goroutine leak, but the goroutine may hold resources
-		// briefly until the library's internal operations complete. This is
-		// a known limitation of the library's cancellation support.
+		// Note: ctx is passed to RunTraceroute, and the library's ICMP path
+		// (icmp.RunICMPTraceroute) does accept and check ctx.Done(), so
+		// cancellation should propagate in most code paths. The goroutine
+		// may briefly hold resources (raw ICMP sockets) until the library
+		// finishes its current operation. The buffered channel prevents a
+		// permanent goroutine leak. Maximum resource hold time is bounded
+		// by the per-probe timeout (MaxTimeout=60s).
 		type trResult struct {
 			results *result.Results
 			err     error

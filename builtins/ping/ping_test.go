@@ -264,10 +264,10 @@ func TestPingLocalhostIntegration(t *testing.T) {
 			assert.Contains(t, stdout, "PING 127.0.0.1")
 			assert.Contains(t, stdout, "ping statistics")
 
-			// Verify we got at least the requested number of reply lines.
+			// Verify we got exactly the requested number of reply lines.
 			replyCount := strings.Count(stdout, "64 bytes from")
-			assert.GreaterOrEqual(t, replyCount, tt.count,
-				"expected at least %d replies, got %d\nstdout:\n%s", tt.count, replyCount, stdout)
+			assert.Equal(t, tt.count, replyCount,
+				"expected exactly %d replies, got %d\nstdout:\n%s", tt.count, replyCount, stdout)
 
 			// Verify the summary reports the correct number of packets transmitted.
 			assert.Contains(t, stdout, fmt.Sprintf("%d packets transmitted", tt.count))
