@@ -10,16 +10,15 @@
       "Skill",
       "WebFetch",
       "WebSearch",
-      "Bash(go test *)",
-      "Bash(go run *)",
+      "Bash(go *)",
       "Bash(gofmt *)",
       "Bash(git *)",
       "Bash(gh *)",
       "Bash(docker *)",
       "Bash(curl *)",
       "Bash(sleep *)",
-      "Bash(RSHELL_BASH_TEST=1 go test *)",
-      "Bash(RSHELL_COMPLIANCE_TEST=1 go test *)"
+      "Bash(RSHELL_BASH_TEST=1 go *)",
+      "Bash(RSHELL_COMPLIANCE_TEST=1 go *)"
     ]
   }
 }
