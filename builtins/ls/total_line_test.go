@@ -36,6 +36,24 @@ func TestLsLongTotalLineUses1KBlocks(t *testing.T) {
 	assert.True(t, strings.HasPrefix(lines[0], "total "), "expected total line, got: %s", lines[0])
 }
 
+func TestLsLongTotalLineSuppressedOnWindows(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("Windows-only test")
+	}
+
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(dir+"/a.txt", []byte("hello"), 0o644))
+
+	stdout, stderr, code := testutil.RunScript(t, "ls -l", dir, interp.AllowedPaths([]string{dir}))
+	assert.Equal(t, 0, code)
+	assert.Empty(t, stderr)
+
+	lines := strings.Split(strings.TrimRight(stdout, "\n"), "\n")
+	require.True(t, len(lines) >= 1, "expected at least 1 line of output")
+	assert.False(t, strings.HasPrefix(lines[0], "total "),
+		"total line should be suppressed on Windows, got: %s", lines[0])
+}
+
 func TestLsLongNlinkIsNonZero(t *testing.T) {
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(dir+"/a.txt", []byte("hello"), 0o644))
