@@ -1,5 +1,6 @@
 description: "find -readable excludes unreadable files (mode 0200)."
 skip_assert_against_bash: true
+skip_if_root: true
 setup:
   files:
     - path: dir/yes.txt

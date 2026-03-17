@@ -35,6 +35,7 @@ const dockerBashImage = "debian:bookworm-slim"
 type scenario struct {
 	Description           string   `yaml:"description"`
 	SkipAssertAgainstBash bool     `yaml:"skip_assert_against_bash"` // true = skip bash comparison
+	SkipIfRoot            bool     `yaml:"skip_if_root"`             // true = skip when running as UID 0
 	Setup                 setup    `yaml:"setup"`
 	Input                 input    `yaml:"input"`
 	Expect                expected `yaml:"expect"`
@@ -161,6 +162,10 @@ func setupTestDir(t *testing.T, sc scenario) string {
 // and asserts the expected output.
 func runScenario(t *testing.T, sc scenario) {
 	t.Helper()
+
+	if sc.SkipIfRoot && os.Getuid() == 0 {
+		t.Skip("skipping: test requires non-root execution")
+	}
 
 	dir := setupTestDir(t, sc)
 
