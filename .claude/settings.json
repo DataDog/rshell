@@ -1,7 +1,12 @@
 {
   "sandbox": {
     "enabled": true,
-    "autoAllowBashIfSandboxed": true
+    "autoAllowBashIfSandboxed": true,
+    "_excludedCommands_comment": "These commands need network access and must run outside the sandbox, but are explicitly allowed in the permissions list so they won't prompt.",
+    "excludedCommands": ["git", "gh", "docker", "curl"],
+    "network": {
+      "allowedDomains": ["*.datadoghq.com", "*.github.com", "github.com"]
+    }
   },
   "permissions": {
     "allow": [
@@ -14,6 +19,7 @@
       "Skill",
       "WebFetch",
       "WebSearch",
+      "LSP",
       "Bash(go *)",
       "Bash(gofmt *)",
       "Bash(git *)",
@@ -21,6 +27,7 @@
       "Bash(docker *)",
       "Bash(curl *)",
       "Bash(sleep *)",
+      "Bash(tar *)",
       "Bash(RSHELL_BASH_TEST=1 go *)",
       "Bash(RSHELL_COMPLIANCE_TEST=1 go *)"
     ]
