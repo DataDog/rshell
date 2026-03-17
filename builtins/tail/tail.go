@@ -85,7 +85,7 @@ import (
 )
 
 // Cmd is the tail builtin command descriptor.
-var Cmd = builtins.Command{Name: "tail", MakeFlags: registerFlags}
+var Cmd = builtins.Command{Name: "tail", Description: "output the last part of files", MakeFlags: registerFlags}
 
 // MaxCount is the maximum accepted line or byte count. Values above this
 // are clamped to prevent huge theoretical allocations.
@@ -584,8 +584,15 @@ func parseCount(s string) (countMode, bool) {
 			if suffix != "" {
 				return countMode{}, false
 			}
-			// No suffix: accept if it fits in uint64, reject otherwise.
-			if _, uerr := strconv.ParseUint(parseStr[:numEnd], 10, 64); uerr == nil {
+			// No suffix: accept if the absolute value fits in uint64, reject
+			// otherwise. Strip a leading '-' so large negative values like
+			// -9223372036854775809 are clamped rather than rejected — GNU tail
+			// accepts them (treats them as a very large count).
+			absStr := parseStr[:numEnd]
+			if len(absStr) > 0 && absStr[0] == '-' {
+				absStr = absStr[1:]
+			}
+			if _, uerr := strconv.ParseUint(absStr, 10, 64); uerr == nil {
 				n = MaxCount
 			} else {
 				return countMode{}, false

@@ -1,4 +1,5 @@
 description: tail -n -9223372036854775808K (MinInt64 with suffix) exits 1 with an invalid count error (negation overflows).
+skip_assert_against_bash: true  # our error message differs from GNU tail's "Value too large" message
 input:
   allowed_paths: ["$DIR"]
   script: |+
@@ -7,4 +8,3 @@ expect:
   stdout: ""
   stderr_contains: ["invalid count"]
   exit_code: 1
-  skip_assert_against_bash: true
