@@ -117,11 +117,9 @@ func (s *Sandbox) Access(path string, cwd string, mode uint32) error {
 		}
 
 		// Check permissions using the kernel's access check (Unix) or
-		// mode-bit inspection (Windows). The path is reconstructed from
-		// the trusted sandbox root + validated relative path, never from
-		// raw user input.
-		safePath := filepath.Join(ar.absPath, rel)
-		if err := accessCheck(safePath, info, mode&0x04 != 0, mode&0x02 != 0, mode&0x01 != 0); err != nil {
+		// mode-bit inspection (Windows). accessCheck constructs the
+		// target path internally from the trusted root + relative path.
+		if err := accessCheck(ar.absPath, rel, info, mode&0x04 != 0, mode&0x02 != 0, mode&0x01 != 0); err != nil {
 			return &os.PathError{Op: "access", Path: path, Err: os.ErrPermission}
 		}
 		return nil

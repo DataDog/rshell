@@ -11,6 +11,7 @@ import (
 	"errors"
 	"io/fs"
 	"os"
+	"path/filepath"
 	"syscall"
 )
 
@@ -41,10 +42,10 @@ const (
 // Unlike Open, access(2) never blocks on FIFOs — it is a pure
 // permission query. It also respects POSIX ACLs.
 //
-// absPath MUST be a sandbox-validated path (constructed from a trusted
-// root + validated relative path). This function does NOT perform
-// sandbox enforcement — the caller must do that first via os.Root.
-func accessCheck(absPath string, _ fs.FileInfo, checkRead, checkWrite, checkExec bool) error {
+// The target path is constructed internally from rootAbsPath (the
+// trusted sandbox root) and rel (the validated relative path), so
+// callers cannot pass an arbitrary absolute path to the syscall.
+func accessCheck(rootAbsPath, rel string, _ fs.FileInfo, checkRead, checkWrite, checkExec bool) error {
 	var mode uint32
 	if checkRead {
 		mode |= accessR
@@ -55,7 +56,7 @@ func accessCheck(absPath string, _ fs.FileInfo, checkRead, checkWrite, checkExec
 	if checkExec {
 		mode |= accessX
 	}
-	return syscall.Access(absPath, mode)
+	return syscall.Access(filepath.Join(rootAbsPath, rel), mode)
 }
 
 // effectiveHasPerm checks whether the current process has the requested

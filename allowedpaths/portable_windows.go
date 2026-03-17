@@ -46,8 +46,9 @@ func FileIdentity(absPath string, _ fs.FileInfo, sandbox *Sandbox) (uint64, uint
 
 // accessCheck checks permissions using mode bits.
 // Windows does not support access(2); mode-bit inspection is the best
-// available approximation.
-func accessCheck(_ string, info fs.FileInfo, checkRead, checkWrite, checkExec bool) error {
+// available approximation. rootAbsPath and rel are accepted for
+// interface compatibility but not used on Windows.
+func accessCheck(_, _ string, info fs.FileInfo, checkRead, checkWrite, checkExec bool) error {
 	if !effectiveHasPerm(info, checkRead, checkWrite, checkExec) {
 		return os.ErrPermission
 	}
