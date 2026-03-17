@@ -11,7 +11,6 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -21,11 +20,10 @@ import (
 	"github.com/DataDog/rshell/builtins"
 )
 
-// TestNowCalledOnce verifies that find captures the invocation timestamp
-// once in run(), not per root path. GNU find evaluates -mtime/-mmin
-// relative to a single invocation time, so multi-path invocations must
-// use a consistent reference.
-func TestNowCalledOnce(t *testing.T) {
+// TestNowConsistentAcrossRoots verifies that find uses a single consistent
+// timestamp across all root paths when evaluating time predicates like
+// -mmin, matching GNU find behaviour.
+func TestNowConsistentAcrossRoots(t *testing.T) {
 	// Create two directories with one file each.
 	tmp := t.TempDir()
 	dir1 := filepath.Join(tmp, "a")
@@ -35,17 +33,11 @@ func TestNowCalledOnce(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(dir1, "f1.txt"), []byte("x"), 0644))
 	require.NoError(t, os.WriteFile(filepath.Join(dir2, "f2.txt"), []byte("y"), 0644))
 
-	var nowCalls atomic.Int32
-	fixedNow := time.Now()
-
 	var stdout, stderr bytes.Buffer
 	callCtx := &builtins.CallContext{
 		Stdout: &stdout,
 		Stderr: &stderr,
-		Now: func() time.Time {
-			nowCalls.Add(1)
-			return fixedNow
-		},
+		Now:    time.Now(),
 		LstatFile: func(_ context.Context, path string) (fs.FileInfo, error) {
 			return os.Lstat(filepath.Join(tmp, path))
 		},
@@ -71,8 +63,6 @@ func TestNowCalledOnce(t *testing.T) {
 	result := run(context.Background(), callCtx, []string{"a", "b", "-mmin", "-60"})
 
 	assert.Equal(t, uint8(0), result.Code, "find should succeed")
-	assert.Equal(t, int32(1), nowCalls.Load(),
-		"Now() should be called exactly once per find invocation, not per root path")
 	assert.Contains(t, stdout.String(), "f1.txt")
 	assert.Contains(t, stdout.String(), "f2.txt")
 }

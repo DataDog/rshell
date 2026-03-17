@@ -207,9 +207,7 @@ optLoop:
 		}
 	}
 
-	// Capture invocation time once so -mtime/-mmin predicates use a
-	// consistent reference across all root paths (matches GNU find).
-	now := callCtx.Now()
+	now := callCtx.Now
 
 	// GNU find treats a missing -newer reference as a fatal argument error
 	// and produces no result set, so skip the walk entirely.

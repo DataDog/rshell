@@ -19,6 +19,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"time"
 
 	"mvdan.cc/sh/v3/expand"
 	"mvdan.cc/sh/v3/syntax"
@@ -113,6 +114,10 @@ type runnerState struct {
 	lastExit exitStatus
 
 	lastExpandExit exitStatus // used to surface exit statuses while expanding fields
+
+	// startTime is captured once at the beginning of Run() and passed to
+	// all builtin invocations so they share a consistent time reference.
+	startTime time.Time
 }
 
 // A Runner interprets shell programs. It can be reused, but it is not safe for
@@ -360,6 +365,7 @@ func (r *Runner) Run(ctx context.Context, node syntax.Node) (retErr error) {
 			retErr = fmt.Errorf("internal error")
 		}
 	}()
+	r.startTime = time.Now()
 	if !r.didReset {
 		r.Reset()
 		if r.exit.fatalExit {

@@ -121,10 +121,10 @@ type CallContext struct {
 	// PortableErr normalizes an OS error to a POSIX-style message.
 	PortableErr func(err error) string
 
-	// Now returns the current time. Builtins should use this instead of
-	// calling time.Now() directly, so the time source is consistent and
-	// testable.
-	Now func() time.Time
+	// Now is the time captured at the start of shell execution. Builtins
+	// should use this instead of calling time.Now() directly, so the time
+	// source is consistent across all commands in a single run.
+	Now time.Time
 
 	// FileIdentity extracts canonical file identity from FileInfo.
 	// On Unix: dev+inode from Stat_t. On Windows: volume serial + file index
