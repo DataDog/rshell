@@ -88,11 +88,12 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 		// Non-numeric values are caught by parsePIDs and cause exit 1.
 		effectivePIDList := *pidList
 		if len(args) > 0 {
-			extra := strings.Join(args, " ")
-			if effectivePIDList != "" {
-				effectivePIDList += " " + extra
-			} else {
-				effectivePIDList = extra
+			for _, arg := range args {
+				if effectivePIDList != "" {
+					effectivePIDList += " " + arg
+				} else {
+					effectivePIDList = arg
+				}
 			}
 			pidFlagChanged = true
 		}
@@ -129,6 +130,13 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 // parsePIDs parses a comma- or whitespace-separated list of PIDs.
 // Each PID must be a positive integer (> 0).
 func parsePIDs(s string) ([]int, error) {
+	// Reject empty comma-separated segments: consecutive commas, leading or
+	// trailing comma (e.g. "1,,2", ",1", "1,") are invalid PID lists.
+	for _, seg := range strings.Split(s, ",") {
+		if strings.TrimSpace(seg) == "" {
+			return nil, fmt.Errorf("invalid PID list: %s", s)
+		}
+	}
 	// Replace commas with spaces for uniform splitting.
 	s = strings.ReplaceAll(s, ",", " ")
 	parts := strings.Split(s, " ")

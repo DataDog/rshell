@@ -152,6 +152,17 @@ func TestPSEmptyPIDListExits1(t *testing.T) {
 	}
 }
 
+// TestPSDoubleCommaExits1 ensures consecutive commas in PID list are rejected.
+func TestPSDoubleCommaExits1(t *testing.T) {
+	_, stderr, code := runScript(t, "ps -p '1,,2'")
+	if code != 1 {
+		t.Errorf("expected exit code 1 for '1,,2', got %d", code)
+	}
+	if !strings.Contains(stderr, "invalid PID") {
+		t.Errorf("expected 'invalid PID' in stderr, got: %s", stderr)
+	}
+}
+
 // TestPSEmptyStringPIDExits1 ensures an explicit empty -p value is rejected
 // rather than falling through to the default session view.
 func TestPSEmptyStringPIDExits1(t *testing.T) {
