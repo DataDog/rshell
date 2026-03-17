@@ -105,11 +105,13 @@ func FuzzSSFlags(f *testing.F) {
 
 		// Skip inputs containing shell metacharacters that the shell would
 		// interpret before passing to ss: control operators (&|;<>), variable
-		// expansion ($), tilde expansion (~), newlines (split into multiple
-		// commands), parentheses (subshells / function declarations), and
-		// redirections. We are fuzzing ss flag parsing, not shell
-		// metacharacter handling.
-		if strings.ContainsAny(flags, "&|;<>$~\n\r()") {
+		// expansion ($), backtick command substitution (`), tilde expansion (~),
+		// newlines (split into multiple commands), parentheses (subshells /
+		// function declarations), redirections, and glob character-class
+		// delimiters ([ triggers POSIX character-class matching which panics on
+		// malformed patterns in mvdan.cc/sh). We are fuzzing ss flag parsing,
+		// not shell metacharacter handling.
+		if strings.ContainsAny(flags, "&|;<>$`~\n\r()[") {
 			return
 		}
 
@@ -131,6 +133,10 @@ func FuzzSSFlags(f *testing.F) {
 		if _, err := syntax.NewParser().Parse(strings.NewReader(script), ""); err != nil {
 			return
 		}
+
+		// Log the script so that any failure (including internal errors from
+		// testutil.RunScriptCtx) shows the input in the CI log.
+		t.Logf("script: %s", script)
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
