@@ -74,6 +74,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"math"
 	"os"
 	"strconv"
 
@@ -569,7 +570,13 @@ func parseCount(s string) (countMode, bool) {
 			return countMode{}, false
 		}
 		// Take absolute value before multiplying so clamping is symmetric.
+		// Guard against MinInt64: its negation overflows back to itself, so
+		// reject it as an invalid (too-large) count, matching GNU tail's
+		// "Value too large for defined data type" error.
 		if n < 0 {
+			if n == math.MinInt64 {
+				return countMode{}, false
+			}
 			n = -n
 		}
 		if n > MaxCount/mult {
