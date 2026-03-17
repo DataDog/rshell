@@ -19,5 +19,9 @@ expect:
     - "total "
     - "a.txt"
     - "b.txt"
+  # On Windows, block allocation is unavailable so the total line is suppressed.
+  stdout_contains_windows:
+    - "a.txt"
+    - "b.txt"
   stderr: ""
   exit_code: 0
