@@ -105,10 +105,22 @@ func FuzzSSFlags(f *testing.F) {
 
 		// Skip inputs containing shell metacharacters that the shell would
 		// interpret before passing to ss: control operators (&|;<>), variable
-		// expansion ($), and redirections. We are fuzzing ss flag parsing, not
-		// shell metacharacter handling.
-		if strings.ContainsAny(flags, "&|;<>$") {
+		// expansion ($), tilde expansion (~), newlines (split into multiple
+		// commands), parentheses (subshells / function declarations), and
+		// redirections. We are fuzzing ss flag parsing, not shell
+		// metacharacter handling.
+		if strings.ContainsAny(flags, "&|;<>$~\n\r()") {
 			return
+		}
+
+		// Skip inputs containing non-ASCII bytes. All ss flags are ASCII, and
+		// non-ASCII bytes in glob patterns (*foo\xNN) trigger a known bug in
+		// the shell's pattern-to-regex converter that produces invalid UTF-8
+		// and panics, returning a non-ExitStatus error.
+		for i := 0; i < len(flags); i++ {
+			if flags[i] > 127 {
+				return
+			}
 		}
 
 		script := fmt.Sprintf("ss %s", flags)
