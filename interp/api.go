@@ -365,13 +365,13 @@ func (r *Runner) Run(ctx context.Context, node syntax.Node) (retErr error) {
 			retErr = fmt.Errorf("internal error")
 		}
 	}()
-	r.startTime = time.Now()
 	if !r.didReset {
 		r.Reset()
 		if r.exit.fatalExit {
 			return r.exit.err
 		}
 	}
+	r.startTime = time.Now()
 	r.fillExpandConfig(ctx)
 	if err := validateNode(node); err != nil {
 		fmt.Fprintln(r.stderr, err)
@@ -487,14 +487,15 @@ func (r *Runner) subshell(background bool) *Runner {
 	r2 := &Runner{
 		runnerConfig: r.runnerConfig,
 		runnerState: runnerState{
-			Dir:      r.Dir,
-			Params:   r.Params,
-			stdin:    r.stdin,
-			stdout:   r.stdout,
-			stderr:   r.stderr,
-			filename: r.filename,
-			exit:     r.exit,
-			lastExit: r.lastExit,
+			Dir:       r.Dir,
+			Params:    r.Params,
+			stdin:     r.stdin,
+			stdout:    r.stdout,
+			stderr:    r.stderr,
+			filename:  r.filename,
+			exit:      r.exit,
+			lastExit:  r.lastExit,
+			startTime: r.startTime,
 		},
 	}
 	r2.writeEnv = newOverlayEnviron(r.writeEnv, background)
