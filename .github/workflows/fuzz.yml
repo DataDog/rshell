@@ -50,6 +50,9 @@ jobs:
           - pkg: ./builtins/tests/ls/
             name: ls
             corpus_path: builtins/tests/ls
+          - pkg: ./builtins/traceroute/
+            name: traceroute
+            corpus_path: builtins/traceroute
           - pkg: ./interp/tests/
             name: interp
             corpus_path: interp/tests

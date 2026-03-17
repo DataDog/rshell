@@ -22,6 +22,7 @@ Blocked features are rejected before execution with exit code 2.
 - ✅ `sed [-n] [-e SCRIPT] [-E|-r] [SCRIPT] [FILE]...` — stream editor for filtering and transforming text; uses RE2 regex engine; `-i`/`-f` rejected; `e`/`w`/`W`/`r`/`R` commands blocked
 - ✅ `strings [-a] [-n MIN] [-t o|d|x] [-o] [-f] [-s SEP] [FILE]...` — print printable character sequences in files (default min length 4); offsets via `-t`/`-o`; filename prefix via `-f`; custom separator via `-s`
 - ✅ `tail [-n N|-c N] [-q|-v] [-z] [FILE]...` — output the last part of files (default: last 10 lines); supports `+N` offset mode; `-f`/`--follow` is rejected
+- ✅ `traceroute [-m N] [-f N] [-w N] [-q N] [-p N] [-n] [-6] [--protocol PROTO] [--json] [--delay MS] [--tcp-method METHOD] [--skip-private-hops] [--e2e-queries N] HOST` — trace the route packets take to a network host; uses datadog-traceroute library supporting UDP, TCP, and ICMP protocols; requires raw socket privileges
 - ✅ `test EXPRESSION` / `[ EXPRESSION ]` — evaluate conditional expression (file tests, string/integer comparison, logical operators)
 - ✅ `tr [-cdsCt] SET1 [SET2]` — translate, squeeze, and/or delete characters from stdin
 - ✅ `true` — return exit code 0
