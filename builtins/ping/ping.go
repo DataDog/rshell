@@ -4,15 +4,17 @@
 // Copyright 2026-present Datadog, Inc.
 
 // Package ping implements the ping builtin command using the
-// datadog-traceroute library's ICMP E2E probe mode.
+// pro-bing library for ICMP echo requests.
 //
 // ping — send ICMP ECHO_REQUEST to network hosts
 //
 // Usage: ping [OPTION]... HOST
 //
 // Send ICMP echo requests to the specified HOST and report round-trip
-// times. Uses the datadog-traceroute library's E2E probe functionality
-// internally.
+// times. Attempts privileged (raw socket) mode first; falls back to
+// unprivileged (UDP-based ICMP) mode on Linux/macOS if the process
+// lacks CAP_NET_RAW. On Windows, privileged mode is always used
+// (works without elevation on Windows 10+).
 //
 // Accepted flags:
 //
@@ -22,7 +24,7 @@
 //
 //	-W, --timeout N
 //	    Time to wait for a response, in seconds (default 2). Must be
-//	    a positive integer.
+//	    a positive integer. Clamped to a maximum of 60.
 //
 //	-i, --interval N
 //	    Wait N seconds between sending each probe (default 1). Must be
@@ -39,12 +41,12 @@
 //
 // Output format:
 //
-//	PING <host>: 56 data bytes
-//	64 bytes from <ip>: icmp_seq=0 time=1.234 ms
+//	PING <host> (<ip>): 56 data bytes
+//	64 bytes from <ip>: icmp_seq=1 ttl=64 time=1.234 ms
 //	...
 //	--- <host> ping statistics ---
 //	N packets transmitted, M packets received, X% packet loss
-//	round-trip min/avg/max = A/B/C ms
+//	round-trip min/avg/max/stddev = A/B/C/D ms
 //
 // Memory safety:
 //
@@ -55,10 +57,11 @@ package ping
 
 import (
 	"context"
+	"runtime"
+	"strings"
 	"time"
 
-	"github.com/DataDog/datadog-traceroute/result"
-	"github.com/DataDog/datadog-traceroute/traceroute"
+	probing "github.com/prometheus-community/pro-bing"
 
 	"github.com/DataDog/rshell/builtins"
 )
@@ -77,8 +80,8 @@ const MaxInterval = 60
 
 func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 	count := fs.IntP("count", "c", 4, "stop after sending N probes")
-	timeout := fs.IntP("timeout", "W", 2, "timeout in seconds per probe")
-	interval := fs.Float64P("interval", "i", 1.0, "interval in seconds between probes (note: may not be effective with current library)")
+	timeout := fs.IntP("timeout", "W", 2, "time to wait for a response, in seconds")
+	interval := fs.Float64P("interval", "i", 1.0, "interval in seconds between probes")
 	help := fs.BoolP("help", "h", false, "print usage and exit")
 
 	return func(ctx context.Context, callCtx *builtins.CallContext, args []string) builtins.Result {
@@ -132,85 +135,103 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			return builtins.Result{Code: 1}
 		}
 
-		callCtx.Outf("PING %s: 56 data bytes\n", host)
-
-		// Note: The Delay field is used as SendDelay for traceroute hops only.
-		// For E2E probes (TracerouteQueries=0), the inter-probe delay is computed
-		// internally by the library as min(MaxTTL*Timeout/E2eQueries, 1s).
-		// We still accept and validate -i for forward compatibility with future
-		// library versions that may support configurable E2E probe delays.
-		params := traceroute.TracerouteParams{
-			Hostname:          host,
-			Protocol:          "icmp",
-			MaxTTL:            64,
-			Timeout:           time.Duration(*timeout) * time.Second,
-			Delay:             int(*interval * 1000), // milliseconds
-			TracerouteQueries: 0,
-			E2eQueries:        *count,
-		}
-
-		tr := traceroute.NewTraceroute()
-
-		// Run traceroute in a goroutine so we can enforce context
-		// cancellation even when the library blocks in time.Sleep.
-		// Note: ctx is passed to RunTraceroute, and the library's ICMP path
-		// (icmp.RunICMPTraceroute) does accept and check ctx.Done(), so
-		// cancellation should propagate in most code paths. The goroutine
-		// may briefly hold resources (raw ICMP sockets) until the library
-		// finishes its current operation. The buffered channel prevents a
-		// permanent goroutine leak. Maximum resource hold time is bounded
-		// by the per-probe timeout (MaxTimeout=60s).
-		type trResult struct {
-			results *result.Results
-			err     error
-		}
-		ch := make(chan trResult, 1)
-		go func() {
-			res, err := tr.RunTraceroute(ctx, params)
-			ch <- trResult{res, err}
-		}()
-
-		var results *result.Results
-		var err error
-		select {
-		case <-ctx.Done():
-			callCtx.Errf("ping: %s: %s\n", host, ctx.Err().Error())
-			return builtins.Result{Code: 1}
-		case r := <-ch:
-			results, err = r.results, r.err
-		}
+		// Resolve hostname before printing the header so DNS errors are
+		// reported cleanly without a dangling header line.
+		pinger, err := probing.NewPinger(host)
 		if err != nil {
-			callCtx.Errf("ping: %s: %s\n", host, err.Error())
+			callCtx.Errf("ping: %s: %s\n", host, err)
 			return builtins.Result{Code: 1}
 		}
 
-		// Print per-probe RTTs.
-		probe := results.E2eProbe
-		for i, rtt := range probe.RTTs {
-			if ctx.Err() != nil {
+		ip := pinger.IPAddr().String()
+		callCtx.Outf("PING %s (%s): 56 data bytes\n", host, ip)
+
+		intervalDur := time.Duration(*interval * float64(time.Second))
+		// Total timeout accommodates all probes: each probe may wait up to
+		// *timeout seconds for a reply, plus *interval seconds before the
+		// next send, with a 1-second buffer.
+		totalTimeout := time.Duration(*count)*(time.Duration(*timeout)*time.Second+intervalDur) + time.Second
+
+		onRecv := func(pkt *probing.Packet) {
+			// icmp_seq is 1-indexed to match standard ping (Linux/macOS).
+			callCtx.Outf("%d bytes from %s: icmp_seq=%d ttl=%d time=%.3f ms\n",
+				pkt.Nbytes, pkt.IPAddr.String(), pkt.Seq+1, pkt.TTL,
+				float64(pkt.Rtt)/float64(time.Millisecond))
+		}
+
+		// On Windows, privileged mode is required but works without elevation.
+		// On other platforms, try raw-socket (privileged) first and fall back
+		// to UDP-based (unprivileged) ICMP on permission errors.
+		modes := []bool{true, false}
+		if runtime.GOOS == "windows" {
+			modes = []bool{true}
+		}
+
+		var stats *probing.Statistics
+		var runErr error
+		for i, privileged := range modes {
+			var p *probing.Pinger
+			if i == 0 {
+				p = pinger
+			} else {
+				// Re-create pinger to reset internal state for the fallback.
+				p, err = probing.NewPinger(host)
+				if err != nil {
+					runErr = err
+					break
+				}
+			}
+			p.Count = *count
+			p.Interval = intervalDur
+			p.Timeout = totalTimeout
+			p.OnRecv = onRecv
+			p.SetPrivileged(privileged)
+
+			runErr = p.RunWithContext(ctx)
+			if runErr == nil || !isPermissionError(runErr) {
+				stats = p.Statistics()
 				break
 			}
-			if rtt <= 0 {
-				continue // skip failed probes (library records 0.0 for failures)
+		}
+
+		// If no packets were sent, report the error and exit 1.
+		if stats == nil || stats.PacketsSent == 0 {
+			if ctx.Err() != nil {
+				callCtx.Errf("ping: %s: %s\n", host, ctx.Err())
+			} else if runErr != nil {
+				callCtx.Errf("ping: %s: %s\n", host, runErr)
 			}
-			callCtx.Outf("64 bytes from %s: icmp_seq=%d time=%.3f ms\n",
-				results.Destination.Hostname, i, rtt)
+			return builtins.Result{Code: 1}
 		}
 
 		// Print summary statistics.
 		callCtx.Outf("\n--- %s ping statistics ---\n", host)
 		callCtx.Outf("%d packets transmitted, %d packets received, %.1f%% packet loss\n",
-			probe.PacketsSent, probe.PacketsReceived, float64(probe.PacketLossPercentage*100))
+			stats.PacketsSent, stats.PacketsRecv, stats.PacketLoss)
 
-		if probe.PacketsReceived > 0 {
-			callCtx.Outf("round-trip min/avg/max = %.3f/%.3f/%.3f ms\n",
-				probe.RTT.Min, probe.RTT.Avg, probe.RTT.Max)
+		if stats.PacketsRecv > 0 {
+			callCtx.Outf("round-trip min/avg/max/stddev = %.3f/%.3f/%.3f/%.3f ms\n",
+				float64(stats.MinRtt)/float64(time.Millisecond),
+				float64(stats.AvgRtt)/float64(time.Millisecond),
+				float64(stats.MaxRtt)/float64(time.Millisecond),
+				float64(stats.StdDevRtt)/float64(time.Millisecond))
 		}
 
-		// Exit code 1 if any packet loss occurred.
-		if probe.PacketsReceived < probe.PacketsSent {
+		if stats.PacketsRecv < stats.PacketsSent {
 			return builtins.Result{Code: 1}
 		}
 		return builtins.Result{}
 	}
+}
+
+// isPermissionError returns true if err indicates a socket permission error,
+// which means the process lacks the capability to open a raw ICMP socket.
+func isPermissionError(err error) bool {
+	if err == nil {
+		return false
+	}
+	s := strings.ToLower(err.Error())
+	return strings.Contains(s, "operation not permitted") ||
+		strings.Contains(s, "permission denied") ||
+		strings.Contains(s, "access is denied")
 }
