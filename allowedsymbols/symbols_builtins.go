@@ -155,11 +155,16 @@ var builtinPerCommandSymbols = map[string][]string{
 		"time.Time",                          // time value type; pure data, no side effects.
 	},
 	"ping": {
-		"context.Context", // deadline/cancellation plumbing; pure interface, no side effects.
-		"github.com/DataDog/datadog-traceroute/result.Results",              // result struct returned by RunTraceroute; pure data type, no side effects.
-		"github.com/DataDog/datadog-traceroute/traceroute.NewTraceroute",    // creates a traceroute runner for ICMP probes; network I/O (authorized for ping).
-		"github.com/DataDog/datadog-traceroute/traceroute.TracerouteParams", // parameter struct for traceroute configuration; pure data type.
+		"context.Context",                                      // deadline/cancellation plumbing; pure interface, no side effects.
+		"github.com/prometheus-community/pro-bing.NewPinger",   // creates an ICMP pinger; network I/O (authorized for ping builtin only).
+		"github.com/prometheus-community/pro-bing.Packet",      // received ICMP packet data; pure data type, no side effects.
+		"github.com/prometheus-community/pro-bing.Pinger",      // ICMP pinger type; network I/O (authorized for ping builtin only).
+		"github.com/prometheus-community/pro-bing.Statistics",  // ping statistics result; pure data type, no side effects.
+		"runtime.GOOS",  // current OS name constant; pure constant, no I/O.
+		"strings.Contains",   // substring check; pure function, no I/O.
+		"strings.ToLower",    // converts string to lowercase; pure function, no I/O.
 		"time.Duration", // duration type; pure integer alias, no I/O.
+		"time.Millisecond", // constant representing one millisecond; no side effects.
 		"time.Second",   // constant representing one second; no side effects.
 	},
 	"printf": {
@@ -359,9 +364,10 @@ var builtinAllowedSymbols = []string{
 	"errors.New",       // creates a simple error value; pure function, no I/O.
 	"fmt.Errorf",       // error formatting; pure function, no I/O.
 	"fmt.Sprintf",      // string formatting; pure function, no I/O.
-	"github.com/DataDog/datadog-traceroute/result.Results",              // result struct returned by RunTraceroute; pure data type, no side effects.
-	"github.com/DataDog/datadog-traceroute/traceroute.NewTraceroute",    // creates a traceroute runner for ICMP probes; network I/O (authorized for ping builtin only via per-command allowlist).
-	"github.com/DataDog/datadog-traceroute/traceroute.TracerouteParams", // parameter struct for traceroute configuration; pure data type.
+	"github.com/prometheus-community/pro-bing.NewPinger",  // creates an ICMP pinger; network I/O (authorized for ping builtin only via per-command allowlist).
+	"github.com/prometheus-community/pro-bing.Packet",    // received ICMP packet data; pure data type, no side effects.
+	"github.com/prometheus-community/pro-bing.Pinger",    // ICMP pinger type; network I/O (authorized for ping builtin only via per-command allowlist).
+	"github.com/prometheus-community/pro-bing.Statistics", // ping statistics result; pure data type, no side effects.
 	"golang.org/x/sys/unix.SysctlRaw",                                   // macOS: reads kernel socket tables (read-only, no exec, no filesystem).
 	"io.EOF",                                                            // sentinel error value; pure constant.
 	"io.MultiReader",                                                    // combines multiple Readers into one sequential Reader; no I/O side effects.
