@@ -192,19 +192,34 @@ func readProc(pid int, btime int64) (ProcInfo, error) {
 	return info, nil
 }
 
-// resolveTTY attempts to map tty_nr to a human-readable name.
-func resolveTTY(pid int, ttyNr int64) string {
+// resolveTTY maps tty_nr (from /proc/pid/stat) to a human-readable name.
+// tty_nr encodes the controlling terminal's device number:
+//
+//	major = bits [15:8]
+//	minor = bits [7:0] | (bits [31:20] << 8)
+//
+// We decode this directly instead of reading /proc/pid/fd/0 (which is stdin
+// and may point to a redirected file rather than the controlling terminal).
+func resolveTTY(_ int, ttyNr int64) string {
 	if ttyNr == 0 {
 		return "?"
 	}
-	// Try readlink /proc/pid/fd/0.
-	link, err := os.Readlink(fmt.Sprintf("/proc/%d/fd/0", pid))
-	if err != nil {
+	major := (ttyNr >> 8) & 0xff
+	minor := (ttyNr & 0xff) | ((ttyNr >> 20) << 8)
+	switch {
+	case major == 4 && minor < 64:
+		// Virtual consoles: /dev/ttyN
+		return fmt.Sprintf("tty%d", minor)
+	case major == 4:
+		// Serial terminals: /dev/ttySN
+		return fmt.Sprintf("ttyS%d", minor-64)
+	case major >= 136 && major <= 143:
+		// Pseudo-terminal slaves: /dev/pts/N
+		pts := (major-136)*256 + minor
+		return fmt.Sprintf("pts/%d", pts)
+	default:
 		return "?"
 	}
-	// Strip /dev/ prefix for terminal names.
-	link = strings.TrimPrefix(link, "/dev/")
-	return link
 }
 
 // readUID reads the real UID from /proc/pid/status.

@@ -51,7 +51,7 @@ import (
 )
 
 // Cmd is the ps builtin command descriptor.
-var Cmd = builtins.Command{Name: "ps", MakeFlags: registerFlags}
+var Cmd = builtins.Command{Name: "ps", Description: "report process status", MakeFlags: registerFlags}
 
 func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 	allProcs := fs.BoolP("all", "e", false, "select all processes")

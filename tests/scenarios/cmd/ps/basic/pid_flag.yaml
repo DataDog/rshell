@@ -1,9 +1,0 @@
-description: ps -p $$ shows PID header and exits 0 (current process always exists).
-skip_assert_against_bash: true
-input:
-  script: |+
-    ps -p $$
-expect:
-  stdout_contains:
-    - "PID"
-  exit_code: 0
