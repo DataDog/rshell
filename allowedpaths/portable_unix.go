@@ -30,32 +30,73 @@ func FileIdentity(_ string, info fs.FileInfo, _ *Sandbox) (uint64, uint64, bool)
 }
 
 func (r *root) accessCheck(rel string, checkRead, checkWrite, checkExec bool) (fs.FileInfo, error) {
-	info, err := r.root.Stat(rel)
+	// Write-only or exec-only checks (no read): single Stat + mode-bit
+	// inspection. No TOCTOU because there is only one resolution.
+	if !checkRead {
+		info, err := r.root.Stat(rel)
+		if err != nil {
+			return nil, err
+		}
+		if !effectiveHasPerm(info, false, checkWrite, checkExec) {
+			return info, os.ErrPermission
+		}
+		return info, nil
+	}
+
+	// Read checks: open-first to get an fd, then fstat the fd.
+	// O_NONBLOCK prevents blocking on FIFOs (open returns immediately
+	// even without a writer). It is harmless on regular files and dirs.
+	f, openErr := r.root.OpenFile(rel, os.O_RDONLY|syscall.O_NONBLOCK, 0)
+	if openErr != nil {
+		// OpenFile failed. Possible reasons:
+		//   - Permission denied on a regular file (kernel/ACL)
+		//   - Unopenable type (Unix socket → ENXIO/EOPNOTSUPP)
+		//   - Path does not exist or symlink escape blocked
+		//
+		// Fall back to Stat for metadata. This is NOT a TOCTOU risk:
+		// the open already failed, so there is no fd pointing to a
+		// wrong inode.
+		info, err := r.root.Stat(rel)
+		if err != nil {
+			return nil, err
+		}
+		// For regular files, the open failure is the kernel's
+		// authoritative answer (may reflect ACLs that mode bits
+		// miss). Trust it.
+		if info.Mode().IsRegular() {
+			return info, os.ErrPermission
+		}
+		// Non-regular files that can't be opened (e.g. sockets):
+		// fall back to mode-bit inspection.
+		if !effectiveHasPerm(info, checkRead, checkWrite, checkExec) {
+			return info, os.ErrPermission
+		}
+		return info, nil
+	}
+
+	// OpenFile succeeded — fstat the fd for metadata from this exact inode.
+	info, err := f.Stat()
+	f.Close()
 	if err != nil {
 		return nil, err
 	}
 
-	// For read checks on regular files, attempt to open through os.Root.
-	// This is fd-relative (openat) and respects POSIX ACLs. FIFOs and
-	// directories are excluded: OpenFile blocks on FIFOs without a
-	// writer, and directories return a handle rather than a permission
-	// error.
-	if checkRead && info.Mode().IsRegular() {
-		f, err := r.root.OpenFile(rel, os.O_RDONLY, 0)
-		if err != nil {
+	// For regular files, the successful open proves read permission
+	// (kernel-level, ACL-accurate). For FIFOs and directories,
+	// O_NONBLOCK open succeeds regardless of read permission, so
+	// mode-bit check is still needed.
+	if !info.Mode().IsRegular() {
+		if !effectiveHasPerm(info, checkRead, checkWrite, checkExec) {
 			return info, os.ErrPermission
 		}
-		f.Close()
-		if !checkWrite && !checkExec {
-			return info, nil
-		}
+		return info, nil
 	}
 
-	// For write, execute, directory read, and FIFO read checks, fall
-	// back to mode-bit inspection on the Stat result (which came from
-	// the fd-relative fstatat, so no TOCTOU).
-	if !effectiveHasPerm(info, checkRead && !info.Mode().IsRegular(), checkWrite, checkExec) {
-		return info, os.ErrPermission
+	// Regular file: read proven. Check write/exec if needed.
+	if checkWrite || checkExec {
+		if !effectiveHasPerm(info, false, checkWrite, checkExec) {
+			return info, os.ErrPermission
+		}
 	}
 	return info, nil
 }

@@ -89,11 +89,13 @@ func (s *Sandbox) resolve(absPath string) (*os.Root, string, bool) {
 // Mode: 0x04 = read, 0x02 = write, 0x01 = execute.
 //
 // On Unix, read permission for regular files is verified by attempting
-// to open through os.Root (fd-relative openat, respects POSIX ACLs).
-// For special files, directories, write, and execute, mode-bit
-// inspection is used on the fd-relative Stat result. On Windows, the
-// same OpenFile approach is used for read checks; write and execute
-// checks are not performed.
+// to open through os.Root with O_NONBLOCK (fd-relative openat, respects
+// POSIX ACLs, never blocks on FIFOs). Metadata is obtained from the
+// opened fd via fstat to eliminate TOCTOU between open and stat.
+// For special files where open fails (e.g. sockets), and for write and
+// execute checks, mode-bit inspection is used on the fd-relative Stat
+// result. On Windows, the same OpenFile approach is used for read
+// checks; write and execute checks are not performed.
 //
 // All operations are fd-relative through os.Root — no filesystem path is
 // re-resolved through the mutable namespace after initial validation.
@@ -112,10 +114,10 @@ func (s *Sandbox) Access(path string, cwd string, mode uint32) error {
 			continue
 		}
 
-		// accessCheck verifies the path is inside the sandbox via
-		// os.Root.Stat, then performs the permission check (fd-relative
-		// OpenFile for regular-file reads on Unix, mode-bit inspection
-		// for everything else).
+		// accessCheck opens or stats the path through os.Root and
+		// performs the permission check (fd-relative OpenFile with
+		// O_NONBLOCK for reads on Unix, mode-bit inspection for
+		// everything else).
 		_, err = ar.accessCheck(rel, mode&0x04 != 0, mode&0x02 != 0, mode&0x01 != 0)
 		if err != nil {
 			return &os.PathError{Op: "access", Path: path, Err: os.ErrPermission}

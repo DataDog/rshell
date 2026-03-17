@@ -365,3 +365,52 @@ func TestAccessFdRelativeEscapeBlocked(t *testing.T) {
 	defer sb.Close()
 	assert.Error(t, sb.Access("escape.txt", dir, 0x04))
 }
+
+// TestAccessSocketFallsBackToStat verifies that Unix sockets, which
+// cannot be opened with open(2), fall back to Stat + effectiveHasPerm.
+func TestAccessSocketFallsBackToStat(t *testing.T) {
+	// Unix socket paths have a ~104-byte limit on macOS. Use a short
+	// temp directory to avoid EINVAL from bind(2).
+	dir, err := os.MkdirTemp("/tmp", "sock")
+	require.NoError(t, err)
+	defer os.RemoveAll(dir)
+	sockPath := filepath.Join(dir, "s.sock")
+
+	fd, err := syscall.Socket(syscall.AF_UNIX, syscall.SOCK_STREAM, 0)
+	require.NoError(t, err)
+	defer syscall.Close(fd)
+	require.NoError(t, syscall.Bind(fd, &syscall.SockaddrUnix{Name: sockPath}))
+
+	sb, err := New([]string{dir})
+	require.NoError(t, err)
+	defer sb.Close()
+
+	// Socket with default permissions should pass read check via the
+	// Stat fallback path (OpenFile fails on sockets).
+	assert.NoError(t, sb.Access("s.sock", dir, 0x04))
+}
+
+// TestAccessFIFONonBlocking verifies that O_NONBLOCK prevents blocking
+// on a FIFO with no writer. Core of the TOCTOU fix: even if an attacker
+// swaps a regular file for a FIFO, the open returns immediately.
+func TestAccessFIFONonBlocking(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, syscall.Mkfifo(filepath.Join(dir, "fifo"), 0644))
+
+	sb, err := New([]string{dir})
+	require.NoError(t, err)
+	defer sb.Close()
+
+	start := time.Now()
+	done := make(chan error, 1)
+	go func() { done <- sb.Access("fifo", dir, 0x04) }()
+	select {
+	case err := <-done:
+		assert.NoError(t, err)
+		// With O_NONBLOCK, this should complete in well under 100ms.
+		assert.Less(t, time.Since(start), 500*time.Millisecond,
+			"FIFO access took too long — O_NONBLOCK may not be working")
+	case <-time.After(2 * time.Second):
+		t.Fatal("Access blocked on FIFO — O_NONBLOCK not effective")
+	}
+}
