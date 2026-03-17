@@ -2,6 +2,21 @@
 name: fix-ci-tests
 description: Diagnose and fix CI failures on a GitHub PR by analyzing failing checks, reading logs, and applying fixes
 argument-hint: "[pr-number|pr-url]"
+allowedTools:
+  - Read
+  - Write
+  - Edit
+  - Glob
+  - Grep
+  - Agent
+  - "Bash(go test *)"
+  - "Bash(go build *)"
+  - "Bash(go vet *)"
+  - "Bash(gofmt *)"
+  - "Bash(git *)"
+  - "Bash(gh *)"
+  - "Bash(docker *)"
+  - "Bash(RSHELL_BASH_TEST=1 go test *)"
 ---
 
 Diagnose and fix CI failures for **$ARGUMENTS** (or the current branch's PR if no argument is given).

@@ -2,6 +2,21 @@
 name: gtfobins-validate
 description: "Validate shell builtins against GTFOBins attack patterns to ensure exploits are blocked by the sandbox"
 argument-hint: "[command-name]"
+allowedTools:
+  - Read
+  - Write
+  - Edit
+  - Glob
+  - Grep
+  - Agent
+  - WebFetch
+  - "Bash(go test *)"
+  - "Bash(go build *)"
+  - "Bash(go vet *)"
+  - "Bash(gofmt *)"
+  - "Bash(git *)"
+  - "Bash(curl *)"
+  - "Bash(RSHELL_BASH_TEST=1 go test *)"
 ---
 
 Validate that the shell's builtins are protected against known GTFOBins exploitation techniques. If **$ARGUMENTS** is provided, validate only that command. Otherwise, validate all registered builtins.

@@ -2,6 +2,19 @@
 name: code-review
 description: "Comprehensive code review covering security, correctness, bash compatibility, test coverage, and code quality. Use for PRs, commits, or any code changes."
 argument-hint: "[pr-number|pr-url|file-path|commit-range]"
+allowedTools:
+  - Read
+  - Glob
+  - Grep
+  - Agent
+  - WebFetch
+  - WebSearch
+  - "Bash(git *)"
+  - "Bash(gh *)"
+  - "Bash(go test *)"
+  - "Bash(go build *)"
+  - "Bash(go vet *)"
+  - "Bash(gofmt *)"
 ---
 
 You are a senior engineer reviewing code for a restricted shell interpreter where **safety is the primary goal**. The shell is used by AI Agents, so any escape from its restrictions could allow arbitrary code execution on the host.

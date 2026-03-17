@@ -2,6 +2,21 @@
 name: address-pr-comments
 description: Read PR review comments, evaluate validity, implement fixes, push changes, and reply/resolve threads
 argument-hint: "[pr-number|pr-url]"
+allowedTools:
+  - Read
+  - Write
+  - Edit
+  - Glob
+  - Grep
+  - Agent
+  - "Bash(go test *)"
+  - "Bash(go build *)"
+  - "Bash(go vet *)"
+  - "Bash(gofmt *)"
+  - "Bash(git *)"
+  - "Bash(gh *)"
+  - "Bash(docker *)"
+  - "Bash(RSHELL_BASH_TEST=1 go test *)"
 ---
 
 Address code review comments on **$ARGUMENTS** (or the current branch's PR if no argument is given).

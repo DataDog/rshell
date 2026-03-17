@@ -2,6 +2,24 @@
 name: improve-loop
 description: "Systematically review and improve every shell feature and builtin command. Iterates through each feature/command, runs code-review, fixes issues, and re-reviews until clean."
 argument-hint: "[pr-number|pr-url]"
+allowedTools:
+  - Read
+  - Write
+  - Edit
+  - Glob
+  - Grep
+  - Agent
+  - Skill
+  - WebFetch
+  - WebSearch
+  - "Bash(go test *)"
+  - "Bash(go build *)"
+  - "Bash(go vet *)"
+  - "Bash(gofmt *)"
+  - "Bash(git *)"
+  - "Bash(gh *)"
+  - "Bash(docker *)"
+  - "Bash(RSHELL_BASH_TEST=1 go test *)"
 ---
 
 Systematically review and improve every shell feature and builtin command on **$ARGUMENTS** (or the current branch's PR if no argument is given), iterating until all issues are resolved.

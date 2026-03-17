@@ -2,6 +2,25 @@
 name: implement-posix-command
 description: Implement a new POSIX command as a builtin in the safe shell interpreter
 argument-hint: "<command-name>"
+allowedTools:
+  - Read
+  - Write
+  - Edit
+  - Glob
+  - Grep
+  - Agent
+  - Skill
+  - WebFetch
+  - WebSearch
+  - "Bash(go test *)"
+  - "Bash(go build *)"
+  - "Bash(go vet *)"
+  - "Bash(gofmt *)"
+  - "Bash(git *)"
+  - "Bash(gh *)"
+  - "Bash(docker *)"
+  - "Bash(curl *)"
+  - "Bash(RSHELL_BASH_TEST=1 go test *)"
 ---
 
 Implement the **$ARGUMENTS** command as a builtin in `interp/`.

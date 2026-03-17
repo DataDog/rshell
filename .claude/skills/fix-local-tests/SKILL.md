@@ -2,6 +2,20 @@
 name: fix-local-tests
 description: Fix failing tests by prioritising shell implementation fixes to match bash behaviour
 argument-hint: "[test filter or description of failure]"
+allowedTools:
+  - Read
+  - Write
+  - Edit
+  - Glob
+  - Grep
+  - Agent
+  - "Bash(go test *)"
+  - "Bash(go build *)"
+  - "Bash(go vet *)"
+  - "Bash(gofmt *)"
+  - "Bash(git *)"
+  - "Bash(docker *)"
+  - "Bash(RSHELL_BASH_TEST=1 go test *)"
 ---
 
 Fix failing tests. **The implementation is more likely wrong than the test.** Always try to fix the shell implementation to match bash behaviour before touching the test expectations.
