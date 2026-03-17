@@ -1,7 +1,7 @@
 description: Brace groups and if statements can appear in a pipeline.
 input:
   script: |+
-    { echo foo; echo bar; } | grep bar
+    { echo foo; echo bar; } | tail -n 1
 expect:
   stdout: |+
     bar

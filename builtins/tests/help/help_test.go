@@ -69,7 +69,7 @@ func TestHelpListsAllBuiltins(t *testing.T) {
 	expected := []string{
 		"[", "break", "cat", "continue", "cut", "echo", "exit",
 		"false", "find", "grep", "head", "help", "ls", "printf",
-		"sed", "sort", "strings", "test", "tr", "true",
+		"sed", "sort", "strings", "tail", "test", "tr", "true",
 		"uniq", "wc",
 	}
 	for _, cmd := range expected {
