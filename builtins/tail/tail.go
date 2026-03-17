@@ -180,6 +180,13 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			callCtx.Errf("tail: invalid number of %s: %q\n", modeLabel, countStr)
 			return builtins.Result{Code: 1}
 		}
+		// GNU tail uses sticky offset semantics: once any -n or -c flag uses
+		// a '+' prefix, offset mode is retained even if a later plain value
+		// overwrites the count. Apply this after parsing so that e.g.
+		// "tail -n +2 -n 2" keeps offset mode with count 2.
+		if linesFlag.offsetSeen || bytesFlag.offsetSeen {
+			cm.offset = true
+		}
 
 		if len(files) == 0 {
 			files = []string{"-"}
@@ -677,10 +684,16 @@ func countMultiplier(s string) (int64, bool) {
 // Two modeFlag values share a *seq counter; each call to Set increments the
 // counter and records the new value in pos. After pflag.Parse, comparing pos
 // fields reveals which flag appeared last on the command line.
+//
+// offsetSeen becomes true if any Set call received a '+'-prefixed value and
+// stays true for the lifetime of the flag. GNU tail uses "sticky offset":
+// once any -n or -c argument uses '+', offset mode is retained even if a
+// later plain argument overwrites the count value.
 type modeFlag struct {
-	val string
-	seq *int
-	pos int
+	val        string
+	seq        *int
+	pos        int
+	offsetSeen bool
 }
 
 func newModeFlag(seq *int, defaultVal string) *modeFlag {
@@ -693,6 +706,9 @@ func (f *modeFlag) Set(s string) error {
 		return errors.New("invalid count")
 	}
 	f.val = s
+	if len(s) > 0 && s[0] == '+' {
+		f.offsetSeen = true
+	}
 	*f.seq++
 	f.pos = *f.seq
 	return nil
