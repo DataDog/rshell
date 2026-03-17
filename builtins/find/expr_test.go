@@ -280,6 +280,13 @@ func TestParsePermPredicate(t *testing.T) {
 		{"u=rwx,a=rX", []string{"-perm", "u=rwx,a=rX"}, false, 0o555, '='},
 		{"a+rX from zero", []string{"-perm", "a+rX"}, false, 0o444, '='},
 		{"u=x,a+rX", []string{"-perm", "u=x,a+rX"}, false, 0o555, '='},
+		// Sticky bit respects who mask (t only applies when who includes o/a)
+		{"sticky u+t is no-op", []string{"-perm", "u+t"}, false, 0o000, '='},
+		{"sticky g=t is no-op", []string{"-perm", "g=t"}, false, 0o000, '='},
+		{"sticky ug+t is no-op", []string{"-perm", "ug+t"}, false, 0o000, '='},
+		{"sticky o+t sets", []string{"-perm", "o+t"}, false, 0o1000, '='},
+		{"sticky a=t sets", []string{"-perm", "a=t"}, false, 0o1000, '='},
+		{"sticky ug+st sets suid sgid only", []string{"-perm", "ug+st"}, false, 0o6000, '='},
 		// Errors
 		{"missing arg", []string{"-perm"}, true, 0, 0},
 		{"invalid octal", []string{"-perm", "xyz"}, true, 0, 0},

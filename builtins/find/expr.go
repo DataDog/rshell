@@ -611,7 +611,9 @@ func parseSymbolicMode(s string) (uint64, error) {
 						special |= 0o2000
 					}
 				case 't':
-					special |= 0o1000 // sticky
+					if who&1 != 0 {
+						special |= 0o1000 // sticky
+					}
 				default:
 					return 0, fmt.Errorf("invalid permission '%c'", clause[i])
 				}
