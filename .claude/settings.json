@@ -6,7 +6,7 @@
     "excludedCommands": ["git", "gh", "docker"],
     "filesystem": {
       "read": {
-        "allow": ["/Users/alexandre.yang/go/pkg"]
+        "allow": ["~/go/pkg"]
       }
     },
     "network": {
