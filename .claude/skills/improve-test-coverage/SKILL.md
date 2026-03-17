@@ -17,7 +17,6 @@ allowedTools:
   - "Bash(gh *)"
   - "Bash(docker *)"
   - "Bash(curl *)"
-  - "Bash(bash -c *)"
   - "Bash(RSHELL_BASH_TEST=1 go test *)"
 ---
 
@@ -315,11 +314,6 @@ go run . -c '<script>'
 docker run --rm debian:bookworm-slim bash -c '<script>'
 ```
 
-**Method C — Run locally with bash:**
-```bash
-bash -c '<script>'
-```
-
 Always verify that our shell output matches bash for tests without `skip_assert_against_bash: true`.
 
 #### Batch size
@@ -365,8 +359,6 @@ For each flagged test:
 1. **Read the test** to understand what behavior it tests
 2. **Determine if the divergence is still intentional**: Run the script in bash to see what bash produces
    ```bash
-   bash -c '<script from test>'
-   # or
    docker run --rm debian:bookworm-slim bash -c '<script>'
    ```
 3. **Classify the result**:

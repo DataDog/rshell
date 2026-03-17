@@ -12,7 +12,6 @@ allowedTools:
   - "Bash(go test *)"
   - "Bash(git *)"
   - "Bash(docker *)"
-  - "Bash(bash -c *)"
   - "Bash(RSHELL_BASH_TEST=1 go test *)"
 ---
 
@@ -57,13 +56,7 @@ For **every** failure, determine the correct bash behaviour before making any ch
 docker run --rm debian:bookworm-slim bash -c '<the script from the failing test>'
 ```
 
-**Method C — run locally with bash.** For quick checks on macOS/Linux:
-
-```bash
-bash -c '<script>'
-```
-
-**Method D — GNU coreutils reference.** For builtin command behaviour, check `resources/gnu-coreutils-tests/` or `resources/uutils-tests/` for relevant test cases.
+**Method C — GNU coreutils reference.** For builtin command behaviour, check `resources/gnu-coreutils-tests/` or `resources/uutils-tests/` for relevant test cases.
 
 Record what bash produces for each failure — this is the ground truth.
 
