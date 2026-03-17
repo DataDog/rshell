@@ -49,6 +49,7 @@ var interpAllowedSymbols = []string{
 	"strconv.Itoa",         // int-to-string conversion; pure function, no I/O.
 	"strings.Builder",      // efficient string concatenation; pure in-memory buffer, no I/O.
 	"strings.ContainsRune", // checks if a rune is in a string; pure function, no I/O.
+	"strings.Index",        // finds substring index; pure function, no I/O.
 	"strings.HasPrefix",    // pure function for prefix matching; no I/O.
 	"strings.HasSuffix",    // pure function for suffix matching; no I/O.
 	"strings.Split",        // splits a string by separator; pure function, no I/O.

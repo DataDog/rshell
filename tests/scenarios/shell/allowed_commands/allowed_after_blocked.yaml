@@ -2,7 +2,7 @@ skip_assert_against_bash: true
 description: Execution continues after a blocked command (non-fatal).
 input:
   allowed_commands:
-    - echo
+    - rshell:echo
   script: |+
     cat /dev/null
     echo after

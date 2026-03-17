@@ -20,11 +20,13 @@ import (
 	"github.com/DataDog/rshell/builtins/grep"
 	"github.com/DataDog/rshell/builtins/head"
 	"github.com/DataDog/rshell/builtins/help"
+	"github.com/DataDog/rshell/builtins/ip"
 	"github.com/DataDog/rshell/builtins/ls"
 	"github.com/DataDog/rshell/builtins/ping"
 	printfcmd "github.com/DataDog/rshell/builtins/printf"
 	"github.com/DataDog/rshell/builtins/sed"
 	sortcmd "github.com/DataDog/rshell/builtins/sort"
+	"github.com/DataDog/rshell/builtins/ss"
 	"github.com/DataDog/rshell/builtins/strings_cmd"
 	"github.com/DataDog/rshell/builtins/tail"
 	"github.com/DataDog/rshell/builtins/testcmd"
@@ -50,11 +52,13 @@ func registerBuiltins() {
 			grep.Cmd,
 			head.Cmd,
 			help.Cmd,
+			ip.Cmd,
 			ls.Cmd,
 			ping.Cmd,
 			sortcmd.Cmd,
 			printfcmd.Cmd,
 			sed.Cmd,
+			ss.Cmd,
 			strings_cmd.Cmd,
 			tail.Cmd,
 			testcmd.Cmd,

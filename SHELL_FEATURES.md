@@ -16,7 +16,9 @@ Blocked features are rejected before execution with exit code 2.
 - ✅ `grep [-EFGivclLnHhoqsxw] [-e PATTERN] [-m NUM] [-A NUM] [-B NUM] [-C NUM] PATTERN [FILE]...` — print lines that match patterns; uses RE2 regex engine (linear-time, no backtracking)
 - ✅ `head [-n N|-c N] [-q|-v] [FILE]...` — output the first part of files (default: first 10 lines); `-z`/`--zero-terminated` and `--follow` are rejected
 - ✅ `help` — display all available builtin commands with brief descriptions; for detailed flag info, use `<command> --help`
+- ✅ `ip [-o|-4|-6|--brief] addr|link [show] [dev IFNAME]` — show network interface addresses and link-layer info (read-only); write ops (`add`, `del`, `flush`, `set`), namespace ops (`netns`, `-n`), and batch mode (`-b`/`-B`/`--force`) are blocked
 - ✅ `sort [-rnubfds] [-k KEYDEF] [-t SEP] [-c|-C] [FILE]...` — sort lines of text files; `-o`, `--compress-program`, and `-T` are rejected (filesystem write / exec)
+- ✅ `ss [-tuaxlans4689Hoehs] [OPTION]...` — display network socket statistics; reads kernel socket state directly (Linux: `/proc/net/`; macOS: sysctl; Windows: iphlpapi.dll); `-F`/`--filter` (GTFOBins file-read), `-p`/`--processes` (PID disclosure), `-K`/`--kill`, `-E`/`--events`, and `-N`/`--net` are rejected
 - ✅ `ls [-1aAdFhlpRrSt] [--offset N] [--limit N] [FILE]...` — list directory contents; `--offset`/`--limit` are non-standard pagination flags (single-directory only, silently ignored with `-R` or multiple arguments, capped at 1,000 entries per call); offset operates on filesystem order (not sorted order) for O(n) memory
 - ✅ `ping [-c N] [-W N] [-i N] HOST` — send ICMP ECHO_REQUEST to network hosts using the datadog-traceroute library; `-c` sets probe count (default 4, max 1000), `-W` sets timeout in seconds (max 60), `-i` sets interval between probes (accepted and validated but may not be effective with current library version; the underlying library computes E2E probe spacing internally)
 - ✅ `printf FORMAT [ARGUMENT]...` — format and print data to stdout; supports `%s`, `%b`, `%c`, `%d`, `%i`, `%o`, `%u`, `%x`, `%X`, `%e`, `%E`, `%f`, `%F`, `%g`, `%G`, `%%`; format reuse for excess arguments; `%n` rejected (security risk); `-v` rejected
@@ -92,7 +94,7 @@ Blocked features are rejected before execution with exit code 2.
 
 ## Execution
 
-- ✅ AllowedCommands — restricts which commands (builtins or external) may be executed; if not set, no commands are allowed
+- ✅ AllowedCommands — restricts which commands (builtins or external) may be executed; commands require the `rshell:` namespace prefix (e.g. `rshell:cat`); if not set, no commands are allowed
 - ✅ AllowAllCommands — permits any command (testing convenience)
 - ✅ AllowedPaths filesystem sandboxing — restricts all file access to specified directories
 - ❌ External commands — blocked by default; requires an ExecHandler to be configured and the binary to be within AllowedPaths

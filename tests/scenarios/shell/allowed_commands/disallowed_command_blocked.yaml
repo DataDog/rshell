@@ -2,7 +2,7 @@ skip_assert_against_bash: true
 description: A command not listed in allowed_commands is blocked.
 input:
   allowed_commands:
-    - echo
+    - rshell:echo
   script: |+
     cat /dev/null
 expect:

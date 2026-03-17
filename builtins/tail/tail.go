@@ -61,12 +61,15 @@
 //
 // Infinite-stream protection:
 //
-//	Both last-N-lines and last-N-bytes modes must consume the entire input
-//	before emitting output. For non-regular-file inputs (pipes, stdin,
-//	character devices) without a context deadline, execution would hang
-//	indefinitely. To bound this, tail returns an error once total bytes read
-//	from such a source exceed MaxTotalReadBytes (256 MiB). Regular files are
-//	not subject to this limit because the OS guarantees they are finite.
+//	Last-N-lines and last-N-bytes modes must consume the entire input before
+//	emitting output. For non-regular-file inputs (pipes, stdin, character
+//	devices) without a context deadline, execution would hang indefinitely.
+//	To bound this, tail returns an error once total bytes read from such a
+//	source exceed MaxTotalReadBytes (256 MiB). Regular files are not subject
+//	to this limit because the OS guarantees they are finite.
+//
+//	Offset (+N) modes stream output incrementally and do not buffer to EOF,
+//	so no read-limit guard is applied; large pipes work correctly.
 package tail
 
 import (
@@ -74,6 +77,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"math"
 	"os"
 	"strconv"
 
@@ -135,9 +139,14 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 	fs.VarP(verboseFlag, "verbose", "v", "always print file name headers")
 	// Mark the header flags as boolean so pflag does not consume the next
 	// positional argument as a value when the flag appears without "=…".
-	fs.Lookup("quiet").NoOptDefVal = "true"
-	fs.Lookup("silent").NoOptDefVal = "true"
-	fs.Lookup("verbose").NoOptDefVal = "true"
+	// Use a non-printable sentinel (headerFlagSentinel) so that Set can
+	// distinguish "flag appeared without a value" (pflag passes the sentinel)
+	// from "flag appeared with an explicit =value" (pflag passes the typed
+	// string). This lets us reject --quiet=true and --quiet=false alike,
+	// matching GNU tail which does not allow any argument for these flags.
+	fs.Lookup("quiet").NoOptDefVal = headerFlagSentinel
+	fs.Lookup("silent").NoOptDefVal = headerFlagSentinel
+	fs.Lookup("verbose").NoOptDefVal = headerFlagSentinel
 
 	// linesFlag and bytesFlag share a sequence counter so that after parsing
 	// we can compare their pos fields to determine which appeared last on the
@@ -173,6 +182,13 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 		if !ok {
 			callCtx.Errf("tail: invalid number of %s: %q\n", modeLabel, countStr)
 			return builtins.Result{Code: 1}
+		}
+		// GNU tail uses sticky offset semantics: once any -n or -c flag uses
+		// a '+' prefix, offset mode is retained even if a later plain value
+		// overwrites the count. Apply this after parsing so that e.g.
+		// "tail -n +2 -n 2" keeps offset mode with count 2.
+		if linesFlag.offsetSeen || bytesFlag.offsetSeen {
+			cm.offset = true
 		}
 
 		if len(files) == 0 {
@@ -240,7 +256,10 @@ func processFile(ctx context.Context, callCtx *builtins.CallContext, file string
 		name = "standard input"
 		// Print the header before the nil-stdin guard so that -v always
 		// emits a header for stdin even when no input stream is present.
-		if printHeaders {
+		// Suppress headers when the count is zero and not in offset mode:
+		// "tail -n 0" and "tail -c 0" produce no output, so no header
+		// should appear (GNU tail behaviour).
+		if printHeaders && (cm.offset || cm.n > 0) {
 			if *headerPrinted {
 				callCtx.Out("\n")
 			}
@@ -255,6 +274,11 @@ func processFile(ctx context.Context, callCtx *builtins.CallContext, file string
 		isRegularFile = isRegular(callCtx.Stdin)
 		rc = io.NopCloser(callCtx.Stdin)
 	} else {
+		// GNU tail skips files entirely in zero-count non-offset mode:
+		// "tail -n 0 missing.txt" exits 0 with no output or error.
+		if cm.n == 0 && !cm.offset {
+			return nil
+		}
 		f, err := callCtx.OpenFile(ctx, file, os.O_RDONLY, 0)
 		if err != nil {
 			return err
@@ -264,7 +288,10 @@ func processFile(ctx context.Context, callCtx *builtins.CallContext, file string
 		rc = f
 		// Header is printed after a successful open so that a file that
 		// cannot be opened produces no header (matches GNU tail behaviour).
-		if printHeaders {
+		// Suppress headers when the count is zero and not in offset mode:
+		// "tail -n 0" and "tail -c 0" produce no output, so no header
+		// should appear (GNU tail behaviour).
+		if printHeaders && (cm.offset || cm.n > 0) {
 			if *headerPrinted {
 				callCtx.Out("\n")
 			}
@@ -275,12 +302,12 @@ func processFile(ctx context.Context, callCtx *builtins.CallContext, file string
 
 	if useBytesMode {
 		if cm.offset {
-			return skipBytes(ctx, callCtx, rc, cm.n, isRegularFile)
+			return skipBytes(ctx, callCtx, rc, cm.n)
 		}
 		return readLastBytes(ctx, callCtx, rc, cm.n, isRegularFile)
 	}
 	if cm.offset {
-		return skipLines(ctx, callCtx, rc, cm.n, zeroTerm, isRegularFile)
+		return skipLines(ctx, callCtx, rc, cm.n, zeroTerm)
 	}
 	return readLastLines(ctx, callCtx, rc, cm.n, zeroTerm, isRegularFile)
 }
@@ -304,7 +331,10 @@ func readLastLines(ctx context.Context, callCtx *builtins.CallContext, r io.Read
 		sc.Split(scanLinesPreservingNewline)
 	}
 
-	ringSize := int(min(count, int64(MaxRingLines)))
+	ringSize := MaxRingLines
+	if count < MaxRingLines {
+		ringSize = int(count) // count < MaxRingLines (100_000) fits safely in int
+	}
 	ring := make([][]byte, ringSize)
 	var ringHead int
 	var ringCount int
@@ -355,8 +385,10 @@ func readLastLines(ctx context.Context, callCtx *builtins.CallContext, r io.Read
 
 // skipLines skips the first (n-1) lines of r and writes the rest to
 // callCtx.Stdout. This implements the "+N" offset mode for -n.
-// isRegularFile disables the MaxTotalReadBytes infinite-stream guard.
-func skipLines(ctx context.Context, callCtx *builtins.CallContext, r io.Reader, n int64, nullDelim bool, isRegularFile bool) error {
+// Unlike readLastLines, this function streams output incrementally and
+// does not need to buffer the entire input, so no read-limit guard is
+// applied even for non-regular-file inputs.
+func skipLines(ctx context.Context, callCtx *builtins.CallContext, r io.Reader, n int64, nullDelim bool) error {
 	skipCount := max(n-1, 0)
 
 	sc := bufio.NewScanner(r)
@@ -369,14 +401,9 @@ func skipLines(ctx context.Context, callCtx *builtins.CallContext, r io.Reader, 
 	}
 
 	var skipped int64
-	var totalRead int64
 	for sc.Scan() {
 		if ctx.Err() != nil {
 			return ctx.Err()
-		}
-		totalRead += int64(len(sc.Bytes()))
-		if !isRegularFile && totalRead > MaxTotalReadBytes {
-			return errors.New("input too large: read limit exceeded")
 		}
 		if skipped < skipCount {
 			skipped++
@@ -403,7 +430,10 @@ func readLastBytes(ctx context.Context, callCtx *builtins.CallContext, r io.Read
 	// Allocate the circular buffer eagerly. bufSize is capped at MaxBytesBuffer
 	// (32 MiB), so this allocation is bounded regardless of the user-supplied
 	// count value.
-	bufSize := int(min(count, int64(MaxBytesBuffer)))
+	bufSize := MaxBytesBuffer
+	if count < MaxBytesBuffer {
+		bufSize = int(count) // count < MaxBytesBuffer (32 MiB) fits safely in int
+	}
 	circ := make([]byte, bufSize)
 	var totalWritten int64
 
@@ -456,8 +486,10 @@ func readLastBytes(ctx context.Context, callCtx *builtins.CallContext, r io.Read
 
 // skipBytes skips the first (n-1) bytes of r and writes the rest to
 // callCtx.Stdout. This implements the "+N" offset mode for -c.
-// isRegularFile disables the MaxTotalReadBytes infinite-stream guard.
-func skipBytes(ctx context.Context, callCtx *builtins.CallContext, r io.Reader, n int64, isRegularFile bool) error {
+// Unlike readLastBytes, this function streams output incrementally and
+// does not need to buffer the entire input, so no read-limit guard is
+// applied even for non-regular-file inputs.
+func skipBytes(ctx context.Context, callCtx *builtins.CallContext, r io.Reader, n int64) error {
 	skipCount := max(n-1, 0)
 
 	buf := make([]byte, 32*1024)
@@ -469,9 +501,6 @@ func skipBytes(ctx context.Context, callCtx *builtins.CallContext, r io.Reader, 
 		toRead := min(int64(len(buf)), skipCount-totalRead)
 		nRead, err := r.Read(buf[:toRead])
 		totalRead += int64(nRead)
-		if !isRegularFile && totalRead > MaxTotalReadBytes {
-			return errors.New("input too large: read limit exceeded")
-		}
 		if errors.Is(err, io.EOF) {
 			return nil
 		}
@@ -486,10 +515,6 @@ func skipBytes(ctx context.Context, callCtx *builtins.CallContext, r io.Reader, 
 			return ctx.Err()
 		}
 		nRead, err := r.Read(buf)
-		totalRead += int64(nRead)
-		if !isRegularFile && totalRead > MaxTotalReadBytes {
-			return errors.New("input too large: read limit exceeded")
-		}
 		if nRead > 0 {
 			if _, werr := callCtx.Stdout.Write(buf[:nRead]); werr != nil {
 				return werr
@@ -508,6 +533,9 @@ func skipBytes(ctx context.Context, callCtx *builtins.CallContext, r io.Reader, 
 // A leading '+' activates offset mode (output starting from position N,
 // 1-based). Without '+', the value is the number of trailing lines/bytes
 // to output. GNU tail silently treats negative counts as their absolute value.
+//
+// GNU multiplier suffixes are accepted after the digits (e.g. "1K" = 1024,
+// "2MB" = 2_000_000). See countMultiplier for the full list.
 func parseCount(s string) (countMode, bool) {
 	if s == "" {
 		return countMode{}, false
@@ -516,17 +544,99 @@ func parseCount(s string) (countMode, bool) {
 	parseStr := s
 	if isOffset {
 		parseStr = s[1:]
-		// After stripping '+', the remainder must be a plain non-negative
-		// integer. A leading '+' or '-' (e.g. "+-3", "++5") is invalid;
-		// GNU tail exits with "invalid number" for these forms.
+		// After stripping '+', the remainder must start with a digit (not
+		// another '+' or '-'). GNU tail exits with "invalid number" for
+		// forms like "+-3" or "++5".
 		if len(parseStr) == 0 || parseStr[0] == '+' || parseStr[0] == '-' {
 			return countMode{}, false
 		}
 	}
-	n, err := strconv.ParseInt(parseStr, 10, 64)
-	if err != nil {
-		return countMode{}, false
+
+	// Split numeric digits from an optional GNU multiplier suffix.
+	// Allow an optional leading '-' for negative counts.
+	numEnd := 0
+	if numEnd < len(parseStr) && parseStr[numEnd] == '-' {
+		numEnd++
 	}
+	for numEnd < len(parseStr) && parseStr[numEnd] >= '0' && parseStr[numEnd] <= '9' {
+		numEnd++
+	}
+	suffix := parseStr[numEnd:]
+	// GNU tail accepts bare multiplier suffixes without a leading digit:
+	// "K" → 1K, "-K" → 1K (abs of -1K). "+K" is still invalid because
+	// offset mode requires an explicit digit. A bare "-" with no suffix
+	// is also invalid.
+	var n int64
+	if numEnd == 0 {
+		if suffix == "" || isOffset {
+			return countMode{}, false // no digits, or bare suffix in offset mode
+		}
+		n = 1 // implicit leading 1 for suffix-only forms like "K", "m"
+	} else if numEnd == 1 && parseStr[0] == '-' {
+		if suffix == "" {
+			return countMode{}, false // bare "-" with no suffix
+		}
+		n = -1 // implicit -1 for forms like "-K"
+	} else {
+		var err error
+		n, err = strconv.ParseInt(parseStr[:numEnd], 10, 64)
+		if err != nil {
+			if !errors.Is(err, strconv.ErrRange) {
+				return countMode{}, false
+			}
+			// Numeric part overflows int64. GNU tail clamping applies only
+			// when there is no suffix; a suffix combined with an overflowed
+			// numeric part is rejected ("Value too large").
+			if suffix != "" {
+				return countMode{}, false
+			}
+			// No suffix: accept if the absolute value fits in uint64, reject
+			// otherwise. Strip a leading '-' so large negative values like
+			// -9223372036854775809 are clamped rather than rejected — GNU tail
+			// accepts them (treats them as a very large count).
+			absStr := parseStr[:numEnd]
+			if len(absStr) > 0 && absStr[0] == '-' {
+				absStr = absStr[1:]
+			}
+			if _, uerr := strconv.ParseUint(absStr, 10, 64); uerr == nil {
+				n = MaxCount
+			} else {
+				return countMode{}, false
+			}
+		}
+	}
+
+	// Apply GNU multiplier suffix if present.
+	if suffix != "" {
+		mult, ok := countMultiplier(suffix)
+		if !ok {
+			return countMode{}, false
+		}
+		// Take absolute value before multiplying so clamping is symmetric.
+		// Guard against MinInt64: its negation overflows back to itself, so
+		// reject it as an invalid (too-large) count, matching GNU tail's
+		// "Value too large for defined data type" error.
+		if n < 0 {
+			if n == math.MinInt64 {
+				return countMode{}, false
+			}
+			n = -n
+		}
+		if mult == 0 {
+			// Z/Y overflow sentinel: the multiplier itself overflows int64.
+			// GNU tail rejects any non-zero count with these suffixes.
+			if n != 0 {
+				return countMode{}, false
+			}
+			return countMode{n: 0, offset: isOffset}, true
+		}
+		if n > MaxCount/mult {
+			n = MaxCount
+		} else {
+			n *= mult
+		}
+	}
+
 	// GNU tail silently treats negative counts as their absolute value.
 	// Guard against MinInt64 overflow: -(-9223372036854775808) overflows back
 	// to itself. Clamp to MaxCount (like any other out-of-range value) so that
@@ -544,14 +654,82 @@ func parseCount(s string) (countMode, bool) {
 	return countMode{n: n, offset: isOffset}, true
 }
 
+// countMultiplier returns the byte multiplier for a GNU tail suffix and
+// whether the suffix is recognised.
+//
+// A return value of (0, true) is an overflow sentinel for Z/Y suffixes whose
+// multiplier cannot be represented as int64. The caller must handle this case
+// specially (0*N=0 is valid; N>0 with these suffixes is rejected by GNU tail).
+//
+// Suffixes match those accepted by GNU coreutils tail(1):
+//
+//	b        512
+//	kB / KB  1 000
+//	k / K / KiB  1 024   (k is an undocumented GNU alias for K)
+//	MB       1 000²
+//	m / M / MiB  1 024²  (m is an undocumented GNU alias for M)
+//	GB       1 000³
+//	G / GiB  1 024³
+//	TB       1 000⁴   (always clamped to MaxCount in practice)
+//	T / TiB  1 024⁴   (always clamped to MaxCount in practice)
+//	PB       1 000⁵   (always clamped to MaxCount in practice)
+//	P / PiB  1 024⁵   (always clamped to MaxCount in practice)
+//	EB       1 000⁶   (always clamped to MaxCount in practice)
+//	E / EiB  1 024⁶   (always clamped to MaxCount in practice)
+//	ZB/Z/ZiB 1 000⁷ / 1 024⁷  (overflow int64; sentinel 0 returned)
+//	YB/Y/YiB 1 000⁸ / 1 024⁸  (overflow int64; sentinel 0 returned)
+func countMultiplier(s string) (int64, bool) {
+	switch s {
+	case "b":
+		return 512, true
+	case "kB", "KB":
+		return 1_000, true
+	case "k", "K", "KiB":
+		return 1_024, true
+	case "MB":
+		return 1_000_000, true
+	case "m", "M", "MiB":
+		return 1_048_576, true
+	case "GB":
+		return 1_000_000_000, true
+	case "G", "GiB":
+		return 1_073_741_824, true
+	case "TB":
+		return 1_000_000_000_000, true
+	case "T", "TiB":
+		return 1_099_511_627_776, true
+	case "PB":
+		return 1_000_000_000_000_000, true
+	case "P", "PiB":
+		return 1_125_899_906_842_624, true // 1024^5
+	case "EB":
+		return 1_000_000_000_000_000_000, true
+	case "E", "EiB":
+		return 1_152_921_504_606_846_976, true // 1024^6
+	case "ZB", "Z", "ZiB", "YB", "Y", "YiB":
+		// 1000^7 and 1024^7 and above overflow int64.
+		// Return sentinel 0; caller rejects n>0 (matching GNU tail's
+		// "Value too large" error) and accepts n=0 as a no-op.
+		return 0, true
+	default:
+		return 0, false
+	}
+}
+
 // modeFlag is a pflag.Value implementation for -n/--lines and -c/--bytes.
 // Two modeFlag values share a *seq counter; each call to Set increments the
 // counter and records the new value in pos. After pflag.Parse, comparing pos
 // fields reveals which flag appeared last on the command line.
+//
+// offsetSeen becomes true if any Set call received a '+'-prefixed value and
+// stays true for the lifetime of the flag. GNU tail uses "sticky offset":
+// once any -n or -c argument uses '+', offset mode is retained even if a
+// later plain argument overwrites the count value.
 type modeFlag struct {
-	val string
-	seq *int
-	pos int
+	val        string
+	seq        *int
+	pos        int
+	offsetSeen bool
 }
 
 func newModeFlag(seq *int, defaultVal string) *modeFlag {
@@ -564,6 +742,9 @@ func (f *modeFlag) Set(s string) error {
 		return errors.New("invalid count")
 	}
 	f.val = s
+	if len(s) > 0 && s[0] == '+' {
+		f.offsetSeen = true
+	}
 	*f.seq++
 	f.pos = *f.seq
 	return nil
@@ -579,10 +760,23 @@ type headerFlag struct {
 	pos int
 }
 
+// headerFlagSentinel is the NoOptDefVal used for --quiet/--silent/--verbose.
+// pflag passes this value to Set when the flag appears without "=…" on the
+// command line. Any other value means the user supplied an explicit argument
+// (e.g. --quiet=false or --quiet=true), which GNU tail does not allow.
+const headerFlagSentinel = "\x01"
+
 func newHeaderFlag(seq *int) *headerFlag { return &headerFlag{seq: seq} }
 
-func (f *headerFlag) String() string   { return "false" }
-func (f *headerFlag) Set(string) error { *f.seq++; f.pos = *f.seq; return nil }
+func (f *headerFlag) String() string { return "false" }
+func (f *headerFlag) Set(s string) error {
+	if s != headerFlagSentinel {
+		return errors.New("does not take a value")
+	}
+	*f.seq++
+	f.pos = *f.seq
+	return nil
+}
 func (f *headerFlag) Type() string     { return "bool" }
 func (f *headerFlag) IsBoolFlag() bool { return true }
 
