@@ -98,9 +98,11 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			pidFlagChanged = true
 		}
 
+		pidMode := false
 		switch {
 		case pidFlagChanged || effectivePIDList != "":
 			// -p: select specific PIDs.
+			pidMode = true
 			pids, parseErr := parsePIDs(effectivePIDList)
 			if parseErr != nil {
 				callCtx.Errf("ps: %v\n", parseErr)
@@ -123,6 +125,10 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 		}
 
 		printProcs(callCtx, procs, full)
+		// GNU ps exits 1 when -p selects no processes (liveness check idiom).
+		if pidMode && len(procs) == 0 {
+			return builtins.Result{Code: 1}
+		}
 		return builtins.Result{}
 	}
 }

@@ -172,6 +172,15 @@ func TestPSEmptyStringPIDExits1(t *testing.T) {
 	}
 }
 
+// TestPSMissingPIDExits1 ensures ps -p with a non-existent PID exits with code 1.
+func TestPSMissingPIDExits1(t *testing.T) {
+	// PID 2147483647 (max int32) is extremely unlikely to exist.
+	_, _, code := runScript(t, "ps -p 2147483647")
+	if code != 1 {
+		t.Errorf("expected exit code 1 for non-existent PID, got %d", code)
+	}
+}
+
 // TestPSNonNumericPositionalArgExits1 ensures non-numeric positional args are rejected.
 func TestPSNonNumericPositionalArgExits1(t *testing.T) {
 	_, stderr, code := runScript(t, "ps foo")
