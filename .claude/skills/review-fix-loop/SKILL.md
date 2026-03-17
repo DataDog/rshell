@@ -397,3 +397,21 @@ gh pr comment <pr-number> --body "<the summary markdown above>"
 - **Stop early on APPROVE + CI green + no unresolved threads** — don't waste iterations if the PR is already clean.
 - **Respect the iteration limit** — hard stop at 30 to prevent infinite loops. If issues persist after 30 iterations, report what's left for the user to handle.
 - **Use gate checks** — always call TaskList and verify prerequisites before starting a step. This prevents out-of-order execution.
+
+## Fully autonomous execution — NEVER ask for user input
+
+This skill MUST run **completely autonomously** from start to finish. **Never** use `AskUserQuestion`, `EnterPlanMode`, or any other mechanism that pauses execution to wait for user input or confirmation.
+
+### Decision-making rules
+
+- **Make all decisions yourself.** If multiple approaches are valid, pick the most reasonable one and proceed. Do not ask the user to choose.
+- **If a command fails, try alternative approaches.** Do not stop and ask the user what to do. Examples:
+  - If `gh pr checks` returns an error, try `gh api repos/{owner}/{repo}/commits/{sha}/check-runs` instead.
+  - If `gh run view --log-failed` is empty or errors, try `gh run view --log --job <job-id>` or fetch the log via the API.
+  - If `git pull --rebase` fails with conflicts, try `git rebase --abort` then `git pull --rebase origin <branch>` again, or `git merge origin/<branch>`.
+  - If a GraphQL query fails, try the equivalent REST API call, or simplify the query.
+  - If `docker run` is unavailable, skip bash comparison checks and rely on existing test results.
+- **If a sub-skill fails or produces unexpected output**, log the issue and continue to the next step. Do not block the entire loop on a single failure.
+- **If a `gh api` call returns a non-zero exit code**, check the error message. If it's a rate limit, wait 60 seconds and retry once. If it's a permissions error or 404, log it and skip that check. If the JSON is malformed, try a simpler `--jq` filter or no filter at all.
+- **If pushing fails** (e.g., protected branch, force-push required), try `git push --force-with-lease`. If that also fails, log the error and continue — the user can resolve push issues later.
+- **Never block on external review responses.** If the Codex bot hasn't responded after the polling window, log it and move on. Do not extend the wait or ask the user.
