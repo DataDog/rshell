@@ -10,7 +10,7 @@
       }
     },
     "network": {
-      "allowedDomains": ["*.datadoghq.com", "*.github.com", "github.com"]
+      "allowedDomains": ["*.datadoghq.com", "*.github.com"]
     }
   },
   "permissions": {
