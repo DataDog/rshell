@@ -63,7 +63,7 @@ func FuzzPingFlags(f *testing.F) {
 	f.Fuzz(func(t *testing.T, flag, value string) {
 		// Skip inputs that contain shell metacharacters that would cause
 		// parse errors or inject unrelated commands.
-		if strings.ContainsAny(flag+value, "`$;&|><\n\r") {
+		if strings.ContainsAny(flag+value, "`$;&|><\n\r\"") {
 			return
 		}
 		if len(flag)+len(value) > 256 {

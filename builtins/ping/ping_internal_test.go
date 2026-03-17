@@ -96,7 +96,7 @@ func TestClampDurationAtMax(t *testing.T) {
 // ============================================================================
 
 func TestDurToMS(t *testing.T) {
-	assert.InDelta(t, 1.0, durToMS(1e6), 1e-9)    // 1ms
+	assert.InDelta(t, 1.0, durToMS(1e6), 1e-9)        // 1ms
 	assert.InDelta(t, 17.045, durToMS(17045e3), 1e-6) // 17.045ms
 	assert.Equal(t, 0.0, durToMS(0))
 }
