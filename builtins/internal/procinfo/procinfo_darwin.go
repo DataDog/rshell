@@ -190,25 +190,59 @@ func resolveTTY(tdev int32) string {
 	return fmt.Sprintf("%d", tdev)
 }
 
-// readCmdlineForPID reads the full command line for a process using kern.procargs2.
+// readCmdlineForPID reads the argument list for a process using kern.procargs2,
+// returning only the argv entries to avoid leaking environment variable values.
+//
+// Buffer format: [4-byte argc (little-endian int32)][exec_path\0][padding\0...][argv[0]\0...argv[argc-1]\0][env\0...]
 func readCmdlineForPID(pid int) string {
-	// kern.procargs2: [4-byte argc][exec_path\0][args\0...]
 	buf, err := unix.SysctlRaw("kern.procargs2", pid)
 	if err != nil || len(buf) < 4 {
 		return ""
 	}
-	// Skip argc (4 bytes).
+
+	// First 4 bytes: argc as little-endian int32.
+	argc := int(int32(buf[0]) | int32(buf[1])<<8 | int32(buf[2])<<16 | int32(buf[3])<<24)
+	if argc <= 0 {
+		return ""
+	}
 	rest := buf[4:]
-	// The rest is exec_path + '\0' + remaining args.
-	// Replace null bytes with spaces.
-	for i, b := range rest {
+
+	// Skip exec_path (first null-terminated string) and any padding nulls.
+	i := 0
+	for i < len(rest) && rest[i] != 0 {
+		i++
+	}
+	for i < len(rest) && rest[i] == 0 {
+		i++
+	}
+
+	// Collect exactly argc null-separated argv entries; stop before env vars.
+	argStart := i
+	argsConsumed := 0
+	argEnd := i
+	for i < len(rest) && argsConsumed < argc {
+		if rest[i] == 0 {
+			argsConsumed++
+			argEnd = i
+		}
+		i++
+	}
+
+	if argEnd <= argStart {
+		return ""
+	}
+
+	// Copy argv bytes and replace null separators with spaces.
+	cmdBytes := make([]byte, argEnd-argStart)
+	copy(cmdBytes, rest[argStart:argEnd])
+	for j, b := range cmdBytes {
 		if b == 0 {
-			rest[i] = ' '
+			cmdBytes[j] = ' '
 		}
 	}
-	cmd := strings.TrimRight(string(rest), " ")
+	cmd := strings.TrimSpace(string(cmdBytes))
 	if len(cmd) > MaxCmdLen {
 		cmd = cmd[:MaxCmdLen]
 	}
-	return strings.TrimSpace(cmd)
+	return cmd
 }

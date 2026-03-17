@@ -24,7 +24,7 @@ func listAll(ctx context.Context) ([]ProcInfo, error) {
 
 	var procs []ProcInfo
 	var entry windows.ProcessEntry32
-	// Process32First sets entry.Size internally — no unsafe.Sizeof needed.
+	entry.Size = sizeofProcessEntry32
 	if err := windows.Process32First(snapshot, &entry); err != nil {
 		return nil, fmt.Errorf("ps: Process32First: %w", err)
 	}
