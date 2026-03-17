@@ -6,7 +6,6 @@
 package allowedsymbols
 
 import (
-	"strings"
 	"testing"
 )
 
@@ -28,7 +27,8 @@ func builtinsInternalCheckConfig() allowedSymbolsConfig {
 		},
 		ExemptImport: func(importPath string) bool {
 			return importPath == "github.com/DataDog/rshell/builtins" ||
-				strings.HasPrefix(importPath, "golang.org/x/sys/")
+				importPath == "golang.org/x/sys/unix" ||
+				importPath == "golang.org/x/sys/windows"
 		},
 		ListName: "builtinInternalAllowedSymbols",
 		MinFiles: 1,
