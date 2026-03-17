@@ -2,6 +2,7 @@ description: "Empty pattern in s/// with no previous regex produces an error."
 input:
   script: |+
     echo test | sed 's//X/'
+# skip: rshell builtin error/output format differs from GNU coreutils
 skip_assert_against_bash: true
 expect:
   stdout: ""

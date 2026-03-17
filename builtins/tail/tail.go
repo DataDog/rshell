@@ -81,7 +81,7 @@ import (
 )
 
 // Cmd is the tail builtin command descriptor.
-var Cmd = builtins.Command{Name: "tail", MakeFlags: registerFlags}
+var Cmd = builtins.Command{Name: "tail", Description: "output the last part of files", MakeFlags: registerFlags}
 
 // MaxCount is the maximum accepted line or byte count. Values above this
 // are clamped to prevent huge theoretical allocations.
@@ -528,12 +528,14 @@ func parseCount(s string) (countMode, bool) {
 		return countMode{}, false
 	}
 	// GNU tail silently treats negative counts as their absolute value.
-	// Guard against MinInt64: -(-9223372036854775808) overflows back to itself.
+	// Guard against MinInt64 overflow: -(-9223372036854775808) overflows back
+	// to itself. Clamp to MaxCount (like any other out-of-range value) so that
+	// behaviour matches GNU tail, which accepts this value and prints the file.
 	if n < 0 {
 		n = -n
 		if n < 0 {
-			// Negation overflowed (was MinInt64); treat as invalid.
-			return countMode{}, false
+			// Negation overflowed (was MinInt64); clamp to MaxCount.
+			n = MaxCount
 		}
 	}
 	if n > MaxCount {

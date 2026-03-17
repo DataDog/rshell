@@ -1,4 +1,5 @@
 description: strings -t with an invalid radix character prints an error and exits 1.
+# skip: rshell builtin error/output format differs from GNU coreutils
 skip_assert_against_bash: true  # GNU strings uses different error/usage format for invalid flags
 setup:
   files:

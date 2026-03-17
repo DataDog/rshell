@@ -1,4 +1,5 @@
 description: "Piping cat output from a file in allowed path works"
+# skip: allowed_paths sandbox restriction is an rshell-specific feature not present in bash
 skip_assert_against_bash: true
 setup:
   files:

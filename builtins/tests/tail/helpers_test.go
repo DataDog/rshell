@@ -14,6 +14,7 @@ import (
 
 	"mvdan.cc/sh/v3/syntax"
 
+	"github.com/DataDog/rshell/builtins/testutil"
 	"github.com/DataDog/rshell/interp"
 )
 
@@ -25,7 +26,7 @@ func runScriptCtx(ctx context.Context, t *testing.T, script, dir string, opts ..
 		t.Fatal(err)
 	}
 	var outBuf, errBuf bytes.Buffer
-	allOpts := append([]interp.RunnerOption{interp.StdIO(nil, &outBuf, &errBuf)}, opts...)
+	allOpts := append([]interp.RunnerOption{interp.StdIO(nil, &outBuf, &errBuf), interp.AllowAllCommands()}, opts...)
 	runner, err := interp.New(allOpts...)
 	if err != nil {
 		t.Fatal(err)
@@ -50,4 +51,11 @@ func runScriptCtx(ctx context.Context, t *testing.T, script, dir string, opts ..
 func cmdRunCtx(ctx context.Context, t *testing.T, script, dir string) (string, string, int) {
 	t.Helper()
 	return runScriptCtx(ctx, t, script, dir, interp.AllowedPaths([]string{dir}))
+}
+
+// fuzzRunCtx delegates to testutil.FuzzRunScriptCtx which runs the script
+// with AllowedPaths set to [dir] for proper file access in fuzz iterations.
+func fuzzRunCtx(ctx context.Context, t *testing.T, script, dir string) (string, string, int) {
+	t.Helper()
+	return testutil.FuzzRunScriptCtx(ctx, t, script, dir)
 }

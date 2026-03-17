@@ -32,6 +32,7 @@ func main() {
 
 	runner, _ := interp.New(
 		interp.StdIO(nil, os.Stdout, os.Stderr),
+		interp.AllowedCommands([]string{"rshell:echo"}),
 	)
 	defer runner.Close()
 
@@ -45,10 +46,13 @@ Every access path is default-deny:
 
 | Resource             | Default                             | Opt-in                                       |
 |----------------------|-------------------------------------|----------------------------------------------|
+| Command execution    | All commands blocked (exit code 127)| `AllowedCommands` with namespaced command list (e.g. `rshell:cat`), or `AllowAllCommands` |
 | External commands    | Blocked (exit code 127)             | Provide an `ExecHandler`                     |
 | Filesystem access    | Blocked                             | Configure `AllowedPaths` with directory list |
 | Environment variables| Empty (no host env inherited)       | Pass variables via the `Env` option          |
 | Output redirections  | Only `/dev/null` allowed (exit code 2 for other targets) | `>/dev/null`, `2>/dev/null`, `&>/dev/null`, `2>&1` |
+
+**AllowedCommands** restricts which commands (builtins or external) the interpreter may execute. Commands must be specified with the `rshell:` namespace prefix (e.g. `rshell:cat`, `rshell:echo`). If not set, no commands are allowed. Use `AllowAllCommands` to permit all commands (useful for testing).
 
 **AllowedPaths** restricts all file operations to specified directories using Go's `os.Root` API (`openat` syscalls), making it immune to symlink traversal, TOCTOU races, and `..` escape attacks.
 

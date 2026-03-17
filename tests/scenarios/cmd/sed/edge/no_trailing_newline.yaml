@@ -7,6 +7,7 @@ setup:
   files:
     - path: input.txt
       content: "no newline at end"
+# skip: rshell builtin error/output format differs from GNU coreutils
 skip_assert_against_bash: true
 input:
   allowed_paths: ["$DIR"]

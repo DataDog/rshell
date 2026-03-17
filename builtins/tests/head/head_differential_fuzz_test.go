@@ -15,8 +15,11 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/DataDog/rshell/builtins/testutil"
 )
 
 // runGNUInDir runs a GNU command under LC_ALL=C.UTF-8 with its working
@@ -69,6 +72,9 @@ func FuzzHeadDifferentialLines(f *testing.F) {
 	f.Add([]byte("single line\n"), int64(1))
 	f.Add([]byte("a\nb\nc\nd\ne\n"), int64(3))
 
+	baseDir := f.TempDir()
+	var counter atomic.Int64
+
 	f.Fuzz(func(t *testing.T, input []byte, n int64) {
 		if len(input) > 64*1024 {
 			return
@@ -77,17 +83,25 @@ func FuzzHeadDifferentialLines(f *testing.F) {
 			return
 		}
 
-		dir := t.TempDir()
+		dir, cleanup := testutil.FuzzIterDir(t, baseDir, &counter)
+		defer cleanup()
+
 		if err := os.WriteFile(filepath.Join(dir, "input.txt"), input, 0644); err != nil {
 			t.Fatal(err)
 		}
 
 		nStr := fmt.Sprintf("%d", n)
 
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		defer cancel()
 
 		rshellOut, rshellErr, rshellCode := cmdRunCtx(ctx, t, fmt.Sprintf("head -n %s input.txt", nStr), dir)
+
+		// If the fuzz engine cancelled us (fuzztime expired), bail out
+		// without comparing — partial output would cause false failures.
+		if t.Context().Err() != nil {
+			return
+		}
 
 		if isSandboxError(rshellErr) {
 			t.Skip("skipping: sandbox restriction")
@@ -121,6 +135,9 @@ func FuzzHeadDifferentialBytes(f *testing.F) {
 	f.Add([]byte("hello world\n"), int64(5))
 	f.Add([]byte("abcdef\n"), int64(6))
 
+	baseDir := f.TempDir()
+	var counter atomic.Int64
+
 	f.Fuzz(func(t *testing.T, input []byte, n int64) {
 		if len(input) > 64*1024 {
 			return
@@ -129,17 +146,25 @@ func FuzzHeadDifferentialBytes(f *testing.F) {
 			return
 		}
 
-		dir := t.TempDir()
+		dir, cleanup := testutil.FuzzIterDir(t, baseDir, &counter)
+		defer cleanup()
+
 		if err := os.WriteFile(filepath.Join(dir, "input.txt"), input, 0644); err != nil {
 			t.Fatal(err)
 		}
 
 		nStr := fmt.Sprintf("%d", n)
 
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		defer cancel()
 
 		rshellOut, rshellErr, rshellCode := cmdRunCtx(ctx, t, fmt.Sprintf("head -c %s input.txt", nStr), dir)
+
+		// If the fuzz engine cancelled us (fuzztime expired), bail out
+		// without comparing — partial output would cause false failures.
+		if t.Context().Err() != nil {
+			return
+		}
 
 		if isSandboxError(rshellErr) {
 			t.Skip("skipping: sandbox restriction")

@@ -1,4 +1,5 @@
 description: ls with multiple directory args silently ignores --offset.
+# skip: pagination flags are an rshell-specific extension not present in GNU coreutils
 skip_assert_against_bash: true
 setup:
   files:

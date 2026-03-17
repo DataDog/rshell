@@ -8,6 +8,7 @@ package allowedpaths
 import (
 	"errors"
 	"io/fs"
+	"os"
 	"syscall"
 )
 
@@ -19,6 +20,28 @@ func IsErrIsDirectory(err error) bool {
 		return errno == syscall.Errno(1) // ERROR_INVALID_FUNCTION
 	}
 	return false
+}
+
+// FileIdentity extracts canonical file identity on Windows using
+// GetFileInformationByHandle (volume serial + file index).
+// The path and sandbox are needed to open the file through the sandbox.
+func FileIdentity(absPath string, _ fs.FileInfo, sandbox *Sandbox) (uint64, uint64, bool) {
+	root, relPath, ok := sandbox.resolve(absPath)
+	if !ok {
+		return 0, 0, false
+	}
+	f, err := root.OpenFile(relPath, os.O_RDONLY, 0)
+	if err != nil {
+		return 0, 0, false
+	}
+	defer f.Close()
+
+	h := syscall.Handle(f.Fd())
+	var d syscall.ByHandleFileInformation
+	if err := syscall.GetFileInformationByHandle(h, &d); err != nil {
+		return 0, 0, false
+	}
+	return uint64(d.VolumeSerialNumber), uint64(d.FileIndexHigh)<<32 | uint64(d.FileIndexLow), true
 }
 
 // effectiveHasPerm checks whether the current process has the requested

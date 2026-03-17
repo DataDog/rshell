@@ -28,11 +28,13 @@ var interpAllowedSymbols = []string{
 	"io.Closer",            // interface type for closing; no side effects.
 	"io.Copy",              // copies from Reader to Writer; no filesystem access, delegates to Read/Write.
 	"io.Discard",           // write sink that discards all data; no side effects.
+	"io.LimitReader",       // wraps a Reader with a byte cap; pure function, no I/O.
 	"io.Reader",            // interface type for reading; no side effects.
 	"io.ReadWriteCloser",   // combined interface type; no side effects.
 	"io.Writer",            // interface type for writing; no side effects.
 	"io/fs.DirEntry",       // interface type for directory entries; no side effects.
 	"io/fs.FileInfo",       // interface type for file metadata; no side effects.
+	"io/fs.ReadDirFile",    // read-only directory handle interface; no write capability.
 	"maps.Insert",          // inserts all key-value pairs from one map into another; pure function.
 	"os.DirEntry",          // type alias for fs.DirEntry; no side effects.
 	"os.File",              // file handle type; interpreter needs file I/O for redirects and pipes.
@@ -41,10 +43,13 @@ var interpAllowedSymbols = []string{
 	"os.O_RDONLY",          // read-only file flag constant; pure constant.
 	"os.PathError",         // error type wrapping path and operation; pure type.
 	"os.Pipe",              // creates an OS pipe pair; needed for shell pipelines.
+	"path/filepath.IsAbs",  // checks if path is absolute; pure function, no I/O.
+	"path/filepath.Join",   // joins path elements; pure function, no I/O.
 	"runtime.GOOS",         // current OS name constant; pure constant, no I/O.
 	"strconv.Itoa",         // int-to-string conversion; pure function, no I/O.
 	"strings.Builder",      // efficient string concatenation; pure in-memory buffer, no I/O.
 	"strings.ContainsRune", // checks if a rune is in a string; pure function, no I/O.
+	"strings.Index",        // finds substring index; pure function, no I/O.
 	"strings.HasPrefix",    // pure function for prefix matching; no I/O.
 	"strings.HasSuffix",    // pure function for suffix matching; no I/O.
 	"strings.Split",        // splits a string by separator; pure function, no I/O.

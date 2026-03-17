@@ -9,4 +9,5 @@ expect:
   stdout: ""
   stderr_contains: ["sort:"]
   exit_code: 1
+# skip: rshell builtin error/output format differs from GNU coreutils
 skip_assert_against_bash: true  # error message format differs

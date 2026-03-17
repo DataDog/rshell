@@ -11,6 +11,7 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"sort"
 	"time"
 
 	"github.com/spf13/pflag"
@@ -33,8 +34,9 @@ type HandlerFunc func(ctx context.Context, callCtx *CallContext, args []string) 
 // registers any flags on the provided FlagSet and returns the bound handler.
 // Commands that accept no flags may ignore fs via NoFlags.
 type Command struct {
-	Name      string
-	MakeFlags func(*FlagSet) HandlerFunc
+	Name        string
+	Description string
+	MakeFlags   func(*FlagSet) HandlerFunc
 }
 
 // NoFlags wraps a HandlerFunc in the MakeFlags format for commands that
@@ -54,6 +56,7 @@ func NoFlags(fn HandlerFunc) func(*FlagSet) HandlerFunc {
 func (c Command) Register() {
 	name := c.Name
 	factory := c.MakeFlags
+	metaRegistry[name] = CommandMeta{Name: name, Description: c.Description}
 	addToRegistry(name, func(ctx context.Context, callCtx *CallContext, args []string) Result {
 		fs := pflag.NewFlagSet(name, pflag.ContinueOnError)
 		fs.SetOutput(io.Discard) // handler formats errors itself
@@ -87,8 +90,17 @@ type CallContext struct {
 	OpenFile func(ctx context.Context, path string, flags int, mode os.FileMode) (io.ReadWriteCloser, error)
 
 	// ReadDir reads a directory within the shell's path restrictions.
-	// Entries are returned sorted by name.
+	// Entries are returned sorted by name. Used by builtins like ls
+	// that need deterministic sorted output.
 	ReadDir func(ctx context.Context, path string) ([]fs.DirEntry, error)
+
+	// OpenDir opens a directory within the shell's path restrictions for
+	// incremental reading via ReadDir(n). Caller must close the handle.
+	OpenDir func(ctx context.Context, path string) (fs.ReadDirFile, error)
+
+	// IsDirEmpty checks whether a directory is empty by reading at most
+	// one entry. More efficient than reading all entries.
+	IsDirEmpty func(ctx context.Context, path string) (bool, error)
 
 	// ReadDirLimited reads directory entries, skipping the first offset entries
 	// and returning up to maxRead entries sorted by name within the read window.
@@ -113,6 +125,17 @@ type CallContext struct {
 	// calling time.Now() directly, so the time source is consistent and
 	// testable.
 	Now func() time.Time
+
+	// FileIdentity extracts canonical file identity from FileInfo.
+	// On Unix: dev+inode from Stat_t. On Windows: volume serial + file index
+	// via GetFileInformationByHandle. The path parameter is needed on Windows
+	// where FileInfo.Sys() lacks identity fields; Unix ignores it.
+	FileIdentity func(path string, info fs.FileInfo) (FileID, bool)
+
+	// CommandAllowed reports whether a command name is permitted under the
+	// current shell policy. Used by the help builtin to list only executable
+	// commands.
+	CommandAllowed func(name string) bool
 }
 
 // Out writes a string to stdout.
@@ -128,6 +151,14 @@ func (c *CallContext) Outf(format string, a ...any) {
 // Errf writes a formatted string to stderr.
 func (c *CallContext) Errf(format string, a ...any) {
 	fmt.Fprintf(c.Stderr, format, a...)
+}
+
+// FileID is a comparable file identity for cycle detection.
+// On Unix: device + inode. On Windows: volume serial + file index.
+// Used as map key for visited-set tracking.
+type FileID struct {
+	Dev uint64
+	Ino uint64
 }
 
 // Result captures the outcome of executing a builtin command.
@@ -147,6 +178,14 @@ type Result struct {
 
 var registry = map[string]HandlerFunc{}
 
+// CommandMeta holds metadata about a registered builtin command.
+type CommandMeta struct {
+	Name        string
+	Description string
+}
+
+var metaRegistry = map[string]CommandMeta{}
+
 func addToRegistry(name string, fn HandlerFunc) {
 	if _, exists := registry[name]; exists {
 		panic("builtin already registered: " + name)
@@ -158,4 +197,20 @@ func addToRegistry(name string, fn HandlerFunc) {
 func Lookup(name string) (HandlerFunc, bool) {
 	fn, ok := registry[name]
 	return fn, ok
+}
+
+// Names returns a sorted list of all registered builtin command names.
+func Names() []string {
+	names := make([]string, 0, len(metaRegistry))
+	for name := range metaRegistry {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
+}
+
+// Meta returns the metadata for a registered builtin command.
+func Meta(name string) (CommandMeta, bool) {
+	m, ok := metaRegistry[name]
+	return m, ok
 }

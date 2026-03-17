@@ -24,4 +24,5 @@ expect:
     bracket noexist: 1
   stderr: ""
   exit_code: 0
+# skip: rshell builtin error/output format differs from GNU coreutils
 skip_assert_against_bash: true  # uses allowed_paths which the bash harness does not support

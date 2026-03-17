@@ -2,6 +2,7 @@ description: "Invalid backreference in s/// rejected at parse time even when add
 input:
   script: |+
     echo x | sed '/y/s/a/\1/'
+# skip: rshell builtin error/output format differs from GNU coreutils
 skip_assert_against_bash: true
 expect:
   stdout: ""

@@ -1,4 +1,5 @@
 description: wc exits 1 and prints error for empty filename argument.
+# skip: rshell builtin error/output format differs from GNU coreutils
 skip_assert_against_bash: true  # rshell returns a clearer error than GNU wc for empty filenames
 input:
   script: |+

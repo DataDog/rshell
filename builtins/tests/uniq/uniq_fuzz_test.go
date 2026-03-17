@@ -11,16 +11,18 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/DataDog/rshell/builtins/testutil"
-	"github.com/DataDog/rshell/interp"
 )
 
-func cmdRunCtx(ctx context.Context, t *testing.T, script, dir string) (string, string, int) {
+// fuzzRunCtx delegates to testutil.FuzzRunScriptCtx which runs the script
+// with AllowedPaths set to [dir] for proper file access in fuzz iterations.
+func fuzzRunCtx(ctx context.Context, t *testing.T, script, dir string) (string, string, int) {
 	t.Helper()
-	return testutil.RunScriptCtx(ctx, t, script, dir, interp.AllowedPaths([]string{dir}))
+	return testutil.FuzzRunScriptCtx(ctx, t, script, dir)
 }
 
 // FuzzUniq fuzzes uniq with arbitrary file content.
@@ -58,20 +60,25 @@ func FuzzUniq(f *testing.F) {
 	f.Add([]byte("a\r\na\r\n"))
 	f.Add([]byte("a\r\na\n")) // CRLF vs LF — how are these compared?
 
+	baseDir := f.TempDir()
+	var counter atomic.Int64
+
 	f.Fuzz(func(t *testing.T, input []byte) {
 		if len(input) > 1<<20 {
 			return
 		}
 
-		dir := t.TempDir()
+		dir, cleanup := testutil.FuzzIterDir(t, baseDir, &counter)
+		defer cleanup()
+
 		if err := os.WriteFile(filepath.Join(dir, "input.txt"), input, 0644); err != nil {
 			t.Fatal(err)
 		}
 
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		defer cancel()
 
-		_, _, code := cmdRunCtx(ctx, t, "uniq input.txt", dir)
+		_, _, code := fuzzRunCtx(ctx, t, "uniq input.txt", dir)
 		if code != 0 && code != 1 {
 			t.Errorf("uniq unexpected exit code %d", code)
 		}
@@ -92,20 +99,25 @@ func FuzzUniqCount(f *testing.F) {
 	// CRLF
 	f.Add([]byte("a\r\na\r\nb\r\n"))
 
+	baseDir := f.TempDir()
+	var counter atomic.Int64
+
 	f.Fuzz(func(t *testing.T, input []byte) {
 		if len(input) > 1<<20 {
 			return
 		}
 
-		dir := t.TempDir()
+		dir, cleanup := testutil.FuzzIterDir(t, baseDir, &counter)
+		defer cleanup()
+
 		if err := os.WriteFile(filepath.Join(dir, "input.txt"), input, 0644); err != nil {
 			t.Fatal(err)
 		}
 
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		defer cancel()
 
-		_, _, code := cmdRunCtx(ctx, t, "uniq -c input.txt", dir)
+		_, _, code := fuzzRunCtx(ctx, t, "uniq -c input.txt", dir)
 		if code != 0 && code != 1 {
 			t.Errorf("uniq -c unexpected exit code %d", code)
 		}
@@ -135,6 +147,9 @@ func FuzzUniqFlags(f *testing.F) {
 	// -d: only print duplicate lines
 	f.Add([]byte("a\na\nb\nc\nc\n"), true, false, false, false, int64(0), int64(0), int64(0))
 
+	baseDir := f.TempDir()
+	var counter atomic.Int64
+
 	f.Fuzz(func(t *testing.T, input []byte, repeated, ignoreCase, unique, nulDelim bool, skipFields, skipChars, checkChars int64) {
 		if len(input) > 1<<20 {
 			return
@@ -149,7 +164,9 @@ func FuzzUniqFlags(f *testing.F) {
 			return
 		}
 
-		dir := t.TempDir()
+		dir, cleanup := testutil.FuzzIterDir(t, baseDir, &counter)
+		defer cleanup()
+
 		if err := os.WriteFile(filepath.Join(dir, "input.txt"), input, 0644); err != nil {
 			t.Fatal(err)
 		}
@@ -177,10 +194,10 @@ func FuzzUniqFlags(f *testing.F) {
 			flags += fmt.Sprintf(" -w %d", checkChars)
 		}
 
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		defer cancel()
 
-		_, _, code := cmdRunCtx(ctx, t, "uniq"+flags+" input.txt", dir)
+		_, _, code := fuzzRunCtx(ctx, t, "uniq"+flags+" input.txt", dir)
 		if code != 0 && code != 1 {
 			t.Errorf("uniq%s unexpected exit code %d", flags, code)
 		}
@@ -195,20 +212,25 @@ func FuzzUniqStdin(f *testing.F) {
 	f.Add([]byte{0xfc, 0x80, 0x80, '\n', 0xfc, 0x80, 0x80, '\n'})
 	f.Add([]byte("line1\r\nline1\r\nline2\r\n"))
 
+	baseDir := f.TempDir()
+	var counter atomic.Int64
+
 	f.Fuzz(func(t *testing.T, input []byte) {
 		if len(input) > 1<<20 {
 			return
 		}
 
-		dir := t.TempDir()
+		dir, cleanup := testutil.FuzzIterDir(t, baseDir, &counter)
+		defer cleanup()
+
 		if err := os.WriteFile(filepath.Join(dir, "stdin.txt"), input, 0644); err != nil {
 			t.Fatal(err)
 		}
 
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		defer cancel()
 
-		_, _, code := cmdRunCtx(ctx, t, "uniq < stdin.txt", dir)
+		_, _, code := fuzzRunCtx(ctx, t, "uniq < stdin.txt", dir)
 		if code != 0 && code != 1 {
 			t.Errorf("uniq stdin unexpected exit code %d", code)
 		}

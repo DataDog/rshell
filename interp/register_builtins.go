@@ -16,8 +16,10 @@ import (
 	"github.com/DataDog/rshell/builtins/echo"
 	"github.com/DataDog/rshell/builtins/exit"
 	falsecmd "github.com/DataDog/rshell/builtins/false"
+	"github.com/DataDog/rshell/builtins/find"
 	"github.com/DataDog/rshell/builtins/grep"
 	"github.com/DataDog/rshell/builtins/head"
+	"github.com/DataDog/rshell/builtins/help"
 	"github.com/DataDog/rshell/builtins/ls"
 	printfcmd "github.com/DataDog/rshell/builtins/printf"
 	pscmd "github.com/DataDog/rshell/builtins/ps"
@@ -44,8 +46,10 @@ func registerBuiltins() {
 			echo.Cmd,
 			exit.Cmd,
 			falsecmd.Cmd,
+			find.Cmd,
 			grep.Cmd,
 			head.Cmd,
+			help.Cmd,
 			ls.Cmd,
 			sortcmd.Cmd,
 			printfcmd.Cmd,
