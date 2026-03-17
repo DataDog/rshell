@@ -46,10 +46,7 @@
 //	    List subdirectories recursively.
 //
 //	-l
-//	    Use a long listing format. Simplified: mode, size, date, name.
-//	    NOTE: This is a simplified format compared to GNU ls — no
-//	    owner/group/link-count columns because syscall and os/user
-//	    packages are banned by the import allowlist.
+//	    Use a long listing format: mode, hard links, owner, group, size, date, name.
 //
 //	-h, --human-readable
 //	    With -l, print sizes in human-readable format (e.g. 1K, 234M).
@@ -241,8 +238,16 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 		// List individual files first.
 		if len(files) > 0 {
 			sortEntries(files, opts, func(a pathArg) iofs.FileInfo { return a.info }, func(a pathArg) string { return a.name })
+			var cw colWidths
+			if opts.longFmt {
+				for i := range files {
+					f := &files[i]
+					f.owner, f.group, f.nlink = fileOwner(ctx, callCtx, f.name, f.info)
+				}
+				cw = computeColWidths(files, func(a pathArg) iofs.FileInfo { return a.info }, func(a pathArg) (string, string, string) { return a.owner, a.group, a.nlink }, opts)
+			}
 			for _, f := range files {
-				printEntry(callCtx, f.name, f.info, opts, now)
+				printEntry(callCtx, f.name, f.info, f.owner, f.group, f.nlink, opts, now, cw)
 			}
 		}
 
@@ -288,8 +293,11 @@ type options struct {
 }
 
 type pathArg struct {
-	name string
-	info iofs.FileInfo
+	name  string
+	info  iofs.FileInfo
+	owner string // cached by fileOwner (populated when longFmt)
+	group string
+	nlink string
 }
 
 func listDir(ctx context.Context, callCtx *builtins.CallContext, dir string, opts *options, depth int, now time.Time) error {
@@ -338,6 +346,9 @@ func listDir(ctx context.Context, callCtx *builtins.CallContext, dir string, opt
 		name      string
 		info      iofs.FileInfo
 		isSymlink bool
+		owner     string // cached by fileOwner (populated when longFmt)
+		group     string
+		nlink     string
 	}
 
 	failed := false
@@ -368,12 +379,17 @@ func listDir(ctx context.Context, callCtx *builtins.CallContext, dir string, opt
 	// Added before sorting so they participate in sort modifiers (-r, -S, -t),
 	// matching bash behavior. They do not consume offset/limit slots because
 	// pagination is handled at the read level.
-	// NOTE: ".." intentionally uses the same FileInfo as "." because the
-	// parent directory may be outside the sandbox and cannot be stat'd.
 	if opts.all {
 		if dotInfo, err := callCtx.StatFile(ctx, dir); err == nil {
 			infoEntries = append(infoEntries, entryInfo{name: ".", info: dotInfo})
-			infoEntries = append(infoEntries, entryInfo{name: "..", info: dotInfo})
+			// Try to stat the real parent so .. has correct metadata (size,
+			// blocks, etc.). Fall back to . info if the parent is outside
+			// the sandbox.
+			dotdotInfo := dotInfo
+			if parentInfo, err := callCtx.StatFile(ctx, joinPath(dir, "..")); err == nil {
+				dotdotInfo = parentInfo
+			}
+			infoEntries = append(infoEntries, entryInfo{name: "..", info: dotdotInfo})
 		}
 	}
 
@@ -385,11 +401,34 @@ func listDir(ctx context.Context, callCtx *builtins.CallContext, dir string, opt
 	// enforced by readDir's maxRead parameter.
 
 	// Print.
+	var cw colWidths
+	if opts.longFmt {
+		// Populate owner metadata once per entry (avoids double file opens on Windows).
+		for i := range infoEntries {
+			ei := &infoEntries[i]
+			ei.owner, ei.group, ei.nlink = fileOwner(ctx, callCtx, joinPath(dir, ei.name), ei.info)
+		}
+		cw = computeColWidths(infoEntries, func(e entryInfo) iofs.FileInfo { return e.info }, func(e entryInfo) (string, string, string) { return e.owner, e.group, e.nlink }, opts)
+		var totalBlocks int64
+		blocksAvailable := true
+		for _, ei := range infoEntries {
+			b, ok := fileBlocks(ctx, callCtx, joinPath(dir, ei.name), ei.info)
+			if !ok {
+				blocksAvailable = false
+				break
+			}
+			totalBlocks += b
+		}
+		if blocksAvailable {
+			// fileBlocks returns 512-byte units; display in 1024-byte blocks.
+			callCtx.Outf("total %d\n", totalBlocks/2)
+		}
+	}
 	for _, ei := range infoEntries {
 		if ctx.Err() != nil {
 			break
 		}
-		printEntry(callCtx, ei.name, ei.info, opts, now)
+		printEntry(callCtx, ei.name, ei.info, ei.owner, ei.group, ei.nlink, opts, now, cw)
 	}
 
 	// Only warn on implicit truncation (no explicit --offset/--limit).
@@ -443,7 +482,46 @@ func readDir(ctx context.Context, callCtx *builtins.CallContext, dir string, off
 	return entries, false, err
 }
 
-func printEntry(callCtx *builtins.CallContext, name string, info iofs.FileInfo, opts *options, now time.Time) {
+// colWidths holds the computed column widths for long-format output.
+type colWidths struct {
+	nlink int
+	owner int
+	group int
+	size  int
+}
+
+// computeColWidths computes the maximum column widths across a slice of entries
+// for long-format output alignment. Owner metadata must be pre-populated in
+// the entries; getOwnerInfo extracts the cached (owner, group, nlink) strings.
+func computeColWidths[T any](entries []T, getInfo func(T) iofs.FileInfo, getOwnerInfo func(T) (string, string, string), opts *options) colWidths {
+	var w colWidths
+	for _, e := range entries {
+		owner, group, nlink := getOwnerInfo(e)
+
+		if n := len(nlink); n > w.nlink {
+			w.nlink = n
+		}
+		if n := len(owner); n > w.owner {
+			w.owner = n
+		}
+		if n := len(group); n > w.group {
+			w.group = n
+		}
+
+		var sizeStr string
+		if opts.humanReadable {
+			sizeStr = humanSize(getInfo(e).Size())
+		} else {
+			sizeStr = fmt.Sprintf("%d", getInfo(e).Size())
+		}
+		if n := len(sizeStr); n > w.size {
+			w.size = n
+		}
+	}
+	return w
+}
+
+func printEntry(callCtx *builtins.CallContext, name string, info iofs.FileInfo, owner, group, nlink string, opts *options, now time.Time, cw colWidths) {
 	if opts.longFmt {
 		mode := formatMode(info)
 		size := info.Size()
@@ -457,7 +535,11 @@ func printEntry(callCtx *builtins.CallContext, name string, info iofs.FileInfo, 
 		}
 
 		timeStr := formatTime(modTime, now)
-		callCtx.Outf("%s %s %s %s%s\n", mode, sizeStr, timeStr, name, indicator(info, opts))
+		callCtx.Outf("%s %*s %-*s %-*s %*s %s %s%s\n",
+			mode, cw.nlink, nlink,
+			cw.owner, owner, cw.group, group,
+			cw.size, sizeStr, timeStr,
+			name, indicator(info, opts))
 	} else {
 		callCtx.Outf("%s%s\n", name, indicator(info, opts))
 	}
