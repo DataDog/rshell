@@ -161,22 +161,34 @@ func TestPSEmptyStringPIDExits1(t *testing.T) {
 	}
 }
 
-// TestPSPositionalArgExits1 ensures extra positional args are rejected.
-func TestPSPositionalArgExits1(t *testing.T) {
+// TestPSNonNumericPositionalArgExits1 ensures non-numeric positional args are rejected.
+func TestPSNonNumericPositionalArgExits1(t *testing.T) {
 	_, stderr, code := runScript(t, "ps foo")
 	if code != 1 {
-		t.Errorf("expected exit code 1 for positional arg, got %d", code)
+		t.Errorf("expected exit code 1 for non-numeric positional arg, got %d", code)
 	}
 	if !strings.Contains(stderr, "ps:") {
 		t.Errorf("expected error in stderr, got: %s", stderr)
 	}
 }
 
-// TestPSHelp ensures -h prints usage and exits 0.
-func TestPSHelp(t *testing.T) {
-	stdout, _, code := runScript(t, "ps -h")
+// TestPSBlankSeparatedPIDs ensures ps -p 123 456 works (blank-separated list).
+func TestPSBlankSeparatedPIDs(t *testing.T) {
+	selfPID := os.Getpid()
+	stdout, stderr, code := runScript(t, "ps -p 1 "+strconv.Itoa(selfPID))
 	if code != 0 {
-		t.Errorf("ps -h exited %d", code)
+		t.Fatalf("ps -p 1 %d exited %d; stderr: %s", selfPID, code, stderr)
+	}
+	if !strings.Contains(stdout, "PID") {
+		t.Errorf("expected PID column header, got:\n%s", stdout)
+	}
+}
+
+// TestPSHelp ensures --help prints usage and exits 0.
+func TestPSHelp(t *testing.T) {
+	stdout, _, code := runScript(t, "ps --help")
+	if code != 0 {
+		t.Errorf("ps --help exited %d", code)
 	}
 	if !strings.Contains(stdout, "Usage:") {
 		t.Errorf("expected Usage: in output, got:\n%s", stdout)
@@ -195,9 +207,9 @@ func TestPSUnknownFlag(t *testing.T) {
 // We provide no stdin and verify ps completes immediately.
 func TestPSNeverReadsStdin(t *testing.T) {
 	// ps should complete without reading stdin at all.
-	_, _, code := runScript(t, "ps -h")
+	_, _, code := runScript(t, "ps --help")
 	if code != 0 {
-		t.Errorf("ps -h should exit 0, got %d", code)
+		t.Errorf("ps --help should exit 0, got %d", code)
 	}
 }
 

@@ -1,4 +1,4 @@
-description: ps with a positional argument exits with code 1.
+description: ps with a non-numeric positional argument exits with code 1.
 skip_assert_against_bash: true
 input:
   script: |+

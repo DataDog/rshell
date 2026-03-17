@@ -1,8 +1,8 @@
-description: ps -h prints usage information and exits with code 0.
+description: ps --help prints usage information and exits with code 0.
 skip_assert_against_bash: true
 input:
   script: |+
-    ps -h
+    ps --help
 expect:
   stdout_contains:
     - "Usage: ps"

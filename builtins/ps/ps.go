@@ -7,7 +7,7 @@
 //
 // ps — report process status
 //
-// Usage: ps [-e|-A] [-f] [-p PIDLIST] [-h]
+// Usage: ps [-e|-A] [-f] [-p PIDLIST] [--help]
 //
 // Display information about running processes. By default shows processes in
 // the current session (ancestor chain from the current process).
@@ -23,7 +23,7 @@
 //	-p PIDLIST
 //	    Select processes by comma- or space-separated PID list.
 //
-//	-h, --help
+//	--help
 //	    Print usage to stdout and exit 0.
 //
 // Output columns (default):
@@ -58,7 +58,7 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 	_ = fs.BoolP("All", "A", false, "select all processes (same as -e)")
 	fullFmt := fs.BoolP("full", "f", false, "full-format listing")
 	pidList := fs.StringP("pid", "p", "", "select by PID list (comma or space separated)")
-	help := fs.BoolP("help", "h", false, "print usage and exit")
+	help := fs.Bool("help", false, "print usage and exit")
 
 	return func(ctx context.Context, callCtx *builtins.CallContext, args []string) builtins.Result {
 		if *help {
@@ -67,12 +67,6 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			fs.SetOutput(callCtx.Stdout)
 			fs.PrintDefaults()
 			return builtins.Result{}
-		}
-
-		// ps accepts no positional operands.
-		if len(args) > 0 {
-			callCtx.Errf("ps: too many arguments\n")
-			return builtins.Result{Code: 1}
 		}
 
 		// -A is an alias for -e.
@@ -89,10 +83,24 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 		// Detect whether -p was explicitly set (even to empty string).
 		pidFlagChanged := fs.Lookup("pid") != nil && fs.Lookup("pid").Changed
 
+		// Merge remaining positional args as blank-separated PIDs.
+		// GNU ps allows blank-separated PID lists: ps -p 123 456 or ps 123 456.
+		// Non-numeric values are caught by parsePIDs and cause exit 1.
+		effectivePIDList := *pidList
+		if len(args) > 0 {
+			extra := strings.Join(args, " ")
+			if effectivePIDList != "" {
+				effectivePIDList += " " + extra
+			} else {
+				effectivePIDList = extra
+			}
+			pidFlagChanged = true
+		}
+
 		switch {
-		case pidFlagChanged || *pidList != "":
+		case pidFlagChanged || effectivePIDList != "":
 			// -p: select specific PIDs.
-			pids, parseErr := parsePIDs(*pidList)
+			pids, parseErr := parsePIDs(effectivePIDList)
 			if parseErr != nil {
 				callCtx.Errf("ps: %v\n", parseErr)
 				return builtins.Result{Code: 1}
