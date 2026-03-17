@@ -122,9 +122,17 @@ func FuzzPingHostname(f *testing.F) {
 	f.Add("no-such-host-xyzzy.invalid")
 
 	f.Fuzz(func(t *testing.T, hostname string) {
-		// Skip inputs with shell metacharacters.
-		if strings.ContainsAny(hostname, "`$;&|><\n\r \t'\"\\") {
-			return
+		// Only allow characters that are safe to pass unquoted as a shell
+		// argument. An allowlist is more robust than a denylist because the
+		// shell parser has many special characters and we cannot enumerate
+		// them all in advance. Valid hostname characters are: letters, digits,
+		// hyphens, dots (domain labels), and colons (IPv6 addresses).
+		for _, r := range hostname {
+			safe := (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') ||
+				(r >= '0' && r <= '9') || r == '-' || r == '.' || r == ':'
+			if !safe {
+				return
+			}
 		}
 		if len(hostname) > 10000 {
 			return
