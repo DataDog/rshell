@@ -240,10 +240,10 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			sortEntries(files, opts, func(a pathArg) iofs.FileInfo { return a.info }, func(a pathArg) string { return a.name })
 			var cw colWidths
 			if opts.longFmt {
-				cw = computeColWidths(files, func(a pathArg) iofs.FileInfo { return a.info }, opts)
+				cw = computeColWidths(files, func(a pathArg) iofs.FileInfo { return a.info }, func(a pathArg) string { return a.name }, opts)
 			}
 			for _, f := range files {
-				printEntry(callCtx, f.name, f.info, opts, now, cw)
+				printEntry(callCtx, f.name, f.name, f.info, opts, now, cw)
 			}
 		}
 
@@ -393,7 +393,7 @@ func listDir(ctx context.Context, callCtx *builtins.CallContext, dir string, opt
 	// Print.
 	var cw colWidths
 	if opts.longFmt {
-		cw = computeColWidths(infoEntries, func(e entryInfo) iofs.FileInfo { return e.info }, opts)
+		cw = computeColWidths(infoEntries, func(e entryInfo) iofs.FileInfo { return e.info }, func(e entryInfo) string { return joinPath(dir, e.name) }, opts)
 		var totalBlocks int64
 		for _, ei := range infoEntries {
 			totalBlocks += fileBlocks(ei.info)
@@ -405,7 +405,7 @@ func listDir(ctx context.Context, callCtx *builtins.CallContext, dir string, opt
 		if ctx.Err() != nil {
 			break
 		}
-		printEntry(callCtx, ei.name, ei.info, opts, now, cw)
+		printEntry(callCtx, ei.name, joinPath(dir, ei.name), ei.info, opts, now, cw)
 	}
 
 	// Only warn on implicit truncation (no explicit --offset/--limit).
@@ -469,11 +469,11 @@ type colWidths struct {
 
 // computeColWidths computes the maximum column widths across a slice of entries
 // for long-format output alignment.
-func computeColWidths[T any](entries []T, getInfo func(T) iofs.FileInfo, opts *options) colWidths {
+func computeColWidths[T any](entries []T, getInfo func(T) iofs.FileInfo, getName func(T) string, opts *options) colWidths {
 	var w colWidths
 	for _, e := range entries {
 		info := getInfo(e)
-		owner, group, nlink := fileOwner(info)
+		owner, group, nlink := fileOwner(getName(e), info)
 
 		nlinkStr := fmt.Sprintf("%d", nlink)
 		if n := len(nlinkStr); n > w.nlink {
@@ -499,12 +499,12 @@ func computeColWidths[T any](entries []T, getInfo func(T) iofs.FileInfo, opts *o
 	return w
 }
 
-func printEntry(callCtx *builtins.CallContext, name string, info iofs.FileInfo, opts *options, now time.Time, cw colWidths) {
+func printEntry(callCtx *builtins.CallContext, name, path string, info iofs.FileInfo, opts *options, now time.Time, cw colWidths) {
 	if opts.longFmt {
 		mode := formatMode(info)
 		size := info.Size()
 		modTime := info.ModTime()
-		owner, group, nlink := fileOwner(info)
+		owner, group, nlink := fileOwner(path, info)
 
 		var sizeStr string
 		if opts.humanReadable {

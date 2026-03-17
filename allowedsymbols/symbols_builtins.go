@@ -132,23 +132,27 @@ var builtinPerCommandSymbols = map[string][]string{
 		"strconv.ParseInt", // string-to-int conversion with base/bit-size; pure function, no I/O.
 	},
 	"ls": {
-		"context.Context",     // deadline/cancellation plumbing; pure interface, no side effects.
-		"errors.New",          // creates a simple error value; pure function, no I/O.
-		"fmt.Sprintf",         // string formatting; pure function, no I/O.
-		"io/fs.DirEntry",      // interface type for directory entries; no side effects.
-		"io/fs.FileInfo",      // interface type for file information; no side effects.
-		"io/fs.ModeDir",       // file mode bit constant for directories; pure constant.
-		"io/fs.ModeNamedPipe", // file mode bit constant for named pipes; pure constant.
-		"io/fs.ModeSetgid",    // file mode bit constant for setgid; pure constant.
-		"io/fs.ModeSetuid",    // file mode bit constant for setuid; pure constant.
-		"io/fs.ModeSocket",    // file mode bit constant for sockets; pure constant.
-		"io/fs.ModeSticky",    // file mode bit constant for sticky bit; pure constant.
-		"io/fs.ModeSymlink",   // file mode bit constant for symlinks; pure constant.
-		"runtime.GOOS",        // current OS name constant; pure constant, no I/O.
-		"slices.Reverse",      // reverses a slice in-place; pure function, no I/O.
-		"slices.SortFunc",     // sorts a slice with a comparison function; pure function, no I/O.
-		"syscall.Stat_t",      // file stat struct for extracting UID/GID/nlink; read-only type, no I/O.
-		"time.Time",           // time value type; pure data, no side effects.
+		"context.Context",                     // deadline/cancellation plumbing; pure interface, no side effects.
+		"errors.New",                          // creates a simple error value; pure function, no I/O.
+		"fmt.Sprintf",                         // string formatting; pure function, no I/O.
+		"io/fs.DirEntry",                      // interface type for directory entries; no side effects.
+		"io/fs.FileInfo",                      // interface type for file information; no side effects.
+		"io/fs.ModeDir",                       // file mode bit constant for directories; pure constant.
+		"io/fs.ModeNamedPipe",                 // file mode bit constant for named pipes; pure constant.
+		"io/fs.ModeSetgid",                    // file mode bit constant for setgid; pure constant.
+		"io/fs.ModeSetuid",                    // file mode bit constant for setuid; pure constant.
+		"io/fs.ModeSocket",                    // file mode bit constant for sockets; pure constant.
+		"io/fs.ModeSticky",                    // file mode bit constant for sticky bit; pure constant.
+		"io/fs.ModeSymlink",                   // file mode bit constant for symlinks; pure constant.
+		"os.Open",                             // opens a file read-only; used on Windows for GetFileInformationByHandle.
+		"runtime.GOOS",                        // current OS name constant; pure constant, no I/O.
+		"slices.Reverse",                      // reverses a slice in-place; pure function, no I/O.
+		"slices.SortFunc",                     // sorts a slice with a comparison function; pure function, no I/O.
+		"syscall.ByHandleFileInformation",     // Windows file info struct for extracting nlink; read-only type, no I/O.
+		"syscall.GetFileInformationByHandle",  // Windows API to query file metadata by handle; read-only, no I/O side effects.
+		"syscall.Handle",                      // Windows file handle type; pure type alias, no I/O.
+		"syscall.Stat_t",                      // Unix file stat struct for extracting UID/GID/nlink; read-only type, no I/O.
+		"time.Time",                           // time value type; pure data, no side effects.
 	},
 	"printf": {
 		"context.Context",      // deadline/cancellation plumbing; pure interface, no side effects.
@@ -339,6 +343,7 @@ var builtinAllowedSymbols = []string{
 	"os.FileInfo",                     // file metadata interface returned by Stat; no I/O side effects.
 	"os.IsNotExist",                   // checks if error is "not exist"; pure function, no I/O.
 	"os.O_RDONLY",                     // read-only file flag constant; cannot open files by itself.
+	"os.Open",                         // opens a file read-only; used on Windows for GetFileInformationByHandle.
 	"os.PathError",                    // error type for filesystem path errors; pure type, no I/O.
 	"path/filepath.ToSlash",           // converts OS path separators to forward slashes; pure function, no I/O.
 	"regexp.Compile",                  // compiles a regular expression; pure function, no I/O. Uses RE2 engine (linear-time, no backtracking).
@@ -367,9 +372,12 @@ var builtinAllowedSymbols = []string{
 	"strings.Split",                   // splits a string by separator into a slice; pure function, no I/O.
 	"strings.ToLower",                 // converts string to lowercase; pure function, no I/O.
 	"strings.TrimSpace",               // removes leading/trailing whitespace; pure function.
-	"syscall.EISDIR",                  // error number constant for "is a directory"; pure constant, no I/O.
-	"syscall.Errno",                   // error type for system call error numbers; pure type, no I/O.
-	"syscall.Stat_t",                  // file stat struct for extracting UID/GID/nlink; read-only type, no I/O.
+	"syscall.ByHandleFileInformation",     // Windows file info struct for extracting nlink; read-only type, no I/O.
+	"syscall.EISDIR",                      // error number constant for "is a directory"; pure constant, no I/O.
+	"syscall.Errno",                       // error type for system call error numbers; pure type, no I/O.
+	"syscall.GetFileInformationByHandle",  // Windows API to query file metadata by handle; read-only, no I/O side effects.
+	"syscall.Handle",                      // Windows file handle type; pure type alias, no I/O.
+	"syscall.Stat_t",                      // file stat struct for extracting UID/GID/nlink; read-only type, no I/O.
 	"time.Duration",                   // duration type; pure integer alias, no I/O.
 	"time.Hour",                       // constant representing one hour; no side effects.
 	"time.Minute",                     // constant representing one minute; no side effects.

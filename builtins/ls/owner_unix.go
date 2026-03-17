@@ -16,7 +16,7 @@ import (
 // fileOwner returns the numeric UID, GID, and hard link count for the given
 // FileInfo. Names are not resolved to avoid reading /etc/passwd or triggering
 // NSS/LDAP lookups outside the sandbox.
-func fileOwner(info iofs.FileInfo) (owner, group string, nlink uint64) {
+func fileOwner(path string, info iofs.FileInfo) (owner, group string, nlink uint64) {
 	st, ok := info.Sys().(*syscall.Stat_t)
 	if !ok {
 		return "?", "?", 0

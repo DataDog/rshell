@@ -5,18 +5,43 @@
 
 package ls
 
-import iofs "io/fs"
+import (
+	iofs "io/fs"
+	"os"
+	"syscall"
+)
 
 // fileOwner returns the owner, group, and hard link count.
-// On Windows the Security API is not available here, so we return
-// placeholder values rather than factual-looking zeros/empties.
-func fileOwner(info iofs.FileInfo) (owner, group string, nlink uint64) {
-	return "?", "?", 1
+// On Windows, UID/GID do not exist so owner and group are returned as "?".
+// Hard link count is resolved via GetFileInformationByHandle.
+func fileOwner(path string, info iofs.FileInfo) (owner, group string, nlink uint64) {
+	owner = "?"
+	group = "?"
+	nlink = getNlink(path)
+	return owner, group, nlink
+}
+
+// getNlink opens the file at path and queries GetFileInformationByHandle
+// to retrieve the hard link count. Returns 1 on any failure.
+func getNlink(path string) uint64 {
+	if path == "" {
+		return 1
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		return 1
+	}
+	defer f.Close()
+
+	var d syscall.ByHandleFileInformation
+	if err := syscall.GetFileInformationByHandle(syscall.Handle(f.Fd()), &d); err != nil {
+		return 1
+	}
+	return uint64(d.NumberOfLinks)
 }
 
 // fileBlocks returns the number of 512-byte blocks allocated for the file.
 // On Windows this information is not available, so we return 0.
-// The total line will show "total 0" which is consistent with the lack of data.
 func fileBlocks(info iofs.FileInfo) int64 {
 	return 0
 }
