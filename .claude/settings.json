@@ -1,4 +1,8 @@
 {
+  "sandbox": {
+    "enabled": true,
+    "autoAllowBashIfSandboxed": true
+  },
   "permissions": {
     "allow": [
       "Edit",
