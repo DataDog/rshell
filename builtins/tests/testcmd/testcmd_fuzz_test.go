@@ -52,6 +52,12 @@ func FuzzTestStringOps(f *testing.F) {
 	// == operator (same as =)
 	f.Add("x", "x", "==")
 
+	// Shared base dir avoids the per-iteration t.TempDir() cleanup overhead
+	// that causes "context deadline exceeded" when the 30 s fuzz budget fires.
+	// No files are created in this dir; it is only used as the working directory
+	// and AllowedPaths root.
+	baseDir := f.TempDir()
+
 	f.Fuzz(func(t *testing.T, left, right, op string) {
 		if len(left) > 100 || len(right) > 100 {
 			return
@@ -78,13 +84,11 @@ func FuzzTestStringOps(f *testing.F) {
 			return
 		}
 
-		dir := t.TempDir()
-
 		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		defer cancel()
 
 		script := fmt.Sprintf("test '%s' %s '%s'", left, op, right)
-		_, _, code := cmdRunCtx(ctx, t, script, dir)
+		_, _, code := cmdRunCtx(ctx, t, script, baseDir)
 		if code != 0 && code != 1 && code != 2 {
 			t.Errorf("test string op unexpected exit code %d", code)
 		}
@@ -113,6 +117,9 @@ func FuzzTestIntegerOps(f *testing.F) {
 	// int64 max (clamped on overflow per GNU test behavior)
 	f.Add(int64(1<<31-1), int64(1<<31-1), "-ge")
 
+	// Shared base dir avoids per-iteration t.TempDir() cleanup overhead.
+	baseDir := f.TempDir()
+
 	f.Fuzz(func(t *testing.T, left, right int64, op string) {
 		switch op {
 		case "-eq", "-ne", "-lt", "-le", "-gt", "-ge":
@@ -124,13 +131,11 @@ func FuzzTestIntegerOps(f *testing.F) {
 			return
 		}
 
-		dir := t.TempDir()
-
 		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		defer cancel()
 
 		script := fmt.Sprintf("test %d %s %d", left, op, right)
-		_, _, code := cmdRunCtx(ctx, t, script, dir)
+		_, _, code := cmdRunCtx(ctx, t, script, baseDir)
 		if code != 0 && code != 1 && code != 2 {
 			t.Errorf("test %d %s %d unexpected exit code %d", left, op, right, code)
 		}
@@ -207,6 +212,9 @@ func FuzzTestStringUnary(f *testing.F) {
 	f.Add("日本語", "-n")
 	f.Add("😀", "-n")
 
+	// Shared base dir avoids per-iteration t.TempDir() cleanup overhead.
+	baseDir := f.TempDir()
+
 	f.Fuzz(func(t *testing.T, arg, op string) {
 		if len(arg) > 200 {
 			return
@@ -227,13 +235,11 @@ func FuzzTestStringUnary(f *testing.F) {
 			}
 		}
 
-		dir := t.TempDir()
-
 		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		defer cancel()
 
 		script := fmt.Sprintf("test %s '%s'", op, arg)
-		_, _, code := cmdRunCtx(ctx, t, script, dir)
+		_, _, code := cmdRunCtx(ctx, t, script, baseDir)
 		if code != 0 && code != 1 && code != 2 {
 			t.Errorf("test %s unexpected exit code %d", op, code)
 		}
@@ -269,6 +275,9 @@ func FuzzTestNesting(f *testing.F) {
 	f.Add("1 -eq 2 -o 2 -eq 2 -o 3 -eq 4")
 	// Mixed -a and -o
 	f.Add("1 -eq 1 -o 1 -eq 2 -a 2 -eq 2")
+
+	// Shared base dir avoids per-iteration t.TempDir() cleanup overhead.
+	baseDir := f.TempDir()
 
 	f.Fuzz(func(t *testing.T, expr string) {
 		// Keep expressions short to avoid slow evaluation on CI where
@@ -312,13 +321,11 @@ func FuzzTestNesting(f *testing.F) {
 			}
 		}
 
-		dir := t.TempDir()
-
 		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		defer cancel()
 
 		script := fmt.Sprintf("test %s", expr)
-		_, _, code := cmdRunCtx(ctx, t, script, dir)
+		_, _, code := cmdRunCtx(ctx, t, script, baseDir)
 		if code != 0 && code != 1 && code != 2 {
 			t.Errorf("test %q unexpected exit code %d", expr, code)
 		}
