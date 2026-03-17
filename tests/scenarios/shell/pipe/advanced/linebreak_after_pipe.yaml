@@ -2,7 +2,7 @@ description: Linebreak after pipe operator continues the pipeline.
 input:
   script: |+
     printf '%s\n' foo bar |
-    tail -n 1 |
+    grep bar |
     cat
 expect:
   stdout: |+
