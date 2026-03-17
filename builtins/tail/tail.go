@@ -61,12 +61,15 @@
 //
 // Infinite-stream protection:
 //
-//	Both last-N-lines and last-N-bytes modes must consume the entire input
-//	before emitting output. For non-regular-file inputs (pipes, stdin,
-//	character devices) without a context deadline, execution would hang
-//	indefinitely. To bound this, tail returns an error once total bytes read
-//	from such a source exceed MaxTotalReadBytes (256 MiB). Regular files are
-//	not subject to this limit because the OS guarantees they are finite.
+//	Last-N-lines and last-N-bytes modes must consume the entire input before
+//	emitting output. For non-regular-file inputs (pipes, stdin, character
+//	devices) without a context deadline, execution would hang indefinitely.
+//	To bound this, tail returns an error once total bytes read from such a
+//	source exceed MaxTotalReadBytes (256 MiB). Regular files are not subject
+//	to this limit because the OS guarantees they are finite.
+//
+//	Offset (+N) modes stream output incrementally and do not buffer to EOF,
+//	so no read-limit guard is applied; large pipes work correctly.
 package tail
 
 import (
@@ -299,12 +302,12 @@ func processFile(ctx context.Context, callCtx *builtins.CallContext, file string
 
 	if useBytesMode {
 		if cm.offset {
-			return skipBytes(ctx, callCtx, rc, cm.n, isRegularFile)
+			return skipBytes(ctx, callCtx, rc, cm.n)
 		}
 		return readLastBytes(ctx, callCtx, rc, cm.n, isRegularFile)
 	}
 	if cm.offset {
-		return skipLines(ctx, callCtx, rc, cm.n, zeroTerm, isRegularFile)
+		return skipLines(ctx, callCtx, rc, cm.n, zeroTerm)
 	}
 	return readLastLines(ctx, callCtx, rc, cm.n, zeroTerm, isRegularFile)
 }
@@ -379,8 +382,10 @@ func readLastLines(ctx context.Context, callCtx *builtins.CallContext, r io.Read
 
 // skipLines skips the first (n-1) lines of r and writes the rest to
 // callCtx.Stdout. This implements the "+N" offset mode for -n.
-// isRegularFile disables the MaxTotalReadBytes infinite-stream guard.
-func skipLines(ctx context.Context, callCtx *builtins.CallContext, r io.Reader, n int64, nullDelim bool, isRegularFile bool) error {
+// Unlike readLastLines, this function streams output incrementally and
+// does not need to buffer the entire input, so no read-limit guard is
+// applied even for non-regular-file inputs.
+func skipLines(ctx context.Context, callCtx *builtins.CallContext, r io.Reader, n int64, nullDelim bool) error {
 	skipCount := max(n-1, 0)
 
 	sc := bufio.NewScanner(r)
@@ -393,14 +398,9 @@ func skipLines(ctx context.Context, callCtx *builtins.CallContext, r io.Reader, 
 	}
 
 	var skipped int64
-	var totalRead int64
 	for sc.Scan() {
 		if ctx.Err() != nil {
 			return ctx.Err()
-		}
-		totalRead += int64(len(sc.Bytes()))
-		if !isRegularFile && totalRead > MaxTotalReadBytes {
-			return errors.New("input too large: read limit exceeded")
 		}
 		if skipped < skipCount {
 			skipped++
@@ -480,8 +480,10 @@ func readLastBytes(ctx context.Context, callCtx *builtins.CallContext, r io.Read
 
 // skipBytes skips the first (n-1) bytes of r and writes the rest to
 // callCtx.Stdout. This implements the "+N" offset mode for -c.
-// isRegularFile disables the MaxTotalReadBytes infinite-stream guard.
-func skipBytes(ctx context.Context, callCtx *builtins.CallContext, r io.Reader, n int64, isRegularFile bool) error {
+// Unlike readLastBytes, this function streams output incrementally and
+// does not need to buffer the entire input, so no read-limit guard is
+// applied even for non-regular-file inputs.
+func skipBytes(ctx context.Context, callCtx *builtins.CallContext, r io.Reader, n int64) error {
 	skipCount := max(n-1, 0)
 
 	buf := make([]byte, 32*1024)
@@ -493,9 +495,6 @@ func skipBytes(ctx context.Context, callCtx *builtins.CallContext, r io.Reader, 
 		toRead := min(int64(len(buf)), skipCount-totalRead)
 		nRead, err := r.Read(buf[:toRead])
 		totalRead += int64(nRead)
-		if !isRegularFile && totalRead > MaxTotalReadBytes {
-			return errors.New("input too large: read limit exceeded")
-		}
 		if errors.Is(err, io.EOF) {
 			return nil
 		}
@@ -510,10 +509,6 @@ func skipBytes(ctx context.Context, callCtx *builtins.CallContext, r io.Reader, 
 			return ctx.Err()
 		}
 		nRead, err := r.Read(buf)
-		totalRead += int64(nRead)
-		if !isRegularFile && totalRead > MaxTotalReadBytes {
-			return errors.New("input too large: read limit exceeded")
-		}
 		if nRead > 0 {
 			if _, werr := callCtx.Stdout.Write(buf[:nRead]); werr != nil {
 				return werr
