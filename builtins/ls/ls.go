@@ -395,11 +395,19 @@ func listDir(ctx context.Context, callCtx *builtins.CallContext, dir string, opt
 	if opts.longFmt {
 		cw = computeColWidths(ctx, callCtx, infoEntries, func(e entryInfo) iofs.FileInfo { return e.info }, func(e entryInfo) string { return joinPath(dir, e.name) }, opts)
 		var totalBlocks int64
+		blocksAvailable := true
 		for _, ei := range infoEntries {
-			totalBlocks += fileBlocks(ei.info)
+			b := fileBlocks(ctx, callCtx, joinPath(dir, ei.name), ei.info)
+			if b < 0 {
+				blocksAvailable = false
+				break
+			}
+			totalBlocks += b
 		}
-		// fileBlocks returns 512-byte units; display in 1024-byte blocks.
-		callCtx.Outf("total %d\n", totalBlocks/2)
+		if blocksAvailable {
+			// fileBlocks returns 512-byte units; display in 1024-byte blocks.
+			callCtx.Outf("total %d\n", totalBlocks/2)
+		}
 	}
 	for _, ei := range infoEntries {
 		if ctx.Err() != nil {

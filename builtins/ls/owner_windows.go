@@ -16,8 +16,8 @@ import (
 
 // fileOwner returns the owner, group, and hard link count.
 // On Windows, UID/GID do not exist so owner and group are returned as "?".
-// Hard link count is resolved via GetFileInformationByHandle, opening the
-// file through the sandbox (callCtx.OpenFile) to respect AllowedPaths.
+// Hard link count is resolved through the sandbox via
+// GetFileInformationByHandle.
 func fileOwner(ctx context.Context, callCtx *builtins.CallContext, path string, info iofs.FileInfo) (owner, group string, nlink uint64) {
 	owner = "?"
 	group = "?"
@@ -55,15 +55,11 @@ func getNlink(ctx context.Context, callCtx *builtins.CallContext, path string) (
 	return uint64(d.NumberOfLinks), true
 }
 
-// fileBlocks estimates the number of 512-byte blocks allocated for the file.
-// Windows does not expose block allocation through standard Go APIs, so we
-// estimate using the NTFS default cluster size of 4096 bytes. This may be
-// inaccurate for sparse, compressed, or non-default cluster-size volumes.
-func fileBlocks(info iofs.FileInfo) int64 {
-	size := info.Size()
-	if size <= 0 {
-		return 0
-	}
-	// Round up to nearest 4096-byte cluster, convert to 512-byte blocks.
-	return ((size + 4095) / 4096) * 8
+// fileBlocks returns the number of 512-byte blocks allocated for the file.
+// On Windows, GetFileInformationByHandle does not expose allocation size
+// and GetFileInformationByHandleEx requires the unsafe package which is
+// permanently banned. Returns -1 to signal that the total line should be
+// suppressed.
+func fileBlocks(_ context.Context, _ *builtins.CallContext, _ string, info iofs.FileInfo) int64 {
+	return -1
 }
