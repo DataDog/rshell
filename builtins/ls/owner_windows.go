@@ -7,15 +7,16 @@ package ls
 
 import iofs "io/fs"
 
-// fileOwner returns the owner name, group name, and hard link count.
-// On Windows, file ownership requires the Windows Security API which is
-// not available here, so we return empty strings and 0.
+// fileOwner returns the owner, group, and hard link count.
+// On Windows the Security API is not available here, so we return
+// placeholder values rather than factual-looking zeros/empties.
 func fileOwner(info iofs.FileInfo) (owner, group string, nlink uint64) {
-	return "", "", 0
+	return "?", "?", 1
 }
 
 // fileBlocks returns the number of 512-byte blocks allocated for the file.
-// On Windows, this information is not available, so we return 0.
+// On Windows this information is not available, so we return 0.
+// The total line will show "total 0" which is consistent with the lack of data.
 func fileBlocks(info iofs.FileInfo) int64 {
 	return 0
 }
