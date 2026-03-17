@@ -28,14 +28,12 @@ var builtinInternalAllowedSymbols = []string{
 	"os.Open",            // opens a file read-only; needed to stream /proc/stat line-by-line.
 	"os.ReadDir",         // reads a directory listing; needed to enumerate /proc entries.
 	"os.ReadFile",        // reads a whole file into memory; needed to read /proc/[pid]/{stat,cmdline,status}.
-	"os.Readlink",        // reads a symlink target; needed to resolve /proc/[pid]/fd/0 to a tty name.
 	"strconv.Atoi",       // converts a string to int; pure function, no I/O.
 	"strconv.ParseInt",   // converts a string to int64 with base/bit-size; pure function, no I/O.
 	"strings.Fields",     // splits a string on whitespace; pure function, no I/O.
 	"strings.HasPrefix",  // checks string prefix; pure function, no I/O.
 	"strings.Index",      // finds first occurrence of a substring; pure function, no I/O.
 	"strings.LastIndex",  // finds last occurrence of a substring; pure function, no I/O.
-	"strings.TrimPrefix", // removes a leading prefix; pure function, no I/O.
 	"strings.TrimRight",  // trims trailing characters from a set; pure function, no I/O.
 	"strings.TrimSpace",  // removes leading/trailing whitespace; pure function, no I/O.
 	"syscall.Getsid",     // returns the session ID of a process; read-only syscall, no write/exec capability.
