@@ -90,7 +90,9 @@ func (s *Sandbox) resolve(absPath string) (*os.Root, string, bool) {
 //
 // On Unix, the check uses the kernel's access(2) syscall which never blocks
 // on special files (FIFOs) and correctly handles POSIX ACLs. On Windows,
-// it falls back to mode-bit inspection.
+// read access is verified by attempting to open the file through os.Root
+// (which respects NTFS ACLs); write and execute checks are not performed
+// because Windows does not enforce these via file permission bits.
 //
 // The path passed to the kernel access check is always reconstructed from
 // the trusted sandbox root + validated relative path, never from raw user input.
@@ -109,17 +111,11 @@ func (s *Sandbox) Access(path string, cwd string, mode uint32) error {
 			continue
 		}
 
-		// Verify the path exists within the sandbox (atomic via os.Root,
-		// which uses openat/fstatat to prevent symlink-based escapes).
-		info, err := ar.root.Stat(rel)
+		// accessCheck verifies the path is inside the sandbox via
+		// os.Root.Stat, then performs the permission check (kernel
+		// access(2) on Unix, mode-bit inspection on Windows).
+		_, err = ar.accessCheck(rel, mode&0x04 != 0, mode&0x02 != 0, mode&0x01 != 0)
 		if err != nil {
-			return PortablePathError(err)
-		}
-
-		// Check permissions using the kernel's access check (Unix) or
-		// mode-bit inspection (Windows). accessCheck constructs the
-		// target path internally from the trusted root + relative path.
-		if err := accessCheck(ar.absPath, rel, info, mode&0x04 != 0, mode&0x02 != 0, mode&0x01 != 0); err != nil {
 			return &os.PathError{Op: "access", Path: path, Err: os.ErrPermission}
 		}
 		return nil

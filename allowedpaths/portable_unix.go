@@ -38,14 +38,19 @@ const (
 	accessX = 0x01 // X_OK — test for execute permission
 )
 
-// accessCheck performs a kernel-level access check using access(2).
-// Unlike Open, access(2) never blocks on FIFOs — it is a pure
-// permission query. It also respects POSIX ACLs.
+// accessCheck verifies the path is inside the sandbox via os.Root.Stat
+// (atomic, symlink-safe), then performs a kernel-level permission check
+// using access(2). Unlike Open, access(2) never blocks on FIFOs and
+// correctly handles POSIX ACLs.
 //
-// The target path is constructed internally from rootAbsPath (the
-// trusted sandbox root) and rel (the validated relative path), so
-// callers cannot pass an arbitrary absolute path to the syscall.
-func accessCheck(rootAbsPath, rel string, _ fs.FileInfo, checkRead, checkWrite, checkExec bool) error {
+// The sandbox verification and the syscall are co-located so that
+// syscall.Access can never be reached without passing the sandbox guard.
+func (r *root) accessCheck(rel string, checkRead, checkWrite, checkExec bool) (fs.FileInfo, error) {
+	info, err := r.root.Stat(rel)
+	if err != nil {
+		return nil, err
+	}
+
 	var mode uint32
 	if checkRead {
 		mode |= accessR
@@ -56,7 +61,7 @@ func accessCheck(rootAbsPath, rel string, _ fs.FileInfo, checkRead, checkWrite, 
 	if checkExec {
 		mode |= accessX
 	}
-	return syscall.Access(filepath.Join(rootAbsPath, rel), mode)
+	return info, syscall.Access(filepath.Join(r.absPath, rel), mode)
 }
 
 // effectiveHasPerm checks whether the current process has the requested

@@ -44,27 +44,30 @@ func FileIdentity(absPath string, _ fs.FileInfo, sandbox *Sandbox) (uint64, uint
 	return uint64(d.VolumeSerialNumber), uint64(d.FileIndexHigh)<<32 | uint64(d.FileIndexLow), true
 }
 
-// accessCheck checks permissions using mode bits.
-// Windows does not support access(2); mode-bit inspection is the best
-// available approximation. rootAbsPath and rel are accepted for
-// interface compatibility but not used on Windows.
-func accessCheck(_, _ string, info fs.FileInfo, checkRead, checkWrite, checkExec bool) error {
-	if !effectiveHasPerm(info, checkRead, checkWrite, checkExec) {
-		return os.ErrPermission
+// accessCheck verifies the path is inside the sandbox via os.Root.Stat,
+// then checks read permission by attempting to open the file through
+// os.Root. This respects NTFS ACLs — the kernel denies the open if
+// the current user lacks read permission. Named pipes cannot appear in
+// regular directories on Windows, so this cannot block.
+//
+// Write and execute checks are not performed:
+//   - Write: the sandbox blocks write-flag opens, so we cannot test
+//     write access without side effects.
+//   - Execute: Windows determines executability by file extension, not
+//     by permission bits.
+func (r *root) accessCheck(rel string, checkRead, _, _ bool) (fs.FileInfo, error) {
+	info, err := r.root.Stat(rel)
+	if err != nil {
+		return nil, err
 	}
-	return nil
-}
 
-// effectiveHasPerm checks whether the current process has the requested
-// permission on Windows.  Windows does not use Unix UID/GID permission classes,
-// so we fall back to checking any-class bits (0444 / 0222 / 0111).
-func effectiveHasPerm(info fs.FileInfo, checkRead, checkWrite, checkExec bool) bool {
-	perm := info.Mode().Perm()
-	if checkRead && perm&0444 == 0 {
-		return false
+	if checkRead && !info.IsDir() {
+		f, err := r.root.OpenFile(rel, os.O_RDONLY, 0)
+		if err != nil {
+			return info, os.ErrPermission
+		}
+		f.Close()
 	}
-	if checkWrite && perm&0222 == 0 {
-		return false
-	}
-	return !(checkExec && perm&0111 == 0)
+
+	return info, nil
 }
