@@ -100,8 +100,14 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 
 		pidMode := false
 		switch {
+		case showAll:
+			// -e / -A: all processes. Takes priority over -p because it is a
+			// superset; GNU ps treats selection options as additive (union), so
+			// -e -p <missing> still returns all processes and exits 0.
+			procs, err = procinfo.ListAll(ctx)
+
 		case pidFlagChanged || effectivePIDList != "":
-			// -p: select specific PIDs.
+			// -p only (no -e/-A): select specific PIDs.
 			pidMode = true
 			pids, parseErr := parsePIDs(effectivePIDList)
 			if parseErr != nil {
@@ -109,10 +115,6 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 				return builtins.Result{Code: 1}
 			}
 			procs, err = procinfo.GetByPIDs(ctx, pids)
-
-		case showAll:
-			// -e / -A: all processes.
-			procs, err = procinfo.ListAll(ctx)
 
 		default:
 			// Default: current session processes.
@@ -147,6 +149,7 @@ func parsePIDs(s string) ([]int, error) {
 	s = strings.ReplaceAll(s, ",", " ")
 	parts := strings.Split(s, " ")
 	pids := make([]int, 0, len(parts))
+	seen := make(map[int]bool, len(parts))
 	for _, f := range parts {
 		f = strings.TrimSpace(f)
 		if f == "" {
@@ -156,7 +159,10 @@ func parsePIDs(s string) ([]int, error) {
 		if err != nil || pid <= 0 {
 			return nil, fmt.Errorf("invalid PID: %s", f)
 		}
-		pids = append(pids, pid)
+		if !seen[pid] {
+			seen[pid] = true
+			pids = append(pids, pid)
+		}
 	}
 	if len(pids) == 0 {
 		return nil, fmt.Errorf("invalid PID: %s", s)

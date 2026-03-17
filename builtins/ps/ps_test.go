@@ -172,6 +172,31 @@ func TestPSEmptyStringPIDExits1(t *testing.T) {
 	}
 }
 
+// TestPSAllWithMissingPIDExitsZero ensures -e takes priority over -p so that
+// ps -e -p <missing> still shows all processes and exits 0 (additive selection).
+func TestPSAllWithMissingPIDExitsZero(t *testing.T) {
+	stdout, stderr, code := runScript(t, "ps -e -p 2147483647")
+	if code != 0 {
+		t.Fatalf("ps -e -p <missing> exited %d; stderr: %s", code, stderr)
+	}
+	if !strings.Contains(stdout, "PID") {
+		t.Errorf("expected PID column header, got:\n%s", stdout)
+	}
+}
+
+// TestPSDuplicatePIDsDeduped ensures duplicate PIDs in -p list appear once.
+func TestPSDuplicatePIDsDeduped(t *testing.T) {
+	selfPID := strconv.Itoa(os.Getpid())
+	stdout, stderr, code := runScript(t, "ps -p "+selfPID+","+selfPID)
+	if code != 0 {
+		t.Fatalf("ps -p <dup> exited %d; stderr: %s", code, stderr)
+	}
+	count := strings.Count(stdout, selfPID)
+	if count != 1 {
+		t.Errorf("expected PID %s to appear once, got %d occurrences:\n%s", selfPID, count, stdout)
+	}
+}
+
 // TestPSMissingPIDExits1 ensures ps -p with a non-existent PID exits with code 1.
 func TestPSMissingPIDExits1(t *testing.T) {
 	// PID 2147483647 (max int32) is extremely unlikely to exist.
