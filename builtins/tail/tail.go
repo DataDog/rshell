@@ -560,14 +560,37 @@ func parseCount(s string) (countMode, bool) {
 	for numEnd < len(parseStr) && parseStr[numEnd] >= '0' && parseStr[numEnd] <= '9' {
 		numEnd++
 	}
-	if numEnd == 0 || (numEnd == 1 && parseStr[0] == '-') {
-		return countMode{}, false // no digits
-	}
 	suffix := parseStr[numEnd:]
-
-	n, err := strconv.ParseInt(parseStr[:numEnd], 10, 64)
-	if err != nil {
-		return countMode{}, false
+	// GNU tail accepts bare multiplier suffixes without a leading digit:
+	// "K" → 1K, "-K" → 1K (abs of -1K). "+K" is still invalid (checked
+	// above for offset forms). A bare "-" with no suffix is still invalid.
+	var n int64
+	if numEnd == 0 {
+		if suffix == "" {
+			return countMode{}, false // no digits and no suffix
+		}
+		n = 1 // implicit leading 1 for suffix-only forms like "K", "m"
+	} else if numEnd == 1 && parseStr[0] == '-' {
+		if suffix == "" {
+			return countMode{}, false // bare "-" with no suffix
+		}
+		n = -1 // implicit -1 for forms like "-K"
+	} else {
+		var err error
+		n, err = strconv.ParseInt(parseStr[:numEnd], 10, 64)
+		if err != nil {
+			if !errors.Is(err, strconv.ErrRange) {
+				return countMode{}, false
+			}
+			// Value overflows int64. Accept if it fits in uint64 (GNU tail
+			// clamps such values to a large-but-valid count); reject if it
+			// overflows uint64 as well ("Value too large").
+			if _, uerr := strconv.ParseUint(parseStr[:numEnd], 10, 64); uerr == nil {
+				n = MaxCount
+			} else {
+				return countMode{}, false
+			}
+		}
 	}
 
 	// Apply GNU multiplier suffix if present.
