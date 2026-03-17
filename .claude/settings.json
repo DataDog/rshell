@@ -3,9 +3,7 @@
     "enabled": true,
     "autoAllowBashIfSandboxed": true,
     "filesystem": {
-      "read": {
-        "allow": ["~/go/pkg"]
-      }
+      "allowWrite": ["/private/tmp"]
     },
     "network": {
       "allowedDomains": ["*.datadoghq.com", "*.github.com"]
@@ -31,7 +29,8 @@
       "Bash(sleep *)",
       "Bash(tar *)",
       "Bash(RSHELL_BASH_TEST=1 go *)",
-      "Bash(RSHELL_COMPLIANCE_TEST=1 go *)"
+      "Bash(RSHELL_COMPLIANCE_TEST=1 go *)",
+      "Bash(cat *)"
     ]
   }
 }
