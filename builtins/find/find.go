@@ -443,8 +443,13 @@ func walkPath(
 			absPath = joinPath(opts.workDir, absPath)
 		}
 		// Trim trailing slashes (except root) so filepath.Dir returns
-		// the parent directory, not the directory itself.
+		// the parent directory, not the directory itself. Preserve
+		// drive-root slashes on Windows (e.g. C:/) to avoid producing
+		// the drive-relative prefix C: which Dir resolves to C:. .
 		for len(absPath) > 1 && absPath[len(absPath)-1] == '/' {
+			if len(absPath) >= 3 && absPath[len(absPath)-2] == ':' {
+				break
+			}
 			absPath = absPath[:len(absPath)-1]
 		}
 		execDirParent := filepath.Dir(absPath)
