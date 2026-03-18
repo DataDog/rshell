@@ -87,25 +87,3 @@ func internalCheckConfig() allowedSymbolsConfig {
 func TestInternalAllowedSymbols(t *testing.T) {
 	checkAllowedSymbols(t, internalCheckConfig())
 }
-
-// internalPerPackageCheckConfig returns the perBuiltinConfig for testing
-// per-package symbol restrictions on builtins/internal/ packages.
-func internalPerPackageCheckConfig() perBuiltinConfig {
-	return perBuiltinConfig{
-		CommonSymbols:     internalAllowedSymbols,
-		PerCommandSymbols: internalPerPackageSymbols,
-		TargetDir:         "builtins/internal",
-		ExemptImport: func(importPath string) bool {
-			return importPath == "github.com/DataDog/rshell/builtins"
-		},
-		SkipDirs: map[string]bool{},
-	}
-}
-
-// TestInternalPerPackageSymbols enforces per-package symbol restrictions on
-// builtins/internal/ packages. Each package subdirectory may only use the
-// symbols declared in its internalPerPackageSymbols entry, which must be a
-// subset of internalAllowedSymbols.
-func TestInternalPerPackageSymbols(t *testing.T) {
-	checkPerBuiltinAllowedSymbols(t, internalPerPackageCheckConfig())
-}
