@@ -66,3 +66,60 @@ func TestNowConsistentAcrossRoots(t *testing.T) {
 	assert.Contains(t, stdout.String(), "f1.txt")
 	assert.Contains(t, stdout.String(), "f2.txt")
 }
+
+// TestNowFromCallContextIsUsed verifies that find actually uses the Now value
+// from CallContext for predicate evaluation. A fixed timestamp far in the
+// future is supplied; files created right now should appear very old relative
+// to that future Now, so they should match +1 (older than 1 minute) and not
+// match -1 (newer than 1 minute).
+func TestNowFromCallContextIsUsed(t *testing.T) {
+	tmp := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(tmp, "fresh.txt"), []byte("x"), 0644))
+
+	var stdout, stderr bytes.Buffer
+	// Use a timestamp 10 years in the future. From that reference point the
+	// fresh file was created "10 years ago", so diff = futureNow - mtime ≈ 10yr.
+	// It should match +1 (older than 1 minute) but not -1 (newer than 1 minute).
+	futureNow := time.Now().Add(10 * 365 * 24 * time.Hour)
+	callCtx := &builtins.CallContext{
+		Stdout: &stdout,
+		Stderr: &stderr,
+		Now:    futureNow,
+		LstatFile: func(_ context.Context, path string) (fs.FileInfo, error) {
+			return os.Lstat(filepath.Join(tmp, path))
+		},
+		StatFile: func(_ context.Context, path string) (fs.FileInfo, error) {
+			return os.Stat(filepath.Join(tmp, path))
+		},
+		OpenDir: func(_ context.Context, path string) (fs.ReadDirFile, error) {
+			return os.Open(filepath.Join(tmp, path))
+		},
+		IsDirEmpty: func(_ context.Context, path string) (bool, error) {
+			entries, err := os.ReadDir(filepath.Join(tmp, path))
+			if err != nil {
+				return false, err
+			}
+			return len(entries) == 0, nil
+		},
+		PortableErr: func(err error) string {
+			return err.Error()
+		},
+	}
+
+	// A fresh file should match +1 (older than 1 minute) when Now is 10 years
+	// in the future, proving that CallContext.Now is used for evaluation.
+	result := run(context.Background(), callCtx, []string{".", "-name", "fresh.txt", "-mmin", "+1"})
+	assert.Equal(t, uint8(0), result.Code, "find should succeed")
+	assert.Contains(t, stdout.String(), "fresh.txt",
+		"fresh file should match -mmin +1 when CallContext.Now is 10 years in the future")
+	assert.Empty(t, stderr.String())
+
+	// The same file should NOT match -1 (newer than 1 minute) under the same Now.
+	stdout.Reset()
+	stderr.Reset()
+	result = run(context.Background(), callCtx, []string{".", "-name", "fresh.txt", "-mmin", "-1"})
+	assert.Equal(t, uint8(0), result.Code, "find should succeed")
+	assert.NotContains(t, stdout.String(), "fresh.txt",
+		"fresh file should not match -mmin -1 when CallContext.Now is 10 years in the future")
+	assert.Empty(t, stderr.String())
+}

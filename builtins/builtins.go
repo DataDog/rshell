@@ -121,9 +121,14 @@ type CallContext struct {
 	// PortableErr normalizes an OS error to a POSIX-style message.
 	PortableErr func(err error) string
 
-	// Now is the time captured at the start of shell execution. Builtins
+	// Now is the time captured at the start of each Run() call. Builtins
 	// should use this instead of calling time.Now() directly, so the time
 	// source is consistent across all commands in a single run.
+	//
+	// Note: this means all builtins within one Run() share the same reference
+	// time, whereas bash evaluates each command against its own invocation
+	// time. This is an intentional trade-off for consistency within a script
+	// run. If Now is the zero value, callers should treat it as time.Now().
 	Now time.Time
 
 	// FileIdentity extracts canonical file identity from FileInfo.
