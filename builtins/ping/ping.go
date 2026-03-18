@@ -108,6 +108,7 @@ import (
 
 const (
 	defaultCount    = 4
+	minCount        = 1
 	maxCount        = 20
 	defaultInterval = time.Second
 	minInterval     = 200 * time.Millisecond
@@ -131,7 +132,7 @@ var Cmd = builtins.Command{
 
 func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 	help := fs.BoolP("help", "h", false, "print usage and exit 0")
-	count := fs.IntP("count", "c", defaultCount, fmt.Sprintf("number of ICMP packets to send (1–%d)", maxCount))
+	count := fs.IntP("count", "c", defaultCount, fmt.Sprintf("number of ICMP packets to send (%d–%d)", minCount, maxCount))
 	// StringP instead of DurationP so we accept both Go duration literals
 	// (e.g. "1s", "500ms") and the integer/float seconds that iputils ping
 	// accepts (e.g. "-W 1", "-i 0.2"). parsePingDuration handles both forms.
@@ -172,9 +173,9 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 		// Clamp inputs to safe ranges; warn when the user-supplied value
 		// is outside the allowed range so the caller is not confused by
 		// unexpected behaviour (mirrors find's -maxdepth clamping).
-		c := clampInt(*count, 1, maxCount)
+		c := clampInt(*count, minCount, maxCount)
 		if *count != c {
-			callCtx.Errf("ping: warning: -c %d out of range [1-%d]; clamped to %d\n", *count, maxCount, c)
+			callCtx.Errf("ping: warning: -c %d out of range [%d-%d]; clamped to %d\n", *count, minCount, maxCount, c)
 		}
 		w := clampDuration(wait, minWait, maxWait)
 		if wait != w {
@@ -337,7 +338,11 @@ func buildPinger(ctx context.Context, host string, count int, wait, interval tim
 	// subnet mask, we cannot enumerate all possible broadcast addresses; blocking
 	// all addresses with last octet ≤ 127 would be far too aggressive. In those
 	// environments the OS still enforces SO_BROADCAST for raw sockets except
-	// that pro-bing's auto-retry circumvents it on Linux.
+	// that pro-bing's auto-retry circumvents it on Linux. Additionally, if
+	// SetBroadcastFlag itself fails in the pro-bing sendICMP loop, the loop has
+	// no exit path until the 120 s context deadline fires — so on such subnets
+	// the command may stall rather than fail immediately. This is an upstream
+	// pro-bing v0.8.0 limitation; the 120 s hard cap provides the safety bound.
 	// Known false-positive: on subnets wider than /24 (e.g. /16 or /23),
 	// the last octet can be 255 on a valid unicast host (e.g. 10.0.1.255 on
 	// 10.0.0.0/16, whose broadcast is 10.0.255.255). These rare addresses are
