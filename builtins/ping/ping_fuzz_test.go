@@ -141,7 +141,10 @@ func FuzzPingHostname(f *testing.F) {
 			return // empty hostname is handled by TestPingPentestEmptyHostname
 		}
 
-		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		// 1s is enough for fast DNS + socket attempt; shorter than the
+		// 3s default to keep CI fuzz runs from stalling on unresolvable
+		// hostnames when the corpus grows to include slow-DNS entries.
+		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 		defer cancel()
 
 		script := fmt.Sprintf("ping -c 1 -W 500ms -- %s", hostname)
