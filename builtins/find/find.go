@@ -606,17 +606,21 @@ func walkPath(
 
 // collectExecDirCmds walks the expression tree and returns all -execdir command names.
 func collectExecDirCmds(e *expr) []string {
-	if e == nil {
-		return nil
-	}
 	var cmds []string
-	if e.kind == exprExecDir {
-		cmds = append(cmds, e.execCmd)
-	}
-	cmds = append(cmds, collectExecDirCmds(e.left)...)
-	cmds = append(cmds, collectExecDirCmds(e.right)...)
-	cmds = append(cmds, collectExecDirCmds(e.operand)...)
+	collectExecDirCmdsInto(e, &cmds)
 	return cmds
+}
+
+func collectExecDirCmdsInto(e *expr, cmds *[]string) {
+	if e == nil {
+		return
+	}
+	if e.kind == exprExecDir {
+		*cmds = append(*cmds, e.execCmd)
+	}
+	collectExecDirCmdsInto(e.left, cmds)
+	collectExecDirCmdsInto(e.right, cmds)
+	collectExecDirCmdsInto(e.operand, cmds)
 }
 
 // collectNewerRefs walks the expression tree and returns all -newer reference paths.

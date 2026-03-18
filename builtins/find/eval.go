@@ -290,11 +290,7 @@ func evalExecDir(ec *evalContext, e *expr) evalResult {
 	}
 	args := make([]string, len(e.execArgs))
 	for i, a := range e.execArgs {
-		if strings.Contains(a, "{}") {
-			args[i] = strings.ReplaceAll(a, "{}", replacement)
-		} else {
-			args[i] = a
-		}
+		args[i] = strings.ReplaceAll(a, "{}", replacement)
 	}
 	exitCode, err := ec.callCtx.RunCommand(ec.ctx, ec.execDirParent, e.execCmd, args)
 	if err != nil {

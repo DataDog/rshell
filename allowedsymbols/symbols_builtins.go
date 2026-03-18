@@ -96,7 +96,6 @@ var builtinPerCommandSymbols = map[string][]string{
 		"strconv.ErrRange",                // 🟢 sentinel error value for overflow; pure constant.
 		"strconv.ParseInt",                // 🟢 string-to-int conversion; pure function, no I/O.
 		"strconv.ParseUint",               // 🟢 string-to-unsigned-int conversion; pure function, no I/O.
-		"strings.Contains",                // 🟢 substring search for {} replacement in -execdir; pure function, no I/O.
 		"strings.HasPrefix",               // 🟢 pure function for prefix matching; no I/O.
 		"strings.ReplaceAll",              // 🟢 replaces all {} occurrences in -execdir args; pure function, no I/O.
 		"strings.Split",                   // 🟢 splits a string by separator into a slice; pure function, no I/O.

@@ -270,7 +270,7 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 			if !r.allowAllCommands && cmdName != "help" && !r.allowedCommands[cmdName] {
 				return 127, fmt.Errorf("%s: command not allowed", cmdName)
 			}
-			fn, ok := builtins.Lookup(cmdName)
+			cmdFn, ok := builtins.Lookup(cmdName)
 			if !ok {
 				return 127, fmt.Errorf("%s: command not found", cmdName)
 			}
@@ -323,7 +323,7 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 			if r.stdin != nil {
 				child.Stdin = r.stdin
 			}
-			result := fn(ctx, child, cmdArgs)
+			result := cmdFn(ctx, child, cmdArgs)
 			return result.Code, nil
 		}
 		call := &builtins.CallContext{
