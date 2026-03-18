@@ -7,7 +7,7 @@
 //
 // find — search for files in a directory hierarchy
 //
-// Usage: find [-L] [PATH...] [EXPRESSION]
+// Usage: find [-H] [-L] [-P] [PATH...] [EXPRESSION]
 //
 // Search the directory tree rooted at each PATH, evaluating the given
 // EXPRESSION for each file found. If no PATH is given, the current
@@ -15,7 +15,8 @@
 //
 // Global options:
 //
-//	-L  Follow symbolic links.
+//	--help  Print usage information and exit.
+//	-L      Follow symbolic links.
 //
 // Supported predicates:
 //
@@ -23,18 +24,19 @@
 //	-iname PATTERN   — like -name but case-insensitive
 //	-path PATTERN    — full path matches shell glob PATTERN
 //	-ipath PATTERN   — like -path but case-insensitive
-//	-type TYPE       — file type: f (regular), d (directory), l (symlink),
-//	                   p (named pipe), s (socket). Comma-separated for OR.
+//	-type TYPE       — file type: b,c,d,f,l,p,s. Comma-separated for OR.
 //	-size N[cwbkMG]  — file size. +N = greater, -N = less, N = exact.
 //	-empty           — empty regular file or directory
 //	-newer FILE      — modified more recently than FILE
 //	-mtime N         — modified N days ago (+N = more, -N = less)
 //	-mmin N          — modified N minutes ago (+N = more, -N = less)
+//	-perm MODE       — permission bits match MODE (octal or symbolic)
 //	-maxdepth N      — descend at most N levels
 //	-mindepth N      — apply tests only at depth >= N
 //	-print           — print path followed by newline
 //	-print0          — print path followed by NUL
 //	-prune           — skip directory subtree
+//	-quit            — exit immediately
 //	-true            — always true
 //	-false           — always false
 //
@@ -106,6 +108,9 @@ func run(ctx context.Context, callCtx *builtins.CallContext, args []string) buil
 optLoop:
 	for i < len(args) {
 		switch args[i] {
+		case "--help":
+			printHelp(callCtx)
+			return builtins.Result{}
 		case "-L":
 			followLinks = true
 			i++
@@ -140,13 +145,18 @@ optLoop:
 		paths = []string{"."}
 	}
 
+	exprArgs := args[i:]
+
 	// Parse expression (includes -maxdepth/-mindepth as parser-recognized
 	// options). The recursive-descent parser naturally handles token ownership,
 	// so depth options can appear in any position without stealing arguments
 	// from other predicates.
-	exprArgs := args[i:]
 	pr, err := parseExpression(exprArgs)
 	if err != nil {
+		if errors.Is(err, errHelpRequested) {
+			printHelp(callCtx)
+			return builtins.Result{}
+		}
 		callCtx.Errf("%s\n", err.Error())
 		return builtins.Result{Code: 1}
 	}
@@ -224,7 +234,7 @@ optLoop:
 				failed = true
 				continue
 			}
-			if walkPath(ctx, callCtx, startPath, walkOptions{
+			wr := walkPath(ctx, callCtx, startPath, walkOptions{
 				expression:       expression,
 				implicitPrint:    implicitPrint,
 				followLinks:      followLinks,
@@ -232,8 +242,12 @@ optLoop:
 				minDepth:         minDepth,
 				now:              now,
 				eagerNewerErrors: eagerNewerErrors,
-			}) {
+			})
+			if wr.failed {
 				failed = true
+			}
+			if wr.quit {
+				break
 			}
 		}
 	}
@@ -254,6 +268,47 @@ func isExpressionStart(arg string) bool {
 	return strings.HasPrefix(arg, "-") && len(arg) > 1
 }
 
+// printHelp outputs the find usage information.
+func printHelp(callCtx *builtins.CallContext) {
+	callCtx.Out("Usage: find [-L] [-P] [path...] [expression]\n\n")
+	callCtx.Out("Search directory trees, evaluating an expression for each file found.\n")
+	callCtx.Out("Default path is the current directory; default expression is -print.\n\n")
+	callCtx.Out("Options:\n")
+	callCtx.Out("  --help                     Print this help and exit.\n")
+	callCtx.Out("  -L                         Follow symbolic links.\n")
+	callCtx.Out("  -P                         Never follow symbolic links (default).\n\n")
+	callCtx.Out("Tests:\n")
+	callCtx.Out("  -name PATTERN              Base name matches shell glob PATTERN.\n")
+	callCtx.Out("  -iname PATTERN             Like -name but case-insensitive.\n")
+	callCtx.Out("  -path PATTERN              Full path matches shell glob PATTERN.\n")
+	callCtx.Out("  -ipath PATTERN             Like -path but case-insensitive.\n")
+	callCtx.Out("  -type TYPE                 File type: b,c,d,f,l,p,s. Comma-separated for OR.\n")
+	callCtx.Out("  -size N[cwbkMG]            File size (+N=greater, -N=less, N=exact).\n")
+	callCtx.Out("  -empty                     Empty regular file or directory.\n")
+	callCtx.Out("  -newer FILE                Modified more recently than FILE.\n")
+	callCtx.Out("  -mtime N                   Modified N days ago (+N=more, -N=less).\n")
+	callCtx.Out("  -mmin N                    Modified N minutes ago (+N=more, -N=less).\n")
+	callCtx.Out("  -perm MODE                 Permission bits match MODE (octal or symbolic).\n")
+	callCtx.Out("  -maxdepth N                Descend at most N levels.\n")
+	callCtx.Out("  -mindepth N                Apply tests only at depth >= N.\n")
+	callCtx.Out("  -true                      Always true.\n")
+	callCtx.Out("  -false                     Always false.\n\n")
+	callCtx.Out("Actions:\n")
+	callCtx.Out("  -print                     Print path followed by newline.\n")
+	callCtx.Out("  -print0                    Print path followed by NUL.\n")
+	callCtx.Out("  -prune                     Skip directory subtree.\n")
+	callCtx.Out("  -quit                      Exit immediately.\n\n")
+	callCtx.Out("Operators:\n")
+	callCtx.Out("  ( EXPR )                   Grouping.\n")
+	callCtx.Out("  ! EXPR / -not EXPR         Negation.\n")
+	callCtx.Out("  EXPR -a EXPR / EXPR -and EXPR  Conjunction (implicit).\n")
+	callCtx.Out("  EXPR -o EXPR / EXPR -or EXPR   Disjunction.\n\n")
+	callCtx.Out("Blocked predicates [sandbox]:\n")
+	callCtx.Out("  -exec, -execdir, -delete, -ok, -okdir          Execution/deletion.\n")
+	callCtx.Out("  -fls, -fprint, -fprint0, -fprintf              File writes.\n")
+	callCtx.Out("  -regex, -iregex                                ReDoS risk.\n")
+}
+
 // walkOptions holds configuration for a single walkPath invocation.
 type walkOptions struct {
 	expression       *expr
@@ -265,16 +320,23 @@ type walkOptions struct {
 	eagerNewerErrors map[string]bool
 }
 
+// walkResult holds the outcome of a walk operation.
+type walkResult struct {
+	failed bool // at least one error occurred
+	quit   bool // -quit was triggered
+}
+
 // walkPath walks the directory tree rooted at startPath, evaluating the
-// expression for each entry. Returns true if any error occurred.
+// expression for each entry.
 func walkPath(
 	ctx context.Context,
 	callCtx *builtins.CallContext,
 	startPath string,
 	opts walkOptions,
-) bool {
+) walkResult {
 	now := opts.now
 	failed := false
+	quit := false
 	newerCache := map[string]time.Time{}
 	newerErrors := map[string]bool{}
 	for k, v := range opts.eagerNewerErrors {
@@ -287,8 +349,6 @@ func walkPath(
 	if opts.followLinks {
 		startInfo, err = callCtx.StatFile(ctx, startPath)
 		if err != nil && isNotExist(err) {
-			// Dangling symlink root: fall back to lstat like child entries.
-			// Only for "not found" — permission/sandbox errors are real.
 			startInfo, err = callCtx.LstatFile(ctx, startPath)
 		}
 	} else {
@@ -296,17 +356,12 @@ func walkPath(
 	}
 	if err != nil {
 		callCtx.Errf("find: '%s': %s\n", startPath, callCtx.PortableErr(err))
-		return true
+		return walkResult{failed: true}
 	}
 
 	// Cycle detection for -L mode: track ancestor directory identities
 	// (dev+inode on Unix, volume serial+file index on Windows) along the
-	// path from root to the current node. This correctly allows multiple
-	// symlinks to the same target (no ancestor cycle) while detecting
-	// actual loops. File identity is attempted per-entry; if it fails for
-	// a specific directory, we fall back to path-based ancestor tracking
-	// for that subtree. The maxTraversalDepth=256 cap remains as an
-	// ultimate safety bound.
+	// path from root to the current node.
 
 	// dirIterator streams directory entries one at a time via ReadDir(1),
 	// keeping memory usage proportional to tree depth, not directory width.
@@ -319,10 +374,8 @@ func walkPath(
 		done          bool
 	}
 
-	// processEntry evaluates the expression for a single file entry.
-	// Returns (prune, isLoop).
-	processEntry := func(path string, info iofs.FileInfo, depth int, ancestorIDs map[builtins.FileID]string, ancestorPaths map[string]bool) (bool, bool, map[builtins.FileID]string, map[string]bool) {
-		// With -L, detect symlink loops BEFORE evaluating predicates.
+	// checkLoop detects symlink loops for -L mode.
+	checkLoop := func(path string, info iofs.FileInfo, ancestorIDs map[builtins.FileID]string, ancestorPaths map[string]bool) (bool, map[builtins.FileID]string, map[string]bool) {
 		var childAncestorIDs map[builtins.FileID]string
 		var childAncestorPaths map[string]bool
 		if info.IsDir() && opts.followLinks {
@@ -334,7 +387,7 @@ func walkPath(
 						callCtx.Errf("find: File system loop detected; '%s' is part of the same file system loop as '%s'.\n",
 							path, firstPath)
 						failed = true
-						return false, true, nil, nil
+						return true, nil, nil
 					}
 					childAncestorIDs = make(map[builtins.FileID]string, len(ancestorIDs)+1)
 					for k, v := range ancestorIDs {
@@ -347,7 +400,7 @@ func walkPath(
 				if ancestorPaths[path] {
 					callCtx.Errf("find: File system loop detected; '%s' has already been visited.\n", path)
 					failed = true
-					return false, true, nil, nil
+					return true, nil, nil
 				}
 				childAncestorPaths = make(map[string]bool, len(ancestorPaths)+1)
 				for k := range ancestorPaths {
@@ -356,7 +409,12 @@ func walkPath(
 				childAncestorPaths[path] = true
 			}
 		}
+		return false, childAncestorIDs, childAncestorPaths
+	}
 
+	// processEntry evaluates the expression for a single file entry.
+	// Returns (prune, quit).
+	processEntry := func(path string, info iofs.FileInfo, depth int) (bool, bool) {
 		ec := &evalContext{
 			callCtx:     callCtx,
 			ctx:         ctx,
@@ -377,26 +435,38 @@ func walkPath(
 			if len(newerErrors) > 0 || ec.failed {
 				failed = true
 			}
+			if result.quit {
+				return prune, true
+			}
 			if result.matched && opts.implicitPrint {
 				callCtx.Outf("%s\n", path)
 			}
 		}
 
-		return prune, false, childAncestorIDs, childAncestorPaths
+		return prune, false
 	}
 
 	// Process the starting path.
-	prune, isLoop, childAncIDs, childAncPaths := processEntry(startPath, startInfo, 0, nil, nil)
+	isLoop, childAncIDs, childAncPaths := checkLoop(startPath, startInfo, nil, nil)
+
+	startPrune := false
+	if !isLoop {
+		var q bool
+		startPrune, q = processEntry(startPath, startInfo, 0)
+		if q {
+			return walkResult{failed: failed, quit: true}
+		}
+	}
 
 	// Set up the iterator stack. Each open directory keeps a file handle
 	// that reads one entry at a time, so memory is O(depth) not O(width).
 	var iterStack []*dirIterator
 
-	if !isLoop && !prune && startInfo.IsDir() && 0 < opts.maxDepth {
+	if !isLoop && !startPrune && startInfo.IsDir() && 0 < opts.maxDepth {
 		dir, openErr := callCtx.OpenDir(ctx, startPath)
 		if openErr != nil {
 			callCtx.Errf("find: '%s': %s\n", startPath, callCtx.PortableErr(openErr))
-			return true
+			return walkResult{failed: true}
 		}
 		iterStack = append(iterStack, &dirIterator{
 			dir:           dir,
@@ -408,8 +478,8 @@ func walkPath(
 	}
 
 	for len(iterStack) > 0 {
-		if ctx.Err() != nil {
-			failed = true
+		if ctx.Err() != nil || quit {
+			failed = failed || ctx.Err() != nil
 			break
 		}
 
@@ -420,7 +490,6 @@ func walkPath(
 			continue
 		}
 
-		// Read one entry at a time from the directory.
 		dirEntries, readErr := top.dir.ReadDir(1)
 		if readErr != nil {
 			if readErr != io.EOF {
@@ -442,8 +511,6 @@ func walkPath(
 		if opts.followLinks {
 			childInfo, err = callCtx.StatFile(ctx, childPath)
 			if err != nil && isNotExist(err) {
-				// Dangling symlink: stat fails but lstat succeeds.
-				// Only for "not found" — permission/sandbox errors are real.
 				childInfo, err = callCtx.LstatFile(ctx, childPath)
 			}
 			if err != nil {
@@ -460,9 +527,15 @@ func walkPath(
 			}
 		}
 
-		prune, isLoop, cAncIDs, cAncPaths := processEntry(childPath, childInfo, top.depth, top.ancestorIDs, top.ancestorPaths)
+		isLoop, cAncIDs, cAncPaths := checkLoop(childPath, childInfo, top.ancestorIDs, top.ancestorPaths)
 		if isLoop {
 			continue
+		}
+
+		prune, q := processEntry(childPath, childInfo, top.depth)
+		if q {
+			quit = true
+			break
 		}
 
 		// Descend into child directories unless pruned or beyond maxdepth.
@@ -488,7 +561,7 @@ func walkPath(
 		it.dir.Close()
 	}
 
-	return failed
+	return walkResult{failed: failed, quit: quit}
 }
 
 // collectNewerRefs walks the expression tree and returns all -newer reference paths.

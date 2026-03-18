@@ -55,5 +55,6 @@ var allowedpathsAllowedSymbols = []string{
 	"syscall.Errno",                      // system call error number type; pure type.
 	"syscall.GetFileInformationByHandle", // Windows API for file identity (vol serial + file index); read-only syscall.
 	"syscall.Handle",                     // Windows file handle type; pure type alias.
+	"syscall.O_NONBLOCK",                 // non-blocking open flag; prevents blocking on FIFOs during access checks. Pure constant.
 	"syscall.Stat_t",                     // file stat structure type; pure type for Unix file metadata.
 }

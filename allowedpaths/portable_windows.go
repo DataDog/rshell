@@ -44,13 +44,44 @@ func FileIdentity(absPath string, _ fs.FileInfo, sandbox *Sandbox) (uint64, uint
 	return uint64(d.VolumeSerialNumber), uint64(d.FileIndexHigh)<<32 | uint64(d.FileIndexLow), true
 }
 
-// effectiveHasPerm checks whether the current process has the requested
-// permission on Windows.  Windows does not use Unix UID/GID permission classes,
-// so we fall back to checking any-class bits (0222 / 0111) as before.
-func effectiveHasPerm(info fs.FileInfo, writeMask, execMask fs.FileMode, checkWrite, checkExec bool) bool {
-	perm := info.Mode().Perm()
-	if checkWrite && perm&writeMask == 0 {
-		return false
+// accessCheck verifies the path is inside the sandbox via os.Root.Stat,
+// then checks read permission by attempting to open the file through
+// os.Root. This respects NTFS ACLs — the kernel denies the open if
+// the current user lacks read permission. Named pipes cannot appear in
+// regular directories on Windows, so this cannot block.
+//
+//   - Read: verified by opening through os.Root (respects NTFS ACLs).
+//   - Write: checked via mode bits from Stat. On Windows,
+//     FILE_ATTRIBUTE_READONLY clears the write permission bits in
+//     Mode().Perm(), so mode-bit inspection is reliable.
+//   - Execute: Windows has no POSIX execute bits. The check always
+//     returns ErrPermission so that test -x behaves like a POSIX shell.
+func (r *root) accessCheck(rel string, checkRead, checkWrite, checkExec bool) (fs.FileInfo, error) {
+	info, err := r.root.Stat(rel)
+	if err != nil {
+		return nil, err
 	}
-	return !(checkExec && perm&execMask == 0)
+
+	// Windows has no POSIX execute bits — always deny execute checks.
+	if checkExec {
+		return info, os.ErrPermission
+	}
+
+	// On Windows, FILE_ATTRIBUTE_READONLY clears the write permission
+	// bits in Mode().Perm(). Check them for write access.
+	if checkWrite && info.Mode().Perm()&0200 == 0 {
+		return info, os.ErrPermission
+	}
+
+	if checkRead && !info.IsDir() {
+		f, err := r.root.OpenFile(rel, os.O_RDONLY, 0)
+		if err != nil {
+			return info, os.ErrPermission
+		}
+		if err := f.Close(); err != nil {
+			return info, err
+		}
+	}
+
+	return info, nil
 }
