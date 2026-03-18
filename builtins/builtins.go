@@ -128,7 +128,7 @@ type CallContext struct {
 	// Note: this means all builtins within one Run() share the same reference
 	// time, whereas bash evaluates each command against its own invocation
 	// time. This is an intentional trade-off for consistency within a script
-	// run. If Now is the zero value, callers should treat it as time.Now().
+	// run.
 	Now time.Time
 
 	// FileIdentity extracts canonical file identity from FileInfo.
