@@ -13,10 +13,6 @@ package allowedsymbols
 // must pass stack-addressed buffers to GetExtendedTcpTable/GetExtendedUdpTable
 // via iphlpapi.dll. Usage is limited to two call sites; no unsafe pointer
 // arithmetic occurs after the DLL call. All buffer parsing uses encoding/binary.
-//
-// Third-party OS abstraction packages (golang.org/x/sys/unix,
-// golang.org/x/sys/windows) are exempted entirely via the ExemptImport
-// function in the test config — their symbols are not listed here.
 var internalAllowedSymbols = []string{
 	"bufio.NewScanner",             // procinfo: line-by-line reading of /proc files; no write capability.
 	"bytes.NewReader",              // procinfo: wraps a byte slice as an in-memory io.Reader; no I/O side effects.
@@ -44,5 +40,17 @@ var internalAllowedSymbols = []string{
 	"syscall.Proc",                 // winnet: DLL procedure handle type used in function signature; pure type, no I/O.
 	"time.Now",                     // procinfo: returns the current wall-clock time; read-only, no side effects.
 	"time.Unix",                    // procinfo: constructs a Time from Unix seconds; pure function, no I/O.
-	"unsafe.Pointer",               // winnet: passes buffer/size pointers to DLL via syscall ABI. No pointer arithmetic; buffer parsed with encoding/binary after the call.
+	"unsafe.Pointer",                                         // winnet: passes buffer/size pointers to DLL via syscall ABI. No pointer arithmetic; buffer parsed with encoding/binary after the call.
+	"golang.org/x/sys/unix.KinfoProc",                        // procinfo (darwin): struct type carrying per-process kinfo_proc data from sysctl; read-only data, no exec capability.
+	"golang.org/x/sys/unix.SysctlKinfoProc",                  // procinfo (darwin): reads a single process's kinfo_proc via kern.proc.pid sysctl; read-only, no exec or write capability.
+	"golang.org/x/sys/unix.SysctlKinfoProcSlice",             // procinfo (darwin): reads all processes' kinfo_proc via kern.proc.all sysctl; read-only, no exec or write capability.
+	"golang.org/x/sys/unix.SysctlRaw",                        // procinfo (darwin): reads raw kern.procargs2 sysctl buffer per-PID to obtain argv; read-only, no exec capability.
+	"golang.org/x/sys/windows.CloseHandle",                   // procinfo (windows): closes a process-snapshot handle after enumeration; no data read or exec capability.
+	"golang.org/x/sys/windows.CreateToolhelp32Snapshot",      // procinfo (windows): creates a read-only snapshot of the process table; no exec or write capability.
+	"golang.org/x/sys/windows.ERROR_NO_MORE_FILES",           // procinfo (windows): sentinel error indicating end of process enumeration; pure constant.
+	"golang.org/x/sys/windows.Process32First",                // procinfo (windows): reads the first entry from a process snapshot; read-only, no exec capability.
+	"golang.org/x/sys/windows.Process32Next",                 // procinfo (windows): advances to the next entry in a process snapshot; read-only, no exec capability.
+	"golang.org/x/sys/windows.ProcessEntry32",                // procinfo (windows): struct type holding process snapshot entry data; pure data type, no I/O.
+	"golang.org/x/sys/windows.TH32CS_SNAPPROCESS",            // procinfo (windows): flag constant selecting process entries for CreateToolhelp32Snapshot; pure constant.
+	"golang.org/x/sys/windows.UTF16ToString",                 // procinfo (windows): converts a null-terminated UTF-16 slice to a Go string; pure function, no I/O.
 }

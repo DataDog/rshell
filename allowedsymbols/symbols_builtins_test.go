@@ -74,9 +74,7 @@ func internalCheckConfig() allowedSymbolsConfig {
 			return collectSubdirGoFiles(dir, nil, nil)
 		},
 		ExemptImport: func(importPath string) bool {
-			return importPath == "github.com/DataDog/rshell/builtins" ||
-				importPath == "golang.org/x/sys/unix" ||
-				importPath == "golang.org/x/sys/windows"
+			return importPath == "github.com/DataDog/rshell/builtins"
 		},
 		ListName: "internalAllowedSymbols",
 		MinFiles: 1,
