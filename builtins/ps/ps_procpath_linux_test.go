@@ -65,6 +65,18 @@ func TestProcPathNonexistentDirErrors(t *testing.T) {
 	}
 }
 
+// TestProcPathNonexistentDirErrorsByPID ensures ps -p fails gracefully when
+// the configured proc path does not exist.
+func TestProcPathNonexistentDirErrorsByPID(t *testing.T) {
+	_, stderr, code := runScriptWithProcPath(t, "ps -p 1", "/nonexistent/proc/path")
+	if code != 1 {
+		t.Errorf("expected exit code 1 for nonexistent proc path, got %d", code)
+	}
+	if !strings.Contains(stderr, "ps:") {
+		t.Errorf("expected error message in stderr, got: %s", stderr)
+	}
+}
+
 // TestProcPathEmptyUsesDefault ensures an empty ProcPath falls back to /proc
 // and ps -e runs successfully.
 func TestProcPathEmptyUsesDefault(t *testing.T) {
