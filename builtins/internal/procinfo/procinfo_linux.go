@@ -81,7 +81,7 @@ func getSession(ctx context.Context, procPath string) ([]ProcInfo, error) {
 	// Also include all processes that share our SID (best-effort; fall back to
 	// ancestor chain only).
 	var selfSID int
-	if data, err := os.ReadFile(filepath.Join(procPath, fmt.Sprintf("%d/stat", selfPID))); err == nil {
+	if data, err := os.ReadFile(filepath.Join(procPath, strconv.Itoa(selfPID), "stat")); err == nil {
 		selfSID = parseSID(data)
 	}
 
@@ -95,7 +95,7 @@ func getSession(ctx context.Context, procPath string) ([]ProcInfo, error) {
 			continue
 		}
 		if selfSID != 0 {
-			if data, err := os.ReadFile(filepath.Join(procPath, fmt.Sprintf("%d/stat", p.PID))); err == nil {
+			if data, err := os.ReadFile(filepath.Join(procPath, strconv.Itoa(p.PID), "stat")); err == nil {
 				if parseSID(data) == selfSID {
 					result = append(result, p)
 				}
@@ -123,7 +123,7 @@ func getByPIDs(ctx context.Context, procPath string, pids []int) ([]ProcInfo, er
 
 // readProc reads process info for a single PID from procPath.
 func readProc(procPath string, pid int, btime int64) (ProcInfo, error) {
-	statData, err := os.ReadFile(filepath.Join(procPath, fmt.Sprintf("%d/stat", pid)))
+	statData, err := os.ReadFile(filepath.Join(procPath, strconv.Itoa(pid), "stat"))
 	if err != nil {
 		return ProcInfo{}, err
 	}
@@ -225,7 +225,7 @@ func resolveTTY(_ int, ttyNr int64) string {
 
 // readUID reads the real UID from procPath/pid/status.
 func readUID(procPath string, pid int) string {
-	data, err := os.ReadFile(filepath.Join(procPath, fmt.Sprintf("%d/status", pid)))
+	data, err := os.ReadFile(filepath.Join(procPath, strconv.Itoa(pid), "status"))
 	if err != nil {
 		return "?"
 	}
@@ -244,7 +244,7 @@ func readUID(procPath string, pid int) string {
 
 // readCmdline reads procPath/pid/cmdline and returns the command line string.
 func readCmdline(procPath string, pid int) string {
-	data, err := os.ReadFile(filepath.Join(procPath, fmt.Sprintf("%d/cmdline", pid)))
+	data, err := os.ReadFile(filepath.Join(procPath, strconv.Itoa(pid), "cmdline"))
 	if err != nil || len(data) == 0 {
 		return ""
 	}
