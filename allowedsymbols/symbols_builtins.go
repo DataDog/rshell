@@ -329,6 +329,7 @@ var builtinPerCommandSymbols = map[string][]string{
 		"net.IPAddr",              // resolved IP address struct (IP + Zone); pure data type, no I/O.
 		"math.IsInf",              // IEEE 754 infinity check; pure function, no I/O.
 		"math.IsNaN",              // IEEE 754 NaN check; pure function, no I/O.
+		"math.MaxInt64",           // maximum int64 constant; used to compute time.Duration overflow boundary.
 		"strconv.ParseFloat",      // parses integer/float seconds for -W/-i flags; pure function, no I/O.
 		"strings.Contains",        // substring search; pure function, no I/O.
 		"strings.ToLower",         // converts string to lowercase; pure function, no I/O.

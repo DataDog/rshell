@@ -423,7 +423,13 @@ func parsePingDuration(s string) (time.Duration, error) {
 	if err != nil {
 		return 0, fmt.Errorf("invalid duration %q: must be a Go duration (e.g. \"1s\", \"500ms\") or seconds (e.g. \"1\", \"0.5\")", s)
 	}
-	if f < 0 || math.IsInf(f, 0) || math.IsNaN(f) {
+	// Reject non-finite values and values that would overflow time.Duration
+	// (int64 nanoseconds; max ~9.2 billion seconds = ~292 years).
+	const maxDurationSec = float64(math.MaxInt64 / int64(time.Second))
+	if math.IsNaN(f) || math.IsInf(f, 0) || f > maxDurationSec {
+		return 0, fmt.Errorf("invalid duration %q: must be a finite positive number", s)
+	}
+	if f < 0 {
 		return 0, fmt.Errorf("negative duration %q not allowed", s)
 	}
 	return time.Duration(f * float64(time.Second)), nil

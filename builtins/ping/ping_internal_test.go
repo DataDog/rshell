@@ -134,6 +134,13 @@ func TestParsePingDurationInfNaN(t *testing.T) {
 	assert.Error(t, err, "NaN should be rejected")
 }
 
+func TestParsePingDurationOverflow(t *testing.T) {
+	// Very large finite float overflows time.Duration (int64 ns) to negative.
+	// Must be caught before the conversion.
+	_, err := parsePingDuration("1e20")
+	assert.Error(t, err, "1e20 seconds should be rejected as overflow")
+}
+
 // ============================================================================
 // clampInt / clampDuration
 // ============================================================================
