@@ -129,6 +129,11 @@ type CallContext struct {
 	// time, whereas bash evaluates each command against its own invocation
 	// time. This is an intentional trade-off for consistency within a script
 	// run.
+	//
+	// Callers must set this to a meaningful time before invoking any builtin
+	// that uses time predicates (find -mmin/-mtime, ls -l). The zero value
+	// (time.Time{}) is silently unsafe: time predicates will evaluate against
+	// year 0001, producing incorrect results with no error.
 	Now time.Time
 
 	// FileIdentity extracts canonical file identity from FileInfo.

@@ -318,6 +318,8 @@ func (r *Runner) Reset() {
 		}
 	}
 	// Reset only the mutable state; config is preserved.
+	// startTime is intentionally zeroed here by the struct literal; it will
+	// be set again by Run() before any builtin is invoked.
 	r.runnerState = runnerState{
 		Dir:    r.origDir,
 		Params: r.origParams,
