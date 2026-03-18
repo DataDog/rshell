@@ -119,7 +119,7 @@ Wait for **both** to complete before proceeding.
 
 **Post the self-review outcome (from 2A1) as a GitHub PR comment** so it is always visible on the PR. Format it like this:
 ```bash
-gh pr comment <pr-number> --body "## Self-review (iteration N)
+gh pr comment <pr-number> --body "## Self-review (iteration N/<TOTAL_ITERATION>)
 Findings: 1×P1, 2×P2   ← or 'No findings.' if APPROVE with nothing to report
 
 P1 — path/to/file.go:42: <description of finding>
@@ -130,7 +130,7 @@ P2 — path/to/other.go:88: <description of finding>"
 
 **Post the codex review findings (from 2A2) as a separate GitHub PR comment**. Parse and reformat the raw codex output into the same structured format:
 ```bash
-gh pr comment <pr-number> --body "## Codex review (iteration N)
+gh pr comment <pr-number> --body "## Codex review (iteration N/<TOTAL_ITERATION>)
 Findings: 1×P1, 2×P2   ← or 'No findings.' if codex reported nothing
 
 P1 — path/to/file.go:42: <description of finding>
