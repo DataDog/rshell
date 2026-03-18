@@ -492,6 +492,11 @@ func AllowAllCommands() RunnerOption {
 // ProcPath sets the path to the proc filesystem used by the ps builtin.
 // When not set (default), ps uses "/proc". This option has no effect on
 // non-Linux platforms.
+//
+// Note: bare ps (session mode) uses the host process's PID to walk the PPID
+// chain. If path points to a proc filesystem from a different PID namespace,
+// the host PID will likely not be found there and session output will be empty.
+// ps -e and ps -p work correctly against any proc tree.
 func ProcPath(path string) RunnerOption {
 	return func(r *Runner) error {
 		r.procPath = path

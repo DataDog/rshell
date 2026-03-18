@@ -67,6 +67,9 @@ func getSession(ctx context.Context, procPath string) ([]ProcInfo, error) {
 	}
 
 	// Walk PPID chain from current process upward; collect session ancestors.
+	// Note: if procPath points to a foreign PID namespace (e.g. a container),
+	// our host PID is unlikely to appear there, so the session result will be
+	// empty. This is expected — GetSession is designed for the current host.
 	selfPID := os.Getpid()
 	ancestors := make(map[int]bool)
 	cur := selfPID

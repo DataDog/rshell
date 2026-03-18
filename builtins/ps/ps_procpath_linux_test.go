@@ -204,10 +204,18 @@ func TestProcPathFakeProcByPID(t *testing.T) {
 // proc path via GetSession rather than the real /proc.
 func TestProcPathFakeProcSession(t *testing.T) {
 	procPath := writeFakeProc(t, 1, "fakeinit")
-	// Bare ps uses GetSession; it may not include PID 1 since it is not in
-	// our session, but it must not crash and must not read the real /proc.
-	_, stderr, code := runScriptWithProcPath(t, "ps", procPath)
+	// Bare ps uses GetSession. Our process's PID is not present in the fake
+	// proc tree (which only has PID 1), so the session walk returns no
+	// ancestors and the SID check finds no matches. The output must contain
+	// only the header line — if real /proc were read, many additional lines
+	// would appear.
+	stdout, stderr, code := runScriptWithProcPath(t, "ps", procPath)
 	if code != 0 {
 		t.Fatalf("ps with fake proc path exited %d; stderr: %s", code, stderr)
+	}
+	// Only the header line should be present (session is empty for the fake proc).
+	lineCount := strings.Count(stdout, "\n")
+	if lineCount > 1 {
+		t.Errorf("expected only header line (real /proc must not be read), got %d lines:\n%s", lineCount, stdout)
 	}
 }
