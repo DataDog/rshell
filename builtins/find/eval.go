@@ -280,7 +280,11 @@ func evalExecDir(ec *evalContext, e *expr) evalResult {
 		ec.failed = true
 		return evalResult{}
 	}
-	replacement := "./" + baseName(ec.relPath)
+	base := baseName(ec.relPath)
+	replacement := "./" + base
+	if base == "/" {
+		replacement = "/"
+	}
 	args := make([]string, len(e.execArgs))
 	for i, a := range e.execArgs {
 		if a == "{}" {
