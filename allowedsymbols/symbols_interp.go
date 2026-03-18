@@ -16,52 +16,72 @@ package allowedsymbols
 // and do not appear here.
 //
 // The permanently banned packages (reflect, unsafe) apply here too.
+// interpAllowedSymbols is ordered from least safe (top) to most safe (bottom).
+// See the package-level doc in symbols_common.go for the full category guide.
 var interpAllowedSymbols = []string{
-	"bytes.Buffer",         // in-memory byte buffer; pure data structure, no I/O.
-	"context.Context",      // deadline/cancellation plumbing; pure interface, no side effects.
-	"context.WithValue",    // derives a context carrying a key-value pair; pure function.
-	"errors.As",            // error type assertion; pure function, no I/O.
-	"fmt.Errorf",           // formatted error creation; pure function, no I/O.
-	"fmt.Fprintf",          // formatted write to an io.Writer; delegates to Write, no filesystem access.
-	"fmt.Fprintln",         // writes to an io.Writer with newline; delegates to Write, no filesystem access.
-	"fmt.Sprintf",          // string formatting; pure function, no I/O.
-	"io.Closer",            // interface type for closing; no side effects.
-	"io.Copy",              // copies from Reader to Writer; no filesystem access, delegates to Read/Write.
-	"io.Discard",           // write sink that discards all data; no side effects.
-	"io.LimitReader",       // wraps a Reader with a byte cap; pure function, no I/O.
-	"io.Reader",            // interface type for reading; no side effects.
-	"io.ReadWriteCloser",   // combined interface type; no side effects.
-	"io.Writer",            // interface type for writing; no side effects.
-	"io/fs.DirEntry",       // interface type for directory entries; no side effects.
-	"io/fs.FileInfo",       // interface type for file metadata; no side effects.
-	"io/fs.ReadDirFile",    // read-only directory handle interface; no write capability.
-	"maps.Insert",          // inserts all key-value pairs from one map into another; pure function.
-	"os.DirEntry",          // type alias for fs.DirEntry; no side effects.
-	"os.File",              // file handle type; interpreter needs file I/O for redirects and pipes.
-	"os.FileMode",          // file permission bits type; pure type.
-	"os.Getwd",             // returns current working directory; read-only.
-	"os.O_RDONLY",          // read-only file flag constant; pure constant.
-	"os.PathError",         // error type wrapping path and operation; pure type.
-	"os.Pipe",              // creates an OS pipe pair; needed for shell pipelines.
-	"path/filepath.IsAbs",  // checks if path is absolute; pure function, no I/O.
-	"path/filepath.Join",   // joins path elements; pure function, no I/O.
-	"runtime.GOOS",         // current OS name constant; pure constant, no I/O.
-	"strconv.Itoa",         // int-to-string conversion; pure function, no I/O.
-	"strings.Builder",      // efficient string concatenation; pure in-memory buffer, no I/O.
-	"strings.ContainsRune", // checks if a rune is in a string; pure function, no I/O.
-	"strings.Index",        // finds substring index; pure function, no I/O.
-	"strings.HasPrefix",    // pure function for prefix matching; no I/O.
-	"strings.HasSuffix",    // pure function for suffix matching; no I/O.
-	"strings.Split",        // splits a string by separator; pure function, no I/O.
-	"strings.ToUpper",      // converts string to uppercase; pure function, no I/O.
-	"strings.TrimLeft",     // trims leading characters; pure function, no I/O.
-	"sync.Mutex",           // mutual exclusion lock; concurrency primitive, no I/O.
-	"sync.Once",            // ensures a function runs exactly once; concurrency primitive, no I/O.
-	"sync.WaitGroup",       // waits for goroutines to finish; concurrency primitive, no I/O.
-	"time.Now",             // returns current time; read-only, no mutation.
-	"time.Time",            // time value type; pure data, no side effects.
 
-	// --- mvdan.cc/sh/v3/expand --- (shell word expansion library)
+	// -------------------------------------------------------------------------
+	// 1. OS / Process interface
+	// Symbols that perform real filesystem I/O or create OS-level resources.
+	// The interpreter core needs these to implement shell redirects and pipelines.
+	// -------------------------------------------------------------------------
+
+	"os.File",  // file handle type; interpreter needs file I/O for redirects and pipes.
+	"os.Getwd", // returns current working directory; read-only filesystem call.
+	"os.Pipe",  // creates an OS pipe pair; needed for shell pipeline plumbing.
+
+	// -------------------------------------------------------------------------
+	// 2. Filesystem metadata
+	// Read-only OS types for file/directory metadata; no file contents or writes.
+	// -------------------------------------------------------------------------
+
+	"io/fs.DirEntry",    // interface type for directory entries; no side effects.
+	"io/fs.FileInfo",    // interface type for file metadata; no side effects.
+	"io/fs.ReadDirFile", // read-only directory handle interface; no write capability.
+	"os.DirEntry",       // type alias for fs.DirEntry; no side effects.
+	"os.FileMode",       // file permission bits type; pure type.
+	"os.O_RDONLY",       // read-only file flag constant; pure constant.
+	"os.PathError",      // error type wrapping path and operation; pure type.
+
+	// -------------------------------------------------------------------------
+	// 3. Concurrency primitives
+	// Goroutine coordination types; no I/O or filesystem access.
+	// -------------------------------------------------------------------------
+
+	"sync.Mutex",     // mutual exclusion lock; concurrency primitive, no I/O.
+	"sync.Once",      // ensures a function runs exactly once; concurrency primitive, no I/O.
+	"sync.WaitGroup", // waits for goroutines to finish; concurrency primitive, no I/O.
+
+	// -------------------------------------------------------------------------
+	// 4. Context & time
+	// Deadline/cancellation management and wall-clock reads; no I/O.
+	// -------------------------------------------------------------------------
+
+	"context.Context",   // deadline/cancellation plumbing; pure interface, no side effects.
+	"context.WithValue", // derives a context carrying a key-value pair; pure function.
+	"time.Now",          // returns current time; read-only, no mutation.
+	"time.Time",         // time value type; pure data, no side effects.
+
+	// -------------------------------------------------------------------------
+	// 5. I/O interfaces & streaming utilities
+	// Reader/Writer/Closer interfaces and in-memory stream adapters.
+	// No direct filesystem or network access by themselves.
+	// -------------------------------------------------------------------------
+
+	"bytes.Buffer",       // in-memory byte buffer; pure data structure, no I/O.
+	"io.Closer",          // interface type for closing; no side effects.
+	"io.Copy",            // copies from Reader to Writer; delegates to Read/Write, no filesystem access.
+	"io.Discard",         // write sink that discards all data; no side effects.
+	"io.LimitReader",     // wraps a Reader with a byte cap; pure function, no I/O.
+	"io.Reader",          // interface type for reading; no side effects.
+	"io.ReadWriteCloser", // combined interface type; no side effects.
+	"io.Writer",          // interface type for writing; no side effects.
+
+	// -------------------------------------------------------------------------
+	// 6. Shell word expansion  (mvdan.cc/sh/v3/expand)
+	// Third-party shell expansion library: environment access, word splitting,
+	// globbing, here-document expansion. Pure in-memory operations.
+	// -------------------------------------------------------------------------
 
 	"mvdan.cc/sh/v3/expand.Config",                 // configuration for word expansion; pure type.
 	"mvdan.cc/sh/v3/expand.Document",               // expands a here-document; pure function.
@@ -76,7 +96,11 @@ var interpAllowedSymbols = []string{
 	"mvdan.cc/sh/v3/expand.Variable",               // represents a shell variable; pure type.
 	"mvdan.cc/sh/v3/expand.WriteEnviron",           // interface for setting environment variables; pure interface.
 
-	// --- mvdan.cc/sh/v3/syntax --- (shell AST types and utilities)
+	// -------------------------------------------------------------------------
+	// 7. Shell AST  (mvdan.cc/sh/v3/syntax)
+	// Third-party shell parsing library: pure AST node types, redirect operator
+	// constants, and the AST walker. No I/O.
+	// -------------------------------------------------------------------------
 
 	"mvdan.cc/sh/v3/syntax.AndStmt",      // AST node for && operator; pure type.
 	"mvdan.cc/sh/v3/syntax.AppAll",       // redirect operator constant (&>>); pure constant.
@@ -130,4 +154,46 @@ var interpAllowedSymbols = []string{
 	"mvdan.cc/sh/v3/syntax.WordHdoc",     // redirect operator constant (<<<); pure constant.
 	"mvdan.cc/sh/v3/syntax.WordIter",     // AST node for word iteration (for-in); pure type.
 	"mvdan.cc/sh/v3/syntax.WordPart",     // AST interface for word components; pure interface.
+
+	// -------------------------------------------------------------------------
+	// 8. Path & runtime
+	// Pure path manipulation and OS-name detection; no I/O.
+	// -------------------------------------------------------------------------
+
+	"path/filepath.IsAbs", // checks if path is absolute; pure function, no I/O.
+	"path/filepath.Join",  // joins path elements; pure function, no I/O.
+	"runtime.GOOS",        // current OS name constant; pure constant, no I/O.
+
+	// -------------------------------------------------------------------------
+	// 9. Collections
+	// Pure map operations; no I/O.
+	// -------------------------------------------------------------------------
+
+	"maps.Insert", // inserts all key-value pairs from one map into another; pure function.
+
+	// -------------------------------------------------------------------------
+	// 10. String manipulation
+	// Pure in-memory string and numeric-conversion functions; no I/O.
+	// -------------------------------------------------------------------------
+
+	"strconv.Itoa",         // int-to-string conversion; pure function, no I/O.
+	"strings.Builder",      // efficient string concatenation; pure in-memory buffer, no I/O.
+	"strings.ContainsRune", // checks if a rune is in a string; pure function, no I/O.
+	"strings.HasPrefix",    // pure function for prefix matching; no I/O.
+	"strings.HasSuffix",    // pure function for suffix matching; no I/O.
+	"strings.Index",        // finds substring index; pure function, no I/O.
+	"strings.Split",        // splits a string by separator; pure function, no I/O.
+	"strings.ToUpper",      // converts string to uppercase; pure function, no I/O.
+	"strings.TrimLeft",     // trims leading characters from a string; pure function, no I/O.
+
+	// -------------------------------------------------------------------------
+	// 11. Error handling & formatting
+	// Pure error construction and formatting; no I/O.
+	// -------------------------------------------------------------------------
+
+	"errors.As",    // error type assertion; pure function, no I/O.
+	"fmt.Errorf",   // formatted error creation; pure function, no I/O.
+	"fmt.Fprintf",  // formatted write to an io.Writer; delegates to Write, no filesystem access.
+	"fmt.Fprintln", // writes to an io.Writer with newline; delegates to Write, no filesystem access.
+	"fmt.Sprintf",  // string formatting; pure function, no I/O.
 }

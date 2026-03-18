@@ -16,44 +16,91 @@ package allowedsymbols
 // and do not appear here.
 //
 // The permanently banned packages (reflect, unsafe) apply here too.
+// allowedpathsAllowedSymbols is ordered from least safe (top) to most safe (bottom).
+// See the package-level doc in symbols_common.go for the full category guide.
 var allowedpathsAllowedSymbols = []string{
-	"errors.As",                          // error type assertion; pure function, no I/O.
-	"errors.Is",                          // error comparison; pure function, no I/O.
-	"errors.New",                         // creates a simple error value; pure function, no I/O.
-	"fmt.Errorf",                         // formatted error creation; pure function, no I/O.
-	"io.EOF",                             // sentinel error value; pure constant.
-	"io.ReadWriteCloser",                 // combined interface type; no side effects.
-	"io/fs.DirEntry",                     // interface type for directory entries; no side effects.
-	"io/fs.ErrExist",                     // sentinel error for "already exists"; pure constant.
-	"io/fs.ErrNotExist",                  // sentinel error for "does not exist"; pure constant.
-	"io/fs.ErrPermission",                // sentinel error for permission denied; pure constant.
-	"io/fs.FileInfo",                     // interface type for file metadata; no side effects.
-	"io/fs.FileMode",                     // file permission bits type; pure type.
-	"io/fs.ReadDirFile",                  // read-only directory handle interface; no write capability.
-	"os.DevNull",                         // platform null device path constant; pure constant.
-	"os.ErrPermission",                   // sentinel error for permission denied; pure constant.
-	"os.FileMode",                        // file permission bits type; pure type.
+
+	// -------------------------------------------------------------------------
+	// 1. OS / Kernel interface
+	// Syscalls and OS-level I/O that underpin sandbox enforcement. These symbols
+	// read process identity or file metadata directly from the kernel.
+	// -------------------------------------------------------------------------
+
 	"os.Getgid",                          // returns the numeric group id of the caller; read-only syscall.
-	"os.Getgroups",                       // returns supplementary group ids; read-only syscall.
+	"os.Getgroups",                       // returns supplementary group ids of the caller; read-only syscall.
 	"os.Getuid",                          // returns the numeric user id of the caller; read-only syscall.
-	"os.O_RDONLY",                        // read-only file flag constant; pure constant.
-	"os.OpenRoot",                        // opens a directory as a root for sandboxed file access; needed for sandbox.
-	"os.PathError",                       // error type wrapping path and operation; pure type.
-	"os.Root",                            // sandboxed directory root type; core of the filesystem sandbox.
-	"os.Stat",                            // returns file info for a path; needed for sandbox path validation.
-	"path/filepath.Abs",                  // returns absolute path; pure path computation.
-	"path/filepath.IsAbs",                // checks if path is absolute; pure function, no I/O.
-	"path/filepath.Join",                 // joins path elements; pure function, no I/O.
-	"path/filepath.Rel",                  // returns relative path; pure path computation.
-	"path/filepath.Separator",            // OS path separator constant; pure constant.
-	"slices.SortFunc",                    // sorts a slice with a comparison function; pure function, no I/O.
-	"strings.Compare",                    // compares two strings lexicographically; pure function, no I/O.
-	"strings.EqualFold",                  // case-insensitive string comparison; pure function, no I/O.
-	"strings.HasPrefix",                  // pure function for prefix matching; no I/O.
-	"syscall.ByHandleFileInformation",    // Windows file identity structure; pure type for file metadata.
-	"syscall.EISDIR",                     // "is a directory" errno constant; pure constant.
-	"syscall.Errno",                      // system call error number type; pure type.
-	"syscall.GetFileInformationByHandle", // Windows API for file identity (vol serial + file index); read-only syscall.
-	"syscall.Handle",                     // Windows file handle type; pure type alias.
-	"syscall.Stat_t",                     // file stat structure type; pure type for Unix file metadata.
+	"os.OpenRoot",                        // opens a directory as a sandboxed root for file access; filesystem I/O.
+	"os.Stat",                            // returns file info for a path; filesystem I/O needed for sandbox path validation.
+	"syscall.ByHandleFileInformation",    // Windows: file identity struct (vol serial + file index); read-only type.
+	"syscall.EISDIR",                     // errno constant for "is a directory"; pure constant, no I/O.
+	"syscall.Errno",                      // system call error number type; pure type, no I/O.
+	"syscall.GetFileInformationByHandle", // Windows: queries file identity via handle; read-only syscall.
+	"syscall.Handle",                     // Windows: file handle type; pure type alias, no I/O.
+	"syscall.Stat_t",                     // Unix: file stat struct for UID/GID/inode; read-only type, no I/O.
+
+	// -------------------------------------------------------------------------
+	// 2. Filesystem sandbox types & sentinel errors
+	// Core abstractions and constants for the sandbox boundary. These types
+	// define what paths are reachable and what errors are expected.
+	// -------------------------------------------------------------------------
+
+	"io/fs.DirEntry",      // interface type for directory entries; no side effects.
+	"io/fs.ErrExist",      // sentinel error for "already exists"; pure constant.
+	"io/fs.ErrNotExist",   // sentinel error for "does not exist"; pure constant.
+	"io/fs.ErrPermission", // sentinel error for permission denied; pure constant.
+	"io/fs.FileInfo",      // interface type for file metadata; no side effects.
+	"io/fs.FileMode",      // file permission bits type; pure type.
+	"io/fs.ReadDirFile",   // read-only directory handle interface; no write capability.
+	"os.DevNull",          // platform null device path constant; pure constant.
+	"os.ErrPermission",    // sentinel error for permission denied; pure constant.
+	"os.FileMode",         // file permission bits type; pure type.
+	"os.O_RDONLY",         // read-only file flag constant; pure constant.
+	"os.PathError",        // error type wrapping path and operation; pure type.
+	"os.Root",             // sandboxed directory root type; core of the filesystem sandbox.
+
+	// -------------------------------------------------------------------------
+	// 3. Path computation
+	// Pure path manipulation; no I/O, but directly affects which filesystem
+	// paths are considered in-bounds by the sandbox.
+	// -------------------------------------------------------------------------
+
+	"path/filepath.Abs",       // returns absolute path; pure path computation, no I/O.
+	"path/filepath.IsAbs",     // checks if path is absolute; pure function, no I/O.
+	"path/filepath.Join",      // joins path elements; pure function, no I/O.
+	"path/filepath.Rel",       // returns relative path between two paths; pure path computation, no I/O.
+	"path/filepath.Separator", // OS path separator constant; pure constant.
+
+	// -------------------------------------------------------------------------
+	// 4. I/O interfaces
+	// Pure interface types; no direct filesystem or network access.
+	// -------------------------------------------------------------------------
+
+	"io.EOF",             // sentinel error value; pure constant.
+	"io.ReadWriteCloser", // combined Reader/Writer/Closer interface type; no side effects.
+
+	// -------------------------------------------------------------------------
+	// 5. Collections
+	// Pure slice operations; no I/O.
+	// -------------------------------------------------------------------------
+
+	"slices.SortFunc", // sorts a slice with a comparison function; pure function, no I/O.
+
+	// -------------------------------------------------------------------------
+	// 6. String manipulation
+	// Pure in-memory string functions; no I/O.
+	// -------------------------------------------------------------------------
+
+	"strings.Compare",   // compares two strings lexicographically; pure function, no I/O.
+	"strings.EqualFold", // case-insensitive string comparison; pure function, no I/O.
+	"strings.HasPrefix", // checks string prefix; pure function, no I/O.
+
+	// -------------------------------------------------------------------------
+	// 7. Error handling
+	// Pure error construction and formatting; no I/O.
+	// -------------------------------------------------------------------------
+
+	"errors.As",  // error type assertion; pure function, no I/O.
+	"errors.Is",  // error comparison; pure function, no I/O.
+	"errors.New", // creates a simple error value; pure function, no I/O.
+	"fmt.Errorf", // formatted error creation; pure function, no I/O.
 }
