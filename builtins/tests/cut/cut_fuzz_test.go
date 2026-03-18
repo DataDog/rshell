@@ -231,8 +231,8 @@ func FuzzCutDelimiter(f *testing.F) {
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		script := fmt.Sprintf("cut -d '%s' -f %s input.txt", delim, fieldSpec)
-		cancel()
 		_, _, code := cmdRunCtxFuzz(ctx, t, script, dir)
+		cancel()
 		if code != 0 && code != 1 {
 			t.Errorf("cut -d '%s' -f %s unexpected exit code %d", delim, fieldSpec, code)
 		}

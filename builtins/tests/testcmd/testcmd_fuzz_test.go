@@ -86,8 +86,8 @@ func FuzzTestStringOps(f *testing.F) {
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		script := fmt.Sprintf("test '%s' %s '%s'", left, op, right)
-		cancel()
 		_, _, code := cmdRunCtx(ctx, t, script, baseDir)
+		cancel()
 		if code != 0 && code != 1 && code != 2 {
 			t.Errorf("test string op unexpected exit code %d", code)
 		}
@@ -132,8 +132,8 @@ func FuzzTestIntegerOps(f *testing.F) {
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		script := fmt.Sprintf("test %d %s %d", left, op, right)
-		cancel()
 		_, _, code := cmdRunCtx(ctx, t, script, baseDir)
+		cancel()
 		if code != 0 && code != 1 && code != 2 {
 			t.Errorf("test %d %s %d unexpected exit code %d", left, op, right, code)
 		}
@@ -182,8 +182,8 @@ func FuzzTestFileOps(f *testing.F) {
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		script := fmt.Sprintf("test %s %s", op, target)
-		cancel()
 		_, _, code := cmdRunCtx(ctx, t, script, dir)
+		cancel()
 		if code != 0 && code != 1 && code != 2 {
 			t.Errorf("test %s unexpected exit code %d", op, code)
 		}
@@ -234,8 +234,8 @@ func FuzzTestStringUnary(f *testing.F) {
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		script := fmt.Sprintf("test %s '%s'", op, arg)
-		cancel()
 		_, _, code := cmdRunCtx(ctx, t, script, baseDir)
+		cancel()
 		if code != 0 && code != 1 && code != 2 {
 			t.Errorf("test %s unexpected exit code %d", op, code)
 		}
@@ -319,8 +319,8 @@ func FuzzTestNesting(f *testing.F) {
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		script := fmt.Sprintf("test %s", expr)
-		cancel()
 		_, _, code := cmdRunCtx(ctx, t, script, baseDir)
+		cancel()
 		if code != 0 && code != 1 && code != 2 {
 			t.Errorf("test %q unexpected exit code %d", expr, code)
 		}

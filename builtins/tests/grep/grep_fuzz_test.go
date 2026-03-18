@@ -90,8 +90,8 @@ func FuzzGrepFileContent(f *testing.F) {
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		script := "grep '" + pattern + "' input.txt"
-		cancel()
 		_, _, code := cmdRunCtx(ctx, t, script, dir)
+		cancel()
 		if code != 0 && code != 1 && code != 2 {
 			t.Errorf("grep unexpected exit code %d", code)
 		}
@@ -320,7 +320,6 @@ func FuzzGrepFlags(f *testing.F) {
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		flags := ""
-		cancel()
 		if caseInsensitive {
 			flags += " -i"
 		}
@@ -342,6 +341,7 @@ func FuzzGrepFlags(f *testing.F) {
 
 		script := "grep" + flags + " 'a' input.txt"
 		_, _, code := cmdRunCtx(ctx, t, script, dir)
+		cancel()
 		if code != 0 && code != 1 && code != 2 {
 			t.Errorf("grep%s unexpected exit code %d", flags, code)
 		}
