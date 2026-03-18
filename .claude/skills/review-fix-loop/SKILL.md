@@ -91,7 +91,7 @@ Store the owner and repo name.
 
 **GATE CHECK**: Call TaskList. Step 1 must be `completed`. Set Step 2 to `in_progress`.
 
-Set `iteration = 1`. Maximum iterations: **50**. Repeat sub-steps A through E while `iteration <= 50`.
+Set `iteration = 1`. Maximum iterations: **30**. Repeat sub-steps A through E while `iteration <= 30`.
 
 **At the start of each iteration**, update the Step 2 task subject to include the current iteration number using TaskUpdate, e.g. `"Step 2: Run the review-fix loop (iteration 3)"`.
 
@@ -246,7 +246,7 @@ Check **all three** review sources for remaining issues:
 | Any findings | Any | Any | **Continue** → go back to Sub-step 2A1 ∥ 2A2 |
 | APPROVE | Unresolved threads | Any | **Continue** → go back to Sub-step 2A1 ∥ 2A2 (address-pr-comments will handle them) |
 | APPROVE | None unresolved | Failing | **Continue** → go back to Sub-step 2A1 ∥ 2A2 (fix-ci-tests will handle it) |
-| — | — | — | If `iteration > 50` → **STOP — iteration limit reached** |
+| — | — | — | If `iteration > 30` → **STOP — iteration limit reached** |
 
 Log the iteration result before continuing or stopping:
 - Iteration number
