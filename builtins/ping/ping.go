@@ -184,45 +184,40 @@ func execPing(ctx context.Context, callCtx *builtins.CallContext, host string, c
 }
 
 // buildPinger creates and configures a Pinger with the given parameters.
-// It resolves host using the requested address family (ip4/ip6/ip) in a
-// goroutine so that ctx cancellation respects the deadline even if the
-// resolver hangs. Passing an already-resolved IP skips DNS entirely.
+// It uses net.DefaultResolver.LookupIPAddr which is natively context-aware:
+// cancellation propagates into the DNS query itself, avoiding goroutine leaks
+// that would result from a goroutine wrapping the non-context net.ResolveIPAddr.
 func buildPinger(ctx context.Context, host string, count int, wait, interval time.Duration, ipv4, ipv6 bool) (*probing.Pinger, error) {
 	if ipv4 && ipv6 {
 		return nil, fmt.Errorf("-4 and -6 are mutually exclusive")
 	}
 
-	// Use the requested family so dual-stack hosts resolve to the right address.
-	resolveNet := "ip"
-	if ipv4 {
-		resolveNet = "ip4"
-	} else if ipv6 {
-		resolveNet = "ip6"
+	// LookupIPAddr returns both IPv4 and IPv6 addresses; we select below.
+	addrs, err := net.DefaultResolver.LookupIPAddr(ctx, host)
+	if err != nil {
+		return nil, err
 	}
 
-	type result struct {
-		addr *net.IPAddr
-		err  error
-	}
-	ch := make(chan result, 1)
-	go func() {
-		addr, err := net.ResolveIPAddr(resolveNet, host)
-		ch <- result{addr, err}
-	}()
-
+	// Select the first address that matches the requested family.
 	var resolved *net.IPAddr
-	select {
-	case <-ctx.Done():
-		return nil, ctx.Err()
-	case r := <-ch:
-		if r.err != nil {
-			return nil, r.err
+	for i := range addrs {
+		a := &addrs[i]
+		isV4 := a.IP.To4() != nil
+		if (ipv4 && isV4) || (ipv6 && !isV4) || (!ipv4 && !ipv6) {
+			resolved = a
+			break
 		}
-		resolved = r.addr
+	}
+	if resolved == nil {
+		family := "ip4"
+		if ipv6 {
+			family = "ip6"
+		}
+		return nil, fmt.Errorf("no %s address for host %q", family, host)
 	}
 
-	// Pass the numeric IP; pro-bing's internal ResolveIPAddr returns immediately
-	// for a numeric address, so no second DNS round-trip occurs.
+	// Pass the numeric IP; pro-bing's internal net.ResolveIPAddr returns
+	// immediately for a numeric address, so no second DNS round-trip occurs.
 	p, err := probing.NewPinger(resolved.String())
 	if err != nil {
 		return nil, err
