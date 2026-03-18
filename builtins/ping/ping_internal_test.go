@@ -134,6 +134,15 @@ func TestParsePingDurationInfNaN(t *testing.T) {
 	assert.Error(t, err, "NaN should be rejected")
 }
 
+func TestParsePingDurationNegativeGoLiteral(t *testing.T) {
+	// time.ParseDuration("-1s") succeeds and returns a negative duration.
+	// parsePingDuration returns it so the caller's clampDuration raises it
+	// to the minimum bound with a warning — same path as "-c -1".
+	d, err := parsePingDuration("-1s")
+	assert.NoError(t, err, "negative Go literal is parsed; clamping handles it")
+	assert.Equal(t, -time.Second, d)
+}
+
 func TestParsePingDurationOverflow(t *testing.T) {
 	// Very large finite float overflows time.Duration (int64 ns) to negative.
 	// Must be caught before the conversion.

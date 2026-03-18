@@ -218,16 +218,17 @@ func execPing(ctx context.Context, callCtx *builtins.CallContext, host string, c
 		pinger = p2
 	}
 
+	// Print statistics unconditionally — even on non-permission errors and
+	// context cancellation. This mirrors POSIX ping which always prints
+	// partial statistics (with 0 received) before exiting, whether due to
+	// SIGINT, network-unreachable, or timeout.
+	stats := pinger.Statistics()
+	printStats(callCtx, host, stats)
+
 	if err != nil && ctx.Err() == nil {
 		callCtx.Errf("ping: %v\n", err)
 		return builtins.Result{Code: 1}
 	}
-
-	// Print statistics unconditionally — even when the context was cancelled
-	// (e.g. script timeout or SIGINT-equivalent). This mirrors POSIX ping
-	// which prints partial statistics on SIGINT before exiting.
-	stats := pinger.Statistics()
-	printStats(callCtx, host, stats)
 
 	if stats.PacketsRecv == 0 {
 		return builtins.Result{Code: 1}
