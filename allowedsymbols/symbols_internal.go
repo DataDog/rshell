@@ -8,55 +8,67 @@ package allowedsymbols
 // internalPerPackageSymbols maps each builtins/internal/<package> name to the
 // symbols it is allowed to use. Every symbol listed here must also appear in
 // internalAllowedSymbols (which acts as the global ceiling).
+// Within each package's slice, symbols are ordered from least safe (top) to
+// most safe (bottom), following the same category taxonomy as internalAllowedSymbols.
 var internalPerPackageSymbols = map[string][]string{
 	"loopctl": {
 		"strconv.Atoi", // string-to-int conversion; pure function, no I/O.
 	},
 	"procinfo": {
-		"bufio.NewScanner",                      // line-by-line reading of /proc files; no write capability.
-		"bytes.NewReader",                       // wraps a byte slice as an in-memory io.Reader; no I/O side effects.
-		"context.Context",                       // deadline/cancellation interface; no side effects.
-		"errors.New",                            // creates a sentinel error (unsupported-platform stub); pure function, no I/O.
-		"fmt.Errorf",                            // error formatting; pure function, no I/O.
-		"fmt.Sprintf",                           // string formatting; pure function, no I/O.
-		"os.Getpid",                             // returns the current process ID; read-only, no side effects.
-		"os.Open",                               // opens a file read-only; needed to stream /proc/stat line-by-line.
-		"os.ReadDir",                            // reads a directory listing; needed to enumerate /proc entries.
-		"os.ReadFile",                           // reads a whole file; needed to read /proc/[pid]/{stat,cmdline,status}.
-		"strconv.Atoi",                          // string-to-int conversion; pure function, no I/O.
-		"strconv.ParseInt",                      // string to int64 with base/bit-size; pure function, no I/O.
-		"strings.Fields",                        // splits a string on whitespace; pure function, no I/O.
-		"strings.HasPrefix",                     // checks string prefix; pure function, no I/O.
-		"strings.Index",                         // finds first occurrence of a substring; pure function, no I/O.
-		"strings.LastIndex",                     // finds last occurrence of a substring; pure function, no I/O.
-		"strings.TrimRight",                     // trims trailing characters; pure function, no I/O.
-		"strings.TrimSpace",                     // removes leading/trailing whitespace; pure function, no I/O.
-		"syscall.Getsid",                        // returns the session ID of a process; read-only syscall, no write/exec.
-		"time.Now",                              // returns the current wall-clock time; read-only, no side effects.
-		"time.Unix",                             // constructs a Time from Unix seconds; pure function, no I/O.
-		"golang.org/x/sys/unix.KinfoProc",       // (darwin) struct type carrying per-process kinfo_proc data from sysctl; read-only data, no exec capability.
-		"golang.org/x/sys/unix.SysctlKinfoProc", // (darwin) reads a single process's kinfo_proc via kern.proc.pid sysctl; read-only, no exec or write capability.
-		"golang.org/x/sys/unix.SysctlKinfoProcSlice",        // (darwin) reads all processes' kinfo_proc via kern.proc.all sysctl; read-only, no exec or write capability.
-		"golang.org/x/sys/unix.SysctlRaw",                   // (darwin) reads raw kern.procargs2 sysctl buffer per-PID to obtain argv; read-only, no exec capability.
-		"golang.org/x/sys/windows.CloseHandle",              // (windows) closes a process-snapshot handle after enumeration; no data read or exec capability.
-		"golang.org/x/sys/windows.CreateToolhelp32Snapshot", // (windows) creates a read-only snapshot of the process table; no exec or write capability.
-		"golang.org/x/sys/windows.ERROR_NO_MORE_FILES",      // (windows) sentinel error indicating end of process enumeration; pure constant.
-		"golang.org/x/sys/windows.Process32First",           // (windows) reads the first entry from a process snapshot; read-only, no exec capability.
-		"golang.org/x/sys/windows.Process32Next",            // (windows) advances to the next entry in a process snapshot; read-only, no exec capability.
-		"golang.org/x/sys/windows.ProcessEntry32",           // (windows) struct type holding process snapshot entry data; pure data type, no I/O.
-		"golang.org/x/sys/windows.TH32CS_SNAPPROCESS",       // (windows) flag constant selecting process entries for CreateToolhelp32Snapshot; pure constant.
-		"golang.org/x/sys/windows.UTF16ToString",            // (windows) converts a null-terminated UTF-16 slice to a Go string; pure function, no I/O.
+		// OS/Kernel interface: sysctl and process-snapshot calls; all read-only.
+		"syscall.Getsid",                                    // returns the session ID of a process; read-only syscall, no write/exec.
+		"golang.org/x/sys/unix.KinfoProc",                   // darwin: struct type for per-process kinfo_proc data; read-only, no exec.
+		"golang.org/x/sys/unix.SysctlKinfoProc",             // darwin: reads a single process's kinfo_proc via kern.proc.pid sysctl; read-only.
+		"golang.org/x/sys/unix.SysctlKinfoProcSlice",        // darwin: reads all processes' kinfo_proc via kern.proc.all sysctl; read-only.
+		"golang.org/x/sys/unix.SysctlRaw",                   // darwin: reads raw kern.procargs2 sysctl buffer per-PID for argv; read-only.
+		"golang.org/x/sys/windows.CloseHandle",              // windows: closes a process-snapshot handle after enumeration; no exec.
+		"golang.org/x/sys/windows.CreateToolhelp32Snapshot", // windows: creates a read-only snapshot of the process table; no exec.
+		"golang.org/x/sys/windows.ERROR_NO_MORE_FILES",      // windows: sentinel error for end of process enumeration; pure constant.
+		"golang.org/x/sys/windows.Process32First",           // windows: reads the first entry from a process snapshot; read-only.
+		"golang.org/x/sys/windows.Process32Next",            // windows: advances to the next entry in a process snapshot; read-only.
+		"golang.org/x/sys/windows.ProcessEntry32",           // windows: struct holding process snapshot entry data; pure data type.
+		"golang.org/x/sys/windows.TH32CS_SNAPPROCESS",       // windows: flag constant for CreateToolhelp32Snapshot; pure constant.
+		"golang.org/x/sys/windows.UTF16ToString",            // windows: converts null-terminated UTF-16 slice to Go string; pure function.
+		// OS filesystem access: reads /proc (Linux) and equivalent sources; all read-only.
+		"os.Getpid",   // returns the current process ID; read-only, no side effects.
+		"os.Open",     // opens a file read-only; needed to stream /proc/stat line-by-line.
+		"os.ReadDir",  // reads a directory listing; needed to enumerate /proc entries.
+		"os.ReadFile", // reads a whole file; needed to read /proc/[pid]/{stat,cmdline,status}.
+		// Time: read-only wall-clock access; no I/O.
+		"time.Now",  // returns the current wall-clock time; read-only, no side effects.
+		"time.Unix", // constructs a Time from Unix epoch seconds; pure function, no I/O.
+		// I/O: in-memory stream adapters for parsing proc buffers.
+		"bufio.NewScanner", // line-by-line reading of /proc files; no write capability.
+		"bytes.NewReader",  // wraps a byte slice as an in-memory io.Reader; no I/O side effects.
+		// String manipulation: pure in-memory functions; no I/O.
+		"strconv.Atoi",      // string-to-int conversion; pure function, no I/O.
+		"strconv.ParseInt",  // string to int64 with base/bit-size; pure function, no I/O.
+		"strings.Fields",    // splits a string on whitespace; pure function, no I/O.
+		"strings.HasPrefix", // checks string prefix; pure function, no I/O.
+		"strings.Index",     // finds first occurrence of a substring; pure function, no I/O.
+		"strings.LastIndex", // finds last occurrence of a substring; pure function, no I/O.
+		"strings.TrimRight", // trims trailing characters; pure function, no I/O.
+		"strings.TrimSpace", // removes leading/trailing whitespace; pure function, no I/O.
+		// Error handling & formatting: pure; no I/O.
+		"context.Context", // deadline/cancellation interface; no side effects.
+		"errors.New",      // creates a sentinel error (unsupported-platform stub); pure function, no I/O.
+		"fmt.Errorf",      // error formatting; pure function, no I/O.
+		"fmt.Sprintf",     // string formatting; pure function, no I/O.
 	},
 	"winnet": {
+		// Native code / DLL interface: highest risk; loads and calls iphlpapi.dll.
+		"unsafe.Pointer",      // passes stack buffers to DLL via syscall ABI; no pointer arithmetic post-call.
+		"syscall.MustLoadDLL", // loads iphlpapi.dll once at program init; OS loader call, no exec capability.
+		"syscall.Proc",        // DLL procedure handle type; pure type, no I/O.
+		// OS/Kernel interface: wraps DLL error codes as Go errors.
+		"syscall.Errno", // wraps DLL return code as an error type; pure type, no I/O.
+		// I/O & binary parsing: parses DLL output buffers in memory; no filesystem I/O.
 		"encoding/binary.BigEndian",    // reads big-endian IPv6 group values from DLL buffer; pure value, no I/O.
 		"encoding/binary.LittleEndian", // reads little-endian DWORD fields from DLL buffer; pure value, no I/O.
-		"errors.New",                   // creates a sentinel error (non-Windows stub); pure function, no I/O.
-		"fmt.Errorf",                   // error formatting; pure function, no I/O.
-		"fmt.Sprintf",                  // string formatting; pure function, no I/O.
-		"syscall.Errno",                // wraps DLL return code as an error type; pure type, no I/O.
-		"syscall.MustLoadDLL",          // loads iphlpapi.dll once at program init; read-only OS loader call.
-		"syscall.Proc",                 // DLL procedure handle type used in function signature; pure type, no I/O.
-		"unsafe.Pointer",               // passes buffer/size pointers to DLL via syscall ABI. No pointer arithmetic; buffer parsed with encoding/binary after the call.
+		// Error handling & formatting: pure; no I/O.
+		"errors.New",  // creates a sentinel error (non-Windows stub); pure function, no I/O.
+		"fmt.Errorf",  // error formatting; pure function, no I/O.
+		"fmt.Sprintf", // string formatting; pure function, no I/O.
 	},
 }
 
@@ -75,23 +87,13 @@ var internalPerPackageSymbols = map[string][]string{
 // See the package-level doc in symbols_common.go for the full category guide.
 var internalAllowedSymbols = []string{
 
-	// -------------------------------------------------------------------------
-	// 1. Native code / DLL interface
-	// Highest risk: bypasses Go's type safety or loads and calls native code.
-	// Permitted solely for winnet, which must call iphlpapi.dll to read
-	// Windows IP socket tables. Usage is confined to two call sites with no
-	// unsafe pointer arithmetic after the DLL call.
-	// -------------------------------------------------------------------------
+	// --- 1. Native code / DLL interface ---
 
 	"unsafe.Pointer",      // winnet: passes stack buffers to DLL via syscall ABI; no pointer arithmetic post-call.
 	"syscall.MustLoadDLL", // winnet: loads iphlpapi.dll once at program init; OS loader call, no exec capability.
 	"syscall.Proc",        // winnet: DLL procedure handle type; pure type, no I/O.
 
-	// -------------------------------------------------------------------------
-	// 2. OS / Kernel interface
-	// Symbols that issue syscalls or read kernel data structures.
-	// All are read-only; none spawn processes or write to the filesystem.
-	// -------------------------------------------------------------------------
+	// --- 2. OS / Kernel interface ---
 
 	// macOS (procinfo): reads process information via sysctl.
 	"golang.org/x/sys/unix.KinfoProc",            // darwin: struct type for per-process kinfo_proc data; read-only, no exec.
@@ -113,40 +115,26 @@ var internalAllowedSymbols = []string{
 	"syscall.Errno",  // winnet: wraps DLL return code as an error type; pure type, no I/O.
 	"syscall.Getsid", // procinfo: returns the session ID of a process; read-only syscall.
 
-	// -------------------------------------------------------------------------
-	// 3. OS filesystem access
-	// procinfo reads /proc (Linux) and equivalent sources to enumerate
-	// processes. All opens are read-only; no writes or execs occur.
-	// -------------------------------------------------------------------------
+	// --- 3. OS filesystem access ---
 
 	"os.Getpid",   // procinfo: returns the current process ID; read-only, no side effects.
 	"os.Open",     // procinfo: opens a file read-only; needed to stream /proc/stat line-by-line.
 	"os.ReadDir",  // procinfo: reads a directory listing; needed to enumerate /proc entries.
 	"os.ReadFile", // procinfo: reads a whole file; needed to read /proc/[pid]/{stat,cmdline,status}.
 
-	// -------------------------------------------------------------------------
-	// 4. Time
-	// Read-only wall-clock access; no I/O or mutation.
-	// -------------------------------------------------------------------------
+	// --- 4. Time ---
 
 	"time.Now",  // procinfo: returns the current wall-clock time; read-only, no side effects.
 	"time.Unix", // procinfo: constructs a Time from Unix epoch seconds; pure function, no I/O.
 
-	// -------------------------------------------------------------------------
-	// 5. I/O & binary parsing
-	// In-memory stream adapters and byte-order readers for parsing DLL/proc
-	// buffers. No filesystem or network I/O of their own.
-	// -------------------------------------------------------------------------
+	// --- 5. I/O & binary parsing ---
 
 	"bufio.NewScanner",             // procinfo: line-by-line reading of /proc files; no write capability.
 	"bytes.NewReader",              // procinfo: wraps a byte slice as an in-memory io.Reader; no I/O side effects.
 	"encoding/binary.BigEndian",    // winnet: reads big-endian IPv6 group values from DLL buffer; pure value, no I/O.
 	"encoding/binary.LittleEndian", // winnet: reads little-endian DWORD fields from DLL buffer; pure value, no I/O.
 
-	// -------------------------------------------------------------------------
-	// 6. String manipulation
-	// Pure in-memory string and numeric-conversion functions; no I/O.
-	// -------------------------------------------------------------------------
+	// --- 6. String manipulation ---
 
 	"strconv.Atoi",      // string-to-int conversion; pure function, no I/O.
 	"strconv.ParseInt",  // procinfo: string to int64 with base/bit-size; pure function, no I/O.
@@ -157,10 +145,7 @@ var internalAllowedSymbols = []string{
 	"strings.TrimRight", // procinfo: trims trailing characters from a string; pure function, no I/O.
 	"strings.TrimSpace", // procinfo: removes leading/trailing whitespace; pure function, no I/O.
 
-	// -------------------------------------------------------------------------
-	// 7. Error handling & formatting
-	// Pure error construction and formatting; no I/O.
-	// -------------------------------------------------------------------------
+	// --- 7. Error handling & formatting ---
 
 	"context.Context", // procinfo: deadline/cancellation interface; pure interface, no side effects.
 	"errors.New",      // creates a sentinel error value; pure function, no I/O.

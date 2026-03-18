@@ -20,20 +20,13 @@ package allowedsymbols
 // See the package-level doc in symbols_common.go for the full category guide.
 var interpAllowedSymbols = []string{
 
-	// -------------------------------------------------------------------------
-	// 1. OS / Process interface
-	// Symbols that perform real filesystem I/O or create OS-level resources.
-	// The interpreter core needs these to implement shell redirects and pipelines.
-	// -------------------------------------------------------------------------
+	// --- 1. OS / Process interface ---
 
 	"os.File",  // file handle type; interpreter needs file I/O for redirects and pipes.
 	"os.Getwd", // returns current working directory; read-only filesystem call.
 	"os.Pipe",  // creates an OS pipe pair; needed for shell pipeline plumbing.
 
-	// -------------------------------------------------------------------------
-	// 2. Filesystem metadata
-	// Read-only OS types for file/directory metadata; no file contents or writes.
-	// -------------------------------------------------------------------------
+	// --- 2. Filesystem metadata ---
 
 	"io/fs.DirEntry",    // interface type for directory entries; no side effects.
 	"io/fs.FileInfo",    // interface type for file metadata; no side effects.
@@ -43,30 +36,20 @@ var interpAllowedSymbols = []string{
 	"os.O_RDONLY",       // read-only file flag constant; pure constant.
 	"os.PathError",      // error type wrapping path and operation; pure type.
 
-	// -------------------------------------------------------------------------
-	// 3. Concurrency primitives
-	// Goroutine coordination types; no I/O or filesystem access.
-	// -------------------------------------------------------------------------
+	// --- 3. Concurrency primitives ---
 
 	"sync.Mutex",     // mutual exclusion lock; concurrency primitive, no I/O.
 	"sync.Once",      // ensures a function runs exactly once; concurrency primitive, no I/O.
 	"sync.WaitGroup", // waits for goroutines to finish; concurrency primitive, no I/O.
 
-	// -------------------------------------------------------------------------
-	// 4. Context & time
-	// Deadline/cancellation management and wall-clock reads; no I/O.
-	// -------------------------------------------------------------------------
+	// --- 4. Context & time ---
 
 	"context.Context",   // deadline/cancellation plumbing; pure interface, no side effects.
 	"context.WithValue", // derives a context carrying a key-value pair; pure function.
 	"time.Now",          // returns current time; read-only, no mutation.
 	"time.Time",         // time value type; pure data, no side effects.
 
-	// -------------------------------------------------------------------------
-	// 5. I/O interfaces & streaming utilities
-	// Reader/Writer/Closer interfaces and in-memory stream adapters.
-	// No direct filesystem or network access by themselves.
-	// -------------------------------------------------------------------------
+	// --- 5. I/O interfaces & streaming utilities ---
 
 	"bytes.Buffer",       // in-memory byte buffer; pure data structure, no I/O.
 	"io.Closer",          // interface type for closing; no side effects.
@@ -77,11 +60,7 @@ var interpAllowedSymbols = []string{
 	"io.ReadWriteCloser", // combined interface type; no side effects.
 	"io.Writer",          // interface type for writing; no side effects.
 
-	// -------------------------------------------------------------------------
-	// 6. Shell word expansion  (mvdan.cc/sh/v3/expand)
-	// Third-party shell expansion library: environment access, word splitting,
-	// globbing, here-document expansion. Pure in-memory operations.
-	// -------------------------------------------------------------------------
+	// --- 6. Shell word expansion  (mvdan.cc/sh/v3/expand) ---
 
 	"mvdan.cc/sh/v3/expand.Config",                 // configuration for word expansion; pure type.
 	"mvdan.cc/sh/v3/expand.Document",               // expands a here-document; pure function.
@@ -96,11 +75,7 @@ var interpAllowedSymbols = []string{
 	"mvdan.cc/sh/v3/expand.Variable",               // represents a shell variable; pure type.
 	"mvdan.cc/sh/v3/expand.WriteEnviron",           // interface for setting environment variables; pure interface.
 
-	// -------------------------------------------------------------------------
-	// 7. Shell AST  (mvdan.cc/sh/v3/syntax)
-	// Third-party shell parsing library: pure AST node types, redirect operator
-	// constants, and the AST walker. No I/O.
-	// -------------------------------------------------------------------------
+	// --- 7. Shell AST  (mvdan.cc/sh/v3/syntax) ---
 
 	"mvdan.cc/sh/v3/syntax.AndStmt",      // AST node for && operator; pure type.
 	"mvdan.cc/sh/v3/syntax.AppAll",       // redirect operator constant (&>>); pure constant.
@@ -155,26 +130,17 @@ var interpAllowedSymbols = []string{
 	"mvdan.cc/sh/v3/syntax.WordIter",     // AST node for word iteration (for-in); pure type.
 	"mvdan.cc/sh/v3/syntax.WordPart",     // AST interface for word components; pure interface.
 
-	// -------------------------------------------------------------------------
-	// 8. Path & runtime
-	// Pure path manipulation and OS-name detection; no I/O.
-	// -------------------------------------------------------------------------
+	// --- 8. Path & runtime ---
 
 	"path/filepath.IsAbs", // checks if path is absolute; pure function, no I/O.
 	"path/filepath.Join",  // joins path elements; pure function, no I/O.
 	"runtime.GOOS",        // current OS name constant; pure constant, no I/O.
 
-	// -------------------------------------------------------------------------
-	// 9. Collections
-	// Pure map operations; no I/O.
-	// -------------------------------------------------------------------------
+	// --- 9. Collections ---
 
 	"maps.Insert", // inserts all key-value pairs from one map into another; pure function.
 
-	// -------------------------------------------------------------------------
-	// 10. String manipulation
-	// Pure in-memory string and numeric-conversion functions; no I/O.
-	// -------------------------------------------------------------------------
+	// --- 10. String manipulation ---
 
 	"strconv.Itoa",         // int-to-string conversion; pure function, no I/O.
 	"strings.Builder",      // efficient string concatenation; pure in-memory buffer, no I/O.
@@ -186,10 +152,7 @@ var interpAllowedSymbols = []string{
 	"strings.ToUpper",      // converts string to uppercase; pure function, no I/O.
 	"strings.TrimLeft",     // trims leading characters from a string; pure function, no I/O.
 
-	// -------------------------------------------------------------------------
-	// 11. Error handling & formatting
-	// Pure error construction and formatting; no I/O.
-	// -------------------------------------------------------------------------
+	// --- 11. Error handling & formatting ---
 
 	"errors.As",    // error type assertion; pure function, no I/O.
 	"fmt.Errorf",   // formatted error creation; pure function, no I/O.

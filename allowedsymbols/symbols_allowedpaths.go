@@ -20,11 +20,7 @@ package allowedsymbols
 // See the package-level doc in symbols_common.go for the full category guide.
 var allowedpathsAllowedSymbols = []string{
 
-	// -------------------------------------------------------------------------
-	// 1. OS / Kernel interface
-	// Syscalls and OS-level I/O that underpin sandbox enforcement. These symbols
-	// read process identity or file metadata directly from the kernel.
-	// -------------------------------------------------------------------------
+	// --- 1. OS / Kernel interface ---
 
 	"os.Getgid",                          // returns the numeric group id of the caller; read-only syscall.
 	"os.Getgroups",                       // returns supplementary group ids of the caller; read-only syscall.
@@ -38,11 +34,7 @@ var allowedpathsAllowedSymbols = []string{
 	"syscall.Handle",                     // Windows: file handle type; pure type alias, no I/O.
 	"syscall.Stat_t",                     // Unix: file stat struct for UID/GID/inode; read-only type, no I/O.
 
-	// -------------------------------------------------------------------------
-	// 2. Filesystem sandbox types & sentinel errors
-	// Core abstractions and constants for the sandbox boundary. These types
-	// define what paths are reachable and what errors are expected.
-	// -------------------------------------------------------------------------
+	// --- 2. Filesystem sandbox types & sentinel errors ---
 
 	"io/fs.DirEntry",      // interface type for directory entries; no side effects.
 	"io/fs.ErrExist",      // sentinel error for "already exists"; pure constant.
@@ -58,11 +50,7 @@ var allowedpathsAllowedSymbols = []string{
 	"os.PathError",        // error type wrapping path and operation; pure type.
 	"os.Root",             // sandboxed directory root type; core of the filesystem sandbox.
 
-	// -------------------------------------------------------------------------
-	// 3. Path computation
-	// Pure path manipulation; no I/O, but directly affects which filesystem
-	// paths are considered in-bounds by the sandbox.
-	// -------------------------------------------------------------------------
+	// --- 3. Path computation ---
 
 	"path/filepath.Abs",       // returns absolute path; pure path computation, no I/O.
 	"path/filepath.IsAbs",     // checks if path is absolute; pure function, no I/O.
@@ -70,34 +58,22 @@ var allowedpathsAllowedSymbols = []string{
 	"path/filepath.Rel",       // returns relative path between two paths; pure path computation, no I/O.
 	"path/filepath.Separator", // OS path separator constant; pure constant.
 
-	// -------------------------------------------------------------------------
-	// 4. I/O interfaces
-	// Pure interface types; no direct filesystem or network access.
-	// -------------------------------------------------------------------------
+	// --- 4. I/O interfaces ---
 
 	"io.EOF",             // sentinel error value; pure constant.
 	"io.ReadWriteCloser", // combined Reader/Writer/Closer interface type; no side effects.
 
-	// -------------------------------------------------------------------------
-	// 5. Collections
-	// Pure slice operations; no I/O.
-	// -------------------------------------------------------------------------
+	// --- 5. Collections ---
 
 	"slices.SortFunc", // sorts a slice with a comparison function; pure function, no I/O.
 
-	// -------------------------------------------------------------------------
-	// 6. String manipulation
-	// Pure in-memory string functions; no I/O.
-	// -------------------------------------------------------------------------
+	// --- 6. String manipulation ---
 
 	"strings.Compare",   // compares two strings lexicographically; pure function, no I/O.
 	"strings.EqualFold", // case-insensitive string comparison; pure function, no I/O.
 	"strings.HasPrefix", // checks string prefix; pure function, no I/O.
 
-	// -------------------------------------------------------------------------
-	// 7. Error handling
-	// Pure error construction and formatting; no I/O.
-	// -------------------------------------------------------------------------
+	// --- 7. Error handling ---
 
 	"errors.As",  // error type assertion; pure function, no I/O.
 	"errors.Is",  // error comparison; pure function, no I/O.
