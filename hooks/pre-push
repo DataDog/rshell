@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+# Check that all Go files are properly formatted.
+# Runs on pre-push to prevent unformatted code from reaching the remote.
+
+unformatted=$(gofmt -l . 2>/dev/null)
+
+if [[ -n "$unformatted" ]]; then
+  echo "❌ The following files are not formatted:" >&2
+  echo "$unformatted" >&2
+  echo "" >&2
+  echo "Run 'make fmt' to fix formatting, then commit and push again." >&2
+  exit 1
+fi
