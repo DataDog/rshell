@@ -197,7 +197,7 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 		total := time.Duration(c-1)*iv + w + pingGracePeriod
 		if total > maxTotalTimeout {
 			total = maxTotalTimeout
-			callCtx.Errf("ping: warning: total run time capped at 120s; some probes may not complete\n")
+			callCtx.Errf("ping: warning: total run time capped at %gs; some probes may not complete\n", maxTotalTimeout.Seconds())
 		}
 		runCtx, cancel := context.WithTimeout(ctx, total)
 		defer cancel()
