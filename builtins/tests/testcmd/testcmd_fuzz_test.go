@@ -85,6 +85,7 @@ func FuzzTestStringOps(f *testing.F) {
 		}
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel() // safety net if t.Fatal fires before explicit cancel
 		script := fmt.Sprintf("test '%s' %s '%s'", left, op, right)
 		_, _, code := cmdRunCtx(ctx, t, script, baseDir)
 		cancel()
@@ -131,6 +132,7 @@ func FuzzTestIntegerOps(f *testing.F) {
 		}
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel() // safety net if t.Fatal fires before explicit cancel
 		script := fmt.Sprintf("test %d %s %d", left, op, right)
 		_, _, code := cmdRunCtx(ctx, t, script, baseDir)
 		cancel()
@@ -181,6 +183,7 @@ func FuzzTestFileOps(f *testing.F) {
 		}
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel() // safety net if t.Fatal fires before explicit cancel
 		script := fmt.Sprintf("test %s %s", op, target)
 		_, _, code := cmdRunCtx(ctx, t, script, dir)
 		cancel()
@@ -233,6 +236,7 @@ func FuzzTestStringUnary(f *testing.F) {
 		}
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel() // safety net if t.Fatal fires before explicit cancel
 		script := fmt.Sprintf("test %s '%s'", op, arg)
 		_, _, code := cmdRunCtx(ctx, t, script, baseDir)
 		cancel()
@@ -318,6 +322,7 @@ func FuzzTestNesting(f *testing.F) {
 		}
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel() // safety net if t.Fatal fires before explicit cancel
 		script := fmt.Sprintf("test %s", expr)
 		_, _, code := cmdRunCtx(ctx, t, script, baseDir)
 		cancel()

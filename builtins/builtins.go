@@ -182,7 +182,7 @@ func (c *CallContext) Errf(format string, a ...any) {
 // (e.g. unit tests) will see the panic unrecovered.
 func (c *CallContext) NowSafe() time.Time {
 	if c.Now.IsZero() {
-		panic("builtins.CallContext.Now is zero: callers must set Now before invoking time-predicate builtins (find -mmin/-mtime, ls -l)")
+		panic("builtins.CallContext.Now is zero: callers must set Now before invoking find or ls")
 	}
 	return c.Now
 }

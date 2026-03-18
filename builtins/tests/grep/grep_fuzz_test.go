@@ -89,6 +89,7 @@ func FuzzGrepFileContent(f *testing.F) {
 		}
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel() // safety net if t.Fatal fires before explicit cancel
 		script := "grep '" + pattern + "' input.txt"
 		_, _, code := cmdRunCtx(ctx, t, script, dir)
 		cancel()
@@ -161,6 +162,7 @@ func FuzzGrepPatterns(f *testing.F) {
 		}
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel() // safety net if t.Fatal fires before explicit cancel
 		_, _, code := cmdRunCtx(ctx, t, "grep '"+pattern+"' input.txt", dir)
 		cancel()
 		if code != 0 && code != 1 && code != 2 {
@@ -198,6 +200,7 @@ func FuzzGrepStdin(f *testing.F) {
 		}
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel() // safety net if t.Fatal fires before explicit cancel
 		_, _, code := cmdRunCtx(ctx, t, "grep '.' < stdin.txt", dir)
 		cancel()
 		if code != 0 && code != 1 && code != 2 {
@@ -268,6 +271,7 @@ func FuzzGrepFixedStrings(f *testing.F) {
 		}
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel() // safety net if t.Fatal fires before explicit cancel
 		_, _, code := cmdRunCtx(ctx, t, "grep -F '"+pattern+"' input.txt", dir)
 		cancel()
 		if code != 0 && code != 1 && code != 2 {
@@ -319,6 +323,7 @@ func FuzzGrepFlags(f *testing.F) {
 		}
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel() // safety net if t.Fatal fires before explicit cancel
 		flags := ""
 		if caseInsensitive {
 			flags += " -i"

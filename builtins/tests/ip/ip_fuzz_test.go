@@ -145,6 +145,7 @@ func FuzzIPSubcommand(f *testing.F) {
 		}
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel() // safety net if t.Fatal fires before explicit cancel
 		script := "ip " + subcmd
 		_, _, code := cmdRunCtxFuzz(ctx, t, script)
 		timedOut := ctx.Err() == context.DeadlineExceeded // capture before cancel()
@@ -216,6 +217,7 @@ func FuzzIPFlags(f *testing.F) {
 		}
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel() // safety net if t.Fatal fires before explicit cancel
 		script := "ip " + flags
 		if subcmd != "" {
 			script += " " + subcmd

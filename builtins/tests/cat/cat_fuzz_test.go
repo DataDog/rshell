@@ -76,6 +76,7 @@ func FuzzCat(f *testing.F) {
 		}
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel() // safety net if t.Fatal fires before explicit cancel
 		stdout, _, code := cmdRunCtx(ctx, t, "cat input.txt", dir)
 		cancel()
 		if code != 0 && code != 1 {
@@ -126,6 +127,7 @@ func FuzzCatNumberLines(f *testing.F) {
 		}
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel() // safety net if t.Fatal fires before explicit cancel
 		_, _, code := cmdRunCtx(ctx, t, "cat -n input.txt", dir)
 		cancel()
 		if code != 0 && code != 1 {
@@ -187,6 +189,7 @@ func FuzzCatDisplayFlags(f *testing.F) {
 		}
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel() // safety net if t.Fatal fires before explicit cancel
 		_, _, code := cmdRunCtx(ctx, t, "cat"+flags+" input.bin", dir)
 		cancel()
 		if code != 0 && code != 1 {
@@ -224,6 +227,7 @@ func FuzzCatStdin(f *testing.F) {
 		}
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel() // safety net if t.Fatal fires before explicit cancel
 		stdout, _, code := cmdRunCtx(ctx, t, "cat < stdin.txt", dir)
 		cancel()
 		if code != 0 && code != 1 {

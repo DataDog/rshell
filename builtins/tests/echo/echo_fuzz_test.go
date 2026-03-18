@@ -61,6 +61,7 @@ func FuzzEcho(f *testing.F) {
 		defer cleanup()
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel() // safety net if t.Fatal fires before explicit cancel
 		_, _, code := fuzzRunCtx(ctx, t, "echo '"+arg+"'", dir)
 		cancel()
 		if code != 0 {
@@ -132,6 +133,7 @@ func FuzzEchoEscapes(f *testing.F) {
 		defer cleanup()
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel() // safety net if t.Fatal fires before explicit cancel
 		_, _, code := fuzzRunCtx(ctx, t, "echo -e '"+arg+"'", dir)
 		cancel()
 		if code != 0 {
@@ -187,6 +189,7 @@ func FuzzEchoFlagInteraction(f *testing.F) {
 		defer cleanup()
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel() // safety net if t.Fatal fires before explicit cancel
 		_, _, code := fuzzRunCtx(ctx, t, "echo"+flags+" '"+arg+"'", dir)
 		cancel()
 		if code != 0 {

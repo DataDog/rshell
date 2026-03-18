@@ -90,6 +90,7 @@ func FuzzCatDifferential(f *testing.F) {
 		// cancellation does not kill the command mid-run; each iteration still
 		// enforces its own 5 s deadline.
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel() // safety net if t.Fatal fires before explicit cancel
 		rshellOut, rshellErr, rshellCode := cmdRunCtx(ctx, t, "cat input.txt", dir)
 		cancel()
 
