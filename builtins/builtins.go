@@ -177,9 +177,10 @@ func (c *CallContext) Errf(format string, a ...any) {
 // to the zero value will trigger this panic. In practice this is never a concern
 // since no shell script runs in year 0001.
 //
-// When invoked via the interpreter, Run() recovers this panic and surfaces it
-// as "internal error" with the panic message printed to stderr. Direct callers
-// (e.g. unit tests) will see the panic unrecovered.
+// In practice, the interpreter never triggers this panic because Run() always
+// sets CallContext.Now before dispatching any builtin. This guard exists solely
+// to catch callers that construct a CallContext directly (e.g. in unit tests)
+// and forget to set Now.
 func (c *CallContext) NowSafe() time.Time {
 	if c.Now.IsZero() {
 		panic("builtins.CallContext.Now is zero: callers must set Now before invoking find or ls")
