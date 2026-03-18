@@ -34,6 +34,8 @@ const (
 	exprNewer                  // -newer file
 	exprMtime                  // -mtime n
 	exprMmin                   // -mmin n
+	exprPerm                   // -perm mode
+	exprQuit                   // -quit
 	exprPrint                  // -print
 	exprPrint0                 // -print0
 	exprPrune                  // -prune
@@ -76,16 +78,21 @@ type sizeUnit struct {
 // expr is a node in the find expression AST.
 type expr struct {
 	kind    exprKind
-	strVal  string   // pattern for name/iname/path/ipath, type char, file path for newer
+	strVal  string   // pattern for name/iname/path/ipath, type char, file path for newer/samefile, format for printf
 	sizeVal sizeUnit // for -size
-	numVal  int64    // for -mtime, -mmin
+	numVal  int64    // for -mtime, -mmin, -atime, -amin, -ctime, -cmin, -uid, -gid, -links, -inum
 	numCmp  cmpOp    // comparison operator for numeric predicates
+	permVal uint32   // for -perm: permission bits
+	permCmp byte     // for -perm: '=' exact, '-' all bits, '/' any bit
 	left    *expr    // for and/or
 	right   *expr    // for and/or
 	operand *expr    // for not
 }
 
 // isAction returns true if this expression is an output action.
+// Only actual output actions suppress implicit -print; -quit is
+// control flow (handled at evaluation time by checking quit before
+// implicit print) and does not affect the implicit-print decision.
 func (e *expr) isAction() bool {
 	return e.kind == exprPrint || e.kind == exprPrint0
 }
@@ -117,6 +124,11 @@ type parseResult struct {
 	maxDepth int // -1 = not specified
 	minDepth int // -1 = not specified
 }
+
+// errHelpRequested is a sentinel error returned by parsePrimary when --help
+// appears as a standalone predicate token (not consumed as an argument by
+// another predicate like -name).
+var errHelpRequested = errors.New("find: help requested")
 
 // blocked predicates that are forbidden for sandbox safety.
 var blockedPredicates = map[string]string{
@@ -285,6 +297,11 @@ func (p *parser) parsePrimary() (*expr, error) {
 
 	tok := p.advance()
 
+	// --help as a standalone predicate triggers help output.
+	if tok == "--help" {
+		return nil, errHelpRequested
+	}
+
 	// Check blocked predicates.
 	if reason, blocked := blockedPredicates[tok]; blocked {
 		return nil, fmt.Errorf("find: %s: %s", tok, reason)
@@ -311,6 +328,10 @@ func (p *parser) parsePrimary() (*expr, error) {
 		return p.parseNumericPredicate(exprMtime)
 	case "-mmin":
 		return p.parseNumericPredicate(exprMmin)
+	case "-perm":
+		return p.parsePermPredicate()
+	case "-quit":
+		return &expr{kind: exprQuit}, nil
 	case "-print":
 		return &expr{kind: exprPrint}, nil
 	case "-print0":
@@ -373,7 +394,7 @@ func (p *parser) parseTypePredicate() (*expr, error) {
 			continue
 		}
 		switch c {
-		case 'f', 'd', 'l', 'p', 's':
+		case 'b', 'c', 'f', 'd', 'l', 'p', 's':
 			if !expectType {
 				// Adjacent type chars without comma (e.g. "fd").
 				return nil, fmt.Errorf("find: Unknown argument to -type: %s", val)
@@ -459,6 +480,205 @@ func (p *parser) parseDepthOption(isMax bool) (*expr, error) {
 	return &expr{kind: exprTrue}, nil
 }
 
+// parsePermPredicate parses -perm MODE where MODE is:
+//   - 0644     exact match (octal)
+//   - -0644    all bits must be set
+//   - /0644    any bit must be set
+//   - u=rwx,g=rx,o=rx  symbolic mode (parsed to octal)
+func (p *parser) parsePermPredicate() (*expr, error) {
+	if p.pos >= len(p.args) {
+		return nil, errors.New("find: missing argument for -perm")
+	}
+	val := p.advance()
+	if len(val) == 0 {
+		return nil, errors.New("find: missing argument for -perm")
+	}
+
+	var cmpMode byte = '=' // default: exact match
+	modeStr := val
+	if modeStr[0] == '-' {
+		cmpMode = '-'
+		modeStr = modeStr[1:]
+	} else if modeStr[0] == '/' {
+		cmpMode = '/'
+		modeStr = modeStr[1:]
+	}
+
+	if len(modeStr) == 0 {
+		return nil, fmt.Errorf("find: invalid mode '%s'", val)
+	}
+
+	// Try octal parse first.
+	mode, err := strconv.ParseUint(modeStr, 8, 32)
+	if err != nil {
+		// Try symbolic mode parse.
+		mode64, serr := parseSymbolicMode(modeStr)
+		if serr != nil {
+			return nil, fmt.Errorf("find: invalid mode '%s'", val)
+		}
+		mode = mode64
+	}
+	if mode > 07777 {
+		return nil, fmt.Errorf("find: invalid mode '%s'", val)
+	}
+
+	return &expr{kind: exprPerm, permVal: uint32(mode), permCmp: cmpMode}, nil
+}
+
+// parseSymbolicMode parses a symbolic permission string like "u=rwx,g=rx,o=rx"
+// or "a=r" into an octal permission value.
+//
+// Supports: who (u/g/o/a), operators (=/+/-), perms (r/w/x/X/s/t),
+// copy-bits (g=u, o=g, etc.), and conditional execute (X).
+func parseSymbolicMode(s string) (uint64, error) {
+	var mode uint64
+	for _, clause := range strings.Split(s, ",") {
+		if len(clause) == 0 {
+			return 0, fmt.Errorf("empty clause")
+		}
+		// Parse who: u, g, o, a (default: a)
+		i := 0
+		who := byte(0) // bitmask: 4=u, 2=g, 1=o
+	whoLoop:
+		for i < len(clause) {
+			switch clause[i] {
+			case 'u':
+				who |= 4
+			case 'g':
+				who |= 2
+			case 'o':
+				who |= 1
+			case 'a':
+				who |= 7
+			default:
+				break whoLoop
+			}
+			i++
+		}
+		if who == 0 {
+			who = 7 // default: a (all)
+		}
+		if i >= len(clause) {
+			return 0, fmt.Errorf("missing operator")
+		}
+		op := clause[i]
+		if op != '=' && op != '+' && op != '-' {
+			return 0, fmt.Errorf("invalid operator '%c'", op)
+		}
+		i++
+		// Parse perms: r, w, x, X, s, t, or copy-bits (u/g/o).
+		var bits uint64    // rwx bits (applied per-class)
+		var special uint64 // special bits (setuid/setgid/sticky, applied globally)
+
+		// Check for copy-bits source (u/g/o). Copy-bits must be the
+		// sole perm token — no mixing with rwxXst (GNU rejects "g=ur").
+		if i < len(clause) && (clause[i] == 'u' || clause[i] == 'g' || clause[i] == 'o') {
+			switch clause[i] {
+			case 'u':
+				bits = uint64((mode >> 6) & 7)
+			case 'g':
+				bits = uint64((mode >> 3) & 7)
+			case 'o':
+				bits = uint64(mode & 7)
+			}
+			i++
+			if i < len(clause) {
+				return 0, fmt.Errorf("invalid permission '%c'", clause[i])
+			}
+		} else {
+			for i < len(clause) {
+				switch clause[i] {
+				case 'r':
+					bits |= 4
+				case 'w':
+					bits |= 2
+				case 'x':
+					bits |= 1
+				case 'X':
+					// Conditional execute: set x only if the mode
+					// being built already has any execute bit set.
+					if mode&0111 != 0 {
+						bits |= 1
+					}
+				case 's':
+					// setuid for user, setgid for group
+					if who&4 != 0 {
+						special |= 0o4000
+					}
+					if who&2 != 0 {
+						special |= 0o2000
+					}
+				case 't':
+					if who&1 != 0 {
+						special |= 0o1000 // sticky
+					}
+				default:
+					return 0, fmt.Errorf("invalid permission '%c'", clause[i])
+				}
+				i++
+			}
+		}
+		// Apply rwx bits to the appropriate class positions.
+		// '=' clears all bits for the class first, then sets the new ones.
+		// '+' only sets bits (OR). '-' only clears bits (AND NOT).
+		if who&4 != 0 { // user
+			switch op {
+			case '=':
+				mode &^= 7 << 6   // clear user bits
+				mode |= bits << 6 // set new bits
+			case '+':
+				mode |= bits << 6
+			case '-':
+				mode &^= bits << 6
+			}
+		}
+		if who&2 != 0 { // group
+			switch op {
+			case '=':
+				mode &^= 7 << 3
+				mode |= bits << 3
+			case '+':
+				mode |= bits << 3
+			case '-':
+				mode &^= bits << 3
+			}
+		}
+		if who&1 != 0 { // other
+			switch op {
+			case '=':
+				mode &^= 7
+				mode |= bits
+			case '+':
+				mode |= bits
+			case '-':
+				mode &^= bits
+			}
+		}
+		// Apply special bits (setuid/setgid/sticky).
+		// For '=', clear the class's special bits first so that e.g.
+		// "u=s,u=rwx" correctly drops setuid on the second clause.
+		if op == '=' {
+			if who&4 != 0 {
+				mode &^= 0o4000 // clear setuid
+			}
+			if who&2 != 0 {
+				mode &^= 0o2000 // clear setgid
+			}
+			// sticky is associated with 'other' or 'all'
+			if who&1 != 0 {
+				mode &^= 0o1000 // clear sticky
+			}
+		}
+		switch op {
+		case '=', '+':
+			mode |= special
+		case '-':
+			mode &^= special
+		}
+	}
+	return mode, nil
+}
+
 // parseSize parses a -size argument like "+10k", "-5M", "100c".
 func parseSize(s string) (sizeUnit, error) {
 	if len(s) == 0 {
@@ -525,6 +745,10 @@ func (k exprKind) String() string {
 		return "-mtime"
 	case exprMmin:
 		return "-mmin"
+	case exprPerm:
+		return "-perm"
+	case exprQuit:
+		return "-quit"
 	case exprPrint:
 		return "-print"
 	case exprPrint0:

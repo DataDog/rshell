@@ -12,6 +12,38 @@ import (
 	"unicode/utf8"
 )
 
+// matchPerm checks whether filePerm matches the target permission bits
+// according to the comparison mode:
+//
+//	'=' exact: filePerm == target
+//	'-' all bits: filePerm & target == target
+//	'/' any bit: filePerm & target != 0 (special: if target==0, always true)
+func matchPerm(filePerm iofs.FileMode, target uint32, cmpMode byte) bool {
+	// Go stores setuid/setgid/sticky as high flag bits (ModeSetuid, etc.),
+	// not in the Unix 12-bit position. Convert to Unix-style 12-bit mode.
+	fp := uint32(filePerm.Perm()) // bits 8-0 (rwxrwxrwx)
+	if filePerm&iofs.ModeSetuid != 0 {
+		fp |= 0o4000
+	}
+	if filePerm&iofs.ModeSetgid != 0 {
+		fp |= 0o2000
+	}
+	if filePerm&iofs.ModeSticky != 0 {
+		fp |= 0o1000
+	}
+	switch cmpMode {
+	case '-':
+		return fp&target == target
+	case '/':
+		if target == 0 {
+			return true // GNU find: -perm /0 matches everything
+		}
+		return fp&target != 0
+	default: // '='
+		return fp == target
+	}
+}
+
 // matchGlob matches a name against a glob pattern.
 // Uses pathGlobMatch which correctly handles [!...] negated character classes
 // and treats malformed brackets (e.g. unclosed '[') as literal characters (or non-matching for incomplete ranges),
@@ -55,6 +87,10 @@ func fileTypeChar(info iofs.FileInfo) byte {
 		return 'p'
 	case mode&iofs.ModeSocket != 0:
 		return 's'
+	case mode&iofs.ModeCharDevice != 0:
+		return 'c'
+	case mode&iofs.ModeDevice != 0:
+		return 'b'
 	default:
 		return '?'
 	}

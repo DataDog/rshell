@@ -178,6 +178,36 @@ func TestParsePathPredicateUsesParsePathPredicate(t *testing.T) {
 	}
 }
 
+// TestParseTypePredicate validates the parser accepts b and c type characters.
+func TestParseTypePredicate(t *testing.T) {
+	tests := []struct {
+		name    string
+		arg     string
+		wantErr bool
+	}{
+		{"b valid", "b", false},
+		{"c valid", "c", false},
+		{"b,c valid", "b,c", false},
+		{"f,b,c valid", "f,b,c", false},
+		{"all types", "b,c,f,d,l,p,s", false},
+		{"x invalid", "x", true},
+		{"trailing comma", "b,", true},
+		{"leading comma", ",c", true},
+		{"no comma separator", "bc", true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := parseExpression([]string{"-type", tt.arg})
+			if tt.wantErr {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
+}
+
 // TestParseBlockedPredicates verifies all dangerous predicates are blocked.
 func TestParseBlockedPredicates(t *testing.T) {
 	blocked := []string{
@@ -197,6 +227,126 @@ func TestParseBlockedPredicates(t *testing.T) {
 			assert.Contains(t, err.Error(), "blocked")
 		})
 	}
+}
+
+// TestParsePermPredicate verifies -perm parsing for octal and symbolic modes.
+func TestParsePermPredicate(t *testing.T) {
+	tests := []struct {
+		name    string
+		args    []string
+		wantErr bool
+		permVal uint32
+		permCmp byte
+	}{
+		{"exact octal 644", []string{"-perm", "644"}, false, 0o644, '='},
+		{"exact octal 0755", []string{"-perm", "0755"}, false, 0o755, '='},
+		{"all bits 0111", []string{"-perm", "-0111"}, false, 0o111, '-'},
+		{"any bit 0222", []string{"-perm", "/0222"}, false, 0o222, '/'},
+		{"exact 0", []string{"-perm", "0"}, false, 0, '='},
+		{"symbolic u=rwx", []string{"-perm", "u=rwx"}, false, 0o700, '='},
+		{"symbolic a=r", []string{"-perm", "a=r"}, false, 0o444, '='},
+		{"symbolic u=rw,g=r,o=r", []string{"-perm", "u=rw,g=r,o=r"}, false, 0o644, '='},
+		{"symbolic = overwrites", []string{"-perm", "u=rw,u=x"}, false, 0o100, '='},
+		{"symbolic + adds", []string{"-perm", "u=rw,u+x"}, false, 0o700, '='},
+		{"all bits symbolic", []string{"-perm", "-u=x"}, false, 0o100, '-'},
+		{"symbolic setuid", []string{"-perm", "-u=s"}, false, 0o4000, '-'},
+		{"symbolic setgid", []string{"-perm", "-g=s"}, false, 0o2000, '-'},
+		{"symbolic sticky", []string{"-perm", "-o=t"}, false, 0o1000, '-'},
+		{"symbolic setuid+exec", []string{"-perm", "u=xs"}, false, 0o4100, '='},
+		{"symbolic = clears special", []string{"-perm", "u=s,u=rwx"}, false, 0o700, '='},
+		// Copy-bits: basic
+		{"copy g=u from empty", []string{"-perm", "g=u"}, false, 0o000, '='},
+		{"copy u=rwx,g=u", []string{"-perm", "u=rwx,g=u"}, false, 0o770, '='},
+		{"copy u=rw,o=u", []string{"-perm", "u=rw,o=u"}, false, 0o606, '='},
+		{"copy o=r,g=o", []string{"-perm", "o=r,g=o"}, false, 0o044, '='},
+		{"copy u=rwx,g=u,o=g cascade", []string{"-perm", "u=rwx,g=u,o=g"}, false, 0o777, '='},
+		{"copy g=o from empty", []string{"-perm", "g=o"}, false, 0o000, '='},
+		{"copy u=g", []string{"-perm", "g=rx,u=g"}, false, 0o550, '='},
+		{"copy o=g", []string{"-perm", "g=rx,o=g"}, false, 0o055, '='},
+		// Copy-bits: with + and - operators
+		{"copy g+u adds", []string{"-perm", "u=rwx,g=r,g+u"}, false, 0o770, '='},
+		{"copy g-u removes", []string{"-perm", "u=rx,g=rwx,g-u"}, false, 0o520, '='},
+		// Copy-bits: special bits NOT copied
+		{"copy g=u does not copy setuid", []string{"-perm", "u=s,g=u"}, false, 0o4000, '='},
+		// Copy-bits: invalid mixing
+		{"copy g=ur invalid", []string{"-perm", "g=ur"}, true, 0, 0},
+		{"copy g=uo invalid", []string{"-perm", "g=uo"}, true, 0, 0},
+		// Conditional execute X
+		{"X from zero no-op", []string{"-perm", "a+X"}, false, 0o000, '='},
+		{"X with existing x", []string{"-perm", "u=x,a+X"}, false, 0o111, '='},
+		{"X with = from zero", []string{"-perm", "u=X"}, false, 0o000, '='},
+		{"X with = and existing x", []string{"-perm", "u=rx,g=X"}, false, 0o510, '='},
+		{"a=rX from zero", []string{"-perm", "a=rX"}, false, 0o444, '='},
+		{"u=rwx,a=rX", []string{"-perm", "u=rwx,a=rX"}, false, 0o555, '='},
+		{"a+rX from zero", []string{"-perm", "a+rX"}, false, 0o444, '='},
+		{"u=x,a+rX", []string{"-perm", "u=x,a+rX"}, false, 0o555, '='},
+		// Sticky bit respects who mask (t only applies when who includes o/a)
+		{"sticky u+t is no-op", []string{"-perm", "u+t"}, false, 0o000, '='},
+		{"sticky g=t is no-op", []string{"-perm", "g=t"}, false, 0o000, '='},
+		{"sticky ug+t is no-op", []string{"-perm", "ug+t"}, false, 0o000, '='},
+		{"sticky o+t sets", []string{"-perm", "o+t"}, false, 0o1000, '='},
+		{"sticky a=t sets", []string{"-perm", "a=t"}, false, 0o1000, '='},
+		{"sticky ug+st sets suid sgid only", []string{"-perm", "ug+st"}, false, 0o6000, '='},
+		// Errors
+		{"missing arg", []string{"-perm"}, true, 0, 0},
+		{"invalid octal", []string{"-perm", "xyz"}, true, 0, 0},
+		{"invalid mode 99999", []string{"-perm", "99999"}, true, 0, 0},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			pr, err := parseExpression(tt.args)
+			if tt.wantErr {
+				assert.Error(t, err)
+			} else {
+				require.NoError(t, err)
+				require.NotNil(t, pr.expr)
+				assert.Equal(t, exprPerm, pr.expr.kind)
+				assert.Equal(t, tt.permVal, pr.expr.permVal)
+				assert.Equal(t, tt.permCmp, pr.expr.permCmp)
+			}
+		})
+	}
+}
+
+// TestParseNewPredicates verifies the new predicates parse correctly.
+func TestParseNewPredicates(t *testing.T) {
+	// No-arg predicates.
+	noArgTests := []struct {
+		arg  string
+		kind exprKind
+	}{
+		{"-quit", exprQuit},
+	}
+	for _, tt := range noArgTests {
+		t.Run(tt.arg, func(t *testing.T) {
+			pr, err := parseExpression([]string{tt.arg})
+			require.NoError(t, err)
+			require.NotNil(t, pr.expr)
+			assert.Equal(t, tt.kind, pr.expr.kind)
+		})
+	}
+
+}
+
+// TestParseHelpRequested verifies that --help as a standalone predicate
+// returns errHelpRequested, and that -name --help consumes it as a pattern.
+func TestParseHelpRequested(t *testing.T) {
+	t.Run("standalone --help", func(t *testing.T) {
+		_, err := parseExpression([]string{"--help"})
+		assert.ErrorIs(t, err, errHelpRequested)
+	})
+	t.Run("--help after other predicate", func(t *testing.T) {
+		_, err := parseExpression([]string{"-true", "--help"})
+		assert.ErrorIs(t, err, errHelpRequested)
+	})
+	t.Run("-name consumes --help as pattern", func(t *testing.T) {
+		pr, err := parseExpression([]string{"-name", "--help"})
+		require.NoError(t, err)
+		require.NotNil(t, pr.expr)
+		assert.Equal(t, exprName, pr.expr.kind)
+		assert.Equal(t, "--help", pr.expr.strVal)
+	})
 }
 
 // TestParseExpressionLimits verifies AST depth and node limits.

@@ -18,6 +18,7 @@ import (
 type evalResult struct {
 	matched bool
 	prune   bool // skip descending into this directory
+	quit    bool // stop all iteration immediately (-quit)
 }
 
 // evalContext holds state needed during expression evaluation.
@@ -44,23 +45,29 @@ func evaluate(ec *evalContext, e *expr) evalResult {
 	switch e.kind {
 	case exprAnd:
 		left := evaluate(ec, e.left)
+		if left.quit {
+			return left
+		}
 		if !left.matched {
 			return evalResult{prune: left.prune}
 		}
 		right := evaluate(ec, e.right)
-		return evalResult{matched: right.matched, prune: left.prune || right.prune}
+		return evalResult{matched: right.matched, prune: left.prune || right.prune, quit: right.quit}
 
 	case exprOr:
 		left := evaluate(ec, e.left)
+		if left.quit {
+			return left
+		}
 		if left.matched {
 			return evalResult{matched: true, prune: left.prune}
 		}
 		right := evaluate(ec, e.right)
-		return evalResult{matched: right.matched, prune: left.prune || right.prune}
+		return evalResult{matched: right.matched, prune: left.prune || right.prune, quit: right.quit}
 
 	case exprNot:
 		r := evaluate(ec, e.operand)
-		return evalResult{matched: !r.matched, prune: r.prune}
+		return evalResult{matched: !r.matched, prune: r.prune, quit: r.quit}
 
 	case exprName:
 		name := baseName(ec.relPath)
@@ -93,6 +100,13 @@ func evaluate(ec *evalContext, e *expr) evalResult {
 
 	case exprMmin:
 		return evalResult{matched: evalMmin(ec, e.numVal, e.numCmp)}
+
+	case exprPerm:
+		// Use full 12-bit mode (including setuid/setgid/sticky), not just Perm() which is only 9 bits.
+		return evalResult{matched: matchPerm(ec.info.Mode(), e.permVal, e.permCmp)}
+
+	case exprQuit:
+		return evalResult{matched: true, quit: true}
 
 	case exprPrint:
 		ec.callCtx.Outf("%s\n", ec.printPath)

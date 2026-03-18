@@ -6,6 +6,7 @@
 package find
 
 import (
+	iofs "io/fs"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -155,6 +156,66 @@ func TestMatchClassEdgeCases(t *testing.T) {
 	assert.False(t, matched)
 }
 
+// TestFileTypeChar verifies fileTypeChar returns the correct character for each file mode.
+func TestFileTypeChar(t *testing.T) {
+	tests := []struct {
+		name string
+		mode iofs.FileMode
+		want byte
+	}{
+		{"regular file", 0o644, 'f'},
+		{"directory", iofs.ModeDir, 'd'},
+		{"symlink", iofs.ModeSymlink, 'l'},
+		{"named pipe", iofs.ModeNamedPipe, 'p'},
+		{"socket", iofs.ModeSocket, 's'},
+		{"char device", iofs.ModeCharDevice, 'c'},
+		{"block device", iofs.ModeDevice, 'b'},
+		{"both device bits set", iofs.ModeDevice | iofs.ModeCharDevice, 'c'},
+		{"irregular", iofs.ModeIrregular, '?'},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			info := &fakeFileInfo{mode: tt.mode}
+			got := fileTypeChar(info)
+			assert.Equal(t, tt.want, got, "fileTypeChar(mode=%v)", tt.mode)
+		})
+	}
+}
+
+// TestMatchType verifies matchType with block and char device types.
+func TestMatchType(t *testing.T) {
+	blockDev := &fakeFileInfo{mode: iofs.ModeDevice}
+	charDev := &fakeFileInfo{mode: iofs.ModeCharDevice}
+	regular := &fakeFileInfo{mode: 0o644}
+
+	tests := []struct {
+		name    string
+		info    iofs.FileInfo
+		typeArg string
+		want    bool
+	}{
+		{"block matches -type b", blockDev, "b", true},
+		{"block no match -type c", blockDev, "c", false},
+		{"char matches -type c", charDev, "c", true},
+		{"char no match -type b", charDev, "b", false},
+		{"block matches -type b,c", blockDev, "b,c", true},
+		{"char matches -type b,c", charDev, "b,c", true},
+		{"regular no match -type b", regular, "b", false},
+		{"regular no match -type c", regular, "c", false},
+		{"regular no match -type b,c", regular, "b,c", false},
+		{"regular matches -type f", regular, "f", true},
+		{"block no match -type f", blockDev, "f", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := matchType(tt.info, tt.typeArg)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
 func TestCompareNumeric(t *testing.T) {
 	// Exact match
 	assert.True(t, compareNumeric(5, 5, cmpExact))
@@ -169,6 +230,52 @@ func TestCompareNumeric(t *testing.T) {
 	assert.True(t, compareNumeric(4, 5, cmpLess))
 	assert.False(t, compareNumeric(5, 5, cmpLess))
 	assert.False(t, compareNumeric(6, 5, cmpLess))
+}
+
+func TestMatchPerm(t *testing.T) {
+	tests := []struct {
+		name     string
+		filePerm iofs.FileMode
+		target   uint32
+		cmpMode  byte
+		want     bool
+	}{
+		// Exact match
+		{"exact 644 match", 0o644, 0o644, '=', true},
+		{"exact 644 no match 755", 0o755, 0o644, '=', false},
+		{"exact 0 match", 0, 0, '=', true},
+		{"exact 777 match", 0o777, 0o777, '=', true},
+
+		// All bits set (-)
+		{"all bits 0111 on 755", 0o755, 0o111, '-', true},
+		{"all bits 0111 on 644", 0o644, 0o111, '-', false},
+		{"all bits 0444 on 644", 0o644, 0o444, '-', true},
+		{"all bits 0 always true", 0o644, 0, '-', true},
+		{"all bits 0777 on 755", 0o755, 0o777, '-', false},
+		{"all bits 0777 on 777", 0o777, 0o777, '-', true},
+
+		// Any bit set (/)
+		{"any bit 0111 on 755", 0o755, 0o111, '/', true},
+		{"any bit 0111 on 644", 0o644, 0o111, '/', false},
+		{"any bit 0222 on 644", 0o644, 0o222, '/', true},
+		{"any bit 0 always true", 0o644, 0, '/', true},
+
+		// Special bits (setuid/setgid/sticky) — Go uses high flag bits
+		{"setuid exact", 0o755 | iofs.ModeSetuid, 0o4755, '=', true},
+		{"setuid all bits", 0o755 | iofs.ModeSetuid, 0o4000, '-', true},
+		{"setuid not set", 0o755, 0o4000, '-', false},
+		{"setgid any bit", 0o755 | iofs.ModeSetgid, 0o2000, '/', true},
+		{"sticky exact", 0o755 | iofs.ModeSticky, 0o1755, '=', true},
+		{"any bit 0001 on 644", 0o644, 0o001, '/', false},
+		{"any bit 0100 on 755", 0o755, 0o100, '/', true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := matchPerm(tt.filePerm, tt.target, tt.cmpMode)
+			assert.Equal(t, tt.want, got)
+		})
+	}
 }
 
 func TestPathGlobMatchMalformedBracket(t *testing.T) {

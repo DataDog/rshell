@@ -32,6 +32,7 @@ var allowedpathsAllowedSymbols = []string{
 	"syscall.Errno",                      // system call error number type; pure type, no I/O.
 	"syscall.GetFileInformationByHandle", // Windows: queries file identity via handle; read-only syscall.
 	"syscall.Handle",                     // Windows: file handle type; pure type alias, no I/O.
+	"syscall.O_NONBLOCK",                 // non-blocking open flag; prevents blocking on FIFOs during access checks. Pure constant.
 	"syscall.Stat_t",                     // Unix: file stat struct for UID/GID/inode; read-only type, no I/O.
 
 	// --- 2. Filesystem sandbox types & sentinel errors ---

@@ -69,15 +69,23 @@ var builtinPerCommandSymbols = map[string][]string{
 	},
 	"find": {
 		"io/fs.FileInfo",                  // interface type for file information; no side effects.
+		"io/fs.FileMode",                  // file permission bits type; pure type.
+		"io/fs.ModeCharDevice",            // file mode bit constant for character devices; pure constant.
+		"io/fs.ModeDevice",                // file mode bit constant for block devices; pure constant.
 		"io/fs.ModeDir",                   // file mode bit constant for directories; pure constant.
 		"io/fs.ModeNamedPipe",             // file mode bit constant for named pipes; pure constant.
+		"io/fs.ModeSetgid",                // file mode bit constant for setgid; pure constant.
+		"io/fs.ModeSetuid",                // file mode bit constant for setuid; pure constant.
 		"io/fs.ModeSocket",                // file mode bit constant for sockets; pure constant.
+		"io/fs.ModeSticky",                // file mode bit constant for sticky bit; pure constant.
 		"io/fs.ModeSymlink",               // file mode bit constant for symlinks; pure constant.
 		"io/fs.ReadDirFile",               // read-only directory handle interface; no write capability.
 		"os.IsNotExist",                   // checks if error is "not exist"; pure function, no I/O.
 		"os.PathError",                    // error type for path operations; pure type.
 		"path/filepath.ToSlash",           // converts OS path separators to forward slashes; pure function, no I/O.
 		"context.Context",                 // deadline/cancellation plumbing; pure interface, no side effects.
+		"strconv.ParseUint",               // string-to-unsigned-int conversion; pure function, no I/O.
+		"strings.Split",                   // splits a string by separator into a slice; pure function, no I/O.
 		"time.Duration",                   // duration type; pure integer alias, no I/O.
 		"time.Hour",                       // constant representing one hour; no side effects.
 		"time.Minute",                     // constant representing one minute; no side effects.
@@ -425,6 +433,9 @@ var builtinAllowedSymbols = []string{
 
 	"io/fs.DirEntry",        // interface type for directory entries; no side effects.
 	"io/fs.FileInfo",        // interface type for file information; no side effects.
+	"io/fs.FileMode",        // file permission bits type; pure type.
+	"io/fs.ModeCharDevice",  // file mode bit constant for character devices; pure constant.
+	"io/fs.ModeDevice",      // file mode bit constant for block devices; pure constant.
 	"io/fs.ModeDir",         // file mode bit constant for directories; pure constant.
 	"io/fs.ModeNamedPipe",   // file mode bit constant for named pipes; pure constant.
 	"io/fs.ModeSetgid",      // file mode bit constant for setgid; pure constant.
