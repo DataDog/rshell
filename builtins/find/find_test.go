@@ -6,6 +6,7 @@
 package find
 
 import (
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -30,7 +31,7 @@ func TestExecDirParentDir(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := execDirParentDir(tt.absPath)
+			got := filepath.ToSlash(execDirParentDir(tt.absPath))
 			assert.Equal(t, tt.want, got, "execDirParentDir(%q)", tt.absPath)
 		})
 	}
