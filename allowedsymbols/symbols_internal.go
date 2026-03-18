@@ -14,41 +14,41 @@ var internalPerPackageSymbols = map[string][]string{
 	},
 	"procinfo": {
 		"bufio.NewScanner",                      // line-by-line reading of /proc files; no write capability.
-		"bytes.NewReader",                        // wraps a byte slice as an in-memory io.Reader; no I/O side effects.
-		"context.Context",                        // deadline/cancellation interface; no side effects.
-		"errors.New",                             // creates a sentinel error (unsupported-platform stub); pure function, no I/O.
-		"fmt.Errorf",                             // error formatting; pure function, no I/O.
-		"fmt.Sprintf",                            // string formatting; pure function, no I/O.
-		"os.Getpid",                              // returns the current process ID; read-only, no side effects.
-		"os.Open",                                // opens a file read-only; needed to stream /proc/stat line-by-line.
-		"os.ReadDir",                             // reads a directory listing; needed to enumerate /proc entries.
-		"os.ReadFile",                            // reads a whole file; needed to read /proc/[pid]/{stat,cmdline,status}.
-		"strconv.Atoi",                           // string-to-int conversion; pure function, no I/O.
-		"strconv.ParseInt",                       // string to int64 with base/bit-size; pure function, no I/O.
-		"strings.Fields",                         // splits a string on whitespace; pure function, no I/O.
-		"strings.HasPrefix",                      // checks string prefix; pure function, no I/O.
-		"strings.Index",                          // finds first occurrence of a substring; pure function, no I/O.
-		"strings.LastIndex",                      // finds last occurrence of a substring; pure function, no I/O.
-		"strings.TrimRight",                      // trims trailing characters; pure function, no I/O.
-		"strings.TrimSpace",                      // removes leading/trailing whitespace; pure function, no I/O.
-		"syscall.Getsid",                         // returns the session ID of a process; read-only syscall, no write/exec.
-		"time.Now",                               // returns the current wall-clock time; read-only, no side effects.
-		"time.Unix",                              // constructs a Time from Unix seconds; pure function, no I/O.
-		"golang.org/x/sys/unix.KinfoProc",        // (darwin) struct type carrying per-process kinfo_proc data from sysctl; read-only data, no exec capability.
-		"golang.org/x/sys/unix.SysctlKinfoProc",  // (darwin) reads a single process's kinfo_proc via kern.proc.pid sysctl; read-only, no exec or write capability.
-		"golang.org/x/sys/unix.SysctlKinfoProcSlice",       // (darwin) reads all processes' kinfo_proc via kern.proc.all sysctl; read-only, no exec or write capability.
-		"golang.org/x/sys/unix.SysctlRaw",                  // (darwin) reads raw kern.procargs2 sysctl buffer per-PID to obtain argv; read-only, no exec capability.
-		"golang.org/x/sys/windows.CloseHandle",             // (windows) closes a process-snapshot handle after enumeration; no data read or exec capability.
+		"bytes.NewReader",                       // wraps a byte slice as an in-memory io.Reader; no I/O side effects.
+		"context.Context",                       // deadline/cancellation interface; no side effects.
+		"errors.New",                            // creates a sentinel error (unsupported-platform stub); pure function, no I/O.
+		"fmt.Errorf",                            // error formatting; pure function, no I/O.
+		"fmt.Sprintf",                           // string formatting; pure function, no I/O.
+		"os.Getpid",                             // returns the current process ID; read-only, no side effects.
+		"os.Open",                               // opens a file read-only; needed to stream /proc/stat line-by-line.
+		"os.ReadDir",                            // reads a directory listing; needed to enumerate /proc entries.
+		"os.ReadFile",                           // reads a whole file; needed to read /proc/[pid]/{stat,cmdline,status}.
+		"strconv.Atoi",                          // string-to-int conversion; pure function, no I/O.
+		"strconv.ParseInt",                      // string to int64 with base/bit-size; pure function, no I/O.
+		"strings.Fields",                        // splits a string on whitespace; pure function, no I/O.
+		"strings.HasPrefix",                     // checks string prefix; pure function, no I/O.
+		"strings.Index",                         // finds first occurrence of a substring; pure function, no I/O.
+		"strings.LastIndex",                     // finds last occurrence of a substring; pure function, no I/O.
+		"strings.TrimRight",                     // trims trailing characters; pure function, no I/O.
+		"strings.TrimSpace",                     // removes leading/trailing whitespace; pure function, no I/O.
+		"syscall.Getsid",                        // returns the session ID of a process; read-only syscall, no write/exec.
+		"time.Now",                              // returns the current wall-clock time; read-only, no side effects.
+		"time.Unix",                             // constructs a Time from Unix seconds; pure function, no I/O.
+		"golang.org/x/sys/unix.KinfoProc",       // (darwin) struct type carrying per-process kinfo_proc data from sysctl; read-only data, no exec capability.
+		"golang.org/x/sys/unix.SysctlKinfoProc", // (darwin) reads a single process's kinfo_proc via kern.proc.pid sysctl; read-only, no exec or write capability.
+		"golang.org/x/sys/unix.SysctlKinfoProcSlice",        // (darwin) reads all processes' kinfo_proc via kern.proc.all sysctl; read-only, no exec or write capability.
+		"golang.org/x/sys/unix.SysctlRaw",                   // (darwin) reads raw kern.procargs2 sysctl buffer per-PID to obtain argv; read-only, no exec capability.
+		"golang.org/x/sys/windows.CloseHandle",              // (windows) closes a process-snapshot handle after enumeration; no data read or exec capability.
 		"golang.org/x/sys/windows.CreateToolhelp32Snapshot", // (windows) creates a read-only snapshot of the process table; no exec or write capability.
-		"golang.org/x/sys/windows.ERROR_NO_MORE_FILES",     // (windows) sentinel error indicating end of process enumeration; pure constant.
-		"golang.org/x/sys/windows.Process32First",          // (windows) reads the first entry from a process snapshot; read-only, no exec capability.
-		"golang.org/x/sys/windows.Process32Next",           // (windows) advances to the next entry in a process snapshot; read-only, no exec capability.
-		"golang.org/x/sys/windows.ProcessEntry32",          // (windows) struct type holding process snapshot entry data; pure data type, no I/O.
-		"golang.org/x/sys/windows.TH32CS_SNAPPROCESS",      // (windows) flag constant selecting process entries for CreateToolhelp32Snapshot; pure constant.
-		"golang.org/x/sys/windows.UTF16ToString",           // (windows) converts a null-terminated UTF-16 slice to a Go string; pure function, no I/O.
+		"golang.org/x/sys/windows.ERROR_NO_MORE_FILES",      // (windows) sentinel error indicating end of process enumeration; pure constant.
+		"golang.org/x/sys/windows.Process32First",           // (windows) reads the first entry from a process snapshot; read-only, no exec capability.
+		"golang.org/x/sys/windows.Process32Next",            // (windows) advances to the next entry in a process snapshot; read-only, no exec capability.
+		"golang.org/x/sys/windows.ProcessEntry32",           // (windows) struct type holding process snapshot entry data; pure data type, no I/O.
+		"golang.org/x/sys/windows.TH32CS_SNAPPROCESS",       // (windows) flag constant selecting process entries for CreateToolhelp32Snapshot; pure constant.
+		"golang.org/x/sys/windows.UTF16ToString",            // (windows) converts a null-terminated UTF-16 slice to a Go string; pure function, no I/O.
 	},
 	"winnet": {
-		"encoding/binary.BigEndian",   // reads big-endian IPv6 group values from DLL buffer; pure value, no I/O.
+		"encoding/binary.BigEndian",    // reads big-endian IPv6 group values from DLL buffer; pure value, no I/O.
 		"encoding/binary.LittleEndian", // reads little-endian DWORD fields from DLL buffer; pure value, no I/O.
 		"errors.New",                   // creates a sentinel error (non-Windows stub); pure function, no I/O.
 		"fmt.Errorf",                   // error formatting; pure function, no I/O.

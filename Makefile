@@ -1,7 +1,10 @@
-.PHONY: build test test_all test_against_bash compliance
+.PHONY: build fmt test test_all test_against_bash compliance
 
 build:
 	go build -o rshell ./cmd/rshell
+
+fmt:
+	go fmt ./...
 
 test:
 	go test -v -race ./...
