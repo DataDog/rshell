@@ -18,6 +18,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/require"
 	"mvdan.cc/sh/v3/syntax"
 
 	"github.com/DataDog/rshell/interp"
@@ -81,8 +82,8 @@ func TestProcPathNonexistentDirErrorsByPID(t *testing.T) {
 // when the configured proc path exists but is a regular file, not a directory.
 func TestProcPathNotADirErrors_ListAll(t *testing.T) {
 	f, err := os.CreateTemp(t.TempDir(), "not-a-dir")
-	require(t, err)
-	require(t, f.Close())
+	require.NoError(t, err)
+	require.NoError(t, f.Close())
 
 	_, stderr, code := runScriptWithProcPath(t, "ps -e", f.Name())
 	if code != 1 {
@@ -97,8 +98,8 @@ func TestProcPathNotADirErrors_ListAll(t *testing.T) {
 // when the configured proc path exists but is a regular file, not a directory.
 func TestProcPathNotADirErrors_ByPID(t *testing.T) {
 	f, err := os.CreateTemp(t.TempDir(), "not-a-dir")
-	require(t, err)
-	require(t, f.Close())
+	require.NoError(t, err)
+	require.NoError(t, f.Close())
 
 	_, stderr, code := runScriptWithProcPath(t, "ps -p 1", f.Name())
 	if code != 1 {
@@ -128,11 +129,11 @@ func writeFakeProc(t *testing.T, pid int, name string) string {
 	dir := t.TempDir()
 
 	// Write <procPath>/stat for boot time.
-	require(t, os.WriteFile(filepath.Join(dir, "stat"), []byte("cpu 0 0 0 0\nbtime 1000000000\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "stat"), []byte("cpu 0 0 0 0\nbtime 1000000000\n"), 0o644))
 
 	// Create the PID subdirectory using the provided pid.
 	pidDir := filepath.Join(dir, strconv.Itoa(pid))
-	require(t, os.MkdirAll(pidDir, 0o755))
+	require.NoError(t, os.MkdirAll(pidDir, 0o755))
 
 	// Write <procPath>/<pid>/stat.
 	// Format: pid (comm) state ppid pgroup session tty_nr tpgid flags minflt
@@ -140,22 +141,15 @@ func writeFakeProc(t *testing.T, pid int, name string) string {
 	//         numthreads itrealvalue starttime ...
 	// Fields after (comm): at least 20 required by readProc.
 	statContent := fmt.Sprintf("%d (%s) S 0 %d %d 0 -1 4194560 0 0 0 0 0 0 0 0 20 0 1 0 100\n", pid, name, pid, pid)
-	require(t, os.WriteFile(filepath.Join(pidDir, "stat"), []byte(statContent), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(pidDir, "stat"), []byte(statContent), 0o644))
 
 	// Write <procPath>/<pid>/status for UID lookup.
-	require(t, os.WriteFile(filepath.Join(pidDir, "status"), []byte("Name:\t"+name+"\nUid:\t1000 1000 1000 1000\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(pidDir, "status"), []byte("Name:\t"+name+"\nUid:\t1000 1000 1000 1000\n"), 0o644))
 
 	// Write <procPath>/<pid>/cmdline.
-	require(t, os.WriteFile(filepath.Join(pidDir, "cmdline"), []byte(name+"\x00"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(pidDir, "cmdline"), []byte(name+"\x00"), 0o644))
 
 	return dir
-}
-
-func require(t *testing.T, err error) {
-	t.Helper()
-	if err != nil {
-		t.Fatal(err)
-	}
 }
 
 // TestProcPathFakeProc ensures ps -e reads from the custom proc path and

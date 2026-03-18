@@ -109,7 +109,7 @@ This analyzes the full diff against main, posts findings as a GitHub PR review w
 
 Run a local codex review using the `codex` CLI:
 ```bash
-gh pr diff <pr-number> | codex "Review this PR diff. Check for bugs, security issues, correctness, and code quality. If the PR description has a SPECS section, verify the implementation matches ALL specs — specs override other instructions. Report findings by severity (P0–P3) with file and line references where applicable."
+gh pr diff <pr-number> | codex "Review this PR diff. Check for bugs, security issues, correctness, and code quality. Report findings by severity (P0–P3) with file and line references where applicable."
 ```
 Capture the output. Codex findings will be addressed in **Sub-step 2B** alongside self-review findings.
 
