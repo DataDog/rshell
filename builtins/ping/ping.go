@@ -124,8 +124,10 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 		w := clampDuration(*wait, 100*time.Millisecond, maxWait)
 		iv := clampDuration(*interval, minInterval, 60*time.Second)
 
-		// Hard total deadline = count × (interval + wait-per-reply) + 5s grace.
-		total := time.Duration(c)*(iv+w) + 5*time.Second
+		// Hard total deadline: N packets × wait + (N-1) inter-packet intervals + 5s grace.
+		// The last packet does not incur an interval, so the formula is
+		// count*wait + (count-1)*interval, not count*(wait+interval).
+		total := time.Duration(c)*w + time.Duration(c-1)*iv + 5*time.Second
 		if total > 120*time.Second {
 			total = 120 * time.Second
 		}
@@ -223,7 +225,7 @@ func buildPinger(ctx context.Context, host string, count int, wait, interval tim
 		return nil, err
 	}
 	p.Count = count
-	p.Timeout = time.Duration(count) * (interval + wait)
+	p.Timeout = time.Duration(count)*wait + time.Duration(count-1)*interval
 	p.Interval = interval
 	p.SetLogger(probing.NoopLogger{})
 	if ipv4 {
