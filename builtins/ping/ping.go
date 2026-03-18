@@ -464,7 +464,8 @@ func printHelp(callCtx *builtins.CallContext, fs *builtins.FlagSet) {
 	callCtx.Out("Options:\n")
 	fs.SetOutput(callCtx.Stdout)
 	fs.PrintDefaults()
-	callCtx.Out("\nNote: -f (flood) and -b (broadcast) are not supported for safety.\n")
+	callCtx.Out("\nNote: the following flags are not supported for safety and will be rejected:\n")
+	callCtx.Out("  -f (flood), -b (broadcast), -s (packet size), -I (interface), -p (pattern), -R (record route)\n")
 }
 
 // clampInt returns v clamped to [lo, hi].
