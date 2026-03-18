@@ -335,8 +335,13 @@ func buildPinger(ctx context.Context, host string, count int, wait, interval tim
 	// all addresses with last octet ≤ 127 would be far too aggressive. In those
 	// environments the OS still enforces SO_BROADCAST for raw sockets except
 	// that pro-bing's auto-retry circumvents it on Linux.
-	// An address ending in .255 is only a valid unicast host on a /31 or /32
-	// subnet; those are extremely rare and sacrificed for safety here.
+	// Known false-positive: on subnets wider than /24 (e.g. /16 or /23),
+	// the last octet can be 255 on a valid unicast host (e.g. 10.0.1.255 on
+	// 10.0.0.0/16, whose broadcast is 10.0.255.255). These rare addresses are
+	// blocked by this heuristic. Without the subnet mask the shell cannot
+	// distinguish them from broadcast addresses, and the safety trade-off
+	// (block a rare unicast > risk unintended broadcast) is appropriate for a
+	// restricted shell environment.
 	ip := resolved.IP
 	if ip.IsUnspecified() {
 		return nil, fmt.Errorf("unspecified destination not allowed: %s", ip)
