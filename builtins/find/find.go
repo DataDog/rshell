@@ -436,23 +436,12 @@ func walkPath(
 		// Compute parent directory for -execdir.
 		// Use joinPath (not filepath.Join) to preserve '.' and '..' components.
 		// filepath.Join cleans lexically, so Join(cwd, ".") = cwd and Dir(cwd)
-		// would point one level above the search root. joinPath concatenates
-		// without cleaning, giving cwd + "/." whose Dir is correctly cwd.
+		// would point one level above the search root.
 		absPath := path
 		if !filepath.IsAbs(absPath) {
 			absPath = joinPath(opts.workDir, absPath)
 		}
-		// Trim trailing slashes (except root) so filepath.Dir returns
-		// the parent directory, not the directory itself. Preserve
-		// drive-root slashes on Windows (e.g. C:/) to avoid producing
-		// the drive-relative prefix C: which Dir resolves to C:. .
-		for len(absPath) > 1 && absPath[len(absPath)-1] == '/' {
-			if len(absPath) >= 3 && absPath[len(absPath)-2] == ':' {
-				break
-			}
-			absPath = absPath[:len(absPath)-1]
-		}
-		execDirParent := filepath.Dir(absPath)
+		execDirParent := execDirParentDir(absPath)
 
 		ec := &evalContext{
 			callCtx:       callCtx,
@@ -649,4 +638,18 @@ func joinPath(dir, name string) string {
 		return dir + name
 	}
 	return dir + "/" + name
+}
+
+// execDirParentDir returns the parent directory of absPath for -execdir.
+// Trailing slashes are trimmed (except Unix root "/" and Windows drive
+// roots like "C:/") so that filepath.Dir returns the parent directory
+// rather than the directory itself.
+func execDirParentDir(absPath string) string {
+	for len(absPath) > 1 && absPath[len(absPath)-1] == '/' {
+		if len(absPath) == 3 && absPath[1] == ':' {
+			break // preserve Windows drive root (e.g. C:/)
+		}
+		absPath = absPath[:len(absPath)-1]
+	}
+	return filepath.Dir(absPath)
 }
