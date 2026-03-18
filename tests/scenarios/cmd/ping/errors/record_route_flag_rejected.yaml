@@ -4,6 +4,7 @@ input:
   script: |+
     ping -R localhost
 expect:
+  stdout: ""
   stderr: "ping: unknown shorthand flag: 'R' in -R\n"
   exit_code: 1
 skip_assert_against_bash: true

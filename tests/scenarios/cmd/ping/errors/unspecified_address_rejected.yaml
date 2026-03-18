@@ -4,6 +4,7 @@ input:
   script: |+
     ping -c 1 -W 100ms 0.0.0.0
 expect:
+  stdout: ""
   stderr: "ping: unspecified destination not allowed: 0.0.0.0\n"
   exit_code: 1
 skip_assert_against_bash: true

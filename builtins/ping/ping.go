@@ -287,11 +287,11 @@ func buildPinger(ctx context.Context, host string, count int, wait, interval tim
 	// For numeric IP literals, use LookupIPAddr instead: parsing is instant
 	// (no DNS query is issued), preserves our custom "no ip6/ip4 address" error
 	// messages when the literal doesn't match the requested family, and (unlike
-	// LookupIP) preserves the zone identifier for scoped IPv6 literals such as
-	// "fe80::1%eth0" (net.ParseIP returns nil for those, so we also check for a
-	// '%' after an otherwise-valid IPv6 prefix).
+	// LookupIP) preserves the zone identifier for scoped IP literals such as
+	// "fe80::1%eth0". net.ParseIP returns nil for scoped addresses, so we also
+	// detect them via isScopedIPLiteral.
 	// When no flag is given, use LookupIPAddr (dual-stack) and select below.
-	isNumericIP := net.ParseIP(host) != nil || isScopedIPv6Literal(host)
+	isNumericIP := net.ParseIP(host) != nil || isScopedIPLiteral(host)
 	var addrs []net.IPAddr
 	switch {
 	case ipv4 && !isNumericIP:
@@ -576,10 +576,12 @@ func isPermissionErr(err error) bool {
 		strings.Contains(msg, "the requested protocol has not been configured")
 }
 
-// isScopedIPv6Literal reports whether host is a scoped IPv6 address literal
-// such as "fe80::1%eth0". net.ParseIP rejects the '%' zone separator, so this
-// function checks by stripping the zone and parsing the base address.
-func isScopedIPv6Literal(host string) bool {
+// isScopedIPLiteral reports whether host is a scoped IP address literal with a
+// zone suffix, such as "fe80::1%eth0" or "192.168.1.1%eth0". net.ParseIP
+// rejects the '%' zone separator, so this function strips the zone and parses
+// the base address. In practice only scoped IPv6 link-local addresses carry a
+// zone, but the function matches any IP+zone for correctness.
+func isScopedIPLiteral(host string) bool {
 	idx := strings.IndexByte(host, '%')
 	if idx < 0 {
 		return false
