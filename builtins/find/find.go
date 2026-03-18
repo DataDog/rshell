@@ -442,6 +442,11 @@ func walkPath(
 		if !filepath.IsAbs(absPath) {
 			absPath = joinPath(opts.workDir, absPath)
 		}
+		// Trim trailing slashes (except root) so filepath.Dir returns
+		// the parent directory, not the directory itself.
+		for len(absPath) > 1 && absPath[len(absPath)-1] == '/' {
+			absPath = absPath[:len(absPath)-1]
+		}
 		execDirParent := filepath.Dir(absPath)
 
 		ec := &evalContext{
