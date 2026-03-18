@@ -112,6 +112,10 @@ Blocked features are rejected before execution with exit code 2.
 - ❌ No automatic inheritance from the host process
 - ❌ `export`, `readonly` are blocked
 
+## Intentional Divergences from Bash
+
+- **Time reference for `find -mmin`/`-mtime` and `ls -l`**: rshell captures `time.Now()` once at the start of each `Run()` call and shares it across all builtins in that run. Bash evaluates each command against its own invocation time. In practice this only matters for long-running scripts (e.g. `sleep 61; find . -mmin -1`) where the reference time drifts from the actual command start. Short-lived AI agent scripts are unaffected.
+
 ## Appendix
 
-Formating: In each category, supported features should be listed first, and the most useful ones first.
+Formatting: In each category, supported features should be listed first, and the most useful ones first.
