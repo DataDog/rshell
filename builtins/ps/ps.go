@@ -47,7 +47,7 @@ import (
 	"strings"
 
 	"github.com/DataDog/rshell/builtins"
-	"github.com/DataDog/rshell/builtins/internal/procinfo"
+	"github.com/DataDog/rshell/builtins/ps/internal/procinfo"
 )
 
 // Cmd is the ps builtin command descriptor.
