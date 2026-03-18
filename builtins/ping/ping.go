@@ -345,15 +345,23 @@ func durToMS(d time.Duration) float64 {
 	return float64(d.Microseconds()) / 1000.0
 }
 
-// isPermissionErr reports whether err is a socket permission error (EPERM or
-// EACCES), indicating that the process lacks the privilege to open a raw
-// ICMP socket. The check traverses the error chain and falls back to a
-// case-insensitive string match for platforms that wrap errors differently.
+// isPermissionErr reports whether err indicates that the process lacks the
+// privilege to open a raw ICMP socket. When true, the caller should retry
+// with privileged raw-socket mode.
+//
+// We detect three classes of failure:
+//  1. EPERM / EACCES — classic Unix permission denials.
+//  2. EPROTONOSUPPORT — returned on Linux when the kernel's
+//     net.ipv4.ping_group_range does not cover the process GID and the
+//     unprivileged UDP-based ICMP path is unavailable; privileged raw
+//     sockets are unaffected and should be tried.
+//  3. String-based fallback for Windows and platforms that wrap errors.
 func isPermissionErr(err error) bool {
 	if err == nil {
 		return false
 	}
-	if errors.Is(err, syscall.EPERM) || errors.Is(err, syscall.EACCES) {
+	if errors.Is(err, syscall.EPERM) || errors.Is(err, syscall.EACCES) ||
+		errors.Is(err, syscall.EPROTONOSUPPORT) {
 		return true
 	}
 	// String-based fallback for Windows and other platforms.
@@ -361,6 +369,7 @@ func isPermissionErr(err error) bool {
 	return strings.Contains(msg, "operation not permitted") ||
 		strings.Contains(msg, "access is denied") ||
 		strings.Contains(msg, "permission denied") ||
+		strings.Contains(msg, "protocol not supported") ||
 		// Windows: WSAEPROTONOSUPPORT (10043) — returned by pro-bing when an
 		// unprivileged raw socket cannot be created; privileged mode should be tried.
 		strings.Contains(msg, "the requested protocol has not been configured")

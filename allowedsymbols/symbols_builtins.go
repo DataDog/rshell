@@ -320,20 +320,21 @@ var builtinPerCommandSymbols = map[string][]string{
 		"unicode/utf8.Valid",      // checks if a byte slice is valid UTF-8; pure function, no I/O.
 	},
 	"ping": {
-		"context.Context",     // deadline/cancellation plumbing; pure interface, no side effects.
-		"context.WithTimeout", // creates a child context with a deadline; no filesystem or network I/O itself.
-		"errors.Is",           // error comparison via chain; pure function, no I/O.
-		"fmt.Errorf",          // error formatting; pure function, no I/O.
-		"fmt.Sprintf",         // string formatting; pure function, no I/O.
-		"net.DefaultResolver", // default system DNS resolver; used for context-aware address lookup; network I/O is the explicit purpose of this builtin.
-		"net.IPAddr",          // resolved IP address struct (IP + Zone); pure data type, no I/O.
-		"strings.Contains",    // substring search; pure function, no I/O.
-		"strings.ToLower",     // converts string to lowercase; pure function, no I/O.
-		"syscall.EACCES",      // POSIX errno constant for permission denied; pure constant, no I/O.
-		"syscall.EPERM",       // POSIX errno constant for operation not permitted; pure constant, no I/O.
-		"time.Duration",       // duration type alias (int64 nanoseconds); pure type, no I/O.
-		"time.Millisecond",    // constant representing one millisecond; no side effects.
-		"time.Second",         // constant representing one second; no side effects.
+		"context.Context",         // deadline/cancellation plumbing; pure interface, no side effects.
+		"context.WithTimeout",     // creates a child context with a deadline; no filesystem or network I/O itself.
+		"errors.Is",               // error comparison via chain; pure function, no I/O.
+		"fmt.Errorf",              // error formatting; pure function, no I/O.
+		"fmt.Sprintf",             // string formatting; pure function, no I/O.
+		"net.DefaultResolver",     // default system DNS resolver; used for context-aware address lookup; network I/O is the explicit purpose of this builtin.
+		"net.IPAddr",              // resolved IP address struct (IP + Zone); pure data type, no I/O.
+		"strings.Contains",        // substring search; pure function, no I/O.
+		"strings.ToLower",         // converts string to lowercase; pure function, no I/O.
+		"syscall.EACCES",          // POSIX errno constant for permission denied; pure constant, no I/O.
+		"syscall.EPERM",           // POSIX errno constant for operation not permitted; pure constant, no I/O.
+		"syscall.EPROTONOSUPPORT", // POSIX errno constant for protocol not supported; pure constant, no I/O.
+		"time.Duration",           // duration type alias (int64 nanoseconds); pure type, no I/O.
+		"time.Millisecond",        // constant representing one millisecond; no side effects.
+		"time.Second",             // constant representing one second; no side effects.
 		"github.com/prometheus-community/pro-bing.NewPinger",  // creates an ICMP pinger; network I/O is the explicit purpose of this builtin.
 		"github.com/prometheus-community/pro-bing.NoopLogger", // no-op logger that discards pro-bing internal messages; no side effects.
 		"github.com/prometheus-community/pro-bing.Packet",     // ICMP packet descriptor struct (received packet data); pure data type, no I/O.
@@ -458,6 +459,7 @@ var builtinAllowedSymbols = []string{
 	"syscall.EACCES",                                      // POSIX errno constant for permission denied; pure constant, no I/O.
 	"syscall.EISDIR",                                      // error number constant for "is a directory"; pure constant, no I/O.
 	"syscall.EPERM",                                       // POSIX errno constant for operation not permitted; pure constant, no I/O.
+	"syscall.EPROTONOSUPPORT",                             // POSIX errno constant for protocol not supported; pure constant, no I/O.
 	"syscall.ENOENT",                                      // error constant for "no such file or directory"; pure constant, no I/O.
 	"syscall.Errno",                                       // error type for system call error numbers; pure type, no I/O.
 	"syscall.GetFileInformationByHandle",                  // Windows API to query file metadata by handle; read-only, no I/O side effects.
