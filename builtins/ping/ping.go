@@ -175,6 +175,9 @@ func execPing(ctx context.Context, callCtx *builtins.CallContext, host string, c
 		// is all zeros here and the header printed above is still valid.
 		// Retry with raw socket privileges. Pass the already-resolved IP so that
 		// buildPinger skips the DNS round-trip and returns immediately.
+		// pinger.IPAddr().String() uses net.IPAddr.String(), which preserves the
+		// zone identifier for link-local IPv6 addresses (e.g. "fe80::1%eth0"),
+		// ensuring the OS can route the retry correctly.
 		p2, err2 := buildPinger(ctx, pinger.IPAddr().String(), count, wait, interval, ipv4, ipv6)
 		if err2 != nil {
 			callCtx.Errf("ping: %v\n", err2)
@@ -191,6 +194,9 @@ func execPing(ctx context.Context, callCtx *builtins.CallContext, host string, c
 		return builtins.Result{Code: 1}
 	}
 
+	// Print statistics unconditionally — even when the context was cancelled
+	// (e.g. script timeout or SIGINT-equivalent). This mirrors POSIX ping
+	// which prints partial statistics on SIGINT before exiting.
 	stats := pinger.Statistics()
 	printStats(callCtx, host, stats)
 
