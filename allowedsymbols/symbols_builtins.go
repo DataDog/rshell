@@ -323,6 +323,7 @@ var builtinPerCommandSymbols = map[string][]string{
 		"context.Context",     // deadline/cancellation plumbing; pure interface, no side effects.
 		"context.WithTimeout", // creates a child context with a deadline; no filesystem or network I/O itself.
 		"errors.Is",           // error comparison via chain; pure function, no I/O.
+		"fmt.Errorf",          // error formatting; pure function, no I/O.
 		"fmt.Sprintf",         // string formatting; pure function, no I/O.
 		"strings.Contains",    // substring search; pure function, no I/O.
 		"strings.ToLower",     // converts string to lowercase; pure function, no I/O.

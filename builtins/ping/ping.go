@@ -137,9 +137,7 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 
 // execPing resolves the host, sets up ICMP probing, and prints results.
 func execPing(ctx context.Context, callCtx *builtins.CallContext, host string, count int, wait, interval time.Duration, quiet, ipv4, ipv6 bool) builtins.Result {
-	// buildPinger calls probing.NewPinger which resolves the host internally.
-	// A DNS failure surfaces as an error from buildPinger itself.
-	pinger, err := buildPinger(host, count, wait, interval, ipv4, ipv6)
+	pinger, err := buildPinger(ctx, host, count, wait, interval, ipv4, ipv6)
 	if err != nil {
 		callCtx.Errf("ping: %v\n", err)
 		return builtins.Result{Code: 1}
@@ -155,17 +153,13 @@ func execPing(ctx context.Context, callCtx *builtins.CallContext, host string, c
 	err = pinger.RunWithContext(ctx)
 
 	if err != nil && isPermissionErr(err) {
-		// Retry with raw socket privileges.
-		// buildPinger calls probing.NewPinger which does a DNS lookup internally.
-		// The SetIPAddr call below overwrites that result with the already-resolved
-		// IP from the first run, making the second DNS lookup wasted. This is a
-		// minor inefficiency: pro-bing has no NewPingerWithoutResolve API to skip it.
-		p2, err2 := buildPinger(host, count, wait, interval, ipv4, ipv6)
+		// Retry with raw socket privileges. Pass the already-resolved IP so that
+		// buildPinger skips the DNS goroutine and returns immediately.
+		p2, err2 := buildPinger(ctx, pinger.IPAddr().String(), count, wait, interval, ipv4, ipv6)
 		if err2 != nil {
 			callCtx.Errf("ping: %v\n", err2)
 			return builtins.Result{Code: 1}
 		}
-		p2.SetIPAddr(pinger.IPAddr()) // reuse already-resolved IP; avoids a third lookup
 		p2.OnRecv = onRecv
 		p2.SetPrivileged(true)
 		err = p2.RunWithContext(ctx)
@@ -187,11 +181,34 @@ func execPing(ctx context.Context, callCtx *builtins.CallContext, host string, c
 }
 
 // buildPinger creates and configures a Pinger with the given parameters.
-func buildPinger(host string, count int, wait, interval time.Duration, ipv4, ipv6 bool) (*probing.Pinger, error) {
-	p, err := probing.NewPinger(host)
-	if err != nil {
-		return nil, err
+// DNS resolution is performed in a goroutine so that ctx cancellation
+// (including the total-deadline timeout) is respected if the resolver hangs.
+func buildPinger(ctx context.Context, host string, count int, wait, interval time.Duration, ipv4, ipv6 bool) (*probing.Pinger, error) {
+	if ipv4 && ipv6 {
+		return nil, fmt.Errorf("-4 and -6 are mutually exclusive")
 	}
+
+	type result struct {
+		p   *probing.Pinger
+		err error
+	}
+	ch := make(chan result, 1)
+	go func() {
+		p, err := probing.NewPinger(host)
+		ch <- result{p, err}
+	}()
+
+	var p *probing.Pinger
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case r := <-ch:
+		if r.err != nil {
+			return nil, r.err
+		}
+		p = r.p
+	}
+
 	p.Count = count
 	p.Timeout = time.Duration(count) * (interval + wait)
 	p.Interval = interval
