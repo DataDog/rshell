@@ -94,7 +94,7 @@ func FuzzLsFlags(f *testing.F) {
 			flags += " -F"
 		}
 
-		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 
 		_, _, code := cmdRunCtx(ctx, t, "ls"+flags, dir)
@@ -142,7 +142,7 @@ func FuzzLsRecursive(f *testing.F) {
 			current = subdir
 		}
 
-		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 
 		_, _, code := cmdRunCtx(ctx, t, "ls -R", dir)
@@ -201,7 +201,7 @@ func FuzzLsHumanReadable(f *testing.F) {
 		}
 		fh.Close()
 
-		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 
 		_, _, code := cmdRunCtx(ctx, t, "ls -lh testfile.bin", dir)
@@ -259,7 +259,7 @@ func FuzzLsMultipleFiles(f *testing.F) {
 			flags += " -S"
 		}
 
-		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 
 		_, _, code := cmdRunCtx(ctx, t, "ls"+flags, dir)
