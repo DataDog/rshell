@@ -267,24 +267,58 @@ func execPing(ctx context.Context, callCtx *builtins.CallContext, host string, c
 }
 
 // buildPinger creates and configures a Pinger with the given parameters.
-// It uses net.DefaultResolver.LookupIPAddr which is natively context-aware:
-// cancellation propagates into the DNS query itself, avoiding goroutine leaks
-// that would result from a goroutine wrapping the non-context net.ResolveIPAddr.
+// DNS resolution is context-aware: cancellation propagates into the DNS query
+// itself, avoiding goroutine leaks that would result from wrapping the
+// non-context net.ResolveIPAddr.
 func buildPinger(ctx context.Context, host string, count int, wait, interval time.Duration, ipv4, ipv6 bool) (*probing.Pinger, error) {
 	if ipv4 && ipv6 {
 		return nil, fmt.Errorf("-4 and -6 are mutually exclusive")
 	}
 
-	// LookupIPAddr returns both IPv4 and IPv6 addresses; we select below.
-	addrs, err := net.DefaultResolver.LookupIPAddr(ctx, host)
-	if err != nil {
-		return nil, err
+	// When a family flag is given and the host is a hostname (not a numeric
+	// IP literal), use a family-specific lookup so that we only wait for the
+	// requested record type (A or AAAA).  This avoids unnecessary latency
+	// when, for example, -4 is requested but AAAA records are slow or broken.
+	// LookupIP returns []net.IP without zone info, which is acceptable here
+	// because DNS-resolved IPv6 link-local addresses (the only case where zone
+	// matters) are extremely rare in practice.
+	// For numeric IP literals, use LookupIPAddr instead: parsing is instant
+	// (no DNS query is issued) and it preserves our custom "no ip6/ip4 address"
+	// error messages when the literal doesn't match the requested family.
+	// When no flag is given, use LookupIPAddr (dual-stack) and select below.
+	isNumericIP := net.ParseIP(host) != nil
+	var addrs []net.IPAddr
+	switch {
+	case ipv4 && !isNumericIP:
+		ips, err := net.DefaultResolver.LookupIP(ctx, "ip4", host)
+		if err != nil {
+			return nil, err
+		}
+		for _, ip := range ips {
+			addrs = append(addrs, net.IPAddr{IP: ip})
+		}
+	case ipv6 && !isNumericIP:
+		ips, err := net.DefaultResolver.LookupIP(ctx, "ip6", host)
+		if err != nil {
+			return nil, err
+		}
+		for _, ip := range ips {
+			addrs = append(addrs, net.IPAddr{IP: ip})
+		}
+	default:
+		var err error
+		addrs, err = net.DefaultResolver.LookupIPAddr(ctx, host)
+		if err != nil {
+			return nil, err
+		}
 	}
 
-	// Select an address matching the requested family.
-	// When -4/-6 is given: take the first address of that family or error.
-	// When neither is given: prefer IPv4 (traditional ping default) so that
-	// AAAA-first DNS results on hosts without working IPv6 do not cause
+	// Select an address from the resolved set.
+	// When -4/-6 is given for a hostname: addrs already match the family;
+	// take the first.  For numeric IP literals (resolved via LookupIPAddr)
+	// we must still filter so that e.g. "ping -4 ::1" correctly errors.
+	// When neither flag is given: prefer IPv4 (traditional ping default) so
+	// that AAAA-first DNS results on hosts without working IPv6 do not cause
 	// spurious failures; fall back to the first IPv6 address if no IPv4 found.
 	var resolved *net.IPAddr
 	if ipv4 || ipv6 {
