@@ -117,6 +117,9 @@ const (
 	maxWait         = 30 * time.Second
 	// icmpPayloadSize matches the POSIX standard ping payload (56 data bytes).
 	icmpPayloadSize = 56
+	// pingGracePeriod is added to the total deadline to allow the last reply
+	// to arrive after the final probe is sent.
+	pingGracePeriod = 5 * time.Second
 )
 
 // Cmd is the ping builtin command descriptor.
@@ -182,11 +185,11 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			callCtx.Errf("ping: warning: -i %v out of range [%v–%v]; clamped to %v\n", interval, minInterval, maxInterval, iv)
 		}
 
-		// Hard total deadline: last-packet deadline + 5s grace.
+		// Hard total deadline: last-packet deadline + grace period.
 		// pro-bing's Timeout is a global wall-clock deadline. The last packet
 		// is sent at (count-1)*interval after start; we then wait up to one
 		// more 'wait' for its reply. So the total is (count-1)*interval + wait.
-		total := time.Duration(c-1)*iv + w + 5*time.Second
+		total := time.Duration(c-1)*iv + w + pingGracePeriod
 		if total > 120*time.Second {
 			total = 120 * time.Second
 			callCtx.Errf("ping: warning: total run time capped at 120s; some probes may not complete\n")
