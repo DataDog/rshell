@@ -1,0 +1,11 @@
+# -c values above maxCount (20) are clamped with a stderr warning.
+# DNS fails immediately on the unresolvable host so the test exits fast.
+description: "ping -c with value above limit emits clamping warning"
+input:
+  script: |+
+    ping -c 100 no-such-host-xyzzy.invalid
+expect:
+  stdout: ""
+  stderr_contains: ["ping: warning: -c 100 out of range"]
+  exit_code: 1
+skip_assert_against_bash: true
