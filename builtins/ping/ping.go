@@ -200,14 +200,36 @@ func buildPinger(ctx context.Context, host string, count int, wait, interval tim
 		return nil, err
 	}
 
-	// Select the first address that matches the requested family.
+	// Select an address matching the requested family.
+	// When -4/-6 is given: take the first address of that family or error.
+	// When neither is given: prefer IPv4 (traditional ping default) so that
+	// AAAA-first DNS results on hosts without working IPv6 do not cause
+	// spurious failures; fall back to the first IPv6 address if no IPv4 found.
 	var resolved *net.IPAddr
-	for i := range addrs {
-		a := &addrs[i]
-		isV4 := a.IP.To4() != nil
-		if (ipv4 && isV4) || (ipv6 && !isV4) || (!ipv4 && !ipv6) {
-			resolved = a
-			break
+	if ipv4 || ipv6 {
+		for i := range addrs {
+			a := &addrs[i]
+			isV4 := a.IP.To4() != nil
+			if (ipv4 && isV4) || (ipv6 && !isV4) {
+				resolved = a
+				break
+			}
+		}
+	} else {
+		// No family flag: prefer IPv4, fall back to first IPv6.
+		var ipv6Fallback *net.IPAddr
+		for i := range addrs {
+			a := &addrs[i]
+			if a.IP.To4() != nil {
+				resolved = a
+				break
+			}
+			if ipv6Fallback == nil {
+				ipv6Fallback = a
+			}
+		}
+		if resolved == nil {
+			resolved = ipv6Fallback
 		}
 	}
 	if resolved == nil {
@@ -325,5 +347,8 @@ func isPermissionErr(err error) bool {
 	msg := strings.ToLower(err.Error())
 	return strings.Contains(msg, "operation not permitted") ||
 		strings.Contains(msg, "access is denied") ||
-		strings.Contains(msg, "permission denied")
+		strings.Contains(msg, "permission denied") ||
+		// Windows: WSAEPROTONOSUPPORT (10043) — returned by pro-bing when an
+		// unprivileged raw socket cannot be created; privileged mode should be tried.
+		strings.Contains(msg, "the requested protocol has not been configured")
 }

@@ -54,6 +54,9 @@ func TestIsPermissionErrStringFallback(t *testing.T) {
 	assert.True(t, isPermissionErr(errors.New("OPERATION NOT PERMITTED"))) // case-insensitive
 	assert.True(t, isPermissionErr(errors.New("access is denied")))
 	assert.True(t, isPermissionErr(errors.New("permission denied")))
+	// Windows WSAEPROTONOSUPPORT (10043): returned by pro-bing when unprivileged
+	// raw socket creation fails; privileged retry should be attempted.
+	assert.True(t, isPermissionErr(errors.New("The requested protocol has not been configured into the system, or no implementation for it exists.")))
 }
 
 func TestIsPermissionErrUnrelated(t *testing.T) {
