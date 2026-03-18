@@ -419,12 +419,13 @@ func TestParseExecDirLiteralPlus(t *testing.T) {
 }
 
 // TestParseExecDirEmbeddedBraces verifies that {} embedded within a larger
-// argument token (e.g. {}.bak) is rejected with an error mentioning
-// "standalone".
+// argument token (e.g. {}.bak) is accepted and stored in execArgs.
 func TestParseExecDirEmbeddedBraces(t *testing.T) {
-	_, err := parseExpression([]string{"-execdir", "echo", "{}.bak", ";"})
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "standalone")
+	pr, err := parseExpression([]string{"-execdir", "echo", "{}.bak", ";"})
+	require.NoError(t, err)
+	require.NotNil(t, pr.expr)
+	assert.Equal(t, exprExecDir, pr.expr.kind)
+	assert.Equal(t, []string{"{}.bak"}, pr.expr.execArgs)
 }
 
 // TestParseExecDirIsAction verifies that isAction() returns true for an

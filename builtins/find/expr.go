@@ -721,13 +721,6 @@ func (p *parser) parseExecDirPredicate() (*expr, error) {
 	cmd := tokens[0]
 	args := tokens[1:]
 
-	// Validate {} usage: reject {}-embedded args like {}.bak.
-	for _, a := range args {
-		if a != "{}" && strings.Contains(a, "{}") {
-			return nil, fmt.Errorf("find: -execdir: '{}' must be a standalone argument")
-		}
-	}
-
 	return &expr{kind: exprExecDir, execCmd: cmd, execArgs: args}, nil
 }
 

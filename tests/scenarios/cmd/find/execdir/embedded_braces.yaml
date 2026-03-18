@@ -1,4 +1,4 @@
-description: find -execdir rejects embedded {} like {}.bak in arguments.
+description: find -execdir replaces {} embedded in arguments like {}.bak.
 skip_assert_against_bash: true  # rshell -execdir only runs builtins, not external commands
 setup:
   files:
@@ -11,7 +11,9 @@ input:
     - rshell:find
     - rshell:echo
   script: |+
-    find dir -execdir echo {}.bak \;
+    find dir -name 'a.txt' -execdir echo {}.bak \;
 expect:
-  stderr_contains: ["{}"]
-  exit_code: 1
+  stdout: |+
+    ./a.txt.bak
+  stderr: ""
+  exit_code: 0

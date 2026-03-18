@@ -9,6 +9,7 @@ import (
 	"context"
 	iofs "io/fs"
 	"math"
+	"strings"
 	"time"
 
 	"github.com/DataDog/rshell/builtins"
@@ -289,8 +290,8 @@ func evalExecDir(ec *evalContext, e *expr) evalResult {
 	}
 	args := make([]string, len(e.execArgs))
 	for i, a := range e.execArgs {
-		if a == "{}" {
-			args[i] = replacement
+		if strings.Contains(a, "{}") {
+			args[i] = strings.ReplaceAll(a, "{}", replacement)
 		} else {
 			args[i] = a
 		}
