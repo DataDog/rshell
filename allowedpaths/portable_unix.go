@@ -76,9 +76,12 @@ func (r *root) accessCheck(rel string, checkRead, checkWrite, checkExec bool) (f
 
 	// OpenFile succeeded — fstat the fd for metadata from this exact inode.
 	info, err := f.Stat()
-	f.Close()
+	closeErr := f.Close()
 	if err != nil {
 		return nil, err
+	}
+	if closeErr != nil {
+		return nil, closeErr
 	}
 
 	// For regular files, the successful open proves read permission

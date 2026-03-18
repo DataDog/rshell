@@ -73,7 +73,9 @@ func (r *root) accessCheck(rel string, checkRead, _, checkExec bool) (fs.FileInf
 		if err != nil {
 			return info, os.ErrPermission
 		}
-		f.Close()
+		if err := f.Close(); err != nil {
+			return info, err
+		}
 	}
 
 	return info, nil
