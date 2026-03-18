@@ -95,9 +95,9 @@ func FuzzLsFlags(f *testing.F) {
 		}
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-
+		defer cancel() // safety net if t.Fatal fires before explicit cancel
 		_, _, code := cmdRunCtx(ctx, t, "ls"+flags, dir)
+		cancel()
 		if code != 0 && code != 1 {
 			t.Errorf("ls%s unexpected exit code %d", flags, code)
 		}
@@ -143,9 +143,9 @@ func FuzzLsRecursive(f *testing.F) {
 		}
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-
+		defer cancel() // safety net if t.Fatal fires before explicit cancel
 		_, _, code := cmdRunCtx(ctx, t, "ls -R", dir)
+		cancel()
 		if code != 0 && code != 1 {
 			t.Errorf("ls -R unexpected exit code %d", code)
 		}
@@ -202,9 +202,9 @@ func FuzzLsHumanReadable(f *testing.F) {
 		fh.Close()
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-
+		defer cancel() // safety net if t.Fatal fires before explicit cancel
 		_, _, code := cmdRunCtx(ctx, t, "ls -lh testfile.bin", dir)
+		cancel()
 		if code != 0 && code != 1 {
 			t.Errorf("ls -lh unexpected exit code %d", code)
 		}
@@ -260,9 +260,9 @@ func FuzzLsMultipleFiles(f *testing.F) {
 		}
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-
+		defer cancel() // safety net if t.Fatal fires before explicit cancel
 		_, _, code := cmdRunCtx(ctx, t, "ls"+flags, dir)
+		cancel()
 		if code != 0 && code != 1 {
 			t.Errorf("ls%s unexpected exit code %d", flags, code)
 		}

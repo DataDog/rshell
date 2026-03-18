@@ -93,9 +93,9 @@ func FuzzStrings(f *testing.F) {
 		}
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-
+		defer cancel() // safety net if t.Fatal fires before explicit cancel
 		_, _, code := cmdRunCtx(ctx, t, "strings input.bin", dir)
+		cancel()
 		if code != 0 && code != 1 {
 			t.Errorf("strings unexpected exit code %d", code)
 		}
@@ -145,9 +145,9 @@ func FuzzStringsMinLen(f *testing.F) {
 		}
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-
+		defer cancel() // safety net if t.Fatal fires before explicit cancel
 		_, _, code := cmdRunCtx(ctx, t, fmt.Sprintf("strings -n %d input.bin", minLen), dir)
+		cancel()
 		if code != 0 && code != 1 {
 			t.Errorf("strings -n %d unexpected exit code %d", minLen, code)
 		}
@@ -195,9 +195,9 @@ func FuzzStringsRadix(f *testing.F) {
 		}
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-
+		defer cancel() // safety net if t.Fatal fires before explicit cancel
 		_, _, code := cmdRunCtx(ctx, t, fmt.Sprintf("strings -t %s input.bin", radix), dir)
+		cancel()
 		if code != 0 && code != 1 {
 			t.Errorf("strings -t %s unexpected exit code %d", radix, code)
 		}
@@ -233,9 +233,9 @@ func FuzzStringsStdin(f *testing.F) {
 		}
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-
+		defer cancel() // safety net if t.Fatal fires before explicit cancel
 		_, _, code := cmdRunCtx(ctx, t, "strings < stdin.bin", dir)
+		cancel()
 		if code != 0 && code != 1 {
 			t.Errorf("strings stdin unexpected exit code %d", code)
 		}

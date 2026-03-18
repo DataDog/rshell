@@ -86,13 +86,17 @@ func FuzzCatDifferential(f *testing.F) {
 			t.Fatal(err)
 		}
 
+		// Use context.Background() (not t.Context()) so the fuzz engine's
+		// cancellation does not kill the command mid-run; each iteration still
+		// enforces its own 5 s deadline.
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-
+		defer cancel() // safety net if t.Fatal fires before explicit cancel
 		rshellOut, rshellErr, rshellCode := cmdRunCtx(ctx, t, "cat input.txt", dir)
+		cancel()
 
-		// If the fuzz engine cancelled us (fuzztime expired), bail out
-		// without comparing — partial output would cause false failures.
+		// If the fuzz engine's budget expired (t.Context(), not the per-command
+		// context above), bail out without comparing — partial output would cause
+		// false failures.
 		if t.Context().Err() != nil {
 			return
 		}

@@ -59,6 +59,7 @@ var interpAllowedSymbols = []string{
 	"sync.Once",            // ensures a function runs exactly once; concurrency primitive, no I/O.
 	"sync.WaitGroup",       // waits for goroutines to finish; concurrency primitive, no I/O.
 	"time.Now",             // returns current time; read-only, no mutation.
+	"time.Time",            // time value type; pure data, no side effects.
 
 	// --- mvdan.cc/sh/v3/expand --- (shell word expansion library)
 
