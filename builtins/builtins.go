@@ -168,6 +168,11 @@ func (c *CallContext) Errf(format string, a ...any) {
 // was invoked without setting CallContext.Now. The interpreter always sets Now
 // before dispatching any builtin; callers constructing CallContext directly in
 // tests must also set it.
+//
+// Note: IsZero() is used as the "unset" sentinel, so time.Time{} (year 0001)
+// cannot be used as a legitimate timestamp — any caller explicitly setting Now
+// to the zero value will trigger this panic. In practice this is never a concern
+// since no shell script runs in year 0001.
 func (c *CallContext) NowSafe() time.Time {
 	if c.Now.IsZero() {
 		panic("builtins.CallContext.Now is zero: callers must set Now before invoking time-predicate builtins (find -mmin/-mtime, ls -l)")
