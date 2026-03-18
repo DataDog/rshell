@@ -69,6 +69,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"strings"
 	"syscall"
 	"time"
@@ -143,7 +144,9 @@ func execPing(ctx context.Context, callCtx *builtins.CallContext, host string, c
 		return builtins.Result{Code: 1}
 	}
 
-	callCtx.Outf("PING %s (%s): %d data bytes\n", pinger.Addr(), pinger.IPAddr(), pinger.Size)
+	// Use host (the original argument) for display; pinger.Addr() returns the
+	// numeric IP because buildPinger passes a resolved IP to probing.NewPinger.
+	callCtx.Outf("PING %s (%s): %d data bytes\n", host, pinger.IPAddr(), pinger.Size)
 
 	onRecv := makeOnRecv(callCtx, quiet)
 	pinger.OnRecv = onRecv
@@ -172,7 +175,7 @@ func execPing(ctx context.Context, callCtx *builtins.CallContext, host string, c
 	}
 
 	stats := pinger.Statistics()
-	printStats(callCtx, stats)
+	printStats(callCtx, host, stats)
 
 	if stats.PacketsRecv == 0 {
 		return builtins.Result{Code: 1}
@@ -181,24 +184,33 @@ func execPing(ctx context.Context, callCtx *builtins.CallContext, host string, c
 }
 
 // buildPinger creates and configures a Pinger with the given parameters.
-// DNS resolution is performed in a goroutine so that ctx cancellation
-// (including the total-deadline timeout) is respected if the resolver hangs.
+// It resolves host using the requested address family (ip4/ip6/ip) in a
+// goroutine so that ctx cancellation respects the deadline even if the
+// resolver hangs. Passing an already-resolved IP skips DNS entirely.
 func buildPinger(ctx context.Context, host string, count int, wait, interval time.Duration, ipv4, ipv6 bool) (*probing.Pinger, error) {
 	if ipv4 && ipv6 {
 		return nil, fmt.Errorf("-4 and -6 are mutually exclusive")
 	}
 
+	// Use the requested family so dual-stack hosts resolve to the right address.
+	resolveNet := "ip"
+	if ipv4 {
+		resolveNet = "ip4"
+	} else if ipv6 {
+		resolveNet = "ip6"
+	}
+
 	type result struct {
-		p   *probing.Pinger
-		err error
+		addr *net.IPAddr
+		err  error
 	}
 	ch := make(chan result, 1)
 	go func() {
-		p, err := probing.NewPinger(host)
-		ch <- result{p, err}
+		addr, err := net.ResolveIPAddr(resolveNet, host)
+		ch <- result{addr, err}
 	}()
 
-	var p *probing.Pinger
+	var resolved *net.IPAddr
 	select {
 	case <-ctx.Done():
 		return nil, ctx.Err()
@@ -206,9 +218,15 @@ func buildPinger(ctx context.Context, host string, count int, wait, interval tim
 		if r.err != nil {
 			return nil, r.err
 		}
-		p = r.p
+		resolved = r.addr
 	}
 
+	// Pass the numeric IP; pro-bing's internal ResolveIPAddr returns immediately
+	// for a numeric address, so no second DNS round-trip occurs.
+	p, err := probing.NewPinger(resolved.String())
+	if err != nil {
+		return nil, err
+	}
 	p.Count = count
 	p.Timeout = time.Duration(count) * (interval + wait)
 	p.Interval = interval
@@ -234,8 +252,9 @@ func makeOnRecv(callCtx *builtins.CallContext, quiet bool) func(*probing.Packet)
 }
 
 // printStats writes the two summary lines that every ping run ends with.
-func printStats(callCtx *builtins.CallContext, stats *probing.Statistics) {
-	callCtx.Outf("\n--- %s ping statistics ---\n", stats.Addr)
+// host is the original argument (hostname or IP) for display in the footer.
+func printStats(callCtx *builtins.CallContext, host string, stats *probing.Statistics) {
+	callCtx.Outf("\n--- %s ping statistics ---\n", host)
 	callCtx.Outf("%d packets transmitted, %d received, %.1f%% packet loss\n",
 		stats.PacketsSent, stats.PacketsRecv, stats.PacketLoss)
 	if stats.PacketsRecv > 0 {

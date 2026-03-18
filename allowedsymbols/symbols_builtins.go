@@ -325,6 +325,8 @@ var builtinPerCommandSymbols = map[string][]string{
 		"errors.Is",           // error comparison via chain; pure function, no I/O.
 		"fmt.Errorf",          // error formatting; pure function, no I/O.
 		"fmt.Sprintf",         // string formatting; pure function, no I/O.
+		"net.IPAddr",          // resolved IP address struct (IP + Zone); pure data type, no I/O.
+		"net.ResolveIPAddr",   // resolves a host to an IP address with family selection; network I/O is the explicit purpose of this builtin.
 		"strings.Contains",    // substring search; pure function, no I/O.
 		"strings.ToLower",     // converts string to lowercase; pure function, no I/O.
 		"syscall.EACCES",      // POSIX errno constant for permission denied; pure constant, no I/O.
@@ -332,7 +334,7 @@ var builtinPerCommandSymbols = map[string][]string{
 		"time.Duration",       // duration type alias (int64 nanoseconds); pure type, no I/O.
 		"time.Millisecond",    // constant representing one millisecond; no side effects.
 		"time.Second",         // constant representing one second; no side effects.
-		"github.com/prometheus-community/pro-bing.NewPinger",  // creates an ICMP pinger by resolving host; network I/O is the explicit purpose of this builtin.
+		"github.com/prometheus-community/pro-bing.NewPinger",  // creates an ICMP pinger; network I/O is the explicit purpose of this builtin.
 		"github.com/prometheus-community/pro-bing.NoopLogger", // no-op logger that discards pro-bing internal messages; no side effects.
 		"github.com/prometheus-community/pro-bing.Packet",     // ICMP packet descriptor struct (received packet data); pure data type, no I/O.
 		"github.com/prometheus-community/pro-bing.Pinger",     // ICMP pinger struct; network I/O is the explicit purpose of this builtin.
@@ -405,6 +407,8 @@ var builtinAllowedSymbols = []string{
 	"math.MinInt64",                                       // integer constant; no side effects.
 	"math.NaN",                                            // returns IEEE 754 NaN value; pure function, no I/O.
 	"net.FlagBroadcast",                                   // interface flag constant: broadcast capability; pure constant, no network connections.
+	"net.IPAddr",                                          // resolved IP address struct (IP + Zone); pure data type, no I/O.
+	"net.ResolveIPAddr",                                   // resolves host to IP with family selection; network I/O is the explicit purpose of the ping builtin.
 	"net.FlagLoopback",                                    // interface flag constant: is loopback; pure constant, no network connections.
 	"net.FlagMulticast",                                   // interface flag constant: multicast capability; pure constant, no network connections.
 	"net.FlagPointToPoint",                                // interface flag constant: point-to-point link; pure constant, no network connections.
