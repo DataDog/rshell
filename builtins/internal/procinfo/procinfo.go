@@ -33,14 +33,19 @@ type ProcInfo struct {
 // DefaultProcPath is the default path to the proc filesystem.
 const DefaultProcPath = "/proc"
 
+// resolveProcPath returns procPath if non-empty, otherwise DefaultProcPath.
+func resolveProcPath(procPath string) string {
+	if procPath == "" {
+		return DefaultProcPath
+	}
+	return procPath
+}
+
 // ListAll returns all running processes.
 // procPath is the path to the proc filesystem (e.g. "/proc"); pass
 // DefaultProcPath or an empty string to use the default.
 func ListAll(ctx context.Context, procPath string) ([]ProcInfo, error) {
-	if procPath == "" {
-		procPath = DefaultProcPath
-	}
-	return listAll(ctx, procPath)
+	return listAll(ctx, resolveProcPath(procPath))
 }
 
 // GetSession returns processes in the current process session
@@ -49,10 +54,7 @@ func ListAll(ctx context.Context, procPath string) ([]ProcInfo, error) {
 // procPath is the path to the proc filesystem; pass DefaultProcPath or an
 // empty string to use the default.
 func GetSession(ctx context.Context, procPath string) ([]ProcInfo, error) {
-	if procPath == "" {
-		procPath = DefaultProcPath
-	}
-	return getSession(ctx, procPath)
+	return getSession(ctx, resolveProcPath(procPath))
 }
 
 // GetByPIDs returns process info for the given PIDs.
@@ -60,8 +62,5 @@ func GetSession(ctx context.Context, procPath string) ([]ProcInfo, error) {
 // procPath is the path to the proc filesystem; pass DefaultProcPath or an
 // empty string to use the default.
 func GetByPIDs(ctx context.Context, procPath string, pids []int) ([]ProcInfo, error) {
-	if procPath == "" {
-		procPath = DefaultProcPath
-	}
-	return getByPIDs(ctx, procPath, pids)
+	return getByPIDs(ctx, resolveProcPath(procPath), pids)
 }
