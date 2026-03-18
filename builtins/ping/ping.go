@@ -12,11 +12,36 @@
 // Sends ICMP echo requests to HOST and reports round-trip statistics.
 // Uses github.com/prometheus-community/pro-bing for ICMP operations.
 //
-// On Linux, raw ICMP sockets require either root or CAP_NET_RAW, or the
-// kernel sysctl net.ipv4.ping_group_range must include the process's GID
-// for unprivileged operation. This command attempts unprivileged mode first
-// (SetPrivileged(false), UDP-based ICMP) and automatically falls back to
-// privileged raw-socket mode if the OS denies the unprivileged attempt.
+// This command always attempts unprivileged mode first (SetPrivileged(false),
+// UDP-based ICMP) and automatically falls back to privileged raw-socket mode
+// (SetPrivileged(true), SOCK_RAW) if the OS returns a permission error.
+//
+// # Platform compatibility
+//
+// Linux:
+//
+//	Unprivileged ICMP (SOCK_DGRAM) requires the process GID to fall within the
+//	kernel sysctl net.ipv4.ping_group_range (default 1–0, i.e. disabled on
+//	many distributions). When that range excludes the GID, the kernel returns
+//	EPROTONOSUPPORT and the command retries with a raw socket (SOCK_RAW), which
+//	requires root or CAP_NET_RAW. CAP_NET_RAW is the preferred deployment
+//	approach in containers; alternatively, widen ping_group_range to allow
+//	unprivileged operation without any capability.
+//
+// macOS:
+//
+//	Unprivileged ICMP (SOCK_DGRAM) is permitted by default for all users on
+//	macOS 10.15+. The privileged fallback (SOCK_RAW) requires root. In normal
+//	operation the fallback is never needed on macOS.
+//
+// Windows:
+//
+//	Both SOCK_DGRAM and SOCK_RAW ICMP sockets on Windows require the process to
+//	run as Administrator. Standard user processes receive WSAEACCES ("access is
+//	denied") or WSAEPROTONOSUPPORT (10043) when creating the socket. The command
+//	attempts the unprivileged path first and retries with privileged mode, but
+//	both attempts will fail for non-elevated processes. Run the shell as
+//	Administrator (or grant SeNetworkLogonRight) to enable ping on Windows.
 //
 // Accepted flags:
 //
