@@ -163,6 +163,18 @@ func (c *CallContext) Errf(format string, a ...any) {
 	fmt.Fprintf(c.Stderr, format, a...)
 }
 
+// NowSafe returns the captured run-start time. It panics if Now is the zero
+// value, which indicates a programmer error: a builtin that uses time predicates
+// was invoked without setting CallContext.Now. The interpreter always sets Now
+// before dispatching any builtin; callers constructing CallContext directly in
+// tests must also set it.
+func (c *CallContext) NowSafe() time.Time {
+	if c.Now.IsZero() {
+		panic("builtins.CallContext.Now is zero: callers must set Now before invoking time-predicate builtins (find -mmin/-mtime, ls -l)")
+	}
+	return c.Now
+}
+
 // FileID is a comparable file identity for cycle detection.
 // On Unix: device + inode. On Windows: volume serial + file index.
 // Used as map key for visited-set tracking.

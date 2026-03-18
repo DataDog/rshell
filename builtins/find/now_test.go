@@ -20,9 +20,12 @@ import (
 	"github.com/DataDog/rshell/builtins"
 )
 
-// TestNowConsistentAcrossRoots verifies that find uses a single consistent
-// timestamp across all root paths when evaluating time predicates like
-// -mmin, matching GNU find behaviour.
+// TestNowConsistentAcrossRoots verifies that find with multiple root paths
+// finds files in all roots when using a shared time reference from
+// CallContext.Now. The single-capture invariant is now structurally enforced
+// by the time.Time value field (there is no function to call multiple times),
+// so this test acts as a regression guard for multi-root traversal with a
+// time predicate.
 func TestNowConsistentAcrossRoots(t *testing.T) {
 	// Create two directories with one file each.
 	tmp := t.TempDir()
