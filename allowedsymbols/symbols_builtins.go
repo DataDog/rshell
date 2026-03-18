@@ -327,11 +327,13 @@ var builtinPerCommandSymbols = map[string][]string{
 		"fmt.Sprintf",             // string formatting; pure function, no I/O.
 		"net.DefaultResolver",     // default system DNS resolver; used for context-aware address lookup; network I/O is the explicit purpose of this builtin.
 		"net.IPAddr",              // resolved IP address struct (IP + Zone); pure data type, no I/O.
+		"net.ParseIP",             // parses an IP address string; pure function, no I/O.
 		"math.IsInf",              // IEEE 754 infinity check; pure function, no I/O.
 		"math.IsNaN",              // IEEE 754 NaN check; pure function, no I/O.
 		"math.MaxInt64",           // maximum int64 constant; used to compute time.Duration overflow boundary.
 		"strconv.ParseFloat",      // parses integer/float seconds for -W/-i flags; pure function, no I/O.
 		"strings.Contains",        // substring search; pure function, no I/O.
+		"strings.IndexByte",       // finds first occurrence of a byte in a string; pure function, no I/O.
 		"strings.ToLower",         // converts string to lowercase; pure function, no I/O.
 		"syscall.EACCES",          // POSIX errno constant for permission denied; pure constant, no I/O.
 		"syscall.EPERM",           // POSIX errno constant for operation not permitted; pure constant, no I/O.
@@ -425,6 +427,7 @@ var builtinAllowedSymbols = []string{
 	"net.Flags",                                           // network interface flags type (uint); pure type, no network connections.
 	"net.IP",                                              // IP address type ([]byte); pure type, no network connections.
 	"net.IPNet",                                           // IP network struct (IP + Mask); pure type, no network connections.
+	"net.ParseIP",                                         // parses an IP address string into a net.IP; pure function, no I/O.
 	"net.Interface",                                       // OS network interface descriptor; read-only struct, no network connections.
 	"net.Interfaces",                                      // read-only OS interface enumeration function; no network connections or writes.
 	"os.FileInfo",                                         // file metadata interface returned by Stat; no I/O side effects.
