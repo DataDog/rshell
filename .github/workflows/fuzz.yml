@@ -58,6 +58,9 @@ jobs:
             corpus_path: builtins/tests/ss
           - pkg: ./builtins/ping/
             name: ping
+            # ping fuzz tests live in the main package (builtins/ping) rather than
+            # builtins/tests/ping because they require access to unexported test
+            # helpers defined in ping_test.go in the same package.
             corpus_path: builtins/ping
           - pkg: ./interp/tests/
             name: interp

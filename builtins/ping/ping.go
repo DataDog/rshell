@@ -174,15 +174,15 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 		// unexpected behaviour (mirrors find's -maxdepth clamping).
 		c := clampInt(*count, 1, maxCount)
 		if *count != c {
-			callCtx.Errf("ping: warning: -c %d out of range [1–%d]; clamped to %d\n", *count, maxCount, c)
+			callCtx.Errf("ping: warning: -c %d out of range [1-%d]; clamped to %d\n", *count, maxCount, c)
 		}
 		w := clampDuration(wait, minWait, maxWait)
 		if wait != w {
-			callCtx.Errf("ping: warning: -W %v out of range [%v–%v]; clamped to %v\n", wait, minWait, maxWait, w)
+			callCtx.Errf("ping: warning: -W %v out of range [%v-%v]; clamped to %v\n", wait, minWait, maxWait, w)
 		}
 		iv := clampDuration(interval, minInterval, maxInterval)
 		if interval != iv {
-			callCtx.Errf("ping: warning: -i %v out of range [%v–%v]; clamped to %v\n", interval, minInterval, maxInterval, iv)
+			callCtx.Errf("ping: warning: -i %v out of range [%v-%v]; clamped to %v\n", interval, minInterval, maxInterval, iv)
 		}
 
 		// Hard total deadline: last-packet deadline + grace period.
@@ -359,6 +359,9 @@ func buildPinger(ctx context.Context, host string, count int, wait, interval tim
 
 	// Pass the numeric IP; pro-bing's internal net.ResolveIPAddr returns
 	// immediately for a numeric address, so no second DNS round-trip occurs.
+	// NOTE: NewPinger calls net.ResolveIPAddr without a context, but since
+	// we always pass a numeric IP here, that call is synchronous and instant —
+	// no goroutine leak or context-cancellation gap exists in practice.
 	p, err := probing.NewPinger(resolved.String())
 	if err != nil {
 		return nil, err
