@@ -13,7 +13,6 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
-	"time"
 
 	"mvdan.cc/sh/v3/expand"
 	"mvdan.cc/sh/v3/syntax"
@@ -296,7 +295,7 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 				return r.sandbox.Access(path, HandlerCtx(r.handlerCtx(ctx, todoPos)).Dir, mode)
 			},
 			PortableErr: allowedpaths.PortableErrMsg,
-			Now:         time.Now,
+			Now:         r.startTime,
 			FileIdentity: func(path string, info fs.FileInfo) (builtins.FileID, bool) {
 				absPath := path
 				if !filepath.IsAbs(absPath) {

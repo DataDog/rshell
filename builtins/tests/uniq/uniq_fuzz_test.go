@@ -75,10 +75,10 @@ func FuzzUniq(f *testing.F) {
 			t.Fatal(err)
 		}
 
-		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
-		defer cancel()
-
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel() // safety net if t.Fatal fires before explicit cancel
 		_, _, code := fuzzRunCtx(ctx, t, "uniq input.txt", dir)
+		cancel()
 		if code != 0 && code != 1 {
 			t.Errorf("uniq unexpected exit code %d", code)
 		}
@@ -114,10 +114,10 @@ func FuzzUniqCount(f *testing.F) {
 			t.Fatal(err)
 		}
 
-		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
-		defer cancel()
-
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel() // safety net if t.Fatal fires before explicit cancel
 		_, _, code := fuzzRunCtx(ctx, t, "uniq -c input.txt", dir)
+		cancel()
 		if code != 0 && code != 1 {
 			t.Errorf("uniq -c unexpected exit code %d", code)
 		}
@@ -194,10 +194,10 @@ func FuzzUniqFlags(f *testing.F) {
 			flags += fmt.Sprintf(" -w %d", checkChars)
 		}
 
-		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
-		defer cancel()
-
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel() // safety net if t.Fatal fires before explicit cancel
 		_, _, code := fuzzRunCtx(ctx, t, "uniq"+flags+" input.txt", dir)
+		cancel()
 		if code != 0 && code != 1 {
 			t.Errorf("uniq%s unexpected exit code %d", flags, code)
 		}
@@ -227,10 +227,10 @@ func FuzzUniqStdin(f *testing.F) {
 			t.Fatal(err)
 		}
 
-		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
-		defer cancel()
-
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel() // safety net if t.Fatal fires before explicit cancel
 		_, _, code := fuzzRunCtx(ctx, t, "uniq < stdin.txt", dir)
+		cancel()
 		if code != 0 && code != 1 {
 			t.Errorf("uniq stdin unexpected exit code %d", code)
 		}
