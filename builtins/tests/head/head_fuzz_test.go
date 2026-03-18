@@ -74,10 +74,9 @@ func FuzzHeadLines(f *testing.F) {
 			t.Fatal(err)
 		}
 
-		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
-		defer cancel()
-
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		stdout, _, code := cmdRunCtx(ctx, t, fmt.Sprintf("head -n %d input.txt", n), dir)
+		cancel()
 		if code != 0 && code != 1 {
 			t.Errorf("unexpected exit code %d", code)
 		}
@@ -138,10 +137,9 @@ func FuzzHeadBytes(f *testing.F) {
 			t.Fatal(err)
 		}
 
-		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
-		defer cancel()
-
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		stdout, _, code := cmdRunCtx(ctx, t, fmt.Sprintf("head -c %d input.txt", n), dir)
+		cancel()
 		if code != 0 && code != 1 {
 			t.Errorf("unexpected exit code %d", code)
 		}
@@ -189,10 +187,9 @@ func FuzzHeadStdin(f *testing.F) {
 			t.Fatal(err)
 		}
 
-		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
-		defer cancel()
-
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		_, _, code := cmdRunCtx(ctx, t, fmt.Sprintf("head -n %d < stdin.txt", n), dir)
+		cancel()
 		if code != 0 && code != 1 {
 			t.Errorf("unexpected exit code %d (stdin mode)", code)
 		}

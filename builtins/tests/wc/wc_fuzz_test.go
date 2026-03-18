@@ -70,10 +70,9 @@ func FuzzWc(f *testing.F) {
 			t.Fatal(err)
 		}
 
-		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
-		defer cancel()
-
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		_, _, code := cmdRunCtx(ctx, t, "wc input.txt", dir)
+		cancel()
 		if code != 0 && code != 1 {
 			t.Errorf("wc unexpected exit code %d", code)
 		}
@@ -108,10 +107,9 @@ func FuzzWcLines(f *testing.F) {
 			t.Fatal(err)
 		}
 
-		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
-		defer cancel()
-
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		_, _, code := cmdRunCtx(ctx, t, "wc -l input.txt", dir)
+		cancel()
 		if code != 0 && code != 1 {
 			t.Errorf("wc -l unexpected exit code %d", code)
 		}
@@ -144,10 +142,9 @@ func FuzzWcBytes(f *testing.F) {
 			t.Fatal(err)
 		}
 
-		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
-		defer cancel()
-
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		_, _, code := cmdRunCtx(ctx, t, "wc -c input.txt", dir)
+		cancel()
 		if code != 0 && code != 1 {
 			t.Errorf("wc -c unexpected exit code %d", code)
 		}
@@ -187,10 +184,9 @@ func FuzzWcChars(f *testing.F) {
 			t.Fatal(err)
 		}
 
-		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
-		defer cancel()
-
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		_, _, code := cmdRunCtx(ctx, t, "wc -m input.txt", dir)
+		cancel()
 		if code != 0 && code != 1 {
 			t.Errorf("wc -m unexpected exit code %d", code)
 		}
@@ -228,10 +224,9 @@ func FuzzWcStdin(f *testing.F) {
 			t.Fatal(err)
 		}
 
-		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
-		defer cancel()
-
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		_, _, code := cmdRunCtx(ctx, t, "wc < stdin.txt", dir)
+		cancel()
 		if code != 0 && code != 1 {
 			t.Errorf("wc stdin unexpected exit code %d", code)
 		}

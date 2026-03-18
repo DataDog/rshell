@@ -139,9 +139,8 @@ func FuzzSSFlags(f *testing.F) {
 		t.Logf("script: %s", script)
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-
 		_, _, code := cmdRunCtxFuzzSS(ctx, t, script)
+		cancel()
 		if code != 0 && code != 1 {
 			t.Errorf("unexpected exit code %d for flags %q", code, flags)
 		}

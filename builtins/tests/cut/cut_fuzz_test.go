@@ -97,10 +97,9 @@ func FuzzCutFields(f *testing.F) {
 			t.Fatal(err)
 		}
 
-		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
-		defer cancel()
-
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		_, _, code := cmdRunCtxFuzz(ctx, t, fmt.Sprintf("cut -f %s input.txt", fieldSpec), dir)
+		cancel()
 		if code != 0 && code != 1 {
 			t.Errorf("cut -f %s unexpected exit code %d", fieldSpec, code)
 		}
@@ -165,10 +164,9 @@ func FuzzCutBytes(f *testing.F) {
 			t.Fatal(err)
 		}
 
-		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
-		defer cancel()
-
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		_, _, code := cmdRunCtxFuzz(ctx, t, fmt.Sprintf("cut -b %s input.txt", byteSpec), dir)
+		cancel()
 		if code != 0 && code != 1 {
 			t.Errorf("cut -b %s unexpected exit code %d", byteSpec, code)
 		}
@@ -231,10 +229,9 @@ func FuzzCutDelimiter(f *testing.F) {
 			t.Fatal(err)
 		}
 
-		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
-		defer cancel()
-
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		script := fmt.Sprintf("cut -d '%s' -f %s input.txt", delim, fieldSpec)
+		cancel()
 		_, _, code := cmdRunCtxFuzz(ctx, t, script, dir)
 		if code != 0 && code != 1 {
 			t.Errorf("cut -d '%s' -f %s unexpected exit code %d", delim, fieldSpec, code)
@@ -290,10 +287,9 @@ func FuzzCutComplement(f *testing.F) {
 			t.Fatal(err)
 		}
 
-		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
-		defer cancel()
-
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		_, _, code := cmdRunCtxFuzz(ctx, t, fmt.Sprintf("cut --complement -b %s input.txt", byteSpec), dir)
+		cancel()
 		if code != 0 && code != 1 {
 			t.Errorf("cut --complement -b %s unexpected exit code %d", byteSpec, code)
 		}
@@ -331,10 +327,9 @@ func FuzzCutStdin(f *testing.F) {
 			t.Fatal(err)
 		}
 
-		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
-		defer cancel()
-
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		_, _, code := cmdRunCtxFuzz(ctx, t, "cut -f 1 < stdin.txt", dir)
+		cancel()
 		if code != 0 && code != 1 {
 			t.Errorf("cut stdin unexpected exit code %d", code)
 		}

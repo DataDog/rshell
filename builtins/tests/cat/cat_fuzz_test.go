@@ -75,10 +75,9 @@ func FuzzCat(f *testing.F) {
 			t.Fatal(err)
 		}
 
-		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
-		defer cancel()
-
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		stdout, _, code := cmdRunCtx(ctx, t, "cat input.txt", dir)
+		cancel()
 		if code != 0 && code != 1 {
 			t.Errorf("unexpected exit code %d", code)
 		}
@@ -126,10 +125,9 @@ func FuzzCatNumberLines(f *testing.F) {
 			t.Fatal(err)
 		}
 
-		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
-		defer cancel()
-
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		_, _, code := cmdRunCtx(ctx, t, "cat -n input.txt", dir)
+		cancel()
 		if code != 0 && code != 1 {
 			t.Errorf("cat -n unexpected exit code %d", code)
 		}
@@ -188,10 +186,9 @@ func FuzzCatDisplayFlags(f *testing.F) {
 			flags += " -T"
 		}
 
-		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
-		defer cancel()
-
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		_, _, code := cmdRunCtx(ctx, t, "cat"+flags+" input.bin", dir)
+		cancel()
 		if code != 0 && code != 1 {
 			t.Errorf("cat%s unexpected exit code %d", flags, code)
 		}
@@ -226,10 +223,9 @@ func FuzzCatStdin(f *testing.F) {
 			t.Fatal(err)
 		}
 
-		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
-		defer cancel()
-
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		stdout, _, code := cmdRunCtx(ctx, t, "cat < stdin.txt", dir)
+		cancel()
 		if code != 0 && code != 1 {
 			t.Errorf("cat stdin unexpected exit code %d", code)
 		}

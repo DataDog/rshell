@@ -145,9 +145,8 @@ func FuzzIPSubcommand(f *testing.F) {
 		}
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-
 		script := "ip " + subcmd
+		cancel()
 		_, _, code := cmdRunCtxFuzz(ctx, t, script)
 		if code == -1 {
 			return // shell/parse error before the builtin ran — not our bug
@@ -216,9 +215,8 @@ func FuzzIPFlags(f *testing.F) {
 		}
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-
 		script := "ip " + flags
+		cancel()
 		if subcmd != "" {
 			script += " " + subcmd
 		}

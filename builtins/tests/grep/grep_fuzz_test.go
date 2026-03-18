@@ -88,10 +88,9 @@ func FuzzGrepFileContent(f *testing.F) {
 			t.Fatal(err)
 		}
 
-		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
-		defer cancel()
-
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		script := "grep '" + pattern + "' input.txt"
+		cancel()
 		_, _, code := cmdRunCtx(ctx, t, script, dir)
 		if code != 0 && code != 1 && code != 2 {
 			t.Errorf("grep unexpected exit code %d", code)
@@ -161,10 +160,9 @@ func FuzzGrepPatterns(f *testing.F) {
 			t.Fatal(err)
 		}
 
-		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
-		defer cancel()
-
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		_, _, code := cmdRunCtx(ctx, t, "grep '"+pattern+"' input.txt", dir)
+		cancel()
 		if code != 0 && code != 1 && code != 2 {
 			t.Errorf("grep pattern %q unexpected exit code %d", pattern, code)
 		}
@@ -199,10 +197,9 @@ func FuzzGrepStdin(f *testing.F) {
 			t.Fatal(err)
 		}
 
-		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
-		defer cancel()
-
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		_, _, code := cmdRunCtx(ctx, t, "grep '.' < stdin.txt", dir)
+		cancel()
 		if code != 0 && code != 1 && code != 2 {
 			t.Errorf("grep stdin unexpected exit code %d", code)
 		}
@@ -270,10 +267,9 @@ func FuzzGrepFixedStrings(f *testing.F) {
 			t.Fatal(err)
 		}
 
-		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
-		defer cancel()
-
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		_, _, code := cmdRunCtx(ctx, t, "grep -F '"+pattern+"' input.txt", dir)
+		cancel()
 		if code != 0 && code != 1 && code != 2 {
 			t.Errorf("grep -F unexpected exit code %d", code)
 		}
@@ -322,10 +318,9 @@ func FuzzGrepFlags(f *testing.F) {
 			t.Fatal(err)
 		}
 
-		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
-		defer cancel()
-
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		flags := ""
+		cancel()
 		if caseInsensitive {
 			flags += " -i"
 		}

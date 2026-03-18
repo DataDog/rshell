@@ -60,10 +60,9 @@ func FuzzEcho(f *testing.F) {
 		dir, cleanup := testutil.FuzzIterDir(t, baseDir, &counter)
 		defer cleanup()
 
-		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
-		defer cancel()
-
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		_, _, code := fuzzRunCtx(ctx, t, "echo '"+arg+"'", dir)
+		cancel()
 		if code != 0 {
 			t.Errorf("echo unexpected exit code %d", code)
 		}
@@ -132,10 +131,9 @@ func FuzzEchoEscapes(f *testing.F) {
 		dir, cleanup := testutil.FuzzIterDir(t, baseDir, &counter)
 		defer cleanup()
 
-		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
-		defer cancel()
-
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		_, _, code := fuzzRunCtx(ctx, t, "echo -e '"+arg+"'", dir)
+		cancel()
 		if code != 0 {
 			t.Errorf("echo -e unexpected exit code %d", code)
 		}
@@ -188,10 +186,9 @@ func FuzzEchoFlagInteraction(f *testing.F) {
 		dir, cleanup := testutil.FuzzIterDir(t, baseDir, &counter)
 		defer cleanup()
 
-		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
-		defer cancel()
-
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		_, _, code := fuzzRunCtx(ctx, t, "echo"+flags+" '"+arg+"'", dir)
+		cancel()
 		if code != 0 {
 			t.Errorf("echo%s unexpected exit code %d", flags, code)
 		}
