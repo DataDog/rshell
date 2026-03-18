@@ -123,10 +123,21 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			return builtins.Result{Code: 1}
 		}
 
-		// Clamp inputs to safe ranges.
+		// Clamp inputs to safe ranges; warn when the user-supplied value
+		// is outside the allowed range so the caller is not confused by
+		// unexpected behaviour (mirrors find's -maxdepth clamping).
 		c := clampInt(*count, 1, maxCount)
+		if *count != c {
+			callCtx.Errf("ping: warning: -c %d out of range [1–%d]; clamped to %d\n", *count, maxCount, c)
+		}
 		w := clampDuration(*wait, minWait, maxWait)
+		if *wait != w {
+			callCtx.Errf("ping: warning: -W %v out of range [%v–%v]; clamped to %v\n", *wait, minWait, maxWait, w)
+		}
 		iv := clampDuration(*interval, minInterval, maxInterval)
+		if *interval != iv {
+			callCtx.Errf("ping: warning: -i %v out of range [%v–%v]; clamped to %v\n", *interval, minInterval, maxInterval, iv)
+		}
 
 		// Hard total deadline: last-packet deadline + 5s grace.
 		// pro-bing's Timeout is a global wall-clock deadline. The last packet
