@@ -45,6 +45,9 @@ func TestTailDevNull(t *testing.T) {
 }
 
 func TestTailPermissionDenied(t *testing.T) {
+	if os.Getuid() == 0 {
+		t.Skip("root can read files with mode 0000; permission check not meaningful")
+	}
 	dir := t.TempDir()
 	writeFile(t, dir, "noperms.txt", "secret\n")
 	require.NoError(t, os.Chmod(filepath.Join(dir, "noperms.txt"), 0000))

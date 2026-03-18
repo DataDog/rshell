@@ -86,12 +86,15 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 		// Merge remaining positional args as blank-separated PIDs.
 		// GNU ps allows blank-separated PID lists: ps -p 123 456 or ps 123 456.
 		// Non-numeric values are caught by parsePIDs and cause exit 1.
+		// If -p was explicitly set (even to empty), do NOT overwrite it with
+		// positional args: ps -p '' 1 should still fail, not silently treat 1
+		// as the PID list (GNU ps rejects the empty -p value immediately).
 		effectivePIDList := *pidList
 		if len(args) > 0 {
 			for _, arg := range args {
 				if effectivePIDList != "" {
 					effectivePIDList += " " + arg
-				} else {
+				} else if !pidFlagChanged {
 					effectivePIDList = arg
 				}
 			}
@@ -152,16 +155,13 @@ func parsePIDs(s string) ([]int, error) {
 			return nil, fmt.Errorf("invalid PID list: %s", s)
 		}
 	}
-	// Replace commas with spaces for uniform splitting.
+	// Replace commas with spaces, then split on all whitespace so that
+	// tab-delimited PID lists (e.g. ps -p $'1\t2') also work.
 	s = strings.ReplaceAll(s, ",", " ")
-	parts := strings.Split(s, " ")
+	parts := strings.Fields(s)
 	pids := make([]int, 0, len(parts))
 	seen := make(map[int]bool, len(parts))
 	for _, f := range parts {
-		f = strings.TrimSpace(f)
-		if f == "" {
-			continue
-		}
 		pid, err := strconv.Atoi(f)
 		if err != nil || pid <= 0 {
 			return nil, fmt.Errorf("invalid PID: %s", f)

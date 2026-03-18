@@ -180,14 +180,27 @@ func runScenario(t *testing.T, sc scenario) {
 		opts = append(opts, interp.Env(pairs...))
 	}
 	if sc.Input.AllowedPaths != nil {
-		resolved := make([]string, len(sc.Input.AllowedPaths))
-		for i, p := range sc.Input.AllowedPaths {
+		var resolved []string
+		for _, p := range sc.Input.AllowedPaths {
 			if p == "$DIR" {
-				resolved[i] = dir
+				resolved = append(resolved, dir)
+			} else if filepath.IsAbs(p) || strings.HasPrefix(p, "/") {
+				// Absolute paths (e.g. /proc/net) are used as-is to allow access
+				// to kernel virtual filesystems that live outside the test temp dir.
+				// Also handle Unix-style paths starting with "/" on Windows, where
+				// filepath.IsAbs only recognises drive-letter paths like C:\...
+				// Skip if the path does not exist on this OS (e.g. /proc/net on macOS/Windows).
+				if _, err := os.Stat(p); err == nil {
+					resolved = append(resolved, p)
+				}
 			} else {
-				resolved[i] = filepath.Join(dir, p)
+				resolved = append(resolved, filepath.Join(dir, p))
 			}
 		}
+		// Always apply AllowedPaths when the scenario specifies it, even
+		// if resolved is empty (e.g. all paths are /proc/net on macOS).
+		// An empty list enforces a closed sandbox rather than leaving the
+		// runner unrestricted.
 		opts = append(opts, interp.AllowedPaths(resolved))
 	}
 	if sc.Input.AllowAllCommands != nil && *sc.Input.AllowAllCommands {
