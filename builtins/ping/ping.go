@@ -190,6 +190,8 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 		// pro-bing's Timeout is a global wall-clock deadline. The last packet
 		// is sent at (count-1)*interval after start; we then wait up to one
 		// more 'wait' for its reply. So the total is (count-1)*interval + wait.
+		// At clamped minimums (count=1, interval=200ms, wait=100ms) the floor
+		// is 0 + 100ms + 5s = 5.1s; callers always get at least that long.
 		total := time.Duration(c-1)*iv + w + pingGracePeriod
 		if total > 120*time.Second {
 			total = 120 * time.Second
@@ -540,7 +542,19 @@ func isPermissionErr(err error) bool {
 		errors.Is(err, syscall.EPROTONOSUPPORT) {
 		return true
 	}
-	// String-based fallback for Windows and other platforms.
+	// String-based fallback for Windows and platforms where pro-bing wraps
+	// the syscall error in a way that breaks errors.Is unwrapping.  On Unix,
+	// these strings overlap with the errors.Is checks above (e.g.
+	// syscall.EACCES produces "permission denied"), but they are kept for
+	// defence-in-depth: pro-bing's internal error path may change across
+	// versions.  The overlap is harmless — a match that is already caught
+	// above short-circuits before reaching this block.
+	//
+	// NOTE: "operation not permitted" / "permission denied" / "protocol not
+	// supported" cannot originate from DNS here because DNS errors are caught
+	// in buildPinger before RunWithContext is ever called (see the function
+	// comment above).  Every error reaching this point comes from the ICMP
+	// socket layer.
 	msg := strings.ToLower(err.Error())
 	return strings.Contains(msg, "operation not permitted") ||
 		strings.Contains(msg, "access is denied") ||
