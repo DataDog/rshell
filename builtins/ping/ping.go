@@ -437,11 +437,14 @@ func durToMS(d time.Duration) float64 {
 // parsePingDuration parses a duration string for the -W and -i flags.
 // It accepts Go duration literals (e.g. "1s", "500ms") and the plain
 // integer/float seconds used by iputils ping (e.g. "1", "0.2", "1.5").
-// This keeps backward compatibility with existing Go-literal invocations while
-// also accepting the forms that users familiar with standard ping expect.
+// Negative values are rejected regardless of form; the caller's
+// clampDuration handles out-of-range positive values.
 func parsePingDuration(s string) (time.Duration, error) {
 	// Try Go duration literal first — fastest and most precise.
 	if d, err := time.ParseDuration(s); err == nil {
+		if d < 0 {
+			return 0, fmt.Errorf("negative duration %q not allowed", s)
+		}
 		return d, nil
 	}
 	// Fall back to plain numeric seconds (integer or float) as iputils does.

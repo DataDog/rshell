@@ -135,12 +135,14 @@ func TestParsePingDurationInfNaN(t *testing.T) {
 }
 
 func TestParsePingDurationNegativeGoLiteral(t *testing.T) {
-	// time.ParseDuration("-1s") succeeds and returns a negative duration.
-	// parsePingDuration returns it so the caller's clampDuration raises it
-	// to the minimum bound with a warning — same path as "-c -1".
-	d, err := parsePingDuration("-1s")
-	assert.NoError(t, err, "negative Go literal is parsed; clamping handles it")
-	assert.Equal(t, -time.Second, d)
+	// Negative Go duration literals (e.g. "-1s") are explicitly rejected.
+	// Providing a negative wait/interval is clearly invalid; an error is
+	// more useful than silently clamping to the minimum.
+	_, err := parsePingDuration("-1s")
+	assert.Error(t, err, "negative Go literal should be rejected")
+
+	_, err = parsePingDuration("-250ms")
+	assert.Error(t, err, "negative Go millisecond literal should be rejected")
 }
 
 func TestParsePingDurationOverflow(t *testing.T) {
