@@ -269,10 +269,18 @@ func buildPinger(ctx context.Context, host string, count int, wait, interval tim
 	// on Linux when WriteTo returns EACCES (ping.go sendICMP loop). This means
 	// that even without -b, a directed-broadcast address (e.g. 10.0.0.255) would
 	// result in actual ICMP broadcast traffic being sent. We therefore reject
-	// any IPv4 address whose last octet is 255, which covers both the limited
-	// broadcast (255.255.255.255) and all subnet-directed broadcast addresses.
-	// An address ending in .255 is only a valid unicast host address on a /31 or
-	// /32 subnet; those are extremely rare and sacrificed for safety here.
+	// any IPv4 address whose last octet is 255, which covers:
+	//   - The limited broadcast: 255.255.255.255
+	//   - All subnet-directed broadcasts on standard /8, /16, /24 networks
+	//     (whose broadcast address always ends in 255).
+	// Known limitation: directed broadcasts on non-standard subnets (e.g. a /25
+	// network whose broadcast is x.x.x.127) are NOT blocked here. Without the
+	// subnet mask, we cannot enumerate all possible broadcast addresses; blocking
+	// all addresses with last octet ≤ 127 would be far too aggressive. In those
+	// environments the OS still enforces SO_BROADCAST for raw sockets except
+	// that pro-bing's auto-retry circumvents it on Linux.
+	// An address ending in .255 is only a valid unicast host on a /31 or /32
+	// subnet; those are extremely rare and sacrificed for safety here.
 	ip := resolved.IP
 	if ip.IsMulticast() {
 		return nil, fmt.Errorf("multicast destination not allowed: %s", ip)

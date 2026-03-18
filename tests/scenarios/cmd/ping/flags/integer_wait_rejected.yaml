@@ -1,0 +1,10 @@
+# -W requires a Go duration string (e.g. "1s"); bare integers like "-W 1" are
+# rejected by pflag with a parse error, not silently treated as nanoseconds.
+description: "ping -W with bare integer is rejected with exit 1"
+input:
+  script: |+
+    ping -W 1 localhost
+expect:
+  stderr: "ping: invalid argument \"1\" for \"-W, --wait\" flag: time: missing unit in duration \"1\"\n"
+  exit_code: 1
+skip_assert_against_bash: true
