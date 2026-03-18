@@ -322,6 +322,13 @@ func buildPinger(ctx context.Context, host string, count int, wait, interval tim
 	// When neither flag is given: prefer IPv4 (traditional ping default) so
 	// that AAAA-first DNS results on hosts without working IPv6 do not cause
 	// spurious failures; fall back to the first IPv6 address if no IPv4 found.
+	// Known limitation: IPv4-mapped IPv6 addresses (e.g. ::ffff:127.0.0.1)
+	// are indistinguishable from native IPv4 at the net.IP byte level — Go's
+	// net.ParseIP collapses both to the same 16-byte representation, and
+	// To4() returns non-nil for both.  As a result, "ping -6 ::ffff:x.x.x.x"
+	// behaves identically to "ping -6 x.x.x.x" and returns "no ip6 address".
+	// This is not fixable without tracking the original string form, and DNS
+	// AAAA records never return IPv4-mapped addresses in practice.
 	var resolved *net.IPAddr
 	if ipv4 || ipv6 {
 		for i := range addrs {
