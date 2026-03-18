@@ -1,0 +1,17 @@
+description: find -exec is still blocked even when -execdir is available.
+skip_assert_against_bash: true  # intentional: bash allows -exec; rshell blocks it
+setup:
+  files:
+    - path: dir/a.txt
+      content: "a"
+      chmod: 0644
+input:
+  allowed_paths: ["$DIR"]
+  allowed_commands:
+    - rshell:find
+    - rshell:echo
+  script: |+
+    find dir -exec echo {} \;
+expect:
+  stderr_contains: ["blocked"]
+  exit_code: 1

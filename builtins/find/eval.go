@@ -23,17 +23,18 @@ type evalResult struct {
 
 // evalContext holds state needed during expression evaluation.
 type evalContext struct {
-	callCtx     *builtins.CallContext
-	ctx         context.Context
-	now         time.Time
-	relPath     string               // path relative to starting point
-	info        iofs.FileInfo        // file info (lstat or stat depending on -L)
-	depth       int                  // current depth
-	printPath   string               // path to print (includes starting point prefix)
-	newerCache  map[string]time.Time // cached -newer reference file modtimes
-	newerErrors map[string]bool      // tracks which -newer reference files failed to stat
-	followLinks bool                 // true when -L is active
-	failed      bool                 // set by predicates that encounter errors
+	callCtx       *builtins.CallContext
+	ctx           context.Context
+	now           time.Time
+	relPath       string               // path relative to starting point
+	info          iofs.FileInfo        // file info (lstat or stat depending on -L)
+	depth         int                  // current depth
+	printPath     string               // path to print (includes starting point prefix)
+	newerCache    map[string]time.Time // cached -newer reference file modtimes
+	newerErrors   map[string]bool      // tracks which -newer reference files failed to stat
+	followLinks   bool                 // true when -L is active
+	failed        bool                 // set by predicates that encounter errors
+	execDirParent string               // absolute path of the file's parent directory for -execdir
 }
 
 // evaluate evaluates an expression tree against a file. If e is nil, returns
@@ -104,6 +105,9 @@ func evaluate(ec *evalContext, e *expr) evalResult {
 	case exprPerm:
 		// Use full 12-bit mode (including setuid/setgid/sticky), not just Perm() which is only 9 bits.
 		return evalResult{matched: matchPerm(ec.info.Mode(), e.permVal, e.permCmp)}
+
+	case exprExecDir:
+		return evalExecDir(ec, e)
 
 	case exprQuit:
 		return evalResult{matched: true, quit: true}
@@ -261,4 +265,35 @@ func evalMmin(ec *evalContext, n int64, cmp cmpOp) bool {
 		mins := int64(math.Ceil(diff.Minutes()))
 		return mins == n
 	}
+}
+
+// evalExecDir executes a command in the directory of each matched file.
+// The filename is passed as ./basename, preventing leading-dash interpretation.
+func evalExecDir(ec *evalContext, e *expr) evalResult {
+	if ec.callCtx.RunCommand == nil {
+		ec.callCtx.Errf("find: -execdir: command execution not available\n")
+		ec.failed = true
+		return evalResult{}
+	}
+	if ec.callCtx.CommandAllowed != nil && !ec.callCtx.CommandAllowed(e.execCmd) {
+		ec.callCtx.Errf("find: -execdir: '%s': command not allowed\n", e.execCmd)
+		ec.failed = true
+		return evalResult{}
+	}
+	replacement := "./" + baseName(ec.relPath)
+	args := make([]string, len(e.execArgs))
+	for i, a := range e.execArgs {
+		if a == "{}" {
+			args[i] = replacement
+		} else {
+			args[i] = a
+		}
+	}
+	exitCode, err := ec.callCtx.RunCommand(ec.ctx, ec.execDirParent, e.execCmd, args)
+	if err != nil {
+		ec.callCtx.Errf("find: '%s': %s\n", e.execCmd, err)
+		ec.failed = true
+		return evalResult{}
+	}
+	return evalResult{matched: exitCode == 0}
 }

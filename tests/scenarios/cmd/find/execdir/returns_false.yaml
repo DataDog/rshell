@@ -1,19 +1,18 @@
-description: find -execdir runs allowed commands in the file's directory.
+description: find -execdir false {} \; exits 0 even though false returns non-zero (find reports errors, not predicate results).
 skip_assert_against_bash: true  # rshell -execdir only runs builtins, not external commands
 setup:
   files:
-    - path: dummy.txt
-      content: "x"
+    - path: dir/a.txt
+      content: "a"
       chmod: 0644
 input:
   allowed_paths: ["$DIR"]
   allowed_commands:
     - rshell:find
-    - rshell:echo
+    - rshell:false
   script: |+
-    find . -name 'dummy.txt' -execdir echo {} \;
+    find dir -type f -execdir false {} \;
 expect:
-  stdout: |+
-    ./dummy.txt
+  stdout: ""
   stderr: ""
   exit_code: 0

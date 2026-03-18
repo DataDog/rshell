@@ -1,9 +1,9 @@
-description: find -execdir runs allowed commands in the file's directory.
+description: find -execdir echo {} \; -print — both the execdir echo and -print run for each file.
 skip_assert_against_bash: true  # rshell -execdir only runs builtins, not external commands
 setup:
   files:
-    - path: dummy.txt
-      content: "x"
+    - path: dir/a.txt
+      content: "a"
       chmod: 0644
 input:
   allowed_paths: ["$DIR"]
@@ -11,9 +11,10 @@ input:
     - rshell:find
     - rshell:echo
   script: |+
-    find . -name 'dummy.txt' -execdir echo {} \;
+    find dir -name '*.txt' -execdir echo {} \; -print
 expect:
   stdout: |+
-    ./dummy.txt
+    ./a.txt
+    dir/a.txt
   stderr: ""
   exit_code: 0

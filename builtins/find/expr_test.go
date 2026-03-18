@@ -211,7 +211,7 @@ func TestParseTypePredicate(t *testing.T) {
 // TestParseBlockedPredicates verifies all dangerous predicates are blocked.
 func TestParseBlockedPredicates(t *testing.T) {
 	blocked := []string{
-		"-exec", "-execdir", "-delete", "-ok", "-okdir",
+		"-exec", "-delete", "-ok", "-okdir",
 		"-fls", "-fprint", "-fprint0", "-fprintf",
 		"-regex", "-iregex",
 	}
@@ -219,7 +219,7 @@ func TestParseBlockedPredicates(t *testing.T) {
 		t.Run(pred, func(t *testing.T) {
 			// Blocked predicates that take an argument need one to not fail with "missing argument".
 			args := []string{pred}
-			if pred == "-exec" || pred == "-execdir" || pred == "-ok" || pred == "-okdir" {
+			if pred == "-exec" || pred == "-ok" || pred == "-okdir" {
 				args = append(args, "cmd", ";")
 			}
 			_, err := parseExpression(args)
@@ -347,6 +347,68 @@ func TestParseHelpRequested(t *testing.T) {
 		assert.Equal(t, exprName, pr.expr.kind)
 		assert.Equal(t, "--help", pr.expr.strVal)
 	})
+}
+
+// TestParseExecDirBasic verifies that -execdir echo {} ; is parsed into an
+// exprExecDir node with the correct execCmd and execArgs.
+func TestParseExecDirBasic(t *testing.T) {
+	pr, err := parseExpression([]string{"-execdir", "echo", "{}", ";"})
+	require.NoError(t, err)
+	require.NotNil(t, pr.expr)
+	assert.Equal(t, exprExecDir, pr.expr.kind)
+	assert.Equal(t, "echo", pr.expr.execCmd)
+	assert.Equal(t, []string{"{}"}, pr.expr.execArgs)
+}
+
+// TestParseExecDirMultipleArgs verifies that all positional arguments
+// surrounding {} are preserved in execArgs.
+func TestParseExecDirMultipleArgs(t *testing.T) {
+	pr, err := parseExpression([]string{"-execdir", "echo", "before", "{}", "after", ";"})
+	require.NoError(t, err)
+	require.NotNil(t, pr.expr)
+	assert.Equal(t, exprExecDir, pr.expr.kind)
+	assert.Equal(t, "echo", pr.expr.execCmd)
+	assert.Equal(t, []string{"before", "{}", "after"}, pr.expr.execArgs)
+}
+
+// TestParseExecDirMissingTerminator verifies that -execdir without a ; or +
+// terminator returns an error mentioning "missing argument".
+func TestParseExecDirMissingTerminator(t *testing.T) {
+	_, err := parseExpression([]string{"-execdir", "echo", "{}"})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "missing argument")
+}
+
+// TestParseExecDirMissingCommand verifies that -execdir ; (no command token)
+// returns an error mentioning "missing argument".
+func TestParseExecDirMissingCommand(t *testing.T) {
+	_, err := parseExpression([]string{"-execdir", ";"})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "missing argument")
+}
+
+// TestParseExecDirBatchRejected verifies that the + batch-mode terminator is
+// explicitly rejected with an error mentioning "batch mode".
+func TestParseExecDirBatchRejected(t *testing.T) {
+	_, err := parseExpression([]string{"-execdir", "echo", "{}", "+"})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "batch mode")
+}
+
+// TestParseExecDirEmbeddedBraces verifies that {} embedded within a larger
+// argument token (e.g. {}.bak) is rejected with an error mentioning
+// "standalone".
+func TestParseExecDirEmbeddedBraces(t *testing.T) {
+	_, err := parseExpression([]string{"-execdir", "echo", "{}.bak", ";"})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "standalone")
+}
+
+// TestParseExecDirIsAction verifies that isAction() returns true for an
+// exprExecDir node, ensuring -execdir suppresses implicit -print.
+func TestParseExecDirIsAction(t *testing.T) {
+	e := &expr{kind: exprExecDir}
+	assert.True(t, e.isAction(), "exprExecDir must be reported as an action")
 }
 
 // TestParseExpressionLimits verifies AST depth and node limits.

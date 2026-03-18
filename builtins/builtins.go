@@ -148,6 +148,15 @@ type CallContext struct {
 	// current shell policy. Used by the help builtin to list only executable
 	// commands.
 	CommandAllowed func(name string) bool
+
+	// WorkDir returns the shell's current working directory (absolute path).
+	// Used by builtins that need to compute absolute paths for sub-operations.
+	WorkDir func() string
+
+	// RunCommand executes a builtin command within the shell's sandbox.
+	// dir overrides the working directory for path resolution.
+	// Returns the command's exit code.
+	RunCommand func(ctx context.Context, dir string, name string, args []string) (uint8, error)
 }
 
 // Out writes a string to stdout.
