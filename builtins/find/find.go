@@ -434,9 +434,13 @@ func walkPath(
 	// Returns (prune, quit).
 	processEntry := func(path string, info iofs.FileInfo, depth int) (bool, bool) {
 		// Compute parent directory for -execdir.
+		// Use joinPath (not filepath.Join) to preserve '.' and '..' components.
+		// filepath.Join cleans lexically, so Join(cwd, ".") = cwd and Dir(cwd)
+		// would point one level above the search root. joinPath concatenates
+		// without cleaning, giving cwd + "/." whose Dir is correctly cwd.
 		absPath := path
 		if !filepath.IsAbs(absPath) {
-			absPath = filepath.Join(opts.workDir, absPath)
+			absPath = joinPath(opts.workDir, absPath)
 		}
 		execDirParent := filepath.Dir(absPath)
 

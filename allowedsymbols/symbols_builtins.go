@@ -91,7 +91,6 @@ var builtinPerCommandSymbols = map[string][]string{
 		"os.PathError",                    // error type for path operations; pure type.
 		"path/filepath.Dir",               // returns the directory component of a path; pure function, no I/O.
 		"path/filepath.IsAbs",             // reports whether a path is absolute; pure function, no I/O.
-		"path/filepath.Join",              // joins path elements; pure function, no I/O.
 		"path/filepath.ToSlash",           // converts OS path separators to forward slashes; pure function, no I/O.
 		"strconv.Atoi",                    // string-to-int conversion; pure function, no I/O.
 		"strconv.ErrRange",                // sentinel error value for overflow; pure constant.
@@ -460,7 +459,6 @@ var builtinAllowedSymbols = []string{
 	"os.PathError",                                        // error type for filesystem path errors; pure type, no I/O.
 	"path/filepath.Dir",                                   // returns the directory component of a path; pure function, no I/O.
 	"path/filepath.IsAbs",                                 // reports whether a path is absolute; pure function, no I/O.
-	"path/filepath.Join",                                  // joins path elements; pure function, no I/O.
 	"path/filepath.ToSlash",                               // converts OS path separators to forward slashes; pure function, no I/O.
 	"regexp.Compile",                                      // compiles a regular expression; pure function, no I/O. Uses RE2 engine (linear-time, no backtracking).
 	"regexp.QuoteMeta",                                    // escapes all special regex characters in a string; pure function, no I/O.
