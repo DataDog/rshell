@@ -11,6 +11,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -121,7 +122,13 @@ func getByPIDs(ctx context.Context, procPath string, pids []int) ([]ProcInfo, er
 		}
 		info, err := readProc(procPath, pid, btime)
 		if err != nil {
-			continue
+			// ENOENT means the process no longer exists — skip silently.
+			// Any other error (EACCES, I/O, etc.) indicates a configuration
+			// or read failure and should be surfaced to the caller.
+			if errors.Is(err, os.ErrNotExist) {
+				continue
+			}
+			return nil, fmt.Errorf("ps: cannot read %s/%d: %w", procPath, pid, err)
 		}
 		result = append(result, info)
 	}
