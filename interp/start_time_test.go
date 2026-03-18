@@ -64,12 +64,14 @@ func TestStartTimeUpdatesOnSubsequentRun(t *testing.T) {
 	require.NoError(t, err)
 	first := r.startTime
 
+	// Sleep to ensure the wall clock advances between runs. Windows default
+	// timer resolution is ~15 ms, so 50 ms provides a safe margin.
+	time.Sleep(50 * time.Millisecond)
+
 	err = r.Run(context.Background(), prog)
 	require.NoError(t, err)
 	second := r.startTime
 
-	// Go's monotonic clock has nanosecond resolution even on Windows, so two
-	// consecutive Run calls capture distinct timestamps without needing a sleep.
 	assert.True(t, second.After(first), "startTime should advance between Run calls")
 }
 
