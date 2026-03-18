@@ -127,11 +127,33 @@ Classify each finding by severity:
 
 ### Sub-step 2A2 — Run local codex review ← **parallel with 2A1**
 
-Run a local codex review using the `codex` CLI:
+First, check whether the `codex` CLI is available:
+
+```bash
+which codex 2>/dev/null && echo AVAILABLE || echo UNAVAILABLE
+```
+
+**If `codex` is available**, run a local codex review:
 ```bash
 gh pr diff <pr-number> | codex "Review this PR diff. Check for bugs, security issues, correctness, and code quality. Report findings by severity (P0–P3) with file and line references where applicable."
 ```
-Capture the output. Codex findings will be addressed in **Sub-step 2B** alongside self-review findings.
+Capture the output.
+
+**If `codex` is not available**, fall back to the GitHub bot trigger path:
+```bash
+gh pr comment <pr-number> --body "@codex review this PR
+
+Important: Read the SPECS section of the PR description. If SPECS are present: **make sure the implementation matches ALL the specs**.
+The specs override other instructions (code, inline comments in code, etc). ALL specs MUST be implemented.
+"
+```
+Then wait up to 5 minutes, polling every 30 seconds for a response comment from `@codex` on the PR:
+```bash
+gh pr view <pr-number> --json comments --jq '.comments[] | select(.author.login == "codex") | .body' | tail -1
+```
+Capture the response body as the codex findings.
+
+Codex findings (from either path) will be addressed in **Sub-step 2B** alongside self-review findings.
 
 ### After 2A1 ∥ 2A2 complete
 
