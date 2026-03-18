@@ -114,9 +114,9 @@ func TestAccessWriteAlwaysSucceedsWindows(t *testing.T) {
 	assert.NoError(t, sb.Access("readonly.txt", dir, 0x02))
 }
 
-// TestAccessExecAlwaysSucceedsWindows verifies that execute checks
-// always succeed on Windows (executability is by extension, not bits).
-func TestAccessExecAlwaysSucceedsWindows(t *testing.T) {
+// TestAccessExecAlwaysDeniedWindows verifies that execute checks
+// always return ErrPermission on Windows (no POSIX execute bits).
+func TestAccessExecAlwaysDeniedWindows(t *testing.T) {
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "data.txt"), []byte("data"), 0644))
 
@@ -124,6 +124,6 @@ func TestAccessExecAlwaysSucceedsWindows(t *testing.T) {
 	require.NoError(t, err)
 	defer sb.Close()
 
-	// Execute check is not performed on Windows — always succeeds.
-	assert.NoError(t, sb.Access("data.txt", dir, 0x01))
+	// Windows has no POSIX execute bits — always denied.
+	assert.ErrorIs(t, sb.Access("data.txt", dir, 0x01), os.ErrPermission)
 }
