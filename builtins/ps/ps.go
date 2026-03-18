@@ -54,8 +54,11 @@ import (
 var Cmd = builtins.Command{Name: "ps", Description: "report process status", MakeFlags: registerFlags}
 
 func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
-	allProcs := fs.BoolP("all", "e", false, "select all processes")
-	allAlias := fs.BoolP("All", "A", false, "select all processes (same as -e)")
+	// Both -e/--all and -A/--All write to the same bool so that
+	// last-flag-wins order is preserved (e.g. ps -A --all=false → false).
+	var showAll bool
+	fs.BoolVarP(&showAll, "all", "e", false, "select all processes")
+	fs.BoolVarP(&showAll, "All", "A", false, "select all processes (same as -e)")
 	fullFmt := fs.BoolP("full", "f", false, "full-format listing")
 	pidList := fs.StringP("pid", "p", "", "select by PID list (comma or space separated)")
 	help := fs.Bool("help", false, "print usage and exit")
@@ -69,9 +72,7 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			return builtins.Result{}
 		}
 
-		// -A is an alias for -e; honour the actual boolean value so that
-		// --All=false does not erroneously enable "show all" mode.
-		showAll := *allProcs || *allAlias
+		// showAll is set by BoolVarP; both -e/--all and -A/--All share it.
 
 		full := *fullFmt
 
