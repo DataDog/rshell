@@ -5,6 +5,7 @@ set -euo pipefail
 # Check that all Go files are properly formatted.
 # Runs on pre-push to prevent unformatted code from reaching the remote.
 
+echo "Checking for unformatted Go files..."
 unformatted=$(gofmt -l . 2>/dev/null)
 
 if [[ -n "$unformatted" ]]; then
