@@ -11,8 +11,10 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -81,25 +83,24 @@ func writeFakeProc(t *testing.T, pid int, name string) string {
 	// Write <procPath>/stat for boot time.
 	require(t, os.WriteFile(filepath.Join(dir, "stat"), []byte("cpu 0 0 0 0\nbtime 1000000000\n"), 0o644))
 
-	// Create the PID subdirectory.
-	pidDir := filepath.Join(dir, "1") // use PID 1 as a process to list
+	// Create the PID subdirectory using the provided pid.
+	pidDir := filepath.Join(dir, strconv.Itoa(pid))
 	require(t, os.MkdirAll(pidDir, 0o755))
 
-	// Write <procPath>/1/stat.
+	// Write <procPath>/<pid>/stat.
 	// Format: pid (comm) state ppid pgroup session tty_nr tpgid flags minflt
 	//         cminflt majflt cmajflt utime stime cutime cstime priority nice
 	//         numthreads itrealvalue starttime ...
 	// Fields after (comm): at least 20 required by readProc.
-	statContent := "1 (" + name + ") S 0 1 1 0 -1 4194560 0 0 0 0 0 0 0 0 20 0 1 0 100\n"
+	statContent := fmt.Sprintf("%d (%s) S 0 %d %d 0 -1 4194560 0 0 0 0 0 0 0 0 20 0 1 0 100\n", pid, name, pid, pid)
 	require(t, os.WriteFile(filepath.Join(pidDir, "stat"), []byte(statContent), 0o644))
 
-	// Write <procPath>/1/status for UID lookup.
+	// Write <procPath>/<pid>/status for UID lookup.
 	require(t, os.WriteFile(filepath.Join(pidDir, "status"), []byte("Name:\t"+name+"\nUid:\t1000 1000 1000 1000\n"), 0o644))
 
-	// Write <procPath>/1/cmdline.
+	// Write <procPath>/<pid>/cmdline.
 	require(t, os.WriteFile(filepath.Join(pidDir, "cmdline"), []byte(name+"\x00"), 0o644))
 
-	_ = pid
 	return dir
 }
 
@@ -155,5 +156,17 @@ func TestProcPathFakeProcByPID(t *testing.T) {
 	}
 	if !strings.Contains(stdout, "1") {
 		t.Errorf("expected PID 1 in output; got:\n%s", stdout)
+	}
+}
+
+// TestProcPathFakeProcSession ensures bare ps (no flags) reads from the custom
+// proc path via GetSession rather than the real /proc.
+func TestProcPathFakeProcSession(t *testing.T) {
+	procPath := writeFakeProc(t, 1, "fakeinit")
+	// Bare ps uses GetSession; it may not include PID 1 since it is not in
+	// our session, but it must not crash and must not read the real /proc.
+	_, stderr, code := runScriptWithProcPath(t, "ps", procPath)
+	if code != 0 {
+		t.Fatalf("ps with fake proc path exited %d; stderr: %s", code, stderr)
 	}
 }

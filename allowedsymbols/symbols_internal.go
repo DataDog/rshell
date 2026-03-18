@@ -23,7 +23,9 @@ var internalPerPackageSymbols = map[string][]string{
 		"os.Open",                               // 🟠 opens a file read-only; needed to stream /proc/stat line-by-line.
 		"os.ReadDir",                            // 🟠 reads a directory listing; needed to enumerate /proc entries.
 		"os.ReadFile",                           // 🟠 reads a whole file; needed to read /proc/[pid]/{stat,cmdline,status}.
+		"path/filepath.Join",                    // 🟢 joins path elements to construct /proc/<pid>/stat paths; pure function, no I/O.
 		"strconv.Atoi",                          // 🟢 string-to-int conversion; pure function, no I/O.
+		"strconv.Itoa",                          // 🟢 int-to-string conversion for PID directory names; pure function, no I/O.
 		"strconv.ParseInt",                      // 🟢 string to int64 with base/bit-size; pure function, no I/O.
 		"strings.Fields",                        // 🟢 splits a string on whitespace; pure function, no I/O.
 		"strings.HasPrefix",                     // 🟢 checks string prefix; pure function, no I/O.
@@ -83,7 +85,9 @@ var internalAllowedSymbols = []string{
 	"os.Open",                               // 🟠 procinfo: opens a file read-only; needed to stream /proc/stat line-by-line.
 	"os.ReadDir",                            // 🟠 procinfo: reads a directory listing; needed to enumerate /proc entries.
 	"os.ReadFile",                           // 🟠 procinfo: reads a whole file; needed to read /proc/[pid]/{stat,cmdline,status}.
+	"path/filepath.Join",                    // 🟢 procinfo: joins path elements to construct /proc/<pid>/stat paths; pure function, no I/O.
 	"strconv.Atoi",                          // 🟢 string-to-int conversion; pure function, no I/O.
+	"strconv.Itoa",                          // 🟢 procinfo: int-to-string conversion for PID directory names; pure function, no I/O.
 	"strconv.ParseInt",                      // 🟢 procinfo: string to int64 with base/bit-size; pure function, no I/O.
 	"strings.Fields",                        // 🟢 procinfo: splits a string on whitespace; pure function, no I/O.
 	"strings.HasPrefix",                     // 🟢 procinfo: checks string prefix; pure function, no I/O.

@@ -149,9 +149,9 @@ type CallContext struct {
 	// commands.
 	CommandAllowed func(name string) bool
 
-	// ProcPath is the path to the proc filesystem used by the ps builtin.
-	// Defaults to "/proc" when empty.
-	ProcPath string
+	// Proc provides access to the proc filesystem for the ps builtin.
+	// The path is fixed at construction time and cannot be overridden by callers.
+	Proc *ProcProvider
 }
 
 // Out writes a string to stdout.
