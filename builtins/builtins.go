@@ -130,13 +130,13 @@ type CallContext struct {
 	// time. This is an intentional trade-off for consistency within a script
 	// run.
 	//
-	// Callers must set this to a meaningful time before invoking any builtin
-	// that uses time predicates (find -mmin/-mtime, ls -l). Builtins must
-	// read this field via NowSafe(), which panics on the zero value to catch
-	// callers that forget to set it. The zero value (time.Time{}) is reserved
-	// as the unset sentinel and must not be assigned intentionally.
 	// Run() always sets this before dispatching any builtin; Reset() clears
-	// it, so it is always re-set by the next Run() call.
+	// it, so it is always re-set by the next Run() call. The zero value
+	// (time.Time{}) is reserved as the unset sentinel; callers constructing
+	// CallContext directly (e.g. in tests) must set this to a non-zero value
+	// before invoking builtins that use time predicates (find -mmin/-mtime,
+	// ls -l). Use NowSafe() if you want an explicit panic on the zero value
+	// instead of silently computing against year 0001.
 	Now time.Time
 
 	// FileIdentity extracts canonical file identity from FileInfo.

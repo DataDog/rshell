@@ -207,7 +207,7 @@ optLoop:
 		}
 	}
 
-	now := callCtx.NowSafe()
+	now := callCtx.Now
 
 	// GNU find treats a missing -newer reference as a fatal argument error
 	// and produces no result set, so skip the walk entirely.

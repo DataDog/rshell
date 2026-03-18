@@ -137,7 +137,7 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			return builtins.Result{}
 		}
 
-		now := callCtx.NowSafe()
+		now := callCtx.Now
 
 		// Determine the effective sort mode. When both -S and -t are given,
 		// the last one specified wins, matching GNU ls behaviour.
