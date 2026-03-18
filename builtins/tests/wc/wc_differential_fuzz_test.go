@@ -93,8 +93,9 @@ func FuzzWcDifferentialLines(f *testing.F) {
 		rshellOut, rshellErr, rshellCode := cmdRunCtx(ctx, t, "wc -l input.txt", dir)
 		cancel()
 
-		// If the fuzz engine cancelled us (fuzztime expired), bail out
-		// without comparing — partial output would cause false failures.
+		// If the fuzz engine's budget expired (t.Context(), not the per-command
+		// context above), bail out without comparing — partial output would cause
+		// false failures.
 		if t.Context().Err() != nil {
 			return
 		}
