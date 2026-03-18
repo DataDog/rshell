@@ -87,3 +87,111 @@ func TestVerificationInterpIgnoresSubdirs(t *testing.T) {
 		t.Errorf("subdirectory files should be ignored by collectFlatGoFiles, but got error: %v", errs)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Per-internal-package verification tests
+// ---------------------------------------------------------------------------
+
+// internalPerPkgVerifyCfg returns a perBuiltinConfig with overrides for
+// verification testing of builtins/internal/ packages.
+func internalPerPkgVerifyCfg(tempRoot string, errs *[]string) perBuiltinConfig {
+	cfg := internalPerPackageCheckConfig()
+	cfg.RepoRootOverride = tempRoot
+	cfg.Errors = errs
+	return cfg
+}
+
+func TestVerificationInternalPerPkgCleanPass(t *testing.T) {
+	root := repoRoot(t)
+	tmp := t.TempDir()
+	copyDir(t, filepath.Join(root, "builtins", "internal"), filepath.Join(tmp, "builtins", "internal"))
+
+	var errs []string
+	checkPerBuiltinAllowedSymbols(t, internalPerPkgVerifyCfg(tmp, &errs))
+
+	if len(errs) > 0 {
+		t.Errorf("expected no errors on clean copy, got:\n%s", strings.Join(errs, "\n"))
+	}
+}
+
+func TestVerificationInternalPerPkgSymbolNotInCommonList(t *testing.T) {
+	root := repoRoot(t)
+	tmp := t.TempDir()
+	copyDir(t, filepath.Join(root, "builtins", "internal"), filepath.Join(tmp, "builtins", "internal"))
+
+	// Override the per-package config to inject a symbol not in the common list.
+	cfg := internalPerPkgVerifyCfg(tmp, nil)
+	cfg.PerCommandSymbols = copyPerCommandMap(cfg.PerCommandSymbols)
+	cfg.PerCommandSymbols["loopctl"] = append(cfg.PerCommandSymbols["loopctl"], "os.Remove")
+
+	var errs []string
+	cfg.Errors = &errs
+	checkPerBuiltinAllowedSymbols(t, cfg)
+
+	if !errContains(errs, "os.Remove") || !errContains(errs, "not in builtinAllowedSymbols") {
+		t.Errorf("expected error about os.Remove not in common list, got: %v", errs)
+	}
+}
+
+func TestVerificationInternalPerPkgSymbolNotInPerPackageList(t *testing.T) {
+	root := repoRoot(t)
+	tmp := t.TempDir()
+	copyDir(t, filepath.Join(root, "builtins", "internal"), filepath.Join(tmp, "builtins", "internal"))
+
+	// Remove "strconv.Atoi" from loopctl's per-package list — loopctl uses it.
+	cfg := internalPerPkgVerifyCfg(tmp, nil)
+	cfg.PerCommandSymbols = copyPerCommandMap(cfg.PerCommandSymbols)
+	filtered := make([]string, 0, len(cfg.PerCommandSymbols["loopctl"]))
+	for _, s := range cfg.PerCommandSymbols["loopctl"] {
+		if s != "strconv.Atoi" {
+			filtered = append(filtered, s)
+		}
+	}
+	cfg.PerCommandSymbols["loopctl"] = filtered
+
+	var errs []string
+	cfg.Errors = &errs
+	checkPerBuiltinAllowedSymbols(t, cfg)
+
+	if !errContains(errs, "strconv") || !errContains(errs, "not in the allowlist") {
+		t.Errorf("expected error about strconv not allowed for loopctl, got: %v", errs)
+	}
+}
+
+func TestVerificationInternalPerPkgUnusedSymbolFlagged(t *testing.T) {
+	root := repoRoot(t)
+	tmp := t.TempDir()
+	copyDir(t, filepath.Join(root, "builtins", "internal"), filepath.Join(tmp, "builtins", "internal"))
+
+	// Add an unused (but common-list-valid) symbol to loopctl's per-package list.
+	cfg := internalPerPkgVerifyCfg(tmp, nil)
+	cfg.PerCommandSymbols = copyPerCommandMap(cfg.PerCommandSymbols)
+	cfg.PerCommandSymbols["loopctl"] = append(cfg.PerCommandSymbols["loopctl"], "fmt.Sprintf")
+
+	var errs []string
+	cfg.Errors = &errs
+	checkPerBuiltinAllowedSymbols(t, cfg)
+
+	if !errContains(errs, "fmt.Sprintf") || !errContains(errs, "not used") {
+		t.Errorf("expected error about unused fmt.Sprintf in loopctl, got: %v", errs)
+	}
+}
+
+func TestVerificationInternalPerPkgMissingPackageEntry(t *testing.T) {
+	root := repoRoot(t)
+	tmp := t.TempDir()
+	copyDir(t, filepath.Join(root, "builtins", "internal"), filepath.Join(tmp, "builtins", "internal"))
+
+	// Remove "loopctl" from the per-package map.
+	cfg := internalPerPkgVerifyCfg(tmp, nil)
+	cfg.PerCommandSymbols = copyPerCommandMap(cfg.PerCommandSymbols)
+	delete(cfg.PerCommandSymbols, "loopctl")
+
+	var errs []string
+	cfg.Errors = &errs
+	checkPerBuiltinAllowedSymbols(t, cfg)
+
+	if !errContains(errs, "loopctl") || !errContains(errs, "no entry in builtinPerCommandSymbols") {
+		t.Errorf("expected error about missing loopctl entry, got: %v", errs)
+	}
+}
