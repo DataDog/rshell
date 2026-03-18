@@ -395,6 +395,29 @@ func TestParseExecDirBatchRejected(t *testing.T) {
 	assert.Contains(t, err.Error(), "batch mode")
 }
 
+// TestParseExecDirLiteralPlus verifies that a literal "+" that does not follow
+// "{}" is treated as a normal argument, not as a batch-mode terminator.
+func TestParseExecDirLiteralPlus(t *testing.T) {
+	// "+" before "{}" — normal argument
+	pr, err := parseExpression([]string{"-execdir", "echo", "+", "{}", ";"})
+	require.NoError(t, err)
+	require.NotNil(t, pr.expr)
+	assert.Equal(t, exprExecDir, pr.expr.kind)
+	assert.Equal(t, "echo", pr.expr.execCmd)
+	assert.Equal(t, []string{"+", "{}"}, pr.expr.execArgs)
+
+	// "+" as the only argument (no "{}" at all)
+	pr2, err := parseExpression([]string{"-execdir", "echo", "+", ";"})
+	require.NoError(t, err)
+	require.NotNil(t, pr2.expr)
+	assert.Equal(t, []string{"+"}, pr2.expr.execArgs)
+
+	// "{}" + still triggers batch mode error
+	_, err = parseExpression([]string{"-execdir", "echo", "{}", "+"})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "batch mode")
+}
+
 // TestParseExecDirEmbeddedBraces verifies that {} embedded within a larger
 // argument token (e.g. {}.bak) is rejected with an error mentioning
 // "standalone".

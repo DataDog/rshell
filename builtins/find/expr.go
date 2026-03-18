@@ -684,20 +684,23 @@ func parseSymbolicMode(s string) (uint64, error) {
 }
 
 // parseExecDirPredicate parses -execdir command [args...] ;
-// Only \; mode is supported. + (batch mode) is rejected with a clear error.
+// Only \; mode is supported. {} + (batch mode) is rejected with a clear error.
+// A literal "+" that does not follow "{}" is treated as a normal argument.
 func (p *parser) parseExecDirPredicate() (*expr, error) {
 	if p.pos >= len(p.args) {
 		return nil, errors.New("find: missing argument to '-execdir'")
 	}
 
-	// Collect tokens until ";" or "+" terminator.
+	// Collect tokens until ";" terminator, or "+" after "{}" (batch mode).
+	// In find syntax, "+" is only special as a terminator in the {} + form;
+	// otherwise it is a normal argument (e.g. -execdir echo + {} \;).
 	startPos := p.pos
 	for p.pos < len(p.args) {
 		tok := p.args[p.pos]
 		if tok == ";" {
 			break
 		}
-		if tok == "+" {
+		if tok == "+" && p.pos > startPos && p.args[p.pos-1] == "{}" {
 			return nil, errors.New("find: -execdir ... + (batch mode) is not yet supported")
 		}
 		p.pos++
