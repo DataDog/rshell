@@ -118,7 +118,7 @@ func TestAllowedPathCommaSeparated(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		extraDir = filepath.ToSlash(extraDir)
 	}
-	code, stdout, _ := runCLI(t, "--allow-all-commands", "-c", `cat `+filePath, "--allowed-path", dir+","+extraDir)
+	code, stdout, _ := runCLI(t, "--allow-all-commands", "-c", `cat `+filePath, "--allowed-paths", dir+","+extraDir)
 	assert.Equal(t, 0, code)
 	assert.Contains(t, stdout, "hello from testfile")
 }
@@ -138,7 +138,7 @@ func TestVariableExpansion(t *testing.T) {
 func TestHelp(t *testing.T) {
 	code, stdout, _ := runCLI(t, "--help")
 	assert.Equal(t, 0, code)
-	assert.Contains(t, stdout, "--allowed-path")
+	assert.Contains(t, stdout, "--allowed-paths")
 	assert.Contains(t, stdout, "--allowed-commands")
 	assert.Contains(t, stdout, "--allow-all-commands")
 	assert.NotContains(t, stdout, "--command", "-c/--command should be hidden from help")
