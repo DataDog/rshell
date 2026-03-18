@@ -19,6 +19,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"time"
 
 	"mvdan.cc/sh/v3/expand"
 	"mvdan.cc/sh/v3/syntax"
@@ -113,6 +114,10 @@ type runnerState struct {
 	lastExit exitStatus
 
 	lastExpandExit exitStatus // used to surface exit statuses while expanding fields
+
+	// startTime is captured once at the beginning of Run() and passed to
+	// all builtin invocations so they share a consistent time reference.
+	startTime time.Time
 }
 
 // A Runner interprets shell programs. It can be reused, but it is not safe for
@@ -313,6 +318,8 @@ func (r *Runner) Reset() {
 		}
 	}
 	// Reset only the mutable state; config is preserved.
+	// startTime is intentionally zeroed here by the struct literal; it will
+	// be set again by Run() before any builtin is invoked.
 	r.runnerState = runnerState{
 		Dir:    r.origDir,
 		Params: r.origParams,
@@ -366,6 +373,7 @@ func (r *Runner) Run(ctx context.Context, node syntax.Node) (retErr error) {
 			return r.exit.err
 		}
 	}
+	r.startTime = time.Now()
 	r.fillExpandConfig(ctx)
 	if err := validateNode(node); err != nil {
 		fmt.Fprintln(r.stderr, err)
@@ -481,14 +489,15 @@ func (r *Runner) subshell(background bool) *Runner {
 	r2 := &Runner{
 		runnerConfig: r.runnerConfig,
 		runnerState: runnerState{
-			Dir:      r.Dir,
-			Params:   r.Params,
-			stdin:    r.stdin,
-			stdout:   r.stdout,
-			stderr:   r.stderr,
-			filename: r.filename,
-			exit:     r.exit,
-			lastExit: r.lastExit,
+			Dir:       r.Dir,
+			Params:    r.Params,
+			stdin:     r.stdin,
+			stdout:    r.stdout,
+			stderr:    r.stderr,
+			filename:  r.filename,
+			exit:      r.exit,
+			lastExit:  r.lastExit,
+			startTime: r.startTime,
 		},
 	}
 	r2.writeEnv = newOverlayEnviron(r.writeEnv, background)
