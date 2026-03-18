@@ -13,6 +13,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -80,7 +81,7 @@ func getSession(ctx context.Context, procPath string) ([]ProcInfo, error) {
 	// Also include all processes that share our SID (best-effort; fall back to
 	// ancestor chain only).
 	var selfSID int
-	if data, err := os.ReadFile(fmt.Sprintf("%s/%d/stat", procPath, selfPID)); err == nil {
+	if data, err := os.ReadFile(filepath.Join(procPath, fmt.Sprintf("%d/stat", selfPID))); err == nil {
 		selfSID = parseSID(data)
 	}
 
@@ -94,7 +95,7 @@ func getSession(ctx context.Context, procPath string) ([]ProcInfo, error) {
 			continue
 		}
 		if selfSID != 0 {
-			if data, err := os.ReadFile(fmt.Sprintf("%s/%d/stat", procPath, p.PID)); err == nil {
+			if data, err := os.ReadFile(filepath.Join(procPath, fmt.Sprintf("%d/stat", p.PID))); err == nil {
 				if parseSID(data) == selfSID {
 					result = append(result, p)
 				}
@@ -122,7 +123,7 @@ func getByPIDs(ctx context.Context, procPath string, pids []int) ([]ProcInfo, er
 
 // readProc reads process info for a single PID from procPath.
 func readProc(procPath string, pid int, btime int64) (ProcInfo, error) {
-	statData, err := os.ReadFile(fmt.Sprintf("%s/%d/stat", procPath, pid))
+	statData, err := os.ReadFile(filepath.Join(procPath, fmt.Sprintf("%d/stat", pid)))
 	if err != nil {
 		return ProcInfo{}, err
 	}
@@ -224,7 +225,7 @@ func resolveTTY(_ int, ttyNr int64) string {
 
 // readUID reads the real UID from procPath/pid/status.
 func readUID(procPath string, pid int) string {
-	data, err := os.ReadFile(fmt.Sprintf("%s/%d/status", procPath, pid))
+	data, err := os.ReadFile(filepath.Join(procPath, fmt.Sprintf("%d/status", pid)))
 	if err != nil {
 		return "?"
 	}
@@ -243,7 +244,7 @@ func readUID(procPath string, pid int) string {
 
 // readCmdline reads procPath/pid/cmdline and returns the command line string.
 func readCmdline(procPath string, pid int) string {
-	data, err := os.ReadFile(fmt.Sprintf("%s/%d/cmdline", procPath, pid))
+	data, err := os.ReadFile(filepath.Join(procPath, fmt.Sprintf("%d/cmdline", pid)))
 	if err != nil || len(data) == 0 {
 		return ""
 	}
@@ -262,7 +263,7 @@ func readCmdline(procPath string, pid int) string {
 
 // procBootTime reads the boot time (seconds since epoch) from procPath/stat.
 func procBootTime(procPath string) (int64, error) {
-	f, err := os.Open(procPath + "/stat")
+	f, err := os.Open(filepath.Join(procPath, "stat"))
 	if err != nil {
 		return 0, err
 	}
