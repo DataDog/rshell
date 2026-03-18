@@ -12,6 +12,7 @@ import (
 	"net"
 	"syscall"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -69,6 +70,57 @@ func TestIsPermissionErrUnrelated(t *testing.T) {
 	assert.False(t, isPermissionErr(errors.New("connection refused")))
 	assert.False(t, isPermissionErr(errors.New("no such host")))
 	assert.False(t, isPermissionErr(errors.New("i/o timeout")))
+}
+
+// ============================================================================
+// parsePingDuration
+// ============================================================================
+
+func TestParsePingDurationGoDuration(t *testing.T) {
+	d, err := parsePingDuration("1s")
+	assert.NoError(t, err)
+	assert.Equal(t, time.Second, d)
+
+	d, err = parsePingDuration("500ms")
+	assert.NoError(t, err)
+	assert.Equal(t, 500*time.Millisecond, d)
+
+	d, err = parsePingDuration("1m30s")
+	assert.NoError(t, err)
+	assert.Equal(t, 90*time.Second, d)
+}
+
+func TestParsePingDurationIntegerSeconds(t *testing.T) {
+	d, err := parsePingDuration("1")
+	assert.NoError(t, err)
+	assert.Equal(t, time.Second, d)
+
+	d, err = parsePingDuration("30")
+	assert.NoError(t, err)
+	assert.Equal(t, 30*time.Second, d)
+}
+
+func TestParsePingDurationFloatSeconds(t *testing.T) {
+	d, err := parsePingDuration("0.2")
+	assert.NoError(t, err)
+	assert.Equal(t, 200*time.Millisecond, d)
+
+	d, err = parsePingDuration("1.5")
+	assert.NoError(t, err)
+	assert.Equal(t, 1500*time.Millisecond, d)
+}
+
+func TestParsePingDurationInvalid(t *testing.T) {
+	_, err := parsePingDuration("abc")
+	assert.Error(t, err)
+
+	_, err = parsePingDuration("1x")
+	assert.Error(t, err)
+}
+
+func TestParsePingDurationNegative(t *testing.T) {
+	_, err := parsePingDuration("-1")
+	assert.Error(t, err)
 }
 
 // ============================================================================

@@ -70,6 +70,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -102,8 +103,11 @@ var Cmd = builtins.Command{
 func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 	help := fs.BoolP("help", "h", false, "print usage and exit 0")
 	count := fs.IntP("count", "c", defaultCount, fmt.Sprintf("number of ICMP packets to send (1–%d)", maxCount))
-	wait := fs.DurationP("wait", "W", defaultWait, fmt.Sprintf("time to wait for each reply (%v–%v)", minWait, maxWait))
-	interval := fs.DurationP("interval", "i", defaultInterval, fmt.Sprintf("interval between packets (%v–%v)", minInterval, maxInterval))
+	// StringP instead of DurationP so we accept both Go duration literals
+	// (e.g. "1s", "500ms") and the integer/float seconds that iputils ping
+	// accepts (e.g. "-W 1", "-i 0.2"). parsePingDuration handles both forms.
+	waitStr := fs.StringP("wait", "W", defaultWait.String(), fmt.Sprintf("time to wait for each reply (%v–%v)", minWait, maxWait))
+	intervalStr := fs.StringP("interval", "i", defaultInterval.String(), fmt.Sprintf("interval between packets (%v–%v)", minInterval, maxInterval))
 	quiet := fs.BoolP("quiet", "q", false, "quiet output: suppress per-packet lines")
 	ipv4 := fs.BoolP("ipv4", "4", false, "use IPv4")
 	ipv6 := fs.BoolP("ipv6", "6", false, "use IPv6")
@@ -123,6 +127,19 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			return builtins.Result{Code: 1}
 		}
 
+		// Parse -W and -i: accept Go duration literals ("1s") and integer/float
+		// seconds ("1", "0.2") for iputils ping compatibility.
+		wait, err := parsePingDuration(*waitStr)
+		if err != nil {
+			callCtx.Errf("ping: invalid argument %q for \"-W, --wait\" flag: %v\n", *waitStr, err)
+			return builtins.Result{Code: 1}
+		}
+		interval, err := parsePingDuration(*intervalStr)
+		if err != nil {
+			callCtx.Errf("ping: invalid argument %q for \"-i, --interval\" flag: %v\n", *intervalStr, err)
+			return builtins.Result{Code: 1}
+		}
+
 		// Clamp inputs to safe ranges; warn when the user-supplied value
 		// is outside the allowed range so the caller is not confused by
 		// unexpected behaviour (mirrors find's -maxdepth clamping).
@@ -130,13 +147,13 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 		if *count != c {
 			callCtx.Errf("ping: warning: -c %d out of range [1–%d]; clamped to %d\n", *count, maxCount, c)
 		}
-		w := clampDuration(*wait, minWait, maxWait)
-		if *wait != w {
-			callCtx.Errf("ping: warning: -W %v out of range [%v–%v]; clamped to %v\n", *wait, minWait, maxWait, w)
+		w := clampDuration(wait, minWait, maxWait)
+		if wait != w {
+			callCtx.Errf("ping: warning: -W %v out of range [%v–%v]; clamped to %v\n", wait, minWait, maxWait, w)
 		}
-		iv := clampDuration(*interval, minInterval, maxInterval)
-		if *interval != iv {
-			callCtx.Errf("ping: warning: -i %v out of range [%v–%v]; clamped to %v\n", *interval, minInterval, maxInterval, iv)
+		iv := clampDuration(interval, minInterval, maxInterval)
+		if interval != iv {
+			callCtx.Errf("ping: warning: -i %v out of range [%v–%v]; clamped to %v\n", interval, minInterval, maxInterval, iv)
 		}
 
 		// Hard total deadline: last-packet deadline + 5s grace.
@@ -388,6 +405,27 @@ func clampDuration(v, lo, hi time.Duration) time.Duration {
 // durToMS converts a duration to milliseconds as a float64.
 func durToMS(d time.Duration) float64 {
 	return float64(d.Microseconds()) / 1000.0
+}
+
+// parsePingDuration parses a duration string for the -W and -i flags.
+// It accepts Go duration literals (e.g. "1s", "500ms") and the plain
+// integer/float seconds used by iputils ping (e.g. "1", "0.2", "1.5").
+// This keeps backward compatibility with existing Go-literal invocations while
+// also accepting the forms that users familiar with standard ping expect.
+func parsePingDuration(s string) (time.Duration, error) {
+	// Try Go duration literal first — fastest and most precise.
+	if d, err := time.ParseDuration(s); err == nil {
+		return d, nil
+	}
+	// Fall back to plain numeric seconds (integer or float) as iputils does.
+	f, err := strconv.ParseFloat(s, 64)
+	if err != nil {
+		return 0, fmt.Errorf("invalid duration %q: must be a Go duration (e.g. \"1s\", \"500ms\") or seconds (e.g. \"1\", \"0.5\")", s)
+	}
+	if f < 0 {
+		return 0, fmt.Errorf("negative duration %q not allowed", s)
+	}
+	return time.Duration(f * float64(time.Second)), nil
 }
 
 // isPermissionErr reports whether err indicates that the process lacks the
