@@ -50,14 +50,13 @@ func FileIdentity(absPath string, _ fs.FileInfo, sandbox *Sandbox) (uint64, uint
 // the current user lacks read permission. Named pipes cannot appear in
 // regular directories on Windows, so this cannot block.
 //
-// Write and execute checks are not performed:
-//   - Write: the sandbox blocks write-flag opens, so we cannot test
-//     write access without side effects.
+//   - Read: verified by opening through os.Root (respects NTFS ACLs).
+//   - Write: checked via mode bits from Stat. On Windows,
+//     FILE_ATTRIBUTE_READONLY clears the write permission bits in
+//     Mode().Perm(), so mode-bit inspection is reliable.
 //   - Execute: Windows has no POSIX execute bits. The check always
-//     returns ErrPermission so that test -x behaves like a POSIX shell
-//     (files are not executable unless the OS marks them as such, which
-//     the sandbox cannot detect without side effects).
-func (r *root) accessCheck(rel string, checkRead, _, checkExec bool) (fs.FileInfo, error) {
+//     returns ErrPermission so that test -x behaves like a POSIX shell.
+func (r *root) accessCheck(rel string, checkRead, checkWrite, checkExec bool) (fs.FileInfo, error) {
 	info, err := r.root.Stat(rel)
 	if err != nil {
 		return nil, err
@@ -65,6 +64,12 @@ func (r *root) accessCheck(rel string, checkRead, _, checkExec bool) (fs.FileInf
 
 	// Windows has no POSIX execute bits — always deny execute checks.
 	if checkExec {
+		return info, os.ErrPermission
+	}
+
+	// On Windows, FILE_ATTRIBUTE_READONLY clears the write permission
+	// bits in Mode().Perm(). Check them for write access.
+	if checkWrite && info.Mode().Perm()&0200 == 0 {
 		return info, os.ErrPermission
 	}
 

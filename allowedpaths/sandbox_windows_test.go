@@ -100,9 +100,9 @@ func TestAccessSymlinkWithinSandboxWindows(t *testing.T) {
 	assert.NoError(t, sb.Access("link.txt", dir, 0x04))
 }
 
-// TestAccessWriteAlwaysSucceedsWindows verifies that write checks
-// always succeed on Windows (we cannot safely test write access).
-func TestAccessWriteAlwaysSucceedsWindows(t *testing.T) {
+// TestAccessWriteDeniedWindows verifies that write checks correctly
+// deny access to read-only files on Windows via mode-bit inspection.
+func TestAccessWriteDeniedWindows(t *testing.T) {
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "readonly.txt"), []byte("data"), 0444))
 
@@ -110,8 +110,7 @@ func TestAccessWriteAlwaysSucceedsWindows(t *testing.T) {
 	require.NoError(t, err)
 	defer sb.Close()
 
-	// Write check is not performed on Windows — always succeeds.
-	assert.NoError(t, sb.Access("readonly.txt", dir, 0x02))
+	assert.ErrorIs(t, sb.Access("readonly.txt", dir, 0x02), os.ErrPermission)
 }
 
 // TestAccessExecAlwaysDeniedWindows verifies that execute checks
