@@ -53,6 +53,9 @@ jobs:
           - pkg: ./builtins/tests/ip/
             name: ip
             corpus_path: builtins/tests/ip
+          - pkg: ./builtins/tests/ss/
+            name: ss
+            corpus_path: builtins/tests/ss
           - pkg: ./interp/tests/
             name: interp
             corpus_path: interp/tests

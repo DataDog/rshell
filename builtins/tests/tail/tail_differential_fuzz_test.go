@@ -15,11 +15,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"sync/atomic"
 	"testing"
 	"time"
-
-	"github.com/DataDog/rshell/builtins/testutil"
 )
 
 // runGNUInDir runs a GNU command under LC_ALL=C.UTF-8 with its working
@@ -73,9 +70,6 @@ func FuzzTailDifferential(f *testing.F) {
 	f.Add([]byte("a\nb\nc\nd\ne\n"), int64(3))
 	f.Add(bytes.Repeat([]byte("line\n"), 20), int64(5))
 
-	baseDir := f.TempDir()
-	var counter atomic.Int64
-
 	f.Fuzz(func(t *testing.T, input []byte, n int64) {
 		if len(input) > 64*1024 {
 			return
@@ -84,25 +78,17 @@ func FuzzTailDifferential(f *testing.F) {
 			return
 		}
 
-		dir, cleanup := testutil.FuzzIterDir(t, baseDir, &counter)
-		defer cleanup()
-
+		dir := t.TempDir()
 		if err := os.WriteFile(filepath.Join(dir, "input.txt"), input, 0644); err != nil {
 			t.Fatal(err)
 		}
 
 		nStr := fmt.Sprintf("%d", n)
 
-		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 
 		rshellOut, rshellErr, rshellCode := cmdRunCtx(ctx, t, fmt.Sprintf("tail -n %s input.txt", nStr), dir)
-
-		// If the fuzz engine cancelled us (fuzztime expired), bail out
-		// without comparing — partial output would cause false failures.
-		if t.Context().Err() != nil {
-			return
-		}
 
 		if isSandboxError(rshellErr) {
 			t.Skip("skipping: sandbox restriction")
