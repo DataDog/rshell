@@ -30,7 +30,6 @@
 //	-newer FILE      — modified more recently than FILE
 //	-mtime N         — modified N days ago (+N = more, -N = less)
 //	-mmin N          — modified N minutes ago (+N = more, -N = less)
-//	-readable        — file is readable by the current user
 //	-perm MODE       — permission bits match MODE (octal or symbolic)
 //	-maxdepth N      — descend at most N levels
 //	-mindepth N      — apply tests only at depth >= N
@@ -291,7 +290,6 @@ func printHelp(callCtx *builtins.CallContext) {
 	callCtx.Out("  -newer FILE                Modified more recently than FILE.\n")
 	callCtx.Out("  -mtime N                   Modified N days ago (+N=more, -N=less).\n")
 	callCtx.Out("  -mmin N                    Modified N minutes ago (+N=more, -N=less).\n")
-	callCtx.Out("  -readable                  File is readable by the current user.\n")
 	callCtx.Out("  -perm MODE                 Permission bits match MODE (octal or symbolic).\n")
 	callCtx.Out("  -maxdepth N                Descend at most N levels.\n")
 	callCtx.Out("  -mindepth N                Apply tests only at depth >= N.\n")

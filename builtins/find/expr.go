@@ -24,27 +24,26 @@ const (
 type exprKind int
 
 const (
-	exprName     exprKind = iota // -name pattern
-	exprIName                    // -iname pattern
-	exprPath                     // -path pattern
-	exprIPath                    // -ipath pattern
-	exprType                     // -type c
-	exprSize                     // -size n[cwbkMG]
-	exprEmpty                    // -empty
-	exprNewer                    // -newer file
-	exprMtime                    // -mtime n
-	exprMmin                     // -mmin n
-	exprReadable                 // -readable
-	exprPerm                     // -perm mode
-	exprQuit                     // -quit
-	exprPrint                    // -print
-	exprPrint0                   // -print0
-	exprPrune                    // -prune
-	exprTrue                     // -true
-	exprFalse                    // -false
-	exprAnd                      // expr -a expr  or  expr expr (implicit)
-	exprOr                       // expr -o expr
-	exprNot                      // ! expr  or  -not expr
+	exprName   exprKind = iota // -name pattern
+	exprIName                  // -iname pattern
+	exprPath                   // -path pattern
+	exprIPath                  // -ipath pattern
+	exprType                   // -type c
+	exprSize                   // -size n[cwbkMG]
+	exprEmpty                  // -empty
+	exprNewer                  // -newer file
+	exprMtime                  // -mtime n
+	exprMmin                   // -mmin n
+	exprPerm                   // -perm mode
+	exprQuit                   // -quit
+	exprPrint                  // -print
+	exprPrint0                 // -print0
+	exprPrune                  // -prune
+	exprTrue                   // -true
+	exprFalse                  // -false
+	exprAnd                    // expr -a expr  or  expr expr (implicit)
+	exprOr                     // expr -o expr
+	exprNot                    // ! expr  or  -not expr
 )
 
 // cmpOp represents a comparison operator for numeric predicates.
@@ -329,8 +328,6 @@ func (p *parser) parsePrimary() (*expr, error) {
 		return p.parseNumericPredicate(exprMtime)
 	case "-mmin":
 		return p.parseNumericPredicate(exprMmin)
-	case "-readable":
-		return &expr{kind: exprReadable}, nil
 	case "-perm":
 		return p.parsePermPredicate()
 	case "-quit":
@@ -748,8 +745,6 @@ func (k exprKind) String() string {
 		return "-mtime"
 	case exprMmin:
 		return "-mmin"
-	case exprReadable:
-		return "-readable"
 	case exprPerm:
 		return "-perm"
 	case exprQuit:

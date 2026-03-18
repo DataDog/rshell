@@ -316,7 +316,6 @@ func TestParseNewPredicates(t *testing.T) {
 		arg  string
 		kind exprKind
 	}{
-		{"-readable", exprReadable},
 		{"-quit", exprQuit},
 	}
 	for _, tt := range noArgTests {
