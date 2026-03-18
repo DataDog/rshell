@@ -285,10 +285,13 @@ func buildPinger(ctx context.Context, host string, count int, wait, interval tim
 	// because DNS-resolved IPv6 link-local addresses (the only case where zone
 	// matters) are extremely rare in practice.
 	// For numeric IP literals, use LookupIPAddr instead: parsing is instant
-	// (no DNS query is issued) and it preserves our custom "no ip6/ip4 address"
-	// error messages when the literal doesn't match the requested family.
+	// (no DNS query is issued), preserves our custom "no ip6/ip4 address" error
+	// messages when the literal doesn't match the requested family, and (unlike
+	// LookupIP) preserves the zone identifier for scoped IPv6 literals such as
+	// "fe80::1%eth0" (net.ParseIP returns nil for those, so we also check for a
+	// '%' after an otherwise-valid IPv6 prefix).
 	// When no flag is given, use LookupIPAddr (dual-stack) and select below.
-	isNumericIP := net.ParseIP(host) != nil
+	isNumericIP := net.ParseIP(host) != nil || isScopedIPv6Literal(host)
 	var addrs []net.IPAddr
 	switch {
 	case ipv4 && !isNumericIP:
@@ -571,4 +574,15 @@ func isPermissionErr(err error) bool {
 		// Windows: WSAEPROTONOSUPPORT (10043) — returned by pro-bing when an
 		// unprivileged raw socket cannot be created; privileged mode should be tried.
 		strings.Contains(msg, "the requested protocol has not been configured")
+}
+
+// isScopedIPv6Literal reports whether host is a scoped IPv6 address literal
+// such as "fe80::1%eth0". net.ParseIP rejects the '%' zone separator, so this
+// function checks by stripping the zone and parsing the base address.
+func isScopedIPv6Literal(host string) bool {
+	idx := strings.IndexByte(host, '%')
+	if idx < 0 {
+		return false
+	}
+	return net.ParseIP(host[:idx]) != nil
 }
