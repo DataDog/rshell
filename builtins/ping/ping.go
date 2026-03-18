@@ -69,6 +69,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"net"
 	"strconv"
 	"strings"
@@ -422,7 +423,7 @@ func parsePingDuration(s string) (time.Duration, error) {
 	if err != nil {
 		return 0, fmt.Errorf("invalid duration %q: must be a Go duration (e.g. \"1s\", \"500ms\") or seconds (e.g. \"1\", \"0.5\")", s)
 	}
-	if f < 0 {
+	if f < 0 || math.IsInf(f, 0) || math.IsNaN(f) {
 		return 0, fmt.Errorf("negative duration %q not allowed", s)
 	}
 	return time.Duration(f * float64(time.Second)), nil

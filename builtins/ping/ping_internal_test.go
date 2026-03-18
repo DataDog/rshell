@@ -123,6 +123,17 @@ func TestParsePingDurationNegative(t *testing.T) {
 	assert.Error(t, err)
 }
 
+func TestParsePingDurationInfNaN(t *testing.T) {
+	_, err := parsePingDuration("inf")
+	assert.Error(t, err, "inf should be rejected")
+
+	_, err = parsePingDuration("+Inf")
+	assert.Error(t, err, "+Inf should be rejected")
+
+	_, err = parsePingDuration("NaN")
+	assert.Error(t, err, "NaN should be rejected")
+}
+
 // ============================================================================
 // clampInt / clampDuration
 // ============================================================================

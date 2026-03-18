@@ -327,6 +327,9 @@ var builtinPerCommandSymbols = map[string][]string{
 		"fmt.Sprintf",             // string formatting; pure function, no I/O.
 		"net.DefaultResolver",     // default system DNS resolver; used for context-aware address lookup; network I/O is the explicit purpose of this builtin.
 		"net.IPAddr",              // resolved IP address struct (IP + Zone); pure data type, no I/O.
+		"math.IsInf",              // IEEE 754 infinity check; pure function, no I/O.
+		"math.IsNaN",              // IEEE 754 NaN check; pure function, no I/O.
+		"strconv.ParseFloat",      // parses integer/float seconds for -W/-i flags; pure function, no I/O.
 		"strings.Contains",        // substring search; pure function, no I/O.
 		"strings.ToLower",         // converts string to lowercase; pure function, no I/O.
 		"syscall.EACCES",          // POSIX errno constant for permission denied; pure constant, no I/O.
@@ -334,6 +337,7 @@ var builtinPerCommandSymbols = map[string][]string{
 		"syscall.EPROTONOSUPPORT", // POSIX errno constant for protocol not supported; pure constant, no I/O.
 		"time.Duration",           // duration type alias (int64 nanoseconds); pure type, no I/O.
 		"time.Millisecond",        // constant representing one millisecond; no side effects.
+		"time.ParseDuration",      // parses Go duration strings (e.g. "1s"); pure function, no I/O.
 		"time.Second",             // constant representing one second; no side effects.
 		"github.com/prometheus-community/pro-bing.NewPinger",  // creates an ICMP pinger; network I/O is the explicit purpose of this builtin.
 		"github.com/prometheus-community/pro-bing.NoopLogger", // no-op logger that discards pro-bing internal messages; no side effects.
@@ -402,6 +406,8 @@ var builtinAllowedSymbols = []string{
 	"math.Ceil",                                           // pure arithmetic; no side effects.
 	"math.Floor",                                          // pure arithmetic; no side effects.
 	"math.Inf",                                            // returns positive or negative infinity; pure function, no I/O.
+	"math.IsInf",                                          // IEEE 754 infinity check; pure function, no I/O.
+	"math.IsNaN",                                          // IEEE 754 NaN check; pure function, no I/O.
 	"math.MaxInt32",                                       // integer constant; no side effects.
 	"math.MaxInt64",                                       // integer constant; no side effects.
 	"math.MaxUint64",                                      // integer constant; no side effects.
@@ -469,6 +475,7 @@ var builtinAllowedSymbols = []string{
 	"time.Hour",                                           // constant representing one hour; no side effects.
 	"time.Millisecond",                                    // constant representing one millisecond; no side effects.
 	"time.Minute",                                         // constant representing one minute; no side effects.
+	"time.ParseDuration",                                  // parses Go duration strings (e.g. "1s"); pure function, no I/O.
 	"time.Second",                                         // constant representing one second; no side effects.
 	"time.Time",                                           // time value type; pure data, no side effects.
 	"unicode.Cc",                                          // control character category range table; pure data, no I/O.
