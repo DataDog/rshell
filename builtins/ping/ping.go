@@ -151,6 +151,13 @@ func execPing(ctx context.Context, callCtx *builtins.CallContext, host string, c
 		return builtins.Result{Code: 1}
 	}
 
+	// Print the header before opening the socket, matching real ping behaviour.
+	// If RunWithContext later fails for a non-permission reason, the header on
+	// stdout and the error on stderr is intentional — it mirrors what POSIX ping
+	// does and all ping scenarios are marked skip_assert_against_bash: true.
+	// pinger.Size is the ICMP echo body size (56 bytes); POSIX "data bytes" refers
+	// to this same field.  Pro-bing stores its timestamp and UUID within those
+	// 56 bytes, so the displayed count matches the on-wire ICMP payload size.
 	// Use host (the original argument) for display; pinger.Addr() returns the
 	// numeric IP because buildPinger passes a resolved IP to probing.NewPinger.
 	callCtx.Outf("PING %s (%s): %d data bytes\n", host, pinger.IPAddr(), pinger.Size)
