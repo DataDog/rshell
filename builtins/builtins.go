@@ -121,10 +121,23 @@ type CallContext struct {
 	// PortableErr normalizes an OS error to a POSIX-style message.
 	PortableErr func(err error) string
 
-	// Now returns the current time. Builtins should use this instead of
-	// calling time.Now() directly, so the time source is consistent and
-	// testable.
-	Now func() time.Time
+	// Now is the time captured at the start of each Run() call. Builtins
+	// should use this instead of calling time.Now() directly, so the time
+	// source is consistent across all commands in a single run.
+	//
+	// Note: this means all builtins within one Run() share the same reference
+	// time, whereas bash evaluates each command against its own invocation
+	// time. This is an intentional trade-off for consistency within a script
+	// run.
+	//
+	// Run() always sets this before dispatching any builtin; Reset() clears
+	// it, so it is always re-set by the next Run() call. The zero value
+	// (time.Time{}) is reserved as the unset sentinel; callers constructing
+	// CallContext directly (e.g. in tests) must set this to a non-zero value
+	// before invoking builtins that use time predicates (find -mmin/-mtime,
+	// ls -l). Use NowSafe() if you want an explicit panic on the zero value
+	// instead of silently computing against year 0001.
+	Now time.Time
 
 	// FileIdentity extracts canonical file identity from FileInfo.
 	// On Unix: dev+inode from Stat_t. On Windows: volume serial + file index
@@ -151,6 +164,28 @@ func (c *CallContext) Outf(format string, a ...any) {
 // Errf writes a formatted string to stderr.
 func (c *CallContext) Errf(format string, a ...any) {
 	fmt.Fprintf(c.Stderr, format, a...)
+}
+
+// NowSafe returns the captured run-start time. It panics if Now is the zero
+// value, which indicates a programmer error: a builtin that uses time predicates
+// was invoked without setting CallContext.Now. The interpreter always sets Now
+// before dispatching any builtin; callers constructing CallContext directly in
+// tests must also set it to a non-zero value (e.g. time.Now()).
+//
+// Note: IsZero() is used as the "unset" sentinel, so time.Time{} (year 0001)
+// cannot be used as a legitimate timestamp — any caller explicitly setting Now
+// to the zero value will trigger this panic. In practice this is never a concern
+// since no shell script runs in year 0001.
+//
+// In practice, the interpreter never triggers this panic because Run() always
+// sets CallContext.Now before dispatching any builtin. This guard exists solely
+// to catch callers that construct a CallContext directly (e.g. in unit tests)
+// and forget to set Now.
+func (c *CallContext) NowSafe() time.Time {
+	if c.Now.IsZero() {
+		panic("builtins.CallContext.Now is zero: callers must set Now before invoking find or ls")
+	}
+	return c.Now
 }
 
 // FileID is a comparable file identity for cycle detection.
