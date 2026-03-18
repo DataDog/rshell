@@ -144,7 +144,7 @@ func FuzzPingHostname(f *testing.F) {
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 		defer cancel()
 
-		script := fmt.Sprintf("ping -c 1 -W 500ms %s", hostname)
+		script := fmt.Sprintf("ping -c 1 -W 500ms -- %s", hostname)
 		_, _, code := cmdRunCtxFuzz(ctx, t, script)
 		if code != 0 && code != 1 {
 			t.Errorf("unexpected exit code %d for hostname: %q", code, hostname)

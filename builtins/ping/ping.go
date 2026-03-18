@@ -243,6 +243,10 @@ func buildPinger(ctx context.Context, host string, count int, wait, interval tim
 	// Reject broadcast and multicast destinations to prevent unintended DoS.
 	// The -f and -b flags are already rejected by the flag parser; this
 	// catches cases where the resolved IP itself is a broadcast or multicast addr.
+	//
+	// Note: subnet-directed broadcasts (e.g. 10.0.0.255) are not explicitly
+	// blocked here because the OS rejects them without SO_BROADCAST, which
+	// pro-bing never sets. They will fail at the socket level with EACCES/EPERM.
 	ip := resolved.IP
 	if ip.IsMulticast() {
 		return nil, fmt.Errorf("broadcast/multicast destination not allowed: %s", ip)

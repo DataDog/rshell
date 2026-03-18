@@ -4,6 +4,6 @@ input:
   script: |+
     ping -s 1000 localhost
 expect:
-  stderr_contains: ["ping:"]
+  stderr: "ping: unknown shorthand flag: 's' in -s\n"
   exit_code: 1
 skip_assert_against_bash: true
