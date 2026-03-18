@@ -119,7 +119,19 @@ Wait for **both** to complete before proceeding.
 
 **Post the self-review outcome (from 2A1) as a GitHub PR comment** so it is always visible on the PR:
 ```bash
-gh pr comment <pr-number> --body "<iteration N self-review result: APPROVE/COMMENT/REQUEST_CHANGES, number of findings by severity, and a brief summary>"
+gh pr comment <pr-number> --body "## Self-review (iteration N)
+
+**Result**: APPROVE / COMMENT / REQUEST_CHANGES
+**Findings**: <count by severity, e.g. 1×P1, 2×P2>
+
+<brief summary of key findings or 'No findings.'>"
+```
+
+**Post the codex review findings (from 2A2) as a separate GitHub PR comment**:
+```bash
+gh pr comment <pr-number> --body "## Codex review (iteration N)
+
+<full codex output, or 'No findings.' if codex reported nothing>"
 ```
 
 **Record the self-review outcome and codex findings:**
