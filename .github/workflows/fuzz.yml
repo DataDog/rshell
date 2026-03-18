@@ -58,9 +58,10 @@ jobs:
             corpus_path: builtins/tests/ss
           - pkg: ./builtins/ping/
             name: ping
-            # ping fuzz tests live in the main package (builtins/ping) rather than
-            # builtins/tests/ping because they require access to unexported test
-            # helpers defined in ping_test.go in the same package.
+            # ping fuzz tests live in builtins/ping/ rather than builtins/tests/ping/
+            # because they share test helper functions (runScriptCtx, etc.) defined in
+            # ping_test.go. Go test helpers are only in scope within the same directory,
+            # so both files must reside in builtins/ping/.
             corpus_path: builtins/ping
           - pkg: ./interp/tests/
             name: interp
