@@ -106,7 +106,7 @@ func getSession(ctx context.Context, procPath string) ([]ProcInfo, error) {
 }
 
 func getByPIDs(ctx context.Context, procPath string, pids []int) ([]ProcInfo, error) {
-	if _, err := os.ReadDir(procPath); err != nil {
+	if _, err := os.Stat(procPath); err != nil {
 		return nil, fmt.Errorf("ps: cannot read %s: %w", procPath, err)
 	}
 	btime, _ := procBootTime(procPath)
