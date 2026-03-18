@@ -218,6 +218,18 @@ func buildPinger(ctx context.Context, host string, count int, wait, interval tim
 		return nil, fmt.Errorf("no %s address for host %q", family, host)
 	}
 
+	// Reject broadcast and multicast destinations to prevent unintended DoS.
+	// The -f and -b flags are already rejected by the flag parser; this
+	// catches cases where the resolved IP itself is a broadcast or multicast addr.
+	ip := resolved.IP
+	if ip.IsMulticast() {
+		return nil, fmt.Errorf("broadcast/multicast destination not allowed: %s", ip)
+	}
+	// Check for IPv4 limited broadcast (255.255.255.255).
+	if ip4 := ip.To4(); ip4 != nil && ip4[0] == 255 && ip4[1] == 255 && ip4[2] == 255 && ip4[3] == 255 {
+		return nil, fmt.Errorf("broadcast destination not allowed: %s", ip)
+	}
+
 	// Pass the numeric IP; pro-bing's internal net.ResolveIPAddr returns
 	// immediately for a numeric address, so no second DNS round-trip occurs.
 	p, err := probing.NewPinger(resolved.String())
