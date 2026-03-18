@@ -163,8 +163,11 @@ func execPing(ctx context.Context, callCtx *builtins.CallContext, host string, c
 	err = pinger.RunWithContext(ctx)
 
 	if err != nil && isPermissionErr(err) {
+		// EPERM / EACCES / EPROTONOSUPPORT are returned by the internal
+		// p.listen() call before any packet is sent, so pinger.Statistics()
+		// is all zeros here and the header printed above is still valid.
 		// Retry with raw socket privileges. Pass the already-resolved IP so that
-		// buildPinger skips the DNS goroutine and returns immediately.
+		// buildPinger skips the DNS round-trip and returns immediately.
 		p2, err2 := buildPinger(ctx, pinger.IPAddr().String(), count, wait, interval, ipv4, ipv6)
 		if err2 != nil {
 			callCtx.Errf("ping: %v\n", err2)
@@ -254,7 +257,7 @@ func buildPinger(ctx context.Context, host string, count int, wait, interval tim
 	// pro-bing never sets. They will fail at the socket level with EACCES/EPERM.
 	ip := resolved.IP
 	if ip.IsMulticast() {
-		return nil, fmt.Errorf("broadcast/multicast destination not allowed: %s", ip)
+		return nil, fmt.Errorf("multicast destination not allowed: %s", ip)
 	}
 	// Check for IPv4 limited broadcast (255.255.255.255).
 	if ip4 := ip.To4(); ip4 != nil && ip4[0] == 255 && ip4[1] == 255 && ip4[2] == 255 && ip4[3] == 255 {
@@ -290,6 +293,9 @@ func makeOnRecv(callCtx *builtins.CallContext, quiet bool) func(*probing.Packet)
 		return nil
 	}
 	return func(pkt *probing.Packet) {
+		// pkt.Seq starts at 0 (pro-bing zero value); POSIX ping starts at 1.
+		// This is an intentional divergence — all ping scenarios are marked
+		// skip_assert_against_bash: true.
 		callCtx.Outf("%d bytes from %s: icmp_seq=%d ttl=%d time=%.3f ms\n",
 			pkt.Nbytes, pkt.IPAddr, pkt.Seq, pkt.TTL, durToMS(pkt.Rtt))
 	}
@@ -348,6 +354,12 @@ func durToMS(d time.Duration) float64 {
 // isPermissionErr reports whether err indicates that the process lacks the
 // privilege to open a raw ICMP socket. When true, the caller should retry
 // with privileged raw-socket mode.
+//
+// This function is only called on errors returned by pinger.RunWithContext,
+// which come from the ICMP socket layer — not from DNS. DNS errors are caught
+// earlier in buildPinger and returned to the caller before RunWithContext is
+// ever invoked, so "permission denied" strings here always originate from
+// socket creation, never from a DNS resolver response.
 //
 // We detect three classes of failure:
 //  1. EPERM / EACCES — classic Unix permission denials.

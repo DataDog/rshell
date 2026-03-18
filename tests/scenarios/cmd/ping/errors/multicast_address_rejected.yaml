@@ -4,6 +4,6 @@ input:
   script: |+
     ping -c 1 224.0.0.1
 expect:
-  stderr: "ping: broadcast/multicast destination not allowed: 224.0.0.1\n"
+  stderr: "ping: multicast destination not allowed: 224.0.0.1\n"
   exit_code: 1
 skip_assert_against_bash: true

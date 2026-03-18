@@ -1,0 +1,10 @@
+# -q / --quiet flag is accepted and suppresses per-packet output.
+# Using a broadcast address so the command exits immediately with no network I/O.
+description: "ping -q flag is accepted"
+input:
+  script: |+
+    ping -q -c 1 255.255.255.255
+expect:
+  stderr: "ping: broadcast destination not allowed: 255.255.255.255\n"
+  exit_code: 1
+skip_assert_against_bash: true
