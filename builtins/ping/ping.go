@@ -84,8 +84,12 @@ const (
 	maxCount        = 20
 	defaultInterval = time.Second
 	minInterval     = 200 * time.Millisecond
+	maxInterval     = 60 * time.Second
 	defaultWait     = time.Second
+	minWait         = 100 * time.Millisecond
 	maxWait         = 30 * time.Second
+	// icmpPayloadSize matches the POSIX standard ping payload (56 data bytes).
+	icmpPayloadSize = 56
 )
 
 // Cmd is the ping builtin command descriptor.
@@ -98,8 +102,8 @@ var Cmd = builtins.Command{
 func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 	help := fs.BoolP("help", "h", false, "print usage and exit 0")
 	count := fs.IntP("count", "c", defaultCount, fmt.Sprintf("number of ICMP packets to send (1–%d)", maxCount))
-	wait := fs.DurationP("wait", "W", defaultWait, "time to wait for each reply (100ms–30s)")
-	interval := fs.DurationP("interval", "i", defaultInterval, "interval between packets (min 200ms)")
+	wait := fs.DurationP("wait", "W", defaultWait, fmt.Sprintf("time to wait for each reply (%v–%v)", minWait, maxWait))
+	interval := fs.DurationP("interval", "i", defaultInterval, fmt.Sprintf("interval between packets (%v–%v)", minInterval, maxInterval))
 	quiet := fs.BoolP("quiet", "q", false, "quiet output: suppress per-packet lines")
 	ipv4 := fs.BoolP("ipv4", "4", false, "use IPv4")
 	ipv6 := fs.BoolP("ipv6", "6", false, "use IPv6")
@@ -121,8 +125,8 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 
 		// Clamp inputs to safe ranges.
 		c := clampInt(*count, 1, maxCount)
-		w := clampDuration(*wait, 100*time.Millisecond, maxWait)
-		iv := clampDuration(*interval, minInterval, 60*time.Second)
+		w := clampDuration(*wait, minWait, maxWait)
+		iv := clampDuration(*interval, minInterval, maxInterval)
 
 		// Hard total deadline: last-packet deadline + 5s grace.
 		// pro-bing's Timeout is a global wall-clock deadline. The last packet
@@ -264,6 +268,7 @@ func buildPinger(ctx context.Context, host string, count int, wait, interval tim
 		return nil, err
 	}
 	p.Count = count
+	p.Size = icmpPayloadSize
 	// pro-bing Timeout is a global wall-clock deadline, not per-packet.
 	// The last probe is sent at (count-1)*interval; we then wait up to
 	// one 'wait' for its reply.
