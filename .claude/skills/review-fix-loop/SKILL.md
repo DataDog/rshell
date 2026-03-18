@@ -1,6 +1,6 @@
 ---
 name: review-fix-loop
-description: "Self-review a PR, fix all issues, and re-review in a loop until clean. Coordinates code-review, address-pr-comments, and fix-ci-tests skills."
+description: "Self-review a PR, fix all issues, and re-review in a loop until clean. Coordinates code-review, local codex review, and fix-ci-tests skills."
 argument-hint: "[pr-number|pr-url]"
 ---
 
@@ -20,7 +20,7 @@ Your very first action — before reading ANY files, before running ANY commands
 2. "Step 2: Run the review-fix loop" ← **Update subject with iteration number each loop** (e.g. "Step 2: Run the review-fix loop (iteration 1)")
 3. "Step 2A1: Self-review (code-review)" ← **parallel with 2A2**
 4. "Step 2A2: Run local codex review" ← **parallel with 2A1**
-5. "Step 2B: Address PR comments (address-pr-comments)"
+5. "Step 2B: Address Self-review and Codex findings"
 6. "Step 2C: Fix CI failures (fix-ci-tests)"
 7. "Step 2D: Verify push and resolve conflicts"
 8. "Step 2E: Check CI status"
@@ -137,15 +137,25 @@ git status
 git pull --rebase origin <head-branch>
 ```
 
-### Sub-step 2B — Address PR comments
+### Sub-step 2B — Address Self-review and Codex findings
 
-Run the **address-pr-comments** skill:
-```
-/address-pr-comments <pr-number>
-```
-This reads all unresolved review comments, evaluates validity, implements fixes, commits, pushes, and replies/resolves threads.
+Address all findings reported by Sub-step 2A1 (self-review) and Sub-step 2A2 (local codex review):
+
+1. Collect all findings from both sources.
+2. For each finding, evaluate its validity:
+   - **P0/P1**: Must be fixed immediately.
+   - **P2**: Fix unless there is a clear, documented reason not to.
+   - **P3**: Fix if straightforward; otherwise note it as a known low-priority item.
+3. Implement fixes directly in the codebase. Do not skip findings without justification.
+4. After all fixes are applied, stage and commit:
+   ```bash
+   git add -p  # or specific files
+   git commit -m "[iter <N>] <short description of fixes>"
+   git push origin <head-branch>
+   ```
 
 **Commit message prefix:** All commits created in this sub-step MUST be prefixed with the current loop iteration number, e.g. `[iter 3] Fix null check in parser`.
+
 
 Wait for completion before proceeding to 2C.
 
@@ -221,7 +231,7 @@ Check **all three** review sources for remaining issues:
 |------------|----------------|-----|--------|
 | APPROVE | None | Passing | **STOP — PR is clean** |
 | Any findings | Any | Any | **Continue** → go back to Sub-step 2A1 ∥ 2A2 |
-| APPROVE | Findings present | Any | **Continue** → go back to Sub-step 2A1 ∥ 2A2 (address-pr-comments will handle them) |
+| APPROVE | Findings present | Any | **Continue** → go back to Sub-step 2A1 ∥ 2A2 |
 | APPROVE | None | Failing | **Continue** → go back to Sub-step 2A1 ∥ 2A2 (fix-ci-tests will handle it) |
 | — | — | — | If `iteration > 30` → **STOP — iteration limit reached** |
 
@@ -337,7 +347,7 @@ gh pr comment <pr-number> --body "<the summary markdown above>"
 
 - **Never skip the review step** — always re-review after fixes to catch regressions or new issues introduced by the fixes themselves.
 - **Always submit reviews to GitHub** — each iteration's review must be posted as PR comments so there's a visible trail.
-- **Run address-pr-comments before fix-ci-tests** — 2B then 2C, sequentially, so CI fixes run on code that already incorporates review feedback.
+- **Address review findings before fix-ci-tests** — 2B then 2C, sequentially, so CI fixes run on code that already incorporates review feedback.
 - **Pull before fixing** — always `git pull --rebase` before launching fix agents to avoid working on stale code.
 - **Stop early on APPROVE + CI green + no unresolved threads** — don't waste iterations if the PR is already clean.
 - **Respect the iteration limit** — hard stop at 30 to prevent infinite loops. If issues persist after 30 iterations, report what's left for the user to handle.
