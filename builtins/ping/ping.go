@@ -121,6 +121,8 @@ const (
 	// pingGracePeriod is added to the total deadline to allow the last reply
 	// to arrive after the final probe is sent.
 	pingGracePeriod = 5 * time.Second
+	// maxTotalTimeout is the hard cap on the total wall-clock run time.
+	maxTotalTimeout = 120 * time.Second
 )
 
 // Cmd is the ping builtin command descriptor.
@@ -193,8 +195,8 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 		// At clamped minimums (count=1, interval=200ms, wait=100ms) the floor
 		// is 0 + 100ms + 5s = 5.1s; callers always get at least that long.
 		total := time.Duration(c-1)*iv + w + pingGracePeriod
-		if total > 120*time.Second {
-			total = 120 * time.Second
+		if total > maxTotalTimeout {
+			total = maxTotalTimeout
 			callCtx.Errf("ping: warning: total run time capped at 120s; some probes may not complete\n")
 		}
 		runCtx, cancel := context.WithTimeout(ctx, total)
