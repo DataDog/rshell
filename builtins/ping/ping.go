@@ -259,15 +259,20 @@ func buildPinger(ctx context.Context, host string, count int, wait, interval tim
 	// The -f and -b flags are already rejected by the flag parser; this
 	// catches cases where the resolved IP itself is a broadcast or multicast addr.
 	//
-	// Note: subnet-directed broadcasts (e.g. 10.0.0.255) are not explicitly
-	// blocked here because the OS rejects them without SO_BROADCAST, which
-	// pro-bing never sets. They will fail at the socket level with EACCES/EPERM.
+	// NOTE: pro-bing v0.8.0 automatically retries sends with SO_BROADCAST set
+	// on Linux when WriteTo returns EACCES (ping.go sendICMP loop). This means
+	// that even without -b, a directed-broadcast address (e.g. 10.0.0.255) would
+	// result in actual ICMP broadcast traffic being sent. We therefore reject
+	// any IPv4 address whose last octet is 255, which covers both the limited
+	// broadcast (255.255.255.255) and all subnet-directed broadcast addresses.
+	// An address ending in .255 is only a valid unicast host address on a /31 or
+	// /32 subnet; those are extremely rare and sacrificed for safety here.
 	ip := resolved.IP
 	if ip.IsMulticast() {
 		return nil, fmt.Errorf("multicast destination not allowed: %s", ip)
 	}
-	// Check for IPv4 limited broadcast (255.255.255.255).
-	if ip4 := ip.To4(); ip4 != nil && ip4[0] == 255 && ip4[1] == 255 && ip4[2] == 255 && ip4[3] == 255 {
+	// Block limited broadcast and subnet-directed broadcast addresses.
+	if ip4 := ip.To4(); ip4 != nil && ip4[3] == 255 {
 		return nil, fmt.Errorf("broadcast destination not allowed: %s", ip)
 	}
 
@@ -300,11 +305,10 @@ func makeOnRecv(callCtx *builtins.CallContext, quiet bool) func(*probing.Packet)
 		return nil
 	}
 	return func(pkt *probing.Packet) {
-		// pkt.Seq starts at 0 (pro-bing zero value); POSIX ping starts at 1.
-		// This is an intentional divergence — all ping scenarios are marked
-		// skip_assert_against_bash: true.
+		// pro-bing sequences start at 0; add 1 to match POSIX/bash ping convention
+		// where the first reply carries icmp_seq=1.
 		callCtx.Outf("%d bytes from %s: icmp_seq=%d ttl=%d time=%.3f ms\n",
-			pkt.Nbytes, pkt.IPAddr, pkt.Seq, pkt.TTL, durToMS(pkt.Rtt))
+			pkt.Nbytes, pkt.IPAddr, pkt.Seq+1, pkt.TTL, durToMS(pkt.Rtt))
 	}
 }
 
