@@ -118,4 +118,4 @@ Blocked features are rejected before execution with exit code 2.
 
 ## Appendix
 
-Formating: In each category, supported features should be listed first, and the most useful ones first.
+Formatting: In each category, supported features should be listed first, and the most useful ones first.

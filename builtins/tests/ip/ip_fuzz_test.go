@@ -147,6 +147,7 @@ func FuzzIPSubcommand(f *testing.F) {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		script := "ip " + subcmd
 		_, _, code := cmdRunCtxFuzz(ctx, t, script)
+		timedOut := ctx.Err() == context.DeadlineExceeded // capture before cancel()
 		cancel()
 		if code == -1 {
 			return // shell/parse error before the builtin ran — not our bug
@@ -154,7 +155,7 @@ func FuzzIPSubcommand(f *testing.F) {
 		if code != 0 && code != 1 {
 			t.Errorf("ip %q: unexpected exit code %d", subcmd, code)
 		}
-		if ctx.Err() == context.DeadlineExceeded {
+		if timedOut {
 			t.Errorf("ip %q: timed out (possible hang)", subcmd)
 		}
 	})
@@ -220,6 +221,7 @@ func FuzzIPFlags(f *testing.F) {
 			script += " " + subcmd
 		}
 		_, _, code := cmdRunCtxFuzz(ctx, t, script)
+		timedOut := ctx.Err() == context.DeadlineExceeded // capture before cancel()
 		cancel()
 		if code == -1 {
 			return // shell/parse error before the builtin ran — not our bug
@@ -227,7 +229,7 @@ func FuzzIPFlags(f *testing.F) {
 		if code != 0 && code != 1 {
 			t.Errorf("ip %q %q: unexpected exit code %d", flags, subcmd, code)
 		}
-		if ctx.Err() == context.DeadlineExceeded {
+		if timedOut {
 			t.Errorf("ip %q %q: timed out", flags, subcmd)
 		}
 	})
