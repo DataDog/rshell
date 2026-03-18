@@ -284,6 +284,8 @@ func evalExecDir(ec *evalContext, e *expr) evalResult {
 	replacement := "./" + base
 	if base == "/" {
 		replacement = "/"
+	} else if len(ec.relPath) > 0 && ec.relPath[len(ec.relPath)-1] == '/' {
+		replacement += "/"
 	}
 	args := make([]string, len(e.execArgs))
 	for i, a := range e.execArgs {

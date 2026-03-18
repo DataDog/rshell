@@ -1,4 +1,4 @@
-description: find dir/ -execdir resolves parent correctly despite trailing slash.
+description: find dir/ -execdir preserves trailing slash in {} replacement.
 skip_assert_against_bash: true  # rshell -execdir only runs builtins, not external commands
 setup:
   files:
@@ -14,6 +14,6 @@ input:
     find dir/ -maxdepth 0 -execdir echo {} \;
 expect:
   stdout: |+
-    ./dir
+    ./dir/
   stderr: ""
   exit_code: 0
