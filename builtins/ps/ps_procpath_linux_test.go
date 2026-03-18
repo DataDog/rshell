@@ -77,6 +77,41 @@ func TestProcPathNonexistentDirErrorsByPID(t *testing.T) {
 	}
 }
 
+// TestProcPathNotADirErrors_ListAll ensures ps -e fails with a clear error
+// when the configured proc path exists but is a regular file, not a directory.
+func TestProcPathNotADirErrors_ListAll(t *testing.T) {
+	f, err := os.CreateTemp(t.TempDir(), "not-a-dir")
+	require(t, err)
+	require(t, f.Close())
+
+	_, stderr, code := runScriptWithProcPath(t, "ps -e", f.Name())
+	if code != 1 {
+		t.Errorf("expected exit code 1 for file proc path, got %d", code)
+	}
+	if !strings.Contains(stderr, "ps:") {
+		t.Errorf("expected ps: error in stderr, got: %s", stderr)
+	}
+}
+
+// TestProcPathNotADirErrors_ByPID ensures ps -p fails with a clear error
+// when the configured proc path exists but is a regular file, not a directory.
+func TestProcPathNotADirErrors_ByPID(t *testing.T) {
+	f, err := os.CreateTemp(t.TempDir(), "not-a-dir")
+	require(t, err)
+	require(t, f.Close())
+
+	_, stderr, code := runScriptWithProcPath(t, "ps -p 1", f.Name())
+	if code != 1 {
+		t.Errorf("expected exit code 1 for file proc path, got %d", code)
+	}
+	if !strings.Contains(stderr, "ps:") {
+		t.Errorf("expected ps: error in stderr, got: %s", stderr)
+	}
+	if !strings.Contains(stderr, "not a directory") {
+		t.Errorf("expected 'not a directory' in stderr, got: %s", stderr)
+	}
+}
+
 // TestProcPathEmptyUsesDefault ensures an empty ProcPath falls back to /proc
 // and ps -e runs successfully.
 func TestProcPathEmptyUsesDefault(t *testing.T) {
