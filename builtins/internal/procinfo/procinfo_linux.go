@@ -128,7 +128,7 @@ func getByPIDs(ctx context.Context, procPath string, pids []int) ([]ProcInfo, er
 			if errors.Is(err, os.ErrNotExist) {
 				continue
 			}
-			return nil, fmt.Errorf("ps: cannot read %s/%d: %w", procPath, pid, err)
+			return nil, fmt.Errorf("ps: cannot read %s: %w", filepath.Join(procPath, strconv.Itoa(pid)), err)
 		}
 		result = append(result, info)
 	}

@@ -490,7 +490,8 @@ func AllowAllCommands() RunnerOption {
 }
 
 // ProcPath sets the path to the proc filesystem used by the ps builtin.
-// When not set (default), ps uses "/proc".
+// When not set (default), ps uses "/proc". This option has no effect on
+// non-Linux platforms.
 func ProcPath(path string) RunnerOption {
 	return func(r *Runner) error {
 		r.procPath = path

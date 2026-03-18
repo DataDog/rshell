@@ -1,6 +1,6 @@
 ---
 name: review-fix-loop
-description: "Self-review a PR, fix all issues, and re-review in a loop until clean. Coordinates code-review, local codex review, and fix-ci-tests skills."
+description: "Self-review a PR against RULES.md, fix all issues, and re-review in a loop until clean. Coordinates local codex review and fix-ci-tests skills."
 argument-hint: "[pr-number|pr-url]"
 ---
 
@@ -18,7 +18,7 @@ Your very first action — before reading ANY files, before running ANY commands
 
 1. "Step 1: Identify the PR"
 2. "Step 2: Run the review-fix loop" ← **Update subject with iteration number each loop** (e.g. "Step 2: Run the review-fix loop (iteration 1)")
-3. "Step 2A1: Self-review (code-review)" ← **parallel with 2A2**
+3. "Step 2A1: Self-review (RULES.md)" ← **parallel with 2A2**
 4. "Step 2A2: Run local codex review" ← **parallel with 2A1**
 5. "Step 2B: Address Self-review and Codex findings"
 6. "Step 2C: Fix CI failures (fix-ci-tests)"
@@ -99,11 +99,31 @@ Set `iteration = 1`. Maximum iterations: **30**. Repeat sub-steps A through E wh
 
 ### Sub-step 2A1 — Self-review ← **parallel with 2A2**
 
-Run the **code-review** skill on the PR:
+Review the PR diff directly against the rules in `.claude/skills/implement-posix-command/RULES.md`:
+
+```bash
+gh pr diff <pr-number>
 ```
-/code-review <pr-number>
-```
-This analyzes the full diff against main, posts findings as a GitHub PR review with inline comments, and classifies findings by severity (P0–P3).
+
+Read `.claude/skills/implement-posix-command/RULES.md` and check every changed file against each rule category:
+- Flag Parsing (pflag, help flag, error handling)
+- File System Safety (use `callCtx.OpenFile`, no `os.*` filesystem calls)
+- Memory Safety & Resource Limits (bounded buffers, no full-file loads)
+- Input Validation & Error Handling (numeric overflow, exit codes, stderr for errors)
+- Special File Handling (/dev/zero, FIFOs, /proc)
+- Path & Traversal Safety
+- Concurrency & Race Conditions
+- Denial of Service Prevention (context cancellation, no infinite loops)
+- Integer Safety
+- Output Consistency
+- Testing Requirements (all flags, edge cases, error paths, security properties tested)
+- Cross-Platform Compatibility (filepath package, Windows reserved names, CRLF)
+
+Classify each finding by severity:
+- **P0**: Security vulnerability or data corruption
+- **P1**: Correctness bug or sandbox bypass
+- **P2**: Missing test coverage or rule violation with workaround
+- **P3**: Style / minor quality issue
 
 ### Sub-step 2A2 — Run local codex review ← **parallel with 2A1**
 
@@ -283,35 +303,13 @@ Run a final verification regardless of how the loop exited:
    gh pr checks <pr-number> --json name,state
    ```
 
-3. **Confirm no unresolved threads:**
-   ```bash
-   gh api graphql -f query='
-     query($owner: String!, $repo: String!, $pr: Int!) {
-       repository(owner: $owner, name: $repo) {
-         pullRequest(number: $pr) {
-           reviewThreads(first: 100) {
-             nodes {
-               isResolved
-               comments(first: 1) {
-                 nodes { author { login } body }
-               }
-             }
-           }
-         }
-       }
-     }
-   ' -f owner="{owner}" -f repo="{repo}" -F pr={pr-number} \
-     --jq '.data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved == false) | .comments.nodes[0].body' \
-     2>&1 | head -50
-   ```
+3. **Confirm the latest local codex review (Sub-step 2A2) reported no findings.**
 
-4. **Confirm the latest local codex review (Sub-step 2A2) reported no findings.**
+Record the final state of each dimension (self-review, local codex review, CI).
 
-Record the final state of each dimension (self-review, local codex review, CI, unresolved threads).
+Track how many times Step 3 has **succeeded** (all three verifications passed) across the entire run.
 
-Track how many times Step 3 has **succeeded** (all four verifications passed) across the entire run.
-
-**If any verification fails** (CI failing, unresolved threads remain, unpushed commits that can't be pushed, or the latest local codex review reported findings), reset the success counter to 0, reset Step 2 and all its sub-steps to `pending`, and go back to **Step 2: Run the review-fix loop** for another iteration.
+**If any verification fails** (CI failing, unpushed commits that can't be pushed, or the latest local codex review reported findings), reset the success counter to 0, reset Step 2 and all its sub-steps to `pending`, and go back to **Step 2: Run the review-fix loop** for another iteration.
 
 **If all verifications pass**, increment the success counter. If this is the **5th consecutive success** of Step 3 → proceed to **Step 4**. Otherwise → reset Step 2 and all its sub-steps to `pending`, and go back to **Step 2: Run the review-fix loop** for another iteration to re-confirm stability.
 
