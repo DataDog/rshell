@@ -18,7 +18,8 @@ The shell is supported on Linux, Windows and macOS.
 
 ## Code Style
 
-- **All Go files must be formatted with `gofmt` before committing.** Run `gofmt -w .` from the repo root and verify with `gofmt -l .` (no output means clean). CI enforces this and will fail if any file is not properly formatted.
+- **IMPORTANT: Always run `make fmt` after making any edits.** This is a mandatory step — no exceptions. CI will reject unformatted code. Run it after every change, before committing, and before running tests. Do not skip this step.
+- All Go files must be formatted with `gofmt` before committing. `make fmt` handles this automatically. You can verify with `gofmt -l .` (no output means clean).
 
 ## Pull Requests
 
