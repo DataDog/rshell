@@ -92,7 +92,7 @@ func FuzzHeadDifferentialLines(f *testing.F) {
 
 		nStr := fmt.Sprintf("%d", n)
 
-		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 
 		rshellOut, rshellErr, rshellCode := cmdRunCtx(ctx, t, fmt.Sprintf("head -n %s input.txt", nStr), dir)
@@ -155,7 +155,7 @@ func FuzzHeadDifferentialBytes(f *testing.F) {
 
 		nStr := fmt.Sprintf("%d", n)
 
-		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 
 		rshellOut, rshellErr, rshellCode := cmdRunCtx(ctx, t, fmt.Sprintf("head -c %s input.txt", nStr), dir)

@@ -75,7 +75,7 @@ func FuzzUniq(f *testing.F) {
 			t.Fatal(err)
 		}
 
-		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 
 		_, _, code := fuzzRunCtx(ctx, t, "uniq input.txt", dir)
@@ -114,7 +114,7 @@ func FuzzUniqCount(f *testing.F) {
 			t.Fatal(err)
 		}
 
-		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 
 		_, _, code := fuzzRunCtx(ctx, t, "uniq -c input.txt", dir)
@@ -194,7 +194,7 @@ func FuzzUniqFlags(f *testing.F) {
 			flags += fmt.Sprintf(" -w %d", checkChars)
 		}
 
-		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 
 		_, _, code := fuzzRunCtx(ctx, t, "uniq"+flags+" input.txt", dir)
@@ -227,7 +227,7 @@ func FuzzUniqStdin(f *testing.F) {
 			t.Fatal(err)
 		}
 
-		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 
 		_, _, code := fuzzRunCtx(ctx, t, "uniq < stdin.txt", dir)
