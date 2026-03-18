@@ -58,6 +58,10 @@ type runnerConfig struct {
 	// command. Intended for testing convenience.
 	allowAllCommands bool
 
+	// procPath is the path to the proc filesystem used by the ps builtin.
+	// Defaults to "/proc" when empty.
+	procPath string
+
 	// usedNew is set by New() and checked in Reset() to ensure a Runner
 	// was properly constructed rather than zero-initialized.
 	usedNew bool
@@ -475,6 +479,15 @@ func AllowedCommands(names []string) RunnerOption {
 func AllowAllCommands() RunnerOption {
 	return func(r *Runner) error {
 		r.allowAllCommands = true
+		return nil
+	}
+}
+
+// ProcPath sets the path to the proc filesystem used by the ps builtin.
+// When not set (default), ps uses "/proc".
+func ProcPath(path string) RunnerOption {
+	return func(r *Runner) error {
+		r.procPath = path
 		return nil
 	}
 }

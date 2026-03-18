@@ -18,7 +18,7 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-func listAll(ctx context.Context) ([]ProcInfo, error) {
+func listAll(ctx context.Context, _ string) ([]ProcInfo, error) {
 	kprocs, err := unix.SysctlKinfoProcSlice("kern.proc.all")
 	if err != nil {
 		return nil, fmt.Errorf("ps: SysctlKinfoProcSlice: %w", err)
@@ -41,8 +41,8 @@ func listAll(ctx context.Context) ([]ProcInfo, error) {
 	return procs, nil
 }
 
-func getSession(ctx context.Context) ([]ProcInfo, error) {
-	all, err := listAll(ctx)
+func getSession(ctx context.Context, procPath string) ([]ProcInfo, error) {
+	all, err := listAll(ctx, procPath)
 	if err != nil {
 		return nil, err
 	}
@@ -99,7 +99,7 @@ func getSession(ctx context.Context) ([]ProcInfo, error) {
 	return result, nil
 }
 
-func getByPIDs(ctx context.Context, pids []int) ([]ProcInfo, error) {
+func getByPIDs(ctx context.Context, _ string, pids []int) ([]ProcInfo, error) {
 	var result []ProcInfo
 	for _, pid := range pids {
 		if ctx.Err() != nil {

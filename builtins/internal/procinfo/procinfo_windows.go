@@ -15,7 +15,7 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-func listAll(ctx context.Context) ([]ProcInfo, error) {
+func listAll(ctx context.Context, _ string) ([]ProcInfo, error) {
 	snapshot, err := windows.CreateToolhelp32Snapshot(windows.TH32CS_SNAPPROCESS, 0)
 	if err != nil {
 		return nil, fmt.Errorf("ps: CreateToolhelp32Snapshot: %w", err)
@@ -49,8 +49,8 @@ func listAll(ctx context.Context) ([]ProcInfo, error) {
 	return procs, nil
 }
 
-func getSession(ctx context.Context) ([]ProcInfo, error) {
-	all, err := listAll(ctx)
+func getSession(ctx context.Context, procPath string) ([]ProcInfo, error) {
+	all, err := listAll(ctx, procPath)
 	if err != nil {
 		return nil, err
 	}
@@ -87,8 +87,8 @@ func getSession(ctx context.Context) ([]ProcInfo, error) {
 	return result, nil
 }
 
-func getByPIDs(ctx context.Context, pids []int) ([]ProcInfo, error) {
-	all, err := listAll(ctx)
+func getByPIDs(ctx context.Context, procPath string, pids []int) ([]ProcInfo, error) {
+	all, err := listAll(ctx, procPath)
 	if err != nil {
 		return nil, err
 	}
