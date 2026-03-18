@@ -27,7 +27,7 @@
 //	    Time to wait for each reply (default 1s, clamped to 100ms–30s).
 //
 //	-i, --interval DURATION
-//	    Interval between sending packets (default 1s, minimum 200ms).
+//	    Interval between sending packets (default 1s, clamped to 200ms–60s).
 //
 //	-q, --quiet
 //	    Quiet output: suppress per-packet lines; print only statistics.
