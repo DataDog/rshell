@@ -25,9 +25,12 @@ func parseScript(t *testing.T, src string) *syntax.File {
 
 // TestStartTimeZeroBeforeRun verifies that startTime is not set until Run is
 // called, so callers cannot accidentally observe a stale time from a previous
-// run.
+// run. Uses New() directly (not newResetRunner) to check the initial zero-value
+// state before any Run or Reset call.
 func TestStartTimeZeroBeforeRun(t *testing.T) {
-	r := newResetRunner(t)
+	r, err := New(AllowAllCommands())
+	require.NoError(t, err)
+	t.Cleanup(func() { r.Close() })
 	assert.True(t, r.startTime.IsZero(), "startTime should be zero before Run")
 }
 

@@ -92,6 +92,9 @@ func FuzzHeadDifferentialLines(f *testing.F) {
 
 		nStr := fmt.Sprintf("%d", n)
 
+		// Use context.Background() (not t.Context()) so the fuzz engine's
+		// cancellation does not kill the command mid-run; each iteration still
+		// enforces its own 5 s deadline.
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		rshellOut, rshellErr, rshellCode := cmdRunCtx(ctx, t, fmt.Sprintf("head -n %s input.txt", nStr), dir)
 		cancel()
@@ -154,6 +157,9 @@ func FuzzHeadDifferentialBytes(f *testing.F) {
 
 		nStr := fmt.Sprintf("%d", n)
 
+		// Use context.Background() (not t.Context()) so the fuzz engine's
+		// cancellation does not kill the command mid-run; each iteration still
+		// enforces its own 5 s deadline.
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		rshellOut, rshellErr, rshellCode := cmdRunCtx(ctx, t, fmt.Sprintf("head -c %s input.txt", nStr), dir)
 		cancel()

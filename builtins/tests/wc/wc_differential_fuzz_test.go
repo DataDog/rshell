@@ -86,6 +86,9 @@ func FuzzWcDifferentialLines(f *testing.F) {
 			t.Fatal(err)
 		}
 
+		// Use context.Background() (not t.Context()) so the fuzz engine's
+		// cancellation does not kill the command mid-run; each iteration still
+		// enforces its own 5 s deadline.
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		rshellOut, rshellErr, rshellCode := cmdRunCtx(ctx, t, "wc -l input.txt", dir)
 		cancel()
@@ -144,6 +147,9 @@ func FuzzWcDifferentialWords(f *testing.F) {
 			t.Fatal(err)
 		}
 
+		// Use context.Background() (not t.Context()) so the fuzz engine's
+		// cancellation does not kill the command mid-run; each iteration still
+		// enforces its own 5 s deadline.
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		rshellOut, rshellErr, rshellCode := cmdRunCtx(ctx, t, "wc -w input.txt", dir)
 		cancel()
@@ -199,6 +205,9 @@ func FuzzWcDifferentialBytes(f *testing.F) {
 			t.Fatal(err)
 		}
 
+		// Use context.Background() (not t.Context()) so the fuzz engine's
+		// cancellation does not kill the command mid-run; each iteration still
+		// enforces its own 5 s deadline.
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		rshellOut, rshellErr, rshellCode := cmdRunCtx(ctx, t, "wc -c input.txt", dir)
 		cancel()
