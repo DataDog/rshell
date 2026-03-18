@@ -25,6 +25,7 @@ import (
 	"mvdan.cc/sh/v3/syntax"
 
 	"github.com/DataDog/rshell/allowedpaths"
+	"github.com/DataDog/rshell/builtins"
 )
 
 // runnerConfig holds the immutable configuration of a [Runner].
@@ -61,6 +62,10 @@ type runnerConfig struct {
 	// procPath is the path to the proc filesystem used by the ps builtin.
 	// Defaults to "/proc" when empty.
 	procPath string
+
+	// proc is the ProcProvider constructed from procPath, created once in
+	// New() and shared across subshells via runnerConfig value copy.
+	proc *builtins.ProcProvider
 
 	// usedNew is set by New() and checked in Reset() to ensure a Runner
 	// was properly constructed rather than zero-initialized.
@@ -219,6 +224,7 @@ func New(opts ...RunnerOption) (*Runner, error) {
 	if r.stdout == nil || r.stderr == nil {
 		StdIO(r.stdin, r.stdout, r.stderr)(r)
 	}
+	r.proc = builtins.NewProcProvider(r.procPath)
 	return r, nil
 }
 

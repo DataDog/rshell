@@ -310,7 +310,7 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 			CommandAllowed: func(cmdName string) bool {
 				return r.allowAllCommands || cmdName == "help" || r.allowedCommands[cmdName]
 			},
-			Proc: builtins.NewProcProvider(r.procPath),
+			Proc: r.proc,
 		}
 		if r.stdin != nil { // do not assign a typed nil into the io.Reader interface
 			call.Stdin = r.stdin
