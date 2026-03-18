@@ -282,6 +282,9 @@ func buildPinger(ctx context.Context, host string, count int, wait, interval tim
 	// An address ending in .255 is only a valid unicast host on a /31 or /32
 	// subnet; those are extremely rare and sacrificed for safety here.
 	ip := resolved.IP
+	if ip.IsUnspecified() {
+		return nil, fmt.Errorf("unspecified destination not allowed: %s", ip)
+	}
 	if ip.IsMulticast() {
 		return nil, fmt.Errorf("multicast destination not allowed: %s", ip)
 	}
