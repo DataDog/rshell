@@ -40,7 +40,10 @@ func listAll(ctx context.Context) ([]ProcInfo, error) {
 		procs = append(procs, info)
 
 		if err := windows.Process32Next(snapshot, &entry); err != nil {
-			break // ERROR_NO_MORE_FILES
+			if err != windows.ERROR_NO_MORE_FILES {
+				return procs, fmt.Errorf("ps: Process32Next: %w", err)
+			}
+			break
 		}
 	}
 	return procs, nil

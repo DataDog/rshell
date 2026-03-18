@@ -55,7 +55,7 @@ var Cmd = builtins.Command{Name: "ps", Description: "report process status", Mak
 
 func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 	allProcs := fs.BoolP("all", "e", false, "select all processes")
-	_ = fs.BoolP("All", "A", false, "select all processes (same as -e)")
+	allAlias := fs.BoolP("All", "A", false, "select all processes (same as -e)")
 	fullFmt := fs.BoolP("full", "f", false, "full-format listing")
 	pidList := fs.StringP("pid", "p", "", "select by PID list (comma or space separated)")
 	help := fs.Bool("help", false, "print usage and exit")
@@ -69,11 +69,9 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			return builtins.Result{}
 		}
 
-		// -A is an alias for -e.
-		showAll := *allProcs
-		if f := fs.Lookup("All"); f != nil && f.Changed {
-			showAll = true
-		}
+		// -A is an alias for -e; honour the actual boolean value so that
+		// --All=false does not erroneously enable "show all" mode.
+		showAll := *allProcs || *allAlias
 
 		full := *fullFmt
 

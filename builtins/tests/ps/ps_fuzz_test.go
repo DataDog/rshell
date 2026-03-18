@@ -27,7 +27,7 @@ func runPS(t testing.TB, script string) (string, string, int) {
 		return "", err.Error(), 1
 	}
 	var outBuf, errBuf bytes.Buffer
-	runner, err := interp.New(interp.StdIO(nil, &outBuf, &errBuf))
+	runner, err := interp.New(interp.StdIO(nil, &outBuf, &errBuf), interp.AllowAllCommands())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -86,7 +86,7 @@ func FuzzPSPidList(f *testing.F) {
 			return // unparseable, skip
 		}
 		var outBuf, errBuf bytes.Buffer
-		runner, err := interp.New(interp.StdIO(nil, &outBuf, &errBuf))
+		runner, err := interp.New(interp.StdIO(nil, &outBuf, &errBuf), interp.AllowAllCommands())
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -133,7 +133,7 @@ func FuzzPSFlags(f *testing.F) {
 			return
 		}
 		var outBuf, errBuf bytes.Buffer
-		runner, err := interp.New(interp.StdIO(nil, &outBuf, &errBuf))
+		runner, err := interp.New(interp.StdIO(nil, &outBuf, &errBuf), interp.AllowAllCommands())
 		if err != nil {
 			t.Fatal(err)
 		}
