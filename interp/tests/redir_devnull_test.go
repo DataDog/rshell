@@ -18,19 +18,20 @@ import (
 	"github.com/stretchr/testify/require"
 	"mvdan.cc/sh/v3/syntax"
 
+	"github.com/DataDog/rshell/internal/interpoption"
 	"github.com/DataDog/rshell/interp"
 )
 
 // redirRun runs a script with the given dir as working directory and allowed path.
 func redirRun(t *testing.T, script, dir string) (string, string, int) {
 	t.Helper()
-	return redirRunWithOpts(t, script, dir, interp.AllowedPaths([]string{dir}), interp.AllowAllCommands())
+	return redirRunWithOpts(t, script, dir, interp.AllowedPaths([]string{dir}), interpoption.AllowAllCommands().(interp.RunnerOption))
 }
 
 // redirRunNoAllowed runs a script with no allowed paths.
 func redirRunNoAllowed(t *testing.T, script, dir string) (string, string, int) {
 	t.Helper()
-	return redirRunWithOpts(t, script, dir, interp.AllowAllCommands())
+	return redirRunWithOpts(t, script, dir, interpoption.AllowAllCommands().(interp.RunnerOption))
 }
 
 func redirRunWithOpts(t *testing.T, script, dir string, opts ...interp.RunnerOption) (string, string, int) {

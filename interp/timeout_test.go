@@ -16,7 +16,7 @@ import (
 
 func newTimeoutRunner(t *testing.T, opts ...RunnerOption) *Runner {
 	t.Helper()
-	allOpts := append([]RunnerOption{AllowAllCommands()}, opts...)
+	allOpts := append([]RunnerOption{allowAllCommandsOpt()}, opts...)
 	r, err := New(allOpts...)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = r.Close() })

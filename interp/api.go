@@ -473,8 +473,7 @@ func AllowedPaths(paths []string) RunnerOption {
 // will not match bare command names and vice versa. Empty strings and empty
 // command names are rejected.
 //
-// When not set (default), no commands are allowed unless [AllowAllCommands] is
-// used.
+// When not set (default), no commands are allowed.
 func AllowedCommands(names []string) RunnerOption {
 	return func(r *Runner) error {
 		m := make(map[string]bool, len(names))
@@ -504,10 +503,8 @@ func AllowedCommands(names []string) RunnerOption {
 	}
 }
 
-// AllowAllCommands permits execution of any command (builtin or external),
-// bypassing the [AllowedCommands] restriction. This is intended for testing
-// convenience.
-func AllowAllCommands() RunnerOption {
+// allowAllCommandsOpt is a convenience for tests within the interp package.
+func allowAllCommandsOpt() RunnerOption {
 	return func(r *Runner) error {
 		r.allowAllCommands = true
 		return nil

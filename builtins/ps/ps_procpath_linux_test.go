@@ -21,6 +21,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"mvdan.cc/sh/v3/syntax"
 
+	"github.com/DataDog/rshell/internal/interpoption"
 	"github.com/DataDog/rshell/interp"
 )
 
@@ -34,7 +35,7 @@ func runScriptWithProcPath(t *testing.T, script, procPath string) (stdout, stder
 	var outBuf, errBuf bytes.Buffer
 	runner, err := interp.New(
 		interp.StdIO(nil, &outBuf, &errBuf),
-		interp.AllowAllCommands(),
+		interpoption.AllowAllCommands().(interp.RunnerOption),
 		interp.ProcPath(procPath),
 	)
 	if err != nil {

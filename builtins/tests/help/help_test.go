@@ -16,6 +16,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"mvdan.cc/sh/v3/syntax"
 
+	"github.com/DataDog/rshell/internal/interpoption"
 	"github.com/DataDog/rshell/interp"
 )
 
@@ -53,7 +54,7 @@ func runScriptCtx(ctx context.Context, t *testing.T, script, dir string, opts ..
 // --- Exit code ---
 
 func TestHelpExitCode(t *testing.T) {
-	stdout, stderr, code := runScript(t, "help", "", interp.AllowAllCommands())
+	stdout, stderr, code := runScript(t, "help", "", interpoption.AllowAllCommands().(interp.RunnerOption))
 	assert.Equal(t, 0, code)
 	assert.Empty(t, stderr)
 	assert.NotEmpty(t, stdout)
@@ -62,7 +63,7 @@ func TestHelpExitCode(t *testing.T) {
 // --- Output content ---
 
 func TestHelpListsAllBuiltins(t *testing.T) {
-	stdout, _, code := runScript(t, "help", "", interp.AllowAllCommands())
+	stdout, _, code := runScript(t, "help", "", interpoption.AllowAllCommands().(interp.RunnerOption))
 	assert.Equal(t, 0, code)
 
 	// Every registered builtin should appear in the output.
@@ -78,7 +79,7 @@ func TestHelpListsAllBuiltins(t *testing.T) {
 }
 
 func TestHelpListsSorted(t *testing.T) {
-	stdout, _, code := runScript(t, "help", "", interp.AllowAllCommands())
+	stdout, _, code := runScript(t, "help", "", interpoption.AllowAllCommands().(interp.RunnerOption))
 	assert.Equal(t, 0, code)
 
 	lines := strings.Split(strings.TrimSpace(stdout), "\n")
@@ -108,7 +109,7 @@ func TestHelpListsSorted(t *testing.T) {
 }
 
 func TestHelpIncludesDescriptions(t *testing.T) {
-	stdout, _, code := runScript(t, "help", "", interp.AllowAllCommands())
+	stdout, _, code := runScript(t, "help", "", interpoption.AllowAllCommands().(interp.RunnerOption))
 	assert.Equal(t, 0, code)
 
 	// Spot-check a few descriptions.
@@ -119,13 +120,13 @@ func TestHelpIncludesDescriptions(t *testing.T) {
 }
 
 func TestHelpIncludesFooterHint(t *testing.T) {
-	stdout, _, code := runScript(t, "help", "", interp.AllowAllCommands())
+	stdout, _, code := runScript(t, "help", "", interpoption.AllowAllCommands().(interp.RunnerOption))
 	assert.Equal(t, 0, code)
 	assert.Contains(t, stdout, "Run 'help <command>' for more information on a specific command.")
 }
 
 func TestHelpColumnsAligned(t *testing.T) {
-	stdout, _, code := runScript(t, "help", "", interp.AllowAllCommands())
+	stdout, _, code := runScript(t, "help", "", interpoption.AllowAllCommands().(interp.RunnerOption))
 	assert.Equal(t, 0, code)
 
 	lines := strings.Split(strings.TrimSpace(stdout), "\n")
@@ -235,26 +236,26 @@ func TestHelpAlwaysAvailableNoCommands(t *testing.T) {
 // --- Error handling ---
 
 func TestHelpUnknownCommandShowsError(t *testing.T) {
-	_, stderr, code := runScript(t, "help foo", "", interp.AllowAllCommands())
+	_, stderr, code := runScript(t, "help foo", "", interpoption.AllowAllCommands().(interp.RunnerOption))
 	assert.Equal(t, 1, code)
 	assert.Contains(t, stderr, "no help topics match 'foo'")
 }
 
 func TestHelpShowsCommandHelp(t *testing.T) {
-	stdout, _, code := runScript(t, "help echo", "", interp.AllowAllCommands())
+	stdout, _, code := runScript(t, "help echo", "", interpoption.AllowAllCommands().(interp.RunnerOption))
 	assert.Equal(t, 0, code)
 	assert.Contains(t, stdout, "echo: echo [-neE]")
 }
 
 func TestHelpFlagPrintsUsage(t *testing.T) {
-	stdout, _, code := runScript(t, "help --help", "", interp.AllowAllCommands())
+	stdout, _, code := runScript(t, "help --help", "", interpoption.AllowAllCommands().(interp.RunnerOption))
 	assert.Equal(t, 1, code)
 	assert.Contains(t, stdout, "Usage: help")
 	assert.Contains(t, stdout, "Display help for builtin commands.")
 }
 
 func TestHelpUnknownFlagRejected(t *testing.T) {
-	_, stderr, code := runScript(t, "help --verbose", "", interp.AllowAllCommands())
+	_, stderr, code := runScript(t, "help --verbose", "", interpoption.AllowAllCommands().(interp.RunnerOption))
 	assert.Equal(t, 1, code)
 	assert.Contains(t, stderr, "help:")
 }
@@ -262,21 +263,21 @@ func TestHelpUnknownFlagRejected(t *testing.T) {
 // --- Pipeline / composition ---
 
 func TestHelpInPipeline(t *testing.T) {
-	stdout, _, code := runScript(t, "help | grep echo", "", interp.AllowAllCommands())
+	stdout, _, code := runScript(t, "help | grep echo", "", interpoption.AllowAllCommands().(interp.RunnerOption))
 	assert.Equal(t, 0, code)
 	assert.Contains(t, stdout, "echo")
 	assert.Contains(t, stdout, "write arguments to stdout")
 }
 
 func TestHelpExitCodeInScript(t *testing.T) {
-	stdout, _, code := runScript(t, "help; echo $?", "", interp.AllowAllCommands())
+	stdout, _, code := runScript(t, "help; echo $?", "", interpoption.AllowAllCommands().(interp.RunnerOption))
 	assert.Equal(t, 0, code)
 	// The last line before the footer should be "0" from echo $?.
 	assert.True(t, strings.HasSuffix(strings.TrimSpace(stdout), "0"))
 }
 
 func TestHelpFailExitCodeInScript(t *testing.T) {
-	stdout, _, code := runScript(t, "help badarg; echo $?", "", interp.AllowAllCommands())
+	stdout, _, code := runScript(t, "help badarg; echo $?", "", interpoption.AllowAllCommands().(interp.RunnerOption))
 	assert.Equal(t, 0, code) // overall script exits 0 because echo $? succeeds
 	assert.True(t, strings.HasSuffix(strings.TrimSpace(stdout), "1"))
 }
@@ -284,7 +285,7 @@ func TestHelpFailExitCodeInScript(t *testing.T) {
 // --- Help lists itself ---
 
 func TestHelpListsItself(t *testing.T) {
-	stdout, _, code := runScript(t, "help", "", interp.AllowAllCommands())
+	stdout, _, code := runScript(t, "help", "", interpoption.AllowAllCommands().(interp.RunnerOption))
 	assert.Equal(t, 0, code)
 	assert.Contains(t, stdout, "help")
 	assert.Contains(t, stdout, "display help for commands")
@@ -293,7 +294,7 @@ func TestHelpListsItself(t *testing.T) {
 // --- Empty stderr on success ---
 
 func TestHelpNoStderrOnSuccess(t *testing.T) {
-	_, stderr, code := runScript(t, "help", "", interp.AllowAllCommands())
+	_, stderr, code := runScript(t, "help", "", interpoption.AllowAllCommands().(interp.RunnerOption))
 	assert.Equal(t, 0, code)
 	assert.Empty(t, stderr)
 }

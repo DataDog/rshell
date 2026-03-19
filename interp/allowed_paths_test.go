@@ -19,6 +19,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"mvdan.cc/sh/v3/syntax"
 
+	"github.com/DataDog/rshell/internal/interpoption"
 	"github.com/DataDog/rshell/interp"
 )
 
@@ -31,7 +32,7 @@ func runScript(t *testing.T, script, dir string, opts ...interp.RunnerOption) (s
 	var outBuf, errBuf bytes.Buffer
 	allOpts := append([]interp.RunnerOption{
 		interp.StdIO(nil, &outBuf, &errBuf),
-		interp.AllowAllCommands(),
+		interpoption.AllowAllCommands().(interp.RunnerOption),
 	}, opts...)
 
 	runner, err := interp.New(allOpts...)
@@ -201,7 +202,7 @@ func TestAllowedPathsPinsRootBeforeRun(t *testing.T) {
 	runner, err := interp.New(
 		interp.StdIO(nil, &outBuf, &errBuf),
 		interp.AllowedPaths([]string{allowed}),
-		interp.AllowAllCommands(),
+		interpoption.AllowAllCommands().(interp.RunnerOption),
 	)
 	require.NoError(t, err)
 	defer runner.Close()
@@ -241,7 +242,7 @@ func TestAllowedPathsClose(t *testing.T) {
 	dir := t.TempDir()
 	runner, err := interp.New(
 		interp.AllowedPaths([]string{dir}),
-		interp.AllowAllCommands(),
+		interpoption.AllowAllCommands().(interp.RunnerOption),
 	)
 	require.NoError(t, err)
 

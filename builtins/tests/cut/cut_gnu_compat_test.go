@@ -18,6 +18,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"mvdan.cc/sh/v3/syntax"
 
+	"github.com/DataDog/rshell/internal/interpoption"
 	"github.com/DataDog/rshell/interp"
 )
 
@@ -31,7 +32,7 @@ func cutRun(t *testing.T, script, dir string) (string, string, int) {
 	opts := []interp.RunnerOption{
 		interp.StdIO(nil, &outBuf, &errBuf),
 		interp.AllowedPaths([]string{dir}),
-		interp.AllowAllCommands(),
+		interpoption.AllowAllCommands().(interp.RunnerOption),
 	}
 
 	runner, err := interp.New(opts...)
