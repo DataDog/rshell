@@ -481,6 +481,39 @@ func TestIPRouteParseEntryBadMask(t *testing.T) {
 	assert.Contains(t, stdout, "192.168.1.0/24")
 }
 
+// TestIPRouteShowNonOctetMasks verifies that non-octet-aligned CIDR masks
+// (e.g. /25, /17, /20, /28) from /proc/net/route are accepted and displayed
+// correctly.  These are stored in little-endian byte order, so /25
+// (255.255.255.128) appears as 0x80FFFFFF — IsContiguousMask must not reject
+// them by assuming byte-aligned LSB-contiguous form.
+func TestIPRouteShowNonOctetMasks(t *testing.T) {
+	// /25 = 255.255.255.128 -> little-endian 0x80FFFFFF
+	// /17 = 255.255.128.0   -> little-endian 0x0080FFFF
+	// /20 = 255.255.240.0   -> little-endian 0x00F0FFFF
+	// /28 = 255.255.255.240 -> little-endian 0xF0FFFFFF
+	//
+	// Dest for 192.168.1.128/25: 0x80A8C0 (little-endian)
+	//   192.168.1.128 bytes: [192,168,1,128] -> LE hex: 80 01 A8 C0 -> 0x80 0x01 0xA8 0xC0
+	//   As uint32 LE: byte0=0x80, byte1=0x01, byte2=0xA8, byte3=0xC0 -> 0xC0A80180
+	// Dest for 10.1.0.0/17: 10.1.0.0 LE = 0x0000010A
+	// Dest for 10.1.0.0/20: 10.1.0.0 LE = 0x0000010A (same dest, different mask)
+	// Dest for 192.168.1.240/28: 192.168.1.240 LE = 0xF001A8C0
+
+	// /25 route: 192.168.1.128/25 dev eth0 — flags=0x0001 (UP, no GW)
+	content := "Iface\tDestination\tGateway\tFlags\tRefCnt\tUse\tMetric\tMask\tMTU\tWindow\tIRTT\n" +
+		"eth0\tC0A80180\t00000000\t0001\t0\t0\t0\t80FFFFFF\t0\t0\t0\n" +
+		"eth0\t0000010A\t00000000\t0001\t0\t0\t0\t0080FFFF\t0\t0\t0\n" +
+		"eth0\t0000010A\t00000000\t0001\t0\t0\t10\t00F0FFFF\t0\t0\t0\n" +
+		"eth0\tF001A8C0\t00000000\t0001\t0\t0\t0\tF0FFFFFF\t0\t0\t0\n"
+	writeProcNetRoute(t, content)
+	stdout, _, code := cmdRun(t, "ip route show")
+	assert.Equal(t, 0, code)
+	assert.Contains(t, stdout, "192.168.1.128/25", "expected /25 route in output")
+	assert.Contains(t, stdout, "/17", "expected /17 route in output")
+	assert.Contains(t, stdout, "/20", "expected /20 route in output")
+	assert.Contains(t, stdout, "/28", "expected /28 route in output")
+}
+
 // TestIPRouteGetHostRoute verifies a /32 route (exact host match) wins over broader
 // routes via longest-prefix-match (popcount of 0xFFFFFFFF = 32 bits).
 func TestIPRouteGetHostRoute(t *testing.T) {
