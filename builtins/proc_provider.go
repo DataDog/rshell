@@ -1,0 +1,42 @@
+// Unless explicitly stated otherwise all files in this repository are licensed
+// under the Apache License Version 2.0.
+// This product includes software developed at Datadog (https://www.datadoghq.com/).
+// Copyright 2026-present Datadog, Inc.
+
+package builtins
+
+import (
+	"context"
+
+	"github.com/DataDog/rshell/builtins/internal/procinfo"
+)
+
+// ProcProvider gives builtins controlled access to the proc filesystem.
+// The path is fixed at construction time and cannot be overridden by callers.
+type ProcProvider struct {
+	path string
+}
+
+// NewProcProvider returns a ProcProvider for the given proc filesystem path.
+// If path is empty, DefaultProcPath ("/proc") is used.
+func NewProcProvider(path string) *ProcProvider {
+	if path == "" {
+		path = procinfo.DefaultProcPath
+	}
+	return &ProcProvider{path: path}
+}
+
+// ListAll returns all running processes.
+func (p *ProcProvider) ListAll(ctx context.Context) ([]procinfo.ProcInfo, error) {
+	return procinfo.ListAll(ctx, p.path)
+}
+
+// GetSession returns processes in the current process session.
+func (p *ProcProvider) GetSession(ctx context.Context) ([]procinfo.ProcInfo, error) {
+	return procinfo.GetSession(ctx, p.path)
+}
+
+// GetByPIDs returns process info for the given PIDs.
+func (p *ProcProvider) GetByPIDs(ctx context.Context, pids []int) ([]procinfo.ProcInfo, error) {
+	return procinfo.GetByPIDs(ctx, p.path, pids)
+}

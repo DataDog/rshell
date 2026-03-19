@@ -11,8 +11,10 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -22,13 +24,13 @@ import (
 // almost always 100, but we default to 100 and let procBootTime handle errors.
 const clkTck = 100
 
-func listAll(ctx context.Context) ([]ProcInfo, error) {
-	entries, err := os.ReadDir("/proc")
+func listAll(ctx context.Context, procPath string) ([]ProcInfo, error) {
+	entries, err := os.ReadDir(procPath)
 	if err != nil {
-		return nil, fmt.Errorf("ps: cannot read /proc: %w", err)
+		return nil, fmt.Errorf("ps: cannot read %s: %w", procPath, err)
 	}
 
-	btime, _ := procBootTime()
+	btime, _ := procBootTime(procPath)
 	var procs []ProcInfo
 	for _, e := range entries {
 		if ctx.Err() != nil {
@@ -44,7 +46,7 @@ func listAll(ctx context.Context) ([]ProcInfo, error) {
 		if err != nil {
 			continue
 		}
-		info, err := readProc(pid, btime)
+		info, err := readProc(procPath, pid, btime)
 		if err != nil {
 			continue
 		}
@@ -53,8 +55,8 @@ func listAll(ctx context.Context) ([]ProcInfo, error) {
 	return procs, nil
 }
 
-func getSession(ctx context.Context) ([]ProcInfo, error) {
-	all, err := listAll(ctx)
+func getSession(ctx context.Context, procPath string) ([]ProcInfo, error) {
+	all, err := listAll(ctx, procPath)
 	if err != nil {
 		return nil, err
 	}
@@ -65,6 +67,9 @@ func getSession(ctx context.Context) ([]ProcInfo, error) {
 	}
 
 	// Walk PPID chain from current process upward; collect session ancestors.
+	// Note: if procPath points to a foreign PID namespace (e.g. a container),
+	// our host PID is unlikely to appear there, so the session result will be
+	// empty. This is expected — GetSession is designed for the current host.
 	selfPID := os.Getpid()
 	ancestors := make(map[int]bool)
 	cur := selfPID
@@ -80,7 +85,7 @@ func getSession(ctx context.Context) ([]ProcInfo, error) {
 	// Also include all processes that share our SID (best-effort; fall back to
 	// ancestor chain only).
 	var selfSID int
-	if data, err := os.ReadFile(fmt.Sprintf("/proc/%d/stat", selfPID)); err == nil {
+	if data, err := os.ReadFile(filepath.Join(procPath, strconv.Itoa(selfPID), "stat")); err == nil {
 		selfSID = parseSID(data)
 	}
 
@@ -94,7 +99,7 @@ func getSession(ctx context.Context) ([]ProcInfo, error) {
 			continue
 		}
 		if selfSID != 0 {
-			if data, err := os.ReadFile(fmt.Sprintf("/proc/%d/stat", p.PID)); err == nil {
+			if data, err := os.ReadFile(filepath.Join(procPath, strconv.Itoa(p.PID), "stat")); err == nil {
 				if parseSID(data) == selfSID {
 					result = append(result, p)
 				}
@@ -104,25 +109,38 @@ func getSession(ctx context.Context) ([]ProcInfo, error) {
 	return result, nil
 }
 
-func getByPIDs(ctx context.Context, pids []int) ([]ProcInfo, error) {
-	btime, _ := procBootTime()
+func getByPIDs(ctx context.Context, procPath string, pids []int) ([]ProcInfo, error) {
+	fi, err := os.Stat(procPath)
+	if err != nil {
+		return nil, fmt.Errorf("ps: cannot read %s: %w", procPath, err)
+	}
+	if !fi.IsDir() {
+		return nil, fmt.Errorf("ps: cannot read %s: not a directory", procPath)
+	}
+	btime, _ := procBootTime(procPath)
 	var result []ProcInfo
 	for _, pid := range pids {
 		if ctx.Err() != nil {
 			break
 		}
-		info, err := readProc(pid, btime)
+		info, err := readProc(procPath, pid, btime)
 		if err != nil {
-			continue
+			// ENOENT means the process no longer exists — skip silently.
+			// Any other error (EACCES, I/O, etc.) indicates a configuration
+			// or read failure and should be surfaced to the caller.
+			if errors.Is(err, os.ErrNotExist) {
+				continue
+			}
+			return nil, fmt.Errorf("ps: cannot read %s: %w", filepath.Join(procPath, strconv.Itoa(pid)), err)
 		}
 		result = append(result, info)
 	}
 	return result, nil
 }
 
-// readProc reads process info for a single PID from /proc.
-func readProc(pid int, btime int64) (ProcInfo, error) {
-	statData, err := os.ReadFile(fmt.Sprintf("/proc/%d/stat", pid))
+// readProc reads process info for a single PID from procPath.
+func readProc(procPath string, pid int, btime int64) (ProcInfo, error) {
+	statData, err := os.ReadFile(filepath.Join(procPath, strconv.Itoa(pid), "stat"))
 	if err != nil {
 		return ProcInfo{}, err
 	}
@@ -177,11 +195,11 @@ func readProc(pid int, btime int64) (ProcInfo, error) {
 		info.STime = "?"
 	}
 
-	// UID from /proc/pid/status.
-	info.UID = readUID(pid)
+	// UID from procPath/pid/status.
+	info.UID = readUID(procPath, pid)
 
-	// Full cmdline from /proc/pid/cmdline (null-separated).
-	cmdline := readCmdline(pid)
+	// Full cmdline from procPath/pid/cmdline (null-separated).
+	cmdline := readCmdline(procPath, pid)
 	if cmdline == "" {
 		// Kernel thread: show [comm].
 		info.Cmd = "[" + comm + "]"
@@ -222,9 +240,9 @@ func resolveTTY(_ int, ttyNr int64) string {
 	}
 }
 
-// readUID reads the real UID from /proc/pid/status.
-func readUID(pid int) string {
-	data, err := os.ReadFile(fmt.Sprintf("/proc/%d/status", pid))
+// readUID reads the real UID from procPath/pid/status.
+func readUID(procPath string, pid int) string {
+	data, err := os.ReadFile(filepath.Join(procPath, strconv.Itoa(pid), "status"))
 	if err != nil {
 		return "?"
 	}
@@ -241,9 +259,9 @@ func readUID(pid int) string {
 	return "?"
 }
 
-// readCmdline reads /proc/pid/cmdline and returns the command line string.
-func readCmdline(pid int) string {
-	data, err := os.ReadFile(fmt.Sprintf("/proc/%d/cmdline", pid))
+// readCmdline reads procPath/pid/cmdline and returns the command line string.
+func readCmdline(procPath string, pid int) string {
+	data, err := os.ReadFile(filepath.Join(procPath, strconv.Itoa(pid), "cmdline"))
 	if err != nil || len(data) == 0 {
 		return ""
 	}
@@ -260,9 +278,9 @@ func readCmdline(pid int) string {
 	return cmd
 }
 
-// procBootTime reads the boot time (seconds since epoch) from /proc/stat.
-func procBootTime() (int64, error) {
-	f, err := os.Open("/proc/stat")
+// procBootTime reads the boot time (seconds since epoch) from procPath/stat.
+func procBootTime(procPath string) (int64, error) {
+	f, err := os.Open(filepath.Join(procPath, "stat"))
 	if err != nil {
 		return 0, err
 	}
