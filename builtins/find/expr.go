@@ -42,6 +42,7 @@ const (
 	exprTrue                    // -true
 	exprFalse                   // -false
 	exprExecDir                 // -execdir command {} ;
+	exprExec                    // -exec command {} ;
 	exprAnd                     // expr -a expr  or  expr expr (implicit)
 	exprOr                      // expr -o expr
 	exprNot                     // ! expr  or  -not expr
@@ -85,8 +86,8 @@ type expr struct {
 	numCmp   cmpOp    // comparison operator for numeric predicates
 	permVal  uint32   // for -perm: permission bits
 	permCmp  byte     // for -perm: '=' exact, '-' all bits, '/' any bit
-	execCmd  string   // command name for -execdir
-	execArgs []string // argument template for -execdir (each element is literal or "{}")
+	execCmd  string   // command name for -exec/-execdir
+	execArgs []string // argument template for -exec/-execdir (each element is literal or "{}")
 	left     *expr    // for and/or
 	right    *expr    // for and/or
 	operand  *expr    // for not
@@ -97,7 +98,7 @@ type expr struct {
 // control flow (handled at evaluation time by checking quit before
 // implicit print) and does not affect the implicit-print decision.
 func (e *expr) isAction() bool {
-	return e.kind == exprPrint || e.kind == exprPrint0 || e.kind == exprExecDir
+	return e.kind == exprPrint || e.kind == exprPrint0 || e.kind == exprExecDir || e.kind == exprExec
 }
 
 // hasAction checks if any node in the expression tree is an action.
@@ -135,7 +136,6 @@ var errHelpRequested = errors.New("find: help requested")
 
 // blocked predicates that are forbidden for sandbox safety.
 var blockedPredicates = map[string]string{
-	"-exec":    "arbitrary command execution is blocked",
 	"-delete":  "file deletion is blocked",
 	"-ok":      "interactive execution is blocked",
 	"-okdir":   "interactive execution is blocked",
@@ -344,6 +344,8 @@ func (p *parser) parsePrimary() (*expr, error) {
 		return p.parseDepthOption(true)
 	case "-mindepth":
 		return p.parseDepthOption(false)
+	case "-exec":
+		return p.parseExecPredicate()
 	case "-execdir":
 		return p.parseExecDirPredicate()
 	case "-true":
@@ -683,17 +685,25 @@ func parseSymbolicMode(s string) (uint64, error) {
 	return mode, nil
 }
 
-// parseExecDirPredicate parses -execdir command [args...] ;
+func (p *parser) parseExecPredicate() (*expr, error) {
+	return p.parseExecLikePredicate(exprExec, "-exec")
+}
+
+func (p *parser) parseExecDirPredicate() (*expr, error) {
+	return p.parseExecLikePredicate(exprExecDir, "-execdir")
+}
+
+// parseExecLikePredicate parses -exec/-execdir command [args...] ;
 // Only \; mode is supported. {} + (batch mode) is rejected with a clear error.
 // A literal "+" that does not follow "{}" is treated as a normal argument.
-func (p *parser) parseExecDirPredicate() (*expr, error) {
+func (p *parser) parseExecLikePredicate(kind exprKind, name string) (*expr, error) {
 	if p.pos >= len(p.args) {
-		return nil, errors.New("find: missing argument to '-execdir'")
+		return nil, fmt.Errorf("find: missing argument to '%s'", name)
 	}
 
 	// Collect tokens until ";" terminator, or "+" after "{}" (batch mode).
 	// In find syntax, "+" is only special as a terminator in the {} + form;
-	// otherwise it is a normal argument (e.g. -execdir echo + {} \;).
+	// otherwise it is a normal argument (e.g. -exec echo + {} \;).
 	startPos := p.pos
 	for p.pos < len(p.args) {
 		tok := p.args[p.pos]
@@ -701,13 +711,13 @@ func (p *parser) parseExecDirPredicate() (*expr, error) {
 			break
 		}
 		if tok == "+" && p.pos > startPos && p.args[p.pos-1] == "{}" {
-			return nil, errors.New("find: -execdir ... + (batch mode) is not yet supported")
+			return nil, fmt.Errorf("find: %s ... + (batch mode) is not yet supported", name)
 		}
 		p.pos++
 	}
 
 	if p.pos >= len(p.args) {
-		return nil, errors.New("find: missing argument to '-execdir'")
+		return nil, fmt.Errorf("find: missing argument to '%s'", name)
 	}
 
 	// Consume the ";" terminator.
@@ -715,13 +725,13 @@ func (p *parser) parseExecDirPredicate() (*expr, error) {
 
 	tokens := p.args[startPos : p.pos-1]
 	if len(tokens) == 0 {
-		return nil, errors.New("find: missing argument to '-execdir'")
+		return nil, fmt.Errorf("find: missing argument to '%s'", name)
 	}
 
 	cmd := tokens[0]
 	args := tokens[1:]
 
-	return &expr{kind: exprExecDir, execCmd: cmd, execArgs: args}, nil
+	return &expr{kind: kind, execCmd: cmd, execArgs: args}, nil
 }
 
 // parseSize parses a -size argument like "+10k", "-5M", "100c".
@@ -794,6 +804,8 @@ func (k exprKind) String() string {
 		return "-perm"
 	case exprExecDir:
 		return "-execdir"
+	case exprExec:
+		return "-exec"
 	case exprQuit:
 		return "-quit"
 	case exprPrint:

@@ -1,4 +1,4 @@
-description: find -exec works alongside -execdir, using full path instead of ./basename.
+description: find -exec echo {} \; -print — both the exec echo and -print run for each file.
 skip_assert_against_bash: true  # rshell -exec only runs builtins, not external commands
 setup:
   files:
@@ -11,9 +11,10 @@ input:
     - rshell:find
     - rshell:echo
   script: |+
-    find dir -name 'a.txt' -exec echo {} \;
+    find dir -name '*.txt' -exec echo {} \; -print
 expect:
   stdout: |+
+    dir/a.txt
     dir/a.txt
   stderr: ""
   exit_code: 0

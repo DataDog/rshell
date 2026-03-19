@@ -1,4 +1,4 @@
-description: find -exec works alongside -execdir, using full path instead of ./basename.
+description: find -exec false {} \; exits 0 even though false returns non-zero (find reports errors, not predicate results).
 skip_assert_against_bash: true  # rshell -exec only runs builtins, not external commands
 setup:
   files:
@@ -9,11 +9,10 @@ input:
   allowed_paths: ["$DIR"]
   allowed_commands:
     - rshell:find
-    - rshell:echo
+    - rshell:false
   script: |+
-    find dir -name 'a.txt' -exec echo {} \;
+    find dir -type f -exec false {} \;
 expect:
-  stdout: |+
-    dir/a.txt
+  stdout: ""
   stderr: ""
   exit_code: 0

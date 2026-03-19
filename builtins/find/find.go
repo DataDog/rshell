@@ -36,6 +36,7 @@
 //	-print           — print path followed by newline
 //	-print0          — print path followed by NUL
 //	-prune           — skip directory subtree
+//	-exec CMD {} ;   — run CMD with full path
 //	-execdir CMD {} ; — run CMD in file's directory with ./basename
 //	-quit            — exit immediately
 //	-true            — always true
@@ -50,7 +51,7 @@
 //
 // Blocked predicates (sandbox safety):
 //
-//	-exec, -delete, -ok, -okdir — execution/deletion
+//	-delete, -ok, -okdir — deletion/interactive
 //	-fls, -fprint, -fprint0, -fprintf — file writes
 //	-regex, -iregex — ReDoS risk
 //
@@ -180,10 +181,15 @@ optLoop:
 		minDepth = 0
 	}
 
-	// Post-parse validation: check -execdir commands are allowed.
-	for _, cmd := range collectExecDirCmds(expression) {
+	// Post-parse validation: check -exec/-execdir commands are allowed.
+	// Commands containing {} are skipped here — the substituted name is
+	// validated at eval-time when the replacement is known.
+	for _, cmd := range collectExecCmds(expression) {
+		if strings.Contains(cmd, "{}") {
+			continue
+		}
 		if callCtx.CommandAllowed != nil && !callCtx.CommandAllowed(cmd) {
-			callCtx.Errf("find: -execdir: '%s': command not allowed\n", cmd)
+			callCtx.Errf("find: '%s': command not allowed\n", cmd)
 			return builtins.Result{Code: 1}
 		}
 	}
@@ -316,6 +322,7 @@ func printHelp(callCtx *builtins.CallContext) {
 	callCtx.Out("Actions:\n")
 	callCtx.Out("  -print                     Print path followed by newline.\n")
 	callCtx.Out("  -print0                    Print path followed by NUL.\n")
+	callCtx.Out("  -exec CMD [ARG]... ;       Run CMD with full path.\n")
 	callCtx.Out("  -execdir CMD [ARG]... ;    Run CMD in file's directory (./basename).\n")
 	callCtx.Out("  -prune                     Skip directory subtree.\n")
 	callCtx.Out("  -quit                      Exit immediately.\n\n")
@@ -325,7 +332,7 @@ func printHelp(callCtx *builtins.CallContext) {
 	callCtx.Out("  EXPR -a EXPR / EXPR -and EXPR  Conjunction (implicit).\n")
 	callCtx.Out("  EXPR -o EXPR / EXPR -or EXPR   Disjunction.\n\n")
 	callCtx.Out("Blocked predicates [sandbox]:\n")
-	callCtx.Out("  -exec, -delete, -ok, -okdir                    Execution/deletion.\n")
+	callCtx.Out("  -delete, -ok, -okdir                           Deletion/interactive.\n")
 	callCtx.Out("  -fls, -fprint, -fprint0, -fprintf              File writes.\n")
 	callCtx.Out("  -regex, -iregex                                ReDoS risk.\n")
 }
@@ -339,7 +346,7 @@ type walkOptions struct {
 	minDepth         int
 	now              time.Time
 	eagerNewerErrors map[string]bool
-	workDir          string // absolute working directory for -execdir path resolution
+	workDir          string // absolute working directory for -exec/-execdir path resolution
 }
 
 // walkResult holds the outcome of a walk operation.
@@ -459,6 +466,7 @@ func walkPath(
 			newerErrors:   newerErrors,
 			followLinks:   opts.followLinks,
 			execDirParent: execDirParent,
+			execWorkDir:   opts.workDir,
 		}
 
 		prune := false
@@ -597,23 +605,23 @@ func walkPath(
 	return walkResult{failed: failed, quit: quit}
 }
 
-// collectExecDirCmds walks the expression tree and returns all -execdir command names.
-func collectExecDirCmds(e *expr) []string {
+// collectExecCmds walks the expression tree and returns all -exec/-execdir command names.
+func collectExecCmds(e *expr) []string {
 	var cmds []string
-	collectExecDirCmdsInto(e, &cmds)
+	collectExecCmdsInto(e, &cmds)
 	return cmds
 }
 
-func collectExecDirCmdsInto(e *expr, cmds *[]string) {
+func collectExecCmdsInto(e *expr, cmds *[]string) {
 	if e == nil {
 		return
 	}
-	if e.kind == exprExecDir {
+	if e.kind == exprExecDir || e.kind == exprExec {
 		*cmds = append(*cmds, e.execCmd)
 	}
-	collectExecDirCmdsInto(e.left, cmds)
-	collectExecDirCmdsInto(e.right, cmds)
-	collectExecDirCmdsInto(e.operand, cmds)
+	collectExecCmdsInto(e.left, cmds)
+	collectExecCmdsInto(e.right, cmds)
+	collectExecCmdsInto(e.operand, cmds)
 }
 
 // collectNewerRefs walks the expression tree and returns all -newer reference paths.

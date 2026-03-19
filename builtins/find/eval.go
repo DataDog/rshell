@@ -36,6 +36,7 @@ type evalContext struct {
 	followLinks   bool                 // true when -L is active
 	failed        bool                 // set by predicates that encounter errors
 	execDirParent string               // absolute path of the file's parent directory for -execdir
+	execWorkDir   string               // absolute working directory for -exec (find's CWD)
 }
 
 // evaluate evaluates an expression tree against a file. If e is nil, returns
@@ -109,6 +110,9 @@ func evaluate(ec *evalContext, e *expr) evalResult {
 
 	case exprExecDir:
 		return evalExecDir(ec, e)
+
+	case exprExec:
+		return evalExec(ec, e)
 
 	case exprQuit:
 		return evalResult{matched: true, quit: true}
@@ -271,16 +275,6 @@ func evalMmin(ec *evalContext, n int64, cmp cmpOp) bool {
 // evalExecDir executes a command in the directory of each matched file.
 // The filename is passed as ./basename, preventing leading-dash interpretation.
 func evalExecDir(ec *evalContext, e *expr) evalResult {
-	if ec.callCtx.RunCommand == nil {
-		ec.callCtx.Errf("find: -execdir: command execution not available\n")
-		ec.failed = true
-		return evalResult{}
-	}
-	if ec.callCtx.CommandAllowed != nil && !ec.callCtx.CommandAllowed(e.execCmd) {
-		ec.callCtx.Errf("find: -execdir: '%s': command not allowed\n", e.execCmd)
-		ec.failed = true
-		return evalResult{}
-	}
 	base := baseName(ec.relPath)
 	replacement := "./" + base
 	if base == "/" {
@@ -288,13 +282,40 @@ func evalExecDir(ec *evalContext, e *expr) evalResult {
 	} else if len(ec.relPath) > 0 && ec.relPath[len(ec.relPath)-1] == '/' {
 		replacement += "/"
 	}
+	return evalExecLike(ec, e, "-execdir", replacement, ec.execDirParent)
+}
+
+// evalExec executes a command in find's working directory for each matched file.
+// The filename is passed as the full relative path (e.g. dir/sub/file.txt).
+// Unlike evalExecDir, no "./" prefix is added — this matches GNU find behavior.
+// Note: -execdir is recommended over -exec for safer filename handling (./prefix
+// prevents dash-injection, and running in the file's directory reduces TOCTOU risk).
+func evalExec(ec *evalContext, e *expr) evalResult {
+	return evalExecLike(ec, e, "-exec", ec.printPath, ec.execWorkDir)
+}
+
+// evalExecLike is the shared implementation for -exec and -execdir.
+// name is the predicate name (for error messages), replacement is the string
+// substituted for {} tokens, and dir is the working directory for the sub-command.
+func evalExecLike(ec *evalContext, e *expr, name, replacement, dir string) evalResult {
+	if ec.callCtx.RunCommand == nil {
+		ec.callCtx.Errf("find: %s: command execution not available\n", name)
+		ec.failed = true
+		return evalResult{}
+	}
+	cmd := strings.ReplaceAll(e.execCmd, "{}", replacement)
+	if ec.callCtx.CommandAllowed != nil && !ec.callCtx.CommandAllowed(cmd) {
+		ec.callCtx.Errf("find: %s: '%s': command not allowed\n", name, cmd)
+		ec.failed = true
+		return evalResult{}
+	}
 	args := make([]string, len(e.execArgs))
 	for i, a := range e.execArgs {
 		args[i] = strings.ReplaceAll(a, "{}", replacement)
 	}
-	exitCode, err := ec.callCtx.RunCommand(ec.ctx, ec.execDirParent, e.execCmd, args)
+	exitCode, err := ec.callCtx.RunCommand(ec.ctx, dir, cmd, args)
 	if err != nil {
-		ec.callCtx.Errf("find: '%s': %s\n", e.execCmd, err)
+		ec.callCtx.Errf("find: '%s': %s\n", cmd, err)
 		ec.failed = true
 		return evalResult{}
 	}

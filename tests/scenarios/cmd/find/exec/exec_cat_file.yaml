@@ -1,19 +1,18 @@
-description: find -exec works alongside -execdir, using full path instead of ./basename.
+description: find -exec cat {} \; reads and prints the content of each matched file.
 skip_assert_against_bash: true  # rshell -exec only runs builtins, not external commands
 setup:
   files:
-    - path: dir/a.txt
-      content: "a"
+    - path: dir/hello.txt
+      content: "hello"
       chmod: 0644
 input:
   allowed_paths: ["$DIR"]
   allowed_commands:
     - rshell:find
-    - rshell:echo
+    - rshell:cat
   script: |+
-    find dir -name 'a.txt' -exec echo {} \;
+    find dir -name 'hello.txt' -exec cat {} \;
 expect:
-  stdout: |+
-    dir/a.txt
+  stdout: "hello"
   stderr: ""
   exit_code: 0

@@ -211,7 +211,7 @@ func TestParseTypePredicate(t *testing.T) {
 // TestParseBlockedPredicates verifies all dangerous predicates are blocked.
 func TestParseBlockedPredicates(t *testing.T) {
 	blocked := []string{
-		"-exec", "-delete", "-ok", "-okdir",
+		"-delete", "-ok", "-okdir",
 		"-fls", "-fprint", "-fprint0", "-fprintf",
 		"-regex", "-iregex",
 	}
@@ -219,7 +219,7 @@ func TestParseBlockedPredicates(t *testing.T) {
 		t.Run(pred, func(t *testing.T) {
 			// Blocked predicates that take an argument need one to not fail with "missing argument".
 			args := []string{pred}
-			if pred == "-exec" || pred == "-ok" || pred == "-okdir" {
+			if pred == "-ok" || pred == "-okdir" {
 				args = append(args, "cmd", ";")
 			}
 			_, err := parseExpression(args)
@@ -433,6 +433,92 @@ func TestParseExecDirEmbeddedBraces(t *testing.T) {
 func TestParseExecDirIsAction(t *testing.T) {
 	e := &expr{kind: exprExecDir}
 	assert.True(t, e.isAction(), "exprExecDir must be reported as an action")
+}
+
+// TestParseExecBasic verifies that -exec echo {} ; is parsed into an
+// exprExec node with the correct execCmd and execArgs.
+func TestParseExecBasic(t *testing.T) {
+	pr, err := parseExpression([]string{"-exec", "echo", "{}", ";"})
+	require.NoError(t, err)
+	require.NotNil(t, pr.expr)
+	assert.Equal(t, exprExec, pr.expr.kind)
+	assert.Equal(t, "echo", pr.expr.execCmd)
+	assert.Equal(t, []string{"{}"}, pr.expr.execArgs)
+}
+
+// TestParseExecMultipleArgs verifies that all positional arguments
+// surrounding {} are preserved in execArgs.
+func TestParseExecMultipleArgs(t *testing.T) {
+	pr, err := parseExpression([]string{"-exec", "echo", "before", "{}", "after", ";"})
+	require.NoError(t, err)
+	require.NotNil(t, pr.expr)
+	assert.Equal(t, exprExec, pr.expr.kind)
+	assert.Equal(t, "echo", pr.expr.execCmd)
+	assert.Equal(t, []string{"before", "{}", "after"}, pr.expr.execArgs)
+}
+
+// TestParseExecMissingTerminator verifies that -exec without a ; or +
+// terminator returns an error mentioning "missing argument".
+func TestParseExecMissingTerminator(t *testing.T) {
+	_, err := parseExpression([]string{"-exec", "echo", "{}"})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "missing argument")
+}
+
+// TestParseExecMissingCommand verifies that -exec ; (no command token)
+// returns an error mentioning "missing argument".
+func TestParseExecMissingCommand(t *testing.T) {
+	_, err := parseExpression([]string{"-exec", ";"})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "missing argument")
+}
+
+// TestParseExecBatchRejected verifies that the + batch-mode terminator is
+// explicitly rejected with an error mentioning "batch mode".
+func TestParseExecBatchRejected(t *testing.T) {
+	_, err := parseExpression([]string{"-exec", "echo", "{}", "+"})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "batch mode")
+}
+
+// TestParseExecLiteralPlus verifies that a literal "+" that does not follow
+// "{}" is treated as a normal argument, not as a batch-mode terminator.
+func TestParseExecLiteralPlus(t *testing.T) {
+	// "+" before "{}" — normal argument
+	pr, err := parseExpression([]string{"-exec", "echo", "+", "{}", ";"})
+	require.NoError(t, err)
+	require.NotNil(t, pr.expr)
+	assert.Equal(t, exprExec, pr.expr.kind)
+	assert.Equal(t, "echo", pr.expr.execCmd)
+	assert.Equal(t, []string{"+", "{}"}, pr.expr.execArgs)
+
+	// "+" as the only argument (no "{}" at all)
+	pr2, err := parseExpression([]string{"-exec", "echo", "+", ";"})
+	require.NoError(t, err)
+	require.NotNil(t, pr2.expr)
+	assert.Equal(t, []string{"+"}, pr2.expr.execArgs)
+
+	// "{}" + still triggers batch mode error
+	_, err = parseExpression([]string{"-exec", "echo", "{}", "+"})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "batch mode")
+}
+
+// TestParseExecEmbeddedBraces verifies that {} embedded within a larger
+// argument token (e.g. {}.bak) is accepted and stored in execArgs.
+func TestParseExecEmbeddedBraces(t *testing.T) {
+	pr, err := parseExpression([]string{"-exec", "echo", "{}.bak", ";"})
+	require.NoError(t, err)
+	require.NotNil(t, pr.expr)
+	assert.Equal(t, exprExec, pr.expr.kind)
+	assert.Equal(t, []string{"{}.bak"}, pr.expr.execArgs)
+}
+
+// TestParseExecIsAction verifies that isAction() returns true for an
+// exprExec node, ensuring -exec suppresses implicit -print.
+func TestParseExecIsAction(t *testing.T) {
+	e := &expr{kind: exprExec}
+	assert.True(t, e.isAction(), "exprExec must be reported as an action")
 }
 
 // TestParseExpressionLimits verifies AST depth and node limits.
