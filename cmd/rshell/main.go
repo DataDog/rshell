@@ -94,7 +94,12 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 				}
 
 				for _, file := range args {
-					data, err := os.ReadFile(file)
+					f, err := os.Open(file)
+					if err != nil {
+						return fmt.Errorf("reading %s: %w", file, err)
+					}
+					data, err := readAllContext(runCtx, f)
+					f.Close()
 					if err != nil {
 						return fmt.Errorf("reading %s: %w", file, err)
 					}
