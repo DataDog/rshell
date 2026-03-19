@@ -41,7 +41,7 @@ var Cmd = builtins.Command{
 
 func run(_ context.Context, callCtx *builtins.CallContext, args []string) builtins.Result {
 	if len(args) > 0 && args[0] == "--help" {
-		callCtx.Errf("exit: exit [n]\n    Exit the shell.\n\n    Exits the shell with a status of N.  If N is omitted, the exit status\n    is that of the last command executed.\n")
+		callCtx.Outf("exit: exit [n]\n    Exit the shell.\n\n    Exits the shell with a status of N.  If N is omitted, the exit status\n    is that of the last command executed.\n")
 		return builtins.Result{Code: 2}
 	}
 	var r builtins.Result

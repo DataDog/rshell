@@ -4,8 +4,7 @@ input:
   script: |+
     for i in 1; do continue --help; done
 expect:
-  stdout: ""
-  stderr: |+
+  stdout: |+
     continue: continue [n]
         Resume for, while, or until loops.
 
@@ -14,4 +13,5 @@ expect:
 
         Exit Status:
         The exit status is 0 unless N is not greater than or equal to 1.
+  stderr: ""
   exit_code: 2
