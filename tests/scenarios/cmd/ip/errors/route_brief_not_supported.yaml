@@ -5,6 +5,6 @@ input:
     ip --brief route show
 expect:
   stdout: ""
-  stderr_contains: ["not supported"]
+  stderr: "ip: route: -o/--brief flags are not supported for route output\n"
   exit_code: 1
 skip_assert_against_bash: true

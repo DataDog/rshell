@@ -5,6 +5,6 @@ input:
     ip route unknowncmd
 expect:
   stdout: ""
-  stderr_contains: ["unknown subcommand", "unknowncmd"]
+  stderr: "ip: route: unknowncmd: unknown subcommand\n"
   exit_code: 1
 skip_assert_against_bash: true
