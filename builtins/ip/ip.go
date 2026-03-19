@@ -118,7 +118,7 @@ const MaxLineBytes = procnet.MaxLineBytes
 // Cmd is the ip builtin command descriptor.
 var Cmd = builtins.Command{
 	Name:        "ip",
-	Description: "show network interface information",
+	Description: "show network interface and routing information",
 	MakeFlags:   registerFlags,
 }
 
