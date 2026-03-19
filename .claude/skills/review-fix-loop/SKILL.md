@@ -25,7 +25,7 @@ You MUST follow this execution protocol. Skipping steps or running them out of o
 
 ### 1. Create the full task list FIRST
 
-Your very first action — before reading ANY files, before running ANY commands — is to call TaskCreate exactly 11 times, once for each step/sub-step below. Use these exact subjects:
+Your very first action — before reading ANY files, before running ANY commands — is to call TaskCreate exactly 10 times, once for each step/sub-step below. Use these exact subjects:
 
 1. "Step 1: Identify the PR"
 2. "Step 2: Run the review-fix loop" ← **Update subject with iteration number each loop** (e.g. "Step 2: Run the review-fix loop (iteration 1)")
@@ -34,21 +34,20 @@ Your very first action — before reading ANY files, before running ANY commands
 5. "Step 2B: Address PR comments (address-pr-comments)"
 6. "Step 2C: Fix CI failures (fix-ci-tests)"
 7. "Step 2D: Verify push and resolve conflicts"
-8. "Step 2E: Check CI status"
-9. "Step 2F: Decide whether to continue"
-10. "Step 3: Verify clean state"
-11. "Step 4: Final summary"
+8. "Step 2E: Decide whether to continue"
+9. "Step 3: Verify clean state"
+10. "Step 4: Final summary"
 
-**Note on sub-steps 2A–2F:** These are created once and reused across loop iterations. At the start of each iteration, reset all sub-steps to `pending`, then execute them in order. Sub-steps marked **parallel** are launched concurrently and must both complete before proceeding to the next group.
+**Note on sub-steps 2A–2E:** These are created once and reused across loop iterations. At the start of each iteration, reset all sub-steps to `pending`, then execute them in order. Sub-steps marked **parallel** are launched concurrently and must both complete before proceeding to the next group.
 
 ### 2. Execution order and gating
 
 Steps run strictly in this order:
 
 ```
-Step 1 → Step 2 (loop: [2A1 ∥ 2A2] → 2B → 2C → 2D → 2E → 2F) → Step 3 → Step 4
-                    ↑                                          ↓
-                    └──────────────── repeat ───────────────────┘
+Step 1 → Step 2 (loop: [2A1 ∥ 2A2] → 2B → 2C → 2D → 2E) → Step 3 → Step 4
+                    ↑                                    ↓
+                    └──────────── repeat ────────────────┘
 ```
 
 **Top-level steps** are sequential: before starting step N, call TaskList and verify step N-1 is `completed`. Set step N to `in_progress`.
@@ -61,8 +60,7 @@ Step 1 → Step 2 (loop: [2A1 ∥ 2A2] → 2B → 2C → 2D → 2E → 2F) → S
 | Fix comments | **2B** | Sequential |
 | Fix CI | **2C** | Sequential — run after 2B completes |
 | Verify | **2D** | Sequential |
-| CI check | **2E** | Sequential |
-| Decide | **2F** | Sequential |
+| Decide | **2E** | Sequential |
 
 ### 3. Never skip steps
 
@@ -138,7 +136,7 @@ Record two values from the self-review:
 1. **Review event** — the enum returned by `code-review`: `APPROVE`, `COMMENT`, or `REQUEST_CHANGES`. For self-reviews (PR author reviewing their own PR) the skill always returns `COMMENT` regardless of findings, since GitHub does not allow self-approval.
 2. **Findings count** — the total number of findings (P0+P1+P2+P3) reported. This is independent of the event enum and is the authoritative signal for whether issues were found.
 
-- If **findings count is 0** → skip to **Sub-step 2E (CI check)**
+- If **findings count is 0** → skip to **Sub-step 2E (Decide)**
 - If **findings count > 0** → continue to **Sub-step 2B**
 
 ---
@@ -199,23 +197,7 @@ git log --oneline -5
 
 ---
 
-### Sub-step 2E — Check CI status
-
-```bash
-gh pr checks <pr-number> --json name,state
-```
-
-- If any checks are **failing** → run the **fix-ci-tests** skill one more time:
-  ```
-  /fix-ci-tests <pr-number>
-  ```
-  Wait for it to complete, then re-check CI status. If still failing after this second attempt, log the failure and continue to Sub-step 2F.
-
-- If all checks are **passing** or **pending** → continue to Sub-step 2F.
-
----
-
-### Sub-step 2F — Decide whether to continue
+### Sub-step 2E — Decide whether to continue
 
 Increment `iteration`.
 
@@ -257,6 +239,7 @@ Check **all three** review sources for remaining issues:
    ```bash
    gh pr checks <pr-number> --json name,state
    ```
+   > **CI-settle note:** CI jobs may still be queued or running after the push in 2D. Treat `pending` checks as non-blocking for the STOP condition — only `failing` checks require another iteration. If all checks are `passing` or `pending`, the CI signal is satisfied.
 
 **Decision matrix** (all signals are structured — no comment body text is read here):
 
