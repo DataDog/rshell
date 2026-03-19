@@ -59,7 +59,30 @@ func TestMaxExecutionTimeRespectsEarlierParentDeadline(t *testing.T) {
 
 	err := r.Run(parent, parseScript(t, "slowcmd"))
 	require.NoError(t, err)
+	// context.WithTimeout takes the earlier of the two deadlines, so the runner's 1s
+	// MaxExecutionTime must not override the parent's tighter 25ms deadline.
 	assert.WithinDuration(t, parentDeadline, got, 5*time.Millisecond)
+}
+
+func TestMaxExecutionTimeStopsForLoop(t *testing.T) {
+	// Exercises the interpreter's own ctx.Err() check inside the for-loop body
+	// (runner_exec.go), not just the execHandler cooperative-cancellation path.
+	// while/until loops are not supported, so we use a for loop with an
+	// execHandler that sleeps per iteration to make the loop outlast the timeout.
+	r := newTimeoutRunner(t, MaxExecutionTime(50*time.Millisecond))
+	r.execHandler = func(ctx context.Context, _ []string) error {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(20 * time.Millisecond):
+			return nil
+		}
+	}
+
+	// 10 iterations × 20ms each = 200ms total, well beyond the 50ms timeout.
+	err := r.Run(context.Background(), parseScript(t, "for x in 1 2 3 4 5 6 7 8 9 10; do cmd; done"))
+	require.Error(t, err)
+	assert.ErrorIs(t, err, context.DeadlineExceeded)
 }
 
 func TestMaxExecutionTimeIsRefreshedPerRun(t *testing.T) {
