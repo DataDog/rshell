@@ -22,6 +22,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 	"unicode/utf8"
@@ -31,8 +32,14 @@ import (
 	ipcmd "github.com/DataDog/rshell/builtins/ip"
 )
 
+// procNetRouteMu guards ProcNetRoutePath during fuzz execution.
+// The Go fuzzer runs workers in parallel goroutines within the same process,
+// so writes to the package-level global must be serialized to avoid a data race.
+var procNetRouteMu sync.Mutex
+
 // writeFuzzRoute writes content to a temp proc directory (dir/net/route),
-// sets ProcNetRoutePath to dir, and returns a cleanup function.
+// acquires procNetRouteMu, sets ProcNetRoutePath to dir, and returns a cleanup
+// function that restores the original path and releases the lock.
 // Used within fuzz functions where t.Cleanup is not available.
 func writeFuzzRoute(t *testing.T, content []byte) (cleanup func()) {
 	t.Helper()
@@ -42,9 +49,13 @@ func writeFuzzRoute(t *testing.T, content []byte) (cleanup func()) {
 	if err := os.WriteFile(filepath.Join(netDir, "route"), content, 0o644); err != nil {
 		return func() {}
 	}
+	procNetRouteMu.Lock()
 	orig := ipcmd.ProcNetRoutePath
 	ipcmd.ProcNetRoutePath = dir
-	return func() { ipcmd.ProcNetRoutePath = orig }
+	return func() {
+		ipcmd.ProcNetRoutePath = orig
+		procNetRouteMu.Unlock()
+	}
 }
 
 // FuzzIPRouteParse fuzzes the /proc/net/route parser with arbitrary file content.
