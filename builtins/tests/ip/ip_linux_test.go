@@ -104,6 +104,20 @@ func TestIPRouteShowDownRouteSkipped(t *testing.T) {
 	assert.NotContains(t, stdout, "192.168.2.0")
 }
 
+// TestIPRouteShowZeroDestNonZeroMaskNotDefault verifies that a route with
+// Dest=0 but a non-zero mask (e.g. 0.0.0.0/8) is NOT formatted as "default".
+// Only a /0 route (Dest=0, Mask=0) should use the "default" keyword.
+func TestIPRouteShowZeroDestNonZeroMaskNotDefault(t *testing.T) {
+	// 0.0.0.0/8: Dest=0x00000000, Mask=0x000000FF (255.0.0.0 little-endian)
+	content := "Iface\tDestination\tGateway\tFlags\tRefCnt\tUse\tMetric\tMask\tMTU\tWindow\tIRTT\n" +
+		"eth0\t00000000\t00000000\t0001\t0\t0\t0\t000000FF\t0\t0\t0\n"
+	writeProcNetRoute(t, content)
+	stdout, _, code := cmdRun(t, "ip route show")
+	assert.Equal(t, 0, code)
+	assert.Contains(t, stdout, "0.0.0.0/8 dev eth0")
+	assert.NotContains(t, stdout, "default")
+}
+
 // TestIPRouteListAliasForShow verifies "ip route list" is an alias for show.
 func TestIPRouteListAliasForShow(t *testing.T) {
 	writeProcNetRoute(t, syntheticProcNetRoute)

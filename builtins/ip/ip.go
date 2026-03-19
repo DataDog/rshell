@@ -639,7 +639,7 @@ func routeGet(ctx context.Context, callCtx *builtins.CallContext, addr string) b
 func formatRoute(r *procnet.Route) string {
 	var b strings.Builder
 
-	if r.Dest == 0 {
+	if r.Dest == 0 && r.Mask == 0 {
 		b.WriteString("default")
 	} else {
 		b.WriteString(procnet.HexToIPStr(r.Dest))
