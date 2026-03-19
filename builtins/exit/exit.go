@@ -27,6 +27,12 @@ import (
 	"github.com/DataDog/rshell/builtins"
 )
 
+const helpText = "exit: exit [n]\n" +
+	"    Exit the shell.\n" +
+	"    \n" +
+	"    Exits the shell with a status of N.  If N is omitted, the exit status\n" +
+	"    is that of the last command executed."
+
 // Cmd is the exit builtin command descriptor.
 var Cmd = builtins.Command{
 	Name:        "exit",
@@ -36,7 +42,7 @@ var Cmd = builtins.Command{
 
 func run(_ context.Context, callCtx *builtins.CallContext, args []string) builtins.Result {
 	if len(args) > 0 && args[0] == "--help" {
-		callCtx.Outf("exit: exit [n]\n    Exit the shell.\n    \n    Exits the shell with a status of N.  If N is omitted, the exit status\n    is that of the last command executed.\n")
+		callCtx.Outf("%s\n", helpText)
 		return builtins.Result{Code: 2}
 	}
 	var r builtins.Result

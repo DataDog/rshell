@@ -25,6 +25,15 @@ import (
 	"github.com/DataDog/rshell/builtins/internal/loopctl"
 )
 
+const helpText = "continue: continue [n]\n" +
+	"    Resume for, while, or until loops.\n" +
+	"    \n" +
+	"    Resumes the next iteration of the enclosing FOR, WHILE or UNTIL loop.\n" +
+	"    If N is specified, resumes the Nth enclosing loop.\n" +
+	"    \n" +
+	"    Exit Status:\n" +
+	"    The exit status is 0 unless N is not greater than or equal to 1."
+
 // Cmd is the continue builtin command descriptor.
 var Cmd = builtins.Command{
 	Name:        "continue",
@@ -34,7 +43,7 @@ var Cmd = builtins.Command{
 
 func run(_ context.Context, callCtx *builtins.CallContext, args []string) builtins.Result {
 	if len(args) > 0 && args[0] == "--help" {
-		callCtx.Outf("continue: continue [n]\n    Resume for, while, or until loops.\n    \n    Resumes the next iteration of the enclosing FOR, WHILE or UNTIL loop.\n    If N is specified, resumes the Nth enclosing loop.\n    \n    Exit Status:\n    The exit status is 0 unless N is not greater than or equal to 1.\n")
+		callCtx.Outf("%s\n", helpText)
 		return builtins.Result{Code: 2}
 	}
 	return loopctl.LoopControl(callCtx, "continue", args)
