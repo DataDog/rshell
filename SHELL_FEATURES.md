@@ -98,6 +98,7 @@ Blocked features are rejected before execution with exit code 2.
 - ✅ AllowedCommands — restricts which commands (builtins or external) may be executed; commands require the `rshell:` namespace prefix (e.g. `rshell:cat`); if not set, no commands are allowed
 - ✅ AllowAllCommands — permits any command (testing convenience)
 - ✅ AllowedPaths filesystem sandboxing — restricts all file access to specified directories
+- ✅ Whole-run execution timeout — callers can bound a `Run()` call via `context.Context`, `interp.MaxExecutionTime`, or the CLI `--timeout` flag; the deadline applies to the entire script, not each individual command
 - ❌ External commands — blocked by default; requires an ExecHandler to be configured and the binary to be within AllowedPaths
 - ❌ Background execution: `cmd &`
 - ❌ Coprocesses: `coproc`

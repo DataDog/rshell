@@ -14,11 +14,14 @@ import (
 	"io"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/DataDog/rshell/interp"
 	"github.com/spf13/cobra"
 	"mvdan.cc/sh/v3/syntax"
 )
+
+const exitCodeTimeout = 124
 
 func main() {
 	os.Exit(run(os.Args[1:], os.Stdin, os.Stdout, os.Stderr))
@@ -30,6 +33,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		allowedPaths    string
 		allowedCommands string
 		allowAllCmds    bool
+		timeout         time.Duration
 	)
 
 	cmd := &cobra.Command{
@@ -46,6 +50,13 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			commandSet := cmd.Flags().Changed("command")
 			if commandSet && len(args) > 0 {
 				return fmt.Errorf("cannot use -c with file arguments")
+			}
+
+			runCtx := cmd.Context()
+			if timeout > 0 {
+				var cancel context.CancelFunc
+				runCtx, cancel = context.WithTimeout(runCtx, timeout)
+				defer cancel()
 			}
 
 			var paths []string
@@ -65,7 +76,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			}
 
 			if commandSet {
-				return execute(cmd.Context(), command, "", execOpts, stdin, stdout, stderr)
+				return execute(runCtx, command, "", execOpts, stdin, stdout, stderr)
 			}
 
 			if len(args) > 0 {
@@ -81,7 +92,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 					if err != nil {
 						return fmt.Errorf("reading %s: %w", file, err)
 					}
-					if err := execute(cmd.Context(), string(data), file, execOpts, bytes.NewReader(stdinData), stdout, stderr); err != nil {
+					if err := execute(runCtx, string(data), file, execOpts, bytes.NewReader(stdinData), stdout, stderr); err != nil {
 						return err
 					}
 				}
@@ -93,7 +104,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			if err != nil {
 				return fmt.Errorf("reading stdin: %w", err)
 			}
-			return execute(cmd.Context(), string(stdinData), "", execOpts, strings.NewReader(""), stdout, stderr)
+			return execute(runCtx, string(stdinData), "", execOpts, strings.NewReader(""), stdout, stderr)
 		},
 	}
 
@@ -107,11 +118,20 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	cmd.Flags().StringVarP(&allowedPaths, "allowed-paths", "p", "", "comma-separated list of directories the shell is allowed to access")
 	cmd.Flags().StringVar(&allowedCommands, "allowed-commands", "", "comma-separated list of namespaced commands (e.g. rshell:cat,rshell:find)")
 	cmd.Flags().BoolVar(&allowAllCmds, "allow-all-commands", false, "allow execution of all commands (builtins and external)")
+	cmd.Flags().DurationVar(&timeout, "timeout", 0, "maximum execution time for the entire shell run (e.g. 100ms, 5s, 1m)")
 
 	if err := cmd.Execute(); err != nil {
 		var status interp.ExitStatus
 		if errors.As(err, &status) {
 			return int(status)
+		}
+		if errors.Is(err, context.DeadlineExceeded) {
+			if timeout > 0 {
+				fmt.Fprintf(stderr, "error: execution timed out after %s\n", timeout)
+			} else {
+				fmt.Fprintln(stderr, "error: execution timed out")
+			}
+			return exitCodeTimeout
 		}
 		fmt.Fprintf(stderr, "error: %v\n", err)
 		return 1

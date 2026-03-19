@@ -20,6 +20,7 @@ import (
 	"context"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/DataDog/rshell/interp"
 	"mvdan.cc/sh/v3/syntax"
@@ -33,11 +34,18 @@ func main() {
 	runner, _ := interp.New(
 		interp.StdIO(nil, os.Stdout, os.Stderr),
 		interp.AllowedCommands([]string{"rshell:echo"}),
+		interp.MaxExecutionTime(5*time.Second),
 	)
 	defer runner.Close()
 
 	runner.Run(context.Background(), prog)
 }
+```
+
+CLI usage also supports a whole-run timeout:
+
+```bash
+rshell --allow-all-commands --timeout 5s -c 'echo "hello from rshell"'
 ```
 
 ## Security Model

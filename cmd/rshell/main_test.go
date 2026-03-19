@@ -141,6 +141,7 @@ func TestHelp(t *testing.T) {
 	assert.Contains(t, stdout, "--allowed-paths")
 	assert.Contains(t, stdout, "--allowed-commands")
 	assert.Contains(t, stdout, "--allow-all-commands")
+	assert.Contains(t, stdout, "--timeout")
 	assert.NotContains(t, stdout, "--command", "-c/--command should be hidden from help")
 }
 
@@ -241,4 +242,11 @@ func TestCommandLongFormRejected(t *testing.T) {
 	code, _, stderr := runCLI(t, "--command", "echo hi")
 	assert.NotEqual(t, 0, code)
 	assert.Contains(t, stderr, "unknown flag: --command")
+}
+
+func TestTimeoutFlagTimesOutExecution(t *testing.T) {
+	code, stdout, stderr := runCLI(t, "--allow-all-commands", "--timeout", "1ns", "-c", `echo hello`)
+	assert.Equal(t, exitCodeTimeout, code)
+	assert.Empty(t, stdout)
+	assert.Contains(t, stderr, "execution timed out")
 }
