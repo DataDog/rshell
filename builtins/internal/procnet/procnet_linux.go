@@ -1,0 +1,97 @@
+// Unless explicitly stated otherwise all files in this repository are licensed
+// under the Apache License Version 2.0.
+// This product includes software developed at Datadog (https://www.datadoghq.com/).
+// Copyright 2026-present Datadog, Inc.
+
+//go:build linux
+
+package procnet
+
+import (
+	"bufio"
+	"context"
+	"os"
+	"path/filepath"
+	"strconv"
+	"strings"
+)
+
+const routeScanBufInit = 4096
+
+// readRoutes is the Linux implementation of ReadRoutes.
+// It opens procPath/net/route, parses each data line, and returns UP entries.
+func readRoutes(ctx context.Context, procPath string) ([]Route, error) {
+	path := filepath.Join(procPath, "net", "route")
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+
+	sc := bufio.NewScanner(f)
+	buf := make([]byte, routeScanBufInit)
+	sc.Buffer(buf, MaxLineBytes)
+
+	var routes []Route
+	firstLine := true
+	for sc.Scan() {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		if firstLine {
+			firstLine = false
+			continue // skip header row
+		}
+		if len(routes) >= MaxRoutes {
+			break
+		}
+		r, ok := parseRouteEntry(sc.Text())
+		if !ok {
+			continue
+		}
+		if r.Flags&FlagUp == 0 {
+			continue // skip routes that are not UP
+		}
+		routes = append(routes, r)
+	}
+	return routes, sc.Err()
+}
+
+// parseRouteEntry parses a single data line from /proc/net/route.
+// Fields are whitespace-separated; IP/flag/mask fields are hex, metric is decimal.
+func parseRouteEntry(line string) (Route, bool) {
+	fields := strings.Fields(line)
+	if len(fields) < 11 {
+		return Route{}, false
+	}
+
+	dest, err := strconv.ParseUint(fields[1], 16, 32)
+	if err != nil {
+		return Route{}, false
+	}
+	gw, err := strconv.ParseUint(fields[2], 16, 32)
+	if err != nil {
+		return Route{}, false
+	}
+	flags, err := strconv.ParseUint(fields[3], 16, 32)
+	if err != nil {
+		return Route{}, false
+	}
+	metric, err := strconv.ParseUint(fields[6], 10, 32)
+	if err != nil {
+		return Route{}, false
+	}
+	mask, err := strconv.ParseUint(fields[7], 16, 32)
+	if err != nil {
+		return Route{}, false
+	}
+
+	return Route{
+		Iface:  fields[0],
+		Dest:   uint32(dest),
+		GW:     uint32(gw),
+		Flags:  uint32(flags),
+		Metric: uint32(metric),
+		Mask:   uint32(mask),
+	}, true
+}

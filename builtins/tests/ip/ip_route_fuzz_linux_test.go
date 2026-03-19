@@ -11,9 +11,10 @@ package ip_test
 // ip route get address parser never panic across arbitrary inputs.
 //
 // Seed corpus sources:
-//   A. Implementation constants/boundaries: MaxLineBytes, maxRoutes, field layout
-//   B. CVE/security-class inputs: null bytes, CRLF, overflow values, binary magic
-//   C. Existing test coverage: all inputs from ip_linux_test.go and ip_pentest_linux_test.go
+//
+//	A. Implementation constants/boundaries: MaxLineBytes, maxRoutes, field layout
+//	B. CVE/security-class inputs: null bytes, CRLF, overflow values, binary magic
+//	C. Existing test coverage: all inputs from ip_linux_test.go and ip_pentest_linux_test.go
 
 import (
 	"context"
@@ -25,9 +26,26 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/stretchr/testify/require"
+
 	ipcmd "github.com/DataDog/rshell/builtins/ip"
-	"github.com/DataDog/rshell/interp"
 )
+
+// writeFuzzRoute writes content to a temp proc directory (dir/net/route),
+// sets ProcNetRoutePath to dir, and returns a cleanup function.
+// Used within fuzz functions where t.Cleanup is not available.
+func writeFuzzRoute(t *testing.T, content []byte) (cleanup func()) {
+	t.Helper()
+	dir := t.TempDir()
+	netDir := filepath.Join(dir, "net")
+	require.NoError(t, os.MkdirAll(netDir, 0o755))
+	if err := os.WriteFile(filepath.Join(netDir, "route"), content, 0o644); err != nil {
+		return func() {}
+	}
+	orig := ipcmd.ProcNetRoutePath
+	ipcmd.ProcNetRoutePath = dir
+	return func() { ipcmd.ProcNetRoutePath = orig }
+}
 
 // FuzzIPRouteParse fuzzes the /proc/net/route parser with arbitrary file content.
 // The fuzzer verifies the parser never panics across arbitrary inputs.
@@ -108,20 +126,13 @@ func FuzzIPRouteParse(f *testing.F) {
 			return
 		}
 
-		dir := t.TempDir()
-		path := filepath.Join(dir, "route")
-		if err := os.WriteFile(path, content, 0o644); err != nil {
-			return
-		}
-
-		orig := ipcmd.ProcNetRoutePath
-		ipcmd.ProcNetRoutePath = path
-		defer func() { ipcmd.ProcNetRoutePath = orig }()
+		cleanup := writeFuzzRoute(t, content)
+		defer cleanup()
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 
-		_, _, code := runScriptCtx(ctx, t, "ip route show", dir, interp.AllowedPaths([]string{dir}))
+		_, _, code := runScriptCtx(ctx, t, "ip route show", "")
 		timedOut := ctx.Err() == context.DeadlineExceeded
 		if timedOut {
 			t.Errorf("FuzzIPRouteParse: timed out on %d-byte input", len(content))
@@ -186,19 +197,13 @@ func FuzzIPRouteGetAddr(f *testing.F) {
 			}
 		}
 
-		dir := t.TempDir()
-		path := filepath.Join(dir, "route")
-		if err := os.WriteFile(path, []byte(syntheticProcNetRoute), 0o644); err != nil {
-			return
-		}
-		orig := ipcmd.ProcNetRoutePath
-		ipcmd.ProcNetRoutePath = path
-		defer func() { ipcmd.ProcNetRoutePath = orig }()
+		cleanup := writeFuzzRoute(t, []byte(syntheticProcNetRoute))
+		defer cleanup()
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 
-		_, _, code := runScriptCtx(ctx, t, "ip route get "+addr, dir, interp.AllowedPaths([]string{dir}))
+		_, _, code := runScriptCtx(ctx, t, "ip route get "+addr, "")
 		timedOut := ctx.Err() == context.DeadlineExceeded
 		if timedOut {
 			t.Errorf("FuzzIPRouteGetAddr %q: timed out", addr)

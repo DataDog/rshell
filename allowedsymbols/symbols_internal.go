@@ -52,6 +52,16 @@ var internalPerPackageSymbols = map[string][]string{
 		"golang.org/x/sys/windows.TH32CS_SNAPPROCESS",       // 🟢 (windows) flag constant selecting process entries for CreateToolhelp32Snapshot; pure constant.
 		"golang.org/x/sys/windows.UTF16ToString",            // 🟢 (windows) converts a null-terminated UTF-16 slice to a Go string; pure function, no I/O.
 	},
+	"procnet": {
+		"bufio.NewScanner",   // 🟢 line-by-line reading of /proc/net/route; no write capability.
+		"context.Context",    // 🟢 deadline/cancellation interface; no side effects.
+		"errors.New",         // 🟢 creates a sentinel error (non-Linux stub); pure function, no I/O.
+		"fmt.Sprintf",        // 🟢 formats dotted-decimal IP strings; pure function, no I/O.
+		"os.Open",            // 🟠 opens /proc/net/route read-only; needed to stream the routing table.
+		"path/filepath.Join", // 🟢 joins procPath + "net/route"; pure function, no I/O.
+		"strconv.ParseUint",  // 🟢 parses hex/decimal route fields; pure function, no I/O.
+		"strings.Fields",     // 🟢 splits whitespace-separated route lines; pure function, no I/O.
+	},
 	"winnet": {
 		"encoding/binary.BigEndian",    // 🟢 reads big-endian IPv6 group values from DLL buffer; pure value, no I/O.
 		"encoding/binary.LittleEndian", // 🟢 reads little-endian DWORD fields from DLL buffer; pure value, no I/O.
@@ -95,6 +105,7 @@ var internalAllowedSymbols = []string{
 	"strconv.Atoi",                          // 🟢 string-to-int conversion; pure function, no I/O.
 	"strconv.Itoa",                          // 🟢 procinfo: int-to-string conversion for PID directory names; pure function, no I/O.
 	"strconv.ParseInt",                      // 🟢 procinfo: string to int64 with base/bit-size; pure function, no I/O.
+	"strconv.ParseUint",                     // 🟢 procnet: parses hex/decimal route fields; pure function, no I/O.
 	"strings.Fields",                        // 🟢 procinfo: splits a string on whitespace; pure function, no I/O.
 	"strings.HasPrefix",                     // 🟢 procinfo: checks string prefix; pure function, no I/O.
 	"strings.Index",                         // 🟢 procinfo: finds first occurrence of a substring; pure function, no I/O.
