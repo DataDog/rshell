@@ -371,6 +371,7 @@ var builtinPerCommandSymbols = map[string][]string{
 		"github.com/prometheus-community/pro-bing.Statistics", // 🟢 ping round-trip statistics struct; pure data type, no I/O.
 	},
 	"ip": {
+		"bufio.NewScanner",     // 🟢 line-by-line /proc/net/route reading; no write or exec capability.
 		"context.Context",      // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
 		"fmt.Errorf",           // 🟢 error formatting; pure function, no I/O.
 		"fmt.Sprintf",          // 🟢 string formatting; pure function, no I/O.
@@ -385,7 +386,15 @@ var builtinPerCommandSymbols = map[string][]string{
 		"net.IPNet",            // 🟢 IP network struct (IP + Mask); pure type, no network connections.
 		"net.Interface",        // 🟢 network interface descriptor (read-only OS struct); no network connections.
 		"net.Interfaces",       // 🟠 read-only OS interface enumeration; no network connections or I/O.
+		"os.O_RDONLY",          // 🟢 read-only file flag constant; cannot open files by itself.
+		"runtime.GOOS",         // 🟢 current OS name constant; pure constant, no I/O.
+		"strconv.Itoa",         // 🟢 int-to-string conversion; pure function, no I/O.
+		"strconv.ParseUint",    // 🟢 string-to-unsigned-int conversion; pure function, no I/O.
+		"strings.Builder",      // 🟢 efficient string concatenation; pure in-memory buffer, no I/O.
+		"strings.Fields",       // 🟢 splits a string on whitespace; pure function, no I/O.
 		"strings.Join",         // 🟢 concatenates a slice of strings with a separator; pure function, no I/O.
+		"strings.Split",        // 🟢 splits a string by separator; pure function, no I/O.
+		"strings.ToLower",      // 🟢 converts string to lowercase; pure function, no I/O.
 	},
 }
 

@@ -1,0 +1,10 @@
+# ip -6 route is not supported (only IPv4 routes via /proc/net/route).
+description: ip -6 route exits 1 with "IPv6 routing not supported".
+input:
+  script: |+
+    ip -6 route show
+expect:
+  stdout: ""
+  stderr_contains: ["IPv6", "not supported"]
+  exit_code: 1
+skip_assert_against_bash: true
