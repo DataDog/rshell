@@ -41,6 +41,7 @@ The shell is supported on Linux, Windows and macOS.
 
 - **Prefer scenario tests (`tests/scenarios/`) over Go tests.** Scenario tests are declarative YAML files that are automatically validated against both the shell and bash, making them easier to write, review, and maintain. Only use Go tests when scenario tests cannot express the required behaviour (e.g. testing Go APIs directly, complex programmatic assertions).
 - In test scenarios, use `expect.stderr` when possible instead of `stderr_contains`.
+- Always use the YAML `|+` block scalar for `input.script`, `expect.stdout`, and `expect.stderr` values, even single-line ones.
 - Test scenarios are asserted against bash by default. Only set `skip_assert_against_bash: true` for features that intentionally diverge from standard bash behavior (e.g. blocked commands, restricted redirects, readonly enforcement).
 - When expected output differs on Windows (e.g. path separators `\` vs `/`), use Windows-specific assertion fields:
   - `stdout_windows` / `stderr_windows` — override `stdout` / `stderr` on Windows.
