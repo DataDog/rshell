@@ -88,7 +88,11 @@ import (
 )
 
 // Cmd is the ip builtin command descriptor.
-var Cmd = builtins.Command{Name: "ip", MakeFlags: registerFlags}
+var Cmd = builtins.Command{
+	Name:        "ip",
+	Description: "show network interface information",
+	MakeFlags:   registerFlags,
+}
 
 // displayOpts holds the resolved global display options.
 type displayOpts struct {

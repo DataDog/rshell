@@ -114,14 +114,14 @@ func TestHelpIncludesDescriptions(t *testing.T) {
 	// Spot-check a few descriptions.
 	assert.Contains(t, stdout, "concatenate and print files")
 	assert.Contains(t, stdout, "write arguments to stdout")
-	assert.Contains(t, stdout, "display available commands")
+	assert.Contains(t, stdout, "display help for commands")
 	assert.Contains(t, stdout, "list directory contents")
 }
 
 func TestHelpIncludesFooterHint(t *testing.T) {
 	stdout, _, code := runScript(t, "help", "", interp.AllowAllCommands())
 	assert.Equal(t, 0, code)
-	assert.Contains(t, stdout, "Run '<command> --help' for more information on a specific command.")
+	assert.Contains(t, stdout, "Run 'help <command>' for more information on a specific command.")
 }
 
 func TestHelpColumnsAligned(t *testing.T) {
@@ -234,23 +234,23 @@ func TestHelpAlwaysAvailableNoCommands(t *testing.T) {
 
 // --- Error handling ---
 
-func TestHelpRejectsArguments(t *testing.T) {
-	stdout, _, code := runScript(t, "help foo", "", interp.AllowAllCommands())
+func TestHelpUnknownCommandShowsError(t *testing.T) {
+	_, stderr, code := runScript(t, "help foo", "", interp.AllowAllCommands())
 	assert.Equal(t, 1, code)
-	assert.Contains(t, stdout, "Usage: help")
+	assert.Contains(t, stderr, "no help topics match 'foo'")
 }
 
-func TestHelpRejectsMultipleArguments(t *testing.T) {
-	stdout, _, code := runScript(t, "help foo bar baz", "", interp.AllowAllCommands())
-	assert.Equal(t, 1, code)
-	assert.Contains(t, stdout, "Usage: help")
+func TestHelpShowsCommandHelp(t *testing.T) {
+	stdout, _, code := runScript(t, "help echo", "", interp.AllowAllCommands())
+	assert.Equal(t, 0, code)
+	assert.Contains(t, stdout, "echo: echo [-neE]")
 }
 
 func TestHelpFlagPrintsUsage(t *testing.T) {
 	stdout, _, code := runScript(t, "help --help", "", interp.AllowAllCommands())
 	assert.Equal(t, 1, code)
 	assert.Contains(t, stdout, "Usage: help")
-	assert.Contains(t, stdout, "Takes no arguments.")
+	assert.Contains(t, stdout, "Display help for builtin commands.")
 }
 
 func TestHelpUnknownFlagRejected(t *testing.T) {
@@ -287,7 +287,7 @@ func TestHelpListsItself(t *testing.T) {
 	stdout, _, code := runScript(t, "help", "", interp.AllowAllCommands())
 	assert.Equal(t, 0, code)
 	assert.Contains(t, stdout, "help")
-	assert.Contains(t, stdout, "display available commands")
+	assert.Contains(t, stdout, "display help for commands")
 }
 
 // --- Empty stderr on success ---

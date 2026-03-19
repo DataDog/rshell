@@ -5,44 +5,90 @@
 
 // Package help implements the help builtin command.
 //
-// help — display available commands
+// help — display help for commands
 //
-// Usage: help
+// Usage: help [command]
 //
-// List all available builtin commands with a brief description.
-// For detailed information on a specific command, run '<command> --help'.
+// With no arguments, list all available builtin commands with a brief
+// description. When a command name is given, display detailed help for
+// that command.
 //
 // Exit codes:
 //
 //	0  Success.
-//	1  Arguments were provided or --help was requested.
+//	1  Unknown command or --help was requested.
 package help
 
 import (
+	"bytes"
 	"context"
 
 	"github.com/DataDog/rshell/builtins"
 )
 
 // Cmd is the help builtin command descriptor.
-var Cmd = builtins.Command{Name: "help", Description: "display available commands", MakeFlags: registerFlags}
+var Cmd = builtins.Command{
+	Name:        "help",
+	Description: "display help for commands",
+	MakeFlags:   registerFlags,
+}
 
 func printUsage(callCtx *builtins.CallContext) {
-	callCtx.Out("Usage: help\n")
-	callCtx.Out("List all available builtin commands with a brief description.\n")
-	callCtx.Out("Takes no arguments.\n")
+	callCtx.Out("Usage: help [command]\n")
+	callCtx.Out("Display help for builtin commands.\n")
 }
 
 func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 	helpFlag := fs.Bool("help", false, "print usage and exit")
 
-	return func(_ context.Context, callCtx *builtins.CallContext, args []string) builtins.Result {
-		if *helpFlag || len(args) > 0 {
+	return func(ctx context.Context, callCtx *builtins.CallContext, args []string) builtins.Result {
+		if *helpFlag {
 			printUsage(callCtx)
 			return builtins.Result{Code: 1}
 		}
 
-		// Filter to only commands allowed under the current policy.
+		// help <command> — show detailed help for a specific command.
+		if len(args) > 1 {
+			printUsage(callCtx)
+			return builtins.Result{Code: 1}
+		}
+		if len(args) > 0 {
+			name := args[0]
+			if callCtx.CommandAllowed != nil && !callCtx.CommandAllowed(name) {
+				callCtx.Errf("help: no help topics match '%s'\n", name)
+				return builtins.Result{Code: 1}
+			}
+			meta, ok := builtins.Meta(name)
+			if !ok {
+				callCtx.Errf("help: no help topics match '%s'\n", name)
+				return builtins.Result{Code: 1}
+			}
+
+			// Use static Help text if available (for commands that don't
+			// handle --help, like echo, true, false).
+			if meta.Help != "" {
+				callCtx.Outf("%s\n", meta.Help)
+				return builtins.Result{}
+			}
+
+			// Otherwise, invoke the command with --help and capture the output.
+			if handler, ok := builtins.Lookup(name); ok && handler != nil {
+				var buf bytes.Buffer
+				captureCtx := *callCtx
+				captureCtx.Stdout = &buf
+				captureCtx.Stderr = &buf
+				handler(ctx, &captureCtx, []string{"--help"})
+				if buf.Len() > 0 {
+					callCtx.Outf("%s", buf.String())
+					return builtins.Result{}
+				}
+			}
+
+			callCtx.Outf("%s - %s\n", meta.Name, meta.Description)
+			return builtins.Result{}
+		}
+
+		// No arguments — list all allowed commands.
 		allNames := builtins.Names()
 		var names []string
 		for _, name := range allNames {
@@ -65,7 +111,7 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			callCtx.Outf("%-*s  %s\n", maxLen, name, meta.Description)
 		}
 
-		callCtx.Out("\nRun '<command> --help' for more information on a specific command.\n")
+		callCtx.Out("\nRun 'help <command>' for more information on a specific command.\n")
 		return builtins.Result{}
 	}
 }

@@ -76,7 +76,11 @@ import (
 )
 
 // Cmd is the cat builtin command descriptor.
-var Cmd = builtins.Command{Name: "cat", Description: "concatenate and print files", MakeFlags: registerFlags}
+var Cmd = builtins.Command{
+	Name:        "cat",
+	Description: "concatenate and print files",
+	MakeFlags:   registerFlags,
+}
 
 // MaxLineBytes is the per-line buffer cap for the line scanner. Lines
 // longer than this are reported as an error instead of being buffered.

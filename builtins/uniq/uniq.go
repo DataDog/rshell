@@ -85,7 +85,11 @@ import (
 )
 
 // Cmd is the uniq builtin command descriptor.
-var Cmd = builtins.Command{Name: "uniq", Description: "report or omit repeated lines", MakeFlags: registerFlags}
+var Cmd = builtins.Command{
+	Name:        "uniq",
+	Description: "report or omit repeated lines",
+	MakeFlags:   registerFlags,
+}
 
 // MaxLineBytes is the per-line buffer cap for the line scanner.
 const MaxLineBytes = 1 << 20 // 1 MiB

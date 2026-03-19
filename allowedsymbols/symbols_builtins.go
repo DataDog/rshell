@@ -125,6 +125,7 @@ var builtinPerCommandSymbols = map[string][]string{
 		"strings.Split",     // 🟢 splits a string by separator into a slice; pure function, no I/O.
 	},
 	"help": {
+		"bytes.Buffer",    // 🟢 in-memory buffer to capture --help output from commands; no I/O side effects.
 		"context.Context", // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
 	},
 	"head": {
@@ -388,6 +389,7 @@ var builtinAllowedSymbols = []string{
 	"bufio.NewScanner",    // 🟢 line-by-line input reading (e.g. head, cat); no write or exec capability.
 	"bufio.Scanner",       // 🟢 scanner type for buffered input reading; no write or exec capability.
 	"bufio.SplitFunc",     // 🟢 type for custom scanner split functions; pure type, no I/O.
+	"bytes.Buffer",        // 🟢 in-memory buffer to capture command output; no I/O side effects.
 	"bytes.Equal",         // 🟢 compares two byte slices for equality; pure function, no I/O.
 	"bytes.IndexByte",     // 🟢 finds a byte in a byte slice; pure function, no I/O.
 	"bytes.NewReader",     // 🟢 wraps a byte slice as an io.Reader; pure in-memory, no I/O.

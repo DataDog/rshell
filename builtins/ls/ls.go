@@ -99,7 +99,11 @@ const MaxDirEntries = 1_000
 var errFailed = errors.New("ls: one or more errors occurred")
 
 // Cmd is the ls builtin command descriptor.
-var Cmd = builtins.Command{Name: "ls", Description: "list directory contents", MakeFlags: registerFlags}
+var Cmd = builtins.Command{
+	Name:        "ls",
+	Description: "list directory contents",
+	MakeFlags:   registerFlags,
+}
 
 func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 	// Preserve parse order so Visit() returns flags in the order set.

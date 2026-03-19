@@ -54,7 +54,24 @@ import (
 )
 
 // Cmd is the echo builtin command descriptor.
-var Cmd = builtins.Command{Name: "echo", Description: "write arguments to stdout", MakeFlags: builtins.NoFlags(run)}
+var Cmd = builtins.Command{
+	Name:        "echo",
+	Description: "write arguments to stdout",
+	Help: `echo: echo [-neE] [arg ...]
+    Write arguments to the standard output.
+
+    Display the ARGs, separated by a single space character and followed by a
+    newline, on the standard output.
+
+    Options:
+      -n  do not output the trailing newline
+      -e  enable interpretation of backslash escapes
+      -E  disable interpretation of backslash escapes (default)
+
+    Exit Status:
+    Returns success unless a write error occurs.`,
+	MakeFlags: builtins.NoFlags(run),
+}
 
 func run(_ context.Context, callCtx *builtins.CallContext, args []string) builtins.Result {
 	// Parse flags: bash treats leading args matching -[neE]+ as flags.

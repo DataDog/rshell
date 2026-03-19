@@ -81,10 +81,18 @@ import (
 )
 
 // Cmd is the "test" builtin command registration.
-var Cmd = builtins.Command{Name: "test", Description: "evaluate conditional expression", MakeFlags: builtins.NoFlags(runTest)}
+var Cmd = builtins.Command{
+	Name:        "test",
+	Description: "evaluate conditional expression",
+	MakeFlags:   builtins.NoFlags(runTest),
+}
 
 // BracketCmd is the "[" builtin command registration.
-var BracketCmd = builtins.Command{Name: "[", Description: "evaluate conditional expression", MakeFlags: builtins.NoFlags(runBracket)}
+var BracketCmd = builtins.Command{
+	Name:        "[",
+	Description: "evaluate conditional expression",
+	MakeFlags:   builtins.NoFlags(runBracket),
+}
 
 const helpText = `Usage: test EXPRESSION
    or: [ EXPRESSION ]

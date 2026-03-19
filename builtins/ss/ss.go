@@ -104,7 +104,11 @@ import (
 )
 
 // Cmd is the ss builtin command descriptor.
-var Cmd = builtins.Command{Name: "ss", MakeFlags: registerFlags}
+var Cmd = builtins.Command{
+	Name:        "ss",
+	Description: "display socket statistics",
+	MakeFlags:   registerFlags,
+}
 
 // MaxLineBytes is the per-line buffer cap for the Linux /proc/net/ scanner.
 const MaxLineBytes = 1 << 20 // 1 MiB

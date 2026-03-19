@@ -125,7 +125,11 @@ import (
 )
 
 // Cmd is the grep builtin command descriptor.
-var Cmd = builtins.Command{Name: "grep", Description: "print lines that match patterns", MakeFlags: registerFlags}
+var Cmd = builtins.Command{
+	Name:        "grep",
+	Description: "print lines that match patterns",
+	MakeFlags:   registerFlags,
+}
 
 // MaxLineBytes is the per-line buffer cap for the line scanner. Lines
 // longer than this are reported as an error instead of being buffered.

@@ -72,7 +72,11 @@ import (
 )
 
 // Cmd is the strings builtin command descriptor.
-var Cmd = builtins.Command{Name: "strings", Description: "print printable character sequences", MakeFlags: registerFlags}
+var Cmd = builtins.Command{
+	Name:        "strings",
+	Description: "print printable character sequences",
+	MakeFlags:   registerFlags,
+}
 
 const (
 	defaultMinLen = 4

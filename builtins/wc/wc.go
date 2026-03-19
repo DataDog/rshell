@@ -68,7 +68,11 @@ import (
 )
 
 // Cmd is the wc builtin command descriptor.
-var Cmd = builtins.Command{Name: "wc", Description: "print newline, word, and byte counts", MakeFlags: registerFlags}
+var Cmd = builtins.Command{
+	Name:        "wc",
+	Description: "print newline, word, and byte counts",
+	MakeFlags:   registerFlags,
+}
 
 const chunkSize = 32 * 1024  // 32 KiB read buffer
 const nonRegularMinWidth = 7 // GNU wc minimum column width for non-regular files

@@ -85,7 +85,11 @@ import (
 )
 
 // Cmd is the tail builtin command descriptor.
-var Cmd = builtins.Command{Name: "tail", Description: "output the last part of files", MakeFlags: registerFlags}
+var Cmd = builtins.Command{
+	Name:        "tail",
+	Description: "output the last part of files",
+	MakeFlags:   registerFlags,
+}
 
 // MaxCount is the maximum accepted line or byte count. Values above this
 // are clamped to prevent huge theoretical allocations.

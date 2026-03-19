@@ -25,9 +25,26 @@ import (
 	"github.com/DataDog/rshell/builtins/internal/loopctl"
 )
 
+const helpText = "break: break [n]\n" +
+	"    Exit for, while, or until loops.\n" +
+	"    \n" +
+	"    Exit a FOR, WHILE or UNTIL loop.  If N is specified, break N enclosing\n" +
+	"    loops.\n" +
+	"    \n" +
+	"    Exit Status:\n" +
+	"    The exit status is 0 unless N is not greater than or equal to 1."
+
 // Cmd is the break builtin command descriptor.
-var Cmd = builtins.Command{Name: "break", Description: "exit from a loop", MakeFlags: builtins.NoFlags(run)}
+var Cmd = builtins.Command{
+	Name:        "break",
+	Description: "exit from a loop",
+	MakeFlags:   builtins.NoFlags(run),
+}
 
 func run(_ context.Context, callCtx *builtins.CallContext, args []string) builtins.Result {
+	if len(args) > 0 && args[0] == "--help" {
+		callCtx.Outf("%s\n", helpText)
+		return builtins.Result{Code: 2}
+	}
 	return loopctl.LoopControl(callCtx, "break", args)
 }

@@ -97,7 +97,11 @@ func isNotExist(err error) bool {
 const maxTraversalDepth = 256
 
 // Cmd is the find builtin command descriptor.
-var Cmd = builtins.Command{Name: "find", Description: "search for files in a directory hierarchy", MakeFlags: builtins.NoFlags(run)}
+var Cmd = builtins.Command{
+	Name:        "find",
+	Description: "search for files in a directory hierarchy",
+	MakeFlags:   builtins.NoFlags(run),
+}
 
 func run(ctx context.Context, callCtx *builtins.CallContext, args []string) builtins.Result {
 	// Parse global options (-L) and separate paths from expression.

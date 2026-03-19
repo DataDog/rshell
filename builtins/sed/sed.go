@@ -116,7 +116,11 @@ import (
 )
 
 // Cmd is the sed builtin command descriptor.
-var Cmd = builtins.Command{Name: "sed", Description: "stream editor for filtering and transforming text", MakeFlags: registerFlags}
+var Cmd = builtins.Command{
+	Name:        "sed",
+	Description: "stream editor for filtering and transforming text",
+	MakeFlags:   registerFlags,
+}
 
 // MaxLineBytes is the per-line buffer cap for the line scanner.
 const MaxLineBytes = 1 << 20 // 1 MiB

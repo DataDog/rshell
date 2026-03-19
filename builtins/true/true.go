@@ -23,7 +23,15 @@ import (
 )
 
 // Cmd is the true builtin command descriptor.
-var Cmd = builtins.Command{Name: "true", Description: "return successful exit status", MakeFlags: builtins.NoFlags(run)}
+var Cmd = builtins.Command{
+	Name:        "true",
+	Description: "return successful exit status",
+	Help: `true: true
+    Return a successful result.
+
+    Exit with a status code indicating success.`,
+	MakeFlags: builtins.NoFlags(run),
+}
 
 func run(_ context.Context, _ *builtins.CallContext, _ []string) builtins.Result {
 	return builtins.Result{}

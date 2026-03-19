@@ -65,7 +65,11 @@ import (
 )
 
 // Cmd is the tr builtin command descriptor.
-var Cmd = builtins.Command{Name: "tr", Description: "translate or delete characters", MakeFlags: registerFlags}
+var Cmd = builtins.Command{
+	Name:        "tr",
+	Description: "translate or delete characters",
+	MakeFlags:   registerFlags,
+}
 
 const readBufSize = 32 * 1024
 
