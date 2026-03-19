@@ -17,7 +17,7 @@ Blocked features are rejected before execution with exit code 2.
 - ✅ `head [-n N|-c N] [-q|-v] [FILE]...` — output the first part of files (default: first 10 lines); `-z`/`--zero-terminated` and `--follow` are rejected
 - ✅ `help` — display all available builtin commands with brief descriptions; for detailed flag info, use `<command> --help`
 - ✅ `ip [-o|-4|-6|--brief] addr|link [show] [dev IFNAME]` — show network interface addresses and link-layer info (read-only); write ops (`add`, `del`, `flush`, `set`), namespace ops (`netns`, `-n`), and batch mode (`-b`/`-B`/`--force`) are blocked
-- ✅ `ip route [show|list]` — show IPv4 routing table (Linux only; reads `/proc/net/route`); at most 10 000 entries loaded; lines longer than 1 MiB are skipped
+- ✅ `ip route [show|list]` — show IPv4 routing table (Linux only; reads `/proc/net/route`); at most 10 000 entries loaded; lines longer than 1 MiB abort parsing with an error (exit 1)
 - ✅ `ip route get ADDRESS` — show the route selected by longest-prefix-match for ADDRESS (Linux only); write ops (`add`, `del`, `flush`, `replace`, `change`, `save`, `restore`) are blocked; `-6` (IPv6 routing) is not supported
 - ✅ `sort [-rnubfds] [-k KEYDEF] [-t SEP] [-c|-C] [FILE]...` — sort lines of text files; `-o`, `--compress-program`, and `-T` are rejected (filesystem write / exec)
 - ✅ `ss [-tuaxlans4689Hoehs] [OPTION]...` — display network socket statistics; reads kernel socket state directly (Linux: `/proc/net/`; macOS: sysctl; Windows: iphlpapi.dll); `-F`/`--filter` (GTFOBins file-read), `-p`/`--processes` (PID disclosure), `-K`/`--kill`, `-E`/`--events`, and `-N`/`--net` are rejected
