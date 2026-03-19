@@ -278,10 +278,19 @@ Store the returned reaction ID so it can be removed later.
 
 ### 1. Determine review event
 
-Based on findings:
+First check whether the authenticated user is the PR author:
+
+```bash
+PR_AUTHOR=$(gh api repos/{owner}/{repo}/pulls/{pr_number} --jq '.user.login')
+REVIEWER=$(gh api user --jq '.login')
+```
+
+**If the reviewer is the PR author** (self-review), always use `COMMENT` — GitHub does not permit self-approval, and `REQUEST_CHANGES` on your own PR blocks merges unnecessarily.
+
+**If the reviewer is not the PR author**, choose based on findings:
+- **No findings at all** → `APPROVE`
 - **No P0/P1 findings** → `COMMENT`
 - **Any P0 or P1 finding** → `REQUEST_CHANGES`
-- **No findings at all** → `APPROVE`
 
 ### 2. Submit the review
 
