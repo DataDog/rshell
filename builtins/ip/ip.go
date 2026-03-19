@@ -649,7 +649,7 @@ func formatRoute(r *procnet.Route) string {
 
 	if r.Metric != 0 {
 		b.WriteString(" metric ")
-		b.WriteString(strconv.Itoa(int(r.Metric)))
+		b.WriteString(strconv.FormatUint(uint64(r.Metric), 10))
 	}
 
 	return b.String()
