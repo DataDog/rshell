@@ -385,6 +385,7 @@ var builtinPerCommandSymbols = map[string][]string{
 		"net.IPNet",            // 🟢 IP network struct (IP + Mask); pure type, no network connections.
 		"net.Interface",        // 🟢 network interface descriptor (read-only OS struct); no network connections.
 		"net.Interfaces",       // 🟠 read-only OS interface enumeration; no network connections or I/O.
+		"strconv.FormatUint",   // 🟢 uint-to-string conversion for metric formatting; pure function, no I/O.
 		"strconv.Itoa",         // 🟢 int-to-string conversion; pure function, no I/O.
 		"strconv.ParseUint",    // 🟢 string-to-unsigned-int conversion for parseIPv4; pure function, no I/O.
 		"strings.Builder",      // 🟢 efficient string concatenation; pure in-memory buffer, no I/O.

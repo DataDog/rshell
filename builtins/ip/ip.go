@@ -567,6 +567,10 @@ func routeCmd(ctx context.Context, callCtx *builtins.CallContext, do displayOpts
 			callCtx.Errf("ip: route get: missing address argument\n")
 			return builtins.Result{Code: 1}
 		}
+		if len(args) > 2 {
+			callCtx.Errf("ip: route get: unsupported argument %q\n", args[2])
+			return builtins.Result{Code: 1}
+		}
 		return routeGet(ctx, callCtx, args[1])
 	case "add", "del", "delete", "change", "replace", "flush", "save", "restore":
 		callCtx.Errf("ip: route: %s: write operations are not permitted\n", sub)
