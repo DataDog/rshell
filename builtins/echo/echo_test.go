@@ -240,10 +240,10 @@ func TestEchoFlagAfterTextIsLiteral(t *testing.T) {
 	assert.Equal(t, "hello -n\n", stdout)
 }
 
-func TestEchoHelpDisplaysUsage(t *testing.T) {
+func TestEchoHelpIsLiteral(t *testing.T) {
 	stdout, _, code := runScript(t, "echo --help")
 	assert.Equal(t, 0, code)
-	assert.Contains(t, stdout, "Usage: echo")
+	assert.Equal(t, "--help\n", stdout)
 }
 
 func TestEchoVersionIsLiteral(t *testing.T) {
