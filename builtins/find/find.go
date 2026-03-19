@@ -182,7 +182,12 @@ optLoop:
 	}
 
 	// Post-parse validation: check -exec/-execdir commands are allowed.
+	// Commands containing {} are skipped here — the substituted name is
+	// validated at eval-time when the replacement is known.
 	for _, cmd := range collectExecCmds(expression) {
+		if strings.Contains(cmd, "{}") {
+			continue
+		}
 		if callCtx.CommandAllowed != nil && !callCtx.CommandAllowed(cmd) {
 			callCtx.Errf("find: '%s': command not allowed\n", cmd)
 			return builtins.Result{Code: 1}

@@ -280,11 +280,6 @@ func evalExecDir(ec *evalContext, e *expr) evalResult {
 		ec.failed = true
 		return evalResult{}
 	}
-	if ec.callCtx.CommandAllowed != nil && !ec.callCtx.CommandAllowed(e.execCmd) {
-		ec.callCtx.Errf("find: -execdir: '%s': command not allowed\n", e.execCmd)
-		ec.failed = true
-		return evalResult{}
-	}
 	base := baseName(ec.relPath)
 	replacement := "./" + base
 	if base == "/" {
@@ -292,11 +287,17 @@ func evalExecDir(ec *evalContext, e *expr) evalResult {
 	} else if len(ec.relPath) > 0 && ec.relPath[len(ec.relPath)-1] == '/' {
 		replacement += "/"
 	}
+	cmd := strings.ReplaceAll(e.execCmd, "{}", replacement)
+	if ec.callCtx.CommandAllowed != nil && !ec.callCtx.CommandAllowed(cmd) {
+		ec.callCtx.Errf("find: -execdir: '%s': command not allowed\n", cmd)
+		ec.failed = true
+		return evalResult{}
+	}
 	args := make([]string, len(e.execArgs))
 	for i, a := range e.execArgs {
 		args[i] = strings.ReplaceAll(a, "{}", replacement)
 	}
-	exitCode, err := ec.callCtx.RunCommand(ec.ctx, ec.execDirParent, e.execCmd, args)
+	exitCode, err := ec.callCtx.RunCommand(ec.ctx, ec.execDirParent, cmd, args)
 	if err != nil {
 		ec.callCtx.Errf("find: '%s': %s\n", e.execCmd, err)
 		ec.failed = true
@@ -316,17 +317,18 @@ func evalExec(ec *evalContext, e *expr) evalResult {
 		ec.failed = true
 		return evalResult{}
 	}
-	if ec.callCtx.CommandAllowed != nil && !ec.callCtx.CommandAllowed(e.execCmd) {
-		ec.callCtx.Errf("find: -exec: '%s': command not allowed\n", e.execCmd)
+	replacement := ec.printPath
+	cmd := strings.ReplaceAll(e.execCmd, "{}", replacement)
+	if ec.callCtx.CommandAllowed != nil && !ec.callCtx.CommandAllowed(cmd) {
+		ec.callCtx.Errf("find: -exec: '%s': command not allowed\n", cmd)
 		ec.failed = true
 		return evalResult{}
 	}
-	replacement := ec.printPath
 	args := make([]string, len(e.execArgs))
 	for i, a := range e.execArgs {
 		args[i] = strings.ReplaceAll(a, "{}", replacement)
 	}
-	exitCode, err := ec.callCtx.RunCommand(ec.ctx, ec.execWorkDir, e.execCmd, args)
+	exitCode, err := ec.callCtx.RunCommand(ec.ctx, ec.execWorkDir, cmd, args)
 	if err != nil {
 		ec.callCtx.Errf("find: '%s': %s\n", e.execCmd, err)
 		ec.failed = true
