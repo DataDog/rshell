@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="logo.png" alt="rshell logo" width="600"/>
+  <img src="assets/logo.png" alt="rshell logo" width="600"/>
 </p>
 
 # rshell - A Restricted Shell for AI Agents
