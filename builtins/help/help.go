@@ -20,6 +20,7 @@
 package help
 
 import (
+	"bytes"
 	"context"
 
 	"github.com/DataDog/rshell/builtins"
@@ -29,12 +30,7 @@ import (
 var Cmd = builtins.Command{
 	Name:        "help",
 	Description: "display help for commands",
-	Help: `Usage: help [command]
-Display help for builtin commands.
-
-With no arguments, list all available commands with a brief description.
-When COMMAND is given, display detailed help for that command.`,
-	MakeFlags: registerFlags,
+	MakeFlags:   registerFlags,
 }
 
 func printUsage(callCtx *builtins.CallContext) {
@@ -45,7 +41,7 @@ func printUsage(callCtx *builtins.CallContext) {
 func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 	helpFlag := fs.Bool("help", false, "print usage and exit")
 
-	return func(_ context.Context, callCtx *builtins.CallContext, args []string) builtins.Result {
+	return func(ctx context.Context, callCtx *builtins.CallContext, args []string) builtins.Result {
 		if *helpFlag {
 			printUsage(callCtx)
 			return builtins.Result{Code: 1}
@@ -63,11 +59,28 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 				callCtx.Errf("help: no help topics match '%s'\n", name)
 				return builtins.Result{Code: 1}
 			}
+
+			// Use static Help text if available (for commands that don't
+			// handle --help, like echo, true, false).
 			if meta.Help != "" {
 				callCtx.Outf("%s\n", meta.Help)
-			} else {
-				callCtx.Outf("%s - %s\n", meta.Name, meta.Description)
+				return builtins.Result{}
 			}
+
+			// Otherwise, invoke the command with --help and capture the output.
+			if handler, ok := builtins.Lookup(name); ok && handler != nil {
+				var buf bytes.Buffer
+				captureCtx := *callCtx
+				captureCtx.Stdout = &buf
+				captureCtx.Stderr = &buf
+				handler(ctx, &captureCtx, []string{"--help"})
+				if buf.Len() > 0 {
+					callCtx.Outf("%s", buf.String())
+					return builtins.Result{}
+				}
+			}
+
+			callCtx.Outf("%s - %s\n", meta.Name, meta.Description)
 			return builtins.Result{}
 		}
 

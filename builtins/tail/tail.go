@@ -88,18 +88,7 @@ import (
 var Cmd = builtins.Command{
 	Name:        "tail",
 	Description: "output the last part of files",
-	Help: `Usage: tail [OPTION]... [FILE]...
-Print the last 10 lines of each FILE to standard output.
-With no FILE, or when FILE is -, read standard input.
-
-  -c, --bytes string      output the last N bytes instead of lines
-  -h, --help              print usage and exit
-  -n, --lines string      output the last N lines instead of the last 10
-  -q, --quiet             never print file name headers
-      --silent            alias for --quiet
-  -v, --verbose           always print file name headers
-  -z, --zero-terminated   use NUL as line delimiter`,
-	MakeFlags: registerFlags,
+	MakeFlags:   registerFlags,
 }
 
 // MaxCount is the maximum accepted line or byte count. Values above this

@@ -100,50 +100,7 @@ const maxTraversalDepth = 256
 var Cmd = builtins.Command{
 	Name:        "find",
 	Description: "search for files in a directory hierarchy",
-	Help: `Usage: find [-L] [-P] [path...] [expression]
-
-Search directory trees, evaluating an expression for each file found.
-Default path is the current directory; default expression is -print.
-
-Options:
-  --help                     Print this help and exit.
-  -L                         Follow symbolic links.
-  -P                         Never follow symbolic links (default).
-
-Tests:
-  -name PATTERN              Base name matches shell glob PATTERN.
-  -iname PATTERN             Like -name but case-insensitive.
-  -path PATTERN              Full path matches shell glob PATTERN.
-  -ipath PATTERN             Like -path but case-insensitive.
-  -type TYPE                 File type: b,c,d,f,l,p,s. Comma-separated for OR.
-  -size N[cwbkMG]            File size (+N=greater, -N=less, N=exact).
-  -empty                     Empty regular file or directory.
-  -newer FILE                Modified more recently than FILE.
-  -mtime N                   Modified N days ago (+N=more, -N=less).
-  -mmin N                    Modified N minutes ago (+N=more, -N=less).
-  -perm MODE                 Permission bits match MODE (octal or symbolic).
-  -maxdepth N                Descend at most N levels.
-  -mindepth N                Apply tests only at depth >= N.
-  -true                      Always true.
-  -false                     Always false.
-
-Actions:
-  -print                     Print path followed by newline.
-  -print0                    Print path followed by NUL.
-  -prune                     Skip directory subtree.
-  -quit                      Exit immediately.
-
-Operators:
-  ( EXPR )                   Grouping.
-  ! EXPR / -not EXPR         Negation.
-  EXPR -a EXPR / EXPR -and EXPR  Conjunction (implicit).
-  EXPR -o EXPR / EXPR -or EXPR   Disjunction.
-
-Blocked predicates [sandbox]:
-  -exec, -execdir, -delete, -ok, -okdir          Execution/deletion.
-  -fls, -fprint, -fprint0, -fprintf              File writes.
-  -regex, -iregex                                ReDoS risk.`,
-	MakeFlags: builtins.NoFlags(run),
+	MakeFlags:   builtins.NoFlags(run),
 }
 
 func run(ctx context.Context, callCtx *builtins.CallContext, args []string) builtins.Result {

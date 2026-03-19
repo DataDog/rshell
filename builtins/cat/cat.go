@@ -79,22 +79,7 @@ import (
 var Cmd = builtins.Command{
 	Name:        "cat",
 	Description: "concatenate and print files",
-	Help: `Usage: cat [OPTION]... [FILE]...
-Concatenate FILE(s) to standard output.
-With no FILE, or when FILE is -, read standard input.
-
-      --help                    print usage and exit
-  -n, --number                  number all output lines
-  -b, --number-nonblank         number non-blank output lines, overrides -n
-  -A, --show-all                equivalent to -vET
-  -E, --show-ends               display $ at end of each line
-  -v, --show-nonprinting        use ^ and M- notation, except for LFD and TAB
-  -e, --show-nonprinting-ends   equivalent to -vE
-  -t, --show-nonprinting-tabs   equivalent to -vT
-  -T, --show-tabs               display TAB characters as ^I
-  -s, --squeeze-blank           suppress repeated empty output lines
-  -u, --unbuffered              ignored`,
-	MakeFlags: registerFlags,
+	MakeFlags:   registerFlags,
 }
 
 // MaxLineBytes is the per-line buffer cap for the line scanner. Lines

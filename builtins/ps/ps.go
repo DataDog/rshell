@@ -54,15 +54,7 @@ import (
 var Cmd = builtins.Command{
 	Name:        "ps",
 	Description: "report process status",
-	Help: `Usage: ps [-e|-A] [-f] [-p PIDLIST]
-Report process status.
-
-  -A, --All          select all processes (same as -e)
-  -e, --all          select all processes
-  -f, --full         full-format listing
-      --help         print usage and exit
-  -p, --pid string   select by PID list (comma or space separated)`,
-	MakeFlags: registerFlags,
+	MakeFlags:   registerFlags,
 }
 
 func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {

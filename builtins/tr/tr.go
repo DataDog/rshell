@@ -68,16 +68,7 @@ import (
 var Cmd = builtins.Command{
 	Name:        "tr",
 	Description: "translate or delete characters",
-	Help: `Usage: tr [OPTION]... SET1 [SET2]
-Translate, squeeze, and/or delete characters from standard input,
-writing to standard output.
-
-  -c, --complement        use complement of SET1
-  -d, --delete            delete characters in SET1
-  -h, --help              print usage and exit
-  -s, --squeeze-repeats   squeeze repeated characters
-  -t, --truncate-set1     truncate SET1 to length of SET2`,
-	MakeFlags: registerFlags,
+	MakeFlags:   registerFlags,
 }
 
 const readBufSize = 32 * 1024

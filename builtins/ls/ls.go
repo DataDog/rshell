@@ -102,26 +102,7 @@ var errFailed = errors.New("ls: one or more errors occurred")
 var Cmd = builtins.Command{
 	Name:        "ls",
 	Description: "list directory contents",
-	Help: `Usage: ls [OPTION]... [FILE]...
-List directory contents.
-List information about the FILEs (the current directory by default).
-
-  -a, --all              do not ignore entries starting with .
-  -A, --almost-all       do not ignore . and ..
-  -d, --directory        list directories themselves, not their contents
-  -r, --reverse          reverse order while sorting
-  -S, --sort-size        sort by file size, largest first
-  -t, --sort-time        sort by modification time, newest first
-  -F, --classify         append indicator to entries
-  -p, --append-slash     append / indicator to directories
-  -R, --recursive        list subdirectories recursively
-  -l, --long             use a long listing format
-  -h, --human-readable   with -l, print human-readable sizes
-  -1, --one              list one file per line
-      --offset int       skip first N entries (pagination)
-      --limit int        show at most N entries (capped at MaxDirEntries)
-      --help             print usage and exit`,
-	MakeFlags: registerFlags,
+	MakeFlags:   registerFlags,
 }
 
 func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {

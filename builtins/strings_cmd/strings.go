@@ -75,18 +75,7 @@ import (
 var Cmd = builtins.Command{
 	Name:        "strings",
 	Description: "print printable character sequences",
-	Help: `Usage: strings [OPTION]... [FILE]...
-Print printable character sequences in files.
-With no FILE, or when FILE is -, read standard input.
-
-  -a, --all                       scan entire file (default; accepted for POSIX compatibility)
-  -n, --bytes int                 minimum string length (default 4)
-  -h, --help                      print usage and exit
-  -o, --offset-octal              alias for -t o (print octal offsets)
-  -s, --output-separator string   output separator between strings (default newline)
-  -f, --print-file-name           print file name before each string
-  -t, --radix string              print file offset in given radix: o=octal, d=decimal, x=hex`,
-	MakeFlags: registerFlags,
+	MakeFlags:   registerFlags,
 }
 
 const (
