@@ -191,7 +191,8 @@ func FuzzIPRouteGetAddr(f *testing.F) {
 			return
 		}
 		// Reject shell metacharacters that would change the script meaning.
-		for _, ch := range []string{"\n", "\r", ";", "|", "&", "`", "$", "\"", "'", "(", ")", "{", "}", "<", ">"} {
+		// ~ triggers tilde expansion which is blocked by the safe shell (exit 2).
+		for _, ch := range []string{"\n", "\r", ";", "|", "&", "`", "$", "\"", "'", "(", ")", "{", "}", "<", ">", "~"} {
 			if strings.Contains(addr, ch) {
 				return
 			}
