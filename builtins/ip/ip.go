@@ -553,6 +553,10 @@ func routeCmd(ctx context.Context, callCtx *builtins.CallContext, do displayOpts
 		callCtx.Errf("ip: route: IPv6 routing not supported\n")
 		return builtins.Result{Code: 1}
 	}
+	if do.oneline || do.brief {
+		callCtx.Errf("ip: route: -o/--brief flags are not supported for route output\n")
+		return builtins.Result{Code: 1}
+	}
 
 	sub := "show"
 	if len(args) > 0 {

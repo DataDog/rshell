@@ -44,6 +44,9 @@ eth0	0002A8C0	00000000	0000	0	0	200	00FFFFFF	0	0	0
 // tree (dir/net/route), patches ipcmd.ProcNetRoutePath to the temp directory,
 // and restores the original path via t.Cleanup.
 //
+// It acquires procNetRouteMu (defined in ip_route_fuzz_linux_test.go) for the
+// duration of the test to prevent data races if any test is ever made parallel.
+//
 // The procnet package opens procPath/net/route directly with os.Open, so no
 // AllowedPaths sandbox configuration is needed — use cmdRun for all route tests.
 func writeProcNetRoute(t *testing.T, content string) {
@@ -52,9 +55,13 @@ func writeProcNetRoute(t *testing.T, content string) {
 	netDir := filepath.Join(dir, "net")
 	require.NoError(t, os.MkdirAll(netDir, 0o755))
 	require.NoError(t, os.WriteFile(filepath.Join(netDir, "route"), []byte(content), 0o644))
+	procNetRouteMu.Lock()
 	orig := ipcmd.ProcNetRoutePath
 	ipcmd.ProcNetRoutePath = dir
-	t.Cleanup(func() { ipcmd.ProcNetRoutePath = orig })
+	t.Cleanup(func() {
+		ipcmd.ProcNetRoutePath = orig
+		procNetRouteMu.Unlock()
+	})
 }
 
 // ============================================================================
