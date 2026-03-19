@@ -82,7 +82,8 @@ func Popcount(v uint32) int {
 }
 
 // LongestPrefixMatch returns the route that best matches addr by
-// longest-prefix-match, or nil if no route matches.
+// longest-prefix-match with metric as a tie-breaker (lower metric wins),
+// or nil if no route matches.
 func LongestPrefixMatch(routes []Route, addr uint32) *Route {
 	var best *Route
 	bestBits := -1
@@ -90,7 +91,7 @@ func LongestPrefixMatch(routes []Route, addr uint32) *Route {
 		r := &routes[i]
 		if addr&r.Mask == r.Dest {
 			bits := Popcount(r.Mask)
-			if bits > bestBits {
+			if bits > bestBits || (bits == bestBits && r.Metric < best.Metric) {
 				bestBits = bits
 				best = r
 			}

@@ -235,6 +235,22 @@ func TestIPRouteGetLongestPrefixMatch(t *testing.T) {
 	assert.NotContains(t, stdout, "via 10.0.0.2")
 }
 
+// TestIPRouteGetMetricTieBreak verifies that when two routes have equal prefix
+// length, the one with the lower metric is preferred.
+func TestIPRouteGetMetricTieBreak(t *testing.T) {
+	// Two default routes (/0) — one with metric 100 (gw1), one with metric 50 (gw2).
+	// gw1 = 10.0.0.1 = 0x0100000A, gw2 = 10.0.0.2 = 0x0200000A
+	content := "Iface\tDestination\tGateway\tFlags\tRefCnt\tUse\tMetric\tMask\tMTU\tWindow\tIRTT\n" +
+		"eth0\t00000000\t0100000A\t0003\t0\t0\t100\t00000000\t0\t0\t0\n" +
+		"eth1\t00000000\t0200000A\t0003\t0\t0\t50\t00000000\t0\t0\t0\n"
+	writeProcNetRoute(t, content)
+	stdout, _, code := cmdRun(t, "ip route get 8.8.8.8")
+	assert.Equal(t, 0, code)
+	// Must select the lower-metric gateway (10.0.0.2 via eth1, metric 50).
+	assert.Contains(t, stdout, "via 10.0.0.2")
+	assert.NotContains(t, stdout, "via 10.0.0.1")
+}
+
 // TestIPRouteGetInvalidAddr verifies get with a non-IP argument returns exit 1.
 // Input validation happens before file access, so no AllowedPaths needed.
 func TestIPRouteGetInvalidAddr(t *testing.T) {
