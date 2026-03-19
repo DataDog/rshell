@@ -8,4 +8,4 @@ expect:
     Usage: false
     Exit with a status code indicating failure.
   stderr: ""
-  exit_code: 0
+  exit_code: 1

@@ -28,7 +28,7 @@ var Cmd = builtins.Command{Name: "false", Description: "return unsuccessful exit
 func run(_ context.Context, callCtx *builtins.CallContext, args []string) builtins.Result {
 	if len(args) > 0 && args[0] == "--help" {
 		callCtx.Out("Usage: false\nExit with a status code indicating failure.\n")
-		return builtins.Result{}
+		return builtins.Result{Code: 1}
 	}
 	return builtins.Result{Code: 1}
 }
