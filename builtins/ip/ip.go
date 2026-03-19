@@ -621,7 +621,7 @@ func routeGet(ctx context.Context, callCtx *builtins.CallContext, addr string) b
 	}
 
 	best := procnet.LongestPrefixMatch(routes, addrVal)
-	if best == nil {
+	if best == nil || best.Flags&procnet.FlagReject != 0 {
 		callCtx.Errf("ip: route get: network unreachable\n")
 		return builtins.Result{Code: 1}
 	}
@@ -642,6 +642,20 @@ func routeGet(ctx context.Context, callCtx *builtins.CallContext, addr string) b
 // formatRoute returns the ip-route(8) display string for r.
 func formatRoute(r *procnet.Route) string {
 	var b strings.Builder
+
+	// Reject (unreachable/blackhole) routes are displayed with a "unreachable"
+	// prefix and no "dev" field, matching real ip-route(8) output.
+	if r.Flags&procnet.FlagReject != 0 {
+		b.WriteString("unreachable ")
+		if r.Dest == 0 && r.Mask == 0 {
+			b.WriteString("default")
+		} else {
+			b.WriteString(procnet.HexToIPStr(r.Dest))
+			b.WriteByte('/')
+			b.WriteString(strconv.Itoa(procnet.Popcount(r.Mask)))
+		}
+		return b.String()
+	}
 
 	if r.Dest == 0 && r.Mask == 0 {
 		b.WriteString("default")

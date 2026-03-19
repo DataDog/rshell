@@ -118,6 +118,55 @@ func TestIPRouteShowDownRouteSkipped(t *testing.T) {
 	assert.NotContains(t, stdout, "192.168.2.0")
 }
 
+// TestIPRouteShowRejectRoute verifies that RTF_REJECT routes (flags & 0x0200)
+// are included in "ip route show" output with the "unreachable" prefix and no
+// "dev" field, matching real ip-route(8) behaviour.
+//
+// In /proc/net/route, an unreachable route has flags=0x0201 (RTF_UP|RTF_REJECT)
+// and the interface name "*".  The little-endian encoding of 10.0.0.0 is
+// 0x0000000A (byte 0 = 10 = 0x0A at LSB).
+func TestIPRouteShowRejectRoute(t *testing.T) {
+	// 10.0.0.0/8: Dest=0x0000000A, Mask=0x000000FF, flags=0x0201 (RTF_UP|RTF_REJECT)
+	content := "Iface\tDestination\tGateway\tFlags\tRefCnt\tUse\tMetric\tMask\tMTU\tWindow\tIRTT\n" +
+		"*\t0000000A\t00000000\t0201\t0\t0\t0\t000000FF\t0\t0\t0\n" +
+		"eth0\t00000000\t0101A8C0\t0003\t0\t0\t100\t00000000\t0\t0\t0\n"
+	writeProcNetRoute(t, content)
+	stdout, _, code := cmdRun(t, "ip route show")
+	assert.Equal(t, 0, code)
+	assert.Contains(t, stdout, "unreachable 10.0.0.0/8")
+	assert.NotContains(t, stdout, "unreachable 10.0.0.0/8 dev") // no "dev" for reject routes
+	assert.Contains(t, stdout, "default via 192.168.1.1 dev eth0")
+}
+
+// TestIPRouteGetRejectRouteUnreachable verifies that when a RTF_REJECT route
+// is the best match for the destination, "ip route get" returns exit 1 with a
+// "network unreachable" error instead of reporting the less-specific fallback.
+func TestIPRouteGetRejectRouteUnreachable(t *testing.T) {
+	// 10.0.0.0/8 is an unreachable route; default is via 192.168.1.1.
+	// A lookup for 10.1.2.3 should match the more-specific /8 reject route
+	// and return "network unreachable", not the default.
+	content := "Iface\tDestination\tGateway\tFlags\tRefCnt\tUse\tMetric\tMask\tMTU\tWindow\tIRTT\n" +
+		"*\t0000000A\t00000000\t0201\t0\t0\t0\t000000FF\t0\t0\t0\n" +
+		"eth0\t00000000\t0101A8C0\t0003\t0\t0\t100\t00000000\t0\t0\t0\n"
+	writeProcNetRoute(t, content)
+	_, stderr, code := cmdRun(t, "ip route get 10.1.2.3")
+	assert.Equal(t, 1, code)
+	assert.Contains(t, stderr, "unreachable")
+}
+
+// TestIPRouteGetNonRejectRouteStillWorks verifies that when a RTF_REJECT route
+// exists but does not match, the normal route is still returned.
+func TestIPRouteGetNonRejectRouteStillWorks(t *testing.T) {
+	// 10.0.0.0/8 is unreachable, but 8.8.8.8 falls through to the default route.
+	content := "Iface\tDestination\tGateway\tFlags\tRefCnt\tUse\tMetric\tMask\tMTU\tWindow\tIRTT\n" +
+		"*\t0000000A\t00000000\t0201\t0\t0\t0\t000000FF\t0\t0\t0\n" +
+		"eth0\t00000000\t0101A8C0\t0003\t0\t0\t100\t00000000\t0\t0\t0\n"
+	writeProcNetRoute(t, content)
+	stdout, stderr, code := cmdRun(t, "ip route get 8.8.8.8")
+	assert.Equal(t, 0, code, "stderr: %s", stderr)
+	assert.Contains(t, stdout, "via 192.168.1.1")
+}
+
 // TestIPRouteShowZeroDestNonZeroMaskNotDefault verifies that a route with
 // Dest=0 but a non-zero mask (e.g. 0.0.0.0/8) is NOT formatted as "default".
 // Only a /0 route (Dest=0, Mask=0) should use the "default" keyword.
