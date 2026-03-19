@@ -24,10 +24,10 @@ import (
 const exitCodeTimeout = 124
 
 func main() {
-	os.Exit(run(os.Args[1:], os.Stdin, os.Stdout, os.Stderr))
+	os.Exit(run(context.Background(), os.Args[1:], os.Stdin, os.Stdout, os.Stderr))
 }
 
-func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
+func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	var (
 		command         string
 		allowedPaths    string
@@ -127,7 +127,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	cmd.Flags().DurationVar(&timeout, "timeout", 0, "maximum execution time for the entire shell run (e.g. 100ms, 5s, 1m)")
 	cmd.Flags().StringVar(&procPath, "proc-path", "", "path to the proc filesystem used by ps (default \"/proc\")")
 
-	if err := cmd.Execute(); err != nil {
+	if err := cmd.ExecuteContext(ctx); err != nil {
 		var status interp.ExitStatus
 		if errors.As(err, &status) {
 			return int(status)
@@ -138,6 +138,10 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			} else {
 				fmt.Fprintln(stderr, "error: execution timed out")
 			}
+			return exitCodeTimeout
+		}
+		if errors.Is(err, context.Canceled) {
+			fmt.Fprintln(stderr, "error: execution canceled")
 			return exitCodeTimeout
 		}
 		fmt.Fprintf(stderr, "error: %v\n", err)
