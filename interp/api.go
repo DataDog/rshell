@@ -418,9 +418,11 @@ func (r *Runner) Close() error {
 	return r.sandbox.Close()
 }
 
-// AllowedPaths restricts file and directory access to the specified directories.
-// Paths must be absolute directories that exist. When set, only files within
-// these directories can be opened, read, or executed.
+// AllowedPaths restricts file and directory access to the specified paths.
+// Each path may be a directory (granting access to all files within) or a
+// regular file (granting access to that single file only).
+// Paths must exist. When set, only files within these paths can be opened,
+// read, or stat-ed.
 //
 // When not set (default), all file access is blocked.
 // An empty slice also blocks all file access.

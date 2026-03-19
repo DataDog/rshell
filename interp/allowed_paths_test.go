@@ -64,15 +64,15 @@ func TestAllowedPathsOption(t *testing.T) {
 		assert.Contains(t, err.Error(), "AllowedPaths")
 	})
 
-	t.Run("file not directory rejected", func(t *testing.T) {
+	t.Run("file accepted", func(t *testing.T) {
 		tmpFile := filepath.Join(t.TempDir(), "file.txt")
 		require.NoError(t, os.WriteFile(tmpFile, []byte("test"), 0644))
 
-		_, err := interp.New(
+		runner, err := interp.New(
 			interp.AllowedPaths([]string{tmpFile}),
 		)
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "not a directory")
+		require.NoError(t, err)
+		runner.Close()
 	})
 
 	t.Run("valid directory accepted", func(t *testing.T) {
@@ -253,4 +253,45 @@ func TestAllowedPathsClose(t *testing.T) {
 	// Close should not panic, even if called twice
 	require.NoError(t, runner.Close())
 	require.NoError(t, runner.Close())
+}
+
+func TestAllowedPathsFileCatAllowed(t *testing.T) {
+	dir := t.TempDir()
+	filePath := filepath.Join(dir, "hello.txt")
+	require.NoError(t, os.WriteFile(filePath, []byte("hello\n"), 0644))
+
+	stdout, _, exitCode := runScript(t, "cat "+filePath, dir,
+		interp.AllowedPaths([]string{filePath}),
+	)
+	assert.Equal(t, 0, exitCode)
+	assert.Equal(t, "hello\n", stdout)
+}
+
+func TestAllowedPathsFileSiblingBlocked(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "allowed.txt"), []byte("ok"), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "secret.txt"), []byte("secret"), 0644))
+
+	secretPath := strings.ReplaceAll(filepath.Join(dir, "secret.txt"), `\`, `/`)
+	_, stderr, exitCode := runScript(t, "cat "+secretPath, dir,
+		interp.AllowedPaths([]string{filepath.Join(dir, "allowed.txt")}),
+	)
+	assert.Equal(t, 1, exitCode)
+	assert.Contains(t, stderr, "permission denied")
+}
+
+func TestAllowedPathsFileMixedWithDir(t *testing.T) {
+	dir := t.TempDir()
+	filePath := filepath.Join(dir, "single.txt")
+	require.NoError(t, os.WriteFile(filePath, []byte("single\n"), 0644))
+
+	subdir := filepath.Join(dir, "sub")
+	require.NoError(t, os.Mkdir(subdir, 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(subdir, "inner.txt"), []byte("inner\n"), 0644))
+
+	stdout, _, exitCode := runScript(t, "cat "+filePath+" "+filepath.Join(subdir, "inner.txt"), dir,
+		interp.AllowedPaths([]string{filePath, subdir}),
+	)
+	assert.Equal(t, 0, exitCode)
+	assert.Equal(t, "single\ninner\n", stdout)
 }

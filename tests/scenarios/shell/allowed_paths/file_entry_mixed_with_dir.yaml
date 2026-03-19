@@ -1,0 +1,17 @@
+description: File and directory entries can be mixed in allowed_paths
+skip_assert_against_bash: true  # allowed_paths is an rshell-specific feature
+setup:
+  files:
+    - path: single.txt
+      content: "single\n"
+    - path: dir/inner.txt
+      content: "inner\n"
+input:
+  allowed_paths: ["single.txt", "dir"]
+  script: |+
+    cat single.txt
+    cat dir/inner.txt
+expect:
+  stdout: "single\ninner\n"
+  stderr: ""
+  exit_code: 0

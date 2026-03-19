@@ -38,6 +38,110 @@ func (f fakeFileInfo) ModTime() time.Time { return time.Time{} }
 func (f fakeFileInfo) IsDir() bool        { return false }
 func (f fakeFileInfo) Sys() any           { return nil }
 
+func TestNewAcceptsFile(t *testing.T) {
+	dir := t.TempDir()
+	filePath := filepath.Join(dir, "allowed.txt")
+	require.NoError(t, os.WriteFile(filePath, []byte("ok"), 0644))
+
+	sb, err := New([]string{filePath})
+	require.NoError(t, err)
+	defer sb.Close()
+}
+
+func TestFileEntryOpenAllowed(t *testing.T) {
+	dir := t.TempDir()
+	filePath := filepath.Join(dir, "allowed.txt")
+	require.NoError(t, os.WriteFile(filePath, []byte("hello\n"), 0644))
+
+	sb, err := New([]string{filePath})
+	require.NoError(t, err)
+	defer sb.Close()
+
+	f, err := sb.Open(filePath, dir, os.O_RDONLY, 0)
+	require.NoError(t, err)
+	data, _ := io.ReadAll(f)
+	f.Close()
+	assert.Equal(t, "hello\n", string(data))
+}
+
+func TestFileEntrySiblingBlocked(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "allowed.txt"), []byte("ok"), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "secret.txt"), []byte("secret"), 0644))
+
+	sb, err := New([]string{filepath.Join(dir, "allowed.txt")})
+	require.NoError(t, err)
+	defer sb.Close()
+
+	_, err = sb.Open(filepath.Join(dir, "secret.txt"), dir, os.O_RDONLY, 0)
+	assert.ErrorIs(t, err, os.ErrPermission)
+}
+
+func TestFileEntryParentDirBlocked(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "allowed.txt"), []byte("ok"), 0644))
+
+	sb, err := New([]string{filepath.Join(dir, "allowed.txt")})
+	require.NoError(t, err)
+	defer sb.Close()
+
+	_, err = sb.ReadDir(".", dir)
+	assert.ErrorIs(t, err, os.ErrPermission)
+}
+
+func TestFileEntryStatAllowed(t *testing.T) {
+	dir := t.TempDir()
+	filePath := filepath.Join(dir, "allowed.txt")
+	require.NoError(t, os.WriteFile(filePath, []byte("ok"), 0644))
+
+	sb, err := New([]string{filePath})
+	require.NoError(t, err)
+	defer sb.Close()
+
+	info, err := sb.Stat(filePath, dir)
+	require.NoError(t, err)
+	assert.Equal(t, "allowed.txt", info.Name())
+}
+
+func TestFileEntryStatSiblingBlocked(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "allowed.txt"), []byte("ok"), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "secret.txt"), []byte("secret"), 0644))
+
+	sb, err := New([]string{filepath.Join(dir, "allowed.txt")})
+	require.NoError(t, err)
+	defer sb.Close()
+
+	_, err = sb.Stat(filepath.Join(dir, "secret.txt"), dir)
+	assert.ErrorIs(t, err, os.ErrPermission)
+}
+
+func TestFileEntryMixedWithDirectory(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "file.txt"), []byte("file"), 0644))
+	subdir := filepath.Join(dir, "sub")
+	require.NoError(t, os.Mkdir(subdir, 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(subdir, "inner.txt"), []byte("inner"), 0644))
+
+	sb, err := New([]string{filepath.Join(dir, "file.txt"), subdir})
+	require.NoError(t, err)
+	defer sb.Close()
+
+	// File entry works.
+	f, err := sb.Open(filepath.Join(dir, "file.txt"), dir, os.O_RDONLY, 0)
+	require.NoError(t, err)
+	f.Close()
+
+	// Directory entry works.
+	f, err = sb.Open(filepath.Join(subdir, "inner.txt"), subdir, os.O_RDONLY, 0)
+	require.NoError(t, err)
+	f.Close()
+
+	// Sibling of file entry is blocked.
+	_, err = sb.Open(filepath.Join(dir, "other.txt"), dir, os.O_RDONLY, 0)
+	assert.ErrorIs(t, err, os.ErrPermission)
+}
+
 func TestSandboxOpenRejectsWriteFlags(t *testing.T) {
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "test.txt"), []byte("data"), 0644))

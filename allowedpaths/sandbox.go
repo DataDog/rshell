@@ -24,9 +24,12 @@ import (
 const MaxGlobEntries = 100_000
 
 // root pairs an absolute directory path with its opened os.Root handle.
+// When file is non-empty, only the named file within the root is accessible
+// (the parent directory itself is not exposed for listing or traversal).
 type root struct {
 	absPath string
 	root    *os.Root
+	file    string
 }
 
 // Sandbox restricts filesystem access to a set of allowed directories.
@@ -38,26 +41,38 @@ type Sandbox struct {
 
 // New validates paths and eagerly opens os.Root handles so the
 // allowed directories are pinned before the caller can modify them between
-// construction and the first run.
+// construction and the first run. Each path may be a directory (granting
+// access to all files within) or a regular file (granting access to that
+// single file only).
 func New(paths []string) (*Sandbox, error) {
 	roots := make([]root, len(paths))
+	cleanup := func(upTo int) {
+		for _, prev := range roots[:upTo] {
+			if prev.root != nil {
+				prev.root.Close()
+			}
+		}
+	}
 	for i, p := range paths {
 		abs, err := filepath.Abs(p)
 		if err != nil {
+			cleanup(i)
 			return nil, fmt.Errorf("AllowedPaths: cannot resolve %q: %w", p, err)
 		}
 		r, err := os.OpenRoot(abs)
 		if err != nil {
-			for _, prev := range roots[:i] {
-				if prev.root != nil {
-					prev.root.Close()
-				}
-			}
-
 			info, statErr := os.Stat(abs)
 			if statErr == nil && !info.IsDir() {
-				return nil, fmt.Errorf("AllowedPaths: %q is not a directory", abs)
+				parentDir := filepath.Dir(abs)
+				r, err = os.OpenRoot(parentDir)
+				if err != nil {
+					cleanup(i)
+					return nil, fmt.Errorf("AllowedPaths: cannot open root for file %q: %w", abs, err)
+				}
+				roots[i] = root{absPath: parentDir, root: r, file: filepath.Base(abs)}
+				continue
 			}
+			cleanup(i)
 			return nil, fmt.Errorf("AllowedPaths: cannot open root %q: %w", abs, err)
 		}
 		roots[i] = root{absPath: abs, root: r}
@@ -66,7 +81,8 @@ func New(paths []string) (*Sandbox, error) {
 }
 
 // resolve returns the matching os.Root and the path relative to it for the
-// given absolute path. It returns false if no root matches.
+// given absolute path. It returns false if no root matches. For file-only
+// entries, only the exact file path matches.
 func (s *Sandbox) resolve(absPath string) (*os.Root, string, bool) {
 	if s == nil {
 		return nil, "", false
@@ -77,6 +93,9 @@ func (s *Sandbox) resolve(absPath string) (*os.Root, string, bool) {
 			continue
 		}
 		if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			continue
+		}
+		if ar.file != "" && rel != ar.file {
 			continue
 		}
 		return ar.root, rel, true
@@ -111,6 +130,9 @@ func (s *Sandbox) Access(path string, cwd string, mode uint32) error {
 			continue
 		}
 		if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			continue
+		}
+		if ar.file != "" && rel != ar.file {
 			continue
 		}
 

@@ -42,6 +42,8 @@ var allowedpathsAllowedSymbols = []string{
 	"os.Root",                            // 🟠 sandboxed directory root type; core of the filesystem sandbox.
 	"os.Stat",                            // 🟠 returns file info for a path; needed for sandbox path validation.
 	"path/filepath.Abs",                  // 🟢 returns absolute path; pure path computation.
+	"path/filepath.Base",                 // 🟢 returns the last element of a path; pure function, no I/O.
+	"path/filepath.Dir",                  // 🟢 returns the directory portion of a path; pure function, no I/O.
 	"path/filepath.IsAbs",                // 🟢 checks if path is absolute; pure function, no I/O.
 	"path/filepath.Join",                 // 🟢 joins path elements; pure function, no I/O.
 	"path/filepath.Rel",                  // 🟢 returns relative path; pure path computation.

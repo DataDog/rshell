@@ -1,0 +1,16 @@
+description: Sibling of a file-level allowed path is blocked
+skip_assert_against_bash: true  # allowed_paths is an rshell-specific feature
+setup:
+  files:
+    - path: allowed.txt
+      content: "ok\n"
+    - path: secret.txt
+      content: "secret\n"
+input:
+  allowed_paths: ["allowed.txt"]
+  script: |+
+    cat secret.txt
+expect:
+  stdout: ""
+  stderr_contains: ["permission denied"]
+  exit_code: 1

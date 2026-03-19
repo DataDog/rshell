@@ -1,0 +1,14 @@
+description: Cat can read a file specified directly in allowed_paths
+skip_assert_against_bash: true  # allowed_paths is an rshell-specific feature
+setup:
+  files:
+    - path: data.txt
+      content: "hello\n"
+input:
+  allowed_paths: ["data.txt"]
+  script: |+
+    cat data.txt
+expect:
+  stdout: "hello\n"
+  stderr: ""
+  exit_code: 0
