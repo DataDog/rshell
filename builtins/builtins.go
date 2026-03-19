@@ -148,6 +148,10 @@ type CallContext struct {
 	// current shell policy. Used by the help builtin to list only executable
 	// commands.
 	CommandAllowed func(name string) bool
+
+	// Proc provides access to the proc filesystem for the ps builtin.
+	// The path is fixed at construction time and cannot be overridden by callers.
+	Proc *ProcProvider
 }
 
 // Out writes a string to stdout.

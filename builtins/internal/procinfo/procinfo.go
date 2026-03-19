@@ -30,20 +30,37 @@ type ProcInfo struct {
 	Cmd   string // full cmdline, truncated to MaxCmdLen
 }
 
+// DefaultProcPath is the default path to the proc filesystem.
+const DefaultProcPath = "/proc"
+
+// resolveProcPath returns procPath if non-empty, otherwise DefaultProcPath.
+func resolveProcPath(procPath string) string {
+	if procPath == "" {
+		return DefaultProcPath
+	}
+	return procPath
+}
+
 // ListAll returns all running processes.
-func ListAll(ctx context.Context) ([]ProcInfo, error) {
-	return listAll(ctx)
+// procPath is the path to the proc filesystem (e.g. "/proc"); pass
+// DefaultProcPath or an empty string to use the default.
+func ListAll(ctx context.Context, procPath string) ([]ProcInfo, error) {
+	return listAll(ctx, resolveProcPath(procPath))
 }
 
 // GetSession returns processes in the current process session
 // (walks PPID chain from os.Getpid() upward to collect ancestors, plus
 // any processes that share the same session ID when available).
-func GetSession(ctx context.Context) ([]ProcInfo, error) {
-	return getSession(ctx)
+// procPath is the path to the proc filesystem; pass DefaultProcPath or an
+// empty string to use the default.
+func GetSession(ctx context.Context, procPath string) ([]ProcInfo, error) {
+	return getSession(ctx, resolveProcPath(procPath))
 }
 
 // GetByPIDs returns process info for the given PIDs.
 // Missing PIDs are silently skipped.
-func GetByPIDs(ctx context.Context, pids []int) ([]ProcInfo, error) {
-	return getByPIDs(ctx, pids)
+// procPath is the path to the proc filesystem; pass DefaultProcPath or an
+// empty string to use the default.
+func GetByPIDs(ctx context.Context, procPath string, pids []int) ([]ProcInfo, error) {
+	return getByPIDs(ctx, resolveProcPath(procPath), pids)
 }

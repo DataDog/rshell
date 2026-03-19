@@ -34,6 +34,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		allowedCommands string
 		allowAllCmds    bool
 		timeout         time.Duration
+		procPath        string
 	)
 
 	cmd := &cobra.Command{
@@ -73,6 +74,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 				allowedPaths:     paths,
 				allowedCommands:  cmds,
 				allowAllCommands: allowAllCmds,
+				procPath:         procPath,
 			}
 
 			if commandSet {
@@ -119,6 +121,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	cmd.Flags().StringVar(&allowedCommands, "allowed-commands", "", "comma-separated list of namespaced commands (e.g. rshell:cat,rshell:find)")
 	cmd.Flags().BoolVar(&allowAllCmds, "allow-all-commands", false, "allow execution of all commands (builtins and external)")
 	cmd.Flags().DurationVar(&timeout, "timeout", 0, "maximum execution time for the entire shell run (e.g. 100ms, 5s, 1m)")
+	cmd.Flags().StringVar(&procPath, "proc-path", "", "path to the proc filesystem used by ps (default \"/proc\")")
 
 	if err := cmd.Execute(); err != nil {
 		var status interp.ExitStatus
@@ -160,6 +163,7 @@ type executeOpts struct {
 	allowedPaths     []string
 	allowedCommands  []string
 	allowAllCommands bool
+	procPath         string
 }
 
 func execute(ctx context.Context, script, name string, opts executeOpts, stdin io.Reader, stdout, stderr io.Writer) error {
@@ -182,6 +186,9 @@ func execute(ctx context.Context, script, name string, opts executeOpts, stdin i
 		runOpts = append(runOpts, interp.AllowAllCommands())
 	} else if len(opts.allowedCommands) > 0 {
 		runOpts = append(runOpts, interp.AllowedCommands(opts.allowedCommands))
+	}
+	if opts.procPath != "" {
+		runOpts = append(runOpts, interp.ProcPath(opts.procPath))
 	}
 
 	runner, err := interp.New(runOpts...)

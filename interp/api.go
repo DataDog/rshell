@@ -25,6 +25,7 @@ import (
 	"mvdan.cc/sh/v3/syntax"
 
 	"github.com/DataDog/rshell/allowedpaths"
+	"github.com/DataDog/rshell/builtins"
 )
 
 // runnerConfig holds the immutable configuration of a [Runner].
@@ -61,6 +62,14 @@ type runnerConfig struct {
 	// maxExecutionTime bounds the duration of each Run call. Zero disables
 	// the limit. When non-zero, Run derives a child context with this timeout.
 	maxExecutionTime time.Duration
+
+	// procPath is the path to the proc filesystem used by the ps builtin.
+	// Defaults to "/proc" when empty.
+	procPath string
+
+	// proc is the ProcProvider constructed from procPath, created once in
+	// New() and shared across subshells via runnerConfig value copy.
+	proc *builtins.ProcProvider
 
 	// usedNew is set by New() and checked in Reset() to ensure a Runner
 	// was properly constructed rather than zero-initialized.
@@ -219,6 +228,7 @@ func New(opts ...RunnerOption) (*Runner, error) {
 	if r.stdout == nil || r.stderr == nil {
 		StdIO(r.stdin, r.stdout, r.stderr)(r)
 	}
+	r.proc = builtins.NewProcProvider(r.procPath)
 	return r, nil
 }
 
@@ -500,6 +510,21 @@ func AllowedCommands(names []string) RunnerOption {
 func AllowAllCommands() RunnerOption {
 	return func(r *Runner) error {
 		r.allowAllCommands = true
+		return nil
+	}
+}
+
+// ProcPath sets the path to the proc filesystem used by the ps builtin.
+// When not set (default), ps uses "/proc". This option has no effect on
+// non-Linux platforms.
+//
+// Note: bare ps (session mode) uses the host process's PID to walk the PPID
+// chain. If path points to a proc filesystem from a different PID namespace,
+// the host PID will likely not be found there and session output will be empty.
+// ps -e and ps -p work correctly against any proc tree.
+func ProcPath(path string) RunnerOption {
+	return func(r *Runner) error {
+		r.procPath = path
 		return nil
 	}
 }

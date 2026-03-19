@@ -64,6 +64,8 @@ Every access path is default-deny:
 
 **AllowedPaths** restricts all file operations to specified directories using Go's `os.Root` API (`openat` syscalls), making it immune to symlink traversal, TOCTOU races, and `..` escape attacks.
 
+**ProcPath** (Linux-only) overrides the proc filesystem root used by the `ps` builtin (default `/proc`). This is a privileged option set at runner construction time by trusted caller code — scripts cannot influence it. Access to the proc path is intentionally not subject to `AllowedPaths` restrictions, since proc is a read-only virtual filesystem that does not expose host data under the normal file hierarchy.
+
 ## Shell Features
 
 See [SHELL_FEATURES.md](SHELL_FEATURES.md) for the complete list of supported and blocked features.
