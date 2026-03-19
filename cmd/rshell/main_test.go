@@ -251,6 +251,12 @@ func TestTimeoutFlagTimesOutExecution(t *testing.T) {
 	assert.Contains(t, stderr, "execution timed out")
 }
 
+func TestTimeoutFlagRejectsNegative(t *testing.T) {
+	code, _, stderr := runCLI(t, "--timeout", "-1s", "-c", `echo hello`)
+	assert.Equal(t, 1, code)
+	assert.Contains(t, stderr, "--timeout must be >= 0")
+}
+
 func TestProcPathFlagInHelp(t *testing.T) {
 	code, stdout, _ := runCLI(t, "--help")
 	assert.Equal(t, 0, code)

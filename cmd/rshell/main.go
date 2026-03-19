@@ -53,6 +53,10 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 				return fmt.Errorf("cannot use -c with file arguments")
 			}
 
+			if timeout < 0 {
+				return fmt.Errorf("--timeout must be >= 0")
+			}
+
 			runCtx := cmd.Context()
 			if timeout > 0 {
 				var cancel context.CancelFunc
@@ -84,7 +88,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			if len(args) > 0 {
 				// Read stdin once so each execute() call gets its own
 				// reader, avoiding a data race on the shared io.Reader.
-				stdinData, err := io.ReadAll(stdin)
+				stdinData, err := readAllContext(runCtx, stdin)
 				if err != nil {
 					return fmt.Errorf("reading stdin: %w", err)
 				}
@@ -102,7 +106,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			}
 
 			// No -c and no file args: read from stdin.
-			stdinData, err := io.ReadAll(stdin)
+			stdinData, err := readAllContext(runCtx, stdin)
 			if err != nil {
 				return fmt.Errorf("reading stdin: %w", err)
 			}
@@ -140,6 +144,29 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return 1
 	}
 	return 0
+}
+
+// readAllContext reads all bytes from r, but returns ctx.Err() immediately if
+// the context is cancelled or its deadline expires before the read completes.
+// It spawns a goroutine to perform the read; the goroutine may outlive this
+// call if the underlying reader blocks (e.g. stdin from a pipe), but it will
+// be reclaimed when the process exits.
+func readAllContext(ctx context.Context, r io.Reader) ([]byte, error) {
+	type result struct {
+		data []byte
+		err  error
+	}
+	ch := make(chan result, 1)
+	go func() {
+		data, err := io.ReadAll(r)
+		ch <- result{data, err}
+	}()
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case res := <-ch:
+		return res.data, res.err
+	}
 }
 
 // rejectLongCommand scans raw CLI args for "--command" or "--command=..." and
