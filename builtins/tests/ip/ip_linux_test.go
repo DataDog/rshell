@@ -166,6 +166,24 @@ func TestIPRouteShowLargeMetric(t *testing.T) {
 	assert.Contains(t, stdout, "metric 4294967295")
 }
 
+// TestIPRouteShowTrailingArgRejected verifies that unsupported trailing
+// arguments to "ip route show" are rejected with exit 1.
+func TestIPRouteShowTrailingArgRejected(t *testing.T) {
+	writeProcNetRoute(t, syntheticProcNetRoute)
+	_, stderr, code := cmdRun(t, "ip route show from 1.1.1.1")
+	assert.Equal(t, 1, code)
+	assert.Contains(t, stderr, "unsupported argument")
+}
+
+// TestIPRouteListTrailingArgRejected verifies "ip route list" also rejects
+// unsupported trailing arguments.
+func TestIPRouteListTrailingArgRejected(t *testing.T) {
+	writeProcNetRoute(t, syntheticProcNetRoute)
+	_, stderr, code := cmdRun(t, "ip route list from 1.1.1.1")
+	assert.Equal(t, 1, code)
+	assert.Contains(t, stderr, "unsupported argument")
+}
+
 // ============================================================================
 // ip route get
 // ============================================================================

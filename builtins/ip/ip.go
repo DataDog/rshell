@@ -561,6 +561,10 @@ func routeCmd(ctx context.Context, callCtx *builtins.CallContext, do displayOpts
 
 	switch sub {
 	case "show", "list":
+		if len(args) > 1 {
+			callCtx.Errf("ip: route %s: unsupported argument %q\n", sub, args[1])
+			return builtins.Result{Code: 1}
+		}
 		return routeShow(ctx, callCtx)
 	case "get":
 		if len(args) < 2 {
