@@ -1,9 +1,9 @@
-description: find -execdir runs allowed commands in the file's directory.
+description: find -execdir preserves argument order when extra args surround {}.
 skip_assert_against_bash: true  # rshell -execdir only runs builtins, not external commands
 setup:
   files:
-    - path: dummy.txt
-      content: "x"
+    - path: dir/a.txt
+      content: "a"
       chmod: 0644
 input:
   allowed_paths: ["$DIR"]
@@ -11,9 +11,9 @@ input:
     - rshell:find
     - rshell:echo
   script: |+
-    find . -name 'dummy.txt' -execdir echo {} \;
+    find dir -name '*.txt' -execdir echo before {} after \;
 expect:
   stdout: |+
-    ./dummy.txt
+    before ./a.txt after
   stderr: ""
   exit_code: 0

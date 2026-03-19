@@ -89,12 +89,15 @@ var builtinPerCommandSymbols = map[string][]string{
 		"math.MaxInt64",                   // 🟢 integer constant; no side effects.
 		"os.IsNotExist",                   // 🟢 checks if error is "not exist"; pure function, no I/O.
 		"os.PathError",                    // 🟢 error type for path operations; pure type.
+		"path/filepath.Dir",               // 🟢 returns the directory component of a path; pure function, no I/O.
+		"path/filepath.IsAbs",             // 🟢 reports whether a path is absolute; pure function, no I/O.
 		"path/filepath.ToSlash",           // 🟢 converts OS path separators to forward slashes; pure function, no I/O.
 		"strconv.Atoi",                    // 🟢 string-to-int conversion; pure function, no I/O.
 		"strconv.ErrRange",                // 🟢 sentinel error value for overflow; pure constant.
 		"strconv.ParseInt",                // 🟢 string-to-int conversion; pure function, no I/O.
 		"strconv.ParseUint",               // 🟢 string-to-unsigned-int conversion; pure function, no I/O.
 		"strings.HasPrefix",               // 🟢 pure function for prefix matching; no I/O.
+		"strings.ReplaceAll",              // 🟢 replaces all {} occurrences in -execdir args; pure function, no I/O.
 		"strings.Split",                   // 🟢 splits a string by separator into a slice; pure function, no I/O.
 		"strings.ToLower",                 // 🟢 converts string to lowercase; pure function, no I/O.
 		"time.Duration",                   // 🟢 duration type; pure integer alias, no I/O.
@@ -103,6 +106,7 @@ var builtinPerCommandSymbols = map[string][]string{
 		"time.Second",                     // 🟢 constant representing one second; no side effects.
 		"time.Time",                       // 🟢 time value type; pure data, no side effects.
 		"unicode/utf8.DecodeRuneInString", // 🟢 decodes first UTF-8 rune from a string; pure function, no I/O.
+
 	},
 	"grep": {
 		"bufio.NewScanner",  // 🟢 line-by-line input reading (e.g. head, cat); no write or exec capability.
@@ -456,6 +460,8 @@ var builtinAllowedSymbols = []string{
 	"os.IsNotExist",                                       // 🟢 checks if error is "not exist"; pure function, no I/O.
 	"os.O_RDONLY",                                         // 🟢 read-only file flag constant; cannot open files by itself.
 	"os.PathError",                                        // 🟢 error type for filesystem path errors; pure type, no I/O.
+	"path/filepath.Dir",                                   // 🟢 returns the directory component of a path; pure function, no I/O.
+	"path/filepath.IsAbs",                                 // 🟢 reports whether a path is absolute; pure function, no I/O.
 	"path/filepath.ToSlash",                               // 🟢 converts OS path separators to forward slashes; pure function, no I/O.
 	"regexp.Compile",                                      // 🟢 compiles a regular expression; pure function, no I/O. Uses RE2 engine (linear-time, no backtracking).
 	"regexp.QuoteMeta",                                    // 🟢 escapes all special regex characters in a string; pure function, no I/O.
@@ -520,4 +526,5 @@ var builtinAllowedSymbols = []string{
 	"unicode/utf8.RuneError",                              // 🟢 replacement character returned for invalid UTF-8; constant, no I/O.
 	"unicode/utf8.UTFMax",                                 // 🟢 maximum number of bytes in a UTF-8 encoding; constant, no I/O.
 	"unicode/utf8.Valid",                                  // 🟢 checks if a byte slice is valid UTF-8; pure function, no I/O.
+
 }

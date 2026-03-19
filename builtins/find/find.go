@@ -36,6 +36,7 @@
 //	-print           — print path followed by newline
 //	-print0          — print path followed by NUL
 //	-prune           — skip directory subtree
+//	-execdir CMD {} ; — run CMD in file's directory with ./basename
 //	-quit            — exit immediately
 //	-true            — always true
 //	-false           — always false
@@ -49,7 +50,7 @@
 //
 // Blocked predicates (sandbox safety):
 //
-//	-exec, -execdir, -delete, -ok, -okdir — execution/deletion
+//	-exec, -delete, -ok, -okdir — execution/deletion
 //	-fls, -fprint, -fprint0, -fprintf — file writes
 //	-regex, -iregex — ReDoS risk
 //
@@ -179,6 +180,14 @@ optLoop:
 		minDepth = 0
 	}
 
+	// Post-parse validation: check -execdir commands are allowed.
+	for _, cmd := range collectExecDirCmds(expression) {
+		if callCtx.CommandAllowed != nil && !callCtx.CommandAllowed(cmd) {
+			callCtx.Errf("find: -execdir: '%s': command not allowed\n", cmd)
+			return builtins.Result{Code: 1}
+		}
+	}
+
 	// If no explicit action, add implicit -print.
 	implicitPrint := expression == nil || !hasAction(expression)
 
@@ -223,6 +232,12 @@ optLoop:
 
 	now := callCtx.Now
 
+	// Resolve working directory for -execdir path computation.
+	var workDir string
+	if callCtx.WorkDir != nil {
+		workDir = callCtx.WorkDir()
+	}
+
 	// GNU find treats a missing -newer reference as a fatal argument error
 	// and produces no result set, so skip the walk entirely.
 	if !failed {
@@ -246,6 +261,7 @@ optLoop:
 				minDepth:         minDepth,
 				now:              now,
 				eagerNewerErrors: eagerNewerErrors,
+				workDir:          workDir,
 			})
 			if wr.failed {
 				failed = true
@@ -300,6 +316,7 @@ func printHelp(callCtx *builtins.CallContext) {
 	callCtx.Out("Actions:\n")
 	callCtx.Out("  -print                     Print path followed by newline.\n")
 	callCtx.Out("  -print0                    Print path followed by NUL.\n")
+	callCtx.Out("  -execdir CMD [ARG]... ;    Run CMD in file's directory (./basename).\n")
 	callCtx.Out("  -prune                     Skip directory subtree.\n")
 	callCtx.Out("  -quit                      Exit immediately.\n\n")
 	callCtx.Out("Operators:\n")
@@ -308,7 +325,7 @@ func printHelp(callCtx *builtins.CallContext) {
 	callCtx.Out("  EXPR -a EXPR / EXPR -and EXPR  Conjunction (implicit).\n")
 	callCtx.Out("  EXPR -o EXPR / EXPR -or EXPR   Disjunction.\n\n")
 	callCtx.Out("Blocked predicates [sandbox]:\n")
-	callCtx.Out("  -exec, -execdir, -delete, -ok, -okdir          Execution/deletion.\n")
+	callCtx.Out("  -exec, -delete, -ok, -okdir                    Execution/deletion.\n")
 	callCtx.Out("  -fls, -fprint, -fprint0, -fprintf              File writes.\n")
 	callCtx.Out("  -regex, -iregex                                ReDoS risk.\n")
 }
@@ -322,6 +339,7 @@ type walkOptions struct {
 	minDepth         int
 	now              time.Time
 	eagerNewerErrors map[string]bool
+	workDir          string // absolute working directory for -execdir path resolution
 }
 
 // walkResult holds the outcome of a walk operation.
@@ -419,17 +437,28 @@ func walkPath(
 	// processEntry evaluates the expression for a single file entry.
 	// Returns (prune, quit).
 	processEntry := func(path string, info iofs.FileInfo, depth int) (bool, bool) {
+		// Compute parent directory for -execdir.
+		// Use joinPath (not filepath.Join) to preserve '.' and '..' components.
+		// filepath.Join cleans lexically, so Join(cwd, ".") = cwd and Dir(cwd)
+		// would point one level above the search root.
+		absPath := path
+		if !filepath.IsAbs(absPath) {
+			absPath = joinPath(opts.workDir, absPath)
+		}
+		execDirParent := execDirParentDir(absPath)
+
 		ec := &evalContext{
-			callCtx:     callCtx,
-			ctx:         ctx,
-			now:         now,
-			relPath:     path,
-			info:        info,
-			depth:       depth,
-			printPath:   path,
-			newerCache:  newerCache,
-			newerErrors: newerErrors,
-			followLinks: opts.followLinks,
+			callCtx:       callCtx,
+			ctx:           ctx,
+			now:           now,
+			relPath:       path,
+			info:          info,
+			depth:         depth,
+			printPath:     path,
+			newerCache:    newerCache,
+			newerErrors:   newerErrors,
+			followLinks:   opts.followLinks,
+			execDirParent: execDirParent,
 		}
 
 		prune := false
@@ -568,6 +597,25 @@ func walkPath(
 	return walkResult{failed: failed, quit: quit}
 }
 
+// collectExecDirCmds walks the expression tree and returns all -execdir command names.
+func collectExecDirCmds(e *expr) []string {
+	var cmds []string
+	collectExecDirCmdsInto(e, &cmds)
+	return cmds
+}
+
+func collectExecDirCmdsInto(e *expr, cmds *[]string) {
+	if e == nil {
+		return
+	}
+	if e.kind == exprExecDir {
+		*cmds = append(*cmds, e.execCmd)
+	}
+	collectExecDirCmdsInto(e.left, cmds)
+	collectExecDirCmdsInto(e.right, cmds)
+	collectExecDirCmdsInto(e.operand, cmds)
+}
+
 // collectNewerRefs walks the expression tree and returns all -newer reference paths.
 func collectNewerRefs(e *expr) []string {
 	if e == nil {
@@ -594,4 +642,18 @@ func joinPath(dir, name string) string {
 		return dir + name
 	}
 	return dir + "/" + name
+}
+
+// execDirParentDir returns the parent directory of absPath for -execdir.
+// Trailing slashes are trimmed (except Unix root "/" and Windows drive
+// roots like "C:/") so that filepath.Dir returns the parent directory
+// rather than the directory itself.
+func execDirParentDir(absPath string) string {
+	for len(absPath) > 1 && absPath[len(absPath)-1] == '/' {
+		if len(absPath) == 3 && absPath[1] == ':' {
+			break // preserve Windows drive root (e.g. C:/)
+		}
+		absPath = absPath[:len(absPath)-1]
+	}
+	return filepath.Dir(absPath)
 }

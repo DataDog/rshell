@@ -265,11 +265,75 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 	}
 
 	if fn, ok := builtins.Lookup(name); ok {
+		var runCmd func(context.Context, string, string, []string) (uint8, error)
+		runCmd = func(ctx context.Context, dir string, cmdName string, cmdArgs []string) (uint8, error) {
+			if !r.allowAllCommands && cmdName != "help" && !r.allowedCommands[cmdName] {
+				return 127, fmt.Errorf("%s: command not allowed", cmdName)
+			}
+			cmdFn, ok := builtins.Lookup(cmdName)
+			if !ok {
+				return 127, fmt.Errorf("%s: command not found", cmdName)
+			}
+			child := &builtins.CallContext{
+				Stdout:     r.stdout,
+				Stderr:     r.stderr,
+				WorkDir:    func() string { return dir },
+				RunCommand: runCmd,
+				OpenFile: func(ctx context.Context, path string, flags int, mode os.FileMode) (io.ReadWriteCloser, error) {
+					return r.sandbox.Open(path, dir, flags, mode)
+				},
+				ReadDir: func(ctx context.Context, path string) ([]fs.DirEntry, error) {
+					return r.sandbox.ReadDir(path, dir)
+				},
+				OpenDir: func(ctx context.Context, path string) (fs.ReadDirFile, error) {
+					return r.sandbox.OpenDir(path, dir)
+				},
+				IsDirEmpty: func(ctx context.Context, path string) (bool, error) {
+					return r.sandbox.IsDirEmpty(path, dir)
+				},
+				ReadDirLimited: func(ctx context.Context, path string, offset, maxRead int) ([]fs.DirEntry, bool, error) {
+					return r.sandbox.ReadDirLimited(path, dir, offset, maxRead)
+				},
+				StatFile: func(ctx context.Context, path string) (fs.FileInfo, error) {
+					return r.sandbox.Stat(path, dir)
+				},
+				LstatFile: func(ctx context.Context, path string) (fs.FileInfo, error) {
+					return r.sandbox.Lstat(path, dir)
+				},
+				AccessFile: func(ctx context.Context, path string, mode uint32) error {
+					return r.sandbox.Access(path, dir, mode)
+				},
+				PortableErr: allowedpaths.PortableErrMsg,
+				Now:         r.startTime,
+				FileIdentity: func(path string, info fs.FileInfo) (builtins.FileID, bool) {
+					absPath := path
+					if !filepath.IsAbs(absPath) {
+						absPath = filepath.Join(dir, absPath)
+					}
+					dev, ino, ok := allowedpaths.FileIdentity(absPath, info, r.sandbox)
+					if !ok {
+						return builtins.FileID{}, false
+					}
+					return builtins.FileID{Dev: dev, Ino: ino}, true
+				},
+				CommandAllowed: func(n string) bool {
+					return r.allowAllCommands || n == "help" || r.allowedCommands[n]
+				},
+			}
+			if r.stdin != nil {
+				child.Stdin = r.stdin
+			}
+			result := cmdFn(ctx, child, cmdArgs)
+			return result.Code, nil
+		}
 		call := &builtins.CallContext{
 			Stdout:       r.stdout,
 			Stderr:       r.stderr,
 			InLoop:       r.inLoop,
 			LastExitCode: r.lastExit.code,
+			WorkDir: func() string {
+				return HandlerCtx(r.handlerCtx(ctx, todoPos)).Dir
+			},
 			OpenFile: func(ctx context.Context, path string, flags int, mode os.FileMode) (io.ReadWriteCloser, error) {
 				return r.open(ctx, path, flags, mode, false)
 			},
@@ -310,7 +374,8 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 			CommandAllowed: func(cmdName string) bool {
 				return r.allowAllCommands || cmdName == "help" || r.allowedCommands[cmdName]
 			},
-			Proc: r.proc,
+			RunCommand: runCmd,
+			Proc:       r.proc,
 		}
 		if r.stdin != nil { // do not assign a typed nil into the io.Reader interface
 			call.Stdin = r.stdin
