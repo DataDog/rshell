@@ -57,6 +57,10 @@ import (
 var Cmd = builtins.Command{Name: "echo", Description: "write arguments to stdout", MakeFlags: builtins.NoFlags(run)}
 
 func run(_ context.Context, callCtx *builtins.CallContext, args []string) builtins.Result {
+	if len(args) > 0 && args[0] == "--help" {
+		callCtx.Out("Usage: echo [-neE] [ARG]...\nWrite each ARG to standard output, separated by a single space,\nfollowed by a newline.\n\n  -n  do not output the trailing newline\n  -e  enable interpretation of backslash escapes\n  -E  disable interpretation of backslash escapes (default)\n      --help  display this help and exit\n")
+		return builtins.Result{}
+	}
 	// Parse flags: bash treats leading args matching -[neE]+ as flags.
 	// Once a non-matching arg is seen, everything from that point is text.
 	var noNewline, escapes bool

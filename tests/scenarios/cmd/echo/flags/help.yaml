@@ -1,0 +1,17 @@
+description: Echo --help displays usage information.
+skip_assert_against_bash: true  # bash builtin echo prints --help literally; we match GNU coreutils
+input:
+  script: |+
+    echo --help
+expect:
+  stdout: |+
+    Usage: echo [-neE] [ARG]...
+    Write each ARG to standard output, separated by a single space,
+    followed by a newline.
+
+      -n  do not output the trailing newline
+      -e  enable interpretation of backslash escapes
+      -E  disable interpretation of backslash escapes (default)
+          --help  display this help and exit
+  stderr: ""
+  exit_code: 0
