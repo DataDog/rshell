@@ -18,7 +18,9 @@ package allowedsymbols
 // The permanently banned packages (reflect, unsafe) apply here too.
 var interpAllowedSymbols = []string{
 	"bytes.Buffer",         // 🟢 in-memory byte buffer; pure data structure, no I/O.
+	"context.CancelFunc",   // 🟢 function type returned by WithTimeout/WithCancel; pure function type, no side effects.
 	"context.Context",      // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
+	"context.WithTimeout",  // 🟢 derives a context with a deadline; needed for execution timeout support.
 	"context.WithValue",    // 🟢 derives a context carrying a key-value pair; pure function.
 	"errors.As",            // 🟢 error type assertion; pure function, no I/O.
 	"fmt.Errorf",           // 🟢 formatted error creation; pure function, no I/O.
@@ -58,6 +60,7 @@ var interpAllowedSymbols = []string{
 	"sync.Mutex",           // 🟢 mutual exclusion lock; concurrency primitive, no I/O.
 	"sync.Once",            // 🟢 ensures a function runs exactly once; concurrency primitive, no I/O.
 	"sync.WaitGroup",       // 🟢 waits for goroutines to finish; concurrency primitive, no I/O.
+	"time.Duration",        // 🟢 numeric duration type; pure type, no side effects.
 	"time.Now",             // 🟠 returns current time; read-only, no mutation.
 	"time.Time",            // 🟢 time value type; pure data, no side effects.
 

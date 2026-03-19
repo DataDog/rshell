@@ -7,6 +7,8 @@ package main
 
 import (
 	"bytes"
+	"context"
+	"io"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -19,8 +21,13 @@ import (
 
 func runCLI(t *testing.T, args ...string) (exitCode int, stdout, stderr string) {
 	t.Helper()
+	return runCLIContext(t, context.Background(), args...)
+}
+
+func runCLIContext(t *testing.T, ctx context.Context, args ...string) (exitCode int, stdout, stderr string) {
+	t.Helper()
 	var out, errBuf bytes.Buffer
-	code := run(args, strings.NewReader(""), &out, &errBuf)
+	code := run(ctx, args, strings.NewReader(""), &out, &errBuf)
 	return code, out.String(), errBuf.String()
 }
 
@@ -39,7 +46,7 @@ func TestShortFlag(t *testing.T) {
 func runCLIWithStdin(t *testing.T, stdin string, args ...string) (exitCode int, stdout, stderr string) {
 	t.Helper()
 	var out, errBuf bytes.Buffer
-	code := run(args, strings.NewReader(stdin), &out, &errBuf)
+	code := run(context.Background(), args, strings.NewReader(stdin), &out, &errBuf)
 	return code, out.String(), errBuf.String()
 }
 
@@ -141,6 +148,7 @@ func TestHelp(t *testing.T) {
 	assert.Contains(t, stdout, "--allowed-paths")
 	assert.Contains(t, stdout, "--allowed-commands")
 	assert.Contains(t, stdout, "--allow-all-commands")
+	assert.Contains(t, stdout, "--timeout")
 	assert.NotContains(t, stdout, "--command", "-c/--command should be hidden from help")
 }
 
@@ -241,6 +249,31 @@ func TestCommandLongFormRejected(t *testing.T) {
 	code, _, stderr := runCLI(t, "--command", "echo hi")
 	assert.NotEqual(t, 0, code)
 	assert.Contains(t, stderr, "unknown flag: --command")
+}
+
+func TestTimeoutFlagTimesOutExecution(t *testing.T) {
+	// Feed a blocking stdin with no -c flag so the timeout fires while readAllContext
+	// is waiting for EOF. 50ms is well above Windows' ~15ms timer resolution.
+	pr, pw := io.Pipe()
+	defer pw.Close()
+	var out, errBuf bytes.Buffer
+	code := run(context.Background(), []string{"--timeout", "50ms"}, pr, &out, &errBuf)
+	assert.Equal(t, exitCodeTimeout, code)
+	assert.Contains(t, errBuf.String(), "execution timed out")
+}
+
+func TestCanceledContextExitsWithTimeoutCode(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // cancel before execution starts
+	code, _, stderr := runCLIContext(t, ctx, "--allow-all-commands", "-c", `echo hello`)
+	assert.Equal(t, exitCodeTimeout, code)
+	assert.Contains(t, stderr, "execution canceled")
+}
+
+func TestTimeoutFlagRejectsNegative(t *testing.T) {
+	code, _, stderr := runCLI(t, "--timeout", "-1s", "-c", `echo hello`)
+	assert.Equal(t, 1, code)
+	assert.Contains(t, stderr, "--timeout must be >= 0")
 }
 
 func TestProcPathFlagInHelp(t *testing.T) {

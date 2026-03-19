@@ -14,22 +14,26 @@ import (
 	"io"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/DataDog/rshell/interp"
 	"github.com/spf13/cobra"
 	"mvdan.cc/sh/v3/syntax"
 )
 
+const exitCodeTimeout = 124
+
 func main() {
-	os.Exit(run(os.Args[1:], os.Stdin, os.Stdout, os.Stderr))
+	os.Exit(run(context.Background(), os.Args[1:], os.Stdin, os.Stdout, os.Stderr))
 }
 
-func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
+func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	var (
 		command         string
 		allowedPaths    string
 		allowedCommands string
 		allowAllCmds    bool
+		timeout         time.Duration
 		procPath        string
 	)
 
@@ -47,6 +51,17 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			commandSet := cmd.Flags().Changed("command")
 			if commandSet && len(args) > 0 {
 				return fmt.Errorf("cannot use -c with file arguments")
+			}
+
+			if timeout < 0 {
+				return fmt.Errorf("--timeout must be >= 0")
+			}
+
+			runCtx := cmd.Context()
+			if timeout > 0 {
+				var cancel context.CancelFunc
+				runCtx, cancel = context.WithTimeout(runCtx, timeout)
+				defer cancel()
 			}
 
 			var paths []string
@@ -67,23 +82,28 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			}
 
 			if commandSet {
-				return execute(cmd.Context(), command, "", execOpts, stdin, stdout, stderr)
+				return execute(runCtx, command, "", execOpts, stdin, stdout, stderr)
 			}
 
 			if len(args) > 0 {
 				// Read stdin once so each execute() call gets its own
 				// reader, avoiding a data race on the shared io.Reader.
-				stdinData, err := io.ReadAll(stdin)
+				stdinData, err := readAllContext(runCtx, stdin)
 				if err != nil {
 					return fmt.Errorf("reading stdin: %w", err)
 				}
 
 				for _, file := range args {
-					data, err := os.ReadFile(file)
+					f, err := os.Open(file)
 					if err != nil {
 						return fmt.Errorf("reading %s: %w", file, err)
 					}
-					if err := execute(cmd.Context(), string(data), file, execOpts, bytes.NewReader(stdinData), stdout, stderr); err != nil {
+					data, err := readAllContext(runCtx, f)
+					f.Close()
+					if err != nil {
+						return fmt.Errorf("reading %s: %w", file, err)
+					}
+					if err := execute(runCtx, string(data), file, execOpts, bytes.NewReader(stdinData), stdout, stderr); err != nil {
 						return err
 					}
 				}
@@ -91,11 +111,11 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			}
 
 			// No -c and no file args: read from stdin.
-			stdinData, err := io.ReadAll(stdin)
+			stdinData, err := readAllContext(runCtx, stdin)
 			if err != nil {
 				return fmt.Errorf("reading stdin: %w", err)
 			}
-			return execute(cmd.Context(), string(stdinData), "", execOpts, strings.NewReader(""), stdout, stderr)
+			return execute(runCtx, string(stdinData), "", execOpts, strings.NewReader(""), stdout, stderr)
 		},
 	}
 
@@ -109,17 +129,53 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	cmd.Flags().StringVarP(&allowedPaths, "allowed-paths", "p", "", "comma-separated list of directories the shell is allowed to access")
 	cmd.Flags().StringVar(&allowedCommands, "allowed-commands", "", "comma-separated list of namespaced commands (e.g. rshell:cat,rshell:find)")
 	cmd.Flags().BoolVar(&allowAllCmds, "allow-all-commands", false, "allow execution of all commands (builtins and external)")
+	cmd.Flags().DurationVar(&timeout, "timeout", 0, "maximum execution time for the entire shell run (e.g. 100ms, 5s, 1m)")
 	cmd.Flags().StringVar(&procPath, "proc-path", "", "path to the proc filesystem used by ps (default \"/proc\")")
 
-	if err := cmd.Execute(); err != nil {
+	if err := cmd.ExecuteContext(ctx); err != nil {
 		var status interp.ExitStatus
 		if errors.As(err, &status) {
 			return int(status)
+		}
+		if errors.Is(err, context.DeadlineExceeded) {
+			if timeout > 0 {
+				fmt.Fprintf(stderr, "error: execution timed out after %s\n", timeout)
+			} else {
+				fmt.Fprintln(stderr, "error: execution timed out")
+			}
+			return exitCodeTimeout
+		}
+		if errors.Is(err, context.Canceled) {
+			fmt.Fprintln(stderr, "error: execution canceled")
+			return exitCodeTimeout
 		}
 		fmt.Fprintf(stderr, "error: %v\n", err)
 		return 1
 	}
 	return 0
+}
+
+// readAllContext reads all bytes from r, but returns ctx.Err() immediately if
+// the context is cancelled or its deadline expires before the read completes.
+// It spawns a goroutine to perform the read; the goroutine may outlive this
+// call if the underlying reader blocks (e.g. stdin from a pipe), but it will
+// be reclaimed when the process exits.
+func readAllContext(ctx context.Context, r io.Reader) ([]byte, error) {
+	type result struct {
+		data []byte
+		err  error
+	}
+	ch := make(chan result, 1)
+	go func() {
+		data, err := io.ReadAll(r)
+		ch <- result{data, err}
+	}()
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case res := <-ch:
+		return res.data, res.err
+	}
 }
 
 // rejectLongCommand scans raw CLI args for "--command" or "--command=..." and

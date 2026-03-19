@@ -59,6 +59,10 @@ type runnerConfig struct {
 	// command. Intended for testing convenience.
 	allowAllCommands bool
 
+	// maxExecutionTime bounds the duration of each Run call. Zero disables
+	// the limit. When non-zero, Run derives a child context with this timeout.
+	maxExecutionTime time.Duration
+
 	// procPath is the path to the proc filesystem used by the ps builtin.
 	// Defaults to "/proc" when empty.
 	procPath string
@@ -292,6 +296,22 @@ func StdIO(in io.Reader, out, err io.Writer) RunnerOption {
 	}
 }
 
+// MaxExecutionTime bounds the total execution time of each [Runner.Run] call.
+//
+// When d is zero, no timeout is applied. Negative values are rejected.
+//
+// The timeout is applied per Run call rather than when the Runner is created,
+// so reusing a Runner across multiple runs yields a fresh deadline each time.
+func MaxExecutionTime(d time.Duration) RunnerOption {
+	return func(r *Runner) error {
+		if d < 0 {
+			return fmt.Errorf("MaxExecutionTime: duration must be >= 0")
+		}
+		r.maxExecutionTime = d
+		return nil
+	}
+}
+
 // Reset returns a runner to its initial state, right before the first call to
 // Run or Reset.
 //
@@ -377,6 +397,11 @@ func (r *Runner) Run(ctx context.Context, node syntax.Node) (retErr error) {
 			retErr = fmt.Errorf("internal error")
 		}
 	}()
+	if r.maxExecutionTime > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, r.maxExecutionTime)
+		defer cancel()
+	}
 	if !r.didReset {
 		r.Reset()
 		if r.exit.fatalExit {
