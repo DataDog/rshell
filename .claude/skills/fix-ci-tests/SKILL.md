@@ -204,62 +204,11 @@ EOF
 git push
 ```
 
-### 9. Reply to and resolve CI review comments
-
-If there are review comments on the PR related to the CI failures (e.g. a reviewer or bot flagged the failure), reply to them and mark them as resolved:
-
-```bash
-# Fetch review comments on the PR
-gh api repos/{owner}/{repo}/pulls/{pr-number}/comments --jq '.[] | {id, body, path, line}' 2>&1 | head -100
-```
-
-For each comment that relates to a CI failure you just fixed:
-
-1. **Reply** (prefixed with `[Claude Opus 4.6]`) explaining what was fixed and how:
-   ```bash
-   gh api repos/{owner}/{repo}/pulls/{pr-number}/comments/{comment-id}/replies \
-     -f body="[Claude Opus 4.6] Fixed — <brief explanation of the fix>"
-   ```
-
-2. **Resolve** the conversation thread (requires GraphQL since the REST API does not support resolving):
-   ```bash
-   # First get the GraphQL thread ID for the comment
-   gh api graphql -f query='
-     query($owner: String!, $repo: String!, $pr: Int!) {
-       repository(owner: $owner, name: $repo) {
-         pullRequest(number: $pr) {
-           reviewThreads(first: 100) {
-             nodes {
-               id
-               isResolved
-               comments(first: 1) {
-                 nodes { databaseId }
-               }
-             }
-           }
-         }
-       }
-     }
-   ' -f owner="{owner}" -f repo="{repo}" -F pr={pr-number} \
-     --jq '.data.repository.pullRequest.reviewThreads.nodes[] | select(.comments.nodes[0].databaseId == {comment-id}) | .id'
-
-   # Then resolve it
-   gh api graphql -f query='
-     mutation($threadId: ID!) {
-       resolveReviewThread(input: {threadId: $threadId}) {
-         thread { isResolved }
-       }
-     }
-   ' -f threadId="<thread-id>"
-   ```
-
-If there are no review comments related to CI failures, skip this step.
-
-### 10. Summary
+### 9. Summary
 
 Provide a final summary:
 
 - List each CI failure that was fixed
 - Briefly explain the root cause and fix for each
 - Note any failures that could not be reproduced or fixed (with explanation)
-- Confirm the commit was pushed and which review comments were resolved
+- Confirm the commit was pushed

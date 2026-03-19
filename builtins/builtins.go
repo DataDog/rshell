@@ -157,6 +157,9 @@ type CallContext struct {
 	// dir overrides the working directory for path resolution.
 	// Returns the command's exit code.
 	RunCommand func(ctx context.Context, dir string, name string, args []string) (uint8, error)
+	// Proc provides access to the proc filesystem for the ps builtin.
+	// The path is fixed at construction time and cannot be overridden by callers.
+	Proc *ProcProvider
 }
 
 // Out writes a string to stdout.

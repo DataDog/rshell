@@ -118,16 +118,16 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			// -e / -A: all processes. Takes priority over -p because it is a
 			// superset; GNU ps treats selection options as additive (union), so
 			// -e -p <valid_or_missing> still returns all processes and exits 0.
-			procs, err = procinfo.ListAll(ctx)
+			procs, err = callCtx.Proc.ListAll(ctx)
 
 		case len(parsedPIDs) > 0:
 			// -p only (no -e/-A): select specific PIDs.
 			pidMode = true
-			procs, err = procinfo.GetByPIDs(ctx, parsedPIDs)
+			procs, err = callCtx.Proc.GetByPIDs(ctx, parsedPIDs)
 
 		default:
 			// Default: current session processes.
-			procs, err = procinfo.GetSession(ctx)
+			procs, err = callCtx.Proc.GetSession(ctx)
 		}
 
 		if err != nil {

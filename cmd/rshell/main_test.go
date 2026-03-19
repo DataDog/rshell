@@ -242,3 +242,9 @@ func TestCommandLongFormRejected(t *testing.T) {
 	assert.NotEqual(t, 0, code)
 	assert.Contains(t, stderr, "unknown flag: --command")
 }
+
+func TestProcPathFlagInHelp(t *testing.T) {
+	code, stdout, _ := runCLI(t, "--help")
+	assert.Equal(t, 0, code)
+	assert.Contains(t, stdout, "--proc-path")
+}

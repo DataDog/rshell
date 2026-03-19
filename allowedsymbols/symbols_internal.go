@@ -16,14 +16,19 @@ var internalPerPackageSymbols = map[string][]string{
 		"bufio.NewScanner",                      // 🟢 line-by-line reading of /proc files; no write capability.
 		"bytes.NewReader",                       // 🟢 wraps a byte slice as an in-memory io.Reader; no I/O side effects.
 		"context.Context",                       // 🟢 deadline/cancellation interface; no side effects.
+		"errors.Is",                             // 🟢 checks whether an error in a chain matches a target; pure function, no I/O.
 		"errors.New",                            // 🟢 creates a sentinel error (unsupported-platform stub); pure function, no I/O.
 		"fmt.Errorf",                            // 🟢 error formatting; pure function, no I/O.
+		"os.ErrNotExist",                        // 🟢 sentinel error value indicating a file or directory does not exist; read-only constant, no I/O.
 		"fmt.Sprintf",                           // 🟢 string formatting; pure function, no I/O.
 		"os.Getpid",                             // 🟠 returns the current process ID; read-only, no side effects.
 		"os.Open",                               // 🟠 opens a file read-only; needed to stream /proc/stat line-by-line.
 		"os.ReadDir",                            // 🟠 reads a directory listing; needed to enumerate /proc entries.
 		"os.ReadFile",                           // 🟠 reads a whole file; needed to read /proc/[pid]/{stat,cmdline,status}.
+		"os.Stat",                               // 🟠 validates that the proc path exists before enumeration; read-only metadata, no write capability.
+		"path/filepath.Join",                    // 🟢 joins path elements to construct /proc/<pid>/stat paths; pure function, no I/O.
 		"strconv.Atoi",                          // 🟢 string-to-int conversion; pure function, no I/O.
+		"strconv.Itoa",                          // 🟢 int-to-string conversion for PID directory names; pure function, no I/O.
 		"strconv.ParseInt",                      // 🟢 string to int64 with base/bit-size; pure function, no I/O.
 		"strings.Fields",                        // 🟢 splits a string on whitespace; pure function, no I/O.
 		"strings.HasPrefix",                     // 🟢 checks string prefix; pure function, no I/O.
@@ -76,14 +81,19 @@ var internalAllowedSymbols = []string{
 	"context.Context",                       // 🟢 procinfo: deadline/cancellation interface; no side effects.
 	"encoding/binary.BigEndian",             // 🟢 winnet: reads big-endian IPv6 group values from DLL buffer; pure value, no I/O.
 	"encoding/binary.LittleEndian",          // 🟢 winnet: reads little-endian DWORD fields from DLL buffer; pure value, no I/O.
+	"errors.Is",                             // 🟢 procinfo: checks whether an error in a chain matches a target; pure function, no I/O.
 	"errors.New",                            // 🟢 creates a sentinel error; pure function, no I/O.
 	"fmt.Errorf",                            // 🟢 error formatting; pure function, no I/O.
+	"os.ErrNotExist",                        // 🟢 procinfo: sentinel error value indicating a file or directory does not exist; read-only constant, no I/O.
 	"fmt.Sprintf",                           // 🟢 string formatting; pure function, no I/O.
 	"os.Getpid",                             // 🟠 procinfo: returns the current process ID; read-only, no side effects.
 	"os.Open",                               // 🟠 procinfo: opens a file read-only; needed to stream /proc/stat line-by-line.
 	"os.ReadDir",                            // 🟠 procinfo: reads a directory listing; needed to enumerate /proc entries.
 	"os.ReadFile",                           // 🟠 procinfo: reads a whole file; needed to read /proc/[pid]/{stat,cmdline,status}.
+	"os.Stat",                               // 🟠 procinfo: validates that the proc path exists before enumeration; read-only metadata, no write capability.
+	"path/filepath.Join",                    // 🟢 procinfo: joins path elements to construct /proc/<pid>/stat paths; pure function, no I/O.
 	"strconv.Atoi",                          // 🟢 string-to-int conversion; pure function, no I/O.
+	"strconv.Itoa",                          // 🟢 procinfo: int-to-string conversion for PID directory names; pure function, no I/O.
 	"strconv.ParseInt",                      // 🟢 procinfo: string to int64 with base/bit-size; pure function, no I/O.
 	"strings.Fields",                        // 🟢 procinfo: splits a string on whitespace; pure function, no I/O.
 	"strings.HasPrefix",                     // 🟢 procinfo: checks string prefix; pure function, no I/O.

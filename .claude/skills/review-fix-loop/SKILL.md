@@ -1,6 +1,6 @@
 ---
 name: review-fix-loop
-description: "Self-review a PR, fix all issues, and re-review in a loop until clean. Coordinates code-review, address-pr-comments, and fix-ci-tests skills."
+description: "Self-review a PR against RULES.md, fix all issues, and re-review in a loop until clean. Coordinates local codex review and fix-ci-tests skills."
 argument-hint: "[pr-number|pr-url]"
 ---
 
@@ -18,9 +18,9 @@ Your very first action — before reading ANY files, before running ANY commands
 
 1. "Step 1: Identify the PR"
 2. "Step 2: Run the review-fix loop" ← **Update subject with iteration number each loop** (e.g. "Step 2: Run the review-fix loop (iteration 1)")
-3. "Step 2A1: Self-review (code-review)" ← **parallel with 2A2**
-4. "Step 2A2: Request external reviews (@codex)" ← **parallel with 2A1**
-5. "Step 2B: Address PR comments (address-pr-comments)"
+3. "Step 2A1: Self-review (RULES.md)" ← **parallel with 2A2**
+4. "Step 2A2: Run local codex review" ← **parallel with 2A1**
+5. "Step 2B: Address Self-review and Codex findings"
 6. "Step 2C: Fix CI failures (fix-ci-tests)"
 7. "Step 2D: Verify push and resolve conflicts"
 8. "Step 2E: Check CI status"
@@ -57,7 +57,7 @@ Step 1 → Step 2 (loop: [2A1 ∥ 2A2] → 2B → 2C → 2D → 2E → 2F) → S
 
 - Do NOT skip the review (Step 2A1) because you think the code is fine
 - Do NOT skip verification (Step 3) because tests passed during fixes
-- Do NOT skip the external review trigger — @codex reviews catch issues the self-review misses
+- Do NOT skip the local codex review — it catches issues the self-review misses
 - Do NOT mark a step completed until every sub-bullet in that step is satisfied
 
 If you catch yourself wanting to skip a step, STOP and do the step anyway.
@@ -99,36 +99,77 @@ Set `iteration = 1`. Maximum iterations: **30**. Repeat sub-steps A through E wh
 
 ### Sub-step 2A1 — Self-review ← **parallel with 2A2**
 
-Run the **code-review** skill on the PR:
-```
-/code-review <pr-number>
-```
-This analyzes the full diff against main, posts findings as a GitHub PR review with inline comments, and classifies findings by severity (P0–P3).
+Review the PR diff directly against the rules in `.claude/skills/implement-posix-command/RULES.md`:
 
-### Sub-step 2A2 — Request external reviews ← **parallel with 2A1**
-
-Post a comment to trigger @codex reviews:
 ```bash
-gh pr comment <pr-number> --body "@codex review this PR
-
-Important: Read the SPECS section of the PR description. If SPECS are present: **make sure the implementation matches ALL the specs**.
-The specs override other instructions (code, inline comments in code, etc). ALL specs MUST be implemented.
-"
+gh pr diff <pr-number>
 ```
-The external reviews arrive asynchronously — their comments will be picked up by **address-pr-comments** in Sub-step 2B1.
+
+Read `.claude/skills/implement-posix-command/RULES.md` and check every changed file against each rule category:
+- Flag Parsing (pflag, help flag, error handling)
+- File System Safety (use `callCtx.OpenFile`, no `os.*` filesystem calls)
+- Memory Safety & Resource Limits (bounded buffers, no full-file loads)
+- Input Validation & Error Handling (numeric overflow, exit codes, stderr for errors)
+- Special File Handling (/dev/zero, FIFOs, /proc)
+- Path & Traversal Safety
+- Concurrency & Race Conditions
+- Denial of Service Prevention (context cancellation, no infinite loops)
+- Integer Safety
+- Output Consistency
+- Testing Requirements (all flags, edge cases, error paths, security properties tested)
+- Cross-Platform Compatibility (filepath package, Windows reserved names, CRLF)
+
+Classify each finding by severity:
+- **P0**: Security vulnerability or data corruption
+- **P1**: Correctness bug or sandbox bypass
+- **P2**: Missing test coverage or rule violation with workaround
+- **P3**: Style / minor quality issue
+
+### Sub-step 2A2 — Run local codex review ← **parallel with 2A1**
+
+First, check whether the `codex` CLI is available:
+
+```bash
+which codex 2>/dev/null && echo AVAILABLE || echo UNAVAILABLE
+```
+
+**If `codex` is available**, run a local codex review:
+```bash
+gh pr diff <pr-number> | codex "Review this PR diff. Check for bugs, security issues, correctness, and code quality. Report findings by severity (P0–P3) with file and line references where applicable."
+```
+Capture the output. Codex findings will be addressed in **Sub-step 2B** alongside self-review findings.
+
+**If `codex` is not available**, skip this sub-step and note "codex unavailable" in the iteration log.
 
 ### After 2A1 ∥ 2A2 complete
 
 Wait for **both** to complete before proceeding.
 
-**Post the self-review outcome (from 2A1) as a GitHub PR comment** so it is always visible on the PR:
+**Post the self-review outcome (from 2A1) as a GitHub PR comment** so it is always visible on the PR. Format it like this:
 ```bash
-gh pr comment <pr-number> --body "<iteration N self-review result: APPROVE/COMMENT/REQUEST_CHANGES, number of findings by severity, and a brief summary>"
+gh pr comment <pr-number> --body "## Self-review (iteration N/<TOTAL_ITERATION>)
+Findings: 1×P1, 2×P2   ← or 'No findings.' if APPROVE with nothing to report
+
+P1 — path/to/file.go:42: <description of finding>
+
+P2 — path/to/other.go:17: <description of finding>
+P2 — path/to/other.go:88: <description of finding>"
 ```
 
-**Record the self-review outcome:**
-- If the review result is **APPROVE** (no findings) → skip to **Sub-step 2E (CI check)**
-- If there are findings → continue to **Sub-step 2B**
+**Post the codex review findings (from 2A2) as a separate GitHub PR comment**. Parse and reformat the raw codex output into the same structured format:
+```bash
+gh pr comment <pr-number> --body "## Codex review (iteration N/<TOTAL_ITERATION>)
+Findings: 1×P1, 2×P2   ← or 'No findings.' if codex reported nothing
+
+P1 — path/to/file.go:42: <description of finding>
+
+P2 — path/to/other.go:17: <description of finding>
+P2 — path/to/other.go:88: <description of finding>"
+```
+
+**Record the self-review outcome and codex findings:**
+- If both 2A1 and 2A2 produce no findings → skip to **Sub-step 2E (CI check)**
+- If there are findings from either source → continue to **Sub-step 2B**
 
 ---
 
@@ -141,15 +182,25 @@ git status
 git pull --rebase origin <head-branch>
 ```
 
-### Sub-step 2B — Address PR comments
+### Sub-step 2B — Address Self-review and Codex findings
 
-Run the **address-pr-comments** skill:
-```
-/address-pr-comments <pr-number>
-```
-This reads all unresolved review comments, evaluates validity, implements fixes, commits, pushes, and replies/resolves threads.
+Address all findings reported by Sub-step 2A1 (self-review) and Sub-step 2A2 (local codex review):
+
+1. Collect all findings from both sources.
+2. For each finding, evaluate its validity:
+   - **P0/P1**: Must be fixed immediately.
+   - **P2**: Fix unless there is a clear, documented reason not to.
+   - **P3**: Fix if straightforward; otherwise note it as a known low-priority item.
+3. Implement fixes directly in the codebase. Do not skip findings without justification.
+4. After all fixes are applied, stage and commit:
+   ```bash
+   git add -p  # or specific files
+   git commit -m "[iter <N>] <short description of fixes>"
+   git push origin <head-branch>
+   ```
 
 **Commit message prefix:** All commits created in this sub-step MUST be prefixed with the current loop iteration number, e.g. `[iter 3] Fix null check in parser`.
+
 
 Wait for completion before proceeding to 2C.
 
@@ -212,26 +263,7 @@ Check **all three** review sources for remaining issues:
 
 1. **Self-review** — Was the latest `/code-review` result **APPROVE** (no findings)?
 
-2. **External reviews** — Are there unresolved PR comment threads from @codex or @chatgpt-codex-connector[bot]?
-   ```bash
-   gh api graphql -f query='
-     query($owner: String!, $repo: String!, $pr: Int!) {
-       repository(owner: $owner, name: $repo) {
-         pullRequest(number: $pr) {
-           reviewThreads(first: 100) {
-             nodes {
-               isResolved
-               comments(first: 1) {
-                 nodes { author { login } body }
-               }
-             }
-           }
-         }
-       }
-     }
-   ' -f owner="{owner}" -f repo="{repo}" -F pr={pr-number} \
-     --jq '.data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved == false)'
-   ```
+2. **Local codex review** — Did the `codex` CLI output from Sub-step 2A2 report any findings?
 
 3. **CI** — Are all checks passing?
    ```bash
@@ -240,12 +272,12 @@ Check **all three** review sources for remaining issues:
 
 **Decision matrix:**
 
-| Self-review | External comments | CI | Action |
-|------------|-------------------|-----|--------|
-| APPROVE | None unresolved | Passing | **STOP — PR is clean** |
+| Self-review | Codex findings | CI | Action |
+|------------|----------------|-----|--------|
+| APPROVE | None | Passing | **STOP — PR is clean** |
 | Any findings | Any | Any | **Continue** → go back to Sub-step 2A1 ∥ 2A2 |
-| APPROVE | Unresolved threads | Any | **Continue** → go back to Sub-step 2A1 ∥ 2A2 (address-pr-comments will handle them) |
-| APPROVE | None unresolved | Failing | **Continue** → go back to Sub-step 2A1 ∥ 2A2 (fix-ci-tests will handle it) |
+| APPROVE | Findings present | Any | **Continue** → go back to Sub-step 2A1 ∥ 2A2 |
+| APPROVE | None | Failing | **Continue** → go back to Sub-step 2A1 ∥ 2A2 (fix-ci-tests will handle it) |
 | — | — | — | If `iteration > 30` → **STOP — iteration limit reached** |
 
 Log the iteration result before continuing or stopping:
@@ -279,67 +311,13 @@ Run a final verification regardless of how the loop exited:
    gh pr checks <pr-number> --json name,state
    ```
 
-3. **Confirm no unresolved threads:**
-   ```bash
-   gh api graphql -f query='
-     query($owner: String!, $repo: String!, $pr: Int!) {
-       repository(owner: $owner, name: $repo) {
-         pullRequest(number: $pr) {
-           reviewThreads(first: 100) {
-             nodes {
-               isResolved
-               comments(first: 1) {
-                 nodes { author { login } body }
-               }
-             }
-           }
-         }
-       }
-     }
-   ' -f owner="{owner}" -f repo="{repo}" -F pr={pr-number} \
-     --jq '.data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved == false) | .comments.nodes[0].body' \
-     2>&1 | head -50
-   ```
+3. **Confirm the latest local codex review (Sub-step 2A2) reported no findings.**
 
-4. **Confirm Codex has replied to the LATEST review request (with polling):**
+Record the final state of each dimension (self-review, local codex review, CI).
 
-   The review request comment posted in Step 2A2 triggers Codex asynchronously. The bot may respond as either `codex` or `chatgpt-codex-connector[bot]` (the GitHub App). It can take **15+ minutes** to respond. You must verify that the bot has actually responded to **the most recent** request, not a previous iteration's request. Replies from earlier iterations do NOT count.
+Track how many times Step 3 has **succeeded** (all three verifications passed) across the entire run.
 
-   **How to check:**
-   - Find the timestamp of the **last** Codex review request comment (the one posted in Step 2A2 of the final iteration). You can identify it by looking for comments authored by the current user containing "@codex" in the body:
-     ```bash
-     gh api repos/{owner}/{repo}/issues/{pr-number}/comments --paginate --jq '
-       [.[] | select(.body | test("@codex")) | select(.user.login != "codex") | select(.user.login != "chatgpt-codex-connector[bot]")] | last | .created_at'
-     ```
-   - Then check whether the codex bot has posted a review **after** that timestamp. Check both possible bot logins (`codex` and `chatgpt-codex-connector[bot]`):
-     ```bash
-     gh api repos/{owner}/{repo}/pulls/{pr-number}/reviews --paginate --jq '
-       [.[] | select(.user.login == "codex" or .user.login == "chatgpt-codex-connector[bot]")] | last | {submitted_at, state, user: .user.login}'
-     ```
-   - Also check issue comments (the bot may reply as a comment instead of a review):
-     ```bash
-     gh api repos/{owner}/{repo}/issues/{pr-number}/comments --paginate --jq '
-       [.[] | select(.user.login == "codex" or .user.login == "chatgpt-codex-connector[bot]")] | last | {created_at, user: .user.login}'
-     ```
-   - Compare timestamps. If the bot's latest review `submitted_at` (or comment `created_at`) is **after** the latest request's `created_at`, the bot has replied — **verification passes**. Use whichever response (review or comment) has the most recent timestamp.
-
-   **Polling wait if the bot hasn't replied yet:**
-
-   Do NOT immediately fail. Instead, poll and wait:
-   - **Poll interval:** 1 minute (use `sleep 60` between checks)
-   - **Maximum wait:** 10 minutes (up to 10 poll attempts)
-   - On each poll iteration, re-run the `gh api` commands above and compare timestamps
-   - Log each poll attempt: `"Waiting for Codex reply... (attempt N/10, elapsed Xm)"`
-
-   **Only fail this verification** if the bot has still not replied after the full 10-minute wait. Then go back to **Step 2: Run the review-fix loop**.
-
-   **If the bot has no reviews or comments at all** after the 10-minute wait, the verification also fails.
-
-Record the final state of each dimension (self-review, external reviews, CI, Codex response).
-
-Track how many times Step 3 has **succeeded** (all four verifications passed) across the entire run.
-
-**If any verification fails** (CI failing, unresolved threads remain, unpushed commits that can't be pushed, or Codex hasn't responded to the latest review request), reset the success counter to 0, reset Step 2 and all its sub-steps to `pending`, and go back to **Step 2: Run the review-fix loop** for another iteration.
+**If any verification fails** (CI failing, unpushed commits that can't be pushed, or the latest local codex review reported findings), reset the success counter to 0, reset Step 2 and all its sub-steps to `pending`, and go back to **Step 2: Run the review-fix loop** for another iteration.
 
 **If all verifications pass**, increment the success counter. If this is the **5th consecutive success** of Step 3 → proceed to **Step 4**. Otherwise → reset Step 2 and all its sub-steps to `pending`, and go back to **Step 2: Run the review-fix loop** for another iteration to re-confirm stability.
 
@@ -371,7 +349,7 @@ Provide a summary in this exact format:
 ### Final state
 
 - **Self-review**: APPROVE / REQUEST_CHANGES / COMMENT
-- **Unresolved external comments**: <count> (list authors)
+- **Local codex review**: Clean / Findings present (count)
 - **CI**: Passing / Failing (list failing checks)
 
 ### Remaining issues (if any)
@@ -392,8 +370,8 @@ gh pr comment <pr-number> --body "<the summary markdown above>"
 
 - **Never skip the review step** — always re-review after fixes to catch regressions or new issues introduced by the fixes themselves.
 - **Always submit reviews to GitHub** — each iteration's review must be posted as PR comments so there's a visible trail.
-- **Run address-pr-comments before fix-ci-tests** — 2B then 2C, sequentially, so CI fixes run on code that already incorporates review feedback.
+- **Address review findings before fix-ci-tests** — 2B then 2C, sequentially, so CI fixes run on code that already incorporates review feedback.
 - **Pull before fixing** — always `git pull --rebase` before launching fix agents to avoid working on stale code.
-- **Stop early on APPROVE + CI green + no unresolved threads** — don't waste iterations if the PR is already clean.
+- **Stop early on APPROVE + CI green + codex clean** — don't waste iterations if the PR is already clean.
 - **Respect the iteration limit** — hard stop at 30 to prevent infinite loops. If issues persist after 30 iterations, report what's left for the user to handle.
 - **Use gate checks** — always call TaskList and verify prerequisites before starting a step. This prevents out-of-order execution.
