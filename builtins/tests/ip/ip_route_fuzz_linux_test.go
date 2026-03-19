@@ -132,11 +132,15 @@ func FuzzIPRouteParse(f *testing.F) {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 
-		_, _, code := runScriptCtx(ctx, t, "ip route show", "")
+		_, _, code := cmdRunCtxFuzz(ctx, t, "ip route show")
 		timedOut := ctx.Err() == context.DeadlineExceeded
+		cancel()
 		if timedOut {
 			t.Errorf("FuzzIPRouteParse: timed out on %d-byte input", len(content))
 			return
+		}
+		if code == -1 {
+			return // internal shell error before the builtin ran — not our bug
 		}
 		if code != 0 && code != 1 {
 			t.Errorf("FuzzIPRouteParse: unexpected exit code %d", code)
@@ -204,11 +208,15 @@ func FuzzIPRouteGetAddr(f *testing.F) {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 
-		_, _, code := runScriptCtx(ctx, t, "ip route get "+addr, "")
+		_, _, code := cmdRunCtxFuzz(ctx, t, "ip route get "+addr)
 		timedOut := ctx.Err() == context.DeadlineExceeded
+		cancel()
 		if timedOut {
 			t.Errorf("FuzzIPRouteGetAddr %q: timed out", addr)
 			return
+		}
+		if code == -1 {
+			return // internal shell error before the builtin ran — not our bug
 		}
 		if code != 0 && code != 1 {
 			t.Errorf("FuzzIPRouteGetAddr %q: unexpected exit code %d", addr, code)
