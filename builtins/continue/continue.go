@@ -42,7 +42,7 @@ var Cmd = builtins.Command{
 
 func run(_ context.Context, callCtx *builtins.CallContext, args []string) builtins.Result {
 	if len(args) > 0 && args[0] == "--help" {
-		callCtx.Outf("continue: continue [n]\n    Resume for, while, or until loops.\n\n    Resumes the next iteration of the enclosing FOR, WHILE or UNTIL loop.\n    If N is specified, resumes the Nth enclosing loop.\n\n    Exit Status:\n    The exit status is 0 unless N is not greater than or equal to 1.\n")
+		callCtx.Outf("continue: continue [n]\n    Resume for, while, or until loops.\n    \n    Resumes the next iteration of the enclosing FOR, WHILE or UNTIL loop.\n    If N is specified, resumes the Nth enclosing loop.\n    \n    Exit Status:\n    The exit status is 0 unless N is not greater than or equal to 1.\n")
 		return builtins.Result{Code: 2}
 	}
 	return loopctl.LoopControl(callCtx, "continue", args)
