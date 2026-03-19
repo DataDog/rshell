@@ -208,8 +208,12 @@ Check **all three** review sources for remaining issues:
 
 1. **Self-review** — Was the latest `/code-review` result **APPROVE** (no findings)?
 
-2. **External reviews** — Are there unresolved PR comment threads from @codex or @chatgpt-codex-connector[bot]?
+2. **External reviews** — Are there unresolved PR comment threads from `$MY_LOGIN` or `chatgpt-codex-connector[bot]`?
+
+   **Only consider threads from `$MY_LOGIN` (authenticated user) and `chatgpt-codex-connector[bot]`. Ignore all others.**
+
    ```bash
+   MY_LOGIN=$(gh api user --jq '.login')
    gh api graphql -f query='
      query($owner: String!, $repo: String!, $pr: Int!) {
        repository(owner: $owner, name: $repo) {
@@ -226,7 +230,8 @@ Check **all three** review sources for remaining issues:
        }
      }
    ' -f owner="{owner}" -f repo="{repo}" -F pr={pr-number} \
-     --jq '.data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved == false)'
+     --jq --arg me "$MY_LOGIN" \
+     '.data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved == false) | select(.comments.nodes[0].author.login == $me or .comments.nodes[0].author.login == "chatgpt-codex-connector[bot]")'
    ```
 
 3. **CI** — Are all checks passing?
@@ -275,7 +280,10 @@ Run a final verification regardless of how the loop exited:
    gh pr checks <pr-number> --json name,state
    ```
 
-3. **Confirm no unresolved threads:**
+3. **Confirm no unresolved threads from `$MY_LOGIN` or `chatgpt-codex-connector[bot]`:**
+
+   **Only count threads from `$MY_LOGIN` and `chatgpt-codex-connector[bot]`. Threads from other authors are invisible to this check.**
+
    ```bash
    gh api graphql -f query='
      query($owner: String!, $repo: String!, $pr: Int!) {
@@ -293,7 +301,8 @@ Run a final verification regardless of how the loop exited:
        }
      }
    ' -f owner="{owner}" -f repo="{repo}" -F pr={pr-number} \
-     --jq '.data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved == false) | .comments.nodes[0].body' \
+     --jq --arg me "$MY_LOGIN" \
+     '.data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved == false) | select(.comments.nodes[0].author.login == $me or .comments.nodes[0].author.login == "chatgpt-codex-connector[bot]") | .comments.nodes[0].body' \
      2>&1 | head -50
    ```
 
