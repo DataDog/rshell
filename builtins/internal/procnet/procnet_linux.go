@@ -22,10 +22,9 @@ const routeScanBufInit = 4096
 // It opens procPath/net/route, parses each data line, and returns UP entries.
 func readRoutes(ctx context.Context, procPath string) ([]Route, error) {
 	path := filepath.Join(procPath, "net", "route")
-	// os.Open is used directly (bypassing the AllowedPaths sandbox wrapper) because
-	// /proc/net/route is a kernel-managed pseudo-file that must always be readable for
-	// network introspection commands, regardless of sandbox path restrictions.
-	// This matches the precedent set by the ss builtin which reads /proc/net/tcp directly.
+	// Intentional sandbox bypass: os.Open is used directly instead of
+	// callCtx.OpenFile because procPath is hardcoded to a kernel pseudo-filesystem
+	// (/proc) and is never derived from user input. See package doc for details.
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, err

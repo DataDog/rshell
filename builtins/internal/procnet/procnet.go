@@ -8,6 +8,15 @@
 // This package is in builtins/internal/ and is therefore exempt from the
 // builtinAllowedSymbols allowlist check. It may use OS-specific APIs freely.
 //
+// # Sandbox bypass
+//
+// ReadRoutes intentionally bypasses the AllowedPaths sandbox (callCtx.OpenFile)
+// and calls os.Open directly. This is safe because procPath is always a
+// kernel-managed pseudo-filesystem root (/proc by default) that is hardcoded
+// by the caller — it is never derived from user-supplied input and cannot be
+// redirected by a shell script. The caller is responsible for ensuring that
+// procPath remains a safe, non-user-controlled path.
+//
 // /proc/net/route format (tab-separated, one route per line after the header):
 //
 //	Iface  Destination  Gateway  Flags  RefCnt  Use  Metric  Mask  MTU  Window  IRTT
@@ -55,6 +64,12 @@ type Route struct {
 // ReadRoutes opens procPath/net/route and returns all UP route entries.
 // procPath is the proc filesystem root (e.g. DefaultProcPath or a test override).
 // It is implemented on Linux and returns an error on other platforms.
+//
+// Sandbox bypass: this function calls os.Open directly, bypassing the
+// AllowedPaths sandbox enforced by callCtx.OpenFile. This is intentional —
+// procPath must always be a safe, hardcoded kernel pseudo-filesystem path
+// (e.g. /proc) that is not controllable from user scripts. Never pass a
+// path derived from user input.
 func ReadRoutes(ctx context.Context, procPath string) ([]Route, error) {
 	return readRoutes(ctx, procPath)
 }
