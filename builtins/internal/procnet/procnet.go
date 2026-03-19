@@ -95,13 +95,16 @@ func Popcount(v uint32) int {
 	return bits.OnesCount32(v)
 }
 
-// IsContiguousMask reports whether v is a valid CIDR subnet mask —
-// all 1-bits are contiguous from the most-significant bit (e.g. /8 = 0xFF000000).
+// IsContiguousMask reports whether v is a valid CIDR subnet mask in the
+// little-endian encoding used by /proc/net/route, where the first octet is
+// stored in the least-significant byte.  In this encoding a valid prefix mask
+// has consecutive 1-bits from the LSB: /24 = 0x00FFFFFF, /8 = 0x000000FF.
 // Non-contiguous masks (e.g. 0xF0F0F0F0) are not valid CIDR prefixes and
 // would produce misleading output from LongestPrefixMatch and formatRoute.
 func IsContiguousMask(v uint32) bool {
-	n := uint(bits.OnesCount32(v))
-	return (^uint32(0))<<(32-n) == v
+	// A mask of the form (1<<n)−1 satisfies v & (v+1) == 0.
+	// This covers v=0 (/0) and v=0xFFFFFFFF (/32, uint32 overflow gives 0).
+	return v&(v+1) == 0
 }
 
 // LongestPrefixMatch returns the route that best matches addr by
