@@ -1,4 +1,8 @@
-# rshell - A Restricted Shell for AI Agents 
+<p align="center">
+  <img src="logo.png" alt="rshell logo" width="200"/>
+</p>
+
+# rshell - A Restricted Shell for AI Agents
 
 [![CI](https://github.com/DataDog/rshell/actions/workflows/test.yml/badge.svg)](https://github.com/DataDog/rshell/actions/workflows/test.yml)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
