@@ -1,13 +1,15 @@
 description: The true builtin ignores unknown flags and still exits 0.
-skip_assert_against_bash: true  # bash builtin true ignores --help; we match GNU coreutils
 input:
   script: |+
     true -x
+    echo $?
+    true --help
     echo $?
     true --unknown-flag
     echo $?
 expect:
   stdout: |+
+    0
     0
     0
   stderr: ""
