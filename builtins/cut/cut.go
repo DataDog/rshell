@@ -75,7 +75,24 @@ import (
 )
 
 // Cmd is the cut builtin command descriptor.
-var Cmd = builtins.Command{Name: "cut", Description: "remove sections from each line", MakeFlags: registerFlags}
+var Cmd = builtins.Command{
+	Name:        "cut",
+	Description: "remove sections from each line",
+	Help: `Usage: cut OPTION... [FILE]...
+Print selected parts of lines from each FILE to standard output.
+With no FILE, or when FILE is -, read standard input.
+
+  -n, --                          do not split multi-byte characters
+  -b, --bytes string              select only these bytes
+  -c, --characters string         select only these characters
+      --complement                complement the set of selected bytes, characters, or fields
+  -d, --delimiter string          use DELIM instead of TAB for field delimiter
+  -f, --fields string             select only these fields
+      --help                      print usage and exit
+  -s, --only-delimited            do not print lines not containing delimiters
+      --output-delimiter string   use STRING as the output delimiter`,
+	MakeFlags: registerFlags,
+}
 
 // MaxLineBytes is the per-line buffer cap for the line scanner.
 const MaxLineBytes = 1 << 20 // 1 MiB

@@ -60,7 +60,21 @@ import (
 )
 
 // Cmd is the head builtin command descriptor.
-var Cmd = builtins.Command{Name: "head", Description: "output the first part of files", MakeFlags: registerFlags}
+var Cmd = builtins.Command{
+	Name:        "head",
+	Description: "output the first part of files",
+	Help: `Usage: head [OPTION]... [FILE]...
+Print the first 10 lines of each FILE to standard output.
+With no FILE, or when FILE is -, read standard input.
+
+  -c, --bytes string   print the first N bytes instead of lines
+  -h, --help           print usage and exit
+  -n, --lines string   print the first N lines instead of the first 10
+  -q, --quiet          never print file name headers
+      --silent         alias for --quiet
+  -v, --verbose        always print file name headers`,
+	MakeFlags: registerFlags,
+}
 
 // MaxCount is the maximum accepted line or byte count. Values above this
 // are clamped. This prevents huge theoretical allocations while remaining

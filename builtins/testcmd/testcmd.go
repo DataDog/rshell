@@ -81,10 +81,122 @@ import (
 )
 
 // Cmd is the "test" builtin command registration.
-var Cmd = builtins.Command{Name: "test", Description: "evaluate conditional expression", MakeFlags: builtins.NoFlags(runTest)}
+var Cmd = builtins.Command{
+	Name:        "test",
+	Description: "evaluate conditional expression",
+	Help: `Usage: test EXPRESSION
+   or: [ EXPRESSION ]
+
+Evaluate conditional expression.
+
+Exit status:
+  0  if EXPRESSION is true,
+  1  if EXPRESSION is false,
+  2  if an error occurred.
+
+File tests:
+  -a FILE   FILE exists (deprecated synonym for -e)
+  -e FILE   FILE exists
+  -f FILE   FILE is a regular file
+  -d FILE   FILE is a directory
+  -s FILE   FILE has size > 0
+  -r FILE   FILE is readable
+  -w FILE   FILE is writable
+  -x FILE   FILE is executable
+  -h FILE   FILE is a symbolic link
+  -L FILE   FILE is a symbolic link (same as -h)
+  -p FILE   FILE is a named pipe
+
+File comparison:
+  FILE1 -nt FILE2   FILE1 is newer than FILE2
+  FILE1 -ot FILE2   FILE1 is older than FILE2
+
+String tests:
+  -z STRING         STRING has zero length
+  -n STRING         STRING has non-zero length
+  STRING            STRING is non-empty
+
+String comparison:
+  S1 = S2    strings are equal
+  S1 == S2   strings are equal (synonym for =)
+  S1 != S2   strings are not equal
+  S1 < S2    S1 sorts before S2
+  S1 > S2    S1 sorts after S2
+
+Integer comparison:
+  N1 -eq N2  N1 equals N2
+  N1 -ne N2  N1 is not equal to N2
+  N1 -lt N2  N1 is less than N2
+  N1 -le N2  N1 is less or equal to N2
+  N1 -gt N2  N1 is greater than N2
+  N1 -ge N2  N1 is greater or equal to N2
+
+Logical:
+  ! EXPR            EXPR is false
+  EXPR1 -a EXPR2   both true
+  EXPR1 -o EXPR2   either true
+  ( EXPR )         grouping`,
+	MakeFlags: builtins.NoFlags(runTest),
+}
 
 // BracketCmd is the "[" builtin command registration.
-var BracketCmd = builtins.Command{Name: "[", Description: "evaluate conditional expression", MakeFlags: builtins.NoFlags(runBracket)}
+var BracketCmd = builtins.Command{
+	Name:        "[",
+	Description: "evaluate conditional expression",
+	Help: `Usage: test EXPRESSION
+   or: [ EXPRESSION ]
+
+Evaluate conditional expression.
+
+Exit status:
+  0  if EXPRESSION is true,
+  1  if EXPRESSION is false,
+  2  if an error occurred.
+
+File tests:
+  -a FILE   FILE exists (deprecated synonym for -e)
+  -e FILE   FILE exists
+  -f FILE   FILE is a regular file
+  -d FILE   FILE is a directory
+  -s FILE   FILE has size > 0
+  -r FILE   FILE is readable
+  -w FILE   FILE is writable
+  -x FILE   FILE is executable
+  -h FILE   FILE is a symbolic link
+  -L FILE   FILE is a symbolic link (same as -h)
+  -p FILE   FILE is a named pipe
+
+File comparison:
+  FILE1 -nt FILE2   FILE1 is newer than FILE2
+  FILE1 -ot FILE2   FILE1 is older than FILE2
+
+String tests:
+  -z STRING         STRING has zero length
+  -n STRING         STRING has non-zero length
+  STRING            STRING is non-empty
+
+String comparison:
+  S1 = S2    strings are equal
+  S1 == S2   strings are equal (synonym for =)
+  S1 != S2   strings are not equal
+  S1 < S2    S1 sorts before S2
+  S1 > S2    S1 sorts after S2
+
+Integer comparison:
+  N1 -eq N2  N1 equals N2
+  N1 -ne N2  N1 is not equal to N2
+  N1 -lt N2  N1 is less than N2
+  N1 -le N2  N1 is less or equal to N2
+  N1 -gt N2  N1 is greater than N2
+  N1 -ge N2  N1 is greater or equal to N2
+
+Logical:
+  ! EXPR            EXPR is false
+  EXPR1 -a EXPR2   both true
+  EXPR1 -o EXPR2   either true
+  ( EXPR )         grouping`,
+	MakeFlags: builtins.NoFlags(runBracket),
+}
 
 const helpText = `Usage: test EXPRESSION
    or: [ EXPRESSION ]

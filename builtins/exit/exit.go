@@ -28,7 +28,16 @@ import (
 )
 
 // Cmd is the exit builtin command descriptor.
-var Cmd = builtins.Command{Name: "exit", Description: "exit the shell", MakeFlags: builtins.NoFlags(run)}
+var Cmd = builtins.Command{
+	Name:        "exit",
+	Description: "exit the shell",
+	Help: `exit: exit [n]
+    Exit the shell.
+
+    Exits the shell with a status of N.  If N is omitted, the exit status
+    is that of the last command executed.`,
+	MakeFlags: builtins.NoFlags(run),
+}
 
 func run(_ context.Context, callCtx *builtins.CallContext, args []string) builtins.Result {
 	if len(args) > 0 && args[0] == "--help" {

@@ -104,7 +104,27 @@ import (
 )
 
 // Cmd is the ss builtin command descriptor.
-var Cmd = builtins.Command{Name: "ss", MakeFlags: registerFlags}
+var Cmd = builtins.Command{
+	Name:        "ss",
+	Description: "display socket statistics",
+	Help: `Usage: ss [OPTION]...
+Display information about network sockets.
+
+  -a, --all         display all sockets (listening and non-listening)
+  -e, --extended    show extended socket info (uid, inode)
+  -h, --help        print usage and exit
+  -4, --ipv4        display only IPv4 sockets
+  -6, --ipv6        display only IPv6 sockets
+  -l, --listening   display only listening sockets
+  -H, --no-header   suppress column header
+  -n, --numeric     do not resolve service names
+  -o, --options     show timer information
+  -s, --summary     print summary statistics only
+  -t, --tcp         display only TCP sockets
+  -u, --udp         display only UDP sockets
+  -x, --unix        display only Unix domain sockets`,
+	MakeFlags: registerFlags,
+}
 
 // MaxLineBytes is the per-line buffer cap for the Linux /proc/net/ scanner.
 const MaxLineBytes = 1 << 20 // 1 MiB

@@ -36,6 +36,7 @@ type HandlerFunc func(ctx context.Context, callCtx *CallContext, args []string) 
 type Command struct {
 	Name        string
 	Description string
+	Help        string
 	MakeFlags   func(*FlagSet) HandlerFunc
 }
 
@@ -56,7 +57,7 @@ func NoFlags(fn HandlerFunc) func(*FlagSet) HandlerFunc {
 func (c Command) Register() {
 	name := c.Name
 	factory := c.MakeFlags
-	metaRegistry[name] = CommandMeta{Name: name, Description: c.Description}
+	metaRegistry[name] = CommandMeta{Name: name, Description: c.Description, Help: c.Help}
 	addToRegistry(name, func(ctx context.Context, callCtx *CallContext, args []string) Result {
 		fs := pflag.NewFlagSet(name, pflag.ContinueOnError)
 		fs.SetOutput(io.Discard) // handler formats errors itself
@@ -198,6 +199,7 @@ var registry = map[string]HandlerFunc{}
 type CommandMeta struct {
 	Name        string
 	Description string
+	Help        string
 }
 
 var metaRegistry = map[string]CommandMeta{}

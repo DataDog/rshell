@@ -26,7 +26,19 @@ import (
 )
 
 // Cmd is the break builtin command descriptor.
-var Cmd = builtins.Command{Name: "break", Description: "exit from a loop", MakeFlags: builtins.NoFlags(run)}
+var Cmd = builtins.Command{
+	Name:        "break",
+	Description: "exit from a loop",
+	Help: `break: break [n]
+    Exit for, while, or until loops.
+
+    Exit a FOR, WHILE or UNTIL loop.  If N is specified, break N enclosing
+    loops.
+
+    Exit Status:
+    The exit status is 0 unless N is not greater than or equal to 1.`,
+	MakeFlags: builtins.NoFlags(run),
+}
 
 func run(_ context.Context, callCtx *builtins.CallContext, args []string) builtins.Result {
 	if len(args) > 0 && args[0] == "--help" {

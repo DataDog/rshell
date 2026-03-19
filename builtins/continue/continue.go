@@ -26,7 +26,19 @@ import (
 )
 
 // Cmd is the continue builtin command descriptor.
-var Cmd = builtins.Command{Name: "continue", Description: "continue a loop iteration", MakeFlags: builtins.NoFlags(run)}
+var Cmd = builtins.Command{
+	Name:        "continue",
+	Description: "continue a loop iteration",
+	Help: `continue: continue [n]
+    Resume for, while, or until loops.
+
+    Resumes the next iteration of the enclosing FOR, WHILE or UNTIL loop.
+    If N is specified, resumes the Nth enclosing loop.
+
+    Exit Status:
+    The exit status is 0 unless N is not greater than or equal to 1.`,
+	MakeFlags: builtins.NoFlags(run),
+}
 
 func run(_ context.Context, callCtx *builtins.CallContext, args []string) builtins.Result {
 	if len(args) > 0 && args[0] == "--help" {

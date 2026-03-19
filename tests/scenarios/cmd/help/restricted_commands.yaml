@@ -7,8 +7,8 @@ input:
 expect:
   stdout: |
     echo  write arguments to stdout
-    help  display available commands
+    help  display help for commands
 
-    Run '<command> --help' for more information on a specific command.
+    Run 'help <command>' for more information on a specific command.
   stderr: ""
   exit_code: 0

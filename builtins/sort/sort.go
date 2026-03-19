@@ -84,7 +84,26 @@ import (
 )
 
 // Cmd is the sort builtin command descriptor.
-var Cmd = builtins.Command{Name: "sort", Description: "sort lines of text files", MakeFlags: registerFlags}
+var Cmd = builtins.Command{
+	Name:        "sort",
+	Description: "sort lines of text files",
+	Help: `Usage: sort [OPTION]... [FILE]...
+Write sorted concatenation of all FILE(s) to standard output.
+With no FILE, or when FILE is -, read standard input.
+
+  -c, --check string                check for sorted input; optionally =silent or =quiet
+  -d, --dictionary-order            consider only blanks and alphanumeric characters
+  -t, --field-separator string      use SEP as the field separator
+  -h, --help                        print usage and exit
+  -f, --ignore-case                 fold lower case to upper case characters
+  -b, --ignore-leading-blanks       ignore leading blanks
+  -k, --key stringArray             sort via a key; KEYDEF is F[.C][OPTS][,F[.C][OPTS]]
+  -n, --numeric-sort                compare according to string numerical value
+  -r, --reverse                     reverse the result of comparisons
+  -s, --stable                      stabilize sort by disabling last-resort comparison
+  -u, --unique                      output only the first of an equal run`,
+	MakeFlags: registerFlags,
+}
 
 // checkTracker is a pflag.Value that tracks all --check/-c modes set
 // during argument parsing so conflicting modes (diagnose vs silent) can

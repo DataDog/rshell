@@ -23,7 +23,15 @@ import (
 )
 
 // Cmd is the false builtin command descriptor.
-var Cmd = builtins.Command{Name: "false", Description: "return unsuccessful exit status", MakeFlags: builtins.NoFlags(run)}
+var Cmd = builtins.Command{
+	Name:        "false",
+	Description: "return unsuccessful exit status",
+	Help: `false: false
+    Return an unsuccessful result.
+
+    Exit with a status code indicating failure.`,
+	MakeFlags: builtins.NoFlags(run),
+}
 
 func run(_ context.Context, _ *builtins.CallContext, _ []string) builtins.Result {
 	return builtins.Result{Code: 1}

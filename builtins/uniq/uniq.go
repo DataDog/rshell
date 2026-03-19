@@ -85,7 +85,26 @@ import (
 )
 
 // Cmd is the uniq builtin command descriptor.
-var Cmd = builtins.Command{Name: "uniq", Description: "report or omit repeated lines", MakeFlags: registerFlags}
+var Cmd = builtins.Command{
+	Name:        "uniq",
+	Description: "report or omit repeated lines",
+	Help: `Usage: uniq [OPTION]... [INPUT]
+Filter adjacent matching lines from INPUT (or stdin),
+writing to standard output.
+
+  -D, --all-repeated string   print all duplicate lines
+  -w, --check-chars string    compare no more than N characters
+  -c, --count                 prefix lines by the number of occurrences
+      --group string          show all input lines with group separators
+  -h, --help                  print usage and exit
+  -i, --ignore-case           ignore differences in case when comparing
+  -d, --repeated              only print duplicate lines, one for each group
+  -s, --skip-chars string     avoid comparing the first N characters
+  -f, --skip-fields string    avoid comparing the first N fields
+  -u, --unique                only print unique lines
+  -z, --zero-terminated       line delimiter is NUL, not newline`,
+	MakeFlags: registerFlags,
+}
 
 // MaxLineBytes is the per-line buffer cap for the line scanner.
 const MaxLineBytes = 1 << 20 // 1 MiB

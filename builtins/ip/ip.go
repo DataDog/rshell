@@ -88,7 +88,27 @@ import (
 )
 
 // Cmd is the ip builtin command descriptor.
-var Cmd = builtins.Command{Name: "ip", MakeFlags: registerFlags}
+var Cmd = builtins.Command{
+	Name:        "ip",
+	Description: "show network interface information",
+	Help: `Usage: ip [GLOBAL-OPTIONS] OBJECT [COMMAND [ARGUMENTS]]
+Show network interface information.
+
+Supported objects:
+  addr [show] [dev IFNAME]  Show IP addresses
+  link [show] [dev IFNAME]  Show link-layer information
+
+Global options:
+      --brief     print brief information in tabular format
+  -h, --help      print usage and exit
+  -4, --ipv4      show only IPv4 addresses
+  -6, --ipv6      show only IPv6 addresses
+  -o, --oneline   output each record on a single line
+
+Note: -b/-B/-batch, -force, -n/--netns, and 'ip netns' are blocked for safety.
+Note: the real ip command's -br flag is --brief in this builtin.`,
+	MakeFlags: registerFlags,
+}
 
 // displayOpts holds the resolved global display options.
 type displayOpts struct {

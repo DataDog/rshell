@@ -1,9 +1,9 @@
-description: Help prints usage when arguments are provided.
+description: Help prints error for unknown command.
 skip_assert_against_bash: true
 input:
   script: |+
     help foo
 expect:
-  stdout_contains: ["Usage: help"]
-  stderr: ""
+  stdout: ""
+  stderr: "help: no help topics match 'foo'\n"
   exit_code: 1

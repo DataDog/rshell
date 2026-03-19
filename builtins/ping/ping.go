@@ -129,7 +129,21 @@ const (
 var Cmd = builtins.Command{
 	Name:        "ping",
 	Description: "send ICMP echo requests to a network host",
-	MakeFlags:   registerFlags,
+	Help: `Usage: ping [OPTION]... HOST
+Send ICMP echo requests to HOST and report statistics.
+
+Options:
+  -c, --count int         number of ICMP packets to send (1-20)
+  -h, --help              print usage and exit 0
+  -i, --interval string   interval between packets (200ms-1m0s)
+  -4, --ipv4              use IPv4
+  -6, --ipv6              use IPv6
+  -q, --quiet             quiet output: suppress per-packet lines
+  -W, --wait string       time to wait for each reply (100ms-30s)
+
+Note: the following flags are not supported for safety and will be rejected:
+  -f (flood), -b (broadcast), -s (packet size), -I (interface), -p (pattern), -R (record route)`,
+	MakeFlags: registerFlags,
 }
 
 func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {

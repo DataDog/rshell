@@ -125,7 +125,39 @@ import (
 )
 
 // Cmd is the grep builtin command descriptor.
-var Cmd = builtins.Command{Name: "grep", Description: "print lines that match patterns", MakeFlags: registerFlags}
+var Cmd = builtins.Command{
+	Name:        "grep",
+	Description: "print lines that match patterns",
+	Help: `Usage: grep [OPTION]... PATTERN [FILE]...
+Search for PATTERN in each FILE.
+When FILE is -, read standard input. With no FILE, read standard input.
+
+  -A, --after-context int     print NUM lines after each match
+  -G, --basic-regexp          use basic regular expressions (default)
+  -B, --before-context int    print NUM lines before each match
+  -C, --context int           print NUM lines of context around each match
+  -c, --count                 print only a count of matching lines per file
+  -E, --extended-regexp       use extended regular expressions
+  -l, --files-with-matches    print only names of files with matches
+  -L, --files-without-match   print only names of files without matches
+  -F, --fixed-strings         interpret pattern as fixed strings
+      --help                  print usage and exit
+  -i, --ignore-case           ignore case distinctions
+  -v, --invert-match          select non-matching lines
+  -n, --line-number           prefix output with line numbers
+  -x, --line-regexp           match only whole lines
+  -m, --max-count int         stop after NUM matches per file
+  -h, --no-filename           suppress filename prefix
+  -s, --no-messages           suppress error messages
+  -o, --only-matching         print only the matched parts
+  -q, --quiet                 suppress all output
+  -e, --regexp string         use PATTERN as the pattern
+      --silent                alias for --quiet
+  -a, --text                  process binary file as if it were text
+  -H, --with-filename         always print filename prefix
+  -w, --word-regexp           match only whole words`,
+	MakeFlags: registerFlags,
+}
 
 // MaxLineBytes is the per-line buffer cap for the line scanner. Lines
 // longer than this are reported as an error instead of being buffered.
