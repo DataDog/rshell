@@ -48,6 +48,10 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 		}
 
 		// help <command> — show detailed help for a specific command.
+		if len(args) > 1 {
+			printUsage(callCtx)
+			return builtins.Result{Code: 1}
+		}
 		if len(args) > 0 {
 			name := args[0]
 			if callCtx.CommandAllowed != nil && !callCtx.CommandAllowed(name) {
