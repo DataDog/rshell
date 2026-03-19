@@ -1,4 +1,4 @@
-description: find -exec works alongside -execdir, using full path instead of ./basename.
+description: find -exec with \; immediately after flag (no command) is a parse error.
 skip_assert_against_bash: true  # rshell -exec only runs builtins, not external commands
 setup:
   files:
@@ -11,9 +11,7 @@ input:
     - rshell:find
     - rshell:echo
   script: |+
-    find dir -name 'a.txt' -exec echo {} \;
+    find dir -exec \;
 expect:
-  stdout: |+
-    dir/a.txt
-  stderr: ""
-  exit_code: 0
+  stderr_contains: ["-exec"]
+  exit_code: 1

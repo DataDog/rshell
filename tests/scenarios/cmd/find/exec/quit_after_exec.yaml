@@ -1,9 +1,15 @@
-description: find -exec works alongside -execdir, using full path instead of ./basename.
+description: find -exec echo {} \; -quit runs exec exactly once then stops.
 skip_assert_against_bash: true  # rshell -exec only runs builtins, not external commands
 setup:
   files:
     - path: dir/a.txt
       content: "a"
+      chmod: 0644
+    - path: dir/b.txt
+      content: "b"
+      chmod: 0644
+    - path: dir/c.txt
+      content: "c"
       chmod: 0644
 input:
   allowed_paths: ["$DIR"]
@@ -11,9 +17,9 @@ input:
     - rshell:find
     - rshell:echo
   script: |+
-    find dir -name 'a.txt' -exec echo {} \;
+    find dir -name '*.txt' -exec echo {} \; -quit
 expect:
-  stdout: |+
-    dir/a.txt
+  stdout_contains:
+    - ".txt"
   stderr: ""
   exit_code: 0

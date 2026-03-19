@@ -36,6 +36,7 @@ type evalContext struct {
 	followLinks   bool                 // true when -L is active
 	failed        bool                 // set by predicates that encounter errors
 	execDirParent string               // absolute path of the file's parent directory for -execdir
+	execWorkDir   string               // absolute working directory for -exec (find's CWD)
 }
 
 // evaluate evaluates an expression tree against a file. If e is nil, returns
@@ -109,6 +110,9 @@ func evaluate(ec *evalContext, e *expr) evalResult {
 
 	case exprExecDir:
 		return evalExecDir(ec, e)
+
+	case exprExec:
+		return evalExec(ec, e)
 
 	case exprQuit:
 		return evalResult{matched: true, quit: true}
@@ -293,6 +297,36 @@ func evalExecDir(ec *evalContext, e *expr) evalResult {
 		args[i] = strings.ReplaceAll(a, "{}", replacement)
 	}
 	exitCode, err := ec.callCtx.RunCommand(ec.ctx, ec.execDirParent, e.execCmd, args)
+	if err != nil {
+		ec.callCtx.Errf("find: '%s': %s\n", e.execCmd, err)
+		ec.failed = true
+		return evalResult{}
+	}
+	return evalResult{matched: exitCode == 0}
+}
+
+// evalExec executes a command in find's working directory for each matched file.
+// The filename is passed as the full relative path (e.g. dir/sub/file.txt).
+// Unlike evalExecDir, no "./" prefix is added — this matches GNU find behavior.
+// Note: -execdir is recommended over -exec for safer filename handling (./prefix
+// prevents dash-injection, and running in the file's directory reduces TOCTOU risk).
+func evalExec(ec *evalContext, e *expr) evalResult {
+	if ec.callCtx.RunCommand == nil {
+		ec.callCtx.Errf("find: -exec: command execution not available\n")
+		ec.failed = true
+		return evalResult{}
+	}
+	if ec.callCtx.CommandAllowed != nil && !ec.callCtx.CommandAllowed(e.execCmd) {
+		ec.callCtx.Errf("find: -exec: '%s': command not allowed\n", e.execCmd)
+		ec.failed = true
+		return evalResult{}
+	}
+	replacement := ec.printPath
+	args := make([]string, len(e.execArgs))
+	for i, a := range e.execArgs {
+		args[i] = strings.ReplaceAll(a, "{}", replacement)
+	}
+	exitCode, err := ec.callCtx.RunCommand(ec.ctx, ec.execWorkDir, e.execCmd, args)
 	if err != nil {
 		ec.callCtx.Errf("find: '%s': %s\n", e.execCmd, err)
 		ec.failed = true
