@@ -68,7 +68,6 @@ Step 1 → Step 2 (loop: [2A1 ∥ 2A2] → 2B → 2C → 2D → 2E → 2F) → S
 
 - Do NOT skip the review (Step 2A1) because you think the code is fine
 - Do NOT skip verification (Step 3) because tests passed during fixes
-- Do NOT skip the external review trigger — @codex reviews catch issues the self-review misses
 - Do NOT mark a step completed until every sub-bullet in that step is satisfied
 
 If you catch yourself wanting to skip a step, STOP and do the step anyway.
@@ -324,45 +323,11 @@ Run a final verification regardless of how the loop exited:
 
    Verification passes when the result is `0`.
 
-4. **Confirm Codex has replied to the LATEST review request (with polling):**
+Record the final state of each dimension (self-review, external reviews, CI).
 
-   The review request comment posted in Step 2A2 triggers Codex asynchronously. The bot may respond as either `codex` or `chatgpt-codex-connector[bot]` (the GitHub App). It can take **15+ minutes** to respond. You must verify that the bot has actually responded to **the most recent** request, not a previous iteration's request. Replies from earlier iterations do NOT count.
+Track how many times Step 3 has **succeeded** (all three verifications passed) across the entire run.
 
-   **How to check:**
-   - Find the timestamp of the **last** Codex review request comment (the one posted in Step 2A2 of the final iteration). You can identify it by looking for comments authored by the current user containing "@codex" in the body:
-     ```bash
-     gh api repos/{owner}/{repo}/issues/{pr-number}/comments --paginate --jq '
-       [.[] | select(.body | test("@codex")) | select(.user.login != "codex") | select(.user.login != "chatgpt-codex-connector[bot]")] | last | .created_at'
-     ```
-   - Then check whether the codex bot has posted a review **after** that timestamp. Check both possible bot logins (`codex` and `chatgpt-codex-connector[bot]`):
-     ```bash
-     gh api repos/{owner}/{repo}/pulls/{pr-number}/reviews --paginate --jq '
-       [.[] | select(.user.login == "codex" or .user.login == "chatgpt-codex-connector[bot]")] | last | {submitted_at, state, user: .user.login}'
-     ```
-   - Also check issue comments (the bot may reply as a comment instead of a review):
-     ```bash
-     gh api repos/{owner}/{repo}/issues/{pr-number}/comments --paginate --jq '
-       [.[] | select(.user.login == "codex" or .user.login == "chatgpt-codex-connector[bot]")] | last | {created_at, user: .user.login}'
-     ```
-   - Compare timestamps. If the bot's latest review `submitted_at` (or comment `created_at`) is **after** the latest request's `created_at`, the bot has replied — **verification passes**. Use whichever response (review or comment) has the most recent timestamp.
-
-   **Polling wait if the bot hasn't replied yet:**
-
-   Do NOT immediately fail. Instead, poll and wait:
-   - **Poll interval:** 1 minute (use `sleep 60` between checks)
-   - **Maximum wait:** 10 minutes (up to 10 poll attempts)
-   - On each poll iteration, re-run the `gh api` commands above and compare timestamps
-   - Log each poll attempt: `"Waiting for Codex reply... (attempt N/10, elapsed Xm)"`
-
-   **Only fail this verification** if the bot has still not replied after the full 10-minute wait. Then go back to **Step 2: Run the review-fix loop**.
-
-   **If the bot has no reviews or comments at all** after the 10-minute wait, the verification also fails.
-
-Record the final state of each dimension (self-review, external reviews, CI, Codex response).
-
-Track how many times Step 3 has **succeeded** (all four verifications passed) across the entire run.
-
-**If any verification fails** (CI failing, unresolved threads remain, unpushed commits that can't be pushed, or Codex hasn't responded to the latest review request), reset the success counter to 0, reset Step 2 and all its sub-steps to `pending`, and go back to **Step 2: Run the review-fix loop** for another iteration.
+**If any verification fails** (CI failing, unresolved threads remain, or unpushed commits that can't be pushed), reset the success counter to 0, reset Step 2 and all its sub-steps to `pending`, and go back to **Step 2: Run the review-fix loop** for another iteration.
 
 **If all verifications pass**, increment the success counter. If this is the **5th consecutive success** of Step 3 → proceed to **Step 4**. Otherwise → reset Step 2 and all its sub-steps to `pending`, and go back to **Step 2: Run the review-fix loop** for another iteration to re-confirm stability.
 
@@ -417,6 +382,7 @@ gh pr comment <pr-number> --body "<the summary markdown above>"
 - **Always submit reviews to GitHub** — each iteration's review must be posted as PR comments so there's a visible trail.
 - **Run address-pr-comments before fix-ci-tests** — 2B then 2C, sequentially, so CI fixes run on code that already incorporates review feedback.
 - **Pull before fixing** — always `git pull --rebase` before launching fix agents to avoid working on stale code.
+- **Codex is non-blocking** — external Codex reviews are requested each iteration but whether Codex responds does NOT gate loop progress. If Codex posts comments they will be picked up by address-pr-comments; if it doesn't respond the loop still completes normally.
 - **Stop early on APPROVE + CI green + no unresolved threads** — don't waste iterations if the PR is already clean.
 - **Respect the iteration limit** — hard stop at 30 to prevent infinite loops. If issues persist after 30 iterations, report what's left for the user to handle.
 - **Use gate checks** — always call TaskList and verify prerequisites before starting a step. This prevents out-of-order execution.
