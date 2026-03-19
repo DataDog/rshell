@@ -52,8 +52,8 @@ func readRoutes(ctx context.Context, procPath string) ([]Route, error) {
 		if !ok {
 			continue
 		}
-		if r.Flags&FlagUp == 0 {
-			continue // skip routes that are not UP
+		if r.Flags&FlagUp == 0 || r.Flags&FlagReject != 0 {
+			continue // skip routes that are not UP or are kernel-reject entries
 		}
 		routes = append(routes, r)
 	}

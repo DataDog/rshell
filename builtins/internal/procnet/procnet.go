@@ -39,13 +39,16 @@ const DefaultProcPath = "/proc"
 const MaxRoutes = 10_000
 
 // MaxLineBytes is the per-line buffer cap for the route-table scanner.
-// Lines longer than this are skipped rather than causing an unbounded allocation.
+// If any line in the route file exceeds this limit the scanner returns
+// bufio.ErrTooLong and ReadRoutes returns an error; processing is aborted
+// rather than allowing unbounded allocation.
 const MaxLineBytes = 1 << 20 // 1 MiB
 
 // Routing-table flags (from linux/route.h).
 const (
 	FlagUp      = uint32(0x0001) // RTF_UP
 	FlagGateway = uint32(0x0002) // RTF_GATEWAY
+	FlagReject  = uint32(0x0200) // RTF_REJECT — kernel will refuse to route to this destination
 )
 
 // Route holds a parsed entry from /proc/net/route.
