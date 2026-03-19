@@ -15,6 +15,7 @@ import (
 
 	"mvdan.cc/sh/v3/syntax"
 
+	"github.com/DataDog/rshell/internal/interpoption"
 	"github.com/DataDog/rshell/interp"
 )
 
@@ -27,7 +28,7 @@ func runPS(t testing.TB, script string) (string, string, int) {
 		return "", err.Error(), 1
 	}
 	var outBuf, errBuf bytes.Buffer
-	runner, err := interp.New(interp.StdIO(nil, &outBuf, &errBuf), interp.AllowAllCommands())
+	runner, err := interp.New(interp.StdIO(nil, &outBuf, &errBuf), interpoption.AllowAllCommands().(interp.RunnerOption))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -86,7 +87,7 @@ func FuzzPSPidList(f *testing.F) {
 			return // unparseable, skip
 		}
 		var outBuf, errBuf bytes.Buffer
-		runner, err := interp.New(interp.StdIO(nil, &outBuf, &errBuf), interp.AllowAllCommands())
+		runner, err := interp.New(interp.StdIO(nil, &outBuf, &errBuf), interpoption.AllowAllCommands().(interp.RunnerOption))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -133,7 +134,7 @@ func FuzzPSFlags(f *testing.F) {
 			return
 		}
 		var outBuf, errBuf bytes.Buffer
-		runner, err := interp.New(interp.StdIO(nil, &outBuf, &errBuf), interp.AllowAllCommands())
+		runner, err := interp.New(interp.StdIO(nil, &outBuf, &errBuf), interpoption.AllowAllCommands().(interp.RunnerOption))
 		if err != nil {
 			t.Fatal(err)
 		}

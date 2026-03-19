@@ -12,18 +12,19 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
+	"github.com/DataDog/rshell/internal/interpoption"
 	"github.com/DataDog/rshell/interp"
 )
 
 // subshellRun runs a script with the given dir as working directory and allowed path.
 func subshellRun(t *testing.T, script, dir string) (string, string, int) {
 	t.Helper()
-	return cmdSubstRunWithOpts(t, script, dir, interp.AllowedPaths([]string{dir}), interp.AllowAllCommands())
+	return cmdSubstRunWithOpts(t, script, dir, interp.AllowedPaths([]string{dir}), interpoption.AllowAllCommands().(interp.RunnerOption))
 }
 
 func subshellRunCtx(ctx context.Context, t *testing.T, script, dir string) (string, string, int) {
 	t.Helper()
-	return cmdSubstRunCtxWithOpts(ctx, t, script, dir, interp.AllowedPaths([]string{dir}), interp.AllowAllCommands())
+	return cmdSubstRunCtxWithOpts(ctx, t, script, dir, interp.AllowedPaths([]string{dir}), interpoption.AllowAllCommands().(interp.RunnerOption))
 }
 
 // --- Basic subshell ---

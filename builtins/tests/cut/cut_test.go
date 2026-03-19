@@ -18,6 +18,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"mvdan.cc/sh/v3/syntax"
 
+	"github.com/DataDog/rshell/internal/interpoption"
 	"github.com/DataDog/rshell/interp"
 )
 
@@ -32,7 +33,7 @@ func runScriptCtx(ctx context.Context, t *testing.T, script, dir string, opts ..
 	prog, err := parser.Parse(strings.NewReader(script), "")
 	require.NoError(t, err)
 	var outBuf, errBuf bytes.Buffer
-	allOpts := append([]interp.RunnerOption{interp.StdIO(nil, &outBuf, &errBuf), interp.AllowAllCommands()}, opts...)
+	allOpts := append([]interp.RunnerOption{interp.StdIO(nil, &outBuf, &errBuf), interpoption.AllowAllCommands().(interp.RunnerOption)}, opts...)
 	runner, err := interp.New(allOpts...)
 	require.NoError(t, err)
 	defer runner.Close()

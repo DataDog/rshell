@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/DataDog/rshell/internal/interpoption"
 	"github.com/DataDog/rshell/interp"
 	"github.com/spf13/cobra"
 	"mvdan.cc/sh/v3/syntax"
@@ -219,7 +220,7 @@ func execute(ctx context.Context, script, name string, opts executeOpts, stdin i
 		runOpts = append(runOpts, interp.AllowedPaths(opts.allowedPaths))
 	}
 	if opts.allowAllCommands {
-		runOpts = append(runOpts, interp.AllowAllCommands())
+		runOpts = append(runOpts, interpoption.AllowAllCommands().(interp.RunnerOption))
 	} else if len(opts.allowedCommands) > 0 {
 		runOpts = append(runOpts, interp.AllowedCommands(opts.allowedCommands))
 	}

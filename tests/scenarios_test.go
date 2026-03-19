@@ -26,6 +26,7 @@ import (
 	"gopkg.in/yaml.v3"
 	"mvdan.cc/sh/v3/syntax"
 
+	"github.com/DataDog/rshell/internal/interpoption"
 	"github.com/DataDog/rshell/interp"
 )
 
@@ -204,13 +205,13 @@ func runScenario(t *testing.T, sc scenario) {
 		opts = append(opts, interp.AllowedPaths(resolved))
 	}
 	if sc.Input.AllowAllCommands != nil && *sc.Input.AllowAllCommands {
-		opts = append(opts, interp.AllowAllCommands())
+		opts = append(opts, interpoption.AllowAllCommands().(interp.RunnerOption))
 	} else if len(sc.Input.AllowedCommands) > 0 {
 		opts = append(opts, interp.AllowedCommands(sc.Input.AllowedCommands))
 	} else if sc.Input.AllowAllCommands == nil {
 		// Default: allow all commands for backward compatibility with
 		// existing scenarios that predate the allowedCommands feature.
-		opts = append(opts, interp.AllowAllCommands())
+		opts = append(opts, interpoption.AllowAllCommands().(interp.RunnerOption))
 	}
 	// When allow_all_commands is explicitly false and allowed_commands is
 	// empty, no AllowedCommands/AllowAllCommands option is added, so the

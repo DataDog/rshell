@@ -14,6 +14,7 @@ import (
 
 	"mvdan.cc/sh/v3/syntax"
 
+	"github.com/DataDog/rshell/internal/interpoption"
 	"github.com/DataDog/rshell/interp"
 )
 
@@ -25,7 +26,7 @@ func runScriptCtx(ctx context.Context, t *testing.T, script, dir string, opts ..
 		t.Fatal(err)
 	}
 	var outBuf, errBuf bytes.Buffer
-	allOpts := append([]interp.RunnerOption{interp.StdIO(nil, &outBuf, &errBuf), interp.AllowAllCommands()}, opts...)
+	allOpts := append([]interp.RunnerOption{interp.StdIO(nil, &outBuf, &errBuf), interpoption.AllowAllCommands().(interp.RunnerOption)}, opts...)
 	runner, err := interp.New(allOpts...)
 	if err != nil {
 		t.Fatal(err)

@@ -22,7 +22,7 @@ func TestReadonlyVariableBlocksReassignment(t *testing.T) {
 	r, err := New(
 		StdIO(nil, &stdout, &stderr),
 		Env("RO_VAR=original"),
-		AllowAllCommands(),
+		allowAllCommandsOpt(),
 	)
 	require.NoError(t, err)
 	t.Cleanup(func() { r.Close() })

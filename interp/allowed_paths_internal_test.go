@@ -39,7 +39,7 @@ func runScriptInternal(t *testing.T, script, dir string, opts ...RunnerOption) (
 	var outBuf, errBuf bytes.Buffer
 	allOpts := append([]RunnerOption{
 		StdIO(nil, &outBuf, &errBuf),
-		AllowAllCommands(),
+		allowAllCommandsOpt(),
 	}, opts...)
 
 	runner, err := New(allOpts...)
@@ -151,7 +151,7 @@ func TestAllowedPathsExecSymlinkEscape(t *testing.T) {
 
 func TestRunRecoversPanic(t *testing.T) {
 	var outBuf, errBuf bytes.Buffer
-	runner, err := New(StdIO(nil, &outBuf, &errBuf), AllowAllCommands())
+	runner, err := New(StdIO(nil, &outBuf, &errBuf), allowAllCommandsOpt())
 	require.NoError(t, err)
 	defer runner.Close()
 

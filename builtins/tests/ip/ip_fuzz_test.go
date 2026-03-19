@@ -28,6 +28,7 @@ import (
 
 	"mvdan.cc/sh/v3/syntax"
 
+	"github.com/DataDog/rshell/internal/interpoption"
 	"github.com/DataDog/rshell/interp"
 )
 
@@ -44,7 +45,7 @@ func cmdRunCtxFuzz(ctx context.Context, t *testing.T, script string) (stdout, st
 		return "", err.Error(), -1
 	}
 	var outBuf, errBuf bytes.Buffer
-	runner, err := interp.New(interp.StdIO(nil, &outBuf, &errBuf), interp.AllowAllCommands())
+	runner, err := interp.New(interp.StdIO(nil, &outBuf, &errBuf), interpoption.AllowAllCommands().(interp.RunnerOption))
 	if err != nil {
 		t.Fatalf("interp.New: %v", err)
 	}

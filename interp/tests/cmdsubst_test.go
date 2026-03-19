@@ -19,18 +19,19 @@ import (
 	"github.com/stretchr/testify/require"
 	"mvdan.cc/sh/v3/syntax"
 
+	"github.com/DataDog/rshell/internal/interpoption"
 	"github.com/DataDog/rshell/interp"
 )
 
 // cmdSubstRun runs a script with the given dir as working directory and allowed path.
 func cmdSubstRun(t *testing.T, script, dir string) (string, string, int) {
 	t.Helper()
-	return cmdSubstRunWithOpts(t, script, dir, interp.AllowedPaths([]string{dir}), interp.AllowAllCommands())
+	return cmdSubstRunWithOpts(t, script, dir, interp.AllowedPaths([]string{dir}), interpoption.AllowAllCommands().(interp.RunnerOption))
 }
 
 func cmdSubstRunCtx(ctx context.Context, t *testing.T, script, dir string) (string, string, int) {
 	t.Helper()
-	return cmdSubstRunCtxWithOpts(ctx, t, script, dir, interp.AllowedPaths([]string{dir}), interp.AllowAllCommands())
+	return cmdSubstRunCtxWithOpts(ctx, t, script, dir, interp.AllowedPaths([]string{dir}), interpoption.AllowAllCommands().(interp.RunnerOption))
 }
 
 func cmdSubstRunWithOpts(t *testing.T, script, dir string, opts ...interp.RunnerOption) (string, string, int) {

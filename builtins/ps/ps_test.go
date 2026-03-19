@@ -16,6 +16,7 @@ import (
 
 	"mvdan.cc/sh/v3/syntax"
 
+	"github.com/DataDog/rshell/internal/interpoption"
 	"github.com/DataDog/rshell/interp"
 )
 
@@ -27,7 +28,7 @@ func runScript(t *testing.T, script string) (stdout, stderr string, code int) {
 		t.Fatal(err)
 	}
 	var outBuf, errBuf bytes.Buffer
-	runner, err := interp.New(interp.StdIO(nil, &outBuf, &errBuf), interp.AllowAllCommands())
+	runner, err := interp.New(interp.StdIO(nil, &outBuf, &errBuf), interpoption.AllowAllCommands().(interp.RunnerOption))
 	if err != nil {
 		t.Fatal(err)
 	}

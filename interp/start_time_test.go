@@ -28,7 +28,7 @@ func parseScript(t *testing.T, src string) *syntax.File {
 // run. Uses New() directly (not newResetRunner) to check the initial zero-value
 // state before any Run or Reset call.
 func TestStartTimeZeroBeforeRun(t *testing.T) {
-	r, err := New(AllowAllCommands())
+	r, err := New(allowAllCommandsOpt())
 	require.NoError(t, err)
 	t.Cleanup(func() { r.Close() })
 	assert.True(t, r.startTime.IsZero(), "startTime should be zero before Run")
@@ -37,7 +37,7 @@ func TestStartTimeZeroBeforeRun(t *testing.T) {
 // TestStartTimeSetByRun verifies that Run captures the current time into
 // startTime before executing any builtins.
 func TestStartTimeSetByRun(t *testing.T) {
-	r, err := New(AllowAllCommands())
+	r, err := New(allowAllCommandsOpt())
 	require.NoError(t, err)
 	t.Cleanup(func() { r.Close() })
 
@@ -54,7 +54,7 @@ func TestStartTimeSetByRun(t *testing.T) {
 // TestStartTimeUpdatesOnSubsequentRun verifies that each Run call captures a
 // fresh timestamp, so commands in different runs do not share a stale time.
 func TestStartTimeUpdatesOnSubsequentRun(t *testing.T) {
-	r, err := New(AllowAllCommands())
+	r, err := New(allowAllCommandsOpt())
 	require.NoError(t, err)
 	t.Cleanup(func() { r.Close() })
 
@@ -79,7 +79,7 @@ func TestStartTimeUpdatesOnSubsequentRun(t *testing.T) {
 // subshell() inherits the parent's startTime so builtins in subshells and
 // pipelines use the correct time reference.
 func TestStartTimePropagatedToSubshell(t *testing.T) {
-	r, err := New(AllowAllCommands())
+	r, err := New(allowAllCommandsOpt())
 	require.NoError(t, err)
 	t.Cleanup(func() { r.Close() })
 
@@ -96,7 +96,7 @@ func TestStartTimePropagatedToSubshell(t *testing.T) {
 // a runner that has been reset but not yet re-run does not expose the previous
 // run's timestamp.
 func TestStartTimeResetToZeroByReset(t *testing.T) {
-	r, err := New(AllowAllCommands())
+	r, err := New(allowAllCommandsOpt())
 	require.NoError(t, err)
 	t.Cleanup(func() { r.Close() })
 
