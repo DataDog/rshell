@@ -11,6 +11,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -19,6 +20,12 @@ import (
 
 	ipcmd "github.com/DataDog/rshell/builtins/ip"
 )
+
+// procNetRouteMu serializes mutations of ipcmd.ProcNetRoutePath across all
+// test files in this package (unit tests, pentest tests, fuzz tests).
+// Any code that writes to ProcNetRoutePath must hold this lock for the
+// duration of the test to prevent data races if tests are run in parallel.
+var procNetRouteMu sync.Mutex
 
 // syntheticProcNetRoute is a realistic /proc/net/route file with:
 //   - A default route via 192.168.1.1 on eth0 (metric 100)

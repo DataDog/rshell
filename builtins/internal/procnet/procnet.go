@@ -29,6 +29,7 @@ package procnet
 import (
 	"context"
 	"fmt"
+	"math/bits"
 )
 
 // DefaultProcPath is the default proc filesystem root.
@@ -91,12 +92,16 @@ func HexToIPStr(val uint32) string {
 
 // Popcount returns the number of set bits in v (used for prefix length).
 func Popcount(v uint32) int {
-	n := 0
-	for v != 0 {
-		n += int(v & 1)
-		v >>= 1
-	}
-	return n
+	return bits.OnesCount32(v)
+}
+
+// IsContiguousMask reports whether v is a valid CIDR subnet mask —
+// all 1-bits are contiguous from the most-significant bit (e.g. /8 = 0xFF000000).
+// Non-contiguous masks (e.g. 0xF0F0F0F0) are not valid CIDR prefixes and
+// would produce misleading output from LongestPrefixMatch and formatRoute.
+func IsContiguousMask(v uint32) bool {
+	n := uint(bits.OnesCount32(v))
+	return (^uint32(0))<<(32-n) == v
 }
 
 // LongestPrefixMatch returns the route that best matches addr by

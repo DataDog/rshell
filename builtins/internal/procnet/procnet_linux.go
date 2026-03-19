@@ -88,6 +88,9 @@ func parseRouteEntry(line string) (Route, bool) {
 	if err != nil {
 		return Route{}, false
 	}
+	if !IsContiguousMask(uint32(mask)) {
+		return Route{}, false // non-contiguous mask: not a valid CIDR prefix
+	}
 
 	return Route{
 		Iface:  fields[0],
