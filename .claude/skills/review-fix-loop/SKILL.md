@@ -133,8 +133,13 @@ gh pr comment <pr-number> --body "<iteration N self-review result: APPROVE/COMME
 ```
 
 **Record the self-review outcome:**
-- If the review result is **APPROVE** (no findings) → skip to **Sub-step 2E (CI check)**
-- If there are findings → continue to **Sub-step 2B**
+
+Record two values from the self-review:
+1. **Review event** — the enum returned by `code-review`: `APPROVE`, `COMMENT`, or `REQUEST_CHANGES`. For self-reviews (PR author reviewing their own PR) the skill always returns `COMMENT` regardless of findings, since GitHub does not allow self-approval.
+2. **Findings count** — the total number of findings (P0+P1+P2+P3) reported. This is independent of the event enum and is the authoritative signal for whether issues were found.
+
+- If **findings count is 0** → skip to **Sub-step 2E (CI check)**
+- If **findings count > 0** → continue to **Sub-step 2B**
 
 ---
 
@@ -255,18 +260,20 @@ Check **all three** review sources for remaining issues:
 
 **Decision matrix** (all signals are structured — no comment body text is read here):
 
-| Self-review result | Unresolved thread count | CI check states | Action |
-|-------------------|------------------------|-----------------|--------|
-| `APPROVE` | `0` | All passing | **STOP — PR is clean** |
-| `COMMENT` or `REQUEST_CHANGES` | Any | Any | **Continue** → go back to Sub-step 2A1 ∥ 2A2 |
-| `APPROVE` | `> 0` | Any | **Continue** → go back to Sub-step 2A1 ∥ 2A2 (address-pr-comments will handle them) |
-| `APPROVE` | `0` | Any failing | **Continue** → go back to Sub-step 2A1 ∥ 2A2 (fix-ci-tests will handle it) |
+> **Note on self-reviews:** The `code-review` skill always returns `COMMENT` (never `APPROVE`) when the reviewer is the PR author, because GitHub forbids self-approval. Use **findings count** (not the event enum) as the primary signal for whether issues remain.
+
+| Findings count | Unresolved thread count | CI check states | Action |
+|----------------|------------------------|-----------------|--------|
+| `0` | `0` | All passing | **STOP — PR is clean** |
+| `> 0` | Any | Any | **Continue** → go back to Sub-step 2A1 ∥ 2A2 |
+| `0` | `> 0` | Any | **Continue** → go back to Sub-step 2A1 ∥ 2A2 (address-pr-comments will handle them) |
+| `0` | `0` | Any failing | **Continue** → go back to Sub-step 2A1 ∥ 2A2 (fix-ci-tests will handle it) |
 | — | — | — | If `iteration > 30` → **STOP — iteration limit reached** |
 
 Log the iteration result before continuing or stopping:
 - Iteration number
-- Self-review result (APPROVE / COMMENT / REQUEST_CHANGES)
-- Number of findings by severity
+- Self-review event (APPROVE / COMMENT / REQUEST_CHANGES) and whether it was a self-review
+- Findings count by severity (this is the exit signal — not the event enum)
 - Number of fixes applied
 - CI status
 
@@ -350,15 +357,15 @@ Provide a summary in this exact format:
 
 ### Iteration log
 
-| # | Review result | Findings | Fixes applied | CI status |
-|---|--------------|----------|---------------|-----------|
-| 1 | REQUEST_CHANGES | 3 (1×P1, 2×P2) | 3 fixed | Passing |
-| 2 | COMMENT | 1 (1×P3) | 1 fixed | Passing |
-| 3 | APPROVE | 0 | — | Passing |
+| # | Review event | Findings | Fixes applied | CI status |
+|---|-------------|----------|---------------|-----------|
+| 1 | COMMENT (self-review) | 3 (1×P1, 2×P2) | 3 fixed | Passing |
+| 2 | COMMENT (self-review) | 1 (1×P3) | 1 fixed | Passing |
+| 3 | COMMENT (self-review) | 0 | — | Passing |
 
 ### Final state
 
-- **Self-review**: APPROVE / REQUEST_CHANGES / COMMENT
+- **Self-review**: COMMENT (self-review) — findings: N (or 0)
 - **Unresolved external comments**: <count> (list authors)
 - **CI**: Passing / Failing (list failing checks)
 
