@@ -557,6 +557,9 @@ func routeCmd(ctx context.Context, callCtx *builtins.CallContext, do displayOpts
 
 	sub := "show"
 	if len(args) > 0 {
+		// ToLower makes subcommands case-insensitive (e.g. "SHOW" == "show").
+		// Real ip is case-sensitive, but this is an intentional leniency for
+		// AI agents that may produce mixed-case commands.
 		sub = strings.ToLower(args[0])
 	}
 
@@ -596,8 +599,10 @@ func routeCmd(ctx context.Context, callCtx *builtins.CallContext, do displayOpts
 		}
 		return routeGet(ctx, callCtx, args[1])
 	default:
-		// unreachable: already validated above
-		panic("routeCmd: unexpected subcommand after validation: " + sub)
+		// unreachable: the first switch above ensures only "show", "list", "get"
+		// reach here, but avoid panic in builtins — return an error instead.
+		callCtx.Errf("ip: route: %s: unknown subcommand\n", sub)
+		return builtins.Result{Code: 1}
 	}
 }
 
