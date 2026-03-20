@@ -7,6 +7,5 @@ input:
 expect:
   stdout: |+
   stderr: |+
-    ip: route: GET: unknown subcommand
-  exit_code: 1
-skip_assert_against_bash: true
+    Command "GET" is unknown, try "ip route help".
+  exit_code: 255

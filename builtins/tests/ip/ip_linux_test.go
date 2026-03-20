@@ -193,12 +193,12 @@ func TestIPRouteSubcmdCaseSensitive(t *testing.T) {
 	writeProcNetRoute(t, syntheticProcNetRoute)
 
 	_, stderr, code := cmdRun(t, "ip route SHOW")
-	assert.Equal(t, 1, code, "uppercase SHOW should be rejected")
-	assert.Contains(t, stderr, "unknown subcommand")
+	assert.Equal(t, 255, code, "uppercase SHOW should be rejected")
+	assert.Contains(t, stderr, "is unknown, try")
 
 	_, stderr2, code2 := cmdRun(t, "ip route LIST")
-	assert.Equal(t, 1, code2, "uppercase LIST should be rejected")
-	assert.Contains(t, stderr2, "unknown subcommand")
+	assert.Equal(t, 255, code2, "uppercase LIST should be rejected")
+	assert.Contains(t, stderr2, "is unknown, try")
 }
 
 // TestIPRouteListAliasForShow verifies "ip route list" is an alias for show.
@@ -442,11 +442,11 @@ func TestIPRouteRestoreBlocked(t *testing.T) {
 	assert.Contains(t, stderr, "write operations are not permitted")
 }
 
-// TestIPRouteUnknownSubcommand verifies an unknown subcommand exits 1.
+// TestIPRouteUnknownSubcommand verifies an unknown subcommand exits 255 with iproute2-compatible message.
 func TestIPRouteUnknownSubcommand(t *testing.T) {
 	_, stderr, code := cmdRun(t, "ip route unknowncmd")
-	assert.Equal(t, 1, code)
-	assert.Contains(t, stderr, "unknown subcommand")
+	assert.Equal(t, 255, code)
+	assert.Contains(t, stderr, "is unknown, try")
 }
 
 // ============================================================================

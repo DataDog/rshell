@@ -576,8 +576,9 @@ func routeCmd(ctx context.Context, callCtx *builtins.CallContext, do displayOpts
 			callCtx.Errf("ip: route: %s: write operations are not permitted\n", sub)
 			return builtins.Result{Code: 1}
 		default:
-			callCtx.Errf("ip: route: %s: unknown subcommand\n", sub)
-			return builtins.Result{Code: 1}
+			// Match iproute2 exit code (255) and error format for unknown subcommands.
+			callCtx.Errf("Command %q is unknown, try \"ip route help\".\n", sub)
+			return builtins.Result{Code: 255}
 		}
 	}
 
@@ -612,8 +613,8 @@ func routeCmd(ctx context.Context, callCtx *builtins.CallContext, do displayOpts
 	default:
 		// unreachable: the first switch above ensures only "show", "list", "get"
 		// reach here, but avoid panic in builtins — return an error instead.
-		callCtx.Errf("ip: route: %s: unknown subcommand\n", sub)
-		return builtins.Result{Code: 1}
+		callCtx.Errf("Command %q is unknown, try \"ip route help\".\n", sub)
+		return builtins.Result{Code: 255}
 	}
 }
 
