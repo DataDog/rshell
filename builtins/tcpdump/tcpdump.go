@@ -5,20 +5,28 @@
 
 // Package tcpdump implements the tcpdump builtin command.
 //
-// tcpdump — read and display packet captures from pcap/pcapng files
+// tcpdump — capture and display network packets
 //
-// Usage: tcpdump -r file [OPTION]... [FILTER EXPRESSION]
+// Usage: tcpdump (-r file | -i interface) [OPTION]... [FILTER EXPRESSION]
 //
-// Read packets from a pcap or pcapng file and display them in a human-readable
-// format. This builtin operates in read-only mode — no live packet capture,
-// file writing, or command execution is supported. The dangerous flags -z, -Z,
-// -w, -C, -W, -G are not implemented and are rejected with exit code 1.
+// Read packets from a pcap/pcapng file (-r) or capture live packets from a
+// network interface (-i). Live capture requires CAP_NET_RAW (Linux) or root
+// (macOS). File writing, command execution, and privilege escalation are not
+// supported. The dangerous flags -z, -Z, -w, -C, -W, -G are rejected with
+// exit code 1.
 //
-// Accepted flags:
+// Source selection (exactly one required):
 //
 //	-r file, --read-file=file
-//	    Read packets from the given pcap or pcapng file. This flag is required;
-//	    without it the command exits with an error.
+//	    Read packets from the given pcap or pcapng file.
+//
+//	-i interface
+//	    Capture live packets from the named network interface.
+//	    Requires CAP_NET_RAW on Linux or root on macOS.
+//	    -c N is strongly recommended to bound the capture; if omitted the
+//	    builtin captures up to MaxPacketCount packets before stopping.
+//
+// Options:
 //
 //	-c N, --count=N
 //	    Stop after processing N packets (must be > 0; clamped to MaxPacketCount).
@@ -98,7 +106,6 @@
 //
 // Rejected flags (all exit 1 with an error message):
 //
-//	-i       live capture on a network interface — requires raw sockets
 //	-w       write captured packets to a file
 //	-z       execute a postrotate command — arbitrary code execution vector
 //	-Z       run as a different user — privilege escalation
@@ -108,17 +115,16 @@
 // Exit codes:
 //
 //	0  All packets processed successfully (or -c limit reached).
-//	1  Error opening file, unrecognised flags, invalid filter, or bad args.
+//	1  Error opening file/interface, unrecognised flags, invalid filter, or bad args.
 //
 // Memory safety:
 //
-//	Packets are read one at a time via ReadPacketData. pcapgo allocates
-//	a buffer of ci.CaptureLength bytes per packet — this is bounded by
-//	the pcap global snaplen and by the actual bytes available in the
-//	file, so the allocation cannot exceed the file size. After reading,
-//	each packet's display is further capped at MaxPacketBytes (64 KiB).
-//	The main loop checks ctx.Err() before every read to honour the
-//	execution timeout.
+//	Packets are processed one at a time. Each packet's allocation is bounded
+//	by the file's global snaplen (file mode) or MaxPacketBytes (live mode).
+//	After reading, each packet's display is further capped at MaxPacketBytes
+//	(64 KiB). The main loop checks ctx.Err() before every read to honour the
+//	execution timeout. In live mode, reads time out every 100 ms so context
+//	cancellation is checked frequently even on quiet interfaces.
 package tcpdump
 
 import (
@@ -140,7 +146,7 @@ import (
 // Cmd is the tcpdump builtin command descriptor.
 var Cmd = builtins.Command{
 	Name:        "tcpdump",
-	Description: "read and display packet captures from pcap/pcapng files",
+	Description: "capture and display network packets",
 	MakeFlags:   registerFlags,
 }
 
@@ -155,9 +161,14 @@ const (
 	MaxSnaplen = 65535
 )
 
+// errReadTimeout is returned by ReadPacketData when no packet arrived within
+// the per-read deadline. The caller should check ctx.Err() and retry.
+var errReadTimeout = errors.New("read timeout")
+
 func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 	help := fs.BoolP("help", "h", false, "print usage and exit")
-	readFile := fs.StringP("read-file", "r", "", "read packets from pcap/pcapng `file` (required)")
+	readFile := fs.StringP("read-file", "r", "", "read packets from pcap/pcapng `file`")
+	iface := fs.StringP("interface", "i", "", "live capture on network `interface` (requires CAP_NET_RAW or root)")
 	count := fs.IntP("count", "c", 0, "stop after processing N packets")
 	noResolve := fs.CountP("no-resolve", "n", "do not resolve addresses (-n) or ports (-nn)")
 	verbose := fs.CountP("verbose", "v", "increase verbosity (-v, -vv, -vvv)")
@@ -171,15 +182,22 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 
 	return func(ctx context.Context, callCtx *builtins.CallContext, args []string) builtins.Result {
 		if *help {
-			callCtx.Out("Usage: tcpdump -r file [OPTION]... [FILTER EXPRESSION]\n")
-			callCtx.Out("Read packets from a pcap or pcapng file.\n\n")
+			callCtx.Out("Usage: tcpdump (-r file | -i interface) [OPTION]... [FILTER EXPRESSION]\n")
+			callCtx.Out("Capture and display network packets.\n\n")
 			fs.SetOutput(callCtx.Stdout)
 			fs.PrintDefaults()
 			return builtins.Result{}
 		}
 
-		if *readFile == "" {
-			callCtx.Errf("tcpdump: -r file is required (live capture is not supported)\n")
+		// Exactly one of -r / -i must be given.
+		hasR := fs.Changed("read-file")
+		hasI := fs.Changed("interface")
+		switch {
+		case hasR && hasI:
+			callCtx.Errf("tcpdump: -r and -i are mutually exclusive\n")
+			return builtins.Result{Code: 1}
+		case !hasR && !hasI:
+			callCtx.Errf("tcpdump: must specify -r file or -i interface\n")
 			return builtins.Result{Code: 1}
 		}
 
@@ -201,13 +219,6 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 
 		filterStr := strings.Join(args, " ")
 
-		rc, err := callCtx.OpenFile(ctx, *readFile, os.O_RDONLY, 0)
-		if err != nil {
-			callCtx.Errf("tcpdump: %s: %s\n", *readFile, callCtx.PortableErr(err))
-			return builtins.Result{Code: 1}
-		}
-		defer rc.Close()
-
 		opts := displayOpts{
 			verbose:   *verbose,
 			quiet:     *quiet,
@@ -220,8 +231,57 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			noResolve: *noResolve,
 		}
 
-		return runCapture(ctx, callCtx, rc, *readFile, filterStr, *count, opts)
+		if hasR {
+			return runFromFile(ctx, callCtx, *readFile, filterStr, *count, opts)
+		}
+		return runFromInterface(ctx, callCtx, *iface, filterStr, *count, opts)
 	}
+}
+
+// runFromFile opens a pcap/pcapng file and runs the capture loop.
+func runFromFile(
+	ctx context.Context,
+	callCtx *builtins.CallContext,
+	filename string,
+	filterStr string,
+	maxCount int,
+	opts displayOpts,
+) builtins.Result {
+	rc, err := callCtx.OpenFile(ctx, filename, os.O_RDONLY, 0)
+	if err != nil {
+		callCtx.Errf("tcpdump: %s: %s\n", filename, callCtx.PortableErr(err))
+		return builtins.Result{Code: 1}
+	}
+	defer rc.Close()
+
+	reader, openErr := openPcapReader(rc)
+	if openErr != nil {
+		callCtx.Errf("tcpdump: %s: %s\n", filename, openErr)
+		return builtins.Result{Code: 1}
+	}
+
+	return runCapture(ctx, callCtx, reader, filterStr, maxCount, opts)
+}
+
+// runFromInterface opens a live capture handle and runs the capture loop.
+func runFromInterface(
+	ctx context.Context,
+	callCtx *builtins.CallContext,
+	iface string,
+	filterStr string,
+	maxCount int,
+	opts displayOpts,
+) builtins.Result {
+	reader, err := openLiveInterface(ctx, iface, opts.snaplen)
+	if err != nil {
+		callCtx.Errf("tcpdump: %s\n", err)
+		return builtins.Result{Code: 1}
+	}
+	if c, ok := reader.(io.Closer); ok {
+		defer c.Close()
+	}
+
+	return runCapture(ctx, callCtx, reader, filterStr, maxCount, opts)
 }
 
 // displayOpts holds the parsed display flags.
@@ -237,7 +297,7 @@ type displayOpts struct {
 	noResolve int // 0=resolve, 1=-n addr only, 2=-nn both
 }
 
-// packetReader abstracts pcap vs pcapng readers.
+// packetReader abstracts pcap vs pcapng vs live readers.
 type packetReader interface {
 	ReadPacketData() (data []byte, ci gopacket.CaptureInfo, err error)
 	LinkType() layers.LinkType
@@ -246,18 +306,11 @@ type packetReader interface {
 func runCapture(
 	ctx context.Context,
 	callCtx *builtins.CallContext,
-	rc io.ReadCloser,
-	filename string,
+	reader packetReader,
 	filterStr string,
 	maxCount int,
 	opts displayOpts,
 ) builtins.Result {
-	reader, openErr := openPcapReader(rc)
-	if openErr != nil {
-		callCtx.Errf("tcpdump: %s: %s\n", filename, openErr)
-		return builtins.Result{Code: 1}
-	}
-
 	var filter *Filter
 	if filterStr != "" {
 		var compileErr error
@@ -281,6 +334,10 @@ func runCapture(
 		data, ci, readErr := reader.ReadPacketData()
 		if errors.Is(readErr, io.EOF) {
 			break
+		}
+		if errors.Is(readErr, errReadTimeout) {
+			// No packet arrived within the read window; loop to re-check ctx.
+			continue
 		}
 		if readErr != nil {
 			callCtx.Errf("tcpdump: read error: %s\n", readErr)

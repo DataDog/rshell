@@ -1,8 +1,11 @@
+# Live capture on a nonexistent interface fails with exit code 1.
+# On any platform, opening a raw socket or BPF device for a nonexistent
+# interface returns an error; the builtin reports it and exits 1.
 skip_assert_against_bash: true
-description: tcpdump -i (live capture) is rejected with exit code 1.
+description: tcpdump -i with a nonexistent interface exits 1 with an error message.
 input:
   script: |+
-    tcpdump -i eth0
+    tcpdump -i tcpdumptest-nonexistent99
 expect:
   stdout: ""
   stderr_contains: ["tcpdump:"]

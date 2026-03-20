@@ -368,23 +368,48 @@ var builtinPerCommandSymbols = map[string][]string{
 		"github.com/google/gopacket/layers.LayerTypeTCP",           // 🟢 TCP layer type constant for packet.Layer() lookup; pure constant, no I/O.
 		"github.com/google/gopacket/layers.LayerTypeUDP",           // 🟢 UDP layer type constant for packet.Layer() lookup; pure constant, no I/O.
 		"github.com/google/gopacket/layers.LinkType",               // 🟢 link-layer type identifier returned by pcapgo; pure integer type, no I/O.
+		"github.com/google/gopacket/layers.LinkTypeEthernet",       // 🟢 pcap link-layer type constant for Ethernet; returned by live capture handles; pure constant, no I/O.
 		"github.com/google/gopacket/layers.TCP",                    // 🟢 TCP segment struct; pure data type for packet decoding, no I/O.
 		"github.com/google/gopacket/layers.UDP",                    // 🟢 UDP datagram struct; pure data type for packet decoding, no I/O.
 		"github.com/google/gopacket/pcapgo.DefaultNgReaderOptions", // 🟢 default options for pcapng reader; pure constant-like value, no I/O.
 		"github.com/google/gopacket/pcapgo.NewNgReader",            // 🟢 opens a pcapng capture file for reading; reads from io.Reader, no raw socket or filesystem access beyond the provided reader.
 		"github.com/google/gopacket/pcapgo.NewReader",              // 🟢 opens a pcap capture file for reading; reads from io.Reader, no raw socket or filesystem access beyond the provided reader.
-		"io.EOF",            // 🟢 sentinel error value; pure constant.
-		"io.MultiReader",    // 🟢 combines multiple Readers into one sequential Reader; no I/O side effects.
-		"io.ReadCloser",     // 🟢 interface type; no side effects.
-		"net.IP",            // 🟢 IP address type ([]byte); pure type, used for filter host matching.
-		"net.ParseIP",       // 🟢 parses an IP address string into a net.IP; pure function, no I/O.
-		"os.O_RDONLY",       // 🟢 read-only file flag constant; cannot open files by itself.
-		"strconv.Atoi",      // 🟢 string-to-int conversion; pure function, no I/O.
-		"strings.Builder",   // 🟢 efficient string concatenation; pure in-memory buffer, no I/O.
-		"strings.Join",      // 🟢 concatenates a slice of strings with a separator; pure function, no I/O.
-		"strings.ToLower",   // 🟢 converts string to lowercase; pure function, no I/O.
-		"strings.TrimSpace", // 🟢 removes leading/trailing whitespace; pure function.
-		"time.Time",         // 🟢 time value type; pure data, used for timestamp formatting.
+		"golang.org/x/sys/unix.AF_PACKET",                          // 🟢 Linux AF_PACKET address-family constant for raw socket creation; pure constant, no I/O.
+		"golang.org/x/sys/unix.BIOCGBLEN",                          // 🟠 macOS BPF ioctl number to query kernel buffer length; read-only kernel query.
+		"golang.org/x/sys/unix.BIOCIMMEDIATE",                      // 🟠 macOS BPF ioctl number to enable immediate packet delivery; configures existing BPF fd.
+		"golang.org/x/sys/unix.BIOCSETIF",                          // 🟠 macOS BPF ioctl number to bind device to a named interface; configures existing BPF fd.
+		"golang.org/x/sys/unix.Bind",                               // 🔴 binds a raw AF_PACKET socket to a specific interface index; network I/O is the explicit purpose of this builtin.
+		"golang.org/x/sys/unix.Close",                              // 🟢 closes a raw socket or BPF file descriptor; resource cleanup, no data exfiltration.
+		"golang.org/x/sys/unix.ETH_P_ALL",                          // 🟢 Ethernet protocol number for all frames; pure constant, no I/O.
+		"golang.org/x/sys/unix.IoctlGetInt",                        // 🟠 macOS: reads an integer kernel parameter via ioctl; read-only, no data written to device.
+		"golang.org/x/sys/unix.IoctlSetPointerInt",                 // 🟠 macOS: sets an integer kernel parameter via ioctl; used only to enable BPF immediate mode.
+		"golang.org/x/sys/unix.IoctlSetString",                     // 🟠 macOS: passes interface name string to BIOCSETIF ioctl; used only to bind BPF fd to interface.
+		"golang.org/x/sys/unix.O_RDONLY",                           // 🟢 read-only open flag for BPF device; pure constant, no I/O.
+		"golang.org/x/sys/unix.Open",                               // 🔴 opens /dev/bpf{n} character device for live packet capture; network I/O is the explicit purpose of this builtin.
+		"golang.org/x/sys/unix.POLLIN",                             // 🟢 poll event flag for readable data; pure constant, no I/O.
+		"golang.org/x/sys/unix.Poll",                               // 🟠 polls file descriptors for I/O readiness with a 100 ms timeout; no data transfer, allows context cancellation.
+		"golang.org/x/sys/unix.PollFd",                             // 🟢 poll file descriptor struct used with Poll; pure data type, no I/O.
+		"golang.org/x/sys/unix.Read",                               // 🔴 reads raw packet bytes from a socket or BPF device; packet capture is the explicit purpose of this builtin.
+		"golang.org/x/sys/unix.SOCK_RAW",                           // 🟢 raw socket type constant; pure constant, no I/O.
+		"golang.org/x/sys/unix.SetNonblock",                        // 🟢 sets a file descriptor to non-blocking mode; pure control flag, no data transfer.
+		"golang.org/x/sys/unix.SockaddrLinklayer",                  // 🟢 link-layer socket address struct for AF_PACKET binding; pure data type, no I/O.
+		"golang.org/x/sys/unix.Socket",                             // 🔴 creates a raw AF_PACKET socket for live capture; network I/O is the explicit purpose of this builtin.
+		"io.Closer",                                                // 🟢 interface type for Close(); used to release live capture handles; pure type, no side effects.
+		"io.EOF",                                                   // 🟢 sentinel error value; pure constant.
+		"io.MultiReader",                                           // 🟢 combines multiple Readers into one sequential Reader; no I/O side effects.
+		"io.ReadCloser",                                            // 🟢 interface type; no side effects.
+		"net.IP",                                                   // 🟢 IP address type ([]byte); pure type, used for filter host matching.
+		"net.InterfaceByName",                                      // 🟠 Linux: looks up a network interface by name to get its index for AF_PACKET binding; read-only OS syscall, no network connections.
+		"net.ParseIP",                                              // 🟢 parses an IP address string into a net.IP; pure function, no I/O.
+		"os.O_RDONLY",                                              // 🟢 read-only file flag constant; cannot open files by itself.
+		"strconv.Atoi",                                             // 🟢 string-to-int conversion; pure function, no I/O.
+		"strings.Builder",                                          // 🟢 efficient string concatenation; pure in-memory buffer, no I/O.
+		"strings.Join",                                             // 🟢 concatenates a slice of strings with a separator; pure function, no I/O.
+		"strings.ToLower",                                          // 🟢 converts string to lowercase; pure function, no I/O.
+		"strings.TrimSpace",                                        // 🟢 removes leading/trailing whitespace; pure function.
+		"time.Now",                                                 // 🟢 returns the current wall-clock time; reads OS clock, no I/O or network access.
+		"time.Time",                                                // 🟢 time value type; pure data, used for timestamp formatting.
+		"time.Unix",                                                // 🟢 constructs a time.Time from a Unix timestamp; pure function, no I/O.
 	},
 	"ping": {
 		"context.Context",         // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
@@ -468,6 +493,7 @@ var builtinAllowedSymbols = []string{
 	"github.com/google/gopacket/layers.LayerTypeTCP",           // 🟢 TCP layer type constant; pure constant.
 	"github.com/google/gopacket/layers.LayerTypeUDP",           // 🟢 UDP layer type constant; pure constant.
 	"github.com/google/gopacket/layers.LinkType",               // 🟢 link-layer type identifier; pure integer type.
+	"github.com/google/gopacket/layers.LinkTypeEthernet",       // 🟢 pcap link-layer type constant for Ethernet; returned by live capture handles; pure constant.
 	"github.com/google/gopacket/layers.TCP",                    // 🟢 TCP segment struct; pure data type for packet decoding.
 	"github.com/google/gopacket/layers.UDP",                    // 🟢 UDP datagram struct; pure data type for packet decoding.
 	"github.com/google/gopacket/pcapgo.DefaultNgReaderOptions", // 🟢 default pcapng reader options; pure constant-like value.
@@ -478,7 +504,28 @@ var builtinAllowedSymbols = []string{
 	"github.com/prometheus-community/pro-bing.Packet",          // 🟢 ICMP packet descriptor struct (received packet data); pure data type, no I/O.
 	"github.com/prometheus-community/pro-bing.Pinger",          // 🔴 ICMP pinger struct; network I/O is the explicit purpose of the ping builtin.
 	"github.com/prometheus-community/pro-bing.Statistics",      // 🟢 ping round-trip statistics struct; pure data type, no I/O.
+	"golang.org/x/sys/unix.AF_PACKET",                          // 🟢 Linux AF_PACKET address-family constant; pure constant, no I/O.
+	"golang.org/x/sys/unix.BIOCGBLEN",                          // 🟠 macOS BPF ioctl number to query kernel buffer length; read-only query.
+	"golang.org/x/sys/unix.BIOCIMMEDIATE",                      // 🟠 macOS BPF ioctl number to enable immediate packet delivery; configures existing BPF fd.
+	"golang.org/x/sys/unix.BIOCSETIF",                          // 🟠 macOS BPF ioctl number to bind device to a named interface; configures existing BPF fd.
+	"golang.org/x/sys/unix.Bind",                               // 🔴 binds a raw socket to a network interface; network I/O is the explicit purpose of tcpdump.
+	"golang.org/x/sys/unix.Close",                              // 🟢 closes a file descriptor; resource cleanup.
+	"golang.org/x/sys/unix.ETH_P_ALL",                          // 🟢 Ethernet protocol number for all frames; pure constant, no I/O.
+	"golang.org/x/sys/unix.IoctlGetInt",                        // 🟠 macOS: reads an integer kernel parameter via ioctl; read-only.
+	"golang.org/x/sys/unix.IoctlSetPointerInt",                 // 🟠 macOS: sets an integer kernel parameter via ioctl; used only for BPF configuration.
+	"golang.org/x/sys/unix.IoctlSetString",                     // 🟠 macOS: passes a string to an ioctl; used only for BPF interface binding.
+	"golang.org/x/sys/unix.O_RDONLY",                           // 🟢 read-only open flag constant; pure constant, no I/O.
+	"golang.org/x/sys/unix.Open",                               // 🔴 opens a file or device; network capture is the explicit purpose of tcpdump.
+	"golang.org/x/sys/unix.POLLIN",                             // 🟢 poll event flag for readable data; pure constant, no I/O.
+	"golang.org/x/sys/unix.Poll",                               // 🟠 polls file descriptors with a bounded timeout; no data transfer.
+	"golang.org/x/sys/unix.PollFd",                             // 🟢 poll file descriptor struct; pure data type, no I/O.
+	"golang.org/x/sys/unix.Read",                               // 🔴 reads bytes from a file descriptor; packet capture is the explicit purpose of tcpdump.
+	"golang.org/x/sys/unix.SOCK_RAW",                           // 🟢 raw socket type constant; pure constant, no I/O.
+	"golang.org/x/sys/unix.SetNonblock",                        // 🟢 sets non-blocking mode on a fd; pure control, no data transfer.
+	"golang.org/x/sys/unix.SockaddrLinklayer",                  // 🟢 link-layer socket address struct; pure data type, no I/O.
+	"golang.org/x/sys/unix.Socket",                             // 🔴 creates a raw socket; network I/O is the explicit purpose of tcpdump.
 	"golang.org/x/sys/unix.SysctlRaw",                          // 🟠 macOS: reads kernel socket tables (read-only, no exec, no filesystem).
+	"io.Closer",                                                // 🟢 interface type for Close(); pure type, no side effects.
 	"io.EOF",                                                   // 🟢 sentinel error value; pure constant.
 	"io.MultiReader",                                           // 🟢 combines multiple Readers into one sequential Reader; no I/O side effects.
 	"io.NopCloser",                                             // 🟢 wraps a Reader with a no-op Close; no side effects.
@@ -524,6 +571,7 @@ var builtinAllowedSymbols = []string{
 	"net.IPNet",                                                // 🟢 IP network struct (IP + Mask); pure type, no network connections.
 	"net.ParseIP",                                              // 🟢 parses an IP address string into a net.IP; pure function, no I/O.
 	"net.Interface",                                            // 🟢 OS network interface descriptor; read-only struct, no network connections.
+	"net.InterfaceByName",                                      // 🟠 looks up a network interface by name; read-only OS syscall, no network connections.
 	"net.Interfaces",                                           // 🟠 read-only OS interface enumeration function; no network connections or writes.
 	"os.FileInfo",                                              // 🟢 file metadata interface returned by Stat; no I/O side effects.
 	"os.IsNotExist",                                            // 🟢 checks if error is "not exist"; pure function, no I/O.
@@ -576,9 +624,11 @@ var builtinAllowedSymbols = []string{
 	"time.Hour",                                                // 🟢 constant representing one hour; no side effects.
 	"time.Millisecond",                                         // 🟢 constant representing one millisecond; no side effects.
 	"time.Minute",                                              // 🟢 constant representing one minute; no side effects.
+	"time.Now",                                                 // 🟢 returns the current wall-clock time; reads OS clock, no I/O or network access.
 	"time.ParseDuration",                                       // 🟢 parses Go duration strings (e.g. "1s"); pure function, no I/O.
 	"time.Second",                                              // 🟢 constant representing one second; no side effects.
 	"time.Time",                                                // 🟢 time value type; pure data, no side effects.
+	"time.Unix",                                                // 🟢 constructs a time.Time from a Unix timestamp; pure function, no I/O.
 	"unicode.Cc",                                               // 🟢 control character category range table; pure data, no I/O.
 	"unicode.Cf",                                               // 🟢 format character category range table; pure data, no I/O.
 	"unicode.Co",                                               // 🟢 private-use character category range table; pure data, no I/O.

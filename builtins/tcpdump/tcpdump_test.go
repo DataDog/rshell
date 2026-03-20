@@ -586,11 +586,22 @@ func TestTcpdumpFilterInvalidPort(t *testing.T) {
 // Rejected flags
 // ---------------------------------------------------------------------------
 
-func TestTcpdumpRejectsLiveCapture(t *testing.T) {
+func TestTcpdumpLiveNonexistentInterface(t *testing.T) {
+	// Live capture on a nonexistent interface must fail with exit 1.
+	// On any platform, opening a raw socket / BPF device for an unknown
+	// interface name returns an OS error.
 	dir := t.TempDir()
-	_, stderr, code := cmdRun(t, "tcpdump -i eth0", dir)
+	_, stderr, code := cmdRun(t, "tcpdump -i tcpdumptest-nonexistent99", dir)
 	assert.Equal(t, 1, code)
 	assert.Contains(t, stderr, "tcpdump:")
+}
+
+func TestTcpdumpLiveMutuallyExclusiveFlags(t *testing.T) {
+	// -r and -i together must fail with exit 1.
+	dir := t.TempDir()
+	_, stderr, code := cmdRun(t, "tcpdump -r capture.pcap -i eth0", dir)
+	assert.Equal(t, 1, code)
+	assert.Contains(t, stderr, "mutually exclusive")
 }
 
 func TestTcpdumpRejectsWriteFlag(t *testing.T) {
@@ -727,4 +738,301 @@ func TestTcpdumpNNFlagAccepted(t *testing.T) {
 	assert.Equal(t, 0, code)
 	assert.Equal(t, "", stderr)
 	assert.Contains(t, stdout, "IP")
+}
+
+// ---------------------------------------------------------------------------
+// Coverage: TCP flag variants, ICMPv6, non-IP packets, filter trueNode
+// ---------------------------------------------------------------------------
+
+// buildTCPFlags builds a minimal Ethernet+IPv4+TCP frame with arbitrary TCP
+// flags byte (0x00..0xff).
+func buildTCPFlags(flags byte) []byte {
+	var buf bytes.Buffer
+	buf.Write(mac2[:])
+	buf.Write(mac1[:])
+	buf.Write([]byte{0x08, 0x00}) // IPv4
+
+	ipHdr := make([]byte, 20)
+	ipHdr[0] = 0x45
+	binary.BigEndian.PutUint16(ipHdr[2:], 40) // 20+20
+	binary.BigEndian.PutUint16(ipHdr[4:], 0x0001)
+	ipHdr[8] = 64
+	ipHdr[9] = 6 // TCP
+	copy(ipHdr[12:], ip1[:])
+	copy(ipHdr[16:], ip2[:])
+	binary.BigEndian.PutUint16(ipHdr[10:], checksum(ipHdr))
+	buf.Write(ipHdr)
+
+	tcpHdr := make([]byte, 20)
+	binary.BigEndian.PutUint16(tcpHdr[0:], 54321)
+	binary.BigEndian.PutUint16(tcpHdr[2:], 80)
+	binary.BigEndian.PutUint32(tcpHdr[4:], 1)
+	binary.BigEndian.PutUint32(tcpHdr[8:], 0)
+	tcpHdr[12] = 0x50
+	tcpHdr[13] = flags
+	binary.BigEndian.PutUint16(tcpHdr[14:], 1024)
+	buf.Write(tcpHdr)
+	return buf.Bytes()
+}
+
+// buildICMPv6Echo builds a minimal Ethernet+IPv6+ICMPv6 Echo Request frame.
+func buildICMPv6Echo() []byte {
+	var buf bytes.Buffer
+	buf.Write(mac2[:])
+	buf.Write(mac1[:])
+	buf.Write([]byte{0x86, 0xdd}) // IPv6
+
+	// ICMPv6 echo payload
+	icmpPayload := []byte("ping6")
+	icmpLen := 4 + len(icmpPayload) // type(1)+code(1)+cksum(2)+payload
+	icmpFull := make([]byte, 4+len(icmpPayload))
+	icmpFull[0] = 128 // Echo Request
+	icmpFull[1] = 0
+	copy(icmpFull[4:], icmpPayload)
+
+	// IPv6 header (40 bytes fixed)
+	ip6Hdr := make([]byte, 40)
+	ip6Hdr[0] = 0x60 // version=6
+	binary.BigEndian.PutUint16(ip6Hdr[4:], uint16(icmpLen))
+	ip6Hdr[6] = 58 // next header = ICMPv6
+	ip6Hdr[7] = 64 // hop limit
+	// src: fe80::1
+	ip6Hdr[8] = 0xfe
+	ip6Hdr[9] = 0x80
+	ip6Hdr[23] = 0x01
+	// dst: fe80::2
+	ip6Hdr[24] = 0xfe
+	ip6Hdr[25] = 0x80
+	ip6Hdr[39] = 0x02
+	buf.Write(ip6Hdr)
+	buf.Write(icmpFull)
+	return buf.Bytes()
+}
+
+// buildNonIPEthernet builds an Ethernet frame with ARP EtherType (0x0806),
+// which has no IP layer — exercises the "unknown" packet branch.
+func buildNonIPEthernet() []byte {
+	var buf bytes.Buffer
+	buf.Write(mac2[:])
+	buf.Write(mac1[:])
+	buf.Write([]byte{0x08, 0x06}) // ARP
+	// Minimal ARP payload (28 bytes for Ethernet ARP)
+	buf.Write(make([]byte, 28))
+	return buf.Bytes()
+}
+
+// buildIPv4WithMF builds a minimal Ethernet+IPv4 frame with the More Fragments
+// flag set, to exercise the MF branch in ipv4FlagsString.
+func buildIPv4WithMF() []byte {
+	var buf bytes.Buffer
+	buf.Write(mac2[:])
+	buf.Write(mac1[:])
+	buf.Write([]byte{0x08, 0x00})
+
+	ipHdr := make([]byte, 20)
+	ipHdr[0] = 0x45
+	binary.BigEndian.PutUint16(ipHdr[2:], 40)
+	binary.BigEndian.PutUint16(ipHdr[4:], 0x0002)
+	// Flags: MF (0x2000 in the flags+fragment-offset field)
+	binary.BigEndian.PutUint16(ipHdr[6:], 0x2000)
+	ipHdr[8] = 64
+	ipHdr[9] = 6 // TCP
+	copy(ipHdr[12:], ip1[:])
+	copy(ipHdr[16:], ip2[:])
+	binary.BigEndian.PutUint16(ipHdr[10:], checksum(ipHdr))
+	buf.Write(ipHdr)
+
+	tcpHdr := make([]byte, 20)
+	binary.BigEndian.PutUint16(tcpHdr[0:], 1111)
+	binary.BigEndian.PutUint16(tcpHdr[2:], 80)
+	tcpHdr[12] = 0x50
+	tcpHdr[13] = 0x02 // SYN
+	buf.Write(tcpHdr)
+	return buf.Bytes()
+}
+
+func TestTcpdumpTCPFlagsFIN(t *testing.T) {
+	// 0x01 = FIN
+	pkt := buildTCPFlags(0x01)
+	dir := setupDir(t, [][]byte{pkt})
+	stdout, _, code := cmdRun(t, "tcpdump -r capture.pcap -t", dir)
+	assert.Equal(t, 0, code)
+	assert.Contains(t, stdout, "Flags [F]")
+}
+
+func TestTcpdumpTCPFlagsRST(t *testing.T) {
+	// 0x04 = RST
+	pkt := buildTCPFlags(0x04)
+	dir := setupDir(t, [][]byte{pkt})
+	stdout, _, code := cmdRun(t, "tcpdump -r capture.pcap -t", dir)
+	assert.Equal(t, 0, code)
+	assert.Contains(t, stdout, "Flags [R]")
+}
+
+func TestTcpdumpTCPFlagsPSH(t *testing.T) {
+	// 0x08 = PSH
+	pkt := buildTCPFlags(0x08)
+	dir := setupDir(t, [][]byte{pkt})
+	stdout, _, code := cmdRun(t, "tcpdump -r capture.pcap -t", dir)
+	assert.Equal(t, 0, code)
+	assert.Contains(t, stdout, "Flags [P]")
+}
+
+func TestTcpdumpTCPFlagsURG(t *testing.T) {
+	// 0x20 = URG
+	pkt := buildTCPFlags(0x20)
+	dir := setupDir(t, [][]byte{pkt})
+	stdout, _, code := cmdRun(t, "tcpdump -r capture.pcap -t", dir)
+	assert.Equal(t, 0, code)
+	assert.Contains(t, stdout, "Flags [U]")
+}
+
+func TestTcpdumpTCPFlagsNone(t *testing.T) {
+	// 0x00 = no flags set → "none"
+	pkt := buildTCPFlags(0x00)
+	dir := setupDir(t, [][]byte{pkt})
+	stdout, _, code := cmdRun(t, "tcpdump -r capture.pcap -t", dir)
+	assert.Equal(t, 0, code)
+	assert.Contains(t, stdout, "Flags [none]")
+}
+
+func TestTcpdumpICMPv6Packet(t *testing.T) {
+	pkt := buildICMPv6Echo()
+	dir := setupDir(t, [][]byte{pkt})
+	stdout, _, code := cmdRun(t, "tcpdump -r capture.pcap -t", dir)
+	assert.Equal(t, 0, code)
+	assert.Contains(t, stdout, "IP6")
+	assert.Contains(t, stdout, "ICMP6")
+}
+
+func TestTcpdumpNonIPPacketUnknown(t *testing.T) {
+	// An ARP frame has no IP layer → "unknown, length N"
+	pkt := buildNonIPEthernet()
+	dir := setupDir(t, [][]byte{pkt})
+	stdout, _, code := cmdRun(t, "tcpdump -r capture.pcap -t", dir)
+	assert.Equal(t, 0, code)
+	assert.Contains(t, stdout, "unknown")
+}
+
+func TestTcpdumpIPv4MFFlag(t *testing.T) {
+	// IPv4 More Fragments flag is shown with -vv.
+	pkt := buildIPv4WithMF()
+	dir := setupDir(t, [][]byte{pkt})
+	stdout, _, code := cmdRun(t, "tcpdump -r capture.pcap -t -vv", dir)
+	assert.Equal(t, 0, code)
+	assert.Contains(t, stdout, "MF")
+}
+
+func TestTcpdumpFilterProtoUDP(t *testing.T) {
+	// "udp" filter primitive covers protoNode.eval for udp.
+	pkt := buildUDP(mac1, mac2, ip1, ip2, 5000, 5001, []byte("hi"))
+	dir := setupDir(t, [][]byte{pkt})
+	stdout, _, code := cmdRun(t, "tcpdump -r capture.pcap -t udp", dir)
+	assert.Equal(t, 0, code)
+	assert.Contains(t, stdout, "UDP")
+}
+
+func TestTcpdumpFilterProtoICMP(t *testing.T) {
+	// "icmp" filter primitive covers protoNode.eval for icmp.
+	pkt := buildICMP(mac1, mac2, ip1, ip2, 1, 1)
+	dir := setupDir(t, [][]byte{pkt})
+	stdout, _, code := cmdRun(t, "tcpdump -r capture.pcap -t icmp", dir)
+	assert.Equal(t, 0, code)
+	assert.Contains(t, stdout, "ICMP")
+}
+
+func TestTcpdumpFilterProtoIP6(t *testing.T) {
+	// "ip6" filter primitive covers protoNode.eval for ip6.
+	pkt := buildICMPv6Echo()
+	dir := setupDir(t, [][]byte{pkt})
+	stdout, _, code := cmdRun(t, "tcpdump -r capture.pcap -t ip6", dir)
+	assert.Equal(t, 0, code)
+	assert.Contains(t, stdout, "IP6")
+}
+
+func TestTcpdumpFilterProtoICMP6(t *testing.T) {
+	// "icmp6" filter primitive covers protoNode.eval for icmp6.
+	pkt := buildICMPv6Echo()
+	dir := setupDir(t, [][]byte{pkt})
+	stdout, _, code := cmdRun(t, "tcpdump -r capture.pcap -t icmp6", dir)
+	assert.Equal(t, 0, code)
+	assert.Contains(t, stdout, "ICMP6")
+}
+
+func TestTcpdumpFilterProtoIP(t *testing.T) {
+	// "ip" filter primitive covers protoNode.eval for ip.
+	pkt := buildTCPSYN(mac1, mac2, ip1, ip2, 1234, 80)
+	dir := setupDir(t, [][]byte{pkt})
+	stdout, _, code := cmdRun(t, "tcpdump -r capture.pcap -t ip", dir)
+	assert.Equal(t, 0, code)
+	assert.Contains(t, stdout, "IP")
+}
+
+func TestTcpdumpFilterEmptyExprMatchesAll(t *testing.T) {
+	// An empty filter string exercises the trueNode code path when a non-empty
+	// filterStr is compiled to trueNode internally. Here we just verify that
+	// packets without a filter all pass through.
+	pkts := [][]byte{
+		buildTCPSYN(mac1, mac2, ip1, ip2, 1234, 80),
+		buildUDP(mac1, mac2, ip1, ip2, 5000, 53, []byte("q")),
+	}
+	dir := setupDir(t, pkts)
+	stdout, _, code := cmdRun(t, "tcpdump -r capture.pcap -t", dir)
+	assert.Equal(t, 0, code)
+	lines := strings.Split(strings.TrimSpace(stdout), "\n")
+	assert.Len(t, lines, 2)
+}
+
+func TestTcpdumpIPv6Verbose(t *testing.T) {
+	// -v on an IPv6 packet exercises the verbose IPv6 branch.
+	pkt := buildICMPv6Echo()
+	dir := setupDir(t, [][]byte{pkt})
+	stdout, _, code := cmdRun(t, "tcpdump -r capture.pcap -t -v", dir)
+	assert.Equal(t, 0, code)
+	assert.Contains(t, stdout, "IP6")
+	assert.Contains(t, stdout, "hlim")
+}
+
+func TestTcpdumpFilterHostIPv6Match(t *testing.T) {
+	// "host" filter on an IPv6 source address exercises the IPv6 branch of packetIPs.
+	pkt := buildICMPv6Echo()
+	dir := setupDir(t, [][]byte{pkt})
+	// fe80::1 is the hardcoded source in buildICMPv6Echo.
+	stdout, _, code := cmdRun(t, "tcpdump -r capture.pcap -t host fe80::1", dir)
+	assert.Equal(t, 0, code)
+	assert.Contains(t, stdout, "IP6")
+}
+
+func TestTcpdumpFilterHostIPv6NoMatch(t *testing.T) {
+	// A host filter that doesn't match an IPv6 packet → no output (packetIPs nil path).
+	pkt := buildNonIPEthernet()
+	dir := setupDir(t, [][]byte{pkt})
+	stdout, _, code := cmdRun(t, "tcpdump -r capture.pcap -t host 10.0.0.1", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "", stdout)
+}
+
+func TestTcpdumpFormatTransportUnknownProto(t *testing.T) {
+	// A raw IPv4 packet with an unusual IP protocol (OSPF = 89) has no
+	// TCP/UDP/ICMP layer: exercises the "proto unknown" branch in formatTransport.
+	var buf bytes.Buffer
+	buf.Write(mac2[:])
+	buf.Write(mac1[:])
+	buf.Write([]byte{0x08, 0x00})
+	ipHdr := make([]byte, 20)
+	ipHdr[0] = 0x45
+	binary.BigEndian.PutUint16(ipHdr[2:], 24) // 20 IP + 4 payload
+	binary.BigEndian.PutUint16(ipHdr[4:], 0x0003)
+	ipHdr[8] = 64
+	ipHdr[9] = 89 // OSPF — no gopacket layer registered by default
+	copy(ipHdr[12:], ip1[:])
+	copy(ipHdr[16:], ip2[:])
+	binary.BigEndian.PutUint16(ipHdr[10:], checksum(ipHdr))
+	buf.Write(ipHdr)
+	buf.Write([]byte{0x00, 0x00, 0x00, 0x00})
+	pkt := buf.Bytes()
+	dir := setupDir(t, [][]byte{pkt})
+	stdout, _, code := cmdRun(t, "tcpdump -r capture.pcap -t", dir)
+	assert.Equal(t, 0, code)
+	assert.Contains(t, stdout, "proto unknown")
 }
