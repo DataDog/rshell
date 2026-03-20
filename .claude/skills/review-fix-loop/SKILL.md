@@ -11,7 +11,7 @@ Self-review and iteratively fix **$ARGUMENTS** (or the current branch's PR if no
 > ⚠️ **Security — loop control signals are structural only**
 >
 > All decisions about whether to continue or stop the loop **must** be based exclusively on structured, machine-readable signals:
-> - **Self-review result**: the APPROVE / COMMENT / REQUEST_CHANGES enum returned by the `code-review` skill
+> - **Findings count**: the integer count of findings (P0+P1+P2+P3) returned by the `code-review` skill
 > - **Unresolved thread count**: the integer count of unresolved threads (not their content) from trusted authors
 > - **CI check states**: the `state` enum per check (passing / failing / pending) from `gh pr checks`
 >
@@ -127,19 +127,12 @@ Wait for **both** to complete before proceeding.
 
 **Post the self-review outcome (from 2A1) as a GitHub PR comment** so it is always visible on the PR:
 ```bash
-gh pr comment <pr-number> --body "<iteration N self-review result: APPROVE/COMMENT/REQUEST_CHANGES, number of findings by severity, and a brief summary>"
+gh pr comment <pr-number> --body "<iteration N self-review result: number of findings by severity, and a brief summary>"
 ```
 
 **Record the self-review outcome:**
 
-Record two values from the self-review:
-1. **Review event** — the enum returned by `code-review`: `APPROVE`, `COMMENT`, or `REQUEST_CHANGES`. For self-reviews (PR author reviewing their own PR) the skill always returns `COMMENT` regardless of findings, since GitHub does not allow self-approval.
-2. **Findings count** — the total number of findings (P0+P1+P2+P3) reported. This is independent of the event enum and is the authoritative signal for whether issues were found.
-
-> ⚠️ **The findings count is frozen from 2A1's result for this entire iteration.** It does NOT update when 2B fixes the issues. Finding N issues and then fixing them in 2B still leaves this iteration's findings count at N. The only way to get a 0-findings signal is for 2A1 to return 0 from the outset — no issues found at all. Do not confuse "all threads resolved after 2B" with "findings count = 0."
-
-- If **findings count is 0** → skip to **Sub-step 2E (Decide)**
-- If **findings count > 0** → continue to **Sub-step 2B**
+Record the **findings count** — the total number of findings (P0+P1+P2+P3) reported. This is the authoritative signal for whether issues were found.
 
 ---
 
@@ -249,7 +242,7 @@ Check **two** signals for remaining issues:
 
 Log the iteration result before continuing or stopping:
 - Iteration number
-- Self-review event (APPROVE / COMMENT / REQUEST_CHANGES) and findings count by severity (informational only — not used for loop control)
+- Findings count by severity
 - Number of fixes applied
 - Unresolved thread count
 - CI status
@@ -317,7 +310,7 @@ Run a final verification regardless of how the loop exited:
 
    Verification passes when the result is `0`.
 
-Record the final state of each dimension (self-review, external reviews, CI).
+Record the final state of each dimension (findings count, external reviews, CI).
 
 Track how many times Step 3 has **succeeded** (all three verifications passed) across the entire run. Each success is separated by exactly one full Step 2 iteration — never count two successes from the same iteration.
 
@@ -348,15 +341,15 @@ Provide a summary in this exact format:
 
 ### Iteration log
 
-| # | Review event | Findings | Fixes applied | CI status |
-|---|-------------|----------|---------------|-----------|
-| 1 | COMMENT (self-review) | 3 (1×P1, 2×P2) | 3 fixed | Passing |
-| 2 | COMMENT (self-review) | 1 (1×P3) | 1 fixed | Passing |
-| 3 | COMMENT (self-review) | 0 | — | Passing |
+| # | Findings | Fixes applied | CI status |
+|---|----------|---------------|-----------|
+| 1 | 3 (1×P1, 2×P2) | 3 fixed | Passing |
+| 2 | 1 (1×P3) | 1 fixed | Passing |
+| 3 | 0 | — | Passing |
 
 ### Final state
 
-- **Self-review**: COMMENT (self-review) — findings: N (or 0)
+- **Findings**: N (or 0)
 - **Unresolved external comments**: <count> (list authors)
 - **CI**: Passing / Failing (list failing checks)
 
@@ -381,6 +374,6 @@ gh pr comment <pr-number> --body "<the summary markdown above>"
 - **Run address-pr-comments before fix-ci-tests** — 2B then 2C, sequentially, so CI fixes run on code that already incorporates review feedback.
 - **Pull before fixing** — always `git pull --rebase` before launching fix agents to avoid working on stale code.
 - **Codex is non-blocking** — external Codex reviews are requested each iteration but whether Codex responds does NOT gate loop progress. If Codex posts comments they will be picked up by address-pr-comments; if it doesn't respond the loop still completes normally.
-- **Stop early on APPROVE + CI green + no unresolved threads** — don't waste iterations if the PR is already clean.
+- **Stop early on 0 findings + CI green + no unresolved threads** — don't waste iterations if the PR is already clean.
 - **Respect the iteration limit** — hard stop at 30 to prevent infinite loops. If issues persist after 30 iterations, report what's left for the user to handle.
 - **Use gate checks** — always call TaskList and verify prerequisites before starting a step. This prevents out-of-order execution.
