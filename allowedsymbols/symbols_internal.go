@@ -87,6 +87,7 @@ var internalPerPackageSymbols = map[string][]string{
 		"strings.Builder",     // 🟢 efficient string concatenation for IPv6 formatting; pure in-memory buffer, no I/O.
 		"strings.Contains",    // 🟢 checks for ".." components in procPath safety guard; pure function, no I/O.
 		"strings.Fields",      // 🟢 splits whitespace-separated socket lines; pure function, no I/O.
+		"strings.Join",        // 🟢 reconstructs space-containing Unix socket paths from Fields tokens; pure function, no I/O.
 		"strings.Split",       // 🟢 splits address:port fields on ":"; pure function, no I/O.
 		"strings.ToUpper",     // 🟢 normalises hex state field to uppercase for map lookup; pure function, no I/O.
 	},
@@ -142,6 +143,7 @@ var internalAllowedSymbols = []string{
 	"strings.Builder",                       // 🟢 procnetsocket: efficient string concatenation for IPv6 formatting; pure in-memory buffer, no I/O.
 	"strings.Contains",                      // 🟢 procnetroute: checks for ".." in procPath safety guard; pure function, no I/O.
 	"strings.Fields",                        // 🟢 procinfo/procnetroute/procnetsocket: splits a string on whitespace; pure function, no I/O.
+	"strings.Join",                          // 🟢 procnetsocket: reconstructs space-containing Unix socket paths from Fields tokens; pure function, no I/O.
 	"strings.Split",                         // 🟢 procnetsocket: splits address:port fields on ":"; pure function, no I/O.
 	"strings.ToUpper",                       // 🟢 procnetsocket: normalises hex state field to uppercase for map lookup; pure function, no I/O.
 	"strings.HasPrefix",                     // 🟢 procinfo: checks string prefix; pure function, no I/O.
