@@ -9,6 +9,7 @@ github.com/pmezard/go-difflib,https://github.com/pmezard/go-difflib,BSD-3-Clause
 github.com/prometheus-community/pro-bing,https://github.com/prometheus-community/pro-bing,MIT,"Copyright 2022 The Prometheus Authors; Copyright 2016 Cameron Sparr and contributors"
 github.com/spf13/cobra,https://github.com/spf13/cobra,Apache-2.0,Copyright 2013-2023 The Cobra Authors
 github.com/spf13/pflag,https://github.com/spf13/pflag,BSD-3-Clause,"Copyright (c) 2012 Alex Ogier, The Go Authors"
+github.com/google/gopacket,https://github.com/google/gopacket,BSD-3-Clause,"Copyright (c) 2012 Google, Inc. All rights reserved.; Copyright (c) 2009-2011 Andreas Krennmair. All rights reserved."
 golang.org/x/net,https://github.com/golang/net,BSD-3-Clause,Copyright (c) 2009 The Go Authors. All rights reserved.
 golang.org/x/sync,https://github.com/golang/sync,BSD-3-Clause,Copyright (c) 2009 The Go Authors. All rights reserved.
 golang.org/x/sys,https://github.com/golang/sys,BSD-3-Clause,Copyright (c) 2009 The Go Authors. All rights reserved.

@@ -183,9 +183,11 @@ func FuzzTcpdumpFilter(f *testing.F) {
 		// Since we can't shell-escape arbitrary strings in the shell script,
 		// we only fuzz expressions that look like safe tokens.
 		for _, ch := range filterExpr {
-			// Skip characters that would cause shell parse errors when unquoted.
+			// Skip characters that would be interpreted by the shell rather than
+			// passed as filter arguments (metacharacters, background operator, etc.).
 			if ch == '\'' || ch == '"' || ch == '\\' || ch == '\n' || ch == '\r' ||
-				ch == '(' || ch == ')' || ch == 0 {
+				ch == '(' || ch == ')' || ch == '&' || ch == '|' || ch == ';' ||
+				ch == '<' || ch == '>' || ch == '`' || ch == '$' || ch == 0 {
 				return
 			}
 		}
