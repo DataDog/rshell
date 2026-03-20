@@ -1,12 +1,12 @@
-# ip route GET (uppercase, no address) exits 1 — the uppercase subcommand is accepted
-# (case-insensitive matching is an intentional divergence from real ip, which is case-sensitive).
-description: ip route uppercase subcommand (GET) is accepted (intentional divergence from bash).
+# ip route GET (uppercase) is rejected — subcommand parsing is case-sensitive,
+# matching real iproute2 behavior.
+description: ip route uppercase subcommand (GET) is rejected (case-sensitive, matches iproute2).
 input:
   script: |+
     ip route GET
 expect:
   stdout: ""
   stderr: |+
-    ip: route get: missing address argument
+    ip: route: GET: unknown subcommand
   exit_code: 1
 skip_assert_against_bash: true
