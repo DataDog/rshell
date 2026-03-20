@@ -95,29 +95,36 @@ gh api repos/{owner}/{repo}/pulls/{pr-number}/reviews \
 Check which threads are already resolved, then keep only unresolved threads where the first comment is authored by `$MY_LOGIN` or `chatgpt-codex-connector[bot]`:
 
 ```bash
-gh api graphql -f query='
-  query($owner: String!, $repo: String!, $pr: Int!) {
-    repository(owner: $owner, name: $repo) {
-      pullRequest(number: $pr) {
-        reviewThreads(first: 100) {
-          nodes {
-            id
-            isResolved
-            comments(first: 10) {
-              nodes {
-                databaseId
-                body
-                author { login }
+# Paginate through ALL threads (GitHub caps each page at 100).
+cursor=""
+while true; do
+  page=$(gh api graphql -f query='
+    query($owner: String!, $repo: String!, $pr: Int!, $after: String) {
+      repository(owner: $owner, name: $repo) {
+        pullRequest(number: $pr) {
+          reviewThreads(first: 100, after: $after) {
+            pageInfo { hasNextPage endCursor }
+            nodes {
+              id
+              isResolved
+              comments(first: 10) {
+                nodes {
+                  databaseId
+                  body
+                  author { login }
+                }
               }
             }
           }
         }
       }
     }
-  }
-' -f owner="{owner}" -f repo="{repo}" -F pr={pr-number} \
-  --jq --arg me "$MY_LOGIN" \
-  '.data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved == false) | select(.comments.nodes[0].author.login == $me or .comments.nodes[0].author.login == "chatgpt-codex-connector[bot]")'
+  ' -f owner="{owner}" -f repo="{repo}" -F pr={pr-number} -f after="$cursor")
+  echo "$page" | jq --arg me "$MY_LOGIN" \
+    '.data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved == false) | select(.comments.nodes[0].author.login == $me or .comments.nodes[0].author.login == "chatgpt-codex-connector[bot]")'
+  [ "$(echo "$page" | jq -r '.data.repository.pullRequest.reviewThreads.pageInfo.hasNextPage')" = "true" ] || break
+  cursor=$(echo "$page" | jq -r '.data.repository.pullRequest.reviewThreads.pageInfo.endCursor')
+done
 ```
 
 Only process **unresolved** threads whose first comment is from `$MY_LOGIN` or `chatgpt-codex-connector[bot]`. Silently skip all others.
@@ -250,25 +257,32 @@ For each reviewer comment that was addressed:
 
 2. **Resolve** the thread:
    ```bash
-   # Get the GraphQL thread ID
-   gh api graphql -f query='
-     query($owner: String!, $repo: String!, $pr: Int!) {
-       repository(owner: $owner, name: $repo) {
-         pullRequest(number: $pr) {
-           reviewThreads(first: 100) {
-             nodes {
-               id
-               isResolved
-               comments(first: 1) {
-                 nodes { databaseId }
+   # Get the GraphQL thread ID — paginate to find it across all threads.
+   thread_id=""
+   cursor=""
+   while [ -z "$thread_id" ]; do
+     page=$(gh api graphql -f query='
+       query($owner: String!, $repo: String!, $pr: Int!, $after: String) {
+         repository(owner: $owner, name: $repo) {
+           pullRequest(number: $pr) {
+             reviewThreads(first: 100, after: $after) {
+               pageInfo { hasNextPage endCursor }
+               nodes {
+                 id
+                 isResolved
+                 comments(first: 1) {
+                   nodes { databaseId }
+                 }
                }
              }
            }
          }
        }
-     }
-   ' -f owner="{owner}" -f repo="{repo}" -F pr={pr-number} \
-     --jq '.data.repository.pullRequest.reviewThreads.nodes[] | select(.comments.nodes[0].databaseId == {comment-id}) | .id'
+     ' -f owner="{owner}" -f repo="{repo}" -F pr={pr-number} -f after="$cursor")
+     thread_id=$(echo "$page" | jq -r '.data.repository.pullRequest.reviewThreads.nodes[] | select(.comments.nodes[0].databaseId == {comment-id}) | .id' | head -1)
+     [ "$(echo "$page" | jq -r '.data.repository.pullRequest.reviewThreads.pageInfo.hasNextPage')" = "true" ] || break
+     cursor=$(echo "$page" | jq -r '.data.repository.pullRequest.reviewThreads.pageInfo.endCursor')
+   done
 
    # Resolve the thread
    gh api graphql -f query='

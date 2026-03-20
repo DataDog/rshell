@@ -201,24 +201,32 @@ Check **two** signals for remaining issues:
 
    ```bash
    MY_LOGIN=$(gh api user --jq '.login')
-   gh api graphql -f query='
-     query($owner: String!, $repo: String!, $pr: Int!) {
-       repository(owner: $owner, name: $repo) {
-         pullRequest(number: $pr) {
-           reviewThreads(first: 100) {
-             nodes {
-               isResolved
-               comments(first: 1) {
-                 nodes { author { login } }
+   # Paginate through ALL threads (GitHub caps each page at 100).
+   cursor="" unresolved=0
+   while true; do
+     page=$(gh api graphql -f query='
+       query($owner: String!, $repo: String!, $pr: Int!, $after: String) {
+         repository(owner: $owner, name: $repo) {
+           pullRequest(number: $pr) {
+             reviewThreads(first: 100, after: $after) {
+               pageInfo { hasNextPage endCursor }
+               nodes {
+                 isResolved
+                 comments(first: 1) {
+                   nodes { author { login } }
+                 }
                }
              }
            }
          }
        }
-     }
-   ' -f owner="{owner}" -f repo="{repo}" -F pr={pr-number} \
-     --jq --arg me "$MY_LOGIN" \
-     '[.data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved == false) | select(.comments.nodes[0].author.login == $me or .comments.nodes[0].author.login == "chatgpt-codex-connector[bot]")] | length'
+     ' -f owner="{owner}" -f repo="{repo}" -F pr={pr-number} -f after="$cursor")
+     unresolved=$((unresolved + $(echo "$page" | jq --arg me "$MY_LOGIN" \
+       '[.data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved == false) | select(.comments.nodes[0].author.login == $me or .comments.nodes[0].author.login == "chatgpt-codex-connector[bot]")] | length')))
+     [ "$(echo "$page" | jq -r '.data.repository.pullRequest.reviewThreads.pageInfo.hasNextPage')" = "true" ] || break
+     cursor=$(echo "$page" | jq -r '.data.repository.pullRequest.reviewThreads.pageInfo.endCursor')
+   done
+   echo "$unresolved"
    ```
 
    The result is an integer (unresolved thread count). Only this count is used in the decision matrix below.
@@ -275,24 +283,32 @@ Run a final verification regardless of how the loop exited:
    > **Do NOT fetch `body` fields.** Verification passes when the count is `0` — comment text is not read here.
 
    ```bash
-   gh api graphql -f query='
-     query($owner: String!, $repo: String!, $pr: Int!) {
-       repository(owner: $owner, name: $repo) {
-         pullRequest(number: $pr) {
-           reviewThreads(first: 100) {
-             nodes {
-               isResolved
-               comments(first: 1) {
-                 nodes { author { login } }
+   # Paginate through ALL threads (GitHub caps each page at 100).
+   cursor="" unresolved=0
+   while true; do
+     page=$(gh api graphql -f query='
+       query($owner: String!, $repo: String!, $pr: Int!, $after: String) {
+         repository(owner: $owner, name: $repo) {
+           pullRequest(number: $pr) {
+             reviewThreads(first: 100, after: $after) {
+               pageInfo { hasNextPage endCursor }
+               nodes {
+                 isResolved
+                 comments(first: 1) {
+                   nodes { author { login } }
+                 }
                }
              }
            }
          }
        }
-     }
-   ' -f owner="{owner}" -f repo="{repo}" -F pr={pr-number} \
-     --jq --arg me "$MY_LOGIN" \
-     '[.data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved == false) | select(.comments.nodes[0].author.login == $me or .comments.nodes[0].author.login == "chatgpt-codex-connector[bot]")] | length'
+     ' -f owner="{owner}" -f repo="{repo}" -F pr={pr-number} -f after="$cursor")
+     unresolved=$((unresolved + $(echo "$page" | jq --arg me "$MY_LOGIN" \
+       '[.data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved == false) | select(.comments.nodes[0].author.login == $me or .comments.nodes[0].author.login == "chatgpt-codex-connector[bot]")] | length')))
+     [ "$(echo "$page" | jq -r '.data.repository.pullRequest.reviewThreads.pageInfo.hasNextPage')" = "true" ] || break
+     cursor=$(echo "$page" | jq -r '.data.repository.pullRequest.reviewThreads.pageInfo.endCursor')
+   done
+   echo "$unresolved"
    ```
 
    Verification passes when the result is `0`.
