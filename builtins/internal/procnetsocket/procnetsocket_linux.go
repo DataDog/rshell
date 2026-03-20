@@ -203,15 +203,17 @@ func parseProcNetIP(
 			header = false
 			continue
 		}
-		// MaxEntries is the memory guard: stop once enough entries are held.
+		// MaxEntries is the memory guard: fail once too many entries are held.
+		// Returning an error ensures callers know the table is incomplete.
 		if len(out) >= MaxEntries {
-			break
+			return nil, ErrMaxEntries
 		}
 		// MaxTotalLines is the scan-time guard: bounds CPU time for files with
 		// many malformed/skipped lines before MaxEntries valid entries are found.
+		// Returning an error ensures callers know the table is incomplete.
 		totalLines++
 		if totalLines > MaxTotalLines {
-			break
+			return nil, ErrMaxTotalLines
 		}
 		line := sc.Text()
 		fields := strings.Fields(line)
@@ -308,15 +310,17 @@ func parseProcNetUnix(ctx context.Context, path string) ([]SocketEntry, error) {
 			header = false
 			continue
 		}
-		// MaxEntries is the memory guard: stop once enough entries are held.
+		// MaxEntries is the memory guard: fail once too many entries are held.
+		// Returning an error ensures callers know the table is incomplete.
 		if len(out) >= MaxEntries {
-			break
+			return nil, ErrMaxEntries
 		}
 		// MaxTotalLines is the scan-time guard: bounds CPU time for files with
 		// many malformed/skipped lines before MaxEntries valid entries are found.
+		// Returning an error ensures callers know the table is incomplete.
 		totalLines++
 		if totalLines > MaxTotalLines {
-			break
+			return nil, ErrMaxTotalLines
 		}
 		line := sc.Text()
 		fields := strings.Fields(line)

@@ -20,6 +20,7 @@ package procnetsocket
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -43,6 +44,16 @@ const MaxEntries = 100_000
 // many malformed/non-matching lines before MaxEntries valid entries are found.
 // MaxEntries is the memory guard; MaxTotalLines is the scan-time guard.
 const MaxTotalLines = MaxEntries * 10 // 1 000 000 lines
+
+// ErrMaxEntries is returned when the socket table exceeds MaxEntries entries.
+// Callers should treat this as a hard failure: the table was truncated and
+// output may be missing active sockets.
+var ErrMaxEntries = errors.New("procnetsocket: socket table truncated: exceeded MaxEntries limit")
+
+// ErrMaxTotalLines is returned when more than MaxTotalLines lines are scanned.
+// Callers should treat this as a hard failure: the table was truncated and
+// output may be missing active sockets.
+var ErrMaxTotalLines = errors.New("procnetsocket: socket table truncated: exceeded MaxTotalLines limit")
 
 // SocketKind identifies the protocol family of a parsed socket entry.
 type SocketKind int
