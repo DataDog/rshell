@@ -629,7 +629,7 @@ func TestIPRouteShowContextCancellation(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	_, _, code := runScriptCtx(ctx, t, "ip route show", "")
-	assert.True(t, code == 0 || code == 1, "expected exit 0 or 1, got %d", code)
+	assert.Equal(t, 0, code, "expected exit 0 on context cancellation, got %d", code)
 }
 
 // TestIPRouteGetContextCancellation verifies "ip route get" honours context
