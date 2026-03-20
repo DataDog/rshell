@@ -643,3 +643,47 @@ func TestIPRouteGetContextCancellation(t *testing.T) {
 	_, _, code := runScriptCtx(ctx, t, "ip route get 10.0.0.1", "")
 	assert.True(t, code == 0 || code == 1, "expected exit 0 or 1, got %d", code)
 }
+
+// ============================================================================
+// ip route show — host route /32 and reject route metric formatting
+// ============================================================================
+
+// TestIPRouteShowHostRouteNoSlash32 verifies that a /32 host route is displayed
+// without the "/32" suffix, matching real ip-route(8) output.
+func TestIPRouteShowHostRouteNoSlash32(t *testing.T) {
+	// 10.0.0.1/32: Dest=0x0100000A, Mask=0xFFFFFFFF (255.255.255.255 little-endian)
+	content := "Iface\tDestination\tGateway\tFlags\tRefCnt\tUse\tMetric\tMask\tMTU\tWindow\tIRTT\n" +
+		"eth1\t0100000A\t00000000\t0001\t0\t0\t0\tFFFFFFFF\t0\t0\t0\n"
+	writeProcNetRoute(t, content)
+	stdout, _, code := cmdRun(t, "ip route show")
+	assert.Equal(t, 0, code)
+	// Host routes must appear without /32 — "10.0.0.1 dev eth1", not "10.0.0.1/32 dev eth1".
+	assert.Contains(t, stdout, "10.0.0.1 dev eth1")
+	assert.NotContains(t, stdout, "10.0.0.1/32")
+}
+
+// TestIPRouteShowRejectHostRouteNoSlash32 verifies that an unreachable /32 host
+// route is displayed without the "/32" suffix.
+func TestIPRouteShowRejectHostRouteNoSlash32(t *testing.T) {
+	// unreachable 10.0.0.1/32: Dest=0x0100000A, Mask=0xFFFFFFFF, flags=0x0201
+	content := "Iface\tDestination\tGateway\tFlags\tRefCnt\tUse\tMetric\tMask\tMTU\tWindow\tIRTT\n" +
+		"*\t0100000A\t00000000\t0201\t0\t0\t0\tFFFFFFFF\t0\t0\t0\n"
+	writeProcNetRoute(t, content)
+	stdout, _, code := cmdRun(t, "ip route show")
+	assert.Equal(t, 0, code)
+	// Reject host routes: "unreachable 10.0.0.1", not "unreachable 10.0.0.1/32".
+	assert.Contains(t, stdout, "unreachable 10.0.0.1")
+	assert.NotContains(t, stdout, "unreachable 10.0.0.1/32")
+}
+
+// TestIPRouteShowRejectRouteWithMetric verifies that a RTF_REJECT route with a
+// non-zero metric includes the metric in its output.
+func TestIPRouteShowRejectRouteWithMetric(t *testing.T) {
+	// unreachable 10.0.0.0/8 with metric 50
+	content := "Iface\tDestination\tGateway\tFlags\tRefCnt\tUse\tMetric\tMask\tMTU\tWindow\tIRTT\n" +
+		"*\t0000000A\t00000000\t0201\t0\t0\t50\t000000FF\t0\t0\t0\n"
+	writeProcNetRoute(t, content)
+	stdout, _, code := cmdRun(t, "ip route show")
+	assert.Equal(t, 0, code)
+	assert.Contains(t, stdout, "unreachable 10.0.0.0/8 metric 50")
+}

@@ -52,12 +52,13 @@ func readRoutes(ctx context.Context, procPath string) ([]Route, error) {
 		if len(routes) >= MaxRoutes {
 			break
 		}
-		// MaxTotalLines is the CPU/scan-time guard: it bounds the number of
-		// lines processed when routes is not yet full. This prevents a
-		// pathological file with many non-UP/malformed rows from spinning
-		// indefinitely before MaxRoutes UP entries are found.
-		// Note: UP routes that triggered the MaxRoutes break above do NOT
-		// count toward this budget; only lines processed after that point do.
+		// MaxTotalLines is the CPU/scan-time guard: it bounds the total number
+		// of data lines scanned while the routes slice is still being filled
+		// (i.e., while len(routes) < MaxRoutes). This prevents a pathological
+		// file with many non-UP/malformed rows from spinning indefinitely before
+		// MaxRoutes UP entries are found. Once MaxRoutes UP routes are collected
+		// the loop breaks immediately above, so totalLines is never incremented
+		// after the memory cap is reached.
 		totalLines++
 		if totalLines > MaxTotalLines {
 			break

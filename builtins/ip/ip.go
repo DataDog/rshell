@@ -110,9 +110,13 @@ import (
 
 // ProcNetRoutePath is the proc filesystem root used to locate the routing table.
 // ReadRoutes opens ProcNetRoutePath/net/route.
-// It is a package-level variable so tests can point it at a synthetic directory
-// instead of the real /proc. Tests that mutate this variable must hold
-// procNetRouteMu (defined in ip_linux_test.go) to prevent data races.
+//
+// Concurrency contract: this variable is written only in tests (via the
+// writeProcNetRoute helper) and is never mutated by production code after
+// package initialization. Production callers therefore need no lock to read it.
+// Test code that mutates ProcNetRoutePath must hold procNetRouteMu (defined in
+// ip_linux_test.go) for the duration of the test to serialise test mutations
+// and prevent races between concurrent test goroutines.
 var ProcNetRoutePath = procnetroute.DefaultProcPath
 
 // MaxLineBytes re-exports the procnetroute constant for test access.
@@ -672,8 +676,15 @@ func formatRoute(r *procnetroute.Route) string {
 			b.WriteString("default")
 		} else {
 			b.WriteString(procnetroute.HexToIPStr(r.Dest))
-			b.WriteByte('/')
-			b.WriteString(strconv.Itoa(procnetroute.Popcount(r.Mask)))
+			prefixLen := procnetroute.Popcount(r.Mask)
+			if prefixLen != 32 {
+				b.WriteByte('/')
+				b.WriteString(strconv.Itoa(prefixLen))
+			}
+		}
+		if r.Metric != 0 {
+			b.WriteString(" metric ")
+			b.WriteString(strconv.FormatUint(uint64(r.Metric), 10))
 		}
 		return b.String()
 	}
@@ -682,8 +693,11 @@ func formatRoute(r *procnetroute.Route) string {
 		b.WriteString("default")
 	} else {
 		b.WriteString(procnetroute.HexToIPStr(r.Dest))
-		b.WriteByte('/')
-		b.WriteString(strconv.Itoa(procnetroute.Popcount(r.Mask)))
+		prefixLen := procnetroute.Popcount(r.Mask)
+		if prefixLen != 32 {
+			b.WriteByte('/')
+			b.WriteString(strconv.Itoa(prefixLen))
+		}
 	}
 
 	if r.Flags&procnetroute.FlagGateway != 0 {

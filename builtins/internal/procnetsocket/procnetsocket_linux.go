@@ -303,7 +303,7 @@ func parseProcNetUnix(ctx context.Context, path string) ([]SocketEntry, error) {
 			continue
 		}
 
-		stateStr := fields[5]
+		stateStr := strings.ToUpper(fields[5])
 		state, ok := unixStateMap[stateStr]
 		if !ok {
 			state = "UNCONN"
