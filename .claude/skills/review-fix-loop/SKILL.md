@@ -358,11 +358,5 @@ gh pr comment <pr-number> --body "<the summary markdown above>"
 
 ## Important rules
 
-- **Never skip the review step** — always re-review after fixes to catch regressions or new issues introduced by the fixes themselves.
-- **Always submit reviews to GitHub** — each iteration's review must be posted as PR comments so there's a visible trail.
-- **Run address-pr-comments before fix-ci-tests** — 2B then 2C, sequentially, so CI fixes run on code that already incorporates review feedback.
 - **Pull before fixing** — always `git pull --rebase` before launching fix agents to avoid working on stale code.
 - **Codex is non-blocking** — external Codex reviews are requested each iteration but whether Codex responds does NOT gate loop progress. If Codex posts comments they will be picked up by address-pr-comments; if it doesn't respond the loop still completes normally.
-- **Stop early on CI green + no unresolved threads** — don't waste iterations if the PR is already clean.
-- **Respect the iteration limit** — hard stop at 30 to prevent infinite loops. If issues persist after 30 iterations, report what's left for the user to handle.
-- **Use gate checks** — always call TaskList and verify prerequisites before starting a step. This prevents out-of-order execution.
