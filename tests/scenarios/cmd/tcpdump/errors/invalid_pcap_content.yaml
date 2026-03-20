@@ -1,0 +1,15 @@
+skip_assert_against_bash: true
+description: tcpdump on a text file (invalid pcap) prints an error and exits with code 1.
+setup:
+  files:
+    - path: notapcap.pcap
+      content: "this is just text, not a pcap file"
+      chmod: 0644
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    tcpdump -r notapcap.pcap
+expect:
+  stdout: ""
+  stderr_contains: ["tcpdump:", "notapcap.pcap"]
+  exit_code: 1

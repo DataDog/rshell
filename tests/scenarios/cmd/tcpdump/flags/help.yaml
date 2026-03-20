@@ -1,0 +1,9 @@
+skip_assert_against_bash: true
+description: tcpdump --help prints usage to stdout and exits with code 0.
+input:
+  script: |+
+    tcpdump --help
+expect:
+  stdout_contains: ["Usage:", "-r"]
+  stderr: ""
+  exit_code: 0

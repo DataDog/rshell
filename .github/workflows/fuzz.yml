@@ -63,6 +63,11 @@ jobs:
             # ping_test.go. Go test helpers are only in scope within the same directory,
             # so both files must reside in builtins/ping/.
             corpus_path: builtins/ping
+          - pkg: ./builtins/tcpdump/
+            name: tcpdump
+            # tcpdump fuzz tests live in builtins/tcpdump/ because they share test
+            # helper functions (writePcap, buildTCPSYN, etc.) defined in tcpdump_test.go.
+            corpus_path: builtins/tcpdump
           - pkg: ./interp/tests/
             name: interp
             corpus_path: interp/tests

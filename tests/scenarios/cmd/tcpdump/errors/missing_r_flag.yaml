@@ -1,0 +1,9 @@
+skip_assert_against_bash: true
+description: tcpdump without -r flag prints an error and exits with code 1.
+input:
+  script: |+
+    tcpdump
+expect:
+  stdout: ""
+  stderr_contains: ["tcpdump:", "-r"]
+  exit_code: 1

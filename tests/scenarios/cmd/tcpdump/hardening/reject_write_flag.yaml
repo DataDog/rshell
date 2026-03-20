@@ -1,0 +1,9 @@
+skip_assert_against_bash: true
+description: tcpdump -w (write to file) is rejected with exit code 1.
+input:
+  script: |+
+    tcpdump -w output.pcap
+expect:
+  stdout: ""
+  stderr_contains: ["tcpdump:"]
+  exit_code: 1
