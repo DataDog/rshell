@@ -83,6 +83,7 @@ var internalPerPackageSymbols = map[string][]string{
 		"strconv.FormatUint", // 🟢 uint-to-string conversion for port/inode formatting; pure function, no I/O.
 		"strconv.ParseUint",  // 🟢 parses hex/decimal socket fields; pure function, no I/O.
 		"strings.Builder",    // 🟢 efficient string concatenation for IPv6 formatting; pure in-memory buffer, no I/O.
+		"strings.Contains",   // 🟢 checks for ".." components in procPath safety guard; pure function, no I/O.
 		"strings.Fields",     // 🟢 splits whitespace-separated socket lines; pure function, no I/O.
 		"strings.Split",      // 🟢 splits address:port fields on ":"; pure function, no I/O.
 		"strings.ToUpper",    // 🟢 normalises hex state field to uppercase for map lookup; pure function, no I/O.
