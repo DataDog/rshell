@@ -468,8 +468,9 @@ func TestIPIPv6RouteBlocked(t *testing.T) {
 // ip route — max-routes cap (memory safety)
 // ============================================================================
 
-// TestIPRouteMaxRoutesCap verifies that parseRoutingTable reads at most
-// maxRoutes entries and does not allocate unboundedly for a large file.
+// TestIPRouteMaxRoutesCap verifies that ip route show fails with an error when
+// the route table exceeds MaxRoutes entries. Silently truncating would cause
+// ip route get to compute LPM on incomplete data and return a wrong next-hop.
 func TestIPRouteMaxRoutesCap(t *testing.T) {
 	// Build a file with 15 000 route entries (> maxRoutes=10000).
 	var b []byte
@@ -479,16 +480,9 @@ func TestIPRouteMaxRoutesCap(t *testing.T) {
 		b = append(b, row...)
 	}
 	writeProcNetRoute(t, string(b))
-	stdout, _, code := cmdRun(t, "ip route show")
-	assert.Equal(t, 0, code)
-	// Verify the output does not exceed 10000 lines (the maxRoutes cap).
-	lines := 0
-	for _, c := range stdout {
-		if c == '\n' {
-			lines++
-		}
-	}
-	assert.LessOrEqual(t, lines, 10_000, "expected at most 10000 route lines, got %d", lines)
+	_, stderr, code := cmdRun(t, "ip route show")
+	assert.Equal(t, 1, code)
+	assert.Contains(t, stderr, "MaxRoutes")
 }
 
 // ============================================================================

@@ -10,11 +10,22 @@ package procnetroute
 import (
 	"bufio"
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 )
+
+// ErrMaxRoutes is returned by readRoutes when the route table exceeds MaxRoutes UP entries.
+// Callers should treat this as a hard failure: the route table was truncated and
+// any LPM result derived from partial data may be incorrect.
+var ErrMaxRoutes = errors.New("procnetroute: route table truncated: exceeded MaxRoutes limit")
+
+// ErrMaxTotalLines is returned by readRoutes when more than MaxTotalLines lines are scanned.
+// Callers should treat this as a hard failure: the route table was truncated and
+// any LPM result derived from partial data may be incorrect.
+var ErrMaxTotalLines = errors.New("procnetroute: route table truncated: exceeded MaxTotalLines limit")
 
 const routeScanBufInit = 4096
 
@@ -46,22 +57,21 @@ func readRoutes(ctx context.Context, procPath string) ([]Route, error) {
 			firstLine = false
 			continue // skip header row
 		}
-		// MaxRoutes is the memory guard: stop once enough UP routes are held.
-		// This check comes first so the loop exits immediately when the memory
-		// cap is reached, without consuming any more of the scan-time budget.
+		// MaxRoutes is the memory guard: fail once enough UP routes are held.
+		// Returning an error (rather than silently truncating) ensures callers
+		// know the table is incomplete and LPM results may be wrong.
 		if len(routes) >= MaxRoutes {
-			break
+			return nil, ErrMaxRoutes
 		}
 		// MaxTotalLines is the CPU/scan-time guard: it bounds the total number
 		// of data lines scanned while the routes slice is still being filled
 		// (i.e., while len(routes) < MaxRoutes). This prevents a pathological
 		// file with many non-UP/malformed rows from spinning indefinitely before
-		// MaxRoutes UP entries are found. Once MaxRoutes UP routes are collected
-		// the loop breaks immediately above, so totalLines is never incremented
-		// after the memory cap is reached.
+		// MaxRoutes UP entries are found. Returning an error (rather than
+		// silently truncating) ensures callers know the table is incomplete.
 		totalLines++
 		if totalLines > MaxTotalLines {
-			break
+			return nil, ErrMaxTotalLines
 		}
 		r, ok := parseRouteEntry(sc.Text())
 		if !ok {
