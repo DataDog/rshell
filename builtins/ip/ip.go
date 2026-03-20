@@ -554,14 +554,28 @@ func routeCmd(ctx context.Context, callCtx *builtins.CallContext, do displayOpts
 		callCtx.Errf("ip: route: IPv6 routing not supported\n")
 		return builtins.Result{Code: 1}
 	}
-	if do.oneline || do.brief {
-		callCtx.Errf("ip: route: -o/--oneline and --brief flags are not supported for route output\n")
-		return builtins.Result{Code: 1}
-	}
 
 	sub := "show"
 	if len(args) > 0 {
 		sub = strings.ToLower(args[0])
+	}
+
+	// Validate the subcommand before checking display flags so that an unknown
+	// subcommand produces a precise error rather than "flag not supported".
+	switch sub {
+	case "show", "list", "get":
+		// valid read subcommands — validated below
+	case "add", "del", "delete", "change", "replace", "flush", "save", "restore":
+		callCtx.Errf("ip: route: %s: write operations are not permitted\n", sub)
+		return builtins.Result{Code: 1}
+	default:
+		callCtx.Errf("ip: route: %s: unknown subcommand\n", sub)
+		return builtins.Result{Code: 1}
+	}
+
+	if do.oneline || do.brief {
+		callCtx.Errf("ip: route: -o/--oneline and --brief flags are not supported for route output\n")
+		return builtins.Result{Code: 1}
 	}
 
 	switch sub {
@@ -581,12 +595,9 @@ func routeCmd(ctx context.Context, callCtx *builtins.CallContext, do displayOpts
 			return builtins.Result{Code: 1}
 		}
 		return routeGet(ctx, callCtx, args[1])
-	case "add", "del", "delete", "change", "replace", "flush", "save", "restore":
-		callCtx.Errf("ip: route: %s: write operations are not permitted\n", sub)
-		return builtins.Result{Code: 1}
 	default:
-		callCtx.Errf("ip: route: %s: unknown subcommand\n", sub)
-		return builtins.Result{Code: 1}
+		// unreachable: already validated above
+		panic("routeCmd: unexpected subcommand after validation: " + sub)
 	}
 }
 

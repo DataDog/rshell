@@ -1,4 +1,7 @@
-# ip route get rejects addresses with leading-zero octets (e.g. "010") — matches real ip behaviour.
+# ip route get rejects addresses with leading-zero octets (e.g. "010").
+# skip_assert_against_bash: real ip exits 1 but emits a different message:
+#   Error: any valid prefix is expected rather than "192.168.010.1".
+# Our message format differs intentionally for consistency with other ip errors.
 description: ip route get rejects addresses with leading-zero octets.
 input:
   script: |+
