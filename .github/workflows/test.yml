@@ -13,7 +13,7 @@ jobs:
   test:
     name: Test (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 25
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
@@ -24,7 +24,7 @@ jobs:
         with:
           go-version-file: .go-version
       - name: Run tests with race detector
-        run: go test -race -v -timeout 20m ./...
+        run: go test -race -v -timeout 10m ./...
 
   fuzz:
     name: Fuzz seed corpus (${{ matrix.os }})
