@@ -562,20 +562,22 @@ func routeCmd(ctx context.Context, callCtx *builtins.CallContext, do displayOpts
 		// ToLower makes subcommands case-insensitive (e.g. "SHOW" == "show").
 		// Real ip is case-sensitive, but this is an intentional leniency for
 		// AI agents that may produce mixed-case commands.
-		sub = strings.ToLower(args[0])
-	}
+		// originalSub preserves the user's original casing for error messages.
+		originalSub := args[0]
+		sub = strings.ToLower(originalSub)
 
-	// Validate the subcommand before checking display flags so that an unknown
-	// subcommand produces a precise error rather than "flag not supported".
-	switch sub {
-	case "show", "list", "get":
-		// valid read subcommands — validated below
-	case "add", "del", "delete", "change", "replace", "flush", "save", "restore":
-		callCtx.Errf("ip: route: %s: write operations are not permitted\n", sub)
-		return builtins.Result{Code: 1}
-	default:
-		callCtx.Errf("ip: route: %s: unknown subcommand\n", sub)
-		return builtins.Result{Code: 1}
+		// Validate the subcommand before checking display flags so that an unknown
+		// subcommand produces a precise error rather than "flag not supported".
+		switch sub {
+		case "show", "list", "get":
+			// valid read subcommands — validated below
+		case "add", "del", "delete", "change", "replace", "flush", "save", "restore":
+			callCtx.Errf("ip: route: %s: write operations are not permitted\n", originalSub)
+			return builtins.Result{Code: 1}
+		default:
+			callCtx.Errf("ip: route: %s: unknown subcommand\n", originalSub)
+			return builtins.Result{Code: 1}
+		}
 	}
 
 	if do.oneline || do.brief {
