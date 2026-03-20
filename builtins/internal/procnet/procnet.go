@@ -30,11 +30,13 @@ import (
 	"context"
 	"fmt"
 	"math/bits"
+
+	"github.com/DataDog/rshell/builtins/internal/procpath"
 )
 
 // DefaultProcPath is the default proc filesystem root.
 // ReadRoutes appends "net/route" to this path to locate the routing table.
-const DefaultProcPath = "/proc"
+const DefaultProcPath = procpath.Default
 
 // MaxRoutes caps the number of route entries read to prevent memory exhaustion.
 const MaxRoutes = 10_000

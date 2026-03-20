@@ -17,12 +17,13 @@ import (
 	"strings"
 
 	"github.com/DataDog/rshell/builtins"
+	"github.com/DataDog/rshell/builtins/internal/procpath"
 )
 
 // ProcPath is the proc filesystem root used to locate /proc/net/* files.
 // It is a package-level variable so tests can point it at a synthetic directory
 // instead of the real /proc.
-var ProcPath = "/proc"
+var ProcPath = procpath.Default
 
 // run is the Linux implementation. It reads socket state from /proc/net/.
 func run(ctx context.Context, callCtx *builtins.CallContext, opts options) builtins.Result {

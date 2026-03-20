@@ -52,6 +52,9 @@ var internalPerPackageSymbols = map[string][]string{
 		"golang.org/x/sys/windows.TH32CS_SNAPPROCESS",       // 🟢 (windows) flag constant selecting process entries for CreateToolhelp32Snapshot; pure constant.
 		"golang.org/x/sys/windows.UTF16ToString",            // 🟢 (windows) converts a null-terminated UTF-16 slice to a Go string; pure function, no I/O.
 	},
+	"procpath": {
+		// No stdlib symbols needed — this package only defines a string constant.
+	},
 	"procnet": {
 		"bufio.NewScanner",         // 🟢 line-by-line reading of /proc/net/route; no write capability.
 		"context.Context",          // 🟢 deadline/cancellation interface; no side effects.

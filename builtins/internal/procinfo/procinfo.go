@@ -9,7 +9,11 @@
 // builtinAllowedSymbols allowlist check. It may use OS-specific APIs freely.
 package procinfo
 
-import "context"
+import (
+	"context"
+
+	"github.com/DataDog/rshell/builtins/internal/procpath"
+)
 
 // MaxProcesses caps slice allocation when listing all processes.
 const MaxProcesses = 10_000
@@ -31,7 +35,7 @@ type ProcInfo struct {
 }
 
 // DefaultProcPath is the default path to the proc filesystem.
-const DefaultProcPath = "/proc"
+const DefaultProcPath = procpath.Default
 
 // resolveProcPath returns procPath if non-empty, otherwise DefaultProcPath.
 func resolveProcPath(procPath string) string {
