@@ -581,6 +581,8 @@ func routeCmd(ctx context.Context, callCtx *builtins.CallContext, do displayOpts
 		}
 	}
 
+	// --oneline and --brief are not supported for route output regardless of
+	// how the subcommand was specified (explicit "show"/"list" or the default).
 	if do.oneline || do.brief {
 		callCtx.Errf("ip: route: -o/--oneline and --brief flags are not supported for route output\n")
 		return builtins.Result{Code: 1}

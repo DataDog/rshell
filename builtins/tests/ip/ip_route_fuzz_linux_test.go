@@ -42,6 +42,8 @@ func writeFuzzRoute(t *testing.T, content []byte) (cleanup func()) {
 	netDir := filepath.Join(dir, "net")
 	require.NoError(t, os.MkdirAll(netDir, 0o755))
 	if err := os.WriteFile(filepath.Join(netDir, "route"), content, 0o644); err != nil {
+		// WriteFile failed; no lock was acquired yet, so no cleanup needed.
+		// Return a no-op so the caller can safely defer it.
 		return func() {}
 	}
 	procNetRouteMu.Lock()

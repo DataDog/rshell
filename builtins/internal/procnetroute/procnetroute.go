@@ -157,6 +157,8 @@ func LongestPrefixMatch(routes []Route, addr uint32) *Route {
 		r := &routes[i]
 		if addr&r.Mask == r.Dest {
 			prefixLen := Popcount(r.Mask)
+			// Longer prefix wins; equal-prefix ties break on lower metric;
+			// equal-prefix equal-metric ties keep the first entry (kernel order).
 			if prefixLen > bestBits || (best != nil && prefixLen == bestBits && r.Metric < best.Metric) {
 				bestBits = prefixLen
 				best = r
