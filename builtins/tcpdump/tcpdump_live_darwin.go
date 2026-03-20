@@ -30,19 +30,20 @@ import (
 //	    uint32_t       bh_caplen;   // 4 bytes
 //	    uint32_t       bh_datalen;  // 4 bytes
 //	    uint16_t       bh_hdrlen;   // 2 bytes
-//	    // 2 bytes padding to align to 4 bytes
 //	};
-//	// Total fixed size: 20 bytes.
-//	// Successive packets are BPF_WORDALIGN(hdrlen + caplen)-aligned to 4-byte
-//	// boundaries.
+//	// Total struct size: 18 bytes. bh_hdrlen is set by the kernel to the actual
+//	// struct size (18), which is the byte offset to the packet data. Successive
+//	// packets are BPF_WORDALIGN(hdrlen + caplen)-aligned to 4-byte boundaries.
 type darwinLiveHandle struct {
 	fd      int
 	buf     []byte
 	pending []byte // unprocessed bytes from the last BPF read
 }
 
-// bpfHdrFixedSize is the fixed byte size of the BPF packet header on Darwin.
-const bpfHdrFixedSize = 20
+// bpfHdrFixedSize is the minimum number of bytes in a BPF packet header on
+// Darwin. The kernel sets bh_hdrlen to 18 (the actual struct size), which is
+// also the byte offset at which packet data begins.
+const bpfHdrFixedSize = 18
 
 // ifreqSize is the size of struct ifreq on Darwin (name[16] + union[16] = 32).
 const ifreqSize = 32
@@ -145,12 +146,11 @@ func (h *darwinLiveHandle) ReadPacketData() ([]byte, gopacket.CaptureInfo, error
 // nextFromPending extracts the next packet from h.pending.
 // BPF header layout (all little-endian on Darwin/x86-64 and Darwin/arm64):
 //
-//	[0:4]   bh_tstamp.tv_sec  (int32 — Timeval32.Sec)
-//	[4:8]   bh_tstamp.tv_usec (int32 — Timeval32.Usec)
-//	[8:12]  bh_caplen         (uint32)
-//	[12:16] bh_datalen        (uint32)
-//	[16:18] bh_hdrlen         (uint16)
-//	[18:20] padding
+//	[0:4]  bh_tstamp.tv_sec  (int32 — Timeval32.Sec)
+//	[4:8]  bh_tstamp.tv_usec (int32 — Timeval32.Usec)
+//	[8:12] bh_caplen         (uint32)
+//	[12:16] bh_datalen       (uint32)
+//	[16:18] bh_hdrlen        (uint16) — equals 18 on Darwin; packet data follows immediately
 func (h *darwinLiveHandle) nextFromPending() ([]byte, gopacket.CaptureInfo, error) {
 	if len(h.pending) < bpfHdrFixedSize {
 		h.pending = nil
