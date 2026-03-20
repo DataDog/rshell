@@ -750,8 +750,8 @@ func parseIPv4(s string) (uint32, bool) {
 		if len(part) > 1 && part[0] == '0' {
 			return 0, false
 		}
-		n, err := strconv.ParseUint(part, 10, 8)
-		if err != nil {
+		n, err := strconv.ParseUint(part, 10, 32)
+		if err != nil || n > 255 {
 			return 0, false
 		}
 		val |= uint32(n) << (uint(i) * 8)
