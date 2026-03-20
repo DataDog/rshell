@@ -7,7 +7,7 @@ input:
   script: |+
     ip route get 192.168.010.1
 expect:
-  stdout: ""
+  stdout: |+
   stderr: |+
     ip: route get: invalid address "192.168.010.1"
   exit_code: 1

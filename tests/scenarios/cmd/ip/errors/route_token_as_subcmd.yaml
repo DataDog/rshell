@@ -6,7 +6,7 @@ input:
   script: |+
     ip route from 1.1.1.1
 expect:
-  stdout: ""
+  stdout: |+
   stderr: |+
     ip: route: from: unknown subcommand
   exit_code: 1

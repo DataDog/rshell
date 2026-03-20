@@ -4,7 +4,7 @@ input:
   script: |+
     ip -6 route show
 expect:
-  stdout: ""
+  stdout: |+
   stderr: |+
     ip: route: IPv6 routing not supported
   exit_code: 1
