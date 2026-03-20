@@ -297,21 +297,17 @@ var builtinPerCommandSymbols = map[string][]string{
 		"strings.HasPrefix", // 🟢 pure function for prefix matching; no I/O.
 	},
 	"ss": {
-		"bufio.NewScanner",                // 🟢 line-by-line /proc/net/ file reading; no write or exec capability.
 		"context.Context",                 // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
 		"errors.Is",                       // 🟢 error comparison; used to distinguish syscall.ENOENT from unexpected errors.
 		"fmt.Errorf",                      // 🟢 error formatting; pure function, no I/O.
 		"fmt.Sprintf",                     // 🟢 string formatting; pure function, no I/O.
-		"os.O_RDONLY",                     // 🟢 read-only file flag constant; cannot open files by itself.
 		"strconv.FormatUint",              // 🟢 uint-to-string conversion; pure function, no I/O.
 		"strconv.Itoa",                    // 🟢 int-to-string conversion; pure function, no I/O.
-		"strconv.ParseUint",               // 🟢 string-to-unsigned-int conversion; pure function, no I/O.
 		"strings.Builder",                 // 🟢 efficient string concatenation; pure in-memory buffer, no I/O.
-		"strings.Fields",                  // 🟢 splits a string on whitespace; pure function, no I/O.
-		"strings.Split",                   // 🟢 splits a string by separator; pure function, no I/O.
-		"strings.ToUpper",                 // 🟢 converts string to uppercase; pure function, no I/O.
 		"syscall.ENOENT",                  // 🟢 error constant for "no such file or directory"; used to distinguish IPv6-unavailable from genuine sysctl errors.
 		"golang.org/x/sys/unix.SysctlRaw", // 🟠 macOS: reads kernel socket tables (read-only, no exec, no filesystem).
+		// Note: builtins/internal/procnetsocket symbols are exempt from this allowlist
+		// (internal packages are not checked by the builtinAllowedSymbols test).
 	},
 	"wc": {
 		"context.Context",         // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
@@ -386,7 +382,14 @@ var builtinPerCommandSymbols = map[string][]string{
 		"net.IPNet",            // 🟢 IP network struct (IP + Mask); pure type, no network connections.
 		"net.Interface",        // 🟢 network interface descriptor (read-only OS struct); no network connections.
 		"net.Interfaces",       // 🟠 read-only OS interface enumeration; no network connections or I/O.
+		"strconv.FormatUint",   // 🟢 uint-to-string conversion for metric formatting; pure function, no I/O.
+		"strconv.Itoa",         // 🟢 int-to-string conversion; pure function, no I/O.
+		"strconv.ParseUint",    // 🟢 string-to-unsigned-int conversion for parseIPv4; pure function, no I/O.
+		"strings.Builder",      // 🟢 efficient string concatenation; pure in-memory buffer, no I/O.
 		"strings.Join",         // 🟢 concatenates a slice of strings with a separator; pure function, no I/O.
+		"strings.Split",        // 🟢 splits a string by separator; pure function, no I/O.
+		// Note: builtins/internal/procnetroute symbols are exempt from this allowlist
+		// (internal packages are not checked by the builtinAllowedSymbols test).
 	},
 }
 
@@ -492,7 +495,6 @@ var builtinAllowedSymbols = []string{
 	"strings.ReplaceAll",                                  // 🟢 replaces all occurrences of a substring; pure function, no I/O.
 	"strings.Split",                                       // 🟢 splits a string by separator into a slice; pure function, no I/O.
 	"strings.ToLower",                                     // 🟢 converts string to lowercase; pure function, no I/O.
-	"strings.ToUpper",                                     // 🟢 converts string to uppercase; pure function, no I/O.
 	"strings.TrimSpace",                                   // 🟢 removes leading/trailing whitespace; pure function.
 	"syscall.ByHandleFileInformation",                     // 🟢 Windows file info struct for extracting nlink; read-only type, no I/O.
 	"syscall.EACCES",                                      // 🟢 POSIX errno constant for permission denied; pure constant, no I/O.

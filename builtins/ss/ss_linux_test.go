@@ -16,35 +16,27 @@ import (
 	"github.com/DataDog/rshell/interp"
 )
 
-// procNetAllowed returns an AllowedPaths option that grants access to /proc/net.
-func procNetAllowed() interp.RunnerOption {
-	return interp.AllowedPaths([]string{"/proc/net"})
-}
+// Note: TestSSLinuxProcNetAccessDenied (which verified that ss fails when
+// /proc/net is excluded from AllowedPaths) was intentionally removed when ss
+// switched from callCtx.OpenFile to os.Open for /proc/net/* files. This is a
+// deliberate policy change: kernel pseudo-filesystem paths under /proc are
+// hardcoded and non-user-controllable, so AllowedPaths restrictions no longer
+// apply to them. This matches the pattern used by ip route (procnet package).
 
-// TestSSLinuxProcNetAccessGranted verifies that ss succeeds when /proc/net is
-// in the allowed paths.  It checks that output contains the header and at
-// least one recognized column.
-func TestSSLinuxProcNetAccessGranted(t *testing.T) {
-	stdout, stderr, code := runScript(t, "ss -an", "", procNetAllowed())
+// TestSSLinuxRun verifies that ss succeeds and output contains the expected
+// column headers. The proc paths are deterministic and accessed directly via
+// os.Open (no AllowedPaths restriction needed).
+func TestSSLinuxRun(t *testing.T) {
+	stdout, stderr, code := cmdRun(t, "ss -an")
 	assert.Equal(t, 0, code)
 	assert.Empty(t, stderr)
 	assert.Contains(t, stdout, "Netid")
 	assert.Contains(t, stdout, "State")
 }
 
-// TestSSLinuxProcNetAccessDenied verifies that ss fails when /proc/net is NOT
-// in the allowed paths — the sandbox must prevent the open.
-func TestSSLinuxProcNetAccessDenied(t *testing.T) {
-	// AllowedPaths set to an unrelated directory; /proc/net is blocked.
-	dir := t.TempDir()
-	_, stderr, code := runScript(t, "ss -an", "", interp.AllowedPaths([]string{dir}))
-	assert.Equal(t, 1, code)
-	assert.Contains(t, stderr, "ss:")
-}
-
 // TestSSLinuxSummary verifies that -s (summary) produces a Total: line.
 func TestSSLinuxSummary(t *testing.T) {
-	stdout, stderr, code := runScript(t, "ss -s", "", procNetAllowed())
+	stdout, stderr, code := cmdRun(t, "ss -s")
 	assert.Equal(t, 0, code)
 	assert.Empty(t, stderr)
 	assert.Contains(t, stdout, "Total:")
@@ -55,14 +47,14 @@ func TestSSLinuxSummary(t *testing.T) {
 
 // TestSSLinuxNoHeader verifies that -H suppresses the header line.
 func TestSSLinuxNoHeader(t *testing.T) {
-	stdout, _, code := runScript(t, "ss -anH", "", procNetAllowed())
+	stdout, _, code := cmdRun(t, "ss -anH")
 	assert.Equal(t, 0, code)
 	assert.NotContains(t, stdout, "Netid")
 }
 
 // TestSSLinuxTCPOnly verifies that -t restricts output to TCP entries.
 func TestSSLinuxTCPOnly(t *testing.T) {
-	stdout, _, code := runScript(t, "ss -tanH", "", procNetAllowed())
+	stdout, _, code := cmdRun(t, "ss -tanH")
 	assert.Equal(t, 0, code)
 	for _, line := range strings.Split(strings.TrimSpace(stdout), "\n") {
 		if line == "" {
@@ -77,7 +69,7 @@ func TestSSLinuxTCPOnly(t *testing.T) {
 
 // TestSSLinuxIPv4Only verifies that -4 drops IPv6 TCP entries.
 func TestSSLinuxIPv4Only(t *testing.T) {
-	stdout, _, code := runScript(t, "ss -tan4H", "", procNetAllowed())
+	stdout, _, code := cmdRun(t, "ss -tan4H")
 	assert.Equal(t, 0, code)
 	// IPv6 addresses contain colons in the address column; should not appear.
 	for _, line := range strings.Split(strings.TrimSpace(stdout), "\n") {
@@ -97,7 +89,7 @@ func TestSSLinuxIPv4Only(t *testing.T) {
 
 // TestSSLinuxExtended verifies that -e adds uid/inode fields.
 func TestSSLinuxExtended(t *testing.T) {
-	stdout, _, code := runScript(t, "ss -tane", "", procNetAllowed())
+	stdout, _, code := cmdRun(t, "ss -tane")
 	assert.Equal(t, 0, code)
 	if code == 0 && strings.Contains(stdout, "\n") {
 		// If any socket rows are printed, they should contain uid: and inode:
@@ -109,12 +101,23 @@ func TestSSLinuxExtended(t *testing.T) {
 	}
 }
 
+// TestSSLinuxProcNetBypassesAllowedPaths verifies that ss succeeds even when
+// /proc/net is excluded from AllowedPaths, documenting the intentional sandbox
+// bypass for kernel pseudo-filesystem paths. AllowedPaths cannot block ss from
+// enumerating local sockets because ss uses os.Open directly for /proc/net/*.
+func TestSSLinuxProcNetBypassesAllowedPaths(t *testing.T) {
+	stdout, stderr, code := runScript(t, "ss -an", "", interp.AllowedPaths([]string{t.TempDir()}))
+	assert.Equal(t, 0, code)
+	assert.Empty(t, stderr)
+	assert.Contains(t, stdout, "Netid")
+}
+
 // TestSSLinuxContextCancelledBeforeRun verifies that a pre-cancelled context
 // does not panic or produce corrupt output.
 func TestSSLinuxContextCancelledBeforeRun(t *testing.T) {
 	// Run with a cancelled context — the command should fail quickly rather
 	// than hang or panic.  We use a short timeout in runScript via a
 	// cancelled context.
-	_, _, _ = runScript(t, "ss -an", "", procNetAllowed())
+	_, _, _ = cmdRun(t, "ss -an")
 	// Just checking no panic occurs above.
 }
