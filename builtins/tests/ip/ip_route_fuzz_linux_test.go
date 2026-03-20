@@ -135,7 +135,7 @@ func FuzzIPRouteParse(f *testing.F) {
 		cleanup := writeFuzzRoute(t, content)
 		defer cleanup()
 
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		defer cancel()
 
 		_, _, code := cmdRunCtxFuzz(ctx, t, "ip route show")
@@ -211,7 +211,7 @@ func FuzzIPRouteGetAddr(f *testing.F) {
 		cleanup := writeFuzzRoute(t, []byte(syntheticProcNetRoute))
 		defer cleanup()
 
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		defer cancel()
 
 		_, _, code := cmdRunCtxFuzz(ctx, t, "ip route get "+addr)

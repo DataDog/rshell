@@ -26,6 +26,10 @@ The shell is supported on Linux, Windows and macOS.
 - **Always open pull requests in draft mode.** Use `gh pr create --draft` (or the GitHub UI's "Draft pull request" option). Only mark a PR ready for review once all CI checks pass and the work is complete.
 - **Never add the `verified/allowed_symbols` GitHub label.** This label is reserved for human manual approval only. Don't try to fix CI failures related to this.
 
+## Security Design Decisions
+
+- **`ss` and `ip route` bypass `AllowedPaths` for `/proc/net/*` reads.** Both builtins use `os.Open` directly to read kernel pseudo-filesystem paths (e.g. `/proc/net/tcp`, `/proc/net/route`). These paths are hardcoded in the implementation and are never derived from user input, so `AllowedPaths` restrictions do not apply to them. As a consequence, operators cannot use `AllowedPaths` to block `ss` from enumerating local sockets or `ip route` from reading the routing table. This is an intentional trade-off: the paths are non-user-controllable, so there is no sandbox-escape risk, but the operator loses the ability to deny these reads via sandbox configuration.
+
 ## CRITICAL: Bug Fixes and Bash Compatibility
 
 - **ALWAYS prioritise fixing the shell implementation to match bash behaviour over changing tests to match the current (incorrect) shell output.** Never "fix" a failing test by updating its expected output to match broken shell behaviour — fix the shell instead.
