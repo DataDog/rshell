@@ -95,9 +95,10 @@ type Route struct {
 //
 // Defence-in-depth: ".." components are always rejected regardless of context;
 // temp-directory overrides used by tests never contain "..".
-// filepath.Clean is applied first so that components like "foo/../bar" are
-// resolved before the check; this avoids false positives on path components
-// whose filenames happen to contain two consecutive dots (e.g. "/tmp/my..dir").
+// filepath.Clean resolves traversal sequences (e.g. "foo/../bar" → "foo/bar")
+// before this check. Note: this guard also rejects any path whose *component names*
+// happen to contain ".." as a substring (e.g. "/tmp/my..dir"), but procPath is
+// always a hardcoded constant ("/proc") in production so this never triggers.
 func ReadRoutes(ctx context.Context, procPath string) ([]Route, error) {
 	clean := filepath.Clean(procPath)
 	if strings.Contains(clean, "..") {

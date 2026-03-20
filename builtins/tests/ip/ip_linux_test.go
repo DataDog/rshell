@@ -25,6 +25,10 @@ import (
 // test files in this package (unit tests, pentest tests, fuzz tests).
 // Any code that writes to ProcNetRoutePath must hold this lock for the
 // duration of the test to prevent data races if tests are run in parallel.
+// Tests in this package must NOT call t.Parallel() — doing so would cause
+// test goroutines to block indefinitely on procNetRouteMu.Lock() while
+// another test holds the lock. The -race detector will surface any accidental
+// concurrent mutation if this rule is violated.
 var procNetRouteMu sync.Mutex
 
 // syntheticProcNetRoute is a realistic /proc/net/route file with:
