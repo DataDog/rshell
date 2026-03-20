@@ -9,12 +9,13 @@ package tcpdump
 
 import (
 	"context"
+	"encoding/binary"
 	"fmt"
 	"io"
 	"time"
 
-	"github.com/google/gopacket"
-	"github.com/google/gopacket/layers"
+	"github.com/gopacket/gopacket"
+	"github.com/gopacket/gopacket/layers"
 	"golang.org/x/sys/unix"
 )
 
@@ -152,11 +153,11 @@ func (h *darwinLiveHandle) nextFromPending() ([]byte, gopacket.CaptureInfo, erro
 		return nil, gopacket.CaptureInfo{}, io.EOF
 	}
 
-	sec := int32(h.pending[0]) | int32(h.pending[1])<<8 | int32(h.pending[2])<<16 | int32(h.pending[3])<<24
-	usec := int32(h.pending[4]) | int32(h.pending[5])<<8 | int32(h.pending[6])<<16 | int32(h.pending[7])<<24
-	caplen := int(h.pending[8]) | int(h.pending[9])<<8 | int(h.pending[10])<<16 | int(h.pending[11])<<24
-	datalen := int(h.pending[12]) | int(h.pending[13])<<8 | int(h.pending[14])<<16 | int(h.pending[15])<<24
-	hdrlen := int(h.pending[16]) | int(h.pending[17])<<8
+	sec := int32(binary.LittleEndian.Uint32(h.pending[0:4]))
+	usec := int32(binary.LittleEndian.Uint32(h.pending[4:8]))
+	caplen := int(binary.LittleEndian.Uint32(h.pending[8:12]))
+	datalen := int(binary.LittleEndian.Uint32(h.pending[12:16]))
+	hdrlen := int(binary.LittleEndian.Uint16(h.pending[16:18]))
 
 	if hdrlen < bpfHdrFixedSize || hdrlen > len(h.pending) {
 		h.pending = nil

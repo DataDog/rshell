@@ -1,0 +1,9 @@
+skip_assert_against_bash: true
+description: tcpdump -D (list interfaces) is rejected with exit code 1.
+input:
+  script: |+
+    tcpdump -D
+expect:
+  stdout: ""
+  stderr_contains: ["tcpdump:"]
+  exit_code: 1

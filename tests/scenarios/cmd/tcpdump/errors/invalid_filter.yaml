@@ -1,5 +1,5 @@
 skip_assert_against_bash: true
-description: tcpdump with an unrecognised filter primitive prints an error and exits with code 1.
+description: tcpdump with an invalid pcap file prints an error and exits with code 1.
 setup:
   files:
     - path: notapcap.pcap
@@ -8,7 +8,7 @@ setup:
 input:
   allowed_paths: ["$DIR"]
   script: |+
-    tcpdump -r notapcap.pcap gobbledygook
+    tcpdump -r notapcap.pcap
 expect:
   stdout: ""
   stderr_contains: ["tcpdump:"]

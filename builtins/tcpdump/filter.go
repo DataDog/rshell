@@ -12,8 +12,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/google/gopacket"
-	"github.com/google/gopacket/layers"
+	"github.com/gopacket/gopacket"
+	"github.com/gopacket/gopacket/layers"
 )
 
 // Filter is a compiled BPF-style filter expression that can match gopacket
@@ -313,7 +313,7 @@ func parsePrimitive(tok *tokenizer) (filterNode, error) {
 			return nil, errors.New("missing port after 'port'")
 		}
 		port, err := strconv.Atoi(portStr)
-		if err != nil || port < 1 || port > 65535 {
+		if err != nil || port < 0 || port > 65535 {
 			return nil, fmt.Errorf("invalid port: %q", portStr)
 		}
 		return &portNode{port: uint16(port), dir: ""}, nil
@@ -338,7 +338,7 @@ func parsePrimitive(tok *tokenizer) (filterNode, error) {
 				return nil, fmt.Errorf("missing port after '%s port'", dir)
 			}
 			port, err := strconv.Atoi(portStr)
-			if err != nil || port < 1 || port > 65535 {
+			if err != nil || port < 0 || port > 65535 {
 				return nil, fmt.Errorf("invalid port: %q", portStr)
 			}
 			return &portNode{port: uint16(port), dir: dir}, nil
