@@ -1,0 +1,9 @@
+skip_assert_against_bash: true
+description: tcpdump with an unknown long flag is rejected with exit code 1.
+input:
+  script: |+
+    tcpdump --follow
+expect:
+  stdout: ""
+  stderr_contains: ["tcpdump:"]
+  exit_code: 1

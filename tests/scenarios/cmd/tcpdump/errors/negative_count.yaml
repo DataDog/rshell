@@ -1,0 +1,15 @@
+skip_assert_against_bash: true
+description: tcpdump -c with a negative value prints an error and exits with code 1.
+setup:
+  files:
+    - path: empty.pcap
+      content: "x"
+      chmod: 0644
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    tcpdump -r empty.pcap -c -1
+expect:
+  stdout: ""
+  stderr_contains: ["tcpdump:"]
+  exit_code: 1

@@ -1,0 +1,10 @@
+skip_assert_against_bash: true
+description: tcpdump on a nonexistent pcap file prints an error and exits with code 1.
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    tcpdump -r nonexistent.pcap
+expect:
+  stdout: ""
+  stderr_contains: ["tcpdump:", "nonexistent.pcap"]
+  exit_code: 1

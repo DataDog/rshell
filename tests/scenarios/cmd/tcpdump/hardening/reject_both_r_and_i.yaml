@@ -1,0 +1,15 @@
+# Providing both -r and -i is mutually exclusive and exits 1.
+skip_assert_against_bash: true
+description: tcpdump rejects -r and -i used together with exit code 1.
+setup:
+  files:
+    - path: empty.pcap
+      content: ""
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    tcpdump -r empty.pcap -i eth0
+expect:
+  stdout: ""
+  stderr: "tcpdump: -r and -i are mutually exclusive\n"
+  exit_code: 1

@@ -8,6 +8,7 @@ package tests
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"os"
@@ -49,11 +50,12 @@ type setup struct {
 // setupFile describes a file to create before executing the scenario.
 // When Symlink is set, a symbolic link is created instead of a regular file.
 type setupFile struct {
-	Path    string      `yaml:"path"`
-	Content string      `yaml:"content"`
-	Chmod   os.FileMode `yaml:"chmod"`
-	Symlink string      `yaml:"symlink"`  // if set, create a symlink pointing to this target (relative to test dir)
-	ModTime string      `yaml:"mod_time"` // if set, override the file's modification time (RFC 3339 format)
+	Path          string      `yaml:"path"`
+	Content       string      `yaml:"content"`
+	ContentBase64 string      `yaml:"content_base64"` // if set, decoded as base64 and written as raw bytes (overrides content)
+	Chmod         os.FileMode `yaml:"chmod"`
+	Symlink       string      `yaml:"symlink"`  // if set, create a symlink pointing to this target (relative to test dir)
+	ModTime       string      `yaml:"mod_time"` // if set, override the file's modification time (RFC 3339 format)
 }
 
 // input holds the shell script to execute.
@@ -144,7 +146,15 @@ func setupTestDir(t *testing.T, sc scenario) string {
 			// Create a symbolic link. The target is used as-is (relative to the link's location).
 			require.NoError(t, os.Symlink(f.Symlink, fullPath), "failed to create symlink %s -> %s", f.Path, f.Symlink)
 		} else {
-			require.NoError(t, os.WriteFile(fullPath, []byte(f.Content), 0644), "failed to write file %s", f.Path)
+			var data []byte
+			if f.ContentBase64 != "" {
+				var err error
+				data, err = base64.StdEncoding.DecodeString(f.ContentBase64)
+				require.NoError(t, err, "failed to decode content_base64 for %s", f.Path)
+			} else {
+				data = []byte(f.Content)
+			}
+			require.NoError(t, os.WriteFile(fullPath, data, 0644), "failed to write file %s", f.Path)
 			if f.Chmod != 0 {
 				require.NoError(t, os.Chmod(fullPath, f.Chmod), "failed to chmod file %s", f.Path)
 			}
@@ -309,7 +319,15 @@ func setupTestDirIn(t *testing.T, parentDir, scriptsDir, subdir string, sc scena
 		if f.Symlink != "" {
 			require.NoError(t, os.Symlink(f.Symlink, fullPath), "failed to create symlink %s -> %s", f.Path, f.Symlink)
 		} else {
-			require.NoError(t, os.WriteFile(fullPath, []byte(f.Content), 0644), "failed to write file %s", f.Path)
+			var data []byte
+			if f.ContentBase64 != "" {
+				var err error
+				data, err = base64.StdEncoding.DecodeString(f.ContentBase64)
+				require.NoError(t, err, "failed to decode content_base64 for %s", f.Path)
+			} else {
+				data = []byte(f.Content)
+			}
+			require.NoError(t, os.WriteFile(fullPath, data, 0644), "failed to write file %s", f.Path)
 			if f.Chmod != 0 {
 				require.NoError(t, os.Chmod(fullPath, f.Chmod), "failed to chmod file %s", f.Path)
 			}

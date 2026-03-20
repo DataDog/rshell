@@ -1,0 +1,16 @@
+skip_assert_against_bash: true
+description: tcpdump rejects an unrecognised filter primitive with exit code 1.
+setup:
+  files:
+    - path: capture.pcap
+      # valid pcap: LE magic + version 2.4 + thiszone 0 + sigfigs 0 + snaplen 65535 + LINKTYPE_ETHERNET + 0 packets
+      content_base64: "1MOyoQIABAAAAAAAAAAAAAD/////AQAAAA=="
+      chmod: 0644
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    tcpdump -r capture.pcap gobbledygook
+expect:
+  stdout: ""
+  stderr_contains: ["tcpdump:", "unknown filter primitive"]
+  exit_code: 1

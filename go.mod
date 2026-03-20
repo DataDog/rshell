@@ -3,6 +3,7 @@ module github.com/DataDog/rshell
 go 1.25.6
 
 require (
+	github.com/gopacket/gopacket v1.3.1
 	github.com/prometheus-community/pro-bing v0.8.0
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.0.10

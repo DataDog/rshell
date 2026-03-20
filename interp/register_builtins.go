@@ -30,6 +30,7 @@ import (
 	"github.com/DataDog/rshell/builtins/ss"
 	"github.com/DataDog/rshell/builtins/strings_cmd"
 	"github.com/DataDog/rshell/builtins/tail"
+	"github.com/DataDog/rshell/builtins/tcpdump"
 	"github.com/DataDog/rshell/builtins/testcmd"
 	"github.com/DataDog/rshell/builtins/tr"
 	truecmd "github.com/DataDog/rshell/builtins/true"
@@ -63,6 +64,7 @@ func registerBuiltins() {
 			ss.Cmd,
 			strings_cmd.Cmd,
 			tail.Cmd,
+			tcpdump.Cmd,
 			testcmd.Cmd,
 			testcmd.BracketCmd,
 			tr.Cmd,
