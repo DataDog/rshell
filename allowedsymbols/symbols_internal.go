@@ -61,12 +61,14 @@ var internalPerPackageSymbols = map[string][]string{
 		"github.com/DataDog/rshell/builtins/internal/procpath.Default", // 🟢 canonical /proc filesystem root path constant; pure constant, no I/O.
 		"context.Context",          // 🟢 deadline/cancellation interface; no side effects.
 		"errors.New",               // 🟢 creates a sentinel error (non-Linux stub); pure function, no I/O.
+		"fmt.Errorf",               // 🟢 error formatting for unsafe-path guard; pure function, no I/O.
 		"fmt.Sprintf",              // 🟢 formats dotted-decimal IP strings; pure function, no I/O.
 		"math/bits.OnesCount32",    // 🟢 counts set bits in a uint32 (popcount for prefix length); pure function, no I/O.
 		"math/bits.ReverseBytes32", // 🟢 byte-swaps a uint32 to convert little-endian /proc mask to network byte order for CIDR validation; pure function, no I/O.
 		"os.Open",                  // 🟠 opens /proc/net/route read-only; needed to stream the routing table.
 		"path/filepath.Join",       // 🟢 joins procPath + "net/route"; pure function, no I/O.
 		"strconv.ParseUint",        // 🟢 parses hex/decimal route fields; pure function, no I/O.
+		"strings.Contains",         // 🟢 checks for ".." components in procPath safety guard; pure function, no I/O.
 		"strings.Fields",           // 🟢 splits whitespace-separated route lines; pure function, no I/O.
 	},
 	"procnetsocket": {
@@ -134,6 +136,7 @@ var internalAllowedSymbols = []string{
 	"strconv.FormatUint",                    // 🟢 procnetsocket: uint-to-string conversion for port/inode formatting; pure function, no I/O.
 	"strconv.ParseUint",                     // 🟢 procnetroute/procnetsocket: parses hex/decimal route and socket fields; pure function, no I/O.
 	"strings.Builder",                       // 🟢 procnetsocket: efficient string concatenation for IPv6 formatting; pure in-memory buffer, no I/O.
+	"strings.Contains",                      // 🟢 procnetroute: checks for ".." in procPath safety guard; pure function, no I/O.
 	"strings.Fields",                        // 🟢 procinfo/procnetroute/procnetsocket: splits a string on whitespace; pure function, no I/O.
 	"strings.Split",                         // 🟢 procnetsocket: splits address:port fields on ":"; pure function, no I/O.
 	"strings.ToUpper",                       // 🟢 procnetsocket: normalises hex state field to uppercase for map lookup; pure function, no I/O.

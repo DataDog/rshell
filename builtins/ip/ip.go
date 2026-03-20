@@ -591,6 +591,9 @@ func routeCmd(ctx context.Context, callCtx *builtins.CallContext, do displayOpts
 
 	switch sub {
 	case "show", "list":
+		// args[0] is the subcommand ("show"/"list"); args[1] would be the first
+		// unsupported argument. When no subcommand was typed ("ip route"), args
+		// is empty and sub defaults to "show", so len(args) > 1 is safe here.
 		if len(args) > 1 {
 			callCtx.Errf("ip: route %s: unsupported argument %q\n", sub, args[1])
 			return builtins.Result{Code: 1}
@@ -646,7 +649,14 @@ func routeGet(ctx context.Context, callCtx *builtins.CallContext, addr string) b
 	}
 
 	best := procnetroute.LongestPrefixMatch(routes, addrVal)
-	if best == nil || best.Flags&procnetroute.FlagReject != 0 {
+	// Split nil vs. reject: nil means no route matched at all; FlagReject means
+	// the kernel explicitly blocks this destination. Both produce "network
+	// unreachable", but the distinction is preserved for future diagnostics.
+	if best == nil {
+		callCtx.Errf("ip: route get: network unreachable\n")
+		return builtins.Result{Code: 1}
+	}
+	if best.Flags&procnetroute.FlagReject != 0 {
 		callCtx.Errf("ip: route get: network unreachable\n")
 		return builtins.Result{Code: 1}
 	}
@@ -657,8 +667,13 @@ func routeGet(ctx context.Context, callCtx *builtins.CallContext, addr string) b
 		b.WriteString(" via ")
 		b.WriteString(procnetroute.HexToIPStr(best.GW))
 	}
-	b.WriteString(" dev ")
-	b.WriteString(best.Iface)
+	// Reject routes have iface="*"; omit "dev" for them to match real ip-route(8)
+	// output. With the FlagReject guard above this branch is unreachable for
+	// reject routes today, but the guard makes the invariant explicit.
+	if best.Flags&procnetroute.FlagReject == 0 {
+		b.WriteString(" dev ")
+		b.WriteString(best.Iface)
+	}
 	b.WriteByte('\n')
 	callCtx.Out(b.String())
 	return builtins.Result{}

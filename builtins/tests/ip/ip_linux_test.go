@@ -51,8 +51,10 @@ eth0	0002A8C0	00000000	0000	0	0	200	00FFFFFF	0	0	0
 // tree (dir/net/route), patches ipcmd.ProcNetRoutePath to the temp directory,
 // and restores the original path via t.Cleanup.
 //
-// It acquires procNetRouteMu (defined in this file) for the
-// duration of the test to prevent data races if any test is ever made parallel.
+// It acquires procNetRouteMu for the duration of the test to prevent data races.
+// Tests in this package must NOT call t.Parallel() — the mutex serializes
+// ProcNetRoutePath mutations, but parallel execution would deadlock waiting for
+// the lock that the currently-running test already holds.
 //
 // The procnet package opens procPath/net/route directly with os.Open, so no
 // AllowedPaths sandbox configuration is needed — use cmdRun for all route tests.

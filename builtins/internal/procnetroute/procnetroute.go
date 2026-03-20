@@ -30,6 +30,7 @@ import (
 	"context"
 	"fmt"
 	"math/bits"
+	"strings"
 
 	"github.com/DataDog/rshell/builtins/internal/procpath"
 )
@@ -90,7 +91,13 @@ type Route struct {
 // tests override procPath with a temp-directory tree to inject synthetic route
 // data — a runtime /proc-prefix check would break those tests. The invariant is
 // therefore caller-enforced rather than implementation-enforced.
+//
+// Defence-in-depth: ".." components are always rejected regardless of context;
+// temp-directory overrides used by tests never contain "..".
 func ReadRoutes(ctx context.Context, procPath string) ([]Route, error) {
+	if strings.Contains(procPath, "..") {
+		return nil, fmt.Errorf("procnetroute: unsafe procPath %q (must not contain \"..\" components)", procPath)
+	}
 	return readRoutes(ctx, procPath)
 }
 
