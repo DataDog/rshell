@@ -87,17 +87,22 @@ type Route struct {
 // (e.g. /proc) that is not controllable from user scripts. Never pass a
 // path derived from user input.
 //
-// Safety invariant: all callers MUST pass a path that (a) starts with /proc and
-// (b) contains no ".." components. No runtime assertion enforces this because
-// tests override procPath with a temp-directory tree to inject synthetic route
-// data — a runtime /proc-prefix check would break those tests. The invariant is
-// therefore caller-enforced rather than implementation-enforced.
+// Safety invariants:
 //
-// Defence-in-depth: ".." path components are always rejected regardless of
-// context. The check is applied to the ORIGINAL path (before filepath.Clean)
-// so that traversal sequences like "/proc/../etc/passwd" are caught — after
-// Clean, such a path becomes "/etc/passwd" which no longer contains "..".
-// Temp-directory overrides used by tests never contain "..".
+//	(a) /proc-prefix requirement: all callers MUST pass a path that starts with
+//	    /proc. No runtime assertion enforces this — tests override procPath with
+//	    a temp-directory tree to inject synthetic route data, so a /proc-prefix
+//	    check would break those tests. This invariant is caller-enforced only.
+//
+//	(b) No ".." components: enforced at runtime by the strings.Contains check
+//	    below. The check is applied to the ORIGINAL path (before filepath.Clean)
+//	    so traversal sequences like "/proc/../etc/passwd" are caught — after
+//	    Clean, such a path becomes "/etc/passwd" and no longer contains "..".
+//	    Temp-directory overrides used by tests never contain "..".
+//	    Note: the check is deliberately conservative: any path whose component
+//	    names happen to contain ".." as a substring (e.g. "/proc..backup") is
+//	    also rejected. This is a theoretical false-positive that never occurs in
+//	    practice since procPath is always "/proc" or a t.TempDir() path.
 func ReadRoutes(ctx context.Context, procPath string) ([]Route, error) {
 	if strings.Contains(procPath, "..") {
 		return nil, fmt.Errorf("procnetroute: unsafe procPath %q (must not contain \"..\" components)", procPath)

@@ -387,7 +387,6 @@ var builtinPerCommandSymbols = map[string][]string{
 		"strings.Builder",      // 🟢 efficient string concatenation; pure in-memory buffer, no I/O.
 		"strings.Join",         // 🟢 concatenates a slice of strings with a separator; pure function, no I/O.
 		"strings.Split",        // 🟢 splits a string by separator; pure function, no I/O.
-		"strings.ToLower",      // 🟢 converts string to lowercase; pure function, no I/O.
 		// Note: builtins/internal/procnetroute symbols are exempt from this allowlist
 		// (internal packages are not checked by the builtinAllowedSymbols test).
 	},
