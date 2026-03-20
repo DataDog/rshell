@@ -66,6 +66,7 @@ var internalPerPackageSymbols = map[string][]string{
 		"math/bits.OnesCount32",    // 🟢 counts set bits in a uint32 (popcount for prefix length); pure function, no I/O.
 		"math/bits.ReverseBytes32", // 🟢 byte-swaps a uint32 to convert little-endian /proc mask to network byte order for CIDR validation; pure function, no I/O.
 		"os.Open",                  // 🟠 opens /proc/net/route read-only; needed to stream the routing table.
+		"path/filepath.Clean",      // 🟢 cleans procPath before ".." component check; pure function, no I/O.
 		"path/filepath.Join",       // 🟢 joins procPath + "net/route"; pure function, no I/O.
 		"strconv.ParseUint",        // 🟢 parses hex/decimal route fields; pure function, no I/O.
 		"strings.Contains",         // 🟢 checks for ".." components in procPath safety guard; pure function, no I/O.
@@ -74,19 +75,20 @@ var internalPerPackageSymbols = map[string][]string{
 	"procnetsocket": {
 		"bufio.NewScanner", // 🟢 line-by-line reading of /proc/net/{tcp,udp,unix}; no write capability.
 		"github.com/DataDog/rshell/builtins/internal/procpath.Default", // 🟢 canonical /proc filesystem root path constant; pure constant, no I/O.
-		"context.Context",    // 🟢 deadline/cancellation interface; no side effects.
-		"errors.New",         // 🟢 creates a sentinel error (non-Linux stub); pure function, no I/O.
-		"fmt.Errorf",         // 🟢 error formatting; pure function, no I/O.
-		"fmt.Sprintf",        // 🟢 formats dotted-decimal IP/port strings; pure function, no I/O.
-		"os.Open",            // 🟠 opens /proc/net/tcp* and /proc/net/udp* read-only; needed to stream socket tables.
-		"path/filepath.Join", // 🟢 joins procPath + "net/<file>"; pure function, no I/O.
-		"strconv.FormatUint", // 🟢 uint-to-string conversion for port/inode formatting; pure function, no I/O.
-		"strconv.ParseUint",  // 🟢 parses hex/decimal socket fields; pure function, no I/O.
-		"strings.Builder",    // 🟢 efficient string concatenation for IPv6 formatting; pure in-memory buffer, no I/O.
-		"strings.Contains",   // 🟢 checks for ".." components in procPath safety guard; pure function, no I/O.
-		"strings.Fields",     // 🟢 splits whitespace-separated socket lines; pure function, no I/O.
-		"strings.Split",      // 🟢 splits address:port fields on ":"; pure function, no I/O.
-		"strings.ToUpper",    // 🟢 normalises hex state field to uppercase for map lookup; pure function, no I/O.
+		"context.Context",     // 🟢 deadline/cancellation interface; no side effects.
+		"errors.New",          // 🟢 creates a sentinel error (non-Linux stub); pure function, no I/O.
+		"fmt.Errorf",          // 🟢 error formatting; pure function, no I/O.
+		"fmt.Sprintf",         // 🟢 formats dotted-decimal IP/port strings; pure function, no I/O.
+		"os.Open",             // 🟠 opens /proc/net/tcp* and /proc/net/udp* read-only; needed to stream socket tables.
+		"path/filepath.Clean", // 🟢 cleans procPath before ".." component check; pure function, no I/O.
+		"path/filepath.Join",  // 🟢 joins procPath + "net/<file>"; pure function, no I/O.
+		"strconv.FormatUint",  // 🟢 uint-to-string conversion for port/inode formatting; pure function, no I/O.
+		"strconv.ParseUint",   // 🟢 parses hex/decimal socket fields; pure function, no I/O.
+		"strings.Builder",     // 🟢 efficient string concatenation for IPv6 formatting; pure in-memory buffer, no I/O.
+		"strings.Contains",    // 🟢 checks for ".." components in procPath safety guard; pure function, no I/O.
+		"strings.Fields",      // 🟢 splits whitespace-separated socket lines; pure function, no I/O.
+		"strings.Split",       // 🟢 splits address:port fields on ":"; pure function, no I/O.
+		"strings.ToUpper",     // 🟢 normalises hex state field to uppercase for map lookup; pure function, no I/O.
 	},
 	"winnet": {
 		"encoding/binary.BigEndian",    // 🟢 reads big-endian IPv6 group values from DLL buffer; pure value, no I/O.
@@ -130,6 +132,7 @@ var internalAllowedSymbols = []string{
 	"os.ReadDir",                            // 🟠 procinfo: reads a directory listing; needed to enumerate /proc entries.
 	"os.ReadFile",                           // 🟠 procinfo: reads a whole file; needed to read /proc/[pid]/{stat,cmdline,status}.
 	"os.Stat",                               // 🟠 procinfo: validates that the proc path exists before enumeration; read-only metadata, no write capability.
+	"path/filepath.Clean",                   // 🟢 procnetroute/procnetsocket: normalises procPath before ".." safety check; pure function, no I/O.
 	"path/filepath.Join",                    // 🟢 procinfo: joins path elements to construct /proc/<pid>/stat paths; pure function, no I/O.
 	"strconv.Atoi",                          // 🟢 string-to-int conversion; pure function, no I/O.
 	"strconv.Itoa",                          // 🟢 procinfo: int-to-string conversion for PID directory names; pure function, no I/O.

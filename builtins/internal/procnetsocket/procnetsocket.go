@@ -21,6 +21,7 @@ package procnetsocket
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	"github.com/DataDog/rshell/builtins/internal/procpath"
@@ -31,6 +32,17 @@ const DefaultProcPath = procpath.Default
 
 // MaxLineBytes is the per-line buffer cap for the /proc/net/ scanner.
 const MaxLineBytes = 1 << 20 // 1 MiB
+
+// MaxEntries caps the number of socket entries retained in memory per
+// /proc/net/ file to prevent memory exhaustion on hosts with very large
+// socket tables.
+const MaxEntries = 100_000
+
+// MaxTotalLines caps the total number of lines (valid + malformed/skipped)
+// scanned per Read* call. This bounds CPU time for pathological files with
+// many malformed/non-matching lines before MaxEntries valid entries are found.
+// MaxEntries is the memory guard; MaxTotalLines is the scan-time guard.
+const MaxTotalLines = MaxEntries * 10 // 1 000 000 lines
 
 // SocketKind identifies the protocol family of a parsed socket entry.
 type SocketKind int
@@ -58,13 +70,17 @@ type SocketEntry struct {
 	HasExtended bool
 }
 
-// validateProcPath rejects any procPath that contains ".." components.
+// validateProcPath rejects any procPath that contains ".." components after
+// cleaning. filepath.Clean is applied first so that components like
+// "foo/../bar" are resolved before the check; this avoids false positives on
+// path components whose filenames contain two consecutive dots (e.g. "/tmp/my..dir").
 // Defence-in-depth: procPath is always a hardcoded kernel pseudo-filesystem
 // root in production and never derived from user input, so this check should
 // never trigger. It mirrors the equivalent guard in procnetroute.ReadRoutes
 // and ensures the invariant is enforced consistently across both packages.
 func validateProcPath(procPath string) error {
-	if strings.Contains(procPath, "..") {
+	clean := filepath.Clean(procPath)
+	if strings.Contains(clean, "..") {
 		return fmt.Errorf("procnetsocket: unsafe procPath %q (must not contain \"..\" components)", procPath)
 	}
 	return nil

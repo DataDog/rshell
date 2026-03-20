@@ -18,6 +18,11 @@ import (
 // ProcPath is the proc filesystem root used to locate /proc/net/* files.
 // It is a package-level variable so tests can point it at a synthetic directory
 // instead of the real /proc.
+//
+// Concurrency contract: this variable is written only in tests and is never
+// mutated by production code after package initialization. Test code that
+// mutates ProcPath must hold a test-package-level mutex for the duration of
+// the test to prevent data races between concurrent test goroutines.
 var ProcPath = procpath.Default
 
 // run is the Linux implementation. It reads socket state from /proc/net/.

@@ -194,6 +194,7 @@ func parseProcNetIP(
 
 	var out []SocketEntry
 	header := true
+	totalLines := 0
 	for sc.Scan() {
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
@@ -201,6 +202,16 @@ func parseProcNetIP(
 		if header {
 			header = false
 			continue
+		}
+		// MaxEntries is the memory guard: stop once enough entries are held.
+		if len(out) >= MaxEntries {
+			break
+		}
+		// MaxTotalLines is the scan-time guard: bounds CPU time for files with
+		// many malformed/skipped lines before MaxEntries valid entries are found.
+		totalLines++
+		if totalLines > MaxTotalLines {
+			break
 		}
 		line := sc.Text()
 		fields := strings.Fields(line)
@@ -288,6 +299,7 @@ func parseProcNetUnix(ctx context.Context, path string) ([]SocketEntry, error) {
 
 	var out []SocketEntry
 	header := true
+	totalLines := 0
 	for sc.Scan() {
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
@@ -295,6 +307,16 @@ func parseProcNetUnix(ctx context.Context, path string) ([]SocketEntry, error) {
 		if header {
 			header = false
 			continue
+		}
+		// MaxEntries is the memory guard: stop once enough entries are held.
+		if len(out) >= MaxEntries {
+			break
+		}
+		// MaxTotalLines is the scan-time guard: bounds CPU time for files with
+		// many malformed/skipped lines before MaxEntries valid entries are found.
+		totalLines++
+		if totalLines > MaxTotalLines {
+			break
 		}
 		line := sc.Text()
 		fields := strings.Fields(line)

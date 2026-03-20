@@ -30,6 +30,7 @@ import (
 	"context"
 	"fmt"
 	"math/bits"
+	"path/filepath"
 	"strings"
 
 	"github.com/DataDog/rshell/builtins/internal/procpath"
@@ -94,11 +95,15 @@ type Route struct {
 //
 // Defence-in-depth: ".." components are always rejected regardless of context;
 // temp-directory overrides used by tests never contain "..".
+// filepath.Clean is applied first so that components like "foo/../bar" are
+// resolved before the check; this avoids false positives on path components
+// whose filenames happen to contain two consecutive dots (e.g. "/tmp/my..dir").
 func ReadRoutes(ctx context.Context, procPath string) ([]Route, error) {
-	if strings.Contains(procPath, "..") {
+	clean := filepath.Clean(procPath)
+	if strings.Contains(clean, "..") {
 		return nil, fmt.Errorf("procnetroute: unsafe procPath %q (must not contain \"..\" components)", procPath)
 	}
-	return readRoutes(ctx, procPath)
+	return readRoutes(ctx, clean)
 }
 
 // HexToIPStr converts a /proc/net/route little-endian uint32 to dotted-decimal.

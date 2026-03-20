@@ -674,6 +674,10 @@ func routeGet(ctx context.Context, callCtx *builtins.CallContext, addr string) b
 		b.WriteString(" dev ")
 		b.WriteString(best.Iface)
 	}
+	if best.Metric != 0 {
+		b.WriteString(" metric ")
+		b.WriteString(strconv.FormatUint(uint64(best.Metric), 10))
+	}
 	b.WriteByte('\n')
 	callCtx.Out(b.String())
 	return builtins.Result{}
