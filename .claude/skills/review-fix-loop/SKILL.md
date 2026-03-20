@@ -136,6 +136,8 @@ Record two values from the self-review:
 1. **Review event** — the enum returned by `code-review`: `APPROVE`, `COMMENT`, or `REQUEST_CHANGES`. For self-reviews (PR author reviewing their own PR) the skill always returns `COMMENT` regardless of findings, since GitHub does not allow self-approval.
 2. **Findings count** — the total number of findings (P0+P1+P2+P3) reported. This is independent of the event enum and is the authoritative signal for whether issues were found.
 
+> ⚠️ **The findings count is frozen from 2A1's result for this entire iteration.** It does NOT update when 2B fixes the issues. Finding N issues and then fixing them in 2B still leaves this iteration's findings count at N. The only way to get a 0-findings signal is for 2A1 to return 0 from the outset — no issues found at all. Do not confuse "all threads resolved after 2B" with "findings count = 0."
+
 - If **findings count is 0** → skip to **Sub-step 2E (Decide)**
 - If **findings count > 0** → continue to **Sub-step 2B**
 
@@ -270,13 +272,13 @@ Log the iteration result before continuing or stopping:
 
 **GATE CHECK**: Call TaskList. Step 2 must be `completed`. Set Step 3 to `in_progress`.
 
-> ⛔ **CRITICAL — one success = one full Step 2 iteration**
+> ⛔ **CRITICAL — one success = one full Step 2 iteration where 2A1 returned 0 findings**
 >
-> The 5 consecutive successes required below are **not** 5 rapid API calls. Each success counts only after a **complete Step 2 iteration** (2A1 ∥ 2A2 → 2B → 2C → 2D → 2E). Running the three checks multiple times in a row without an intervening Step 2 iteration counts as **one success, not many**.
+> The 5 consecutive successes required below are **not** 5 rapid API calls. Each success counts only after a **complete Step 2 iteration** (2A1 ∥ 2A2 → 2B → 2C → 2D → 2E) **in which 2A1 returned 0 findings from the start**. An iteration where 2A1 found issues (even if fixed in 2B) is **not a clean iteration** — do NOT increment the success counter for it; reset the counter to 0 instead.
 >
-> The correct flow is: Step 2 → **Step 3 (success 1)** → Step 2 → **Step 3 (success 2)** → … → **Step 3 (success 5)** → Step 4.
+> The correct flow is: Step 2 (2A1=0) → **Step 3 (success 1)** → Step 2 (2A1=0) → **Step 3 (success 2)** → … → **Step 3 (success 5)** → Step 4.
 >
-> Violating this causes the PR to be declared clean before it has been re-reviewed after each stability pass.
+> Violating this causes the PR to be declared clean before a run of 5 genuinely issue-free reviews has been confirmed.
 
 Update the Step 3 task subject to reflect the current count: `"Step 3: Verify clean state (N/5)"`.
 
@@ -327,9 +329,13 @@ Record the final state of each dimension (self-review, external reviews, CI).
 
 Track how many times Step 3 has **succeeded** (all three verifications passed) across the entire run. Each success is separated by exactly one full Step 2 iteration — never count two successes from the same iteration.
 
-**If any verification fails** (CI failing, unresolved threads remain, or unpushed commits that can't be pushed), reset the success counter to 0, reset Step 2 and all its sub-steps to `pending`, and go back to **Step 2: Run the review-fix loop** for another iteration.
+**If any of the following is true, reset the success counter to 0**, reset Step 2 and all its sub-steps to `pending`, and go back to **Step 2: Run the review-fix loop** for another iteration:
+- CI is failing
+- Unresolved threads remain
+- Unpushed commits that can't be pushed
+- **The preceding Step 2 iteration had 2A1 findings count > 0** (even if all findings were subsequently fixed in 2B — a finding-then-fixing iteration is not clean)
 
-**If all verifications pass**, increment the success counter and update the Step 3 task subject to `"Step 3: Verify clean state (N/5)"`. If this is the **5th consecutive success** → proceed to **Step 4**. Otherwise → reset Step 2 and all its sub-steps to `pending`, and go back to **Step 2: Run the review-fix loop** for another full iteration before returning here.
+**If all verifications pass AND the preceding Step 2 had 2A1 findings count = 0**, increment the success counter and update the Step 3 task subject to `"Step 3: Verify clean state (N/5)"`. If this is the **5th consecutive success** → proceed to **Step 4**. Otherwise → reset Step 2 and all its sub-steps to `pending`, and go back to **Step 2: Run the review-fix loop** for another full iteration before returning here.
 
 **Completion check:** Step 3 has succeeded 5 consecutive times (each separated by a full Step 2 iteration). Mark Step 3 as `completed`.
 
