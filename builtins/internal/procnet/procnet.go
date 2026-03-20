@@ -38,8 +38,16 @@ import (
 // ReadRoutes appends "net/route" to this path to locate the routing table.
 const DefaultProcPath = procpath.Default
 
-// MaxRoutes caps the number of route entries read to prevent memory exhaustion.
+// MaxRoutes caps the number of UP route entries retained in memory to prevent
+// memory exhaustion.
 const MaxRoutes = 10_000
+
+// MaxTotalLines caps the total number of lines (UP + non-UP + malformed)
+// scanned per ReadRoutes call. This bounds CPU time for pathological
+// /proc/net/route files with many non-UP/malformed lines before MaxRoutes UP
+// entries are found. MaxRoutes is the memory guard; MaxTotalLines is the
+// scan-time guard.
+const MaxTotalLines = MaxRoutes * 10 // 100 000 lines
 
 // MaxLineBytes is the per-line buffer cap for the route-table scanner.
 // If any line in the route file exceeds this limit the scanner returns
@@ -76,6 +84,12 @@ type Route struct {
 // procPath must always be a safe, hardcoded kernel pseudo-filesystem path
 // (e.g. /proc) that is not controllable from user scripts. Never pass a
 // path derived from user input.
+//
+// Safety invariant: all callers MUST pass a path that (a) starts with /proc and
+// (b) contains no ".." components. No runtime assertion enforces this because
+// tests override procPath with a temp-directory tree to inject synthetic route
+// data — a runtime /proc-prefix check would break those tests. The invariant is
+// therefore caller-enforced rather than implementation-enforced.
 func ReadRoutes(ctx context.Context, procPath string) ([]Route, error) {
 	return readRoutes(ctx, procPath)
 }

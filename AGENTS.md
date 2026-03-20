@@ -44,6 +44,7 @@ The shell is supported on Linux, Windows and macOS.
   The test suite runs all scenarios against `debian:bookworm-slim` (GNU bash + GNU coreutils) and compares output byte-for-byte. Only set `skip_assert_against_bash: true` in a scenario when the behavior intentionally diverges from bash (e.g. sandbox restrictions, blocked commands).
 
 - **Prefer scenario tests (`tests/scenarios/`) over Go tests.** Scenario tests are declarative YAML files that are automatically validated against both the shell and bash, making them easier to write, review, and maintain. Only use Go tests when scenario tests cannot express the required behaviour (e.g. testing Go APIs directly, complex programmatic assertions).
+- **`ip route show`/`ip route get` happy-path scenario tests cannot be added.** The scenario test framework has no platform-skip mechanism, and `ip route` reads `/proc/net/route` which is Linux-only — the command exits 1 with "not supported" on macOS and Windows. Happy-path coverage lives in `builtins/tests/ip/ip_linux_test.go` instead.
 - In test scenarios, use `expect.stderr` when possible instead of `stderr_contains`.
 - Always use the YAML `|+` block scalar for `input.script`, `expect.stdout`, and `expect.stderr` values, even single-line ones.
 - Test scenarios are asserted against bash by default. Only set `skip_assert_against_bash: true` for features that intentionally diverge from standard bash behavior (e.g. blocked commands, restricted redirects, readonly enforcement).

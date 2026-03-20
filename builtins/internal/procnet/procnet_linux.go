@@ -37,6 +37,7 @@ func readRoutes(ctx context.Context, procPath string) ([]Route, error) {
 
 	var routes []Route
 	firstLine := true
+	totalLines := 0
 	for sc.Scan() {
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
@@ -45,10 +46,14 @@ func readRoutes(ctx context.Context, procPath string) ([]Route, error) {
 			firstLine = false
 			continue // skip header row
 		}
-		// MaxRoutes caps UP routes retained in memory; down/malformed lines are
-		// skipped and do not count. Context cancellation (ctx.Err check above)
-		// is the backstop for files with many non-UP lines before MaxRoutes UP
-		// routes are reached.
+		// MaxTotalLines is the scan-time guard: stop after this many lines
+		// regardless of how many UP entries have been collected, so a
+		// pathological file with many non-UP rows cannot spin indefinitely.
+		// MaxRoutes is the memory guard: stop once enough UP routes are held.
+		totalLines++
+		if totalLines > MaxTotalLines {
+			break
+		}
 		if len(routes) >= MaxRoutes {
 			break
 		}

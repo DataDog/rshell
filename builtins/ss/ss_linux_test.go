@@ -12,6 +12,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+
+	"github.com/DataDog/rshell/interp"
 )
 
 // Note: TestSSLinuxProcNetAccessDenied (which verified that ss fails when
@@ -97,6 +99,17 @@ func TestSSLinuxExtended(t *testing.T) {
 			assert.Contains(t, stdout, "inode:")
 		}
 	}
+}
+
+// TestSSLinuxProcNetBypassesAllowedPaths verifies that ss succeeds even when
+// /proc/net is excluded from AllowedPaths, documenting the intentional sandbox
+// bypass for kernel pseudo-filesystem paths. AllowedPaths cannot block ss from
+// enumerating local sockets because ss uses os.Open directly for /proc/net/*.
+func TestSSLinuxProcNetBypassesAllowedPaths(t *testing.T) {
+	stdout, stderr, code := runScript(t, "ss -an", "", interp.AllowedPaths([]string{t.TempDir()}))
+	assert.Equal(t, 0, code)
+	assert.Empty(t, stderr)
+	assert.Contains(t, stdout, "Netid")
 }
 
 // TestSSLinuxContextCancelledBeforeRun verifies that a pre-cancelled context
