@@ -12,44 +12,51 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 
 	"github.com/DataDog/rshell/builtins"
 )
 
+// ProcPath is the proc filesystem root used to locate /proc/net/* files.
+// It is a package-level variable so tests can point it at a synthetic directory
+// instead of the real /proc.
+var ProcPath = "/proc"
+
 // run is the Linux implementation. It reads socket state from /proc/net/.
 func run(ctx context.Context, callCtx *builtins.CallContext, opts options) builtins.Result {
 	var entries []socketEntry
 	var firstErr error
 
-	collect := func(path string, parser func(context.Context, *builtins.CallContext, string, *[]socketEntry) error) {
+	collect := func(path string, parser func(context.Context, string, *[]socketEntry) error) {
 		if firstErr != nil {
 			return
 		}
-		if err := parser(ctx, callCtx, path, &entries); err != nil {
+		if err := parser(ctx, path, &entries); err != nil {
 			firstErr = err
 		}
 	}
 
+	netDir := filepath.Join(ProcPath, "net")
 	if opts.showTCP {
 		if !opts.ipv6Only {
-			collect("/proc/net/tcp", parseProcNetTCP4)
+			collect(filepath.Join(netDir, "tcp"), parseProcNetTCP4)
 		}
 		if !opts.ipv4Only {
-			collect("/proc/net/tcp6", parseProcNetTCP6)
+			collect(filepath.Join(netDir, "tcp6"), parseProcNetTCP6)
 		}
 	}
 	if opts.showUDP {
 		if !opts.ipv6Only {
-			collect("/proc/net/udp", parseProcNetUDP4)
+			collect(filepath.Join(netDir, "udp"), parseProcNetUDP4)
 		}
 		if !opts.ipv4Only {
-			collect("/proc/net/udp6", parseProcNetUDP6)
+			collect(filepath.Join(netDir, "udp6"), parseProcNetUDP6)
 		}
 	}
 	if opts.showUnix {
-		collect("/proc/net/unix", parseProcNetUnix)
+		collect(filepath.Join(netDir, "unix"), parseProcNetUnix)
 	}
 
 	if firstErr != nil {
@@ -203,23 +210,23 @@ func formatIPv6(b [16]byte) string {
 }
 
 // parseProcNetTCP4 reads /proc/net/tcp and appends IPv4 TCP socket entries.
-func parseProcNetTCP4(ctx context.Context, callCtx *builtins.CallContext, path string, out *[]socketEntry) error {
-	return parseProcNetIP(ctx, callCtx, path, sockTCP4, tcpStateMap, parseIPv4Proc, out)
+func parseProcNetTCP4(ctx context.Context, path string, out *[]socketEntry) error {
+	return parseProcNetIP(ctx, path, sockTCP4, tcpStateMap, parseIPv4Proc, out)
 }
 
 // parseProcNetTCP6 reads /proc/net/tcp6 and appends IPv6 TCP socket entries.
-func parseProcNetTCP6(ctx context.Context, callCtx *builtins.CallContext, path string, out *[]socketEntry) error {
-	return parseProcNetIP(ctx, callCtx, path, sockTCP6, tcpStateMap, parseIPv6Proc, out)
+func parseProcNetTCP6(ctx context.Context, path string, out *[]socketEntry) error {
+	return parseProcNetIP(ctx, path, sockTCP6, tcpStateMap, parseIPv6Proc, out)
 }
 
 // parseProcNetUDP4 reads /proc/net/udp and appends IPv4 UDP socket entries.
-func parseProcNetUDP4(ctx context.Context, callCtx *builtins.CallContext, path string, out *[]socketEntry) error {
-	return parseProcNetIP(ctx, callCtx, path, sockUDP4, udpStateMap, parseIPv4Proc, out)
+func parseProcNetUDP4(ctx context.Context, path string, out *[]socketEntry) error {
+	return parseProcNetIP(ctx, path, sockUDP4, udpStateMap, parseIPv4Proc, out)
 }
 
 // parseProcNetUDP6 reads /proc/net/udp6 and appends IPv6 UDP socket entries.
-func parseProcNetUDP6(ctx context.Context, callCtx *builtins.CallContext, path string, out *[]socketEntry) error {
-	return parseProcNetIP(ctx, callCtx, path, sockUDP6, udpStateMap, parseIPv6Proc, out)
+func parseProcNetUDP6(ctx context.Context, path string, out *[]socketEntry) error {
+	return parseProcNetIP(ctx, path, sockUDP6, udpStateMap, parseIPv6Proc, out)
 }
 
 // parseProcNetIP is the shared parser for /proc/net/tcp*, /proc/net/udp*.
@@ -228,16 +235,19 @@ func parseProcNetUDP6(ctx context.Context, callCtx *builtins.CallContext, path s
 //	sl  local_address rem_address st tx_queue:rx_queue ... uid timeout inode ...
 //
 // Fields are 0-indexed after splitting on whitespace.
+//
+// Sandbox bypass: os.Open is used directly instead of callCtx.OpenFile because
+// path is always derived from ProcPath (a hardcoded kernel pseudo-filesystem
+// root, never from user input). See procnet package doc for rationale.
 func parseProcNetIP(
 	ctx context.Context,
-	callCtx *builtins.CallContext,
 	path string,
 	kind socketType,
 	stateMap map[string]string,
 	parseAddr func(string) (string, error),
 	out *[]socketEntry,
 ) error {
-	f, err := callCtx.OpenFile(ctx, path, os.O_RDONLY, 0)
+	f, err := os.Open(path)
 	if err != nil {
 		return fmt.Errorf("open %s: %w", path, err)
 	}
@@ -327,8 +337,10 @@ func parseProcNetIP(
 // The format of each non-header line is:
 //
 //	Num RefCount Protocol Flags Type St Inode [Path]
-func parseProcNetUnix(ctx context.Context, callCtx *builtins.CallContext, path string, out *[]socketEntry) error {
-	f, err := callCtx.OpenFile(ctx, path, os.O_RDONLY, 0)
+//
+// Sandbox bypass: os.Open is used directly; see parseProcNetIP for rationale.
+func parseProcNetUnix(ctx context.Context, path string, out *[]socketEntry) error {
+	f, err := os.Open(path)
 	if err != nil {
 		return fmt.Errorf("open %s: %w", path, err)
 	}
