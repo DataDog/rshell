@@ -141,7 +141,7 @@ func LongestPrefixMatch(routes []Route, addr uint32) *Route {
 		r := &routes[i]
 		if addr&r.Mask == r.Dest {
 			prefixLen := Popcount(r.Mask)
-			if prefixLen > bestBits || (prefixLen == bestBits && r.Metric < best.Metric) {
+			if prefixLen > bestBits || (best != nil && prefixLen == bestBits && r.Metric < best.Metric) {
 				bestBits = prefixLen
 				best = r
 			}
