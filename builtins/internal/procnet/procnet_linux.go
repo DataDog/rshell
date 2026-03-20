@@ -45,8 +45,10 @@ func readRoutes(ctx context.Context, procPath string) ([]Route, error) {
 			firstLine = false
 			continue // skip header row
 		}
-		// MaxRoutes bounds UP routes retained in memory.
-		// Down routes (FlagUp==0) and malformed lines do not count toward this cap.
+		// MaxRoutes caps UP routes retained in memory; down/malformed lines are
+		// skipped and do not count. Context cancellation (ctx.Err check above)
+		// is the backstop for files with many non-UP lines before MaxRoutes UP
+		// routes are reached.
 		if len(routes) >= MaxRoutes {
 			break
 		}
@@ -91,7 +93,10 @@ func parseRouteEntry(line string) (Route, bool) {
 		return Route{}, false
 	}
 	if !IsContiguousMask(uint32(mask)) {
-		return Route{}, false // non-contiguous mask: not a valid CIDR prefix
+		// Non-contiguous masks are not valid CIDR prefixes and are silently
+		// skipped. Modern Linux kernels only generate CIDR masks in
+		// /proc/net/route, but legacy or manually-crafted routes may differ.
+		return Route{}, false
 	}
 
 	return Route{

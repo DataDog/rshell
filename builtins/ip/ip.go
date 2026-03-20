@@ -109,7 +109,8 @@ import (
 // ProcNetRoutePath is the proc filesystem root used to locate the routing table.
 // ReadRoutes opens ProcNetRoutePath/net/route.
 // It is a package-level variable so tests can point it at a synthetic directory
-// instead of the real /proc.
+// instead of the real /proc. Tests that mutate this variable must hold
+// procNetRouteMu (defined in ip_linux_test.go) to prevent data races.
 var ProcNetRoutePath = procnet.DefaultProcPath
 
 // MaxLineBytes re-exports the procnet constant for test access.
