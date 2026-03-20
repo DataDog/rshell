@@ -90,8 +90,10 @@
 //
 // Output differences from real ip:
 //
-//	The qdisc field is omitted from interface header lines. For route, the
-//	proto/scope/src fields are not included in the output (not available from
+//	The qdisc field is omitted from interface header lines. For route show/list,
+//	the proto/scope/src fields are not included (not available from
+//	/proc/net/route alone). For route get, the src, uid, and cache fields
+//	present in real ip-route(8) output are also omitted (not derivable from
 //	/proc/net/route alone).
 package ip
 
@@ -633,7 +635,7 @@ func routeGet(ctx context.Context, callCtx *builtins.CallContext, addr string) b
 
 	routes, err := procnet.ReadRoutes(ctx, ProcNetRoutePath)
 	if err != nil {
-		callCtx.Errf("ip: route: %s\n", callCtx.PortableErr(err))
+		callCtx.Errf("ip: route get: %s\n", callCtx.PortableErr(err))
 		return builtins.Result{Code: 1}
 	}
 

@@ -181,6 +181,22 @@ func TestIPRouteShowZeroDestNonZeroMaskNotDefault(t *testing.T) {
 	assert.NotContains(t, stdout, "default")
 }
 
+// TestIPRouteSubcmdCaseInsensitive verifies that route subcommands are
+// case-insensitive (intentional divergence from bash: real ip is case-sensitive).
+func TestIPRouteSubcmdCaseInsensitive(t *testing.T) {
+	writeProcNetRoute(t, syntheticProcNetRoute)
+	show, _, code1 := cmdRun(t, "ip route show")
+	upper, _, code2 := cmdRun(t, "ip route SHOW")
+	assert.Equal(t, 0, code1)
+	assert.Equal(t, 0, code2, "uppercase SHOW should be accepted (intentional divergence)")
+	assert.Equal(t, show, upper, "SHOW and show should produce identical output")
+
+	// LIST and list should also be equivalent.
+	list, _, code3 := cmdRun(t, "ip route LIST")
+	assert.Equal(t, 0, code3, "uppercase LIST should be accepted")
+	assert.Equal(t, show, list)
+}
+
 // TestIPRouteListAliasForShow verifies "ip route list" is an alias for show.
 func TestIPRouteListAliasForShow(t *testing.T) {
 	writeProcNetRoute(t, syntheticProcNetRoute)
