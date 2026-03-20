@@ -203,11 +203,9 @@ git log --oneline -5
 
 Increment `iteration`.
 
-Check **all three** review sources for remaining issues:
+Check **two** signals for remaining issues:
 
-1. **Self-review** — Was the latest `/code-review` result **APPROVE** (no findings)?
-
-2. **External reviews** — Count unresolved PR comment threads from `$MY_LOGIN` or `chatgpt-codex-connector[bot]`.
+1. **Unresolved threads** — Count unresolved PR comment threads from `$MY_LOGIN` or `chatgpt-codex-connector[bot]`.
 
    **Only consider threads from `$MY_LOGIN` (authenticated user) and `chatgpt-codex-connector[bot]`. Ignore all others.**
 
@@ -237,29 +235,23 @@ Check **all three** review sources for remaining issues:
 
    The result is an integer (unresolved thread count). Only this count is used in the decision matrix below.
 
-3. **CI** — Are all checks passing?
+2. **CI** — Are all checks passing?
    ```bash
    gh pr checks <pr-number> --json name,state
    ```
    > **CI-settle note:** CI jobs may still be queued or running after the push in 2D. Treat `pending` checks as non-blocking for the STOP condition — only `failing` checks require another iteration. If all checks are `passing` or `pending`, the CI signal is satisfied.
 
-**Decision matrix** (all signals are structured — no comment body text is read here):
+**Decision** (no comment body text is read here):
 
-> **Note on self-reviews:** The `code-review` skill always returns `COMMENT` (never `APPROVE`) when the reviewer is the PR author, because GitHub forbids self-approval. Use **findings count** (not the event enum) as the primary signal for whether issues remain.
-
-| Findings count | Unresolved thread count | CI check states | Action |
-|----------------|------------------------|-----------------|--------|
-| `0` | `0` | All passing | **STOP — PR is clean** |
-| `> 0` | Any | Any | **Continue** → go back to Sub-step 2A1 ∥ 2A2 |
-| `0` | `> 0` | Any | **Continue** → go back to Sub-step 2A1 ∥ 2A2 (address-pr-comments will handle them) |
-| `0` | `0` | Any failing | **Continue** → go back to Sub-step 2A1 ∥ 2A2 (fix-ci-tests will handle it) |
-| — | — | — | If `iteration > 30` → **STOP — iteration limit reached** |
+- If `iteration > 30` → **STOP — iteration limit reached**
+- If unresolved thread count = `0` AND no failing CI checks → **STOP — PR is clean**
+- Otherwise → **Continue** → go back to Sub-step 2A1 ∥ 2A2
 
 Log the iteration result before continuing or stopping:
 - Iteration number
-- Self-review event (APPROVE / COMMENT / REQUEST_CHANGES) and whether it was a self-review
-- Findings count by severity (this is the exit signal — not the event enum)
+- Self-review event (APPROVE / COMMENT / REQUEST_CHANGES) and findings count by severity (informational only — not used for loop control)
 - Number of fixes applied
+- Unresolved thread count
 - CI status
 
 ---
