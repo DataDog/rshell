@@ -113,9 +113,8 @@ func (h *linuxLiveHandle) Close() error {
 }
 
 // htons converts a uint16 from host byte order to network byte order.
-// On little-endian systems (x86, ARM) this swaps the two bytes; on
-// big-endian systems it is a no-op. All currently supported Linux
-// hardware is little-endian, so the swap is always needed here.
+// All currently supported Linux hardware is little-endian (x86, ARM),
+// so this always swaps the two bytes.
 func htons(v uint16) uint16 {
 	return (v >> 8) | (v << 8)
 }

@@ -45,9 +45,6 @@ type darwinLiveHandle struct {
 // also the byte offset at which packet data begins.
 const bpfHdrFixedSize = 18
 
-// ifreqSize is the size of struct ifreq on Darwin (name[16] + union[16] = 32).
-const ifreqSize = 32
-
 // bpfWordAlign rounds n up to the next 4-byte boundary (BPF_WORDALIGN).
 func bpfWordAlign(n int) int {
 	return (n + 3) &^ 3
@@ -76,12 +73,10 @@ func openLiveInterface(_ context.Context, iface string, snaplen int) (packetRead
 	}
 
 	// Bind BPF to the named interface.
-	// BIOCSETIF expects a struct ifreq (32 bytes on Darwin): the first 16 bytes
-	// are the interface name (ifr_name[IFNAMSIZ]), the remainder is a union.
-	// We pad the name to ifreqSize bytes so the kernel copyin reads valid memory.
-	ifnameBuf := make([]byte, ifreqSize)
-	copy(ifnameBuf, []byte(iface))
-	if err := unix.IoctlSetString(fd, unix.BIOCSETIF, string(ifnameBuf)); err != nil {
+	// BIOCSETIF expects struct ifreq where the first IFNAMSIZ (16) bytes are the
+	// null-terminated interface name. IoctlSetString passes a pointer to the
+	// null-terminated iface string, satisfying the kernel's copyin requirement.
+	if err := unix.IoctlSetString(fd, unix.BIOCSETIF, iface); err != nil {
 		_ = unix.Close(fd)
 		return nil, fmt.Errorf("cannot bind to interface %q: %w", iface, err)
 	}
