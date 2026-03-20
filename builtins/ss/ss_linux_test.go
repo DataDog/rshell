@@ -14,6 +14,13 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// Note: TestSSLinuxProcNetAccessDenied (which verified that ss fails when
+// /proc/net is excluded from AllowedPaths) was intentionally removed when ss
+// switched from callCtx.OpenFile to os.Open for /proc/net/* files. This is a
+// deliberate policy change: kernel pseudo-filesystem paths under /proc are
+// hardcoded and non-user-controllable, so AllowedPaths restrictions no longer
+// apply to them. This matches the pattern used by ip route (procnet package).
+
 // TestSSLinuxRun verifies that ss succeeds and output contains the expected
 // column headers. The proc paths are deterministic and accessed directly via
 // os.Open (no AllowedPaths restriction needed).

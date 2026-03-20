@@ -554,7 +554,7 @@ func routeCmd(ctx context.Context, callCtx *builtins.CallContext, do displayOpts
 		return builtins.Result{Code: 1}
 	}
 	if do.oneline || do.brief {
-		callCtx.Errf("ip: route: -o/--brief flags are not supported for route output\n")
+		callCtx.Errf("ip: route: -o/--oneline and --brief flags are not supported for route output\n")
 		return builtins.Result{Code: 1}
 	}
 
