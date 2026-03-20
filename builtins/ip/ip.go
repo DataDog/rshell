@@ -79,7 +79,7 @@
 //
 //	addr and link use Go's net.Interfaces() for read-only enumeration of OS
 //	network interfaces and their addresses; the AllowedPaths sandbox is not
-//	involved. route reads /proc/net/route via builtins/internal/procnet using
+//	involved. route reads /proc/net/route via builtins/internal/procnetroute using
 //	os.Open directly (Linux only); the AllowedPaths sandbox is not involved.
 //
 // Memory safety for route:
@@ -105,7 +105,7 @@ import (
 	"strings"
 
 	"github.com/DataDog/rshell/builtins"
-	"github.com/DataDog/rshell/builtins/internal/procnet"
+	"github.com/DataDog/rshell/builtins/internal/procnetroute"
 )
 
 // ProcNetRoutePath is the proc filesystem root used to locate the routing table.
@@ -113,10 +113,10 @@ import (
 // It is a package-level variable so tests can point it at a synthetic directory
 // instead of the real /proc. Tests that mutate this variable must hold
 // procNetRouteMu (defined in ip_linux_test.go) to prevent data races.
-var ProcNetRoutePath = procnet.DefaultProcPath
+var ProcNetRoutePath = procnetroute.DefaultProcPath
 
-// MaxLineBytes re-exports the procnet constant for test access.
-const MaxLineBytes = procnet.MaxLineBytes
+// MaxLineBytes re-exports the procnetroute constant for test access.
+const MaxLineBytes = procnetroute.MaxLineBytes
 
 // Cmd is the ip builtin command descriptor.
 var Cmd = builtins.Command{
@@ -610,7 +610,7 @@ func routeCmd(ctx context.Context, callCtx *builtins.CallContext, do displayOpts
 
 // routeShow prints the IPv4 routing table in ip-route(8) format.
 func routeShow(ctx context.Context, callCtx *builtins.CallContext) builtins.Result {
-	routes, err := procnet.ReadRoutes(ctx, ProcNetRoutePath)
+	routes, err := procnetroute.ReadRoutes(ctx, ProcNetRoutePath)
 	if err != nil {
 		callCtx.Errf("ip: route: %s\n", callCtx.PortableErr(err))
 		return builtins.Result{Code: 1}
@@ -633,23 +633,23 @@ func routeGet(ctx context.Context, callCtx *builtins.CallContext, addr string) b
 		return builtins.Result{Code: 1}
 	}
 
-	routes, err := procnet.ReadRoutes(ctx, ProcNetRoutePath)
+	routes, err := procnetroute.ReadRoutes(ctx, ProcNetRoutePath)
 	if err != nil {
 		callCtx.Errf("ip: route get: %s\n", callCtx.PortableErr(err))
 		return builtins.Result{Code: 1}
 	}
 
-	best := procnet.LongestPrefixMatch(routes, addrVal)
-	if best == nil || best.Flags&procnet.FlagReject != 0 {
+	best := procnetroute.LongestPrefixMatch(routes, addrVal)
+	if best == nil || best.Flags&procnetroute.FlagReject != 0 {
 		callCtx.Errf("ip: route get: network unreachable\n")
 		return builtins.Result{Code: 1}
 	}
 
 	var b strings.Builder
 	b.WriteString(addr)
-	if best.Flags&procnet.FlagGateway != 0 {
+	if best.Flags&procnetroute.FlagGateway != 0 {
 		b.WriteString(" via ")
-		b.WriteString(procnet.HexToIPStr(best.GW))
+		b.WriteString(procnetroute.HexToIPStr(best.GW))
 	}
 	b.WriteString(" dev ")
 	b.WriteString(best.Iface)
@@ -659,19 +659,19 @@ func routeGet(ctx context.Context, callCtx *builtins.CallContext, addr string) b
 }
 
 // formatRoute returns the ip-route(8) display string for r.
-func formatRoute(r *procnet.Route) string {
+func formatRoute(r *procnetroute.Route) string {
 	var b strings.Builder
 
 	// Reject (unreachable/blackhole) routes are displayed with a "unreachable"
 	// prefix and no "dev" field, matching real ip-route(8) output.
-	if r.Flags&procnet.FlagReject != 0 {
+	if r.Flags&procnetroute.FlagReject != 0 {
 		b.WriteString("unreachable ")
 		if r.Dest == 0 && r.Mask == 0 {
 			b.WriteString("default")
 		} else {
-			b.WriteString(procnet.HexToIPStr(r.Dest))
+			b.WriteString(procnetroute.HexToIPStr(r.Dest))
 			b.WriteByte('/')
-			b.WriteString(strconv.Itoa(procnet.Popcount(r.Mask)))
+			b.WriteString(strconv.Itoa(procnetroute.Popcount(r.Mask)))
 		}
 		return b.String()
 	}
@@ -679,14 +679,14 @@ func formatRoute(r *procnet.Route) string {
 	if r.Dest == 0 && r.Mask == 0 {
 		b.WriteString("default")
 	} else {
-		b.WriteString(procnet.HexToIPStr(r.Dest))
+		b.WriteString(procnetroute.HexToIPStr(r.Dest))
 		b.WriteByte('/')
-		b.WriteString(strconv.Itoa(procnet.Popcount(r.Mask)))
+		b.WriteString(strconv.Itoa(procnetroute.Popcount(r.Mask)))
 	}
 
-	if r.Flags&procnet.FlagGateway != 0 {
+	if r.Flags&procnetroute.FlagGateway != 0 {
 		b.WriteString(" via ")
-		b.WriteString(procnet.HexToIPStr(r.GW))
+		b.WriteString(procnetroute.HexToIPStr(r.GW))
 	}
 
 	b.WriteString(" dev ")

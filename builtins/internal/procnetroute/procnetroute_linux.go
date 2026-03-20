@@ -5,7 +5,7 @@
 
 //go:build linux
 
-package procnet
+package procnetroute
 
 import (
 	"bufio"

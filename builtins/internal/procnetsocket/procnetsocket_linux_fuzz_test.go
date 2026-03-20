@@ -6,14 +6,14 @@
 //go:build linux
 
 // White-box fuzz tests for the Linux /proc/net/ parsing helpers.
-// These run in the ss package to access unexported functions.
+// These run in the procnetsocket package to access unexported functions.
 //
 // Seed corpus is built from:
 //
 //	A. Implementation constants (MaxLineBytes, boundary values).
 //	B. CVE-class inputs: null bytes, CRLF, invalid UTF-8, large values.
-//	C. All hex strings used in ss_linux_parse_test.go.
-package ss
+//	C. All hex strings used in procnetsocket_linux_parse_test.go.
+package procnetsocket
 
 import (
 	"bytes"

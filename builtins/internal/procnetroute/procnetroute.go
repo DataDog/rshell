@@ -3,7 +3,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2026-present Datadog, Inc.
 
-// Package procnet reads the Linux IPv4 routing table from /proc/net/route.
+// Package procnetroute reads the Linux IPv4 routing table from /proc/net/route.
 //
 // This package is in builtins/internal/ and is therefore exempt from the
 // builtinAllowedSymbols allowlist check. It may use OS-specific APIs freely.
@@ -24,7 +24,7 @@
 //
 // All IP fields are little-endian uint32 hex: 192.168.1.1 is encoded as
 // 0x0101A8C0 (first octet in the least-significant byte).
-package procnet
+package procnetroute
 
 import (
 	"context"
