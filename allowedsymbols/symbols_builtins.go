@@ -301,7 +301,8 @@ var builtinPerCommandSymbols = map[string][]string{
 		"errors.Is",                       // 🟢 error comparison; used to distinguish syscall.ENOENT from unexpected errors.
 		"fmt.Errorf",                      // 🟢 error formatting; pure function, no I/O.
 		"fmt.Sprintf",                     // 🟢 string formatting; pure function, no I/O.
-		"os.O_RDONLY",                     // 🟢 read-only file flag constant; cannot open files by itself.
+		"os.Open",                         // 🟠 opens /proc/net/* files read-only directly (bypassing AllowedPaths sandbox); path is hardcoded via ProcPath, never user-supplied.
+		"path/filepath.Join",              // 🟢 joins ProcPath + "net/tcp" etc. to build /proc/net/* paths; pure function, no I/O.
 		"strconv.FormatUint",              // 🟢 uint-to-string conversion; pure function, no I/O.
 		"strconv.Itoa",                    // 🟢 int-to-string conversion; pure function, no I/O.
 		"strconv.ParseUint",               // 🟢 string-to-unsigned-int conversion; pure function, no I/O.
@@ -467,8 +468,10 @@ var builtinAllowedSymbols = []string{
 	"os.FileInfo",                                         // 🟢 file metadata interface returned by Stat; no I/O side effects.
 	"os.IsNotExist",                                       // 🟢 checks if error is "not exist"; pure function, no I/O.
 	"os.O_RDONLY",                                         // 🟢 read-only file flag constant; cannot open files by itself.
+	"os.Open",                                             // 🟠 opens a file read-only; used by ss/ip to read hardcoded /proc/net/* paths directly (bypassing AllowedPaths sandbox); path is never user-supplied.
 	"os.PathError",                                        // 🟢 error type for filesystem path errors; pure type, no I/O.
 	"path/filepath.Dir",                                   // 🟢 returns the directory component of a path; pure function, no I/O.
+	"path/filepath.Join",                                  // 🟢 joins path elements into one path; pure function, no I/O.
 	"path/filepath.IsAbs",                                 // 🟢 reports whether a path is absolute; pure function, no I/O.
 	"path/filepath.ToSlash",                               // 🟢 converts OS path separators to forward slashes; pure function, no I/O.
 	"regexp.Compile",                                      // 🟢 compiles a regular expression; pure function, no I/O. Uses RE2 engine (linear-time, no backtracking).

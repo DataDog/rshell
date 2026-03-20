@@ -13,8 +13,9 @@ var internalPerPackageSymbols = map[string][]string{
 		"strconv.Atoi", // 🟢 string-to-int conversion; pure function, no I/O.
 	},
 	"procinfo": {
-		"bufio.NewScanner",                      // 🟢 line-by-line reading of /proc files; no write capability.
-		"bytes.NewReader",                       // 🟢 wraps a byte slice as an in-memory io.Reader; no I/O side effects.
+		"bufio.NewScanner", // 🟢 line-by-line reading of /proc files; no write capability.
+		"bytes.NewReader",  // 🟢 wraps a byte slice as an in-memory io.Reader; no I/O side effects.
+		"github.com/DataDog/rshell/builtins/internal/procpath.Default", // 🟢 canonical /proc filesystem root path constant; pure constant, no I/O.
 		"context.Context",                       // 🟢 deadline/cancellation interface; no side effects.
 		"errors.Is",                             // 🟢 checks whether an error in a chain matches a target; pure function, no I/O.
 		"errors.New",                            // 🟢 creates a sentinel error (unsupported-platform stub); pure function, no I/O.
@@ -56,7 +57,8 @@ var internalPerPackageSymbols = map[string][]string{
 		// No stdlib symbols needed — this package only defines a string constant.
 	},
 	"procnet": {
-		"bufio.NewScanner",         // 🟢 line-by-line reading of /proc/net/route; no write capability.
+		"bufio.NewScanner", // 🟢 line-by-line reading of /proc/net/route; no write capability.
+		"github.com/DataDog/rshell/builtins/internal/procpath.Default", // 🟢 canonical /proc filesystem root path constant; pure constant, no I/O.
 		"context.Context",          // 🟢 deadline/cancellation interface; no side effects.
 		"errors.New",               // 🟢 creates a sentinel error (non-Linux stub); pure function, no I/O.
 		"fmt.Sprintf",              // 🟢 formats dotted-decimal IP strings; pure function, no I/O.
@@ -91,7 +93,8 @@ var internalPerPackageSymbols = map[string][]string{
 // via iphlpapi.dll. Usage is limited to two call sites; no unsafe pointer
 // arithmetic occurs after the DLL call. All buffer parsing uses encoding/binary.
 var internalAllowedSymbols = []string{
-	"bufio.NewScanner",                      // 🟢 procinfo: line-by-line reading of /proc files; no write capability.
+	"bufio.NewScanner", // 🟢 procinfo: line-by-line reading of /proc files; no write capability.
+	"github.com/DataDog/rshell/builtins/internal/procpath.Default", // 🟢 procinfo/procnet: canonical /proc filesystem root path constant; pure constant, no I/O.
 	"bytes.NewReader",                       // 🟢 procinfo: wraps a byte slice as an in-memory io.Reader; no I/O side effects.
 	"context.Context",                       // 🟢 procinfo: deadline/cancellation interface; no side effects.
 	"encoding/binary.BigEndian",             // 🟢 winnet: reads big-endian IPv6 group values from DLL buffer; pure value, no I/O.
