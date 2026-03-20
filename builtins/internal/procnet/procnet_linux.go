@@ -45,6 +45,8 @@ func readRoutes(ctx context.Context, procPath string) ([]Route, error) {
 			firstLine = false
 			continue // skip header row
 		}
+		// MaxRoutes bounds UP routes retained in memory.
+		// Down routes (FlagUp==0) and malformed lines do not count toward this cap.
 		if len(routes) >= MaxRoutes {
 			break
 		}

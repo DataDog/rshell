@@ -1,0 +1,10 @@
+# ip route get rejects addresses with leading-zero octets (e.g. "010") — matches real ip behaviour.
+description: ip route get rejects addresses with leading-zero octets.
+input:
+  script: |+
+    ip route get 192.168.010.1
+expect:
+  stdout: ""
+  stderr: "ip: route get: invalid address \"192.168.010.1\"\n"
+  exit_code: 1
+skip_assert_against_bash: true

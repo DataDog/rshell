@@ -690,6 +690,10 @@ func parseIPv4(s string) (uint32, bool) {
 	}
 	var val uint32
 	for i, part := range parts {
+		// Reject leading zeros (e.g. "010") — real ip rejects them as invalid.
+		if len(part) > 1 && part[0] == '0' {
+			return 0, false
+		}
 		n, err := strconv.ParseUint(part, 10, 8)
 		if err != nil {
 			return 0, false
