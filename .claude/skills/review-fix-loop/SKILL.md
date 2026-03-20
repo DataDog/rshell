@@ -256,12 +256,6 @@ Log the iteration result before continuing or stopping:
 
 **GATE CHECK**: Call TaskList. Step 2 must be `completed`. Set Step 3 to `in_progress`.
 
-> ⛔ **CRITICAL — one success = one full Step 2 iteration ending with unresolved thread count = 0 and CI passing**
->
-> The 5 consecutive successes required below are **not** 5 rapid API calls. Each success counts only after a **complete Step 2 iteration** (2A1 ∥ 2A2 → 2B → 2C → 2D → 2E) that ends with unresolved thread count = 0 and CI passing.
->
-> Violating this causes the PR to be declared clean before a run of 5 genuinely issue-free iterations has been confirmed.
-
 Update the Step 3 task subject to reflect the current count: `"Step 3: Verify clean state (N/5)"`.
 
 Run a final verification regardless of how the loop exited:
