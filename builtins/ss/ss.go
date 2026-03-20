@@ -235,6 +235,8 @@ func netidStr(e socketEntry) string {
 // isListening reports whether the entry represents a listening/bound socket.
 // TCP/Unix listening sockets have state "LISTEN"; UDP sockets in UNCONN state
 // are considered "listening" (bound but not connected).
+// Unix sockets with unknown states are mapped to "UNKNOWN" (not "UNCONN") so
+// that they are not mistakenly classified as listening/bound sockets.
 func isListening(e socketEntry) bool {
 	return e.state == "LISTEN" || e.state == "UNCONN"
 }

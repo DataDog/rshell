@@ -596,7 +596,7 @@ func routeCmd(ctx context.Context, callCtx *builtins.CallContext, do displayOpts
 		// is empty and sub defaults to "show", so the len(args) > 1 guard cannot
 		// panic (args[1] is only accessed when len(args) >= 2).
 		if len(args) > 1 {
-			callCtx.Errf("ip: route %s: unsupported argument %q\n", sub, args[1])
+			callCtx.Errf("ip: route %s: unsupported argument %q\n", args[0], args[1])
 			return builtins.Result{Code: 1}
 		}
 		return routeShow(ctx, callCtx)

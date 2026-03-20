@@ -328,14 +328,24 @@ func parseProcNetUnix(ctx context.Context, path string) ([]SocketEntry, error) {
 		stateStr := strings.ToUpper(fields[5])
 		state, ok := unixStateMap[stateStr]
 		if !ok {
-			state = "UNCONN"
+			// Unknown state: use a distinct sentinel so isListening does not
+			// misclassify these sockets as UNCONN (bound/listening). Linux
+			// /proc/net/unix uses TCP state enum values; only ESTABLISHED(01)
+			// and LISTEN(0A) are common, but other values can appear. Mapping
+			// them to UNKNOWN keeps them in the default non-listening output
+			// rather than incorrectly treating them as bound sockets.
+			state = "UNKNOWN"
 		}
 
 		inode, _ := strconv.ParseUint(fields[6], 10, 64)
 
+		// The path column is always the last token and may contain spaces
+		// (e.g. abstract sockets or paths with spaces). Reconstruct it by
+		// joining all remaining fields so that space-containing paths are
+		// not truncated to their first word.
 		socketPath := ""
 		if len(fields) >= 8 {
-			socketPath = fields[7]
+			socketPath = strings.Join(fields[7:], " ")
 		}
 
 		out = append(out, SocketEntry{
