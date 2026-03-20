@@ -56,7 +56,7 @@ var internalPerPackageSymbols = map[string][]string{
 	"procpath": {
 		// No stdlib symbols needed — this package only defines a string constant.
 	},
-	"procnet": {
+	"procnetroute": {
 		"bufio.NewScanner", // 🟢 line-by-line reading of /proc/net/route; no write capability.
 		"github.com/DataDog/rshell/builtins/internal/procpath.Default", // 🟢 canonical /proc filesystem root path constant; pure constant, no I/O.
 		"context.Context",          // 🟢 deadline/cancellation interface; no side effects.
@@ -68,6 +68,22 @@ var internalPerPackageSymbols = map[string][]string{
 		"path/filepath.Join",       // 🟢 joins procPath + "net/route"; pure function, no I/O.
 		"strconv.ParseUint",        // 🟢 parses hex/decimal route fields; pure function, no I/O.
 		"strings.Fields",           // 🟢 splits whitespace-separated route lines; pure function, no I/O.
+	},
+	"procnetsocket": {
+		"bufio.NewScanner", // 🟢 line-by-line reading of /proc/net/{tcp,udp,unix}; no write capability.
+		"github.com/DataDog/rshell/builtins/internal/procpath.Default", // 🟢 canonical /proc filesystem root path constant; pure constant, no I/O.
+		"context.Context",    // 🟢 deadline/cancellation interface; no side effects.
+		"errors.New",         // 🟢 creates a sentinel error (non-Linux stub); pure function, no I/O.
+		"fmt.Errorf",         // 🟢 error formatting; pure function, no I/O.
+		"fmt.Sprintf",        // 🟢 formats dotted-decimal IP/port strings; pure function, no I/O.
+		"os.Open",            // 🟠 opens /proc/net/tcp* and /proc/net/udp* read-only; needed to stream socket tables.
+		"path/filepath.Join", // 🟢 joins procPath + "net/<file>"; pure function, no I/O.
+		"strconv.FormatUint", // 🟢 uint-to-string conversion for port/inode formatting; pure function, no I/O.
+		"strconv.ParseUint",  // 🟢 parses hex/decimal socket fields; pure function, no I/O.
+		"strings.Builder",    // 🟢 efficient string concatenation for IPv6 formatting; pure in-memory buffer, no I/O.
+		"strings.Fields",     // 🟢 splits whitespace-separated socket lines; pure function, no I/O.
+		"strings.Split",      // 🟢 splits address:port fields on ":"; pure function, no I/O.
+		"strings.ToUpper",    // 🟢 normalises hex state field to uppercase for map lookup; pure function, no I/O.
 	},
 	"winnet": {
 		"encoding/binary.BigEndian",    // 🟢 reads big-endian IPv6 group values from DLL buffer; pure value, no I/O.
@@ -115,8 +131,12 @@ var internalAllowedSymbols = []string{
 	"strconv.Atoi",                          // 🟢 string-to-int conversion; pure function, no I/O.
 	"strconv.Itoa",                          // 🟢 procinfo: int-to-string conversion for PID directory names; pure function, no I/O.
 	"strconv.ParseInt",                      // 🟢 procinfo: string to int64 with base/bit-size; pure function, no I/O.
-	"strconv.ParseUint",                     // 🟢 procnet: parses hex/decimal route fields; pure function, no I/O.
-	"strings.Fields",                        // 🟢 procinfo: splits a string on whitespace; pure function, no I/O.
+	"strconv.FormatUint",                    // 🟢 procnetsocket: uint-to-string conversion for port/inode formatting; pure function, no I/O.
+	"strconv.ParseUint",                     // 🟢 procnetroute/procnetsocket: parses hex/decimal route and socket fields; pure function, no I/O.
+	"strings.Builder",                       // 🟢 procnetsocket: efficient string concatenation for IPv6 formatting; pure in-memory buffer, no I/O.
+	"strings.Fields",                        // 🟢 procinfo/procnetroute/procnetsocket: splits a string on whitespace; pure function, no I/O.
+	"strings.Split",                         // 🟢 procnetsocket: splits address:port fields on ":"; pure function, no I/O.
+	"strings.ToUpper",                       // 🟢 procnetsocket: normalises hex state field to uppercase for map lookup; pure function, no I/O.
 	"strings.HasPrefix",                     // 🟢 procinfo: checks string prefix; pure function, no I/O.
 	"strings.Index",                         // 🟢 procinfo: finds first occurrence of a substring; pure function, no I/O.
 	"strings.LastIndex",                     // 🟢 procinfo: finds last occurrence of a substring; pure function, no I/O.

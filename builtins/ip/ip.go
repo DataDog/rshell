@@ -618,7 +618,7 @@ func routeShow(ctx context.Context, callCtx *builtins.CallContext) builtins.Resu
 
 	for i := range routes {
 		if ctx.Err() != nil {
-			break
+			return builtins.Result{Code: 1}
 		}
 		callCtx.Outf("%s\n", formatRoute(&routes[i]))
 	}
