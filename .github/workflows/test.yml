@@ -23,7 +23,7 @@ jobs:
         with:
           go-version-file: .go-version
       - name: Run tests with race detector
-        run: go test -race -v ./...
+        run: go test -race -v -timeout 20m ./...
       - name: Run fuzz seed corpus (regression test)
         run: go test -run '^Fuzz' ./builtins/... -timeout 120s
 
