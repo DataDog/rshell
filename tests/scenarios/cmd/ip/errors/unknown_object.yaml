@@ -1,10 +1,12 @@
-# Unknown object name should fail with exit 1 and an informative error.
-# ip is not a standard coreutils command; scenarios test behavior unique to this builtin.
-description: "ip with unknown object exits 1 with error message"
+# ip <unknown> exits 1 with "not supported" message.
+description: ip with an unknown object exits 1.
 input:
   script: |+
     ip foobar
 expect:
-  stderr: "ip: object \"foobar\" is not supported\nSupported objects: addr, link\n"
+  stdout: |+
+  stderr: |+
+    ip: object "foobar" is not supported
+    Supported objects: addr, link, route
   exit_code: 1
 skip_assert_against_bash: true

@@ -1,0 +1,10 @@
+# ip route <unknown> exits 255 with iproute2-compatible "unknown" message.
+description: ip route with an unknown subcommand exits 255.
+input:
+  script: |+
+    ip route unknowncmd
+expect:
+  stdout: |+
+  stderr: |+
+    Command "unknowncmd" is unknown, try "ip route help".
+  exit_code: 255

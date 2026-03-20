@@ -245,7 +245,7 @@ func TestIPNoArgs(t *testing.T) {
 
 // TestIPUnknownObject verifies ip with unknown object exits 1 with error.
 func TestIPUnknownObject(t *testing.T) {
-	_, stderr, code := cmdRun(t, "ip route")
+	_, stderr, code := cmdRun(t, "ip foobar-unknown-object")
 	assert.Equal(t, 1, code)
 	assert.Contains(t, stderr, "ip:")
 }

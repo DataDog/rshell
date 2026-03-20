@@ -13,8 +13,9 @@ var internalPerPackageSymbols = map[string][]string{
 		"strconv.Atoi", // 🟢 string-to-int conversion; pure function, no I/O.
 	},
 	"procinfo": {
-		"bufio.NewScanner",                      // 🟢 line-by-line reading of /proc files; no write capability.
-		"bytes.NewReader",                       // 🟢 wraps a byte slice as an in-memory io.Reader; no I/O side effects.
+		"bufio.NewScanner", // 🟢 line-by-line reading of /proc files; no write capability.
+		"bytes.NewReader",  // 🟢 wraps a byte slice as an in-memory io.Reader; no I/O side effects.
+		"github.com/DataDog/rshell/builtins/internal/procpath.Default", // 🟢 canonical /proc filesystem root path constant; pure constant, no I/O.
 		"context.Context",                       // 🟢 deadline/cancellation interface; no side effects.
 		"errors.Is",                             // 🟢 checks whether an error in a chain matches a target; pure function, no I/O.
 		"errors.New",                            // 🟢 creates a sentinel error (unsupported-platform stub); pure function, no I/O.
@@ -52,6 +53,44 @@ var internalPerPackageSymbols = map[string][]string{
 		"golang.org/x/sys/windows.TH32CS_SNAPPROCESS",       // 🟢 (windows) flag constant selecting process entries for CreateToolhelp32Snapshot; pure constant.
 		"golang.org/x/sys/windows.UTF16ToString",            // 🟢 (windows) converts a null-terminated UTF-16 slice to a Go string; pure function, no I/O.
 	},
+	"procpath": {
+		// No stdlib symbols needed — this package only defines a string constant.
+	},
+	"procnetroute": {
+		"bufio.NewScanner", // 🟢 line-by-line reading of /proc/net/route; no write capability.
+		"github.com/DataDog/rshell/builtins/internal/procpath.Default", // 🟢 canonical /proc filesystem root path constant; pure constant, no I/O.
+		"context.Context",          // 🟢 deadline/cancellation interface; no side effects.
+		"errors.New",               // 🟢 creates a sentinel error (non-Linux stub); pure function, no I/O.
+		"fmt.Errorf",               // 🟢 error formatting for unsafe-path guard; pure function, no I/O.
+		"fmt.Sprintf",              // 🟢 formats dotted-decimal IP strings; pure function, no I/O.
+		"math/bits.OnesCount32",    // 🟢 counts set bits in a uint32 (popcount for prefix length); pure function, no I/O.
+		"math/bits.ReverseBytes32", // 🟢 byte-swaps a uint32 to convert little-endian /proc mask to network byte order for CIDR validation; pure function, no I/O.
+		"os.Open",                  // 🟠 opens /proc/net/route read-only; needed to stream the routing table.
+		"path/filepath.Clean",      // 🟢 cleans procPath before ".." component check; pure function, no I/O.
+		"path/filepath.Join",       // 🟢 joins procPath + "net/route"; pure function, no I/O.
+		"strconv.ParseUint",        // 🟢 parses hex/decimal route fields; pure function, no I/O.
+		"strings.Contains",         // 🟢 checks for ".." components in procPath safety guard; pure function, no I/O.
+		"strings.Fields",           // 🟢 splits whitespace-separated route lines; pure function, no I/O.
+	},
+	"procnetsocket": {
+		"bufio.NewScanner", // 🟢 line-by-line reading of /proc/net/{tcp,udp,unix}; no write capability.
+		"github.com/DataDog/rshell/builtins/internal/procpath.Default", // 🟢 canonical /proc filesystem root path constant; pure constant, no I/O.
+		"context.Context",     // 🟢 deadline/cancellation interface; no side effects.
+		"errors.New",          // 🟢 creates a sentinel error (non-Linux stub); pure function, no I/O.
+		"fmt.Errorf",          // 🟢 error formatting; pure function, no I/O.
+		"fmt.Sprintf",         // 🟢 formats dotted-decimal IP/port strings; pure function, no I/O.
+		"os.Open",             // 🟠 opens /proc/net/tcp* and /proc/net/udp* read-only; needed to stream socket tables.
+		"path/filepath.Clean", // 🟢 cleans procPath before ".." component check; pure function, no I/O.
+		"path/filepath.Join",  // 🟢 joins procPath + "net/<file>"; pure function, no I/O.
+		"strconv.FormatUint",  // 🟢 uint-to-string conversion for port/inode formatting; pure function, no I/O.
+		"strconv.ParseUint",   // 🟢 parses hex/decimal socket fields; pure function, no I/O.
+		"strings.Builder",     // 🟢 efficient string concatenation for IPv6 formatting; pure in-memory buffer, no I/O.
+		"strings.Contains",    // 🟢 checks for ".." components in procPath safety guard; pure function, no I/O.
+		"strings.Fields",      // 🟢 splits whitespace-separated socket lines; pure function, no I/O.
+		"strings.Join",        // 🟢 reconstructs space-containing Unix socket paths from Fields tokens; pure function, no I/O.
+		"strings.Split",       // 🟢 splits address:port fields on ":"; pure function, no I/O.
+		"strings.ToUpper",     // 🟢 normalises hex state field to uppercase for map lookup; pure function, no I/O.
+	},
 	"winnet": {
 		"encoding/binary.BigEndian",    // 🟢 reads big-endian IPv6 group values from DLL buffer; pure value, no I/O.
 		"encoding/binary.LittleEndian", // 🟢 reads little-endian DWORD fields from DLL buffer; pure value, no I/O.
@@ -76,13 +115,16 @@ var internalPerPackageSymbols = map[string][]string{
 // via iphlpapi.dll. Usage is limited to two call sites; no unsafe pointer
 // arithmetic occurs after the DLL call. All buffer parsing uses encoding/binary.
 var internalAllowedSymbols = []string{
-	"bufio.NewScanner",                      // 🟢 procinfo: line-by-line reading of /proc files; no write capability.
+	"bufio.NewScanner", // 🟢 procinfo: line-by-line reading of /proc files; no write capability.
+	"github.com/DataDog/rshell/builtins/internal/procpath.Default", // 🟢 procinfo/procnet: canonical /proc filesystem root path constant; pure constant, no I/O.
 	"bytes.NewReader",                       // 🟢 procinfo: wraps a byte slice as an in-memory io.Reader; no I/O side effects.
 	"context.Context",                       // 🟢 procinfo: deadline/cancellation interface; no side effects.
 	"encoding/binary.BigEndian",             // 🟢 winnet: reads big-endian IPv6 group values from DLL buffer; pure value, no I/O.
 	"encoding/binary.LittleEndian",          // 🟢 winnet: reads little-endian DWORD fields from DLL buffer; pure value, no I/O.
 	"errors.Is",                             // 🟢 procinfo: checks whether an error in a chain matches a target; pure function, no I/O.
 	"errors.New",                            // 🟢 creates a sentinel error; pure function, no I/O.
+	"math/bits.OnesCount32",                 // 🟢 procnet: counts set bits in a uint32 (popcount for prefix length); pure function, no I/O.
+	"math/bits.ReverseBytes32",              // 🟢 procnet: byte-swaps a uint32 to convert little-endian /proc mask to network byte order for CIDR validation; pure function, no I/O.
 	"fmt.Errorf",                            // 🟢 error formatting; pure function, no I/O.
 	"os.ErrNotExist",                        // 🟢 procinfo: sentinel error value indicating a file or directory does not exist; read-only constant, no I/O.
 	"fmt.Sprintf",                           // 🟢 string formatting; pure function, no I/O.
@@ -91,11 +133,19 @@ var internalAllowedSymbols = []string{
 	"os.ReadDir",                            // 🟠 procinfo: reads a directory listing; needed to enumerate /proc entries.
 	"os.ReadFile",                           // 🟠 procinfo: reads a whole file; needed to read /proc/[pid]/{stat,cmdline,status}.
 	"os.Stat",                               // 🟠 procinfo: validates that the proc path exists before enumeration; read-only metadata, no write capability.
+	"path/filepath.Clean",                   // 🟢 procnetroute/procnetsocket: normalises procPath before ".." safety check; pure function, no I/O.
 	"path/filepath.Join",                    // 🟢 procinfo: joins path elements to construct /proc/<pid>/stat paths; pure function, no I/O.
 	"strconv.Atoi",                          // 🟢 string-to-int conversion; pure function, no I/O.
 	"strconv.Itoa",                          // 🟢 procinfo: int-to-string conversion for PID directory names; pure function, no I/O.
 	"strconv.ParseInt",                      // 🟢 procinfo: string to int64 with base/bit-size; pure function, no I/O.
-	"strings.Fields",                        // 🟢 procinfo: splits a string on whitespace; pure function, no I/O.
+	"strconv.FormatUint",                    // 🟢 procnetsocket: uint-to-string conversion for port/inode formatting; pure function, no I/O.
+	"strconv.ParseUint",                     // 🟢 procnetroute/procnetsocket: parses hex/decimal route and socket fields; pure function, no I/O.
+	"strings.Builder",                       // 🟢 procnetsocket: efficient string concatenation for IPv6 formatting; pure in-memory buffer, no I/O.
+	"strings.Contains",                      // 🟢 procnetroute: checks for ".." in procPath safety guard; pure function, no I/O.
+	"strings.Fields",                        // 🟢 procinfo/procnetroute/procnetsocket: splits a string on whitespace; pure function, no I/O.
+	"strings.Join",                          // 🟢 procnetsocket: reconstructs space-containing Unix socket paths from Fields tokens; pure function, no I/O.
+	"strings.Split",                         // 🟢 procnetsocket: splits address:port fields on ":"; pure function, no I/O.
+	"strings.ToUpper",                       // 🟢 procnetsocket: normalises hex state field to uppercase for map lookup; pure function, no I/O.
 	"strings.HasPrefix",                     // 🟢 procinfo: checks string prefix; pure function, no I/O.
 	"strings.Index",                         // 🟢 procinfo: finds first occurrence of a substring; pure function, no I/O.
 	"strings.LastIndex",                     // 🟢 procinfo: finds last occurrence of a substring; pure function, no I/O.
