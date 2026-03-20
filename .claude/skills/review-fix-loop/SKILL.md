@@ -256,11 +256,9 @@ Log the iteration result before continuing or stopping:
 
 **GATE CHECK**: Call TaskList. Step 2 must be `completed`. Set Step 3 to `in_progress`.
 
-> ⛔ **CRITICAL — one success = one full Step 2 iteration where unresolved thread count = 0 at the start**
+> ⛔ **CRITICAL — one success = one full Step 2 iteration ending with unresolved thread count = 0 and CI passing**
 >
-> The 5 consecutive successes required below are **not** 5 rapid API calls. Each success counts only after a **complete Step 2 iteration** (2A1 ∥ 2A2 → 2B → 2C → 2D → 2E) **in which the unresolved thread count (from `$MY_LOGIN` and `chatgpt-codex-connector[bot]`) was already 0 at the start of that iteration**. An iteration that started with unresolved threads (even if all were resolved during 2B) is **not a clean iteration** — do NOT increment the success counter for it; reset the counter to 0 instead.
->
-> The correct flow is: Step 2 (threads=0 at start) → **Step 3 (success 1)** → Step 2 (threads=0 at start) → **Step 3 (success 2)** → … → **Step 3 (success 5)** → Step 4.
+> The 5 consecutive successes required below are **not** 5 rapid API calls. Each success counts only after a **complete Step 2 iteration** (2A1 ∥ 2A2 → 2B → 2C → 2D → 2E) that ends with unresolved thread count = 0 and CI passing.
 >
 > Violating this causes the PR to be declared clean before a run of 5 genuinely issue-free iterations has been confirmed.
 
@@ -317,9 +315,8 @@ Track how many times Step 3 has **succeeded** (all three verifications passed) a
 - CI is failing
 - Unresolved threads remain (count > 0 from `$MY_LOGIN` or `chatgpt-codex-connector[bot]`)
 - Unpushed commits that can't be pushed
-- **The preceding Step 2 iteration started with unresolved thread count > 0** (even if all threads were resolved during 2B — a thread-then-fixing iteration is not clean)
 
-**If all verifications pass AND the preceding Step 2 iteration started with unresolved thread count = 0**, increment the success counter and update the Step 3 task subject to `"Step 3: Verify clean state (N/5)"`. If this is the **5th consecutive success** → proceed to **Step 4**. Otherwise → reset Step 2 and all its sub-steps to `pending`, and go back to **Step 2: Run the review-fix loop** for another full iteration before returning here.
+**If all verifications pass**, increment the success counter and update the Step 3 task subject to `"Step 3: Verify clean state (N/5)"`. If this is the **5th consecutive success** → proceed to **Step 4**. Otherwise → reset Step 2 and all its sub-steps to `pending`, and go back to **Step 2: Run the review-fix loop** for another full iteration before returning here.
 
 **Completion check:** Step 3 has succeeded 5 consecutive times (each separated by a full Step 2 iteration). Mark Step 3 as `completed`.
 
