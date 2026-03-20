@@ -252,7 +252,7 @@ Log the iteration result before continuing or stopping:
 
 **GATE CHECK**: Call TaskList. Step 2 must be `completed`. Set Step 3 to `in_progress`.
 
-Update the Step 3 task subject to reflect the current count: `"Step 3: Verify clean state (N/5)"`.
+Update the Step 3 task subject to reflect the current `SUCCESS_COUNT`: `"Step 3: Verify clean state (SUCCESS_COUNT/5)"`.
 
 Run a final verification regardless of how the loop exited:
 
@@ -299,16 +299,13 @@ Run a final verification regardless of how the loop exited:
 
 Record the final state of each dimension (unresolved thread count, CI).
 
-Track how many times Step 3 has **succeeded** (all three verifications passed) across the entire run. Each success is separated by exactly one full Step 2 iteration — never count two successes from the same iteration.
+Maintain a `SUCCESS_COUNT` integer (starts at 0) tracking how many times Step 3 has passed all three verifications in a row. Each success must be separated by exactly one full Step 2 iteration — never increment `SUCCESS_COUNT` twice from the same iteration.
 
-**If any of the following is true, reset the success counter to 0**, reset Step 2 and all its sub-steps to `pending`, and go back to **Step 2: Run the review-fix loop** for another iteration:
-- CI is failing
-- Unresolved threads remain (count > 0 from `$MY_LOGIN` or `chatgpt-codex-connector[bot]`)
-- Unpushed commits that can't be pushed
+**If any verification fails**, set `SUCCESS_COUNT = 0`, reset Step 2 and all its sub-steps to `pending`, and go back to **Step 2: Run the review-fix loop** for another iteration.
 
-**If all verifications pass**, increment the success counter and update the Step 3 task subject to `"Step 3: Verify clean state (N/5)"`. If this is the **5th consecutive success** → proceed to **Step 4**. Otherwise → reset Step 2 and all its sub-steps to `pending`, and go back to **Step 2: Run the review-fix loop** for another full iteration before returning here.
+**If all verifications pass**, increment `SUCCESS_COUNT` and update the Step 3 task subject to `"Step 3: Verify clean state (SUCCESS_COUNT/5)"`. If `SUCCESS_COUNT = 5` → proceed to **Step 4**. Otherwise → reset Step 2 and all its sub-steps to `pending`, and go back to **Step 2: Run the review-fix loop** for another full iteration before returning here.
 
-**Completion check:** Step 3 has succeeded 5 consecutive times (each separated by a full Step 2 iteration). Mark Step 3 as `completed`.
+**Completion check:** `SUCCESS_COUNT` has reached 5. Mark Step 3 as `completed`.
 
 ---
 
