@@ -6,6 +6,7 @@ input:
     ip route GET
 expect:
   stdout: ""
-  stderr: "ip: route get: missing address argument\n"
+  stderr: |+
+    ip: route get: missing address argument
   exit_code: 1
 skip_assert_against_bash: true

@@ -5,6 +5,7 @@ input:
     ip -6 route show
 expect:
   stdout: ""
-  stderr: "ip: route: IPv6 routing not supported\n"
+  stderr: |+
+    ip: route: IPv6 routing not supported
   exit_code: 1
 skip_assert_against_bash: true

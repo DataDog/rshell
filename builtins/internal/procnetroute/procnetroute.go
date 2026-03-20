@@ -93,18 +93,16 @@ type Route struct {
 // data — a runtime /proc-prefix check would break those tests. The invariant is
 // therefore caller-enforced rather than implementation-enforced.
 //
-// Defence-in-depth: ".." components are always rejected regardless of context;
-// temp-directory overrides used by tests never contain "..".
-// filepath.Clean resolves traversal sequences (e.g. "foo/../bar" → "foo/bar")
-// before this check. Note: this guard also rejects any path whose *component names*
-// happen to contain ".." as a substring (e.g. "/tmp/my..dir"), but procPath is
-// always a hardcoded constant ("/proc") in production so this never triggers.
+// Defence-in-depth: ".." path components are always rejected regardless of
+// context. The check is applied to the ORIGINAL path (before filepath.Clean)
+// so that traversal sequences like "/proc/../etc/passwd" are caught — after
+// Clean, such a path becomes "/etc/passwd" which no longer contains "..".
+// Temp-directory overrides used by tests never contain "..".
 func ReadRoutes(ctx context.Context, procPath string) ([]Route, error) {
-	clean := filepath.Clean(procPath)
-	if strings.Contains(clean, "..") {
+	if strings.Contains(procPath, "..") {
 		return nil, fmt.Errorf("procnetroute: unsafe procPath %q (must not contain \"..\" components)", procPath)
 	}
-	return readRoutes(ctx, clean)
+	return readRoutes(ctx, filepath.Clean(procPath))
 }
 
 // HexToIPStr converts a /proc/net/route little-endian uint32 to dotted-decimal.

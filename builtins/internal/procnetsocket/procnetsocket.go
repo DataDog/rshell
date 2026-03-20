@@ -70,20 +70,20 @@ type SocketEntry struct {
 	HasExtended bool
 }
 
-// validateProcPath rejects any procPath that contains ".." components after
-// cleaning. filepath.Clean is applied first so that components like
-// "foo/../bar" are resolved before the check; this avoids false positives on
-// path components whose filenames contain two consecutive dots (e.g. "/tmp/my..dir").
+// validateProcPath rejects any procPath that contains ".." components and
+// returns the cleaned path for use in subsequent file operations.
+// The check is applied to the ORIGINAL path (before filepath.Clean) so that
+// traversal sequences like "/proc/../etc/passwd" are caught — after Clean,
+// such a path becomes "/etc/passwd" which no longer contains "..".
 // Defence-in-depth: procPath is always a hardcoded kernel pseudo-filesystem
 // root in production and never derived from user input, so this check should
 // never trigger. It mirrors the equivalent guard in procnetroute.ReadRoutes
 // and ensures the invariant is enforced consistently across both packages.
-func validateProcPath(procPath string) error {
-	clean := filepath.Clean(procPath)
-	if strings.Contains(clean, "..") {
-		return fmt.Errorf("procnetsocket: unsafe procPath %q (must not contain \"..\" components)", procPath)
+func validateProcPath(procPath string) (string, error) {
+	if strings.Contains(procPath, "..") {
+		return "", fmt.Errorf("procnetsocket: unsafe procPath %q (must not contain \"..\" components)", procPath)
 	}
-	return nil
+	return filepath.Clean(procPath), nil
 }
 
 // ReadTCP4 reads procPath/net/tcp and returns IPv4 TCP socket entries.
@@ -93,10 +93,11 @@ func validateProcPath(procPath string) error {
 //
 // Defence-in-depth: ".." components are always rejected regardless of context.
 func ReadTCP4(ctx context.Context, procPath string) ([]SocketEntry, error) {
-	if err := validateProcPath(procPath); err != nil {
+	clean, err := validateProcPath(procPath)
+	if err != nil {
 		return nil, err
 	}
-	return readTCP4(ctx, procPath)
+	return readTCP4(ctx, clean)
 }
 
 // ReadTCP6 reads procPath/net/tcp6 and returns IPv6 TCP socket entries.
@@ -104,10 +105,11 @@ func ReadTCP4(ctx context.Context, procPath string) ([]SocketEntry, error) {
 // Sandbox bypass: same rationale as ReadTCP4.
 // Defence-in-depth: same ".." guard as ReadTCP4.
 func ReadTCP6(ctx context.Context, procPath string) ([]SocketEntry, error) {
-	if err := validateProcPath(procPath); err != nil {
+	clean, err := validateProcPath(procPath)
+	if err != nil {
 		return nil, err
 	}
-	return readTCP6(ctx, procPath)
+	return readTCP6(ctx, clean)
 }
 
 // ReadUDP4 reads procPath/net/udp and returns IPv4 UDP socket entries.
@@ -115,10 +117,11 @@ func ReadTCP6(ctx context.Context, procPath string) ([]SocketEntry, error) {
 // Sandbox bypass: same rationale as ReadTCP4.
 // Defence-in-depth: same ".." guard as ReadTCP4.
 func ReadUDP4(ctx context.Context, procPath string) ([]SocketEntry, error) {
-	if err := validateProcPath(procPath); err != nil {
+	clean, err := validateProcPath(procPath)
+	if err != nil {
 		return nil, err
 	}
-	return readUDP4(ctx, procPath)
+	return readUDP4(ctx, clean)
 }
 
 // ReadUDP6 reads procPath/net/udp6 and returns IPv6 UDP socket entries.
@@ -126,10 +129,11 @@ func ReadUDP4(ctx context.Context, procPath string) ([]SocketEntry, error) {
 // Sandbox bypass: same rationale as ReadTCP4.
 // Defence-in-depth: same ".." guard as ReadTCP4.
 func ReadUDP6(ctx context.Context, procPath string) ([]SocketEntry, error) {
-	if err := validateProcPath(procPath); err != nil {
+	clean, err := validateProcPath(procPath)
+	if err != nil {
 		return nil, err
 	}
-	return readUDP6(ctx, procPath)
+	return readUDP6(ctx, clean)
 }
 
 // ReadUnix reads procPath/net/unix and returns Unix domain socket entries.
@@ -137,8 +141,9 @@ func ReadUDP6(ctx context.Context, procPath string) ([]SocketEntry, error) {
 // Sandbox bypass: same rationale as ReadTCP4.
 // Defence-in-depth: same ".." guard as ReadTCP4.
 func ReadUnix(ctx context.Context, procPath string) ([]SocketEntry, error) {
-	if err := validateProcPath(procPath); err != nil {
+	clean, err := validateProcPath(procPath)
+	if err != nil {
 		return nil, err
 	}
-	return readUnix(ctx, procPath)
+	return readUnix(ctx, clean)
 }

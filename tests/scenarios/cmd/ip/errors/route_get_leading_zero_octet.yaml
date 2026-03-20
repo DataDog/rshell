@@ -8,6 +8,7 @@ input:
     ip route get 192.168.010.1
 expect:
   stdout: ""
-  stderr: "ip: route get: invalid address \"192.168.010.1\"\n"
+  stderr: |+
+    ip: route get: invalid address "192.168.010.1"
   exit_code: 1
 skip_assert_against_bash: true

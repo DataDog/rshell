@@ -5,6 +5,7 @@ input:
     ip -o route show
 expect:
   stdout: ""
-  stderr: "ip: route: -o/--oneline and --brief flags are not supported for route output\n"
+  stderr: |+
+    ip: route: -o/--oneline and --brief flags are not supported for route output
   exit_code: 1
 skip_assert_against_bash: true

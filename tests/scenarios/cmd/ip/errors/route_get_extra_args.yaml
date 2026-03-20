@@ -5,6 +5,7 @@ input:
     ip route get 8.8.8.8 from 10.0.0.5
 expect:
   stdout: ""
-  stderr: "ip: route get: unsupported argument \"from\"\n"
+  stderr: |+
+    ip: route get: unsupported argument "from"
   exit_code: 1
 skip_assert_against_bash: true
