@@ -129,6 +129,26 @@ func (ar *root) verifyFileID(dev, ino uint64) bool {
 	return dev == ar.fileIDDev && ino == ar.fileIDIno
 }
 
+// verifyFileIDFromInfo verifies the file identity using FileInfo metadata.
+// If the platform cannot extract identity from FileInfo (e.g. Windows),
+// falls back to opening the file through os.Root and using fstat.
+func (ar *root) verifyFileIDFromInfo(info fs.FileInfo, relPath string) bool {
+	if !ar.fileIDSet {
+		return true
+	}
+	dev, ino, ok := fileIdentityFromInfo(info)
+	if ok {
+		return ar.verifyFileID(dev, ino)
+	}
+	// Fallback: open the file and fstat the fd (needed on Windows
+	// where FileInfo.Sys() does not expose volume/file-index).
+	dev, ino, ok = fileIdentity(ar.root, relPath)
+	if !ok {
+		return false
+	}
+	return ar.verifyFileID(dev, ino)
+}
+
 // resolveEntry returns the matching root entry and the path relative to it
 // for the given absolute path. Unlike resolve(), it returns the full root
 // struct so callers can perform post-operation identity verification.
@@ -221,8 +241,7 @@ func (s *Sandbox) Access(path string, cwd string, mode uint32) error {
 		// For file-only roots, verify the identity from the
 		// accessCheck result (which uses fstat on the opened fd).
 		if ar.fileOnly != "" && ar.fileIDSet && info != nil {
-			dev, ino, idOK := fileIdentityFromInfo(info)
-			if !idOK || !ar.verifyFileID(dev, ino) {
+			if !ar.verifyFileIDFromInfo(info, rel) {
 				return &os.PathError{Op: "access", Path: path, Err: os.ErrPermission}
 			}
 		}
@@ -499,8 +518,7 @@ func (s *Sandbox) Stat(path string, cwd string) (fs.FileInfo, error) {
 
 	// For file-only roots, verify the stat result's identity matches.
 	if entry.fileOnly != "" && entry.fileIDSet {
-		dev, ino, idOK := fileIdentityFromInfo(info)
-		if !idOK || !entry.verifyFileID(dev, ino) {
+		if !entry.verifyFileIDFromInfo(info, relPath) {
 			return nil, &os.PathError{Op: "stat", Path: path, Err: os.ErrPermission}
 		}
 	}
@@ -530,8 +548,7 @@ func (s *Sandbox) Lstat(path string, cwd string) (fs.FileInfo, error) {
 
 	// For file-only roots, verify the lstat result's identity matches.
 	if entry.fileOnly != "" && entry.fileIDSet {
-		dev, ino, idOK := fileIdentityFromInfo(info)
-		if !idOK || !entry.verifyFileID(dev, ino) {
+		if !entry.verifyFileIDFromInfo(info, relPath) {
 			return nil, &os.PathError{Op: "lstat", Path: path, Err: os.ErrPermission}
 		}
 	}
