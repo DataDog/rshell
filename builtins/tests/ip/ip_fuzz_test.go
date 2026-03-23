@@ -154,7 +154,7 @@ func FuzzIPSubcommand(f *testing.F) {
 		if code == -1 {
 			return // shell/parse error before the builtin ran — not our bug
 		}
-		if code != 0 && code != 1 {
+		if code != 0 && code != 1 && code != 255 {
 			t.Errorf("ip %q: unexpected exit code %d", subcmd, code)
 		}
 		if timedOut {

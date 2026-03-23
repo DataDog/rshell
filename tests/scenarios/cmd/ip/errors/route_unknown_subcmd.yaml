@@ -1,5 +1,6 @@
 # ip route <unknown> exits 255 with iproute2-compatible "unknown" message.
 description: ip route with an unknown subcommand exits 255.
+skip_assert_against_bash: true # ip is a rshell builtin; bash does not have it
 input:
   script: |+
     ip route unknowncmd
