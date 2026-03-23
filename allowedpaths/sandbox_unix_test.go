@@ -431,9 +431,13 @@ func TestFileOnlyInodeVerification(t *testing.T) {
 	require.NoError(t, err)
 	f.Close()
 
-	// Replace the file: remove + create gives a new inode.
+	// Replace the file with a guaranteed-different inode.
+	// Create the replacement while the original still exists so that
+	// the allocator cannot reuse the same inode (important on tmpfs).
+	replacement := filepath.Join(dir, "data.txt.new")
+	require.NoError(t, os.WriteFile(replacement, []byte("replaced"), 0644))
 	require.NoError(t, os.Remove(filePath))
-	require.NoError(t, os.WriteFile(filePath, []byte("replaced"), 0644))
+	require.NoError(t, os.Rename(replacement, filePath))
 
 	// Same name, different inode — must be rejected.
 	_, err = sb.Open(filePath, dir, os.O_RDONLY, 0)
