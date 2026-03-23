@@ -9,8 +9,15 @@ import (
 	"errors"
 	"io/fs"
 	"os"
+	"strings"
 	"syscall"
 )
+
+// fileOnlyMatch reports whether rel matches the fileOnly name.
+// On Windows, NTFS/FAT are case-insensitive — use case-folded comparison.
+func fileOnlyMatch(rel, fileOnly string) bool {
+	return strings.EqualFold(rel, fileOnly)
+}
 
 // IsErrIsDirectory checks if the error is the Windows equivalent of EISDIR.
 // On Windows, reading a directory handle returns ERROR_INVALID_FUNCTION (errno 1).

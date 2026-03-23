@@ -105,7 +105,7 @@ func (s *Sandbox) resolve(absPath string) (*os.Root, string, bool) {
 			continue
 		}
 		// For file-only roots, only the exact file is accessible.
-		if ar.fileOnly != "" && rel != ar.fileOnly {
+		if ar.fileOnly != "" && !fileOnlyMatch(rel, ar.fileOnly) {
 			continue
 		}
 		return ar.root, rel, true
@@ -143,7 +143,7 @@ func (s *Sandbox) Access(path string, cwd string, mode uint32) error {
 			continue
 		}
 		// For file-only roots, only the exact file is accessible.
-		if ar.fileOnly != "" && rel != ar.fileOnly {
+		if ar.fileOnly != "" && !fileOnlyMatch(rel, ar.fileOnly) {
 			continue
 		}
 

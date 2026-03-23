@@ -14,6 +14,12 @@ import (
 	"syscall"
 )
 
+// fileOnlyMatch reports whether rel matches the fileOnly name.
+// On Unix, filenames are case-sensitive — exact match required.
+func fileOnlyMatch(rel, fileOnly string) bool {
+	return rel == fileOnly
+}
+
 // IsErrIsDirectory reports whether err is an "is a directory" error.
 func IsErrIsDirectory(err error) bool {
 	return errors.Is(err, syscall.EISDIR)

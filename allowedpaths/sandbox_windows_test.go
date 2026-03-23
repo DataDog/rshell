@@ -126,3 +126,30 @@ func TestAccessExecAlwaysDeniedWindows(t *testing.T) {
 	// Windows has no POSIX execute bits — always denied.
 	assert.ErrorIs(t, sb.Access("data.txt", dir, 0x01), os.ErrPermission)
 }
+
+// TestFileOnlyCaseInsensitiveWindows verifies that file-only matching is
+// case-insensitive on Windows, where "Data.txt" and "data.txt" refer to
+// the same file on NTFS/FAT.
+func TestFileOnlyCaseInsensitiveWindows(t *testing.T) {
+	dir := t.TempDir()
+	filePath := filepath.Join(dir, "Data.txt")
+	require.NoError(t, os.WriteFile(filePath, []byte("hello"), 0644))
+
+	sb, err := New([]string{filePath})
+	require.NoError(t, err)
+	defer sb.Close()
+
+	// Access via different casing must succeed on Windows.
+	lowerPath := filepath.Join(dir, "data.txt")
+
+	f, err := sb.Open(lowerPath, dir, os.O_RDONLY, 0)
+	require.NoError(t, err, "Open with different casing should succeed on Windows")
+	f.Close()
+
+	info, err := sb.Stat(lowerPath, dir)
+	require.NoError(t, err, "Stat with different casing should succeed on Windows")
+	assert.Equal(t, "Data.txt", info.Name()) // NTFS preserves original casing
+
+	assert.NoError(t, sb.Access(lowerPath, dir, 0x04),
+		"Access with different casing should succeed on Windows")
+}
