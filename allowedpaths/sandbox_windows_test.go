@@ -152,10 +152,11 @@ func TestFileOnlyInodeVerificationWindows(t *testing.T) {
 	assert.ErrorIs(t, err, os.ErrPermission, "replaced file should be rejected")
 }
 
-// TestFileOnlyCaseInsensitiveWindows verifies that file-only matching is
-// case-insensitive on Windows, where "Data.txt" and "data.txt" refer to
-// the same file on NTFS/FAT.
-func TestFileOnlyCaseInsensitiveWindows(t *testing.T) {
+// TestFileOnlyCaseSensitiveWindows verifies that file-only matching uses
+// exact comparison even on Windows, because NTFS supports per-directory
+// case-sensitive mode (e.g. WSL). Callers must use the exact casing they
+// specified in AllowedPaths.
+func TestFileOnlyCaseSensitiveWindows(t *testing.T) {
 	dir := t.TempDir()
 	filePath := filepath.Join(dir, "Data.txt")
 	require.NoError(t, os.WriteFile(filePath, []byte("hello"), 0644))
@@ -164,17 +165,14 @@ func TestFileOnlyCaseInsensitiveWindows(t *testing.T) {
 	require.NoError(t, err)
 	defer sb.Close()
 
-	// Access via different casing must succeed on Windows.
-	lowerPath := filepath.Join(dir, "data.txt")
-
-	f, err := sb.Open(lowerPath, dir, os.O_RDONLY, 0)
-	require.NoError(t, err, "Open with different casing should succeed on Windows")
+	// Exact casing should succeed.
+	f, err := sb.Open(filePath, dir, os.O_RDONLY, 0)
+	require.NoError(t, err)
 	f.Close()
 
-	info, err := sb.Stat(lowerPath, dir)
-	require.NoError(t, err, "Stat with different casing should succeed on Windows")
-	assert.Equal(t, "Data.txt", info.Name()) // NTFS preserves original casing
-
-	assert.NoError(t, sb.Access(lowerPath, dir, 0x04),
-		"Access with different casing should succeed on Windows")
+	// Different casing should be rejected (exact match enforced).
+	lowerPath := filepath.Join(dir, "data.txt")
+	_, err = sb.Open(lowerPath, dir, os.O_RDONLY, 0)
+	assert.ErrorIs(t, err, os.ErrPermission,
+		"different casing should be rejected (exact match)")
 }

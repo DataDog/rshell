@@ -9,14 +9,15 @@ import (
 	"errors"
 	"io/fs"
 	"os"
-	"strings"
 	"syscall"
 )
 
 // fileOnlyMatch reports whether rel matches the fileOnly name.
-// On Windows, NTFS/FAT are case-insensitive — use case-folded comparison.
+// Exact match is used even on Windows because NTFS supports per-directory
+// case-sensitive mode (e.g. WSL). The inode-pinning check
+// (verifyFileIdentity) provides the authoritative identity guarantee.
 func fileOnlyMatch(rel, fileOnly string) bool {
-	return strings.EqualFold(rel, fileOnly)
+	return rel == fileOnly
 }
 
 // fileIdentity extracts the canonical file identity (volume serial + file
