@@ -35,6 +35,26 @@ func fileIdentity(r *os.Root, relPath string) (uint64, uint64, bool) {
 	return uint64(st.Dev), uint64(st.Ino), true
 }
 
+// fileIdentityFromInfo extracts file identity (dev+inode) from FileInfo.
+// Used for post-operation identity verification on Stat/Lstat results.
+func fileIdentityFromInfo(info fs.FileInfo) (uint64, uint64, bool) {
+	st, ok := info.Sys().(*syscall.Stat_t)
+	if !ok {
+		return 0, 0, false
+	}
+	return uint64(st.Dev), uint64(st.Ino), true
+}
+
+// fileIdentityFromFile extracts file identity (dev+inode) from an opened fd
+// via fstat. Used for atomic post-open identity verification.
+func fileIdentityFromFile(f *os.File) (uint64, uint64, bool) {
+	info, err := f.Stat()
+	if err != nil {
+		return 0, 0, false
+	}
+	return fileIdentityFromInfo(info)
+}
+
 // IsErrIsDirectory reports whether err is an "is a directory" error.
 func IsErrIsDirectory(err error) bool {
 	return errors.Is(err, syscall.EISDIR)

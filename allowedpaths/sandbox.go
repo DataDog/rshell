@@ -100,7 +100,9 @@ func New(paths []string) (*Sandbox, error) {
 
 // verifyFileIdentity checks that the file at relPath still has the same
 // identity (dev+ino) as was captured at construction time. Returns true
-// if identity matches or if no identity was captured.
+// if identity matches or if no identity was captured. This is a
+// non-authoritative fast pre-filter; the authoritative check uses
+// fstat on the opened fd (see verifyFileID).
 func (ar *root) verifyFileIdentity(relPath string) bool {
 	if !ar.fileIDSet {
 		return true
@@ -112,13 +114,25 @@ func (ar *root) verifyFileIdentity(relPath string) bool {
 	return dev == ar.fileIDDev && ino == ar.fileIDIno
 }
 
-// resolve returns the matching os.Root and the path relative to it for the
-// given absolute path. It returns false if no root matches.
-func (s *Sandbox) resolve(absPath string) (*os.Root, string, bool) {
+// verifyFileID checks whether the given identity matches the pinned
+// identity captured at construction time. Returns true if identity
+// matches or if no identity was captured.
+func (ar *root) verifyFileID(dev, ino uint64) bool {
+	if !ar.fileIDSet {
+		return true
+	}
+	return dev == ar.fileIDDev && ino == ar.fileIDIno
+}
+
+// resolveEntry returns the matching root entry and the path relative to it
+// for the given absolute path. Unlike resolve(), it returns the full root
+// struct so callers can perform post-operation identity verification.
+func (s *Sandbox) resolveEntry(absPath string) (*root, string, bool) {
 	if s == nil {
 		return nil, "", false
 	}
-	for _, ar := range s.roots {
+	for i := range s.roots {
+		ar := &s.roots[i]
 		rel, err := filepath.Rel(ar.absPath, absPath)
 		if err != nil {
 			continue
@@ -130,14 +144,25 @@ func (s *Sandbox) resolve(absPath string) (*os.Root, string, bool) {
 		if ar.fileOnly != "" && !fileOnlyMatch(rel, ar.fileOnly) {
 			continue
 		}
-		// For file-only roots, verify the file identity hasn't changed
-		// since construction (guards against rename/replace attacks).
+		// Non-authoritative fast pre-filter: reject if identity has
+		// clearly changed. The authoritative check happens post-open
+		// via fstat on the returned fd.
 		if ar.fileOnly != "" && !ar.verifyFileIdentity(rel) {
 			continue
 		}
-		return ar.root, rel, true
+		return ar, rel, true
 	}
 	return nil, "", false
+}
+
+// resolve returns the matching os.Root and the path relative to it for the
+// given absolute path. It returns false if no root matches.
+func (s *Sandbox) resolve(absPath string) (*os.Root, string, bool) {
+	entry, rel, ok := s.resolveEntry(absPath)
+	if !ok {
+		return nil, "", false
+	}
+	return entry.root, rel, ok
 }
 
 // Access checks whether the resolved path is accessible with the given mode.
@@ -161,7 +186,8 @@ func (s *Sandbox) Access(path string, cwd string, mode uint32) error {
 	if s == nil {
 		return &os.PathError{Op: "access", Path: path, Err: os.ErrPermission}
 	}
-	for _, ar := range s.roots {
+	for i := range s.roots {
+		ar := &s.roots[i]
 		rel, err := filepath.Rel(ar.absPath, absPath)
 		if err != nil {
 			continue
@@ -173,8 +199,7 @@ func (s *Sandbox) Access(path string, cwd string, mode uint32) error {
 		if ar.fileOnly != "" && !fileOnlyMatch(rel, ar.fileOnly) {
 			continue
 		}
-		// For file-only roots, verify the file identity hasn't changed
-		// since construction (guards against rename/replace attacks).
+		// Non-authoritative fast pre-filter for file-only roots.
 		if ar.fileOnly != "" && !ar.verifyFileIdentity(rel) {
 			continue
 		}
@@ -183,9 +208,18 @@ func (s *Sandbox) Access(path string, cwd string, mode uint32) error {
 		// performs the permission check (fd-relative OpenFile with
 		// O_NONBLOCK for reads on Unix, mode-bit inspection for
 		// everything else).
-		_, err = ar.accessCheck(rel, mode&0x04 != 0, mode&0x02 != 0, mode&0x01 != 0)
+		info, err := ar.accessCheck(rel, mode&0x04 != 0, mode&0x02 != 0, mode&0x01 != 0)
 		if err != nil {
 			return &os.PathError{Op: "access", Path: path, Err: os.ErrPermission}
+		}
+
+		// For file-only roots, verify the identity from the
+		// accessCheck result (which uses fstat on the opened fd).
+		if ar.fileOnly != "" && ar.fileIDSet && info != nil {
+			dev, ino, idOK := fileIdentityFromInfo(info)
+			if !idOK || !ar.verifyFileID(dev, ino) {
+				return &os.PathError{Op: "access", Path: path, Err: os.ErrPermission}
+			}
 		}
 		return nil
 	}
@@ -222,14 +256,25 @@ func (s *Sandbox) Open(path string, cwd string, flag int, perm os.FileMode) (io.
 
 	absPath := toAbs(path, cwd)
 
-	root, relPath, ok := s.resolve(absPath)
+	entry, relPath, ok := s.resolveEntry(absPath)
 	if !ok {
 		return nil, &os.PathError{Op: "open", Path: path, Err: os.ErrPermission}
 	}
 
-	f, err := root.OpenFile(relPath, flag, perm)
+	f, err := entry.root.OpenFile(relPath, flag, perm)
 	if err != nil {
 		return nil, PortablePathError(err)
+	}
+
+	// For file-only roots, verify the opened fd's identity matches the
+	// pinned identity. This is the authoritative check — fstat on the
+	// opened fd is atomic with the open, closing the TOCTOU gap.
+	if entry.fileOnly != "" && entry.fileIDSet {
+		dev, ino, idOK := fileIdentityFromFile(f)
+		if !idOK || !entry.verifyFileID(dev, ino) {
+			f.Close()
+			return nil, &os.PathError{Op: "open", Path: path, Err: os.ErrPermission}
+		}
 	}
 	return f, nil
 }
@@ -437,14 +482,22 @@ func (s *Sandbox) Stat(path string, cwd string) (fs.FileInfo, error) {
 
 	absPath := toAbs(path, cwd)
 
-	root, relPath, ok := s.resolve(absPath)
+	entry, relPath, ok := s.resolveEntry(absPath)
 	if !ok {
 		return nil, &os.PathError{Op: "stat", Path: path, Err: os.ErrPermission}
 	}
 
-	info, err := root.Stat(relPath)
+	info, err := entry.root.Stat(relPath)
 	if err != nil {
 		return nil, PortablePathError(err)
+	}
+
+	// For file-only roots, verify the stat result's identity matches.
+	if entry.fileOnly != "" && entry.fileIDSet {
+		dev, ino, idOK := fileIdentityFromInfo(info)
+		if !idOK || !entry.verifyFileID(dev, ino) {
+			return nil, &os.PathError{Op: "stat", Path: path, Err: os.ErrPermission}
+		}
 	}
 	return info, nil
 }
@@ -460,14 +513,22 @@ func (s *Sandbox) Lstat(path string, cwd string) (fs.FileInfo, error) {
 
 	absPath := toAbs(path, cwd)
 
-	root, relPath, ok := s.resolve(absPath)
+	entry, relPath, ok := s.resolveEntry(absPath)
 	if !ok {
 		return nil, &os.PathError{Op: "lstat", Path: path, Err: os.ErrPermission}
 	}
 
-	info, err := root.Lstat(relPath)
+	info, err := entry.root.Lstat(relPath)
 	if err != nil {
 		return nil, PortablePathError(err)
+	}
+
+	// For file-only roots, verify the lstat result's identity matches.
+	if entry.fileOnly != "" && entry.fileIDSet {
+		dev, ino, idOK := fileIdentityFromInfo(info)
+		if !idOK || !entry.verifyFileID(dev, ino) {
+			return nil, &os.PathError{Op: "lstat", Path: path, Err: os.ErrPermission}
+		}
 	}
 	return info, nil
 }

@@ -38,6 +38,24 @@ func fileIdentity(r *os.Root, relPath string) (uint64, uint64, bool) {
 	return uint64(d.VolumeSerialNumber), uint64(d.FileIndexHigh)<<32 | uint64(d.FileIndexLow), true
 }
 
+// fileIdentityFromInfo extracts file identity from FileInfo on Windows.
+// Windows FileInfo does not expose volume/file-index through Sys(), so
+// this always returns false. Use fileIdentityFromFile for opened handles.
+func fileIdentityFromInfo(_ fs.FileInfo) (uint64, uint64, bool) {
+	return 0, 0, false
+}
+
+// fileIdentityFromFile extracts file identity from an opened fd using
+// GetFileInformationByHandle. Used for atomic post-open identity verification.
+func fileIdentityFromFile(f *os.File) (uint64, uint64, bool) {
+	h := syscall.Handle(f.Fd())
+	var d syscall.ByHandleFileInformation
+	if err := syscall.GetFileInformationByHandle(h, &d); err != nil {
+		return 0, 0, false
+	}
+	return uint64(d.VolumeSerialNumber), uint64(d.FileIndexHigh)<<32 | uint64(d.FileIndexLow), true
+}
+
 // IsErrIsDirectory checks if the error is the Windows equivalent of EISDIR.
 // On Windows, reading a directory handle returns ERROR_INVALID_FUNCTION (errno 1).
 func IsErrIsDirectory(err error) bool {
