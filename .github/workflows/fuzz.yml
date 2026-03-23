@@ -78,7 +78,7 @@ jobs:
 
       # Restore corpus from previous runs
       - name: Restore fuzz corpus
-        uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
+        uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
         with:
           path: |
             ${{ matrix.corpus_path }}/testdata/fuzz/
@@ -112,7 +112,7 @@ jobs:
 
       # Save corpus
       - name: Save fuzz corpus
-        uses: actions/cache/save@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
+        uses: actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
         if: always()
         with:
           path: |
@@ -142,7 +142,7 @@ jobs:
           go-version-file: .go-version
 
       - name: Restore fuzz corpus
-        uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
+        uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
         with:
           path: |
             builtins/tests/${{ matrix.name }}/testdata/fuzz/
@@ -165,7 +165,7 @@ jobs:
           done
 
       - name: Save fuzz corpus
-        uses: actions/cache/save@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
+        uses: actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
         if: always()
         with:
           path: |
