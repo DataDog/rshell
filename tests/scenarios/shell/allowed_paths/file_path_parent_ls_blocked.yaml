@@ -1,0 +1,14 @@
+description: Listing parent directory is blocked when only a file within it is allowed
+skip_assert_against_bash: true
+setup:
+  files:
+    - path: data.txt
+      content: "data\n"
+input:
+  allowed_paths: ["data.txt"]
+  script: |+
+    ls .
+expect:
+  stdout: ""
+  stderr_contains: ["permission denied"]
+  exit_code: 1

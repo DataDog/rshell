@@ -1,0 +1,14 @@
+description: Cat can read an individually-allowed file path
+skip_assert_against_bash: true
+setup:
+  files:
+    - path: data.txt
+      content: "hello world\n"
+input:
+  allowed_paths: ["data.txt"]
+  script: |+
+    cat data.txt
+expect:
+  stdout: "hello world\n"
+  stderr: ""
+  exit_code: 0

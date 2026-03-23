@@ -60,13 +60,13 @@ Every access path is default-deny:
 |----------------------|-------------------------------------|----------------------------------------------|
 | Command execution    | All commands blocked (exit code 127)| `AllowedCommands` with namespaced command list (e.g. `rshell:cat`) |
 | External commands    | Blocked (exit code 127)             | Provide an `ExecHandler`                     |
-| Filesystem access    | Blocked                             | Configure `AllowedPaths` with directory list |
+| Filesystem access    | Blocked                             | Configure `AllowedPaths` with file/directory list |
 | Environment variables| Empty (no host env inherited)       | Pass variables via the `Env` option          |
 | Output redirections  | Only `/dev/null` allowed (exit code 2 for other targets) | `>/dev/null`, `2>/dev/null`, `&>/dev/null`, `2>&1` |
 
 **AllowedCommands** restricts which commands (builtins or external) the interpreter may execute. Commands must be specified with the `rshell:` namespace prefix (e.g. `rshell:cat`, `rshell:echo`). If not set, no commands are allowed.
 
-**AllowedPaths** restricts all file operations to specified directories using Go's `os.Root` API (`openat` syscalls), making it immune to symlink traversal, TOCTOU races, and `..` escape attacks.
+**AllowedPaths** restricts all file operations to specified directories or individual files using Go's `os.Root` API (`openat` syscalls), making it immune to symlink traversal, TOCTOU races, and `..` escape attacks. When an individual file is specified, only that file is accessible — not its parent directory or sibling files.
 
 > **Note:** The `ss` and `ip route` builtins bypass `AllowedPaths` for their `/proc/net/*` reads. Both builtins open kernel pseudo-filesystem paths (e.g. `/proc/net/tcp`, `/proc/net/route`) directly with `os.Open` rather than going through the sandboxed opener. These paths are hardcoded in the implementation and are never derived from user input, so there is no sandbox-escape risk. However, operators cannot use `AllowedPaths` to block `ss` from enumerating local sockets or `ip route` from reading the routing table — these reads succeed regardless of the configured path policy.
 

@@ -1,0 +1,16 @@
+description: Sibling file in same directory is blocked when only one file is allowed
+skip_assert_against_bash: true
+setup:
+  files:
+    - path: allowed.txt
+      content: "ok\n"
+    - path: sibling.txt
+      content: "secret\n"
+input:
+  allowed_paths: ["allowed.txt"]
+  script: |+
+    cat sibling.txt
+expect:
+  stdout: ""
+  stderr_contains: ["permission denied"]
+  exit_code: 1

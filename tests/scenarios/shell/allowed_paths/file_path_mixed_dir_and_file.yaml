@@ -1,0 +1,16 @@
+description: Both a directory and a separate file can be allowed simultaneously
+skip_assert_against_bash: true
+setup:
+  files:
+    - path: dir/a.txt
+      content: "from dir\n"
+    - path: single.txt
+      content: "from file\n"
+input:
+  allowed_paths: ["dir", "single.txt"]
+  script: |+
+    cat dir/a.txt && cat single.txt
+expect:
+  stdout: "from dir\nfrom file\n"
+  stderr: ""
+  exit_code: 0

@@ -65,15 +65,15 @@ func TestAllowedPathsOption(t *testing.T) {
 		assert.Contains(t, err.Error(), "AllowedPaths")
 	})
 
-	t.Run("file not directory rejected", func(t *testing.T) {
+	t.Run("file path accepted", func(t *testing.T) {
 		tmpFile := filepath.Join(t.TempDir(), "file.txt")
 		require.NoError(t, os.WriteFile(tmpFile, []byte("test"), 0644))
 
-		_, err := interp.New(
+		runner, err := interp.New(
 			interp.AllowedPaths([]string{tmpFile}),
 		)
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "not a directory")
+		require.NoError(t, err)
+		runner.Close()
 	})
 
 	t.Run("valid directory accepted", func(t *testing.T) {
@@ -254,4 +254,57 @@ func TestAllowedPathsClose(t *testing.T) {
 	// Close should not panic, even if called twice
 	require.NoError(t, runner.Close())
 	require.NoError(t, runner.Close())
+}
+
+func TestAllowedPathsFilePathCatFile(t *testing.T) {
+	dir := t.TempDir()
+	filePath := filepath.Join(dir, "hello.txt")
+	require.NoError(t, os.WriteFile(filePath, []byte("hello world\n"), 0644))
+
+	stdout, _, exitCode := runScript(t, "cat "+filepath.ToSlash(filePath), dir,
+		interp.AllowedPaths([]string{filePath}),
+	)
+	assert.Equal(t, 0, exitCode)
+	assert.Equal(t, "hello world\n", stdout)
+}
+
+func TestAllowedPathsFilePathBlocksSibling(t *testing.T) {
+	dir := t.TempDir()
+	allowed := filepath.Join(dir, "allowed.txt")
+	sibling := filepath.Join(dir, "sibling.txt")
+	require.NoError(t, os.WriteFile(allowed, []byte("ok"), 0644))
+	require.NoError(t, os.WriteFile(sibling, []byte("secret"), 0644))
+
+	_, stderr, exitCode := runScript(t, "cat "+filepath.ToSlash(sibling), dir,
+		interp.AllowedPaths([]string{allowed}),
+	)
+	assert.Equal(t, 1, exitCode)
+	assert.Contains(t, stderr, "permission denied")
+}
+
+func TestAllowedPathsFilePathBlocksParentDir(t *testing.T) {
+	dir := t.TempDir()
+	filePath := filepath.Join(dir, "data.txt")
+	require.NoError(t, os.WriteFile(filePath, []byte("data"), 0644))
+
+	_, stderr, exitCode := runScript(t, "ls "+filepath.ToSlash(dir), dir,
+		interp.AllowedPaths([]string{filePath}),
+	)
+	assert.Equal(t, 1, exitCode)
+	assert.Contains(t, stderr, "permission denied")
+}
+
+func TestAllowedPathsMixedDirAndFile(t *testing.T) {
+	dirA := t.TempDir()
+	dirB := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dirA, "a.txt"), []byte("from dir\n"), 0644))
+	fileB := filepath.Join(dirB, "b.txt")
+	require.NoError(t, os.WriteFile(fileB, []byte("from file\n"), 0644))
+
+	script := "cat " + filepath.ToSlash(filepath.Join(dirA, "a.txt")) + " && cat " + filepath.ToSlash(fileB)
+	stdout, _, exitCode := runScript(t, script, dirA,
+		interp.AllowedPaths([]string{dirA, fileB}),
+	)
+	assert.Equal(t, 0, exitCode)
+	assert.Equal(t, "from dir\nfrom file\n", stdout)
 }

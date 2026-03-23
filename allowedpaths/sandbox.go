@@ -24,9 +24,12 @@ import (
 const MaxGlobEntries = 100_000
 
 // root pairs an absolute directory path with its opened os.Root handle.
+// When fileOnly is non-empty, only that specific filename within the directory
+// is accessible — the rest of the directory is off-limits.
 type root struct {
-	absPath string
-	root    *os.Root
+	absPath  string
+	root     *os.Root
+	fileOnly string // non-empty restricts access to exactly this filename
 }
 
 // Sandbox restricts filesystem access to a set of allowed directories.
@@ -39,26 +42,48 @@ type Sandbox struct {
 // New validates paths and eagerly opens os.Root handles so the
 // allowed directories are pinned before the caller can modify them between
 // construction and the first run.
+//
+// Each path may be a directory or a regular file. Directories are opened
+// directly with os.OpenRoot. Files are handled by opening os.OpenRoot on
+// the parent directory with a fileOnly restriction so that only the
+// specified file is accessible — not the rest of the parent directory.
 func New(paths []string) (*Sandbox, error) {
 	roots := make([]root, len(paths))
+	closeAll := func(n int) {
+		for _, prev := range roots[:n] {
+			if prev.root != nil {
+				prev.root.Close()
+			}
+		}
+	}
 	for i, p := range paths {
 		abs, err := filepath.Abs(p)
 		if err != nil {
+			closeAll(i)
 			return nil, fmt.Errorf("AllowedPaths: cannot resolve %q: %w", p, err)
 		}
 		r, err := os.OpenRoot(abs)
 		if err != nil {
-			for _, prev := range roots[:i] {
-				if prev.root != nil {
-					prev.root.Close()
-				}
-			}
-
+			// os.OpenRoot failed — check if the path is a regular file.
 			info, statErr := os.Stat(abs)
-			if statErr == nil && !info.IsDir() {
-				return nil, fmt.Errorf("AllowedPaths: %q is not a directory", abs)
+			if statErr != nil {
+				closeAll(i)
+				return nil, fmt.Errorf("AllowedPaths: cannot open root %q: %w", abs, err)
 			}
-			return nil, fmt.Errorf("AllowedPaths: cannot open root %q: %w", abs, err)
+			if !info.Mode().IsRegular() {
+				closeAll(i)
+				return nil, fmt.Errorf("AllowedPaths: cannot open root %q: %w", abs, err)
+			}
+			// It's a regular file — open the parent directory and restrict
+			// access to just this filename.
+			parentDir := filepath.Dir(abs)
+			r, err = os.OpenRoot(parentDir)
+			if err != nil {
+				closeAll(i)
+				return nil, fmt.Errorf("AllowedPaths: cannot open parent of %q: %w", abs, err)
+			}
+			roots[i] = root{absPath: parentDir, root: r, fileOnly: filepath.Base(abs)}
+			continue
 		}
 		roots[i] = root{absPath: abs, root: r}
 	}
@@ -77,6 +102,10 @@ func (s *Sandbox) resolve(absPath string) (*os.Root, string, bool) {
 			continue
 		}
 		if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			continue
+		}
+		// For file-only roots, only the exact file is accessible.
+		if ar.fileOnly != "" && rel != ar.fileOnly {
 			continue
 		}
 		return ar.root, rel, true
@@ -111,6 +140,10 @@ func (s *Sandbox) Access(path string, cwd string, mode uint32) error {
 			continue
 		}
 		if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			continue
+		}
+		// For file-only roots, only the exact file is accessible.
+		if ar.fileOnly != "" && rel != ar.fileOnly {
 			continue
 		}
 

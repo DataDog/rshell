@@ -306,3 +306,94 @@ func TestCollectDirEntries(t *testing.T) {
 		assert.Equal(t, "cherry", entries[2].Name())
 	})
 }
+
+func TestNewAcceptsFilePath(t *testing.T) {
+	dir := t.TempDir()
+	filePath := filepath.Join(dir, "data.txt")
+	require.NoError(t, os.WriteFile(filePath, []byte("hello"), 0644))
+
+	sb, err := New([]string{filePath})
+	require.NoError(t, err)
+	defer sb.Close()
+}
+
+func TestFileOnlyOpenAllowed(t *testing.T) {
+	dir := t.TempDir()
+	filePath := filepath.Join(dir, "data.txt")
+	require.NoError(t, os.WriteFile(filePath, []byte("hello"), 0644))
+
+	sb, err := New([]string{filePath})
+	require.NoError(t, err)
+	defer sb.Close()
+
+	f, err := sb.Open(filePath, dir, os.O_RDONLY, 0)
+	require.NoError(t, err)
+	defer f.Close()
+
+	data, err := io.ReadAll(f)
+	require.NoError(t, err)
+	assert.Equal(t, "hello", string(data))
+}
+
+func TestFileOnlyOpenSiblingBlocked(t *testing.T) {
+	dir := t.TempDir()
+	allowed := filepath.Join(dir, "allowed.txt")
+	sibling := filepath.Join(dir, "sibling.txt")
+	require.NoError(t, os.WriteFile(allowed, []byte("ok"), 0644))
+	require.NoError(t, os.WriteFile(sibling, []byte("secret"), 0644))
+
+	sb, err := New([]string{allowed})
+	require.NoError(t, err)
+	defer sb.Close()
+
+	_, err = sb.Open(sibling, dir, os.O_RDONLY, 0)
+	assert.ErrorIs(t, err, os.ErrPermission)
+}
+
+func TestFileOnlyReadDirParentBlocked(t *testing.T) {
+	dir := t.TempDir()
+	filePath := filepath.Join(dir, "data.txt")
+	require.NoError(t, os.WriteFile(filePath, []byte("data"), 0644))
+
+	sb, err := New([]string{filePath})
+	require.NoError(t, err)
+	defer sb.Close()
+
+	_, err = sb.ReadDir(dir, dir)
+	assert.ErrorIs(t, err, os.ErrPermission)
+}
+
+func TestFileOnlyStatAllowed(t *testing.T) {
+	dir := t.TempDir()
+	filePath := filepath.Join(dir, "data.txt")
+	require.NoError(t, os.WriteFile(filePath, []byte("data"), 0644))
+
+	sb, err := New([]string{filePath})
+	require.NoError(t, err)
+	defer sb.Close()
+
+	info, err := sb.Stat(filePath, dir)
+	require.NoError(t, err)
+	assert.Equal(t, "data.txt", info.Name())
+	assert.False(t, info.IsDir())
+}
+
+func TestFileOnlyAccessAllowed(t *testing.T) {
+	dir := t.TempDir()
+	allowed := filepath.Join(dir, "allowed.txt")
+	sibling := filepath.Join(dir, "sibling.txt")
+	require.NoError(t, os.WriteFile(allowed, []byte("ok"), 0644))
+	require.NoError(t, os.WriteFile(sibling, []byte("secret"), 0644))
+
+	sb, err := New([]string{allowed})
+	require.NoError(t, err)
+	defer sb.Close()
+
+	// Allowed file should be accessible.
+	err = sb.Access(allowed, dir, 0x04) // read
+	assert.NoError(t, err)
+
+	// Sibling should be blocked.
+	err = sb.Access(sibling, dir, 0x04)
+	assert.ErrorIs(t, err, os.ErrPermission)
+}
