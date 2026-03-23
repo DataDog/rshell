@@ -149,6 +149,30 @@ func (ar *root) verifyFileIDFromInfo(info fs.FileInfo, relPath string) bool {
 	return ar.verifyFileID(dev, ino)
 }
 
+// openStatVerified opens the file through os.Root, then obtains both
+// metadata and identity from the same fd via fstat. This eliminates the
+// TOCTOU gap that exists when Stat and identity-verify are separate
+// operations (important on Windows where fileIdentityFromInfo is
+// unavailable and the fallback would re-open the file).
+func (ar *root) openStatVerified(relPath string) (fs.FileInfo, error) {
+	f, err := ar.root.OpenFile(relPath, os.O_RDONLY, 0)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+
+	info, err := f.Stat()
+	if err != nil {
+		return nil, err
+	}
+
+	dev, ino, ok := fileIdentityFromFile(f)
+	if !ok || !ar.verifyFileID(dev, ino) {
+		return nil, os.ErrPermission
+	}
+	return info, nil
+}
+
 // resolveEntry returns the matching root entry and the path relative to it
 // for the given absolute path. Unlike resolve(), it returns the full root
 // struct so callers can perform post-operation identity verification.
@@ -233,15 +257,15 @@ func (s *Sandbox) Access(path string, cwd string, mode uint32) error {
 		// performs the permission check (fd-relative OpenFile with
 		// O_NONBLOCK for reads on Unix, mode-bit inspection for
 		// everything else).
-		info, err := ar.accessCheck(rel, mode&0x04 != 0, mode&0x02 != 0, mode&0x01 != 0)
+		_, err = ar.accessCheck(rel, mode&0x04 != 0, mode&0x02 != 0, mode&0x01 != 0)
 		if err != nil {
 			return &os.PathError{Op: "access", Path: path, Err: os.ErrPermission}
 		}
 
-		// For file-only roots, verify the identity from the
-		// accessCheck result (which uses fstat on the opened fd).
-		if ar.fileOnly != "" && ar.fileIDSet && info != nil {
-			if !ar.verifyFileIDFromInfo(info, rel) {
+		// For file-only roots, verify identity atomically via a
+		// single open+fstat to avoid TOCTOU with the accessCheck.
+		if ar.fileOnly != "" && ar.fileIDSet {
+			if _, verifyErr := ar.openStatVerified(rel); verifyErr != nil {
 				return &os.PathError{Op: "access", Path: path, Err: os.ErrPermission}
 			}
 		}
@@ -511,16 +535,19 @@ func (s *Sandbox) Stat(path string, cwd string) (fs.FileInfo, error) {
 		return nil, &os.PathError{Op: "stat", Path: path, Err: os.ErrPermission}
 	}
 
+	// For file-only roots, open the file and derive both metadata and
+	// identity from the same fd to avoid TOCTOU between stat and verify.
+	if entry.fileOnly != "" && entry.fileIDSet {
+		info, err := entry.openStatVerified(relPath)
+		if err != nil {
+			return nil, &os.PathError{Op: "stat", Path: path, Err: os.ErrPermission}
+		}
+		return info, nil
+	}
+
 	info, err := entry.root.Stat(relPath)
 	if err != nil {
 		return nil, PortablePathError(err)
-	}
-
-	// For file-only roots, verify the stat result's identity matches.
-	if entry.fileOnly != "" && entry.fileIDSet {
-		if !entry.verifyFileIDFromInfo(info, relPath) {
-			return nil, &os.PathError{Op: "stat", Path: path, Err: os.ErrPermission}
-		}
 	}
 	return info, nil
 }
@@ -541,16 +568,19 @@ func (s *Sandbox) Lstat(path string, cwd string) (fs.FileInfo, error) {
 		return nil, &os.PathError{Op: "lstat", Path: path, Err: os.ErrPermission}
 	}
 
+	// For file-only roots, open the file and derive both metadata and
+	// identity from the same fd to avoid TOCTOU between lstat and verify.
+	if entry.fileOnly != "" && entry.fileIDSet {
+		info, err := entry.openStatVerified(relPath)
+		if err != nil {
+			return nil, &os.PathError{Op: "lstat", Path: path, Err: os.ErrPermission}
+		}
+		return info, nil
+	}
+
 	info, err := entry.root.Lstat(relPath)
 	if err != nil {
 		return nil, PortablePathError(err)
-	}
-
-	// For file-only roots, verify the lstat result's identity matches.
-	if entry.fileOnly != "" && entry.fileIDSet {
-		if !entry.verifyFileIDFromInfo(info, relPath) {
-			return nil, &os.PathError{Op: "lstat", Path: path, Err: os.ErrPermission}
-		}
 	}
 	return info, nil
 }
