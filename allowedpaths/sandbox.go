@@ -87,9 +87,14 @@ func New(paths []string) (*Sandbox, error) {
 			}
 			baseName := filepath.Base(abs)
 			dev, ino, idOK := fileIdentity(r, baseName)
+			if !idOK {
+				r.Close()
+				closeAll(i)
+				return nil, fmt.Errorf("AllowedPaths: cannot capture identity for %q", abs)
+			}
 			roots[i] = root{
 				absPath: parentDir, root: r, fileOnly: baseName,
-				fileIDDev: dev, fileIDIno: ino, fileIDSet: idOK,
+				fileIDDev: dev, fileIDIno: ino, fileIDSet: true,
 			}
 			continue
 		}
