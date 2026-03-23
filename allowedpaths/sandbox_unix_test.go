@@ -415,6 +415,31 @@ func TestAccessFIFONonBlocking(t *testing.T) {
 	}
 }
 
+// TestFileOnlyInodeVerification verifies that file-only roots reject access
+// when the file has been replaced (different inode) after sandbox construction.
+func TestFileOnlyInodeVerification(t *testing.T) {
+	dir := t.TempDir()
+	filePath := filepath.Join(dir, "data.txt")
+	require.NoError(t, os.WriteFile(filePath, []byte("original"), 0644))
+
+	sb, err := New([]string{filePath})
+	require.NoError(t, err)
+	defer sb.Close()
+
+	// Original file should be accessible.
+	f, err := sb.Open(filePath, dir, os.O_RDONLY, 0)
+	require.NoError(t, err)
+	f.Close()
+
+	// Replace the file: remove + create gives a new inode.
+	require.NoError(t, os.Remove(filePath))
+	require.NoError(t, os.WriteFile(filePath, []byte("replaced"), 0644))
+
+	// Same name, different inode — must be rejected.
+	_, err = sb.Open(filePath, dir, os.O_RDONLY, 0)
+	assert.ErrorIs(t, err, os.ErrPermission, "replaced file (different inode) should be rejected")
+}
+
 // TestFileOnlyCaseSensitiveUnix verifies that file-only matching is
 // case-sensitive on Unix, where "Data.txt" and "data.txt" are distinct files.
 func TestFileOnlyCaseSensitiveUnix(t *testing.T) {

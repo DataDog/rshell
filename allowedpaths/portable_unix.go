@@ -20,6 +20,21 @@ func fileOnlyMatch(rel, fileOnly string) bool {
 	return rel == fileOnly
 }
 
+// fileIdentity extracts the canonical file identity (dev+inode) for a file
+// within an os.Root. Used to pin file-only allowlist entries at construction
+// time and verify they haven't been replaced.
+func fileIdentity(r *os.Root, relPath string) (uint64, uint64, bool) {
+	info, err := r.Stat(relPath)
+	if err != nil {
+		return 0, 0, false
+	}
+	st, ok := info.Sys().(*syscall.Stat_t)
+	if !ok {
+		return 0, 0, false
+	}
+	return uint64(st.Dev), uint64(st.Ino), true
+}
+
 // IsErrIsDirectory reports whether err is an "is a directory" error.
 func IsErrIsDirectory(err error) bool {
 	return errors.Is(err, syscall.EISDIR)

@@ -19,6 +19,24 @@ func fileOnlyMatch(rel, fileOnly string) bool {
 	return strings.EqualFold(rel, fileOnly)
 }
 
+// fileIdentity extracts the canonical file identity (volume serial + file
+// index) for a file within an os.Root using GetFileInformationByHandle.
+// Used to pin file-only allowlist entries at construction time and verify
+// they haven't been replaced.
+func fileIdentity(r *os.Root, relPath string) (uint64, uint64, bool) {
+	f, err := r.OpenFile(relPath, os.O_RDONLY, 0)
+	if err != nil {
+		return 0, 0, false
+	}
+	defer f.Close()
+	h := syscall.Handle(f.Fd())
+	var d syscall.ByHandleFileInformation
+	if err := syscall.GetFileInformationByHandle(h, &d); err != nil {
+		return 0, 0, false
+	}
+	return uint64(d.VolumeSerialNumber), uint64(d.FileIndexHigh)<<32 | uint64(d.FileIndexLow), true
+}
+
 // IsErrIsDirectory checks if the error is the Windows equivalent of EISDIR.
 // On Windows, reading a directory handle returns ERROR_INVALID_FUNCTION (errno 1).
 func IsErrIsDirectory(err error) bool {

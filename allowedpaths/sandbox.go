@@ -27,9 +27,12 @@ const MaxGlobEntries = 100_000
 // When fileOnly is non-empty, only that specific filename within the directory
 // is accessible — the rest of the directory is off-limits.
 type root struct {
-	absPath  string
-	root     *os.Root
-	fileOnly string // non-empty restricts access to exactly this filename
+	absPath   string
+	root      *os.Root
+	fileOnly  string // non-empty restricts access to exactly this filename
+	fileIDDev uint64 // device ID captured at construction (file-only roots)
+	fileIDIno uint64 // inode captured at construction (file-only roots)
+	fileIDSet bool   // true if fileIDDev/fileIDIno are valid
 }
 
 // Sandbox restricts filesystem access to a set of allowed directories.
@@ -82,12 +85,31 @@ func New(paths []string) (*Sandbox, error) {
 				closeAll(i)
 				return nil, fmt.Errorf("AllowedPaths: cannot open parent of %q: %w", abs, err)
 			}
-			roots[i] = root{absPath: parentDir, root: r, fileOnly: filepath.Base(abs)}
+			baseName := filepath.Base(abs)
+			dev, ino, idOK := fileIdentity(r, baseName)
+			roots[i] = root{
+				absPath: parentDir, root: r, fileOnly: baseName,
+				fileIDDev: dev, fileIDIno: ino, fileIDSet: idOK,
+			}
 			continue
 		}
 		roots[i] = root{absPath: abs, root: r}
 	}
 	return &Sandbox{roots: roots}, nil
+}
+
+// verifyFileIdentity checks that the file at relPath still has the same
+// identity (dev+ino) as was captured at construction time. Returns true
+// if identity matches or if no identity was captured.
+func (ar *root) verifyFileIdentity(relPath string) bool {
+	if !ar.fileIDSet {
+		return true
+	}
+	dev, ino, ok := fileIdentity(ar.root, relPath)
+	if !ok {
+		return false
+	}
+	return dev == ar.fileIDDev && ino == ar.fileIDIno
 }
 
 // resolve returns the matching os.Root and the path relative to it for the
@@ -106,6 +128,11 @@ func (s *Sandbox) resolve(absPath string) (*os.Root, string, bool) {
 		}
 		// For file-only roots, only the exact file is accessible.
 		if ar.fileOnly != "" && !fileOnlyMatch(rel, ar.fileOnly) {
+			continue
+		}
+		// For file-only roots, verify the file identity hasn't changed
+		// since construction (guards against rename/replace attacks).
+		if ar.fileOnly != "" && !ar.verifyFileIdentity(rel) {
 			continue
 		}
 		return ar.root, rel, true
@@ -144,6 +171,11 @@ func (s *Sandbox) Access(path string, cwd string, mode uint32) error {
 		}
 		// For file-only roots, only the exact file is accessible.
 		if ar.fileOnly != "" && !fileOnlyMatch(rel, ar.fileOnly) {
+			continue
+		}
+		// For file-only roots, verify the file identity hasn't changed
+		// since construction (guards against rename/replace attacks).
+		if ar.fileOnly != "" && !ar.verifyFileIdentity(rel) {
 			continue
 		}
 
