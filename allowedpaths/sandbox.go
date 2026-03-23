@@ -568,14 +568,14 @@ func (s *Sandbox) Lstat(path string, cwd string) (fs.FileInfo, error) {
 		return nil, &os.PathError{Op: "lstat", Path: path, Err: os.ErrPermission}
 	}
 
-	// For file-only roots, open the file and derive both metadata and
-	// identity from the same fd to avoid TOCTOU between lstat and verify.
+	// For file-only roots, verify the target identity atomically via
+	// openStatVerified (open+fstat on same fd), then return symlink
+	// metadata via Lstat. The identity is pinned to the symlink target,
+	// but Lstat must return the symlink's own metadata.
 	if entry.fileOnly != "" && entry.fileIDSet {
-		info, err := entry.openStatVerified(relPath)
-		if err != nil {
+		if _, err := entry.openStatVerified(relPath); err != nil {
 			return nil, &os.PathError{Op: "lstat", Path: path, Err: os.ErrPermission}
 		}
-		return info, nil
 	}
 
 	info, err := entry.root.Lstat(relPath)
