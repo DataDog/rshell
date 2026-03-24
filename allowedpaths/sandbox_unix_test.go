@@ -466,3 +466,32 @@ func TestFileOnlyCaseSensitiveUnix(t *testing.T) {
 	_, err = sb.Open(lower, dir, os.O_RDONLY, 0)
 	assert.ErrorIs(t, err, os.ErrPermission)
 }
+
+// TestFileOnlyAccessWriteExecWithoutRead verifies that write/exec access
+// checks on file-only entries do not fail due to the identity verification
+// opening the file with O_RDONLY (which requires read permission).
+func TestFileOnlyAccessWriteExecWithoutRead(t *testing.T) {
+	if os.Getuid() == 0 {
+		t.Skip("root bypasses permission checks")
+	}
+
+	dir := t.TempDir()
+	filePath := filepath.Join(dir, "noread.sh")
+	require.NoError(t, os.WriteFile(filePath, []byte("#!/bin/sh"), 0333))
+
+	sb, err := New([]string{filePath})
+	require.NoError(t, err)
+	defer sb.Close()
+
+	// Write check must succeed (file is writable).
+	assert.NoError(t, sb.Access(filePath, dir, 0x02),
+		"write access should succeed on write-only file-only entry")
+
+	// Exec check must succeed (file is executable).
+	assert.NoError(t, sb.Access(filePath, dir, 0x01),
+		"exec access should succeed on exec-only file-only entry")
+
+	// Read check must fail (file is not readable).
+	assert.ErrorIs(t, sb.Access(filePath, dir, 0x04), os.ErrPermission,
+		"read access should fail on non-readable file-only entry")
+}

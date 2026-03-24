@@ -263,8 +263,11 @@ func (s *Sandbox) Access(path string, cwd string, mode uint32) error {
 		}
 
 		// For file-only roots, verify identity atomically via a
-		// single open+fstat to avoid TOCTOU with the accessCheck.
-		if ar.fileOnly != "" && ar.fileIDSet {
+		// single open+fstat. Only when read is requested — openStatVerified
+		// opens with O_RDONLY, which would fail on write/exec-only files.
+		// For non-read checks, the pre-filter verifyFileIdentity (Stat-based)
+		// in resolveEntry provides sufficient identity verification.
+		if ar.fileOnly != "" && ar.fileIDSet && mode&0x04 != 0 {
 			if _, verifyErr := ar.openStatVerified(rel); verifyErr != nil {
 				return &os.PathError{Op: "access", Path: path, Err: os.ErrPermission}
 			}
