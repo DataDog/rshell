@@ -2,7 +2,7 @@
   <img src="../assets/rshell-logo-text.png" alt="rshell logo" width="600"/>
 </p>
 
-# Shell Power, Agent Safety: How We Built a Restricted Shell Interpreter—Mostly Using AI
+# Shell Power, Agent Safety: How We Built a Restricted Shell for AI by AI
 
 In roughly ten days, a small team merged 100 pull requests, shipped 20,000 lines of production Go, and wrote 4,500 tests for a POSIX-compatible shell interpreter—now open source at [github.com/DataDog/rshell](https://github.com/DataDog/rshell). Almost all of it was written and reviewed by AI.
 
@@ -114,7 +114,7 @@ What this enabled: a fully cross-platform, sandboxed POSIX shell interpreter tha
 
 ## What's Next
 
-We're continuing to expand the command set and working on OS-level sandboxing layers—Landlock on Linux, App Sandbox on macOS—to add defense in depth beyond the interpreter-level protections. The shell will be integrated into the Datadog Agent as an MCP tool exposed over PAR (Private Action Runner), giving AI agents a secure execution environment on any monitored host. Further out, we're exploring a remote shell UI in Fleet Automation, letting users inspect their hosts directly from the Datadog platform.
+We're continuing to expand the command set and working on OS-level sandboxing layers—Landlock on Linux, App Sandbox on macOS—to add defense in depth beyond the interpreter-level protections. The shell will be integrated into the Datadog Agent as an MCP tool exposed over PAR (Private Action Runner), giving AI agents a secure execution environment on any monitored host.
 
 The through-line of this project turned out to be *trust*. We built a shell that gives AI agents real power with real constraints—enough to investigate production incidents, not enough to cause them. And we built a development process that gives AI systems real autonomy with real guardrails—enough to ship 100 PRs in ten days, not enough to skip security review.
 
