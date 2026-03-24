@@ -22,7 +22,9 @@ We needed agents to read log files, filter text, and inspect system state—but 
 
 ## Designing the Restricted Shell
 
-We needed a shell that was powerful enough to be useful and constrained enough to be safe. Three design decisions shaped the architecture.
+We needed a shell that was powerful enough to be useful and constrained enough to be safe. The embedding application explicitly grants access to specific commands, filesystem paths, and environment variables. No external binaries can be executed. No writes to the filesystem. No network connections. Dangerous shell constructs—background execution, function declarations, write redirections, arithmetic expansion—are rejected at the syntax level before any code runs. Everything the agent can do must be opted into; everything else is blocked.
+
+Three design decisions shaped the architecture.
 
 ### Parser and interpreter, separated
 
