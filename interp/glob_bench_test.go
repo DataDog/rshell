@@ -70,9 +70,10 @@ func BenchmarkGlobStar(b *testing.B) {
 	}
 }
 
-// BenchmarkGlobStarLargeDir measures "echo *" in a 10000-entry directory.
+// BenchmarkGlobStarLargeDir measures "echo *" in a 9999-entry directory
+// (just under MaxGlobEntries=10k cap).
 func BenchmarkGlobStarLargeDir(b *testing.B) {
-	dir := createGlobDir(b, 10000)
+	dir := createGlobDir(b, 9999)
 	b.ResetTimer()
 	b.ReportAllocs()
 	for b.Loop() {
@@ -172,6 +173,17 @@ func BenchmarkGlobSmallDir(b *testing.B) {
 	}
 }
 
+// BenchmarkGlobExceedsCap measures "echo *" in a directory that exceeds
+// MaxGlobEntries, verifying the rejection path is fast.
+func BenchmarkGlobExceedsCap(b *testing.B) {
+	dir := createGlobDir(b, 10001)
+	b.ResetTimer()
+	b.ReportAllocs()
+	for b.Loop() {
+		runGlob(b, "echo *", dir)
+	}
+}
+
 // TestGlobMemoryBounded asserts that glob expansion in a large directory
 // does not allocate pathological amounts of memory. With 1000 entries of
 // ~12-byte names, allocation should be on the order of a few hundred KB.
@@ -191,9 +203,10 @@ func TestGlobMemoryBounded(t *testing.T) {
 	}
 }
 
-// TestGlobLargeDirMemoryBounded asserts memory stays bounded for a 10k-entry directory.
+// TestGlobLargeDirMemoryBounded asserts memory stays bounded for a 9999-entry
+// directory (just under MaxGlobEntries=10k cap).
 func TestGlobLargeDirMemoryBounded(t *testing.T) {
-	dir := createGlobDir(t, 10000)
+	dir := createGlobDir(t, 9999)
 
 	result := testing.Benchmark(func(b *testing.B) {
 		b.ReportAllocs()
@@ -202,11 +215,11 @@ func TestGlobLargeDirMemoryBounded(t *testing.T) {
 		}
 	})
 
-	// With 10k entries, expect allocation proportional to entry count.
+	// With ~10k entries, expect allocation proportional to entry count.
 	// Use a generous ceiling to catch regressions, not measure precisely.
 	const maxBytesPerOp = 50 << 20 // 50 MB ceiling
 	if bpo := result.AllocedBytesPerOp(); bpo > maxBytesPerOp {
-		t.Errorf("glob echo * allocated %d bytes/op on 10000-entry dir; want < %d", bpo, maxBytesPerOp)
+		t.Errorf("glob echo * allocated %d bytes/op on 9999-entry dir; want < %d", bpo, maxBytesPerOp)
 	}
 }
 
