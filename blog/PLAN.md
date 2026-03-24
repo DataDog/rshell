@@ -48,7 +48,7 @@ The insight: what if we built a shell that only knows the commands we taught it,
 Walk through the key design decisions (draw from RFC). Keep it conceptual—explain the *why*, not the *how*.
 
 **A. Parser vs. interpreter**
-We use `mvdan/sh` to parse shell scripts into an AST, then execute that AST through our own interpreter written in Go. This means we control every operation: we can allow `for` loops and `if` clauses, block `exec` and `eval`, and reject unknown syntax at the grammar level before anything runs.
+Shell scripts are parsed into an AST, then executed through our own interpreter written in Go. This means we control every operation: we can allow `for` loops and `if` clauses, block `exec` and `eval`, and reject unknown syntax at the grammar level before anything runs.
 
 **B. Builtins, not host binaries**
 Every command—`cat`, `grep`, `find`, `sed`, `ss`, `ip`—is reimplemented as a Go function. The interpreter never calls a host binary. This gives us:
@@ -58,7 +58,7 @@ Every command—`cat`, `grep`, `find`, `sed`, `ss`, `ip`—is reimplemented as a
 
 **C. Layered security**
 Layer 1 (always): interpreter restrictions + builtin-only execution + path allowlist.
-Layer 2 (optional, per-platform): OS-level sandboxing (Landlock on Linux, App Sandbox on macOS, Job Objects on Windows) for additional depth-in-defense.
+Layer 2 (future, per-platform): OS-level sandboxing for additional depth-in-defense. This is a planned improvement, not yet shipped.
 
 The tradeoff we accepted: we own the implementation risk. Every builtin we write could have a bug. The mitigation: rigorous testing, automated code review, and a development harness designed to catch issues early.
 
