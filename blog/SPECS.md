@@ -1,3 +1,5 @@
+Goal: Write a blog post about rshel project
+
 Audience & purpose
 - Audience: Datadog engineers,  AI engineers
 - This is a blog about "we built this" and "lessons learned" story
