@@ -12,5 +12,5 @@ input:
     cat sibling.txt
 expect:
   stdout: ""
-  stderr_contains: ["permission denied"]
+  stderr: "cat: sibling.txt: open sibling.txt: permission denied\n"
   exit_code: 1

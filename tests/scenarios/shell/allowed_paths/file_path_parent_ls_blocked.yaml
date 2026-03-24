@@ -10,5 +10,5 @@ input:
     ls .
 expect:
   stdout: ""
-  stderr_contains: ["permission denied"]
+  stderr: "ls: cannot access '.': permission denied\n"
   exit_code: 1
