@@ -118,7 +118,10 @@ func (ar *root) verifyFileIdentity(relPath string) bool {
 	}
 	info, err := ar.root.Stat(relPath)
 	if err != nil {
-		return false
+		// File may have been deleted — allow through so the downstream
+		// operation (Open/Stat/Lstat) returns the correct OS error
+		// (e.g. ENOENT) instead of a misleading "permission denied".
+		return true
 	}
 	dev, ino, ok := fileIdentityFromInfo(info)
 	if ok {
@@ -586,7 +589,12 @@ func (s *Sandbox) Stat(path string, cwd string) (fs.FileInfo, error) {
 	if entry.fileOnly != "" && entry.fileIDSet {
 		info, err := entry.statVerified(relPath)
 		if err != nil {
-			return nil, &os.PathError{Op: "stat", Path: path, Err: os.ErrPermission}
+			// Propagate the actual error (e.g. ENOENT for deleted
+			// files) instead of always returning permission denied.
+			if errors.Is(err, os.ErrPermission) {
+				return nil, &os.PathError{Op: "stat", Path: path, Err: os.ErrPermission}
+			}
+			return nil, PortablePathError(err)
 		}
 		return info, nil
 	}
@@ -620,7 +628,10 @@ func (s *Sandbox) Lstat(path string, cwd string) (fs.FileInfo, error) {
 	// Lstat must return the symlink's own metadata.
 	if entry.fileOnly != "" && entry.fileIDSet {
 		if _, err := entry.statVerified(relPath); err != nil {
-			return nil, &os.PathError{Op: "lstat", Path: path, Err: os.ErrPermission}
+			if errors.Is(err, os.ErrPermission) {
+				return nil, &os.PathError{Op: "lstat", Path: path, Err: os.ErrPermission}
+			}
+			return nil, PortablePathError(err)
 		}
 	}
 

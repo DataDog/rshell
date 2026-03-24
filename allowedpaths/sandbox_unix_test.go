@@ -8,6 +8,8 @@
 package allowedpaths
 
 import (
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"syscall"
@@ -521,4 +523,31 @@ func TestFileOnlyStatUnreadableFile(t *testing.T) {
 	info, err = sb.Lstat(filePath, dir)
 	require.NoError(t, err, "Lstat should succeed on unreadable file-only entry")
 	assert.Equal(t, "noread.txt", info.Name())
+}
+
+// TestFileOnlyDeletedFileReturnsENOENT verifies that deleting a file-only
+// entry's target produces ENOENT (not permission denied) from Open and Stat.
+func TestFileOnlyDeletedFileReturnsENOENT(t *testing.T) {
+	dir := t.TempDir()
+	filePath := filepath.Join(dir, "ephemeral.txt")
+	require.NoError(t, os.WriteFile(filePath, []byte("data"), 0644))
+
+	sb, err := New([]string{filePath})
+	require.NoError(t, err)
+	defer sb.Close()
+
+	// Delete the file.
+	require.NoError(t, os.Remove(filePath))
+
+	// Open should return a "not exist" error, not permission denied.
+	_, err = sb.Open(filePath, dir, os.O_RDONLY, 0)
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, fs.ErrNotExist) || errors.Is(err, fs.ErrPermission) == false,
+		"deleted file-only entry should return ENOENT, got: %v", err)
+
+	// Stat should also return a "not exist" error.
+	_, err = sb.Stat(filePath, dir)
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, fs.ErrNotExist) || errors.Is(err, fs.ErrPermission) == false,
+		"deleted file-only entry stat should return ENOENT, got: %v", err)
 }
