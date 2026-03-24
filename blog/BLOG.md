@@ -42,7 +42,7 @@ The tradeoff we accepted is clear: we own the implementation risk. Every builtin
 
 ## The AI Harness: Building with AI at Scale
 
-This is the part that surprised us. Not that AI could write the code—but that the *process* of structuring AI-assisted development turned out to be more important than the AI itself.
+AI handles the coding. Making it work across 25 commands, 100 PRs, and a security-sensitive codebase—that required something more: a structured harness.
 
 ### The problem with ad-hoc AI coding
 
