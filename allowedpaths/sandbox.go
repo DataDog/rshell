@@ -248,9 +248,13 @@ func (s *Sandbox) resolveEntry(absPath string) (*root, string, bool) {
 
 // resolve returns the matching os.Root and the path relative to it for the
 // given absolute path. It returns false if no root matches.
+//
+// File-only roots are excluded — they require post-operation identity
+// verification via the root struct's pinned identity fields, which
+// resolve() discards. Use resolveEntry() for file-only access.
 func (s *Sandbox) resolve(absPath string) (*os.Root, string, bool) {
 	entry, rel, ok := s.resolveEntry(absPath)
-	if !ok {
+	if !ok || entry.fileOnly != "" {
 		return nil, "", false
 	}
 	return entry.root, rel, ok
