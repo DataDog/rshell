@@ -291,19 +291,27 @@ func (s *Sandbox) Access(path string, cwd string, mode uint32) error {
 		// performs the permission check (fd-relative OpenFile with
 		// O_NONBLOCK for reads on Unix, mode-bit inspection for
 		// everything else).
-		_, err = ar.accessCheck(rel, mode&0x04 != 0, mode&0x02 != 0, mode&0x01 != 0)
+		info, err := ar.accessCheck(rel, mode&0x04 != 0, mode&0x02 != 0, mode&0x01 != 0)
 		if err != nil {
 			return &os.PathError{Op: "access", Path: path, Err: os.ErrPermission}
 		}
 
-		// For file-only roots, verify identity atomically via a
-		// single open+fstat. Only when read is requested — openStatVerified
-		// opens with O_RDONLY, which would fail on write/exec-only files.
-		// For non-read checks, the pre-filter verifyFileIdentity (Stat-based)
-		// in resolveEntry provides sufficient identity verification.
-		if ar.fileOnly != "" && ar.fileIDSet && mode&0x04 != 0 {
-			if _, verifyErr := ar.openStatVerified(rel); verifyErr != nil {
-				return &os.PathError{Op: "access", Path: path, Err: os.ErrPermission}
+		// For file-only roots, verify identity post-accessCheck.
+		if ar.fileOnly != "" && ar.fileIDSet {
+			if mode&0x04 != 0 {
+				// Read requested — atomic open+fstat verification.
+				if _, verifyErr := ar.openStatVerified(rel); verifyErr != nil {
+					return &os.PathError{Op: "access", Path: path, Err: os.ErrPermission}
+				}
+			} else if info != nil {
+				// Non-read — verify from accessCheck's stat result.
+				// On Unix, fileIdentityFromInfo extracts dev+ino from
+				// the same stat accessCheck used (atomic). On Windows,
+				// unavailable — accepted platform limitation.
+				dev, ino, idOK := fileIdentityFromInfo(info)
+				if idOK && !ar.verifyFileID(dev, ino) {
+					return &os.PathError{Op: "access", Path: path, Err: os.ErrPermission}
+				}
 			}
 		}
 		return nil
