@@ -3,14 +3,18 @@ skip_assert_against_bash: true
 setup:
   files:
     - path: dir/a.txt
-      content: "from dir\n"
+      content: |+
+        from dir
     - path: single.txt
-      content: "from file\n"
+      content: |+
+        from file
 input:
   allowed_paths: ["dir", "single.txt"]
   script: |+
     cat dir/a.txt && cat single.txt
 expect:
-  stdout: "from dir\nfrom file\n"
-  stderr: ""
+  stdout: |+
+    from dir
+    from file
+  stderr: |+
   exit_code: 0

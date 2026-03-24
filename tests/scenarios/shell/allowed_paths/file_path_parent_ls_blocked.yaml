@@ -3,12 +3,14 @@ skip_assert_against_bash: true
 setup:
   files:
     - path: data.txt
-      content: "data\n"
+      content: |+
+        data
 input:
   allowed_paths: ["data.txt"]
   script: |+
     ls .
 expect:
-  stdout: ""
-  stderr: "ls: cannot access '.': permission denied\n"
+  stdout: |+
+  stderr: |+
+    ls: cannot access '.': permission denied
   exit_code: 1

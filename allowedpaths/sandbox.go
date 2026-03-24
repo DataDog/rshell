@@ -177,7 +177,7 @@ func (ar *root) statVerified(relPath string) (fs.FileInfo, error) {
 // operations (important on Windows where fileIdentityFromInfo is
 // unavailable and the fallback would re-open the file).
 func (ar *root) openStatVerified(relPath string) (fs.FileInfo, error) {
-	f, err := ar.root.OpenFile(relPath, os.O_RDONLY, 0)
+	f, err := ar.root.OpenFile(relPath, os.O_RDONLY|nonBlockOpenFlag, 0)
 	if err != nil {
 		return nil, err
 	}

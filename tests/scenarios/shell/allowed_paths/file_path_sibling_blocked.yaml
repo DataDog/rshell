@@ -3,14 +3,17 @@ skip_assert_against_bash: true
 setup:
   files:
     - path: allowed.txt
-      content: "ok\n"
+      content: |+
+        ok
     - path: sibling.txt
-      content: "secret\n"
+      content: |+
+        secret
 input:
   allowed_paths: ["allowed.txt"]
   script: |+
     cat sibling.txt
 expect:
-  stdout: ""
-  stderr: "cat: sibling.txt: open sibling.txt: permission denied\n"
+  stdout: |+
+  stderr: |+
+    cat: sibling.txt: open sibling.txt: permission denied
   exit_code: 1
