@@ -15,3 +15,9 @@ Scope & tone
 - No code sample, more conceptual/narrative oriented
 - Full post (~1500–2500 words)
 - Will be published as Datadog engineering blog and internally
+
+Important resources to use:
+- [Restricted Shell RFC.md](Restricted%20Shell%20RFC.md)
+- [SPECS.md](SPECS.md)
+- [STATS.md](STATS.md)
+- the rshell repository
