@@ -167,12 +167,12 @@ func (ar *root) verifyFileIDFromInfo(info fs.FileInfo, relPath string) bool {
 	return ar.verifyFileID(dev, ino)
 }
 
-// statVerified obtains metadata via os.Root.Stat (metadata-only, no read
-// permission required) and verifies identity from the returned FileInfo.
-// On Unix, FileInfo.Sys() provides dev+ino atomically. On Windows where
-// FileInfo lacks identity data, returns the stat result without identity
-// verification — requiring read access for stat would be worse than the
-// theoretical rename-race risk on that platform.
+// statVerified obtains metadata via os.Root.Stat and verifies identity
+// from the returned FileInfo. On Unix, FileInfo.Sys() provides dev+ino
+// atomically (no read permission required). On Windows where FileInfo
+// lacks identity data, falls back to openStatVerified (requires read
+// permission — a platform limitation of the Go os.Root API, but
+// necessary to enforce the file-ID pinning invariant).
 func (ar *root) statVerified(relPath string) (fs.FileInfo, error) {
 	info, err := ar.root.Stat(relPath)
 	if err != nil {
@@ -183,12 +183,12 @@ func (ar *root) statVerified(relPath string) (fs.FileInfo, error) {
 		if !ar.verifyFileID(dev, ino) {
 			return nil, os.ErrPermission
 		}
+		return info, nil
 	}
-	// On platforms where fileIdentityFromInfo is unavailable (Windows),
-	// return the stat result without identity verification. The
-	// alternative (openStatVerified) requires read permission, which
-	// stat operations must not impose.
-	return info, nil
+	// Platform cannot extract identity from FileInfo (Windows).
+	// Fall back to open+fstat to enforce the pinning invariant.
+	// This requires read permission — a platform limitation.
+	return ar.openStatVerified(relPath)
 }
 
 // openStatVerified opens the file through os.Root, then obtains both
