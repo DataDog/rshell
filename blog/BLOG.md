@@ -42,7 +42,9 @@ Every command—`cat`, `grep`, `find`, `sed`, `ss`, `ip`, and twenty more—is r
 
 The first layer is always on: interpreter restrictions, builtin-only execution, and the path allowlist. A planned second layer adds OS-level sandboxing (Landlock on Linux, App Sandbox on macOS) for defense in depth.
 
-The tradeoff we accepted is clear: we own the implementation risk. Every builtin we write could have a bug. The mitigation: rigorous testing, automated code review, and a development process designed to catch issues before they ship.
+Between these layers sits a library function allowlist. Every builtin has an explicit list of permitted Go standard library functions—`os.Open` is allowed, `os/exec.Command` is not. CI enforces that no builtin uses a function outside its allowlist, and any change to the allowlists requires a human to review and approve it before the PR can merge. AI can implement commands, but it cannot grant itself access to new capabilities.
+
+The tradeoff we accepted is clear: we own the implementation risk. Every builtin we write could have a bug. The mitigation: rigorous testing, automated code review, a library function allowlist that a human must sign off on, and a development process designed to catch issues before they ship.
 
 ## The AI Harness: Building with AI at Scale
 
@@ -81,6 +83,7 @@ The role of the human engineer shifted. Less time writing code. More time on:
 
 - **Defining the security rules** and invariants that the harness enforces
 - **Approving flag selections** and design decisions before implementation starts
+- **Verifying library function allowlists** — every PR that adds new standard library functions to a builtin's allowlist requires explicit human approval, ensuring AI-generated code never quietly expands its own capabilities
 - **Reviewing the harness itself** — the skills are code too, and a bug in a skill replicates across every command it implements
 - **Handling the cases the harness couldn't** — novel security questions, cross-cutting architectural decisions, judgment calls about scope
 
