@@ -4,7 +4,7 @@
 // Copyright 2026-present Datadog, Inc.
 
 // Package allowedpaths implements a filesystem sandbox that restricts access
-// to a set of allowed directories using os.Root (Go 1.24+).
+// to a set of allowed directories or individual files using os.Root (Go 1.24+).
 package allowedpaths
 
 import (
@@ -147,26 +147,6 @@ func (ar *root) verifyFileID(dev, ino uint64) bool {
 	return dev == ar.fileIDDev && ino == ar.fileIDIno
 }
 
-// verifyFileIDFromInfo verifies the file identity using FileInfo metadata.
-// If the platform cannot extract identity from FileInfo (e.g. Windows),
-// falls back to opening the file through os.Root and using fstat.
-func (ar *root) verifyFileIDFromInfo(info fs.FileInfo, relPath string) bool {
-	if !ar.fileIDSet {
-		return true
-	}
-	dev, ino, ok := fileIdentityFromInfo(info)
-	if ok {
-		return ar.verifyFileID(dev, ino)
-	}
-	// Fallback: open the file and fstat the fd (needed on Windows
-	// where FileInfo.Sys() does not expose volume/file-index).
-	dev, ino, ok = fileIdentity(ar.root, relPath)
-	if !ok {
-		return false
-	}
-	return ar.verifyFileID(dev, ino)
-}
-
 // statVerified obtains metadata via os.Root.Stat and verifies identity
 // from the returned FileInfo. On Unix, FileInfo.Sys() provides dev+ino
 // atomically (no read permission required). On Windows where FileInfo
@@ -278,59 +258,41 @@ func (s *Sandbox) resolve(absPath string) (*os.Root, string, bool) {
 func (s *Sandbox) Access(path string, cwd string, mode uint32) error {
 	absPath := toAbs(path, cwd)
 
-	if s == nil {
+	ar, rel, ok := s.resolveEntry(absPath)
+	if !ok {
 		return &os.PathError{Op: "access", Path: path, Err: os.ErrPermission}
 	}
-	for i := range s.roots {
-		ar := &s.roots[i]
-		rel, err := filepath.Rel(ar.absPath, absPath)
-		if err != nil {
-			continue
-		}
-		if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-			continue
-		}
-		// For file-only roots, only the exact file is accessible.
-		if ar.fileOnly != "" && !fileOnlyMatch(rel, ar.fileOnly) {
-			continue
-		}
-		// Non-authoritative fast pre-filter for file-only roots.
-		if ar.fileOnly != "" && !ar.verifyFileIdentity(rel) {
-			continue
-		}
 
-		// accessCheck opens or stats the path through os.Root and
-		// performs the permission check (fd-relative OpenFile with
-		// O_NONBLOCK for reads on Unix, mode-bit inspection for
-		// everything else).
-		info, err := ar.accessCheck(rel, mode&0x04 != 0, mode&0x02 != 0, mode&0x01 != 0)
-		if err != nil {
-			return &os.PathError{Op: "access", Path: path, Err: os.ErrPermission}
-		}
+	// accessCheck opens or stats the path through os.Root and
+	// performs the permission check (fd-relative OpenFile with
+	// O_NONBLOCK for reads on Unix, mode-bit inspection for
+	// everything else).
+	info, err := ar.accessCheck(rel, mode&0x04 != 0, mode&0x02 != 0, mode&0x01 != 0)
+	if err != nil {
+		return &os.PathError{Op: "access", Path: path, Err: os.ErrPermission}
+	}
 
-		// For file-only roots, verify identity post-accessCheck.
-		if ar.fileOnly != "" && ar.fileIDSet {
-			if mode&0x04 != 0 {
-				// Read requested — atomic open+fstat verification.
-				if _, verifyErr := ar.openStatVerified(rel); verifyErr != nil {
-					return &os.PathError{Op: "access", Path: path, Err: os.ErrPermission}
-				}
-			} else if info != nil {
-				// Non-read — verify from accessCheck's stat result.
-				// On Unix, fileIdentityFromInfo extracts dev+ino from
-				// the same stat accessCheck used (atomic). On Windows,
-				// fileIdentityFromInfo is unavailable and we cannot
-				// verify without read access (os.Root API limitation);
-				// identity enforcement for non-read modes is skipped.
-				dev, ino, idOK := fileIdentityFromInfo(info)
-				if idOK && !ar.verifyFileID(dev, ino) {
-					return &os.PathError{Op: "access", Path: path, Err: os.ErrPermission}
-				}
+	// For file-only roots, verify identity post-accessCheck.
+	if ar.fileOnly != "" && ar.fileIDSet {
+		if mode&0x04 != 0 {
+			// Read requested — atomic open+fstat verification.
+			if _, verifyErr := ar.openStatVerified(rel); verifyErr != nil {
+				return &os.PathError{Op: "access", Path: path, Err: os.ErrPermission}
+			}
+		} else if info != nil {
+			// Non-read — verify from accessCheck's stat result.
+			// On Unix, fileIdentityFromInfo extracts dev+ino from
+			// the same stat accessCheck used (atomic). On Windows,
+			// fileIdentityFromInfo is unavailable and we cannot
+			// verify without read access (os.Root API limitation);
+			// identity enforcement for non-read modes is skipped.
+			dev, ino, idOK := fileIdentityFromInfo(info)
+			if idOK && !ar.verifyFileID(dev, ino) {
+				return &os.PathError{Op: "access", Path: path, Err: os.ErrPermission}
 			}
 		}
-		return nil
 	}
-	return &os.PathError{Op: "access", Path: path, Err: os.ErrPermission}
+	return nil
 }
 
 // toAbs resolves path against cwd when it is not already absolute.
@@ -379,7 +341,7 @@ func (s *Sandbox) Open(path string, cwd string, flag int, perm os.FileMode) (io.
 	if entry.fileOnly != "" && entry.fileIDSet {
 		dev, ino, idOK := fileIdentityFromFile(f)
 		if !idOK || !entry.verifyFileID(dev, ino) {
-			f.Close()
+			_ = f.Close() // Best-effort close; identity mismatch is the primary error.
 			return nil, &os.PathError{Op: "open", Path: path, Err: os.ErrPermission}
 		}
 	}

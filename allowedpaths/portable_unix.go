@@ -24,15 +24,8 @@ func fileOnlyMatch(rel, fileOnly string) bool {
 // within an os.Root. Used to pin file-only allowlist entries at construction
 // time and verify they haven't been replaced.
 func fileIdentity(r *os.Root, relPath string) (uint64, uint64, bool) {
-	info, err := r.Stat(relPath)
-	if err != nil {
-		return 0, 0, false
-	}
-	st, ok := info.Sys().(*syscall.Stat_t)
-	if !ok {
-		return 0, 0, false
-	}
-	return uint64(st.Dev), uint64(st.Ino), true
+	dev, ino, _, ok := fileIdentityAndMode(r, relPath)
+	return dev, ino, ok
 }
 
 // fileIdentityAndMode extracts file identity and mode from a single stat,
