@@ -630,15 +630,12 @@ func (s *Sandbox) Lstat(path string, cwd string) (fs.FileInfo, error) {
 	}
 
 	// For file-only roots, verify the target identity via metadata-only
-	// stat (no read permission required), then return symlink metadata
-	// via Lstat. The identity is pinned to the symlink target, but
-	// Lstat must return the symlink's own metadata.
+	// stat, then return symlink metadata via Lstat. Only reject on
+	// identity mismatch (ErrPermission). If the target is gone (dangling
+	// symlink), proceed — lstat inspects the link itself, not the target.
 	if entry.fileOnly != "" && entry.fileIDSet {
-		if _, err := entry.statVerified(relPath); err != nil {
-			if errors.Is(err, os.ErrPermission) {
-				return nil, &os.PathError{Op: "lstat", Path: path, Err: os.ErrPermission}
-			}
-			return nil, PortablePathError(err)
+		if _, err := entry.statVerified(relPath); err != nil && errors.Is(err, os.ErrPermission) {
+			return nil, &os.PathError{Op: "lstat", Path: path, Err: os.ErrPermission}
 		}
 	}
 
