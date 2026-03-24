@@ -28,7 +28,7 @@ The through-line is *trust*: how do you give an AI agent enough power to be usef
 
 ### 1. Hook / Opening (~150 words)
 
-Open with the concrete result: in roughly ten days, a small team merged 100 pull requests, shipped 20,000 lines of production Go, and wrote 4,500 tests for a POSIX-compatible shell interpreter. Almost all of it was written and reviewed by AI.
+Open with the concrete result: in roughly ten days, a small team merged 100 pull requests, shipped 20,000 lines of production Go, and wrote 4,500 tests for a POSIX-compatible shell interpreter—now open source at [github.com/DataDog/rshell](https://github.com/DataDog/rshell). Almost all of it was written and reviewed by AI.
 
 Then ask the question that makes it interesting: how do you actually pull that off without the whole thing falling apart?
 
@@ -114,7 +114,7 @@ State the numbers plainly:
 - 4,500 tests (2,000 unit + 2,500 scenario tests validated against real bash)
 - ~100% AI-generated code; most of the code reviewed by AI
 
-Brief note on what this enabled: a fully cross-platform, sandboxed POSIX shell interpreter that AI agents can use to diagnose production systems, with a security model that operators can configure and audit.
+Brief note on what this enabled: a fully cross-platform, sandboxed POSIX shell interpreter that AI agents can use to diagnose production systems, with a security model that operators can configure and audit. The project is open source at [github.com/DataDog/rshell](https://github.com/DataDog/rshell).
 
 ### 7. What's Next (~150 words)
 
