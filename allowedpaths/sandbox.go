@@ -108,15 +108,25 @@ func New(paths []string) (*Sandbox, error) {
 // if identity matches or if no identity was captured. This is a
 // non-authoritative fast pre-filter; the authoritative check uses
 // fstat on the opened fd (see verifyFileID).
+//
+// Uses metadata-only stat (no read permission required). On platforms
+// where FileInfo lacks identity data (Windows), allows through —
+// authoritative checks happen post-operation in Open/Stat/Lstat/Access.
 func (ar *root) verifyFileIdentity(relPath string) bool {
 	if !ar.fileIDSet {
 		return true
 	}
-	dev, ino, ok := fileIdentity(ar.root, relPath)
-	if !ok {
+	info, err := ar.root.Stat(relPath)
+	if err != nil {
 		return false
 	}
-	return dev == ar.fileIDDev && ino == ar.fileIDIno
+	dev, ino, ok := fileIdentityFromInfo(info)
+	if ok {
+		return ar.verifyFileID(dev, ino)
+	}
+	// Platform cannot extract identity from metadata (e.g. Windows).
+	// Allow through — authoritative checks happen post-operation.
+	return true
 }
 
 // verifyFileID checks whether the given identity matches the pinned
@@ -152,7 +162,9 @@ func (ar *root) verifyFileIDFromInfo(info fs.FileInfo, relPath string) bool {
 // statVerified obtains metadata via os.Root.Stat (metadata-only, no read
 // permission required) and verifies identity from the returned FileInfo.
 // On Unix, FileInfo.Sys() provides dev+ino atomically. On Windows where
-// fileIdentityFromInfo is unavailable, falls back to openStatVerified.
+// FileInfo lacks identity data, returns the stat result without identity
+// verification — requiring read access for stat would be worse than the
+// theoretical rename-race risk on that platform.
 func (ar *root) statVerified(relPath string) (fs.FileInfo, error) {
 	info, err := ar.root.Stat(relPath)
 	if err != nil {
@@ -163,10 +175,12 @@ func (ar *root) statVerified(relPath string) (fs.FileInfo, error) {
 		if !ar.verifyFileID(dev, ino) {
 			return nil, os.ErrPermission
 		}
-		return info, nil
 	}
-	// Fallback for platforms where FileInfo lacks identity (Windows).
-	return ar.openStatVerified(relPath)
+	// On platforms where fileIdentityFromInfo is unavailable (Windows),
+	// return the stat result without identity verification. The
+	// alternative (openStatVerified) requires read permission, which
+	// stat operations must not impose.
+	return info, nil
 }
 
 // openStatVerified opens the file through os.Root, then obtains both
