@@ -22,7 +22,7 @@ We needed a shell that was powerful enough to be useful and constrained enough t
 
 ### Parser and interpreter, separated
 
-Shell scripts are parsed into an AST using [mvdan/sh](https://github.com/mvdan/sh), a well-maintained Go shell parser. But instead of handing that AST to a standard interpreter, we wrote our own. This separation is the foundation of the security model: we control every operation. We can allow `for` loops and `if` clauses while blocking `exec` and `eval`. Unknown syntax is rejected at the grammar level before anything runs. The interpreter supports pipes, command substitution, variable expansion, globbing—enough shell to be genuinely useful, without the features that make `bash` dangerous in untrusted contexts.
+Shell scripts are parsed into an AST using [mvdan/sh](https://github.com/mvdan/sh), a well-maintained Go shell parser. We forked its interpreter and rebuilt it around our security model. This separation is the foundation of the security model: we control every operation. We can allow `for` loops and `if` clauses while blocking `exec` and `eval`. Unknown syntax is rejected at the grammar level before anything runs. The interpreter supports pipes, command substitution, variable expansion, globbing—enough shell to be genuinely useful, without the features that make `bash` dangerous in untrusted contexts.
 
 ### Builtins, not host binaries
 
