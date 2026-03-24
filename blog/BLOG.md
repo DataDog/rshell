@@ -26,7 +26,7 @@ Shell scripts are parsed into an AST using [mvdan/sh](https://github.com/mvdan/s
 
 ### Builtins, not host binaries
 
-Every command—`cat`, `grep`, `find`, `sed`, `ss`, `ip`, and twenty more—is reimplemented as a Go function. The interpreter never calls a host binary. This gives us three properties that would be impossible otherwise:
+Every command—`cat`, `grep`, `find`, `sed`, `ss`, `ip`, and twenty more—is reimplemented as a Go function. The interpreter never calls a host binary. This gives us three properties that would be difficult to achieve otherwise:
 
 **File access enforcement.** Every file open goes through an `AllowedPaths` sandbox check. It doesn't matter how creative the shell script is—if the path isn't on the allowlist, the operation is denied. This works at the Go function level, not at the OS level, so it's consistent across platforms.
 
