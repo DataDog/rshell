@@ -18,7 +18,7 @@ LLMs are trained on POSIX shell. When an agent needs to diagnose an issue, it na
 
 But the naive answer—giving the agent a real `bash` session on a production host—is a non-starter. Standard POSIX tools carry risks that aren't obvious at first glance: `find` and `sed` can execute arbitrary binaries, `sort` can write to the filesystem, `grep`'s default regex engine can trivially DoS a machine, and `tail -n 9999999999999999` will OOM a host through greedy buffer allocation. Even the shell itself is a risk: a malicious binary planted on `$PATH` can silently replace any command. A single prompt injection could turn an investigative agent into an attacker with full access to these capabilities.
 
-The insight that launched this project: what if we built a shell that only knows the commands we taught it, and only accesses the paths we explicitly allow?
+We needed agents to read log files, filter text, and inspect system state—but not execute binaries, write to disk, or open network connections. That framing launched the project: what if we built a shell that only knows the commands we taught it, only accesses the paths we explicitly allow, and blocks everything else by default?
 
 ## Designing the Restricted Shell
 
