@@ -149,6 +149,26 @@ func (ar *root) verifyFileIDFromInfo(info fs.FileInfo, relPath string) bool {
 	return ar.verifyFileID(dev, ino)
 }
 
+// statVerified obtains metadata via os.Root.Stat (metadata-only, no read
+// permission required) and verifies identity from the returned FileInfo.
+// On Unix, FileInfo.Sys() provides dev+ino atomically. On Windows where
+// fileIdentityFromInfo is unavailable, falls back to openStatVerified.
+func (ar *root) statVerified(relPath string) (fs.FileInfo, error) {
+	info, err := ar.root.Stat(relPath)
+	if err != nil {
+		return nil, err
+	}
+	dev, ino, ok := fileIdentityFromInfo(info)
+	if ok {
+		if !ar.verifyFileID(dev, ino) {
+			return nil, os.ErrPermission
+		}
+		return info, nil
+	}
+	// Fallback for platforms where FileInfo lacks identity (Windows).
+	return ar.openStatVerified(relPath)
+}
+
 // openStatVerified opens the file through os.Root, then obtains both
 // metadata and identity from the same fd via fstat. This eliminates the
 // TOCTOU gap that exists when Stat and identity-verify are separate
@@ -538,10 +558,11 @@ func (s *Sandbox) Stat(path string, cwd string) (fs.FileInfo, error) {
 		return nil, &os.PathError{Op: "stat", Path: path, Err: os.ErrPermission}
 	}
 
-	// For file-only roots, open the file and derive both metadata and
-	// identity from the same fd to avoid TOCTOU between stat and verify.
+	// For file-only roots, verify identity using metadata-only stat
+	// (no read permission required). Falls back to open+fstat on
+	// platforms where FileInfo lacks identity (Windows).
 	if entry.fileOnly != "" && entry.fileIDSet {
-		info, err := entry.openStatVerified(relPath)
+		info, err := entry.statVerified(relPath)
 		if err != nil {
 			return nil, &os.PathError{Op: "stat", Path: path, Err: os.ErrPermission}
 		}
@@ -571,12 +592,12 @@ func (s *Sandbox) Lstat(path string, cwd string) (fs.FileInfo, error) {
 		return nil, &os.PathError{Op: "lstat", Path: path, Err: os.ErrPermission}
 	}
 
-	// For file-only roots, verify the target identity atomically via
-	// openStatVerified (open+fstat on same fd), then return symlink
-	// metadata via Lstat. The identity is pinned to the symlink target,
-	// but Lstat must return the symlink's own metadata.
+	// For file-only roots, verify the target identity via metadata-only
+	// stat (no read permission required), then return symlink metadata
+	// via Lstat. The identity is pinned to the symlink target, but
+	// Lstat must return the symlink's own metadata.
 	if entry.fileOnly != "" && entry.fileIDSet {
-		if _, err := entry.openStatVerified(relPath); err != nil {
+		if _, err := entry.statVerified(relPath); err != nil {
 			return nil, &os.PathError{Op: "lstat", Path: path, Err: os.ErrPermission}
 		}
 	}

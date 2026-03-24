@@ -495,3 +495,30 @@ func TestFileOnlyAccessWriteExecWithoutRead(t *testing.T) {
 	assert.ErrorIs(t, sb.Access(filePath, dir, 0x04), os.ErrPermission,
 		"read access should fail on non-readable file-only entry")
 }
+
+// TestFileOnlyStatUnreadableFile verifies that Stat and Lstat on file-only
+// entries work for files that are statable but not readable (e.g. chmod 0333).
+// Stat/Lstat are metadata-only operations and must not require read permission.
+func TestFileOnlyStatUnreadableFile(t *testing.T) {
+	if os.Getuid() == 0 {
+		t.Skip("root bypasses permission checks")
+	}
+
+	dir := t.TempDir()
+	filePath := filepath.Join(dir, "noread.txt")
+	require.NoError(t, os.WriteFile(filePath, []byte("data"), 0333))
+
+	sb, err := New([]string{filePath})
+	require.NoError(t, err)
+	defer sb.Close()
+
+	// Stat must succeed (metadata-only, no read needed).
+	info, err := sb.Stat(filePath, dir)
+	require.NoError(t, err, "Stat should succeed on unreadable file-only entry")
+	assert.Equal(t, "noread.txt", info.Name())
+
+	// Lstat must also succeed.
+	info, err = sb.Lstat(filePath, dir)
+	require.NoError(t, err, "Lstat should succeed on unreadable file-only entry")
+	assert.Equal(t, "noread.txt", info.Name())
+}
