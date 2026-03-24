@@ -14,6 +14,10 @@ import (
 	"syscall"
 )
 
+// nonBlockOpenFlag is OR-ed into OpenFile calls for file-only roots to
+// prevent blocking on FIFOs that an attacker may have swapped in.
+const nonBlockOpenFlag = syscall.O_NONBLOCK
+
 // fileOnlyMatch reports whether rel matches the fileOnly name.
 // On Unix, filenames are case-sensitive — exact match required.
 func fileOnlyMatch(rel, fileOnly string) bool {

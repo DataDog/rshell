@@ -330,7 +330,11 @@ func (s *Sandbox) Open(path string, cwd string, flag int, perm os.FileMode) (io.
 		return nil, &os.PathError{Op: "open", Path: path, Err: os.ErrPermission}
 	}
 
-	f, err := entry.root.OpenFile(relPath, flag, perm)
+	openFlag := flag
+	if entry.fileOnly != "" {
+		openFlag |= nonBlockOpenFlag
+	}
+	f, err := entry.root.OpenFile(relPath, openFlag, perm)
 	if err != nil {
 		return nil, PortablePathError(err)
 	}

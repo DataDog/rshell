@@ -12,6 +12,9 @@ import (
 	"syscall"
 )
 
+// nonBlockOpenFlag is a no-op on Windows (FIFOs are not a concern).
+const nonBlockOpenFlag = 0
+
 // fileOnlyMatch reports whether rel matches the fileOnly name.
 // Exact match is used even on Windows because NTFS supports per-directory
 // case-sensitive mode (e.g. WSL). The inode-pinning check
