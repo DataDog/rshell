@@ -319,17 +319,12 @@ func (s *Sandbox) Access(path string, cwd string, mode uint32) error {
 				// Non-read — verify from accessCheck's stat result.
 				// On Unix, fileIdentityFromInfo extracts dev+ino from
 				// the same stat accessCheck used (atomic). On Windows,
-				// fileIdentityFromInfo is unavailable; fall back to
-				// open+fstat which requires read permission.
+				// fileIdentityFromInfo is unavailable and we cannot
+				// verify without read access (os.Root API limitation);
+				// identity enforcement for non-read modes is skipped.
 				dev, ino, idOK := fileIdentityFromInfo(info)
-				if idOK {
-					if !ar.verifyFileID(dev, ino) {
-						return &os.PathError{Op: "access", Path: path, Err: os.ErrPermission}
-					}
-				} else {
-					if _, verifyErr := ar.openStatVerified(rel); verifyErr != nil {
-						return &os.PathError{Op: "access", Path: path, Err: os.ErrPermission}
-					}
+				if idOK && !ar.verifyFileID(dev, ino) {
+					return &os.PathError{Op: "access", Path: path, Err: os.ErrPermission}
 				}
 			}
 		}
