@@ -5,10 +5,11 @@
 
 //go:build linux
 
-// White-box unit tests for the Linux-specific parsing helpers in ss_linux.go.
-// These exercise parseIPv4Proc, parseIPv6Proc, parsePortProc, and formatIPv6.
+// White-box unit tests for the Linux-specific parsing helpers in
+// procnetsocket_linux.go. These exercise parseIPv4Proc, parseIPv6Proc,
+// parsePortProc, and formatIPv6.
 
-package ss
+package procnetsocket
 
 import (
 	"testing"

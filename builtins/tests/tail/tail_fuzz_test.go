@@ -201,6 +201,9 @@ func FuzzTailLinesOffset(f *testing.F) {
 	f.Add([]byte("a\r\nb\r\nc\r\n"), int64(2))
 
 	f.Fuzz(func(t *testing.T, input []byte, n int64) {
+		if t.Context().Err() != nil {
+			return
+		}
 		if len(input) > 1<<20 {
 			return
 		}
@@ -217,10 +220,13 @@ func FuzzTailLinesOffset(f *testing.F) {
 			t.Fatal(err)
 		}
 
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		defer cancel() // safety net if t.Fatal fires before explicit cancel
 		_, _, code := cmdRunCtx(ctx, t, fmt.Sprintf("tail -n +%d input.txt", n), dir)
 		cancel()
+		if t.Context().Err() != nil {
+			return
+		}
 		if code != 0 && code != 1 {
 			t.Errorf("tail -n +%d unexpected exit code %d", n, code)
 		}

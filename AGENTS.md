@@ -26,6 +26,10 @@ The shell is supported on Linux, Windows and macOS.
 - **Always open pull requests in draft mode.** Use `gh pr create --draft` (or the GitHub UI's "Draft pull request" option). Only mark a PR ready for review once all CI checks pass and the work is complete.
 - **Never add the `verified/allowed_symbols` GitHub label.** This label is reserved for human manual approval only. Don't try to fix CI failures related to this.
 
+## Security Design Decisions
+
+- **`ss` and `ip route` bypass `AllowedPaths` for `/proc/net/*` reads.** Both builtins delegate `/proc/net/` I/O to internal packages (`builtins/internal/procnetsocket` for `ss`, `builtins/internal/procnetroute` for `ip route`) that call `os.Open` directly on kernel pseudo-filesystem paths (e.g. `/proc/net/tcp`, `/proc/net/route`). These paths are hardcoded in the implementation and are never derived from user input, so `AllowedPaths` restrictions do not apply to them. As a consequence, operators cannot use `AllowedPaths` to block `ss` from enumerating local sockets or `ip route` from reading the routing table. This is an intentional trade-off: the paths are non-user-controllable, so there is no sandbox-escape risk, but the operator loses the ability to deny these reads via sandbox configuration.
+
 ## CRITICAL: Bug Fixes and Bash Compatibility
 
 - **ALWAYS prioritise fixing the shell implementation to match bash behaviour over changing tests to match the current (incorrect) shell output.** Never "fix" a failing test by updating its expected output to match broken shell behaviour — fix the shell instead.
@@ -40,7 +44,9 @@ The shell is supported on Linux, Windows and macOS.
   The test suite runs all scenarios against `debian:bookworm-slim` (GNU bash + GNU coreutils) and compares output byte-for-byte. Only set `skip_assert_against_bash: true` in a scenario when the behavior intentionally diverges from bash (e.g. sandbox restrictions, blocked commands).
 
 - **Prefer scenario tests (`tests/scenarios/`) over Go tests.** Scenario tests are declarative YAML files that are automatically validated against both the shell and bash, making them easier to write, review, and maintain. Only use Go tests when scenario tests cannot express the required behaviour (e.g. testing Go APIs directly, complex programmatic assertions).
+- **`ip route show`/`ip route get` happy-path scenario tests cannot be added.** The scenario test framework has no platform-skip mechanism, and `ip route` reads `/proc/net/route` which is Linux-only — the command exits 1 with "not supported" on macOS and Windows. Happy-path coverage lives in `builtins/tests/ip/ip_linux_test.go` instead.
 - In test scenarios, use `expect.stderr` when possible instead of `stderr_contains`.
+- Always use the YAML `|+` block scalar for `input.script`, `expect.stdout`, and `expect.stderr` values, even single-line ones.
 - Test scenarios are asserted against bash by default. Only set `skip_assert_against_bash: true` for features that intentionally diverge from standard bash behavior (e.g. blocked commands, restricted redirects, readonly enforcement).
 - When expected output differs on Windows (e.g. path separators `\` vs `/`), use Windows-specific assertion fields:
   - `stdout_windows` / `stderr_windows` — override `stdout` / `stderr` on Windows.

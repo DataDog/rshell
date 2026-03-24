@@ -12,8 +12,10 @@
 // Display information about network sockets. Reads kernel socket state
 // directly without executing any external binary. On Linux the data comes
 // from /proc/net/tcp, /proc/net/tcp6, /proc/net/udp, /proc/net/udp6, and
-// /proc/net/unix, which must be within the shell's AllowedPaths for the
-// command to work. On macOS kernel data is read via syscall.SysctlRaw (no
+// /proc/net/unix via os.Open directly (AllowedPaths sandbox is not used;
+// the paths are derived from ProcPath, a hardcoded kernel pseudo-filesystem
+// root that is never derived from user input). On macOS kernel data is read
+// via syscall.SysctlRaw (no
 // unsafe at the call site). On Windows a narrow unsafe exception is used
 // to call GetExtendedTcpTable via iphlpapi.dll.
 //
@@ -233,6 +235,8 @@ func netidStr(e socketEntry) string {
 // isListening reports whether the entry represents a listening/bound socket.
 // TCP/Unix listening sockets have state "LISTEN"; UDP sockets in UNCONN state
 // are considered "listening" (bound but not connected).
+// Unix sockets with unknown states are mapped to "UNKNOWN" (not "UNCONN") so
+// that they are not mistakenly classified as listening/bound sockets.
 func isListening(e socketEntry) bool {
 	return e.state == "LISTEN" || e.state == "UNCONN"
 }
