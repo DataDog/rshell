@@ -21,7 +21,7 @@ import (
 // MaxGlobEntries is the maximum number of directory entries read per single
 // glob expansion step. ReadDirForGlob returns an error for directories that
 // exceed this limit to prevent memory exhaustion during pattern matching.
-const MaxGlobEntries = 100_000
+const MaxGlobEntries = 10_000
 
 // root pairs an absolute directory path with its opened os.Root handle.
 type root struct {
