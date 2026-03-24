@@ -35,6 +35,21 @@ func fileIdentity(r *os.Root, relPath string) (uint64, uint64, bool) {
 	return uint64(st.Dev), uint64(st.Ino), true
 }
 
+// fileIdentityAndMode extracts file identity and mode from a single stat,
+// ensuring both are captured atomically from the same inode. Used by New()
+// to verify regularity and capture identity without a TOCTOU gap.
+func fileIdentityAndMode(r *os.Root, relPath string) (uint64, uint64, fs.FileMode, bool) {
+	info, err := r.Stat(relPath)
+	if err != nil {
+		return 0, 0, 0, false
+	}
+	st, ok := info.Sys().(*syscall.Stat_t)
+	if !ok {
+		return 0, 0, 0, false
+	}
+	return uint64(st.Dev), uint64(st.Ino), info.Mode(), true
+}
+
 // fileIdentityFromInfo extracts file identity (dev+inode) from FileInfo.
 // Used for post-operation identity verification on Stat/Lstat results.
 func fileIdentityFromInfo(info fs.FileInfo) (uint64, uint64, bool) {

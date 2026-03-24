@@ -38,6 +38,27 @@ func fileIdentity(r *os.Root, relPath string) (uint64, uint64, bool) {
 	return uint64(d.VolumeSerialNumber), uint64(d.FileIndexHigh)<<32 | uint64(d.FileIndexLow), true
 }
 
+// fileIdentityAndMode extracts file identity and mode from a single open+fstat,
+// ensuring both are captured atomically from the same inode. Used by New()
+// to verify regularity and capture identity without a TOCTOU gap.
+func fileIdentityAndMode(r *os.Root, relPath string) (uint64, uint64, fs.FileMode, bool) {
+	f, err := r.OpenFile(relPath, os.O_RDONLY, 0)
+	if err != nil {
+		return 0, 0, 0, false
+	}
+	defer f.Close()
+	info, err := f.Stat()
+	if err != nil {
+		return 0, 0, 0, false
+	}
+	h := syscall.Handle(f.Fd())
+	var d syscall.ByHandleFileInformation
+	if err := syscall.GetFileInformationByHandle(h, &d); err != nil {
+		return 0, 0, 0, false
+	}
+	return uint64(d.VolumeSerialNumber), uint64(d.FileIndexHigh)<<32 | uint64(d.FileIndexLow), info.Mode(), true
+}
+
 // fileIdentityFromInfo extracts file identity from FileInfo on Windows.
 // Windows FileInfo does not expose volume/file-index through Sys(), so
 // this always returns false. Use fileIdentityFromFile for opened handles.

@@ -86,11 +86,16 @@ func New(paths []string) (*Sandbox, error) {
 				return nil, fmt.Errorf("AllowedPaths: cannot open parent of %q: %w", abs, err)
 			}
 			baseName := filepath.Base(abs)
-			dev, ino, idOK := fileIdentity(r, baseName)
+			dev, ino, mode, idOK := fileIdentityAndMode(r, baseName)
 			if !idOK {
 				r.Close()
 				closeAll(i)
 				return nil, fmt.Errorf("AllowedPaths: cannot capture identity for %q", abs)
+			}
+			if !mode.IsRegular() {
+				r.Close()
+				closeAll(i)
+				return nil, fmt.Errorf("AllowedPaths: %q is not a regular file", abs)
 			}
 			roots[i] = root{
 				absPath: parentDir, root: r, fileOnly: baseName,
