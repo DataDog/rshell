@@ -8,8 +8,6 @@
 package allowedpaths
 
 import (
-	"errors"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"syscall"
@@ -542,12 +540,12 @@ func TestFileOnlyDeletedFileReturnsENOENT(t *testing.T) {
 	// Open should return a "not exist" error, not permission denied.
 	_, err = sb.Open(filePath, dir, os.O_RDONLY, 0)
 	require.Error(t, err)
-	assert.True(t, errors.Is(err, fs.ErrNotExist) || errors.Is(err, fs.ErrPermission) == false,
+	assert.Contains(t, err.Error(), "no such file or directory",
 		"deleted file-only entry should return ENOENT, got: %v", err)
 
 	// Stat should also return a "not exist" error.
 	_, err = sb.Stat(filePath, dir)
 	require.Error(t, err)
-	assert.True(t, errors.Is(err, fs.ErrNotExist) || errors.Is(err, fs.ErrPermission) == false,
+	assert.Contains(t, err.Error(), "no such file or directory",
 		"deleted file-only entry stat should return ENOENT, got: %v", err)
 }

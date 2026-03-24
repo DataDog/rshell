@@ -315,12 +315,17 @@ func (s *Sandbox) Access(path string, cwd string, mode uint32) error {
 				// Non-read — verify from accessCheck's stat result.
 				// On Unix, fileIdentityFromInfo extracts dev+ino from
 				// the same stat accessCheck used (atomic). On Windows,
-				// fileIdentityFromInfo is unavailable and we cannot
-				// verify without read access (os.Root API limitation);
-				// identity enforcement for non-read modes is skipped.
+				// fileIdentityFromInfo is unavailable; fall back to
+				// open+fstat which requires read permission.
 				dev, ino, idOK := fileIdentityFromInfo(info)
-				if idOK && !ar.verifyFileID(dev, ino) {
-					return &os.PathError{Op: "access", Path: path, Err: os.ErrPermission}
+				if idOK {
+					if !ar.verifyFileID(dev, ino) {
+						return &os.PathError{Op: "access", Path: path, Err: os.ErrPermission}
+					}
+				} else {
+					if _, verifyErr := ar.openStatVerified(rel); verifyErr != nil {
+						return &os.PathError{Op: "access", Path: path, Err: os.ErrPermission}
+					}
 				}
 			}
 		}
@@ -630,12 +635,15 @@ func (s *Sandbox) Lstat(path string, cwd string) (fs.FileInfo, error) {
 	}
 
 	// For file-only roots, verify the target identity via metadata-only
-	// stat, then return symlink metadata via Lstat. Only reject on
-	// identity mismatch (ErrPermission). If the target is gone (dangling
-	// symlink), proceed — lstat inspects the link itself, not the target.
+	// stat, then return symlink metadata via Lstat. Allow dangling
+	// symlinks (target gone) — lstat inspects the link itself, not the
+	// target. Deny all other verification failures (identity mismatch,
+	// unexpected errors) to fail closed.
 	if entry.fileOnly != "" && entry.fileIDSet {
-		if _, err := entry.statVerified(relPath); err != nil && errors.Is(err, os.ErrPermission) {
-			return nil, &os.PathError{Op: "lstat", Path: path, Err: os.ErrPermission}
+		if _, err := entry.statVerified(relPath); err != nil {
+			if !errors.Is(err, fs.ErrNotExist) {
+				return nil, &os.PathError{Op: "lstat", Path: path, Err: os.ErrPermission}
+			}
 		}
 	}
 
