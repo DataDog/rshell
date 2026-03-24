@@ -634,15 +634,13 @@ func (s *Sandbox) Lstat(path string, cwd string) (fs.FileInfo, error) {
 	}
 
 	// For file-only roots, verify the target identity via metadata-only
-	// stat, then return symlink metadata via Lstat. Allow dangling
-	// symlinks (target gone) — lstat inspects the link itself, not the
-	// target. Deny all other verification failures (identity mismatch,
-	// unexpected errors) to fail closed.
+	// stat, then return symlink metadata via Lstat. Only reject on
+	// identity mismatch (ErrPermission). All other errors (ENOENT from
+	// dangling symlink, transient permission/traversal errors on the
+	// target) are allowed through — lstat inspects the link itself.
 	if entry.fileOnly != "" && entry.fileIDSet {
-		if _, err := entry.statVerified(relPath); err != nil {
-			if !errors.Is(err, fs.ErrNotExist) {
-				return nil, &os.PathError{Op: "lstat", Path: path, Err: os.ErrPermission}
-			}
+		if _, err := entry.statVerified(relPath); err != nil && errors.Is(err, os.ErrPermission) {
+			return nil, &os.PathError{Op: "lstat", Path: path, Err: os.ErrPermission}
 		}
 	}
 
