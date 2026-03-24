@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="../assets/rshell-logo-text.png" alt="rshell logo" width="600"/>
+</p>
+
 # Shell Power, Agent Safety: How We Built a Restricted Shell Interpreter—Mostly Using AI
 
 In roughly ten days, a small team merged 100 pull requests, shipped 20,000 lines of production Go, and wrote 4,500 tests for a POSIX-compatible shell interpreter—now open source at [github.com/DataDog/rshell](https://github.com/DataDog/rshell). Almost all of it was written and reviewed by AI.
