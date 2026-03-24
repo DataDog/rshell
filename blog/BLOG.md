@@ -89,7 +89,7 @@ The role of the human engineer shifted. Less time writing code. More time on:
 
 The human became the architect of the process rather than the author of the code.
 
-## What Surprised Us
+## What We Learned
 
 **The harness is load-bearing infrastructure.** When a skill had a gap—say, it didn't enforce a security rule consistently—that gap replicated across every command implemented with it. Fixing the skill retroactively meant re-reviewing work already done. We learned to invest heavily in the skill definitions upfront. The compound interest is real: a ten-minute improvement to a skill saves hours across twenty command implementations.
 
