@@ -138,6 +138,13 @@ const MaxLineBytes = 1 << 20 // 1 MiB
 // MaxContextLines caps -A/-B/-C to prevent excessive memory use.
 const MaxContextLines = 1_000 // 1k lines
 
+// MaxContextBytes is the aggregate byte cap applied per match group to both
+// the before-context sliding window and the after-context output stream.
+// A single match group may emit at most this many bytes of context lines
+// (before and after counted separately). The global executor output limit
+// acts as the ceiling across all groups combined.
+const MaxContextBytes = 512 * 1024 // 512 KiB
+
 const scanBufInit = 4096 // initial scanner buffer
 
 // containsNUL reports whether p contains a NUL byte, which is the
@@ -593,7 +600,9 @@ func grepFile(ctx context.Context, callCtx *builtins.CallContext, file string, o
 	// used, even with value 0. This controls the "--" group separator.
 	contextRequested := opts.afterContext > 0 || opts.beforeContext > 0 || opts.contextRequested
 	var beforeBuf []contextLine // ring buffer for before-context
+	beforeBufBytes := 0         // aggregate byte count of lines in beforeBuf
 	afterRemaining := 0         // lines of after-context still to print
+	afterGroupBytes := 0        // bytes of after-context emitted in current match group
 	lastPrintedLine := 0        // last line number we printed (for separator)
 	printedSeparator := false   // have we ever printed a match group?
 
@@ -652,6 +661,9 @@ func grepFile(ctx context.Context, callCtx *builtins.CallContext, file string, o
 				}
 			}
 
+			// Reset per-group counters.
+			afterGroupBytes = 0
+
 			// Print the match.
 			if opts.onlyMatching && opts.invertMatch {
 				// -o -v: line was selected by inversion (doesn't contain
@@ -673,22 +685,30 @@ func grepFile(ctx context.Context, callCtx *builtins.CallContext, file string, o
 
 			// Clear before buffer since we've consumed it.
 			beforeBuf = beforeBuf[:0]
+			beforeBufBytes = 0
 		} else {
 			// Non-matching line: might be after-context or before-context.
 			if !isBinary && afterRemaining > 0 && !opts.quiet && !opts.count && !opts.filesWithMatches && !opts.filesWithoutMatch {
-				printContextLine(callCtx, displayName, lineNum, lineBytes, opts, '-')
-				lastPrintedLine = lineNum
+				if afterGroupBytes+len(lineBytes) <= MaxContextBytes {
+					printContextLine(callCtx, displayName, lineNum, lineBytes, opts, '-')
+					lastPrintedLine = lineNum
+					afterGroupBytes += len(lineBytes)
+				}
 				afterRemaining--
 			}
 
 			// Add to before-context ring buffer.
 			if !isBinary && opts.beforeContext > 0 {
-				if len(beforeBuf) >= opts.beforeContext {
+				// Evict oldest lines until both the line-count and aggregate
+				// byte limits are satisfied.
+				for len(beforeBuf) > 0 && (len(beforeBuf) >= opts.beforeContext || beforeBufBytes+len(lineBytes) > MaxContextBytes) {
+					beforeBufBytes -= len(beforeBuf[0].text)
 					beforeBuf = beforeBuf[1:]
 				}
 				cp := make([]byte, len(lineBytes))
 				copy(cp, lineBytes)
 				beforeBuf = append(beforeBuf, contextLine{num: lineNum, text: cp})
+				beforeBufBytes += len(lineBytes)
 			}
 		}
 	}
