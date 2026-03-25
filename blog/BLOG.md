@@ -116,6 +116,6 @@ What this enabled: a fully cross-platform, sandboxed POSIX shell interpreter tha
 
 ## The Takeaway
 
-A key aspect of this project turned out to be _trust_. We built a shell (pun intended) that gives AI agents real power with guardrails, enough to investigate production incidents, not enough to cause them. And we built a development process that gives AI systems real autonomy with precise guardrails, enough to ship 100 PRs in ten days within security constraints we defined.
+rshell started as a security constraint: give AI agents the power of shell scripting without giving them the power to execute arbitrary code on production hosts. What we ended up building was also a development constraint: a way to let AI generate large amounts of code without letting it expand its own capabilities or bypass review. The same pattern showed up in both places. Narrow the interface. Make the allowed behavior explicit. Test against reality. Put human judgment at the boundaries.
 
-In both cases (building the restricted shell and development process), the key factor was to build the right structure around capability with safety as key component.
+That is probably the main lesson of this project. The story is not that AI magically wrote a shell in ten days. The story is that, with a strong harness, clear rules, and a security model designed up front, AI can move very quickly on well-specified systems work. The speed came from structure. In our case, the safeguards were what made the velocity possible.
