@@ -201,10 +201,7 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 
 		// Determine header printing using last-flag-wins: the highest pos among
 		// quiet/silent (suppress) vs verbose (force) controls the outcome.
-		suppressPos := quietFlag.pos
-		if silentFlag.pos > suppressPos {
-			suppressPos = silentFlag.pos
-		}
+		suppressPos := max(quietFlag.pos, silentFlag.pos)
 		printHeaders := len(files) > 1
 		if verboseFlag.pos > suppressPos {
 			printHeaders = true
