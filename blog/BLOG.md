@@ -93,7 +93,7 @@ Gaps in the harness replicate. This one bit us. When a skill didn't enforce a se
 
 AI-generated tests caught AI-generated bugs. I didn't expect this to work, but it does, because the test suite was written from POSIX specs and GNU coreutils reference tests, not from the implementation. The spec and the code are different representations of the same behavior. When they disagree, that's a real bug.
 
-"Review this for security issues" doesn't cut it. Open-ended security prompts give you inconsistent results. What worked was the pentest step in our skill, which forces specific attack categories on every command: path traversal, symlink exploitation, integer overflow, infinite sources, flag injection, filename-as-flag injection. A checklist that runs every time beats a sharp reviewer who sometimes forgets to check something.
+"Review this for security issues" doesn't cut it. Open-ended security prompts give you inconsistent results. What worked was the pentest step in our skill, which forces specific attack categories on every command: path traversal, symlink exploitation, integer overflow, infinite sources, flag injection, filename-as-flag injection. The shared rules file reinforces this: instead of hoping the AI remembers to use bounded buffers or validate numeric arguments, the rules spell out every invariant explicitly, and the review step checks against them. A checklist that runs every time beats a sharp reviewer who sometimes forgets to check something.
 
 We assumed safety would slow us down. It didn't. Security checks baked into the workflow meant issues got caught at the PR level instead of surfacing weeks later. We moved faster because we weren't piling up hidden risk.
 
