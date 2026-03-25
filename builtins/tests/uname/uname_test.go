@@ -236,3 +236,143 @@ func TestUnameNonLinuxPlatform(t *testing.T) {
 	assert.Equal(t, 1, code)
 	assert.Contains(t, stderr, "not supported")
 }
+
+func TestUnameDuplicateFlags(t *testing.T) {
+	requireLinux(t)
+	dir := t.TempDir()
+	writeFakeProc(t, dir, defaultFakeProc())
+	// -ss should print kernel name once, not twice.
+	stdout, _, code := cmdRun(t, "uname -ss", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "Linux\n", stdout)
+}
+
+func TestUnameAllFlagsExplicit(t *testing.T) {
+	requireLinux(t)
+	dir := t.TempDir()
+	writeFakeProc(t, dir, defaultFakeProc())
+	// -snrvm should produce the same output as -a.
+	stdout, _, code := cmdRun(t, "uname -snrvm", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "Linux testhost 5.15.0-test #1 SMP Test x86_64\n", stdout)
+}
+
+func TestUnameFlagOrderDoesntMatter(t *testing.T) {
+	requireLinux(t)
+	dir := t.TempDir()
+	writeFakeProc(t, dir, defaultFakeProc())
+	// -mrvns (reverse order) should still output in POSIX order: s,n,r,v,m.
+	stdout, _, code := cmdRun(t, "uname -mrvns", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "Linux testhost 5.15.0-test #1 SMP Test x86_64\n", stdout)
+}
+
+func TestUnameAllOverridesIndividual(t *testing.T) {
+	requireLinux(t)
+	dir := t.TempDir()
+	writeFakeProc(t, dir, defaultFakeProc())
+	// -as should produce the same output as -a.
+	stdout, _, code := cmdRun(t, "uname -as", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "Linux testhost 5.15.0-test #1 SMP Test x86_64\n", stdout)
+}
+
+func TestUnamePartialProcTreeSuccess(t *testing.T) {
+	requireLinux(t)
+	dir := t.TempDir()
+	// Only create ostype — requesting -s should succeed.
+	writeFakeProc(t, dir, map[string]string{"ostype": "Linux"})
+	stdout, _, code := cmdRun(t, "uname -s", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "Linux\n", stdout)
+}
+
+func TestUnamePartialProcTreeFailure(t *testing.T) {
+	requireLinux(t)
+	dir := t.TempDir()
+	// Only create ostype — requesting -n should fail (hostname missing).
+	writeFakeProc(t, dir, map[string]string{"ostype": "Linux"})
+	_, stderr, code := cmdRun(t, "uname -n", dir)
+	assert.Equal(t, 1, code)
+	assert.Contains(t, stderr, "uname: cannot read hostname")
+}
+
+func TestUnameWhitespaceInProcValues(t *testing.T) {
+	requireLinux(t)
+	dir := t.TempDir()
+	writeFakeProc(t, dir, map[string]string{
+		"ostype":    "Linux",
+		"hostname":  "myhost  \t",
+		"osrelease": "5.15.0",
+		"version":   "#1 SMP",
+		"arch":      "x86_64",
+	})
+	stdout, _, code := cmdRun(t, "uname -n", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "myhost\n", stdout, "trailing whitespace should be trimmed")
+}
+
+func TestUnameEmptyProcFile(t *testing.T) {
+	requireLinux(t)
+	dir := t.TempDir()
+	// ostype exists but writeFakeProc adds "\n" — write truly empty file.
+	kernelDir := filepath.Join(dir, "sys", "kernel")
+	require.NoError(t, os.MkdirAll(kernelDir, 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(kernelDir, "ostype"), []byte(""), 0644))
+	stdout, _, code := cmdRun(t, "uname -s", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "\n", stdout, "empty proc file should produce empty field")
+}
+
+func TestUnamePipeIntegration(t *testing.T) {
+	requireLinux(t)
+	dir := t.TempDir()
+	writeFakeProc(t, dir, defaultFakeProc())
+	stdout, _, code := cmdRun(t, "uname -s | cat", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "Linux\n", stdout)
+}
+
+func TestUnameVariableCapture(t *testing.T) {
+	requireLinux(t)
+	dir := t.TempDir()
+	writeFakeProc(t, dir, defaultFakeProc())
+	stdout, _, code := cmdRun(t, `x=$(uname -s); echo "$x"`, dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "Linux\n", stdout)
+}
+
+func TestUnameContextCancellation(t *testing.T) {
+	requireLinux(t)
+	dir := t.TempDir()
+	writeFakeProc(t, dir, defaultFakeProc())
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // Cancel immediately.
+	_, _, code := runScriptCtx(ctx, t, "uname -a", dir, interp.ProcPath(dir))
+	assert.NotEqual(t, 0, code, "cancelled context should result in non-zero exit")
+}
+
+func TestUnameHelpShortFlag(t *testing.T) {
+	dir := t.TempDir()
+	stdout, stderr, code := cmdRun(t, "uname -h", dir)
+	assert.Equal(t, 0, code)
+	assert.Contains(t, stdout, "uname")
+	assert.Empty(t, stderr, "help should not write to stderr")
+}
+
+func TestUnameHelpStderrEmpty(t *testing.T) {
+	dir := t.TempDir()
+	_, stderr, code := cmdRun(t, "uname --help", dir)
+	assert.Equal(t, 0, code)
+	assert.Empty(t, stderr)
+}
+
+func TestUnameExtraArgsIgnored(t *testing.T) {
+	requireLinux(t)
+	dir := t.TempDir()
+	writeFakeProc(t, dir, defaultFakeProc())
+	// POSIX uname ignores extra arguments.
+	stdout, _, code := cmdRun(t, "uname foo bar", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "Linux\n", stdout)
+}

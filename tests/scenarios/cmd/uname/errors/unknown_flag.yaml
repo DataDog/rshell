@@ -1,0 +1,9 @@
+description: uname rejects unknown flags
+skip_assert_against_bash: true
+input:
+  script: |+
+    uname -z
+expect:
+  stdout: ""
+  stderr_contains: ["uname:"]
+  exit_code: 1

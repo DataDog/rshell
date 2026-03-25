@@ -1,0 +1,9 @@
+description: uname --help prints usage to stdout
+skip_assert_against_bash: true
+input:
+  script: |+
+    uname --help
+expect:
+  stdout_contains: ["uname", "kernel"]
+  stderr: ""
+  exit_code: 0
