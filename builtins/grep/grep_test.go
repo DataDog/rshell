@@ -7,8 +7,10 @@ package grep_test
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -28,6 +30,14 @@ func cmdRun(t *testing.T, script, dir string) (string, string, int) {
 func cmdRunCtx(ctx context.Context, t *testing.T, script, dir string) (string, string, int) {
 	t.Helper()
 	return testutil.RunScriptCtx(ctx, t, script, dir, interp.AllowedPaths([]string{dir}))
+}
+
+// cmdRunDiscard runs the script with stdout sent to io.Discard and returns
+// (stderr, exitCode). Use this in memory-measurement tests so that the output
+// bytes.Buffer does not inflate TotalAlloc and skew the measurement.
+func cmdRunDiscard(t *testing.T, script, dir string) (string, int) {
+	t.Helper()
+	return testutil.RunScriptDiscard(t, script, dir, interp.AllowedPaths([]string{dir}))
 }
 
 func writeFile(t *testing.T, dir, name, content string) string {
@@ -704,4 +714,160 @@ func TestGrepStdinDisplayName(t *testing.T) {
 	stdout, _, code := cmdRun(t, "grep foo file.txt - < src.txt", dir)
 	assert.Equal(t, 0, code)
 	assert.Equal(t, "file.txt:foo\n(standard input):foo\n", stdout)
+}
+
+// --- Memory edge cases: before-context buffering ---
+//
+// grep -B N holds up to N explicit copies of input lines in a sliding window
+// (beforeBuf). There is no aggregate byte cap — only a line-count cap
+// (MaxContextLines = 1000). With the per-line cap MaxLineBytes = 1 MiB, the
+// peak is MaxContextLines × MaxLineBytes = 1 GiB.
+//
+// The two tests below exercise the actual maximum (1000 lines × 1 MiB each)
+// and demonstrate the asymmetry between -B (buffers copies, ~1 GiB allocated)
+// and -A (streams directly to stdout, ~a few MiB allocated).
+//
+// Requirements: ~1 GiB of free RAM and ~1 GiB of free disk space in the temp
+// directory (the input file is 1000 × 1 MiB + 1 line ≈ 1 GiB).
+
+const (
+	// memEdgeLineSize is MaxLineBytes-1, not MaxLineBytes. bufio.Scanner needs
+	// room for the line content AND the '\n' delimiter in its internal buffer.
+	// At exactly MaxLineBytes bytes the buffer fills before the '\n' is read,
+	// causing "bufio.Scanner: token too long" (exit code 2). MaxLineBytes-1 is
+	// therefore the true maximum line length that grep can process without error.
+	memEdgeLineSize    = (1 << 20) - 1 // 1 MiB − 1 byte: true per-line maximum
+	memEdgeContextSize = 1_000         // context window — exactly MaxContextLines
+
+	// Before-context buffer peak: MaxContextLines × (MaxLineBytes−1) ≈ 1 GiB.
+	memEdgeExpectedAlloc int64 = memEdgeContextSize * memEdgeLineSize
+)
+
+// writeLargeFile creates a file of contextLines identical lines of lineSize
+// bytes each, followed by a final "MATCHLINE\n". Using raw []byte writes
+// avoids the allocations and overhead of fmt.Fprintf / strings.Repeat at
+// this scale (1 GiB of file I/O).
+func writeLargeFile(t *testing.T, path string, contextLines, lineSize int) {
+	t.Helper()
+	f, err := os.Create(path)
+	require.NoError(t, err)
+	defer func() { require.NoError(t, f.Close()) }()
+
+	line := make([]byte, lineSize+1) // lineSize 'x' bytes + '\n'
+	for i := range line[:lineSize] {
+		line[i] = 'x'
+	}
+	line[lineSize] = '\n'
+
+	for i := 0; i < contextLines; i++ {
+		_, err = f.Write(line)
+		require.NoError(t, err)
+	}
+	_, err = fmt.Fprintln(f, "MATCHLINE")
+	require.NoError(t, err)
+}
+
+// TestGrepBeforeContextMemorySpike verifies that grep -B 1000 with 1 MiB lines
+// allocates at least MaxContextLines × MaxLineBytes = 1 GiB for the
+// before-context ring buffer.
+//
+// The relevant code in grep.go (lines 688-692):
+//
+//	cp := make([]byte, len(lineBytes))  // explicit per-line copy
+//	copy(cp, lineBytes)
+//	beforeBuf = append(beforeBuf, contextLine{num: lineNum, text: cp})
+//
+// Placing the match at the very end of the file means all 1000 lines are
+// simultaneously live in beforeBuf right before the match fires — the exact
+// worst-case memory snapshot for this buffer.
+func TestGrepBeforeContextMemorySpike(t *testing.T) {
+	dir := t.TempDir()
+	t.Logf("Writing ~1 GiB input file (%d lines × %d bytes)…", memEdgeContextSize, memEdgeLineSize)
+	writeLargeFile(t, filepath.Join(dir, "large.txt"), memEdgeContextSize, memEdgeLineSize)
+
+	// Force a GC to establish a clean heap baseline before measuring.
+	runtime.GC()
+	var memBefore, memAfter runtime.MemStats
+	runtime.ReadMemStats(&memBefore)
+
+	// Use RunScriptDiscard so the output bytes.Buffer does not inflate
+	// TotalAlloc — we want to isolate the beforeBuf copy allocations.
+	_, code := cmdRunDiscard(t, fmt.Sprintf("grep -B %d MATCHLINE large.txt", memEdgeContextSize), dir)
+
+	runtime.ReadMemStats(&memAfter)
+
+	require.Equal(t, 0, code)
+
+	allocated := int64(memAfter.TotalAlloc - memBefore.TotalAlloc)
+	t.Logf("grep -B %d (%d bytes/line): %.1f MiB allocated; before-context buffer minimum = %.1f MiB",
+		memEdgeContextSize, memEdgeLineSize,
+		float64(allocated)/(1<<20),
+		float64(memEdgeExpectedAlloc)/(1<<20))
+
+	// TotalAlloc must grow by at least MaxContextLines × (MaxLineBytes−1) ≈ 1 GiB,
+	// one explicit make+copy per line in the before-context sliding window.
+	assert.GreaterOrEqual(t, allocated, memEdgeExpectedAlloc,
+		"grep -B %d with %d-byte lines: expected ≥ %.0f MiB for the before-context buffer, got %.1f MiB",
+		memEdgeContextSize, memEdgeLineSize,
+		float64(memEdgeExpectedAlloc)/(1<<20),
+		float64(allocated)/(1<<20))
+}
+
+// TestGrepAfterContextNoBuffering shows the contrast: grep -A N does NOT copy
+// context lines. After-context lines are written directly to stdout as they
+// arrive (grep.go lines 678-681):
+//
+//	if afterRemaining > 0 {
+//	    printContextLine(callCtx, ...)  // → callCtx.Stdout.Write(lineBytes)
+//	    afterRemaining--                // only a counter, no storage
+//	}
+//
+// The scanner's internal read buffer is reused across lines, so total
+// allocation stays in the low single-digit MiB regardless of N or lineSize.
+func TestGrepAfterContextNoBuffering(t *testing.T) {
+	dir := t.TempDir()
+	t.Logf("Writing ~1 GiB input file (%d lines × %d bytes)…", memEdgeContextSize, memEdgeLineSize)
+
+	// One matching line first, then memEdgeContextSize non-matching lines.
+	f, err := os.Create(filepath.Join(dir, "large_after.txt"))
+	require.NoError(t, err)
+	_, err = fmt.Fprintln(f, "MATCHLINE")
+	require.NoError(t, err)
+	line := make([]byte, memEdgeLineSize+1)
+	for i := range line[:memEdgeLineSize] {
+		line[i] = 'x'
+	}
+	line[memEdgeLineSize] = '\n'
+	for i := 0; i < memEdgeContextSize; i++ {
+		_, err = f.Write(line)
+		require.NoError(t, err)
+	}
+	require.NoError(t, f.Close())
+
+	runtime.GC()
+	var memBefore, memAfter runtime.MemStats
+	runtime.ReadMemStats(&memBefore)
+
+	_, code := cmdRunDiscard(t, fmt.Sprintf("grep -A %d MATCHLINE large_after.txt", memEdgeContextSize), dir)
+
+	runtime.ReadMemStats(&memAfter)
+
+	require.Equal(t, 0, code)
+
+	allocated := int64(memAfter.TotalAlloc - memBefore.TotalAlloc)
+
+	// Upper bound: 20 MiB. The scanner grows its internal buffer once (from
+	// 4 KiB doubling up to 2 MiB ≈ 4 MiB cumulative growth allocations) and
+	// reuses it for all 1000 lines. Interpreter overhead adds a few MiB.
+	// Compare to -B which allocates 1 GiB — a ~500× difference.
+	const upperBound = 20 << 20 // 20 MiB
+	t.Logf("grep -A %d (%d bytes/line): %.1f MiB allocated (upper bound = %d MiB, no line copies)",
+		memEdgeContextSize, memEdgeLineSize,
+		float64(allocated)/(1<<20),
+		upperBound>>20)
+
+	assert.Less(t, allocated, int64(upperBound),
+		"grep -A %d must NOT buffer %d × %d-byte lines; got %.1f MiB, expected < %d MiB",
+		memEdgeContextSize, memEdgeContextSize, memEdgeLineSize,
+		float64(allocated)/(1<<20), upperBound>>20)
 }
