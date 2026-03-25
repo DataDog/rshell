@@ -1,0 +1,14 @@
+description: break exits the innermost for loop.
+input:
+  script: |+
+    for i in 1 2 3; do
+      echo $i
+      break
+    done
+    echo done
+expect:
+  stdout: |+
+    1
+    done
+  stderr: ""
+  exit_code: 0

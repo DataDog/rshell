@@ -1,0 +1,16 @@
+description: break 2 exits two enclosing loops.
+input:
+  script: |+
+    for i in 1 2; do
+      for j in a b; do
+        echo "$i$j"
+        break 2
+      done
+    done
+    echo done
+expect:
+  stdout: |+
+    1a
+    done
+  stderr: ""
+  exit_code: 0

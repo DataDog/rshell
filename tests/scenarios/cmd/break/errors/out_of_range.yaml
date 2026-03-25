@@ -1,0 +1,21 @@
+# skip: rshell error message format differs slightly from bash.
+skip_assert_against_bash: true
+description: break with count less than 1 prints error to stderr, exits 1, and does not break the loop.
+input:
+  script: |+
+    for i in 1 2 3; do
+      break 0
+      echo "after: $?"
+    done
+    echo done
+expect:
+  stdout: |+
+    after: 1
+    after: 1
+    after: 1
+    done
+  stderr: |+
+    break: 0: loop count out of range
+    break: 0: loop count out of range
+    break: 0: loop count out of range
+  exit_code: 0

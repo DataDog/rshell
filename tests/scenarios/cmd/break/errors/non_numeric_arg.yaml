@@ -1,0 +1,22 @@
+# skip: rshell treats non-numeric arg as non-fatal (Code 1, loop continues);
+# bash exits the loop and the script with exit code 2.
+skip_assert_against_bash: true
+description: break with non-numeric argument prints error to stderr, exits 1, and loop continues.
+input:
+  script: |+
+    for i in 1 2 3; do
+      break abc
+      echo "after: $?"
+    done
+    echo done
+expect:
+  stdout: |+
+    after: 1
+    after: 1
+    after: 1
+    done
+  stderr: |+
+    break: abc: numeric argument required
+    break: abc: numeric argument required
+    break: abc: numeric argument required
+  exit_code: 0

@@ -1,0 +1,21 @@
+# skip: rshell error message differs from bash ("too many arguments" format differs).
+skip_assert_against_bash: true
+description: continue with too many arguments prints error to stderr, exits 1, and loop continues.
+input:
+  script: |+
+    for i in 1 2 3; do
+      continue 1 2
+      echo "after: $?"
+    done
+    echo done
+expect:
+  stdout: |+
+    after: 1
+    after: 1
+    after: 1
+    done
+  stderr: |+
+    continue: too many arguments
+    continue: too many arguments
+    continue: too many arguments
+  exit_code: 0

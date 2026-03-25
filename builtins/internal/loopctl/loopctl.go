@@ -15,7 +15,7 @@ import (
 func LoopControl(callCtx *builtins.CallContext, name string, args []string) builtins.Result {
 	if !callCtx.InLoop {
 		callCtx.Errf("%s is only useful in a loop\n", name)
-		return builtins.Result{}
+		return builtins.Result{Code: 1}
 	}
 
 	n := 1
@@ -25,16 +25,16 @@ func LoopControl(callCtx *builtins.CallContext, name string, args []string) buil
 		parsed, err := strconv.Atoi(args[0])
 		if err != nil {
 			callCtx.Errf("%s: %s: numeric argument required\n", name, args[0])
-			return builtins.Result{Code: 128, Exiting: true}
+			return builtins.Result{Code: 1}
 		}
 		if parsed < 1 {
 			callCtx.Errf("%s: %s: loop count out of range\n", name, args[0])
-			return builtins.Result{Code: 1, BreakN: 1}
+			return builtins.Result{Code: 1}
 		}
 		n = parsed
 	default:
 		callCtx.Errf("%s: too many arguments\n", name)
-		return builtins.Result{Code: 1, Exiting: true}
+		return builtins.Result{Code: 1}
 	}
 
 	var r builtins.Result

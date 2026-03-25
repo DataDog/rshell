@@ -1,0 +1,21 @@
+# skip: rshell error message format differs slightly from bash.
+skip_assert_against_bash: true
+description: continue with count less than 1 prints error to stderr, exits 1, and does not skip the iteration.
+input:
+  script: |+
+    for i in 1 2 3; do
+      continue 0
+      echo "after: $?"
+    done
+    echo done
+expect:
+  stdout: |+
+    after: 1
+    after: 1
+    after: 1
+    done
+  stderr: |+
+    continue: 0: loop count out of range
+    continue: 0: loop count out of range
+    continue: 0: loop count out of range
+  exit_code: 0

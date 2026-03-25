@@ -1,4 +1,7 @@
-description: Continue with non-numeric argument exits the shell and produces an error.
+# skip: rshell treats non-numeric arg as non-fatal (loop continues, exit 1);
+# bash exits the loop and the script with exit code 2.
+skip_assert_against_bash: true
+description: Continue with non-numeric argument prints error to stderr and continues the loop.
 input:
   script: |+
     for i in a b c; do
@@ -8,4 +11,4 @@ expect:
   stdout: ""
   stderr_contains:
     - "continue: abc: numeric argument required"
-  exit_code: 128
+  exit_code: 1

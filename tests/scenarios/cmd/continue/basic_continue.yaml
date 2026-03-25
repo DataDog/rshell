@@ -1,0 +1,17 @@
+description: continue skips the rest of the current loop iteration.
+input:
+  script: |+
+    for i in 1 2 3; do
+      if [ "$i" = "2" ]; then
+        continue
+      fi
+      echo $i
+    done
+    echo done
+expect:
+  stdout: |+
+    1
+    3
+    done
+  stderr: ""
+  exit_code: 0
