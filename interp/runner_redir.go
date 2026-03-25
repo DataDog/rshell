@@ -94,15 +94,11 @@ func (r *Runner) hdocReader(ctx context.Context, rd *syntax.Redirect) (*os.File,
 			return nil, fmt.Errorf("heredoc: content exceeds maximum size (%d bytes)", MaxHeredocBytes)
 		}
 		go func() {
-			if ctx.Err() != nil {
-				pw.Close()
-				return
-			}
+			defer pw.Close()
 			const chunkSize = 32 * 1024
 			data := []byte(hdoc)
 			for len(data) > 0 {
 				if ctx.Err() != nil {
-					pw.Close()
 					return
 				}
 				n := chunkSize
@@ -114,7 +110,6 @@ func (r *Runner) hdocReader(ctx context.Context, rd *syntax.Redirect) (*os.File,
 				}
 				data = data[n:]
 			}
-			pw.Close()
 		}()
 		return pr, nil
 	}
@@ -163,15 +158,11 @@ func (r *Runner) hdocReader(ctx context.Context, rd *syntax.Redirect) (*os.File,
 		return nil, hdocErr
 	}
 	go func() {
-		if ctx.Err() != nil {
-			pw.Close()
-			return
-		}
+		defer pw.Close()
 		const chunkSize = 32 * 1024
 		data := buf.Bytes()
 		for len(data) > 0 {
 			if ctx.Err() != nil {
-				pw.Close()
 				return
 			}
 			n := chunkSize
@@ -183,7 +174,6 @@ func (r *Runner) hdocReader(ctx context.Context, rd *syntax.Redirect) (*os.File,
 			}
 			data = data[n:]
 		}
-		pw.Close()
 	}()
 	return pr, nil
 }
