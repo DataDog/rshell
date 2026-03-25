@@ -1,3 +1,5 @@
+@docs/RULES.md
+
 # Restricted Shell Interpreter
 
 ## Overview
