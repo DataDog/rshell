@@ -278,14 +278,6 @@ var builtinPerCommandSymbols = map[string][]string{
 	"true": {
 		"context.Context", // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
 	},
-	"uname": {
-		"context.Context",    // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
-		"io.EOF",             // 🟢 sentinel error value; pure constant.
-		"os.Open",            // 🟠 opens proc pseudo-files for reading kernel info; reads only /proc/sys/kernel/*.
-		"path/filepath.Join", // 🟢 joins path elements; pure function, no I/O.
-		"strings.Join",       // 🟢 joins string slices; pure function, no I/O.
-		"strings.TrimRight",  // 🟢 trims trailing characters; pure function, no I/O.
-	},
 	"uniq": {
 		"bufio.NewScanner",  // 🟢 line-by-line input reading (e.g. head, cat); no write or exec capability.
 		"bufio.SplitFunc",   // 🟢 type for custom scanner split functions; pure type, no I/O.
@@ -471,11 +463,9 @@ var builtinAllowedSymbols = []string{
 	"os.FileInfo",                                         // 🟢 file metadata interface returned by Stat; no I/O side effects.
 	"os.IsNotExist",                                       // 🟢 checks if error is "not exist"; pure function, no I/O.
 	"os.O_RDONLY",                                         // 🟢 read-only file flag constant; cannot open files by itself.
-	"os.Open",                                             // 🟠 opens a file for reading; used by uname to read /proc/sys/kernel/ pseudo-files.
 	"os.PathError",                                        // 🟢 error type for filesystem path errors; pure type, no I/O.
 	"path/filepath.Dir",                                   // 🟢 returns the directory component of a path; pure function, no I/O.
 	"path/filepath.IsAbs",                                 // 🟢 reports whether a path is absolute; pure function, no I/O.
-	"path/filepath.Join",                                  // 🟢 joins path elements; pure function, no I/O.
 	"path/filepath.ToSlash",                               // 🟢 converts OS path separators to forward slashes; pure function, no I/O.
 	"regexp.Compile",                                      // 🟢 compiles a regular expression; pure function, no I/O. Uses RE2 engine (linear-time, no backtracking).
 	"regexp.QuoteMeta",                                    // 🟢 escapes all special regex characters in a string; pure function, no I/O.
@@ -505,7 +495,6 @@ var builtinAllowedSymbols = []string{
 	"strings.ReplaceAll",                                  // 🟢 replaces all occurrences of a substring; pure function, no I/O.
 	"strings.Split",                                       // 🟢 splits a string by separator into a slice; pure function, no I/O.
 	"strings.ToLower",                                     // 🟢 converts string to lowercase; pure function, no I/O.
-	"strings.TrimRight",                                   // 🟢 trims trailing characters from a string; pure function, no I/O.
 	"strings.TrimSpace",                                   // 🟢 removes leading/trailing whitespace; pure function.
 	"syscall.ByHandleFileInformation",                     // 🟢 Windows file info struct for extracting nlink; read-only type, no I/O.
 	"syscall.EACCES",                                      // 🟢 POSIX errno constant for permission denied; pure constant, no I/O.
