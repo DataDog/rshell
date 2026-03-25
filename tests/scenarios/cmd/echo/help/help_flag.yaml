@@ -1,0 +1,11 @@
+description: echo --help is not recognised as a flag and is printed as literal text.
+# skip: echo does not implement --help; bash behaves the same way
+skip_assert_against_bash: true
+input:
+  script: |+
+    echo --help
+expect:
+  stdout: |+
+    --help
+  stderr: ""
+  exit_code: 0

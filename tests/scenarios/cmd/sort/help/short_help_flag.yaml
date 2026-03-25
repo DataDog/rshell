@@ -1,0 +1,10 @@
+description: sort -h prints usage to stdout and exits 0.
+# skip: rshell builtin help output differs from GNU coreutils
+skip_assert_against_bash: true
+input:
+  script: |+
+    sort -h
+expect:
+  stdout_contains: ["Usage: sort"]
+  stderr: ""
+  exit_code: 0
