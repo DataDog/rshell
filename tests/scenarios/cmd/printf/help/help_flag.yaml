@@ -5,6 +5,6 @@ input:
   script: |+
     printf --help
 expect:
-  stdout_contains: ["printf"]
+  stdout_contains: ["printf: usage: printf"]
   stderr: ""
   exit_code: 2
