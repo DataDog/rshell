@@ -366,3 +366,114 @@ func TestFileOnlyAccessAllowed(t *testing.T) {
 	err = sb.Access(sibling, dir, 0x04)
 	assert.ErrorIs(t, err, os.ErrPermission)
 }
+
+// TestFileOnlySandbox verifies that every public Sandbox method correctly
+// grants access to the allowed file and denies access to the parent
+// directory and sibling files when a file-only root is configured.
+func TestFileOnlySandbox(t *testing.T) {
+	dir := t.TempDir()
+	allowed := filepath.Join(dir, "allowed.txt")
+	sibling := filepath.Join(dir, "sibling.txt")
+	require.NoError(t, os.WriteFile(allowed, []byte("hello"), 0644))
+	require.NoError(t, os.WriteFile(sibling, []byte("secret"), 0644))
+
+	sb, err := New([]string{allowed})
+	require.NoError(t, err)
+	defer sb.Close()
+
+	t.Run("Open", func(t *testing.T) {
+		t.Run("allowed file succeeds", func(t *testing.T) {
+			f, err := sb.Open(allowed, dir, os.O_RDONLY, 0)
+			require.NoError(t, err)
+			data, err := io.ReadAll(f)
+			require.NoError(t, err)
+			f.Close()
+			assert.Equal(t, "hello", string(data))
+		})
+		t.Run("sibling blocked", func(t *testing.T) {
+			_, err := sb.Open(sibling, dir, os.O_RDONLY, 0)
+			assert.ErrorIs(t, err, os.ErrPermission)
+		})
+		t.Run("parent dir blocked", func(t *testing.T) {
+			_, err := sb.Open(dir, dir, os.O_RDONLY, 0)
+			assert.ErrorIs(t, err, os.ErrPermission)
+		})
+	})
+
+	t.Run("Stat", func(t *testing.T) {
+		t.Run("allowed file succeeds", func(t *testing.T) {
+			info, err := sb.Stat(allowed, dir)
+			require.NoError(t, err)
+			assert.Equal(t, "allowed.txt", info.Name())
+		})
+		t.Run("sibling blocked", func(t *testing.T) {
+			_, err := sb.Stat(sibling, dir)
+			assert.ErrorIs(t, err, os.ErrPermission)
+		})
+		t.Run("parent dir blocked", func(t *testing.T) {
+			_, err := sb.Stat(dir, dir)
+			assert.ErrorIs(t, err, os.ErrPermission)
+		})
+	})
+
+	t.Run("Lstat", func(t *testing.T) {
+		t.Run("allowed file succeeds", func(t *testing.T) {
+			info, err := sb.Lstat(allowed, dir)
+			require.NoError(t, err)
+			assert.Equal(t, "allowed.txt", info.Name())
+		})
+		t.Run("sibling blocked", func(t *testing.T) {
+			_, err := sb.Lstat(sibling, dir)
+			assert.ErrorIs(t, err, os.ErrPermission)
+		})
+		t.Run("parent dir blocked", func(t *testing.T) {
+			_, err := sb.Lstat(dir, dir)
+			assert.ErrorIs(t, err, os.ErrPermission)
+		})
+	})
+
+	t.Run("Access", func(t *testing.T) {
+		t.Run("allowed file succeeds", func(t *testing.T) {
+			assert.NoError(t, sb.Access(allowed, dir, 0x04))
+		})
+		t.Run("sibling blocked", func(t *testing.T) {
+			assert.ErrorIs(t, sb.Access(sibling, dir, 0x04), os.ErrPermission)
+		})
+		t.Run("parent dir blocked", func(t *testing.T) {
+			assert.ErrorIs(t, sb.Access(dir, dir, 0x04), os.ErrPermission)
+		})
+	})
+
+	t.Run("ReadDir", func(t *testing.T) {
+		_, err := sb.ReadDir(dir, dir)
+		assert.ErrorIs(t, err, os.ErrPermission)
+	})
+
+	t.Run("ReadDirForGlob", func(t *testing.T) {
+		_, err := sb.ReadDirForGlob(dir, dir)
+		assert.ErrorIs(t, err, os.ErrPermission)
+	})
+
+	t.Run("OpenDir", func(t *testing.T) {
+		_, err := sb.OpenDir(dir, dir)
+		assert.ErrorIs(t, err, os.ErrPermission)
+	})
+
+	t.Run("IsDirEmpty", func(t *testing.T) {
+		_, err := sb.IsDirEmpty(dir, dir)
+		assert.ErrorIs(t, err, os.ErrPermission)
+	})
+
+	t.Run("ReadDirLimited", func(t *testing.T) {
+		_, _, err := sb.ReadDirLimited(dir, dir, 0, 10)
+		assert.ErrorIs(t, err, os.ErrPermission)
+	})
+
+	t.Run("Close", func(t *testing.T) {
+		// Close on a separate sandbox to avoid affecting other subtests.
+		sb2, err := New([]string{allowed})
+		require.NoError(t, err)
+		assert.NoError(t, sb2.Close())
+		assert.NoError(t, sb2.Close(), "double close should not error")
+	})
+}
