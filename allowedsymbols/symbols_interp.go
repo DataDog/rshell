@@ -60,6 +60,7 @@ var interpAllowedSymbols = []string{
 	"sync.Mutex",           // 🟢 mutual exclusion lock; concurrency primitive, no I/O.
 	"sync.Once",            // 🟢 ensures a function runs exactly once; concurrency primitive, no I/O.
 	"sync.WaitGroup",       // 🟢 waits for goroutines to finish; concurrency primitive, no I/O.
+	"sync/atomic.Int64",    // 🟢 atomic int64 counter; concurrency primitive, no I/O.
 	"time.Duration",        // 🟢 numeric duration type; pure type, no side effects.
 	"time.Now",             // 🟠 returns current time; read-only, no mutation.
 	"time.Time",            // 🟢 time value type; pure data, no side effects.
