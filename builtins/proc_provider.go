@@ -56,14 +56,10 @@ func (p *ProcProvider) GetByPIDs(ctx context.Context, pids []int) ([]procinfo.Pr
 // The returned value is trimmed of trailing whitespace.
 func (p *ProcProvider) ReadKernelFile(name string) (string, error) {
 	path := filepath.Join(p.path, "sys", "kernel", name)
-	f, err := os.Open(path)
-	if err != nil {
-		return "", err
-	}
-	defer f.Close()
-	// Reject non-regular files (FIFOs, devices, etc.) to prevent blocking
-	// reads when --proc-path points at a non-proc tree.
-	info, err := f.Stat()
+	// Stat before opening to reject FIFOs and other blocking file types
+	// without hanging in open(2). This prevents DoS when --proc-path
+	// points at a non-proc tree with mkfifo'd entries.
+	info, err := os.Stat(path)
 	if err != nil {
 		return "", err
 	}
@@ -72,6 +68,11 @@ func (p *ProcProvider) ReadKernelFile(name string) (string, error) {
 		// char devices on some configurations). Reject FIFOs, sockets, etc.
 		return "", fmt.Errorf("not a regular file: %s", path)
 	}
+	f, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
 	// Proc kernel files are tiny single-line values. Cap at 4 KiB to
 	// prevent unbounded reads if --proc-path points at a non-proc tree.
 	data, err := io.ReadAll(io.LimitReader(f, 4096))
