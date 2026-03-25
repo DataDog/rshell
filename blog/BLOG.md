@@ -114,9 +114,7 @@ In ~10 days from first commit, here is what we delivered using AI:
 
 What this enabled: a fully cross-platform, sandboxed POSIX shell interpreter that AI agents can use to diagnose production systems, with a security model that operators can configure and audit. The project is open source at [github.com/DataDog/rshell](https://github.com/DataDog/rshell).
 
-## What's Next
-
-We're continuing to expand the command set and working on OS-level sandboxing layers for additional protection.
+## The Takeaway
 
 A key aspect of this project turned out to be _trust_. We built a shell (pun intended) that gives AI agents real power with guardrails, enough to investigate production incidents, not enough to cause them. And we built a development process that gives AI systems real autonomy with precise guardrails, enough to ship 100 PRs in ten days within security constraints we defined.
 
