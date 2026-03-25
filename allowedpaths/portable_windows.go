@@ -12,13 +12,6 @@ import (
 	"syscall"
 )
 
-// fileOnlyMatch reports whether rel matches the fileOnly name.
-// Exact match is used even on Windows because NTFS supports per-directory
-// case-sensitive mode (e.g. WSL).
-func fileOnlyMatch(rel, fileOnly string) bool {
-	return rel == fileOnly
-}
-
 // IsErrIsDirectory checks if the error is the Windows equivalent of EISDIR.
 // On Windows, reading a directory handle returns ERROR_INVALID_FUNCTION (errno 1).
 func IsErrIsDirectory(err error) bool {

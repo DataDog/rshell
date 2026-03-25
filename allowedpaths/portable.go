@@ -11,6 +11,13 @@ import (
 	"os"
 )
 
+// fileOnlyMatch reports whether rel matches the fileOnly name.
+// Exact match is required on all platforms — NTFS supports per-directory
+// case-sensitive mode (e.g. WSL), so case-folding is not safe.
+func fileOnlyMatch(rel, fileOnly string) bool {
+	return rel == fileOnly
+}
+
 // PortableErrMsg returns a POSIX-style error message for the given error,
 // normalizing platform-specific syscall messages to consistent strings.
 // This ensures shell error output is identical across Linux, macOS, and Windows.
