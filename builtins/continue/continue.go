@@ -42,7 +42,7 @@ var Cmd = builtins.Command{
 }
 
 func run(_ context.Context, callCtx *builtins.CallContext, args []string) builtins.Result {
-	if len(args) > 0 && args[0] == "--help" {
+	if len(args) > 0 && (args[0] == "--help" || args[0] == "-h") {
 		callCtx.Outf("%s\n", helpText)
 		return builtins.Result{}
 	}

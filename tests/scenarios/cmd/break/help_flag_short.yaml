@@ -1,8 +1,8 @@
-description: break --help prints usage and exits zero.
+description: break -h prints usage and exits zero.
 skip_assert_against_bash: true
 input:
   script: |+
-    break --help
+    break -h
 expect:
   stdout_contains: ["break: break [n]"]
   stderr: ""

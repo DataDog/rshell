@@ -1,8 +1,8 @@
-description: continue --help prints usage and exits zero.
+description: continue -h prints usage and exits zero.
 skip_assert_against_bash: true
 input:
   script: |+
-    continue --help
+    continue -h
 expect:
   stdout_contains: ["continue: continue [n]"]
   stderr: ""
