@@ -1,4 +1,5 @@
-# skip: bash returns exit code 0 for break outside a loop; rshell returns 1.
+# skip: bash returns exit code 0 for the break command itself; rshell returns 1 for $?.
+# The script exits 0 in both cases because 'echo after' resets $?.
 # bash error message format also differs.
 skip_assert_against_bash: true
 description: break outside a loop prints error to stderr, exits 1, but script continues.
