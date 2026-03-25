@@ -26,6 +26,11 @@ func NewProcProvider(path string) *ProcProvider {
 	return &ProcProvider{path: path}
 }
 
+// ProcPath returns the configured proc filesystem path (e.g. "/proc" or "/host/proc").
+func (p *ProcProvider) ProcPath() string {
+	return p.path
+}
+
 // ListAll returns all running processes.
 func (p *ProcProvider) ListAll(ctx context.Context) ([]procinfo.ProcInfo, error) {
 	return procinfo.ListAll(ctx, p.path)
