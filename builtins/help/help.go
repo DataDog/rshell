@@ -15,8 +15,8 @@
 //
 // Exit codes:
 //
-//	0  Success.
-//	1  Unknown command or --help was requested.
+//	0  Success or --help was requested.
+//	1  Unknown command.
 package help
 
 import (
@@ -44,7 +44,7 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 	return func(ctx context.Context, callCtx *builtins.CallContext, args []string) builtins.Result {
 		if *helpFlag {
 			printUsage(callCtx)
-			return builtins.Result{Code: 1}
+			return builtins.Result{}
 		}
 
 		// help <command> — show detailed help for a specific command.

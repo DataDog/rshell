@@ -44,7 +44,7 @@ var Cmd = builtins.Command{
 func run(_ context.Context, callCtx *builtins.CallContext, args []string) builtins.Result {
 	if len(args) > 0 && args[0] == "--help" {
 		callCtx.Outf("%s\n", helpText)
-		return builtins.Result{Code: 2}
+		return builtins.Result{}
 	}
 	return loopctl.LoopControl(callCtx, "break", args)
 }
