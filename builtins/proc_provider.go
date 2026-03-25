@@ -7,6 +7,7 @@ package builtins
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -54,11 +55,23 @@ func (p *ProcProvider) GetByPIDs(ctx context.Context, pids []int) ([]procinfo.Pr
 // name is the filename relative to sys/kernel/ (e.g. "ostype", "hostname").
 // The returned value is trimmed of trailing whitespace.
 func (p *ProcProvider) ReadKernelFile(name string) (string, error) {
-	f, err := os.Open(filepath.Join(p.path, "sys", "kernel", name))
+	path := filepath.Join(p.path, "sys", "kernel", name)
+	f, err := os.Open(path)
 	if err != nil {
 		return "", err
 	}
 	defer f.Close()
+	// Reject non-regular files (FIFOs, devices, etc.) to prevent blocking
+	// reads when --proc-path points at a non-proc tree.
+	info, err := f.Stat()
+	if err != nil {
+		return "", err
+	}
+	if !info.Mode().IsRegular() && info.Mode().Type()&os.ModeCharDevice == 0 {
+		// Allow regular files and char devices (proc pseudo-files appear as
+		// char devices on some configurations). Reject FIFOs, sockets, etc.
+		return "", fmt.Errorf("not a regular file: %s", path)
+	}
 	// Proc kernel files are tiny single-line values. Cap at 4 KiB to
 	// prevent unbounded reads if --proc-path points at a non-proc tree.
 	data, err := io.ReadAll(io.LimitReader(f, 4096))
