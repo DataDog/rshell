@@ -66,7 +66,7 @@ If you catch yourself wanting to skip a step, STOP and do the step anyway.
 
 ## Context
 
-The safe shell interpreter (`interp/`) implements all commands as Go builtins — it never executes host binaries. All security and safety constraints are defined in `.claude/skills/implement-posix-command/RULES.md`. Read that file first before writing any code.
+The safe shell interpreter (`interp/`) implements all commands as Go builtins — it never executes host binaries. All security and safety constraints are defined in `docs/RULES.md` at the repository root. Read that file first before writing any code.
 
 Key structural facts about this codebase:
 - Builtin implementations live in `interp/builtins/` (`package builtins`), one file per command
@@ -80,7 +80,7 @@ Key structural facts about this codebase:
 
 Before writing any code:
 
-1. Read `.claude/skills/implement-posix-command/RULES.md` in full.
+1. Read `docs/RULES.md` in full.
 2. Read the POSIX specification behavior for **$ARGUMENTS** — what flags are standard, what flags are dangerous (write/execute), and what the expected output format is.
 3. Read the associated GTFOBins recommendations, if any. First check if the offline resource exists at `resources/gtfobins/$ARGUMENTS.md`. If it does, read it directly. If it does not exist, fetch it from https://gtfobins.org/gtfobins/$ARGUMENTS. These contain information on unsafe flags and vulnerabilities that we will need to avoid.
 
