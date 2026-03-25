@@ -57,12 +57,12 @@ func runScript(t *testing.T, script, dir string, opts ...interp.RunnerOption) (s
 }
 
 func TestAllowedPathsOption(t *testing.T) {
-	t.Run("invalid path rejected", func(t *testing.T) {
-		_, err := interp.New(
+	t.Run("nonexistent path skipped", func(t *testing.T) {
+		runner, err := interp.New(
 			interp.AllowedPaths([]string{"/nonexistent/path/that/does/not/exist"}),
 		)
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "AllowedPaths")
+		require.NoError(t, err, "nonexistent paths should be skipped, not rejected")
+		runner.Close()
 	})
 
 	t.Run("file path accepted", func(t *testing.T) {

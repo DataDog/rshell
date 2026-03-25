@@ -317,6 +317,21 @@ func TestNewAcceptsFilePath(t *testing.T) {
 	defer sb.Close()
 }
 
+func TestNewSkipsNonexistentPaths(t *testing.T) {
+	dir := t.TempDir()
+	existing := filepath.Join(dir, "exists.txt")
+	require.NoError(t, os.WriteFile(existing, []byte("data"), 0644))
+
+	sb, err := New([]string{"/nonexistent/path", existing, "/also/missing"})
+	require.NoError(t, err, "nonexistent paths should be skipped")
+	defer sb.Close()
+
+	// The existing file should still be accessible.
+	f, err := sb.Open(existing, dir, os.O_RDONLY, 0)
+	require.NoError(t, err)
+	f.Close()
+}
+
 func TestFileOnlyStatAllowed(t *testing.T) {
 	dir := t.TempDir()
 	filePath := filepath.Join(dir, "data.txt")

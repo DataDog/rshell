@@ -39,53 +39,45 @@ type Sandbox struct {
 	roots []root
 }
 
-// New validates paths and eagerly opens os.Root handles so the
-// allowed directories are pinned before the caller can modify them between
-// construction and the first run.
+// New creates a sandbox from an allowlist of paths. Each path may be a
+// directory or a regular file. Paths that do not exist or cannot be
+// opened are silently skipped — the sandbox operates with whatever paths
+// are available at construction time.
 //
-// Each path may be a directory or a regular file. Directories are opened
-// directly with os.OpenRoot. Files are handled by opening os.OpenRoot on
-// the parent directory with a fileOnly restriction so that only the
-// specified file is accessible — not the rest of the parent directory.
+// Directories are opened directly with os.OpenRoot. Files are handled by
+// opening os.OpenRoot on the parent directory with a fileOnly restriction
+// so that only the specified file is accessible.
 func New(paths []string) (*Sandbox, error) {
-	roots := make([]root, len(paths))
-	closeAll := func(n int) {
-		for _, prev := range roots[:n] {
-			if prev.root != nil {
-				prev.root.Close()
-			}
-		}
-	}
-	for i, p := range paths {
+	roots := make([]root, 0, len(paths))
+	for _, p := range paths {
 		abs, err := filepath.Abs(p)
 		if err != nil {
-			closeAll(i)
-			return nil, fmt.Errorf("AllowedPaths: cannot resolve %q: %w", p, err)
+			continue
 		}
 		r, err := os.OpenRoot(abs)
 		if err != nil {
 			// os.OpenRoot failed — check if the path is a regular file.
 			info, statErr := os.Stat(abs)
 			if statErr != nil {
-				closeAll(i)
-				return nil, fmt.Errorf("AllowedPaths: cannot open root %q: %w", abs, err)
+				// Path does not exist — skip.
+				continue
 			}
 			if !info.Mode().IsRegular() {
-				closeAll(i)
-				return nil, fmt.Errorf("AllowedPaths: cannot open root %q: %w", abs, err)
+				// Not a directory and not a regular file — skip.
+				continue
 			}
 			// It's a regular file — open the parent directory and restrict
 			// access to just this filename.
 			parentDir := filepath.Dir(abs)
 			r, err = os.OpenRoot(parentDir)
 			if err != nil {
-				closeAll(i)
-				return nil, fmt.Errorf("AllowedPaths: cannot open parent of %q: %w", abs, err)
+				// Parent dir inaccessible — skip.
+				continue
 			}
-			roots[i] = root{absPath: parentDir, root: r, fileOnly: filepath.Base(abs)}
+			roots = append(roots, root{absPath: parentDir, root: r, fileOnly: filepath.Base(abs)})
 			continue
 		}
-		roots[i] = root{absPath: abs, root: r}
+		roots = append(roots, root{absPath: abs, root: r})
 	}
 	return &Sandbox{roots: roots}, nil
 }
