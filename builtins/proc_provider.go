@@ -7,6 +7,9 @@ package builtins
 
 import (
 	"context"
+	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/DataDog/rshell/builtins/internal/procinfo"
 )
@@ -44,4 +47,15 @@ func (p *ProcProvider) GetSession(ctx context.Context) ([]procinfo.ProcInfo, err
 // GetByPIDs returns process info for the given PIDs.
 func (p *ProcProvider) GetByPIDs(ctx context.Context, pids []int) ([]procinfo.ProcInfo, error) {
 	return procinfo.GetByPIDs(ctx, p.path, pids)
+}
+
+// ReadKernelFile reads a single-line value from a /proc/sys/kernel/ pseudo-file.
+// name is the filename relative to sys/kernel/ (e.g. "ostype", "hostname").
+// The returned value is trimmed of trailing whitespace.
+func (p *ProcProvider) ReadKernelFile(name string) (string, error) {
+	data, err := os.ReadFile(filepath.Join(p.path, "sys", "kernel", name))
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimRight(string(data), " \t\r\n"), nil
 }

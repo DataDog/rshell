@@ -11,11 +11,9 @@
 //
 // Print certain system information. With no flags, same as -s.
 //
-// Reads system information from /proc/sys/kernel/ pseudo-files. The proc
-// path is configurable via the --proc-path CLI flag or interp.ProcPath()
-// API option (e.g., /host/proc for containerized environments).
-//
-// Linux only — returns exit code 1 with "not supported" on other platforms.
+// Reads system information from /proc/sys/kernel/ pseudo-files via the
+// ProcProvider. The proc path is configurable via the --proc-path CLI
+// flag or interp.ProcPath() API option (e.g., /host/proc for containers).
 //
 // Flags:
 //
@@ -43,9 +41,6 @@ package uname
 
 import (
 	"context"
-	"io"
-	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/DataDog/rshell/builtins"
@@ -59,28 +54,27 @@ var Cmd = builtins.Command{
     Print system information.
 
     With no flags, print the kernel name (same as -s).
-    Reads from /proc/sys/kernel/ (configurable via --proc-path).
-    Linux only.`,
+    Reads from /proc/sys/kernel/ (configurable via --proc-path).`,
 	MakeFlags: makeFlags,
 }
 
-// procKernelFiles maps each flag letter to the proc pseudo-file that
+// kernelFiles maps each flag letter to the proc pseudo-file that
 // provides the corresponding value. Order matches POSIX -a output.
-var procKernelFiles = [...]struct {
+var kernelFiles = [...]struct {
 	flag string
 	file string
 }{
-	{"s", "sys/kernel/ostype"},
-	{"n", "sys/kernel/hostname"},
-	{"r", "sys/kernel/osrelease"},
-	{"v", "sys/kernel/version"},
-	{"m", "sys/kernel/arch"},
+	{"s", "ostype"},
+	{"n", "hostname"},
+	{"r", "osrelease"},
+	{"v", "version"},
+	{"m", "arch"},
 }
 
 func makeFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 	help := fs.BoolP("help", "h", false, "print usage and exit")
-	var flags [len(procKernelFiles)]*bool
-	for i, entry := range procKernelFiles {
+	var flags [len(kernelFiles)]*bool
+	for i, entry := range kernelFiles {
 		flags[i] = fs.BoolP(entry.flag, entry.flag, false, "")
 	}
 	allFlag := fs.BoolP("a", "a", false, "print all information")
@@ -98,66 +92,43 @@ func makeFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			callCtx.Outf("  -h, --help  display this help and exit\n")
 			return builtins.Result{}
 		}
-		return run(ctx, callCtx, flags, allFlag)
-	}
-}
 
-func run(ctx context.Context, callCtx *builtins.CallContext, flags [len(procKernelFiles)]*bool, allFlag *bool) builtins.Result {
-	if callCtx.Proc == nil {
-		callCtx.Errf("uname: not supported (no proc filesystem configured)\n")
-		return builtins.Result{Code: 1}
-	}
+		if callCtx.Proc == nil {
+			callCtx.Errf("uname: not supported (no proc filesystem configured)\n")
+			return builtins.Result{Code: 1}
+		}
 
-	procPath := callCtx.Proc.ProcPath()
-
-	// Default: -s when no flags given.
-	anySet := *allFlag
-	if !anySet {
-		for _, f := range flags {
-			if *f {
-				anySet = true
-				break
+		// Default: -s when no flags given.
+		anySet := *allFlag
+		if !anySet {
+			for _, f := range flags {
+				if *f {
+					anySet = true
+					break
+				}
 			}
 		}
-	}
-	if !anySet {
-		*flags[0] = true // -s
-	}
-
-	var parts []string
-	for i, entry := range procKernelFiles {
-		if !*allFlag && !*flags[i] {
-			continue
+		if !anySet {
+			*flags[0] = true // -s
 		}
-		if ctx.Err() != nil {
-			return builtins.Result{Code: 1}
+
+		var parts []string
+		for i, entry := range kernelFiles {
+			if !*allFlag && !*flags[i] {
+				continue
+			}
+			if ctx.Err() != nil {
+				return builtins.Result{Code: 1}
+			}
+			val, err := callCtx.Proc.ReadKernelFile(entry.file)
+			if err != nil {
+				callCtx.Errf("uname: cannot read %s: %s\n", entry.file, err)
+				return builtins.Result{Code: 1}
+			}
+			parts = append(parts, val)
 		}
-		val, err := readProcFile(filepath.Join(procPath, entry.file))
-		if err != nil {
-			callCtx.Errf("uname: cannot read %s: %s\n", entry.file, err)
-			return builtins.Result{Code: 1}
-		}
-		parts = append(parts, val)
-	}
 
-	callCtx.Outf("%s\n", strings.Join(parts, " "))
-	return builtins.Result{}
-}
-
-// readProcFile reads a single-line value from a proc pseudo-file.
-// The value is trimmed of trailing whitespace/newlines.
-func readProcFile(path string) (string, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return "", err
+		callCtx.Outf("%s\n", strings.Join(parts, " "))
+		return builtins.Result{}
 	}
-	defer f.Close()
-
-	// Proc files are tiny — cap read at 4 KiB for safety.
-	buf := make([]byte, 4096)
-	n, err := f.Read(buf)
-	if err != nil && err != io.EOF {
-		return "", err
-	}
-	return strings.TrimRight(string(buf[:n]), " \t\r\n"), nil
 }
