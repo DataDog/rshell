@@ -7,6 +7,7 @@ package builtins
 
 import (
 	"context"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -53,7 +54,14 @@ func (p *ProcProvider) GetByPIDs(ctx context.Context, pids []int) ([]procinfo.Pr
 // name is the filename relative to sys/kernel/ (e.g. "ostype", "hostname").
 // The returned value is trimmed of trailing whitespace.
 func (p *ProcProvider) ReadKernelFile(name string) (string, error) {
-	data, err := os.ReadFile(filepath.Join(p.path, "sys", "kernel", name))
+	f, err := os.Open(filepath.Join(p.path, "sys", "kernel", name))
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+	// Proc kernel files are tiny single-line values. Cap at 4 KiB to
+	// prevent unbounded reads if --proc-path points at a non-proc tree.
+	data, err := io.ReadAll(io.LimitReader(f, 4096))
 	if err != nil {
 		return "", err
 	}
