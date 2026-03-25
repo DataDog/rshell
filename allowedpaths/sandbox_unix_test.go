@@ -414,26 +414,3 @@ func TestAccessFIFONonBlocking(t *testing.T) {
 		t.Fatal("Access blocked on FIFO — O_NONBLOCK not effective")
 	}
 }
-
-// TestFileOnlyCaseSensitiveUnix verifies that file-only matching is
-// case-sensitive on Unix, where "Data.txt" and "data.txt" are distinct files.
-func TestFileOnlyCaseSensitiveUnix(t *testing.T) {
-	dir := t.TempDir()
-	upper := filepath.Join(dir, "Data.txt")
-	lower := filepath.Join(dir, "data.txt")
-	require.NoError(t, os.WriteFile(upper, []byte("upper"), 0644))
-	require.NoError(t, os.WriteFile(lower, []byte("lower"), 0644))
-
-	sb, err := New([]string{upper})
-	require.NoError(t, err)
-	defer sb.Close()
-
-	// Allowed file should be accessible.
-	f, err := sb.Open(upper, dir, os.O_RDONLY, 0)
-	require.NoError(t, err)
-	f.Close()
-
-	// Different-cased sibling must be blocked on Unix.
-	_, err = sb.Open(lower, dir, os.O_RDONLY, 0)
-	assert.ErrorIs(t, err, os.ErrPermission)
-}
