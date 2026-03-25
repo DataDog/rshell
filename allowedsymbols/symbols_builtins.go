@@ -280,6 +280,7 @@ var builtinPerCommandSymbols = map[string][]string{
 	},
 	"uname": {
 		"context.Context", // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
+		"runtime.GOOS",    // 🟢 current OS name constant; pure constant, no I/O.
 		"strings.Join",    // 🟢 joins string slices; pure function, no I/O.
 	},
 	"uniq": {

@@ -11,6 +11,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -82,9 +83,17 @@ func cmdRun(t *testing.T, script, procDir string) (stdout, stderr string, exitCo
 	return runScript(t, script, procDir, interp.ProcPath(procDir))
 }
 
+func requireLinux(t *testing.T) {
+	t.Helper()
+	if runtime.GOOS != "linux" {
+		t.Skip("uname reads from /proc; skipping on " + runtime.GOOS)
+	}
+}
+
 // --- Tests ---
 
 func TestUnameDefault(t *testing.T) {
+	requireLinux(t)
 	dir := t.TempDir()
 	writeFakeProc(t, dir, defaultFakeProc())
 	stdout, _, code := cmdRun(t, "uname", dir)
@@ -93,6 +102,7 @@ func TestUnameDefault(t *testing.T) {
 }
 
 func TestUnameS(t *testing.T) {
+	requireLinux(t)
 	dir := t.TempDir()
 	writeFakeProc(t, dir, defaultFakeProc())
 	stdout, _, code := cmdRun(t, "uname -s", dir)
@@ -101,6 +111,7 @@ func TestUnameS(t *testing.T) {
 }
 
 func TestUnameN(t *testing.T) {
+	requireLinux(t)
 	dir := t.TempDir()
 	writeFakeProc(t, dir, defaultFakeProc())
 	stdout, _, code := cmdRun(t, "uname -n", dir)
@@ -109,6 +120,7 @@ func TestUnameN(t *testing.T) {
 }
 
 func TestUnameR(t *testing.T) {
+	requireLinux(t)
 	dir := t.TempDir()
 	writeFakeProc(t, dir, defaultFakeProc())
 	stdout, _, code := cmdRun(t, "uname -r", dir)
@@ -117,6 +129,7 @@ func TestUnameR(t *testing.T) {
 }
 
 func TestUnameV(t *testing.T) {
+	requireLinux(t)
 	dir := t.TempDir()
 	writeFakeProc(t, dir, defaultFakeProc())
 	stdout, _, code := cmdRun(t, "uname -v", dir)
@@ -125,6 +138,7 @@ func TestUnameV(t *testing.T) {
 }
 
 func TestUnameM(t *testing.T) {
+	requireLinux(t)
 	dir := t.TempDir()
 	writeFakeProc(t, dir, defaultFakeProc())
 	stdout, _, code := cmdRun(t, "uname -m", dir)
@@ -133,6 +147,7 @@ func TestUnameM(t *testing.T) {
 }
 
 func TestUnameA(t *testing.T) {
+	requireLinux(t)
 	dir := t.TempDir()
 	writeFakeProc(t, dir, defaultFakeProc())
 	stdout, _, code := cmdRun(t, "uname -a", dir)
@@ -141,6 +156,7 @@ func TestUnameA(t *testing.T) {
 }
 
 func TestUnameCombinedFlags(t *testing.T) {
+	requireLinux(t)
 	dir := t.TempDir()
 	writeFakeProc(t, dir, defaultFakeProc())
 	stdout, _, code := cmdRun(t, "uname -sn", dir)
@@ -149,6 +165,7 @@ func TestUnameCombinedFlags(t *testing.T) {
 }
 
 func TestUnameCombinedFlagsMR(t *testing.T) {
+	requireLinux(t)
 	dir := t.TempDir()
 	writeFakeProc(t, dir, defaultFakeProc())
 	stdout, _, code := cmdRun(t, "uname -mr", dir)
@@ -158,6 +175,7 @@ func TestUnameCombinedFlagsMR(t *testing.T) {
 }
 
 func TestUnameUnknownFlag(t *testing.T) {
+	requireLinux(t)
 	dir := t.TempDir()
 	writeFakeProc(t, dir, defaultFakeProc())
 	_, stderr, code := cmdRun(t, "uname -z", dir)
@@ -166,6 +184,7 @@ func TestUnameUnknownFlag(t *testing.T) {
 }
 
 func TestUnameMissingProcFile(t *testing.T) {
+	requireLinux(t)
 	dir := t.TempDir()
 	// Don't create any proc files — all reads should fail.
 	_, stderr, code := cmdRun(t, "uname", dir)
@@ -174,6 +193,7 @@ func TestUnameMissingProcFile(t *testing.T) {
 }
 
 func TestUnameCustomProcPath(t *testing.T) {
+	requireLinux(t)
 	dir := t.TempDir()
 	customProc := filepath.Join(dir, "host", "proc")
 	writeFakeProc(t, customProc, map[string]string{
@@ -197,6 +217,7 @@ func TestUnameHelp(t *testing.T) {
 }
 
 func TestUnameNoProcFiles(t *testing.T) {
+	requireLinux(t)
 	// Point proc path at an empty directory — no kernel files exist.
 	dir := t.TempDir()
 	emptyProc := filepath.Join(dir, "empty_proc")
@@ -204,4 +225,14 @@ func TestUnameNoProcFiles(t *testing.T) {
 	_, stderr, code := runScript(t, "uname", dir, interp.ProcPath(emptyProc))
 	assert.Equal(t, 1, code)
 	assert.Contains(t, stderr, "uname: cannot read")
+}
+
+func TestUnameNonLinuxPlatform(t *testing.T) {
+	if runtime.GOOS == "linux" {
+		t.Skip("this test verifies non-Linux behavior")
+	}
+	dir := t.TempDir()
+	_, stderr, code := cmdRun(t, "uname", dir)
+	assert.Equal(t, 1, code)
+	assert.Contains(t, stderr, "not supported")
 }

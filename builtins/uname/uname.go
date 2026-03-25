@@ -41,6 +41,7 @@ package uname
 
 import (
 	"context"
+	"runtime"
 	"strings"
 
 	"github.com/DataDog/rshell/builtins"
@@ -91,6 +92,11 @@ func makeFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			callCtx.Outf("  -a    print all information\n")
 			callCtx.Outf("  -h, --help  display this help and exit\n")
 			return builtins.Result{}
+		}
+
+		if runtime.GOOS != "linux" {
+			callCtx.Errf("uname: not supported on %s (Linux only)\n", runtime.GOOS)
+			return builtins.Result{Code: 1}
 		}
 
 		if callCtx.Proc == nil {
