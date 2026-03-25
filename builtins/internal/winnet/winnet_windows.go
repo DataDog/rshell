@@ -96,7 +96,7 @@ func Collect() ([]SocketEntry, error) {
 }
 
 // callExtendedTable calls GetExtendedTcpTable or GetExtendedUdpTable with a
-// grow-loop, capped at MaxWinBufSize. Returns the raw buffer on success.
+// grow-loop, capped at MaxBufSize. Returns the raw buffer on success.
 func callExtendedTable(proc *syscall.Proc, af, tableClass uintptr) ([]byte, error) {
 	size := uint32(4096)
 	for {
