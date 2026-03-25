@@ -50,6 +50,9 @@ func FuzzTailLines(f *testing.F) {
 	f.Add(bytes.Repeat([]byte("\n"), 1000), int64(5))
 
 	f.Fuzz(func(t *testing.T, input []byte, n int64) {
+		if t.Context().Err() != nil {
+			return
+		}
 		if len(input) > 1<<20 {
 			return
 		}
@@ -66,10 +69,13 @@ func FuzzTailLines(f *testing.F) {
 			t.Fatal(err)
 		}
 
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		defer cancel() // safety net if t.Fatal fires before explicit cancel
 		stdout, _, code := cmdRunCtx(ctx, t, fmt.Sprintf("tail -n %d input.txt", n), dir)
 		cancel()
+		if t.Context().Err() != nil {
+			return
+		}
 		if code != 0 && code != 1 {
 			t.Errorf("tail -n %d unexpected exit code %d", n, code)
 		}
@@ -107,6 +113,9 @@ func FuzzTailBytes(f *testing.F) {
 	f.Add(bytes.Repeat([]byte("z"), 32*1024+1), int64(1))
 
 	f.Fuzz(func(t *testing.T, input []byte, n int64) {
+		if t.Context().Err() != nil {
+			return
+		}
 		if len(input) > 1<<20 {
 			return
 		}
@@ -123,10 +132,13 @@ func FuzzTailBytes(f *testing.F) {
 			t.Fatal(err)
 		}
 
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		defer cancel() // safety net if t.Fatal fires before explicit cancel
 		stdout, _, code := cmdRunCtx(ctx, t, fmt.Sprintf("tail -c %d input.txt", n), dir)
 		cancel()
+		if t.Context().Err() != nil {
+			return
+		}
 		if code != 0 && code != 1 {
 			t.Errorf("tail -c %d unexpected exit code %d", n, code)
 		}
@@ -154,6 +166,9 @@ func FuzzTailStdin(f *testing.F) {
 	f.Add([]byte("line1\r\nline2\r\n"), int64(1))
 
 	f.Fuzz(func(t *testing.T, input []byte, n int64) {
+		if t.Context().Err() != nil {
+			return
+		}
 		if len(input) > 1<<20 {
 			return
 		}
@@ -170,10 +185,13 @@ func FuzzTailStdin(f *testing.F) {
 			t.Fatal(err)
 		}
 
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		defer cancel() // safety net if t.Fatal fires before explicit cancel
 		_, _, code := cmdRunCtx(ctx, t, fmt.Sprintf("tail -n %d < stdin.txt", n), dir)
 		cancel()
+		if t.Context().Err() != nil {
+			return
+		}
 		if code != 0 && code != 1 {
 			t.Errorf("tail stdin unexpected exit code %d", code)
 		}
@@ -251,6 +269,9 @@ func FuzzTailBytesOffset(f *testing.F) {
 	f.Add([]byte{0x00, 0x01, 0x02, 0xff, 0xfe}, int64(2))
 
 	f.Fuzz(func(t *testing.T, input []byte, n int64) {
+		if t.Context().Err() != nil {
+			return
+		}
 		if len(input) > 1<<20 {
 			return
 		}
@@ -267,10 +288,13 @@ func FuzzTailBytesOffset(f *testing.F) {
 			t.Fatal(err)
 		}
 
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		defer cancel() // safety net if t.Fatal fires before explicit cancel
 		_, _, code := cmdRunCtx(ctx, t, fmt.Sprintf("tail -c +%d input.txt", n), dir)
 		cancel()
+		if t.Context().Err() != nil {
+			return
+		}
 		if code != 0 && code != 1 {
 			t.Errorf("tail -c +%d unexpected exit code %d", n, code)
 		}
