@@ -71,7 +71,9 @@ func runScriptCtx(ctx context.Context, t *testing.T, script, dir string, opts ..
 		var es interp.ExitStatus
 		if errors.As(err, &es) {
 			exitCode = int(es)
-		} else if ctx.Err() == nil {
+		} else if ctx.Err() != nil {
+			exitCode = 1 // Context cancelled/timed out.
+		} else {
 			t.Fatalf("unexpected error: %v", err)
 		}
 	}
