@@ -40,6 +40,15 @@ func newOverlayEnviron(parent expand.Environ, background bool) *overlayEnviron {
 	oenv := &overlayEnviron{}
 	if !background {
 		oenv.parent = parent
+		// Seed totalBytes with the parent's current variable storage so that the
+		// per-shell cap is enforced consistently whether variables were set in this
+		// shell or inherited from a parent.  Without this, a script that nests
+		// subshells could reset the counter to zero at each nesting level and
+		// allocate O(depth × MaxTotalVarsBytes) before hitting any limit.
+		parent.Each(func(_ string, vr expand.Variable) bool {
+			oenv.totalBytes += len(vr.Str)
+			return true
+		})
 	} else {
 		// We could do better here if the parent is also an overlayEnviron;
 		// measure with profiles or benchmarks before we choose to do so.

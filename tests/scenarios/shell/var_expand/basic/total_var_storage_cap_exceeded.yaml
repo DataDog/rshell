@@ -1,0 +1,14 @@
+description: Script aborts when total variable storage exceeds MaxTotalVarsBytes (1 MiB).
+skip_assert_against_bash: true  # intentional divergence: bash has no variable storage limit
+input:
+  script: |+
+    A=x
+    A=$A$A;A=$A$A;A=$A$A;A=$A$A;A=$A$A;A=$A$A;A=$A$A;A=$A$A;A=$A$A;A=$A$A
+    A=$A$A;A=$A$A;A=$A$A;A=$A$A;A=$A$A;A=$A$A;A=$A$A;A=$A$A;A=$A$A
+    B=$A
+    C=x
+    echo DONE
+expect:
+  stdout: ""
+  stderr_contains: ["variable storage limit exceeded"]
+  exit_code: 1

@@ -291,6 +291,14 @@ func Env(pairs ...string) RunnerOption {
 // When providing an [*os.File] as standard input, consider using an [os.Pipe]
 // as it has the best chance to support cancellable reads via [os.File.SetReadDeadline],
 // so that cancelling the runner's context can stop a blocked standard input read.
+//
+// When a non-[*os.File] reader is provided, the background copy goroutine uses
+// [context.Background] because [StdIO] is a [RunnerOption] executed before any
+// [Runner.Run] call, so no run-scoped context is available at this point.
+// The goroutine terminates as soon as the reader returns [io.EOF] or the pipe's
+// write end is closed, so it is bounded by the reader's lifetime. Callers that
+// require context-cancellable stdin should provide an [*os.File] (e.g. via
+// [os.Pipe]) directly, or use a redirect inside the script.
 func StdIO(in io.Reader, out, err io.Writer) RunnerOption {
 	return func(r *Runner) error {
 		stdin, _err := stdinFile(context.Background(), in)
