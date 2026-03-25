@@ -126,6 +126,9 @@ only the filesystem-accessing *functions* are forbidden.
 - Commands MUST NOT exhaust file descriptors or other system resources
 - Commands MUST handle interruption (context cancellation) gracefully
 
+### Goroutine Context Propagation
+- Goroutines spawned during command or interpreter execution MUST propagate and respect context cancellation. Before any blocking I/O in a goroutine, check `ctx.Err()`. For multi-chunk writes, check `ctx.Err()` between chunks. Close the pipe write end (`pw.Close()`) on cancellation to unblock the reader and propagate termination.
+
 ### Integer Safety
 - Commands MUST check for integer overflow in all arithmetic operations
 - Commands MUST validate numeric conversions (string to int) and handle errors

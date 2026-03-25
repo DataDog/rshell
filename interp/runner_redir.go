@@ -69,7 +69,7 @@ func hdocLiteralPart(buf *strings.Builder, part syntax.WordPart) {
 	}
 }
 
-func (r *Runner) hdocReader(rd *syntax.Redirect) (*os.File, error) {
+func (r *Runner) hdocReader(ctx context.Context, rd *syntax.Redirect) (*os.File, error) {
 	pr, pw, err := os.Pipe()
 	if err != nil {
 		return nil, err
@@ -94,7 +94,26 @@ func (r *Runner) hdocReader(rd *syntax.Redirect) (*os.File, error) {
 			return nil, fmt.Errorf("heredoc: content exceeds maximum size (%d bytes)", MaxHeredocBytes)
 		}
 		go func() {
-			pw.WriteString(hdoc)
+			if ctx.Err() != nil {
+				pw.Close()
+				return
+			}
+			const chunkSize = 32 * 1024
+			data := []byte(hdoc)
+			for len(data) > 0 {
+				if ctx.Err() != nil {
+					pw.Close()
+					return
+				}
+				n := chunkSize
+				if n > len(data) {
+					n = len(data)
+				}
+				if _, err := pw.Write(data[:n]); err != nil {
+					return
+				}
+				data = data[n:]
+			}
 			pw.Close()
 		}()
 		return pr, nil
@@ -144,7 +163,26 @@ func (r *Runner) hdocReader(rd *syntax.Redirect) (*os.File, error) {
 		return nil, hdocErr
 	}
 	go func() {
-		pw.Write(buf.Bytes())
+		if ctx.Err() != nil {
+			pw.Close()
+			return
+		}
+		const chunkSize = 32 * 1024
+		data := buf.Bytes()
+		for len(data) > 0 {
+			if ctx.Err() != nil {
+				pw.Close()
+				return
+			}
+			n := chunkSize
+			if n > len(data) {
+				n = len(data)
+			}
+			if _, err := pw.Write(data[:n]); err != nil {
+				return
+			}
+			data = data[n:]
+		}
 		pw.Close()
 	}()
 	return pr, nil
@@ -152,7 +190,7 @@ func (r *Runner) hdocReader(rd *syntax.Redirect) (*os.File, error) {
 
 func (r *Runner) redir(ctx context.Context, rd *syntax.Redirect) (io.Closer, error) {
 	if rd.Hdoc != nil {
-		pr, err := r.hdocReader(rd)
+		pr, err := r.hdocReader(ctx, rd)
 		if err != nil {
 			return nil, err
 		}
