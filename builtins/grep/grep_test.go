@@ -871,3 +871,59 @@ func TestGrepAfterContextNoBuffering(t *testing.T) {
 		memEdgeContextSize, memEdgeContextSize, memEdgeLineSize,
 		float64(allocated)/(1<<20), upperBound>>20)
 }
+
+// TestGrepAfterContextCallerBufferAccumulation demonstrates the full picture:
+// rshell streams grep -A N output to its stdout writer without internal copies,
+// but when the caller supplies a *bytes.Buffer as stdout — exactly as the
+// datadog-agent does in run_command.go — the entire output accumulates in the
+// caller's heap.
+//
+// A script that produces ~1 GiB of grep -A output causes ~1 GiB of memory
+// growth in the agent process, even though rshell itself holds almost nothing.
+// The gap is not in rshell's implementation; it is in the caller's buffering
+// contract. Any caller that collects stdout into memory is responsible for
+// bounding the output size before it runs the script.
+//
+// Contrast with TestGrepAfterContextNoBuffering: when stdout is discarded
+// (io.Discard), rshell allocates only ~2 MiB for the same input. Switching to
+// a *bytes.Buffer multiplies resident memory by ~500×.
+func TestGrepAfterContextCallerBufferAccumulation(t *testing.T) {
+	dir := t.TempDir()
+	t.Logf("Writing ~1 GiB input file (%d lines × %d bytes)…", memEdgeContextSize, memEdgeLineSize)
+
+	// Same layout as TestGrepAfterContextNoBuffering: MATCHLINE first, then
+	// memEdgeContextSize lines of memEdgeLineSize bytes each.
+	f, err := os.Create(filepath.Join(dir, "large_after_buf.txt"))
+	require.NoError(t, err)
+	_, err = fmt.Fprintln(f, "MATCHLINE")
+	require.NoError(t, err)
+	line := make([]byte, memEdgeLineSize+1)
+	for i := range line[:memEdgeLineSize] {
+		line[i] = 'x'
+	}
+	line[memEdgeLineSize] = '\n'
+	for i := 0; i < memEdgeContextSize; i++ {
+		_, err = f.Write(line)
+		require.NoError(t, err)
+	}
+	require.NoError(t, f.Close())
+
+	// cmdRun uses testutil.RunScript, which captures stdout into a bytes.Buffer
+	// — the same pattern used by the datadog-agent caller.
+	script := fmt.Sprintf("grep -A %d MATCHLINE large_after_buf.txt", memEdgeContextSize)
+	stdout, _, code := cmdRun(t, script, dir)
+	assert.Equal(t, 0, code)
+
+	callerBytes := int64(len(stdout))
+	t.Logf("grep -A %d (%d bytes/line): caller buffer holds %.1f MiB",
+		memEdgeContextSize, memEdgeLineSize, float64(callerBytes)/(1<<20))
+	t.Logf("rshell internal alloc (stdout discarded): ~2 MiB  (see TestGrepAfterContextNoBuffering)")
+	t.Logf("caller buffer (bytes.Buffer, as in dd-agent): ~%.0f MiB  (~%d× larger)",
+		float64(callerBytes)/(1<<20), callerBytes/(2<<20))
+
+	// The caller's buffer must hold at least memEdgeContextSize × memEdgeLineSize
+	// bytes — one copy of every after-context line that grep wrote to stdout.
+	assert.GreaterOrEqual(t, callerBytes, memEdgeExpectedAlloc,
+		"caller buffer should hold ≥ %.0f MiB of grep -A output; got %.1f MiB",
+		float64(memEdgeExpectedAlloc)/(1<<20), float64(callerBytes)/(1<<20))
+}
