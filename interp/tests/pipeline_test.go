@@ -70,67 +70,65 @@ func sortChainAlloc(t *testing.T, dir, script string) int64 {
 	return int64(after.TotalAlloc) - int64(before.TotalAlloc)
 }
 
-// TestSortChainMemoryScalesWithDepth demonstrates that chaining N sort
-// commands in a pipeline causes N × (input size) bytes to be allocated
-// simultaneously, because each sort buffers its full input before it begins
-// emitting output.
+// sortMaxTotalBytes is the per-sort cumulative byte cap (MaxTotalBytes in
+// builtins/sort/sort.go). Copied here so the test documents the actual limit.
+const sortMaxTotalBytes = 256 * 1024 * 1024 // 256 MiB
+
+// TestSortChainLargeMemoryConsumption demonstrates that chaining sort commands
+// in a pipeline forces hundreds of MiB of real allocations within a single
+// script execution.
 //
-// With a 10 MiB input file:
-//   - 1 sort  → ~10 MiB allocated
-//   - 2 sorts → ~20 MiB allocated  (≈ 2×)
-//   - 3 sorts → ~30 MiB allocated  (≈ 3×)
+// Each sort must buffer its entire input in an allLines []string slice before
+// emitting a single byte of output (sorting cannot stream). Because the left
+// side of every pipe runs concurrently with the right side, all N sorts in a
+// chain hold their allLines slices simultaneously at peak — there is no
+// aggregate cap across the chain.
 //
-// The theoretical maximum with a 256 MiB input (MaxTotalBytes) and a 3-sort
-// chain is 3 × 256 MiB = 768 MiB — well within a single script execution.
-// There is no aggregate cap across all sorts in a pipeline.
-func TestSortChainMemoryScalesWithDepth(t *testing.T) {
+// This test uses a ~64 MiB input file. Expected allocations:
+//
+//	sort input.txt             →  ~64 MiB  (1 × input)
+//	sort input.txt | sort      → ~128 MiB  (2 × input)
+//	sort input.txt | sort | sort → ~192 MiB (3 × input)
+//
+// With the maximum allowed input (MaxTotalBytes = 256 MiB per sort), a
+// 3-sort chain would allocate up to 768 MiB in a single script invocation.
+func TestSortChainLargeMemoryConsumption(t *testing.T) {
 	dir := t.TempDir()
 	inputFile := filepath.Join(dir, "input.txt")
 
-	// 10 MiB input: 10240 lines × 1023 bytes each.
-	// 1023 bytes keeps us safely below MaxLineBytes (1 MiB) and MaxLines (1M).
+	// ~64 MiB input: 65536 lines × 1023 bytes each.
+	// 1023 keeps us safely below MaxLineBytes (1 MiB); 65536 < MaxLines (1M).
 	const lineSize = 1023
-	const nLines = 10240 // ≈ 10 MiB total
+	const nLines = 65536                             // ≈ 64 MiB total
+	const inputSize = int64(nLines) * (lineSize + 1) // +1 for newline
+
 	writeLinesFile(t, inputFile, nLines, lineSize)
 
-	type result struct {
-		depth int
-		alloc int64
-	}
-
 	depths := []int{1, 2, 3}
-	results := make([]result, len(depths))
+	allocs := make([]int64, len(depths))
 
 	for i, depth := range depths {
-		// Build: sort input.txt | sort | sort ...
 		parts := make([]string, depth)
 		parts[0] = fmt.Sprintf("sort %s", inputFile)
 		for j := 1; j < depth; j++ {
 			parts[j] = "sort"
 		}
 		script := strings.Join(parts, " | ")
-		alloc := sortChainAlloc(t, dir, script)
-		results[i] = result{depth, alloc}
-		t.Logf("sort chain depth %d: %d MiB allocated (%.1f MiB)", depth, alloc>>20, float64(alloc)/float64(1<<20))
+		allocs[i] = sortChainAlloc(t, dir, script)
+		t.Logf("sort chain depth %d: %.0f MiB allocated", depth, float64(allocs[i])/(1<<20))
 	}
 
-	// Each additional sort in the chain should add roughly the input size worth
-	// of allocations. We allow a generous 50% tolerance to account for GC
-	// timing and scanner/sort overhead.
-	alloc1 := results[0].alloc
-	alloc2 := results[1].alloc
-	alloc3 := results[2].alloc
+	t.Logf("---")
+	t.Logf("Input file:            %.0f MiB", float64(inputSize)/(1<<20))
+	t.Logf("Per-sort cap:          %d MiB (MaxTotalBytes)", sortMaxTotalBytes>>20)
+	t.Logf("Max possible (3-sort chain with max input): %d MiB", (3*sortMaxTotalBytes)>>20)
 
-	t.Logf("Theoretical max (3 × 256 MiB): %d MiB", (3*256*1024*1024)>>20)
-	t.Logf("alloc1=%d MiB, alloc2=%d MiB, alloc3=%d MiB", alloc1>>20, alloc2>>20, alloc3>>20)
-
-	// alloc2 should be at least 1.5× alloc1 (generous lower bound for 2×).
-	assert.GreaterOrEqual(t, alloc2, alloc1*3/2,
-		"2-sort chain should allocate at least 1.5× as much as 1-sort chain")
-
-	// alloc3 should be at least 2× alloc1 (generous lower bound for 3×).
-	assert.GreaterOrEqual(t, alloc3, alloc1*2,
-		"3-sort chain should allocate at least 2× as much as 1-sort chain")
+	// The 3-sort chain must allocate at least 2× the input size — proving that
+	// multiple large buffers are held simultaneously with no aggregate limit.
+	minExpected := 2 * inputSize
+	assert.GreaterOrEqual(t, allocs[2], minExpected,
+		"3-sort chain should allocate ≥ %.0f MiB (2× input); got %.0f MiB",
+		float64(minExpected)/(1<<20), float64(allocs[2])/(1<<20))
 }
 
 // TestPipelineGoroutineScalesWithDepth demonstrates that a pipeline of N
