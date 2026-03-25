@@ -19,7 +19,6 @@ import (
 	"github.com/DataDog/rshell/internal/interpoption"
 	"github.com/DataDog/rshell/interp"
 	"github.com/spf13/cobra"
-	"mvdan.cc/sh/v3/syntax"
 )
 
 const exitCodeTimeout = 124
@@ -204,8 +203,8 @@ type executeOpts struct {
 }
 
 func execute(ctx context.Context, script, name string, opts executeOpts, stdin io.Reader, stdout, stderr io.Writer) error {
-	// Parse.
-	prog, err := syntax.NewParser().Parse(strings.NewReader(script), name)
+	// Parse (also enforces the MaxScriptBytes limit).
+	prog, err := interp.ParseScript(script, name)
 	if err != nil {
 		// Bash returns exit code 2 for syntax/parse errors.
 		fmt.Fprintf(stderr, "%v\n", err)

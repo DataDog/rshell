@@ -437,6 +437,31 @@ func (r *Runner) Run(ctx context.Context, node syntax.Node) (retErr error) {
 	return nil
 }
 
+// MaxScriptBytes is the maximum allowed byte length of a shell script passed
+// to [ParseScript]. Scripts larger than this are rejected before parsing to
+// prevent the parser from allocating unbounded memory. Unlike other per-input
+// limits (variables, command substitution, per-line builtins) this cap is
+// enforced at the API boundary rather than inside the interpreter, because the
+// interpreter only receives the pre-parsed AST.
+const MaxScriptBytes = 5 * 1024 * 1024 // 5 MiB
+
+// ParseScript parses script as a shell program and returns the resulting AST.
+// It enforces [MaxScriptBytes]: if len(script) exceeds that limit the call
+// returns an error immediately, before the parser allocates any memory.
+//
+// name is an optional filename used in parse-error messages (pass "" if
+// there is no associated file).
+//
+// Library callers should use ParseScript rather than calling the underlying
+// syntax parser directly so that the size limit is consistently enforced.
+func ParseScript(script, name string) (*syntax.File, error) {
+	if len(script) > MaxScriptBytes {
+		return nil, fmt.Errorf("script size %d bytes exceeds maximum of %d bytes (%d MiB); split the script into smaller pieces",
+			len(script), MaxScriptBytes, MaxScriptBytes/(1024*1024))
+	}
+	return syntax.NewParser().Parse(strings.NewReader(script), name)
+}
+
 // Close releases resources held by the Runner, such as os.Root file descriptors
 // opened by AllowedPaths. It is safe to call Close multiple times.
 func (r *Runner) Close() error {

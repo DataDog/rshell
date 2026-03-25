@@ -17,6 +17,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/DataDog/rshell/interp"
 )
 
 func runCLI(t *testing.T, args ...string) (exitCode int, stdout, stderr string) {
@@ -280,4 +282,37 @@ func TestProcPathFlagInHelp(t *testing.T) {
 	code, stdout, _ := runCLI(t, "--help")
 	assert.Equal(t, 0, code)
 	assert.Contains(t, stdout, "--proc-path")
+}
+
+// TestScriptExceedsMaxScriptBytes verifies that the CLI rejects a script
+// larger than interp.MaxScriptBytes (5 MiB) with exit code 2 and a
+// descriptive error message that tells the caller what limit was hit.
+func TestScriptExceedsMaxScriptBytes(t *testing.T) {
+	// Build a syntactically valid script just over the limit so the error is
+	// definitely from the size check, not the parser.
+	line := "echo hello\n"
+	script := strings.Repeat(line, interp.MaxScriptBytes/len(line)+1)
+	require.Greater(t, len(script), interp.MaxScriptBytes)
+
+	code, _, stderr := runCLI(t, "-c", script)
+	assert.Equal(t, 2, code, "oversized script should return exit code 2")
+	assert.Contains(t, stderr, "exceeds maximum")
+	assert.Contains(t, stderr, "5 MiB")
+}
+
+// TestScriptAtMaxScriptBytes verifies that a script exactly at the limit is
+// accepted (boundary condition).
+func TestScriptAtMaxScriptBytes(t *testing.T) {
+	// Build a script of exactly MaxScriptBytes: a comment line followed by the
+	// command. The comment must end with \n so the parser sees two separate
+	// lines, not a single comment that swallows the command.
+	cmd := "echo ok\n"
+	// comment = (MaxScriptBytes - len(cmd) - 1) '#' chars + '\n'
+	comment := strings.Repeat("#", interp.MaxScriptBytes-len(cmd)-1) + "\n"
+	script := comment + cmd
+	require.Equal(t, interp.MaxScriptBytes, len(script))
+
+	code, stdout, _ := runCLI(t, "--allow-all-commands", "-c", script)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "ok\n", stdout)
 }

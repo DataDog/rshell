@@ -132,8 +132,9 @@ const MaxLineBytes = 1 << 20 // 1 MiB
 
 // MaxTotalBytes is the cumulative byte cap across all input lines. This
 // prevents OOM when many lines are each below MaxLineBytes but collectively
-// consume excessive memory. 256 MiB is generous for agent workloads.
-const MaxTotalBytes = 256 * 1024 * 1024 // 256 MiB
+// consume excessive memory — especially in sort chains where N concurrent
+// sort instances each hold their full input buffer simultaneously.
+const MaxTotalBytes = 5 * 1024 * 1024 // 5 MiB
 
 // registerFlags registers all sort flags and returns the bound handler.
 func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
@@ -391,7 +392,7 @@ func readFile(ctx context.Context, callCtx *builtins.CallContext, file string, t
 		line := sc.Text()
 		*totalBytes += int64(len(line))
 		if *totalBytes > MaxTotalBytes {
-			return nil, errors.New("input exceeds maximum total size")
+			return nil, fmt.Errorf("input exceeds maximum of %d MiB; pre-filter or split the input before sorting", MaxTotalBytes/(1024*1024))
 		}
 		lines = append(lines, line)
 		if len(lines) > MaxLines {

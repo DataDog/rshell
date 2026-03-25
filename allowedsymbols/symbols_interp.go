@@ -51,6 +51,7 @@ var interpAllowedSymbols = []string{
 	"strconv.Itoa",         // 🟢 int-to-string conversion; pure function, no I/O.
 	"strings.Builder",      // 🟢 efficient string concatenation; pure in-memory buffer, no I/O.
 	"strings.ContainsRune", // 🟢 checks if a rune is in a string; pure function, no I/O.
+	"strings.NewReader",    // 🟢 wraps a string as an io.Reader; pure function, no I/O; used by ParseScript.
 	"strings.Index",        // 🟢 finds substring index; pure function, no I/O.
 	"strings.HasPrefix",    // 🟢 pure function for prefix matching; no I/O.
 	"strings.HasSuffix",    // 🟢 pure function for suffix matching; no I/O.
@@ -127,6 +128,7 @@ var interpAllowedSymbols = []string{
 	"mvdan.cc/sh/v3/syntax.TestClause",   // 🟢 AST node for [[ ]] test command; pure type.
 	"mvdan.cc/sh/v3/syntax.TestDecl",     // 🟢 AST node for test declaration; pure type.
 	"mvdan.cc/sh/v3/syntax.TimeClause",   // 🟢 AST node for time command; pure type.
+	"mvdan.cc/sh/v3/syntax.NewParser",    // 🟢 creates a new shell parser; used by ParseScript to parse scripts into AST nodes.
 	"mvdan.cc/sh/v3/syntax.Walk",         // 🟢 traverses the AST; pure function, no I/O.
 	"mvdan.cc/sh/v3/syntax.WhileClause",  // 🟢 AST node for while/until loop; pure type.
 	"mvdan.cc/sh/v3/syntax.Word",         // 🟢 AST node for a shell word; pure type.
