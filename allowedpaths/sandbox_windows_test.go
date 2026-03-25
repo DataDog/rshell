@@ -127,31 +127,6 @@ func TestAccessExecAlwaysDeniedWindows(t *testing.T) {
 	assert.ErrorIs(t, sb.Access("data.txt", dir, 0x01), os.ErrPermission)
 }
 
-// TestFileOnlyInodeVerificationWindows verifies that file-only roots reject
-// access when the file has been replaced after sandbox construction.
-func TestFileOnlyInodeVerificationWindows(t *testing.T) {
-	dir := t.TempDir()
-	filePath := filepath.Join(dir, "data.txt")
-	require.NoError(t, os.WriteFile(filePath, []byte("original"), 0644))
-
-	sb, err := New([]string{filePath})
-	require.NoError(t, err)
-	defer sb.Close()
-
-	// Original file should be accessible.
-	f, err := sb.Open(filePath, dir, os.O_RDONLY, 0)
-	require.NoError(t, err)
-	f.Close()
-
-	// Replace the file: remove + create gives a new file identity.
-	require.NoError(t, os.Remove(filePath))
-	require.NoError(t, os.WriteFile(filePath, []byte("replaced"), 0644))
-
-	// Same name, different identity — must be rejected.
-	_, err = sb.Open(filePath, dir, os.O_RDONLY, 0)
-	assert.ErrorIs(t, err, os.ErrPermission, "replaced file should be rejected")
-}
-
 // TestFileOnlyCaseSensitiveWindows verifies that file-only matching uses
 // exact comparison even on Windows, because NTFS supports per-directory
 // case-sensitive mode (e.g. WSL). Callers must use the exact casing they

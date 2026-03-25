@@ -14,57 +14,10 @@ import (
 	"syscall"
 )
 
-// nonBlockOpenFlag is OR-ed into OpenFile calls for file-only roots to
-// prevent blocking on FIFOs that an attacker may have swapped in.
-const nonBlockOpenFlag = syscall.O_NONBLOCK
-
 // fileOnlyMatch reports whether rel matches the fileOnly name.
 // On Unix, filenames are case-sensitive — exact match required.
 func fileOnlyMatch(rel, fileOnly string) bool {
 	return rel == fileOnly
-}
-
-// fileIdentity extracts the canonical file identity (dev+inode) for a file
-// within an os.Root. Used to pin file-only allowlist entries at construction
-// time and verify they haven't been replaced.
-func fileIdentity(r *os.Root, relPath string) (uint64, uint64, bool) {
-	dev, ino, _, ok := fileIdentityAndMode(r, relPath)
-	return dev, ino, ok
-}
-
-// fileIdentityAndMode extracts file identity and mode from a single stat,
-// ensuring both are captured atomically from the same inode. Used by New()
-// to verify regularity and capture identity without a TOCTOU gap.
-func fileIdentityAndMode(r *os.Root, relPath string) (uint64, uint64, fs.FileMode, bool) {
-	info, err := r.Stat(relPath)
-	if err != nil {
-		return 0, 0, 0, false
-	}
-	st, ok := info.Sys().(*syscall.Stat_t)
-	if !ok {
-		return 0, 0, 0, false
-	}
-	return uint64(st.Dev), uint64(st.Ino), info.Mode(), true
-}
-
-// fileIdentityFromInfo extracts file identity (dev+inode) from FileInfo.
-// Used for post-operation identity verification on Stat/Lstat results.
-func fileIdentityFromInfo(info fs.FileInfo) (uint64, uint64, bool) {
-	st, ok := info.Sys().(*syscall.Stat_t)
-	if !ok {
-		return 0, 0, false
-	}
-	return uint64(st.Dev), uint64(st.Ino), true
-}
-
-// fileIdentityFromFile extracts file identity (dev+inode) from an opened fd
-// via fstat. Used for atomic post-open identity verification.
-func fileIdentityFromFile(f *os.File) (uint64, uint64, bool) {
-	info, err := f.Stat()
-	if err != nil {
-		return 0, 0, false
-	}
-	return fileIdentityFromInfo(info)
 }
 
 // IsErrIsDirectory reports whether err is an "is a directory" error.

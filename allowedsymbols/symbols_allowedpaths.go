@@ -32,7 +32,6 @@ var allowedpathsAllowedSymbols = []string{
 	"io/fs.ReadDirFile",                  // 🟢 read-only directory handle interface; no write capability.
 	"os.DevNull",                         // 🟢 platform null device path constant; pure constant.
 	"os.ErrPermission",                   // 🟢 sentinel error for permission denied; pure constant.
-	"os.File",                            // 🟠 opened file handle type; used for fstat-based identity verification on opened fds.
 	"os.FileMode",                        // 🟢 file permission bits type; pure type.
 	"os.Getgid",                          // 🟠 returns the numeric group id of the caller; read-only syscall.
 	"os.Getgroups",                       // 🟠 returns supplementary group ids; read-only syscall.

@@ -397,21 +397,3 @@ func TestFileOnlyAccessAllowed(t *testing.T) {
 	err = sb.Access(sibling, dir, 0x04)
 	assert.ErrorIs(t, err, os.ErrPermission)
 }
-
-func TestFileOnlyInodeStable(t *testing.T) {
-	dir := t.TempDir()
-	filePath := filepath.Join(dir, "data.txt")
-	require.NoError(t, os.WriteFile(filePath, []byte("original"), 0644))
-
-	sb, err := New([]string{filePath})
-	require.NoError(t, err)
-	defer sb.Close()
-
-	// Overwrite content in the same file (inode stays the same).
-	require.NoError(t, os.WriteFile(filePath, []byte("updated"), 0644))
-
-	// Same inode — should still be accessible.
-	f, err := sb.Open(filePath, dir, os.O_RDONLY, 0)
-	require.NoError(t, err, "same inode after content update should still be allowed")
-	f.Close()
-}

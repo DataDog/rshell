@@ -27,12 +27,9 @@ const MaxGlobEntries = 100_000
 // When fileOnly is non-empty, only that specific filename within the directory
 // is accessible — the rest of the directory is off-limits.
 type root struct {
-	absPath   string
-	root      *os.Root
-	fileOnly  string // non-empty restricts access to exactly this filename
-	fileIDDev uint64 // device ID captured at construction (file-only roots)
-	fileIDIno uint64 // inode captured at construction (file-only roots)
-	fileIDSet bool   // true if fileIDDev/fileIDIno are valid
+	absPath  string
+	root     *os.Root
+	fileOnly string // non-empty restricts access to exactly this filename
 }
 
 // Sandbox restricts filesystem access to a set of allowed directories.
@@ -85,22 +82,7 @@ func New(paths []string) (*Sandbox, error) {
 				closeAll(i)
 				return nil, fmt.Errorf("AllowedPaths: cannot open parent of %q: %w", abs, err)
 			}
-			baseName := filepath.Base(abs)
-			dev, ino, mode, idOK := fileIdentityAndMode(r, baseName)
-			if !idOK {
-				r.Close()
-				closeAll(i)
-				return nil, fmt.Errorf("AllowedPaths: cannot capture identity for %q", abs)
-			}
-			if !mode.IsRegular() {
-				r.Close()
-				closeAll(i)
-				return nil, fmt.Errorf("AllowedPaths: %q is not a regular file", abs)
-			}
-			roots[i] = root{
-				absPath: parentDir, root: r, fileOnly: baseName,
-				fileIDDev: dev, fileIDIno: ino, fileIDSet: true,
-			}
+			roots[i] = root{absPath: parentDir, root: r, fileOnly: filepath.Base(abs)}
 			continue
 		}
 		roots[i] = root{absPath: abs, root: r}
@@ -108,102 +90,13 @@ func New(paths []string) (*Sandbox, error) {
 	return &Sandbox{roots: roots}, nil
 }
 
-// verifyFileIdentity checks that the file at relPath still has the same
-// identity (dev+ino) as was captured at construction time. Returns true
-// if identity matches or if no identity was captured. This is a
-// non-authoritative fast pre-filter; the authoritative check uses
-// fstat on the opened fd (see verifyFileID).
-//
-// Uses metadata-only stat (no read permission required). On platforms
-// where FileInfo lacks identity data (Windows), allows through —
-// authoritative checks happen post-operation in Open/Stat/Lstat/Access.
-func (ar *root) verifyFileIdentity(relPath string) bool {
-	if !ar.fileIDSet {
-		return true
-	}
-	info, err := ar.root.Stat(relPath)
-	if err != nil {
-		// File may have been deleted — allow through so the downstream
-		// operation (Open/Stat/Lstat) returns the correct OS error
-		// (e.g. ENOENT) instead of a misleading "permission denied".
-		return true
-	}
-	dev, ino, ok := fileIdentityFromInfo(info)
-	if ok {
-		return ar.verifyFileID(dev, ino)
-	}
-	// Platform cannot extract identity from metadata (e.g. Windows).
-	// Allow through — authoritative checks happen post-operation.
-	return true
-}
-
-// verifyFileID checks whether the given identity matches the pinned
-// identity captured at construction time. Returns true if identity
-// matches or if no identity was captured.
-func (ar *root) verifyFileID(dev, ino uint64) bool {
-	if !ar.fileIDSet {
-		return true
-	}
-	return dev == ar.fileIDDev && ino == ar.fileIDIno
-}
-
-// statVerified obtains metadata via os.Root.Stat and verifies identity
-// from the returned FileInfo. On Unix, FileInfo.Sys() provides dev+ino
-// atomically (no read permission required). On Windows where FileInfo
-// lacks identity data, falls back to openStatVerified (requires read
-// permission — a platform limitation of the Go os.Root API, but
-// necessary to enforce the file-ID pinning invariant).
-func (ar *root) statVerified(relPath string) (fs.FileInfo, error) {
-	info, err := ar.root.Stat(relPath)
-	if err != nil {
-		return nil, err
-	}
-	dev, ino, ok := fileIdentityFromInfo(info)
-	if ok {
-		if !ar.verifyFileID(dev, ino) {
-			return nil, os.ErrPermission
-		}
-		return info, nil
-	}
-	// Platform cannot extract identity from FileInfo (Windows).
-	// Fall back to open+fstat to enforce the pinning invariant.
-	// This requires read permission — a platform limitation.
-	return ar.openStatVerified(relPath)
-}
-
-// openStatVerified opens the file through os.Root, then obtains both
-// metadata and identity from the same fd via fstat. This eliminates the
-// TOCTOU gap that exists when Stat and identity-verify are separate
-// operations (important on Windows where fileIdentityFromInfo is
-// unavailable and the fallback would re-open the file).
-func (ar *root) openStatVerified(relPath string) (fs.FileInfo, error) {
-	f, err := ar.root.OpenFile(relPath, os.O_RDONLY|nonBlockOpenFlag, 0)
-	if err != nil {
-		return nil, err
-	}
-	defer f.Close()
-
-	info, err := f.Stat()
-	if err != nil {
-		return nil, err
-	}
-
-	dev, ino, ok := fileIdentityFromFile(f)
-	if !ok || !ar.verifyFileID(dev, ino) {
-		return nil, os.ErrPermission
-	}
-	return info, nil
-}
-
-// resolveEntry returns the matching root entry and the path relative to it
-// for the given absolute path. Unlike resolve(), it returns the full root
-// struct so callers can perform post-operation identity verification.
-func (s *Sandbox) resolveEntry(absPath string) (*root, string, bool) {
+// resolve returns the matching os.Root and the path relative to it for the
+// given absolute path. It returns false if no root matches.
+func (s *Sandbox) resolve(absPath string) (*os.Root, string, bool) {
 	if s == nil {
 		return nil, "", false
 	}
-	for i := range s.roots {
-		ar := &s.roots[i]
+	for _, ar := range s.roots {
 		rel, err := filepath.Rel(ar.absPath, absPath)
 		if err != nil {
 			continue
@@ -215,29 +108,9 @@ func (s *Sandbox) resolveEntry(absPath string) (*root, string, bool) {
 		if ar.fileOnly != "" && !fileOnlyMatch(rel, ar.fileOnly) {
 			continue
 		}
-		// Non-authoritative fast pre-filter: reject if identity has
-		// clearly changed. The authoritative check happens post-open
-		// via fstat on the returned fd.
-		if ar.fileOnly != "" && !ar.verifyFileIdentity(rel) {
-			continue
-		}
-		return ar, rel, true
+		return ar.root, rel, true
 	}
 	return nil, "", false
-}
-
-// resolve returns the matching os.Root and the path relative to it for the
-// given absolute path. It returns false if no root matches.
-//
-// File-only roots are excluded — they require post-operation identity
-// verification via the root struct's pinned identity fields, which
-// resolve() discards. Use resolveEntry() for file-only access.
-func (s *Sandbox) resolve(absPath string) (*os.Root, string, bool) {
-	entry, rel, ok := s.resolveEntry(absPath)
-	if !ok || entry.fileOnly != "" {
-		return nil, "", false
-	}
-	return entry.root, rel, ok
 }
 
 // Access checks whether the resolved path is accessible with the given mode.
@@ -258,41 +131,33 @@ func (s *Sandbox) resolve(absPath string) (*os.Root, string, bool) {
 func (s *Sandbox) Access(path string, cwd string, mode uint32) error {
 	absPath := toAbs(path, cwd)
 
-	ar, rel, ok := s.resolveEntry(absPath)
-	if !ok {
+	if s == nil {
 		return &os.PathError{Op: "access", Path: path, Err: os.ErrPermission}
 	}
-
-	// accessCheck opens or stats the path through os.Root and
-	// performs the permission check (fd-relative OpenFile with
-	// O_NONBLOCK for reads on Unix, mode-bit inspection for
-	// everything else).
-	info, err := ar.accessCheck(rel, mode&0x04 != 0, mode&0x02 != 0, mode&0x01 != 0)
-	if err != nil {
-		return &os.PathError{Op: "access", Path: path, Err: os.ErrPermission}
-	}
-
-	// For file-only roots, verify identity post-accessCheck.
-	if ar.fileOnly != "" && ar.fileIDSet {
-		if mode&0x04 != 0 {
-			// Read requested — atomic open+fstat verification.
-			if _, verifyErr := ar.openStatVerified(rel); verifyErr != nil {
-				return &os.PathError{Op: "access", Path: path, Err: os.ErrPermission}
-			}
-		} else if info != nil {
-			// Non-read — verify from accessCheck's stat result.
-			// On Unix, fileIdentityFromInfo extracts dev+ino from
-			// the same stat accessCheck used (atomic). On Windows,
-			// fileIdentityFromInfo is unavailable and we cannot
-			// verify without read access (os.Root API limitation);
-			// identity enforcement for non-read modes is skipped.
-			dev, ino, idOK := fileIdentityFromInfo(info)
-			if idOK && !ar.verifyFileID(dev, ino) {
-				return &os.PathError{Op: "access", Path: path, Err: os.ErrPermission}
-			}
+	for _, ar := range s.roots {
+		rel, err := filepath.Rel(ar.absPath, absPath)
+		if err != nil {
+			continue
 		}
+		if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			continue
+		}
+		// For file-only roots, only the exact file is accessible.
+		if ar.fileOnly != "" && !fileOnlyMatch(rel, ar.fileOnly) {
+			continue
+		}
+
+		// accessCheck opens or stats the path through os.Root and
+		// performs the permission check (fd-relative OpenFile with
+		// O_NONBLOCK for reads on Unix, mode-bit inspection for
+		// everything else).
+		_, err = ar.accessCheck(rel, mode&0x04 != 0, mode&0x02 != 0, mode&0x01 != 0)
+		if err != nil {
+			return &os.PathError{Op: "access", Path: path, Err: os.ErrPermission}
+		}
+		return nil
 	}
-	return nil
+	return &os.PathError{Op: "access", Path: path, Err: os.ErrPermission}
 }
 
 // toAbs resolves path against cwd when it is not already absolute.
@@ -325,29 +190,14 @@ func (s *Sandbox) Open(path string, cwd string, flag int, perm os.FileMode) (io.
 
 	absPath := toAbs(path, cwd)
 
-	entry, relPath, ok := s.resolveEntry(absPath)
+	root, relPath, ok := s.resolve(absPath)
 	if !ok {
 		return nil, &os.PathError{Op: "open", Path: path, Err: os.ErrPermission}
 	}
 
-	openFlag := flag
-	if entry.fileOnly != "" {
-		openFlag |= nonBlockOpenFlag
-	}
-	f, err := entry.root.OpenFile(relPath, openFlag, perm)
+	f, err := root.OpenFile(relPath, flag, perm)
 	if err != nil {
 		return nil, PortablePathError(err)
-	}
-
-	// For file-only roots, verify the opened fd's identity matches the
-	// pinned identity. This is the authoritative check — fstat on the
-	// opened fd is atomic with the open, closing the TOCTOU gap.
-	if entry.fileOnly != "" && entry.fileIDSet {
-		dev, ino, idOK := fileIdentityFromFile(f)
-		if !idOK || !entry.verifyFileID(dev, ino) {
-			_ = f.Close() // Best-effort close; identity mismatch is the primary error.
-			return nil, &os.PathError{Op: "open", Path: path, Err: os.ErrPermission}
-		}
 	}
 	return f, nil
 }
@@ -555,28 +405,12 @@ func (s *Sandbox) Stat(path string, cwd string) (fs.FileInfo, error) {
 
 	absPath := toAbs(path, cwd)
 
-	entry, relPath, ok := s.resolveEntry(absPath)
+	root, relPath, ok := s.resolve(absPath)
 	if !ok {
 		return nil, &os.PathError{Op: "stat", Path: path, Err: os.ErrPermission}
 	}
 
-	// For file-only roots, verify identity using metadata-only stat
-	// (no read permission required). Falls back to open+fstat on
-	// platforms where FileInfo lacks identity (Windows).
-	if entry.fileOnly != "" && entry.fileIDSet {
-		info, err := entry.statVerified(relPath)
-		if err != nil {
-			// Propagate the actual error (e.g. ENOENT for deleted
-			// files) instead of always returning permission denied.
-			if errors.Is(err, os.ErrPermission) {
-				return nil, &os.PathError{Op: "stat", Path: path, Err: os.ErrPermission}
-			}
-			return nil, PortablePathError(err)
-		}
-		return info, nil
-	}
-
-	info, err := entry.root.Stat(relPath)
+	info, err := root.Stat(relPath)
 	if err != nil {
 		return nil, PortablePathError(err)
 	}
@@ -594,23 +428,12 @@ func (s *Sandbox) Lstat(path string, cwd string) (fs.FileInfo, error) {
 
 	absPath := toAbs(path, cwd)
 
-	entry, relPath, ok := s.resolveEntry(absPath)
+	root, relPath, ok := s.resolve(absPath)
 	if !ok {
 		return nil, &os.PathError{Op: "lstat", Path: path, Err: os.ErrPermission}
 	}
 
-	// For file-only roots, verify the target identity via metadata-only
-	// stat, then return symlink metadata via Lstat. Only reject on
-	// identity mismatch (ErrPermission). All other errors (ENOENT from
-	// dangling symlink, transient permission/traversal errors on the
-	// target) are allowed through — lstat inspects the link itself.
-	if entry.fileOnly != "" && entry.fileIDSet {
-		if _, err := entry.statVerified(relPath); err != nil && errors.Is(err, os.ErrPermission) {
-			return nil, &os.PathError{Op: "lstat", Path: path, Err: os.ErrPermission}
-		}
-	}
-
-	info, err := entry.root.Lstat(relPath)
+	info, err := root.Lstat(relPath)
 	if err != nil {
 		return nil, PortablePathError(err)
 	}
