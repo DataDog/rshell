@@ -94,6 +94,11 @@ func makeFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			return builtins.Result{}
 		}
 
+		if len(args) > 0 {
+			callCtx.Errf("uname: extra operand '%s'\n", args[0])
+			return builtins.Result{Code: 1}
+		}
+
 		if runtime.GOOS != "linux" {
 			callCtx.Errf("uname: not supported on %s (Linux only)\n", runtime.GOOS)
 			return builtins.Result{Code: 1}

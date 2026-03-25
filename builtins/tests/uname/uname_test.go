@@ -367,12 +367,11 @@ func TestUnameHelpStderrEmpty(t *testing.T) {
 	assert.Empty(t, stderr)
 }
 
-func TestUnameExtraArgsIgnored(t *testing.T) {
-	requireLinux(t)
+func TestUnameExtraOperandRejected(t *testing.T) {
 	dir := t.TempDir()
 	writeFakeProc(t, dir, defaultFakeProc())
-	// POSIX uname ignores extra arguments.
-	stdout, _, code := cmdRun(t, "uname foo bar", dir)
-	assert.Equal(t, 0, code)
-	assert.Equal(t, "Linux\n", stdout)
+	// GNU uname rejects extra operands.
+	_, stderr, code := cmdRun(t, "uname foo", dir)
+	assert.Equal(t, 1, code)
+	assert.Contains(t, stderr, "uname: extra operand")
 }
