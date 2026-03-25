@@ -238,6 +238,40 @@ func TestAllowedPathsDefaultBlocksAll(t *testing.T) {
 	assert.Contains(t, stderr, "permission denied")
 }
 
+// TestParseScriptRejectsOversizedInput verifies that interp.ParseScript returns
+// an error (without calling the parser) when the script byte length exceeds
+// interp.MaxScriptBytes (5 MiB). This is the library-level enforcement that
+// prevents callers from accidentally bypassing the limit by using the syntax
+// parser directly.
+func TestParseScriptRejectsOversizedInput(t *testing.T) {
+	// A script just over the limit; syntactically valid so any error is from
+	// the size check, not the parser.
+	line := "echo hello\n"
+	script := strings.Repeat(line, interp.MaxScriptBytes/len(line)+1)
+	require.Greater(t, len(script), interp.MaxScriptBytes)
+
+	_, err := interp.ParseScript(script, "test.sh")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "exceeds maximum")
+	assert.Contains(t, err.Error(), "5 MiB")
+}
+
+// TestParseScriptAcceptsValidInput verifies that interp.ParseScript succeeds
+// for a normal-sized, syntactically valid script.
+func TestParseScriptAcceptsValidInput(t *testing.T) {
+	prog, err := interp.ParseScript("echo hello\n", "test.sh")
+	require.NoError(t, err)
+	require.NotNil(t, prog)
+}
+
+// TestParseScriptRejectsInvalidSyntax verifies that interp.ParseScript
+// propagates parse errors from the underlying syntax parser.
+func TestParseScriptRejectsInvalidSyntax(t *testing.T) {
+	_, err := interp.ParseScript(`echo "unterminated`, "test.sh")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "without closing quote")
+}
+
 func TestAllowedPathsClose(t *testing.T) {
 	dir := t.TempDir()
 	runner, err := interp.New(

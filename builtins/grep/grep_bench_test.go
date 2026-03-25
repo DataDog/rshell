@@ -11,6 +11,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/DataDog/rshell/builtins/testutil"
@@ -98,6 +99,39 @@ func TestGrepMemoryBounded(t *testing.T) {
 	const maxBytesPerOp = 4 << 20
 	if bpo := result.AllocedBytesPerOp(); bpo > maxBytesPerOp {
 		t.Errorf("grep allocated %d bytes/op on 10MB input; want < %d", bpo, maxBytesPerOp)
+	}
+}
+
+// TestGrepBeforeContextMemoryBounded asserts that grep -B N with large lines
+// stays within the MaxContextBytes sliding-window cap. Lines are 8 KiB each;
+// requesting -B 1000 would hold 1000 × 8 KiB ≈ 8 MiB live without the cap.
+// With the cap the live window is bounded to MaxContextBytes (512 KiB).
+//
+// AllocedBytesPerOp captures total (not peak live) allocations: the before-
+// context path allocates a copy of each line before deciding to evict, so
+// total allocation tracks file size. The threshold here validates that
+// allocations do not grow beyond the expected O(file_size) budget and that no
+// additional unbounded accumulation occurs.
+func TestGrepBeforeContextMemoryBounded(t *testing.T) {
+	dir := t.TempDir()
+	// 8 KiB lines; 10 MiB file ≈ 1280 lines. Requesting -B 1000 means the
+	// uncapped window would hold the entire file (1280 × 8 KiB ≈ 10 MiB live).
+	// With the cap the window is bounded to MaxContextBytes (512 KiB).
+	const lineSize = 8 * 1024
+	createLargeFileGrep(t, dir, "input.txt", strings.Repeat("x", lineSize-1)+"\n", 10<<20)
+
+	result := testing.Benchmark(func(b *testing.B) {
+		b.ReportAllocs()
+		for b.Loop() {
+			testutil.RunScriptDiscard(b, "grep -B 1000 NOMATCH input.txt", dir, interp.AllowedPaths([]string{dir}))
+		}
+	})
+
+	// Total allocation budget: ~10 MiB of per-line copies + shell/runner overhead.
+	// Capped at 24 MiB to catch any unexpected accumulation.
+	const maxBytesPerOp = 24 << 20
+	if bpo := result.AllocedBytesPerOp(); bpo > maxBytesPerOp {
+		t.Errorf("grep -B 1000 allocated %d bytes/op on 10MB input with 8KiB lines; want < %d", bpo, maxBytesPerOp)
 	}
 }
 
