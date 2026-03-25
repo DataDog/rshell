@@ -1,3 +1,6 @@
+# skip_assert_against_bash: true — intentional divergence from bash.
+# Bash returns exit code 2 for "help --help"; rshell returns 0 per project
+# convention (RULES.md: "When --help is passed: Set exit code 0 and return").
 description: Help --help prints usage.
 skip_assert_against_bash: true
 input:

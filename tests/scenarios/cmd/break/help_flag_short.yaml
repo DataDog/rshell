@@ -1,3 +1,6 @@
+# skip_assert_against_bash: true — intentional divergence from bash.
+# Bash returns exit code 2 for "break -h"; rshell returns 0 per project
+# convention (RULES.md: "When --help is passed: Set exit code 0 and return").
 description: break -h prints usage and exits zero.
 skip_assert_against_bash: true
 input:

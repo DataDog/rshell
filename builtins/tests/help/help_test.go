@@ -249,7 +249,7 @@ func TestHelpShowsCommandHelp(t *testing.T) {
 
 func TestHelpFlagPrintsUsage(t *testing.T) {
 	stdout, _, code := runScript(t, "help --help", "", interpoption.AllowAllCommands().(interp.RunnerOption))
-	assert.Equal(t, 1, code)
+	assert.Equal(t, 0, code)
 	assert.Contains(t, stdout, "Usage: help")
 	assert.Contains(t, stdout, "Display help for builtin commands.")
 }
