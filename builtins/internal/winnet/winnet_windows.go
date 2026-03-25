@@ -34,7 +34,8 @@ const (
 	// calling GetExtendedTcpTable / GetExtendedUdpTable. This cap is
 	// intentionally defined here (where the DLL calls live) so that the limit
 	// stays co-located with the code that enforces it.
-	MaxBufSize = 64 << 20 // 64 MiB
+	// 5 MiB is sufficient for any realistic socket table on Windows.
+	MaxBufSize = 5 << 20 // 5 MiB
 )
 
 var (
