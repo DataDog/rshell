@@ -69,6 +69,8 @@ We built a set of "skills," structured step-by-step workflows that Claude Code f
 
 Steps 3, 4, and 5 run in parallel since the tests and the implementation are both driven by the approved spec from step 2.
 
+Backing the skills is a shared rules file that codifies every security invariant a builtin must satisfy: bounded buffers for untrusted input, regex execution limits to prevent ReDoS, integer overflow checks on all numeric arguments, sandbox-only file access, cross-platform path handling, and more. The rules file acts as a machine-readable security policy. The AI follows it on every implementation, and reviewers audit against it. When we found a gap in the rules, we fixed it once and every future command inherited the fix.
+
 Every command went through this same pipeline. That consistency made review tractable. By the twentieth builtin, the reviewer already knew the structure, the test patterns, and the security invariants to check.
 
 ### The review-fix loop
