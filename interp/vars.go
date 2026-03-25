@@ -6,6 +6,7 @@
 package interp
 
 import (
+	"errors"
 	"fmt"
 	"maps"
 	"runtime"
@@ -20,6 +21,21 @@ import (
 // Assignments that exceed this limit are rejected with an error.
 const MaxVarBytes = 1 << 20 // 1 MiB
 
+// MaxTotalVarsBytes is the maximum total size in bytes of all variable values
+// combined. Assignments that would push the total over this limit are rejected.
+const MaxTotalVarsBytes = 1 << 20 // 1 MiB
+
+// errTotalVarStorageExceeded is returned by overlayEnviron.Set when the total
+// variable storage cap is exceeded. It is a distinct type so that setVar can
+// treat it as a fatal error and abort the script.
+type errTotalVarStorageExceeded struct {
+	total int
+}
+
+func (e *errTotalVarStorageExceeded) Error() string {
+	return fmt.Sprintf("variable storage limit exceeded (%d bytes total)", e.total)
+}
+
 func newOverlayEnviron(parent expand.Environ, background bool) *overlayEnviron {
 	oenv := &overlayEnviron{}
 	if !background {
@@ -29,6 +45,9 @@ func newOverlayEnviron(parent expand.Environ, background bool) *overlayEnviron {
 		// measure with profiles or benchmarks before we choose to do so.
 		oenv.values = make(map[string]expand.Variable)
 		maps.Insert(oenv.values, parent.Each)
+		for _, vr := range oenv.values {
+			oenv.totalBytes += len(vr.Str)
+		}
 	}
 	return oenv
 }
@@ -39,6 +58,8 @@ type overlayEnviron struct {
 	// which we can safely reuse without data races, such as non-background subshells.
 	parent expand.Environ
 	values map[string]expand.Variable
+	// totalBytes tracks the sum of len(value.Str) for all variables in [values].
+	totalBytes int
 }
 
 func (o *overlayEnviron) Get(name string) expand.Variable {
@@ -80,13 +101,30 @@ func (o *overlayEnviron) Set(name string, vr expand.Variable) error {
 		}
 		if prev.Local {
 			vr.Local = true
+			// Subtract old value from total; the unset local retains its slot but no value.
+			if inOverlay {
+				o.totalBytes -= len(prev.Str)
+			}
 			o.values[name] = vr
 			return nil
+		}
+		if inOverlay {
+			o.totalBytes -= len(prev.Str)
 		}
 		delete(o.values, name)
 		return nil
 	}
-	// modifying the entire variable
+	// modifying the entire variable — enforce total storage cap
+	oldBytes := 0
+	if inOverlay {
+		oldBytes = len(prev.Str)
+	}
+	newBytes := len(vr.Str)
+	delta := newBytes - oldBytes
+	if delta > 0 && o.totalBytes+delta > MaxTotalVarsBytes {
+		return &errTotalVarStorageExceeded{total: o.totalBytes + delta}
+	}
+	o.totalBytes += delta
 	vr.Local = prev.Local || vr.Local
 	o.values[name] = vr
 	return nil
@@ -154,7 +192,16 @@ func (r *Runner) setVar(name string, vr expand.Variable) {
 	}
 	if err := r.writeEnv.Set(name, vr); err != nil {
 		r.errf("%s: %v\n", name, err)
-		r.exit.code = 1
+		var storageErr *errTotalVarStorageExceeded
+		if errors.As(err, &storageErr) {
+			// Total storage exhaustion aborts the script (sets exiting without
+			// recording a fatal error, so Run returns ExitStatus(1) rather than
+			// the raw error, which is consistent with how the test helpers work).
+			r.exit.code = 1
+			r.exit.exiting = true
+		} else {
+			r.exit.code = 1
+		}
 		return
 	}
 }

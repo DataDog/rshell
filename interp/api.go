@@ -235,7 +235,7 @@ func New(opts ...RunnerOption) (*Runner, error) {
 // RunnerOption can be passed to [New] to alter a [Runner]'s behaviour.
 type RunnerOption func(*Runner) error
 
-func stdinFile(r io.Reader) (*os.File, error) {
+func stdinFile(ctx context.Context, r io.Reader) (*os.File, error) {
 	switch r := r.(type) {
 	case *os.File:
 		return r, nil
@@ -247,8 +247,22 @@ func stdinFile(r io.Reader) (*os.File, error) {
 			return nil, err
 		}
 		go func() {
-			io.Copy(pw, r)
-			pw.Close()
+			defer pw.Close()
+			buf := make([]byte, 32*1024)
+			for {
+				if ctx.Err() != nil {
+					return
+				}
+				n, err := r.Read(buf)
+				if n > 0 {
+					if _, werr := pw.Write(buf[:n]); werr != nil {
+						return
+					}
+				}
+				if err != nil {
+					return
+				}
+			}
 		}()
 		return pr, nil
 	}
@@ -279,7 +293,7 @@ func Env(pairs ...string) RunnerOption {
 // so that cancelling the runner's context can stop a blocked standard input read.
 func StdIO(in io.Reader, out, err io.Writer) RunnerOption {
 	return func(r *Runner) error {
-		stdin, _err := stdinFile(in)
+		stdin, _err := stdinFile(context.Background(), in)
 		if _err != nil {
 			return _err
 		}
@@ -367,6 +381,14 @@ func (r *Runner) Reset() {
 	// blocks all external execution, limiting the practical impact of this vector.
 	r.setVarString("IFS", " \t\n")
 	r.setVarString("OPTIND", "1")
+
+	// Reset the total-bytes counter so that the interpreter's own initial
+	// variable assignments (PWD, IFS, OPTIND above) do not count against the
+	// user-visible MaxTotalVarsBytes cap.  Those values are small and bounded;
+	// only the variables that a script itself creates or modifies should count.
+	if ov, ok := r.writeEnv.(*overlayEnviron); ok {
+		ov.totalBytes = 0
+	}
 
 	r.didReset = true
 }
