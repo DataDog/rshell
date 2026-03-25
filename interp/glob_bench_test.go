@@ -402,6 +402,73 @@ func TestGlobManyConsecutiveStarsMemoryBounded(t *testing.T) {
 	}
 }
 
+// TestGlobReadDirLimitEnforced verifies that a script triggering more than
+// MaxGlobReadDirCalls directory reads is stopped with an error.
+func TestGlobReadDirLimitEnforced(t *testing.T) {
+	dir := createGlobDir(t, 5)
+
+	// Generate a script with 10,001 glob words — each "*" triggers one
+	// ReadDirForGlob call, exceeding MaxGlobReadDirCalls (10,000).
+	args := make([]string, interp.MaxGlobReadDirCalls+1)
+	for i := range args {
+		args[i] = "*"
+	}
+	script := "echo " + strings.Join(args, " ")
+
+	stdout, stderr, exitCode := testutil.RunScript(t, script, dir, interp.AllowedPaths([]string{dir}))
+	_ = stdout
+
+	if exitCode == 0 {
+		t.Fatal("expected non-zero exit code when glob ReadDir limit is exceeded")
+	}
+	if !strings.Contains(stderr, "exceeded maximum number of directory reads") {
+		t.Errorf("expected glob limit error in stderr, got: %s", stderr)
+	}
+}
+
+// TestGlobReadDirLimitNotTriggeredBelowCap verifies that scripts just under
+// the limit work fine.
+func TestGlobReadDirLimitNotTriggeredBelowCap(t *testing.T) {
+	dir := createGlobDir(t, 5)
+
+	// Exactly MaxGlobReadDirCalls glob words — should succeed.
+	args := make([]string, interp.MaxGlobReadDirCalls)
+	for i := range args {
+		args[i] = "*"
+	}
+	script := "echo " + strings.Join(args, " ")
+
+	_, stderr, exitCode := testutil.RunScript(t, script, dir, interp.AllowedPaths([]string{dir}))
+
+	if exitCode != 0 {
+		t.Errorf("expected exit code 0 at exactly MaxGlobReadDirCalls, got %d; stderr: %s", exitCode, stderr)
+	}
+}
+
+// TestGlobReadDirLimitSharedAcrossSubshells verifies that the counter is
+// shared between the parent shell and subshells (e.g. pipes).
+func TestGlobReadDirLimitSharedAcrossSubshells(t *testing.T) {
+	dir := createGlobDir(t, 5)
+
+	// Use a for-in loop that expands globs many times.
+	// Each "echo *" triggers 1 ReadDir call. We need >10K iterations.
+	// Generate a sequence as for-in values and glob inside the body.
+	vals := make([]string, interp.MaxGlobReadDirCalls+1)
+	for i := range vals {
+		vals[i] = "x"
+	}
+	script := "for i in " + strings.Join(vals, " ") + "; do echo *; done"
+
+	_, stderr, exitCode := testutil.RunScript(t, script, dir, interp.AllowedPaths([]string{dir}))
+
+	if exitCode == 0 {
+		t.Fatal("expected non-zero exit code when glob ReadDir limit is exceeded via loop")
+	}
+	if !strings.Contains(stderr, "exceeded maximum number of directory reads") {
+		t.Errorf("expected glob limit error in stderr, got: %s", stderr)
+	}
+}
+
 // createNestedTree creates a directory tree with the given depth and branching
 // factor. At each level, it creates 'branching' subdirectories. At the leaf
 // level, it creates a single file.
