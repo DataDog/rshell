@@ -9,6 +9,7 @@ import (
 	"context"
 
 	"github.com/DataDog/rshell/builtins/internal/procinfo"
+	"github.com/DataDog/rshell/builtins/internal/procsyskernel"
 )
 
 // ProcProvider gives builtins controlled access to the proc filesystem.
@@ -26,6 +27,11 @@ func NewProcProvider(path string) *ProcProvider {
 	return &ProcProvider{path: path}
 }
 
+// ProcPath returns the configured proc filesystem path (e.g. "/proc" or "/host/proc").
+func (p *ProcProvider) ProcPath() string {
+	return p.path
+}
+
 // ListAll returns all running processes.
 func (p *ProcProvider) ListAll(ctx context.Context) ([]procinfo.ProcInfo, error) {
 	return procinfo.ListAll(ctx, p.path)
@@ -39,4 +45,11 @@ func (p *ProcProvider) GetSession(ctx context.Context) ([]procinfo.ProcInfo, err
 // GetByPIDs returns process info for the given PIDs.
 func (p *ProcProvider) GetByPIDs(ctx context.Context, pids []int) ([]procinfo.ProcInfo, error) {
 	return procinfo.GetByPIDs(ctx, p.path, pids)
+}
+
+// ReadKernelFile reads a single-line value from a /proc/sys/kernel/ pseudo-file.
+// name is the filename relative to sys/kernel/ (e.g. "ostype", "hostname").
+// The returned value is trimmed of trailing whitespace.
+func (p *ProcProvider) ReadKernelFile(name string) (string, error) {
+	return procsyskernel.ReadFile(p.path, name)
 }
