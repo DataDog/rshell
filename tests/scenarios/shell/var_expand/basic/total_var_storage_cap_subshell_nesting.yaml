@@ -10,5 +10,6 @@ input:
 expect:
   stdout: |+
     OUTER_DONE
-  stderr_contains: ["variable storage limit exceeded"]
+  stderr: |+
+    B: variable storage limit exceeded (1572864 bytes total)
   exit_code: 0

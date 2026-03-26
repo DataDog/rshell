@@ -315,6 +315,10 @@ func Env(pairs ...string) RunnerOption {
 // write end is closed, so it is bounded by the reader's lifetime. Callers that
 // require context-cancellable stdin should provide an [*os.File] (e.g. via
 // [os.Pipe]) directly, or use a redirect inside the script.
+// If the provided reader's Read blocks indefinitely (for example a [net.Conn]
+// without a deadline), the goroutine may outlive the script; callers in that
+// situation should wrap the reader with a deadline-aware adapter before passing
+// it to StdIO.
 func StdIO(in io.Reader, out, err io.Writer) RunnerOption {
 	return func(r *Runner) error {
 		stdin, _err := stdinFile(context.Background(), in)

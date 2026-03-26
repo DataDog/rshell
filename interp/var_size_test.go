@@ -104,6 +104,32 @@ func TestNonBackgroundSubshellVarOverrideTracking(t *testing.T) {
 	assert.Equal(t, 0, code)
 }
 
+// TestNonBackgroundSubshellDoesNotCountEnvVars is a regression test for a bug
+// where newOverlayEnviron seeded totalBytes for non-background subshells by
+// summing parent.Each(), which included variables provided via interp.Env().
+// Because Env() variables are intentionally excluded from the cap in the top-level
+// runner (via Reset()'s post-init totalBytes zero-out), counting them again in the
+// subshell seed caused false cap violations: a legitimate caller passing a large
+// Env() variable would find that any non-background subshell started with a
+// pre-inflated counter, causing otherwise-valid assignments to be rejected.
+func TestNonBackgroundSubshellDoesNotCountEnvVars(t *testing.T) {
+	// Provide a 512 KiB variable via Env() — it must NOT count against the cap.
+	// A non-background subshell that assigns another 600 KiB variable should
+	// succeed, because the real script-assigned storage (600 KiB) is within the cap.
+	envValue512K := strings.Repeat("x", 512*1024)
+	script := fmt.Sprintf(
+		"( A=%s; echo SUBSHELL_OK )\necho DONE\n",
+		strings.Repeat("y", 600*1024),
+	)
+
+	stdout, _, code := runScript(t, script, "", interp.Env("CONFIG="+envValue512K))
+
+	assert.Contains(t, stdout, "SUBSHELL_OK",
+		"non-background subshell should not count Env() vars toward the cap")
+	assert.Contains(t, stdout, "DONE")
+	assert.Equal(t, 0, code)
+}
+
 // TestTotalVarStorageCapUpdateTracking verifies that updating an existing variable
 // correctly adjusts the total byte counter (i.e. growing a variable counts against
 // the cap, and shrinking it frees space).

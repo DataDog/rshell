@@ -40,15 +40,28 @@ func newOverlayEnviron(parent expand.Environ, background bool) *overlayEnviron {
 	oenv := &overlayEnviron{}
 	if !background {
 		oenv.parent = parent
-		// Seed totalBytes with the parent's current variable storage so that the
-		// per-shell cap is enforced consistently whether variables were set in this
-		// shell or inherited from a parent.  Without this, a script that nests
-		// subshells could reset the counter to zero at each nesting level and
-		// allocate O(depth × MaxTotalVarsBytes) before hitting any limit.
-		parent.Each(func(_ string, vr expand.Variable) bool {
-			oenv.totalBytes += len(vr.Str)
-			return true
-		})
+		// Seed totalBytes from the parent's tracked counter so that the cap is
+		// enforced consistently across subshell nesting levels (preventing a
+		// script from resetting the counter to zero at each nesting level and
+		// allocating O(depth × MaxTotalVarsBytes) before hitting any limit).
+		//
+		// When the parent is an *overlayEnviron we use its tracked counter
+		// directly, which reflects only script-assigned variables (Env()
+		// variables are excluded from the cap via the Reset() zero-out, so they
+		// do not appear in pov.totalBytes).  Summing via parent.Each() instead
+		// would also count inherited Env() variables, producing false cap hits
+		// for legitimate callers that provide a large Env() variable.
+		//
+		// When the parent is not an *overlayEnviron (fallback) we must sum
+		// manually since there is no pre-computed counter.
+		if pov, ok := parent.(*overlayEnviron); ok {
+			oenv.totalBytes = pov.totalBytes
+		} else {
+			parent.Each(func(_ string, vr expand.Variable) bool {
+				oenv.totalBytes += len(vr.Str)
+				return true
+			})
+		}
 	} else {
 		oenv.values = make(map[string]expand.Variable)
 		maps.Insert(oenv.values, parent.Each)
