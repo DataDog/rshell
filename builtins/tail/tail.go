@@ -49,7 +49,7 @@
 //	Line mode uses a ring buffer of size min(N, MaxRingLines) slots. Each slot
 //	holds one line; lines exceeding MaxLineBytes cause a scanner error. The
 //	ring buffer's total memory footprint is additionally capped at MaxRingBytes
-//	(64 MiB). If the input has more lines than the ring can hold and N exceeds
+//	(5 MiB). If the input has more lines than the ring can hold and N exceeds
 //	MaxRingLines, tail returns an error rather than silently truncating output.
 //
 //	Byte mode uses a circular buffer of size min(N, MaxBytesBuffer). If the
@@ -104,12 +104,12 @@ const MaxRingLines = 100_000
 // MaxRingBytes is the maximum total bytes the ring buffer may hold at any
 // one time. Without this cap, MaxRingLines (100 000) × MaxLineBytes (1 MiB)
 // yields a worst-case memory envelope of ~97.6 GiB. This constant reduces
-// the bound to 64 MiB.
-const MaxRingBytes = 64 << 20 // 64 MiB
+// the bound to 5 MiB.
+const MaxRingBytes = 5 << 20 // 5 MiB
 
 // MaxBytesBuffer is the maximum size of the circular byte buffer used in
 // last-N-bytes mode.
-const MaxBytesBuffer = 32 << 20 // 32 MiB
+const MaxBytesBuffer = 5 << 20 // 5 MiB
 
 // MaxTotalReadBytes is the maximum total bytes tail will consume from a
 // single input source. Both last-N-lines and last-N-bytes modes must read
@@ -201,10 +201,7 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 
 		// Determine header printing using last-flag-wins: the highest pos among
 		// quiet/silent (suppress) vs verbose (force) controls the outcome.
-		suppressPos := quietFlag.pos
-		if silentFlag.pos > suppressPos {
-			suppressPos = silentFlag.pos
-		}
+		suppressPos := max(quietFlag.pos, silentFlag.pos)
 		printHeaders := len(files) > 1
 		if verboseFlag.pos > suppressPos {
 			printHeaders = true
@@ -432,11 +429,11 @@ func readLastBytes(ctx context.Context, callCtx *builtins.CallContext, r io.Read
 	}
 
 	// Allocate the circular buffer eagerly. bufSize is capped at MaxBytesBuffer
-	// (32 MiB), so this allocation is bounded regardless of the user-supplied
+	// (5 MiB), so this allocation is bounded regardless of the user-supplied
 	// count value.
 	bufSize := MaxBytesBuffer
 	if count < MaxBytesBuffer {
-		bufSize = int(count) // count < MaxBytesBuffer (32 MiB) fits safely in int
+		bufSize = int(count) // count < MaxBytesBuffer (5 MiB) fits safely in int
 	}
 	circ := make([]byte, bufSize)
 	var totalWritten int64
