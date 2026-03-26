@@ -7,14 +7,9 @@ package builtins
 
 import (
 	"context"
-	"fmt"
-	"io"
-	"os"
-	"path/filepath"
-	"strings"
-	"syscall"
 
 	"github.com/DataDog/rshell/builtins/internal/procinfo"
+	"github.com/DataDog/rshell/builtins/internal/procsyskernel"
 )
 
 // ProcProvider gives builtins controlled access to the proc filesystem.
@@ -56,29 +51,5 @@ func (p *ProcProvider) GetByPIDs(ctx context.Context, pids []int) ([]procinfo.Pr
 // name is the filename relative to sys/kernel/ (e.g. "ostype", "hostname").
 // The returned value is trimmed of trailing whitespace.
 func (p *ProcProvider) ReadKernelFile(name string) (string, error) {
-	path := filepath.Join(p.path, "sys", "kernel", name)
-	// Open with O_NONBLOCK to prevent blocking on FIFOs, then validate
-	// the file type via fstat on the opened fd. This is atomic — no
-	// TOCTOU gap between type check and open.
-	f, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NONBLOCK, 0)
-	if err != nil {
-		return "", err
-	}
-	defer f.Close()
-	info, err := f.Stat()
-	if err != nil {
-		return "", err
-	}
-	if !info.Mode().IsRegular() && info.Mode().Type()&os.ModeCharDevice == 0 {
-		// Allow regular files and char devices (proc pseudo-files appear as
-		// char devices on some configurations). Reject FIFOs, sockets, etc.
-		return "", fmt.Errorf("not a regular file: %s", path)
-	}
-	// Proc kernel files are tiny single-line values. Cap at 4 KiB to
-	// prevent unbounded reads if --proc-path points at a non-proc tree.
-	data, err := io.ReadAll(io.LimitReader(f, 4096))
-	if err != nil {
-		return "", err
-	}
-	return strings.TrimRight(string(data), " \t\r\n"), nil
+	return procsyskernel.ReadFile(p.path, name)
 }
