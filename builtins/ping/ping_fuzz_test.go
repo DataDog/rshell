@@ -61,6 +61,9 @@ func FuzzPingFlags(f *testing.F) {
 	f.Add("-h", "")
 
 	f.Fuzz(func(t *testing.T, flag, value string) {
+		if t.Context().Err() != nil {
+			return
+		}
 		// Only allow characters that are safe to pass unquoted in a shell script.
 		// Using an allowlist is more robust than a denylist: any character not
 		// explicitly permitted here could cause shell parse errors or command
@@ -76,7 +79,7 @@ func FuzzPingFlags(f *testing.F) {
 			return
 		}
 
-		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
 		defer cancel()
 
 		var script string
@@ -87,6 +90,9 @@ func FuzzPingFlags(f *testing.F) {
 		}
 
 		_, _, code := cmdRunCtxFuzz(ctx, t, script)
+		if t.Context().Err() != nil {
+			return
+		}
 		if code != 0 && code != 1 {
 			t.Errorf("unexpected exit code %d for script: %s", code, script)
 		}
@@ -122,6 +128,9 @@ func FuzzPingHostname(f *testing.F) {
 	f.Add("no-such-host-xyzzy.invalid")
 
 	f.Fuzz(func(t *testing.T, hostname string) {
+		if t.Context().Err() != nil {
+			return
+		}
 		// Only allow characters that are safe to pass unquoted as a shell
 		// argument. An allowlist is more robust than a denylist because the
 		// shell parser has many special characters and we cannot enumerate
@@ -144,11 +153,14 @@ func FuzzPingHostname(f *testing.F) {
 		// 1s is enough for fast DNS + socket attempt; shorter than the
 		// 3s default to keep CI fuzz runs from stalling on unresolvable
 		// hostnames when the corpus grows to include slow-DNS entries.
-		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+		ctx, cancel := context.WithTimeout(t.Context(), 1*time.Second)
 		defer cancel()
 
 		script := fmt.Sprintf("ping -c 1 -W 500ms -- %s", hostname)
 		_, _, code := cmdRunCtxFuzz(ctx, t, script)
+		if t.Context().Err() != nil {
+			return
+		}
 		if code != 0 && code != 1 {
 			t.Errorf("unexpected exit code %d for hostname: %q", code, hostname)
 		}

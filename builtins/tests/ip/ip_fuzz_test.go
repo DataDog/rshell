@@ -129,6 +129,9 @@ func FuzzIPSubcommand(f *testing.F) {
 	f.Add("addr lst dev lo")
 
 	f.Fuzz(func(t *testing.T, subcmd string) {
+		if t.Context().Err() != nil {
+			return
+		}
 		if len(subcmd) > 1024 {
 			return
 		}
@@ -145,12 +148,15 @@ func FuzzIPSubcommand(f *testing.F) {
 			}
 		}
 
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		defer cancel() // safety net if t.Fatal fires before explicit cancel
 		script := "ip " + subcmd
 		_, _, code := cmdRunCtxFuzz(ctx, t, script)
 		timedOut := ctx.Err() == context.DeadlineExceeded // capture before cancel()
 		cancel()
+		if t.Context().Err() != nil {
+			return
+		}
 		if code == -1 {
 			return // shell/parse error before the builtin ran — not our bug
 		}
@@ -203,6 +209,9 @@ func FuzzIPFlags(f *testing.F) {
 	f.Add("--brief", "link show dev lo")
 
 	f.Fuzz(func(t *testing.T, flags, subcmd string) {
+		if t.Context().Err() != nil {
+			return
+		}
 		if len(flags)+len(subcmd) > 512 {
 			return
 		}
@@ -217,7 +226,7 @@ func FuzzIPFlags(f *testing.F) {
 			}
 		}
 
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		defer cancel() // safety net if t.Fatal fires before explicit cancel
 		script := "ip " + flags
 		if subcmd != "" {
@@ -226,6 +235,9 @@ func FuzzIPFlags(f *testing.F) {
 		_, _, code := cmdRunCtxFuzz(ctx, t, script)
 		timedOut := ctx.Err() == context.DeadlineExceeded // capture before cancel()
 		cancel()
+		if t.Context().Err() != nil {
+			return
+		}
 		if code == -1 {
 			return // shell/parse error before the builtin ran — not our bug
 		}

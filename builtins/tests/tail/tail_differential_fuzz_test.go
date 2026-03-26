@@ -71,6 +71,9 @@ func FuzzTailDifferential(f *testing.F) {
 	f.Add(bytes.Repeat([]byte("line\n"), 20), int64(5))
 
 	f.Fuzz(func(t *testing.T, input []byte, n int64) {
+		if t.Context().Err() != nil {
+			return
+		}
 		if len(input) > 64*1024 {
 			return
 		}
@@ -85,10 +88,14 @@ func FuzzTailDifferential(f *testing.F) {
 
 		nStr := fmt.Sprintf("%d", n)
 
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		defer cancel() // safety net if t.Fatal fires before explicit cancel
 		rshellOut, rshellErr, rshellCode := cmdRunCtx(ctx, t, fmt.Sprintf("tail -n %s input.txt", nStr), dir)
 		cancel()
+
+		if t.Context().Err() != nil {
+			return
+		}
 
 		if isSandboxError(rshellErr) {
 			t.Skip("skipping: sandbox restriction")
