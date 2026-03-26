@@ -23,6 +23,14 @@ const MaxVarBytes = 1 << 20 // 1 MiB
 
 // MaxTotalVarsBytes is the maximum total size in bytes of all variable values
 // combined. Assignments that would push the total over this limit are rejected.
+//
+// Design note: MaxTotalVarsBytes == MaxVarBytes (both 1 MiB) is intentional.
+// A script that fills one variable to the per-value limit simultaneously fills
+// the total cap; any subsequent assignment (even a small one) is rejected.
+// This is an intentional trade-off that keeps the worst-case memory footprint
+// predictable: the shell can never hold more than ~1 MiB of script-assigned
+// variable data at once.  Callers that need to hold one large value alongside
+// many small bookkeeping variables should stay under the per-value limit.
 const MaxTotalVarsBytes = 1 << 20 // 1 MiB
 
 // errTotalVarStorageExceeded is returned by overlayEnviron.Set when the total
@@ -137,21 +145,27 @@ func (o *overlayEnviron) Set(name string, vr expand.Variable) error {
 		if prev.ReadOnly {
 			return fmt.Errorf("readonly variable")
 		}
+		// Only free bytes that are actually tracked in totalBytes (same rule as
+		// the assignment path below).  For untracked Env() variables (parent is
+		// not *overlayEnviron and variable not in our own overlay), those bytes
+		// were never counted, so subtracting them would drive totalBytes negative
+		// and — after the underflow clamp — silently grant the script extra quota.
+		_, parentIsOverlayUnset := o.parent.(*overlayEnviron)
+		var unsetOldBytes int
+		if inOverlay || parentIsOverlayUnset {
+			unsetOldBytes = len(prev.Str)
+		}
 		if prev.Local {
 			vr.Local = true
 			// Subtract old value from total; the unset local retains its slot but no value.
-			// Use prev.Str unconditionally: non-background subshells seed totalBytes from
-			// the parent, so parent-inherited vars are already counted even when !inOverlay.
-			o.totalBytes -= len(prev.Str)
+			o.totalBytes -= unsetOldBytes
 			if o.totalBytes < 0 {
 				o.totalBytes = 0 // defensive guard against invariant violation
 			}
 			o.values[name] = vr
 			return nil
 		}
-		// Same reasoning as above: subtract unconditionally so parent-seeded bytes are
-		// correctly released when a parent-inherited variable is deleted in a subshell.
-		o.totalBytes -= len(prev.Str)
+		o.totalBytes -= unsetOldBytes
 		if o.totalBytes < 0 {
 			o.totalBytes = 0 // defensive guard against invariant violation
 		}
@@ -159,13 +173,27 @@ func (o *overlayEnviron) Set(name string, vr expand.Variable) error {
 		return nil
 	}
 	// modifying the entire variable — enforce total storage cap.
-	// Use the previous value's byte count unconditionally: for non-background
-	// subshells, newOverlayEnviron seeds totalBytes by summing parent variables,
-	// so the parent's bytes are already counted. If we only credited oldBytes
-	// when inOverlay (i.e. the variable was already in our overlay), we would
-	// double-charge the parent's contribution on the first override, erroneously
-	// inflating totalBytes by len(prev.Str).
-	oldBytes := len(prev.Str)
+	//
+	// oldBytes must reflect only bytes that are actually counted in totalBytes:
+	//   - If the variable is in our own overlay (inOverlay), we wrote it and
+	//     counted it previously.
+	//   - If the variable lives in the parent and the parent is an
+	//     *overlayEnviron, newOverlayEnviron seeded totalBytes from the parent's
+	//     counter, so the parent's bytes are already included.
+	//   - If the variable lives in the parent and the parent is NOT an
+	//     *overlayEnviron (e.g. it was supplied via interp.Env()), those bytes
+	//     are NOT counted: Reset() zeros totalBytes after seeding PWD/IFS/OPTIND
+	//     to exclude interpreter-managed variables from the user-visible cap.
+	//     Treating such a variable as having oldBytes > 0 would produce a
+	//     negative delta on shrink, be clamped to zero by the underflow guard,
+	//     and create headroom for the script to exceed MaxTotalVarsBytes.
+	_, parentIsOverlay := o.parent.(*overlayEnviron)
+	var oldBytes int
+	if inOverlay || parentIsOverlay {
+		oldBytes = len(prev.Str)
+	}
+	// If !inOverlay and parent is not *overlayEnviron, oldBytes stays 0:
+	// this is the first script-level write to an untracked Env() variable.
 	newBytes := len(vr.Str)
 	delta := newBytes - oldBytes
 	if delta > 0 && o.totalBytes+delta > MaxTotalVarsBytes {
@@ -193,7 +221,13 @@ func (o *overlayEnviron) setUncapped(name string, vr expand.Variable) {
 	if !inOverlay && o.parent != nil {
 		prev = o.parent.Get(name)
 	}
-	oldBytes := len(prev.Str)
+	// Apply the same untracked-Env() guard as Set(): only count oldBytes if
+	// those bytes are actually reflected in totalBytes.
+	_, parentIsOverlay := o.parent.(*overlayEnviron)
+	var oldBytes int
+	if inOverlay || parentIsOverlay {
+		oldBytes = len(prev.Str)
+	}
 	newBytes := len(vr.Str)
 	o.totalBytes += newBytes - oldBytes
 	if o.totalBytes < 0 {
@@ -270,7 +304,13 @@ func (r *Runner) setVarString(name, value string) {
 // setVarErr is like setVar but returns the error instead of recording it as a
 // side-effect. Use this when the caller needs to propagate the error (e.g. in
 // the expand package's WriteEnviron.Set callback).
+// It applies the same per-value MaxVarBytes guard as setVar so that oversized
+// values are rejected consistently regardless of which code path triggers the
+// assignment.
 func (r *Runner) setVarErr(name string, vr expand.Variable) error {
+	if vr.IsSet() && len(vr.Str) > MaxVarBytes {
+		return fmt.Errorf("%s: value too large (limit %d bytes)", name, MaxVarBytes)
+	}
 	return r.writeEnv.Set(name, vr)
 }
 

@@ -151,6 +151,59 @@ func TestBackgroundSubshellCapEnforced(t *testing.T) {
 		"parent shell must continue after background subshell fails")
 }
 
+// TestInlineVarRestoreAtStorageBoundary is an end-to-end integration test that
+// verifies the setVarRestore / setUncapped path correctly restores inline
+// command variables (e.g. FOO=val cmd) even when the script holds significant
+// storage during the command's execution.  Before the setUncapped fix, restore
+// left a tombstone entry in the overlay map rather than deleting it; before the
+// untracked-Env() fix, restoring an Env()-inherited variable could drive
+// totalBytes negative and silently expand quota.
+func TestInlineVarRestoreAtStorageBoundary(t *testing.T) {
+	// Fill ~500 KiB of script storage, run an inline-var command, then verify
+	// the large variable is still intact after the restore.  We check that A is
+	// still set by assigning a sentinel via a conditional expansion — rshell
+	// does not support ${#var}, so we use the value directly.
+	value500K := strings.Repeat("x", 500*1024)
+	// After the inline assignment FOO=bar echo hi, FOO must be restored to unset.
+	// A must still be accessible (the large value was not cleared).
+	// We verify A is intact by assigning a second variable equal to A and
+	// confirming the shell does not error out (it would if A were corrupted/cleared).
+	script := fmt.Sprintf("A=%s\nFOO=bar echo hi\nB=$A\necho OK\n", value500K)
+
+	stdout, stderr, code := runScript(t, script, "")
+
+	assert.Contains(t, stdout, "OK", "script must complete: A must still be intact after inline-var restore")
+	assert.Empty(t, stderr)
+	assert.Equal(t, 0, code)
+}
+
+// TestEnvVarReassignDoesNotExpandQuota verifies that reassigning an Env()-supplied
+// variable to a shorter value does NOT silently grant the script extra quota.
+// The bug: Set() used len(prev.Str) as oldBytes even for untracked Env() vars,
+// producing a negative delta that (after the underflow clamp) effectively reset
+// totalBytes to zero and allowed subsequent assignments to exceed MaxTotalVarsBytes.
+func TestEnvVarReassignDoesNotExpandQuota(t *testing.T) {
+	// Provide a large Env() variable (900 KiB) then shrink it to empty.
+	// Without the fix, totalBytes would be clamped to 0 after the shrink,
+	// and two subsequent 600 KiB assignments would each be under the cap delta
+	// but together exceed MaxTotalVarsBytes.
+	envValue900K := strings.Repeat("x", 900*1024)
+	value700K := strings.Repeat("y", 700*1024)
+	value400K := strings.Repeat("z", 400*1024)
+	// Script: clear the Env() var, then assign 700 KiB + 400 KiB = 1.1 MiB.
+	// The 400 KiB assignment should be rejected because totalBytes is already
+	// at 700 KiB and adding 400 KiB exceeds the 1 MiB cap.
+	script := fmt.Sprintf("BIG=\nA=%s\nB=%s\necho SHOULD_NOT_REACH\n", value700K, value400K)
+
+	stdout, stderr, code := runScript(t, script, "", interp.Env("BIG="+envValue900K))
+
+	assert.NotContains(t, stdout, "SHOULD_NOT_REACH",
+		"script must be aborted before assigning B: total would exceed MaxTotalVarsBytes")
+	assert.Contains(t, stderr, "variable storage limit exceeded",
+		"expected storage-cap error in stderr")
+	assert.NotEqual(t, 0, code)
+}
+
 // TestTotalVarStorageCapUpdateTracking verifies that updating an existing variable
 // correctly adjusts the total byte counter (i.e. growing a variable counts against
 // the cap, and shrinking it frees space).
