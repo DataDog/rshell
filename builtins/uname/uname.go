@@ -70,7 +70,7 @@ var kernelFiles = [...]struct {
 	{"n", "nodename", "hostname"},
 	{"r", "kernel-release", "osrelease"},
 	{"v", "kernel-version", "version"},
-	{"m", "machine", "arch"},
+	{"m", "machine", "arch"}, // Available since Linux 2.6 (2003); last 2.6 LTS (2.6.32) EOL Feb 2016.
 }
 
 func makeFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
