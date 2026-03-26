@@ -7,7 +7,6 @@ package allowedsymbols
 
 import (
 	"fmt"
-	"go/ast"
 	"go/parser"
 	"go/token"
 	"os"
@@ -45,20 +44,23 @@ type allowedSymbolsConfig struct {
 // Go source files. It verifies that every imported symbol is in the allowlist,
 // that no permanently banned packages are imported, and that every symbol in
 // the allowlist is actually used.
+//
+// The core checking logic is provided by the analyzer helpers in analyzer.go
+// (checkFileImports, checkFileSelectors, reportUnused) — this function handles
+// file discovery, AST parsing, and test-framework integration.
 func checkAllowedSymbols(t *testing.T, cfg allowedSymbolsConfig) {
 	t.Helper()
 
 	// Build lookup sets from the allowlist.
-	allowedSymbols := make(map[string]bool, len(cfg.Symbols))
+	allowedSyms, allowedPkgs := buildAllowlistSets(cfg.Symbols)
 	usedSymbols := make(map[string]bool, len(cfg.Symbols))
-	allowedPackages := make(map[string]bool)
+
+	// Validate allowlist entries are well-formed.
 	for _, entry := range cfg.Symbols {
 		dot := strings.LastIndexByte(entry, '.')
 		if dot <= 0 {
 			t.Fatalf("malformed allowlist entry (no dot): %q", entry)
 		}
-		allowedSymbols[entry] = true
-		allowedPackages[entry[:dot]] = true
 	}
 
 	// reportErr collects errors into cfg.Errors when set, otherwise calls t.Errorf.
@@ -102,90 +104,22 @@ func checkAllowedSymbols(t *testing.T, cfg allowedSymbolsConfig) {
 			continue
 		}
 
-		// Build a map from local package name → import path and validate each import.
-		localToPath := make(map[string]string)
-		for _, imp := range f.Imports {
-			importPath := strings.Trim(imp.Path.Value, `"`)
-
-			banned := false
-			for key, reason := range permanentlyBanned {
-				if strings.HasSuffix(key, "/") {
-					if strings.HasPrefix(importPath, key) {
-						reportErr("%s: import of %q is permanently banned (%s)", rel, importPath, reason)
-						banned = true
-						break
-					}
-				} else if importPath == key {
-					reportErr("%s: import of %q is permanently banned (%s)", rel, importPath, reason)
-					banned = true
-					break
-				}
-			}
-			if banned {
-				continue
-			}
-
-			if cfg.ExemptImport(importPath) {
-				continue
-			}
-
-			// Determine the local name used to reference this package.
-			var localName string
-			if imp.Name != nil {
-				localName = imp.Name.Name
-			} else {
-				parts := strings.Split(importPath, "/")
-				localName = parts[len(parts)-1]
-			}
-
-			if localName == "_" || localName == "." {
-				reportErr("%s: blank/dot import of %q is not allowed", rel, importPath)
-				continue
-			}
-
-			if !allowedPackages[importPath] {
-				reportErr("%s: import of %q is not in the allowlist", rel, importPath)
-				continue
-			}
-
-			localToPath[localName] = importPath
-		}
-
-		// Walk all selector expressions and verify each pkg.Symbol is allowed.
-		ast.Inspect(f, func(n ast.Node) bool {
-			sel, ok := n.(*ast.SelectorExpr)
-			if !ok {
-				return true
-			}
-			ident, ok := sel.X.(*ast.Ident)
-			if !ok {
-				return true
-			}
-			importPath, ok := localToPath[ident.Name]
-			if !ok {
-				return true // not a package-level selector
-			}
-			key := importPath + "." + sel.Sel.Name
-			if !allowedSymbols[key] {
-				pos := fset.Position(sel.Pos())
-				reportErr("%s:%d: %s is not in the allowlist", rel, pos.Line, key)
-			} else {
-				usedSymbols[key] = true
-			}
-			return true
-		})
+		// Use analyzer helpers for import checking and selector walking.
+		reporter := fileLineReporter(fset, rel, reportErr)
+		localToPath := checkFileImports(f, allowedPkgs, cfg.ExemptImport, reporter)
+		checkFileSelectors(f, localToPath, allowedSyms, usedSymbols, reporter)
 	}
+
 	if checked < cfg.MinFiles {
 		t.Fatalf("expected at least %d files in %s, found %d", cfg.MinFiles, cfg.TargetDir, checked)
 	}
 
 	// Verify every symbol in the allowlist is actually used by at least one
 	// file. Unused entries should be removed to keep the allowlist minimal.
-	for _, entry := range cfg.Symbols {
-		if !usedSymbols[entry] {
-			reportErr("allowlist symbol %q is not used by any file in %s — remove it from %s", entry, cfg.TargetDir, cfg.ListName)
-		}
-	}
+	reportUnused(cfg.Symbols, usedSymbols, cfg.ListName, func(entry string) {
+		reportErr("allowlist symbol %q is not used by any file in %s — remove it from %s",
+			entry, cfg.TargetDir, cfg.ListName)
+	})
 }
 
 // perBuiltinConfig holds the configuration for checkPerBuiltinAllowedSymbols.
