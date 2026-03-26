@@ -458,6 +458,10 @@ func (r *Runner) Run(ctx context.Context, node syntax.Node) (retErr error) {
 			return r.exit.err
 		}
 	}
+	// Wrap stdout with a cap to prevent runaway scripts from producing more
+	// than maxStdoutBytes of output. Excess bytes are silently discarded so
+	// that Write never returns an error and downstream code is not disrupted.
+	r.stdout = &limitWriter{w: r.stdout, limit: maxStdoutBytes}
 	r.startTime = time.Now()
 	r.globReadDirCount = &atomic.Int64{}
 	r.fillExpandConfig(ctx)

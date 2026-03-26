@@ -49,6 +49,12 @@ func (r *Runner) updateExpandOpts() {
 // commands that produce unbounded output.
 const maxCmdSubstOutput = 1 << 20 // 1 MiB
 
+// maxStdoutBytes is the maximum number of bytes a script can write to stdout
+// before further output is silently discarded. This caps total script output
+// to prevent memory exhaustion from runaway commands (e.g. infinite loops
+// writing to stdout).
+const maxStdoutBytes = 10 * 1024 * 1024 // 10 MiB
+
 // MaxGlobReadDirCalls is the maximum number of ReadDirForGlob invocations
 // allowed per Run() call. This prevents memory exhaustion from scripts that
 // trigger an excessive number of glob expansions (e.g. millions of unquoted

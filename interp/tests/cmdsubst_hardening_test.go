@@ -20,6 +20,31 @@ import (
 
 // --- Memory limits: output capping ---
 
+// TestGlobalStdoutCapSilentlyDrops verifies that the global 10 MiB stdout cap
+// silently discards bytes beyond the limit rather than returning an error that
+// would abort the script. The cat loop writes slightly more than 10 MiB; the
+// captured stdout buffer must not exceed maxStdoutBytes.
+func TestGlobalStdoutCapSilentlyDrops(t *testing.T) {
+	dir := t.TempDir()
+
+	// Create a file of exactly 1 MiB.
+	content := strings.Repeat("A", 1<<20)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "mb.txt"), []byte(content), 0644))
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	// cat the file 11 times in a loop — produces 11 MiB, exceeding the 10 MiB cap.
+	script := `for i in 1 2 3 4 5 6 7 8 9 10 11; do cat mb.txt; done`
+	stdout, _, code := cmdSubstRunCtx(ctx, t, script, dir)
+	assert.Equal(t, 0, code)
+	// Output must be capped at 10 MiB (10 * 1024 * 1024 bytes).
+	assert.LessOrEqual(t, len(stdout), 10*1024*1024,
+		"stdout must not exceed 10 MiB global cap; got %d bytes", len(stdout))
+	// Some output must have been written (the cap does not suppress all output).
+	assert.Greater(t, len(stdout), 0, "expected non-empty stdout before cap")
+}
+
 func TestCmdSubstOutputCapped(t *testing.T) {
 	// Generate output exceeding 1 MiB inside command substitution.
 	// The output should be truncated, not cause OOM.
