@@ -63,6 +63,7 @@ var internalPerPackageSymbols = map[string][]string{
 		"os.ModeCharDevice",   // 🟢 file mode constant; pure constant.
 		"os.O_RDONLY",         // 🟢 read-only file flag; pure constant.
 		"os.OpenFile",         // 🟠 opens kernel pseudo-files for reading; bypasses AllowedPaths by design.
+		"path/filepath.Base",  // 🟢 returns the last element of a path; validates name is a plain basename.
 		"path/filepath.Clean", // 🟢 normalises path before use; pure function, no I/O.
 		"path/filepath.Join",  // 🟢 joins path elements; pure function, no I/O.
 		"strings.Contains",    // 🟢 checks for ".." traversal in procPath; pure function, no I/O.
@@ -151,6 +152,7 @@ var internalAllowedSymbols = []string{
 	"os.ReadDir",                            // 🟠 procinfo: reads a directory listing; needed to enumerate /proc entries.
 	"os.ReadFile",                           // 🟠 procinfo: reads a whole file; needed to read /proc/[pid]/{stat,cmdline,status}.
 	"os.Stat",                               // 🟠 procinfo: validates that the proc path exists before enumeration; read-only metadata, no write capability.
+	"path/filepath.Base",                    // 🟢 procsyskernel: returns the last element of a path; validates name is a plain basename.
 	"path/filepath.Clean",                   // 🟢 procnetroute/procnetsocket: normalises procPath before ".." safety check; pure function, no I/O.
 	"path/filepath.Join",                    // 🟢 procinfo: joins path elements to construct /proc/<pid>/stat paths; pure function, no I/O.
 	"strconv.Atoi",                          // 🟢 string-to-int conversion; pure function, no I/O.

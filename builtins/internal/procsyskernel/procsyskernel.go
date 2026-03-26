@@ -41,6 +41,10 @@ func ReadFile(procPath, name string) (string, error) {
 	if strings.Contains(procPath, "..") {
 		return "", fmt.Errorf("procsyskernel: unsafe procPath %q (must not contain \"..\" components)", procPath)
 	}
+	// Reject path components in name — must be a plain basename (e.g. "ostype").
+	if name != filepath.Base(name) || strings.Contains(name, "..") {
+		return "", fmt.Errorf("procsyskernel: unsafe name %q (must be a plain filename)", name)
+	}
 	path := filepath.Join(filepath.Clean(procPath), "sys", "kernel", name)
 	// Open with O_NONBLOCK to prevent blocking on FIFOs, then validate
 	// the file type via fstat on the opened fd. This is atomic — no
