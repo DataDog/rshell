@@ -97,6 +97,7 @@ func makeFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 
 		if len(args) > 0 {
 			callCtx.Errf("uname: extra operand '%s'\n", args[0])
+			callCtx.Errf("Try 'uname --help' for more information.\n")
 			return builtins.Result{Code: 1}
 		}
 

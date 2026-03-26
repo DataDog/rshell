@@ -1,9 +1,8 @@
 description: uname rejects extra positional operands
-skip_assert_against_bash: true
 input:
   script: |+
     uname foo
 expect:
   stdout: ""
-  stderr: "uname: extra operand 'foo'\n"
+  stderr: "uname: extra operand 'foo'\nTry 'uname --help' for more information.\n"
   exit_code: 1
