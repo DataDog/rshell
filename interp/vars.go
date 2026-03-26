@@ -50,12 +50,22 @@ func newOverlayEnviron(parent expand.Environ, background bool) *overlayEnviron {
 			return true
 		})
 	} else {
-		// We could do better here if the parent is also an overlayEnviron;
-		// measure with profiles or benchmarks before we choose to do so.
 		oenv.values = make(map[string]expand.Variable)
 		maps.Insert(oenv.values, parent.Each)
-		for _, vr := range oenv.values {
-			oenv.totalBytes += len(vr.Str)
+		// Seed totalBytes from the parent's tracked counter rather than
+		// re-summing all variables (which would include inherited env vars
+		// provided via Env() that the main runner intentionally excludes from
+		// the cap).  Using the parent's counter keeps background-subshell
+		// accounting consistent with the main runner and prevents false positives
+		// when the caller provides a large Env() variable: an assignment that
+		// succeeds in the parent must also succeed in a pipeline/background subshell.
+		if pov, ok := parent.(*overlayEnviron); ok {
+			oenv.totalBytes = pov.totalBytes
+		} else {
+			// Fallback for non-overlayEnviron parents: sum all values.
+			for _, vr := range oenv.values {
+				oenv.totalBytes += len(vr.Str)
+			}
 		}
 	}
 	return oenv
@@ -148,6 +158,29 @@ func (o *overlayEnviron) Set(name string, vr expand.Variable) error {
 	return nil
 }
 
+// setUncapped sets a variable without enforcing MaxTotalVarsBytes.  It is
+// used by setVarRestore to restore inline command variables (e.g. FOO=val cmd)
+// to their original values after the command returns, even when the script
+// has filled storage close to the cap during command execution.  totalBytes
+// is still updated so that subsequent cap checks use an accurate baseline.
+func (o *overlayEnviron) setUncapped(name string, vr expand.Variable) {
+	if o.values == nil {
+		o.values = make(map[string]expand.Variable)
+	}
+	prev, inOverlay := o.values[name]
+	if !inOverlay && o.parent != nil {
+		prev = o.parent.Get(name)
+	}
+	oldBytes := len(prev.Str)
+	newBytes := len(vr.Str)
+	o.totalBytes += newBytes - oldBytes
+	if o.totalBytes < 0 {
+		o.totalBytes = 0
+	}
+	vr.Local = prev.Local || vr.Local
+	o.values[name] = vr
+}
+
 func (o *overlayEnviron) Each(f func(name string, vr expand.Variable) bool) {
 	// Emit our own overrides first so they take precedence.
 	for name, vr := range o.values {
@@ -234,11 +267,18 @@ func (r *Runner) setVar(name string, vr expand.Variable) {
 	}
 }
 
-// setVarRestore writes a variable back without enforcing the size limit.
+// setVarRestore writes a variable back without enforcing any size limits.
 // Used to restore inline command variables (e.g. FOO=val cmd) to their
 // original values after the command returns, so that inherited variables
-// larger than MaxVarBytes can be restored correctly.
+// larger than MaxVarBytes or near the total cap can be restored correctly.
+// If the underlying env is an overlayEnviron, it bypasses the total-bytes
+// cap to avoid erroneously blocking the restore when the script filled storage
+// during the command's execution.
 func (r *Runner) setVarRestore(name string, vr expand.Variable) {
+	if ov, ok := r.writeEnv.(*overlayEnviron); ok {
+		ov.setUncapped(name, vr)
+		return
+	}
 	if err := r.writeEnv.Set(name, vr); err != nil {
 		r.errf("%s: %v\n", name, err)
 		r.exit.code = 1
