@@ -56,6 +56,20 @@ var internalPerPackageSymbols = map[string][]string{
 	"procpath": {
 		// No stdlib symbols needed — this package only defines a string constant.
 	},
+	"procsyskernel": {
+		"fmt.Errorf",          // 🟢 error formatting; pure function, no I/O.
+		"io.LimitReader",      // 🟢 wraps a reader with a byte cap; pure wrapper, no I/O by itself.
+		"io.ReadAll",          // 🟠 reads all data from a reader; bounded by io.LimitReader.
+		"os.ModeCharDevice",   // 🟢 file mode constant; pure constant.
+		"os.O_RDONLY",         // 🟢 read-only file flag; pure constant.
+		"os.OpenFile",         // 🟠 opens kernel pseudo-files for reading; bypasses AllowedPaths by design.
+		"path/filepath.Base",  // 🟢 returns the last element of a path; validates name is a plain basename.
+		"path/filepath.Clean", // 🟢 normalises path before use; pure function, no I/O.
+		"path/filepath.Join",  // 🟢 joins path elements; pure function, no I/O.
+		"strings.Contains",    // 🟢 checks for ".." traversal in procPath; pure function, no I/O.
+		"strings.TrimRight",   // 🟢 trims trailing characters; pure function, no I/O.
+		"syscall.O_NONBLOCK",  // 🟢 non-blocking open flag; prevents FIFO hang. Pure constant.
+	},
 	"procnetroute": {
 		"bufio.NewScanner", // 🟢 line-by-line reading of /proc/net/route; no write capability.
 		"github.com/DataDog/rshell/builtins/internal/procpath.Default", // 🟢 canonical /proc filesystem root path constant; pure constant, no I/O.
@@ -128,11 +142,17 @@ var internalAllowedSymbols = []string{
 	"fmt.Errorf",                            // 🟢 error formatting; pure function, no I/O.
 	"os.ErrNotExist",                        // 🟢 procinfo: sentinel error value indicating a file or directory does not exist; read-only constant, no I/O.
 	"fmt.Sprintf",                           // 🟢 string formatting; pure function, no I/O.
+	"io.LimitReader",                        // 🟢 procsyskernel: wraps a reader with a byte cap; pure wrapper, no I/O by itself.
+	"io.ReadAll",                            // 🟠 procsyskernel: reads all data from a bounded reader; used with LimitReader for 4KiB cap.
 	"os.Getpid",                             // 🟠 procinfo: returns the current process ID; read-only, no side effects.
+	"os.ModeCharDevice",                     // 🟢 procsyskernel: file mode constant for char device detection; pure constant.
+	"os.O_RDONLY",                           // 🟢 procsyskernel: read-only open flag; pure constant.
 	"os.Open",                               // 🟠 procinfo: opens a file read-only; needed to stream /proc/stat line-by-line.
+	"os.OpenFile",                           // 🟠 procsyskernel: opens kernel pseudo-files with O_NONBLOCK; bypasses AllowedPaths by design.
 	"os.ReadDir",                            // 🟠 procinfo: reads a directory listing; needed to enumerate /proc entries.
 	"os.ReadFile",                           // 🟠 procinfo: reads a whole file; needed to read /proc/[pid]/{stat,cmdline,status}.
 	"os.Stat",                               // 🟠 procinfo: validates that the proc path exists before enumeration; read-only metadata, no write capability.
+	"path/filepath.Base",                    // 🟢 procsyskernel: returns the last element of a path; validates name is a plain basename.
 	"path/filepath.Clean",                   // 🟢 procnetroute/procnetsocket: normalises procPath before ".." safety check; pure function, no I/O.
 	"path/filepath.Join",                    // 🟢 procinfo: joins path elements to construct /proc/<pid>/stat paths; pure function, no I/O.
 	"strconv.Atoi",                          // 🟢 string-to-int conversion; pure function, no I/O.
@@ -153,6 +173,7 @@ var internalAllowedSymbols = []string{
 	"strings.TrimSpace",                     // 🟢 procinfo: removes leading/trailing whitespace; pure function, no I/O.
 	"syscall.Errno",                         // 🟢 winnet: wraps DLL return code as an error type; pure type, no I/O.
 	"syscall.Getsid",                        // 🟠 procinfo: returns the session ID of a process; read-only syscall, no write/exec.
+	"syscall.O_NONBLOCK",                    // 🟢 procsyskernel: non-blocking open flag to prevent FIFO hang; pure constant.
 	"syscall.MustLoadDLL",                   // 🔴 winnet: loads iphlpapi.dll once at program init; read-only OS loader call.
 	"syscall.Proc",                          // 🟢 winnet: DLL procedure handle type used in function signature; pure type, no I/O.
 	"time.Now",                              // 🟠 procinfo: returns the current wall-clock time; read-only, no side effects.

@@ -69,12 +69,15 @@ func FuzzPSPidList(f *testing.F) {
 	f.Add("  1  ,  2  ")
 
 	f.Fuzz(func(t *testing.T, pidList string) {
+		if t.Context().Err() != nil {
+			return
+		}
 		// Bound input length to avoid overly long strings.
 		if len(pidList) > 256 {
 			return
 		}
 
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		defer cancel()
 
 		parser := syntax.NewParser()
@@ -114,6 +117,9 @@ func FuzzPSFlags(f *testing.F) {
 	f.Add("--unknownflag")
 
 	f.Fuzz(func(t *testing.T, flags string) {
+		if t.Context().Err() != nil {
+			return
+		}
 		if len(flags) > 64 {
 			return
 		}
@@ -124,7 +130,7 @@ func FuzzPSFlags(f *testing.F) {
 			}
 		}
 
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		defer cancel()
 
 		script := "ps " + flags

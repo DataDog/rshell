@@ -56,6 +56,9 @@ func FuzzHeadLines(f *testing.F) {
 	var counter atomic.Int64
 
 	f.Fuzz(func(t *testing.T, input []byte, n int64) {
+		if t.Context().Err() != nil {
+			return
+		}
 		if len(input) > 1<<20 {
 			return
 		}
@@ -74,10 +77,13 @@ func FuzzHeadLines(f *testing.F) {
 			t.Fatal(err)
 		}
 
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		defer cancel() // safety net if t.Fatal fires before explicit cancel
 		stdout, _, code := cmdRunCtx(ctx, t, fmt.Sprintf("head -n %d input.txt", n), dir)
 		cancel()
+		if t.Context().Err() != nil {
+			return
+		}
 		if code != 0 && code != 1 {
 			t.Errorf("unexpected exit code %d", code)
 		}
@@ -120,6 +126,9 @@ func FuzzHeadBytes(f *testing.F) {
 	var counter atomic.Int64
 
 	f.Fuzz(func(t *testing.T, input []byte, n int64) {
+		if t.Context().Err() != nil {
+			return
+		}
 		if len(input) > 1<<20 {
 			return
 		}
@@ -138,10 +147,13 @@ func FuzzHeadBytes(f *testing.F) {
 			t.Fatal(err)
 		}
 
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		defer cancel() // safety net if t.Fatal fires before explicit cancel
 		stdout, _, code := cmdRunCtx(ctx, t, fmt.Sprintf("head -c %d input.txt", n), dir)
 		cancel()
+		if t.Context().Err() != nil {
+			return
+		}
 		if code != 0 && code != 1 {
 			t.Errorf("unexpected exit code %d", code)
 		}
@@ -171,6 +183,9 @@ func FuzzHeadStdin(f *testing.F) {
 	var counter atomic.Int64
 
 	f.Fuzz(func(t *testing.T, input []byte, n int64) {
+		if t.Context().Err() != nil {
+			return
+		}
 		if len(input) > 1<<20 {
 			return
 		}
@@ -189,10 +204,13 @@ func FuzzHeadStdin(f *testing.F) {
 			t.Fatal(err)
 		}
 
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		defer cancel() // safety net if t.Fatal fires before explicit cancel
 		_, _, code := cmdRunCtx(ctx, t, fmt.Sprintf("head -n %d < stdin.txt", n), dir)
 		cancel()
+		if t.Context().Err() != nil {
+			return
+		}
 		if code != 0 && code != 1 {
 			t.Errorf("unexpected exit code %d (stdin mode)", code)
 		}

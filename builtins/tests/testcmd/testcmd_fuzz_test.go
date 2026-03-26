@@ -59,6 +59,9 @@ func FuzzTestStringOps(f *testing.F) {
 	baseDir := f.TempDir()
 
 	f.Fuzz(func(t *testing.T, left, right, op string) {
+		if t.Context().Err() != nil {
+			return
+		}
 		if len(left) > 100 || len(right) > 100 {
 			return
 		}
@@ -84,11 +87,14 @@ func FuzzTestStringOps(f *testing.F) {
 			return
 		}
 
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		defer cancel() // safety net if t.Fatal fires before explicit cancel
 		script := fmt.Sprintf("test '%s' %s '%s'", left, op, right)
 		_, _, code := cmdRunCtx(ctx, t, script, baseDir)
 		cancel()
+		if t.Context().Err() != nil {
+			return
+		}
 		if code != 0 && code != 1 && code != 2 {
 			t.Errorf("test string op unexpected exit code %d", code)
 		}
@@ -121,6 +127,9 @@ func FuzzTestIntegerOps(f *testing.F) {
 	baseDir := f.TempDir()
 
 	f.Fuzz(func(t *testing.T, left, right int64, op string) {
+		if t.Context().Err() != nil {
+			return
+		}
 		switch op {
 		case "-eq", "-ne", "-lt", "-le", "-gt", "-ge":
 		default:
@@ -131,11 +140,14 @@ func FuzzTestIntegerOps(f *testing.F) {
 			return
 		}
 
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		defer cancel() // safety net if t.Fatal fires before explicit cancel
 		script := fmt.Sprintf("test %d %s %d", left, op, right)
 		_, _, code := cmdRunCtx(ctx, t, script, baseDir)
 		cancel()
+		if t.Context().Err() != nil {
+			return
+		}
 		if code != 0 && code != 1 && code != 2 {
 			t.Errorf("test %d %s %d unexpected exit code %d", left, op, right, code)
 		}
@@ -162,6 +174,9 @@ func FuzzTestFileOps(f *testing.F) {
 	var counter atomic.Int64
 
 	f.Fuzz(func(t *testing.T, op string, createFile bool) {
+		if t.Context().Err() != nil {
+			return
+		}
 		switch op {
 		case "-e", "-f", "-d", "-s", "-r", "-w", "-x", "-h", "-L", "-p":
 		default:
@@ -182,11 +197,14 @@ func FuzzTestFileOps(f *testing.F) {
 			}
 		}
 
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		defer cancel() // safety net if t.Fatal fires before explicit cancel
 		script := fmt.Sprintf("test %s %s", op, target)
 		_, _, code := cmdRunCtx(ctx, t, script, dir)
 		cancel()
+		if t.Context().Err() != nil {
+			return
+		}
 		if code != 0 && code != 1 && code != 2 {
 			t.Errorf("test %s unexpected exit code %d", op, code)
 		}
@@ -216,6 +234,9 @@ func FuzzTestStringUnary(f *testing.F) {
 	baseDir := f.TempDir()
 
 	f.Fuzz(func(t *testing.T, arg, op string) {
+		if t.Context().Err() != nil {
+			return
+		}
 		if len(arg) > 200 {
 			return
 		}
@@ -235,11 +256,14 @@ func FuzzTestStringUnary(f *testing.F) {
 			}
 		}
 
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		defer cancel() // safety net if t.Fatal fires before explicit cancel
 		script := fmt.Sprintf("test %s '%s'", op, arg)
 		_, _, code := cmdRunCtx(ctx, t, script, baseDir)
 		cancel()
+		if t.Context().Err() != nil {
+			return
+		}
 		if code != 0 && code != 1 && code != 2 {
 			t.Errorf("test %s unexpected exit code %d", op, code)
 		}
@@ -280,6 +304,9 @@ func FuzzTestNesting(f *testing.F) {
 	baseDir := f.TempDir()
 
 	f.Fuzz(func(t *testing.T, expr string) {
+		if t.Context().Err() != nil {
+			return
+		}
 		// Keep expressions short to avoid slow evaluation on CI where
 		// fuzz workers have limited CPU; long expressions with many
 		// tokens can cause the shell interpreter to exceed the
@@ -321,11 +348,14 @@ func FuzzTestNesting(f *testing.F) {
 			}
 		}
 
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		defer cancel() // safety net if t.Fatal fires before explicit cancel
 		script := fmt.Sprintf("test %s", expr)
 		_, _, code := cmdRunCtx(ctx, t, script, baseDir)
 		cancel()
+		if t.Context().Err() != nil {
+			return
+		}
 		if code != 0 && code != 1 && code != 2 {
 			t.Errorf("test %q unexpected exit code %d", expr, code)
 		}

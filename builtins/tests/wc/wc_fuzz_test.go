@@ -58,6 +58,9 @@ func FuzzWc(f *testing.F) {
 	var counter atomic.Int64
 
 	f.Fuzz(func(t *testing.T, input []byte) {
+		if t.Context().Err() != nil {
+			return
+		}
 		if len(input) > 1<<20 {
 			return
 		}
@@ -70,10 +73,13 @@ func FuzzWc(f *testing.F) {
 			t.Fatal(err)
 		}
 
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		defer cancel() // safety net if t.Fatal fires before explicit cancel
 		_, _, code := cmdRunCtx(ctx, t, "wc input.txt", dir)
 		cancel()
+		if t.Context().Err() != nil {
+			return
+		}
 		if code != 0 && code != 1 {
 			t.Errorf("wc unexpected exit code %d", code)
 		}
@@ -96,6 +102,9 @@ func FuzzWcLines(f *testing.F) {
 	var counter atomic.Int64
 
 	f.Fuzz(func(t *testing.T, input []byte) {
+		if t.Context().Err() != nil {
+			return
+		}
 		if len(input) > 1<<20 {
 			return
 		}
@@ -108,10 +117,13 @@ func FuzzWcLines(f *testing.F) {
 			t.Fatal(err)
 		}
 
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		defer cancel() // safety net if t.Fatal fires before explicit cancel
 		_, _, code := cmdRunCtx(ctx, t, "wc -l input.txt", dir)
 		cancel()
+		if t.Context().Err() != nil {
+			return
+		}
 		if code != 0 && code != 1 {
 			t.Errorf("wc -l unexpected exit code %d", code)
 		}
@@ -132,6 +144,9 @@ func FuzzWcBytes(f *testing.F) {
 	var counter atomic.Int64
 
 	f.Fuzz(func(t *testing.T, input []byte) {
+		if t.Context().Err() != nil {
+			return
+		}
 		if len(input) > 1<<20 {
 			return
 		}
@@ -144,10 +159,13 @@ func FuzzWcBytes(f *testing.F) {
 			t.Fatal(err)
 		}
 
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		defer cancel() // safety net if t.Fatal fires before explicit cancel
 		_, _, code := cmdRunCtx(ctx, t, "wc -c input.txt", dir)
 		cancel()
+		if t.Context().Err() != nil {
+			return
+		}
 		if code != 0 && code != 1 {
 			t.Errorf("wc -c unexpected exit code %d", code)
 		}
@@ -175,6 +193,9 @@ func FuzzWcChars(f *testing.F) {
 	var counter atomic.Int64
 
 	f.Fuzz(func(t *testing.T, input []byte) {
+		if t.Context().Err() != nil {
+			return
+		}
 		if len(input) > 1<<20 {
 			return
 		}
@@ -187,10 +208,13 @@ func FuzzWcChars(f *testing.F) {
 			t.Fatal(err)
 		}
 
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		defer cancel() // safety net if t.Fatal fires before explicit cancel
 		_, _, code := cmdRunCtx(ctx, t, "wc -m input.txt", dir)
 		cancel()
+		if t.Context().Err() != nil {
+			return
+		}
 		if code != 0 && code != 1 {
 			t.Errorf("wc -m unexpected exit code %d", code)
 		}
@@ -212,6 +236,9 @@ func FuzzWcStdin(f *testing.F) {
 	var counter atomic.Int64
 
 	f.Fuzz(func(t *testing.T, input []byte) {
+		if t.Context().Err() != nil {
+			return
+		}
 		// Keep the limit modest: stdin redirection goes through the full
 		// shell interpreter pipeline, which is slower than direct file
 		// reads. A 64 KiB cap prevents CI timeouts on resource-constrained
@@ -228,10 +255,13 @@ func FuzzWcStdin(f *testing.F) {
 			t.Fatal(err)
 		}
 
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		defer cancel() // safety net if t.Fatal fires before explicit cancel
 		_, _, code := cmdRunCtx(ctx, t, "wc < stdin.txt", dir)
 		cancel()
+		if t.Context().Err() != nil {
+			return
+		}
 		if code != 0 && code != 1 {
 			t.Errorf("wc stdin unexpected exit code %d", code)
 		}
