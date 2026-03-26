@@ -85,13 +85,33 @@ func FuzzCat(f *testing.F) {
 		if t.Context().Err() != nil {
 			return
 		}
+		// Invariant 3: exit code validity.
 		if code != 0 && code != 1 {
 			t.Errorf("unexpected exit code %d", code)
+		}
+		// Invariant 1: output bounded.
+		if len(stdout) > 10*1024*1024 {
+			t.Errorf("output exceeds 10 MiB: %d bytes", len(stdout))
 		}
 
 		// cat must output exactly the file contents
 		if code == 0 && stdout != string(input) {
 			t.Errorf("cat output differs from input: got %d bytes, want %d bytes", len(stdout), len(input))
+		}
+
+		// Invariant 4: no panic — reaching this line proves no panic escaped Run().
+
+		// Invariant 2: determinism.
+		ctx2, cancel2 := context.WithTimeout(t.Context(), 5*time.Second)
+		defer cancel2()
+		stdout2, _, code2 := cmdRunCtx(ctx2, t, "cat input.txt", dir)
+		cancel2()
+		if t.Context().Err() != nil {
+			return
+		}
+		if stdout != stdout2 || code != code2 {
+			t.Errorf("determinism violation on cat: outputs differ on identical input\nrun1: exit=%d, len=%d\nrun2: exit=%d, len=%d",
+				code, len(stdout), code2, len(stdout2))
 		}
 	})
 }
@@ -137,13 +157,33 @@ func FuzzCatNumberLines(f *testing.F) {
 
 		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		defer cancel() // safety net if t.Fatal fires before explicit cancel
-		_, _, code := cmdRunCtx(ctx, t, "cat -n input.txt", dir)
+		stdout, _, code := cmdRunCtx(ctx, t, "cat -n input.txt", dir)
 		cancel()
 		if t.Context().Err() != nil {
 			return
 		}
+		// Invariant 3: exit code validity.
 		if code != 0 && code != 1 {
 			t.Errorf("cat -n unexpected exit code %d", code)
+		}
+		// Invariant 1: output bounded.
+		if len(stdout) > 10*1024*1024 {
+			t.Errorf("cat -n output exceeds 10 MiB: %d bytes", len(stdout))
+		}
+
+		// Invariant 4: no panic — reaching this line proves no panic escaped Run().
+
+		// Invariant 2: determinism.
+		ctx2, cancel2 := context.WithTimeout(t.Context(), 5*time.Second)
+		defer cancel2()
+		stdout2, _, code2 := cmdRunCtx(ctx2, t, "cat -n input.txt", dir)
+		cancel2()
+		if t.Context().Err() != nil {
+			return
+		}
+		if stdout != stdout2 || code != code2 {
+			t.Errorf("determinism violation on cat -n: outputs differ on identical input\nrun1: exit=%d, len=%d\nrun2: exit=%d, len=%d",
+				code, len(stdout), code2, len(stdout2))
 		}
 	})
 }
@@ -205,13 +245,33 @@ func FuzzCatDisplayFlags(f *testing.F) {
 
 		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		defer cancel() // safety net if t.Fatal fires before explicit cancel
-		_, _, code := cmdRunCtx(ctx, t, "cat"+flags+" input.bin", dir)
+		stdout, _, code := cmdRunCtx(ctx, t, "cat"+flags+" input.bin", dir)
 		cancel()
 		if t.Context().Err() != nil {
 			return
 		}
+		// Invariant 3: exit code validity.
 		if code != 0 && code != 1 {
 			t.Errorf("cat%s unexpected exit code %d", flags, code)
+		}
+		// Invariant 1: output bounded.
+		if len(stdout) > 10*1024*1024 {
+			t.Errorf("cat%s output exceeds 10 MiB: %d bytes", flags, len(stdout))
+		}
+
+		// Invariant 4: no panic — reaching this line proves no panic escaped Run().
+
+		// Invariant 2: determinism.
+		ctx2, cancel2 := context.WithTimeout(t.Context(), 5*time.Second)
+		defer cancel2()
+		stdout2, _, code2 := cmdRunCtx(ctx2, t, "cat"+flags+" input.bin", dir)
+		cancel2()
+		if t.Context().Err() != nil {
+			return
+		}
+		if stdout != stdout2 || code != code2 {
+			t.Errorf("determinism violation on cat%s: outputs differ on identical input\nrun1: exit=%d, len=%d\nrun2: exit=%d, len=%d",
+				flags, code, len(stdout), code2, len(stdout2))
 		}
 	})
 }
@@ -254,12 +314,32 @@ func FuzzCatStdin(f *testing.F) {
 		if t.Context().Err() != nil {
 			return
 		}
+		// Invariant 3: exit code validity.
 		if code != 0 && code != 1 {
 			t.Errorf("cat stdin unexpected exit code %d", code)
+		}
+		// Invariant 1: output bounded.
+		if len(stdout) > 10*1024*1024 {
+			t.Errorf("cat stdin output exceeds 10 MiB: %d bytes", len(stdout))
 		}
 
 		if code == 0 && stdout != string(input) {
 			t.Errorf("cat stdin output differs from input: got %d bytes, want %d bytes", len(stdout), len(input))
+		}
+
+		// Invariant 4: no panic — reaching this line proves no panic escaped Run().
+
+		// Invariant 2: determinism.
+		ctx2, cancel2 := context.WithTimeout(t.Context(), 5*time.Second)
+		defer cancel2()
+		stdout2, _, code2 := cmdRunCtx(ctx2, t, "cat < stdin.txt", dir)
+		cancel2()
+		if t.Context().Err() != nil {
+			return
+		}
+		if stdout != stdout2 || code != code2 {
+			t.Errorf("determinism violation on cat stdin: outputs differ on identical input\nrun1: exit=%d, len=%d\nrun2: exit=%d, len=%d",
+				code, len(stdout), code2, len(stdout2))
 		}
 	})
 }

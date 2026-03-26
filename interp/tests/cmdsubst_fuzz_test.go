@@ -49,12 +49,33 @@ func FuzzCmdSubstEcho(f *testing.F) {
 		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		defer cancel()
 
-		_, _, code := cmdSubstRunCtx(ctx, t, `x=$(echo '`+arg+`'); echo "$x"`, dir)
+		script := `x=$(echo '` + arg + `'); echo "$x"`
+		stdout, _, code := cmdSubstRunCtx(ctx, t, script, dir)
 		if t.Context().Err() != nil {
 			return
 		}
+		// Invariant 3: exit code validity.
 		if code != 0 && code != 1 {
 			t.Errorf("unexpected exit code %d for arg %q", code, arg)
+		}
+		// Invariant 1: output bounded.
+		if len(stdout) > 10*1024*1024 {
+			t.Errorf("cmdsubst echo output exceeds 10 MiB: %d bytes", len(stdout))
+		}
+
+		// Invariant 4: no panic — reaching this line proves no panic escaped Run().
+
+		// Invariant 2: determinism.
+		ctx2, cancel2 := context.WithTimeout(t.Context(), 5*time.Second)
+		defer cancel2()
+		stdout2, _, code2 := cmdSubstRunCtx(ctx2, t, script, dir)
+		cancel2()
+		if t.Context().Err() != nil {
+			return
+		}
+		if stdout != stdout2 || code != code2 {
+			t.Errorf("determinism violation on cmdsubst echo %q: outputs differ on identical input\nrun1: exit=%d, len=%d\nrun2: exit=%d, len=%d",
+				arg, code, len(stdout), code2, len(stdout2))
 		}
 	})
 }
@@ -95,12 +116,33 @@ func FuzzCmdSubstNested(f *testing.F) {
 		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		defer cancel()
 
-		_, _, code := cmdSubstRunCtx(ctx, t, `echo $(echo '`+arg+`')`, dir)
+		script := `echo $(echo '` + arg + `')`
+		stdout, _, code := cmdSubstRunCtx(ctx, t, script, dir)
 		if t.Context().Err() != nil {
 			return
 		}
+		// Invariant 3: exit code validity.
 		if code != 0 && code != 1 {
 			t.Errorf("unexpected exit code %d for arg %q", code, arg)
+		}
+		// Invariant 1: output bounded.
+		if len(stdout) > 10*1024*1024 {
+			t.Errorf("cmdsubst nested output exceeds 10 MiB: %d bytes", len(stdout))
+		}
+
+		// Invariant 4: no panic — reaching this line proves no panic escaped Run().
+
+		// Invariant 2: determinism.
+		ctx2, cancel2 := context.WithTimeout(t.Context(), 5*time.Second)
+		defer cancel2()
+		stdout2, _, code2 := cmdSubstRunCtx(ctx2, t, script, dir)
+		cancel2()
+		if t.Context().Err() != nil {
+			return
+		}
+		if stdout != stdout2 || code != code2 {
+			t.Errorf("determinism violation on nested cmdsubst %q: outputs differ on identical input\nrun1: exit=%d, len=%d\nrun2: exit=%d, len=%d",
+				arg, code, len(stdout), code2, len(stdout2))
 		}
 	})
 }
@@ -135,12 +177,33 @@ func FuzzSubshellCommands(f *testing.F) {
 		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		defer cancel()
 
-		_, _, code := subshellRunCtx(ctx, t, `(echo '`+arg+`')`, dir)
+		script := `(echo '` + arg + `')`
+		stdout, _, code := subshellRunCtx(ctx, t, script, dir)
 		if t.Context().Err() != nil {
 			return
 		}
+		// Invariant 3: exit code validity.
 		if code != 0 && code != 1 {
 			t.Errorf("unexpected exit code %d for arg %q", code, arg)
+		}
+		// Invariant 1: output bounded.
+		if len(stdout) > 10*1024*1024 {
+			t.Errorf("subshell output exceeds 10 MiB: %d bytes", len(stdout))
+		}
+
+		// Invariant 4: no panic — reaching this line proves no panic escaped Run().
+
+		// Invariant 2: determinism.
+		ctx2, cancel2 := context.WithTimeout(t.Context(), 5*time.Second)
+		defer cancel2()
+		stdout2, _, code2 := subshellRunCtx(ctx2, t, script, dir)
+		cancel2()
+		if t.Context().Err() != nil {
+			return
+		}
+		if stdout != stdout2 || code != code2 {
+			t.Errorf("determinism violation on subshell %q: outputs differ on identical input\nrun1: exit=%d, len=%d\nrun2: exit=%d, len=%d",
+				arg, code, len(stdout), code2, len(stdout2))
 		}
 	})
 }

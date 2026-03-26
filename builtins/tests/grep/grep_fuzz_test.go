@@ -94,13 +94,33 @@ func FuzzGrepFileContent(f *testing.F) {
 		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		defer cancel() // safety net if t.Fatal fires before explicit cancel
 		script := "grep '" + pattern + "' input.txt"
-		_, _, code := cmdRunCtx(ctx, t, script, dir)
+		stdout, _, code := cmdRunCtx(ctx, t, script, dir)
 		cancel()
 		if t.Context().Err() != nil {
 			return
 		}
+		// Invariant 3: exit code validity — grep exits 0 (match), 1 (no match), 2 (error).
 		if code != 0 && code != 1 && code != 2 {
 			t.Errorf("grep unexpected exit code %d", code)
+		}
+		// Invariant 1: output bounded.
+		if len(stdout) > 10*1024*1024 {
+			t.Errorf("grep output exceeds 10 MiB: %d bytes", len(stdout))
+		}
+
+		// Invariant 4: no panic — reaching this line proves no panic escaped Run().
+
+		// Invariant 2: determinism.
+		ctx2, cancel2 := context.WithTimeout(t.Context(), 5*time.Second)
+		defer cancel2()
+		stdout2, _, code2 := cmdRunCtx(ctx2, t, script, dir)
+		cancel2()
+		if t.Context().Err() != nil {
+			return
+		}
+		if stdout != stdout2 || code != code2 {
+			t.Errorf("determinism violation on grep: outputs differ on identical input\nrun1: exit=%d, len=%d\nrun2: exit=%d, len=%d",
+				code, len(stdout), code2, len(stdout2))
 		}
 	})
 }
@@ -172,13 +192,33 @@ func FuzzGrepPatterns(f *testing.F) {
 
 		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		defer cancel() // safety net if t.Fatal fires before explicit cancel
-		_, _, code := cmdRunCtx(ctx, t, "grep '"+pattern+"' input.txt", dir)
+		stdout, _, code := cmdRunCtx(ctx, t, "grep '"+pattern+"' input.txt", dir)
 		cancel()
 		if t.Context().Err() != nil {
 			return
 		}
+		// Invariant 3: exit code validity.
 		if code != 0 && code != 1 && code != 2 {
 			t.Errorf("grep pattern %q unexpected exit code %d", pattern, code)
+		}
+		// Invariant 1: output bounded.
+		if len(stdout) > 10*1024*1024 {
+			t.Errorf("grep pattern %q output exceeds 10 MiB: %d bytes", pattern, len(stdout))
+		}
+
+		// Invariant 4: no panic — reaching this line proves no panic escaped Run().
+
+		// Invariant 2: determinism.
+		ctx2, cancel2 := context.WithTimeout(t.Context(), 5*time.Second)
+		defer cancel2()
+		stdout2, _, code2 := cmdRunCtx(ctx2, t, "grep '"+pattern+"' input.txt", dir)
+		cancel2()
+		if t.Context().Err() != nil {
+			return
+		}
+		if stdout != stdout2 || code != code2 {
+			t.Errorf("determinism violation on grep pattern %q: outputs differ on identical input\nrun1: exit=%d, len=%d\nrun2: exit=%d, len=%d",
+				pattern, code, len(stdout), code2, len(stdout2))
 		}
 	})
 }
@@ -216,13 +256,33 @@ func FuzzGrepStdin(f *testing.F) {
 
 		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		defer cancel() // safety net if t.Fatal fires before explicit cancel
-		_, _, code := cmdRunCtx(ctx, t, "grep '.' < stdin.txt", dir)
+		stdout, _, code := cmdRunCtx(ctx, t, "grep '.' < stdin.txt", dir)
 		cancel()
 		if t.Context().Err() != nil {
 			return
 		}
+		// Invariant 3: exit code validity.
 		if code != 0 && code != 1 && code != 2 {
 			t.Errorf("grep stdin unexpected exit code %d", code)
+		}
+		// Invariant 1: output bounded.
+		if len(stdout) > 10*1024*1024 {
+			t.Errorf("grep stdin output exceeds 10 MiB: %d bytes", len(stdout))
+		}
+
+		// Invariant 4: no panic — reaching this line proves no panic escaped Run().
+
+		// Invariant 2: determinism.
+		ctx2, cancel2 := context.WithTimeout(t.Context(), 5*time.Second)
+		defer cancel2()
+		stdout2, _, code2 := cmdRunCtx(ctx2, t, "grep '.' < stdin.txt", dir)
+		cancel2()
+		if t.Context().Err() != nil {
+			return
+		}
+		if stdout != stdout2 || code != code2 {
+			t.Errorf("determinism violation on grep stdin: outputs differ on identical input\nrun1: exit=%d, len=%d\nrun2: exit=%d, len=%d",
+				code, len(stdout), code2, len(stdout2))
 		}
 	})
 }
@@ -293,13 +353,33 @@ func FuzzGrepFixedStrings(f *testing.F) {
 
 		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		defer cancel() // safety net if t.Fatal fires before explicit cancel
-		_, _, code := cmdRunCtx(ctx, t, "grep -F '"+pattern+"' input.txt", dir)
+		stdout, _, code := cmdRunCtx(ctx, t, "grep -F '"+pattern+"' input.txt", dir)
 		cancel()
 		if t.Context().Err() != nil {
 			return
 		}
+		// Invariant 3: exit code validity.
 		if code != 0 && code != 1 && code != 2 {
 			t.Errorf("grep -F unexpected exit code %d", code)
+		}
+		// Invariant 1: output bounded.
+		if len(stdout) > 10*1024*1024 {
+			t.Errorf("grep -F output exceeds 10 MiB: %d bytes", len(stdout))
+		}
+
+		// Invariant 4: no panic — reaching this line proves no panic escaped Run().
+
+		// Invariant 2: determinism.
+		ctx2, cancel2 := context.WithTimeout(t.Context(), 5*time.Second)
+		defer cancel2()
+		stdout2, _, code2 := cmdRunCtx(ctx2, t, "grep -F '"+pattern+"' input.txt", dir)
+		cancel2()
+		if t.Context().Err() != nil {
+			return
+		}
+		if stdout != stdout2 || code != code2 {
+			t.Errorf("determinism violation on grep -F: outputs differ on identical input\nrun1: exit=%d, len=%d\nrun2: exit=%d, len=%d",
+				code, len(stdout), code2, len(stdout2))
 		}
 	})
 }
@@ -372,13 +452,33 @@ func FuzzGrepFlags(f *testing.F) {
 		}
 
 		script := "grep" + flags + " 'a' input.txt"
-		_, _, code := cmdRunCtx(ctx, t, script, dir)
+		stdout, _, code := cmdRunCtx(ctx, t, script, dir)
 		cancel()
 		if t.Context().Err() != nil {
 			return
 		}
+		// Invariant 3: exit code validity.
 		if code != 0 && code != 1 && code != 2 {
 			t.Errorf("grep%s unexpected exit code %d", flags, code)
+		}
+		// Invariant 1: output bounded.
+		if len(stdout) > 10*1024*1024 {
+			t.Errorf("grep%s output exceeds 10 MiB: %d bytes", flags, len(stdout))
+		}
+
+		// Invariant 4: no panic — reaching this line proves no panic escaped Run().
+
+		// Invariant 2: determinism.
+		ctx2, cancel2 := context.WithTimeout(t.Context(), 5*time.Second)
+		defer cancel2()
+		stdout2, _, code2 := cmdRunCtx(ctx2, t, script, dir)
+		cancel2()
+		if t.Context().Err() != nil {
+			return
+		}
+		if stdout != stdout2 || code != code2 {
+			t.Errorf("determinism violation on grep%s: outputs differ on identical input\nrun1: exit=%d, len=%d\nrun2: exit=%d, len=%d",
+				flags, code, len(stdout), code2, len(stdout2))
 		}
 	})
 }

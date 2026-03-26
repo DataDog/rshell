@@ -102,13 +102,34 @@ func FuzzCutFields(f *testing.F) {
 
 		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		defer cancel() // safety net if t.Fatal fires before explicit cancel
-		_, _, code := cmdRunCtxFuzz(ctx, t, fmt.Sprintf("cut -f %s input.txt", fieldSpec), dir)
+		script := fmt.Sprintf("cut -f %s input.txt", fieldSpec)
+		stdout, _, code := cmdRunCtxFuzz(ctx, t, script, dir)
 		cancel()
 		if t.Context().Err() != nil {
 			return
 		}
+		// Invariant 3: exit code validity.
 		if code != 0 && code != 1 {
 			t.Errorf("cut -f %s unexpected exit code %d", fieldSpec, code)
+		}
+		// Invariant 1: output bounded.
+		if len(stdout) > 10*1024*1024 {
+			t.Errorf("cut -f %s output exceeds 10 MiB: %d bytes", fieldSpec, len(stdout))
+		}
+
+		// Invariant 4: no panic — reaching this line proves no panic escaped Run().
+
+		// Invariant 2: determinism.
+		ctx2, cancel2 := context.WithTimeout(t.Context(), 5*time.Second)
+		defer cancel2()
+		stdout2, _, code2 := cmdRunCtxFuzz(ctx2, t, script, dir)
+		cancel2()
+		if t.Context().Err() != nil {
+			return
+		}
+		if stdout != stdout2 || code != code2 {
+			t.Errorf("determinism violation on cut -f %s: outputs differ on identical input\nrun1: exit=%d, len=%d\nrun2: exit=%d, len=%d",
+				fieldSpec, code, len(stdout), code2, len(stdout2))
 		}
 	})
 }
@@ -176,13 +197,34 @@ func FuzzCutBytes(f *testing.F) {
 
 		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		defer cancel() // safety net if t.Fatal fires before explicit cancel
-		_, _, code := cmdRunCtxFuzz(ctx, t, fmt.Sprintf("cut -b %s input.txt", byteSpec), dir)
+		script := fmt.Sprintf("cut -b %s input.txt", byteSpec)
+		stdout, _, code := cmdRunCtxFuzz(ctx, t, script, dir)
 		cancel()
 		if t.Context().Err() != nil {
 			return
 		}
+		// Invariant 3: exit code validity.
 		if code != 0 && code != 1 {
 			t.Errorf("cut -b %s unexpected exit code %d", byteSpec, code)
+		}
+		// Invariant 1: output bounded.
+		if len(stdout) > 10*1024*1024 {
+			t.Errorf("cut -b %s output exceeds 10 MiB: %d bytes", byteSpec, len(stdout))
+		}
+
+		// Invariant 4: no panic — reaching this line proves no panic escaped Run().
+
+		// Invariant 2: determinism.
+		ctx2, cancel2 := context.WithTimeout(t.Context(), 5*time.Second)
+		defer cancel2()
+		stdout2, _, code2 := cmdRunCtxFuzz(ctx2, t, script, dir)
+		cancel2()
+		if t.Context().Err() != nil {
+			return
+		}
+		if stdout != stdout2 || code != code2 {
+			t.Errorf("determinism violation on cut -b %s: outputs differ on identical input\nrun1: exit=%d, len=%d\nrun2: exit=%d, len=%d",
+				byteSpec, code, len(stdout), code2, len(stdout2))
 		}
 	})
 }
@@ -249,13 +291,33 @@ func FuzzCutDelimiter(f *testing.F) {
 		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		defer cancel() // safety net if t.Fatal fires before explicit cancel
 		script := fmt.Sprintf("cut -d '%s' -f %s input.txt", delim, fieldSpec)
-		_, _, code := cmdRunCtxFuzz(ctx, t, script, dir)
+		stdout, _, code := cmdRunCtxFuzz(ctx, t, script, dir)
 		cancel()
 		if t.Context().Err() != nil {
 			return
 		}
+		// Invariant 3: exit code validity.
 		if code != 0 && code != 1 {
 			t.Errorf("cut -d '%s' -f %s unexpected exit code %d", delim, fieldSpec, code)
+		}
+		// Invariant 1: output bounded.
+		if len(stdout) > 10*1024*1024 {
+			t.Errorf("cut -d '%s' -f %s output exceeds 10 MiB: %d bytes", delim, fieldSpec, len(stdout))
+		}
+
+		// Invariant 4: no panic — reaching this line proves no panic escaped Run().
+
+		// Invariant 2: determinism.
+		ctx2, cancel2 := context.WithTimeout(t.Context(), 5*time.Second)
+		defer cancel2()
+		stdout2, _, code2 := cmdRunCtxFuzz(ctx2, t, script, dir)
+		cancel2()
+		if t.Context().Err() != nil {
+			return
+		}
+		if stdout != stdout2 || code != code2 {
+			t.Errorf("determinism violation on cut -d '%s' -f %s: outputs differ on identical input\nrun1: exit=%d, len=%d\nrun2: exit=%d, len=%d",
+				delim, fieldSpec, code, len(stdout), code2, len(stdout2))
 		}
 	})
 }
@@ -313,13 +375,34 @@ func FuzzCutComplement(f *testing.F) {
 
 		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		defer cancel() // safety net if t.Fatal fires before explicit cancel
-		_, _, code := cmdRunCtxFuzz(ctx, t, fmt.Sprintf("cut --complement -b %s input.txt", byteSpec), dir)
+		script := fmt.Sprintf("cut --complement -b %s input.txt", byteSpec)
+		stdout, _, code := cmdRunCtxFuzz(ctx, t, script, dir)
 		cancel()
 		if t.Context().Err() != nil {
 			return
 		}
+		// Invariant 3: exit code validity.
 		if code != 0 && code != 1 {
 			t.Errorf("cut --complement -b %s unexpected exit code %d", byteSpec, code)
+		}
+		// Invariant 1: output bounded.
+		if len(stdout) > 10*1024*1024 {
+			t.Errorf("cut --complement -b %s output exceeds 10 MiB: %d bytes", byteSpec, len(stdout))
+		}
+
+		// Invariant 4: no panic — reaching this line proves no panic escaped Run().
+
+		// Invariant 2: determinism.
+		ctx2, cancel2 := context.WithTimeout(t.Context(), 5*time.Second)
+		defer cancel2()
+		stdout2, _, code2 := cmdRunCtxFuzz(ctx2, t, script, dir)
+		cancel2()
+		if t.Context().Err() != nil {
+			return
+		}
+		if stdout != stdout2 || code != code2 {
+			t.Errorf("determinism violation on cut --complement -b %s: outputs differ on identical input\nrun1: exit=%d, len=%d\nrun2: exit=%d, len=%d",
+				byteSpec, code, len(stdout), code2, len(stdout2))
 		}
 	})
 }
@@ -360,13 +443,33 @@ func FuzzCutStdin(f *testing.F) {
 
 		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		defer cancel() // safety net if t.Fatal fires before explicit cancel
-		_, _, code := cmdRunCtxFuzz(ctx, t, "cut -f 1 < stdin.txt", dir)
+		stdout, _, code := cmdRunCtxFuzz(ctx, t, "cut -f 1 < stdin.txt", dir)
 		cancel()
 		if t.Context().Err() != nil {
 			return
 		}
+		// Invariant 3: exit code validity.
 		if code != 0 && code != 1 {
 			t.Errorf("cut stdin unexpected exit code %d", code)
+		}
+		// Invariant 1: output bounded.
+		if len(stdout) > 10*1024*1024 {
+			t.Errorf("cut stdin output exceeds 10 MiB: %d bytes", len(stdout))
+		}
+
+		// Invariant 4: no panic — reaching this line proves no panic escaped Run().
+
+		// Invariant 2: determinism.
+		ctx2, cancel2 := context.WithTimeout(t.Context(), 5*time.Second)
+		defer cancel2()
+		stdout2, _, code2 := cmdRunCtxFuzz(ctx2, t, "cut -f 1 < stdin.txt", dir)
+		cancel2()
+		if t.Context().Err() != nil {
+			return
+		}
+		if stdout != stdout2 || code != code2 {
+			t.Errorf("determinism violation on cut stdin: outputs differ on identical input\nrun1: exit=%d, len=%d\nrun2: exit=%d, len=%d",
+				code, len(stdout), code2, len(stdout2))
 		}
 	})
 }

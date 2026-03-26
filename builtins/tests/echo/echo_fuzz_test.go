@@ -65,13 +65,33 @@ func FuzzEcho(f *testing.F) {
 
 		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		defer cancel() // safety net if t.Fatal fires before explicit cancel
-		_, _, code := fuzzRunCtx(ctx, t, "echo '"+arg+"'", dir)
+		stdout, _, code := fuzzRunCtx(ctx, t, "echo '"+arg+"'", dir)
 		cancel()
 		if t.Context().Err() != nil {
 			return
 		}
+		// Invariant 3: exit code validity — echo always exits 0.
 		if code != 0 {
 			t.Errorf("echo unexpected exit code %d", code)
+		}
+		// Invariant 1: output bounded.
+		if len(stdout) > 10*1024*1024 {
+			t.Errorf("echo output exceeds 10 MiB: %d bytes", len(stdout))
+		}
+
+		// Invariant 4: no panic — reaching this line proves no panic escaped Run().
+
+		// Invariant 2: determinism.
+		ctx2, cancel2 := context.WithTimeout(t.Context(), 5*time.Second)
+		defer cancel2()
+		stdout2, _, code2 := fuzzRunCtx(ctx2, t, "echo '"+arg+"'", dir)
+		cancel2()
+		if t.Context().Err() != nil {
+			return
+		}
+		if stdout != stdout2 || code != code2 {
+			t.Errorf("determinism violation on echo: outputs differ on identical input\nrun1: exit=%d, len=%d\nrun2: exit=%d, len=%d",
+				code, len(stdout), code2, len(stdout2))
 		}
 	})
 }
@@ -143,13 +163,33 @@ func FuzzEchoEscapes(f *testing.F) {
 
 		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		defer cancel() // safety net if t.Fatal fires before explicit cancel
-		_, _, code := fuzzRunCtx(ctx, t, "echo -e '"+arg+"'", dir)
+		stdout, _, code := fuzzRunCtx(ctx, t, "echo -e '"+arg+"'", dir)
 		cancel()
 		if t.Context().Err() != nil {
 			return
 		}
+		// Invariant 3: exit code validity.
 		if code != 0 {
 			t.Errorf("echo -e unexpected exit code %d", code)
+		}
+		// Invariant 1: output bounded.
+		if len(stdout) > 10*1024*1024 {
+			t.Errorf("echo -e output exceeds 10 MiB: %d bytes", len(stdout))
+		}
+
+		// Invariant 4: no panic — reaching this line proves no panic escaped Run().
+
+		// Invariant 2: determinism.
+		ctx2, cancel2 := context.WithTimeout(t.Context(), 5*time.Second)
+		defer cancel2()
+		stdout2, _, code2 := fuzzRunCtx(ctx2, t, "echo -e '"+arg+"'", dir)
+		cancel2()
+		if t.Context().Err() != nil {
+			return
+		}
+		if stdout != stdout2 || code != code2 {
+			t.Errorf("determinism violation on echo -e: outputs differ on identical input\nrun1: exit=%d, len=%d\nrun2: exit=%d, len=%d",
+				code, len(stdout), code2, len(stdout2))
 		}
 	})
 }
@@ -205,13 +245,33 @@ func FuzzEchoFlagInteraction(f *testing.F) {
 
 		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		defer cancel() // safety net if t.Fatal fires before explicit cancel
-		_, _, code := fuzzRunCtx(ctx, t, "echo"+flags+" '"+arg+"'", dir)
+		stdout, _, code := fuzzRunCtx(ctx, t, "echo"+flags+" '"+arg+"'", dir)
 		cancel()
 		if t.Context().Err() != nil {
 			return
 		}
+		// Invariant 3: exit code validity.
 		if code != 0 {
 			t.Errorf("echo%s unexpected exit code %d", flags, code)
+		}
+		// Invariant 1: output bounded.
+		if len(stdout) > 10*1024*1024 {
+			t.Errorf("echo%s output exceeds 10 MiB: %d bytes", flags, len(stdout))
+		}
+
+		// Invariant 4: no panic — reaching this line proves no panic escaped Run().
+
+		// Invariant 2: determinism.
+		ctx2, cancel2 := context.WithTimeout(t.Context(), 5*time.Second)
+		defer cancel2()
+		stdout2, _, code2 := fuzzRunCtx(ctx2, t, "echo"+flags+" '"+arg+"'", dir)
+		cancel2()
+		if t.Context().Err() != nil {
+			return
+		}
+		if stdout != stdout2 || code != code2 {
+			t.Errorf("determinism violation on echo%s: outputs differ on identical input\nrun1: exit=%d, len=%d\nrun2: exit=%d, len=%d",
+				flags, code, len(stdout), code2, len(stdout2))
 		}
 	})
 }

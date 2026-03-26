@@ -90,13 +90,33 @@ func FuzzTestStringOps(f *testing.F) {
 		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		defer cancel() // safety net if t.Fatal fires before explicit cancel
 		script := fmt.Sprintf("test '%s' %s '%s'", left, op, right)
-		_, _, code := cmdRunCtx(ctx, t, script, baseDir)
+		stdout, _, code := cmdRunCtx(ctx, t, script, baseDir)
 		cancel()
 		if t.Context().Err() != nil {
 			return
 		}
+		// Invariant 3: exit code validity.
 		if code != 0 && code != 1 && code != 2 {
 			t.Errorf("test string op unexpected exit code %d", code)
+		}
+		// Invariant 1: output bounded (test produces no stdout, but cap applies).
+		if len(stdout) > 10*1024*1024 {
+			t.Errorf("test string op output exceeds 10 MiB: %d bytes", len(stdout))
+		}
+
+		// Invariant 4: no panic — reaching this line proves no panic escaped Run().
+
+		// Invariant 2: determinism.
+		ctx2, cancel2 := context.WithTimeout(t.Context(), 5*time.Second)
+		defer cancel2()
+		stdout2, _, code2 := cmdRunCtx(ctx2, t, script, baseDir)
+		cancel2()
+		if t.Context().Err() != nil {
+			return
+		}
+		if stdout != stdout2 || code != code2 {
+			t.Errorf("determinism violation on test string op: outputs differ on identical input\nrun1: exit=%d, len=%d\nrun2: exit=%d, len=%d",
+				code, len(stdout), code2, len(stdout2))
 		}
 	})
 }
@@ -143,13 +163,33 @@ func FuzzTestIntegerOps(f *testing.F) {
 		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		defer cancel() // safety net if t.Fatal fires before explicit cancel
 		script := fmt.Sprintf("test %d %s %d", left, op, right)
-		_, _, code := cmdRunCtx(ctx, t, script, baseDir)
+		stdout, _, code := cmdRunCtx(ctx, t, script, baseDir)
 		cancel()
 		if t.Context().Err() != nil {
 			return
 		}
+		// Invariant 3: exit code validity.
 		if code != 0 && code != 1 && code != 2 {
 			t.Errorf("test %d %s %d unexpected exit code %d", left, op, right, code)
+		}
+		// Invariant 1: output bounded.
+		if len(stdout) > 10*1024*1024 {
+			t.Errorf("test integer op output exceeds 10 MiB: %d bytes", len(stdout))
+		}
+
+		// Invariant 4: no panic — reaching this line proves no panic escaped Run().
+
+		// Invariant 2: determinism.
+		ctx2, cancel2 := context.WithTimeout(t.Context(), 5*time.Second)
+		defer cancel2()
+		stdout2, _, code2 := cmdRunCtx(ctx2, t, script, baseDir)
+		cancel2()
+		if t.Context().Err() != nil {
+			return
+		}
+		if stdout != stdout2 || code != code2 {
+			t.Errorf("determinism violation on test integer op: outputs differ on identical input\nrun1: exit=%d, len=%d\nrun2: exit=%d, len=%d",
+				code, len(stdout), code2, len(stdout2))
 		}
 	})
 }
@@ -200,13 +240,33 @@ func FuzzTestFileOps(f *testing.F) {
 		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		defer cancel() // safety net if t.Fatal fires before explicit cancel
 		script := fmt.Sprintf("test %s %s", op, target)
-		_, _, code := cmdRunCtx(ctx, t, script, dir)
+		stdout, _, code := cmdRunCtx(ctx, t, script, dir)
 		cancel()
 		if t.Context().Err() != nil {
 			return
 		}
+		// Invariant 3: exit code validity.
 		if code != 0 && code != 1 && code != 2 {
 			t.Errorf("test %s unexpected exit code %d", op, code)
+		}
+		// Invariant 1: output bounded.
+		if len(stdout) > 10*1024*1024 {
+			t.Errorf("test file op output exceeds 10 MiB: %d bytes", len(stdout))
+		}
+
+		// Invariant 4: no panic — reaching this line proves no panic escaped Run().
+
+		// Invariant 2: determinism. File state (created or not) is stable within iteration.
+		ctx2, cancel2 := context.WithTimeout(t.Context(), 5*time.Second)
+		defer cancel2()
+		stdout2, _, code2 := cmdRunCtx(ctx2, t, script, dir)
+		cancel2()
+		if t.Context().Err() != nil {
+			return
+		}
+		if stdout != stdout2 || code != code2 {
+			t.Errorf("determinism violation on test file op: outputs differ on identical input\nrun1: exit=%d, len=%d\nrun2: exit=%d, len=%d",
+				code, len(stdout), code2, len(stdout2))
 		}
 	})
 }
@@ -259,13 +319,33 @@ func FuzzTestStringUnary(f *testing.F) {
 		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		defer cancel() // safety net if t.Fatal fires before explicit cancel
 		script := fmt.Sprintf("test %s '%s'", op, arg)
-		_, _, code := cmdRunCtx(ctx, t, script, baseDir)
+		stdout, _, code := cmdRunCtx(ctx, t, script, baseDir)
 		cancel()
 		if t.Context().Err() != nil {
 			return
 		}
+		// Invariant 3: exit code validity.
 		if code != 0 && code != 1 && code != 2 {
 			t.Errorf("test %s unexpected exit code %d", op, code)
+		}
+		// Invariant 1: output bounded.
+		if len(stdout) > 10*1024*1024 {
+			t.Errorf("test unary op output exceeds 10 MiB: %d bytes", len(stdout))
+		}
+
+		// Invariant 4: no panic — reaching this line proves no panic escaped Run().
+
+		// Invariant 2: determinism.
+		ctx2, cancel2 := context.WithTimeout(t.Context(), 5*time.Second)
+		defer cancel2()
+		stdout2, _, code2 := cmdRunCtx(ctx2, t, script, baseDir)
+		cancel2()
+		if t.Context().Err() != nil {
+			return
+		}
+		if stdout != stdout2 || code != code2 {
+			t.Errorf("determinism violation on test unary op: outputs differ on identical input\nrun1: exit=%d, len=%d\nrun2: exit=%d, len=%d",
+				code, len(stdout), code2, len(stdout2))
 		}
 	})
 }
@@ -351,13 +431,33 @@ func FuzzTestNesting(f *testing.F) {
 		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		defer cancel() // safety net if t.Fatal fires before explicit cancel
 		script := fmt.Sprintf("test %s", expr)
-		_, _, code := cmdRunCtx(ctx, t, script, baseDir)
+		stdout, _, code := cmdRunCtx(ctx, t, script, baseDir)
 		cancel()
 		if t.Context().Err() != nil {
 			return
 		}
+		// Invariant 3: exit code validity.
 		if code != 0 && code != 1 && code != 2 {
 			t.Errorf("test %q unexpected exit code %d", expr, code)
+		}
+		// Invariant 1: output bounded.
+		if len(stdout) > 10*1024*1024 {
+			t.Errorf("test nesting output exceeds 10 MiB: %d bytes", len(stdout))
+		}
+
+		// Invariant 4: no panic — reaching this line proves no panic escaped Run().
+
+		// Invariant 2: determinism.
+		ctx2, cancel2 := context.WithTimeout(t.Context(), 5*time.Second)
+		defer cancel2()
+		stdout2, _, code2 := cmdRunCtx(ctx2, t, script, baseDir)
+		cancel2()
+		if t.Context().Err() != nil {
+			return
+		}
+		if stdout != stdout2 || code != code2 {
+			t.Errorf("determinism violation on test nesting: outputs differ on identical input\nrun1: exit=%d, len=%d\nrun2: exit=%d, len=%d",
+				code, len(stdout), code2, len(stdout2))
 		}
 	})
 }

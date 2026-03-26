@@ -151,7 +151,7 @@ func FuzzIPSubcommand(f *testing.F) {
 		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		defer cancel() // safety net if t.Fatal fires before explicit cancel
 		script := "ip " + subcmd
-		_, _, code := cmdRunCtxFuzz(ctx, t, script)
+		stdout, _, code := cmdRunCtxFuzz(ctx, t, script)
 		timedOut := ctx.Err() == context.DeadlineExceeded // capture before cancel()
 		cancel()
 		if t.Context().Err() != nil {
@@ -160,12 +160,23 @@ func FuzzIPSubcommand(f *testing.F) {
 		if code == -1 {
 			return // shell/parse error before the builtin ran — not our bug
 		}
+		// Invariant 3: exit code validity.
 		if code != 0 && code != 1 && code != 255 {
 			t.Errorf("ip %q: unexpected exit code %d", subcmd, code)
 		}
 		if timedOut {
 			t.Errorf("ip %q: timed out (possible hang)", subcmd)
 		}
+		// Invariant 1: output bounded.
+		if len(stdout) > 10*1024*1024 {
+			t.Errorf("ip %q output exceeds 10 MiB: %d bytes", subcmd, len(stdout))
+		}
+
+		// Invariant 4: no panic — reaching this line proves no panic escaped Run().
+
+		// Note: Invariant 2 (determinism) is intentionally skipped for ip addr/link
+		// because these subcommands read live kernel network interface state, which
+		// may change between calls.
 	})
 }
 
@@ -232,7 +243,7 @@ func FuzzIPFlags(f *testing.F) {
 		if subcmd != "" {
 			script += " " + subcmd
 		}
-		_, _, code := cmdRunCtxFuzz(ctx, t, script)
+		stdout, _, code := cmdRunCtxFuzz(ctx, t, script)
 		timedOut := ctx.Err() == context.DeadlineExceeded // capture before cancel()
 		cancel()
 		if t.Context().Err() != nil {
@@ -241,11 +252,21 @@ func FuzzIPFlags(f *testing.F) {
 		if code == -1 {
 			return // shell/parse error before the builtin ran — not our bug
 		}
+		// Invariant 3: exit code validity.
 		if code != 0 && code != 1 {
 			t.Errorf("ip %q %q: unexpected exit code %d", flags, subcmd, code)
 		}
 		if timedOut {
 			t.Errorf("ip %q %q: timed out", flags, subcmd)
 		}
+		// Invariant 1: output bounded.
+		if len(stdout) > 10*1024*1024 {
+			t.Errorf("ip %q %q output exceeds 10 MiB: %d bytes", flags, subcmd, len(stdout))
+		}
+
+		// Invariant 4: no panic — reaching this line proves no panic escaped Run().
+
+		// Note: Invariant 2 (determinism) is intentionally skipped for ip addr/link
+		// because these subcommands read live kernel network interface state.
 	})
 }

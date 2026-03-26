@@ -143,13 +143,23 @@ func FuzzSSFlags(f *testing.F) {
 
 		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		defer cancel() // safety net if t.Fatal fires before explicit cancel
-		_, _, code := cmdRunCtxFuzzSS(ctx, t, script)
+		stdout, _, code := cmdRunCtxFuzzSS(ctx, t, script)
 		cancel()
 		if t.Context().Err() != nil {
 			return
 		}
+		// Invariant 3: exit code validity.
 		if code != 0 && code != 1 {
 			t.Errorf("unexpected exit code %d for flags %q", code, flags)
 		}
+		// Invariant 1: output bounded.
+		if len(stdout) > 10*1024*1024 {
+			t.Errorf("ss output exceeds 10 MiB: %d bytes", len(stdout))
+		}
+
+		// Invariant 4: no panic — reaching this line proves no panic escaped Run().
+
+		// Note: Invariant 2 (determinism) is intentionally skipped for ss because
+		// it reads live kernel socket state, which changes between calls.
 	})
 }

@@ -140,7 +140,7 @@ func FuzzIPRouteParse(f *testing.F) {
 		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		defer cancel()
 
-		_, _, code := cmdRunCtxFuzz(ctx, t, "ip route show")
+		stdout, _, code := cmdRunCtxFuzz(ctx, t, "ip route show")
 		timedOut := ctx.Err() == context.DeadlineExceeded
 		cancel()
 		if timedOut {
@@ -150,8 +150,31 @@ func FuzzIPRouteParse(f *testing.F) {
 		if code == -1 {
 			return // internal shell error before the builtin ran — not our bug
 		}
+		// Invariant 3: exit code validity.
 		if code != 0 && code != 1 {
 			t.Errorf("FuzzIPRouteParse: unexpected exit code %d", code)
+		}
+		// Invariant 1: output bounded.
+		if len(stdout) > 10*1024*1024 {
+			t.Errorf("FuzzIPRouteParse: output exceeds 10 MiB: %d bytes", len(stdout))
+		}
+
+		// Invariant 4: no panic — reaching this line proves no panic escaped Run().
+
+		// Invariant 2: determinism — same proc content (mutex still held) must give same output.
+		ctx2, cancel2 := context.WithTimeout(t.Context(), 5*time.Second)
+		defer cancel2()
+		stdout2, _, code2 := cmdRunCtxFuzz(ctx2, t, "ip route show")
+		cancel2()
+		if t.Context().Err() != nil {
+			return
+		}
+		if code2 == -1 {
+			return
+		}
+		if stdout != stdout2 || code != code2 {
+			t.Errorf("FuzzIPRouteParse: determinism violation: outputs differ on identical input\nrun1: exit=%d, len=%d\nrun2: exit=%d, len=%d",
+				code, len(stdout), code2, len(stdout2))
 		}
 	})
 }
@@ -216,7 +239,7 @@ func FuzzIPRouteGetAddr(f *testing.F) {
 		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		defer cancel()
 
-		_, _, code := cmdRunCtxFuzz(ctx, t, "ip route get "+addr)
+		stdout, _, code := cmdRunCtxFuzz(ctx, t, "ip route get "+addr)
 		timedOut := ctx.Err() == context.DeadlineExceeded
 		cancel()
 		if timedOut {
@@ -226,8 +249,31 @@ func FuzzIPRouteGetAddr(f *testing.F) {
 		if code == -1 {
 			return // internal shell error before the builtin ran — not our bug
 		}
+		// Invariant 3: exit code validity.
 		if code != 0 && code != 1 {
 			t.Errorf("FuzzIPRouteGetAddr %q: unexpected exit code %d", addr, code)
+		}
+		// Invariant 1: output bounded.
+		if len(stdout) > 10*1024*1024 {
+			t.Errorf("FuzzIPRouteGetAddr %q: output exceeds 10 MiB: %d bytes", addr, len(stdout))
+		}
+
+		// Invariant 4: no panic — reaching this line proves no panic escaped Run().
+
+		// Invariant 2: determinism — same proc content (mutex still held) must give same output.
+		ctx2, cancel2 := context.WithTimeout(t.Context(), 5*time.Second)
+		defer cancel2()
+		stdout2, _, code2 := cmdRunCtxFuzz(ctx2, t, "ip route get "+addr)
+		cancel2()
+		if t.Context().Err() != nil {
+			return
+		}
+		if code2 == -1 {
+			return
+		}
+		if stdout != stdout2 || code != code2 {
+			t.Errorf("FuzzIPRouteGetAddr %q: determinism violation: outputs differ on identical input\nrun1: exit=%d, len=%d\nrun2: exit=%d, len=%d",
+				addr, code, len(stdout), code2, len(stdout2))
 		}
 	})
 }

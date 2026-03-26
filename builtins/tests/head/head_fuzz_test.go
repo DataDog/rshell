@@ -84,8 +84,13 @@ func FuzzHeadLines(f *testing.F) {
 		if t.Context().Err() != nil {
 			return
 		}
+		// Invariant 3: exit code validity — head exits 0 (success) or 1 (error).
 		if code != 0 && code != 1 {
 			t.Errorf("unexpected exit code %d", code)
+		}
+		// Invariant 1: output bounded — the global 10 MiB stdout cap must hold.
+		if len(stdout) > 10*1024*1024 {
+			t.Errorf("output exceeds 10 MiB: %d bytes", len(stdout))
 		}
 
 		// If successful, output line count must be <= n
@@ -94,6 +99,23 @@ func FuzzHeadLines(f *testing.F) {
 			if int64(lineCount) > n {
 				t.Errorf("head -n %d produced %d newlines in output", n, lineCount)
 			}
+		}
+
+		// Invariant 4: no panic — the runner's deferred recover in api.go catches
+		// any panic and converts it to an error return. Reaching this line means
+		// no panic escaped the Run() call.
+
+		// Invariant 2: determinism — identical inputs must produce identical outputs.
+		ctx2, cancel2 := context.WithTimeout(t.Context(), 5*time.Second)
+		defer cancel2()
+		stdout2, _, code2 := cmdRunCtx(ctx2, t, fmt.Sprintf("head -n %d input.txt", n), dir)
+		cancel2()
+		if t.Context().Err() != nil {
+			return
+		}
+		if stdout != stdout2 || code != code2 {
+			t.Errorf("determinism violation on head -n %d: outputs differ on identical input\nrun1: exit=%d, len=%d\nrun2: exit=%d, len=%d",
+				n, code, len(stdout), code2, len(stdout2))
 		}
 	})
 }
@@ -154,8 +176,13 @@ func FuzzHeadBytes(f *testing.F) {
 		if t.Context().Err() != nil {
 			return
 		}
+		// Invariant 3: exit code validity.
 		if code != 0 && code != 1 {
 			t.Errorf("unexpected exit code %d", code)
+		}
+		// Invariant 1: output bounded.
+		if len(stdout) > 10*1024*1024 {
+			t.Errorf("output exceeds 10 MiB: %d bytes", len(stdout))
 		}
 
 		// If successful, output byte count must be <= n
@@ -164,6 +191,21 @@ func FuzzHeadBytes(f *testing.F) {
 			if outLen > n {
 				t.Errorf("head -c %d produced %d bytes of output", n, outLen)
 			}
+		}
+
+		// Invariant 4: no panic — reaching this line proves no panic escaped Run().
+
+		// Invariant 2: determinism.
+		ctx2, cancel2 := context.WithTimeout(t.Context(), 5*time.Second)
+		defer cancel2()
+		stdout2, _, code2 := cmdRunCtx(ctx2, t, fmt.Sprintf("head -c %d input.txt", n), dir)
+		cancel2()
+		if t.Context().Err() != nil {
+			return
+		}
+		if stdout != stdout2 || code != code2 {
+			t.Errorf("determinism violation on head -c %d: outputs differ on identical input\nrun1: exit=%d, len=%d\nrun2: exit=%d, len=%d",
+				n, code, len(stdout), code2, len(stdout2))
 		}
 	})
 }
@@ -206,13 +248,33 @@ func FuzzHeadStdin(f *testing.F) {
 
 		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		defer cancel() // safety net if t.Fatal fires before explicit cancel
-		_, _, code := cmdRunCtx(ctx, t, fmt.Sprintf("head -n %d < stdin.txt", n), dir)
+		stdout, _, code := cmdRunCtx(ctx, t, fmt.Sprintf("head -n %d < stdin.txt", n), dir)
 		cancel()
 		if t.Context().Err() != nil {
 			return
 		}
+		// Invariant 3: exit code validity.
 		if code != 0 && code != 1 {
 			t.Errorf("unexpected exit code %d (stdin mode)", code)
+		}
+		// Invariant 1: output bounded.
+		if len(stdout) > 10*1024*1024 {
+			t.Errorf("output exceeds 10 MiB: %d bytes", len(stdout))
+		}
+
+		// Invariant 4: no panic — reaching this line proves no panic escaped Run().
+
+		// Invariant 2: determinism.
+		ctx2, cancel2 := context.WithTimeout(t.Context(), 5*time.Second)
+		defer cancel2()
+		stdout2, _, code2 := cmdRunCtx(ctx2, t, fmt.Sprintf("head -n %d < stdin.txt", n), dir)
+		cancel2()
+		if t.Context().Err() != nil {
+			return
+		}
+		if stdout != stdout2 || code != code2 {
+			t.Errorf("determinism violation on head stdin -n %d: outputs differ on identical input\nrun1: exit=%d, len=%d\nrun2: exit=%d, len=%d",
+				n, code, len(stdout), code2, len(stdout2))
 		}
 	})
 }

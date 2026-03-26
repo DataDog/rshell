@@ -102,6 +102,16 @@ func FuzzPSPidList(f *testing.F) {
 				t.Errorf("unexpected runner error: %v", runErr)
 			}
 		}
+
+		// Invariant 1: output bounded.
+		if outBuf.Len() > 10*1024*1024 {
+			t.Errorf("ps output exceeds 10 MiB: %d bytes", outBuf.Len())
+		}
+
+		// Invariant 4: no panic — reaching this line proves no panic escaped Run().
+
+		// Note: Invariant 2 (determinism) is intentionally skipped for ps because
+		// it reads live kernel process state, which changes between calls.
 	})
 }
 
@@ -152,5 +162,15 @@ func FuzzPSFlags(f *testing.F) {
 				t.Errorf("unexpected runner error: %v", runErr)
 			}
 		}
+
+		// Invariant 1: output bounded.
+		if outBuf.Len() > 10*1024*1024 {
+			t.Errorf("ps flags output exceeds 10 MiB: %d bytes", outBuf.Len())
+		}
+
+		// Invariant 4: no panic — reaching this line proves no panic escaped Run().
+
+		// Note: Invariant 2 (determinism) is intentionally skipped for ps because
+		// it reads live kernel process state, which changes between calls.
 	})
 }
