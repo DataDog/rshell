@@ -1,3 +1,5 @@
+# skip: pflag formats unknown-flag errors differently from GNU coreutils
+# ("unknown shorthand flag" vs "invalid option"). Exit code matches (1).
 description: uname rejects unknown flags
 skip_assert_against_bash: true
 input:
