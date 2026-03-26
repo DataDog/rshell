@@ -62,23 +62,24 @@ var Cmd = builtins.Command{
 // kernelFiles maps each flag letter to the proc pseudo-file that
 // provides the corresponding value. Order matches POSIX -a output.
 var kernelFiles = [...]struct {
-	flag string
-	file string
+	short string
+	long  string
+	file  string
 }{
-	{"s", "ostype"},
-	{"n", "hostname"},
-	{"r", "osrelease"},
-	{"v", "version"},
-	{"m", "arch"},
+	{"s", "kernel-name", "ostype"},
+	{"n", "nodename", "hostname"},
+	{"r", "kernel-release", "osrelease"},
+	{"v", "kernel-version", "version"},
+	{"m", "machine", "arch"},
 }
 
 func makeFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 	help := fs.BoolP("help", "h", false, "print usage and exit")
 	var flags [len(kernelFiles)]*bool
 	for i, entry := range kernelFiles {
-		flags[i] = fs.BoolP(entry.flag, entry.flag, false, "")
+		flags[i] = fs.BoolP(entry.long, entry.short, false, "")
 	}
-	allFlag := fs.BoolP("a", "a", false, "print all information")
+	allFlag := fs.BoolP("all", "a", false, "print all information")
 
 	return func(ctx context.Context, callCtx *builtins.CallContext, args []string) builtins.Result {
 		if *help {
