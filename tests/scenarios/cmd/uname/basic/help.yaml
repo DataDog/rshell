@@ -4,6 +4,6 @@ input:
   script: |+
     uname --help
 expect:
-  stdout_contains: ["uname", "kernel"]
+  stdout_contains: ["uname", "kernel-name", "nodename", "kernel-release", "kernel-version", "machine"]
   stderr: ""
   exit_code: 0

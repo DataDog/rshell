@@ -83,15 +83,15 @@ func makeFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 
 	return func(ctx context.Context, callCtx *builtins.CallContext, args []string) builtins.Result {
 		if *help {
-			callCtx.Outf("Usage: uname [-asnrvm]\n")
-			callCtx.Outf("Print system information. With no flags, same as -s.\n\n")
-			callCtx.Outf("  -s    kernel name\n")
-			callCtx.Outf("  -n    network node hostname\n")
-			callCtx.Outf("  -r    kernel release\n")
-			callCtx.Outf("  -v    kernel version\n")
-			callCtx.Outf("  -m    machine hardware name\n")
-			callCtx.Outf("  -a    print all information\n")
-			callCtx.Outf("  -h, --help  display this help and exit\n")
+			callCtx.Outf("Usage: uname [OPTION]...\n")
+			callCtx.Outf("Print system information. With no OPTION, same as -s.\n\n")
+			callCtx.Outf("  -s, --kernel-name     print the kernel name\n")
+			callCtx.Outf("  -n, --nodename        print the network node hostname\n")
+			callCtx.Outf("  -r, --kernel-release  print the kernel release\n")
+			callCtx.Outf("  -v, --kernel-version  print the kernel version\n")
+			callCtx.Outf("  -m, --machine         print the machine hardware name\n")
+			callCtx.Outf("  -a, --all             print all information\n")
+			callCtx.Outf("      --help            display this help and exit\n")
 			return builtins.Result{}
 		}
 
