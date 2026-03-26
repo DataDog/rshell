@@ -172,6 +172,9 @@ func (o *overlayEnviron) Set(name string, vr expand.Variable) error {
 		return &errTotalVarStorageExceeded{total: o.totalBytes + delta}
 	}
 	o.totalBytes += delta
+	if o.totalBytes < 0 {
+		o.totalBytes = 0 // defensive guard against invariant violation
+	}
 	vr.Local = prev.Local || vr.Local
 	o.values[name] = vr
 	return nil
@@ -195,6 +198,13 @@ func (o *overlayEnviron) setUncapped(name string, vr expand.Variable) {
 	o.totalBytes += newBytes - oldBytes
 	if o.totalBytes < 0 {
 		o.totalBytes = 0
+	}
+	if !vr.IsSet() {
+		// Delete the key rather than storing a zero-value tombstone entry.
+		// Storing an unset entry causes Each() to iterate it and allows unbounded
+		// map growth for inline command vars (FOO=bar cmd) where FOO was unset before.
+		delete(o.values, name)
+		return
 	}
 	vr.Local = prev.Local || vr.Local
 	o.values[name] = vr
