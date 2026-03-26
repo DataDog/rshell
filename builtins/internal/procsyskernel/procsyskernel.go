@@ -35,7 +35,13 @@ import (
 // validated via fstat to reject non-regular files. Reads are bounded to
 // 4 KiB. The returned value is trimmed of trailing whitespace.
 func ReadFile(procPath, name string) (string, error) {
-	path := filepath.Join(procPath, "sys", "kernel", name)
+	// Defence-in-depth: reject ".." in the original path before Clean
+	// so traversal like "/proc/../etc/passwd" is caught. Matches the
+	// equivalent guard in procnetroute and procnetsocket.
+	if strings.Contains(procPath, "..") {
+		return "", fmt.Errorf("procsyskernel: unsafe procPath %q (must not contain \"..\" components)", procPath)
+	}
+	path := filepath.Join(filepath.Clean(procPath), "sys", "kernel", name)
 	// Open with O_NONBLOCK to prevent blocking on FIFOs, then validate
 	// the file type via fstat on the opened fd. This is atomic — no
 	// TOCTOU gap between type check and open.

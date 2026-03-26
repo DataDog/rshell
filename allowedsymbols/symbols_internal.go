@@ -57,15 +57,17 @@ var internalPerPackageSymbols = map[string][]string{
 		// No stdlib symbols needed — this package only defines a string constant.
 	},
 	"procsyskernel": {
-		"fmt.Errorf",         // 🟢 error formatting; pure function, no I/O.
-		"io.ReadAll",         // 🟠 reads all data from a reader; bounded by io.LimitReader below.
-		"io.LimitReader",     // 🟢 wraps a reader with a byte cap; pure wrapper, no I/O by itself.
-		"os.ModeCharDevice",  // 🟢 file mode constant; pure constant.
-		"os.O_RDONLY",        // 🟢 read-only file flag; pure constant.
-		"os.OpenFile",        // 🟠 opens kernel pseudo-files for reading; bypasses AllowedPaths by design.
-		"path/filepath.Join", // 🟢 joins path elements; pure function, no I/O.
-		"strings.TrimRight",  // 🟢 trims trailing characters; pure function, no I/O.
-		"syscall.O_NONBLOCK", // 🟢 non-blocking open flag; prevents FIFO hang. Pure constant.
+		"fmt.Errorf",          // 🟢 error formatting; pure function, no I/O.
+		"io.LimitReader",      // 🟢 wraps a reader with a byte cap; pure wrapper, no I/O by itself.
+		"io.ReadAll",          // 🟠 reads all data from a reader; bounded by io.LimitReader.
+		"os.ModeCharDevice",   // 🟢 file mode constant; pure constant.
+		"os.O_RDONLY",         // 🟢 read-only file flag; pure constant.
+		"os.OpenFile",         // 🟠 opens kernel pseudo-files for reading; bypasses AllowedPaths by design.
+		"path/filepath.Clean", // 🟢 normalises path before use; pure function, no I/O.
+		"path/filepath.Join",  // 🟢 joins path elements; pure function, no I/O.
+		"strings.Contains",    // 🟢 checks for ".." traversal in procPath; pure function, no I/O.
+		"strings.TrimRight",   // 🟢 trims trailing characters; pure function, no I/O.
+		"syscall.O_NONBLOCK",  // 🟢 non-blocking open flag; prevents FIFO hang. Pure constant.
 	},
 	"procnetroute": {
 		"bufio.NewScanner", // 🟢 line-by-line reading of /proc/net/route; no write capability.
