@@ -140,13 +140,23 @@ func (o *overlayEnviron) Set(name string, vr expand.Variable) error {
 }
 
 func (o *overlayEnviron) Each(f func(name string, vr expand.Variable) bool) {
-	if o.parent != nil {
-		o.parent.Each(f)
-	}
+	// Emit our own overrides first so they take precedence.
 	for name, vr := range o.values {
 		if !f(name, vr) {
 			return
 		}
+	}
+	// Then emit parent variables, skipping any that we already overrode above.
+	// Without this guard, a variable that exists in both the parent environment
+	// and our overlay (because the script re-assigned it) would be emitted twice,
+	// causing newOverlayEnviron to seed totalBytes at 2× the real storage.
+	if o.parent != nil {
+		o.parent.Each(func(name string, vr expand.Variable) bool {
+			if _, override := o.values[name]; override {
+				return true // already emitted from our overlay
+			}
+			return f(name, vr)
+		})
 	}
 }
 

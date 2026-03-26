@@ -59,6 +59,29 @@ func TestTotalVarStorageCapEnforced(t *testing.T) {
 	assert.NotEqual(t, 0, code, "exit code must be non-zero after hitting total storage cap")
 }
 
+// TestSubshellTotalVarStorageDoubleCount is a regression test for a bug where
+// overlayEnviron.Each emitted overridden variables twice — once from the parent
+// environment and once from the overlay — causing newOverlayEnviron to seed
+// totalBytes at 2× the real storage.  With the seed inflated past
+// MaxTotalVarsBytes, any assignment inside the subshell was rejected even though
+// actual memory use was within the cap.
+func TestSubshellTotalVarStorageDoubleCount(t *testing.T) {
+	// X is 600 KiB in the initial environment — well under the 1 MiB cap.
+	value600K := strings.Repeat("x", 600*1024)
+
+	// The script overrides X in the parent shell, putting it into the overlay.
+	// Before the fix, Each() emitted X from both r.Env and the parent overlay,
+	// seeding the subshell's totalBytes at 1200 KiB > MaxTotalVarsBytes.
+	// Y=x inside the subshell was then rejected even though real storage is 600 KiB.
+	script := fmt.Sprintf("X=%s\n( Y=x; echo SUBSHELL_OK )\necho DONE\n", value600K)
+
+	stdout, _, code := runScript(t, script, "", interp.Env("X="+value600K))
+
+	assert.Contains(t, stdout, "SUBSHELL_OK", "subshell assignment should succeed: real storage is 600 KiB, within the 1 MiB cap")
+	assert.Contains(t, stdout, "DONE")
+	assert.Equal(t, 0, code)
+}
+
 // TestTotalVarStorageCapUpdateTracking verifies that updating an existing variable
 // correctly adjusts the total byte counter (i.e. growing a variable counts against
 // the cap, and shrinking it frees space).
