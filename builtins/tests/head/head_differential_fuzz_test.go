@@ -76,6 +76,9 @@ func FuzzHeadDifferentialLines(f *testing.F) {
 	var counter atomic.Int64
 
 	f.Fuzz(func(t *testing.T, input []byte, n int64) {
+		if t.Context().Err() != nil {
+			return
+		}
 		if len(input) > 64*1024 {
 			return
 		}
@@ -92,17 +95,11 @@ func FuzzHeadDifferentialLines(f *testing.F) {
 
 		nStr := fmt.Sprintf("%d", n)
 
-		// Use context.Background() (not t.Context()) so the fuzz engine's
-		// cancellation does not kill the command mid-run; each iteration still
-		// enforces its own 5 s deadline.
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		defer cancel() // safety net if t.Fatal fires before explicit cancel
 		rshellOut, rshellErr, rshellCode := cmdRunCtx(ctx, t, fmt.Sprintf("head -n %s input.txt", nStr), dir)
 		cancel()
 
-		// If the fuzz engine's budget expired (t.Context(), not the per-command
-		// context above), bail out without comparing — partial output would cause
-		// false failures.
 		if t.Context().Err() != nil {
 			return
 		}
@@ -143,6 +140,9 @@ func FuzzHeadDifferentialBytes(f *testing.F) {
 	var counter atomic.Int64
 
 	f.Fuzz(func(t *testing.T, input []byte, n int64) {
+		if t.Context().Err() != nil {
+			return
+		}
 		if len(input) > 64*1024 {
 			return
 		}
@@ -159,17 +159,11 @@ func FuzzHeadDifferentialBytes(f *testing.F) {
 
 		nStr := fmt.Sprintf("%d", n)
 
-		// Use context.Background() (not t.Context()) so the fuzz engine's
-		// cancellation does not kill the command mid-run; each iteration still
-		// enforces its own 5 s deadline.
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		defer cancel() // safety net if t.Fatal fires before explicit cancel
 		rshellOut, rshellErr, rshellCode := cmdRunCtx(ctx, t, fmt.Sprintf("head -c %s input.txt", nStr), dir)
 		cancel()
 
-		// If the fuzz engine's budget expired (t.Context(), not the per-command
-		// context above), bail out without comparing — partial output would cause
-		// false failures.
 		if t.Context().Err() != nil {
 			return
 		}

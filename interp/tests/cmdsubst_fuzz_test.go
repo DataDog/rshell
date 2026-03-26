@@ -26,6 +26,9 @@ func FuzzCmdSubstEcho(f *testing.F) {
 	f.Add("日本語")
 
 	f.Fuzz(func(t *testing.T, arg string) {
+		if t.Context().Err() != nil {
+			return
+		}
 		if len(arg) > 1000 {
 			return
 		}
@@ -43,10 +46,13 @@ func FuzzCmdSubstEcho(f *testing.F) {
 		}
 
 		dir := t.TempDir()
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		defer cancel()
 
 		_, _, code := cmdSubstRunCtx(ctx, t, `x=$(echo '`+arg+`'); echo "$x"`, dir)
+		if t.Context().Err() != nil {
+			return
+		}
 		if code != 0 && code != 1 {
 			t.Errorf("unexpected exit code %d for arg %q", code, arg)
 		}
@@ -60,6 +66,9 @@ func FuzzCmdSubstNested(f *testing.F) {
 	f.Add("")
 
 	f.Fuzz(func(t *testing.T, arg string) {
+		if t.Context().Err() != nil {
+			return
+		}
 		if len(arg) > 500 {
 			return
 		}
@@ -83,10 +92,13 @@ func FuzzCmdSubstNested(f *testing.F) {
 		}
 
 		dir := t.TempDir()
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		defer cancel()
 
 		_, _, code := cmdSubstRunCtx(ctx, t, `echo $(echo '`+arg+`')`, dir)
+		if t.Context().Err() != nil {
+			return
+		}
 		if code != 0 && code != 1 {
 			t.Errorf("unexpected exit code %d for arg %q", code, arg)
 		}
@@ -101,6 +113,9 @@ func FuzzSubshellCommands(f *testing.F) {
 	f.Add("hello world")
 
 	f.Fuzz(func(t *testing.T, arg string) {
+		if t.Context().Err() != nil {
+			return
+		}
 		if len(arg) > 500 {
 			return
 		}
@@ -117,10 +132,13 @@ func FuzzSubshellCommands(f *testing.F) {
 		}
 
 		dir := t.TempDir()
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		defer cancel()
 
 		_, _, code := subshellRunCtx(ctx, t, `(echo '`+arg+`')`, dir)
+		if t.Context().Err() != nil {
+			return
+		}
 		if code != 0 && code != 1 {
 			t.Errorf("unexpected exit code %d for arg %q", code, arg)
 		}

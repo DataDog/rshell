@@ -98,6 +98,9 @@ func FuzzSSFlags(f *testing.F) {
 	f.Add("-an extra_arg_1 extra_arg_2")
 
 	f.Fuzz(func(t *testing.T, flags string) {
+		if t.Context().Err() != nil {
+			return
+		}
 		// Cap input length to prevent shell-parse errors from excessively long strings.
 		if len(flags) > 256 {
 			return
@@ -138,10 +141,13 @@ func FuzzSSFlags(f *testing.F) {
 		// testutil.RunScriptCtx) shows the input in the CI log.
 		t.Logf("script: %s", script)
 
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		defer cancel() // safety net if t.Fatal fires before explicit cancel
 		_, _, code := cmdRunCtxFuzzSS(ctx, t, script)
 		cancel()
+		if t.Context().Err() != nil {
+			return
+		}
 		if code != 0 && code != 1 {
 			t.Errorf("unexpected exit code %d for flags %q", code, flags)
 		}
