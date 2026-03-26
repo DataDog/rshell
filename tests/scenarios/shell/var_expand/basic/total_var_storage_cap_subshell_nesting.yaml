@@ -1,0 +1,14 @@
+description: Nested subshells cannot bypass MaxTotalVarsBytes by resetting the counter at each nesting level.
+skip_assert_against_bash: true  # intentional divergence: bash has no variable storage limit
+input:
+  script: |+
+    A=x
+    A=$A$A;A=$A$A;A=$A$A;A=$A$A;A=$A$A;A=$A$A;A=$A$A;A=$A$A;A=$A$A;A=$A$A
+    A=$A$A;A=$A$A;A=$A$A;A=$A$A;A=$A$A;A=$A$A;A=$A$A;A=$A$A;A=$A$A
+    ( B=$A; B=$B$B; echo SUBSHELL_DONE )
+    echo OUTER_DONE
+expect:
+  stdout: |+
+    OUTER_DONE
+  stderr_contains: ["variable storage limit exceeded"]
+  exit_code: 0

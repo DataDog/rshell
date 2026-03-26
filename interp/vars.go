@@ -114,12 +114,18 @@ func (o *overlayEnviron) Set(name string, vr expand.Variable) error {
 			// Use prev.Str unconditionally: non-background subshells seed totalBytes from
 			// the parent, so parent-inherited vars are already counted even when !inOverlay.
 			o.totalBytes -= len(prev.Str)
+			if o.totalBytes < 0 {
+				o.totalBytes = 0 // defensive guard against invariant violation
+			}
 			o.values[name] = vr
 			return nil
 		}
 		// Same reasoning as above: subtract unconditionally so parent-seeded bytes are
 		// correctly released when a parent-inherited variable is deleted in a subshell.
 		o.totalBytes -= len(prev.Str)
+		if o.totalBytes < 0 {
+			o.totalBytes = 0 // defensive guard against invariant violation
+		}
 		delete(o.values, name)
 		return nil
 	}
