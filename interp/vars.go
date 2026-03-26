@@ -6,6 +6,7 @@
 package interp
 
 import (
+	"errors"
 	"fmt"
 	"maps"
 	"runtime"
@@ -20,15 +21,65 @@ import (
 // Assignments that exceed this limit are rejected with an error.
 const MaxVarBytes = 1 << 20 // 1 MiB
 
+// MaxTotalVarsBytes is the maximum total size in bytes of all variable values
+// combined. Assignments that would push the total over this limit are rejected.
+const MaxTotalVarsBytes = 1 << 20 // 1 MiB
+
+// errTotalVarStorageExceeded is returned by overlayEnviron.Set when the total
+// variable storage cap is exceeded. It is a distinct type so that setVar can
+// treat it as a fatal error and abort the script.
+type errTotalVarStorageExceeded struct {
+	total int
+}
+
+func (e *errTotalVarStorageExceeded) Error() string {
+	return fmt.Sprintf("variable storage limit exceeded (%d bytes total)", e.total)
+}
+
 func newOverlayEnviron(parent expand.Environ, background bool) *overlayEnviron {
 	oenv := &overlayEnviron{}
 	if !background {
 		oenv.parent = parent
+		// Seed totalBytes from the parent's tracked counter so that the cap is
+		// enforced consistently across subshell nesting levels (preventing a
+		// script from resetting the counter to zero at each nesting level and
+		// allocating O(depth × MaxTotalVarsBytes) before hitting any limit).
+		//
+		// When the parent is an *overlayEnviron we use its tracked counter
+		// directly, which reflects only script-assigned variables (Env()
+		// variables are excluded from the cap via the Reset() zero-out, so they
+		// do not appear in pov.totalBytes).  Summing via parent.Each() instead
+		// would also count inherited Env() variables, producing false cap hits
+		// for legitimate callers that provide a large Env() variable.
+		//
+		// When the parent is not an *overlayEnviron (fallback) we must sum
+		// manually since there is no pre-computed counter.
+		if pov, ok := parent.(*overlayEnviron); ok {
+			oenv.totalBytes = pov.totalBytes
+		} else {
+			parent.Each(func(_ string, vr expand.Variable) bool {
+				oenv.totalBytes += len(vr.Str)
+				return true
+			})
+		}
 	} else {
-		// We could do better here if the parent is also an overlayEnviron;
-		// measure with profiles or benchmarks before we choose to do so.
 		oenv.values = make(map[string]expand.Variable)
 		maps.Insert(oenv.values, parent.Each)
+		// Seed totalBytes from the parent's tracked counter rather than
+		// re-summing all variables (which would include inherited env vars
+		// provided via Env() that the main runner intentionally excludes from
+		// the cap).  Using the parent's counter keeps background-subshell
+		// accounting consistent with the main runner and prevents false positives
+		// when the caller provides a large Env() variable: an assignment that
+		// succeeds in the parent must also succeed in a pipeline/background subshell.
+		if pov, ok := parent.(*overlayEnviron); ok {
+			oenv.totalBytes = pov.totalBytes
+		} else {
+			// Fallback for non-overlayEnviron parents: sum all values.
+			for _, vr := range oenv.values {
+				oenv.totalBytes += len(vr.Str)
+			}
+		}
 	}
 	return oenv
 }
@@ -39,6 +90,14 @@ type overlayEnviron struct {
 	// which we can safely reuse without data races, such as non-background subshells.
 	parent expand.Environ
 	values map[string]expand.Variable
+	// totalBytes tracks the total script-assigned variable storage counted
+	// against MaxTotalVarsBytes. For background subshells, where all parent
+	// variables are copied into [values], this equals the sum of len(value.Str)
+	// over [values]. For non-background subshells (e.g. ( ) or $( )), the
+	// counter is seeded from the parent's counter so parent-inherited bytes
+	// are included even before any variable is written to [values]; those
+	// inherited variables are NOT present in [values] themselves.
+	totalBytes int
 }
 
 func (o *overlayEnviron) Get(name string) expand.Variable {
@@ -80,26 +139,85 @@ func (o *overlayEnviron) Set(name string, vr expand.Variable) error {
 		}
 		if prev.Local {
 			vr.Local = true
+			// Subtract old value from total; the unset local retains its slot but no value.
+			// Use prev.Str unconditionally: non-background subshells seed totalBytes from
+			// the parent, so parent-inherited vars are already counted even when !inOverlay.
+			o.totalBytes -= len(prev.Str)
+			if o.totalBytes < 0 {
+				o.totalBytes = 0 // defensive guard against invariant violation
+			}
 			o.values[name] = vr
 			return nil
+		}
+		// Same reasoning as above: subtract unconditionally so parent-seeded bytes are
+		// correctly released when a parent-inherited variable is deleted in a subshell.
+		o.totalBytes -= len(prev.Str)
+		if o.totalBytes < 0 {
+			o.totalBytes = 0 // defensive guard against invariant violation
 		}
 		delete(o.values, name)
 		return nil
 	}
-	// modifying the entire variable
+	// modifying the entire variable — enforce total storage cap.
+	// Use the previous value's byte count unconditionally: for non-background
+	// subshells, newOverlayEnviron seeds totalBytes by summing parent variables,
+	// so the parent's bytes are already counted. If we only credited oldBytes
+	// when inOverlay (i.e. the variable was already in our overlay), we would
+	// double-charge the parent's contribution on the first override, erroneously
+	// inflating totalBytes by len(prev.Str).
+	oldBytes := len(prev.Str)
+	newBytes := len(vr.Str)
+	delta := newBytes - oldBytes
+	if delta > 0 && o.totalBytes+delta > MaxTotalVarsBytes {
+		return &errTotalVarStorageExceeded{total: o.totalBytes + delta}
+	}
+	o.totalBytes += delta
 	vr.Local = prev.Local || vr.Local
 	o.values[name] = vr
 	return nil
 }
 
-func (o *overlayEnviron) Each(f func(name string, vr expand.Variable) bool) {
-	if o.parent != nil {
-		o.parent.Each(f)
+// setUncapped sets a variable without enforcing MaxTotalVarsBytes.  It is
+// used by setVarRestore to restore inline command variables (e.g. FOO=val cmd)
+// to their original values after the command returns, even when the script
+// has filled storage close to the cap during command execution.  totalBytes
+// is still updated so that subsequent cap checks use an accurate baseline.
+func (o *overlayEnviron) setUncapped(name string, vr expand.Variable) {
+	if o.values == nil {
+		o.values = make(map[string]expand.Variable)
 	}
+	prev, inOverlay := o.values[name]
+	if !inOverlay && o.parent != nil {
+		prev = o.parent.Get(name)
+	}
+	oldBytes := len(prev.Str)
+	newBytes := len(vr.Str)
+	o.totalBytes += newBytes - oldBytes
+	if o.totalBytes < 0 {
+		o.totalBytes = 0
+	}
+	vr.Local = prev.Local || vr.Local
+	o.values[name] = vr
+}
+
+func (o *overlayEnviron) Each(f func(name string, vr expand.Variable) bool) {
+	// Emit our own overrides first so they take precedence.
 	for name, vr := range o.values {
 		if !f(name, vr) {
 			return
 		}
+	}
+	// Then emit parent variables, skipping any that we already overrode above.
+	// Without this guard, a variable that exists in both the parent environment
+	// and our overlay (because the script re-assigned it) would be emitted twice,
+	// causing newOverlayEnviron to seed totalBytes at 2× the real storage.
+	if o.parent != nil {
+		o.parent.Each(func(name string, vr expand.Variable) bool {
+			if _, override := o.values[name]; override {
+				return true // already emitted from our overlay
+			}
+			return f(name, vr)
+		})
 	}
 }
 
@@ -154,16 +272,32 @@ func (r *Runner) setVar(name string, vr expand.Variable) {
 	}
 	if err := r.writeEnv.Set(name, vr); err != nil {
 		r.errf("%s: %v\n", name, err)
-		r.exit.code = 1
+		var storageErr *errTotalVarStorageExceeded
+		if errors.As(err, &storageErr) {
+			// Total storage exhaustion aborts the script (sets exiting without
+			// recording a fatal error, so Run returns ExitStatus(1) rather than
+			// the raw error, which is consistent with how the test helpers work).
+			r.exit.code = 1
+			r.exit.exiting = true
+		} else {
+			r.exit.code = 1
+		}
 		return
 	}
 }
 
-// setVarRestore writes a variable back without enforcing the size limit.
+// setVarRestore writes a variable back without enforcing any size limits.
 // Used to restore inline command variables (e.g. FOO=val cmd) to their
 // original values after the command returns, so that inherited variables
-// larger than MaxVarBytes can be restored correctly.
+// larger than MaxVarBytes or near the total cap can be restored correctly.
+// If the underlying env is an overlayEnviron, it bypasses the total-bytes
+// cap to avoid erroneously blocking the restore when the script filled storage
+// during the command's execution.
 func (r *Runner) setVarRestore(name string, vr expand.Variable) {
+	if ov, ok := r.writeEnv.(*overlayEnviron); ok {
+		ov.setUncapped(name, vr)
+		return
+	}
 	if err := r.writeEnv.Set(name, vr); err != nil {
 		r.errf("%s: %v\n", name, err)
 		r.exit.code = 1

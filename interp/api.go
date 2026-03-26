@@ -242,7 +242,7 @@ func New(opts ...RunnerOption) (*Runner, error) {
 // RunnerOption can be passed to [New] to alter a [Runner]'s behaviour.
 type RunnerOption func(*Runner) error
 
-func stdinFile(r io.Reader) (*os.File, error) {
+func stdinFile(ctx context.Context, r io.Reader) (*os.File, error) {
 	switch r := r.(type) {
 	case *os.File:
 		return r, nil
@@ -254,8 +254,31 @@ func stdinFile(r io.Reader) (*os.File, error) {
 			return nil, err
 		}
 		go func() {
-			io.Copy(pw, r)
-			pw.Close()
+			defer pw.Close()
+			buf := make([]byte, 32*1024)
+			for {
+				if ctx.Err() != nil {
+					return
+				}
+				// Note: r.Read may block past ctx cancellation if the underlying
+				// reader does not respect deadlines. For the StdIO path
+				// (context.Background()), the goroutine is bounded by the
+				// reader reaching EOF or pw.Write failing once the runner
+				// closes the pipe read-end. For the runner_redir.go path
+				// (execution-scoped context), a slow reader may keep this
+				// goroutine alive briefly after the script is cancelled; the
+				// ctx.Err() check at the top of the loop bounds the delay to
+				// at most one additional Read call.
+				n, err := r.Read(buf)
+				if n > 0 {
+					if _, werr := pw.Write(buf[:n]); werr != nil {
+						return
+					}
+				}
+				if err != nil {
+					return
+				}
+			}
 		}()
 		return pr, nil
 	}
@@ -284,9 +307,21 @@ func Env(pairs ...string) RunnerOption {
 // When providing an [*os.File] as standard input, consider using an [os.Pipe]
 // as it has the best chance to support cancellable reads via [os.File.SetReadDeadline],
 // so that cancelling the runner's context can stop a blocked standard input read.
+//
+// When a non-[*os.File] reader is provided, the background copy goroutine uses
+// [context.Background] because [StdIO] is a [RunnerOption] executed before any
+// [Runner.Run] call, so no run-scoped context is available at this point.
+// The goroutine terminates as soon as the reader returns [io.EOF] or the pipe's
+// write end is closed, so it is bounded by the reader's lifetime. Callers that
+// require context-cancellable stdin should provide an [*os.File] (e.g. via
+// [os.Pipe]) directly, or use a redirect inside the script.
+// If the provided reader's Read blocks indefinitely (for example a [net.Conn]
+// without a deadline), the goroutine may outlive the script; callers in that
+// situation should wrap the reader with a deadline-aware adapter before passing
+// it to StdIO.
 func StdIO(in io.Reader, out, err io.Writer) RunnerOption {
 	return func(r *Runner) error {
-		stdin, _err := stdinFile(in)
+		stdin, _err := stdinFile(context.Background(), in)
 		if _err != nil {
 			return _err
 		}
@@ -374,6 +409,14 @@ func (r *Runner) Reset() {
 	// blocks all external execution, limiting the practical impact of this vector.
 	r.setVarString("IFS", " \t\n")
 	r.setVarString("OPTIND", "1")
+
+	// Reset the total-bytes counter so that the interpreter's own initial
+	// variable assignments (PWD, IFS, OPTIND above) do not count against the
+	// user-visible MaxTotalVarsBytes cap.  Those values are small and bounded;
+	// only the variables that a script itself creates or modifies should count.
+	if ov, ok := r.writeEnv.(*overlayEnviron); ok {
+		ov.totalBytes = 0
+	}
 
 	r.didReset = true
 }

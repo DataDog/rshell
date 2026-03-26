@@ -8,6 +8,7 @@ package interp
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -248,6 +249,29 @@ func TestExpandErrUnexpectedCommand(t *testing.T) {
 	r.expandErr(expand.UnexpectedCommandError{Node: &syntax.CmdSubst{}})
 	assert.True(t, r.exit.exiting)
 	assert.Equal(t, uint8(1), r.exit.code)
+}
+
+// TestExpandErrStorageExhaustedAborts verifies that expandErr treats
+// errTotalVarStorageExceeded as fatal (sets exiting=true), matching the
+// behaviour of the direct-assignment path in setVar.  This guards against
+// a regression where a cap violation arriving via a parameter-expansion
+// assignment (e.g. ${var:=value} if that syntax is ever re-enabled) would
+// only set exit.code=1 without aborting the script.
+func TestExpandErrStorageExhaustedAborts(t *testing.T) {
+	var errBuf bytes.Buffer
+	r, err := New(StdIO(nil, nil, &errBuf))
+	require.NoError(t, err)
+	t.Cleanup(func() { r.Close() })
+	r.Reset()
+
+	// expandEnv.Set wraps the error with the variable name before it reaches
+	// expandErr, producing "name: variable storage limit exceeded (N bytes total)".
+	storageErr := fmt.Errorf("UNSET_VAR: %w", &errTotalVarStorageExceeded{total: 1048577})
+	r.expandErr(storageErr)
+
+	assert.True(t, r.exit.exiting, "expandErr must set exiting=true for storage-cap errors so the script aborts")
+	assert.Equal(t, uint8(1), r.exit.code)
+	assert.Contains(t, errBuf.String(), "variable storage limit exceeded")
 }
 
 func TestInternalErrorStopsExecution(t *testing.T) {

@@ -18,6 +18,7 @@ package allowedsymbols
 // The permanently banned packages (reflect, unsafe) apply here too.
 var interpAllowedSymbols = []string{
 	"bytes.Buffer",         // 🟢 in-memory byte buffer; pure data structure, no I/O.
+	"context.Background",   // 🟢 returns the empty background context; used in StdIO option where no run-scoped context is available.
 	"context.CancelFunc",   // 🟢 function type returned by WithTimeout/WithCancel; pure function type, no side effects.
 	"context.Context",      // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
 	"context.WithTimeout",  // 🟢 derives a context with a deadline; needed for execution timeout support.
