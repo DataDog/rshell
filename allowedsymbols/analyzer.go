@@ -13,7 +13,6 @@
 package allowedsymbols
 
 import (
-	"fmt"
 	"go/ast"
 	"go/token"
 	"strings"
@@ -39,7 +38,7 @@ type AnalyzerConfig struct {
 // efficient AST traversal and reports violations via pass.Reportf so they
 // appear as go vet diagnostics with proper file:line:col positions.
 func NewAnalyzer(cfg AnalyzerConfig) *analysis.Analyzer {
-	run := func(pass *analysis.Pass) (interface{}, error) {
+	run := func(pass *analysis.Pass) (any, error) {
 		allowedSyms, allowedPkgs := buildAllowlistSets(cfg.Symbols)
 		usedSymbols := make(map[string]bool, len(cfg.Symbols))
 
@@ -56,12 +55,11 @@ func NewAnalyzer(cfg AnalyzerConfig) *analysis.Analyzer {
 		}
 
 		if len(pass.Files) > 0 {
-			reportUnused(cfg.Symbols, usedSymbols, cfg.ListName,
-				func(entry string) {
-					pass.Reportf(pass.Files[0].Package,
-						"allowlist symbol %q is not used by any file — remove it from %s",
-						entry, cfg.ListName)
-				})
+			reportUnused(cfg.Symbols, usedSymbols, func(entry string) {
+				pass.Reportf(pass.Files[0].Package,
+					"allowlist symbol %q is not used by any file — remove it from %s",
+					entry, cfg.ListName)
+			})
 		}
 
 		return nil, nil
@@ -194,30 +192,10 @@ func checkFileSelectors(
 
 // reportUnused calls onUnused for each symbol in symbols that is not present
 // in usedSymbols.
-func reportUnused(symbols []string, usedSymbols map[string]bool, listName string, onUnused func(entry string)) {
+func reportUnused(symbols []string, usedSymbols map[string]bool, onUnused func(entry string)) {
 	for _, entry := range symbols {
 		if !usedSymbols[entry] {
 			onUnused(entry)
-		}
-	}
-}
-
-// fileLineReporter returns a report function suitable for use with
-// checkFileImports and checkFileSelectors when doing file-level AST analysis
-// (without type information). It translates token.Pos into file:line strings
-// using fset and collects messages via errorf.
-//
-// The returned function ignores the pos argument and produces messages already
-// prefixed with relPath:line via fset. When pos is token.NoPos, only the
-// format+args message is emitted (no location prefix).
-func fileLineReporter(fset *token.FileSet, relPath string, errorf func(string, ...any)) func(token.Pos, string, ...any) {
-	return func(pos token.Pos, format string, args ...any) {
-		msg := fmt.Sprintf(format, args...)
-		if pos != token.NoPos && fset != nil {
-			p := fset.Position(pos)
-			errorf("%s:%d: %s", relPath, p.Line, msg)
-		} else {
-			errorf("%s: %s", relPath, msg)
 		}
 	}
 }

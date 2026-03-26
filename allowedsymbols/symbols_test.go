@@ -116,7 +116,7 @@ func checkAllowedSymbols(t *testing.T, cfg allowedSymbolsConfig) {
 
 	// Verify every symbol in the allowlist is actually used by at least one
 	// file. Unused entries should be removed to keep the allowlist minimal.
-	reportUnused(cfg.Symbols, usedSymbols, cfg.ListName, func(entry string) {
+	reportUnused(cfg.Symbols, usedSymbols, func(entry string) {
 		reportErr("allowlist symbol %q is not used by any file in %s — remove it from %s",
 			entry, cfg.TargetDir, cfg.ListName)
 	})
@@ -296,4 +296,21 @@ func collectFlatGoFiles(dir string) ([]string, error) {
 		files = append(files, filepath.Join(dir, e.Name()))
 	}
 	return files, nil
+}
+
+// fileLineReporter returns a report function suitable for use with
+// checkFileImports and checkFileSelectors in the test harness. It translates
+// token.Pos into file:line strings using fset and forwards messages via errorf.
+// When pos is token.NoPos, only the format+args message is emitted without a
+// location prefix.
+func fileLineReporter(fset *token.FileSet, relPath string, errorf func(string, ...any)) func(token.Pos, string, ...any) {
+	return func(pos token.Pos, format string, args ...any) {
+		msg := fmt.Sprintf(format, args...)
+		if pos != token.NoPos && fset != nil {
+			p := fset.Position(pos)
+			errorf("%s:%d: %s", relPath, p.Line, msg)
+		} else {
+			errorf("%s: %s", relPath, msg)
+		}
+	}
 }
