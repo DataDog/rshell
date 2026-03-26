@@ -53,6 +53,9 @@ func FuzzLsFlags(f *testing.F) {
 	var counter atomic.Int64
 
 	f.Fuzz(func(t *testing.T, filename string, flagL, flagA, flagR, flagS, flagF bool) {
+		if t.Context().Err() != nil {
+			return
+		}
 		if len(filename) == 0 || len(filename) > 100 {
 			return
 		}
@@ -94,10 +97,13 @@ func FuzzLsFlags(f *testing.F) {
 			flags += " -F"
 		}
 
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		defer cancel() // safety net if t.Fatal fires before explicit cancel
 		_, _, code := cmdRunCtx(ctx, t, "ls"+flags, dir)
 		cancel()
+		if t.Context().Err() != nil {
+			return
+		}
 		if code != 0 && code != 1 {
 			t.Errorf("ls%s unexpected exit code %d", flags, code)
 		}
@@ -121,6 +127,9 @@ func FuzzLsRecursive(f *testing.F) {
 	var counter atomic.Int64
 
 	f.Fuzz(func(t *testing.T, depth int64) {
+		if t.Context().Err() != nil {
+			return
+		}
 		// Cap at 10 to avoid hitting OS max path length (creating 256+ nested
 		// "sub" directories exceeds filesystem limits on most platforms).
 		// The maxRecursionDepth=256 limit is tested in ls_pentest_test.go instead.
@@ -142,10 +151,13 @@ func FuzzLsRecursive(f *testing.F) {
 			current = subdir
 		}
 
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		defer cancel() // safety net if t.Fatal fires before explicit cancel
 		_, _, code := cmdRunCtx(ctx, t, "ls -R", dir)
 		cancel()
+		if t.Context().Err() != nil {
+			return
+		}
 		if code != 0 && code != 1 {
 			t.Errorf("ls -R unexpected exit code %d", code)
 		}
@@ -180,6 +192,9 @@ func FuzzLsHumanReadable(f *testing.F) {
 	var counter atomic.Int64
 
 	f.Fuzz(func(t *testing.T, fileSize int64) {
+		if t.Context().Err() != nil {
+			return
+		}
 		// Clamp to 1 MiB to avoid slow file creation.
 		if fileSize < 0 || fileSize > 1<<20 {
 			return
@@ -201,10 +216,13 @@ func FuzzLsHumanReadable(f *testing.F) {
 		}
 		fh.Close()
 
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		defer cancel() // safety net if t.Fatal fires before explicit cancel
 		_, _, code := cmdRunCtx(ctx, t, "ls -lh testfile.bin", dir)
 		cancel()
+		if t.Context().Err() != nil {
+			return
+		}
 		if code != 0 && code != 1 {
 			t.Errorf("ls -lh unexpected exit code %d", code)
 		}
@@ -228,6 +246,9 @@ func FuzzLsMultipleFiles(f *testing.F) {
 	var counter atomic.Int64
 
 	f.Fuzz(func(t *testing.T, flagL, flagA, flagT, flagS bool) {
+		if t.Context().Err() != nil {
+			return
+		}
 		dir, cleanup := testutil.FuzzIterDir(t, tmpRoot, &counter)
 		defer cleanup()
 
@@ -259,10 +280,13 @@ func FuzzLsMultipleFiles(f *testing.F) {
 			flags += " -S"
 		}
 
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		defer cancel() // safety net if t.Fatal fires before explicit cancel
 		_, _, code := cmdRunCtx(ctx, t, "ls"+flags, dir)
 		cancel()
+		if t.Context().Err() != nil {
+			return
+		}
 		if code != 0 && code != 1 {
 			t.Errorf("ls%s unexpected exit code %d", flags, code)
 		}
