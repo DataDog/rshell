@@ -204,6 +204,43 @@ func TestEnvVarReassignDoesNotExpandQuota(t *testing.T) {
 	assert.NotEqual(t, 0, code)
 }
 
+// TestBackgroundSubshellEnvVarClearDoesNotExpandQuota is a regression test for
+// a cap-bypass via background subshells.  In a background subshell (pipeline /
+// { } group), newOverlayEnviron copies all parent variables — including
+// Env()-provided ones — into oenv.values, but seeds totalBytes from the
+// parent's tracked counter which intentionally excludes Env() bytes.
+// Before the fix, shrinking or clearing an Env() variable inside the background
+// subshell set inOverlay=true and therefore credited oldBytes from untracked
+// storage, driving totalBytes negative and clamping it to zero, which allowed
+// subsequent assignments to exceed MaxTotalVarsBytes.
+func TestBackgroundSubshellEnvVarClearDoesNotExpandQuota(t *testing.T) {
+	// BIG comes from Env() — 900 KiB, intentionally excluded from the cap.
+	// Parent script assigns P = 500 KiB (tracked).
+	// Inside a background (pipeline) subshell:
+	//   - Clear BIG (untracked; must NOT drive totalBytes negative)
+	//   - Assign A = 600 KiB
+	// If the fix is absent, totalBytes clamps to 0 after clearing BIG, and the
+	// 600 KiB assignment succeeds even though the combined tracked storage
+	// (P=500KiB + A=600KiB) exceeds MaxTotalVarsBytes.
+	envValue900K := strings.Repeat("x", 900*1024)
+	value500K := strings.Repeat("p", 500*1024)
+	value600K := strings.Repeat("a", 600*1024)
+	// The pipeline RHS runs as a background subshell.
+	script := fmt.Sprintf(
+		"P=%s\necho test | { BIG=; A=%s; echo BYPASS_DONE; }\necho OUTER_DONE\n",
+		value500K, value600K,
+	)
+
+	stdout, stderr, _ := runScript(t, script, "", interp.Env("BIG="+envValue900K))
+
+	assert.NotContains(t, stdout, "BYPASS_DONE",
+		"background subshell must not exceed cap after clearing Env() var")
+	assert.Contains(t, stderr, "variable storage limit exceeded",
+		"expected storage-cap error in stderr from background subshell")
+	assert.Contains(t, stdout, "OUTER_DONE",
+		"parent shell must continue after background subshell fails")
+}
+
 // TestTotalVarStorageCapUpdateTracking verifies that updating an existing variable
 // correctly adjusts the total byte counter (i.e. growing a variable counts against
 // the cap, and shrinking it frees space).

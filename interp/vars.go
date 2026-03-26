@@ -82,6 +82,28 @@ func newOverlayEnviron(parent expand.Environ, background bool) *overlayEnviron {
 		// succeeds in the parent must also succeed in a pipeline/background subshell.
 		if pov, ok := parent.(*overlayEnviron); ok {
 			oenv.totalBytes = pov.totalBytes
+			// Background subshells copy ALL parent variables into oenv.values
+			// (including Env()-provided ones), but oenv.totalBytes is seeded
+			// from pov.totalBytes which intentionally excludes Env() variables.
+			// If a script later shrinks or clears an Env() variable (which has
+			// inOverlay=true because it was copied into oenv.values), the delta
+			// calculation would subtract bytes that were never counted, driving
+			// totalBytes negative and opening a cap bypass.
+			//
+			// To prevent this: build a set of variable names whose bytes are NOT
+			// reflected in totalBytes.  A variable is "untracked" if it exists
+			// in oenv.values (was inherited) but is NOT in pov.values (was NOT
+			// script-assigned by the parent — i.e., it came from Env()).
+			// On the first script-level write to such a variable, it transitions
+			// from untracked to tracked and is removed from this set.
+			for name := range oenv.values {
+				if _, inParentOverlay := pov.values[name]; !inParentOverlay {
+					if oenv.untrackedEnvVars == nil {
+						oenv.untrackedEnvVars = make(map[string]struct{})
+					}
+					oenv.untrackedEnvVars[name] = struct{}{}
+				}
+			}
 		} else {
 			// Fallback for non-overlayEnviron parents: sum all values.
 			//
@@ -114,6 +136,25 @@ type overlayEnviron struct {
 	// are included even before any variable is written to [values]; those
 	// inherited variables are NOT present in [values] themselves.
 	totalBytes int
+	// untrackedEnvVars holds the names of variables that are present in
+	// [values] (copied from the parent during background subshell construction)
+	// but whose bytes are NOT counted in totalBytes.  This occurs for Env()
+	// variables: they exist in the parent's underlying expand.Environ but not
+	// in the parent overlayEnviron.values, so they were excluded from the
+	// parent's totalBytes counter.  We must not credit their oldBytes when
+	// computing assignment deltas, otherwise shrinking them drives totalBytes
+	// negative and opens a cap bypass.  On the first script-level write to
+	// such a variable it is promoted to tracked (removed from this set).
+	// Only populated for background subshells (parent == nil).
+	untrackedEnvVars map[string]struct{}
+}
+
+// isUntracked reports whether name is in untrackedEnvVars, meaning it was
+// copied from an Env()-provided variable during background subshell construction
+// and its bytes are NOT reflected in totalBytes.
+func (o *overlayEnviron) isUntracked(name string) bool {
+	_, untracked := o.untrackedEnvVars[name]
+	return untracked
 }
 
 func (o *overlayEnviron) Get(name string) expand.Variable {
@@ -155,14 +196,18 @@ func (o *overlayEnviron) Set(name string, vr expand.Variable) error {
 		}
 		// Only free bytes that are actually tracked in totalBytes (same rule as
 		// the assignment path below).  For untracked Env() variables (parent is
-		// not *overlayEnviron and variable not in our own overlay), those bytes
-		// were never counted, so subtracting them would drive totalBytes negative
-		// and — after the underflow clamp — silently grant the script extra quota.
+		// not *overlayEnviron and variable not in our own overlay, or the variable
+		// is in untrackedEnvVars for background subshells), those bytes were never
+		// counted, so subtracting them would drive totalBytes negative and —
+		// after the underflow clamp — silently grant the script extra quota.
 		_, parentIsOverlayUnset := o.parent.(*overlayEnviron)
 		var unsetOldBytes int
-		if inOverlay || parentIsOverlayUnset {
+		if (inOverlay || parentIsOverlayUnset) && !o.isUntracked(name) {
 			unsetOldBytes = len(prev.Str)
 		}
+		// Unsetting an untracked Env() var: remove it from untrackedEnvVars since
+		// it is being cleared and will no longer be in values.
+		delete(o.untrackedEnvVars, name)
 		if prev.Local {
 			vr.Local = true
 			// Subtract old value from total; the unset local retains its slot but no value.
@@ -184,7 +229,8 @@ func (o *overlayEnviron) Set(name string, vr expand.Variable) error {
 	//
 	// oldBytes must reflect only bytes that are actually counted in totalBytes:
 	//   - If the variable is in our own overlay (inOverlay), we wrote it and
-	//     counted it previously.
+	//     counted it previously — UNLESS it is in untrackedEnvVars (a background
+	//     subshell Env() variable whose bytes are not yet in totalBytes).
 	//   - If the variable lives in the parent and the parent is an
 	//     *overlayEnviron, newOverlayEnviron seeded totalBytes from the parent's
 	//     counter, so the parent's bytes are already included.
@@ -197,10 +243,14 @@ func (o *overlayEnviron) Set(name string, vr expand.Variable) error {
 	//     and create headroom for the script to exceed MaxTotalVarsBytes.
 	_, parentIsOverlay := o.parent.(*overlayEnviron)
 	var oldBytes int
-	if inOverlay || parentIsOverlay {
+	if (inOverlay || parentIsOverlay) && !o.isUntracked(name) {
 		oldBytes = len(prev.Str)
 	}
-	// If !inOverlay and parent is not *overlayEnviron, oldBytes stays 0:
+	// If the variable was untracked (an Env() var in a background subshell),
+	// this is the first script-level write: promote it to tracked by removing
+	// it from untrackedEnvVars so that future delta calculations are correct.
+	delete(o.untrackedEnvVars, name)
+	// If !inOverlay and parent is not *overlayEnviron (and not untracked), oldBytes stays 0:
 	// this is the first script-level write to an untracked Env() variable.
 	newBytes := len(vr.Str)
 	delta := newBytes - oldBytes
@@ -233,9 +283,11 @@ func (o *overlayEnviron) setUncapped(name string, vr expand.Variable) {
 	// those bytes are actually reflected in totalBytes.
 	_, parentIsOverlay := o.parent.(*overlayEnviron)
 	var oldBytes int
-	if inOverlay || parentIsOverlay {
+	if (inOverlay || parentIsOverlay) && !o.isUntracked(name) {
 		oldBytes = len(prev.Str)
 	}
+	// Promote the variable to tracked (if it was an untracked Env() var).
+	delete(o.untrackedEnvVars, name)
 	newBytes := len(vr.Str)
 	o.totalBytes += newBytes - oldBytes
 	if o.totalBytes < 0 {
@@ -317,7 +369,9 @@ func (r *Runner) setVarString(name, value string) {
 // assignment.
 func (r *Runner) setVarErr(name string, vr expand.Variable) error {
 	if vr.IsSet() && len(vr.Str) > MaxVarBytes {
-		return fmt.Errorf("%s: value too large (limit %d bytes)", name, MaxVarBytes)
+		// Do not include name here: the caller (expandEnv.Set) wraps this error
+		// with fmt.Errorf("%s: %w", name, err), which would double the name.
+		return fmt.Errorf("value too large (limit %d bytes)", MaxVarBytes)
 	}
 	return r.writeEnv.Set(name, vr)
 }
