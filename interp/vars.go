@@ -90,7 +90,13 @@ type overlayEnviron struct {
 	// which we can safely reuse without data races, such as non-background subshells.
 	parent expand.Environ
 	values map[string]expand.Variable
-	// totalBytes tracks the sum of len(value.Str) for all variables in [values].
+	// totalBytes tracks the total script-assigned variable storage counted
+	// against MaxTotalVarsBytes. For background subshells, where all parent
+	// variables are copied into [values], this equals the sum of len(value.Str)
+	// over [values]. For non-background subshells (e.g. ( ) or $( )), the
+	// counter is seeded from the parent's counter so parent-inherited bytes
+	// are included even before any variable is written to [values]; those
+	// inherited variables are NOT present in [values] themselves.
 	totalBytes int
 }
 

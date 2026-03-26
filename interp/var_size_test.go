@@ -130,6 +130,27 @@ func TestNonBackgroundSubshellDoesNotCountEnvVars(t *testing.T) {
 	assert.Equal(t, 0, code)
 }
 
+// TestBackgroundSubshellCapEnforced verifies that a background (pipeline) subshell
+// correctly inherits the parent's totalBytes counter and cannot allocate beyond
+// MaxTotalVarsBytes. This exercises the background=true path in newOverlayEnviron.
+func TestBackgroundSubshellCapEnforced(t *testing.T) {
+	value900K := strings.Repeat("x", 900*1024)
+	value200K := strings.Repeat("y", 200*1024)
+	// Parent fills ~900 KiB. The pipeline right-hand side is a background subshell;
+	// it tries to assign another 200 KiB which would push the total past 1 MiB.
+	script := fmt.Sprintf("A=%s\necho test | { B=%s; echo SHOULD_NOT_PRINT; }\necho DONE\n",
+		value900K, value200K)
+
+	stdout, stderr, _ := runScript(t, script, "")
+
+	assert.NotContains(t, stdout, "SHOULD_NOT_PRINT",
+		"background subshell must not execute after total storage cap is exceeded")
+	assert.Contains(t, stderr, "variable storage limit exceeded",
+		"expected storage-cap error in stderr")
+	assert.Contains(t, stdout, "DONE",
+		"parent shell must continue after background subshell fails")
+}
+
 // TestTotalVarStorageCapUpdateTracking verifies that updating an existing variable
 // correctly adjusts the total byte counter (i.e. growing a variable counts against
 // the cap, and shrinking it frees space).
