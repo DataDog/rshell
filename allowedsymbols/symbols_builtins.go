@@ -278,6 +278,11 @@ var builtinPerCommandSymbols = map[string][]string{
 	"true": {
 		"context.Context", // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
 	},
+	"uname": {
+		"context.Context", // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
+		"runtime.GOOS",    // 🟢 current OS name constant; pure constant, no I/O.
+		"strings.Join",    // 🟢 joins string slices; pure function, no I/O.
+	},
 	"uniq": {
 		"bufio.NewScanner",  // 🟢 line-by-line input reading (e.g. head, cat); no write or exec capability.
 		"bufio.SplitFunc",   // 🟢 type for custom scanner split functions; pure type, no I/O.

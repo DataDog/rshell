@@ -30,6 +30,11 @@ func (r *Runner) fillExpandConfig(ctx context.Context) {
 
 func (r *Runner) updateExpandOpts() {
 	r.ecfg.ReadDir2 = func(s string) ([]fs.DirEntry, error) {
+		if r.globReadDirCount != nil {
+			if r.globReadDirCount.Add(1) > MaxGlobReadDirCalls {
+				return nil, fmt.Errorf("glob expansion exceeded maximum number of directory reads (%d)", MaxGlobReadDirCalls)
+			}
+		}
 		ctx := r.handlerCtx(r.ectx, todoPos)
 		if r.readDirHandler != nil {
 			return r.readDirHandler(ctx, s)
@@ -43,6 +48,12 @@ func (r *Runner) updateExpandOpts() {
 // can capture before being truncated. This prevents memory exhaustion from
 // commands that produce unbounded output.
 const maxCmdSubstOutput = 1 << 20 // 1 MiB
+
+// MaxGlobReadDirCalls is the maximum number of ReadDirForGlob invocations
+// allowed per Run() call. This prevents memory exhaustion from scripts that
+// trigger an excessive number of glob expansions (e.g. millions of unquoted
+// * tokens, or deeply nested glob patterns in loops).
+const MaxGlobReadDirCalls = 10_000
 
 // cmdSubst handles command substitution ($(...) and `...`).
 // It runs the commands in a subshell and writes their stdout to w.

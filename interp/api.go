@@ -19,6 +19,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"mvdan.cc/sh/v3/expand"
@@ -131,6 +132,12 @@ type runnerState struct {
 	// startTime is captured once at the beginning of Run() and passed to
 	// all builtin invocations so they share a consistent time reference.
 	startTime time.Time
+
+	// globReadDirCount tracks the total number of ReadDirForGlob calls
+	// across the entire Run() invocation. It is shared with subshells
+	// (including concurrent pipe subshells) via pointer, and must be
+	// accessed atomically.
+	globReadDirCount *atomic.Int64
 }
 
 // A Runner interprets shell programs. It can be reused, but it is not safe for
@@ -439,6 +446,7 @@ func (r *Runner) Run(ctx context.Context, node syntax.Node) (retErr error) {
 		}
 	}
 	r.startTime = time.Now()
+	r.globReadDirCount = &atomic.Int64{}
 	r.fillExpandConfig(ctx)
 	if err := validateNode(node); err != nil {
 		fmt.Fprintln(r.stderr, err)
@@ -591,15 +599,16 @@ func (r *Runner) subshell(background bool) *Runner {
 	r2 := &Runner{
 		runnerConfig: r.runnerConfig,
 		runnerState: runnerState{
-			Dir:       r.Dir,
-			Params:    r.Params,
-			stdin:     r.stdin,
-			stdout:    r.stdout,
-			stderr:    r.stderr,
-			filename:  r.filename,
-			exit:      r.exit,
-			lastExit:  r.lastExit,
-			startTime: r.startTime,
+			Dir:              r.Dir,
+			Params:           r.Params,
+			stdin:            r.stdin,
+			stdout:           r.stdout,
+			stderr:           r.stderr,
+			filename:         r.filename,
+			exit:             r.exit,
+			lastExit:         r.lastExit,
+			startTime:        r.startTime,
+			globReadDirCount: r.globReadDirCount,
 		},
 	}
 	r2.writeEnv = newOverlayEnviron(r.writeEnv, background)
