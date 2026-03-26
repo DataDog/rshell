@@ -10,5 +10,6 @@ input:
     echo DONE
 expect:
   stdout: ""
-  stderr_contains: ["variable storage limit exceeded"]
+  stderr: |+
+    C: variable storage limit exceeded (1048577 bytes total)
   exit_code: 1

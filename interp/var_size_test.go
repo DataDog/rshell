@@ -82,6 +82,28 @@ func TestSubshellTotalVarStorageDoubleCount(t *testing.T) {
 	assert.Equal(t, 0, code)
 }
 
+// TestNonBackgroundSubshellVarOverrideTracking is a regression test for the
+// double-count bug in overlayEnviron.Set when a non-background subshell
+// (created by ( ) or $( )) overrides a parent-inherited variable for the first
+// time.  Before the fix, the parent variable's bytes were seeded into totalBytes
+// by newOverlayEnviron AND charged again as a full "new" write (oldBytes=0),
+// causing the delta to be inflated by len(prev.Str) and incorrectly hitting the
+// cap even when real memory use was well within bounds.
+func TestNonBackgroundSubshellVarOverrideTracking(t *testing.T) {
+	// 512 KiB in parent; override with the same 512 KiB value inside a ( ) subshell.
+	// Real subshell memory = 512 KiB — well within the 1 MiB cap.
+	// Before the fix: totalBytes seed = 512 KiB, delta = +512 KiB (oldBytes=0),
+	// sum = 1 MiB, then Y=z would push it over → cap hit.
+	value512K := strings.Repeat("x", 512*1024)
+	script := fmt.Sprintf("X=%s\n( X=%s; Y=z; echo OK )\necho DONE\n", value512K, value512K)
+
+	stdout, _, code := runScript(t, script, "")
+
+	assert.Contains(t, stdout, "OK", "subshell override should succeed: real storage is 512 KiB, within the 1 MiB cap")
+	assert.Contains(t, stdout, "DONE")
+	assert.Equal(t, 0, code)
+}
+
 // TestTotalVarStorageCapUpdateTracking verifies that updating an existing variable
 // correctly adjusts the total byte counter (i.e. growing a variable counts against
 // the cap, and shrinking it frees space).

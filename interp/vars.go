@@ -111,23 +111,26 @@ func (o *overlayEnviron) Set(name string, vr expand.Variable) error {
 		if prev.Local {
 			vr.Local = true
 			// Subtract old value from total; the unset local retains its slot but no value.
-			if inOverlay {
-				o.totalBytes -= len(prev.Str)
-			}
+			// Use prev.Str unconditionally: non-background subshells seed totalBytes from
+			// the parent, so parent-inherited vars are already counted even when !inOverlay.
+			o.totalBytes -= len(prev.Str)
 			o.values[name] = vr
 			return nil
 		}
-		if inOverlay {
-			o.totalBytes -= len(prev.Str)
-		}
+		// Same reasoning as above: subtract unconditionally so parent-seeded bytes are
+		// correctly released when a parent-inherited variable is deleted in a subshell.
+		o.totalBytes -= len(prev.Str)
 		delete(o.values, name)
 		return nil
 	}
-	// modifying the entire variable — enforce total storage cap
-	oldBytes := 0
-	if inOverlay {
-		oldBytes = len(prev.Str)
-	}
+	// modifying the entire variable — enforce total storage cap.
+	// Use the previous value's byte count unconditionally: for non-background
+	// subshells, newOverlayEnviron seeds totalBytes by summing parent variables,
+	// so the parent's bytes are already counted. If we only credited oldBytes
+	// when inOverlay (i.e. the variable was already in our overlay), we would
+	// double-charge the parent's contribution on the first override, erroneously
+	// inflating totalBytes by len(prev.Str).
+	oldBytes := len(prev.Str)
 	newBytes := len(vr.Str)
 	delta := newBytes - oldBytes
 	if delta > 0 && o.totalBytes+delta > MaxTotalVarsBytes {
