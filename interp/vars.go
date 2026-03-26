@@ -196,7 +196,7 @@ func (o *overlayEnviron) Set(name string, vr expand.Variable) error {
 	// this is the first script-level write to an untracked Env() variable.
 	newBytes := len(vr.Str)
 	delta := newBytes - oldBytes
-	if delta > 0 && o.totalBytes+delta > MaxTotalVarsBytes {
+	if delta > 0 && o.totalBytes+delta > MaxTotalVarsBytes { // shrinks (delta<=0) can never violate the cap
 		return &errTotalVarStorageExceeded{total: o.totalBytes + delta}
 	}
 	o.totalBytes += delta

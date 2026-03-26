@@ -1,0 +1,16 @@
+description: Inline variable assignments (FOO=val cmd) are correctly restored after the command, and the storage cap accounting remains accurate so subsequent assignments are not incorrectly blocked.
+skip_assert_against_bash: true  # intentional divergence: bash has no variable storage limit
+input:
+  script: |+
+    A=x
+    A=$A$A;A=$A$A;A=$A$A;A=$A$A;A=$A$A;A=$A$A;A=$A$A;A=$A$A;A=$A$A;A=$A$A
+    A=$A$A;A=$A$A;A=$A$A;A=$A$A;A=$A$A;A=$A$A;A=$A$A;A=$A$A;A=$A$A
+    FOO=bar echo hi
+    B=ok
+    echo $B
+expect:
+  stdout: |+
+    hi
+    ok
+  stderr: ""
+  exit_code: 0

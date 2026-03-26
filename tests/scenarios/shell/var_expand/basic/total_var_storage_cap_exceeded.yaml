@@ -9,7 +9,7 @@ input:
     C=x
     echo DONE
 expect:
-  stdout: |+
+  stdout: ""
   stderr: |+
     C: variable storage limit exceeded (1048577 bytes total)
   exit_code: 1
