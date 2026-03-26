@@ -84,6 +84,14 @@ func newOverlayEnviron(parent expand.Environ, background bool) *overlayEnviron {
 			oenv.totalBytes = pov.totalBytes
 		} else {
 			// Fallback for non-overlayEnviron parents: sum all values.
+			//
+			// NOTE: this branch is unreachable in the current implementation.
+			// Background subshells are only created by Runner.subshell, which
+			// always passes r.writeEnv as the parent.  r.writeEnv is set by
+			// Reset() to a fresh *overlayEnviron, so the type assertion above
+			// always succeeds for any Runner created via New().  This branch is
+			// retained as a defensive fallback in case a future refactor
+			// introduces a non-overlayEnviron parent for background subshells.
 			for _, vr := range oenv.values {
 				oenv.totalBytes += len(vr.Str)
 			}
@@ -351,6 +359,12 @@ func (r *Runner) setVarRestore(name string, vr expand.Variable) {
 	if err := r.writeEnv.Set(name, vr); err != nil {
 		r.errf("%s: %v\n", name, err)
 		r.exit.code = 1
+		var storageErr *errTotalVarStorageExceeded
+		if errors.As(err, &storageErr) {
+			// Storage exhaustion during restore is fatal: abort the script so
+			// the cap violation is not silently swallowed.
+			r.exit.exiting = true
+		}
 	}
 }
 
