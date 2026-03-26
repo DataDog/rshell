@@ -62,15 +62,17 @@ func getSession(ctx context.Context, procPath string) ([]ProcInfo, error) {
 
 	selfPID := os.Getpid()
 	ancestors := make(map[int]bool)
+	visited := make(map[int]bool)
 	cur := selfPID
 	for cur > 0 {
+		if visited[cur] {
+			break // cycle detected in PPID chain
+		}
+		visited[cur] = true
 		ancestors[cur] = true
 		p, ok := byPID[cur]
 		if !ok {
 			break
-		}
-		if p.PPID == cur {
-			break // avoid infinite loop for PID 0
 		}
 		cur = p.PPID
 	}
