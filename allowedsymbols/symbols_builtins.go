@@ -280,7 +280,6 @@ var builtinPerCommandSymbols = map[string][]string{
 	},
 	"uname": {
 		"context.Context", // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
-		"runtime.GOARCH",  // 🟢 current architecture constant; fallback for -m when /proc/sys/kernel/arch is unavailable.
 		"runtime.GOOS",    // 🟢 current OS name constant; pure constant, no I/O.
 		"strings.Join",    // 🟢 joins string slices; pure function, no I/O.
 	},
@@ -476,7 +475,6 @@ var builtinAllowedSymbols = []string{
 	"regexp.Compile",                                      // 🟢 compiles a regular expression; pure function, no I/O. Uses RE2 engine (linear-time, no backtracking).
 	"regexp.QuoteMeta",                                    // 🟢 escapes all special regex characters in a string; pure function, no I/O.
 	"regexp.Regexp",                                       // 🟢 compiled regular expression type; no I/O side effects. All matching methods are linear-time (RE2).
-	"runtime.GOARCH",                                      // 🟢 current architecture constant; pure constant, no I/O.
 	"runtime.GOOS",                                        // 🟢 current OS name constant; pure constant, no I/O.
 	"slices.Reverse",                                      // 🟢 reverses a slice in-place; pure function, no I/O.
 	"slices.SortFunc",                                     // 🟢 sorts a slice with a comparison function; pure function, no I/O.

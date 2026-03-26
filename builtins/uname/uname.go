@@ -135,42 +135,13 @@ func makeFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			}
 			val, err := callCtx.Proc.ReadKernelFile(entry.file)
 			if err != nil {
-				// Fallback for -m (arch): use runtime.GOARCH mapped to
-				// kernel names when /proc/sys/kernel/arch is unavailable.
-				if entry.file == "arch" {
-					val = goarchToKernel(runtime.GOARCH)
-				} else {
-					callCtx.Errf("uname: cannot read %s: %s\n", entry.file, err)
-					return builtins.Result{Code: 1}
-				}
+				callCtx.Errf("uname: cannot read %s: %s\n", entry.file, err)
+				return builtins.Result{Code: 1}
 			}
 			parts = append(parts, val)
 		}
 
 		callCtx.Outf("%s\n", strings.Join(parts, " "))
 		return builtins.Result{}
-	}
-}
-
-// goarchToKernel maps Go's runtime.GOARCH to Linux kernel machine names.
-// Used as a fallback when /proc/sys/kernel/arch is unavailable.
-func goarchToKernel(goarch string) string {
-	switch goarch {
-	case "amd64":
-		return "x86_64"
-	case "arm64":
-		return "aarch64"
-	case "386":
-		return "i686"
-	case "arm":
-		return "armv7l"
-	case "ppc64le":
-		return "ppc64le"
-	case "s390x":
-		return "s390x"
-	case "riscv64":
-		return "riscv64"
-	default:
-		return goarch
 	}
 }
