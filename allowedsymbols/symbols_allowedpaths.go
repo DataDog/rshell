@@ -17,6 +17,7 @@ package allowedsymbols
 //
 // The permanently banned packages (reflect, unsafe) apply here too.
 var allowedpathsAllowedSymbols = []string{
+	"context.Context",                    // 🟢 context type used to signal cancellation; no I/O or side effects.
 	"errors.As",                          // 🟢 error type assertion; pure function, no I/O.
 	"errors.Is",                          // 🟢 error comparison; pure function, no I/O.
 	"errors.New",                         // 🟢 creates a simple error value; pure function, no I/O.
@@ -47,6 +48,7 @@ var allowedpathsAllowedSymbols = []string{
 	"path/filepath.Rel",                  // 🟢 returns relative path; pure path computation.
 	"path/filepath.Separator",            // 🟢 OS path separator constant; pure constant.
 	"slices.SortFunc",                    // 🟢 sorts a slice with a comparison function; pure function, no I/O.
+	"sync.Once",                          // 🟢 ensures one-time execution; used to close file descriptors at most once.
 	"strings.Compare",                    // 🟢 compares two strings lexicographically; pure function, no I/O.
 	"strings.EqualFold",                  // 🟢 case-insensitive string comparison; pure function, no I/O.
 	"strings.HasPrefix",                  // 🟢 pure function for prefix matching; no I/O.
