@@ -6,7 +6,9 @@
 package tests_test
 
 import (
+	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -16,9 +18,138 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"mvdan.cc/sh/v3/syntax"
+
+	"github.com/DataDog/rshell/internal/interpoption"
+	"github.com/DataDog/rshell/interp"
 )
 
 // --- Memory limits: output capping ---
+
+// TestGlobalStdoutCapReturnsError verifies that Run returns ErrOutputLimitExceeded
+// when a script exceeds the 10 MiB stdout cap. The script runs to completion
+// but partial output (up to the limit) is still delivered, and the caller
+// receives a well-defined error rather than a silent truncation.
+func TestGlobalStdoutCapReturnsError(t *testing.T) {
+	dir := t.TempDir()
+
+	// Create a file of exactly 1 MiB.
+	content := strings.Repeat("A", 1<<20)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "mb.txt"), []byte(content), 0644))
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	// cat the file 11 times — produces 11 MiB, exceeding the 10 MiB cap.
+	script := `for i in 1 2 3 4 5 6 7 8 9 10 11; do cat mb.txt; done`
+	var outBuf bytes.Buffer
+	runner, err := interp.New(
+		interp.StdIO(nil, &outBuf, nil),
+		interp.AllowedPaths([]string{dir}),
+		interpoption.AllowAllCommands().(interp.RunnerOption),
+	)
+	require.NoError(t, err)
+	defer runner.Close()
+	runner.Dir = dir
+
+	prog, err := syntax.NewParser().Parse(strings.NewReader(script), "test")
+	require.NoError(t, err)
+
+	runErr := runner.Run(ctx, prog)
+	assert.ErrorIs(t, runErr, interp.ErrOutputLimitExceeded,
+		"Run must return ErrOutputLimitExceeded when stdout cap is exceeded")
+	// Output up to the cap must still be delivered.
+	assert.LessOrEqual(t, outBuf.Len(), 10*1024*1024,
+		"stdout must not exceed 10 MiB; got %d bytes", outBuf.Len())
+	assert.Greater(t, outBuf.Len(), 0, "expected non-empty stdout before cap")
+}
+
+// TestGlobalStdoutCapMultipleRuns verifies that repeated Run() calls on the
+// same Runner without Reset() do not double-wrap the stdout writer. The first
+// call must not leave r.stdout pointing at the limitWriter, so the second call
+// starts with a fresh 10 MiB budget rather than inheriting the first call's
+// byte counter.
+func TestGlobalStdoutCapMultipleRuns(t *testing.T) {
+	dir := t.TempDir()
+	content := strings.Repeat("A", 1<<20) // 1 MiB
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "mb.txt"), []byte(content), 0644))
+
+	var outBuf bytes.Buffer
+	runner, err := interp.New(
+		interp.StdIO(nil, &outBuf, nil),
+		interp.AllowedPaths([]string{dir}),
+		interpoption.AllowAllCommands().(interp.RunnerOption),
+	)
+	require.NoError(t, err)
+	defer runner.Close()
+	runner.Dir = dir
+
+	parse := func(script string) *syntax.File {
+		t.Helper()
+		prog, parseErr := syntax.NewParser().Parse(strings.NewReader(script), "test")
+		require.NoError(t, parseErr)
+		return prog
+	}
+
+	ctx := context.Background()
+
+	// First call: write 9 MiB — just under the cap. Must succeed.
+	outBuf.Reset()
+	ctx1, cancel1 := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel1()
+	err = runner.Run(ctx1, parse(`for i in 1 2 3 4 5 6 7 8 9; do cat mb.txt; done`))
+	assert.NoError(t, err, "first run (9 MiB) must not exceed cap")
+	assert.Equal(t, 9<<20, outBuf.Len(), "first run must deliver exactly 9 MiB")
+
+	// Second call: write another 9 MiB. If r.stdout was not restored, the
+	// wrapped limitWriter from call 1 already has 9 MiB counted and would
+	// silently drop all output here — returning no error. A fresh budget means
+	// this call also succeeds with 9 MiB delivered.
+	outBuf.Reset()
+	ctx2, cancel2 := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel2()
+	err = runner.Run(ctx2, parse(`for i in 1 2 3 4 5 6 7 8 9; do cat mb.txt; done`))
+	assert.NoError(t, err, "second run (9 MiB) must not exceed cap")
+	assert.Equal(t, 9<<20, outBuf.Len(), "second run must deliver exactly 9 MiB (fresh cap)")
+}
+
+// TestGlobalStdoutCapPrecedenceOverExitCode verifies that ErrOutputLimitExceeded
+// takes precedence over a non-zero exit code when both occur in the same Run()
+// call. Fatal handler errors (r.exit.err) still take precedence over the cap
+// per the ordering in Run(), but that path is not easily triggerable from a
+// script-level test.
+func TestGlobalStdoutCapPrecedenceOverExitCode(t *testing.T) {
+	dir := t.TempDir()
+	content := strings.Repeat("A", 1<<20) // 1 MiB
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "mb.txt"), []byte(content), 0644))
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	var outBuf bytes.Buffer
+	runner, err := interp.New(
+		interp.StdIO(nil, &outBuf, nil),
+		interp.AllowedPaths([]string{dir}),
+		interpoption.AllowAllCommands().(interp.RunnerOption),
+	)
+	require.NoError(t, err)
+	defer runner.Close()
+	runner.Dir = dir
+
+	// Exceed the cap then exit non-zero. ErrOutputLimitExceeded must be returned,
+	// not ExitStatus(1).
+	prog, parseErr := syntax.NewParser().Parse(strings.NewReader(
+		`for i in 1 2 3 4 5 6 7 8 9 10 11; do cat mb.txt; done; exit 1`,
+	), "test")
+	require.NoError(t, parseErr)
+
+	runErr := runner.Run(ctx, prog)
+	assert.ErrorIs(t, runErr, interp.ErrOutputLimitExceeded,
+		"ErrOutputLimitExceeded must take precedence over a non-zero exit code")
+	var es interp.ExitStatus
+	assert.False(t, errors.As(runErr, &es),
+		"must not return ExitStatus when stdout cap was exceeded")
+}
 
 func TestCmdSubstOutputCapped(t *testing.T) {
 	// Generate output exceeding 1 MiB inside command substitution.
