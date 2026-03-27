@@ -46,9 +46,9 @@ jobs:
         env:
           PR_LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
         run: |
-          if echo "$PR_LABELS" | jq -e 'index("verified/allowed_symbols")' > /dev/null 2>&1; then
-            echo "Label 'verified/allowed_symbols' is present. Check passed."
+          if echo "$PR_LABELS" | jq -e 'index("verified/analysis") // index("verified/allowed_symbols")' > /dev/null 2>&1; then
+            echo "Label present. Check passed."
           else
-            echo "::error::Files in analysis/ have been modified. A human must review the changes and add the 'verified/allowed_symbols' label to this PR before it can be merged."
+            echo "::error::Files in analysis/ have been modified. A human must review the changes and add the 'verified/analysis' label to this PR before it can be merged."
             exit 1
           fi
