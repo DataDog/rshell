@@ -11,7 +11,7 @@
 // repetitive plumbing (copying trees, rewriting Go source, locating files) so
 // each per-config test file stays focused on the specific violation it tests.
 
-package allowedsymbols
+package analysis
 
 import (
 	"io"
@@ -64,7 +64,7 @@ func copyFile(src, dst string) error {
 }
 
 // repoRoot returns the repo root by going one level up from the test's working
-// directory (allowedsymbols/).
+// directory (analysis/).
 func repoRoot(t *testing.T) string {
 	t.Helper()
 	dir, err := os.Getwd()

@@ -5,7 +5,7 @@
 
 // Package winnet provides socket enumeration for Windows via iphlpapi.dll.
 // It is placed in builtins/internal/ to isolate the unsafe.Pointer DLL call
-// from the allowedsymbols checker, which cannot evaluate build tags.
+// from the analysis checker, which cannot evaluate build tags.
 package winnet
 
 // SocketEntry holds the parsed fields for one Windows socket.

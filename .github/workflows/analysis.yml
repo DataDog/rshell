@@ -1,4 +1,4 @@
-name: Allowed Symbols Verification
+name: Static Analysis Verification
 
 # Use pull_request_target so the workflow definition always comes from the
 # base branch (main).  This prevents a PR from editing the workflow file to
@@ -15,7 +15,7 @@ permissions:
 
 jobs:
   check-allowed-symbols:
-    name: Allowed Symbols Label Check
+    name: Static Analysis Label Check
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -28,17 +28,17 @@ jobs:
       - name: Fetch PR head
         run: git fetch origin "refs/pull/${{ github.event.pull_request.number }}/head"
 
-      - name: Check for allowedsymbols changes
+      - name: Check for analysis changes
         id: changes
         run: |
-          changed=$(git diff --name-only "${{ github.event.pull_request.base.sha }}...${{ github.event.pull_request.head.sha }}" -- 'allowedsymbols/')
+          changed=$(git diff --name-only "${{ github.event.pull_request.base.sha }}...${{ github.event.pull_request.head.sha }}" -- 'analysis/')
           if [ -n "$changed" ]; then
             echo "modified=true" >> "$GITHUB_OUTPUT"
-            echo "Changed allowedsymbols files:"
+            echo "Changed analysis files:"
             echo "$changed"
           else
             echo "modified=false" >> "$GITHUB_OUTPUT"
-            echo "No allowedsymbols files changed."
+            echo "No analysis files changed."
           fi
 
       - name: Require verified/allowed_symbols label
@@ -46,9 +46,9 @@ jobs:
         env:
           PR_LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
         run: |
-          if echo "$PR_LABELS" | jq -e 'index("verified/allowed_symbols")' > /dev/null 2>&1; then
-            echo "Label 'verified/allowed_symbols' is present. Check passed."
+          if echo "$PR_LABELS" | jq -e 'index("verified/analysis") // index("verified/allowed_symbols")' > /dev/null 2>&1; then
+            echo "Label present. Check passed."
           else
-            echo "::error::Files in allowedsymbols/ have been modified. A human must review the changes and add the 'verified/allowed_symbols' label to this PR before it can be merged."
+            echo "::error::Files in analysis/ have been modified. A human must review the changes and add the 'verified/analysis' label to this PR before it can be merged."
             exit 1
           fi

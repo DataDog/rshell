@@ -3,7 +3,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2026-present Datadog, Inc.
 
-package allowedsymbols
+package analysis
 
 // allowedpathsAllowedSymbols lists every "importpath.Symbol" that may be used
 // by non-test Go files in allowedpaths/. Each entry must be in
