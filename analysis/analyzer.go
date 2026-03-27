@@ -3,14 +3,14 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2026-present Datadog, Inc.
 
-// Package allowedsymbols provides a go/analysis.Analyzer that enforces
+// Package analysis provides a go/analysis.Analyzer that enforces
 // symbol-level import restrictions on Go source files.
 //
 // The analyzer checks that every imported symbol is in a given allowlist, that
 // no permanently banned packages are imported, and that every symbol in the
 // allowlist is actually used. It reports violations with file:line:col
 // diagnostics.
-package allowedsymbols
+package analysis
 
 import (
 	"fmt"
@@ -42,7 +42,7 @@ type AnalyzerConfig struct {
 func NewAnalyzer(cfg AnalyzerConfig) *analysis.Analyzer {
 	for _, entry := range cfg.Symbols {
 		if strings.LastIndexByte(entry, '.') <= 0 {
-			panic(fmt.Sprintf("allowedsymbols.NewAnalyzer: malformed allowlist entry (no dot): %q", entry))
+			panic(fmt.Sprintf("analysis.NewAnalyzer: malformed allowlist entry (no dot): %q", entry))
 		}
 	}
 
@@ -74,7 +74,7 @@ func NewAnalyzer(cfg AnalyzerConfig) *analysis.Analyzer {
 	}
 
 	return &analysis.Analyzer{
-		Name: "allowedsymbols",
+		Name: "analysis",
 		Doc:  "enforces symbol-level import restrictions via an allowlist",
 		Run:  run,
 	}

@@ -1,4 +1,4 @@
-# allowedsymbols
+# analysis
 
 Static enforcement of symbol-level import restrictions for the rshell interpreter.
 
@@ -122,4 +122,4 @@ _ = f  // flagged: f is never closed
 
 1. Add a line to the appropriate allowlist (and the per-command sublist if it's a builtin).
 2. Prefix the comment with the correct safety emoji.
-3. Run `go test ./allowedsymbols/` to verify the entry is valid and used.
+3. Run `go test ./analysis/` to verify the entry is valid and used.

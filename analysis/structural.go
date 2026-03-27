@@ -3,7 +3,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2026-present Datadog, Inc.
 
-package allowedsymbols
+package analysis
 
 import (
 	"go/ast"
@@ -89,7 +89,7 @@ func checkFileScannerBuffer(f *ast.File, report func(pos token.Pos, format strin
 		for _, sc := range scanners {
 			if !buffered[sc.name] {
 				report(sc.pos,
-					"bufio.NewScanner result %q must have .Buffer() called to cap the maximum line size (see allowedsymbols/README.md §Structural Rules)",
+					"bufio.NewScanner result %q must have .Buffer() called to cap the maximum line size (see analysis/README.md §Structural Rules)",
 					sc.name)
 			}
 		}
@@ -163,7 +163,7 @@ func checkFileOpenFileClose(f *ast.File, report func(pos token.Pos, format strin
 		for _, ov := range opens {
 			if !isClosedTransitive(ov.name, closed, handOff) && !returned[ov.name] {
 				report(ov.pos,
-					"OpenFile result %q must be closed via defer or explicit Close() call (see allowedsymbols/README.md §Structural Rules)",
+					"OpenFile result %q must be closed via defer or explicit Close() call (see analysis/README.md §Structural Rules)",
 					ov.name)
 			}
 		}
