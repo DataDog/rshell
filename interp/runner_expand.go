@@ -159,11 +159,18 @@ func (r *Runner) expandErr(err error) {
 	}
 	errMsg := err.Error()
 	fmt.Fprintln(r.stderr, errMsg)
+	var storageErr *errTotalVarStorageExceeded
 	switch {
 	case errors.As(err, &expand.UnsetParameterError{}):
 	case errors.As(err, &expand.UnexpectedCommandError{}):
 		// Defense in depth: if the expand package encounters a command
 		// substitution that our handler cannot process, treat it as fatal.
+	case errors.As(err, &storageErr):
+		// Total variable storage exhaustion via parameter expansion (e.g.
+		// ${var:=value}) must abort the script, just as direct assignment
+		// through setVar does.  Without this arm the error falls through to
+		// the default case, which only sets exit code 1 and lets the script
+		// continue — a cap bypass.
 	case errMsg == "invalid indirect expansion":
 		// TODO: These errors are treated as fatal by bash.
 		// Make the error type reflect that.

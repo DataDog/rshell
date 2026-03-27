@@ -237,7 +237,7 @@ func (r *Runner) redir(ctx context.Context, rd *syntax.Redirect) (io.Closer, err
 	if err != nil {
 		return nil, err
 	}
-	stdin, err := stdinFile(f)
+	stdin, err := stdinFile(ctx, f)
 	if err != nil {
 		return nil, err
 	}

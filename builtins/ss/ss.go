@@ -93,7 +93,7 @@
 //	macOS: sysctl returns a bounded []byte. Every offset dereference is
 //	bounds-checked against len(data) before reading.
 //
-//	Windows: the DLL grow-loop is capped at MaxWinBufSize (64 MiB).
+//	Windows: the DLL grow-loop is capped at winnet.MaxBufSize (5 MiB).
 //	unsafe.Pointer is used only to pass &buf[0] to the DLL call; the
 //	returned data is parsed entirely with encoding/binary.LittleEndian.
 package ss
@@ -114,11 +114,6 @@ var Cmd = builtins.Command{
 
 // MaxLineBytes is the per-line buffer cap for the Linux /proc/net/ scanner.
 const MaxLineBytes = 1 << 20 // 1 MiB
-
-// MaxWinBufSize is the maximum buffer size used by the Windows grow-loop
-// when calling GetExtendedTcpTable / GetExtendedUdpTable. This must match
-// winnet.MaxBufSize; the winnet package owns the authoritative value.
-const MaxWinBufSize = 64 << 20 // 64 MiB — keep in sync with winnet.MaxBufSize
 
 // socketType identifies the protocol family of a socket entry.
 type socketType int
