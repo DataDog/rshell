@@ -24,6 +24,7 @@ var interpAllowedSymbols = []string{
 	"context.WithTimeout",  // 🟢 derives a context with a deadline; needed for execution timeout support.
 	"context.WithValue",    // 🟢 derives a context carrying a key-value pair; pure function.
 	"errors.As",            // 🟢 error type assertion; pure function, no I/O.
+	"errors.New",           // 🟢 creates a sentinel error value; pure function, no I/O.
 	"fmt.Errorf",           // 🟢 formatted error creation; pure function, no I/O.
 	"fmt.Fprintf",          // 🟠 formatted write to an io.Writer; delegates to Write, no filesystem access.
 	"fmt.Fprintln",         // 🟠 writes to an io.Writer with newline; delegates to Write, no filesystem access.
