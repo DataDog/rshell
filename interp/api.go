@@ -424,7 +424,7 @@ func (r *Runner) Reset() {
 // ErrOutputLimitExceeded is returned by Run when a script produces more stdout
 // than maxStdoutBytes. Partial output up to the limit is still delivered to the
 // caller's writer. Use errors.Is to check for this condition.
-var ErrOutputLimitExceeded = fmt.Errorf("stdout limit exceeded: script produced more than %d MiB of output", maxStdoutBytes/(1024*1024))
+var ErrOutputLimitExceeded = errors.New("stdout limit exceeded: script produced more than 10 MiB of output")
 
 // ExitStatus is a non-zero status code resulting from running a shell node.
 type ExitStatus uint8
@@ -466,9 +466,12 @@ func (r *Runner) Run(ctx context.Context, node syntax.Node) (retErr error) {
 	// Wrap stdout with a cap. Bytes beyond maxStdoutBytes are silently
 	// discarded so that builtins never see a write error mid-execution, but
 	// the exceeded flag is set so Run() can surface a well-defined error to
-	// the caller after the script finishes.
-	stdoutCap := &limitWriter{w: r.stdout, limit: maxStdoutBytes}
+	// the caller after the script finishes. Restore r.stdout on return so
+	// that repeated Run() calls without Reset() do not double-wrap the writer.
+	prevStdout := r.stdout
+	stdoutCap := &limitWriter{w: prevStdout, limit: maxStdoutBytes}
 	r.stdout = stdoutCap
+	defer func() { r.stdout = prevStdout }()
 	r.startTime = time.Now()
 	r.globReadDirCount = &atomic.Int64{}
 	r.fillExpandConfig(ctx)
@@ -489,13 +492,14 @@ func (r *Runner) Run(ctx context.Context, node syntax.Node) (retErr error) {
 	default:
 		return fmt.Errorf("node can only be File, Stmt, or Command: %T", node)
 	}
-	// If the script exceeded the stdout cap, report it regardless of exit code.
-	if stdoutCap.exceeded {
-		return ErrOutputLimitExceeded
-	}
-	// Return the first of: a fatal error, a non-fatal handler error, or the exit code.
+	// Return the first of: a fatal/handler error, stdout cap exceeded, or the exit code.
+	// Fatal errors take precedence over ErrOutputLimitExceeded so that cancellation
+	// and handler failures are not masked when the cap is also hit.
 	if err := r.exit.err; err != nil {
 		return err
+	}
+	if stdoutCap.exceeded {
+		return ErrOutputLimitExceeded
 	}
 	if code := r.exit.code; code != 0 {
 		return ExitStatus(code)
