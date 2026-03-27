@@ -12,4 +12,5 @@ github.com/spf13/pflag,https://github.com/spf13/pflag,BSD-3-Clause,"Copyright (c
 golang.org/x/net,https://github.com/golang/net,BSD-3-Clause,Copyright (c) 2009 The Go Authors. All rights reserved.
 golang.org/x/sync,https://github.com/golang/sync,BSD-3-Clause,Copyright (c) 2009 The Go Authors. All rights reserved.
 golang.org/x/sys,https://github.com/golang/sys,BSD-3-Clause,Copyright (c) 2009 The Go Authors. All rights reserved.
+golang.org/x/mod,https://github.com/golang/mod,BSD-3-Clause,Copyright (c) 2009 The Go Authors. All rights reserved.
 golang.org/x/tools,https://github.com/golang/tools,BSD-3-Clause,Copyright (c) 2009 The Go Authors. All rights reserved.
