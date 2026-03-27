@@ -14,6 +14,7 @@ import (
 	"io/fs"
 	"os"
 	"strings"
+	"sync"
 
 	"mvdan.cc/sh/v3/expand"
 	"mvdan.cc/sh/v3/syntax"
@@ -139,8 +140,13 @@ func catShortcutArg(stmt *syntax.Stmt) *syntax.Word {
 // When the limit is exceeded, exceeded is set to true and further writes
 // are silently discarded so that callers do not see spurious short-write
 // errors mid-execution. The exceeded flag can be checked after execution
-// to surface the event as an error.
+// via isExceeded to surface the event as an error.
+//
+// limitWriter is safe for concurrent use: the mutex serialises writes so
+// that the byte counter and exceeded flag are always consistent, even when
+// background goroutines write to the same writer concurrently.
 type limitWriter struct {
+	mu       sync.Mutex
 	w        io.Writer
 	limit    int64
 	n        int64
@@ -148,6 +154,8 @@ type limitWriter struct {
 }
 
 func (lw *limitWriter) Write(p []byte) (int, error) {
+	lw.mu.Lock()
+	defer lw.mu.Unlock()
 	if lw.n >= lw.limit {
 		lw.exceeded = true
 		return len(p), nil // silently discard excess
@@ -164,6 +172,14 @@ func (lw *limitWriter) Write(p []byte) (int, error) {
 	n, err := lw.w.Write(p)
 	lw.n += int64(n)
 	return n, err
+}
+
+// isExceeded reports whether any write has exceeded the byte limit.
+// It is safe to call concurrently with Write.
+func (lw *limitWriter) isExceeded() bool {
+	lw.mu.Lock()
+	defer lw.mu.Unlock()
+	return lw.exceeded
 }
 
 func (r *Runner) expandErr(err error) {

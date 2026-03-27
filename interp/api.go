@@ -424,7 +424,10 @@ func (r *Runner) Reset() {
 // ErrOutputLimitExceeded is returned by Run when a script produces more stdout
 // than maxStdoutBytes. Partial output up to the limit is still delivered to the
 // caller's writer. Use errors.Is to check for this condition.
-var ErrOutputLimitExceeded = errors.New("stdout limit exceeded: script produced more than 10 MiB of output")
+var ErrOutputLimitExceeded = errors.New(fmt.Sprintf(
+	"stdout limit exceeded: script produced more than %d MiB of output",
+	maxStdoutBytes/(1024*1024),
+))
 
 // ExitStatus is a non-zero status code resulting from running a shell node.
 type ExitStatus uint8
@@ -498,7 +501,7 @@ func (r *Runner) Run(ctx context.Context, node syntax.Node) (retErr error) {
 	if err := r.exit.err; err != nil {
 		return err
 	}
-	if stdoutCap.exceeded {
+	if stdoutCap.isExceeded() {
 		return ErrOutputLimitExceeded
 	}
 	if code := r.exit.code; code != 0 {
