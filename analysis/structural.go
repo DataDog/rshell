@@ -110,14 +110,25 @@ func checkFileOpenFileClose(f *ast.File, report func(pos token.Pos, format strin
 			pos  token.Pos
 			name string
 		}
+		// NOTE: opens is keyed on variable name as a string. If the same name is
+		// reused for two successive OpenFile calls without closing the first, a
+		// single Close() call will satisfy both entries and the second leak will
+		// not be flagged. Use distinct variable names for successive file opens
+		// in the same scope to ensure reliable detection.
 		var opens []openVar
 		closed := make(map[string]bool)
 		// handOff maps a "holder" variable name to the original variable it was
 		// assigned from. Closing the holder counts as closing the original.
 		handOff := make(map[string]string) // holder → original
-		// returned tracks variables that appear in a return statement. Returning
-		// a file handle transfers ownership to the caller, so no Close() is
-		// required in the current scope.
+		// returned tracks variables that appear in any return statement.
+		// Returning a file handle transfers ownership to the caller, so no
+		// Close() is required in the current scope.
+		//
+		// NOTE: This check is path-insensitive. If a variable appears in a
+		// return statement on one branch (e.g. the happy path) but is leaked on
+		// another branch (e.g. a subsequent early-return), this checker will NOT
+		// flag it. Full path-sensitive analysis requires CFG-based data flow,
+		// which is beyond the scope of this AST-only checker.
 		returned := make(map[string]bool)
 
 		inspectBody(body, func(n ast.Node) {
@@ -170,15 +181,29 @@ func checkFileOpenFileClose(f *ast.File, report func(pos token.Pos, format strin
 	})
 }
 
-// isClosedTransitive returns true if name is closed directly or if a variable
-// that name was handed off to is closed.
+// isClosedTransitive returns true if name is closed directly or transitively
+// through a chain of hand-off assignments. It performs a breadth-first search
+// over the handOff graph to handle chains of arbitrary depth, e.g.:
+//
+//	f → a → b → Close()   (handOff["a"]="f", handOff["b"]="a", closed["b"]=true)
 func isClosedTransitive(name string, closed map[string]bool, handOff map[string]string) bool {
-	if closed[name] {
-		return true
-	}
-	for holder, orig := range handOff {
-		if orig == name && closed[holder] {
+	visited := make(map[string]bool)
+	queue := []string{name}
+	for len(queue) > 0 {
+		cur := queue[0]
+		queue = queue[1:]
+		if visited[cur] {
+			continue
+		}
+		visited[cur] = true
+		if closed[cur] {
 			return true
+		}
+		// Enqueue all variables that were assigned from cur.
+		for holder, orig := range handOff {
+			if orig == cur && !visited[holder] {
+				queue = append(queue, holder)
+			}
 		}
 	}
 	return false

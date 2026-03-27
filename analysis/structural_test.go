@@ -42,27 +42,6 @@ func run(callCtx fakeCtx) {
 	return fset, f
 }
 
-// collectViolations runs fn against a parsed snippet and returns all reported
-// violation messages.
-func collectViolations(t *testing.T, body string, fn func(f interface{ Pos() token.Pos }, report func(token.Pos, string, ...any))) []string {
-	t.Helper()
-	_, f := parseSnippet(t, body)
-
-	type astFile interface {
-		Pos() token.Pos
-	}
-
-	var msgs []string
-	fn(f, func(_ token.Pos, format string, args ...any) {
-		msg := format
-		if len(args) > 0 {
-			msg = format // simplified: just collect format for test assertions
-		}
-		msgs = append(msgs, msg)
-	})
-	return msgs
-}
-
 // --- ScannerBuffer rule tests ---
 
 func TestScannerBufferClean(t *testing.T) {
@@ -250,4 +229,96 @@ func open(callCtx cc) (io.ReadCloser, error) {
 		violations = append(violations, format)
 	})
 	assert.Empty(t, violations, "OpenFile result returned to caller should not be flagged")
+}
+
+func TestOpenFileCloseChainedHandOff(t *testing.T) {
+	// f → a → b → Close(): two-hop chain must be detected.
+	fset := token.NewFileSet()
+	src := `package p
+import ("context"; "io"; "os")
+type cc struct{}
+func (cc) OpenFile(ctx context.Context, path string, flags int, mode os.FileMode) (interface{ Read([]byte)(int,error); Close() error }, error) { return nil, nil }
+func run(callCtx cc) {
+	f, err := callCtx.OpenFile(context.Background(), "x", os.O_RDONLY, 0)
+	if err != nil { return }
+	var a io.ReadCloser
+	a = f
+	var b io.ReadCloser
+	b = a
+	defer b.Close()
+}
+`
+	f, err := parser.ParseFile(fset, "chain.go", src, 0)
+	require.NoError(t, err)
+
+	var violations []string
+	checkFileOpenFileClose(f, func(_ token.Pos, format string, _ ...any) {
+		violations = append(violations, format)
+	})
+	assert.Empty(t, violations, "two-hop hand-off chain closed at end must not be flagged")
+}
+
+// TestOpenFileCloseKnownLimitationMultiBranchReturn documents a known
+// path-insensitivity limitation: if a variable appears in a return statement
+// on any branch, the checker treats the whole variable as "returned" and will
+// not flag it even if another branch leaks it. Fixing this requires CFG-based
+// data-flow analysis beyond the scope of this AST-only checker.
+func TestOpenFileCloseKnownLimitationMultiBranchReturn(t *testing.T) {
+	fset := token.NewFileSet()
+	src := `package p
+import ("context"; "io"; "os")
+type cc struct{}
+func (cc) OpenFile(ctx context.Context, path string, flags int, mode os.FileMode) (interface{ Read([]byte)(int,error); Close() error }, error) { return nil, nil }
+func run(callCtx cc, cond bool) (io.ReadCloser, error) {
+	f, err := callCtx.OpenFile(context.Background(), "x", os.O_RDONLY, 0)
+	if err != nil { return nil, err }
+	if cond {
+		return f, nil // f is returned here
+	}
+	// f is leaked here (no close, no return) — NOT caught due to path-insensitivity
+	return nil, nil
+}
+`
+	f, err := parser.ParseFile(fset, "multibranch.go", src, 0)
+	require.NoError(t, err)
+
+	var violations []string
+	checkFileOpenFileClose(f, func(_ token.Pos, format string, _ ...any) {
+		violations = append(violations, format)
+	})
+	// Known false negative: the checker sees "f" in a return statement and
+	// exempts it globally. This test documents the gap rather than asserting
+	// correct behaviour.
+	assert.Empty(t, violations, "known limitation: path-insensitive return exemption produces false negative")
+}
+
+// TestOpenFileCloseKnownLimitationNameReuse documents a known limitation:
+// if the same variable name is reused for two successive OpenFile results,
+// a single Close() satisfies both entries in the checker.
+func TestOpenFileCloseKnownLimitationNameReuse(t *testing.T) {
+	fset := token.NewFileSet()
+	src := `package p
+import ("context"; "os")
+type cc struct{}
+func (cc) OpenFile(ctx context.Context, path string, flags int, mode os.FileMode) (interface{ Read([]byte)(int,error); Close() error }, error) { return nil, nil }
+func run(callCtx cc) {
+	f, err := callCtx.OpenFile(context.Background(), "x", os.O_RDONLY, 0)
+	if err != nil { return }
+	defer f.Close()
+	// Re-using f for a second OpenFile — the second handle is never closed.
+	f, err = callCtx.OpenFile(context.Background(), "y", os.O_RDONLY, 0)
+	if err != nil { return }
+	_ = f
+}
+`
+	f, err := parser.ParseFile(fset, "reuse.go", src, 0)
+	require.NoError(t, err)
+
+	var violations []string
+	checkFileOpenFileClose(f, func(_ token.Pos, format string, _ ...any) {
+		violations = append(violations, format)
+	})
+	// Known false negative: closed["f"]=true from the first defer satisfies
+	// both opens entries. Use distinct variable names in production code.
+	assert.Empty(t, violations, "known limitation: name reuse produces false negative")
 }

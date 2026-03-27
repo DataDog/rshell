@@ -39,6 +39,12 @@ type AnalyzerConfig struct {
 //
 // NewAnalyzer panics if any entry in cfg.Symbols is malformed (no dot
 // separator), matching the behaviour of the test-harness variant.
+//
+// NOTE: This analyzer only enforces symbol-level allowlist restrictions. For
+// full static analysis coverage, callers should also register
+// ScannerBufferAnalyzer and OpenFileCloseAnalyzer alongside this one. The
+// test-harness path (checkAllowedSymbols) already applies all three checks
+// automatically.
 func NewAnalyzer(cfg AnalyzerConfig) *analysis.Analyzer {
 	for _, entry := range cfg.Symbols {
 		if strings.LastIndexByte(entry, '.') <= 0 {
