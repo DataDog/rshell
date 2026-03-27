@@ -9,16 +9,16 @@
 // The analyzer checks that every imported symbol is in a given allowlist, that
 // no permanently banned packages are imported, and that every symbol in the
 // allowlist is actually used. It reports violations with file:line:col
-// diagnostics and integrates with go vet.
+// diagnostics.
 package allowedsymbols
 
 import (
+	"fmt"
 	"go/ast"
 	"go/token"
 	"strings"
 
 	"golang.org/x/tools/go/analysis"
-	"golang.org/x/tools/go/analysis/passes/inspect"
 )
 
 // AnalyzerConfig configures a single instance of the allowed-symbols analyzer.
@@ -34,10 +34,18 @@ type AnalyzerConfig struct {
 }
 
 // NewAnalyzer returns a go/analysis.Analyzer that enforces the symbol-level
-// import restrictions described by cfg. The analyzer uses the inspect pass for
-// efficient AST traversal and reports violations via pass.Reportf so they
-// appear as go vet diagnostics with proper file:line:col positions.
+// import restrictions described by cfg. Violations are reported via
+// pass.Reportf and appear as diagnostics with proper file:line:col positions.
+//
+// NewAnalyzer panics if any entry in cfg.Symbols is malformed (no dot
+// separator), matching the behaviour of the test-harness variant.
 func NewAnalyzer(cfg AnalyzerConfig) *analysis.Analyzer {
+	for _, entry := range cfg.Symbols {
+		if strings.LastIndexByte(entry, '.') <= 0 {
+			panic(fmt.Sprintf("allowedsymbols.NewAnalyzer: malformed allowlist entry (no dot): %q", entry))
+		}
+	}
+
 	run := func(pass *analysis.Pass) (any, error) {
 		allowedSyms, allowedPkgs := buildAllowlistSets(cfg.Symbols)
 		usedSymbols := make(map[string]bool, len(cfg.Symbols))
@@ -66,10 +74,9 @@ func NewAnalyzer(cfg AnalyzerConfig) *analysis.Analyzer {
 	}
 
 	return &analysis.Analyzer{
-		Name:     "allowedsymbols",
-		Doc:      "enforces symbol-level import restrictions via an allowlist",
-		Requires: []*analysis.Analyzer{inspect.Analyzer},
-		Run:      run,
+		Name: "allowedsymbols",
+		Doc:  "enforces symbol-level import restrictions via an allowlist",
+		Run:  run,
 	}
 }
 
@@ -95,11 +102,10 @@ func buildAllowlistSets(symbols []string) (map[string]bool, map[string]bool) {
 // violation and returns a localName→importPath map for the file's valid,
 // non-exempt imports.
 //
-// report is called with a token.Pos and a pre-formatted message (the pos
-// argument is valid only when fset is non-nil; callers using the token.Pos
-// form must pass the actual position). For callers that use the file:line
-// string form (symbols_test.go), token.Pos is set to token.NoPos and the
-// message already encodes position info.
+// report is called with a token.Pos and a pre-formatted message. Callers that
+// use the file:line string form (e.g. fileLineReporter) set pos to
+// token.NoPos; callers that surface diagnostics via pass.Reportf pass the
+// actual source position.
 func checkFileImports(
 	f *ast.File,
 	allowedPkgs map[string]bool,
