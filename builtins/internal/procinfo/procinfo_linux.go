@@ -247,6 +247,7 @@ func readUID(procPath string, pid int) string {
 		return "?"
 	}
 	scanner := bufio.NewScanner(bytes.NewReader(data))
+	scanner.Buffer(make([]byte, 4096), 1<<20)
 	for scanner.Scan() {
 		line := scanner.Text()
 		if strings.HasPrefix(line, "Uid:") {
@@ -286,6 +287,7 @@ func procBootTime(procPath string) (int64, error) {
 	}
 	defer f.Close()
 	scanner := bufio.NewScanner(f)
+	scanner.Buffer(make([]byte, 4096), 1<<20)
 	for scanner.Scan() {
 		line := scanner.Text()
 		if strings.HasPrefix(line, "btime ") {

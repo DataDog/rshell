@@ -108,6 +108,10 @@ func checkAllowedSymbols(t *testing.T, cfg allowedSymbolsConfig) {
 		reporter := fileLineReporter(fset, rel, reportErr)
 		localToPath := checkFileImports(f, allowedPkgs, cfg.ExemptImport, reporter)
 		checkFileSelectors(f, localToPath, allowedSyms, usedSymbols, reporter)
+
+		// Structural rules — applied to every checked file.
+		checkFileScannerBuffer(f, reporter)
+		checkFileOpenFileClose(f, reporter)
 	}
 
 	if checked < cfg.MinFiles {
