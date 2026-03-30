@@ -3,7 +3,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2026-present Datadog, Inc.
 
-package allowedsymbols
+package analysis
 
 import (
 	"testing"
@@ -18,8 +18,8 @@ func TestNewAnalyzer_Metadata(t *testing.T) {
 		Symbols:  []string{"fmt.Println"},
 		ListName: "test",
 	})
-	if a.Name != "allowedsymbols" {
-		t.Errorf("Name = %q, want \"allowedsymbols\"", a.Name)
+	if a.Name != "analysis" {
+		t.Errorf("Name = %q, want \"analysis\"", a.Name)
 	}
 	if len(a.Requires) != 0 {
 		t.Errorf("Requires has %d entries, want 0", len(a.Requires))

@@ -3,7 +3,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2026-present Datadog, Inc.
 
-package allowedsymbols
+package analysis
 
 // builtinAllowedSymbols lists every "importpath.Symbol" that may be used by
 // command implementation files in builtins/. Each entry must be in

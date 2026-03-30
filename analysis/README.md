@@ -1,4 +1,4 @@
-# allowedsymbols
+# analysis
 
 Static enforcement of symbol-level import restrictions for the rshell interpreter.
 
@@ -56,8 +56,70 @@ The tests in this package use Go's `go/parser` and `go/ast` to walk source files
 
 Verification tests additionally inject banned imports or unlisted symbols into a temporary copy of the repo and assert the checker catches them.
 
+## Structural Rules
+
+In addition to symbol-level allowlist checking, the package enforces **structural rules** — code patterns that must (or must not) appear together in the same function scope. These are checked by `checkFileScannerBuffer` and `checkFileOpenFileClose` in `structural.go` and are applied automatically to every file that passes through `checkAllowedSymbols`.
+
+Both rules are also exposed as standalone `go/analysis` analyzers (`ScannerBufferAnalyzer`, `OpenFileCloseAnalyzer`) that can be registered with `go vet` or gopls.
+
+### Rule 1 — `bufio.NewScanner` must call `.Buffer()`
+
+**Why:** `bufio.Scanner` has a fixed default buffer of 64 KiB. Any line longer than that causes `Scanner.Scan()` to return `false` and `Scanner.Err()` to return `bufio.ErrTooLong`. In a shell that must handle arbitrary user input this is a reliability and DoS risk — a single long line silently truncates or aborts processing.
+
+**What is checked:** Every variable assigned from `bufio.NewScanner(...)` must have `.Buffer(...)` called on it within the same function body. Nested function literals (`func() { ... }`) are treated as independent scopes.
+
+**Compliant:**
+```go
+sc := bufio.NewScanner(r)
+sc.Buffer(make([]byte, 4096), maxLineBytes)
+for sc.Scan() { ... }
+```
+
+**Violation:**
+```go
+sc := bufio.NewScanner(r)  // flagged: no sc.Buffer() call
+for sc.Scan() { ... }
+```
+
+### Rule 2 — `callCtx.OpenFile` results must be closed
+
+**Why:** Every open file descriptor consumes a kernel resource. Over repeated script executions, unclosed handles exhaust the process file-descriptor limit and cause all subsequent I/O to fail.
+
+**What is checked:** Every variable assigned from a `.OpenFile(...)` call (any receiver — the check matches the method name, not the receiver type) must have `.Close()` called on it — directly or via `defer` — within the same function body. The checker also tracks **hand-off** assignments: if `f` is reassigned to `rc` and `rc.Close()` is called, `f` is considered closed.
+
+**Compliant — direct close:**
+```go
+f, err := callCtx.OpenFile(ctx, path, os.O_RDONLY, 0)
+if err != nil { return err }
+defer f.Close()
+```
+
+**Compliant — hand-off pattern:**
+```go
+f, err := callCtx.OpenFile(ctx, path, os.O_RDONLY, 0)
+if err != nil { return err }
+rc = f          // hand off to rc
+defer rc.Close() // closes f transitively
+```
+
+**Compliant — return ownership transfer:**
+```go
+func openHelper(callCtx cc) (io.ReadCloser, error) {
+    f, err := callCtx.OpenFile(ctx, path, os.O_RDONLY, 0)
+    if err != nil { return nil, err }
+    return f, nil  // caller is responsible for closing
+}
+```
+
+**Violation:**
+```go
+f, err := callCtx.OpenFile(ctx, path, os.O_RDONLY, 0)
+if err != nil { return err }
+_ = f  // flagged: f is never closed
+```
+
 ## Adding a New Symbol
 
 1. Add a line to the appropriate allowlist (and the per-command sublist if it's a builtin).
 2. Prefix the comment with the correct safety emoji.
-3. Run `go test ./allowedsymbols/` to verify the entry is valid and used.
+3. Run `go test ./analysis/` to verify the entry is valid and used.

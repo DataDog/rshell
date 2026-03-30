@@ -3,7 +3,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2026-present Datadog, Inc.
 
-package allowedsymbols
+package analysis
 
 // internalPerPackageSymbols maps each builtins/internal/<package> name to the
 // symbols it is allowed to use. Every symbol listed here must also appear in

@@ -3,7 +3,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2026-present Datadog, Inc.
 
-package allowedsymbols
+package analysis
 
 import (
 	"fmt"
@@ -78,7 +78,7 @@ func checkAllowedSymbols(t *testing.T, cfg allowedSymbolsConfig) {
 	if cfg.RepoRootOverride != "" {
 		root = cfg.RepoRootOverride
 	} else {
-		// This package lives in allowedsymbols/, so the repo root is one level up.
+		// This package lives in analysis/, so the repo root is one level up.
 		dir, err := os.Getwd()
 		if err != nil {
 			t.Fatal(err)
@@ -108,6 +108,10 @@ func checkAllowedSymbols(t *testing.T, cfg allowedSymbolsConfig) {
 		reporter := fileLineReporter(fset, rel, reportErr)
 		localToPath := checkFileImports(f, allowedPkgs, cfg.ExemptImport, reporter)
 		checkFileSelectors(f, localToPath, allowedSyms, usedSymbols, reporter)
+
+		// Structural rules — applied to every checked file.
+		checkFileScannerBuffer(f, reporter)
+		checkFileOpenFileClose(f, reporter)
 	}
 
 	if checked < cfg.MinFiles {
