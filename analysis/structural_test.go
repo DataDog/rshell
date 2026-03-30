@@ -14,34 +14,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// parseSnippet parses a minimal Go source file containing the given body
-// inserted into a function named "f". The returned file can be passed to
-// checkFileScannerBuffer or checkFileOpenFileClose.
-func parseSnippet(t *testing.T, body string) (*token.FileSet, interface{ Pos() token.Pos }) {
-	t.Helper()
-	src := `package p
-
-import (
-	"bufio"
-	"context"
-	"os"
-)
-
-type fakeCtx struct{}
-func (fakeCtx) OpenFile(ctx context.Context, path string, flags int, mode os.FileMode) (interface{ Read([]byte)(int,error); Close() error }, error) {
-	return nil, nil
-}
-
-func run(callCtx fakeCtx) {
-` + body + `
-}
-`
-	fset := token.NewFileSet()
-	f, err := parser.ParseFile(fset, "snippet.go", src, 0)
-	require.NoError(t, err)
-	return fset, f
-}
-
 // --- ScannerBuffer rule tests ---
 
 func TestScannerBufferClean(t *testing.T) {
