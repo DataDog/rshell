@@ -42,7 +42,7 @@ func TestSandboxOpenRejectsWriteFlags(t *testing.T) {
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "test.txt"), []byte("data"), 0644))
 
-	sb, err := New([]string{dir})
+	sb, _, err := New([]string{dir})
 	require.NoError(t, err)
 	defer sb.Close()
 
@@ -74,7 +74,7 @@ func TestReadDirLimited(t *testing.T) {
 		require.NoError(t, os.WriteFile(filepath.Join(dir, fmt.Sprintf("f%02d", i)), nil, 0644))
 	}
 
-	sb, err := New([]string{dir})
+	sb, _, err := New([]string{dir})
 	require.NoError(t, err)
 	defer sb.Close()
 
@@ -193,7 +193,7 @@ func TestReadDirNCapExceeded(t *testing.T) {
 		require.NoError(t, os.WriteFile(filepath.Join(dir, fmt.Sprintf("f%02d", i)), nil, 0644))
 	}
 
-	sb, err := New([]string{dir})
+	sb, _, err := New([]string{dir})
 	require.NoError(t, err)
 	defer sb.Close()
 
@@ -305,4 +305,58 @@ func TestCollectDirEntries(t *testing.T) {
 		assert.Equal(t, "banana", entries[1].Name())
 		assert.Equal(t, "cherry", entries[2].Name())
 	})
+}
+
+func TestNewSkipsNonexistentPaths(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "test.txt"), []byte("data"), 0644))
+
+	sb, _, err := New([]string{"/nonexistent/path", dir})
+	require.NoError(t, err, "nonexistent paths should be skipped")
+	defer sb.Close()
+
+	// The existing directory should still be accessible.
+	f, err := sb.Open(filepath.Join(dir, "test.txt"), dir, os.O_RDONLY, 0)
+	require.NoError(t, err)
+	f.Close()
+}
+
+func TestNewAllPathsNonexistent(t *testing.T) {
+	sb, _, err := New([]string{"/does/not/exist", "/also/missing"})
+	require.NoError(t, err, "all-nonexistent paths should succeed with empty sandbox")
+	defer sb.Close()
+
+	// Sandbox should block all access.
+	_, err = sb.Stat("/tmp", "/tmp")
+	assert.ErrorIs(t, err, os.ErrPermission)
+}
+
+func TestNewEmptyPaths(t *testing.T) {
+	sb, _, err := New([]string{})
+	require.NoError(t, err, "empty path list should succeed")
+	defer sb.Close()
+
+	// Sandbox should block all access.
+	_, err = sb.Stat("/tmp", "/tmp")
+	assert.ErrorIs(t, err, os.ErrPermission)
+}
+
+func TestNewMixedExistingAndNonexistent(t *testing.T) {
+	dirA := t.TempDir()
+	dirB := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dirA, "a.txt"), []byte("aaa"), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(dirB, "b.txt"), []byte("bbb"), 0644))
+
+	sb, _, err := New([]string{dirA, "/nonexistent", dirB})
+	require.NoError(t, err, "nonexistent path between valid dirs should be skipped")
+	defer sb.Close()
+
+	// Both existing directories should be accessible.
+	f, err := sb.Open(filepath.Join(dirA, "a.txt"), dirA, os.O_RDONLY, 0)
+	require.NoError(t, err, "first existing dir should work")
+	f.Close()
+
+	f, err = sb.Open(filepath.Join(dirB, "b.txt"), dirB, os.O_RDONLY, 0)
+	require.NoError(t, err, "second existing dir should work")
+	f.Close()
 }

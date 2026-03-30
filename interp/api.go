@@ -51,6 +51,11 @@ type runnerConfig struct {
 	// nil (default) blocks all file access; populate via AllowedPaths option.
 	sandbox *allowedpaths.Sandbox
 
+	// sandboxWarnings holds diagnostic messages about skipped AllowedPaths
+	// entries. Written to stderr after all options are applied and defaults
+	// are set, so the output target is independent of option ordering.
+	sandboxWarnings []byte
+
 	// allowedCommands is the set of command names (builtins or external) that
 	// the interpreter is permitted to execute. If nil and allowAllCommands is
 	// false, no commands are allowed.
@@ -234,6 +239,11 @@ func New(opts ...RunnerOption) (*Runner, error) {
 	}
 	if r.stdout == nil || r.stderr == nil {
 		StdIO(r.stdin, r.stdout, r.stderr)(r)
+	}
+	// Flush any sandbox warnings now that stderr is guaranteed to be set.
+	if len(r.sandboxWarnings) > 0 {
+		r.stderr.Write(r.sandboxWarnings)
+		r.sandboxWarnings = nil
 	}
 	r.proc = builtins.NewProcProvider(r.procPath)
 	return r, nil
@@ -549,11 +559,12 @@ func (r *Runner) Close() error {
 // An empty slice also blocks all file access.
 func AllowedPaths(paths []string) RunnerOption {
 	return func(r *Runner) error {
-		sb, err := allowedpaths.New(paths)
+		sb, warnings, err := allowedpaths.New(paths)
 		if err != nil {
 			return err
 		}
 		r.sandbox = sb
+		r.sandboxWarnings = warnings
 		return nil
 	}
 }

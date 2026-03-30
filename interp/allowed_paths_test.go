@@ -57,23 +57,23 @@ func runScript(t *testing.T, script, dir string, opts ...interp.RunnerOption) (s
 }
 
 func TestAllowedPathsOption(t *testing.T) {
-	t.Run("invalid path rejected", func(t *testing.T) {
-		_, err := interp.New(
+	t.Run("nonexistent path skipped", func(t *testing.T) {
+		runner, err := interp.New(
 			interp.AllowedPaths([]string{"/nonexistent/path/that/does/not/exist"}),
 		)
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "AllowedPaths")
+		require.NoError(t, err, "nonexistent paths should be skipped, not rejected")
+		runner.Close()
 	})
 
-	t.Run("file not directory rejected", func(t *testing.T) {
+	t.Run("file path skipped", func(t *testing.T) {
 		tmpFile := filepath.Join(t.TempDir(), "file.txt")
 		require.NoError(t, os.WriteFile(tmpFile, []byte("test"), 0644))
 
-		_, err := interp.New(
+		runner, err := interp.New(
 			interp.AllowedPaths([]string{tmpFile}),
 		)
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "not a directory")
+		require.NoError(t, err, "file paths should be skipped (not directories)")
+		runner.Close()
 	})
 
 	t.Run("valid directory accepted", func(t *testing.T) {
