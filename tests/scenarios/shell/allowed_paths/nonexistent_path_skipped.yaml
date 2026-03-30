@@ -8,6 +8,7 @@ input:
   script: |+
     cat allowed/data.txt
 expect:
-  stdout: "hello\n"
-  stderr: ""
+  stdout: |+
+    hello
+  stderr: |+
   exit_code: 0

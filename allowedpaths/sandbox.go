@@ -48,7 +48,9 @@ func New(paths []string) (*Sandbox, error) {
 		}
 		r, err := os.OpenRoot(abs)
 		if err != nil {
-			// Path does not exist or is not a directory — skip.
+			// AllowedPaths is a suggestion, not a requirement. If we can't
+			// open a path (missing, not a directory, no permission, etc.),
+			// skip it and work with whatever paths are available.
 			continue
 		}
 		roots = append(roots, root{absPath: abs, root: r})
