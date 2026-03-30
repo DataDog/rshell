@@ -549,7 +549,13 @@ func (r *Runner) Close() error {
 // An empty slice also blocks all file access.
 func AllowedPaths(paths []string) RunnerOption {
 	return func(r *Runner) error {
-		sb, err := allowedpaths.New(paths)
+		// Use the runner's configured stderr for warnings if available,
+		// otherwise fall back to os.Stderr.
+		warn := r.stderr
+		if warn == nil {
+			warn = os.Stderr
+		}
+		sb, err := allowedpaths.New(paths, warn)
 		if err != nil {
 			return err
 		}

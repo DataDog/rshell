@@ -25,6 +25,7 @@ var allowedpathsAllowedSymbols = []string{
 	"fmt.Fprintf",                        // 🟠 writes warning to os.Stderr when skipping unavailable paths.
 	"io.EOF",                             // 🟢 sentinel error value; pure constant.
 	"io.ReadWriteCloser",                 // 🟢 combined interface type; no side effects.
+	"io.Writer",                          // 🟢 interface type for warning output; no side effects.
 	"io/fs.DirEntry",                     // 🟢 interface type for directory entries; no side effects.
 	"io/fs.ErrExist",                     // 🟢 sentinel error for "already exists"; pure constant.
 	"io/fs.ErrNotExist",                  // 🟢 sentinel error for "does not exist"; pure constant.

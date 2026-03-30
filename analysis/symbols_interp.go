@@ -47,6 +47,7 @@ var interpAllowedSymbols = []string{
 	"os.O_RDONLY",          // 🟢 read-only file flag constant; pure constant.
 	"os.PathError",         // 🟢 error type wrapping path and operation; pure type.
 	"os.Pipe",              // 🟠 creates an OS pipe pair; needed for shell pipelines.
+	"os.Stderr",            // 🟠 process stderr; fallback for AllowedPaths warnings when runner stderr is not yet configured.
 	"path/filepath.IsAbs",  // 🟢 checks if path is absolute; pure function, no I/O.
 	"path/filepath.Join",   // 🟢 joins path elements; pure function, no I/O.
 	"runtime.GOOS",         // 🟢 current OS name constant; pure constant, no I/O.

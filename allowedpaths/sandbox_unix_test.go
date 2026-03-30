@@ -8,6 +8,7 @@
 package allowedpaths
 
 import (
+	"io"
 	"os"
 	"path/filepath"
 	"syscall"
@@ -26,7 +27,7 @@ func TestAccessFIFODoesNotBlock(t *testing.T) {
 	fifoPath := filepath.Join(dir, "pipe")
 	require.NoError(t, syscall.Mkfifo(fifoPath, 0644))
 
-	sb, err := New([]string{dir})
+	sb, err := New([]string{dir}, io.Discard)
 	require.NoError(t, err)
 	defer sb.Close()
 
@@ -54,7 +55,7 @@ func TestAccessReadPermissionDenied(t *testing.T) {
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "noread.txt"), []byte("secret"), 0200))
 
-	sb, err := New([]string{dir})
+	sb, err := New([]string{dir}, io.Discard)
 	require.NoError(t, err)
 	defer sb.Close()
 
@@ -72,7 +73,7 @@ func TestAccessWriteDenied(t *testing.T) {
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "readonly.txt"), []byte("data"), 0444))
 
-	sb, err := New([]string{dir})
+	sb, err := New([]string{dir}, io.Discard)
 	require.NoError(t, err)
 	defer sb.Close()
 
@@ -90,7 +91,7 @@ func TestAccessExecDenied(t *testing.T) {
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "noexec.txt"), []byte("data"), 0644))
 
-	sb, err := New([]string{dir})
+	sb, err := New([]string{dir}, io.Discard)
 	require.NoError(t, err)
 	defer sb.Close()
 
@@ -103,7 +104,7 @@ func TestAccessReadAllowed(t *testing.T) {
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "readable.txt"), []byte("data"), 0644))
 
-	sb, err := New([]string{dir})
+	sb, err := New([]string{dir}, io.Discard)
 	require.NoError(t, err)
 	defer sb.Close()
 
@@ -115,7 +116,7 @@ func TestAccessWriteAllowed(t *testing.T) {
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "writable.txt"), []byte("data"), 0644))
 
-	sb, err := New([]string{dir})
+	sb, err := New([]string{dir}, io.Discard)
 	require.NoError(t, err)
 	defer sb.Close()
 
@@ -127,7 +128,7 @@ func TestAccessExecAllowed(t *testing.T) {
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "script.sh"), []byte("#!/bin/sh"), 0755))
 
-	sb, err := New([]string{dir})
+	sb, err := New([]string{dir}, io.Discard)
 	require.NoError(t, err)
 	defer sb.Close()
 
@@ -138,7 +139,7 @@ func TestAccessExecAllowed(t *testing.T) {
 func TestAccessNonexistent(t *testing.T) {
 	dir := t.TempDir()
 
-	sb, err := New([]string{dir})
+	sb, err := New([]string{dir}, io.Discard)
 	require.NoError(t, err)
 	defer sb.Close()
 
@@ -153,7 +154,7 @@ func TestAccessOutsideSandbox(t *testing.T) {
 	outside := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(outside, "secret.txt"), []byte("secret"), 0644))
 
-	sb, err := New([]string{dir})
+	sb, err := New([]string{dir}, io.Discard)
 	require.NoError(t, err)
 	defer sb.Close()
 
@@ -166,7 +167,7 @@ func TestAccessDirectory(t *testing.T) {
 	dir := t.TempDir()
 	require.NoError(t, os.Mkdir(filepath.Join(dir, "subdir"), 0755))
 
-	sb, err := New([]string{dir})
+	sb, err := New([]string{dir}, io.Discard)
 	require.NoError(t, err)
 	defer sb.Close()
 
@@ -180,7 +181,7 @@ func TestAccessSymlinkWithinSandbox(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "target.txt"), []byte("data"), 0644))
 	require.NoError(t, os.Symlink("target.txt", filepath.Join(dir, "link.txt")))
 
-	sb, err := New([]string{dir})
+	sb, err := New([]string{dir}, io.Discard)
 	require.NoError(t, err)
 	defer sb.Close()
 
@@ -195,7 +196,7 @@ func TestAccessSymlinkEscapeBlocked(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(outside, "secret.txt"), []byte("secret"), 0644))
 	require.NoError(t, os.Symlink(filepath.Join(outside, "secret.txt"), filepath.Join(dir, "escape.txt")))
 
-	sb, err := New([]string{dir})
+	sb, err := New([]string{dir}, io.Discard)
 	require.NoError(t, err)
 	defer sb.Close()
 
@@ -213,7 +214,7 @@ func TestAccessCombinedModes(t *testing.T) {
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "rx.sh"), []byte("#!/bin/sh"), 0555))
 
-	sb, err := New([]string{dir})
+	sb, err := New([]string{dir}, io.Discard)
 	require.NoError(t, err)
 	defer sb.Close()
 
@@ -236,7 +237,7 @@ func TestAccessReadRegularFileOpenFile(t *testing.T) {
 	}
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "writeonly.txt"), []byte("data"), 0200))
-	sb, err := New([]string{dir})
+	sb, err := New([]string{dir}, io.Discard)
 	require.NoError(t, err)
 	defer sb.Close()
 	assert.ErrorIs(t, sb.Access("writeonly.txt", dir, 0x04), os.ErrPermission)
@@ -247,7 +248,7 @@ func TestAccessReadRegularFileOpenFile(t *testing.T) {
 func TestAccessReadRegularFileAllowed(t *testing.T) {
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "readable.txt"), []byte("data"), 0644))
-	sb, err := New([]string{dir})
+	sb, err := New([]string{dir}, io.Discard)
 	require.NoError(t, err)
 	defer sb.Close()
 	assert.NoError(t, sb.Access("readable.txt", dir, 0x04))
@@ -259,7 +260,7 @@ func TestAccessReadRegularFileAllowed(t *testing.T) {
 func TestAccessFIFOReadFallsBackToModeBits(t *testing.T) {
 	dir := t.TempDir()
 	require.NoError(t, syscall.Mkfifo(filepath.Join(dir, "pipe"), 0644))
-	sb, err := New([]string{dir})
+	sb, err := New([]string{dir}, io.Discard)
 	require.NoError(t, err)
 	defer sb.Close()
 
@@ -281,7 +282,7 @@ func TestAccessFIFOReadDeniedModeBits(t *testing.T) {
 	}
 	dir := t.TempDir()
 	require.NoError(t, syscall.Mkfifo(filepath.Join(dir, "pipe"), 0200))
-	sb, err := New([]string{dir})
+	sb, err := New([]string{dir}, io.Discard)
 	require.NoError(t, err)
 	defer sb.Close()
 
@@ -300,7 +301,7 @@ func TestAccessFIFOReadDeniedModeBits(t *testing.T) {
 func TestAccessDirectoryReadUsesModeBits(t *testing.T) {
 	dir := t.TempDir()
 	require.NoError(t, os.Mkdir(filepath.Join(dir, "subdir"), 0755))
-	sb, err := New([]string{dir})
+	sb, err := New([]string{dir}, io.Discard)
 	require.NoError(t, err)
 	defer sb.Close()
 	assert.NoError(t, sb.Access("subdir", dir, 0x04))
@@ -314,7 +315,7 @@ func TestAccessDirectoryReadDenied(t *testing.T) {
 	}
 	dir := t.TempDir()
 	require.NoError(t, os.Mkdir(filepath.Join(dir, "noread"), 0300))
-	sb, err := New([]string{dir})
+	sb, err := New([]string{dir}, io.Discard)
 	require.NoError(t, err)
 	defer sb.Close()
 	assert.ErrorIs(t, sb.Access("noread", dir, 0x04), os.ErrPermission)
@@ -329,7 +330,7 @@ func TestAccessReadWriteCombined(t *testing.T) {
 	dir := t.TempDir()
 	// 0444 = readable but not writable
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "readonly.txt"), []byte("data"), 0444))
-	sb, err := New([]string{dir})
+	sb, err := New([]string{dir}, io.Discard)
 	require.NoError(t, err)
 	defer sb.Close()
 	// Read-only succeeds
@@ -347,7 +348,7 @@ func TestAccessFdRelativeSymlink(t *testing.T) {
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "target.txt"), []byte("data"), 0644))
 	require.NoError(t, os.Symlink("target.txt", filepath.Join(dir, "link.txt")))
-	sb, err := New([]string{dir})
+	sb, err := New([]string{dir}, io.Discard)
 	require.NoError(t, err)
 	defer sb.Close()
 	assert.NoError(t, sb.Access("link.txt", dir, 0x04))
@@ -360,7 +361,7 @@ func TestAccessFdRelativeEscapeBlocked(t *testing.T) {
 	outside := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(outside, "secret.txt"), []byte("secret"), 0644))
 	require.NoError(t, os.Symlink(filepath.Join(outside, "secret.txt"), filepath.Join(dir, "escape.txt")))
-	sb, err := New([]string{dir})
+	sb, err := New([]string{dir}, io.Discard)
 	require.NoError(t, err)
 	defer sb.Close()
 	assert.Error(t, sb.Access("escape.txt", dir, 0x04))
@@ -381,7 +382,7 @@ func TestAccessSocketFallsBackToStat(t *testing.T) {
 	defer syscall.Close(fd)
 	require.NoError(t, syscall.Bind(fd, &syscall.SockaddrUnix{Name: sockPath}))
 
-	sb, err := New([]string{dir})
+	sb, err := New([]string{dir}, io.Discard)
 	require.NoError(t, err)
 	defer sb.Close()
 
@@ -397,7 +398,7 @@ func TestAccessFIFONonBlocking(t *testing.T) {
 	dir := t.TempDir()
 	require.NoError(t, syscall.Mkfifo(filepath.Join(dir, "fifo"), 0644))
 
-	sb, err := New([]string{dir})
+	sb, err := New([]string{dir}, io.Discard)
 	require.NoError(t, err)
 	defer sb.Close()
 
