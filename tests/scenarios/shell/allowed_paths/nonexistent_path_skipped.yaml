@@ -1,5 +1,4 @@
 description: Nonexistent paths in AllowedPaths are skipped, existing paths still work
-skip_assert_against_bash: true
 setup:
   files:
     - path: allowed/data.txt
