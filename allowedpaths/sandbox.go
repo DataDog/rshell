@@ -44,6 +44,7 @@ func New(paths []string) (*Sandbox, error) {
 	for _, p := range paths {
 		abs, err := filepath.Abs(p)
 		if err != nil {
+			fmt.Fprintf(os.Stderr, "AllowedPaths: skipping %q: %v\n", p, err)
 			continue
 		}
 		r, err := os.OpenRoot(abs)
@@ -51,6 +52,7 @@ func New(paths []string) (*Sandbox, error) {
 			// AllowedPaths is a suggestion, not a requirement. If we can't
 			// open a path (missing, not a directory, no permission, etc.),
 			// skip it and work with whatever paths are available.
+			fmt.Fprintf(os.Stderr, "AllowedPaths: skipping %q: %v\n", abs, err)
 			continue
 		}
 		roots = append(roots, root{absPath: abs, root: r})
