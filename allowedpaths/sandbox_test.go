@@ -42,7 +42,7 @@ func TestSandboxOpenRejectsWriteFlags(t *testing.T) {
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "test.txt"), []byte("data"), 0644))
 
-	sb, err := New([]string{dir}, io.Discard)
+	sb, _, err := New([]string{dir})
 	require.NoError(t, err)
 	defer sb.Close()
 
@@ -74,7 +74,7 @@ func TestReadDirLimited(t *testing.T) {
 		require.NoError(t, os.WriteFile(filepath.Join(dir, fmt.Sprintf("f%02d", i)), nil, 0644))
 	}
 
-	sb, err := New([]string{dir}, io.Discard)
+	sb, _, err := New([]string{dir})
 	require.NoError(t, err)
 	defer sb.Close()
 
@@ -193,7 +193,7 @@ func TestReadDirNCapExceeded(t *testing.T) {
 		require.NoError(t, os.WriteFile(filepath.Join(dir, fmt.Sprintf("f%02d", i)), nil, 0644))
 	}
 
-	sb, err := New([]string{dir}, io.Discard)
+	sb, _, err := New([]string{dir})
 	require.NoError(t, err)
 	defer sb.Close()
 
@@ -311,7 +311,7 @@ func TestNewSkipsNonexistentPaths(t *testing.T) {
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "test.txt"), []byte("data"), 0644))
 
-	sb, err := New([]string{"/nonexistent/path", dir}, io.Discard)
+	sb, _, err := New([]string{"/nonexistent/path", dir})
 	require.NoError(t, err, "nonexistent paths should be skipped")
 	defer sb.Close()
 
@@ -322,7 +322,7 @@ func TestNewSkipsNonexistentPaths(t *testing.T) {
 }
 
 func TestNewAllPathsNonexistent(t *testing.T) {
-	sb, err := New([]string{"/does/not/exist", "/also/missing"}, io.Discard)
+	sb, _, err := New([]string{"/does/not/exist", "/also/missing"})
 	require.NoError(t, err, "all-nonexistent paths should succeed with empty sandbox")
 	defer sb.Close()
 
@@ -332,7 +332,7 @@ func TestNewAllPathsNonexistent(t *testing.T) {
 }
 
 func TestNewEmptyPaths(t *testing.T) {
-	sb, err := New([]string{}, io.Discard)
+	sb, _, err := New([]string{})
 	require.NoError(t, err, "empty path list should succeed")
 	defer sb.Close()
 
@@ -347,7 +347,7 @@ func TestNewMixedExistingAndNonexistent(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(dirA, "a.txt"), []byte("aaa"), 0644))
 	require.NoError(t, os.WriteFile(filepath.Join(dirB, "b.txt"), []byte("bbb"), 0644))
 
-	sb, err := New([]string{dirA, "/nonexistent", dirB}, io.Discard)
+	sb, _, err := New([]string{dirA, "/nonexistent", dirB})
 	require.NoError(t, err, "nonexistent path between valid dirs should be skipped")
 	defer sb.Close()
 

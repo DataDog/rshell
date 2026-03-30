@@ -8,7 +8,6 @@
 package allowedpaths
 
 import (
-	"io"
 	"os"
 	"path/filepath"
 	"testing"
@@ -23,7 +22,7 @@ func TestAccessReadAllowedWindows(t *testing.T) {
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "readable.txt"), []byte("data"), 0644))
 
-	sb, err := New([]string{dir}, io.Discard)
+	sb, _, err := New([]string{dir})
 	require.NoError(t, err)
 	defer sb.Close()
 
@@ -35,7 +34,7 @@ func TestAccessReadAllowedWindows(t *testing.T) {
 func TestAccessNonexistentWindows(t *testing.T) {
 	dir := t.TempDir()
 
-	sb, err := New([]string{dir}, io.Discard)
+	sb, _, err := New([]string{dir})
 	require.NoError(t, err)
 	defer sb.Close()
 
@@ -50,7 +49,7 @@ func TestAccessOutsideSandboxWindows(t *testing.T) {
 	outside := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(outside, "secret.txt"), []byte("secret"), 0644))
 
-	sb, err := New([]string{dir}, io.Discard)
+	sb, _, err := New([]string{dir})
 	require.NoError(t, err)
 	defer sb.Close()
 
@@ -64,7 +63,7 @@ func TestAccessDirectoryReadWindows(t *testing.T) {
 	dir := t.TempDir()
 	require.NoError(t, os.Mkdir(filepath.Join(dir, "subdir"), 0755))
 
-	sb, err := New([]string{dir}, io.Discard)
+	sb, _, err := New([]string{dir})
 	require.NoError(t, err)
 	defer sb.Close()
 
@@ -79,7 +78,7 @@ func TestAccessSymlinkEscapeBlockedWindows(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(outside, "secret.txt"), []byte("secret"), 0644))
 	require.NoError(t, os.Symlink(filepath.Join(outside, "secret.txt"), filepath.Join(dir, "escape.txt")))
 
-	sb, err := New([]string{dir}, io.Discard)
+	sb, _, err := New([]string{dir})
 	require.NoError(t, err)
 	defer sb.Close()
 
@@ -94,7 +93,7 @@ func TestAccessSymlinkWithinSandboxWindows(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "target.txt"), []byte("data"), 0644))
 	require.NoError(t, os.Symlink("target.txt", filepath.Join(dir, "link.txt")))
 
-	sb, err := New([]string{dir}, io.Discard)
+	sb, _, err := New([]string{dir})
 	require.NoError(t, err)
 	defer sb.Close()
 
@@ -107,7 +106,7 @@ func TestAccessWriteDeniedWindows(t *testing.T) {
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "readonly.txt"), []byte("data"), 0444))
 
-	sb, err := New([]string{dir}, io.Discard)
+	sb, _, err := New([]string{dir})
 	require.NoError(t, err)
 	defer sb.Close()
 
@@ -120,7 +119,7 @@ func TestAccessExecAlwaysDeniedWindows(t *testing.T) {
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "data.txt"), []byte("data"), 0644))
 
-	sb, err := New([]string{dir}, io.Discard)
+	sb, _, err := New([]string{dir})
 	require.NoError(t, err)
 	defer sb.Close()
 

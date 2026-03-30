@@ -8,6 +8,7 @@
 package allowedpaths
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"io"
@@ -40,17 +41,15 @@ type Sandbox struct {
 // not exist or cannot be opened are silently skipped — the sandbox operates
 // with whatever paths are available at construction time.
 //
-// warn receives diagnostic messages about skipped paths. If nil, warnings
-// are written to os.Stderr.
-func New(paths []string, warn io.Writer) (*Sandbox, error) {
-	if warn == nil {
-		warn = os.Stderr
-	}
+// Diagnostic messages about skipped paths are collected into warnings. The
+// caller is responsible for writing them to the appropriate output stream.
+func New(paths []string) (*Sandbox, []byte, error) {
+	var warnings bytes.Buffer
 	roots := make([]root, 0, len(paths))
 	for _, p := range paths {
 		abs, err := filepath.Abs(p)
 		if err != nil {
-			fmt.Fprintf(warn, "AllowedPaths: skipping %q: %v\n", p, err)
+			fmt.Fprintf(&warnings, "AllowedPaths: skipping %q: %v\n", p, err)
 			continue
 		}
 		r, err := os.OpenRoot(abs)
@@ -58,12 +57,12 @@ func New(paths []string, warn io.Writer) (*Sandbox, error) {
 			// AllowedPaths is a suggestion, not a requirement. If we can't
 			// open a path (missing, not a directory, no permission, etc.),
 			// skip it and work with whatever paths are available.
-			fmt.Fprintf(warn, "AllowedPaths: skipping %q: %v\n", abs, err)
+			fmt.Fprintf(&warnings, "AllowedPaths: skipping %q: %v\n", abs, err)
 			continue
 		}
 		roots = append(roots, root{absPath: abs, root: r})
 	}
-	return &Sandbox{roots: roots}, nil
+	return &Sandbox{roots: roots}, warnings.Bytes(), nil
 }
 
 // resolve returns the matching os.Root and the path relative to it for the

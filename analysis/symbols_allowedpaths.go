@@ -17,15 +17,15 @@ package analysis
 //
 // The permanently banned packages (reflect, unsafe) apply here too.
 var allowedpathsAllowedSymbols = []string{
+	"bytes.Buffer",                       // 🟢 in-memory byte buffer; collects sandbox warnings for deferred output.
 	"context.Context",                    // 🟢 context type used to signal cancellation; no I/O or side effects.
 	"errors.As",                          // 🟢 error type assertion; pure function, no I/O.
 	"errors.Is",                          // 🟢 error comparison; pure function, no I/O.
 	"errors.New",                         // 🟢 creates a simple error value; pure function, no I/O.
 	"fmt.Errorf",                         // 🟢 formatted error creation; pure function, no I/O.
-	"fmt.Fprintf",                        // 🟠 writes warning to os.Stderr when skipping unavailable paths.
+	"fmt.Fprintf",                        // 🟠 writes warning messages to in-memory buffer during sandbox construction.
 	"io.EOF",                             // 🟢 sentinel error value; pure constant.
 	"io.ReadWriteCloser",                 // 🟢 combined interface type; no side effects.
-	"io.Writer",                          // 🟢 interface type for warning output; no side effects.
 	"io/fs.DirEntry",                     // 🟢 interface type for directory entries; no side effects.
 	"io/fs.ErrExist",                     // 🟢 sentinel error for "already exists"; pure constant.
 	"io/fs.ErrNotExist",                  // 🟢 sentinel error for "does not exist"; pure constant.
@@ -35,7 +35,6 @@ var allowedpathsAllowedSymbols = []string{
 	"io/fs.ReadDirFile",                  // 🟢 read-only directory handle interface; no write capability.
 	"os.DevNull",                         // 🟢 platform null device path constant; pure constant.
 	"os.ErrPermission",                   // 🟢 sentinel error for permission denied; pure constant.
-	"os.Stderr",                          // 🟠 process stderr; used for warnings when skipping unavailable paths.
 	"os.FileMode",                        // 🟢 file permission bits type; pure type.
 	"os.Getgid",                          // 🟠 returns the numeric group id of the caller; read-only syscall.
 	"os.Getgroups",                       // 🟠 returns supplementary group ids; read-only syscall.
