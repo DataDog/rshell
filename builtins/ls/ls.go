@@ -233,7 +233,13 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 				}
 			}
 			if !isDir || opts.dirOnly {
-				files = append(files, pathArg{name: p, info: info})
+				pa := pathArg{name: p, info: info}
+				if opts.longFmt && info.Mode()&iofs.ModeSymlink != 0 {
+					if t, err := callCtx.ReadlinkFile(ctx, p); err == nil {
+						pa.linkTarget = t
+					}
+				}
+				files = append(files, pa)
 			} else {
 				dirs = append(dirs, pathArg{name: p, info: info})
 			}
@@ -251,7 +257,7 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 				cw = computeColWidths(files, func(a pathArg) iofs.FileInfo { return a.info }, func(a pathArg) (string, string, string) { return a.owner, a.group, a.nlink }, opts)
 			}
 			for _, f := range files {
-				printEntry(callCtx, f.name, f.info, f.owner, f.group, f.nlink, opts, now, cw)
+				printEntry(callCtx, f.name, f.info, f.owner, f.group, f.nlink, f.linkTarget, opts, now, cw)
 			}
 		}
 
@@ -297,11 +303,12 @@ type options struct {
 }
 
 type pathArg struct {
-	name  string
-	info  iofs.FileInfo
-	owner string // cached by fileOwner (populated when longFmt)
-	group string
-	nlink string
+	name       string
+	info       iofs.FileInfo
+	owner      string // cached by fileOwner (populated when longFmt)
+	group      string
+	nlink      string
+	linkTarget string // symlink destination (populated when longFmt + symlink)
 }
 
 func listDir(ctx context.Context, callCtx *builtins.CallContext, dir string, opts *options, depth int, now time.Time) error {
@@ -347,12 +354,13 @@ func listDir(ctx context.Context, callCtx *builtins.CallContext, dir string, opt
 
 	// Get FileInfo for sorting (if needed) and for long format.
 	type entryInfo struct {
-		name      string
-		info      iofs.FileInfo
-		isSymlink bool
-		owner     string // cached by fileOwner (populated when longFmt)
-		group     string
-		nlink     string
+		name       string
+		info       iofs.FileInfo
+		isSymlink  bool
+		owner      string // cached by fileOwner (populated when longFmt)
+		group      string
+		nlink      string
+		linkTarget string // symlink destination (populated when longFmt + symlink)
 	}
 
 	failed := false
@@ -372,11 +380,17 @@ func listDir(ctx context.Context, callCtx *builtins.CallContext, dir string, opt
 			failed = true
 			continue
 		}
-		infoEntries = append(infoEntries, entryInfo{
+		ei := entryInfo{
 			name:      name,
 			info:      info,
 			isSymlink: e.Type()&iofs.ModeSymlink != 0,
-		})
+		}
+		if opts.longFmt && ei.isSymlink {
+			if t, err := callCtx.ReadlinkFile(ctx, joinPath(dir, name)); err == nil {
+				ei.linkTarget = t
+			}
+		}
+		infoEntries = append(infoEntries, ei)
 	}
 
 	// Synthesize . and .. for -a (os.ReadDir never includes them).
@@ -432,7 +446,7 @@ func listDir(ctx context.Context, callCtx *builtins.CallContext, dir string, opt
 		if ctx.Err() != nil {
 			break
 		}
-		printEntry(callCtx, ei.name, ei.info, ei.owner, ei.group, ei.nlink, opts, now, cw)
+		printEntry(callCtx, ei.name, ei.info, ei.owner, ei.group, ei.nlink, ei.linkTarget, opts, now, cw)
 	}
 
 	// Only warn on implicit truncation (no explicit --offset/--limit).
@@ -525,7 +539,7 @@ func computeColWidths[T any](entries []T, getInfo func(T) iofs.FileInfo, getOwne
 	return w
 }
 
-func printEntry(callCtx *builtins.CallContext, name string, info iofs.FileInfo, owner, group, nlink string, opts *options, now time.Time, cw colWidths) {
+func printEntry(callCtx *builtins.CallContext, name string, info iofs.FileInfo, owner, group, nlink, linkTarget string, opts *options, now time.Time, cw colWidths) {
 	if opts.longFmt {
 		mode := formatMode(info)
 		size := info.Size()
@@ -538,12 +552,17 @@ func printEntry(callCtx *builtins.CallContext, name string, info iofs.FileInfo, 
 			sizeStr = fmt.Sprintf("%d", size)
 		}
 
+		suffix := indicator(info, opts)
+		if linkTarget != "" {
+			suffix = " -> " + linkTarget
+		}
+
 		timeStr := formatTime(modTime, now)
 		callCtx.Outf("%s %*s %-*s %-*s %*s %s %s%s\n",
 			mode, cw.nlink, nlink,
 			cw.owner, owner, cw.group, group,
 			cw.size, sizeStr, timeStr,
-			name, indicator(info, opts))
+			name, suffix)
 	} else {
 		callCtx.Outf("%s%s\n", name, indicator(info, opts))
 	}
