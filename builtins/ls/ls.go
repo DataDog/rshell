@@ -387,9 +387,11 @@ func listDir(ctx context.Context, callCtx *builtins.CallContext, dir string, opt
 			continue
 		}
 		ei := entryInfo{
-			name:      name,
-			info:      info,
-			isSymlink: e.Type()&iofs.ModeSymlink != 0,
+			name: name,
+			info: info,
+			// Check both Type() and info.Mode() — Type() can be 0 on
+			// filesystems that report DT_UNKNOWN.
+			isSymlink: e.Type()&iofs.ModeSymlink != 0 || info.Mode()&iofs.ModeSymlink != 0,
 		}
 		if opts.longFmt && ei.isSymlink {
 			fullPath := joinPath(dir, name)

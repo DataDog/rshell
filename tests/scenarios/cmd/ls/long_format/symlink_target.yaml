@@ -1,6 +1,4 @@
 description: ls -l shows symlink target with -> arrow
-# skip: rshell displays numeric UID/GID while GNU ls resolves usernames.
-skip_assert_against_bash: true
 setup:
   files:
     - path: file.txt

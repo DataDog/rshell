@@ -1,6 +1,4 @@
 description: ls -lF shows classification indicators on symlink targets
-# skip: rshell displays numeric UID/GID while GNU ls resolves usernames.
-skip_assert_against_bash: true
 setup:
   files:
     - path: dir/file.txt
