@@ -238,6 +238,10 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 					if t, err := callCtx.ReadlinkFile(ctx, p); err == nil {
 						pa.linkTarget = t
 					}
+					// Stat the target for -F/-p indicators (nil for dangling links).
+					if ti, err := callCtx.StatFile(ctx, p); err == nil {
+						pa.linkTargetInfo = ti
+					}
 				}
 				files = append(files, pa)
 			} else {
@@ -257,7 +261,7 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 				cw = computeColWidths(files, func(a pathArg) iofs.FileInfo { return a.info }, func(a pathArg) (string, string, string) { return a.owner, a.group, a.nlink }, opts)
 			}
 			for _, f := range files {
-				printEntry(callCtx, f.name, f.info, f.owner, f.group, f.nlink, f.linkTarget, opts, now, cw)
+				printEntry(callCtx, f.name, f.info, f.owner, f.group, f.nlink, f.linkTarget, f.linkTargetInfo, opts, now, cw)
 			}
 		}
 
@@ -303,12 +307,13 @@ type options struct {
 }
 
 type pathArg struct {
-	name       string
-	info       iofs.FileInfo
-	owner      string // cached by fileOwner (populated when longFmt)
-	group      string
-	nlink      string
-	linkTarget string // symlink destination (populated when longFmt + symlink)
+	name           string
+	info           iofs.FileInfo
+	owner          string // cached by fileOwner (populated when longFmt)
+	group          string
+	nlink          string
+	linkTarget     string        // symlink destination (populated when longFmt + symlink)
+	linkTargetInfo iofs.FileInfo // target's FileInfo for indicator (may be nil for dangling links)
 }
 
 func listDir(ctx context.Context, callCtx *builtins.CallContext, dir string, opts *options, depth int, now time.Time) error {
@@ -354,13 +359,14 @@ func listDir(ctx context.Context, callCtx *builtins.CallContext, dir string, opt
 
 	// Get FileInfo for sorting (if needed) and for long format.
 	type entryInfo struct {
-		name       string
-		info       iofs.FileInfo
-		isSymlink  bool
-		owner      string // cached by fileOwner (populated when longFmt)
-		group      string
-		nlink      string
-		linkTarget string // symlink destination (populated when longFmt + symlink)
+		name           string
+		info           iofs.FileInfo
+		isSymlink      bool
+		owner          string // cached by fileOwner (populated when longFmt)
+		group          string
+		nlink          string
+		linkTarget     string        // symlink destination (populated when longFmt + symlink)
+		linkTargetInfo iofs.FileInfo // target's FileInfo for indicator (may be nil for dangling links)
 	}
 
 	failed := false
@@ -386,8 +392,13 @@ func listDir(ctx context.Context, callCtx *builtins.CallContext, dir string, opt
 			isSymlink: e.Type()&iofs.ModeSymlink != 0,
 		}
 		if opts.longFmt && ei.isSymlink {
-			if t, err := callCtx.ReadlinkFile(ctx, joinPath(dir, name)); err == nil {
+			fullPath := joinPath(dir, name)
+			if t, err := callCtx.ReadlinkFile(ctx, fullPath); err == nil {
 				ei.linkTarget = t
+			}
+			// Stat the target for -F/-p indicators (nil for dangling links).
+			if ti, err := callCtx.StatFile(ctx, fullPath); err == nil {
+				ei.linkTargetInfo = ti
 			}
 		}
 		infoEntries = append(infoEntries, ei)
@@ -446,7 +457,7 @@ func listDir(ctx context.Context, callCtx *builtins.CallContext, dir string, opt
 		if ctx.Err() != nil {
 			break
 		}
-		printEntry(callCtx, ei.name, ei.info, ei.owner, ei.group, ei.nlink, ei.linkTarget, opts, now, cw)
+		printEntry(callCtx, ei.name, ei.info, ei.owner, ei.group, ei.nlink, ei.linkTarget, ei.linkTargetInfo, opts, now, cw)
 	}
 
 	// Only warn on implicit truncation (no explicit --offset/--limit).
@@ -539,7 +550,7 @@ func computeColWidths[T any](entries []T, getInfo func(T) iofs.FileInfo, getOwne
 	return w
 }
 
-func printEntry(callCtx *builtins.CallContext, name string, info iofs.FileInfo, owner, group, nlink, linkTarget string, opts *options, now time.Time, cw colWidths) {
+func printEntry(callCtx *builtins.CallContext, name string, info iofs.FileInfo, owner, group, nlink, linkTarget string, linkTargetInfo iofs.FileInfo, opts *options, now time.Time, cw colWidths) {
 	if opts.longFmt {
 		mode := formatMode(info)
 		size := info.Size()
@@ -554,7 +565,11 @@ func printEntry(callCtx *builtins.CallContext, name string, info iofs.FileInfo, 
 
 		suffix := indicator(info, opts)
 		if linkTarget != "" {
-			suffix = " -> " + linkTarget
+			targetIndicator := ""
+			if linkTargetInfo != nil {
+				targetIndicator = indicator(linkTargetInfo, opts)
+			}
+			suffix = " -> " + linkTarget + targetIndicator
 		}
 
 		timeStr := formatTime(modTime, now)
