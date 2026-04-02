@@ -2,7 +2,9 @@
 
 ## Overview
 
-Datadog Cloud Shell brings AWS CloudShell-style terminal access directly into the Datadog platform — a secure, auditable, browser-based shell for interacting with customer infrastructure without requiring direct SSH access or cloud provider console logins.
+Datadog Cloud Shell brings terminal access directly into the Datadog platform — a secure, auditable, browser-based shell for interacting with customer infrastructure without requiring direct SSH access or cloud provider console logins.
+
+Similar to [AWS CloudShell](https://aws.amazon.com/cloudshell/), [Google Cloud Shell](https://docs.cloud.google.com/shell/docs/launching-cloud-shell), [Azure Cloud Shell](https://learn.microsoft.com/en-us/azure/cloud-shell/overview) 
 
 ### The Problem
 
