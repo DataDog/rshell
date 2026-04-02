@@ -534,6 +534,23 @@ func TestCrossRootSymlinkOutsideAllRoots(t *testing.T) {
 	assert.Error(t, err)
 }
 
+// TestCrossRootSymlinkMissingTarget verifies that a cross-root symlink
+// pointing to a non-existent file returns ENOENT, not the escape error.
+func TestCrossRootSymlinkMissingTarget(t *testing.T) {
+	dir1 := t.TempDir()
+	dir2 := t.TempDir()
+	// link points into dir1, but the target file doesn't exist.
+	require.NoError(t, os.Symlink(filepath.Join(dir1, "missing.txt"), filepath.Join(dir2, "link.txt")))
+
+	sb, _, err := New([]string{dir1, dir2})
+	require.NoError(t, err)
+	defer sb.Close()
+
+	_, err = sb.Open("link.txt", dir2, os.O_RDONLY, 0)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "no such file or directory", "should report file not found, not path escape")
+}
+
 // TestCrossRootSymlinkLoopBlocked verifies that circular symlinks between
 // roots are detected and rejected after maxSymlinkHops.
 func TestCrossRootSymlinkLoopBlocked(t *testing.T) {

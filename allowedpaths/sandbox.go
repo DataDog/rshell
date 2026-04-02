@@ -150,7 +150,10 @@ func (s *Sandbox) resolveRootFollowingSymlinks(absPath string) (*root, string, b
 			partial := strings.Join(components[:i+1], string(filepath.Separator))
 			info, err := ar.root.Lstat(partial)
 			if err != nil {
-				return nil, "", false
+				// Component doesn't exist or isn't accessible. It can't
+				// be a symlink we need to resolve, so return what we have
+				// and let the caller get the real error.
+				return ar, rel, true
 			}
 			if info.Mode()&fs.ModeSymlink == 0 {
 				continue
