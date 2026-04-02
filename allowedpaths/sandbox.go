@@ -137,6 +137,9 @@ func (s *Sandbox) resolveRoot(absPath string) (*root, string, bool) {
 // This is only called as a fallback when the primary os.Root operation
 // fails, so there is no overhead on the happy path.
 func (s *Sandbox) resolveRootFollowingSymlinks(absPath string, preserveLast bool) (*root, string, bool) {
+	// Clean trailing slashes so filepath.Dir computes the correct parent
+	// when resolving relative symlink targets.
+	absPath = filepath.Clean(absPath)
 	// N+1 iterations: up to N to resolve symlinks, 1 more to confirm
 	// the final path has no more symlinks and return success.
 	for range maxSymlinkHops + 1 {
