@@ -551,6 +551,49 @@ func TestCrossRootSymlinkMissingTarget(t *testing.T) {
 	assert.Contains(t, err.Error(), "no such file or directory", "should report file not found, not path escape")
 }
 
+// TestCrossRootSymlinkLstatPreservesTerminal verifies that Lstat through a
+// cross-root intermediate symlink preserves the terminal symlink.
+func TestCrossRootSymlinkLstatPreservesTerminal(t *testing.T) {
+	dir1 := t.TempDir()
+	dir2 := t.TempDir()
+	// dir1/sub/leaf.txt -> some_target (a symlink)
+	subdir := filepath.Join(dir1, "sub")
+	require.NoError(t, os.MkdirAll(subdir, 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(subdir, "real.txt"), []byte("data"), 0644))
+	require.NoError(t, os.Symlink("real.txt", filepath.Join(subdir, "leaf.txt")))
+	// dir2/bridge -> dir1/sub (cross-root directory symlink)
+	require.NoError(t, os.Symlink(subdir, filepath.Join(dir2, "bridge")))
+
+	sb, _, err := New([]string{dir1, dir2})
+	require.NoError(t, err)
+	defer sb.Close()
+
+	// Lstat should report leaf.txt as a symlink, not the target.
+	info, err := sb.Lstat(filepath.Join("bridge", "leaf.txt"), dir2)
+	require.NoError(t, err)
+	assert.NotZero(t, info.Mode()&os.ModeSymlink, "Lstat should report symlink mode for terminal component")
+}
+
+// TestCrossRootSymlinkReadlinkPreservesTerminal verifies that Readlink
+// through a cross-root intermediate symlink reads the terminal symlink.
+func TestCrossRootSymlinkReadlinkPreservesTerminal(t *testing.T) {
+	dir1 := t.TempDir()
+	dir2 := t.TempDir()
+	subdir := filepath.Join(dir1, "sub")
+	require.NoError(t, os.MkdirAll(subdir, 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(subdir, "real.txt"), []byte("data"), 0644))
+	require.NoError(t, os.Symlink("real.txt", filepath.Join(subdir, "leaf.txt")))
+	require.NoError(t, os.Symlink(subdir, filepath.Join(dir2, "bridge")))
+
+	sb, _, err := New([]string{dir1, dir2})
+	require.NoError(t, err)
+	defer sb.Close()
+
+	target, err := sb.Readlink(filepath.Join("bridge", "leaf.txt"), dir2)
+	require.NoError(t, err)
+	assert.Equal(t, "real.txt", target)
+}
+
 // TestCrossRootSymlinkLoopBlocked verifies that circular symlinks between
 // roots are detected and rejected after maxSymlinkHops.
 func TestCrossRootSymlinkLoopBlocked(t *testing.T) {
