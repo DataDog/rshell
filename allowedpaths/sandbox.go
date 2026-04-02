@@ -37,17 +37,18 @@ type root struct {
 	root    *os.Root
 }
 
-// hostMountPrefix is prepended to symlink targets when running inside a
-// container. Host filesystems are mounted under this prefix, but symlinks
-// created on the host use paths without it.
-const hostMountPrefix = "/host"
+// defaultHostMountPrefix is prepended to symlink targets when running
+// inside a container. Host filesystems are mounted under this prefix,
+// but symlinks created on the host use paths without it.
+const defaultHostMountPrefix = "/host"
 
 // Sandbox restricts filesystem access to a set of allowed directories.
 // The restriction is enforced using os.Root (Go 1.24+), which uses openat
 // syscalls for atomic path validation — immune to symlink and ".." traversal attacks.
 type Sandbox struct {
 	roots         []root
-	containerized bool // true when running inside a container (DOCKER_DD_AGENT set)
+	containerized bool   // true when running inside a container (DOCKER_DD_AGENT set)
+	hostPrefix    string // mount prefix for host paths inside the container
 }
 
 // New creates a sandbox from an allowlist of directory paths. Paths that do
@@ -78,6 +79,7 @@ func New(paths []string) (sb *Sandbox, warnings []byte, err error) {
 	return &Sandbox{
 		roots:         roots,
 		containerized: os.Getenv("DOCKER_DD_AGENT") != "",
+		hostPrefix:    defaultHostMountPrefix,
 	}, buf.Bytes(), nil
 }
 
@@ -183,8 +185,8 @@ func (s *Sandbox) resolveRootFollowingSymlinks(absPath string, preserveLast bool
 			// In containers, host symlinks use host-absolute paths
 			// (e.g. /var/log/pods/...) that don't include the /host
 			// mount prefix. Prepend it so the path matches our roots.
-			if s.containerized && !strings.HasPrefix(absPath, hostMountPrefix+string(filepath.Separator)) {
-				absPath = filepath.Join(hostMountPrefix, absPath)
+			if s.containerized && !strings.HasPrefix(absPath, s.hostPrefix+string(filepath.Separator)) {
+				absPath = filepath.Join(s.hostPrefix, absPath)
 			}
 			symlinkFound = true
 			break
