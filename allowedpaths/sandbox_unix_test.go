@@ -452,7 +452,7 @@ func TestCrossRootSymlinkStat(t *testing.T) {
 	info, err := sb.Stat("link.txt", dir2)
 	require.NoError(t, err)
 	assert.Equal(t, int64(5), info.Size())
-	assert.False(t, info.Mode()&os.ModeSymlink != 0, "Stat should follow the symlink")
+	assert.Zero(t, info.Mode()&os.ModeSymlink, "Stat should follow the symlink")
 }
 
 // TestCrossRootSymlinkAccess verifies that Access works through a cross-root symlink.

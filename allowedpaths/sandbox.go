@@ -125,19 +125,26 @@ func (s *Sandbox) resolveRoot(absPath string) (*root, string, bool) {
 	return nil, "", false
 }
 
-// resolveRootFollowingSymlinks is the cross-root symlink fallback for
-// resolveRoot.
+// resolveRootFollowingSymlinks resolves absPath to a (root, relPath) pair,
+// following symlinks that cross between allowed roots. It walks the
+// relative path component by component; when a component is a symlink,
+// its target is resolved to an absolute path and matched against all
+// roots, then resolution continues with the remaining components.
+//
+// This is only called as a fallback when the primary os.Root operation
+// fails, so there is no overhead on the happy path.
 func (s *Sandbox) resolveRootFollowingSymlinks(absPath string) (*root, string, bool) {
-	for hops := 0; hops < maxSymlinkHops; hops++ {
+	for range maxSymlinkHops {
 		ar, rel, ok := s.resolveRoot(absPath)
 		if !ok {
 			return nil, "", false
 		}
 
+		// Walk rel component by component looking for symlinks.
 		components := strings.Split(rel, string(filepath.Separator))
 		symlinkFound := false
-		for i, comp := range components {
-			if comp == "." {
+		for i := range components {
+			if components[i] == "." {
 				continue
 			}
 			partial := strings.Join(components[:i+1], string(filepath.Separator))
@@ -148,71 +155,13 @@ func (s *Sandbox) resolveRootFollowingSymlinks(absPath string) (*root, string, b
 			if info.Mode()&fs.ModeSymlink == 0 {
 				continue
 			}
-			target, err := ar.root.Readlink(partial)
-			if err != nil {
-				return nil, "", false
-			}
-			if !filepath.IsAbs(target) {
-				parentAbs := absPath
-				for j := len(components) - 1; j >= i; j-- {
-					parentAbs = filepath.Dir(parentAbs)
-				}
-				target = filepath.Join(parentAbs, target)
-			}
-			if i+1 < len(components) {
-				remaining := strings.Join(components[i+1:], string(filepath.Separator))
-				target = filepath.Join(target, remaining)
-			}
-			absPath = filepath.Clean(target)
-			symlinkFound = true
-			break
-		}
-		if !symlinkFound {
-			return ar, rel, true
-		}
-	}
-	return nil, "", false
-}
-
-// resolveFollowingSymlinks resolves absPath to a (root, relPath) pair,
-// following symlinks that cross between allowed roots. It walks the
-// relative path component by component; when a component is a symlink,
-// its target is resolved to an absolute path and matched against all
-// roots, then resolution continues with the remaining components.
-//
-// This is only called as a fallback when the primary os.Root operation
-// fails, so there is no overhead on the happy path.
-func (s *Sandbox) resolveFollowingSymlinks(absPath string) (*os.Root, string, bool) {
-	for hops := 0; hops < maxSymlinkHops; hops++ {
-		root, rel, ok := s.resolve(absPath)
-		if !ok {
-			return nil, "", false
-		}
-
-		// Walk rel component by component looking for symlinks.
-		components := strings.Split(rel, string(filepath.Separator))
-		symlinkFound := false
-		for i, comp := range components {
-			if comp == "." {
-				continue
-			}
-			// Build the path up to and including this component.
-			partial := strings.Join(components[:i+1], string(filepath.Separator))
-			info, err := root.Lstat(partial)
-			if err != nil {
-				return nil, "", false
-			}
-			if info.Mode()&fs.ModeSymlink == 0 {
-				continue
-			}
 			// Found a symlink — read its target.
-			target, err := root.Readlink(partial)
+			target, err := ar.root.Readlink(partial)
 			if err != nil {
 				return nil, "", false
 			}
 			// Resolve target to absolute path.
 			if !filepath.IsAbs(target) {
-				// Relative to the directory containing the symlink.
 				parentAbs := absPath
 				for j := len(components) - 1; j >= i; j-- {
 					parentAbs = filepath.Dir(parentAbs)
@@ -229,12 +178,20 @@ func (s *Sandbox) resolveFollowingSymlinks(absPath string) (*os.Root, string, bo
 			break
 		}
 		if !symlinkFound {
-			// No symlinks found — return the resolved root and path.
-			return root, rel, true
+			return ar, rel, true
 		}
-		// Loop again with the new absPath (may chain through another root).
 	}
 	return nil, "", false // too many hops
+}
+
+// resolveFollowingSymlinks is like resolveRootFollowingSymlinks but returns
+// the *os.Root handle instead of the internal root entry.
+func (s *Sandbox) resolveFollowingSymlinks(absPath string) (*os.Root, string, bool) {
+	ar, rel, ok := s.resolveRootFollowingSymlinks(absPath)
+	if !ok {
+		return nil, "", false
+	}
+	return ar.root, rel, true
 }
 
 // Access checks whether the resolved path is accessible with the given mode.
