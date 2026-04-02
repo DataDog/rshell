@@ -210,6 +210,18 @@ func (s *Sandbox) resolveFollowingSymlinks(absPath string, preserveLast bool) (*
 	return ar.root, rel, true
 }
 
+// openWithSymlinkFallback opens relPath through root, falling back to
+// cross-root symlink resolution if the open fails with a path escape.
+func (s *Sandbox) openWithSymlinkFallback(root *os.Root, relPath, absPath string) (*os.File, error) {
+	f, err := root.Open(relPath)
+	if err != nil && isPathEscapeError(err) {
+		if r, rel, ok := s.resolveFollowingSymlinks(absPath, false); ok {
+			f, err = r.Open(rel)
+		}
+	}
+	return f, err
+}
+
 // Access checks whether the resolved path is accessible with the given mode.
 // All operations go through os.Root to stay within the sandbox.
 // Mode: 0x04 = read, 0x02 = write, 0x01 = execute.
@@ -350,12 +362,7 @@ func (s *Sandbox) readDirN(path string, cwd string, maxEntries int) ([]fs.DirEnt
 		return nil, &os.PathError{Op: "readdir", Path: path, Err: os.ErrPermission}
 	}
 
-	f, err := root.Open(relPath)
-	if err != nil && isPathEscapeError(err) {
-		if r, rel, ok := s.resolveFollowingSymlinks(absPath, false); ok {
-			f, err = r.Open(rel)
-		}
-	}
+	f, err := s.openWithSymlinkFallback(root, relPath, absPath)
 	if err != nil {
 		return nil, PortablePathError(err)
 	}
@@ -396,12 +403,7 @@ func (s *Sandbox) OpenDir(path string, cwd string) (fs.ReadDirFile, error) {
 		return nil, &os.PathError{Op: "opendir", Path: path, Err: os.ErrPermission}
 	}
 
-	f, err := root.Open(relPath)
-	if err != nil && isPathEscapeError(err) {
-		if r, rel, ok := s.resolveFollowingSymlinks(absPath, false); ok {
-			f, err = r.Open(rel)
-		}
-	}
+	f, err := s.openWithSymlinkFallback(root, relPath, absPath)
 	if err != nil {
 		return nil, PortablePathError(err)
 	}
@@ -419,12 +421,7 @@ func (s *Sandbox) IsDirEmpty(path string, cwd string) (bool, error) {
 		return false, &os.PathError{Op: "readdir", Path: path, Err: os.ErrPermission}
 	}
 
-	f, err := root.Open(relPath)
-	if err != nil && isPathEscapeError(err) {
-		if r, rel, ok := s.resolveFollowingSymlinks(absPath, false); ok {
-			f, err = r.Open(rel)
-		}
-	}
+	f, err := s.openWithSymlinkFallback(root, relPath, absPath)
 	if err != nil {
 		return false, PortablePathError(err)
 	}
@@ -451,12 +448,7 @@ func (s *Sandbox) ReadDirLimited(path string, cwd string, offset, maxRead int) (
 	if !ok {
 		return nil, false, &os.PathError{Op: "readdir", Path: path, Err: os.ErrPermission}
 	}
-	f, err := root.Open(relPath)
-	if err != nil && isPathEscapeError(err) {
-		if r, rel, ok := s.resolveFollowingSymlinks(absPath, false); ok {
-			f, err = r.Open(rel)
-		}
-	}
+	f, err := s.openWithSymlinkFallback(root, relPath, absPath)
 	if err != nil {
 		return nil, false, PortablePathError(err)
 	}

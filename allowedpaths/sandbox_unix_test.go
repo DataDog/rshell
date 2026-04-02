@@ -187,6 +187,29 @@ func TestAccessSymlinkWithinSandbox(t *testing.T) {
 	assert.NoError(t, sb.Access("link.txt", dir, 0x04))
 }
 
+// TestIsPathEscapeError is a regression test for isPathEscapeError.
+// If Go changes the "path escapes from parent" error string in a future
+// version, this test will fail and alert us to update the detection.
+func TestIsPathEscapeError(t *testing.T) {
+	dir := t.TempDir()
+	outside := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(outside, "file.txt"), []byte("data"), 0644))
+	require.NoError(t, os.Symlink(filepath.Join(outside, "file.txt"), filepath.Join(dir, "escape.txt")))
+
+	r, err := os.OpenRoot(dir)
+	require.NoError(t, err)
+	defer r.Close()
+
+	_, err = r.OpenFile("escape.txt", os.O_RDONLY, 0)
+	require.Error(t, err)
+	assert.True(t, isPathEscapeError(err), "expected path escape error, got: %v", err)
+
+	// Non-escape errors should not match.
+	_, err = r.OpenFile("nonexistent.txt", os.O_RDONLY, 0)
+	require.Error(t, err)
+	assert.False(t, isPathEscapeError(err), "ENOENT should not be a path escape error")
+}
+
 // TestAccessSymlinkEscapeBlocked verifies that Access blocks symlinks
 // that resolve outside the sandbox.
 func TestAccessSymlinkEscapeBlocked(t *testing.T) {
