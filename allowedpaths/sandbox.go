@@ -37,11 +37,17 @@ type root struct {
 	root    *os.Root
 }
 
+// hostMountPrefix is prepended to symlink targets when running inside a
+// container. Host filesystems are mounted under this prefix, but symlinks
+// created on the host use paths without it.
+const hostMountPrefix = "/host"
+
 // Sandbox restricts filesystem access to a set of allowed directories.
 // The restriction is enforced using os.Root (Go 1.24+), which uses openat
 // syscalls for atomic path validation — immune to symlink and ".." traversal attacks.
 type Sandbox struct {
-	roots []root
+	roots         []root
+	containerized bool // true when running inside a container (DOCKER_DD_AGENT set)
 }
 
 // New creates a sandbox from an allowlist of directory paths. Paths that do
@@ -69,7 +75,10 @@ func New(paths []string) (sb *Sandbox, warnings []byte, err error) {
 		}
 		roots = append(roots, root{absPath: abs, root: r})
 	}
-	return &Sandbox{roots: roots}, buf.Bytes(), nil
+	return &Sandbox{
+		roots:         roots,
+		containerized: os.Getenv("DOCKER_DD_AGENT") != "",
+	}, buf.Bytes(), nil
 }
 
 // isPathEscapeError reports whether err is the unexported "path escapes
@@ -171,6 +180,12 @@ func (s *Sandbox) resolveRootFollowingSymlinks(absPath string, preserveLast bool
 				target = filepath.Join(target, remaining)
 			}
 			absPath = filepath.Clean(target)
+			// In containers, host symlinks use host-absolute paths
+			// (e.g. /var/log/pods/...) that don't include the /host
+			// mount prefix. Prepend it so the path matches our roots.
+			if s.containerized && !strings.HasPrefix(absPath, hostMountPrefix+string(filepath.Separator)) {
+				absPath = filepath.Join(hostMountPrefix, absPath)
+			}
 			symlinkFound = true
 			break
 		}

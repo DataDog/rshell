@@ -38,6 +38,7 @@ var allowedpathsAllowedSymbols = []string{
 	"os.ErrPermission",                   // 🟢 sentinel error for permission denied; pure constant.
 	"os.File",                            // 🟠 file handle returned by os.Root.Open; needed for cross-root symlink fallback.
 	"os.FileMode",                        // 🟢 file permission bits type; pure type.
+	"os.Getenv",                          // 🟠 reads environment variable; used once at construction to detect containerized environments.
 	"os.Getgid",                          // 🟠 returns the numeric group id of the caller; read-only syscall.
 	"os.Getgroups",                       // 🟠 returns supplementary group ids; read-only syscall.
 	"os.Getuid",                          // 🟠 returns the numeric user id of the caller; read-only syscall.
