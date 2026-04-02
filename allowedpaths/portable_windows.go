@@ -26,11 +26,11 @@ func IsErrIsDirectory(err error) bool {
 // GetFileInformationByHandle (volume serial + file index).
 // The path and sandbox are needed to open the file through the sandbox.
 func FileIdentity(absPath string, _ fs.FileInfo, sandbox *Sandbox) (uint64, uint64, bool) {
-	root, relPath, ok := sandbox.resolve(absPath)
+	ar, relPath, ok := sandbox.resolve(absPath)
 	if !ok {
 		return 0, 0, false
 	}
-	f, err := root.OpenFile(relPath, os.O_RDONLY, 0)
+	f, err := ar.root.OpenFile(relPath, os.O_RDONLY, 0)
 	if err != nil {
 		return 0, 0, false
 	}
