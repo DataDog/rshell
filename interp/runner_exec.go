@@ -304,6 +304,9 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 				LstatFile: func(ctx context.Context, path string) (fs.FileInfo, error) {
 					return r.sandbox.Lstat(path, dir)
 				},
+				ReadlinkFile: func(ctx context.Context, path string) (string, error) {
+					return r.sandbox.Readlink(path, dir)
+				},
 				AccessFile: func(ctx context.Context, path string, mode uint32) error {
 					return r.sandbox.Access(path, dir, mode)
 				},
@@ -362,6 +365,9 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 			},
 			LstatFile: func(ctx context.Context, path string) (fs.FileInfo, error) {
 				return r.sandbox.Lstat(path, HandlerCtx(r.handlerCtx(ctx, todoPos)).Dir)
+			},
+			ReadlinkFile: func(ctx context.Context, path string) (string, error) {
+				return r.sandbox.Readlink(path, HandlerCtx(r.handlerCtx(ctx, todoPos)).Dir)
 			},
 			AccessFile: func(ctx context.Context, path string, mode uint32) error {
 				return r.sandbox.Access(path, HandlerCtx(r.handlerCtx(ctx, todoPos)).Dir, mode)

@@ -115,6 +115,10 @@ type CallContext struct {
 	// LstatFile returns file info within the shell's path restrictions (does not follow symlinks).
 	LstatFile func(ctx context.Context, path string) (fs.FileInfo, error)
 
+	// ReadlinkFile returns the destination of a symbolic link within the
+	// shell's path restrictions.
+	ReadlinkFile func(ctx context.Context, path string) (string, error)
+
 	// AccessFile checks whether the file at path is accessible with the given mode
 	// within the shell's path restrictions. Mode: 0x04=read, 0x02=write, 0x01=execute.
 	AccessFile func(ctx context.Context, path string, mode uint32) error

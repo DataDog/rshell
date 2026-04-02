@@ -407,6 +407,22 @@ func (s *Sandbox) Lstat(path string, cwd string) (fs.FileInfo, error) {
 	return info, nil
 }
 
+// Readlink returns the destination of a symbolic link within the sandbox.
+func (s *Sandbox) Readlink(path string, cwd string) (string, error) {
+	absPath := toAbs(path, cwd)
+
+	root, relPath, ok := s.resolve(absPath)
+	if !ok {
+		return "", &os.PathError{Op: "readlink", Path: path, Err: os.ErrPermission}
+	}
+
+	target, err := root.Readlink(relPath)
+	if err != nil {
+		return "", PortablePathError(err)
+	}
+	return target, nil
+}
+
 // Close releases all os.Root file descriptors. It is safe to call multiple times.
 func (s *Sandbox) Close() error {
 	if s == nil {
