@@ -568,7 +568,10 @@ func printEntry(callCtx *builtins.CallContext, name string, info iofs.FileInfo, 
 		suffix := indicator(info, opts)
 		if linkTarget != "" {
 			targetIndicator := ""
-			if linkTargetInfo != nil {
+			// GNU ls only applies -F (classify) indicators to symlink
+			// targets, not -p (append-slash-only). For example,
+			// ls -lF shows "link -> dir/" but ls -lp shows "link -> dir".
+			if linkTargetInfo != nil && opts.classify {
 				targetIndicator = indicator(linkTargetInfo, opts)
 			}
 			suffix = " -> " + linkTarget + targetIndicator
