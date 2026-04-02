@@ -27,6 +27,7 @@ var allowedpathsAllowedSymbols = []string{
 	"io.EOF",                             // 🟢 sentinel error value; pure constant.
 	"io.ReadWriteCloser",                 // 🟢 combined interface type; no side effects.
 	"io/fs.DirEntry",                     // 🟢 interface type for directory entries; no side effects.
+	"io/fs.ModeSymlink",                  // 🟢 file mode bit for symlinks; pure constant.
 	"io/fs.ErrExist",                     // 🟢 sentinel error for "already exists"; pure constant.
 	"io/fs.ErrNotExist",                  // 🟢 sentinel error for "does not exist"; pure constant.
 	"io/fs.ErrPermission",                // 🟢 sentinel error for permission denied; pure constant.
@@ -35,6 +36,7 @@ var allowedpathsAllowedSymbols = []string{
 	"io/fs.ReadDirFile",                  // 🟢 read-only directory handle interface; no write capability.
 	"os.DevNull",                         // 🟢 platform null device path constant; pure constant.
 	"os.ErrPermission",                   // 🟢 sentinel error for permission denied; pure constant.
+	"os.File",                            // 🟠 file handle returned by os.Root.Open; needed for cross-root symlink fallback.
 	"os.FileMode",                        // 🟢 file permission bits type; pure type.
 	"os.Getgid",                          // 🟠 returns the numeric group id of the caller; read-only syscall.
 	"os.Getgroups",                       // 🟠 returns supplementary group ids; read-only syscall.
@@ -45,6 +47,8 @@ var allowedpathsAllowedSymbols = []string{
 	"os.Root",                            // 🟠 sandboxed directory root type; core of the filesystem sandbox.
 	"os.Stat",                            // 🟠 returns file info for a path; needed for sandbox path validation.
 	"path/filepath.Abs",                  // 🟢 returns absolute path; pure path computation.
+	"path/filepath.Clean",                // 🟢 normalizes a path; pure function, no I/O.
+	"path/filepath.Dir",                  // 🟢 returns directory portion of a path; pure function, no I/O.
 	"path/filepath.IsAbs",                // 🟢 checks if path is absolute; pure function, no I/O.
 	"path/filepath.Join",                 // 🟢 joins path elements; pure function, no I/O.
 	"path/filepath.Rel",                  // 🟢 returns relative path; pure path computation.
@@ -54,6 +58,8 @@ var allowedpathsAllowedSymbols = []string{
 	"strings.Compare",                    // 🟢 compares two strings lexicographically; pure function, no I/O.
 	"strings.EqualFold",                  // 🟢 case-insensitive string comparison; pure function, no I/O.
 	"strings.HasPrefix",                  // 🟢 pure function for prefix matching; no I/O.
+	"strings.Join",                       // 🟢 joins string slices; pure function, no I/O.
+	"strings.Split",                      // 🟢 splits a string by separator; pure function, no I/O.
 	"syscall.ByHandleFileInformation",    // 🟢 Windows file identity structure; pure type for file metadata.
 	"syscall.EISDIR",                     // 🟢 "is a directory" errno constant; pure constant.
 	"syscall.Errno",                      // 🟢 system call error number type; pure type.
