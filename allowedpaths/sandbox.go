@@ -185,7 +185,7 @@ func (s *Sandbox) resolveRootFollowingSymlinks(absPath string, preserveLast bool
 			// In containers, host symlinks use host-absolute paths
 			// (e.g. /var/log/pods/...) that don't include the /host
 			// mount prefix. Prepend it so the path matches our roots.
-			if s.containerized && !strings.HasPrefix(absPath, s.hostPrefix+string(filepath.Separator)) {
+			if s.containerized {
 				absPath = filepath.Join(s.hostPrefix, absPath)
 			}
 			symlinkFound = true

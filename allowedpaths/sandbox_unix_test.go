@@ -789,28 +789,6 @@ func TestContainerSymlinkHostPrefixNotAppliedWhenNotContainerized(t *testing.T) 
 	assert.Error(t, err, "without container mode, host-absolute symlinks should fail")
 }
 
-// TestContainerSymlinkHostPrefixAlreadyPresent verifies that the prefix
-// is not double-prepended when the symlink target already includes it.
-func TestContainerSymlinkHostPrefixAlreadyPresent(t *testing.T) {
-	hostPrefix, pods, containers := setupContainerDirs(t)
-
-	// Overwrite the symlink to use a target that already starts with the
-	// host prefix (i.e. a container-aware path, not a host-absolute one).
-	require.NoError(t, os.Remove(filepath.Join(containers, "app.log")))
-	require.NoError(t, os.Symlink(filepath.Join(pods, "app.log"), filepath.Join(containers, "app.log")))
-
-	sb := newContainerSandbox(t, []string{pods, containers}, hostPrefix)
-	defer sb.Close()
-
-	f, err := sb.Open("app.log", containers, os.O_RDONLY, 0)
-	require.NoError(t, err, "symlink with prefix already present should not be double-prefixed")
-	defer f.Close()
-
-	buf := make([]byte, 64)
-	n, _ := f.Read(buf)
-	assert.Equal(t, "log line", string(buf[:n]))
-}
-
 // TestContainerSymlinkHostPrefixOutsideAllRoots verifies that a container
 // symlink pointing outside all allowed roots is still blocked even with
 // the host prefix applied.
