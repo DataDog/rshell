@@ -19,6 +19,13 @@ import (
 	"strings"
 )
 
+// Access mode bits for permission checks.
+const (
+	modeRead    = 0x04
+	modeWrite   = 0x02
+	modeExecute = 0x01
+)
+
 // MaxGlobEntries is the maximum number of directory entries read per single
 // glob expansion step. ReadDirForGlob returns an error for directories that
 // exceed this limit to prevent memory exhaustion during pattern matching.
@@ -65,6 +72,21 @@ func New(paths []string) (sb *Sandbox, warnings []byte, err error) {
 	return &Sandbox{roots: roots}, buf.Bytes(), nil
 }
 
+// isPathEscapeError reports whether err is the unexported "path escapes
+// from parent" error from os.Root. Stable per Hyrum's Law.
+func isPathEscapeError(err error) bool {
+	var pe *os.PathError
+	if errors.As(err, &pe) {
+		return pe.Err != nil && pe.Err.Error() == "path escapes from parent"
+	}
+	return false
+}
+
+// maxSymlinkHops is the maximum number of symlink resolutions performed
+// when following cross-root symlinks. Prevents infinite loops from
+// circular symlinks.
+const maxSymlinkHops = 10
+
 // resolve returns the matching os.Root and the path relative to it for the
 // given absolute path. It returns false if no root matches.
 func (s *Sandbox) resolve(absPath string) (*os.Root, string, bool) {
@@ -82,6 +104,137 @@ func (s *Sandbox) resolve(absPath string) (*os.Root, string, bool) {
 		return ar.root, rel, true
 	}
 	return nil, "", false
+}
+
+// resolveRoot is like resolve but returns the internal root entry instead
+// of the os.Root handle, so callers can access accessCheck and absPath.
+func (s *Sandbox) resolveRoot(absPath string) (*root, string, bool) {
+	if s == nil {
+		return nil, "", false
+	}
+	for i := range s.roots {
+		rel, err := filepath.Rel(s.roots[i].absPath, absPath)
+		if err != nil {
+			continue
+		}
+		if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			continue
+		}
+		return &s.roots[i], rel, true
+	}
+	return nil, "", false
+}
+
+// resolveRootFollowingSymlinks is the cross-root symlink fallback for
+// resolveRoot.
+func (s *Sandbox) resolveRootFollowingSymlinks(absPath string) (*root, string, bool) {
+	for hops := 0; hops < maxSymlinkHops; hops++ {
+		ar, rel, ok := s.resolveRoot(absPath)
+		if !ok {
+			return nil, "", false
+		}
+
+		components := strings.Split(rel, string(filepath.Separator))
+		symlinkFound := false
+		for i, comp := range components {
+			if comp == "." {
+				continue
+			}
+			partial := strings.Join(components[:i+1], string(filepath.Separator))
+			info, err := ar.root.Lstat(partial)
+			if err != nil {
+				return nil, "", false
+			}
+			if info.Mode()&fs.ModeSymlink == 0 {
+				continue
+			}
+			target, err := ar.root.Readlink(partial)
+			if err != nil {
+				return nil, "", false
+			}
+			if !filepath.IsAbs(target) {
+				parentAbs := absPath
+				for j := len(components) - 1; j >= i; j-- {
+					parentAbs = filepath.Dir(parentAbs)
+				}
+				target = filepath.Join(parentAbs, target)
+			}
+			if i+1 < len(components) {
+				remaining := strings.Join(components[i+1:], string(filepath.Separator))
+				target = filepath.Join(target, remaining)
+			}
+			absPath = filepath.Clean(target)
+			symlinkFound = true
+			break
+		}
+		if !symlinkFound {
+			return ar, rel, true
+		}
+	}
+	return nil, "", false
+}
+
+// resolveFollowingSymlinks resolves absPath to a (root, relPath) pair,
+// following symlinks that cross between allowed roots. It walks the
+// relative path component by component; when a component is a symlink,
+// its target is resolved to an absolute path and matched against all
+// roots, then resolution continues with the remaining components.
+//
+// This is only called as a fallback when the primary os.Root operation
+// fails, so there is no overhead on the happy path.
+func (s *Sandbox) resolveFollowingSymlinks(absPath string) (*os.Root, string, bool) {
+	for hops := 0; hops < maxSymlinkHops; hops++ {
+		root, rel, ok := s.resolve(absPath)
+		if !ok {
+			return nil, "", false
+		}
+
+		// Walk rel component by component looking for symlinks.
+		components := strings.Split(rel, string(filepath.Separator))
+		symlinkFound := false
+		for i, comp := range components {
+			if comp == "." {
+				continue
+			}
+			// Build the path up to and including this component.
+			partial := strings.Join(components[:i+1], string(filepath.Separator))
+			info, err := root.Lstat(partial)
+			if err != nil {
+				return nil, "", false
+			}
+			if info.Mode()&fs.ModeSymlink == 0 {
+				continue
+			}
+			// Found a symlink — read its target.
+			target, err := root.Readlink(partial)
+			if err != nil {
+				return nil, "", false
+			}
+			// Resolve target to absolute path.
+			if !filepath.IsAbs(target) {
+				// Relative to the directory containing the symlink.
+				parentAbs := absPath
+				for j := len(components) - 1; j >= i; j-- {
+					parentAbs = filepath.Dir(parentAbs)
+				}
+				target = filepath.Join(parentAbs, target)
+			}
+			// Append remaining components after the symlink.
+			if i+1 < len(components) {
+				remaining := strings.Join(components[i+1:], string(filepath.Separator))
+				target = filepath.Join(target, remaining)
+			}
+			absPath = filepath.Clean(target)
+			symlinkFound = true
+			break
+		}
+		if !symlinkFound {
+			// No symlinks found — return the resolved root and path.
+			return root, rel, true
+		}
+		// Loop again with the new absPath (may chain through another root).
+	}
+	return nil, "", false // too many hops
 }
 
 // Access checks whether the resolved path is accessible with the given mode.
@@ -118,7 +271,23 @@ func (s *Sandbox) Access(path string, cwd string, mode uint32) error {
 		// performs the permission check (fd-relative OpenFile with
 		// O_NONBLOCK for reads on Unix, mode-bit inspection for
 		// everything else).
-		_, err = ar.accessCheck(rel, mode&0x04 != 0, mode&0x02 != 0, mode&0x01 != 0)
+		checkRead := mode&modeRead != 0
+		checkWrite := mode&modeWrite != 0
+		checkExec := mode&modeExecute != 0
+
+		_, err = ar.accessCheck(rel, checkRead, checkWrite, checkExec)
+		if err == nil {
+			return nil
+		}
+		if !isPathEscapeError(err) {
+			return &os.PathError{Op: "access", Path: path, Err: os.ErrPermission}
+		}
+		// Symlink escapes this root — resolve across all roots.
+		resolved, resolvedRel, ok := s.resolveRootFollowingSymlinks(absPath)
+		if !ok {
+			return &os.PathError{Op: "access", Path: path, Err: os.ErrPermission}
+		}
+		_, err = resolved.accessCheck(resolvedRel, checkRead, checkWrite, checkExec)
 		if err != nil {
 			return &os.PathError{Op: "access", Path: path, Err: os.ErrPermission}
 		}
@@ -163,6 +332,18 @@ func (s *Sandbox) Open(path string, cwd string, flag int, perm os.FileMode) (io.
 	}
 
 	f, err := root.OpenFile(relPath, flag, perm)
+	if err == nil {
+		return f, nil
+	}
+	if !isPathEscapeError(err) {
+		return nil, PortablePathError(err)
+	}
+	// Symlink escapes this root — resolve across all roots.
+	r, rel, ok := s.resolveFollowingSymlinks(absPath)
+	if !ok {
+		return nil, PortablePathError(err)
+	}
+	f, err = r.OpenFile(rel, flag, perm)
 	if err != nil {
 		return nil, PortablePathError(err)
 	}
@@ -197,6 +378,11 @@ func (s *Sandbox) readDirN(path string, cwd string, maxEntries int) ([]fs.DirEnt
 	}
 
 	f, err := root.Open(relPath)
+	if err != nil && isPathEscapeError(err) {
+		if r, rel, ok := s.resolveFollowingSymlinks(absPath); ok {
+			f, err = r.Open(rel)
+		}
+	}
 	if err != nil {
 		return nil, PortablePathError(err)
 	}
@@ -238,6 +424,11 @@ func (s *Sandbox) OpenDir(path string, cwd string) (fs.ReadDirFile, error) {
 	}
 
 	f, err := root.Open(relPath)
+	if err != nil && isPathEscapeError(err) {
+		if r, rel, ok := s.resolveFollowingSymlinks(absPath); ok {
+			f, err = r.Open(rel)
+		}
+	}
 	if err != nil {
 		return nil, PortablePathError(err)
 	}
@@ -256,6 +447,11 @@ func (s *Sandbox) IsDirEmpty(path string, cwd string) (bool, error) {
 	}
 
 	f, err := root.Open(relPath)
+	if err != nil && isPathEscapeError(err) {
+		if r, rel, ok := s.resolveFollowingSymlinks(absPath); ok {
+			f, err = r.Open(rel)
+		}
+	}
 	if err != nil {
 		return false, PortablePathError(err)
 	}
@@ -283,6 +479,11 @@ func (s *Sandbox) ReadDirLimited(path string, cwd string, offset, maxRead int) (
 		return nil, false, &os.PathError{Op: "readdir", Path: path, Err: os.ErrPermission}
 	}
 	f, err := root.Open(relPath)
+	if err != nil && isPathEscapeError(err) {
+		if r, rel, ok := s.resolveFollowingSymlinks(absPath); ok {
+			f, err = r.Open(rel)
+		}
+	}
 	if err != nil {
 		return nil, false, PortablePathError(err)
 	}
@@ -378,6 +579,17 @@ func (s *Sandbox) Stat(path string, cwd string) (fs.FileInfo, error) {
 	}
 
 	info, err := root.Stat(relPath)
+	if err == nil {
+		return info, nil
+	}
+	if !isPathEscapeError(err) {
+		return nil, PortablePathError(err)
+	}
+	r, rel, ok := s.resolveFollowingSymlinks(absPath)
+	if !ok {
+		return nil, PortablePathError(err)
+	}
+	info, err = r.Stat(rel)
 	if err != nil {
 		return nil, PortablePathError(err)
 	}
@@ -401,6 +613,17 @@ func (s *Sandbox) Lstat(path string, cwd string) (fs.FileInfo, error) {
 	}
 
 	info, err := root.Lstat(relPath)
+	if err == nil {
+		return info, nil
+	}
+	if !isPathEscapeError(err) {
+		return nil, PortablePathError(err)
+	}
+	r, rel, ok := s.resolveFollowingSymlinks(absPath)
+	if !ok {
+		return nil, PortablePathError(err)
+	}
+	info, err = r.Lstat(rel)
 	if err != nil {
 		return nil, PortablePathError(err)
 	}
@@ -417,6 +640,17 @@ func (s *Sandbox) Readlink(path string, cwd string) (string, error) {
 	}
 
 	target, err := root.Readlink(relPath)
+	if err == nil {
+		return target, nil
+	}
+	if !isPathEscapeError(err) {
+		return "", PortablePathError(err)
+	}
+	r, rel, ok := s.resolveFollowingSymlinks(absPath)
+	if !ok {
+		return "", PortablePathError(err)
+	}
+	target, err = r.Readlink(rel)
 	if err != nil {
 		return "", PortablePathError(err)
 	}

@@ -414,3 +414,202 @@ func TestAccessFIFONonBlocking(t *testing.T) {
 		t.Fatal("Access blocked on FIFO — O_NONBLOCK not effective")
 	}
 }
+
+// --- Cross-root symlink tests ---
+
+// TestCrossRootSymlinkOpen verifies that a symlink in one allowed root
+// pointing to a file in another allowed root can be opened.
+func TestCrossRootSymlinkOpen(t *testing.T) {
+	dir1 := t.TempDir()
+	dir2 := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir1, "file.txt"), []byte("hello"), 0644))
+	require.NoError(t, os.Symlink(filepath.Join(dir1, "file.txt"), filepath.Join(dir2, "link.txt")))
+
+	sb, _, err := New([]string{dir1, dir2})
+	require.NoError(t, err)
+	defer sb.Close()
+
+	f, err := sb.Open("link.txt", dir2, os.O_RDONLY, 0)
+	require.NoError(t, err)
+	defer f.Close()
+
+	buf := make([]byte, 64)
+	n, _ := f.Read(buf)
+	assert.Equal(t, "hello", string(buf[:n]))
+}
+
+// TestCrossRootSymlinkStat verifies that Stat follows a cross-root symlink.
+func TestCrossRootSymlinkStat(t *testing.T) {
+	dir1 := t.TempDir()
+	dir2 := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir1, "file.txt"), []byte("hello"), 0644))
+	require.NoError(t, os.Symlink(filepath.Join(dir1, "file.txt"), filepath.Join(dir2, "link.txt")))
+
+	sb, _, err := New([]string{dir1, dir2})
+	require.NoError(t, err)
+	defer sb.Close()
+
+	info, err := sb.Stat("link.txt", dir2)
+	require.NoError(t, err)
+	assert.Equal(t, int64(5), info.Size())
+	assert.False(t, info.Mode()&os.ModeSymlink != 0, "Stat should follow the symlink")
+}
+
+// TestCrossRootSymlinkAccess verifies that Access works through a cross-root symlink.
+func TestCrossRootSymlinkAccess(t *testing.T) {
+	dir1 := t.TempDir()
+	dir2 := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir1, "file.txt"), []byte("hello"), 0644))
+	require.NoError(t, os.Symlink(filepath.Join(dir1, "file.txt"), filepath.Join(dir2, "link.txt")))
+
+	sb, _, err := New([]string{dir1, dir2})
+	require.NoError(t, err)
+	defer sb.Close()
+
+	assert.NoError(t, sb.Access("link.txt", dir2, modeRead))
+}
+
+// TestCrossRootSymlinkRelativeTarget verifies cross-root resolution with
+// a relative symlink target (e.g. ../dir1/file.txt).
+func TestCrossRootSymlinkRelativeTarget(t *testing.T) {
+	parent := t.TempDir()
+	dir1 := filepath.Join(parent, "dir1")
+	dir2 := filepath.Join(parent, "dir2")
+	require.NoError(t, os.MkdirAll(dir1, 0755))
+	require.NoError(t, os.MkdirAll(dir2, 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(dir1, "file.txt"), []byte("data"), 0644))
+	require.NoError(t, os.Symlink("../dir1/file.txt", filepath.Join(dir2, "link.txt")))
+
+	sb, _, err := New([]string{dir1, dir2})
+	require.NoError(t, err)
+	defer sb.Close()
+
+	f, err := sb.Open("link.txt", dir2, os.O_RDONLY, 0)
+	require.NoError(t, err)
+	defer f.Close()
+
+	buf := make([]byte, 64)
+	n, _ := f.Read(buf)
+	assert.Equal(t, "data", string(buf[:n]))
+}
+
+// TestCrossRootSymlinkIntermediateDir verifies that an intermediate directory
+// symlink crossing roots is resolved correctly.
+func TestCrossRootSymlinkIntermediateDir(t *testing.T) {
+	dir1 := t.TempDir()
+	dir2 := t.TempDir()
+	subdir := filepath.Join(dir1, "sub")
+	require.NoError(t, os.MkdirAll(subdir, 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(subdir, "file.txt"), []byte("deep"), 0644))
+	// dir2/link -> dir1/sub (directory symlink)
+	require.NoError(t, os.Symlink(subdir, filepath.Join(dir2, "link")))
+
+	sb, _, err := New([]string{dir1, dir2})
+	require.NoError(t, err)
+	defer sb.Close()
+
+	f, err := sb.Open(filepath.Join("link", "file.txt"), dir2, os.O_RDONLY, 0)
+	require.NoError(t, err)
+	defer f.Close()
+
+	buf := make([]byte, 64)
+	n, _ := f.Read(buf)
+	assert.Equal(t, "deep", string(buf[:n]))
+}
+
+// TestCrossRootSymlinkOutsideAllRoots verifies that a symlink pointing
+// outside all allowed roots is still blocked.
+func TestCrossRootSymlinkOutsideAllRoots(t *testing.T) {
+	dir1 := t.TempDir()
+	dir2 := t.TempDir()
+	outside := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(outside, "secret.txt"), []byte("secret"), 0644))
+	require.NoError(t, os.Symlink(filepath.Join(outside, "secret.txt"), filepath.Join(dir1, "escape.txt")))
+
+	sb, _, err := New([]string{dir1, dir2})
+	require.NoError(t, err)
+	defer sb.Close()
+
+	_, err = sb.Open("escape.txt", dir1, os.O_RDONLY, 0)
+	assert.Error(t, err)
+}
+
+// TestCrossRootSymlinkLoopBlocked verifies that circular symlinks between
+// roots are detected and rejected after maxSymlinkHops.
+func TestCrossRootSymlinkLoopBlocked(t *testing.T) {
+	dir1 := t.TempDir()
+	dir2 := t.TempDir()
+	// dir1/a.txt -> dir2/b.txt -> dir1/a.txt (circular)
+	require.NoError(t, os.Symlink(filepath.Join(dir2, "b.txt"), filepath.Join(dir1, "a.txt")))
+	require.NoError(t, os.Symlink(filepath.Join(dir1, "a.txt"), filepath.Join(dir2, "b.txt")))
+
+	sb, _, err := New([]string{dir1, dir2})
+	require.NoError(t, err)
+	defer sb.Close()
+
+	_, err = sb.Open("a.txt", dir1, os.O_RDONLY, 0)
+	assert.Error(t, err, "circular cross-root symlinks should be rejected")
+
+	_, err = sb.Stat("a.txt", dir1)
+	assert.Error(t, err, "circular cross-root symlinks should be rejected")
+}
+
+// TestCrossRootSymlinkChainLimit verifies that a long chain of cross-root
+// symlinks exceeding maxSymlinkHops is rejected.
+func TestCrossRootSymlinkChainLimit(t *testing.T) {
+	dirs := make([]string, maxSymlinkHops+2)
+	for i := range dirs {
+		dirs[i] = t.TempDir()
+	}
+	// Last directory has the real file.
+	require.NoError(t, os.WriteFile(filepath.Join(dirs[len(dirs)-1], "file.txt"), []byte("end"), 0644))
+
+	// Each dir[i]/link.txt -> dir[i+1]/link.txt, except the penultimate
+	// which points to the real file.
+	for i := 0; i < len(dirs)-1; i++ {
+		target := filepath.Join(dirs[i+1], "link.txt")
+		if i == len(dirs)-2 {
+			target = filepath.Join(dirs[i+1], "file.txt")
+		}
+		require.NoError(t, os.Symlink(target, filepath.Join(dirs[i], "link.txt")))
+	}
+
+	sb, _, err := New(dirs)
+	require.NoError(t, err)
+	defer sb.Close()
+
+	_, err = sb.Open("link.txt", dirs[0], os.O_RDONLY, 0)
+	assert.Error(t, err, "symlink chain exceeding maxSymlinkHops should be rejected")
+}
+
+// TestCrossRootSymlinkSiblingDirs verifies that a symlink in one sibling
+// directory pointing into another sibling directory can be read when both
+// are in AllowedPaths.
+func TestCrossRootSymlinkSiblingDirs(t *testing.T) {
+	parent := t.TempDir()
+	dir1 := filepath.Join(parent, "dir1")
+	dir2 := filepath.Join(parent, "dir2")
+	require.NoError(t, os.MkdirAll(dir1, 0755))
+	require.NoError(t, os.MkdirAll(dir2, 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(dir1, "file.txt"), []byte("abc"), 0644))
+	// dir2/sym.txt -> ../dir1/file.txt
+	require.NoError(t, os.Symlink("../dir1/file.txt", filepath.Join(dir2, "sym.txt")))
+
+	sb, _, err := New([]string{dir1, dir2})
+	require.NoError(t, err)
+	defer sb.Close()
+
+	f, err := sb.Open(filepath.Join(dir2, "sym.txt"), "/", os.O_RDONLY, 0)
+	require.NoError(t, err, "cross-root symlink between sibling dirs should be readable")
+	defer f.Close()
+
+	buf := make([]byte, 64)
+	n, _ := f.Read(buf)
+	assert.Equal(t, "abc", string(buf[:n]))
+
+	info, err := sb.Stat(filepath.Join(dir2, "sym.txt"), "/")
+	require.NoError(t, err)
+	assert.Equal(t, int64(3), info.Size())
+
+	assert.NoError(t, sb.Access(filepath.Join(dir2, "sym.txt"), "/", modeRead))
+}
