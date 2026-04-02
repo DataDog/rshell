@@ -34,11 +34,14 @@ const dockerBashImage = "debian:bookworm-slim"
 
 // scenario represents a single test scenario.
 type scenario struct {
-	Description           string   `yaml:"description"`
-	SkipAssertAgainstBash bool     `yaml:"skip_assert_against_bash"` // true = skip bash comparison
-	Setup                 setup    `yaml:"setup"`
-	Input                 input    `yaml:"input"`
-	Expect                expected `yaml:"expect"`
+	Description           string `yaml:"description"`
+	SkipAssertAgainstBash bool   `yaml:"skip_assert_against_bash"` // true = skip bash comparison
+	// Containerized simulates a containerized environment by setting
+	// DOCKER_DD_AGENT before sandbox construction. Disables t.Parallel.
+	Containerized bool     `yaml:"containerized"`
+	Setup         setup    `yaml:"setup"`
+	Input         input    `yaml:"input"`
+	Expect        expected `yaml:"expect"`
 }
 
 // setup holds optional pre-test configuration such as files to create.
@@ -216,6 +219,10 @@ func runScenario(t *testing.T, sc scenario) {
 	// When allow_all_commands is explicitly false and allowed_commands is
 	// empty, no AllowedCommands/AllowAllCommands option is added, so the
 	// interpreter defaults to blocking all commands.
+	if sc.Containerized {
+		t.Setenv("DOCKER_DD_AGENT", "true")
+		opts = append(opts, interp.HostPrefix(filepath.Join(dir, "host")))
+	}
 	runner, err := interp.New(opts...)
 	require.NoError(t, err, "failed to create runner")
 	defer runner.Close()
@@ -449,12 +456,26 @@ func TestShellScenarios(t *testing.T) {
 
 	for group, paths := range groups {
 		t.Run(group, func(t *testing.T) {
-			t.Parallel()
+			// Check if any scenario in this group needs containerized mode.
+			// If so, the group cannot be parallel (t.Setenv requirement).
+			hasContainerized := false
+			for _, path := range paths {
+				sc := loadScenario(t, path)
+				if sc.Containerized {
+					hasContainerized = true
+					break
+				}
+			}
+			if !hasContainerized {
+				t.Parallel()
+			}
 			for _, path := range paths {
 				sc := loadScenario(t, path)
 				name := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
 				t.Run(name, func(t *testing.T) {
-					t.Parallel()
+					if !sc.Containerized {
+						t.Parallel()
+					}
 					runScenario(t, sc)
 				})
 			}

@@ -569,6 +569,19 @@ func AllowedPaths(paths []string) RunnerOption {
 	}
 }
 
+// HostPrefix sets the mount prefix used to translate host-absolute symlink
+// targets inside containers. Defaults to "/host". Only takes effect when
+// running in a containerized environment (DOCKER_DD_AGENT set).
+// Must be applied after AllowedPaths.
+func HostPrefix(prefix string) RunnerOption {
+	return func(r *Runner) error {
+		if r.sandbox != nil {
+			r.sandbox.SetHostPrefix(prefix)
+		}
+		return nil
+	}
+}
+
 // AllowedCommands restricts command execution to the specified command names.
 // Names must use the "rshell:" namespace prefix (e.g. "rshell:cat",
 // "rshell:find"). Names without a colon separator or with an unknown namespace
