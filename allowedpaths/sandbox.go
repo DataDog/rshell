@@ -134,7 +134,9 @@ func (s *Sandbox) resolveRoot(absPath string) (*root, string, bool) {
 // This is only called as a fallback when the primary os.Root operation
 // fails, so there is no overhead on the happy path.
 func (s *Sandbox) resolveRootFollowingSymlinks(absPath string) (*root, string, bool) {
-	for range maxSymlinkHops {
+	// N+1 iterations: up to N to resolve symlinks, 1 more to confirm
+	// the final path has no more symlinks and return success.
+	for range maxSymlinkHops + 1 {
 		ar, rel, ok := s.resolveRoot(absPath)
 		if !ok {
 			return nil, "", false
