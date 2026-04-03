@@ -431,9 +431,7 @@ func (r *Runner) Reset() {
 	r.setVarString("IFS", " \t\n")
 	r.setVarString("OPTIND", "1")
 	if r.sandbox != nil {
-		if paths := r.sandbox.Paths(); len(paths) > 0 {
-			r.setVarString("ALLOWED_PATHS", strings.Join(paths, string(filepath.ListSeparator)))
-		}
+		r.setVarString("ALLOWED_PATHS", strings.Join(r.sandbox.Paths(), string(filepath.ListSeparator)))
 	}
 
 	// Reset the total-bytes counter so that the interpreter's own initial
