@@ -623,6 +623,18 @@ func (s *Sandbox) HostPrefix() string {
 	return s.hostPrefix
 }
 
+// Paths returns the resolved absolute paths of all allowed directories.
+func (s *Sandbox) Paths() []string {
+	if s == nil {
+		return nil
+	}
+	paths := make([]string, len(s.roots))
+	for i, r := range s.roots {
+		paths[i] = r.absPath
+	}
+	return paths
+}
+
 // Close releases all os.Root file descriptors. It is safe to call multiple times.
 func (s *Sandbox) Close() error {
 	if s == nil {

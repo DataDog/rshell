@@ -17,56 +17,58 @@ package analysis
 //
 // The permanently banned packages (reflect, unsafe) apply here too.
 var interpAllowedSymbols = []string{
-	"bytes.Buffer",         // 🟢 in-memory byte buffer; pure data structure, no I/O.
-	"context.Background",   // 🟢 returns the empty background context; used in StdIO option where no run-scoped context is available.
-	"context.CancelFunc",   // 🟢 function type returned by WithTimeout/WithCancel; pure function type, no side effects.
-	"context.Context",      // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
-	"context.WithTimeout",  // 🟢 derives a context with a deadline; needed for execution timeout support.
-	"context.WithValue",    // 🟢 derives a context carrying a key-value pair; pure function.
-	"errors.As",            // 🟢 error type assertion; pure function, no I/O.
-	"errors.New",           // 🟢 creates a sentinel error value; pure function, no I/O.
-	"fmt.Errorf",           // 🟢 formatted error creation; pure function, no I/O.
-	"fmt.Fprintf",          // 🟠 formatted write to an io.Writer; delegates to Write, no filesystem access.
-	"fmt.Fprintln",         // 🟠 writes to an io.Writer with newline; delegates to Write, no filesystem access.
-	"fmt.Sprintf",          // 🟢 string formatting; pure function, no I/O.
-	"io.Closer",            // 🟢 interface type for closing; no side effects.
-	"io.Copy",              // 🟠 copies from Reader to Writer; no filesystem access, delegates to Read/Write.
-	"io.Discard",           // 🟢 write sink that discards all data; no side effects.
-	"io.LimitReader",       // 🟢 wraps a Reader with a byte cap; pure function, no I/O.
-	"io.Reader",            // 🟢 interface type for reading; no side effects.
-	"io.ReadWriteCloser",   // 🟢 combined interface type; no side effects.
-	"io.Writer",            // 🟢 interface type for writing; no side effects.
-	"io/fs.DirEntry",       // 🟢 interface type for directory entries; no side effects.
-	"io/fs.FileInfo",       // 🟢 interface type for file metadata; no side effects.
-	"io/fs.ReadDirFile",    // 🟢 read-only directory handle interface; no write capability.
-	"maps.Insert",          // 🟢 inserts all key-value pairs from one map into another; pure function.
-	"os.DirEntry",          // 🟢 type alias for fs.DirEntry; no side effects.
-	"os.File",              // 🟠 file handle type; interpreter needs file I/O for redirects and pipes.
-	"os.FileMode",          // 🟢 file permission bits type; pure type.
-	"os.Getwd",             // 🟠 returns current working directory; read-only.
-	"os.O_RDONLY",          // 🟢 read-only file flag constant; pure constant.
-	"os.PathError",         // 🟢 error type wrapping path and operation; pure type.
-	"os.Pipe",              // 🟠 creates an OS pipe pair; needed for shell pipelines.
-	"path/filepath.IsAbs",  // 🟢 checks if path is absolute; pure function, no I/O.
-	"path/filepath.Join",   // 🟢 joins path elements; pure function, no I/O.
-	"runtime.GOOS",         // 🟢 current OS name constant; pure constant, no I/O.
-	"strconv.Itoa",         // 🟢 int-to-string conversion; pure function, no I/O.
-	"strings.Builder",      // 🟢 efficient string concatenation; pure in-memory buffer, no I/O.
-	"strings.ContainsRune", // 🟢 checks if a rune is in a string; pure function, no I/O.
-	"strings.NewReader",    // 🟢 wraps a string as an io.Reader; pure function, no I/O; used by ParseScript.
-	"strings.Index",        // 🟢 finds substring index; pure function, no I/O.
-	"strings.HasPrefix",    // 🟢 pure function for prefix matching; no I/O.
-	"strings.HasSuffix",    // 🟢 pure function for suffix matching; no I/O.
-	"strings.Split",        // 🟢 splits a string by separator; pure function, no I/O.
-	"strings.ToUpper",      // 🟢 converts string to uppercase; pure function, no I/O.
-	"strings.TrimLeft",     // 🟢 trims leading characters; pure function, no I/O.
-	"sync.Mutex",           // 🟢 mutual exclusion lock; concurrency primitive, no I/O.
-	"sync.Once",            // 🟢 ensures a function runs exactly once; concurrency primitive, no I/O.
-	"sync.WaitGroup",       // 🟢 waits for goroutines to finish; concurrency primitive, no I/O.
-	"sync/atomic.Int64",    // 🟢 atomic int64 counter; concurrency primitive, no I/O.
-	"time.Duration",        // 🟢 numeric duration type; pure type, no side effects.
-	"time.Now",             // 🟠 returns current time; read-only, no mutation.
-	"time.Time",            // 🟢 time value type; pure data, no side effects.
+	"bytes.Buffer",                // 🟢 in-memory byte buffer; pure data structure, no I/O.
+	"context.Background",          // 🟢 returns the empty background context; used in StdIO option where no run-scoped context is available.
+	"context.CancelFunc",          // 🟢 function type returned by WithTimeout/WithCancel; pure function type, no side effects.
+	"context.Context",             // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
+	"context.WithTimeout",         // 🟢 derives a context with a deadline; needed for execution timeout support.
+	"context.WithValue",           // 🟢 derives a context carrying a key-value pair; pure function.
+	"errors.As",                   // 🟢 error type assertion; pure function, no I/O.
+	"errors.New",                  // 🟢 creates a sentinel error value; pure function, no I/O.
+	"fmt.Errorf",                  // 🟢 formatted error creation; pure function, no I/O.
+	"fmt.Fprintf",                 // 🟠 formatted write to an io.Writer; delegates to Write, no filesystem access.
+	"fmt.Fprintln",                // 🟠 writes to an io.Writer with newline; delegates to Write, no filesystem access.
+	"fmt.Sprintf",                 // 🟢 string formatting; pure function, no I/O.
+	"io.Closer",                   // 🟢 interface type for closing; no side effects.
+	"io.Copy",                     // 🟠 copies from Reader to Writer; no filesystem access, delegates to Read/Write.
+	"io.Discard",                  // 🟢 write sink that discards all data; no side effects.
+	"io.LimitReader",              // 🟢 wraps a Reader with a byte cap; pure function, no I/O.
+	"io.Reader",                   // 🟢 interface type for reading; no side effects.
+	"io.ReadWriteCloser",          // 🟢 combined interface type; no side effects.
+	"io.Writer",                   // 🟢 interface type for writing; no side effects.
+	"io/fs.DirEntry",              // 🟢 interface type for directory entries; no side effects.
+	"io/fs.FileInfo",              // 🟢 interface type for file metadata; no side effects.
+	"io/fs.ReadDirFile",           // 🟢 read-only directory handle interface; no write capability.
+	"maps.Insert",                 // 🟢 inserts all key-value pairs from one map into another; pure function.
+	"os.DirEntry",                 // 🟢 type alias for fs.DirEntry; no side effects.
+	"os.File",                     // 🟠 file handle type; interpreter needs file I/O for redirects and pipes.
+	"os.FileMode",                 // 🟢 file permission bits type; pure type.
+	"os.Getwd",                    // 🟠 returns current working directory; read-only.
+	"os.O_RDONLY",                 // 🟢 read-only file flag constant; pure constant.
+	"os.PathError",                // 🟢 error type wrapping path and operation; pure type.
+	"os.Pipe",                     // 🟠 creates an OS pipe pair; needed for shell pipelines.
+	"path/filepath.IsAbs",         // 🟢 checks if path is absolute; pure function, no I/O.
+	"path/filepath.Join",          // 🟢 joins path elements; pure function, no I/O.
+	"path/filepath.ListSeparator", // 🟢 OS-specific path list separator; pure constant.
+	"runtime.GOOS",                // 🟢 current OS name constant; pure constant, no I/O.
+	"strconv.Itoa",                // 🟢 int-to-string conversion; pure function, no I/O.
+	"strings.Builder",             // 🟢 efficient string concatenation; pure in-memory buffer, no I/O.
+	"strings.ContainsRune",        // 🟢 checks if a rune is in a string; pure function, no I/O.
+	"strings.NewReader",           // 🟢 wraps a string as an io.Reader; pure function, no I/O; used by ParseScript.
+	"strings.Index",               // 🟢 finds substring index; pure function, no I/O.
+	"strings.HasPrefix",           // 🟢 pure function for prefix matching; no I/O.
+	"strings.HasSuffix",           // 🟢 pure function for suffix matching; no I/O.
+	"strings.Join",                // 🟢 joins string slices; pure function, no I/O.
+	"strings.Split",               // 🟢 splits a string by separator; pure function, no I/O.
+	"strings.ToUpper",             // 🟢 converts string to uppercase; pure function, no I/O.
+	"strings.TrimLeft",            // 🟢 trims leading characters; pure function, no I/O.
+	"sync.Mutex",                  // 🟢 mutual exclusion lock; concurrency primitive, no I/O.
+	"sync.Once",                   // 🟢 ensures a function runs exactly once; concurrency primitive, no I/O.
+	"sync.WaitGroup",              // 🟢 waits for goroutines to finish; concurrency primitive, no I/O.
+	"sync/atomic.Int64",           // 🟢 atomic int64 counter; concurrency primitive, no I/O.
+	"time.Duration",               // 🟢 numeric duration type; pure type, no side effects.
+	"time.Now",                    // 🟠 returns current time; read-only, no mutation.
+	"time.Time",                   // 🟢 time value type; pure data, no side effects.
 
 	// --- mvdan.cc/sh/v3/expand --- (shell word expansion library)
 

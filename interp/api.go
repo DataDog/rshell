@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -230,7 +231,6 @@ func New(opts ...RunnerOption) (*Runner, error) {
 		}
 	}
 
-	// Set the default fallbacks, if necessary.
 	// Default to an empty environment to avoid propagating parent env vars.
 	if r.Env == nil {
 		r.Env = expand.ListEnviron()
@@ -429,11 +429,16 @@ func (r *Runner) Reset() {
 	// blocks all external execution, limiting the practical impact of this vector.
 	r.setVarString("IFS", " \t\n")
 	r.setVarString("OPTIND", "1")
+	if r.sandbox != nil {
+		r.setVarString("ALLOWED_PATHS", strings.Join(r.sandbox.Paths(), string(filepath.ListSeparator)))
+	}
 
 	// Reset the total-bytes counter so that the interpreter's own initial
-	// variable assignments (PWD, IFS, OPTIND above) do not count against the
-	// user-visible MaxTotalVarsBytes cap.  Those values are small and bounded;
-	// only the variables that a script itself creates or modifies should count.
+	// variable assignments (PWD, IFS, OPTIND, ALLOWED_PATHS above) do not
+	// count against the user-visible MaxTotalVarsBytes cap. Those values are
+	// small and bounded; only the variables that a script itself creates or
+	// modifies should count. ALLOWED_PATHS is operator-configured and
+	// typically a few hundred bytes, so this is safe.
 	if ov, ok := r.writeEnv.(*overlayEnviron); ok {
 		ov.totalBytes = 0
 	}
