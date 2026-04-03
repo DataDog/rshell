@@ -115,6 +115,7 @@ Blocked features are rejected before execution with exit code 2.
 - ✅ Empty by default — no parent environment variables are inherited
 - ✅ Caller-provided variables via the `Env` option
 - ✅ `IFS` is set to space/tab/newline by default
+- ✅ `ALLOWED_PATHS` — when `AllowedPaths` is configured, set to a `filepath.ListSeparator`-delimited list of resolved allowed directories (`:` on Unix, `;` on Windows)
 - ❌ No automatic inheritance from the host process
 - ❌ `export`, `readonly` are blocked
 
