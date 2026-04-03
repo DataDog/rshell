@@ -204,6 +204,9 @@ func TestAllowedPathsExecDefaultBlocksAll(t *testing.T) {
 // TestHostPrefixAfterAllowedPaths verifies that HostPrefix applied after
 // AllowedPaths correctly sets the sandbox's host prefix.
 func TestHostPrefixAfterAllowedPaths(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("container host prefix is not supported on Windows")
+	}
 	dir := t.TempDir()
 	runner, err := New(
 		AllowedPaths([]string{dir}),
@@ -218,6 +221,9 @@ func TestHostPrefixAfterAllowedPaths(t *testing.T) {
 // TestHostPrefixBeforeAllowedPaths verifies that HostPrefix applied before
 // AllowedPaths still correctly sets the sandbox's host prefix.
 func TestHostPrefixBeforeAllowedPaths(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("container host prefix is not supported on Windows")
+	}
 	dir := t.TempDir()
 	runner, err := New(
 		HostPrefix("/custom"),
@@ -244,6 +250,9 @@ func TestHostPrefixWithoutAllowedPaths(t *testing.T) {
 // TestHostPrefixDefaultWhenNotSet verifies that the sandbox uses the
 // default host prefix when HostPrefix is not called.
 func TestHostPrefixDefaultWhenNotSet(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("container host prefix is not supported on Windows")
+	}
 	dir := t.TempDir()
 	runner, err := New(
 		AllowedPaths([]string{dir}),
