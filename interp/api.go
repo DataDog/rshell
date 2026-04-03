@@ -259,7 +259,6 @@ func New(opts ...RunnerOption) (*Runner, error) {
 	return r, nil
 }
 
-// environToList converts an Environ back to "KEY=value" pairs.
 // RunnerOption can be passed to [New] to alter a [Runner]'s behaviour.
 type RunnerOption func(*Runner) error
 
@@ -435,9 +434,11 @@ func (r *Runner) Reset() {
 	}
 
 	// Reset the total-bytes counter so that the interpreter's own initial
-	// variable assignments (PWD, IFS, OPTIND above) do not count against the
-	// user-visible MaxTotalVarsBytes cap.  Those values are small and bounded;
-	// only the variables that a script itself creates or modifies should count.
+	// variable assignments (PWD, IFS, OPTIND, ALLOWED_PATHS above) do not
+	// count against the user-visible MaxTotalVarsBytes cap. Those values are
+	// small and bounded; only the variables that a script itself creates or
+	// modifies should count. ALLOWED_PATHS is operator-configured and
+	// typically a few hundred bytes, so this is safe.
 	if ov, ok := r.writeEnv.(*overlayEnviron); ok {
 		ov.totalBytes = 0
 	}
