@@ -61,9 +61,47 @@ import (
 
 // Cmd is the head builtin command descriptor.
 var Cmd = builtins.Command{
-	Name:        "head",
-	Description: "output the first part of files",
-	MakeFlags:   registerFlags,
+	Name:          "head",
+	Description:   "output the first part of files",
+	MakeFlags:     registerFlags,
+	NormalizeArgs: normalizeArgs,
+}
+
+// normalizeArgs rewrites legacy -N shorthand (e.g. -5) to -n N so that
+// pflag can parse it. Only bare -<digits> tokens are rewritten; everything
+// else passes through unchanged. Processing stops at "--".
+//
+// When the previous argument is a value-taking flag (-n, -c, --lines, --bytes),
+// the current argument is its value and must not be rewritten — even if it
+// looks like -<digits> (e.g. "tail -n -9223372036854775809").
+func normalizeArgs(args []string) []string {
+	var out []string
+	skipNext := false
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		if a == "--" {
+			out = append(out, args[i:]...)
+			break
+		}
+		if skipNext {
+			out = append(out, a)
+			skipNext = false
+			continue
+		}
+		if len(a) >= 2 && a[0] == '-' && a[1] >= '0' && a[1] <= '9' {
+			out = append(out, "-n", a[1:])
+			continue
+		}
+		out = append(out, a)
+		// If this arg is a separate-value flag, skip its next argument.
+		if a == "-n" || a == "-c" || a == "--lines" || a == "--bytes" {
+			skipNext = true
+		}
+	}
+	if out == nil {
+		return args
+	}
+	return out
 }
 
 // MaxCount is the maximum accepted line or byte count. Values above this

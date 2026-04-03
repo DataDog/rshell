@@ -38,6 +38,11 @@ type Command struct {
 	Description string
 	Help        string
 	MakeFlags   func(*FlagSet) HandlerFunc
+
+	// NormalizeArgs, if non-nil, rewrites raw argument slices before pflag
+	// parsing. This allows commands to support legacy flag syntax that pflag
+	// cannot handle natively (e.g. head/tail -5 → -n 5).
+	NormalizeArgs func(args []string) []string
 }
 
 // NoFlags wraps a HandlerFunc in the MakeFlags format for commands that
@@ -57,6 +62,7 @@ func NoFlags(fn HandlerFunc) func(*FlagSet) HandlerFunc {
 func (c Command) Register() {
 	name := c.Name
 	factory := c.MakeFlags
+	normalize := c.NormalizeArgs
 	metaRegistry[name] = CommandMeta{Name: name, Description: c.Description, Help: c.Help}
 	addToRegistry(name, func(ctx context.Context, callCtx *CallContext, args []string) Result {
 		fs := pflag.NewFlagSet(name, pflag.ContinueOnError)
@@ -65,6 +71,9 @@ func (c Command) Register() {
 		if !fs.HasFlags() {
 			// No flags declared: pass all args through unchanged.
 			return handler(ctx, callCtx, args)
+		}
+		if normalize != nil {
+			args = normalize(args)
 		}
 		if err := fs.Parse(args); err != nil {
 			callCtx.Errf("%s: %v\n", name, err)
