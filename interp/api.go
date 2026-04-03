@@ -38,11 +38,6 @@ type runnerConfig struct {
 	// not be nil. It can only be set via [Env].
 	Env expand.Environ
 
-	// envPairs stores the raw "KEY=value" pairs from the Env option so
-	// that internal pairs (like ALLOWED_PATHS) can be appended before
-	// building the final ListEnviron in New().
-	envPairs []string
-
 	// execHandler is responsible for executing programs. It must not be nil.
 	execHandler ExecHandlerFunc
 
@@ -236,16 +231,10 @@ func New(opts ...RunnerOption) (*Runner, error) {
 		}
 	}
 
-	// Build the environment from stored pairs plus any internal variables.
-	// ALLOWED_PATHS is injected here so it's part of the immutable base
-	// environment regardless of option ordering.
-	pairs := r.envPairs
-	if r.sandbox != nil {
-		if paths := r.sandbox.Paths(); len(paths) > 0 {
-			pairs = append(pairs, "ALLOWED_PATHS="+strings.Join(paths, string(filepath.ListSeparator)))
-		}
+	// Default to an empty environment to avoid propagating parent env vars.
+	if r.Env == nil {
+		r.Env = expand.ListEnviron()
 	}
-	r.Env = expand.ListEnviron(pairs...)
 	if r.Dir == "" {
 		dir, err := os.Getwd()
 		if err != nil {
@@ -261,14 +250,6 @@ func New(opts ...RunnerOption) (*Runner, error) {
 	if r.hostPrefix != "" && r.sandbox != nil {
 		r.sandbox.SetHostPrefix(r.hostPrefix)
 	}
-	// Expose allowed paths as an environment variable so users/agents can
-	// discover which directories are accessible (e.g. echo $ALLOWED_PATHS).
-	if r.sandbox != nil {
-		if paths := r.sandbox.Paths(); len(paths) > 0 {
-			pair := "ALLOWED_PATHS=" + strings.Join(paths, string(filepath.ListSeparator))
-			r.Env = expand.ListEnviron(append(environToList(r.Env), pair)...)
-		}
-	}
 	// Flush any sandbox warnings now that stderr is guaranteed to be set.
 	if len(r.sandboxWarnings) > 0 {
 		r.stderr.Write(r.sandboxWarnings)
@@ -279,17 +260,6 @@ func New(opts ...RunnerOption) (*Runner, error) {
 }
 
 // environToList converts an Environ back to "KEY=value" pairs.
-func environToList(env expand.Environ) []string {
-	var pairs []string
-	env.Each(func(name string, vr expand.Variable) bool {
-		if vr.Exported && vr.Kind == expand.String {
-			pairs = append(pairs, name+"="+vr.Str)
-		}
-		return true
-	})
-	return pairs
-}
-
 // RunnerOption can be passed to [New] to alter a [Runner]'s behaviour.
 type RunnerOption func(*Runner) error
 
@@ -340,7 +310,7 @@ func stdinFile(ctx context.Context, r io.Reader) (*os.File, error) {
 // an empty environment (no host environment variables are inherited).
 func Env(pairs ...string) RunnerOption {
 	return func(r *Runner) error {
-		r.envPairs = pairs
+		r.Env = expand.ListEnviron(pairs...)
 		return nil
 	}
 }
@@ -460,6 +430,11 @@ func (r *Runner) Reset() {
 	// blocks all external execution, limiting the practical impact of this vector.
 	r.setVarString("IFS", " \t\n")
 	r.setVarString("OPTIND", "1")
+	if r.sandbox != nil {
+		if paths := r.sandbox.Paths(); len(paths) > 0 {
+			r.setVarString("ALLOWED_PATHS", strings.Join(paths, string(filepath.ListSeparator)))
+		}
+	}
 
 	// Reset the total-bytes counter so that the interpreter's own initial
 	// variable assignments (PWD, IFS, OPTIND above) do not count against the
