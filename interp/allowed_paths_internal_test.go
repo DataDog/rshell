@@ -259,3 +259,101 @@ func TestHostPrefixDefaultWhenNotSet(t *testing.T) {
 
 	assert.Empty(t, runner.sandbox.HostPrefix())
 }
+
+// TestAllowedPathsEnvVar verifies that ALLOWED_PATHS is set in the
+// interpreter's environment with the resolved absolute paths.
+func TestAllowedPathsEnvVar(t *testing.T) {
+	dir1 := t.TempDir()
+	dir2 := t.TempDir()
+
+	stdout, _, _ := runScriptInternal(t, `echo $ALLOWED_PATHS`, dir1,
+		AllowedPaths([]string{dir1, dir2}),
+	)
+
+	expected := dir1 + string(filepath.ListSeparator) + dir2
+	assert.Equal(t, expected+"\n", stdout)
+}
+
+// TestAllowedPathsEnvVarSinglePath verifies ALLOWED_PATHS with one path.
+func TestAllowedPathsEnvVarSinglePath(t *testing.T) {
+	dir := t.TempDir()
+
+	stdout, _, _ := runScriptInternal(t, `echo $ALLOWED_PATHS`, dir,
+		AllowedPaths([]string{dir}),
+	)
+
+	assert.Equal(t, dir+"\n", stdout)
+}
+
+// TestAllowedPathsEnvVarManyDirs verifies ALLOWED_PATHS with several directories.
+func TestAllowedPathsEnvVarManyDirs(t *testing.T) {
+	dirs := make([]string, 5)
+	for i := range dirs {
+		dirs[i] = t.TempDir()
+	}
+
+	stdout, _, _ := runScriptInternal(t, `echo $ALLOWED_PATHS`, dirs[0],
+		AllowedPaths(dirs),
+	)
+
+	expected := strings.Join(dirs, string(filepath.ListSeparator))
+	assert.Equal(t, expected+"\n", stdout)
+}
+
+// TestAllowedPathsEnvVarNestedDirs verifies ALLOWED_PATHS with deeply
+// nested directories.
+func TestAllowedPathsEnvVarNestedDirs(t *testing.T) {
+	root := t.TempDir()
+	nested1 := filepath.Join(root, "a", "b", "c")
+	nested2 := filepath.Join(root, "x", "y")
+	require.NoError(t, os.MkdirAll(nested1, 0755))
+	require.NoError(t, os.MkdirAll(nested2, 0755))
+
+	stdout, _, _ := runScriptInternal(t, `echo $ALLOWED_PATHS`, root,
+		AllowedPaths([]string{nested1, nested2}),
+	)
+
+	expected := nested1 + string(filepath.ListSeparator) + nested2
+	assert.Equal(t, expected+"\n", stdout)
+}
+
+// TestAllowedPathsEnvVarParentAndChild verifies ALLOWED_PATHS when both
+// a parent and child directory are allowed.
+func TestAllowedPathsEnvVarParentAndChild(t *testing.T) {
+	root := t.TempDir()
+	child := filepath.Join(root, "sub", "dir")
+	require.NoError(t, os.MkdirAll(child, 0755))
+
+	stdout, _, _ := runScriptInternal(t, `echo $ALLOWED_PATHS`, root,
+		AllowedPaths([]string{root, child}),
+	)
+
+	expected := root + string(filepath.ListSeparator) + child
+	assert.Equal(t, expected+"\n", stdout)
+}
+
+// TestAllowedPathsEnvVarSkipsNonexistent verifies that ALLOWED_PATHS only
+// contains directories that were successfully opened.
+func TestAllowedPathsEnvVarSkipsNonexistent(t *testing.T) {
+	dir := t.TempDir()
+
+	stdout, _, _ := runScriptInternal(t, `echo $ALLOWED_PATHS`, dir,
+		AllowedPaths([]string{"/nonexistent/path", dir}),
+	)
+
+	assert.Equal(t, dir+"\n", stdout)
+}
+
+// TestAllowedPathsEnvVarNotSetWithoutSandbox verifies that ALLOWED_PATHS
+// is not set when AllowedPaths is not configured.
+func TestAllowedPathsEnvVarNotSetWithoutSandbox(t *testing.T) {
+	dir := t.TempDir()
+
+	runner, err := New()
+	require.NoError(t, err)
+	defer runner.Close()
+
+	runner.Dir = dir
+	v := runner.Env.Get("ALLOWED_PATHS")
+	assert.False(t, v.IsSet(), "ALLOWED_PATHS should not be set without AllowedPaths")
+}

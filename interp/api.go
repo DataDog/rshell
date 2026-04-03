@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -250,6 +251,14 @@ func New(opts ...RunnerOption) (*Runner, error) {
 	if r.hostPrefix != "" && r.sandbox != nil {
 		r.sandbox.SetHostPrefix(r.hostPrefix)
 	}
+	// Expose allowed paths as an environment variable so users/agents can
+	// discover which directories are accessible (e.g. echo $ALLOWED_PATHS).
+	if r.sandbox != nil {
+		if paths := r.sandbox.Paths(); len(paths) > 0 {
+			pair := "ALLOWED_PATHS=" + strings.Join(paths, string(filepath.ListSeparator))
+			r.Env = expand.ListEnviron(append(environToList(r.Env), pair)...)
+		}
+	}
 	// Flush any sandbox warnings now that stderr is guaranteed to be set.
 	if len(r.sandboxWarnings) > 0 {
 		r.stderr.Write(r.sandboxWarnings)
@@ -257,6 +266,18 @@ func New(opts ...RunnerOption) (*Runner, error) {
 	}
 	r.proc = builtins.NewProcProvider(r.procPath)
 	return r, nil
+}
+
+// environToList converts an Environ back to "KEY=value" pairs.
+func environToList(env expand.Environ) []string {
+	var pairs []string
+	env.Each(func(name string, vr expand.Variable) bool {
+		if vr.Exported && vr.Kind == expand.String {
+			pairs = append(pairs, name+"="+vr.Str)
+		}
+		return true
+	})
+	return pairs
 }
 
 // RunnerOption can be passed to [New] to alter a [Runner]'s behaviour.
