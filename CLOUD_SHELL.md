@@ -4,7 +4,7 @@
 
 Datadog Cloud Shell brings terminal access directly into the Datadog platform — a secure, auditable, browser-based shell for interacting with customer infrastructure without requiring direct SSH access or cloud provider console logins.
 
-Similar to [AWS CloudShell](https://aws.amazon.com/cloudshell/), [Google Cloud Shell](https://docs.cloud.google.com/shell/docs/launching-cloud-shell), [Azure Cloud Shell](https://learn.microsoft.com/en-us/azure/cloud-shell/overview) 
+Similar to [AWS CloudShell](https://aws.amazon.com/cloudshell/), [Google Cloud Shell](https://docs.cloud.google.com/shell/docs/launching-cloud-shell), [Azure Cloud Shell](https://learn.microsoft.com/en-us/azure/cloud-shell/overview) but cross cloud provider and fully embedded in Datadog.
 
 ### The Problem
 
@@ -14,7 +14,7 @@ When engineers are in the middle of triaging or remediating an incident, context
 
 **Incident triage and remediation, in context.** Engineers can run diagnostic commands and remediation scripts directly from Datadog, alongside the dashboards, logs, and traces that surfaced the issue — no tab-switching, no separate credential management.
 
-**Access control and auditability, built in.** Because the shell runs through Datadog, access policies, approval workflows, and a full audit log of every command executed come for free. This is meaningfully simpler than managing SSH keys or cloud IAM policies per team.
+**Access control and auditability, built in.** Because the shell runs through Datadog, access policies, approval workflows, and a full audit log of every command executed come for free. This is meaningfully simpler than managing SSH keys or cloud IAM policies per team. We can rely on new Private Action Runner Execution Group for handling permissions.
 
 **Platform-agnostic reach.** Cloud Shell works across AWS, GCP, Azure, on-premise servers, and physical devices — steering customers toward a single, governed access path instead of a patchwork of SSH tunnels and cloud-specific consoles.
 
