@@ -623,7 +623,7 @@ func (s *Sandbox) Readlink(path string, cwd string) (string, error) {
 // SetHostPrefix overrides the mount prefix used to translate host-absolute
 // symlink targets inside containers.
 func (s *Sandbox) SetHostPrefix(prefix string) {
-	s.hostPrefix = prefix
+	s.hostPrefix = filepath.Clean(prefix)
 }
 
 // Close releases all os.Root file descriptors. It is safe to call multiple times.
