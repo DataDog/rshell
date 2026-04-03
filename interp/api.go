@@ -56,6 +56,11 @@ type runnerConfig struct {
 	// are set, so the output target is independent of option ordering.
 	sandboxWarnings []byte
 
+	// hostPrefix is stored here so HostPrefix can be applied before or
+	// after AllowedPaths. Applied to the sandbox in New() after all
+	// options are processed.
+	hostPrefix string
+
 	// allowedCommands is the set of command names (builtins or external) that
 	// the interpreter is permitted to execute. If nil and allowAllCommands is
 	// false, no commands are allowed.
@@ -239,6 +244,11 @@ func New(opts ...RunnerOption) (*Runner, error) {
 	}
 	if r.stdout == nil || r.stderr == nil {
 		StdIO(r.stdin, r.stdout, r.stderr)(r)
+	}
+	// Apply host prefix if set, now that both HostPrefix and AllowedPaths
+	// have been processed regardless of option ordering.
+	if r.hostPrefix != "" && r.sandbox != nil {
+		r.sandbox.SetHostPrefix(r.hostPrefix)
 	}
 	// Flush any sandbox warnings now that stderr is guaranteed to be set.
 	if len(r.sandboxWarnings) > 0 {
@@ -572,12 +582,10 @@ func AllowedPaths(paths []string) RunnerOption {
 // HostPrefix sets the mount prefix used to translate host-absolute symlink
 // targets inside containers. Defaults to "/host". Only takes effect when
 // running in a containerized environment (DOCKER_DD_AGENT set).
-// Must be applied after AllowedPaths.
+// Can be applied before or after AllowedPaths.
 func HostPrefix(prefix string) RunnerOption {
 	return func(r *Runner) error {
-		if r.sandbox != nil {
-			r.sandbox.SetHostPrefix(prefix)
-		}
+		r.hostPrefix = prefix
 		return nil
 	}
 }
