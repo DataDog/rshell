@@ -184,7 +184,10 @@ func (s *Sandbox) resolveRootFollowingSymlinks(absPath string, preserveLast bool
 			absPath = filepath.Clean(target)
 			// In containers, host symlinks use host-absolute paths
 			// (e.g. /var/log/pods/...) that don't include the /host
-			// mount prefix. Prepend it so the path matches our roots.
+			// mount prefix. We always prepend the prefix because the
+			// Private Action Runner in the Datadog agent mounts host
+			// volumes exclusively under /host. If the mount prefix
+			// changes, use the HostPrefix RunnerOption to configure it.
 			if s.containerized {
 				absPath = filepath.Join(s.hostPrefix, absPath)
 			}
