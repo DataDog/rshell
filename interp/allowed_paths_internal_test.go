@@ -247,12 +247,9 @@ func TestHostPrefixWithoutAllowedPaths(t *testing.T) {
 	assert.Nil(t, runner.sandbox, "sandbox should be nil when AllowedPaths is not set")
 }
 
-// TestHostPrefixDefaultWhenNotSet verifies that the sandbox uses the
-// default host prefix when HostPrefix is not called.
+// TestHostPrefixDefaultWhenNotSet verifies that the sandbox has no host
+// prefix when HostPrefix is not called (container resolution disabled).
 func TestHostPrefixDefaultWhenNotSet(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("container host prefix is not supported on Windows")
-	}
 	dir := t.TempDir()
 	runner, err := New(
 		AllowedPaths([]string{dir}),
@@ -260,5 +257,5 @@ func TestHostPrefixDefaultWhenNotSet(t *testing.T) {
 	require.NoError(t, err)
 	defer runner.Close()
 
-	assert.Equal(t, "/host", runner.sandbox.HostPrefix())
+	assert.Empty(t, runner.sandbox.HostPrefix())
 }

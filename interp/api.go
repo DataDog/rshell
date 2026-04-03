@@ -579,9 +579,9 @@ func AllowedPaths(paths []string) RunnerOption {
 	}
 }
 
-// HostPrefix sets the mount prefix used to translate host-absolute symlink
-// targets inside containers. Defaults to "/host". Only takes effect when
-// running in a containerized environment (DOCKER_DD_AGENT set).
+// HostPrefix enables container symlink resolution and sets the mount prefix
+// used to translate host-absolute symlink targets. When set, symlink targets
+// resolved during cross-root fallback are prepended with this prefix.
 // Can be applied before or after AllowedPaths.
 func HostPrefix(prefix string) RunnerOption {
 	return func(r *Runner) error {

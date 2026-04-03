@@ -36,8 +36,8 @@ const dockerBashImage = "debian:bookworm-slim"
 type scenario struct {
 	Description           string `yaml:"description"`
 	SkipAssertAgainstBash bool   `yaml:"skip_assert_against_bash"` // true = skip bash comparison
-	// Containerized simulates a containerized environment by setting
-	// DOCKER_DD_AGENT before sandbox construction. Disables t.Parallel.
+	// Containerized enables container symlink resolution by setting
+	// HostPrefix to the test directory's host/ subdirectory.
 	Containerized bool     `yaml:"containerized"`
 	Setup         setup    `yaml:"setup"`
 	Input         input    `yaml:"input"`
@@ -220,7 +220,6 @@ func runScenario(t *testing.T, sc scenario) {
 	// empty, no AllowedCommands/AllowAllCommands option is added, so the
 	// interpreter defaults to blocking all commands.
 	if sc.Containerized {
-		t.Setenv("DOCKER_DD_AGENT", "true")
 		opts = append(opts, interp.HostPrefix(filepath.Join(dir, "host")))
 	}
 	runner, err := interp.New(opts...)
@@ -456,35 +455,16 @@ func TestShellScenarios(t *testing.T) {
 
 	for group, paths := range groups {
 		t.Run(group, func(t *testing.T) {
-			// Load all scenarios once and check if any needs containerized
-			// mode. If so, the group cannot be parallel (t.Setenv requirement).
-			type namedScenario struct {
-				name string
-				sc   scenario
-			}
-			loaded := make([]namedScenario, 0, len(paths))
-			hasContainerized := false
+			t.Parallel()
 			for _, path := range paths {
 				sc := loadScenario(t, path)
 				name := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
-				loaded = append(loaded, namedScenario{name: name, sc: sc})
-				if sc.Containerized {
-					hasContainerized = true
-				}
-			}
-			if !hasContainerized {
-				t.Parallel()
-			}
-			for _, ns := range loaded {
-				t.Run(ns.name, func(t *testing.T) {
-					if ns.sc.Containerized {
-						if runtime.GOOS == "windows" {
-							t.Skip("containerized tests are not supported on Windows")
-						}
-					} else {
-						t.Parallel()
+				t.Run(name, func(t *testing.T) {
+					if sc.Containerized && runtime.GOOS == "windows" {
+						t.Skip("containerized tests are not supported on Windows")
 					}
-					runScenario(t, ns.sc)
+					t.Parallel()
+					runScenario(t, sc)
 				})
 			}
 		})

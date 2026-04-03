@@ -699,15 +699,14 @@ func TestCrossRootSymlinkSiblingDirs(t *testing.T) {
 
 // --- Container /host prefix tests ---
 
-// newContainerSandbox creates a sandbox with containerized=true and a
-// custom host prefix, simulating a containerized environment where host
-// filesystems are mounted under prefix.
+// newContainerSandbox creates a sandbox with a host prefix set,
+// simulating a containerized environment where host filesystems
+// are mounted under prefix.
 func newContainerSandbox(t *testing.T, paths []string, hostPrefix string) *Sandbox {
 	t.Helper()
 	sb, _, err := New(paths)
 	require.NoError(t, err)
-	sb.containerized = true
-	sb.hostPrefix = hostPrefix
+	sb.SetHostPrefix(hostPrefix)
 	return sb
 }
 
