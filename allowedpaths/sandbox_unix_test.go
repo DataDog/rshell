@@ -809,3 +809,28 @@ func TestContainerSymlinkHostPrefixOutsideAllRoots(t *testing.T) {
 	_, err := sb.Open("escape.log", containers, os.O_RDONLY, 0)
 	assert.Error(t, err, "container symlink to path outside allowed roots should be blocked")
 }
+
+// TestContainerSymlinkRelativeTarget verifies that a relative symlink in
+// container mode resolves correctly without double-prepending the prefix.
+func TestContainerSymlinkRelativeTarget(t *testing.T) {
+	root := t.TempDir()
+	hostPrefix := root
+	pods := filepath.Join(root, "var", "log", "pods")
+	containers := filepath.Join(root, "var", "log", "containers")
+	require.NoError(t, os.MkdirAll(pods, 0755))
+	require.NoError(t, os.MkdirAll(containers, 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(pods, "app.log"), []byte("relative"), 0644))
+	// Relative symlink — target already resolves within the host prefix.
+	require.NoError(t, os.Symlink("../pods/app.log", filepath.Join(containers, "app.log")))
+
+	sb := newContainerSandbox(t, []string{pods, containers}, hostPrefix)
+	defer sb.Close()
+
+	f, err := sb.Open("app.log", containers, os.O_RDONLY, 0)
+	require.NoError(t, err, "relative symlink in container mode should not double-prepend prefix")
+	defer f.Close()
+
+	buf := make([]byte, 64)
+	n, _ := f.Read(buf)
+	assert.Equal(t, "relative", string(buf[:n]))
+}
