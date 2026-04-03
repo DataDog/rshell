@@ -34,11 +34,14 @@ const dockerBashImage = "debian:bookworm-slim"
 
 // scenario represents a single test scenario.
 type scenario struct {
-	Description           string   `yaml:"description"`
-	SkipAssertAgainstBash bool     `yaml:"skip_assert_against_bash"` // true = skip bash comparison
-	Setup                 setup    `yaml:"setup"`
-	Input                 input    `yaml:"input"`
-	Expect                expected `yaml:"expect"`
+	Description           string `yaml:"description"`
+	SkipAssertAgainstBash bool   `yaml:"skip_assert_against_bash"` // true = skip bash comparison
+	// Containerized enables container symlink resolution by setting
+	// HostPrefix to the test directory's host/ subdirectory.
+	Containerized bool     `yaml:"containerized"`
+	Setup         setup    `yaml:"setup"`
+	Input         input    `yaml:"input"`
+	Expect        expected `yaml:"expect"`
 }
 
 // setup holds optional pre-test configuration such as files to create.
@@ -216,6 +219,9 @@ func runScenario(t *testing.T, sc scenario) {
 	// When allow_all_commands is explicitly false and allowed_commands is
 	// empty, no AllowedCommands/AllowAllCommands option is added, so the
 	// interpreter defaults to blocking all commands.
+	if sc.Containerized {
+		opts = append(opts, interp.HostPrefix(filepath.Join(dir, "host")))
+	}
 	runner, err := interp.New(opts...)
 	require.NoError(t, err, "failed to create runner")
 	defer runner.Close()
@@ -454,6 +460,9 @@ func TestShellScenarios(t *testing.T) {
 				sc := loadScenario(t, path)
 				name := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
 				t.Run(name, func(t *testing.T) {
+					if sc.Containerized && runtime.GOOS == "windows" {
+						t.Skip("containerized tests are not supported on Windows")
+					}
 					t.Parallel()
 					runScenario(t, sc)
 				})

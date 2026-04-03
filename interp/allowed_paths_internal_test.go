@@ -200,3 +200,62 @@ func TestAllowedPathsExecDefaultBlocksAll(t *testing.T) {
 	assert.Equal(t, 127, exitCode)
 	assert.Contains(t, stderr, "command not found")
 }
+
+// TestHostPrefixAfterAllowedPaths verifies that HostPrefix applied after
+// AllowedPaths correctly sets the sandbox's host prefix.
+func TestHostPrefixAfterAllowedPaths(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("container host prefix is not supported on Windows")
+	}
+	dir := t.TempDir()
+	runner, err := New(
+		AllowedPaths([]string{dir}),
+		HostPrefix("/custom"),
+	)
+	require.NoError(t, err)
+	defer runner.Close()
+
+	assert.Equal(t, "/custom", runner.sandbox.HostPrefix())
+}
+
+// TestHostPrefixBeforeAllowedPaths verifies that HostPrefix applied before
+// AllowedPaths still correctly sets the sandbox's host prefix.
+func TestHostPrefixBeforeAllowedPaths(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("container host prefix is not supported on Windows")
+	}
+	dir := t.TempDir()
+	runner, err := New(
+		HostPrefix("/custom"),
+		AllowedPaths([]string{dir}),
+	)
+	require.NoError(t, err)
+	defer runner.Close()
+
+	assert.Equal(t, "/custom", runner.sandbox.HostPrefix())
+}
+
+// TestHostPrefixWithoutAllowedPaths verifies that HostPrefix is silently
+// ignored when no AllowedPaths is configured (sandbox is nil).
+func TestHostPrefixWithoutAllowedPaths(t *testing.T) {
+	runner, err := New(
+		HostPrefix("/custom"),
+	)
+	require.NoError(t, err)
+	defer runner.Close()
+
+	assert.Nil(t, runner.sandbox, "sandbox should be nil when AllowedPaths is not set")
+}
+
+// TestHostPrefixDefaultWhenNotSet verifies that the sandbox has no host
+// prefix when HostPrefix is not called (container resolution disabled).
+func TestHostPrefixDefaultWhenNotSet(t *testing.T) {
+	dir := t.TempDir()
+	runner, err := New(
+		AllowedPaths([]string{dir}),
+	)
+	require.NoError(t, err)
+	defer runner.Close()
+
+	assert.Empty(t, runner.sandbox.HostPrefix())
+}

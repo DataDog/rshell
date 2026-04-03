@@ -41,7 +41,8 @@ type root struct {
 // The restriction is enforced using os.Root (Go 1.24+), which uses openat
 // syscalls for atomic path validation — immune to symlink and ".." traversal attacks.
 type Sandbox struct {
-	roots []root
+	roots      []root
+	hostPrefix string // when non-empty, enables container symlink resolution
 }
 
 // New creates a sandbox from an allowlist of directory paths. Paths that do
@@ -171,6 +172,14 @@ func (s *Sandbox) resolveRootFollowingSymlinks(absPath string, preserveLast bool
 				target = filepath.Join(target, remaining)
 			}
 			absPath = filepath.Clean(target)
+			// In containers, host symlinks use host-absolute paths
+			// (e.g. /var/log/pods/...) that don't include the mount
+			// prefix. Prepend it so the path matches our roots. Skip
+			// if the path already starts with the prefix (e.g. a
+			// relative symlink that resolved within the same root).
+			if s.hostPrefix != "" && !strings.HasPrefix(absPath, s.hostPrefix+string(filepath.Separator)) {
+				absPath = filepath.Join(s.hostPrefix, absPath)
+			}
 			symlinkFound = true
 			break
 		}
@@ -601,6 +610,17 @@ func (s *Sandbox) Readlink(path string, cwd string) (string, error) {
 		return "", PortablePathError(err)
 	}
 	return target, nil
+}
+
+// SetHostPrefix overrides the mount prefix used to translate host-absolute
+// symlink targets inside containers.
+func (s *Sandbox) SetHostPrefix(prefix string) {
+	s.hostPrefix = filepath.Clean(prefix)
+}
+
+// HostPrefix returns the current host mount prefix.
+func (s *Sandbox) HostPrefix() string {
+	return s.hostPrefix
 }
 
 // Close releases all os.Root file descriptors. It is safe to call multiple times.

@@ -696,3 +696,141 @@ func TestCrossRootSymlinkSiblingDirs(t *testing.T) {
 
 	assert.NoError(t, sb.Access(filepath.Join(dir2, "sym.txt"), "/", modeRead))
 }
+
+// --- Container /host prefix tests ---
+
+// newContainerSandbox creates a sandbox with a host prefix set,
+// simulating a containerized environment where host filesystems
+// are mounted under prefix.
+func newContainerSandbox(t *testing.T, paths []string, hostPrefix string) *Sandbox {
+	t.Helper()
+	sb, _, err := New(paths)
+	require.NoError(t, err)
+	sb.SetHostPrefix(hostPrefix)
+	return sb
+}
+
+// setupContainerDirs creates a directory structure simulating a container
+// where host paths are mounted under a prefix. The symlink target is a
+// "host-absolute" path (e.g. /var/log/pods/app.log) that only resolves
+// after the host prefix is prepended. The symlink is dangling on the test
+// machine, but our code reads it via Readlink and constructs the correct
+// path.
+func setupContainerDirs(t *testing.T) (hostPrefix, pods, containers string) {
+	t.Helper()
+	root := t.TempDir()
+	hostPrefix = root
+	pods = filepath.Join(root, "var", "log", "pods")
+	containers = filepath.Join(root, "var", "log", "containers")
+	require.NoError(t, os.MkdirAll(pods, 0755))
+	require.NoError(t, os.MkdirAll(containers, 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(pods, "app.log"), []byte("log line"), 0644))
+	// Symlink points to "/var/log/pods/app.log" — a host-absolute path.
+	// This is dangling on the test machine, but after our code prepends
+	// hostPrefix (root), it becomes root/var/log/pods/app.log which exists.
+	require.NoError(t, os.Symlink("/var/log/pods/app.log", filepath.Join(containers, "app.log")))
+	return hostPrefix, pods, containers
+}
+
+// TestContainerSymlinkHostPrefixOpen verifies that a symlink using a
+// host-absolute path (without the mount prefix) can be opened when
+// containerized.
+func TestContainerSymlinkHostPrefixOpen(t *testing.T) {
+	hostPrefix, pods, containers := setupContainerDirs(t)
+
+	sb := newContainerSandbox(t, []string{pods, containers}, hostPrefix)
+	defer sb.Close()
+
+	f, err := sb.Open("app.log", containers, os.O_RDONLY, 0)
+	require.NoError(t, err, "container symlink with host prefix should be readable")
+	defer f.Close()
+
+	buf := make([]byte, 64)
+	n, _ := f.Read(buf)
+	assert.Equal(t, "log line", string(buf[:n]))
+}
+
+// TestContainerSymlinkHostPrefixStat verifies Stat through a container
+// symlink with host-absolute target.
+func TestContainerSymlinkHostPrefixStat(t *testing.T) {
+	hostPrefix, pods, containers := setupContainerDirs(t)
+
+	sb := newContainerSandbox(t, []string{pods, containers}, hostPrefix)
+	defer sb.Close()
+
+	info, err := sb.Stat("app.log", containers)
+	require.NoError(t, err)
+	assert.Equal(t, int64(8), info.Size()) // "log line" = 8 bytes
+}
+
+// TestContainerSymlinkHostPrefixAccess verifies Access through a container
+// symlink with host-absolute target.
+func TestContainerSymlinkHostPrefixAccess(t *testing.T) {
+	hostPrefix, pods, containers := setupContainerDirs(t)
+
+	sb := newContainerSandbox(t, []string{pods, containers}, hostPrefix)
+	defer sb.Close()
+
+	assert.NoError(t, sb.Access("app.log", containers, modeRead))
+}
+
+// TestContainerSymlinkHostPrefixNotAppliedWhenNotContainerized verifies
+// that the host prefix is NOT prepended when not in a container.
+func TestContainerSymlinkHostPrefixNotAppliedWhenNotContainerized(t *testing.T) {
+	// Use the same setup but don't enable containerized mode.
+	_, pods, containers := setupContainerDirs(t)
+
+	sb, _, err := New([]string{pods, containers})
+	require.NoError(t, err)
+	defer sb.Close()
+
+	_, err = sb.Open("app.log", containers, os.O_RDONLY, 0)
+	assert.Error(t, err, "without container mode, host-absolute symlinks should fail")
+}
+
+// TestContainerSymlinkHostPrefixOutsideAllRoots verifies that a container
+// symlink pointing outside all allowed roots is still blocked even with
+// the host prefix applied.
+func TestContainerSymlinkHostPrefixOutsideAllRoots(t *testing.T) {
+	root := t.TempDir()
+	hostPrefix := root
+	containers := filepath.Join(root, "var", "log", "containers")
+	require.NoError(t, os.MkdirAll(containers, 0755))
+	// /etc/secret exists under the host prefix, but is NOT in allowed roots.
+	outside := filepath.Join(root, "etc", "secret")
+	require.NoError(t, os.MkdirAll(outside, 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(outside, "passwd"), []byte("secret"), 0644))
+	// Symlink uses host-absolute path to /etc/secret/passwd.
+	require.NoError(t, os.Symlink("/etc/secret/passwd", filepath.Join(containers, "escape.log")))
+
+	sb := newContainerSandbox(t, []string{containers}, hostPrefix)
+	defer sb.Close()
+
+	_, err := sb.Open("escape.log", containers, os.O_RDONLY, 0)
+	assert.Error(t, err, "container symlink to path outside allowed roots should be blocked")
+}
+
+// TestContainerSymlinkRelativeTarget verifies that a relative symlink in
+// container mode resolves correctly without double-prepending the prefix.
+func TestContainerSymlinkRelativeTarget(t *testing.T) {
+	root := t.TempDir()
+	hostPrefix := root
+	pods := filepath.Join(root, "var", "log", "pods")
+	containers := filepath.Join(root, "var", "log", "containers")
+	require.NoError(t, os.MkdirAll(pods, 0755))
+	require.NoError(t, os.MkdirAll(containers, 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(pods, "app.log"), []byte("relative"), 0644))
+	// Relative symlink — target already resolves within the host prefix.
+	require.NoError(t, os.Symlink("../pods/app.log", filepath.Join(containers, "app.log")))
+
+	sb := newContainerSandbox(t, []string{pods, containers}, hostPrefix)
+	defer sb.Close()
+
+	f, err := sb.Open("app.log", containers, os.O_RDONLY, 0)
+	require.NoError(t, err, "relative symlink in container mode should not double-prepend prefix")
+	defer f.Close()
+
+	buf := make([]byte, 64)
+	n, _ := f.Read(buf)
+	assert.Equal(t, "relative", string(buf[:n]))
+}
