@@ -456,31 +456,35 @@ func TestShellScenarios(t *testing.T) {
 
 	for group, paths := range groups {
 		t.Run(group, func(t *testing.T) {
-			// Check if any scenario in this group needs containerized mode.
-			// If so, the group cannot be parallel (t.Setenv requirement).
+			// Load all scenarios once and check if any needs containerized
+			// mode. If so, the group cannot be parallel (t.Setenv requirement).
+			type namedScenario struct {
+				name string
+				sc   scenario
+			}
+			loaded := make([]namedScenario, 0, len(paths))
 			hasContainerized := false
 			for _, path := range paths {
 				sc := loadScenario(t, path)
+				name := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
+				loaded = append(loaded, namedScenario{name: name, sc: sc})
 				if sc.Containerized {
 					hasContainerized = true
-					break
 				}
 			}
 			if !hasContainerized {
 				t.Parallel()
 			}
-			for _, path := range paths {
-				sc := loadScenario(t, path)
-				name := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
-				t.Run(name, func(t *testing.T) {
-					if sc.Containerized {
+			for _, ns := range loaded {
+				t.Run(ns.name, func(t *testing.T) {
+					if ns.sc.Containerized {
 						if runtime.GOOS == "windows" {
-							t.Skip("containerized tests are Linux-only")
+							t.Skip("containerized tests are not supported on Windows")
 						}
 					} else {
 						t.Parallel()
 					}
-					runScenario(t, sc)
+					runScenario(t, ns.sc)
 				})
 			}
 		})

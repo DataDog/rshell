@@ -629,8 +629,8 @@ func (s *Sandbox) SetHostPrefix(prefix string) {
 	s.hostPrefix = filepath.Clean(prefix)
 }
 
-// GetHostPrefix returns the current host mount prefix.
-func (s *Sandbox) GetHostPrefix() string {
+// HostPrefix returns the current host mount prefix.
+func (s *Sandbox) HostPrefix() string {
 	return s.hostPrefix
 }
 

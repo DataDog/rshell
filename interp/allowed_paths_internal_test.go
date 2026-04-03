@@ -212,7 +212,7 @@ func TestHostPrefixAfterAllowedPaths(t *testing.T) {
 	require.NoError(t, err)
 	defer runner.Close()
 
-	assert.Equal(t, "/custom", runner.sandbox.GetHostPrefix())
+	assert.Equal(t, "/custom", runner.sandbox.HostPrefix())
 }
 
 // TestHostPrefixBeforeAllowedPaths verifies that HostPrefix applied before
@@ -226,7 +226,7 @@ func TestHostPrefixBeforeAllowedPaths(t *testing.T) {
 	require.NoError(t, err)
 	defer runner.Close()
 
-	assert.Equal(t, "/custom", runner.sandbox.GetHostPrefix())
+	assert.Equal(t, "/custom", runner.sandbox.HostPrefix())
 }
 
 // TestHostPrefixWithoutAllowedPaths verifies that HostPrefix is silently
@@ -251,5 +251,5 @@ func TestHostPrefixDefaultWhenNotSet(t *testing.T) {
 	require.NoError(t, err)
 	defer runner.Close()
 
-	assert.Equal(t, "/host", runner.sandbox.GetHostPrefix())
+	assert.Equal(t, "/host", runner.sandbox.HostPrefix())
 }
