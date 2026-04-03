@@ -38,6 +38,11 @@ type Command struct {
 	Description string
 	Help        string
 	MakeFlags   func(*FlagSet) HandlerFunc
+
+	// NormalizeArgs, if non-nil, rewrites raw argument slices before pflag
+	// parsing. This allows commands to support legacy flag syntax that pflag
+	// cannot handle natively (e.g. head/tail -5 → -n 5).
+	NormalizeArgs func(args []string) []string
 }
 
 // NoFlags wraps a HandlerFunc in the MakeFlags format for commands that
@@ -57,6 +62,7 @@ func NoFlags(fn HandlerFunc) func(*FlagSet) HandlerFunc {
 func (c Command) Register() {
 	name := c.Name
 	factory := c.MakeFlags
+	normalize := c.NormalizeArgs
 	metaRegistry[name] = CommandMeta{Name: name, Description: c.Description, Help: c.Help}
 	addToRegistry(name, func(ctx context.Context, callCtx *CallContext, args []string) Result {
 		fs := pflag.NewFlagSet(name, pflag.ContinueOnError)
@@ -65,6 +71,9 @@ func (c Command) Register() {
 		if !fs.HasFlags() {
 			// No flags declared: pass all args through unchanged.
 			return handler(ctx, callCtx, args)
+		}
+		if normalize != nil {
+			args = normalize(args)
 		}
 		if err := fs.Parse(args); err != nil {
 			callCtx.Errf("%s: %v\n", name, err)
@@ -243,4 +252,33 @@ func Names() []string {
 func Meta(name string) (CommandMeta, bool) {
 	m, ok := metaRegistry[name]
 	return m, ok
+}
+
+// NormalizeBareNumberArg rewrites legacy -N shorthand (e.g. -5) to -n N so
+// that pflag can parse it. Only a bare -<digits> token in the first argument
+// position is rewritten; -<digits> appearing later in the argument list is
+// left unchanged (matching GNU head/tail behavior where the obsolete form is
+// only accepted as the first option). Processing stops at "--".
+//
+// When the first argument is a value-taking flag (-n, -c, --lines, --bytes),
+// the second argument is its value and must not be rewritten — even if it
+// looks like -<digits> (e.g. "head -n -9223372036854775809").
+//
+// valueFlags lists the flags that consume the next argument as a value
+// (e.g. []string{"-n", "-c", "--lines", "--bytes"}).
+func NormalizeBareNumberArg(args []string, valueFlags []string) []string {
+	if len(args) == 0 {
+		return args
+	}
+	a := args[0]
+	if a == "--" {
+		return args
+	}
+	if len(a) >= 2 && a[0] == '-' && a[1] >= '0' && a[1] <= '9' {
+		out := make([]string, 0, len(args)+1)
+		out = append(out, "-n", a[1:])
+		out = append(out, args[1:]...)
+		return out
+	}
+	return args
 }

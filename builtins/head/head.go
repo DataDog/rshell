@@ -61,9 +61,18 @@ import (
 
 // Cmd is the head builtin command descriptor.
 var Cmd = builtins.Command{
-	Name:        "head",
-	Description: "output the first part of files",
-	MakeFlags:   registerFlags,
+	Name:          "head",
+	Description:   "output the first part of files",
+	MakeFlags:     registerFlags,
+	NormalizeArgs: normalizeArgs,
+}
+
+// normalizeArgs rewrites legacy -N shorthand (e.g. -5) to -n N so that
+// pflag can parse it. Only a bare -<digits> token in the first argument
+// position is rewritten, matching GNU head behavior where the obsolete form
+// is only accepted as the first option.
+func normalizeArgs(args []string) []string {
+	return builtins.NormalizeBareNumberArg(args, []string{"-n", "-c", "--lines", "--bytes"})
 }
 
 // MaxCount is the maximum accepted line or byte count. Values above this

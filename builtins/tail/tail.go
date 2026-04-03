@@ -86,9 +86,18 @@ import (
 
 // Cmd is the tail builtin command descriptor.
 var Cmd = builtins.Command{
-	Name:        "tail",
-	Description: "output the last part of files",
-	MakeFlags:   registerFlags,
+	Name:          "tail",
+	Description:   "output the last part of files",
+	MakeFlags:     registerFlags,
+	NormalizeArgs: normalizeArgs,
+}
+
+// normalizeArgs rewrites legacy -N shorthand (e.g. -5) to -n N so that
+// pflag can parse it. Only a bare -<digits> token in the first argument
+// position is rewritten, matching GNU tail behavior where the obsolete form
+// is only accepted as the first option.
+func normalizeArgs(args []string) []string {
+	return builtins.NormalizeBareNumberArg(args, []string{"-n", "-c", "--lines", "--bytes"})
 }
 
 // MaxCount is the maximum accepted line or byte count. Values above this
