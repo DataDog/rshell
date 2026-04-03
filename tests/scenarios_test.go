@@ -473,7 +473,11 @@ func TestShellScenarios(t *testing.T) {
 				sc := loadScenario(t, path)
 				name := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
 				t.Run(name, func(t *testing.T) {
-					if !sc.Containerized {
+					if sc.Containerized {
+						if runtime.GOOS == "windows" {
+							t.Skip("containerized tests are Linux-only")
+						}
+					} else {
 						t.Parallel()
 					}
 					runScenario(t, sc)
