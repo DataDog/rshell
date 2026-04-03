@@ -629,6 +629,11 @@ func (s *Sandbox) SetHostPrefix(prefix string) {
 	s.hostPrefix = filepath.Clean(prefix)
 }
 
+// GetHostPrefix returns the current host mount prefix.
+func (s *Sandbox) GetHostPrefix() string {
+	return s.hostPrefix
+}
+
 // Close releases all os.Root file descriptors. It is safe to call multiple times.
 func (s *Sandbox) Close() error {
 	if s == nil {
