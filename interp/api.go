@@ -38,6 +38,11 @@ type runnerConfig struct {
 	// not be nil. It can only be set via [Env].
 	Env expand.Environ
 
+	// envPairs stores the raw "KEY=value" pairs from the Env option so
+	// that internal pairs (like ALLOWED_PATHS) can be appended before
+	// building the final ListEnviron in New().
+	envPairs []string
+
 	// execHandler is responsible for executing programs. It must not be nil.
 	execHandler ExecHandlerFunc
 
@@ -231,11 +236,16 @@ func New(opts ...RunnerOption) (*Runner, error) {
 		}
 	}
 
-	// Set the default fallbacks, if necessary.
-	// Default to an empty environment to avoid propagating parent env vars.
-	if r.Env == nil {
-		r.Env = expand.ListEnviron()
+	// Build the environment from stored pairs plus any internal variables.
+	// ALLOWED_PATHS is injected here so it's part of the immutable base
+	// environment regardless of option ordering.
+	pairs := r.envPairs
+	if r.sandbox != nil {
+		if paths := r.sandbox.Paths(); len(paths) > 0 {
+			pairs = append(pairs, "ALLOWED_PATHS="+strings.Join(paths, string(filepath.ListSeparator)))
+		}
 	}
+	r.Env = expand.ListEnviron(pairs...)
 	if r.Dir == "" {
 		dir, err := os.Getwd()
 		if err != nil {
@@ -330,7 +340,7 @@ func stdinFile(ctx context.Context, r io.Reader) (*os.File, error) {
 // an empty environment (no host environment variables are inherited).
 func Env(pairs ...string) RunnerOption {
 	return func(r *Runner) error {
-		r.Env = expand.ListEnviron(pairs...)
+		r.envPairs = pairs
 		return nil
 	}
 }
