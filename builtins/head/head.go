@@ -68,40 +68,11 @@ var Cmd = builtins.Command{
 }
 
 // normalizeArgs rewrites legacy -N shorthand (e.g. -5) to -n N so that
-// pflag can parse it. Only bare -<digits> tokens are rewritten; everything
-// else passes through unchanged. Processing stops at "--".
-//
-// When the previous argument is a value-taking flag (-n, -c, --lines, --bytes),
-// the current argument is its value and must not be rewritten — even if it
-// looks like -<digits> (e.g. "tail -n -9223372036854775809").
+// pflag can parse it. Only a bare -<digits> token in the first argument
+// position is rewritten, matching GNU head behavior where the obsolete form
+// is only accepted as the first option.
 func normalizeArgs(args []string) []string {
-	var out []string
-	skipNext := false
-	for i := 0; i < len(args); i++ {
-		a := args[i]
-		if a == "--" {
-			out = append(out, args[i:]...)
-			break
-		}
-		if skipNext {
-			out = append(out, a)
-			skipNext = false
-			continue
-		}
-		if len(a) >= 2 && a[0] == '-' && a[1] >= '0' && a[1] <= '9' {
-			out = append(out, "-n", a[1:])
-			continue
-		}
-		out = append(out, a)
-		// If this arg is a separate-value flag, skip its next argument.
-		if a == "-n" || a == "-c" || a == "--lines" || a == "--bytes" {
-			skipNext = true
-		}
-	}
-	if out == nil {
-		return args
-	}
-	return out
+	return builtins.NormalizeBareNumberArg(args, []string{"-n", "-c", "--lines", "--bytes"})
 }
 
 // MaxCount is the maximum accepted line or byte count. Values above this

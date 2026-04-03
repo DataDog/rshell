@@ -253,3 +253,32 @@ func Meta(name string) (CommandMeta, bool) {
 	m, ok := metaRegistry[name]
 	return m, ok
 }
+
+// NormalizeBareNumberArg rewrites legacy -N shorthand (e.g. -5) to -n N so
+// that pflag can parse it. Only a bare -<digits> token in the first argument
+// position is rewritten; -<digits> appearing later in the argument list is
+// left unchanged (matching GNU head/tail behavior where the obsolete form is
+// only accepted as the first option). Processing stops at "--".
+//
+// When the first argument is a value-taking flag (-n, -c, --lines, --bytes),
+// the second argument is its value and must not be rewritten — even if it
+// looks like -<digits> (e.g. "head -n -9223372036854775809").
+//
+// valueFlags lists the flags that consume the next argument as a value
+// (e.g. []string{"-n", "-c", "--lines", "--bytes"}).
+func NormalizeBareNumberArg(args []string, valueFlags []string) []string {
+	if len(args) == 0 {
+		return args
+	}
+	a := args[0]
+	if a == "--" {
+		return args
+	}
+	if len(a) >= 2 && a[0] == '-' && a[1] >= '0' && a[1] <= '9' {
+		out := make([]string, 0, len(args)+1)
+		out = append(out, "-n", a[1:])
+		out = append(out, args[1:]...)
+		return out
+	}
+	return args
+}
