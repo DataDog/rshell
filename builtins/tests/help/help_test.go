@@ -167,20 +167,19 @@ func TestHelpColumnsAligned(t *testing.T) {
 
 func TestHelpRestrictedShowsOnlyAllowed(t *testing.T) {
 	stdout, stderr, code := runScript(t, "help", "",
-		interp.AllowedCommands([]string{"rshell:echo"}))
+		interp.AllowedCommands([]string{"rshell:echo", "rshell:help"}))
 	assert.Equal(t, 0, code)
 	assert.Empty(t, stderr)
 	assert.Contains(t, stdout, "echo")
-	assert.Contains(t, stdout, "help") // help is always listed
+	assert.Contains(t, stdout, "help")
 	assert.NotContains(t, stdout, "cat")
 	assert.NotContains(t, stdout, "grep")
 	assert.NotContains(t, stdout, "ls")
 }
 
 func TestHelpRestrictedSingleCommand(t *testing.T) {
-	// Only "ls" is explicitly allowed; help should still appear.
 	stdout, _, code := runScript(t, "help", "",
-		interp.AllowedCommands([]string{"rshell:ls"}))
+		interp.AllowedCommands([]string{"rshell:ls", "rshell:help"}))
 	assert.Equal(t, 0, code)
 	assert.Contains(t, stdout, "help")
 	assert.Contains(t, stdout, "ls")
@@ -188,10 +187,10 @@ func TestHelpRestrictedSingleCommand(t *testing.T) {
 }
 
 func TestHelpRestrictedAlignmentAdjusts(t *testing.T) {
-	// With "wc" (2-char) and "strings" (7-char) plus implicit "help" (4-char),
+	// With "wc" (2-char), "strings" (7-char), and "help" (4-char),
 	// the column width should match the longest allowed name.
 	stdout, _, code := runScript(t, "help", "",
-		interp.AllowedCommands([]string{"rshell:wc", "rshell:strings"}))
+		interp.AllowedCommands([]string{"rshell:wc", "rshell:strings", "rshell:help"}))
 	assert.Equal(t, 0, code)
 
 	lines := strings.Split(strings.TrimSpace(stdout), "\n")
@@ -210,27 +209,20 @@ func TestHelpRestrictedAlignmentAdjusts(t *testing.T) {
 	}
 }
 
-func TestHelpAlwaysAvailable(t *testing.T) {
-	// help is not in the allowed list, but should still run.
-	stdout, stderr, code := runScript(t, "help", "",
+func TestHelpNotAllowedWhenNotInList(t *testing.T) {
+	// help is not in the allowed list and should be blocked.
+	_, stderr, code := runScript(t, "help", "",
 		interp.AllowedCommands([]string{"rshell:echo", "rshell:ls"}))
-	assert.Equal(t, 0, code)
-	assert.Empty(t, stderr)
-	assert.Contains(t, stdout, "help")
-	assert.Contains(t, stdout, "echo")
-	assert.Contains(t, stdout, "ls")
-	assert.NotContains(t, stdout, "cat")
+	assert.Equal(t, 127, code)
+	assert.Contains(t, stderr, "command not allowed")
 }
 
 func TestHelpAlwaysAvailableNoCommands(t *testing.T) {
 	// Even with an empty allowed list, help should work.
-	stdout, stderr, code := runScript(t, "help", "",
+	_, stderr, code := runScript(t, "help", "",
 		interp.AllowedCommands([]string{}))
-	assert.Equal(t, 0, code)
-	assert.Empty(t, stderr)
-	// Only help itself should be listed.
-	assert.Contains(t, stdout, "help")
-	assert.NotContains(t, stdout, "echo")
+	assert.Equal(t, 127, code)
+	assert.Contains(t, stderr, "command not allowed")
 }
 
 // --- Error handling ---
