@@ -6,6 +6,38 @@ First of all, thanks for contributing!
 
 Use the GitHub issue tracker to report bugs or request features. Before opening a new issue, search existing issues to avoid duplicates.
 
+### Issue Template
+
+```markdown
+## Summary
+<!-- one or two sentences describing the problem or feature request -->
+
+## Type
+<!-- bug | feature | security | documentation -->
+
+## Environment
+<!-- OS, rshell version or commit SHA, relevant runtime context (e.g. container, Kubernetes) -->
+
+## Reproduction
+\`\`\`sh
+# minimal script that reliably triggers the issue
+\`\`\`
+
+## Expected Behavior
+
+## Actual Behavior
+\`\`\`
+# exact output or error observed
+\`\`\`
+
+## Root Cause (if known)
+<!-- link to file and line, e.g. interp/runner_exec.go:261 -->
+
+## Related Issues / PRs
+```
+
+Before opening, search for duplicates — comment on an existing issue instead if one exists. Quote exact error strings rather than paraphrasing them.
+
 ## Pull Requests
 
 Have you fixed a bug or written a new feature and want to share it? Many thanks!
