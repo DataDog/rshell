@@ -256,9 +256,8 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 	}
 	name := args[0]
 
-	// Check whether the command is allowed. "help" is always permitted so
-	// users can discover available commands regardless of the active policy.
-	if !r.allowAllCommands && name != "help" && !r.allowedCommands[name] {
+	// Check whether the command is allowed.
+	if !r.allowAllCommands && !r.allowedCommands[name] {
 		r.errf("%s: command not allowed\n", name)
 		r.exit.code = 127
 		return
@@ -267,7 +266,7 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 	if fn, ok := builtins.Lookup(name); ok {
 		var runCmd func(context.Context, string, string, []string) (uint8, error)
 		runCmd = func(ctx context.Context, dir string, cmdName string, cmdArgs []string) (uint8, error) {
-			if !r.allowAllCommands && cmdName != "help" && !r.allowedCommands[cmdName] {
+			if !r.allowAllCommands && !r.allowedCommands[cmdName] {
 				return 127, fmt.Errorf("%s: command not allowed", cmdName)
 			}
 			cmdFn, ok := builtins.Lookup(cmdName)
@@ -324,7 +323,7 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 					return builtins.FileID{Dev: dev, Ino: ino}, true
 				},
 				CommandAllowed: func(n string) bool {
-					return r.allowAllCommands || n == "help" || r.allowedCommands[n]
+					return r.allowAllCommands || r.allowedCommands[n]
 				},
 			}
 			if r.stdin != nil {
@@ -386,7 +385,7 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 				return builtins.FileID{Dev: dev, Ino: ino}, true
 			},
 			CommandAllowed: func(cmdName string) bool {
-				return r.allowAllCommands || cmdName == "help" || r.allowedCommands[cmdName]
+				return r.allowAllCommands || r.allowedCommands[cmdName]
 			},
 			RunCommand: runCmd,
 			Proc:       r.proc,
