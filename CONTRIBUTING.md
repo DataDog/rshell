@@ -6,34 +6,34 @@ First of all, thanks for contributing!
 
 Use the GitHub issue tracker to report bugs or request features. Before opening a new issue, search existing issues to avoid duplicates.
 
-### Issue Template
+## Issue Template
 
 ```markdown
-## Summary
+### Summary
 <!-- one or two sentences describing the problem or feature request -->
 
-## Type
+### Type
 <!-- bug | feature | security | documentation -->
 
-## Environment
+### Environment
 <!-- OS, rshell version or commit SHA, relevant runtime context (e.g. container, Kubernetes) -->
 
-## Reproduction
+### Reproduction
 \`\`\`sh
 # minimal script that reliably triggers the issue
 \`\`\`
 
-## Expected Behavior
+### Expected Behavior
 
-## Actual Behavior
+### Actual Behavior
 \`\`\`
 # exact output or error observed
 \`\`\`
 
-## Root Cause (if known)
+### Root Cause (if known)
 <!-- link to file and line, e.g. interp/runner_exec.go:261 -->
 
-## Related Issues / PRs
+### Related Issues / PRs
 ```
 
 Before opening, search for duplicates — comment on an existing issue instead if one exists. Quote exact error strings rather than paraphrasing them.
