@@ -1,4 +1,4 @@
-description: python os.environ is accessible as a mapping and supports get() with a default.
+description: python os.environ is an empty dict — host environment variables are not accessible.
 skip_assert_against_bash: true
 setup:
   files:
@@ -7,9 +7,13 @@ setup:
         import os
         env = os.environ
         print(hasattr(env, 'get'))
-        # Read an env var that must be set in any real environment, or use a default
+        # Non-existent key returns the default, not a host env var
         val = env.get("NONEXISTENT_VAR_12345", "default_value")
         print(val)
+        # PATH is always set in any real OS environment, but must be invisible here
+        path_val = env.get("PATH", "not_visible")
+        print(path_val)
+        print(len(env) == 0)
       chmod: 0644
 input:
   allowed_paths: ["$DIR"]
@@ -19,5 +23,7 @@ expect:
   stdout: |+
     True
     default_value
+    not_visible
+    True
   stderr: |+
   exit_code: 0

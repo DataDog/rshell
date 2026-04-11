@@ -302,20 +302,11 @@ func mathFactorial(args []Object, _ map[string]Object) Object {
 func makeOsModule(opts *RunOpts) *PyModule {
 	osPath := makeOsPathModule(opts)
 
-	// Build environ dict
-	environ := pyDict()
-	for _, e := range os.Environ() {
-		parts := strings.SplitN(e, "=", 2)
-		if len(parts) == 2 {
-			environ.set(pyStr(parts[0]), pyStr(parts[1]))
-		}
-	}
-
 	linesep := "\n"
 
 	return &PyModule{Name: "os", Dict: map[string]Object{
 		"path":    osPath,
-		"environ": environ,
+		"environ": pyDict(), // empty — Python must not access the host process environment
 		"getcwd": makeBuiltin("getcwd", func(args []Object, _ map[string]Object) Object {
 			wd, err := os.Getwd()
 			if err != nil {
@@ -327,15 +318,11 @@ func makeOsModule(opts *RunOpts) *PyModule {
 			if len(args) < 1 {
 				raiseTypeError("getenv() missing required argument: 'key'")
 			}
-			key := mustStr(args[0], "getenv")
-			val, ok := os.LookupEnv(key)
-			if !ok {
-				if len(args) >= 2 {
-					return args[1]
-				}
-				return pyNone
+			// Always return the default — Python must not access the host process environment.
+			if len(args) >= 2 {
+				return args[1]
 			}
-			return pyStr(val)
+			return pyNone
 		}),
 		"listdir": makeBuiltin("listdir", func(args []Object, _ map[string]Object) Object {
 			// Read-only listing — use os.ReadDir (allowed since it's not sandboxed per design for reads)

@@ -66,8 +66,9 @@ func runInternal(ctx context.Context, opts RunOpts) (exitCode int) {
 	// Module cache
 	modules := map[string]*PyModule{}
 
-	// Create evaluator
-	eval := newEvaluator(ctx, &opts, globals, modules)
+	// Create evaluator; cleanup deregisters the goroutine's callObject entry.
+	eval, cleanup := newEvaluator(ctx, &opts, globals, modules)
+	defer cleanup()
 
 	// Catch sys.exit and unhandled exceptions
 	defer func() {

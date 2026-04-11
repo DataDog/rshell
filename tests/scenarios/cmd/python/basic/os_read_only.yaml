@@ -1,4 +1,4 @@
-description: python can use read-only os functions such as os.path.join and os.getenv.
+description: python os.getenv always returns the default — host environment is not accessible.
 skip_assert_against_bash: true
 input:
   script: |+

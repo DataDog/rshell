@@ -62,11 +62,9 @@ var internalPerPackageSymbols = map[string][]string{
 		"math/big.Int",                    // 🟢 arbitrary-precision integer type; pure in-memory computation, no I/O.
 		"math/big.NewInt",                 // 🟢 creates arbitrary-precision integer; pure function, no I/O.
 		"os.DevNull",                      // 🟢 device null path constant; pure constant.
-		"os.Environ",                      // 🟠 reads process environment variables for sys.environ module; read-only, no side effects.
 		"os.FileMode",                     // 🟢 file mode type; used only as argument type in the Open callback signature.
 		"os.Getwd",                        // 🟠 returns the current working directory for os.getcwd(); read-only, no side effects.
 		"os.IsNotExist",                   // 🟢 checks whether an error indicates file-not-found; pure predicate, no I/O.
-		"os.LookupEnv",                    // 🟠 reads a single environment variable for os.getenv(); read-only, no side effects.
 		"os.O_RDONLY",                     // 🟢 read-only file flag; pure constant.
 		"os.ReadDir",                      // 🟠 reads a directory listing for Python os.listdir(); read-only, no side effects.
 		"os.Stat",                         // 🟠 reads file metadata for Python os.path.exists/stat(); read-only, no side effects.
@@ -118,6 +116,8 @@ var internalPerPackageSymbols = map[string][]string{
 		"unicode/utf8.RuneCountInString",  // 🟢 counts runes in a string; pure function, no I/O.
 		"unicode/utf8.RuneLen",            // 🟢 returns the number of bytes required to encode a rune; pure function, no I/O.
 		"unicode/utf8.ValidString",        // 🟢 checks if a string is valid UTF-8; pure function, no I/O.
+		"runtime.Stack",                   // 🟢 reads current goroutine stack header to extract goroutine ID for per-goroutine callObject dispatch; read-only, no exec capability.
+		"sync.Map",                        // 🟢 concurrent-safe map for per-goroutine callObject registration; no I/O, no side effects.
 	},
 	"loopctl": {
 		"strconv.Atoi", // 🟢 string-to-int conversion; pure function, no I/O.
@@ -289,11 +289,9 @@ var internalAllowedSymbols = []string{
 	"math/big.Int",                    // 🟢 pyruntime: arbitrary-precision integer type for Python int arithmetic; pure in-memory computation.
 	"math/big.NewInt",                 // 🟢 pyruntime: creates arbitrary-precision integer; pure function, no I/O.
 	"os.DevNull",                      // 🟢 pyruntime: device null path constant for os.devnull in Python os module; pure constant.
-	"os.Environ",                      // 🟠 pyruntime: reads process environment for sys.environ; read-only, no side effects.
 	"os.FileMode",                     // 🟢 pyruntime: file mode type used in sandbox Open callback signature; pure type.
 	"os.Getwd",                        // 🟠 pyruntime: returns current working directory for os.getcwd(); read-only, no side effects.
 	"os.IsNotExist",                   // 🟢 pyruntime: file-not-found predicate; pure function, no I/O.
-	"os.LookupEnv",                    // 🟠 pyruntime: reads a single environment variable for os.getenv(); read-only, no side effects.
 	"os.UserHomeDir",                  // 🟠 pyruntime: returns home directory path for os.path.expanduser(); read-only, no side effects.
 	"path/filepath.Abs",               // 🟢 pyruntime: resolves relative path to absolute for os.path.abspath(); pure function.
 	"path/filepath.Dir",               // 🟢 pyruntime: returns directory component for os.path.dirname(); pure function, no I/O.
@@ -326,6 +324,8 @@ var internalAllowedSymbols = []string{
 	"unicode/utf8.RuneCountInString",  // 🟢 pyruntime: counts runes for len() on strings; pure function, no I/O.
 	"unicode/utf8.RuneLen",            // 🟢 pyruntime: bytes required to encode a rune; pure function, no I/O.
 	"unicode/utf8.ValidString",        // 🟢 pyruntime: checks if string is valid UTF-8 for str.isascii(); pure function, no I/O.
+	"runtime.Stack",                   // 🟢 pyruntime: reads current goroutine stack header to extract goroutine ID for per-goroutine callObject dispatch; read-only, no exec capability.
+	"sync.Map",                        // 🟢 pyruntime: concurrent-safe map for per-goroutine callObject registration; no I/O, no side effects.
 	// procinfo
 	"bufio.NewScanner", // 🟢 procinfo: line-by-line reading of /proc files; no write capability.
 	"github.com/DataDog/rshell/builtins/internal/procpath.Default", // 🟢 procinfo/procnet: canonical /proc filesystem root path constant; pure constant, no I/O.

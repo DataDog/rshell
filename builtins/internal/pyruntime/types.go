@@ -12,8 +12,10 @@ import (
 	"io"
 	"math/big"
 	"os"
+	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"unicode/utf8"
 )
 
@@ -1844,8 +1846,35 @@ func (i *PyInstance) lookupMethod(name string) (Object, bool) {
 	return nil, false
 }
 
-// callObject calls a callable object. Implemented in eval.go.
-var callObject func(fn Object, args []Object, kwargs map[string]Object) Object
+// goroutineCallFns maps goroutine ID → the active evaluator's callObject for that goroutine.
+// Each Python execution registers its callObject before running and deregisters on return,
+// so concurrent executions never share a function pointer.
+var goroutineCallFns sync.Map // map[int64]func(Object, []Object, map[string]Object) Object
+
+// goroutineID returns the current goroutine's numeric ID by inspecting the stack header.
+// Format: "goroutine N [..."
+func goroutineID() int64 {
+	var buf [64]byte
+	runtime.Stack(buf[:], false)
+	var id int64
+	for i := 10; i < len(buf); i++ { // skip "goroutine "
+		c := buf[i]
+		if c < '0' || c > '9' {
+			break
+		}
+		id = id*10 + int64(c-'0')
+	}
+	return id
+}
+
+// callObject dispatches a call through the evaluator registered for the current goroutine.
+func callObject(fn Object, args []Object, kwargs map[string]Object) Object {
+	v, ok := goroutineCallFns.Load(goroutineID())
+	if !ok {
+		panic("callObject invoked outside Python evaluation context")
+	}
+	return v.(func(Object, []Object, map[string]Object) Object)(fn, args, kwargs)
+}
 
 // ---- PyModule ----
 

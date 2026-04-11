@@ -36,8 +36,10 @@ type Evaluator struct {
 	activeException *PyException
 }
 
-// newEvaluator creates an Evaluator rooted at the module scope.
-func newEvaluator(ctx context.Context, opts *RunOpts, globals map[string]Object, modules map[string]*PyModule) *Evaluator {
+// newEvaluator creates an Evaluator rooted at the module scope and registers its
+// callObject for the current goroutine. The returned cleanup function must be
+// deferred by the caller to deregister the entry when execution finishes.
+func newEvaluator(ctx context.Context, opts *RunOpts, globals map[string]Object, modules map[string]*PyModule) (*Evaluator, func()) {
 	scope := newModuleScope(globals)
 	e := &Evaluator{
 		ctx:     ctx,
@@ -46,11 +48,13 @@ func newEvaluator(ctx context.Context, opts *RunOpts, globals map[string]Object,
 		opts:    opts,
 		modules: modules,
 	}
-	// Wire the callObject package-level var so types.go can call user functions.
-	callObject = func(fn Object, args []Object, kwargs map[string]Object) Object {
+	// Register the evaluator's callObject for this goroutine so that types.go
+	// and builtins_funcs.go can call user-defined functions without a shared global.
+	gid := goroutineID()
+	goroutineCallFns.Store(gid, func(fn Object, args []Object, kwargs map[string]Object) Object {
 		return e.callObject(fn, args, kwargs)
-	}
-	return e
+	})
+	return e, func() { goroutineCallFns.Delete(gid) }
 }
 
 // checkCtx panics with KeyboardInterrupt if the context has been cancelled.
