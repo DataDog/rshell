@@ -18,7 +18,7 @@ import (
 )
 
 // FuzzPythonSource fuzzes arbitrary Python source code via python -c.
-// The goal is to ensure gpython never panics regardless of input.
+// The goal is to ensure the interpreter never panics regardless of input.
 func FuzzPythonSource(f *testing.F) {
 	f.Add("print('hello')")
 	f.Add("import sys; sys.exit(0)")

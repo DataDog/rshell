@@ -1,4 +1,4 @@
-description: sys.exit() with a non-integer argument exits with code 1.
+description: sys.exit() with a non-integer argument prints the message to stderr and exits with code 1.
 skip_assert_against_bash: true
 input:
   script: |+
@@ -6,4 +6,5 @@ input:
 expect:
   stdout: |+
   stderr: |+
+    fatal error
   exit_code: 1

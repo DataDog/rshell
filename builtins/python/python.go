@@ -9,8 +9,8 @@
 //
 // Usage: python [-c code] [--help] [script | -] [arg ...]
 //
-// Execute Python source code.  Uses gpython, a pure-Go Python 3.4
-// interpreter, so no CPython installation is required.
+// Execute Python source code using a built-in pure-Go Python 3 interpreter.
+// No CPython installation is required.
 //
 // Input modes (mutually exclusive; first one wins):
 //
@@ -37,25 +37,22 @@
 //	-h, --help
 //	    Print usage to stdout and exit 0.
 //
-// Security restrictions (enforced by the gpython sandbox):
+// Security restrictions:
 //
 //   - os.system(), os.popen() and all OS process-spawning functions are
-//     removed.  Calling them raises AttributeError.
+//     absent from the os module.  Calling them raises AttributeError.
 //   - File-system mutation functions (os.remove, os.mkdir, os.makedirs,
 //     os.rmdir, os.removedirs, os.rename, os.link, os.symlink, etc.) are
-//     removed.
+//     absent.
 //   - The built-in open() is replaced with a read-only version that routes
 //     through the shell's AllowedPaths sandbox.  Write/append modes raise
 //     PermissionError.
-//   - tempfile and glob modules raise ImportError when imported.
+//   - tempfile, glob, subprocess, socket, ctypes raise ImportError when
+//     imported.
 //
-// Limitations (gpython vs CPython):
-//
-//   - Python 3.4 syntax only (no f-strings, no walrus operator, no
-//     match/case, no := assignments).
-//   - Very limited stdlib: math, string, sys, time, os (read-only), binascii.
-//   - No subprocess, socket, threading, multiprocessing, json, re, io,
-//     pathlib, hashlib, or other CPython batteries.
+// Supported stdlib modules: math, string, sys, os (read-only), binascii.
+// Blocked modules: subprocess, socket, ctypes, tempfile, glob, threading,
+// multiprocessing, asyncio.
 //
 // Exit codes:
 //
@@ -85,7 +82,7 @@ import (
 // Cmd is the python builtin command descriptor.
 var Cmd = builtins.Command{
 	Name:        "python",
-	Description: "run Python 3 scripts or inline code (gpython, Python 3.4)",
+	Description: "run Python 3 scripts or inline code",
 	MakeFlags:   registerFlags,
 }
 
@@ -99,11 +96,11 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 	return func(ctx context.Context, callCtx *builtins.CallContext, args []string) builtins.Result {
 		if *help {
 			callCtx.Out("Usage: python [-c code] [-h] [script | -] [arg ...]\n\n")
-			callCtx.Out("Run Python 3 source code (gpython interpreter, Python 3.4 syntax).\n\n")
+			callCtx.Out("Run Python 3 source code (built-in pure-Go interpreter).\n\n")
 			fs.SetOutput(callCtx.Stdout)
 			fs.PrintDefaults()
 			callCtx.Out("\nSecurity restrictions: os.system/write/delete blocked; open() is read-only.\n")
-			callCtx.Out("Limitations: Python 3.4 syntax; very limited stdlib (math, string, sys, time, os).\n")
+			callCtx.Out("Stdlib: math, string, sys, os (read-only), binascii.\n")
 			return builtins.Result{}
 		}
 

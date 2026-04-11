@@ -78,14 +78,6 @@ func internalCheckConfig() allowedSymbolsConfig {
 			if importPath == "github.com/DataDog/rshell/builtins" {
 				return true
 			}
-			// gpython: trusted third-party Python interpreter used exclusively by
-			// builtins/internal/pyruntime/.  All gpython symbols are exempt because
-			// listing every py.* symbol would be impractical and offer no real
-			// security benefit — the entire gpython library is a deliberate,
-			// code-reviewed dependency.
-			if strings.HasPrefix(importPath, "github.com/go-python/gpython/") {
-				return true
-			}
 			return false
 		},
 		ListName: "internalAllowedSymbols",

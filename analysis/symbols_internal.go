@@ -10,28 +10,114 @@ package analysis
 // internalAllowedSymbols (which acts as the global ceiling).
 var internalPerPackageSymbols = map[string][]string{
 	"pyruntime": {
-		"bufio.NewReader",      // 🟢 wraps an io.Reader with buffering for readline support; no write capability.
-		"bufio.NewScanner",     // 🟢 creates a line scanner on a file for readline(); no write capability.
-		"bufio.Reader",         // 🟢 type reference for buffered reader; no write capability.
-		"bufio.Scanner",        // 🟢 type reference for line-by-line scanner on goFile; no write capability.
-		"bytes.SplitAfter",     // 🟢 splits byte slice after delimiter; pure function, no I/O.
-		"context.Background",   // 🟢 returns the background context used for Open calls within Python open(); no side effects.
-		"context.Context",      // 🟢 deadline/cancellation interface; no side effects.
-		"errors.Is",            // 🟢 checks whether an error in a chain matches a target; pure function, no I/O.
-		"fmt.Errorf",           // 🟢 error formatting; pure function, no I/O.
-		"fmt.Fprintf",          // 🟢 formats and writes to a writer; used only for error output to stderr.
-		"fmt.Sprintf",          // 🟢 string formatting; pure function, no I/O.
-		"io.EOF",               // 🟢 sentinel error value for end-of-file; read-only constant, no I/O.
-		"io.LimitReader",       // 🟢 wraps a reader with a byte cap to prevent memory exhaustion; pure wrapper, no I/O by itself.
-		"io.ReadAll",           // 🟠 reads all bytes from a reader; always bounded by io.LimitReader in this package.
-		"io.ReadWriteCloser",   // 🟢 type reference for sandbox file handle; no write capability (write mode is blocked).
-		"io.Reader",            // 🟢 type reference for stdin reader; no write capability.
-		"io.Writer",            // 🟢 type reference for stdout/stderr writers; used only for output, not file writes.
-		"os.FileMode",          // 🟢 file mode type; used only as argument type in the Open callback signature.
-		"os.IsNotExist",        // 🟢 checks whether an error indicates file-not-found; pure predicate, no I/O.
-		"os.O_RDONLY",          // 🟢 read-only file flag; pure constant.
-		"strings.ContainsRune", // 🟢 checks if a rune appears in a string (used to detect binary mode 'b'); pure function, no I/O.
-		"strings.NewReader",    // 🟢 creates an in-memory io.Reader from a string (empty stdin fallback); pure function, no I/O.
+		"bufio.NewReader",        // 🟢 wraps an io.Reader with buffering for readline support; no write capability.
+		"bufio.Reader",           // 🟢 type reference for buffered reader; no write capability.
+		"context.Background",     // 🟢 returns the background context used for Open calls within Python open(); no side effects.
+		"context.Context",        // 🟢 deadline/cancellation interface; no side effects.
+		"encoding/base64.RawStdEncoding", // 🟢 base64 encoding/decoding without padding; pure function, no I/O.
+		"encoding/base64.StdEncoding",    // 🟢 base64 encoding/decoding of byte data; pure function, no I/O.
+		"encoding/hex.DecodeString",   // 🟢 hex decoding; pure function, no I/O.
+		"encoding/hex.EncodeToString", // 🟢 hex encoding; pure function, no I/O.
+		"fmt.Errorf",             // 🟢 error formatting; pure function, no I/O.
+		"fmt.Fprint",             // 🟢 writes to a writer; used only for output to stdout/stderr, no file-write capability.
+		"fmt.Fprintf",            // 🟢 formats and writes to a writer; used only for error output to stderr.
+		"fmt.Fprintln",           // 🟢 writes formatted line to a writer; used only for traceback output to stderr.
+		"fmt.Sprintf",            // 🟢 string formatting; pure function, no I/O.
+		"hash/crc32.IEEETable",   // 🟢 precomputed CRC32 lookup table constant; pure constant.
+		"hash/crc32.Update",      // 🟢 incremental CRC32 update; pure function, no I/O.
+		"io.EOF",                 // 🟢 sentinel error value for end-of-file; read-only constant, no I/O.
+		"io.LimitReader",         // 🟢 wraps a reader with a byte cap to prevent memory exhaustion; pure wrapper, no I/O by itself.
+		"io.ReadAll",             // 🟠 reads all bytes from a reader; always bounded by io.LimitReader in this package.
+		"io.ReadWriteCloser",     // 🟢 type reference for sandbox file handle; no write capability (write mode is blocked).
+		"io.Reader",              // 🟢 type reference for stdin reader; no write capability.
+		"io.Writer",              // 🟢 type reference for stdout/stderr writers; used only for output, not file writes.
+		"math.Abs",               // 🟢 absolute value; pure function, no I/O.
+		"math.Acos",              // 🟢 arc cosine for Python math module; pure function, no I/O.
+		"math.Asin",              // 🟢 arc sine for Python math module; pure function, no I/O.
+		"math.Atan",              // 🟢 arc tangent for Python math module; pure function, no I/O.
+		"math.Atan2",             // 🟢 two-argument arc tangent for Python math module; pure function, no I/O.
+		"math.Ceil",              // 🟢 ceiling function; pure function, no I/O.
+		"math.Cos",               // 🟢 cosine; pure function, no I/O.
+		"math.E",                 // 🟢 Euler's number constant; pure constant.
+		"math.Exp",               // 🟢 exponential; pure function, no I/O.
+		"math.Floor",             // 🟢 floor function; pure function, no I/O.
+		"math.Inf",               // 🟢 returns infinity; pure function, no I/O.
+		"math.IsInf",             // 🟢 checks for infinity; pure function, no I/O.
+		"math.IsNaN",             // 🟢 checks for NaN; pure function, no I/O.
+		"math.Log",               // 🟢 natural logarithm; pure function, no I/O.
+		"math.Log10",             // 🟢 base-10 logarithm; pure function, no I/O.
+		"math.Log2",              // 🟢 base-2 logarithm; pure function, no I/O.
+		"math.NaN",               // 🟢 returns NaN; pure function, no I/O.
+		"math.Pi",                // 🟢 pi constant; pure constant.
+		"math.Mod",               // 🟢 floating-point modulo for Python float %; pure function, no I/O.
+		"math.Pow",               // 🟢 power function; pure function, no I/O.
+		"math.Pow10",             // 🟢 power of 10 for float formatting; pure function, no I/O.
+		"math.RoundToEven",       // 🟢 banker's rounding for Python round(); pure function, no I/O.
+		"math.Sin",               // 🟢 sine; pure function, no I/O.
+		"math.Sqrt",              // 🟢 square root; pure function, no I/O.
+		"math.Tan",               // 🟢 tangent; pure function, no I/O.
+		"math.Hypot",             // 🟢 Euclidean norm for Python math.hypot(); pure function, no I/O.
+		"math.Trunc",             // 🟢 truncate to integer for Python math.trunc(); pure function, no I/O.
+		"math/big.Float",         // 🟢 arbitrary-precision float type; pure in-memory computation, no I/O.
+		"math/big.Int",           // 🟢 arbitrary-precision integer type; pure in-memory computation, no I/O.
+		"math/big.NewInt",        // 🟢 creates arbitrary-precision integer; pure function, no I/O.
+		"os.DevNull",             // 🟢 device null path constant; pure constant.
+		"os.Environ",             // 🟠 reads process environment variables for sys.environ module; read-only, no side effects.
+		"os.FileMode",            // 🟢 file mode type; used only as argument type in the Open callback signature.
+		"os.Getwd",               // 🟠 returns the current working directory for os.getcwd(); read-only, no side effects.
+		"os.IsNotExist",          // 🟢 checks whether an error indicates file-not-found; pure predicate, no I/O.
+		"os.LookupEnv",           // 🟠 reads a single environment variable for os.getenv(); read-only, no side effects.
+		"os.O_RDONLY",            // 🟢 read-only file flag; pure constant.
+		"os.ReadDir",             // 🟠 reads a directory listing for Python os.listdir(); read-only, no side effects.
+		"os.Stat",                // 🟠 reads file metadata for Python os.path.exists/stat(); read-only, no side effects.
+		"os.UserHomeDir",         // 🟠 returns the home directory path; read-only, no side effects.
+		"path/filepath.Abs",      // 🟢 resolves a relative path to absolute; pure function, no I/O beyond cwd read.
+		"path/filepath.Base",     // 🟢 returns the last element of a path for os.path.basename(); pure function, no I/O.
+		"path/filepath.Clean",    // 🟢 normalises path before use; pure function, no I/O.
+		"path/filepath.Dir",      // 🟢 returns directory component of path; pure function, no I/O.
+		"path/filepath.Ext",      // 🟢 returns file extension; pure function, no I/O.
+		"path/filepath.Join",     // 🟢 joins path elements; pure function, no I/O.
+		"path/filepath.ListSeparator", // 🟢 OS path list separator constant; pure constant.
+		"path/filepath.Separator", // 🟢 OS path separator constant; pure constant.
+		"strconv.Atoi",           // 🟢 string-to-int conversion; pure function, no I/O.
+		"strconv.FormatFloat",    // 🟢 float to string conversion; pure function, no I/O.
+		"strconv.FormatInt",      // 🟢 int to string conversion; pure function, no I/O.
+		"strconv.ParseFloat",     // 🟢 string to float conversion; pure function, no I/O.
+		"strconv.ParseInt",       // 🟢 string to int64 with base; pure function, no I/O.
+		"strconv.ParseUint",      // 🟢 string to uint64 with base; pure function, no I/O.
+		"strings.Builder",        // 🟢 efficient in-memory string builder; pure in-memory buffer, no I/O.
+		"strings.ContainsAny",    // 🟢 checks if string contains any of a set of runes; pure function, no I/O.
+		"strings.ContainsRune",   // 🟢 checks if a rune appears in a string (used to detect binary mode 'b'); pure function, no I/O.
+		"strings.Count",          // 🟢 counts non-overlapping instances of a substring; pure function, no I/O.
+		"strings.Fields",         // 🟢 splits a string on whitespace; pure function, no I/O.
+		"strings.HasPrefix",      // 🟢 checks string prefix; pure function, no I/O.
+		"strings.HasSuffix",      // 🟢 checks string suffix; pure function, no I/O.
+		"strings.Index",          // 🟢 finds first occurrence of a substring; pure function, no I/O.
+		"strings.IndexAny",       // 🟢 finds first occurrence of any rune in a string; pure function, no I/O.
+		"strings.Join",           // 🟢 joins strings with a separator for str.join(); pure function, no I/O.
+		"strings.LastIndex",      // 🟢 finds last occurrence of a substring; pure function, no I/O.
+		"strings.NewReader",      // 🟢 creates an in-memory io.Reader from a string (empty stdin fallback); pure function, no I/O.
+		"strings.Repeat",         // 🟢 repeats a string n times; pure function, no I/O.
+		"strings.Replace",        // 🟢 replaces occurrences of a substring; pure function, no I/O.
+		"strings.ReplaceAll",     // 🟢 replaces all occurrences of a substring; pure function, no I/O.
+		"strings.Split",          // 🟢 splits string on a separator; pure function, no I/O.
+		"strings.SplitN",         // 🟢 splits string into at most n substrings; pure function, no I/O.
+		"strings.Title",          // 🟢 title-cases words in a string; pure function, no I/O.
+		"strings.ToLower",        // 🟢 converts string to lowercase; pure function, no I/O.
+		"strings.ToUpper",        // 🟢 converts string to uppercase; pure function, no I/O.
+		"strings.Trim",           // 🟢 trims leading and trailing characters; pure function, no I/O.
+		"strings.TrimLeft",       // 🟢 trims leading characters; pure function, no I/O.
+		"strings.TrimLeftFunc",   // 🟢 trims leading runes matching a predicate; pure function, no I/O.
+		"strings.TrimRight",      // 🟢 trims trailing characters; pure function, no I/O.
+		"strings.TrimRightFunc",  // 🟢 trims trailing runes matching a predicate; pure function, no I/O.
+		"strings.TrimSpace",      // 🟢 removes leading/trailing whitespace; pure function, no I/O.
+		"strings.TrimSuffix",     // 🟢 trims a suffix from a string; pure function, no I/O.
+		"unicode.IsDigit",        // 🟢 checks if a rune is a digit; pure function, no I/O.
+		"unicode.IsLetter",       // 🟢 checks if a rune is a letter; pure function, no I/O.
+		"unicode/utf8.DecodeRuneInString", // 🟢 decodes the first rune of a string; pure function, no I/O.
+		"unicode/utf8.RuneCountInString",  // 🟢 counts runes in a string; pure function, no I/O.
+		"unicode/utf8.RuneLen",            // 🟢 returns the number of bytes required to encode a rune; pure function, no I/O.
+		"unicode/utf8.ValidString",        // 🟢 checks if a string is valid UTF-8; pure function, no I/O.
 	},
 	"loopctl": {
 		"strconv.Atoi", // 🟢 string-to-int conversion; pure function, no I/O.
@@ -160,18 +246,102 @@ var internalAllowedSymbols = []string{
 	"bufio.Scanner",        // 🟢 pyruntime: line-by-line scanner type reference; no write capability.
 	"bytes.SplitAfter",     // 🟢 pyruntime: splits byte slice after delimiter; pure function, no I/O.
 	"context.Background",   // 🟢 pyruntime: returns background context for sandbox open() calls; no side effects.
+	"encoding/base64.StdEncoding", // 🟢 pyruntime: base64 encoding/decoding in the binascii module; pure function, no I/O.
+	"encoding/hex.DecodeString",   // 🟢 pyruntime: hex decoding in the binascii module; pure function, no I/O.
+	"encoding/hex.EncodeToString", // 🟢 pyruntime: hex encoding in the binascii module; pure function, no I/O.
 	"errors.Is",            // 🟢 pyruntime: checks error chain membership; pure function, no I/O.
+	"fmt.Fprint",           // 🟢 pyruntime: writes to stdout/stderr in Python print(); no file-write capability.
 	"fmt.Fprintf",          // 🟢 pyruntime: writes formatted error messages to stderr; no file-write capability.
+	"fmt.Fprintln",         // 🟢 pyruntime: writes formatted traceback lines to stderr; no file-write capability.
 	"io.EOF",               // 🟢 pyruntime: end-of-file sentinel; read-only constant.
 	"io.LimitReader",       // 🟢 pyruntime/procsyskernel: wraps a reader with a byte cap; pure wrapper, no I/O by itself.
 	"io.ReadAll",           // 🟠 pyruntime/procsyskernel: reads all bytes from a bounded reader; always used with LimitReader.
 	"io.ReadWriteCloser",   // 🟢 pyruntime: sandbox file handle type; write mode is blocked at runtime.
 	"io.Reader",            // 🟢 pyruntime: stdin reader type reference; no write capability.
 	"io.Writer",            // 🟢 pyruntime: stdout/stderr writer type reference; no file-write capability.
+	"encoding/base64.RawStdEncoding", // 🟢 pyruntime: base64 encoding without padding in binascii module; pure function, no I/O.
+	"hash/crc32.ChecksumIEEE", // 🟢 pyruntime: computes CRC32 in the binascii module; pure function, no I/O.
+	"hash/crc32.IEEETable",    // 🟢 pyruntime: precomputed CRC32 table constant; pure constant.
+	"hash/crc32.Update",       // 🟢 pyruntime: incremental CRC32 update in binascii module; pure function, no I/O.
+	"math.Abs",             // 🟢 pyruntime: absolute value for Python math module; pure function, no I/O.
+	"math.Acos",            // 🟢 pyruntime: arc cosine for Python math module; pure function, no I/O.
+	"math.Asin",            // 🟢 pyruntime: arc sine for Python math module; pure function, no I/O.
+	"math.Atan",            // 🟢 pyruntime: arc tangent for Python math module; pure function, no I/O.
+	"math.Atan2",           // 🟢 pyruntime: two-argument arc tangent for Python math module; pure function, no I/O.
+	"math.Hypot",           // 🟢 pyruntime: Euclidean norm for Python math.hypot(); pure function, no I/O.
+	"math.Mod",             // 🟢 pyruntime: floating-point modulo for Python float %; pure function, no I/O.
+	"math.Pow10",           // 🟢 pyruntime: power of 10 for float formatting; pure function, no I/O.
+	"math.RoundToEven",     // 🟢 pyruntime: banker's rounding for Python round(); pure function, no I/O.
+	"math.Trunc",           // 🟢 pyruntime: truncate to integer for Python math.trunc(); pure function, no I/O.
+	"math.Ceil",            // 🟢 pyruntime: ceiling for Python math module; pure function, no I/O.
+	"math.Cos",             // 🟢 pyruntime: cosine for Python math module; pure function, no I/O.
+	"math.E",               // 🟢 pyruntime: Euler's number constant; pure constant.
+	"math.Exp",             // 🟢 pyruntime: exponential for Python math module; pure function, no I/O.
+	"math.Floor",           // 🟢 pyruntime: floor for Python math module; pure function, no I/O.
+	"math.Inf",             // 🟢 pyruntime: returns infinity; pure function, no I/O.
+	"math.IsInf",           // 🟢 pyruntime: checks for infinity; pure function, no I/O.
+	"math.IsNaN",           // 🟢 pyruntime: checks for NaN; pure function, no I/O.
+	"math.Log",             // 🟢 pyruntime: natural logarithm for Python math module; pure function, no I/O.
+	"math.Log10",           // 🟢 pyruntime: base-10 logarithm for Python math module; pure function, no I/O.
+	"math.Log2",            // 🟢 pyruntime: base-2 logarithm for Python math module; pure function, no I/O.
+	"math.MaxFloat64",      // 🟢 pyruntime: maximum float64 constant; pure constant.
+	"math.NaN",             // 🟢 pyruntime: returns NaN; pure function, no I/O.
+	"math.Pi",              // 🟢 pyruntime: pi constant; pure constant.
+	"math.Pow",             // 🟢 pyruntime: power function for Python math module; pure function, no I/O.
+	"math.Round",           // 🟢 pyruntime: round to nearest integer; pure function, no I/O.
+	"math.Sin",             // 🟢 pyruntime: sine for Python math module; pure function, no I/O.
+	"math.Sqrt",            // 🟢 pyruntime: square root for Python math module; pure function, no I/O.
+	"math.Tan",             // 🟢 pyruntime: tangent for Python math module; pure function, no I/O.
+	"math/big.Float",       // 🟢 pyruntime: arbitrary-precision float type for Python big int arithmetic; pure in-memory computation.
+	"math/big.Int",         // 🟢 pyruntime: arbitrary-precision integer type for Python int arithmetic; pure in-memory computation.
+	"math/big.NewFloat",    // 🟢 pyruntime: creates arbitrary-precision float; pure function, no I/O.
+	"math/big.NewInt",      // 🟢 pyruntime: creates arbitrary-precision integer; pure function, no I/O.
+	"os.DevNull",           // 🟢 pyruntime: device null path constant for os.devnull in Python os module; pure constant.
+	"os.Environ",           // 🟠 pyruntime: reads process environment for sys.environ; read-only, no side effects.
 	"os.FileMode",          // 🟢 pyruntime: file mode type used in sandbox Open callback signature; pure type.
+	"os.Getwd",             // 🟠 pyruntime: returns current working directory for os.getcwd(); read-only, no side effects.
 	"os.IsNotExist",        // 🟢 pyruntime: file-not-found predicate; pure function, no I/O.
+	"os.LookupEnv",         // 🟠 pyruntime: reads a single environment variable for os.getenv(); read-only, no side effects.
+	"os.UserHomeDir",       // 🟠 pyruntime: returns home directory path for os.path.expanduser(); read-only, no side effects.
+	"path/filepath.Abs",    // 🟢 pyruntime: resolves relative path to absolute for os.path.abspath(); pure function.
+	"path/filepath.Dir",    // 🟢 pyruntime: returns directory component for os.path.dirname(); pure function, no I/O.
+	"path/filepath.Ext",    // 🟢 pyruntime: returns file extension for os.path.splitext(); pure function, no I/O.
+	"path/filepath.ListSeparator", // 🟢 pyruntime: OS path list separator constant for os.pathsep; pure constant.
+	"path/filepath.Separator",     // 🟢 pyruntime: OS path separator constant for os.sep; pure constant.
+	"strconv.FormatFloat",  // 🟢 pyruntime: float-to-string conversion for Python repr/str; pure function, no I/O.
+	"strconv.FormatInt",    // 🟢 pyruntime: int-to-string conversion for Python repr/str/bin/hex/oct; pure function, no I/O.
+	"strconv.ParseFloat",   // 🟢 pyruntime: string-to-float conversion for float() builtin; pure function, no I/O.
+	"strings.ContainsAny",  // 🟢 pyruntime: checks if string contains any rune from a set; pure function, no I/O.
 	"strings.ContainsRune", // 🟢 pyruntime: checks mode string for binary flag; pure function, no I/O.
+	"strings.Count",        // 🟢 pyruntime: counts non-overlapping substrings for str.count(); pure function, no I/O.
+	"strings.HasSuffix",    // 🟢 pyruntime: checks string suffix for str.endswith(); pure function, no I/O.
+	"strings.Join",         // 🟢 pyruntime: joins strings with separator for str.join(); pure function, no I/O.
+	"strings.IndexAny",     // 🟢 pyruntime: finds first occurrence of any rune for string scanning; pure function, no I/O.
 	"strings.NewReader",    // 🟢 pyruntime: creates in-memory reader from string (empty stdin fallback); pure function.
+	"strings.Repeat",       // 🟢 pyruntime: repeats a string n times for str*n operator; pure function, no I/O.
+	"strings.Replace",      // 🟢 pyruntime: replaces substring occurrences for str.replace(); pure function, no I/O.
+	"strings.ReplaceAll",   // 🟢 pyruntime: replaces all occurrences for str.replace(); pure function, no I/O.
+	"strings.SplitN",       // 🟢 pyruntime: splits string for str.split(sep, maxsplit); pure function, no I/O.
+	"strings.Title",        // 🟢 pyruntime: title-cases words for str.title(); pure function, no I/O.
+	"strings.ToLower",      // 🟢 pyruntime: converts string to lowercase for str.lower(); pure function, no I/O.
+	"strings.Trim",         // 🟢 pyruntime: trims characters for str.strip(); pure function, no I/O.
+	"strings.TrimLeft",     // 🟢 pyruntime: trims leading characters for str.lstrip(); pure function, no I/O.
+	"strings.TrimLeftFunc", // 🟢 pyruntime: trims leading runes matching predicate for str.lstrip(); pure function, no I/O.
+	"strings.TrimRightFunc", // 🟢 pyruntime: trims trailing runes matching predicate for str.rstrip(); pure function, no I/O.
+	"strings.TrimSuffix",   // 🟢 pyruntime: trims a suffix; used for augmented assignment op stripping; pure function, no I/O.
+	"unicode.IsDigit",      // 🟢 pyruntime: checks if rune is digit for str.isdigit(); pure function, no I/O.
+	"unicode.IsLetter",     // 🟢 pyruntime: checks if rune is letter for lexer identifier scanning; pure function, no I/O.
+	"unicode.IsSpace",      // 🟢 pyruntime: checks if rune is whitespace for lexer; pure function, no I/O.
+	"unicode.IsTitle",      // 🟢 pyruntime: checks if rune is title case for str.istitle(); pure function, no I/O.
+	"unicode.IsUpper",      // 🟢 pyruntime: checks if rune is uppercase for str.isupper(); pure function, no I/O.
+	"unicode.ToLower",      // 🟢 pyruntime: converts rune to lowercase; pure function, no I/O.
+	"unicode.ToTitle",      // 🟢 pyruntime: converts rune to title case; pure function, no I/O.
+	"unicode.ToUpper",      // 🟢 pyruntime: converts rune to uppercase; pure function, no I/O.
+	"unicode/utf8.DecodeRuneInString", // 🟢 pyruntime: decodes first rune for lexer/string ops; pure function, no I/O.
+	"unicode/utf8.RuneCountInString",  // 🟢 pyruntime: counts runes for len() on strings; pure function, no I/O.
+	"unicode/utf8.RuneError",          // 🟢 pyruntime: replacement rune for invalid UTF-8; pure constant.
+	"unicode/utf8.RuneLen",            // 🟢 pyruntime: bytes required to encode a rune; pure function, no I/O.
+	"unicode/utf8.ValidString",        // 🟢 pyruntime: checks if string is valid UTF-8 for str.isascii(); pure function, no I/O.
 	// procinfo
 	"bufio.NewScanner", // 🟢 procinfo: line-by-line reading of /proc files; no write capability.
 	"github.com/DataDog/rshell/builtins/internal/procpath.Default", // 🟢 procinfo/procnet: canonical /proc filesystem root path constant; pure constant, no I/O.

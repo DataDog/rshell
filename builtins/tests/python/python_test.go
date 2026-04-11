@@ -243,7 +243,7 @@ func TestGlobNeutered(t *testing.T) {
 	dir := t.TempDir()
 	_, stderr, code := cmdRun(t, `python -c "import glob; glob.glob('*')"`, dir)
 	assert.Equal(t, 1, code)
-	assert.Contains(t, stderr, "AttributeError")
+	assert.Contains(t, stderr, "ImportError")
 }
 
 // ---- Error handling ----
