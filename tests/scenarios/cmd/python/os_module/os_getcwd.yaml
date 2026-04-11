@@ -1,12 +1,15 @@
-description: python os.getcwd() returns the current working directory as a non-empty string.
+description: python os.getcwd() is not available (blocked).
 skip_assert_against_bash: true
 setup:
   files:
     - path: getcwd.py
       content: |+
         import os
-        cwd = os.getcwd()
-        print(len(cwd) > 0)
+        try:
+            os.getcwd()
+            print("not blocked")
+        except AttributeError:
+            print("blocked")
       chmod: 0644
 input:
   allowed_paths: ["$DIR"]
@@ -14,6 +17,6 @@ input:
     python getcwd.py
 expect:
   stdout: |+
-    True
+    blocked
   stderr: |+
   exit_code: 0

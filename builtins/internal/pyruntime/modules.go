@@ -308,13 +308,6 @@ func makeOsModule(opts *RunOpts) *PyModule {
 	return &PyModule{Name: "os", Dict: map[string]Object{
 		"path":    osPath,
 		"environ": pyDict(), // empty — Python must not access the host process environment
-		"getcwd": makeBuiltin("getcwd", func(args []Object, _ map[string]Object) Object {
-			wd, err := os.Getwd()
-			if err != nil {
-				raiseOSError(err.Error())
-			}
-			return pyStr(wd)
-		}),
 		"getenv": makeBuiltin("getenv", func(args []Object, kwargs map[string]Object) Object {
 			if len(args) < 1 {
 				raiseTypeError("getenv() missing required argument: 'key'")
@@ -383,19 +376,6 @@ func makeOsPathModule(opts *RunOpts) *PyModule {
 				return pyStr(p)
 			}
 			return pyStr(abs)
-		}),
-		"expanduser": makeBuiltin("expanduser", func(args []Object, _ map[string]Object) Object {
-			if len(args) != 1 {
-				raiseTypeError("expanduser() takes exactly 1 argument")
-			}
-			p := mustStr(args[0], "expanduser")
-			if strings.HasPrefix(p, "~") {
-				home, err := os.UserHomeDir()
-				if err == nil {
-					p = home + p[1:]
-				}
-			}
-			return pyStr(p)
 		}),
 	}}
 }
