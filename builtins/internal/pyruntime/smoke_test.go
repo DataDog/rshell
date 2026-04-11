@@ -10,11 +10,20 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"testing"
 )
 
 func noFileOpen(ctx context.Context, path string, flags int, mode os.FileMode) (io.ReadWriteCloser, error) {
+	return nil, fmt.Errorf("no file access")
+}
+
+func noStat(_ context.Context, _ string) (fs.FileInfo, error) {
+	return nil, fmt.Errorf("no file access")
+}
+
+func noReadDir(_ context.Context, _ string) ([]fs.DirEntry, error) {
 	return nil, fmt.Errorf("no file access")
 }
 
@@ -71,6 +80,8 @@ print(add5(3))`, "8\n"},
 				Stdout:     &buf,
 				Stderr:     &ebuf,
 				Open:       noFileOpen,
+				Stat:       noStat,
+				ReadDir:    noReadDir,
 			})
 			got := buf.String()
 			if code != 0 || got != tt.expect {

@@ -10,6 +10,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"io/fs"
 	"math/big"
 	"os"
 	"runtime"
@@ -38,6 +39,12 @@ type RunOpts struct {
 
 	// Open opens a file for reading within the shell's AllowedPaths sandbox.
 	Open func(ctx context.Context, path string, flags int, mode os.FileMode) (io.ReadWriteCloser, error)
+
+	// Stat returns file metadata within the shell's AllowedPaths sandbox (follows symlinks).
+	Stat func(ctx context.Context, path string) (fs.FileInfo, error)
+
+	// ReadDir lists a directory within the shell's AllowedPaths sandbox.
+	ReadDir func(ctx context.Context, path string) ([]fs.DirEntry, error)
 
 	// Args are additional arguments appended to sys.argv after SourceName.
 	Args []string

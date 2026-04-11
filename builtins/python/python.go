@@ -160,6 +160,8 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			Stdout:     callCtx.Stdout,
 			Stderr:     callCtx.Stderr,
 			Open:       callCtx.OpenFile,
+			Stat:       callCtx.StatFile,
+			ReadDir:    callCtx.ReadDir,
 			Args:       extraArgs,
 		})
 

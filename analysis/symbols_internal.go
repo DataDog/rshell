@@ -61,13 +61,13 @@ var internalPerPackageSymbols = map[string][]string{
 		"math/big.Float",                  // 🟢 arbitrary-precision float type; pure in-memory computation, no I/O.
 		"math/big.Int",                    // 🟢 arbitrary-precision integer type; pure in-memory computation, no I/O.
 		"math/big.NewInt",                 // 🟢 creates arbitrary-precision integer; pure function, no I/O.
+		"io/fs.DirEntry",                  // 🟢 interface type for directory entries returned by ReadDir callback; no I/O by itself.
+		"io/fs.FileInfo",                  // 🟢 interface type for file metadata returned by Stat callback; no I/O by itself.
 		"os.DevNull",                      // 🟢 device null path constant; pure constant.
 		"os.FileMode",                     // 🟢 file mode type; used only as argument type in the Open callback signature.
 		"os.Getwd",                        // 🟠 returns the current working directory for os.getcwd(); read-only, no side effects.
 		"os.IsNotExist",                   // 🟢 checks whether an error indicates file-not-found; pure predicate, no I/O.
 		"os.O_RDONLY",                     // 🟢 read-only file flag; pure constant.
-		"os.ReadDir",                      // 🟠 reads a directory listing for Python os.listdir(); read-only, no side effects.
-		"os.Stat",                         // 🟠 reads file metadata for Python os.path.exists/stat(); read-only, no side effects.
 		"os.UserHomeDir",                  // 🟠 returns the home directory path; read-only, no side effects.
 		"path/filepath.Abs",               // 🟢 resolves a relative path to absolute; pure function, no I/O beyond cwd read.
 		"path/filepath.Base",              // 🟢 returns the last element of a path for os.path.basename(); pure function, no I/O.
@@ -258,6 +258,8 @@ var internalAllowedSymbols = []string{
 	"io.ReadWriteCloser",              // 🟢 pyruntime: sandbox file handle type; write mode is blocked at runtime.
 	"io.Reader",                       // 🟢 pyruntime: stdin reader type reference; no write capability.
 	"io.Writer",                       // 🟢 pyruntime: stdout/stderr writer type reference; no file-write capability.
+	"io/fs.DirEntry",                  // 🟢 pyruntime: interface type for directory entries returned by the ReadDir sandbox callback; no I/O by itself.
+	"io/fs.FileInfo",                  // 🟢 pyruntime: interface type for file metadata returned by the Stat sandbox callback; no I/O by itself.
 	"math.Abs",                        // 🟢 pyruntime: absolute value for Python math module; pure function, no I/O.
 	"math.Acos",                       // 🟢 pyruntime: arc cosine for Python math module; pure function, no I/O.
 	"math.Asin",                       // 🟢 pyruntime: arc sine for Python math module; pure function, no I/O.

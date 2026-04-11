@@ -7,6 +7,7 @@ package pyruntime
 
 import (
 	"bufio"
+	"context"
 	"encoding/base64"
 	"encoding/hex"
 	"fmt"
@@ -325,12 +326,11 @@ func makeOsModule(opts *RunOpts) *PyModule {
 			return pyNone
 		}),
 		"listdir": makeBuiltin("listdir", func(args []Object, _ map[string]Object) Object {
-			// Read-only listing — use os.ReadDir (allowed since it's not sandboxed per design for reads)
 			dir := "."
 			if len(args) > 0 {
 				dir = mustStr(args[0], "listdir")
 			}
-			entries, err := os.ReadDir(dir)
+			entries, err := opts.ReadDir(context.Background(), dir)
 			if err != nil {
 				raiseOSError(err.Error())
 			}
@@ -417,7 +417,7 @@ func makeOsPathExists(opts *RunOpts) func([]Object, map[string]Object) Object {
 			raiseTypeError("exists() takes exactly 1 argument")
 		}
 		path := mustStr(args[0], "exists")
-		_, err := os.Stat(path)
+		_, err := opts.Stat(context.Background(), path)
 		return pyBool(err == nil)
 	}
 }
@@ -428,7 +428,7 @@ func makeOsPathIsFile(opts *RunOpts) func([]Object, map[string]Object) Object {
 			raiseTypeError("isfile() takes exactly 1 argument")
 		}
 		path := mustStr(args[0], "isfile")
-		info, err := os.Stat(path)
+		info, err := opts.Stat(context.Background(), path)
 		if err != nil {
 			return pyFalse
 		}
@@ -442,7 +442,7 @@ func makeOsPathIsDir(opts *RunOpts) func([]Object, map[string]Object) Object {
 			raiseTypeError("isdir() takes exactly 1 argument")
 		}
 		path := mustStr(args[0], "isdir")
-		info, err := os.Stat(path)
+		info, err := opts.Stat(context.Background(), path)
 		if err != nil {
 			return pyFalse
 		}
