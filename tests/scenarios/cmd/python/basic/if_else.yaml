@@ -1,0 +1,23 @@
+description: python evaluates if/elif/else branches correctly.
+skip_assert_against_bash: true
+setup:
+  files:
+    - path: branch.py
+      content: |+
+        x = 7
+        if x > 10:
+            print("large")
+        elif x > 5:
+            print("medium")
+        else:
+            print("small")
+      chmod: 0644
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    python branch.py
+expect:
+  stdout: |+
+    medium
+  stderr: |+
+  exit_code: 0

@@ -1,0 +1,14 @@
+description: python exit code can be used to branch in a shell if statement.
+skip_assert_against_bash: true
+input:
+  script: |+
+    if python -c "import sys; sys.exit(1)"; then
+      echo "success"
+    else
+      echo "failure"
+    fi
+expect:
+  stdout: |+
+    failure
+  stderr: |+
+  exit_code: 0

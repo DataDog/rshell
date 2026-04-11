@@ -1,0 +1,20 @@
+description: open().readline() reads one line at a time from a file.
+skip_assert_against_bash: true
+setup:
+  files:
+    - path: lines.txt
+      content: |+
+        first
+        second
+        third
+      chmod: 0644
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    python -c "f = open('lines.txt'); print(f.readline().strip()); print(f.readline().strip()); f.close()"
+expect:
+  stdout: |+
+    first
+    second
+  stderr: |+
+  exit_code: 0

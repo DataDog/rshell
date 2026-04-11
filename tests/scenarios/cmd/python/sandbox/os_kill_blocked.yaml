@@ -1,0 +1,9 @@
+description: os.kill() is blocked and raises AttributeError.
+skip_assert_against_bash: true
+input:
+  script: |+
+    python -c "import os; os.kill(1, 9)"
+expect:
+  stdout: |+
+  stderr_contains: ["AttributeError"]
+  exit_code: 1

@@ -1,0 +1,9 @@
+description: tempfile module functions are blocked and fail when called.
+skip_assert_against_bash: true
+input:
+  script: |+
+    python -c "import tempfile; tempfile.mkstemp()"
+expect:
+  stdout: |+
+  stderr_contains: ["AttributeError"]
+  exit_code: 1

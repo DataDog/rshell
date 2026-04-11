@@ -1,0 +1,10 @@
+description: Python code can read a single line from sys.stdin using readline().
+skip_assert_against_bash: true
+input:
+  script: |+
+    printf "first\nsecond\n" | python -c "import sys; line = sys.stdin.readline(); print(line.strip())"
+expect:
+  stdout: |+
+    first
+  stderr: |+
+  exit_code: 0

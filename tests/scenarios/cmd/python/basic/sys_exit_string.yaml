@@ -1,0 +1,9 @@
+description: sys.exit() with a non-integer argument exits with code 1.
+skip_assert_against_bash: true
+input:
+  script: |+
+    python -c "import sys; sys.exit('fatal error')"
+expect:
+  stdout: |+
+  stderr: |+
+  exit_code: 1

@@ -1,0 +1,39 @@
+description: python script uses class inheritance with method overriding.
+skip_assert_against_bash: true
+setup:
+  files:
+    - path: shapes.py
+      content: |+
+        class Shape:
+            def area(self):
+                return 0
+
+            def describe(self):
+                return 'Shape with area ' + str(self.area())
+
+        class Rectangle(Shape):
+            def __init__(self, w, h):
+                self.w = w
+                self.h = h
+
+            def area(self):
+                return self.w * self.h
+
+        class Square(Rectangle):
+            def __init__(self, side):
+                Rectangle.__init__(self, side, side)
+
+        shapes = [Rectangle(3, 4), Square(5)]
+        for s in shapes:
+            print(s.describe())
+      chmod: 0644
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    python shapes.py
+expect:
+  stdout: |+
+    Shape with area 12
+    Shape with area 25
+  stderr: |+
+  exit_code: 0

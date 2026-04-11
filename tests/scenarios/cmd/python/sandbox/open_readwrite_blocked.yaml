@@ -1,0 +1,9 @@
+description: open() in read-write mode ('r+') raises PermissionError.
+skip_assert_against_bash: true
+input:
+  script: |+
+    python -c "open('/tmp/test.txt', 'r+')"
+expect:
+  stdout: |+
+  stderr_contains: ["PermissionError"]
+  exit_code: 1

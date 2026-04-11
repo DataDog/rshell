@@ -1,0 +1,9 @@
+description: glob module functions are blocked and raise AttributeError when called.
+skip_assert_against_bash: true
+input:
+  script: |+
+    python -c "import glob; glob.glob('*')"
+expect:
+  stdout: |+
+  stderr_contains: ["AttributeError"]
+  exit_code: 1

@@ -1,0 +1,11 @@
+description: python supports list operations including append, len, and indexing.
+skip_assert_against_bash: true
+input:
+  script: |+
+    python -c "lst = [10, 20, 30]; lst.append(40); print(len(lst)); print(lst[-1])"
+expect:
+  stdout: |+
+    4
+    40
+  stderr: |+
+  exit_code: 0

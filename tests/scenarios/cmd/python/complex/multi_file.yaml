@@ -1,0 +1,31 @@
+description: python script processes multiple input files passed via sys.argv.
+skip_assert_against_bash: true
+setup:
+  files:
+    - path: a.txt
+      content: "10\n20\n30\n"
+      chmod: 0644
+    - path: b.txt
+      content: "5\n15\n"
+      chmod: 0644
+    - path: sum_files.py
+      content: |+
+        import sys
+        total = 0
+        for path in sys.argv[1:]:
+            with open(path) as f:
+                for line in f.readlines():
+                    line = line.strip()
+                    if line:
+                        total = total + int(line)
+        print(total)
+      chmod: 0644
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    python sum_files.py a.txt b.txt
+expect:
+  stdout: |+
+    80
+  stderr: |+
+  exit_code: 0

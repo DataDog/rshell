@@ -1,0 +1,9 @@
+description: ZeroDivisionError is reported to stderr and exits with code 1.
+skip_assert_against_bash: true
+input:
+  script: |+
+    python -c "print(1 / 0)"
+expect:
+  stdout: |+
+  stderr_contains: ["ZeroDivisionError"]
+  exit_code: 1
