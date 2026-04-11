@@ -456,7 +456,7 @@ func (l *Lexer) readStringOrBytes() Token {
 				// \UNNNNNNNN
 				if l.pos+7 < len(l.src) {
 					hexStr := string(l.src[l.pos : l.pos+8])
-					if v, err := strconv.ParseUint(hexStr, 16, 32); err == nil {
+					if v, err := strconv.ParseUint(hexStr, 16, 32); err == nil && v <= unicode.MaxRune {
 						buf.WriteRune(rune(v))
 						l.pos += 8
 						l.col += 8

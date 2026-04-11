@@ -7,6 +7,7 @@ package pyruntime
 
 import (
 	"fmt"
+	"math"
 	"math/big"
 	"strconv"
 	"strings"
@@ -2320,8 +2321,8 @@ func parseIntLiteral(s string) (interface{}, error) {
 	if n, err := strconv.ParseInt(s, base, 64); err == nil {
 		return n, nil
 	}
-	// Try uint64.
-	if n, err := strconv.ParseUint(s, base, 64); err == nil {
+	// Try uint64 (only if the value fits in int64 to avoid silent wrap-around).
+	if n, err := strconv.ParseUint(s, base, 64); err == nil && n <= math.MaxInt64 {
 		return int64(n), nil
 	}
 	// Fall back to big.Int.
