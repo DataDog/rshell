@@ -1,0 +1,10 @@
+description: python assert passes when condition is true.
+skip_assert_against_bash: true
+input:
+  script: |+
+    python -c "assert True; assert 1 == 1; assert 'hello' != 'world'; print('all asserts passed')"
+expect:
+  stdout: |+
+    all asserts passed
+  stderr: |+
+  exit_code: 0

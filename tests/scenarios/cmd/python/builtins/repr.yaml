@@ -1,0 +1,25 @@
+description: python repr() returns a developer-readable string representation of an object.
+skip_assert_against_bash: true
+setup:
+  files:
+    - path: repr.py
+      content: |+
+        print(repr("hello"))
+        print(repr(42))
+        print(repr([1, 2, 3]))
+        print(repr(None))
+        print(repr(True))
+      chmod: 0644
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    python repr.py
+expect:
+  stdout: |+
+    'hello'
+    42
+    [1, 2, 3]
+    None
+    True
+  stderr: |+
+  exit_code: 0

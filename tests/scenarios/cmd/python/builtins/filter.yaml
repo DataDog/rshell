@@ -1,0 +1,10 @@
+description: python filter() selects elements from an iterable for which a function returns true.
+skip_assert_against_bash: true
+input:
+  script: |+
+    python -c "nums = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]; evens = list(filter(lambda x: x % 2 == 0, nums)); print(evens)"
+expect:
+  stdout: |+
+    [2, 4, 6, 8, 10]
+  stderr: |+
+  exit_code: 0

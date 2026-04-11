@@ -1,0 +1,23 @@
+description: python range() supports stop-only, start/stop, start/stop/step, and negative step forms.
+skip_assert_against_bash: true
+setup:
+  files:
+    - path: range.py
+      content: |+
+        print(list(range(5)))
+        print(list(range(2, 6)))
+        print(list(range(0, 10, 3)))
+        print(list(range(5, 0, -1)))
+      chmod: 0644
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    python range.py
+expect:
+  stdout: |+
+    [0, 1, 2, 3, 4]
+    [2, 3, 4, 5]
+    [0, 3, 6, 9]
+    [5, 4, 3, 2, 1]
+  stderr: |+
+  exit_code: 0

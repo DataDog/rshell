@@ -1,0 +1,30 @@
+description: python pass statement works in if/for/while/def/class bodies.
+skip_assert_against_bash: true
+setup:
+  files:
+    - path: pass.py
+      content: |+
+        if True:
+            pass
+        for i in range(3):
+            pass
+        n = 0
+        while n < 2:
+            n += 1
+            pass
+        def noop():
+            pass
+        class Empty:
+            pass
+        noop()
+        print("done")
+      chmod: 0644
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    python pass.py
+expect:
+  stdout: |+
+    done
+  stderr: |+
+  exit_code: 0

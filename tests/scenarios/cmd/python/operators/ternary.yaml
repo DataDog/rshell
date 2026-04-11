@@ -1,0 +1,31 @@
+description: python ternary (conditional) expression selects one of two values based on a condition.
+skip_assert_against_bash: true
+setup:
+  files:
+    - path: ternary.py
+      content: |+
+        x = 10
+        result = "positive" if x > 0 else "non-positive"
+        print(result)
+
+        def abs_val(n):
+            return n if n >= 0 else -n
+
+        print(abs_val(-5))
+        print(abs_val(3))
+
+        grade = "pass" if 60 <= 75 <= 100 else "fail"
+        print(grade)
+      chmod: 0644
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    python ternary.py
+expect:
+  stdout: |+
+    positive
+    5
+    3
+    pass
+  stderr: |+
+  exit_code: 0

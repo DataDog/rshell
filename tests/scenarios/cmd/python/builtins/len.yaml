@@ -1,0 +1,25 @@
+description: python len() returns the number of items in lists, strings, dicts, tuples, and sets.
+skip_assert_against_bash: true
+setup:
+  files:
+    - path: len.py
+      content: |+
+        print(len([1, 2, 3]))
+        print(len("hello"))
+        print(len({"a": 1, "b": 2}))
+        print(len((1, 2, 3, 4)))
+        print(len({1, 2, 3}))
+      chmod: 0644
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    python len.py
+expect:
+  stdout: |+
+    3
+    5
+    2
+    4
+    3
+  stderr: |+
+  exit_code: 0

@@ -1,0 +1,28 @@
+description: python bare raise re-raises the current exception from within an except handler.
+skip_assert_against_bash: true
+setup:
+  files:
+    - path: bareraise.py
+      content: |+
+        def risky():
+            try:
+                raise RuntimeError("original")
+            except RuntimeError:
+                print("handling")
+                raise
+
+        try:
+            risky()
+        except RuntimeError as e:
+            print("re-raised:", e)
+      chmod: 0644
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    python bareraise.py
+expect:
+  stdout: |+
+    handling
+    re-raised: original
+  stderr: |+
+  exit_code: 0

@@ -1,0 +1,36 @@
+description: python multiple except handlers match the first matching exception type, including tuple catch.
+skip_assert_against_bash: true
+setup:
+  files:
+    - path: multiexcept.py
+      content: |+
+        for v in [1, 2, 0]:
+            try:
+                if v == 1:
+                    raise ValueError("val")
+                elif v == 2:
+                    raise TypeError("typ")
+                else:
+                    print("ok")
+            except ValueError as e:
+                print("ValueError:", e)
+            except TypeError as e:
+                print("TypeError:", e)
+
+        try:
+            raise IndexError("index")
+        except (ValueError, IndexError, KeyError) as e:
+            print("tuple catch:", e)
+      chmod: 0644
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    python multiexcept.py
+expect:
+  stdout: |+
+    ValueError: val
+    TypeError: typ
+    ok
+    tuple catch: index
+  stderr: |+
+  exit_code: 0

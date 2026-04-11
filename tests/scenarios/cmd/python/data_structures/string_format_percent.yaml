@@ -1,0 +1,26 @@
+description: python % operator formats strings with positional substitution for strings, ints, and floats.
+skip_assert_against_bash: true
+setup:
+  files:
+    - path: fmtpct.py
+      content: |+
+        name = "world"
+        n = 42
+        pi = 3.14159
+        print("Hello, %s!" % name)
+        print("Number: %d" % n)
+        print("Float: %.2f" % pi)
+        print("%s has %d items" % ("list", 5))
+      chmod: 0644
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    python fmtpct.py
+expect:
+  stdout: |+
+    Hello, world!
+    Number: 42
+    Float: 3.14
+    list has 5 items
+  stderr: |+
+  exit_code: 0

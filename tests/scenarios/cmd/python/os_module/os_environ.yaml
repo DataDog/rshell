@@ -1,0 +1,23 @@
+description: python os.environ is accessible as a mapping and supports get() with a default.
+skip_assert_against_bash: true
+setup:
+  files:
+    - path: environ.py
+      content: |+
+        import os
+        env = os.environ
+        print(hasattr(env, 'get'))
+        # Read an env var that must be set in any real environment, or use a default
+        val = env.get("NONEXISTENT_VAR_12345", "default_value")
+        print(val)
+      chmod: 0644
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    python environ.py
+expect:
+  stdout: |+
+    True
+    default_value
+  stderr: |+
+  exit_code: 0

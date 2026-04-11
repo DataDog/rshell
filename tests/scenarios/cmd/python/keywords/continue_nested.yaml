@@ -1,0 +1,26 @@
+description: python continue skips to the next iteration of only the innermost loop.
+skip_assert_against_bash: true
+setup:
+  files:
+    - path: continue.py
+      content: |+
+        for i in range(3):
+            for j in range(3):
+                if j == 1:
+                    continue
+                print(i, j)
+      chmod: 0644
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    python continue.py
+expect:
+  stdout: |+
+    0 0
+    0 2
+    1 0
+    1 2
+    2 0
+    2 2
+  stderr: |+
+  exit_code: 0

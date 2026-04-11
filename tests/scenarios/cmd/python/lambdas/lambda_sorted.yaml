@@ -1,0 +1,23 @@
+description: python lambda used as key argument to sorted() orders by computed value.
+skip_assert_against_bash: true
+setup:
+  files:
+    - path: lambdasort.py
+      content: |+
+        words = ["banana", "apple", "cherry", "date"]
+        sorted_words = sorted(words, key=lambda w: len(w))
+        for w in sorted_words:
+            print(w)
+      chmod: 0644
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    python lambdasort.py
+expect:
+  stdout: |+
+    date
+    apple
+    banana
+    cherry
+  stderr: |+
+  exit_code: 0

@@ -1,0 +1,21 @@
+description: python lambda creates anonymous single-expression functions.
+skip_assert_against_bash: true
+setup:
+  files:
+    - path: lambda.py
+      content: |+
+        square = lambda x: x * x
+        add = lambda a, b: a + b
+        print(square(5))
+        print(add(3, 4))
+      chmod: 0644
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    python lambda.py
+expect:
+  stdout: |+
+    25
+    7
+  stderr: |+
+  exit_code: 0

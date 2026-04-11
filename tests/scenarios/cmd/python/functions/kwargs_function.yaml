@@ -1,0 +1,23 @@
+description: python **kwargs collects extra keyword arguments into a dict.
+skip_assert_against_bash: true
+setup:
+  files:
+    - path: kwargs.py
+      content: |+
+        def describe(**kwargs):
+            for key in sorted(kwargs.keys()):
+                print(key + "=" + str(kwargs[key]))
+
+        describe(name="Alice", age=30, city="NYC")
+      chmod: 0644
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    python kwargs.py
+expect:
+  stdout: |+
+    age=30
+    city=NYC
+    name=Alice
+  stderr: |+
+  exit_code: 0

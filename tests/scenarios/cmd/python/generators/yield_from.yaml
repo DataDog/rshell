@@ -1,0 +1,28 @@
+description: python yield from delegates to a sub-generator, forwarding all its values.
+skip_assert_against_bash: true
+setup:
+  files:
+    - path: yieldfrom.py
+      content: |+
+        def gen_a():
+            yield 1
+            yield 2
+
+        def gen_b():
+            yield from gen_a()
+            yield 3
+
+        for v in gen_b():
+            print(v)
+      chmod: 0644
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    python yieldfrom.py
+expect:
+  stdout: |+
+    1
+    2
+    3
+  stderr: |+
+  exit_code: 0

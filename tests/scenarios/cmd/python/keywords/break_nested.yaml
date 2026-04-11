@@ -1,0 +1,23 @@
+description: python break exits only the innermost loop in nested loops.
+skip_assert_against_bash: true
+setup:
+  files:
+    - path: break.py
+      content: |+
+        for i in range(3):
+            for j in range(3):
+                if j == 1:
+                    break
+                print(i, j)
+      chmod: 0644
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    python break.py
+expect:
+  stdout: |+
+    0 0
+    1 0
+    2 0
+  stderr: |+
+  exit_code: 0

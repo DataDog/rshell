@@ -1,0 +1,25 @@
+description: python try/except/finally catches the exception and runs cleanup in finally.
+skip_assert_against_bash: true
+setup:
+  files:
+    - path: excfinally.py
+      content: |+
+        try:
+            raise ValueError("oops")
+        except ValueError as e:
+            print("caught:", e)
+        finally:
+            print("cleanup")
+        print("after")
+      chmod: 0644
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    python excfinally.py
+expect:
+  stdout: |+
+    caught: oops
+    cleanup
+    after
+  stderr: |+
+  exit_code: 0

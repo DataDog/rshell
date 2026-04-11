@@ -1,0 +1,27 @@
+description: python isinstance() checks whether an object is an instance of a type or tuple of types.
+skip_assert_against_bash: true
+setup:
+  files:
+    - path: isinstance.py
+      content: |+
+        print(isinstance(42, int))
+        print(isinstance("hello", str))
+        print(isinstance(3.14, float))
+        print(isinstance([1, 2], list))
+        print(isinstance(42, (int, str)))
+        print(isinstance("x", (int, str)))
+      chmod: 0644
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    python isinstance.py
+expect:
+  stdout: |+
+    True
+    True
+    True
+    True
+    True
+    True
+  stderr: |+
+  exit_code: 0

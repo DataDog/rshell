@@ -1,0 +1,19 @@
+description: python os.getcwd() returns the current working directory as a non-empty string.
+skip_assert_against_bash: true
+setup:
+  files:
+    - path: getcwd.py
+      content: |+
+        import os
+        cwd = os.getcwd()
+        print(len(cwd) > 0)
+      chmod: 0644
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    python getcwd.py
+expect:
+  stdout: |+
+    True
+  stderr: |+
+  exit_code: 0

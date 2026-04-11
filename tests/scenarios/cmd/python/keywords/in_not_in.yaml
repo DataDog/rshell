@@ -1,0 +1,30 @@
+description: python in and not in operators test membership in lists, dicts, and strings.
+skip_assert_against_bash: true
+setup:
+  files:
+    - path: membership.py
+      content: |+
+        lst = [1, 2, 3, 4, 5]
+        print(3 in lst)
+        print(6 not in lst)
+        d = {"key": "value"}
+        print("key" in d)
+        print("missing" not in d)
+        s = "hello world"
+        print("world" in s)
+        print("xyz" not in s)
+      chmod: 0644
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    python membership.py
+expect:
+  stdout: |+
+    True
+    True
+    True
+    True
+    True
+    True
+  stderr: |+
+  exit_code: 0

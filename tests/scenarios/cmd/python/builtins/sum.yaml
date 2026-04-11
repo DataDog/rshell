@@ -1,0 +1,22 @@
+description: python sum() adds all elements of an iterable with an optional start value.
+skip_assert_against_bash: true
+setup:
+  files:
+    - path: sum.py
+      content: |+
+        nums = [1, 2, 3, 4, 5]
+        print(sum(nums))
+        print(sum(nums, 10))
+        print(sum(x * x for x in range(4)))
+      chmod: 0644
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    python sum.py
+expect:
+  stdout: |+
+    15
+    25
+    14
+  stderr: |+
+  exit_code: 0

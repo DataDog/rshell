@@ -1,0 +1,33 @@
+description: python and/or operators short-circuit evaluation and return the determining operand.
+skip_assert_against_bash: true
+setup:
+  files:
+    - path: shortcircuit.py
+      content: |+
+        def side_effect(val, msg):
+            print(msg)
+            return val
+
+        print(False and side_effect(True, "should not print"))
+        print(True or side_effect(True, "should not print"))
+        print(True and side_effect(True, "and executed"))
+        print(False or side_effect(False, "or executed"))
+        print(not True)
+        print(not False)
+      chmod: 0644
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    python shortcircuit.py
+expect:
+  stdout: |+
+    False
+    True
+    and executed
+    True
+    or executed
+    False
+    False
+    True
+  stderr: |+
+  exit_code: 0
