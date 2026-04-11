@@ -1,0 +1,15 @@
+description: open() cannot read files outside allowed paths and raises OSError.
+skip_assert_against_bash: true
+setup:
+  files:
+    - path: allowed.txt
+      content: "ok\n"
+      chmod: 0644
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    python -c "open('/etc/passwd')"
+expect:
+  stdout: |+
+  stderr_contains: ["OSError"]
+  exit_code: 1

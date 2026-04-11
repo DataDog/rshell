@@ -1,0 +1,9 @@
+description: Unhandled Python exceptions exit with code 1 and print traceback to stderr.
+skip_assert_against_bash: true
+input:
+  script: |+
+    python -c "raise ValueError('oops')"
+expect:
+  stdout: |+
+  stderr_contains: ["ValueError", "oops"]
+  exit_code: 1

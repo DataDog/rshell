@@ -1,0 +1,9 @@
+description: Python syntax errors are reported to stderr and exit with code 1.
+skip_assert_against_bash: true
+input:
+  script: |+
+    python -c "def foo("
+expect:
+  stdout: |+
+  stderr_contains: ["SyntaxError"]
+  exit_code: 1

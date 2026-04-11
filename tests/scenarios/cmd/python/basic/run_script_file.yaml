@@ -1,0 +1,17 @@
+description: python executes a script file passed as a positional argument.
+skip_assert_against_bash: true
+setup:
+  files:
+    - path: hello.py
+      content: |+
+        print("hello from script")
+      chmod: 0644
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    python hello.py
+expect:
+  stdout: |+
+    hello from script
+  stderr: |+
+  exit_code: 0

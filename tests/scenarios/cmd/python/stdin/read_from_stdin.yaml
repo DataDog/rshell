@@ -1,0 +1,10 @@
+description: python reads source from stdin when invoked with '-'.
+skip_assert_against_bash: true
+input:
+  script: |+
+    echo "print('from stdin')" | python -
+expect:
+  stdout: |+
+    from stdin
+  stderr: |+
+  exit_code: 0

@@ -1,0 +1,9 @@
+description: python --help prints usage to stdout and exits 0.
+skip_assert_against_bash: true
+input:
+  script: |+
+    python --help
+expect:
+  stdout_contains: ["Usage: python"]
+  stderr: |+
+  exit_code: 0

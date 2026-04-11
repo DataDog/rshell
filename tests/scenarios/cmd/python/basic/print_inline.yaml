@@ -1,6 +1,5 @@
-# python is now a builtin in rshell; update this test accordingly.
+description: python -c executes inline Python code and prints output.
 skip_assert_against_bash: true
-description: The python command is a builtin that executes Python 3 code.
 input:
   script: |+
     python -c "print('hello')"

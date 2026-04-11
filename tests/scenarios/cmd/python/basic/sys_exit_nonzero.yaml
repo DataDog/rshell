@@ -1,0 +1,11 @@
+description: sys.exit(N) sets $? to N in the calling shell.
+skip_assert_against_bash: true
+input:
+  script: |+
+    python -c "import sys; sys.exit(42)"
+    echo "exit was $?"
+expect:
+  stdout: |+
+    exit was 42
+  stderr: |+
+  exit_code: 0
