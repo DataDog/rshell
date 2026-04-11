@@ -41,6 +41,11 @@ func Run(ctx context.Context, opts RunOpts) int {
 	case r := <-ch:
 		return r.code
 	case <-ctx.Done():
+		// Wait for the goroutine to finish before returning to avoid data races
+		// on opts.Stderr: runInternal may still write traceback output after the
+		// context fires. Waiting here is safe because the evaluator checks
+		// ctx.Done() at each loop iteration and returns promptly.
+		<-ch
 		return 1
 	}
 }
