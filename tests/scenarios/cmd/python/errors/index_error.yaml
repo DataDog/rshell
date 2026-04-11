@@ -1,0 +1,9 @@
+description: IndexError from out-of-bounds list access is reported to stderr and exits with code 1.
+skip_assert_against_bash: true
+input:
+  script: |+
+    python -c "lst = [1, 2, 3]; print(lst[10])"
+expect:
+  stdout: |+
+  stderr_contains: ["IndexError"]
+  exit_code: 1

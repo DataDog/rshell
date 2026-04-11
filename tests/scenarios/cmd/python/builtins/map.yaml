@@ -1,0 +1,10 @@
+description: python map() applies a function to each element of an iterable.
+skip_assert_against_bash: true
+input:
+  script: |+
+    python -c "nums = [1, 2, 3, 4, 5]; strs = list(map(str, nums)); print(strs)"
+expect:
+  stdout: |+
+    ['1', '2', '3', '4', '5']
+  stderr: |+
+  exit_code: 0

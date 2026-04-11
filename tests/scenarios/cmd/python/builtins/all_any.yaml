@@ -1,0 +1,27 @@
+description: python all() and any() test whether all or any elements are truthy.
+skip_assert_against_bash: true
+setup:
+  files:
+    - path: allany.py
+      content: |+
+        print(all([True, True, True]))
+        print(all([True, False, True]))
+        print(any([False, False, True]))
+        print(any([False, False, False]))
+        print(all(x > 0 for x in [1, 2, 3]))
+        print(any(x > 5 for x in [1, 2, 3]))
+      chmod: 0644
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    python allany.py
+expect:
+  stdout: |+
+    True
+    False
+    True
+    False
+    True
+    False
+  stderr: |+
+  exit_code: 0

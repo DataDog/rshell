@@ -1,0 +1,15 @@
+description: I/O operations on a closed file object raise ValueError.
+skip_assert_against_bash: true
+setup:
+  files:
+    - path: test.txt
+      content: "hello\n"
+      chmod: 0644
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    python -c "f = open('test.txt'); f.close(); f.read()"
+expect:
+  stdout: |+
+  stderr_contains: ["ValueError"]
+  exit_code: 1

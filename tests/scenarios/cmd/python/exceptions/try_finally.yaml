@@ -1,0 +1,27 @@
+description: python try/finally runs the finally block even when the try block returns.
+skip_assert_against_bash: true
+setup:
+  files:
+    - path: finally.py
+      content: |+
+        def test():
+            try:
+                print("try")
+                return 1
+            finally:
+                print("finally")
+
+        result = test()
+        print("result:", result)
+      chmod: 0644
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    python finally.py
+expect:
+  stdout: |+
+    try
+    finally
+    result: 1
+  stderr: |+
+  exit_code: 0

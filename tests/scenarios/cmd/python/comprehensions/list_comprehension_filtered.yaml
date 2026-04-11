@@ -1,0 +1,10 @@
+description: python list comprehension with if filter selects matching elements.
+skip_assert_against_bash: true
+input:
+  script: |+
+    python -c "evens = [x for x in range(10) if x % 2 == 0]; print(evens)"
+expect:
+  stdout: |+
+    [0, 2, 4, 6, 8]
+  stderr: |+
+  exit_code: 0

@@ -1,0 +1,9 @@
+description: os.rename() is blocked and raises AttributeError.
+skip_assert_against_bash: true
+input:
+  script: |+
+    python -c "import os; os.rename('/tmp/a', '/tmp/b')"
+expect:
+  stdout: |+
+  stderr_contains: ["AttributeError"]
+  exit_code: 1

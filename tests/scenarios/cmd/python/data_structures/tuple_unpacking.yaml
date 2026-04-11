@@ -1,0 +1,27 @@
+description: python tuple unpacking assigns multiple variables from a sequence in a single statement.
+skip_assert_against_bash: true
+setup:
+  files:
+    - path: unpack.py
+      content: |+
+        a, b = 1, 2
+        print(a, b)
+        x, y, z = (10, 20, 30)
+        print(x, y, z)
+        first, second = "ab"
+        print(first, second)
+        a, b = b, a
+        print(a, b)
+      chmod: 0644
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    python unpack.py
+expect:
+  stdout: |+
+    1 2
+    10 20 30
+    a b
+    2 1
+  stderr: |+
+  exit_code: 0

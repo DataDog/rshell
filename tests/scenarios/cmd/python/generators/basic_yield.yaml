@@ -1,0 +1,25 @@
+description: python generator function uses yield to produce a sequence of values.
+skip_assert_against_bash: true
+setup:
+  files:
+    - path: gen.py
+      content: |+
+        def count_up(n):
+            for i in range(n):
+                yield i
+
+        for val in count_up(4):
+            print(val)
+      chmod: 0644
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    python gen.py
+expect:
+  stdout: |+
+    0
+    1
+    2
+    3
+  stderr: |+
+  exit_code: 0

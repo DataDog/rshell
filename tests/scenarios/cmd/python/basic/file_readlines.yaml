@@ -1,0 +1,19 @@
+description: open().readlines() returns all lines of a file as a list.
+skip_assert_against_bash: true
+setup:
+  files:
+    - path: items.txt
+      content: |+
+        alpha
+        beta
+        gamma
+      chmod: 0644
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    python -c "lines = open('items.txt').readlines(); print(len(lines))"
+expect:
+  stdout: |+
+    3
+  stderr: |+
+  exit_code: 0

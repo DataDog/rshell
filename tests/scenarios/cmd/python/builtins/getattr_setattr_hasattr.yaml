@@ -1,0 +1,33 @@
+description: python getattr/setattr/hasattr/delattr read, set, check, and remove object attributes.
+skip_assert_against_bash: true
+setup:
+  files:
+    - path: attrs.py
+      content: |+
+        class Point:
+            def __init__(self, x, y):
+                self.x = x
+                self.y = y
+
+        p = Point(3, 4)
+        print(getattr(p, 'x'))
+        print(hasattr(p, 'z'))
+        setattr(p, 'z', 7)
+        print(getattr(p, 'z'))
+        print(hasattr(p, 'z'))
+        delattr(p, 'z')
+        print(hasattr(p, 'z'))
+      chmod: 0644
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    python attrs.py
+expect:
+  stdout: |+
+    3
+    False
+    7
+    True
+    False
+  stderr: |+
+  exit_code: 0

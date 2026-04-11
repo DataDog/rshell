@@ -1,0 +1,28 @@
+description: python extended unpacking with star expression captures remaining elements into a list.
+skip_assert_against_bash: true
+setup:
+  files:
+    - path: starpack.py
+      content: |+
+        first, *rest = [1, 2, 3, 4, 5]
+        print(first)
+        print(rest)
+        *init, last = [1, 2, 3, 4, 5]
+        print(init)
+        print(last)
+        a, *b, c = [1, 2, 3, 4, 5]
+        print(a, b, c)
+      chmod: 0644
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    python starpack.py
+expect:
+  stdout: |+
+    1
+    [2, 3, 4, 5]
+    [1, 2, 3, 4]
+    5
+    1 [2, 3, 4] 5
+  stderr: |+
+  exit_code: 0

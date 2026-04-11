@@ -1,0 +1,31 @@
+description: python script multiplies two 2x2 matrices using nested lists.
+skip_assert_against_bash: true
+setup:
+  files:
+    - path: matmul.py
+      content: |+
+        def matmul(A, B):
+            n = len(A)
+            C = [[0] * n for _ in range(n)]
+            for i in range(n):
+                for j in range(n):
+                    for k in range(n):
+                        C[i][j] = C[i][j] + A[i][k] * B[k][j]
+            return C
+
+        A = [[1, 2], [3, 4]]
+        B = [[5, 6], [7, 8]]
+        C = matmul(A, B)
+        for row in C:
+            print(str(row[0]) + ' ' + str(row[1]))
+      chmod: 0644
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    python matmul.py
+expect:
+  stdout: |+
+    19 22
+    43 50
+  stderr: |+
+  exit_code: 0

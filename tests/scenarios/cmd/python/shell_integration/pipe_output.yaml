@@ -1,0 +1,10 @@
+description: python output can be piped as stdin to another python invocation.
+skip_assert_against_bash: true
+input:
+  script: |+
+    python -c "print('hello world')" | python -c "import sys; data = sys.stdin.read().strip(); print('got: ' + data)"
+expect:
+  stdout: |+
+    got: hello world
+  stderr: |+
+  exit_code: 0

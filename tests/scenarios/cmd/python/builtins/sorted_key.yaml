@@ -1,0 +1,22 @@
+description: python sorted() supports key function and reverse flag for custom ordering.
+skip_assert_against_bash: true
+setup:
+  files:
+    - path: sorted.py
+      content: |+
+        words = ["banana", "fig", "apple", "date", "cherry"]
+        print(sorted(words))
+        print(sorted(words, key=len))
+        print(sorted(words, reverse=True))
+      chmod: 0644
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    python sorted.py
+expect:
+  stdout: |+
+    ['apple', 'banana', 'cherry', 'date', 'fig']
+    ['fig', 'date', 'apple', 'banana', 'cherry']
+    ['fig', 'date', 'cherry', 'banana', 'apple']
+  stderr: |+
+  exit_code: 0

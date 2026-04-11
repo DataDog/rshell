@@ -1,0 +1,35 @@
+description: python *args collects extra positional arguments into a tuple.
+skip_assert_against_bash: true
+setup:
+  files:
+    - path: varargs.py
+      content: |+
+        def sum_all(*args):
+            total = 0
+            for x in args:
+                total += x
+            return total
+
+        print(sum_all(1, 2, 3))
+        print(sum_all(10, 20))
+        print(sum_all())
+
+        def first_and_rest(first, *rest):
+            print(first)
+            print(list(rest))
+
+        first_and_rest(1, 2, 3, 4)
+      chmod: 0644
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    python varargs.py
+expect:
+  stdout: |+
+    6
+    30
+    0
+    1
+    [2, 3, 4]
+  stderr: |+
+  exit_code: 0

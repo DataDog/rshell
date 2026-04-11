@@ -1,0 +1,27 @@
+description: python abs(), divmod(), and pow() perform absolute value, combined division/modulo, and exponentiation.
+skip_assert_against_bash: true
+setup:
+  files:
+    - path: math_builtins.py
+      content: |+
+        print(abs(-5))
+        print(abs(3))
+        print(divmod(10, 3))
+        print(divmod(-7, 2))
+        print(pow(2, 10))
+        print(pow(3, 3, 10))
+      chmod: 0644
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    python math_builtins.py
+expect:
+  stdout: |+
+    5
+    3
+    (3, 1)
+    (-4, 1)
+    1024
+    7
+  stderr: |+
+  exit_code: 0

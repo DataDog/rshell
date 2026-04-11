@@ -1,0 +1,22 @@
+description: python catches exceptions with try/except and continues execution.
+skip_assert_against_bash: true
+setup:
+  files:
+    - path: exc.py
+      content: |+
+        try:
+            raise ValueError("test error")
+        except ValueError as e:
+            print("caught:", e)
+        print("done")
+      chmod: 0644
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    python exc.py
+expect:
+  stdout: |+
+    caught: test error
+    done
+  stderr: |+
+  exit_code: 0

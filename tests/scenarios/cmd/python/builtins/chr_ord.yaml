@@ -1,0 +1,25 @@
+description: python chr() converts an integer to a character and ord() converts back.
+skip_assert_against_bash: true
+setup:
+  files:
+    - path: chrord.py
+      content: |+
+        print(chr(65))
+        print(chr(97))
+        print(ord('A'))
+        print(ord('a'))
+        print(chr(ord('Z') + 1))
+      chmod: 0644
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    python chrord.py
+expect:
+  stdout: |+
+    A
+    a
+    65
+    97
+    [
+  stderr: |+
+  exit_code: 0

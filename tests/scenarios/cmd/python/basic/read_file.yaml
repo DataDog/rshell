@@ -1,0 +1,17 @@
+description: python can read files via open() when they are within AllowedPaths.
+skip_assert_against_bash: true
+setup:
+  files:
+    - path: hello.txt
+      content: |+
+        hello from file
+      chmod: 0644
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    python -c "f = open('hello.txt'); print(f.read().strip()); f.close()"
+expect:
+  stdout: |+
+    hello from file
+  stderr: |+
+  exit_code: 0

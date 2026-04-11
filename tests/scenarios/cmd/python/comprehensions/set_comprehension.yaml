@@ -1,0 +1,10 @@
+description: python set comprehension builds a set of unique computed values.
+skip_assert_against_bash: true
+input:
+  script: |+
+    python -c "s = {x % 3 for x in range(9)}; print(sorted(s))"
+expect:
+  stdout: |+
+    [0, 1, 2]
+  stderr: |+
+  exit_code: 0

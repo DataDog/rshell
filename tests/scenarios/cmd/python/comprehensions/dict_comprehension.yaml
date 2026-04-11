@@ -1,0 +1,22 @@
+description: python dict comprehension builds a dict mapping string keys to computed values.
+skip_assert_against_bash: true
+setup:
+  files:
+    - path: dictcomp.py
+      content: |+
+        words = ["apple", "banana", "cherry"]
+        word_lens = {w: len(w) for w in words}
+        for k in sorted(word_lens.keys()):
+            print(k, word_lens[k])
+      chmod: 0644
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    python dictcomp.py
+expect:
+  stdout: |+
+    apple 5
+    banana 6
+    cherry 6
+  stderr: |+
+  exit_code: 0

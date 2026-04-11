@@ -1,0 +1,11 @@
+description: sys.exit(0) exits with code 0.
+skip_assert_against_bash: true
+input:
+  script: |+
+    python -c "import sys; sys.exit(0)"
+    echo "after"
+expect:
+  stdout: |+
+    after
+  stderr: |+
+  exit_code: 0

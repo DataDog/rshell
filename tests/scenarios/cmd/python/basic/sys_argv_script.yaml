@@ -1,0 +1,21 @@
+description: extra arguments after the script name are available in sys.argv.
+skip_assert_against_bash: true
+setup:
+  files:
+    - path: show_args.py
+      content: |+
+        import sys
+        for arg in sys.argv:
+            print(arg)
+      chmod: 0644
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    python show_args.py foo bar
+expect:
+  stdout: |+
+    show_args.py
+    foo
+    bar
+  stderr: |+
+  exit_code: 0

@@ -1,0 +1,10 @@
+description: python can use read-only os functions such as os.path.join and os.getenv.
+skip_assert_against_bash: true
+input:
+  script: |+
+    python -c "import os; print(os.getenv('NONEXISTENT_KEY_XYZ', 'default'))"
+expect:
+  stdout: |+
+    default
+  stderr: |+
+  exit_code: 0

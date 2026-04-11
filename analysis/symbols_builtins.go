@@ -177,6 +177,15 @@ var builtinPerCommandSymbols = map[string][]string{
 		"strings.Split",      // 🟢 splits a string by separator into a slice; pure function, no I/O.
 		"strings.TrimSpace",  // 🟢 removes leading/trailing whitespace; pure function.
 	},
+	"python": {
+		"context.Context", // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
+		"io.LimitReader",  // 🟢 caps source-code reads at 1 MiB to prevent memory exhaustion; no I/O side effects.
+		"io.ReadAll",      // 🟠 reads all bytes from a LimitReader-wrapped source; bounded by maxSourceBytes (1 MiB).
+		"io.Reader",       // 🟢 interface type; no side effects.
+		"os.O_RDONLY",     // 🟢 read-only file flag constant; cannot open files by itself.
+		// Note: builtins/internal/pyruntime symbols are exempt from this allowlist
+		// (internal packages are not checked by the builtinAllowedSymbols test).
+	},
 	"printf": {
 		"context.Context",      // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
 		"errors.As",            // 🟢 error type assertion; pure function, no I/O.
@@ -420,8 +429,10 @@ var builtinAllowedSymbols = []string{
 	"github.com/prometheus-community/pro-bing.Statistics", // 🟢 ping round-trip statistics struct; pure data type, no I/O.
 	"golang.org/x/sys/unix.SysctlRaw",                     // 🟠 macOS: reads kernel socket tables (read-only, no exec, no filesystem).
 	"io.EOF",                                              // 🟢 sentinel error value; pure constant.
+	"io.LimitReader",                                      // 🟢 wraps a Reader with a byte-count limit; prevents reading unbounded data; no I/O side effects.
 	"io.MultiReader",                                      // 🟢 combines multiple Readers into one sequential Reader; no I/O side effects.
 	"io.NopCloser",                                        // 🟢 wraps a Reader with a no-op Close; no side effects.
+	"io.ReadAll",                                          // 🟠 reads all bytes from a Reader; only safe when combined with io.LimitReader to bound allocation.
 	"io.ReadCloser",                                       // 🟢 interface type; no side effects.
 	"io.ReadSeeker",                                       // 🟢 interface type combining Reader and Seeker; no side effects.
 	"io.Reader",                                           // 🟢 interface type; no side effects.

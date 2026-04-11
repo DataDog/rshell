@@ -1,0 +1,34 @@
+description: python augmented assignment operators update variables in-place.
+skip_assert_against_bash: true
+setup:
+  files:
+    - path: augmented.py
+      content: |+
+        x = 10
+        x += 5
+        print(x)
+        x -= 3
+        print(x)
+        x *= 2
+        print(x)
+        x //= 3
+        print(x)
+        x **= 2
+        print(x)
+        x %= 7
+        print(x)
+      chmod: 0644
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    python augmented.py
+expect:
+  stdout: |+
+    15
+    12
+    24
+    8
+    64
+    1
+  stderr: |+
+  exit_code: 0

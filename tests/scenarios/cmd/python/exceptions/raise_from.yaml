@@ -1,0 +1,23 @@
+description: python raise X from Y chains exceptions, setting __cause__ on the new exception.
+skip_assert_against_bash: true
+setup:
+  files:
+    - path: raisefrom.py
+      content: |+
+        try:
+            try:
+                int("not a number")
+            except ValueError as e:
+                raise TypeError("conversion failed") from e
+        except TypeError as e:
+            print("caught:", e)
+      chmod: 0644
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    python raisefrom.py
+expect:
+  stdout: |+
+    caught: conversion failed
+  stderr: |+
+  exit_code: 0

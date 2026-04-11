@@ -1,0 +1,30 @@
+description: python script reads a file and counts word frequencies.
+skip_assert_against_bash: true
+setup:
+  files:
+    - path: text.txt
+      content: "apple banana apple cherry banana apple\n"
+      chmod: 0644
+    - path: wc.py
+      content: |+
+        counts = {}
+        with open('text.txt') as f:
+            for word in f.read().split():
+                if word in counts:
+                    counts[word] = counts[word] + 1
+                else:
+                    counts[word] = 1
+        for word in ['apple', 'banana', 'cherry']:
+            print(word + ': ' + str(counts[word]))
+      chmod: 0644
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    python wc.py
+expect:
+  stdout: |+
+    apple: 3
+    banana: 2
+    cherry: 1
+  stderr: |+
+  exit_code: 0

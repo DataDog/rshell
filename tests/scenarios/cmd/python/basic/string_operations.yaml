@@ -1,0 +1,12 @@
+description: python supports string operations including concatenation, repetition, and slicing.
+skip_assert_against_bash: true
+input:
+  script: |+
+    python -c "s = 'hello'; print(s + ' world'); print(s[1:4]); print(s * 2)"
+expect:
+  stdout: |+
+    hello world
+    ell
+    hellohello
+  stderr: |+
+  exit_code: 0

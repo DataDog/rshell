@@ -1,0 +1,20 @@
+description: python assert raises AssertionError with message when condition is false.
+skip_assert_against_bash: true
+setup:
+  files:
+    - path: assert_fail.py
+      content: |+
+        try:
+            assert False, "assertion message"
+        except AssertionError as e:
+            print("AssertionError:", e)
+      chmod: 0644
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    python assert_fail.py
+expect:
+  stdout: |+
+    AssertionError: assertion message
+  stderr: |+
+  exit_code: 0

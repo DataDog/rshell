@@ -1,11 +1,11 @@
-# skip: rshell reports different error format than bash for unavailable commands
+# python is now a builtin in rshell; update this test accordingly.
 skip_assert_against_bash: true
-description: The python command is not a builtin and is rejected as unknown.
+description: The python command is a builtin that executes Python 3 code.
 input:
   script: |+
     python -c "print('hello')"
 expect:
-  stdout: ""
+  stdout: |+
+    hello
   stderr: |+
-    python: command not found
-  exit_code: 127
+  exit_code: 0

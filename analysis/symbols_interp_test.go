@@ -44,7 +44,15 @@ func internalPerPackageCheckConfig() perBuiltinConfig {
 		PerCommandSymbols: internalPerPackageSymbols,
 		TargetDir:         "builtins/internal",
 		ExemptImport: func(importPath string) bool {
-			return importPath == "github.com/DataDog/rshell/builtins"
+			if importPath == "github.com/DataDog/rshell/builtins" {
+				return true
+			}
+			// gpython: exempt from per-package checks (same rationale as
+			// internalCheckConfig — listing every py.* symbol is impractical).
+			if strings.HasPrefix(importPath, "github.com/go-python/gpython/") {
+				return true
+			}
+			return false
 		},
 		SkipDirs: map[string]bool{},
 	}
