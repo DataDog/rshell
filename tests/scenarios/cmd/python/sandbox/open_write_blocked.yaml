@@ -1,0 +1,9 @@
+description: open() in write mode raises PermissionError.
+skip_assert_against_bash: true
+input:
+  script: |+
+    python -c "open('/tmp/evil.txt', 'w')"
+expect:
+  stdout: |+
+  stderr_contains: ["PermissionError"]
+  exit_code: 1

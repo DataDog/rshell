@@ -1,0 +1,26 @@
+description: python global statement allows functions to modify module-level variables.
+skip_assert_against_bash: true
+setup:
+  files:
+    - path: global.py
+      content: |+
+        counter = 0
+
+        def increment():
+            global counter
+            counter += 1
+
+        increment()
+        increment()
+        increment()
+        print(counter)
+      chmod: 0644
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    python global.py
+expect:
+  stdout: |+
+    3
+  stderr: |+
+  exit_code: 0

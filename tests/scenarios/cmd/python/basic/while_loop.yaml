@@ -1,0 +1,22 @@
+description: python executes while loops with a counter.
+skip_assert_against_bash: true
+setup:
+  files:
+    - path: while.py
+      content: |+
+        n = 0
+        while n < 3:
+            print(n)
+            n += 1
+      chmod: 0644
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    python while.py
+expect:
+  stdout: |+
+    0
+    1
+    2
+  stderr: |+
+  exit_code: 0

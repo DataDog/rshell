@@ -1,0 +1,25 @@
+description: python supports the with statement for context managers via a script file.
+skip_assert_against_bash: true
+setup:
+  files:
+    - path: data.txt
+      content: |+
+        line one
+        line two
+      chmod: 0644
+    - path: read_file.py
+      content: |+
+        with open('data.txt') as f:
+            content = f.read()
+        print(content.strip())
+      chmod: 0644
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    python read_file.py
+expect:
+  stdout: |+
+    line one
+    line two
+  stderr: |+
+  exit_code: 0

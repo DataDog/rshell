@@ -1,0 +1,29 @@
+description: python string methods strip, split, replace, find, startswith, endswith work correctly.
+skip_assert_against_bash: true
+setup:
+  files:
+    - path: strmethods.py
+      content: |+
+        s = "  Hello, World!  "
+        print(s.strip())
+        words = "one two three".split()
+        print(words)
+        print("hello world".replace("world", "Python"))
+        print("hello world".find("world"))
+        print("hello".startswith("hel"))
+        print("hello".endswith("lo"))
+      chmod: 0644
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    python strmethods.py
+expect:
+  stdout: |+
+    Hello, World!
+    ['one', 'two', 'three']
+    hello Python
+    6
+    True
+    True
+  stderr: |+
+  exit_code: 0

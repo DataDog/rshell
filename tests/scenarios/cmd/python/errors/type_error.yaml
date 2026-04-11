@@ -1,0 +1,9 @@
+description: TypeError from incompatible operand types is reported to stderr and exits with code 1.
+skip_assert_against_bash: true
+input:
+  script: |+
+    python -c "print('hello' + 42)"
+expect:
+  stdout: |+
+  stderr_contains: ["TypeError"]
+  exit_code: 1

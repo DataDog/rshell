@@ -1,0 +1,27 @@
+description: python bin(), hex(), and oct() convert integers to binary, hex, and octal strings.
+skip_assert_against_bash: true
+setup:
+  files:
+    - path: binhexoct.py
+      content: |+
+        print(bin(10))
+        print(bin(255))
+        print(hex(255))
+        print(hex(16))
+        print(oct(8))
+        print(oct(64))
+      chmod: 0644
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    python binhexoct.py
+expect:
+  stdout: |+
+    0b1010
+    0b11111111
+    0xff
+    0x10
+    0o10
+    0o100
+  stderr: |+
+  exit_code: 0

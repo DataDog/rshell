@@ -1,0 +1,10 @@
+description: python evaluates arithmetic expressions.
+skip_assert_against_bash: true
+input:
+  script: |+
+    python -c "print(2 + 3)"
+expect:
+  stdout: |+
+    5
+  stderr: |+
+  exit_code: 0

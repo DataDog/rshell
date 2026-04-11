@@ -1,0 +1,29 @@
+description: python min() and max() find the smallest/largest value with optional key function.
+skip_assert_against_bash: true
+setup:
+  files:
+    - path: minmax.py
+      content: |+
+        nums = [3, 1, 4, 1, 5, 9, 2, 6]
+        print(min(nums))
+        print(max(nums))
+        words = ["apple", "fig", "banana"]
+        print(min(words, key=lambda w: len(w)))
+        print(max(words, key=lambda w: len(w)))
+        print(min(3, 7, 1, 9))
+        print(max(3, 7, 1, 9))
+      chmod: 0644
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    python minmax.py
+expect:
+  stdout: |+
+    1
+    9
+    fig
+    banana
+    1
+    9
+  stderr: |+
+  exit_code: 0

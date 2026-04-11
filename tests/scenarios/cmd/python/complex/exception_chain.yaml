@@ -1,0 +1,33 @@
+description: python script uses nested try/except blocks and reraises exceptions.
+skip_assert_against_bash: true
+setup:
+  files:
+    - path: exc_chain.py
+      content: |+
+        def parse_int(s):
+            try:
+                return int(s)
+            except ValueError:
+                raise ValueError('not a number: ' + s)
+
+        results = []
+        for token in ['42', 'bad', '7']:
+            try:
+                results.append(parse_int(token))
+            except ValueError as e:
+                results.append(-1)
+
+        for r in results:
+            print(r)
+      chmod: 0644
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    python exc_chain.py
+expect:
+  stdout: |+
+    42
+    -1
+    7
+  stderr: |+
+  exit_code: 0

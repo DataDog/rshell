@@ -1,0 +1,11 @@
+description: python can import and use the math module.
+skip_assert_against_bash: true
+input:
+  script: |+
+    python -c "import math; print(math.floor(3.7)); print(int(math.sqrt(16)))"
+expect:
+  stdout: |+
+    3
+    4
+  stderr: |+
+  exit_code: 0

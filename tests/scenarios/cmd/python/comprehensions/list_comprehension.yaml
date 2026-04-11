@@ -1,0 +1,10 @@
+description: python list comprehension builds a list by applying an expression to each element.
+skip_assert_against_bash: true
+input:
+  script: |+
+    python -c "squares = [x * x for x in range(5)]; print(squares)"
+expect:
+  stdout: |+
+    [0, 1, 4, 9, 16]
+  stderr: |+
+  exit_code: 0

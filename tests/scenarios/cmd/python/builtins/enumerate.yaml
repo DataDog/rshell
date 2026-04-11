@@ -1,0 +1,26 @@
+description: python enumerate() adds an index counter to an iterable, with optional positional start offset.
+skip_assert_against_bash: true
+setup:
+  files:
+    - path: enumerate.py
+      content: |+
+        fruits = ["apple", "banana", "cherry"]
+        for i, fruit in enumerate(fruits):
+            print(i, fruit)
+        for i, fruit in enumerate(fruits, 1):
+            print(i, fruit)
+      chmod: 0644
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    python enumerate.py
+expect:
+  stdout: |+
+    0 apple
+    1 banana
+    2 cherry
+    1 apple
+    2 banana
+    3 cherry
+  stderr: |+
+  exit_code: 0

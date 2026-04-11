@@ -1,0 +1,10 @@
+description: python without any arguments reads Python source from stdin.
+skip_assert_against_bash: true
+input:
+  script: |+
+    echo "print('no dash')" | python
+expect:
+  stdout: |+
+    no dash
+  stderr: |+
+  exit_code: 0

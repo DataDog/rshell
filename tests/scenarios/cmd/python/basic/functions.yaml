@@ -1,0 +1,22 @@
+description: python supports defining and calling user-defined functions.
+skip_assert_against_bash: true
+setup:
+  files:
+    - path: funcs.py
+      content: |+
+        def multiply(a, b):
+            return a * b
+
+        print(multiply(3, 4))
+        print(multiply(2, 5))
+      chmod: 0644
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    python funcs.py
+expect:
+  stdout: |+
+    12
+    10
+  stderr: |+
+  exit_code: 0

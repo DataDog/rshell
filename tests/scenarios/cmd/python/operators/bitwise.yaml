@@ -1,0 +1,29 @@
+description: python bitwise operators AND, OR, XOR, NOT, left shift, and right shift work on integers.
+skip_assert_against_bash: true
+setup:
+  files:
+    - path: bitwise.py
+      content: |+
+        a = 0b1010
+        b = 0b1100
+        print(bin(a & b))
+        print(bin(a | b))
+        print(bin(a ^ b))
+        print(bin(~a & 0xFF))
+        print(bin(a << 2))
+        print(bin(b >> 1))
+      chmod: 0644
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    python bitwise.py
+expect:
+  stdout: |+
+    0b1000
+    0b1110
+    0b110
+    0b11110101
+    0b101000
+    0b110
+  stderr: |+
+  exit_code: 0

@@ -1,0 +1,28 @@
+description: python generator send() passes a value into the generator at the yield point.
+skip_assert_against_bash: true
+setup:
+  files:
+    - path: gensend.py
+      content: |+
+        def echo():
+            while True:
+                val = yield
+                if val is None:
+                    break
+                print("got:", val)
+
+        g = echo()
+        next(g)
+        g.send("hello")
+        g.send("world")
+      chmod: 0644
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    python gensend.py
+expect:
+  stdout: |+
+    got: hello
+    got: world
+  stderr: |+
+  exit_code: 0

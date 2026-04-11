@@ -1,0 +1,10 @@
+description: python exits with code 1 when the script file does not exist.
+skip_assert_against_bash: true
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    python nonexistent.py
+expect:
+  stdout: |+
+  stderr_contains: ["python:", "nonexistent.py"]
+  exit_code: 1

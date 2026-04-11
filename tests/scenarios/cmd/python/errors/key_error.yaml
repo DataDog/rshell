@@ -1,0 +1,9 @@
+description: KeyError from missing dict key is reported to stderr and exits with code 1.
+skip_assert_against_bash: true
+input:
+  script: |+
+    python -c "d = {'a': 1}; print(d['b'])"
+expect:
+  stdout: |+
+  stderr_contains: ["KeyError"]
+  exit_code: 1

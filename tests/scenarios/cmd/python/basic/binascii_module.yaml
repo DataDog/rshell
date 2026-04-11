@@ -1,0 +1,10 @@
+description: python can import and use the binascii module for hex encoding.
+skip_assert_against_bash: true
+input:
+  script: |+
+    python -c "import binascii; binascii.hexlify(b'AB'); print('ok')"
+expect:
+  stdout: |+
+    ok
+  stderr: |+
+  exit_code: 0

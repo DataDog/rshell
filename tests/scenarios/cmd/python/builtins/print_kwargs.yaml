@@ -1,0 +1,22 @@
+description: python print() supports sep and end keyword arguments to control output formatting.
+skip_assert_against_bash: true
+setup:
+  files:
+    - path: printkw.py
+      content: |+
+        print("a", "b", "c", sep="-")
+        print("hello", end="")
+        print(" world")
+        print("x", "y", sep="")
+      chmod: 0644
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    python printkw.py
+expect:
+  stdout: |+
+    a-b-c
+    hello world
+    xy
+  stderr: |+
+  exit_code: 0

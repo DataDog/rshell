@@ -1,0 +1,11 @@
+description: python -c with extra arguments populates sys.argv with <string> as argv[0].
+skip_assert_against_bash: true
+input:
+  script: |+
+    python -c "import sys; print(sys.argv[0]); print(sys.argv[1])" hello
+expect:
+  stdout: |+
+    <string>
+    hello
+  stderr: |+
+  exit_code: 0

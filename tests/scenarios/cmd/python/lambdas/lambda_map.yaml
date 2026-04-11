@@ -1,0 +1,10 @@
+description: python lambda used with map() transforms each element of a list.
+skip_assert_against_bash: true
+input:
+  script: |+
+    python -c "nums = [1, 2, 3, 4, 5]; doubled = list(map(lambda x: x * 2, nums)); print(doubled)"
+expect:
+  stdout: |+
+    [2, 4, 6, 8, 10]
+  stderr: |+
+  exit_code: 0

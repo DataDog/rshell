@@ -1,0 +1,31 @@
+description: python is and is not operators test object identity.
+skip_assert_against_bash: true
+setup:
+  files:
+    - path: identity.py
+      content: |+
+        x = None
+        print(x is None)
+        print(x is not None)
+        a = [1, 2, 3]
+        b = a
+        c = [1, 2, 3]
+        print(a is b)
+        print(a is not c)
+        print(True is True)
+        print(False is not True)
+      chmod: 0644
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    python identity.py
+expect:
+  stdout: |+
+    True
+    False
+    True
+    True
+    True
+    True
+  stderr: |+
+  exit_code: 0

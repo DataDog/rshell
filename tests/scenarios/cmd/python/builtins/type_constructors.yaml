@@ -1,0 +1,30 @@
+description: python type constructor functions convert between types.
+skip_assert_against_bash: true
+setup:
+  files:
+    - path: typecons.py
+      content: |+
+        print(int("42"))
+        print(int(3.9))
+        print(float("3.14"))
+        print(str(42))
+        print(list((1, 2, 3)))
+        print(tuple([4, 5, 6]))
+        s = set([1, 2, 3, 2, 1])
+        print(sorted(s))
+      chmod: 0644
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    python typecons.py
+expect:
+  stdout: |+
+    42
+    3
+    3.14
+    42
+    [1, 2, 3]
+    (4, 5, 6)
+    [1, 2, 3]
+  stderr: |+
+  exit_code: 0

@@ -1,0 +1,30 @@
+description: python nonlocal statement allows nested functions to modify enclosing scope variables.
+skip_assert_against_bash: true
+setup:
+  files:
+    - path: nonlocal.py
+      content: |+
+        def make_counter():
+            count = 0
+            def increment():
+                nonlocal count
+                count += 1
+                return count
+            return increment
+
+        c = make_counter()
+        print(c())
+        print(c())
+        print(c())
+      chmod: 0644
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    python nonlocal.py
+expect:
+  stdout: |+
+    1
+    2
+    3
+  stderr: |+
+  exit_code: 0

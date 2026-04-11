@@ -1,0 +1,10 @@
+description: python can import the string module and access character set constants.
+skip_assert_against_bash: true
+input:
+  script: |+
+    python -c "import string; print(string.digits)"
+expect:
+  stdout: |+
+    0123456789
+  stderr: |+
+  exit_code: 0

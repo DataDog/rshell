@@ -1,0 +1,10 @@
+description: python -c executes inline Python code and prints output.
+skip_assert_against_bash: true
+input:
+  script: |+
+    python -c "print('hello')"
+expect:
+  stdout: |+
+    hello
+  stderr: |+
+  exit_code: 0

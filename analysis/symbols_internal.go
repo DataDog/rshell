@@ -9,6 +9,30 @@ package analysis
 // symbols it is allowed to use. Every symbol listed here must also appear in
 // internalAllowedSymbols (which acts as the global ceiling).
 var internalPerPackageSymbols = map[string][]string{
+	"pyruntime": {
+		"bufio.NewReader",      // 🟢 wraps an io.Reader with buffering for readline support; no write capability.
+		"bufio.NewScanner",     // 🟢 creates a line scanner on a file for readline(); no write capability.
+		"bufio.Reader",         // 🟢 type reference for buffered reader; no write capability.
+		"bufio.Scanner",        // 🟢 type reference for line-by-line scanner on goFile; no write capability.
+		"bytes.SplitAfter",     // 🟢 splits byte slice after delimiter; pure function, no I/O.
+		"context.Background",   // 🟢 returns the background context used for Open calls within Python open(); no side effects.
+		"context.Context",      // 🟢 deadline/cancellation interface; no side effects.
+		"errors.Is",            // 🟢 checks whether an error in a chain matches a target; pure function, no I/O.
+		"fmt.Errorf",           // 🟢 error formatting; pure function, no I/O.
+		"fmt.Fprintf",          // 🟢 formats and writes to a writer; used only for error output to stderr.
+		"fmt.Sprintf",          // 🟢 string formatting; pure function, no I/O.
+		"io.EOF",               // 🟢 sentinel error value for end-of-file; read-only constant, no I/O.
+		"io.LimitReader",       // 🟢 wraps a reader with a byte cap to prevent memory exhaustion; pure wrapper, no I/O by itself.
+		"io.ReadAll",           // 🟠 reads all bytes from a reader; always bounded by io.LimitReader in this package.
+		"io.ReadWriteCloser",   // 🟢 type reference for sandbox file handle; no write capability (write mode is blocked).
+		"io.Reader",            // 🟢 type reference for stdin reader; no write capability.
+		"io.Writer",            // 🟢 type reference for stdout/stderr writers; used only for output, not file writes.
+		"os.FileMode",          // 🟢 file mode type; used only as argument type in the Open callback signature.
+		"os.IsNotExist",        // 🟢 checks whether an error indicates file-not-found; pure predicate, no I/O.
+		"os.O_RDONLY",          // 🟢 read-only file flag; pure constant.
+		"strings.ContainsRune", // 🟢 checks if a rune appears in a string (used to detect binary mode 'b'); pure function, no I/O.
+		"strings.NewReader",    // 🟢 creates an in-memory io.Reader from a string (empty stdin fallback); pure function, no I/O.
+	},
 	"loopctl": {
 		"strconv.Atoi", // 🟢 string-to-int conversion; pure function, no I/O.
 	},
@@ -129,6 +153,26 @@ var internalPerPackageSymbols = map[string][]string{
 // via iphlpapi.dll. Usage is limited to two call sites; no unsafe pointer
 // arithmetic occurs after the DLL call. All buffer parsing uses encoding/binary.
 var internalAllowedSymbols = []string{
+	// pyruntime
+	"bufio.NewReader",      // 🟢 pyruntime: wraps an io.Reader with buffering for readline support; no write capability.
+	"bufio.NewScanner",     // 🟢 pyruntime: creates a line scanner on a file for readline(); no write capability.
+	"bufio.Reader",         // 🟢 pyruntime: buffered reader type reference; no write capability.
+	"bufio.Scanner",        // 🟢 pyruntime: line-by-line scanner type reference; no write capability.
+	"bytes.SplitAfter",     // 🟢 pyruntime: splits byte slice after delimiter; pure function, no I/O.
+	"context.Background",   // 🟢 pyruntime: returns background context for sandbox open() calls; no side effects.
+	"errors.Is",            // 🟢 pyruntime: checks error chain membership; pure function, no I/O.
+	"fmt.Fprintf",          // 🟢 pyruntime: writes formatted error messages to stderr; no file-write capability.
+	"io.EOF",               // 🟢 pyruntime: end-of-file sentinel; read-only constant.
+	"io.LimitReader",       // 🟢 pyruntime/procsyskernel: wraps a reader with a byte cap; pure wrapper, no I/O by itself.
+	"io.ReadAll",           // 🟠 pyruntime/procsyskernel: reads all bytes from a bounded reader; always used with LimitReader.
+	"io.ReadWriteCloser",   // 🟢 pyruntime: sandbox file handle type; write mode is blocked at runtime.
+	"io.Reader",            // 🟢 pyruntime: stdin reader type reference; no write capability.
+	"io.Writer",            // 🟢 pyruntime: stdout/stderr writer type reference; no file-write capability.
+	"os.FileMode",          // 🟢 pyruntime: file mode type used in sandbox Open callback signature; pure type.
+	"os.IsNotExist",        // 🟢 pyruntime: file-not-found predicate; pure function, no I/O.
+	"strings.ContainsRune", // 🟢 pyruntime: checks mode string for binary flag; pure function, no I/O.
+	"strings.NewReader",    // 🟢 pyruntime: creates in-memory reader from string (empty stdin fallback); pure function.
+	// procinfo
 	"bufio.NewScanner", // 🟢 procinfo: line-by-line reading of /proc files; no write capability.
 	"github.com/DataDog/rshell/builtins/internal/procpath.Default", // 🟢 procinfo/procnet: canonical /proc filesystem root path constant; pure constant, no I/O.
 	"bytes.NewReader",                       // 🟢 procinfo: wraps a byte slice as an in-memory io.Reader; no I/O side effects.

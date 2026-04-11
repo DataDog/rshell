@@ -1,0 +1,31 @@
+description: python supports class definitions with __init__ and instance methods.
+skip_assert_against_bash: true
+setup:
+  files:
+    - path: counter.py
+      content: |+
+        class Counter:
+            def __init__(self):
+                self.count = 0
+
+            def increment(self):
+                self.count += 1
+
+            def value(self):
+                return self.count
+
+        c = Counter()
+        c.increment()
+        c.increment()
+        c.increment()
+        print(c.value())
+      chmod: 0644
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    python counter.py
+expect:
+  stdout: |+
+    3
+  stderr: |+
+  exit_code: 0

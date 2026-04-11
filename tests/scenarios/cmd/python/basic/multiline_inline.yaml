@@ -1,0 +1,10 @@
+description: python -c handles multiline code using semicolons.
+skip_assert_against_bash: true
+input:
+  script: |+
+    python -c "x = 1 + 2; print(x)"
+expect:
+  stdout: |+
+    3
+  stderr: |+
+  exit_code: 0

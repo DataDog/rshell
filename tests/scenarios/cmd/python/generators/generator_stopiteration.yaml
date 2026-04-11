@@ -1,0 +1,29 @@
+description: python generator raises StopIteration when exhausted and next() is called.
+skip_assert_against_bash: true
+setup:
+  files:
+    - path: stopiter.py
+      content: |+
+        def one_two():
+            yield 1
+            yield 2
+
+        g = one_two()
+        print(next(g))
+        print(next(g))
+        try:
+            next(g)
+        except StopIteration:
+            print("stopped")
+      chmod: 0644
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    python stopiter.py
+expect:
+  stdout: |+
+    1
+    2
+    stopped
+  stderr: |+
+  exit_code: 0

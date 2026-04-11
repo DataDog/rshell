@@ -1,0 +1,10 @@
+description: python generator expression lazily computes values and is consumed by sum.
+skip_assert_against_bash: true
+input:
+  script: |+
+    python -c "total = sum(x * x for x in range(5)); print(total)"
+expect:
+  stdout: |+
+    30
+  stderr: |+
+  exit_code: 0

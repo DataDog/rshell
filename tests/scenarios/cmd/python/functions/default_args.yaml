@@ -1,0 +1,24 @@
+description: python function default argument values are used when the caller omits those arguments.
+skip_assert_against_bash: true
+setup:
+  files:
+    - path: defaults.py
+      content: |+
+        def greet(name, greeting="Hello"):
+            print(greeting + ", " + name + "!")
+
+        greet("Alice")
+        greet("Bob", "Hi")
+        greet("Charlie", greeting="Hey")
+      chmod: 0644
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    python defaults.py
+expect:
+  stdout: |+
+    Hello, Alice!
+    Hi, Bob!
+    Hey, Charlie!
+  stderr: |+
+  exit_code: 0

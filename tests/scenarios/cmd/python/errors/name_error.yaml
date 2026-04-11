@@ -1,0 +1,9 @@
+description: NameError from an undefined variable is reported to stderr and exits with code 1.
+skip_assert_against_bash: true
+input:
+  script: |+
+    python -c "print(undefined_variable)"
+expect:
+  stdout: |+
+  stderr_contains: ["NameError"]
+  exit_code: 1

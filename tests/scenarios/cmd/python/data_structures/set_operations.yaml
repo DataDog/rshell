@@ -1,0 +1,30 @@
+description: python set supports union, intersection, difference, and add operations.
+skip_assert_against_bash: true
+setup:
+  files:
+    - path: setops.py
+      content: |+
+        a = {1, 2, 3, 4}
+        b = {3, 4, 5, 6}
+        print(sorted(a | b))
+        print(sorted(a & b))
+        print(sorted(a - b))
+        print(sorted(b - a))
+        a.add(7)
+        print(7 in a)
+        print(1 in a)
+      chmod: 0644
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    python setops.py
+expect:
+  stdout: |+
+    [1, 2, 3, 4, 5, 6]
+    [3, 4]
+    [1, 2]
+    [5, 6]
+    True
+    True
+  stderr: |+
+  exit_code: 0

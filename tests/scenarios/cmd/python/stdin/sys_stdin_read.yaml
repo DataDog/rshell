@@ -1,0 +1,10 @@
+description: Python code can read all of stdin via sys.stdin.read().
+skip_assert_against_bash: true
+input:
+  script: |+
+    echo "hello" | python -c "import sys; data = sys.stdin.read(); print(data.strip())"
+expect:
+  stdout: |+
+    hello
+  stderr: |+
+  exit_code: 0

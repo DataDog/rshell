@@ -1,0 +1,37 @@
+description: python script parses a CSV file and computes column sums.
+skip_assert_against_bash: true
+setup:
+  files:
+    - path: data.csv
+      content: |+
+        name,score
+        alice,85
+        bob,92
+        carol,78
+      chmod: 0644
+    - path: csv_sum.py
+      content: |+
+        total = 0
+        count = 0
+        with open('data.csv') as f:
+            lines = f.read().split('\n')
+        for line in lines[1:]:
+            if line:
+                parts = line.split(',')
+                total = total + int(parts[1])
+                count = count + 1
+        print('total: ' + str(total))
+        print('count: ' + str(count))
+        print('average: ' + str(total // count))
+      chmod: 0644
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    python csv_sum.py
+expect:
+  stdout: |+
+    total: 255
+    count: 3
+    average: 85
+  stderr: |+
+  exit_code: 0
