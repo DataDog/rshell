@@ -65,10 +65,8 @@ var internalPerPackageSymbols = map[string][]string{
 		"io/fs.FileInfo",                  // 🟢 interface type for file metadata returned by Stat callback; no I/O by itself.
 		"os.DevNull",                      // 🟢 device null path constant; pure constant.
 		"os.FileMode",                     // 🟢 file mode type; used only as argument type in the Open callback signature.
-		"os.Getwd",                        // 🟠 returns the current working directory for os.getcwd(); read-only, no side effects.
 		"os.IsNotExist",                   // 🟢 checks whether an error indicates file-not-found; pure predicate, no I/O.
 		"os.O_RDONLY",                     // 🟢 read-only file flag; pure constant.
-		"os.UserHomeDir",                  // 🟠 returns the home directory path; read-only, no side effects.
 		"path/filepath.Abs",               // 🟢 resolves a relative path to absolute; pure function, no I/O beyond cwd read.
 		"path/filepath.Base",              // 🟢 returns the last element of a path for os.path.basename(); pure function, no I/O.
 		"path/filepath.Clean",             // 🟢 normalises path before use; pure function, no I/O.
@@ -110,8 +108,10 @@ var internalPerPackageSymbols = map[string][]string{
 		"strings.TrimRightFunc",           // 🟢 trims trailing runes matching a predicate; pure function, no I/O.
 		"strings.TrimSpace",               // 🟢 removes leading/trailing whitespace; pure function, no I/O.
 		"strings.TrimSuffix",              // 🟢 trims a suffix from a string; pure function, no I/O.
+		"math.MaxInt64",                   // 🟢 maximum int64 constant; used for bounds checks in integer conversions; pure constant.
 		"unicode.IsDigit",                 // 🟢 checks if a rune is a digit; pure function, no I/O.
 		"unicode.IsLetter",                // 🟢 checks if a rune is a letter; pure function, no I/O.
+		"unicode.MaxRune",                 // 🟢 maximum valid Unicode code point constant; used for rune range checks; pure constant.
 		"unicode/utf8.DecodeRuneInString", // 🟢 decodes the first rune of a string; pure function, no I/O.
 		"unicode/utf8.RuneCountInString",  // 🟢 counts runes in a string; pure function, no I/O.
 		"unicode/utf8.RuneLen",            // 🟢 returns the number of bytes required to encode a rune; pure function, no I/O.
@@ -292,9 +292,7 @@ var internalAllowedSymbols = []string{
 	"math/big.NewInt",                 // 🟢 pyruntime: creates arbitrary-precision integer; pure function, no I/O.
 	"os.DevNull",                      // 🟢 pyruntime: device null path constant for os.devnull in Python os module; pure constant.
 	"os.FileMode",                     // 🟢 pyruntime: file mode type used in sandbox Open callback signature; pure type.
-	"os.Getwd",                        // 🟠 pyruntime: returns current working directory for os.getcwd(); read-only, no side effects.
 	"os.IsNotExist",                   // 🟢 pyruntime: file-not-found predicate; pure function, no I/O.
-	"os.UserHomeDir",                  // 🟠 pyruntime: returns home directory path for os.path.expanduser(); read-only, no side effects.
 	"path/filepath.Abs",               // 🟢 pyruntime: resolves relative path to absolute for os.path.abspath(); pure function.
 	"path/filepath.Dir",               // 🟢 pyruntime: returns directory component for os.path.dirname(); pure function, no I/O.
 	"path/filepath.Ext",               // 🟢 pyruntime: returns file extension for os.path.splitext(); pure function, no I/O.
@@ -320,8 +318,10 @@ var internalAllowedSymbols = []string{
 	"strings.TrimLeftFunc",            // 🟢 pyruntime: trims leading runes matching predicate for str.lstrip(); pure function, no I/O.
 	"strings.TrimRightFunc",           // 🟢 pyruntime: trims trailing runes matching predicate for str.rstrip(); pure function, no I/O.
 	"strings.TrimSuffix",              // 🟢 pyruntime: trims a suffix; used for augmented assignment op stripping; pure function, no I/O.
+	"math.MaxInt64",                   // 🟢 pyruntime: maximum int64 constant; used for bounds checks in integer conversions; pure constant.
 	"unicode.IsDigit",                 // 🟢 pyruntime: checks if rune is digit for str.isdigit(); pure function, no I/O.
 	"unicode.IsLetter",                // 🟢 pyruntime: checks if rune is letter for lexer identifier scanning; pure function, no I/O.
+	"unicode.MaxRune",                 // 🟢 pyruntime: maximum valid Unicode code point constant; used for rune range checks; pure constant.
 	"unicode/utf8.DecodeRuneInString", // 🟢 pyruntime: decodes first rune for lexer/string ops; pure function, no I/O.
 	"unicode/utf8.RuneCountInString",  // 🟢 pyruntime: counts runes for len() on strings; pure function, no I/O.
 	"unicode/utf8.RuneLen",            // 🟢 pyruntime: bytes required to encode a rune; pure function, no I/O.
