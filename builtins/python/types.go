@@ -28,6 +28,11 @@ type RunOpts struct {
 	// SourceName is the name shown in tracebacks (e.g. "<string>", "script.py").
 	SourceName string
 
+	// Ctx is the execution context. Sandbox I/O calls (Open, Stat, ReadDir) use
+	// this context so they respect the shell's cancellation deadline. Set by
+	// runInternal; callers should leave it nil (it will be populated automatically).
+	Ctx context.Context
+
 	// Stdin is Python's sys.stdin reader. If nil, stdin returns EOF immediately.
 	Stdin io.Reader
 

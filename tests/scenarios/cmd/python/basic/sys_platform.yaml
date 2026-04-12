@@ -1,0 +1,10 @@
+description: python sys.platform returns a non-empty string.
+skip_assert_against_bash: true
+input:
+  script: |+
+    python -c "import sys; print(len(sys.platform) > 0)"
+expect:
+  stdout: |+
+    True
+  stderr: |+
+  exit_code: 0

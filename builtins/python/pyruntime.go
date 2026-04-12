@@ -32,6 +32,10 @@ func Run(ctx context.Context, opts RunOpts) int {
 }
 
 func runInternal(ctx context.Context, opts RunOpts) (exitCode int) {
+	// Propagate the execution context into RunOpts so that sandbox I/O calls
+	// (Open, Stat, ReadDir) respect the shell's cancellation deadline.
+	opts.Ctx = ctx
+
 	// Parse
 	mod, err := Parse(opts.Source+"\n", opts.SourceName)
 	if err != nil {

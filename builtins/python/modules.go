@@ -7,7 +7,6 @@ package python
 
 import (
 	"bufio"
-	"context"
 	"encoding/base64"
 	"encoding/hex"
 	"fmt"
@@ -16,6 +15,7 @@ import (
 	"math/big"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 )
 
@@ -60,6 +60,19 @@ func loadModule(name string, opts *RunOpts) (*PyModule, bool) {
 	return mod, true
 }
 
+// goosToSysPlatform converts a runtime.GOOS value to the string that Python's
+// sys.platform reports on each OS. This matches CPython behaviour.
+func goosToSysPlatform(goos string) string {
+	switch goos {
+	case "darwin":
+		return "darwin"
+	case "windows":
+		return "win32"
+	default:
+		return "linux"
+	}
+}
+
 // ---- sys module ----
 
 func makeSysModule(opts *RunOpts) *PyModule {
@@ -76,7 +89,7 @@ func makeSysModule(opts *RunOpts) *PyModule {
 		"stdin":        nil, // set below
 		"version":      pyStr("3.12.0 (rshell custom interpreter)"),
 		"version_info": pyTuple([]Object{pyInt(3), pyInt(12), pyInt(0), pyStr("final"), pyInt(0)}),
-		"platform":     pyStr("linux"),
+		"platform":     pyStr(goosToSysPlatform(runtime.GOOS)),
 		"path":         pyList([]Object{}),
 		"modules":      pyDict(),
 		"maxsize":      pyInt(int64(^uint(0) >> 1)),
@@ -323,7 +336,7 @@ func makeOsModule(opts *RunOpts) *PyModule {
 			if len(args) > 0 {
 				dir = mustStr(args[0], "listdir")
 			}
-			entries, err := opts.ReadDir(context.Background(), dir)
+			entries, err := opts.ReadDir(opts.Ctx, dir)
 			if err != nil {
 				raiseOSError(err.Error())
 			}
@@ -353,7 +366,6 @@ func makeOsPathModule(opts *RunOpts) *PyModule {
 		"dirname":  makeBuiltin("dirname", osPathDirname),
 		"basename": makeBuiltin("basename", osPathBasename),
 		"splitext": makeBuiltin("splitext", osPathSplitext),
-		"abspath":  makeBuiltin("abspath", osPathAbspath),
 		"split":    makeBuiltin("split", osPathSplit),
 		"sep":      pyStr(string(filepath.Separator)),
 		"curdir":   pyStr("."),
@@ -366,17 +378,9 @@ func makeOsPathModule(opts *RunOpts) *PyModule {
 			}
 			return pyStr(filepath.Clean(mustStr(args[0], "normpath")))
 		}),
-		"realpath": makeBuiltin("realpath", func(args []Object, _ map[string]Object) Object {
-			if len(args) != 1 {
-				raiseTypeError("realpath() takes exactly 1 argument")
-			}
-			p := mustStr(args[0], "realpath")
-			abs, err := filepath.Abs(p)
-			if err != nil {
-				return pyStr(p)
-			}
-			return pyStr(abs)
-		}),
+		// abspath and realpath are intentionally absent: both call filepath.Abs
+		// which reads the host process CWD via os.Getwd, leaking the host path.
+		// This matches the policy that blocked os.getcwd() (commit f5235f88).
 	}}
 }
 
@@ -397,7 +401,7 @@ func makeOsPathExists(opts *RunOpts) func([]Object, map[string]Object) Object {
 			raiseTypeError("exists() takes exactly 1 argument")
 		}
 		path := mustStr(args[0], "exists")
-		_, err := opts.Stat(context.Background(), path)
+		_, err := opts.Stat(opts.Ctx, path)
 		return pyBool(err == nil)
 	}
 }
@@ -408,7 +412,7 @@ func makeOsPathIsFile(opts *RunOpts) func([]Object, map[string]Object) Object {
 			raiseTypeError("isfile() takes exactly 1 argument")
 		}
 		path := mustStr(args[0], "isfile")
-		info, err := opts.Stat(context.Background(), path)
+		info, err := opts.Stat(opts.Ctx, path)
 		if err != nil {
 			return pyFalse
 		}
@@ -422,7 +426,7 @@ func makeOsPathIsDir(opts *RunOpts) func([]Object, map[string]Object) Object {
 			raiseTypeError("isdir() takes exactly 1 argument")
 		}
 		path := mustStr(args[0], "isdir")
-		info, err := opts.Stat(context.Background(), path)
+		info, err := opts.Stat(opts.Ctx, path)
 		if err != nil {
 			return pyFalse
 		}
@@ -452,18 +456,6 @@ func osPathSplitext(args []Object, _ map[string]Object) Object {
 	ext := filepath.Ext(p)
 	base := p[:len(p)-len(ext)]
 	return pyTuple([]Object{pyStr(base), pyStr(ext)})
-}
-
-func osPathAbspath(args []Object, _ map[string]Object) Object {
-	if len(args) != 1 {
-		raiseTypeError("abspath() takes exactly 1 argument")
-	}
-	p := mustStr(args[0], "abspath")
-	abs, err := filepath.Abs(p)
-	if err != nil {
-		return pyStr(p)
-	}
-	return pyStr(abs)
 }
 
 func osPathSplit(args []Object, _ map[string]Object) Object {

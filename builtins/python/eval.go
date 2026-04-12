@@ -17,6 +17,11 @@ import (
 // maxCallDepth is the maximum recursion depth for function calls.
 const maxCallDepth = 500
 
+// maxRepeatBytes is the maximum number of bytes that may be produced by a
+// sequence-repetition operation (str * n, bytes * n, list * n, tuple * n).
+// Exceeding this limit raises MemoryError, preventing OOM attacks via large n.
+const maxRepeatBytes = 1 << 20 // 1 MiB
+
 // genChannels holds the channels used inside a generator goroutine.
 type genChannels struct {
 	sendCh  chan Object
@@ -807,6 +812,7 @@ func (e *Evaluator) mulOp(left, right Object) Object {
 			if n <= 0 {
 				return pyStr("")
 			}
+			checkRepeatBytesLimit(len(lv.v), n)
 			result := make([]byte, 0, len(lv.v)*int(n))
 			for i := int64(0); i < n; i++ {
 				result = append(result, lv.v...)
@@ -818,6 +824,7 @@ func (e *Evaluator) mulOp(left, right Object) Object {
 			if n <= 0 {
 				return pyList(nil)
 			}
+			checkRepeatItemsLimit(len(lv.items), n)
 			items := make([]Object, 0, len(lv.items)*int(n))
 			for i := int64(0); i < n; i++ {
 				items = append(items, lv.items...)
@@ -829,6 +836,7 @@ func (e *Evaluator) mulOp(left, right Object) Object {
 			if n <= 0 {
 				return pyTuple(nil)
 			}
+			checkRepeatItemsLimit(len(lv.items), n)
 			items := make([]Object, 0, len(lv.items)*int(n))
 			for i := int64(0); i < n; i++ {
 				items = append(items, lv.items...)
@@ -840,6 +848,7 @@ func (e *Evaluator) mulOp(left, right Object) Object {
 			if n <= 0 {
 				return pyBytes(nil)
 			}
+			checkRepeatBytesLimit(len(lv.v), n)
 			result := make([]byte, 0, len(lv.v)*int(n))
 			for i := int64(0); i < n; i++ {
 				result = append(result, lv.v...)
@@ -854,6 +863,7 @@ func (e *Evaluator) mulOp(left, right Object) Object {
 			if n <= 0 {
 				return pyStr("")
 			}
+			checkRepeatBytesLimit(len(rv.v), n)
 			result := make([]byte, 0, len(rv.v)*int(n))
 			for i := int64(0); i < n; i++ {
 				result = append(result, rv.v...)
@@ -863,6 +873,7 @@ func (e *Evaluator) mulOp(left, right Object) Object {
 			if n <= 0 {
 				return pyList(nil)
 			}
+			checkRepeatItemsLimit(len(rv.items), n)
 			items := make([]Object, 0, len(rv.items)*int(n))
 			for i := int64(0); i < n; i++ {
 				items = append(items, rv.items...)
@@ -872,6 +883,7 @@ func (e *Evaluator) mulOp(left, right Object) Object {
 			if n <= 0 {
 				return pyTuple(nil)
 			}
+			checkRepeatItemsLimit(len(rv.items), n)
 			items := make([]Object, 0, len(rv.items)*int(n))
 			for i := int64(0); i < n; i++ {
 				items = append(items, rv.items...)
@@ -881,6 +893,7 @@ func (e *Evaluator) mulOp(left, right Object) Object {
 			if n <= 0 {
 				return pyBytes(nil)
 			}
+			checkRepeatBytesLimit(len(rv.v), n)
 			result := make([]byte, 0, len(rv.v)*int(n))
 			for i := int64(0); i < n; i++ {
 				result = append(result, rv.v...)
@@ -895,6 +908,23 @@ func (e *Evaluator) mulOp(left, right Object) Object {
 	}
 	// Fall back to numeric mul
 	return e.numericMul(left, right)
+}
+
+// checkRepeatBytesLimit raises MemoryError if repeating unitLen bytes n times
+// would exceed maxRepeatBytes. unitLen==0 is always safe (empty string/bytes).
+func checkRepeatBytesLimit(unitLen int, n int64) {
+	if unitLen > 0 && n > maxRepeatBytes/int64(unitLen) {
+		panic(exceptionSignal{exc: newExceptionf(ExcMemoryError, "repeated string/bytes is too large")})
+	}
+}
+
+// checkRepeatItemsLimit raises MemoryError if repeating unitLen items n times
+// would produce more than maxRepeatBytes/8 items (each Object pointer is 8 bytes).
+func checkRepeatItemsLimit(unitLen int, n int64) {
+	const maxItems = maxRepeatBytes / 8 // ~128k objects
+	if unitLen > 0 && n > maxItems/int64(unitLen) {
+		panic(exceptionSignal{exc: newExceptionf(ExcMemoryError, "repeated list/tuple is too large")})
+	}
 }
 
 func (e *Evaluator) numericMul(left, right Object) Object {
@@ -1973,6 +2003,13 @@ func (e *Evaluator) evalGeneratorExp(n *GeneratorExp) Object {
 	firstItems := childEval.iterateObj(firstIter)
 
 	go func() {
+		// Register this goroutine's callObject so that map/filter/sorted with
+		// user-defined key functions work correctly inside generator expressions.
+		gid := goroutineID()
+		goroutineCallFns.Store(gid, func(fn Object, args []Object, kwargs map[string]Object) Object {
+			return childEval.callObject(fn, args, kwargs)
+		})
+		defer goroutineCallFns.Delete(gid)
 		defer close(g.yieldCh)
 		defer func() {
 			r := recover()
@@ -1987,7 +2024,12 @@ func (e *Evaluator) evalGeneratorExp(n *GeneratorExp) Object {
 					return
 				}
 			}
-			// controlSignal for return is normal
+			if _, ok := r.(controlSignal); ok {
+				// controlSignal for return is normal completion.
+				return
+			}
+			// Real Go panic — re-panic so it is not silently swallowed.
+			panic(r)
 		}()
 
 		childEval.evalGenExpHelper(n.Elt, firstItems, gens, 0)
@@ -2302,6 +2344,13 @@ func (e *Evaluator) makeGenerator(fn *PyFunction, scope *Scope) *PyGenerator {
 	}
 
 	go func() {
+		// Register this goroutine's callObject so that map/filter/sorted with
+		// user-defined key functions work correctly inside generator bodies.
+		gid := goroutineID()
+		goroutineCallFns.Store(gid, func(fn Object, args []Object, kwargs map[string]Object) Object {
+			return childEval.callObject(fn, args, kwargs)
+		})
+		defer goroutineCallFns.Delete(gid)
 		defer close(g.yieldCh)
 		defer func() {
 			r := recover()
@@ -2315,13 +2364,16 @@ func (e *Evaluator) makeGenerator(fn *PyFunction, scope *Scope) *PyGenerator {
 				if exceptionMatchesClass(sig.exc, ExcGeneratorExit) {
 					return
 				}
-				// Other exception: silently absorbed (generator exits)
+				// Other Python exception: generator exits cleanly.
 				return
 			}
 			if _, ok := r.(controlSignal); ok {
-				// return from generator is normal completion
+				// return from generator is normal completion.
 				return
 			}
+			// Real Go panic (nil pointer, index OOB, etc.) — re-panic so it is
+			// not silently swallowed.
+			panic(r)
 		}()
 		childEval.exec(fn.Body)
 	}()

@@ -7,7 +7,6 @@ package python
 
 import (
 	"bufio"
-	"context"
 	"fmt"
 	"io"
 	"math"
@@ -1476,7 +1475,7 @@ func makeBuiltinOpen(opts *RunOpts) *PyBuiltin {
 
 		binary := strings.ContainsRune(mode, 'b')
 
-		rc, err := opts.Open(context.Background(), path, os.O_RDONLY, 0)
+		rc, err := opts.Open(opts.Ctx, path, os.O_RDONLY, 0)
 		if err != nil {
 			if os.IsNotExist(err) {
 				panic(exceptionSignal{exc: newExceptionf(ExcFileNotFoundError, "[Errno 2] No such file or directory: '%s'", path)})

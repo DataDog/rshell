@@ -1,0 +1,38 @@
+description: python string/bytes/list/tuple repetition raises MemoryError when the result would exceed 1 MiB.
+skip_assert_against_bash: true
+input:
+  script: |+
+    python -c "
+    import sys
+    try:
+        x = 'a' * (2**62)
+        print('no error')
+    except MemoryError:
+        print('MemoryError for str')
+
+    try:
+        x = b'a' * (2**62)
+        print('no error')
+    except MemoryError:
+        print('MemoryError for bytes')
+
+    try:
+        x = [1] * (2**62)
+        print('no error')
+    except MemoryError:
+        print('MemoryError for list')
+
+    try:
+        x = (1,) * (2**62)
+        print('no error')
+    except MemoryError:
+        print('MemoryError for tuple')
+    "
+expect:
+  stdout: |+
+    MemoryError for str
+    MemoryError for bytes
+    MemoryError for list
+    MemoryError for tuple
+  stderr: |+
+  exit_code: 0

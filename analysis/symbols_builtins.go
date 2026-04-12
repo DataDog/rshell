@@ -180,7 +180,6 @@ var builtinPerCommandSymbols = map[string][]string{
 	"python": {
 		"bufio.NewReader",                 // 🟢 wraps an io.Reader with buffering for readline support; no write capability.
 		"bufio.Reader",                    // 🟢 type reference for buffered reader; no write capability.
-		"context.Background",              // 🟢 returns the background context used for Open calls within Python open(); no side effects.
 		"context.Context",                 // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
 		"encoding/base64.RawStdEncoding",  // 🟢 base64 encoding/decoding without padding; pure function, no I/O.
 		"encoding/base64.StdEncoding",     // 🟢 base64 encoding/decoding of byte data; pure function, no I/O.
@@ -236,7 +235,6 @@ var builtinPerCommandSymbols = map[string][]string{
 		"os.FileMode",                     // 🟢 file mode type; used only as argument type in the Open callback signature.
 		"os.IsNotExist",                   // 🟢 checks whether an error indicates file-not-found; pure predicate, no I/O.
 		"os.O_RDONLY",                     // 🟢 read-only file flag; pure constant.
-		"path/filepath.Abs",               // 🟢 resolves a relative path to absolute for os.path.abspath(); pure function, no I/O beyond cwd read.
 		"path/filepath.Base",              // 🟢 returns the last element of a path for os.path.basename(); pure function, no I/O.
 		"path/filepath.Clean",             // 🟢 normalises path before use; pure function, no I/O.
 		"path/filepath.Dir",               // 🟢 returns directory component of path; pure function, no I/O.
@@ -284,6 +282,7 @@ var builtinPerCommandSymbols = map[string][]string{
 		"unicode/utf8.RuneCountInString",  // 🟢 counts runes in a string; pure function, no I/O.
 		"unicode/utf8.RuneLen",            // 🟢 returns the number of bytes required to encode a rune; pure function, no I/O.
 		"unicode/utf8.ValidString",        // 🟢 checks if a string is valid UTF-8; pure function, no I/O.
+		"runtime.GOOS",                    // 🟢 build-time OS identifier constant; used to set sys.platform; read-only, no exec capability.
 		"runtime.Stack",                   // 🟢 reads current goroutine stack header to extract goroutine ID; read-only, no exec capability.
 		"sync.Map",                        // 🟢 concurrent-safe map for per-goroutine callObject registration; no I/O, no side effects.
 	},
@@ -518,7 +517,6 @@ var builtinAllowedSymbols = []string{
 	"bytes.Equal",                    // 🟢 compares two byte slices for equality; pure function, no I/O.
 	"bytes.IndexByte",                // 🟢 finds a byte in a byte slice; pure function, no I/O.
 	"bytes.NewReader",                // 🟢 wraps a byte slice as an io.Reader; pure in-memory, no I/O.
-	"context.Background",             // 🟢 returns a non-nil, empty background context; no side effects.
 	"context.Context",                // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
 	"context.WithTimeout",            // 🟢 creates a child context with a deadline; no filesystem or network I/O itself.
 	"encoding/base64.RawStdEncoding", // 🟢 base64 encoding/decoding without padding; pure function, no I/O.
@@ -620,7 +618,6 @@ var builtinAllowedSymbols = []string{
 	"os.IsNotExist",                                       // 🟢 checks if error is "not exist"; pure function, no I/O.
 	"os.O_RDONLY",                                         // 🟢 read-only file flag constant; cannot open files by itself.
 	"os.PathError",                                        // 🟢 error type for filesystem path errors; pure type, no I/O.
-	"path/filepath.Abs",                                   // 🟢 resolves a relative path to absolute for os.path.abspath(); pure function.
 	"path/filepath.Base",                                  // 🟢 returns the last element of a path for os.path.basename(); pure function, no I/O.
 	"path/filepath.Clean",                                 // 🟢 normalises path before use; pure function, no I/O.
 	"path/filepath.Dir",                                   // 🟢 returns the directory component of a path; pure function, no I/O.

@@ -1,0 +1,10 @@
+description: python os.path.abspath() is not available (blocked — leaks host CWD via os.Getwd).
+skip_assert_against_bash: true
+input:
+  script: |+
+    python -c "import os; print(hasattr(os.path, 'abspath'))"
+expect:
+  stdout: |+
+    False
+  stderr: |+
+  exit_code: 0
