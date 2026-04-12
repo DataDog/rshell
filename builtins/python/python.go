@@ -76,7 +76,6 @@ import (
 	"os"
 
 	"github.com/DataDog/rshell/builtins"
-	"github.com/DataDog/rshell/builtins/internal/pyruntime"
 )
 
 // Cmd is the python builtin command descriptor.
@@ -153,7 +152,7 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			source = src
 		}
 
-		exitCode := pyruntime.Run(ctx, pyruntime.RunOpts{
+		exitCode := Run(ctx, RunOpts{
 			Source:     source,
 			SourceName: sourceName,
 			Stdin:      callCtx.Stdin,

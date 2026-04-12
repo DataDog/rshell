@@ -3,26 +3,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2026-present Datadog, Inc.
 
-// Package pyruntime implements a sandboxed Python 3 interpreter for the
-// python builtin shell command.
-//
-// # Security sandbox
-//
-// The interpreter is a from-scratch tree-walking evaluator that provides
-// safety-by-design through:
-//
-//   - A module whitelist: only approved modules are importable.
-//   - Read-only file access: open() is sandboxed to AllowedPaths via callCtx.OpenFile.
-//   - Write/append/create modes in open() raise PermissionError.
-//   - Dangerous modules (subprocess, socket, ctypes, tempfile, etc.) raise ImportError.
-//   - A recursion depth limit of 500 frames.
-//
-// # Context cancellation
-//
-// Run executes Python in a goroutine and selects on ctx.Done(). If the
-// context is cancelled the function returns exit code 1 immediately. Loop
-// bodies check ctx.Done() at each iteration.
-package pyruntime
+package python
 
 import (
 	"context"

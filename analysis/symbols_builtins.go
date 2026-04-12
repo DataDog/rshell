@@ -178,13 +178,114 @@ var builtinPerCommandSymbols = map[string][]string{
 		"strings.TrimSpace",  // 🟢 removes leading/trailing whitespace; pure function.
 	},
 	"python": {
-		"context.Context", // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
-		"io.LimitReader",  // 🟢 caps source-code reads at 1 MiB to prevent memory exhaustion; no I/O side effects.
-		"io.ReadAll",      // 🟠 reads all bytes from a LimitReader-wrapped source; bounded by maxSourceBytes (1 MiB).
-		"io.Reader",       // 🟢 interface type; no side effects.
-		"os.O_RDONLY",     // 🟢 read-only file flag constant; cannot open files by itself.
-		// Note: builtins/internal/pyruntime symbols are exempt from this allowlist
-		// (internal packages are not checked by the builtinAllowedSymbols test).
+		"bufio.NewReader",                 // 🟢 wraps an io.Reader with buffering for readline support; no write capability.
+		"bufio.Reader",                    // 🟢 type reference for buffered reader; no write capability.
+		"context.Background",              // 🟢 returns the background context used for Open calls within Python open(); no side effects.
+		"context.Context",                 // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
+		"encoding/base64.RawStdEncoding",  // 🟢 base64 encoding/decoding without padding; pure function, no I/O.
+		"encoding/base64.StdEncoding",     // 🟢 base64 encoding/decoding of byte data; pure function, no I/O.
+		"encoding/hex.DecodeString",       // 🟢 hex decoding; pure function, no I/O.
+		"encoding/hex.EncodeToString",     // 🟢 hex encoding; pure function, no I/O.
+		"fmt.Errorf",                      // 🟢 error formatting; pure function, no I/O.
+		"fmt.Fprint",                      // 🟢 writes to a writer; used only for output to stdout/stderr, no file-write capability.
+		"fmt.Fprintf",                     // 🟢 formats and writes to a writer; used only for error output to stderr.
+		"fmt.Fprintln",                    // 🟢 writes formatted line to a writer; used only for traceback output to stderr.
+		"fmt.Sprintf",                     // 🟢 string formatting; pure function, no I/O.
+		"hash/crc32.IEEETable",            // 🟢 precomputed CRC32 lookup table constant; pure constant.
+		"hash/crc32.Update",               // 🟢 incremental CRC32 update; pure function, no I/O.
+		"io.EOF",                          // 🟢 sentinel error value for end-of-file; read-only constant, no I/O.
+		"io.LimitReader",                  // 🟢 caps source-code reads at 1 MiB and wraps file reads; pure wrapper, no I/O by itself.
+		"io.ReadAll",                      // 🟠 reads all bytes from a reader; always bounded by io.LimitReader in this package.
+		"io.ReadWriteCloser",              // 🟢 type reference for sandbox file handle; write mode is blocked at runtime.
+		"io.Reader",                       // 🟢 type reference for stdin reader; no write capability.
+		"io.Writer",                       // 🟢 type reference for stdout/stderr writers; used only for output, not file writes.
+		"io/fs.DirEntry",                  // 🟢 interface type for directory entries returned by ReadDir callback; no I/O by itself.
+		"io/fs.FileInfo",                  // 🟢 interface type for file metadata returned by Stat callback; no I/O by itself.
+		"math.Abs",                        // 🟢 absolute value; pure function, no I/O.
+		"math.Acos",                       // 🟢 arc cosine for Python math module; pure function, no I/O.
+		"math.Asin",                       // 🟢 arc sine for Python math module; pure function, no I/O.
+		"math.Atan",                       // 🟢 arc tangent for Python math module; pure function, no I/O.
+		"math.Atan2",                      // 🟢 two-argument arc tangent for Python math module; pure function, no I/O.
+		"math.Ceil",                       // 🟢 ceiling function; pure function, no I/O.
+		"math.Cos",                        // 🟢 cosine; pure function, no I/O.
+		"math.E",                          // 🟢 Euler's number constant; pure constant.
+		"math.Exp",                        // 🟢 exponential; pure function, no I/O.
+		"math.Floor",                      // 🟢 floor function; pure function, no I/O.
+		"math.Hypot",                      // 🟢 Euclidean norm for Python math.hypot(); pure function, no I/O.
+		"math.Inf",                        // 🟢 returns infinity; pure function, no I/O.
+		"math.IsInf",                      // 🟢 checks for infinity; pure function, no I/O.
+		"math.IsNaN",                      // 🟢 checks for NaN; pure function, no I/O.
+		"math.Log",                        // 🟢 natural logarithm; pure function, no I/O.
+		"math.Log10",                      // 🟢 base-10 logarithm; pure function, no I/O.
+		"math.Log2",                       // 🟢 base-2 logarithm; pure function, no I/O.
+		"math.MaxInt64",                   // 🟢 maximum int64 constant; used for bounds checks; pure constant.
+		"math.Mod",                        // 🟢 floating-point modulo for Python float %; pure function, no I/O.
+		"math.NaN",                        // 🟢 returns NaN; pure function, no I/O.
+		"math.Pi",                         // 🟢 pi constant; pure constant.
+		"math.Pow",                        // 🟢 power function; pure function, no I/O.
+		"math.Pow10",                      // 🟢 power of 10 for float formatting; pure function, no I/O.
+		"math.RoundToEven",                // 🟢 banker's rounding for Python round(); pure function, no I/O.
+		"math.Sin",                        // 🟢 sine; pure function, no I/O.
+		"math.Sqrt",                       // 🟢 square root; pure function, no I/O.
+		"math.Tan",                        // 🟢 tangent; pure function, no I/O.
+		"math.Trunc",                      // 🟢 truncate to integer for Python math.trunc(); pure function, no I/O.
+		"math/big.Float",                  // 🟢 arbitrary-precision float type; pure in-memory computation, no I/O.
+		"math/big.Int",                    // 🟢 arbitrary-precision integer type; pure in-memory computation, no I/O.
+		"math/big.NewInt",                 // 🟢 creates arbitrary-precision integer; pure function, no I/O.
+		"os.DevNull",                      // 🟢 device null path constant; pure constant.
+		"os.FileMode",                     // 🟢 file mode type; used only as argument type in the Open callback signature.
+		"os.IsNotExist",                   // 🟢 checks whether an error indicates file-not-found; pure predicate, no I/O.
+		"os.O_RDONLY",                     // 🟢 read-only file flag; pure constant.
+		"path/filepath.Abs",               // 🟢 resolves a relative path to absolute for os.path.abspath(); pure function, no I/O beyond cwd read.
+		"path/filepath.Base",              // 🟢 returns the last element of a path for os.path.basename(); pure function, no I/O.
+		"path/filepath.Clean",             // 🟢 normalises path before use; pure function, no I/O.
+		"path/filepath.Dir",               // 🟢 returns directory component of path; pure function, no I/O.
+		"path/filepath.Ext",               // 🟢 returns file extension; pure function, no I/O.
+		"path/filepath.Join",              // 🟢 joins path elements; pure function, no I/O.
+		"path/filepath.ListSeparator",     // 🟢 OS path list separator constant; pure constant.
+		"path/filepath.Separator",         // 🟢 OS path separator constant; pure constant.
+		"strconv.Atoi",                    // 🟢 string-to-int conversion; pure function, no I/O.
+		"strconv.FormatFloat",             // 🟢 float to string conversion; pure function, no I/O.
+		"strconv.FormatInt",               // 🟢 int to string conversion; pure function, no I/O.
+		"strconv.ParseFloat",              // 🟢 string to float conversion; pure function, no I/O.
+		"strconv.ParseInt",                // 🟢 string to int64 with base; pure function, no I/O.
+		"strconv.ParseUint",               // 🟢 string to uint64 with base; pure function, no I/O.
+		"strings.Builder",                 // 🟢 efficient in-memory string builder; pure in-memory buffer, no I/O.
+		"strings.ContainsAny",             // 🟢 checks if string contains any of a set of runes; pure function, no I/O.
+		"strings.ContainsRune",            // 🟢 checks if a rune appears in a string; pure function, no I/O.
+		"strings.Count",                   // 🟢 counts non-overlapping instances of a substring; pure function, no I/O.
+		"strings.Fields",                  // 🟢 splits a string on whitespace; pure function, no I/O.
+		"strings.HasPrefix",               // 🟢 checks string prefix; pure function, no I/O.
+		"strings.HasSuffix",               // 🟢 checks string suffix; pure function, no I/O.
+		"strings.Index",                   // 🟢 finds first occurrence of a substring; pure function, no I/O.
+		"strings.IndexAny",                // 🟢 finds first occurrence of any rune in a string; pure function, no I/O.
+		"strings.Join",                    // 🟢 joins strings with a separator for str.join(); pure function, no I/O.
+		"strings.LastIndex",               // 🟢 finds last occurrence of a substring; pure function, no I/O.
+		"strings.NewReader",               // 🟢 creates an in-memory io.Reader from a string; pure function, no I/O.
+		"strings.Repeat",                  // 🟢 repeats a string n times; pure function, no I/O.
+		"strings.Replace",                 // 🟢 replaces occurrences of a substring; pure function, no I/O.
+		"strings.ReplaceAll",              // 🟢 replaces all occurrences of a substring; pure function, no I/O.
+		"strings.Split",                   // 🟢 splits string on a separator; pure function, no I/O.
+		"strings.SplitN",                  // 🟢 splits string into at most n substrings; pure function, no I/O.
+		"strings.Title",                   // 🟢 title-cases words in a string; pure function, no I/O.
+		"strings.ToLower",                 // 🟢 converts string to lowercase; pure function, no I/O.
+		"strings.ToUpper",                 // 🟢 converts string to uppercase; pure function, no I/O.
+		"strings.Trim",                    // 🟢 trims leading and trailing characters; pure function, no I/O.
+		"strings.TrimLeft",                // 🟢 trims leading characters; pure function, no I/O.
+		"strings.TrimLeftFunc",            // 🟢 trims leading runes matching a predicate; pure function, no I/O.
+		"strings.TrimRight",               // 🟢 trims trailing characters; pure function, no I/O.
+		"strings.TrimRightFunc",           // 🟢 trims trailing runes matching a predicate; pure function, no I/O.
+		"strings.TrimSpace",               // 🟢 removes leading/trailing whitespace; pure function, no I/O.
+		"strings.TrimSuffix",              // 🟢 trims a suffix from a string; pure function, no I/O.
+		"unicode.IsDigit",                 // 🟢 checks if a rune is a digit; pure function, no I/O.
+		"unicode.IsLetter",                // 🟢 checks if a rune is a letter; pure function, no I/O.
+		"unicode.MaxRune",                 // 🟢 maximum valid Unicode code point constant; pure constant.
+		"unicode/utf8.DecodeRuneInString", // 🟢 decodes the first rune of a string; pure function, no I/O.
+		"unicode/utf8.RuneCountInString",  // 🟢 counts runes in a string; pure function, no I/O.
+		"unicode/utf8.RuneLen",            // 🟢 returns the number of bytes required to encode a rune; pure function, no I/O.
+		"unicode/utf8.ValidString",        // 🟢 checks if a string is valid UTF-8; pure function, no I/O.
+		"runtime.Stack",                   // 🟢 reads current goroutine stack header to extract goroutine ID; read-only, no exec capability.
+		"sync.Map",                        // 🟢 concurrent-safe map for per-goroutine callObject registration; no I/O, no side effects.
 	},
 	"printf": {
 		"context.Context",      // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
@@ -408,26 +509,38 @@ var builtinPerCommandSymbols = map[string][]string{
 }
 
 var builtinAllowedSymbols = []string{
-	"bufio.NewScanner",    // 🟢 line-by-line input reading (e.g. head, cat); no write or exec capability.
-	"bufio.Scanner",       // 🟢 scanner type for buffered input reading; no write or exec capability.
-	"bufio.SplitFunc",     // 🟢 type for custom scanner split functions; pure type, no I/O.
-	"bytes.Buffer",        // 🟢 in-memory buffer to capture command output; no I/O side effects.
-	"bytes.Equal",         // 🟢 compares two byte slices for equality; pure function, no I/O.
-	"bytes.IndexByte",     // 🟢 finds a byte in a byte slice; pure function, no I/O.
-	"bytes.NewReader",     // 🟢 wraps a byte slice as an io.Reader; pure in-memory, no I/O.
-	"context.Context",     // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
-	"context.WithTimeout", // 🟢 creates a child context with a deadline; no filesystem or network I/O itself.
-	"errors.As",           // 🟢 error type assertion; pure function, no I/O.
-	"errors.Is",           // 🟢 error comparison; pure function, no I/O.
-	"errors.New",          // 🟢 creates a simple error value; pure function, no I/O.
-	"fmt.Errorf",          // 🟢 error formatting; pure function, no I/O.
-	"fmt.Sprintf",         // 🟢 string formatting; pure function, no I/O.
+	"bufio.NewReader",                // 🟢 wraps an io.Reader with buffering for readline support; no write capability.
+	"bufio.NewScanner",               // 🟢 line-by-line input reading (e.g. head, cat); no write or exec capability.
+	"bufio.Reader",                   // 🟢 buffered reader type reference; no write capability.
+	"bufio.Scanner",                  // 🟢 scanner type for buffered input reading; no write or exec capability.
+	"bufio.SplitFunc",                // 🟢 type for custom scanner split functions; pure type, no I/O.
+	"bytes.Buffer",                   // 🟢 in-memory buffer to capture command output; no I/O side effects.
+	"bytes.Equal",                    // 🟢 compares two byte slices for equality; pure function, no I/O.
+	"bytes.IndexByte",                // 🟢 finds a byte in a byte slice; pure function, no I/O.
+	"bytes.NewReader",                // 🟢 wraps a byte slice as an io.Reader; pure in-memory, no I/O.
+	"context.Background",             // 🟢 returns a non-nil, empty background context; no side effects.
+	"context.Context",                // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
+	"context.WithTimeout",            // 🟢 creates a child context with a deadline; no filesystem or network I/O itself.
+	"encoding/base64.RawStdEncoding", // 🟢 base64 encoding/decoding without padding; pure function, no I/O.
+	"encoding/base64.StdEncoding",    // 🟢 base64 encoding/decoding of byte data; pure function, no I/O.
+	"encoding/hex.DecodeString",      // 🟢 hex decoding; pure function, no I/O.
+	"encoding/hex.EncodeToString",    // 🟢 hex encoding; pure function, no I/O.
+	"errors.As",                      // 🟢 error type assertion; pure function, no I/O.
+	"errors.Is",                      // 🟢 error comparison; pure function, no I/O.
+	"errors.New",                     // 🟢 creates a simple error value; pure function, no I/O.
+	"fmt.Errorf",                     // 🟢 error formatting; pure function, no I/O.
+	"fmt.Fprint",                     // 🟢 writes to a writer; used only for output to stdout/stderr, no file-write capability.
+	"fmt.Fprintf",                    // 🟢 formats and writes to a writer; used only for error output to stderr.
+	"fmt.Fprintln",                   // 🟢 writes formatted line to a writer; used only for traceback output to stderr.
+	"fmt.Sprintf",                    // 🟢 string formatting; pure function, no I/O.
 	"github.com/prometheus-community/pro-bing.NewPinger",  // 🔴 creates an ICMP pinger by resolving host; network I/O is the explicit purpose of the ping builtin.
 	"github.com/prometheus-community/pro-bing.NoopLogger", // 🟢 no-op logger that discards pro-bing internal messages; no side effects.
 	"github.com/prometheus-community/pro-bing.Packet",     // 🟢 ICMP packet descriptor struct (received packet data); pure data type, no I/O.
 	"github.com/prometheus-community/pro-bing.Pinger",     // 🔴 ICMP pinger struct; network I/O is the explicit purpose of the ping builtin.
 	"github.com/prometheus-community/pro-bing.Statistics", // 🟢 ping round-trip statistics struct; pure data type, no I/O.
 	"golang.org/x/sys/unix.SysctlRaw",                     // 🟠 macOS: reads kernel socket tables (read-only, no exec, no filesystem).
+	"hash/crc32.IEEETable",                                // 🟢 precomputed CRC32 lookup table constant; pure constant.
+	"hash/crc32.Update",                                   // 🟢 incremental CRC32 update; pure function, no I/O.
 	"io.EOF",                                              // 🟢 sentinel error value; pure constant.
 	"io.LimitReader",                                      // 🟢 wraps a Reader with a byte-count limit; prevents reading unbounded data; no I/O side effects.
 	"io.MultiReader",                                      // 🟢 combines multiple Readers into one sequential Reader; no I/O side effects.
@@ -435,6 +548,7 @@ var builtinAllowedSymbols = []string{
 	"io.ReadAll",                                          // 🟠 reads all bytes from a Reader; only safe when combined with io.LimitReader to bound allocation.
 	"io.ReadCloser",                                       // 🟢 interface type; no side effects.
 	"io.ReadSeeker",                                       // 🟢 interface type combining Reader and Seeker; no side effects.
+	"io.ReadWriteCloser",                                  // 🟢 type reference for sandbox file handle; write mode is blocked at runtime.
 	"io.Reader",                                           // 🟢 interface type; no side effects.
 	"io.SeekCurrent",                                      // 🟢 whence constant for Seek(offset, SeekCurrent); pure constant.
 	"io.WriteString",                                      // 🟠 writes a string to a writer; no filesystem access, delegates to Write.
@@ -452,16 +566,40 @@ var builtinAllowedSymbols = []string{
 	"io/fs.ModeSticky",                                    // 🟢 file mode bit constant for sticky bit; pure constant.
 	"io/fs.ModeSymlink",                                   // 🟢 file mode bit constant for symlinks; pure constant.
 	"io/fs.ReadDirFile",                                   // 🟢 read-only directory handle interface; no write capability.
+	"math.Abs",                                            // 🟢 absolute value; pure function, no I/O.
+	"math.Acos",                                           // 🟢 arc cosine for Python math module; pure function, no I/O.
+	"math.Asin",                                           // 🟢 arc sine for Python math module; pure function, no I/O.
+	"math.Atan",                                           // 🟢 arc tangent for Python math module; pure function, no I/O.
+	"math.Atan2",                                          // 🟢 two-argument arc tangent for Python math module; pure function, no I/O.
 	"math.Ceil",                                           // 🟢 pure arithmetic; no side effects.
+	"math.Cos",                                            // 🟢 cosine for Python math module; pure function, no I/O.
+	"math.E",                                              // 🟢 Euler's number constant; pure constant.
+	"math.Exp",                                            // 🟢 exponential for Python math module; pure function, no I/O.
 	"math.Floor",                                          // 🟢 pure arithmetic; no side effects.
+	"math.Hypot",                                          // 🟢 Euclidean norm for Python math.hypot(); pure function, no I/O.
 	"math.Inf",                                            // 🟢 returns positive or negative infinity; pure function, no I/O.
 	"math.IsInf",                                          // 🟢 IEEE 754 infinity check; pure function, no I/O.
 	"math.IsNaN",                                          // 🟢 IEEE 754 NaN check; pure function, no I/O.
+	"math.Log",                                            // 🟢 natural logarithm for Python math module; pure function, no I/O.
+	"math.Log10",                                          // 🟢 base-10 logarithm for Python math module; pure function, no I/O.
+	"math.Log2",                                           // 🟢 base-2 logarithm for Python math module; pure function, no I/O.
 	"math.MaxInt32",                                       // 🟢 integer constant; no side effects.
 	"math.MaxInt64",                                       // 🟢 integer constant; no side effects.
 	"math.MaxUint64",                                      // 🟢 integer constant; no side effects.
 	"math.MinInt64",                                       // 🟢 integer constant; no side effects.
+	"math.Mod",                                            // 🟢 floating-point modulo for Python float %; pure function, no I/O.
 	"math.NaN",                                            // 🟢 returns IEEE 754 NaN value; pure function, no I/O.
+	"math.Pi",                                             // 🟢 pi constant; pure constant.
+	"math.Pow",                                            // 🟢 power function for Python math module; pure function, no I/O.
+	"math.Pow10",                                          // 🟢 power of 10 for float formatting; pure function, no I/O.
+	"math.RoundToEven",                                    // 🟢 banker's rounding for Python round(); pure function, no I/O.
+	"math.Sin",                                            // 🟢 sine for Python math module; pure function, no I/O.
+	"math.Sqrt",                                           // 🟢 square root for Python math module; pure function, no I/O.
+	"math.Tan",                                            // 🟢 tangent for Python math module; pure function, no I/O.
+	"math.Trunc",                                          // 🟢 truncate to integer for Python math.trunc(); pure function, no I/O.
+	"math/big.Float",                                      // 🟢 arbitrary-precision float type for Python big int arithmetic; pure in-memory computation.
+	"math/big.Int",                                        // 🟢 arbitrary-precision integer type for Python int arithmetic; pure in-memory computation.
+	"math/big.NewInt",                                     // 🟢 creates arbitrary-precision integer; pure function, no I/O.
 	"net.DefaultResolver",                                 // 🔴 default system DNS resolver; used for context-aware address lookup; network I/O is the explicit purpose of the ping builtin.
 	"net.FlagBroadcast",                                   // 🟢 interface flag constant: broadcast capability; pure constant, no network connections.
 	"net.IPAddr",                                          // 🟢 resolved IP address struct (IP + Zone); pure data type, no I/O.
@@ -476,22 +614,33 @@ var builtinAllowedSymbols = []string{
 	"net.ParseIP",                                         // 🟢 parses an IP address string into a net.IP; pure function, no I/O.
 	"net.Interface",                                       // 🟢 OS network interface descriptor; read-only struct, no network connections.
 	"net.Interfaces",                                      // 🟠 read-only OS interface enumeration function; no network connections or writes.
+	"os.DevNull",                                          // 🟢 device null path constant for os.devnull in Python os module; pure constant.
 	"os.FileInfo",                                         // 🟢 file metadata interface returned by Stat; no I/O side effects.
+	"os.FileMode",                                         // 🟢 file mode type used in sandbox Open callback signature; pure type.
 	"os.IsNotExist",                                       // 🟢 checks if error is "not exist"; pure function, no I/O.
 	"os.O_RDONLY",                                         // 🟢 read-only file flag constant; cannot open files by itself.
 	"os.PathError",                                        // 🟢 error type for filesystem path errors; pure type, no I/O.
+	"path/filepath.Abs",                                   // 🟢 resolves a relative path to absolute for os.path.abspath(); pure function.
+	"path/filepath.Base",                                  // 🟢 returns the last element of a path for os.path.basename(); pure function, no I/O.
+	"path/filepath.Clean",                                 // 🟢 normalises path before use; pure function, no I/O.
 	"path/filepath.Dir",                                   // 🟢 returns the directory component of a path; pure function, no I/O.
+	"path/filepath.Ext",                                   // 🟢 returns file extension for os.path.splitext(); pure function, no I/O.
 	"path/filepath.IsAbs",                                 // 🟢 reports whether a path is absolute; pure function, no I/O.
+	"path/filepath.Join",                                  // 🟢 joins path elements; pure function, no I/O.
+	"path/filepath.ListSeparator",                         // 🟢 OS path list separator constant for os.pathsep; pure constant.
+	"path/filepath.Separator",                             // 🟢 OS path separator constant for os.sep; pure constant.
 	"path/filepath.ToSlash",                               // 🟢 converts OS path separators to forward slashes; pure function, no I/O.
 	"regexp.Compile",                                      // 🟢 compiles a regular expression; pure function, no I/O. Uses RE2 engine (linear-time, no backtracking).
 	"regexp.QuoteMeta",                                    // 🟢 escapes all special regex characters in a string; pure function, no I/O.
 	"regexp.Regexp",                                       // 🟢 compiled regular expression type; no I/O side effects. All matching methods are linear-time (RE2).
 	"runtime.GOOS",                                        // 🟢 current OS name constant; pure constant, no I/O.
+	"runtime.Stack",                                       // 🟢 reads current goroutine stack header; read-only, no exec capability.
 	"slices.Reverse",                                      // 🟢 reverses a slice in-place; pure function, no I/O.
 	"slices.SortFunc",                                     // 🟢 sorts a slice with a comparison function; pure function, no I/O.
 	"slices.SortStableFunc",                               // 🟢 stable sort with a comparison function; pure function, no I/O.
 	"strconv.Atoi",                                        // 🟢 string-to-int conversion; pure function, no I/O.
 	"strconv.ErrRange",                                    // 🟢 sentinel error value for overflow; pure constant.
+	"strconv.FormatFloat",                                 // 🟢 float-to-string conversion for Python repr/str; pure function, no I/O.
 	"strconv.FormatInt",                                   // 🟢 int-to-string conversion; pure function, no I/O.
 	"strconv.FormatUint",                                  // 🟢 uint-to-string conversion; pure function, no I/O.
 	"strconv.IntSize",                                     // 🟢 platform int size constant (32 or 64); pure constant, no I/O.
@@ -503,15 +652,34 @@ var builtinAllowedSymbols = []string{
 	"strconv.ParseUint",                                   // 🟢 string-to-unsigned-int conversion; pure function, no I/O.
 	"strings.Builder",                                     // 🟢 efficient string concatenation; pure in-memory buffer, no I/O.
 	"strings.Contains",                                    // 🟢 substring search; pure function, no I/O.
+	"strings.ContainsAny",                                 // 🟢 checks if string contains any of a set of runes; pure function, no I/O.
 	"strings.ContainsRune",                                // 🟢 checks if a rune is in a string; pure function, no I/O.
+	"strings.Count",                                       // 🟢 counts non-overlapping instances of a substring; pure function, no I/O.
 	"strings.Fields",                                      // 🟢 splits a string on whitespace into a slice; pure function, no I/O.
 	"strings.HasPrefix",                                   // 🟢 pure function for prefix matching; no I/O.
+	"strings.HasSuffix",                                   // 🟢 checks string suffix; pure function, no I/O.
+	"strings.Index",                                       // 🟢 finds first occurrence of a substring; pure function, no I/O.
+	"strings.IndexAny",                                    // 🟢 finds first occurrence of any rune in a string; pure function, no I/O.
 	"strings.IndexByte",                                   // 🟢 finds byte in string; pure function, no I/O.
 	"strings.Join",                                        // 🟢 concatenates a slice of strings with a separator; pure function, no I/O.
+	"strings.LastIndex",                                   // 🟢 finds last occurrence of a substring; pure function, no I/O.
+	"strings.NewReader",                                   // 🟢 creates an in-memory io.Reader from a string; pure function, no I/O.
+	"strings.Repeat",                                      // 🟢 repeats a string n times for str*n operator; pure function, no I/O.
+	"strings.Replace",                                     // 🟢 replaces occurrences of a substring; pure function, no I/O.
 	"strings.ReplaceAll",                                  // 🟢 replaces all occurrences of a substring; pure function, no I/O.
 	"strings.Split",                                       // 🟢 splits a string by separator into a slice; pure function, no I/O.
+	"strings.SplitN",                                      // 🟢 splits string into at most n substrings; pure function, no I/O.
+	"strings.Title",                                       // 🟢 title-cases words in a string; pure function, no I/O.
 	"strings.ToLower",                                     // 🟢 converts string to lowercase; pure function, no I/O.
+	"strings.ToUpper",                                     // 🟢 converts string to uppercase; pure function, no I/O.
+	"strings.Trim",                                        // 🟢 trims leading and trailing characters; pure function, no I/O.
+	"strings.TrimLeft",                                    // 🟢 trims leading characters; pure function, no I/O.
+	"strings.TrimLeftFunc",                                // 🟢 trims leading runes matching a predicate; pure function, no I/O.
+	"strings.TrimRight",                                   // 🟢 trims trailing characters; pure function, no I/O.
+	"strings.TrimRightFunc",                               // 🟢 trims trailing runes matching a predicate; pure function, no I/O.
 	"strings.TrimSpace",                                   // 🟢 removes leading/trailing whitespace; pure function.
+	"strings.TrimSuffix",                                  // 🟢 trims a suffix from a string; pure function, no I/O.
+	"sync.Map",                                            // 🟢 concurrent-safe map for per-goroutine state; no I/O, no side effects.
 	"syscall.ByHandleFileInformation",                     // 🟢 Windows file info struct for extracting nlink; read-only type, no I/O.
 	"syscall.EACCES",                                      // 🟢 POSIX errno constant for permission denied; pure constant, no I/O.
 	"syscall.EISDIR",                                      // 🟢 error number constant for "is a directory"; pure constant, no I/O.
@@ -533,7 +701,10 @@ var builtinAllowedSymbols = []string{
 	"unicode.Cf",                                          // 🟢 format character category range table; pure data, no I/O.
 	"unicode.Co",                                          // 🟢 private-use character category range table; pure data, no I/O.
 	"unicode.Is",                                          // 🟢 checks if rune belongs to a range table; pure function, no I/O.
+	"unicode.IsDigit",                                     // 🟢 checks if a rune is a digit; pure function, no I/O.
 	"unicode.IsGraphic",                                   // 🟢 reports whether rune is defined as a graphic character; pure function, no I/O.
+	"unicode.IsLetter",                                    // 🟢 checks if a rune is a letter; pure function, no I/O.
+	"unicode.MaxRune",                                     // 🟢 maximum valid Unicode code point constant; pure constant.
 	"unicode.Me",                                          // 🟢 enclosing mark category range table; pure data, no I/O.
 	"unicode.Mn",                                          // 🟢 nonspacing mark category range table; pure data, no I/O.
 	"unicode.Range16",                                     // 🟢 struct type for 16-bit Unicode ranges; pure data.
@@ -542,8 +713,11 @@ var builtinAllowedSymbols = []string{
 	"unicode.Zs",                                          // 🟢 Unicode space separator category range table; pure data, no I/O.
 	"unicode/utf8.DecodeRune",                             // 🟢 decodes first UTF-8 rune from a byte slice; pure function, no I/O.
 	"unicode/utf8.DecodeRuneInString",                     // 🟢 decodes first UTF-8 rune from a string; pure function, no I/O.
+	"unicode/utf8.RuneCountInString",                      // 🟢 counts runes in a string; pure function, no I/O.
 	"unicode/utf8.RuneError",                              // 🟢 replacement character returned for invalid UTF-8; constant, no I/O.
+	"unicode/utf8.RuneLen",                                // 🟢 returns bytes required to encode a rune; pure function, no I/O.
 	"unicode/utf8.UTFMax",                                 // 🟢 maximum number of bytes in a UTF-8 encoding; constant, no I/O.
 	"unicode/utf8.Valid",                                  // 🟢 checks if a byte slice is valid UTF-8; pure function, no I/O.
+	"unicode/utf8.ValidString",                            // 🟢 checks if a string is valid UTF-8; pure function, no I/O.
 
 }
