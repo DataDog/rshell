@@ -1,0 +1,24 @@
+description: os.name and os.linesep reflect the host OS on all platforms.
+skip_assert_against_bash: true
+tests:
+  - name: os.name is posix on Unix
+    input:
+      script: |+
+        python3 -c "import os; print(os.name)"
+    expect:
+      stdout: |+
+        posix
+      stdout_windows: |+
+        nt
+      exit_code: 0
+
+  - name: os.linesep is LF on Unix
+    input:
+      script: |+
+        python3 -c "import os; print(repr(os.linesep))"
+    expect:
+      stdout: |+
+        '\n'
+      stdout_windows: |+
+        '\r\n'
+      exit_code: 0

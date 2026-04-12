@@ -317,6 +317,11 @@ func makeOsModule(opts *RunOpts) *PyModule {
 	osPath := makeOsPathModule(opts)
 
 	linesep := "\n"
+	osName := "posix"
+	if runtime.GOOS == "windows" {
+		linesep = "\r\n"
+		osName = "nt"
+	}
 
 	return &PyModule{Name: "os", Dict: map[string]Object{
 		"path":    osPath,
@@ -350,7 +355,7 @@ func makeOsModule(opts *RunOpts) *PyModule {
 		"linesep": pyStr(linesep),
 		"curdir":  pyStr("."),
 		"pardir":  pyStr(".."),
-		"name":    pyStr("posix"),
+		"name":    pyStr(osName),
 		"devnull": pyStr(os.DevNull),
 		"error":   ExcOSError,
 		// Dangerous functions intentionally absent

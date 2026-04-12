@@ -1,0 +1,15 @@
+description: sys.stdin.read(n) with a very large n is capped at maxFileReadBytes to prevent OOM.
+skip_assert_against_bash: true
+tests:
+  - name: read with large n returns available bytes without OOM
+    input:
+      script: |+
+        echo "hello" | python3 -c "
+        import sys
+        data = sys.stdin.read(1 << 30)
+        print(repr(data))
+        "
+    expect:
+      stdout: |+
+        'hello\n'
+      exit_code: 0

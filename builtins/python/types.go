@@ -2184,7 +2184,9 @@ func fileGetAttr(f *PyFile, name string) (Object, bool) {
 				panic(exceptionSignal{exc: newExceptionf(ExcValueError, "I/O operation on closed file.")})
 			}
 			if f.r != nil {
-				line, err := f.r.ReadString('\n')
+				// Read at most maxFileReadBytes to prevent OOM from infinite sources.
+				limited := bufio.NewReader(io.LimitReader(f.r, int64(maxFileReadBytes)))
+				line, err := limited.ReadString('\n')
 				if err != nil && err != io.EOF {
 					panic(exceptionSignal{exc: newExceptionf(ExcOSError, "readline error: %v", err)})
 				}
@@ -2320,6 +2322,10 @@ func (f *PyFile) read(n int) Object {
 				return pyBytes(data)
 			}
 			return pyStr(string(data))
+		}
+		// Cap n to the per-file read limit to prevent OOM via large allocations.
+		if n > maxFileReadBytes {
+			n = maxFileReadBytes
 		}
 		buf := make([]byte, n)
 		total := 0

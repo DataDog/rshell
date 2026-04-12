@@ -972,17 +972,17 @@ func (e *Evaluator) floorDivOp(left, right Object) Object {
 	case *PyInt:
 		switch rv := right.(type) {
 		case *PyInt:
-			ln, _ := lv.int64()
-			rn, _ := rv.int64()
-			if rn == 0 {
+			// Use big.Int arithmetic to handle values that don't fit in int64.
+			la, ra := lv.toBigInt(), rv.toBigInt()
+			if ra.Sign() == 0 {
 				panic(exceptionSignal{exc: newExceptionf(ExcZeroDivisionError, "integer division or modulo by zero")})
 			}
-			q := ln / rn
-			// Python floor division: result sign matches divisor
-			if (ln^rn) < 0 && q*rn != ln {
-				q--
+			q, rem := new(big.Int).DivMod(la, ra, new(big.Int))
+			// Python floor division: round toward negative infinity.
+			if rem.Sign() != 0 && (rem.Sign() < 0) != (ra.Sign() < 0) {
+				q.Sub(q, big.NewInt(1))
 			}
-			return pyInt(q)
+			return pyIntBig(q)
 		case *PyFloat:
 			if n, ok := lv.int64(); ok {
 				if rv.v == 0 {
@@ -990,6 +990,12 @@ func (e *Evaluator) floorDivOp(left, right Object) Object {
 				}
 				return pyFloat(math.Floor(float64(n) / rv.v))
 			}
+			// Big-int operand: convert to float
+			f, _ := new(big.Float).SetInt(lv.toBigInt()).Float64()
+			if rv.v == 0 {
+				panic(exceptionSignal{exc: newExceptionf(ExcZeroDivisionError, "float floor division by zero")})
+			}
+			return pyFloat(math.Floor(f / rv.v))
 		}
 	case *PyFloat:
 		rf := toFloatVal(right)
@@ -1015,17 +1021,14 @@ func (e *Evaluator) modOp(left, right Object) Object {
 	case *PyInt:
 		switch rv := right.(type) {
 		case *PyInt:
-			ln, _ := lv.int64()
-			rn, _ := rv.int64()
-			if rn == 0 {
+			// Use big.Int arithmetic to handle values that don't fit in int64.
+			la, ra := lv.toBigInt(), rv.toBigInt()
+			if ra.Sign() == 0 {
 				panic(exceptionSignal{exc: newExceptionf(ExcZeroDivisionError, "integer division or modulo by zero")})
 			}
-			r := ln % rn
-			// Python: result has same sign as divisor
-			if r != 0 && (r^rn) < 0 {
-				r += rn
-			}
-			return pyInt(r)
+			r := new(big.Int).Mod(la, ra)
+			// Python: result has same sign as divisor (Mod already does this for big.Int)
+			return pyIntBig(r)
 		case *PyFloat:
 			if n, ok := lv.int64(); ok {
 				if rv.v == 0 {
@@ -1037,6 +1040,16 @@ func (e *Evaluator) modOp(left, right Object) Object {
 				}
 				return pyFloat(r)
 			}
+			// Big-int operand: convert to float
+			f, _ := new(big.Float).SetInt(lv.toBigInt()).Float64()
+			if rv.v == 0 {
+				panic(exceptionSignal{exc: newExceptionf(ExcZeroDivisionError, "float modulo")})
+			}
+			r := math.Mod(f, rv.v)
+			if r != 0 && ((r < 0) != (rv.v < 0)) {
+				r += rv.v
+			}
+			return pyFloat(r)
 		}
 	case *PyFloat:
 		rf := toFloatVal(right)

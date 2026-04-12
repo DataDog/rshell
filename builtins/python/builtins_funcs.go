@@ -1268,7 +1268,8 @@ func makeBuiltinInput(opts *RunOpts) *PyBuiltin {
 		if opts.Stdin == nil {
 			return pyStr("")
 		}
-		reader := bufio.NewReader(opts.Stdin)
+		// Limit reads to prevent OOM from infinite sources (e.g. /dev/zero piped to stdin).
+		reader := bufio.NewReader(io.LimitReader(opts.Stdin, int64(maxFileReadBytes)))
 		line, err := reader.ReadString('\n')
 		if err != nil && err != io.EOF {
 			panic(exceptionSignal{exc: newExceptionf(ExcOSError, "input error: %v", err)})

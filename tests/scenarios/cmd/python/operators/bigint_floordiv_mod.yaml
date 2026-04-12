@@ -1,0 +1,55 @@
+tests:
+  - name: floor division of big integers
+    input:
+      script: |+
+        python3 -c "
+        x = 10 ** 40
+        print(x // 3)
+        print(x // -3)
+        print(-x // 3)
+        "
+    expect:
+      stdout: |+
+        3333333333333333333333333333333333333333
+        -3333333333333333333333333333333333333334
+        -3333333333333333333333333333333333333334
+
+  - name: modulo of big integers
+    input:
+      script: |+
+        python3 -c "
+        x = 10 ** 40
+        print(x % 7)
+        print(x % -7)
+        print(-x % 7)
+        "
+    expect:
+      stdout: |+
+        4
+        -3
+        3
+
+  - name: floor division by big integer divisor
+    input:
+      script: |+
+        python3 -c "
+        x = 10 ** 40
+        print(x // (10 ** 20))
+        "
+    expect:
+      stdout: |+
+        10000000000000000000
+
+  - name: floor division by zero raises ZeroDivisionError
+    input:
+      script: |+
+        python3 -c "
+        x = 10 ** 40
+        try:
+            print(x // 0)
+        except ZeroDivisionError as e:
+            print('ZeroDivisionError:', e)
+        "
+    expect:
+      stdout: |+
+        ZeroDivisionError: integer division or modulo by zero
