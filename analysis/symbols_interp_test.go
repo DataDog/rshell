@@ -44,10 +44,7 @@ func internalPerPackageCheckConfig() perBuiltinConfig {
 		PerCommandSymbols: internalPerPackageSymbols,
 		TargetDir:         "builtins/internal",
 		ExemptImport: func(importPath string) bool {
-			if importPath == "github.com/DataDog/rshell/builtins" {
-				return true
-			}
-			return false
+			return importPath == "github.com/DataDog/rshell/builtins"
 		},
 		SkipDirs: map[string]bool{},
 	}

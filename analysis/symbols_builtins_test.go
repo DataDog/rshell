@@ -74,11 +74,7 @@ func internalCheckConfig() allowedSymbolsConfig {
 			return collectSubdirGoFiles(dir, nil, nil)
 		},
 		ExemptImport: func(importPath string) bool {
-			// builtins package: the framework types used by all internal helpers.
-			if importPath == "github.com/DataDog/rshell/builtins" {
-				return true
-			}
-			return false
+			return importPath == "github.com/DataDog/rshell/builtins"
 		},
 		ListName: "internalAllowedSymbols",
 		MinFiles: 1,

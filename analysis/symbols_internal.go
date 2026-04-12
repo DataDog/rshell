@@ -129,7 +129,6 @@ var internalPerPackageSymbols = map[string][]string{
 // via iphlpapi.dll. Usage is limited to two call sites; no unsafe pointer
 // arithmetic occurs after the DLL call. All buffer parsing uses encoding/binary.
 var internalAllowedSymbols = []string{
-	// procinfo
 	"bufio.NewScanner", // 🟢 procinfo: line-by-line reading of /proc files; no write capability.
 	"github.com/DataDog/rshell/builtins/internal/procpath.Default", // 🟢 procinfo/procnet: canonical /proc filesystem root path constant; pure constant, no I/O.
 	"bytes.NewReader",                       // 🟢 procinfo: wraps a byte slice as an in-memory io.Reader; no I/O side effects.
