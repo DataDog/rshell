@@ -335,8 +335,11 @@ func makeOsModule(opts *RunOpts) *PyModule {
 	}
 
 	return &PyModule{Name: "os", Dict: map[string]Object{
-		"path":    osPath,
-		"environ": pyDict(), // empty — Python must not access the host process environment
+		"path": osPath,
+		// os.environ is an empty dict. Python code may write to it (the writes are
+		// in-memory only and do not affect the host process). This is intentional:
+		// os.getenv() always returns the default to prevent host env leakage.
+		"environ": pyDict(),
 		"getenv": makeBuiltin("getenv", func(args []Object, kwargs map[string]Object) Object {
 			if len(args) < 1 {
 				raiseTypeError("getenv() missing required argument: 'key'")
@@ -661,7 +664,10 @@ func makeJsonModule(_ *RunOpts) *PyModule {
 			return pyStr(jsonDumps(args[0]))
 		}),
 		"loads": makeBuiltin("loads", func(args []Object, _ map[string]Object) Object {
-			panic(exceptionSignal{exc: newExceptionf(ExcNotImplementedError, "json.loads() is not implemented in this shell")})
+			// json.loads() is not implemented. Raise ValueError (matching CPython's
+			// json.JSONDecodeError which is a subclass of ValueError) so callers
+			// using `except ValueError` can handle the error correctly.
+			panic(exceptionSignal{exc: newExceptionf(ExcValueError, "json.loads() is not implemented in this shell")})
 			return nil
 		}),
 	}}

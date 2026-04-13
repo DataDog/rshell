@@ -2953,12 +2953,18 @@ func collectIterable(obj Object) []Object {
 		return result
 	case *PyStr:
 		runes := []rune(v.v)
+		if len(runes) > maxGeneratorItems {
+			panic(exceptionSignal{exc: newExceptionf(ExcMemoryError, "string too large to iterate (length %d exceeds limit %d)", len(runes), maxGeneratorItems)})
+		}
 		result := make([]Object, len(runes))
 		for i, r := range runes {
 			result[i] = pyStr(string(r))
 		}
 		return result
 	case *PyBytes:
+		if len(v.v) > maxGeneratorItems {
+			panic(exceptionSignal{exc: newExceptionf(ExcMemoryError, "bytes too large to iterate (length %d exceeds limit %d)", len(v.v), maxGeneratorItems)})
+		}
 		result := make([]Object, len(v.v))
 		for i, b := range v.v {
 			result[i] = pyInt(int64(b))
@@ -3004,6 +3010,9 @@ func collectIterable(obj Object) []Object {
 				break
 			}
 			result = append(result, item)
+			if len(result) > maxGeneratorItems {
+				panic(exceptionSignal{exc: newExceptionf(ExcMemoryError, "iterable produced too many items (limit %d)", maxGeneratorItems)})
+			}
 		}
 		return result
 	case *PyMapIter:
@@ -3014,6 +3023,9 @@ func collectIterable(obj Object) []Object {
 				break
 			}
 			result = append(result, item)
+			if len(result) > maxGeneratorItems {
+				panic(exceptionSignal{exc: newExceptionf(ExcMemoryError, "iterable produced too many items (limit %d)", maxGeneratorItems)})
+			}
 		}
 		return result
 	case *PyFilterIter:
@@ -3024,6 +3036,9 @@ func collectIterable(obj Object) []Object {
 				break
 			}
 			result = append(result, item)
+			if len(result) > maxGeneratorItems {
+				panic(exceptionSignal{exc: newExceptionf(ExcMemoryError, "iterable produced too many items (limit %d)", maxGeneratorItems)})
+			}
 		}
 		return result
 	case *PyZipIter:
@@ -3034,6 +3049,9 @@ func collectIterable(obj Object) []Object {
 				break
 			}
 			result = append(result, item)
+			if len(result) > maxGeneratorItems {
+				panic(exceptionSignal{exc: newExceptionf(ExcMemoryError, "iterable produced too many items (limit %d)", maxGeneratorItems)})
+			}
 		}
 		return result
 	case *PyEnumerateIter:
@@ -3044,6 +3062,9 @@ func collectIterable(obj Object) []Object {
 				break
 			}
 			result = append(result, item)
+			if len(result) > maxGeneratorItems {
+				panic(exceptionSignal{exc: newExceptionf(ExcMemoryError, "iterable produced too many items (limit %d)", maxGeneratorItems)})
+			}
 		}
 		return result
 	case *PyReversedIter:
@@ -3054,6 +3075,9 @@ func collectIterable(obj Object) []Object {
 				break
 			}
 			result = append(result, item)
+			if len(result) > maxGeneratorItems {
+				panic(exceptionSignal{exc: newExceptionf(ExcMemoryError, "iterable produced too many items (limit %d)", maxGeneratorItems)})
+			}
 		}
 		return result
 	}

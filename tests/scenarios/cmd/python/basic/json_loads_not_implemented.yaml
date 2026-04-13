@@ -1,4 +1,4 @@
-description: json.loads raises NotImplementedError (not TypeError) so it can be caught with except NotImplementedError.
+description: json.loads raises ValueError (matching CPython's json.JSONDecodeError which is a subclass of ValueError) so callers using except ValueError can handle the error correctly.
 skip_assert_against_bash: true
 input:
   script: |+
@@ -7,13 +7,13 @@ input:
     try:
         json.loads('{\"a\": 1}')
         print('no error')
+    except ValueError:
+        print('ValueError raised')
     except NotImplementedError:
-        print('NotImplementedError raised')
-    except TypeError:
-        print('TypeError raised (wrong)')
+        print('NotImplementedError raised (wrong)')
     "
 expect:
   stdout: |+
-    NotImplementedError raised
+    ValueError raised
   stderr: |+
   exit_code: 0

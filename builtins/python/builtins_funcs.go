@@ -1644,10 +1644,24 @@ func getAttr(obj Object, name string) (Object, bool) {
 					raiseTypeError("can't send non-None value to a just-started generator")
 				}
 				// Send value into generator (unblock its sendCh receive).
-				v.sendCh <- args[0]
+				select {
+				case v.sendCh <- args[0]:
+				case <-v.ctx.Done():
+					v.done = true
+					panic(exceptionSignal{exc: newExceptionf(ExcGeneratorExit, "cancelled")})
+				}
 				v.awaitingSend = false
 				// Receive the next yielded value.
-				val, ok := <-v.yieldCh
+				var (
+					val Object
+					ok  bool
+				)
+				select {
+				case val, ok = <-v.yieldCh:
+				case <-v.ctx.Done():
+					v.done = true
+					panic(exceptionSignal{exc: newExceptionf(ExcGeneratorExit, "cancelled")})
+				}
 				if !ok {
 					v.done = true
 					panic(exceptionSignal{exc: newException(ExcStopIteration, nil)})
@@ -1661,10 +1675,24 @@ func getAttr(obj Object, name string) (Object, bool) {
 					panic(exceptionSignal{exc: newException(ExcStopIteration, nil)})
 				}
 				if v.awaitingSend {
-					v.sendCh <- pyNone
+					select {
+					case v.sendCh <- pyNone:
+					case <-v.ctx.Done():
+						v.done = true
+						panic(exceptionSignal{exc: newExceptionf(ExcGeneratorExit, "cancelled")})
+					}
 					v.awaitingSend = false
 				}
-				val, ok := <-v.yieldCh
+				var (
+					val Object
+					ok  bool
+				)
+				select {
+				case val, ok = <-v.yieldCh:
+				case <-v.ctx.Done():
+					v.done = true
+					panic(exceptionSignal{exc: newExceptionf(ExcGeneratorExit, "cancelled")})
+				}
 				if !ok {
 					v.done = true
 					panic(exceptionSignal{exc: newException(ExcStopIteration, nil)})
@@ -1674,7 +1702,19 @@ func getAttr(obj Object, name string) (Object, bool) {
 			}), true
 		case "close":
 			return makeBuiltin("close", func(args []Object, kwargs map[string]Object) Object {
+				if v.done {
+					return pyNone
+				}
 				v.done = true
+				// If the generator goroutine is blocked waiting for sendCh, closing
+				// sendCh unblocks it so it can observe !ok and exit cleanly.
+				close(v.sendCh)
+				// If the generator is blocked waiting to yield a value, drain it so
+				// the goroutine can proceed to its sendCh receive and observe closure.
+				select {
+				case <-v.yieldCh:
+				default:
+				}
 				return pyNone
 			}), true
 		case "__iter__":

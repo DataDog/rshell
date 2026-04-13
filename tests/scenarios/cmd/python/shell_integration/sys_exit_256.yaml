@@ -1,0 +1,11 @@
+description: sys.exit(N) with N > 255 truncates to uint8 (POSIX exit code mod 256).
+skip_assert_against_bash: true
+input:
+  script: |+
+    python -c "import sys; sys.exit(256)"
+    echo "exit=$?"
+expect:
+  stdout: |+
+    exit=0
+  stderr: |+
+  exit_code: 0

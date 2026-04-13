@@ -169,6 +169,8 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 		})
 
 		if exitCode != 0 {
+			// Exit codes > 255 are truncated to uint8 (POSIX behaviour: exit codes
+			// are mod 256, matching CPython's behaviour on Linux/macOS).
 			return builtins.Result{Code: uint8(exitCode)}
 		}
 		return builtins.Result{}
