@@ -1,0 +1,21 @@
+description: drainGenerator raises MemoryError when a generator produces too many items (list of infinite generator).
+skip_assert_against_bash: true
+input:
+  script: |+
+    python -c "
+    def infinite():
+        n = 0
+        while True:
+            yield n
+            n += 1
+    try:
+        list(infinite())
+        print('no error')
+    except MemoryError as e:
+        print('MemoryError:', str(e))
+    "
+expect:
+  stdout: |+
+    MemoryError: generator produced too many items (limit 131072)
+  stderr: |+
+  exit_code: 0

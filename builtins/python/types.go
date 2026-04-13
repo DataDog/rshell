@@ -1964,6 +1964,7 @@ type PyGenerator struct {
 	done         bool
 	awaitingSend bool              // true after a value has been received from yieldCh; the generator is blocked waiting for sendCh
 	excCh        chan *PyException // generator sends exception at close
+	ctx          context.Context   // execution context; used by drainGenerator to respect cancellation
 }
 
 func (g *PyGenerator) pyType() *PyType { return typeGenerator }
@@ -3017,21 +3018,44 @@ func collectIterable(obj Object) []Object {
 	return nil
 }
 
-// drainGenerator collects all values from a generator.
+// maxGeneratorItems is the maximum number of items drainGenerator will collect
+// from an infinite generator before raising MemoryError (~128k items at 8 bytes each = 1 MiB).
+const maxGeneratorItems = 1 << 17 // 128k items
+
+// drainGenerator collects all values from a generator, respecting context
+// cancellation and capping the result at maxGeneratorItems to prevent OOM.
 func drainGenerator(g *PyGenerator) []Object {
 	var result []Object
+	ctx := g.ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	for !g.done {
 		if g.awaitingSend {
-			g.sendCh <- pyNone
+			select {
+			case g.sendCh <- pyNone:
+			case <-ctx.Done():
+				g.done = true
+				panic(exceptionSignal{exc: newExceptionf(ExcKeyboardInterrupt, "")})
+			}
 			g.awaitingSend = false
 		}
-		val, ok := <-g.yieldCh
-		if !ok {
+		select {
+		case val, ok := <-g.yieldCh:
+			if !ok {
+				g.done = true
+				return result
+			}
+			g.awaitingSend = true
+			result = append(result, val)
+			if len(result) > maxGeneratorItems {
+				g.done = true
+				panic(exceptionSignal{exc: newExceptionf(ExcMemoryError, "generator produced too many items (limit %d)", maxGeneratorItems)})
+			}
+		case <-ctx.Done():
 			g.done = true
-			break
+			panic(exceptionSignal{exc: newExceptionf(ExcKeyboardInterrupt, "")})
 		}
-		g.awaitingSend = true
-		result = append(result, val)
 	}
 	return result
 }

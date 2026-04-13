@@ -1977,7 +1977,7 @@ func (e *Evaluator) evalCompHelper(eltExpr Expr, gens []*Comprehension, depth in
 func (e *Evaluator) evalGeneratorExp(n *GeneratorExp) Object {
 	// Eagerly evaluate the first iterator (per Python semantics), create a generator
 	if len(n.Generators) == 0 {
-		return &PyGenerator{name: "<genexpr>", sendCh: make(chan Object), yieldCh: make(chan Object)}
+		return &PyGenerator{name: "<genexpr>", sendCh: make(chan Object), yieldCh: make(chan Object), ctx: e.ctx}
 	}
 
 	// Capture first iterator in current scope
@@ -1989,6 +1989,7 @@ func (e *Evaluator) evalGeneratorExp(n *GeneratorExp) Object {
 		name:    "<genexpr>",
 		sendCh:  make(chan Object, 0),
 		yieldCh: make(chan Object, 0),
+		ctx:     e.ctx,
 	}
 
 	childScope := newFunctionScope(e.scope, e.globals, "<genexpr>")
@@ -2335,6 +2336,7 @@ func (e *Evaluator) makeGenerator(fn *PyFunction, scope *Scope) *PyGenerator {
 		name:    fn.Name,
 		sendCh:  make(chan Object, 0),
 		yieldCh: make(chan Object, 0),
+		ctx:     e.ctx,
 	}
 
 	childEval := &Evaluator{

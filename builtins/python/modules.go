@@ -766,7 +766,12 @@ func makeCollectionsModule(_ *RunOpts) *PyModule {
 			return d
 		}),
 		"defaultdict": makeBuiltin("defaultdict", func(args []Object, kwargs map[string]Object) Object {
-			// Simplified: return a regular dict, ignoring the default_factory
+			// If a non-None default_factory is provided, raise NotImplementedError
+			// to avoid silent data corruption (KeyError would occur instead of
+			// auto-default behaviour, which is confusing and hard to debug).
+			if len(args) > 0 && args[0] != pyNone {
+				panic(exceptionSignal{exc: newExceptionf(ExcNotImplementedError, "collections.defaultdict default_factory is not implemented in this shell")})
+			}
 			return pyDict()
 		}),
 		"namedtuple": makeBuiltin("namedtuple", func(args []Object, kwargs map[string]Object) Object {
