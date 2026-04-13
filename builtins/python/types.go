@@ -3027,9 +3027,6 @@ const maxGeneratorItems = 1 << 17 // 128k items
 func drainGenerator(g *PyGenerator) []Object {
 	var result []Object
 	ctx := g.ctx
-	if ctx == nil {
-		ctx = context.Background()
-	}
 	for !g.done {
 		if g.awaitingSend {
 			select {
