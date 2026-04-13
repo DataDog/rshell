@@ -1,0 +1,15 @@
+description: os.listdir() cannot list directories outside allowed paths and raises OSError.
+skip_assert_against_bash: true
+setup:
+  files:
+    - path: subdir/file.txt
+      content: "ok\n"
+      chmod: 0644
+input:
+  allowed_paths: ["$DIR/subdir"]
+  script: |+
+    python -c "import os; os.listdir('.')"
+expect:
+  stdout: |+
+  stderr_contains: ["OSError"]
+  exit_code: 1

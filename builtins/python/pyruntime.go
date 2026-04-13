@@ -8,6 +8,7 @@ package python
 import (
 	"context"
 	"fmt"
+	"io"
 )
 
 // Run executes Python source code in a sandboxed context.
@@ -35,6 +36,14 @@ func runInternal(ctx context.Context, opts RunOpts) (exitCode int) {
 	// Propagate the execution context into RunOpts so that sandbox I/O calls
 	// (Open, Stat, ReadDir) respect the shell's cancellation deadline.
 	opts.Ctx = ctx
+
+	// Wrap stdin in a single global LimitReader so that all input() calls and
+	// sys.stdin.read*() calls share one cumulative byte budget. Without this,
+	// each input() call gets a fresh 1 MiB window, allowing a script that calls
+	// input() in a loop to read unbounded data from /dev/zero-like sources.
+	if opts.Stdin != nil {
+		opts.Stdin = io.LimitReader(opts.Stdin, int64(maxFileReadBytes))
+	}
 
 	// Parse
 	mod, err := Parse(opts.Source+"\n", opts.SourceName)

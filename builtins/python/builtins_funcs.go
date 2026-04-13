@@ -1268,8 +1268,9 @@ func makeBuiltinInput(opts *RunOpts) *PyBuiltin {
 		if opts.Stdin == nil {
 			return pyStr("")
 		}
-		// Limit reads to prevent OOM from infinite sources (e.g. /dev/zero piped to stdin).
-		reader := bufio.NewReader(io.LimitReader(opts.Stdin, int64(maxFileReadBytes)))
+		// opts.Stdin is already wrapped in a global LimitReader (maxFileReadBytes) by
+		// runInternal, so all input() calls share one cumulative byte budget.
+		reader := bufio.NewReader(opts.Stdin)
 		line, err := reader.ReadString('\n')
 		if err != nil && err != io.EOF {
 			panic(exceptionSignal{exc: newExceptionf(ExcOSError, "input error: %v", err)})
@@ -1380,6 +1381,9 @@ func makeBuiltinBytes() *PyBuiltin {
 			if n < 0 {
 				raiseValueError("bytes length must be >= 0")
 			}
+			if n > maxRepeatBytes {
+				panic(exceptionSignal{exc: newExceptionf(ExcMemoryError, "bytes() size %d exceeds limit (%d)", n, maxRepeatBytes)})
+			}
 			return pyBytes(make([]byte, n))
 		case *PyStr:
 			// Requires encoding
@@ -1418,6 +1422,12 @@ func makeBuiltinBytearray() *PyBuiltin {
 		switch v := args[0].(type) {
 		case *PyInt:
 			n, _ := v.int64()
+			if n < 0 {
+				raiseValueError("bytearray() length must be >= 0")
+			}
+			if n > maxRepeatBytes {
+				panic(exceptionSignal{exc: newExceptionf(ExcMemoryError, "bytearray() size %d exceeds limit (%d)", n, maxRepeatBytes)})
+			}
 			return pyBytes(make([]byte, n))
 		case *PyStr:
 			return pyBytes([]byte(v.v))

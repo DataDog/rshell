@@ -41,6 +41,9 @@ func init() {
 		"multiprocessing": makeBlockedModule("multiprocessing"),
 		"threading":       makeBlockedModule("threading"),
 		"asyncio":         makeBlockedModule("asyncio"),
+		// re is not implemented; block it so `import re` raises ImportError and
+		// `try: import re except ImportError: ...` works correctly.
+		"re": makeBlockedModule("re"),
 	}
 }
 
@@ -639,33 +642,6 @@ func raiseOSError(msg string) {
 	panic(exceptionSignal{exc: newExceptionf(ExcOSError, "%s", msg)})
 }
 
-// ---- re module (stub) ----
-
-func makeReModule(_ *RunOpts) *PyModule {
-	return &PyModule{Name: "re", Dict: map[string]Object{
-		"compile": makeBuiltin("compile", func(args []Object, _ map[string]Object) Object {
-			raiseTypeError("re module is not implemented in this shell")
-			return nil
-		}),
-		"match": makeBuiltin("match", func(args []Object, _ map[string]Object) Object {
-			raiseTypeError("re module is not implemented in this shell")
-			return nil
-		}),
-		"search": makeBuiltin("search", func(args []Object, _ map[string]Object) Object {
-			raiseTypeError("re module is not implemented in this shell")
-			return nil
-		}),
-		"findall": makeBuiltin("findall", func(args []Object, _ map[string]Object) Object {
-			raiseTypeError("re module is not implemented in this shell")
-			return nil
-		}),
-		"sub": makeBuiltin("sub", func(args []Object, _ map[string]Object) Object {
-			raiseTypeError("re module is not implemented in this shell")
-			return nil
-		}),
-	}}
-}
-
 // ---- json module (stub) ----
 
 func makeJsonModule(_ *RunOpts) *PyModule {
@@ -743,7 +719,6 @@ func jsonDumps(obj Object) string {
 
 func init() {
 	// Add extra modules to the registry
-	moduleRegistry["re"] = makeReModule
 	moduleRegistry["json"] = makeJsonModule
 	moduleRegistry["collections"] = makeCollectionsModule
 }

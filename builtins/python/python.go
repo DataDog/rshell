@@ -51,11 +51,11 @@
 //     imported.
 //
 // Supported stdlib modules: math, string, sys, os (read-only), binascii,
-// re (stub — raises TypeError on all calls), json (dumps only; loads raises
-// TypeError), collections (OrderedDict, Counter, deque, defaultdict — but
-// defaultdict default_factory raises NotImplementedError if provided).
+// json (dumps only; loads raises TypeError), collections (OrderedDict,
+// Counter, deque, defaultdict — but defaultdict default_factory raises
+// NotImplementedError if provided).
 // Blocked modules: subprocess, socket, ctypes, tempfile, glob, threading,
-// multiprocessing, asyncio.
+// multiprocessing, asyncio, re.
 //
 // Exit codes:
 //
@@ -102,7 +102,8 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			fs.SetOutput(callCtx.Stdout)
 			fs.PrintDefaults()
 			callCtx.Out("\nSecurity restrictions: os.system/write/delete blocked; open() is read-only.\n")
-			callCtx.Out("Stdlib: math, string, sys, os (read-only), binascii, re (stub), json (dumps only), collections.\n")
+			callCtx.Out("Stdlib: math, string, sys, os (read-only), binascii, json (dumps only), collections.\n")
+			callCtx.Out("Blocked modules (raise ImportError): subprocess, socket, ctypes, tempfile, glob, threading, multiprocessing, asyncio, re.\n")
 			return builtins.Result{}
 		}
 

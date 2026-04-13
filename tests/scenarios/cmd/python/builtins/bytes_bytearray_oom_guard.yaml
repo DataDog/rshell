@@ -1,0 +1,21 @@
+description: bytes(n) and bytearray(n) with very large n raise MemoryError instead of OOM.
+skip_assert_against_bash: true
+input:
+  script: |+
+    python -c "
+    try:
+        bytes(2**40)
+        print('no error')
+    except MemoryError as e:
+        print('bytes MemoryError ok')
+    try:
+        bytearray(2**40)
+        print('no error')
+    except MemoryError as e:
+        print('bytearray MemoryError ok')
+    "
+expect:
+  stdout: |+
+    bytes MemoryError ok
+    bytearray MemoryError ok
+  exit_code: 0

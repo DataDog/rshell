@@ -1865,6 +1865,10 @@ var goroutineCallFns sync.Map // map[int64]func(Object, []Object, map[string]Obj
 
 // goroutineID returns the current goroutine's numeric ID by inspecting the stack header.
 // Format: "goroutine N [..."
+//
+// Parsing runtime.Stack output is fragile — the format is undocumented. If the format
+// ever changes so that id stays 0, we panic immediately rather than silently mis-dispatching
+// all goroutines through a shared slot in goroutineCallFns.
 func goroutineID() int64 {
 	var buf [64]byte
 	runtime.Stack(buf[:], false)
@@ -1875,6 +1879,9 @@ func goroutineID() int64 {
 			break
 		}
 		id = id*10 + int64(c-'0')
+	}
+	if id == 0 {
+		panic("goroutineID: could not parse goroutine ID from runtime.Stack output — Go runtime format may have changed")
 	}
 	return id
 }
@@ -3033,6 +3040,12 @@ func drainGenerator(g *PyGenerator) []Object {
 			case g.sendCh <- pyNone:
 			case <-ctx.Done():
 				g.done = true
+				// The generator may be blocked on yieldCh <- val; drain it so the
+				// goroutine can exit rather than leaking.
+				select {
+				case <-g.yieldCh:
+				default:
+				}
 				panic(exceptionSignal{exc: newExceptionf(ExcKeyboardInterrupt, "")})
 			}
 			g.awaitingSend = false
@@ -3051,6 +3064,13 @@ func drainGenerator(g *PyGenerator) []Object {
 			}
 		case <-ctx.Done():
 			g.done = true
+			// Non-blocking drain: if the generator goroutine is blocked on
+			// yieldCh <- val, receive that value so the goroutine can observe
+			// g.done == true (or ctx.Done()) and exit rather than hanging forever.
+			select {
+			case <-g.yieldCh:
+			default:
+			}
 			panic(exceptionSignal{exc: newExceptionf(ExcKeyboardInterrupt, "")})
 		}
 	}
