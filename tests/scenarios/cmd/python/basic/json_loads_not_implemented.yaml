@@ -1,0 +1,19 @@
+description: json.loads raises NotImplementedError (not TypeError) so it can be caught with except NotImplementedError.
+skip_assert_against_bash: true
+input:
+  script: |+
+    python -c "
+    import json
+    try:
+        json.loads('{\"a\": 1}')
+        print('no error')
+    except NotImplementedError:
+        print('NotImplementedError raised')
+    except TypeError:
+        print('TypeError raised (wrong)')
+    "
+expect:
+  stdout: |+
+    NotImplementedError raised
+  stderr: |+
+  exit_code: 0

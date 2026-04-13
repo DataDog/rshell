@@ -1,0 +1,30 @@
+description: math.comb and math.perm raise ValueError when k exceeds 10000 to prevent CPU exhaustion.
+skip_assert_against_bash: true
+input:
+  script: |+
+    python -c "
+    import math
+    try:
+        x = math.comb(1000000, 500000)
+        print('no error')
+    except ValueError:
+        print('ValueError for math.comb large k')
+
+    try:
+        x = math.perm(1000000, 500000)
+        print('no error')
+    except ValueError:
+        print('ValueError for math.perm large k')
+
+    # Small values should work fine
+    print(math.comb(10, 3))
+    print(math.perm(5, 2))
+    "
+expect:
+  stdout: |+
+    ValueError for math.comb large k
+    ValueError for math.perm large k
+    120
+    20
+  stderr: |+
+  exit_code: 0

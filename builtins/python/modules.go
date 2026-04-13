@@ -243,6 +243,9 @@ func makeMathModule(_ *RunOpts) *PyModule {
 			if k < 0 || k > n {
 				return pyInt(0)
 			}
+			if k > 10000 {
+				raiseValueError("math.comb argument is too large")
+			}
 			// C(n, k) = n! / (k! * (n-k)!)
 			result := big.NewInt(1)
 			for i := int64(0); i < k; i++ {
@@ -262,6 +265,9 @@ func makeMathModule(_ *RunOpts) *PyModule {
 			}
 			if k < 0 || k > n {
 				return pyInt(0)
+			}
+			if k > 10000 {
+				raiseValueError("math.perm argument is too large")
 			}
 			result := big.NewInt(1)
 			for i := int64(0); i < k; i++ {
@@ -653,7 +659,7 @@ func makeJsonModule(_ *RunOpts) *PyModule {
 			return pyStr(jsonDumps(args[0]))
 		}),
 		"loads": makeBuiltin("loads", func(args []Object, _ map[string]Object) Object {
-			raiseTypeError("json.loads() is not implemented in this shell")
+			panic(exceptionSignal{exc: newExceptionf(ExcNotImplementedError, "json.loads() is not implemented in this shell")})
 			return nil
 		}),
 	}}

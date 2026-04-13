@@ -1075,6 +1075,13 @@ func (e *Evaluator) powOp(left, right Object) Object {
 		case *PyInt:
 			en, eok := rv.int64()
 			if eok && en >= 0 {
+				// Guard against exponents that would produce astronomically large results.
+				// Analogous to the maxShift cap on <<. Allow up to ~8 Mbit of result.
+				const maxExpBits = 8 * maxRepeatBytes
+				baseBits := int64(lv.toBigInt().BitLen())
+				if baseBits > 1 && en > maxExpBits/baseBits {
+					panic(exceptionSignal{exc: newExceptionf(ExcOverflowError, "integer exponentiation result too large")})
+				}
 				result := new(big.Int).Exp(lv.toBigInt(), rv.toBigInt(), nil)
 				return pyIntBig(result)
 			}

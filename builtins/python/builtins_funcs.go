@@ -181,7 +181,9 @@ func makeBuiltinPrint(opts *RunOpts) *PyBuiltin {
 				if f.w != nil {
 					out = f.w
 				} else if f.rc != nil {
-					out = f.rc
+					// Files opened via open() are read-only; block writes at the
+					// application layer for consistency with file.write().
+					panic(exceptionSignal{exc: newExceptionf(ExcPermissionError, "print() cannot write to a file opened in read mode")})
 				}
 			}
 		}
@@ -546,6 +548,13 @@ func makeBuiltinPow() *PyBuiltin {
 			case *PyInt:
 				en, eok := ev.int64()
 				if eok && en >= 0 {
+					// Guard against exponents that would produce astronomically large results.
+					// Analogous to the maxShift cap on <<. Allow up to ~8 Mbit of result.
+					const maxExpBits = 8 * maxRepeatBytes
+					baseBits := int64(bv.toBigInt().BitLen())
+					if baseBits > 1 && en > maxExpBits/baseBits {
+						panic(exceptionSignal{exc: newExceptionf(ExcOverflowError, "integer exponentiation result too large")})
+					}
 					bi := bv.toBigInt()
 					ei := ev.toBigInt()
 					result := new(big.Int).Exp(bi, ei, nil)

@@ -1,0 +1,29 @@
+description: python ** operator and pow() builtin raise OverflowError when the exponent is too large to be computed safely.
+skip_assert_against_bash: true
+input:
+  script: |+
+    python -c "
+    try:
+        x = 2 ** 1000000000
+        print('no error')
+    except OverflowError:
+        print('OverflowError for 2**1000000000')
+
+    try:
+        x = pow(2, 1000000000)
+        print('no error')
+    except OverflowError:
+        print('OverflowError for pow(2, 1000000000)')
+
+    # Small exponents should still work
+    print(2 ** 10)
+    print(pow(3, 5))
+    "
+expect:
+  stdout: |+
+    OverflowError for 2**1000000000
+    OverflowError for pow(2, 1000000000)
+    1024
+    243
+  stderr: |+
+  exit_code: 0
