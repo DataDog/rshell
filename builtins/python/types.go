@@ -2260,7 +2260,9 @@ func fileGetAttr(f *PyFile, name string) (Object, bool) {
 			if f.w != nil {
 				_, err = f.w.Write(data)
 			} else if f.rc != nil {
-				_, err = f.rc.Write(data)
+				// Files opened via open() are always read-only; block writes at the
+				// application layer rather than relying solely on OS rejection.
+				panic(exceptionSignal{exc: newExceptionf(ExcPermissionError, "write() is not permitted on a file opened in read mode")})
 			}
 			if err != nil {
 				panic(exceptionSignal{exc: newExceptionf(ExcOSError, "write error: %v", err)})
@@ -2318,6 +2320,9 @@ func (f *PyFile) read(n int) Object {
 		// stdin-like reader
 		if n < 0 {
 			data, _ := io.ReadAll(io.LimitReader(f.r, maxFileReadBytes+1))
+			if len(data) > maxFileReadBytes {
+				panic(exceptionSignal{exc: newExceptionf(ExcMemoryError, "stdin content exceeds %d byte limit", maxFileReadBytes)})
+			}
 			if f.binary {
 				return pyBytes(data)
 			}

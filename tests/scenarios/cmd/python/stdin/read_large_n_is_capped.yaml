@@ -4,7 +4,7 @@ tests:
   - name: read with large n returns available bytes without OOM
     input:
       script: |+
-        echo "hello" | python3 -c "
+        echo "hello" | python -c "
         import sys
         data = sys.stdin.read(1 << 30)
         print(repr(data))

@@ -1137,38 +1137,34 @@ func (e *Evaluator) bitwiseOp(op string, left, right Object) Object {
 	if !lok || !rok {
 		raiseTypeError("unsupported operand type(s) for %s: '%s' and '%s'", op, left.pyType().Name, right.pyType().Name)
 	}
-	ln, _ := lv.int64()
-	rn, _ := rv.int64()
-	var result int64
 	switch op {
 	case "&":
-		result = ln & rn
+		result := new(big.Int).And(lv.toBigInt(), rv.toBigInt())
+		return pyIntBig(result)
 	case "^":
-		result = ln ^ rn
+		result := new(big.Int).Xor(lv.toBigInt(), rv.toBigInt())
+		return pyIntBig(result)
 	case "<<":
-		if rn < 0 {
+		rn, rok2 := rv.int64()
+		if !rok2 || rn < 0 {
 			panic(exceptionSignal{exc: newExceptionf(ExcValueError, "negative shift count")})
 		}
-		if rn >= 64 {
-			// Use big int for large shifts
-			br := new(big.Int).Lsh(lv.toBigInt(), uint(rn))
-			return pyIntBig(br)
+		// Cap shift to prevent OOM on huge left shifts (result would exceed output limit anyway).
+		const maxShift = 1 << 23 // 8 MB worth of bits
+		if rn > maxShift {
+			rn = maxShift
 		}
-		result = ln << uint(rn)
+		br := new(big.Int).Lsh(lv.toBigInt(), uint(rn))
+		return pyIntBig(br)
 	case ">>":
-		if rn < 0 {
+		rn, rok2 := rv.int64()
+		if !rok2 || rn < 0 {
 			panic(exceptionSignal{exc: newExceptionf(ExcValueError, "negative shift count")})
 		}
-		if rn >= 64 {
-			result = 0
-			if ln < 0 {
-				result = -1
-			}
-		} else {
-			result = ln >> uint(rn)
-		}
+		br := new(big.Int).Rsh(lv.toBigInt(), uint(rn))
+		return pyIntBig(br)
 	}
-	return pyInt(result)
+	return pyInt(0)
 }
 
 func (e *Evaluator) bitwiseOrOp(left, right Object) Object {
@@ -1224,9 +1220,8 @@ func (e *Evaluator) bitwiseOrOp(left, right Object) Object {
 	if !lok || !rok {
 		raiseTypeError("unsupported operand type(s) for |: '%s' and '%s'", left.pyType().Name, right.pyType().Name)
 	}
-	ln, _ := lv.int64()
-	rn, _ := rv.int64()
-	return pyInt(ln | rn)
+	result := new(big.Int).Or(lv.toBigInt(), rv.toBigInt())
+	return pyIntBig(result)
 }
 
 func (e *Evaluator) evalUnaryOp(n *UnaryOp) Object {

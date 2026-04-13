@@ -4,7 +4,7 @@ tests:
   - name: os.name is posix on Unix
     input:
       script: |+
-        python3 -c "import os; print(os.name)"
+        python -c "import os; print(os.name)"
     expect:
       stdout: |+
         posix
@@ -15,7 +15,7 @@ tests:
   - name: os.linesep is LF on Unix
     input:
       script: |+
-        python3 -c "import os; print(repr(os.linesep))"
+        python -c "import os; print(repr(os.linesep))"
     expect:
       stdout: |+
         '\n'

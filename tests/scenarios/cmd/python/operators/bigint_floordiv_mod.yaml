@@ -1,8 +1,9 @@
+skip_assert_against_bash: true
 tests:
   - name: floor division of big integers
     input:
       script: |+
-        python3 -c "
+        python -c "
         x = 10 ** 40
         print(x // 3)
         print(x // -3)
@@ -17,7 +18,7 @@ tests:
   - name: modulo of big integers
     input:
       script: |+
-        python3 -c "
+        python -c "
         x = 10 ** 40
         print(x % 7)
         print(x % -7)
@@ -32,7 +33,7 @@ tests:
   - name: floor division by big integer divisor
     input:
       script: |+
-        python3 -c "
+        python -c "
         x = 10 ** 40
         print(x // (10 ** 20))
         "
@@ -43,7 +44,7 @@ tests:
   - name: floor division by zero raises ZeroDivisionError
     input:
       script: |+
-        python3 -c "
+        python -c "
         x = 10 ** 40
         try:
             print(x // 0)
