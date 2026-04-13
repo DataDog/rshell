@@ -1,0 +1,28 @@
+description: python generator exceptions are propagated to the caller of next(), not silently swallowed.
+skip_assert_against_bash: true
+setup:
+  files:
+    - path: gen_exc.py
+      content: |+
+        def gen():
+            yield 1
+            raise ValueError('oops')
+            yield 2
+
+        g = gen()
+        print(next(g))
+        try:
+            next(g)
+        except ValueError as e:
+            print('caught:', e)
+      chmod: 0644
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    python gen_exc.py
+expect:
+  stdout: |+
+    1
+    caught: oops
+  stderr: |+
+  exit_code: 0

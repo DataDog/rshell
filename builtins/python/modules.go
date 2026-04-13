@@ -100,9 +100,11 @@ func makeSysModule(opts *RunOpts) *PyModule {
 		"__name__":     pyStr("sys"),
 	}}
 
-	// stdin
-	if opts.Stdin != nil {
-		sysMod.Dict["stdin"] = &PyFile{r: bufio.NewReader(opts.Stdin), name: "<stdin>"}
+	// stdin — reuse the persistent stdinReader from RunOpts so that input() and
+	// sys.stdin.read*()/readline() share one bufio.Reader and do not lose
+	// read-ahead bytes to each other.
+	if opts.Stdin != nil && opts.stdinReader != nil {
+		sysMod.Dict["stdin"] = &PyFile{r: opts.stdinReader, name: "<stdin>"}
 	} else {
 		sysMod.Dict["stdin"] = &PyFile{r: bufio.NewReader(strings.NewReader("")), name: "<stdin>"}
 	}
@@ -555,7 +557,7 @@ func makeBinasciModule(_ *RunOpts) *PyModule {
 			checksum := crc32.Update(init, crc32.IEEETable, b)
 			return pyInt(int64(checksum))
 		}),
-		"Error": ExcOSError, // binascii.Error = OSError
+		"Error": ExcValueError, // binascii.Error = ValueError (CPython)
 	}}
 }
 

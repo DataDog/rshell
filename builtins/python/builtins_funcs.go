@@ -6,7 +6,6 @@
 package python
 
 import (
-	"bufio"
 	"fmt"
 	"io"
 	"math"
@@ -490,19 +489,21 @@ func makeBuiltinDivmod() *PyBuiltin {
 		switch av := a.(type) {
 		case *PyInt:
 			if bv, ok := b.(*PyInt); ok {
-				an, _ := av.int64()
-				bn, _ := bv.int64()
-				if bn == 0 {
+				// Use big.Int arithmetic to handle values outside int64 range.
+				ab := av.toBigInt()
+				bb := bv.toBigInt()
+				if bb.Sign() == 0 {
 					panic(exceptionSignal{exc: newExceptionf(ExcZeroDivisionError, "integer division or modulo by zero")})
 				}
-				q := an / bn
-				r := an % bn
+				q := new(big.Int)
+				r := new(big.Int)
+				q.DivMod(ab, bb, r)
 				// Python-style modulo: result has same sign as divisor
-				if r != 0 && (r^bn) < 0 {
-					r += bn
-					q--
+				if r.Sign() != 0 && r.Sign() != bb.Sign() {
+					r.Add(r, bb)
+					q.Sub(q, big.NewInt(1))
 				}
-				return pyTuple([]Object{pyInt(q), pyInt(r)})
+				return pyTuple([]Object{pyIntBig(q), pyIntBig(r)})
 			}
 		case *PyFloat:
 			var bv float64
@@ -668,11 +669,11 @@ func makeBuiltinBin() *PyBuiltin {
 		if len(args) != 1 {
 			raiseTypeError("bin() takes exactly 1 argument")
 		}
-		n := toIntVal(args[0])
-		if n >= 0 {
-			return pyStr("0b" + strconv.FormatInt(n, 2))
+		bi := toIntValBig(args[0])
+		if bi.Sign() >= 0 {
+			return pyStr("0b" + bi.Text(2))
 		}
-		return pyStr("-0b" + strconv.FormatInt(-n, 2))
+		return pyStr("-0b" + new(big.Int).Neg(bi).Text(2))
 	})
 }
 
@@ -681,11 +682,11 @@ func makeBuiltinHex() *PyBuiltin {
 		if len(args) != 1 {
 			raiseTypeError("hex() takes exactly 1 argument")
 		}
-		n := toIntVal(args[0])
-		if n >= 0 {
-			return pyStr("0x" + strconv.FormatInt(n, 16))
+		bi := toIntValBig(args[0])
+		if bi.Sign() >= 0 {
+			return pyStr("0x" + bi.Text(16))
 		}
-		return pyStr("-0x" + strconv.FormatInt(-n, 16))
+		return pyStr("-0x" + new(big.Int).Neg(bi).Text(16))
 	})
 }
 
@@ -694,11 +695,11 @@ func makeBuiltinOct() *PyBuiltin {
 		if len(args) != 1 {
 			raiseTypeError("oct() takes exactly 1 argument")
 		}
-		n := toIntVal(args[0])
-		if n >= 0 {
-			return pyStr("0o" + strconv.FormatInt(n, 8))
+		bi := toIntValBig(args[0])
+		if bi.Sign() >= 0 {
+			return pyStr("0o" + bi.Text(8))
 		}
-		return pyStr("-0o" + strconv.FormatInt(-n, 8))
+		return pyStr("-0o" + new(big.Int).Neg(bi).Text(8))
 	})
 }
 
@@ -1274,13 +1275,13 @@ func makeBuiltinInput(opts *RunOpts) *PyBuiltin {
 		if len(args) > 0 {
 			fmt.Fprint(opts.Stdout, args[0].pyStr())
 		}
-		if opts.Stdin == nil {
+		if opts.Stdin == nil || opts.stdinReader == nil {
 			return pyStr("")
 		}
-		// opts.Stdin is already wrapped in a global LimitReader (maxFileReadBytes) by
-		// runInternal, so all input() calls share one cumulative byte budget.
-		reader := bufio.NewReader(opts.Stdin)
-		line, err := reader.ReadString('\n')
+		// opts.stdinReader is a single persistent bufio.Reader (initialised by
+		// runInternal) so read-ahead bytes are not dropped between input() calls.
+		// The underlying reader is already wrapped in a global LimitReader.
+		line, err := opts.stdinReader.ReadString('\n')
 		if err != nil && err != io.EOF {
 			panic(exceptionSignal{exc: newExceptionf(ExcOSError, "input error: %v", err)})
 		}

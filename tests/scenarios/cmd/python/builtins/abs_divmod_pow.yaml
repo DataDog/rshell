@@ -1,4 +1,4 @@
-description: python abs(), divmod(), and pow() perform absolute value, combined division/modulo, and exponentiation.
+description: python abs(), divmod(), and pow() perform absolute value, combined division/modulo, and exponentiation including big integers.
 skip_assert_against_bash: true
 setup:
   files:
@@ -10,6 +10,11 @@ setup:
         print(divmod(-7, 2))
         print(pow(2, 10))
         print(pow(3, 3, 10))
+        # big int divmod (> int64 range)
+        big = 10**40
+        q, r = divmod(big, 3)
+        print(q)
+        print(r)
       chmod: 0644
 input:
   allowed_paths: ["$DIR"]
@@ -23,5 +28,7 @@ expect:
     (-4, 1)
     1024
     7
+    3333333333333333333333333333333333333333
+    1
   stderr: |+
   exit_code: 0

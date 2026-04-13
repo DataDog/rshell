@@ -6,6 +6,7 @@
 package python
 
 import (
+	"bufio"
 	"context"
 	"fmt"
 	"io"
@@ -43,6 +44,10 @@ func runInternal(ctx context.Context, opts RunOpts) (exitCode int) {
 	// input() in a loop to read unbounded data from /dev/zero-like sources.
 	if opts.Stdin != nil {
 		opts.Stdin = io.LimitReader(opts.Stdin, int64(maxFileReadBytes))
+		// A single persistent bufio.Reader shared across all input() and
+		// sys.stdin.readline() calls so that read-ahead bytes are not dropped
+		// between calls.
+		opts.stdinReader = bufio.NewReader(opts.Stdin)
 	}
 
 	// Parse

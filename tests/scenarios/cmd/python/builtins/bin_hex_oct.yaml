@@ -1,4 +1,4 @@
-description: python bin(), hex(), and oct() convert integers to binary, hex, and octal strings.
+description: python bin(), hex(), and oct() convert integers to binary, hex, and octal strings including big integers.
 skip_assert_against_bash: true
 setup:
   files:
@@ -10,6 +10,11 @@ setup:
         print(hex(16))
         print(oct(8))
         print(oct(64))
+        # big int (> int64 max)
+        big = 2**63
+        print(bin(big))
+        print(hex(big))
+        print(oct(big))
       chmod: 0644
 input:
   allowed_paths: ["$DIR"]
@@ -23,5 +28,8 @@ expect:
     0x10
     0o10
     0o100
+    0b1000000000000000000000000000000000000000000000000000000000000000
+    0x8000000000000000
+    0o1000000000000000000000
   stderr: |+
   exit_code: 0

@@ -1,0 +1,27 @@
+description: python drainIter raises MemoryError when a custom iterator produces too many items.
+skip_assert_against_bash: true
+setup:
+  files:
+    - path: inf_iter.py
+      content: |+
+        class Inf:
+            def __iter__(self):
+                return self
+            def __next__(self):
+                return 1
+
+        try:
+            for x in Inf():
+                pass
+        except MemoryError:
+            print('MemoryError raised')
+      chmod: 0644
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    python inf_iter.py
+expect:
+  stdout: |+
+    MemoryError raised
+  stderr: |+
+  exit_code: 0

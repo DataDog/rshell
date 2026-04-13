@@ -55,7 +55,12 @@ func newEvaluator(ctx context.Context, opts *RunOpts, globals map[string]Object,
 	}
 	// Register the evaluator's callObject for this goroutine so that types.go
 	// and builtins_funcs.go can call user-defined functions without a shared global.
-	gid := goroutineID()
+	gid, ok := goroutineID()
+	if !ok {
+		// Parsing failed — degrade gracefully rather than crashing the shell.
+		// callObject will raise RuntimeError if invoked in this state.
+		return e, func() {}
+	}
 	goroutineCallFns.Store(gid, func(fn Object, args []Object, kwargs map[string]Object) Object {
 		return e.callObject(fn, args, kwargs)
 	})
@@ -1996,6 +2001,7 @@ func (e *Evaluator) evalGeneratorExp(n *GeneratorExp) Object {
 		name:    "<genexpr>",
 		sendCh:  make(chan Object, 0),
 		yieldCh: make(chan Object, 0),
+		excCh:   make(chan *PyException, 1),
 		ctx:     e.ctx,
 	}
 
@@ -2021,11 +2027,12 @@ func (e *Evaluator) evalGeneratorExp(n *GeneratorExp) Object {
 	go func() {
 		// Register this goroutine's callObject so that map/filter/sorted with
 		// user-defined key functions work correctly inside generator expressions.
-		gid := goroutineID()
-		goroutineCallFns.Store(gid, func(fn Object, args []Object, kwargs map[string]Object) Object {
-			return childEval.callObject(fn, args, kwargs)
-		})
-		defer goroutineCallFns.Delete(gid)
+		if gid, ok := goroutineID(); ok {
+			goroutineCallFns.Store(gid, func(fn Object, args []Object, kwargs map[string]Object) Object {
+				return childEval.callObject(fn, args, kwargs)
+			})
+			defer goroutineCallFns.Delete(gid)
+		}
 		defer close(g.yieldCh)
 		defer func() {
 			r := recover()
@@ -2039,6 +2046,12 @@ func (e *Evaluator) evalGeneratorExp(n *GeneratorExp) Object {
 				if exceptionMatchesClass(sig.exc, ExcGeneratorExit) {
 					return
 				}
+				// Non-StopIteration Python exception: propagate to the caller via excCh.
+				select {
+				case g.excCh <- sig.exc:
+				default:
+				}
+				return
 			}
 			if _, ok := r.(controlSignal); ok {
 				// controlSignal for return is normal completion.
@@ -2343,6 +2356,7 @@ func (e *Evaluator) makeGenerator(fn *PyFunction, scope *Scope) *PyGenerator {
 		name:    fn.Name,
 		sendCh:  make(chan Object, 0),
 		yieldCh: make(chan Object, 0),
+		excCh:   make(chan *PyException, 1),
 		ctx:     e.ctx,
 	}
 
@@ -2363,11 +2377,12 @@ func (e *Evaluator) makeGenerator(fn *PyFunction, scope *Scope) *PyGenerator {
 	go func() {
 		// Register this goroutine's callObject so that map/filter/sorted with
 		// user-defined key functions work correctly inside generator bodies.
-		gid := goroutineID()
-		goroutineCallFns.Store(gid, func(fn Object, args []Object, kwargs map[string]Object) Object {
-			return childEval.callObject(fn, args, kwargs)
-		})
-		defer goroutineCallFns.Delete(gid)
+		if gid, ok := goroutineID(); ok {
+			goroutineCallFns.Store(gid, func(fn Object, args []Object, kwargs map[string]Object) Object {
+				return childEval.callObject(fn, args, kwargs)
+			})
+			defer goroutineCallFns.Delete(gid)
+		}
 		defer close(g.yieldCh)
 		defer func() {
 			r := recover()
@@ -2381,7 +2396,12 @@ func (e *Evaluator) makeGenerator(fn *PyFunction, scope *Scope) *PyGenerator {
 				if exceptionMatchesClass(sig.exc, ExcGeneratorExit) {
 					return
 				}
-				// Other Python exception: generator exits cleanly.
+				// Non-StopIteration Python exception: propagate to the caller of
+				// next(g) via excCh so it is not silently swallowed.
+				select {
+				case g.excCh <- sig.exc:
+				default:
+				}
 				return
 			}
 			if _, ok := r.(controlSignal); ok {
@@ -2480,6 +2500,9 @@ func (e *Evaluator) drainIter(iterObj Object) []Object {
 			break
 		}
 		result = append(result, val)
+		if len(result) > maxGeneratorItems {
+			panic(exceptionSignal{exc: newExceptionf(ExcMemoryError, "iterable produced too many items (limit %d)", maxGeneratorItems)})
+		}
 	}
 	return result
 }
@@ -2557,6 +2580,17 @@ func (e *Evaluator) nextFromGenerator(g *PyGenerator) (Object, bool) {
 	case val, ok := <-g.yieldCh:
 		if !ok {
 			g.done = true
+			// Check if the generator exited with a non-StopIteration exception.
+			// The generator goroutine sends the exception on excCh before closing
+			// yieldCh (via defer), so by the time we see the channel close the
+			// exception (if any) is already in excCh.
+			if g.excCh != nil {
+				select {
+				case exc := <-g.excCh:
+					panic(exceptionSignal{exc: exc})
+				default:
+				}
+			}
 			return nil, false
 		}
 		g.awaitingSend = true

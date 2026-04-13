@@ -53,6 +53,11 @@ type RunOpts struct {
 
 	// Args are additional arguments appended to sys.argv after SourceName.
 	Args []string
+
+	// stdinReader is a single persistent bufio.Reader wrapping Stdin, shared
+	// across all input() calls so that read-ahead bytes are not lost between calls.
+	// Initialised by runInternal once Stdin has been wrapped in its LimitReader.
+	stdinReader *bufio.Reader
 }
 
 // ---- Control flow signals ----
@@ -1866,10 +1871,9 @@ var goroutineCallFns sync.Map // map[int64]func(Object, []Object, map[string]Obj
 // goroutineID returns the current goroutine's numeric ID by inspecting the stack header.
 // Format: "goroutine N [..."
 //
-// Parsing runtime.Stack output is fragile — the format is undocumented. If the format
-// ever changes so that id stays 0, we panic immediately rather than silently mis-dispatching
-// all goroutines through a shared slot in goroutineCallFns.
-func goroutineID() int64 {
+// Parsing runtime.Stack output is fragile — the format is undocumented. Returns (0, false)
+// if the ID cannot be parsed so callers can degrade gracefully rather than crashing.
+func goroutineID() (int64, bool) {
 	var buf [64]byte
 	runtime.Stack(buf[:], false)
 	var id int64
@@ -1881,14 +1885,18 @@ func goroutineID() int64 {
 		id = id*10 + int64(c-'0')
 	}
 	if id == 0 {
-		panic("goroutineID: could not parse goroutine ID from runtime.Stack output — Go runtime format may have changed")
+		return 0, false
 	}
-	return id
+	return id, true
 }
 
 // callObject dispatches a call through the evaluator registered for the current goroutine.
 func callObject(fn Object, args []Object, kwargs map[string]Object) Object {
-	v, ok := goroutineCallFns.Load(goroutineID())
+	gid, ok := goroutineID()
+	if !ok {
+		panic(exceptionSignal{exc: newExceptionf(ExcRuntimeError, "could not determine goroutine ID (runtime.Stack format changed)")})
+	}
+	v, ok := goroutineCallFns.Load(gid)
 	if !ok {
 		panic("callObject invoked outside Python evaluation context")
 	}
@@ -2192,9 +2200,12 @@ func fileGetAttr(f *PyFile, name string) (Object, bool) {
 				panic(exceptionSignal{exc: newExceptionf(ExcValueError, "I/O operation on closed file.")})
 			}
 			if f.r != nil {
-				// Read at most maxFileReadBytes to prevent OOM from infinite sources.
-				limited := bufio.NewReader(io.LimitReader(f.r, int64(maxFileReadBytes)))
-				line, err := limited.ReadString('\n')
+				// f.r is a bufio.Reader already wrapping a LimitReader (set up in
+				// runInternal), so we reuse it directly rather than wrapping again.
+				// Creating a fresh LimitReader per call would give each readline()
+				// call its own independent 1 MiB budget and would also discard
+				// buffered bytes from f.r's internal buffer.
+				line, err := f.r.ReadString('\n')
 				if err != nil && err != io.EOF {
 					panic(exceptionSignal{exc: newExceptionf(ExcOSError, "readline error: %v", err)})
 				}
@@ -2909,6 +2920,24 @@ func toIntVal(obj Object) int64 {
 	return 0
 }
 
+// toIntValBig extracts a *big.Int from a PyInt, PyBool, or PyFloat.
+// Unlike toIntVal it never truncates big integers.
+func toIntValBig(obj Object) *big.Int {
+	switch v := obj.(type) {
+	case *PyInt:
+		return v.toBigInt()
+	case *PyBool:
+		if v.v {
+			return big.NewInt(1)
+		}
+		return big.NewInt(0)
+	case *PyFloat:
+		return new(big.Int).SetInt64(int64(v.v))
+	}
+	raiseTypeError("expected int, got %s", obj.pyType().Name)
+	return nil
+}
+
 // collectIterable collects all items from an iterable into a slice.
 func collectIterable(obj Object) []Object {
 	switch v := obj.(type) {
@@ -3104,6 +3133,15 @@ func nextFromIterable(obj Object) (Object, bool) {
 		val, ok := <-v.yieldCh
 		if !ok {
 			v.done = true
+			// Check if the generator exited due to a non-StopIteration exception
+			// and propagate it to the caller.
+			if v.excCh != nil {
+				select {
+				case exc := <-v.excCh:
+					panic(exceptionSignal{exc: exc})
+				default:
+				}
+			}
 			return nil, false
 		}
 		v.awaitingSend = true
