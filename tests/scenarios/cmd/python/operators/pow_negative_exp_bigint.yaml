@@ -1,0 +1,18 @@
+description: python ** operator with negative exponent and big-int base returns correct float (not +Inf).
+skip_assert_against_bash: true
+input:
+  script: |+
+    python -c "
+    # (2**80)**-1 should be a small positive float, not +Inf
+    result = (2**80)**-1
+    print(result > 0)
+    print(result < 1)
+    print(result == float('inf'))
+    "
+expect:
+  stdout: |+
+    True
+    True
+    False
+  stderr: |+
+  exit_code: 0

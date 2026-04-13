@@ -1177,8 +1177,10 @@ func makeBuiltinId() *PyBuiltin {
 		if len(args) != 1 {
 			raiseTypeError("id() takes exactly 1 argument")
 		}
-		// Return a stable identifier — use fmt.Sprintf to get pointer
-		id := fmt.Sprintf("%p", &args[0])
+		// Return a stable per-object identifier. Using the pointer stored
+		// in the interface value (args[0]) rather than &args[0] (the slice
+		// slot address) ensures the same object always returns the same id.
+		id := fmt.Sprintf("%p", args[0])
 		// Parse hex pointer address
 		if len(id) > 2 {
 			n, err := strconv.ParseInt(id[2:], 16, 64)

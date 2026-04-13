@@ -1,0 +1,22 @@
+description: python list/string/bytes indexing with a huge big-int raises IndexError instead of silently returning index 0.
+skip_assert_against_bash: true
+input:
+  script: |+
+    python -c "
+    a = [1, 2, 3]
+    try:
+        x = a[2**80]
+    except IndexError as e:
+        print('list IndexError:', 'cannot fit' in str(e))
+
+    try:
+        x = 'abc'[2**80]
+    except IndexError as e:
+        print('str IndexError:', 'cannot fit' in str(e))
+    "
+expect:
+  stdout: |+
+    list IndexError: True
+    str IndexError: True
+  stderr: |+
+  exit_code: 0

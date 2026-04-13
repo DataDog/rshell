@@ -2901,13 +2901,15 @@ func toNumber(obj Object) (Object, bool) {
 }
 
 // toIntVal extracts an int64 from a PyInt or PyBool.
+// If the value is a big integer that does not fit in int64 it raises
+// IndexError (matching CPython's "cannot fit 'int' into an index-sized integer").
 func toIntVal(obj Object) int64 {
 	switch v := obj.(type) {
 	case *PyInt:
 		if n, ok := v.int64(); ok {
 			return n
 		}
-		return 0
+		panic(exceptionSignal{exc: newExceptionf(ExcIndexError, "cannot fit 'int' into an index-sized integer")})
 	case *PyBool:
 		if v.v {
 			return 1
@@ -2964,6 +2966,11 @@ func collectIterable(obj Object) []Object {
 		return result
 	case *PyRange:
 		n := v.length()
+		// Guard against huge range lengths (e.g. list(range(0, 1<<62))) that
+		// would cause make([]Object, n) to panic with "makeslice: len out of range".
+		if n > maxGeneratorItems {
+			panic(exceptionSignal{exc: newExceptionf(ExcMemoryError, "range too large to materialize (length %d exceeds limit %d)", n, maxGeneratorItems)})
+		}
 		result := make([]Object, n)
 		cur := v.start
 		for i := int64(0); i < n; i++ {

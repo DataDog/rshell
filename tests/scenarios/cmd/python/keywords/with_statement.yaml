@@ -1,0 +1,59 @@
+description: python with statement correctly passes exception class to __exit__, suppresses exceptions, and unwinds managers on __enter__ failure.
+skip_assert_against_bash: true
+input:
+  script: |+
+    python -c "
+    # Test 1: __exit__ receives exception class as first argument
+    class CM:
+        def __enter__(self): return self
+        def __exit__(self, exc_type, exc_val, tb):
+            print('exc_type is class:', exc_type is ValueError)
+            return False
+
+    try:
+        with CM():
+            raise ValueError('test')
+    except ValueError:
+        pass
+
+    # Test 2: inner __exit__ suppresses; outer sees (None, None, None)
+    class Suppressor:
+        def __enter__(self): return self
+        def __exit__(self, et, ev, tb):
+            return True  # suppress
+
+    class Outer:
+        def __enter__(self): return self
+        def __exit__(self, et, ev, tb):
+            print('outer exc_type after suppress:', et)
+            return False
+
+    with Outer() as o, Suppressor() as s:
+        raise ValueError('suppressed')
+
+    # Test 3: __enter__ failure unwinds already-entered managers
+    class CM1:
+        def __enter__(self): return self
+        def __exit__(self, *a):
+            print('CM1 exited')
+            return False
+
+    class CM2:
+        def __enter__(self): raise RuntimeError('enter failed')
+        def __exit__(self, *a):
+            print('CM2 exited (should not print)')
+
+    try:
+        with CM1() as a, CM2() as b:
+            print('body (should not print)')
+    except RuntimeError as e:
+        print('caught:', e)
+    "
+expect:
+  stdout: |+
+    exc_type is class: True
+    outer exc_type after suppress: None
+    CM1 exited
+    caught: enter failed
+  stderr: |+
+  exit_code: 0

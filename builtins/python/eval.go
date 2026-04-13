@@ -437,19 +437,34 @@ func (e *Evaluator) handlerMatches(exc *PyException, h *ExceptHandler) bool {
 
 func (e *Evaluator) execWith(n *WithStmt) {
 	type ctxEntry struct {
-		mgr     Object
-		optVar  Expr
-		entered Object
+		mgr    Object
+		optVar Expr
 	}
 
+	// Enter each context manager in order. If __enter__ raises, unwind all
+	// already-entered managers before propagating the exception (matching
+	// CPython's behaviour: previously entered managers must still run __exit__).
 	entries := make([]ctxEntry, 0, len(n.Items))
-	for _, item := range n.Items {
-		mgr := e.eval(item.CtxExpr)
-		entered := e.callMethod(mgr, "__enter__", nil, nil)
-		entries = append(entries, ctxEntry{mgr: mgr, optVar: item.OptVar, entered: entered})
-		if item.OptVar != nil {
-			e.assign(item.OptVar, entered)
+	var enterPanic interface{}
+	func() {
+		defer func() {
+			enterPanic = recover()
+		}()
+		for _, item := range n.Items {
+			mgr := e.eval(item.CtxExpr)
+			entered := e.callMethod(mgr, "__enter__", nil, nil)
+			entries = append(entries, ctxEntry{mgr: mgr, optVar: item.OptVar})
+			if item.OptVar != nil {
+				e.assign(item.OptVar, entered)
+			}
 		}
+	}()
+	if enterPanic != nil {
+		// Unwind already-entered managers in reverse order with (None, None, None).
+		for i := len(entries) - 1; i >= 0; i-- {
+			e.callMethod(entries[i].mgr, "__exit__", []Object{pyNone, pyNone, pyNone}, nil)
+		}
+		panic(enterPanic)
 	}
 
 	var bodyPanic interface{}
@@ -460,14 +475,18 @@ func (e *Evaluator) execWith(n *WithStmt) {
 		e.exec(n.Body)
 	}()
 
-	// Call __exit__ for each context manager in reverse order
-	suppress := false
+	// Call __exit__ for each context manager in reverse order.
+	// Once a manager suppresses the exception (returns truthy), subsequent
+	// outer managers must receive (None, None, None), not the original
+	// exception — matching CPython semantics.
 	for i := len(entries) - 1; i >= 0; i-- {
 		mgr := entries[i].mgr
 		var result Object
 		if bodyPanic != nil {
 			if sig, ok := bodyPanic.(exceptionSignal); ok {
-				result = e.callMethod(mgr, "__exit__", []Object{sig.exc, sig.exc, pyNone}, nil)
+				// Pass (type, value, traceback): exc_type is the class, exc_val is
+				// the instance, traceback is None (we don't model tb objects).
+				result = e.callMethod(mgr, "__exit__", []Object{sig.exc.ExcClass, sig.exc, pyNone}, nil)
 			} else {
 				result = e.callMethod(mgr, "__exit__", []Object{pyNone, pyNone, pyNone}, nil)
 			}
@@ -475,11 +494,13 @@ func (e *Evaluator) execWith(n *WithStmt) {
 			result = e.callMethod(mgr, "__exit__", []Object{pyNone, pyNone, pyNone}, nil)
 		}
 		if pyTruth(result) {
-			suppress = true
+			// Exception suppressed: clear bodyPanic so outer managers in this
+			// same with-chain receive (None, None, None) as required by Python.
+			bodyPanic = nil
 		}
 	}
 
-	if bodyPanic != nil && !suppress {
+	if bodyPanic != nil {
 		panic(bodyPanic)
 	}
 }
@@ -1090,14 +1111,15 @@ func (e *Evaluator) powOp(left, right Object) Object {
 				result := new(big.Int).Exp(lv.toBigInt(), rv.toBigInt(), nil)
 				return pyIntBig(result)
 			}
-			// Negative exponent → float
-			bn, _ := lv.int64()
-			en2, _ := rv.int64()
-			return pyFloat(math.Pow(float64(bn), float64(en2)))
+			// Negative exponent → float. Use big.Float for full precision so
+			// that large bases (e.g. 2**80) are not silently truncated to zero.
+			bf, _ := new(big.Float).SetInt(lv.toBigInt()).Float64()
+			ef, _ := new(big.Float).SetInt(rv.toBigInt()).Float64()
+			return pyFloat(math.Pow(bf, ef))
 		case *PyFloat:
-			if n, ok := lv.int64(); ok {
-				return pyFloat(math.Pow(float64(n), rv.v))
-			}
+			// Use big.Float for full precision when the base is a large integer.
+			bf, _ := new(big.Float).SetInt(lv.toBigInt()).Float64()
+			return pyFloat(math.Pow(bf, rv.v))
 		}
 	case *PyFloat:
 		rf := toFloatVal(right)

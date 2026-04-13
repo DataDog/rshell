@@ -1,0 +1,18 @@
+description: python id() returns a stable identifier for the same object across multiple calls.
+skip_assert_against_bash: true
+input:
+  script: |+
+    python -c "
+    x = 'hello'
+    print(id(x) == id(x))
+    a = [1, 2, 3]
+    print(id(a) == id(a))
+    print(id(x) != id(a))
+    "
+expect:
+  stdout: |+
+    True
+    True
+    True
+  stderr: |+
+  exit_code: 0
