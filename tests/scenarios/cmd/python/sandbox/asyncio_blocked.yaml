@@ -1,0 +1,15 @@
+description: asyncio module is blocked and raises ImportError when imported, so try/except ImportError works correctly.
+skip_assert_against_bash: true
+input:
+  script: |+
+    python -c "
+    try:
+        import asyncio
+        print('imported')
+    except ImportError:
+        print('ImportError ok')
+    "
+expect:
+  stdout: |+
+    ImportError ok
+  exit_code: 0

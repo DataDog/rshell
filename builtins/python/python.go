@@ -51,11 +51,18 @@
 //     imported.
 //
 // Supported stdlib modules: math, string, sys, os (read-only), binascii,
-// json (dumps only; loads raises TypeError), collections (OrderedDict,
+// json (dumps only; loads raises ValueError), collections (OrderedDict,
 // Counter, deque, defaultdict — but defaultdict default_factory raises
 // NotImplementedError if provided).
 // Blocked modules: subprocess, socket, ctypes, tempfile, glob, threading,
 // multiprocessing, asyncio, re.
+//
+// Known limitations:
+//
+//   - `import os.path` raises ImportError; use `from os import path` instead.
+//   - goroutineID() parses runtime.Stack output which is undocumented; if the
+//     format changes in a future Go release the evaluator degrades gracefully
+//     (callbacks go through a no-op context) but may panic on some code paths.
 //
 // Exit codes:
 //
