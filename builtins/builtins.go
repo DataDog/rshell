@@ -63,7 +63,15 @@ func (c Command) Register() {
 	name := c.Name
 	factory := c.MakeFlags
 	normalize := c.NormalizeArgs
-	metaRegistry[name] = CommandMeta{Name: name, Description: c.Description, Help: c.Help}
+
+	// Probe whether the command registers any flags so we can record it
+	// in metadata (used by tests to enforce help-consistency invariants).
+	probe := pflag.NewFlagSet(name, pflag.ContinueOnError)
+	probe.SetOutput(io.Discard)
+	factory(probe)
+	hasFlags := probe.HasFlags()
+
+	metaRegistry[name] = CommandMeta{Name: name, Description: c.Description, Help: c.Help, HasFlags: hasFlags}
 	addToRegistry(name, func(ctx context.Context, callCtx *CallContext, args []string) Result {
 		fs := pflag.NewFlagSet(name, pflag.ContinueOnError)
 		fs.SetOutput(io.Discard) // handler formats errors itself
@@ -221,6 +229,7 @@ type CommandMeta struct {
 	Name        string
 	Description string
 	Help        string
+	HasFlags    bool // true when MakeFlags registers at least one flag
 }
 
 var metaRegistry = map[string]CommandMeta{}
