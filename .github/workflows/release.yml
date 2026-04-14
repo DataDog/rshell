@@ -1,0 +1,89 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: "Version bump type"
+        required: true
+        default: "patch"
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment: release
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+
+      - name: Compute next version
+        id: version
+        run: |
+          # Find the latest semver tag.
+          LATEST=$(git tag --list 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | head -1)
+          if [ -z "$LATEST" ]; then
+            echo "::error::No existing version tags found."
+            exit 1
+          fi
+
+          # Strip the leading "v" and split into components.
+          CURRENT="${LATEST#v}"
+          IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT"
+
+          BUMP="${{ inputs.bump }}"
+          case "$BUMP" in
+            patch) PATCH=$((PATCH + 1)) ;;
+            minor) MINOR=$((MINOR + 1)); PATCH=0 ;;
+            major) MAJOR=$((MAJOR + 1)); MINOR=0; PATCH=0 ;;
+          esac
+
+          NEXT="${MAJOR}.${MINOR}.${PATCH}"
+          echo "current=$CURRENT" >> "$GITHUB_OUTPUT"
+          echo "next=$NEXT" >> "$GITHUB_OUTPUT"
+          echo "Releasing: v$CURRENT → v$NEXT ($BUMP bump)"
+
+      - name: Check tag does not already exist
+        run: |
+          if git rev-parse "v${{ steps.version.outputs.next }}" >/dev/null 2>&1; then
+            echo "::error::Tag v${{ steps.version.outputs.next }} already exists."
+            exit 1
+          fi
+
+      - name: Update version constant
+        run: |
+          NEXT="${{ steps.version.outputs.next }}"
+          sed -i "s/^const version = \".*\"/const version = \"$NEXT\"/" internal/version/version.go
+          grep -q "const version = \"$NEXT\"" internal/version/version.go || {
+            echo "::error::Failed to update version constant."
+            exit 1
+          }
+
+      - name: Commit version bump
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add internal/version/version.go
+          git commit -m "release: bump version to ${{ steps.version.outputs.next }}"
+
+      - name: Tag and push
+        run: |
+          git tag "v${{ steps.version.outputs.next }}"
+          git push origin main "v${{ steps.version.outputs.next }}"
+
+      - name: Create GitHub release
+        run: |
+          gh release create "v${{ steps.version.outputs.next }}" \
+            --title "v${{ steps.version.outputs.next }}" \
+            --generate-notes
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
