@@ -16,6 +16,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"mvdan.cc/sh/v3/syntax"
 
+	"github.com/DataDog/rshell/builtins"
 	"github.com/DataDog/rshell/internal/interpoption"
 	"github.com/DataDog/rshell/interp"
 )
@@ -289,4 +290,21 @@ func TestHelpNoStderrOnSuccess(t *testing.T) {
 	_, stderr, code := runScript(t, "help", "", interpoption.AllowAllCommands().(interp.RunnerOption))
 	assert.Equal(t, 0, code)
 	assert.Empty(t, stderr)
+}
+
+// --- Invariant: Help field only on NoFlags commands ---
+
+func TestHelpFieldOnlyOnNoFlagsCommands(t *testing.T) {
+	// Trigger registration so Names()/Meta() are populated.
+	_, _ = interp.New()
+
+	for _, name := range builtins.Names() {
+		meta, ok := builtins.Meta(name)
+		require.True(t, ok)
+		if meta.Help != "" && meta.HasFlags {
+			t.Errorf("%s: Help field must not be set on commands that register flags — "+
+				"use --help instead so that 'help %s' and '%s --help' produce the same output",
+				name, name, name)
+		}
+	}
 }

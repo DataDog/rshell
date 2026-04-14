@@ -51,12 +51,7 @@ import (
 var Cmd = builtins.Command{
 	Name:        "uname",
 	Description: "print system information",
-	Help: `uname: uname [-asnrvm]
-    Print system information.
-
-    With no flags, print the kernel name (same as -s).
-    Reads from /proc/sys/kernel/ (configurable via --proc-path).`,
-	MakeFlags: makeFlags,
+	MakeFlags:   makeFlags,
 }
 
 // kernelFiles maps each flag letter to the proc pseudo-file that
