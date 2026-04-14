@@ -9,7 +9,10 @@ input:
 expect:
   stdout: ""
   stderr: |+
-    notacmd1: command not found
-    notacmd2: command not found
-    notacmd3: command not found
+    rshell: notacmd1: unknown command
+    Run 'help' to see available commands.
+    rshell: notacmd2: unknown command
+    Run 'help' to see available commands.
+    rshell: notacmd3: unknown command
+    Run 'help' to see available commands.
   exit_code: 127

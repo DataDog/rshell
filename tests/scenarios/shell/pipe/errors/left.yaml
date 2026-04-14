@@ -1,3 +1,5 @@
+# skip: error message format differs from bash
+skip_assert_against_bash: true
 description: Unknown command on left side of pipe sends error to stderr; right side still runs.
 input:
   script: |+
@@ -5,5 +7,5 @@ input:
 expect:
   stdout: |+
     ok
-  stderr_contains: ["foo", "command not found"]
+  stderr_contains: ["foo", "unknown command"]
   exit_code: 0

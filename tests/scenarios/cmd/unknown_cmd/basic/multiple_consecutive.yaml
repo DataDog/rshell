@@ -1,3 +1,5 @@
+# skip: error message format differs from bash
+skip_assert_against_bash: true
 description: Multiple unknown commands on separate lines all execute and report errors.
 input:
   script: |+
@@ -6,5 +8,5 @@ input:
     baz
 expect:
   stdout: ""
-  stderr_contains: ["foo", "bar", "baz", "command not found"]
+  stderr_contains: ["foo", "bar", "baz", "unknown command"]
   exit_code: 127

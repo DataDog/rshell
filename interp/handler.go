@@ -86,15 +86,19 @@ type ReadDirHandlerFunc func(ctx context.Context, path string) ([]fs.DirEntry, e
 type ExecHandlerFunc func(ctx context.Context, args []string) error
 
 // noExecHandler returns an [ExecHandlerFunc] that rejects all commands.
-// It prints "<cmd>: command not found" to stderr and returns exit code 127,
-// without ever searching PATH or executing host binaries.
-func noExecHandler() ExecHandlerFunc {
+// It prints "rshell: <cmd>: unknown command" to stderr and returns exit
+// code 127, without ever searching PATH or executing host binaries.
+// When helpAvailable is true, a hint directing the user to 'help' is appended.
+func noExecHandler(helpAvailable bool) ExecHandlerFunc {
 	return func(ctx context.Context, args []string) error {
 		if len(args) == 0 {
 			return fmt.Errorf("exec handler called with no arguments")
 		}
 		hc := HandlerCtx(ctx)
-		fmt.Fprintf(hc.Stderr, "%s: command not found\n", args[0])
+		fmt.Fprintf(hc.Stderr, "rshell: %s: unknown command\n", args[0])
+		if helpAvailable {
+			fmt.Fprintf(hc.Stderr, "Run 'help' to see available commands.\n")
+		}
 		return ExitStatus(127)
 	}
 }

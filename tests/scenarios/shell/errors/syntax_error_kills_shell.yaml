@@ -11,5 +11,6 @@ expect:
     before
     after
   stderr: |+
-    no_such_cmd_abc: command not found
+    rshell: no_such_cmd_abc: unknown command
+    Run 'help' to see available commands.
   exit_code: 0

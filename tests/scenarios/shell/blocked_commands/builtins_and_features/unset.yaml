@@ -8,5 +8,6 @@ input:
 expect:
   stdout: ""
   stderr: |+
-    unset: command not found
+    rshell: unset: unknown command
+    Run 'help' to see available commands.
   exit_code: 127
