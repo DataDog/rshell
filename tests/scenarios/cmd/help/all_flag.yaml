@@ -1,0 +1,10 @@
+description: Help --all shows allowed and not-allowed commands with descriptions.
+skip_assert_against_bash: true
+input:
+  allowed_commands: ["rshell:echo", "rshell:help"]
+  script: |+
+    help --all
+expect:
+  stdout_contains: ["2 of", "builtins enabled", "echo", "help", "Not allowed:", "cat", "concatenate and print files", "grep", "print lines that match patterns"]
+  stderr: ""
+  exit_code: 0

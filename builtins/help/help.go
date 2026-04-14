@@ -7,11 +7,16 @@
 //
 // help — display help for commands
 //
-// Usage: help [command]
+// Usage: help [--all] [command]
 //
-// With no arguments, list all available builtin commands with a brief
-// description. When a command name is given, display detailed help for
-// that command.
+// With no arguments, list allowed builtin commands with descriptions
+// and a compact list of not-allowed builtins. When --all is given,
+// both sections are shown as full description tables. When a command
+// name is given, display detailed help for that command.
+//
+// Flags:
+//
+//	--all   show not-allowed builtins with descriptions (instead of a compact list)
 //
 // Exit codes:
 //
@@ -22,8 +27,10 @@ package help
 import (
 	"bytes"
 	"context"
+	"strings"
 
 	"github.com/DataDog/rshell/builtins"
+	"github.com/DataDog/rshell/internal/version"
 )
 
 // Cmd is the help builtin command descriptor.
@@ -34,12 +41,13 @@ var Cmd = builtins.Command{
 }
 
 func printUsage(callCtx *builtins.CallContext) {
-	callCtx.Out("Usage: help [command]\n")
+	callCtx.Out("Usage: help [--all] [command]\n")
 	callCtx.Out("Display help for builtin commands.\n")
 }
 
 func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 	helpFlag := fs.Bool("help", false, "print usage and exit")
+	allFlag := fs.Bool("all", false, "show not-allowed builtins with descriptions")
 
 	return func(ctx context.Context, callCtx *builtins.CallContext, args []string) builtins.Result {
 		if *helpFlag {
@@ -88,30 +96,103 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			return builtins.Result{}
 		}
 
-		// No arguments — list all allowed commands.
+		// No arguments — list commands.
 		allNames := builtins.Names()
-		var names []string
+		var allowed, notAllowed []string
 		for _, name := range allNames {
 			if callCtx.CommandAllowed != nil && !callCtx.CommandAllowed(name) {
+				notAllowed = append(notAllowed, name)
 				continue
 			}
-			names = append(names, name)
+			allowed = append(allowed, name)
 		}
 
-		// Find the longest command name for alignment.
-		maxLen := 0
-		for _, name := range names {
-			if len(name) > maxLen {
-				maxLen = len(name)
+		// Header: version + command counts.
+		printHeader(callCtx, len(allowed), len(allNames))
+
+		// Print allowed commands with descriptions.
+		printCommandTable(callCtx, allowed)
+
+		// Show not-allowed commands when restrictions are active.
+		if len(notAllowed) > 0 {
+			if *allFlag {
+				// --all: full description table for not-allowed commands.
+				callCtx.Out("\nNot allowed:\n")
+				printCommandTable(callCtx, notAllowed)
+			} else {
+				// Default: compact comma-separated list.
+				callCtx.Outf("\nNot allowed: %s\n", wrapNames(notAllowed, 80))
 			}
-		}
-
-		for _, name := range names {
-			meta, _ := builtins.Meta(name)
-			callCtx.Outf("%-*s  %s\n", maxLen, name, meta.Description)
+		} else if *allFlag {
+			callCtx.Out("\nAll builtins are allowed in this session.\n")
 		}
 
 		callCtx.Out("\nRun 'help <command>' for more information on a specific command.\n")
 		return builtins.Result{}
 	}
+}
+
+// printHeader writes the version line and command count summary.
+func printHeader(callCtx *builtins.CallContext, allowed, total int) {
+	var header strings.Builder
+	header.WriteString("rshell")
+	if version.Version != "" {
+		header.WriteByte(' ')
+		header.WriteString(version.Version)
+	}
+	header.WriteString(" — ")
+	if allowed < total {
+		callCtx.Outf("%s%d of %d builtins enabled\n\n", header.String(), allowed, total)
+	} else {
+		callCtx.Outf("%sAll %d builtins available\n\n", header.String(), total)
+	}
+}
+
+// printCommandTable prints an aligned name/description table.
+func printCommandTable(callCtx *builtins.CallContext, names []string) {
+	maxLen := 0
+	for _, name := range names {
+		if len(name) > maxLen {
+			maxLen = len(name)
+		}
+	}
+	for _, name := range names {
+		meta, _ := builtins.Meta(name)
+		callCtx.Outf("%-*s  %s\n", maxLen, name, meta.Description)
+	}
+}
+
+// wrapNames formats a list of names into comma-separated lines that stay
+// within the given line width. Continuation lines are indented by two spaces.
+func wrapNames(names []string, lineWidth int) string {
+	if len(names) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	col := 0
+	lineStart := true // true at the very start and after each newline indent
+	for i, name := range names {
+		token := name
+		if i < len(names)-1 {
+			token += ","
+		}
+		needed := len(token)
+		if !lineStart {
+			needed++ // space before token
+		}
+		if !lineStart && col+needed > lineWidth {
+			b.WriteString("\n  ")
+			col = 2
+			lineStart = true
+			needed = len(token)
+		}
+		if !lineStart {
+			b.WriteByte(' ')
+			col++
+		}
+		b.WriteString(token)
+		col += len(token)
+		lineStart = false
+	}
+	return b.String()
 }

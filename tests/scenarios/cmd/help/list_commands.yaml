@@ -4,6 +4,6 @@ input:
   script: |+
     help
 expect:
-  stdout_contains: ["cat", "echo", "grep", "help", "ls", "test", "true", "false"]
+  stdout_contains: ["rshell", "All ", "builtins available", "cat", "echo", "grep", "help", "ls", "test", "true", "false"]
   stderr: ""
   exit_code: 0

@@ -5,10 +5,6 @@ input:
   script: |+
     help
 expect:
-  stdout: |
-    echo  write arguments to stdout
-    help  display help for commands
-
-    Run 'help <command>' for more information on a specific command.
+  stdout_contains: ["2 of", "builtins enabled", "echo", "help", "Not allowed:", "cat", "Run 'help <command>'"]
   stderr: ""
   exit_code: 0
