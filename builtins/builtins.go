@@ -7,11 +7,13 @@ package builtins
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
 	"os"
 	"sort"
+	"syscall"
 	"time"
 
 	"github.com/spf13/pflag"
@@ -197,6 +199,14 @@ func (c *CallContext) Outf(format string, a ...any) {
 // Errf writes a formatted string to stderr.
 func (c *CallContext) Errf(format string, a ...any) {
 	fmt.Fprintf(c.Stderr, format, a...)
+}
+
+// IsBrokenPipe reports whether err is a broken-pipe (EPIPE) error,
+// which occurs when writing to a pipe whose read end has been closed.
+// In bash this triggers SIGPIPE which silently terminates the writer;
+// builtins should use this to suppress error messages on pipe closure.
+func IsBrokenPipe(err error) bool {
+	return err != nil && errors.Is(err, syscall.EPIPE)
 }
 
 // FileID is a comparable file identity for cycle detection.
