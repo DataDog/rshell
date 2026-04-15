@@ -113,15 +113,19 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 		// Print allowed commands with descriptions.
 		printCommandTable(callCtx, allowed)
 
-		// Show not-allowed commands when restrictions are active.
+		// Show disabled builtins when restrictions are active.
 		if len(notAllowed) > 0 {
+			label := "Disabled builtins"
+			if len(notAllowed) == 1 {
+				label = "Disabled builtin"
+			}
 			if *allFlag {
-				// --all: full description table for not-allowed commands.
-				callCtx.Out("\nNot allowed:\n")
+				// --all: full description table for disabled builtins.
+				callCtx.Outf("\n%s:\n", label)
 				printCommandTable(callCtx, notAllowed)
 			} else {
 				// Default: compact comma-separated list.
-				callCtx.Outf("\nNot allowed: %s\n", wrapNames(notAllowed, 80))
+				callCtx.Outf("\n%s: %s\n", label, wrapNames(notAllowed, 80))
 			}
 		} else if *allFlag {
 			callCtx.Out("\nAll builtins are allowed in this session.\n")

@@ -189,11 +189,11 @@ func TestHelpRestrictedShowsOnlyAllowedInTable(t *testing.T) {
 	assert.Empty(t, stderr)
 	assert.Contains(t, stdout, "echo")
 	assert.Contains(t, stdout, "help")
-	// The allowed-commands table (lines before "Not allowed:") should only
-	// contain allowed commands. The "Not allowed:" line lists the rest.
+	// The allowed-commands table (lines before "Disabled builtin") should only
+	// contain allowed commands. The "Disabled builtin" line lists the rest.
 	inAllowedSection := true
 	for _, line := range strings.Split(stdout, "\n") {
-		if strings.HasPrefix(line, "Not allowed:") {
+		if strings.HasPrefix(line, "Disabled builtin") {
 			inAllowedSection = false
 		}
 		if !inAllowedSection || strings.HasPrefix(line, "rshell") || line == "" || strings.HasPrefix(line, "Run '") {
@@ -211,7 +211,7 @@ func TestHelpRestrictedShowsNotAllowedList(t *testing.T) {
 	stdout, _, code := runScript(t, "help", "",
 		interp.AllowedCommands([]string{"rshell:echo", "rshell:help"}))
 	assert.Equal(t, 0, code)
-	assert.Contains(t, stdout, "Not allowed:")
+	assert.Contains(t, stdout, "Disabled builtin")
 	assert.Contains(t, stdout, "cat")
 	assert.Contains(t, stdout, "grep")
 	assert.Contains(t, stdout, "ls")
@@ -270,18 +270,18 @@ func TestHelpAllFlagShowsNotAllowedWithDescriptions(t *testing.T) {
 	stdout, _, code := runScript(t, "help --all", "",
 		interp.AllowedCommands([]string{"rshell:echo", "rshell:help"}))
 	assert.Equal(t, 0, code)
-	assert.Contains(t, stdout, "Not allowed:")
+	assert.Contains(t, stdout, "Disabled builtin")
 	// --all shows full description table for not-allowed commands.
 	assert.Contains(t, stdout, "concatenate and print files")     // cat description
 	assert.Contains(t, stdout, "print lines that match patterns") // grep description
 }
 
 func TestHelpAllFlagNoRestrictions(t *testing.T) {
-	// When all commands are allowed, --all should not show "Not allowed:"
+	// When all commands are allowed, --all should not show "Disabled builtin"
 	// but should confirm that all builtins are allowed.
 	stdout, _, code := runScript(t, "help --all", "", interpoption.AllowAllCommands().(interp.RunnerOption))
 	assert.Equal(t, 0, code)
-	assert.NotContains(t, stdout, "Not allowed:")
+	assert.NotContains(t, stdout, "Disabled builtin")
 	assert.Contains(t, stdout, "All builtins are allowed in this session.")
 }
 

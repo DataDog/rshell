@@ -5,6 +5,6 @@ input:
   script: |+
     help
 expect:
-  stdout_contains: ["2 of", "builtins enabled", "echo", "help", "Not allowed:", "cat", "Run 'help <command>'"]
+  stdout_contains: ["2 of", "builtins enabled", "echo", "help", "Disabled builtin", "cat", "Run 'help <command>'"]
   stderr: ""
   exit_code: 0

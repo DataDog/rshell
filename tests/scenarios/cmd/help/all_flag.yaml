@@ -5,6 +5,6 @@ input:
   script: |+
     help --all
 expect:
-  stdout_contains: ["2 of", "builtins enabled", "echo", "help", "Not allowed:", "cat", "concatenate and print files", "grep", "print lines that match patterns"]
+  stdout_contains: ["2 of", "builtins enabled", "echo", "help", "Disabled builtin", "cat", "concatenate and print files", "grep", "print lines that match patterns"]
   stderr: ""
   exit_code: 0
