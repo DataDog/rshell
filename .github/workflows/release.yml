@@ -44,22 +44,6 @@ jobs:
             exit 1
           fi
 
-      - name: Update version constant
-        run: |
-          NEXT="${{ steps.version.outputs.next }}"
-          sed -i "s/^const version = \".*\"/const version = \"$NEXT\"/" internal/version/version.go
-          grep -q "const version = \"$NEXT\"" internal/version/version.go || {
-            echo "::error::Failed to update version constant."
-            exit 1
-          }
-
-      - name: Commit version bump
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add internal/version/version.go
-          git commit -m "release: bump version to ${{ steps.version.outputs.next }}"
-
       - name: Tag and push
         run: |
           git tag "v${{ steps.version.outputs.next }}"
