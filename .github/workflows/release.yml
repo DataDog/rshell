@@ -2,16 +2,6 @@ name: Release
 
 on:
   workflow_dispatch:
-    inputs:
-      bump:
-        description: "Version bump type"
-        required: true
-        default: "patch"
-        type: choice
-        options:
-          - patch
-          - minor
-          - major
 
 permissions:
   contents: write
@@ -40,17 +30,12 @@ jobs:
           CURRENT="${LATEST#v}"
           IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT"
 
-          BUMP="${{ inputs.bump }}"
-          case "$BUMP" in
-            patch) PATCH=$((PATCH + 1)) ;;
-            minor) MINOR=$((MINOR + 1)); PATCH=0 ;;
-            major) MAJOR=$((MAJOR + 1)); MINOR=0; PATCH=0 ;;
-          esac
+          PATCH=$((PATCH + 1))
 
           NEXT="${MAJOR}.${MINOR}.${PATCH}"
           echo "current=$CURRENT" >> "$GITHUB_OUTPUT"
           echo "next=$NEXT" >> "$GITHUB_OUTPUT"
-          echo "Releasing: v$CURRENT → v$NEXT ($BUMP bump)"
+          echo "Releasing: v$CURRENT → v$NEXT (patch bump)"
 
       - name: Check tag does not already exist
         run: |
