@@ -13,16 +13,15 @@ import "runtime/debug"
 
 const modulePath = "github.com/DataDog/rshell"
 
-// Version is the build version string. Read from Go's embedded dependency
-// info when rshell is imported as a library (e.g. by the Datadog Agent).
-// Returns "dev" for standalone builds. Can be overridden via ldflags:
-//
-//	go build -ldflags "-X github.com/DataDog/rshell/internal/version.Version=custom"
+// Version is the build version string.
 var Version = buildVersion()
 
 // buildVersion reads the rshell version from Go's embedded build info.
 // When rshell is a dependency (e.g. in the Datadog Agent), the version
 // from go.mod is embedded automatically. For standalone builds it returns "dev".
+// Can be overridden via ldflags:
+//
+//	go build -ldflags "-X github.com/DataDog/rshell/internal/version.Version=custom"
 func buildVersion() string {
 	info, ok := debug.ReadBuildInfo()
 	if !ok {
