@@ -94,8 +94,10 @@ func TestBuildVersionAsDependency(t *testing.T) {
 	}
 
 	got := strings.TrimSpace(string(out))
-	if got == "NOT_FOUND" || got == "NO_BUILD_INFO" || got == "" {
-		t.Fatalf("expected a version from build info deps, got %q", got)
+	// The test go.mod requires rshell at v1.2.3 — verify that's what
+	// debug.ReadBuildInfo reports back.
+	const want = "v1.2.3"
+	if got != want {
+		t.Fatalf("expected version %q from build info deps, got %q", want, got)
 	}
-	t.Logf("rshell version from dependency build info: %s", got)
 }
