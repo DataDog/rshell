@@ -151,8 +151,11 @@ def main() -> int:
     )
     log(f"committing: {commit_msg}")
     run(["git", "commit", "-m", commit_msg], cwd=workdir)
-    log(f"pushing branch {branch} to origin")
-    run(["git", "push", "origin", branch], cwd=workdir)
+    log(f"pushing branch {branch} to origin (force)")
+    # Force push is safe: this branch is only ever written by this script, and
+    # the force handles retries after a prior failure (deterministic tree,
+    # non-deterministic commit timestamp).
+    run(["git", "push", "--force", "origin", branch], cwd=workdir)
 
     log("opening draft PR")
     pr = repo.create_pull(
