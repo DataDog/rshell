@@ -77,7 +77,7 @@ def main() -> int:
 
     gh = Github(auth=Auth.Token(token), per_page=100)
     repo = gh.get_repo(TARGET_REPO)
-    branch = f"bot/bump-rshell-{version}"
+    branch = f"bump-rshell-{version}"
 
     existing = list(repo.get_pulls(state="open", head=f"{TARGET_REPO.split('/')[0]}:{branch}"))
     if existing:
