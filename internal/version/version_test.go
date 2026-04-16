@@ -51,9 +51,9 @@ func TestBuildVersionAsDependency(t *testing.T) {
 	// Build and run the depcheck program directly from testdata.
 	run := exec.Command("go", "run", ".")
 	run.Dir = "testdata/depcheck"
-	out, err := run.CombinedOutput()
+	out, err := run.Output()
 	if err != nil {
-		t.Fatalf("go run failed: %v\n%s", err, out)
+		t.Fatalf("go run failed: %v", err)
 	}
 
 	got := strings.TrimSpace(string(out))
