@@ -14,7 +14,14 @@ import "runtime/debug"
 const modulePath = "github.com/DataDog/rshell"
 
 // Version is the build version string.
-var Version = buildVersion()
+// Set via ldflags for standalone builds; falls back to build info.
+var Version string
+
+func init() {
+	if Version == "" {
+		Version = buildVersion()
+	}
+}
 
 // buildVersion reads the rshell version from Go's embedded build info.
 // When rshell is a dependency (e.g. in the Datadog Agent), the version
