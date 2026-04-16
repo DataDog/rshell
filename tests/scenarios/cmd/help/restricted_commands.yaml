@@ -6,7 +6,7 @@ input:
     help
 expect:
   stdout: |+
-    rshell dev — 2 of 28 builtins enabled
+    rshell — 2 of 28 builtins enabled
 
     echo  write arguments to stdout
     help  display help for commands
