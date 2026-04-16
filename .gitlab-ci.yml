@@ -18,7 +18,8 @@ bump_datadog_agent:
   resource_group: rshell-bump
   rules:
     - if: $CI_COMMIT_TAG =~ /^v[0-9]+\.[0-9]+\.[0-9]+$/
+    - if: $CI_PIPELINE_SOURCE == "web" && $BUMP_VERSION =~ /^v[0-9]+\.[0-9]+\.[0-9]+$/
   before_script:
     - !reference [.setup_github_bump_token]
   script:
-    - python3 .gitlab/scripts/bump_datadog_agent.py "$CI_COMMIT_TAG"
+    - python3 .gitlab/scripts/bump_datadog_agent.py "${CI_COMMIT_TAG:-$BUMP_VERSION}"
