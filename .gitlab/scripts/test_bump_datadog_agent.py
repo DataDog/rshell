@@ -1,9 +1,9 @@
 """Tests for bump_datadog_agent.py.
 
-Runs with stdlib only — the script and its tests have no third-party
-dependencies:
+Runs with stdlib only; PyGithub is stubbed before the script is imported, so
+the suite executes anywhere Python 3.10+ is installed:
 
-    cd .gitlab/scripts && python3 -m unittest test_bump_datadog_agent -v
+    python3 -m unittest .gitlab/scripts/test_bump_datadog_agent.py
 """
 
 from __future__ import annotations
@@ -14,7 +14,11 @@ import tempfile
 import textwrap
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
+
+_github_stub = MagicMock()
+_github_stub.GithubException = type("GithubException", (Exception,), {})
+sys.modules["github"] = _github_stub
 
 sys.path.insert(0, str(Path(__file__).parent))
 import bump_datadog_agent as bump  # noqa: E402
@@ -187,57 +191,25 @@ class TestMainInputValidation(unittest.TestCase):
 
 class TestMainIdempotency(unittest.TestCase):
     def test_exits_zero_when_pr_already_exists(self):
-        existing_pr = {"html_url": "https://github.com/DataDog/datadog-agent/pull/999"}
+        existing_pr = MagicMock()
+        existing_pr.html_url = "https://github.com/DataDog/datadog-agent/pull/999"
+        mock_repo = MagicMock()
+        mock_repo.get_pulls.return_value = [existing_pr]
+        _github_stub.Github.reset_mock()
+        _github_stub.Github.return_value.get_repo.return_value = mock_repo
 
         with patch.dict(os.environ, {"GITHUB_TOKEN": "fake-token"}):
             with patch.object(sys, "argv", ["bump_datadog_agent.py", "v0.0.99"]):
-                with patch.object(bump.GitHub, "list_open_prs", return_value=[existing_pr]) as mock_list:
-                    # subprocess.run should never be reached on the early-exit path
-                    with patch("bump_datadog_agent.subprocess.run") as mock_run:
-                        result = bump.main()
-                        mock_run.assert_not_called()
+                # subprocess.run should never be reached on the early-exit path
+                with patch("bump_datadog_agent.subprocess.run") as mock_run:
+                    result = bump.main()
+                    mock_run.assert_not_called()
 
         self.assertEqual(result, 0)
-        mock_list.assert_called_once_with(head="DataDog:bump-rshell-v0.0.99")
-
-
-class TestGitHubClient(unittest.TestCase):
-    def test_list_open_prs_builds_correct_url(self):
-        with patch.object(bump.GitHub, "_request", return_value=[]) as mock_req:
-            bump.GitHub("tok", "DataDog/datadog-agent").list_open_prs(head="DataDog:my-branch")
-        mock_req.assert_called_once()
-        method, path = mock_req.call_args.args[:2]
-        self.assertEqual(method, "GET")
-        self.assertIn("state=open", path)
-        self.assertIn("head=DataDog%3Amy-branch", path)
-
-    def test_create_pull_sends_draft_true_and_body(self):
-        with patch.object(bump.GitHub, "_request", return_value={"number": 1, "html_url": "x"}) as mock_req:
-            bump.GitHub("tok", "DataDog/datadog-agent").create_pull(
-                title="t", body="b", base="main", head="bump-rshell-v0.0.11", draft=True
-            )
-        method, path, body = mock_req.call_args.args
-        self.assertEqual(method, "POST")
-        self.assertEqual(path, "/pulls")
-        self.assertEqual(body["draft"], True)
-        self.assertEqual(body["title"], "t")
-        self.assertEqual(body["head"], "bump-rshell-v0.0.11")
-
-    def test_add_labels_hits_issues_endpoint(self):
-        with patch.object(bump.GitHub, "_request", return_value=None) as mock_req:
-            bump.GitHub("tok", "DataDog/datadog-agent").add_labels(42, ["foo", "bar"])
-        method, path, body = mock_req.call_args.args
-        self.assertEqual(method, "POST")
-        self.assertEqual(path, "/issues/42/labels")
-        self.assertEqual(body, {"labels": ["foo", "bar"]})
-
-    def test_request_team_review_hits_pulls_endpoint(self):
-        with patch.object(bump.GitHub, "_request", return_value=None) as mock_req:
-            bump.GitHub("tok", "DataDog/datadog-agent").request_team_review(42, "action-platform")
-        method, path, body = mock_req.call_args.args
-        self.assertEqual(method, "POST")
-        self.assertEqual(path, "/pulls/42/requested_reviewers")
-        self.assertEqual(body, {"team_reviewers": ["action-platform"]})
+        mock_repo.get_pulls.assert_called_once()
+        call_kwargs = mock_repo.get_pulls.call_args.kwargs
+        self.assertEqual(call_kwargs["state"], "open")
+        self.assertEqual(call_kwargs["head"], "DataDog:bump-rshell-v0.0.99")
 
 
 if __name__ == "__main__":
