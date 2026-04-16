@@ -1,0 +1,43 @@
+description: Help --all with no restrictions shows all builtins and a confirmation message.
+skip_assert_against_bash: true
+input:
+  script: |+
+    help --all
+expect:
+  stdout: |+
+    rshell — All 28 builtins available
+
+    [         evaluate conditional expression
+    break     exit from a loop
+    cat       concatenate and print files
+    continue  continue a loop iteration
+    cut       remove sections from each line
+    echo      write arguments to stdout
+    exit      exit the shell
+    false     return unsuccessful exit status
+    find      search for files in a directory hierarchy
+    grep      print lines that match patterns
+    head      output the first part of files
+    help      display help for commands
+    ip        show network interface and routing information
+    ls        list directory contents
+    ping      send ICMP echo requests to a network host
+    printf    format and print data
+    ps        report process status
+    sed       stream editor for filtering and transforming text
+    sort      sort lines of text files
+    ss        display socket statistics
+    strings   print printable character sequences
+    tail      output the last part of files
+    test      evaluate conditional expression
+    tr        translate or delete characters
+    true      return successful exit status
+    uname     print system information
+    uniq      report or omit repeated lines
+    wc        print newline, word, and byte counts
+
+    All builtins are allowed in this session.
+
+    Run 'help <command>' for more information on a specific command.
+  stderr: ""
+  exit_code: 0
