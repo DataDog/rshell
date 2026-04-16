@@ -37,6 +37,19 @@ func isQuotedHdoc(rd *syntax.Redirect) bool {
 	return false
 }
 
+// hdocWordRawSize returns the total byte count of literal parts in a heredoc
+// word. This is used as a fast pre-check before expensive expansion — if the
+// raw literals alone exceed the size limit, the expanded output will too.
+func hdocWordRawSize(w *syntax.Word) int {
+	var n int
+	for _, part := range w.Parts {
+		if lit, ok := part.(*syntax.Lit); ok {
+			n += len(lit.Value)
+		}
+	}
+	return n
+}
+
 // hdocLiteral reconstructs the literal (unexpanded) text of a heredoc body.
 // This is used for quoted delimiters where no expansion should occur.
 func hdocLiteral(word *syntax.Word) string {
@@ -86,6 +99,15 @@ func (r *Runner) hdocReader(ctx context.Context, rd *syntax.Redirect) (*os.File,
 		return r.document(w)
 	}
 	if rd.Op != syntax.DashHdoc {
+		// Fast pre-check: if the raw literal content already exceeds the
+		// limit, reject before the expensive expansion pass. This avoids
+		// timeouts on very large heredocs (e.g. under the race detector).
+		if hdocWordRawSize(rd.Hdoc) > MaxHeredocBytes {
+			pr.Close()
+			pw.Close()
+			r.errf("heredoc: content exceeds maximum size (%d bytes)\n", MaxHeredocBytes)
+			return nil, fmt.Errorf("heredoc: content exceeds maximum size (%d bytes)", MaxHeredocBytes)
+		}
 		hdoc := expandWord(rd.Hdoc)
 		if len(hdoc) > MaxHeredocBytes {
 			pr.Close()
