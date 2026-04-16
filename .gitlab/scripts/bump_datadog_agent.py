@@ -49,14 +49,28 @@ def configure_credentials(workdir: Path, token: str) -> Path:
     return creds_path
 
 
+_RSHELL_REPLACE_RE = re.compile(
+    rf"^[ \t]*(?:replace\s+)?{re.escape(RSHELL_MODULE)}(?:\s+v\S+)?\s+=>\s+[^\n]*$\n?",
+    re.MULTILINE,
+)
+
+
 def strip_rshell_replace(go_mod: Path) -> None:
-    """Drop any `replace github.com/DataDog/rshell => ...` line (one-time v0.0.11 transition)."""
+    """Remove rshell replace directives from go.mod in every valid Go form.
+
+    Handles:
+      - single-line unversioned:  replace github.com/DataDog/rshell => /path
+      - single-line versioned:    replace github.com/DataDog/rshell v0.0.10 => /path
+      - block-form entries (no leading `replace` keyword on the line itself)
+
+    Any leftover empty `replace ( )` block is normalized away by `dda inv tidy`
+    downstream.
+    """
     original = go_mod.read_text()
-    pattern = re.compile(rf"^\s*replace\s+{re.escape(RSHELL_MODULE)}\s+=>.*$\n?", re.MULTILINE)
-    updated = pattern.sub("", original)
+    updated = _RSHELL_REPLACE_RE.sub("", original)
     if updated != original:
         go_mod.write_text(updated)
-        log(f"stripped `replace {RSHELL_MODULE} =>` directive from go.mod")
+        log(f"stripped replace directive(s) for {RSHELL_MODULE} from go.mod")
 
 
 def current_rshell_version(go_mod: Path) -> str | None:

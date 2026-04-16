@@ -99,6 +99,97 @@ class TestStripRshellReplace(unittest.TestCase):
         self.assertIn("github.com/other/mod", updated)
         self.assertIn("github.com/yet/another", updated)
 
+    def test_removes_single_line_versioned_replace(self):
+        original = textwrap.dedent(
+            """\
+            module m
+            go 1.25
+
+            replace github.com/DataDog/rshell v0.0.10 => /local/path
+
+            require github.com/DataDog/rshell v0.0.10
+            """
+        )
+        with tempfile.TemporaryDirectory() as td:
+            go_mod = Path(td) / "go.mod"
+            go_mod.write_text(original)
+            bump.strip_rshell_replace(go_mod)
+            updated = go_mod.read_text()
+        self.assertNotIn("replace github.com/DataDog/rshell", updated)
+        self.assertIn("require github.com/DataDog/rshell v0.0.10", updated)
+
+    def test_removes_block_form_unversioned_entry(self):
+        original = textwrap.dedent(
+            """\
+            module m
+            go 1.25
+
+            replace (
+                github.com/DataDog/rshell => /local/path
+            )
+            """
+        )
+        with tempfile.TemporaryDirectory() as td:
+            go_mod = Path(td) / "go.mod"
+            go_mod.write_text(original)
+            bump.strip_rshell_replace(go_mod)
+            updated = go_mod.read_text()
+        self.assertNotIn("DataDog/rshell", updated)
+
+    def test_removes_block_form_versioned_entry(self):
+        original = textwrap.dedent(
+            """\
+            module m
+            go 1.25
+
+            replace (
+                github.com/DataDog/rshell v0.0.10 => /local/path
+            )
+            """
+        )
+        with tempfile.TemporaryDirectory() as td:
+            go_mod = Path(td) / "go.mod"
+            go_mod.write_text(original)
+            bump.strip_rshell_replace(go_mod)
+            updated = go_mod.read_text()
+        self.assertNotIn("DataDog/rshell", updated)
+
+    def test_strips_only_rshell_entries_from_mixed_block(self):
+        original = textwrap.dedent(
+            """\
+            replace (
+                github.com/other => /a
+                github.com/DataDog/rshell => /rshell-local
+                github.com/DataDog/rshell v0.0.10 => /rshell-pinned
+                github.com/another => /b
+            )
+            """
+        )
+        with tempfile.TemporaryDirectory() as td:
+            go_mod = Path(td) / "go.mod"
+            go_mod.write_text(original)
+            bump.strip_rshell_replace(go_mod)
+            updated = go_mod.read_text()
+        self.assertNotIn("DataDog/rshell", updated)
+        self.assertIn("github.com/other => /a", updated)
+        self.assertIn("github.com/another => /b", updated)
+
+    def test_does_not_touch_require_lines(self):
+        # Lines in a require block look similar but have no `=>`; must not be
+        # stripped.
+        original = textwrap.dedent(
+            """\
+            require (
+                github.com/DataDog/rshell v0.0.10
+            )
+            """
+        )
+        with tempfile.TemporaryDirectory() as td:
+            go_mod = Path(td) / "go.mod"
+            go_mod.write_text(original)
+            bump.strip_rshell_replace(go_mod)
+            self.assertEqual(go_mod.read_text(), original)
+
 
 class TestCurrentRshellVersion(unittest.TestCase):
     def _write(self, content: str) -> Path:
