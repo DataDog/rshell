@@ -122,19 +122,26 @@ def main() -> int:
     go_mod = workdir / "go.mod"
     previous_version = current_rshell_version(go_mod)
     log(f"current pinned version in go.mod: {previous_version or '<none>'}")
+
+    if previous_version == version:
+        log(f"datadog-agent already pins rshell at {version}; nothing to do")
+        return 0
+
     strip_rshell_replace(go_mod)
     log(f"running: go get {RSHELL_MODULE}@{version}")
     run(["go", "get", f"{RSHELL_MODULE}@{version}"], cwd=workdir)
     log("running: dda inv tidy")
     run(["dda", "inv", "tidy"], cwd=workdir)
-    note = write_release_note(workdir, version)
-    log(f"wrote release note: {note.relative_to(workdir)}")
 
     run(["git", "add", "-A"], cwd=workdir)
     diff = subprocess.run(["git", "diff", "--cached", "--quiet"], cwd=workdir)
     if diff.returncode == 0:
-        log(f"no staged changes; datadog-agent already at rshell {version}")
+        log(f"no changes to go.mod/go.sum; datadog-agent already at rshell {version}")
         return 0
+
+    note = write_release_note(workdir, version)
+    log(f"wrote release note: {note.relative_to(workdir)}")
+    run(["git", "add", str(note)], cwd=workdir)
 
     commit_msg = (
         f"Bump rshell dependency from {previous_version} to {version}"
