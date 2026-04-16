@@ -24,6 +24,37 @@ sys.path.insert(0, str(Path(__file__).parent))
 import bump_datadog_agent as bump  # noqa: E402
 
 
+class TestRedact(unittest.TestCase):
+    def test_redacts_token_in_push_url(self):
+        cmd = ["git", "push", "https://x-access-token:ghs_SECRET123@github.com/DataDog/datadog-agent.git", "main"]
+        redacted = bump._redact(cmd)
+        self.assertNotIn("ghs_SECRET123", " ".join(redacted))
+        self.assertIn("<redacted>", redacted[2])
+        self.assertIn("x-access-token", redacted[2])
+        self.assertIn("github.com/DataDog/datadog-agent.git", redacted[2])
+
+    def test_leaves_clean_urls_alone(self):
+        cmd = ["git", "clone", "https://github.com/DataDog/datadog-agent.git", "/tmp/x"]
+        self.assertEqual(bump._redact(cmd), cmd)
+
+    def test_leaves_non_url_args_alone(self):
+        cmd = ["git", "config", "user.email", "bot@users.noreply.github.com"]
+        self.assertEqual(bump._redact(cmd), cmd)
+
+    def test_handles_multiple_tokened_args(self):
+        cmd = [
+            "echo",
+            "https://user1:tok1@host.a/repo",
+            "plain-arg",
+            "https://user2:tok2@host.b/repo",
+        ]
+        redacted = bump._redact(cmd)
+        joined = " ".join(redacted)
+        self.assertNotIn("tok1", joined)
+        self.assertNotIn("tok2", joined)
+        self.assertEqual(redacted.count("plain-arg"), 1)
+
+
 class TestStripRshellReplace(unittest.TestCase):
     def test_removes_replace_directive(self):
         original = textwrap.dedent(

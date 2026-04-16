@@ -26,8 +26,16 @@ GIT_USER_NAME = "github-actions[bot]"
 GIT_USER_EMAIL = "github-actions[bot]@users.noreply.github.com"
 
 
+_CREDS_IN_URL = re.compile(r"(https?://[^/@:\s]+):[^@/\s]+@")
+
+
+def _redact(cmd: list[str]) -> list[str]:
+    """Redact credentials embedded in URL-shaped arguments for safe logging."""
+    return [_CREDS_IN_URL.sub(r"\1:<redacted>@", arg) for arg in cmd]
+
+
 def run(cmd: list[str], cwd: Path | None = None, check: bool = True) -> subprocess.CompletedProcess[str]:
-    print(f"+ {' '.join(cmd)}", flush=True)
+    print(f"+ {' '.join(_redact(cmd))}", flush=True)
     return subprocess.run(cmd, cwd=cwd, check=check, text=True, capture_output=True)
 
 
