@@ -132,6 +132,8 @@ var builtinPerCommandSymbols = map[string][]string{
 	"help": {
 		"bytes.Buffer",    // 🟢 in-memory buffer to capture --help output from commands; no I/O side effects.
 		"context.Context", // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
+		"github.com/DataDog/rshell/internal/version.Version", // 🟢 build version string; read-only package-level variable, no I/O.
+		"strings.Builder", // 🟢 efficient string concatenation; pure in-memory buffer, no I/O.
 	},
 	"head": {
 		"bufio.NewScanner", // 🟢 line-by-line input reading (e.g. head, cat); no write or exec capability.
@@ -413,6 +415,7 @@ var builtinAllowedSymbols = []string{
 	"errors.New",          // 🟢 creates a simple error value; pure function, no I/O.
 	"fmt.Errorf",          // 🟢 error formatting; pure function, no I/O.
 	"fmt.Sprintf",         // 🟢 string formatting; pure function, no I/O.
+	"github.com/DataDog/rshell/internal/version.Version",  // 🟢 build version string; read-only package-level variable, no I/O.
 	"github.com/prometheus-community/pro-bing.NewPinger",  // 🔴 creates an ICMP pinger by resolving host; network I/O is the explicit purpose of the ping builtin.
 	"github.com/prometheus-community/pro-bing.NoopLogger", // 🟢 no-op logger that discards pro-bing internal messages; no side effects.
 	"github.com/prometheus-community/pro-bing.Packet",     // 🟢 ICMP packet descriptor struct (received packet data); pure data type, no I/O.

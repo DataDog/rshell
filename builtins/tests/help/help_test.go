@@ -61,6 +61,23 @@ func TestHelpExitCode(t *testing.T) {
 	assert.NotEmpty(t, stdout)
 }
 
+// --- Header ---
+
+func TestHelpHeaderShowsRshell(t *testing.T) {
+	stdout, _, code := runScript(t, "help", "", interpoption.AllowAllCommands().(interp.RunnerOption))
+	assert.Equal(t, 0, code)
+	assert.Contains(t, stdout, "rshell")
+	assert.Contains(t, stdout, "All ")
+}
+
+func TestHelpHeaderRestrictedShowsCount(t *testing.T) {
+	stdout, _, code := runScript(t, "help", "",
+		interp.AllowedCommands([]string{"rshell:echo", "rshell:help"}))
+	assert.Equal(t, 0, code)
+	assert.Contains(t, stdout, "2 of")
+	assert.Contains(t, stdout, "builtins enabled")
+}
+
 // --- Output content ---
 
 func TestHelpListsAllBuiltins(t *testing.T) {
@@ -84,10 +101,10 @@ func TestHelpListsSorted(t *testing.T) {
 	assert.Equal(t, 0, code)
 
 	lines := strings.Split(strings.TrimSpace(stdout), "\n")
-	// Last line is the footer hint — exclude it and the blank line before it.
+	// Skip the header (first two lines: header + blank) and footer.
 	var cmdLines []string
 	for _, line := range lines {
-		if line == "" || strings.HasPrefix(line, "Run '") {
+		if line == "" || strings.HasPrefix(line, "Run '") || strings.HasPrefix(line, "rshell") {
 			continue
 		}
 		cmdLines = append(cmdLines, line)
@@ -138,7 +155,7 @@ func TestHelpColumnsAligned(t *testing.T) {
 	// followed by a non-space character.
 	descCol := -1
 	for _, line := range lines {
-		if line == "" || strings.HasPrefix(line, "Run '") {
+		if line == "" || strings.HasPrefix(line, "Run '") || strings.HasPrefix(line, "rshell") {
 			continue
 		}
 		// Walk backwards from the end to find where the description text starts.
@@ -166,16 +183,39 @@ func TestHelpColumnsAligned(t *testing.T) {
 
 // --- Restricted commands ---
 
-func TestHelpRestrictedShowsOnlyAllowed(t *testing.T) {
+func TestHelpRestrictedShowsOnlyAllowedInTable(t *testing.T) {
 	stdout, stderr, code := runScript(t, "help", "",
 		interp.AllowedCommands([]string{"rshell:echo", "rshell:help"}))
 	assert.Equal(t, 0, code)
 	assert.Empty(t, stderr)
 	assert.Contains(t, stdout, "echo")
 	assert.Contains(t, stdout, "help")
-	assert.NotContains(t, stdout, "cat")
-	assert.NotContains(t, stdout, "grep")
-	assert.NotContains(t, stdout, "ls")
+	// The allowed-commands table (lines before "Disabled builtin") should only
+	// contain allowed commands. The "Disabled builtin" line lists the rest.
+	inAllowedSection := true
+	for _, line := range strings.Split(stdout, "\n") {
+		if strings.HasPrefix(line, "Disabled builtin") {
+			inAllowedSection = false
+		}
+		if !inAllowedSection || strings.HasPrefix(line, "rshell") || line == "" || strings.HasPrefix(line, "Run '") {
+			continue
+		}
+		fields := strings.Fields(line)
+		if len(fields) > 0 {
+			assert.True(t, fields[0] == "echo" || fields[0] == "help",
+				"unexpected command in allowed table: %q", fields[0])
+		}
+	}
+}
+
+func TestHelpRestrictedShowsNotAllowedList(t *testing.T) {
+	stdout, _, code := runScript(t, "help", "",
+		interp.AllowedCommands([]string{"rshell:echo", "rshell:help"}))
+	assert.Equal(t, 0, code)
+	assert.Contains(t, stdout, "Disabled builtin")
+	assert.Contains(t, stdout, "cat")
+	assert.Contains(t, stdout, "grep")
+	assert.Contains(t, stdout, "ls")
 }
 
 func TestHelpRestrictedSingleCommand(t *testing.T) {
@@ -184,7 +224,6 @@ func TestHelpRestrictedSingleCommand(t *testing.T) {
 	assert.Equal(t, 0, code)
 	assert.Contains(t, stdout, "help")
 	assert.Contains(t, stdout, "ls")
-	assert.NotContains(t, stdout, "echo")
 }
 
 func TestHelpRestrictedAlignmentAdjusts(t *testing.T) {
@@ -196,7 +235,7 @@ func TestHelpRestrictedAlignmentAdjusts(t *testing.T) {
 
 	lines := strings.Split(strings.TrimSpace(stdout), "\n")
 	for _, line := range lines {
-		if line == "" || strings.HasPrefix(line, "Run '") {
+		if line == "" || strings.HasPrefix(line, "Run '") || strings.HasPrefix(line, "rshell") {
 			continue
 		}
 		// "strings" is the longest name (7 chars), so the description should
@@ -224,6 +263,36 @@ func TestHelpAlwaysAvailableNoCommands(t *testing.T) {
 		interp.AllowedCommands([]string{}))
 	assert.Equal(t, 127, code)
 	assert.Contains(t, stderr, "command not allowed")
+}
+
+// --- --all flag ---
+
+func TestHelpAllFlagShowsNotAllowedWithDescriptions(t *testing.T) {
+	stdout, _, code := runScript(t, "help --all", "",
+		interp.AllowedCommands([]string{"rshell:echo", "rshell:help"}))
+	assert.Equal(t, 0, code)
+	assert.Contains(t, stdout, "Disabled builtin")
+	// --all shows full description table for not-allowed commands.
+	assert.Contains(t, stdout, "concatenate and print files")     // cat description
+	assert.Contains(t, stdout, "print lines that match patterns") // grep description
+}
+
+func TestHelpAllFlagNoRestrictions(t *testing.T) {
+	// When all commands are allowed, --all should not show "Disabled builtin"
+	// but should confirm that all builtins are allowed.
+	stdout, _, code := runScript(t, "help --all", "", interpoption.AllowAllCommands().(interp.RunnerOption))
+	assert.Equal(t, 0, code)
+	assert.NotContains(t, stdout, "Disabled builtin")
+	assert.Contains(t, stdout, "All builtins are allowed in this session.")
+}
+
+func TestHelpAllFlagStillShowsAllowed(t *testing.T) {
+	stdout, _, code := runScript(t, "help --all", "",
+		interp.AllowedCommands([]string{"rshell:echo", "rshell:help"}))
+	assert.Equal(t, 0, code)
+	// Allowed commands should still appear with descriptions.
+	assert.Contains(t, stdout, "write arguments to stdout")
+	assert.Contains(t, stdout, "display help for commands")
 }
 
 // --- Error handling ---
