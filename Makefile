@@ -1,12 +1,7 @@
 .PHONY: build fmt test test_all test_against_bash compliance
 
-VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo unknown)
-COMMIT  ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
-LDFLAGS  = -X github.com/DataDog/rshell/internal/version.Version=$(VERSION) \
-           -X github.com/DataDog/rshell/internal/version.Commit=$(COMMIT)
-
 build:
-	go build -ldflags "$(LDFLAGS)" -o rshell ./cmd/rshell
+	go build -o rshell ./cmd/rshell
 
 fmt:
 	go fmt ./...
