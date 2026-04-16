@@ -5,7 +5,7 @@ input:
     help --all
 expect:
   stdout: |+
-    rshell dev — All 28 builtins available
+    rshell (dev) — All 28 builtins available
 
     [         evaluate conditional expression
     break     exit from a loop

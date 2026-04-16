@@ -141,8 +141,9 @@ func printHeader(callCtx *builtins.CallContext, allowed, total int) {
 	var header strings.Builder
 	header.WriteString("rshell")
 	if version.Version != "" {
-		header.WriteByte(' ')
+		header.WriteString(" (")
 		header.WriteString(version.Version)
+		header.WriteByte(')')
 	}
 	header.WriteString(" — ")
 	if allowed < total {
