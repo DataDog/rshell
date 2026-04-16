@@ -85,7 +85,7 @@ def main() -> int:
         return 0
 
     workdir = Path("/tmp/datadog-agent")
-    clone_url = f"https://x-access-token:{token}@github.com/{TARGET_REPO}.git"
+    clone_url = f"https://github.com/{TARGET_REPO}.git"
     run(["git", "clone", "--depth=1", "--branch", TARGET_BASE, clone_url, str(workdir)])
     run(["git", "config", "user.name", GIT_USER_NAME], cwd=workdir)
     run(["git", "config", "user.email", GIT_USER_EMAIL], cwd=workdir)
@@ -110,7 +110,8 @@ def main() -> int:
         else f"Bump rshell dependency to {version}"
     )
     run(["git", "commit", "-m", commit_msg], cwd=workdir)
-    run(["git", "push", "origin", branch], cwd=workdir)
+    push_url = f"https://x-access-token:{token}@github.com/{TARGET_REPO}.git"
+    run(["git", "push", push_url, branch], cwd=workdir)
 
     pr = repo.create_pull(
         title=f"[automated] Bump rshell to {version}",
