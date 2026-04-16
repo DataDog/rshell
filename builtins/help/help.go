@@ -16,7 +16,7 @@
 //
 // Flags:
 //
-//	--all   show not-allowed builtins with descriptions (instead of a compact list)
+//	--all   show all builtins (including not allowed) with descriptions
 //
 // Exit codes:
 //
@@ -47,7 +47,7 @@ func printUsage(callCtx *builtins.CallContext) {
 
 func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 	helpFlag := fs.Bool("help", false, "print usage and exit")
-	allFlag := fs.Bool("all", false, "show not-allowed builtins with descriptions")
+	allFlag := fs.Bool("all", false, "show all builtins (including not allowed) with descriptions")
 
 	return func(ctx context.Context, callCtx *builtins.CallContext, args []string) builtins.Result {
 		if *helpFlag {

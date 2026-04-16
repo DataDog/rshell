@@ -5,6 +5,15 @@ input:
   script: |+
     help
 expect:
-  stdout_contains: ["2 of", "builtins enabled", "echo", "help", "Disabled builtin", "cat", "Run 'help <command>'"]
+  stdout: |+
+    rshell 0.0.10 — 2 of 28 builtins enabled
+
+    echo  write arguments to stdout
+    help  display help for commands
+
+    Disabled builtins: [, break, cat, continue, cut, exit, false, find, grep, head, ip, ls, ping,
+      printf, ps, sed, sort, ss, strings, tail, test, tr, true, uname, uniq, wc
+
+    Run 'help <command>' for more information on a specific command.
   stderr: ""
   exit_code: 0
