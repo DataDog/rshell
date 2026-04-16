@@ -21,5 +21,6 @@ bump_datadog_agent:
     - if: $CI_PIPELINE_SOURCE == "web" && $BUMP_VERSION =~ /^v[0-9]+\.[0-9]+\.[0-9]+$/
   before_script:
     - !reference [.setup_github_bump_token]
+    - pip install PyGithub
   script:
     - python3 .gitlab/scripts/bump_datadog_agent.py "${CI_COMMIT_TAG:-$BUMP_VERSION}"
