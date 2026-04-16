@@ -17,8 +17,6 @@ import subprocess
 import sys
 from pathlib import Path
 
-from github import Auth, Github, GithubException
-
 TARGET_REPO = "DataDog/datadog-agent"
 TARGET_BASE = "main"
 RSHELL_MODULE = "github.com/DataDog/rshell"
@@ -44,7 +42,11 @@ def strip_rshell_replace(go_mod: Path) -> None:
 
 
 def current_rshell_version(go_mod: Path) -> str | None:
-    pattern = re.compile(rf"^\s*{re.escape(RSHELL_MODULE)}\s+(v\S+)", re.MULTILINE)
+    """Return the rshell version pinned in a `require` declaration, ignoring `replace` lines."""
+    pattern = re.compile(
+        rf"^\s*(?:require\s+)?{re.escape(RSHELL_MODULE)}\s+(v\S+)(?!\s*=>)",
+        re.MULTILINE,
+    )
     m = pattern.search(go_mod.read_text())
     return m.group(1) if m else None
 
@@ -74,6 +76,8 @@ def main() -> int:
     if not token:
         print("GITHUB_TOKEN is not set; dd-octo-sts exchange failed upstream", file=sys.stderr)
         return 1
+
+    from github import Auth, Github, GithubException
 
     gh = Github(auth=Auth.Token(token), per_page=100)
     repo = gh.get_repo(TARGET_REPO)
