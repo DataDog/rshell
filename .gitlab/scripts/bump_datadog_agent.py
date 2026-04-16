@@ -26,17 +26,22 @@ GIT_USER_NAME = "github-actions[bot]"
 GIT_USER_EMAIL = "github-actions[bot]@users.noreply.github.com"
 
 
-_CREDS_IN_URL = re.compile(r"(https?://[^/@:\s]+):[^@/\s]+@")
-
-
-def _redact(cmd: list[str]) -> list[str]:
-    """Redact credentials embedded in URL-shaped arguments for safe logging."""
-    return [_CREDS_IN_URL.sub(r"\1:<redacted>@", arg) for arg in cmd]
-
-
 def run(cmd: list[str], cwd: Path | None = None, check: bool = True) -> subprocess.CompletedProcess[str]:
-    print(f"+ {' '.join(_redact(cmd))}", flush=True)
     return subprocess.run(cmd, cwd=cwd, check=check, text=True, capture_output=True)
+
+
+def configure_credentials(workdir: Path, token: str) -> Path:
+    """Store the GitHub token in a local git credentials file under .git/.
+
+    Keeps the token out of process argv (visible to `ps`), command-line logs,
+    and subprocess exception tracebacks. The file is mode 0600 and lives inside
+    the ephemeral clone directory, which is discarded when the runner exits.
+    """
+    creds_path = workdir / ".git" / "ci-credentials"
+    creds_path.write_text(f"https://x-access-token:{token}@github.com\n")
+    creds_path.chmod(0o600)
+    run(["git", "config", "credential.helper", f"store --file={creds_path}"], cwd=workdir)
+    return creds_path
 
 
 def strip_rshell_replace(go_mod: Path) -> None:
@@ -46,7 +51,6 @@ def strip_rshell_replace(go_mod: Path) -> None:
     updated = pattern.sub("", original)
     if updated != original:
         go_mod.write_text(updated)
-        print(f"stripped replace directive for {RSHELL_MODULE}", flush=True)
 
 
 def current_rshell_version(go_mod: Path) -> str | None:
@@ -93,12 +97,12 @@ def main() -> int:
 
     existing = list(repo.get_pulls(state="open", head=f"{TARGET_REPO.split('/')[0]}:{branch}"))
     if existing:
-        print(f"PR already exists for {branch}: {existing[0].html_url}; nothing to do", flush=True)
         return 0
 
     workdir = Path("/tmp/datadog-agent")
     clone_url = f"https://github.com/{TARGET_REPO}.git"
     run(["git", "clone", "--depth=1", "--branch", TARGET_BASE, clone_url, str(workdir)])
+    configure_credentials(workdir, token)
     run(["git", "config", "user.name", GIT_USER_NAME], cwd=workdir)
     run(["git", "config", "user.email", GIT_USER_EMAIL], cwd=workdir)
     run(["git", "checkout", "-b", branch], cwd=workdir)
@@ -113,7 +117,6 @@ def main() -> int:
     run(["git", "add", "-A"], cwd=workdir)
     diff = subprocess.run(["git", "diff", "--cached", "--quiet"], cwd=workdir)
     if diff.returncode == 0:
-        print(f"no changes to commit; datadog-agent already at rshell {version}", flush=True)
         return 0
 
     commit_msg = (
@@ -122,8 +125,7 @@ def main() -> int:
         else f"Bump rshell dependency to {version}"
     )
     run(["git", "commit", "-m", commit_msg], cwd=workdir)
-    push_url = f"https://x-access-token:{token}@github.com/{TARGET_REPO}.git"
-    run(["git", "push", push_url, branch], cwd=workdir)
+    run(["git", "push", "origin", branch], cwd=workdir)
 
     pr = repo.create_pull(
         title=f"[automated] Bump rshell to {version}",
@@ -135,17 +137,16 @@ def main() -> int:
         head=branch,
         draft=True,
     )
-    print(f"opened draft PR: {pr.html_url}", flush=True)
 
     try:
         pr.add_to_labels(*PR_LABELS)
-    except GithubException as e:
-        print(f"warning: failed to add labels {PR_LABELS}: {e}", flush=True)
+    except GithubException:
+        pass
 
     try:
         pr.create_review_request(team_reviewers=[REVIEW_TEAM])
-    except GithubException as e:
-        print(f"warning: failed to request review from @DataDog/{REVIEW_TEAM}: {e}", flush=True)
+    except GithubException:
+        pass
 
     return 0
 

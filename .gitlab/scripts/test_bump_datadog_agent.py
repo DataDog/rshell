@@ -24,35 +24,28 @@ sys.path.insert(0, str(Path(__file__).parent))
 import bump_datadog_agent as bump  # noqa: E402
 
 
-class TestRedact(unittest.TestCase):
-    def test_redacts_token_in_push_url(self):
-        cmd = ["git", "push", "https://x-access-token:ghs_SECRET123@github.com/DataDog/datadog-agent.git", "main"]
-        redacted = bump._redact(cmd)
-        self.assertNotIn("ghs_SECRET123", " ".join(redacted))
-        self.assertIn("<redacted>", redacted[2])
-        self.assertIn("x-access-token", redacted[2])
-        self.assertIn("github.com/DataDog/datadog-agent.git", redacted[2])
+class TestConfigureCredentials(unittest.TestCase):
+    def test_writes_credentials_file_and_invokes_git_config(self):
+        with tempfile.TemporaryDirectory() as td:
+            workdir = Path(td)
+            (workdir / ".git").mkdir()
+            with patch("bump_datadog_agent.subprocess.run") as mock_run:
+                mock_run.return_value.returncode = 0
+                path = bump.configure_credentials(workdir, "ghs_SECRET123")
 
-    def test_leaves_clean_urls_alone(self):
-        cmd = ["git", "clone", "https://github.com/DataDog/datadog-agent.git", "/tmp/x"]
-        self.assertEqual(bump._redact(cmd), cmd)
+            self.assertEqual(path, workdir / ".git" / "ci-credentials")
+            self.assertTrue(path.exists())
+            self.assertIn("ghs_SECRET123", path.read_text())
+            self.assertIn("x-access-token", path.read_text())
+            # file permissions are 0o600
+            self.assertEqual(path.stat().st_mode & 0o777, 0o600)
 
-    def test_leaves_non_url_args_alone(self):
-        cmd = ["git", "config", "user.email", "bot@users.noreply.github.com"]
-        self.assertEqual(bump._redact(cmd), cmd)
-
-    def test_handles_multiple_tokened_args(self):
-        cmd = [
-            "echo",
-            "https://user1:tok1@host.a/repo",
-            "plain-arg",
-            "https://user2:tok2@host.b/repo",
-        ]
-        redacted = bump._redact(cmd)
-        joined = " ".join(redacted)
-        self.assertNotIn("tok1", joined)
-        self.assertNotIn("tok2", joined)
-        self.assertEqual(redacted.count("plain-arg"), 1)
+            # git config was invoked with the path, not the token
+            self.assertEqual(mock_run.call_count, 1)
+            called_cmd = mock_run.call_args.args[0]
+            self.assertEqual(called_cmd[:3], ["git", "config", "credential.helper"])
+            self.assertNotIn("ghs_SECRET123", " ".join(called_cmd))
+            self.assertIn(str(path), called_cmd[3])
 
 
 class TestStripRshellReplace(unittest.TestCase):
