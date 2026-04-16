@@ -15,6 +15,7 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 TARGET_REPO = "DataDog/datadog-agent"
@@ -123,53 +124,57 @@ def main() -> int:
         log(f"PR already exists: {existing[0].html_url}; nothing to do")
         return 0
 
-    workdir = Path("/tmp/datadog-agent")
-    clone_url = f"https://github.com/{TARGET_REPO}.git"
-    log(f"cloning {TARGET_REPO}@{TARGET_BASE} into {workdir}")
-    run(["git", "clone", "--depth=1", "--branch", TARGET_BASE, clone_url, str(workdir)])
-    log("configuring git credentials (token stored in .git/ci-credentials, not argv)")
-    configure_credentials(workdir, token)
-    run(["git", "config", "user.name", GIT_USER_NAME], cwd=workdir)
-    run(["git", "config", "user.email", GIT_USER_EMAIL], cwd=workdir)
-    log(f"creating branch {branch}")
-    run(["git", "checkout", "-b", branch], cwd=workdir)
+    # Use a fresh, unique tempdir each run. Auto-cleanup on exit means no stale
+    # state leaks between runs; starting empty means `git clone` never fails
+    # with exit 128 because a prior directory already existed.
+    with tempfile.TemporaryDirectory(prefix="bump-datadog-agent-") as td:
+        workdir = Path(td) / "datadog-agent"
+        clone_url = f"https://github.com/{TARGET_REPO}.git"
+        log(f"cloning {TARGET_REPO}@{TARGET_BASE} into {workdir}")
+        run(["git", "clone", "--depth=1", "--branch", TARGET_BASE, clone_url, str(workdir)])
+        log("configuring git credentials (token stored in .git/ci-credentials, not argv)")
+        configure_credentials(workdir, token)
+        run(["git", "config", "user.name", GIT_USER_NAME], cwd=workdir)
+        run(["git", "config", "user.email", GIT_USER_EMAIL], cwd=workdir)
+        log(f"creating branch {branch}")
+        run(["git", "checkout", "-b", branch], cwd=workdir)
 
-    go_mod = workdir / "go.mod"
-    previous_version = current_rshell_version(go_mod)
-    log(f"current pinned version in go.mod: {previous_version or '<none>'}")
+        go_mod = workdir / "go.mod"
+        previous_version = current_rshell_version(go_mod)
+        log(f"current pinned version in go.mod: {previous_version or '<none>'}")
 
-    if previous_version == version:
-        log(f"datadog-agent already pins rshell at {version}; nothing to do")
-        return 0
+        if previous_version == version:
+            log(f"datadog-agent already pins rshell at {version}; nothing to do")
+            return 0
 
-    strip_rshell_replace(go_mod)
-    log(f"running: go get {RSHELL_MODULE}@{version}")
-    run(["go", "get", f"{RSHELL_MODULE}@{version}"], cwd=workdir)
-    log("running: dda inv tidy")
-    run(["dda", "inv", "tidy"], cwd=workdir)
+        strip_rshell_replace(go_mod)
+        log(f"running: go get {RSHELL_MODULE}@{version}")
+        run(["go", "get", f"{RSHELL_MODULE}@{version}"], cwd=workdir)
+        log("running: dda inv tidy")
+        run(["dda", "inv", "tidy"], cwd=workdir)
 
-    run(["git", "add", "-A"], cwd=workdir)
-    diff = subprocess.run(["git", "diff", "--cached", "--quiet"], cwd=workdir)
-    if diff.returncode == 0:
-        log(f"no changes to go.mod/go.sum; datadog-agent already at rshell {version}")
-        return 0
+        run(["git", "add", "-A"], cwd=workdir)
+        diff = subprocess.run(["git", "diff", "--cached", "--quiet"], cwd=workdir)
+        if diff.returncode == 0:
+            log(f"no changes to go.mod/go.sum; datadog-agent already at rshell {version}")
+            return 0
 
-    note = write_release_note(workdir, version)
-    log(f"wrote release note: {note.relative_to(workdir)}")
-    run(["git", "add", str(note)], cwd=workdir)
+        note = write_release_note(workdir, version)
+        log(f"wrote release note: {note.relative_to(workdir)}")
+        run(["git", "add", str(note)], cwd=workdir)
 
-    commit_msg = (
-        f"Bump rshell dependency from {previous_version} to {version}"
-        if previous_version
-        else f"Bump rshell dependency to {version}"
-    )
-    log(f"committing: {commit_msg}")
-    run(["git", "commit", "-m", commit_msg], cwd=workdir)
-    log(f"pushing branch {branch} to origin (force)")
-    # Force push is safe: this branch is only ever written by this script, and
-    # the force handles retries after a prior failure (deterministic tree,
-    # non-deterministic commit timestamp).
-    run(["git", "push", "--force", "origin", branch], cwd=workdir)
+        commit_msg = (
+            f"Bump rshell dependency from {previous_version} to {version}"
+            if previous_version
+            else f"Bump rshell dependency to {version}"
+        )
+        log(f"committing: {commit_msg}")
+        run(["git", "commit", "-m", commit_msg], cwd=workdir)
+        log(f"pushing branch {branch} to origin (force)")
+        # Force push is safe: this branch is only ever written by this script, and
+        # the force handles retries after a prior failure (deterministic tree,
+        # non-deterministic commit timestamp).
+        run(["git", "push", "--force", "origin", branch], cwd=workdir)
 
     log("opening draft PR")
     pr = repo.create_pull(
