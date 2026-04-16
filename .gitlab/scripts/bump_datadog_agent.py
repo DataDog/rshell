@@ -30,6 +30,11 @@ def run(cmd: list[str], cwd: Path | None = None, check: bool = True) -> subproce
     return subprocess.run(cmd, cwd=cwd, check=check, text=True, capture_output=True)
 
 
+def log(msg: str) -> None:
+    """Emit a progress line to stdout. Call sites must never pass secrets."""
+    print(f"[bump] {msg}", flush=True)
+
+
 def configure_credentials(workdir: Path, token: str) -> Path:
     """Store the GitHub token in a local git credentials file under .git/.
 
@@ -51,6 +56,7 @@ def strip_rshell_replace(go_mod: Path) -> None:
     updated = pattern.sub("", original)
     if updated != original:
         go_mod.write_text(updated)
+        log(f"stripped `replace {RSHELL_MODULE} =>` directive from go.mod")
 
 
 def current_rshell_version(go_mod: Path) -> str | None:
@@ -89,34 +95,45 @@ def main() -> int:
         print("GITHUB_TOKEN is not set; dd-octo-sts exchange failed upstream", file=sys.stderr)
         return 1
 
+    log(f"preparing bump of {RSHELL_MODULE} to {version}")
     from github import Auth, Github, GithubException
 
     gh = Github(auth=Auth.Token(token), per_page=100)
     repo = gh.get_repo(TARGET_REPO)
     branch = f"bump-rshell-{version}"
 
+    log(f"checking {TARGET_REPO} for existing PR with head={branch}")
     existing = list(repo.get_pulls(state="open", head=f"{TARGET_REPO.split('/')[0]}:{branch}"))
     if existing:
+        log(f"PR already exists: {existing[0].html_url}; nothing to do")
         return 0
 
     workdir = Path("/tmp/datadog-agent")
     clone_url = f"https://github.com/{TARGET_REPO}.git"
+    log(f"cloning {TARGET_REPO}@{TARGET_BASE} into {workdir}")
     run(["git", "clone", "--depth=1", "--branch", TARGET_BASE, clone_url, str(workdir)])
+    log("configuring git credentials (token stored in .git/ci-credentials, not argv)")
     configure_credentials(workdir, token)
     run(["git", "config", "user.name", GIT_USER_NAME], cwd=workdir)
     run(["git", "config", "user.email", GIT_USER_EMAIL], cwd=workdir)
+    log(f"creating branch {branch}")
     run(["git", "checkout", "-b", branch], cwd=workdir)
 
     go_mod = workdir / "go.mod"
     previous_version = current_rshell_version(go_mod)
+    log(f"current pinned version in go.mod: {previous_version or '<none>'}")
     strip_rshell_replace(go_mod)
+    log(f"running: go get {RSHELL_MODULE}@{version}")
     run(["go", "get", f"{RSHELL_MODULE}@{version}"], cwd=workdir)
+    log("running: dda inv tidy")
     run(["dda", "inv", "tidy"], cwd=workdir)
-    write_release_note(workdir, version)
+    note = write_release_note(workdir, version)
+    log(f"wrote release note: {note.relative_to(workdir)}")
 
     run(["git", "add", "-A"], cwd=workdir)
     diff = subprocess.run(["git", "diff", "--cached", "--quiet"], cwd=workdir)
     if diff.returncode == 0:
+        log(f"no staged changes; datadog-agent already at rshell {version}")
         return 0
 
     commit_msg = (
@@ -124,9 +141,12 @@ def main() -> int:
         if previous_version
         else f"Bump rshell dependency to {version}"
     )
+    log(f"committing: {commit_msg}")
     run(["git", "commit", "-m", commit_msg], cwd=workdir)
+    log(f"pushing branch {branch} to origin")
     run(["git", "push", "origin", branch], cwd=workdir)
 
+    log("opening draft PR")
     pr = repo.create_pull(
         title=f"[automated] Bump rshell to {version}",
         body=(
@@ -137,16 +157,19 @@ def main() -> int:
         head=branch,
         draft=True,
     )
+    log(f"opened draft PR: {pr.html_url}")
 
     try:
         pr.add_to_labels(*PR_LABELS)
-    except GithubException:
-        pass
+        log(f"added labels: {', '.join(PR_LABELS)}")
+    except GithubException as e:
+        log(f"warning: failed to add labels {PR_LABELS}: {e}")
 
     try:
         pr.create_review_request(team_reviewers=[REVIEW_TEAM])
-    except GithubException:
-        pass
+        log(f"requested review from @DataDog/{REVIEW_TEAM}")
+    except GithubException as e:
+        log(f"warning: failed to request review from @DataDog/{REVIEW_TEAM}: {e}")
 
     return 0
 
