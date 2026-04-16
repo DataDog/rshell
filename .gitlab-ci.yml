@@ -1,0 +1,24 @@
+---
+stages:
+  - trigger_release
+
+.dd_octo_sts:
+  id_tokens:
+    DDOCTOSTS_ID_TOKEN:
+      aud: dd-octo-sts
+
+.setup_github_bump_token:
+  - export GITHUB_TOKEN=$(dd-octo-sts token --scope DataDog/datadog-agent --policy self.rshell.bump-rshell-version)
+
+bump_datadog_agent:
+  stage: trigger_release
+  image: registry.ddbuild.io/ci/datadog-agent-buildimages/linux:latest
+  tags: ["arch:arm64"]
+  extends: .dd_octo_sts
+  resource_group: rshell-bump
+  rules:
+    - if: $CI_COMMIT_TAG =~ /^v[0-9]+\.[0-9]+\.[0-9]+$/
+  before_script:
+    - !reference [.setup_github_bump_token]
+  script:
+    - python3 .gitlab/scripts/bump_datadog_agent.py "$CI_COMMIT_TAG"
