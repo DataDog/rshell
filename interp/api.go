@@ -80,6 +80,11 @@ type runnerConfig struct {
 	// Defaults to "/proc" when empty.
 	procPath string
 
+	// commandObserver, if non-nil, is invoked after each simple command
+	// dispatch with the resolved outcome. Intended for trace/telemetry
+	// instrumentation; see [CommandObserver] for details.
+	commandObserver CommandObserverFunc
+
 	// proc is the ProcProvider constructed from procPath, created once in
 	// New() and shared across subshells via runnerConfig value copy.
 	proc *builtins.ProcProvider
@@ -371,6 +376,20 @@ func MaxExecutionTime(d time.Duration) RunnerOption {
 			return fmt.Errorf("MaxExecutionTime: duration must be >= 0")
 		}
 		r.maxExecutionTime = d
+		return nil
+	}
+}
+
+// CommandObserver installs a [CommandObserverFunc] invoked once per simple
+// command dispatch. The observer receives the resolved command name, args,
+// exit code, status, source position, and wall-clock duration. Passing nil
+// clears any previously set observer.
+//
+// The observer is best-effort telemetry; it must not modify interpreter
+// state, and its panics propagate to the caller of [Runner.Run].
+func CommandObserver(fn CommandObserverFunc) RunnerOption {
+	return func(r *Runner) error {
+		r.commandObserver = fn
 		return nil
 	}
 }

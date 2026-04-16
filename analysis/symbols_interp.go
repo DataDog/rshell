@@ -68,6 +68,7 @@ var interpAllowedSymbols = []string{
 	"sync/atomic.Int64",           // 🟢 atomic int64 counter; concurrency primitive, no I/O.
 	"time.Duration",               // 🟢 numeric duration type; pure type, no side effects.
 	"time.Now",                    // 🟠 returns current time; read-only, no mutation.
+	"time.Since",                  // 🟠 returns elapsed duration since a Time; read-only, no mutation.
 	"time.Time",                   // 🟢 time value type; pure data, no side effects.
 
 	// --- mvdan.cc/sh/v3/expand --- (shell word expansion library)

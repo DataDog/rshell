@@ -11,6 +11,7 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"time"
 
 	"mvdan.cc/sh/v3/expand"
 	"mvdan.cc/sh/v3/syntax"
@@ -84,6 +85,40 @@ type ReadDirHandlerFunc func(ctx context.Context, path string) ([]fs.DirEntry, e
 // and such an error is returned via the API if it is the last statement executed.
 // Any other error will halt the [Runner] and will be returned via the API.
 type ExecHandlerFunc func(ctx context.Context, args []string) error
+
+// CommandStatus describes the outcome of a single command dispatch.
+type CommandStatus string
+
+const (
+	// CommandStatusOk indicates the command ran (builtin or external) and its
+	// exit status was captured, regardless of whether the exit code was zero.
+	CommandStatusOk CommandStatus = "ok"
+	// CommandStatusNotAllowed indicates the command was rejected because it
+	// was not in the AllowedCommands set.
+	CommandStatusNotAllowed CommandStatus = "not_allowed"
+	// CommandStatusUnknown indicates the command was not a known builtin and
+	// the default noExecHandler refused to execute it. This is the signal
+	// that a customer attempted a command rshell does not implement.
+	CommandStatusUnknown CommandStatus = "unknown"
+)
+
+// CommandEvent describes a single command dispatch observed by a
+// [CommandObserverFunc]. ExitCode is -1 when Status is CommandStatusNotAllowed
+// or CommandStatusUnknown.
+type CommandEvent struct {
+	Name     string
+	Args     []string
+	ExitCode int
+	Status   CommandStatus
+	Pos      syntax.Pos
+	Duration time.Duration
+}
+
+// CommandObserverFunc is invoked after every simple command dispatch (builtin
+// or external), including commands rejected by AllowedCommands or the default
+// noExecHandler. Observers must not modify interpreter state; the hook is
+// informational only.
+type CommandObserverFunc func(ctx context.Context, event CommandEvent)
 
 // noExecHandler returns an [ExecHandlerFunc] that rejects all commands.
 // It prints "rshell: <cmd>: unknown command" to stderr and returns exit

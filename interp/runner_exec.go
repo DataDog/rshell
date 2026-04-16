@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"time"
 
 	"mvdan.cc/sh/v3/expand"
 	"mvdan.cc/sh/v3/syntax"
@@ -256,12 +257,33 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 	}
 	name := args[0]
 
+	// observerStart records the dispatch time so the observer (if any)
+	// receives an accurate Duration regardless of which path r.call takes.
+	var observerStart time.Time
+	if r.commandObserver != nil {
+		observerStart = time.Now()
+	}
+	emitObservation := func(status CommandStatus, exitCode int) {
+		if r.commandObserver == nil {
+			return
+		}
+		r.commandObserver(ctx, CommandEvent{
+			Name:     name,
+			Args:     args,
+			ExitCode: exitCode,
+			Status:   status,
+			Pos:      pos,
+			Duration: time.Since(observerStart),
+		})
+	}
+
 	if !r.allowAllCommands && !r.allowedCommands[name] {
 		r.errf("rshell: %s: command not allowed\n", name)
 		if r.allowedCommands["help"] {
 			r.errf("Run 'help' to see allowed commands.\n")
 		}
 		r.exit.code = 127
+		emitObservation(CommandStatusNotAllowed, -1)
 		return
 	}
 
@@ -400,9 +422,15 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 		r.exit.exiting = result.Exiting
 		r.breakEnclosing = result.BreakN
 		r.contnEnclosing = result.ContinueN
+		emitObservation(CommandStatusOk, int(result.Code))
 		return
 	}
 	r.exec(ctx, pos, args)
+	// Reaching here means the command was allowed by AllowedCommands but no
+	// rshell builtin implements it, so the default noExecHandler rejected
+	// execution. This is the "customer tried a command rshell does not
+	// implement" signal described by CommandStatusUnknown.
+	emitObservation(CommandStatusUnknown, -1)
 }
 
 func (r *Runner) exec(ctx context.Context, pos syntax.Pos, args []string) {
