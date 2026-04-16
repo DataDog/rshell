@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/DataDog/rshell/internal/interpoption"
+	"github.com/DataDog/rshell/internal/version"
 	"github.com/DataDog/rshell/interp"
 	"github.com/spf13/cobra"
 )
@@ -40,6 +41,7 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 	cmd := &cobra.Command{
 		Use:           "rshell [file ...]",
 		Short:         "A restricted shell interpreter for AI agents",
+		Version:       version.Version,
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		Args:          cobra.ArbitraryArgs,
