@@ -7,11 +7,13 @@ package builtins
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
 	"os"
 	"sort"
+	"syscall"
 	"time"
 
 	"github.com/spf13/pflag"
@@ -63,7 +65,15 @@ func (c Command) Register() {
 	name := c.Name
 	factory := c.MakeFlags
 	normalize := c.NormalizeArgs
-	metaRegistry[name] = CommandMeta{Name: name, Description: c.Description, Help: c.Help}
+
+	// Probe whether the command registers any flags so we can record it
+	// in metadata (used by tests to enforce help-consistency invariants).
+	probe := pflag.NewFlagSet(name, pflag.ContinueOnError)
+	probe.SetOutput(io.Discard)
+	factory(probe)
+	hasFlags := probe.HasFlags()
+
+	metaRegistry[name] = CommandMeta{Name: name, Description: c.Description, Help: c.Help, HasFlags: hasFlags}
 	addToRegistry(name, func(ctx context.Context, callCtx *CallContext, args []string) Result {
 		fs := pflag.NewFlagSet(name, pflag.ContinueOnError)
 		fs.SetOutput(io.Discard) // handler formats errors itself
@@ -191,6 +201,14 @@ func (c *CallContext) Errf(format string, a ...any) {
 	fmt.Fprintf(c.Stderr, format, a...)
 }
 
+// IsBrokenPipe reports whether err is a broken-pipe (EPIPE) error,
+// which occurs when writing to a pipe whose read end has been closed.
+// In bash this triggers SIGPIPE which silently terminates the writer;
+// builtins should use this to suppress error messages on pipe closure.
+func IsBrokenPipe(err error) bool {
+	return err != nil && errors.Is(err, syscall.EPIPE)
+}
+
 // FileID is a comparable file identity for cycle detection.
 // On Unix: device + inode. On Windows: volume serial + file index.
 // Used as map key for visited-set tracking.
@@ -221,6 +239,7 @@ type CommandMeta struct {
 	Name        string
 	Description string
 	Help        string
+	HasFlags    bool // true when MakeFlags registers at least one flag
 }
 
 var metaRegistry = map[string]CommandMeta{}

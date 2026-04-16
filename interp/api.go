@@ -28,6 +28,7 @@ import (
 
 	"github.com/DataDog/rshell/allowedpaths"
 	"github.com/DataDog/rshell/builtins"
+	"github.com/DataDog/rshell/internal/version"
 )
 
 // runnerConfig holds the immutable configuration of a [Runner].
@@ -421,6 +422,7 @@ func (r *Runner) Reset() {
 	}
 	r.writeEnv = &overlayEnviron{parent: r.Env}
 	r.setVarString("PWD", r.Dir)
+	r.setVarString("RSHELL_VERSION", version.Version)
 	// IFS is intentionally mutable: scripts may set it to customise field splitting,
 	// which is standard POSIX behaviour. Callers that provide a custom ExecHandler
 	// should be aware that a script can set IFS to a non-whitespace value (e.g.

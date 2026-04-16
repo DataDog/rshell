@@ -162,6 +162,9 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 				err = catRaw(ctx, callCtx, file)
 			}
 			if err != nil {
+				if builtins.IsBrokenPipe(err) {
+					break
+				}
 				name := file
 				if file == "-" {
 					name = "standard input"

@@ -11,37 +11,54 @@ import (
 	"testing"
 )
 
-func TestVersionConstantNotEmpty(t *testing.T) {
-	if version == "" {
-		t.Fatal("version constant must not be empty")
+func TestVersionNotEmpty(t *testing.T) {
+	// In normal test runs (go test), buildVersion returns "dev" because
+	// the module is the main module built as (devel). That's fine — we
+	// just verify it's never empty.
+	if Version == "" {
+		t.Fatal("Version must not be empty")
 	}
 }
 
-func TestVersionDefaultMatchesConstant(t *testing.T) {
-	// When ldflags haven't overridden Version, it should equal the constant.
-	// In tests, ldflags are not set, so this always holds.
-	if Version != version {
-		t.Errorf("Version = %q, want source constant %q (was it overridden by ldflags in a test?)", Version, version)
+func TestBuildVersionFallback(t *testing.T) {
+	// When running tests, the module is the main module so ReadBuildInfo
+	// returns (devel) for Main.Version. buildVersion should return "dev".
+	v := buildVersion()
+	if v == "" {
+		t.Fatal("buildVersion() must not return empty string")
+	}
+	if v != "dev" {
+		t.Logf("buildVersion() = %q (expected 'dev' in test, got something else — ldflags?)", v)
 	}
 }
 
-// TestVersionMatchesGitTag verifies that the source constant matches the
-// latest git tag. This catches forgotten version bumps before a release.
+// TestBuildVersionAsDependency verifies that debug.ReadBuildInfo() reports
+// the correct version when rshell is imported as a dependency by another
+// module. This is the primary use case (the Datadog Agent imports rshell).
 //
-// Skipped when:
-//   - git is not available
-//   - there are no tags (new clone / shallow clone)
-//   - HEAD is not exactly on a tag (development builds between releases)
-func TestVersionMatchesGitTag(t *testing.T) {
-	// Check if HEAD is exactly a tag (git describe --exact-match fails otherwise).
-	out, err := exec.Command("git", "describe", "--tags", "--exact-match", "HEAD").CombinedOutput()
-	if err != nil {
-		t.Skipf("HEAD is not on a tag (expected during development): %v", err)
+// The test uses testdata/depcheck/ — a standalone Go module that depends on
+// a published version of rshell (v0.0.10). The depcheck program doesn't use
+// rshell's version package — it only blank-imports rshell/interp so that
+// rshell appears in the binary's dependency list, then calls ReadBuildInfo()
+// to verify the version is present. This tests the Go embedding mechanism
+// that our buildVersion() relies on, not rshell's code itself, so the
+// specific version imported doesn't matter.
+func TestBuildVersionAsDependency(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping: requires building an external module")
 	}
-	tag := strings.TrimSpace(string(out))
-	tag = strings.TrimPrefix(tag, "v")
 
-	if version != tag {
-		t.Errorf("version constant %q does not match git tag %q — update the constant in version.go before tagging", version, tag)
+	// Build and run the depcheck program directly from testdata.
+	run := exec.Command("go", "run", ".")
+	run.Dir = "testdata/depcheck"
+	out, err := run.Output()
+	if err != nil {
+		t.Fatalf("go run failed: %v", err)
+	}
+
+	got := strings.TrimSpace(string(out))
+	const want = "v0.0.10"
+	if got != want {
+		t.Fatalf("expected version %q from build info deps, got %q", want, got)
 	}
 }
