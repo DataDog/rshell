@@ -154,6 +154,18 @@ func TestHelp(t *testing.T) {
 	assert.NotContains(t, stdout, "--command", "-c/--command should be hidden from help")
 }
 
+// TestVersion verifies that --version exits 0 and prints the version.
+// In tests rshell is the main module, so debug.ReadBuildInfo returns "(devel)"
+// and the version falls back to "dev". When imported as a library (e.g. by the
+// Datadog Agent) it reports the real version from go.mod — see
+// TestBuildVersionAsDependency in internal/version/.
+func TestVersion(t *testing.T) {
+	code, stdout, _ := runCLI(t, "--version")
+	t.Logf("stdout: %q", stdout)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "rshell version dev\n", stdout)
+}
+
 func TestFileArg(t *testing.T) {
 	dir := t.TempDir()
 	script := filepath.Join(dir, "test.sh")

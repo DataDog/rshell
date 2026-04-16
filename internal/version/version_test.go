@@ -6,10 +6,7 @@
 package version
 
 import (
-	"fmt"
-	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -35,68 +32,32 @@ func TestBuildVersionFallback(t *testing.T) {
 	}
 }
 
-// TestBuildVersionAsDependency verifies that buildVersion returns a real
-// version (not "dev") when rshell is imported as a dependency by another
+// TestBuildVersionAsDependency verifies that debug.ReadBuildInfo() reports
+// the correct version when rshell is imported as a dependency by another
 // module. This is the primary use case (the Datadog Agent imports rshell).
 //
-// The test uses testdata/depcheck/ — a small Go program that imports rshell
-// and prints the version from debug.ReadBuildInfo(). The test copies it to a
-// temp dir, adds a replace directive pointing to the local rshell module,
-// builds and runs it, and checks the output.
+// The test uses testdata/depcheck/ — a standalone Go module that depends on
+// a published version of rshell (v0.0.10). The depcheck program doesn't use
+// rshell's version package — it only blank-imports rshell/interp so that
+// rshell appears in the binary's dependency list, then calls ReadBuildInfo()
+// to verify the version is present. This tests the Go embedding mechanism
+// that our buildVersion() relies on, not rshell's code itself, so the
+// specific version imported doesn't matter.
 func TestBuildVersionAsDependency(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping: requires building an external module")
 	}
 
-	// Find the rshell module root (two levels up from internal/version/).
-	modRoot, err := filepath.Abs(filepath.Join("..", ".."))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := os.Stat(filepath.Join(modRoot, "go.mod")); err != nil {
-		t.Fatalf("could not find rshell go.mod at %s: %v", modRoot, err)
-	}
-
-	tmp := t.TempDir()
-
-	// Copy main.go from testdata.
-	mainSrc, err := os.ReadFile("testdata/depcheck/main.go")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(tmp, "main.go"), mainSrc, 0o644); err != nil {
-		t.Fatal(err)
-	}
-
-	// Copy go.mod template and append the replace directive.
-	goModSrc, err := os.ReadFile("testdata/depcheck/go.mod.test")
-	if err != nil {
-		t.Fatal(err)
-	}
-	goMod := string(goModSrc) + fmt.Sprintf("\nreplace github.com/DataDog/rshell => %s\n", modRoot)
-	if err := os.WriteFile(filepath.Join(tmp, "go.mod"), []byte(goMod), 0o644); err != nil {
-		t.Fatal(err)
-	}
-
-	// Resolve dependencies.
-	tidy := exec.Command("go", "mod", "tidy")
-	tidy.Dir = tmp
-	if out, err := tidy.CombinedOutput(); err != nil {
-		t.Fatalf("go mod tidy failed: %v\n%s", err, out)
-	}
-
-	// Build and run.
+	// Build and run the depcheck program directly from testdata.
 	run := exec.Command("go", "run", ".")
-	run.Dir = tmp
+	run.Dir = "testdata/depcheck"
 	out, err := run.CombinedOutput()
 	if err != nil {
 		t.Fatalf("go run failed: %v\n%s", err, out)
 	}
 
 	got := strings.TrimSpace(string(out))
-	// The test go.mod requires rshell at v1.2.3 — verify that's what
-	// debug.ReadBuildInfo reports back.
-	const want = "v1.2.3"
+	const want = "v0.0.10"
 	if got != want {
 		t.Fatalf("expected version %q from build info deps, got %q", want, got)
 	}
