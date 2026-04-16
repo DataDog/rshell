@@ -7,9 +7,6 @@ stages:
     DDOCTOSTS_ID_TOKEN:
       aud: dd-octo-sts
 
-.setup_github_bump_token:
-  - export GITHUB_TOKEN=$(dd-octo-sts token --scope DataDog/datadog-agent --policy self.rshell.bump-rshell-version)
-
 bump_datadog_agent:
   stage: trigger_release
   image: registry.ddbuild.io/ci/datadog-agent-buildimages/linux:latest
@@ -24,6 +21,6 @@ bump_datadog_agent:
     # package's install-time hook can't read the token from the environment.
     # Pin to a vetted PyGithub version; review periodically and bump deliberately.
     - pip install "PyGithub==2.5.0"
-    - !reference [.setup_github_bump_token]
+    - export GITHUB_TOKEN=$(dd-octo-sts token --scope DataDog/datadog-agent --policy self.rshell.bump-rshell-version)
   script:
     - python3 tools/bump_datadog_agent/bump.py "${CI_COMMIT_TAG:-$BUMP_VERSION}"
