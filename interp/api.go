@@ -404,10 +404,10 @@ func (r *Runner) Reset() {
 			r.readDirHandler = func(ctx context.Context, path string) ([]os.DirEntry, error) {
 				return r.sandbox.ReadDirForGlob(path, HandlerCtx(ctx).Dir)
 			}
-			r.execHandler = noExecHandler()
+			r.execHandler = noExecHandler(r.allowAllCommands || r.allowedCommands["help"])
 		}
 		if r.execHandler == nil {
-			r.execHandler = noExecHandler()
+			r.execHandler = noExecHandler(r.allowAllCommands || r.allowedCommands["help"])
 		}
 	}
 	// Reset only the mutable state; config is preserved.

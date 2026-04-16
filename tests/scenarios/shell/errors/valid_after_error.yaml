@@ -11,5 +11,6 @@ expect:
     first
     third
   stderr: |+
-    nonexistent_cmd: command not found
+    rshell: nonexistent_cmd: unknown command
+    Run 'help' to see available commands.
   exit_code: 0

@@ -7,5 +7,6 @@ input:
 expect:
   stdout: ""
   stderr: |+
-    mv: command not found
+    rshell: mv: unknown command
+    Run 'help' to see available commands.
   exit_code: 127

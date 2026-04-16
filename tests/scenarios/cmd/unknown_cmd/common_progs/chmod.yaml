@@ -7,5 +7,6 @@ input:
 expect:
   stdout: ""
   stderr: |+
-    chmod: command not found
+    rshell: chmod: unknown command
+    Run 'help' to see available commands.
   exit_code: 127

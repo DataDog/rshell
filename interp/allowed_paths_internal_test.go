@@ -84,7 +84,7 @@ func TestAllowedPathsExecBlocked(t *testing.T) {
 		AllowedPaths(append([]string{dir}, systemExecAllowedPaths(t)...)),
 	)
 	assert.Equal(t, 127, exitCode)
-	assert.Contains(t, stderr, "command not found")
+	assert.Contains(t, stderr, "unknown command")
 }
 
 func TestAllowedPathsExecNonexistent(t *testing.T) {
@@ -93,7 +93,7 @@ func TestAllowedPathsExecNonexistent(t *testing.T) {
 		AllowedPaths(append([]string{dir}, systemExecAllowedPaths(t)...)),
 	)
 	assert.Equal(t, 127, exitCode)
-	assert.Contains(t, stderr, "command not found")
+	assert.Contains(t, stderr, "unknown command")
 }
 
 func TestAllowedPathsExecViaPathLookup(t *testing.T) {
@@ -146,7 +146,7 @@ func TestAllowedPathsExecSymlinkEscape(t *testing.T) {
 		AllowedPaths([]string{dir}),
 	)
 	assert.Equal(t, 127, exitCode)
-	assert.Contains(t, stderr, "command not found")
+	assert.Contains(t, stderr, "unknown command")
 }
 
 func TestRunRecoversPanic(t *testing.T) {
@@ -195,10 +195,10 @@ func TestAllowedPathsExecDefaultBlocksAll(t *testing.T) {
 	dir := t.TempDir()
 	// No AllowedPaths option — default noExecHandler blocks all external commands.
 	// With AllowAllCommands (set by runScriptInternal), the command reaches the
-	// exec handler which returns "command not found" via noExecHandler.
+	// exec handler which returns "unknown command" via noExecHandler.
 	_, stderr, exitCode := runScriptInternal(t, `/bin/echo hello`, dir)
 	assert.Equal(t, 127, exitCode)
-	assert.Contains(t, stderr, "command not found")
+	assert.Contains(t, stderr, "unknown command")
 }
 
 // TestHostPrefixAfterAllowedPaths verifies that HostPrefix applied after

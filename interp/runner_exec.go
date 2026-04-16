@@ -257,7 +257,10 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 	name := args[0]
 
 	if !r.allowAllCommands && !r.allowedCommands[name] {
-		r.errf("%s: command not allowed\n", name)
+		r.errf("rshell: %s: command not allowed\n", name)
+		if r.allowedCommands["help"] {
+			r.errf("Run 'help' to see allowed commands.\n")
+		}
 		r.exit.code = 127
 		return
 	}
@@ -266,11 +269,11 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 		var runCmd func(context.Context, string, string, []string) (uint8, error)
 		runCmd = func(ctx context.Context, dir string, cmdName string, cmdArgs []string) (uint8, error) {
 			if !r.allowAllCommands && !r.allowedCommands[cmdName] {
-				return 127, fmt.Errorf("%s: command not allowed", cmdName)
+				return 127, fmt.Errorf("rshell: %s: command not allowed", cmdName)
 			}
 			cmdFn, ok := builtins.Lookup(cmdName)
 			if !ok {
-				return 127, fmt.Errorf("%s: command not found", cmdName)
+				return 127, fmt.Errorf("rshell: %s: unknown command", cmdName)
 			}
 			child := &builtins.CallContext{
 				Stdout:     r.stdout,

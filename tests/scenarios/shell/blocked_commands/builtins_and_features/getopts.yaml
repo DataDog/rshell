@@ -7,5 +7,6 @@ input:
 expect:
   stdout: ""
   stderr: |+
-    getopts: command not found
+    rshell: getopts: unknown command
+    Run 'help' to see available commands.
   exit_code: 127

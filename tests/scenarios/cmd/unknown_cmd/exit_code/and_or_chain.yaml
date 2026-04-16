@@ -1,3 +1,5 @@
+# skip: error message format differs from bash
+skip_assert_against_bash: true
 description: Mixed && and || operators work correctly with unknown commands.
 input:
   script: |+
@@ -5,5 +7,5 @@ input:
 expect:
   stdout: |+
     yes
-  stderr_contains: ["foo", "command not found"]
+  stderr_contains: ["foo", "unknown command"]
   exit_code: 0

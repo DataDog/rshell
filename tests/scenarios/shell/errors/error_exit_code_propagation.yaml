@@ -9,5 +9,6 @@ expect:
   stdout: |+
     127
   stderr: |+
-    nonexistent_cmd_xyz: command not found
+    rshell: nonexistent_cmd_xyz: unknown command
+    Run 'help' to see available commands.
   exit_code: 0

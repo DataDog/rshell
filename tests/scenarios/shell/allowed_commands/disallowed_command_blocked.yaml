@@ -8,5 +8,5 @@ input:
 expect:
   stdout: ""
   stderr: |+
-    cat: command not allowed
+    rshell: cat: command not allowed
   exit_code: 127

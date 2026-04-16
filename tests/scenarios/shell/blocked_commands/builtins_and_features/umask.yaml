@@ -7,5 +7,6 @@ input:
 expect:
   stdout: ""
   stderr: |+
-    umask: command not found
+    rshell: umask: unknown command
+    Run 'help' to see available commands.
   exit_code: 127
