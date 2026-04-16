@@ -1,0 +1,26 @@
+name: CI scripts
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'tools/**'
+      - '.github/workflows/test-ci-scripts.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'tools/**'
+      - '.github/workflows/test-ci-scripts.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  test-bump-datadog-agent:
+    name: Test bump_datadog_agent
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Run unit tests
+        run: python3 -m unittest discover -s tools/bump_datadog_agent/tests -v

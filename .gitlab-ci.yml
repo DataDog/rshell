@@ -25,4 +25,4 @@ bump_datadog_agent:
     - pip install PyGithub
     - !reference [.setup_github_bump_token]
   script:
-    - python3 .gitlab/scripts/bump_datadog_agent.py "${CI_COMMIT_TAG:-$BUMP_VERSION}"
+    - python3 tools/bump_datadog_agent/bump.py "${CI_COMMIT_TAG:-$BUMP_VERSION}"

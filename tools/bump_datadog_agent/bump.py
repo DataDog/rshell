@@ -98,7 +98,7 @@ def write_release_note(repo_root: Path, version: str) -> Path:
 
 def main() -> int:
     if len(sys.argv) != 2:
-        print("usage: bump_datadog_agent.py <tag>", file=sys.stderr)
+        print("usage: bump.py <tag>", file=sys.stderr)
         return 2
     version = sys.argv[1]
     if not re.fullmatch(r"v\d+\.\d+\.\d+", version):

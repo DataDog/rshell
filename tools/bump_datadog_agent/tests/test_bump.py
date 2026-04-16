@@ -1,9 +1,9 @@
-"""Tests for bump_datadog_agent.py.
+"""Tests for tools/bump_datadog_agent/bump.py.
 
 Runs with stdlib only; PyGithub is stubbed before the script is imported, so
-the suite executes anywhere Python 3.10+ is installed:
+the suite executes anywhere Python 3.10+ is installed. From the repo root:
 
-    python3 -m unittest .gitlab/scripts/test_bump_datadog_agent.py
+    python3 -m unittest discover -s tools/bump_datadog_agent/tests -v
 """
 
 from __future__ import annotations
@@ -20,8 +20,10 @@ _github_stub = MagicMock()
 _github_stub.GithubException = type("GithubException", (Exception,), {})
 sys.modules["github"] = _github_stub
 
-sys.path.insert(0, str(Path(__file__).parent))
-import bump_datadog_agent as bump  # noqa: E402
+# Put the script's directory on sys.path so we can `import bump` regardless of
+# where the test runner is invoked from.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+import bump  # noqa: E402
 
 
 class TestConfigureCredentials(unittest.TestCase):
@@ -29,7 +31,7 @@ class TestConfigureCredentials(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             workdir = Path(td)
             (workdir / ".git").mkdir()
-            with patch("bump_datadog_agent.subprocess.run") as mock_run:
+            with patch("bump.subprocess.run") as mock_run:
                 mock_run.return_value.returncode = 0
                 path = bump.configure_credentials(workdir, "ghs_SECRET123")
 
@@ -300,7 +302,7 @@ class TestMainIdempotency(unittest.TestCase):
         with patch.dict(os.environ, {"GITHUB_TOKEN": "fake-token"}):
             with patch.object(sys, "argv", ["bump_datadog_agent.py", "v0.0.99"]):
                 # subprocess.run should never be reached on the early-exit path
-                with patch("bump_datadog_agent.subprocess.run") as mock_run:
+                with patch("bump.subprocess.run") as mock_run:
                     result = bump.main()
                     mock_run.assert_not_called()
 
