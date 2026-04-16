@@ -10,9 +10,9 @@ detected. Expects:
 
 from __future__ import annotations
 
+import hashlib
 import os
 import re
-import secrets
 import subprocess
 import sys
 from pathlib import Path
@@ -70,7 +70,8 @@ def current_rshell_version(go_mod: Path) -> str | None:
 
 
 def write_release_note(repo_root: Path, version: str) -> Path:
-    suffix = secrets.token_hex(8)
+    # Deterministic per (module, version) so retries produce the identical file.
+    suffix = hashlib.sha256(f"{RSHELL_MODULE}@{version}".encode()).hexdigest()[:16]
     note = repo_root / "releasenotes" / "notes" / f"bump-rshell-{version}-{suffix}.yaml"
     note.write_text(
         "---\n"

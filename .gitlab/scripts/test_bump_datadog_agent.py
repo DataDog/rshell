@@ -155,12 +155,20 @@ class TestWriteReleaseNote(unittest.TestCase):
             self.assertIn("enhancements:", content)
             self.assertIn("Bump ``rshell`` to v0.0.11", content)
 
-    def test_filenames_are_unique(self):
+    def test_filename_is_deterministic_for_same_version(self):
         with tempfile.TemporaryDirectory() as td:
             repo_root = Path(td)
             (repo_root / "releasenotes" / "notes").mkdir(parents=True)
             a = bump.write_release_note(repo_root, "v0.0.11")
             b = bump.write_release_note(repo_root, "v0.0.11")
+            self.assertEqual(a.name, b.name)
+
+    def test_filename_differs_between_versions(self):
+        with tempfile.TemporaryDirectory() as td:
+            repo_root = Path(td)
+            (repo_root / "releasenotes" / "notes").mkdir(parents=True)
+            a = bump.write_release_note(repo_root, "v0.0.11")
+            b = bump.write_release_note(repo_root, "v0.0.12")
             self.assertNotEqual(a.name, b.name)
 
 
