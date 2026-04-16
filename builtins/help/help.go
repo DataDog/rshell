@@ -140,9 +140,9 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 func printHeader(callCtx *builtins.CallContext, allowed, total int) {
 	var header strings.Builder
 	header.WriteString("rshell")
-	if v := version.Version; v != "" && v != "dev" {
+	if version.Version != "" {
 		header.WriteByte(' ')
-		header.WriteString(v)
+		header.WriteString(version.Version)
 	}
 	header.WriteString(" — ")
 	if allowed < total {
