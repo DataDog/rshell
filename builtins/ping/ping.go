@@ -531,8 +531,9 @@ func parsePingDuration(s string) (time.Duration, error) {
 }
 
 // isPermissionErr reports whether err indicates that the process lacks the
-// privilege to open a raw ICMP socket. When true, the caller should retry
-// with privileged raw-socket mode.
+// privilege to open a raw ICMP socket, or that the unprivileged socket path
+// failed in a way that privileged raw-socket mode may fix. When true, the
+// caller should retry with privileged raw-socket mode.
 //
 // This function is only called on errors returned by pinger.RunWithContext,
 // which come from the ICMP socket layer — not from DNS. DNS errors are caught
@@ -540,19 +541,26 @@ func parsePingDuration(s string) (time.Duration, error) {
 // ever invoked, so "permission denied" strings here always originate from
 // socket creation, never from a DNS resolver response.
 //
-// We detect three classes of failure:
+// We detect four classes of failure:
 //  1. EPERM / EACCES — classic Unix permission denials.
 //  2. EPROTONOSUPPORT — returned on Linux when the kernel's
 //     net.ipv4.ping_group_range does not cover the process GID and the
 //     unprivileged UDP-based ICMP path is unavailable; privileged raw
 //     sockets are unaffected and should be tried.
-//  3. String-based fallback for Windows and platforms that wrap errors.
+//  3. ENETUNREACH — returned on Linux when the unprivileged ICMPv6 SOCK_DGRAM
+//     socket binds to :: (unspecified) and the kernel finds no matching route
+//     for the source/destination pair. Privileged SOCK_RAW uses a different
+//     socket-creation path that correctly selects the outgoing interface and
+//     source address, so a retry is worthwhile. If IPv6 is genuinely
+//     unreachable the privileged retry will also fail, producing the same
+//     outcome without hiding a real network problem.
+//  4. String-based fallback for Windows and platforms that wrap errors.
 func isPermissionErr(err error) bool {
 	if err == nil {
 		return false
 	}
 	if errors.Is(err, syscall.EPERM) || errors.Is(err, syscall.EACCES) ||
-		errors.Is(err, syscall.EPROTONOSUPPORT) {
+		errors.Is(err, syscall.EPROTONOSUPPORT) || errors.Is(err, syscall.ENETUNREACH) {
 		return true
 	}
 	// String-based fallback for Windows and platforms where pro-bing wraps
@@ -564,15 +572,19 @@ func isPermissionErr(err error) bool {
 	// above short-circuits before reaching this block.
 	//
 	// NOTE: "operation not permitted" / "permission denied" / "protocol not
-	// supported" cannot originate from DNS here because DNS errors are caught
-	// in buildPinger before RunWithContext is ever called (see the function
-	// comment above).  Every error reaching this point comes from the ICMP
-	// socket layer.
+	// supported" / "network is unreachable" cannot originate from DNS here
+	// because DNS errors are caught in buildPinger before RunWithContext is
+	// ever called (see the function comment above).  Every error reaching
+	// this point comes from the ICMP socket layer.
 	msg := strings.ToLower(err.Error())
 	return strings.Contains(msg, "operation not permitted") ||
 		strings.Contains(msg, "access is denied") ||
 		strings.Contains(msg, "permission denied") ||
 		strings.Contains(msg, "protocol not supported") ||
+		// Linux ICMPv6 unprivileged (SOCK_DGRAM) may fail with ENETUNREACH when
+		// the source resolves to :: and the kernel has no matching route; the
+		// privileged SOCK_RAW path handles source-address selection correctly.
+		strings.Contains(msg, "network is unreachable") ||
 		// Windows: WSAEPROTONOSUPPORT (10043) — returned by pro-bing when an
 		// unprivileged raw socket cannot be created; privileged mode should be tried.
 		strings.Contains(msg, "the requested protocol has not been configured")

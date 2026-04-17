@@ -66,6 +66,14 @@ func TestIsPermissionErrStringFallback(t *testing.T) {
 	assert.True(t, isPermissionErr(errors.New("The requested protocol has not been configured into the system, or no implementation for it exists.")))
 }
 
+func TestIsPermissionErrENETUNREACH(t *testing.T) {
+	// Linux: unprivileged ICMPv6 (SOCK_DGRAM) may fail with ENETUNREACH when the
+	// kernel cannot route from :: to the destination; privileged SOCK_RAW should
+	// be tried instead.
+	assert.True(t, isPermissionErr(syscall.ENETUNREACH))
+	assert.True(t, isPermissionErr(errors.New("write ip ::->`2001:4860:4860::8844: sendmsg: network is unreachable")))
+}
+
 func TestIsPermissionErrUnrelated(t *testing.T) {
 	assert.False(t, isPermissionErr(errors.New("connection refused")))
 	assert.False(t, isPermissionErr(errors.New("no such host")))
