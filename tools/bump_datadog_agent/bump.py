@@ -127,11 +127,26 @@ def main() -> int:
     # file rather than the env var.
     os.environ.pop("GITHUB_TOKEN", None)
 
-    log(f"checking {TARGET_REPO} for existing PR with head={branch}")
-    existing = list(repo.get_pulls(state="open", head=f"{TARGET_REPO.split('/')[0]}:{branch}"))
-    if existing:
-        log(f"PR already exists: {existing[0].html_url}; nothing to do")
+    # Include closed + merged PRs too, so we can distinguish:
+    #   - open:             stop (human owns the cycle)
+    #   - merged:           log and let the go.mod/go.sum diff decide
+    #   - closed unmerged:  reopen it at create-pull time instead of failing
+    log(f"checking {TARGET_REPO} for existing PRs with head={branch}")
+    all_existing = list(
+        repo.get_pulls(state="all", head=f"{TARGET_REPO.split('/')[0]}:{branch}")
+    )
+    open_existing = [p for p in all_existing if p.state == "open"]
+    if open_existing:
+        log(f"open PR already exists: {open_existing[0].html_url}; nothing to do")
         return 0
+
+    closed_unmerged = [p for p in all_existing if p.state == "closed" and not p.merged]
+    merged_existing = [p for p in all_existing if p.merged]
+    if merged_existing:
+        log(
+            f"prior PR merged ({merged_existing[0].html_url}); will no-op unless "
+            "go.mod/go.sum shows a genuine diff"
+        )
 
     # Use a fresh, unique tempdir each run. Auto-cleanup on exit means no stale
     # state leaks between runs; starting empty means `git clone` never fails
@@ -185,18 +200,27 @@ def main() -> int:
         # non-deterministic commit timestamp).
         run(["git", "push", "--force", "origin", branch], cwd=workdir)
 
-    log("opening draft PR")
-    pr = repo.create_pull(
-        title=f"[automated] Bump rshell to {version}",
-        body=(
-            f"Automated bump of `{RSHELL_MODULE}` to "
-            f"[{version}](https://github.com/DataDog/rshell/releases/tag/{version}).\n"
-        ),
-        base=TARGET_BASE,
-        head=branch,
-        draft=True,
+    pr_title = f"[automated] Bump rshell to {version}"
+    pr_body = (
+        f"Automated bump of `{RSHELL_MODULE}` to "
+        f"[{version}](https://github.com/DataDog/rshell/releases/tag/{version}).\n"
     )
-    log(f"opened draft PR: {pr.html_url}")
+    if closed_unmerged:
+        # Reusing a previously-closed PR avoids GitHub's duplicate-PR error and
+        # keeps the review history in one thread.
+        pr = closed_unmerged[0]
+        log(f"reopening prior closed PR: {pr.html_url}")
+        pr.edit(state="open", title=pr_title, body=pr_body)
+    else:
+        log("opening draft PR")
+        pr = repo.create_pull(
+            title=pr_title,
+            body=pr_body,
+            base=TARGET_BASE,
+            head=branch,
+            draft=True,
+        )
+        log(f"opened draft PR: {pr.html_url}")
 
     try:
         pr.add_to_labels(*PR_LABELS)

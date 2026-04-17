@@ -291,35 +291,65 @@ class TestMainInputValidation(unittest.TestCase):
 
 
 class TestMainIdempotency(unittest.TestCase):
-    def test_exits_zero_when_pr_already_exists(self):
-        existing_pr = MagicMock()
-        existing_pr.html_url = "https://github.com/DataDog/datadog-agent/pull/999"
+    def _setup_pulls(self, prs):
         mock_repo = MagicMock()
-        mock_repo.get_pulls.return_value = [existing_pr]
+        mock_repo.get_pulls.return_value = prs
         _github_stub.Github.reset_mock()
         _github_stub.Github.return_value.get_repo.return_value = mock_repo
+        return mock_repo
+
+    def test_exits_zero_when_open_pr_already_exists(self):
+        existing_pr = MagicMock()
+        existing_pr.state = "open"
+        existing_pr.merged = False
+        existing_pr.html_url = "https://github.com/DataDog/datadog-agent/pull/999"
+        mock_repo = self._setup_pulls([existing_pr])
 
         with patch.dict(os.environ, {"GITHUB_TOKEN": "fake-token"}):
-            with patch.object(sys, "argv", ["bump_datadog_agent.py", "v0.0.99"]):
-                # subprocess.run should never be reached on the early-exit path
+            with patch.object(sys, "argv", ["bump.py", "v0.0.99"]):
                 with patch("bump.subprocess.run") as mock_run:
                     result = bump.main()
                     mock_run.assert_not_called()
 
         self.assertEqual(result, 0)
-        mock_repo.get_pulls.assert_called_once()
         call_kwargs = mock_repo.get_pulls.call_args.kwargs
-        self.assertEqual(call_kwargs["state"], "open")
+        # Must query *all* PRs (not just open) so we can detect closed/merged
+        # ones and handle them without a duplicate-PR error.
+        self.assertEqual(call_kwargs["state"], "all")
         self.assertEqual(call_kwargs["head"], "DataDog:bump-rshell-v0.0.99")
+
+    def test_does_not_short_circuit_on_closed_unmerged_pr(self):
+        # Closed-but-not-merged PR should NOT stop the flow — the early exit is
+        # only for open PRs. We prove this by letting the subprocess calls
+        # run; the first one (git clone) fails in the test env, which means
+        # we've exited early only if subprocess was *never* called.
+        closed_pr = MagicMock(state="closed", merged=False)
+        self._setup_pulls([closed_pr])
+
+        with patch.dict(os.environ, {"GITHUB_TOKEN": "fake-token"}):
+            with patch.object(sys, "argv", ["bump.py", "v0.0.99"]):
+                with patch("bump.run") as mock_run:
+                    # Have the helper raise on first call so we don't actually
+                    # hit the network / disk.
+                    mock_run.side_effect = RuntimeError("stop here")
+                    with self.assertRaises(RuntimeError):
+                        bump.main()
+                    self.assertTrue(
+                        mock_run.called,
+                        "bump should have proceeded past the early-exit check",
+                    )
 
 
 class TestTokenScrubbing(unittest.TestCase):
     def test_github_token_removed_from_environ_before_subprocess_calls(self):
-        # Use the "PR already exists" path because it goes just far enough to
-        # create the GitHub client — which is where the token should get
-        # scrubbed — without needing to mock clone/go/dda.
-        existing_pr = MagicMock()
-        existing_pr.html_url = "https://github.com/DataDog/datadog-agent/pull/1"
+        # Use the "open PR already exists" path because it goes just far
+        # enough to create the GitHub client — which is where the token should
+        # get scrubbed — without needing to mock clone/go/dda.
+        existing_pr = MagicMock(
+            state="open",
+            merged=False,
+            html_url="https://github.com/DataDog/datadog-agent/pull/1",
+        )
         mock_repo = MagicMock()
         mock_repo.get_pulls.return_value = [existing_pr]
         _github_stub.Github.reset_mock()
