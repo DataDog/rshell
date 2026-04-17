@@ -118,6 +118,15 @@ def main() -> int:
     repo = gh.get_repo(TARGET_REPO)
     branch = f"bump-rshell-{version}"
 
+    # Scrub the token from the process environment now that PyGithub has
+    # internalized it. Subsequent subprocess calls (git, go, dda inv tidy,
+    # which executes code from the freshly cloned repo) inherit os.environ by
+    # default; leaving the write-scoped GITHUB_TOKEN in that environment would
+    # let any of them exfiltrate it. PyGithub still holds the token in its
+    # auth object, and git push authenticates via the on-disk credential-helper
+    # file rather than the env var.
+    os.environ.pop("GITHUB_TOKEN", None)
+
     log(f"checking {TARGET_REPO} for existing PR with head={branch}")
     existing = list(repo.get_pulls(state="open", head=f"{TARGET_REPO.split('/')[0]}:{branch}"))
     if existing:

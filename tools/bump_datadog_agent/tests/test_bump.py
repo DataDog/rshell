@@ -313,5 +313,24 @@ class TestMainIdempotency(unittest.TestCase):
         self.assertEqual(call_kwargs["head"], "DataDog:bump-rshell-v0.0.99")
 
 
+class TestTokenScrubbing(unittest.TestCase):
+    def test_github_token_removed_from_environ_before_subprocess_calls(self):
+        # Use the "PR already exists" path because it goes just far enough to
+        # create the GitHub client — which is where the token should get
+        # scrubbed — without needing to mock clone/go/dda.
+        existing_pr = MagicMock()
+        existing_pr.html_url = "https://github.com/DataDog/datadog-agent/pull/1"
+        mock_repo = MagicMock()
+        mock_repo.get_pulls.return_value = [existing_pr]
+        _github_stub.Github.reset_mock()
+        _github_stub.Github.return_value.get_repo.return_value = mock_repo
+
+        with patch.dict(os.environ, {"GITHUB_TOKEN": "fake-token"}, clear=False):
+            with patch.object(sys, "argv", ["bump.py", "v0.0.99"]):
+                bump.main()
+                # After main(), the token must no longer be readable from env.
+                self.assertNotIn("GITHUB_TOKEN", os.environ)
+
+
 if __name__ == "__main__":
     unittest.main()
