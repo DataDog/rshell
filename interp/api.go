@@ -26,6 +26,7 @@ import (
 	"mvdan.cc/sh/v3/expand"
 	"mvdan.cc/sh/v3/syntax"
 
+	"github.com/DataDog/datadog-agent/pkg/fleet/installer/telemetry"
 	"github.com/DataDog/rshell/allowedpaths"
 	"github.com/DataDog/rshell/builtins"
 	"github.com/DataDog/rshell/internal/version"
@@ -116,6 +117,22 @@ type runnerState struct {
 	stdin  *os.File // e.g. the read end of a pipe
 	stdout io.Writer
 	stderr io.Writer
+
+	// runStdin / runStdout are the baselines captured at the start of Run()
+	// after any Run-level stdout wrapping. Telemetry uses them to decide
+	// whether a command's stdin/stdout was reassigned by a pipe or redirect.
+	// Propagated to subshells via the runnerState copy in subshell().
+	runStdin  *os.File
+	runStdout io.Writer
+
+	// inPipeline is set to true on subshells created for pipeline stages and
+	// inherited by further subshells spawned inside them. It suppresses the
+	// nested rshell.pipeline spans that would otherwise fire when the
+	// pipeline implementation recurses through stmt() to handle N-stage
+	// pipelines (a|b|c is BinaryCmd(Pipe, BinaryCmd(Pipe, a, b), c)). Reset
+	// to false when entering a syntax.Subshell so a pipeline inside (…) gets
+	// its own span.
+	inPipeline bool
 
 	ecfg *expand.Config
 	ectx context.Context // just so that subshell can use it again
@@ -469,6 +486,10 @@ func (s ExitStatus) Error() string { return fmt.Sprintf("exit status %d", s) }
 // incrementally. To reuse a [Runner] without keeping the internal shell state,
 // call Reset.
 func (r *Runner) Run(ctx context.Context, node syntax.Node) (retErr error) {
+	span, ctx := telemetry.StartSpanFromContext(ctx, "run")
+	span.SetTag("rshell.version", version.Version)
+	defer func() { span.Finish(retErr) }()
+
 	defer func() {
 		if rec := recover(); rec != nil {
 			panicOut := io.Writer(io.Discard)
@@ -502,6 +523,11 @@ func (r *Runner) Run(ctx context.Context, node syntax.Node) (retErr error) {
 	stdoutCap := &limitWriter{w: prevStdout, limit: maxStdoutBytes}
 	r.stdout = stdoutCap
 	defer func() { r.stdout = prevStdout }()
+	// Capture the stdin/stdout baseline at Run() start (after wrapping) so
+	// per-command telemetry can detect pipe and redirect reassignments
+	// without tripping on the Run-level limitWriter wrap.
+	r.runStdin = r.stdin
+	r.runStdout = r.stdout
 	r.startTime = time.Now()
 	r.globReadDirCount = &atomic.Int64{}
 	r.fillExpandConfig(ctx)
@@ -678,6 +704,9 @@ func (r *Runner) subshell(background bool) *Runner {
 			stdin:            r.stdin,
 			stdout:           r.stdout,
 			stderr:           r.stderr,
+			runStdin:         r.runStdin,
+			runStdout:        r.runStdout,
+			inPipeline:       r.inPipeline,
 			filename:         r.filename,
 			exit:             r.exit,
 			lastExit:         r.lastExit,

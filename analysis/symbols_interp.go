@@ -70,6 +70,11 @@ var interpAllowedSymbols = []string{
 	"time.Now",                    // 🟠 returns current time; read-only, no mutation.
 	"time.Time",                   // 🟢 time value type; pure data, no side effects.
 
+	// --- github.com/DataDog/datadog-agent/pkg/fleet/installer/telemetry --- (lightweight span tracer used by the Agent Installer)
+
+	"github.com/DataDog/datadog-agent/pkg/fleet/installer/telemetry.Span",                 // 🟢 pointer type used to hold a span across the if-block that starts it; no side effects from the type reference itself.
+	"github.com/DataDog/datadog-agent/pkg/fleet/installer/telemetry.StartSpanFromContext", // 🟠 starts a span from a parent carried on ctx; registers with the package-global tracer. No I/O here — flushing happens only if the embedding process has also called NewTelemetry.
+
 	// --- mvdan.cc/sh/v3/expand --- (shell word expansion library)
 
 	"mvdan.cc/sh/v3/expand.Config",                 // 🟢 configuration for word expansion; pure type.
