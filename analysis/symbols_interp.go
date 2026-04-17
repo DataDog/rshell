@@ -20,10 +20,13 @@ var interpAllowedSymbols = []string{
 	"bytes.Buffer",                // 🟢 in-memory byte buffer; pure data structure, no I/O.
 	"context.Background",          // 🟢 returns the empty background context; used in StdIO option where no run-scoped context is available.
 	"context.CancelFunc",          // 🟢 function type returned by WithTimeout/WithCancel; pure function type, no side effects.
+	"context.Canceled",            // 🟢 sentinel error returned by ctx.Err() when Done was closed by CancelFunc; used to classify the run-span outcome.
 	"context.Context",             // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
+	"context.DeadlineExceeded",    // 🟢 sentinel error returned by ctx.Err() on deadline; used to classify the run-span outcome.
 	"context.WithTimeout",         // 🟢 derives a context with a deadline; needed for execution timeout support.
 	"context.WithValue",           // 🟢 derives a context carrying a key-value pair; pure function.
 	"errors.As",                   // 🟢 error type assertion; pure function, no I/O.
+	"errors.Is",                   // 🟢 sentinel-error equivalence check; pure function, no I/O.
 	"errors.New",                  // 🟢 creates a sentinel error value; pure function, no I/O.
 	"fmt.Errorf",                  // 🟢 formatted error creation; pure function, no I/O.
 	"fmt.Fprintf",                 // 🟠 formatted write to an io.Writer; delegates to Write, no filesystem access.

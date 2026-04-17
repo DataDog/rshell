@@ -134,6 +134,15 @@ type runnerState struct {
 	// its own span.
 	inPipeline bool
 
+	// lastDispatchStatus captures how the most recent call() invocation
+	// resolved: "dispatched" (ran a builtin or exec handler), "unallowed"
+	// (blocked by AllowedCommands), or "unknown" (not in the builtin
+	// registry). The run span reads it to classify outcomes like
+	// "unallowed" vs plain "success". Propagated up from subshells when a
+	// pipeline or (…) finishes so the top-level runner sees the last
+	// dispatch its execution thread observed.
+	lastDispatchStatus string
+
 	ecfg *expand.Config
 	ectx context.Context // just so that subshell can use it again
 
@@ -488,7 +497,25 @@ func (s ExitStatus) Error() string { return fmt.Sprintf("exit status %d", s) }
 func (r *Runner) Run(ctx context.Context, node syntax.Node) (retErr error) {
 	span, ctx := telemetry.StartSpanFromContext(ctx, "run")
 	span.SetTag("rshell.version", version.Version)
-	defer func() { span.Finish(retErr) }()
+	defer func() {
+		span.SetTag("rshell.run.exit_code", int(r.exit.code))
+		outcome := classifyRunOutcome(retErr, r.lastDispatchStatus)
+		span.SetTag("rshell.run.outcome", outcome)
+		// The run span reports whether the shell interpreter did its job.
+		// Script completion — even with a non-zero last command, an
+		// explicit `exit N`, a blocked command, or an unknown command —
+		// is not an interpreter-level failure and should not flag the
+		// span as errored. Only abnormal terminations (timeout,
+		// canceled, stdout cap hit, internal fatal) mark the span as an
+		// error for APM purposes. Consumers who want to alert on blocked
+		// or unknown commands can filter on rshell.run.outcome.
+		switch outcome {
+		case "success", "unallowed", "unknown":
+			span.Finish(nil)
+		default:
+			span.Finish(retErr)
+		}
+	}()
 
 	defer func() {
 		if rec := recover(); rec != nil {
@@ -718,4 +745,46 @@ func (r *Runner) subshell(background bool) *Runner {
 	r2.fillExpandConfig(r.ectx)
 	r2.didReset = true
 	return r2
+}
+
+// classifyRunOutcome maps the error Run() is about to return, combined with
+// the last dispatch attempted, into a stable low-cardinality enum tag on
+// the run span. Outcomes:
+//
+//   - success: script completed normally (including non-zero exit codes from
+//     command failures or explicit exit N).
+//   - unallowed: the last command dispatched was blocked by the
+//     AllowedCommands policy.
+//   - unknown: the last command dispatched was not in the builtin registry.
+//   - timeout / canceled: the run context's deadline or cancellation fired.
+//   - output_limit: the stdout cap was hit.
+//   - fatal: anything else (pipe creation error, internal panic, etc.).
+//
+// "unallowed" and "unknown" take precedence over "success" when the relevant
+// dispatch was the last one observed, so operators can alert on policy
+// rejections and roadmap gaps without false positives from plain non-zero
+// exits.
+func classifyRunOutcome(err error, lastDispatch string) string {
+	switch {
+	case errors.Is(err, ErrOutputLimitExceeded):
+		return "output_limit"
+	case errors.Is(err, context.DeadlineExceeded):
+		return "timeout"
+	case errors.Is(err, context.Canceled):
+		return "canceled"
+	}
+	switch lastDispatch {
+	case "unallowed":
+		return "unallowed"
+	case "unknown":
+		return "unknown"
+	}
+	if err == nil {
+		return "success"
+	}
+	var status ExitStatus
+	if errors.As(err, &status) {
+		return "success"
+	}
+	return "fatal"
 }

@@ -64,7 +64,7 @@ func newCapturingTelemetry(t *testing.T) (*telemetry.Telemetry, *captureTranspor
 }
 
 // TestRunEmitsTracerSpan verifies that Run creates a "run" span tagged with
-// the rshell version.
+// the rshell version, exit code, and a "success" outcome for a clean run.
 func TestRunEmitsTracerSpan(t *testing.T) {
 	tel, ct := newCapturingTelemetry(t)
 
@@ -80,6 +80,72 @@ func TestRunEmitsTracerSpan(t *testing.T) {
 	runSpan := findOneSpanByResource(spans, "run")
 	require.NotNil(t, runSpan, "expected a run span")
 	assert.Equal(t, version.Version, runSpan.Meta["rshell.version"])
+	assert.Equal(t, "success", runSpan.Meta["rshell.run.outcome"])
+	assert.Equal(t, float64(0), runSpan.Metrics["rshell.run.exit_code"])
+}
+
+// TestRunSpanOutcome verifies the outcome classification on the run span
+// across each completion mode. "success" covers any natural script
+// completion (zero or non-zero exit, explicit exit N). "unallowed" and
+// "unknown" surface when the last dispatched command was blocked by
+// AllowedCommands or not in the builtin registry respectively, so operators
+// can alert on policy rejections without false positives from plain
+// non-zero exits. In every case the span must NOT be flagged as errored —
+// APM error-rate signals are reserved for abnormal terminations (timeout,
+// canceled, output_limit, fatal).
+func TestRunSpanOutcome(t *testing.T) {
+	cases := []struct {
+		name     string
+		script   string
+		opts     []RunnerOption
+		outcome  string
+		exitCode float64
+	}{
+		{"natural exit 0", "true",
+			[]RunnerOption{allowAllCommandsOpt()},
+			"success", 0},
+		{"explicit exit 0", "exit 0",
+			[]RunnerOption{allowAllCommandsOpt()},
+			"success", 0},
+		{"last command returns non-zero", "false",
+			[]RunnerOption{allowAllCommandsOpt()},
+			"success", 1},
+		{"explicit exit N", "exit 7",
+			[]RunnerOption{allowAllCommandsOpt()},
+			"success", 7},
+		{"blocked by AllowedCommands as last dispatch",
+			"echo hi; cat /etc/hostname",
+			[]RunnerOption{AllowedCommands([]string{"rshell:echo"}), StdIO(nil, io.Discard, io.Discard)},
+			"unallowed", 127},
+		{"unknown command (not in builtin registry)",
+			"nosuchcommand_xyz",
+			[]RunnerOption{allowAllCommandsOpt(), StdIO(nil, io.Discard, io.Discard)},
+			"unknown", 127},
+		{"blocked command followed by success",
+			"cat /etc/hostname; echo ok",
+			[]RunnerOption{AllowedCommands([]string{"rshell:echo"}), StdIO(nil, io.Discard, io.Discard)},
+			"success", 0},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			tel, ct := newCapturingTelemetry(t)
+			r, err := New(tc.opts...)
+			require.NoError(t, err)
+			t.Cleanup(func() { r.Close() })
+
+			traceID := newTestTraceID()
+			_ = runWithTracedContext(t, r, traceID, tc.script)
+			tel.Stop()
+
+			spans := ct.spansForTrace(t, traceID)
+			runSpan := findOneSpanByResource(spans, "run")
+			require.NotNil(t, runSpan)
+			assert.Equal(t, tc.outcome, runSpan.Meta["rshell.run.outcome"])
+			assert.Equal(t, tc.exitCode, runSpan.Metrics["rshell.run.exit_code"])
+			assert.Empty(t, runSpan.Meta["error.message"],
+				"script completion should not flag the run span as errored")
+		})
+	}
 }
 
 // decodedEvent mirrors the top-level JSON shape the installer telemetry sender
