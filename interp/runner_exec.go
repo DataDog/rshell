@@ -68,6 +68,8 @@ func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {
 		r2.stmts(ctx, cm.Stmts)
 		r.exit = r2.exit
 		r.exit.exiting = false
+		r.totalCount += r2.totalCount
+		r.dispatchedCount += r2.dispatchedCount
 		r.unallowedCount += r2.unallowedCount
 		r.unknownCount += r2.unknownCount
 	case *syntax.Block:
@@ -183,9 +185,11 @@ func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {
 			r.exit.exiting = false
 			pr.Close()
 			wg.Wait()
-			// Both pipeline stages can independently hit blocked or
-			// unknown commands; roll both subshells' counters up to the
-			// parent so the run-span totals reflect the whole pipeline.
+			// Roll each pipeline stage's per-run counters up to the
+			// parent so the run-span totals reflect commands dispatched,
+			// blocked, or unknown across every stage.
+			r.totalCount += rLeft.totalCount + rRight.totalCount
+			r.dispatchedCount += rLeft.dispatchedCount + rRight.dispatchedCount
 			r.unallowedCount += rLeft.unallowedCount + rRight.unallowedCount
 			r.unknownCount += rLeft.unknownCount + rRight.unknownCount
 			if rLeft.exit.fatalExit {
@@ -282,6 +286,7 @@ func (r *Runner) loopStmtsBroken(ctx context.Context, stmts []*syntax.Stmt) bool
 
 func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 	name := args[0]
+	r.totalCount++
 
 	// Evaluate both policy checks upfront so the span tags reflect the
 	// independent facts about the command name regardless of which gate
@@ -309,8 +314,18 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 		return
 	}
 
+	// Increment independently — is_allowed and is_known are orthogonal
+	// facts about the command name, so a command that is both blocked and
+	// missing from the registry bumps both counters. Mirrors the semantics
+	// of the per-command rshell.command.is_allowed / is_known tags.
 	if !isAllowed {
 		r.unallowedCount++
+	}
+	if !isKnown {
+		r.unknownCount++
+	}
+
+	if !isAllowed {
 		r.errf("rshell: %s: command not allowed\n", name)
 		if r.allowedCommands["help"] {
 			r.errf("Run 'help' to see allowed commands.\n")
@@ -320,6 +335,7 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 	}
 
 	if isKnown {
+		r.dispatchedCount++
 		var runCmd func(context.Context, string, string, []string) (uint8, error)
 		runCmd = func(ctx context.Context, dir string, cmdName string, cmdArgs []string) (uint8, error) {
 			if !r.allowAllCommands && !r.allowedCommands[cmdName] {
@@ -456,7 +472,8 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 		r.contnEnclosing = result.ContinueN
 		return
 	}
-	r.unknownCount++
+	// Allowed but not known: the default execHandler (noExecHandler) will
+	// reject with exit 127. unknownCount was already incremented above.
 	r.exec(ctx, pos, args)
 }
 

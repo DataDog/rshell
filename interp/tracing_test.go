@@ -136,35 +136,44 @@ func TestRunSpanOutcome(t *testing.T) {
 	}
 }
 
-// TestRunSpanPolicyCounters verifies the unallowed_count and unknown_count
-// tags accurately tally the number of commands blocked by AllowedCommands
-// and the number of commands missing from the builtin registry
-// encountered during a run, including across pipeline stages.
+// TestRunSpanPolicyCounters verifies the three per-run counters on the
+// run span — dispatched_count (commands that actually ran a builtin),
+// unallowed_count (blocked by AllowedCommands), and unknown_count
+// (missing from the builtin registry) — tally correctly, including
+// across pipeline stages and for commands that are both blocked and
+// unknown (which bump both counters since is_allowed and is_known are
+// independent facts about the command name).
 func TestRunSpanPolicyCounters(t *testing.T) {
 	cases := []struct {
-		name           string
-		script         string
-		opts           []RunnerOption
-		unallowedCount float64
-		unknownCount   float64
+		name            string
+		script          string
+		opts            []RunnerOption
+		totalCount      float64
+		dispatchedCount float64
+		unallowedCount  float64
+		unknownCount    float64
 	}{
 		{"no rejections", "echo a; echo b",
 			[]RunnerOption{allowAllCommandsOpt(), StdIO(nil, io.Discard, io.Discard)},
-			0, 0},
-		{"one blocked", "echo a; cat /etc/hostname",
+			2, 2, 0, 0},
+		{"one blocked, one dispatched", "echo a; cat /etc/hostname",
 			[]RunnerOption{AllowedCommands([]string{"rshell:echo"}), StdIO(nil, io.Discard, io.Discard)},
-			1, 0},
-		{"two blocked, one in pipeline",
+			2, 1, 1, 0},
+		{"blocked builtins across pipeline stages",
 			"cat x; cat y | grep z",
 			[]RunnerOption{AllowedCommands([]string{"rshell:echo"}), StdIO(nil, io.Discard, io.Discard)},
-			3, 0},
-		{"one unknown", "nosuchcmd_xyz",
+			3, 0, 3, 0},
+		{"one unknown", "echo a; nosuchcmd_xyz",
 			[]RunnerOption{allowAllCommandsOpt(), StdIO(nil, io.Discard, io.Discard)},
-			0, 1},
-		{"mixed blocked and unknown",
+			2, 1, 0, 1},
+		{"blocked and unknown simultaneously (pwd-like)",
+			"echo a; pwd_no_such",
+			[]RunnerOption{AllowedCommands([]string{"rshell:echo"}), StdIO(nil, io.Discard, io.Discard)},
+			2, 1, 1, 1},
+		{"blocked builtin plus allowed-but-unknown",
 			"cat x; totally_made_up",
 			[]RunnerOption{AllowedCommands([]string{"rshell:totally_made_up"}), StdIO(nil, io.Discard, io.Discard)},
-			1, 1},
+			2, 0, 1, 1},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -180,8 +189,10 @@ func TestRunSpanPolicyCounters(t *testing.T) {
 			spans := ct.spansForTrace(t, traceID)
 			runSpan := findOneSpanByResource(spans, "run")
 			require.NotNil(t, runSpan)
-			assert.Equal(t, tc.unallowedCount, runSpan.Metrics["rshell.run.unallowed_count"])
-			assert.Equal(t, tc.unknownCount, runSpan.Metrics["rshell.run.unknown_count"])
+			assert.Equal(t, tc.totalCount, runSpan.Metrics["rshell.run.commands.total"])
+			assert.Equal(t, tc.dispatchedCount, runSpan.Metrics["rshell.run.commands.dispatched"])
+			assert.Equal(t, tc.unallowedCount, runSpan.Metrics["rshell.run.commands.unallowed"])
+			assert.Equal(t, tc.unknownCount, runSpan.Metrics["rshell.run.commands.unknown"])
 			// These are accounting tags, not error signals.
 			assert.Equal(t, "success", runSpan.Meta["rshell.run.outcome"])
 			assert.Empty(t, runSpan.Meta["error.message"])

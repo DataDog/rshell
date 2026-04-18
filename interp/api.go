@@ -134,17 +134,22 @@ type runnerState struct {
 	// its own span.
 	inPipeline bool
 
-	// unallowedCount / unknownCount count policy rejections observed by
-	// call() during this run: the number of commands blocked by
-	// AllowedCommands and the number of commands not in the builtin
-	// registry, respectively. Summed up from subshells when a pipeline or
-	// (…) completes so the top-level run span reports the run-wide totals.
-	// Kept separate so operators can alert on policy violations
-	// (unallowedCount > 0) independently from roadmap gaps
-	// (unknownCount > 0). The script as a whole may still succeed — these
-	// counts are informational, not an error signal.
-	unallowedCount int
-	unknownCount   int
+	// totalCount / dispatchedCount / unallowedCount / unknownCount tally
+	// the call() invocations this run observed: how many command
+	// dispatches were attempted in total, how many ran through a
+	// builtin, how many were blocked by AllowedCommands, and how many
+	// were not in the builtin registry. The unallowed/unknown pair are
+	// independent facts about the command name — a command that is both
+	// blocked and unknown bumps both counters, matching the semantics of
+	// the per-command rshell.command.is_allowed / is_known tags.
+	// totalCount counts each call() exactly once regardless of outcome,
+	// so total_count = dispatched_count + (unallowed-only) + (unknown-only)
+	// + (unallowed AND unknown). Summed up from subshells when a
+	// pipeline or (…) completes.
+	totalCount      int
+	dispatchedCount int
+	unallowedCount  int
+	unknownCount    int
 
 	ecfg *expand.Config
 	ectx context.Context // just so that subshell can use it again
@@ -502,8 +507,10 @@ func (r *Runner) Run(ctx context.Context, node syntax.Node) (retErr error) {
 	span.SetTag("rshell.version", version.Version)
 	defer func() {
 		span.SetTag("rshell.run.exit_code", int(r.exit.code))
-		span.SetTag("rshell.run.unallowed_count", r.unallowedCount)
-		span.SetTag("rshell.run.unknown_count", r.unknownCount)
+		span.SetTag("rshell.run.commands.total", r.totalCount)
+		span.SetTag("rshell.run.commands.dispatched", r.dispatchedCount)
+		span.SetTag("rshell.run.commands.unallowed", r.unallowedCount)
+		span.SetTag("rshell.run.commands.unknown", r.unknownCount)
 		outcome := classifyRunOutcome(retErr)
 		span.SetTag("rshell.run.outcome", outcome)
 		// The run span reports whether the shell interpreter did its job —
