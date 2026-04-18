@@ -68,9 +68,8 @@ func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {
 		r2.stmts(ctx, cm.Stmts)
 		r.exit = r2.exit
 		r.exit.exiting = false
-		if r2.lastDispatchStatus != "" {
-			r.lastDispatchStatus = r2.lastDispatchStatus
-		}
+		r.unallowedCount += r2.unallowedCount
+		r.unknownCount += r2.unknownCount
 	case *syntax.Block:
 		r.stmts(ctx, cm.Stmts)
 	case *syntax.CallExpr:
@@ -182,11 +181,13 @@ func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {
 			rRight.stmt(ctx, cm.Y)
 			r.exit = rRight.exit
 			r.exit.exiting = false
-			if rRight.lastDispatchStatus != "" {
-				r.lastDispatchStatus = rRight.lastDispatchStatus
-			}
 			pr.Close()
 			wg.Wait()
+			// Both pipeline stages can independently hit blocked or
+			// unknown commands; roll both subshells' counters up to the
+			// parent so the run-span totals reflect the whole pipeline.
+			r.unallowedCount += rLeft.unallowedCount + rRight.unallowedCount
+			r.unknownCount += rLeft.unknownCount + rRight.unknownCount
 			if rLeft.exit.fatalExit {
 				r.exit.fatal(rLeft.exit.err)
 			}
@@ -309,7 +310,7 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 	}
 
 	if !isAllowed {
-		r.lastDispatchStatus = "unallowed"
+		r.unallowedCount++
 		r.errf("rshell: %s: command not allowed\n", name)
 		if r.allowedCommands["help"] {
 			r.errf("Run 'help' to see allowed commands.\n")
@@ -319,7 +320,6 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 	}
 
 	if isKnown {
-		r.lastDispatchStatus = "dispatched"
 		var runCmd func(context.Context, string, string, []string) (uint8, error)
 		runCmd = func(ctx context.Context, dir string, cmdName string, cmdArgs []string) (uint8, error) {
 			if !r.allowAllCommands && !r.allowedCommands[cmdName] {
@@ -456,7 +456,7 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 		r.contnEnclosing = result.ContinueN
 		return
 	}
-	r.lastDispatchStatus = "unknown"
+	r.unknownCount++
 	r.exec(ctx, pos, args)
 }
 

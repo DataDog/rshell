@@ -84,15 +84,12 @@ func TestRunEmitsTracerSpan(t *testing.T) {
 	assert.Equal(t, float64(0), runSpan.Metrics["rshell.run.exit_code"])
 }
 
-// TestRunSpanOutcome verifies the outcome classification on the run span
-// across each completion mode. "success" covers any natural script
-// completion (zero or non-zero exit, explicit exit N). "unallowed" and
-// "unknown" surface when the last dispatched command was blocked by
-// AllowedCommands or not in the builtin registry respectively, so operators
-// can alert on policy rejections without false positives from plain
-// non-zero exits. In every case the span must NOT be flagged as errored —
-// APM error-rate signals are reserved for abnormal terminations (timeout,
-// canceled, output_limit, fatal).
+// TestRunSpanOutcome verifies the outcome classification on the run span:
+// any script completion (zero exit, non-zero exit, explicit exit N, or
+// scripts that hit blocked/unknown commands along the way) is "success"
+// — rshell treats these as the shell doing its job. The exit code lands
+// in rshell.run.exit_code; blocked/unknown dispatches are counted via
+// rshell.run.unallowed_count and rshell.run.unknown_count.
 func TestRunSpanOutcome(t *testing.T) {
 	cases := []struct {
 		name     string
@@ -113,16 +110,7 @@ func TestRunSpanOutcome(t *testing.T) {
 		{"explicit exit N", "exit 7",
 			[]RunnerOption{allowAllCommandsOpt()},
 			"success", 7},
-		{"blocked by AllowedCommands as last dispatch",
-			"echo hi; cat /etc/hostname",
-			[]RunnerOption{AllowedCommands([]string{"rshell:echo"}), StdIO(nil, io.Discard, io.Discard)},
-			"unallowed", 127},
-		{"unknown command (not in builtin registry)",
-			"nosuchcommand_xyz",
-			[]RunnerOption{allowAllCommandsOpt(), StdIO(nil, io.Discard, io.Discard)},
-			"unknown", 127},
-		{"blocked command followed by success",
-			"cat /etc/hostname; echo ok",
+		{"blocked command on the way", "cat /etc/hostname; echo ok",
 			[]RunnerOption{AllowedCommands([]string{"rshell:echo"}), StdIO(nil, io.Discard, io.Discard)},
 			"success", 0},
 	}
@@ -144,6 +132,59 @@ func TestRunSpanOutcome(t *testing.T) {
 			assert.Equal(t, tc.exitCode, runSpan.Metrics["rshell.run.exit_code"])
 			assert.Empty(t, runSpan.Meta["error.message"],
 				"script completion should not flag the run span as errored")
+		})
+	}
+}
+
+// TestRunSpanPolicyCounters verifies the unallowed_count and unknown_count
+// tags accurately tally the number of commands blocked by AllowedCommands
+// and the number of commands missing from the builtin registry
+// encountered during a run, including across pipeline stages.
+func TestRunSpanPolicyCounters(t *testing.T) {
+	cases := []struct {
+		name           string
+		script         string
+		opts           []RunnerOption
+		unallowedCount float64
+		unknownCount   float64
+	}{
+		{"no rejections", "echo a; echo b",
+			[]RunnerOption{allowAllCommandsOpt(), StdIO(nil, io.Discard, io.Discard)},
+			0, 0},
+		{"one blocked", "echo a; cat /etc/hostname",
+			[]RunnerOption{AllowedCommands([]string{"rshell:echo"}), StdIO(nil, io.Discard, io.Discard)},
+			1, 0},
+		{"two blocked, one in pipeline",
+			"cat x; cat y | grep z",
+			[]RunnerOption{AllowedCommands([]string{"rshell:echo"}), StdIO(nil, io.Discard, io.Discard)},
+			3, 0},
+		{"one unknown", "nosuchcmd_xyz",
+			[]RunnerOption{allowAllCommandsOpt(), StdIO(nil, io.Discard, io.Discard)},
+			0, 1},
+		{"mixed blocked and unknown",
+			"cat x; totally_made_up",
+			[]RunnerOption{AllowedCommands([]string{"rshell:totally_made_up"}), StdIO(nil, io.Discard, io.Discard)},
+			1, 1},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			tel, ct := newCapturingTelemetry(t)
+			r, err := New(tc.opts...)
+			require.NoError(t, err)
+			t.Cleanup(func() { r.Close() })
+
+			traceID := newTestTraceID()
+			_ = runWithTracedContext(t, r, traceID, tc.script)
+			tel.Stop()
+
+			spans := ct.spansForTrace(t, traceID)
+			runSpan := findOneSpanByResource(spans, "run")
+			require.NotNil(t, runSpan)
+			assert.Equal(t, tc.unallowedCount, runSpan.Metrics["rshell.run.unallowed_count"])
+			assert.Equal(t, tc.unknownCount, runSpan.Metrics["rshell.run.unknown_count"])
+			// These are accounting tags, not error signals.
+			assert.Equal(t, "success", runSpan.Meta["rshell.run.outcome"])
+			assert.Empty(t, runSpan.Meta["error.message"])
 		})
 	}
 }

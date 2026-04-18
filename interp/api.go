@@ -134,14 +134,17 @@ type runnerState struct {
 	// its own span.
 	inPipeline bool
 
-	// lastDispatchStatus captures how the most recent call() invocation
-	// resolved: "dispatched" (ran a builtin or exec handler), "unallowed"
-	// (blocked by AllowedCommands), or "unknown" (not in the builtin
-	// registry). The run span reads it to classify outcomes like
-	// "unallowed" vs plain "success". Propagated up from subshells when a
-	// pipeline or (…) finishes so the top-level runner sees the last
-	// dispatch its execution thread observed.
-	lastDispatchStatus string
+	// unallowedCount / unknownCount count policy rejections observed by
+	// call() during this run: the number of commands blocked by
+	// AllowedCommands and the number of commands not in the builtin
+	// registry, respectively. Summed up from subshells when a pipeline or
+	// (…) completes so the top-level run span reports the run-wide totals.
+	// Kept separate so operators can alert on policy violations
+	// (unallowedCount > 0) independently from roadmap gaps
+	// (unknownCount > 0). The script as a whole may still succeed — these
+	// counts are informational, not an error signal.
+	unallowedCount int
+	unknownCount   int
 
 	ecfg *expand.Config
 	ectx context.Context // just so that subshell can use it again
@@ -499,20 +502,20 @@ func (r *Runner) Run(ctx context.Context, node syntax.Node) (retErr error) {
 	span.SetTag("rshell.version", version.Version)
 	defer func() {
 		span.SetTag("rshell.run.exit_code", int(r.exit.code))
-		outcome := classifyRunOutcome(retErr, r.lastDispatchStatus)
+		span.SetTag("rshell.run.unallowed_count", r.unallowedCount)
+		span.SetTag("rshell.run.unknown_count", r.unknownCount)
+		outcome := classifyRunOutcome(retErr)
 		span.SetTag("rshell.run.outcome", outcome)
-		// The run span reports whether the shell interpreter did its job.
-		// Script completion — even with a non-zero last command, an
-		// explicit `exit N`, a blocked command, or an unknown command —
-		// is not an interpreter-level failure and should not flag the
-		// span as errored. Only abnormal terminations (timeout,
-		// canceled, stdout cap hit, internal fatal) mark the span as an
-		// error for APM purposes. Consumers who want to alert on blocked
-		// or unknown commands can filter on rshell.run.outcome.
-		switch outcome {
-		case "success", "unallowed", "unknown":
+		// The run span reports whether the shell interpreter did its job —
+		// any script completion (even with a non-zero last command or an
+		// explicit `exit N`) is success from that point of view. Only
+		// abnormal terminations (timeout, canceled, stdout cap hit,
+		// internal fatal) flag the span as errored. Consumers distinguish
+		// zero vs non-zero exits via rshell.run.exit_code, and alert on
+		// policy rejections via rshell.run.unallowed_count > 0.
+		if outcome == "success" {
 			span.Finish(nil)
-		default:
+		} else {
 			span.Finish(retErr)
 		}
 	}()
@@ -747,40 +750,23 @@ func (r *Runner) subshell(background bool) *Runner {
 	return r2
 }
 
-// classifyRunOutcome maps the error Run() is about to return, combined with
-// the last dispatch attempted, into a stable low-cardinality enum tag on
-// the run span. Outcomes:
-//
-//   - success: script completed normally (including non-zero exit codes from
-//     command failures or explicit exit N).
-//   - unallowed: the last command dispatched was blocked by the
-//     AllowedCommands policy.
-//   - unknown: the last command dispatched was not in the builtin registry.
-//   - timeout / canceled: the run context's deadline or cancellation fired.
-//   - output_limit: the stdout cap was hit.
-//   - fatal: anything else (pipe creation error, internal panic, etc.).
-//
-// "unallowed" and "unknown" take precedence over "success" when the relevant
-// dispatch was the last one observed, so operators can alert on policy
-// rejections and roadmap gaps without false positives from plain non-zero
-// exits.
-func classifyRunOutcome(err error, lastDispatch string) string {
+// classifyRunOutcome maps the error Run() is about to return to a stable,
+// low-cardinality enum tag on the run span. The outcome answers "did the
+// interpreter do its job", not "did the script exit zero" — any script
+// completion (including a failing last command or an explicit exit N) is
+// "success". Consumers that care about the exit code read
+// rshell.run.exit_code; those that care about policy rejections read
+// rshell.run.unallowed_count / rshell.run.unknown_count.
+func classifyRunOutcome(err error) string {
 	switch {
+	case err == nil:
+		return "success"
 	case errors.Is(err, ErrOutputLimitExceeded):
 		return "output_limit"
 	case errors.Is(err, context.DeadlineExceeded):
 		return "timeout"
 	case errors.Is(err, context.Canceled):
 		return "canceled"
-	}
-	switch lastDispatch {
-	case "unallowed":
-		return "unallowed"
-	case "unknown":
-		return "unknown"
-	}
-	if err == nil {
-		return "success"
 	}
 	var status ExitStatus
 	if errors.As(err, &status) {
