@@ -25,7 +25,11 @@ import (
 const exitCodeTimeout = 124
 
 func main() {
-	os.Exit(run(context.Background(), os.Args[1:], os.Stdin, os.Stdout, os.Stderr))
+	stopTelemetry := startTelemetry()
+	code := run(context.Background(), os.Args[1:], os.Stdin, os.Stdout, os.Stderr)
+	// Flush before os.Exit — os.Exit does not run deferred calls.
+	stopTelemetry()
+	os.Exit(code)
 }
 
 func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.Writer) int {

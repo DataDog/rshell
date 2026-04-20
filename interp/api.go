@@ -26,6 +26,7 @@ import (
 	"mvdan.cc/sh/v3/expand"
 	"mvdan.cc/sh/v3/syntax"
 
+	"github.com/DataDog/datadog-agent/pkg/fleet/installer/telemetry"
 	"github.com/DataDog/rshell/allowedpaths"
 	"github.com/DataDog/rshell/builtins"
 	"github.com/DataDog/rshell/internal/version"
@@ -116,6 +117,39 @@ type runnerState struct {
 	stdin  *os.File // e.g. the read end of a pipe
 	stdout io.Writer
 	stderr io.Writer
+
+	// runStdin / runStdout are the baselines captured at the start of Run()
+	// after any Run-level stdout wrapping. Telemetry uses them to decide
+	// whether a command's stdin/stdout was reassigned by a pipe or redirect.
+	// Propagated to subshells via the runnerState copy in subshell().
+	runStdin  *os.File
+	runStdout io.Writer
+
+	// inPipeline is set to true on subshells created for pipeline stages and
+	// inherited by further subshells spawned inside them. It suppresses the
+	// nested rshell.pipeline spans that would otherwise fire when the
+	// pipeline implementation recurses through stmt() to handle N-stage
+	// pipelines (a|b|c is BinaryCmd(Pipe, BinaryCmd(Pipe, a, b), c)). Reset
+	// to false when entering a syntax.Subshell so a pipeline inside (…) gets
+	// its own span.
+	inPipeline bool
+
+	// totalCount / dispatchedCount / unallowedCount / unknownCount tally
+	// the call() invocations this run observed: how many command
+	// dispatches were attempted in total, how many ran through a
+	// builtin, how many were blocked by AllowedCommands, and how many
+	// were not in the builtin registry. The unallowed/unknown pair are
+	// independent facts about the command name — a command that is both
+	// blocked and unknown bumps both counters, matching the semantics of
+	// the per-command rshell.command.is_allowed / is_known tags.
+	// totalCount counts each call() exactly once regardless of outcome,
+	// so total_count = dispatched_count + (unallowed-only) + (unknown-only)
+	// + (unallowed AND unknown). Summed up from subshells when a
+	// pipeline or (…) completes.
+	totalCount      int
+	dispatchedCount int
+	unallowedCount  int
+	unknownCount    int
 
 	ecfg *expand.Config
 	ectx context.Context // just so that subshell can use it again
@@ -469,6 +503,30 @@ func (s ExitStatus) Error() string { return fmt.Sprintf("exit status %d", s) }
 // incrementally. To reuse a [Runner] without keeping the internal shell state,
 // call Reset.
 func (r *Runner) Run(ctx context.Context, node syntax.Node) (retErr error) {
+	span, ctx := telemetry.StartSpanFromContext(ctx, "run")
+	span.SetTag("rshell.version", version.Version)
+	defer func() {
+		span.SetTag("rshell.run.exit_code", int(r.exit.code))
+		span.SetTag("rshell.run.commands.total", r.totalCount)
+		span.SetTag("rshell.run.commands.dispatched", r.dispatchedCount)
+		span.SetTag("rshell.run.commands.unallowed", r.unallowedCount)
+		span.SetTag("rshell.run.commands.unknown", r.unknownCount)
+		outcome := classifyRunOutcome(retErr)
+		span.SetTag("rshell.run.outcome", outcome)
+		// The run span reports whether the shell interpreter did its job —
+		// any script completion (even with a non-zero last command or an
+		// explicit `exit N`) is success from that point of view. Only
+		// abnormal terminations (timeout, canceled, stdout cap hit,
+		// internal fatal) flag the span as errored. Consumers distinguish
+		// zero vs non-zero exits via rshell.run.exit_code, and alert on
+		// policy rejections via rshell.run.unallowed_count > 0.
+		if outcome == "success" {
+			span.Finish(nil)
+		} else {
+			span.Finish(retErr)
+		}
+	}()
+
 	defer func() {
 		if rec := recover(); rec != nil {
 			panicOut := io.Writer(io.Discard)
@@ -502,6 +560,11 @@ func (r *Runner) Run(ctx context.Context, node syntax.Node) (retErr error) {
 	stdoutCap := &limitWriter{w: prevStdout, limit: maxStdoutBytes}
 	r.stdout = stdoutCap
 	defer func() { r.stdout = prevStdout }()
+	// Capture the stdin/stdout baseline at Run() start (after wrapping) so
+	// per-command telemetry can detect pipe and redirect reassignments
+	// without tripping on the Run-level limitWriter wrap.
+	r.runStdin = r.stdin
+	r.runStdout = r.stdout
 	r.startTime = time.Now()
 	r.globReadDirCount = &atomic.Int64{}
 	r.fillExpandConfig(ctx)
@@ -678,6 +741,9 @@ func (r *Runner) subshell(background bool) *Runner {
 			stdin:            r.stdin,
 			stdout:           r.stdout,
 			stderr:           r.stderr,
+			runStdin:         r.runStdin,
+			runStdout:        r.runStdout,
+			inPipeline:       r.inPipeline,
 			filename:         r.filename,
 			exit:             r.exit,
 			lastExit:         r.lastExit,
@@ -689,4 +755,29 @@ func (r *Runner) subshell(background bool) *Runner {
 	r2.fillExpandConfig(r.ectx)
 	r2.didReset = true
 	return r2
+}
+
+// classifyRunOutcome maps the error Run() is about to return to a stable,
+// low-cardinality enum tag on the run span. The outcome answers "did the
+// interpreter do its job", not "did the script exit zero" — any script
+// completion (including a failing last command or an explicit exit N) is
+// "success". Consumers that care about the exit code read
+// rshell.run.exit_code; those that care about policy rejections read
+// rshell.run.unallowed_count / rshell.run.unknown_count.
+func classifyRunOutcome(err error) string {
+	switch {
+	case err == nil:
+		return "success"
+	case errors.Is(err, ErrOutputLimitExceeded):
+		return "output_limit"
+	case errors.Is(err, context.DeadlineExceeded):
+		return "timeout"
+	case errors.Is(err, context.Canceled):
+		return "canceled"
+	}
+	var status ExitStatus
+	if errors.As(err, &status) {
+		return "success"
+	}
+	return "fatal"
 }

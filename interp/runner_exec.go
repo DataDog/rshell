@@ -17,6 +17,7 @@ import (
 	"mvdan.cc/sh/v3/expand"
 	"mvdan.cc/sh/v3/syntax"
 
+	"github.com/DataDog/datadog-agent/pkg/fleet/installer/telemetry"
 	"github.com/DataDog/rshell/allowedpaths"
 	"github.com/DataDog/rshell/builtins"
 )
@@ -61,9 +62,16 @@ func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {
 	switch cm := cm.(type) {
 	case *syntax.Subshell:
 		r2 := r.subshell(false)
+		// A pipeline inside (…) should get its own pipeline span, so
+		// clear the flag that suppresses nested pipeline spans.
+		r2.inPipeline = false
 		r2.stmts(ctx, cm.Stmts)
 		r.exit = r2.exit
 		r.exit.exiting = false
+		r.totalCount += r2.totalCount
+		r.dispatchedCount += r2.dispatchedCount
+		r.unallowedCount += r2.unallowedCount
+		r.unknownCount += r2.unknownCount
 	case *syntax.Block:
 		r.stmts(ctx, cm.Stmts)
 	case *syntax.CallExpr:
@@ -125,6 +133,16 @@ func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {
 				r.stmt(ctx, cm.Y)
 			}
 		case syntax.Pipe:
+			if !r.inPipeline {
+				var span *telemetry.Span
+				span, ctx = telemetry.StartSpanFromContext(ctx, "control_flow")
+				span.SetResourceName("pipeline")
+				span.SetTag("rshell.pipeline.stage_count", countPipelineStages(cm))
+				defer func() {
+					span.SetTag("rshell.pipeline.exit_code", int(r.exit.code))
+					span.Finish(nil)
+				}()
+			}
 			pr, pw, err := os.Pipe()
 			if err != nil {
 				r.exit.fatal(err) // not being able to create a pipe is rare but critical
@@ -136,9 +154,11 @@ func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {
 			rLeft := r.subshell(true)
 			rLeft.stdout = pw
 			rLeft.stderr = safeStderr
+			rLeft.inPipeline = true
 			rRight := r.subshell(true)
 			rRight.stdin = pr
 			rRight.stderr = safeStderr
+			rRight.inPipeline = true
 			var wg sync.WaitGroup
 			wg.Add(1)
 			go func() {
@@ -165,27 +185,34 @@ func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {
 			r.exit.exiting = false
 			pr.Close()
 			wg.Wait()
+			// Roll each pipeline stage's per-run counters up to the
+			// parent so the run-span totals reflect commands dispatched,
+			// blocked, or unknown across every stage.
+			r.totalCount += rLeft.totalCount + rRight.totalCount
+			r.dispatchedCount += rLeft.dispatchedCount + rRight.dispatchedCount
+			r.unallowedCount += rLeft.unallowedCount + rRight.unallowedCount
+			r.unknownCount += rLeft.unknownCount + rRight.unknownCount
 			if rLeft.exit.fatalExit {
 				r.exit.fatal(rLeft.exit.err)
 			}
 		}
 	case *syntax.IfClause:
-		r.stmts(ctx, cm.Cond)
-		if r.exit.exiting || r.breakEnclosing > 0 || r.contnEnclosing > 0 {
-			break
-		}
-		if r.exit.ok() {
-			r.stmts(ctx, cm.Then)
-		} else {
-			r.exit = exitStatus{}
-			if cm.Else != nil {
-				r.cmd(ctx, cm.Else)
-			}
-		}
+		r.execIfChain(ctx, cm)
 	case *syntax.ForClause:
+		span, forCtx := telemetry.StartSpanFromContext(ctx, "control_flow")
+		span.SetResourceName("for")
+		iterationCount := 0
+		brokeEarly := false
+		var varName string
+		defer func() {
+			span.SetTag("rshell.for.variable_name", varName)
+			span.SetTag("rshell.for.iteration_count", iterationCount)
+			span.SetTag("rshell.for.broke_early", brokeEarly)
+			span.Finish(nil)
+		}()
 		switch y := cm.Loop.(type) {
 		case *syntax.WordIter:
-			name := y.Name.Value
+			varName = y.Name.Value
 			items := r.Params // for i; do ...
 
 			inToken := y.InPos.IsValid()
@@ -194,18 +221,25 @@ func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {
 			}
 
 			for _, field := range items {
-				if err := ctx.Err(); err != nil {
+				if err := forCtx.Err(); err != nil {
 					r.exit.fatal(err)
 					break
 				}
-				r.setVarString(name, field)
-				if r.loopStmtsBroken(ctx, cm.Do) {
+				r.setVarString(varName, field)
+				iterSpan, iterCtx := telemetry.StartSpanFromContext(forCtx, "control_flow")
+				iterSpan.SetResourceName("for.iteration")
+				iterSpan.SetTag("rshell.for.iteration.index", iterationCount)
+				broken := r.loopStmtsBroken(iterCtx, cm.Do)
+				iterSpan.Finish(nil)
+				iterationCount++
+				if broken {
 					// Excess continue at outermost loop: clamp and keep iterating
 					// (bash treats "continue 99" in a single loop like "continue 1").
 					if r.contnEnclosing > 0 && !r.inLoop {
 						r.contnEnclosing = 0
 						continue
 					}
+					brokeEarly = true
 					break
 				}
 			}
@@ -251,12 +285,47 @@ func (r *Runner) loopStmtsBroken(ctx context.Context, stmts []*syntax.Stmt) bool
 }
 
 func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
+	name := args[0]
+	r.totalCount++
+
+	// Evaluate both policy checks upfront so the span tags reflect the
+	// independent facts about the command name regardless of which gate
+	// short-circuits dispatch.
+	isAllowed := r.allowAllCommands || r.allowedCommands[name]
+	fn, isKnown := builtins.Lookup(name)
+
+	span, ctx := telemetry.StartSpanFromContext(ctx, "command")
+	span.SetResourceName(name)
+	span.SetTag("rshell.command.name", name)
+	span.SetTag("rshell.command.argc", len(args)-1)
+	span.SetTag("rshell.command.is_allowed", isAllowed)
+	span.SetTag("rshell.command.is_known", isKnown)
+	// has_stdin_pipe / has_output_redirect reflect whether the command's
+	// stdin/stdout were reassigned from the Runner's originals — true for
+	// both pipeline stages and file redirects.
+	span.SetTag("rshell.command.has_stdin_pipe", r.stdin != r.runStdin)
+	span.SetTag("rshell.command.has_output_redirect", r.stdout != r.runStdout)
+	defer func() {
+		span.SetTag("rshell.command.exit_code", int(r.exit.code))
+		span.Finish(nil)
+	}()
+
 	if r.stop(ctx) {
 		return
 	}
-	name := args[0]
 
-	if !r.allowAllCommands && !r.allowedCommands[name] {
+	// Increment independently — is_allowed and is_known are orthogonal
+	// facts about the command name, so a command that is both blocked and
+	// missing from the registry bumps both counters. Mirrors the semantics
+	// of the per-command rshell.command.is_allowed / is_known tags.
+	if !isAllowed {
+		r.unallowedCount++
+	}
+	if !isKnown {
+		r.unknownCount++
+	}
+
+	if !isAllowed {
 		r.errf("rshell: %s: command not allowed\n", name)
 		if r.allowedCommands["help"] {
 			r.errf("Run 'help' to see allowed commands.\n")
@@ -265,7 +334,8 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 		return
 	}
 
-	if fn, ok := builtins.Lookup(name); ok {
+	if isKnown {
+		r.dispatchedCount++
 		var runCmd func(context.Context, string, string, []string) (uint8, error)
 		runCmd = func(ctx context.Context, dir string, cmdName string, cmdArgs []string) (uint8, error) {
 			if !r.allowAllCommands && !r.allowedCommands[cmdName] {
@@ -402,11 +472,66 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 		r.contnEnclosing = result.ContinueN
 		return
 	}
+	// Allowed but not known: the default execHandler (noExecHandler) will
+	// reject with exit 127. unknownCount was already incremented above.
 	r.exec(ctx, pos, args)
 }
 
 func (r *Runner) exec(ctx context.Context, pos syntax.Pos, args []string) {
 	r.exit.fromHandlerError(r.execHandler(r.handlerCtx(ctx, pos), args))
+}
+
+// execIfChain runs an if/elif/else chain iteratively (rather than recursing
+// through cmd() on each elif as the AST's Else pointer suggests) so the whole
+// chain is covered by a single rshell.if span. The parser encodes "else" as a
+// trailing *IfClause with no ThenPos set and an empty Cond.
+func (r *Runner) execIfChain(ctx context.Context, cm *syntax.IfClause) {
+	span, ctx := telemetry.StartSpanFromContext(ctx, "control_flow")
+	span.SetResourceName("if")
+	branchCount := 0
+	for cur := cm; cur != nil; cur = cur.Else {
+		branchCount++
+	}
+	branchTaken := -2 // -2 = none matched, -1 = else, >=0 = if/elif index
+	defer func() {
+		span.SetTag("rshell.if.branch_taken", branchTaken)
+		span.SetTag("rshell.if.branch_count", branchCount)
+		span.Finish(nil)
+	}()
+
+	idx := 0
+	for cur := cm; cur != nil; cur = cur.Else {
+		// A trailing "else" branch has no "then" token.
+		if !cur.ThenPos.IsValid() {
+			branchTaken = -1
+			r.stmts(ctx, cur.Then)
+			return
+		}
+		r.stmts(ctx, cur.Cond)
+		if r.exit.exiting || r.breakEnclosing > 0 || r.contnEnclosing > 0 {
+			return
+		}
+		if r.exit.ok() {
+			branchTaken = idx
+			r.stmts(ctx, cur.Then)
+			return
+		}
+		r.exit = exitStatus{}
+		idx++
+	}
+}
+
+// countPipelineStages walks a left-recursive Pipe-BinaryCmd tree (e.g. a|b|c
+// is BinaryCmd(Pipe, BinaryCmd(Pipe, a, b), c)) and returns the total number
+// of stages.
+func countPipelineStages(cm *syntax.BinaryCmd) int {
+	n := 1 // Y is one stage
+	if inner, ok := cm.X.Cmd.(*syntax.BinaryCmd); ok && inner.Op == syntax.Pipe {
+		n += countPipelineStages(inner)
+	} else {
+		n += 1
+	}
+	return n
 }
 
 // syncWriter wraps an io.Writer with a mutex so concurrent writes are safe.
