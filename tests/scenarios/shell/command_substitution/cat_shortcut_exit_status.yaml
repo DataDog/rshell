@@ -1,4 +1,5 @@
-description: $(<file) shortcut resets exit status after prior failed substitution.
+description: $(<file) shortcut is rejected at validation even when combined with other assignments.
+skip_assert_against_bash: true
 setup:
   files:
     - path: ok.txt
@@ -9,7 +10,7 @@ input:
     a=$(false) b=$(<ok.txt)
     echo "$?"
 expect:
-  stdout: |+
-    0
-  stderr: ""
-  exit_code: 0
+  stdout: ""
+  stderr_contains:
+    - "< input redirection requires a command"
+  exit_code: 2

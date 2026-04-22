@@ -93,6 +93,20 @@ func validateNode(node syntax.Node) error {
 				err = fmt.Errorf("background execution (&) is not supported")
 				return false
 			}
+			// A `<` input redirection must be paired with a command that
+			// performs the read (e.g. `cat < file`). Without a command,
+			// bash implements the POSIX `$(<file)` shortcut by reading the
+			// file directly — which bypasses the AllowedCommands allowlist.
+			// Reject any bare `<` redirection here so the only way to read
+			// a file is through an allowed builtin.
+			if n.Cmd == nil {
+				for _, rd := range n.Redirs {
+					if rd.Op == syntax.RdrIn {
+						err = fmt.Errorf("< input redirection requires a command (e.g. cat < file); $(<file) is not supported")
+						return false
+					}
+				}
+			}
 
 		// Blocked pipe operators.
 		case *syntax.BinaryCmd:

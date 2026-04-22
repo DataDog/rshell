@@ -1,4 +1,5 @@
-description: $(<file) shortcut reads file contents directly.
+description: $(<file) is rejected because it bypasses the command allowlist; use $(cat file) instead.
+skip_assert_against_bash: true
 setup:
   files:
     - path: data.txt
@@ -9,7 +10,7 @@ input:
     x=$(<data.txt)
     echo "$x"
 expect:
-  stdout: |+
-    file content here
-  stderr: ""
-  exit_code: 0
+  stdout: ""
+  stderr_contains:
+    - "< input redirection requires a command"
+  exit_code: 2

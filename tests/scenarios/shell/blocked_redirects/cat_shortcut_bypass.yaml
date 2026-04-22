@@ -1,0 +1,17 @@
+description: $(<file) must not bypass the command allowlist — even with the file in allowed_paths and no file-reading commands allowed, the read is rejected at validation.
+skip_assert_against_bash: true
+setup:
+  files:
+    - path: secret.txt
+      content: "top secret"
+input:
+  allowed_paths: ["$DIR"]
+  allowed_commands: ["rshell:echo"]
+  script: |+
+    x=$(<secret.txt)
+    echo "$x"
+expect:
+  stdout: ""
+  stderr_contains:
+    - "< input redirection requires a command"
+  exit_code: 2
