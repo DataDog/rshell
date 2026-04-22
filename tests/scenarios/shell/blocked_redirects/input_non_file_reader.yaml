@@ -1,0 +1,16 @@
+description: < input redirection is rejected when paired with a command that does not read file contents (echo just writes its args).
+skip_assert_against_bash: true
+setup:
+  files:
+    - path: secret.txt
+      content: "do not leak"
+input:
+  allowed_paths: ["$DIR"]
+  allowed_commands: ["rshell:echo"]
+  script: |+
+    echo hi < secret.txt
+expect:
+  stdout: ""
+  stderr_contains:
+    - "file-reading command"
+  exit_code: 2

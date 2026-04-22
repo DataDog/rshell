@@ -13,5 +13,5 @@ input:
 expect:
   stdout: ""
   stderr_contains:
-    - "< input redirection requires a command"
+    - "file-reading command"
   exit_code: 2

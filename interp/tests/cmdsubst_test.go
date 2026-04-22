@@ -178,7 +178,7 @@ func TestCmdSubstCatShortcutRejected(t *testing.T) {
 	stdout, stderr, code := cmdSubstRun(t, `x=$(<data.txt); echo "$x"`, dir)
 	assert.Equal(t, 2, code, "$(<file) must be rejected at validation")
 	assert.Equal(t, "", stdout, "must not emit any file content")
-	assert.Contains(t, stderr, "< input redirection requires a command")
+	assert.Contains(t, stderr, "file-reading command")
 }
 
 func TestCmdSubstCatShortcutMissingFileRejected(t *testing.T) {
@@ -188,7 +188,7 @@ func TestCmdSubstCatShortcutMissingFileRejected(t *testing.T) {
 	stdout, stderr, code := cmdSubstRun(t, `x=$(<nonexistent.txt); echo "$?"`, dir)
 	assert.Equal(t, 2, code)
 	assert.Equal(t, "", stdout)
-	assert.Contains(t, stderr, "< input redirection requires a command")
+	assert.Contains(t, stderr, "file-reading command")
 }
 
 func TestCmdSubstCatShortcutCommandAllowlistBypass(t *testing.T) {
@@ -205,7 +205,7 @@ func TestCmdSubstCatShortcutCommandAllowlistBypass(t *testing.T) {
 	)
 	assert.Equal(t, 2, code, "must reject at validation before any read occurs")
 	assert.Equal(t, "", stdout, "must not leak the file contents")
-	assert.Contains(t, stderr, "< input redirection requires a command")
+	assert.Contains(t, stderr, "file-reading command")
 }
 
 // --- For loop integration ---
