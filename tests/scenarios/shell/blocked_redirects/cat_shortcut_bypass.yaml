@@ -13,7 +13,6 @@ input:
 expect:
   stdout: |+
 
-  stderr_contains:
-    - "file read not permitted"
-    - "cat not in allowed commands"
+  stderr: |+
+    $(<file): file read not permitted (cat not in allowed commands)
   exit_code: 0
