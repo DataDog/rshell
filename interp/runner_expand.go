@@ -64,6 +64,13 @@ const MaxGlobReadDirCalls = 10_000
 
 // cmdSubst handles command substitution ($(...) and `...`).
 // It runs the commands in a subshell and writes their stdout to w.
+//
+// Special case: the POSIX `$(<file)` shortcut reads file contents
+// directly without spawning a subshell. Because that path performs a
+// file read without invoking any command, it would bypass the
+// AllowedCommands allowlist if left unchecked. We therefore gate the
+// shortcut on `cat` being an allowed command — `$(<file)` is treated as
+// an implicit `$(cat file)` for allowlist purposes.
 func (r *Runner) cmdSubst(w io.Writer, cs *syntax.CmdSubst) error {
 	if len(cs.Stmts) == 0 {
 		return nil
@@ -71,6 +78,12 @@ func (r *Runner) cmdSubst(w io.Writer, cs *syntax.CmdSubst) error {
 
 	// $(<file) shortcut: read file contents directly without a subshell.
 	if word := catShortcutArg(cs.Stmts[0]); word != nil && len(cs.Stmts) == 1 {
+		if !r.allowAllCommands && !r.allowedCommands["cat"] {
+			r.errf("$(<file): file read not permitted (cat not in allowed commands)\n")
+			r.lastExpandExit = exitStatus{code: 1}
+			r.lastExit = r.lastExpandExit
+			return nil
+		}
 		path := r.literal(word)
 		f, err := r.open(r.ectx, path, os.O_RDONLY, 0, true)
 		if err != nil {

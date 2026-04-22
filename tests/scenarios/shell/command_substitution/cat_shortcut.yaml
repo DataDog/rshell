@@ -1,4 +1,4 @@
-description: $(<file) shortcut reads file contents directly.
+description: $(<file) shortcut reads file contents directly when cat is allowed.
 setup:
   files:
     - path: data.txt

@@ -42,7 +42,7 @@ Blocked features are rejected before execution with exit code 2.
 - ✅ Expansion: `$VAR`, `${VAR}`
 - ✅ `$?` — last exit code (the only supported special variable)
 - ✅ Inline assignment: `VAR=value command` (scoped to that command)
-- ✅ Command substitution: `$(cmd)`, `` `cmd` `` — captures stdout; trailing newlines stripped; `$(<file)` shortcut reads file directly; output capped at 1 MiB
+- ✅ Command substitution: `$(cmd)`, `` `cmd` `` — captures stdout; trailing newlines stripped; `$(<file)` shortcut reads file directly (gated on `cat` being in the command allowlist); output capped at 1 MiB
 - ❌ Arithmetic expansion: `$(( expr ))`
 - ❌ Array assignment: `arr=(a b c)`, `arr[0]=x`
 - ❌ Append assignment: `VAR+=value`

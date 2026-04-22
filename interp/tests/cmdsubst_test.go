@@ -182,6 +182,41 @@ func TestCmdSubstCatShortcutMissingFile(t *testing.T) {
 	assert.Equal(t, "1\n", stdout, "$? should be 1 from the failed substitution")
 }
 
+// TestCmdSubstCatShortcutCommandAllowlistBypass is the regression test
+// for the original vulnerability: $(<file) must be gated on `cat` being
+// in AllowedCommands. With the file in AllowedPaths but cat absent from
+// the allowlist, the shortcut must refuse to read.
+func TestCmdSubstCatShortcutCommandAllowlistBypass(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "secret.txt"), []byte("top secret"), 0644))
+	stdout, stderr, code := cmdSubstRunWithOpts(t,
+		`x=$(<secret.txt); echo "[$x]"`,
+		dir,
+		interp.AllowedPaths([]string{dir}),
+		interp.AllowedCommands([]string{"rshell:echo"}),
+	)
+	assert.Equal(t, 0, code, "script completes; only the substitution fails")
+	assert.Equal(t, "[]\n", stdout, "must not leak the file contents")
+	assert.Contains(t, stderr, "file read not permitted")
+	assert.Contains(t, stderr, "cat not in allowed commands")
+}
+
+// TestCmdSubstCatShortcutAllowedWhenCatAllowed verifies the shortcut
+// works when cat is explicitly in AllowedCommands (not just
+// AllowAllCommands).
+func TestCmdSubstCatShortcutAllowedWhenCatAllowed(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "data.txt"), []byte("ok"), 0644))
+	stdout, _, code := cmdSubstRunWithOpts(t,
+		`x=$(<data.txt); echo "$x"`,
+		dir,
+		interp.AllowedPaths([]string{dir}),
+		interp.AllowedCommands([]string{"rshell:cat", "rshell:echo"}),
+	)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "ok\n", stdout)
+}
+
 // --- For loop integration ---
 
 func TestCmdSubstInForLoop(t *testing.T) {
