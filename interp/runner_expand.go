@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"os"
 	"strings"
 	"sync"
 
@@ -64,17 +65,54 @@ const MaxGlobReadDirCalls = 10_000
 // cmdSubst handles command substitution ($(...) and `...`).
 // It runs the commands in a subshell and writes their stdout to w.
 //
-// The $(<file) POSIX shortcut is intentionally NOT implemented here: it
-// reads file contents without invoking any command and thus bypasses the
-// AllowedCommands allowlist. Scripts that need file contents must invoke
-// an allowed file-reading command explicitly, e.g. $(cat file). Bare
-// input redirection without a command is rejected at validation time by
-// validateRedirectHasCommand.
+// Special case: the POSIX `$(<file)` shortcut reads file contents
+// directly without spawning a subshell. Because that path performs a
+// file read without invoking any command, it would bypass the
+// AllowedCommands allowlist if left unchecked. We therefore gate the
+// shortcut on `cat` being an allowed command — `$(<file)` is treated as
+// an implicit `$(cat file)` for allowlist purposes.
 func (r *Runner) cmdSubst(w io.Writer, cs *syntax.CmdSubst) error {
 	if len(cs.Stmts) == 0 {
 		return nil
 	}
 
+	// $(<file) shortcut: read file contents directly without a subshell.
+	if word := catShortcutArg(cs.Stmts[0]); word != nil && len(cs.Stmts) == 1 {
+		if !r.allowAllCommands && !r.allowedCommands["cat"] {
+			r.errf("$(<file): file read not permitted (cat not in allowed commands)\n")
+			r.lastExpandExit = exitStatus{code: 1}
+			r.lastExit = r.lastExpandExit
+			return nil
+		}
+		path := r.literal(word)
+		f, err := r.open(r.ectx, path, os.O_RDONLY, 0, true)
+		if err != nil {
+			// r.open already printed the error; set exit status and
+			// return nil so the expand layer does not double-report.
+			r.lastExpandExit = exitStatus{code: 1}
+			r.lastExit = r.lastExpandExit
+			return nil
+		}
+		defer f.Close()
+		// If the path is a directory, silently produce empty output (matches bash).
+		if st, ok := f.(interface{ Stat() (fs.FileInfo, error) }); ok {
+			if fi, serr := st.Stat(); serr == nil && fi.IsDir() {
+				r.lastExpandExit = exitStatus{code: 0}
+				r.lastExit = r.lastExpandExit
+				return nil
+			}
+		}
+		_, err = io.Copy(w, io.LimitReader(f, maxCmdSubstOutput))
+		var exitCode uint8
+		if err != nil {
+			exitCode = 1
+		}
+		r.lastExpandExit = exitStatus{code: exitCode}
+		r.lastExit = r.lastExpandExit
+		return err
+	}
+
+	// General case: run statements in a subshell, capturing stdout.
 	var buf bytes.Buffer
 	r2 := r.subshell(false)
 	r2.stdout = &limitWriter{w: &buf, limit: maxCmdSubstOutput}
@@ -92,6 +130,23 @@ func (r *Runner) cmdSubst(w io.Writer, cs *syntax.CmdSubst) error {
 	}
 	_, err := w.Write(buf.Bytes())
 	return err
+}
+
+// catShortcutArg detects the $(<file) pattern: a single statement with no
+// command and exactly one input redirection. Returns the redirect word if
+// matched, nil otherwise.
+func catShortcutArg(stmt *syntax.Stmt) *syntax.Word {
+	if stmt.Cmd != nil || stmt.Negated || stmt.Background || stmt.Coprocess || stmt.Disown {
+		return nil
+	}
+	if len(stmt.Redirs) != 1 {
+		return nil
+	}
+	rd := stmt.Redirs[0]
+	if rd.Op != syntax.RdrIn {
+		return nil
+	}
+	return rd.Word
 }
 
 // limitWriter wraps a writer and stops writing after limit bytes.

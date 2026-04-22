@@ -1,4 +1,4 @@
-description: The $(<file) shortcut is rejected; $(cat file) is the allowed equivalent and still strips trailing newlines.
+description: $(<file) strips trailing newlines from file content.
 setup:
   files:
     - path: trailing.txt
@@ -6,7 +6,7 @@ setup:
 input:
   allowed_paths: ["$DIR"]
   script: |+
-    x=$(cat trailing.txt)
+    x=$(<trailing.txt)
     echo "[$x]"
 expect:
   stdout: |+

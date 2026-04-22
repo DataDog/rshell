@@ -42,8 +42,7 @@ Blocked features are rejected before execution with exit code 2.
 - ✅ Expansion: `$VAR`, `${VAR}`
 - ✅ `$?` — last exit code (the only supported special variable)
 - ✅ Inline assignment: `VAR=value command` (scoped to that command)
-- ✅ Command substitution: `$(cmd)`, `` `cmd` `` — captures stdout; trailing newlines stripped; output capped at 1 MiB
-- ❌ `$(<file)` shortcut — bypasses the command allowlist; use `$(cat file)` (or another allowed file-reading builtin) instead
+- ✅ Command substitution: `$(cmd)`, `` `cmd` `` — captures stdout; trailing newlines stripped; `$(<file)` shortcut reads file directly (gated on `cat` being in the command allowlist); output capped at 1 MiB
 - ❌ Arithmetic expansion: `$(( expr ))`
 - ❌ Array assignment: `arr=(a b c)`, `arr[0]=x`
 - ❌ Append assignment: `VAR+=value`
@@ -70,7 +69,7 @@ Blocked features are rejected before execution with exit code 2.
 ## Pipes and Redirections
 
 - ✅ `|` — pipe stdout
-- ✅ `<` — input redirection (read-only, within AllowedPaths); only permitted directly on file-reading builtins: `cat`, `cut`, `grep`, `head`, `sed`, `sort`, `strings`, `tail`, `tr`, `uniq`, `wc`
+- ✅ `<` — input redirection (read-only, within AllowedPaths)
 - ✅ `<<DELIM` — heredoc
 - ✅ `<<-DELIM` — heredoc with tab stripping
 - ✅ `>/dev/null`, `2>/dev/null` — redirect stdout or stderr to /dev/null (output is discarded; only `/dev/null` is allowed as target)

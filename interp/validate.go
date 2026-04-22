@@ -93,10 +93,6 @@ func validateNode(node syntax.Node) error {
 				err = fmt.Errorf("background execution (&) is not supported")
 				return false
 			}
-			if rerr := validateInputRedirection(n); rerr != nil {
-				err = rerr
-				return false
-			}
 
 		// Blocked pipe operators.
 		case *syntax.BinaryCmd:
@@ -201,103 +197,6 @@ func validateAssign(as *syntax.Assign) error {
 	}
 	if as.Index != nil {
 		return fmt.Errorf("array index assignment is not supported")
-	}
-	return nil
-}
-
-// fileReadingCommands enumerates the builtins whose semantics is "read
-// stdin (or a file arg) and process its contents". These are the only
-// commands the `<` input redirection may be applied to — commands that
-// ignore stdin (echo, printf, true, ps, …) cannot be used to smuggle
-// file reads past the AllowedCommands allowlist via constructs like
-// `echo < file` being rewritten into `$(<file)` by the cmdsubst layer.
-//
-// Keep this list in sync with builtins/ — a command belongs here iff
-// its implementation actually consumes stdin as file-like content.
-var fileReadingCommands = map[string]bool{
-	"cat":     true,
-	"cut":     true,
-	"grep":    true,
-	"head":    true,
-	"sed":     true,
-	"sort":    true,
-	"strings": true,
-	"tail":    true,
-	"tr":      true,
-	"uniq":    true,
-	"wc":      true,
-}
-
-// fileReadingCommandList is the human-readable form of the set above,
-// used in validation error messages so callers know which commands are
-// acceptable on the LHS of `<`.
-const fileReadingCommandList = "cat, cut, grep, head, sed, sort, strings, tail, tr, uniq, wc"
-
-// validateInputRedirection enforces the rule that `<` input redirection
-// may only be applied to a simple call to one of the fileReadingCommands
-// builtins. This closes the `$(<file)` bypass and the equivalent
-// bare/compound forms — bash implements that shortcut by reading the
-// file directly, which skips the AllowedCommands check entirely.
-//
-// The rule deliberately requires a static (literal) command name: a
-// dynamic name like `$CMD < file` cannot be validated without running
-// the expansion, so we reject it rather than permit a bypass surface.
-func validateInputRedirection(stmt *syntax.Stmt) error {
-	var in *syntax.Redirect
-	for _, rd := range stmt.Redirs {
-		if rd.Op != syntax.RdrIn {
-			continue
-		}
-		// Non-default fds (e.g. `3< file`) are rejected by
-		// validateRedirect with a more precise error message. Skip them
-		// here so the fd-level diagnostic surfaces instead of this rule.
-		if rd.N != nil && rd.N.Value != "0" {
-			continue
-		}
-		in = rd
-		break
-	}
-	if in == nil {
-		return nil
-	}
-
-	// Bare `< file` with no command — this is the shape used by
-	// `$(<file)`, `( <file )`, `{ <file; }`, etc. and is exactly the
-	// allowlist-bypass path.
-	if stmt.Cmd == nil {
-		return fmt.Errorf("< input redirection requires a file-reading command (%s); bare <file and $(<file) are not supported because they bypass the command allowlist", fileReadingCommandList)
-	}
-
-	// `< file` must attach directly to a simple command, never to a
-	// compound construct like `{ … } < file` or `if … < file`. Those
-	// would apply the redirect transitively to whatever inner command
-	// reads stdin first, which makes it hard to reason about which
-	// command is actually consuming the file.
-	call, ok := stmt.Cmd.(*syntax.CallExpr)
-	if !ok {
-		return fmt.Errorf("< input redirection must be attached directly to a file-reading command (%s), not to a compound statement", fileReadingCommandList)
-	}
-
-	// A CallExpr with only assignments (e.g. `FOO=bar < file`) runs no
-	// command — the redirect has no consumer, so the file read is
-	// unbound. Treat it the same as the bare-< case.
-	if len(call.Args) == 0 {
-		return fmt.Errorf("< input redirection requires a file-reading command (%s); assignment-only statements do not qualify", fileReadingCommandList)
-	}
-
-	// The command name must be a single literal part. Dynamic forms
-	// (variable expansion, command substitution in the name, quoted
-	// words) cannot be validated statically, so we reject them.
-	first := call.Args[0]
-	if len(first.Parts) != 1 {
-		return fmt.Errorf("< input redirection requires a statically-known file-reading command (%s); dynamic command names are not permitted", fileReadingCommandList)
-	}
-	lit, ok := first.Parts[0].(*syntax.Lit)
-	if !ok {
-		return fmt.Errorf("< input redirection requires a statically-known file-reading command (%s); dynamic command names are not permitted", fileReadingCommandList)
-	}
-	if !fileReadingCommands[lit.Value] {
-		return fmt.Errorf("< input redirection is only allowed with file-reading commands (%s); %q is not one of them", fileReadingCommandList, lit.Value)
 	}
 	return nil
 }

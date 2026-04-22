@@ -1,4 +1,4 @@
-description: $(<file) must not bypass the command allowlist — even with the file in allowed_paths and no file-reading commands allowed, the read is rejected at validation.
+description: $(<file) must not bypass the command allowlist — with the file in allowed_paths but cat NOT in allowed_commands, the shortcut is blocked at runtime.
 skip_assert_against_bash: true
 setup:
   files:
@@ -11,7 +11,9 @@ input:
     x=$(<secret.txt)
     echo "$x"
 expect:
-  stdout: ""
+  stdout: |+
+
   stderr_contains:
-    - "file-reading command"
-  exit_code: 2
+    - "file read not permitted"
+    - "cat not in allowed commands"
+  exit_code: 0

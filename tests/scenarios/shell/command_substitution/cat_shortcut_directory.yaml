@@ -1,5 +1,4 @@
-description: $(<dir) is also rejected at validation because it uses the blocked $(<file) shortcut.
-skip_assert_against_bash: true
+description: $(<dir) silently produces empty output (matches bash).
 setup:
   files:
     - path: subdir/placeholder.txt
@@ -10,7 +9,7 @@ input:
     x=$(<subdir)
     echo "[$x]"
 expect:
-  stdout: ""
-  stderr_contains:
-    - "file-reading command"
-  exit_code: 2
+  stdout: |+
+    []
+  stderr: ""
+  exit_code: 0
