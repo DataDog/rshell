@@ -334,7 +334,7 @@ func TestScriptAtMaxScriptBytes(t *testing.T) {
 // error message, rather than allowed to recurse into a stack-overflow panic
 // inside the parser (observed at ~2·10^5 levels).
 func TestScriptExceedsMaxParseDepth(t *testing.T) {
-	const depth = 1500 // safely above MaxParseDepth (1000)
+	depth := interp.MaxParseDepth + 500
 	script := "echo " + strings.Repeat("$(echo ", depth) + "hi" + strings.Repeat(")", depth)
 
 	code, _, stderr := runCLI(t, "--allow-all-commands", "-c", script)

@@ -615,7 +615,12 @@ const MaxScriptBytes = 5 * 1024 * 1024 // 5 MiB
 // before any context deadline can fire, crashing the host process when rshell
 // is embedded as a library. A script under the 5 MiB byte cap can still reach
 // that depth, so byte-size alone is not a sufficient guard.
-const MaxParseDepth = 1000
+//
+// The limit is deliberately generous (10 000 ≫ any realistic script) so that
+// the coarse pre-check in [scriptNestingDepth] — which doesn't understand
+// quoting and so may over-count literal parens — never rejects a legitimate
+// program.
+const MaxParseDepth = 10000
 
 // ParseScript parses script as a shell program and returns the resulting AST.
 // It enforces [MaxScriptBytes] and [MaxParseDepth] before handing the input to
@@ -640,70 +645,22 @@ func ParseScript(script, name string) (*syntax.File, error) {
 	return syntax.NewParser().Parse(strings.NewReader(script), name)
 }
 
-// scriptNestingDepth returns the maximum simultaneous open-paren /
-// command-substitution depth observed in script, respecting shell quoting:
+// scriptNestingDepth returns the maximum simultaneous open-paren depth
+// observed in script by a byte-wise scan of `(` and `)` with no quoting
+// awareness.
 //
-//   - inside single quotes, all characters are literal;
-//   - inside double quotes, backslash escapes the next byte and only `$(` (not
-//     bare `(`) opens a new substitution;
-//   - unquoted, `\` escapes the next byte and bare `(` (subshells) as well as
-//     `$(` (command substitution) open a new level.
-//
-// Backticks are intentionally not tracked: to nest “ `…` “ in shell syntax
-// each level doubles the required backslash count, so a script reaching
-// parser-harmful backtick depth would already exceed [MaxScriptBytes].
-//
-// Heredoc bodies are treated as ordinary unquoted text; this over-counts when
-// a heredoc body contains literal `(` characters, but the threshold
-// ([MaxParseDepth]) is far above any realistic heredoc content.
+// This is a deliberately coarse upper bound on what the parser will recurse
+// into. It over-counts for literal parens inside single/double quotes,
+// heredoc bodies, `$(( … ))` arithmetic, and `<(…)`/`>(…)` process
+// substitution (the last two are blocked anyway). It never under-counts — any
+// `(` that the parser will recurse on is seen here — which is the property
+// that matters: the check cannot be bypassed by quoting tricks. The
+// [MaxParseDepth] threshold is set high enough that over-counting does not
+// reject realistic scripts.
 func scriptNestingDepth(script string) int {
-	var (
-		maxDepth int
-		depth    int
-		inSQuote bool
-		inDQuote bool
-		escaped  bool
-	)
+	var maxDepth, depth int
 	for i := 0; i < len(script); i++ {
-		c := script[i]
-		if escaped {
-			escaped = false
-			continue
-		}
-		if inSQuote {
-			if c == '\'' {
-				inSQuote = false
-			}
-			continue
-		}
-		if inDQuote {
-			switch c {
-			case '\\':
-				escaped = true
-			case '"':
-				inDQuote = false
-			case '$':
-				if i+1 < len(script) && script[i+1] == '(' {
-					depth++
-					if depth > maxDepth {
-						maxDepth = depth
-					}
-					i++ // consume the '('
-				}
-			case ')':
-				if depth > 0 {
-					depth--
-				}
-			}
-			continue
-		}
-		switch c {
-		case '\\':
-			escaped = true
-		case '\'':
-			inSQuote = true
-		case '"':
-			inDQuote = true
+		switch script[i] {
 		case '(':
 			depth++
 			if depth > maxDepth {

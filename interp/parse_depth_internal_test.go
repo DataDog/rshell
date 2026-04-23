@@ -27,18 +27,18 @@ func TestScriptNestingDepth(t *testing.T) {
 		{"nested cmd subst depth 3", "echo $(echo $(echo $(echo hi)))", 3},
 		{"mixed subshell and subst", "( $( ( $(x) ) ) )", 4},
 
-		// Quoting must make parens literal.
-		{"single quoted parens do not count", "echo '((((((('", 0},
-		{"double quoted bare paren does not count", `echo "((((((("`, 0},
-		{"double quoted $( still counts", `echo "$(echo $(x))"`, 2},
+		// Unbalanced ')' without matching '(' must not drive depth negative.
+		{"leading close paren ignored", ")))(((", 3},
 
-		// Backslash escapes the next byte in unquoted/double-quoted context.
-		{"backslash escapes unquoted paren", `\(\(\(`, 0},
-		{"backslash escapes paren in dquote", `"\(\(\("`, 0},
-		{"backslash does not escape in single quote", `'\(\(\('`, 0},
-
-		// Maxima are tracked, not final depth.
+		// Max is tracked, not final depth.
 		{"max before close", "(((a))) (b)", 3},
+
+		// Loose scan: literal parens inside quotes are counted. This is an
+		// intentional over-count — safe-by-construction (never under-counts,
+		// so it cannot be bypassed) and harmless in practice because the
+		// threshold sits far above any realistic script.
+		{"single quoted parens count (over-count by design)", "'((('", 3},
+		{"double quoted parens count (over-count by design)", `"((("`, 3},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
