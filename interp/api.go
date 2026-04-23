@@ -608,21 +608,114 @@ func (r *Runner) Run(ctx context.Context, node syntax.Node) (retErr error) {
 // interpreter only receives the pre-parsed AST.
 const MaxScriptBytes = 5 * 1024 * 1024 // 5 MiB
 
+// MaxParseDepth bounds the maximum parenthesis / command-substitution nesting
+// depth accepted by [ParseScript]. The underlying parser recurses on every
+// `(`, `$(`, and “ ` “; a sufficiently deep chain (observed at ~2·10^5)
+// exhausts the goroutine stack and panics with `runtime: stack overflow`
+// before any context deadline can fire, crashing the host process when rshell
+// is embedded as a library. A script under the 5 MiB byte cap can still reach
+// that depth, so byte-size alone is not a sufficient guard.
+const MaxParseDepth = 1000
+
 // ParseScript parses script as a shell program and returns the resulting AST.
-// It enforces [MaxScriptBytes]: if len(script) exceeds that limit the call
-// returns an error immediately, before the parser allocates any memory.
+// It enforces [MaxScriptBytes] and [MaxParseDepth] before handing the input to
+// the parser, so oversized or pathologically nested scripts are rejected
+// without allocating parser memory or recursing into a stack-overflow.
 //
 // name is an optional filename used in parse-error messages (pass "" if
 // there is no associated file).
 //
 // Library callers should use ParseScript rather than calling the underlying
-// syntax parser directly so that the size limit is consistently enforced.
+// syntax parser directly so that the size and depth limits are consistently
+// enforced.
 func ParseScript(script, name string) (*syntax.File, error) {
 	if len(script) > MaxScriptBytes {
 		return nil, fmt.Errorf("script size %d bytes exceeds maximum of %d bytes (%d MiB); split the script into smaller pieces",
 			len(script), MaxScriptBytes, MaxScriptBytes/(1024*1024))
 	}
+	if depth := scriptNestingDepth(script); depth > MaxParseDepth {
+		return nil, fmt.Errorf("script nesting depth %d exceeds maximum of %d; reduce $(…)/(…) nesting",
+			depth, MaxParseDepth)
+	}
 	return syntax.NewParser().Parse(strings.NewReader(script), name)
+}
+
+// scriptNestingDepth returns the maximum simultaneous open-paren /
+// command-substitution depth observed in script, respecting shell quoting:
+//
+//   - inside single quotes, all characters are literal;
+//   - inside double quotes, backslash escapes the next byte and only `$(` (not
+//     bare `(`) opens a new substitution;
+//   - unquoted, `\` escapes the next byte and bare `(` (subshells) as well as
+//     `$(` (command substitution) open a new level.
+//
+// Backticks are intentionally not tracked: to nest “ `…` “ in shell syntax
+// each level doubles the required backslash count, so a script reaching
+// parser-harmful backtick depth would already exceed [MaxScriptBytes].
+//
+// Heredoc bodies are treated as ordinary unquoted text; this over-counts when
+// a heredoc body contains literal `(` characters, but the threshold
+// ([MaxParseDepth]) is far above any realistic heredoc content.
+func scriptNestingDepth(script string) int {
+	var (
+		maxDepth int
+		depth    int
+		inSQuote bool
+		inDQuote bool
+		escaped  bool
+	)
+	for i := 0; i < len(script); i++ {
+		c := script[i]
+		if escaped {
+			escaped = false
+			continue
+		}
+		if inSQuote {
+			if c == '\'' {
+				inSQuote = false
+			}
+			continue
+		}
+		if inDQuote {
+			switch c {
+			case '\\':
+				escaped = true
+			case '"':
+				inDQuote = false
+			case '$':
+				if i+1 < len(script) && script[i+1] == '(' {
+					depth++
+					if depth > maxDepth {
+						maxDepth = depth
+					}
+					i++ // consume the '('
+				}
+			case ')':
+				if depth > 0 {
+					depth--
+				}
+			}
+			continue
+		}
+		switch c {
+		case '\\':
+			escaped = true
+		case '\'':
+			inSQuote = true
+		case '"':
+			inDQuote = true
+		case '(':
+			depth++
+			if depth > maxDepth {
+				maxDepth = depth
+			}
+		case ')':
+			if depth > 0 {
+				depth--
+			}
+		}
+	}
+	return maxDepth
 }
 
 // Close releases resources held by the Runner, such as os.Root file descriptors

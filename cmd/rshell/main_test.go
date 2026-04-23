@@ -328,3 +328,17 @@ func TestScriptAtMaxScriptBytes(t *testing.T) {
 	assert.Equal(t, 0, code)
 	assert.Equal(t, "ok\n", stdout)
 }
+
+// TestScriptExceedsMaxParseDepth verifies that a script whose $(…) nesting
+// exceeds interp.MaxParseDepth is rejected with exit code 2 and a clear
+// error message, rather than allowed to recurse into a stack-overflow panic
+// inside the parser (observed at ~2·10^5 levels).
+func TestScriptExceedsMaxParseDepth(t *testing.T) {
+	const depth = 1500 // safely above MaxParseDepth (1000)
+	script := "echo " + strings.Repeat("$(echo ", depth) + "hi" + strings.Repeat(")", depth)
+
+	code, _, stderr := runCLI(t, "--allow-all-commands", "-c", script)
+	assert.Equal(t, 2, code, "over-nested script should return exit code 2")
+	assert.Contains(t, stderr, "nesting depth")
+	assert.Contains(t, stderr, "exceeds maximum")
+}
