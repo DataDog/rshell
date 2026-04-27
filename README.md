@@ -66,7 +66,7 @@ Every access path is default-deny:
 
 **AllowedCommands** restricts which commands (builtins or external) the interpreter may execute. Commands must be specified with the `rshell:` namespace prefix (e.g. `rshell:cat`, `rshell:echo`). If not set, no commands are allowed.
 
-**AllowedPaths** restricts all file operations to specified directories using Go's `os.Root` API (`openat` syscalls), making it immune to symlink traversal, TOCTOU races, and `..` escape attacks.
+**AllowedPaths** restricts all file operations to specified directories using Go's `os.Root` API (`openat` syscalls), making it immune to symlink traversal, TOCTOU races, and `..` escape attacks. Configured directories that cannot be opened (missing, not a directory, no permission) are skipped with a diagnostic message; by default these messages are flushed once to the runner's stderr at construction time. Callers that need to keep stderr clean of sandbox diagnostics can route them to a dedicated sink with `WarningsWriter(io.Writer)` or retrieve them programmatically via `Runner.Warnings()`.
 
 > **Note:** The `ss` and `ip route` builtins bypass `AllowedPaths` for their `/proc/net/*` reads. Both builtins open kernel pseudo-filesystem paths (e.g. `/proc/net/tcp`, `/proc/net/route`) directly with `os.Open` rather than going through the sandboxed opener. These paths are hardcoded in the implementation and are never derived from user input, so there is no sandbox-escape risk. However, operators cannot use `AllowedPaths` to block `ss` from enumerating local sockets or `ip route` from reading the routing table — these reads succeed regardless of the configured path policy.
 
