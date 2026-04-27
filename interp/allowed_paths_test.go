@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -288,4 +289,86 @@ func TestAllowedPathsClose(t *testing.T) {
 	// Close should not panic, even if called twice
 	require.NoError(t, runner.Close())
 	require.NoError(t, runner.Close())
+}
+
+func TestSandboxWarningsDefaultGoToStderr(t *testing.T) {
+	var outBuf, errBuf bytes.Buffer
+	runner, err := interp.New(
+		interp.StdIO(nil, &outBuf, &errBuf),
+		interp.AllowedPaths([]string{"/nonexistent/path/that/does/not/exist"}),
+	)
+	require.NoError(t, err)
+	defer runner.Close()
+
+	assert.Contains(t, errBuf.String(), "AllowedPaths: skipping",
+		"with no WarningsWriter option, warnings should fall back to stderr")
+	assert.Empty(t, outBuf.String(), "warnings must never land on stdout")
+}
+
+func TestSandboxWarningsRoutedToDedicatedWriter(t *testing.T) {
+	var outBuf, errBuf, warnBuf bytes.Buffer
+	runner, err := interp.New(
+		interp.StdIO(nil, &outBuf, &errBuf),
+		interp.WarningsWriter(&warnBuf),
+		interp.AllowedPaths([]string{"/nonexistent/path/that/does/not/exist"}),
+	)
+	require.NoError(t, err)
+	defer runner.Close()
+
+	assert.Contains(t, warnBuf.String(), "AllowedPaths: skipping",
+		"warnings should be routed to the dedicated writer")
+	assert.Empty(t, errBuf.String(),
+		"with WarningsWriter set, stderr must remain clean of sandbox diagnostics")
+	assert.Empty(t, outBuf.String(), "warnings must never land on stdout")
+}
+
+func TestSandboxWarningsAccessor(t *testing.T) {
+	t.Run("returns warnings as slice", func(t *testing.T) {
+		runner, err := interp.New(
+			interp.WarningsWriter(io.Discard),
+			interp.AllowedPaths([]string{
+				"/nonexistent/path/one",
+				"/nonexistent/path/two",
+			}),
+		)
+		require.NoError(t, err)
+		defer runner.Close()
+
+		warnings := runner.Warnings()
+		require.Len(t, warnings, 2, "one entry per skipped path")
+		assert.Contains(t, warnings[0], "AllowedPaths: skipping")
+		assert.Contains(t, warnings[1], "AllowedPaths: skipping")
+	})
+
+	t.Run("returns nil when no warnings emitted", func(t *testing.T) {
+		dir := t.TempDir()
+		runner, err := interp.New(
+			interp.AllowedPaths([]string{dir}),
+		)
+		require.NoError(t, err)
+		defer runner.Close()
+
+		assert.Nil(t, runner.Warnings(),
+			"a clean configuration should yield no warnings")
+	})
+
+	t.Run("accessor still works when streaming flush is suppressed", func(t *testing.T) {
+		runner, err := interp.New(
+			interp.WarningsWriter(io.Discard),
+			interp.AllowedPaths([]string{"/nonexistent/path"}),
+		)
+		require.NoError(t, err)
+		defer runner.Close()
+
+		warnings := runner.Warnings()
+		require.Len(t, warnings, 1,
+			"io.Discard should suppress streaming output but not the accessor")
+		assert.Contains(t, warnings[0], "AllowedPaths: skipping")
+	})
+}
+
+func TestWarningsWriterRejectsNil(t *testing.T) {
+	_, err := interp.New(interp.WarningsWriter(nil))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "writer must not be nil")
 }

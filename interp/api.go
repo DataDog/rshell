@@ -55,9 +55,18 @@ type runnerConfig struct {
 	sandbox *allowedpaths.Sandbox
 
 	// sandboxWarnings holds diagnostic messages about skipped AllowedPaths
-	// entries. Written to stderr after all options are applied and defaults
-	// are set, so the output target is independent of option ordering.
+	// entries. Flushed to warningsWriter after all options are applied and
+	// defaults are set, so the output target is independent of option
+	// ordering. Retained on the runner after flush so callers can also
+	// retrieve them programmatically via [Runner.Warnings].
 	sandboxWarnings []byte
+
+	// warningsWriter is the destination for sandbox diagnostic messages
+	// (currently just AllowedPaths skip warnings). Defaults to r.stderr
+	// when unset; callers can route warnings to a separate sink (e.g. a
+	// dedicated buffer or logger) via [WarningsWriter] so they are not
+	// conflated with command stderr.
+	warningsWriter io.Writer
 
 	// hostPrefix is stored here so HostPrefix can be applied before or
 	// after AllowedPaths. Applied to the sandbox in New() after all
@@ -280,15 +289,21 @@ func New(opts ...RunnerOption) (*Runner, error) {
 	if r.stdout == nil || r.stderr == nil {
 		StdIO(r.stdin, r.stdout, r.stderr)(r)
 	}
+	// Default sandbox warnings to r.stderr so today's behaviour is
+	// preserved for callers who do not opt in to a dedicated sink.
+	if r.warningsWriter == nil {
+		r.warningsWriter = r.stderr
+	}
 	// Apply host prefix if set, now that both HostPrefix and AllowedPaths
 	// have been processed regardless of option ordering.
 	if r.hostPrefix != "" && r.sandbox != nil {
 		r.sandbox.SetHostPrefix(r.hostPrefix)
 	}
-	// Flush any sandbox warnings now that stderr is guaranteed to be set.
+	// Flush any sandbox warnings now that the warnings sink is guaranteed
+	// to be set. The buffer is retained on the runner so callers can also
+	// retrieve warnings via [Runner.Warnings].
 	if len(r.sandboxWarnings) > 0 {
-		r.stderr.Write(r.sandboxWarnings)
-		r.sandboxWarnings = nil
+		r.warningsWriter.Write(r.sandboxWarnings)
 	}
 	r.proc = builtins.NewProcProvider(r.procPath)
 	return r, nil
@@ -629,6 +644,53 @@ func ParseScript(script, name string) (*syntax.File, error) {
 // opened by AllowedPaths. It is safe to call Close multiple times.
 func (r *Runner) Close() error {
 	return r.sandbox.Close()
+}
+
+// WarningsWriter routes sandbox diagnostic messages (currently produced by
+// [AllowedPaths] when a configured directory cannot be opened) to the given
+// writer instead of the runner's stderr.
+//
+// Sandbox diagnostics are buffered during option processing and flushed once
+// during [New], after all other options have been applied. They are not
+// written again on subsequent runs.
+//
+// When unset, warnings fall back to the runner's stderr writer (whatever was
+// supplied via [StdIO]), matching the historical behaviour. Callers that
+// inspect stderr to detect command failure should pass a dedicated writer
+// here so sandbox diagnostics are not conflated with command output.
+//
+// Passing [io.Discard] suppresses the streaming flush entirely; the messages
+// remain accessible via [Runner.Warnings] regardless.
+func WarningsWriter(w io.Writer) RunnerOption {
+	return func(r *Runner) error {
+		if w == nil {
+			return fmt.Errorf("WarningsWriter: writer must not be nil")
+		}
+		r.warningsWriter = w
+		return nil
+	}
+}
+
+// Warnings returns the sandbox diagnostic messages collected during runner
+// construction (currently produced by [AllowedPaths] when a configured
+// directory cannot be opened), one entry per warning. The slice is empty when
+// no warnings were emitted.
+//
+// Callers that integrate rshell as a library can use this to surface
+// configuration problems in their own structured output (e.g. a "warnings"
+// field in an API response) without parsing them out of stderr.
+func (r *Runner) Warnings() []string {
+	if len(r.sandboxWarnings) == 0 {
+		return nil
+	}
+	s := string(r.sandboxWarnings)
+	// allowedpaths.New emits one warning per line, each terminated with
+	// "\n". Strip a single trailing newline before splitting so the result
+	// is one entry per warning rather than ending in a stray empty string.
+	if strings.HasSuffix(s, "\n") {
+		s = s[:len(s)-1]
+	}
+	return strings.Split(s, "\n")
 }
 
 // AllowedPaths restricts file and directory access to the specified directories.
