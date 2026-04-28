@@ -295,7 +295,7 @@ func protectEscapedLeftBracesWord(word *syntax.Word) *syntax.Word {
 
 func splitEscapedLeftBracesLit(lit *syntax.Lit) ([]syntax.WordPart, bool) {
 	s := lit.Value
-	if !strings.Contains(s, "\\{") {
+	if strings.Index(s, "\\{") < 0 {
 		return nil, false
 	}
 
@@ -327,7 +327,7 @@ func splitEscapedLeftBracesLit(lit *syntax.Lit) ([]syntax.WordPart, bool) {
 		}
 		appendLit(s[segmentStart:slashStart])
 		parts = append(parts, &syntax.SglQuoted{
-			Value: strings.Repeat("\\", slashCount/2) + "{",
+			Value: escapedLeftBraceValue(slashCount),
 		})
 		segmentStart = i + 1
 	}
@@ -337,6 +337,19 @@ func splitEscapedLeftBracesLit(lit *syntax.Lit) ([]syntax.WordPart, bool) {
 	}
 	appendLit(s[segmentStart:])
 	return parts, true
+}
+
+func escapedLeftBraceValue(slashCount int) string {
+	quotedSlashCount := slashCount / 2
+	if quotedSlashCount == 0 {
+		return "{"
+	}
+	var b strings.Builder
+	for i := 0; i < quotedSlashCount; i++ {
+		b.WriteByte('\\')
+	}
+	b.WriteByte('{')
+	return b.String()
 }
 
 func (r *Runner) literal(word *syntax.Word) string {
