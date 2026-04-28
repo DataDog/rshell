@@ -236,15 +236,15 @@ func (r *Runner) fields(words ...*syntax.Word) []string {
 	return strs
 }
 
-// protectEscapedLeftBraces preserves bash's handling of backslash-quoted left
-// braces before delegating to mvdan.cc/sh's field expansion.
+// protectEscapedLeftBraces preserves bash's handling of backslash-quoted brace
+// metacharacters before delegating to mvdan.cc/sh's field expansion.
 //
-// Brace expansion happens before quote removal, but backslashes still quote the
-// next byte for the purpose of deciding whether a "{" starts a brace
-// expansion. syntax.SplitBraces does not track that quote state for literal
-// parts, so an input like `\{` can be treated as an unmatched brace and keep the
-// backslash. Rewriting odd-backslash-escaped left braces as quoted word parts
-// prevents brace expansion from seeing them while producing the same final text.
+// expand.Fields calls syntax.SplitBraces before quote removal. SplitBraces scans
+// literal word parts for "{", ",", "..", and "}" without tracking whether a
+// backslash quoted the byte, while bash uses that quote state when deciding
+// whether a byte is brace syntax. Rewriting odd-backslash-escaped brace
+// metacharacters as quoted word parts prevents brace expansion from seeing them
+// while producing the same final text after quote removal.
 func protectEscapedLeftBraces(words []*syntax.Word) []*syntax.Word {
 	var out []*syntax.Word
 	for i, word := range words {
@@ -277,7 +277,7 @@ func protectEscapedLeftBracesWord(word *syntax.Word) *syntax.Word {
 			}
 			continue
 		}
-		litParts, changed := splitEscapedLeftBracesLit(lit, rightBraceQuotes[i])
+		litParts, changed := splitEscapedBraceMetasLit(lit, rightBraceQuotes[i])
 		if changed && parts == nil {
 			parts = make([]syntax.WordPart, 0, len(word.Parts)+len(litParts)-1)
 			parts = append(parts, word.Parts[:i]...)
@@ -328,9 +328,9 @@ func rightBraceQuotesAfterEscapedLeftBraces(parts []syntax.WordPart) map[int]map
 	return quotes
 }
 
-func splitEscapedLeftBracesLit(lit *syntax.Lit, rightBraceQuotes map[int]struct{}) ([]syntax.WordPart, bool) {
+func splitEscapedBraceMetasLit(lit *syntax.Lit, rightBraceQuotes map[int]struct{}) ([]syntax.WordPart, bool) {
 	s := lit.Value
-	if strings.Index(s, "\\{") < 0 && len(rightBraceQuotes) == 0 {
+	if !strings.Contains(s, "\\") && len(rightBraceQuotes) == 0 {
 		return nil, false
 	}
 
@@ -358,7 +358,7 @@ func splitEscapedLeftBracesLit(lit *syntax.Lit, rightBraceQuotes map[int]struct{
 			appendProtected(i, i+1, &syntax.SglQuoted{Value: "}"})
 			continue
 		}
-		if s[i] != '{' {
+		if !isBraceMetaByte(s[i]) {
 			continue
 		}
 		slashStart := i
@@ -370,7 +370,7 @@ func splitEscapedLeftBracesLit(lit *syntax.Lit, rightBraceQuotes map[int]struct{
 			continue
 		}
 		appendProtected(slashStart, i+1, &syntax.SglQuoted{
-			Value: escapedLeftBraceValue(slashCount),
+			Value: escapedBraceMetaValue(slashCount, s[i]),
 		})
 	}
 
@@ -404,10 +404,17 @@ func rightBraceToQuoteAfterEscapedLeftBrace(parts []syntax.WordPart, openPart in
 					depth++
 				}
 			case ',':
-				if depth == 0 {
+				if countBackslashesBefore(lit.Value, i)%2 == 0 && depth == 0 {
+					return 0, 0, false
+				}
+			case '.':
+				if countBackslashesBefore(lit.Value, i)%2 == 0 && depth == 0 && i+1 < len(lit.Value) && lit.Value[i+1] == '.' {
 					return 0, 0, false
 				}
 			case '}':
+				if countBackslashesBefore(lit.Value, i)%2 != 0 {
+					continue
+				}
 				if depth == 0 {
 					return partIndex, i, true
 				}
@@ -427,16 +434,25 @@ func countBackslashesBefore(s string, i int) int {
 	return count
 }
 
-func escapedLeftBraceValue(slashCount int) string {
+func isBraceMetaByte(b byte) bool {
+	switch b {
+	case '{', ',', '.', '}':
+		return true
+	default:
+		return false
+	}
+}
+
+func escapedBraceMetaValue(slashCount int, meta byte) string {
 	quotedSlashCount := slashCount / 2
 	if quotedSlashCount == 0 {
-		return "{"
+		return string(meta)
 	}
 	var b strings.Builder
 	for i := 0; i < quotedSlashCount; i++ {
 		b.WriteByte('\\')
 	}
-	b.WriteByte('{')
+	b.WriteByte(meta)
 	return b.String()
 }
 

@@ -74,6 +74,51 @@ func TestProtectEscapedLeftBraces(t *testing.T) {
 			want:   []string{"cmd", "{}x", "{y"},
 		},
 		{
+			name:   "escaped_comma_in_braced_alternative",
+			script: `cmd \{{a\,b},}`,
+			want:   []string{"cmd", "{a,b}", "{"},
+		},
+		{
+			name:   "escaped_right_brace_in_single_braced_word",
+			script: `cmd \{{a\}}`,
+			want:   []string{"cmd", "{{a}}"},
+		},
+		{
+			name:   "escaped_right_brace_in_braced_alternative",
+			script: `cmd \{{a\},}`,
+			want:   []string{"cmd", "{a}", "{"},
+		},
+		{
+			name:   "escaped_right_brace_in_braced_alternative_with_suffix",
+			script: `cmd \{{a\},z}`,
+			want:   []string{"cmd", "{a}", "{z"},
+		},
+		{
+			name:   "sequence_after_escaped_left_brace_still_expands",
+			script: `cmd \{{1..3},}`,
+			want:   []string{"cmd", "{1,}", "{2,}", "{3,}"},
+		},
+		{
+			name:   "escaped_dot_disables_sequence_after_escaped_left_brace",
+			script: `cmd \{{1\..3},}`,
+			want:   []string{"cmd", "{1..3}", "{"},
+		},
+		{
+			name:   "escaped_comma_in_regular_brace_expansion",
+			script: `cmd {a\,b,c}`,
+			want:   []string{"cmd", "a,b", "c"},
+		},
+		{
+			name:   "escaped_right_brace_in_regular_brace_expansion",
+			script: `cmd {a\}b,c}`,
+			want:   []string{"cmd", "a}b", "c"},
+		},
+		{
+			name:   "escaped_dot_in_regular_brace_expansion",
+			script: `cmd {1\..3,foo}`,
+			want:   []string{"cmd", "1..3", "foo"},
+		},
+		{
 			name:   "escaped_left_brace_adjacent_to_quoted_part",
 			script: `cmd \{"x"`,
 			want:   []string{"cmd", "{x"},
