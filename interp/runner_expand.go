@@ -330,6 +330,17 @@ func splitEscapedLeftBracesLit(lit *syntax.Lit) ([]syntax.WordPart, bool) {
 			Value: escapedLeftBraceValue(slashCount),
 		})
 		segmentStart = i + 1
+		// If the escaped left brace is immediately followed by "{}", the
+		// following "{" can still start a bash brace expansion whose first
+		// alternative begins with a literal "}" (for example, `\{{},}`).
+		// Quote that "}" too so syntax.SplitBraces does not prematurely
+		// close a malformed single-element expansion before seeing the comma.
+		if i+2 < len(s) && s[i+1] == '{' && s[i+2] == '}' {
+			appendLit(s[i+1 : i+2])
+			parts = append(parts, &syntax.SglQuoted{Value: "}"})
+			segmentStart = i + 3
+			i += 2
+		}
 	}
 
 	if parts == nil {
