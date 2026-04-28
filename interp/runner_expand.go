@@ -268,6 +268,7 @@ func protectEscapedLeftBracesWord(word *syntax.Word) *syntax.Word {
 	if word == nil {
 		return nil
 	}
+	rightBraceQuotes := rightBraceQuotesAfterEscapedLeftBraces(word.Parts)
 	var parts []syntax.WordPart
 	for i, part := range word.Parts {
 		lit, ok := part.(*syntax.Lit)
@@ -277,7 +278,7 @@ func protectEscapedLeftBracesWord(word *syntax.Word) *syntax.Word {
 			}
 			continue
 		}
-		litParts, changed := splitEscapedLeftBracesLit(lit)
+		litParts, changed := splitEscapedLeftBracesLit(lit, rightBraceQuotes[i])
 		if changed && parts == nil {
 			parts = make([]syntax.WordPart, 0, len(word.Parts)+len(litParts)-1)
 			parts = append(parts, word.Parts[:i]...)
@@ -294,9 +295,43 @@ func protectEscapedLeftBracesWord(word *syntax.Word) *syntax.Word {
 	return &protected
 }
 
-func splitEscapedLeftBracesLit(lit *syntax.Lit) ([]syntax.WordPart, bool) {
+func rightBraceQuotesAfterEscapedLeftBraces(parts []syntax.WordPart) map[int]map[int]struct{} {
+	var quotes map[int]map[int]struct{}
+	for partIndex, part := range parts {
+		lit, ok := part.(*syntax.Lit)
+		if !ok || strings.Index(lit.Value, "\\{") < 0 {
+			continue
+		}
+		for i := 0; i < len(lit.Value); i++ {
+			if lit.Value[i] != '{' {
+				continue
+			}
+			slashStart := i
+			for slashStart > 0 && lit.Value[slashStart-1] == '\\' {
+				slashStart--
+			}
+			if (i-slashStart)%2 == 0 {
+				continue
+			}
+			quotePart, quoteOffset, ok := rightBraceToQuoteAfterEscapedLeftBrace(parts, partIndex, i+1)
+			if !ok {
+				continue
+			}
+			if quotes == nil {
+				quotes = make(map[int]map[int]struct{})
+			}
+			if quotes[quotePart] == nil {
+				quotes[quotePart] = make(map[int]struct{})
+			}
+			quotes[quotePart][quoteOffset] = struct{}{}
+		}
+	}
+	return quotes
+}
+
+func splitEscapedLeftBracesLit(lit *syntax.Lit, rightBraceQuotes map[int]struct{}) ([]syntax.WordPart, bool) {
 	s := lit.Value
-	if strings.Index(s, "\\{") < 0 {
+	if strings.Index(s, "\\{") < 0 && len(rightBraceQuotes) == 0 {
 		return nil, false
 	}
 
@@ -307,7 +342,6 @@ func splitEscapedLeftBracesLit(lit *syntax.Lit) ([]syntax.WordPart, bool) {
 	}
 
 	var protected []protectedPart
-	protectedRightBraces := make(map[int]struct{})
 	for i := 0; i < len(s); i++ {
 		if s[i] != '{' {
 			continue
@@ -327,23 +361,16 @@ func splitEscapedLeftBracesLit(lit *syntax.Lit) ([]syntax.WordPart, bool) {
 				Value: escapedLeftBraceValue(slashCount),
 			},
 		})
-
-		// If the escaped left brace is immediately followed by a brace
-		// expression whose first top-level right brace appears before the first
-		// top-level comma, that right brace is literal text in bash (for
-		// example, `\{{},}` and `\{{x},}`). Quote it too so
-		// syntax.SplitBraces does not prematurely close a malformed
-		// single-element expansion before seeing the comma.
-		if rightBrace := rightBraceToQuoteAfterEscapedLeftBrace(s, i+1); rightBrace >= 0 {
-			if _, ok := protectedRightBraces[rightBrace]; !ok {
-				protectedRightBraces[rightBrace] = struct{}{}
-				protected = append(protected, protectedPart{
-					start: rightBrace,
-					end:   rightBrace + 1,
-					part:  &syntax.SglQuoted{Value: "}"},
-				})
-			}
+	}
+	for rightBrace := range rightBraceQuotes {
+		if rightBrace < 0 || rightBrace >= len(s) || s[rightBrace] != '}' {
+			continue
 		}
+		protected = append(protected, protectedPart{
+			start: rightBrace,
+			end:   rightBrace + 1,
+			part:  &syntax.SglQuoted{Value: "}"},
+		})
 	}
 
 	if len(protected) == 0 {
@@ -372,30 +399,41 @@ func splitEscapedLeftBracesLit(lit *syntax.Lit) ([]syntax.WordPart, bool) {
 	return parts, true
 }
 
-func rightBraceToQuoteAfterEscapedLeftBrace(s string, openBrace int) int {
-	if openBrace >= len(s) || s[openBrace] != '{' {
-		return -1
+func rightBraceToQuoteAfterEscapedLeftBrace(parts []syntax.WordPart, openPart int, openOffset int) (int, int, bool) {
+	openLit, ok := parts[openPart].(*syntax.Lit)
+	if !ok || openOffset >= len(openLit.Value) || openLit.Value[openOffset] != '{' {
+		return 0, 0, false
 	}
 
 	depth := 0
-	for i := openBrace + 1; i < len(s); i++ {
-		switch s[i] {
-		case '{':
-			if countBackslashesBefore(s, i)%2 == 0 {
-				depth++
+	for partIndex := openPart; partIndex < len(parts); partIndex++ {
+		lit, ok := parts[partIndex].(*syntax.Lit)
+		if !ok {
+			continue
+		}
+		start := 0
+		if partIndex == openPart {
+			start = openOffset + 1
+		}
+		for i := start; i < len(lit.Value); i++ {
+			switch lit.Value[i] {
+			case '{':
+				if countBackslashesBefore(lit.Value, i)%2 == 0 {
+					depth++
+				}
+			case ',':
+				if depth == 0 {
+					return 0, 0, false
+				}
+			case '}':
+				if depth == 0 {
+					return partIndex, i, true
+				}
+				depth--
 			}
-		case ',':
-			if depth == 0 {
-				return -1
-			}
-		case '}':
-			if depth == 0 {
-				return i
-			}
-			depth--
 		}
 	}
-	return -1
+	return 0, 0, false
 }
 
 func countBackslashesBefore(s string, i int) int {
