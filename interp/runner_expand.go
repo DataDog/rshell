@@ -13,7 +13,6 @@ import (
 	"io"
 	"io/fs"
 	"os"
-	"sort"
 	"strings"
 	"sync"
 
@@ -335,52 +334,7 @@ func splitEscapedLeftBracesLit(lit *syntax.Lit, rightBraceQuotes map[int]struct{
 		return nil, false
 	}
 
-	type protectedPart struct {
-		start int
-		end   int
-		part  syntax.WordPart
-	}
-
-	var protected []protectedPart
-	for i := 0; i < len(s); i++ {
-		if s[i] != '{' {
-			continue
-		}
-		slashStart := i
-		for slashStart > 0 && s[slashStart-1] == '\\' {
-			slashStart--
-		}
-		slashCount := i - slashStart
-		if slashCount%2 == 0 {
-			continue
-		}
-		protected = append(protected, protectedPart{
-			start: slashStart,
-			end:   i + 1,
-			part: &syntax.SglQuoted{
-				Value: escapedLeftBraceValue(slashCount),
-			},
-		})
-	}
-	for rightBrace := range rightBraceQuotes {
-		if rightBrace < 0 || rightBrace >= len(s) || s[rightBrace] != '}' {
-			continue
-		}
-		protected = append(protected, protectedPart{
-			start: rightBrace,
-			end:   rightBrace + 1,
-			part:  &syntax.SglQuoted{Value: "}"},
-		})
-	}
-
-	if len(protected) == 0 {
-		return nil, false
-	}
-	sort.Slice(protected, func(i, j int) bool {
-		return protected[i].start < protected[j].start
-	})
-
-	parts := make([]syntax.WordPart, 0, len(protected)*2+1)
+	var parts []syntax.WordPart
 	segmentStart := 0
 	appendLit := func(value string) {
 		if value == "" {
@@ -390,10 +344,38 @@ func splitEscapedLeftBracesLit(lit *syntax.Lit, rightBraceQuotes map[int]struct{
 		part.Value = value
 		parts = append(parts, &part)
 	}
-	for _, part := range protected {
-		appendLit(s[segmentStart:part.start])
-		parts = append(parts, part.part)
-		segmentStart = part.end
+	appendProtected := func(start int, end int, part syntax.WordPart) {
+		if parts == nil {
+			parts = make([]syntax.WordPart, 0, 3)
+		}
+		appendLit(s[segmentStart:start])
+		parts = append(parts, part)
+		segmentStart = end
+	}
+
+	for i := 0; i < len(s); i++ {
+		if _, ok := rightBraceQuotes[i]; ok && s[i] == '}' {
+			appendProtected(i, i+1, &syntax.SglQuoted{Value: "}"})
+			continue
+		}
+		if s[i] != '{' {
+			continue
+		}
+		slashStart := i
+		for slashStart > segmentStart && s[slashStart-1] == '\\' {
+			slashStart--
+		}
+		slashCount := i - slashStart
+		if slashCount%2 == 0 {
+			continue
+		}
+		appendProtected(slashStart, i+1, &syntax.SglQuoted{
+			Value: escapedLeftBraceValue(slashCount),
+		})
+	}
+
+	if parts == nil {
+		return nil, false
 	}
 	appendLit(s[segmentStart:])
 	return parts, true
