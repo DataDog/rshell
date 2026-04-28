@@ -19,6 +19,7 @@ func TestProtectEscapedLeftBraces(t *testing.T) {
 	tests := []struct {
 		name   string
 		script string
+		env    []string
 		want   []string
 	}{
 		{
@@ -37,9 +38,40 @@ func TestProtectEscapedLeftBraces(t *testing.T) {
 			want:   []string{"cmd", "pre{post"},
 		},
 		{
+			name:   "multiple_escaped_left_braces_in_one_literal",
+			script: `cmd \{\{`,
+			want:   []string{"cmd", "{{"},
+		},
+		{
+			name:   "escaped_left_brace_adjacent_to_quoted_part",
+			script: `cmd \{"x"`,
+			want:   []string{"cmd", "{x"},
+		},
+		{
+			name:   "escaped_left_brace_adjacent_to_parameter_expansion",
+			script: `cmd \{$X`,
+			env:    []string{"X=ok"},
+			want:   []string{"cmd", "{ok"},
+		},
+		{
+			name:   "escaped_left_brace_disables_sequence_expansion",
+			script: `cmd \{1..3}`,
+			want:   []string{"cmd", "{1..3}"},
+		},
+		{
+			name:   "unescaped_left_brace_still_expands",
+			script: `cmd {a,b}`,
+			want:   []string{"cmd", "a", "b"},
+		},
+		{
 			name:   "even_backslashes_still_allow_brace_expansion",
 			script: `cmd \\{a,b}`,
 			want:   []string{"cmd", `\a`, `\b`},
+		},
+		{
+			name:   "even_backslashes_still_allow_sequence_expansion",
+			script: `cmd \\{1..3}`,
+			want:   []string{"cmd", `\1`, `\2`, `\3`},
 		},
 		{
 			name:   "odd_backslashes_quote_left_brace",
@@ -57,7 +89,11 @@ func TestProtectEscapedLeftBraces(t *testing.T) {
 			call, ok := prog.Stmts[0].Cmd.(*syntax.CallExpr)
 			require.True(t, ok)
 
-			fields, err := expand.Fields(nil, protectEscapedLeftBraces(call.Args)...)
+			cfg := &expand.Config{}
+			if len(tt.env) > 0 {
+				cfg.Env = expand.ListEnviron(tt.env...)
+			}
+			fields, err := expand.Fields(cfg, protectEscapedLeftBraces(call.Args)...)
 			require.NoError(t, err)
 			assert.Equal(t, tt.want, fields)
 		})

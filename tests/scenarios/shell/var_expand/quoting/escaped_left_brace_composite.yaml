@@ -1,0 +1,20 @@
+description: Escaped left braces work next to other word parts and sequence syntax.
+input:
+  script: |+
+    X=ok
+    printf '<%s>\n' \{\{
+    printf '<%s>\n' \{"x"
+    printf '<%s>\n' \{$X
+    printf '<%s>\n' \{1..3}
+    printf '<%s>\n' \\{1..3}
+expect:
+  stdout: |+
+    <{{>
+    <{x>
+    <{ok>
+    <{1..3}>
+    <\1>
+    <\2>
+    <\3>
+  stderr: |+
+  exit_code: 0
