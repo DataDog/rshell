@@ -6,6 +6,7 @@
 package version
 
 import (
+	"bytes"
 	"os/exec"
 	"strings"
 	"testing"
@@ -52,9 +53,11 @@ func TestBuildVersionAsDependency(t *testing.T) {
 
 	list := exec.Command("go", "list", "-m", "-f", "{{.Version}}", modulePath)
 	list.Dir = depDir
-	wantOut, err := list.CombinedOutput()
+	var listStderr bytes.Buffer
+	list.Stderr = &listStderr
+	wantOut, err := list.Output()
 	if err != nil {
-		t.Fatalf("go list failed: %v\n%s", err, wantOut)
+		t.Fatalf("go list failed: %v\n%s", err, listStderr.String())
 	}
 	want := strings.TrimSpace(string(wantOut))
 	if want == "" {
@@ -64,9 +67,11 @@ func TestBuildVersionAsDependency(t *testing.T) {
 	// Build and run the depcheck program directly from testdata.
 	run := exec.Command("go", "run", ".")
 	run.Dir = depDir
-	out, err := run.CombinedOutput()
+	var runStderr bytes.Buffer
+	run.Stderr = &runStderr
+	out, err := run.Output()
 	if err != nil {
-		t.Fatalf("go run failed: %v\n%s", err, out)
+		t.Fatalf("go run failed: %v\n%s", err, runStderr.String())
 	}
 
 	got := strings.TrimSpace(string(out))
