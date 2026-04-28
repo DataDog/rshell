@@ -37,27 +37,39 @@ func TestBuildVersionFallback(t *testing.T) {
 // module. This is the primary use case (the Datadog Agent imports rshell).
 //
 // The test uses testdata/depcheck/ — a standalone Go module that depends on
-// a published version of rshell (v0.0.10). The depcheck program doesn't use
-// rshell's version package — it only blank-imports rshell/interp so that
-// rshell appears in the binary's dependency list, then calls ReadBuildInfo()
-// to verify the version is present. This tests the Go embedding mechanism
-// that our buildVersion() relies on, not rshell's code itself, so the
-// specific version imported doesn't matter.
+// a published version of rshell. The depcheck program doesn't use rshell's
+// version package — it only blank-imports rshell/interp so that rshell appears
+// in the binary's dependency list, then calls ReadBuildInfo() to verify the
+// version is present. This tests the Go embedding mechanism that our
+// buildVersion() relies on, not rshell's code itself, so the specific version
+// imported doesn't matter.
 func TestBuildVersionAsDependency(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping: requires building an external module")
 	}
 
+	depDir := "testdata/depcheck"
+
+	list := exec.Command("go", "list", "-m", "-f", "{{.Version}}", modulePath)
+	list.Dir = depDir
+	wantOut, err := list.CombinedOutput()
+	if err != nil {
+		t.Fatalf("go list failed: %v\n%s", err, wantOut)
+	}
+	want := strings.TrimSpace(string(wantOut))
+	if want == "" {
+		t.Fatal("go list returned an empty rshell module version")
+	}
+
 	// Build and run the depcheck program directly from testdata.
 	run := exec.Command("go", "run", ".")
-	run.Dir = "testdata/depcheck"
-	out, err := run.Output()
+	run.Dir = depDir
+	out, err := run.CombinedOutput()
 	if err != nil {
-		t.Fatalf("go run failed: %v", err)
+		t.Fatalf("go run failed: %v\n%s", err, out)
 	}
 
 	got := strings.TrimSpace(string(out))
-	const want = "v0.0.10"
 	if got != want {
 		t.Fatalf("expected version %q from build info deps, got %q", want, got)
 	}
