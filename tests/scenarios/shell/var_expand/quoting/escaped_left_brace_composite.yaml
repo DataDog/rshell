@@ -5,6 +5,8 @@ input:
     printf '<%s>\n' \{\{
     printf '<%s>\n' \{{},}
     printf '<%s>\n' \{{}x,y}
+    printf '<%s>\n' \{{x},}
+    printf '<%s>\n' \{{x},z}
     printf '<%s>\n' \\\{{},}
     printf '<%s>\n' \{"x"
     printf '<%s>\n' \{$X
@@ -17,6 +19,10 @@ expect:
     <{>
     <{}x>
     <{y>
+    <{x}>
+    <{>
+    <{x}>
+    <{z>
     <\{}>
     <\{>
     <{x>

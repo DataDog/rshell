@@ -13,6 +13,7 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"sort"
 	"strings"
 	"sync"
 
@@ -299,7 +300,60 @@ func splitEscapedLeftBracesLit(lit *syntax.Lit) ([]syntax.WordPart, bool) {
 		return nil, false
 	}
 
-	var parts []syntax.WordPart
+	type protectedPart struct {
+		start int
+		end   int
+		part  syntax.WordPart
+	}
+
+	var protected []protectedPart
+	protectedRightBraces := make(map[int]struct{})
+	for i := 0; i < len(s); i++ {
+		if s[i] != '{' {
+			continue
+		}
+		slashStart := i
+		for slashStart > 0 && s[slashStart-1] == '\\' {
+			slashStart--
+		}
+		slashCount := i - slashStart
+		if slashCount%2 == 0 {
+			continue
+		}
+		protected = append(protected, protectedPart{
+			start: slashStart,
+			end:   i + 1,
+			part: &syntax.SglQuoted{
+				Value: escapedLeftBraceValue(slashCount),
+			},
+		})
+
+		// If the escaped left brace is immediately followed by a brace
+		// expression whose first top-level right brace appears before the first
+		// top-level comma, that right brace is literal text in bash (for
+		// example, `\{{},}` and `\{{x},}`). Quote it too so
+		// syntax.SplitBraces does not prematurely close a malformed
+		// single-element expansion before seeing the comma.
+		if rightBrace := rightBraceToQuoteAfterEscapedLeftBrace(s, i+1); rightBrace >= 0 {
+			if _, ok := protectedRightBraces[rightBrace]; !ok {
+				protectedRightBraces[rightBrace] = struct{}{}
+				protected = append(protected, protectedPart{
+					start: rightBrace,
+					end:   rightBrace + 1,
+					part:  &syntax.SglQuoted{Value: "}"},
+				})
+			}
+		}
+	}
+
+	if len(protected) == 0 {
+		return nil, false
+	}
+	sort.Slice(protected, func(i, j int) bool {
+		return protected[i].start < protected[j].start
+	})
+
+	parts := make([]syntax.WordPart, 0, len(protected)*2+1)
 	segmentStart := 0
 	appendLit := func(value string) {
 		if value == "" {
@@ -309,45 +363,48 @@ func splitEscapedLeftBracesLit(lit *syntax.Lit) ([]syntax.WordPart, bool) {
 		part.Value = value
 		parts = append(parts, &part)
 	}
-
-	for i := 0; i < len(s); i++ {
-		if s[i] != '{' {
-			continue
-		}
-		slashStart := i
-		for slashStart > segmentStart && s[slashStart-1] == '\\' {
-			slashStart--
-		}
-		slashCount := i - slashStart
-		if slashCount%2 == 0 {
-			continue
-		}
-		if parts == nil {
-			parts = make([]syntax.WordPart, 0, 3)
-		}
-		appendLit(s[segmentStart:slashStart])
-		parts = append(parts, &syntax.SglQuoted{
-			Value: escapedLeftBraceValue(slashCount),
-		})
-		segmentStart = i + 1
-		// If the escaped left brace is immediately followed by "{}", the
-		// following "{" can still start a bash brace expansion whose first
-		// alternative begins with a literal "}" (for example, `\{{},}`).
-		// Quote that "}" too so syntax.SplitBraces does not prematurely
-		// close a malformed single-element expansion before seeing the comma.
-		if i+2 < len(s) && s[i+1] == '{' && s[i+2] == '}' {
-			appendLit(s[i+1 : i+2])
-			parts = append(parts, &syntax.SglQuoted{Value: "}"})
-			segmentStart = i + 3
-			i += 2
-		}
-	}
-
-	if parts == nil {
-		return nil, false
+	for _, part := range protected {
+		appendLit(s[segmentStart:part.start])
+		parts = append(parts, part.part)
+		segmentStart = part.end
 	}
 	appendLit(s[segmentStart:])
 	return parts, true
+}
+
+func rightBraceToQuoteAfterEscapedLeftBrace(s string, openBrace int) int {
+	if openBrace >= len(s) || s[openBrace] != '{' {
+		return -1
+	}
+
+	depth := 0
+	for i := openBrace + 1; i < len(s); i++ {
+		switch s[i] {
+		case '{':
+			if countBackslashesBefore(s, i)%2 == 0 {
+				depth++
+			}
+		case ',':
+			if depth == 0 {
+				return -1
+			}
+		case '}':
+			if depth == 0 {
+				return i
+			}
+			depth--
+		}
+	}
+	return -1
+}
+
+func countBackslashesBefore(s string, i int) int {
+	count := 0
+	for i > 0 && s[i-1] == '\\' {
+		count++
+		i--
+	}
+	return count
 }
 
 func escapedLeftBraceValue(slashCount int) string {

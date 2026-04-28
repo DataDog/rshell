@@ -48,6 +48,16 @@ func TestProtectEscapedLeftBraces(t *testing.T) {
 			want:   []string{"cmd", "{}", "{"},
 		},
 		{
+			name:   "escaped_left_brace_before_braced_non_empty_alternative",
+			script: `cmd \{{x},}`,
+			want:   []string{"cmd", "{x}", "{"},
+		},
+		{
+			name:   "escaped_left_brace_before_braced_non_empty_alternative_with_suffix",
+			script: `cmd \{{x},z}`,
+			want:   []string{"cmd", "{x}", "{z"},
+		},
+		{
 			name:   "escaped_left_brace_before_right_brace_alternative_with_suffix",
 			script: `cmd \{{}x,y}`,
 			want:   []string{"cmd", "{}x", "{y"},
