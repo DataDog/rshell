@@ -330,7 +330,7 @@ func rightBraceQuotesAfterEscapedLeftBraces(parts []syntax.WordPart) map[int]map
 
 func splitEscapedBraceMetasLit(lit *syntax.Lit, rightBraceQuotes map[int]struct{}) ([]syntax.WordPart, bool) {
 	s := lit.Value
-	if !strings.Contains(s, "\\") && len(rightBraceQuotes) == 0 {
+	if strings.Index(s, "\\") < 0 && len(rightBraceQuotes) == 0 {
 		return nil, false
 	}
 
