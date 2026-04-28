@@ -2,6 +2,8 @@ module github.com/DataDog/rshell
 
 go 1.25.6
 
+toolchain go1.26.2
+
 require (
 	github.com/DataDog/datadog-agent/pkg/fleet/installer v0.78.0
 	github.com/prometheus-community/pro-bing v0.8.0
