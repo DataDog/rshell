@@ -2,6 +2,8 @@ module depcheck
 
 go 1.25.6
 
+toolchain go1.26.2
+
 require github.com/DataDog/rshell v0.0.10
 
 require (
