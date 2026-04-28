@@ -231,9 +231,112 @@ func (r *Runner) expandErr(err error) {
 }
 
 func (r *Runner) fields(words ...*syntax.Word) []string {
-	strs, err := expand.Fields(r.ecfg, words...)
+	strs, err := expand.Fields(r.ecfg, protectEscapedLeftBraces(words)...)
 	r.expandErr(err)
 	return strs
+}
+
+// protectEscapedLeftBraces preserves bash's handling of backslash-quoted left
+// braces before delegating to mvdan.cc/sh's field expansion.
+//
+// Brace expansion happens before quote removal, but backslashes still quote the
+// next byte for the purpose of deciding whether a "{" starts a brace
+// expansion. syntax.SplitBraces does not track that quote state for literal
+// parts, so an input like `\{` can be treated as an unmatched brace and keep the
+// backslash. Rewriting odd-backslash-escaped left braces as quoted word parts
+// prevents brace expansion from seeing them while producing the same final text.
+func protectEscapedLeftBraces(words []*syntax.Word) []*syntax.Word {
+	var out []*syntax.Word
+	for i, word := range words {
+		protected := protectEscapedLeftBracesWord(word)
+		if protected != word && out == nil {
+			out = make([]*syntax.Word, len(words))
+			copy(out, words[:i])
+		}
+		if out != nil {
+			out[i] = protected
+		}
+	}
+	if out == nil {
+		return words
+	}
+	return out
+}
+
+func protectEscapedLeftBracesWord(word *syntax.Word) *syntax.Word {
+	if word == nil {
+		return nil
+	}
+	var parts []syntax.WordPart
+	for i, part := range word.Parts {
+		lit, ok := part.(*syntax.Lit)
+		if !ok {
+			if parts != nil {
+				parts = append(parts, part)
+			}
+			continue
+		}
+		litParts, changed := splitEscapedLeftBracesLit(lit)
+		if changed && parts == nil {
+			parts = make([]syntax.WordPart, 0, len(word.Parts)+len(litParts)-1)
+			parts = append(parts, word.Parts[:i]...)
+		}
+		if parts != nil {
+			parts = append(parts, litParts...)
+		}
+	}
+	if parts == nil {
+		return word
+	}
+	protected := *word
+	protected.Parts = parts
+	return &protected
+}
+
+func splitEscapedLeftBracesLit(lit *syntax.Lit) ([]syntax.WordPart, bool) {
+	s := lit.Value
+	if !strings.Contains(s, "\\{") {
+		return nil, false
+	}
+
+	var parts []syntax.WordPart
+	segmentStart := 0
+	appendLit := func(value string) {
+		if value == "" {
+			return
+		}
+		part := *lit
+		part.Value = value
+		parts = append(parts, &part)
+	}
+
+	for i := 0; i < len(s); i++ {
+		if s[i] != '{' {
+			continue
+		}
+		slashStart := i
+		for slashStart > segmentStart && s[slashStart-1] == '\\' {
+			slashStart--
+		}
+		slashCount := i - slashStart
+		if slashCount%2 == 0 {
+			continue
+		}
+		if parts == nil {
+			parts = make([]syntax.WordPart, 0, 3)
+		}
+		appendLit(s[segmentStart:slashStart])
+		parts = append(parts, &syntax.SglQuoted{
+			Value: strings.Repeat("\\", slashCount/2) + "{",
+		})
+		segmentStart = i + 1
+	}
+
+	if parts == nil {
+		return nil, false
+	}
+	appendLit(s[segmentStart:])
+	return parts, true
 }
 
 func (r *Runner) literal(word *syntax.Word) string {
