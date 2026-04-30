@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -20,6 +21,17 @@ import (
 // cannot express directly: that the file handle is closed before the next
 // command runs (so reads from disk see the written bytes), that file mode
 // is 0644, and that the sandbox boundary is enforced when the open fails.
+
+// shQuote single-quotes a path for safe inclusion in a shell command,
+// escaping any embedded single quotes with the standard '\” idiom. This
+// is necessary on Windows where t.TempDir() returns paths with backslashes
+// — without quoting, the shell parser would consume the backslashes as
+// escape characters and the redirect target would not match the intended
+// path. Single quotes also defuse any other shell metacharacters that
+// could appear in paths (spaces, $, etc.).
+func shQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}
 
 func TestRedirTruncateWritesAndCloses(t *testing.T) {
 	dir := t.TempDir()
@@ -113,7 +125,7 @@ func TestRedirOutsideAllowedPathsDoesNotCreateFile(t *testing.T) {
 	other := t.TempDir()
 	target := filepath.Join(other, "evil.txt")
 
-	stdout, stderr, code := redirRun(t, "echo hi > "+target, allowed)
+	stdout, stderr, code := redirRun(t, "echo hi > "+shQuote(target), allowed)
 	assert.Equal(t, 1, code)
 	assert.Empty(t, stdout)
 	assert.Contains(t, stderr, "permission denied")
@@ -129,8 +141,8 @@ func TestRedirFailureDoesNotRunCommand(t *testing.T) {
 	// remain empty (created and closed) since the second redirect aborts
 	// before echo executes.
 	other := t.TempDir()
-	stderr := other + "/blocked.log"
-	stdout, errOut, code := redirRun(t, "echo hi > ok.txt 2> "+stderr, allowed)
+	blockedTarget := filepath.Join(other, "blocked.log")
+	stdout, errOut, code := redirRun(t, "echo hi > ok.txt 2> "+shQuote(blockedTarget), allowed)
 	assert.Equal(t, 1, code)
 	assert.Empty(t, stdout)
 	assert.Contains(t, errOut, "permission denied")
