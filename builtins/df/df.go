@@ -564,26 +564,40 @@ func humanBytes(v uint64, base uint64) string {
 }
 
 // buildHeader returns the column header strings.
+//
+// Header naming is mode-dependent and matches GNU df verbatim:
+//
+//   - Block mode (default / -k / -h / -H / -P)
+//   - "Capacity" appears only with -P (block-POSIX format).
+//   - In all other block modes the percentage column is "Use%".
+//   - Inode mode (-i, possibly with -P)
+//   - The percentage column is always "IUse%". GNU keeps it that way
+//     even with -iP — only the *block* POSIX format substitutes
+//     "Capacity".
+//   - Available column
+//   - "Available" in fixed-block modes (default, -k, -P).
+//   - "Avail" in human modes (-h, -H), to match GNU's compact human
+//     output.
 func buildHeader(posix, withType, inodeMode bool, mode unitMode) []string {
 	first := "Filesystem"
 	last := "Mounted on"
-
-	capacity := "Use%"
-	if posix {
-		capacity = "Capacity"
-	}
+	human := mode == unitsHuman1024 || mode == unitsHuman1000
 
 	if inodeMode {
+		// IUse% header is preserved across -P; only the block POSIX
+		// format renames the percentage column.
 		cols := []string{first}
 		if withType {
 			cols = append(cols, "Type")
 		}
 		cols = append(cols, "Inodes", "IUsed", "IFree", "IUse%", last)
-		if posix {
-			// POSIX output format for inodes still uses "Capacity".
-			cols[len(cols)-2] = "Capacity"
-		}
 		return cols
+	}
+
+	// Block mode.
+	capacity := "Use%"
+	if posix {
+		capacity = "Capacity"
 	}
 
 	// Size column header. -h / -H always show "Size" (the values are
@@ -592,7 +606,7 @@ func buildHeader(posix, withType, inodeMode bool, mode unitMode) []string {
 	// mode is itself fixed-block.
 	var col1 string
 	switch {
-	case mode == unitsHuman1024 || mode == unitsHuman1000:
+	case human:
 		col1 = "Size"
 	case posix:
 		col1 = "1024-blocks"
@@ -600,11 +614,18 @@ func buildHeader(posix, withType, inodeMode bool, mode unitMode) []string {
 		col1 = "1K-blocks"
 	}
 
+	// Available column: GNU compresses to "Avail" in human modes,
+	// keeps the full "Available" in fixed-block modes.
+	available := "Available"
+	if human {
+		available = "Avail"
+	}
+
 	cols := []string{first}
 	if withType {
 		cols = append(cols, "Type")
 	}
-	cols = append(cols, col1, "Used", "Available", capacity, last)
+	cols = append(cols, col1, "Used", available, capacity, last)
 	return cols
 }
 

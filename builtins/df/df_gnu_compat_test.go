@@ -57,9 +57,12 @@ func TestGNUCompatHeaderDefault(t *testing.T) {
 	}
 }
 
-// TestGNUCompatHeaderHuman — `gdf -h` swaps the block column for "Size".
+// TestGNUCompatHeaderHuman — `gdf -h` swaps the block column for "Size"
+// and compresses "Available" to "Avail" in the human-readable output.
 //
-// Reference: `gdf -h` → header has "Size" instead of "1K-blocks".
+// Reference: `gdf -h /` →
+//
+//	"Filesystem      Size  Used Avail Use% Mounted on"
 func TestGNUCompatHeaderHuman(t *testing.T) {
 	requireSupported(t)
 	stdout, _, _ := testutil.RunScript(t, "df -h", "")
@@ -67,6 +70,10 @@ func TestGNUCompatHeaderHuman(t *testing.T) {
 	assert.Contains(t, header, "Size")
 	assert.NotContains(t, header, "1K-blocks")
 	assert.NotContains(t, header, "1024-blocks")
+	// GNU compresses "Available" → "Avail" in human modes; the long
+	// form would diverge from any bash-comparison scenario.
+	assert.Contains(t, header, "Avail")
+	assert.NotContains(t, header, "Available")
 }
 
 // TestGNUCompatHeaderInodes — `gdf -i` uses inode column names.

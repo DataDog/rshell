@@ -416,43 +416,53 @@ func TestFilterMounts_EmptyDevIDNotDeduped(t *testing.T) {
 }
 
 func TestBuildHeader(t *testing.T) {
-	// Default: Filesystem 1K-blocks Used Available Use% Mounted on
+	// Default block mode: Filesystem 1K-blocks Used Available Use% Mounted on.
 	h := buildHeader(false, false, false, unitsK)
 	assert.Equal(t, []string{"Filesystem", "1K-blocks", "Used", "Available", "Use%", "Mounted on"}, h)
 
-	// -P: Filesystem 1024-blocks Used Available Capacity Mounted on
+	// -P (block POSIX): "Capacity" replaces "Use%".
 	h = buildHeader(true, false, false, unitsK)
 	assert.Equal(t, []string{"Filesystem", "1024-blocks", "Used", "Available", "Capacity", "Mounted on"}, h)
 
-	// -h: column 1 is "Size" instead of blocks
+	// -h: column 1 → "Size", and "Available" is compressed to "Avail"
+	// to match GNU's compact human output.
 	h = buildHeader(false, false, false, unitsHuman1024)
-	assert.Contains(t, h, "Size")
+	assert.Equal(t, []string{"Filesystem", "Size", "Used", "Avail", "Use%", "Mounted on"}, h)
 
-	// -T: inserts Type column
+	// -H: same compact "Avail" header.
+	h = buildHeader(false, false, false, unitsHuman1000)
+	assert.Equal(t, []string{"Filesystem", "Size", "Used", "Avail", "Use%", "Mounted on"}, h)
+
+	// -T: inserts Type column after Filesystem.
 	h = buildHeader(false, true, false, unitsK)
 	assert.Equal(t, "Type", h[1])
 
-	// -i: inode columns
+	// -i: inode columns.
 	h = buildHeader(false, false, true, unitsK)
 	assert.Equal(t, []string{"Filesystem", "Inodes", "IUsed", "IFree", "IUse%", "Mounted on"}, h)
 
-	// -i -P: inode columns but POSIX renames the percentage column
+	// -i -P: inode columns. GNU keeps "IUse%" — only the *block*
+	// POSIX format substitutes "Capacity", so the inode header is
+	// unchanged by -P.
 	h = buildHeader(true, false, true, unitsK)
-	assert.Contains(t, h, "Capacity")
+	assert.Equal(t, []string{"Filesystem", "Inodes", "IUsed", "IFree", "IUse%", "Mounted on"}, h)
+	assert.NotContains(t, h, "Capacity")
 
 	// -i -T: inode columns + Type column inserted after Filesystem.
 	h = buildHeader(false, true, true, unitsK)
 	assert.Equal(t, []string{"Filesystem", "Type", "Inodes", "IUsed", "IFree", "IUse%", "Mounted on"}, h)
 
-	// -P -h: human suffix overrides the fixed-block POSIX label, so
-	// "Size" appears even when -P is set. Matches GNU `df -P -h`.
+	// -P -h: human suffix wins over the fixed-block POSIX label, so
+	// "Size" + "Avail" appear even when -P is set. Matches `gdf -P -h`.
 	h = buildHeader(true, false, false, unitsHuman1024)
 	assert.Equal(t, "Size", h[1])
+	assert.Contains(t, h, "Avail")
 	assert.NotContains(t, h, "1024-blocks")
 
 	// -P -H: same for SI mode.
 	h = buildHeader(true, false, false, unitsHuman1000)
 	assert.Equal(t, "Size", h[1])
+	assert.Contains(t, h, "Avail")
 }
 
 func TestSelectColumns(t *testing.T) {
