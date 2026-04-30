@@ -84,10 +84,15 @@ var remoteTypePrefixes = []string{
 // listImpl enumerates Linux mounts.
 //
 // It reads /proc/self/mountinfo (sandbox-exempt; the path is hardcoded),
-// parses each line into a Mount, and then calls statfs(2) on the mount
-// point to populate the size fields. Mounts that fail statfs (transient
-// EACCES/ENOENT, race with umount) are silently skipped.
-func listImpl(ctx context.Context) ([]Mount, error) {
+// parses each line into a Mount, evaluates the caller's filter against
+// the pre-stat Mount, and only then calls statfs(2) on the kept mounts.
+// Filtering before statfs is critical: statfs(2) on a stale NFS or CIFS
+// mount can block indefinitely and is not interrupted by context
+// cancellation, so `df -l` would otherwise hang on dead remotes.
+//
+// Mounts that fail statfs (transient EACCES/ENOENT, race with umount)
+// are silently skipped.
+func listImpl(ctx context.Context, filter FilterFunc) ([]Mount, error) {
 	f, err := os.Open(mountInfoPath)
 	if err != nil {
 		return nil, fmt.Errorf("open %s: %w", mountInfoPath, err)
@@ -105,6 +110,9 @@ func listImpl(ctx context.Context) ([]Mount, error) {
 			return nil, err
 		}
 		m := mounts[i]
+		if filter != nil && !filter(m) {
+			continue
+		}
 		var st unix.Statfs_t
 		if err := unix.Statfs(m.MountPoint, &st); err != nil {
 			// Skip mounts that disappear or become inaccessible

@@ -167,31 +167,44 @@ func TestStringSet(t *testing.T) {
 	assert.Equal(t, map[string]struct{}{"ext4": {}}, got)
 }
 
-func TestFilterMounts_DefaultDropsPseudo(t *testing.T) {
+// keep is a small helper that runs makePreStatFilter against a fixture
+// slice and returns the survivors. Mirrors what diskstats.List does
+// internally between mountinfo parsing and statfs.
+func keep(in []diskstats.Mount, f *flags) []diskstats.Mount {
+	pred := makePreStatFilter(f)
+	out := make([]diskstats.Mount, 0, len(in))
+	for _, m := range in {
+		if pred(m) {
+			out = append(out, m)
+		}
+	}
+	return out
+}
+
+func TestPreStatFilter_DefaultDropsPseudo(t *testing.T) {
 	in := []diskstats.Mount{
 		{MountPoint: "/", FSType: "ext4", Local: true},
 		{MountPoint: "/proc", FSType: "proc", Pseudo: true},
 		{MountPoint: "/dev", FSType: "devtmpfs", Pseudo: true},
 		{MountPoint: "/mnt/nfs", FSType: "nfs", Local: false},
 	}
-	out := filterMounts(append([]diskstats.Mount(nil), in...), &flags{
+	out := keep(in, &flags{
 		all:          ptrBool(false),
 		local:        ptrBool(false),
 		includeTypes: ptrSlice([]string(nil)),
 		excludeTypes: ptrSlice([]string(nil)),
 	})
-	// Pseudo mounts are filtered out by default; nfs stays.
 	assert.Len(t, out, 2)
 	assert.Equal(t, "/", out[0].MountPoint)
 	assert.Equal(t, "/mnt/nfs", out[1].MountPoint)
 }
 
-func TestFilterMounts_AllIncludesPseudo(t *testing.T) {
+func TestPreStatFilter_AllIncludesPseudo(t *testing.T) {
 	in := []diskstats.Mount{
 		{MountPoint: "/", FSType: "ext4", Local: true},
 		{MountPoint: "/proc", FSType: "proc", Pseudo: true},
 	}
-	out := filterMounts(append([]diskstats.Mount(nil), in...), &flags{
+	out := keep(in, &flags{
 		all:          ptrBool(true),
 		local:        ptrBool(false),
 		includeTypes: ptrSlice([]string(nil)),
@@ -200,12 +213,12 @@ func TestFilterMounts_AllIncludesPseudo(t *testing.T) {
 	assert.Len(t, out, 2)
 }
 
-func TestFilterMounts_LocalDropsRemote(t *testing.T) {
+func TestPreStatFilter_LocalDropsRemote(t *testing.T) {
 	in := []diskstats.Mount{
 		{MountPoint: "/", FSType: "ext4", Local: true},
 		{MountPoint: "/mnt/nfs", FSType: "nfs", Local: false},
 	}
-	out := filterMounts(append([]diskstats.Mount(nil), in...), &flags{
+	out := keep(in, &flags{
 		all:          ptrBool(true),
 		local:        ptrBool(true),
 		includeTypes: ptrSlice([]string(nil)),
@@ -218,13 +231,13 @@ func TestFilterMounts_LocalDropsRemote(t *testing.T) {
 // An explicit -t TYPE filter must override the default pseudo-FS
 // suppression so scripts running `df -t tmpfs` see tmpfs mounts even
 // without -a. Matches GNU df behaviour.
-func TestFilterMounts_TypeIncludeOverridesPseudoSuppression(t *testing.T) {
+func TestPreStatFilter_TypeIncludeOverridesPseudoSuppression(t *testing.T) {
 	in := []diskstats.Mount{
 		{MountPoint: "/", FSType: "ext4", Local: true},
 		{MountPoint: "/dev/shm", FSType: "tmpfs", Pseudo: true, Local: true},
 		{MountPoint: "/run", FSType: "tmpfs", Pseudo: true, Local: true},
 	}
-	out := filterMounts(append([]diskstats.Mount(nil), in...), &flags{
+	out := keep(in, &flags{
 		all:          ptrBool(false),
 		local:        ptrBool(false),
 		includeTypes: ptrSlice([]string{"tmpfs"}),
@@ -236,14 +249,11 @@ func TestFilterMounts_TypeIncludeOverridesPseudoSuppression(t *testing.T) {
 	}
 }
 
-// -x TYPE wins over an explicit -t for the same TYPE. Mostly defensive;
-// covered already by TestFilterMounts_TypeIncludeAndExclude but worth
-// pinning the pseudo case too: -t pseudo + -x pseudo → empty.
-func TestFilterMounts_TypeExcludeWinsOverIncludeOnPseudo(t *testing.T) {
+func TestPreStatFilter_TypeExcludeWinsOverIncludeOnPseudo(t *testing.T) {
 	in := []diskstats.Mount{
 		{MountPoint: "/dev/shm", FSType: "tmpfs", Pseudo: true},
 	}
-	out := filterMounts(append([]diskstats.Mount(nil), in...), &flags{
+	out := keep(in, &flags{
 		all:          ptrBool(false),
 		local:        ptrBool(false),
 		includeTypes: ptrSlice([]string{"tmpfs"}),
@@ -252,14 +262,14 @@ func TestFilterMounts_TypeExcludeWinsOverIncludeOnPseudo(t *testing.T) {
 	assert.Empty(t, out)
 }
 
-func TestFilterMounts_TypeIncludeAndExclude(t *testing.T) {
+func TestPreStatFilter_TypeIncludeAndExclude(t *testing.T) {
 	in := []diskstats.Mount{
 		{MountPoint: "/a", FSType: "ext4", Local: true},
 		{MountPoint: "/b", FSType: "ext4", Local: true},
 		{MountPoint: "/c", FSType: "btrfs", Local: true},
 		{MountPoint: "/d", FSType: "xfs", Local: true},
 	}
-	out := filterMounts(append([]diskstats.Mount(nil), in...), &flags{
+	out := keep(in, &flags{
 		all:          ptrBool(true),
 		local:        ptrBool(false),
 		includeTypes: ptrSlice([]string{"ext4", "xfs"}),
@@ -267,15 +277,56 @@ func TestFilterMounts_TypeIncludeAndExclude(t *testing.T) {
 	})
 	assert.Len(t, out, 3) // both ext4 + xfs
 
-	// Exclude wins over include when both name a type.
-	out = filterMounts(append([]diskstats.Mount(nil), in...), &flags{
+	out = keep(in, &flags{
 		all:          ptrBool(true),
 		local:        ptrBool(false),
 		includeTypes: ptrSlice([]string{"ext4", "xfs"}),
 		excludeTypes: ptrSlice([]string{"ext4"}),
 	})
-	assert.Len(t, out, 1) // only xfs
+	assert.Len(t, out, 1)
 	assert.Equal(t, "xfs", out[0].FSType)
+}
+
+// filterMounts now only handles dedup. With -a, every mount is kept;
+// without -a, mounts sharing a Source are collapsed to the first.
+func TestFilterMounts_DedupBySourceWithoutAll(t *testing.T) {
+	in := []diskstats.Mount{
+		{Source: "overlay", MountPoint: "/etc/hosts", FSType: "overlay"},
+		{Source: "overlay", MountPoint: "/etc/hostname", FSType: "overlay"},
+		{Source: "overlay", MountPoint: "/etc/resolv.conf", FSType: "overlay"},
+		{Source: "/dev/sda1", MountPoint: "/", FSType: "ext4"},
+	}
+	out := filterMounts(append([]diskstats.Mount(nil), in...), &flags{
+		all: ptrBool(false),
+	})
+	assert.Len(t, out, 2, "duplicate overlay mounts collapsed to one")
+	assert.Equal(t, "/etc/hosts", out[0].MountPoint)
+	assert.Equal(t, "/", out[1].MountPoint)
+}
+
+// With -a, dedup is disabled (matches GNU df --all).
+func TestFilterMounts_AllPreservesDuplicates(t *testing.T) {
+	in := []diskstats.Mount{
+		{Source: "overlay", MountPoint: "/etc/hosts", FSType: "overlay"},
+		{Source: "overlay", MountPoint: "/etc/hostname", FSType: "overlay"},
+	}
+	out := filterMounts(append([]diskstats.Mount(nil), in...), &flags{
+		all: ptrBool(true),
+	})
+	assert.Len(t, out, 2, "-a must preserve duplicates")
+}
+
+// Empty Source is unusual but possible for some pseudo filesystems;
+// dedup should not collapse mounts with empty Source onto each other.
+func TestFilterMounts_EmptySourceNotDeduped(t *testing.T) {
+	in := []diskstats.Mount{
+		{Source: "", MountPoint: "/a", FSType: "tmpfs"},
+		{Source: "", MountPoint: "/b", FSType: "tmpfs"},
+	}
+	out := filterMounts(append([]diskstats.Mount(nil), in...), &flags{
+		all: ptrBool(false),
+	})
+	assert.Len(t, out, 2)
 }
 
 func TestBuildHeader(t *testing.T) {

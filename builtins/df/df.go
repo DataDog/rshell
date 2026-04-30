@@ -156,7 +156,16 @@ func makeFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			return builtins.Result{Code: 1}
 		}
 
-		mounts, err := diskstats.List(ctx)
+		// Pre-stat filter: drop mounts the caller already asked to
+		// exclude before diskstats.List calls statfs(2) on them.
+		// statfs on a stale NFS or CIFS mount can hang indefinitely
+		// and is not interrupted by ctx cancellation, so `df -l` /
+		// `df -x nfs` MUST decide "skip this mount" before the syscall
+		// is issued. Filters that depend on capacity numbers are still
+		// applied post-stat by filterMounts.
+		preStat := makePreStatFilter(f)
+
+		mounts, err := diskstats.List(ctx, preStat)
 		switch {
 		case errors.Is(err, diskstats.ErrMaxMounts):
 			// Non-fatal: print what we have, warn on stderr.
@@ -212,36 +221,68 @@ func resolveUnitMode(f *flags) unitMode {
 	return unitsK
 }
 
-// filterMounts applies the -a / -l / -t / -x flags. The order of
-// operations is:
-//  1. -x removes the given types (always wins over everything else).
-//  2. -t restricts to the given types if set; an explicit -t match
-//     overrides the default pseudo-FS suppression so e.g. `df -t tmpfs`
-//     lists tmpfs mounts even without -a (matching GNU df).
-//  3. Otherwise -a includes everything; without -a, pseudo filesystems
-//     are dropped.
-//  4. -l drops remote (non-local) filesystems.
+// makePreStatFilter returns a diskstats.FilterFunc that drops mounts
+// before they are stat(2)'d. It encodes everything filterMounts would
+// have rejected based on type/pseudo/local — the categories that are
+// already known from /proc/self/mountinfo at parse time and do not
+// depend on capacity numbers.
+//
+// Running these checks pre-stat is what protects `df -l` and `df -x nfs`
+// from blocking on a stale NFS mount: without it, statfs(2) is called
+// on every mount in the table before any filter runs, and statfs on a
+// dead remote can hang indefinitely (and is not interrupted by ctx).
+func makePreStatFilter(f *flags) diskstats.FilterFunc {
+	includeSet := stringSet(*f.includeTypes)
+	excludeSet := stringSet(*f.excludeTypes)
+	all := *f.all
+	local := *f.local
+	return func(m diskstats.Mount) bool {
+		if _, ok := excludeSet[m.FSType]; ok {
+			return false
+		}
+		if len(includeSet) > 0 {
+			if _, ok := includeSet[m.FSType]; !ok {
+				return false
+			}
+		} else if !all && m.Pseudo {
+			return false
+		}
+		if local && !m.Local {
+			return false
+		}
+		return true
+	}
+}
+
+// filterMounts applies post-stat filtering. The pre-stat filter
+// (makePreStatFilter) has already dropped mounts that don't match
+// -t/-x/-a/-l, so this pass is responsible for:
+//
+//  1. Deduplicating mounts that share a Source (matches GNU df, which
+//     hides bind-mounts of the same filesystem unless -a is given).
+//     This avoids `--total` double-counting overlay bind-mounts of
+//     /etc/hosts, /etc/hostname, /etc/resolv.conf, etc., on container
+//     hosts.
 //
 // The result reuses the input slice's backing array; the caller must
 // not retain the original slice after this call. diskstats.List always
 // returns a fresh slice, so this is safe in the current call sites.
 func filterMounts(mounts []diskstats.Mount, f *flags) []diskstats.Mount {
-	includeSet := stringSet(*f.includeTypes)
-	excludeSet := stringSet(*f.excludeTypes)
+	if *f.all {
+		// -a: keep duplicates and everything else exactly as the
+		// pre-stat pass left it.
+		return mounts
+	}
+	seen := make(map[string]struct{}, len(mounts))
 	out := mounts[:0]
 	for _, m := range mounts {
-		if _, ok := excludeSet[m.FSType]; ok {
-			continue
-		}
-		if len(includeSet) > 0 {
-			if _, ok := includeSet[m.FSType]; !ok {
+		// Empty Source is unusual but possible for some pseudo
+		// filesystems; do not collapse them.
+		if m.Source != "" {
+			if _, dup := seen[m.Source]; dup {
 				continue
 			}
-		} else if !*f.all && m.Pseudo {
-			continue
-		}
-		if *f.local && !m.Local {
-			continue
+			seen[m.Source] = struct{}{}
 		}
 		out = append(out, m)
 	}

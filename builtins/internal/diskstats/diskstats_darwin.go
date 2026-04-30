@@ -35,8 +35,10 @@ var darwinRemoteTypes = map[string]bool{
 }
 
 // listImpl enumerates macOS mounts via getfsstat(2). The MNT_NOWAIT flag
-// avoids blocking on remote filesystems that are temporarily unavailable.
-func listImpl(ctx context.Context) ([]Mount, error) {
+// avoids blocking on remote filesystems that are temporarily unavailable,
+// so the filter argument is applied as a post-filter (cosmetic on Darwin)
+// rather than as a hang-prevention measure (essential on Linux).
+func listImpl(ctx context.Context, filter FilterFunc) ([]Mount, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -87,7 +89,7 @@ func listImpl(ctx context.Context) ([]Mount, error) {
 		// (devfs, autofs, …); subtracting the pseudo set isolates the
 		// actually-remote ones.
 		remote := darwinRemoteTypes[fsType] || (st.Flags&uint32(unix.MNT_LOCAL) == 0 && !pseudo)
-		out = append(out, Mount{
+		m := Mount{
 			Source:     src,
 			MountPoint: mp,
 			FSType:     fsType,
@@ -100,7 +102,11 @@ func listImpl(ctx context.Context) ([]Mount, error) {
 			InodesUsed: inodesUsed,
 			Pseudo:     pseudo,
 			Local:      !remote && !pseudo,
-		})
+		}
+		if filter != nil && !filter(m) {
+			continue
+		}
+		out = append(out, m)
 	}
 	if truncated {
 		return out, ErrMaxMounts

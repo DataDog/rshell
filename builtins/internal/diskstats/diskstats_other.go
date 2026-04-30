@@ -10,6 +10,6 @@ package diskstats
 import "context"
 
 // listImpl returns ErrNotSupported on platforms without a backend.
-func listImpl(_ context.Context) ([]Mount, error) {
+func listImpl(_ context.Context, _ FilterFunc) ([]Mount, error) {
 	return nil, ErrNotSupported
 }

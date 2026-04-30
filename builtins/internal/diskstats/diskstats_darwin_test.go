@@ -17,7 +17,7 @@ import (
 )
 
 func TestList_Darwin_HappyPath(t *testing.T) {
-	mounts, err := List(context.Background())
+	mounts, err := List(context.Background(), nil)
 	require.NoError(t, err)
 	assert.NotEmpty(t, mounts, "macOS should always have at least one mount")
 
@@ -37,7 +37,7 @@ func TestList_Darwin_HappyPath(t *testing.T) {
 func TestList_Darwin_UsedNeverNegative(t *testing.T) {
 	// Used is computed via saturated subtraction; verify no mount
 	// produces a wrap-around (a sign the implementation is buggy).
-	mounts, err := List(context.Background())
+	mounts, err := List(context.Background(), nil)
 	require.NoError(t, err)
 	for _, m := range mounts {
 		// Used must be ≤ Total (modulo root reservation), never the
@@ -50,7 +50,7 @@ func TestList_Darwin_UsedNeverNegative(t *testing.T) {
 func TestList_Darwin_ContextCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	_, err := List(ctx)
+	_, err := List(ctx, nil)
 	assert.ErrorIs(t, err, context.Canceled)
 }
 

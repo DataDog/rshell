@@ -156,7 +156,7 @@ func TestIsOctal(t *testing.T) {
 }
 
 func TestList_LiveHost_Linux(t *testing.T) {
-	mounts, err := List(context.Background())
+	mounts, err := List(context.Background(), nil)
 	if err != nil && errors.Is(err, ErrNotSupported) {
 		t.Skipf("not supported on this platform: %v", err)
 	}

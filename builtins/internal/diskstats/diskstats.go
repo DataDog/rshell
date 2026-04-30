@@ -108,14 +108,29 @@ var ErrMaxMounts = errors.New("mount table truncated: too many mounts")
 // maxMountInfoLine bytes. Surfaced from List as a generic error.
 var errLineTooLong = errors.New("mountinfo line exceeds maximum length")
 
+// FilterFunc decides, before per-mount statfs(2) is called, whether to
+// keep a mount in the listing. The argument has Source / MountPoint /
+// FSType / Pseudo / Local populated from /proc/self/mountinfo; capacity
+// fields are still zero. Return true to keep, false to drop.
+//
+// Used by df to skip filtered remote/pseudo mounts before the syscall
+// is issued. Statfs(2) on a stale NFS mount can hang indefinitely and
+// is not interrupted by context cancellation, so filtering up-front is
+// the only way to guarantee `df -l` does not block on a dead remote.
+type FilterFunc func(Mount) bool
+
 // List enumerates the mounted filesystems on the host.
 //
 // On unsupported platforms it returns (nil, ErrNotSupported).
-// On Linux it reads /proc/self/mountinfo and calls statfs(2) per mount.
-// On macOS it calls getfsstat(2).
+// On Linux it reads /proc/self/mountinfo, evaluates filter against each
+// pre-stat Mount, and only calls statfs(2) for mounts the filter keeps.
+// On macOS it calls getfsstat(2) (which is non-blocking under
+// MNT_NOWAIT) and applies filter to the resulting Mounts.
+//
+// Pass nil for filter to keep every mount.
 //
 // Mounts that disappear or become inaccessible mid-enumeration are silently
 // skipped; the listing is best-effort.
-func List(ctx context.Context) ([]Mount, error) {
-	return listImpl(ctx)
+func List(ctx context.Context, filter FilterFunc) ([]Mount, error) {
+	return listImpl(ctx, filter)
 }
