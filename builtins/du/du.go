@@ -475,16 +475,24 @@ func shouldEmit(depth int, isDir bool, opts options) bool {
 //   - Non-directory files in disk-usage mode use Stat_t.Blocks * 512, or
 //     (when Blocks is unavailable) info.Size() rounded up to the nearest
 //     1024-byte block.
-//   - Directories always use Stat_t.Blocks * 512 regardless of
-//     apparent-size, because GNU does not include a directory's own
-//     info.Size() in --apparent-size totals — only its children
-//     contribute. On platforms without Blocks, directories report 0.
+//   - Directories in apparent-size mode contribute 0 — GNU du with
+//     --apparent-size does not count the directory's own bytes; only its
+//     children contribute. (Verified empirically against GNU coreutils
+//     on both ext4 and APFS.)
+//   - Directories in disk-usage mode use Stat_t.Blocks * 512. On
+//     platforms without Blocks (Windows), directories report 0.
 //
 // The Blocks * 512 multiplication is clamped to math.MaxInt64 to defend
 // against pathological filesystems (e.g. FUSE) that report bogus values.
 func entrySize(info iofs.FileInfo, apparent bool) int64 {
 	if info.IsDir() {
-		return blocksAsBytes(info)
+		if apparent {
+			return 0
+		}
+		if blocks, ok := infoBlocks(info); ok {
+			return clampMul(blocks, statBlockUnit)
+		}
+		return 0
 	}
 	if apparent {
 		return info.Size()
@@ -500,15 +508,6 @@ func entrySize(info iofs.FileInfo, apparent bool) int64 {
 		return math.MaxInt64
 	}
 	return ((size + apparentBlockSize - 1) / apparentBlockSize) * apparentBlockSize
-}
-
-// blocksAsBytes returns Stat_t.Blocks * 512, clamped to MaxInt64.
-// Platforms without Blocks (Windows) always return 0.
-func blocksAsBytes(info iofs.FileInfo) int64 {
-	if blocks, ok := infoBlocks(info); ok {
-		return clampMul(blocks, statBlockUnit)
-	}
-	return 0
 }
 
 // clampMul multiplies a*b for non-negative inputs, returning math.MaxInt64

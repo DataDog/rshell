@@ -104,6 +104,13 @@ func FuzzDuFlags(f *testing.F) {
 		if len(script) > 1<<14 {
 			return // avoid pathological scripts
 		}
+		// Restrict the fuzz target to scripts that actually invoke du. The
+		// mutator can otherwise produce inputs like "0" that the shell
+		// treats as a command-not-found (exit 127), which is not what we
+		// are testing.
+		if !strings.HasPrefix(script, "du ") && script != "du" {
+			return
+		}
 		// Filter inputs that would cause shell parse errors. Unbalanced
 		// quotes are a common one and not a useful test of du itself.
 		if strings.Count(script, `"`)%2 != 0 || strings.Count(script, `'`)%2 != 0 {

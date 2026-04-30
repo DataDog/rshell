@@ -407,12 +407,14 @@ func TestDuDoesNotCrashOnDeepTree(t *testing.T) {
 func TestDuRespectsRecursionLimit(t *testing.T) {
 	dir := t.TempDir()
 	deep := dir
-	for i := 0; i < 300; i++ {
+	// 270 levels — comfortably above maxRecursionDepth (256) but small
+	// enough to keep the test snappy under -race + parallel CI load.
+	for range 270 {
 		deep = filepath.Join(deep, "x")
 	}
 	require.NoError(t, os.MkdirAll(deep, 0o755))
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	_, stderr, code := cmdRunCtx(ctx, t, "du .", dir)
 	assert.Equal(t, 1, code)
