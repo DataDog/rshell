@@ -82,7 +82,9 @@ func listImpl(ctx context.Context, filter FilterFunc) ([]Mount, error) {
 			bsize = 1
 		}
 
-		used := subSat(uint64(st.Blocks), uint64(st.Bfree)) * bsize
+		// Saturating multiply guards against a buggy filesystem
+		// reporting block counts above MaxUint64/bsize.
+		used := mulSat(subSat(uint64(st.Blocks), uint64(st.Bfree)), bsize)
 		inodesUsed := subSat(uint64(st.Files), uint64(st.Ffree))
 
 		pseudo := darwinPseudoTypes[fsType]
@@ -98,8 +100,8 @@ func listImpl(ctx context.Context, filter FilterFunc) ([]Mount, error) {
 			MountPoint: mp,
 			FSType:     fsType,
 			BlockSize:  bsize,
-			Total:      uint64(st.Blocks) * bsize,
-			Free:       uint64(st.Bavail) * bsize,
+			Total:      mulSat(uint64(st.Blocks), bsize),
+			Free:       mulSat(uint64(st.Bavail), bsize),
 			Used:       used,
 			Inodes:     uint64(st.Files),
 			InodesFree: uint64(st.Ffree),

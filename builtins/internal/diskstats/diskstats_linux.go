@@ -143,11 +143,16 @@ func listImpl(ctx context.Context, filter FilterFunc) ([]Mount, error) {
 			bsize = 1
 		}
 		m.BlockSize = bsize
-		m.Total = uint64(st.Blocks) * bsize
-		m.Free = uint64(st.Bavail) * bsize
+		// Saturating multiply: a buggy/malicious FUSE FS could
+		// report block counts above MaxUint64/bsize, which would
+		// wrap a plain a*b. Saturating keeps the displayed values
+		// monotonic and prevents one rogue mount from corrupting
+		// the --total accumulation.
+		m.Total = mulSat(uint64(st.Blocks), bsize)
+		m.Free = mulSat(uint64(st.Bavail), bsize)
 		// Used is computed from f_blocks - f_bfree (root-reserved
 		// blocks are counted as used), which differs from Total - Free.
-		m.Used = subSat(uint64(st.Blocks), uint64(st.Bfree)) * bsize
+		m.Used = mulSat(subSat(uint64(st.Blocks), uint64(st.Bfree)), bsize)
 		m.Inodes = uint64(st.Files)
 		m.InodesFree = uint64(st.Ffree)
 		m.InodesUsed = subSat(uint64(st.Files), uint64(st.Ffree))

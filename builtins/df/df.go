@@ -107,12 +107,38 @@ const (
 	unitsHuman1000                 // -H: powers of 1000
 )
 
+// unitFlag is a pflag.Value that writes a fixed unitMode into a shared
+// target each time the flag is set. We use one instance for -h (writes
+// unitsHuman1024) and one for -H (writes unitsHuman1000) sharing a
+// pointer to the same `mode` field — the LAST set wins by overwriting,
+// which is exactly the argv-order semantics GNU df documents.
+//
+// pflag.FlagSet.Visit walks set flags in *lexicographical* order, not
+// argv order, so it cannot be used to honor input ordering. A
+// shared-target Var sidesteps that limitation entirely.
+type unitFlag struct {
+	target *unitMode
+	value  unitMode
+}
+
+func (u *unitFlag) String() string   { return "" }
+func (u *unitFlag) Type() string     { return "bool" }
+func (u *unitFlag) Set(string) error { *u.target = u.value; return nil }
+
+// registerUnitFlag installs a unitFlag at name/shorthand and configures
+// NoOptDefVal so users can pass `-h` / `-H` (no argument). Without
+// NoOptDefVal, pflag treats Var-registered flags as requiring a value
+// and rejects `-h` with "flag needs an argument".
+func registerUnitFlag(fs *builtins.FlagSet, target *unitMode, value unitMode, name, shorthand, usage string) {
+	flag := fs.VarPF(&unitFlag{target: target, value: value}, name, shorthand, usage)
+	flag.NoOptDefVal = "true"
+}
+
 // flags carries the parsed flag state. It is constructed once per
 // invocation by makeFlags and consumed by the bound handler.
 type flags struct {
 	help         *bool
-	human        *bool
-	si           *bool
+	mode         *unitMode // updated by the unitFlag values for -h / -H
 	posix        *bool
 	printType    *bool
 	inodes       *bool
@@ -125,10 +151,10 @@ type flags struct {
 }
 
 func makeFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
+	mode := unitsK
 	f := &flags{
 		help:         fs.Bool("help", false, "print usage and exit"),
-		human:        fs.BoolP("human-readable", "h", false, "print sizes in powers of 1024 (e.g. 1023M)"),
-		si:           fs.BoolP("si", "H", false, "print sizes in powers of 1000 (e.g. 1.1G)"),
+		mode:         &mode,
 		posix:        fs.BoolP("portability", "P", false, "use the POSIX output format"),
 		printType:    fs.BoolP("print-type", "T", false, "print file system type"),
 		inodes:       fs.BoolP("inodes", "i", false, "list inode information instead of block usage"),
@@ -139,6 +165,10 @@ func makeFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 		includeTypes: fs.StringArrayP("type", "t", nil, "limit listing to file systems of type TYPE"),
 		excludeTypes: fs.StringArrayP("exclude-type", "x", nil, "limit listing to file systems not of type TYPE"),
 	}
+	// -h / -H share `mode` via unitFlag so argv order picks the
+	// winner (last-set wins). See unitFlag's doc for the rationale.
+	registerUnitFlag(fs, &mode, unitsHuman1024, "human-readable", "h", "print sizes in powers of 1024 (e.g. 1023M)")
+	registerUnitFlag(fs, &mode, unitsHuman1000, "si", "H", "print sizes in powers of 1000 (e.g. 1.1G)")
 	// -k is registered separately because it has no long form. It is a
 	// no-op in this v1 implementation — 1024-byte blocks are already
 	// the default — but POSIX scripts pass it explicitly.
@@ -200,25 +230,9 @@ func makeFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			return builtins.Result{Code: 1}
 		}
 
-		mode := resolveUnitMode(f)
-		writeOutput(callCtx, mounts, f, mode)
+		writeOutput(callCtx, mounts, f, *f.mode)
 		return builtins.Result{}
 	}
-}
-
-// resolveUnitMode picks the unit mode based on flag presence. -h beats -H
-// beats -k (1024 is the implicit default). -i is orthogonal: it swaps the
-// columns from blocks to inodes but the unit mode still applies to the
-// inode counts (kept as raw numbers in non-human mode, formatted in
-// human mode).
-func resolveUnitMode(f *flags) unitMode {
-	if *f.human {
-		return unitsHuman1024
-	}
-	if *f.si {
-		return unitsHuman1000
-	}
-	return unitsK
 }
 
 // makePreStatFilter returns a diskstats.FilterFunc that drops mounts

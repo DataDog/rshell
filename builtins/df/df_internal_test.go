@@ -8,7 +8,9 @@ package df
 import (
 	"testing"
 
+	"github.com/spf13/pflag"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/DataDog/rshell/builtins/internal/diskstats"
 )
@@ -452,3 +454,43 @@ func TestSelectColumns(t *testing.T) {
 
 func ptrBool(v bool) *bool          { return &v }
 func ptrSlice(v []string) *[]string { return &v }
+
+// -h / -H share the unit-mode target via unitFlag, so argv order
+// picks the winner (last-set wins). Verify every interleaving emits
+// the expected mode.
+func TestUnitFlag_LastFlagWins(t *testing.T) {
+	cases := []struct {
+		name string
+		argv []string
+		want unitMode
+	}{
+		{"no flag", nil, unitsK},
+		{"-k only", []string{"-k"}, unitsK},
+		{"-h only", []string{"-h"}, unitsHuman1024},
+		{"-H only", []string{"-H"}, unitsHuman1000},
+		{"-h then -H → SI", []string{"-h", "-H"}, unitsHuman1000},
+		{"-H then -h → IEC", []string{"-H", "-h"}, unitsHuman1024},
+		{"-hH (combined short) → SI", []string{"-hH"}, unitsHuman1000},
+		{"-Hh (combined short) → IEC", []string{"-Hh"}, unitsHuman1024},
+		// Non-unit flags interleaved must not change the answer.
+		{"-h -P -H → SI", []string{"-h", "-P", "-H"}, unitsHuman1000},
+		{"--si then --human-readable → IEC",
+			[]string{"--si", "--human-readable"}, unitsHuman1024},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			fs := pflag.NewFlagSet("df", pflag.ContinueOnError)
+			handler := makeFlags(fs)
+			_ = handler // exercise the same flag wiring df uses at runtime
+			require.NoError(t, fs.Parse(c.argv))
+			// Look up the human-readable Var to access its target.
+			// Both -h and -H point to the same shared target via
+			// unitFlag, so reading either reveals the final mode.
+			fl := fs.Lookup("human-readable")
+			require.NotNil(t, fl)
+			uf, ok := fl.Value.(*unitFlag)
+			require.True(t, ok, "expected unitFlag value type")
+			assert.Equal(t, c.want, *uf.target)
+		})
+	}
+}
