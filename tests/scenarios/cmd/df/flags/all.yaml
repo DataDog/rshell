@@ -1,0 +1,12 @@
+description: df -a includes pseudo filesystems (≥ default count)
+skip_assert_against_bash: true
+input:
+  script: |+
+    a=$(df -a | wc -l)
+    d=$(df | wc -l)
+    if [ "$a" -ge "$d" ]; then echo "ok"; else echo "regression: -a=$a < default=$d"; fi
+expect:
+  stdout: |+
+    ok
+  stderr: ""
+  exit_code: 0

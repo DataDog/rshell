@@ -1,0 +1,284 @@
+// Unless explicitly stated otherwise all files in this repository are licensed
+// under the Apache License Version 2.0.
+// This product includes software developed at Datadog (https://www.datadoghq.com/).
+// Copyright 2026-present Datadog, Inc.
+
+package df
+
+import (
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+
+	"github.com/DataDog/rshell/builtins/internal/diskstats"
+)
+
+func TestHumanBytes_1024(t *testing.T) {
+	cases := []struct {
+		v    uint64
+		want string
+	}{
+		{0, "0"},
+		{1, "1"},
+		{1023, "1023"},
+		{1024, "1.0K"},
+		{2047, "2.0K"}, // 2047/1024 = 1.999 → 2.0
+		{2048, "2.0K"},
+		{10 * 1024, "10K"}, // ≥10 drops decimal
+		{1024 * 1024, "1.0M"},
+		{500 * 1024 * 1024, "500M"},
+		{1 << 30, "1.0G"},
+		{1<<40 + 1<<39, "1.5T"},
+		{1 << 50, "1.0P"},
+		{1 << 60, "1.0E"},
+		{^uint64(0), "16E"},
+	}
+	for _, c := range cases {
+		assert.Equal(t, c.want, humanBytes(c.v, 1024), "v=%d", c.v)
+	}
+}
+
+func TestHumanBytes_1000(t *testing.T) {
+	cases := []struct {
+		v    uint64
+		want string
+	}{
+		{0, "0"},
+		{999, "999"},
+		{1000, "1.0K"},
+		{1500, "1.5K"},
+		{1_000_000, "1.0M"},
+		{1_000_000_000, "1.0G"},
+	}
+	for _, c := range cases {
+		assert.Equal(t, c.want, humanBytes(c.v, 1000), "v=%d", c.v)
+	}
+}
+
+func TestPercentUsed(t *testing.T) {
+	cases := []struct {
+		used, free uint64
+		want       string
+	}{
+		{0, 0, "-"},
+		{0, 100, "0%"},
+		{1, 99, "1%"},
+		{50, 50, "50%"},
+		{99, 1, "99%"},
+		{1, 0, "100%"},
+		// Round-up semantics: any non-zero remainder bumps the
+		// percentage up.
+		{1, 999, "1%"},
+		{1, 9_999_999, "1%"},
+		// Overflow guard: used * 100 would wrap; the implementation
+		// right-shifts both sides until the multiplication fits.
+		// used == free → 50%, even at extreme magnitudes.
+		{^uint64(0) / 50, ^uint64(0) / 50, "50%"},
+		// Used > free at extreme magnitudes → 100%.
+		{^uint64(0), 1, "100%"},
+		{^uint64(0) / 2, ^uint64(0) / 4, "67%"},
+	}
+	for _, c := range cases {
+		assert.Equal(t, c.want, percentUsed(c.used, c.free), "u=%d f=%d", c.used, c.free)
+	}
+}
+
+func TestSaturatingAdd(t *testing.T) {
+	maxU := ^uint64(0)
+	assert.Equal(t, uint64(3), saturatingAdd(1, 2))
+	assert.Equal(t, maxU, saturatingAdd(maxU, 0))
+	assert.Equal(t, maxU, saturatingAdd(0, maxU))
+	assert.Equal(t, maxU, saturatingAdd(maxU, 1))
+	assert.Equal(t, maxU, saturatingAdd(maxU, maxU))
+	assert.Equal(t, maxU-1, saturatingAdd(maxU/2, maxU/2))
+}
+
+func TestFormatCount(t *testing.T) {
+	// inode mode always returns raw integers.
+	assert.Equal(t, "0", formatCount(0, unitsHuman1024, true))
+	assert.Equal(t, "1234567", formatCount(1234567, unitsHuman1024, true))
+	assert.Equal(t, "9999", formatCount(9999, unitsHuman1000, true))
+	assert.Equal(t, "12345", formatCount(12345, unitsK, true))
+
+	// 1K block mode: rounds up to the next 1024 boundary.
+	assert.Equal(t, "0", formatCount(0, unitsK, false))
+	assert.Equal(t, "1", formatCount(1, unitsK, false))
+	assert.Equal(t, "1", formatCount(1024, unitsK, false))
+	assert.Equal(t, "2", formatCount(1025, unitsK, false))
+
+	// Saturated max value (e.g. an overflowed grand total) must not
+	// wrap to 0 — must remain a sane integer count of 1K blocks.
+	assert.Equal(t, "18014398509481984", formatCount(^uint64(0), unitsK, false))
+
+	// Human modes delegate to humanBytes.
+	assert.Equal(t, "1.0K", formatCount(1024, unitsHuman1024, false))
+	assert.Equal(t, "1.0K", formatCount(1000, unitsHuman1000, false))
+}
+
+// TestPercentUsed_NoDivByZero — every combination of zero inputs and
+// extreme magnitudes must produce a finite percentage string and never
+// panic. percentUsed is called from a hot per-mount loop, so a panic
+// would crash the entire df invocation.
+func TestPercentUsed_NoDivByZero(t *testing.T) {
+	maxU := ^uint64(0)
+	cases := []struct{ used, free uint64 }{
+		{0, 0},
+		{0, maxU},
+		{maxU, 0},
+		{maxU, maxU},
+		{maxU, 1},
+		{1, maxU},
+		{maxU - 1, 1},
+		{maxU / 2, maxU / 2},
+		{maxU / 200, maxU / 200},
+	}
+	for _, c := range cases {
+		// Wrap in a func so a panic in any case fails the whole test
+		// with a useful message instead of taking down the suite.
+		assert.NotPanics(t, func() { _ = percentUsed(c.used, c.free) },
+			"u=%d f=%d", c.used, c.free)
+	}
+}
+
+func TestStringSet(t *testing.T) {
+	assert.Nil(t, stringSet(nil))
+	assert.Nil(t, stringSet([]string{}))
+	got := stringSet([]string{"ext4"})
+	assert.Equal(t, map[string]struct{}{"ext4": {}}, got)
+	got = stringSet([]string{"ext4", "tmpfs"})
+	assert.Contains(t, got, "ext4")
+	assert.Contains(t, got, "tmpfs")
+	// Comma-separated values are split apart (matches GNU df).
+	got = stringSet([]string{"ext4,tmpfs", "xfs"})
+	assert.Contains(t, got, "ext4")
+	assert.Contains(t, got, "tmpfs")
+	assert.Contains(t, got, "xfs")
+	// Empty fragments are silently dropped.
+	got = stringSet([]string{",,ext4,,"})
+	assert.Equal(t, map[string]struct{}{"ext4": {}}, got)
+}
+
+func TestFilterMounts_DefaultDropsPseudo(t *testing.T) {
+	in := []diskstats.Mount{
+		{MountPoint: "/", FSType: "ext4", Local: true},
+		{MountPoint: "/proc", FSType: "proc", Pseudo: true},
+		{MountPoint: "/dev", FSType: "devtmpfs", Pseudo: true},
+		{MountPoint: "/mnt/nfs", FSType: "nfs", Local: false},
+	}
+	out := filterMounts(append([]diskstats.Mount(nil), in...), &flags{
+		all:          ptrBool(false),
+		local:        ptrBool(false),
+		includeTypes: ptrSlice([]string(nil)),
+		excludeTypes: ptrSlice([]string(nil)),
+	})
+	// Pseudo mounts are filtered out by default; nfs stays.
+	assert.Len(t, out, 2)
+	assert.Equal(t, "/", out[0].MountPoint)
+	assert.Equal(t, "/mnt/nfs", out[1].MountPoint)
+}
+
+func TestFilterMounts_AllIncludesPseudo(t *testing.T) {
+	in := []diskstats.Mount{
+		{MountPoint: "/", FSType: "ext4", Local: true},
+		{MountPoint: "/proc", FSType: "proc", Pseudo: true},
+	}
+	out := filterMounts(append([]diskstats.Mount(nil), in...), &flags{
+		all:          ptrBool(true),
+		local:        ptrBool(false),
+		includeTypes: ptrSlice([]string(nil)),
+		excludeTypes: ptrSlice([]string(nil)),
+	})
+	assert.Len(t, out, 2)
+}
+
+func TestFilterMounts_LocalDropsRemote(t *testing.T) {
+	in := []diskstats.Mount{
+		{MountPoint: "/", FSType: "ext4", Local: true},
+		{MountPoint: "/mnt/nfs", FSType: "nfs", Local: false},
+	}
+	out := filterMounts(append([]diskstats.Mount(nil), in...), &flags{
+		all:          ptrBool(true),
+		local:        ptrBool(true),
+		includeTypes: ptrSlice([]string(nil)),
+		excludeTypes: ptrSlice([]string(nil)),
+	})
+	assert.Len(t, out, 1)
+	assert.Equal(t, "/", out[0].MountPoint)
+}
+
+func TestFilterMounts_TypeIncludeAndExclude(t *testing.T) {
+	in := []diskstats.Mount{
+		{MountPoint: "/a", FSType: "ext4", Local: true},
+		{MountPoint: "/b", FSType: "ext4", Local: true},
+		{MountPoint: "/c", FSType: "btrfs", Local: true},
+		{MountPoint: "/d", FSType: "xfs", Local: true},
+	}
+	out := filterMounts(append([]diskstats.Mount(nil), in...), &flags{
+		all:          ptrBool(true),
+		local:        ptrBool(false),
+		includeTypes: ptrSlice([]string{"ext4", "xfs"}),
+		excludeTypes: ptrSlice([]string(nil)),
+	})
+	assert.Len(t, out, 3) // both ext4 + xfs
+
+	// Exclude wins over include when both name a type.
+	out = filterMounts(append([]diskstats.Mount(nil), in...), &flags{
+		all:          ptrBool(true),
+		local:        ptrBool(false),
+		includeTypes: ptrSlice([]string{"ext4", "xfs"}),
+		excludeTypes: ptrSlice([]string{"ext4"}),
+	})
+	assert.Len(t, out, 1) // only xfs
+	assert.Equal(t, "xfs", out[0].FSType)
+}
+
+func TestBuildHeader(t *testing.T) {
+	// Default: Filesystem 1K-blocks Used Available Use% Mounted on
+	h := buildHeader(false, false, false, unitsK)
+	assert.Equal(t, []string{"Filesystem", "1K-blocks", "Used", "Available", "Use%", "Mounted on"}, h)
+
+	// -P: Filesystem 1024-blocks Used Available Capacity Mounted on
+	h = buildHeader(true, false, false, unitsK)
+	assert.Equal(t, []string{"Filesystem", "1024-blocks", "Used", "Available", "Capacity", "Mounted on"}, h)
+
+	// -h: column 1 is "Size" instead of blocks
+	h = buildHeader(false, false, false, unitsHuman1024)
+	assert.Contains(t, h, "Size")
+
+	// -T: inserts Type column
+	h = buildHeader(false, true, false, unitsK)
+	assert.Equal(t, "Type", h[1])
+
+	// -i: inode columns
+	h = buildHeader(false, false, true, unitsK)
+	assert.Equal(t, []string{"Filesystem", "Inodes", "IUsed", "IFree", "IUse%", "Mounted on"}, h)
+
+	// -i -P: inode columns but POSIX renames the percentage column
+	h = buildHeader(true, false, true, unitsK)
+	assert.Contains(t, h, "Capacity")
+
+	// -i -T: inode columns + Type column inserted after Filesystem.
+	h = buildHeader(false, true, true, unitsK)
+	assert.Equal(t, []string{"Filesystem", "Type", "Inodes", "IUsed", "IFree", "IUse%", "Mounted on"}, h)
+}
+
+func TestSelectColumns(t *testing.T) {
+	m := diskstats.Mount{
+		Total: 1000, Used: 200, Free: 800,
+		Inodes: 50, InodesUsed: 10, InodesFree: 40,
+	}
+	// block mode
+	a, b, c := selectColumns(m, false)
+	assert.Equal(t, uint64(1000), a)
+	assert.Equal(t, uint64(200), b)
+	assert.Equal(t, uint64(800), c)
+
+	// inode mode
+	a, b, c = selectColumns(m, true)
+	assert.Equal(t, uint64(50), a)
+	assert.Equal(t, uint64(10), b)
+	assert.Equal(t, uint64(40), c)
+}
+
+func ptrBool(v bool) *bool          { return &v }
+func ptrSlice(v []string) *[]string { return &v }

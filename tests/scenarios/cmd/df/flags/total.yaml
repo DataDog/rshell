@@ -1,0 +1,10 @@
+description: df --total appends a grand total row
+skip_assert_against_bash: true
+input:
+  script: |+
+    df --total | tail -n 1 | cut -c 1-5
+expect:
+  stdout: |+
+    total
+  stderr: ""
+  exit_code: 0

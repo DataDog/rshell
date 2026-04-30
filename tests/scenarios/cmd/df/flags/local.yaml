@@ -1,0 +1,9 @@
+description: df -l accepts the local-only filter and exits 0
+skip_assert_against_bash: true
+input:
+  script: |+
+    df -l | head -n 1
+expect:
+  stdout_contains: ["Filesystem"]
+  stderr: ""
+  exit_code: 0
