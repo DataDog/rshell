@@ -445,6 +445,65 @@ func TestDuLastDereferenceFlagWins(t *testing.T) {
 		stdout, _, _ := cmdRun(t, "du -L -P -b link", dir)
 		assert.NotEqual(t, "4096\tlink\n", stdout)
 	})
+	// Repeated occurrences must each toggle. pflag's Visit collapses
+	// repeated flags into a single entry, so we use a custom seqBool
+	// Value type to capture every Set() call.
+	t.Run("P_L_P_uses_last_P", func(t *testing.T) {
+		stdout, _, _ := cmdRun(t, "du -P -L -P -b link", dir)
+		assert.NotEqual(t, "4096\tlink\n", stdout, "trailing -P must win")
+	})
+	t.Run("L_P_L_uses_last_L", func(t *testing.T) {
+		stdout, _, _ := cmdRun(t, "du -L -P -L -b link", dir)
+		assert.Equal(t, "4096\tlink\n", stdout, "trailing -L must follow target")
+	})
+}
+
+// TestDuRepeatedSizeFlagWins covers the same last-wins property for
+// repeated size-format flags.
+func TestDuRepeatedSizeFlagWins(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "f.bin"), make([]byte, 1500), 0o644))
+
+	t.Run("b_k_b_keeps_bytes", func(t *testing.T) {
+		stdout, _, _ := cmdRun(t, "du -b -k -b f.bin", dir)
+		assert.Equal(t, "1500\tf.bin\n", stdout)
+	})
+	t.Run("k_b_k_keeps_kilo", func(t *testing.T) {
+		// -b is sticky (sets apparent-size), but -k after -b switches the
+		// unit to KiB. With apparent=1500 bytes → 2 KiB.
+		stdout, _, _ := cmdRun(t, "du -k -b -k f.bin", dir)
+		assert.Equal(t, "2\tf.bin\n", stdout)
+	})
+}
+
+// TestDuSummarizeWithMaxDepthZero confirms that `-s --max-depth=0` is
+// allowed (warning + exit 0) since GNU treats the two as equivalent.
+func TestDuSummarizeWithMaxDepthZero(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "f.txt"), []byte("abc"), 0o644))
+
+	stdout, stderr, code := cmdRun(t, "du -s --max-depth=0 -b .", dir)
+	assert.Equal(t, 0, code, "GNU exits 0 for -s --max-depth=0; got stderr=%q", stderr)
+	assert.Contains(t, stderr, "warning")
+	assert.Contains(t, stdout, "\t.\n")
+
+	// -s --max-depth=1 is a true conflict — exit 1.
+	_, stderr2, code2 := cmdRun(t, "du -s --max-depth=1 .", dir)
+	assert.Equal(t, 1, code2)
+	assert.Contains(t, stderr2, "conflicts")
+}
+
+// TestDuHumanRoundsUp checks GNU-style ceiling rounding rather than
+// round-to-nearest. 1025 → 1.1K, 10241 → 11K.
+func TestDuHumanRoundsUp(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "a"), make([]byte, 1025), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "b"), make([]byte, 10241), 0o644))
+
+	stdoutA, _, _ := cmdRun(t, "du -h --apparent-size a", dir)
+	assert.Equal(t, "1.1K\ta\n", stdoutA)
+	stdoutB, _, _ := cmdRun(t, "du -h --apparent-size b", dir)
+	assert.Equal(t, "11K\tb\n", stdoutB)
 }
 
 // --- Help ---

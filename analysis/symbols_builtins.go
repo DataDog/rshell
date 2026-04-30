@@ -66,14 +66,17 @@ var builtinPerCommandSymbols = map[string][]string{
 		"context.Context", // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
 	},
 	"du": {
-		"context.Context", // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
-		"errors.Is",       // 🟢 error comparison; pure function, no I/O.
-		"errors.New",      // 🟢 creates a simple error value; pure function, no I/O.
-		"fmt.Sprintf",     // 🟢 string formatting; pure function, no I/O.
-		"io.EOF",          // 🟢 sentinel error value; pure constant.
-		"io/fs.FileInfo",  // 🟢 interface type for file information; no side effects.
-		"math.MaxInt64",   // 🟢 integer constant; used for overflow clamping.
-		"syscall.Stat_t",  // 🟢 Unix file stat struct for extracting Blocks/Nlink; read-only type, no I/O.
+		"context.Context",    // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
+		"errors.Is",          // 🟢 error comparison; pure function, no I/O.
+		"errors.New",         // 🟢 creates a simple error value; pure function, no I/O.
+		"fmt.Sprintf",        // 🟢 string formatting; pure function, no I/O.
+		"io.EOF",             // 🟢 sentinel error value; pure constant.
+		"io/fs.FileInfo",     // 🟢 interface type for file information; no side effects.
+		"math.Ceil",          // 🟢 pure arithmetic; rounds float up to nearest integer.
+		"math.MaxInt64",      // 🟢 integer constant; used for overflow clamping.
+		"strconv.FormatBool", // 🟢 bool→string conversion for pflag.Value; pure function.
+		"strconv.ParseBool",  // 🟢 string→bool conversion for pflag.Value; pure function.
+		"syscall.Stat_t",     // 🟢 Unix file stat struct for extracting Blocks/Nlink; read-only type, no I/O.
 	},
 	"find": {
 		"context.Context",                 // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
@@ -514,6 +517,7 @@ var builtinAllowedSymbols = []string{
 	"slices.SortStableFunc",                               // 🟢 stable sort with a comparison function; pure function, no I/O.
 	"strconv.Atoi",                                        // 🟢 string-to-int conversion; pure function, no I/O.
 	"strconv.ErrRange",                                    // 🟢 sentinel error value for overflow; pure constant.
+	"strconv.FormatBool",                                  // 🟢 bool-to-string conversion; pure function, no I/O.
 	"strconv.FormatInt",                                   // 🟢 int-to-string conversion; pure function, no I/O.
 	"strconv.FormatUint",                                  // 🟢 uint-to-string conversion; pure function, no I/O.
 	"strconv.IntSize",                                     // 🟢 platform int size constant (32 or 64); pure constant, no I/O.

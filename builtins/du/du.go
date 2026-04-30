@@ -114,6 +114,7 @@ import (
 	"io"
 	iofs "io/fs"
 	"math"
+	"strconv"
 
 	"github.com/DataDog/rshell/builtins"
 )
@@ -170,34 +171,71 @@ type options struct {
 	unit         unitMode
 }
 
+// seqBool is a pflag.Value that records the sequence number of every
+// Set() call. Multiple invocations of the same flag (e.g. `-P -L -P`)
+// each increment the shared counter, so the largest lastSet across a
+// group of mutually-exclusive flags identifies the user's final choice.
+//
+// pflag.Visit only reports each flag once (at its first-set position),
+// which loses repeated occurrences. seqBool is the workaround.
+type seqBool struct {
+	val     bool
+	seq     *int // shared counter across all flags in this invocation
+	lastSet int  // 0 = never set
+}
+
+func (b *seqBool) Set(s string) error {
+	v, err := strconv.ParseBool(s)
+	if err != nil {
+		return err
+	}
+	b.val = v
+	*b.seq++
+	b.lastSet = *b.seq
+	return nil
+}
+
+func (b *seqBool) String() string   { return strconv.FormatBool(b.val) }
+func (b *seqBool) Type() string     { return "bool" }
+func (b *seqBool) IsBoolFlag() bool { return true }
+
 func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
-	// Preserve the parse order of flags so fs.Visit can resolve last-wins
-	// semantics for mutually-exclusive flag groups (-L vs -P, and the
-	// size-format flags -b/-h/--si/-k/-m). pflag.NewFlagSet defaults
-	// SortFlags to true, which would make Visit iterate alphabetically
-	// instead.
+	// Preserve registration order so PrintDefaults emits flags in a stable
+	// shape rather than alphabetical.
 	fs.SortFlags = false
 
 	all := fs.BoolP("all", "a", false, "write counts for all files, not just directories")
 	summarize := fs.BoolP("summarize", "s", false, "display only a total for each argument")
 	total := fs.BoolP("total", "c", false, "produce a grand total")
 	separateDirs := fs.BoolP("separate-dirs", "S", false, "for directories, do not include size of subdirectories")
-	_ = fs.BoolP("dereference", "L", false, "dereference all symbolic links")
-	// -P is the default; the flag is registered so users can toggle back to
-	// it when -L was given earlier in the same invocation. Effective state
-	// is determined by parse-order via fs.Visit below.
-	_ = fs.BoolP("no-dereference", "P", false, "don't follow any symbolic links (default)")
+
+	// Mutually-exclusive last-wins groups (-L vs -P, and the size-format
+	// flags -b/-h/--si/-k/-m). Each Set() call increments a shared
+	// sequence counter, so the largest lastSet across the group identifies
+	// the user's final choice — including repetitions like `du -P -L -P`
+	// which pflag's Visit collapses to a single occurrence.
+	//
+	// Helper: register a custom Var-based bool flag with the parser-side
+	// NoOptDefVal="true" trick that BoolP sets internally, so pflag treats
+	// `-L`/`-P`/etc. as no-argument flags.
+	seqCounter := new(int)
+	registerSeq := func(name, shorthand, usage string) *seqBool {
+		v := &seqBool{seq: seqCounter}
+		f := fs.VarPF(v, name, shorthand, usage)
+		f.NoOptDefVal = "true"
+		return v
+	}
+	derefL := registerSeq("dereference", "L", "dereference all symbolic links")
+	derefP := registerSeq("no-dereference", "P", "don't follow any symbolic links (default)")
+
 	apparentSize := fs.Bool("apparent-size", false, "print apparent sizes rather than device usage")
-	// The size-format flags -b/-h/--si/-k/-m are mutually exclusive and
-	// last-wins: GNU lets the user override an earlier choice with a later
-	// flag. We register all of them and resolve the active mode below
-	// using fs.Visit.
-	_ = fs.BoolP("bytes", "b", false, "equivalent to --apparent-size --block-size=1")
+	bytesFlag := registerSeq("bytes", "b", "equivalent to --apparent-size --block-size=1")
+	humanFlag := registerSeq("human-readable", "h", "print sizes in human-readable format")
+	siFlag := registerSeq("si", "", "like -h, but use powers of 1000")
+	kiloFlag := registerSeq("kilobytes", "k", "use 1024-byte blocks (default)")
+	megaFlag := registerSeq("megabytes", "m", "use 1 MiB (1024*1024) blocks")
+
 	null := fs.BoolP("null", "0", false, "end each output line with NUL, not newline")
-	_ = fs.BoolP("human-readable", "h", false, "print sizes in human-readable format")
-	_ = fs.Bool("si", false, "like -h, but use powers of 1000")
-	_ = fs.BoolP("kilobytes", "k", false, "use 1024-byte blocks (default)")
-	_ = fs.BoolP("megabytes", "m", false, "use 1 MiB (1024*1024) blocks")
 	maxDepth := fs.IntP("max-depth", "d", -1, "print the total for a directory only if it is N or fewer levels deep")
 	helpFlag := fs.Bool("help", false, "print usage and exit")
 
@@ -222,42 +260,51 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			maxDepthSet:  fs.Changed("max-depth"),
 			unit:         unitKilo, // GNU default when no size-format flag is set
 		}
-		// `-L`/`-P` and the size-format flags (-b/-h/--si/-k/-m) are
-		// last-wins. fs.Visit iterates flags in parse order because we set
-		// SortFlags=false above. Reading parse-order here is the single
-		// source of truth for both opts.dereference and opts.unit.
-		bytesSeen := false
-		fs.Visit(func(f *builtins.Flag) {
-			switch f.Name {
-			case "dereference":
-				opts.dereference = true
-			case "no-dereference":
-				opts.dereference = false
-			case "bytes":
-				opts.unit = unitBytes
-				bytesSeen = true
-			case "human-readable":
-				opts.unit = unitHuman
-			case "si":
-				opts.unit = unitSI
-			case "kilobytes":
-				opts.unit = unitKilo
-			case "megabytes":
-				opts.unit = unitMega
+		// Resolve `-L` vs `-P` last-wins by comparing sequence numbers.
+		// Repeated invocations like `du -P -L -P` are honoured because each
+		// Set() call updates lastSet on its respective seqBool.
+		if derefL.lastSet > derefP.lastSet {
+			opts.dereference = true
+		} else if derefP.lastSet > derefL.lastSet {
+			opts.dereference = false
+		}
+		// Resolve the size-format group (-b / -h / --si / -k / -m) the same
+		// way: pick the flag with the highest lastSet sequence.
+		sizeChoices := []struct {
+			flag *seqBool
+			unit unitMode
+		}{
+			{bytesFlag, unitBytes},
+			{humanFlag, unitHuman},
+			{siFlag, unitSI},
+			{kiloFlag, unitKilo},
+			{megaFlag, unitMega},
+		}
+		bestSeq := 0
+		for _, c := range sizeChoices {
+			if c.flag.lastSet > bestSeq {
+				bestSeq = c.flag.lastSet
+				opts.unit = c.unit
 			}
-		})
-		// `-b` is shorthand for `--apparent-size --block-size=1`. The
-		// apparent-size component is sticky: once set, a later -k/-m only
-		// changes the unit but the totals remain apparent-size. This
-		// matches GNU semantics for `du -b -k`.
-		if bytesSeen {
+		}
+		// `-b` is shorthand for `--apparent-size --block-size=1`. Apparent
+		// mode is sticky: once `-b` has appeared anywhere on the command
+		// line, the totals remain apparent-size even if a later -k/-m
+		// changed the unit. Matches GNU semantics for `du -b -k`.
+		if bytesFlag.lastSet > 0 {
 			opts.apparentSize = true
 		}
 
 		// Mutual-exclusion checks (GNU semantics).
-		if opts.summarize && opts.maxDepthSet {
+		// `-s` and `--max-depth=N` are equivalent at N=0; GNU prints a
+		// warning for that case but exits 0. Any non-zero --max-depth
+		// truly conflicts with -s and is a hard error.
+		if opts.summarize && opts.maxDepthSet && opts.maxDepth > 0 {
 			callCtx.Errf("du: summarizing conflicts with --max-depth=%d\n", opts.maxDepth)
 			return builtins.Result{Code: 1}
+		}
+		if opts.summarize && opts.maxDepthSet && opts.maxDepth == 0 {
+			callCtx.Errf("du: warning: summarizing is the same as using --max-depth=0\n")
 		}
 		if opts.summarize && opts.all {
 			callCtx.Errf("du: cannot both summarize and show all entries\n")
@@ -600,8 +647,13 @@ func divCeil(n, d int64) int64 {
 // humanSize formats a byte count using the supplied base (1024 or 1000).
 // Below the base it prints the raw integer with no suffix (matching GNU).
 // At base or above it picks the smallest unit such that value < base,
-// printing one decimal when val < 9.95 (so "1.5K" but "234M") and zero
-// decimals otherwise (GNU's threshold).
+// printing one decimal when the value is < 10 in that unit (so "1.5K"
+// but "234M") and zero decimals otherwise.
+//
+// GNU `du -h` rounds *up* at the displayed precision rather than to
+// nearest, so 1025 bytes prints "1.1K" (not "1.0K") and 10241 bytes
+// prints "11K" (not "10K"). We replicate this with explicit ceiling
+// rounding before formatting.
 func humanSize(rawBytes int64, base int64, units []string) string {
 	if rawBytes < 0 {
 		rawBytes = 0
@@ -614,13 +666,17 @@ func humanSize(rawBytes int64, base int64, units []string) string {
 	for i := 1; i < len(units); i++ {
 		val /= div
 		if val < float64(base) {
-			if val < 9.95 {
-				return fmt.Sprintf("%.1f%s", val, units[i])
+			// Decide one-decimal vs zero-decimal display based on the
+			// rounded-up value, not the raw float, so e.g. 9.95 rounds
+			// up to 10 (no decimal) but 9.94 stays at "9.9".
+			oneDecCeil := math.Ceil(val*10) / 10
+			if oneDecCeil < 10 {
+				return fmt.Sprintf("%.1f%s", oneDecCeil, units[i])
 			}
-			return fmt.Sprintf("%.0f%s", val, units[i])
+			return fmt.Sprintf("%.0f%s", math.Ceil(val), units[i])
 		}
 	}
-	return fmt.Sprintf("%.0f%s", val, units[len(units)-1])
+	return fmt.Sprintf("%.0f%s", math.Ceil(val), units[len(units)-1])
 }
 
 // emit writes a single output line: "<size>\t<path>" terminated by \n
