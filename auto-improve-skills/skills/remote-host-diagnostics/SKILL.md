@@ -1,8 +1,8 @@
 ---
 name: remote-host-diagnostics
-description: Diagnose customer hosts through the Datadog Agent restricted shell (rshell). Use when running read-only log, process, route, socket, or other diagnostic commands via Datadog remote actions.
-compatibility: Requires Datadog remote-actions access and the datadog_remote_action_restricted_shell_run_command tool.
-allowed-tools: datadog_remote_action_restricted_shell_run_command
+description: Diagnose hosts through the local Datadog restricted shell (`./rshell`). Use when running read-only log, process, route, socket, or other diagnostic commands locally.
+compatibility: Requires running from the rshell repository with a built local `./rshell` binary (`make build` if missing).
+allowed-tools: bash
 metadata:
   source_url: "https://github.com/DataDog/dd-source/blob/main/domains/mcp_services/libs/go/mcp/tools/skills/datadog/remote-host-diagnostics.md"
   source_skill_name: "datadog/remote-host-diagnostics"
@@ -10,35 +10,54 @@ metadata:
 
 # Remote Host Diagnostics
 
-Use this skill to run diagnostic commands on customer hosts through the Datadog Agent restricted shell (`rshell`). The shell is sandboxed, read-only, and has filesystem access limited to logs.
+Use this skill to run diagnostic commands through the local restricted shell binary (`./rshell`) in the current repository. This is a local rshell run: do not call Datadog remote actions. Commands run on the machine where the agent is operating, constrained by the `./rshell` flags you pass.
 
 ## Tool
 
-Use `datadog_remote_action_restricted_shell_run_command`.
+Use the Bash tool to invoke `./rshell` directly.
 
-| Parameter | Required | Description |
+If `./rshell` is missing, build it first:
+
+```sh
+make build
+```
+
+Run commands with `-c` and a bounded timeout:
+
+```sh
+./rshell --allow-all-commands --timeout 5s -c '<command>'
+```
+
+For commands that read logs or other files, explicitly allow the relevant directory:
+
+```sh
+./rshell --allow-all-commands --timeout 5s --allowed-paths /var/log -c '<command>'
+```
+
+| Option | Required | Description |
 |---|---|---|
-| `command` | Yes | Shell command to run. Pipes (`|`) and standard POSIX constructs are supported. |
-| `hostname` | No* | Hostname of the machine to run the command on. Prefer this when the user provides a host identifier; the tool resolves it to a Private Action Runner connection. |
-| `connection_id` | No* | Private Action Runner connection ID targeting the Datadog Agent on the host. Use only when hostname resolution is unavailable or the user explicitly provides one. |
+| `-c '<command>'` | Yes | Shell command to run. Pipes (`|`) and standard POSIX constructs are supported. |
+| `--allow-all-commands` | Yes by default | Allows all rshell builtins. Use `--allowed-commands rshell:<cmd>,...` only when intentionally testing a narrower allowlist. |
+| `--allowed-paths <paths>` | For filesystem reads | Comma-separated directories that rshell may read, for example `/var/log` or `/var/log,/host/var/log`. Without this, filesystem access is blocked. |
+| `--timeout <duration>` | Recommended | Maximum execution time for the shell run, for example `5s` or `30s`. |
 
-*Exactly one of `hostname` or `connection_id` is required. Prefer `hostname` by default.
+This local variant does not target remote hosts. If the user asks to target a remote host, explain that this skill only exercises local `./rshell`; use the appropriate remote-action tooling outside this skill for real remote hosts.
 
 ## Required workflow
 
-1. Identify the target host. Use `hostname` if available; ask for `connection_id` only if hostname resolution fails or the user explicitly gives one.
+1. Confirm you are in the rshell repository and that `./rshell` exists. If it does not, run `make build`.
 2. Tell the user what command you are about to run and why.
 3. At the start of every new diagnostic session, run:
 
    ```sh
-   help
+   ./rshell --allow-all-commands --timeout 5s -c 'help'
    ```
 
-   The available command set varies by Datadog Agent version. Do not assume a command exists; if `help` does not list it, it is unavailable and will return exit code 127.
+   The available command set can vary by build. Do not assume a command exists; if `help` does not list it, it is unavailable and will return exit code 127.
 4. For log investigations, start by listing available logs:
 
    ```sh
-   ls -la /var/log
+   ./rshell --allow-all-commands --timeout 5s --allowed-paths /var/log -c 'ls -la /var/log'
    ```
 
 5. Use bounded commands such as `tail`, `head`, and filtered `grep` queries. Do not read entire large log files without filtering.
@@ -47,16 +66,21 @@ Use `datadog_remote_action_restricted_shell_run_command`.
 
 ## Filesystem access
 
-- Only `/var/log` and its subdirectories are accessible. All other paths are blocked.
+- `./rshell` blocks filesystem access by default. Pass `--allowed-paths` for every directory the diagnostic command needs to read.
+- To mirror restricted remote diagnostics, prefer read-only commands and narrow allowed paths such as `/var/log`.
 - The environment is read-only: no file writes, directory creation, or host modifications.
 - Output redirections work only to `/dev/null`.
 - Do not rely on standard environment variables such as `$HOME` or `$PATH`; the shell runs with a minimal environment.
 
 ### Containerized Datadog Agent
 
-When the Datadog Agent runs in a container, host filesystem paths are mounted under `/host`. For example, host `/var/log` becomes `/host/var/log` inside the container.
+When diagnosing files from a containerized Datadog Agent layout, host filesystem paths may be mounted under `/host`. For example, host `/var/log` becomes `/host/var/log` inside the container.
 
-If commands against `/var/log` return empty results or "no such file" errors, retry under `/host/var/log`. When in doubt, check both paths.
+If commands against `/var/log` return empty results or "no such file" errors, retry under `/host/var/log` if that path exists locally. When checking both paths, allow both directories:
+
+```sh
+./rshell --allow-all-commands --timeout 5s --allowed-paths /var/log,/host/var/log -c 'ls -la /var/log; ls -la /host/var/log'
+```
 
 ## Safety notes
 
@@ -66,29 +90,20 @@ If commands against `/var/log` return empty results or "no such file" errors, re
 
 ## Examples
 
-View recent syslog errors using hostname:
+View recent syslog errors locally:
 
-```text
-datadog_remote_action_restricted_shell_run_command(
-  command="tail -n 50 /var/log/syslog | grep -i error",
-  hostname="<hostname>"
-)
+```sh
+./rshell --allow-all-commands --timeout 5s --allowed-paths /var/log -c 'tail -n 50 /var/log/syslog | grep -i error'
 ```
 
-List available log files:
+List available local log files:
 
-```text
-datadog_remote_action_restricted_shell_run_command(
-  command="ls -la /var/log",
-  hostname="<hostname>"
-)
+```sh
+./rshell --allow-all-commands --timeout 5s --allowed-paths /var/log -c 'ls -la /var/log'
 ```
 
-Check listening TCP sockets using a connection ID:
+Check listening TCP sockets locally on Linux:
 
-```text
-datadog_remote_action_restricted_shell_run_command(
-  command="ss -tlnp",
-  connection_id="<connection-id>"
-)
+```sh
+./rshell --allow-all-commands --timeout 5s -c 'ss -tlnp'
 ```
