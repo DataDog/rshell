@@ -40,9 +40,16 @@ func TestParseMountInfo_HappyPath(t *testing.T) {
 	assert.True(t, mounts[1].Pseudo)
 	assert.False(t, mounts[1].Local)
 
+	// devtmpfs reports real /dev contents and is intentionally NOT in
+	// pseudoTypes (matches GNU df default listing).
 	assert.Equal(t, "/dev", mounts[3].MountPoint)
 	assert.Equal(t, "devtmpfs", mounts[3].FSType)
-	assert.True(t, mounts[3].Pseudo)
+	assert.False(t, mounts[3].Pseudo)
+
+	// tmpfs is /run in this fixture — also intentionally NOT pseudo.
+	assert.Equal(t, "/run", mounts[4].MountPoint)
+	assert.Equal(t, "tmpfs", mounts[4].FSType)
+	assert.False(t, mounts[4].Pseudo)
 
 	// Octal-escaped space.
 	assert.Equal(t, "/mnt/with space", mounts[5].MountPoint)
