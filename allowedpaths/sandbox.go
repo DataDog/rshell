@@ -310,11 +310,29 @@ func IsDevNull(path string) bool {
 	return false
 }
 
+// allowedOpenFlags is the set of os.OpenFile flag bits permitted by the
+// sandbox. Anything outside this mask (O_DIRECTORY, O_NOFOLLOW, O_SYNC,
+// O_NONBLOCK, etc.) is rejected as a defense-in-depth measure so unknown
+// or platform-specific flags cannot slip through.
+const allowedOpenFlags = os.O_RDONLY | os.O_WRONLY | os.O_RDWR |
+	os.O_APPEND | os.O_CREATE | os.O_EXCL | os.O_TRUNC
+
 // Open implements the restricted file-open policy. The file is opened through
-// os.Root for atomic path validation. Only read-only access is permitted;
-// any write flags are rejected as a defense-in-depth measure.
+// os.Root for atomic path validation, which uses openat under the hood and is
+// immune to symlink and ".." traversal between path validation and open.
+//
+// Read and write opens are both permitted. Only the flag bits in
+// allowedOpenFlags are accepted; anything else returns ErrPermission.
+//
+// The cross-root symlink fallback (resolveFollowingSymlinks) is read-only.
+// Following a symlink that escapes its os.Root and then performing a write
+// (O_CREATE/O_TRUNC/O_APPEND/O_WRONLY/O_RDWR) is the classic TOCTOU footgun:
+// a malicious symlink could redirect a create or truncate to a target that
+// has changed between resolution and open, defeating the sandbox. Writes
+// must therefore stay within a single os.Root and never traverse the
+// cross-root fallback.
 func (s *Sandbox) Open(path string, cwd string, flag int, perm os.FileMode) (io.ReadWriteCloser, error) {
-	if flag != os.O_RDONLY {
+	if flag&^allowedOpenFlags != 0 {
 		return nil, &os.PathError{Op: "open", Path: path, Err: os.ErrPermission}
 	}
 
@@ -332,7 +350,12 @@ func (s *Sandbox) Open(path string, cwd string, flag int, perm os.FileMode) (io.
 	if !isPathEscapeError(err) {
 		return nil, PortablePathError(err)
 	}
-	// Symlink escapes this root — resolve across all roots.
+	// Symlink escapes this root. Only fall back across roots for
+	// read-only opens — cross-root writes are TOCTOU-unsafe (see the
+	// function comment above).
+	if flag != os.O_RDONLY {
+		return nil, PortablePathError(err)
+	}
 	r, rel, ok := s.resolveFollowingSymlinks(absPath, false)
 	if !ok {
 		return nil, PortablePathError(err)

@@ -699,7 +699,14 @@ func (r *Runner) Warnings() []string {
 
 // AllowedPaths restricts file and directory access to the specified directories.
 // Paths must be absolute directories that exist. When set, only files within
-// these directories can be opened, read, or executed.
+// these directories can be opened (for reading or writing), read, or executed.
+//
+// The sandbox itself permits both read and write opens through os.Root;
+// whether a particular shell feature (a builtin, a redirection, etc.)
+// actually performs writes is a separate, layered decision. The validate
+// pass currently blocks file-target output redirections (>, >>) at parse
+// time, so the user-visible surface remains read-only until those layers
+// opt in.
 //
 // When not set (default), all file access is blocked.
 // An empty slice also blocks all file access.
