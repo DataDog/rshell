@@ -237,7 +237,13 @@ func resolveSymlinks(ctx context.Context, callCtx *builtins.CallContext, path st
 			out = rootPrefix(cleanedTarget)
 			rest = strings.TrimPrefix(cleanedTarget, out) + rest
 		} else {
-			rest = string(filepath.Separator) + target + rest
+			// filepath.Clean normalizes the relative target — collapsing
+			// "." segments and converting forward slashes to the host
+			// separator on Windows. Without it, a target like "./real"
+			// keeps its forward slash on Windows and the walking loop
+			// (which splits on filepath.Separator) treats "./real" as a
+			// single opaque component.
+			rest = string(filepath.Separator) + filepath.Clean(target) + rest
 		}
 	}
 
