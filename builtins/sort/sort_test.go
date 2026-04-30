@@ -422,12 +422,14 @@ func TestSortHelp(t *testing.T) {
 	assert.Empty(t, stderr)
 }
 
-func TestSortHelpShort(t *testing.T) {
+func TestSortShortHAcceptedAsHumanNumeric(t *testing.T) {
+	// -h is the short form of --human-numeric-sort (GNU compat).
 	dir := t.TempDir()
-	stdout, stderr, code := cmdRun(t, "sort -h", dir)
+	writeFile(t, dir, "f.txt", "1G\n500M\n2K\n")
+	stdout, stderr, code := cmdRun(t, "sort -h f.txt", dir)
 	assert.Equal(t, 0, code)
-	assert.Contains(t, stdout, "Usage:")
 	assert.Empty(t, stderr)
+	assert.Equal(t, "2K\n500M\n1G\n", stdout)
 }
 
 // --- Error cases ---
