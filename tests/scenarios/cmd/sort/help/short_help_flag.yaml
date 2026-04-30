@@ -1,9 +1,0 @@
-description: sort -h is rejected as an unknown flag (slot freed for future --human-numeric-sort).
-# skip: GNU sort treats -h as --human-numeric-sort; rshell rejects it (not yet implemented).
-skip_assert_against_bash: true
-input:
-  script: |+
-    sort -h
-expect:
-  stderr_contains: ["sort:"]
-  exit_code: 1
