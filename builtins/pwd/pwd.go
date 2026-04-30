@@ -125,10 +125,19 @@ func makeFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			// the cwd is the sandbox root and we cannot walk above it),
 			// fall back to the logical path silently. Cycles still error
 			// because they indicate corrupt input, not a sandbox limit.
-			if resolved, err := resolveSymlinks(ctx, callCtx, cwd); err == nil {
+			//
+			// Context cancellation is *not* a best-effort case: if the
+			// run is being interrupted, we must not report success with
+			// a stale logical path. RULES.md requires graceful handling
+			// of cancellation; we exit 1 without writing.
+			resolved, err := resolveSymlinks(ctx, callCtx, cwd)
+			switch {
+			case err == nil:
 				cwd = resolved
-			} else if errors.Is(err, errSymlinkLoop) {
+			case errors.Is(err, errSymlinkLoop):
 				callCtx.Errf("pwd: %s\n", err)
+				return builtins.Result{Code: 1}
+			case ctx.Err() != nil:
 				return builtins.Result{Code: 1}
 			}
 		}

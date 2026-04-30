@@ -117,6 +117,37 @@ func TestResolveSymlinksContextCancelled(t *testing.T) {
 	assert.True(t, errors.Is(err, context.Canceled))
 }
 
+// TestPwdPhysicalCancelledDoesNotEmitLogical: if the context is
+// canceled during -P resolution, the handler must return exit 1
+// without emitting the logical (stale) path. Falling back silently
+// would let a canceled run report success and stash a misleading
+// path on stdout.
+func TestPwdPhysicalCancelledDoesNotEmitLogical(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // pre-cancel so resolveSymlinks sees ctx.Err() on first iteration
+	cc := &builtins.CallContext{
+		WorkDir: func() string { return absRoot + "some" + string(filepath.Separator) + "path" },
+		LstatFile: func(_ context.Context, _ string) (iofs.FileInfo, error) {
+			return &fakeFileInfo{mode: iofs.ModeDir}, nil
+		},
+		ReadlinkFile: func(_ context.Context, _ string) (string, error) {
+			return "", errors.New("not a symlink")
+		},
+	}
+	var sout, serr bytes.Buffer
+	cc.Stdout = &sout
+	cc.Stderr = &serr
+
+	fs := pflag.NewFlagSet("pwd", pflag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	handler := makeFlags(fs)
+	require.NoError(t, fs.Parse([]string{"-P"}))
+	res := handler(ctx, cc, fs.Args())
+
+	assert.Equal(t, uint8(1), res.Code)
+	assert.Equal(t, "", sout.String(), "stdout must be empty when context is canceled")
+}
+
 // --- resolveSymlinks: dot and dot-dot components are collapsed even
 //     when the lstat result is non-symlink. ---
 
