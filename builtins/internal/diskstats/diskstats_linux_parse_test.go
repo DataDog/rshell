@@ -138,10 +138,23 @@ func TestParseMountInfoLine_PostSeparatorTooFew(t *testing.T) {
 }
 
 func TestIsRemoteType(t *testing.T) {
-	for _, fs := range []string{"nfs", "nfs4", "cifs", "smb3", "smbfs", "afs", "ceph", "glusterfs", "sshfs", "davfs"} {
+	for _, fs := range []string{
+		"nfs", "nfs4", "cifs", "smb3", "smbfs", "afs", "ceph",
+		"glusterfs", "sshfs", "davfs",
+		// FUSE subtypes: must match the explicit "fuse.<backend>"
+		// form, not the short backend name. This is critical for
+		// `df -l` hang protection on stale sshfs / smbnetfs mounts.
+		"fuse.sshfs", "fuse.smbnetfs", "fuse.cifs", "fuse.davfs2",
+		"fuse.glusterfs", "fuse.cephfs", "fuse.nfsv4", "fuse.s3fs",
+		"fuse.rclone",
+	} {
 		assert.True(t, isRemoteType(fs), fs)
 	}
-	for _, fs := range []string{"ext4", "btrfs", "xfs", "tmpfs", "apfs"} {
+	for _, fs := range []string{
+		"ext4", "btrfs", "xfs", "tmpfs", "apfs",
+		// FUSE local backends must NOT be classified remote.
+		"fuse.gvfsd-fuse", "fuse.portal", "fuse.archivemount",
+	} {
 		assert.False(t, isRemoteType(fs), fs)
 	}
 }

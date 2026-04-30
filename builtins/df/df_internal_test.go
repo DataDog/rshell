@@ -38,6 +38,19 @@ func TestHumanBytes_1024(t *testing.T) {
 		{1_576_960, "1.6M"},
 		// 2 KiB + 1 byte → just over 2.0K, must round up to 2.1K.
 		{2*1024 + 1, "2.1K"},
+		// Just under 1 MiB: rounds up at K-level to 1024K which is
+		// awkward output, so promote to the next suffix and emit
+		// "1.0M". Matches GNU df.
+		{1<<20 - 1, "1.0M"},
+		// Same promotion at every higher boundary.
+		{1<<30 - 1, "1.0G"},
+		{1<<40 - 1, "1.0T"},
+		// Above 10K we drop the decimal — make sure the promotion
+		// path through the >=10 branch also works. 9.7M = 10172724
+		// rounds-up to 10M (no decimal). 10239*1024 = 10484736 is
+		// just under 10M and rounds to 10M too, but 10240*1024 - 1
+		// = 10485759 (just under 10M) similarly rounds to 10M.
+		{10485759, "10M"},
 	}
 	for _, c := range cases {
 		assert.Equal(t, c.want, humanBytes(c.v, 1024), "v=%d", c.v)

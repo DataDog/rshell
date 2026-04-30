@@ -70,6 +70,15 @@ var pseudoTypes = map[string]bool{
 // remoteTypePrefixes lists filesystem-type prefixes that mark a filesystem
 // as remote (i.e. !Local). GNU df classifies these via me_remote in
 // lib/mountlist.c.
+//
+// Linux mountinfo reports FUSE mounts as "fuse.<subtype>" (e.g.
+// "fuse.sshfs", "fuse.smbnetfs"), so the remote FUSE backends are
+// listed under their full "fuse." prefix here in addition to their
+// short forms. A bare "sshfs" prefix would not match "fuse.sshfs"
+// because HasPrefix is anchored at byte zero. Missing this means
+// `df -l` can still call statfs(2) on a stale sshfs mount and hang,
+// so the explicit "fuse.*" entries are load-bearing for the documented
+// pre-stat hang protection.
 var remoteTypePrefixes = []string{
 	"nfs",
 	"cifs",
@@ -79,6 +88,16 @@ var remoteTypePrefixes = []string{
 	"glusterfs",
 	"sshfs",
 	"davfs",
+	// FUSE subtypes: anything in fuse.<remote-backend> form.
+	"fuse.sshfs",
+	"fuse.smb",
+	"fuse.cifs",
+	"fuse.davfs",
+	"fuse.glusterfs",
+	"fuse.cephfs",
+	"fuse.nfs",
+	"fuse.s3",
+	"fuse.rclone",
 }
 
 // listImpl enumerates Linux mounts.

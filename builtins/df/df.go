@@ -455,6 +455,11 @@ func formatCount(v uint64, mode unitMode, inodeMode bool) string {
 // never under-reports. We mirror that with math.Ceil after scaling
 // rather than fmt.Sprintf's round-to-nearest. Example: 1,576,960 bytes
 // is "1.6M", not "1.5M".
+//
+// When the rounded value reaches `base`, it is promoted to the next
+// suffix to avoid silly outputs like "1024K" — that should display as
+// "1.0M". Promotion can chain (e.g. ".999...K" → "1.0M" → at the very
+// top we clamp at "E" to avoid escaping the suffix table).
 func humanBytes(v uint64, base uint64) string {
 	const suffixes = "KMGTPE"
 	if v < base {
@@ -463,23 +468,45 @@ func humanBytes(v uint64, base uint64) string {
 	// Walk through suffix levels until v fits in 4 digits.
 	val := float64(v)
 	div := float64(base)
-	suffix := byte('K')
+	suffixIdx := 0
 	for i := range len(suffixes) {
+		suffixIdx = i
 		if val < div*float64(base) {
-			suffix = suffixes[i]
 			break
 		}
 		div *= float64(base)
-		suffix = suffixes[len(suffixes)-1]
+		suffixIdx = len(suffixes) - 1
 	}
+
+	// Round up. The granularity depends on the pre-rounded magnitude:
+	//   < 10  → one decimal place (e.g. 1.5K, 9.9G)
+	//   ≥ 10  → integer (e.g. 12K, 927G)
+	// This matches GNU df, which displays one decimal only for small
+	// values and otherwise rounds to whole units.
 	scaled := val / div
+	var ceiled float64
 	if scaled < 10 {
-		// One decimal digit, rounded up.
-		ceiled := math.Ceil(scaled*10) / 10
-		return fmt.Sprintf("%.1f%c", ceiled, suffix)
+		ceiled = math.Ceil(scaled*10) / 10
+	} else {
+		ceiled = math.Ceil(scaled)
 	}
-	// No decimal digit, rounded up.
-	return fmt.Sprintf("%.0f%c", math.Ceil(scaled), suffix)
+
+	// Promote to the next suffix when rounding pushed the value at or
+	// above the base (e.g. 1023.95K → 1024.0K → 1.0M). Without this,
+	// we would emit awkward outputs like "1024K" instead of "1.0M".
+	baseF := float64(base)
+	if ceiled >= baseF && suffixIdx < len(suffixes)-1 {
+		suffixIdx++
+		ceiled /= baseF
+	}
+
+	// Final format decision uses the rounded value: 9.999K that
+	// ceiling'd to 10.0K prints as "10K" with no decimal, while a
+	// genuine 9.5K stays at "9.5K".
+	if ceiled < 10 {
+		return fmt.Sprintf("%.1f%c", ceiled, suffixes[suffixIdx])
+	}
+	return fmt.Sprintf("%.0f%c", ceiled, suffixes[suffixIdx])
 }
 
 // buildHeader returns the column header strings.
