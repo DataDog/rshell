@@ -200,6 +200,44 @@ func (r *Runner) hdocReader(ctx context.Context, rd *syntax.Redirect) (*os.File,
 	return pr, nil
 }
 
+// rejectNonRegularRedirectTarget guards against opening a non-regular
+// redirect target (FIFO, socket, char/block device) for output. Opening
+// a FIFO with O_WRONLY blocks until a reader connects, which would hang
+// the script during redirect setup before the command runs and before
+// context cancellation can fire. Sandbox.Stat is metadata-only (openat-
+// based) and never blocks.
+//
+// /dev/null is handled by callers via the io.Discard fast path and never
+// reaches this helper. ENOENT and other Stat errors are ignored — if the
+// file does not exist, O_CREATE will create a regular file; any genuine
+// failure (permission denied, etc.) will surface from the subsequent
+// Open call.
+//
+// When a custom openHandler is installed (r.sandbox is nil), the caller
+// is responsible for the file-type check; we skip the guard rather than
+// silently misbehave.
+//
+// There is a TOCTOU window between Stat and Open. It is not a sandbox-
+// escape concern: the sandbox enforces that the path stays within
+// AllowedPaths, and an attacker who can swap a regular file for a FIFO
+// already has write access to the parent directory. The check defends
+// against accidental hangs on operator-created FIFOs in the common case.
+func (r *Runner) rejectNonRegularRedirectTarget(path string) error {
+	if r.sandbox == nil {
+		return nil
+	}
+	info, err := r.sandbox.Stat(path, r.Dir)
+	if err != nil {
+		return nil
+	}
+	if info.Mode().IsRegular() {
+		return nil
+	}
+	werr := fmt.Errorf("open %s: not a regular file", path)
+	r.errf("%v\n", werr)
+	return werr
+}
+
 func (r *Runner) redir(ctx context.Context, rd *syntax.Redirect) (io.Closer, error) {
 	if rd.Hdoc != nil {
 		pr, err := r.hdocReader(ctx, rd)
@@ -253,6 +291,9 @@ func (r *Runner) redir(ctx context.Context, rd *syntax.Redirect) (io.Closer, err
 			*orig = io.Discard
 			return nil, nil
 		}
+		if err := r.rejectNonRegularRedirectTarget(arg); err != nil {
+			return nil, err
+		}
 		flags := os.O_WRONLY | os.O_CREATE | os.O_TRUNC
 		if rd.Op == syntax.AppOut {
 			flags = os.O_WRONLY | os.O_CREATE | os.O_APPEND
@@ -272,6 +313,9 @@ func (r *Runner) redir(ctx context.Context, rd *syntax.Redirect) (io.Closer, err
 			r.stdout = io.Discard
 			r.stderr = io.Discard
 			return nil, nil
+		}
+		if err := r.rejectNonRegularRedirectTarget(arg); err != nil {
+			return nil, err
 		}
 		flags := os.O_WRONLY | os.O_CREATE | os.O_TRUNC
 		if rd.Op == syntax.AppAll {
