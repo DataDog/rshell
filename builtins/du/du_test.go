@@ -388,16 +388,17 @@ func TestDuSeparateDirsKeepsDirectFiles(t *testing.T) {
 
 	stdout, _, code := cmdRun(t, "du -S -b p", dir)
 	assert.Equal(t, 0, code)
-	// Bytes mode keeps everything deterministic regardless of filesystem.
-	// p reports 8192 (own + direct) + dir-blocks (filesystem-dep) but
-	// must NOT include sub's 4096. Use stdout_contains-style asserts:
-	last := lastLine(stdout)
-	assert.True(t, strings.HasSuffix(last, "\tp"), "got %q", stdout)
-	// Sub's 4096 must not be folded into p — assert p's value < 12000
-	// (which would only be possible if sub's bytes were included).
-	pSize := parseLeadingInt(t, last)
-	assert.GreaterOrEqual(t, pSize, int64(8192), "must include direct file: %q", stdout)
-	assert.Less(t, pSize, int64(12000), "must NOT include subdir subtree: %q", stdout)
+	// Bytes mode keeps file children deterministic, but the directory's
+	// own info.Size() / Blocks varies by filesystem (APFS dir = 0,
+	// ext4 dir = 4096). Compute the expected upper bound from this run:
+	//   without -S, p = own + direct + sub-subtree
+	//   with    -S, p = own + direct
+	// So with -S, p must be strictly less than the without-S value.
+	pSep := parseLeadingInt(t, lastLine(stdout))
+	stdoutPlain, _, _ := cmdRun(t, "du -b p", dir)
+	pPlain := parseLeadingInt(t, lastLine(stdoutPlain))
+	assert.GreaterOrEqual(t, pSep, int64(8192), "must include direct file (8192 B): plain=%q sep=%q", stdoutPlain, stdout)
+	assert.Less(t, pSep, pPlain, "must NOT include subdir subtree: plain=%q sep=%q", stdoutPlain, stdout)
 }
 
 // TestDuLastSizeFlagWins guards against the regression where size-format
