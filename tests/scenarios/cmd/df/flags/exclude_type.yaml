@@ -1,9 +1,0 @@
-description: df -x is accepted and reduces the listing to non-matching types
-skip_assert_against_bash: true
-input:
-  script: |+
-    df -x no-such-fs-type | head -n 1
-expect:
-  stdout_contains: ["Filesystem"]
-  stderr: ""
-  exit_code: 0

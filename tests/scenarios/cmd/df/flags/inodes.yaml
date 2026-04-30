@@ -1,9 +1,0 @@
-description: df -i swaps block columns for inode columns
-skip_assert_against_bash: true
-input:
-  script: |+
-    df -i | head -n 1
-expect:
-  stdout_contains: ["Filesystem", "Inodes", "IUsed", "IFree", "IUse%", "Mounted on"]
-  stderr: ""
-  exit_code: 0

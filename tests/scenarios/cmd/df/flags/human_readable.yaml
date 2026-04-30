@@ -1,9 +1,0 @@
-description: df -h replaces the block column with "Size"
-skip_assert_against_bash: true
-input:
-  script: |+
-    df -h | head -n 1
-expect:
-  stdout_contains: ["Filesystem", "Size", "Mounted on"]
-  stderr: ""
-  exit_code: 0

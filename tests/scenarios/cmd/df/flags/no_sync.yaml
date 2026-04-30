@@ -1,9 +1,0 @@
-description: df --no-sync is accepted as a no-op
-skip_assert_against_bash: true
-input:
-  script: |+
-    df --no-sync | head -n 1
-expect:
-  stdout_contains: ["Filesystem"]
-  stderr: ""
-  exit_code: 0

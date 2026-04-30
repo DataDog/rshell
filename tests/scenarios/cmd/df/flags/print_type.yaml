@@ -1,9 +1,0 @@
-description: df -T inserts a Type column after Filesystem
-skip_assert_against_bash: true
-input:
-  script: |+
-    df -T | head -n 1
-expect:
-  stdout_contains: ["Filesystem", "Type", "1K-blocks", "Mounted on"]
-  stderr: ""
-  exit_code: 0

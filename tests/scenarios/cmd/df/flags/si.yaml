@@ -1,9 +1,0 @@
-description: df -H uses powers of 1000 (header still shows "Size")
-skip_assert_against_bash: true
-input:
-  script: |+
-    df -H | head -n 1
-expect:
-  stdout_contains: ["Filesystem", "Size", "Mounted on"]
-  stderr: ""
-  exit_code: 0

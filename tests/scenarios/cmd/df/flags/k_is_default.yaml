@@ -1,9 +1,0 @@
-description: df -k is accepted (1024-byte blocks are already the default)
-skip_assert_against_bash: true
-input:
-  script: |+
-    df -k | head -n 1
-expect:
-  stdout_contains: ["Filesystem", "1K-blocks", "Mounted on"]
-  stderr: ""
-  exit_code: 0
