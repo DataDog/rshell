@@ -252,3 +252,29 @@ func TestPwdPhysicalSkipsHostPrefixWhenAlreadyApplied(t *testing.T) {
 	require.Equal(t, 0, code, "stderr=%q", stderr)
 	assert.Equal(t, target+"\n", stdout)
 }
+
+// TestPwdPhysicalHostPrefixWithTrailingSlash: a HostPrefix passed with
+// a trailing separator must be normalized before pwd -P uses it for
+// prefix-matching. Without normalization, a target that already
+// includes the cleaned prefix would fail the HasPrefix check (because
+// "$root/host/" + "/" != "$root/host//") and get doubled — emitting
+// `$root/host/$root/host/real`. The CallContext.HostPrefix accessor
+// returns the sandbox's filepath.Clean'd prefix, so this test pins
+// the contract.
+func TestPwdPhysicalHostPrefixWithTrailingSlash(t *testing.T) {
+	root := t.TempDir()
+	hostPrefix := filepath.Join(root, "host")
+	target := filepath.Join(hostPrefix, "real")
+	link := filepath.Join(hostPrefix, "lnk")
+	require.NoError(t, os.MkdirAll(target, 0755))
+	require.NoError(t, os.Symlink(target, link))
+
+	// Pass HostPrefix with a trailing slash on purpose — this is the
+	// kind of input that previously caused double-prefixing.
+	stdout, stderr, code := testutil.RunScript(t, "pwd -P", link,
+		interp.AllowedPaths([]string{hostPrefix}),
+		interp.HostPrefix(hostPrefix+string(filepath.Separator)),
+	)
+	require.Equal(t, 0, code, "stderr=%q", stderr)
+	assert.Equal(t, target+"\n", stdout, "trailing-slash HostPrefix must not produce a doubled-prefix path")
+}
