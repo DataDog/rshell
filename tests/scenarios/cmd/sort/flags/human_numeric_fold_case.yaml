@@ -19,5 +19,5 @@ expect:
     500K
     1m
     1G
-  stderr: ""
+  stderr: |+
   exit_code: 0

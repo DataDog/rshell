@@ -17,5 +17,5 @@ expect:
     2G
     10G
     100G
-  stderr: ""
+  stderr: |+
   exit_code: 0

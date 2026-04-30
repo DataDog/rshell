@@ -22,5 +22,5 @@ expect:
     500M	/var/cache
     20K	/var/tmp
     4.0K	/var/empty
-  stderr: ""
+  stderr: |+
   exit_code: 0

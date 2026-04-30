@@ -11,7 +11,7 @@ input:
 # skip: rshell builtin error format differs from GNU coreutils
 skip_assert_against_bash: true
 expect:
-  stdout: ""
+  stdout: |+
   stderr: |+
     sort: options '-hn' are incompatible
   exit_code: 2
