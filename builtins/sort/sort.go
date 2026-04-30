@@ -20,6 +20,13 @@
 //	-n, --numeric-sort
 //	    Compare according to string numerical value.
 //
+//	-h, --human-numeric-sort
+//	    Compare human-readable numbers (e.g. 2K, 1G). Suffixes K (or k),
+//	    M, G, T, P, E, Z, Y, R, Q are recognised and ordered by magnitude
+//	    (matching GNU sort's "kKMGTPEZYRQ" table). Multi-letter suffixes
+//	    such as "Ki" are NOT recognised — only the leading single letter
+//	    is consumed.
+//
 //	-u, --unique
 //	    Output only the first of an equal run.
 //
@@ -141,6 +148,7 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 	help := fs.Bool("help", false, "print usage and exit")
 	reverse := fs.BoolP("reverse", "r", false, "reverse the result of comparisons")
 	numeric := fs.BoolP("numeric-sort", "n", false, "compare according to string numerical value")
+	humanNumeric := fs.BoolP("human-numeric-sort", "h", false, "compare human-readable numbers (e.g. 2K 1G)")
 	unique := fs.BoolP("unique", "u", false, "output only the first of an equal run")
 	keyDefs := fs.StringArrayP("key", "k", nil, "sort via a key; KEYDEF is F[.C][OPTS][,F[.C][OPTS]]")
 	fieldSep := fs.StringP("field-separator", "t", "", "use SEP as the field separator")
@@ -239,11 +247,12 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 
 		// Parse key definitions.
 		globalOpts := keyOpts{
-			numeric:   *numeric,
-			reverse:   *reverse,
-			ignBlanks: *ignBlanks,
-			ignCase:   *ignCase,
-			dictOrder: *dictOrder,
+			numeric:      *numeric,
+			humanNumeric: *humanNumeric,
+			reverse:      *reverse,
+			ignBlanks:    *ignBlanks,
+			ignCase:      *ignCase,
+			dictOrder:    *dictOrder,
 		}
 
 		var keys []keySpec
@@ -270,6 +279,36 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			}
 			if globalsUsed {
 				callCtx.Errf("sort: options '-dn' are incompatible\n")
+				return builtins.Result{Code: 2}
+			}
+		}
+		// -d and -h are also mutually exclusive (GNU compat).
+		if globalOpts.dictOrder && globalOpts.humanNumeric {
+			globalsUsed := len(keys) == 0
+			for _, k := range keys {
+				if !k.hasOpts {
+					globalsUsed = true
+					break
+				}
+			}
+			if globalsUsed {
+				callCtx.Errf("sort: options '-dh' are incompatible\n")
+				return builtins.Result{Code: 2}
+			}
+		}
+		// -h and -n are mutually exclusive — but skip the check if every
+		// -k spec carries its own ordering option (matching GNU's deferred
+		// validation; see -dn handling above).
+		if globalOpts.humanNumeric && globalOpts.numeric {
+			globalsUsed := len(keys) == 0
+			for _, k := range keys {
+				if !k.hasOpts {
+					globalsUsed = true
+					break
+				}
+			}
+			if globalsUsed {
+				callCtx.Errf("sort: options '-hn' are incompatible\n")
 				return builtins.Result{Code: 2}
 			}
 		}
@@ -407,11 +446,12 @@ func readFile(ctx context.Context, callCtx *builtins.CallContext, file string, t
 
 // keyOpts holds the modifier flags for a sort key or the global default.
 type keyOpts struct {
-	numeric   bool
-	reverse   bool
-	ignBlanks bool
-	ignCase   bool
-	dictOrder bool
+	numeric      bool
+	humanNumeric bool
+	reverse      bool
+	ignBlanks    bool
+	ignCase      bool
+	dictOrder    bool
 }
 
 // keySpec represents a parsed -k KEYDEF.
@@ -478,6 +518,14 @@ func parseKeyDef(s string) (keySpec, error) {
 	if k.hasOpts && k.opts.dictOrder && k.opts.numeric {
 		return k, errors.New("options '-dn' are incompatible")
 	}
+	// -h and -n are mutually exclusive.
+	if k.hasOpts && k.opts.humanNumeric && k.opts.numeric {
+		return k, errors.New("options '-hn' are incompatible")
+	}
+	// -d and -h are mutually exclusive in GNU sort.
+	if k.hasOpts && k.opts.dictOrder && k.opts.humanNumeric {
+		return k, errors.New("options '-dh' are incompatible")
+	}
 	return k, nil
 }
 
@@ -511,6 +559,8 @@ func parseFieldSpec(s string) (fieldPos, parsedOpts, error) {
 		switch c {
 		case 'n':
 			po.ko.numeric = true
+		case 'h':
+			po.ko.humanNumeric = true
 		case 'r':
 			po.ko.reverse = true
 		case 'b':
@@ -555,6 +605,9 @@ func parseFieldSpec(s string) (fieldPos, parsedOpts, error) {
 func mergeOpts(a, b keyOpts) keyOpts {
 	if b.numeric {
 		a.numeric = true
+	}
+	if b.humanNumeric {
+		a.humanNumeric = true
 	}
 	if b.reverse {
 		a.reverse = true
@@ -689,23 +742,23 @@ func compareStrings(a, b string, opts keyOpts) int {
 		a = trimLeadingBlanks(a)
 		b = trimLeadingBlanks(b)
 	}
+	// Apply -f (fold case) before any specialised parser so that lowercase
+	// human-numeric suffixes (e.g. "1m", "1g") are recognised under -fh.
+	// foldCase only touches ASCII a-z, so it is a no-op on digits, signs,
+	// and the SI suffix letters that are already uppercase.
+	if opts.ignCase {
+		a = foldCase(a)
+		b = foldCase(b)
+	}
+	if opts.humanNumeric {
+		return compareHuman(a, b)
+	}
 	if opts.dictOrder {
 		a = dictFilter(a)
 		b = dictFilter(b)
 	}
 	if opts.numeric {
 		return compareNumeric(a, b)
-	}
-	if opts.ignCase {
-		au := foldCase(a)
-		bu := foldCase(b)
-		if au < bu {
-			return -1
-		}
-		if au > bu {
-			return 1
-		}
-		return 0
 	}
 	if a < b {
 		return -1
@@ -884,6 +937,155 @@ func parseNumParts(s string) (bool, string, string) {
 		neg = false
 	}
 	return neg, intPart, fracPart
+}
+
+// compareHuman compares two strings as human-readable numbers (GNU sort -h).
+// Ordering:
+//  1. by sign category (negative, zero, positive),
+//  2. then by SI suffix magnitude
+//     (none < K/k < M < G < T < P < E < Z < Y < R < Q),
+//  3. then by numeric value within the same suffix.
+//
+// Lines whose leading token cannot be parsed as a human-readable number
+// compare as zero — matching GNU's behaviour. Only the leading byte after
+// the digits is consumed as a suffix; multi-letter forms like "Ki" or "MB"
+// are NOT recognised, matching GNU sort.
+func compareHuman(a, b string) int {
+	aNeg, aZero, aOrder, aInt, aFrac := parseHumanParts(a)
+	bNeg, bZero, bOrder, bInt, bFrac := parseHumanParts(b)
+
+	aSign := signCategory(aNeg, aZero)
+	bSign := signCategory(bNeg, bZero)
+	if aSign != bSign {
+		if aSign < bSign {
+			return -1
+		}
+		return 1
+	}
+	// Both zero — treated equal.
+	if aSign == 0 {
+		return 0
+	}
+	// Same sign — compare suffix magnitude, reversed for negatives.
+	if aOrder != bOrder {
+		c := 1
+		if aOrder < bOrder {
+			c = -1
+		}
+		if aSign < 0 {
+			c = -c
+		}
+		return c
+	}
+	// Same suffix — compare numeric magnitudes.
+	c := compareMagnitude(aInt, aFrac, bInt, bFrac)
+	if aSign < 0 {
+		c = -c
+	}
+	return c
+}
+
+// signCategory maps (neg, isZero) to -1/0/1 sort buckets.
+func signCategory(neg, isZero bool) int {
+	if isZero {
+		return 0
+	}
+	if neg {
+		return -1
+	}
+	return 1
+}
+
+// parseHumanParts parses a human-readable number prefix from s.
+// Returns (neg, isZero, order, intDigits, fracDigits).
+//
+// The function consumes optional leading blanks, an optional '-' sign, a
+// digit run with optional fractional part, then a single SI suffix byte.
+// '+' is not accepted as a sign (matching GNU sort).
+//
+// Multi-letter suffixes such as "Ki" are NOT recognised — only the byte
+// directly following the digits is examined, and any trailing characters
+// after that are ignored. If the leading token has no digits at all, the
+// line is treated as zero (sign category 0), matching GNU sort -h.
+func parseHumanParts(s string) (neg, isZero bool, order int, intPart, fracPart string) {
+	intPart = "0"
+	fracPart = ""
+	isZero = true
+
+	i := 0
+	for i < len(s) && (s[i] == ' ' || s[i] == '\t') {
+		i++
+	}
+	s = s[i:]
+	if s == "" {
+		return
+	}
+	j := 0
+	if s[j] == '-' {
+		neg = true
+		j++
+	}
+	intStart := j
+	for j < len(s) && s[j] >= '0' && s[j] <= '9' {
+		j++
+	}
+	rawInt := s[intStart:j]
+	rawFrac := ""
+	if j < len(s) && s[j] == '.' {
+		j++
+		fracStart := j
+		for j < len(s) && s[j] >= '0' && s[j] <= '9' {
+			j++
+		}
+		rawFrac = s[fracStart:j]
+	}
+	// No digits at all — unparseable, treat as zero.
+	if rawInt == "" && rawFrac == "" {
+		neg = false
+		return
+	}
+	// Identify single-letter SI suffix immediately after the digits.
+	if j < len(s) {
+		switch s[j] {
+		case 'K', 'k':
+			order = 1
+		case 'M':
+			order = 2
+		case 'G':
+			order = 3
+		case 'T':
+			order = 4
+		case 'P':
+			order = 5
+		case 'E':
+			order = 6
+		case 'Z':
+			order = 7
+		case 'Y':
+			order = 8
+		case 'R':
+			order = 9
+		case 'Q':
+			order = 10
+		}
+	}
+	// Strip leading zeros from the integer part.
+	intPart = rawInt
+	if intPart == "" {
+		intPart = "0"
+	} else {
+		z := 0
+		for z < len(intPart)-1 && intPart[z] == '0' {
+			z++
+		}
+		intPart = intPart[z:]
+	}
+	fracPart = rawFrac
+	isZero = isZeroNum(intPart, fracPart)
+	if isZero {
+		neg = false
+	}
+	return
 }
 
 // isZeroNum returns true if the integer and fractional parts represent zero.
