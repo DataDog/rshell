@@ -34,6 +34,8 @@ func TestParseHumanParts(t *testing.T) {
 		{"1E", false, false, 6, "1", ""},
 		{"1Z", false, false, 7, "1", ""},
 		{"1Y", false, false, 8, "1", ""},
+		{"1R", false, false, 9, "1", ""},
+		{"1Q", false, false, 10, "1", ""},
 		// Fractions.
 		{"1.5G", false, false, 3, "1", "5"},
 		{"0.5K", false, false, 1, "0", "5"},
@@ -90,6 +92,10 @@ func TestCompareHuman(t *testing.T) {
 		{"1M", "1G", -1},
 		{"1G", "1T", -1},
 		{"1Y", "1Z", 1},
+		{"1Y", "1R", -1},
+		{"1R", "1Q", -1},
+		// 1000Y < 1R because Y < R despite the value.
+		{"1000Y", "1R", -1},
 		// Within same suffix, compare numerically.
 		{"500M", "1G", -1},
 		{"1.5G", "2G", -1},

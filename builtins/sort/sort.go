@@ -22,9 +22,10 @@
 //
 //	-h, --human-numeric-sort
 //	    Compare human-readable numbers (e.g. 2K, 1G). Suffixes K (or k),
-//	    M, G, T, P, E, Z, Y are recognised and ordered by magnitude.
-//	    Multi-letter suffixes such as "Ki" are NOT recognised — only
-//	    the leading single letter is consumed.
+//	    M, G, T, P, E, Z, Y, R, Q are recognised and ordered by magnitude
+//	    (matching GNU sort's "kKMGTPEZYRQ" table). Multi-letter suffixes
+//	    such as "Ki" are NOT recognised — only the leading single letter
+//	    is consumed.
 //
 //	-u, --unique
 //	    Output only the first of an equal run.
@@ -941,7 +942,8 @@ func parseNumParts(s string) (bool, string, string) {
 // compareHuman compares two strings as human-readable numbers (GNU sort -h).
 // Ordering:
 //  1. by sign category (negative, zero, positive),
-//  2. then by SI suffix magnitude (none < K/k < M < G < T < P < E < Z < Y),
+//  2. then by SI suffix magnitude
+//     (none < K/k < M < G < T < P < E < Z < Y < R < Q),
 //  3. then by numeric value within the same suffix.
 //
 // Lines whose leading token cannot be parsed as a human-readable number
@@ -1061,6 +1063,10 @@ func parseHumanParts(s string) (neg, isZero bool, order int, intPart, fracPart s
 			order = 7
 		case 'Y':
 			order = 8
+		case 'R':
+			order = 9
+		case 'Q':
+			order = 10
 		}
 	}
 	// Strip leading zeros from the integer part.
