@@ -47,7 +47,7 @@
 //	-s, --stable
 //	    Stabilize sort by disabling last-resort comparison.
 //
-//	-h, --help
+//	--help
 //	    Print usage to stdout and exit 0.
 //
 // Rejected flags (unsafe):
