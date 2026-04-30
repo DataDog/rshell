@@ -151,3 +151,30 @@ func TestRedirSandboxBlockedNoFileCreated(t *testing.T) {
 	_, err := os.Stat(filepath.Join(dir, "evil.txt"))
 	assert.True(t, os.IsNotExist(err), "no file should have been created, got err=%v", err)
 }
+
+// Unsupported fds (anything other than 1 or 2 for output, 0 for input) must
+// be rejected before the redirect word is expanded, otherwise a command
+// substitution in an invalid-fd redirect would execute its body for its
+// side effects only to be discarded.
+func TestRedirUnsupportedFdRejectedBeforeExpansion(t *testing.T) {
+	dir := t.TempDir()
+	// If fd 3 were rejected after expansion, the command substitution
+	// would run and write SIDE-EFFECT to stderr. We assert the opposite:
+	// nothing on stderr besides the unsupported-fd error.
+	stdout, stderr, code := redirRun(t, "echo x 3>$(echo SIDE-EFFECT >&2; echo out)", dir)
+	assert.Equal(t, 1, code)
+	assert.Empty(t, stdout)
+	assert.NotContains(t, stderr, "SIDE-EFFECT", "command substitution must not run for an unsupported fd")
+	assert.Contains(t, stderr, "3: unsupported fd")
+}
+
+func TestRedirInputFdOnOutputRejectedBeforeExpansion(t *testing.T) {
+	dir := t.TempDir()
+	// fd 0 on an output op is rejected. The command substitution must not
+	// run before that rejection.
+	stdout, stderr, code := redirRun(t, "echo x 0>$(echo SIDE-EFFECT >&2; echo out)", dir)
+	assert.Equal(t, 1, code)
+	assert.Empty(t, stdout)
+	assert.NotContains(t, stderr, "SIDE-EFFECT")
+	assert.Contains(t, stderr, "0: unsupported fd")
+}

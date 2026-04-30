@@ -257,9 +257,11 @@ func (r *Runner) redir(ctx context.Context, rd *syntax.Redirect) (io.Closer, err
 		return pr, nil
 	}
 
-	arg := r.literal(rd.Word)
-
 	// Determine which fd this redirect targets (default: stdout for output ops).
+	// This check runs BEFORE expanding the redirect word so that an unsupported
+	// fd rejects the redirect without triggering any command substitution or
+	// other expansion side effects in the target. rd.N is a parser literal,
+	// not an expansion, so this is safe to inspect early.
 	orig := &r.stdout
 	if rd.N != nil {
 		switch rd.N.Value {
@@ -278,6 +280,8 @@ func (r *Runner) redir(ctx context.Context, rd *syntax.Redirect) (io.Closer, err
 			return nil, fmt.Errorf("%s: unsupported fd", rd.N.Value)
 		}
 	}
+
+	arg := r.literal(rd.Word)
 
 	switch rd.Op {
 	case syntax.RdrIn:
