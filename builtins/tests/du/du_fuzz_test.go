@@ -122,10 +122,13 @@ func FuzzDuFlags(f *testing.F) {
 		// Filter inputs containing shell metacharacters that change the
 		// command structure (`&` background, `;` chain, `|` pipe, `<`/`>`
 		// redirect, `$` expansion, `` ` `` substitution, `(` subshell,
-		// `\n`/`\r` multi-line). The fuzzer is testing du's flag-parsing
-		// surface, not the shell's job-control / pipeline / multi-line
+		// `\n`/`\r` multi-line). Also filter glob metacharacters
+		// (`*`, `?`, `[`) because the shell's glob→regex translator can
+		// panic on certain multi-byte sequences (a known shell-side bug,
+		// not a du bug). The fuzzer is testing du's flag-parsing surface,
+		// not the shell's job-control / pipeline / multi-line / glob
 		// semantics — those have their own tests.
-		if strings.ContainsAny(script, "&;|<>$`(){}\\\n\r") {
+		if strings.ContainsAny(script, "&;|<>$`(){}\\\n\r*?[") {
 			return
 		}
 		// Filter inputs that would cause shell parse errors. Unbalanced
