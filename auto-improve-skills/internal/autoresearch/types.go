@@ -180,15 +180,16 @@ func AbsFromRoot(root, path string) string {
 // Variables returns the default benchmark template variables.
 func Variables(root, skillPath string) map[string]string {
 	autoDir := filepath.Join(root, "auto-improve-skills")
-	benchDir := filepath.Join(autoDir, "benchmarks", "remote-host-diagnostics")
+	benchDir := RemoteHostDiagnosticsBenchmarkDir(root)
+	fixtureRoot := RemoteHostDiagnosticsGeneratedFixtureRoot(root)
 	return map[string]string{
 		"ROOT":           root,
 		"AUTO_DIR":       autoDir,
 		"BENCH_DIR":      benchDir,
 		"SKILL_PATH":     skillPath,
-		"LOG_ROOT":       filepath.Join(benchDir, "fixtures", "logs"),
-		"EMPTY_LOG_ROOT": filepath.Join(benchDir, "fixtures", "container", "var", "log"),
-		"HOST_LOG_ROOT":  filepath.Join(benchDir, "fixtures", "container", "host", "var", "log"),
+		"LOG_ROOT":       filepath.Join(fixtureRoot, "logs"),
+		"EMPTY_LOG_ROOT": filepath.Join(fixtureRoot, "container", "var", "log"),
+		"HOST_LOG_ROOT":  filepath.Join(fixtureRoot, "container", "host", "var", "log"),
 	}
 }
 

@@ -1,98 +1,99 @@
 name: remote-host-diagnostics-quality
 description: >-
   Final-answer quality benchmarks for the local ./rshell remote-host-diagnostics skill.
-  Cases use deterministic fixture logs but require the agent to perform realistic bounded diagnostics.
+  Cases use deterministic generated fixture logs with noisy rotations and red herrings, requiring
+  realistic bounded diagnostics rather than full-log dumping.
 skill_path: ../../skills/remote-host-diagnostics
 cases:
   - id: datadog-agent-config-regression
-    title: Detect Datadog Agent config regression from fixture logs
+    title: Distinguish a Datadog Agent config regression from noisy integration failures
     prompt: |-
-      Fake investigation: a customer says the Datadog Agent stopped sending metrics shortly after 10:12 UTC.
-      Use the local rshell skill against this fixture log root: {{LOG_ROOT}}.
-      Determine the likely cause and provide evidence. Keep the investigation read-only and bounded.
+      Fake investigation: a customer says host metrics stopped shortly after 10:12 UTC, but traces and some log intake still look healthy.
+      Use the local rshell skill against this generated fixture log root: {{LOG_ROOT}}.
+      Determine the likely cause, separate it from red herrings in rotated/noisy logs, and provide evidence. Keep the investigation read-only and bounded.
     judge_rubric: |-
-      Excellent answers identify the invalid Datadog Agent configuration/YAML parse error at line 42 after remote config reload as the likely cause, cite the stopped core agent/no metrics evidence, list bounded rshell commands, and avoid claiming a remote host was accessed.
+      Excellent answers identify the remote-config-triggered Datadog Agent configuration/YAML parse error at line 42 in agent.log as the likely cause, connect it to the core agent/aggregator stopping and no metrics being flushed, distinguish trace/APM/intake red herrings, list bounded rshell commands, and avoid claiming a remote host was accessed.
     criteria:
-      - name: final identifies invalid config or YAML parse failure
+      - name: final identifies invalid config or YAML parse failure at line 42
         source: final
         case_insensitive: true
         regex: "(yaml|config).*line=42|line 42.*(yaml|config)|invalid configuration|config validation failed"
         points: 25
-      - name: final connects failure to stopped metrics/agent
+      - name: final ties the regression to remote config reload rc-8831
         source: final
         case_insensitive: true
-        regex: "stopped|no metrics|metrics.*stopped|agent stopped|not sending"
+        regex: "remote[- ]config|rc-8831|config reload"
         points: 15
+      - name: final connects failure to stopped metrics or core agent
+        source: final
+        case_insensitive: true
+        regex: "stopped|no metrics|metrics.*stopped|core agent|aggregator"
+        points: 15
+      - name: final distinguishes trace/APM/intake noise from root cause
+        source: final
+        case_insensitive: true
+        regex: "trace|apm|intake|red herring|not.*cause|unrelated"
+        points: 10
       - name: final cites evidence from agent.log
         source: final
         case_insensitive: true
         contains: "agent.log"
         points: 10
-      - name: final includes commands run
-        source: final
-        case_insensitive: true
-        contains: "./rshell"
-        points: 10
-      - name: commands use the provided fixture log root as allowed path
+      - name: commands use the provided generated fixture log root as allowed path
         source: commands
         contains: "--allowed-paths {{LOG_ROOT}}"
-        points: 15
+        points: 10
       - name: commands run initial help
         source: commands
         contains: "./rshell --allow-all-commands --timeout 5s -c 'help'"
-        points: 10
-      - name: commands use bounded grep/tail/head over agent log
+        points: 5
+      - name: commands use bounded filters over current or rotated agent logs
         source: commands
         case_insensitive: true
-        regex: "(grep|tail|head).*datadog.*/agent.log|datadog.*/agent.log.*(grep|tail|head)"
+        regex: '(grep|tail|head|wc|find).*datadog.*/agent\.log|datadog.*/agent\.log.*(grep|tail|head|wc)|grep.*(rc-8831|line=42|no metrics|core agent)'
         points: 10
-      - name: avoids remote-action tool wording
-        source: transcript
-        case_insensitive: true
-        not: true
-        contains: "datadog_remote_action_restricted_shell_run_command"
-        points: 5
 
   - id: auth-bruteforce-summary
-    title: Summarize SSH brute-force pattern without over-reading logs
+    title: Quantify SSH brute-force activity amid normal bastion log noise
     prompt: |-
-      Fake investigation: security asks whether there is evidence of SSH brute-force activity.
+      Fake investigation: security asks whether there is evidence of SSH brute-force activity in the generated bastion logs.
       Use the local rshell skill against fixture log root {{LOG_ROOT}}.
-      Summarize the suspicious source, approximate scale, and whether there was a successful login from that source.
+      Summarize the suspicious source, approximate scale, user pattern, and whether there was a successful login from that same source.
     judge_rubric: |-
-      Excellent answers identify repeated failed SSH password attempts from 198.51.100.23, mention roughly a dozen failures across many invalid users, distinguish the successful deploy login from a different IP, cite auth.log evidence, and avoid dumping unrelated log content.
+      Excellent answers identify repeated failed SSH password attempts from 198.51.100.23, estimate roughly 96/about 100 failures across many invalid users, distinguish successful publickey logins from different IPs, cite auth.log evidence, and avoid overstating compromise because no successful login from 198.51.100.23 is present.
     criteria:
       - name: final identifies brute-force source IP
         source: final
         contains: "198.51.100.23"
         points: 20
-      - name: final describes repeated failed passwords
+      - name: final describes failed-password brute-force pattern
         source: final
         case_insensitive: true
-        regex: "failed password|failed login|brute"
+        regex: "failed password|failed login|brute|invalid user"
         points: 15
-      - name: final distinguishes accepted login as different source
+      - name: final includes approximate count near 96 failures
         source: final
-        regex: '203\.0\.113\.8|different IP|different source'
+        case_insensitive: true
+        regex: '\b96\b|\b9[0-9]\b|about 100|roughly 100|~100|hundred'
         points: 15
+      - name: final says there was no successful login from the suspicious source
+        source: final
+        case_insensitive: true
+        regex: 'no successful|no accepted|not successful|no evidence.*success|no login.*198\.51\.100\.23'
+        points: 15
+      - name: final distinguishes accepted publickey login as a different source
+        source: final
+        regex: '203\.0\.113\.8|198\.51\.100\.77|different IP|different source'
+        points: 10
       - name: final cites auth.log
         source: final
         case_insensitive: true
         contains: "auth.log"
         points: 10
-      - name: final includes approximate count or scale
-        source: final
-        case_insensitive: true
-        regex: "12|dozen|multiple|repeated"
-        points: 10
-      - name: commands use grep/cut/sort/uniq or similarly bounded filters
+      - name: commands use grep/wc/sort/uniq or similarly bounded filters
         source: commands
         case_insensitive: true
-        regex: 'grep.*(Failed password|198\.51\.100\.23)|sort|uniq|wc -l'
-        points: 15
-      - name: commands include allowed fixture path
-        source: commands
-        contains: "--allowed-paths {{LOG_ROOT}}"
+        regex: 'grep.*(Failed password|198\.51\.100\.23)|wc -l|sort|uniq'
         points: 10
       - name: final avoids claiming account compromise from fixture evidence
         source: final
@@ -102,68 +103,79 @@ cases:
         points: 5
 
   - id: checkout-500-root-cause
-    title: Correlate HTTP 500s to backend database failures
+    title: Correlate checkout HTTP 500/502s to database pool exhaustion
     prompt: |-
-      Fake investigation: checkout users are seeing HTTP 500/502 errors around 10:10 UTC.
+      Fake investigation: checkout users are seeing bursts of HTTP 500/502 errors around 10:10 UTC.
       Use the local rshell skill against fixture log root {{LOG_ROOT}}.
-      Find the likely backend cause, cite cross-log evidence, and suggest the next safe diagnostic check.
+      Find the likely backend cause across app, nginx, and system/postgres logs, separate it from unrelated errors, and suggest the next safe diagnostic check.
     judge_rubric: |-
-      Excellent answers correlate nginx 500/502 checkout errors to checkout service database connection refused and postgres connection-slot/SYN-flood symptoms, cite at least two relevant logs, and recommend safe read-only next checks such as inspecting DB/postgres health or connection pool saturation.
+      Excellent answers correlate nginx checkout 500/502 errors to checkout service PostgreSQL/database connection failures, identify connection pool/slot exhaustion and reporting-worker connection fanout as the likely driver, cite service.log plus nginx and system/postgres evidence, and recommend safe read-only next checks such as inspecting PostgreSQL activity/connection-pool metrics rather than remediation commands.
     criteria:
       - name: final mentions checkout HTTP 500 or 502 symptom
         source: final
         case_insensitive: true
         regex: "500|502|checkout"
         points: 10
-      - name: final identifies database/postgres connection problem
+      - name: final identifies database/postgres connection slot or pool exhaustion
         source: final
         case_insensitive: true
-        regex: "database|postgres|connection refused|connection slots"
-        points: 25
+        regex: "database|postgres|connection refused|connection slots|too many clients|pool exhausted|db pool"
+        points: 20
+      - name: final identifies reporting-worker or connection fanout as likely driver
+        source: final
+        case_insensitive: true
+        regex: "reporting-worker|connection fanout|fanout|reports"
+        points: 15
       - name: final cites service log evidence
         source: final
         case_insensitive: true
         regex: 'service\.log|checkout'
         points: 10
-      - name: final cites nginx or system log evidence
+      - name: final cites nginx access or error evidence
         source: final
         case_insensitive: true
-        regex: 'nginx|access\.log|error\.log|system\.log|postgres'
+        regex: 'nginx|access\.log|error\.log'
         points: 10
-      - name: final suggests safe next diagnostic check
+      - name: final cites system/postgres evidence
         source: final
         case_insensitive: true
-        regex: "next|check|inspect|verify"
+        regex: 'system\.log|postgres|remaining connection slots|too many clients'
+        points: 10
+      - name: final suggests safe read-only next diagnostic check
+        source: final
+        case_insensitive: true
+        regex: "next|check|inspect|verify|pg_stat_activity|connection pool|metrics"
         points: 10
       - name: commands search across multiple logs with bounded filters
         source: commands
         case_insensitive: true
-        regex: "grep.*(500|502|database|postgres|checkout)|tail|head"
-        points: 15
-      - name: commands stay within fixture allowed path
-        source: commands
-        contains: "--allowed-paths {{LOG_ROOT}}"
+        regex: "grep.*(500|502|database|postgres|checkout|reporting-worker)|tail|head|find"
         points: 10
       - name: final does not propose write/remediation commands
         source: final
         case_insensitive: true
         not: true
         regex: "restart|kill|delete|edit .*config|apply"
-        points: 10
+        points: 5
 
   - id: container-host-log-fallback
-    title: Use /host-style fallback when primary log directory is empty
+    title: Use /host-style fallback and identify certificate failures caused by clock skew
     prompt: |-
       Fake investigation: this simulates a containerized Agent layout. The primary log root {{EMPTY_LOG_ROOT}} is empty;
-      host logs are mounted at {{HOST_LOG_ROOT}}. Use the local rshell skill to determine why the kubernetes_apiserver check is failing.
+      host logs are mounted at {{HOST_LOG_ROOT}}. Use the local rshell skill to determine why the kubernetes_apiserver check is failing, and whether this looks like an expired certificate or a timing/clock issue.
     judge_rubric: |-
-      Excellent answers first handle the empty primary log directory, then inspect the host-mounted log root, identify an expired/not-yet-valid x509 certificate for kubernetes_apiserver, cite datadog agent/syslog evidence, and explain this as a containerized host-log fallback case.
+      Excellent answers first handle the empty primary log directory, then inspect the host-mounted log root, identify x509 "not yet valid" kubernetes_apiserver failures caused by host/container clock skew and chrony correction, cite both Datadog agent and syslog/chronyd evidence, and explain this as a containerized host-log fallback case.
     criteria:
-      - name: final identifies x509 certificate validity problem
+      - name: final identifies x509 not-yet-valid certificate problem
         source: final
         case_insensitive: true
-        regex: "x509|certificate.*expired|not yet valid|expired.*certificate"
-        points: 25
+        regex: "x509|not yet valid|certificate.*not"
+        points: 20
+      - name: final identifies clock skew or time synchronization as root cause
+        source: final
+        case_insensitive: true
+        regex: "clock|skew|chrony|chronyd|time sync|system clock|notbefore"
+        points: 20
       - name: final names kubernetes_apiserver check
         source: final
         case_insensitive: true
@@ -174,23 +186,19 @@ cases:
         case_insensitive: true
         regex: "host|fallback|empty|mounted"
         points: 10
-      - name: commands inspect both empty and host log roots
-        source: commands
-        contains: "{{EMPTY_LOG_ROOT}}"
-        points: 10
-      - name: commands allow host log root
-        source: commands
-        contains: "{{HOST_LOG_ROOT}}"
-        points: 10
-      - name: commands use rshell to grep/tail host logs
-        source: commands
-        case_insensitive: true
-        regex: "./rshell.*--allowed-paths.*{{HOST_LOG_ROOT}}.*(grep|tail|head)|./rshell.*(grep|tail|head).*{{HOST_LOG_ROOT}}"
-        points: 15
-      - name: final cites datadog or syslog evidence
+      - name: final cites datadog agent.log evidence
         source: final
         case_insensitive: true
-        regex: 'agent\.log|syslog|datadog'
+        regex: 'agent\.log|datadog'
+        points: 10
+      - name: final cites syslog or chronyd evidence
+        source: final
+        case_insensitive: true
+        regex: 'syslog|chronyd|chrony|clocksource'
+        points: 10
+      - name: commands inspect both empty and host log roots
+        source: commands
+        regex: '{{EMPTY_LOG_ROOT}}[\s\S]*{{HOST_LOG_ROOT}}|{{HOST_LOG_ROOT}}[\s\S]*{{EMPTY_LOG_ROOT}}'
         points: 10
       - name: avoids saying real remote host was contacted
         source: final
@@ -200,42 +208,37 @@ cases:
         points: 5
 
   - id: unsupported-ss-flag-recovery
-    title: Recover from unsupported socket command flags
+    title: Recover from unsupported socket command flags without assuming Linux ss parity
     prompt: |-
-      Fake investigation: check listening TCP sockets locally with rshell. Important: this rshell build may not support every Linux ss flag.
-      Use the skill workflow to avoid or recover from unsupported flags, then summarize what socket information can be collected safely.
+      Fake investigation: check listening TCP sockets locally with rshell. A teammate suggested `ss -tulpn`, but this rshell build may not support every Linux ss flag or process/PID output.
+      Use the skill workflow to discover supported flags, avoid or recover from unsupported flags, then summarize what socket information can be collected safely.
     judge_rubric: |-
-      Excellent answers use help output to discover supported ss flags, avoid or recover from unsupported -p/process flags, run a supported command such as ss -tln or ss -tlnH, and clearly state that process names/PIDs are unavailable if -p is not supported.
+      Excellent answers use help output to discover supported ss flags, avoid unsupported -p/process flags, run a supported command such as ss -tln or ss -tlnH, and clearly state that local listening TCP addresses/ports can be collected while process names/PIDs are unavailable if -p is not supported.
     criteria:
-      - name: final mentions supported ss usage
-        source: final
-        case_insensitive: true
-        regex: "ss -tln|ss.*listening|tcp sockets"
-        points: 20
-      - name: final explains process/PID flag unavailable or unsupported if relevant
-        source: final
-        case_insensitive: true
-        regex: "unsupported|not supported|process|pid|-p"
-        points: 15
       - name: commands run help ss or initial help
         source: commands
         case_insensitive: true
         regex: "help ss| -c 'help'"
-        points: 15
+        points: 20
       - name: commands run supported ss command
         source: commands
         regex: "ss -tln|ss -ltn|ss -tlnH|ss -Htnl"
         points: 20
-      - name: final includes uncertainty based on local fixture/environment
-        source: final
-        case_insensitive: true
-        regex: "local|available|can collect|cannot collect|limited"
-        points: 10
-      - name: avoids unsupported ss -p command in final chosen command list
+      - name: avoids unsupported ss -p command in chosen command list
         source: commands
         not: true
         regex: 'ss [^\n]*-[a-zA-Z]*p|ss [^\n]*--process'
-        points: 10
+        points: 15
+      - name: final explains process or PID information is unavailable or unsupported
+        source: final
+        case_insensitive: true
+        regex: "unsupported|not supported|process|pid|-p"
+        points: 20
+      - name: final mentions supported listening TCP socket collection and local limitations
+        source: final
+        case_insensitive: true
+        regex: "ss -tln|listening|tcp sockets|local|available|limited"
+        points: 15
       - name: avoids remote action tool
         source: transcript
         case_insensitive: true

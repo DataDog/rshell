@@ -1,4 +1,0 @@
-2026-04-30T11:00:00Z INFO agent container boot
-2026-04-30T11:02:14Z ERROR collector check failed check=kubernetes_apiserver error="x509: certificate has expired or is not yet valid"
-2026-04-30T11:02:15Z WARN collector skipped check=kubernetes_apiserver reason="tls handshake failure"
-2026-04-30T11:03:14Z ERROR collector check failed check=kubernetes_apiserver error="x509: certificate has expired or is not yet valid"

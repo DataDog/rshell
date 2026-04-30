@@ -15,10 +15,11 @@ The loop is inspired by <https://github.com/karpathy/autoresearch>: keep the ben
 ```text
 program.md                                      Instructions for researcher agents
 skills/remote-host-diagnostics/SKILL.md         Target skill being improved
-benchmarks/remote-host-diagnostics/cases.yaml   Benchmark cases and deterministic scoring criteria
-benchmarks/remote-host-diagnostics/fixtures/    Fake logs used by benchmark investigations
-cmd/skillbench/                                 Go benchmark runner
-cmd/skilltrain/                                 Go improvement-loop orchestrator
+benchmarks/remote-host-diagnostics/cases.yaml        Benchmark cases and deterministic scoring criteria
+benchmarks/remote-host-diagnostics/generated-fixtures/ Generated fake logs (gitignored; recreated deterministically)
+cmd/skillbench/                                      Go benchmark runner
+cmd/skillfixtures/                                   Deterministic fixture generator
+cmd/skilltrain/                                      Go improvement-loop orchestrator
 internal/autoresearch/                          Shared Go types/helpers
 runs/                                           Benchmark/training outputs, gitignored except .gitkeep
 report/remote-host-diagnostics-autoresearch.html Single-file slide report
@@ -57,6 +58,8 @@ go run ./auto-improve-skills/cmd/skillbench -case datadog-agent-config-regressio
 # More semantic, more expensive scoring with LLM-as-judge
 go run ./auto-improve-skills/cmd/skillbench -judge
 ```
+
+The runner deterministically regenerates large fake log fixtures under `auto-improve-skills/benchmarks/remote-host-diagnostics/generated-fixtures/` before each run. The generated logs are gitignored.
 
 The runner writes a JSON report and raw nested-`pi` JSONL transcripts under `auto-improve-skills/runs/`.
 
@@ -107,14 +110,24 @@ go run ./auto-improve-skills/cmd/skilltrain \
   -run-dir auto-improve-skills/runs/train-proof
 ```
 
+## Fixture generation
+
+Generate or refresh the deterministic fixtures without running nested agents:
+
+```sh
+go run ./auto-improve-skills/cmd/skillfixtures
+```
+
+The generated files are intentionally not committed. They contain 500-2,000 lines per log file with rotations, red herrings, cross-service correlations, and container/host-mounted log layouts.
+
 ## Current benchmark suite
 
-The initial suite measures final-answer quality across realistic fake investigations:
+The suite measures final-answer quality across realistic fake investigations:
 
-- Datadog Agent config regression
-- SSH brute-force summary
-- Checkout HTTP 500/502 root-cause correlation
-- Containerized Agent host-log fallback
+- Datadog Agent config regression hidden among integration/APM/intake noise
+- SSH brute-force summary with approximate counting and no-compromise distinction
+- Checkout HTTP 500/502 root-cause correlation to PostgreSQL pool/slot exhaustion
+- Containerized Agent host-log fallback with x509 failures caused by clock skew
 - Unsupported `ss` flag recovery
 
 More cases can be added to `benchmarks/remote-host-diagnostics/cases.yaml` without changing Go code.

@@ -1,6 +1,0 @@
-Apr 30 10:00:00 host kernel: boot fixture host
-Apr 30 10:03:12 host systemd[1]: Started checkout.service.
-Apr 30 10:09:54 host kernel: TCP: request_sock_TCP: Possible SYN flooding on port 5432. Sending cookies.
-Apr 30 10:10:00 host postgres[2200]: could not accept SSL connection: Connection reset by peer
-Apr 30 10:10:01 host postgres[2201]: FATAL: remaining connection slots are reserved for non-replication superuser connections
-Apr 30 10:11:00 host systemd[1]: checkout.service: Watchdog timeout ignored in fixture

@@ -24,29 +24,30 @@ const defaultModel = "openai-codex/gpt-5.5"
 
 func main() {
 	var (
-		casesPath    = flag.String("cases", "auto-improve-skills/benchmarks/remote-host-diagnostics/cases.yaml", "YAML benchmark suite")
-		skillPath    = flag.String("skill", "auto-improve-skills/skills/remote-host-diagnostics", "skill directory or SKILL.md path")
-		outputPath   = flag.String("out", "", "write JSON report to this path")
-		rawDir       = flag.String("raw-dir", "", "directory for raw pi JSONL transcripts")
-		piBinary     = flag.String("pi", "pi", "pi executable")
-		model        = flag.String("model", defaultModel, "pi model for benchmark agents and optional judge")
-		mode         = flag.String("mode", "live", "benchmark mode: live or prompts")
-		limit        = flag.Int("limit", 0, "run at most N cases (0 = all)")
-		caseFilter   = flag.String("case", "", "run one case id")
-		caseTimeout  = flag.Duration("case-timeout", 10*time.Minute, "timeout per benchmark case")
-		judge        = flag.Bool("judge", false, "run optional LLM-as-judge scoring pass")
-		judgeWeight  = flag.Float64("judge-weight", 0.6, "when -judge is set, final score weight for judge score (0..1)")
-		ensureRShell = flag.Bool("ensure-rshell", true, "run make build if ./rshell is missing")
+		casesPath        = flag.String("cases", "auto-improve-skills/benchmarks/remote-host-diagnostics/cases.yaml", "YAML benchmark suite")
+		skillPath        = flag.String("skill", "auto-improve-skills/skills/remote-host-diagnostics", "skill directory or SKILL.md path")
+		outputPath       = flag.String("out", "", "write JSON report to this path")
+		rawDir           = flag.String("raw-dir", "", "directory for raw pi JSONL transcripts")
+		piBinary         = flag.String("pi", "pi", "pi executable")
+		model            = flag.String("model", defaultModel, "pi model for benchmark agents and optional judge")
+		mode             = flag.String("mode", "live", "benchmark mode: live or prompts")
+		limit            = flag.Int("limit", 0, "run at most N cases (0 = all)")
+		caseFilter       = flag.String("case", "", "run one case id")
+		caseTimeout      = flag.Duration("case-timeout", 10*time.Minute, "timeout per benchmark case")
+		judge            = flag.Bool("judge", false, "run optional LLM-as-judge scoring pass")
+		judgeWeight      = flag.Float64("judge-weight", 0.6, "when -judge is set, final score weight for judge score (0..1)")
+		ensureRShell     = flag.Bool("ensure-rshell", true, "run make build if ./rshell is missing")
+		generateFixtures = flag.Bool("generate-fixtures", true, "generate deterministic remote-host-diagnostics fixture logs before running")
 	)
 	flag.Parse()
 
-	if err := run(*casesPath, *skillPath, *outputPath, *rawDir, *piBinary, *model, *mode, *limit, *caseFilter, *caseTimeout, *judge, *judgeWeight, *ensureRShell); err != nil {
+	if err := run(*casesPath, *skillPath, *outputPath, *rawDir, *piBinary, *model, *mode, *limit, *caseFilter, *caseTimeout, *judge, *judgeWeight, *ensureRShell, *generateFixtures); err != nil {
 		fmt.Fprintf(os.Stderr, "skillbench: %v\n", err)
 		os.Exit(1)
 	}
 }
 
-func run(casesPath, skillPath, outputPath, rawDir, piBinary, model, mode string, limit int, caseFilter string, caseTimeout time.Duration, judge bool, judgeWeight float64, ensureRShell bool) error {
+func run(casesPath, skillPath, outputPath, rawDir, piBinary, model, mode string, limit int, caseFilter string, caseTimeout time.Duration, judge bool, judgeWeight float64, ensureRShell, generateFixtures bool) error {
 	if mode != "live" && mode != "prompts" {
 		return fmt.Errorf("unsupported -mode %q (want live or prompts)", mode)
 	}
@@ -66,6 +67,11 @@ func run(casesPath, skillPath, outputPath, rawDir, piBinary, model, mode string,
 		piBinary = resolvedPI
 	}
 	casesAbs := autoresearch.AbsFromRoot(root, casesPath)
+	if generateFixtures && isRemoteHostDiagnosticsSuite(casesAbs) {
+		if err := autoresearch.GenerateRemoteHostDiagnosticsFixtures(root); err != nil {
+			return fmt.Errorf("generating deterministic fixtures: %w", err)
+		}
+	}
 	requestedSkillAbs := autoresearch.AbsFromRoot(root, skillPath)
 	if strings.HasSuffix(requestedSkillAbs, "SKILL.md") {
 		requestedSkillAbs = filepath.Dir(requestedSkillAbs)
@@ -152,6 +158,10 @@ func run(casesPath, skillPath, outputPath, rawDir, piBinary, model, mode string,
 	}
 	printSummary(results, outputPath)
 	return nil
+}
+
+func isRemoteHostDiagnosticsSuite(casesPath string) bool {
+	return filepath.Base(filepath.Dir(casesPath)) == "remote-host-diagnostics"
 }
 
 func ensureLocalRShell(root string) error {
