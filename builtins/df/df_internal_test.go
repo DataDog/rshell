@@ -287,6 +287,12 @@ func TestPreStatFilter_TypeIncludeOverridesPseudoSuppression(t *testing.T) {
 	}
 }
 
+// At the filter layer, exclude wins over include for the same TYPE.
+// In production this configuration is rejected upstream by the
+// overlappingType check before makePreStatFilter ever runs (matching
+// GNU df's "both selected and excluded" error), but the unit-level
+// behaviour is still exercised here so the filter's exclude-precedence
+// is locked in for future callers that bypass the top-level check.
 func TestPreStatFilter_TypeExcludeWinsOverIncludeOnPseudo(t *testing.T) {
 	in := []diskstats.Mount{
 		{MountPoint: "/dev/shm", FSType: "tmpfs", Pseudo: true},
@@ -298,6 +304,21 @@ func TestPreStatFilter_TypeExcludeWinsOverIncludeOnPseudo(t *testing.T) {
 		excludeTypes: ptrSlice([]string{"tmpfs"}),
 	})
 	assert.Empty(t, out)
+}
+
+// overlappingType returns the conflicting type, or "" when -t and -x
+// are disjoint. Used by makeFlags to emit the GNU "both selected and
+// excluded" error before any mounts are listed.
+func TestOverlappingType(t *testing.T) {
+	assert.Equal(t, "", overlappingType(nil, nil))
+	assert.Equal(t, "", overlappingType([]string{"ext4"}, nil))
+	assert.Equal(t, "", overlappingType(nil, []string{"ext4"}))
+	assert.Equal(t, "", overlappingType([]string{"ext4"}, []string{"tmpfs"}))
+	assert.Equal(t, "tmpfs", overlappingType([]string{"ext4", "tmpfs"}, []string{"tmpfs"}))
+	assert.Equal(t, "tmpfs", overlappingType([]string{"tmpfs"}, []string{"ext4", "tmpfs"}))
+	// Both lists name multiple overlapping types — first include match
+	// is reported.
+	assert.Equal(t, "ext4", overlappingType([]string{"ext4", "tmpfs"}, []string{"ext4", "tmpfs"}))
 }
 
 func TestPreStatFilter_TypeIncludeAndExclude(t *testing.T) {
@@ -476,6 +497,15 @@ func TestUnitFlag_LastFlagWins(t *testing.T) {
 		{"-h -P -H → SI", []string{"-h", "-P", "-H"}, unitsHuman1000},
 		{"--si then --human-readable → IEC",
 			[]string{"--si", "--human-readable"}, unitsHuman1024},
+		// -k participates in the same last-flag-wins group; GNU df
+		// treats `-h -k` as 1K-blocks (-k is "equivalent to
+		// --block-size=1K", which is itself a unit override).
+		{"-h then -k → 1K-blocks", []string{"-h", "-k"}, unitsK},
+		{"-H then -k → 1K-blocks", []string{"-H", "-k"}, unitsK},
+		{"-k then -h → IEC", []string{"-k", "-h"}, unitsHuman1024},
+		{"-k then -H → SI", []string{"-k", "-H"}, unitsHuman1000},
+		{"-hk (combined short) → 1K-blocks", []string{"-hk"}, unitsK},
+		{"-kh (combined short) → IEC", []string{"-kh"}, unitsHuman1024},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

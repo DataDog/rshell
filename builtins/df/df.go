@@ -165,14 +165,14 @@ func makeFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 		includeTypes: fs.StringArrayP("type", "t", nil, "limit listing to file systems of type TYPE"),
 		excludeTypes: fs.StringArrayP("exclude-type", "x", nil, "limit listing to file systems not of type TYPE"),
 	}
-	// -h / -H share `mode` via unitFlag so argv order picks the
-	// winner (last-set wins). See unitFlag's doc for the rationale.
+	// -h / -H / -k all share `mode` via unitFlag so argv order picks
+	// the winner (last-set wins). See unitFlag's doc for the
+	// rationale; including -k here matches GNU df, where
+	// `df -h -k` prints "1K-blocks" because -k overrides the earlier
+	// -h, and `df -k -h` prints "Size" for the reverse reason.
 	registerUnitFlag(fs, &mode, unitsHuman1024, "human-readable", "h", "print sizes in powers of 1024 (e.g. 1023M)")
 	registerUnitFlag(fs, &mode, unitsHuman1000, "si", "H", "print sizes in powers of 1000 (e.g. 1.1G)")
-	// -k is registered separately because it has no long form. It is a
-	// no-op in this v1 implementation — 1024-byte blocks are already
-	// the default — but POSIX scripts pass it explicitly.
-	fs.BoolP("kibibytes", "k", false, "use 1024-byte blocks (POSIX default)")
+	registerUnitFlag(fs, &mode, unitsK, "kibibytes", "k", "use 1024-byte blocks (POSIX default)")
 
 	return func(ctx context.Context, callCtx *builtins.CallContext, args []string) builtins.Result {
 		if *f.help {
@@ -183,6 +183,15 @@ func makeFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 		if len(args) > 0 {
 			callCtx.Errf("df: extra operand '%s'\n", args[0])
 			callCtx.Errf("Try 'df --help' for more information.\n")
+			return builtins.Result{Code: 1}
+		}
+
+		// GNU df: a type appearing in both -t and -x is a usage
+		// error, not a silent "exclude wins" — surface it before any
+		// other work so configs / scripts that accidentally name the
+		// same type in both lists fail loudly.
+		if dup := overlappingType(*f.includeTypes, *f.excludeTypes); dup != "" {
+			callCtx.Errf("df: file system type '%s' both selected and excluded\n", dup)
 			return builtins.Result{Code: 1}
 		}
 
@@ -315,6 +324,23 @@ func filterMounts(mounts []diskstats.Mount, f *flags) []diskstats.Mount {
 		}
 	}
 	return out
+}
+
+// overlappingType returns the first type string that appears in both
+// includes and excludes, or "" if the lists are disjoint. GNU df
+// rejects this combination with exit 1 rather than silently letting
+// exclusion win.
+func overlappingType(includes, excludes []string) string {
+	if len(includes) == 0 || len(excludes) == 0 {
+		return ""
+	}
+	excl := stringSet(excludes)
+	for _, t := range includes {
+		if _, ok := excl[t]; ok {
+			return t
+		}
+	}
+	return ""
 }
 
 // stringSet converts the repeated -t/-x argv into a set keyed by the
