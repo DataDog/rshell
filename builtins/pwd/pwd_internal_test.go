@@ -174,16 +174,35 @@ func TestBoolSeqFlagRejectsExplicitValue(t *testing.T) {
 	assert.Contains(t, err.Error(), "doesn't allow an argument")
 }
 
+func TestBoolSeqFlagRejectsExplicitTrueValue(t *testing.T) {
+	// `--logical=true` must also be rejected — GNU `/bin/pwd --logical=true`
+	// fails the same way. The sentinel for NoOptDefVal makes this work:
+	// pflag passes the literal "true" for `=true`, but "true" is not the
+	// sentinel, so Set rejects it.
+	fs := pflag.NewFlagSet("pwd", pflag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	makeFlags(fs)
+	err := fs.Parse([]string{"--logical=true"})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "doesn't allow an argument")
+}
+
 func TestBoolSeqFlagRejectsExplicitTrueLikeValue(t *testing.T) {
 	fs := pflag.NewFlagSet("pwd", pflag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	makeFlags(fs)
-	// Even --logical=true is rejected: "true" alone matches NoOptDefVal,
-	// so the only way pflag passes us "true" is the bare-flag form.
-	// Anything else passed via =value path (including "TRUE", "1") fails.
 	err := fs.Parse([]string{"--logical=TRUE"})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "doesn't allow an argument")
+}
+
+func TestBoolSeqFlagBareFormAccepted(t *testing.T) {
+	// Sanity check: the bare flag form must still succeed.
+	fs := pflag.NewFlagSet("pwd", pflag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	makeFlags(fs)
+	require.NoError(t, fs.Parse([]string{"-L"}))
+	require.NoError(t, fs.Parse([]string{"--physical"}))
 }
 
 // --- joinPath / parentDir / rootPrefix unit cases ---

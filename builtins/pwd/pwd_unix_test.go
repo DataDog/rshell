@@ -192,3 +192,63 @@ func TestPwdPhysicalDotDotResolvesAcrossDepth(t *testing.T) {
 	require.Equal(t, 0, code, "stderr=%q", stderr)
 	assert.Equal(t, filepath.Join(root, "d3")+"\n", stdout)
 }
+
+// TestPwdPhysicalAppliesHostPrefixToAbsoluteSymlinkTarget: in a
+// container-style sandbox where AllowedPaths roots live under a host
+// mount prefix and on-disk symlinks store host-absolute targets,
+// `pwd -P` must apply the HostPrefix so the printed path is reachable
+// through the sandbox. Without the prefix, the output is the literal
+// readlink string (e.g. /var/log/pods/app), which the user cannot
+// access via further filesystem operations.
+//
+// Layout:
+//
+//	$root/host/var/log/pods/app/        (real dir)
+//	$root/host/var/log/containers/app   (symlink to /var/log/pods/app)
+//
+// HostPrefix = $root/host. AllowedPaths = $root/host/var/log/.
+// cd into containers/app, then `pwd -P` must emit
+// $root/host/var/log/pods/app, not /var/log/pods/app.
+func TestPwdPhysicalAppliesHostPrefixToAbsoluteSymlinkTarget(t *testing.T) {
+	root := t.TempDir()
+	hostPrefix := filepath.Join(root, "host")
+	pods := filepath.Join(hostPrefix, "var", "log", "pods", "app")
+	containers := filepath.Join(hostPrefix, "var", "log", "containers")
+	require.NoError(t, os.MkdirAll(pods, 0755))
+	require.NoError(t, os.MkdirAll(containers, 0755))
+	link := filepath.Join(containers, "app")
+	// Host-absolute target without the prefix — typical of container
+	// log directories where pods/containers are bind-mounted from the
+	// host filesystem.
+	require.NoError(t, os.Symlink("/var/log/pods/app", link))
+
+	allowedRoot := filepath.Join(hostPrefix, "var", "log")
+	stdout, stderr, code := testutil.RunScript(t, "pwd -P", link,
+		interp.AllowedPaths([]string{allowedRoot}),
+		interp.HostPrefix(hostPrefix),
+	)
+	require.Equal(t, 0, code, "stderr=%q", stderr)
+	assert.Equal(t, pods+"\n", stdout, "host-absolute symlink target must be prefixed with HostPrefix")
+}
+
+// TestPwdPhysicalSkipsHostPrefixWhenAlreadyApplied: if the resolved
+// target already begins with the host prefix (e.g. a relative symlink
+// stayed within the prefixed tree), HostPrefix should not be applied
+// again.
+func TestPwdPhysicalSkipsHostPrefixWhenAlreadyApplied(t *testing.T) {
+	root := t.TempDir()
+	hostPrefix := filepath.Join(root, "host")
+	target := filepath.Join(hostPrefix, "real")
+	link := filepath.Join(hostPrefix, "lnk")
+	require.NoError(t, os.MkdirAll(target, 0755))
+	// Absolute target already includes the host prefix — must not be
+	// double-prefixed.
+	require.NoError(t, os.Symlink(target, link))
+
+	stdout, stderr, code := testutil.RunScript(t, "pwd -P", link,
+		interp.AllowedPaths([]string{hostPrefix}),
+		interp.HostPrefix(hostPrefix),
+	)
+	require.Equal(t, 0, code, "stderr=%q", stderr)
+	assert.Equal(t, target+"\n", stdout)
+}

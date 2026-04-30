@@ -349,6 +349,7 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 				Stdout:     r.stdout,
 				Stderr:     r.stderr,
 				WorkDir:    func() string { return dir },
+				HostPrefix: func() string { return r.hostPrefix },
 				RunCommand: runCmd,
 				OpenFile: func(ctx context.Context, path string, flags int, mode os.FileMode) (io.ReadWriteCloser, error) {
 					f, err := r.sandbox.Open(path, dir, flags, mode)
@@ -411,6 +412,9 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 			LastExitCode: r.lastExit.code,
 			WorkDir: func() string {
 				return HandlerCtx(r.handlerCtx(ctx, todoPos)).Dir
+			},
+			HostPrefix: func() string {
+				return r.hostPrefix
 			},
 			OpenFile: func(ctx context.Context, path string, flags int, mode os.FileMode) (io.ReadWriteCloser, error) {
 				f, err := r.open(ctx, path, flags, mode, false)

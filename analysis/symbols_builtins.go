@@ -208,8 +208,10 @@ var builtinPerCommandSymbols = map[string][]string{
 		"path/filepath.Clean",      // 🟢 normalizes a path lexically (collapses ".", "..", duplicate separators); pure function, no I/O.
 		"path/filepath.Dir",        // 🟢 returns the directory component of a path; pure function, no I/O.
 		"path/filepath.IsAbs",      // 🟢 reports whether a path is absolute; pure function, no I/O.
+		"path/filepath.Join",       // 🟢 lexically joins path components with the OS separator; pure function, no I/O.
 		"path/filepath.Separator",  // 🟢 OS path separator constant ('/' or '\\'); pure constant, no I/O.
 		"path/filepath.VolumeName", // 🟢 returns the volume prefix of a path (e.g. "C:" on Windows, "" on Unix); pure function, no I/O.
+		"strings.HasPrefix",        // 🟢 pure function for prefix matching; no I/O.
 		"strings.IndexByte",        // 🟢 finds byte in string; pure function, no I/O.
 		"strings.TrimPrefix",       // 🟢 removes a leading prefix from a string; pure function, no I/O.
 	},
@@ -489,6 +491,7 @@ var builtinAllowedSymbols = []string{
 	"path/filepath.Clean",                                 // 🟢 normalizes a path lexically (collapses ".", "..", duplicate separators); pure function, no I/O.
 	"path/filepath.Dir",                                   // 🟢 returns the directory component of a path; pure function, no I/O.
 	"path/filepath.IsAbs",                                 // 🟢 reports whether a path is absolute; pure function, no I/O.
+	"path/filepath.Join",                                  // 🟢 lexically joins path components with the OS separator; pure function, no I/O.
 	"path/filepath.Separator",                             // 🟢 OS path separator constant ('/' or '\\'); pure constant, no I/O.
 	"path/filepath.ToSlash",                               // 🟢 converts OS path separators to forward slashes; pure function, no I/O.
 	"path/filepath.VolumeName",                            // 🟢 returns the volume prefix of a path (e.g. "C:" on Windows, "" on Unix); pure function, no I/O.

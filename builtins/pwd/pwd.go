@@ -75,6 +75,13 @@ const maxSymlinkHops = 40
 // errSymlinkLoop is returned when -P resolution exceeds maxSymlinkHops.
 var errSymlinkLoop = errors.New("too many levels of symbolic links")
 
+// boolSeqSentinel is the NoOptDefVal we register for -L/-P. pflag passes
+// this exact string to Set when the user types the bare flag form
+// (`pwd -P`). Any other value — including the literal "true" supplied
+// via `--physical=true` — fails the equality check in Set and is
+// rejected as "option doesn't allow an argument", matching GNU.
+const boolSeqSentinel = "\x00rshell:pwd:bare\x00"
+
 func makeFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 	helpFlag := fs.BoolP("help", "h", false, "print usage and exit")
 
@@ -93,8 +100,8 @@ func makeFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 	var modeSeq int
 	logicalFlag := newBoolSeqFlag(&modeSeq)
 	physicalFlag := newBoolSeqFlag(&modeSeq)
-	fs.VarPF(logicalFlag, "logical", "L", "use the shell's working directory, even if it contains symlinks (default)").NoOptDefVal = "true"
-	fs.VarPF(physicalFlag, "physical", "P", "resolve all symlinks before printing the path").NoOptDefVal = "true"
+	fs.VarPF(logicalFlag, "logical", "L", "use the shell's working directory, even if it contains symlinks (default)").NoOptDefVal = boolSeqSentinel
+	fs.VarPF(physicalFlag, "physical", "P", "resolve all symlinks before printing the path").NoOptDefVal = boolSeqSentinel
 
 	return func(ctx context.Context, callCtx *builtins.CallContext, _ []string) builtins.Result {
 		if *helpFlag {
@@ -151,11 +158,11 @@ func newBoolSeqFlag(seq *int) *boolSeqFlag {
 func (f *boolSeqFlag) String() string { return "false" }
 
 func (f *boolSeqFlag) Set(s string) error {
-	// With NoOptDefVal="true", pflag passes "true" for the bare flag
-	// form and the user-supplied value for `--flag=value`. Accept only
-	// "true" (matching GNU coreutils, which rejects explicit values
-	// for -L/-P).
-	if s != "true" {
+	// pflag passes NoOptDefVal (boolSeqSentinel) when the user types the
+	// bare flag form, and the user-supplied value for `--flag=value`.
+	// Reject anything that isn't the sentinel — including the literal
+	// "true", which GNU `/bin/pwd --physical=true` also rejects.
+	if s != boolSeqSentinel {
 		return errors.New("option doesn't allow an argument")
 	}
 	*f.seq++
@@ -264,6 +271,18 @@ func resolveSymlinks(ctx context.Context, callCtx *builtins.CallContext, path st
 
 		if filepath.IsAbs(target) {
 			cleanedTarget := filepath.Clean(target)
+			// Container-style sandboxes mount the host filesystem at a
+			// prefix (e.g. /mnt/host). Symlink targets stored on disk
+			// often refer to host-absolute paths without that prefix
+			// (e.g. /var/log/pods/...), so apply the prefix when set
+			// — otherwise the resolved path would not be reachable
+			// through the sandbox and `pwd -P` output would be unusable
+			// for further filesystem operations.
+			if callCtx.HostPrefix != nil {
+				if hp := callCtx.HostPrefix(); hp != "" && !strings.HasPrefix(cleanedTarget, hp+string(filepath.Separator)) && cleanedTarget != hp {
+					cleanedTarget = filepath.Join(hp, cleanedTarget)
+				}
+			}
 			out = rootPrefix(cleanedTarget)
 			rest = strings.TrimPrefix(cleanedTarget, out) + rest
 		} else {
