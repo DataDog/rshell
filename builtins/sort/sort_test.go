@@ -422,12 +422,11 @@ func TestSortHelp(t *testing.T) {
 	assert.Empty(t, stderr)
 }
 
-func TestSortHelpShort(t *testing.T) {
+func TestSortShortHRejected(t *testing.T) {
 	dir := t.TempDir()
-	stdout, stderr, code := cmdRun(t, "sort -h", dir)
-	assert.Equal(t, 0, code)
-	assert.Contains(t, stdout, "Usage:")
-	assert.Empty(t, stderr)
+	_, stderr, code := cmdRun(t, "sort -h", dir)
+	assert.Equal(t, 1, code)
+	assert.Contains(t, stderr, "sort:")
 }
 
 // --- Error cases ---

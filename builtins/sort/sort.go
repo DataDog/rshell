@@ -138,7 +138,7 @@ const MaxTotalBytes = 5 * 1024 * 1024 // 5 MiB
 
 // registerFlags registers all sort flags and returns the bound handler.
 func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
-	help := fs.BoolP("help", "h", false, "print usage and exit")
+	help := fs.Bool("help", false, "print usage and exit")
 	reverse := fs.BoolP("reverse", "r", false, "reverse the result of comparisons")
 	numeric := fs.BoolP("numeric-sort", "n", false, "compare according to string numerical value")
 	unique := fs.BoolP("unique", "u", false, "output only the first of an equal run")
