@@ -169,12 +169,25 @@ func makeFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			return builtins.Result{Code: 1}
 		}
 
+		// Capture whether any explicit type filter was given so we can
+		// distinguish "filters left no rows" (a usage error per GNU df)
+		// from "no mounts at all" (still success).
+		filterRequested := len(*f.includeTypes) > 0 || len(*f.excludeTypes) > 0
+
 		mounts = filterMounts(mounts, f)
 		sort.Slice(mounts, func(i, j int) bool {
 			return mounts[i].MountPoint < mounts[j].MountPoint
 		})
 
 		if err := ctx.Err(); err != nil {
+			return builtins.Result{Code: 1}
+		}
+
+		// GNU df: if -t/-x leaves no rows, exit 1 with a stderr
+		// message. Scripts use this exit status to test filesystem
+		// presence, so silently exiting 0 would be a regression.
+		if filterRequested && len(mounts) == 0 {
+			callCtx.Errf("df: no file systems processed\n")
 			return builtins.Result{Code: 1}
 		}
 
@@ -358,12 +371,21 @@ func saturatingAdd(a, b uint64) uint64 {
 
 // formatCount renders a numeric column.
 //
-// In inode mode every unit mode renders raw integers (matches GNU df,
-// which never displays "K" or "M" suffixes for inode counts even with
-// -h). In block mode unitsK renders the byte count divided by 1024 (1K
+// In inode mode the value is an inode count (unit-less). When -h or -H
+// is also set, GNU df scales inode counts through the same K/M/G suffix
+// machinery, so `df -ih` emits e.g. "4.0M" rather than "4194304". In
+// non-human inode mode, the raw integer is printed.
+//
+// In block mode, unitsK renders the byte count divided by 1024 (1K
 // blocks); the human modes call humanBytes.
 func formatCount(v uint64, mode unitMode, inodeMode bool) string {
 	if inodeMode {
+		switch mode {
+		case unitsHuman1024:
+			return humanBytes(v, 1024)
+		case unitsHuman1000:
+			return humanBytes(v, 1000)
+		}
 		return strconv.FormatUint(v, 10)
 	}
 	switch mode {
@@ -442,12 +464,16 @@ func buildHeader(posix, withType, inodeMode bool, mode unitMode) []string {
 		return cols
 	}
 
+	// Size column header. -h / -H always show "Size" (the values are
+	// human-suffixed), even when -P is also given — matching GNU df
+	// output. The fixed-block POSIX header only applies when the unit
+	// mode is itself fixed-block.
 	var col1 string
 	switch {
-	case posix:
-		col1 = "1024-blocks"
 	case mode == unitsHuman1024 || mode == unitsHuman1000:
 		col1 = "Size"
+	case posix:
+		col1 = "1024-blocks"
 	default:
 		col1 = "1K-blocks"
 	}

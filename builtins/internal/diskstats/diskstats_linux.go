@@ -28,11 +28,16 @@ const mountInfoPath = "/proc/self/mountinfo"
 // and hides from the default listing. Sourced from the GNU coreutils df
 // implementation (lib/mountlist.c, me_dummy classification).
 //
-// "overlay" is intentionally NOT classified as pseudo: it is the default
-// root filesystem inside Docker / Kubernetes containers, where it
-// represents the user's actual storage. Hiding it would make `df` print
-// only the header on a typical container host. GNU's table excludes
-// "overlay" too.
+// Several types are intentionally NOT classified as pseudo even though
+// they live in kernel memory:
+//
+//   - "overlay": the default root filesystem inside Docker / Kubernetes
+//     containers, which represents the user's actual storage. Hiding it
+//     would make `df` print only the header on a typical container host.
+//   - "tmpfs", "devtmpfs": RAM-backed but report real, useful capacity
+//     (think /dev/shm or /run). GNU df lists nonzero tmpfs mounts in
+//     the default output; hiding them would make scripts that watch
+//     shared-memory or run-state usage fail silently.
 var pseudoTypes = map[string]bool{
 	"autofs":          true,
 	"binfmt_misc":     true,
@@ -43,7 +48,6 @@ var pseudoTypes = map[string]bool{
 	"debugfs":         true,
 	"devfs":           true,
 	"devpts":          true,
-	"devtmpfs":        true,
 	"efivarfs":        true,
 	"fuse.gvfsd-fuse": true,
 	"fuse.portal":     true,
@@ -60,7 +64,6 @@ var pseudoTypes = map[string]bool{
 	"selinuxfs":       true,
 	"squashfs":        true,
 	"sysfs":           true,
-	"tmpfs":           true,
 	"tracefs":         true,
 }
 

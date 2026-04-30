@@ -138,12 +138,11 @@ func TestDfAll(t *testing.T) {
 
 func TestDfTypeFilter_NoMatches(t *testing.T) {
 	requireSupported(t)
-	// Pick an FS type that almost certainly does not exist on the host.
-	stdout, _, code := dfRun(t, "df -t no-such-fs-type")
-	assert.Equal(t, 0, code)
-	// Header is still printed even when the result is empty.
-	lines := strings.Split(strings.TrimRight(stdout, "\n"), "\n")
-	assert.Len(t, lines, 1)
+	// GNU df: when -t leaves no rows, exit 1 with a stderr message.
+	// Scripts use this exit status to test filesystem presence.
+	_, stderr, code := dfRun(t, "df -t no-such-fs-type")
+	assert.Equal(t, 1, code)
+	assert.Contains(t, stderr, "no file systems processed")
 }
 
 func TestDfNoSyncIsNoop(t *testing.T) {

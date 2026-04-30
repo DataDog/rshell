@@ -100,11 +100,14 @@ func TestSaturatingAdd(t *testing.T) {
 }
 
 func TestFormatCount(t *testing.T) {
-	// inode mode always returns raw integers.
-	assert.Equal(t, "0", formatCount(0, unitsHuman1024, true))
-	assert.Equal(t, "1234567", formatCount(1234567, unitsHuman1024, true))
-	assert.Equal(t, "9999", formatCount(9999, unitsHuman1000, true))
+	// Inode mode in fixed-block (POSIX / -k) units → raw integers.
 	assert.Equal(t, "12345", formatCount(12345, unitsK, true))
+
+	// `df -ih` and `df -iH`: GNU scales inode counts through the same
+	// suffix machinery as block counts, so 4M inodes renders as "4.0M",
+	// not "4194304".
+	assert.Equal(t, "4.0M", formatCount(4*1024*1024, unitsHuman1024, true))
+	assert.Equal(t, "1.0G", formatCount(1_000_000_000, unitsHuman1000, true))
 
 	// 1K block mode: rounds up to the next 1024 boundary.
 	assert.Equal(t, "0", formatCount(0, unitsK, false))
@@ -303,6 +306,16 @@ func TestBuildHeader(t *testing.T) {
 	// -i -T: inode columns + Type column inserted after Filesystem.
 	h = buildHeader(false, true, true, unitsK)
 	assert.Equal(t, []string{"Filesystem", "Type", "Inodes", "IUsed", "IFree", "IUse%", "Mounted on"}, h)
+
+	// -P -h: human suffix overrides the fixed-block POSIX label, so
+	// "Size" appears even when -P is set. Matches GNU `df -P -h`.
+	h = buildHeader(true, false, false, unitsHuman1024)
+	assert.Equal(t, "Size", h[1])
+	assert.NotContains(t, h, "1024-blocks")
+
+	// -P -H: same for SI mode.
+	h = buildHeader(true, false, false, unitsHuman1000)
+	assert.Equal(t, "Size", h[1])
 }
 
 func TestSelectColumns(t *testing.T) {
