@@ -6,5 +6,6 @@ input:
     pwd -- --not-a-flag
 expect:
   stdout_contains: ["/"]
+  stdout_contains_windows: ["\\"]
   stderr: ""
   exit_code: 0
