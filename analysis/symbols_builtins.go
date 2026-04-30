@@ -65,6 +65,16 @@ var builtinPerCommandSymbols = map[string][]string{
 	"false": {
 		"context.Context", // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
 	},
+	"du": {
+		"context.Context", // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
+		"errors.Is",       // 🟢 error comparison; pure function, no I/O.
+		"errors.New",      // 🟢 creates a simple error value; pure function, no I/O.
+		"fmt.Sprintf",     // 🟢 string formatting; pure function, no I/O.
+		"io.EOF",          // 🟢 sentinel error value; pure constant.
+		"io/fs.FileInfo",  // 🟢 interface type for file information; no side effects.
+		"math.MaxInt64",   // 🟢 integer constant; used for overflow clamping.
+		"syscall.Stat_t",  // 🟢 Unix file stat struct for extracting Blocks/Nlink; read-only type, no I/O.
+	},
 	"find": {
 		"context.Context",                 // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
 		"errors.As",                       // 🟢 error type assertion; pure function, no I/O.

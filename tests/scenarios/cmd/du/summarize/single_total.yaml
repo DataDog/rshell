@@ -1,0 +1,16 @@
+description: du -s emits exactly one line per operand (the total).
+setup:
+  files:
+    - path: top/a.txt
+      content: "ab"
+    - path: top/b/inner.txt
+      content: "cdef"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    du -s -b top
+expect:
+  stdout: |+
+    6	top
+  stderr: ""
+  exit_code: 0

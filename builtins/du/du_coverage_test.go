@@ -1,0 +1,106 @@
+// Unless explicitly stated otherwise all files in this repository are licensed
+// under the Apache License Version 2.0.
+// This product includes software developed at Datadog (https://www.datadoghq.com/).
+// Copyright 2026-present Datadog, Inc.
+
+//go:build !windows
+
+package du_test
+
+import (
+	"context"
+	"os"
+	"path/filepath"
+	"testing"
+	"time"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+// --- Hardlink dedup ---
+
+// TestDuDedupsHardlinks confirms that two hardlinks to the same inode are
+// counted only once when both appear in the same du invocation.
+func TestDuDedupsHardlinks(t *testing.T) {
+	dir := t.TempDir()
+	primary := filepath.Join(dir, "primary.bin")
+	require.NoError(t, os.WriteFile(primary, make([]byte, 4096), 0o644))
+	require.NoError(t, os.Link(primary, filepath.Join(dir, "alias.bin")))
+
+	stdout, _, code := cmdRun(t, "du -c -b primary.bin alias.bin", dir)
+	assert.Equal(t, 0, code)
+	// GNU du silently drops the second link from output and the grand
+	// total when a hardlinked inode has already been counted in this
+	// invocation. Confirmed against `du (GNU coreutils) 9.10`.
+	assert.Equal(t, "4096\tprimary.bin\n4096\ttotal\n", stdout)
+}
+
+// --- Symlink-loop detection under -L ---
+
+func TestDuDetectsSymlinkLoopWithL(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "a"), 0o755))
+	// b -> a creates a loop when followed.
+	require.NoError(t, os.Symlink("..", filepath.Join(dir, "a", "loop")))
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	_, stderr, code := cmdRunCtx(ctx, t, "du -L .", dir)
+	assert.Equal(t, 1, code)
+	assert.Contains(t, stderr, "File system loop detected")
+}
+
+// --- humanSize edge values ---
+
+// 1023 bytes is below the 1KiB threshold; -h prints raw.
+func TestDuHumanSubKBytes(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "tiny.bin"), make([]byte, 700), 0o644))
+	stdout, _, code := cmdRun(t, "du -h --apparent-size tiny.bin", dir)
+	assert.Equal(t, 0, code)
+	// 700 bytes < 1024 → "700".
+	assert.Equal(t, "700\ttiny.bin\n", stdout)
+}
+
+// 9 GiB rendered as 9.0G (one decimal because <10).
+func TestDuHumanGigabytes(t *testing.T) {
+	// We cannot allocate 9 GiB of zero-filled bytes in the testing process,
+	// so synthesise the file via Truncate (sparse).
+	dir := t.TempDir()
+	f, err := os.Create(filepath.Join(dir, "big.bin"))
+	require.NoError(t, err)
+	require.NoError(t, f.Truncate(9*1024*1024*1024))
+	require.NoError(t, f.Close())
+	stdout, _, code := cmdRun(t, "du -h --apparent-size big.bin", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "9.0G\tbig.bin\n", stdout)
+}
+
+// --- joinPath edge cases via emitted output ---
+
+// When an operand ends with '/', the trailing slash is preserved in output
+// because joinPath only adds a separator when the dir part doesn't already
+// end with one.
+func TestDuPreservesTrailingSlashInOperand(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "sub"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "sub", "f"), []byte("x"), 0o644))
+
+	stdout, _, code := cmdRun(t, "du -a -b sub/", dir)
+	assert.Equal(t, 0, code)
+	// "sub/f" — joinPath("sub/", "f") should produce "sub/f" not "sub//f".
+	assert.Contains(t, stdout, "sub/f\n")
+	assert.NotContains(t, stdout, "sub//f")
+}
+
+// --- Mega/SI rounding ---
+
+// `--si` formats 1500 bytes as "1.5k" because 1500 / 1000 = 1.5 and < 9.95.
+func TestDuSI1500Bytes(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "f.bin"), make([]byte, 1500), 0o644))
+	stdout, _, code := cmdRun(t, "du --apparent-size --si f.bin", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "1.5k\tf.bin\n", stdout)
+}
