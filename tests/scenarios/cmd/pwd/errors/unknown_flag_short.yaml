@@ -1,0 +1,9 @@
+description: pwd rejects an unknown short flag with a stderr diagnostic and exit 1.
+skip_assert_against_bash: true
+input:
+  script: |+
+    pwd -x
+expect:
+  stdout: ""
+  stderr_contains: ["pwd:", "unknown shorthand flag"]
+  exit_code: 1

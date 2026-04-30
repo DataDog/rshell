@@ -6,13 +6,13 @@ input:
     help
 expect:
   stdout: |+
-    rshell (dev) — 2 of 28 builtins enabled
+    rshell (dev) — 2 of 29 builtins enabled
 
     echo  write arguments to stdout
     help  display help for commands
 
     Disabled builtins: [, break, cat, continue, cut, exit, false, find, grep, head, ip, ls, ping,
-      printf, ps, sed, sort, ss, strings, tail, test, tr, true, uname, uniq, wc
+      printf, ps, pwd, sed, sort, ss, strings, tail, test, tr, true, uname, uniq, wc
 
     Run 'help <command>' for more information on a specific command.
   stderr: ""

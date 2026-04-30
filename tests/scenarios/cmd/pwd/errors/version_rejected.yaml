@@ -1,0 +1,9 @@
+description: pwd does not support --version (not POSIX); rejects it with exit 1.
+skip_assert_against_bash: true
+input:
+  script: |+
+    pwd --version
+expect:
+  stdout: ""
+  stderr_contains: ["pwd:", "unknown flag"]
+  exit_code: 1

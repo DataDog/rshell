@@ -1,0 +1,162 @@
+// Unless explicitly stated otherwise all files in this repository are licensed
+// under the Apache License Version 2.0.
+// This product includes software developed at Datadog (https://www.datadoghq.com/).
+// Copyright 2026-present Datadog, Inc.
+
+//go:build unix
+
+package pwd_test
+
+import (
+	"os"
+	"path/filepath"
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	"github.com/DataDog/rshell/builtins/testutil"
+	"github.com/DataDog/rshell/interp"
+)
+
+// pwdRunDirAllowed runs a script with `dir` as the working directory and
+// `allowedRoot` as the AllowedPaths root. Useful when the cwd is *inside*
+// a larger sandbox (so the resolver can walk above the cwd, exercising
+// real -P logic) — unlike pwdRun in pwd_test.go which scopes AllowedPaths
+// to the cwd itself.
+func pwdRunDirAllowed(t *testing.T, script, dir, allowedRoot string) (string, string, int) {
+	t.Helper()
+	return testutil.RunScript(t, script, dir, interp.AllowedPaths([]string{allowedRoot}))
+}
+
+// TestPwdPhysicalResolvesSymlink: when the cwd is reached via a symlink
+// inside the sandbox, "pwd -P" must print the canonical (target) path.
+func TestPwdPhysicalResolvesSymlink(t *testing.T) {
+	root := t.TempDir()
+	target := filepath.Join(root, "real")
+	link := filepath.Join(root, "lnk")
+	require.NoError(t, os.Mkdir(target, 0755))
+	require.NoError(t, os.Symlink(target, link))
+
+	stdoutP, stderr, code := pwdRunDirAllowed(t, "pwd -P", link, root)
+	require.Equal(t, 0, code, "stderr=%q", stderr)
+	assert.Equal(t, target+"\n", stdoutP)
+}
+
+// TestPwdLogicalKeepsSymlink: when the cwd is reached via a symlink,
+// "pwd -L" must print the logical (symlink) path, not the canonical one.
+func TestPwdLogicalKeepsSymlink(t *testing.T) {
+	root := t.TempDir()
+	target := filepath.Join(root, "real")
+	link := filepath.Join(root, "lnk")
+	require.NoError(t, os.Mkdir(target, 0755))
+	require.NoError(t, os.Symlink(target, link))
+
+	stdoutL, _, code := pwdRunDirAllowed(t, "pwd -L", link, root)
+	require.Equal(t, 0, code)
+	assert.Equal(t, link+"\n", stdoutL)
+}
+
+// TestPwdPhysicalChainedSymlinks: A -> B -> C resolves to C.
+func TestPwdPhysicalChainedSymlinks(t *testing.T) {
+	root := t.TempDir()
+	c := filepath.Join(root, "c")
+	require.NoError(t, os.Mkdir(c, 0755))
+	b := filepath.Join(root, "b")
+	require.NoError(t, os.Symlink(c, b))
+	a := filepath.Join(root, "a")
+	require.NoError(t, os.Symlink(b, a))
+
+	stdout, stderr, code := pwdRunDirAllowed(t, "pwd -P", a, root)
+	require.Equal(t, 0, code, "stderr=%q", stderr)
+	assert.Equal(t, c+"\n", stdout)
+}
+
+// TestPwdPhysicalRelativeSymlink: relative symlink targets are resolved
+// against the link's directory, not the cwd.
+func TestPwdPhysicalRelativeSymlink(t *testing.T) {
+	root := t.TempDir()
+	require.NoError(t, os.Mkdir(filepath.Join(root, "real"), 0755))
+	// "lnk" → "real" (relative). When at $root/lnk, -P must yield $root/real.
+	require.NoError(t, os.Symlink("real", filepath.Join(root, "lnk")))
+
+	stdout, stderr, code := pwdRunDirAllowed(t, "pwd -P", filepath.Join(root, "lnk"), root)
+	require.Equal(t, 0, code, "stderr=%q", stderr)
+	assert.Equal(t, filepath.Join(root, "real")+"\n", stdout)
+}
+
+// TestPwdPhysicalSymlinkCycle: A -> B -> A loops; -P must error with a
+// loop diagnostic and exit 1, not hang or recurse forever.
+func TestPwdPhysicalSymlinkCycle(t *testing.T) {
+	root := t.TempDir()
+	a := filepath.Join(root, "a")
+	b := filepath.Join(root, "b")
+	require.NoError(t, os.Symlink(b, a))
+	require.NoError(t, os.Symlink(a, b))
+
+	_, stderr, code := pwdRunDirAllowed(t, "pwd -P", a, root)
+	assert.Equal(t, 1, code)
+	assert.Contains(t, stderr, "pwd:")
+	assert.Contains(t, stderr, "too many levels of symbolic links")
+}
+
+// TestPwdPhysicalNestedSymlinks: link inside a real dir, with components
+// after the link.  $root/real/lnk → $root/real/sub.
+func TestPwdPhysicalNestedSymlinks(t *testing.T) {
+	root := t.TempDir()
+	realDir := filepath.Join(root, "real")
+	sub := filepath.Join(realDir, "sub")
+	require.NoError(t, os.MkdirAll(sub, 0755))
+	link := filepath.Join(realDir, "lnk")
+	require.NoError(t, os.Symlink("sub", link))
+
+	stdout, stderr, code := pwdRunDirAllowed(t, "pwd -P", link, root)
+	require.Equal(t, 0, code, "stderr=%q", stderr)
+	assert.Equal(t, sub+"\n", stdout)
+}
+
+// TestPwdPhysicalWithDotDotInTarget: a symlink whose target contains
+// ".." resolves correctly. $root/sibling/lnk → "../target".
+func TestPwdPhysicalWithDotDotInTarget(t *testing.T) {
+	root := t.TempDir()
+	target := filepath.Join(root, "target")
+	sibling := filepath.Join(root, "sibling")
+	require.NoError(t, os.Mkdir(target, 0755))
+	require.NoError(t, os.Mkdir(sibling, 0755))
+	link := filepath.Join(sibling, "lnk")
+	require.NoError(t, os.Symlink("../target", link))
+
+	stdout, stderr, code := pwdRunDirAllowed(t, "pwd -P", link, root)
+	require.Equal(t, 0, code, "stderr=%q", stderr)
+	assert.Equal(t, target+"\n", stdout)
+}
+
+// TestPwdPhysicalAbsoluteSymlinkTargetInsideSandbox: an absolute symlink
+// whose target is inside the sandbox resolves correctly (target is
+// absolute, so we reset the resolved prefix to the absolute root).
+func TestPwdPhysicalAbsoluteSymlinkTargetInsideSandbox(t *testing.T) {
+	root := t.TempDir()
+	target := filepath.Join(root, "real")
+	link := filepath.Join(root, "abslnk")
+	require.NoError(t, os.Mkdir(target, 0755))
+	require.NoError(t, os.Symlink(target, link)) // absolute path
+
+	stdout, stderr, code := pwdRunDirAllowed(t, "pwd -P", link, root)
+	require.Equal(t, 0, code, "stderr=%q", stderr)
+	assert.Equal(t, target+"\n", stdout)
+}
+
+// TestPwdPhysicalDotDotComponents: symlink target with explicit ".."
+// segments is canonicalized.  $root/d1/d2/lnk → "../../d3", which lands
+// at $root/d3.
+func TestPwdPhysicalDotDotResolvesAcrossDepth(t *testing.T) {
+	root := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(root, "d1", "d2"), 0755))
+	require.NoError(t, os.Mkdir(filepath.Join(root, "d3"), 0755))
+	link := filepath.Join(root, "d1", "d2", "lnk")
+	require.NoError(t, os.Symlink("../../d3", link))
+
+	stdout, stderr, code := pwdRunDirAllowed(t, "pwd -P", link, root)
+	require.Equal(t, 0, code, "stderr=%q", stderr)
+	assert.Equal(t, filepath.Join(root, "d3")+"\n", stdout)
+}

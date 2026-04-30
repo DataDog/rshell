@@ -64,6 +64,11 @@ jobs:
             # ping_test.go. Go test helpers are only in scope within the same directory,
             # so both files must reside in builtins/ping/.
             corpus_path: builtins/ping
+          - pkg: ./builtins/pwd/
+            name: pwd
+            # pwd fuzz tests live in builtins/pwd/ alongside the pwd_test.go
+            # helpers (pwdRun) — same rationale as ping above.
+            corpus_path: builtins/pwd
           - pkg: ./interp/tests/
             name: interp
             corpus_path: interp/tests
