@@ -27,6 +27,12 @@ const mountInfoPath = "/proc/self/mountinfo"
 // pseudoTypes lists filesystem types that GNU df treats as pseudo / dummy
 // and hides from the default listing. Sourced from the GNU coreutils df
 // implementation (lib/mountlist.c, me_dummy classification).
+//
+// "overlay" is intentionally NOT classified as pseudo: it is the default
+// root filesystem inside Docker / Kubernetes containers, where it
+// represents the user's actual storage. Hiding it would make `df` print
+// only the header on a typical container host. GNU's table excludes
+// "overlay" too.
 var pseudoTypes = map[string]bool{
 	"autofs":          true,
 	"binfmt_misc":     true,
@@ -46,7 +52,6 @@ var pseudoTypes = map[string]bool{
 	"mqueue":          true,
 	"none":            true,
 	"nsfs":            true,
-	"overlay":         true,
 	"proc":            true,
 	"pstore":          true,
 	"ramfs":           true,

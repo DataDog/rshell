@@ -82,6 +82,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"sort"
 	"strconv"
 	"strings"
@@ -200,10 +201,13 @@ func resolveUnitMode(f *flags) unitMode {
 
 // filterMounts applies the -a / -l / -t / -x flags. The order of
 // operations is:
-//  1. -a includes everything; otherwise pseudo filesystems are dropped.
-//  2. -l drops remote (non-local) filesystems.
-//  3. -t restricts to the given types (if any).
-//  4. -x removes the given types (wins over -t).
+//  1. -x removes the given types (always wins over everything else).
+//  2. -t restricts to the given types if set; an explicit -t match
+//     overrides the default pseudo-FS suppression so e.g. `df -t tmpfs`
+//     lists tmpfs mounts even without -a (matching GNU df).
+//  3. Otherwise -a includes everything; without -a, pseudo filesystems
+//     are dropped.
+//  4. -l drops remote (non-local) filesystems.
 //
 // The result reuses the input slice's backing array; the caller must
 // not retain the original slice after this call. diskstats.List always
@@ -213,18 +217,17 @@ func filterMounts(mounts []diskstats.Mount, f *flags) []diskstats.Mount {
 	excludeSet := stringSet(*f.excludeTypes)
 	out := mounts[:0]
 	for _, m := range mounts {
-		if !*f.all && m.Pseudo {
-			continue
-		}
-		if *f.local && !m.Local {
+		if _, ok := excludeSet[m.FSType]; ok {
 			continue
 		}
 		if len(includeSet) > 0 {
 			if _, ok := includeSet[m.FSType]; !ok {
 				continue
 			}
+		} else if !*f.all && m.Pseudo {
+			continue
 		}
-		if _, ok := excludeSet[m.FSType]; ok {
+		if *f.local && !m.Local {
 			continue
 		}
 		out = append(out, m)
@@ -384,6 +387,11 @@ func formatCount(v uint64, mode unitMode, inodeMode bool) string {
 // df: one decimal digit when the integer part is < 10, no decimal
 // otherwise. Suffixes go up to E (exa); larger sizes are clamped at "E"
 // to avoid overflow.
+//
+// GNU df rounds *up* on every non-integer remainder so that "Used"
+// never under-reports. We mirror that with math.Ceil after scaling
+// rather than fmt.Sprintf's round-to-nearest. Example: 1,576,960 bytes
+// is "1.6M", not "1.5M".
 func humanBytes(v uint64, base uint64) string {
 	const suffixes = "KMGTPE"
 	if v < base {
@@ -403,9 +411,12 @@ func humanBytes(v uint64, base uint64) string {
 	}
 	scaled := val / div
 	if scaled < 10 {
-		return fmt.Sprintf("%.1f%c", scaled, suffix)
+		// One decimal digit, rounded up.
+		ceiled := math.Ceil(scaled*10) / 10
+		return fmt.Sprintf("%.1f%c", ceiled, suffix)
 	}
-	return fmt.Sprintf("%.0f%c", scaled, suffix)
+	// No decimal digit, rounded up.
+	return fmt.Sprintf("%.0f%c", math.Ceil(scaled), suffix)
 }
 
 // buildHeader returns the column header strings.

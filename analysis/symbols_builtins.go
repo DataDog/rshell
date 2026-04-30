@@ -58,6 +58,7 @@ var builtinPerCommandSymbols = map[string][]string{
 		"context.Context",    // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
 		"errors.Is",          // 🟢 error comparison via chain; pure function, no I/O.
 		"fmt.Sprintf",        // 🟢 string formatting; pure function, no I/O.
+		"math.Ceil",          // 🟢 ceiling of a float64; pure function, no I/O. Used for GNU-compatible round-up of human-readable sizes.
 		"sort.Slice",         // 🟢 in-place slice sort with comparison func; pure function, no I/O.
 		"strconv.FormatUint", // 🟢 uint-to-string conversion; pure function, no I/O.
 		"strings.Builder",    // 🟢 efficient string concatenation; pure in-memory buffer, no I/O.

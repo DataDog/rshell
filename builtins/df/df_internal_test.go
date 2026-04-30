@@ -32,6 +32,12 @@ func TestHumanBytes_1024(t *testing.T) {
 		{1 << 50, "1.0P"},
 		{1 << 60, "1.0E"},
 		{^uint64(0), "16E"},
+		// GNU df rounds non-integer remainders up so "Used" never
+		// under-reports. 1,576,960 bytes is 385 × 4 KiB blocks; GNU
+		// emits "1.6M" rather than the round-to-nearest "1.5M".
+		{1_576_960, "1.6M"},
+		// 2 KiB + 1 byte → just over 2.0K, must round up to 2.1K.
+		{2*1024 + 1, "2.1K"},
 	}
 	for _, c := range cases {
 		assert.Equal(t, c.want, humanBytes(c.v, 1024), "v=%d", c.v)
@@ -204,6 +210,43 @@ func TestFilterMounts_LocalDropsRemote(t *testing.T) {
 	})
 	assert.Len(t, out, 1)
 	assert.Equal(t, "/", out[0].MountPoint)
+}
+
+// An explicit -t TYPE filter must override the default pseudo-FS
+// suppression so scripts running `df -t tmpfs` see tmpfs mounts even
+// without -a. Matches GNU df behaviour.
+func TestFilterMounts_TypeIncludeOverridesPseudoSuppression(t *testing.T) {
+	in := []diskstats.Mount{
+		{MountPoint: "/", FSType: "ext4", Local: true},
+		{MountPoint: "/dev/shm", FSType: "tmpfs", Pseudo: true, Local: true},
+		{MountPoint: "/run", FSType: "tmpfs", Pseudo: true, Local: true},
+	}
+	out := filterMounts(append([]diskstats.Mount(nil), in...), &flags{
+		all:          ptrBool(false),
+		local:        ptrBool(false),
+		includeTypes: ptrSlice([]string{"tmpfs"}),
+		excludeTypes: ptrSlice([]string(nil)),
+	})
+	assert.Len(t, out, 2)
+	for _, m := range out {
+		assert.Equal(t, "tmpfs", m.FSType)
+	}
+}
+
+// -x TYPE wins over an explicit -t for the same TYPE. Mostly defensive;
+// covered already by TestFilterMounts_TypeIncludeAndExclude but worth
+// pinning the pseudo case too: -t pseudo + -x pseudo → empty.
+func TestFilterMounts_TypeExcludeWinsOverIncludeOnPseudo(t *testing.T) {
+	in := []diskstats.Mount{
+		{MountPoint: "/dev/shm", FSType: "tmpfs", Pseudo: true},
+	}
+	out := filterMounts(append([]diskstats.Mount(nil), in...), &flags{
+		all:          ptrBool(false),
+		local:        ptrBool(false),
+		includeTypes: ptrSlice([]string{"tmpfs"}),
+		excludeTypes: ptrSlice([]string{"tmpfs"}),
+	})
+	assert.Empty(t, out)
 }
 
 func TestFilterMounts_TypeIncludeAndExclude(t *testing.T) {

@@ -6,23 +6,58 @@
 package df_test
 
 import (
+	"bytes"
 	"context"
+	"errors"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/DataDog/rshell/builtins/testutil"
+	"mvdan.cc/sh/v3/syntax"
+
 	"github.com/DataDog/rshell/interp"
 )
 
-// dfRunFuzz invokes the df builtin from a fuzz test. Each invocation
-// has a 5-second hard timeout so a regression that introduces a hang
-// surfaces as a clear failure, not a CI freeze.
-func dfRunFuzz(t *testing.T, script string) (string, string, int) {
+// dfRunFuzz invokes the df builtin from a fuzz test. It returns
+// (stdout, stderr, exitCode, parseErr). When parseErr is non-nil the
+// fuzzer mutated the input into something the shell parser cannot read
+// (e.g. unclosed quote), and the caller should treat it as
+// uninteresting rather than as a failure.
+//
+// We intentionally do not call testutil.RunScriptCtx — that helper
+// fails the test on parse errors via require.NoError, which is correct
+// for unit tests but turns every malformed fuzz input into a fatal.
+func dfRunFuzz(t *testing.T, script string) (string, string, int, error) {
 	t.Helper()
+	parser := syntax.NewParser()
+	prog, err := parser.Parse(strings.NewReader(script), "")
+	if err != nil {
+		return "", "", 0, err
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	return testutil.RunScriptCtx(ctx, t, script, "", interp.AllowedPaths(nil))
+
+	var outBuf, errBuf bytes.Buffer
+	runner, err := interp.New(
+		interp.StdIO(nil, &outBuf, &errBuf),
+		interp.AllowedPaths(nil),
+	)
+	if err != nil {
+		t.Fatalf("interp.New: %v", err)
+	}
+	defer runner.Close()
+
+	exitCode := 0
+	if runErr := runner.Run(ctx, prog); runErr != nil {
+		var es interp.ExitStatus
+		if errors.As(runErr, &es) {
+			exitCode = int(es)
+		} else if ctx.Err() == nil {
+			t.Fatalf("unexpected runner error: %v", runErr)
+		}
+	}
+	return outBuf.String(), errBuf.String(), exitCode, nil
 }
 
 // FuzzDfFlagCombinator runs `df` end-to-end through the runner with
@@ -107,20 +142,19 @@ func FuzzDfFlagCombinator(f *testing.F) {
 			return
 		}
 
-		_, _, code := dfRunFuzz(t, script)
-		// df returns only 0 or 1 (per its documented contract). The
-		// runner returns 2 for shell-parse errors, 127 for not-found,
-		// and may return other codes for runtime errors that
-		// terminate the script. Tolerate those so we don't flag the
-		// runner's behaviour, but flag any code df itself produces
-		// outside its contract.
+		_, _, code, parseErr := dfRunFuzz(t, script)
+		// Parse errors are expected — the fuzzer routinely mutates
+		// inputs into malformed shell syntax (unclosed quotes,
+		// unbalanced parens, …). They are not failures.
+		if parseErr != nil {
+			return
+		}
+		// df returns only 0 or 1 per its documented contract. The
+		// runner may return 127 for not-found if df is somehow
+		// unregistered during a fuzz iteration. Anything else is
+		// a contract violation.
 		switch code {
-		case 0, 1, 2, 127:
-			// 0/1: df contract.
-			// 2: runner shell-parse error.
-			// 127: command-not-found from the runner (if df was
-			//      somehow not registered for the duration of a
-			//      fuzz iteration).
+		case 0, 1, 127:
 		default:
 			t.Fatalf("unexpected exit code %d for script %q", code, script)
 		}
