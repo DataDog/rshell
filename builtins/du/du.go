@@ -470,25 +470,22 @@ func shouldEmit(depth int, isDir bool, opts options) bool {
 
 // entrySize returns the raw byte count attributed to an entry.
 //
-// Behaviour matches GNU du:
+// Behaviour matches GNU du across platforms:
 //   - Non-directory files in apparent-size mode use info.Size().
 //   - Non-directory files in disk-usage mode use Stat_t.Blocks * 512, or
 //     (when Blocks is unavailable) info.Size() rounded up to the nearest
 //     1024-byte block.
-//   - Directories in apparent-size mode contribute 0 — GNU du with
-//     --apparent-size does not count the directory's own bytes; only its
-//     children contribute. (Verified empirically against GNU coreutils
-//     on both ext4 and APFS.)
-//   - Directories in disk-usage mode use Stat_t.Blocks * 512. On
+//   - Directories use Stat_t.Blocks * 512 in *both* modes. This matches
+//     GNU's observed behaviour: on macOS APFS dirs report Blocks=0 and
+//     contribute 0 bytes; on Linux ext4 dirs report Blocks=8 and
+//     contribute 4096 bytes. GNU du --apparent-size mirrors this exactly
+//     (verified against coreutils 9.10 on both filesystems). On
 //     platforms without Blocks (Windows), directories report 0.
 //
 // The Blocks * 512 multiplication is clamped to math.MaxInt64 to defend
 // against pathological filesystems (e.g. FUSE) that report bogus values.
 func entrySize(info iofs.FileInfo, apparent bool) int64 {
 	if info.IsDir() {
-		if apparent {
-			return 0
-		}
 		if blocks, ok := infoBlocks(info); ok {
 			return clampMul(blocks, statBlockUnit)
 		}

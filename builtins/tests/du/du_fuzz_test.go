@@ -14,6 +14,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/DataDog/rshell/builtins/testutil"
 )
@@ -104,11 +106,26 @@ func FuzzDuFlags(f *testing.F) {
 		if len(script) > 1<<14 {
 			return // avoid pathological scripts
 		}
+		// Skip non-UTF-8 strings: the shell parser rejects them with a
+		// parse error before du is ever invoked, which is not a useful
+		// signal here.
+		if !utf8.ValidString(script) {
+			return
+		}
 		// Restrict the fuzz target to scripts that actually invoke du. The
 		// mutator can otherwise produce inputs like "0" that the shell
 		// treats as a command-not-found (exit 127), which is not what we
 		// are testing.
 		if !strings.HasPrefix(script, "du ") && script != "du" {
+			return
+		}
+		// Filter inputs containing shell metacharacters that change the
+		// command structure (`&` background, `;` chain, `|` pipe, `<`/`>`
+		// redirect, `$` expansion, `` ` `` substitution, `(` subshell,
+		// `&&`/`||`). The fuzzer is testing du's flag-parsing surface,
+		// not the shell's job-control / pipeline semantics — those have
+		// their own tests.
+		if strings.ContainsAny(script, "&;|<>$`(){}\\") {
 			return
 		}
 		// Filter inputs that would cause shell parse errors. Unbalanced
@@ -168,6 +185,10 @@ func FuzzDuTreeShape(f *testing.F) {
 			return
 		}
 		if len(spec) > 1<<13 {
+			return
+		}
+		// Skip inputs the shell parser would reject with a parse error.
+		if !utf8.ValidString(spec) {
 			return
 		}
 
@@ -264,9 +285,22 @@ func FuzzDuPath(f *testing.F) {
 		if len(path) > 1<<12 {
 			return
 		}
+		// Skip inputs the shell parser would reject with a parse error.
+		if !utf8.ValidString(path) {
+			return
+		}
 		// NUL bytes can't appear in a real path; skip.
 		if strings.ContainsRune(path, 0) {
 			return
+		}
+		// Skip paths containing characters the shell quoting can't safely
+		// round-trip (control characters in C0/C1, isolated CR/LF). The
+		// fuzz target here exercises du's path handling, not the shell's
+		// quoting rules.
+		for _, r := range path {
+			if r != '\t' && unicode.IsControl(r) {
+				return
+			}
 		}
 		// Don't let the fuzzer escape the temp dir; we test absolute paths
 		// separately via the seed corpus. For arbitrary fuzz inputs, just
