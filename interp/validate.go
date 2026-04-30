@@ -209,26 +209,11 @@ func validateRedirect(rd *syntax.Redirect) error {
 			return fmt.Errorf("%s< input fd redirection is not supported", rd.N.Value)
 		}
 		return nil
-	case syntax.RdrOut, syntax.ClbOut:
-		if redirectTargetIsDevNull(rd) {
-			return nil
-		}
-		return fmt.Errorf("> file redirection is not supported")
-	case syntax.AppOut:
-		if redirectTargetIsDevNull(rd) {
-			return nil
-		}
-		return fmt.Errorf(">> file redirection is not supported")
-	case syntax.RdrAll:
-		if redirectTargetIsDevNull(rd) {
-			return nil
-		}
-		return fmt.Errorf("&> file redirection is not supported")
-	case syntax.AppAll:
-		if redirectTargetIsDevNull(rd) {
-			return nil
-		}
-		return fmt.Errorf("&>> file redirection is not supported")
+	case syntax.RdrOut, syntax.ClbOut, syntax.AppOut, syntax.RdrAll, syntax.AppAll:
+		// File-target output redirections are accepted at the parser level;
+		// the runtime opens the target via the AllowedPaths sandbox and
+		// rejects fds other than 1 (stdout) or 2 (stderr).
+		return nil
 	case syntax.RdrInOut:
 		return fmt.Errorf("<> file redirection is not supported")
 	case syntax.DplOut:
@@ -240,30 +225,6 @@ func validateRedirect(rd *syntax.Redirect) error {
 		return fmt.Errorf("<&N fd duplication is not supported")
 	}
 	return nil
-}
-
-// redirectTargetIsDevNull reports whether the redirect word is the literal
-// path /dev/null (or os.DevNull on Windows). Only simple literal words are
-// accepted — variable expansions, globs, and other dynamic forms are rejected
-// so that the target cannot be manipulated at runtime. The source fd (rd.N)
-// must also be a supported fd (1 or 2).
-func redirectTargetIsDevNull(rd *syntax.Redirect) bool {
-	// Check source fd: only 1 (stdout) and 2 (stderr) are supported.
-	// rd.N is nil when no explicit fd is given (defaults to stdout).
-	// For RdrAll/AppAll (&>/&>>), rd.N is always nil since bash does
-	// not allow an explicit fd prefix on these ops, so this check is
-	// a no-op for them.
-	if rd.N != nil && rd.N.Value != "1" && rd.N.Value != "2" {
-		return false
-	}
-	if rd.Word == nil || len(rd.Word.Parts) != 1 {
-		return false
-	}
-	lit, ok := rd.Word.Parts[0].(*syntax.Lit)
-	if !ok {
-		return false
-	}
-	return isDevNull(lit.Value)
 }
 
 // redirectTargetIsFD reports whether the DplOut (>&N) redirect uses only

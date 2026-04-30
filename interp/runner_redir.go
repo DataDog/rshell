@@ -246,26 +246,44 @@ func (r *Runner) redir(ctx context.Context, rd *syntax.Redirect) (io.Closer, err
 		// done further below
 
 	case syntax.RdrOut, syntax.ClbOut, syntax.AppOut:
-		// Output redirects are only allowed to /dev/null (enforced at validation).
-		// Re-check at runtime after variable expansion for defense-in-depth.
-		if !isDevNull(arg) {
-			r.errf("> %s: file redirection is only supported for /dev/null\n", arg)
-			return nil, fmt.Errorf("> %s: file redirection is only supported for /dev/null", arg)
+		// /dev/null is short-circuited to io.Discard. The sandbox does not
+		// add /dev/null to AllowedPaths automatically, so going through
+		// r.open would require operators to whitelist it explicitly.
+		if isDevNull(arg) {
+			*orig = io.Discard
+			return nil, nil
 		}
-		*orig = io.Discard
-		return nil, nil
+		flags := os.O_WRONLY | os.O_CREATE | os.O_TRUNC
+		if rd.Op == syntax.AppOut {
+			flags = os.O_WRONLY | os.O_CREATE | os.O_APPEND
+		}
+		f, err := r.open(ctx, arg, flags, 0644, true)
+		if err != nil {
+			return nil, err
+		}
+		*orig = f
+		return f, nil
 
 	case syntax.RdrAll, syntax.AppAll:
 		// Note: these ops redirect both stdout and stderr, so they assign
 		// r.stdout and r.stderr directly rather than going through *orig.
 		// Bash does not allow an explicit fd prefix on &>/&>>.
-		if !isDevNull(arg) {
-			r.errf("&> %s: file redirection is only supported for /dev/null\n", arg)
-			return nil, fmt.Errorf("&> %s: file redirection is only supported for /dev/null", arg)
+		if isDevNull(arg) {
+			r.stdout = io.Discard
+			r.stderr = io.Discard
+			return nil, nil
 		}
-		r.stdout = io.Discard
-		r.stderr = io.Discard
-		return nil, nil
+		flags := os.O_WRONLY | os.O_CREATE | os.O_TRUNC
+		if rd.Op == syntax.AppAll {
+			flags = os.O_WRONLY | os.O_CREATE | os.O_APPEND
+		}
+		f, err := r.open(ctx, arg, flags, 0644, true)
+		if err != nil {
+			return nil, err
+		}
+		r.stdout = f
+		r.stderr = f
+		return f, nil
 
 	case syntax.DplOut:
 		switch arg {

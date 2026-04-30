@@ -1,6 +1,6 @@
-# skip: file redirection is intentionally blocked in the restricted shell
+# skip: sandbox blocks writes to paths outside AllowedPaths; bash has no equivalent restriction
 skip_assert_against_bash: true
-description: Output redirection with variable filename is blocked.
+description: Output redirection with variable filename is blocked when target is outside AllowedPaths.
 input:
   script: |+
     F=out.txt
@@ -8,5 +8,5 @@ input:
 expect:
   stdout: ""
   stderr: |+
-    > file redirection is not supported
-  exit_code: 2
+    open out.txt: permission denied
+  exit_code: 1

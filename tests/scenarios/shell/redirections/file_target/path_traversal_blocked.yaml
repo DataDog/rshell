@@ -1,0 +1,16 @@
+# skip: sandbox restriction is rshell-specific; bash has no AllowedPaths concept
+skip_assert_against_bash: true
+description: A redirect target that escapes AllowedPaths via .. is blocked.
+setup:
+  files:
+    - path: inside/.keep
+      content: ""
+input:
+  allowed_paths: ["inside"]
+  script: |+
+    echo hi > inside/../../etc/foo
+expect:
+  stdout: ""
+  stderr_contains:
+    - "permission denied"
+  exit_code: 1

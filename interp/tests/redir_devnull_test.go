@@ -174,39 +174,38 @@ func TestRedirDevNullPreservesFailureExitCode(t *testing.T) {
 	assert.Equal(t, "1\n", stdout)
 }
 
-// --- Blocked redirects (still rejected) ---
+// --- Sandbox-blocked redirects (target outside AllowedPaths) ---
 
-func TestRedirToFileStillBlocked(t *testing.T) {
+func TestRedirToFileBlockedBySandbox(t *testing.T) {
 	dir := t.TempDir()
-	// The validation should reject this
 	stdout, stderr, code := redirRunNoAllowed(t, "echo hello > /tmp/output.txt", dir)
-	assert.Equal(t, 2, code)
+	assert.Equal(t, 1, code)
 	assert.Equal(t, "", stdout)
-	assert.Contains(t, stderr, "file redirection is not supported")
+	assert.Contains(t, stderr, "permission denied")
 }
 
-func TestRedirStderrToFileStillBlocked(t *testing.T) {
+func TestRedirStderrToFileBlockedBySandbox(t *testing.T) {
 	dir := t.TempDir()
 	stdout, stderr, code := redirRunNoAllowed(t, "echo hello 2> /tmp/errors.txt", dir)
-	assert.Equal(t, 2, code)
+	assert.Equal(t, 1, code)
 	assert.Equal(t, "", stdout)
-	assert.Contains(t, stderr, "file redirection is not supported")
+	assert.Contains(t, stderr, "permission denied")
 }
 
-func TestRedirAppendToFileStillBlocked(t *testing.T) {
+func TestRedirAppendToFileBlockedBySandbox(t *testing.T) {
 	dir := t.TempDir()
 	stdout, stderr, code := redirRunNoAllowed(t, "echo hello >> /tmp/output.txt", dir)
-	assert.Equal(t, 2, code)
+	assert.Equal(t, 1, code)
 	assert.Equal(t, "", stdout)
-	assert.Contains(t, stderr, "file redirection is not supported")
+	assert.Contains(t, stderr, "permission denied")
 }
 
-func TestRedirAllToFileStillBlocked(t *testing.T) {
+func TestRedirAllToFileBlockedBySandbox(t *testing.T) {
 	dir := t.TempDir()
 	stdout, stderr, code := redirRunNoAllowed(t, "echo hello &> /tmp/output.txt", dir)
-	assert.Equal(t, 2, code)
+	assert.Equal(t, 1, code)
 	assert.Equal(t, "", stdout)
-	assert.Contains(t, stderr, "file redirection is not supported")
+	assert.Contains(t, stderr, "permission denied")
 }
 
 // --- Path traversal via /dev/null ---
@@ -214,17 +213,17 @@ func TestRedirAllToFileStillBlocked(t *testing.T) {
 func TestRedirDevNullPathTraversalBlocked(t *testing.T) {
 	dir := t.TempDir()
 	stdout, stderr, code := redirRunNoAllowed(t, "echo hello > /dev/null/../../../tmp/evil", dir)
-	assert.Equal(t, 2, code)
+	assert.Equal(t, 1, code)
 	assert.Equal(t, "", stdout)
-	assert.Contains(t, stderr, "file redirection is not supported")
+	assert.Contains(t, stderr, "permission denied")
 }
 
 func TestRedirDevNullExtraSlashBlocked(t *testing.T) {
 	dir := t.TempDir()
 	stdout, stderr, code := redirRunNoAllowed(t, "echo hello > /dev//null", dir)
-	assert.Equal(t, 2, code)
+	assert.Equal(t, 1, code)
 	assert.Equal(t, "", stdout)
-	assert.Contains(t, stderr, "file redirection is not supported")
+	assert.Contains(t, stderr, "permission denied")
 }
 
 // --- Unsupported fd numbers ---
@@ -232,9 +231,9 @@ func TestRedirDevNullExtraSlashBlocked(t *testing.T) {
 func TestRedirFd3Blocked(t *testing.T) {
 	dir := t.TempDir()
 	stdout, stderr, code := redirRunNoAllowed(t, "echo hello 3>/dev/null", dir)
-	assert.Equal(t, 2, code)
+	assert.Equal(t, 1, code)
 	assert.Equal(t, "", stdout)
-	assert.Contains(t, stderr, "file redirection is not supported")
+	assert.Contains(t, stderr, "unsupported fd")
 }
 
 func TestRedirDupFd3Blocked(t *testing.T) {
@@ -269,13 +268,13 @@ func TestRedirMultipleDevNull(t *testing.T) {
 	assert.Equal(t, "", stderr)
 }
 
-// --- Variable in redirect target should be blocked ---
+// --- Variable in redirect target ---
 
-func TestRedirVariableTargetBlocked(t *testing.T) {
+func TestRedirVariableTargetExpandsToDevNull(t *testing.T) {
 	dir := t.TempDir()
-	// $TARGET in redirect word makes it non-literal, so validation rejects it
+	// $TARGET expands to /dev/null at runtime, which is short-circuited to io.Discard.
 	stdout, stderr, code := redirRunNoAllowed(t, "TARGET=/dev/null; echo hello > $TARGET", dir)
-	assert.Equal(t, 2, code)
+	assert.Equal(t, 0, code)
 	assert.Equal(t, "", stdout)
-	assert.Contains(t, stderr, "file redirection is not supported")
+	assert.Equal(t, "", stderr)
 }

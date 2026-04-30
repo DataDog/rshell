@@ -80,17 +80,13 @@ The in-shell `help` command mirrors these feature categories: run `help` for a c
 - ✅ `<` — input redirection (read-only, within AllowedPaths)
 - ✅ `<<DELIM` — heredoc
 - ✅ `<<-DELIM` — heredoc with tab stripping
-- ✅ `>/dev/null`, `2>/dev/null` — redirect stdout or stderr to /dev/null (output is discarded; only `/dev/null` is allowed as target)
-- ✅ `&>/dev/null` — redirect both stdout and stderr to /dev/null
-- ✅ `>>/dev/null`, `&>>/dev/null` — append redirect to /dev/null (same effect as truncate)
+- ✅ `> FILE`, `>> FILE` — write/truncate or append to a regular file inside AllowedPaths; `/dev/null` is always accepted (output is discarded). Targets outside AllowedPaths return `permission denied` and exit 1.
+- ✅ `2> FILE`, `2>> FILE` — same rules for the stderr stream.
+- ✅ `&> FILE`, `&>> FILE` — redirect both stdout and stderr to the same file (truncate / append).
 - ✅ `2>&1`, `>&2` — file descriptor duplication between stdout (1) and stderr (2)
 - ❌ `|&` — pipe stdout and stderr (bash extension)
 - ❌ `<<<` — herestring (bash extension)
-- ❌ `> FILE` — write/truncate to any file other than /dev/null
-- ❌ `>> FILE` — append to any file other than /dev/null
-- ❌ `&> FILE` — redirect all to any file other than /dev/null
-- ❌ `&>> FILE` — append all to any file other than /dev/null
-- ❌ `<>` — read-write
+- ❌ `<>` — read-write open
 - ❌ `<&N` — input file descriptor duplication
 
 ## Quoting and Expansion

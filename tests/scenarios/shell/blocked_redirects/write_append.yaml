@@ -1,11 +1,11 @@
-# skip: redirect type is intentionally blocked in the restricted shell
+# skip: sandbox blocks writes to paths outside AllowedPaths; bash has no equivalent restriction
 skip_assert_against_bash: true
-description: Append redirection (>>) is not supported.
+description: Append redirection (>>) is blocked when target is outside AllowedPaths.
 input:
   script: |+
     echo hello >> output.txt
 expect:
   stdout: ""
   stderr: |+
-    >> file redirection is not supported
-  exit_code: 2
+    open output.txt: permission denied
+  exit_code: 1

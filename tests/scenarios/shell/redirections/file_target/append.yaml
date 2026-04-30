@@ -1,0 +1,16 @@
+description: Append redirect (>>) appends to an existing file inside AllowedPaths.
+setup:
+  files:
+    - path: out.txt
+      content: "first\n"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    echo second >> out.txt
+    cat out.txt
+expect:
+  stdout: |+
+    first
+    second
+  stderr: ""
+  exit_code: 0

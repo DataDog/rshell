@@ -1,11 +1,11 @@
-# skip: redirect restrictions are an rshell-specific security feature
+# skip: sandbox redirect support is rshell-specific; bash has no AllowedPaths restriction
 skip_assert_against_bash: true
-description: Path traversal via /dev/null/../../etc is blocked (not literal /dev/null).
+description: Path traversal via /dev/null/.. is not recognized as /dev/null and the sandbox blocks the open.
 input:
   script: |+
     echo hello > /dev/null/../../../tmp/evil
 expect:
   stdout: ""
   stderr: |+
-    > file redirection is not supported
-  exit_code: 2
+    open /dev/null/../../../tmp/evil: permission denied
+  exit_code: 1

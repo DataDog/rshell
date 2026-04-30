@@ -1,0 +1,11 @@
+description: '&> sends both stdout and stderr to the same file.'
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    echo on-stdout &> combined.log
+    cat combined.log
+expect:
+  stdout: |+
+    on-stdout
+  stderr: ""
+  exit_code: 0
