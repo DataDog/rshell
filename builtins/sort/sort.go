@@ -244,12 +244,6 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			hasSep = true
 		}
 
-		// -h and -n are mutually exclusive in GNU sort.
-		if *humanNumeric && *numeric {
-			callCtx.Errf("sort: options '-hn' are incompatible\n")
-			return builtins.Result{Code: 2}
-		}
-
 		// Parse key definitions.
 		globalOpts := keyOpts{
 			numeric:      *numeric,
@@ -298,6 +292,22 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			}
 			if globalsUsed {
 				callCtx.Errf("sort: options '-dh' are incompatible\n")
+				return builtins.Result{Code: 2}
+			}
+		}
+		// -h and -n are mutually exclusive — but skip the check if every
+		// -k spec carries its own ordering option (matching GNU's deferred
+		// validation; see -dn handling above).
+		if globalOpts.humanNumeric && globalOpts.numeric {
+			globalsUsed := len(keys) == 0
+			for _, k := range keys {
+				if !k.hasOpts {
+					globalsUsed = true
+					break
+				}
+			}
+			if globalsUsed {
+				callCtx.Errf("sort: options '-hn' are incompatible\n")
 				return builtins.Result{Code: 2}
 			}
 		}
@@ -731,6 +741,14 @@ func compareStrings(a, b string, opts keyOpts) int {
 		a = trimLeadingBlanks(a)
 		b = trimLeadingBlanks(b)
 	}
+	// Apply -f (fold case) before any specialised parser so that lowercase
+	// human-numeric suffixes (e.g. "1m", "1g") are recognised under -fh.
+	// foldCase only touches ASCII a-z, so it is a no-op on digits, signs,
+	// and the SI suffix letters that are already uppercase.
+	if opts.ignCase {
+		a = foldCase(a)
+		b = foldCase(b)
+	}
 	if opts.humanNumeric {
 		return compareHuman(a, b)
 	}
@@ -740,17 +758,6 @@ func compareStrings(a, b string, opts keyOpts) int {
 	}
 	if opts.numeric {
 		return compareNumeric(a, b)
-	}
-	if opts.ignCase {
-		au := foldCase(a)
-		bu := foldCase(b)
-		if au < bu {
-			return -1
-		}
-		if au > bu {
-			return 1
-		}
-		return 0
 	}
 	if a < b {
 		return -1
