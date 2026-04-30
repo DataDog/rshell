@@ -171,6 +171,13 @@ type options struct {
 }
 
 func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
+	// Preserve the parse order of flags so fs.Visit can resolve last-wins
+	// semantics for mutually-exclusive flag groups (-L vs -P, and the
+	// size-format flags -b/-h/--si/-k/-m). pflag.NewFlagSet defaults
+	// SortFlags to true, which would make Visit iterate alphabetically
+	// instead.
+	fs.SortFlags = false
+
 	all := fs.BoolP("all", "a", false, "write counts for all files, not just directories")
 	summarize := fs.BoolP("summarize", "s", false, "display only a total for each argument")
 	total := fs.BoolP("total", "c", false, "produce a grand total")
@@ -181,17 +188,16 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 	// is determined by parse-order via fs.Visit below.
 	_ = fs.BoolP("no-dereference", "P", false, "don't follow any symbolic links (default)")
 	apparentSize := fs.Bool("apparent-size", false, "print apparent sizes rather than device usage")
-	bytesFlag := fs.BoolP("bytes", "b", false, "equivalent to --apparent-size --block-size=1")
+	// The size-format flags -b/-h/--si/-k/-m are mutually exclusive and
+	// last-wins: GNU lets the user override an earlier choice with a later
+	// flag. We register all of them and resolve the active mode below
+	// using fs.Visit.
+	_ = fs.BoolP("bytes", "b", false, "equivalent to --apparent-size --block-size=1")
 	null := fs.BoolP("null", "0", false, "end each output line with NUL, not newline")
-	human := fs.BoolP("human-readable", "h", false, "print sizes in human-readable format")
-	si := fs.Bool("si", false, "like -h, but use powers of 1000")
-	// -k matches the default unit (1024-byte blocks). It is registered so
-	// users may pass it explicitly without "unknown flag" errors, but its
-	// value is not consulted because no other unit is "smaller" — the
-	// switch below falls through to the default kilo branch when no other
-	// unit flag is set.
+	_ = fs.BoolP("human-readable", "h", false, "print sizes in human-readable format")
+	_ = fs.Bool("si", false, "like -h, but use powers of 1000")
 	_ = fs.BoolP("kilobytes", "k", false, "use 1024-byte blocks (default)")
-	mega := fs.BoolP("megabytes", "m", false, "use 1 MiB (1024*1024) blocks")
+	_ = fs.BoolP("megabytes", "m", false, "use 1 MiB (1024*1024) blocks")
 	maxDepth := fs.IntP("max-depth", "d", -1, "print the total for a directory only if it is N or fewer levels deep")
 	helpFlag := fs.Bool("help", false, "print usage and exit")
 
@@ -210,37 +216,42 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			summarize:    *summarize,
 			total:        *total,
 			separateDirs: *separateDirs,
-			apparentSize: *apparentSize || *bytesFlag,
+			apparentSize: *apparentSize,
 			null:         *null,
 			maxDepth:     *maxDepth,
 			maxDepthSet:  fs.Changed("max-depth"),
+			unit:         unitKilo, // GNU default when no size-format flag is set
 		}
-		// `-L` and `-P` cancel each other out; the *last* one wins. fs.Visit
-		// iterates flags in parse order (only when SortFlags=false, which is
-		// the default for our builtins). Reading from these flags here is the
-		// single source of truth for opts.dereference.
+		// `-L`/`-P` and the size-format flags (-b/-h/--si/-k/-m) are
+		// last-wins. fs.Visit iterates flags in parse order because we set
+		// SortFlags=false above. Reading parse-order here is the single
+		// source of truth for both opts.dereference and opts.unit.
+		bytesSeen := false
 		fs.Visit(func(f *builtins.Flag) {
 			switch f.Name {
 			case "dereference":
 				opts.dereference = true
 			case "no-dereference":
 				opts.dereference = false
+			case "bytes":
+				opts.unit = unitBytes
+				bytesSeen = true
+			case "human-readable":
+				opts.unit = unitHuman
+			case "si":
+				opts.unit = unitSI
+			case "kilobytes":
+				opts.unit = unitKilo
+			case "megabytes":
+				opts.unit = unitMega
 			}
 		})
-
-		// Resolve unit precedence. -b implies bytes mode; -h overrides -m.
-		// -k is the default and never explicitly selected here.
-		switch {
-		case *bytesFlag:
-			opts.unit = unitBytes
-		case *human:
-			opts.unit = unitHuman
-		case *si:
-			opts.unit = unitSI
-		case *mega:
-			opts.unit = unitMega
-		default:
-			opts.unit = unitKilo
+		// `-b` is shorthand for `--apparent-size --block-size=1`. The
+		// apparent-size component is sticky: once set, a later -k/-m only
+		// changes the unit but the totals remain apparent-size. This
+		// matches GNU semantics for `du -b -k`.
+		if bytesSeen {
+			opts.apparentSize = true
 		}
 
 		// Mutual-exclusion checks (GNU semantics).
@@ -276,7 +287,7 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			if ctx.Err() != nil {
 				break
 			}
-			size, err := walk(ctx, callCtx, p, p, 0, opts, visited, nil)
+			size, _, err := walk(ctx, callCtx, p, p, 0, opts, visited, nil)
 			if err != nil {
 				failed = true
 			}
@@ -294,8 +305,15 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 	}
 }
 
-// walk processes a single operand or recursive entry, returning the
-// cumulative subtree size in raw bytes (or 0 on early failure).
+// walk processes a single operand or recursive entry. It returns:
+//   - size: the subtree size to attribute to this entry. Under
+//     --separate-dirs this excludes any subdirectory subtree; otherwise
+//     it is the full recursive total.
+//   - isDir: whether the entry was treated as a directory (false for
+//     symlinks under -P, true for symlinks-to-dirs under -L). The parent
+//     uses this to decide whether to skip this child under
+//     --separate-dirs.
+//   - err: non-nil if the entry could not be processed.
 //
 // reportPath is the path as written on the command line (for output).
 // fsPath is the actual path to read (same as reportPath for top-level
@@ -312,19 +330,19 @@ func walk(
 	opts options,
 	visited map[builtins.FileID]bool,
 	ancestorIDs map[builtins.FileID]string,
-) (int64, error) {
+) (size int64, isDir bool, err error) {
 	if ctx.Err() != nil {
-		return 0, ctx.Err()
+		return 0, false, ctx.Err()
 	}
 	if depth > maxRecursionDepth {
 		callCtx.Errf("du: recursion depth limit exceeded at '%s'\n", reportPath)
-		return 0, errFailed
+		return 0, false, errFailed
 	}
 
 	info, err := statEntry(ctx, callCtx, fsPath, opts.dereference)
 	if err != nil {
 		callCtx.Errf("du: cannot access '%s': %s\n", reportPath, callCtx.PortableErr(err))
-		return 0, err
+		return 0, false, err
 	}
 
 	// Hardlink dedup applies only to regular files. Directories with
@@ -333,7 +351,7 @@ func walk(
 	if info.Mode().IsRegular() && callCtx.FileIdentity != nil {
 		if id, ok := callCtx.FileIdentity(fsPath, info); ok {
 			if visited[id] {
-				return 0, nil
+				return 0, false, nil
 			}
 			if infoNlink(info) > 1 && len(visited) < maxDedupEntries {
 				visited[id] = true
@@ -341,15 +359,15 @@ func walk(
 		}
 	}
 
-	// Symlink leaves report the symlink's own size. Under -L, statEntry
-	// already followed the link, so info.Mode() will not have ModeSymlink set
-	// here. Under -P this branch fires.
+	// Non-directory leaf (regular file, symlink under -P, dangling link).
+	// Always reports its own size; --separate-dirs does not exclude file
+	// children — only subdirectory subtrees.
 	if !info.IsDir() {
-		size := entrySize(info, opts.apparentSize)
+		fileSize := entrySize(info, opts.apparentSize)
 		if shouldEmit(depth, false, opts) {
-			emit(callCtx, opts, size, reportPath)
+			emit(callCtx, opts, fileSize, reportPath)
 		}
-		return size, nil
+		return fileSize, false, nil
 	}
 
 	// Directory: cycle-check (only relevant under -L).
@@ -358,7 +376,7 @@ func walk(
 			if firstPath, seen := ancestorIDs[id]; seen {
 				callCtx.Errf("du: File system loop detected; '%s' is part of the same file system loop as '%s'.\n",
 					reportPath, firstPath)
-				return 0, errFailed
+				return 0, true, errFailed
 			}
 			// Push this directory onto the ancestor map for the duration of
 			// the recursion below, then pop on the way back up. This avoids
@@ -370,30 +388,37 @@ func walk(
 	}
 
 	dirOwn := entrySize(info, opts.apparentSize)
-	subtreeFromChildren, failedAny := walkChildren(ctx, callCtx, fsPath, reportPath, depth, opts, visited, ancestorIDs)
+	fileChildren, subdirChildren, failedAny := walkChildren(ctx, callCtx, fsPath, reportPath, depth, opts, visited, ancestorIDs)
 
-	// Compute and emit the directory's reported size. With --separate-dirs,
-	// the printed value excludes children even though we keep counting them
-	// for the parent's accumulation.
-	dirReport := dirOwn
+	// Compute the directory's reported size:
+	//   - Always includes the directory's own bytes and direct file
+	//     children.
+	//   - Includes subdirectory subtrees unless --separate-dirs is set.
+	dirReport := saturatingAdd(dirOwn, fileChildren)
 	if !opts.separateDirs {
-		dirReport = saturatingAdd(dirOwn, subtreeFromChildren)
+		dirReport = saturatingAdd(dirReport, subdirChildren)
 	}
 	if shouldEmit(depth, true, opts) {
 		emit(callCtx, opts, dirReport, reportPath)
 	}
 
-	totalForParent := saturatingAdd(dirOwn, subtreeFromChildren)
+	// The value passed to the parent is identical to what we just
+	// printed. Under --separate-dirs that means subdirectory subtrees are
+	// also excluded from the grandparent's total — matching GNU.
 	if failedAny {
-		return totalForParent, errFailed
+		return dirReport, true, errFailed
 	}
-	return totalForParent, nil
+	return dirReport, true, nil
 }
 
 // walkChildren iterates entries in dir via OpenDir/ReadDir(1), recursing
 // into walk for each. Scoped as a separate function so the directory
 // handle's defer Close() fires at this frame's exit rather than the
 // outer walk's, keeping FD usage proportional to depth × 1 not depth × N.
+//
+// Returns the file-children sum and the subdirectory-children sum
+// separately so that the caller can apply --separate-dirs (which
+// excludes only subdirectory contributions, not direct file children).
 func walkChildren(
 	ctx context.Context,
 	callCtx *builtins.CallContext,
@@ -403,37 +428,41 @@ func walkChildren(
 	opts options,
 	visited map[builtins.FileID]bool,
 	ancestorIDs map[builtins.FileID]string,
-) (subtree int64, failedAny bool) {
+) (fileChildren, subdirChildren int64, failedAny bool) {
 	dh, err := callCtx.OpenDir(ctx, fsPath)
 	if err != nil {
 		callCtx.Errf("du: cannot read directory '%s': %s\n", reportPath, callCtx.PortableErr(err))
-		return 0, true
+		return 0, 0, true
 	}
 	defer dh.Close()
 
 	for {
 		if ctx.Err() != nil {
-			return subtree, true
+			return fileChildren, subdirChildren, true
 		}
 		entries, readErr := dh.ReadDir(1)
 		if len(entries) == 0 {
 			if readErr == nil || errors.Is(readErr, io.EOF) {
-				return subtree, failedAny
+				return fileChildren, subdirChildren, failedAny
 			}
 			callCtx.Errf("du: error reading directory '%s': %s\n", reportPath, callCtx.PortableErr(readErr))
-			return subtree, true
+			return fileChildren, subdirChildren, true
 		}
 		ent := entries[0]
 		childFs := joinPath(fsPath, ent.Name())
 		childReport := joinPath(reportPath, ent.Name())
-		childSize, walkErr := walk(ctx, callCtx, childFs, childReport, depth+1, opts, visited, ancestorIDs)
+		childSize, childIsDir, walkErr := walk(ctx, callCtx, childFs, childReport, depth+1, opts, visited, ancestorIDs)
 		if walkErr != nil {
 			failedAny = true
 		}
-		subtree = saturatingAdd(subtree, childSize)
+		if childIsDir {
+			subdirChildren = saturatingAdd(subdirChildren, childSize)
+		} else {
+			fileChildren = saturatingAdd(fileChildren, childSize)
+		}
 		if readErr != nil && !errors.Is(readErr, io.EOF) {
 			callCtx.Errf("du: error reading directory '%s': %s\n", reportPath, callCtx.PortableErr(readErr))
-			return subtree, true
+			return fileChildren, subdirChildren, true
 		}
 	}
 }

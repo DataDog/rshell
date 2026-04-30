@@ -9,6 +9,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -375,6 +376,76 @@ func TestDuSeparateDirsExcludesSubdirSize(t *testing.T) {
 	assert.NotEqual(t, lastLine(stdoutPlain), lastLine(stdoutSep), "plain=%q sep=%q", stdoutPlain, stdoutSep)
 }
 
+// TestDuSeparateDirsKeepsDirectFiles guards against the regression where
+// -S dropped *all* children, including direct files. GNU --separate-dirs
+// excludes only subdirectory subtrees.
+func TestDuSeparateDirsKeepsDirectFiles(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "p"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "p", "direct.bin"), make([]byte, 8192), 0o644))
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "p", "sub"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "p", "sub", "deep.bin"), make([]byte, 4096), 0o644))
+
+	stdout, _, code := cmdRun(t, "du -S -b p", dir)
+	assert.Equal(t, 0, code)
+	// Bytes mode keeps everything deterministic regardless of filesystem.
+	// p reports 8192 (own + direct) + dir-blocks (filesystem-dep) but
+	// must NOT include sub's 4096. Use stdout_contains-style asserts:
+	last := lastLine(stdout)
+	assert.True(t, strings.HasSuffix(last, "\tp"), "got %q", stdout)
+	// Sub's 4096 must not be folded into p — assert p's value < 12000
+	// (which would only be possible if sub's bytes were included).
+	pSize := parseLeadingInt(t, last)
+	assert.GreaterOrEqual(t, pSize, int64(8192), "must include direct file: %q", stdout)
+	assert.Less(t, pSize, int64(12000), "must NOT include subdir subtree: %q", stdout)
+}
+
+// TestDuLastSizeFlagWins guards against the regression where size-format
+// flags had a fixed priority instead of last-wins (matching GNU).
+func TestDuLastSizeFlagWins(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "f.bin"), make([]byte, 1500), 0o644))
+
+	t.Run("h_then_m", func(t *testing.T) {
+		stdout, _, _ := cmdRun(t, "du -h -m --apparent-size f.bin", dir)
+		assert.Equal(t, "1\tf.bin\n", stdout)
+	})
+	t.Run("m_then_h", func(t *testing.T) {
+		stdout, _, _ := cmdRun(t, "du -m -h --apparent-size f.bin", dir)
+		assert.Equal(t, "1.5K\tf.bin\n", stdout)
+	})
+	t.Run("m_then_k", func(t *testing.T) {
+		stdout, _, _ := cmdRun(t, "du -m -k --apparent-size f.bin", dir)
+		assert.Equal(t, "2\tf.bin\n", stdout)
+	})
+	t.Run("k_then_m", func(t *testing.T) {
+		stdout, _, _ := cmdRun(t, "du -k -m --apparent-size f.bin", dir)
+		assert.Equal(t, "1\tf.bin\n", stdout)
+	})
+}
+
+// TestDuLastDereferenceFlagWins guards against fs.SortFlags=true making
+// fs.Visit alphabetical instead of parse-order. Without the
+// SortFlags=false fix, `du -P -L` would visit `dereference` then
+// `no-dereference` regardless of input order, leaving dereference=false.
+func TestDuLastDereferenceFlagWins(t *testing.T) {
+	if !canSymlink() {
+		t.Skip("symlinks unavailable")
+	}
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "target"), make([]byte, 4096), 0o644))
+	require.NoError(t, os.Symlink("target", filepath.Join(dir, "link")))
+
+	t.Run("P_then_L_follows_target", func(t *testing.T) {
+		stdout, _, _ := cmdRun(t, "du -P -L -b link", dir)
+		assert.Equal(t, "4096\tlink\n", stdout)
+	})
+	t.Run("L_then_P_does_not_follow", func(t *testing.T) {
+		stdout, _, _ := cmdRun(t, "du -L -P -b link", dir)
+		assert.NotEqual(t, "4096\tlink\n", stdout)
+	})
+}
+
 // --- Help ---
 
 func TestDuHelp(t *testing.T) {
@@ -419,6 +490,17 @@ func TestDuRespectsRecursionLimit(t *testing.T) {
 	_, stderr, code := cmdRunCtx(ctx, t, "du .", dir)
 	assert.Equal(t, 1, code)
 	assert.Contains(t, stderr, "recursion depth limit exceeded")
+}
+
+// parseLeadingInt returns the integer that prefixes a "<size>\t<path>"
+// line (the size in raw bytes / blocks / whatever unit was used).
+func parseLeadingInt(t *testing.T, line string) int64 {
+	t.Helper()
+	tab := strings.IndexByte(line, '\t')
+	require.GreaterOrEqual(t, tab, 0, "no tab in line %q", line)
+	n, err := strconv.ParseInt(line[:tab], 10, 64)
+	require.NoError(t, err, "parse %q", line[:tab])
+	return n
 }
 
 func lastLine(s string) string {
