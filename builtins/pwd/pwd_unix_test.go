@@ -57,6 +57,38 @@ func TestPwdLogicalKeepsSymlink(t *testing.T) {
 	assert.Equal(t, link+"\n", stdoutL)
 }
 
+// TestPwdLastWinsPThenLWithSymlink: with a symlinked cwd, "pwd -P -L"
+// must emit the logical (symlinked) path because -L appears last on
+// the command line. This regression-tests the bug where pflag's Visit
+// walks flags in lexicographical order rather than command-line order
+// — without the boolSeqFlag pos-tracking, the wrong mode is selected
+// even though both flags are present.
+func TestPwdLastWinsPThenLWithSymlink(t *testing.T) {
+	root := t.TempDir()
+	target := filepath.Join(root, "real")
+	link := filepath.Join(root, "lnk")
+	require.NoError(t, os.Mkdir(target, 0755))
+	require.NoError(t, os.Symlink(target, link))
+
+	stdout, stderr, code := pwdRunDirAllowed(t, "pwd -P -L", link, root)
+	require.Equal(t, 0, code, "stderr=%q", stderr)
+	assert.Equal(t, link+"\n", stdout, "-P -L: -L wins, must emit logical path")
+}
+
+// TestPwdLastWinsLThenPWithSymlink: the mirror case — -L then -P picks
+// physical (the resolved target).
+func TestPwdLastWinsLThenPWithSymlink(t *testing.T) {
+	root := t.TempDir()
+	target := filepath.Join(root, "real")
+	link := filepath.Join(root, "lnk")
+	require.NoError(t, os.Mkdir(target, 0755))
+	require.NoError(t, os.Symlink(target, link))
+
+	stdout, stderr, code := pwdRunDirAllowed(t, "pwd -L -P", link, root)
+	require.Equal(t, 0, code, "stderr=%q", stderr)
+	assert.Equal(t, target+"\n", stdout, "-L -P: -P wins, must emit physical path")
+}
+
 // TestPwdPhysicalChainedSymlinks: A -> B -> C resolves to C.
 func TestPwdPhysicalChainedSymlinks(t *testing.T) {
 	root := t.TempDir()

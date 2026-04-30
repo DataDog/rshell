@@ -77,12 +77,24 @@ var errSymlinkLoop = errors.New("too many levels of symbolic links")
 
 func makeFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 	helpFlag := fs.BoolP("help", "h", false, "print usage and exit")
-	// -L and -P are deliberately not bound to local pointers: the
-	// command-line ordering matters (last-wins per POSIX), so the
-	// handler consults pflag.FlagSet.Visit in pickPhysical(fs)
-	// rather than reading the bool values directly.
-	fs.BoolP("logical", "L", false, "use the shell's working directory, even if it contains symlinks (default)")
-	fs.BoolP("physical", "P", false, "resolve all symlinks before printing the path")
+
+	// -L and -P share a sequence counter so that after parsing we can
+	// compare their pos fields to determine which appeared last on the
+	// command line. pflag calls Set() in parse order, so the last flag
+	// Set gets the highest pos value. We do this rather than relying on
+	// pflag.FlagSet.Visit because Visit walks in lexicographical (or
+	// declaration) order — never command-line order — which would make
+	// `-P -L` always pick the wrong mode.
+	//
+	// boolSeqFlag.Set also rejects explicit values (e.g. --logical=foo
+	// or --physical=false). NoOptDefVal="true" lets pflag accept the
+	// bare flag form; any other value yields an error, matching GNU
+	// `/bin/pwd --physical=false`.
+	var modeSeq int
+	logicalFlag := newBoolSeqFlag(&modeSeq)
+	physicalFlag := newBoolSeqFlag(&modeSeq)
+	fs.VarPF(logicalFlag, "logical", "L", "use the shell's working directory, even if it contains symlinks (default)").NoOptDefVal = "true"
+	fs.VarPF(physicalFlag, "physical", "P", "resolve all symlinks before printing the path").NoOptDefVal = "true"
 
 	return func(ctx context.Context, callCtx *builtins.CallContext, _ []string) builtins.Result {
 		if *helpFlag {
@@ -101,7 +113,7 @@ func makeFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			return builtins.Result{Code: 1}
 		}
 
-		if pickPhysical(fs) {
+		if physicalFlag.pos > logicalFlag.pos {
 			// Best-effort: if symlink resolution fails (typically because
 			// the cwd is the sandbox root and we cannot walk above it),
 			// fall back to the logical path silently. Cycles still error
@@ -119,21 +131,39 @@ func makeFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 	}
 }
 
-// pickPhysical reports whether to resolve symlinks (-P). Walks fs.Visit
-// in declaration order so that when both -L and -P appear, the last one
-// wins (POSIX). When neither is set, returns false (logical default).
-func pickPhysical(fs *builtins.FlagSet) bool {
-	usePhysical := false
-	fs.Visit(func(f *builtins.Flag) {
-		switch f.Name {
-		case "logical":
-			usePhysical = false
-		case "physical":
-			usePhysical = true
-		}
-	})
-	return usePhysical
+// boolSeqFlag is a pflag.Value implementation for -L/-P. Two boolSeqFlag
+// values share a *seq counter; each call to Set increments the counter
+// and records the new value in pos. After pflag.Parse, comparing pos
+// fields reveals which flag appeared last on the command line.
+//
+// Set also rejects explicit values: pwd's mode flags are bare boolean
+// switches and `pwd --physical=false` should fail like GNU coreutils
+// rather than silently flip the mode.
+type boolSeqFlag struct {
+	seq *int
+	pos int
 }
+
+func newBoolSeqFlag(seq *int) *boolSeqFlag {
+	return &boolSeqFlag{seq: seq}
+}
+
+func (f *boolSeqFlag) String() string { return "false" }
+
+func (f *boolSeqFlag) Set(s string) error {
+	// With NoOptDefVal="true", pflag passes "true" for the bare flag
+	// form and the user-supplied value for `--flag=value`. Accept only
+	// "true" (matching GNU coreutils, which rejects explicit values
+	// for -L/-P).
+	if s != "true" {
+		return errors.New("option doesn't allow an argument")
+	}
+	*f.seq++
+	f.pos = *f.seq
+	return nil
+}
+
+func (f *boolSeqFlag) Type() string { return "bool" }
 
 func printHelp(callCtx *builtins.CallContext) {
 	callCtx.Out("Usage: pwd [-LP] [--help]\n")

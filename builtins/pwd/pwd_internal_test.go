@@ -161,13 +161,29 @@ func TestResolveSymlinksLoopDetected(t *testing.T) {
 	assert.True(t, errors.Is(err, errSymlinkLoop))
 }
 
-// --- pickPhysical with no flags set defaults to logical ---
+// --- boolSeqFlag rejects explicit values ---
 
-func TestPickPhysicalNoFlagsDefaultsLogical(t *testing.T) {
+func TestBoolSeqFlagRejectsExplicitValue(t *testing.T) {
 	fs := pflag.NewFlagSet("pwd", pflag.ContinueOnError)
+	fs.SetOutput(io.Discard)
 	makeFlags(fs)
-	require.NoError(t, fs.Parse([]string{}))
-	assert.False(t, pickPhysical(fs))
+	// pwd --physical=false must fail like GNU coreutils — pflag accepts
+	// the explicit value, but our boolSeqFlag.Set rejects it.
+	err := fs.Parse([]string{"--physical=false"})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "doesn't allow an argument")
+}
+
+func TestBoolSeqFlagRejectsExplicitTrueLikeValue(t *testing.T) {
+	fs := pflag.NewFlagSet("pwd", pflag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	makeFlags(fs)
+	// Even --logical=true is rejected: "true" alone matches NoOptDefVal,
+	// so the only way pflag passes us "true" is the bare-flag form.
+	// Anything else passed via =value path (including "TRUE", "1") fails.
+	err := fs.Parse([]string{"--logical=TRUE"})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "doesn't allow an argument")
 }
 
 // --- joinPath / parentDir / rootPrefix unit cases ---
