@@ -9,6 +9,7 @@ package diskstats
 
 import (
 	"context"
+	"fmt"
 
 	"golang.org/x/sys/unix"
 )
@@ -89,8 +90,11 @@ func listImpl(ctx context.Context, filter FilterFunc) ([]Mount, error) {
 		// (devfs, autofs, …); subtracting the pseudo set isolates the
 		// actually-remote ones.
 		remote := darwinRemoteTypes[fsType] || (st.Flags&uint32(unix.MNT_LOCAL) == 0 && !pseudo)
+		// DevID from Fsid (a [2]int32 unique per filesystem).
+		devID := fmt.Sprintf("%d:%d", st.Fsid.Val[0], st.Fsid.Val[1])
 		m := Mount{
 			Source:     src,
+			DevID:      devID,
 			MountPoint: mp,
 			FSType:     fsType,
 			BlockSize:  bsize,
@@ -101,7 +105,10 @@ func listImpl(ctx context.Context, filter FilterFunc) ([]Mount, error) {
 			InodesFree: uint64(st.Ffree),
 			InodesUsed: inodesUsed,
 			Pseudo:     pseudo,
-			Local:      !remote && !pseudo,
+			// "Local" means "not remote" per GNU df. Pseudo mounts
+			// (devfs, autofs, …) are local — they live in kernel
+			// memory, not on a remote server.
+			Local: !remote,
 		}
 		if filter != nil && !filter(m) {
 			continue

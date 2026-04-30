@@ -16,6 +16,7 @@ var internalPerPackageSymbols = map[string][]string{
 		"errors.Is",            // 🟢 checks whether an error in a chain matches a target; pure function, no I/O.
 		"errors.New",           // 🟢 creates a sentinel error (ErrNotSupported, ErrMaxMounts, ErrLineTooLong); pure function, no I/O.
 		"fmt.Errorf",           // 🟢 error formatting; pure function, no I/O.
+		"fmt.Sprintf",          // 🟢 string formatting; used to encode Statfs_t.Fsid as "major:minor"; pure function, no I/O.
 		"io.Reader",            // 🟢 interface type used to feed parseMountInfo from arbitrary readers (tests use strings.NewReader); pure type, no I/O.
 		"os.Open",              // 🟠 opens /proc/self/mountinfo read-only. Bypasses AllowedPaths by design — the path is hardcoded and never derived from user input, mirroring procnetsocket's documented exception.
 		"strings.Builder",      // 🟢 in-memory buffer for octal-escape unescape of mountinfo paths; no I/O.

@@ -170,14 +170,13 @@ func TestStringSet(t *testing.T) {
 	got = stringSet([]string{"ext4", "tmpfs"})
 	assert.Contains(t, got, "ext4")
 	assert.Contains(t, got, "tmpfs")
-	// Comma-separated values are split apart (matches GNU df).
+	// Comma-separated values are kept literal (matches GNU df, which
+	// requires multiple -t flags rather than comma-splitting one).
 	got = stringSet([]string{"ext4,tmpfs", "xfs"})
-	assert.Contains(t, got, "ext4")
-	assert.Contains(t, got, "tmpfs")
+	assert.Contains(t, got, "ext4,tmpfs")
 	assert.Contains(t, got, "xfs")
-	// Empty fragments are silently dropped.
-	got = stringSet([]string{",,ext4,,"})
-	assert.Equal(t, map[string]struct{}{"ext4": {}}, got)
+	assert.NotContains(t, got, "ext4")
+	assert.NotContains(t, got, "tmpfs")
 }
 
 // keep is a small helper that runs makePreStatFilter against a fixture
@@ -241,6 +240,30 @@ func TestPreStatFilter_LocalDropsRemote(t *testing.T) {
 	assert.Equal(t, "/", out[0].MountPoint)
 }
 
+// `df -al` must include local pseudo mounts. GNU df treats pseudo and
+// remote as independent: -a re-enables pseudo, -l drops only remote
+// (NFS / CIFS / fuse.sshfs), so pseudo mounts pass when -a is set even
+// alongside -l.
+func TestPreStatFilter_AllPlusLocalKeepsPseudo(t *testing.T) {
+	in := []diskstats.Mount{
+		{MountPoint: "/", FSType: "ext4", Local: true},
+		{MountPoint: "/proc", FSType: "proc", Pseudo: true, Local: true},
+		{MountPoint: "/sys", FSType: "sysfs", Pseudo: true, Local: true},
+		{MountPoint: "/sys/fs/cgroup", FSType: "cgroup2", Pseudo: true, Local: true},
+		{MountPoint: "/mnt/nfs", FSType: "nfs", Local: false},
+	}
+	out := keep(in, &flags{
+		all:          ptrBool(true),
+		local:        ptrBool(true),
+		includeTypes: ptrSlice([]string(nil)),
+		excludeTypes: ptrSlice([]string(nil)),
+	})
+	assert.Len(t, out, 4, "-al must keep ext4 + proc + sysfs + cgroup2; only nfs drops")
+	for _, m := range out {
+		assert.NotEqual(t, "nfs", m.FSType)
+	}
+}
+
 // An explicit -t TYPE filter must override the default pseudo-FS
 // suppression so scripts running `df -t tmpfs` see tmpfs mounts even
 // without -a. Matches GNU df behaviour.
@@ -300,28 +323,54 @@ func TestPreStatFilter_TypeIncludeAndExclude(t *testing.T) {
 	assert.Equal(t, "xfs", out[0].FSType)
 }
 
-// filterMounts now only handles dedup. With -a, every mount is kept;
-// without -a, mounts sharing a Source are collapsed to the first.
-func TestFilterMounts_DedupBySourceWithoutAll(t *testing.T) {
+// filterMounts dedups by DevID and keeps the entry with the shortest
+// mount point. Order in the input slice does not influence the choice
+// of representative — matches GNU df, which on Kata containers picks
+// /etc/hosts over /etc/hostname or /etc/resolv.conf even though the
+// kernel reports them in arbitrary order.
+func TestFilterMounts_DedupByDevicePicksShortestMountpoint(t *testing.T) {
 	in := []diskstats.Mount{
-		{Source: "overlay", MountPoint: "/etc/hosts", FSType: "overlay"},
-		{Source: "overlay", MountPoint: "/etc/hostname", FSType: "overlay"},
-		{Source: "overlay", MountPoint: "/etc/resolv.conf", FSType: "overlay"},
-		{Source: "/dev/sda1", MountPoint: "/", FSType: "ext4"},
+		// Three bind-mounts of the same device, in non-shortest-first
+		// order. The shortest mount point is /etc/hosts.
+		{Source: "kataShared", DevID: "0:25", MountPoint: "/etc/resolv.conf", FSType: "9p"},
+		{Source: "kataShared", DevID: "0:25", MountPoint: "/etc/hostname", FSType: "9p"},
+		{Source: "kataShared", DevID: "0:25", MountPoint: "/etc/hosts", FSType: "9p"},
+		// Distinct device — must pass through.
+		{Source: "/dev/sda1", DevID: "8:1", MountPoint: "/", FSType: "ext4"},
 	}
 	out := filterMounts(append([]diskstats.Mount(nil), in...), &flags{
 		all: ptrBool(false),
 	})
-	assert.Len(t, out, 2, "duplicate overlay mounts collapsed to one")
-	assert.Equal(t, "/etc/hosts", out[0].MountPoint)
-	assert.Equal(t, "/", out[1].MountPoint)
+	assert.Len(t, out, 2, "duplicate kataShared mounts collapsed to one")
+	// Find the kataShared survivor and confirm it is /etc/hosts.
+	for _, m := range out {
+		if m.DevID == "0:25" {
+			assert.Equal(t, "/etc/hosts", m.MountPoint,
+				"shortest mount point of duplicates must be the representative")
+		}
+	}
+}
+
+// Two mounts sharing a Source string but with distinct DevIDs are NOT
+// duplicates. The dedup key is device identity, not source name —
+// otherwise unrelated overlay mounts (e.g. multiple Kubernetes pods
+// each named "overlay") would be wrongly collapsed.
+func TestFilterMounts_DistinctDeviceSameSourceNotDeduped(t *testing.T) {
+	in := []diskstats.Mount{
+		{Source: "overlay", DevID: "0:30", MountPoint: "/var/lib/pod-a"},
+		{Source: "overlay", DevID: "0:31", MountPoint: "/var/lib/pod-b"},
+	}
+	out := filterMounts(append([]diskstats.Mount(nil), in...), &flags{
+		all: ptrBool(false),
+	})
+	assert.Len(t, out, 2, "different DevIDs must not be collapsed")
 }
 
 // With -a, dedup is disabled (matches GNU df --all).
 func TestFilterMounts_AllPreservesDuplicates(t *testing.T) {
 	in := []diskstats.Mount{
-		{Source: "overlay", MountPoint: "/etc/hosts", FSType: "overlay"},
-		{Source: "overlay", MountPoint: "/etc/hostname", FSType: "overlay"},
+		{Source: "overlay", DevID: "0:25", MountPoint: "/etc/hosts"},
+		{Source: "overlay", DevID: "0:25", MountPoint: "/etc/hostname"},
 	}
 	out := filterMounts(append([]diskstats.Mount(nil), in...), &flags{
 		all: ptrBool(true),
@@ -329,12 +378,13 @@ func TestFilterMounts_AllPreservesDuplicates(t *testing.T) {
 	assert.Len(t, out, 2, "-a must preserve duplicates")
 }
 
-// Empty Source is unusual but possible for some pseudo filesystems;
-// dedup should not collapse mounts with empty Source onto each other.
-func TestFilterMounts_EmptySourceNotDeduped(t *testing.T) {
+// Empty DevID disables dedup (used by platforms that do not expose a
+// stable device identity, or as a graceful fallback). Mounts pass
+// through untouched.
+func TestFilterMounts_EmptyDevIDNotDeduped(t *testing.T) {
 	in := []diskstats.Mount{
-		{Source: "", MountPoint: "/a", FSType: "tmpfs"},
-		{Source: "", MountPoint: "/b", FSType: "tmpfs"},
+		{Source: "", DevID: "", MountPoint: "/a", FSType: "tmpfs"},
+		{Source: "", DevID: "", MountPoint: "/b", FSType: "tmpfs"},
 	}
 	out := filterMounts(append([]diskstats.Mount(nil), in...), &flags{
 		all: ptrBool(false),

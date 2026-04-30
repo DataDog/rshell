@@ -64,7 +64,6 @@ var builtinPerCommandSymbols = map[string][]string{
 		"strings.Builder",    // 🟢 efficient string concatenation; pure in-memory buffer, no I/O.
 		"strings.Join",       // 🟢 joins string slices; pure function, no I/O.
 		"strings.Repeat",     // 🟢 returns a string of n repetitions; pure function, no I/O.
-		"strings.SplitSeq",   // 🟢 returns an iter.Seq of substrings split by separator; pure function, no I/O.
 		// Note: builtins/internal/diskstats symbols are exempt from this
 		// allowlist (internal packages are not checked by the
 		// builtinAllowedSymbols test).
@@ -531,7 +530,6 @@ var builtinAllowedSymbols = []string{
 	"slices.SortFunc",                                     // 🟢 sorts a slice with a comparison function; pure function, no I/O.
 	"slices.SortStableFunc",                               // 🟢 stable sort with a comparison function; pure function, no I/O.
 	"sort.Slice",                                          // 🟢 in-place slice sort with a comparison function; pure function, no I/O.
-	"strings.SplitSeq",                                    // 🟢 returns an iter.Seq of substrings split by separator; pure function, no I/O.
 	"strings.Repeat",                                      // 🟢 returns a string of n repetitions; pure function, no I/O.
 	"strconv.Atoi",                                        // 🟢 string-to-int conversion; pure function, no I/O.
 	"strconv.ErrRange",                                    // 🟢 sentinel error value for overflow; pure constant.

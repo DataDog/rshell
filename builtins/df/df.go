@@ -258,11 +258,13 @@ func makePreStatFilter(f *flags) diskstats.FilterFunc {
 // (makePreStatFilter) has already dropped mounts that don't match
 // -t/-x/-a/-l, so this pass is responsible for:
 //
-//  1. Deduplicating mounts that share a Source (matches GNU df, which
-//     hides bind-mounts of the same filesystem unless -a is given).
-//     This avoids `--total` double-counting overlay bind-mounts of
-//     /etc/hosts, /etc/hostname, /etc/resolv.conf, etc., on container
-//     hosts.
+//  1. Deduplicating mounts that share a kernel device (matches GNU
+//     df: bind-mounts of the same filesystem are elided unless -a is
+//     given, and the entry with the *shortest* mount point is kept).
+//     This avoids `--total` double-counting overlay / kataShared
+//     bind-mounts of /etc/hosts, /etc/hostname, /etc/resolv.conf and
+//     keeps the canonical mount visible (e.g. /etc/hosts rather than
+//     /etc/resolv.conf).
 //
 // The result reuses the input slice's backing array; the caller must
 // not retain the original slice after this call. diskstats.List always
@@ -273,35 +275,47 @@ func filterMounts(mounts []diskstats.Mount, f *flags) []diskstats.Mount {
 		// pre-stat pass left it.
 		return mounts
 	}
-	seen := make(map[string]struct{}, len(mounts))
-	out := mounts[:0]
-	for _, m := range mounts {
-		// Empty Source is unusual but possible for some pseudo
-		// filesystems; do not collapse them.
-		if m.Source != "" {
-			if _, dup := seen[m.Source]; dup {
-				continue
-			}
-			seen[m.Source] = struct{}{}
+	// First pass: per device, find the index of the entry with the
+	// shortest mount point. Mounts without a DevID (rare; the
+	// platform did not expose one) bypass dedup entirely and are
+	// always kept.
+	keep := make(map[string]int, len(mounts))
+	for i, m := range mounts {
+		if m.DevID == "" {
+			continue
 		}
-		out = append(out, m)
+		if cur, ok := keep[m.DevID]; !ok || len(m.MountPoint) < len(mounts[cur].MountPoint) {
+			keep[m.DevID] = i
+		}
+	}
+	// Second pass: emit the chosen entry (or all entries that had no
+	// DevID) in the original order.
+	out := mounts[:0]
+	for i, m := range mounts {
+		if m.DevID == "" {
+			out = append(out, m)
+			continue
+		}
+		if keep[m.DevID] == i {
+			out = append(out, m)
+		}
 	}
 	return out
 }
 
+// stringSet converts the repeated -t/-x argv into a set keyed by the
+// literal type strings. GNU df does NOT comma-split a single -t value;
+// `df -t overlay,tmpfs` treats "overlay,tmpfs" as one literal type and
+// matches nothing. Multiple types are passed as multiple -t flags. We
+// match GNU exactly so scripts that rely on the no-match exit-1 path
+// behave the same way under rshell.
 func stringSet(values []string) map[string]struct{} {
 	if len(values) == 0 {
 		return nil
 	}
 	s := make(map[string]struct{}, len(values))
 	for _, v := range values {
-		// Allow comma-separated lists, matching GNU df.
-		for p := range strings.SplitSeq(v, ",") {
-			if p == "" {
-				continue
-			}
-			s[p] = struct{}{}
-		}
+		s[v] = struct{}{}
 	}
 	return s
 }

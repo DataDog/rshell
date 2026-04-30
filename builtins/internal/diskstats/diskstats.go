@@ -55,6 +55,17 @@ type Mount struct {
 	// "tmpfs", "proc"). May be empty if the kernel does not expose it.
 	Source string
 
+	// DevID identifies the kernel device backing this mount as a
+	// "major:minor" string (e.g. "8:1" for /dev/sda1, "0:18" for sysfs).
+	// On Linux it comes from /proc/self/mountinfo field index 2; on
+	// macOS it is formatted from Statfs_t.Fsid. Empty if the platform
+	// does not expose a stable device identity.
+	//
+	// Used as the dedup key in df.filterMounts: GNU df elides
+	// bind-mounts that share a device (regardless of source string),
+	// keeping the entry with the shortest mount point.
+	DevID string
+
 	// MountPoint is the absolute path where the filesystem is mounted.
 	MountPoint string
 

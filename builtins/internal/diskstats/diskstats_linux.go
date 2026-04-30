@@ -226,15 +226,23 @@ func parseMountInfoLine(line string) (Mount, bool) {
 		return Mount{}, false
 	}
 
+	devID := preFields[2] // mountinfo field 2 is "major:minor"
 	mountPoint := unescapeMountField(preFields[4])
 	fsType := postFields[0]
 	source := unescapeMountField(postFields[1])
 
 	pseudo := pseudoTypes[fsType]
-	local := !pseudo && !isRemoteType(fsType)
+	// "Local" means "not remote" per GNU df: pseudo mounts (proc,
+	// sysfs, cgroup, …) are local in this sense — they live in
+	// kernel memory, not on a remote server. This matters for
+	// `df -al`: GNU includes local pseudo mounts when -a re-enables
+	// them, and -l only filters out actually-remote (NFS / CIFS /
+	// fuse.sshfs) entries.
+	local := !isRemoteType(fsType)
 
 	return Mount{
 		Source:     source,
+		DevID:      devID,
 		MountPoint: mountPoint,
 		FSType:     fsType,
 		Pseudo:     pseudo,

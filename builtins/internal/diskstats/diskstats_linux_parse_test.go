@@ -33,12 +33,16 @@ func TestParseMountInfo_HappyPath(t *testing.T) {
 	assert.Equal(t, "/", mounts[0].MountPoint)
 	assert.Equal(t, "ext4", mounts[0].FSType)
 	assert.Equal(t, "/dev/sda1", mounts[0].Source)
+	assert.Equal(t, "98:0", mounts[0].DevID, "DevID from mountinfo field 2")
 	assert.False(t, mounts[0].Pseudo)
 	assert.True(t, mounts[0].Local)
 
+	// Pseudo filesystems are local in the GNU sense ("not remote")
+	// so that `df -al` keeps them. -l only drops actually-remote
+	// mounts (NFS / CIFS / fuse.sshfs).
 	assert.Equal(t, "sysfs", mounts[1].FSType)
 	assert.True(t, mounts[1].Pseudo)
-	assert.False(t, mounts[1].Local)
+	assert.True(t, mounts[1].Local)
 
 	// devtmpfs reports real /dev contents and is intentionally NOT in
 	// pseudoTypes (matches GNU df default listing).
