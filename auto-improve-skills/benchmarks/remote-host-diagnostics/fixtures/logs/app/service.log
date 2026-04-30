@@ -1,0 +1,8 @@
+2026-04-30T10:00:01Z INFO service=checkout boot complete version=2026.04.30
+2026-04-30T10:07:14Z INFO service=checkout handled request id=req-1001 status=200 latency_ms=43
+2026-04-30T10:08:02Z WARN service=checkout upstream retry id=req-1008 upstream=payments attempt=1
+2026-04-30T10:09:55Z ERROR service=checkout request failed id=req-1015 status=500 error="database connection refused" db_host=db.internal db_port=5432
+2026-04-30T10:10:01Z ERROR service=checkout request failed id=req-1016 status=500 error="database connection refused" db_host=db.internal db_port=5432
+2026-04-30T10:10:07Z ERROR service=checkout request failed id=req-1017 status=500 error="database connection refused" db_host=db.internal db_port=5432
+2026-04-30T10:10:14Z WARN service=checkout circuit breaker opened dependency=postgres
+2026-04-30T10:11:23Z INFO service=checkout healthcheck status=degraded dependency=postgres

@@ -1,0 +1,244 @@
+name: remote-host-diagnostics-quality
+description: >-
+  Final-answer quality benchmarks for the local ./rshell remote-host-diagnostics skill.
+  Cases use deterministic fixture logs but require the agent to perform realistic bounded diagnostics.
+skill_path: ../../skills/remote-host-diagnostics
+cases:
+  - id: datadog-agent-config-regression
+    title: Detect Datadog Agent config regression from fixture logs
+    prompt: |-
+      Fake investigation: a customer says the Datadog Agent stopped sending metrics shortly after 10:12 UTC.
+      Use the local rshell skill against this fixture log root: {{LOG_ROOT}}.
+      Determine the likely cause and provide evidence. Keep the investigation read-only and bounded.
+    judge_rubric: |-
+      Excellent answers identify the invalid Datadog Agent configuration/YAML parse error at line 42 after remote config reload as the likely cause, cite the stopped core agent/no metrics evidence, list bounded rshell commands, and avoid claiming a remote host was accessed.
+    criteria:
+      - name: final identifies invalid config or YAML parse failure
+        source: final
+        case_insensitive: true
+        regex: "(yaml|config).*line=42|line 42.*(yaml|config)|invalid configuration|config validation failed"
+        points: 25
+      - name: final connects failure to stopped metrics/agent
+        source: final
+        case_insensitive: true
+        regex: "stopped|no metrics|metrics.*stopped|agent stopped|not sending"
+        points: 15
+      - name: final cites evidence from agent.log
+        source: final
+        case_insensitive: true
+        contains: "agent.log"
+        points: 10
+      - name: final includes commands run
+        source: final
+        case_insensitive: true
+        contains: "./rshell"
+        points: 10
+      - name: commands use the provided fixture log root as allowed path
+        source: commands
+        contains: "--allowed-paths {{LOG_ROOT}}"
+        points: 15
+      - name: commands run initial help
+        source: commands
+        contains: "./rshell --allow-all-commands --timeout 5s -c 'help'"
+        points: 10
+      - name: commands use bounded grep/tail/head over agent log
+        source: commands
+        case_insensitive: true
+        regex: "(grep|tail|head).*datadog.*/agent.log|datadog.*/agent.log.*(grep|tail|head)"
+        points: 10
+      - name: avoids remote-action tool wording
+        source: transcript
+        case_insensitive: true
+        not: true
+        contains: "datadog_remote_action_restricted_shell_run_command"
+        points: 5
+
+  - id: auth-bruteforce-summary
+    title: Summarize SSH brute-force pattern without over-reading logs
+    prompt: |-
+      Fake investigation: security asks whether there is evidence of SSH brute-force activity.
+      Use the local rshell skill against fixture log root {{LOG_ROOT}}.
+      Summarize the suspicious source, approximate scale, and whether there was a successful login from that source.
+    judge_rubric: |-
+      Excellent answers identify repeated failed SSH password attempts from 198.51.100.23, mention roughly a dozen failures across many invalid users, distinguish the successful deploy login from a different IP, cite auth.log evidence, and avoid dumping unrelated log content.
+    criteria:
+      - name: final identifies brute-force source IP
+        source: final
+        contains: "198.51.100.23"
+        points: 20
+      - name: final describes repeated failed passwords
+        source: final
+        case_insensitive: true
+        regex: "failed password|failed login|brute"
+        points: 15
+      - name: final distinguishes accepted login as different source
+        source: final
+        regex: '203\.0\.113\.8|different IP|different source'
+        points: 15
+      - name: final cites auth.log
+        source: final
+        case_insensitive: true
+        contains: "auth.log"
+        points: 10
+      - name: final includes approximate count or scale
+        source: final
+        case_insensitive: true
+        regex: "12|dozen|multiple|repeated"
+        points: 10
+      - name: commands use grep/cut/sort/uniq or similarly bounded filters
+        source: commands
+        case_insensitive: true
+        regex: 'grep.*(Failed password|198\.51\.100\.23)|sort|uniq|wc -l'
+        points: 15
+      - name: commands include allowed fixture path
+        source: commands
+        contains: "--allowed-paths {{LOG_ROOT}}"
+        points: 10
+      - name: final avoids claiming account compromise from fixture evidence
+        source: final
+        case_insensitive: true
+        not: true
+        regex: 'compromised|successful.*198\.51\.100\.23'
+        points: 5
+
+  - id: checkout-500-root-cause
+    title: Correlate HTTP 500s to backend database failures
+    prompt: |-
+      Fake investigation: checkout users are seeing HTTP 500/502 errors around 10:10 UTC.
+      Use the local rshell skill against fixture log root {{LOG_ROOT}}.
+      Find the likely backend cause, cite cross-log evidence, and suggest the next safe diagnostic check.
+    judge_rubric: |-
+      Excellent answers correlate nginx 500/502 checkout errors to checkout service database connection refused and postgres connection-slot/SYN-flood symptoms, cite at least two relevant logs, and recommend safe read-only next checks such as inspecting DB/postgres health or connection pool saturation.
+    criteria:
+      - name: final mentions checkout HTTP 500 or 502 symptom
+        source: final
+        case_insensitive: true
+        regex: "500|502|checkout"
+        points: 10
+      - name: final identifies database/postgres connection problem
+        source: final
+        case_insensitive: true
+        regex: "database|postgres|connection refused|connection slots"
+        points: 25
+      - name: final cites service log evidence
+        source: final
+        case_insensitive: true
+        regex: 'service\.log|checkout'
+        points: 10
+      - name: final cites nginx or system log evidence
+        source: final
+        case_insensitive: true
+        regex: 'nginx|access\.log|error\.log|system\.log|postgres'
+        points: 10
+      - name: final suggests safe next diagnostic check
+        source: final
+        case_insensitive: true
+        regex: "next|check|inspect|verify"
+        points: 10
+      - name: commands search across multiple logs with bounded filters
+        source: commands
+        case_insensitive: true
+        regex: "grep.*(500|502|database|postgres|checkout)|tail|head"
+        points: 15
+      - name: commands stay within fixture allowed path
+        source: commands
+        contains: "--allowed-paths {{LOG_ROOT}}"
+        points: 10
+      - name: final does not propose write/remediation commands
+        source: final
+        case_insensitive: true
+        not: true
+        regex: "restart|kill|delete|edit .*config|apply"
+        points: 10
+
+  - id: container-host-log-fallback
+    title: Use /host-style fallback when primary log directory is empty
+    prompt: |-
+      Fake investigation: this simulates a containerized Agent layout. The primary log root {{EMPTY_LOG_ROOT}} is empty;
+      host logs are mounted at {{HOST_LOG_ROOT}}. Use the local rshell skill to determine why the kubernetes_apiserver check is failing.
+    judge_rubric: |-
+      Excellent answers first handle the empty primary log directory, then inspect the host-mounted log root, identify an expired/not-yet-valid x509 certificate for kubernetes_apiserver, cite datadog agent/syslog evidence, and explain this as a containerized host-log fallback case.
+    criteria:
+      - name: final identifies x509 certificate validity problem
+        source: final
+        case_insensitive: true
+        regex: "x509|certificate.*expired|not yet valid|expired.*certificate"
+        points: 25
+      - name: final names kubernetes_apiserver check
+        source: final
+        case_insensitive: true
+        contains: "kubernetes_apiserver"
+        points: 15
+      - name: final mentions host-mounted fallback or empty primary logs
+        source: final
+        case_insensitive: true
+        regex: "host|fallback|empty|mounted"
+        points: 10
+      - name: commands inspect both empty and host log roots
+        source: commands
+        contains: "{{EMPTY_LOG_ROOT}}"
+        points: 10
+      - name: commands allow host log root
+        source: commands
+        contains: "{{HOST_LOG_ROOT}}"
+        points: 10
+      - name: commands use rshell to grep/tail host logs
+        source: commands
+        case_insensitive: true
+        regex: "./rshell.*--allowed-paths.*{{HOST_LOG_ROOT}}.*(grep|tail|head)|./rshell.*(grep|tail|head).*{{HOST_LOG_ROOT}}"
+        points: 15
+      - name: final cites datadog or syslog evidence
+        source: final
+        case_insensitive: true
+        regex: 'agent\.log|syslog|datadog'
+        points: 10
+      - name: avoids saying real remote host was contacted
+        source: final
+        case_insensitive: true
+        not: true
+        regex: "remote host|customer host.*accessed|connection_id|hostname"
+        points: 5
+
+  - id: unsupported-ss-flag-recovery
+    title: Recover from unsupported socket command flags
+    prompt: |-
+      Fake investigation: check listening TCP sockets locally with rshell. Important: this rshell build may not support every Linux ss flag.
+      Use the skill workflow to avoid or recover from unsupported flags, then summarize what socket information can be collected safely.
+    judge_rubric: |-
+      Excellent answers use help output to discover supported ss flags, avoid or recover from unsupported -p/process flags, run a supported command such as ss -tln or ss -tlnH, and clearly state that process names/PIDs are unavailable if -p is not supported.
+    criteria:
+      - name: final mentions supported ss usage
+        source: final
+        case_insensitive: true
+        regex: "ss -tln|ss.*listening|tcp sockets"
+        points: 20
+      - name: final explains process/PID flag unavailable or unsupported if relevant
+        source: final
+        case_insensitive: true
+        regex: "unsupported|not supported|process|pid|-p"
+        points: 15
+      - name: commands run help ss or initial help
+        source: commands
+        case_insensitive: true
+        regex: "help ss| -c 'help'"
+        points: 15
+      - name: commands run supported ss command
+        source: commands
+        regex: "ss -tln|ss -ltn|ss -tlnH|ss -Htnl"
+        points: 20
+      - name: final includes uncertainty based on local fixture/environment
+        source: final
+        case_insensitive: true
+        regex: "local|available|can collect|cannot collect|limited"
+        points: 10
+      - name: avoids unsupported ss -p command in final chosen command list
+        source: commands
+        not: true
+        regex: 'ss [^\n]*-[a-zA-Z]*p|ss [^\n]*--process'
+        points: 10
+      - name: avoids remote action tool
+        source: transcript
+        case_insensitive: true
+        not: true
+        contains: "datadog_remote_action"
+        points: 10

@@ -1,0 +1,9 @@
+2026-04-30T10:04:55Z INFO agent starting version=7.99.0
+2026-04-30T10:05:01Z INFO config loaded from /etc/datadog-agent/datadog.yaml
+2026-04-30T10:11:42Z INFO remote config applied transaction_id=rc-8831
+2026-04-30T10:12:03Z ERROR config validation failed file=/etc/datadog-agent/datadog.yaml line=42 error="yaml: mapping values are not allowed in this context"
+2026-04-30T10:12:03Z ERROR core agent stopped: invalid configuration after remote-config reload
+2026-04-30T10:12:04Z WARN forwarder paused because aggregator is stopped
+2026-04-30T10:13:10Z INFO retrying config load attempt=1
+2026-04-30T10:13:10Z ERROR config validation failed file=/etc/datadog-agent/datadog.yaml line=42 error="yaml: mapping values are not allowed in this context"
+2026-04-30T10:14:00Z WARN no metrics flushed since 2026-04-30T10:12:03Z

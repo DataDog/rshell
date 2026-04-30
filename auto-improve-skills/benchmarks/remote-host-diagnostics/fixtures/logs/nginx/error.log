@@ -1,0 +1,2 @@
+2026/04/30 10:10:02 [error] 100#100: *42 upstream prematurely closed connection while reading response header from upstream, client: 203.0.113.13, server: checkout.example, request: "POST /api/checkout HTTP/1.1", upstream: "http://127.0.0.1:8080/api/checkout"
+2026/04/30 10:10:11 [error] 100#100: *43 connect() failed (111: Connection refused) while connecting to upstream, client: 203.0.113.16, server: checkout.example, request: "POST /api/checkout HTTP/1.1", upstream: "http://127.0.0.1:8080/api/checkout"

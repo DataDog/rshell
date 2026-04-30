@@ -28,7 +28,7 @@ Run commands with `-c` and a bounded timeout:
 ./rshell --allow-all-commands --timeout 5s -c '<command>'
 ```
 
-For commands that read logs or other files, explicitly allow the relevant directory:
+For commands that read logs or other files, explicitly allow the relevant directory. If the user provides a log root or fixture directory, use that directory instead of `/var/log`:
 
 ```sh
 ./rshell --allow-all-commands --timeout 5s --allowed-paths /var/log -c '<command>'
@@ -54,19 +54,21 @@ This local variant does not target remote hosts. If the user asks to target a re
    ```
 
    The available command set can vary by build. Do not assume a command exists; if `help` does not list it, it is unavailable and will return exit code 127.
-4. For log investigations, start by listing available logs:
+4. For log investigations, identify the log root first. Use a user-provided root (for example a benchmark fixture path) when present; otherwise use `/var/log`. Start by listing that root:
 
    ```sh
    ./rshell --allow-all-commands --timeout 5s --allowed-paths /var/log -c 'ls -la /var/log'
    ```
 
-5. Use bounded commands such as `tail`, `head`, and filtered `grep` queries. Do not read entire large log files without filtering.
-6. If a command returns a non-zero exit code, explain the failure. Do not retry the same failing command without understanding why it failed.
-7. Interpret results in the context of the user's question.
+5. Use bounded commands such as `tail`, `head`, `wc -l`, and filtered `grep` queries. Do not read entire large log files without filtering.
+6. For command-specific flags, check `help <command>` before using flags that may not exist in this build. For example, this rshell supports `ss -tln` for listening TCP sockets, but may not support process/PID flags such as `ss -p`.
+7. If a command returns a non-zero exit code, explain the failure. Do not retry the same failing command without understanding why it failed. Prefer a supported equivalent after checking `help`.
+8. Interpret results in the context of the user's question. Final answers should include the likely finding/root cause, concise evidence with filenames, commands run, uncertainty, and safe read-only next checks.
 
 ## Filesystem access
 
 - `./rshell` blocks filesystem access by default. Pass `--allowed-paths` for every directory the diagnostic command needs to read.
+- If the user provides a log root, fixture directory, or mounted host-log directory, set `--allowed-paths` to that exact path and use it in commands.
 - To mirror restricted remote diagnostics, prefer read-only commands and narrow allowed paths such as `/var/log`.
 - The environment is read-only: no file writes, directory creation, or host modifications.
 - Output redirections work only to `/dev/null`.
@@ -76,7 +78,7 @@ This local variant does not target remote hosts. If the user asks to target a re
 
 When diagnosing files from a containerized Datadog Agent layout, host filesystem paths may be mounted under `/host`. For example, host `/var/log` becomes `/host/var/log` inside the container.
 
-If commands against `/var/log` return empty results or "no such file" errors, retry under `/host/var/log` if that path exists locally. When checking both paths, allow both directories:
+If commands against the primary log root return empty results or "no such file" errors, retry under the host-mounted log root (usually `/host/var/log`, or a user-provided equivalent) if that path exists locally. When checking both paths, allow both directories:
 
 ```sh
 ./rshell --allow-all-commands --timeout 5s --allowed-paths /var/log,/host/var/log -c 'ls -la /var/log; ls -la /host/var/log'
@@ -102,8 +104,10 @@ List available local log files:
 ./rshell --allow-all-commands --timeout 5s --allowed-paths /var/log -c 'ls -la /var/log'
 ```
 
-Check listening TCP sockets locally on Linux:
+Check listening TCP sockets locally:
 
 ```sh
-./rshell --allow-all-commands --timeout 5s -c 'ss -tlnp'
+./rshell --allow-all-commands --timeout 5s -c 'help ss; ss -tln'
 ```
+
+If `help ss` does not list process/PID flags, do not use `ss -p`; explain that process names/PIDs are unavailable from this rshell build.

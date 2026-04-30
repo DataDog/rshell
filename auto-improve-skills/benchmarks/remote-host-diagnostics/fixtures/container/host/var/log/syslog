@@ -1,0 +1,2 @@
+Apr 30 11:02:14 node datadog-agent[17]: kubernetes_apiserver check failing: x509 certificate has expired or is not yet valid
+Apr 30 11:04:00 node kubelet[22]: certificate rotation pending approval
