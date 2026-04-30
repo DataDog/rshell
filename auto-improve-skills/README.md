@@ -33,7 +33,10 @@ report/remote-host-diagnostics-autoresearch.html Single-file slide report
 make build
 ```
 
-- `pi` must be available and authenticated for `openai-codex/gpt-5.5`.
+- `pi` must be installed and authenticated for `openai-codex/gpt-5.5`.
+  - The Go tools now auto-detect `pi` from `PATH`, `PI_BIN`, npm global prefix, and common nvm locations.
+  - If auto-detection fails, pass `-pi /absolute/path/to/pi` or set `PI_BIN=/absolute/path/to/pi`.
+  - Example nvm path on this machine: `/Users/alexandre.yang/.nvm/versions/node/v22.18.0/bin/pi`.
 
 ## Run the benchmark
 
@@ -57,6 +60,13 @@ go run ./auto-improve-skills/cmd/skillbench -judge
 
 The runner writes a JSON report and raw nested-`pi` JSONL transcripts under `auto-improve-skills/runs/`.
 
+If you see `exec: "pi": executable file not found in $PATH`, either update to this version of the tooling or pass an explicit binary:
+
+```sh
+go run ./auto-improve-skills/cmd/skillbench \
+  -pi /Users/alexandre.yang/.nvm/versions/node/v22.18.0/bin/pi
+```
+
 ## Run the training loop
 
 Commit or stash unrelated changes first, then run:
@@ -75,6 +85,16 @@ The loop:
 3. Runs the benchmark again.
 4. Commits the skill edit if the normalized score improves by at least `-min-delta`.
 5. Reverts the skill edit if it does not improve.
+
+If `pi` is outside your shell `PATH`, use the same `-pi` flag:
+
+```sh
+go run ./auto-improve-skills/cmd/skilltrain \
+  -pi /Users/alexandre.yang/.nvm/versions/node/v22.18.0/bin/pi \
+  -model openai-codex/gpt-5.5 \
+  -iters 3 \
+  -judge
+```
 
 For a safe proof run that exercises the loop without committing:
 

@@ -58,6 +58,13 @@ func run(casesPath, skillPath, outputPath, rawDir, piBinary, model, mode string,
 	if err != nil {
 		return err
 	}
+	if mode == "live" {
+		resolvedPI, err := autoresearch.ResolvePI(piBinary)
+		if err != nil {
+			return err
+		}
+		piBinary = resolvedPI
+	}
 	casesAbs := autoresearch.AbsFromRoot(root, casesPath)
 	requestedSkillAbs := autoresearch.AbsFromRoot(root, skillPath)
 	if strings.HasSuffix(requestedSkillAbs, "SKILL.md") {
@@ -212,6 +219,7 @@ func runCase(root, rawDir, skillPath, piBinary, model, mode string, tc autoresea
 	defer cancel()
 	cmd := exec.CommandContext(ctx, piBinary, args...)
 	cmd.Dir = root
+	cmd.Env = autoresearch.EnvWithExecutableDir(piBinary)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
@@ -460,6 +468,7 @@ Return only compact JSON with this schema: {"score": number, "reason": "short ex
 	args := []string{"--print", "--no-session", "--no-tools", "--model", model, prompt}
 	cmd := exec.CommandContext(ctx, piBinary, args...)
 	cmd.Dir = root
+	cmd.Env = autoresearch.EnvWithExecutableDir(piBinary)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr

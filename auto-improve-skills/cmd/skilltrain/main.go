@@ -43,6 +43,11 @@ func run(iterations int, casesPath, skillPath, model, piBinary, runDir string, m
 	if err != nil {
 		return err
 	}
+	resolvedPI, err := autoresearch.ResolvePI(piBinary)
+	if err != nil {
+		return err
+	}
+	piBinary = resolvedPI
 	casesAbs := autoresearch.AbsFromRoot(root, casesPath)
 	skillAbs := autoresearch.AbsFromRoot(root, skillPath)
 	if runDir == "" {
@@ -191,6 +196,7 @@ Task for iteration %d:
 	}
 	cmd := exec.CommandContext(ctx, piBinary, args...)
 	cmd.Dir = root
+	cmd.Env = autoresearch.EnvWithExecutableDir(piBinary)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
