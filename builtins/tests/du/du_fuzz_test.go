@@ -122,10 +122,10 @@ func FuzzDuFlags(f *testing.F) {
 		// Filter inputs containing shell metacharacters that change the
 		// command structure (`&` background, `;` chain, `|` pipe, `<`/`>`
 		// redirect, `$` expansion, `` ` `` substitution, `(` subshell,
-		// `&&`/`||`). The fuzzer is testing du's flag-parsing surface,
-		// not the shell's job-control / pipeline semantics — those have
-		// their own tests.
-		if strings.ContainsAny(script, "&;|<>$`(){}\\") {
+		// `\n`/`\r` multi-line). The fuzzer is testing du's flag-parsing
+		// surface, not the shell's job-control / pipeline / multi-line
+		// semantics — those have their own tests.
+		if strings.ContainsAny(script, "&;|<>$`(){}\\\n\r") {
 			return
 		}
 		// Filter inputs that would cause shell parse errors. Unbalanced
@@ -152,7 +152,13 @@ func FuzzDuFlags(f *testing.F) {
 		if t.Context().Err() != nil {
 			return
 		}
-		if code != 0 && code != 1 {
+		// Acceptable exit codes:
+		//   0   du success
+		//   1   du runtime error (rejected flag, missing file, etc.)
+		//   2   shell parse/syntax error (e.g. unsupported ~user expansion)
+		//   127 command-not-found from shell expansion oddities
+		// Anything else (a panic, SIGSEGV, OOM kill, etc.) is a real bug.
+		if code != 0 && code != 1 && code != 2 && code != 127 {
 			t.Errorf("du unexpected exit code %d for script %q", code, script)
 		}
 	})
@@ -318,7 +324,11 @@ func FuzzDuPath(f *testing.F) {
 		if t.Context().Err() != nil {
 			return
 		}
-		if code != 0 && code != 1 {
+		// Accept du success (0), du runtime error (1), shell parse error
+		// (2 — when the path triggers an unsupported expansion), and
+		// command-not-found (127). Anything else indicates a panic,
+		// SIGSEGV, or other catastrophic failure.
+		if code != 0 && code != 1 && code != 2 && code != 127 {
 			t.Errorf("du unexpected exit code %d for path %q", code, path)
 		}
 	})
