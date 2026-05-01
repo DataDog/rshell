@@ -1,0 +1,14 @@
+# Bare `jq` with no FILTER defaults to identity (matches real jq).
+description: jq with no filter argument defaults to the identity filter.
+skip_assert_against_bash: true
+input:
+  script: |+
+    printf '{"a":1,"b":2}' | jq
+expect:
+  stdout: |+
+    {
+      "a": 1,
+      "b": 2
+    }
+  stderr: ""
+  exit_code: 0

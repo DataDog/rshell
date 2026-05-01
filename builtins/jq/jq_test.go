@@ -329,11 +329,14 @@ func TestJqMultipleFiles(t *testing.T) {
 
 // --- error cases ---
 
-func TestJqMissingFilter(t *testing.T) {
+// Bare `jq` with no args defaults to the identity filter (`.`), matching
+// real jq. With no input on stdin, no output is produced and exit is 0.
+func TestJqNoArgsDefaultsToIdentity(t *testing.T) {
 	dir := t.TempDir()
-	_, stderr, code := jqRun(t, "jq", dir)
-	assert.Equal(t, 2, code)
-	assert.Contains(t, stderr, "no filter")
+	stdout, stderr, code := jqRun(t, `printf '{"a":1}' | jq`, dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "", stderr)
+	assert.Equal(t, "{\n  \"a\": 1\n}\n", stdout)
 }
 
 func TestJqCompileError(t *testing.T) {

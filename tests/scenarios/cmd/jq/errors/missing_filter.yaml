@@ -1,9 +1,0 @@
-# A jq invocation with no filter is a usage error.
-description: jq with no filter argument fails with exit 2.
-skip_assert_against_bash: true
-input:
-  script: |+
-    jq
-expect:
-  exit_code: 2
-  stderr_contains: ["jq: no filter"]

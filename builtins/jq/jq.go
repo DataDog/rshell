@@ -10,7 +10,8 @@
 // Usage: jq [OPTION]... FILTER [FILE]...
 //
 // Apply FILTER to each JSON value parsed from FILE(s) (or standard input
-// when no FILE is given) and print the results.
+// when no FILE is given) and print the results. When FILTER is omitted
+// it defaults to the identity filter ".".
 //
 // The filter language and output formatting follow the jq manual at
 // https://jqlang.org/manual/. The expression engine is the fastjq library
@@ -38,7 +39,7 @@
 //	0  Success.
 //	1  Runtime error (unknown flag, file not found, invalid JSON, runtime
 //	   filter error, or with -e all outputs were null/false/absent).
-//	2  Usage error (missing FILTER, FILTER too large).
+//	2  Usage error (FILTER too large).
 //	3  Compile error (FILTER could not be parsed).
 //
 // Line endings:
@@ -131,13 +132,13 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			return builtins.Result{}
 		}
 
-		if len(args) == 0 {
-			callCtx.Errf("jq: no filter given\n")
-			return builtins.Result{Code: 2}
+		// Real jq defaults the filter to identity (".") when no FILTER is given.
+		filter := "."
+		var files []string
+		if len(args) > 0 {
+			filter = args[0]
+			files = args[1:]
 		}
-
-		filter := args[0]
-		files := args[1:]
 
 		if len(filter) > MaxFilterBytes {
 			callCtx.Errf("jq: filter too large (%d bytes, max %d)\n", len(filter), MaxFilterBytes)
