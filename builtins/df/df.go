@@ -170,9 +170,15 @@ func makeFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 	// rationale; including -k here matches GNU df, where
 	// `df -h -k` prints "1K-blocks" because -k overrides the earlier
 	// -h, and `df -k -h` prints "Size" for the reverse reason.
+	//
+	// -k is registered with shorthand only because GNU df has no
+	// long form for it (the GNU manual documents -k as "equivalent
+	// to --block-size=1K"; no --kibibytes long flag exists). Adding
+	// a long form would let scripts depend on rshell-only behavior.
 	registerUnitFlag(fs, &mode, unitsHuman1024, "human-readable", "h", "print sizes in powers of 1024 (e.g. 1023M)")
 	registerUnitFlag(fs, &mode, unitsHuman1000, "si", "H", "print sizes in powers of 1000 (e.g. 1.1G)")
-	registerUnitFlag(fs, &mode, unitsK, "kibibytes", "k", "use 1024-byte blocks (POSIX default)")
+	kFlag := fs.VarPF(&unitFlag{target: &mode, value: unitsK}, "", "k", "use 1024-byte blocks (POSIX default)")
+	kFlag.NoOptDefVal = "true"
 
 	return func(ctx context.Context, callCtx *builtins.CallContext, args []string) builtins.Result {
 		if *f.help {
@@ -414,7 +420,13 @@ func writeOutput(callCtx *builtins.CallContext, mounts []diskstats.Mount, f *fla
 		})
 	}
 
-	printRows(callCtx, header, rows, posix, withType)
+	// GNU df uses the strict POSIX single-space row format only when
+	// -P is the *sole* format-affecting flag. Combining -P with -T,
+	// -i, -h, or -H reverts to the default aligned column layout
+	// even though the POSIX header names (e.g. "Capacity") may stay.
+	human := mode == unitsHuman1024 || mode == unitsHuman1000
+	posixLayout := posix && !withType && !inodeMode && !human
+	printRows(callCtx, header, rows, posixLayout, withType)
 }
 
 // selectColumns returns the (total, used, available) values that go into
@@ -568,8 +580,9 @@ func humanBytes(v uint64, base uint64) string {
 // Header naming is mode-dependent and matches GNU df verbatim:
 //
 //   - Block mode (default / -k / -h / -H / -P)
-//   - "Capacity" appears only with -P (block-POSIX format).
-//   - In all other block modes the percentage column is "Use%".
+//   - "Capacity" appears only with strict block-POSIX (-P alone, or
+//     -PT). In human modes (-h / -H) GNU keeps "Use%" even when -P
+//     is also passed.
 //   - Inode mode (-i, possibly with -P)
 //   - The percentage column is always "IUse%". GNU keeps it that way
 //     even with -iP — only the *block* POSIX format substitutes
@@ -594,9 +607,11 @@ func buildHeader(posix, withType, inodeMode bool, mode unitMode) []string {
 		return cols
 	}
 
-	// Block mode.
+	// Block mode. The "Capacity" header is the strict POSIX label;
+	// GNU keeps "Use%" when -P is combined with -h or -H since those
+	// flags override the POSIX block-size convention.
 	capacity := "Use%"
-	if posix {
+	if posix && !human {
 		capacity = "Capacity"
 	}
 

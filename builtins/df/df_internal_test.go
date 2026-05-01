@@ -453,16 +453,28 @@ func TestBuildHeader(t *testing.T) {
 	assert.Equal(t, []string{"Filesystem", "Type", "Inodes", "IUsed", "IFree", "IUse%", "Mounted on"}, h)
 
 	// -P -h: human suffix wins over the fixed-block POSIX label, so
-	// "Size" + "Avail" appear even when -P is set. Matches `gdf -P -h`.
+	// "Size" + "Avail" appear even when -P is set. The percentage
+	// column also drops back to "Use%" because GNU treats human mode
+	// as overriding the strict POSIX block-size convention.
 	h = buildHeader(true, false, false, unitsHuman1024)
 	assert.Equal(t, "Size", h[1])
 	assert.Contains(t, h, "Avail")
+	assert.Contains(t, h, "Use%")
 	assert.NotContains(t, h, "1024-blocks")
+	assert.NotContains(t, h, "Capacity")
 
 	// -P -H: same for SI mode.
 	h = buildHeader(true, false, false, unitsHuman1000)
 	assert.Equal(t, "Size", h[1])
 	assert.Contains(t, h, "Avail")
+	assert.Contains(t, h, "Use%")
+	assert.NotContains(t, h, "Capacity")
+
+	// -P -T (block POSIX with Type): keeps "Capacity" — only -h/-H
+	// drops it, since -T does not change unit mode.
+	h = buildHeader(true, true, false, unitsK)
+	assert.Contains(t, h, "Capacity")
+	assert.Equal(t, "Type", h[1])
 }
 
 func TestSelectColumns(t *testing.T) {
