@@ -97,6 +97,14 @@ func TestBenchmarkObjectiveUsesNewFields(t *testing.T) {
 	}
 }
 
+func TestFormatCommitSubjectIncludesObjectiveChange(t *testing.T) {
+	got := formatCommitSubject(7, 0.81234, 0.84567)
+	want := "auto-improve remote-host-diagnostics iter 7 (objective 81.23% -> 84.57%)"
+	if got != want {
+		t.Fatalf("formatCommitSubject() = %q, want %q", got, want)
+	}
+}
+
 func TestAggregateBenchmarkRepeatsAveragesScoresAndCases(t *testing.T) {
 	results := []autoresearch.SuiteResult{
 		{
@@ -191,7 +199,7 @@ func TestFormatCommitBodyIncludesChangeAndScoreDetails(t *testing.T) {
 		"/repo/auto-improve-skills/runs/train/iter-002/result.json",
 		nil,
 		"Tightened the workflow and removed duplicated guidance.",
-		0.0123,
+		0.9302,
 		" auto-improve-skills/skills/remote-host-diagnostics/SKILL.md | 12 ++++++------\n 1 file changed, 6 insertions(+), 6 deletions(-)\n",
 		" 1 file changed, 6 insertions(+), 6 deletions(-)\n",
 	)
@@ -199,7 +207,7 @@ func TestFormatCommitBodyIncludesChangeAndScoreDetails(t *testing.T) {
 		"Training iteration: 2",
 		"Benchmark report: auto-improve-skills/runs/train/iter-002/result.json",
 		"Quality: 195.00/200.00 (97.50%)",
-		"Objective: 94.25/100.00 (94.25%, delta +1.23 pp)",
+		"Objective: 94.25/100.00 (93.02% -> 94.25%, delta +1.23 pp)",
 		"Average case duration: 82.3s",
 		"Skill size: 2100 estimated tokens, 8400 bytes",
 		"Objective config: quality=0.85 duration=0.10 skill_size=0.05",

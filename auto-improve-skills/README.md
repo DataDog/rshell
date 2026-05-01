@@ -95,7 +95,7 @@ The loop:
 6. Commits and pushes the skill edit if the composite objective improves by at least `-min-delta` (default 0.001), public quality stays within `-quality-tolerance`, and holdout quality stays within `-holdout-quality-tolerance` (defaults to `-quality-tolerance`); pass `-push=false` to keep accepted commits local.
 7. Reverts the skill edit if it does not improve or fails the holdout gate.
 
-Accepted commit bodies include the benchmark report path, quality/objective/duration/size scores, repeat counts, holdout gate summary when enabled, per-case scoring details, the researcher summary, and a diffstat. Accepted commits are pushed by default; pass `-push=false` to review and push them manually.
+Accepted commit subjects include the objective percentage change (`old% -> new%`). Commit bodies include the benchmark report path, quality/objective/duration/size scores, repeat counts, holdout gate summary when enabled, per-case scoring details, the researcher summary, and a diffstat. Accepted commits are pushed by default; pass `-push=false` to review and push them manually.
 
 If `pi` is outside your shell `PATH`, use the same `-pi` flag:
 

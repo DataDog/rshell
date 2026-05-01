@@ -390,7 +390,7 @@ func run(iterations int, casesPath, skillPath, model, piBinary, runDir string, m
 				printSemantic(logSemanticDryRun, "dry-run: would accept iteration %d and commit %s (candidate saved in %s)", iter, skillAbs, filepath.Join(iterDir, "candidate.SKILL.md"))
 			} else {
 				logSuccess("iteration %d/%d: accepted; committing skill change", iter, iterations)
-				if err := commitSkill(root, skillAbs, iter, candidate, candidatePath, holdoutGate, filepath.Join(iterDir, "researcher.stdout.md"), delta, push); err != nil {
+				if err := commitSkill(root, skillAbs, iter, candidate, candidatePath, holdoutGate, filepath.Join(iterDir, "researcher.stdout.md"), bestObjective, push); err != nil {
 					return err
 				}
 			}
@@ -890,7 +890,7 @@ Task for iteration %d:
 	return nil
 }
 
-func commitSkill(root, skillAbs string, iter int, result autoresearch.SuiteResult, resultPath string, holdoutGate *benchmarkGate, researcherSummaryPath string, delta float64, push bool) error {
+func commitSkill(root, skillAbs string, iter int, result autoresearch.SuiteResult, resultPath string, holdoutGate *benchmarkGate, researcherSummaryPath string, previousObjective float64, push bool) error {
 	skillRel := gitPath(root, skillAbs)
 	logStep("iteration %d: staging %s", iter, skillRel)
 	if err := runGit(root, "add", skillRel); err != nil {
@@ -911,8 +911,8 @@ func commitSkill(root, skillAbs string, iter int, result autoresearch.SuiteResul
 		return err
 	}
 	researcherSummary := readCommitSummary(researcherSummaryPath)
-	msg := fmt.Sprintf("auto-improve remote-host-diagnostics iter %d", iter)
-	body := formatCommitBody(root, skillRel, iter, result, resultPath, holdoutGate, researcherSummary, delta, diffStat, shortStat)
+	msg := formatCommitSubject(iter, previousObjective, benchmarkObjective(result))
+	body := formatCommitBody(root, skillRel, iter, result, resultPath, holdoutGate, researcherSummary, previousObjective, diffStat, shortStat)
 	logSuccess("iteration %d: creating git commit", iter)
 	if err := runGit(root, "commit", "-m", msg, "-m", body, "--", skillRel); err != nil {
 		return err
@@ -925,7 +925,11 @@ func commitSkill(root, skillAbs string, iter int, result autoresearch.SuiteResul
 	return runGit(root, "push")
 }
 
-func formatCommitBody(root, skillRel string, iter int, result autoresearch.SuiteResult, resultPath string, holdoutGate *benchmarkGate, researcherSummary string, delta float64, diffStat, shortStat string) string {
+func formatCommitSubject(iter int, previousObjective, newObjective float64) string {
+	return fmt.Sprintf("auto-improve remote-host-diagnostics iter %d (objective %.2f%% -> %.2f%%)", iter, previousObjective*100, newObjective*100)
+}
+
+func formatCommitBody(root, skillRel string, iter int, result autoresearch.SuiteResult, resultPath string, holdoutGate *benchmarkGate, researcherSummary string, previousObjective float64, diffStat, shortStat string) string {
 	qualityScore, qualityMax, qualityPct := result.QualityScore, result.QualityMaxScore, benchmarkQuality(result)*100
 	if qualityMax == 0 {
 		qualityScore, qualityMax, qualityPct = result.Score, result.MaxScore, result.NormalizedScore*100
@@ -950,7 +954,7 @@ func formatCommitBody(root, skillRel string, iter int, result autoresearch.Suite
 
 	fmt.Fprintf(&b, "\nScore summary:\n")
 	fmt.Fprintf(&b, "- Quality: %.2f/%.2f (%.2f%%)\n", qualityScore, qualityMax, qualityPct)
-	fmt.Fprintf(&b, "- Objective: %.2f/%.2f (%.2f%%, delta %+0.2f pp)\n", objectiveScore, objectiveMax, objectivePct, delta*100)
+	fmt.Fprintf(&b, "- Objective: %.2f/%.2f (%.2f%% -> %.2f%%, delta %+0.2f pp)\n", objectiveScore, objectiveMax, previousObjective*100, objectivePct, objectivePct-previousObjective*100)
 	fmt.Fprintf(&b, "- Average case duration: %.1fs (score %.2f%%)\n", result.AverageCaseDurationSeconds, result.DurationScore*100)
 	fmt.Fprintf(&b, "- Skill size: %d estimated tokens, %d bytes (score %.2f%%)\n", result.SkillSizeEstimatedTokens, result.SkillSizeBytes, result.SkillSizeScore*100)
 	if result.Repeats > 1 {
