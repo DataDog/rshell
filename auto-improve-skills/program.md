@@ -15,7 +15,7 @@ Do not edit benchmark cases, fixture generation, Go tooling, reports, run output
 - Do not edit `auto-improve-skills/benchmarks/remote-host-diagnostics/cases.yaml` during skill tuning.
 - Do not edit `auto-improve-skills/internal/autoresearch/fixtures.go` during skill tuning.
 - Do not commit `auto-improve-skills/benchmarks/remote-host-diagnostics/generated-fixtures/`; it is generated and gitignored.
-- Do not train by hard-coding benchmark fixture facts (specific IPs, transaction IDs, line numbers, root causes, or filenames) into the skill. Improve general diagnostic behavior instead.
+- Do not overfit the skill to benchmark cases. In particular, do not hard-code case names, prompt wording, fixture facts, specific IPs, transaction IDs, line numbers, root causes, filenames, or expected-answer templates. Improve general diagnostic behavior instead.
 
 ## Objective
 
@@ -28,6 +28,14 @@ Improve final-answer quality for diagnostics performed through the local `./rshe
 - clear about uncertainty and next steps
 - efficient: stop once the finding is well supported instead of running broad or repetitive follow-up commands
 - compact: keep safety-critical instructions, but avoid duplicated or over-specific guidance
+
+## Anti-overfitting requirement
+
+Treat benchmark cases as representative samples, not targets to memorize. Skill changes must improve general diagnostic behavior for unseen incidents, not encode benchmark-specific facts or expected answers.
+
+Do not add guidance that depends on case names, exact prompt wording, fixture-specific filenames, IPs, timestamps, transaction IDs, log snippets, root causes, or answer templates. If a change only helps because it recognizes a benchmark case, prompt pattern, or generated fixture detail, reject it.
+
+Prefer general investigation strategies: bounded searches, evidence gathering, cross-log correlation, uncertainty handling, and clear final answers grounded in observed command output.
 
 ## Invariants
 
