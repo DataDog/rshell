@@ -116,7 +116,7 @@ The loop:
 1. Runs a baseline benchmark.
 2. Invokes `pi` as a researcher to edit only `SKILL.md`.
 3. Runs the benchmark again.
-4. Commits the skill edit if the normalized score improves by at least `-min-delta`.
+4. Commits and pushes the skill edit if the normalized score improves by at least `-min-delta`.
 5. Reverts the skill edit if it does not improve.
 
 ## Improvement strategy for agents

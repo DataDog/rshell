@@ -228,7 +228,10 @@ func commitSkill(root, skillAbs string, iter int, score, delta float64) error {
 	}
 	msg := fmt.Sprintf("auto-improve remote-host-diagnostics iter %d", iter)
 	body := fmt.Sprintf("Score: %.2f%%\nDelta: %.2f%%", score*100, delta*100)
-	return runGit(root, "commit", "-m", msg, "-m", body)
+	if err := runGit(root, "commit", "-m", msg, "-m", body); err != nil {
+		return err
+	}
+	return runGit(root, "push")
 }
 
 func gitDirty(root string) (bool, string, error) {
