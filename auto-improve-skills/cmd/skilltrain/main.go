@@ -15,12 +15,17 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/DataDog/rshell/auto-improve-skills/internal/autoresearch"
 )
 
-const defaultModel = "openai-codex/gpt-5.5"
+const (
+	defaultModel           = "openai-codex/gpt-5.5"
+	defaultParallelRepeats = 3
+	defaultParallelCases   = 2
+)
 
 type logSemantic int
 
@@ -58,6 +63,9 @@ func main() {
 		holdoutCasesPath        = flag.String("holdout-cases", "auto-improve-skills/benchmarks/remote-host-diagnostics/holdout.yaml", "holdout benchmark suite used as an acceptance gate (empty disables)")
 		holdoutQualityTolerance = flag.Float64("holdout-quality-tolerance", -1, "maximum allowed holdout quality drop from the best seen holdout quality; defaults to -quality-tolerance")
 		repeats                 = flag.Int("repeats", 3, "benchmark repeats to average for each baseline and candidate")
+		parallelRepeats         = flag.Int("parallel-repeats", defaultParallelRepeats, "maximum benchmark repeats to run concurrently (0 = all repeats, 1 = serial)")
+		parallelCases           = flag.Int("parallel-cases", defaultParallelCases, "maximum cases per skillbench run to execute concurrently (0 = all selected cases, 1 = serial)")
+		parallelSuites          = flag.Bool("parallel-suites", true, "run independent public and holdout suites concurrently when possible")
 		limit                   = flag.Int("limit", 0, "run at most N benchmark cases per iteration (0 = all)")
 		judge                   = flag.Bool("judge", false, "enable skillbench LLM-as-judge scoring")
 		push                    = flag.Bool("push", true, "push accepted skill commits to the current branch; set -push=false to keep commits local")
@@ -66,7 +74,7 @@ func main() {
 	)
 	flag.Parse()
 
-	if err := run(*iterations, *casesPath, *skillPath, *model, *piBinary, *runDir, *minDelta, *qualityTolerance, *holdoutCasesPath, *holdoutQualityTolerance, *repeats, *limit, *judge, *push, *dryRun, *allowDirty); err != nil {
+	if err := run(*iterations, *casesPath, *skillPath, *model, *piBinary, *runDir, *minDelta, *qualityTolerance, *holdoutCasesPath, *holdoutQualityTolerance, *repeats, *parallelRepeats, *parallelCases, *limit, *judge, *parallelSuites, *push, *dryRun, *allowDirty); err != nil {
 		logError("%v", err)
 		os.Exit(1)
 	}
@@ -157,7 +165,7 @@ func colorEnabledForLog(stream *os.File) bool {
 	return err == nil && info.Mode()&os.ModeCharDevice != 0
 }
 
-func run(iterations int, casesPath, skillPath, model, piBinary, runDir string, minDelta, qualityTolerance float64, holdoutCasesPath string, holdoutQualityTolerance float64, repeats, limit int, judge, push, dryRun, allowDirty bool) error {
+func run(iterations int, casesPath, skillPath, model, piBinary, runDir string, minDelta, qualityTolerance float64, holdoutCasesPath string, holdoutQualityTolerance float64, repeats, parallelRepeats, parallelCases, limit int, judge, parallelSuites, push, dryRun, allowDirty bool) error {
 	if qualityTolerance < 0 {
 		return fmt.Errorf("-quality-tolerance must be non-negative")
 	}
@@ -166,6 +174,12 @@ func run(iterations int, casesPath, skillPath, model, piBinary, runDir string, m
 	}
 	if repeats <= 0 {
 		return fmt.Errorf("-repeats must be positive")
+	}
+	if parallelRepeats < 0 {
+		return fmt.Errorf("-parallel-repeats must be non-negative")
+	}
+	if parallelCases < 0 {
+		return fmt.Errorf("-parallel-cases must be non-negative")
 	}
 	logStep("resolving repository root and pi binary")
 	root, err := autoresearch.RepoRoot()
@@ -203,10 +217,14 @@ func run(iterations int, casesPath, skillPath, model, piBinary, runDir string, m
 			return fmt.Errorf("working tree is dirty; commit or stash first, or pass -allow-dirty. Status:\n%s", status)
 		}
 	}
+	logStep("preparing shared benchmark prerequisites")
+	if err := prepareBenchmarkPrerequisites(root, casesAbs, holdoutCasesAbs); err != nil {
+		return err
+	}
 
 	printSemantic(logSemanticSummary, "skilltrain run dir: %s", runDir)
 	logBenchmark("running baseline benchmark")
-	baseline, err := runBenchmark(root, casesAbs, skillAbs, model, piBinary, filepath.Join(runDir, "iter-000-baseline"), limit, judge, repeats)
+	baseline, holdoutBaseline, haveHoldoutBaseline, err := runBaselineBenchmarks(root, casesAbs, holdoutCasesAbs, skillAbs, model, piBinary, runDir, limit, judge, repeats, parallelRepeats, parallelCases, parallelSuites)
 	if err != nil {
 		return err
 	}
@@ -218,12 +236,7 @@ func run(iterations int, casesPath, skillPath, model, piBinary, runDir string, m
 
 	var holdoutBestQuality, holdoutQualityFloor float64
 	var holdoutBestPath string
-	if holdoutCasesAbs != "" {
-		logBenchmark("running holdout baseline benchmark")
-		holdoutBaseline, err := runBenchmark(root, holdoutCasesAbs, skillAbs, model, piBinary, filepath.Join(runDir, "iter-000-holdout"), limit, judge, repeats)
-		if err != nil {
-			return err
-		}
+	if haveHoldoutBaseline {
 		holdoutBestQuality = benchmarkQuality(holdoutBaseline)
 		holdoutQualityFloor = holdoutBestQuality - holdoutQualityTolerance
 		holdoutBestPath = filepath.Join(runDir, "iter-000-holdout", "result.json")
@@ -255,8 +268,6 @@ func run(iterations int, casesPath, skillPath, model, piBinary, runDir string, m
 				_ = os.WriteFile(filepath.Join(iterDir, "candidate.SKILL.md"), candidateSkill, 0o644)
 			}
 		}
-		logBenchmark("iteration %d/%d: running candidate benchmark", iter, iterations)
-		candidate, err := runBenchmark(root, casesAbs, skillAbs, model, piBinary, iterDir, limit, judge, repeats)
 		restoreDryRun := func() error {
 			if !dryRun {
 				return nil
@@ -264,6 +275,8 @@ func run(iterations int, casesPath, skillPath, model, piBinary, runDir string, m
 			logDryRun("iteration %d/%d: restoring original skill after dry-run benchmarks", iter, iterations)
 			return os.WriteFile(skillAbs, original, 0o644)
 		}
+		logBenchmark("iteration %d/%d: running candidate benchmark", iter, iterations)
+		candidate, speculativeHoldout, speculativeHoldoutRan, speculativeHoldoutErr, err := runCandidateBenchmarks(root, casesAbs, holdoutCasesAbs, skillAbs, model, piBinary, iterDir, limit, judge, repeats, parallelRepeats, parallelCases, parallelSuites)
 		if err != nil {
 			if restoreErr := restoreDryRun(); restoreErr != nil {
 				return restoreErr
@@ -286,13 +299,25 @@ func run(iterations int, casesPath, skillPath, model, piBinary, runDir string, m
 		holdoutOK := true
 		var holdoutGate *benchmarkGate
 		if publicOK && holdoutCasesAbs != "" {
-			logBenchmark("iteration %d/%d: running holdout gate benchmark", iter, iterations)
-			holdoutCandidate, err := runBenchmark(root, holdoutCasesAbs, skillAbs, model, piBinary, filepath.Join(iterDir, "holdout"), limit, judge, repeats)
-			if err != nil {
-				if restoreErr := restoreDryRun(); restoreErr != nil {
-					return restoreErr
+			var holdoutCandidate autoresearch.SuiteResult
+			if speculativeHoldoutRan {
+				if speculativeHoldoutErr != nil {
+					if restoreErr := restoreDryRun(); restoreErr != nil {
+						return restoreErr
+					}
+					return speculativeHoldoutErr
 				}
-				return err
+				holdoutCandidate = speculativeHoldout
+			} else {
+				logBenchmark("iteration %d/%d: running holdout gate benchmark", iter, iterations)
+				var err error
+				holdoutCandidate, err = runBenchmark(root, holdoutCasesAbs, skillAbs, model, piBinary, filepath.Join(iterDir, "holdout"), limit, judge, repeats, parallelRepeats, parallelCases)
+				if err != nil {
+					if restoreErr := restoreDryRun(); restoreErr != nil {
+						return restoreErr
+					}
+					return err
+				}
 			}
 			holdoutPath := filepath.Join(iterDir, "holdout", "result.json")
 			holdoutQuality := benchmarkQuality(holdoutCandidate)
@@ -303,6 +328,8 @@ func run(iterations int, casesPath, skillPath, model, piBinary, runDir string, m
 			} else {
 				printSemantic(logSemanticWarning, "iteration %d holdout quality: %.2f%% below floor %.2f%% (%s)", iter, holdoutQuality*100, holdoutQualityFloor*100, holdoutPath)
 			}
+		} else if speculativeHoldoutRan && speculativeHoldoutErr != nil {
+			logWarn("iteration %d/%d: speculative holdout benchmark failed after public rejection; ignoring: %v", iter, iterations, speculativeHoldoutErr)
 		}
 		if restoreErr := restoreDryRun(); restoreErr != nil {
 			return restoreErr
@@ -360,25 +387,157 @@ type benchmarkGate struct {
 	QualityFloor float64
 }
 
-func runBenchmark(root, casesAbs, skillAbs, model, piBinary, outDir string, limit int, judge bool, repeats int) (autoresearch.SuiteResult, error) {
+func prepareBenchmarkPrerequisites(root string, casesPaths ...string) error {
+	if err := ensureSkilltrainRShell(root); err != nil {
+		return err
+	}
+	for _, casesPath := range casesPaths {
+		if casesPath != "" && isRemoteHostDiagnosticsSuite(casesPath) {
+			logBenchmark("generating deterministic fixtures once for parallel benchmark runs")
+			return autoresearch.GenerateRemoteHostDiagnosticsFixtures(root)
+		}
+	}
+	return nil
+}
+
+func ensureSkilltrainRShell(root string) error {
+	if st, err := os.Stat(filepath.Join(root, "rshell")); err == nil && st.Mode()&0o111 != 0 {
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "make", "build")
+	cmd.Dir = root
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("building ./rshell: %w", err)
+	}
+	return nil
+}
+
+func isRemoteHostDiagnosticsSuite(casesPath string) bool {
+	return filepath.Base(filepath.Dir(casesPath)) == "remote-host-diagnostics"
+}
+
+type benchmarkOutcome struct {
+	Result autoresearch.SuiteResult
+	Err    error
+}
+
+func runBaselineBenchmarks(root, casesAbs, holdoutCasesAbs, skillAbs, model, piBinary, runDir string, limit int, judge bool, repeats, parallelRepeats, parallelCases int, parallelSuites bool) (autoresearch.SuiteResult, autoresearch.SuiteResult, bool, error) {
+	baselineDir := filepath.Join(runDir, "iter-000-baseline")
+	if holdoutCasesAbs == "" {
+		baseline, err := runBenchmark(root, casesAbs, skillAbs, model, piBinary, baselineDir, limit, judge, repeats, parallelRepeats, parallelCases)
+		return baseline, autoresearch.SuiteResult{}, false, err
+	}
+
+	holdoutDir := filepath.Join(runDir, "iter-000-holdout")
+	if parallelSuites {
+		logBenchmark("running public and holdout baseline benchmarks in parallel")
+		baselineCh := runBenchmarkAsync(root, casesAbs, skillAbs, model, piBinary, baselineDir, limit, judge, repeats, parallelRepeats, parallelCases)
+		holdoutCh := runBenchmarkAsync(root, holdoutCasesAbs, skillAbs, model, piBinary, holdoutDir, limit, judge, repeats, parallelRepeats, parallelCases)
+		baseline := <-baselineCh
+		holdout := <-holdoutCh
+		if baseline.Err != nil {
+			return autoresearch.SuiteResult{}, autoresearch.SuiteResult{}, false, baseline.Err
+		}
+		if holdout.Err != nil {
+			return autoresearch.SuiteResult{}, autoresearch.SuiteResult{}, false, holdout.Err
+		}
+		return baseline.Result, holdout.Result, true, nil
+	}
+
+	baseline, err := runBenchmark(root, casesAbs, skillAbs, model, piBinary, baselineDir, limit, judge, repeats, parallelRepeats, parallelCases)
+	if err != nil {
+		return autoresearch.SuiteResult{}, autoresearch.SuiteResult{}, false, err
+	}
+	logBenchmark("running holdout baseline benchmark")
+	holdout, err := runBenchmark(root, holdoutCasesAbs, skillAbs, model, piBinary, holdoutDir, limit, judge, repeats, parallelRepeats, parallelCases)
+	if err != nil {
+		return autoresearch.SuiteResult{}, autoresearch.SuiteResult{}, false, err
+	}
+	return baseline, holdout, true, nil
+}
+
+func runCandidateBenchmarks(root, casesAbs, holdoutCasesAbs, skillAbs, model, piBinary, iterDir string, limit int, judge bool, repeats, parallelRepeats, parallelCases int, parallelSuites bool) (autoresearch.SuiteResult, autoresearch.SuiteResult, bool, error, error) {
+	if holdoutCasesAbs == "" || !parallelSuites {
+		candidate, err := runBenchmark(root, casesAbs, skillAbs, model, piBinary, iterDir, limit, judge, repeats, parallelRepeats, parallelCases)
+		return candidate, autoresearch.SuiteResult{}, false, nil, err
+	}
+
+	logBenchmark("running public candidate and speculative holdout benchmarks in parallel")
+	candidateCh := runBenchmarkAsync(root, casesAbs, skillAbs, model, piBinary, iterDir, limit, judge, repeats, parallelRepeats, parallelCases)
+	holdoutCh := runBenchmarkAsync(root, holdoutCasesAbs, skillAbs, model, piBinary, filepath.Join(iterDir, "holdout"), limit, judge, repeats, parallelRepeats, parallelCases)
+	candidate := <-candidateCh
+	holdout := <-holdoutCh
+	return candidate.Result, holdout.Result, true, holdout.Err, candidate.Err
+}
+
+func runBenchmarkAsync(root, casesAbs, skillAbs, model, piBinary, outDir string, limit int, judge bool, repeats, parallelRepeats, parallelCases int) <-chan benchmarkOutcome {
+	ch := make(chan benchmarkOutcome, 1)
+	go func() {
+		result, err := runBenchmark(root, casesAbs, skillAbs, model, piBinary, outDir, limit, judge, repeats, parallelRepeats, parallelCases)
+		ch <- benchmarkOutcome{Result: result, Err: err}
+	}()
+	return ch
+}
+
+func runBenchmark(root, casesAbs, skillAbs, model, piBinary, outDir string, limit int, judge bool, repeats, parallelRepeats, parallelCases int) (autoresearch.SuiteResult, error) {
 	if repeats <= 1 {
-		return runBenchmarkOnce(root, casesAbs, skillAbs, model, piBinary, outDir, limit, judge)
+		return runBenchmarkOnce(root, casesAbs, skillAbs, model, piBinary, outDir, limit, judge, parallelCases)
 	}
 	if err := os.MkdirAll(outDir, 0o755); err != nil {
 		return autoresearch.SuiteResult{}, err
 	}
-	results := make([]autoresearch.SuiteResult, 0, repeats)
-	paths := make([]string, 0, repeats)
-	for repeat := 1; repeat <= repeats; repeat++ {
-		repeatDir := filepath.Join(outDir, fmt.Sprintf("repeat-%03d", repeat))
-		logBenchmark("benchmark: repeat %d/%d", repeat, repeats)
-		result, err := runBenchmarkOnce(root, casesAbs, skillAbs, model, piBinary, repeatDir, limit, judge)
-		if err != nil {
-			return autoresearch.SuiteResult{}, err
-		}
-		results = append(results, result)
-		paths = append(paths, filepath.Join(repeatDir, "result.json"))
+	results := make([]autoresearch.SuiteResult, repeats)
+	paths := make([]string, repeats)
+	parallelism := repeatParallelism(parallelRepeats, repeats)
+	if parallelism > 1 {
+		logBenchmark("benchmark: running %d repeats with parallelism %d", repeats, parallelism)
 	}
+
+	if parallelism <= 1 {
+		for repeat := 1; repeat <= repeats; repeat++ {
+			result, err := runBenchmarkRepeat(root, casesAbs, skillAbs, model, piBinary, outDir, limit, judge, parallelCases, repeat, repeats)
+			if err != nil {
+				return autoresearch.SuiteResult{}, err
+			}
+			results[repeat-1] = result
+			paths[repeat-1] = filepath.Join(outDir, fmt.Sprintf("repeat-%03d", repeat), "result.json")
+		}
+	} else {
+		jobs := make(chan int)
+		errCh := make(chan error, repeats)
+		var wg sync.WaitGroup
+		for worker := 0; worker < parallelism; worker++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				for repeat := range jobs {
+					result, err := runBenchmarkRepeat(root, casesAbs, skillAbs, model, piBinary, outDir, limit, judge, parallelCases, repeat, repeats)
+					if err != nil {
+						errCh <- err
+						continue
+					}
+					results[repeat-1] = result
+					paths[repeat-1] = filepath.Join(outDir, fmt.Sprintf("repeat-%03d", repeat), "result.json")
+				}
+			}()
+		}
+		for repeat := 1; repeat <= repeats; repeat++ {
+			jobs <- repeat
+		}
+		close(jobs)
+		wg.Wait()
+		close(errCh)
+		for err := range errCh {
+			if err != nil {
+				return autoresearch.SuiteResult{}, err
+			}
+		}
+	}
+
 	aggregate, err := aggregateBenchmarkRepeats(results, paths)
 	if err != nil {
 		return autoresearch.SuiteResult{}, err
@@ -391,7 +550,23 @@ func runBenchmark(root, casesAbs, skillAbs, model, piBinary, outDir string, limi
 	return aggregate, nil
 }
 
-func runBenchmarkOnce(root, casesAbs, skillAbs, model, piBinary, outDir string, limit int, judge bool) (autoresearch.SuiteResult, error) {
+func runBenchmarkRepeat(root, casesAbs, skillAbs, model, piBinary, outDir string, limit int, judge bool, parallelCases, repeat, repeats int) (autoresearch.SuiteResult, error) {
+	repeatDir := filepath.Join(outDir, fmt.Sprintf("repeat-%03d", repeat))
+	logBenchmark("benchmark: repeat %d/%d", repeat, repeats)
+	return runBenchmarkOnce(root, casesAbs, skillAbs, model, piBinary, repeatDir, limit, judge, parallelCases)
+}
+
+func repeatParallelism(configured, repeats int) int {
+	if repeats <= 1 {
+		return 1
+	}
+	if configured <= 0 || configured > repeats {
+		return repeats
+	}
+	return configured
+}
+
+func runBenchmarkOnce(root, casesAbs, skillAbs, model, piBinary, outDir string, limit int, judge bool, parallelCases int) (autoresearch.SuiteResult, error) {
 	if err := os.MkdirAll(outDir, 0o755); err != nil {
 		return autoresearch.SuiteResult{}, err
 	}
@@ -404,6 +579,9 @@ func runBenchmarkOnce(root, casesAbs, skillAbs, model, piBinary, outDir string, 
 		"-pi", piBinary,
 		"-out", filepath.Join(outDir, "result.json"),
 		"-raw-dir", filepath.Join(outDir, "raw"),
+		"-parallel-cases", fmt.Sprint(parallelCases),
+		"-ensure-rshell=false",
+		"-generate-fixtures=false",
 	}
 	if limit > 0 {
 		args = append(args, "-limit", fmt.Sprint(limit))

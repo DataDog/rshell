@@ -37,6 +37,39 @@ func TestBoundedUpperScore(t *testing.T) {
 	}
 }
 
+func TestDefaultParallelCasesIsTwo(t *testing.T) {
+	if defaultParallelCases != 2 {
+		t.Fatalf("defaultParallelCases = %d, want 2", defaultParallelCases)
+	}
+}
+
+func TestCaseParallelismZeroMeansAllSelectedCases(t *testing.T) {
+	if got := caseParallelism(0, 5); got != 5 {
+		t.Fatalf("caseParallelism(0, 5) = %d, want 5", got)
+	}
+	if got := caseParallelism(2, 5); got != 2 {
+		t.Fatalf("caseParallelism(2, 5) = %d, want 2", got)
+	}
+	if got := caseParallelism(99, 5); got != 5 {
+		t.Fatalf("caseParallelism(99, 5) = %d, want 5", got)
+	}
+	if got := caseParallelism(1, 5); got != 1 {
+		t.Fatalf("caseParallelism(1, 5) = %d, want 1", got)
+	}
+}
+
+func TestSelectCasesAppliesFilterBeforeLimit(t *testing.T) {
+	cases := []autoresearch.Case{{ID: "a"}, {ID: "b"}, {ID: "c"}}
+	selected := selectCases(cases, 2, "")
+	if len(selected) != 2 || selected[0].ID != "a" || selected[1].ID != "b" {
+		t.Fatalf("selectCases limit = %+v, want a,b", selected)
+	}
+	selected = selectCases(cases, 1, "c")
+	if len(selected) != 1 || selected[0].ID != "c" {
+		t.Fatalf("selectCases filter = %+v, want c", selected)
+	}
+}
+
 func TestApplyObjectiveScore(t *testing.T) {
 	result := autoresearch.SuiteResult{
 		QualityNormalizedScore: 0.90,

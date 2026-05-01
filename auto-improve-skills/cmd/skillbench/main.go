@@ -20,13 +20,17 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 	"unicode/utf8"
 
 	"github.com/DataDog/rshell/auto-improve-skills/internal/autoresearch"
 )
 
-const defaultModel = "openai-codex/gpt-5.5"
+const (
+	defaultModel         = "openai-codex/gpt-5.5"
+	defaultParallelCases = 2
+)
 
 func main() {
 	var (
@@ -38,6 +42,7 @@ func main() {
 		model                    = flag.String("model", defaultModel, "pi model for benchmark agents and optional judge")
 		mode                     = flag.String("mode", "live", "benchmark mode: live or prompts")
 		limit                    = flag.Int("limit", 0, "run at most N cases (0 = all)")
+		parallelCases            = flag.Int("parallel-cases", defaultParallelCases, "maximum benchmark cases to run concurrently (0 = all selected cases, 1 = serial)")
 		caseFilter               = flag.String("case", "", "run one case id")
 		caseTimeout              = flag.Duration("case-timeout", 6*time.Minute, "timeout per benchmark case")
 		judge                    = flag.Bool("judge", false, "run optional LLM-as-judge scoring pass")
@@ -63,18 +68,21 @@ func main() {
 		SkillSizeTargetTokens:    *skillSizeTargetTokens,
 		SkillSizeHardLimitTokens: *skillSizeHardLimitTokens,
 	}
-	if err := run(*casesPath, *skillPath, *outputPath, *rawDir, *piBinary, *model, *mode, *limit, *caseFilter, *caseTimeout, *judge, *judgeWeight, *ensureRShell, *generateFixtures, objective); err != nil {
+	if err := run(*casesPath, *skillPath, *outputPath, *rawDir, *piBinary, *model, *mode, *limit, *parallelCases, *caseFilter, *caseTimeout, *judge, *judgeWeight, *ensureRShell, *generateFixtures, objective); err != nil {
 		fmt.Fprintf(os.Stderr, "skillbench: %v\n", err)
 		os.Exit(1)
 	}
 }
 
-func run(casesPath, skillPath, outputPath, rawDir, piBinary, model, mode string, limit int, caseFilter string, caseTimeout time.Duration, judge bool, judgeWeight float64, ensureRShell, generateFixtures bool, objective autoresearch.ObjectiveConfig) error {
+func run(casesPath, skillPath, outputPath, rawDir, piBinary, model, mode string, limit, parallelCases int, caseFilter string, caseTimeout time.Duration, judge bool, judgeWeight float64, ensureRShell, generateFixtures bool, objective autoresearch.ObjectiveConfig) error {
 	if mode != "live" && mode != "prompts" {
 		return fmt.Errorf("unsupported -mode %q (want live or prompts)", mode)
 	}
 	if judgeWeight < 0 || judgeWeight > 1 {
 		return fmt.Errorf("-judge-weight must be between 0 and 1")
+	}
+	if parallelCases < 0 {
+		return fmt.Errorf("-parallel-cases must be non-negative")
 	}
 	if err := validateObjectiveConfig(objective); err != nil {
 		return err
@@ -153,39 +161,24 @@ func run(casesPath, skillPath, outputPath, rawDir, piBinary, model, mode string,
 		StartedAt:                started,
 	}
 
-	runCount := 0
-	for _, tc := range suite.Cases {
-		if caseFilter != "" && tc.ID != caseFilter {
-			continue
-		}
-		if limit > 0 && runCount >= limit {
-			break
-		}
-		runCount++
+	selectedCases := selectCases(suite.Cases, limit, caseFilter)
+	if len(selectedCases) == 0 {
+		return fmt.Errorf("no cases selected")
+	}
+	expandedCases := make([]autoresearch.Case, 0, len(selectedCases))
+	for _, tc := range selectedCases {
 		caseVars := autoresearch.MergeVariables(vars, tc.Variables)
-		expanded := expandCase(tc, caseVars)
-		caseResult := runCase(root, rawDir, requestedSkillAbs, piBinary, model, mode, expanded, caseTimeout)
-		scoreCase(&caseResult, expanded)
-		caseResult.DurationScore = boundedUpperScore(caseResult.DurationSeconds, objective.DurationBudgetSeconds, objective.DurationHardLimitSeconds)
-		applySafetyGates(&caseResult)
-		if judge && mode == "live" && strings.TrimSpace(caseResult.FinalAnswer) != "" && len(caseResult.SafetyViolations) == 0 {
-			jr, err := runJudge(root, piBinary, model, expanded, caseResult, caseTimeout/2)
-			if err != nil {
-				caseResult.Error = strings.TrimSpace(caseResult.Error + "; judge: " + err.Error())
-			} else {
-				caseResult.Judge = &jr
-				applyJudgeScore(&caseResult, judgeWeight)
-			}
-		}
+		expandedCases = append(expandedCases, expandCase(tc, caseVars))
+	}
+	caseResults := runCases(root, rawDir, requestedSkillAbs, piBinary, model, mode, expandedCases, caseTimeout, judge, judgeWeight, objective, caseParallelism(parallelCases, len(expandedCases)))
+	for _, caseResult := range caseResults {
 		results.Cases = append(results.Cases, caseResult)
 		results.Score += caseResult.Score
 		results.MaxScore += caseResult.MaxScore
 		results.DurationScore += caseResult.DurationScore
 		results.AverageCaseDurationSeconds += caseResult.DurationSeconds
 	}
-	if runCount == 0 {
-		return fmt.Errorf("no cases selected")
-	}
+	runCount := len(caseResults)
 	if results.MaxScore > 0 {
 		results.NormalizedScore = results.Score / results.MaxScore
 	}
@@ -225,6 +218,20 @@ func ensureLocalRShell(root string) error {
 	return nil
 }
 
+func selectCases(cases []autoresearch.Case, limit int, caseFilter string) []autoresearch.Case {
+	selected := make([]autoresearch.Case, 0, len(cases))
+	for _, tc := range cases {
+		if caseFilter != "" && tc.ID != caseFilter {
+			continue
+		}
+		if limit > 0 && len(selected) >= limit {
+			break
+		}
+		selected = append(selected, tc)
+	}
+	return selected
+}
+
 func expandCase(tc autoresearch.Case, vars map[string]string) autoresearch.Case {
 	tc.Prompt = autoresearch.Expand(tc.Prompt, vars)
 	tc.JudgeRubric = autoresearch.Expand(tc.JudgeRubric, vars)
@@ -235,6 +242,66 @@ func expandCase(tc autoresearch.Case, vars map[string]string) autoresearch.Case 
 		tc.Criteria[i].EvidenceRegex = autoresearch.Expand(tc.Criteria[i].EvidenceRegex, vars)
 	}
 	return tc
+}
+
+func runCases(root, rawDir, skillPath, piBinary, model, mode string, cases []autoresearch.Case, timeout time.Duration, judge bool, judgeWeight float64, objective autoresearch.ObjectiveConfig, parallelism int) []autoresearch.CaseResult {
+	results := make([]autoresearch.CaseResult, len(cases))
+	if len(cases) == 0 {
+		return results
+	}
+	parallelism = caseParallelism(parallelism, len(cases))
+	if parallelism <= 1 {
+		for i, tc := range cases {
+			results[i] = runScoredCase(root, rawDir, skillPath, piBinary, model, mode, tc, timeout, judge, judgeWeight, objective)
+		}
+		return results
+	}
+
+	fmt.Printf("skillbench: running %d cases with parallelism %d\n", len(cases), parallelism)
+	jobs := make(chan int)
+	var wg sync.WaitGroup
+	for worker := 0; worker < parallelism; worker++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for idx := range jobs {
+				results[idx] = runScoredCase(root, rawDir, skillPath, piBinary, model, mode, cases[idx], timeout, judge, judgeWeight, objective)
+			}
+		}()
+	}
+	for idx := range cases {
+		jobs <- idx
+	}
+	close(jobs)
+	wg.Wait()
+	return results
+}
+
+func runScoredCase(root, rawDir, skillPath, piBinary, model, mode string, tc autoresearch.Case, timeout time.Duration, judge bool, judgeWeight float64, objective autoresearch.ObjectiveConfig) autoresearch.CaseResult {
+	caseResult := runCase(root, rawDir, skillPath, piBinary, model, mode, tc, timeout)
+	scoreCase(&caseResult, tc)
+	caseResult.DurationScore = boundedUpperScore(caseResult.DurationSeconds, objective.DurationBudgetSeconds, objective.DurationHardLimitSeconds)
+	applySafetyGates(&caseResult)
+	if judge && mode == "live" && strings.TrimSpace(caseResult.FinalAnswer) != "" && len(caseResult.SafetyViolations) == 0 {
+		jr, err := runJudge(root, piBinary, model, tc, caseResult, timeout/2)
+		if err != nil {
+			caseResult.Error = strings.TrimSpace(caseResult.Error + "; judge: " + err.Error())
+		} else {
+			caseResult.Judge = &jr
+			applyJudgeScore(&caseResult, judgeWeight)
+		}
+	}
+	return caseResult
+}
+
+func caseParallelism(configured, count int) int {
+	if count <= 1 {
+		return 1
+	}
+	if configured <= 0 || configured > count {
+		return count
+	}
+	return configured
 }
 
 func runCase(root, rawDir, skillPath, piBinary, model, mode string, tc autoresearch.Case, timeout time.Duration) (result autoresearch.CaseResult) {

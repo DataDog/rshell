@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Parallel Benchmark Execution Proof</title>
+  <style>
+    :root { color-scheme: dark; --bg:#08111f; --panel:#101c2f; --ink:#edf6ff; --muted:#a9bdd4; --accent:#60a5fa; --ok:#34d399; --warn:#fbbf24; --line:#22354f; }
+    * { box-sizing: border-box; }
+    body { margin:0; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; background:linear-gradient(135deg,#08111f,#14213d 55%,#0f172a); color:var(--ink); }
+    main { scroll-snap-type:y mandatory; height:100vh; overflow-y:auto; }
+    section { min-height:100vh; padding:6vh 7vw; display:flex; flex-direction:column; justify-content:center; scroll-snap-align:start; }
+    h1 { font-size:clamp(2.6rem,7vw,6rem); line-height:.95; margin:0 0 1rem; letter-spacing:-.05em; }
+    h2 { font-size:clamp(2rem,4vw,3.8rem); margin:0 0 1.2rem; letter-spacing:-.035em; }
+    h3 { margin:.2rem 0 .5rem; color:var(--accent); }
+    p, li { font-size:clamp(1.05rem,1.6vw,1.45rem); color:var(--muted); line-height:1.45; }
+    code { color:#bfdbfe; }
+    pre { background:#050b14; border:1px solid var(--line); border-radius:18px; padding:1.2rem; overflow:auto; color:#d7e8ff; font-size:clamp(.82rem,1vw,1rem); line-height:1.45; box-shadow:0 20px 60px #0008; }
+    .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:1rem; }
+    .card { background:linear-gradient(180deg,#13223a,#0c1728); border:1px solid var(--line); border-radius:24px; padding:1.4rem; box-shadow:0 20px 60px #0005; }
+    .pill { display:inline-flex; gap:.45rem; align-items:center; padding:.35rem .75rem; border-radius:999px; background:#12345a; color:#dbeafe; border:1px solid #24527f; font-weight:700; }
+    .ok { color:var(--ok); }
+    .warn { color:var(--warn); }
+    .big { font-size:clamp(1.4rem,2.2vw,2rem); color:var(--ink); }
+    .muted { color:var(--muted); }
+    .footer { position:fixed; right:1rem; bottom:1rem; color:#8aa4c2; font-size:.9rem; }
+  </style>
+</head>
+<body>
+<main>
+  <section>
+    <span class="pill">Auto-improve skills</span>
+    <h1>Parallel benchmark execution is now on by default</h1>
+    <p class="big">Implemented parallel suites, repeats, and cases for <code>skilltrain</code>/<code>skillbench</code>, with bounded defaults requested by the user.</p>
+    <p>Proof date: 2026-05-01</p>
+  </section>
+
+  <section>
+    <h2>What runs in parallel</h2>
+    <div class="grid">
+      <div class="card"><h3>Suite-level</h3><p>Public and holdout baselines run concurrently. Candidate public benchmark and speculative holdout benchmark run concurrently when holdout is enabled.</p></div>
+      <div class="card"><h3>Repeat-level</h3><p><code>skilltrain</code> runs benchmark repeats concurrently up to <code>-parallel-repeats</code>. Default: <strong>3</strong>.</p></div>
+      <div class="card"><h3>Case-level</h3><p><code>skillbench</code> runs selected cases concurrently up to <code>-parallel-cases</code>. Default: <strong>2</strong>.</p></div>
+      <div class="card"><h3>Safety setup</h3><p><code>skilltrain</code> prepares <code>./rshell</code> and generated fixtures once before parallel runs, then disables per-run rebuild/regeneration.</p></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Default flags prove bounded parallelism</h2>
+    <pre><code>$ go run ./cmd/skilltrain -h 2&gt;&amp;1 | awk '/parallel-cases|parallel-repeats|parallel-suites/{print; getline; print}'
+  -parallel-cases int
+    	maximum cases per skillbench run to execute concurrently (0 = all selected cases, 1 = serial) (default 2)
+  -parallel-repeats int
+    	maximum benchmark repeats to run concurrently (0 = all repeats, 1 = serial) (default 3)
+  -parallel-suites
+    	run independent public and holdout suites concurrently when possible (default true)
+
+$ go run ./cmd/skillbench -h 2&gt;&amp;1 | awk '/parallel-cases/{print; getline; print}'
+  -parallel-cases int
+    	maximum benchmark cases to run concurrently (0 = all selected cases, 1 = serial) (default 2)</code></pre>
+  </section>
+
+  <section>
+    <h2>Case parallelism exercised</h2>
+    <p>The prompt-only benchmark path is cheap but runs the same case scheduling code. It selected two cases and executed with parallelism two.</p>
+    <pre><code>$ go run ./cmd/skillbench -mode prompts -limit 2 -parallel-cases 2 \
+    -ensure-rshell=false -generate-fixtures=false \
+    -out auto-improve-skills/tmp/parallel-proof-skillbench.json \
+    -raw-dir auto-improve-skills/tmp/parallel-proof-raw
+skillbench: running 2 cases with parallelism 2
+skillbench remote-host-diagnostics-quality: quality 5.0/200.0 (2.5%), objective 17.1%
+  avg duration 0.0s (score 100.0%), skill size ~1719 tokens (score 100.0%)
+  auth-bruteforce-summary                5.0/100.0   5.0% dur   0.0s FAIL
+  datadog-agent-config-regression        0.0/100.0   0.0% dur   0.0s FAIL
+report: .../auto-improve-skills/tmp/parallel-proof-skillbench.json</code></pre>
+  </section>
+
+  <section>
+    <h2>Automated tests pass</h2>
+    <p>Unit tests cover default parallel constants, repeat parallelism selection, case selection/parallelism, scoring, and aggregation behavior.</p>
+    <pre><code>$ (cd .. &amp;&amp; make fmt) &amp;&amp; go test ./...
+go fmt ./...
+ok  	github.com/DataDog/rshell/auto-improve-skills/cmd/skillbench	0.427s
+?   	github.com/DataDog/rshell/auto-improve-skills/cmd/skillfixtures	[no test files]
+ok  	github.com/DataDog/rshell/auto-improve-skills/cmd/skilltrain	0.698s
+ok  	github.com/DataDog/rshell/auto-improve-skills/internal/autoresearch	(cached)</code></pre>
+  </section>
+
+  <section>
+    <h2>Files changed</h2>
+    <div class="grid">
+      <div class="card"><h3><code>cmd/skillbench/main.go</code></h3><p>Added <code>-parallel-cases</code> default 2 and worker-pool execution for selected cases.</p></div>
+      <div class="card"><h3><code>cmd/skilltrain/main.go</code></h3><p>Added suite, repeat, and nested-case parallelism; prerequisites are prepared once.</p></div>
+      <div class="card"><h3>Tests</h3><p>Added default and parallelism selection checks for both commands.</p></div>
+      <div class="card"><h3>Docs</h3><p>Updated <code>README.md</code> and <code>program.md</code> with the new defaults and execution model.</p></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Result</h2>
+    <p class="big ok">All requested parallel modes are implemented and enabled by default.</p>
+    <ul>
+      <li><code>-parallel-repeats</code> default: <strong>3</strong></li>
+      <li><code>-parallel-cases</code> default: <strong>2</strong></li>
+      <li><code>-parallel-suites</code> default: <strong>true</strong></li>
+      <li>Serial fallback remains available with <code>-parallel-repeats 1</code>, <code>-parallel-cases 1</code>, or <code>-parallel-suites=false</code>.</li>
+    </ul>
+  </section>
+</main>
+<div class="footer">report/parallel-benchmark-execution.html</div>
+</body>
+</html>

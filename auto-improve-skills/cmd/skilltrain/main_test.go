@@ -46,6 +46,30 @@ func TestLogSemanticStyleMapsStatusesToColors(t *testing.T) {
 	}
 }
 
+func TestDefaultParallelSettings(t *testing.T) {
+	if defaultParallelRepeats != 3 {
+		t.Fatalf("defaultParallelRepeats = %d, want 3", defaultParallelRepeats)
+	}
+	if defaultParallelCases != 2 {
+		t.Fatalf("defaultParallelCases = %d, want 2", defaultParallelCases)
+	}
+}
+
+func TestRepeatParallelismZeroMeansAllRepeats(t *testing.T) {
+	if got := repeatParallelism(0, 3); got != 3 {
+		t.Fatalf("repeatParallelism(0, 3) = %d, want 3", got)
+	}
+	if got := repeatParallelism(2, 3); got != 2 {
+		t.Fatalf("repeatParallelism(2, 3) = %d, want 2", got)
+	}
+	if got := repeatParallelism(99, 3); got != 3 {
+		t.Fatalf("repeatParallelism(99, 3) = %d, want 3", got)
+	}
+	if got := repeatParallelism(1, 3); got != 1 {
+		t.Fatalf("repeatParallelism(1, 3) = %d, want 1", got)
+	}
+}
+
 func TestBenchmarkObjectiveFallsBackToQualityForOldResults(t *testing.T) {
 	result := autoresearch.SuiteResult{NormalizedScore: 0.75}
 	if got := benchmarkQuality(result); got != 0.75 {
