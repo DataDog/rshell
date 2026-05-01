@@ -56,6 +56,8 @@ func main() {
 		skillSizeHardLimitTokens = flag.Int("skill-size-hard-limit-tokens", 3500, "estimated skill tokens with full objective penalty")
 		ensureRShell             = flag.Bool("ensure-rshell", true, "run make build if ./rshell is missing")
 		generateFixtures         = flag.Bool("generate-fixtures", true, "generate deterministic remote-host-diagnostics fixture logs before running")
+		logSuite                 = flag.String("log-suite", "", "short suite label to include in log prefixes")
+		logRepeat                = flag.String("log-repeat", "", "repeat label to include in log prefixes")
 	)
 	flag.Parse()
 
@@ -68,13 +70,56 @@ func main() {
 		SkillSizeTargetTokens:    *skillSizeTargetTokens,
 		SkillSizeHardLimitTokens: *skillSizeHardLimitTokens,
 	}
-	if err := run(*casesPath, *skillPath, *outputPath, *rawDir, *piBinary, *model, *mode, *limit, *parallelCases, *caseFilter, *caseTimeout, *judge, *judgeWeight, *ensureRShell, *generateFixtures, objective); err != nil {
-		fmt.Fprintf(os.Stderr, "skillbench: %v\n", err)
+	if err := run(*casesPath, *skillPath, *outputPath, *rawDir, *piBinary, *model, *mode, *limit, *parallelCases, *caseFilter, *caseTimeout, *judge, *judgeWeight, *ensureRShell, *generateFixtures, *logSuite, *logRepeat, objective); err != nil {
+		fmt.Fprintf(os.Stderr, "skillbench: %s %v\n", formatLogContext(benchLogContext{Suite: *logSuite, Repeat: *logRepeat}), err)
 		os.Exit(1)
 	}
 }
 
-func run(casesPath, skillPath, outputPath, rawDir, piBinary, model, mode string, limit, parallelCases int, caseFilter string, caseTimeout time.Duration, judge bool, judgeWeight float64, ensureRShell, generateFixtures bool, objective autoresearch.ObjectiveConfig) error {
+type benchLogContext struct {
+	Suite  string
+	Repeat string
+	Case   string
+}
+
+var benchLogMu sync.Mutex
+
+func formatLogContext(ctx benchLogContext) string {
+	return "[" + logContextValue(ctx.Suite) + "|" + logContextValue(ctx.Repeat) + "|" + logContextValue(ctx.Case) + "]"
+}
+
+func logContextValue(s string) string {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return "-"
+	}
+	s = strings.ReplaceAll(s, "|", "_")
+	s = strings.ReplaceAll(s, "\n", "_")
+	s = strings.ReplaceAll(s, "\r", "_")
+	return s
+}
+
+func benchLogf(ctx benchLogContext, format string, args ...any) {
+	benchLogMu.Lock()
+	defer benchLogMu.Unlock()
+	fmt.Printf("skillbench: %s %s\n", formatLogContext(ctx), fmt.Sprintf(format, args...))
+}
+
+func suiteLogLabel(casesPath string) string {
+	base := strings.TrimSuffix(filepath.Base(casesPath), filepath.Ext(casesPath))
+	switch base {
+	case "cases":
+		return "p"
+	case "holdout":
+		return "h"
+	case "":
+		return "suite"
+	default:
+		return base
+	}
+}
+
+func run(casesPath, skillPath, outputPath, rawDir, piBinary, model, mode string, limit, parallelCases int, caseFilter string, caseTimeout time.Duration, judge bool, judgeWeight float64, ensureRShell, generateFixtures bool, logSuite, logRepeat string, objective autoresearch.ObjectiveConfig) error {
 	if mode != "live" && mode != "prompts" {
 		return fmt.Errorf("unsupported -mode %q (want live or prompts)", mode)
 	}
@@ -119,6 +164,10 @@ func run(casesPath, skillPath, outputPath, rawDir, piBinary, model, mode string,
 	if err != nil {
 		return err
 	}
+	if strings.TrimSpace(logSuite) == "" {
+		logSuite = suiteLogLabel(casesAbs)
+	}
+	logCtx := benchLogContext{Suite: logSuite, Repeat: logRepeat}
 	if suite.SkillPath != "" && skillPath == "" {
 		requestedSkillAbs = autoresearch.AbsFromRoot(filepath.Dir(casesAbs), suite.SkillPath)
 	}
@@ -170,7 +219,7 @@ func run(casesPath, skillPath, outputPath, rawDir, piBinary, model, mode string,
 		caseVars := autoresearch.MergeVariables(vars, tc.Variables)
 		expandedCases = append(expandedCases, expandCase(tc, caseVars))
 	}
-	caseResults := runCases(root, rawDir, requestedSkillAbs, piBinary, model, mode, expandedCases, caseTimeout, judge, judgeWeight, objective, caseParallelism(parallelCases, len(expandedCases)))
+	caseResults := runCases(root, rawDir, requestedSkillAbs, piBinary, model, mode, expandedCases, caseTimeout, judge, judgeWeight, objective, caseParallelism(parallelCases, len(expandedCases)), logCtx)
 	for _, caseResult := range caseResults {
 		results.Cases = append(results.Cases, caseResult)
 		results.Score += caseResult.Score
@@ -194,7 +243,7 @@ func run(casesPath, skillPath, outputPath, rawDir, piBinary, model, mode string,
 	if err := autoresearch.WriteJSON(outputPath, results); err != nil {
 		return err
 	}
-	printSummary(results, outputPath)
+	printSummary(results, outputPath, logCtx)
 	return nil
 }
 
@@ -244,7 +293,7 @@ func expandCase(tc autoresearch.Case, vars map[string]string) autoresearch.Case 
 	return tc
 }
 
-func runCases(root, rawDir, skillPath, piBinary, model, mode string, cases []autoresearch.Case, timeout time.Duration, judge bool, judgeWeight float64, objective autoresearch.ObjectiveConfig, parallelism int) []autoresearch.CaseResult {
+func runCases(root, rawDir, skillPath, piBinary, model, mode string, cases []autoresearch.Case, timeout time.Duration, judge bool, judgeWeight float64, objective autoresearch.ObjectiveConfig, parallelism int, logCtx benchLogContext) []autoresearch.CaseResult {
 	results := make([]autoresearch.CaseResult, len(cases))
 	if len(cases) == 0 {
 		return results
@@ -252,12 +301,12 @@ func runCases(root, rawDir, skillPath, piBinary, model, mode string, cases []aut
 	parallelism = caseParallelism(parallelism, len(cases))
 	if parallelism <= 1 {
 		for i, tc := range cases {
-			results[i] = runScoredCase(root, rawDir, skillPath, piBinary, model, mode, tc, timeout, judge, judgeWeight, objective)
+			results[i] = runScoredCase(root, rawDir, skillPath, piBinary, model, mode, tc, timeout, judge, judgeWeight, objective, logCtx)
 		}
 		return results
 	}
 
-	fmt.Printf("skillbench: running %d cases with parallelism %d\n", len(cases), parallelism)
+	benchLogf(logCtx, "running %d cases with parallelism %d", len(cases), parallelism)
 	jobs := make(chan int)
 	var wg sync.WaitGroup
 	for worker := 0; worker < parallelism; worker++ {
@@ -265,7 +314,7 @@ func runCases(root, rawDir, skillPath, piBinary, model, mode string, cases []aut
 		go func() {
 			defer wg.Done()
 			for idx := range jobs {
-				results[idx] = runScoredCase(root, rawDir, skillPath, piBinary, model, mode, cases[idx], timeout, judge, judgeWeight, objective)
+				results[idx] = runScoredCase(root, rawDir, skillPath, piBinary, model, mode, cases[idx], timeout, judge, judgeWeight, objective, logCtx)
 			}
 		}()
 	}
@@ -277,12 +326,16 @@ func runCases(root, rawDir, skillPath, piBinary, model, mode string, cases []aut
 	return results
 }
 
-func runScoredCase(root, rawDir, skillPath, piBinary, model, mode string, tc autoresearch.Case, timeout time.Duration, judge bool, judgeWeight float64, objective autoresearch.ObjectiveConfig) autoresearch.CaseResult {
+func runScoredCase(root, rawDir, skillPath, piBinary, model, mode string, tc autoresearch.Case, timeout time.Duration, judge bool, judgeWeight float64, objective autoresearch.ObjectiveConfig, logCtx benchLogContext) autoresearch.CaseResult {
+	caseCtx := logCtx
+	caseCtx.Case = tc.ID
+	benchLogf(caseCtx, "start")
 	caseResult := runCase(root, rawDir, skillPath, piBinary, model, mode, tc, timeout)
 	scoreCase(&caseResult, tc)
 	caseResult.DurationScore = boundedUpperScore(caseResult.DurationSeconds, objective.DurationBudgetSeconds, objective.DurationHardLimitSeconds)
 	applySafetyGates(&caseResult)
 	if judge && mode == "live" && strings.TrimSpace(caseResult.FinalAnswer) != "" && len(caseResult.SafetyViolations) == 0 {
+		benchLogf(caseCtx, "judge")
 		jr, err := runJudge(root, piBinary, model, tc, caseResult, timeout/2)
 		if err != nil {
 			caseResult.Error = strings.TrimSpace(caseResult.Error + "; judge: " + err.Error())
@@ -291,6 +344,7 @@ func runScoredCase(root, rawDir, skillPath, piBinary, model, mode string, tc aut
 			applyJudgeScore(&caseResult, judgeWeight)
 		}
 	}
+	benchLogf(caseCtx, "done %.1f/%.1f %.1f%% dur %.1fs", caseResult.Score, caseResult.MaxScore, caseResult.NormalizedScore*100, caseResult.DurationSeconds)
 	return caseResult
 }
 
@@ -816,9 +870,9 @@ func applyObjectiveScore(result *autoresearch.SuiteResult) {
 	result.ObjectiveNormalizedScore = objective
 }
 
-func printSummary(result autoresearch.SuiteResult, outputPath string) {
-	fmt.Printf("skillbench %s: quality %.1f/%.1f (%.1f%%), objective %.1f%%\n", result.SuiteName, result.Score, result.MaxScore, result.NormalizedScore*100, result.ObjectiveNormalizedScore*100)
-	fmt.Printf("  avg duration %.1fs (score %.1f%%), skill size ~%d tokens (score %.1f%%)\n", result.AverageCaseDurationSeconds, result.DurationScore*100, result.SkillSizeEstimatedTokens, result.SkillSizeScore*100)
+func printSummary(result autoresearch.SuiteResult, outputPath string, logCtx benchLogContext) {
+	benchLogf(logCtx, "%s quality %.1f/%.1f (%.1f%%), objective %.1f%%", result.SuiteName, result.Score, result.MaxScore, result.NormalizedScore*100, result.ObjectiveNormalizedScore*100)
+	benchLogf(logCtx, "avg duration %.1fs (score %.1f%%), skill size ~%d tokens (score %.1f%%)", result.AverageCaseDurationSeconds, result.DurationScore*100, result.SkillSizeEstimatedTokens, result.SkillSizeScore*100)
 	caseResults := append([]autoresearch.CaseResult(nil), result.Cases...)
 	sort.SliceStable(caseResults, func(i, j int) bool { return caseResults[i].ID < caseResults[j].ID })
 	for _, cr := range caseResults {
@@ -829,12 +883,14 @@ func printSummary(result autoresearch.SuiteResult, outputPath string) {
 		if cr.NormalizedScore < 0.65 {
 			status = "FAIL"
 		}
-		fmt.Printf("  %-36s %5.1f/%-5.1f %5.1f%% dur %5.1fs %s\n", cr.ID, cr.Score, cr.MaxScore, cr.NormalizedScore*100, cr.DurationSeconds, status)
+		caseCtx := logCtx
+		caseCtx.Case = cr.ID
+		benchLogf(caseCtx, "%.1f/%.1f %.1f%% dur %.1fs %s", cr.Score, cr.MaxScore, cr.NormalizedScore*100, cr.DurationSeconds, status)
 		if cr.Error != "" {
-			fmt.Printf("    error: %s\n", cr.Error)
+			benchLogf(caseCtx, "error: %s", cr.Error)
 		}
 	}
-	fmt.Printf("report: %s\n", outputPath)
+	benchLogf(logCtx, "report: %s", outputPath)
 }
 
 func appendErr(existing, msg string) string {

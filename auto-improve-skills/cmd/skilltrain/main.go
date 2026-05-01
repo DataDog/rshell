@@ -80,47 +80,95 @@ func main() {
 	}
 }
 
+type logContext struct {
+	Suite  string
+	Repeat string
+	Case   string
+}
+
+var skilltrainLogMu sync.Mutex
+
+func defaultLogContext() logContext {
+	return logContext{Suite: "t", Repeat: "-", Case: "-"}
+}
+
+func suiteLogContext(suite string) logContext {
+	return logContext{Suite: suite, Repeat: "-", Case: "-"}
+}
+
+func repeatLogContext(suite string, repeat, repeats int) logContext {
+	ctx := suiteLogContext(suite)
+	if repeat > 0 && repeats > 0 {
+		ctx.Repeat = fmt.Sprintf("%d/%d", repeat, repeats)
+	}
+	return ctx
+}
+
 func logStep(format string, args ...any) {
-	logf(os.Stdout, logSemanticInfo, format, args...)
+	logf(os.Stdout, logSemanticInfo, defaultLogContext(), format, args...)
 }
 
 func logBenchmark(format string, args ...any) {
-	logf(os.Stdout, logSemanticBenchmark, format, args...)
+	logf(os.Stdout, logSemanticBenchmark, defaultLogContext(), format, args...)
+}
+
+func logBenchmarkCtx(ctx logContext, format string, args ...any) {
+	logf(os.Stdout, logSemanticBenchmark, ctx, format, args...)
 }
 
 func logSuccess(format string, args ...any) {
-	logf(os.Stdout, logSemanticSuccess, format, args...)
+	logf(os.Stdout, logSemanticSuccess, defaultLogContext(), format, args...)
 }
 
 func logWarn(format string, args ...any) {
-	logf(os.Stdout, logSemanticWarning, format, args...)
+	logf(os.Stdout, logSemanticWarning, defaultLogContext(), format, args...)
 }
 
 func logError(format string, args ...any) {
-	logf(os.Stderr, logSemanticError, format, args...)
+	logf(os.Stderr, logSemanticError, defaultLogContext(), format, args...)
 }
 
 func logDryRun(format string, args ...any) {
-	logf(os.Stdout, logSemanticDryRun, format, args...)
+	logf(os.Stdout, logSemanticDryRun, defaultLogContext(), format, args...)
 }
 
-func logf(stream *os.File, semantic logSemantic, format string, args ...any) {
+func logf(stream *os.File, semantic logSemantic, ctx logContext, format string, args ...any) {
 	msg := fmt.Sprintf(format, args...)
-	fmt.Fprintln(stream, formatSkilltrainLog(semantic, msg, colorEnabledForLog(stream)))
+	skilltrainLogMu.Lock()
+	defer skilltrainLogMu.Unlock()
+	fmt.Fprintln(stream, formatSkilltrainLog(semantic, ctx, msg, colorEnabledForLog(stream)))
 }
 
 func printSemantic(semantic logSemantic, format string, args ...any) {
 	msg := fmt.Sprintf(format, args...)
-	fmt.Fprintln(os.Stdout, formatSemanticText(semantic, msg, colorEnabledForLog(os.Stdout)))
+	skilltrainLogMu.Lock()
+	defer skilltrainLogMu.Unlock()
+	fmt.Fprintln(os.Stdout, formatSkilltrainLog(semantic, defaultLogContext(), msg, colorEnabledForLog(os.Stdout)))
 }
 
-func formatSkilltrainLog(semantic logSemantic, msg string, colorEnabled bool) string {
-	line := "skilltrain: " + msg
+func formatSkilltrainLog(semantic logSemantic, ctx logContext, msg string, colorEnabled bool) string {
+	contextPrefix := formatLogContext(ctx)
+	line := "skilltrain: " + contextPrefix + " " + msg
 	if !colorEnabled {
 		return line
 	}
 	prefix := ansiDim + "skilltrain:" + ansiReset
-	return prefix + " " + formatSemanticText(semantic, msg, true)
+	return prefix + " " + formatSemanticText(semantic, contextPrefix+" "+msg, true)
+}
+
+func formatLogContext(ctx logContext) string {
+	return "[" + logContextValue(ctx.Suite) + "|" + logContextValue(ctx.Repeat) + "|" + logContextValue(ctx.Case) + "]"
+}
+
+func logContextValue(s string) string {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return "-"
+	}
+	s = strings.ReplaceAll(s, "|", "_")
+	s = strings.ReplaceAll(s, "\n", "_")
+	s = strings.ReplaceAll(s, "\r", "_")
+	return s
 }
 
 func formatSemanticText(semantic logSemantic, msg string, colorEnabled bool) string {
@@ -309,9 +357,10 @@ func run(iterations int, casesPath, skillPath, model, piBinary, runDir string, m
 				}
 				holdoutCandidate = speculativeHoldout
 			} else {
-				logBenchmark("iteration %d/%d: running holdout gate benchmark", iter, iterations)
+				holdoutSuite := suiteLogLabel(holdoutCasesAbs)
+				logBenchmarkCtx(suiteLogContext(holdoutSuite), "iteration %d/%d: running holdout gate benchmark", iter, iterations)
 				var err error
-				holdoutCandidate, err = runBenchmark(root, holdoutCasesAbs, skillAbs, model, piBinary, filepath.Join(iterDir, "holdout"), limit, judge, repeats, parallelRepeats, parallelCases)
+				holdoutCandidate, err = runBenchmark(root, holdoutCasesAbs, skillAbs, model, piBinary, filepath.Join(iterDir, "holdout"), holdoutSuite, limit, judge, repeats, parallelRepeats, parallelCases)
 				if err != nil {
 					if restoreErr := restoreDryRun(); restoreErr != nil {
 						return restoreErr
@@ -420,6 +469,20 @@ func isRemoteHostDiagnosticsSuite(casesPath string) bool {
 	return filepath.Base(filepath.Dir(casesPath)) == "remote-host-diagnostics"
 }
 
+func suiteLogLabel(casesPath string) string {
+	base := strings.TrimSuffix(filepath.Base(casesPath), filepath.Ext(casesPath))
+	switch base {
+	case "cases":
+		return "p"
+	case "holdout":
+		return "h"
+	case "":
+		return "suite"
+	default:
+		return base
+	}
+}
+
 type benchmarkOutcome struct {
 	Result autoresearch.SuiteResult
 	Err    error
@@ -427,16 +490,18 @@ type benchmarkOutcome struct {
 
 func runBaselineBenchmarks(root, casesAbs, holdoutCasesAbs, skillAbs, model, piBinary, runDir string, limit int, judge bool, repeats, parallelRepeats, parallelCases int, parallelSuites bool) (autoresearch.SuiteResult, autoresearch.SuiteResult, bool, error) {
 	baselineDir := filepath.Join(runDir, "iter-000-baseline")
+	baselineSuite := suiteLogLabel(casesAbs)
 	if holdoutCasesAbs == "" {
-		baseline, err := runBenchmark(root, casesAbs, skillAbs, model, piBinary, baselineDir, limit, judge, repeats, parallelRepeats, parallelCases)
+		baseline, err := runBenchmark(root, casesAbs, skillAbs, model, piBinary, baselineDir, baselineSuite, limit, judge, repeats, parallelRepeats, parallelCases)
 		return baseline, autoresearch.SuiteResult{}, false, err
 	}
 
 	holdoutDir := filepath.Join(runDir, "iter-000-holdout")
+	holdoutSuite := suiteLogLabel(holdoutCasesAbs)
 	if parallelSuites {
 		logBenchmark("running public and holdout baseline benchmarks in parallel")
-		baselineCh := runBenchmarkAsync(root, casesAbs, skillAbs, model, piBinary, baselineDir, limit, judge, repeats, parallelRepeats, parallelCases)
-		holdoutCh := runBenchmarkAsync(root, holdoutCasesAbs, skillAbs, model, piBinary, holdoutDir, limit, judge, repeats, parallelRepeats, parallelCases)
+		baselineCh := runBenchmarkAsync(root, casesAbs, skillAbs, model, piBinary, baselineDir, baselineSuite, limit, judge, repeats, parallelRepeats, parallelCases)
+		holdoutCh := runBenchmarkAsync(root, holdoutCasesAbs, skillAbs, model, piBinary, holdoutDir, holdoutSuite, limit, judge, repeats, parallelRepeats, parallelCases)
 		baseline := <-baselineCh
 		holdout := <-holdoutCh
 		if baseline.Err != nil {
@@ -448,12 +513,12 @@ func runBaselineBenchmarks(root, casesAbs, holdoutCasesAbs, skillAbs, model, piB
 		return baseline.Result, holdout.Result, true, nil
 	}
 
-	baseline, err := runBenchmark(root, casesAbs, skillAbs, model, piBinary, baselineDir, limit, judge, repeats, parallelRepeats, parallelCases)
+	baseline, err := runBenchmark(root, casesAbs, skillAbs, model, piBinary, baselineDir, baselineSuite, limit, judge, repeats, parallelRepeats, parallelCases)
 	if err != nil {
 		return autoresearch.SuiteResult{}, autoresearch.SuiteResult{}, false, err
 	}
-	logBenchmark("running holdout baseline benchmark")
-	holdout, err := runBenchmark(root, holdoutCasesAbs, skillAbs, model, piBinary, holdoutDir, limit, judge, repeats, parallelRepeats, parallelCases)
+	logBenchmarkCtx(suiteLogContext(holdoutSuite), "running holdout baseline benchmark")
+	holdout, err := runBenchmark(root, holdoutCasesAbs, skillAbs, model, piBinary, holdoutDir, holdoutSuite, limit, judge, repeats, parallelRepeats, parallelCases)
 	if err != nil {
 		return autoresearch.SuiteResult{}, autoresearch.SuiteResult{}, false, err
 	}
@@ -461,31 +526,33 @@ func runBaselineBenchmarks(root, casesAbs, holdoutCasesAbs, skillAbs, model, piB
 }
 
 func runCandidateBenchmarks(root, casesAbs, holdoutCasesAbs, skillAbs, model, piBinary, iterDir string, limit int, judge bool, repeats, parallelRepeats, parallelCases int, parallelSuites bool) (autoresearch.SuiteResult, autoresearch.SuiteResult, bool, error, error) {
+	candidateSuite := suiteLogLabel(casesAbs)
 	if holdoutCasesAbs == "" || !parallelSuites {
-		candidate, err := runBenchmark(root, casesAbs, skillAbs, model, piBinary, iterDir, limit, judge, repeats, parallelRepeats, parallelCases)
+		candidate, err := runBenchmark(root, casesAbs, skillAbs, model, piBinary, iterDir, candidateSuite, limit, judge, repeats, parallelRepeats, parallelCases)
 		return candidate, autoresearch.SuiteResult{}, false, nil, err
 	}
 
+	holdoutSuite := suiteLogLabel(holdoutCasesAbs)
 	logBenchmark("running public candidate and speculative holdout benchmarks in parallel")
-	candidateCh := runBenchmarkAsync(root, casesAbs, skillAbs, model, piBinary, iterDir, limit, judge, repeats, parallelRepeats, parallelCases)
-	holdoutCh := runBenchmarkAsync(root, holdoutCasesAbs, skillAbs, model, piBinary, filepath.Join(iterDir, "holdout"), limit, judge, repeats, parallelRepeats, parallelCases)
+	candidateCh := runBenchmarkAsync(root, casesAbs, skillAbs, model, piBinary, iterDir, candidateSuite, limit, judge, repeats, parallelRepeats, parallelCases)
+	holdoutCh := runBenchmarkAsync(root, holdoutCasesAbs, skillAbs, model, piBinary, filepath.Join(iterDir, "holdout"), holdoutSuite, limit, judge, repeats, parallelRepeats, parallelCases)
 	candidate := <-candidateCh
 	holdout := <-holdoutCh
 	return candidate.Result, holdout.Result, true, holdout.Err, candidate.Err
 }
 
-func runBenchmarkAsync(root, casesAbs, skillAbs, model, piBinary, outDir string, limit int, judge bool, repeats, parallelRepeats, parallelCases int) <-chan benchmarkOutcome {
+func runBenchmarkAsync(root, casesAbs, skillAbs, model, piBinary, outDir, suiteLabel string, limit int, judge bool, repeats, parallelRepeats, parallelCases int) <-chan benchmarkOutcome {
 	ch := make(chan benchmarkOutcome, 1)
 	go func() {
-		result, err := runBenchmark(root, casesAbs, skillAbs, model, piBinary, outDir, limit, judge, repeats, parallelRepeats, parallelCases)
+		result, err := runBenchmark(root, casesAbs, skillAbs, model, piBinary, outDir, suiteLabel, limit, judge, repeats, parallelRepeats, parallelCases)
 		ch <- benchmarkOutcome{Result: result, Err: err}
 	}()
 	return ch
 }
 
-func runBenchmark(root, casesAbs, skillAbs, model, piBinary, outDir string, limit int, judge bool, repeats, parallelRepeats, parallelCases int) (autoresearch.SuiteResult, error) {
+func runBenchmark(root, casesAbs, skillAbs, model, piBinary, outDir, suiteLabel string, limit int, judge bool, repeats, parallelRepeats, parallelCases int) (autoresearch.SuiteResult, error) {
 	if repeats <= 1 {
-		return runBenchmarkOnce(root, casesAbs, skillAbs, model, piBinary, outDir, limit, judge, parallelCases)
+		return runBenchmarkOnce(root, casesAbs, skillAbs, model, piBinary, outDir, suiteLabel, 1, 1, limit, judge, parallelCases)
 	}
 	if err := os.MkdirAll(outDir, 0o755); err != nil {
 		return autoresearch.SuiteResult{}, err
@@ -494,12 +561,12 @@ func runBenchmark(root, casesAbs, skillAbs, model, piBinary, outDir string, limi
 	paths := make([]string, repeats)
 	parallelism := repeatParallelism(parallelRepeats, repeats)
 	if parallelism > 1 {
-		logBenchmark("benchmark: running %d repeats with parallelism %d", repeats, parallelism)
+		logBenchmarkCtx(suiteLogContext(suiteLabel), "benchmark: running %d repeats with parallelism %d", repeats, parallelism)
 	}
 
 	if parallelism <= 1 {
 		for repeat := 1; repeat <= repeats; repeat++ {
-			result, err := runBenchmarkRepeat(root, casesAbs, skillAbs, model, piBinary, outDir, limit, judge, parallelCases, repeat, repeats)
+			result, err := runBenchmarkRepeat(root, casesAbs, skillAbs, model, piBinary, outDir, suiteLabel, limit, judge, parallelCases, repeat, repeats)
 			if err != nil {
 				return autoresearch.SuiteResult{}, err
 			}
@@ -515,7 +582,7 @@ func runBenchmark(root, casesAbs, skillAbs, model, piBinary, outDir string, limi
 			go func() {
 				defer wg.Done()
 				for repeat := range jobs {
-					result, err := runBenchmarkRepeat(root, casesAbs, skillAbs, model, piBinary, outDir, limit, judge, parallelCases, repeat, repeats)
+					result, err := runBenchmarkRepeat(root, casesAbs, skillAbs, model, piBinary, outDir, suiteLabel, limit, judge, parallelCases, repeat, repeats)
 					if err != nil {
 						errCh <- err
 						continue
@@ -546,14 +613,14 @@ func runBenchmark(root, casesAbs, skillAbs, model, piBinary, outDir string, limi
 	if err := autoresearch.WriteJSON(aggregatePath, aggregate); err != nil {
 		return autoresearch.SuiteResult{}, err
 	}
-	printSemantic(logSemanticSummary, "benchmark aggregate (%d repeats): quality %.2f%% objective %.2f%% (%s)", repeats, benchmarkQuality(aggregate)*100, benchmarkObjective(aggregate)*100, aggregatePath)
+	logBenchmarkCtx(suiteLogContext(suiteLabel), "benchmark aggregate (%d repeats): quality %.2f%% objective %.2f%% (%s)", repeats, benchmarkQuality(aggregate)*100, benchmarkObjective(aggregate)*100, aggregatePath)
 	return aggregate, nil
 }
 
-func runBenchmarkRepeat(root, casesAbs, skillAbs, model, piBinary, outDir string, limit int, judge bool, parallelCases, repeat, repeats int) (autoresearch.SuiteResult, error) {
+func runBenchmarkRepeat(root, casesAbs, skillAbs, model, piBinary, outDir, suiteLabel string, limit int, judge bool, parallelCases, repeat, repeats int) (autoresearch.SuiteResult, error) {
 	repeatDir := filepath.Join(outDir, fmt.Sprintf("repeat-%03d", repeat))
-	logBenchmark("benchmark: repeat %d/%d", repeat, repeats)
-	return runBenchmarkOnce(root, casesAbs, skillAbs, model, piBinary, repeatDir, limit, judge, parallelCases)
+	logBenchmarkCtx(repeatLogContext(suiteLabel, repeat, repeats), "benchmark: repeat %d/%d", repeat, repeats)
+	return runBenchmarkOnce(root, casesAbs, skillAbs, model, piBinary, repeatDir, suiteLabel, repeat, repeats, limit, judge, parallelCases)
 }
 
 func repeatParallelism(configured, repeats int) int {
@@ -566,11 +633,12 @@ func repeatParallelism(configured, repeats int) int {
 	return configured
 }
 
-func runBenchmarkOnce(root, casesAbs, skillAbs, model, piBinary, outDir string, limit int, judge bool, parallelCases int) (autoresearch.SuiteResult, error) {
+func runBenchmarkOnce(root, casesAbs, skillAbs, model, piBinary, outDir, suiteLabel string, repeat, repeats, limit int, judge bool, parallelCases int) (autoresearch.SuiteResult, error) {
 	if err := os.MkdirAll(outDir, 0o755); err != nil {
 		return autoresearch.SuiteResult{}, err
 	}
-	logBenchmark("benchmark: writing results under %s", outDir)
+	logCtx := repeatLogContext(suiteLabel, repeat, repeats)
+	logBenchmarkCtx(logCtx, "benchmark: writing results under %s", outDir)
 	args := []string{
 		"run", "./auto-improve-skills/cmd/skillbench",
 		"-cases", casesAbs,
@@ -580,6 +648,8 @@ func runBenchmarkOnce(root, casesAbs, skillAbs, model, piBinary, outDir string, 
 		"-out", filepath.Join(outDir, "result.json"),
 		"-raw-dir", filepath.Join(outDir, "raw"),
 		"-parallel-cases", fmt.Sprint(parallelCases),
+		"-log-suite", suiteLabel,
+		"-log-repeat", logCtx.Repeat,
 		"-ensure-rshell=false",
 		"-generate-fixtures=false",
 	}
@@ -589,7 +659,7 @@ func runBenchmarkOnce(root, casesAbs, skillAbs, model, piBinary, outDir string, 
 	if judge {
 		args = append(args, "-judge")
 	}
-	logBenchmark("benchmark: executing skillbench")
+	logBenchmarkCtx(logCtx, "benchmark: executing skillbench")
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Hour)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "go", args...)

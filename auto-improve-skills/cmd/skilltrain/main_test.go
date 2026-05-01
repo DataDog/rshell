@@ -13,13 +13,14 @@ import (
 )
 
 func TestFormatSkilltrainLogUsesSemanticColors(t *testing.T) {
-	plain := formatSkilltrainLog(logSemanticSuccess, "accepted skill change", false)
-	if plain != "skilltrain: accepted skill change" {
+	ctx := defaultLogContext()
+	plain := formatSkilltrainLog(logSemanticSuccess, ctx, "accepted skill change", false)
+	if plain != "skilltrain: [t|-|-] accepted skill change" {
 		t.Fatalf("plain log line = %q", plain)
 	}
 
-	colored := formatSkilltrainLog(logSemanticSuccess, "accepted skill change", true)
-	want := ansiDim + "skilltrain:" + ansiReset + " " + ansiGreen + "accepted skill change" + ansiReset
+	colored := formatSkilltrainLog(logSemanticSuccess, ctx, "accepted skill change", true)
+	want := ansiDim + "skilltrain:" + ansiReset + " " + ansiGreen + "[t|-|-] accepted skill change" + ansiReset
 	if colored != want {
 		t.Fatalf("colored log line = %q, want %q", colored, want)
 	}
