@@ -46,10 +46,15 @@ func main() {
 	}
 }
 
+func logStep(format string, args ...any) {
+	fmt.Printf("skilltrain: "+format+"\n", args...)
+}
+
 func run(iterations int, casesPath, skillPath, model, piBinary, runDir string, minDelta, qualityTolerance float64, limit int, judge, push, dryRun, allowDirty bool) error {
 	if qualityTolerance < 0 {
 		return fmt.Errorf("-quality-tolerance must be non-negative")
 	}
+	logStep("resolving repository root and pi binary")
 	root, err := autoresearch.RepoRoot()
 	if err != nil {
 		return err
@@ -59,6 +64,9 @@ func run(iterations int, casesPath, skillPath, model, piBinary, runDir string, m
 		return err
 	}
 	piBinary = resolvedPI
+	logStep("using repo root: %s", root)
+	logStep("using pi binary: %s", piBinary)
+
 	casesAbs := autoresearch.AbsFromRoot(root, casesPath)
 	skillAbs := autoresearch.AbsFromRoot(root, skillPath)
 	if runDir == "" {
@@ -66,10 +74,12 @@ func run(iterations int, casesPath, skillPath, model, piBinary, runDir string, m
 	} else {
 		runDir = autoresearch.AbsFromRoot(root, runDir)
 	}
+	logStep("preparing run directory: %s", runDir)
 	if err := os.MkdirAll(runDir, 0o755); err != nil {
 		return err
 	}
 	if !allowDirty && !dryRun {
+		logStep("checking working tree cleanliness")
 		if dirty, status, err := gitDirty(root); err != nil {
 			return err
 		} else if dirty {
@@ -78,6 +88,7 @@ func run(iterations int, casesPath, skillPath, model, piBinary, runDir string, m
 	}
 
 	fmt.Printf("skilltrain run dir: %s\n", runDir)
+	logStep("running baseline benchmark")
 	baseline, err := runBenchmark(root, casesAbs, skillAbs, model, piBinary, filepath.Join(runDir, "iter-000-baseline"), limit, judge)
 	if err != nil {
 		return err
@@ -89,28 +100,34 @@ func run(iterations int, casesPath, skillPath, model, piBinary, runDir string, m
 	fmt.Printf("baseline quality: %.2f%% objective: %.2f%% (%s)\n", bestQuality*100, bestObjective*100, bestPath)
 
 	for iter := 1; iter <= iterations; iter++ {
+		logStep("iteration %d/%d: preparing workspace", iter, iterations)
 		iterDir := filepath.Join(runDir, fmt.Sprintf("iter-%03d", iter))
 		if err := os.MkdirAll(iterDir, 0o755); err != nil {
 			return err
 		}
 		var original []byte
 		if dryRun {
+			logStep("iteration %d/%d: snapshotting skill for dry-run restore", iter, iterations)
 			var err error
 			original, err = os.ReadFile(skillAbs)
 			if err != nil {
 				return err
 			}
 		}
+		logStep("iteration %d/%d: invoking researcher to edit skill", iter, iterations)
 		if err := improveSkill(root, skillAbs, casesAbs, bestPath, iterDir, model, piBinary, iter, qualityTolerance); err != nil {
 			return err
 		}
 		if dryRun {
+			logStep("iteration %d/%d: saving candidate skill copy", iter, iterations)
 			if candidateSkill, err := os.ReadFile(skillAbs); err == nil {
 				_ = os.WriteFile(filepath.Join(iterDir, "candidate.SKILL.md"), candidateSkill, 0o644)
 			}
 		}
+		logStep("iteration %d/%d: running candidate benchmark", iter, iterations)
 		candidate, err := runBenchmark(root, casesAbs, skillAbs, model, piBinary, iterDir, limit, judge)
 		if dryRun {
+			logStep("iteration %d/%d: restoring original skill after dry-run benchmark", iter, iterations)
 			if restoreErr := os.WriteFile(skillAbs, original, 0o644); restoreErr != nil && err == nil {
 				err = restoreErr
 			}
@@ -118,6 +135,7 @@ func run(iterations int, casesPath, skillPath, model, piBinary, runDir string, m
 		if err != nil {
 			return err
 		}
+		logStep("iteration %d/%d: evaluating candidate", iter, iterations)
 		candidatePath := filepath.Join(iterDir, "result.json")
 		candidateObjective := benchmarkObjective(candidate)
 		candidateQuality := benchmarkQuality(candidate)
@@ -126,8 +144,10 @@ func run(iterations int, casesPath, skillPath, model, piBinary, runDir string, m
 		fmt.Printf("iteration %d quality: %.2f%% objective: %.2f%% (delta %.2f%%)\n", iter, candidateQuality*100, candidateObjective*100, delta*100)
 		if qualityOK && delta >= minDelta {
 			if dryRun {
+				logStep("iteration %d/%d: accepted in dry-run", iter, iterations)
 				fmt.Printf("dry-run: would accept iteration %d and commit %s (candidate saved in %s)\n", iter, skillAbs, filepath.Join(iterDir, "candidate.SKILL.md"))
 			} else {
+				logStep("iteration %d/%d: accepted; committing skill change", iter, iterations)
 				if err := commitSkill(root, skillAbs, iter, candidate, candidatePath, filepath.Join(iterDir, "researcher.stdout.md"), delta, push); err != nil {
 					return err
 				}
@@ -143,9 +163,13 @@ func run(iterations int, casesPath, skillPath, model, piBinary, runDir string, m
 				fmt.Printf("iteration %d rejected: quality %.2f%% is below floor %.2f%%\n", iter, candidateQuality*100, qualityFloor*100)
 			}
 			if dryRun {
+				logStep("iteration %d/%d: rejected in dry-run", iter, iterations)
 				fmt.Printf("dry-run: would reject iteration %d and revert %s (candidate saved in %s)\n", iter, skillAbs, filepath.Join(iterDir, "candidate.SKILL.md"))
-			} else if err := gitCheckout(root, skillAbs); err != nil {
-				return err
+			} else {
+				logStep("iteration %d/%d: rejected; reverting skill change", iter, iterations)
+				if err := gitCheckout(root, skillAbs); err != nil {
+					return err
+				}
 			}
 		}
 	}
@@ -157,6 +181,7 @@ func runBenchmark(root, casesAbs, skillAbs, model, piBinary, outDir string, limi
 	if err := os.MkdirAll(outDir, 0o755); err != nil {
 		return autoresearch.SuiteResult{}, err
 	}
+	logStep("benchmark: writing results under %s", outDir)
 	args := []string{
 		"run", "./auto-improve-skills/cmd/skillbench",
 		"-cases", casesAbs,
@@ -172,6 +197,7 @@ func runBenchmark(root, casesAbs, skillAbs, model, piBinary, outDir string, limi
 	if judge {
 		args = append(args, "-judge")
 	}
+	logStep("benchmark: executing skillbench")
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Hour)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "go", args...)
@@ -224,6 +250,7 @@ Task for iteration %d:
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
+	logStep("iteration %d: running researcher pi; transcript will be saved under %s", iter, iterDir)
 	err := cmd.Run()
 	_ = os.WriteFile(filepath.Join(iterDir, "researcher.stdout.md"), stdout.Bytes(), 0o644)
 	if stderr.Len() > 0 {
@@ -237,6 +264,7 @@ Task for iteration %d:
 
 func commitSkill(root, skillAbs string, iter int, result autoresearch.SuiteResult, resultPath, researcherSummaryPath string, delta float64, push bool) error {
 	skillRel := gitPath(root, skillAbs)
+	logStep("iteration %d: staging %s", iter, skillRel)
 	if err := runGit(root, "add", skillRel); err != nil {
 		return err
 	}
@@ -257,6 +285,7 @@ func commitSkill(root, skillAbs string, iter int, result autoresearch.SuiteResul
 	researcherSummary := readCommitSummary(researcherSummaryPath)
 	msg := fmt.Sprintf("auto-improve remote-host-diagnostics iter %d", iter)
 	body := formatCommitBody(root, skillRel, iter, result, resultPath, researcherSummary, delta, diffStat, shortStat)
+	logStep("iteration %d: creating git commit", iter)
 	if err := runGit(root, "commit", "-m", msg, "-m", body, "--", skillRel); err != nil {
 		return err
 	}
@@ -264,6 +293,7 @@ func commitSkill(root, skillAbs string, iter int, result autoresearch.SuiteResul
 		fmt.Println("accepted iteration committed locally; pass -push to push automatically")
 		return nil
 	}
+	logStep("iteration %d: pushing accepted commit", iter)
 	return runGit(root, "push")
 }
 
