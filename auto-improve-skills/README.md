@@ -61,7 +61,7 @@ go run ./auto-improve-skills/cmd/skillbench -judge
 
 The runner deterministically regenerates large fake log fixtures under `auto-improve-skills/benchmarks/remote-host-diagnostics/generated-fixtures/` before each run. The generated logs are gitignored.
 
-The runner writes a JSON report and raw nested-`pi` JSONL transcripts under `auto-improve-skills/runs/`.
+The runner writes a JSON report and raw nested-`pi` JSONL transcripts under `auto-improve-skills/runs/`. Reports include quality scores plus a soft composite objective (`objective_normalized_score`) that accounts for wall-clock duration and skill size.
 
 If you see `exec: "pi": executable file not found in $PATH`, either update to this version of the tooling or pass an explicit binary:
 
@@ -86,7 +86,7 @@ The loop:
 1. Runs a baseline benchmark.
 2. Invokes `pi` as a researcher to edit only `SKILL.md`.
 3. Runs the benchmark again.
-4. Commits and pushes the skill edit if the normalized score improves by at least `-min-delta`.
+4. Commits and pushes the skill edit if the composite objective improves by at least `-min-delta` without dropping quality by more than `-quality-tolerance` (default 1 percentage point).
 5. Reverts the skill edit if it does not improve.
 
 If `pi` is outside your shell `PATH`, use the same `-pi` flag:
@@ -122,7 +122,7 @@ The generated files are intentionally not committed. They contain 500-2,000 line
 
 ## Current benchmark suite
 
-The suite measures final-answer quality across realistic fake investigations:
+The suite measures final-answer quality across realistic fake investigations. It also records a simple efficiency objective: final-answer quality remains the primary score, with soft penalties for end-to-end wall-clock investigation duration and estimated `SKILL.md` token size.
 
 - Datadog Agent config regression hidden among integration/APM/intake noise
 - SSH brute-force summary with approximate counting and no-compromise distinction

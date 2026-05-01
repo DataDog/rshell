@@ -76,6 +76,19 @@ type JudgeResult struct {
 	Raw    string  `json:"raw,omitempty"`
 }
 
+// ObjectiveConfig records the soft objective used to compare candidate
+// skills. Quality remains the primary benchmark score; duration and skill size
+// are soft penalties in the composite objective.
+type ObjectiveConfig struct {
+	QualityWeight            float64 `json:"quality_weight"`
+	DurationWeight           float64 `json:"duration_weight"`
+	SkillSizeWeight          float64 `json:"skill_size_weight"`
+	DurationBudgetSeconds    float64 `json:"duration_budget_seconds"`
+	DurationHardLimitSeconds float64 `json:"duration_hard_limit_seconds"`
+	SkillSizeTargetTokens    int     `json:"skill_size_target_tokens"`
+	SkillSizeHardLimitTokens int     `json:"skill_size_hard_limit_tokens"`
+}
+
 // CaseResult contains all data needed to audit one case.
 type CaseResult struct {
 	ID                    string            `json:"id"`
@@ -89,6 +102,11 @@ type CaseResult struct {
 	FinalAnswer           string            `json:"final_answer"`
 	Commands              []string          `json:"commands"`
 	ToolCalls             []ToolCall        `json:"tool_calls"`
+	CommandCount          int               `json:"command_count"`
+	ToolOutputBytes       int               `json:"tool_output_bytes"`
+	FailedToolCalls       int               `json:"failed_tool_calls"`
+	DurationSeconds       float64           `json:"duration_seconds"`
+	DurationScore         float64           `json:"duration_score"`
 	Criteria              []CriterionResult `json:"criteria"`
 	Judge                 *JudgeResult      `json:"judge,omitempty"`
 	RawJSONLPath          string            `json:"raw_jsonl_path,omitempty"`
@@ -100,20 +118,34 @@ type CaseResult struct {
 
 // SuiteResult is the machine-readable benchmark report.
 type SuiteResult struct {
-	SuiteName         string       `json:"suite_name"`
-	Description       string       `json:"description"`
-	Mode              string       `json:"mode"`
-	Model             string       `json:"model"`
-	SkillPath         string       `json:"skill_path"`
-	CasesPath         string       `json:"cases_path"`
-	RepoRoot          string       `json:"repo_root"`
-	Score             float64      `json:"score"`
-	MaxScore          float64      `json:"max_score"`
-	NormalizedScore   float64      `json:"normalized_score"`
-	Cases             []CaseResult `json:"cases"`
-	StartedAt         time.Time    `json:"started_at"`
-	CompletedAt       time.Time    `json:"completed_at"`
-	WallClockDuration string       `json:"wall_clock_duration"`
+	SuiteName                  string          `json:"suite_name"`
+	Description                string          `json:"description"`
+	Mode                       string          `json:"mode"`
+	Model                      string          `json:"model"`
+	SkillPath                  string          `json:"skill_path"`
+	CasesPath                  string          `json:"cases_path"`
+	RepoRoot                   string          `json:"repo_root"`
+	Score                      float64         `json:"score"`
+	MaxScore                   float64         `json:"max_score"`
+	NormalizedScore            float64         `json:"normalized_score"`
+	QualityScore               float64         `json:"quality_score"`
+	QualityMaxScore            float64         `json:"quality_max_score"`
+	QualityNormalizedScore     float64         `json:"quality_normalized_score"`
+	ObjectiveScore             float64         `json:"objective_score"`
+	ObjectiveMaxScore          float64         `json:"objective_max_score"`
+	ObjectiveNormalizedScore   float64         `json:"objective_normalized_score"`
+	ObjectiveConfig            ObjectiveConfig `json:"objective_config"`
+	AverageCaseDurationSeconds float64         `json:"average_case_duration_seconds"`
+	DurationScore              float64         `json:"duration_score"`
+	SkillSizeBytes             int             `json:"skill_size_bytes"`
+	SkillSizeChars             int             `json:"skill_size_chars"`
+	SkillSizeWords             int             `json:"skill_size_words"`
+	SkillSizeEstimatedTokens   int             `json:"skill_size_estimated_tokens"`
+	SkillSizeScore             float64         `json:"skill_size_score"`
+	Cases                      []CaseResult    `json:"cases"`
+	StartedAt                  time.Time       `json:"started_at"`
+	CompletedAt                time.Time       `json:"completed_at"`
+	WallClockDuration          string          `json:"wall_clock_duration"`
 }
 
 // LoadSuite reads a YAML benchmark suite.

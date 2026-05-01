@@ -21,6 +21,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/DataDog/rshell/auto-improve-skills/internal/autoresearch"
 )
@@ -29,35 +30,54 @@ const defaultModel = "openai-codex/gpt-5.5"
 
 func main() {
 	var (
-		casesPath        = flag.String("cases", "auto-improve-skills/benchmarks/remote-host-diagnostics/cases.yaml", "YAML benchmark suite")
-		skillPath        = flag.String("skill", "auto-improve-skills/skills/remote-host-diagnostics", "skill directory or SKILL.md path")
-		outputPath       = flag.String("out", "", "write JSON report to this path")
-		rawDir           = flag.String("raw-dir", "", "directory for raw pi JSONL transcripts")
-		piBinary         = flag.String("pi", "pi", "pi executable")
-		model            = flag.String("model", defaultModel, "pi model for benchmark agents and optional judge")
-		mode             = flag.String("mode", "live", "benchmark mode: live or prompts")
-		limit            = flag.Int("limit", 0, "run at most N cases (0 = all)")
-		caseFilter       = flag.String("case", "", "run one case id")
-		caseTimeout      = flag.Duration("case-timeout", 10*time.Minute, "timeout per benchmark case")
-		judge            = flag.Bool("judge", false, "run optional LLM-as-judge scoring pass")
-		judgeWeight      = flag.Float64("judge-weight", 0.6, "when -judge is set, final score weight for judge score (0..1)")
-		ensureRShell     = flag.Bool("ensure-rshell", true, "run make build if ./rshell is missing")
-		generateFixtures = flag.Bool("generate-fixtures", true, "generate deterministic remote-host-diagnostics fixture logs before running")
+		casesPath                = flag.String("cases", "auto-improve-skills/benchmarks/remote-host-diagnostics/cases.yaml", "YAML benchmark suite")
+		skillPath                = flag.String("skill", "auto-improve-skills/skills/remote-host-diagnostics", "skill directory or SKILL.md path")
+		outputPath               = flag.String("out", "", "write JSON report to this path")
+		rawDir                   = flag.String("raw-dir", "", "directory for raw pi JSONL transcripts")
+		piBinary                 = flag.String("pi", "pi", "pi executable")
+		model                    = flag.String("model", defaultModel, "pi model for benchmark agents and optional judge")
+		mode                     = flag.String("mode", "live", "benchmark mode: live or prompts")
+		limit                    = flag.Int("limit", 0, "run at most N cases (0 = all)")
+		caseFilter               = flag.String("case", "", "run one case id")
+		caseTimeout              = flag.Duration("case-timeout", 10*time.Minute, "timeout per benchmark case")
+		judge                    = flag.Bool("judge", false, "run optional LLM-as-judge scoring pass")
+		judgeWeight              = flag.Float64("judge-weight", 0.6, "when -judge is set, final score weight for judge score (0..1)")
+		objectiveQualityWeight   = flag.Float64("objective-quality-weight", 0.85, "composite objective weight for answer quality")
+		objectiveDurationWeight  = flag.Float64("objective-duration-weight", 0.10, "composite objective weight for wall-clock investigation duration")
+		objectiveSkillSizeWeight = flag.Float64("objective-skill-size-weight", 0.05, "composite objective weight for skill size")
+		durationBudget           = flag.Duration("duration-budget", 2*time.Minute, "per-case wall-clock duration with no objective penalty")
+		durationHardLimit        = flag.Duration("duration-hard-limit", 5*time.Minute, "per-case wall-clock duration with full objective penalty")
+		skillSizeTargetTokens    = flag.Int("skill-size-target-tokens", 1500, "estimated skill tokens with no objective penalty")
+		skillSizeHardLimitTokens = flag.Int("skill-size-hard-limit-tokens", 3000, "estimated skill tokens with full objective penalty")
+		ensureRShell             = flag.Bool("ensure-rshell", true, "run make build if ./rshell is missing")
+		generateFixtures         = flag.Bool("generate-fixtures", true, "generate deterministic remote-host-diagnostics fixture logs before running")
 	)
 	flag.Parse()
 
-	if err := run(*casesPath, *skillPath, *outputPath, *rawDir, *piBinary, *model, *mode, *limit, *caseFilter, *caseTimeout, *judge, *judgeWeight, *ensureRShell, *generateFixtures); err != nil {
+	objective := autoresearch.ObjectiveConfig{
+		QualityWeight:            *objectiveQualityWeight,
+		DurationWeight:           *objectiveDurationWeight,
+		SkillSizeWeight:          *objectiveSkillSizeWeight,
+		DurationBudgetSeconds:    durationBudget.Seconds(),
+		DurationHardLimitSeconds: durationHardLimit.Seconds(),
+		SkillSizeTargetTokens:    *skillSizeTargetTokens,
+		SkillSizeHardLimitTokens: *skillSizeHardLimitTokens,
+	}
+	if err := run(*casesPath, *skillPath, *outputPath, *rawDir, *piBinary, *model, *mode, *limit, *caseFilter, *caseTimeout, *judge, *judgeWeight, *ensureRShell, *generateFixtures, objective); err != nil {
 		fmt.Fprintf(os.Stderr, "skillbench: %v\n", err)
 		os.Exit(1)
 	}
 }
 
-func run(casesPath, skillPath, outputPath, rawDir, piBinary, model, mode string, limit int, caseFilter string, caseTimeout time.Duration, judge bool, judgeWeight float64, ensureRShell, generateFixtures bool) error {
+func run(casesPath, skillPath, outputPath, rawDir, piBinary, model, mode string, limit int, caseFilter string, caseTimeout time.Duration, judge bool, judgeWeight float64, ensureRShell, generateFixtures bool, objective autoresearch.ObjectiveConfig) error {
 	if mode != "live" && mode != "prompts" {
 		return fmt.Errorf("unsupported -mode %q (want live or prompts)", mode)
 	}
 	if judgeWeight < 0 || judgeWeight > 1 {
 		return fmt.Errorf("-judge-weight must be between 0 and 1")
+	}
+	if err := validateObjectiveConfig(objective); err != nil {
+		return err
 	}
 
 	root, err := autoresearch.RepoRoot()
@@ -112,15 +132,25 @@ func run(casesPath, skillPath, outputPath, rawDir, piBinary, model, mode string,
 
 	started := time.Now().UTC()
 	vars := autoresearch.Variables(root, requestedSkillAbs)
+	skillStats, err := measureSkillSize(requestedSkillAbs)
+	if err != nil {
+		return err
+	}
 	results := autoresearch.SuiteResult{
-		SuiteName:   suite.Name,
-		Description: suite.Description,
-		Mode:        mode,
-		Model:       model,
-		SkillPath:   requestedSkillAbs,
-		CasesPath:   casesAbs,
-		RepoRoot:    root,
-		StartedAt:   started,
+		SuiteName:                suite.Name,
+		Description:              suite.Description,
+		Mode:                     mode,
+		Model:                    model,
+		SkillPath:                requestedSkillAbs,
+		CasesPath:                casesAbs,
+		RepoRoot:                 root,
+		ObjectiveConfig:          objective,
+		SkillSizeBytes:           skillStats.Bytes,
+		SkillSizeChars:           skillStats.Chars,
+		SkillSizeWords:           skillStats.Words,
+		SkillSizeEstimatedTokens: skillStats.EstimatedTokens,
+		SkillSizeScore:           boundedUpperScore(float64(skillStats.EstimatedTokens), float64(objective.SkillSizeTargetTokens), float64(objective.SkillSizeHardLimitTokens)),
+		StartedAt:                started,
 	}
 
 	runCount := 0
@@ -136,6 +166,7 @@ func run(casesPath, skillPath, outputPath, rawDir, piBinary, model, mode string,
 		expanded := expandCase(tc, caseVars)
 		caseResult := runCase(root, rawDir, requestedSkillAbs, piBinary, model, mode, expanded, caseTimeout)
 		scoreCase(&caseResult, expanded)
+		caseResult.DurationScore = boundedUpperScore(caseResult.DurationSeconds, objective.DurationBudgetSeconds, objective.DurationHardLimitSeconds)
 		if judge && mode == "live" && strings.TrimSpace(caseResult.FinalAnswer) != "" {
 			jr, err := runJudge(root, piBinary, model, expanded, caseResult, caseTimeout/2)
 			if err != nil {
@@ -148,6 +179,8 @@ func run(casesPath, skillPath, outputPath, rawDir, piBinary, model, mode string,
 		results.Cases = append(results.Cases, caseResult)
 		results.Score += caseResult.Score
 		results.MaxScore += caseResult.MaxScore
+		results.DurationScore += caseResult.DurationScore
+		results.AverageCaseDurationSeconds += caseResult.DurationSeconds
 	}
 	if runCount == 0 {
 		return fmt.Errorf("no cases selected")
@@ -155,6 +188,12 @@ func run(casesPath, skillPath, outputPath, rawDir, piBinary, model, mode string,
 	if results.MaxScore > 0 {
 		results.NormalizedScore = results.Score / results.MaxScore
 	}
+	results.QualityScore = results.Score
+	results.QualityMaxScore = results.MaxScore
+	results.QualityNormalizedScore = results.NormalizedScore
+	results.DurationScore /= float64(runCount)
+	results.AverageCaseDurationSeconds /= float64(runCount)
+	applyObjectiveScore(&results)
 	results.CompletedAt = time.Now().UTC()
 	results.WallClockDuration = results.CompletedAt.Sub(started).String()
 
@@ -205,7 +244,9 @@ func runCase(root, rawDir, skillPath, piBinary, model, mode string, tc autoresea
 	}
 	defer func() {
 		result.CompletedAt = time.Now().UTC()
-		result.WallClockDuration = result.CompletedAt.Sub(started).String()
+		duration := result.CompletedAt.Sub(started)
+		result.WallClockDuration = duration.String()
+		result.DurationSeconds = duration.Seconds()
 	}()
 
 	if mode == "prompts" {
@@ -248,6 +289,13 @@ func runCase(root, rawDir, skillPath, piBinary, model, mode string, tc autoresea
 	result.FinalAnswer = parsed.FinalAnswer
 	result.Commands = parsed.Commands
 	result.ToolCalls = parsed.ToolCalls
+	result.CommandCount = len(result.Commands)
+	for _, call := range result.ToolCalls {
+		result.ToolOutputBytes += len(call.Result)
+		if call.IsError {
+			result.FailedToolCalls++
+		}
+	}
 	if parseErr != nil {
 		result.Error = appendErr(result.Error, "parse pi JSONL: "+parseErr.Error())
 	}
@@ -269,7 +317,7 @@ func benchmarkPrompt(tc autoresearch.Case) string {
 
 You must use the loaded remote-host-diagnostics skill. Load/read the skill instructions first, then follow its workflow. This is a fake local investigation using fixture logs, so do not use host tools directly to inspect the fixture contents; run diagnostics through local ./rshell as the skill instructs. Do not modify files.
 
-Final answer quality is the metric. Your final answer should be concise but complete, with:
+Final answer quality is the primary metric. The benchmark also records end-to-end wall-clock duration, so be efficient and stop investigating once the answer is well supported. Your final answer should be concise but complete, with:
 - finding or likely root cause
 - concrete evidence from the logs/commands
 - commands you ran
@@ -534,8 +582,79 @@ func applyJudgeScore(result *autoresearch.CaseResult, judgeWeight float64) {
 	result.NormalizedScore = combined / 100
 }
 
+type skillSizeStats struct {
+	Bytes           int
+	Chars           int
+	Words           int
+	EstimatedTokens int
+}
+
+func measureSkillSize(skillPath string) (skillSizeStats, error) {
+	path := skillPath
+	if !strings.HasSuffix(path, "SKILL.md") {
+		path = filepath.Join(path, "SKILL.md")
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return skillSizeStats{}, fmt.Errorf("reading skill size: %w", err)
+	}
+	chars := utf8.RuneCount(data)
+	return skillSizeStats{
+		Bytes:           len(data),
+		Chars:           chars,
+		Words:           len(strings.Fields(string(data))),
+		EstimatedTokens: (chars + 3) / 4,
+	}, nil
+}
+
+func validateObjectiveConfig(cfg autoresearch.ObjectiveConfig) error {
+	if cfg.QualityWeight < 0 || cfg.DurationWeight < 0 || cfg.SkillSizeWeight < 0 {
+		return fmt.Errorf("objective weights must be non-negative")
+	}
+	if cfg.QualityWeight+cfg.DurationWeight+cfg.SkillSizeWeight <= 0 {
+		return fmt.Errorf("at least one objective weight must be positive")
+	}
+	if cfg.DurationBudgetSeconds < 0 || cfg.DurationHardLimitSeconds <= cfg.DurationBudgetSeconds {
+		return fmt.Errorf("duration hard limit must be greater than duration budget")
+	}
+	if cfg.SkillSizeTargetTokens < 0 || cfg.SkillSizeHardLimitTokens <= cfg.SkillSizeTargetTokens {
+		return fmt.Errorf("skill size hard limit must be greater than skill size target")
+	}
+	return nil
+}
+
+func boundedUpperScore(value, budget, hardLimit float64) float64 {
+	switch {
+	case value <= budget:
+		return 1
+	case value >= hardLimit:
+		return 0
+	default:
+		return 1 - (value-budget)/(hardLimit-budget)
+	}
+}
+
+func applyObjectiveScore(result *autoresearch.SuiteResult) {
+	cfg := result.ObjectiveConfig
+	weightSum := cfg.QualityWeight + cfg.DurationWeight + cfg.SkillSizeWeight
+	objective := result.QualityNormalizedScore
+	if weightSum > 0 {
+		objective = (cfg.QualityWeight*result.QualityNormalizedScore + cfg.DurationWeight*result.DurationScore + cfg.SkillSizeWeight*result.SkillSizeScore) / weightSum
+	}
+	if objective < 0 {
+		objective = 0
+	}
+	if objective > 1 {
+		objective = 1
+	}
+	result.ObjectiveMaxScore = 100
+	result.ObjectiveScore = objective * result.ObjectiveMaxScore
+	result.ObjectiveNormalizedScore = objective
+}
+
 func printSummary(result autoresearch.SuiteResult, outputPath string) {
-	fmt.Printf("skillbench %s: %.1f/%.1f (%.1f%%)\n", result.SuiteName, result.Score, result.MaxScore, result.NormalizedScore*100)
+	fmt.Printf("skillbench %s: quality %.1f/%.1f (%.1f%%), objective %.1f%%\n", result.SuiteName, result.Score, result.MaxScore, result.NormalizedScore*100, result.ObjectiveNormalizedScore*100)
+	fmt.Printf("  avg duration %.1fs (score %.1f%%), skill size ~%d tokens (score %.1f%%)\n", result.AverageCaseDurationSeconds, result.DurationScore*100, result.SkillSizeEstimatedTokens, result.SkillSizeScore*100)
 	caseResults := append([]autoresearch.CaseResult(nil), result.Cases...)
 	sort.SliceStable(caseResults, func(i, j int) bool { return caseResults[i].ID < caseResults[j].ID })
 	for _, cr := range caseResults {
@@ -546,7 +665,7 @@ func printSummary(result autoresearch.SuiteResult, outputPath string) {
 		if cr.NormalizedScore < 0.65 {
 			status = "FAIL"
 		}
-		fmt.Printf("  %-36s %5.1f/%-5.1f %5.1f%% %s\n", cr.ID, cr.Score, cr.MaxScore, cr.NormalizedScore*100, status)
+		fmt.Printf("  %-36s %5.1f/%-5.1f %5.1f%% dur %5.1fs %s\n", cr.ID, cr.Score, cr.MaxScore, cr.NormalizedScore*100, cr.DurationSeconds, status)
 		if cr.Error != "" {
 			fmt.Printf("    error: %s\n", cr.Error)
 		}

@@ -23,27 +23,31 @@ const defaultModel = "openai-codex/gpt-5.5"
 
 func main() {
 	var (
-		iterations = flag.Int("iters", 3, "maximum improvement iterations")
-		casesPath  = flag.String("cases", "auto-improve-skills/benchmarks/remote-host-diagnostics/cases.yaml", "benchmark suite")
-		skillPath  = flag.String("skill", "auto-improve-skills/skills/remote-host-diagnostics/SKILL.md", "skill file to improve")
-		model      = flag.String("model", defaultModel, "pi model for researcher and benchmark agents")
-		piBinary   = flag.String("pi", "pi", "pi executable")
-		runDir     = flag.String("run-dir", "", "directory for this training run")
-		minDelta   = flag.Float64("min-delta", 0.01, "minimum normalized-score improvement to accept")
-		limit      = flag.Int("limit", 0, "run at most N benchmark cases per iteration (0 = all)")
-		judge      = flag.Bool("judge", false, "enable skillbench LLM-as-judge scoring")
-		dryRun     = flag.Bool("dry-run", false, "run benchmark and researcher but do not commit/revert")
-		allowDirty = flag.Bool("allow-dirty", false, "allow starting with unrelated uncommitted changes")
+		iterations       = flag.Int("iters", 3, "maximum improvement iterations")
+		casesPath        = flag.String("cases", "auto-improve-skills/benchmarks/remote-host-diagnostics/cases.yaml", "benchmark suite")
+		skillPath        = flag.String("skill", "auto-improve-skills/skills/remote-host-diagnostics/SKILL.md", "skill file to improve")
+		model            = flag.String("model", defaultModel, "pi model for researcher and benchmark agents")
+		piBinary         = flag.String("pi", "pi", "pi executable")
+		runDir           = flag.String("run-dir", "", "directory for this training run")
+		minDelta         = flag.Float64("min-delta", 0.01, "minimum normalized objective improvement to accept")
+		qualityTolerance = flag.Float64("quality-tolerance", 0.01, "maximum allowed quality drop from the best seen quality")
+		limit            = flag.Int("limit", 0, "run at most N benchmark cases per iteration (0 = all)")
+		judge            = flag.Bool("judge", false, "enable skillbench LLM-as-judge scoring")
+		dryRun           = flag.Bool("dry-run", false, "run benchmark and researcher but do not commit/revert")
+		allowDirty       = flag.Bool("allow-dirty", false, "allow starting with unrelated uncommitted changes")
 	)
 	flag.Parse()
 
-	if err := run(*iterations, *casesPath, *skillPath, *model, *piBinary, *runDir, *minDelta, *limit, *judge, *dryRun, *allowDirty); err != nil {
+	if err := run(*iterations, *casesPath, *skillPath, *model, *piBinary, *runDir, *minDelta, *qualityTolerance, *limit, *judge, *dryRun, *allowDirty); err != nil {
 		fmt.Fprintf(os.Stderr, "skilltrain: %v\n", err)
 		os.Exit(1)
 	}
 }
 
-func run(iterations int, casesPath, skillPath, model, piBinary, runDir string, minDelta float64, limit int, judge, dryRun, allowDirty bool) error {
+func run(iterations int, casesPath, skillPath, model, piBinary, runDir string, minDelta, qualityTolerance float64, limit int, judge, dryRun, allowDirty bool) error {
+	if qualityTolerance < 0 {
+		return fmt.Errorf("-quality-tolerance must be non-negative")
+	}
 	root, err := autoresearch.RepoRoot()
 	if err != nil {
 		return err
@@ -76,9 +80,11 @@ func run(iterations int, casesPath, skillPath, model, piBinary, runDir string, m
 	if err != nil {
 		return err
 	}
-	bestScore := baseline.NormalizedScore
+	bestObjective := benchmarkObjective(baseline)
+	bestQuality := benchmarkQuality(baseline)
+	qualityFloor := bestQuality - qualityTolerance
 	bestPath := filepath.Join(runDir, "iter-000-baseline", "result.json")
-	fmt.Printf("baseline score: %.2f%% (%s)\n", bestScore*100, bestPath)
+	fmt.Printf("baseline quality: %.2f%% objective: %.2f%% (%s)\n", bestQuality*100, bestObjective*100, bestPath)
 
 	for iter := 1; iter <= iterations; iter++ {
 		iterDir := filepath.Join(runDir, fmt.Sprintf("iter-%03d", iter))
@@ -93,7 +99,7 @@ func run(iterations int, casesPath, skillPath, model, piBinary, runDir string, m
 				return err
 			}
 		}
-		if err := improveSkill(root, skillAbs, casesAbs, bestPath, iterDir, model, piBinary, iter); err != nil {
+		if err := improveSkill(root, skillAbs, casesAbs, bestPath, iterDir, model, piBinary, iter, qualityTolerance); err != nil {
 			return err
 		}
 		if dryRun {
@@ -111,19 +117,29 @@ func run(iterations int, casesPath, skillPath, model, piBinary, runDir string, m
 			return err
 		}
 		candidatePath := filepath.Join(iterDir, "result.json")
-		delta := candidate.NormalizedScore - bestScore
-		fmt.Printf("iteration %d score: %.2f%% (delta %.2f%%)\n", iter, candidate.NormalizedScore*100, delta*100)
-		if delta >= minDelta {
+		candidateObjective := benchmarkObjective(candidate)
+		candidateQuality := benchmarkQuality(candidate)
+		delta := candidateObjective - bestObjective
+		qualityOK := candidateQuality >= qualityFloor
+		fmt.Printf("iteration %d quality: %.2f%% objective: %.2f%% (delta %.2f%%)\n", iter, candidateQuality*100, candidateObjective*100, delta*100)
+		if qualityOK && delta >= minDelta {
 			if dryRun {
 				fmt.Printf("dry-run: would accept iteration %d and commit %s (candidate saved in %s)\n", iter, skillAbs, filepath.Join(iterDir, "candidate.SKILL.md"))
 			} else {
-				if err := commitSkill(root, skillAbs, iter, candidate.NormalizedScore, delta); err != nil {
+				if err := commitSkill(root, skillAbs, iter, candidateQuality, candidateObjective, delta); err != nil {
 					return err
 				}
 			}
-			bestScore = candidate.NormalizedScore
+			bestObjective = candidateObjective
+			if candidateQuality > bestQuality {
+				bestQuality = candidateQuality
+				qualityFloor = bestQuality - qualityTolerance
+			}
 			bestPath = candidatePath
 		} else {
+			if !qualityOK {
+				fmt.Printf("iteration %d rejected: quality %.2f%% is below floor %.2f%%\n", iter, candidateQuality*100, qualityFloor*100)
+			}
 			if dryRun {
 				fmt.Printf("dry-run: would reject iteration %d and revert %s (candidate saved in %s)\n", iter, skillAbs, filepath.Join(iterDir, "candidate.SKILL.md"))
 			} else if err := gitCheckout(root, skillAbs); err != nil {
@@ -131,7 +147,7 @@ func run(iterations int, casesPath, skillPath, model, piBinary, runDir string, m
 			}
 		}
 	}
-	fmt.Printf("best score: %.2f%% (%s)\n", bestScore*100, bestPath)
+	fmt.Printf("best objective: %.2f%%; best quality seen: %.2f%% (%s)\n", bestObjective*100, bestQuality*100, bestPath)
 	return nil
 }
 
@@ -174,19 +190,20 @@ func runBenchmark(root, casesAbs, skillAbs, model, piBinary, outDir string, limi
 	return result, nil
 }
 
-func improveSkill(root, skillAbs, casesAbs, bestResultPath, iterDir, model, piBinary string, iter int) error {
+func improveSkill(root, skillAbs, casesAbs, bestResultPath, iterDir, model, piBinary string, iter int, qualityTolerance float64) error {
 	prompt := fmt.Sprintf(`You are an autoresearch-style skill improvement agent.
 
 Read auto-improve-skills/program.md, the current skill at %s, the benchmark suite at %s, and the best benchmark result at %s.
 
 Task for iteration %d:
 - Improve only %s.
-- Optimize final answer quality on the benchmark cases.
+- Optimize final answer quality first. The trainer allows at most a %.1f percentage point quality drop from the best seen quality.
+- Also improve the simple composite objective by reducing end-to-end investigation time and keeping the skill concise.
 - Keep the skill safe and local: it must use ./rshell through bash and must not use Datadog remote-action tools.
 - Do not edit benchmark cases, fake logs, Go tooling, or reports.
-- Prefer clear diagnostic workflow instructions over overfitting exact answers.
-- After editing, briefly summarize what you changed.
-`, skillAbs, casesAbs, bestResultPath, iter, skillAbs)
+- Prefer short, general diagnostic workflow instructions over long case-specific rules or overfitting exact answers.
+- After editing, briefly summarize what you changed and whether the skill became shorter.
+`, skillAbs, casesAbs, bestResultPath, iter, skillAbs, qualityTolerance*100)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
 	defer cancel()
 	args := []string{
@@ -216,7 +233,7 @@ Task for iteration %d:
 	return nil
 }
 
-func commitSkill(root, skillAbs string, iter int, score, delta float64) error {
+func commitSkill(root, skillAbs string, iter int, quality, objective, delta float64) error {
 	if err := runGit(root, "add", skillAbs); err != nil {
 		return err
 	}
@@ -227,11 +244,25 @@ func commitSkill(root, skillAbs string, iter int, score, delta float64) error {
 		return nil
 	}
 	msg := fmt.Sprintf("auto-improve remote-host-diagnostics iter %d", iter)
-	body := fmt.Sprintf("Score: %.2f%%\nDelta: %.2f%%", score*100, delta*100)
+	body := fmt.Sprintf("Quality: %.2f%%\nObjective: %.2f%%\nObjective delta: %.2f%%", quality*100, objective*100, delta*100)
 	if err := runGit(root, "commit", "-m", msg, "-m", body); err != nil {
 		return err
 	}
 	return runGit(root, "push")
+}
+
+func benchmarkQuality(result autoresearch.SuiteResult) float64 {
+	if result.QualityMaxScore > 0 {
+		return result.QualityNormalizedScore
+	}
+	return result.NormalizedScore
+}
+
+func benchmarkObjective(result autoresearch.SuiteResult) float64 {
+	if result.ObjectiveMaxScore > 0 {
+		return result.ObjectiveNormalizedScore
+	}
+	return result.NormalizedScore
 }
 
 func gitDirty(root string) (bool, string, error) {
