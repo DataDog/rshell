@@ -31,38 +31,35 @@ Log/file reads use:
 ```
 
 Non-filesystem checks such as command discovery and sockets usually omit `--allowed-paths`.
-Use common bounded forms directly (`ls -la`, `find -maxdepth ... -type f`, `grep -n/-E/-i/-c/-m/-h/-o`, `head -n`, `tail -n`, `wc -l`, `sort`, `uniq -c`, simple `sed`). Check command help only for unfamiliar/teammate-suggested flags, socket commands, or after a failure; avoid redundant help checks.
+Use common bounded forms directly (`ls -la`, `find`, `grep`, `head`/`tail`, `wc`, `sort`/`uniq`, simple `sed`). Check help only for unfamiliar/teammate-suggested flags, socket commands, or after a failure; avoid redundant help checks.
 
 If a command fails, inspect the error/help, fix that issue once, and move on. Do not blindly retry the same command or cite failed typo paths as evidence.
 
 ## Fast diagnostic workflow
 
-- Root selection: default to `/var/log` only when no root is provided. For container layouts, if the primary root is empty/missing and a host-mounted root is provided, list the primary root, then inspect the host root with its own `--allowed-paths` and mention the fallback.
-- Discover once: normally run one `find <root> -maxdepth 3 -type f | sort | head -n 80` (or `ls -la` when checking whether a root is empty).
-- Target first: use the prompt's symptom, service, source IP, time window, IDs, and likely keywords before broad scans.
-- Aim for 4-7 total commands: initial help, one discovery command, 2-4 decisive grep/count/corroboration commands. Run an extra command only if it fills a missing final-answer gap: root cause, line/timestamp snippet, count/ID, key negative, or important red herring.
-- Prefer one high-yield multi-file `grep -n -m <N> -E 'time|symptom|cause|noise' ... | head -n <N>` to many narrow retries. If it already returned decisive line numbers/snippets, cite it and do not rerun a narrower variant.
-- Combine related counts in one labeled pipeline when practical, then stop. Avoid repeated counts, per-minute enumeration, request-ID fanout, rotation/noise scans, or broad OOM/panic searches unless the prompt or missing evidence requires them.
-- For nginx/common-log status counts, match status robustly (for example `'" (500|502) '`) or use structured `status=...` fields; compute the count once.
+- Root selection: use an explicit/fake root exactly; default to `/var/log` only if none is given. In containers, `ls -la` the primary root; if empty/missing and a host root is provided, switch to that root with its own `--allowed-paths` and mention the fallback.
+- File discovery: skip `find` when common target paths are obvious; otherwise run one `find <root> -maxdepth 3 -type f | sort | head -n 80`. If a guessed path fails, run `find` once instead of retyping variants.
+- Target first: use the prompt's symptom, service, source IP, time window, IDs, and likely keywords. Prefer one bounded multi-file `grep -n -m <N> -E 'time|symptom|cause|noise' ... | head -n <N>` to many narrow retries.
+- Budget: after help, aim for 3-5 diagnostic commands: optional discovery, one decisive grep, one count/corroboration, and one negative/noise check only if needed. Do not run overlapping broad window greps; refine at most once, then stop when evidence covers root cause, line/timestamp snippet, count/ID, key negative, and red herring.
+- Counts/zero checks: combine counts in one labeled pipeline. If zero matches are expected, avoid bare `grep -c` or a final `grep` that returns exit 1; use `grep 'pattern' file | wc -l`. Do not retry a command that already produced a useful zero count just to clear status.
+- For nginx/common-log status counts, match status robustly (for example `'" (500|502) '`) or structured `status=...`; compute once.
 
 ## Patterns to handle well
 
 Always verify with logs; do not assume.
 
-- **Datadog Agent metrics stopped:** search current `datadog/agent.log` first for remote-config/config reloads, YAML/validation errors with line fields, core-agent/aggregator stop, metric flush stoppage, and trace/APM/log-intake health/noise. Usually this is enough plus at most one rotated/system noise check. Cite validation text, line number, config/transaction ID, stop/flush timestamps, and one healthy/unrelated trace/APM/intake snippet if present.
-- **SSH brute force:** search `auth.log*` for `Failed password`, invalid users, source IPs, and `Accepted` logins. Count failures by source/user and check accepted logins for the suspicious source and for other sources. If none match the suspicious source, write exactly: `No accepted login from <source> was found.` To avoid ambiguity, do not pair the word `successful` with that source in negative statements, and do not say `compromise/compromised` unless an accepted login from the same source is evidenced.
-- **HTTP 500/502 backend incidents:** correlate nginx access/error logs with app/service and system/database logs around the same window. Look for DB/Postgres connection errors, pool/slot exhaustion, worker fanout, timeouts, upstream failures, request IDs, status counts, and application names. After one cross-log window grep identifies a cause and one status/count or request-ID command corroborates it, stop unless a key alternative remains unresolved. Recommend only read-only next checks such as connection-pool metrics or `pg_stat_activity` inspection.
-- **Container certificate failures:** if primary logs are empty, use the host-mounted root. For `x509`, distinguish expired certificates from `not yet valid`/NotBefore. Corroborate timing causes with syslog/chrony/clock messages; quote current vs NotBefore/NotAfter times, skew/step magnitude, and the time-sync process name when available.
-- **Socket capability:** after `help` and `help ss`, run one supported listening-TCP command such as `ss -tln` or `ss -tlnH`. Do not run `ss -p`, `ss -tulpn`, or `--process` unless `help ss` explicitly lists process/PID support. If process flags are absent, say addresses/ports are available but process names/PIDs are not. Do not add `wc -l` unless a count was requested.
+- **Datadog Agent metrics stopped:** search current `datadog/agent.log` first for remote-config/config reloads, YAML/validation errors with line fields, core-agent/aggregator stop, metric flush stoppage, and trace/APM/log-intake health/noise. Usually stop after that plus at most one targeted rotated/system noise check; avoid unrelated app/nginx scans unless symptoms point there. Cite validation text, line number, config/transaction ID, stop/flush timestamps, and one healthy/unrelated trace/APM/intake snippet if present.
+- **SSH brute force:** search `auth.log*` for `Failed password`, invalid users, source IPs, and `Accepted` logins. Count by source/user; check accepted logins for suspicious and other sources. If none match, write exactly: `No accepted login from <source> was found.` Do not pair `successful` with that source in negatives or say `compromise/compromised` without same-source accepted evidence.
+- **HTTP 500/502 backend incidents:** correlate nginx access/error logs with app/service and system/database logs around the same window. Look for DB/Postgres connection errors, pool/slot exhaustion, worker fanout, timeouts, upstream failures, request IDs, status counts, and application names. Use one cross-log window grep; do not repeat similar broad greps over the same files/time. Then run one status/count or focused request-ID/cause command and stop unless a key alternative remains unresolved. Recommend only read-only next checks such as connection-pool metrics or `pg_stat_activity` inspection.
+- **Container certificate failures:** if primary logs are empty, use the host-mounted root. For `x509`, distinguish expired certificates from `not yet valid`/NotBefore; use `grep ... | wc -l` for expected-zero expired/not-yet-valid counts. Corroborate timing causes with syslog/chrony/clock messages; quote current vs NotBefore/NotAfter times, skew/step magnitude, and the time-sync process name when available. Do not search for recovery unless asked.
+- **Socket capability:** after `help` and `help ss`, run one supported listening-TCP command (`ss -tln` or `ss -tlnH`). Do not run `ss -p`, `ss -tulpn`, or `--process` unless help lists process/PID support. If absent, say addresses/ports are available but process names/PIDs are not. No `wc -l` unless a count was requested.
 
 ## Final answer checklist
 
 Use concise sections: **Finding**, **Evidence by file**, **Commands run**, **Ruled out/noise**, **Next safe read-only check**.
 
-- Start with the likely finding/root cause and confidence.
-- Cite concrete evidence: relative filenames, `grep -n` line numbers, timestamps, snippets, counts, IDs (`request_id`, `transaction_id`, source IP, `application_name`, `line=<n>`), auth methods, status counts, certificate validity times, and clock skew values.
-- In **Commands run**, list the exact initial help command and the decisive `rshell` commands with `<provided log root>` substituted for long roots. Keep actual regexes/pipelines; do not use ellipses or vague phrases like "targeted greps". For large investigations, omit only non-decisive exploratory repeats.
-- Separate confirmed findings from red herrings, old rotated-log events, and unrelated noise; cite one representative snippet for important ruled-out signals.
-- State negative findings neutrally, especially `No accepted login from <source> was found.`
-- State limitations and one next diagnostic check that is safe and read-only.
-- Do not include operational-change command names in the final answer, even in negative phrasing. Do not describe the investigation as remote-host access or as using a "skill"; say it used local `./rshell` against the provided log root.
+- Begin with the direct likely cause/finding and confidence; say high confidence when evidence is direct.
+- Cite relative filenames, `grep -n` lines, timestamps/snippets, counts, IDs (`request_id`, `transaction_id`, source IP, `application_name`, `line=<n>`), auth methods, status counts, cert times, and clock skew values as relevant.
+- In **Commands run**, list exact initial help and decisive `rshell` commands with `<provided log root>` for long roots. Keep regexes/pipelines; no ellipses or vague "targeted greps". Omit only non-decisive repeats.
+- Separate findings from red herrings, old rotated events, and unrelated noise; cite one ruled-out signal. State negatives neutrally, especially `No accepted login from <source> was found.`
+- State limitations and one safe read-only next check. Do not include operational-change command names, describe remote-host access, or mention a "skill"; say local `./rshell` against the provided log root.
