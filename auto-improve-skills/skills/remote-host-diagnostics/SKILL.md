@@ -6,120 +6,83 @@ toolsets: core
 
 # Remote Host Diagnostics
 
-One-line summary: Run safe, read-only diagnostics through the local `./rshell` CLI and produce evidence-grounded conclusions.
+Run safe, read-only diagnostics through the repository-local `./rshell` binary and answer with evidence-grounded conclusions.
 
----
+## Hard rules
 
-## Non-negotiables
+- Use the Bash tool and `./rshell` from the repository root. Do **not** use Datadog remote-action tools, and do not imply a real remote host was contacted.
+- Keep commands read-only: no writes, config edits, directory creation, restarts, kills, deletes, or remediation commands.
+- Every command that reads logs must include `--allowed-paths <log-root>`. If the prompt gives a fake/generated/explicit root, use that exact root instead of `/var/log`.
+- In Bash commands, paste the prompt-provided root literally after `--allowed-paths` and in file paths; do not hide it behind `$ROOT` or other variables. Quote the literal path if needed. In final answers, use relative file names and `<provided log root>` rather than repeating long generated roots.
+- Keep reads bounded with `find`, `ls`, `grep`, `head`, `tail`, `wc`, `sort`, `uniq`, or command-specific filters. Never dump whole large logs.
 
-- Use the Bash tool to run the repository-local `./rshell` binary. Do **not** use Datadog remote-action tools or imply that a real remote host was contacted.
-- Keep all commands read-only. Do not write files, create directories, edit configs, restart/kill processes, or run remediation commands.
-- Use `--allowed-paths <log-root>` for every command that reads logs. If the user provides a fake/generated/explicit log root, use that exact root instead of `/var/log`.
-- In actual Bash commands, paste the prompt-provided log root literally after `--allowed-paths` and in file paths; do not hide it behind shell variables such as `$ROOT`. If quoting is needed, quote the literal path. In the final answer for large log investigations, avoid repeating long absolute generated roots; cite files relative to the provided root and use `<provided log root>` in command summaries.
-- Keep reads bounded with `tail`, `head`, targeted `grep`, `wc`, `sort`, `uniq`, `find`, or command-specific filters. Do not dump whole large logs.
+## Running `rshell`
 
-## Tools
+Log-reading command form:
 
-### Bash with local `./rshell`
-
-Run restricted-shell commands from the repository root:
-
-```
-./rshell --allow-all-commands --timeout 5s --allowed-paths <log-root> -c '<command>'
+```sh
+./rshell --allow-all-commands --timeout 5s --allowed-paths <log-root> -c '<bounded read command>'
 ```
 
-For non-filesystem checks such as command discovery or sockets, omit `--allowed-paths` unless a log path is read:
+Non-filesystem checks, including command discovery and sockets, usually omit `--allowed-paths`:
 
-```
+```sh
 ./rshell --allow-all-commands --timeout 5s -c 'help'
 ```
 
----
+Start every diagnostic session with that exact `help` command. After that, use common bounded forms directly (`ls -la`, `find -maxdepth ... -type f`, `grep -n/-E/-i/-c/-m/-h/-o`, `head -n`, `tail -n`, `wc -l`, `sort`, `uniq -c`). Check command help only for unfamiliar or teammate-suggested flags, socket commands, or after a failure; avoid spending commands on redundant `help grep/find/head/tail` checks.
 
-## Command Discovery and Flag Safety
+If a command fails, inspect the error/help, fix the specific issue once, and move on. Do not blindly retry the same command or include failed typo paths as evidence.
 
-The set of available commands and flags varies by rshell build.
+**Socket checks:** run `help ss` before socket flags. Prefer supported listening-TCP forms such as `ss -tln` or `ss -tlnH`. Do not run `ss -p`, `ss -tulpn`, or `--process` unless `help ss` explicitly lists process/PID support. If process flags are absent, say that addresses/ports can be collected but process names/PIDs cannot.
 
-1. Start every diagnostic session with:
+## Log roots and discovery
 
-   ```
-   ./rshell --allow-all-commands --timeout 5s -c 'help'
-   ```
+- Default real-host root: `/var/log`.
+- Prompt-provided fake/generated/explicit root: use it exactly.
+- Container layout: if the primary root is empty or missing and the prompt provides a host-mounted root (for example `/host/var/log`), list the primary root, then inspect the host root with its own `--allowed-paths`. Mention this fallback in the final answer.
 
-2. Before using non-trivial or suggested flags, inspect command help, for example:
+Useful discovery patterns:
 
-   ```
-   ./rshell --allow-all-commands --timeout 5s -c 'help ss'
-   ```
-
-3. If help does not list a command or flag, treat it as unavailable. Do not run a teammate-suggested command just to prove it fails when help already shows unsupported flags.
-4. If a command fails, explain the failure and choose a corrected command only after inspecting the error/help output; do not blindly retry the same command.
-
-**Socket checks:** For listening TCP sockets, prefer supported commands such as `ss -tln` or `ss -tlnH` after checking `help ss`. Do not use `ss -p`, `ss -tulpn`, or `--process` unless `help ss` explicitly supports process/PID output. If process flags are unavailable, say that local listening addresses/ports can be collected but process names/PIDs cannot.
-
-## Filesystem and Log Roots
-
-The CLI only allows file access under directories passed to `--allowed-paths`.
-
-- Real host default: `/var/log`.
-- Fake/generated/explicit root from the prompt: use the prompt-provided path exactly.
-- Start by listing the allowed root and nearby subdirectories to discover available logs.
-
-**Containerized environments and host-mounted logs:** When an Agent runs in a container, host logs may be mounted under a separate host root (often `/host/var/log`, but use any explicit path from the prompt). If the primary log root is empty or returns "no such file", inspect the provided host-mounted root with its own `--allowed-paths` and continue there. In the final answer, mention that primary logs were empty and host-mounted fallback logs were used.
-
-## Diagnostic Workflow
-
-Use a small, evidence-driven loop:
-
-1. **Discover:** run `help`, list the log root, and use `find`/`ls` to identify relevant files without reading them fully.
-2. **Target:** search by the user's symptom, service names, time window, and common error terms. Prefer current logs first, then rotated logs only to confirm whether similar events are old/noisy.
-3. **Correlate:** compare timestamps across service, agent, nginx/access/error, auth, system, database, and rotated logs as relevant. Separate temporally aligned evidence from red herrings.
-4. **Quantify when useful:** use `wc -l`, `sort`, and `uniq -c` for counts (for example, repeated auth failures by source IP/user or status-code counts).
-5. **Keep a command/evidence ledger:** before the final answer, note the decisive file, line/count/ID, and exact command form that produced it. Avoid final summaries like "targeted grep" without the actual pattern and file names.
-6. **Conclude carefully:** state the likely root cause or finding, cite filenames plus representative log snippets/timestamps, preserve useful `grep -n` line numbers and IDs (`transaction_id`, `request_id`, source IP, `application_name`, `line=<n>`), name what was ruled out, and give only safe read-only next diagnostic checks.
-
-Useful bounded command patterns (adapt paths/keywords to the prompt and available logs):
-
-```
+```sh
 ./rshell --allow-all-commands --timeout 5s --allowed-paths <root> -c 'ls -la <root>'
-./rshell --allow-all-commands --timeout 5s --allowed-paths <root> -c 'find <root> -maxdepth 3 -type f | head -n 80'
-./rshell --allow-all-commands --timeout 5s --allowed-paths <root> -c 'grep -n -E "(ERROR|WARN|failed|timeout|500|502|database|postgres|x509|clock|config|yaml|metrics)" <file> | head -n 80'
-./rshell --allow-all-commands --timeout 5s --allowed-paths <root> -c 'grep -n "<time-or-id>" <file> | head -n 80'
+./rshell --allow-all-commands --timeout 5s --allowed-paths <root> -c 'find <root> -maxdepth 3 -type f | sort | head -n 80'
 ```
 
-## Case Patterns to Handle Well
+## Efficient diagnostic loop
 
-These are general diagnostic patterns, not facts to assume. Always verify with logs before concluding.
+1. **Discover:** run initial `help`, then one `ls` and/or one `find` for the chosen root.
+2. **Target first:** use the prompt's symptom, service, source IP, time window, and keywords to search the most likely current logs before broad scans. Search multiple relevant files in one bounded `grep` when safe.
+3. **Corroborate:** add one or two focused searches in secondary logs (agent/app/nginx/auth/system/database) to connect symptoms to cause.
+4. **Quantify when useful:** use `grep -c`, `wc -l`, `sort | uniq -c`, or status/source/user counts.
+5. **Rule out only key alternatives:** inspect rotations or noisy/debug logs only when the prompt asks, current logs are incomplete, or you need one representative red-herring/old-event line.
+6. **Stop when supported:** once you have a likely finding, decisive snippets/line numbers, useful counts/IDs, and the main alternative/noise addressed, stop. Avoid repetitive grep/tail/count variants and broad searches across unrelated logs.
 
-- **Datadog Agent metric stoppage:** inspect `datadog/agent.log` and rotations for config reloads, remote-config events, YAML/validation errors, aggregator/core-agent stoppage, forwarder/flush messages, and trace/APM/log-intake health. In the finding, report the exact validation error and any line number/error field (`line=<n>`), transaction/config ID, and stop/flush timestamps as primary evidence. If traces or log intake remain healthy, explicitly separate them from a metrics-agent failure and cite the exact line/snippet for that health or unrelated noise; do not merely say "traces/log intake looked healthy" without evidence.
-- **SSH brute-force investigations:** search `auth.log*` for `Failed password`, invalid users, source IPs, and `Accepted` logins. Count failures by source and user. If there are no `Accepted` lines from the suspicious source, write plainly: "No accepted login from <source> was found." Prefer `accepted`/`Accepted` wording over placing `successful` next to the suspicious IP. If accepted logins exist from other sources, quote the exact accepted phrase including source IP, user, and authentication method (for example, `Accepted publickey for deploy from 203.0.113.8`) and state those are different sources, not the suspicious source. Unless an accepted login from the suspicious source is evidenced, avoid the words "compromise" and "compromised" entirely.
-- **HTTP 500/502 app/backend incidents:** correlate access/error logs with app/service logs and system/database logs around the same window. Look for database/Postgres connection errors, pool exhaustion, worker fanout, timeouts, and upstream failures. Preserve request IDs, line numbers, status counts, and application names when available. Recommend only read-only next checks such as inspecting connection-pool metrics or `pg_stat_activity`; do not mention operational changes in the final answer.
-- **Certificate failures in containers:** if primary logs are empty, use host-mounted fallback logs. For `x509` errors, distinguish expired certificates from `not yet valid`/NotBefore problems, and corroborate timing causes with syslog/chrony/clock messages when present. Keep evidence attributed to the file where it appeared (for example, Agent check failures in `agent.log`, clock synchronization in `syslog`). Quote the current time versus NotBefore/NotAfter times and any clock-step/skew magnitude when present.
-- **Socket capability checks:** after `help` and `help ss`, run only supported socket flags. Prefer `ss -tln`/`ss -tlnH` for listening TCP sockets. If `help ss` lists `-e`, an optional `ss -tlne` can show supported extended socket fields, but it still does not provide process/PID ownership; say that explicitly when process flags are absent.
+Good bounded search forms:
 
-## Final Answer Checklist
-
-Your final answer should be concise but complete:
-
-- Use a clear structure: **Finding**, **Evidence by file**, **Commands run**, **Ruled out/noise**, and **Next safe read-only check**.
-- Start with the likely finding/root cause and confidence level.
-- Cite concrete evidence: filenames, line numbers from `grep -n` when available, timestamps, key terms, counts, IDs, auth methods, status-code counts, certificate validity times, and short snippets. Prefer exact file names like `agent.log`, `auth.log`, `service.log`, `nginx/access.log`, `nginx/error.log`, `system.log`, or `syslog` when used.
-- List the important `./rshell` commands you ran. When there are only a few commands (for example socket checks), list every command exactly. For larger log investigations, list the initial `help` command exactly, then give representative decisive command forms with `<provided log root>`, relative file names, and the actual search/count patterns used (for example the exact `grep -n -E` regex, `grep ... | wc -l`, or `sort | uniq -c` pipeline); avoid copying long absolute generated roots into the final answer. Make clear that the actual log reads used the literal provided `--allowed-paths` root. Do not leave the command section at only "listed files" or "targeted grep searches".
-- Separate confirmed evidence from red herrings/older rotated-log noise, and cite one representative line/snippet for important ruled-out signals when the prompt asks to distinguish them.
-- Use neutral negative findings: say "No accepted login from <source> was found" instead of "not compromised" unless an accepted login from that source is directly evidenced; avoid phrasing like "successful ... <source>" when the finding is negative.
-- State limitations and the next safe read-only diagnostic check.
-- Do not include operational-change command names in the final answer, even in negative phrasing; just state that the next checks are read-only.
-- Do not claim remote-host access or describe the tool as a "skill" in the final answer; describe the investigation as using local `./rshell` against the provided log root.
-
-## Examples
-
+```sh
+./rshell --allow-all-commands --timeout 5s --allowed-paths <root> -c 'grep -n -m 80 -E "(ERROR|WARN|failed|timeout|500|502|database|postgres|x509|clock|config|yaml|metrics)" <file1> <file2>'
+./rshell --allow-all-commands --timeout 5s --allowed-paths <root> -c 'grep -n -m 80 "<time-or-id>" <file>'
 ```
-# View recent syslog errors
-./rshell --allow-all-commands --timeout 5s --allowed-paths /var/log -c 'tail -n 50 /var/log/syslog | grep -i error'
 
-# List available log files
-./rshell --allow-all-commands --timeout 5s --allowed-paths /var/log -c 'ls -la /var/log'
+## Patterns to handle well
 
-# Check supported listening TCP sockets after help/help ss
-./rshell --allow-all-commands --timeout 5s -c 'ss -tln'
-```
+Always verify these patterns with logs; do not assume them.
+
+- **Datadog Agent metrics stopped:** inspect `datadog/agent.log*` for remote-config/config reloads, YAML/validation errors with line fields, core-agent/aggregator stop, metric flush stoppage, and trace/APM/log-intake health. Cite the exact validation error, line number, config/transaction ID, stop/flush timestamps, and one snippet showing healthy/unrelated trace or log intake if relevant.
+- **SSH brute force:** search `auth.log*` for `Failed password`, invalid users, source IPs, and `Accepted` logins. Count failures by source/user. If no accepted login from the suspicious source is evidenced, say exactly that and avoid "compromise/compromised." Quote accepted logins from different IPs as different sources.
+- **HTTP 500/502 backend incidents:** correlate nginx access/error logs with app/service and system/database logs around the same window. Look for DB/Postgres connection errors, pool/slot exhaustion, worker fanout, timeouts, upstream failures, request IDs, status counts, and application names. Recommend only read-only next checks such as connection-pool metrics or `pg_stat_activity` inspection.
+- **Container certificate failures:** if primary logs are empty, use the host-mounted root. For `x509`, distinguish expired certificates from `not yet valid`/NotBefore. Corroborate timing causes with syslog/chrony/clock messages, quoting current vs NotBefore/NotAfter times and skew/step magnitude when available.
+- **Socket capability:** after `help` and `help ss`, run only supported `ss` flags and explicitly note any missing process/PID support.
+
+## Final answer checklist
+
+Use a concise structure: **Finding**, **Evidence by file**, **Commands run**, **Ruled out/noise**, **Next safe read-only check**.
+
+- Start with the likely finding/root cause and confidence.
+- Cite concrete evidence: relative filenames, `grep -n` line numbers, timestamps, snippets, counts, IDs (`request_id`, `transaction_id`, source IP, `application_name`, `line=<n>`), auth methods, status-code counts, certificate validity times, and clock skew values.
+- Commands run: if there are only a few commands (for example sockets), list every command exactly. For larger log investigations, list the exact initial `help` command plus decisive command forms with `<provided log root>`, relative files, and actual grep/count regex or pipeline. Do **not** summarize only as "targeted greps"; include the patterns and files that produced the evidence.
+- Separate confirmed findings from red herrings, old rotated-log events, and unrelated noise; cite one representative line/snippet for important ruled-out signals.
+- Use neutral negative findings: "No accepted login from <source> was found." Avoid phrasing like "successful ... <source>" when the finding is negative.
+- State limitations and one next diagnostic check that is safe and read-only.
+- Do not include operational-change command names in the final answer, even in negative phrasing. Do not describe the investigation as remote-host access or as using a "skill"; say it used local `./rshell` against the provided log root.
