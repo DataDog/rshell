@@ -145,7 +145,7 @@ The loop:
 1. Runs a baseline benchmark.
 2. Invokes `pi` as a researcher to edit only `SKILL.md`.
 3. Runs the benchmark again.
-4. Commits the skill edit if the overall objective improves without dropping quality beyond the allowed tolerance; pass `-push` to push accepted commits automatically.
+4. Commits and pushes the skill edit if the overall objective improves without dropping quality beyond the allowed tolerance; pass `-push=false` to keep accepted commits local.
 5. Reverts the skill edit if it does not improve.
 
 ## Improvement strategy for agents

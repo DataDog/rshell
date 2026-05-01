@@ -34,7 +34,7 @@ func main() {
 		qualityTolerance = flag.Float64("quality-tolerance", 0.01, "maximum allowed quality drop from the best seen quality")
 		limit            = flag.Int("limit", 0, "run at most N benchmark cases per iteration (0 = all)")
 		judge            = flag.Bool("judge", false, "enable skillbench LLM-as-judge scoring")
-		push             = flag.Bool("push", false, "push accepted skill commits to the current branch")
+		push             = flag.Bool("push", true, "push accepted skill commits to the current branch; set -push=false to keep commits local")
 		dryRun           = flag.Bool("dry-run", false, "run benchmark and researcher but do not commit/revert")
 		allowDirty       = flag.Bool("allow-dirty", false, "allow starting with unrelated uncommitted changes")
 	)
@@ -290,7 +290,7 @@ func commitSkill(root, skillAbs string, iter int, result autoresearch.SuiteResul
 		return err
 	}
 	if !push {
-		fmt.Println("accepted iteration committed locally; pass -push to push automatically")
+		fmt.Println("accepted iteration committed locally because -push=false; run git push manually to publish it")
 		return nil
 	}
 	logStep("iteration %d: pushing accepted commit", iter)
