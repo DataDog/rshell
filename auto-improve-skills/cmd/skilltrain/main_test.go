@@ -12,6 +12,40 @@ import (
 	"github.com/DataDog/rshell/auto-improve-skills/internal/autoresearch"
 )
 
+func TestFormatSkilltrainLogUsesSemanticColors(t *testing.T) {
+	plain := formatSkilltrainLog(logSemanticSuccess, "accepted skill change", false)
+	if plain != "skilltrain: accepted skill change" {
+		t.Fatalf("plain log line = %q", plain)
+	}
+
+	colored := formatSkilltrainLog(logSemanticSuccess, "accepted skill change", true)
+	want := ansiDim + "skilltrain:" + ansiReset + " " + ansiGreen + "accepted skill change" + ansiReset
+	if colored != want {
+		t.Fatalf("colored log line = %q, want %q", colored, want)
+	}
+}
+
+func TestLogSemanticStyleMapsStatusesToColors(t *testing.T) {
+	cases := []struct {
+		name     string
+		semantic logSemantic
+		want     string
+	}{
+		{name: "success", semantic: logSemanticSuccess, want: ansiGreen},
+		{name: "warning", semantic: logSemanticWarning, want: ansiYellow},
+		{name: "dry run", semantic: logSemanticDryRun, want: ansiYellow},
+		{name: "error", semantic: logSemanticError, want: ansiRed},
+		{name: "benchmark", semantic: logSemanticBenchmark, want: ansiMagenta},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := logSemanticStyle(tc.semantic); got != tc.want {
+				t.Fatalf("logSemanticStyle(%s) = %q, want %q", tc.name, got, tc.want)
+			}
+		})
+	}
+}
+
 func TestBenchmarkObjectiveFallsBackToQualityForOldResults(t *testing.T) {
 	result := autoresearch.SuiteResult{NormalizedScore: 0.75}
 	if got := benchmarkQuality(result); got != 0.75 {

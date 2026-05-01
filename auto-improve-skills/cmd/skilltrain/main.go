@@ -22,6 +22,29 @@ import (
 
 const defaultModel = "openai-codex/gpt-5.5"
 
+type logSemantic int
+
+const (
+	logSemanticInfo logSemantic = iota
+	logSemanticBenchmark
+	logSemanticSuccess
+	logSemanticWarning
+	logSemanticError
+	logSemanticSummary
+	logSemanticDryRun
+)
+
+const (
+	ansiReset   = "\x1b[0m"
+	ansiBold    = "\x1b[1m"
+	ansiDim     = "\x1b[2m"
+	ansiRed     = "\x1b[31m"
+	ansiGreen   = "\x1b[32m"
+	ansiYellow  = "\x1b[33m"
+	ansiMagenta = "\x1b[35m"
+	ansiCyan    = "\x1b[36m"
+)
+
 func main() {
 	var (
 		iterations       = flag.Int("iters", 3, "maximum improvement iterations")
@@ -41,13 +64,94 @@ func main() {
 	flag.Parse()
 
 	if err := run(*iterations, *casesPath, *skillPath, *model, *piBinary, *runDir, *minDelta, *qualityTolerance, *limit, *judge, *push, *dryRun, *allowDirty); err != nil {
-		fmt.Fprintf(os.Stderr, "skilltrain: %v\n", err)
+		logError("%v", err)
 		os.Exit(1)
 	}
 }
 
 func logStep(format string, args ...any) {
-	fmt.Printf("skilltrain: "+format+"\n", args...)
+	logf(os.Stdout, logSemanticInfo, format, args...)
+}
+
+func logBenchmark(format string, args ...any) {
+	logf(os.Stdout, logSemanticBenchmark, format, args...)
+}
+
+func logSuccess(format string, args ...any) {
+	logf(os.Stdout, logSemanticSuccess, format, args...)
+}
+
+func logWarn(format string, args ...any) {
+	logf(os.Stdout, logSemanticWarning, format, args...)
+}
+
+func logError(format string, args ...any) {
+	logf(os.Stderr, logSemanticError, format, args...)
+}
+
+func logDryRun(format string, args ...any) {
+	logf(os.Stdout, logSemanticDryRun, format, args...)
+}
+
+func logf(stream *os.File, semantic logSemantic, format string, args ...any) {
+	msg := fmt.Sprintf(format, args...)
+	fmt.Fprintln(stream, formatSkilltrainLog(semantic, msg, colorEnabledForLog(stream)))
+}
+
+func printSemantic(semantic logSemantic, format string, args ...any) {
+	msg := fmt.Sprintf(format, args...)
+	fmt.Fprintln(os.Stdout, formatSemanticText(semantic, msg, colorEnabledForLog(os.Stdout)))
+}
+
+func formatSkilltrainLog(semantic logSemantic, msg string, colorEnabled bool) string {
+	line := "skilltrain: " + msg
+	if !colorEnabled {
+		return line
+	}
+	prefix := ansiDim + "skilltrain:" + ansiReset
+	return prefix + " " + formatSemanticText(semantic, msg, true)
+}
+
+func formatSemanticText(semantic logSemantic, msg string, colorEnabled bool) string {
+	if !colorEnabled {
+		return msg
+	}
+	style := logSemanticStyle(semantic)
+	if style == "" {
+		return msg
+	}
+	return style + msg + ansiReset
+}
+
+func logSemanticStyle(semantic logSemantic) string {
+	switch semantic {
+	case logSemanticBenchmark:
+		return ansiMagenta
+	case logSemanticSuccess:
+		return ansiGreen
+	case logSemanticWarning, logSemanticDryRun:
+		return ansiYellow
+	case logSemanticError:
+		return ansiRed
+	case logSemanticSummary:
+		return ansiBold + ansiCyan
+	default:
+		return ansiCyan
+	}
+}
+
+func colorEnabledForLog(stream *os.File) bool {
+	if stream == nil || os.Getenv("NO_COLOR") != "" {
+		return false
+	}
+	if os.Getenv("FORCE_COLOR") != "" || os.Getenv("CLICOLOR_FORCE") != "" {
+		return true
+	}
+	if strings.EqualFold(os.Getenv("TERM"), "dumb") {
+		return false
+	}
+	info, err := stream.Stat()
+	return err == nil && info.Mode()&os.ModeCharDevice != 0
 }
 
 func run(iterations int, casesPath, skillPath, model, piBinary, runDir string, minDelta, qualityTolerance float64, limit int, judge, push, dryRun, allowDirty bool) error {
@@ -87,8 +191,8 @@ func run(iterations int, casesPath, skillPath, model, piBinary, runDir string, m
 		}
 	}
 
-	fmt.Printf("skilltrain run dir: %s\n", runDir)
-	logStep("running baseline benchmark")
+	printSemantic(logSemanticSummary, "skilltrain run dir: %s", runDir)
+	logBenchmark("running baseline benchmark")
 	baseline, err := runBenchmark(root, casesAbs, skillAbs, model, piBinary, filepath.Join(runDir, "iter-000-baseline"), limit, judge)
 	if err != nil {
 		return err
@@ -97,7 +201,7 @@ func run(iterations int, casesPath, skillPath, model, piBinary, runDir string, m
 	bestQuality := benchmarkQuality(baseline)
 	qualityFloor := bestQuality - qualityTolerance
 	bestPath := filepath.Join(runDir, "iter-000-baseline", "result.json")
-	fmt.Printf("baseline quality: %.2f%% objective: %.2f%% (%s)\n", bestQuality*100, bestObjective*100, bestPath)
+	printSemantic(logSemanticSummary, "baseline quality: %.2f%% objective: %.2f%% (%s)", bestQuality*100, bestObjective*100, bestPath)
 
 	for iter := 1; iter <= iterations; iter++ {
 		logStep("iteration %d/%d: preparing workspace", iter, iterations)
@@ -107,7 +211,7 @@ func run(iterations int, casesPath, skillPath, model, piBinary, runDir string, m
 		}
 		var original []byte
 		if dryRun {
-			logStep("iteration %d/%d: snapshotting skill for dry-run restore", iter, iterations)
+			logDryRun("iteration %d/%d: snapshotting skill for dry-run restore", iter, iterations)
 			var err error
 			original, err = os.ReadFile(skillAbs)
 			if err != nil {
@@ -119,15 +223,15 @@ func run(iterations int, casesPath, skillPath, model, piBinary, runDir string, m
 			return err
 		}
 		if dryRun {
-			logStep("iteration %d/%d: saving candidate skill copy", iter, iterations)
+			logDryRun("iteration %d/%d: saving candidate skill copy", iter, iterations)
 			if candidateSkill, err := os.ReadFile(skillAbs); err == nil {
 				_ = os.WriteFile(filepath.Join(iterDir, "candidate.SKILL.md"), candidateSkill, 0o644)
 			}
 		}
-		logStep("iteration %d/%d: running candidate benchmark", iter, iterations)
+		logBenchmark("iteration %d/%d: running candidate benchmark", iter, iterations)
 		candidate, err := runBenchmark(root, casesAbs, skillAbs, model, piBinary, iterDir, limit, judge)
 		if dryRun {
-			logStep("iteration %d/%d: restoring original skill after dry-run benchmark", iter, iterations)
+			logDryRun("iteration %d/%d: restoring original skill after dry-run benchmark", iter, iterations)
 			if restoreErr := os.WriteFile(skillAbs, original, 0o644); restoreErr != nil && err == nil {
 				err = restoreErr
 			}
@@ -141,13 +245,17 @@ func run(iterations int, casesPath, skillPath, model, piBinary, runDir string, m
 		candidateQuality := benchmarkQuality(candidate)
 		delta := candidateObjective - bestObjective
 		qualityOK := candidateQuality >= qualityFloor
-		fmt.Printf("iteration %d quality: %.2f%% objective: %.2f%% (delta %.2f%%)\n", iter, candidateQuality*100, candidateObjective*100, delta*100)
+		if qualityOK && delta >= minDelta {
+			printSemantic(logSemanticSuccess, "iteration %d quality: %.2f%% objective: %.2f%% (delta %.2f%%)", iter, candidateQuality*100, candidateObjective*100, delta*100)
+		} else {
+			printSemantic(logSemanticWarning, "iteration %d quality: %.2f%% objective: %.2f%% (delta %.2f%%)", iter, candidateQuality*100, candidateObjective*100, delta*100)
+		}
 		if qualityOK && delta >= minDelta {
 			if dryRun {
-				logStep("iteration %d/%d: accepted in dry-run", iter, iterations)
-				fmt.Printf("dry-run: would accept iteration %d and commit %s (candidate saved in %s)\n", iter, skillAbs, filepath.Join(iterDir, "candidate.SKILL.md"))
+				logSuccess("iteration %d/%d: accepted in dry-run", iter, iterations)
+				printSemantic(logSemanticDryRun, "dry-run: would accept iteration %d and commit %s (candidate saved in %s)", iter, skillAbs, filepath.Join(iterDir, "candidate.SKILL.md"))
 			} else {
-				logStep("iteration %d/%d: accepted; committing skill change", iter, iterations)
+				logSuccess("iteration %d/%d: accepted; committing skill change", iter, iterations)
 				if err := commitSkill(root, skillAbs, iter, candidate, candidatePath, filepath.Join(iterDir, "researcher.stdout.md"), delta, push); err != nil {
 					return err
 				}
@@ -160,20 +268,20 @@ func run(iterations int, casesPath, skillPath, model, piBinary, runDir string, m
 			bestPath = candidatePath
 		} else {
 			if !qualityOK {
-				fmt.Printf("iteration %d rejected: quality %.2f%% is below floor %.2f%%\n", iter, candidateQuality*100, qualityFloor*100)
+				printSemantic(logSemanticWarning, "iteration %d rejected: quality %.2f%% is below floor %.2f%%", iter, candidateQuality*100, qualityFloor*100)
 			}
 			if dryRun {
-				logStep("iteration %d/%d: rejected in dry-run", iter, iterations)
-				fmt.Printf("dry-run: would reject iteration %d and revert %s (candidate saved in %s)\n", iter, skillAbs, filepath.Join(iterDir, "candidate.SKILL.md"))
+				logWarn("iteration %d/%d: rejected in dry-run", iter, iterations)
+				printSemantic(logSemanticDryRun, "dry-run: would reject iteration %d and revert %s (candidate saved in %s)", iter, skillAbs, filepath.Join(iterDir, "candidate.SKILL.md"))
 			} else {
-				logStep("iteration %d/%d: rejected; reverting skill change", iter, iterations)
+				logWarn("iteration %d/%d: rejected; reverting skill change", iter, iterations)
 				if err := gitCheckout(root, skillAbs); err != nil {
 					return err
 				}
 			}
 		}
 	}
-	fmt.Printf("best objective: %.2f%%; best quality seen: %.2f%% (%s)\n", bestObjective*100, bestQuality*100, bestPath)
+	printSemantic(logSemanticSummary, "best objective: %.2f%%; best quality seen: %.2f%% (%s)", bestObjective*100, bestQuality*100, bestPath)
 	return nil
 }
 
@@ -181,7 +289,7 @@ func runBenchmark(root, casesAbs, skillAbs, model, piBinary, outDir string, limi
 	if err := os.MkdirAll(outDir, 0o755); err != nil {
 		return autoresearch.SuiteResult{}, err
 	}
-	logStep("benchmark: writing results under %s", outDir)
+	logBenchmark("benchmark: writing results under %s", outDir)
 	args := []string{
 		"run", "./auto-improve-skills/cmd/skillbench",
 		"-cases", casesAbs,
@@ -197,7 +305,7 @@ func runBenchmark(root, casesAbs, skillAbs, model, piBinary, outDir string, limi
 	if judge {
 		args = append(args, "-judge")
 	}
-	logStep("benchmark: executing skillbench")
+	logBenchmark("benchmark: executing skillbench")
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Hour)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "go", args...)
@@ -271,7 +379,7 @@ func commitSkill(root, skillAbs string, iter int, result autoresearch.SuiteResul
 	if clean, _, err := gitDiffCachedPathClean(root, skillRel); err != nil {
 		return err
 	} else if clean {
-		fmt.Println("accepted iteration had no staged diff; skipping commit")
+		printSemantic(logSemanticWarning, "accepted iteration had no staged diff; skipping commit")
 		return nil
 	}
 	diffStat, err := gitOutput(root, "diff", "--cached", "--stat", "--", skillRel)
@@ -285,15 +393,15 @@ func commitSkill(root, skillAbs string, iter int, result autoresearch.SuiteResul
 	researcherSummary := readCommitSummary(researcherSummaryPath)
 	msg := fmt.Sprintf("auto-improve remote-host-diagnostics iter %d", iter)
 	body := formatCommitBody(root, skillRel, iter, result, resultPath, researcherSummary, delta, diffStat, shortStat)
-	logStep("iteration %d: creating git commit", iter)
+	logSuccess("iteration %d: creating git commit", iter)
 	if err := runGit(root, "commit", "-m", msg, "-m", body, "--", skillRel); err != nil {
 		return err
 	}
 	if !push {
-		fmt.Println("accepted iteration committed locally because -push=false; run git push manually to publish it")
+		printSemantic(logSemanticSuccess, "accepted iteration committed locally because -push=false; run git push manually to publish it")
 		return nil
 	}
-	logStep("iteration %d: pushing accepted commit", iter)
+	logSuccess("iteration %d: pushing accepted commit", iter)
 	return runGit(root, "push")
 }
 
