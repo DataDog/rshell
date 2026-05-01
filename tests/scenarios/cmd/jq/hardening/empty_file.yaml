@@ -1,0 +1,15 @@
+# An empty file is not an error; jq simply produces no output.
+description: jq on an empty file produces no output and exits 0.
+skip_assert_against_bash: true
+setup:
+  files:
+    - path: empty.json
+      content: ""
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    jq . empty.json
+expect:
+  stdout: ""
+  stderr: ""
+  exit_code: 0

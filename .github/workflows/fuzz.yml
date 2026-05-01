@@ -64,6 +64,11 @@ jobs:
             # ping_test.go. Go test helpers are only in scope within the same directory,
             # so both files must reside in builtins/ping/.
             corpus_path: builtins/ping
+          - pkg: ./builtins/jq/
+            name: jq
+            # jq fuzz tests live in builtins/jq/ alongside the rest of the jq tests
+            # for the same reason as ping: they share helpers (runScript, jqRun, etc.).
+            corpus_path: builtins/jq
           - pkg: ./interp/tests/
             name: interp
             corpus_path: interp/tests

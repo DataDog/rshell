@@ -1,0 +1,21 @@
+# Multiple JSON documents in one source are processed sequentially.
+description: jq processes whitespace-separated JSON documents one at a time.
+skip_assert_against_bash: true
+setup:
+  files:
+    - path: stream.json
+      content: |+
+        1
+        2
+        3
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    jq -c . stream.json
+expect:
+  stdout: |+
+    1
+    2
+    3
+  stderr: ""
+  exit_code: 0

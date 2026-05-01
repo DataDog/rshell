@@ -1,0 +1,17 @@
+# -r prints JSON-string outputs without surrounding quotes.
+description: jq -r decodes JSON-string outputs and prints the contents raw.
+skip_assert_against_bash: true
+setup:
+  files:
+    - path: data.json
+      content: |+
+        {"name":"alice"}
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    jq -r .name data.json
+expect:
+  stdout: |+
+    alice
+  stderr: ""
+  exit_code: 0

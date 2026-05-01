@@ -1,0 +1,17 @@
+# -s -R slurps the entire stream into a single JSON string.
+description: jq -s -R reads the whole input as one JSON string.
+skip_assert_against_bash: true
+setup:
+  files:
+    - path: text.txt
+      content: |+
+        hello world
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    jq -s -R . text.txt
+expect:
+  stdout: |+
+    "hello world\n"
+  stderr: ""
+  exit_code: 0

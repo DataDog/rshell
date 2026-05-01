@@ -1,0 +1,19 @@
+# A literal "--" stops flag parsing so a filter starting with "-" works.
+description: jq accepts -- to terminate flag parsing.
+skip_assert_against_bash: true
+setup:
+  files:
+    - path: data.json
+      content: |+
+        {"a":1}
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    jq -- . data.json
+expect:
+  stdout: |+
+    {
+      "a": 1
+    }
+  stderr: ""
+  exit_code: 0

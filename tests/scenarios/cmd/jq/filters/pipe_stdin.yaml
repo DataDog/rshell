@@ -1,0 +1,11 @@
+# Filter reads from stdin when no FILE is given.
+description: jq reads JSON from stdin when no file argument is supplied.
+skip_assert_against_bash: true
+input:
+  script: |+
+    printf '{"k":"v"}' | jq -c '.k'
+expect:
+  stdout: |+
+    "v"
+  stderr: ""
+  exit_code: 0

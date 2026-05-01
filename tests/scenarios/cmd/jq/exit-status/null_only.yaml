@@ -1,0 +1,17 @@
+# -e returns 1 when every output is null.
+description: jq -e exits 1 when only null was produced.
+skip_assert_against_bash: true
+setup:
+  files:
+    - path: data.json
+      content: |+
+        {"a":1}
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    jq -e .missing data.json
+expect:
+  stdout: |+
+    null
+  stderr: ""
+  exit_code: 1

@@ -1,0 +1,17 @@
+# -c forces single-line JSON output.
+description: jq -c emits each output as a single JSON line.
+skip_assert_against_bash: true
+setup:
+  files:
+    - path: data.json
+      content: |+
+        {"a":1,"b":2}
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    jq -c . data.json
+expect:
+  stdout: |+
+    {"a":1,"b":2}
+  stderr: ""
+  exit_code: 0

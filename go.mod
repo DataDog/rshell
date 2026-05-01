@@ -6,6 +6,7 @@ toolchain go1.26.2
 
 require (
 	github.com/DataDog/datadog-agent/pkg/fleet/installer v0.78.0
+	github.com/brianfloersch/fastjq v0.0.0-00010101000000-000000000000
 	github.com/prometheus-community/pro-bing v0.8.0
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.0.10
@@ -40,3 +41,5 @@ require (
 	golang.org/x/sync v0.20.0 // indirect
 	golang.org/x/time v0.14.0 // indirect
 )
+
+replace github.com/brianfloersch/fastjq => ../../fastjq

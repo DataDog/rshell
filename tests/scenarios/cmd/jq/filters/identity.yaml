@@ -1,0 +1,20 @@
+# Identity filter on a small object pretty-prints with 2-space indent.
+description: jq . pretty-prints input by default.
+skip_assert_against_bash: true # bash has no jq builtin.
+setup:
+  files:
+    - path: data.json
+      content: |+
+        {"a":1,"b":2}
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    jq . data.json
+expect:
+  stdout: |+
+    {
+      "a": 1,
+      "b": 2
+    }
+  stderr: ""
+  exit_code: 0

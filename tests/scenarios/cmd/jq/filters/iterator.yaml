@@ -1,0 +1,19 @@
+# Iterator .[] emits one value per array element.
+description: jq '.[]' emits each array element on its own line.
+skip_assert_against_bash: true
+setup:
+  files:
+    - path: data.json
+      content: |+
+        [1,2,3]
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    jq '.[]' data.json
+expect:
+  stdout: |+
+    1
+    2
+    3
+  stderr: ""
+  exit_code: 0

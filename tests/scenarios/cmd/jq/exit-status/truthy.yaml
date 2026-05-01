@@ -1,0 +1,17 @@
+# -e returns 0 when at least one output is truthy.
+description: jq -e exits 0 when output is a truthy value.
+skip_assert_against_bash: true
+setup:
+  files:
+    - path: data.json
+      content: |+
+        {"a":1}
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    jq -e .a data.json
+expect:
+  stdout: |+
+    1
+  stderr: ""
+  exit_code: 0

@@ -1,0 +1,16 @@
+# -j suppresses the trailing newline that -r normally writes.
+description: jq -j writes raw strings with no separator between outputs.
+skip_assert_against_bash: true
+setup:
+  files:
+    - path: data.json
+      content: |+
+        {"a":"hello","b":"world"}
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    jq -j .a,.b data.json
+expect:
+  stdout: "helloworld"
+  stderr: ""
+  exit_code: 0

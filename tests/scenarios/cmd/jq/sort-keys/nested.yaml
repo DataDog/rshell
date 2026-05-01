@@ -1,0 +1,17 @@
+# -S sorts keys at every nesting level.
+description: jq -S sorts keys recursively in nested objects.
+skip_assert_against_bash: true
+setup:
+  files:
+    - path: data.json
+      content: |+
+        {"z":{"b":2,"a":1},"y":{"d":4,"c":3}}
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    jq -S -c . data.json
+expect:
+  stdout: |+
+    {"y":{"c":3,"d":4},"z":{"a":1,"b":2}}
+  stderr: ""
+  exit_code: 0

@@ -21,6 +21,7 @@ import (
 	"github.com/DataDog/rshell/builtins/head"
 	"github.com/DataDog/rshell/builtins/help"
 	"github.com/DataDog/rshell/builtins/ip"
+	"github.com/DataDog/rshell/builtins/jq"
 	"github.com/DataDog/rshell/builtins/ls"
 	"github.com/DataDog/rshell/builtins/ping"
 	printfcmd "github.com/DataDog/rshell/builtins/printf"
@@ -55,6 +56,7 @@ func registerBuiltins() {
 			head.Cmd,
 			help.Cmd,
 			ip.Cmd,
+			jq.Cmd,
 			ls.Cmd,
 			ping.Cmd,
 			sortcmd.Cmd,

@@ -1,0 +1,15 @@
+# With -e and no output produced, exit must be 1.
+description: jq -e on an empty stream returns exit 1 (no output produced).
+skip_assert_against_bash: true
+setup:
+  files:
+    - path: empty.json
+      content: ""
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    jq -e . empty.json
+expect:
+  stdout: ""
+  stderr: ""
+  exit_code: 1

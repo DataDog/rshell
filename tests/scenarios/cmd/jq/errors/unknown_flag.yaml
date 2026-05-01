@@ -1,0 +1,9 @@
+# An unsupported flag is rejected with exit 1.
+description: jq rejects unknown flags with a clear error.
+skip_assert_against_bash: true
+input:
+  script: |+
+    jq --no-such-flag .
+expect:
+  exit_code: 1
+  stderr_contains: ["unknown flag"]

@@ -1,0 +1,17 @@
+# -s gathers all input values into a single array.
+description: jq -s collects multi-document input into one array.
+skip_assert_against_bash: true
+setup:
+  files:
+    - path: stream.json
+      content: |+
+        1 2 3
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    jq -c -s . stream.json
+expect:
+  stdout: |+
+    [1,2,3]
+  stderr: ""
+  exit_code: 0

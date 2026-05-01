@@ -1,0 +1,19 @@
+# select() suppresses values whose predicate is false.
+description: jq select(.level == "error") emits only matching documents.
+skip_assert_against_bash: true
+setup:
+  files:
+    - path: log.json
+      content: |+
+        {"level":"info","msg":"hi"}
+        {"level":"error","msg":"boom"}
+        {"level":"info","msg":"bye"}
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    jq -c 'select(.level == "error")' log.json
+expect:
+  stdout: |+
+    {"level":"error","msg":"boom"}
+  stderr: ""
+  exit_code: 0

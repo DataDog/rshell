@@ -1,0 +1,11 @@
+# -n with a literal expression yields the literal directly.
+description: jq -n returns the literal expression value.
+skip_assert_against_bash: true
+input:
+  script: |+
+    jq -n -c '{x: 1, y: 2}'
+expect:
+  stdout: |+
+    {"x":1,"y":2}
+  stderr: ""
+  exit_code: 0

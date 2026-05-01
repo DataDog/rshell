@@ -1,0 +1,10 @@
+# Verifies --help prints usage to stdout with exit 0.
+description: jq --help prints usage to stdout and exits 0.
+skip_assert_against_bash: true # rshell builtin help differs from system jq.
+input:
+  script: |+
+    jq --help
+expect:
+  stdout_contains: ["Usage: jq"]
+  stderr: ""
+  exit_code: 0

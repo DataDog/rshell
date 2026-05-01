@@ -1,0 +1,17 @@
+# -S emits object keys in lexicographic order.
+description: jq -S sorts object keys in output.
+skip_assert_against_bash: true
+setup:
+  files:
+    - path: data.json
+      content: |+
+        {"banana":2,"apple":1,"cherry":3}
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    jq -S -c . data.json
+expect:
+  stdout: |+
+    {"apple":1,"banana":2,"cherry":3}
+  stderr: ""
+  exit_code: 0

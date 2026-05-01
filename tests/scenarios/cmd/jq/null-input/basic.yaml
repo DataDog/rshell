@@ -1,0 +1,11 @@
+# -n runs the filter once with input fixed to null.
+description: jq -n runs FILTER with null as the input.
+skip_assert_against_bash: true
+input:
+  script: |+
+    jq -n '.'
+expect:
+  stdout: |+
+    null
+  stderr: ""
+  exit_code: 0

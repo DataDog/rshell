@@ -1,0 +1,9 @@
+# --color-output is not implemented; rejected with exit 1.
+description: jq does not support --color-output / -C and rejects it.
+skip_assert_against_bash: true
+input:
+  script: |+
+    jq -C -n .
+expect:
+  exit_code: 1
+  stderr_contains: ["unknown shorthand flag"]

@@ -1,0 +1,10 @@
+# Reading a missing file is a runtime error.
+description: jq fails with exit 1 when the input file does not exist.
+skip_assert_against_bash: true
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    jq . nonexistent.json
+expect:
+  exit_code: 1
+  stderr_contains: ["jq: nonexistent.json"]

@@ -1,0 +1,9 @@
+# A syntactically invalid filter triggers a compile error (exit 3).
+description: jq with an unparseable filter exits with the compile-error code 3.
+skip_assert_against_bash: true
+input:
+  script: |+
+    jq -n '...not a valid filter...'
+expect:
+  exit_code: 3
+  stderr_contains: ["jq: compile error"]

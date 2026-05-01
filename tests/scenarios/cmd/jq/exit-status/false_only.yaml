@@ -1,0 +1,17 @@
+# -e returns 1 when every output is false.
+description: jq -e exits 1 when only false was produced.
+skip_assert_against_bash: true
+setup:
+  files:
+    - path: data.json
+      content: |+
+        {"flag":false}
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    jq -e .flag data.json
+expect:
+  stdout: |+
+    false
+  stderr: ""
+  exit_code: 1

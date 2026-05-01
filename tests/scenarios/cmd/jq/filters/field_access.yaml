@@ -1,0 +1,17 @@
+# Single-field access via .name on a flat object.
+description: jq .name extracts a single field as a JSON string.
+skip_assert_against_bash: true
+setup:
+  files:
+    - path: data.json
+      content: |+
+        {"name":"alice","age":30}
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    jq .name data.json
+expect:
+  stdout: |+
+    "alice"
+  stderr: ""
+  exit_code: 0

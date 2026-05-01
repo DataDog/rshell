@@ -1,0 +1,9 @@
+# -f / --from-file is not implemented in v1; rejected with exit 1.
+description: jq does not support -f / --from-file in v1.
+skip_assert_against_bash: true
+input:
+  script: |+
+    jq -f filter.jq .
+expect:
+  exit_code: 1
+  stderr_contains: ["unknown shorthand flag"]

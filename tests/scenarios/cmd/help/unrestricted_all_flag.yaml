@@ -5,7 +5,7 @@ input:
     help --all
 expect:
   stdout: |+
-    rshell (dev) — All 28 builtins available
+    rshell (dev) — All 29 builtins available
 
     [         evaluate conditional expression
     break     exit from a loop
@@ -20,6 +20,7 @@ expect:
     head      output the first part of files
     help      display help for commands
     ip        show network interface and routing information
+    jq        command-line JSON processor
     ls        list directory contents
     ping      send ICMP echo requests to a network host
     printf    format and print data

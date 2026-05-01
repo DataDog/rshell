@@ -1,0 +1,21 @@
+# -r does not affect non-string outputs.
+description: jq -r leaves number / boolean / null outputs unchanged.
+skip_assert_against_bash: true
+setup:
+  files:
+    - path: data.json
+      content: |+
+        {"a":42,"b":true,"c":null}
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    jq -r .a data.json
+    jq -r .b data.json
+    jq -r .c data.json
+expect:
+  stdout: |+
+    42
+    true
+    null
+  stderr: ""
+  exit_code: 0

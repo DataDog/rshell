@@ -398,24 +398,61 @@ var builtinPerCommandSymbols = map[string][]string{
 		// Note: builtins/internal/procnetroute symbols are exempt from this allowlist
 		// (internal packages are not checked by the builtinAllowedSymbols test).
 	},
+	"jq": {
+		"bufio.NewScanner",                        // 🟢 line-by-line scanner for --raw-input mode; no write or exec capability.
+		"bytes.Buffer",                            // 🟢 in-memory buffer for re-emitting JSON; no I/O side effects.
+		"bytes.Equal",                             // 🟢 byte-slice equality check; pure function, no I/O.
+		"bytes.NewReader",                         // 🟢 wraps a byte slice as an io.Reader for json.Decoder; pure in-memory.
+		"context.Context",                         // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
+		"encoding/json.Decoder",                   // 🟢 streaming JSON token reader; pure in-memory operation, no I/O of its own.
+		"encoding/json.Delim",                     // 🟢 token type for JSON delimiters; pure type, no I/O.
+		"encoding/json.Marshal",                   // 🟢 encodes a Go value as JSON bytes; pure in-memory, no I/O.
+		"encoding/json.NewDecoder",                // 🟢 constructs a json.Decoder around an io.Reader; pure constructor.
+		"encoding/json.Number",                    // 🟢 raw-number type used to preserve numeric formatting through Token; pure type.
+		"encoding/json.RawMessage",                // 🟢 deferred-decoding type for raw JSON value bytes; pure type.
+		"encoding/json.Unmarshal",                 // 🟢 decodes JSON bytes into a Go value; pure in-memory, no I/O.
+		"errors.Is",                               // 🟢 error comparison; pure function, no I/O.
+		"errors.New",                              // 🟢 creates a simple error value; pure function, no I/O.
+		"fmt.Errorf",                              // 🟢 error formatting; pure function, no I/O.
+		"fmt.Fprintf",                             // 🟠 formats and writes to a writer; we only ever target an in-memory bytes.Buffer here.
+		"github.com/brianfloersch/fastjq.Compile", // 🟢 compiles a jq filter expression into a *Program; pure CPU, no I/O, no recursion through user input. Engine is fuzz-hardened to never panic.
+		"github.com/brianfloersch/fastjq.Program", // 🟢 compiled jq program type; runs on []byte inputs only, no fs/net I/O.
+		"io.EOF",                                  // 🟢 sentinel error value; pure constant.
+		"io.NopCloser",                            // 🟢 wraps a Reader with a no-op Close; no side effects.
+		"io.ReadCloser",                           // 🟢 interface type for read+close; no side effects.
+		"io.Reader",                               // 🟢 interface type for reading; no side effects.
+		"os.O_RDONLY",                             // 🟢 read-only file flag constant; cannot open files by itself.
+		"slices.SortFunc",                         // 🟢 sorts a slice with a comparison function; pure function, no I/O.
+		"unicode/utf8.DecodeRuneInString",         // 🟢 decodes first UTF-8 rune from a string; pure function, no I/O.
+	},
 }
 
 var builtinAllowedSymbols = []string{
-	"bufio.NewScanner",    // 🟢 line-by-line input reading (e.g. head, cat); no write or exec capability.
-	"bufio.Scanner",       // 🟢 scanner type for buffered input reading; no write or exec capability.
-	"bufio.SplitFunc",     // 🟢 type for custom scanner split functions; pure type, no I/O.
-	"bytes.Buffer",        // 🟢 in-memory buffer to capture command output; no I/O side effects.
-	"bytes.Equal",         // 🟢 compares two byte slices for equality; pure function, no I/O.
-	"bytes.IndexByte",     // 🟢 finds a byte in a byte slice; pure function, no I/O.
-	"bytes.NewReader",     // 🟢 wraps a byte slice as an io.Reader; pure in-memory, no I/O.
-	"context.Context",     // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
-	"context.WithTimeout", // 🟢 creates a child context with a deadline; no filesystem or network I/O itself.
-	"errors.As",           // 🟢 error type assertion; pure function, no I/O.
-	"errors.Is",           // 🟢 error comparison; pure function, no I/O.
-	"errors.New",          // 🟢 creates a simple error value; pure function, no I/O.
-	"fmt.Errorf",          // 🟢 error formatting; pure function, no I/O.
-	"fmt.Sprintf",         // 🟢 string formatting; pure function, no I/O.
+	"bufio.NewScanner",         // 🟢 line-by-line input reading (e.g. head, cat); no write or exec capability.
+	"bufio.Scanner",            // 🟢 scanner type for buffered input reading; no write or exec capability.
+	"bufio.SplitFunc",          // 🟢 type for custom scanner split functions; pure type, no I/O.
+	"bytes.Buffer",             // 🟢 in-memory buffer to capture command output; no I/O side effects.
+	"bytes.Equal",              // 🟢 compares two byte slices for equality; pure function, no I/O.
+	"bytes.IndexByte",          // 🟢 finds a byte in a byte slice; pure function, no I/O.
+	"bytes.NewReader",          // 🟢 wraps a byte slice as an io.Reader; pure in-memory, no I/O.
+	"context.Context",          // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
+	"context.WithTimeout",      // 🟢 creates a child context with a deadline; no filesystem or network I/O itself.
+	"encoding/json.Decoder",    // 🟢 streaming JSON token reader used by jq; pure in-memory, no I/O of its own.
+	"encoding/json.Delim",      // 🟢 token type for JSON delimiters returned by Decoder.Token; pure type.
+	"encoding/json.Marshal",    // 🟢 encodes a Go value as JSON bytes; pure in-memory, no I/O.
+	"encoding/json.NewDecoder", // 🟢 constructs a json.Decoder around an io.Reader; pure constructor.
+	"encoding/json.Number",     // 🟢 raw-number type used to preserve numeric formatting; pure type.
+	"encoding/json.RawMessage", // 🟢 deferred-decoding type for raw JSON value bytes; pure type.
+	"encoding/json.Unmarshal",  // 🟢 decodes JSON bytes into a Go value; pure in-memory, no I/O.
+	"errors.As",                // 🟢 error type assertion; pure function, no I/O.
+	"errors.Is",                // 🟢 error comparison; pure function, no I/O.
+	"errors.New",               // 🟢 creates a simple error value; pure function, no I/O.
+	"fmt.Errorf",               // 🟢 error formatting; pure function, no I/O.
+	"fmt.Fprintf",              // 🟠 formats and writes to a writer; only used in jq targeting an in-memory bytes.Buffer.
+	"fmt.Sprintf",              // 🟢 string formatting; pure function, no I/O.
 	"github.com/DataDog/rshell/internal/version.Version",  // 🟢 build version string; read-only package-level variable, no I/O.
+	"github.com/brianfloersch/fastjq.Compile",             // 🟢 compiles a jq filter expression to a *Program; pure CPU, no fs/net I/O. Engine is fuzz-hardened to never panic.
+	"github.com/brianfloersch/fastjq.Program",             // 🟢 compiled jq program type; runs on []byte inputs only, no fs/net I/O.
 	"github.com/prometheus-community/pro-bing.NewPinger",  // 🔴 creates an ICMP pinger by resolving host; network I/O is the explicit purpose of the ping builtin.
 	"github.com/prometheus-community/pro-bing.NoopLogger", // 🟢 no-op logger that discards pro-bing internal messages; no side effects.
 	"github.com/prometheus-community/pro-bing.Packet",     // 🟢 ICMP packet descriptor struct (received packet data); pure data type, no I/O.

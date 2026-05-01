@@ -1,0 +1,21 @@
+# -R turns each input line into a JSON-string input (parses correctly).
+description: jq -R wraps each line as a JSON string output.
+skip_assert_against_bash: true
+setup:
+  files:
+    - path: lines.txt
+      content: |+
+        foo
+        bar
+        baz
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    jq -R . lines.txt
+expect:
+  stdout: |+
+    "foo"
+    "bar"
+    "baz"
+  stderr: ""
+  exit_code: 0

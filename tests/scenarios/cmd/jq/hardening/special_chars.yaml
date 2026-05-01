@@ -1,0 +1,17 @@
+# Strings with embedded escapes round-trip correctly.
+description: jq preserves embedded JSON-string escape sequences.
+skip_assert_against_bash: true
+setup:
+  files:
+    - path: data.json
+      content: |+
+        {"s":"a\tb\nc"}
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    jq -c .s data.json
+expect:
+  stdout: |+
+    "a\tb\nc"
+  stderr: ""
+  exit_code: 0

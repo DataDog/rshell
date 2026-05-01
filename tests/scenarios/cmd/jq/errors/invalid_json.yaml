@@ -1,0 +1,15 @@
+# Invalid JSON input is a runtime error.
+description: jq fails with exit 1 when input is not valid JSON.
+skip_assert_against_bash: true
+setup:
+  files:
+    - path: bad.json
+      content: |+
+        {"unterminated":
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    jq . bad.json
+expect:
+  exit_code: 1
+  stderr_contains: ["error reading"]

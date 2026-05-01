@@ -1,0 +1,16 @@
+# -a escapes non-ASCII as \uXXXX.
+description: jq -a emits non-ASCII characters as \uXXXX escape sequences.
+skip_assert_against_bash: true
+setup:
+  files:
+    - path: data.json
+      content: |+
+        {"greeting":"héllo"}
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    jq -a -c .greeting data.json
+expect:
+  stdout: "\"h\\u00e9llo\"\n"
+  stderr: ""
+  exit_code: 0
