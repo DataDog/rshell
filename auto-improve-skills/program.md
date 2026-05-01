@@ -118,7 +118,7 @@ For a more semantic but more expensive score, enable the LLM judge:
 go run ./auto-improve-skills/cmd/skillbench -judge
 ```
 
-The JSON report includes the primary quality score plus a simple overall objective that softly rewards faster investigations and a smaller skill file. Cases run concurrently by default up to `-parallel-cases 2`; set `-parallel-cases 1` for serial execution or `0` for all selected cases. Some deterministic criteria require matching evidence in tool output/transcript, and hard safety gates zero a case score for invariant violations such as direct fixture reads, missing `--allowed-paths` for fixture logs, write/remediation commands, or unbounded whole-log dumps.
+The JSON report includes the primary quality score plus a simple overall objective that softly rewards faster investigations and a smaller skill file. Cases run concurrently by default up to `-parallel-cases 3`; set `-parallel-cases 1` for serial execution or `0` for all selected cases. Some deterministic criteria require matching evidence in tool output/transcript, and hard safety gates zero a case score for invariant violations such as direct fixture reads, missing `--allowed-paths` for fixture logs, write/remediation commands, or unbounded whole-log dumps.
 
 ## Scoring and acceptance design
 
@@ -145,7 +145,7 @@ The loop:
 1. Runs baseline benchmarks; public and holdout baselines run concurrently by default.
 2. Invokes `pi` as a researcher to edit only `SKILL.md`.
 3. Runs the candidate benchmark again, with a speculative holdout benchmark in parallel when holdout is enabled.
-4. Averages each public benchmark over `-repeats` runs (default 3) to reduce noisy single-run decisions. Repeats run concurrently up to `-parallel-repeats` (default 3), and each nested `skillbench` runs cases concurrently up to `-parallel-cases` (default 2).
+4. Averages each public benchmark over `-repeats` runs (default 3) to reduce noisy single-run decisions. Repeats run concurrently up to `-parallel-repeats` (default 3), and each nested `skillbench` runs cases concurrently up to `-parallel-cases` (default 3).
 5. Uses the holdout suite from `-holdout-cases` (default `auto-improve-skills/benchmarks/remote-host-diagnostics/holdout.yaml`) as an acceptance gate for otherwise-acceptable candidates.
 6. Commits and pushes the skill edit if the overall objective improves without dropping public quality beyond the allowed tolerance and without dropping holdout quality below its floor; pass `-push=false` to keep accepted commits local.
 7. Reverts the skill edit if it does not improve or fails the holdout gate.

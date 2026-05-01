@@ -37,9 +37,9 @@ func TestBoundedUpperScore(t *testing.T) {
 	}
 }
 
-func TestDefaultParallelCasesIsTwo(t *testing.T) {
-	if defaultParallelCases != 2 {
-		t.Fatalf("defaultParallelCases = %d, want 2", defaultParallelCases)
+func TestDefaultParallelCasesIsThree(t *testing.T) {
+	if defaultParallelCases != 3 {
+		t.Fatalf("defaultParallelCases = %d, want 3", defaultParallelCases)
 	}
 }
 

@@ -29,7 +29,7 @@ import (
 
 const (
 	defaultModel         = "openai-codex/gpt-5.5"
-	defaultParallelCases = 2
+	defaultParallelCases = 3
 )
 
 func main() {

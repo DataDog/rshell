@@ -65,7 +65,7 @@ go run ./auto-improve-skills/cmd/skillbench -judge
 
 The runner deterministically regenerates large fake log fixtures under `auto-improve-skills/benchmarks/remote-host-diagnostics/generated-fixtures/` before each run. The generated logs are gitignored.
 
-The runner writes a JSON report and raw nested-`pi` JSONL transcripts under `auto-improve-skills/runs/`. Cases run concurrently by default up to `-parallel-cases 2`; set `-parallel-cases 1` for serial execution or `0` for all selected cases. Reports include quality scores plus a soft composite objective (`objective_normalized_score`) that accounts for wall-clock duration and skill size. Deterministic scoring can require evidence in tool output for a final-answer claim, and hard safety gates zero a case if the transcript violates benchmark invariants such as direct fixture reads, write/remediation commands, missing `--allowed-paths` for fixture log reads, or whole-log dumps.
+The runner writes a JSON report and raw nested-`pi` JSONL transcripts under `auto-improve-skills/runs/`. Cases run concurrently by default up to `-parallel-cases 3`; set `-parallel-cases 1` for serial execution or `0` for all selected cases. Reports include quality scores plus a soft composite objective (`objective_normalized_score`) that accounts for wall-clock duration and skill size. Deterministic scoring can require evidence in tool output for a final-answer claim, and hard safety gates zero a case if the transcript violates benchmark invariants such as direct fixture reads, write/remediation commands, missing `--allowed-paths` for fixture log reads, or whole-log dumps.
 
 If you see `exec: "pi": executable file not found in $PATH`, either update to this version of the tooling or pass an explicit binary:
 
@@ -90,7 +90,7 @@ The loop:
 1. Runs baseline benchmarks. Public and holdout baselines run concurrently by default.
 2. Invokes `pi` as a researcher to edit only `SKILL.md`.
 3. Runs the candidate benchmark again, with a speculative holdout benchmark in parallel when holdout is enabled.
-4. Averages each public benchmark result over `-repeats` runs (default 3) to reduce judge/runtime noise. Repeats run concurrently up to `-parallel-repeats` (default 3), and each nested `skillbench` runs cases concurrently up to `-parallel-cases` (default 2).
+4. Averages each public benchmark result over `-repeats` runs (default 3) to reduce judge/runtime noise. Repeats run concurrently up to `-parallel-repeats` (default 3), and each nested `skillbench` runs cases concurrently up to `-parallel-cases` (default 3).
 5. Uses the holdout suite from `-holdout-cases` (default `auto-improve-skills/benchmarks/remote-host-diagnostics/holdout.yaml`) as an acceptance gate for public-suite improvements; pass `-holdout-cases ""` to disable it.
 6. Commits and pushes the skill edit if the composite objective improves by at least `-min-delta` (default 0.001), public quality stays within `-quality-tolerance`, and holdout quality stays within `-holdout-quality-tolerance` (defaults to `-quality-tolerance`); pass `-push=false` to keep accepted commits local.
 7. Reverts the skill edit if it does not improve or fails the holdout gate.

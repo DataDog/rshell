@@ -50,8 +50,8 @@ func TestDefaultParallelSettings(t *testing.T) {
 	if defaultParallelRepeats != 3 {
 		t.Fatalf("defaultParallelRepeats = %d, want 3", defaultParallelRepeats)
 	}
-	if defaultParallelCases != 2 {
-		t.Fatalf("defaultParallelCases = %d, want 2", defaultParallelCases)
+	if defaultParallelCases != 3 {
+		t.Fatalf("defaultParallelCases = %d, want 3", defaultParallelCases)
 	}
 }
 
