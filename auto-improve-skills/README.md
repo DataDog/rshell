@@ -86,8 +86,10 @@ The loop:
 1. Runs a baseline benchmark.
 2. Invokes `pi` as a researcher to edit only `SKILL.md`.
 3. Runs the benchmark again.
-4. Commits and pushes the skill edit if the composite objective improves by at least `-min-delta` without dropping quality by more than `-quality-tolerance` (default 1 percentage point).
+4. Commits the skill edit if the composite objective improves by at least `-min-delta` without dropping quality by more than `-quality-tolerance` (default 1 percentage point); pass `-push` to push accepted commits automatically.
 5. Reverts the skill edit if it does not improve.
+
+Accepted commit bodies include the benchmark report path, quality/objective/duration/size scores, per-case scoring details, the researcher summary, and a diffstat. Accepted commits are local by default; pass `-push` to push them automatically.
 
 If `pi` is outside your shell `PATH`, use the same `-pi` flag:
 

@@ -14,6 +14,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/DataDog/rshell/auto-improve-skills/internal/autoresearch"
@@ -29,22 +30,23 @@ func main() {
 		model            = flag.String("model", defaultModel, "pi model for researcher and benchmark agents")
 		piBinary         = flag.String("pi", "pi", "pi executable")
 		runDir           = flag.String("run-dir", "", "directory for this training run")
-		minDelta         = flag.Float64("min-delta", 0.01, "minimum normalized objective improvement to accept")
+		minDelta         = flag.Float64("min-delta", 0.005, "minimum normalized objective improvement to accept")
 		qualityTolerance = flag.Float64("quality-tolerance", 0.01, "maximum allowed quality drop from the best seen quality")
 		limit            = flag.Int("limit", 0, "run at most N benchmark cases per iteration (0 = all)")
 		judge            = flag.Bool("judge", false, "enable skillbench LLM-as-judge scoring")
+		push             = flag.Bool("push", false, "push accepted skill commits to the current branch")
 		dryRun           = flag.Bool("dry-run", false, "run benchmark and researcher but do not commit/revert")
 		allowDirty       = flag.Bool("allow-dirty", false, "allow starting with unrelated uncommitted changes")
 	)
 	flag.Parse()
 
-	if err := run(*iterations, *casesPath, *skillPath, *model, *piBinary, *runDir, *minDelta, *qualityTolerance, *limit, *judge, *dryRun, *allowDirty); err != nil {
+	if err := run(*iterations, *casesPath, *skillPath, *model, *piBinary, *runDir, *minDelta, *qualityTolerance, *limit, *judge, *push, *dryRun, *allowDirty); err != nil {
 		fmt.Fprintf(os.Stderr, "skilltrain: %v\n", err)
 		os.Exit(1)
 	}
 }
 
-func run(iterations int, casesPath, skillPath, model, piBinary, runDir string, minDelta, qualityTolerance float64, limit int, judge, dryRun, allowDirty bool) error {
+func run(iterations int, casesPath, skillPath, model, piBinary, runDir string, minDelta, qualityTolerance float64, limit int, judge, push, dryRun, allowDirty bool) error {
 	if qualityTolerance < 0 {
 		return fmt.Errorf("-quality-tolerance must be non-negative")
 	}
@@ -126,7 +128,7 @@ func run(iterations int, casesPath, skillPath, model, piBinary, runDir string, m
 			if dryRun {
 				fmt.Printf("dry-run: would accept iteration %d and commit %s (candidate saved in %s)\n", iter, skillAbs, filepath.Join(iterDir, "candidate.SKILL.md"))
 			} else {
-				if err := commitSkill(root, skillAbs, iter, candidateQuality, candidateObjective, delta); err != nil {
+				if err := commitSkill(root, skillAbs, iter, candidate, candidatePath, filepath.Join(iterDir, "researcher.stdout.md"), delta, push); err != nil {
 					return err
 				}
 			}
@@ -233,22 +235,193 @@ Task for iteration %d:
 	return nil
 }
 
-func commitSkill(root, skillAbs string, iter int, quality, objective, delta float64) error {
-	if err := runGit(root, "add", skillAbs); err != nil {
+func commitSkill(root, skillAbs string, iter int, result autoresearch.SuiteResult, resultPath, researcherSummaryPath string, delta float64, push bool) error {
+	skillRel := gitPath(root, skillAbs)
+	if err := runGit(root, "add", skillRel); err != nil {
 		return err
 	}
-	if clean, _, err := gitDiffCachedClean(root); err != nil {
+	if clean, _, err := gitDiffCachedPathClean(root, skillRel); err != nil {
 		return err
 	} else if clean {
 		fmt.Println("accepted iteration had no staged diff; skipping commit")
 		return nil
 	}
-	msg := fmt.Sprintf("auto-improve remote-host-diagnostics iter %d", iter)
-	body := fmt.Sprintf("Quality: %.2f%%\nObjective: %.2f%%\nObjective delta: %.2f%%", quality*100, objective*100, delta*100)
-	if err := runGit(root, "commit", "-m", msg, "-m", body); err != nil {
+	diffStat, err := gitOutput(root, "diff", "--cached", "--stat", "--", skillRel)
+	if err != nil {
 		return err
 	}
+	shortStat, err := gitOutput(root, "diff", "--cached", "--shortstat", "--", skillRel)
+	if err != nil {
+		return err
+	}
+	researcherSummary := readCommitSummary(researcherSummaryPath)
+	msg := fmt.Sprintf("auto-improve remote-host-diagnostics iter %d", iter)
+	body := formatCommitBody(root, skillRel, iter, result, resultPath, researcherSummary, delta, diffStat, shortStat)
+	if err := runGit(root, "commit", "-m", msg, "-m", body, "--", skillRel); err != nil {
+		return err
+	}
+	if !push {
+		fmt.Println("accepted iteration committed locally; pass -push to push automatically")
+		return nil
+	}
 	return runGit(root, "push")
+}
+
+func formatCommitBody(root, skillRel string, iter int, result autoresearch.SuiteResult, resultPath, researcherSummary string, delta float64, diffStat, shortStat string) string {
+	qualityScore, qualityMax, qualityPct := result.QualityScore, result.QualityMaxScore, benchmarkQuality(result)*100
+	if qualityMax == 0 {
+		qualityScore, qualityMax, qualityPct = result.Score, result.MaxScore, result.NormalizedScore*100
+	}
+	objectiveScore, objectiveMax, objectivePct := result.ObjectiveScore, result.ObjectiveMaxScore, benchmarkObjective(result)*100
+	if objectiveMax == 0 {
+		objectiveScore, objectiveMax = objectivePct, 100
+	}
+
+	var b strings.Builder
+	fmt.Fprintf(&b, "Training iteration: %d\n", iter)
+	fmt.Fprintf(&b, "Changed file: %s\n", skillRel)
+	if resultPath != "" {
+		fmt.Fprintf(&b, "Benchmark report: %s\n", gitPath(root, resultPath))
+	}
+	if result.SuiteName != "" {
+		fmt.Fprintf(&b, "Benchmark suite: %s\n", result.SuiteName)
+	}
+	if result.Model != "" {
+		fmt.Fprintf(&b, "Model: %s\n", result.Model)
+	}
+
+	fmt.Fprintf(&b, "\nScore summary:\n")
+	fmt.Fprintf(&b, "- Quality: %.2f/%.2f (%.2f%%)\n", qualityScore, qualityMax, qualityPct)
+	fmt.Fprintf(&b, "- Objective: %.2f/%.2f (%.2f%%, delta %+0.2f pp)\n", objectiveScore, objectiveMax, objectivePct, delta*100)
+	fmt.Fprintf(&b, "- Average case duration: %.1fs (score %.2f%%)\n", result.AverageCaseDurationSeconds, result.DurationScore*100)
+	fmt.Fprintf(&b, "- Skill size: %d estimated tokens, %d bytes (score %.2f%%)\n", result.SkillSizeEstimatedTokens, result.SkillSizeBytes, result.SkillSizeScore*100)
+	cfg := result.ObjectiveConfig
+	if cfg.QualityWeight+cfg.DurationWeight+cfg.SkillSizeWeight > 0 {
+		fmt.Fprintf(&b, "- Objective config: quality=%.2f duration=%.2f skill_size=%.2f; duration budget/hard=%.0fs/%.0fs; skill-size target/hard=%d/%d tokens\n",
+			cfg.QualityWeight, cfg.DurationWeight, cfg.SkillSizeWeight, cfg.DurationBudgetSeconds, cfg.DurationHardLimitSeconds, cfg.SkillSizeTargetTokens, cfg.SkillSizeHardLimitTokens)
+	}
+
+	fmt.Fprintf(&b, "\nPer-case scores:\n")
+	if len(result.Cases) == 0 {
+		fmt.Fprintf(&b, "- none recorded\n")
+	}
+	for _, cr := range result.Cases {
+		fmt.Fprintf(&b, "- %s: %.1f/%.1f (%.1f%%), duration %.1fs, commands %d, failed tool calls %d",
+			cr.ID, cr.Score, cr.MaxScore, cr.NormalizedScore*100, cr.DurationSeconds, cr.CommandCount, cr.FailedToolCalls)
+		if cr.Judge != nil {
+			fmt.Fprintf(&b, ", judge %.1f", cr.Judge.Score)
+		}
+		if cr.Error != "" {
+			fmt.Fprintf(&b, ", error: %s", truncateOneLine(cr.Error, 160))
+		}
+		b.WriteByte('\n')
+		if criteria := criteriaSummary(cr); criteria != "" {
+			fmt.Fprintf(&b, "%s\n", indentLines(criteria, "  "))
+		}
+	}
+
+	if strings.TrimSpace(researcherSummary) != "" {
+		fmt.Fprintf(&b, "\nResearcher summary:\n%s\n", indentLines(truncateText(strings.TrimSpace(researcherSummary), 2000), "  "))
+	}
+
+	fmt.Fprintf(&b, "\nChange summary:\n")
+	if strings.TrimSpace(diffStat) == "" {
+		fmt.Fprintf(&b, "- no diff stat captured\n")
+	} else {
+		fmt.Fprint(&b, strings.TrimRight(diffStat, "\n"), "\n")
+	}
+	if strings.TrimSpace(shortStat) != "" && !strings.Contains(diffStat, strings.TrimSpace(shortStat)) {
+		fmt.Fprint(&b, strings.TrimRight(shortStat, "\n"), "\n")
+	}
+	return strings.TrimRight(b.String(), "\n")
+}
+
+func criteriaSummary(cr autoresearch.CaseResult) string {
+	if len(cr.Criteria) == 0 {
+		return ""
+	}
+	failed := make([]string, 0)
+	for _, criterion := range cr.Criteria {
+		if criterion.Passed {
+			continue
+		}
+		detail := criterion.Name
+		if criterion.Detail != "" {
+			detail += " (" + criterion.Detail + ")"
+		}
+		failed = append(failed, fmt.Sprintf("%s: 0/%.1f", detail, criterion.Max))
+	}
+	if len(failed) == 0 {
+		return "Criteria: all deterministic checks passed"
+	}
+	const maxFailedCriteria = 5
+	if len(failed) > maxFailedCriteria {
+		failed = append(failed[:maxFailedCriteria], fmt.Sprintf("... and %d more failed criteria", len(failed)-maxFailedCriteria))
+	}
+	return "Failed criteria:\n- " + strings.Join(failed, "\n- ")
+}
+
+func readCommitSummary(path string) string {
+	if path == "" {
+		return ""
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(data))
+}
+
+func gitPath(root, path string) string {
+	rel, err := filepath.Rel(root, path)
+	if err == nil && rel != "." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) && rel != ".." {
+		return filepath.ToSlash(rel)
+	}
+	return path
+}
+
+func gitDiffCachedPathClean(root, path string) (bool, string, error) {
+	out, err := gitOutput(root, "diff", "--cached", "--name-only", "--", path)
+	if err != nil {
+		return false, "", err
+	}
+	return len(bytes.TrimSpace([]byte(out))) == 0, out, nil
+}
+
+func gitOutput(root string, args ...string) (string, error) {
+	cmd := exec.Command("git", args...)
+	cmd.Dir = root
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("git %s: %w: %s", strings.Join(args, " "), err, strings.TrimSpace(string(out)))
+	}
+	return string(out), nil
+}
+
+func indentLines(s, prefix string) string {
+	if s == "" {
+		return ""
+	}
+	lines := strings.Split(s, "\n")
+	for i, line := range lines {
+		lines[i] = prefix + line
+	}
+	return strings.Join(lines, "\n")
+}
+
+func truncateOneLine(s string, limit int) string {
+	s = strings.Join(strings.Fields(s), " ")
+	return truncateText(s, limit)
+}
+
+func truncateText(s string, limit int) string {
+	if limit <= 0 || len(s) <= limit {
+		return s
+	}
+	if limit <= len("...") {
+		return s[:limit]
+	}
+	return s[:limit-len("...")] + "..."
 }
 
 func benchmarkQuality(result autoresearch.SuiteResult) float64 {
