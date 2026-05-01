@@ -41,7 +41,6 @@ Prefer general investigation strategies: bounded searches, evidence gathering, c
 ## Invariants
 
 - Use local `./rshell` through the Bash tool.
-- Do not use Datadog remote-action tools.
 - Keep diagnostics read-only.
 - Prefer bounded log reads (`tail`, `head`, filtered `grep`, `wc`, `sort`, `uniq`, `find`) over reading entire logs.
 - If the user gives a fake or explicit log root, use that root instead of hard-coded `/var/log`.
