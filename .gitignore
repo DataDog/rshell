@@ -11,3 +11,4 @@
 # Fuzz corpus: keep checked in for regression testing.
 # Uncomment the line below if corpus grows too large:
 # interp/builtins/tests/*/testdata/fuzz/*/corpus-*
+.claude/scheduled_tasks.lock
