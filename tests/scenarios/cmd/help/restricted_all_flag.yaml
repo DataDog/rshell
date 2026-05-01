@@ -6,7 +6,7 @@ input:
     help --all
 expect:
   stdout: |+
-    rshell (dev) — 2 of 28 builtins enabled
+    rshell (dev) — 2 of 29 builtins enabled
 
     echo  write arguments to stdout
     help  display help for commands
@@ -27,6 +27,7 @@ expect:
     ping      send ICMP echo requests to a network host
     printf    format and print data
     ps        report process status
+    read      read a line from standard input and assign to shell variables
     sed       stream editor for filtering and transforming text
     sort      sort lines of text files
     ss        display socket statistics

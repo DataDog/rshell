@@ -25,6 +25,7 @@ import (
 	"github.com/DataDog/rshell/builtins/ping"
 	printfcmd "github.com/DataDog/rshell/builtins/printf"
 	pscmd "github.com/DataDog/rshell/builtins/ps"
+	readcmd "github.com/DataDog/rshell/builtins/read"
 	"github.com/DataDog/rshell/builtins/sed"
 	sortcmd "github.com/DataDog/rshell/builtins/sort"
 	"github.com/DataDog/rshell/builtins/ss"
@@ -60,6 +61,7 @@ func registerBuiltins() {
 			sortcmd.Cmd,
 			printfcmd.Cmd,
 			pscmd.Cmd,
+			readcmd.Cmd,
 			sed.Cmd,
 			ss.Cmd,
 			strings_cmd.Cmd,

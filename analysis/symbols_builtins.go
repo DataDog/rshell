@@ -199,6 +199,33 @@ var builtinPerCommandSymbols = map[string][]string{
 		"strings.ReplaceAll",   // 🟢 replaces all occurrences of a substring; pure function, no I/O.
 		"strings.ToLower",      // 🟢 converts string to lowercase; pure function, no I/O.
 	},
+	"read": {
+		"context.CancelFunc",                  // 🟢 cancellation function returned by context.WithTimeout; pure type.
+		"context.Context",                     // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
+		"context.DeadlineExceeded",            // 🟢 sentinel error value for context deadline expiry; pure constant.
+		"context.WithTimeout",                 // 🟢 derives a timeout-bound context for read -t; no I/O itself.
+		"errors.Is",                           // 🟢 error comparison; pure function, no I/O.
+		"fmt.Errorf",                          // 🟢 error formatting; pure function, no I/O.
+		"fmt.Fprint",                          // 🟠 writes the -p prompt to callCtx.Stderr; no filesystem access, delegates to Write.
+		"fmt.Sprintf",                         // 🟢 string formatting; pure function, no I/O.
+		"io.EOF",                              // 🟢 sentinel error value; pure constant.
+		"io.Reader",                           // 🟢 interface type; no side effects.
+		"os.ErrDeadlineExceeded",              // 🟢 sentinel error returned by *os.File when SetReadDeadline fires; pure constant.
+		"os.File",                             // 🟠 *os.File type used for type-asserting callCtx.Stdin to access SetReadDeadline/Stat; no constructors invoked.
+		"os.ModeCharDevice",                   // 🟢 file mode bit constant for character devices (TTY detection for read -p); pure constant.
+		"strconv.ParseFloat",                  // 🟢 string-to-float conversion (parses -t TIMEOUT seconds); pure function, no I/O.
+		"strings.ContainsRune",                // 🟢 checks if a rune is in IFS; pure function, no I/O.
+		"time.Duration",                       // 🟢 duration type; pure integer alias, no I/O.
+		"time.Now",                            // 🟠 returns current time; reads OS clock, no filesystem or network I/O. Used to compute *os.File read deadline.
+		"time.Second",                         // 🟢 constant representing one second; no side effects.
+		"time.Time",                           // 🟢 time value type; pure data, no side effects.
+		"unicode/utf8.DecodeLastRuneInString", // 🟢 decodes last UTF-8 rune in a string (trailing IFS-whitespace strip); pure function, no I/O.
+		"unicode/utf8.DecodeRune",             // 🟢 decodes first UTF-8 rune from a byte slice; pure function, no I/O.
+		"unicode/utf8.DecodeRuneInString",     // 🟢 decodes first UTF-8 rune from a string; pure function, no I/O.
+		"unicode/utf8.FullRune",               // 🟢 reports whether a byte slice begins with a complete UTF-8 rune; pure function, no I/O.
+		"unicode/utf8.RuneSelf",               // 🟢 first byte value above which UTF-8 multi-byte encoding begins; pure constant.
+		"unicode/utf8.UTFMax",                 // 🟢 maximum number of bytes in a UTF-8 encoding; pure constant.
+	},
 	"sort": {
 		"bufio.NewScanner",      // 🟢 line-by-line input reading (e.g. head, cat); no write or exec capability.
 		"context.Context",       // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
@@ -401,20 +428,23 @@ var builtinPerCommandSymbols = map[string][]string{
 }
 
 var builtinAllowedSymbols = []string{
-	"bufio.NewScanner",    // 🟢 line-by-line input reading (e.g. head, cat); no write or exec capability.
-	"bufio.Scanner",       // 🟢 scanner type for buffered input reading; no write or exec capability.
-	"bufio.SplitFunc",     // 🟢 type for custom scanner split functions; pure type, no I/O.
-	"bytes.Buffer",        // 🟢 in-memory buffer to capture command output; no I/O side effects.
-	"bytes.Equal",         // 🟢 compares two byte slices for equality; pure function, no I/O.
-	"bytes.IndexByte",     // 🟢 finds a byte in a byte slice; pure function, no I/O.
-	"bytes.NewReader",     // 🟢 wraps a byte slice as an io.Reader; pure in-memory, no I/O.
-	"context.Context",     // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
-	"context.WithTimeout", // 🟢 creates a child context with a deadline; no filesystem or network I/O itself.
-	"errors.As",           // 🟢 error type assertion; pure function, no I/O.
-	"errors.Is",           // 🟢 error comparison; pure function, no I/O.
-	"errors.New",          // 🟢 creates a simple error value; pure function, no I/O.
-	"fmt.Errorf",          // 🟢 error formatting; pure function, no I/O.
-	"fmt.Sprintf",         // 🟢 string formatting; pure function, no I/O.
+	"bufio.NewScanner",         // 🟢 line-by-line input reading (e.g. head, cat); no write or exec capability.
+	"bufio.Scanner",            // 🟢 scanner type for buffered input reading; no write or exec capability.
+	"bufio.SplitFunc",          // 🟢 type for custom scanner split functions; pure type, no I/O.
+	"bytes.Buffer",             // 🟢 in-memory buffer to capture command output; no I/O side effects.
+	"bytes.Equal",              // 🟢 compares two byte slices for equality; pure function, no I/O.
+	"bytes.IndexByte",          // 🟢 finds a byte in a byte slice; pure function, no I/O.
+	"bytes.NewReader",          // 🟢 wraps a byte slice as an io.Reader; pure in-memory, no I/O.
+	"context.CancelFunc",       // 🟢 cancellation function returned by context.WithTimeout/WithCancel; pure type, no side effects beyond context tree.
+	"context.Context",          // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
+	"context.DeadlineExceeded", // 🟢 sentinel error value for context deadline expiry; pure constant.
+	"context.WithTimeout",      // 🟢 creates a child context with a deadline; no filesystem or network I/O itself.
+	"errors.As",                // 🟢 error type assertion; pure function, no I/O.
+	"errors.Is",                // 🟢 error comparison; pure function, no I/O.
+	"errors.New",               // 🟢 creates a simple error value; pure function, no I/O.
+	"fmt.Errorf",               // 🟢 error formatting; pure function, no I/O.
+	"fmt.Fprint",               // 🟠 writes to a writer (e.g. callCtx.Stderr for read -p prompts); no filesystem access, delegates to Write.
+	"fmt.Sprintf",              // 🟢 string formatting; pure function, no I/O.
 	"github.com/DataDog/rshell/internal/version.Version",  // 🟢 build version string; read-only package-level variable, no I/O.
 	"github.com/prometheus-community/pro-bing.NewPinger",  // 🔴 creates an ICMP pinger by resolving host; network I/O is the explicit purpose of the ping builtin.
 	"github.com/prometheus-community/pro-bing.NoopLogger", // 🟢 no-op logger that discards pro-bing internal messages; no side effects.
@@ -468,8 +498,11 @@ var builtinAllowedSymbols = []string{
 	"net.ParseIP",                                         // 🟢 parses an IP address string into a net.IP; pure function, no I/O.
 	"net.Interface",                                       // 🟢 OS network interface descriptor; read-only struct, no network connections.
 	"net.Interfaces",                                      // 🟠 read-only OS interface enumeration function; no network connections or writes.
+	"os.ErrDeadlineExceeded",                              // 🟢 sentinel error value for *os.File read/write deadline expiry; pure constant.
+	"os.File",                                             // 🟠 *os.File type, used for type-asserting callCtx.Stdin to access SetReadDeadline/Stat (e.g. read -t timeout, TTY detection); no constructors invoked.
 	"os.FileInfo",                                         // 🟢 file metadata interface returned by Stat; no I/O side effects.
 	"os.IsNotExist",                                       // 🟢 checks if error is "not exist"; pure function, no I/O.
+	"os.ModeCharDevice",                                   // 🟢 file mode bit constant for character devices (TTY detection); pure constant.
 	"os.O_RDONLY",                                         // 🟢 read-only file flag constant; cannot open files by itself.
 	"os.PathError",                                        // 🟢 error type for filesystem path errors; pure type, no I/O.
 	"path/filepath.Dir",                                   // 🟢 returns the directory component of a path; pure function, no I/O.
@@ -518,6 +551,7 @@ var builtinAllowedSymbols = []string{
 	"time.Hour",                                           // 🟢 constant representing one hour; no side effects.
 	"time.Millisecond",                                    // 🟢 constant representing one millisecond; no side effects.
 	"time.Minute",                                         // 🟢 constant representing one minute; no side effects.
+	"time.Now",                                            // 🟠 returns the current time; reads OS clock, no filesystem or network I/O.
 	"time.ParseDuration",                                  // 🟢 parses Go duration strings (e.g. "1s"); pure function, no I/O.
 	"time.Second",                                         // 🟢 constant representing one second; no side effects.
 	"time.Time",                                           // 🟢 time value type; pure data, no side effects.
@@ -532,9 +566,12 @@ var builtinAllowedSymbols = []string{
 	"unicode.Range32",                                     // 🟢 struct type for 32-bit Unicode ranges; pure data.
 	"unicode.RangeTable",                                  // 🟢 struct type for Unicode range tables; pure data.
 	"unicode.Zs",                                          // 🟢 Unicode space separator category range table; pure data, no I/O.
+	"unicode/utf8.DecodeLastRuneInString",                 // 🟢 decodes the last UTF-8 rune from a string (used for trailing-IFS-whitespace stripping); pure function, no I/O.
 	"unicode/utf8.DecodeRune",                             // 🟢 decodes first UTF-8 rune from a byte slice; pure function, no I/O.
 	"unicode/utf8.DecodeRuneInString",                     // 🟢 decodes first UTF-8 rune from a string; pure function, no I/O.
+	"unicode/utf8.FullRune",                               // 🟢 reports whether a byte slice begins with a complete UTF-8 rune; pure function, no I/O.
 	"unicode/utf8.RuneError",                              // 🟢 replacement character returned for invalid UTF-8; constant, no I/O.
+	"unicode/utf8.RuneSelf",                               // 🟢 first byte value above which UTF-8 multi-byte encoding begins; constant, no I/O.
 	"unicode/utf8.UTFMax",                                 // 🟢 maximum number of bytes in a UTF-8 encoding; constant, no I/O.
 	"unicode/utf8.Valid",                                  // 🟢 checks if a byte slice is valid UTF-8; pure function, no I/O.
 

@@ -5,7 +5,7 @@ input:
     help
 expect:
   stdout: |+
-    rshell (dev) — All 28 builtins available
+    rshell (dev) — All 29 builtins available
 
     [         evaluate conditional expression
     break     exit from a loop
@@ -24,6 +24,7 @@ expect:
     ping      send ICMP echo requests to a network host
     printf    format and print data
     ps        report process status
+    read      read a line from standard input and assign to shell variables
     sed       stream editor for filtering and transforming text
     sort      sort lines of text files
     ss        display socket statistics

@@ -181,6 +181,19 @@ type CallContext struct {
 	// dir overrides the working directory for path resolution.
 	// Returns the command's exit code.
 	RunCommand func(ctx context.Context, dir string, name string, args []string) (uint8, error)
+
+	// SetVar assigns a value to a shell variable in the calling shell's
+	// scope. Returns an error if the value exceeds the per-variable size
+	// limit or if the total variable-storage cap would be exceeded.
+	// Used by builtins that mutate parent-shell state, such as read.
+	SetVar func(name, value string) error
+
+	// GetVar returns the value of a shell variable. The bool reports
+	// whether the variable was set; an unset variable returns ("", false).
+	// Used by builtins that need to consult shell state, such as read
+	// reading IFS for field-splitting.
+	GetVar func(name string) (value string, ok bool)
+
 	// Proc provides access to the proc filesystem for the ps builtin.
 	// The path is fixed at construction time and cannot be overridden by callers.
 	Proc *ProcProvider

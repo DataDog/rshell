@@ -397,6 +397,16 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 				CommandAllowed: func(n string) bool {
 					return r.allowAllCommands || r.allowedCommands[n]
 				},
+				SetVar: func(name, value string) error {
+					if len(value) > MaxVarBytes {
+						return fmt.Errorf("%s: value too large (limit %d bytes)", name, MaxVarBytes)
+					}
+					return r.setVarErr(name, expand.Variable{Set: true, Kind: expand.String, Str: value})
+				},
+				GetVar: func(name string) (string, bool) {
+					vr := r.writeEnv.Get(name)
+					return vr.Str, vr.IsSet()
+				},
 			}
 			if r.stdin != nil {
 				child.Stdin = r.stdin
@@ -460,7 +470,17 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 				return r.allowAllCommands || r.allowedCommands[cmdName]
 			},
 			RunCommand: runCmd,
-			Proc:       r.proc,
+			SetVar: func(name, value string) error {
+				if len(value) > MaxVarBytes {
+					return fmt.Errorf("%s: value too large (limit %d bytes)", name, MaxVarBytes)
+				}
+				return r.setVarErr(name, expand.Variable{Set: true, Kind: expand.String, Str: value})
+			},
+			GetVar: func(name string) (string, bool) {
+				vr := r.writeEnv.Get(name)
+				return vr.Str, vr.IsSet()
+			},
+			Proc: r.proc,
 		}
 		if r.stdin != nil { // do not assign a typed nil into the io.Reader interface
 			call.Stdin = r.stdin

@@ -1,0 +1,10 @@
+description: read -t with a non-numeric timeout is rejected.
+skip_assert_against_bash: true
+input:
+  script: |+
+    echo "x" | { read -t notanumber X; echo "exit=$?"; }
+expect:
+  stdout: |+
+    exit=1
+  stderr_contains: ["invalid timeout"]
+  exit_code: 0
