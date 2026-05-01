@@ -140,8 +140,9 @@ func run(ctx context.Context, c *builtins.CallContext, args []string, opt runOpt
 		}
 	}
 
+	noNames := len(args) == 0
 	names := args
-	if len(names) == 0 {
+	if noNames {
 		names = []string{"REPLY"}
 	}
 	for _, n := range names {
@@ -162,7 +163,20 @@ func run(ctx context.Context, c *builtins.CallContext, args []string, opt runOpt
 	if c.Stdin == nil {
 		return builtins.Result{Code: 1}
 	}
-	line, eof, err := readInput(readCtx, c.Stdin, delim, opt.raw, opt.nChars, opt.nBytes)
+
+	// -N counts characters (not bytes) and ignores the delimiter. Otherwise
+	// the read loop is identical to the default/-n path including escape
+	// handling, so we collapse the modes into one helper that takes a
+	// character limit and a "ignore delimiter" flag.
+	nFixedMode := opt.nBytes >= 0
+	charLimit := -1
+	switch {
+	case nFixedMode:
+		charLimit = opt.nBytes
+	case opt.nChars >= 0:
+		charLimit = opt.nChars
+	}
+	line, eof, err := readInput(readCtx, c.Stdin, delim, opt.raw, charLimit, nFixedMode)
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, os.ErrDeadlineExceeded) {
 			// Bash convention for read -t timeout: 128 + SIGALRM (14) = 142.
@@ -177,18 +191,30 @@ func run(ctx context.Context, c *builtins.CallContext, args []string, opt runOpt
 		return builtins.Result{Code: 1}
 	}
 
-	ifs := " \t\n"
-	if v, ok := c.GetVar("IFS"); ok {
-		ifs = v
+	// Determine field values for each variable. Three cases, each matching
+	// bash exactly:
+	//   1. No NAMEs — raw line is assigned to REPLY, no IFS splitting and
+	//      no leading/trailing IFS-whitespace stripping.
+	//   2. -N mode (with NAMEs) — the entire read goes to the first NAME;
+	//      remaining NAMEs are empty. IFS splitting is skipped.
+	//   3. Default / -n mode — POSIX IFS field-splitting across NAMEs.
+	values := make([]string, len(names))
+	switch {
+	case noNames:
+		values[0] = line
+	case nFixedMode:
+		values[0] = line
+	default:
+		ifs := " \t\n"
+		if v, ok := c.GetVar("IFS"); ok {
+			ifs = v
+		}
+		fields := splitIFS(line, ifs, len(names))
+		copy(values, fields)
 	}
-	fields := splitIFS(line, ifs, len(names))
 
 	for i, name := range names {
-		var val string
-		if i < len(fields) {
-			val = fields[i]
-		}
-		if err := c.SetVar(name, val); err != nil {
+		if err := c.SetVar(name, values[i]); err != nil {
 			c.Errf("read: %s\n", err)
 			return builtins.Result{Code: 1}
 		}
@@ -235,13 +261,12 @@ func validVarName(name string) bool {
 	return true
 }
 
-// readInput reads from r byte-by-byte until one of:
-//   - the delimiter rune is encountered (default and -n modes)
-//   - nChars characters have been read (-n mode)
-//   - nBytes bytes have been read (-N mode)
+// readInput reads from r rune-by-rune until one of:
+//   - the delimiter rune is encountered (and ignoreDelim is false)
+//   - charLimit characters have been read (when charLimit >= 0)
 //   - EOF
 //   - context cancellation or timeout
-//   - MaxReadBytes total bytes (hard memory cap)
+//   - the next character would push the output buffer past MaxReadBytes
 //
 // The returned line excludes the trailing delimiter. eof reports whether
 // the underlying reader reached EOF.
@@ -255,9 +280,12 @@ func validVarName(name string) bool {
 // Reads happen one byte at a time. This is slow but correct: a buffered
 // reader would consume bytes past the delimiter and prevent subsequent
 // reads from the same underlying stream from observing them.
-func readInput(ctx context.Context, r io.Reader, delim rune, raw bool, nChars, nBytes int) (string, bool, error) {
+//
+// The MaxReadBytes cap is checked just before each append so a value or
+// line exactly at the cap (e.g. read -n 1048576 over 1 MiB of ASCII)
+// succeeds; only a write that would exceed the cap is rejected.
+func readInput(ctx context.Context, r io.Reader, delim rune, raw bool, charLimit int, ignoreDelim bool) (string, bool, error) {
 	var buf []byte
-	bytes := 0
 	one := make([]byte, 1)
 
 	readByte := func() (byte, error) {
@@ -276,24 +304,6 @@ func readInput(ctx context.Context, r io.Reader, delim rune, raw bool, nChars, n
 		}
 	}
 
-	// -N (byte) mode: read up to nBytes raw bytes, ignoring delimiter and escapes.
-	if nBytes >= 0 {
-		for bytes < nBytes && bytes < MaxReadBytes {
-			b, err := readByte()
-			if errors.Is(err, io.EOF) {
-				return string(buf), true, nil
-			}
-			if err != nil {
-				return string(buf), false, err
-			}
-			buf = append(buf, b)
-			bytes++
-		}
-		return string(buf), false, nil
-	}
-
-	// Default and -n modes: rune-by-rune with delimiter and escape handling.
-	runes := 0
 	readRune := func() (rune, []byte, error) {
 		b, err := readByte()
 		if err != nil {
@@ -315,19 +325,26 @@ func readInput(ctx context.Context, r io.Reader, delim rune, raw bool, nChars, n
 		return rn, rb, nil
 	}
 
-	for {
-		if bytes >= MaxReadBytes {
-			return string(buf), false, fmt.Errorf("input exceeds maximum of %d bytes", MaxReadBytes)
+	tryAppend := func(rb []byte) error {
+		if len(buf)+len(rb) > MaxReadBytes {
+			return fmt.Errorf("input exceeds maximum of %d bytes", MaxReadBytes)
 		}
-		if nChars >= 0 && runes >= nChars {
+		buf = append(buf, rb...)
+		return nil
+	}
+
+	runes := 0
+	for {
+		if charLimit >= 0 && runes >= charLimit {
 			return string(buf), false, nil
 		}
 
 		rn, rb, err := readRune()
 		if errors.Is(err, io.EOF) {
 			if len(rb) > 0 {
-				buf = append(buf, rb...)
-				bytes += len(rb)
+				if aerr := tryAppend(rb); aerr != nil {
+					return string(buf), false, aerr
+				}
 			}
 			return string(buf), true, nil
 		}
@@ -335,7 +352,7 @@ func readInput(ctx context.Context, r io.Reader, delim rune, raw bool, nChars, n
 			return string(buf), false, err
 		}
 
-		if rn == delim {
+		if !ignoreDelim && rn == delim {
 			return string(buf), false, nil
 		}
 
@@ -349,20 +366,21 @@ func readInput(ctx context.Context, r io.Reader, delim rune, raw bool, nChars, n
 			if nerr != nil {
 				return string(buf), false, nerr
 			}
-			if nrn == delim {
+			if !ignoreDelim && nrn == delim {
 				// Line continuation: discard both, keep reading.
-				bytes += len(rb) + len(nrb)
 				continue
 			}
 			// Escape: drop the backslash, keep the next rune.
-			buf = append(buf, nrb...)
-			bytes += len(rb) + len(nrb)
+			if aerr := tryAppend(nrb); aerr != nil {
+				return string(buf), false, aerr
+			}
 			runes++
 			continue
 		}
 
-		buf = append(buf, rb...)
-		bytes += len(rb)
+		if aerr := tryAppend(rb); aerr != nil {
+			return string(buf), false, aerr
+		}
 		runes++
 	}
 }
@@ -378,6 +396,13 @@ func readInput(ctx context.Context, r io.Reader, delim rune, raw bool, nChars, n
 //   - When the input has more fields than n, the n-th field absorbs the
 //     remainder of the input verbatim, with only trailing IFS-whitespace
 //     stripped.
+//   - A single trailing non-whitespace IFS character is treated as the
+//     start of an empty trailing field that bash silently discards. We
+//     recognise this when the absorbed last field contains exactly one
+//     non-whitespace IFS character and that character is at the end —
+//     in which case it is stripped. With two or more non-whitespace IFS
+//     characters in the last field, none are stripped (matches bash:
+//     `IFS=: read a b` of `a:b:` → b="b"; of `a:b::` → b="b::").
 //   - When the input has fewer fields than n, the missing fields are "".
 func splitIFS(s, ifs string, n int) []string {
 	if n <= 0 {
@@ -417,6 +442,24 @@ func splitIFS(s, ifs string, n int) []string {
 
 	// Last field absorbs the remainder with trailing IFS-whitespace stripped.
 	s = trimTrailingFunc(s, inIFSWS)
+
+	// Strip a lone trailing non-ws IFS character that represents an empty
+	// trailing field bash drops. Only applies when the absorbed string has
+	// exactly one such character; multiple non-ws IFS chars indicate the
+	// absorbed remainder spans multiple separator-bounded sub-fields and
+	// must be preserved verbatim.
+	nonWSIFSCount := 0
+	for _, r := range s {
+		if inIFSNonWS(r) {
+			nonWSIFSCount++
+		}
+	}
+	if nonWSIFSCount == 1 {
+		if r, size := utf8.DecodeLastRuneInString(s); inIFSNonWS(r) {
+			s = s[:len(s)-size]
+		}
+	}
+
 	fields = append(fields, s)
 
 	for len(fields) < n {

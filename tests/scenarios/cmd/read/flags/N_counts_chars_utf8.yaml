@@ -1,0 +1,9 @@
+description: read -N counts characters (not bytes) — multibyte UTF-8 input.
+input:
+  script: |+
+    printf '%s' 'éx' | { IFS= read -N 1 x; echo "[$x]"; }
+expect:
+  stdout: |+
+    [é]
+  stderr: ""
+  exit_code: 0
