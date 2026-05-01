@@ -127,9 +127,16 @@ func run(ctx context.Context, c *builtins.CallContext, args []string, opt runOpt
 		// Best-effort kernel-level read deadline: works for *os.File pipes,
 		// which is the typical stdin shape produced by the runner. Other
 		// readers fall back to context-driven cancellation between bytes.
-		if f, ok := c.Stdin.(*os.File); ok {
-			_ = f.SetReadDeadline(time.Now().Add(dur))
-			defer func() { _ = f.SetReadDeadline(time.Time{}) }()
+		// We pull the deadline from readCtx rather than computing one with
+		// time.Now to avoid a second time source: builtins read time only
+		// via callCtx.Now (script-start reference) or, for monotonic
+		// "from-now" deadlines like this one, via context.WithTimeout's
+		// internal clock surfaced through ctx.Deadline().
+		if dl, ok := readCtx.Deadline(); ok {
+			if f, fok := c.Stdin.(*os.File); fok {
+				_ = f.SetReadDeadline(dl)
+				defer func() { _ = f.SetReadDeadline(time.Time{}) }()
+			}
 		}
 	}
 

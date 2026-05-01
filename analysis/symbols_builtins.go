@@ -216,7 +216,6 @@ var builtinPerCommandSymbols = map[string][]string{
 		"strconv.ParseFloat",                  // 🟢 string-to-float conversion (parses -t TIMEOUT seconds); pure function, no I/O.
 		"strings.ContainsRune",                // 🟢 checks if a rune is in IFS; pure function, no I/O.
 		"time.Duration",                       // 🟢 duration type; pure integer alias, no I/O.
-		"time.Now",                            // 🟠 returns current time; reads OS clock, no filesystem or network I/O. Used to compute *os.File read deadline.
 		"time.Second",                         // 🟢 constant representing one second; no side effects.
 		"time.Time",                           // 🟢 time value type; pure data, no side effects.
 		"unicode/utf8.DecodeLastRuneInString", // 🟢 decodes last UTF-8 rune in a string (trailing IFS-whitespace strip); pure function, no I/O.
@@ -551,7 +550,6 @@ var builtinAllowedSymbols = []string{
 	"time.Hour",                                           // 🟢 constant representing one hour; no side effects.
 	"time.Millisecond",                                    // 🟢 constant representing one millisecond; no side effects.
 	"time.Minute",                                         // 🟢 constant representing one minute; no side effects.
-	"time.Now",                                            // 🟠 returns the current time; reads OS clock, no filesystem or network I/O.
 	"time.ParseDuration",                                  // 🟢 parses Go duration strings (e.g. "1s"); pure function, no I/O.
 	"time.Second",                                         // 🟢 constant representing one second; no side effects.
 	"time.Time",                                           // 🟢 time value type; pure data, no side effects.
