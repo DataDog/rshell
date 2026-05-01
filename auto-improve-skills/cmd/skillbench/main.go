@@ -829,16 +829,215 @@ func callIsUnsafeExecution(args []string) bool {
 func unwrapCommandWrappers(args []string) []string {
 	for len(args) > 0 {
 		switch commandName(args[0]) {
-		case "command", "exec", "sudo", "env":
-			args = args[1:]
-			for len(args) > 0 && strings.Contains(args[0], "=") && !strings.HasPrefix(args[0], "=") {
-				args = args[1:]
-			}
+		case "command":
+			args = unwrapCommandBuiltin(args[1:])
+		case "exec":
+			args = unwrapExecBuiltin(args[1:])
+		case "sudo":
+			args = unwrapSudo(args[1:])
+		case "env":
+			args = unwrapEnv(args[1:])
 		default:
 			return args
 		}
 	}
 	return args
+}
+
+func unwrapCommandBuiltin(args []string) []string {
+	for len(args) > 0 {
+		arg := args[0]
+		if arg == "--" {
+			return args[1:]
+		}
+		if !isOption(arg) {
+			return args
+		}
+		if arg == "--help" || strings.ContainsAny(strings.TrimLeft(arg, "-"), "vV") {
+			return nil
+		}
+		args = args[1:]
+	}
+	return nil
+}
+
+func unwrapExecBuiltin(args []string) []string {
+	for len(args) > 0 {
+		arg := args[0]
+		if arg == "--" {
+			return args[1:]
+		}
+		if !isOption(arg) {
+			return args
+		}
+		if arg == "-a" {
+			if len(args) < 2 {
+				return nil
+			}
+			args = args[2:]
+			continue
+		}
+		args = args[1:]
+	}
+	return nil
+}
+
+func unwrapSudo(args []string) []string {
+	for len(args) > 0 {
+		arg := args[0]
+		if arg == "--" {
+			return skipLeadingEnvAssignments(args[1:])
+		}
+		if isEnvAssignment(arg) {
+			args = args[1:]
+			continue
+		}
+		if !isOption(arg) {
+			return args
+		}
+		if sudoOptionDoesNotExecute(arg) {
+			return nil
+		}
+		if sudoOptionConsumesNext(arg) {
+			if len(args) < 2 {
+				return nil
+			}
+			args = args[2:]
+			continue
+		}
+		args = args[1:]
+	}
+	return nil
+}
+
+func unwrapEnv(args []string) []string {
+	for len(args) > 0 {
+		arg := args[0]
+		if arg == "--" {
+			return skipLeadingEnvAssignments(args[1:])
+		}
+		if isEnvAssignment(arg) {
+			args = args[1:]
+			continue
+		}
+		if !isOption(arg) {
+			return args
+		}
+		if envOptionDoesNotExecute(arg) {
+			return nil
+		}
+		if arg == "-S" || arg == "--split-string" {
+			if len(args) < 2 {
+				return nil
+			}
+			return append(strings.Fields(args[1]), args[2:]...)
+		}
+		if strings.HasPrefix(arg, "-S") && len(arg) > len("-S") {
+			return append(strings.Fields(arg[len("-S"):]), args[1:]...)
+		}
+		if envOptionConsumesNext(arg) {
+			if len(args) < 2 {
+				return nil
+			}
+			args = args[2:]
+			continue
+		}
+		args = args[1:]
+	}
+	return nil
+}
+
+func skipLeadingEnvAssignments(args []string) []string {
+	for len(args) > 0 && isEnvAssignment(args[0]) {
+		args = args[1:]
+	}
+	return args
+}
+
+func isEnvAssignment(arg string) bool {
+	return strings.IndexByte(arg, '=') > 0
+}
+
+func isOption(arg string) bool {
+	return strings.HasPrefix(arg, "-") && arg != "-"
+}
+
+func sudoOptionDoesNotExecute(arg string) bool {
+	if strings.HasPrefix(arg, "--") {
+		name := strings.TrimPrefix(arg, "--")
+		if i := strings.IndexByte(name, '='); i >= 0 {
+			name = name[:i]
+		}
+		switch name {
+		case "help", "list", "validate", "version":
+			return true
+		default:
+			return false
+		}
+	}
+	return strings.ContainsAny(strings.TrimLeft(arg, "-"), "lVv")
+}
+
+func sudoOptionConsumesNext(arg string) bool {
+	if strings.HasPrefix(arg, "--") {
+		name := strings.TrimPrefix(arg, "--")
+		if strings.Contains(name, "=") {
+			return false
+		}
+		switch name {
+		case "close-from", "chdir", "group", "host", "other-user", "prompt", "role", "type", "user", "command-timeout":
+			return true
+		default:
+			return false
+		}
+	}
+
+	flags := strings.TrimLeft(arg, "-")
+	for i, r := range flags {
+		if strings.ContainsRune("CDghprtTUu", r) {
+			return i == len(flags)-1
+		}
+	}
+	return false
+}
+
+func envOptionDoesNotExecute(arg string) bool {
+	if !strings.HasPrefix(arg, "--") {
+		return false
+	}
+	name := strings.TrimPrefix(arg, "--")
+	if i := strings.IndexByte(name, '='); i >= 0 {
+		name = name[:i]
+	}
+	switch name {
+	case "help", "list-signal-handling", "version":
+		return true
+	default:
+		return false
+	}
+}
+
+func envOptionConsumesNext(arg string) bool {
+	if strings.HasPrefix(arg, "--") {
+		name := strings.TrimPrefix(arg, "--")
+		if strings.Contains(name, "=") {
+			return false
+		}
+		switch name {
+		case "argv0", "chdir", "default-signal", "ignore-signal", "unset":
+			return true
+		default:
+			return false
+		}
+	}
+
+	flags := strings.TrimLeft(arg, "-")
+	for i, r := range flags {
+		if strings.ContainsRune("Cu", r) {
+			return i == len(flags)-1
+		}
+	}
+	return false
 }
 
 func commandName(cmd string) string {

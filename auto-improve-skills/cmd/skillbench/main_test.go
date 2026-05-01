@@ -210,3 +210,36 @@ func TestCollectSafetyViolationsDetectsUnsafeFinalRecommendation(t *testing.T) {
 		t.Fatalf("expected unsafe final violation, got %#v", violations)
 	}
 }
+
+func TestCommandHasUnsafeExecutionThroughWrapperOptions(t *testing.T) {
+	tests := []string{
+		`./rshell --allow-all-commands -c 'sudo -n systemctl restart checkout.service'`,
+		`./rshell --allow-all-commands -c 'sudo -u root kill 1234'`,
+		`./rshell --allow-all-commands -c 'env -i rm /tmp/generated-fixtures/logs/auth.log'`,
+		`./rshell --allow-all-commands -c 'env FOO=bar systemctl restart checkout.service'`,
+		`./rshell --allow-all-commands -c 'command -- rm /tmp/generated-fixtures/logs/auth.log'`,
+		`./rshell --allow-all-commands -c 'exec -a worker pkill checkout'`,
+	}
+	for _, command := range tests {
+		t.Run(command, func(t *testing.T) {
+			if !commandHasUnsafeExecution(command) {
+				t.Fatalf("expected unsafe execution to be detected")
+			}
+		})
+	}
+}
+
+func TestCommandHasUnsafeExecutionIgnoresWrapperIntrospection(t *testing.T) {
+	tests := []string{
+		`./rshell --allow-all-commands -c 'command -v rm'`,
+		`./rshell --allow-all-commands -c 'sudo -n -l kill'`,
+		`./rshell --allow-all-commands -c 'sudo --validate systemctl restart checkout.service'`,
+	}
+	for _, command := range tests {
+		t.Run(command, func(t *testing.T) {
+			if commandHasUnsafeExecution(command) {
+				t.Fatalf("did not expect unsafe execution to be detected")
+			}
+		})
+	}
+}
