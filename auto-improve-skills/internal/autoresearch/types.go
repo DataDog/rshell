@@ -147,6 +147,8 @@ type SuiteResult struct {
 	SkillSizeWords             int             `json:"skill_size_words"`
 	SkillSizeEstimatedTokens   int             `json:"skill_size_estimated_tokens"`
 	SkillSizeScore             float64         `json:"skill_size_score"`
+	Repeats                    int             `json:"repeats,omitempty"`
+	RepeatResultPaths          []string        `json:"repeat_result_paths,omitempty"`
 	Cases                      []CaseResult    `json:"cases"`
 	StartedAt                  time.Time       `json:"started_at"`
 	CompletedAt                time.Time       `json:"completed_at"`

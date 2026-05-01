@@ -41,6 +41,12 @@ func TestGenerateRemoteHostDiagnosticsFixtures(t *testing.T) {
 		"holdout/logs/app/worker.log":              620,
 		"holdout/logs/auth.log":                    980,
 		"holdout/logs/deploy.log":                  620,
+		"holdout/logs/security/auth-success.log":   900,
+		"holdout/logs/datadog/api-agent.log":       900,
+		"holdout/logs/app/cart.log":                780,
+		"holdout/logs/app/cart.log.1":              620,
+		"holdout/logs/nginx/cart-access.log":       900,
+		"holdout/logs/system-cart.log":             760,
 		"container/var/log/.gitkeep":               0,
 	}
 	for rel, want := range wantLineCounts {
@@ -96,6 +102,29 @@ func TestGenerateRemoteHostDiagnosticsFixtures(t *testing.T) {
 	holdoutDeploy := string(readGeneratedFixture(t, fixtureRoot, "holdout/logs/deploy.log"))
 	assertContains(t, holdoutDeploy, "dep-771")
 	assertContains(t, holdoutDeploy, "completed status=success")
+
+	holdoutAuthSuccess := string(readGeneratedFixture(t, fixtureRoot, "holdout/logs/security/auth-success.log"))
+	if got := countLinesContaining(holdoutAuthSuccess, "Failed password for invalid user", "from 203.0.113.66"); got != 42 {
+		t.Fatalf("holdout accepted-login brute-force failure count = %d, want 42", got)
+	}
+	assertContains(t, holdoutAuthSuccess, "Accepted password for backup from 203.0.113.66")
+
+	holdoutAPIKey := string(readGeneratedFixture(t, fixtureRoot, "holdout/logs/datadog/api-agent.log"))
+	assertContains(t, holdoutAPIKey, "api key validation failed")
+	assertContains(t, holdoutAPIKey, "api_key_invalid")
+	assertContains(t, holdoutAPIKey, "no config validation errors observed")
+
+	holdoutCart := string(readGeneratedFixture(t, fixtureRoot, "holdout/logs/app/cart.log"))
+	assertContains(t, holdoutCart, "ERR max number of clients reached")
+	assertContains(t, holdoutCart, "database not saturated during cart 503s")
+
+	holdoutCartRotated := string(readGeneratedFixture(t, fixtureRoot, "holdout/logs/app/cart.log.1"))
+	assertContains(t, holdoutCartRotated, "db pool exhausted")
+	assertContains(t, holdoutCartRotated, "old_incident=true")
+
+	holdoutCartSystem := string(readGeneratedFixture(t, fixtureRoot, "holdout/logs/system-cart.log"))
+	assertContains(t, holdoutCartSystem, "maxclients")
+	assertContains(t, holdoutCartSystem, "connection count active=32")
 }
 
 func readGeneratedFixture(t *testing.T, fixtureRoot, rel string) []byte {

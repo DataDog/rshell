@@ -47,23 +47,26 @@ const (
 
 func main() {
 	var (
-		iterations       = flag.Int("iters", 3, "maximum improvement iterations")
-		casesPath        = flag.String("cases", "auto-improve-skills/benchmarks/remote-host-diagnostics/cases.yaml", "benchmark suite")
-		skillPath        = flag.String("skill", "auto-improve-skills/skills/remote-host-diagnostics/SKILL.md", "skill file to improve")
-		model            = flag.String("model", defaultModel, "pi model for researcher and benchmark agents")
-		piBinary         = flag.String("pi", "pi", "pi executable")
-		runDir           = flag.String("run-dir", "", "directory for this training run")
-		minDelta         = flag.Float64("min-delta", 0.005, "minimum normalized objective improvement to accept")
-		qualityTolerance = flag.Float64("quality-tolerance", 0.01, "maximum allowed quality drop from the best seen quality")
-		limit            = flag.Int("limit", 0, "run at most N benchmark cases per iteration (0 = all)")
-		judge            = flag.Bool("judge", false, "enable skillbench LLM-as-judge scoring")
-		push             = flag.Bool("push", true, "push accepted skill commits to the current branch; set -push=false to keep commits local")
-		dryRun           = flag.Bool("dry-run", false, "run benchmark and researcher but do not commit/revert")
-		allowDirty       = flag.Bool("allow-dirty", false, "allow starting with unrelated uncommitted changes")
+		iterations              = flag.Int("iters", 3, "maximum improvement iterations")
+		casesPath               = flag.String("cases", "auto-improve-skills/benchmarks/remote-host-diagnostics/cases.yaml", "benchmark suite")
+		skillPath               = flag.String("skill", "auto-improve-skills/skills/remote-host-diagnostics/SKILL.md", "skill file to improve")
+		model                   = flag.String("model", defaultModel, "pi model for researcher and benchmark agents")
+		piBinary                = flag.String("pi", "pi", "pi executable")
+		runDir                  = flag.String("run-dir", "", "directory for this training run")
+		minDelta                = flag.Float64("min-delta", 0.001, "minimum normalized objective improvement to accept")
+		qualityTolerance        = flag.Float64("quality-tolerance", 0.01, "maximum allowed quality drop from the best seen quality")
+		holdoutCasesPath        = flag.String("holdout-cases", "auto-improve-skills/benchmarks/remote-host-diagnostics/holdout.yaml", "holdout benchmark suite used as an acceptance gate (empty disables)")
+		holdoutQualityTolerance = flag.Float64("holdout-quality-tolerance", -1, "maximum allowed holdout quality drop from the best seen holdout quality; defaults to -quality-tolerance")
+		repeats                 = flag.Int("repeats", 3, "benchmark repeats to average for each baseline and candidate")
+		limit                   = flag.Int("limit", 0, "run at most N benchmark cases per iteration (0 = all)")
+		judge                   = flag.Bool("judge", false, "enable skillbench LLM-as-judge scoring")
+		push                    = flag.Bool("push", true, "push accepted skill commits to the current branch; set -push=false to keep commits local")
+		dryRun                  = flag.Bool("dry-run", false, "run benchmark and researcher but do not commit/revert")
+		allowDirty              = flag.Bool("allow-dirty", false, "allow starting with unrelated uncommitted changes")
 	)
 	flag.Parse()
 
-	if err := run(*iterations, *casesPath, *skillPath, *model, *piBinary, *runDir, *minDelta, *qualityTolerance, *limit, *judge, *push, *dryRun, *allowDirty); err != nil {
+	if err := run(*iterations, *casesPath, *skillPath, *model, *piBinary, *runDir, *minDelta, *qualityTolerance, *holdoutCasesPath, *holdoutQualityTolerance, *repeats, *limit, *judge, *push, *dryRun, *allowDirty); err != nil {
 		logError("%v", err)
 		os.Exit(1)
 	}
@@ -154,9 +157,15 @@ func colorEnabledForLog(stream *os.File) bool {
 	return err == nil && info.Mode()&os.ModeCharDevice != 0
 }
 
-func run(iterations int, casesPath, skillPath, model, piBinary, runDir string, minDelta, qualityTolerance float64, limit int, judge, push, dryRun, allowDirty bool) error {
+func run(iterations int, casesPath, skillPath, model, piBinary, runDir string, minDelta, qualityTolerance float64, holdoutCasesPath string, holdoutQualityTolerance float64, repeats, limit int, judge, push, dryRun, allowDirty bool) error {
 	if qualityTolerance < 0 {
 		return fmt.Errorf("-quality-tolerance must be non-negative")
+	}
+	if holdoutQualityTolerance < 0 {
+		holdoutQualityTolerance = qualityTolerance
+	}
+	if repeats <= 0 {
+		return fmt.Errorf("-repeats must be positive")
 	}
 	logStep("resolving repository root and pi binary")
 	root, err := autoresearch.RepoRoot()
@@ -173,6 +182,10 @@ func run(iterations int, casesPath, skillPath, model, piBinary, runDir string, m
 
 	casesAbs := autoresearch.AbsFromRoot(root, casesPath)
 	skillAbs := autoresearch.AbsFromRoot(root, skillPath)
+	holdoutCasesAbs := ""
+	if strings.TrimSpace(holdoutCasesPath) != "" {
+		holdoutCasesAbs = autoresearch.AbsFromRoot(root, holdoutCasesPath)
+	}
 	if runDir == "" {
 		runDir = filepath.Join(root, "auto-improve-skills", "runs", "train-"+time.Now().UTC().Format("20060102T150405Z"))
 	} else {
@@ -193,7 +206,7 @@ func run(iterations int, casesPath, skillPath, model, piBinary, runDir string, m
 
 	printSemantic(logSemanticSummary, "skilltrain run dir: %s", runDir)
 	logBenchmark("running baseline benchmark")
-	baseline, err := runBenchmark(root, casesAbs, skillAbs, model, piBinary, filepath.Join(runDir, "iter-000-baseline"), limit, judge)
+	baseline, err := runBenchmark(root, casesAbs, skillAbs, model, piBinary, filepath.Join(runDir, "iter-000-baseline"), limit, judge, repeats)
 	if err != nil {
 		return err
 	}
@@ -202,6 +215,20 @@ func run(iterations int, casesPath, skillPath, model, piBinary, runDir string, m
 	qualityFloor := bestQuality - qualityTolerance
 	bestPath := filepath.Join(runDir, "iter-000-baseline", "result.json")
 	printSemantic(logSemanticSummary, "baseline quality: %.2f%% objective: %.2f%% (%s)", bestQuality*100, bestObjective*100, bestPath)
+
+	var holdoutBestQuality, holdoutQualityFloor float64
+	var holdoutBestPath string
+	if holdoutCasesAbs != "" {
+		logBenchmark("running holdout baseline benchmark")
+		holdoutBaseline, err := runBenchmark(root, holdoutCasesAbs, skillAbs, model, piBinary, filepath.Join(runDir, "iter-000-holdout"), limit, judge, repeats)
+		if err != nil {
+			return err
+		}
+		holdoutBestQuality = benchmarkQuality(holdoutBaseline)
+		holdoutQualityFloor = holdoutBestQuality - holdoutQualityTolerance
+		holdoutBestPath = filepath.Join(runDir, "iter-000-holdout", "result.json")
+		printSemantic(logSemanticSummary, "holdout baseline quality: %.2f%% floor: %.2f%% (%s)", holdoutBestQuality*100, holdoutQualityFloor*100, holdoutBestPath)
+	}
 
 	for iter := 1; iter <= iterations; iter++ {
 		logStep("iteration %d/%d: preparing workspace", iter, iterations)
@@ -229,14 +256,18 @@ func run(iterations int, casesPath, skillPath, model, piBinary, runDir string, m
 			}
 		}
 		logBenchmark("iteration %d/%d: running candidate benchmark", iter, iterations)
-		candidate, err := runBenchmark(root, casesAbs, skillAbs, model, piBinary, iterDir, limit, judge)
-		if dryRun {
-			logDryRun("iteration %d/%d: restoring original skill after dry-run benchmark", iter, iterations)
-			if restoreErr := os.WriteFile(skillAbs, original, 0o644); restoreErr != nil && err == nil {
-				err = restoreErr
+		candidate, err := runBenchmark(root, casesAbs, skillAbs, model, piBinary, iterDir, limit, judge, repeats)
+		restoreDryRun := func() error {
+			if !dryRun {
+				return nil
 			}
+			logDryRun("iteration %d/%d: restoring original skill after dry-run benchmarks", iter, iterations)
+			return os.WriteFile(skillAbs, original, 0o644)
 		}
 		if err != nil {
+			if restoreErr := restoreDryRun(); restoreErr != nil {
+				return restoreErr
+			}
 			return err
 		}
 		logStep("iteration %d/%d: evaluating candidate", iter, iterations)
@@ -245,18 +276,45 @@ func run(iterations int, casesPath, skillPath, model, piBinary, runDir string, m
 		candidateQuality := benchmarkQuality(candidate)
 		delta := candidateObjective - bestObjective
 		qualityOK := candidateQuality >= qualityFloor
-		if qualityOK && delta >= minDelta {
+		publicOK := qualityOK && delta >= minDelta
+		if publicOK {
 			printSemantic(logSemanticSuccess, "iteration %d quality: %.2f%% objective: %.2f%% (delta %.2f%%)", iter, candidateQuality*100, candidateObjective*100, delta*100)
 		} else {
 			printSemantic(logSemanticWarning, "iteration %d quality: %.2f%% objective: %.2f%% (delta %.2f%%)", iter, candidateQuality*100, candidateObjective*100, delta*100)
 		}
-		if qualityOK && delta >= minDelta {
+
+		holdoutOK := true
+		var holdoutGate *benchmarkGate
+		if publicOK && holdoutCasesAbs != "" {
+			logBenchmark("iteration %d/%d: running holdout gate benchmark", iter, iterations)
+			holdoutCandidate, err := runBenchmark(root, holdoutCasesAbs, skillAbs, model, piBinary, filepath.Join(iterDir, "holdout"), limit, judge, repeats)
+			if err != nil {
+				if restoreErr := restoreDryRun(); restoreErr != nil {
+					return restoreErr
+				}
+				return err
+			}
+			holdoutPath := filepath.Join(iterDir, "holdout", "result.json")
+			holdoutQuality := benchmarkQuality(holdoutCandidate)
+			holdoutOK = holdoutQuality >= holdoutQualityFloor
+			holdoutGate = &benchmarkGate{Result: holdoutCandidate, ResultPath: holdoutPath, QualityFloor: holdoutQualityFloor}
+			if holdoutOK {
+				printSemantic(logSemanticSuccess, "iteration %d holdout quality: %.2f%% floor: %.2f%% (%s)", iter, holdoutQuality*100, holdoutQualityFloor*100, holdoutPath)
+			} else {
+				printSemantic(logSemanticWarning, "iteration %d holdout quality: %.2f%% below floor %.2f%% (%s)", iter, holdoutQuality*100, holdoutQualityFloor*100, holdoutPath)
+			}
+		}
+		if restoreErr := restoreDryRun(); restoreErr != nil {
+			return restoreErr
+		}
+
+		if publicOK && holdoutOK {
 			if dryRun {
 				logSuccess("iteration %d/%d: accepted in dry-run", iter, iterations)
 				printSemantic(logSemanticDryRun, "dry-run: would accept iteration %d and commit %s (candidate saved in %s)", iter, skillAbs, filepath.Join(iterDir, "candidate.SKILL.md"))
 			} else {
 				logSuccess("iteration %d/%d: accepted; committing skill change", iter, iterations)
-				if err := commitSkill(root, skillAbs, iter, candidate, candidatePath, filepath.Join(iterDir, "researcher.stdout.md"), delta, push); err != nil {
+				if err := commitSkill(root, skillAbs, iter, candidate, candidatePath, holdoutGate, filepath.Join(iterDir, "researcher.stdout.md"), delta, push); err != nil {
 					return err
 				}
 			}
@@ -266,9 +324,17 @@ func run(iterations int, casesPath, skillPath, model, piBinary, runDir string, m
 				qualityFloor = bestQuality - qualityTolerance
 			}
 			bestPath = candidatePath
+			if holdoutGate != nil && benchmarkQuality(holdoutGate.Result) > holdoutBestQuality {
+				holdoutBestQuality = benchmarkQuality(holdoutGate.Result)
+				holdoutQualityFloor = holdoutBestQuality - holdoutQualityTolerance
+				holdoutBestPath = holdoutGate.ResultPath
+			}
 		} else {
 			if !qualityOK {
 				printSemantic(logSemanticWarning, "iteration %d rejected: quality %.2f%% is below floor %.2f%%", iter, candidateQuality*100, qualityFloor*100)
+			}
+			if publicOK && !holdoutOK && holdoutGate != nil {
+				printSemantic(logSemanticWarning, "iteration %d rejected: holdout quality %.2f%% is below floor %.2f%%", iter, benchmarkQuality(holdoutGate.Result)*100, holdoutGate.QualityFloor*100)
 			}
 			if dryRun {
 				logWarn("iteration %d/%d: rejected in dry-run", iter, iterations)
@@ -282,10 +348,50 @@ func run(iterations int, casesPath, skillPath, model, piBinary, runDir string, m
 		}
 	}
 	printSemantic(logSemanticSummary, "best objective: %.2f%%; best quality seen: %.2f%% (%s)", bestObjective*100, bestQuality*100, bestPath)
+	if holdoutCasesAbs != "" {
+		printSemantic(logSemanticSummary, "best holdout quality seen: %.2f%% (floor %.2f%%; %s)", holdoutBestQuality*100, holdoutQualityFloor*100, holdoutBestPath)
+	}
 	return nil
 }
 
-func runBenchmark(root, casesAbs, skillAbs, model, piBinary, outDir string, limit int, judge bool) (autoresearch.SuiteResult, error) {
+type benchmarkGate struct {
+	Result       autoresearch.SuiteResult
+	ResultPath   string
+	QualityFloor float64
+}
+
+func runBenchmark(root, casesAbs, skillAbs, model, piBinary, outDir string, limit int, judge bool, repeats int) (autoresearch.SuiteResult, error) {
+	if repeats <= 1 {
+		return runBenchmarkOnce(root, casesAbs, skillAbs, model, piBinary, outDir, limit, judge)
+	}
+	if err := os.MkdirAll(outDir, 0o755); err != nil {
+		return autoresearch.SuiteResult{}, err
+	}
+	results := make([]autoresearch.SuiteResult, 0, repeats)
+	paths := make([]string, 0, repeats)
+	for repeat := 1; repeat <= repeats; repeat++ {
+		repeatDir := filepath.Join(outDir, fmt.Sprintf("repeat-%03d", repeat))
+		logBenchmark("benchmark: repeat %d/%d", repeat, repeats)
+		result, err := runBenchmarkOnce(root, casesAbs, skillAbs, model, piBinary, repeatDir, limit, judge)
+		if err != nil {
+			return autoresearch.SuiteResult{}, err
+		}
+		results = append(results, result)
+		paths = append(paths, filepath.Join(repeatDir, "result.json"))
+	}
+	aggregate, err := aggregateBenchmarkRepeats(results, paths)
+	if err != nil {
+		return autoresearch.SuiteResult{}, err
+	}
+	aggregatePath := filepath.Join(outDir, "result.json")
+	if err := autoresearch.WriteJSON(aggregatePath, aggregate); err != nil {
+		return autoresearch.SuiteResult{}, err
+	}
+	printSemantic(logSemanticSummary, "benchmark aggregate (%d repeats): quality %.2f%% objective %.2f%% (%s)", repeats, benchmarkQuality(aggregate)*100, benchmarkObjective(aggregate)*100, aggregatePath)
+	return aggregate, nil
+}
+
+func runBenchmarkOnce(root, casesAbs, skillAbs, model, piBinary, outDir string, limit int, judge bool) (autoresearch.SuiteResult, error) {
 	if err := os.MkdirAll(outDir, 0o755); err != nil {
 		return autoresearch.SuiteResult{}, err
 	}
@@ -324,6 +430,172 @@ func runBenchmark(root, casesAbs, skillAbs, model, piBinary, outDir string, limi
 		return autoresearch.SuiteResult{}, err
 	}
 	return result, nil
+}
+
+func aggregateBenchmarkRepeats(results []autoresearch.SuiteResult, paths []string) (autoresearch.SuiteResult, error) {
+	if len(results) == 0 {
+		return autoresearch.SuiteResult{}, fmt.Errorf("no benchmark repeats to aggregate")
+	}
+	aggregate := results[0]
+	aggregate.Repeats = len(results)
+	aggregate.RepeatResultPaths = append([]string(nil), paths...)
+	aggregate.Cases = aggregateCaseRepeats(results)
+	aggregate.Score = 0
+	aggregate.MaxScore = 0
+	aggregate.QualityScore = 0
+	aggregate.QualityMaxScore = 0
+	aggregate.ObjectiveScore = 0
+	aggregate.AverageCaseDurationSeconds = 0
+	aggregate.DurationScore = 0
+
+	for _, result := range results {
+		aggregate.Score += result.Score
+		aggregate.MaxScore += result.MaxScore
+		aggregate.QualityScore += result.QualityScore
+		aggregate.QualityMaxScore += result.QualityMaxScore
+		aggregate.ObjectiveScore += result.ObjectiveScore
+		aggregate.AverageCaseDurationSeconds += result.AverageCaseDurationSeconds
+		aggregate.DurationScore += result.DurationScore
+	}
+	count := float64(len(results))
+	aggregate.Score /= count
+	aggregate.MaxScore /= count
+	aggregate.QualityScore /= count
+	aggregate.QualityMaxScore /= count
+	aggregate.ObjectiveScore /= count
+	aggregate.AverageCaseDurationSeconds /= count
+	aggregate.DurationScore /= count
+	if aggregate.MaxScore > 0 {
+		aggregate.NormalizedScore = aggregate.Score / aggregate.MaxScore
+	}
+	if aggregate.QualityMaxScore > 0 {
+		aggregate.QualityNormalizedScore = aggregate.QualityScore / aggregate.QualityMaxScore
+	}
+	if aggregate.ObjectiveMaxScore > 0 {
+		aggregate.ObjectiveNormalizedScore = aggregate.ObjectiveScore / aggregate.ObjectiveMaxScore
+	}
+	aggregate.StartedAt = results[0].StartedAt
+	aggregate.CompletedAt = results[len(results)-1].CompletedAt
+	if !aggregate.StartedAt.IsZero() && !aggregate.CompletedAt.IsZero() {
+		aggregate.WallClockDuration = aggregate.CompletedAt.Sub(aggregate.StartedAt).String()
+	}
+	return aggregate, nil
+}
+
+func aggregateCaseRepeats(results []autoresearch.SuiteResult) []autoresearch.CaseResult {
+	type accum struct {
+		caseResult              autoresearch.CaseResult
+		count                   int
+		score                   float64
+		maxScore                float64
+		normalizedScore         float64
+		deterministicScore      float64
+		deterministicMaxScore   float64
+		commandCount            int
+		toolOutputBytes         int
+		failedToolCalls         int
+		durationSeconds         float64
+		durationScore           float64
+		criteriaPointsByName    map[string]float64
+		criteriaPassCountByName map[string]int
+		criteriaSeenCountByName map[string]int
+		criteriaOrder           []string
+		criteriaTemplateByName  map[string]autoresearch.CriterionResult
+	}
+	accums := map[string]*accum{}
+	order := make([]string, 0)
+	for _, result := range results {
+		for _, caseResult := range result.Cases {
+			acc := accums[caseResult.ID]
+			if acc == nil {
+				copyCase := caseResult
+				copyCase.FinalAnswer = ""
+				copyCase.Commands = nil
+				copyCase.ToolCalls = nil
+				copyCase.Criteria = nil
+				copyCase.Judge = nil
+				copyCase.RawJSONLPath = ""
+				acc = &accum{
+					caseResult:              copyCase,
+					criteriaPointsByName:    map[string]float64{},
+					criteriaPassCountByName: map[string]int{},
+					criteriaSeenCountByName: map[string]int{},
+					criteriaTemplateByName:  map[string]autoresearch.CriterionResult{},
+				}
+				accums[caseResult.ID] = acc
+				order = append(order, caseResult.ID)
+			}
+			acc.count++
+			acc.score += caseResult.Score
+			acc.maxScore += caseResult.MaxScore
+			acc.normalizedScore += caseResult.NormalizedScore
+			acc.deterministicScore += caseResult.DeterministicScore
+			acc.deterministicMaxScore += caseResult.DeterministicMaxScore
+			acc.commandCount += caseResult.CommandCount
+			acc.toolOutputBytes += caseResult.ToolOutputBytes
+			acc.failedToolCalls += caseResult.FailedToolCalls
+			acc.durationSeconds += caseResult.DurationSeconds
+			acc.durationScore += caseResult.DurationScore
+			if caseResult.Error != "" {
+				acc.caseResult.Error = appendErr(acc.caseResult.Error, caseResult.Error)
+			}
+			for _, criterion := range caseResult.Criteria {
+				if _, ok := acc.criteriaTemplateByName[criterion.Name]; !ok {
+					acc.criteriaTemplateByName[criterion.Name] = criterion
+					acc.criteriaOrder = append(acc.criteriaOrder, criterion.Name)
+				}
+				acc.criteriaPointsByName[criterion.Name] += criterion.Points
+				acc.criteriaSeenCountByName[criterion.Name]++
+				if criterion.Passed {
+					acc.criteriaPassCountByName[criterion.Name]++
+				}
+			}
+		}
+	}
+
+	cases := make([]autoresearch.CaseResult, 0, len(order))
+	for _, id := range order {
+		acc := accums[id]
+		count := float64(acc.count)
+		caseResult := acc.caseResult
+		caseResult.Score = acc.score / count
+		caseResult.MaxScore = acc.maxScore / count
+		caseResult.NormalizedScore = acc.normalizedScore / count
+		caseResult.DeterministicScore = acc.deterministicScore / count
+		caseResult.DeterministicMaxScore = acc.deterministicMaxScore / count
+		caseResult.CommandCount = roundedAverage(acc.commandCount, acc.count)
+		caseResult.ToolOutputBytes = roundedAverage(acc.toolOutputBytes, acc.count)
+		caseResult.FailedToolCalls = roundedAverage(acc.failedToolCalls, acc.count)
+		caseResult.DurationSeconds = acc.durationSeconds / count
+		caseResult.DurationScore = acc.durationScore / count
+		caseResult.WallClockDuration = fmt.Sprintf("average of %d repeats", acc.count)
+		caseResult.Criteria = aggregateCriteria(acc.criteriaOrder, acc.criteriaTemplateByName, acc.criteriaPointsByName, acc.criteriaPassCountByName, acc.criteriaSeenCountByName)
+		cases = append(cases, caseResult)
+	}
+	return cases
+}
+
+func aggregateCriteria(order []string, templates map[string]autoresearch.CriterionResult, points map[string]float64, passCounts, seenCounts map[string]int) []autoresearch.CriterionResult {
+	criteria := make([]autoresearch.CriterionResult, 0, len(order))
+	for _, name := range order {
+		template := templates[name]
+		seen := seenCounts[name]
+		if seen == 0 {
+			continue
+		}
+		template.Points = points[name] / float64(seen)
+		template.Passed = passCounts[name] == seen
+		template.Detail = fmt.Sprintf("passed in %d/%d repeats", passCounts[name], seen)
+		criteria = append(criteria, template)
+	}
+	return criteria
+}
+
+func roundedAverage(sum, count int) int {
+	if count <= 0 {
+		return 0
+	}
+	return (sum + count/2) / count
 }
 
 func improveSkill(root, skillAbs, casesAbs, bestResultPath, iterDir, model, piBinary string, iter int, qualityTolerance float64) error {
@@ -370,7 +642,7 @@ Task for iteration %d:
 	return nil
 }
 
-func commitSkill(root, skillAbs string, iter int, result autoresearch.SuiteResult, resultPath, researcherSummaryPath string, delta float64, push bool) error {
+func commitSkill(root, skillAbs string, iter int, result autoresearch.SuiteResult, resultPath string, holdoutGate *benchmarkGate, researcherSummaryPath string, delta float64, push bool) error {
 	skillRel := gitPath(root, skillAbs)
 	logStep("iteration %d: staging %s", iter, skillRel)
 	if err := runGit(root, "add", skillRel); err != nil {
@@ -392,7 +664,7 @@ func commitSkill(root, skillAbs string, iter int, result autoresearch.SuiteResul
 	}
 	researcherSummary := readCommitSummary(researcherSummaryPath)
 	msg := fmt.Sprintf("auto-improve remote-host-diagnostics iter %d", iter)
-	body := formatCommitBody(root, skillRel, iter, result, resultPath, researcherSummary, delta, diffStat, shortStat)
+	body := formatCommitBody(root, skillRel, iter, result, resultPath, holdoutGate, researcherSummary, delta, diffStat, shortStat)
 	logSuccess("iteration %d: creating git commit", iter)
 	if err := runGit(root, "commit", "-m", msg, "-m", body, "--", skillRel); err != nil {
 		return err
@@ -405,7 +677,7 @@ func commitSkill(root, skillAbs string, iter int, result autoresearch.SuiteResul
 	return runGit(root, "push")
 }
 
-func formatCommitBody(root, skillRel string, iter int, result autoresearch.SuiteResult, resultPath, researcherSummary string, delta float64, diffStat, shortStat string) string {
+func formatCommitBody(root, skillRel string, iter int, result autoresearch.SuiteResult, resultPath string, holdoutGate *benchmarkGate, researcherSummary string, delta float64, diffStat, shortStat string) string {
 	qualityScore, qualityMax, qualityPct := result.QualityScore, result.QualityMaxScore, benchmarkQuality(result)*100
 	if qualityMax == 0 {
 		qualityScore, qualityMax, qualityPct = result.Score, result.MaxScore, result.NormalizedScore*100
@@ -433,10 +705,27 @@ func formatCommitBody(root, skillRel string, iter int, result autoresearch.Suite
 	fmt.Fprintf(&b, "- Objective: %.2f/%.2f (%.2f%%, delta %+0.2f pp)\n", objectiveScore, objectiveMax, objectivePct, delta*100)
 	fmt.Fprintf(&b, "- Average case duration: %.1fs (score %.2f%%)\n", result.AverageCaseDurationSeconds, result.DurationScore*100)
 	fmt.Fprintf(&b, "- Skill size: %d estimated tokens, %d bytes (score %.2f%%)\n", result.SkillSizeEstimatedTokens, result.SkillSizeBytes, result.SkillSizeScore*100)
+	if result.Repeats > 1 {
+		fmt.Fprintf(&b, "- Repeats averaged: %d\n", result.Repeats)
+	}
 	cfg := result.ObjectiveConfig
 	if cfg.QualityWeight+cfg.DurationWeight+cfg.SkillSizeWeight > 0 {
 		fmt.Fprintf(&b, "- Objective config: quality=%.2f duration=%.2f skill_size=%.2f; duration budget/hard=%.0fs/%.0fs; skill-size target/hard=%d/%d tokens\n",
 			cfg.QualityWeight, cfg.DurationWeight, cfg.SkillSizeWeight, cfg.DurationBudgetSeconds, cfg.DurationHardLimitSeconds, cfg.SkillSizeTargetTokens, cfg.SkillSizeHardLimitTokens)
+	}
+
+	if holdoutGate != nil {
+		holdoutQualityScore, holdoutQualityMax, holdoutQualityPct := holdoutGate.Result.QualityScore, holdoutGate.Result.QualityMaxScore, benchmarkQuality(holdoutGate.Result)*100
+		if holdoutQualityMax == 0 {
+			holdoutQualityScore, holdoutQualityMax, holdoutQualityPct = holdoutGate.Result.Score, holdoutGate.Result.MaxScore, holdoutGate.Result.NormalizedScore*100
+		}
+		fmt.Fprintf(&b, "\nHoldout gate:\n")
+		fmt.Fprintf(&b, "- Report: %s\n", gitPath(root, holdoutGate.ResultPath))
+		fmt.Fprintf(&b, "- Quality: %.2f/%.2f (%.2f%%; floor %.2f%%)\n", holdoutQualityScore, holdoutQualityMax, holdoutQualityPct, holdoutGate.QualityFloor*100)
+		fmt.Fprintf(&b, "- Objective: %.2f%%\n", benchmarkObjective(holdoutGate.Result)*100)
+		if holdoutGate.Result.Repeats > 1 {
+			fmt.Fprintf(&b, "- Repeats averaged: %d\n", holdoutGate.Result.Repeats)
+		}
 	}
 
 	fmt.Fprintf(&b, "\nPer-case scores:\n")
@@ -487,7 +776,7 @@ func criteriaSummary(cr autoresearch.CaseResult) string {
 		if criterion.Detail != "" {
 			detail += " (" + criterion.Detail + ")"
 		}
-		failed = append(failed, fmt.Sprintf("%s: 0/%.1f", detail, criterion.Max))
+		failed = append(failed, fmt.Sprintf("%s: %.1f/%.1f", detail, criterion.Points, criterion.Max))
 	}
 	if len(failed) == 0 {
 		return "Criteria: all deterministic checks passed"
@@ -534,6 +823,16 @@ func gitOutput(root string, args ...string) (string, error) {
 		return "", fmt.Errorf("git %s: %w: %s", strings.Join(args, " "), err, strings.TrimSpace(string(out)))
 	}
 	return string(out), nil
+}
+
+func appendErr(existing, msg string) string {
+	if strings.TrimSpace(msg) == "" {
+		return existing
+	}
+	if strings.TrimSpace(existing) == "" {
+		return msg
+	}
+	return existing + "; " + msg
 }
 
 func indentLines(s, prefix string) string {

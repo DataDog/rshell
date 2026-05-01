@@ -55,7 +55,7 @@ go run ./auto-improve-skills/cmd/skillbench -limit 1
 # One specific case
 go run ./auto-improve-skills/cmd/skillbench -case datadog-agent-config-regression
 
-# Small holdout acceptance suite (not used by the default training loop)
+# Holdout acceptance suite used by skilltrain as a gate by default
 go run ./auto-improve-skills/cmd/skillbench \
   -cases auto-improve-skills/benchmarks/remote-host-diagnostics/holdout.yaml
 
@@ -90,10 +90,12 @@ The loop:
 1. Runs a baseline benchmark.
 2. Invokes `pi` as a researcher to edit only `SKILL.md`.
 3. Runs the benchmark again.
-4. Commits and pushes the skill edit if the composite objective improves by at least `-min-delta` without dropping quality by more than `-quality-tolerance` (default 1 percentage point); pass `-push=false` to keep accepted commits local.
-5. Reverts the skill edit if it does not improve.
+4. Averages each public benchmark result over `-repeats` runs (default 3) to reduce judge/runtime noise.
+5. Runs the holdout suite from `-holdout-cases` (default `auto-improve-skills/benchmarks/remote-host-diagnostics/holdout.yaml`) as an acceptance gate for public-suite improvements; pass `-holdout-cases ""` to disable it.
+6. Commits and pushes the skill edit if the composite objective improves by at least `-min-delta` (default 0.001), public quality stays within `-quality-tolerance`, and holdout quality stays within `-holdout-quality-tolerance` (defaults to `-quality-tolerance`); pass `-push=false` to keep accepted commits local.
+7. Reverts the skill edit if it does not improve or fails the holdout gate.
 
-Accepted commit bodies include the benchmark report path, quality/objective/duration/size scores, per-case scoring details, the researcher summary, and a diffstat. Accepted commits are pushed by default; pass `-push=false` to review and push them manually.
+Accepted commit bodies include the benchmark report path, quality/objective/duration/size scores, repeat counts, holdout gate summary when enabled, per-case scoring details, the researcher summary, and a diffstat. Accepted commits are pushed by default; pass `-push=false` to review and push them manually.
 
 If `pi` is outside your shell `PATH`, use the same `-pi` flag:
 
@@ -111,6 +113,8 @@ For a safe proof run that exercises the loop without committing:
 go run ./auto-improve-skills/cmd/skilltrain \
   -iters 1 \
   -limit 1 \
+  -repeats 1 \
+  -holdout-cases "" \
   -dry-run \
   -allow-dirty \
   -run-dir auto-improve-skills/runs/train-proof
@@ -136,7 +140,7 @@ The suite measures final-answer quality across realistic fake investigations. It
 - Containerized Agent host-log fallback with x509 failures caused by clock skew
 - Unsupported `ss` flag recovery
 
-A small holdout acceptance suite lives in `benchmarks/remote-host-diagnostics/holdout.yaml`. It uses separate generated fixture facts and is intended for occasional gating rather than every inner-loop training run, keeping the default benchmark duration reasonable.
+A holdout acceptance suite lives in `benchmarks/remote-host-diagnostics/holdout.yaml`. It uses separate generated fixture facts, including adversarial cases for same-source accepted SSH logins, Datadog API-key failures that are not YAML line-42 regressions, and Redis/cache 503s with rotated DB-pool red herrings. `skilltrain` runs this suite as a gate by default.
 
 More cases can be added to `benchmarks/remote-host-diagnostics/cases.yaml` or the holdout suite without changing Go code.
 

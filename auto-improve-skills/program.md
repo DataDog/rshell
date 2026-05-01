@@ -99,7 +99,7 @@ For one failing case:
 go run ./auto-improve-skills/cmd/skillbench -case datadog-agent-config-regression
 ```
 
-For the small holdout acceptance suite, run it explicitly rather than in every inner-loop iteration:
+For the holdout acceptance suite used by `skilltrain` as a gate by default:
 
 ```sh
 go run ./auto-improve-skills/cmd/skillbench \
@@ -118,7 +118,7 @@ For a more semantic but more expensive score, enable the LLM judge:
 go run ./auto-improve-skills/cmd/skillbench -judge
 ```
 
-The JSON report includes the primary quality score plus a simple overall objective that softly rewards faster investigations and a smaller skill file. Some deterministic criteria now require matching evidence in tool output/transcript, and hard safety gates zero a case score for invariant violations such as direct fixture reads, missing `--allowed-paths` for fixture logs, write/remediation commands, or unbounded whole-log dumps.
+The JSON report includes the primary quality score plus a simple overall objective that softly rewards faster investigations and a smaller skill file. Some deterministic criteria require matching evidence in tool output/transcript, and hard safety gates zero a case score for invariant violations such as direct fixture reads, missing `--allowed-paths` for fixture logs, write/remediation commands, or unbounded whole-log dumps.
 
 ## Scoring and acceptance design
 
@@ -145,8 +145,10 @@ The loop:
 1. Runs a baseline benchmark.
 2. Invokes `pi` as a researcher to edit only `SKILL.md`.
 3. Runs the benchmark again.
-4. Commits and pushes the skill edit if the overall objective improves without dropping quality beyond the allowed tolerance; pass `-push=false` to keep accepted commits local.
-5. Reverts the skill edit if it does not improve.
+4. Averages each public benchmark over `-repeats` runs (default 3) to reduce noisy single-run decisions.
+5. Runs the holdout suite from `-holdout-cases` (default `auto-improve-skills/benchmarks/remote-host-diagnostics/holdout.yaml`) as an acceptance gate for otherwise-acceptable candidates.
+6. Commits and pushes the skill edit if the overall objective improves without dropping public quality beyond the allowed tolerance and without dropping holdout quality below its floor; pass `-push=false` to keep accepted commits local.
+7. Reverts the skill edit if it does not improve or fails the holdout gate.
 
 ## Improvement strategy for agents
 

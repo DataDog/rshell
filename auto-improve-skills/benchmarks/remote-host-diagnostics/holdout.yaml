@@ -1,8 +1,8 @@
 name: remote-host-diagnostics-holdout
-# Keep this suite out of normal skilltrain inner loops. It is a small acceptance
-# suite with different fixture facts/layouts to catch overfitting to cases.yaml.
+# Keep this suite separate from the researcher-visible public benchmark. skilltrain
+# uses it as an acceptance gate to catch overfitting to cases.yaml.
 description: >-
-  Small holdout benchmarks for the local ./rshell remote-host-diagnostics skill.
+  Holdout benchmarks for the local ./rshell remote-host-diagnostics skill.
   Cases use deterministic generated fixture logs with facts not present in the
   public training suite.
 skill_path: ../../skills/remote-host-diagnostics
@@ -119,4 +119,177 @@ cases:
         source: final
         case_insensitive: true
         regex: "next|check|inspect|verify|systemd|orchestrator|kubernetes|events|service manager|journal"
+        points: 5
+
+  - id: holdout-ssh-accepted-after-failures
+    title: Detect brute force where the suspicious source later has an accepted login
+    prompt: |-
+      Fake holdout investigation: security sees SSH failures from 203.0.113.66 around 18:13 UTC and asks whether that same source also got in.
+      Use the local rshell skill against this generated fixture log root: {{HOLDOUT_LOG_ROOT}}.
+      Summarize the suspicious source, approximate scale/user pattern, and whether there was an accepted login from that same source. Keep the investigation read-only and bounded.
+    judge_rubric: |-
+      Excellent answers identify repeated failed SSH password attempts from 203.0.113.66, estimate roughly 42 failures across invalid users, and explicitly report the same-source Accepted password login for user backup. They should avoid the usual negative no-accepted-login conclusion, distinguish other publickey logins from different sources, cite auth-success.log evidence, and avoid overstating beyond the logs.
+    criteria:
+      - name: final identifies brute-force source IP
+        source: final
+        contains: "203.0.113.66"
+        require_evidence: true
+        points: 15
+      - name: final describes failed-password invalid-user pattern
+        source: final
+        case_insensitive: true
+        regex: "failed password|brute|invalid user|password attempts"
+        require_evidence: true
+        evidence_regex: "Failed password|Invalid user"
+        points: 15
+      - name: final includes approximate count near 42 failures
+        source: final
+        case_insensitive: true
+        regex: "\\b42\\b|\\b4[0-9]\\b|about 40|roughly 40|~40|dozens"
+        require_evidence: true
+        evidence_source: transcript
+        evidence_regex: "\\b42\\b|203\\.0\\.113\\.66|Failed password"
+        points: 15
+      - name: final states same source had accepted password login for backup
+        source: final
+        case_insensitive: true
+        regex: "accepted password|accepted login|successful login|got in|backup"
+        require_evidence: true
+        evidence_regex: "Accepted password for backup from 203\\.0\\.113\\.66"
+        points: 25
+      - name: final avoids incorrect no-accepted-login conclusion
+        source: final
+        case_insensitive: true
+        not: true
+        regex: "no accepted login from 203\\.0\\.113\\.66|no successful login from 203\\.0\\.113\\.66|no login.*203\\.0\\.113\\.66"
+        points: 10
+      - name: final cites auth-success log evidence
+        source: final
+        case_insensitive: true
+        regex: "auth-success\\.log|auth\\.log|ssh"
+        points: 10
+      - name: commands use bounded grep/count filters
+        source: commands
+        case_insensitive: true
+        regex: "grep.*(203\\.0\\.113\\.66|Failed password|Accepted)|wc -l|sort|uniq|find|head"
+        points: 5
+      - name: commands use provided holdout log root as allowed path
+        source: commands
+        contains: "--allowed-paths {{HOLDOUT_LOG_ROOT}}"
+        points: 5
+
+  - id: holdout-datadog-api-key-not-yaml
+    title: Avoid overfitting Datadog metrics stoppage to YAML line-42 remote-config failures
+    prompt: |-
+      Fake holdout investigation: Datadog metrics and log intake start failing around 11:06 UTC. A teammate suspects the known remote-config YAML line-42 failure pattern.
+      Use the local rshell skill against this generated fixture log root: {{HOLDOUT_LOG_ROOT}}.
+      Determine the likely cause, whether the YAML/remote-config theory is supported, and provide evidence. Keep the investigation read-only and bounded.
+    judge_rubric: |-
+      Excellent answers identify API key/authentication rejection (403 invalid_api_key / api_key_invalid) as the cause of Datadog metrics/log intake failures, cite api-agent.log evidence, explicitly say the remote-config/YAML line-42 theory is not supported by these logs, avoid mentioning rc-8831 or line 42 as the cause, and suggest only safe read-only next checks such as API key/audit/config-source verification.
+    criteria:
+      - name: final identifies API key or authentication rejection as likely cause
+        source: final
+        case_insensitive: true
+        regex: "api key|invalid_api_key|api_key_invalid|403|unauthorized|authentication"
+        require_evidence: true
+        evidence_regex: "api key validation failed|api_key_invalid|invalid_api_key|status=403"
+        points: 25
+      - name: final connects rejection to metrics or log intake failure
+        source: final
+        case_insensitive: true
+        regex: "metrics|series|log intake|logs intake|forwarder|no metrics"
+        require_evidence: true
+        evidence_regex: "dropping metric payload|logs intake rejected|no metrics flushed|domain=series|domain=logs"
+        points: 20
+      - name: final says YAML or remote-config theory is not supported
+        source: final
+        case_insensitive: true
+        regex: "not.*(yaml|remote[- ]config|line 42|config validation)|no.*(yaml|remote[- ]config|config validation)|unsupported"
+        points: 15
+      - name: final avoids claiming rc-8831 or line 42 as cause
+        source: final
+        case_insensitive: true
+        not: true
+        regex: "rc-8831.*cause|line 42.*cause|yaml.*cause|config validation.*cause"
+        points: 10
+      - name: final cites api-agent log evidence
+        source: final
+        case_insensitive: true
+        regex: "api-agent\\.log|agent\\.log|datadog"
+        points: 10
+      - name: commands use provided holdout log root as allowed path
+        source: commands
+        contains: "--allowed-paths {{HOLDOUT_LOG_ROOT}}"
+        points: 5
+      - name: commands use bounded filters for Datadog/API-key evidence
+        source: commands
+        case_insensitive: true
+        regex: "grep.*(api[_ -]?key|403|invalid|metrics|logs|remote|yaml|config)|find|head|tail"
+        points: 10
+      - name: final suggests safe read-only API key or audit next check
+        source: final
+        case_insensitive: true
+        regex: "next|check|inspect|verify|audit|api key|config source|credential"
+        points: 5
+
+  - id: holdout-cart-redis-503-rotated-db-red-herring
+    title: Distinguish current Redis/cache 503s from older rotated database-pool noise
+    prompt: |-
+      Fake holdout investigation: cart users see HTTP 503s around 17:45 UTC. There is known noisy rotated-log history of database pool exhaustion from a previous day.
+      Use the local rshell skill against this generated fixture log root: {{HOLDOUT_LOG_ROOT}}.
+      Find the likely current backend cause, separate it from the older DB-pool red herring, and suggest the next safe read-only check.
+    judge_rubric: |-
+      Excellent answers correlate current /api/cart HTTP 503s to Redis/cache maxclients or connection-refused failures, cite cart.log plus nginx cart-access and system-cart/redis evidence, explicitly distinguish previous-day rotated db pool/reporting-worker errors as not the current cause, avoid recommending remediation commands, and suggest safe read-only checks such as Redis client/connection metrics or cache logs.
+    criteria:
+      - name: final identifies Redis/cache maxclients or connection failure as likely cause
+        source: final
+        case_insensitive: true
+        regex: "redis|cache|maxclients|max number of clients|connection refused"
+        require_evidence: true
+        evidence_regex: "ERR max number of clients reached|cache dependency failure|connection refused|clients nearing maxclients"
+        points: 25
+      - name: final mentions HTTP 503 cart symptom
+        source: final
+        case_insensitive: true
+        regex: "503|/api/cart|cart"
+        require_evidence: true
+        evidence_regex: "HTTP/1.1\" 503|status=503|route=/api/cart"
+        points: 15
+      - name: final distinguishes old database pool rotated-log noise
+        source: final
+        case_insensitive: true
+        regex: "old|rotated|previous day|red herring|not.*current|unrelated|db pool|database"
+        require_evidence: true
+        evidence_regex: "cart.log.1|old_incident=true|previous-day-noise|db pool exhausted"
+        points: 15
+      - name: final cites cart app log evidence
+        source: final
+        case_insensitive: true
+        regex: "cart\\.log|service=cart|app"
+        points: 10
+      - name: final cites nginx cart access evidence
+        source: final
+        case_insensitive: true
+        regex: "cart-access\\.log|nginx|access"
+        points: 10
+      - name: final cites system redis evidence
+        source: final
+        case_insensitive: true
+        regex: "system-cart\\.log|redis-server|system"
+        points: 10
+      - name: commands use bounded filters across relevant logs
+        source: commands
+        case_insensitive: true
+        regex: "grep.*(503|redis|cache|maxclients|db pool|cart)|find|head|tail"
+        points: 5
+      - name: final does not propose write/remediation commands
+        source: final
+        case_insensitive: true
+        not: true
+        regex: "restart|kill|delete|edit .*config|apply|flush"
+        points: 5
+      - name: final suggests safe read-only Redis/cache next check
+        source: final
+        case_insensitive: true
+        regex: "next|check|inspect|verify|redis|cache|client|connection|metrics|logs"
         points: 5

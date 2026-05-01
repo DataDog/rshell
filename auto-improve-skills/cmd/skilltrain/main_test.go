@@ -72,6 +72,57 @@ func TestBenchmarkObjectiveUsesNewFields(t *testing.T) {
 	}
 }
 
+func TestAggregateBenchmarkRepeatsAveragesScoresAndCases(t *testing.T) {
+	results := []autoresearch.SuiteResult{
+		{
+			SuiteName:                  "suite",
+			Score:                      90,
+			MaxScore:                   100,
+			QualityScore:               90,
+			QualityMaxScore:            100,
+			ObjectiveScore:             91,
+			ObjectiveMaxScore:          100,
+			AverageCaseDurationSeconds: 80,
+			DurationScore:              1,
+			Cases: []autoresearch.CaseResult{{
+				ID: "case-a", Score: 90, MaxScore: 100, NormalizedScore: 0.90, CommandCount: 4,
+				Criteria: []autoresearch.CriterionResult{{Name: "finding", Passed: true, Points: 10, Max: 10}},
+			}},
+		},
+		{
+			SuiteName:                  "suite",
+			Score:                      96,
+			MaxScore:                   100,
+			QualityScore:               96,
+			QualityMaxScore:            100,
+			ObjectiveScore:             97,
+			ObjectiveMaxScore:          100,
+			AverageCaseDurationSeconds: 100,
+			DurationScore:              0.8,
+			Cases: []autoresearch.CaseResult{{
+				ID: "case-a", Score: 96, MaxScore: 100, NormalizedScore: 0.96, CommandCount: 6,
+				Criteria: []autoresearch.CriterionResult{{Name: "finding", Passed: true, Points: 10, Max: 10}},
+			}},
+		},
+	}
+	aggregate, err := aggregateBenchmarkRepeats(results, []string{"repeat-001/result.json", "repeat-002/result.json"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if aggregate.Repeats != 2 || aggregate.Score != 93 {
+		t.Fatalf("unexpected aggregate scores: %+v", aggregate)
+	}
+	if diff := aggregate.QualityNormalizedScore - 0.93; diff < -1e-9 || diff > 1e-9 {
+		t.Fatalf("QualityNormalizedScore = %v, want 0.93", aggregate.QualityNormalizedScore)
+	}
+	if diff := aggregate.ObjectiveNormalizedScore - 0.94; diff < -1e-9 || diff > 1e-9 {
+		t.Fatalf("ObjectiveNormalizedScore = %v, want 0.94", aggregate.ObjectiveNormalizedScore)
+	}
+	if len(aggregate.Cases) != 1 || aggregate.Cases[0].CommandCount != 5 || aggregate.Cases[0].Criteria[0].Detail != "passed in 2/2 repeats" {
+		t.Fatalf("unexpected aggregate cases: %+v", aggregate.Cases)
+	}
+}
+
 func TestFormatCommitBodyIncludesChangeAndScoreDetails(t *testing.T) {
 	result := autoresearch.SuiteResult{
 		SuiteName:                  "remote-host-diagnostics-quality",
@@ -113,6 +164,7 @@ func TestFormatCommitBodyIncludesChangeAndScoreDetails(t *testing.T) {
 		2,
 		result,
 		"/repo/auto-improve-skills/runs/train/iter-002/result.json",
+		nil,
 		"Tightened the workflow and removed duplicated guidance.",
 		0.0123,
 		" auto-improve-skills/skills/remote-host-diagnostics/SKILL.md | 12 ++++++------\n 1 file changed, 6 insertions(+), 6 deletions(-)\n",
@@ -130,7 +182,7 @@ func TestFormatCommitBodyIncludesChangeAndScoreDetails(t *testing.T) {
 		"auth-bruteforce-summary: 95.0/100.0 (95.0%)",
 		"Criteria: all deterministic checks passed",
 		"Failed criteria:",
-		"count near 96 (regex count): 0/5.0",
+		"count near 96 (regex count): 0.0/5.0",
 		"Researcher summary:",
 		"Tightened the workflow",
 		"Change summary:",

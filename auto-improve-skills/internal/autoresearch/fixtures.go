@@ -61,6 +61,12 @@ func GenerateRemoteHostDiagnosticsFixtures(root string) error {
 		{path: "holdout/logs/app/worker.log", lines: generateHoldoutWorkerLog()},
 		{path: "holdout/logs/auth.log", lines: generateHoldoutAuthLog()},
 		{path: "holdout/logs/deploy.log", lines: generateHoldoutDeployLog()},
+		{path: "holdout/logs/security/auth-success.log", lines: generateHoldoutAuthSuccessLog()},
+		{path: "holdout/logs/datadog/api-agent.log", lines: generateHoldoutDatadogAPIKeyLog()},
+		{path: "holdout/logs/app/cart.log", lines: generateHoldoutCartLog()},
+		{path: "holdout/logs/app/cart.log.1", lines: generateHoldoutCartRotatedLog()},
+		{path: "holdout/logs/nginx/cart-access.log", lines: generateHoldoutCartNginxAccessLog()},
+		{path: "holdout/logs/system-cart.log", lines: generateHoldoutCartSystemLog()},
 	}
 
 	for _, file := range files {
@@ -667,6 +673,159 @@ func generateHoldoutDeployLog() []string {
 			lines = append(lines, fmt.Sprintf("%s %s", isoTime(dt), event))
 		} else {
 			lines = append(lines, fmt.Sprintf("%s DEBUG deploy controller idle sequence=%04d token=holdout-deploy", isoTime(dt), i))
+		}
+	}
+	return lines
+}
+
+func generateHoldoutAuthSuccessLog() []string {
+	start := time.Date(2026, 5, 1, 18, 10, 0, 0, time.UTC)
+	users := []string{"backup", "deploy", "oracle", "postgres", "admin", "mysql", "support"}
+	failures := map[int]int{}
+	for n := 0; n < 42; n++ {
+		failures[180+n*5] = n
+	}
+	events := map[int]string{
+		92:  "login01 sshd[6120]: Accepted publickey for release from 198.51.100.44 port 61192 ssh2: ED25519 SHA256:holdout-release",
+		176: "login01 sshd[6220]: Invalid user backup from 203.0.113.66 port 54101",
+		402: "login01 sshd[6801]: maximum authentication attempts exceeded for invalid user support from 203.0.113.66 port 54380 ssh2 [preauth]",
+		428: "login01 sshd[6810]: Accepted password for backup from 203.0.113.66 port 54402 ssh2",
+		430: "login01 sshd[6810]: pam_unix(sshd:session): session opened for user backup(uid=1007) by (uid=0)",
+		492: "login01 sudo:   backup : TTY=pts/2 ; PWD=/home/backup ; USER=root ; COMMAND=/usr/bin/id",
+		710: "login01 sshd[6910]: Accepted publickey for deploy from 203.0.113.42 port 61222 ssh2: RSA SHA256:holdout-deploy",
+	}
+	lines := make([]string, 0, 900)
+	for i := 0; i < 900; i++ {
+		dt := start.Add(time.Duration(i) * time.Second)
+		if n, ok := failures[i]; ok {
+			user := users[n%len(users)]
+			lines = append(lines, fmt.Sprintf("%s login01 sshd[%d]: Failed password for invalid user %s from 203.0.113.66 port %d ssh2", syslogTime(dt), 6500+n, user, 54100+n))
+		} else if event, ok := events[i]; ok {
+			lines = append(lines, fmt.Sprintf("%s %s", syslogTime(dt), event))
+		} else if i%157 == 0 {
+			lines = append(lines, fmt.Sprintf("%s login01 sshd[%d]: Failed password for invalid user temp from 198.51.100.%d port %d ssh2", syslogTime(dt), 7000+i, 90+i%10, 51000+i))
+		} else {
+			lines = append(lines, fmt.Sprintf("%s login01 CRON[%d]: pam_unix(cron:session): session closed for user root token=holdout-auth-success-%04d", syslogTime(dt), 8000+i, i))
+		}
+	}
+	return lines
+}
+
+func generateHoldoutDatadogAPIKeyLog() []string {
+	start := time.Date(2026, 5, 1, 11, 0, 0, 0, time.UTC)
+	events := map[int]string{
+		0:   "INFO agent starting version=7.99.0 build=holdout-api host=api-01 remote_config=true",
+		48:  "INFO config loaded from /etc/datadog-agent/datadog.yaml source=file status=OK",
+		121: "INFO remote config poll complete transaction_id=rc-9901 changed=false products=agent_config,apm_sampling",
+		296: "INFO forwarder domain=series endpoint=/api/v1/series status=202 payloads_sent=42",
+		367: "ERROR api key validation failed key_id=ak-2209 endpoint=/api/v1/validate status=403 reason=api_key_invalid",
+		371: "ERROR forwarder dropping metric payload domain=series endpoint=/api/v1/series status=403 error=invalid_api_key retryable=false",
+		374: "ERROR logs intake rejected domain=logs endpoint=/api/v2/logs status=403 error=invalid_api_key",
+		382: "WARN trace-agent intake rejected endpoint=/api/v0.2/traces status=403 reason=invalid_api_key",
+		428: "WARN no metrics flushed since 2026-05-01T11:06:11Z reason=api_key_invalid",
+		536: "INFO remote config poll complete transaction_id=rc-9902 changed=false products=agent_config,apm_sampling",
+		690: "WARN no config validation errors observed since boot status=OK note=api-key-failure-not-yaml",
+	}
+	checks := []string{"cpu", "disk", "network", "postgres", "container", "redisdb"}
+	lines := make([]string, 0, 900)
+	for i := 0; i < 900; i++ {
+		dt := start.Add(time.Duration(i) * time.Second)
+		if event, ok := events[i]; ok {
+			lines = append(lines, fmt.Sprintf("%s %s", isoTime(dt), event))
+		} else if i%127 == 0 {
+			lines = append(lines, fmt.Sprintf("%s WARN collector transient check=%s error=timeout recovered=true token=api-agent-noise-%04d", isoTime(dt), checks[i%len(checks)], i))
+		} else if i%53 == 0 {
+			lines = append(lines, fmt.Sprintf("%s DEBUG remote config poll skipped jitter_ms=%d transaction_id=rc-noop-api-%04d", isoTime(dt), 80+i%300, i))
+		} else {
+			lines = append(lines, fmt.Sprintf("%s DEBUG collector heartbeat check=%s status=OK sequence=%04d token=api-agent-holdout", isoTime(dt), checks[(i*5)%len(checks)], i))
+		}
+	}
+	return lines
+}
+
+func generateHoldoutCartLog() []string {
+	start := time.Date(2026, 5, 1, 17, 40, 0, 0, time.UTC)
+	events := map[int]string{
+		0:   "INFO service=cart boot complete version=2026.05.01 build=cart-901",
+		226: "INFO service=cart postgres health status=OK pool=cart_rw active=31 idle=24 max=100 latency_ms=12",
+		303: "WARN service=cart cache latency high dependency=redis p95_ms=1450 route=/api/cart request_id=cart-7781",
+		318: "ERROR service=cart request failed id=cart-7784 route=/api/cart status=503 dependency=redis error=\"ERR max number of clients reached\" cache=cart-primary",
+		324: "ERROR service=cart request failed id=cart-7785 route=/api/cart status=503 dependency=redis error=\"dial tcp 10.2.4.19:6379: connection refused\" cache=cart-primary",
+		337: "WARN service=cart circuit breaker opened dependency=redis reason=cache dependency failure window=60s",
+		402: "INFO service=cart postgres health status=OK pool=cart_rw active=32 idle=25 max=100 latency_ms=11 note=\"database not saturated during cart 503s\"",
+		511: "INFO service=cart cache dependency recovered dependency=redis status=OK reconnects=3",
+	}
+	routes := []string{"/api/cart", "/api/profile", "/api/promotions", "/health"}
+	lines := make([]string, 0, 780)
+	for i := 0; i < 780; i++ {
+		dt := start.Add(time.Duration(i) * time.Second)
+		if event, ok := events[i]; ok {
+			lines = append(lines, fmt.Sprintf("%s %s", isoTime(dt), event))
+		} else if i%149 == 0 {
+			lines = append(lines, fmt.Sprintf("%s WARN service=cart payment enrichment timeout recovered=true token=cart-noise-%04d", isoTime(dt), i))
+		} else {
+			lines = append(lines, fmt.Sprintf("%s INFO service=cart handled request id=cart-noise-%04d route=%s status=200 latency_ms=%d token=cart-holdout", isoTime(dt), i, routes[(i*7)%len(routes)], 20+i%70))
+		}
+	}
+	return lines
+}
+
+func generateHoldoutCartRotatedLog() []string {
+	start := time.Date(2026, 4, 30, 17, 30, 0, 0, time.UTC)
+	events := map[int]string{
+		112: "WARN service=cart db pool wait high pool=cart_rw active=98 max=100 wait_ms=500 recovered=true note=previous-day-noise",
+		141: "ERROR service=cart db pool exhausted pool=cart_rw active=100 max=100 suspected_client=reporting-worker old_incident=true",
+		154: "ERROR service=cart request failed id=cart-old-331 route=/api/cart status=500 error=\"pq: remaining connection slots are reserved\" old_incident=true",
+		260: "INFO service=cart database recovered pool=cart_rw active=37 max=100 old_incident=true",
+	}
+	lines := make([]string, 0, 620)
+	for i := 0; i < 620; i++ {
+		dt := start.Add(time.Duration(i*2) * time.Second)
+		if event, ok := events[i]; ok {
+			lines = append(lines, fmt.Sprintf("%s %s", isoTime(dt), event))
+		} else {
+			lines = append(lines, fmt.Sprintf("%s DEBUG service=cart previous-rotation heartbeat sequence=%04d token=cart-rotated-holdout", isoTime(dt), i))
+		}
+	}
+	return lines
+}
+
+func generateHoldoutCartNginxAccessLog() []string {
+	start := time.Date(2026, 5, 1, 17, 39, 0, 0, time.UTC)
+	failures := map[int]int{360: 503, 363: 503, 369: 503, 376: 503, 384: 503, 397: 503, 411: 503}
+	lines := make([]string, 0, 900)
+	for i := 0; i < 900; i++ {
+		dt := start.Add(time.Duration(i) * time.Second)
+		client := fmt.Sprintf("198.51.100.%d", 20+i%60)
+		if code, ok := failures[i]; ok {
+			lines = append(lines, fmt.Sprintf("%s - - [%s] \"GET /api/cart HTTP/1.1\" %d 189 \"-\" \"holdout-cart/%d\" request_id=cart-%04d", client, nginxTime(dt), code, i%4, 7780+i-360))
+		} else if i%223 == 0 {
+			lines = append(lines, fmt.Sprintf("%s - - [%s] \"GET /api/search HTTP/1.1\" 502 144 \"-\" \"holdout-cart/%d\" request_id=search-noise-%04d", client, nginxTime(dt), i%4, i))
+		} else {
+			lines = append(lines, fmt.Sprintf("%s - - [%s] \"GET /api/cart HTTP/1.1\" 200 %d \"-\" \"holdout-cart/%d\" request_id=cart-noise-%04d", client, nginxTime(dt), 250+i%300, i%4, i))
+		}
+	}
+	return lines
+}
+
+func generateHoldoutCartSystemLog() []string {
+	start := time.Date(2026, 5, 1, 17, 40, 0, 0, time.UTC)
+	events := map[int]string{
+		292: "cart-node redis-server[771]: clients nearing maxclients connected_clients=998 maxclients=1000",
+		318: "cart-node redis-server[771]: ERR max number of clients reached client=10.2.4.55:44821",
+		322: "cart-node kernel: TCP: request_sock_TCP: Possible SYN flooding on port 6379. Sending cookies. Check SNMP counters.",
+		405: "cart-node postgres[2400]: LOG: connection count active=32 max=100 database=cart status=OK",
+		512: "cart-node redis-server[771]: clients below maxclients connected_clients=212 maxclients=1000 recovered=true",
+	}
+	lines := make([]string, 0, 760)
+	for i := 0; i < 760; i++ {
+		dt := start.Add(time.Duration(i) * time.Second)
+		if event, ok := events[i]; ok {
+			lines = append(lines, fmt.Sprintf("%s %s", syslogTime(dt), event))
+		} else if i%181 == 0 {
+			lines = append(lines, fmt.Sprintf("%s cart-node kernel: audit: type=1400 apparmor=\"DENIED\" operation=\"open\" profile=\"fixture\" token=cart-system-noise-%04d", syslogTime(dt), i))
+		} else {
+			lines = append(lines, fmt.Sprintf("%s cart-node systemd[1]: fixture heartbeat unit=cart.slice sequence=%04d token=cart-system-holdout", syslogTime(dt), i))
 		}
 	}
 	return lines
