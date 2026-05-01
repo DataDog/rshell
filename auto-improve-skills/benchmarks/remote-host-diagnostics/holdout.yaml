@@ -1,0 +1,122 @@
+name: remote-host-diagnostics-holdout
+# Keep this suite out of normal skilltrain inner loops. It is a small acceptance
+# suite with different fixture facts/layouts to catch overfitting to cases.yaml.
+description: >-
+  Small holdout benchmarks for the local ./rshell remote-host-diagnostics skill.
+  Cases use deterministic generated fixture logs with facts not present in the
+  public training suite.
+skill_path: ../../skills/remote-host-diagnostics
+cases:
+  - id: holdout-payments-dns-502
+    title: Distinguish payment upstream DNS failures from database pool noise
+    prompt: |-
+      Fake holdout investigation: checkout payment requests are returning HTTP 502s around 14:22 UTC.
+      Use the local rshell skill against this generated fixture log root: {{HOLDOUT_LOG_ROOT}}.
+      Determine the likely backend cause, separate it from database/pool red herrings, and provide evidence. Keep the investigation read-only and bounded.
+    judge_rubric: |-
+      Excellent answers correlate /api/pay 502s to checkout service payment-upstream DNS resolution failures for payments.service.consul, cite checkout.log/nginx access/system DNS resolver evidence, explicitly say Postgres/database pool evidence looks healthy or unrelated, list bounded rshell commands, and suggest only safe read-only next checks such as DNS/resolver metrics/logs.
+    criteria:
+      - name: final identifies payment upstream DNS resolution as likely cause
+        source: final
+        case_insensitive: true
+        regex: "dns|lookup|resolver|servfail|no such host|payments\\.service\\.consul"
+        require_evidence: true
+        evidence_regex: "lookup payments\\.service\\.consul|SERVFAIL|DNS server|server misbehaving|no such host"
+        points: 25
+      - name: final mentions HTTP 502 payment symptom
+        source: final
+        case_insensitive: true
+        regex: "502|/api/pay|payment|payments"
+        require_evidence: true
+        evidence_regex: "HTTP/1.1\" 502|status=502|route=/api/pay"
+        points: 15
+      - name: final distinguishes database/postgres pool as not root cause
+        source: final
+        case_insensitive: true
+        regex: "database|postgres|pool|db"
+        require_evidence: true
+        evidence_regex: "postgres health status=OK|database not saturated|connections active=43|max=120"
+        points: 15
+      - name: final cites checkout service log evidence
+        source: final
+        case_insensitive: true
+        regex: "checkout\\.log|service log|checkout"
+        points: 10
+      - name: final cites nginx access evidence
+        source: final
+        case_insensitive: true
+        regex: "nginx|access\\.log"
+        points: 10
+      - name: final cites system resolver evidence
+        source: final
+        case_insensitive: true
+        regex: "system\\.log|systemd-resolved|dnsmasq|resolver"
+        points: 10
+      - name: commands use provided holdout log root as allowed path
+        source: commands
+        contains: "--allowed-paths {{HOLDOUT_LOG_ROOT}}"
+        points: 5
+      - name: commands use bounded filters across relevant logs
+        source: commands
+        case_insensitive: true
+        regex: "grep.*(502|dns|lookup|servfail|payments|postgres)|find|head|tail"
+        points: 5
+      - name: final suggests safe read-only DNS/resolver next check
+        source: final
+        case_insensitive: true
+        regex: "next|check|inspect|verify|dns|resolver|metrics|logs"
+        points: 5
+
+  - id: holdout-ambiguous-worker-restart
+    title: Avoid overclaiming when worker restart cause is not evidenced
+    prompt: |-
+      Fake holdout investigation: an async worker restarted around 16:03 UTC, and a teammate suspects a bad deploy.
+      Use the local rshell skill against this generated fixture log root: {{HOLDOUT_LOG_ROOT}}.
+      Determine what the logs prove, whether the bad-deploy theory is supported, and what safe read-only check should come next.
+    judge_rubric: |-
+      Excellent answers identify that async-worker received SIGTERM and restarted cleanly, note the deploy completed about an hour earlier with the same build and no direct error tying it to the restart, avoid asserting a definitive root cause, cite worker/auth/deploy evidence as available, and recommend safe read-only next checks such as orchestrator/systemd/kubernetes events or service manager logs around the signal.
+    criteria:
+      - name: final identifies SIGTERM and clean restart evidence
+        source: final
+        case_insensitive: true
+        regex: "sigterm|restarted|shutdown complete|boot complete|restart"
+        require_evidence: true
+        evidence_regex: "received signal signal=SIGTERM|shutdown complete|boot complete.*same build"
+        points: 25
+      - name: final avoids claiming bad deploy as confirmed root cause
+        source: final
+        case_insensitive: true
+        not: true
+        regex: "bad deploy caused the|deploy was the cause|root cause was.*deploy|definitive.*deploy"
+        points: 15
+      - name: final states evidence is insufficient or cause is unknown/uncertain
+        source: final
+        case_insensitive: true
+        regex: "insufficient|not enough evidence|unknown|uncertain|cannot confirm|not proven|no direct evidence"
+        points: 20
+      - name: final distinguishes deploy timing or same-build evidence
+        source: final
+        case_insensitive: true
+        regex: "same build|deploy.*earlier|completed|dep-771|15:02"
+        require_evidence: true
+        evidence_regex: "dep-771|completed status=success|same build after restart"
+        points: 15
+      - name: final cites worker log evidence
+        source: final
+        case_insensitive: true
+        regex: "worker\\.log|async-worker"
+        points: 10
+      - name: commands use provided holdout log root as allowed path
+        source: commands
+        contains: "--allowed-paths {{HOLDOUT_LOG_ROOT}}"
+        points: 5
+      - name: commands inspect worker plus auth or deploy/system context with bounded filters
+        source: commands
+        case_insensitive: true
+        regex: "grep.*(SIGTERM|deploy|Accepted|sudo|restart|boot)|find|head|tail"
+        points: 5
+      - name: final suggests safe read-only orchestrator or service-manager next check
+        source: final
+        case_insensitive: true
+        regex: "next|check|inspect|verify|systemd|orchestrator|kubernetes|events|service manager|journal"
+        points: 5

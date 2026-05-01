@@ -55,6 +55,12 @@ func GenerateRemoteHostDiagnosticsFixtures(root string) error {
 		{path: "logs/debug-noise.log", lines: generateDebugNoiseLog()},
 		{path: "container/host/var/log/datadog/agent.log", lines: generateContainerAgentLog()},
 		{path: "container/host/var/log/syslog", lines: generateContainerSyslog()},
+		{path: "holdout/logs/app/checkout.log", lines: generateHoldoutCheckoutLog()},
+		{path: "holdout/logs/nginx/access.log", lines: generateHoldoutNginxAccessLog()},
+		{path: "holdout/logs/system.log", lines: generateHoldoutSystemLog()},
+		{path: "holdout/logs/app/worker.log", lines: generateHoldoutWorkerLog()},
+		{path: "holdout/logs/auth.log", lines: generateHoldoutAuthLog()},
+		{path: "holdout/logs/deploy.log", lines: generateHoldoutDeployLog()},
 	}
 
 	for _, file := range files {
@@ -515,6 +521,152 @@ func generateContainerSyslog() []string {
 			lines = append(lines, fmt.Sprintf("%s node containerd[33]: image garbage collection completed reclaimed=%dMB token=container-syslog-noise-%04d", syslogTime(dt), i%17, i))
 		} else {
 			lines = append(lines, fmt.Sprintf("%s node systemd[1]: fixture heartbeat unit=container-runtime.service sequence=%04d token=container-syslog-noise", syslogTime(dt), i))
+		}
+	}
+	return lines
+}
+
+func generateHoldoutCheckoutLog() []string {
+	start := time.Date(2026, 5, 1, 14, 15, 0, 0, time.UTC)
+	events := map[int]string{
+		0:   "INFO service=checkout boot complete version=2026.05.01 build=holdout-a config_source=file",
+		312: "INFO service=checkout postgres health status=OK pool=checkout_rw active=42 idle=18 max=120 latency_ms=15",
+		396: "WARN service=checkout dependency latency high dependency=payments route=/api/pay p95_ms=1800 request_id=pay-2198",
+		414: "ERROR service=checkout request failed id=pay-2201 route=/api/pay status=502 upstream=payments error=\"lookup payments.service.consul: no such host\" resolver=10.0.0.53",
+		421: "ERROR service=checkout request failed id=pay-2202 route=/api/pay status=502 upstream=payments error=\"dial tcp: lookup payments.service.consul: i/o timeout\" resolver=10.0.0.53",
+		427: "WARN service=checkout circuit breaker opened dependency=payments reason=\"dns resolution failure\" window=60s",
+		456: "INFO service=checkout postgres health status=OK pool=checkout_rw active=43 idle=17 max=120 latency_ms=17 note=\"database not saturated during payment errors\"",
+		509: "ERROR service=checkout request failed id=pay-2211 route=/api/pay status=502 upstream=payments error=\"lookup payments.service.consul: server misbehaving\" resolver=10.0.0.53",
+		690: "INFO service=checkout dependency=payments recovered status=OK dns_cache_refreshed=true",
+	}
+	routes := []string{"/api/cart", "/api/pay", "/api/profile", "/health"}
+	lines := make([]string, 0, 760)
+	for i := 0; i < 760; i++ {
+		dt := start.Add(time.Duration(i) * time.Second)
+		if event, ok := events[i]; ok {
+			lines = append(lines, fmt.Sprintf("%s %s", isoTime(dt), event))
+			continue
+		}
+		route := routes[(i*3)%len(routes)]
+		if i%173 == 0 {
+			lines = append(lines, fmt.Sprintf("%s WARN service=checkout db pool wait elevated pool=analytics_ro active=%d max=20 recovered=true note=\"old analytics noise, not checkout_rw\"", isoTime(dt), 12+i%5))
+		} else if i%137 == 0 {
+			lines = append(lines, fmt.Sprintf("%s ERROR service=checkout feature flag refresh failed flag=upsell recovered=true token=holdout-checkout-noise-%04d", isoTime(dt), i))
+		} else {
+			lines = append(lines, fmt.Sprintf("%s INFO service=checkout handled request id=pay-noise-%04d route=%s status=200 latency_ms=%d token=holdout-checkout", isoTime(dt), i, route, 30+i%120))
+		}
+	}
+	return lines
+}
+
+func generateHoldoutNginxAccessLog() []string {
+	start := time.Date(2026, 5, 1, 14, 10, 0, 0, time.UTC)
+	failures := map[int]int{720: 502, 724: 502, 729: 502, 736: 502, 741: 502, 748: 502, 756: 502, 768: 502}
+	lines := make([]string, 0, 1050)
+	for i := 0; i < 1050; i++ {
+		dt := start.Add(time.Duration(i) * time.Second)
+		client := fmt.Sprintf("198.51.100.%d", 40+i%40)
+		if code, ok := failures[i]; ok {
+			lines = append(lines, fmt.Sprintf("%s - - [%s] \"POST /api/pay HTTP/1.1\" %d 173 \"-\" \"holdout-client/%d\" request_id=pay-%04d", client, nginxTime(dt), code, i%5, 2200+i-720))
+		} else if i%211 == 0 {
+			lines = append(lines, fmt.Sprintf("%s - - [%s] \"GET /api/search?q=noise HTTP/1.1\" 500 211 \"-\" \"holdout-client/%d\" request_id=search-holdout-%04d", client, nginxTime(dt), i%5, i))
+		} else {
+			route := "/api/cart"
+			method := "GET"
+			if i%4 == 0 {
+				route = "/api/pay"
+				method = "POST"
+			}
+			lines = append(lines, fmt.Sprintf("%s - - [%s] \"%s %s HTTP/1.1\" 200 %d \"-\" \"holdout-client/%d\" request_id=pay-noise-%04d", client, nginxTime(dt), method, route, 300+i%400, i%5, i))
+		}
+	}
+	return lines
+}
+
+func generateHoldoutSystemLog() []string {
+	start := time.Date(2026, 5, 1, 14, 15, 0, 0, time.UTC)
+	events := map[int]string{
+		378: "edge systemd-resolved[511]: DNS server 10.0.0.53 timed out, retrying transaction=payments.service.consul type=A",
+		414: "edge systemd-resolved[511]: Server returned error SERVFAIL for payments.service.consul IN A",
+		418: "edge dnsmasq[902]: query[A] payments.service.consul from 10.0.12.44",
+		419: "edge dnsmasq[902]: forwarded payments.service.consul to 10.0.0.53",
+		420: "edge dnsmasq[902]: reply payments.service.consul is SERVFAIL",
+		456: "edge postgres[2300]: LOG: checkpoint complete: wrote 48 buffers; connections active=43 max=120",
+		691: "edge systemd-resolved[511]: DNS lookup for payments.service.consul recovered status=NOERROR ttl=30",
+	}
+	lines := make([]string, 0, 760)
+	for i := 0; i < 760; i++ {
+		dt := start.Add(time.Duration(i) * time.Second)
+		if event, ok := events[i]; ok {
+			lines = append(lines, fmt.Sprintf("%s %s", syslogTime(dt), event))
+		} else if i%149 == 0 {
+			lines = append(lines, fmt.Sprintf("%s edge kernel: audit: type=1400 apparmor=\"DENIED\" operation=\"open\" profile=\"fixture\" name=\"/tmp/holdout-noise-%d\"", syslogTime(dt), i))
+		} else {
+			lines = append(lines, fmt.Sprintf("%s edge systemd[1]: fixture heartbeat unit=checkout.slice sequence=%04d token=holdout-system", syslogTime(dt), i))
+		}
+	}
+	return lines
+}
+
+func generateHoldoutWorkerLog() []string {
+	start := time.Date(2026, 5, 1, 15, 58, 0, 0, time.UTC)
+	events := map[int]string{
+		0:   "INFO service=async-worker boot complete version=2026.05.01 build=77ac21 pid=4441",
+		215: "WARN service=async-worker heartbeat delayed queue=emails lag_ms=2100 recovered=true",
+		300: "INFO service=async-worker received signal signal=SIGTERM pid=4441 reason=unknown drain_started=true",
+		303: "INFO service=async-worker shutdown complete pid=4441 jobs_inflight=0 exit_code=0",
+		316: "INFO service=async-worker boot complete version=2026.05.01 build=77ac21 pid=4528 note=\"same build after restart\"",
+		410: "INFO service=async-worker queue healthy queue=emails lag_ms=88",
+	}
+	lines := make([]string, 0, 620)
+	for i := 0; i < 620; i++ {
+		dt := start.Add(time.Duration(i) * time.Second)
+		if event, ok := events[i]; ok {
+			lines = append(lines, fmt.Sprintf("%s %s", isoTime(dt), event))
+		} else if i%181 == 0 {
+			lines = append(lines, fmt.Sprintf("%s ERROR service=async-worker email provider transient timeout recovered=true token=worker-noise-%04d", isoTime(dt), i))
+		} else {
+			lines = append(lines, fmt.Sprintf("%s DEBUG service=async-worker heartbeat pid=4441 sequence=%04d token=worker-holdout", isoTime(dt), i))
+		}
+	}
+	return lines
+}
+
+func generateHoldoutAuthLog() []string {
+	start := time.Date(2026, 5, 1, 15, 45, 0, 0, time.UTC)
+	events := map[int]string{
+		240: "ops sshd[3100]: Accepted publickey for deploy from 203.0.113.42 port 61022 ssh2: ED25519 SHA256:holdout-deploy",
+		312: "ops sudo:   deploy : TTY=pts/1 ; PWD=/srv/app ; USER=root ; COMMAND=/usr/bin/systemctl status async-worker.service",
+		780: "ops sudo:   deploy : TTY=pts/1 ; PWD=/srv/app ; USER=root ; COMMAND=/usr/bin/journalctl -u async-worker -n 50",
+	}
+	lines := make([]string, 0, 980)
+	for i := 0; i < 980; i++ {
+		dt := start.Add(time.Duration(i) * time.Second)
+		if event, ok := events[i]; ok {
+			lines = append(lines, fmt.Sprintf("%s %s", syslogTime(dt), event))
+		} else if i%197 == 0 {
+			lines = append(lines, fmt.Sprintf("%s ops sshd[%d]: Failed password for invalid user temp from 198.51.100.%d port %d ssh2", syslogTime(dt), 4200+i, 80+i%10, 50000+i))
+		} else {
+			lines = append(lines, fmt.Sprintf("%s ops CRON[%d]: pam_unix(cron:session): session closed for user root token=holdout-auth-%04d", syslogTime(dt), 5000+i, i))
+		}
+	}
+	return lines
+}
+
+func generateHoldoutDeployLog() []string {
+	start := time.Date(2026, 5, 1, 15, 0, 0, 0, time.UTC)
+	events := map[int]string{
+		10:  "INFO deploy id=dep-771 service=async-worker version=2026.05.01 started_by=release-bot",
+		132: "INFO deploy id=dep-771 service=async-worker version=2026.05.01 completed status=success finished_at=2026-05-01T15:02:12Z",
+		540: "INFO deploy controller heartbeat service=checkout no_change=true",
+	}
+	lines := make([]string, 0, 620)
+	for i := 0; i < 620; i++ {
+		dt := start.Add(time.Duration(i) * time.Second)
+		if event, ok := events[i]; ok {
+			lines = append(lines, fmt.Sprintf("%s %s", isoTime(dt), event))
+		} else {
+			lines = append(lines, fmt.Sprintf("%s DEBUG deploy controller idle sequence=%04d token=holdout-deploy", isoTime(dt), i))
 		}
 	}
 	return lines

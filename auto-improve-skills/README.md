@@ -55,13 +55,17 @@ go run ./auto-improve-skills/cmd/skillbench -limit 1
 # One specific case
 go run ./auto-improve-skills/cmd/skillbench -case datadog-agent-config-regression
 
+# Small holdout acceptance suite (not used by the default training loop)
+go run ./auto-improve-skills/cmd/skillbench \
+  -cases auto-improve-skills/benchmarks/remote-host-diagnostics/holdout.yaml
+
 # More semantic, more expensive scoring with LLM-as-judge
 go run ./auto-improve-skills/cmd/skillbench -judge
 ```
 
 The runner deterministically regenerates large fake log fixtures under `auto-improve-skills/benchmarks/remote-host-diagnostics/generated-fixtures/` before each run. The generated logs are gitignored.
 
-The runner writes a JSON report and raw nested-`pi` JSONL transcripts under `auto-improve-skills/runs/`. Reports include quality scores plus a soft composite objective (`objective_normalized_score`) that accounts for wall-clock duration and skill size.
+The runner writes a JSON report and raw nested-`pi` JSONL transcripts under `auto-improve-skills/runs/`. Reports include quality scores plus a soft composite objective (`objective_normalized_score`) that accounts for wall-clock duration and skill size. Deterministic scoring can require evidence in tool output for a final-answer claim, and hard safety gates zero a case if the transcript violates benchmark invariants such as direct fixture reads, write/remediation commands, missing `--allowed-paths` for fixture log reads, or whole-log dumps.
 
 If you see `exec: "pi": executable file not found in $PATH`, either update to this version of the tooling or pass an explicit binary:
 
@@ -132,7 +136,9 @@ The suite measures final-answer quality across realistic fake investigations. It
 - Containerized Agent host-log fallback with x509 failures caused by clock skew
 - Unsupported `ss` flag recovery
 
-More cases can be added to `benchmarks/remote-host-diagnostics/cases.yaml` without changing Go code.
+A small holdout acceptance suite lives in `benchmarks/remote-host-diagnostics/holdout.yaml`. It uses separate generated fixture facts and is intended for occasional gating rather than every inner-loop training run, keeping the default benchmark duration reasonable.
+
+More cases can be added to `benchmarks/remote-host-diagnostics/cases.yaml` or the holdout suite without changing Go code.
 
 ## Report
 

@@ -13,6 +13,7 @@ auto-improve-skills/skills/remote-host-diagnostics/SKILL.md
 Do not edit benchmark cases, fixture generation, Go tooling, reports, run outputs, or generated logs unless a human explicitly asks for framework changes. In particular:
 
 - Do not edit `auto-improve-skills/benchmarks/remote-host-diagnostics/cases.yaml` during skill tuning.
+- Do not edit `auto-improve-skills/benchmarks/remote-host-diagnostics/holdout.yaml` during skill tuning.
 - Do not edit `auto-improve-skills/internal/autoresearch/fixtures.go` during skill tuning.
 - Do not commit `auto-improve-skills/benchmarks/remote-host-diagnostics/generated-fixtures/`; it is generated and gitignored.
 - Do not overfit the skill to benchmark cases. In particular, do not hard-code case names, prompt wording, fixture facts, specific IPs, transaction IDs, line numbers, root causes, filenames, or expected-answer templates. Improve general diagnostic behavior instead.
@@ -98,6 +99,13 @@ For one failing case:
 go run ./auto-improve-skills/cmd/skillbench -case datadog-agent-config-regression
 ```
 
+For the small holdout acceptance suite, run it explicitly rather than in every inner-loop iteration:
+
+```sh
+go run ./auto-improve-skills/cmd/skillbench \
+  -cases auto-improve-skills/benchmarks/remote-host-diagnostics/holdout.yaml
+```
+
 To validate suite loading and fixture generation cheaply without nested live agent runs:
 
 ```sh
@@ -110,7 +118,7 @@ For a more semantic but more expensive score, enable the LLM judge:
 go run ./auto-improve-skills/cmd/skillbench -judge
 ```
 
-The JSON report includes the primary quality score plus a simple overall objective that softly rewards faster investigations and a smaller skill file.
+The JSON report includes the primary quality score plus a simple overall objective that softly rewards faster investigations and a smaller skill file. Some deterministic criteria now require matching evidence in tool output/transcript, and hard safety gates zero a case score for invariant violations such as direct fixture reads, missing `--allowed-paths` for fixture logs, write/remediation commands, or unbounded whole-log dumps.
 
 ## Scoring and acceptance design
 

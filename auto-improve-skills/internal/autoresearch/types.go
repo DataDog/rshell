@@ -40,13 +40,17 @@ type Case struct {
 // results, or all transcript text. It is intentionally simple so new benchmark
 // cases can be added without writing Go code.
 type Criterion struct {
-	Name            string  `json:"name" yaml:"name"`
-	Source          string  `json:"source" yaml:"source"` // final, commands, tool_results, transcript
-	Contains        string  `json:"contains,omitempty" yaml:"contains,omitempty"`
-	Regex           string  `json:"regex,omitempty" yaml:"regex,omitempty"`
-	Not             bool    `json:"not,omitempty" yaml:"not,omitempty"`
-	CaseInsensitive bool    `json:"case_insensitive,omitempty" yaml:"case_insensitive,omitempty"`
-	Points          float64 `json:"points" yaml:"points"`
+	Name             string  `json:"name" yaml:"name"`
+	Source           string  `json:"source" yaml:"source"` // final, commands, tool_results, transcript
+	Contains         string  `json:"contains,omitempty" yaml:"contains,omitempty"`
+	Regex            string  `json:"regex,omitempty" yaml:"regex,omitempty"`
+	Not              bool    `json:"not,omitempty" yaml:"not,omitempty"`
+	CaseInsensitive  bool    `json:"case_insensitive,omitempty" yaml:"case_insensitive,omitempty"`
+	RequireEvidence  bool    `json:"require_evidence,omitempty" yaml:"require_evidence,omitempty"`
+	EvidenceSource   string  `json:"evidence_source,omitempty" yaml:"evidence_source,omitempty"` // defaults to tool_results
+	EvidenceContains string  `json:"evidence_contains,omitempty" yaml:"evidence_contains,omitempty"`
+	EvidenceRegex    string  `json:"evidence_regex,omitempty" yaml:"evidence_regex,omitempty"`
+	Points           float64 `json:"points" yaml:"points"`
 }
 
 // ToolCall captures a tool invocation from pi's JSON event stream.
@@ -109,6 +113,7 @@ type CaseResult struct {
 	DurationScore         float64           `json:"duration_score"`
 	Criteria              []CriterionResult `json:"criteria"`
 	Judge                 *JudgeResult      `json:"judge,omitempty"`
+	SafetyViolations      []string          `json:"safety_violations,omitempty"`
 	RawJSONLPath          string            `json:"raw_jsonl_path,omitempty"`
 	Error                 string            `json:"error,omitempty"`
 	StartedAt             time.Time         `json:"started_at"`
@@ -220,13 +225,14 @@ func Variables(root, skillPath string) map[string]string {
 	benchDir := RemoteHostDiagnosticsBenchmarkDir(root)
 	fixtureRoot := RemoteHostDiagnosticsGeneratedFixtureRoot(root)
 	return map[string]string{
-		"ROOT":           root,
-		"AUTO_DIR":       autoDir,
-		"BENCH_DIR":      benchDir,
-		"SKILL_PATH":     skillPath,
-		"LOG_ROOT":       filepath.Join(fixtureRoot, "logs"),
-		"EMPTY_LOG_ROOT": filepath.Join(fixtureRoot, "container", "var", "log"),
-		"HOST_LOG_ROOT":  filepath.Join(fixtureRoot, "container", "host", "var", "log"),
+		"ROOT":             root,
+		"AUTO_DIR":         autoDir,
+		"BENCH_DIR":        benchDir,
+		"SKILL_PATH":       skillPath,
+		"LOG_ROOT":         filepath.Join(fixtureRoot, "logs"),
+		"EMPTY_LOG_ROOT":   filepath.Join(fixtureRoot, "container", "var", "log"),
+		"HOST_LOG_ROOT":    filepath.Join(fixtureRoot, "container", "host", "var", "log"),
+		"HOLDOUT_LOG_ROOT": filepath.Join(fixtureRoot, "holdout", "logs"),
 	}
 }
 

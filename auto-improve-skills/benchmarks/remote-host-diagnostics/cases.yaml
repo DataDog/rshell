@@ -18,21 +18,29 @@ cases:
         source: final
         case_insensitive: true
         regex: "(yaml|config).*line=42|line 42.*(yaml|config)|invalid configuration|config validation failed"
+        require_evidence: true
+        evidence_regex: "config validation failed.*line=42|line=42.*yaml|invalid configuration"
         points: 25
       - name: final ties the regression to remote config reload rc-8831
         source: final
         case_insensitive: true
         regex: "remote[- ]config|rc-8831|config reload"
+        require_evidence: true
+        evidence_regex: "remote config|rc-8831|config reload"
         points: 15
       - name: final connects failure to stopped metrics or core agent
         source: final
         case_insensitive: true
         regex: "stopped|no metrics|metrics.*stopped|core agent|aggregator"
+        require_evidence: true
+        evidence_regex: "core agent stopped|aggregator stopped|no metrics flushed"
         points: 15
       - name: final distinguishes trace/APM/intake noise from root cause
         source: final
         case_insensitive: true
         regex: "trace|apm|intake|red herring|not.*cause|unrelated"
+        require_evidence: true
+        evidence_regex: "trace-agent still running|APM intake|forwarder recovered|red herring: traces unaffected|intake"
         points: 10
       - name: final cites evidence from agent.log
         source: final
@@ -65,16 +73,22 @@ cases:
       - name: final identifies brute-force source IP
         source: final
         contains: "198.51.100.23"
+        require_evidence: true
         points: 20
       - name: final describes failed-password brute-force pattern
         source: final
         case_insensitive: true
         regex: "failed password|failed login|brute|invalid user"
+        require_evidence: true
+        evidence_regex: "Failed password|Invalid user"
         points: 15
       - name: final includes approximate count near 96 failures
         source: final
         case_insensitive: true
         regex: '\b96\b|\b9[0-9]\b|about 100|roughly 100|~100|hundred'
+        require_evidence: true
+        evidence_source: transcript
+        evidence_regex: '\b96\b|198\.51\.100\.23|Failed password'
         points: 15
       - name: final says there was no successful login from the suspicious source
         source: final
@@ -84,6 +98,8 @@ cases:
       - name: final distinguishes accepted publickey login as a different source
         source: final
         regex: '203\.0\.113\.8|198\.51\.100\.77|different IP|different source'
+        require_evidence: true
+        evidence_regex: 'Accepted publickey.*(203\.0\.113\.8|198\.51\.100\.77)'
         points: 10
       - name: final cites auth.log
         source: final
@@ -115,16 +131,22 @@ cases:
         source: final
         case_insensitive: true
         regex: "500|502|checkout"
+        require_evidence: true
+        evidence_regex: 'status=500|status=502|HTTP/1.1" 50[02]|request failed'
         points: 10
       - name: final identifies database/postgres connection slot or pool exhaustion
         source: final
         case_insensitive: true
         regex: "database|postgres|connection refused|connection slots|too many clients|pool exhausted|db pool"
+        require_evidence: true
+        evidence_regex: "db pool exhausted|remaining connection slots|too many clients|database connection refused"
         points: 20
       - name: final identifies reporting-worker or connection fanout as likely driver
         source: final
         case_insensitive: true
         regex: "reporting-worker|connection fanout|fanout|reports"
+        require_evidence: true
+        evidence_regex: "reporting-worker|connection fanout|application_name=reporting-worker"
         points: 15
       - name: final cites service log evidence
         source: final
@@ -170,16 +192,21 @@ cases:
         source: final
         case_insensitive: true
         regex: "x509|not yet valid|certificate.*not"
+        require_evidence: true
+        evidence_regex: "x509: certificate is not yet valid|certificate is not yet valid"
         points: 20
       - name: final identifies clock skew or time synchronization as root cause
         source: final
         case_insensitive: true
         regex: "clock|skew|chrony|chronyd|time sync|system clock|notbefore"
+        require_evidence: true
+        evidence_regex: "chronyd|clock.*skew|System clock|NotBefore|clock synchronized"
         points: 20
       - name: final names kubernetes_apiserver check
         source: final
         case_insensitive: true
         contains: "kubernetes_apiserver"
+        require_evidence: true
         points: 15
       - name: final mentions host-mounted fallback or empty primary logs
         source: final
@@ -233,6 +260,9 @@ cases:
         source: final
         case_insensitive: true
         regex: "unsupported|not supported|process|pid|-p"
+        require_evidence: true
+        evidence_source: transcript
+        evidence_regex: "help ss|Usage: ss|unsupported|unknown flag|process|pid|-p"
         points: 20
       - name: final mentions supported listening TCP socket collection and local limitations
         source: final

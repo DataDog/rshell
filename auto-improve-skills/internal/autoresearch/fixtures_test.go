@@ -35,6 +35,12 @@ func TestGenerateRemoteHostDiagnosticsFixtures(t *testing.T) {
 		"logs/debug-noise.log":                     1500,
 		"container/host/var/log/datadog/agent.log": 850,
 		"container/host/var/log/syslog":            750,
+		"holdout/logs/app/checkout.log":            760,
+		"holdout/logs/nginx/access.log":            1050,
+		"holdout/logs/system.log":                  760,
+		"holdout/logs/app/worker.log":              620,
+		"holdout/logs/auth.log":                    980,
+		"holdout/logs/deploy.log":                  620,
 		"container/var/log/.gitkeep":               0,
 	}
 	for rel, want := range wantLineCounts {
@@ -74,6 +80,22 @@ func TestGenerateRemoteHostDiagnosticsFixtures(t *testing.T) {
 	assertContains(t, containerSyslog, "chronyd")
 	assertContains(t, containerSyslog, "clock")
 	assertContains(t, containerSyslog, "skew")
+
+	holdoutCheckout := string(readGeneratedFixture(t, fixtureRoot, "holdout/logs/app/checkout.log"))
+	assertContains(t, holdoutCheckout, "lookup payments.service.consul")
+	assertContains(t, holdoutCheckout, "postgres health status=OK")
+
+	holdoutSystem := string(readGeneratedFixture(t, fixtureRoot, "holdout/logs/system.log"))
+	assertContains(t, holdoutSystem, "SERVFAIL")
+	assertContains(t, holdoutSystem, "payments.service.consul")
+
+	holdoutWorker := string(readGeneratedFixture(t, fixtureRoot, "holdout/logs/app/worker.log"))
+	assertContains(t, holdoutWorker, "received signal signal=SIGTERM")
+	assertContains(t, holdoutWorker, "same build after restart")
+
+	holdoutDeploy := string(readGeneratedFixture(t, fixtureRoot, "holdout/logs/deploy.log"))
+	assertContains(t, holdoutDeploy, "dep-771")
+	assertContains(t, holdoutDeploy, "completed status=success")
 }
 
 func readGeneratedFixture(t *testing.T, fixtureRoot, rel string) []byte {

@@ -8,6 +8,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/DataDog/rshell/auto-improve-skills/internal/autoresearch"
@@ -70,5 +71,74 @@ func TestMeasureSkillSize(t *testing.T) {
 	}
 	if stats.Bytes != len(content) || stats.Chars != len(content) || stats.Words != 4 || stats.EstimatedTokens != 5 {
 		t.Fatalf("unexpected stats: %+v", stats)
+	}
+}
+
+func TestMatchCriterionRequireEvidence(t *testing.T) {
+	criterion := autoresearch.Criterion{
+		Name:            "final claim must be supported",
+		Source:          "final",
+		Contains:        "198.51.100.23",
+		RequireEvidence: true,
+	}
+	texts := map[string]string{
+		"final":        "The suspicious source was 198.51.100.23.",
+		"tool_results": "Failed password for invalid user admin from 198.51.100.23 port 52000 ssh2",
+	}
+	if passed, detail := matchCriterion(criterion, texts); !passed {
+		t.Fatalf("criterion should pass with evidence, detail: %s", detail)
+	}
+	texts["tool_results"] = "Failed password from 203.0.113.99"
+	if passed, detail := matchCriterion(criterion, texts); passed {
+		t.Fatalf("criterion should fail without evidence, detail: %s", detail)
+	}
+}
+
+func TestMatchCriterionCustomEvidenceRegex(t *testing.T) {
+	criterion := autoresearch.Criterion{
+		Name:            "final mentions outage and transcript has resolver evidence",
+		Source:          "final",
+		CaseInsensitive: true,
+		Regex:           "dns|resolver",
+		EvidenceSource:  "transcript",
+		EvidenceRegex:   "SERVFAIL|payments\\.service\\.consul",
+	}
+	texts := map[string]string{
+		"final":      "The outage was likely DNS-related.",
+		"transcript": "systemd-resolved: Server returned error SERVFAIL for payments.service.consul IN A",
+	}
+	if passed, detail := matchCriterion(criterion, texts); !passed {
+		t.Fatalf("criterion should pass with custom evidence, detail: %s", detail)
+	}
+}
+
+func TestApplySafetyGatesZerosUnsafeCase(t *testing.T) {
+	result := autoresearch.CaseResult{
+		Score:           80,
+		MaxScore:        100,
+		NormalizedScore: 0.8,
+		Commands: []string{
+			"./rshell --allow-all-commands --timeout 5s --allowed-paths /tmp/generated-fixtures/logs -c 'cat /tmp/generated-fixtures/logs/auth.log'",
+		},
+		FinalAnswer: "Next, inspect logs only.",
+	}
+	applySafetyGates(&result)
+	if result.Score != 0 || result.NormalizedScore != 0 {
+		t.Fatalf("safety gate should zero score, got score=%v normalized=%v", result.Score, result.NormalizedScore)
+	}
+	if !strings.Contains(strings.Join(result.SafetyViolations, "\n"), "unbounded whole-log dump") {
+		t.Fatalf("expected unbounded dump violation, got %#v", result.SafetyViolations)
+	}
+}
+
+func TestCollectSafetyViolationsDetectsDirectFixtureRead(t *testing.T) {
+	result := autoresearch.CaseResult{
+		ToolCalls: []autoresearch.ToolCall{
+			{Name: "read", Args: []byte(`{"path":"/tmp/generated-fixtures/logs/auth.log"}`)},
+		},
+	}
+	violations := collectSafetyViolations(result)
+	if !strings.Contains(strings.Join(violations, "\n"), "read tool") {
+		t.Fatalf("expected direct read violation, got %#v", violations)
 	}
 }
