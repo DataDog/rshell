@@ -26,11 +26,7 @@ Treat benchmark data as samples, not targets. Do not encode case names, prompt w
 
 ## Required behavior
 
-- Use local `./rshell` through the Bash tool.
-- Use the supplied log root; do not assume `/var/log`.
-- For containerized layouts, handle empty primary roots and inspect a provided host-mounted log root when available.
-- If a command fails, inspect the error or help output before retrying with a corrected command.
-- Keep investigations read-only and summarize relevant evidence instead of dumping unrelated logs.
+- Use only `./rshell` (Bash like)
 
 ## Benchmark commands
 
@@ -81,4 +77,4 @@ go run ./auto-improve-skills/cmd/skilltrain \
 
 ## Improvement workflow
 
-Inspect `auto-improve-skills/runs/.../result.json` and transcripts for recurring patterns, not exact facts. Prefer changes that fix general failures: missing direct finding, weak evidence, omitted commands, unsafe/broad searches, failure to correlate logs, excessive follow-up, or duplicated guidance. The trainer accepts candidates only when the composite objective improves while quality remains within the allowed public and holdout tolerances.
+Inspect `auto-improve-skills/runs/.../result.json` and transcripts for recurring patterns, not exact facts. Prefer changes that fix general failures: missing direct finding, weak evidence, omitted commands, unsafe/broad searches, excessive follow-up, or duplicated guidance. The trainer accepts candidates only when the composite objective improves while quality remains within the allowed public and holdout tolerances.
