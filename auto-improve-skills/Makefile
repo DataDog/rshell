@@ -11,3 +11,6 @@ train3:
 		-model openai-codex/gpt-5.5 \
 		-iters 3 \
 		-judge
+
+loop:
+	for i in $(seq 0 20); do make train3; done

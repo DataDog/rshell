@@ -1,80 +1,42 @@
 # Auto-Improve Program: remote-host-diagnostics
 
-This directory follows the spirit of Karpathy's `autoresearch`: keep the evaluation harness fixed, let an AI agent edit one target file, run a bounded benchmark, keep improvements, and iterate.
+Improve the `remote-host-diagnostics` skill with a fixed benchmark harness. Keep changes small, general, and auditable.
 
-## Scope and allowed edits
+## Edit scope
 
-During normal improvement iterations, only edit:
+During skill tuning, edit only:
 
 ```text
 auto-improve-skills/skills/remote-host-diagnostics/SKILL.md
 ```
 
-Do not edit benchmark cases, fixture generation, Go tooling, reports, run outputs, or generated logs unless a human explicitly asks for framework changes. In particular:
-
-- Do not edit `auto-improve-skills/benchmarks/remote-host-diagnostics/cases.yaml` during skill tuning.
-- Do not edit `auto-improve-skills/benchmarks/remote-host-diagnostics/holdout.yaml` during skill tuning.
-- Do not edit `auto-improve-skills/internal/autoresearch/fixtures.go` during skill tuning.
-- Do not commit `auto-improve-skills/benchmarks/remote-host-diagnostics/generated-fixtures/`; it is generated and gitignored.
-- Do not overfit the skill to benchmark cases. In particular, do not hard-code case names, prompt wording, fixture facts, specific IPs, transaction IDs, line numbers, root causes, filenames, or expected-answer templates. Improve general diagnostic behavior instead.
+Do not edit benchmark cases, holdout cases, generated fixtures/logs, Go tooling, reports, or run outputs unless explicitly asked for framework changes. Do not commit `auto-improve-skills/benchmarks/remote-host-diagnostics/generated-fixtures/`.
 
 ## Objective
 
-Improve final-answer quality for diagnostics performed through the local `./rshell` binary. Quality is the primary goal, with soft secondary pressure for faster investigations and a smaller skill file. The skill should help an agent produce answers that are:
+Optimize in this order:
 
-- correct about the likely root cause or finding
-- grounded in command output/log evidence
-- explicit about commands run
-- safe and read-only
-- clear about uncertainty and next steps
-- efficient: stop once the finding is well supported instead of running broad or repetitive follow-up commands
-- compact: keep safety-critical instructions, but avoid duplicated or over-specific guidance
+1. Final-answer quality: correct finding/root cause, grounded in command output, explicit about commands run, read-only/safe, clear about uncertainty and next steps.
+2. Efficiency: gather enough evidence, then stop; avoid broad or repetitive searches.
+3. Skill size: keep essential guidance, remove duplication and over-specific prose.
 
-## Anti-overfitting requirement
+## Anti-overfitting
 
-Treat benchmark cases as representative samples, not targets to memorize. Skill changes must improve general diagnostic behavior for unseen incidents, not encode benchmark-specific facts or expected answers.
+Treat benchmark data as samples, not targets. Do not encode case names, prompt wording, fixture-only paths or filenames, IPs, timestamps, IDs, log snippets, root causes, line numbers, or expected-answer templates. Add only general diagnostic behavior that should help unseen incidents.
 
-Do not add guidance that depends on case names, exact prompt wording, fixture-specific filenames, IPs, timestamps, transaction IDs, log snippets, root causes, or answer templates. If a change only helps because it recognizes a benchmark case, prompt pattern, or generated fixture detail, reject it.
-
-Prefer general investigation strategies: bounded searches, evidence gathering, cross-log correlation, uncertainty handling, and clear final answers grounded in observed command output.
-
-## Invariants
+## Required behavior
 
 - Use local `./rshell` through the Bash tool.
-- If the user gives a fake or explicit log root, use that root instead of hard-coded `/var/log`.
-- For containerized layouts, handle empty primary log roots and inspect a provided host-mounted log root when available.
-- If a command fails, explain why and choose a corrected command only after inspecting the failure or help output.
-- The benchmark measures final-answer quality first. It also considers investigation time and skill size as soft preferences.
+- Use the supplied log root; do not assume `/var/log`.
+- For containerized layouts, handle empty primary roots and inspect a provided host-mounted log root when available.
+- If a command fails, inspect the error or help output before retrying with a corrected command.
+- Keep investigations read-only and summarize relevant evidence instead of dumping unrelated logs.
 
-## Generated fixtures
+## Benchmark commands
 
-Benchmark logs are generated deterministically, not committed as static large files.
+Run from the repository root.
 
-- `cmd/skillbench` regenerates fixtures automatically before running the remote-host-diagnostics suite.
-- To regenerate them manually without nested agent runs:
-
-  ```sh
-  go run ./auto-improve-skills/cmd/skillfixtures
-  ```
-
-- Generated logs live under:
-
-  ```text
-  auto-improve-skills/benchmarks/remote-host-diagnostics/generated-fixtures/
-  ```
-
-- Fixture variables used by cases point at generated paths:
-  - `{{LOG_ROOT}}`
-  - `{{EMPTY_LOG_ROOT}}`
-  - `{{HOST_LOG_ROOT}}`
-
-The generated logs are intentionally noisy and larger: rotated files, red herrings, cross-service correlations, SSH/auth noise, Datadog Agent logs, nginx/app/system logs, and container host-log fallback layouts. Skill improvements should teach bounded investigation strategies that work on these patterns without memorizing fixture content.
-
-## Benchmark
-
-Run commands from the repository root.
-
-Run the fixed benchmark suite with:
+Full suite:
 
 ```sh
 go run ./auto-improve-skills/cmd/skillbench \
@@ -83,51 +45,32 @@ go run ./auto-improve-skills/cmd/skillbench \
   -skill auto-improve-skills/skills/remote-host-diagnostics
 ```
 
-For a quicker smoke test:
+Smoke test:
 
 ```sh
 go run ./auto-improve-skills/cmd/skillbench -limit 1
 ```
 
-For one failing case:
-
-```sh
-go run ./auto-improve-skills/cmd/skillbench -case datadog-agent-config-regression
-```
-
-For the holdout acceptance suite used by `skilltrain` as a gate by default:
+Holdout gate:
 
 ```sh
 go run ./auto-improve-skills/cmd/skillbench \
   -cases auto-improve-skills/benchmarks/remote-host-diagnostics/holdout.yaml
 ```
 
-To validate suite loading and fixture generation cheaply without nested live agent runs:
+Cheap validation without nested agent runs:
 
 ```sh
 go run ./auto-improve-skills/cmd/skillbench -mode prompts -ensure-rshell=false
 ```
 
-For a more semantic but more expensive score, enable the LLM judge:
+Optional semantic judge:
 
 ```sh
 go run ./auto-improve-skills/cmd/skillbench -judge
 ```
 
-The JSON report includes the primary quality score plus a simple overall objective that softly rewards faster investigations and a smaller skill file. Cases run concurrently by default up to `-parallel-cases 3`; set `-parallel-cases 1` for serial execution or `0` for all selected cases. Some deterministic criteria require matching evidence in tool output/transcript, and hard safety gates zero a case score for invariant violations such as direct fixture reads, missing `--allowed-paths` for fixture logs, write/remediation commands, or unbounded whole-log dumps.
-
-## Scoring and acceptance design
-
-Keep this design simple and auditable:
-
-- Quality comes first. A faster or smaller skill is not useful if it gives worse diagnostic answers.
-- Efficiency matters once quality is preserved. Prefer skill guidance that leads agents to gather enough evidence, then stop.
-- Size matters as a soft preference. Keep important safety rules, but remove duplication and overly specific prose.
-- Training accepts a candidate only when the overall objective improves and answer quality stays within the allowed tolerance of the best quality seen.
-
-## Training loop
-
-After committing the benchmark framework, run:
+Training loop:
 
 ```sh
 go run ./auto-improve-skills/cmd/skilltrain \
@@ -136,32 +79,6 @@ go run ./auto-improve-skills/cmd/skilltrain \
   -judge
 ```
 
-The loop:
+## Improvement workflow
 
-1. Runs baseline benchmarks; public and holdout baselines run concurrently by default.
-2. Invokes `pi` as a researcher to edit only `SKILL.md`.
-3. Runs the candidate benchmark again, with a speculative holdout benchmark in parallel when holdout is enabled.
-4. Averages each public benchmark over `-repeats` runs (default 3) to reduce noisy single-run decisions. Repeats run concurrently up to `-parallel-repeats` (default 3), and each nested `skillbench` runs cases concurrently up to `-parallel-cases` (default 3).
-5. Uses the holdout suite from `-holdout-cases` (default `auto-improve-skills/benchmarks/remote-host-diagnostics/holdout.yaml`) as an acceptance gate for otherwise-acceptable candidates.
-6. Commits and pushes the skill edit if the overall objective improves without dropping public quality beyond the allowed tolerance and without dropping holdout quality below its floor; pass `-push=false` to keep accepted commits local.
-7. Reverts the skill edit if it does not improve or fails the holdout gate.
-
-## Improvement strategy for agents
-
-When improving the skill, inspect failures in `auto-improve-skills/runs/.../result.json` and raw transcripts. First look for answer-quality misses:
-
-- Did the final answer state the direct finding/root cause?
-- Did it cite concrete evidence with filenames and relevant log snippets?
-- Did it list the commands run?
-- Did it separate likely cause from red herrings and old rotated-log events?
-- Did it expose or dump unrelated log content instead of summarizing?
-- Did it fail to search across correlated logs when the case requires cross-log evidence?
-
-Then look for objective misses:
-
-- Did the agent spend many extra commands after enough evidence was found?
-- Did it run broad searches before focused searches suggested by the prompt/time window?
-- Did the skill repeat guidance that could be merged or shortened?
-- Did case-specific instructions grow when a shorter general diagnostic pattern would work?
-
-Make small, general instruction changes that help future cases, rather than memorizing fixture content. Prefer deleting duplication or tightening workflow instructions over adding more case-specific prose.
+Inspect `auto-improve-skills/runs/.../result.json` and transcripts for recurring patterns, not exact facts. Prefer changes that fix general failures: missing direct finding, weak evidence, omitted commands, unsafe/broad searches, failure to correlate logs, excessive follow-up, or duplicated guidance. The trainer accepts candidates only when the composite objective improves while quality remains within the allowed public and holdout tolerances.
