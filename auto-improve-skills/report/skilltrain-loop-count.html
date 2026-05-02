@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Skilltrain Train Loop Proof</title>
+  <style>
+    :root { color-scheme: dark; --bg:#08111f; --panel:#101c2f; --ink:#edf6ff; --muted:#a9bdd4; --accent:#60a5fa; --ok:#34d399; --warn:#fbbf24; --line:#22354f; }
+    * { box-sizing: border-box; }
+    body { margin:0; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; background:linear-gradient(135deg,#08111f,#14213d 55%,#0f172a); color:var(--ink); }
+    main { scroll-snap-type:y mandatory; height:100vh; overflow-y:auto; }
+    section { min-height:100vh; padding:6vh 7vw; display:flex; flex-direction:column; justify-content:center; scroll-snap-align:start; }
+    h1 { font-size:clamp(2.6rem,7vw,6rem); line-height:.95; margin:0 0 1rem; letter-spacing:-.05em; }
+    h2 { font-size:clamp(2rem,4vw,3.8rem); margin:0 0 1.2rem; letter-spacing:-.035em; }
+    h3 { margin:.2rem 0 .5rem; color:var(--accent); }
+    p, li { font-size:clamp(1.05rem,1.6vw,1.45rem); color:var(--muted); line-height:1.45; }
+    code { color:#bfdbfe; }
+    pre { background:#050b14; border:1px solid var(--line); border-radius:18px; padding:1.2rem; overflow:auto; color:#d7e8ff; font-size:clamp(.82rem,1vw,1rem); line-height:1.45; box-shadow:0 20px 60px #0008; }
+    .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:1rem; }
+    .card { background:linear-gradient(180deg,#13223a,#0c1728); border:1px solid var(--line); border-radius:24px; padding:1.4rem; box-shadow:0 20px 60px #0005; }
+    .pill { display:inline-flex; gap:.45rem; align-items:center; padding:.35rem .75rem; border-radius:999px; background:#12345a; color:#dbeafe; border:1px solid #24527f; font-weight:700; }
+    .ok { color:var(--ok); }
+    .warn { color:var(--warn); }
+    .big { font-size:clamp(1.4rem,2.2vw,2rem); color:var(--ink); }
+    .footer { position:fixed; right:1rem; bottom:1rem; color:#8aa4c2; font-size:.9rem; }
+  </style>
+</head>
+<body>
+<main>
+  <section>
+    <span class="pill">Auto-improve skills</span>
+    <h1><code>skilltrain</code> now owns the train loop</h1>
+    <p class="big">The old shell-only <code>make trainloop</code> behavior is implemented directly in <code>cmd/skilltrain</code> with <code>-loop-count</code>.</p>
+    <p>Proof date: 2026-05-02</p>
+  </section>
+
+  <section>
+    <h2>What changed</h2>
+    <div class="grid">
+      <div class="card"><h3>Native loop flag</h3><p><code>-loop-count N</code> repeats the full training run in the same Go process. The default is <code>1</code>, preserving normal single-run behavior.</p></div>
+      <div class="card"><h3>Equivalent Make target</h3><p><code>make trainloop</code> now calls <code>go run ./cmd/skilltrain -iters 3 -judge -model openai-codex/gpt-5.5 -loop-count 21</code>.</p></div>
+      <div class="card"><h3>Supplied flags preserved</h3><p>Every loop iteration uses the user-provided configuration instead of hardcoding model, judge, or iteration settings.</p></div>
+      <div class="card"><h3>Run directory fan-out</h3><p>When <code>-run-dir</code> is set and <code>-loop-count &gt; 1</code>, runs write under <code>loop-001</code>, <code>loop-002</code>, etc.</p></div>
+      <div class="card"><h3>Clear logs</h3><p>The log prefix now reads <code>skilltrain train loop:</code> so nested output identifies the train-loop driver.</p></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>CLI exposes the loop flag</h2>
+    <pre><code>$ go run ./auto-improve-skills/cmd/skilltrain -h 2&gt;&amp;1 | rg -- '-loop-count|Usage'
+Usage of /var/folders/2z/8sjtfr2n5p1313kwpcfrtdb40000gq/T/go-build2597458304/b001/exe/skilltrain:
+  -loop-count int</code></pre>
+  </section>
+
+  <section>
+    <h2><code>make trainloop</code> maps to native loop mode</h2>
+    <pre><code>$ cd auto-improve-skills &amp;&amp; make -n trainloop
+go run ./cmd/skilltrain \
+		-model openai-codex/gpt-5.5 \
+		-iters 3 \
+		-judge \
+		-loop-count 21</code></pre>
+  </section>
+
+  <section>
+    <h2>Focused tests prove loop behavior and logs</h2>
+    <p>The new unit tests use an injected runner, so they prove loop-count control flow without launching expensive benchmarks or nested agents.</p>
+    <pre><code>$ go test -v ./auto-improve-skills/cmd/skilltrain -run 'Test(FormatSkilltrainLogUsesSemanticColors|RunLoopWithRunner|DefaultParallelSettings)'
+=== RUN   TestFormatSkilltrainLogUsesSemanticColors
+--- PASS: TestFormatSkilltrainLogUsesSemanticColors (0.00s)
+=== RUN   TestDefaultParallelSettings
+--- PASS: TestDefaultParallelSettings (0.00s)
+=== RUN   TestRunLoopWithRunnerRepeatsProvidedConfig
+skilltrain train loop: [t|-|-] loop 1/3: starting training run
+skilltrain train loop: [t|-|-] loop 2/3: starting training run
+skilltrain train loop: [t|-|-] loop 3/3: starting training run
+--- PASS: TestRunLoopWithRunnerRepeatsProvidedConfig (0.00s)
+=== RUN   TestRunLoopWithRunnerLeavesDefaultRunDirEmpty
+skilltrain train loop: [t|-|-] loop 1/2: starting training run
+skilltrain train loop: [t|-|-] loop 2/2: starting training run
+--- PASS: TestRunLoopWithRunnerLeavesDefaultRunDirEmpty (0.00s)
+=== RUN   TestRunLoopWithRunnerRejectsNonPositiveLoopCount
+--- PASS: TestRunLoopWithRunnerRejectsNonPositiveLoopCount (0.00s)
+PASS
+ok  	github.com/DataDog/rshell/auto-improve-skills/cmd/skilltrain	0.197s</code></pre>
+  </section>
+
+  <section>
+    <h2>Package tests pass</h2>
+    <pre><code>$ cd /Users/alexandre.yang/worktrees/rshell/rshell-skill-auto-improve &amp;&amp; make fmt
+go fmt ./...
+
+$ cd /Users/alexandre.yang/worktrees/rshell/rshell-skill-auto-improve &amp;&amp; go test ./auto-improve-skills/cmd/skilltrain
+ok  	github.com/DataDog/rshell/auto-improve-skills/cmd/skilltrain	0.436s
+
+$ cd /Users/alexandre.yang/worktrees/rshell/rshell-skill-auto-improve &amp;&amp; go test ./auto-improve-skills/...
+ok  	github.com/DataDog/rshell/auto-improve-skills/cmd/skillbench	(cached)
+?   	github.com/DataDog/rshell/auto-improve-skills/cmd/skillfixtures	[no test files]
+ok  	github.com/DataDog/rshell/auto-improve-skills/cmd/skilltrain	(cached)
+ok  	github.com/DataDog/rshell/auto-improve-skills/internal/autoresearch	(cached)</code></pre>
+  </section>
+
+  <section>
+    <h2>Files changed</h2>
+    <div class="grid">
+      <div class="card"><h3><code>cmd/skilltrain/main.go</code></h3><p>Added <code>trainConfig</code>, <code>runLoop</code>, <code>runLoopWithRunner</code>, <code>loopRunDir</code>, and the <code>-loop-count</code> flag.</p></div>
+      <div class="card"><h3><code>cmd/skilltrain/main_test.go</code></h3><p>Added tests for defaults, repeated runner calls, run-dir suffixes, validation, and the train-loop log prefix.</p></div>
+      <div class="card"><h3><code>Makefile</code></h3><p>Replaced the shell <code>while</code> loop with the Go-native <code>-loop-count 21</code> invocation.</p></div>
+      <div class="card"><h3><code>README.md</code></h3><p>Documented <code>-loop-count</code>, repeated full-run semantics, and run-dir subdirectory behavior.</p></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Result</h2>
+    <p class="big ok">The previous <code>make trainloop</code> semantics are implemented inside <code>skilltrain</code>.</p>
+    <ul>
+      <li><code>-loop-count 21</code> performs 21 full runs and exits on the first error.</li>
+      <li>The model, judge, iteration count, and other flags are whatever the user supplied.</li>
+      <li><code>-run-dir</code> safely fans out to per-loop subdirectories.</li>
+      <li>Logs visibly identify the <code>skilltrain train loop</code>.</li>
+    </ul>
+  </section>
+</main>
+<div class="footer">report/skilltrain-loop-count.html</div>
+</body>
+</html>

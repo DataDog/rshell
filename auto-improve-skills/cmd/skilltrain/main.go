@@ -23,6 +23,7 @@ import (
 
 const (
 	defaultModel           = "openai-codex/gpt-5.5"
+	defaultLoopCount       = 1
 	defaultParallelRepeats = 3
 	defaultParallelCases   = 3
 )
@@ -40,6 +41,8 @@ const (
 )
 
 const (
+	skilltrainLogPrefix = "skilltrain train loop:"
+
 	ansiReset   = "\x1b[0m"
 	ansiBold    = "\x1b[1m"
 	ansiDim     = "\x1b[2m"
@@ -51,33 +54,55 @@ const (
 )
 
 func main() {
-	var (
-		iterations              = flag.Int("iters", 3, "maximum improvement iterations")
-		casesPath               = flag.String("cases", "auto-improve-skills/benchmarks/remote-host-diagnostics/cases.yaml", "benchmark suite")
-		skillPath               = flag.String("skill", "auto-improve-skills/skills/remote-host-diagnostics/SKILL.md", "skill file to improve")
-		model                   = flag.String("model", defaultModel, "pi model for researcher and benchmark agents")
-		piBinary                = flag.String("pi", "pi", "pi executable")
-		runDir                  = flag.String("run-dir", "", "directory for this training run")
-		minDelta                = flag.Float64("min-delta", 0.001, "minimum normalized objective improvement to accept")
-		qualityTolerance        = flag.Float64("quality-tolerance", 0.01, "maximum allowed quality drop from the best seen quality")
-		holdoutCasesPath        = flag.String("holdout-cases", "auto-improve-skills/benchmarks/remote-host-diagnostics/holdout.yaml", "holdout benchmark suite used as an acceptance gate (empty disables)")
-		holdoutQualityTolerance = flag.Float64("holdout-quality-tolerance", -1, "maximum allowed holdout quality drop from the best seen holdout quality; defaults to -quality-tolerance")
-		repeats                 = flag.Int("repeats", 3, "benchmark repeats to average for each baseline and candidate")
-		parallelRepeats         = flag.Int("parallel-repeats", defaultParallelRepeats, "maximum benchmark repeats to run concurrently (0 = all repeats, 1 = serial)")
-		parallelCases           = flag.Int("parallel-cases", defaultParallelCases, "maximum cases per skillbench run to execute concurrently (0 = all selected cases, 1 = serial)")
-		parallelSuites          = flag.Bool("parallel-suites", true, "run independent public and holdout suites concurrently when possible")
-		limit                   = flag.Int("limit", 0, "run at most N benchmark cases per iteration (0 = all)")
-		judge                   = flag.Bool("judge", false, "enable skillbench LLM-as-judge scoring")
-		push                    = flag.Bool("push", true, "push accepted skill commits to the current branch; set -push=false to keep commits local")
-		dryRun                  = flag.Bool("dry-run", false, "run benchmark and researcher but do not commit/revert")
-		allowDirty              = flag.Bool("allow-dirty", false, "allow starting with unrelated uncommitted changes")
-	)
+	var cfg trainConfig
+	loopCount := flag.Int("loop-count", defaultLoopCount, "number of full training runs to execute; repeats all other supplied flags")
+	flag.IntVar(&cfg.iterations, "iters", 3, "maximum improvement iterations")
+	flag.StringVar(&cfg.casesPath, "cases", "auto-improve-skills/benchmarks/remote-host-diagnostics/cases.yaml", "benchmark suite")
+	flag.StringVar(&cfg.skillPath, "skill", "auto-improve-skills/skills/remote-host-diagnostics/SKILL.md", "skill file to improve")
+	flag.StringVar(&cfg.model, "model", defaultModel, "pi model for researcher and benchmark agents")
+	flag.StringVar(&cfg.piBinary, "pi", "pi", "pi executable")
+	flag.StringVar(&cfg.runDir, "run-dir", "", "directory for this training run")
+	flag.Float64Var(&cfg.minDelta, "min-delta", 0.001, "minimum normalized objective improvement to accept")
+	flag.Float64Var(&cfg.qualityTolerance, "quality-tolerance", 0.01, "maximum allowed quality drop from the best seen quality")
+	flag.StringVar(&cfg.holdoutCasesPath, "holdout-cases", "auto-improve-skills/benchmarks/remote-host-diagnostics/holdout.yaml", "holdout benchmark suite used as an acceptance gate (empty disables)")
+	flag.Float64Var(&cfg.holdoutQualityTolerance, "holdout-quality-tolerance", -1, "maximum allowed holdout quality drop from the best seen holdout quality; defaults to -quality-tolerance")
+	flag.IntVar(&cfg.repeats, "repeats", 3, "benchmark repeats to average for each baseline and candidate")
+	flag.IntVar(&cfg.parallelRepeats, "parallel-repeats", defaultParallelRepeats, "maximum benchmark repeats to run concurrently (0 = all repeats, 1 = serial)")
+	flag.IntVar(&cfg.parallelCases, "parallel-cases", defaultParallelCases, "maximum cases per skillbench run to execute concurrently (0 = all selected cases, 1 = serial)")
+	flag.BoolVar(&cfg.parallelSuites, "parallel-suites", true, "run independent public and holdout suites concurrently when possible")
+	flag.IntVar(&cfg.limit, "limit", 0, "run at most N benchmark cases per iteration (0 = all)")
+	flag.BoolVar(&cfg.judge, "judge", false, "enable skillbench LLM-as-judge scoring")
+	flag.BoolVar(&cfg.push, "push", true, "push accepted skill commits to the current branch; set -push=false to keep commits local")
+	flag.BoolVar(&cfg.dryRun, "dry-run", false, "run benchmark and researcher but do not commit/revert")
+	flag.BoolVar(&cfg.allowDirty, "allow-dirty", false, "allow starting with unrelated uncommitted changes")
 	flag.Parse()
 
-	if err := run(*iterations, *casesPath, *skillPath, *model, *piBinary, *runDir, *minDelta, *qualityTolerance, *holdoutCasesPath, *holdoutQualityTolerance, *repeats, *parallelRepeats, *parallelCases, *limit, *judge, *parallelSuites, *push, *dryRun, *allowDirty); err != nil {
+	if err := runLoop(*loopCount, cfg); err != nil {
 		logError("%v", err)
 		os.Exit(1)
 	}
+}
+
+type trainConfig struct {
+	iterations              int
+	casesPath               string
+	skillPath               string
+	model                   string
+	piBinary                string
+	runDir                  string
+	minDelta                float64
+	qualityTolerance        float64
+	holdoutCasesPath        string
+	holdoutQualityTolerance float64
+	repeats                 int
+	parallelRepeats         int
+	parallelCases           int
+	limit                   int
+	judge                   bool
+	parallelSuites          bool
+	push                    bool
+	dryRun                  bool
+	allowDirty              bool
 }
 
 type logContext struct {
@@ -148,11 +173,11 @@ func printSemantic(semantic logSemantic, format string, args ...any) {
 
 func formatSkilltrainLog(semantic logSemantic, ctx logContext, msg string, colorEnabled bool) string {
 	contextPrefix := formatLogContext(ctx)
-	line := "skilltrain: " + contextPrefix + " " + msg
+	line := skilltrainLogPrefix + " " + contextPrefix + " " + msg
 	if !colorEnabled {
 		return line
 	}
-	prefix := ansiDim + "skilltrain:" + ansiReset
+	prefix := ansiDim + skilltrainLogPrefix + ansiReset
 	return prefix + " " + formatSemanticText(semantic, contextPrefix+" "+msg, true)
 }
 
@@ -211,6 +236,44 @@ func colorEnabledForLog(stream *os.File) bool {
 	}
 	info, err := stream.Stat()
 	return err == nil && info.Mode()&os.ModeCharDevice != 0
+}
+
+type trainRunner func(trainConfig) error
+
+func runLoop(loopCount int, cfg trainConfig) error {
+	return runLoopWithRunner(loopCount, cfg, runConfig)
+}
+
+func runLoopWithRunner(loopCount int, cfg trainConfig, runner trainRunner) error {
+	if loopCount <= 0 {
+		return fmt.Errorf("-loop-count must be positive")
+	}
+	if runner == nil {
+		return fmt.Errorf("internal error: training runner is nil")
+	}
+	if loopCount == 1 {
+		return runner(cfg)
+	}
+	for loop := 1; loop <= loopCount; loop++ {
+		loopCfg := cfg
+		loopCfg.runDir = loopRunDir(cfg.runDir, loop)
+		printSemantic(logSemanticSummary, "loop %d/%d: starting training run", loop, loopCount)
+		if err := runner(loopCfg); err != nil {
+			return fmt.Errorf("loop %d/%d: %w", loop, loopCount, err)
+		}
+	}
+	return nil
+}
+
+func loopRunDir(runDir string, loop int) string {
+	if strings.TrimSpace(runDir) == "" {
+		return runDir
+	}
+	return filepath.Join(runDir, fmt.Sprintf("loop-%03d", loop))
+}
+
+func runConfig(cfg trainConfig) error {
+	return run(cfg.iterations, cfg.casesPath, cfg.skillPath, cfg.model, cfg.piBinary, cfg.runDir, cfg.minDelta, cfg.qualityTolerance, cfg.holdoutCasesPath, cfg.holdoutQualityTolerance, cfg.repeats, cfg.parallelRepeats, cfg.parallelCases, cfg.limit, cfg.judge, cfg.parallelSuites, cfg.push, cfg.dryRun, cfg.allowDirty)
 }
 
 func run(iterations int, casesPath, skillPath, model, piBinary, runDir string, minDelta, qualityTolerance float64, holdoutCasesPath string, holdoutQualityTolerance float64, repeats, parallelRepeats, parallelCases, limit int, judge, parallelSuites, push, dryRun, allowDirty bool) error {

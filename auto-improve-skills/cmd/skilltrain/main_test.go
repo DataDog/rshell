@@ -6,6 +6,7 @@
 package main
 
 import (
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -15,12 +16,12 @@ import (
 func TestFormatSkilltrainLogUsesSemanticColors(t *testing.T) {
 	ctx := defaultLogContext()
 	plain := formatSkilltrainLog(logSemanticSuccess, ctx, "accepted skill change", false)
-	if plain != "skilltrain: [t|-|-] accepted skill change" {
+	if plain != "skilltrain train loop: [t|-|-] accepted skill change" {
 		t.Fatalf("plain log line = %q", plain)
 	}
 
 	colored := formatSkilltrainLog(logSemanticSuccess, ctx, "accepted skill change", true)
-	want := ansiDim + "skilltrain:" + ansiReset + " " + ansiGreen + "[t|-|-] accepted skill change" + ansiReset
+	want := ansiDim + "skilltrain train loop:" + ansiReset + " " + ansiGreen + "[t|-|-] accepted skill change" + ansiReset
 	if colored != want {
 		t.Fatalf("colored log line = %q, want %q", colored, want)
 	}
@@ -48,11 +49,80 @@ func TestLogSemanticStyleMapsStatusesToColors(t *testing.T) {
 }
 
 func TestDefaultParallelSettings(t *testing.T) {
+	if defaultLoopCount != 1 {
+		t.Fatalf("defaultLoopCount = %d, want 1", defaultLoopCount)
+	}
 	if defaultParallelRepeats != 3 {
 		t.Fatalf("defaultParallelRepeats = %d, want 3", defaultParallelRepeats)
 	}
 	if defaultParallelCases != 3 {
 		t.Fatalf("defaultParallelCases = %d, want 3", defaultParallelCases)
+	}
+}
+
+func TestRunLoopWithRunnerRepeatsProvidedConfig(t *testing.T) {
+	cfg := trainConfig{
+		iterations:       3,
+		model:            "test/model",
+		runDir:           filepath.Join("auto-improve-skills", "runs", "trainloop"),
+		judge:            true,
+		parallelSuites:   true,
+		push:             false,
+		allowDirty:       true,
+		parallelRepeats:  2,
+		parallelCases:    4,
+		qualityTolerance: 0.02,
+	}
+	var calls []trainConfig
+	err := runLoopWithRunner(3, cfg, func(call trainConfig) error {
+		calls = append(calls, call)
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(calls) != 3 {
+		t.Fatalf("runner calls = %d, want 3", len(calls))
+	}
+	wantRunDirs := []string{"loop-001", "loop-002", "loop-003"}
+	for i, call := range calls {
+		wantRunDir := filepath.Join(cfg.runDir, wantRunDirs[i])
+		if call.runDir != wantRunDir {
+			t.Fatalf("call %d runDir = %q, want %q", i+1, call.runDir, wantRunDir)
+		}
+		if call.iterations != cfg.iterations || call.model != cfg.model || call.judge != cfg.judge || call.parallelRepeats != cfg.parallelRepeats || call.parallelCases != cfg.parallelCases || call.qualityTolerance != cfg.qualityTolerance {
+			t.Fatalf("call %d did not preserve supplied flags: %+v", i+1, call)
+		}
+	}
+}
+
+func TestRunLoopWithRunnerLeavesDefaultRunDirEmpty(t *testing.T) {
+	var calls []trainConfig
+	err := runLoopWithRunner(2, trainConfig{iterations: 3, judge: true}, func(call trainConfig) error {
+		calls = append(calls, call)
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i, call := range calls {
+		if call.runDir != "" {
+			t.Fatalf("call %d runDir = %q, want empty default", i+1, call.runDir)
+		}
+	}
+}
+
+func TestRunLoopWithRunnerRejectsNonPositiveLoopCount(t *testing.T) {
+	called := false
+	err := runLoopWithRunner(0, trainConfig{}, func(trainConfig) error {
+		called = true
+		return nil
+	})
+	if err == nil || !strings.Contains(err.Error(), "-loop-count must be positive") {
+		t.Fatalf("runLoopWithRunner error = %v, want loop-count validation", err)
+	}
+	if called {
+		t.Fatal("runner was called after loop-count validation failed")
 	}
 }
 

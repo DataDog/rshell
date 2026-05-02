@@ -1,4 +1,4 @@
-.PHONY: train
+.PHONY: train train3 trainloop
 
 train:
 	go run ./cmd/skilltrain \
@@ -13,4 +13,8 @@ train3:
 		-judge
 
 trainloop:
-	for i in $(seq 0 20); do make train3; done
+	go run ./cmd/skilltrain \
+		-model openai-codex/gpt-5.5 \
+		-iters 3 \
+		-judge \
+		-loop-count 21

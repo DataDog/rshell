@@ -22,7 +22,7 @@ cmd/skillfixtures/                                   Deterministic fixture gener
 cmd/skilltrain/                                      Go improvement-loop orchestrator
 internal/autoresearch/                          Shared Go types/helpers
 runs/                                           Benchmark/training outputs, gitignored except .gitkeep
-report/remote-host-diagnostics-autoresearch.html Single-file slide report
+report/*.html                                  Single-file proof/report slides
 ```
 
 ## Prerequisites
@@ -85,6 +85,18 @@ go run ./auto-improve-skills/cmd/skilltrain \
   -judge
 ```
 
+To repeat the entire training run multiple times in one `skilltrain` process, use `-loop-count`. The `trainloop` Make target is equivalent to 21 full runs of the supplied `-iters 3 -judge -model openai-codex/gpt-5.5` configuration:
+
+```sh
+go run ./auto-improve-skills/cmd/skilltrain \
+  -model openai-codex/gpt-5.5 \
+  -iters 3 \
+  -judge \
+  -loop-count 21
+```
+
+When `-run-dir` is provided with `-loop-count N`, each full training run writes under `loop-001`, `loop-002`, and so on below that base directory.
+
 The loop:
 
 1. Runs baseline benchmarks. Public and holdout baselines run concurrently by default.
@@ -94,6 +106,7 @@ The loop:
 5. Uses the holdout suite from `-holdout-cases` (default `auto-improve-skills/benchmarks/remote-host-diagnostics/holdout.yaml`) as an acceptance gate for public-suite improvements; pass `-holdout-cases ""` to disable it.
 6. Commits and pushes the skill edit if the composite objective improves by at least `-min-delta` (default 0.001), public quality stays within `-quality-tolerance`, and holdout quality stays within `-holdout-quality-tolerance` (defaults to `-quality-tolerance`); pass `-push=false` to keep accepted commits local.
 7. Reverts the skill edit if it does not improve or fails the holdout gate.
+8. If `-loop-count` is greater than 1, starts the next full run with the same flags and exits immediately on the first error, matching the old shell `trainloop` behavior.
 
 Accepted commit subjects include the objective percentage change (`old% -> new%`). Commit bodies include the benchmark report path, quality/objective/duration/size scores, repeat counts, holdout gate summary when enabled, per-case scoring details, the researcher summary, and a diffstat. Accepted commits are pushed by default; pass `-push=false` to review and push them manually.
 
@@ -146,8 +159,9 @@ More cases can be added to `benchmarks/remote-host-diagnostics/cases.yaml` or th
 
 ## Report
 
-Open the slide report in a browser:
+Open the slide reports in a browser:
 
 ```text
 auto-improve-skills/report/remote-host-diagnostics-autoresearch.html
+auto-improve-skills/report/skilltrain-loop-count.html
 ```
