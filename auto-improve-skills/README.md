@@ -8,7 +8,7 @@ Harness for improving `skills/remote-host-diagnostics/SKILL.md` with fixed bench
 - `skills/remote-host-diagnostics/SKILL.md` — skill being tuned.
 - `benchmarks/remote-host-diagnostics/` — public and holdout suites plus generated fixtures.
 - `cmd/skillbench`, `cmd/skillfixtures`, `cmd/skilltrain` — Go CLIs. Run any command with `-h` for current flags and defaults.
-- `runs/` — generated benchmark/training outputs.
+- `runs/` — generated benchmark/training outputs, including per-iteration `SKILL.candidate.md`, `SKILL.previous.md`, and `SKILL.diff` artifacts from `skilltrain`.
 
 ## Usage
 

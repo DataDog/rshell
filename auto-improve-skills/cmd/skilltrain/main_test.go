@@ -401,6 +401,56 @@ func TestPrepareResearcherWorkspaceCopiesOnlyResearcherFiles(t *testing.T) {
 	}
 }
 
+func TestSaveIterationSkillArtifactsWritesSnapshotAndDiff(t *testing.T) {
+	iterDir := t.TempDir()
+	previous := []byte("# Skill\n\nOld guidance.\n")
+	candidate := []byte("# Skill\n\nNew guidance.\n")
+
+	if err := saveIterationSkillArtifacts(iterDir, previous, candidate); err != nil {
+		t.Fatal(err)
+	}
+
+	previousData, err := os.ReadFile(filepath.Join(iterDir, iterationPreviousSkillPath))
+	if err != nil || string(previousData) != string(previous) {
+		t.Fatalf("previous skill artifact = %q, %v", string(previousData), err)
+	}
+	snapshotData, err := os.ReadFile(filepath.Join(iterDir, iterationSkillSnapshotPath))
+	if err != nil || string(snapshotData) != string(candidate) {
+		t.Fatalf("skill snapshot artifact = %q, %v", string(snapshotData), err)
+	}
+	diffData, err := os.ReadFile(filepath.Join(iterDir, iterationSkillDiffPath))
+	if err != nil {
+		t.Fatal(err)
+	}
+	diff := string(diffData)
+	for _, want := range []string{iterationPreviousSkillPath, iterationSkillSnapshotPath, "-Old guidance.", "+New guidance."} {
+		if !strings.Contains(diff, want) {
+			t.Fatalf("skill diff missing %q:\n%s", want, diff)
+		}
+	}
+}
+
+func TestSaveBaselineSkillArtifactsWritesPublicAndHoldoutSnapshots(t *testing.T) {
+	skillPath := filepath.Join(t.TempDir(), "SKILL.md")
+	if err := os.WriteFile(skillPath, []byte("baseline skill\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runDir := t.TempDir()
+	baselineDir := filepath.Join(runDir, "iter-000-baseline")
+	holdoutDir := filepath.Join(runDir, "iter-000-holdout")
+
+	if err := saveBaselineSkillArtifacts(skillPath, baselineDir, true, holdoutDir); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, dir := range []string{baselineDir, holdoutDir} {
+		data, err := os.ReadFile(filepath.Join(dir, iterationSkillSnapshotPath))
+		if err != nil || string(data) != "baseline skill\n" {
+			t.Fatalf("baseline snapshot in %s = %q, %v", dir, string(data), err)
+		}
+	}
+}
+
 func TestResearcherToolsExcludeReadAndBash(t *testing.T) {
 	if researcherTools != "edit,write" {
 		t.Fatalf("researcherTools = %q, want edit,write", researcherTools)

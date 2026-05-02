@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -48,6 +49,9 @@ const (
 	researcherProgramPath           = "program.md"
 	researcherSanitizedFeedbackPath = "sanitized-feedback.md"
 	researcherTools                 = "edit,write"
+	iterationSkillSnapshotPath      = "SKILL.candidate.md"
+	iterationPreviousSkillPath      = "SKILL.previous.md"
+	iterationSkillDiffPath          = "SKILL.diff"
 
 	ansiReset   = "\x1b[0m"
 	ansiBold    = "\x1b[1m"
@@ -572,6 +576,10 @@ func run(trainLoop, iterations int, casesPath, skillPath, model, piBinary, runDi
 		return err
 	}
 
+	if err := saveBaselineSkillArtifacts(skillAbs, filepath.Join(runDir, "iter-000-baseline"), holdoutCasesAbs != "", filepath.Join(runDir, "iter-000-holdout")); err != nil {
+		return err
+	}
+
 	logBenchmark("baseline reps=%d reps-par=%d cases-par=%d", repeats, repeatParallelism(parallelRepeats, repeats), parallelCases)
 	baseline, holdoutBaseline, haveHoldoutBaseline, err := runBaselineBenchmarks(root, casesAbs, holdoutCasesAbs, skillAbs, model, piBinary, runDir, limit, judge, repeats, parallelRepeats, parallelCases, parallelSuites)
 	if err != nil {
@@ -602,14 +610,10 @@ func run(trainLoop, iterations int, casesPath, skillPath, model, piBinary, runDi
 		if err := os.MkdirAll(iterDir, 0o755); err != nil {
 			return err
 		}
-		var original []byte
-		if dryRun {
-			logDryRunVerbose("iter %d/%d snapshot skill", iter, iterations)
-			var err error
-			original, err = os.ReadFile(skillAbs)
-			if err != nil {
-				return err
-			}
+		logVerbose("iter %d/%d snapshot skill", iter, iterations)
+		previousSkill, err := os.ReadFile(skillAbs)
+		if err != nil {
+			return err
 		}
 		feedback := formatSanitizedResearcherFeedback(feedbackSource)
 		if err := os.WriteFile(filepath.Join(iterDir, researcherSanitizedFeedbackPath), []byte(feedback), 0o644); err != nil {
@@ -620,18 +624,19 @@ func run(trainLoop, iterations int, casesPath, skillPath, model, piBinary, runDi
 		if err := improveSkill(root, skillAbs, iterDir, model, piBinary, iter, feedback); err != nil {
 			return err
 		}
-		if dryRun {
-			logDryRunVerbose("iter %d/%d save candidate", iter, iterations)
-			if candidateSkill, err := os.ReadFile(skillAbs); err == nil {
-				_ = os.WriteFile(filepath.Join(iterDir, "candidate.SKILL.md"), candidateSkill, 0o644)
-			}
+		candidateSkill, err := os.ReadFile(skillAbs)
+		if err != nil {
+			return err
+		}
+		if err := saveIterationSkillArtifacts(iterDir, previousSkill, candidateSkill); err != nil {
+			return err
 		}
 		restoreDryRun := func() error {
 			if !dryRun {
 				return nil
 			}
 			logDryRunVerbose("iter %d/%d restore original skill", iter, iterations)
-			return os.WriteFile(skillAbs, original, 0o644)
+			return os.WriteFile(skillAbs, previousSkill, 0o644)
 		}
 		logBenchmark("iter %d/%d candidate", iter, iterations)
 		candidate, speculativeHoldout, speculativeHoldoutRan, speculativeHoldoutErr, err := runCandidateBenchmarks(root, casesAbs, holdoutCasesAbs, skillAbs, model, piBinary, iterDir, limit, judge, repeats, parallelRepeats, parallelCases, parallelSuites)
@@ -699,7 +704,7 @@ func run(trainLoop, iterations int, casesPath, skillPath, model, piBinary, runDi
 			acceptedIterations++
 			if dryRun {
 				logSuccess("iter %d/%d accepted (dry-run)", iter, iterations)
-				printSemantic(logSemanticDryRun, "accept iter %d; would commit %s (candidate %s)", iter, displayPath(root, skillAbs), displayRunPath(runDir, filepath.Join(iterDir, "candidate.SKILL.md")))
+				printSemantic(logSemanticDryRun, "accept iter %d; would commit %s (candidate %s)", iter, displayPath(root, skillAbs), displayRunPath(runDir, filepath.Join(iterDir, iterationSkillSnapshotPath)))
 			} else {
 				logSuccess("iter %d/%d accepted; commit", iter, iterations)
 				if err := commitSkill(root, skillAbs, trainLoop, iter, candidate, candidatePath, holdoutGate, filepath.Join(iterDir, "researcher.stdout.md"), bestObjective, push); err != nil {
@@ -729,7 +734,7 @@ func run(trainLoop, iterations int, casesPath, skillPath, model, piBinary, runDi
 			}
 			if dryRun {
 				logWarn("iter %d/%d rejected (dry-run)", iter, iterations)
-				printSemantic(logSemanticDryRun, "reject iter %d; would revert %s (candidate %s)", iter, displayPath(root, skillAbs), displayRunPath(runDir, filepath.Join(iterDir, "candidate.SKILL.md")))
+				printSemantic(logSemanticDryRun, "reject iter %d; would revert %s (candidate %s)", iter, displayPath(root, skillAbs), displayRunPath(runDir, filepath.Join(iterDir, iterationSkillSnapshotPath)))
 			} else {
 				logWarn("iter %d/%d rejected; revert", iter, iterations)
 				if err := gitCheckout(root, skillAbs); err != nil {
@@ -749,6 +754,56 @@ type benchmarkGate struct {
 	Result       autoresearch.SuiteResult
 	ResultPath   string
 	QualityFloor float64
+}
+
+func saveBaselineSkillArtifacts(skillAbs, baselineDir string, haveHoldout bool, holdoutDir string) error {
+	skill, err := os.ReadFile(skillAbs)
+	if err != nil {
+		return err
+	}
+	if err := writeSkillRunArtifact(baselineDir, iterationSkillSnapshotPath, skill); err != nil {
+		return err
+	}
+	if haveHoldout {
+		return writeSkillRunArtifact(holdoutDir, iterationSkillSnapshotPath, skill)
+	}
+	return nil
+}
+
+func saveIterationSkillArtifacts(iterDir string, previousSkill, candidateSkill []byte) error {
+	if err := writeSkillRunArtifact(iterDir, iterationPreviousSkillPath, previousSkill); err != nil {
+		return err
+	}
+	if err := writeSkillRunArtifact(iterDir, iterationSkillSnapshotPath, candidateSkill); err != nil {
+		return err
+	}
+	diff, err := generateSkillDiff(iterDir)
+	if err != nil {
+		return err
+	}
+	return writeSkillRunArtifact(iterDir, iterationSkillDiffPath, diff)
+}
+
+func writeSkillRunArtifact(dir, name string, data []byte) error {
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(dir, name), data, 0o644)
+}
+
+func generateSkillDiff(iterDir string) ([]byte, error) {
+	cmd := exec.Command("git", "diff", "--no-index", "--no-color", "--", iterationPreviousSkillPath, iterationSkillSnapshotPath)
+	cmd.Dir = iterDir
+	out, err := cmd.CombinedOutput()
+	if err != nil && !isGitDiffDifferentExit(err) {
+		return nil, fmt.Errorf("creating skill diff: %w: %s", err, strings.TrimSpace(string(out)))
+	}
+	return out, nil
+}
+
+func isGitDiffDifferentExit(err error) bool {
+	var exitErr *exec.ExitError
+	return errors.As(err, &exitErr) && exitErr.ExitCode() == 1
 }
 
 func prepareBenchmarkPrerequisites(root string, casesPaths ...string) error {
