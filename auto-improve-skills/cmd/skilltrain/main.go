@@ -16,6 +16,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -51,7 +52,8 @@ const (
 	researcherSanitizedFeedbackSourcePath = "sanitized-feedback.source.json"
 	researcherTools                       = "edit,write"
 	sanitizedFeedbackDisclosureThreshold  = 2
-	sanitizedFeedbackLLMMaxSelections     = 3
+	sanitizedFeedbackDefaultMaxSelections = 3
+	sanitizedFeedbackLLMMaxSelections     = sanitizedFeedbackDefaultMaxSelections
 	iterationSkillSnapshotPath            = "SKILL.candidate.md"
 	iterationPreviousSkillPath            = "SKILL.previous.md"
 	iterationSkillDiffPath                = "SKILL.diff"
@@ -1343,6 +1345,8 @@ type sanitizedFeedbackSource struct {
 
 type sanitizedFeedbackOption struct {
 	ID          string `json:"id"`
+	ParentID    string `json:"parent_id,omitempty"`
+	Title       string `json:"title"`
 	Description string `json:"description"`
 	Count       int    `json:"count"`
 }
@@ -1351,7 +1355,7 @@ type sanitizedFeedbackLLMRequest struct {
 	Instructions          string                    `json:"instructions"`
 	DisclosureThreshold   int                       `json:"disclosure_threshold"`
 	MaxFeedbackIDs        int                       `json:"max_feedback_ids"`
-	RecurringFeedbackTags []string                  `json:"recurring_feedback_tags"`
+	RecurringFeedbackTags []string                  `json:"recurring_feedback_card_ids"`
 	AllowedOptions        []sanitizedFeedbackOption `json:"allowed_options"`
 }
 
@@ -1366,7 +1370,7 @@ func buildSanitizedFeedbackSource(result autoresearch.SuiteResult) sanitizedFeed
 				continue
 			}
 			occurrences := sanitizedFeedbackFailureOccurrences(criterion)
-			for _, tag := range autoresearch.NormalizeFeedbackTags(criterion.FeedbackTags) {
+			for _, tag := range autoresearch.ExpandFeedbackTags(criterion.FeedbackTags) {
 				counts[tag] += occurrences
 			}
 		}
@@ -1378,13 +1382,14 @@ func buildSanitizedFeedbackSource(result autoresearch.SuiteResult) sanitizedFeed
 			recurring = append(recurring, tag)
 		}
 	}
-	return sanitizedFeedbackSource{
+	source := sanitizedFeedbackSource{
 		Version:               1,
 		DisclosureThreshold:   sanitizedFeedbackDisclosureThreshold,
 		TagCounts:             counts,
 		RecurringFeedbackTags: recurring,
-		SelectedFeedbackTags:  append([]string(nil), recurring...),
 	}
+	source.SelectedFeedbackTags = selectSanitizedFeedbackIDs(source, sanitizedFeedbackDefaultMaxSelections)
+	return source
 }
 
 func formatSanitizedResearcherFeedback(result autoresearch.SuiteResult) string {
@@ -1397,7 +1402,7 @@ func formatSanitizedResearcherFeedbackFromSource(source sanitizedFeedbackSource)
 	shown := 0
 	selected := source.SelectedFeedbackTags
 	if selected == nil {
-		selected = source.RecurringFeedbackTags
+		selected = selectSanitizedFeedbackIDs(source, sanitizedFeedbackDefaultMaxSelections)
 	}
 	threshold := sanitizedFeedbackThreshold(source)
 	seen := map[string]bool{}
@@ -1410,7 +1415,11 @@ func formatSanitizedResearcherFeedbackFromSource(source sanitizedFeedbackSource)
 		if !ok {
 			continue
 		}
-		fmt.Fprintf(&b, "- %s\n", description)
+		if title, ok := autoresearch.FeedbackTagTitle(tag); ok && strings.TrimSpace(title) != "" {
+			fmt.Fprintf(&b, "- %s: %s\n", title, description)
+		} else {
+			fmt.Fprintf(&b, "- %s\n", description)
+		}
 		seen[tag] = true
 		shown++
 	}
@@ -1440,19 +1449,105 @@ func sanitizedFeedbackAllowedOptions(source sanitizedFeedbackSource) []sanitized
 	threshold := sanitizedFeedbackThreshold(source)
 	options := make([]sanitizedFeedbackOption, 0, len(source.RecurringFeedbackTags))
 	seen := map[string]bool{}
+	parentHasRecurringChild := sanitizedFeedbackParentsWithRecurringChildren(source, threshold)
 	for _, tag := range source.RecurringFeedbackTags {
 		tag = strings.TrimSpace(tag)
 		if seen[tag] || source.TagCounts[tag] < threshold {
+			continue
+		}
+		if parentHasRecurringChild[tag] {
 			continue
 		}
 		description, ok := autoresearch.FeedbackTagDescription(tag)
 		if !ok {
 			continue
 		}
-		options = append(options, sanitizedFeedbackOption{ID: tag, Description: description, Count: source.TagCounts[tag]})
+		title, _ := autoresearch.FeedbackTagTitle(tag)
+		parentID, _ := autoresearch.FeedbackTagParent(tag)
+		options = append(options, sanitizedFeedbackOption{ID: tag, ParentID: parentID, Title: title, Description: description, Count: source.TagCounts[tag]})
 		seen[tag] = true
 	}
 	return options
+}
+
+func sanitizedFeedbackParentsWithRecurringChildren(source sanitizedFeedbackSource, threshold int) map[string]bool {
+	parents := map[string]bool{}
+	seen := map[string]bool{}
+	for _, tag := range source.RecurringFeedbackTags {
+		tag = strings.TrimSpace(tag)
+		if seen[tag] || source.TagCounts[tag] < threshold {
+			continue
+		}
+		seen[tag] = true
+		parent, ok := autoresearch.FeedbackTagParent(tag)
+		if ok && parent != "" {
+			parents[parent] = true
+		}
+	}
+	return parents
+}
+
+func selectSanitizedFeedbackIDs(source sanitizedFeedbackSource, maxSelections int) []string {
+	if maxSelections <= 0 {
+		return nil
+	}
+	options := sanitizedFeedbackAllowedOptions(source)
+	if len(options) == 0 {
+		return nil
+	}
+	type candidate struct {
+		option sanitizedFeedbackOption
+		order  int
+		depth  int
+	}
+	candidates := make([]candidate, 0, len(options))
+	for i, option := range options {
+		depth := 0
+		if option.ParentID != "" {
+			depth = 1
+		}
+		candidates = append(candidates, candidate{option: option, order: i, depth: depth})
+	}
+	sort.SliceStable(candidates, func(i, j int) bool {
+		if candidates[i].option.Count != candidates[j].option.Count {
+			return candidates[i].option.Count > candidates[j].option.Count
+		}
+		if candidates[i].depth != candidates[j].depth {
+			return candidates[i].depth > candidates[j].depth
+		}
+		return candidates[i].order < candidates[j].order
+	})
+
+	selected := make([]string, 0, min(maxSelections, len(candidates)))
+	usedCandidate := map[int]bool{}
+	usedParent := map[string]bool{}
+	selectCandidate := func(i int) bool {
+		if len(selected) >= maxSelections || usedCandidate[i] {
+			return false
+		}
+		usedCandidate[i] = true
+		selected = append(selected, candidates[i].option.ID)
+		parentKey := candidates[i].option.ParentID
+		if parentKey == "" {
+			parentKey = candidates[i].option.ID
+		}
+		usedParent[parentKey] = true
+		return true
+	}
+	for i, candidate := range candidates {
+		parentKey := candidate.option.ParentID
+		if parentKey == "" {
+			parentKey = candidate.option.ID
+		}
+		if usedParent[parentKey] {
+			continue
+		}
+		selectCandidate(i)
+	}
+	for i := range candidates {
+		selectCandidate(i)
+	}
+	return selected
 }
 
 func prioritizeSanitizedFeedbackWithLLM(piBinary, model string, source sanitizedFeedbackSource) ([]string, error) {
@@ -1466,7 +1561,7 @@ func prioritizeSanitizedFeedbackWithLLM(piBinary, model string, source sanitized
 		ids = append(ids, option.ID)
 	}
 	request := sanitizedFeedbackLLMRequest{
-		Instructions:          "Choose and prioritize only approved generic feedback IDs. Use only this sanitized aggregate data. Do not generate prose, descriptions, facts, paths, identifiers, commands, services, root causes, or hidden-task details. Return strict JSON only with the schema {\"feedback_ids\":[\"id\"]}.",
+		Instructions:          "Choose and prioritize only approved generic feedback card IDs. Use only this sanitized aggregate data. Do not generate prose, descriptions, facts, paths, identifiers, commands, services, root causes, or hidden-task details. Return strict JSON only with the schema {\"feedback_ids\":[\"id\"]}.",
 		DisclosureThreshold:   sanitizedFeedbackThreshold(source),
 		MaxFeedbackIDs:        maxSelections,
 		RecurringFeedbackTags: ids,
@@ -1479,8 +1574,8 @@ func prioritizeSanitizedFeedbackWithLLM(piBinary, model string, source sanitized
 	prompt := fmt.Sprintf(`You prioritize sanitized aggregate feedback for a skill-improvement agent.
 
 Safety rules:
-- The input contains only approved generic feedback IDs, counts, and descriptions.
-- Select 1 to %d feedback IDs from allowed_options.
+- The input contains only approved generic feedback card IDs, titles, counts, and descriptions.
+- Select 1 to %d feedback card IDs from allowed_options.
 - Return only strict JSON: {"feedback_ids":["id"]}
 - Do not include markdown, commentary, descriptions, task facts, paths, IPs, hostnames, services, commands, root causes, or expected-answer text.
 

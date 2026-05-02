@@ -8,6 +8,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -316,6 +317,54 @@ func TestFormatSanitizedResearcherFeedbackAggregatesClosedTags(t *testing.T) {
 	safeNextDescription, _ := autoresearch.FeedbackTagDescription(autoresearch.FeedbackTagSafeNextSteps)
 	if strings.Contains(feedback, safeNextDescription) {
 		t.Fatalf("single-occurrence feedback theme should be suppressed:\n%s", feedback)
+	}
+}
+
+func TestFormatSanitizedResearcherFeedbackUsesGranularCardsAndSuppressesParentFallback(t *testing.T) {
+	result := autoresearch.SuiteResult{Cases: []autoresearch.CaseResult{
+		{
+			ID: "case-alpha",
+			Criteria: []autoresearch.CriterionResult{{
+				Name:         "missing grounded output",
+				Passed:       false,
+				FeedbackTags: []string{autoresearch.FeedbackTagEvidenceGroundingCiteKeyOutputs},
+			}},
+		},
+		{
+			ID: "case-beta",
+			Criteria: []autoresearch.CriterionResult{{
+				Name:         "missing grounded output again",
+				Passed:       false,
+				FeedbackTags: []string{autoresearch.FeedbackTagEvidenceGroundingCiteKeyOutputs},
+			}},
+		},
+	}}
+
+	source := buildSanitizedFeedbackSource(result)
+	if got := source.TagCounts[autoresearch.FeedbackTagEvidenceGroundingCiteKeyOutputs]; got != 2 {
+		t.Fatalf("granular evidence count = %d, want 2", got)
+	}
+	if got := source.TagCounts[autoresearch.FeedbackTagEvidenceGrounding]; got != 2 {
+		t.Fatalf("parent evidence count = %d, want 2", got)
+	}
+	if !slices.Contains(source.RecurringFeedbackTags, autoresearch.FeedbackTagEvidenceGrounding) || !slices.Contains(source.RecurringFeedbackTags, autoresearch.FeedbackTagEvidenceGroundingCiteKeyOutputs) {
+		t.Fatalf("recurring tags should include parent fallback and granular card: %#v", source.RecurringFeedbackTags)
+	}
+	if !slices.Contains(source.SelectedFeedbackTags, autoresearch.FeedbackTagEvidenceGroundingCiteKeyOutputs) {
+		t.Fatalf("selected tags should prefer granular card: %#v", source.SelectedFeedbackTags)
+	}
+	if slices.Contains(source.SelectedFeedbackTags, autoresearch.FeedbackTagEvidenceGrounding) {
+		t.Fatalf("selected tags should suppress parent when recurring child exists: %#v", source.SelectedFeedbackTags)
+	}
+
+	feedback := formatSanitizedResearcherFeedbackFromSource(source)
+	granularDescription, _ := autoresearch.FeedbackTagDescription(autoresearch.FeedbackTagEvidenceGroundingCiteKeyOutputs)
+	if !strings.Contains(feedback, "Cite key output") || !strings.Contains(feedback, granularDescription) {
+		t.Fatalf("feedback missing granular card title/description:\n%s", feedback)
+	}
+	parentDescription, _ := autoresearch.FeedbackTagDescription(autoresearch.FeedbackTagEvidenceGrounding)
+	if strings.Contains(feedback, parentDescription) {
+		t.Fatalf("feedback should not render parent fallback when granular card is selected:\n%s", feedback)
 	}
 }
 
