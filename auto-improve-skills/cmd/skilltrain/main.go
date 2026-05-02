@@ -13,9 +13,11 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"sync"
@@ -51,9 +53,8 @@ const (
 	researcherSanitizedFeedbackPath       = "sanitized-feedback.md"
 	researcherSanitizedFeedbackSourcePath = "sanitized-feedback.source.json"
 	researcherTools                       = "edit,write"
-	sanitizedFeedbackDisclosureThreshold  = 2
-	sanitizedFeedbackDefaultMaxSelections = 5
-	sanitizedFeedbackLLMMaxSelections     = sanitizedFeedbackDefaultMaxSelections
+	sanitizedFeedbackMaxChars             = 2400
+	sanitizedFeedbackLLMTimeout           = 5 * time.Minute
 	iterationSkillSnapshotPath            = "SKILL.candidate.md"
 	iterationPreviousSkillPath            = "SKILL.previous.md"
 	iterationSkillDiffPath                = "SKILL.diff"
@@ -75,7 +76,7 @@ func main() {
 	flag.StringVar(&cfg.casesPath, "cases", "auto-improve-skills/benchmarks/remote-host-diagnostics/cases.yaml", "benchmark suite")
 	flag.StringVar(&cfg.skillPath, "skill", "auto-improve-skills/skills/remote-host-diagnostics/SKILL.md", "skill file to improve")
 	flag.StringVar(&cfg.model, "model", defaultModel, "pi model for researcher and benchmark agents")
-	flag.StringVar(&cfg.feedbackModel, "feedback-model", "", "pi model for sanitized feedback prioritizer (defaults to -model)")
+	flag.StringVar(&cfg.feedbackModel, "feedback-model", "", "pi model for sanitized feedback generator (defaults to -model)")
 	flag.StringVar(&cfg.piBinary, "pi", "pi", "pi executable")
 	flag.StringVar(&cfg.runDir, "run-dir", "", "directory for this training run")
 	flag.Float64Var(&cfg.minDelta, "min-delta", 0.001, "minimum normalized objective improvement to accept")
@@ -91,7 +92,7 @@ func main() {
 	flag.BoolVar(&cfg.push, "push", true, "push accepted skill commits to the current branch; set -push=false to keep commits local")
 	flag.BoolVar(&cfg.dryRun, "dry-run", false, "run benchmark and researcher but do not commit/revert")
 	flag.BoolVar(&cfg.allowDirty, "allow-dirty", false, "allow starting with unrelated uncommitted changes")
-	flag.BoolVar(&cfg.feedbackLLM, "feedback-llm", false, "use an LLM over sanitized aggregate data to choose/prioritize approved feedback cards")
+	flag.BoolVar(&cfg.feedbackLLM, "feedback-llm", true, "generate freeform sanitized researcher feedback with an LLM (default true; false writes no feedback)")
 	flag.StringVar(&cfg.regenerateFeedbackRunDir, "regenerate-feedback", "", "regenerate sanitized-feedback artifacts under an existing skilltrain run directory or parent runs directory, then exit")
 	flag.BoolVar(&cfg.verbose, "verbose", false, "show detailed per-step logs and stream nested skillbench output")
 	flag.Parse()
@@ -101,7 +102,7 @@ func main() {
 
 	setSkilltrainVerbose(cfg.verbose)
 	if strings.TrimSpace(cfg.regenerateFeedbackRunDir) != "" {
-		count, err := regenerateSanitizedFeedbackArtifacts(cfg.regenerateFeedbackRunDir)
+		count, err := regenerateSanitizedFeedbackArtifacts(cfg.regenerateFeedbackRunDir, cfg.piBinary, cfg.feedbackModel, cfg.feedbackLLM)
 		if err != nil {
 			logError("%v", err)
 			os.Exit(1)
@@ -646,16 +647,8 @@ func run(trainLoop, iterations int, casesPath, skillPath, model, feedbackModel, 
 		}
 		feedbackData := buildSanitizedFeedbackSource(feedbackSource)
 		if feedbackLLM {
-			feedbackData.LLMEnabled = true
-			feedbackData.LLMModel = feedbackModel
-			if len(feedbackData.RecurringFeedbackTags) > 0 {
-				selected, err := prioritizeSanitizedFeedbackWithLLM(piBinary, feedbackModel, feedbackData)
-				if err != nil {
-					feedbackData.LLMError = err.Error()
-					logWarn("iter %d/%d feedback llm failed; using deterministic sanitized feedback: %v", iter, iterations, err)
-				} else {
-					feedbackData.SelectedFeedbackTags = selected
-				}
+			if err := populateSanitizedFeedbackWithLLM(piBinary, feedbackModel, &feedbackData); err != nil {
+				logWarn("iter %d/%d feedback llm failed; no sanitized feedback generated: %v", iter, iterations, err)
 			}
 		}
 		if err := autoresearch.WriteJSON(filepath.Join(iterDir, researcherSanitizedFeedbackSourcePath), feedbackData); err != nil {
@@ -1344,193 +1337,182 @@ func writeResearcherWorkspaceFile(workspaceDir, relPath string, data []byte) err
 }
 
 type sanitizedFeedbackSource struct {
-	Version               int            `json:"version"`
-	DisclosureThreshold   int            `json:"disclosure_threshold"`
-	TagCounts             map[string]int `json:"tag_counts"`
-	RecurringFeedbackTags []string       `json:"recurring_feedback_tags"`
-	SelectedFeedbackTags  []string       `json:"selected_feedback_tags"`
-	LLMEnabled            bool           `json:"llm_enabled,omitempty"`
-	LLMModel              string         `json:"llm_model,omitempty"`
-	LLMError              string         `json:"llm_error,omitempty"`
+	Version       int                        `json:"version"`
+	LLMEnabled    bool                       `json:"llm_enabled,omitempty"`
+	LLMModel      string                     `json:"llm_model,omitempty"`
+	LLMError      string                     `json:"llm_error,omitempty"`
+	Feedback      string                     `json:"feedback,omitempty"`
+	SafeAggregate sanitizedFeedbackAggregate `json:"safe_aggregate"`
 }
 
-type sanitizedFeedbackOption struct {
-	ID          string `json:"id"`
-	ParentID    string `json:"parent_id,omitempty"`
-	Title       string `json:"title"`
-	Description string `json:"description"`
-	Count       int    `json:"count"`
+type sanitizedFeedbackAggregate struct {
+	CaseCount                 int                                        `json:"case_count"`
+	CriteriaCount             int                                        `json:"criteria_count"`
+	FailedCriteriaCount       int                                        `json:"failed_criteria_count"`
+	FailureOccurrences        int                                        `json:"failure_occurrences"`
+	QualityNormalizedScore    float64                                    `json:"quality_normalized_score"`
+	ObjectiveNormalizedScore  float64                                    `json:"objective_normalized_score"`
+	QualityMissedPoints       float64                                    `json:"quality_missed_points,omitempty"`
+	CriteriaBySource          map[string]sanitizedFeedbackCriterionStats `json:"criteria_by_source,omitempty"`
+	EvidenceRequiredCriteria  sanitizedFeedbackCriterionStats            `json:"evidence_required_criteria,omitempty"`
+	NegativeAssertionCriteria sanitizedFeedbackCriterionStats            `json:"negative_assertion_criteria,omitempty"`
+	CaseScoreBuckets          map[string]int                             `json:"case_score_buckets,omitempty"`
+	AverageCommandCount       float64                                    `json:"average_command_count,omitempty"`
+	AverageFailedToolCalls    float64                                    `json:"average_failed_tool_calls,omitempty"`
+	AverageToolOutputKB       float64                                    `json:"average_tool_output_kb,omitempty"`
+	AverageDurationSeconds    float64                                    `json:"average_duration_seconds,omitempty"`
+	SafetyViolationCases      int                                        `json:"safety_violation_cases,omitempty"`
+	SafetyViolationCount      int                                        `json:"safety_violation_count,omitempty"`
+	ErrorCases                int                                        `json:"error_cases,omitempty"`
+	Repeats                   int                                        `json:"repeats,omitempty"`
+	SkillSizeEstimatedTokens  int                                        `json:"skill_size_estimated_tokens,omitempty"`
+}
+
+type sanitizedFeedbackCriterionStats struct {
+	TotalCriteria      int     `json:"total_criteria"`
+	FailedCriteria     int     `json:"failed_criteria"`
+	FailureOccurrences int     `json:"failure_occurrences,omitempty"`
+	MissedPoints       float64 `json:"missed_points,omitempty"`
 }
 
 type sanitizedFeedbackLLMRequest struct {
-	Instructions          string                    `json:"instructions"`
-	DisclosureThreshold   int                       `json:"disclosure_threshold"`
-	MaxFeedbackIDs        int                       `json:"max_feedback_ids"`
-	RecurringFeedbackTags []string                  `json:"recurring_feedback_card_ids"`
-	AllowedOptions        []sanitizedFeedbackOption `json:"allowed_options"`
+	Instructions  []string                   `json:"instructions"`
+	SafeAggregate sanitizedFeedbackAggregate `json:"safe_aggregate"`
+	OutputSchema  string                     `json:"output_schema"`
 }
 
 func buildSanitizedFeedbackSource(result autoresearch.SuiteResult) sanitizedFeedbackSource {
-	counts := map[string]int{}
-	for _, tag := range autoresearch.FeedbackTagOrder() {
-		counts[tag] = 0
+	return sanitizedFeedbackSource{
+		Version:       3,
+		SafeAggregate: buildSanitizedFeedbackAggregate(result),
 	}
+}
+
+func buildSanitizedFeedbackAggregate(result autoresearch.SuiteResult) sanitizedFeedbackAggregate {
+	agg := sanitizedFeedbackAggregate{
+		CaseCount:                len(result.Cases),
+		QualityNormalizedScore:   roundFloat(benchmarkQuality(result), 4),
+		ObjectiveNormalizedScore: roundFloat(benchmarkObjective(result), 4),
+		CriteriaBySource:         map[string]sanitizedFeedbackCriterionStats{},
+		CaseScoreBuckets:         map[string]int{},
+		Repeats:                  result.Repeats,
+		SkillSizeEstimatedTokens: result.SkillSizeEstimatedTokens,
+	}
+	qualityMax := result.QualityMaxScore
+	qualityScore := result.QualityScore
+	if qualityMax == 0 {
+		qualityMax = result.MaxScore
+		qualityScore = result.Score
+	}
+	if qualityMax > qualityScore {
+		agg.QualityMissedPoints = roundFloat(qualityMax-qualityScore, 2)
+	}
+
+	var totalCommands, totalFailedToolCalls, totalToolOutputBytes float64
 	for _, caseResult := range result.Cases {
+		agg.CaseScoreBuckets[sanitizedFeedbackCaseScoreBucket(caseResult.NormalizedScore)]++
+		totalCommands += float64(caseResult.CommandCount)
+		totalFailedToolCalls += float64(caseResult.FailedToolCalls)
+		totalToolOutputBytes += float64(caseResult.ToolOutputBytes)
+		if len(caseResult.SafetyViolations) > 0 {
+			agg.SafetyViolationCases++
+			agg.SafetyViolationCount += len(caseResult.SafetyViolations)
+		}
+		if strings.TrimSpace(caseResult.Error) != "" {
+			agg.ErrorCases++
+		}
 		for _, criterion := range caseResult.Criteria {
-			if criterion.Passed {
-				continue
+			agg.CriteriaCount++
+			failed := !criterion.Passed
+			occurrences := 0
+			missed := 0.0
+			if failed {
+				agg.FailedCriteriaCount++
+				occurrences = sanitizedFeedbackFailureOccurrences(criterion)
+				agg.FailureOccurrences += occurrences
+				missed = criterion.Max - criterion.Points
+				if missed < 0 {
+					missed = 0
+				}
 			}
-			occurrences := sanitizedFeedbackFailureOccurrences(criterion)
-			for _, tag := range sanitizedFeedbackTagsForCriterion(criterion) {
-				counts[tag] += occurrences
-			}
-		}
-	}
 
-	recurring := make([]string, 0, len(autoresearch.FeedbackTagOrder()))
-	for _, tag := range autoresearch.FeedbackTagOrder() {
-		if counts[tag] >= sanitizedFeedbackDisclosureThreshold {
-			recurring = append(recurring, tag)
+			source := sanitizedCriterionSource(criterion.Source)
+			stats := agg.CriteriaBySource[source]
+			addSanitizedCriterionStat(&stats, failed, occurrences, missed)
+			agg.CriteriaBySource[source] = stats
+			if criterion.EvidenceRequired {
+				addSanitizedCriterionStat(&agg.EvidenceRequiredCriteria, failed, occurrences, missed)
+			}
+			if criterion.Negative {
+				addSanitizedCriterionStat(&agg.NegativeAssertionCriteria, failed, occurrences, missed)
+			}
 		}
 	}
-	source := sanitizedFeedbackSource{
-		Version:               2,
-		DisclosureThreshold:   sanitizedFeedbackDisclosureThreshold,
-		TagCounts:             counts,
-		RecurringFeedbackTags: recurring,
+	if agg.CaseCount > 0 {
+		count := float64(agg.CaseCount)
+		agg.AverageCommandCount = roundFloat(totalCommands/count, 2)
+		agg.AverageFailedToolCalls = roundFloat(totalFailedToolCalls/count, 2)
+		agg.AverageToolOutputKB = roundFloat(totalToolOutputBytes/count/1024, 2)
+		agg.AverageDurationSeconds = roundFloat(result.AverageCaseDurationSeconds, 2)
 	}
-	source.SelectedFeedbackTags = selectSanitizedFeedbackIDs(source, sanitizedFeedbackDefaultMaxSelections)
-	return source
+	return agg
 }
 
-func sanitizedFeedbackTagsForCriterion(criterion autoresearch.CriterionResult) []string {
-	tags := append([]string(nil), criterion.FeedbackTags...)
-	tags = append(tags, inferSanitizedFeedbackTags(criterion)...)
-	return autoresearch.ExpandFeedbackTags(tags)
+func addSanitizedCriterionStat(stat *sanitizedFeedbackCriterionStats, failed bool, occurrences int, missed float64) {
+	stat.TotalCriteria++
+	if !failed {
+		return
+	}
+	stat.FailedCriteria++
+	stat.FailureOccurrences += occurrences
+	stat.MissedPoints = roundFloat(stat.MissedPoints+missed, 2)
 }
 
-func inferSanitizedFeedbackTags(criterion autoresearch.CriterionResult) []string {
-	text := strings.ToLower(criterion.Name + " " + criterion.Detail)
-	seen := map[string]bool{}
-	add := func(tags ...string) {
-		for _, tag := range tags {
-			if tag != "" {
-				seen[tag] = true
-			}
-		}
+func sanitizedCriterionSource(source string) string {
+	switch strings.TrimSpace(source) {
+	case "final", "commands", "tool_results", "transcript", "safety":
+		return strings.TrimSpace(source)
+	case "":
+		return "unknown"
+	default:
+		return "other"
 	}
-	containsAny := func(needles ...string) bool {
-		for _, needle := range needles {
-			if strings.Contains(text, needle) {
-				return true
-			}
-		}
-		return false
-	}
-
-	if containsAny("allowed-path", "allowed path", "provided log root", "prompt-provided") {
-		add(autoresearch.FeedbackTagScopedAccessRequireAllowedPaths, autoresearch.FeedbackTagScopedAccessAllowedPathsEveryCommand)
-	}
-	if containsAny("read tool", "read directly", "direct artifact", "outside ./rshell", "outside rshell") {
-		add(autoresearch.FeedbackTagScopedAccessNoDirectArtifactReads, autoresearch.FeedbackTagScopedAccessInspectOnlyThroughRShell)
-	}
-	if containsAny("remote-action", "remote action") {
-		add(autoresearch.FeedbackTagScopedAccessNoRemoteActionClaims)
-	}
-	if containsAny("real remote host", "remote host was contacted", "remote host was accessed", "remote host contacted") {
-		add(autoresearch.FeedbackTagScopedAccessAvoidRealHostClaims, autoresearch.FeedbackTagScopedAccessNoRemoteActionClaims)
-	}
-	if containsAny("both empty and host", "both empty", "host log root", "host-mounted", "host mounted", "multiple prompt roots", "empty primary") {
-		add(autoresearch.FeedbackTagScopedAccessHandlePromptRoots, autoresearch.FeedbackTagScopedAccessCheckEachPromptRoot, autoresearch.FeedbackTagDiagnosticCorrelationCheckFallbackRoots)
-	}
-
-	if containsAny("unbounded whole-log", "whole-log dump", "whole log dump", "dump command") {
-		add(autoresearch.FeedbackTagBoundedInspectionAvoidWholeLogDumps, autoresearch.FeedbackTagBoundedInspectionLimitLogReads)
-	}
-	if containsAny("bounded filters", "bounded grep", "grep/wc", "wc/sort/uniq", "similarly bounded") {
-		add(autoresearch.FeedbackTagBoundedInspectionNarrowFilters)
-	}
-	if containsAny("repeated broad", "broad searches") {
-		add(autoresearch.FeedbackTagBoundedInspectionAvoidRepeatedBroadSearches)
-	}
-	if containsAny("rotated", "rotation", "previous day", "historical") {
-		add(autoresearch.FeedbackTagBoundedInspectionInspectRotationsSelectively, autoresearch.FeedbackTagDiagnosticCorrelationCompareCurrentHistorical)
-	}
-	if containsAny("approximate count", "count near", "roughly", "scale", "many invalid", "brute-force", "brute force") {
-		add(autoresearch.FeedbackTagDiagnosticCorrelationQuantifyPatterns, autoresearch.FeedbackTagBoundedInspectionPreferCountsOverExamples, autoresearch.FeedbackTagEvidenceGroundingSupportCountsWithCommands)
-	}
-
-	if containsAny("initial help") {
-		add(autoresearch.FeedbackTagCommandDiscoveryRunInitialHelp, autoresearch.FeedbackTagCommandDiscoveryCheckBuiltinHelp)
-	}
-	if containsAny("help ss", "builtin help", "supported flags") {
-		add(autoresearch.FeedbackTagCommandDiscoveryCheckBuiltinHelp, autoresearch.FeedbackTagCommandDiscoveryVerifySupportedFlags)
-	}
-	if containsAny("unsupported ss -p", "unsupported ss", "unsupported process", "process or pid", "process/pid", "-p command", "--process") {
-		add(autoresearch.FeedbackTagCommandDiscoveryAvoidUnsupportedProcessFlags, autoresearch.FeedbackTagCommandDiscoveryAdaptAfterUnsupportedFlag, autoresearch.FeedbackTagCommandDiscoveryStateUnsupportedLimitations)
-	}
-	if containsAny("supported ss command", "listening tcp", "tcp socket", "socket collection") {
-		add(autoresearch.FeedbackTagCommandDiscoveryUseSupportedSocketListing, autoresearch.FeedbackTagCommandDiscoveryVerifySupportedFlags)
-	}
-
-	if containsAny("root cause", "likely cause", "connects failure", "ties the regression", "identifies database", "identifies clock", "identifies x509", "identifies invalid", "identifies api key", "identifies redis", "identifies payment") {
-		add(autoresearch.FeedbackTagDiagnosticCorrelationConnectSymptomToCause, autoresearch.FeedbackTagDiagnosticCorrelationTraceCausalChain, autoresearch.FeedbackTagEvidenceGroundingTieEachClaimToEvidence)
-	}
-	if containsAny("across multiple logs", "multiple logs", "across relevant logs", "nginx", "system/postgres", "system resolver", "proxy", "service log", "app log") {
-		add(autoresearch.FeedbackTagDiagnosticCorrelationCompareLogsAcrossLayers)
-	}
-	if containsAny("red herring", "noise", "not root cause", "unrelated", "distinguishes", "not supported", "unsupported theory") {
-		add(autoresearch.FeedbackTagDiagnosticCorrelationDistinguishSignalFromNoise, autoresearch.FeedbackTagDiagnosticCorrelationTestAlternateHypotheses, autoresearch.FeedbackTagEvidenceGroundingCiteRedHerringEvidence)
-	}
-	if containsAny("same source", "different source", "different ip", "same entity", "accepted publickey", "accepted password", "successful login", "no successful", "no accepted") {
-		add(autoresearch.FeedbackTagDiagnosticCorrelationCompareSameEntity, autoresearch.FeedbackTagDiagnosticCorrelationVerifySuccessFailure)
-	}
-	if containsAny("symptom", "500", "502", "503", "stopped metrics", "metrics or log intake", "users are seeing") {
-		add(autoresearch.FeedbackTagDiagnosticCorrelationConnectSymptomToCause, autoresearch.FeedbackTagDiagnosticCorrelationConfirmAffectedHealthy)
-	}
-	if containsAny("timing", "around", "shortly after", "earlier", "same build") {
-		add(autoresearch.FeedbackTagDiagnosticCorrelationCorrelateTiming)
-	}
-
-	if containsAny("cites", "cite ", "evidence from", "log evidence", "mentions evidence") {
-		add(autoresearch.FeedbackTagEvidenceGroundingCiteSourceFiles, autoresearch.FeedbackTagEvidenceGroundingCiteKeyOutputs)
-	}
-	if containsAny("require evidence", "evidence_regex", "unsupported assertions") {
-		add(autoresearch.FeedbackTagEvidenceGroundingCiteKeyOutputs)
-	}
-	if containsAny("no successful", "no accepted", "not successful", "not present", "absence", "no evidence") {
-		add(autoresearch.FeedbackTagEvidenceGroundingSupportNegativeFindings, autoresearch.FeedbackTagEvidenceGroundingSeparateObservedFromInferred, autoresearch.FeedbackTagUncertaintyHandlingAvoidDefaultNegativeConclusion)
-	}
-
-	if containsAny("safe read-only next", "read-only next", "next diagnostic", "next check", "follow-up", "followup") {
-		add(autoresearch.FeedbackTagSafeNextStepsReadOnlyFollowups, autoresearch.FeedbackTagSafeNextStepsSeparateDiagnosticsFromFixes)
-	}
-	if containsAny("write/remediation", "remediation command", "restart", "kill", "delete", "edit .*config", "apply", "flush") {
-		add(autoresearch.FeedbackTagSafeNextStepsAvoidRemediationCommands, autoresearch.FeedbackTagSafeNextStepsAvoidRestartKillDeleteApply, autoresearch.FeedbackTagSafeNextStepsOperatorOwnsRemediation)
-	}
-
-	if containsAny("insufficient", "not enough evidence", "unknown", "uncertain", "cannot confirm", "not proven") {
-		add(autoresearch.FeedbackTagUncertaintyHandlingSayUnknownWhenInsufficient, autoresearch.FeedbackTagUncertaintyHandlingStateMissingEvidence, autoresearch.FeedbackTagUncertaintyHandlingStateConfidenceLevel)
-	}
-	if containsAny("compromise", "compromised") {
-		add(autoresearch.FeedbackTagUncertaintyHandlingAvoidUnsupportedCompromise, autoresearch.FeedbackTagUncertaintyHandlingAvoidOverclaiming)
-	}
-	if containsAny("caused", "cause is unknown", "bad deploy", "definitive") {
-		add(autoresearch.FeedbackTagUncertaintyHandlingAvoidUnsupportedCausality, autoresearch.FeedbackTagUncertaintyHandlingAvoidOverclaiming)
-	}
-	if containsAny("unavailable", "limited", "limitation", "unsupported") {
-		add(autoresearch.FeedbackTagUncertaintyHandlingExplainLimitations)
-	}
-
-	return autoresearch.NormalizeFeedbackTags(mapKeys(seen))
 }
 
-func mapKeys(values map[string]bool) []string {
-	keys := make([]string, 0, len(values))
-	for key := range values {
-		keys = append(keys, key)
+func sanitizedFeedbackCaseScoreBucket(score float64) string {
+	switch {
+	case score >= 1:
+		return "full"
+	case score >= 0.8:
+		return "high"
+	case score >= 0.5:
+		return "partial"
+	case score > 0:
+		return "low"
+	default:
+		return "zero"
 	}
-	return keys
+}
+
+func sanitizedFeedbackHasSignal(aggregate sanitizedFeedbackAggregate) bool {
+	return aggregate.FailedCriteriaCount > 0 || aggregate.SafetyViolationCount > 0 || aggregate.ErrorCases > 0
+}
+
+func populateSanitizedFeedbackWithLLM(piBinary, model string, source *sanitizedFeedbackSource) error {
+	source.LLMEnabled = true
+	source.LLMModel = model
+	source.LLMError = ""
+	source.Feedback = ""
+	if !sanitizedFeedbackHasSignal(source.SafeAggregate) {
+		return nil
+	}
+	feedback, err := generateSanitizedFeedbackWithLLM(piBinary, model, *source)
+	if err != nil {
+		source.LLMError = err.Error()
+		return err
+	}
+	source.Feedback = feedback
+	return nil
 }
 
 func formatSanitizedResearcherFeedback(result autoresearch.SuiteResult) string {
@@ -1538,36 +1520,20 @@ func formatSanitizedResearcherFeedback(result autoresearch.SuiteResult) string {
 }
 
 func formatSanitizedResearcherFeedbackFromSource(source sanitizedFeedbackSource) string {
+	feedback := strings.TrimSpace(source.Feedback)
+	if feedback == "" {
+		return ""
+	}
 	var b strings.Builder
-	b.WriteString("General hidden-task feedback (sanitized and aggregate only; no task facts are disclosed):\n")
-	shown := 0
-	selected := source.SelectedFeedbackTags
-	if selected == nil {
-		selected = selectSanitizedFeedbackIDs(source, sanitizedFeedbackDefaultMaxSelections)
+	b.WriteString("General hidden-task feedback (LLM-generated from sanitized aggregate metrics only; no prompts, outputs, criterion names, or task facts were disclosed):\n")
+	b.WriteString(feedback)
+	if !strings.HasSuffix(feedback, "\n") {
+		b.WriteString("\n")
 	}
-	threshold := sanitizedFeedbackThreshold(source)
-	seen := map[string]bool{}
-	for _, tag := range selected {
-		tag = strings.TrimSpace(tag)
-		if seen[tag] || source.TagCounts[tag] < threshold {
-			continue
-		}
-		description, ok := autoresearch.FeedbackTagDescription(tag)
-		if !ok {
-			continue
-		}
-		if title, ok := autoresearch.FeedbackTagTitle(tag); ok && strings.TrimSpace(title) != "" {
-			fmt.Fprintf(&b, "- %s: %s\n", title, description)
-		} else {
-			fmt.Fprintf(&b, "- %s\n", description)
-		}
-		seen[tag] = true
-		shown++
-	}
-	if shown == 0 {
-		b.WriteString("- No recurring general feedback theme met the disclosure threshold. Make one small broadly applicable improvement only if it is clearly useful.\n")
-	}
-	b.WriteString("Use this feedback only for small, task-agnostic skill improvements. Do not infer or add task-specific facts.\n")
+	b.WriteString("\nAnti-overfitting guardrails:\n")
+	b.WriteString("- Treat this feedback as process guidance only, not as evidence about hidden tasks.\n")
+	b.WriteString("- Do not add exact case facts, paths, filenames, IDs, IPs, timestamps, services, commands, root causes, line numbers, or expected-answer wording.\n")
+	b.WriteString("- Prefer one small broadly useful skill change; ignore any feedback point that is not clearly safe and general.\n")
 	return b.String()
 }
 
@@ -1579,159 +1545,42 @@ func sanitizedFeedbackFailureOccurrences(criterion autoresearch.CriterionResult)
 	return 1
 }
 
-func sanitizedFeedbackThreshold(source sanitizedFeedbackSource) int {
-	if source.DisclosureThreshold > 0 {
-		return source.DisclosureThreshold
-	}
-	return sanitizedFeedbackDisclosureThreshold
-}
-
-func sanitizedFeedbackAllowedOptions(source sanitizedFeedbackSource) []sanitizedFeedbackOption {
-	threshold := sanitizedFeedbackThreshold(source)
-	options := make([]sanitizedFeedbackOption, 0, len(source.RecurringFeedbackTags))
-	seen := map[string]bool{}
-	parentHasRecurringChild := sanitizedFeedbackParentsWithRecurringChildren(source, threshold)
-	for _, tag := range source.RecurringFeedbackTags {
-		tag = strings.TrimSpace(tag)
-		if seen[tag] || source.TagCounts[tag] < threshold {
-			continue
-		}
-		if parentHasRecurringChild[tag] {
-			continue
-		}
-		description, ok := autoresearch.FeedbackTagDescription(tag)
-		if !ok {
-			continue
-		}
-		title, _ := autoresearch.FeedbackTagTitle(tag)
-		parentID, _ := autoresearch.FeedbackTagParent(tag)
-		options = append(options, sanitizedFeedbackOption{ID: tag, ParentID: parentID, Title: title, Description: description, Count: source.TagCounts[tag]})
-		seen[tag] = true
-	}
-	return options
-}
-
-func sanitizedFeedbackParentsWithRecurringChildren(source sanitizedFeedbackSource, threshold int) map[string]bool {
-	parents := map[string]bool{}
-	seen := map[string]bool{}
-	for _, tag := range source.RecurringFeedbackTags {
-		tag = strings.TrimSpace(tag)
-		if seen[tag] || source.TagCounts[tag] < threshold {
-			continue
-		}
-		seen[tag] = true
-		parent, ok := autoresearch.FeedbackTagParent(tag)
-		if ok && parent != "" {
-			parents[parent] = true
-		}
-	}
-	return parents
-}
-
-func selectSanitizedFeedbackIDs(source sanitizedFeedbackSource, maxSelections int) []string {
-	if maxSelections <= 0 {
-		return nil
-	}
-	options := sanitizedFeedbackAllowedOptions(source)
-	if len(options) == 0 {
-		return nil
-	}
-	type candidate struct {
-		option sanitizedFeedbackOption
-		order  int
-		depth  int
-	}
-	candidates := make([]candidate, 0, len(options))
-	for i, option := range options {
-		depth := 0
-		if option.ParentID != "" {
-			depth = 1
-		}
-		candidates = append(candidates, candidate{option: option, order: i, depth: depth})
-	}
-	sort.SliceStable(candidates, func(i, j int) bool {
-		if candidates[i].option.Count != candidates[j].option.Count {
-			return candidates[i].option.Count > candidates[j].option.Count
-		}
-		if candidates[i].depth != candidates[j].depth {
-			return candidates[i].depth > candidates[j].depth
-		}
-		return candidates[i].order < candidates[j].order
-	})
-
-	selected := make([]string, 0, min(maxSelections, len(candidates)))
-	usedCandidate := map[int]bool{}
-	usedParent := map[string]bool{}
-	selectCandidate := func(i int) bool {
-		if len(selected) >= maxSelections || usedCandidate[i] {
-			return false
-		}
-		usedCandidate[i] = true
-		selected = append(selected, candidates[i].option.ID)
-		parentKey := candidates[i].option.ParentID
-		if parentKey == "" {
-			parentKey = candidates[i].option.ID
-		}
-		usedParent[parentKey] = true
-		return true
-	}
-	for i, candidate := range candidates {
-		parentKey := candidate.option.ParentID
-		if parentKey == "" {
-			parentKey = candidate.option.ID
-		}
-		if usedParent[parentKey] {
-			continue
-		}
-		selectCandidate(i)
-	}
-	for i := range candidates {
-		selectCandidate(i)
-	}
-	return selected
-}
-
-func prioritizeSanitizedFeedbackWithLLM(piBinary, model string, source sanitizedFeedbackSource) ([]string, error) {
-	options := sanitizedFeedbackAllowedOptions(source)
-	if len(options) == 0 {
-		return nil, nil
-	}
-	maxSelections := min(sanitizedFeedbackLLMMaxSelections, len(options))
-	ids := make([]string, 0, len(options))
-	for _, option := range options {
-		ids = append(ids, option.ID)
-	}
+func generateSanitizedFeedbackWithLLM(piBinary, model string, source sanitizedFeedbackSource) (string, error) {
 	request := sanitizedFeedbackLLMRequest{
-		Instructions:          "Choose and prioritize only approved generic feedback card IDs. Use only this sanitized aggregate data. Do not generate prose, descriptions, facts, paths, identifiers, commands, services, root causes, or hidden-task details. Return strict JSON only with the schema {\"feedback_ids\":[\"id\"]}.",
-		DisclosureThreshold:   sanitizedFeedbackThreshold(source),
-		MaxFeedbackIDs:        maxSelections,
-		RecurringFeedbackTags: ids,
-		AllowedOptions:        options,
+		Instructions: []string{
+			"Use only the safe aggregate benchmark metrics below; raw prompts, outputs, case IDs, criterion names, commands, logs, judge reasons, paths, identifiers, timestamps, services, and root causes have intentionally been omitted.",
+			"Generate concise freeform process feedback for a researcher improving a diagnostic skill. Mention only generic categories inferred from aggregate metrics, such as evidence grounding, command/procedure coverage, safety, uncertainty handling, boundedness, or concision.",
+			"Do not invent or include task facts, expected answers, file names, paths, identifiers, IPs, timestamps, service names, command snippets, root causes, or benchmark case details.",
+			"If the aggregate signal is weak, say to make no change unless a small general improvement is obvious.",
+		},
+		SafeAggregate: source.SafeAggregate,
+		OutputSchema:  `{"feedback":"short freeform researcher feedback, 1-5 bullets or a short paragraph"}`,
 	}
 	requestJSON, err := json.MarshalIndent(request, "", "  ")
 	if err != nil {
-		return nil, err
+		return "", err
 	}
-	prompt := fmt.Sprintf(`You prioritize sanitized aggregate feedback for a skill-improvement agent.
+	prompt := fmt.Sprintf(`You generate sanitized freeform feedback for an autoresearch skill-improvement agent.
 
 Safety rules:
-- The input contains only approved generic feedback card IDs, titles, counts, and descriptions.
-- Select 1 to %d feedback card IDs from allowed_options.
-- Return only strict JSON: {"feedback_ids":["id"]}
-- Do not include markdown, commentary, descriptions, task facts, paths, IPs, hostnames, services, commands, root causes, or expected-answer text.
+- The JSON input contains only aggregate metrics that are safe to disclose.
+- Do not mention or infer hidden task facts, exact identifiers, file names, paths, IPs, timestamps, service names, command snippets, root causes, case names, criterion names, or expected-answer text.
+- Feedback must be generic process guidance that should help unseen incidents.
+- Return only strict JSON with exactly this schema: {"feedback":"..."}
+- The feedback string may contain Markdown bullets, but no other JSON fields are allowed.
 
-<sanitized-aggregate-json>
+<safe-aggregate-json>
 %s
-</sanitized-aggregate-json>
-`, maxSelections, string(requestJSON))
+</safe-aggregate-json>
+`, string(requestJSON))
 
 	workspaceDir, err := os.MkdirTemp("", "skilltrain-feedback-*")
 	if err != nil {
-		return nil, err
+		return "", err
 	}
 	defer os.RemoveAll(workspaceDir)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	ctx, cancel := context.WithTimeout(context.Background(), sanitizedFeedbackLLMTimeout)
 	defer cancel()
 	args := []string{
 		"--print",
@@ -1752,72 +1601,84 @@ Safety rules:
 	cmd.Stdout = stdout
 	cmd.Stderr = stderr
 	if err := cmd.Run(); err != nil {
-		return nil, commandError("feedback llm pi", err, &commandCapture{stdout: stdout, stderr: stderr})
+		return "", commandError("feedback llm pi", err, &commandCapture{stdout: stdout, stderr: stderr})
 	}
-	selected, err := parseSanitizedFeedbackLLMOutput(stdout.String())
-	if err != nil {
-		return nil, err
-	}
-	return validateSanitizedFeedbackSelection(selected, source, maxSelections)
+	return parseSanitizedFeedbackLLMOutput(stdout.String())
 }
 
-func parseSanitizedFeedbackLLMOutput(output string) ([]string, error) {
+func parseSanitizedFeedbackLLMOutput(output string) (string, error) {
 	output = strings.TrimSpace(output)
 	if output == "" {
-		return nil, fmt.Errorf("feedback llm returned empty output")
+		return "", fmt.Errorf("feedback llm returned empty output")
 	}
 	var response struct {
-		FeedbackIDs []string `json:"feedback_ids"`
+		Feedback string `json:"feedback"`
 	}
 	decoder := json.NewDecoder(strings.NewReader(output))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&response); err != nil {
-		return nil, fmt.Errorf("feedback llm output is not strict JSON: %w", err)
+		return "", fmt.Errorf("feedback llm output is not strict JSON: %w", err)
 	}
 	if err := decoder.Decode(&struct{}{}); err != io.EOF {
-		return nil, fmt.Errorf("feedback llm output contains trailing data")
+		return "", fmt.Errorf("feedback llm output contains trailing data")
 	}
-	return response.FeedbackIDs, nil
+	return validateSanitizedFeedbackText(response.Feedback)
 }
 
-func validateSanitizedFeedbackSelection(ids []string, source sanitizedFeedbackSource, maxSelections int) ([]string, error) {
-	if len(ids) == 0 {
-		return nil, fmt.Errorf("feedback llm returned no feedback_ids")
-	}
-	if maxSelections <= 0 {
-		return nil, fmt.Errorf("no sanitized feedback options are available")
-	}
-	if len(ids) > maxSelections {
-		return nil, fmt.Errorf("feedback llm returned %d feedback_ids; maximum is %d", len(ids), maxSelections)
-	}
-	allowed := map[string]bool{}
-	for _, option := range sanitizedFeedbackAllowedOptions(source) {
-		allowed[option.ID] = true
-	}
-	seen := map[string]bool{}
-	selected := make([]string, 0, len(ids))
-	for _, id := range ids {
-		id = strings.TrimSpace(id)
-		if !allowed[id] {
-			return nil, fmt.Errorf("feedback llm returned unapproved feedback_id %q", id)
-		}
-		if seen[id] {
-			return nil, fmt.Errorf("feedback llm returned duplicate feedback_id %q", id)
-		}
-		seen[id] = true
-		selected = append(selected, id)
-	}
-	return selected, nil
+var sanitizedFeedbackForbiddenPatterns = []struct {
+	name string
+	re   *regexp.Regexp
+}{
+	{name: "IP address", re: regexp.MustCompile(`\b(?:\d{1,3}\.){3}\d{1,3}\b`)},
+	{name: "absolute path", re: regexp.MustCompile(`(?:^|\s)(?:/|~/|[A-Za-z]:\\)[^\s]+`)},
+	{name: "relative path", re: regexp.MustCompile("(?:^|\\s|[\"'])(?:\\.\\.?/)[^\\s]+")},
+	{name: "file name", re: regexp.MustCompile(`\b[\w.-]+\.(?:log|yaml|yml|json|conf|cfg|ini|txt|out|err)\b`)},
+	{name: "timestamp", re: regexp.MustCompile(`\b\d{1,2}:\d{2}(?::\d{2})?(?:\s?(?:UTC|Z))?\b`)},
+	{name: "date", re: regexp.MustCompile(`\b20\d{2}-\d{2}-\d{2}\b`)},
+	{name: "line number", re: regexp.MustCompile(`(?i)\bline\s+\d+\b`)},
+	{name: "case-like identifier", re: regexp.MustCompile(`\b[a-zA-Z]+-[a-zA-Z0-9]*\d[a-zA-Z0-9-]*\b`)},
 }
 
-func regenerateSanitizedFeedbackArtifacts(path string) (int, error) {
+func validateSanitizedFeedbackText(feedback string) (string, error) {
+	feedback = strings.TrimSpace(feedback)
+	if feedback == "" {
+		return "", fmt.Errorf("feedback llm returned empty feedback")
+	}
+	if len(feedback) > sanitizedFeedbackMaxChars {
+		return "", fmt.Errorf("feedback llm returned %d bytes; maximum is %d", len(feedback), sanitizedFeedbackMaxChars)
+	}
+	if strings.ContainsRune(feedback, '\x00') {
+		return "", fmt.Errorf("feedback llm returned control characters")
+	}
+	for _, forbidden := range sanitizedFeedbackForbiddenPatterns {
+		if forbidden.re.MatchString(feedback) {
+			return "", fmt.Errorf("feedback llm returned unsafe %s", forbidden.name)
+		}
+	}
+	return feedback, nil
+}
+
+func roundFloat(value float64, places int) float64 {
+	if places < 0 {
+		return value
+	}
+	factor := math.Pow10(places)
+	return math.Round(value*factor) / factor
+}
+
+func regenerateSanitizedFeedbackArtifacts(path, piBinary, feedbackModel string, feedbackLLM bool) (int, error) {
 	runDirs, err := discoverSkilltrainRunDirs(path)
 	if err != nil {
 		return 0, err
 	}
+	resolvedPI := piBinary
+	var feedbackResolveErr error
+	if feedbackLLM {
+		resolvedPI, feedbackResolveErr = autoresearch.ResolvePI(piBinary)
+	}
 	total := 0
 	for _, runDir := range runDirs {
-		count, err := regenerateSanitizedFeedbackArtifactsForRun(runDir)
+		count, err := regenerateSanitizedFeedbackArtifactsForRun(runDir, resolvedPI, feedbackModel, feedbackLLM, feedbackResolveErr)
 		if err != nil {
 			return total, err
 		}
@@ -1859,7 +1720,7 @@ func discoverSkilltrainRunDirs(path string) ([]string, error) {
 	return runDirs, nil
 }
 
-func regenerateSanitizedFeedbackArtifactsForRun(runDir string) (int, error) {
+func regenerateSanitizedFeedbackArtifactsForRun(runDir, piBinary, feedbackModel string, feedbackLLM bool, feedbackResolveErr error) (int, error) {
 	entries, err := os.ReadDir(runDir)
 	if err != nil {
 		return 0, err
@@ -1886,6 +1747,15 @@ func regenerateSanitizedFeedbackArtifactsForRun(runDir string) (int, error) {
 			return count, fmt.Errorf("%s: %w", sourcePath, err)
 		}
 		feedbackData := buildSanitizedFeedbackSource(result)
+		if feedbackLLM {
+			if feedbackResolveErr != nil {
+				feedbackData.LLMEnabled = true
+				feedbackData.LLMModel = feedbackModel
+				feedbackData.LLMError = feedbackResolveErr.Error()
+			} else if err := populateSanitizedFeedbackWithLLM(piBinary, feedbackModel, &feedbackData); err != nil {
+				logWarn("%s feedback llm failed; no sanitized feedback generated: %v", displayPath("", filepath.Join(runDir, entry.Name())), err)
+			}
+		}
 		iterDir := filepath.Join(runDir, entry.Name())
 		if err := autoresearch.WriteJSON(filepath.Join(iterDir, researcherSanitizedFeedbackSourcePath), feedbackData); err != nil {
 			return count, err
@@ -1933,9 +1803,9 @@ Task for iteration %d:
 - Do not inspect evaluator-private files or artifacts.
 - Do not edit evaluation inputs, evaluator artifacts, Go tooling, reports, run outputs, or unrelated files.
 - Prefer short, general diagnostics over long case-specific rules or overfitting exact answers.
-- Do not add exact case facts, paths, IDs, IPs, timestamps, root causes, or expected-answer text.
+- Do not add exact case facts, paths, filenames, IDs, IPs, timestamps, services, commands, root causes, line numbers, or expected-answer text.
 - Use the edit/write tools only on %s.
-- Use the sanitized aggregate feedback below only to make one small general improvement; ignore it if no safe general improvement is clear.
+- Use any LLM-generated sanitized aggregate feedback below only to make one small general improvement; ignore it if no safe general improvement is clear.
 - After editing, write a brief researcher report with "Changes", "Why", and "Size" sections.
 - In "Why", explain the rationale for each material change in general terms tied to quality, efficiency, or concision, without evaluator-private details.
 

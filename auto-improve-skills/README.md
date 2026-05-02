@@ -26,9 +26,9 @@ Training loop:
 go run ./cmd/skilltrain -iters 3 -judge
 ```
 
-`skilltrain` writes per-iteration `sanitized-feedback.md` plus an auditable `sanitized-feedback.source.json`. By default feedback is generated deterministically from aggregate closed-tag counts and rendered as approved generic feedback cards. Granular card IDs roll up to parent tags for safe fallback; recurring granular cards suppress their broader parent cards. Recent-result safety/criterion names are used only to infer approved generic card IDs, never to render task facts. Pass `-feedback-llm` to let a nested no-tools Pi call choose/prioritize among those approved generic feedback cards only; raw benchmark prompts, outputs, criterion names, and task facts are not provided to that call.
+`skilltrain` writes per-iteration `sanitized-feedback.md` plus an auditable `sanitized-feedback.source.json`. By default a nested no-tools Pi call generates concise freeform researcher feedback from safe aggregate metrics only (scores, criterion source/evidence/negative counts, runtime and safety counts). Raw benchmark prompts, outputs, criterion names/details, commands, tool output, judge reasons, case IDs, paths, identifiers, and task facts are not provided. The feedback is strict-JSON parsed and rejected if it contains overfitting-looking artifacts; on LLM failure or unsafe output, no feedback is supplied. Use `-feedback-llm=false` to disable feedback generation.
 
-Regenerate sanitized feedback artifacts after taxonomy/template changes:
+Regenerate sanitized feedback artifacts after feedback prompt/validation changes. This invokes the feedback LLM by default; pass `-feedback-llm=false` to regenerate empty feedback/source artifacts without LLM prose.
 
 ```sh
 go run ./cmd/skilltrain -regenerate-feedback runs

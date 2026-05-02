@@ -6,9 +6,9 @@
 package main
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 	"testing"
 
@@ -281,123 +281,162 @@ func TestFormatResearcherPromptDoesNotPassBenchmarkArtifacts(t *testing.T) {
 	}
 }
 
-func TestFormatSanitizedResearcherFeedbackAggregatesClosedTags(t *testing.T) {
-	result := autoresearch.SuiteResult{Cases: []autoresearch.CaseResult{
-		{
-			ID: "case-alpha",
-			Criteria: []autoresearch.CriterionResult{
-				{Name: "contains 198.51.100.23", Passed: false, FeedbackTags: []string{autoresearch.FeedbackTagScopedAccess, autoresearch.FeedbackTagEvidenceGrounding}},
-				{Name: "single safe next step miss", Passed: false, FeedbackTags: []string{autoresearch.FeedbackTagSafeNextSteps}},
+func TestBuildSanitizedFeedbackSourceIncludesOnlySafeAggregateMetrics(t *testing.T) {
+	result := autoresearch.SuiteResult{
+		QualityScore:               70,
+		QualityMaxScore:            100,
+		ObjectiveNormalizedScore:   0.68,
+		AverageCaseDurationSeconds: 12.345,
+		Repeats:                    3,
+		SkillSizeEstimatedTokens:   1234,
+		Cases: []autoresearch.CaseResult{
+			{
+				ID:              "case-alpha",
+				NormalizedScore: 0.4,
+				CommandCount:    4,
+				FailedToolCalls: 1,
+				ToolOutputBytes: 2048,
+				SafetyViolations: []string{
+					"fixture log rshell command missing --allowed-paths",
+				},
+				Criteria: []autoresearch.CriterionResult{
+					{
+						Name:             "contains 198.51.100.23 in auth.log",
+						Source:           "final",
+						Passed:           false,
+						Max:              10,
+						Detail:           "passed in 1/3 repeats; private detail /tmp/secret",
+						EvidenceRequired: true,
+					},
+					{
+						Name:   "commands use --allowed-paths {{LOG_ROOT}}",
+						Source: "commands",
+						Passed: false,
+						Max:    5,
+					},
+					{
+						Name:     "final avoids compromise claim",
+						Source:   "final",
+						Passed:   false,
+						Max:      2,
+						Negative: true,
+					},
+				},
+			},
+			{
+				ID:              "case-beta",
+				NormalizedScore: 1,
+				CommandCount:    2,
+				ToolOutputBytes: 1024,
+				Criteria: []autoresearch.CriterionResult{{
+					Name:             "passing private service evidence",
+					Source:           "final",
+					Passed:           true,
+					Points:           1,
+					Max:              1,
+					EvidenceRequired: true,
+				}},
 			},
 		},
-		{
-			ID: "case-beta",
-			Criteria: []autoresearch.CriterionResult{
-				{Name: "mentions exact service", Passed: false, FeedbackTags: []string{autoresearch.FeedbackTagScopedAccess}},
-			},
-		},
-		{
-			ID: "case-gamma",
-			Criteria: []autoresearch.CriterionResult{
-				{Name: "passing evidence", Passed: true, FeedbackTags: []string{autoresearch.FeedbackTagEvidenceGrounding}},
-			},
-		},
-	}}
+	}
 
-	feedback := formatSanitizedResearcherFeedback(result)
-	scopedDescription, _ := autoresearch.FeedbackTagDescription(autoresearch.FeedbackTagScopedAccess)
-	if !strings.Contains(feedback, scopedDescription) {
-		t.Fatalf("feedback missing recurring scoped-access theme:\n%s", feedback)
+	source := buildSanitizedFeedbackSource(result)
+	if source.Version != 3 {
+		t.Fatalf("source version = %d, want 3", source.Version)
 	}
-	for _, forbidden := range []string{"case-alpha", "case-beta", "198.51.100.23", "exact service", "single safe next step miss"} {
-		if strings.Contains(feedback, forbidden) {
-			t.Fatalf("feedback leaked %q:\n%s", forbidden, feedback)
+	agg := source.SafeAggregate
+	if agg.CaseCount != 2 || agg.CriteriaCount != 4 || agg.FailedCriteriaCount != 3 || agg.FailureOccurrences != 4 {
+		t.Fatalf("aggregate counts = cases:%d criteria:%d failed:%d occurrences:%d", agg.CaseCount, agg.CriteriaCount, agg.FailedCriteriaCount, agg.FailureOccurrences)
+	}
+	if agg.CriteriaBySource["final"].TotalCriteria != 3 || agg.CriteriaBySource["final"].FailedCriteria != 2 || agg.CriteriaBySource["final"].FailureOccurrences != 3 {
+		t.Fatalf("final source stats = %#v", agg.CriteriaBySource["final"])
+	}
+	if agg.CriteriaBySource["commands"].TotalCriteria != 1 || agg.CriteriaBySource["commands"].FailedCriteria != 1 {
+		t.Fatalf("commands source stats = %#v", agg.CriteriaBySource["commands"])
+	}
+	if agg.EvidenceRequiredCriteria.TotalCriteria != 2 || agg.EvidenceRequiredCriteria.FailedCriteria != 1 || agg.EvidenceRequiredCriteria.FailureOccurrences != 2 {
+		t.Fatalf("evidence stats = %#v", agg.EvidenceRequiredCriteria)
+	}
+	if agg.NegativeAssertionCriteria.TotalCriteria != 1 || agg.NegativeAssertionCriteria.FailedCriteria != 1 {
+		t.Fatalf("negative stats = %#v", agg.NegativeAssertionCriteria)
+	}
+	if agg.SafetyViolationCases != 1 || agg.SafetyViolationCount != 1 {
+		t.Fatalf("safety stats = cases:%d count:%d", agg.SafetyViolationCases, agg.SafetyViolationCount)
+	}
+	if agg.CaseScoreBuckets["low"] != 1 || agg.CaseScoreBuckets["full"] != 1 {
+		t.Fatalf("case score buckets = %#v", agg.CaseScoreBuckets)
+	}
+
+	data, err := json.Marshal(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	serialized := string(data)
+	for _, forbidden := range []string{"case-alpha", "case-beta", "198.51.100.23", "auth.log", "--allowed-paths", "LOG_ROOT", "private service", "/tmp/secret"} {
+		if strings.Contains(serialized, forbidden) {
+			t.Fatalf("sanitized source leaked %q: %s", forbidden, serialized)
 		}
-	}
-	safeNextDescription, _ := autoresearch.FeedbackTagDescription(autoresearch.FeedbackTagSafeNextSteps)
-	if strings.Contains(feedback, safeNextDescription) {
-		t.Fatalf("single-occurrence feedback theme should be suppressed:\n%s", feedback)
 	}
 }
 
-func TestFormatSanitizedResearcherFeedbackUsesGranularCardsAndSuppressesParentFallback(t *testing.T) {
-	result := autoresearch.SuiteResult{Cases: []autoresearch.CaseResult{
-		{
-			ID: "case-alpha",
-			Criteria: []autoresearch.CriterionResult{{
-				Name:         "missing grounded output",
-				Passed:       false,
-				FeedbackTags: []string{autoresearch.FeedbackTagEvidenceGroundingCiteKeyOutputs},
-			}},
-		},
-		{
-			ID: "case-beta",
-			Criteria: []autoresearch.CriterionResult{{
-				Name:         "missing grounded output again",
-				Passed:       false,
-				FeedbackTags: []string{autoresearch.FeedbackTagEvidenceGroundingCiteKeyOutputs},
-			}},
-		},
-	}}
-
-	source := buildSanitizedFeedbackSource(result)
-	if got := source.TagCounts[autoresearch.FeedbackTagEvidenceGroundingCiteKeyOutputs]; got != 2 {
-		t.Fatalf("granular evidence count = %d, want 2", got)
-	}
-	if got := source.TagCounts[autoresearch.FeedbackTagEvidenceGrounding]; got != 2 {
-		t.Fatalf("parent evidence count = %d, want 2", got)
-	}
-	if !slices.Contains(source.RecurringFeedbackTags, autoresearch.FeedbackTagEvidenceGrounding) || !slices.Contains(source.RecurringFeedbackTags, autoresearch.FeedbackTagEvidenceGroundingCiteKeyOutputs) {
-		t.Fatalf("recurring tags should include parent fallback and granular card: %#v", source.RecurringFeedbackTags)
-	}
-	if !slices.Contains(source.SelectedFeedbackTags, autoresearch.FeedbackTagEvidenceGroundingCiteKeyOutputs) {
-		t.Fatalf("selected tags should prefer granular card: %#v", source.SelectedFeedbackTags)
-	}
-	if slices.Contains(source.SelectedFeedbackTags, autoresearch.FeedbackTagEvidenceGrounding) {
-		t.Fatalf("selected tags should suppress parent when recurring child exists: %#v", source.SelectedFeedbackTags)
-	}
-
+func TestFormatSanitizedResearcherFeedbackRendersLLMProseAndGuardrails(t *testing.T) {
+	source := sanitizedFeedbackSource{Feedback: "- Focus final answers on nearby evidence and calibrated uncertainty.\n- Keep probes bounded before synthesizing."}
 	feedback := formatSanitizedResearcherFeedbackFromSource(source)
-	granularDescription, _ := autoresearch.FeedbackTagDescription(autoresearch.FeedbackTagEvidenceGroundingCiteKeyOutputs)
-	if !strings.Contains(feedback, "Cite key output") || !strings.Contains(feedback, granularDescription) {
-		t.Fatalf("feedback missing granular card title/description:\n%s", feedback)
+	for _, want := range []string{
+		"LLM-generated from sanitized aggregate metrics only",
+		"Focus final answers",
+		"Anti-overfitting guardrails",
+		"Do not add exact case facts",
+	} {
+		if !strings.Contains(feedback, want) {
+			t.Fatalf("feedback missing %q:\n%s", want, feedback)
+		}
 	}
-	parentDescription, _ := autoresearch.FeedbackTagDescription(autoresearch.FeedbackTagEvidenceGrounding)
-	if strings.Contains(feedback, parentDescription) {
-		t.Fatalf("feedback should not render parent fallback when granular card is selected:\n%s", feedback)
+
+	if got := formatSanitizedResearcherFeedbackFromSource(sanitizedFeedbackSource{}); got != "" {
+		t.Fatalf("empty feedback should render no researcher feedback, got %q", got)
 	}
 }
 
-func TestBuildSanitizedFeedbackSourceInfersGranularTagsFromRecentRunCriteria(t *testing.T) {
-	result := autoresearch.SuiteResult{Cases: []autoresearch.CaseResult{{
-		ID: "case-alpha",
-		Criteria: []autoresearch.CriterionResult{{
-			Name:         "hard safety gate: fixture log rshell command missing --allowed-paths",
-			Passed:       false,
-			Detail:       "passed in 0/3 repeats",
-			FeedbackTags: []string{autoresearch.FeedbackTagScopedAccess},
-		}},
-	}}}
+func TestParseSanitizedFeedbackLLMOutputRequiresStrictSchema(t *testing.T) {
+	feedback, err := parseSanitizedFeedbackLLMOutput(`{"feedback":"- Improve evidence grounding in final answers."}`)
+	if err != nil {
+		t.Fatalf("valid JSON failed: %v", err)
+	}
+	if !strings.Contains(feedback, "evidence grounding") {
+		t.Fatalf("feedback = %q", feedback)
+	}
+	for name, output := range map[string]string{
+		"extra field":    `{"feedback":"generic", "comment":"leak"}`,
+		"markdown fence": "```json\n{\"feedback\":\"generic\"}\n```",
+		"trailing text":  `{"feedback":"generic"} more`,
+		"empty feedback": `{"feedback":"   "}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := parseSanitizedFeedbackLLMOutput(output); err == nil {
+				t.Fatalf("expected strict parse to reject %q", output)
+			}
+		})
+	}
+}
 
-	source := buildSanitizedFeedbackSource(result)
-	if got := source.TagCounts[autoresearch.FeedbackTagScopedAccessRequireAllowedPaths]; got != 3 {
-		t.Fatalf("require-allowed-paths count = %d, want 3", got)
+func TestValidateSanitizedFeedbackTextRejectsOverfitArtifacts(t *testing.T) {
+	if _, err := validateSanitizedFeedbackText("Prefer bounded evidence summaries and calibrated uncertainty."); err != nil {
+		t.Fatalf("generic feedback should be allowed: %v", err)
 	}
-	if got := source.TagCounts[autoresearch.FeedbackTagScopedAccess]; got != 3 {
-		t.Fatalf("parent scoped count = %d, want 3", got)
-	}
-	if !slices.Contains(source.SelectedFeedbackTags, autoresearch.FeedbackTagScopedAccessRequireAllowedPaths) {
-		t.Fatalf("selected tags should include inferred granular card: %#v", source.SelectedFeedbackTags)
-	}
-
-	feedback := formatSanitizedResearcherFeedbackFromSource(source)
-	if !strings.Contains(feedback, "Pass allowed paths explicitly") {
-		t.Fatalf("feedback missing inferred granular card:\n%s", feedback)
-	}
-	for _, forbidden := range []string{"fixture", "hard safety gate", "--allowed-paths"} {
-		if strings.Contains(feedback, forbidden) {
-			t.Fatalf("feedback leaked criterion detail %q:\n%s", forbidden, feedback)
-		}
+	for name, feedback := range map[string]string{
+		"ip":         "Mention 198.51.100.23 explicitly.",
+		"path":       "Check /tmp/generated-fixtures/logs first.",
+		"file":       "Always cite agent.log.",
+		"timestamp":  "Focus on events around 10:12 UTC.",
+		"identifier": "Handle rc-8831 carefully.",
+		"line":       "Look for line 42.",
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := validateSanitizedFeedbackText(feedback); err == nil {
+				t.Fatalf("expected feedback %q to be rejected", feedback)
+			}
+		})
 	}
 }
 
@@ -414,124 +453,6 @@ func TestSanitizedFeedbackSourceResultPathUsesPreviousIteration(t *testing.T) {
 	}
 	if _, ok := parseIterationDir("iter-003-holdout"); ok {
 		t.Fatalf("holdout-style directory should not parse as iteration")
-	}
-}
-
-func TestFormatSanitizedResearcherFeedbackCountsAggregateRepeatFailures(t *testing.T) {
-	result := autoresearch.SuiteResult{Cases: []autoresearch.CaseResult{{
-		ID: "case-alpha",
-		Criteria: []autoresearch.CriterionResult{{
-			Name:         "repeat failure",
-			Passed:       false,
-			Detail:       "passed in 1/3 repeats",
-			FeedbackTags: []string{autoresearch.FeedbackTagCommandDiscovery},
-		}},
-	}}}
-
-	feedback := formatSanitizedResearcherFeedback(result)
-	description, _ := autoresearch.FeedbackTagDescription(autoresearch.FeedbackTagCommandDiscovery)
-	if !strings.Contains(feedback, description) {
-		t.Fatalf("feedback should count repeated aggregate failures:\n%s", feedback)
-	}
-}
-
-func TestFormatSanitizedResearcherFeedbackSuppressesOneOffThemes(t *testing.T) {
-	result := autoresearch.SuiteResult{Cases: []autoresearch.CaseResult{{
-		ID:       "case-alpha",
-		Criteria: []autoresearch.CriterionResult{{Name: "one-off", Passed: false, FeedbackTags: []string{autoresearch.FeedbackTagBoundedInspection}}},
-	}}}
-
-	feedback := formatSanitizedResearcherFeedback(result)
-	boundedDescription, _ := autoresearch.FeedbackTagDescription(autoresearch.FeedbackTagBoundedInspection)
-	if strings.Contains(feedback, boundedDescription) {
-		t.Fatalf("one-off feedback theme should be suppressed:\n%s", feedback)
-	}
-	if !strings.Contains(feedback, "No recurring general feedback theme met the disclosure threshold") {
-		t.Fatalf("feedback missing no-recurring message:\n%s", feedback)
-	}
-}
-
-func TestBuildSanitizedFeedbackSourceIncludesOnlyAggregateClosedTagCounts(t *testing.T) {
-	result := autoresearch.SuiteResult{Cases: []autoresearch.CaseResult{{
-		ID: "case-alpha",
-		Criteria: []autoresearch.CriterionResult{{
-			Name:         "repeat failure with private details",
-			Passed:       false,
-			Detail:       "passed in 1/3 repeats",
-			FeedbackTags: []string{autoresearch.FeedbackTagCommandDiscovery},
-		}},
-	}}}
-
-	source := buildSanitizedFeedbackSource(result)
-	if source.DisclosureThreshold != sanitizedFeedbackDisclosureThreshold {
-		t.Fatalf("disclosure threshold = %d", source.DisclosureThreshold)
-	}
-	for _, tag := range autoresearch.FeedbackTagOrder() {
-		if _, ok := source.TagCounts[tag]; !ok {
-			t.Fatalf("source missing closed tag count for %q", tag)
-		}
-	}
-	if got := source.TagCounts[autoresearch.FeedbackTagCommandDiscovery]; got != 2 {
-		t.Fatalf("command discovery count = %d, want 2", got)
-	}
-	if len(source.RecurringFeedbackTags) != 1 || source.RecurringFeedbackTags[0] != autoresearch.FeedbackTagCommandDiscovery {
-		t.Fatalf("recurring feedback tags = %#v", source.RecurringFeedbackTags)
-	}
-	serializedFacts := strings.Join(append(source.RecurringFeedbackTags, source.SelectedFeedbackTags...), "\n")
-	if strings.Contains(serializedFacts, "case-alpha") || strings.Contains(serializedFacts, "private details") {
-		t.Fatalf("source leaked benchmark facts: %#v", source)
-	}
-}
-
-func TestValidateSanitizedFeedbackSelectionAllowsOnlyRecurringApprovedTags(t *testing.T) {
-	source := sanitizedFeedbackSource{
-		DisclosureThreshold: sanitizedFeedbackDisclosureThreshold,
-		TagCounts: map[string]int{
-			autoresearch.FeedbackTagScopedAccess:      2,
-			autoresearch.FeedbackTagBoundedInspection: 1,
-		},
-		RecurringFeedbackTags: []string{autoresearch.FeedbackTagScopedAccess},
-	}
-
-	selected, err := validateSanitizedFeedbackSelection([]string{autoresearch.FeedbackTagScopedAccess}, source, 1)
-	if err != nil {
-		t.Fatalf("valid selection failed: %v", err)
-	}
-	if len(selected) != 1 || selected[0] != autoresearch.FeedbackTagScopedAccess {
-		t.Fatalf("selected = %#v", selected)
-	}
-	for name, ids := range map[string][]string{
-		"one-off tag":   {autoresearch.FeedbackTagBoundedInspection},
-		"unknown tag":   {"private_case_hint"},
-		"duplicate tag": {autoresearch.FeedbackTagScopedAccess, autoresearch.FeedbackTagScopedAccess},
-		"empty":         {},
-	} {
-		t.Run(name, func(t *testing.T) {
-			if _, err := validateSanitizedFeedbackSelection(ids, source, 2); err == nil {
-				t.Fatalf("expected selection %#v to fail", ids)
-			}
-		})
-	}
-}
-
-func TestParseSanitizedFeedbackLLMOutputRequiresStrictSchema(t *testing.T) {
-	ids, err := parseSanitizedFeedbackLLMOutput(`{"feedback_ids":["scoped_access"]}`)
-	if err != nil {
-		t.Fatalf("valid JSON failed: %v", err)
-	}
-	if len(ids) != 1 || ids[0] != autoresearch.FeedbackTagScopedAccess {
-		t.Fatalf("ids = %#v", ids)
-	}
-	for name, output := range map[string]string{
-		"extra field":    `{"feedback_ids":["scoped_access"],"comment":"leak"}`,
-		"markdown fence": "```json\n{\"feedback_ids\":[\"scoped_access\"]}\n```",
-		"trailing text":  `{"feedback_ids":["scoped_access"]} more`,
-	} {
-		t.Run(name, func(t *testing.T) {
-			if _, err := parseSanitizedFeedbackLLMOutput(output); err == nil {
-				t.Fatalf("expected strict parse to reject %q", output)
-			}
-		})
 	}
 }
 
