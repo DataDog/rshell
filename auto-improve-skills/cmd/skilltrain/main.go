@@ -1226,7 +1226,8 @@ Task for iteration %d:
 - Prefer short, general diagnostics over long case-specific rules or overfitting exact answers.
 - Do not add exact case facts, paths, IDs, IPs, timestamps, root causes, or expected-answer text.
 - Use the edit/write tools only on %s.
-- After editing, briefly summarize what you changed and whether the skill became shorter.
+- After editing, write a brief researcher report with "Changes", "Why", and "Size" sections.
+- In "Why", explain the rationale for each material change in general terms tied to quality, efficiency, or concision, without evaluator-private details.
 
 <program.md>
 %s

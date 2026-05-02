@@ -34,4 +34,4 @@ Do not encode exact case facts, prompt wording, paths, filenames, IPs, timestamp
 
 ## Improvement workflow
 
-Read the current skill, make the smallest useful general improvement, and summarize what changed. If there is no clear safe improvement, leave the skill unchanged and say why.
+Read the current skill, make the smallest useful general improvement, and summarize what changed plus why each material change improves quality, efficiency, or concision. If there is no clear safe improvement, leave the skill unchanged and say why.

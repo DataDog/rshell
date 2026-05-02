@@ -228,6 +228,8 @@ func TestFormatResearcherPromptDoesNotPassBenchmarkArtifacts(t *testing.T) {
 		skillRel,
 		"Improve only",
 		"Do not inspect evaluator-private",
+		"\"Changes\", \"Why\", and \"Size\" sections",
+		"explain the rationale for each material change",
 	} {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("researcher prompt missing %q:\n%s", want, prompt)
