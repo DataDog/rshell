@@ -462,17 +462,17 @@ func TestResearcherToolsExcludeReadAndBash(t *testing.T) {
 	}
 }
 
-func TestFormatCommitSubjectIncludesTrainLoopIterationAndObjectiveChange(t *testing.T) {
-	got := formatCommitSubject(3, 7, 0.81234, 0.84567)
-	want := "[update skill] train-loop=3 iter=7 obj=81.23%->84.57%"
+func TestFormatCommitSubjectIncludesTrainLoopIterationAndObjective(t *testing.T) {
+	got := formatCommitSubject(3, 7, 0.84567)
+	want := "[update skill] loop 3 - iter 7 - obj 84.57%"
 	if got != want {
 		t.Fatalf("formatCommitSubject() = %q, want %q", got, want)
 	}
 }
 
 func TestFormatCommitSubjectDefaultsTrainLoopToOne(t *testing.T) {
-	got := formatCommitSubject(0, 2, 0.1, 0.2)
-	want := "[update skill] train-loop=1 iter=2 obj=10.00%->20.00%"
+	got := formatCommitSubject(0, 2, 0.2)
+	want := "[update skill] loop 1 - iter 2 - obj 20.00%"
 	if got != want {
 		t.Fatalf("formatCommitSubject() = %q, want %q", got, want)
 	}
