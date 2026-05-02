@@ -221,7 +221,7 @@ func TestBenchmarkObjectiveUsesNewFields(t *testing.T) {
 
 func TestFormatCommitSubjectIncludesTrainLoopIterationAndObjectiveChange(t *testing.T) {
 	got := formatCommitSubject(3, 7, 0.81234, 0.84567)
-	want := "[update skill] train loop 3|iter 7|obj 81.23%->84.57%"
+	want := "[update skill] train-loop=3 iter=7 obj=81.23%->84.57%"
 	if got != want {
 		t.Fatalf("formatCommitSubject() = %q, want %q", got, want)
 	}
@@ -229,7 +229,7 @@ func TestFormatCommitSubjectIncludesTrainLoopIterationAndObjectiveChange(t *test
 
 func TestFormatCommitSubjectDefaultsTrainLoopToOne(t *testing.T) {
 	got := formatCommitSubject(0, 2, 0.1, 0.2)
-	want := "[update skill] train loop 1|iter 2|obj 10.00%->20.00%"
+	want := "[update skill] train-loop=1 iter=2 obj=10.00%->20.00%"
 	if got != want {
 		t.Fatalf("formatCommitSubject() = %q, want %q", got, want)
 	}

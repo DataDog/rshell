@@ -1239,7 +1239,7 @@ func formatCommitSubject(trainLoop, iter int, previousObjective, newObjective fl
 	if trainLoop <= 0 {
 		trainLoop = 1
 	}
-	return fmt.Sprintf("[update skill] train loop %d|iter %d|obj %.2f%%->%.2f%%", trainLoop, iter, previousObjective*100, newObjective*100)
+	return fmt.Sprintf("[update skill] train-loop=%d iter=%d obj=%.2f%%->%.2f%%", trainLoop, iter, previousObjective*100, newObjective*100)
 }
 
 func formatCommitBody(root, skillRel string, iter int, result autoresearch.SuiteResult, resultPath string, holdoutGate *benchmarkGate, researcherSummary string, previousObjective float64, diffStat, shortStat string) string {
