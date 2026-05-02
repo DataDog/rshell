@@ -16,12 +16,12 @@ import (
 func TestFormatSkilltrainLogUsesSemanticColors(t *testing.T) {
 	ctx := defaultLogContext()
 	plain := formatSkilltrainLog(logSemanticSuccess, ctx, "accepted skill change", false)
-	if plain != "skilltrain: accepted skill change" {
+	if plain != "skilltrain | ok    accepted skill change" {
 		t.Fatalf("plain log line = %q", plain)
 	}
 
 	colored := formatSkilltrainLog(logSemanticSuccess, ctx, "accepted skill change", true)
-	want := ansiDim + "skilltrain:" + ansiReset + " " + ansiGreen + "accepted skill change" + ansiReset
+	want := ansiDim + "skilltrain" + ansiReset + " | " + ansiGreen + "ok    accepted skill change" + ansiReset
 	if colored != want {
 		t.Fatalf("colored log line = %q, want %q", colored, want)
 	}
@@ -29,12 +29,12 @@ func TestFormatSkilltrainLogUsesSemanticColors(t *testing.T) {
 
 func TestFormatSkilltrainLogAddsUsefulContextOnlyWhenPresent(t *testing.T) {
 	plain := formatSkilltrainLog(logSemanticBenchmark, repeatLogContext("public", 2, 3), "benchmark repeat", false)
-	if plain != "skilltrain: [public 2/3] benchmark repeat" {
+	if plain != "skilltrain | bench [public 2/3] benchmark repeat" {
 		t.Fatalf("plain log line = %q", plain)
 	}
 
 	withoutRepeat := formatSkilltrainLog(logSemanticBenchmark, repeatLogContext("holdout", 1, 1), "benchmark result", false)
-	if withoutRepeat != "skilltrain: [holdout] benchmark result" {
+	if withoutRepeat != "skilltrain | bench [holdout] benchmark result" {
 		t.Fatalf("single-repeat log line = %q", withoutRepeat)
 	}
 }

@@ -42,8 +42,9 @@ const (
 )
 
 const (
-	skilltrainLogPrefix = "skilltrain:"
-	commandOutputLimit  = 64 * 1024
+	skilltrainLogPrefix    = "skilltrain"
+	skilltrainLogSeparator = " | "
+	commandOutputLimit     = 64 * 1024
 
 	ansiReset   = "\x1b[0m"
 	ansiBold    = "\x1b[1m"
@@ -157,6 +158,13 @@ func logBenchmark(format string, args ...any) {
 	logf(os.Stdout, logSemanticBenchmark, defaultLogContext(), format, args...)
 }
 
+func logBenchmarkVerbose(format string, args ...any) {
+	if !skilltrainLogVerbose {
+		return
+	}
+	logf(os.Stdout, logSemanticBenchmark, defaultLogContext(), format, args...)
+}
+
 func logBenchmarkCtx(ctx logContext, format string, args ...any) {
 	logf(os.Stdout, logSemanticBenchmark, ctx, format, args...)
 }
@@ -210,12 +218,34 @@ func formatSkilltrainLog(semantic logSemantic, ctx logContext, msg string, color
 	if contextPrefix := formatLogContext(ctx); contextPrefix != "" {
 		text = contextPrefix + " " + msg
 	}
-	line := skilltrainLogPrefix + " " + text
+	if label := logSemanticLabel(semantic); label != "" {
+		text = fmt.Sprintf("%-5s %s", label, text)
+	}
+	line := skilltrainLogPrefix + skilltrainLogSeparator + text
 	if !colorEnabled {
 		return line
 	}
 	prefix := ansiDim + skilltrainLogPrefix + ansiReset
-	return prefix + " " + formatSemanticText(semantic, text, true)
+	return prefix + skilltrainLogSeparator + formatSemanticText(semantic, text, true)
+}
+
+func logSemanticLabel(semantic logSemantic) string {
+	switch semantic {
+	case logSemanticBenchmark:
+		return "bench"
+	case logSemanticSuccess:
+		return "ok"
+	case logSemanticWarning:
+		return "warn"
+	case logSemanticError:
+		return "err"
+	case logSemanticSummary:
+		return "run"
+	case logSemanticDryRun:
+		return "dry"
+	default:
+		return "step"
+	}
 }
 
 func formatLogContext(ctx logContext) string {
@@ -292,6 +322,72 @@ func colorEnabledForLog(stream *os.File) bool {
 	}
 	info, err := stream.Stat()
 	return err == nil && info.Mode()&os.ModeCharDevice != 0
+}
+
+func displayPath(root, path string) string {
+	if path == "" {
+		return ""
+	}
+	cleaned := filepath.Clean(path)
+	if cwd, err := os.Getwd(); err == nil {
+		if rel, ok := relativeDisplayPath(cwd, cleaned); ok {
+			return rel
+		}
+	}
+	if rel, ok := relativeDisplayPath(root, cleaned); ok {
+		return rel
+	}
+	if rel, ok := homeDisplayPath(cleaned); ok {
+		return rel
+	}
+	return cleaned
+}
+
+func displayRunPath(runDir, path string) string {
+	if rel, ok := relativeDisplayPath(runDir, path); ok {
+		return rel
+	}
+	return displayPath("", path)
+}
+
+func relativeDisplayPath(base, path string) (string, bool) {
+	if base == "" || path == "" {
+		return "", false
+	}
+	absBase, err := filepath.Abs(base)
+	if err != nil {
+		return "", false
+	}
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		return "", false
+	}
+	rel, err := filepath.Rel(absBase, absPath)
+	if err != nil {
+		return "", false
+	}
+	if rel == "." {
+		return rel, true
+	}
+	if rel == ".." || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) || filepath.IsAbs(rel) {
+		return "", false
+	}
+	return rel, true
+}
+
+func homeDisplayPath(path string) (string, bool) {
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return "", false
+	}
+	rel, ok := relativeDisplayPath(home, path)
+	if !ok {
+		return "", false
+	}
+	if rel == "." {
+		return "~", true
+	}
+	return filepath.Join("~", rel), true
 }
 
 type commandCapture struct {
@@ -396,7 +492,7 @@ func runLoopWithRunner(loopCount int, cfg trainConfig, runner trainRunner) error
 		loopCfg := cfg
 		loopCfg.trainLoop = loop
 		loopCfg.runDir = loopRunDir(cfg.runDir, loop)
-		printSemantic(logSemanticSummary, "loop %d/%d: starting training run", loop, loopCount)
+		printSemantic(logSemanticSummary, "loop %d/%d start", loop, loopCount)
 		if err := runner(loopCfg); err != nil {
 			return fmt.Errorf("loop %d/%d: %w", loop, loopCount, err)
 		}
@@ -432,7 +528,7 @@ func run(trainLoop, iterations int, casesPath, skillPath, model, piBinary, runDi
 	if parallelCases < 0 {
 		return fmt.Errorf("-parallel-cases must be non-negative")
 	}
-	logStep("setup: resolving repository root and pi binary")
+	logVerbose("setup resolve repo/pi")
 	root, err := autoresearch.RepoRoot()
 	if err != nil {
 		return err
@@ -442,8 +538,8 @@ func run(trainLoop, iterations int, casesPath, skillPath, model, piBinary, runDi
 		return err
 	}
 	piBinary = resolvedPI
-	logVerbose("setup: repo root: %s", root)
-	logVerbose("setup: pi binary: %s", piBinary)
+	logVerbose("setup repo=%s", root)
+	logVerbose("setup pi=%s", piBinary)
 
 	casesAbs := autoresearch.AbsFromRoot(root, casesPath)
 	skillAbs := autoresearch.AbsFromRoot(root, skillPath)
@@ -456,25 +552,24 @@ func run(trainLoop, iterations int, casesPath, skillPath, model, piBinary, runDi
 	} else {
 		runDir = autoresearch.AbsFromRoot(root, runDir)
 	}
-	logStep("setup: preparing run directory: %s", runDir)
+	logStep("run-dir %s", displayPath(root, runDir))
 	if err := os.MkdirAll(runDir, 0o755); err != nil {
 		return err
 	}
 	if !allowDirty && !dryRun {
-		logVerbose("setup: checking working tree cleanliness")
+		logVerbose("setup check clean tree")
 		if dirty, status, err := gitDirty(root); err != nil {
 			return err
 		} else if dirty {
 			return fmt.Errorf("working tree is dirty; commit or stash first, or pass -allow-dirty. Status:\n%s", status)
 		}
 	}
-	logStep("setup: preparing shared benchmark prerequisites")
+	logVerbose("setup benchmark prerequisites")
 	if err := prepareBenchmarkPrerequisites(root, casesAbs, holdoutCasesAbs); err != nil {
 		return err
 	}
 
-	printSemantic(logSemanticSummary, "skilltrain run dir: %s", runDir)
-	logBenchmark("baseline: benchmarking current skill (repeats=%d, parallel-repeats=%d, parallel-cases=%d)", repeats, repeatParallelism(parallelRepeats, repeats), parallelCases)
+	logBenchmark("baseline reps=%d rpar=%d cpar=%d", repeats, repeatParallelism(parallelRepeats, repeats), parallelCases)
 	baseline, holdoutBaseline, haveHoldoutBaseline, err := runBaselineBenchmarks(root, casesAbs, holdoutCasesAbs, skillAbs, model, piBinary, runDir, limit, judge, repeats, parallelRepeats, parallelCases, parallelSuites)
 	if err != nil {
 		return err
@@ -483,7 +578,6 @@ func run(trainLoop, iterations int, casesPath, skillPath, model, piBinary, runDi
 	bestQuality := benchmarkQuality(baseline)
 	qualityFloor := bestQuality - qualityTolerance
 	bestPath := filepath.Join(runDir, "iter-000-baseline", "result.json")
-	printSemantic(logSemanticSummary, "baseline quality: %.2f%% objective: %.2f%% (%s)", bestQuality*100, bestObjective*100, bestPath)
 
 	var holdoutBestQuality, holdoutQualityFloor float64
 	var holdoutBestPath string
@@ -493,30 +587,33 @@ func run(trainLoop, iterations int, casesPath, skillPath, model, piBinary, runDi
 		holdoutBestQuality = benchmarkQuality(holdoutBaseline)
 		holdoutQualityFloor = holdoutBestQuality - holdoutQualityTolerance
 		holdoutBestPath = filepath.Join(runDir, "iter-000-holdout", "result.json")
-		printSemantic(logSemanticSummary, "holdout baseline quality: %.2f%% floor: %.2f%% (%s)", holdoutBestQuality*100, holdoutQualityFloor*100, holdoutBestPath)
+		printSemantic(logSemanticSummary, "baseline q=%.2f%% obj=%.2f%%; holdout q=%.2f%% floor=%.2f%%", bestQuality*100, bestObjective*100, holdoutBestQuality*100, holdoutQualityFloor*100)
+	} else {
+		printSemantic(logSemanticSummary, "baseline q=%.2f%% obj=%.2f%%", bestQuality*100, bestObjective*100)
 	}
 
 	for iter := 1; iter <= iterations; iter++ {
-		logVerbose("iteration %d/%d: preparing workspace", iter, iterations)
+		logVerbose("iter %d/%d prepare workspace", iter, iterations)
 		iterDir := filepath.Join(runDir, fmt.Sprintf("iter-%03d", iter))
 		if err := os.MkdirAll(iterDir, 0o755); err != nil {
 			return err
 		}
 		var original []byte
 		if dryRun {
-			logDryRunVerbose("iteration %d/%d: snapshotting skill for dry-run restore", iter, iterations)
+			logDryRunVerbose("iter %d/%d snapshot skill", iter, iterations)
 			var err error
 			original, err = os.ReadFile(skillAbs)
 			if err != nil {
 				return err
 			}
 		}
-		logStep("iteration %d/%d: researcher editing skill (transcript: %s)", iter, iterations, filepath.Join(iterDir, "researcher.stdout.md"))
+		transcriptPath := filepath.Join(iterDir, "researcher.stdout.md")
+		logStep("iter %d/%d edit -> %s", iter, iterations, displayRunPath(runDir, transcriptPath))
 		if err := improveSkill(root, skillAbs, casesAbs, bestPath, iterDir, model, piBinary, iter, qualityTolerance); err != nil {
 			return err
 		}
 		if dryRun {
-			logDryRunVerbose("iteration %d/%d: saving candidate skill copy", iter, iterations)
+			logDryRunVerbose("iter %d/%d save candidate", iter, iterations)
 			if candidateSkill, err := os.ReadFile(skillAbs); err == nil {
 				_ = os.WriteFile(filepath.Join(iterDir, "candidate.SKILL.md"), candidateSkill, 0o644)
 			}
@@ -525,10 +622,10 @@ func run(trainLoop, iterations int, casesPath, skillPath, model, piBinary, runDi
 			if !dryRun {
 				return nil
 			}
-			logDryRunVerbose("iteration %d/%d: restoring original skill after dry-run benchmarks", iter, iterations)
+			logDryRunVerbose("iter %d/%d restore original skill", iter, iterations)
 			return os.WriteFile(skillAbs, original, 0o644)
 		}
-		logBenchmark("iteration %d/%d: benchmarking candidate", iter, iterations)
+		logBenchmark("iter %d/%d candidate", iter, iterations)
 		candidate, speculativeHoldout, speculativeHoldoutRan, speculativeHoldoutErr, err := runCandidateBenchmarks(root, casesAbs, holdoutCasesAbs, skillAbs, model, piBinary, iterDir, limit, judge, repeats, parallelRepeats, parallelCases, parallelSuites)
 		if err != nil {
 			if restoreErr := restoreDryRun(); restoreErr != nil {
@@ -536,7 +633,7 @@ func run(trainLoop, iterations int, casesPath, skillPath, model, piBinary, runDi
 			}
 			return err
 		}
-		logVerbose("iteration %d/%d: evaluating candidate", iter, iterations)
+		logVerbose("iter %d/%d evaluate", iter, iterations)
 		candidatePath := filepath.Join(iterDir, "result.json")
 		candidateObjective := benchmarkObjective(candidate)
 		candidateQuality := benchmarkQuality(candidate)
@@ -544,9 +641,9 @@ func run(trainLoop, iterations int, casesPath, skillPath, model, piBinary, runDi
 		qualityOK := candidateQuality >= qualityFloor
 		publicOK := qualityOK && delta >= minDelta
 		if publicOK {
-			printSemantic(logSemanticSuccess, "iteration %d quality: %.2f%% objective: %.2f%% (delta %.2f%%)", iter, candidateQuality*100, candidateObjective*100, delta*100)
+			printSemantic(logSemanticSuccess, "iter %d q=%.2f%% obj=%.2f%% delta=%+.2fpp", iter, candidateQuality*100, candidateObjective*100, delta*100)
 		} else {
-			printSemantic(logSemanticWarning, "iteration %d quality: %.2f%% objective: %.2f%% (delta %.2f%%)", iter, candidateQuality*100, candidateObjective*100, delta*100)
+			printSemantic(logSemanticWarning, "iter %d q=%.2f%% obj=%.2f%% delta=%+.2fpp", iter, candidateQuality*100, candidateObjective*100, delta*100)
 		}
 
 		holdoutOK := true
@@ -563,7 +660,7 @@ func run(trainLoop, iterations int, casesPath, skillPath, model, piBinary, runDi
 				holdoutCandidate = speculativeHoldout
 			} else {
 				holdoutSuite := suiteLogLabel(holdoutCasesAbs)
-				logBenchmarkCtx(suiteLogContext(holdoutSuite), "iteration %d/%d: benchmarking holdout gate", iter, iterations)
+				logBenchmarkCtx(suiteLogContext(holdoutSuite), "iter %d/%d holdout gate", iter, iterations)
 				var err error
 				holdoutCandidate, err = runBenchmark(root, holdoutCasesAbs, skillAbs, model, piBinary, filepath.Join(iterDir, "holdout"), holdoutSuite, limit, judge, repeats, parallelRepeats, parallelCases)
 				if err != nil {
@@ -578,12 +675,12 @@ func run(trainLoop, iterations int, casesPath, skillPath, model, piBinary, runDi
 			holdoutOK = holdoutQuality >= holdoutQualityFloor
 			holdoutGate = &benchmarkGate{Result: holdoutCandidate, ResultPath: holdoutPath, QualityFloor: holdoutQualityFloor}
 			if holdoutOK {
-				printSemantic(logSemanticSuccess, "iteration %d holdout quality: %.2f%% floor: %.2f%% (%s)", iter, holdoutQuality*100, holdoutQualityFloor*100, holdoutPath)
+				printSemantic(logSemanticSuccess, "iter %d holdout q=%.2f%% floor=%.2f%% -> %s", iter, holdoutQuality*100, holdoutQualityFloor*100, displayRunPath(runDir, holdoutPath))
 			} else {
-				printSemantic(logSemanticWarning, "iteration %d holdout quality: %.2f%% below floor %.2f%% (%s)", iter, holdoutQuality*100, holdoutQualityFloor*100, holdoutPath)
+				printSemantic(logSemanticWarning, "iter %d holdout q=%.2f%% < floor=%.2f%% -> %s", iter, holdoutQuality*100, holdoutQualityFloor*100, displayRunPath(runDir, holdoutPath))
 			}
 		} else if speculativeHoldoutRan && speculativeHoldoutErr != nil {
-			logWarn("iteration %d/%d: speculative holdout benchmark failed after public rejection; ignoring: %v", iter, iterations, speculativeHoldoutErr)
+			logWarn("iter %d/%d speculative holdout failed after public reject; ignored: %v", iter, iterations, speculativeHoldoutErr)
 		}
 		if restoreErr := restoreDryRun(); restoreErr != nil {
 			return restoreErr
@@ -592,10 +689,10 @@ func run(trainLoop, iterations int, casesPath, skillPath, model, piBinary, runDi
 		if publicOK && holdoutOK {
 			acceptedIterations++
 			if dryRun {
-				logSuccess("iteration %d/%d: accepted in dry-run", iter, iterations)
-				printSemantic(logSemanticDryRun, "dry-run: would accept iteration %d and commit %s (candidate saved in %s)", iter, skillAbs, filepath.Join(iterDir, "candidate.SKILL.md"))
+				logSuccess("iter %d/%d accepted (dry-run)", iter, iterations)
+				printSemantic(logSemanticDryRun, "accept iter %d; would commit %s (candidate %s)", iter, displayPath(root, skillAbs), displayRunPath(runDir, filepath.Join(iterDir, "candidate.SKILL.md")))
 			} else {
-				logSuccess("iteration %d/%d: accepted; committing skill change", iter, iterations)
+				logSuccess("iter %d/%d accepted; commit", iter, iterations)
 				if err := commitSkill(root, skillAbs, trainLoop, iter, candidate, candidatePath, holdoutGate, filepath.Join(iterDir, "researcher.stdout.md"), bestObjective, push); err != nil {
 					return err
 				}
@@ -614,27 +711,27 @@ func run(trainLoop, iterations int, casesPath, skillPath, model, piBinary, runDi
 		} else {
 			rejectedIterations++
 			if !qualityOK {
-				printSemantic(logSemanticWarning, "iteration %d rejected: quality %.2f%% is below floor %.2f%%", iter, candidateQuality*100, qualityFloor*100)
+				printSemantic(logSemanticWarning, "iter %d reject: q=%.2f%% < floor=%.2f%%", iter, candidateQuality*100, qualityFloor*100)
 			} else if !publicOK {
-				printSemantic(logSemanticWarning, "iteration %d rejected: objective delta %.2f%% is below min-delta %.2f%%", iter, delta*100, minDelta*100)
+				printSemantic(logSemanticWarning, "iter %d reject: delta=%+.2fpp < min=%+.2fpp", iter, delta*100, minDelta*100)
 			}
 			if publicOK && !holdoutOK && holdoutGate != nil {
-				printSemantic(logSemanticWarning, "iteration %d rejected: holdout quality %.2f%% is below floor %.2f%%", iter, benchmarkQuality(holdoutGate.Result)*100, holdoutGate.QualityFloor*100)
+				printSemantic(logSemanticWarning, "iter %d reject: holdout q=%.2f%% < floor=%.2f%%", iter, benchmarkQuality(holdoutGate.Result)*100, holdoutGate.QualityFloor*100)
 			}
 			if dryRun {
-				logWarn("iteration %d/%d: rejected in dry-run", iter, iterations)
-				printSemantic(logSemanticDryRun, "dry-run: would reject iteration %d and revert %s (candidate saved in %s)", iter, skillAbs, filepath.Join(iterDir, "candidate.SKILL.md"))
+				logWarn("iter %d/%d rejected (dry-run)", iter, iterations)
+				printSemantic(logSemanticDryRun, "reject iter %d; would revert %s (candidate %s)", iter, displayPath(root, skillAbs), displayRunPath(runDir, filepath.Join(iterDir, "candidate.SKILL.md")))
 			} else {
-				logWarn("iteration %d/%d: rejected; reverting skill change", iter, iterations)
+				logWarn("iter %d/%d rejected; revert", iter, iterations)
 				if err := gitCheckout(root, skillAbs); err != nil {
 					return err
 				}
 			}
 		}
 	}
-	printSemantic(logSemanticSummary, "summary: iterations=%d accepted=%d rejected=%d best objective=%.2f%% best quality=%.2f%% report=%s", iterations, acceptedIterations, rejectedIterations, bestObjective*100, bestQuality*100, bestPath)
+	printSemantic(logSemanticSummary, "done iters=%d accepted=%d rejected=%d best obj=%.2f%% q=%.2f%% -> %s", iterations, acceptedIterations, rejectedIterations, bestObjective*100, bestQuality*100, displayRunPath(runDir, bestPath))
 	if holdoutCasesAbs != "" {
-		printSemantic(logSemanticSummary, "best holdout quality seen: %.2f%% (floor %.2f%%; %s)", holdoutBestQuality*100, holdoutQualityFloor*100, holdoutBestPath)
+		printSemantic(logSemanticSummary, "holdout best q=%.2f%% floor=%.2f%% -> %s", holdoutBestQuality*100, holdoutQualityFloor*100, displayRunPath(runDir, holdoutBestPath))
 	}
 	return nil
 }
@@ -651,7 +748,7 @@ func prepareBenchmarkPrerequisites(root string, casesPaths ...string) error {
 	}
 	for _, casesPath := range casesPaths {
 		if casesPath != "" && isRemoteHostDiagnosticsSuite(casesPath) {
-			logBenchmark("setup: generating deterministic fixtures once for benchmark runs")
+			logBenchmarkVerbose("fixtures generate")
 			return autoresearch.GenerateRemoteHostDiagnosticsFixtures(root)
 		}
 	}
@@ -709,7 +806,7 @@ func runBaselineBenchmarks(root, casesAbs, holdoutCasesAbs, skillAbs, model, piB
 	holdoutDir := filepath.Join(runDir, "iter-000-holdout")
 	holdoutSuite := suiteLogLabel(holdoutCasesAbs)
 	if parallelSuites {
-		logBenchmark("baseline: running public and holdout suites in parallel")
+		logBenchmarkVerbose("baseline public+holdout parallel")
 		baselineCh := runBenchmarkAsync(root, casesAbs, skillAbs, model, piBinary, baselineDir, baselineSuite, limit, judge, repeats, parallelRepeats, parallelCases)
 		holdoutCh := runBenchmarkAsync(root, holdoutCasesAbs, skillAbs, model, piBinary, holdoutDir, holdoutSuite, limit, judge, repeats, parallelRepeats, parallelCases)
 		baseline := <-baselineCh
@@ -727,7 +824,7 @@ func runBaselineBenchmarks(root, casesAbs, holdoutCasesAbs, skillAbs, model, piB
 	if err != nil {
 		return autoresearch.SuiteResult{}, autoresearch.SuiteResult{}, false, err
 	}
-	logBenchmarkCtx(suiteLogContext(holdoutSuite), "baseline: running holdout suite")
+	logBenchmarkCtx(suiteLogContext(holdoutSuite), "baseline holdout")
 	holdout, err := runBenchmark(root, holdoutCasesAbs, skillAbs, model, piBinary, holdoutDir, holdoutSuite, limit, judge, repeats, parallelRepeats, parallelCases)
 	if err != nil {
 		return autoresearch.SuiteResult{}, autoresearch.SuiteResult{}, false, err
@@ -743,7 +840,7 @@ func runCandidateBenchmarks(root, casesAbs, holdoutCasesAbs, skillAbs, model, pi
 	}
 
 	holdoutSuite := suiteLogLabel(holdoutCasesAbs)
-	logBenchmark("candidate: running public and speculative holdout suites in parallel")
+	logBenchmarkVerbose("candidate public+holdout parallel")
 	candidateCh := runBenchmarkAsync(root, casesAbs, skillAbs, model, piBinary, iterDir, candidateSuite, limit, judge, repeats, parallelRepeats, parallelCases)
 	holdoutCh := runBenchmarkAsync(root, holdoutCasesAbs, skillAbs, model, piBinary, filepath.Join(iterDir, "holdout"), holdoutSuite, limit, judge, repeats, parallelRepeats, parallelCases)
 	candidate := <-candidateCh
@@ -771,7 +868,7 @@ func runBenchmark(root, casesAbs, skillAbs, model, piBinary, outDir, suiteLabel 
 	paths := make([]string, repeats)
 	parallelism := repeatParallelism(parallelRepeats, repeats)
 	if parallelism > 1 {
-		logBenchmarkCtx(suiteLogContext(suiteLabel), "benchmark: %d repeats with parallelism %d", repeats, parallelism)
+		logBenchmarkVerboseCtx(suiteLogContext(suiteLabel), "%dx rpar=%d", repeats, parallelism)
 	}
 
 	if parallelism <= 1 {
@@ -823,13 +920,13 @@ func runBenchmark(root, casesAbs, skillAbs, model, piBinary, outDir, suiteLabel 
 	if err := autoresearch.WriteJSON(aggregatePath, aggregate); err != nil {
 		return autoresearch.SuiteResult{}, err
 	}
-	logBenchmarkCtx(suiteLogContext(suiteLabel), "benchmark aggregate: repeats=%d quality=%.2f%% objective=%.2f%% avg-case=%.1fs report=%s", repeats, benchmarkQuality(aggregate)*100, benchmarkObjective(aggregate)*100, aggregate.AverageCaseDurationSeconds, aggregatePath)
+	logBenchmarkCtx(suiteLogContext(suiteLabel), "done n=%d q=%.2f%% obj=%.2f%% avg=%.1fs -> %s", repeats, benchmarkQuality(aggregate)*100, benchmarkObjective(aggregate)*100, aggregate.AverageCaseDurationSeconds, displayPath(root, aggregatePath))
 	return aggregate, nil
 }
 
 func runBenchmarkRepeat(root, casesAbs, skillAbs, model, piBinary, outDir, suiteLabel string, limit int, judge bool, parallelCases, repeat, repeats int) (autoresearch.SuiteResult, error) {
 	repeatDir := filepath.Join(outDir, fmt.Sprintf("repeat-%03d", repeat))
-	logBenchmarkVerboseCtx(repeatLogContext(suiteLabel, repeat, repeats), "benchmark: starting repeat %d/%d", repeat, repeats)
+	logBenchmarkVerboseCtx(repeatLogContext(suiteLabel, repeat, repeats), "repeat %d/%d start", repeat, repeats)
 	return runBenchmarkOnce(root, casesAbs, skillAbs, model, piBinary, repeatDir, suiteLabel, repeat, repeats, limit, judge, parallelCases)
 }
 
@@ -848,7 +945,7 @@ func runBenchmarkOnce(root, casesAbs, skillAbs, model, piBinary, outDir, suiteLa
 		return autoresearch.SuiteResult{}, err
 	}
 	logCtx := repeatLogContext(suiteLabel, repeat, repeats)
-	logBenchmarkVerboseCtx(logCtx, "benchmark: writing results under %s", outDir)
+	logBenchmarkVerboseCtx(logCtx, "out %s", displayPath(root, outDir))
 	args := []string{
 		"run", "./auto-improve-skills/cmd/skillbench",
 		"-cases", casesAbs,
@@ -869,7 +966,7 @@ func runBenchmarkOnce(root, casesAbs, skillAbs, model, piBinary, outDir, suiteLa
 	if judge {
 		args = append(args, "-judge")
 	}
-	logBenchmarkVerboseCtx(logCtx, "benchmark: executing skillbench")
+	logBenchmarkVerboseCtx(logCtx, "exec skillbench")
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Hour)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "go", args...)
@@ -889,7 +986,7 @@ func runBenchmarkOnce(root, casesAbs, skillAbs, model, piBinary, outDir, suiteLa
 		return autoresearch.SuiteResult{}, err
 	}
 	if repeats <= 1 {
-		logBenchmarkCtx(suiteLogContext(suiteLabel), "benchmark result: quality=%.2f%% objective=%.2f%% avg-case=%.1fs report=%s", benchmarkQuality(result)*100, benchmarkObjective(result)*100, result.AverageCaseDurationSeconds, filepath.Join(outDir, "result.json"))
+		logBenchmarkCtx(suiteLogContext(suiteLabel), "done q=%.2f%% obj=%.2f%% avg=%.1fs -> %s", benchmarkQuality(result)*100, benchmarkObjective(result)*100, result.AverageCaseDurationSeconds, displayPath(root, filepath.Join(outDir, "result.json")))
 	}
 	return result, nil
 }
@@ -1091,7 +1188,7 @@ Task for iteration %d:
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
-	logVerbose("iteration %d: running researcher pi", iter)
+	logVerbose("iter %d run researcher pi", iter)
 	err := cmd.Run()
 	_ = os.WriteFile(filepath.Join(iterDir, "researcher.stdout.md"), stdout.Bytes(), 0o644)
 	if stderr.Len() > 0 {
@@ -1105,14 +1202,14 @@ Task for iteration %d:
 
 func commitSkill(root, skillAbs string, trainLoop, iter int, result autoresearch.SuiteResult, resultPath string, holdoutGate *benchmarkGate, researcherSummaryPath string, previousObjective float64, push bool) error {
 	skillRel := gitPath(root, skillAbs)
-	logVerbose("iteration %d: staging %s", iter, skillRel)
+	logVerbose("iter %d stage %s", iter, skillRel)
 	if err := runGit(root, "add", skillRel); err != nil {
 		return err
 	}
 	if clean, _, err := gitDiffCachedPathClean(root, skillRel); err != nil {
 		return err
 	} else if clean {
-		printSemantic(logSemanticWarning, "accepted iteration had no staged diff; skipping commit")
+		printSemantic(logSemanticWarning, "accepted iter has no diff; skip commit")
 		return nil
 	}
 	diffStat, err := gitOutput(root, "diff", "--cached", "--stat", "--", skillRel)
@@ -1126,15 +1223,15 @@ func commitSkill(root, skillAbs string, trainLoop, iter int, result autoresearch
 	researcherSummary := readCommitSummary(researcherSummaryPath)
 	msg := formatCommitSubject(trainLoop, iter, previousObjective, benchmarkObjective(result))
 	body := formatCommitBody(root, skillRel, iter, result, resultPath, holdoutGate, researcherSummary, previousObjective, diffStat, shortStat)
-	logSuccess("iteration %d: creating git commit", iter)
+	logSuccess("iter %d git commit", iter)
 	if err := runGit(root, "commit", "-m", msg, "-m", body, "--", skillRel); err != nil {
 		return err
 	}
 	if !push {
-		printSemantic(logSemanticSuccess, "accepted iteration committed locally because -push=false; run git push manually to publish it")
+		printSemantic(logSemanticSuccess, "committed locally (-push=false); run git push to publish")
 		return nil
 	}
-	logSuccess("iteration %d: pushing accepted commit", iter)
+	logSuccess("iter %d git push", iter)
 	return runGit(root, "push")
 }
 
