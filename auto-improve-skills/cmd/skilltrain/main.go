@@ -855,9 +855,8 @@ Task for iteration %d:
 - Improve only %s.
 - Optimize final answer quality first. The trainer allows at most a %.1f percentage point quality drop from the best seen quality.
 - Also improve the simple composite objective by reducing end-to-end investigation time and keeping the skill concise.
-- Keep the skill safe and local: it must use ./rshell through bash and must not use Datadog remote-action tools.
 - Do not edit benchmark cases, fake logs, Go tooling, or reports.
-- Prefer short, general diagnostic workflow instructions over long case-specific rules or overfitting exact answers.
+- Prefer short, general diagnostic over long case-specific rules or overfitting exact answers.
 - After editing, briefly summarize what you changed and whether the skill became shorter.
 `, skillAbs, casesAbs, bestResultPath, iter, skillAbs, qualityTolerance*100)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
