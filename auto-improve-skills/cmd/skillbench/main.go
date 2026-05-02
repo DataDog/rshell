@@ -440,7 +440,7 @@ func runCase(root, rawDir, skillPath, piBinary, model, mode string, tc autoresea
 func benchmarkPrompt(tc autoresearch.Case) string {
 	return strings.TrimSpace(`You are running an automated benchmark of an Agent Skill.
 
-You must use the loaded remote-host-diagnostics skill. Load/read the skill instructions first, then follow its workflow. This is a fake local investigation using fixture logs, so do not use host tools directly to inspect the fixture contents; run diagnostics through local ./rshell as the skill instructs. Do not modify files.
+You must use the loaded remote-host-diagnostics skill. Load/read the skill instructions first, then follow the instructions. This is a fake local investigation using fixture logs, so do not use host tools directly to inspect the fixture contents; run diagnostics through local ./rshell as the skill instructs. Do not modify files.
 
 Final answer quality is the primary metric. The benchmark also records end-to-end wall-clock duration, so be efficient and stop investigating once the answer is well supported. Your final answer should be concise but complete, with:
 - finding or likely root cause
