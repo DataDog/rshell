@@ -42,11 +42,12 @@ const (
 )
 
 const (
-	skilltrainLogPrefix    = "skilltrain"
-	skilltrainLogSeparator = " | "
-	commandOutputLimit     = 64 * 1024
-	researcherProgramPath  = "program.md"
-	researcherTools        = "edit,write"
+	skilltrainLogPrefix             = "skilltrain"
+	skilltrainLogSeparator          = " | "
+	commandOutputLimit              = 64 * 1024
+	researcherProgramPath           = "program.md"
+	researcherSanitizedFeedbackPath = "sanitized-feedback.md"
+	researcherTools                 = "edit,write"
 
 	ansiReset   = "\x1b[0m"
 	ansiBold    = "\x1b[1m"
@@ -594,6 +595,7 @@ func run(trainLoop, iterations int, casesPath, skillPath, model, piBinary, runDi
 		printSemantic(logSemanticSummary, "baseline q=%.2f%% obj=%.2f%%", bestQuality*100, bestObjective*100)
 	}
 
+	feedbackSource := baseline
 	for iter := 1; iter <= iterations; iter++ {
 		logVerbose("iter %d/%d prepare workspace", iter, iterations)
 		iterDir := filepath.Join(runDir, fmt.Sprintf("iter-%03d", iter))
@@ -609,9 +611,13 @@ func run(trainLoop, iterations int, casesPath, skillPath, model, piBinary, runDi
 				return err
 			}
 		}
+		feedback := formatSanitizedResearcherFeedback(feedbackSource)
+		if err := os.WriteFile(filepath.Join(iterDir, researcherSanitizedFeedbackPath), []byte(feedback), 0o644); err != nil {
+			return err
+		}
 		transcriptPath := filepath.Join(iterDir, "researcher.stdout.md")
 		logStep("iter %d/%d edit -> %s", iter, iterations, displayRunPath(runDir, transcriptPath))
-		if err := improveSkill(root, skillAbs, iterDir, model, piBinary, iter); err != nil {
+		if err := improveSkill(root, skillAbs, iterDir, model, piBinary, iter, feedback); err != nil {
 			return err
 		}
 		if dryRun {
@@ -687,6 +693,7 @@ func run(trainLoop, iterations int, casesPath, skillPath, model, piBinary, runDi
 		if restoreErr := restoreDryRun(); restoreErr != nil {
 			return restoreErr
 		}
+		feedbackSource = candidate
 
 		if publicOK && holdoutOK {
 			acceptedIterations++
@@ -1213,7 +1220,50 @@ func writeResearcherWorkspaceFile(workspaceDir, relPath string, data []byte) err
 	return os.WriteFile(path, data, 0o644)
 }
 
-func formatResearcherPrompt(programContent, skillRel, skillContent string, iter int) string {
+func formatSanitizedResearcherFeedback(result autoresearch.SuiteResult) string {
+	counts := map[string]int{}
+	for _, caseResult := range result.Cases {
+		for _, criterion := range caseResult.Criteria {
+			if criterion.Passed {
+				continue
+			}
+			occurrences := sanitizedFeedbackFailureOccurrences(criterion)
+			for _, tag := range autoresearch.NormalizeFeedbackTags(criterion.FeedbackTags) {
+				counts[tag] += occurrences
+			}
+		}
+	}
+
+	var b strings.Builder
+	b.WriteString("General hidden-task feedback (sanitized and aggregate only; no task facts are disclosed):\n")
+	shown := 0
+	for _, tag := range autoresearch.FeedbackTagOrder() {
+		if counts[tag] < 2 {
+			continue
+		}
+		description, ok := autoresearch.FeedbackTagDescription(tag)
+		if !ok {
+			continue
+		}
+		fmt.Fprintf(&b, "- %s\n", description)
+		shown++
+	}
+	if shown == 0 {
+		b.WriteString("- No recurring general feedback theme met the disclosure threshold. Make one small broadly applicable improvement only if it is clearly useful.\n")
+	}
+	b.WriteString("Use this feedback only for small, task-agnostic skill improvements. Do not infer or add task-specific facts.\n")
+	return b.String()
+}
+
+func sanitizedFeedbackFailureOccurrences(criterion autoresearch.CriterionResult) int {
+	var passed, seen int
+	if _, err := fmt.Sscanf(criterion.Detail, "passed in %d/%d repeats", &passed, &seen); err == nil && seen > passed {
+		return seen - passed
+	}
+	return 1
+}
+
+func formatResearcherPrompt(programContent, skillRel, skillContent string, iter int, sanitizedFeedback string) string {
 	return fmt.Sprintf(`You are an autoresearch-style skill improvement agent.
 
 This isolated workspace contains only %s and the current skill at %s. To avoid granting file-read access, their contents are included below.
@@ -1226,6 +1276,7 @@ Task for iteration %d:
 - Prefer short, general diagnostics over long case-specific rules or overfitting exact answers.
 - Do not add exact case facts, paths, IDs, IPs, timestamps, root causes, or expected-answer text.
 - Use the edit/write tools only on %s.
+- Use the sanitized aggregate feedback below only to make one small general improvement; ignore it if no safe general improvement is clear.
 - After editing, write a brief researcher report with "Changes", "Why", and "Size" sections.
 - In "Why", explain the rationale for each material change in general terms tied to quality, efficiency, or concision, without evaluator-private details.
 
@@ -1233,13 +1284,16 @@ Task for iteration %d:
 %s
 </program.md>
 
+<general-feedback>
+%s</general-feedback>
+
 <current-skill path=%q>
 %s
 </current-skill>
-`, researcherProgramPath, skillRel, iter, skillRel, skillRel, programContent, skillRel, skillContent)
+`, researcherProgramPath, skillRel, iter, skillRel, skillRel, programContent, sanitizedFeedback, skillRel, skillContent)
 }
 
-func improveSkill(root, skillAbs, iterDir, model, piBinary string, iter int) error {
+func improveSkill(root, skillAbs, iterDir, model, piBinary string, iter int, sanitizedFeedback string) error {
 	workspace, err := prepareResearcherWorkspace(root, skillAbs)
 	if err != nil {
 		return err
@@ -1254,7 +1308,7 @@ func improveSkill(root, skillAbs, iterDir, model, piBinary string, iter int) err
 	if err != nil {
 		return err
 	}
-	prompt := formatResearcherPrompt(string(programContentBytes), workspace.SkillRel, string(skillContentBytes), iter)
+	prompt := formatResearcherPrompt(string(programContentBytes), workspace.SkillRel, string(skillContentBytes), iter, sanitizedFeedback)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
 	defer cancel()
 	args := []string{

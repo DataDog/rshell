@@ -222,12 +222,14 @@ func TestBenchmarkObjectiveUsesNewFields(t *testing.T) {
 
 func TestFormatResearcherPromptDoesNotPassBenchmarkArtifacts(t *testing.T) {
 	skillRel := filepath.Join("skills", "remote-host-diagnostics", "SKILL.md")
-	prompt := formatResearcherPrompt("program content", skillRel, "skill content", 2)
+	prompt := formatResearcherPrompt("program content", skillRel, "skill content", 2, "General hidden-task feedback.\n")
 	for _, want := range []string{
 		"program.md",
 		skillRel,
 		"Improve only",
 		"Do not inspect evaluator-private",
+		"general-feedback",
+		"General hidden-task feedback",
 		"\"Changes\", \"Why\", and \"Size\" sections",
 		"explain the rationale for each material change",
 	} {
@@ -251,6 +253,79 @@ func TestFormatResearcherPromptDoesNotPassBenchmarkArtifacts(t *testing.T) {
 		if strings.Contains(prompt, forbidden) {
 			t.Fatalf("researcher prompt leaked %q:\n%s", forbidden, prompt)
 		}
+	}
+}
+
+func TestFormatSanitizedResearcherFeedbackAggregatesClosedTags(t *testing.T) {
+	result := autoresearch.SuiteResult{Cases: []autoresearch.CaseResult{
+		{
+			ID: "case-alpha",
+			Criteria: []autoresearch.CriterionResult{
+				{Name: "contains 198.51.100.23", Passed: false, FeedbackTags: []string{autoresearch.FeedbackTagScopedAccess, autoresearch.FeedbackTagEvidenceGrounding}},
+				{Name: "single safe next step miss", Passed: false, FeedbackTags: []string{autoresearch.FeedbackTagSafeNextSteps}},
+			},
+		},
+		{
+			ID: "case-beta",
+			Criteria: []autoresearch.CriterionResult{
+				{Name: "mentions exact service", Passed: false, FeedbackTags: []string{autoresearch.FeedbackTagScopedAccess}},
+			},
+		},
+		{
+			ID: "case-gamma",
+			Criteria: []autoresearch.CriterionResult{
+				{Name: "passing evidence", Passed: true, FeedbackTags: []string{autoresearch.FeedbackTagEvidenceGrounding}},
+			},
+		},
+	}}
+
+	feedback := formatSanitizedResearcherFeedback(result)
+	scopedDescription, _ := autoresearch.FeedbackTagDescription(autoresearch.FeedbackTagScopedAccess)
+	if !strings.Contains(feedback, scopedDescription) {
+		t.Fatalf("feedback missing recurring scoped-access theme:\n%s", feedback)
+	}
+	for _, forbidden := range []string{"case-alpha", "case-beta", "198.51.100.23", "exact service", "single safe next step miss"} {
+		if strings.Contains(feedback, forbidden) {
+			t.Fatalf("feedback leaked %q:\n%s", forbidden, feedback)
+		}
+	}
+	safeNextDescription, _ := autoresearch.FeedbackTagDescription(autoresearch.FeedbackTagSafeNextSteps)
+	if strings.Contains(feedback, safeNextDescription) {
+		t.Fatalf("single-occurrence feedback theme should be suppressed:\n%s", feedback)
+	}
+}
+
+func TestFormatSanitizedResearcherFeedbackCountsAggregateRepeatFailures(t *testing.T) {
+	result := autoresearch.SuiteResult{Cases: []autoresearch.CaseResult{{
+		ID: "case-alpha",
+		Criteria: []autoresearch.CriterionResult{{
+			Name:         "repeat failure",
+			Passed:       false,
+			Detail:       "passed in 1/3 repeats",
+			FeedbackTags: []string{autoresearch.FeedbackTagCommandDiscovery},
+		}},
+	}}}
+
+	feedback := formatSanitizedResearcherFeedback(result)
+	description, _ := autoresearch.FeedbackTagDescription(autoresearch.FeedbackTagCommandDiscovery)
+	if !strings.Contains(feedback, description) {
+		t.Fatalf("feedback should count repeated aggregate failures:\n%s", feedback)
+	}
+}
+
+func TestFormatSanitizedResearcherFeedbackSuppressesOneOffThemes(t *testing.T) {
+	result := autoresearch.SuiteResult{Cases: []autoresearch.CaseResult{{
+		ID:       "case-alpha",
+		Criteria: []autoresearch.CriterionResult{{Name: "one-off", Passed: false, FeedbackTags: []string{autoresearch.FeedbackTagBoundedInspection}}},
+	}}}
+
+	feedback := formatSanitizedResearcherFeedback(result)
+	boundedDescription, _ := autoresearch.FeedbackTagDescription(autoresearch.FeedbackTagBoundedInspection)
+	if strings.Contains(feedback, boundedDescription) {
+		t.Fatalf("one-off feedback theme should be suppressed:\n%s", feedback)
+	}
+	if !strings.Contains(feedback, "No recurring general feedback theme met the disclosure threshold") {
+		t.Fatalf("feedback missing no-recurring message:\n%s", feedback)
 	}
 }
 

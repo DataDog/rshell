@@ -22,7 +22,9 @@ Optimize in this order:
 
 ## Anti-overfitting
 
-Use only this program and the current skill file. Do not inspect evaluator-private files or artifacts.
+Use only this program, the current skill file, and any sanitized aggregate feedback included in the prompt. Do not inspect evaluator-private files or artifacts.
+
+Treat sanitized feedback as generic process guidance only. Do not infer hidden task details from it.
 
 Do not encode exact case facts, prompt wording, paths, filenames, IPs, timestamps, IDs, log snippets, root causes, line numbers, or expected-answer templates. Add only general diagnostic behavior that should help unseen incidents.
 
