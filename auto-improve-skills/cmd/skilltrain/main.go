@@ -43,15 +43,18 @@ const (
 )
 
 const (
-	skilltrainLogPrefix             = "skilltrain"
-	skilltrainLogSeparator          = " | "
-	commandOutputLimit              = 64 * 1024
-	researcherProgramPath           = "program.md"
-	researcherSanitizedFeedbackPath = "sanitized-feedback.md"
-	researcherTools                 = "edit,write"
-	iterationSkillSnapshotPath      = "SKILL.candidate.md"
-	iterationPreviousSkillPath      = "SKILL.previous.md"
-	iterationSkillDiffPath          = "SKILL.diff"
+	skilltrainLogPrefix                   = "skilltrain"
+	skilltrainLogSeparator                = " | "
+	commandOutputLimit                    = 64 * 1024
+	researcherProgramPath                 = "program.md"
+	researcherSanitizedFeedbackPath       = "sanitized-feedback.md"
+	researcherSanitizedFeedbackSourcePath = "sanitized-feedback.source.json"
+	researcherTools                       = "edit,write"
+	sanitizedFeedbackDisclosureThreshold  = 2
+	sanitizedFeedbackLLMMaxSelections     = 3
+	iterationSkillSnapshotPath            = "SKILL.candidate.md"
+	iterationPreviousSkillPath            = "SKILL.previous.md"
+	iterationSkillDiffPath                = "SKILL.diff"
 
 	ansiReset   = "\x1b[0m"
 	ansiBold    = "\x1b[1m"
@@ -70,6 +73,7 @@ func main() {
 	flag.StringVar(&cfg.casesPath, "cases", "auto-improve-skills/benchmarks/remote-host-diagnostics/cases.yaml", "benchmark suite")
 	flag.StringVar(&cfg.skillPath, "skill", "auto-improve-skills/skills/remote-host-diagnostics/SKILL.md", "skill file to improve")
 	flag.StringVar(&cfg.model, "model", defaultModel, "pi model for researcher and benchmark agents")
+	flag.StringVar(&cfg.feedbackModel, "feedback-model", "", "pi model for sanitized feedback prioritizer (defaults to -model)")
 	flag.StringVar(&cfg.piBinary, "pi", "pi", "pi executable")
 	flag.StringVar(&cfg.runDir, "run-dir", "", "directory for this training run")
 	flag.Float64Var(&cfg.minDelta, "min-delta", 0.001, "minimum normalized objective improvement to accept")
@@ -85,8 +89,12 @@ func main() {
 	flag.BoolVar(&cfg.push, "push", true, "push accepted skill commits to the current branch; set -push=false to keep commits local")
 	flag.BoolVar(&cfg.dryRun, "dry-run", false, "run benchmark and researcher but do not commit/revert")
 	flag.BoolVar(&cfg.allowDirty, "allow-dirty", false, "allow starting with unrelated uncommitted changes")
+	flag.BoolVar(&cfg.feedbackLLM, "feedback-llm", false, "use an LLM over sanitized aggregate data to choose/prioritize approved feedback snippets")
 	flag.BoolVar(&cfg.verbose, "verbose", false, "show detailed per-step logs and stream nested skillbench output")
 	flag.Parse()
+	if strings.TrimSpace(cfg.feedbackModel) == "" {
+		cfg.feedbackModel = cfg.model
+	}
 
 	setSkilltrainVerbose(cfg.verbose)
 	if err := runLoop(*loopCount, cfg); err != nil {
@@ -100,6 +108,7 @@ type trainConfig struct {
 	casesPath               string
 	skillPath               string
 	model                   string
+	feedbackModel           string
 	piBinary                string
 	runDir                  string
 	minDelta                float64
@@ -115,6 +124,7 @@ type trainConfig struct {
 	push                    bool
 	dryRun                  bool
 	allowDirty              bool
+	feedbackLLM             bool
 	verbose                 bool
 	trainLoop               int
 }
@@ -516,10 +526,16 @@ func loopRunDir(runDir string, loop int) string {
 
 func runConfig(cfg trainConfig) error {
 	setSkilltrainVerbose(cfg.verbose)
-	return run(cfg.trainLoop, cfg.iterations, cfg.casesPath, cfg.skillPath, cfg.model, cfg.piBinary, cfg.runDir, cfg.minDelta, cfg.qualityTolerance, cfg.holdoutCasesPath, cfg.holdoutQualityTolerance, cfg.repeats, cfg.parallelRepeats, cfg.parallelCases, cfg.limit, cfg.judge, cfg.parallelSuites, cfg.push, cfg.dryRun, cfg.allowDirty)
+	if strings.TrimSpace(cfg.feedbackModel) == "" {
+		cfg.feedbackModel = cfg.model
+	}
+	return run(cfg.trainLoop, cfg.iterations, cfg.casesPath, cfg.skillPath, cfg.model, cfg.feedbackModel, cfg.piBinary, cfg.runDir, cfg.minDelta, cfg.qualityTolerance, cfg.holdoutCasesPath, cfg.holdoutQualityTolerance, cfg.repeats, cfg.parallelRepeats, cfg.parallelCases, cfg.limit, cfg.judge, cfg.parallelSuites, cfg.push, cfg.dryRun, cfg.allowDirty, cfg.feedbackLLM)
 }
 
-func run(trainLoop, iterations int, casesPath, skillPath, model, piBinary, runDir string, minDelta, qualityTolerance float64, holdoutCasesPath string, holdoutQualityTolerance float64, repeats, parallelRepeats, parallelCases, limit int, judge, parallelSuites, push, dryRun, allowDirty bool) error {
+func run(trainLoop, iterations int, casesPath, skillPath, model, feedbackModel, piBinary, runDir string, minDelta, qualityTolerance float64, holdoutCasesPath string, holdoutQualityTolerance float64, repeats, parallelRepeats, parallelCases, limit int, judge, parallelSuites, push, dryRun, allowDirty, feedbackLLM bool) error {
+	if strings.TrimSpace(feedbackModel) == "" {
+		feedbackModel = model
+	}
 	if qualityTolerance < 0 {
 		return fmt.Errorf("-quality-tolerance must be non-negative")
 	}
@@ -615,7 +631,24 @@ func run(trainLoop, iterations int, casesPath, skillPath, model, piBinary, runDi
 		if err != nil {
 			return err
 		}
-		feedback := formatSanitizedResearcherFeedback(feedbackSource)
+		feedbackData := buildSanitizedFeedbackSource(feedbackSource)
+		if feedbackLLM {
+			feedbackData.LLMEnabled = true
+			feedbackData.LLMModel = feedbackModel
+			if len(feedbackData.RecurringFeedbackTags) > 0 {
+				selected, err := prioritizeSanitizedFeedbackWithLLM(piBinary, feedbackModel, feedbackData)
+				if err != nil {
+					feedbackData.LLMError = err.Error()
+					logWarn("iter %d/%d feedback llm failed; using deterministic sanitized feedback: %v", iter, iterations, err)
+				} else {
+					feedbackData.SelectedFeedbackTags = selected
+				}
+			}
+		}
+		if err := autoresearch.WriteJSON(filepath.Join(iterDir, researcherSanitizedFeedbackSourcePath), feedbackData); err != nil {
+			return err
+		}
+		feedback := formatSanitizedResearcherFeedbackFromSource(feedbackData)
 		if err := os.WriteFile(filepath.Join(iterDir, researcherSanitizedFeedbackPath), []byte(feedback), 0o644); err != nil {
 			return err
 		}
@@ -1297,8 +1330,36 @@ func writeResearcherWorkspaceFile(workspaceDir, relPath string, data []byte) err
 	return os.WriteFile(path, data, 0o644)
 }
 
-func formatSanitizedResearcherFeedback(result autoresearch.SuiteResult) string {
+type sanitizedFeedbackSource struct {
+	Version               int            `json:"version"`
+	DisclosureThreshold   int            `json:"disclosure_threshold"`
+	TagCounts             map[string]int `json:"tag_counts"`
+	RecurringFeedbackTags []string       `json:"recurring_feedback_tags"`
+	SelectedFeedbackTags  []string       `json:"selected_feedback_tags"`
+	LLMEnabled            bool           `json:"llm_enabled,omitempty"`
+	LLMModel              string         `json:"llm_model,omitempty"`
+	LLMError              string         `json:"llm_error,omitempty"`
+}
+
+type sanitizedFeedbackOption struct {
+	ID          string `json:"id"`
+	Description string `json:"description"`
+	Count       int    `json:"count"`
+}
+
+type sanitizedFeedbackLLMRequest struct {
+	Instructions          string                    `json:"instructions"`
+	DisclosureThreshold   int                       `json:"disclosure_threshold"`
+	MaxFeedbackIDs        int                       `json:"max_feedback_ids"`
+	RecurringFeedbackTags []string                  `json:"recurring_feedback_tags"`
+	AllowedOptions        []sanitizedFeedbackOption `json:"allowed_options"`
+}
+
+func buildSanitizedFeedbackSource(result autoresearch.SuiteResult) sanitizedFeedbackSource {
 	counts := map[string]int{}
+	for _, tag := range autoresearch.FeedbackTagOrder() {
+		counts[tag] = 0
+	}
 	for _, caseResult := range result.Cases {
 		for _, criterion := range caseResult.Criteria {
 			if criterion.Passed {
@@ -1311,11 +1372,38 @@ func formatSanitizedResearcherFeedback(result autoresearch.SuiteResult) string {
 		}
 	}
 
+	recurring := make([]string, 0, len(autoresearch.FeedbackTagOrder()))
+	for _, tag := range autoresearch.FeedbackTagOrder() {
+		if counts[tag] >= sanitizedFeedbackDisclosureThreshold {
+			recurring = append(recurring, tag)
+		}
+	}
+	return sanitizedFeedbackSource{
+		Version:               1,
+		DisclosureThreshold:   sanitizedFeedbackDisclosureThreshold,
+		TagCounts:             counts,
+		RecurringFeedbackTags: recurring,
+		SelectedFeedbackTags:  append([]string(nil), recurring...),
+	}
+}
+
+func formatSanitizedResearcherFeedback(result autoresearch.SuiteResult) string {
+	return formatSanitizedResearcherFeedbackFromSource(buildSanitizedFeedbackSource(result))
+}
+
+func formatSanitizedResearcherFeedbackFromSource(source sanitizedFeedbackSource) string {
 	var b strings.Builder
 	b.WriteString("General hidden-task feedback (sanitized and aggregate only; no task facts are disclosed):\n")
 	shown := 0
-	for _, tag := range autoresearch.FeedbackTagOrder() {
-		if counts[tag] < 2 {
+	selected := source.SelectedFeedbackTags
+	if selected == nil {
+		selected = source.RecurringFeedbackTags
+	}
+	threshold := sanitizedFeedbackThreshold(source)
+	seen := map[string]bool{}
+	for _, tag := range selected {
+		tag = strings.TrimSpace(tag)
+		if seen[tag] || source.TagCounts[tag] < threshold {
 			continue
 		}
 		description, ok := autoresearch.FeedbackTagDescription(tag)
@@ -1323,6 +1411,7 @@ func formatSanitizedResearcherFeedback(result autoresearch.SuiteResult) string {
 			continue
 		}
 		fmt.Fprintf(&b, "- %s\n", description)
+		seen[tag] = true
 		shown++
 	}
 	if shown == 0 {
@@ -1338,6 +1427,151 @@ func sanitizedFeedbackFailureOccurrences(criterion autoresearch.CriterionResult)
 		return seen - passed
 	}
 	return 1
+}
+
+func sanitizedFeedbackThreshold(source sanitizedFeedbackSource) int {
+	if source.DisclosureThreshold > 0 {
+		return source.DisclosureThreshold
+	}
+	return sanitizedFeedbackDisclosureThreshold
+}
+
+func sanitizedFeedbackAllowedOptions(source sanitizedFeedbackSource) []sanitizedFeedbackOption {
+	threshold := sanitizedFeedbackThreshold(source)
+	options := make([]sanitizedFeedbackOption, 0, len(source.RecurringFeedbackTags))
+	seen := map[string]bool{}
+	for _, tag := range source.RecurringFeedbackTags {
+		tag = strings.TrimSpace(tag)
+		if seen[tag] || source.TagCounts[tag] < threshold {
+			continue
+		}
+		description, ok := autoresearch.FeedbackTagDescription(tag)
+		if !ok {
+			continue
+		}
+		options = append(options, sanitizedFeedbackOption{ID: tag, Description: description, Count: source.TagCounts[tag]})
+		seen[tag] = true
+	}
+	return options
+}
+
+func prioritizeSanitizedFeedbackWithLLM(piBinary, model string, source sanitizedFeedbackSource) ([]string, error) {
+	options := sanitizedFeedbackAllowedOptions(source)
+	if len(options) == 0 {
+		return nil, nil
+	}
+	maxSelections := min(sanitizedFeedbackLLMMaxSelections, len(options))
+	ids := make([]string, 0, len(options))
+	for _, option := range options {
+		ids = append(ids, option.ID)
+	}
+	request := sanitizedFeedbackLLMRequest{
+		Instructions:          "Choose and prioritize only approved generic feedback IDs. Use only this sanitized aggregate data. Do not generate prose, descriptions, facts, paths, identifiers, commands, services, root causes, or hidden-task details. Return strict JSON only with the schema {\"feedback_ids\":[\"id\"]}.",
+		DisclosureThreshold:   sanitizedFeedbackThreshold(source),
+		MaxFeedbackIDs:        maxSelections,
+		RecurringFeedbackTags: ids,
+		AllowedOptions:        options,
+	}
+	requestJSON, err := json.MarshalIndent(request, "", "  ")
+	if err != nil {
+		return nil, err
+	}
+	prompt := fmt.Sprintf(`You prioritize sanitized aggregate feedback for a skill-improvement agent.
+
+Safety rules:
+- The input contains only approved generic feedback IDs, counts, and descriptions.
+- Select 1 to %d feedback IDs from allowed_options.
+- Return only strict JSON: {"feedback_ids":["id"]}
+- Do not include markdown, commentary, descriptions, task facts, paths, IPs, hostnames, services, commands, root causes, or expected-answer text.
+
+<sanitized-aggregate-json>
+%s
+</sanitized-aggregate-json>
+`, maxSelections, string(requestJSON))
+
+	workspaceDir, err := os.MkdirTemp("", "skilltrain-feedback-*")
+	if err != nil {
+		return nil, err
+	}
+	defer os.RemoveAll(workspaceDir)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+	args := []string{
+		"--print",
+		"--no-session",
+		"--no-context-files",
+		"--no-extensions",
+		"--no-prompt-templates",
+		"--no-skills",
+		"--no-tools",
+		"--model", model,
+		prompt,
+	}
+	cmd := exec.CommandContext(ctx, piBinary, args...)
+	cmd.Dir = workspaceDir
+	cmd.Env = autoresearch.EnvWithExecutableDir(piBinary)
+	stdout := newLimitedBuffer(commandOutputLimit)
+	stderr := newLimitedBuffer(commandOutputLimit)
+	cmd.Stdout = stdout
+	cmd.Stderr = stderr
+	if err := cmd.Run(); err != nil {
+		return nil, commandError("feedback llm pi", err, &commandCapture{stdout: stdout, stderr: stderr})
+	}
+	selected, err := parseSanitizedFeedbackLLMOutput(stdout.String())
+	if err != nil {
+		return nil, err
+	}
+	return validateSanitizedFeedbackSelection(selected, source, maxSelections)
+}
+
+func parseSanitizedFeedbackLLMOutput(output string) ([]string, error) {
+	output = strings.TrimSpace(output)
+	if output == "" {
+		return nil, fmt.Errorf("feedback llm returned empty output")
+	}
+	var response struct {
+		FeedbackIDs []string `json:"feedback_ids"`
+	}
+	decoder := json.NewDecoder(strings.NewReader(output))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&response); err != nil {
+		return nil, fmt.Errorf("feedback llm output is not strict JSON: %w", err)
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		return nil, fmt.Errorf("feedback llm output contains trailing data")
+	}
+	return response.FeedbackIDs, nil
+}
+
+func validateSanitizedFeedbackSelection(ids []string, source sanitizedFeedbackSource, maxSelections int) ([]string, error) {
+	if len(ids) == 0 {
+		return nil, fmt.Errorf("feedback llm returned no feedback_ids")
+	}
+	if maxSelections <= 0 {
+		return nil, fmt.Errorf("no sanitized feedback options are available")
+	}
+	if len(ids) > maxSelections {
+		return nil, fmt.Errorf("feedback llm returned %d feedback_ids; maximum is %d", len(ids), maxSelections)
+	}
+	allowed := map[string]bool{}
+	for _, option := range sanitizedFeedbackAllowedOptions(source) {
+		allowed[option.ID] = true
+	}
+	seen := map[string]bool{}
+	selected := make([]string, 0, len(ids))
+	for _, id := range ids {
+		id = strings.TrimSpace(id)
+		if !allowed[id] {
+			return nil, fmt.Errorf("feedback llm returned unapproved feedback_id %q", id)
+		}
+		if seen[id] {
+			return nil, fmt.Errorf("feedback llm returned duplicate feedback_id %q", id)
+		}
+		seen[id] = true
+		selected = append(selected, id)
+	}
+	return selected, nil
 }
 
 func formatResearcherPrompt(programContent, skillRel, skillContent string, iter int, sanitizedFeedback string) string {

@@ -353,6 +353,90 @@ func TestFormatSanitizedResearcherFeedbackSuppressesOneOffThemes(t *testing.T) {
 	}
 }
 
+func TestBuildSanitizedFeedbackSourceIncludesOnlyAggregateClosedTagCounts(t *testing.T) {
+	result := autoresearch.SuiteResult{Cases: []autoresearch.CaseResult{{
+		ID: "case-alpha",
+		Criteria: []autoresearch.CriterionResult{{
+			Name:         "repeat failure with private details",
+			Passed:       false,
+			Detail:       "passed in 1/3 repeats",
+			FeedbackTags: []string{autoresearch.FeedbackTagCommandDiscovery},
+		}},
+	}}}
+
+	source := buildSanitizedFeedbackSource(result)
+	if source.DisclosureThreshold != sanitizedFeedbackDisclosureThreshold {
+		t.Fatalf("disclosure threshold = %d", source.DisclosureThreshold)
+	}
+	for _, tag := range autoresearch.FeedbackTagOrder() {
+		if _, ok := source.TagCounts[tag]; !ok {
+			t.Fatalf("source missing closed tag count for %q", tag)
+		}
+	}
+	if got := source.TagCounts[autoresearch.FeedbackTagCommandDiscovery]; got != 2 {
+		t.Fatalf("command discovery count = %d, want 2", got)
+	}
+	if len(source.RecurringFeedbackTags) != 1 || source.RecurringFeedbackTags[0] != autoresearch.FeedbackTagCommandDiscovery {
+		t.Fatalf("recurring feedback tags = %#v", source.RecurringFeedbackTags)
+	}
+	serializedFacts := strings.Join(append(source.RecurringFeedbackTags, source.SelectedFeedbackTags...), "\n")
+	if strings.Contains(serializedFacts, "case-alpha") || strings.Contains(serializedFacts, "private details") {
+		t.Fatalf("source leaked benchmark facts: %#v", source)
+	}
+}
+
+func TestValidateSanitizedFeedbackSelectionAllowsOnlyRecurringApprovedTags(t *testing.T) {
+	source := sanitizedFeedbackSource{
+		DisclosureThreshold: sanitizedFeedbackDisclosureThreshold,
+		TagCounts: map[string]int{
+			autoresearch.FeedbackTagScopedAccess:      2,
+			autoresearch.FeedbackTagBoundedInspection: 1,
+		},
+		RecurringFeedbackTags: []string{autoresearch.FeedbackTagScopedAccess},
+	}
+
+	selected, err := validateSanitizedFeedbackSelection([]string{autoresearch.FeedbackTagScopedAccess}, source, 1)
+	if err != nil {
+		t.Fatalf("valid selection failed: %v", err)
+	}
+	if len(selected) != 1 || selected[0] != autoresearch.FeedbackTagScopedAccess {
+		t.Fatalf("selected = %#v", selected)
+	}
+	for name, ids := range map[string][]string{
+		"one-off tag":   {autoresearch.FeedbackTagBoundedInspection},
+		"unknown tag":   {"private_case_hint"},
+		"duplicate tag": {autoresearch.FeedbackTagScopedAccess, autoresearch.FeedbackTagScopedAccess},
+		"empty":         {},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := validateSanitizedFeedbackSelection(ids, source, 2); err == nil {
+				t.Fatalf("expected selection %#v to fail", ids)
+			}
+		})
+	}
+}
+
+func TestParseSanitizedFeedbackLLMOutputRequiresStrictSchema(t *testing.T) {
+	ids, err := parseSanitizedFeedbackLLMOutput(`{"feedback_ids":["scoped_access"]}`)
+	if err != nil {
+		t.Fatalf("valid JSON failed: %v", err)
+	}
+	if len(ids) != 1 || ids[0] != autoresearch.FeedbackTagScopedAccess {
+		t.Fatalf("ids = %#v", ids)
+	}
+	for name, output := range map[string]string{
+		"extra field":    `{"feedback_ids":["scoped_access"],"comment":"leak"}`,
+		"markdown fence": "```json\n{\"feedback_ids\":[\"scoped_access\"]}\n```",
+		"trailing text":  `{"feedback_ids":["scoped_access"]} more`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := parseSanitizedFeedbackLLMOutput(output); err == nil {
+				t.Fatalf("expected strict parse to reject %q", output)
+			}
+		})
+	}
+}
+
 func TestPrepareResearcherWorkspaceCopiesOnlyResearcherFiles(t *testing.T) {
 	root := t.TempDir()
 	programPath := filepath.Join(root, "auto-improve-skills", "program.md")

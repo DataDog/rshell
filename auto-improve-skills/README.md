@@ -26,6 +26,8 @@ Training loop:
 go run ./cmd/skilltrain -iters 3 -judge
 ```
 
+`skilltrain` writes per-iteration `sanitized-feedback.md` plus an auditable `sanitized-feedback.source.json`. By default feedback is generated deterministically from aggregate closed-tag counts. Pass `-feedback-llm` to let a nested no-tools Pi call choose/prioritize among those approved generic feedback snippets only; raw benchmark prompts, outputs, criterion names, and task facts are not provided to that call.
+
 Generate fixtures only:
 
 ```sh
