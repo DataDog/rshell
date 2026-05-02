@@ -16,16 +16,47 @@ import (
 func TestFormatSkilltrainLogUsesSemanticColors(t *testing.T) {
 	ctx := defaultLogContext()
 	plain := formatSkilltrainLog(logSemanticSuccess, ctx, "accepted skill change", false)
-	if plain != "skilltrain train loop: [t|-|-] accepted skill change" {
+	if plain != "skilltrain: accepted skill change" {
 		t.Fatalf("plain log line = %q", plain)
 	}
 
 	colored := formatSkilltrainLog(logSemanticSuccess, ctx, "accepted skill change", true)
-	want := ansiDim + "skilltrain train loop:" + ansiReset + " " + ansiGreen + "[t|-|-] accepted skill change" + ansiReset
+	want := ansiDim + "skilltrain:" + ansiReset + " " + ansiGreen + "accepted skill change" + ansiReset
 	if colored != want {
 		t.Fatalf("colored log line = %q, want %q", colored, want)
 	}
 }
+
+func TestFormatSkilltrainLogAddsUsefulContextOnlyWhenPresent(t *testing.T) {
+	plain := formatSkilltrainLog(logSemanticBenchmark, repeatLogContext("public", 2, 3), "benchmark repeat", false)
+	if plain != "skilltrain: [public 2/3] benchmark repeat" {
+		t.Fatalf("plain log line = %q", plain)
+	}
+
+	withoutRepeat := formatSkilltrainLog(logSemanticBenchmark, repeatLogContext("holdout", 1, 1), "benchmark result", false)
+	if withoutRepeat != "skilltrain: [holdout] benchmark result" {
+		t.Fatalf("single-repeat log line = %q", withoutRepeat)
+	}
+}
+
+func TestCommandErrorIncludesCapturedOutput(t *testing.T) {
+	_, _, capture := commandWriters(false)
+	_, _ = capture.stdout.Write([]byte("public progress\n"))
+	_, _ = capture.stderr.Write([]byte("failure details\n"))
+
+	err := commandError("skillbench failed", errTestCommand, capture)
+	for _, want := range []string{"skillbench failed", "stdout:\npublic progress", "stderr:\nfailure details"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("error missing %q: %v", want, err)
+		}
+	}
+}
+
+var errTestCommand = &testCommandError{}
+
+type testCommandError struct{}
+
+func (e *testCommandError) Error() string { return "exit status 1" }
 
 func TestLogSemanticStyleMapsStatusesToColors(t *testing.T) {
 	cases := []struct {
@@ -69,6 +100,7 @@ func TestRunLoopWithRunnerRepeatsProvidedConfig(t *testing.T) {
 		parallelSuites:   true,
 		push:             false,
 		allowDirty:       true,
+		verbose:          true,
 		parallelRepeats:  2,
 		parallelCases:    4,
 		qualityTolerance: 0.02,
@@ -90,7 +122,7 @@ func TestRunLoopWithRunnerRepeatsProvidedConfig(t *testing.T) {
 		if call.runDir != wantRunDir {
 			t.Fatalf("call %d runDir = %q, want %q", i+1, call.runDir, wantRunDir)
 		}
-		if call.iterations != cfg.iterations || call.model != cfg.model || call.judge != cfg.judge || call.parallelRepeats != cfg.parallelRepeats || call.parallelCases != cfg.parallelCases || call.qualityTolerance != cfg.qualityTolerance {
+		if call.iterations != cfg.iterations || call.model != cfg.model || call.judge != cfg.judge || call.parallelRepeats != cfg.parallelRepeats || call.parallelCases != cfg.parallelCases || call.qualityTolerance != cfg.qualityTolerance || call.verbose != cfg.verbose {
 			t.Fatalf("call %d did not preserve supplied flags: %+v", i+1, call)
 		}
 	}

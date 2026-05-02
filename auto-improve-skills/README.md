@@ -97,6 +97,8 @@ go run ./auto-improve-skills/cmd/skilltrain \
 
 When `-run-dir` is provided with `-loop-count N`, each full training run writes under `loop-001`, `loop-002`, and so on below that base directory.
 
+`skilltrain` logs high-level setup, benchmark progress, candidate decisions, warnings/errors, and a final summary by default. Pass `-verbose` to show per-repeat/per-command details and stream nested `skillbench` output.
+
 The loop:
 
 1. Runs baseline benchmarks. Public and holdout baselines run concurrently by default.
