@@ -1,4 +1,10 @@
-.PHONY: train train3 trainloop
+.PHONY: fmt test train train3 trainloop
+
+fmt:
+	go fmt ./...
+
+test:
+	go test ./...
 
 train:
 	go run ./cmd/skilltrain \

@@ -12,25 +12,34 @@ Harness for improving `skills/remote-host-diagnostics/SKILL.md` with fixed bench
 
 ## Usage
 
-Run commands from the repository root. Ensure `pi` is installed/authenticated and `./rshell` exists (`make build` if needed).
+Run Go tooling from this `auto-improve-skills` directory; it is a standalone Go module. Ensure `pi` is installed/authenticated and the containing rshell checkout has `./rshell` built (`cd .. && make build` if needed).
 
 Benchmark:
 
 ```sh
-go run ./auto-improve-skills/cmd/skillbench
+go run ./cmd/skillbench
 ```
 
 Training loop:
 
 ```sh
-go run ./auto-improve-skills/cmd/skilltrain -iters 3 -judge
+go run ./cmd/skilltrain -iters 3 -judge
 ```
 
 Generate fixtures only:
 
 ```sh
-go run ./auto-improve-skills/cmd/skillfixtures
+go run ./cmd/skillfixtures
 ```
+
+Local validation for this module only:
+
+```sh
+make fmt
+make test
+```
+
+Do not run parent-repository validation commands for auto-improve-skills changes.
 
 Generated fixtures and run outputs are intentionally not committed.
 
