@@ -12,5 +12,5 @@ train3:
 		-iters 3 \
 		-judge
 
-loop:
+trainloop:
 	for i in $(seq 0 20); do make train3; done
