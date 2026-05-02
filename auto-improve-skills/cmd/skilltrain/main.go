@@ -1010,8 +1010,9 @@ func runBenchmarkOnce(root, casesAbs, skillAbs, model, piBinary, outDir, suiteLa
 	}
 	logCtx := repeatLogContext(suiteLabel, repeat, repeats)
 	logBenchmarkVerboseCtx(logCtx, "out %s", displayPath(root, outDir))
+	goRunDir, skillbenchTarget := skillbenchGoRunTarget(root)
 	args := []string{
-		"run", "./auto-improve-skills/cmd/skillbench",
+		"run", skillbenchTarget,
 		"-cases", casesAbs,
 		"-skill", filepath.Dir(skillAbs),
 		"-model", model,
@@ -1034,7 +1035,7 @@ func runBenchmarkOnce(root, casesAbs, skillAbs, model, piBinary, outDir, suiteLa
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Hour)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "go", args...)
-	cmd.Dir = root
+	cmd.Dir = goRunDir
 	stdout, stderr, capture := commandWriters(skilltrainLogVerbose)
 	cmd.Stdout = stdout
 	cmd.Stderr = stderr
@@ -1053,6 +1054,27 @@ func runBenchmarkOnce(root, casesAbs, skillAbs, model, piBinary, outDir, suiteLa
 		logBenchmarkCtx(suiteLogContext(suiteLabel), "done q=%.2f%% obj=%.2f%% avg=%.1fs -> %s", benchmarkQuality(result)*100, benchmarkObjective(result)*100, result.AverageCaseDurationSeconds, displayPath(root, filepath.Join(outDir, "result.json")))
 	}
 	return result, nil
+}
+
+func skillbenchGoRunTarget(root string) (dir, target string) {
+	if hasFile(filepath.Join(root, "go.mod")) && hasDir(filepath.Join(root, "cmd", "skillbench")) {
+		return root, "./cmd/skillbench"
+	}
+	autoRoot := filepath.Join(root, "auto-improve-skills")
+	if hasFile(filepath.Join(autoRoot, "go.mod")) {
+		return autoRoot, "./cmd/skillbench"
+	}
+	return root, "./auto-improve-skills/cmd/skillbench"
+}
+
+func hasFile(path string) bool {
+	st, err := os.Stat(path)
+	return err == nil && st.Mode().IsRegular()
+}
+
+func hasDir(path string) bool {
+	st, err := os.Stat(path)
+	return err == nil && st.IsDir()
 }
 
 func aggregateBenchmarkRepeats(results []autoresearch.SuiteResult, paths []string) (autoresearch.SuiteResult, error) {

@@ -179,6 +179,30 @@ func TestRunLoopWithRunnerRejectsNonPositiveLoopCount(t *testing.T) {
 	}
 }
 
+func TestSkillbenchGoRunTargetUsesNestedModule(t *testing.T) {
+	root := t.TempDir()
+	autoRoot := filepath.Join(root, "auto-improve-skills")
+	if err := os.MkdirAll(filepath.Join(autoRoot, "cmd", "skillbench"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(autoRoot, "go.mod"), []byte("module example/auto\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	dir, target := skillbenchGoRunTarget(root)
+	if dir != autoRoot || target != "./cmd/skillbench" {
+		t.Fatalf("skillbenchGoRunTarget() = %q, %q; want %q, %q", dir, target, autoRoot, "./cmd/skillbench")
+	}
+}
+
+func TestSkillbenchGoRunTargetKeepsLegacyLayout(t *testing.T) {
+	root := t.TempDir()
+	dir, target := skillbenchGoRunTarget(root)
+	if dir != root || target != "./auto-improve-skills/cmd/skillbench" {
+		t.Fatalf("skillbenchGoRunTarget() = %q, %q; want %q, %q", dir, target, root, "./auto-improve-skills/cmd/skillbench")
+	}
+}
+
 func TestRepeatParallelismZeroMeansAllRepeats(t *testing.T) {
 	if got := repeatParallelism(0, 3); got != 3 {
 		t.Fatalf("repeatParallelism(0, 3) = %d, want 3", got)
