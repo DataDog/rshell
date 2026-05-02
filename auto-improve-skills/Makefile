@@ -23,4 +23,4 @@ trainloop:
 		-model openai-codex/gpt-5.5 \
 		-iters 3 \
 		-judge \
-		-loop-count 21
+		-loop-count 30
