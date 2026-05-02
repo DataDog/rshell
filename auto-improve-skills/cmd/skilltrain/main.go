@@ -1369,6 +1369,7 @@ func improveSkill(root, skillAbs, iterDir, model, piBinary string, iter int, san
 	args := []string{
 		"--print",
 		"--no-session",
+		"--no-context-files",
 		"--no-extensions",
 		"--no-prompt-templates",
 		"--no-skills",

@@ -1283,7 +1283,17 @@ Return only compact JSON with this schema: {"score": number, "reason": "short ex
 `, tc.Prompt, tc.JudgeRubric, strings.Join(result.Commands, "\n"), result.FinalAnswer)
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
-	args := []string{"--print", "--no-session", "--no-tools", "--model", model, prompt}
+	args := []string{
+		"--print",
+		"--no-session",
+		"--no-context-files",
+		"--no-extensions",
+		"--no-prompt-templates",
+		"--no-skills",
+		"--no-tools",
+		"--model", model,
+		prompt,
+	}
 	cmd := exec.CommandContext(ctx, piBinary, args...)
 	cmd.Dir = root
 	cmd.Env = autoresearch.EnvWithExecutableDir(piBinary)

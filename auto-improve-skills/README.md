@@ -33,3 +33,9 @@ go run ./auto-improve-skills/cmd/skillfixtures
 ```
 
 Generated fixtures and run outputs are intentionally not committed.
+
+## LLM context isolation
+
+The harness starts nested `pi` agents with `--no-context-files` so they do not load `AGENTS.md`/`CLAUDE.md` from this directory, parent directories, or the global Pi agent directory. Benchmark/researcher runs also disable discovered extensions, prompt templates, and skills except for the explicitly supplied benchmark skill.
+
+If you start `pi` manually inside this nested directory and want the same behavior, use `pi --no-context-files` (or `pi -nc`).
