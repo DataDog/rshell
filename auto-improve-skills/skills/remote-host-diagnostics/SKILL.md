@@ -15,5 +15,5 @@ Use only `./rshell`; keep probes read-only, targeted, and bounded.
 
 ## Final answer
 - List the commands run and key evidence.
-- State the likely finding/root cause with confidence and any uncertainty.
+- Separate observed facts from hypotheses; state the likely finding/root cause with confidence, and bound any negative claims to what was checked.
 - Suggest safe next read-only checks or remediation handoff steps when appropriate.
