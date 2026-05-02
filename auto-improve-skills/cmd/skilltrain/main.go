@@ -569,7 +569,7 @@ func run(trainLoop, iterations int, casesPath, skillPath, model, piBinary, runDi
 		return err
 	}
 
-	logBenchmark("baseline reps=%d rpar=%d cpar=%d", repeats, repeatParallelism(parallelRepeats, repeats), parallelCases)
+	logBenchmark("baseline reps=%d reps-par=%d cases-par=%d", repeats, repeatParallelism(parallelRepeats, repeats), parallelCases)
 	baseline, holdoutBaseline, haveHoldoutBaseline, err := runBaselineBenchmarks(root, casesAbs, holdoutCasesAbs, skillAbs, model, piBinary, runDir, limit, judge, repeats, parallelRepeats, parallelCases, parallelSuites)
 	if err != nil {
 		return err
@@ -868,7 +868,7 @@ func runBenchmark(root, casesAbs, skillAbs, model, piBinary, outDir, suiteLabel 
 	paths := make([]string, repeats)
 	parallelism := repeatParallelism(parallelRepeats, repeats)
 	if parallelism > 1 {
-		logBenchmarkVerboseCtx(suiteLogContext(suiteLabel), "%dx rpar=%d", repeats, parallelism)
+		logBenchmarkVerboseCtx(suiteLogContext(suiteLabel), "%dx reps-par=%d cases-par=%d", repeats, parallelism, parallelCases)
 	}
 
 	if parallelism <= 1 {
