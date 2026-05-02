@@ -122,6 +122,9 @@ func TestRunLoopWithRunnerRepeatsProvidedConfig(t *testing.T) {
 		if call.runDir != wantRunDir {
 			t.Fatalf("call %d runDir = %q, want %q", i+1, call.runDir, wantRunDir)
 		}
+		if call.trainLoop != i+1 {
+			t.Fatalf("call %d trainLoop = %d, want %d", i+1, call.trainLoop, i+1)
+		}
 		if call.iterations != cfg.iterations || call.model != cfg.model || call.judge != cfg.judge || call.parallelRepeats != cfg.parallelRepeats || call.parallelCases != cfg.parallelCases || call.qualityTolerance != cfg.qualityTolerance || call.verbose != cfg.verbose {
 			t.Fatalf("call %d did not preserve supplied flags: %+v", i+1, call)
 		}
@@ -141,6 +144,23 @@ func TestRunLoopWithRunnerLeavesDefaultRunDirEmpty(t *testing.T) {
 		if call.runDir != "" {
 			t.Fatalf("call %d runDir = %q, want empty default", i+1, call.runDir)
 		}
+		if call.trainLoop != i+1 {
+			t.Fatalf("call %d trainLoop = %d, want %d", i+1, call.trainLoop, i+1)
+		}
+	}
+}
+
+func TestRunLoopWithRunnerSetsTrainLoopForSingleRun(t *testing.T) {
+	var got trainConfig
+	err := runLoopWithRunner(1, trainConfig{iterations: 3}, func(call trainConfig) error {
+		got = call
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.trainLoop != 1 {
+		t.Fatalf("trainLoop = %d, want 1", got.trainLoop)
 	}
 }
 
@@ -199,9 +219,17 @@ func TestBenchmarkObjectiveUsesNewFields(t *testing.T) {
 	}
 }
 
-func TestFormatCommitSubjectIncludesObjectiveChange(t *testing.T) {
-	got := formatCommitSubject(7, 0.81234, 0.84567)
-	want := "auto-improve remote-host-diagnostics iter 7 (objective 81.23% -> 84.57%)"
+func TestFormatCommitSubjectIncludesTrainLoopIterationAndObjectiveChange(t *testing.T) {
+	got := formatCommitSubject(3, 7, 0.81234, 0.84567)
+	want := "[update skill] train loop 3|iter 7|obj 81.23%->84.57%"
+	if got != want {
+		t.Fatalf("formatCommitSubject() = %q, want %q", got, want)
+	}
+}
+
+func TestFormatCommitSubjectDefaultsTrainLoopToOne(t *testing.T) {
+	got := formatCommitSubject(0, 2, 0.1, 0.2)
+	want := "[update skill] train loop 1|iter 2|obj 10.00%->20.00%"
 	if got != want {
 		t.Fatalf("formatCommitSubject() = %q, want %q", got, want)
 	}

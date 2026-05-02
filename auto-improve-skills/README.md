@@ -110,7 +110,7 @@ The loop:
 7. Reverts the skill edit if it does not improve or fails the holdout gate.
 8. If `-loop-count` is greater than 1, starts the next full run with the same flags and exits immediately on the first error, matching the old shell `trainloop` behavior.
 
-Accepted commit subjects include the objective percentage change (`old% -> new%`). Commit bodies include the benchmark report path, quality/objective/duration/size scores, repeat counts, holdout gate summary when enabled, per-case scoring details, the researcher summary, and a diffstat. Accepted commits are pushed by default; pass `-push=false` to review and push them manually.
+Accepted commit subjects use the format `[update skill] train loop <X>|iter <Y>|obj XX.XX%->XX.XX%`, where `X` is the full-run loop number and `Y` is the in-run improvement iteration. Commit bodies include the benchmark report path, quality/objective/duration/size scores, repeat counts, holdout gate summary when enabled, per-case scoring details, the researcher summary, and a diffstat. Accepted commits are pushed by default; pass `-push=false` to review and push them manually.
 
 If `pi` is outside your shell `PATH`, use the same `-pi` flag:
 
