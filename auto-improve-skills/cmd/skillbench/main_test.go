@@ -162,7 +162,7 @@ func TestApplySafetyGatesZerosUnsafeCase(t *testing.T) {
 	if !strings.Contains(strings.Join(result.SafetyViolations, "\n"), "unbounded whole-log dump") {
 		t.Fatalf("expected unbounded dump violation, got %#v", result.SafetyViolations)
 	}
-	if len(result.Criteria) == 0 || !containsString(result.Criteria[len(result.Criteria)-1].FeedbackTags, autoresearch.FeedbackTagBoundedInspection) {
+	if len(result.Criteria) == 0 || !containsString(result.Criteria[len(result.Criteria)-1].FeedbackTags, autoresearch.FeedbackTagBoundedInspectionAvoidWholeLogDumps) {
 		t.Fatalf("expected bounded-inspection feedback tag on safety criterion, got %#v", result.Criteria)
 	}
 }

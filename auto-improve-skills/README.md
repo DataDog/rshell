@@ -26,7 +26,13 @@ Training loop:
 go run ./cmd/skilltrain -iters 3 -judge
 ```
 
-`skilltrain` writes per-iteration `sanitized-feedback.md` plus an auditable `sanitized-feedback.source.json`. By default feedback is generated deterministically from aggregate closed-tag counts and rendered as approved generic feedback cards. Granular card IDs roll up to parent tags for safe fallback; recurring granular cards suppress their broader parent cards. Pass `-feedback-llm` to let a nested no-tools Pi call choose/prioritize among those approved generic feedback cards only; raw benchmark prompts, outputs, criterion names, and task facts are not provided to that call.
+`skilltrain` writes per-iteration `sanitized-feedback.md` plus an auditable `sanitized-feedback.source.json`. By default feedback is generated deterministically from aggregate closed-tag counts and rendered as approved generic feedback cards. Granular card IDs roll up to parent tags for safe fallback; recurring granular cards suppress their broader parent cards. Recent-result safety/criterion names are used only to infer approved generic card IDs, never to render task facts. Pass `-feedback-llm` to let a nested no-tools Pi call choose/prioritize among those approved generic feedback cards only; raw benchmark prompts, outputs, criterion names, and task facts are not provided to that call.
+
+Regenerate sanitized feedback artifacts after taxonomy/template changes:
+
+```sh
+go run ./cmd/skilltrain -regenerate-feedback runs
+```
 
 Generate fixtures only:
 

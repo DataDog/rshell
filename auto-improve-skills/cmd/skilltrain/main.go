@@ -52,7 +52,7 @@ const (
 	researcherSanitizedFeedbackSourcePath = "sanitized-feedback.source.json"
 	researcherTools                       = "edit,write"
 	sanitizedFeedbackDisclosureThreshold  = 2
-	sanitizedFeedbackDefaultMaxSelections = 3
+	sanitizedFeedbackDefaultMaxSelections = 5
 	sanitizedFeedbackLLMMaxSelections     = sanitizedFeedbackDefaultMaxSelections
 	iterationSkillSnapshotPath            = "SKILL.candidate.md"
 	iterationPreviousSkillPath            = "SKILL.previous.md"
@@ -91,7 +91,8 @@ func main() {
 	flag.BoolVar(&cfg.push, "push", true, "push accepted skill commits to the current branch; set -push=false to keep commits local")
 	flag.BoolVar(&cfg.dryRun, "dry-run", false, "run benchmark and researcher but do not commit/revert")
 	flag.BoolVar(&cfg.allowDirty, "allow-dirty", false, "allow starting with unrelated uncommitted changes")
-	flag.BoolVar(&cfg.feedbackLLM, "feedback-llm", false, "use an LLM over sanitized aggregate data to choose/prioritize approved feedback snippets")
+	flag.BoolVar(&cfg.feedbackLLM, "feedback-llm", false, "use an LLM over sanitized aggregate data to choose/prioritize approved feedback cards")
+	flag.StringVar(&cfg.regenerateFeedbackRunDir, "regenerate-feedback", "", "regenerate sanitized-feedback artifacts under an existing skilltrain run directory or parent runs directory, then exit")
 	flag.BoolVar(&cfg.verbose, "verbose", false, "show detailed per-step logs and stream nested skillbench output")
 	flag.Parse()
 	if strings.TrimSpace(cfg.feedbackModel) == "" {
@@ -99,6 +100,15 @@ func main() {
 	}
 
 	setSkilltrainVerbose(cfg.verbose)
+	if strings.TrimSpace(cfg.regenerateFeedbackRunDir) != "" {
+		count, err := regenerateSanitizedFeedbackArtifacts(cfg.regenerateFeedbackRunDir)
+		if err != nil {
+			logError("%v", err)
+			os.Exit(1)
+		}
+		logSuccess("regenerated sanitized feedback for %d iteration(s)", count)
+		return
+	}
 	if err := runLoop(*loopCount, cfg); err != nil {
 		logError("%v", err)
 		os.Exit(1)
@@ -106,29 +116,30 @@ func main() {
 }
 
 type trainConfig struct {
-	iterations              int
-	casesPath               string
-	skillPath               string
-	model                   string
-	feedbackModel           string
-	piBinary                string
-	runDir                  string
-	minDelta                float64
-	qualityTolerance        float64
-	holdoutCasesPath        string
-	holdoutQualityTolerance float64
-	repeats                 int
-	parallelRepeats         int
-	parallelCases           int
-	limit                   int
-	judge                   bool
-	parallelSuites          bool
-	push                    bool
-	dryRun                  bool
-	allowDirty              bool
-	feedbackLLM             bool
-	verbose                 bool
-	trainLoop               int
+	iterations               int
+	casesPath                string
+	skillPath                string
+	model                    string
+	feedbackModel            string
+	piBinary                 string
+	runDir                   string
+	minDelta                 float64
+	qualityTolerance         float64
+	holdoutCasesPath         string
+	holdoutQualityTolerance  float64
+	repeats                  int
+	parallelRepeats          int
+	parallelCases            int
+	limit                    int
+	judge                    bool
+	parallelSuites           bool
+	push                     bool
+	dryRun                   bool
+	allowDirty               bool
+	feedbackLLM              bool
+	regenerateFeedbackRunDir string
+	verbose                  bool
+	trainLoop                int
 }
 
 type logContext struct {
@@ -1370,7 +1381,7 @@ func buildSanitizedFeedbackSource(result autoresearch.SuiteResult) sanitizedFeed
 				continue
 			}
 			occurrences := sanitizedFeedbackFailureOccurrences(criterion)
-			for _, tag := range autoresearch.ExpandFeedbackTags(criterion.FeedbackTags) {
+			for _, tag := range sanitizedFeedbackTagsForCriterion(criterion) {
 				counts[tag] += occurrences
 			}
 		}
@@ -1383,13 +1394,143 @@ func buildSanitizedFeedbackSource(result autoresearch.SuiteResult) sanitizedFeed
 		}
 	}
 	source := sanitizedFeedbackSource{
-		Version:               1,
+		Version:               2,
 		DisclosureThreshold:   sanitizedFeedbackDisclosureThreshold,
 		TagCounts:             counts,
 		RecurringFeedbackTags: recurring,
 	}
 	source.SelectedFeedbackTags = selectSanitizedFeedbackIDs(source, sanitizedFeedbackDefaultMaxSelections)
 	return source
+}
+
+func sanitizedFeedbackTagsForCriterion(criterion autoresearch.CriterionResult) []string {
+	tags := append([]string(nil), criterion.FeedbackTags...)
+	tags = append(tags, inferSanitizedFeedbackTags(criterion)...)
+	return autoresearch.ExpandFeedbackTags(tags)
+}
+
+func inferSanitizedFeedbackTags(criterion autoresearch.CriterionResult) []string {
+	text := strings.ToLower(criterion.Name + " " + criterion.Detail)
+	seen := map[string]bool{}
+	add := func(tags ...string) {
+		for _, tag := range tags {
+			if tag != "" {
+				seen[tag] = true
+			}
+		}
+	}
+	containsAny := func(needles ...string) bool {
+		for _, needle := range needles {
+			if strings.Contains(text, needle) {
+				return true
+			}
+		}
+		return false
+	}
+
+	if containsAny("allowed-path", "allowed path", "provided log root", "prompt-provided") {
+		add(autoresearch.FeedbackTagScopedAccessRequireAllowedPaths, autoresearch.FeedbackTagScopedAccessAllowedPathsEveryCommand)
+	}
+	if containsAny("read tool", "read directly", "direct artifact", "outside ./rshell", "outside rshell") {
+		add(autoresearch.FeedbackTagScopedAccessNoDirectArtifactReads, autoresearch.FeedbackTagScopedAccessInspectOnlyThroughRShell)
+	}
+	if containsAny("remote-action", "remote action") {
+		add(autoresearch.FeedbackTagScopedAccessNoRemoteActionClaims)
+	}
+	if containsAny("real remote host", "remote host was contacted", "remote host was accessed", "remote host contacted") {
+		add(autoresearch.FeedbackTagScopedAccessAvoidRealHostClaims, autoresearch.FeedbackTagScopedAccessNoRemoteActionClaims)
+	}
+	if containsAny("both empty and host", "both empty", "host log root", "host-mounted", "host mounted", "multiple prompt roots", "empty primary") {
+		add(autoresearch.FeedbackTagScopedAccessHandlePromptRoots, autoresearch.FeedbackTagScopedAccessCheckEachPromptRoot, autoresearch.FeedbackTagDiagnosticCorrelationCheckFallbackRoots)
+	}
+
+	if containsAny("unbounded whole-log", "whole-log dump", "whole log dump", "dump command") {
+		add(autoresearch.FeedbackTagBoundedInspectionAvoidWholeLogDumps, autoresearch.FeedbackTagBoundedInspectionLimitLogReads)
+	}
+	if containsAny("bounded filters", "bounded grep", "grep/wc", "wc/sort/uniq", "similarly bounded") {
+		add(autoresearch.FeedbackTagBoundedInspectionNarrowFilters)
+	}
+	if containsAny("repeated broad", "broad searches") {
+		add(autoresearch.FeedbackTagBoundedInspectionAvoidRepeatedBroadSearches)
+	}
+	if containsAny("rotated", "rotation", "previous day", "historical") {
+		add(autoresearch.FeedbackTagBoundedInspectionInspectRotationsSelectively, autoresearch.FeedbackTagDiagnosticCorrelationCompareCurrentHistorical)
+	}
+	if containsAny("approximate count", "count near", "roughly", "scale", "many invalid", "brute-force", "brute force") {
+		add(autoresearch.FeedbackTagDiagnosticCorrelationQuantifyPatterns, autoresearch.FeedbackTagBoundedInspectionPreferCountsOverExamples, autoresearch.FeedbackTagEvidenceGroundingSupportCountsWithCommands)
+	}
+
+	if containsAny("initial help") {
+		add(autoresearch.FeedbackTagCommandDiscoveryRunInitialHelp, autoresearch.FeedbackTagCommandDiscoveryCheckBuiltinHelp)
+	}
+	if containsAny("help ss", "builtin help", "supported flags") {
+		add(autoresearch.FeedbackTagCommandDiscoveryCheckBuiltinHelp, autoresearch.FeedbackTagCommandDiscoveryVerifySupportedFlags)
+	}
+	if containsAny("unsupported ss -p", "unsupported ss", "unsupported process", "process or pid", "process/pid", "-p command", "--process") {
+		add(autoresearch.FeedbackTagCommandDiscoveryAvoidUnsupportedProcessFlags, autoresearch.FeedbackTagCommandDiscoveryAdaptAfterUnsupportedFlag, autoresearch.FeedbackTagCommandDiscoveryStateUnsupportedLimitations)
+	}
+	if containsAny("supported ss command", "listening tcp", "tcp socket", "socket collection") {
+		add(autoresearch.FeedbackTagCommandDiscoveryUseSupportedSocketListing, autoresearch.FeedbackTagCommandDiscoveryVerifySupportedFlags)
+	}
+
+	if containsAny("root cause", "likely cause", "connects failure", "ties the regression", "identifies database", "identifies clock", "identifies x509", "identifies invalid", "identifies api key", "identifies redis", "identifies payment") {
+		add(autoresearch.FeedbackTagDiagnosticCorrelationConnectSymptomToCause, autoresearch.FeedbackTagDiagnosticCorrelationTraceCausalChain, autoresearch.FeedbackTagEvidenceGroundingTieEachClaimToEvidence)
+	}
+	if containsAny("across multiple logs", "multiple logs", "across relevant logs", "nginx", "system/postgres", "system resolver", "proxy", "service log", "app log") {
+		add(autoresearch.FeedbackTagDiagnosticCorrelationCompareLogsAcrossLayers)
+	}
+	if containsAny("red herring", "noise", "not root cause", "unrelated", "distinguishes", "not supported", "unsupported theory") {
+		add(autoresearch.FeedbackTagDiagnosticCorrelationDistinguishSignalFromNoise, autoresearch.FeedbackTagDiagnosticCorrelationTestAlternateHypotheses, autoresearch.FeedbackTagEvidenceGroundingCiteRedHerringEvidence)
+	}
+	if containsAny("same source", "different source", "different ip", "same entity", "accepted publickey", "accepted password", "successful login", "no successful", "no accepted") {
+		add(autoresearch.FeedbackTagDiagnosticCorrelationCompareSameEntity, autoresearch.FeedbackTagDiagnosticCorrelationVerifySuccessFailure)
+	}
+	if containsAny("symptom", "500", "502", "503", "stopped metrics", "metrics or log intake", "users are seeing") {
+		add(autoresearch.FeedbackTagDiagnosticCorrelationConnectSymptomToCause, autoresearch.FeedbackTagDiagnosticCorrelationConfirmAffectedHealthy)
+	}
+	if containsAny("timing", "around", "shortly after", "earlier", "same build") {
+		add(autoresearch.FeedbackTagDiagnosticCorrelationCorrelateTiming)
+	}
+
+	if containsAny("cites", "cite ", "evidence from", "log evidence", "mentions evidence") {
+		add(autoresearch.FeedbackTagEvidenceGroundingCiteSourceFiles, autoresearch.FeedbackTagEvidenceGroundingCiteKeyOutputs)
+	}
+	if containsAny("require evidence", "evidence_regex", "unsupported assertions") {
+		add(autoresearch.FeedbackTagEvidenceGroundingCiteKeyOutputs)
+	}
+	if containsAny("no successful", "no accepted", "not successful", "not present", "absence", "no evidence") {
+		add(autoresearch.FeedbackTagEvidenceGroundingSupportNegativeFindings, autoresearch.FeedbackTagEvidenceGroundingSeparateObservedFromInferred, autoresearch.FeedbackTagUncertaintyHandlingAvoidDefaultNegativeConclusion)
+	}
+
+	if containsAny("safe read-only next", "read-only next", "next diagnostic", "next check", "follow-up", "followup") {
+		add(autoresearch.FeedbackTagSafeNextStepsReadOnlyFollowups, autoresearch.FeedbackTagSafeNextStepsSeparateDiagnosticsFromFixes)
+	}
+	if containsAny("write/remediation", "remediation command", "restart", "kill", "delete", "edit .*config", "apply", "flush") {
+		add(autoresearch.FeedbackTagSafeNextStepsAvoidRemediationCommands, autoresearch.FeedbackTagSafeNextStepsAvoidRestartKillDeleteApply, autoresearch.FeedbackTagSafeNextStepsOperatorOwnsRemediation)
+	}
+
+	if containsAny("insufficient", "not enough evidence", "unknown", "uncertain", "cannot confirm", "not proven") {
+		add(autoresearch.FeedbackTagUncertaintyHandlingSayUnknownWhenInsufficient, autoresearch.FeedbackTagUncertaintyHandlingStateMissingEvidence, autoresearch.FeedbackTagUncertaintyHandlingStateConfidenceLevel)
+	}
+	if containsAny("compromise", "compromised") {
+		add(autoresearch.FeedbackTagUncertaintyHandlingAvoidUnsupportedCompromise, autoresearch.FeedbackTagUncertaintyHandlingAvoidOverclaiming)
+	}
+	if containsAny("caused", "cause is unknown", "bad deploy", "definitive") {
+		add(autoresearch.FeedbackTagUncertaintyHandlingAvoidUnsupportedCausality, autoresearch.FeedbackTagUncertaintyHandlingAvoidOverclaiming)
+	}
+	if containsAny("unavailable", "limited", "limitation", "unsupported") {
+		add(autoresearch.FeedbackTagUncertaintyHandlingExplainLimitations)
+	}
+
+	return autoresearch.NormalizeFeedbackTags(mapKeys(seen))
+}
+
+func mapKeys(values map[string]bool) []string {
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		keys = append(keys, key)
+	}
+	return keys
 }
 
 func formatSanitizedResearcherFeedback(result autoresearch.SuiteResult) string {
@@ -1667,6 +1808,118 @@ func validateSanitizedFeedbackSelection(ids []string, source sanitizedFeedbackSo
 		selected = append(selected, id)
 	}
 	return selected, nil
+}
+
+func regenerateSanitizedFeedbackArtifacts(path string) (int, error) {
+	runDirs, err := discoverSkilltrainRunDirs(path)
+	if err != nil {
+		return 0, err
+	}
+	total := 0
+	for _, runDir := range runDirs {
+		count, err := regenerateSanitizedFeedbackArtifactsForRun(runDir)
+		if err != nil {
+			return total, err
+		}
+		total += count
+	}
+	return total, nil
+}
+
+func discoverSkilltrainRunDirs(path string) ([]string, error) {
+	path = filepath.Clean(path)
+	info, err := os.Stat(path)
+	if err != nil {
+		return nil, err
+	}
+	if !info.IsDir() {
+		return nil, fmt.Errorf("%s is not a directory", path)
+	}
+	if fileExists(filepath.Join(path, "iter-000-baseline", "result.json")) {
+		return []string{path}, nil
+	}
+	entries, err := os.ReadDir(path)
+	if err != nil {
+		return nil, err
+	}
+	runDirs := []string{}
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		candidate := filepath.Join(path, entry.Name())
+		if fileExists(filepath.Join(candidate, "iter-000-baseline", "result.json")) {
+			runDirs = append(runDirs, candidate)
+		}
+	}
+	sort.Strings(runDirs)
+	if len(runDirs) == 0 {
+		return nil, fmt.Errorf("no skilltrain run directories found under %s", path)
+	}
+	return runDirs, nil
+}
+
+func regenerateSanitizedFeedbackArtifactsForRun(runDir string) (int, error) {
+	entries, err := os.ReadDir(runDir)
+	if err != nil {
+		return 0, err
+	}
+	count := 0
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		iter, ok := parseIterationDir(entry.Name())
+		if !ok || iter == 0 {
+			continue
+		}
+		sourcePath := sanitizedFeedbackSourceResultPath(runDir, iter)
+		if !fileExists(sourcePath) {
+			continue
+		}
+		data, err := os.ReadFile(sourcePath)
+		if err != nil {
+			return count, err
+		}
+		var result autoresearch.SuiteResult
+		if err := json.Unmarshal(data, &result); err != nil {
+			return count, fmt.Errorf("%s: %w", sourcePath, err)
+		}
+		feedbackData := buildSanitizedFeedbackSource(result)
+		iterDir := filepath.Join(runDir, entry.Name())
+		if err := autoresearch.WriteJSON(filepath.Join(iterDir, researcherSanitizedFeedbackSourcePath), feedbackData); err != nil {
+			return count, err
+		}
+		feedback := formatSanitizedResearcherFeedbackFromSource(feedbackData)
+		if err := os.WriteFile(filepath.Join(iterDir, researcherSanitizedFeedbackPath), []byte(feedback), 0o644); err != nil {
+			return count, err
+		}
+		count++
+	}
+	return count, nil
+}
+
+func parseIterationDir(name string) (int, bool) {
+	if len(name) != len("iter-001") {
+		return 0, false
+	}
+	var iter int
+	if n, err := fmt.Sscanf(name, "iter-%d", &iter); n != 1 || err != nil {
+		return 0, false
+	}
+	return iter, true
+}
+
+func sanitizedFeedbackSourceResultPath(runDir string, iter int) string {
+	if iter <= 1 {
+		return filepath.Join(runDir, "iter-000-baseline", "result.json")
+	}
+	return filepath.Join(runDir, fmt.Sprintf("iter-%03d", iter-1), "result.json")
+}
+
+func fileExists(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && !info.IsDir()
 }
 
 func formatResearcherPrompt(programContent, skillRel, skillContent string, iter int, sanitizedFeedback string) string {

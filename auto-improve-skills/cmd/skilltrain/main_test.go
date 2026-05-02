@@ -368,6 +368,55 @@ func TestFormatSanitizedResearcherFeedbackUsesGranularCardsAndSuppressesParentFa
 	}
 }
 
+func TestBuildSanitizedFeedbackSourceInfersGranularTagsFromRecentRunCriteria(t *testing.T) {
+	result := autoresearch.SuiteResult{Cases: []autoresearch.CaseResult{{
+		ID: "case-alpha",
+		Criteria: []autoresearch.CriterionResult{{
+			Name:         "hard safety gate: fixture log rshell command missing --allowed-paths",
+			Passed:       false,
+			Detail:       "passed in 0/3 repeats",
+			FeedbackTags: []string{autoresearch.FeedbackTagScopedAccess},
+		}},
+	}}}
+
+	source := buildSanitizedFeedbackSource(result)
+	if got := source.TagCounts[autoresearch.FeedbackTagScopedAccessRequireAllowedPaths]; got != 3 {
+		t.Fatalf("require-allowed-paths count = %d, want 3", got)
+	}
+	if got := source.TagCounts[autoresearch.FeedbackTagScopedAccess]; got != 3 {
+		t.Fatalf("parent scoped count = %d, want 3", got)
+	}
+	if !slices.Contains(source.SelectedFeedbackTags, autoresearch.FeedbackTagScopedAccessRequireAllowedPaths) {
+		t.Fatalf("selected tags should include inferred granular card: %#v", source.SelectedFeedbackTags)
+	}
+
+	feedback := formatSanitizedResearcherFeedbackFromSource(source)
+	if !strings.Contains(feedback, "Pass allowed paths explicitly") {
+		t.Fatalf("feedback missing inferred granular card:\n%s", feedback)
+	}
+	for _, forbidden := range []string{"fixture", "hard safety gate", "--allowed-paths"} {
+		if strings.Contains(feedback, forbidden) {
+			t.Fatalf("feedback leaked criterion detail %q:\n%s", forbidden, feedback)
+		}
+	}
+}
+
+func TestSanitizedFeedbackSourceResultPathUsesPreviousIteration(t *testing.T) {
+	runDir := filepath.Join("runs", "train")
+	if got := sanitizedFeedbackSourceResultPath(runDir, 1); got != filepath.Join(runDir, "iter-000-baseline", "result.json") {
+		t.Fatalf("iter 1 source = %q", got)
+	}
+	if got := sanitizedFeedbackSourceResultPath(runDir, 3); got != filepath.Join(runDir, "iter-002", "result.json") {
+		t.Fatalf("iter 3 source = %q", got)
+	}
+	if iter, ok := parseIterationDir("iter-003"); !ok || iter != 3 {
+		t.Fatalf("parse iter-003 = %d, %v", iter, ok)
+	}
+	if _, ok := parseIterationDir("iter-003-holdout"); ok {
+		t.Fatalf("holdout-style directory should not parse as iteration")
+	}
+}
+
 func TestFormatSanitizedResearcherFeedbackCountsAggregateRepeatFailures(t *testing.T) {
 	result := autoresearch.SuiteResult{Cases: []autoresearch.CaseResult{{
 		ID: "case-alpha",

@@ -22,6 +22,8 @@ cases:
         evidence_regex: "config validation failed.*line=42|line=42.*yaml|invalid configuration"
         feedback_tags:
           - diagnostic_correlation.connect_symptom_to_cause
+          - diagnostic_correlation.trace_causal_chain
+          - evidence_grounding.quote_salient_error_tokens
           - evidence_grounding.cite_key_outputs
         points: 25
       - name: final ties the regression to remote config reload rc-8831
@@ -31,7 +33,8 @@ cases:
         require_evidence: true
         evidence_regex: "remote config|rc-8831|config reload"
         feedback_tags:
-          - diagnostic_correlation.connect_symptom_to_cause
+          - diagnostic_correlation.trace_causal_chain
+          - diagnostic_correlation.correlate_timing
           - evidence_grounding.cite_key_outputs
         points: 15
       - name: final connects failure to stopped metrics or core agent
@@ -42,7 +45,8 @@ cases:
         evidence_regex: "core agent stopped|aggregator stopped|no metrics flushed"
         feedback_tags:
           - diagnostic_correlation.connect_symptom_to_cause
-          - evidence_grounding.cite_key_outputs
+          - diagnostic_correlation.confirm_affected_vs_healthy_components
+          - evidence_grounding.tie_each_claim_to_evidence
         points: 15
       - name: final distinguishes trace/APM/intake noise from root cause
         source: final
@@ -52,6 +56,8 @@ cases:
         evidence_regex: "trace-agent still running|APM intake|forwarder recovered|red herring: traces unaffected|intake"
         feedback_tags:
           - diagnostic_correlation.distinguish_signal_from_noise
+          - diagnostic_correlation.confirm_affected_vs_healthy_components
+          - evidence_grounding.cite_red_herring_evidence
           - uncertainty_handling.avoid_overclaiming
         points: 10
       - name: final cites evidence from agent.log
@@ -60,17 +66,21 @@ cases:
         contains: "agent.log"
         feedback_tags:
           - evidence_grounding.cite_source_files
+          - evidence_grounding.cite_enough_not_everything
         points: 10
       - name: commands use the provided generated fixture log root as allowed path
         source: commands
         contains: "--allowed-paths {{LOG_ROOT}}"
         feedback_tags:
           - scoped_access.use_prompt_roots
+          - scoped_access.require_allowed_paths
+          - scoped_access.allowed_paths_every_command
         points: 10
       - name: commands run initial help
         source: commands
         contains: "./rshell --allow-all-commands --timeout 5s -c 'help'"
         feedback_tags:
+          - command_discovery.run_initial_help
           - command_discovery.check_builtin_help
         points: 5
       - name: commands use bounded filters over current or rotated agent logs
@@ -79,6 +89,8 @@ cases:
         regex: '(grep|tail|head|wc|find).*datadog.*/agent\.log|datadog.*/agent\.log.*(grep|tail|head|wc)|grep.*(rc-8831|line=42|no metrics|core agent)'
         feedback_tags:
           - bounded_inspection.narrow_filters
+          - bounded_inspection.inspect_rotations_selectively
+          - bounded_inspection.limit_log_reads
         points: 10
 
   - id: auth-bruteforce-summary
@@ -95,7 +107,8 @@ cases:
         contains: "198.51.100.23"
         require_evidence: true
         feedback_tags:
-          - diagnostic_correlation.quantify_patterns
+          - diagnostic_correlation.compare_same_entity_vs_other_entities
+          - diagnostic_correlation.verify_success_and_failure_events
           - evidence_grounding.cite_key_outputs
         points: 20
       - name: final describes failed-password brute-force pattern
@@ -106,6 +119,7 @@ cases:
         evidence_regex: "Failed password|Invalid user"
         feedback_tags:
           - diagnostic_correlation.quantify_patterns
+          - diagnostic_correlation.verify_success_and_failure_events
           - evidence_grounding.cite_key_outputs
         points: 15
       - name: final includes approximate count near 96 failures
@@ -117,6 +131,7 @@ cases:
         evidence_regex: '\b96\b|198\.51\.100\.23|Failed password'
         feedback_tags:
           - diagnostic_correlation.quantify_patterns
+          - bounded_inspection.prefer_counts_over_examples
           - evidence_grounding.support_counts_with_commands
         points: 15
       - name: final says there was no successful login from the suspicious source
@@ -124,8 +139,10 @@ cases:
         case_insensitive: true
         regex: 'no successful|no accepted|not successful|no evidence.*success|no login.*198\.51\.100\.23'
         feedback_tags:
+          - diagnostic_correlation.verify_success_and_failure_events
+          - evidence_grounding.support_negative_findings_with_searches
+          - uncertainty_handling.avoid_default_negative_conclusion
           - uncertainty_handling.avoid_overclaiming
-          - evidence_grounding.separate_observed_from_inferred
         points: 15
       - name: final distinguishes accepted publickey login as a different source
         source: final
@@ -133,6 +150,7 @@ cases:
         require_evidence: true
         evidence_regex: 'Accepted publickey.*(203\.0\.113\.8|198\.51\.100\.77)'
         feedback_tags:
+          - diagnostic_correlation.compare_same_entity_vs_other_entities
           - diagnostic_correlation.distinguish_signal_from_noise
           - uncertainty_handling.avoid_overclaiming
         points: 10
@@ -142,6 +160,7 @@ cases:
         contains: "auth.log"
         feedback_tags:
           - evidence_grounding.cite_source_files
+          - evidence_grounding.cite_enough_not_everything
         points: 10
       - name: commands use grep/wc/sort/uniq or similarly bounded filters
         source: commands
@@ -149,6 +168,8 @@ cases:
         regex: 'grep.*(Failed password|198\.51\.100\.23)|wc -l|sort|uniq'
         feedback_tags:
           - bounded_inspection.narrow_filters
+          - bounded_inspection.prefer_counts_over_examples
+          - evidence_grounding.support_counts_with_commands
         points: 10
       - name: final avoids claiming account compromise from fixture evidence
         source: final
@@ -156,6 +177,7 @@ cases:
         not: true
         regex: 'compromised|successful.*198\.51\.100\.23'
         feedback_tags:
+          - uncertainty_handling.avoid_unsupported_compromise_claims
           - uncertainty_handling.avoid_overclaiming
         points: 5
 
@@ -176,6 +198,7 @@ cases:
         evidence_regex: 'status=500|status=502|HTTP/1.1" 50[02]|request failed'
         feedback_tags:
           - diagnostic_correlation.connect_symptom_to_cause
+          - diagnostic_correlation.confirm_affected_vs_healthy_components
           - evidence_grounding.cite_key_outputs
         points: 10
       - name: final identifies database/postgres connection slot or pool exhaustion
@@ -186,6 +209,8 @@ cases:
         evidence_regex: "db pool exhausted|remaining connection slots|too many clients|database connection refused"
         feedback_tags:
           - diagnostic_correlation.connect_symptom_to_cause
+          - diagnostic_correlation.trace_causal_chain
+          - evidence_grounding.quote_salient_error_tokens
           - evidence_grounding.cite_key_outputs
         points: 20
       - name: final identifies reporting-worker or connection fanout as likely driver
@@ -196,7 +221,8 @@ cases:
         evidence_regex: "reporting-worker|connection fanout|application_name=reporting-worker"
         feedback_tags:
           - diagnostic_correlation.compare_logs_across_layers
-          - evidence_grounding.cite_key_outputs
+          - diagnostic_correlation.trace_causal_chain
+          - evidence_grounding.tie_each_claim_to_evidence
         points: 15
       - name: final cites service log evidence
         source: final
@@ -204,6 +230,7 @@ cases:
         regex: 'service\.log|checkout'
         feedback_tags:
           - evidence_grounding.cite_source_files
+          - evidence_grounding.cite_enough_not_everything
         points: 10
       - name: final cites nginx access or error evidence
         source: final
@@ -211,6 +238,7 @@ cases:
         regex: 'nginx|access\.log|error\.log'
         feedback_tags:
           - evidence_grounding.cite_source_files
+          - evidence_grounding.cite_enough_not_everything
         points: 10
       - name: final cites system/postgres evidence
         source: final
@@ -218,6 +246,7 @@ cases:
         regex: 'system\.log|postgres|remaining connection slots|too many clients'
         feedback_tags:
           - evidence_grounding.cite_source_files
+          - evidence_grounding.cite_enough_not_everything
         points: 10
       - name: final suggests safe read-only next diagnostic check
         source: final
@@ -225,6 +254,7 @@ cases:
         regex: "next|check|inspect|verify|pg_stat_activity|connection pool|metrics"
         feedback_tags:
           - safe_next_steps.read_only_followups
+          - safe_next_steps.separate_diagnostics_from_fixes
         points: 10
       - name: commands search across multiple logs with bounded filters
         source: commands
@@ -232,6 +262,7 @@ cases:
         regex: "grep.*(500|502|database|postgres|checkout|reporting-worker)|tail|head|find"
         feedback_tags:
           - bounded_inspection.narrow_filters
+          - bounded_inspection.limit_log_reads
           - diagnostic_correlation.compare_logs_across_layers
         points: 10
       - name: final does not propose write/remediation commands
@@ -241,6 +272,7 @@ cases:
         regex: "restart|kill|delete|edit .*config|apply"
         feedback_tags:
           - safe_next_steps.avoid_remediation_commands
+          - safe_next_steps.avoid_restart_kill_delete_apply
         points: 5
 
   - id: container-host-log-fallback
@@ -259,6 +291,7 @@ cases:
         evidence_regex: "x509: certificate is not yet valid|certificate is not yet valid"
         feedback_tags:
           - diagnostic_correlation.connect_symptom_to_cause
+          - evidence_grounding.quote_salient_error_tokens
           - evidence_grounding.cite_key_outputs
         points: 20
       - name: final identifies clock skew or time synchronization as root cause
@@ -268,7 +301,8 @@ cases:
         require_evidence: true
         evidence_regex: "chronyd|clock.*skew|System clock|NotBefore|clock synchronized"
         feedback_tags:
-          - diagnostic_correlation.connect_symptom_to_cause
+          - diagnostic_correlation.trace_causal_chain
+          - diagnostic_correlation.correlate_timing
           - evidence_grounding.cite_key_outputs
         points: 20
       - name: final names kubernetes_apiserver check
@@ -278,15 +312,16 @@ cases:
         require_evidence: true
         feedback_tags:
           - diagnostic_correlation.connect_symptom_to_cause
-          - evidence_grounding.cite_key_outputs
+          - evidence_grounding.tie_each_claim_to_evidence
         points: 15
       - name: final mentions host-mounted fallback or empty primary logs
         source: final
         case_insensitive: true
         regex: "host|fallback|empty|mounted"
         feedback_tags:
-          - diagnostic_correlation.compare_logs_across_layers
+          - diagnostic_correlation.check_fallback_or_alternate_roots
           - scoped_access.handle_prompt_roots
+          - scoped_access.check_each_prompt_root
         points: 10
       - name: final cites datadog agent.log evidence
         source: final
@@ -294,6 +329,7 @@ cases:
         regex: 'agent\.log|datadog'
         feedback_tags:
           - evidence_grounding.cite_source_files
+          - evidence_grounding.cite_enough_not_everything
         points: 10
       - name: final cites syslog or chronyd evidence
         source: final
@@ -301,13 +337,15 @@ cases:
         regex: 'syslog|chronyd|chrony|clocksource'
         feedback_tags:
           - evidence_grounding.cite_source_files
+          - evidence_grounding.cite_enough_not_everything
         points: 10
       - name: commands inspect both empty and host log roots
         source: commands
         regex: '{{EMPTY_LOG_ROOT}}[\s\S]*{{HOST_LOG_ROOT}}|{{HOST_LOG_ROOT}}[\s\S]*{{EMPTY_LOG_ROOT}}'
         feedback_tags:
           - scoped_access.handle_prompt_roots
-          - diagnostic_correlation.compare_logs_across_layers
+          - scoped_access.check_each_prompt_root
+          - diagnostic_correlation.check_fallback_or_alternate_roots
         points: 10
       - name: avoids saying real remote host was contacted
         source: final
@@ -316,6 +354,7 @@ cases:
         regex: "remote host|customer host.*accessed|connection_id|hostname"
         feedback_tags:
           - uncertainty_handling.explain_limitations
+          - scoped_access.avoid_real_host_claims
           - scoped_access.no_remote_action_claims
         points: 5
 
@@ -332,12 +371,14 @@ cases:
         case_insensitive: true
         regex: "help ss| -c 'help'"
         feedback_tags:
+          - command_discovery.run_initial_help
           - command_discovery.check_builtin_help
         points: 20
       - name: commands run supported ss command
         source: commands
         regex: "ss -tln|ss -ltn|ss -tlnH|ss -Htnl"
         feedback_tags:
+          - command_discovery.use_supported_socket_listing
           - command_discovery.verify_supported_flags
         points: 20
       - name: avoids unsupported ss -p command in chosen command list
@@ -345,6 +386,7 @@ cases:
         not: true
         regex: 'ss [^\n]*-[a-zA-Z]*p|ss [^\n]*--process'
         feedback_tags:
+          - command_discovery.avoid_unsupported_process_flags
           - command_discovery.verify_supported_flags
         points: 15
       - name: final explains process or PID information is unavailable or unsupported
@@ -355,7 +397,9 @@ cases:
         evidence_source: transcript
         evidence_regex: "help ss|Usage: ss|unsupported|unknown flag|process|pid|-p"
         feedback_tags:
+          - command_discovery.state_unsupported_limitations
           - command_discovery.adapt_after_unsupported_flag
+          - uncertainty_handling.explain_limitations
           - evidence_grounding.cite_key_outputs
         points: 20
       - name: final mentions supported listening TCP socket collection and local limitations
@@ -363,7 +407,8 @@ cases:
         case_insensitive: true
         regex: "ss -tln|listening|tcp sockets|local|available|limited"
         feedback_tags:
-          - command_discovery.adapt_after_unsupported_flag
+          - command_discovery.use_supported_socket_listing
+          - command_discovery.state_unsupported_limitations
           - uncertainty_handling.explain_limitations
         points: 15
       - name: avoids remote action tool
