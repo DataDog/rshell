@@ -6,6 +6,7 @@
 package main
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -216,6 +217,121 @@ func TestBenchmarkObjectiveUsesNewFields(t *testing.T) {
 	}
 	if got := benchmarkObjective(result); got != 0.90 {
 		t.Fatalf("benchmarkObjective() = %v, want 0.90", got)
+	}
+}
+
+func TestFormatResearcherPromptDoesNotPassBenchmarkArtifacts(t *testing.T) {
+	skillRel := filepath.Join("skills", "remote-host-diagnostics", "SKILL.md")
+	prompt := formatResearcherPrompt("program content", skillRel, "skill content", 2)
+	for _, want := range []string{
+		"program.md",
+		skillRel,
+		"Improve only",
+		"Do not inspect evaluator-private",
+	} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("researcher prompt missing %q:\n%s", want, prompt)
+		}
+	}
+	for _, forbidden := range []string{
+		"/repo",
+		"auto-improve-skills",
+		"cases.yaml",
+		"holdout.yaml",
+		"benchmark suite",
+		"best benchmark result",
+		"researcher-feedback",
+		"generated-fixtures",
+		"raw/",
+		"raw transcripts",
+		"result JSON",
+	} {
+		if strings.Contains(prompt, forbidden) {
+			t.Fatalf("researcher prompt leaked %q:\n%s", forbidden, prompt)
+		}
+	}
+}
+
+func TestPrepareResearcherWorkspaceCopiesOnlyResearcherFiles(t *testing.T) {
+	root := t.TempDir()
+	programPath := filepath.Join(root, "auto-improve-skills", "program.md")
+	skillPath := filepath.Join(root, "auto-improve-skills", "skills", "remote-host-diagnostics", "SKILL.md")
+	secretPath := filepath.Join(root, "auto-improve-skills", "benchmarks", "remote-host-diagnostics", "cases.yaml")
+	if err := os.MkdirAll(filepath.Dir(programPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(programPath, []byte("program"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(skillPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(skillPath, []byte("skill"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(secretPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(secretPath, []byte("secret"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	workspace, err := prepareResearcherWorkspace(root, skillPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(workspace.Dir)
+	if strings.HasPrefix(workspace.Dir, root) {
+		t.Fatalf("researcher workspace %q should not be inside repo root %q", workspace.Dir, root)
+	}
+	if workspace.SkillRel != filepath.Join("skills", "remote-host-diagnostics", "SKILL.md") {
+		t.Fatalf("SkillRel = %q", workspace.SkillRel)
+	}
+	programData, err := os.ReadFile(filepath.Join(workspace.Dir, researcherProgramPath))
+	if err != nil || string(programData) != "program" {
+		t.Fatalf("workspace program = %q, %v", string(programData), err)
+	}
+	skillData, err := os.ReadFile(filepath.Join(workspace.Dir, workspace.SkillRel))
+	if err != nil || string(skillData) != "skill" {
+		t.Fatalf("workspace skill = %q, %v", string(skillData), err)
+	}
+
+	files := map[string]bool{}
+	if err := filepath.WalkDir(workspace.Dir, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			return nil
+		}
+		rel, err := filepath.Rel(workspace.Dir, path)
+		if err != nil {
+			return err
+		}
+		files[rel] = true
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	wantFiles := []string{researcherProgramPath, filepath.Join("skills", "remote-host-diagnostics", "SKILL.md")}
+	if len(files) != len(wantFiles) {
+		t.Fatalf("workspace files = %#v", files)
+	}
+	for _, want := range wantFiles {
+		if !files[want] {
+			t.Fatalf("workspace missing %q in %#v", want, files)
+		}
+	}
+}
+
+func TestResearcherToolsExcludeReadAndBash(t *testing.T) {
+	if researcherTools != "edit,write" {
+		t.Fatalf("researcherTools = %q, want edit,write", researcherTools)
+	}
+	for _, forbidden := range []string{"bash", "read"} {
+		if strings.Contains(researcherTools, forbidden) {
+			t.Fatalf("researcherTools must not include %s: %q", forbidden, researcherTools)
+		}
 	}
 }
 

@@ -45,6 +45,8 @@ const (
 	skilltrainLogPrefix    = "skilltrain"
 	skilltrainLogSeparator = " | "
 	commandOutputLimit     = 64 * 1024
+	researcherProgramPath  = "program.md"
+	researcherTools        = "edit,write"
 
 	ansiReset   = "\x1b[0m"
 	ansiBold    = "\x1b[1m"
@@ -609,7 +611,7 @@ func run(trainLoop, iterations int, casesPath, skillPath, model, piBinary, runDi
 		}
 		transcriptPath := filepath.Join(iterDir, "researcher.stdout.md")
 		logStep("iter %d/%d edit -> %s", iter, iterations, displayRunPath(runDir, transcriptPath))
-		if err := improveSkill(root, skillAbs, casesAbs, bestPath, iterDir, model, piBinary, iter, qualityTolerance); err != nil {
+		if err := improveSkill(root, skillAbs, iterDir, model, piBinary, iter); err != nil {
 			return err
 		}
 		if dryRun {
@@ -1157,19 +1159,101 @@ func roundedAverage(sum, count int) int {
 	return (sum + count/2) / count
 }
 
-func improveSkill(root, skillAbs, casesAbs, bestResultPath, iterDir, model, piBinary string, iter int, qualityTolerance float64) error {
-	prompt := fmt.Sprintf(`You are an autoresearch-style skill improvement agent.
+type researcherWorkspace struct {
+	Dir      string
+	SkillRel string
+}
 
-Read auto-improve-skills/program.md, the current skill at %s, the benchmark suite at %s, and the best benchmark result at %s.
+func prepareResearcherWorkspace(root, skillAbs string) (researcherWorkspace, error) {
+	workspaceDir, err := os.MkdirTemp("", "skilltrain-researcher-*")
+	if err != nil {
+		return researcherWorkspace{}, err
+	}
+	cleanupOnError := true
+	defer func() {
+		if cleanupOnError {
+			_ = os.RemoveAll(workspaceDir)
+		}
+	}()
+
+	programData, err := os.ReadFile(filepath.Join(root, "auto-improve-skills", "program.md"))
+	if err != nil {
+		return researcherWorkspace{}, err
+	}
+	if err := writeResearcherWorkspaceFile(workspaceDir, researcherProgramPath, programData); err != nil {
+		return researcherWorkspace{}, err
+	}
+
+	skillData, err := os.ReadFile(skillAbs)
+	if err != nil {
+		return researcherWorkspace{}, err
+	}
+	skillRel := researcherSkillRelPath(skillAbs)
+	if err := writeResearcherWorkspaceFile(workspaceDir, skillRel, skillData); err != nil {
+		return researcherWorkspace{}, err
+	}
+
+	cleanupOnError = false
+	return researcherWorkspace{Dir: workspaceDir, SkillRel: skillRel}, nil
+}
+
+func researcherSkillRelPath(skillAbs string) string {
+	skillDir := filepath.Base(filepath.Dir(skillAbs))
+	if strings.TrimSpace(skillDir) == "" || skillDir == "." || skillDir == string(filepath.Separator) {
+		skillDir = "skill"
+	}
+	return filepath.Join("skills", skillDir, "SKILL.md")
+}
+
+func writeResearcherWorkspaceFile(workspaceDir, relPath string, data []byte) error {
+	path := filepath.Join(workspaceDir, relPath)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(path, data, 0o644)
+}
+
+func formatResearcherPrompt(programContent, skillRel, skillContent string, iter int) string {
+	return fmt.Sprintf(`You are an autoresearch-style skill improvement agent.
+
+This isolated workspace contains only %s and the current skill at %s. To avoid granting file-read access, their contents are included below.
 
 Task for iteration %d:
 - Improve only %s.
-- Optimize final answer quality first. The trainer allows at most a %.1f percentage point quality drop from the best seen quality.
-- Also improve the simple composite objective by reducing end-to-end investigation time and keeping the skill concise.
-- Do not edit benchmark cases, fake logs, Go tooling, or reports.
-- Prefer short, general diagnostic over long case-specific rules or overfitting exact answers.
+- Preserve existing quality while improving general diagnostic usefulness, end-to-end investigation time, and skill concision.
+- Do not inspect evaluator-private files or artifacts.
+- Do not edit evaluation inputs, evaluator artifacts, Go tooling, reports, run outputs, or unrelated files.
+- Prefer short, general diagnostics over long case-specific rules or overfitting exact answers.
+- Do not add exact case facts, paths, IDs, IPs, timestamps, root causes, or expected-answer text.
+- Use the edit/write tools only on %s.
 - After editing, briefly summarize what you changed and whether the skill became shorter.
-`, skillAbs, casesAbs, bestResultPath, iter, skillAbs, qualityTolerance*100)
+
+<program.md>
+%s
+</program.md>
+
+<current-skill path=%q>
+%s
+</current-skill>
+`, researcherProgramPath, skillRel, iter, skillRel, skillRel, programContent, skillRel, skillContent)
+}
+
+func improveSkill(root, skillAbs, iterDir, model, piBinary string, iter int) error {
+	workspace, err := prepareResearcherWorkspace(root, skillAbs)
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(workspace.Dir)
+
+	programContentBytes, err := os.ReadFile(filepath.Join(workspace.Dir, researcherProgramPath))
+	if err != nil {
+		return err
+	}
+	skillContentBytes, err := os.ReadFile(filepath.Join(workspace.Dir, workspace.SkillRel))
+	if err != nil {
+		return err
+	}
+	prompt := formatResearcherPrompt(string(programContentBytes), workspace.SkillRel, string(skillContentBytes), iter)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
 	defer cancel()
 	args := []string{
@@ -1178,18 +1262,18 @@ Task for iteration %d:
 		"--no-extensions",
 		"--no-prompt-templates",
 		"--no-skills",
-		"--tools", "read,bash,edit,write",
+		"--tools", researcherTools,
 		"--model", model,
 		prompt,
 	}
 	cmd := exec.CommandContext(ctx, piBinary, args...)
-	cmd.Dir = root
+	cmd.Dir = workspace.Dir
 	cmd.Env = autoresearch.EnvWithExecutableDir(piBinary)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 	logVerbose("iter %d run researcher pi", iter)
-	err := cmd.Run()
+	err = cmd.Run()
 	_ = os.WriteFile(filepath.Join(iterDir, "researcher.stdout.md"), stdout.Bytes(), 0o644)
 	if stderr.Len() > 0 {
 		_ = os.WriteFile(filepath.Join(iterDir, "researcher.stderr.txt"), stderr.Bytes(), 0o644)
@@ -1197,7 +1281,11 @@ Task for iteration %d:
 	if err != nil {
 		return fmt.Errorf("researcher pi failed: %w", err)
 	}
-	return nil
+	candidateSkill, err := os.ReadFile(filepath.Join(workspace.Dir, workspace.SkillRel))
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(skillAbs, candidateSkill, 0o644)
 }
 
 func commitSkill(root, skillAbs string, trainLoop, iter int, result autoresearch.SuiteResult, resultPath string, holdoutGate *benchmarkGate, researcherSummaryPath string, previousObjective float64, push bool) error {
