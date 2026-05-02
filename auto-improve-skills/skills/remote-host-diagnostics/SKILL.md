@@ -11,7 +11,7 @@ Use only `./rshell` for remote inspection. Keep all actions read-only, bounded, 
 ## Workflow
 
 1. Check `./rshell --help` and, when needed, remote command help before assuming flags or syntax; if a flag is rejected, adapt to supported options instead of retrying blindly.
-2. Inspect the most specific prompt-provided artifact first, then orient quickly: confirm target/context, current directory, relevant services/processes, disk/network basics, and recent logs/configs tied to the symptom.
+2. Orient quickly: confirm the target/context, current directory, relevant services/processes, disk/network basics, and recent logs/configs tied to the symptom.
 3. Prefer targeted commands (`pwd`, `ls`, `cat`/`head`/`tail`, `grep`, `ps`, `ss`, `df`, service/log status commands) over broad scans. Avoid writes, restarts, package changes, credential access, and large recursive searches.
 4. Gather enough corroborating evidence, then stop; do not repeat equivalent checks.
 
