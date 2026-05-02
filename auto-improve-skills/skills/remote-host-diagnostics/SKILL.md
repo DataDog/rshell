@@ -1,36 +1,32 @@
 ---
 name: datadog/remote-host-diagnostics
-description: Load this skill when running diagnostic commands through the local ./rshell CLI.
+description: Use local ./rshell for remote-host diagnostics.
 toolsets: core
 ---
 
 # Remote Host Diagnostics
 
-Use Bash only for local `./rshell`. No Datadog remote-action/nonlocal tools, host-side reads, old skill docs, writes, or remediation.
+Use Bash only for local `./rshell`; no Datadog remote-action/nonlocal tools, host-side reads, old skill docs, writes, or remediation.
 
 ## Commands
 
-- Start: `./rshell --allow-all-commands --timeout 5s -c 'help'`.
-- Use supplied roots; never assume `/var/log`. For each log-read:
+- Start exactly: `./rshell --allow-all-commands --timeout 5s -c 'help'`.
+- Use supplied roots; never assume `/var/log`. Log reads:
   `./rshell --allow-all-commands --allowed-paths <ROOT>[,<HOST_ROOT>] --timeout 10s -c '<read-only command>'`
-  Use long `--allowed-paths`, never `-p`; primary+fallback is comma-separated. If primary is empty, inspect fallback too and say so.
-- Builtins: `help`, `find`, `ls`, `grep`, `tail`, `head`, `wc`, `sort`, `uniq`, `cut`, `sed`, `strings`, `ss`, `ps`, `ip route`. No whole-log `cat`, redirects, writes, deletes, edits, service/process/config changes.
+  Use long `--allowed-paths` only; comma-separate primary+fallback. If primary is empty, inspect fallback too and say so.
+- Read-only builtins: `help`, `find`, `ls`, `grep`, `tail`, `head`, `wc`, `sort`, `uniq`, `cut`, `sed`, `strings`, `ss`, `ps`, `ip route`. No whole-log `cat`, redirects, writes/deletes/edits, or service/process/config changes.
 
 ## Workflow
 
-1. Inventory once: `find <ROOT> -maxdepth 3 -type f | head -n 80`; choose relevant files/log groups, not everything.
-2. Budget 4-7 commands. Run one focused broad `grep -HnEi 'time|symptom|component|error' <files> | head -n 100`, then 1-3 confirm/count/negative greps. No duplicate broad greps; short `sed` context only if needed.
-3. Stop when supported: primary failure, corroborating source for cross-layer incidents, targeted red-herring/negative, and requested scale/count. Skip extra counts unless they change the answer.
-4. Auth/security: count failed actors (`grep|sort|uniq -c|wc -l`), check Accepted/success for the same actor, and list Accepted logins from other sources. If none: `No accepted login from that source`; avoid `successful` next to the suspicious actor.
+1. Inventory once: `find <ROOT> -maxdepth 3 -type f | head -n 80`; pick the small relevant file set.
+2. Total budget: 5-7 `./rshell` calls including help+inventory. Do one focused grep (`grep -HnEi '<time/window>|<symptom>|<component>|error' <files> | head -n 80`), then <=3 confirm/correlate/count/negative checks. Use exact time fragments or time+symptom; avoid broad clock regexes/heartbeat dumps. No duplicate broad greps.
+3. Stop once you have the primary failure, needed cross-source evidence, targeted red-herring/negative, and requested scale/count. Skip checks that won't change the answer.
+4. Auth/security: count failed actors (`grep|sort|uniq -c|wc -l`), check Accepted/success for the same actor, and list Accepted logins from other sources. If none, say `No accepted login from that source`; avoid `successful` next to the suspicious actor.
 5. `ss`/uncertain flags: run `help <command>` first; use `ss -tln`/`ss -tlnH`; no `-p` unless help lists it; state PID/process info is unavailable when unsupported.
 6. Failed command: inspect error/help, correct once, do not guess.
 
 ## Final answer
 
-Concise bullets:
-- scope (`local fixture logs only` for fake fixtures; no real-host claim);
-- finding/root cause plus confidence/uncertainty;
-- evidence with filenames and short snippets/counts; preserve decisive timestamps, line numbers, IDs, actors, counts;
-- red herrings/negative checks that mattered;
-- actual `./rshell` commands run;
-- read-only next checks only (`inspect`, `verify`, `count`, `list`). In next steps and negatives, avoid remediation-action words; prefer neutral phrases like `no service lifecycle/process termination/config-change evidence`.
+Bullets: scope (`local fixture logs only` for fake fixtures; no real-host claim); finding/root cause with confidence; evidence with filenames + snippets/counts, keeping decisive timestamps/lines/IDs/actors; relevant red herrings/negatives; actual `./rshell` commands; read-only next checks (`inspect`, `verify`, `count`, `list`).
+
+Final: never use `restart`, `kill/killed`, `delete`, `edit`, `apply` even in negatives; say `service lifecycle`, `process termination`, or `config-change` instead.
