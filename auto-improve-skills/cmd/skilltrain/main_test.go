@@ -86,6 +86,73 @@ func TestDefaultTrainingSettings(t *testing.T) {
 	}
 }
 
+func TestSaveBaselineSkillArtifactsWritesSkillSnapshots(t *testing.T) {
+	dir := t.TempDir()
+	skillPath := filepath.Join(dir, "SKILL.md")
+	skill := []byte("# Skill\n\nUse rshell.\n")
+	if err := os.WriteFile(skillPath, skill, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	baselineDir := filepath.Join(dir, "runs", "iter-000-baseline")
+	holdoutDir := filepath.Join(dir, "runs", "iter-000-holdout")
+	if err := saveBaselineSkillArtifacts(skillPath, baselineDir, true, holdoutDir); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, path := range []string{
+		filepath.Join(baselineDir, iterationSkillSnapshotPath),
+		filepath.Join(holdoutDir, iterationSkillSnapshotPath),
+	} {
+		got, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("reading %s: %v", path, err)
+		}
+		if string(got) != string(skill) {
+			t.Fatalf("%s = %q, want %q", path, got, skill)
+		}
+	}
+}
+
+func TestSaveIterationSkillArtifactsWritesSnapshotsAndRenamedDiff(t *testing.T) {
+	dir := t.TempDir()
+	previous := []byte("# Skill\n\nUse the old workflow.\n")
+	candidate := []byte("# Skill\n\nUse the new workflow.\n")
+
+	if err := saveIterationSkillArtifacts(dir, previous, candidate); err != nil {
+		t.Fatal(err)
+	}
+
+	previousPath := filepath.Join(dir, iterationPreviousSkillPath)
+	candidatePath := filepath.Join(dir, iterationSkillSnapshotPath)
+	diffPath := filepath.Join(dir, iterationSkillDiffPath)
+	for path, want := range map[string][]byte{
+		previousPath:  previous,
+		candidatePath: candidate,
+	} {
+		got, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("reading %s: %v", path, err)
+		}
+		if string(got) != string(want) {
+			t.Fatalf("%s = %q, want %q", path, got, want)
+		}
+	}
+
+	diff, err := os.ReadFile(diffPath)
+	if err != nil {
+		t.Fatalf("reading %s: %v", diffPath, err)
+	}
+	for _, want := range []string{"SKILL.previous.md", "SKILL.candidate.md", "-Use the old workflow.", "+Use the new workflow."} {
+		if !strings.Contains(string(diff), want) {
+			t.Fatalf("diff missing %q:\n%s", want, diff)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(dir, "SKILL.diff")); !os.IsNotExist(err) {
+		t.Fatalf("legacy SKILL.diff should not be written, stat error: %v", err)
+	}
+}
+
 func TestSkillbenchGoRunTargetUsesNestedModule(t *testing.T) {
 	root := t.TempDir()
 	autoRoot := filepath.Join(root, "auto-improve-skills")

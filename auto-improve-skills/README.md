@@ -28,6 +28,8 @@ go run ./cmd/skilltrain -iters 3 -judge
 
 `skilltrain` asks for a general skill improvement per iteration, benchmarks the candidate, and accepts it only when quality stays within tolerance and the objective improves. Case templates with `variants:` are expanded into concrete seeded benchmark cases before selection/scoring.
 
+Each training iteration writes skill artifacts under `runs/`: `SKILL.previous.md`, `SKILL.candidate.md`, and `SKILL.md.diff`. Baseline directories include `SKILL.candidate.md` for the starting skill snapshot.
+
 Researcher agents run from the repository root with read, bash, edit, and write tools so they can inspect the public benchmark suite and the best public `result.json`. The prompt forbids reading, listing, grepping, or editing holdout-related files, folders, fixtures, run outputs, or results.
 
 Generate fixtures only:

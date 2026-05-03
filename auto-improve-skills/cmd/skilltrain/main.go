@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -45,6 +46,9 @@ const (
 	commandOutputLimit               = 64 * 1024
 	rshellCapabilitySnapshotMaxBytes = 12 * 1024
 	researcherTools                  = "read,bash,edit,write"
+	iterationSkillSnapshotPath       = "SKILL.candidate.md"
+	iterationPreviousSkillPath       = "SKILL.previous.md"
+	iterationSkillDiffPath           = "SKILL.md.diff"
 
 	ansiReset   = "\x1b[0m"
 	ansiBold    = "\x1b[1m"
@@ -506,6 +510,9 @@ func run(iterations int, casesPath, skillPath, model, piBinary, runDir string, m
 	if err := prepareBenchmarkPrerequisites(root, casesAbs, holdoutCasesAbs); err != nil {
 		return err
 	}
+	if err := saveBaselineSkillArtifacts(skillAbs, filepath.Join(runDir, "iter-000-baseline"), holdoutCasesAbs != "", filepath.Join(runDir, "iter-000-holdout")); err != nil {
+		return err
+	}
 
 	logBenchmark("baseline cases-par=%d", parallelCases)
 	baseline, holdoutBaseline, haveHoldoutBaseline, err := runBaselineBenchmarks(root, casesAbs, holdoutCasesAbs, skillAbs, model, piBinary, runDir, limit, judge, parallelCases, parallelSuites)
@@ -551,6 +558,19 @@ func run(iterations int, casesPath, skillPath, model, piBinary, runDir string, m
 			return os.WriteFile(skillAbs, previousSkill, 0o644)
 		}
 		if err := improveSkill(root, skillAbs, casesAbs, bestPath, iterDir, model, piBinary, iter, qualityTolerance); err != nil {
+			if restoreErr := restoreDryRun(); restoreErr != nil {
+				return restoreErr
+			}
+			return err
+		}
+		candidateSkill, err := os.ReadFile(skillAbs)
+		if err != nil {
+			if restoreErr := restoreDryRun(); restoreErr != nil {
+				return restoreErr
+			}
+			return err
+		}
+		if err := saveIterationSkillArtifacts(iterDir, previousSkill, candidateSkill); err != nil {
 			if restoreErr := restoreDryRun(); restoreErr != nil {
 				return restoreErr
 			}
@@ -620,7 +640,7 @@ func run(iterations int, casesPath, skillPath, model, piBinary, runDir string, m
 			acceptedIterations++
 			if dryRun {
 				logSuccess("iter %d/%d accepted (dry-run)", iter, iterations)
-				printSemantic(logSemanticDryRun, "accept iter %d; would commit %s", iter, displayPath(root, skillAbs))
+				printSemantic(logSemanticDryRun, "accept iter %d; would commit %s (candidate %s)", iter, displayPath(root, skillAbs), displayRunPath(runDir, filepath.Join(iterDir, iterationSkillSnapshotPath)))
 			} else {
 				logSuccess("iter %d/%d accepted; commit", iter, iterations)
 				if err := commitSkill(root, skillAbs, iter, candidate, candidatePath, holdoutGate, filepath.Join(iterDir, "researcher.stdout.md"), bestObjective, push); err != nil {
@@ -650,7 +670,7 @@ func run(iterations int, casesPath, skillPath, model, piBinary, runDir string, m
 			}
 			if dryRun {
 				logWarn("iter %d/%d rejected (dry-run)", iter, iterations)
-				printSemantic(logSemanticDryRun, "reject iter %d; would revert %s", iter, displayPath(root, skillAbs))
+				printSemantic(logSemanticDryRun, "reject iter %d; would revert %s (candidate %s)", iter, displayPath(root, skillAbs), displayRunPath(runDir, filepath.Join(iterDir, iterationSkillSnapshotPath)))
 			} else {
 				logWarn("iter %d/%d rejected; revert", iter, iterations)
 				if err := gitCheckout(root, skillAbs); err != nil {
@@ -670,6 +690,56 @@ type benchmarkGate struct {
 	Result       autoresearch.SuiteResult
 	ResultPath   string
 	QualityFloor float64
+}
+
+func saveBaselineSkillArtifacts(skillAbs, baselineDir string, haveHoldout bool, holdoutDir string) error {
+	skill, err := os.ReadFile(skillAbs)
+	if err != nil {
+		return err
+	}
+	if err := writeSkillRunArtifact(baselineDir, iterationSkillSnapshotPath, skill); err != nil {
+		return err
+	}
+	if haveHoldout {
+		return writeSkillRunArtifact(holdoutDir, iterationSkillSnapshotPath, skill)
+	}
+	return nil
+}
+
+func saveIterationSkillArtifacts(iterDir string, previousSkill, candidateSkill []byte) error {
+	if err := writeSkillRunArtifact(iterDir, iterationPreviousSkillPath, previousSkill); err != nil {
+		return err
+	}
+	if err := writeSkillRunArtifact(iterDir, iterationSkillSnapshotPath, candidateSkill); err != nil {
+		return err
+	}
+	diff, err := generateSkillDiff(iterDir)
+	if err != nil {
+		return err
+	}
+	return writeSkillRunArtifact(iterDir, iterationSkillDiffPath, diff)
+}
+
+func writeSkillRunArtifact(dir, name string, data []byte) error {
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(dir, name), data, 0o644)
+}
+
+func generateSkillDiff(iterDir string) ([]byte, error) {
+	cmd := exec.Command("git", "diff", "--no-index", "--no-color", "--", iterationPreviousSkillPath, iterationSkillSnapshotPath)
+	cmd.Dir = iterDir
+	out, err := cmd.CombinedOutput()
+	if err != nil && !isGitDiffDifferentExit(err) {
+		return nil, fmt.Errorf("creating skill diff: %w: %s", err, strings.TrimSpace(string(out)))
+	}
+	return out, nil
+}
+
+func isGitDiffDifferentExit(err error) bool {
+	var exitErr *exec.ExitError
+	return errors.As(err, &exitErr) && exitErr.ExitCode() == 1
 }
 
 func prepareBenchmarkPrerequisites(root string, casesPaths ...string) error {
