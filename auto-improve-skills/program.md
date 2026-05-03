@@ -24,19 +24,16 @@ Optimize in this order:
 
 ## Anti-overfitting
 
-Use only this program, the current skill file, the public benchmark suite, and the best public benchmark result named in the researcher prompt. Do not inspect evaluator-private or holdout files or artifacts.
+Use only this program, the current skill file, the public benchmark suite, and the public benchmark result named in the researcher prompt. Do not inspect evaluator-private or holdout files or artifacts.
 
-Treat public benchmark data as samples, not targets. Do not infer hidden holdout task details.
-
-Do not encode exact case facts, prompt wording, paths, filenames, IPs, timestamps, IDs, log snippets, root causes, line numbers, or expected-answer templates. Add only general diagnostic behavior that should help unseen incidents.
+Treat public benchmark data as samples, not targets.
 
 ## Required behavior
 
-- Use only `./rshell --allow-all-commands` for diagnostics in this repository.
+- Use only `./rshell --allow-all-commands -c "<shell command/script>"` for diagnostics in this repository.
 - If diagnostics need file access, keep it explicit and narrow with `--allowed-paths string` (a comma-separated list of allowed directories).
 - Use the `help` builtin inside rshell to discover available capabilities. `help` lists supported feature topics and builtins; `help <feature|command>` shows details for a specific topic, command, or flags.
 - Keep diagnostics read-only and bounded.
-- Prefer general workflow guidance over case-specific rules.
 - Mention that production rshell deployments may restrict or omit some commands/features; `help` in that environment is the source of truth for what is supported.
 
 ## Improvement workflow
