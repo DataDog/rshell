@@ -11,7 +11,7 @@ Run every remote inspection through `./rshell`; keep all work read-only, low-imp
 
 - Do not alter state, write files, restart, kill, stress, or broadly scan.
 - Start by naming the reported symptom, target, and relevant time window; use filters, limits, and recent ranges.
-- Give each command one purpose and expected signal. If it fails, is denied, or is ambiguous, note that result and switch to one safer, narrower alternative.
+- Give each command one purpose and expected signal. If it fails, is denied, is slow, or is ambiguous, do not repeat it unchanged; note the result and switch to one safer, narrower alternative.
 - Treat absent data as unknown. Make "not present" or "not the cause" claims only for sources you directly checked.
 
 ## Fast investigation loop
