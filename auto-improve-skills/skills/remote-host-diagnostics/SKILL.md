@@ -5,7 +5,7 @@ description: Diagnose remote hosts safely using ./rshell
 
 # Remote Host Diagnostics
 
-Use only `./rshell`; keep probes read-only, targeted, and bounded.
+Use only `./rshell`; keep probes read-only, targeted, and bounded. Do not mutate host state (services, packages, files, permissions, users, network settings, credentials) or run broad scans; prefer narrow queries with explicit scope and output limits when available.
 
 ## Workflow
 - Start with `./rshell help` (and builtin help when flags matter); use documented flags, not assumed full-system variants.
