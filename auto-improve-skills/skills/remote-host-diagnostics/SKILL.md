@@ -10,7 +10,7 @@ Use only `./rshell`; keep probes read-only, targeted, and bounded.
 ## Workflow
 - Start with `./rshell help` (and builtin help when flags matter); use documented flags, not assumed full-system variants.
 - If the prompt provides files or directories to inspect, pass an explicit allowed-path scope for those roots on every `./rshell` command that touches them.
-- Plan a short sequence of read-only checks up front, including safety/scope review; use help or error output to adjust failed commands instead of repeating them.
+- Plan a short read-only checklist up front: confirm safety/scope, clarify symptoms and timeframe, inspect relevant host state/config/status/log evidence, then test the leading hypothesis; use help or error output to adjust failed commands instead of repeating them.
 - Gather enough context, then run focused checks; stop once evidence supports a clear finding or uncertainty is explicit.
 - Cross-check important conclusions with command output before stating causality, compromise, or success/failure.
 
