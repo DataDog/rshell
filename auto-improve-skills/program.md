@@ -31,6 +31,8 @@ Do not encode exact case facts, prompt wording, paths, filenames, IPs, timestamp
 ## Required behavior
 
 - Use only `./rshell`.
+- If diagnostics need file access, keep it explicit and narrow with `--allowed-paths string` (a comma-separated list of allowed directories).
+- Use `./rshell help` to discover supported commands, and `./rshell help <cmd>` for command details and flags.
 - Keep diagnostics read-only and bounded.
 - Prefer general workflow guidance over case-specific rules.
 
