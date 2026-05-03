@@ -90,33 +90,21 @@ func TestDefaultTrainingSettings(t *testing.T) {
 	if defaultParallelCases != 10 {
 		t.Fatalf("defaultParallelCases = %d, want 10", defaultParallelCases)
 	}
-	if defaultStructuralInterval != 3 {
-		t.Fatalf("defaultStructuralInterval = %d, want 3", defaultStructuralInterval)
-	}
-	if defaultRewriteInterval != 5 {
-		t.Fatalf("defaultRewriteInterval = %d, want 5", defaultRewriteInterval)
-	}
-	if defaultExplorationCandidates != 3 {
-		t.Fatalf("defaultExplorationCandidates = %d, want 3", defaultExplorationCandidates)
-	}
 }
 
 func TestRunLoopWithRunnerRepeatsProvidedConfig(t *testing.T) {
 	cfg := trainConfig{
-		iterations:            3,
-		model:                 "test/model",
-		runDir:                filepath.Join("auto-improve-skills", "runs", "trainloop"),
-		judge:                 true,
-		parallelSuites:        true,
-		push:                  false,
-		allowDirty:            true,
-		verbose:               true,
-		parallelRepeats:       2,
-		parallelCases:         4,
-		structuralInterval:    3,
-		rewriteInterval:       5,
-		explorationCandidates: 4,
-		qualityTolerance:      0.02,
+		iterations:       3,
+		model:            "test/model",
+		runDir:           filepath.Join("auto-improve-skills", "runs", "trainloop"),
+		judge:            true,
+		parallelSuites:   true,
+		push:             false,
+		allowDirty:       true,
+		verbose:          true,
+		parallelRepeats:  2,
+		parallelCases:    4,
+		qualityTolerance: 0.02,
 	}
 	var calls []trainConfig
 	err := runLoopWithRunner(3, cfg, func(call trainConfig) error {
@@ -138,7 +126,7 @@ func TestRunLoopWithRunnerRepeatsProvidedConfig(t *testing.T) {
 		if call.trainLoop != i+1 {
 			t.Fatalf("call %d trainLoop = %d, want %d", i+1, call.trainLoop, i+1)
 		}
-		if call.iterations != cfg.iterations || call.model != cfg.model || call.judge != cfg.judge || call.parallelRepeats != cfg.parallelRepeats || call.parallelCases != cfg.parallelCases || call.structuralInterval != cfg.structuralInterval || call.rewriteInterval != cfg.rewriteInterval || call.explorationCandidates != cfg.explorationCandidates || call.qualityTolerance != cfg.qualityTolerance || call.verbose != cfg.verbose {
+		if call.iterations != cfg.iterations || call.model != cfg.model || call.judge != cfg.judge || call.parallelRepeats != cfg.parallelRepeats || call.parallelCases != cfg.parallelCases || call.qualityTolerance != cfg.qualityTolerance || call.verbose != cfg.verbose {
 			t.Fatalf("call %d did not preserve supplied flags: %+v", i+1, call)
 		}
 	}
@@ -260,7 +248,7 @@ func TestFormatResearcherPromptIncludesPublicArtifactsAndForbidsHoldout(t *testi
 	skillRel := filepath.Join("auto-improve-skills", "skills", "remote-host-diagnostics", "SKILL.md")
 	casesPath := filepath.Join("auto-improve-skills", "benchmarks", "remote-host-diagnostics", "cases.yaml")
 	bestResultPath := filepath.Join("auto-improve-skills", "runs", "train", "iter-000-baseline", "result.json")
-	prompt := formatResearcherPrompt(skillRel, casesPath, bestResultPath, 2, 0.01)
+	prompt := formatResearcherPrompt(skillRel, casesPath, bestResultPath, 2, 0.01, "")
 	for _, want := range []string{
 		"program.md",
 		skillRel,
@@ -288,109 +276,6 @@ func TestFormatResearcherPromptIncludesPublicArtifactsAndForbidsHoldout(t *testi
 	} {
 		if strings.Contains(prompt, forbidden) {
 			t.Fatalf("researcher prompt should not contain %q:\n%s", forbidden, prompt)
-		}
-	}
-}
-
-func TestPlanIterationResearchSchedulesStructuralAndRewriteExploration(t *testing.T) {
-	incremental := planIterationResearch(1, 3, 5, 3)
-	if incremental.Kind != "incremental" || incremental.CandidateCount != 1 {
-		t.Fatalf("iter 1 plan = %+v, want incremental single candidate", incremental)
-	}
-
-	structural := planIterationResearch(3, 3, 5, 3)
-	if structural.Kind != "structural" || structural.CandidateCount != 3 {
-		t.Fatalf("iter 3 plan = %+v, want structural 3 candidates", structural)
-	}
-
-	rewrite := planIterationResearch(15, 3, 5, 3)
-	if rewrite.Kind != "rewrite" || rewrite.CandidateCount != 3 {
-		t.Fatalf("iter 15 plan = %+v, want rewrite to take precedence", rewrite)
-	}
-}
-
-func TestFormatResearcherPromptForRewriteAllowsLargeDistinctCandidate(t *testing.T) {
-	skillRel := filepath.Join("auto-improve-skills", "skills", "remote-host-diagnostics", "SKILL.md")
-	casesPath := filepath.Join("auto-improve-skills", "benchmarks", "remote-host-diagnostics", "cases.yaml")
-	bestResultPath := filepath.Join("auto-improve-skills", "runs", "train", "iter-000-baseline", "result.json")
-	plan := planIterationResearch(5, 3, 5, 3)
-	prompt := formatResearcherPromptForPlan(skillRel, casesPath, bestResultPath, 5, 0.01, "rshell help snapshot", plan, 2)
-	for _, want := range []string{
-		"change-directive",
-		"Full-rewrite exploration",
-		"candidate 2 of 3",
-		"replace headings",
-		"Preserve the YAML frontmatter",
-	} {
-		if !strings.Contains(prompt, want) {
-			t.Fatalf("rewrite prompt missing %q:\n%s", want, prompt)
-		}
-	}
-	if strings.Contains(prompt, "one small general improvement") {
-		t.Fatalf("rewrite prompt should not force tiny edits:\n%s", prompt)
-	}
-}
-
-func TestBetterCandidateSelectionPrefersQualityFloorThenObjective(t *testing.T) {
-	best := candidateSelection{Index: 1, Result: autoresearch.SuiteResult{QualityMaxScore: 1, QualityNormalizedScore: 0.70, ObjectiveMaxScore: 1, ObjectiveNormalizedScore: 0.95}}
-	candidate := candidateSelection{Index: 2, Result: autoresearch.SuiteResult{QualityMaxScore: 1, QualityNormalizedScore: 0.80, ObjectiveMaxScore: 1, ObjectiveNormalizedScore: 0.85}}
-	if !betterCandidateSelection(candidate, best, 0.75) {
-		t.Fatal("candidate above the quality floor should beat a higher-objective candidate below the floor")
-	}
-
-	best = candidate
-	candidate = candidateSelection{Index: 3, Result: autoresearch.SuiteResult{QualityMaxScore: 1, QualityNormalizedScore: 0.82, ObjectiveMaxScore: 1, ObjectiveNormalizedScore: 0.83}}
-	if betterCandidateSelection(candidate, best, 0.75) {
-		t.Fatal("when both pass the quality floor, lower objective should not win")
-	}
-}
-
-func TestSaveIterationSkillArtifactsWritesSnapshotAndDiff(t *testing.T) {
-	iterDir := t.TempDir()
-	previous := []byte("# Skill\n\nOld guidance.\n")
-	candidate := []byte("# Skill\n\nNew guidance.\n")
-
-	if err := saveIterationSkillArtifacts(iterDir, previous, candidate); err != nil {
-		t.Fatal(err)
-	}
-
-	previousData, err := os.ReadFile(filepath.Join(iterDir, iterationPreviousSkillPath))
-	if err != nil || string(previousData) != string(previous) {
-		t.Fatalf("previous skill artifact = %q, %v", string(previousData), err)
-	}
-	snapshotData, err := os.ReadFile(filepath.Join(iterDir, iterationSkillSnapshotPath))
-	if err != nil || string(snapshotData) != string(candidate) {
-		t.Fatalf("skill snapshot artifact = %q, %v", string(snapshotData), err)
-	}
-	diffData, err := os.ReadFile(filepath.Join(iterDir, iterationSkillDiffPath))
-	if err != nil {
-		t.Fatal(err)
-	}
-	diff := string(diffData)
-	for _, want := range []string{iterationPreviousSkillPath, iterationSkillSnapshotPath, "-Old guidance.", "+New guidance."} {
-		if !strings.Contains(diff, want) {
-			t.Fatalf("skill diff missing %q:\n%s", want, diff)
-		}
-	}
-}
-
-func TestSaveBaselineSkillArtifactsWritesPublicAndHoldoutSnapshots(t *testing.T) {
-	skillPath := filepath.Join(t.TempDir(), "SKILL.md")
-	if err := os.WriteFile(skillPath, []byte("baseline skill\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	runDir := t.TempDir()
-	baselineDir := filepath.Join(runDir, "iter-000-baseline")
-	holdoutDir := filepath.Join(runDir, "iter-000-holdout")
-
-	if err := saveBaselineSkillArtifacts(skillPath, baselineDir, true, holdoutDir); err != nil {
-		t.Fatal(err)
-	}
-
-	for _, dir := range []string{baselineDir, holdoutDir} {
-		data, err := os.ReadFile(filepath.Join(dir, iterationSkillSnapshotPath))
-		if err != nil || string(data) != "baseline skill\n" {
-			t.Fatalf("baseline snapshot in %s = %q, %v", dir, string(data), err)
 		}
 	}
 }

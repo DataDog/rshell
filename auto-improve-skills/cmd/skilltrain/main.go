@@ -9,7 +9,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -24,13 +23,10 @@ import (
 )
 
 const (
-	defaultModel                 = "openai-codex/gpt-5.5"
-	defaultLoopCount             = 1
-	defaultParallelRepeats       = 3
-	defaultParallelCases         = 10
-	defaultStructuralInterval    = 3
-	defaultRewriteInterval       = 5
-	defaultExplorationCandidates = 3
+	defaultModel           = "openai-codex/gpt-5.5"
+	defaultLoopCount       = 1
+	defaultParallelRepeats = 3
+	defaultParallelCases   = 10
 )
 
 type logSemantic int
@@ -51,9 +47,6 @@ const (
 	commandOutputLimit               = 64 * 1024
 	rshellCapabilitySnapshotMaxBytes = 12 * 1024
 	researcherTools                  = "read,bash,edit,write"
-	iterationSkillSnapshotPath       = "SKILL.candidate.md"
-	iterationPreviousSkillPath       = "SKILL.previous.md"
-	iterationSkillDiffPath           = "SKILL.diff"
 
 	ansiReset   = "\x1b[0m"
 	ansiBold    = "\x1b[1m"
@@ -69,9 +62,6 @@ func main() {
 	var cfg trainConfig
 	loopCount := flag.Int("loop-count", defaultLoopCount, "number of full training runs to execute; repeats all other supplied flags")
 	flag.IntVar(&cfg.iterations, "iters", 3, "maximum improvement iterations")
-	flag.IntVar(&cfg.structuralInterval, "structural-interval", defaultStructuralInterval, "allow larger structural skill mutations every N iterations (0 disables)")
-	flag.IntVar(&cfg.rewriteInterval, "rewrite-interval", defaultRewriteInterval, "generate full-rewrite exploration candidates every N iterations (0 disables)")
-	flag.IntVar(&cfg.explorationCandidates, "exploration-candidates", defaultExplorationCandidates, "number of candidates to generate and benchmark on structural/rewrite iterations")
 	flag.StringVar(&cfg.casesPath, "cases", "auto-improve-skills/benchmarks/remote-host-diagnostics/cases.yaml", "benchmark suite")
 	flag.StringVar(&cfg.skillPath, "skill", "auto-improve-skills/skills/remote-host-diagnostics/SKILL.md", "skill file to improve")
 	flag.StringVar(&cfg.model, "model", defaultModel, "pi model for researcher and benchmark agents")
@@ -102,9 +92,6 @@ func main() {
 
 type trainConfig struct {
 	iterations              int
-	structuralInterval      int
-	rewriteInterval         int
-	explorationCandidates   int
 	casesPath               string
 	skillPath               string
 	model                   string
@@ -524,24 +511,15 @@ func loopRunDir(runDir string, loop int) string {
 
 func runConfig(cfg trainConfig) error {
 	setSkilltrainVerbose(cfg.verbose)
-	return run(cfg.trainLoop, cfg.iterations, cfg.structuralInterval, cfg.rewriteInterval, cfg.explorationCandidates, cfg.casesPath, cfg.skillPath, cfg.model, cfg.piBinary, cfg.runDir, cfg.minDelta, cfg.qualityTolerance, cfg.holdoutCasesPath, cfg.holdoutQualityTolerance, cfg.repeats, cfg.parallelRepeats, cfg.parallelCases, cfg.limit, cfg.judge, cfg.parallelSuites, cfg.push, cfg.dryRun, cfg.allowDirty)
+	return run(cfg.trainLoop, cfg.iterations, cfg.casesPath, cfg.skillPath, cfg.model, cfg.piBinary, cfg.runDir, cfg.minDelta, cfg.qualityTolerance, cfg.holdoutCasesPath, cfg.holdoutQualityTolerance, cfg.repeats, cfg.parallelRepeats, cfg.parallelCases, cfg.limit, cfg.judge, cfg.parallelSuites, cfg.push, cfg.dryRun, cfg.allowDirty)
 }
 
-func run(trainLoop, iterations, structuralInterval, rewriteInterval, explorationCandidates int, casesPath, skillPath, model, piBinary, runDir string, minDelta, qualityTolerance float64, holdoutCasesPath string, holdoutQualityTolerance float64, repeats, parallelRepeats, parallelCases, limit int, judge, parallelSuites, push, dryRun, allowDirty bool) error {
+func run(trainLoop, iterations int, casesPath, skillPath, model, piBinary, runDir string, minDelta, qualityTolerance float64, holdoutCasesPath string, holdoutQualityTolerance float64, repeats, parallelRepeats, parallelCases, limit int, judge, parallelSuites, push, dryRun, allowDirty bool) error {
 	if qualityTolerance < 0 {
 		return fmt.Errorf("-quality-tolerance must be non-negative")
 	}
 	if holdoutQualityTolerance < 0 {
 		holdoutQualityTolerance = qualityTolerance
-	}
-	if structuralInterval < 0 {
-		return fmt.Errorf("-structural-interval must be non-negative")
-	}
-	if rewriteInterval < 0 {
-		return fmt.Errorf("-rewrite-interval must be non-negative")
-	}
-	if explorationCandidates <= 0 {
-		return fmt.Errorf("-exploration-candidates must be positive")
 	}
 	if repeats <= 0 {
 		return fmt.Errorf("-repeats must be positive")
@@ -593,10 +571,6 @@ func run(trainLoop, iterations, structuralInterval, rewriteInterval, exploration
 		return err
 	}
 
-	if err := saveBaselineSkillArtifacts(skillAbs, filepath.Join(runDir, "iter-000-baseline"), holdoutCasesAbs != "", filepath.Join(runDir, "iter-000-holdout")); err != nil {
-		return err
-	}
-
 	logBenchmark("baseline reps=%d reps-par=%d cases-par=%d", repeats, repeatParallelism(parallelRepeats, repeats), parallelCases)
 	baseline, holdoutBaseline, haveHoldoutBaseline, err := runBaselineBenchmarks(root, casesAbs, holdoutCasesAbs, skillAbs, model, piBinary, runDir, limit, judge, repeats, parallelRepeats, parallelCases, parallelSuites)
 	if err != nil {
@@ -631,13 +605,8 @@ func run(trainLoop, iterations, structuralInterval, rewriteInterval, exploration
 		if err != nil {
 			return err
 		}
-		plan := planIterationResearch(iter, structuralInterval, rewriteInterval, explorationCandidates)
-		if plan.CandidateCount <= 1 {
-			transcriptPath := filepath.Join(iterDir, "researcher.stdout.md")
-			logStep("iter %d/%d edit -> %s", iter, iterations, displayRunPath(runDir, transcriptPath))
-		} else {
-			logStep("iter %d/%d %s exploration: generate %d candidates", iter, iterations, plan.Label, plan.CandidateCount)
-		}
+		transcriptPath := filepath.Join(iterDir, "researcher.stdout.md")
+		logStep("iter %d/%d edit -> %s", iter, iterations, displayRunPath(runDir, transcriptPath))
 		restoreDryRun := func() error {
 			if !dryRun {
 				return nil
@@ -645,19 +614,22 @@ func run(trainLoop, iterations, structuralInterval, rewriteInterval, exploration
 			logDryRunVerbose("iter %d/%d restore original skill", iter, iterations)
 			return os.WriteFile(skillAbs, previousSkill, 0o644)
 		}
-		selection, err := improveAndBenchmarkCandidates(root, runDir, casesAbs, holdoutCasesAbs, skillAbs, model, piBinary, iterDir, iter, previousSkill, bestPath, plan, qualityFloor, qualityTolerance, limit, judge, repeats, parallelRepeats, parallelCases, parallelSuites)
+		if err := improveSkill(root, skillAbs, casesAbs, bestPath, iterDir, model, piBinary, iter, qualityTolerance); err != nil {
+			if restoreErr := restoreDryRun(); restoreErr != nil {
+				return restoreErr
+			}
+			return err
+		}
+		logBenchmark("iter %d/%d candidate", iter, iterations)
+		candidate, speculativeHoldout, speculativeHoldoutRan, speculativeHoldoutErr, err := runCandidateBenchmarks(root, casesAbs, holdoutCasesAbs, skillAbs, model, piBinary, iterDir, limit, judge, repeats, parallelRepeats, parallelCases, parallelSuites)
 		if err != nil {
 			if restoreErr := restoreDryRun(); restoreErr != nil {
 				return restoreErr
 			}
 			return err
 		}
-		candidate := selection.Result
-		speculativeHoldout := selection.SpeculativeHoldout
-		speculativeHoldoutRan := selection.SpeculativeHoldoutRan
-		speculativeHoldoutErr := selection.SpeculativeHoldoutErr
 		logVerbose("iter %d/%d evaluate", iter, iterations)
-		candidatePath := selection.ResultPath
+		candidatePath := filepath.Join(iterDir, "result.json")
 		candidateObjective := benchmarkObjective(candidate)
 		candidateQuality := benchmarkQuality(candidate)
 		delta := candidateObjective - bestObjective
@@ -712,7 +684,7 @@ func run(trainLoop, iterations, structuralInterval, rewriteInterval, exploration
 			acceptedIterations++
 			if dryRun {
 				logSuccess("iter %d/%d accepted (dry-run)", iter, iterations)
-				printSemantic(logSemanticDryRun, "accept iter %d; would commit %s (candidate %s)", iter, displayPath(root, skillAbs), displayRunPath(runDir, filepath.Join(iterDir, iterationSkillSnapshotPath)))
+				printSemantic(logSemanticDryRun, "accept iter %d; would commit %s", iter, displayPath(root, skillAbs))
 			} else {
 				logSuccess("iter %d/%d accepted; commit", iter, iterations)
 				if err := commitSkill(root, skillAbs, trainLoop, iter, candidate, candidatePath, holdoutGate, filepath.Join(iterDir, "researcher.stdout.md"), bestObjective, push); err != nil {
@@ -742,7 +714,7 @@ func run(trainLoop, iterations, structuralInterval, rewriteInterval, exploration
 			}
 			if dryRun {
 				logWarn("iter %d/%d rejected (dry-run)", iter, iterations)
-				printSemantic(logSemanticDryRun, "reject iter %d; would revert %s (candidate %s)", iter, displayPath(root, skillAbs), displayRunPath(runDir, filepath.Join(iterDir, iterationSkillSnapshotPath)))
+				printSemantic(logSemanticDryRun, "reject iter %d; would revert %s", iter, displayPath(root, skillAbs))
 			} else {
 				logWarn("iter %d/%d rejected; revert", iter, iterations)
 				if err := gitCheckout(root, skillAbs); err != nil {
@@ -762,121 +734,6 @@ type benchmarkGate struct {
 	Result       autoresearch.SuiteResult
 	ResultPath   string
 	QualityFloor float64
-}
-
-type iterationResearchPlan struct {
-	Kind           string
-	Label          string
-	Guidance       string
-	CandidateCount int
-}
-
-func planIterationResearch(iter, structuralInterval, rewriteInterval, explorationCandidates int) iterationResearchPlan {
-	if explorationCandidates < 1 {
-		explorationCandidates = 1
-	}
-	plan := iterationResearchPlan{
-		Kind:           "incremental",
-		Label:          "incremental refinement",
-		Guidance:       "Default iteration: make one concise, general improvement. Keep the change focused unless a clearly better structure is needed.",
-		CandidateCount: 1,
-	}
-	if iter <= 0 {
-		return plan
-	}
-	if rewriteInterval > 0 && iter%rewriteInterval == 0 {
-		plan.Kind = "rewrite"
-		plan.Label = "full rewrite"
-		plan.Guidance = "Full-rewrite exploration: create a fresh version of the complete skill from scratch, using the current skill only as reference. Preserve the YAML frontmatter and required safety behavior, but feel free to replace headings, ordering, wording, and examples wholesale. Keep the result compact, general, and anti-overfit."
-		plan.CandidateCount = explorationCandidates
-		return plan
-	}
-	if structuralInterval > 0 && iter%structuralInterval == 0 {
-		plan.Kind = "structural"
-		plan.Label = "structural mutation"
-		plan.Guidance = "Structural exploration: make a larger coherent mutation if useful. You may reorganize sections, merge or split bullets, change headings, and replace clusters of guidance rather than only editing one line. Keep the result compact, general, and anti-overfit."
-		plan.CandidateCount = explorationCandidates
-	}
-	return plan
-}
-
-func researcherCandidateDirective(plan iterationResearchPlan, candidateIndex int) string {
-	candidateCount := plan.CandidateCount
-	if candidateCount <= 0 {
-		candidateCount = 1
-	}
-	if candidateIndex <= 0 {
-		candidateIndex = 1
-	}
-	var b strings.Builder
-	b.WriteString(plan.Guidance)
-	if candidateCount > 1 {
-		fmt.Fprintf(&b, "\n\nThis is candidate %d of %d for the same iteration. Produce a distinct alternative that could win on general quality, not a near-duplicate of a tiny line edit. Diversity should come from structure, emphasis, and concision, never from hidden benchmark-specific guesses.", candidateIndex, candidateCount)
-	}
-	return b.String()
-}
-
-type candidateSelection struct {
-	Index                 int
-	Count                 int
-	Dir                   string
-	Skill                 []byte
-	Result                autoresearch.SuiteResult
-	ResultPath            string
-	TranscriptPath        string
-	SpeculativeHoldout    autoresearch.SuiteResult
-	SpeculativeHoldoutRan bool
-	SpeculativeHoldoutErr error
-}
-
-func saveBaselineSkillArtifacts(skillAbs, baselineDir string, haveHoldout bool, holdoutDir string) error {
-	skill, err := os.ReadFile(skillAbs)
-	if err != nil {
-		return err
-	}
-	if err := writeSkillRunArtifact(baselineDir, iterationSkillSnapshotPath, skill); err != nil {
-		return err
-	}
-	if haveHoldout {
-		return writeSkillRunArtifact(holdoutDir, iterationSkillSnapshotPath, skill)
-	}
-	return nil
-}
-
-func saveIterationSkillArtifacts(iterDir string, previousSkill, candidateSkill []byte) error {
-	if err := writeSkillRunArtifact(iterDir, iterationPreviousSkillPath, previousSkill); err != nil {
-		return err
-	}
-	if err := writeSkillRunArtifact(iterDir, iterationSkillSnapshotPath, candidateSkill); err != nil {
-		return err
-	}
-	diff, err := generateSkillDiff(iterDir)
-	if err != nil {
-		return err
-	}
-	return writeSkillRunArtifact(iterDir, iterationSkillDiffPath, diff)
-}
-
-func writeSkillRunArtifact(dir, name string, data []byte) error {
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return err
-	}
-	return os.WriteFile(filepath.Join(dir, name), data, 0o644)
-}
-
-func generateSkillDiff(iterDir string) ([]byte, error) {
-	cmd := exec.Command("git", "diff", "--no-index", "--no-color", "--", iterationPreviousSkillPath, iterationSkillSnapshotPath)
-	cmd.Dir = iterDir
-	out, err := cmd.CombinedOutput()
-	if err != nil && !isGitDiffDifferentExit(err) {
-		return nil, fmt.Errorf("creating skill diff: %w: %s", err, strings.TrimSpace(string(out)))
-	}
-	return out, nil
-}
-
-func isGitDiffDifferentExit(err error) bool {
-	var exitErr *exec.ExitError
-	return errors.As(err, &exitErr) && exitErr.ExitCode() == 1
 }
 
 func prepareBenchmarkPrerequisites(root string, casesPaths ...string) error {
@@ -1027,135 +884,6 @@ func runCandidateBenchmarks(root, casesAbs, holdoutCasesAbs, skillAbs, model, pi
 	candidate := <-candidateCh
 	holdout := <-holdoutCh
 	return candidate.Result, holdout.Result, true, holdout.Err, candidate.Err
-}
-
-func improveAndBenchmarkCandidates(root, runDir, casesAbs, holdoutCasesAbs, skillAbs, model, piBinary, iterDir string, iter int, previousSkill []byte, bestResultPath string, plan iterationResearchPlan, qualityFloor, qualityTolerance float64, limit int, judge bool, repeats, parallelRepeats, parallelCases int, parallelSuites bool) (candidateSelection, error) {
-	candidateCount := plan.CandidateCount
-	if candidateCount <= 1 {
-		if err := improveSkill(root, skillAbs, casesAbs, bestResultPath, iterDir, model, piBinary, iter, qualityTolerance, plan, 1); err != nil {
-			return candidateSelection{}, err
-		}
-		candidateSkill, err := os.ReadFile(skillAbs)
-		if err != nil {
-			return candidateSelection{}, err
-		}
-		if err := saveIterationSkillArtifacts(iterDir, previousSkill, candidateSkill); err != nil {
-			return candidateSelection{}, err
-		}
-		logBenchmark("iter %d candidate", iter)
-		candidate, speculativeHoldout, speculativeHoldoutRan, speculativeHoldoutErr, err := runCandidateBenchmarks(root, casesAbs, holdoutCasesAbs, skillAbs, model, piBinary, iterDir, limit, judge, repeats, parallelRepeats, parallelCases, parallelSuites)
-		if err != nil {
-			return candidateSelection{}, err
-		}
-		return candidateSelection{
-			Index:                 1,
-			Count:                 1,
-			Dir:                   iterDir,
-			Skill:                 append([]byte(nil), candidateSkill...),
-			Result:                candidate,
-			ResultPath:            filepath.Join(iterDir, "result.json"),
-			TranscriptPath:        filepath.Join(iterDir, "researcher.stdout.md"),
-			SpeculativeHoldout:    speculativeHoldout,
-			SpeculativeHoldoutRan: speculativeHoldoutRan,
-			SpeculativeHoldoutErr: speculativeHoldoutErr,
-		}, nil
-	}
-
-	var best candidateSelection
-	for candidateIndex := 1; candidateIndex <= candidateCount; candidateIndex++ {
-		if err := os.WriteFile(skillAbs, previousSkill, 0o644); err != nil {
-			return candidateSelection{}, err
-		}
-		candidateDir := filepath.Join(iterDir, fmt.Sprintf("candidate-%03d", candidateIndex))
-		if err := os.MkdirAll(candidateDir, 0o755); err != nil {
-			return candidateSelection{}, err
-		}
-		transcriptPath := filepath.Join(candidateDir, "researcher.stdout.md")
-		logStep("iter %d %s candidate %d/%d edit -> %s", iter, plan.Label, candidateIndex, candidateCount, displayRunPath(runDir, transcriptPath))
-		if err := improveSkill(root, skillAbs, casesAbs, bestResultPath, candidateDir, model, piBinary, iter, qualityTolerance, plan, candidateIndex); err != nil {
-			return candidateSelection{}, err
-		}
-		candidateSkill, err := os.ReadFile(skillAbs)
-		if err != nil {
-			return candidateSelection{}, err
-		}
-		if err := saveIterationSkillArtifacts(candidateDir, previousSkill, candidateSkill); err != nil {
-			return candidateSelection{}, err
-		}
-
-		candidateSuite := fmt.Sprintf("%s-candidate-%03d", suiteLogLabel(casesAbs), candidateIndex)
-		logBenchmark("iter %d %s candidate %d/%d", iter, plan.Label, candidateIndex, candidateCount)
-		candidate, err := runBenchmark(root, casesAbs, skillAbs, model, piBinary, candidateDir, candidateSuite, limit, judge, repeats, parallelRepeats, parallelCases)
-		if err != nil {
-			return candidateSelection{}, err
-		}
-		selection := candidateSelection{
-			Index:          candidateIndex,
-			Count:          candidateCount,
-			Dir:            candidateDir,
-			Skill:          append([]byte(nil), candidateSkill...),
-			Result:         candidate,
-			ResultPath:     filepath.Join(candidateDir, "result.json"),
-			TranscriptPath: transcriptPath,
-		}
-		if betterCandidateSelection(selection, best, qualityFloor) {
-			best = selection
-		}
-	}
-	if best.Index == 0 {
-		return candidateSelection{}, fmt.Errorf("no candidate was generated")
-	}
-	if err := os.WriteFile(skillAbs, best.Skill, 0o644); err != nil {
-		return candidateSelection{}, err
-	}
-	if err := saveIterationSkillArtifacts(iterDir, previousSkill, best.Skill); err != nil {
-		return candidateSelection{}, err
-	}
-	rootResultPath := filepath.Join(iterDir, "result.json")
-	if err := copyFile(best.ResultPath, rootResultPath); err != nil {
-		return candidateSelection{}, err
-	}
-	rootTranscriptPath := filepath.Join(iterDir, "researcher.stdout.md")
-	if err := copyFile(best.TranscriptPath, rootTranscriptPath); err != nil {
-		return candidateSelection{}, err
-	}
-	selectedSummary := fmt.Sprintf("candidate-%03d\n", best.Index)
-	if err := os.WriteFile(filepath.Join(iterDir, "selected-candidate.txt"), []byte(selectedSummary), 0o644); err != nil {
-		return candidateSelection{}, err
-	}
-	best.Dir = iterDir
-	best.ResultPath = rootResultPath
-	best.TranscriptPath = rootTranscriptPath
-	logSuccess("iter %d selected %s candidate %d/%d q=%.2f%% obj=%.2f%%", iter, plan.Label, best.Index, best.Count, benchmarkQuality(best.Result)*100, benchmarkObjective(best.Result)*100)
-	return best, nil
-}
-
-func betterCandidateSelection(candidate, best candidateSelection, qualityFloor float64) bool {
-	if best.Index == 0 {
-		return true
-	}
-	candidateQualityOK := benchmarkQuality(candidate.Result) >= qualityFloor
-	bestQualityOK := benchmarkQuality(best.Result) >= qualityFloor
-	if candidateQualityOK != bestQualityOK {
-		return candidateQualityOK
-	}
-	candidateObjective := benchmarkObjective(candidate.Result)
-	bestObjective := benchmarkObjective(best.Result)
-	if candidateObjective != bestObjective {
-		return candidateObjective > bestObjective
-	}
-	return benchmarkQuality(candidate.Result) > benchmarkQuality(best.Result)
-}
-
-func copyFile(src, dst string) error {
-	data, err := os.ReadFile(src)
-	if err != nil {
-		return err
-	}
-	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
-		return err
-	}
-	return os.WriteFile(dst, data, 0o644)
 }
 
 func runBenchmarkAsync(root, casesAbs, skillAbs, model, piBinary, outDir, suiteLabel string, limit int, judge bool, repeats, parallelRepeats, parallelCases int) <-chan benchmarkOutcome {
@@ -1489,13 +1217,7 @@ func roundedAverage(sum, count int) int {
 	return (sum + count/2) / count
 }
 
-func formatResearcherPrompt(skillPath, casesPath, bestResultPath string, iter int, qualityTolerance float64) string {
-	plan := planIterationResearch(iter, 0, 0, 1)
-	return formatResearcherPromptForPlan(skillPath, casesPath, bestResultPath, iter, qualityTolerance, "", plan, 1)
-}
-
-func formatResearcherPromptForPlan(skillPath, casesPath, bestResultPath string, iter int, qualityTolerance float64, rshellCapabilitySnapshot string, plan iterationResearchPlan, candidateIndex int) string {
-	changeDirective := researcherCandidateDirective(plan, candidateIndex)
+func formatResearcherPrompt(skillPath, casesPath, bestResultPath string, iter int, qualityTolerance float64, rshellCapabilitySnapshot string) string {
 	rshellCapabilitySnapshot = strings.TrimSpace(rshellCapabilitySnapshot)
 	if rshellCapabilitySnapshot == "" {
 		rshellCapabilitySnapshot = "Static rshell capability snapshot unavailable. The skill should still tell agents to run rshell help in the target environment because deployments may differ."
@@ -1510,7 +1232,7 @@ Task for iteration %d:
 - Improve only %s.
 - Optimize final-answer quality first. The trainer allows at most a %.1f percentage point quality drop from the best seen public quality.
 - Also improve the composite objective by reducing end-to-end investigation time and keeping the skill concise.
-- Follow the change directive below for the allowed edit size; default iterations should stay focused, while structural/rewrite directives may replace larger parts of the skill.
+- Make one focused, general improvement.
 - Do not edit benchmark cases, fake logs, Go tooling, reports, run outputs, or unrelated files.
 - Treat public benchmark data as samples, not targets.
 - Prefer short, general diagnostics over long case-specific rules or overfitting exact answers.
@@ -1521,19 +1243,15 @@ Task for iteration %d:
 - After editing, write a brief researcher report with "Changes", "Why", and "Size" sections.
 - In "Why", explain the rationale for each material change in general terms tied to quality, efficiency, or concision, without evaluator-private details.
 
-<change-directive>
-%s
-</change-directive>
-
 <rshell-capability-snapshot>
 %s
 </rshell-capability-snapshot>
-`, skillPath, casesPath, bestResultPath, iter, skillPath, qualityTolerance*100, skillPath, changeDirective, rshellCapabilitySnapshot)
+`, skillPath, casesPath, bestResultPath, iter, skillPath, qualityTolerance*100, skillPath, rshellCapabilitySnapshot)
 }
 
-func improveSkill(root, skillAbs, casesAbs, bestResultPath, iterDir, model, piBinary string, iter int, qualityTolerance float64, plan iterationResearchPlan, candidateIndex int) error {
+func improveSkill(root, skillAbs, casesAbs, bestResultPath, iterDir, model, piBinary string, iter int, qualityTolerance float64) error {
 	rshellCapabilitySnapshot := researcherRShellCapabilitySnapshot(root)
-	prompt := formatResearcherPromptForPlan(skillAbs, casesAbs, bestResultPath, iter, qualityTolerance, rshellCapabilitySnapshot, plan, candidateIndex)
+	prompt := formatResearcherPrompt(skillAbs, casesAbs, bestResultPath, iter, qualityTolerance, rshellCapabilitySnapshot)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
 	defer cancel()
 	args := []string{
