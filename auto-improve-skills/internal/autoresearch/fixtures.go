@@ -36,10 +36,32 @@ func GenerateRemoteHostDiagnosticsFixtures(root string) error {
 		return fmt.Errorf("remove old generated fixtures: %w", err)
 	}
 
-	files := []struct {
-		path  string
-		lines []string
-	}{
+	files := remoteHostDiagnosticsBaseFixtureFiles()
+	files = append(files, remoteHostDiagnosticsPublicVariantFixtureFiles()...)
+
+	for _, file := range files {
+		if err := writeFixtureLines(filepath.Join(fixtureRoot, filepath.FromSlash(file.path)), file.lines); err != nil {
+			return err
+		}
+	}
+	for _, rel := range remoteHostDiagnosticsEmptyFixtureDirs() {
+		if err := os.MkdirAll(filepath.Join(fixtureRoot, filepath.FromSlash(rel)), 0o755); err != nil {
+			return err
+		}
+		if err := os.WriteFile(filepath.Join(fixtureRoot, filepath.FromSlash(rel), ".gitkeep"), nil, 0o644); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+type fixtureFile struct {
+	path  string
+	lines []string
+}
+
+func remoteHostDiagnosticsBaseFixtureFiles() []fixtureFile {
+	return []fixtureFile{
 		{path: "logs/datadog/agent.log", lines: generateDatadogAgentLog()},
 		{path: "logs/datadog/agent.log.1", lines: generateDatadogAgentRotatedLog()},
 		{path: "logs/auth.log", lines: generateAuthLog()},
@@ -68,16 +90,200 @@ func GenerateRemoteHostDiagnosticsFixtures(root string) error {
 		{path: "holdout/logs/nginx/cart-access.log", lines: generateHoldoutCartNginxAccessLog()},
 		{path: "holdout/logs/system-cart.log", lines: generateHoldoutCartSystemLog()},
 	}
+}
 
-	for _, file := range files {
-		if err := writeFixtureLines(filepath.Join(fixtureRoot, filepath.FromSlash(file.path)), file.lines); err != nil {
-			return err
+func remoteHostDiagnosticsPublicVariantFixtureFiles() []fixtureFile {
+	files := []fixtureFile{}
+
+	ddConfigRoot := "variants/public/dd-config-seed-17/logs"
+	files = append(files,
+		fixtureFile{path: ddConfigRoot + "/datadog/core-agent.log", lines: replaceFixtureLines(generateDatadogAgentLog(),
+			"2026-04-30T10", "2026-05-02T12",
+			"2026-04-30T", "2026-05-02T",
+			"host=checkout-01", "host=payments-17",
+			"rc-8831", "rc-9137",
+			"rc-8832", "rc-9138",
+			"line=42", "line=87",
+			"line 42", "line 87",
+			"column=17", "column=9",
+		)},
+		fixtureFile{path: ddConfigRoot + "/datadog/agent.log.1", lines: appendFixtureLines(generateDatadogAgentRotatedLog(),
+			"2026-05-01T23:51:14Z ERROR config validation failed file=/etc/datadog-agent/datadog.yaml line=42 column=17 error=\"yaml: mapping values are not allowed in this context\" transaction_id=rc-8831 recovered=true old_rotation=true note=adversarial-red-herring",
+			"2026-05-01T23:51:22Z INFO config validation recovered transaction_id=rc-8831 old_rotation=true",
+		)},
+		fixtureFile{path: ddConfigRoot + "/debug-noise.log", lines: appendFixtureLines(generateDebugNoiseLog(),
+			"2026-05-02T11:58:00Z ERROR component=fixture-noise message=\"old api_key_invalid canary recovered before incident\" token=not-root-cause",
+		)},
+	)
+
+	sshRoot := "variants/public/ssh-seed-29/logs"
+	files = append(files,
+		fixtureFile{path: sshRoot + "/security/secure.log", lines: generateSSHAuthVariantLog(sshAuthVariantConfig{SourceIP: "192.0.2.88", FailureCount: 73, OtherAcceptedIP: "203.0.113.19", Start: time.Date(2026, 5, 2, 8, 30, 0, 0, time.UTC)})},
+		fixtureFile{path: sshRoot + "/security/secure.log.1", lines: generateSSHAuthVariantRotatedLog("192.0.2.88", time.Date(2026, 5, 1, 21, 0, 0, 0, time.UTC))},
+	)
+
+	ordersRoot := "variants/public/orders-db-seed-33/logs"
+	orderReplacements := []string{
+		"checkout", "orders",
+		"Checkout", "Orders",
+		"req-", "ord-",
+	}
+	files = append(files,
+		fixtureFile{path: ordersRoot + "/app/orders-service.log", lines: replaceFixtureLines(generateCheckoutServiceLog(), orderReplacements...)},
+		fixtureFile{path: ordersRoot + "/app/orders-service.log.1", lines: appendFixtureLines(replaceFixtureLines(generateCheckoutServiceRotatedLog(), orderReplacements...),
+			"2026-05-01T22:44:10Z ERROR service=orders request failed id=ord-old-900 route=/api/orders status=502 error=\"lookup payments.service.consul: no such host\" recovered=true old_rotation=true note=dns-red-herring",
+		)},
+		fixtureFile{path: ordersRoot + "/nginx/orders-access.log", lines: replaceFixtureLines(generateNginxAccessLog(), orderReplacements...)},
+		fixtureFile{path: ordersRoot + "/nginx/orders-error.log", lines: replaceFixtureLines(generateNginxErrorLog(), orderReplacements...)},
+		fixtureFile{path: ordersRoot + "/system-orders.log", lines: replaceFixtureLines(generateSystemLog(), orderReplacements...)},
+	)
+
+	kubeExpiredRoot := "variants/public/kube-cert-expired-seed-41/container/host/var/log"
+	files = append(files,
+		fixtureFile{path: kubeExpiredRoot + "/datadog/checks.log", lines: generateContainerExpiredAgentLog()},
+		fixtureFile{path: kubeExpiredRoot + "/syslog", lines: generateContainerExpiredSyslog()},
+	)
+
+	ddAPIKeyRoot := "variants/public/dd-api-key-seed-53/logs"
+	files = append(files,
+		fixtureFile{path: ddAPIKeyRoot + "/datadog/agent-api.log", lines: replaceFixtureLines(generateHoldoutDatadogAPIKeyLog(),
+			"holdout-api", "public-api-seed-53",
+			"ak-2209", "ak-5317",
+			"2026-05-01T11", "2026-05-02T13",
+			"rc-9901", "rc-5311",
+			"rc-9902", "rc-5312",
+		)},
+		fixtureFile{path: ddAPIKeyRoot + "/datadog/agent.log.1", lines: appendFixtureLines(generateDatadogAgentRotatedLog(),
+			"2026-05-01T03:18:22Z ERROR config validation failed file=/etc/datadog-agent/datadog.yaml line=42 column=17 transaction_id=rc-8831 recovered=true old_rotation=true note=not-current-incident",
+		)},
+	)
+
+	return files
+}
+
+func remoteHostDiagnosticsEmptyFixtureDirs() []string {
+	return []string{
+		"container/var/log",
+		"variants/public/kube-cert-expired-seed-41/container/var/log",
+	}
+}
+
+func replaceFixtureLines(lines []string, replacements ...string) []string {
+	replacer := strings.NewReplacer(replacements...)
+	out := make([]string, len(lines))
+	for i, line := range lines {
+		out[i] = replacer.Replace(line)
+	}
+	return out
+}
+
+func appendFixtureLines(lines []string, extra ...string) []string {
+	out := append([]string{}, lines...)
+	return append(out, extra...)
+}
+
+type sshAuthVariantConfig struct {
+	SourceIP        string
+	FailureCount    int
+	OtherAcceptedIP string
+	Start           time.Time
+}
+
+func generateSSHAuthVariantLog(cfg sshAuthVariantConfig) []string {
+	users := []string{"admin", "root", "oracle", "postgres", "test", "ubuntu", "deploy", "backup", "guest", "ci", "jenkins", "support"}
+	failures := map[int]int{}
+	for n := 0; n < cfg.FailureCount; n++ {
+		failures[360+n*6] = n
+	}
+	events := map[int]string{
+		82:  fmt.Sprintf("login-gw sshd[3210]: Accepted publickey for deploy from %s port 61200 ssh2: RSA SHA256:variant-deploy", cfg.OtherAcceptedIP),
+		190: "login-gw sudo:   deploy : TTY=pts/3 ; PWD=/srv/app ; USER=root ; COMMAND=/usr/bin/journalctl -n 20",
+		350: fmt.Sprintf("login-gw sshd[3301]: Invalid user admin from %s port 55100", cfg.SourceIP),
+		612: fmt.Sprintf("login-gw sshd[3701]: maximum authentication attempts exceeded for invalid user support from %s port 55320 ssh2 [preauth]", cfg.SourceIP),
+		912: fmt.Sprintf("login-gw sshd[3900]: Accepted publickey for release from %s port 61244 ssh2: ED25519 SHA256:variant-release", cfg.OtherAcceptedIP),
+	}
+	lines := make([]string, 0, 1200)
+	for i := 0; i < 1200; i++ {
+		dt := cfg.Start.Add(time.Duration(i) * time.Second)
+		if n, ok := failures[i]; ok {
+			user := users[n%len(users)]
+			lines = append(lines, fmt.Sprintf("%s login-gw sshd[%d]: Failed password for invalid user %s from %s port %d ssh2", syslogTime(dt), 3500+n, user, cfg.SourceIP, 55100+n))
+		} else if event, ok := events[i]; ok {
+			lines = append(lines, fmt.Sprintf("%s %s", syslogTime(dt), event))
+		} else if i%149 == 0 {
+			lines = append(lines, fmt.Sprintf("%s login-gw sshd[%d]: Failed password for invalid user scanner from 198.51.100.%d port %d ssh2", syslogTime(dt), 4200+i, 30+i%40, 47000+i))
+		} else if i%101 == 0 {
+			lines = append(lines, fmt.Sprintf("%s login-gw sudo:   deploy : TTY=pts/3 ; PWD=/srv/app ; USER=root ; COMMAND=/usr/bin/systemctl status ssh.service token=ssh-variant-red-herring", syslogTime(dt)))
+		} else {
+			lines = append(lines, fmt.Sprintf("%s login-gw CRON[%d]: pam_unix(cron:session): session closed for user root token=ssh-variant-noise-%04d", syslogTime(dt), 5000+i, i))
 		}
 	}
-	if err := os.MkdirAll(filepath.Join(fixtureRoot, "container", "var", "log"), 0o755); err != nil {
-		return err
+	return lines
+}
+
+func generateSSHAuthVariantRotatedLog(sourceIP string, start time.Time) []string {
+	lines := make([]string, 0, 620)
+	for i := 0; i < 620; i++ {
+		dt := start.Add(time.Duration(i*2) * time.Second)
+		switch {
+		case i == 222:
+			lines = append(lines, fmt.Sprintf("%s login-gw sshd[5222]: Accepted password for backup from %s port 50022 ssh2 old_rotation=true note=previous-day-red-herring", syslogTime(dt), sourceIP))
+		case i%83 == 0:
+			lines = append(lines, fmt.Sprintf("%s login-gw sshd[%d]: Failed password for invalid user temp from 203.0.113.%d port %d ssh2", syslogTime(dt), 6000+i, 40+i%20, 48000+i))
+		default:
+			lines = append(lines, fmt.Sprintf("%s login-gw CRON[%d]: pam_unix(cron:session): session closed for user root token=ssh-variant-rotated-%04d", syslogTime(dt), 7000+i, i))
+		}
 	}
-	return os.WriteFile(filepath.Join(fixtureRoot, "container", "var", "log", ".gitkeep"), nil, 0o644)
+	return lines
+}
+
+func generateContainerExpiredAgentLog() []string {
+	start := time.Date(2026, 5, 2, 6, 0, 0, 0, time.UTC)
+	events := map[int]string{
+		0:   "INFO agent container boot version=7.99.0 container_id=fixture-expired host_mount=/host/var/log",
+		94:  "INFO collector check completed check=kubelet status=OK latency_ms=29",
+		211: "ERROR collector check failed check=kubernetes_apiserver error=\"x509: certificate has expired or is not yet valid: current time 2026-05-02T06:03:31Z is after 2026-05-01T23:59:59Z\" endpoint=https://10.96.0.1:443",
+		212: "WARN collector skipped check=kubernetes_apiserver reason=\"tls handshake failure\" next_retry=15s",
+		286: "ERROR collector check failed check=kubernetes_apiserver error=\"x509: certificate has expired\" tls_server_name=kubernetes.default.svc cert_not_after=2026-05-01T23:59:59Z",
+		420: "INFO collector check completed check=container status=OK latency_ms=18 note=\"red herring: container check healthy\"",
+		522: "ERROR collector check failed check=kubernetes_apiserver error=\"x509: certificate has expired\" endpoint=https://10.96.0.1:443",
+	}
+	checks := []string{"container", "docker", "kubelet", "process", "network", "kubernetes_state_core"}
+	lines := make([]string, 0, 720)
+	for i := 0; i < 720; i++ {
+		dt := start.Add(time.Duration(i) * time.Second)
+		if event, ok := events[i]; ok {
+			lines = append(lines, fmt.Sprintf("%s %s", isoTime(dt), event))
+		} else if i%131 == 0 {
+			lines = append(lines, fmt.Sprintf("%s WARN collector slow check=%s duration_ms=%d recovered=true token=expired-cert-noise-%04d", isoTime(dt), checks[i%len(checks)], 210+i%70, i))
+		} else {
+			lines = append(lines, fmt.Sprintf("%s DEBUG collector heartbeat check=%s status=OK sequence=%04d token=expired-cert-noise", isoTime(dt), checks[i%len(checks)], i))
+		}
+	}
+	return lines
+}
+
+func generateContainerExpiredSyslog() []string {
+	start := time.Date(2026, 5, 2, 6, 0, 0, 0, time.UTC)
+	events := map[int]string{
+		18:  "node chronyd[801]: System clock synchronized stratum=2 offset=0.001s note=clock-healthy-red-herring",
+		136: "node kubelet[22]: apiserver serving certificate NotAfter=2026-05-01T23:59:59Z has passed; rotation controller pending",
+		208: "node datadog-agent[17]: kubernetes_apiserver check failing: x509 certificate has expired (node clock synchronized)",
+		244: "node cert-rotation[77]: renewal request queued for kubernetes.default.svc serving certificate status=pending approval",
+		390: "node chronyd[801]: Selected source 192.0.2.10 (time.example) offset=0.0009s",
+	}
+	lines := make([]string, 0, 680)
+	for i := 0; i < 680; i++ {
+		dt := start.Add(time.Duration(i) * time.Second)
+		if event, ok := events[i]; ok {
+			lines = append(lines, fmt.Sprintf("%s %s", syslogTime(dt), event))
+		} else if i%121 == 0 {
+			lines = append(lines, fmt.Sprintf("%s node kubelet[22]: pod sandbox changed pod=fixture-expired-noise-%d namespace=default", syslogTime(dt), i))
+		} else {
+			lines = append(lines, fmt.Sprintf("%s node systemd[1]: fixture heartbeat unit=container-runtime.service sequence=%04d token=expired-cert-syslog", syslogTime(dt), i))
+		}
+	}
+	return lines
 }
 
 func writeFixtureLines(path string, lines []string) error {

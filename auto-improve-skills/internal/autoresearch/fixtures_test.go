@@ -12,6 +12,40 @@ import (
 	"testing"
 )
 
+func TestExpandCaseVariants(t *testing.T) {
+	cases := []Case{
+		{
+			ID:        "ssh",
+			Title:     "SSH",
+			Prompt:    "prompt {{IP}} {{LOG_ROOT}}",
+			Variables: map[string]string{"LOG_ROOT": "base", "IP": "198.51.100.23"},
+			Criteria:  []Criterion{{Name: "ip", Source: "final", Contains: "{{IP}}", Points: 1}},
+			Variants: []CaseVariant{
+				{ID: "seed-1"},
+				{ID: "seed-2", Title: "SSH seed 2", Variables: map[string]string{"IP": "203.0.113.66"}},
+			},
+		},
+		{ID: "plain", Prompt: "plain", Criteria: []Criterion{{Name: "plain", Source: "final", Contains: "plain", Points: 1}}},
+	}
+
+	expanded, err := ExpandCaseVariants(cases)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(expanded) != 3 {
+		t.Fatalf("expanded case count = %d, want 3", len(expanded))
+	}
+	if expanded[0].ID != "ssh-seed-1" || expanded[1].ID != "ssh-seed-2" || expanded[2].ID != "plain" {
+		t.Fatalf("expanded ids = %q, %q, %q", expanded[0].ID, expanded[1].ID, expanded[2].ID)
+	}
+	if expanded[1].Title != "SSH seed 2" {
+		t.Fatalf("variant title = %q", expanded[1].Title)
+	}
+	if expanded[1].Variables["LOG_ROOT"] != "base" || expanded[1].Variables["IP"] != "203.0.113.66" {
+		t.Fatalf("merged variables = %#v", expanded[1].Variables)
+	}
+}
+
 func TestGenerateRemoteHostDiagnosticsFixtures(t *testing.T) {
 	root := t.TempDir()
 	if err := GenerateRemoteHostDiagnosticsFixtures(root); err != nil {
@@ -20,34 +54,49 @@ func TestGenerateRemoteHostDiagnosticsFixtures(t *testing.T) {
 
 	fixtureRoot := RemoteHostDiagnosticsGeneratedFixtureRoot(root)
 	wantLineCounts := map[string]int{
-		"logs/datadog/agent.log":                   1200,
-		"logs/datadog/agent.log.1":                 700,
-		"logs/auth.log":                            1500,
-		"logs/auth.log.1":                          700,
-		"logs/app/service.log":                     1100,
-		"logs/app/service.log.1":                   650,
-		"logs/nginx/access.log":                    1800,
-		"logs/nginx/access.log.1":                  900,
-		"logs/nginx/error.log":                     800,
-		"logs/nginx/error.log.1":                   600,
-		"logs/system.log":                          900,
-		"logs/system.log.1":                        650,
-		"logs/debug-noise.log":                     1500,
-		"container/host/var/log/datadog/agent.log": 850,
-		"container/host/var/log/syslog":            750,
-		"holdout/logs/app/checkout.log":            760,
-		"holdout/logs/nginx/access.log":            1050,
-		"holdout/logs/system.log":                  760,
-		"holdout/logs/app/worker.log":              620,
-		"holdout/logs/auth.log":                    980,
-		"holdout/logs/deploy.log":                  620,
-		"holdout/logs/security/auth-success.log":   900,
-		"holdout/logs/datadog/api-agent.log":       900,
-		"holdout/logs/app/cart.log":                780,
-		"holdout/logs/app/cart.log.1":              620,
-		"holdout/logs/nginx/cart-access.log":       900,
-		"holdout/logs/system-cart.log":             760,
-		"container/var/log/.gitkeep":               0,
+		"logs/datadog/agent.log":                                               1200,
+		"logs/datadog/agent.log.1":                                             700,
+		"logs/auth.log":                                                        1500,
+		"logs/auth.log.1":                                                      700,
+		"logs/app/service.log":                                                 1100,
+		"logs/app/service.log.1":                                               650,
+		"logs/nginx/access.log":                                                1800,
+		"logs/nginx/access.log.1":                                              900,
+		"logs/nginx/error.log":                                                 800,
+		"logs/nginx/error.log.1":                                               600,
+		"logs/system.log":                                                      900,
+		"logs/system.log.1":                                                    650,
+		"logs/debug-noise.log":                                                 1500,
+		"container/host/var/log/datadog/agent.log":                             850,
+		"container/host/var/log/syslog":                                        750,
+		"holdout/logs/app/checkout.log":                                        760,
+		"holdout/logs/nginx/access.log":                                        1050,
+		"holdout/logs/system.log":                                              760,
+		"holdout/logs/app/worker.log":                                          620,
+		"holdout/logs/auth.log":                                                980,
+		"holdout/logs/deploy.log":                                              620,
+		"holdout/logs/security/auth-success.log":                               900,
+		"holdout/logs/datadog/api-agent.log":                                   900,
+		"holdout/logs/app/cart.log":                                            780,
+		"holdout/logs/app/cart.log.1":                                          620,
+		"holdout/logs/nginx/cart-access.log":                                   900,
+		"holdout/logs/system-cart.log":                                         760,
+		"container/var/log/.gitkeep":                                           0,
+		"variants/public/dd-config-seed-17/logs/datadog/core-agent.log":        1200,
+		"variants/public/dd-config-seed-17/logs/datadog/agent.log.1":           702,
+		"variants/public/dd-config-seed-17/logs/debug-noise.log":               1501,
+		"variants/public/ssh-seed-29/logs/security/secure.log":                 1200,
+		"variants/public/ssh-seed-29/logs/security/secure.log.1":               620,
+		"variants/public/orders-db-seed-33/logs/app/orders-service.log":        1100,
+		"variants/public/orders-db-seed-33/logs/app/orders-service.log.1":      651,
+		"variants/public/orders-db-seed-33/logs/nginx/orders-access.log":       1800,
+		"variants/public/orders-db-seed-33/logs/nginx/orders-error.log":        800,
+		"variants/public/orders-db-seed-33/logs/system-orders.log":             900,
+		"variants/public/kube-cert-expired-seed-41/container/var/log/.gitkeep": 0,
+		"variants/public/kube-cert-expired-seed-41/container/host/var/log/datadog/checks.log": 720,
+		"variants/public/kube-cert-expired-seed-41/container/host/var/log/syslog":             680,
+		"variants/public/dd-api-key-seed-53/logs/datadog/agent-api.log":                       900,
+		"variants/public/dd-api-key-seed-53/logs/datadog/agent.log.1":                         701,
 	}
 	for rel, want := range wantLineCounts {
 		data := readGeneratedFixture(t, fixtureRoot, rel)
@@ -125,6 +174,38 @@ func TestGenerateRemoteHostDiagnosticsFixtures(t *testing.T) {
 	holdoutCartSystem := string(readGeneratedFixture(t, fixtureRoot, "holdout/logs/system-cart.log"))
 	assertContains(t, holdoutCartSystem, "maxclients")
 	assertContains(t, holdoutCartSystem, "connection count active=32")
+
+	ddConfigVariant := string(readGeneratedFixture(t, fixtureRoot, "variants/public/dd-config-seed-17/logs/datadog/core-agent.log"))
+	assertContains(t, ddConfigVariant, "transaction_id=rc-9137")
+	assertContains(t, ddConfigVariant, "line=87")
+	ddConfigVariantRotated := string(readGeneratedFixture(t, fixtureRoot, "variants/public/dd-config-seed-17/logs/datadog/agent.log.1"))
+	assertContains(t, ddConfigVariantRotated, "old_rotation=true note=adversarial-red-herring")
+
+	sshVariant := string(readGeneratedFixture(t, fixtureRoot, "variants/public/ssh-seed-29/logs/security/secure.log"))
+	if got := countLinesContaining(sshVariant, "Failed password for invalid user", "from 192.0.2.88"); got != 73 {
+		t.Fatalf("ssh variant failure count = %d, want 73", got)
+	}
+	sshVariantRotated := string(readGeneratedFixture(t, fixtureRoot, "variants/public/ssh-seed-29/logs/security/secure.log.1"))
+	assertContains(t, sshVariantRotated, "Accepted password for backup from 192.0.2.88")
+
+	ordersVariant := string(readGeneratedFixture(t, fixtureRoot, "variants/public/orders-db-seed-33/logs/app/orders-service.log"))
+	assertContains(t, ordersVariant, "service=orders")
+	assertContains(t, ordersVariant, "db pool exhausted")
+	assertContains(t, ordersVariant, "suspected_client=reporting-worker")
+	ordersVariantRotated := string(readGeneratedFixture(t, fixtureRoot, "variants/public/orders-db-seed-33/logs/app/orders-service.log.1"))
+	assertContains(t, ordersVariantRotated, "dns-red-herring")
+
+	kubeExpiredAgent := string(readGeneratedFixture(t, fixtureRoot, "variants/public/kube-cert-expired-seed-41/container/host/var/log/datadog/checks.log"))
+	assertContains(t, kubeExpiredAgent, "x509: certificate has expired")
+	kubeExpiredSyslog := string(readGeneratedFixture(t, fixtureRoot, "variants/public/kube-cert-expired-seed-41/container/host/var/log/syslog"))
+	assertContains(t, kubeExpiredSyslog, "NotAfter=2026-05-01T23:59:59Z")
+	assertContains(t, kubeExpiredSyslog, "clock-healthy-red-herring")
+
+	apiKeyVariant := string(readGeneratedFixture(t, fixtureRoot, "variants/public/dd-api-key-seed-53/logs/datadog/agent-api.log"))
+	assertContains(t, apiKeyVariant, "key_id=ak-5317")
+	assertContains(t, apiKeyVariant, "api_key_invalid")
+	apiKeyVariantRotated := string(readGeneratedFixture(t, fixtureRoot, "variants/public/dd-api-key-seed-53/logs/datadog/agent.log.1"))
+	assertContains(t, apiKeyVariantRotated, "old_rotation=true note=not-current-incident")
 }
 
 func readGeneratedFixture(t *testing.T, fixtureRoot, rel string) []byte {

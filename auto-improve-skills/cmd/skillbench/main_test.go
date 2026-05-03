@@ -70,6 +70,10 @@ func TestSelectCasesAppliesFilterBeforeLimit(t *testing.T) {
 	if len(selected) != 1 || selected[0].ID != "c" {
 		t.Fatalf("selectCases filter = %+v, want c", selected)
 	}
+	selected = selectCases([]autoresearch.Case{{ID: "a-seed-00"}, {ID: "a-seed-01"}, {ID: "b-seed-00"}}, 0, "a")
+	if len(selected) != 2 || selected[0].ID != "a-seed-00" || selected[1].ID != "a-seed-01" {
+		t.Fatalf("selectCases prefix filter = %+v, want a variants", selected)
+	}
 }
 
 func TestApplyObjectiveScore(t *testing.T) {

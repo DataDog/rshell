@@ -1,55 +1,75 @@
 name: remote-host-diagnostics-quality
+# Public suite now uses case templates plus deterministic seeded variants. The
+# concrete fixture facts are intentionally varied across roots so skill changes
+# must improve diagnostic workflow rather than memorize one fixed log shape.
 description: >-
   Final-answer quality benchmarks for the local ./rshell remote-host-diagnostics skill.
-  Cases use deterministic generated fixture logs with noisy rotations and red herrings, requiring
-  realistic bounded diagnostics rather than full-log dumping.
+  Cases use deterministic generated fixture logs with noisy rotations, misleading hypotheses,
+  and seeded variants requiring realistic bounded diagnostics rather than full-log dumping.
 skill_path: ../../skills/remote-host-diagnostics
 cases:
   - id: datadog-agent-config-regression
-    title: Distinguish a Datadog Agent config regression from noisy integration failures
+    title: Infer a Datadog Agent telemetry regression from noisy agent logs
+    variables:
+      INCIDENT_TIME: "10:12"
+      DD_CONFIG_LINE: "42"
+      DD_RC_ID: rc-8831
+      DD_AGENT_LOG_NAME: agent.log
+      DD_AGENT_LOG_REGEX: 'agent\.log'
+    variants:
+      - id: seed-00
+      - id: seed-17
+        title: Infer a Datadog Agent telemetry regression from renamed agent logs
+        variables:
+          LOG_ROOT: '{{BENCH_DIR}}/generated-fixtures/variants/public/dd-config-seed-17/logs'
+          INCIDENT_TIME: "12:12"
+          DD_CONFIG_LINE: "87"
+          DD_RC_ID: rc-9137
+          DD_AGENT_LOG_NAME: core-agent.log
+          DD_AGENT_LOG_REGEX: 'core-agent\.log'
     prompt: |-
-      Fake investigation: a customer says host metrics stopped shortly after 10:12 UTC, but traces and some log intake still look healthy.
+      Fake investigation: one host's telemetry changed shortly after {{INCIDENT_TIME}} UTC. A teammate is focused on APM/intake noise because traces still look healthy.
       Use the local rshell skill against this generated fixture log root: {{LOG_ROOT}}.
-      Determine the likely cause, separate it from red herrings in rotated/noisy logs, and provide evidence. Keep the investigation read-only and bounded.
+      Determine the likely cause, separate it from misleading/recovered noise in current or rotated logs, and provide evidence. Keep the investigation read-only and bounded.
     judge_rubric: |-
-      Excellent answers identify the remote-config-triggered Datadog Agent configuration/YAML parse error at line 42 in agent.log as the likely cause, connect it to the core agent/aggregator stopping and no metrics being flushed, distinguish trace/APM/intake red herrings, list bounded rshell commands, and avoid claiming a remote host was accessed.
+      Excellent answers identify a remote-config-triggered Datadog Agent configuration/YAML parse error at line {{DD_CONFIG_LINE}} in {{DD_AGENT_LOG_NAME}} as the likely cause, connect it to the core agent/aggregator stopping and no metrics being flushed, distinguish trace/APM/intake red herrings and older rotated noise, list bounded rshell commands, and avoid claiming a remote host was accessed.
     criteria:
-      - name: final identifies invalid config or YAML parse failure at line 42
+      - name: final identifies invalid config or YAML parse failure at the expected line
         source: final
         case_insensitive: true
-        regex: "(yaml|config).*line=42|line 42.*(yaml|config)|invalid configuration|config validation failed"
+        regex: '(yaml|config).*line={{DD_CONFIG_LINE}}|line {{DD_CONFIG_LINE}}.*(yaml|config)|invalid configuration|config validation failed'
         require_evidence: true
-        evidence_regex: "config validation failed.*line=42|line=42.*yaml|invalid configuration"
+        evidence_regex: 'config validation failed.*line={{DD_CONFIG_LINE}}|line={{DD_CONFIG_LINE}}.*yaml|invalid configuration'
         points: 25
-      - name: final ties the regression to remote config reload rc-8831
+      - name: final ties the regression to the expected remote config reload
         source: final
         case_insensitive: true
-        regex: "remote[- ]config|rc-8831|config reload"
+        regex: 'remote[- ]config|{{DD_RC_ID}}|config reload'
         require_evidence: true
-        evidence_regex: "remote config|rc-8831|config reload"
+        evidence_regex: 'remote config|{{DD_RC_ID}}|config reload'
         points: 15
       - name: final connects failure to stopped metrics or core agent
         source: final
         case_insensitive: true
-        regex: "stopped|no metrics|metrics.*stopped|core agent|aggregator"
+        regex: 'stopped|no metrics|metrics.*stopped|core agent|aggregator'
         require_evidence: true
-        evidence_regex: "core agent stopped|aggregator stopped|no metrics flushed"
+        evidence_regex: 'core agent stopped|aggregator stopped|no metrics flushed'
         points: 15
-      - name: final distinguishes trace/APM/intake noise from root cause
+      - name: final distinguishes trace/APM/intake or rotated noise from root cause
         source: final
         case_insensitive: true
-        regex: "trace|apm|intake|red herring|not.*cause|unrelated"
+        regex: 'trace|apm|intake|rotated|old|red herring|not.*cause|unrelated|recovered'
         require_evidence: true
-        evidence_regex: "trace-agent still running|APM intake|forwarder recovered|red herring: traces unaffected|intake"
+        evidence_regex: 'trace-agent still running|APM intake|forwarder recovered|red herring: traces unaffected|old_rotation|intake'
         points: 10
-      - name: final cites evidence from agent.log
+      - name: final cites the concrete agent log file
         source: final
         case_insensitive: true
-        contains: "agent.log"
+        contains: '{{DD_AGENT_LOG_NAME}}'
         points: 10
       - name: commands use the provided generated fixture log root as allowed path
         source: commands
-        contains: "--allowed-paths {{LOG_ROOT}}"
+        contains: '--allowed-paths {{LOG_ROOT}}'
         points: 10
       - name: commands run initial help
         source: commands
@@ -58,170 +78,287 @@ cases:
       - name: commands use bounded filters over current or rotated agent logs
         source: commands
         case_insensitive: true
-        regex: '(grep|tail|head|wc|find).*datadog.*/agent\.log|datadog.*/agent\.log.*(grep|tail|head|wc)|grep.*(rc-8831|line=42|no metrics|core agent)'
+        regex: '(grep|tail|head|wc|find).*datadog.*({{DD_AGENT_LOG_REGEX}}|agent\.log)|grep.*({{DD_RC_ID}}|line={{DD_CONFIG_LINE}}|no metrics|core agent)'
         points: 10
 
-  - id: auth-bruteforce-summary
-    title: Quantify SSH brute-force activity amid normal bastion log noise
+  - id: datadog-agent-api-key-rejection
+    title: Avoid forcing a Datadog telemetry outage into the config-regression pattern
+    variables:
+      LOG_ROOT: '{{BENCH_DIR}}/generated-fixtures/variants/public/dd-api-key-seed-53/logs'
+      API_AGENT_LOG_NAME: agent-api.log
+      API_KEY_ID: ak-5317
+    variants:
+      - id: seed-53
     prompt: |-
-      Fake investigation: security asks whether there is evidence of SSH brute-force activity in the generated bastion logs.
-      Use the local rshell skill against fixture log root {{LOG_ROOT}}.
-      Summarize the suspicious source, approximate scale, user pattern, and whether there was a successful login from that same source.
+      Fake investigation: telemetry and log delivery from a host degrade after 13:06 UTC. A teammate thinks this resembles an earlier config-reload incident.
+      Use the local rshell skill against this generated fixture log root: {{LOG_ROOT}}.
+      Determine what these logs actually support, whether the teammate's theory is supported, and provide evidence. Keep the investigation read-only and bounded.
     judge_rubric: |-
-      Excellent answers identify repeated failed SSH password attempts from 198.51.100.23, estimate roughly 96/about 100 failures across many invalid users, distinguish successful publickey logins from different IPs, cite auth.log evidence, and avoid overstating compromise because no successful login from 198.51.100.23 is present.
+      Excellent answers identify API key/authentication rejection (403 invalid_api_key / api_key_invalid) as the cause of Datadog metrics/log intake failures, cite {{API_AGENT_LOG_NAME}} evidence, explicitly say the config/YAML theory is not supported by these logs, avoid naming the old line-42 pattern as the cause, and suggest only safe read-only next checks such as API key/audit/config-source verification.
     criteria:
-      - name: final identifies brute-force source IP
+      - name: final identifies API key or authentication rejection as likely cause
         source: final
-        contains: "198.51.100.23"
+        case_insensitive: true
+        regex: 'api key|invalid_api_key|api_key_invalid|403|unauthorized|authentication|{{API_KEY_ID}}'
+        require_evidence: true
+        evidence_regex: 'api key validation failed|api_key_invalid|invalid_api_key|status=403|{{API_KEY_ID}}'
+        points: 25
+      - name: final connects rejection to metrics or log intake failure
+        source: final
+        case_insensitive: true
+        regex: 'metrics|series|log intake|logs intake|forwarder|no metrics'
+        require_evidence: true
+        evidence_regex: 'dropping metric payload|logs intake rejected|no metrics flushed|domain=series|domain=logs'
+        points: 20
+      - name: final says config/YAML theory is not supported
+        source: final
+        case_insensitive: true
+        regex: 'not.*(yaml|remote[- ]config|line 42|config validation|config-reload)|no.*(yaml|remote[- ]config|config validation)|unsupported|not current'
+        points: 15
+      - name: final avoids claiming old YAML pattern as cause
+        source: final
+        case_insensitive: true
+        not: true
+        regex: 'rc-8831.*cause|line 42.*cause|yaml.*cause|config validation.*cause'
+        points: 10
+      - name: final cites api-agent log evidence
+        source: final
+        case_insensitive: true
+        contains: '{{API_AGENT_LOG_NAME}}'
+        points: 10
+      - name: commands use provided log root as allowed path
+        source: commands
+        contains: '--allowed-paths {{LOG_ROOT}}'
+        points: 5
+      - name: commands use bounded filters for Datadog/API-key evidence
+        source: commands
+        case_insensitive: true
+        regex: 'grep.*(api[_ -]?key|403|invalid|metrics|logs|remote|yaml|config)|find|head|tail'
+        points: 10
+      - name: final suggests safe read-only API key or audit next check
+        source: final
+        case_insensitive: true
+        regex: 'next|check|inspect|verify|audit|api key|config source|credential'
+        points: 5
+
+  - id: auth-ssh-anomaly-summary
+    title: Quantify concentrated SSH authentication anomalies amid normal bastion noise
+    variables:
+      SSH_SOURCE_IP: 198.51.100.23
+      SSH_FAILURE_COUNT_REGEX: '\b96\b|\b9[0-9]\b|about 100|roughly 100|~100|hundred'
+      AUTH_LOG_NAME: auth.log
+      OTHER_ACCEPTED_REGEX: '203\.0\.113\.8|198\.51\.100\.77|different IP|different source'
+      OTHER_ACCEPTED_EVIDENCE_REGEX: 'Accepted publickey.*(203\.0\.113\.8|198\.51\.100\.77)'
+    variants:
+      - id: seed-00
+      - id: seed-29
+        title: Quantify concentrated SSH authentication anomalies in renamed security logs
+        variables:
+          LOG_ROOT: '{{BENCH_DIR}}/generated-fixtures/variants/public/ssh-seed-29/logs'
+          SSH_SOURCE_IP: 192.0.2.88
+          SSH_FAILURE_COUNT_REGEX: '\b73\b|\b7[0-9]\b|about 70|roughly 70|~70|dozens'
+          AUTH_LOG_NAME: secure.log
+          OTHER_ACCEPTED_REGEX: '203\.0\.113\.19|different IP|different source'
+          OTHER_ACCEPTED_EVIDENCE_REGEX: 'Accepted publickey.*203\.0\.113\.19'
+    prompt: |-
+      Fake investigation: security asks what the SSH authentication noise in these generated bastion logs proves. A teammate points at unrelated successful deploy logins as possible explanation.
+      Use the local rshell skill against fixture log root {{LOG_ROOT}}.
+      Summarize the concentrated source if any, approximate scale, user pattern, and whether that same source got in during the current window.
+    judge_rubric: |-
+      Excellent answers identify repeated failed SSH password attempts from {{SSH_SOURCE_IP}}, estimate the expected approximate scale, describe invalid-user/password patterns, distinguish successful publickey logins from different IPs and old rotated red herrings, cite {{AUTH_LOG_NAME}} evidence, and avoid overstating compromise when no current successful login from {{SSH_SOURCE_IP}} is present.
+    criteria:
+      - name: final identifies concentrated source IP
+        source: final
+        contains: '{{SSH_SOURCE_IP}}'
         require_evidence: true
         points: 20
-      - name: final describes failed-password brute-force pattern
+      - name: final describes failed-password invalid-user pattern
         source: final
         case_insensitive: true
-        regex: "failed password|failed login|brute|invalid user"
+        regex: 'failed password|failed login|brute|invalid user|password attempts'
         require_evidence: true
-        evidence_regex: "Failed password|Invalid user"
+        evidence_regex: 'Failed password|Invalid user'
         points: 15
-      - name: final includes approximate count near 96 failures
+      - name: final includes approximate count for this seed
         source: final
         case_insensitive: true
-        regex: '\b96\b|\b9[0-9]\b|about 100|roughly 100|~100|hundred'
+        regex: '{{SSH_FAILURE_COUNT_REGEX}}'
         require_evidence: true
         evidence_source: transcript
-        evidence_regex: '\b96\b|198\.51\.100\.23|Failed password'
+        evidence_regex: '{{SSH_FAILURE_COUNT_REGEX}}|{{SSH_SOURCE_IP}}|Failed password'
         points: 15
-      - name: final says there was no successful login from the suspicious source
+      - name: final says there was no current successful login from the suspicious source
         source: final
         case_insensitive: true
-        regex: 'no successful|no accepted|not successful|no evidence.*success|no login.*198\.51\.100\.23'
+        regex: 'no successful|no accepted|not successful|no evidence.*success|no current login.*{{SSH_SOURCE_IP}}|no login.*{{SSH_SOURCE_IP}}'
         points: 15
       - name: final distinguishes accepted publickey login as a different source
         source: final
-        regex: '203\.0\.113\.8|198\.51\.100\.77|different IP|different source'
+        regex: '{{OTHER_ACCEPTED_REGEX}}'
         require_evidence: true
-        evidence_regex: 'Accepted publickey.*(203\.0\.113\.8|198\.51\.100\.77)'
+        evidence_regex: '{{OTHER_ACCEPTED_EVIDENCE_REGEX}}'
         points: 10
-      - name: final cites auth.log
+      - name: final cites auth log evidence
         source: final
         case_insensitive: true
-        contains: "auth.log"
+        contains: '{{AUTH_LOG_NAME}}'
         points: 10
       - name: commands use grep/wc/sort/uniq or similarly bounded filters
         source: commands
         case_insensitive: true
-        regex: 'grep.*(Failed password|198\.51\.100\.23)|wc -l|sort|uniq'
+        regex: 'grep.*(Failed password|{{SSH_SOURCE_IP}}|Accepted)|wc -l|sort|uniq|find|head'
         points: 10
       - name: final avoids claiming account compromise from fixture evidence
         source: final
         case_insensitive: true
         not: true
-        regex: 'compromised|successful.*198\.51\.100\.23'
+        regex: 'compromised|compromise confirmed|got in from {{SSH_SOURCE_IP}}'
         points: 5
 
-  - id: checkout-500-root-cause
-    title: Correlate checkout HTTP 500/502s to database pool exhaustion
+  - id: checkout-5xx-backend-correlation
+    title: Correlate checkout-style HTTP errors to backend dependency evidence
+    variables:
+      SERVICE_WORD: checkout
+      ROUTE_WORD: checkout
+      ROUTE_PATH: /api/checkout
+      SERVICE_LOG_NAME: service.log
+      NGINX_LOG_REGEX: 'nginx|access\.log|error\.log'
+      SYSTEM_LOG_REGEX: 'system\.log|postgres|remaining connection slots|too many clients'
+      LOG_ROOT: '{{LOG_ROOT}}'
+    variants:
+      - id: seed-00
+      - id: seed-33
+        title: Correlate orders HTTP errors to backend dependency evidence in renamed logs
+        variables:
+          LOG_ROOT: '{{BENCH_DIR}}/generated-fixtures/variants/public/orders-db-seed-33/logs'
+          SERVICE_WORD: orders
+          ROUTE_WORD: orders
+          ROUTE_PATH: /api/orders
+          SERVICE_LOG_NAME: orders-service.log
+          NGINX_LOG_REGEX: 'nginx|orders-access\.log|orders-error\.log'
+          SYSTEM_LOG_REGEX: 'system-orders\.log|postgres|remaining connection slots|too many clients'
     prompt: |-
-      Fake investigation: checkout users are seeing bursts of HTTP 500/502 errors around 10:10 UTC.
+      Fake investigation: users are seeing bursts of 500/502 errors on {{ROUTE_WORD}} traffic around the reported window. A teammate suspects an unrelated payment-gateway blip from older noise.
       Use the local rshell skill against fixture log root {{LOG_ROOT}}.
-      Find the likely backend cause across app, nginx, and system/postgres logs, separate it from unrelated errors, and suggest the next safe diagnostic check.
+      Find the likely backend cause across available logs, separate it from unrelated/recovered errors, and suggest the next safe diagnostic check.
     judge_rubric: |-
-      Excellent answers correlate nginx checkout 500/502 errors to checkout service PostgreSQL/database connection failures, identify connection pool/slot exhaustion and reporting-worker connection fanout as the likely driver, cite service.log plus nginx and system/postgres evidence, and recommend safe read-only next checks such as inspecting PostgreSQL activity/connection-pool metrics rather than remediation commands.
+      Excellent answers correlate nginx {{ROUTE_PATH}} 500/502 errors to {{SERVICE_WORD}} service PostgreSQL/database connection failures, identify connection pool/slot exhaustion and reporting-worker connection fanout as the likely driver, cite {{SERVICE_LOG_NAME}} plus nginx and system/postgres evidence, reject older unrelated noise, and recommend safe read-only next checks such as inspecting PostgreSQL activity/connection-pool metrics rather than remediation commands.
     criteria:
-      - name: final mentions checkout HTTP 500 or 502 symptom
+      - name: final mentions HTTP 500 or 502 symptom for the affected route
         source: final
         case_insensitive: true
-        regex: "500|502|checkout"
+        regex: '500|502|{{ROUTE_WORD}}|{{ROUTE_PATH}}'
         require_evidence: true
         evidence_regex: 'status=500|status=502|HTTP/1.1" 50[02]|request failed'
         points: 10
       - name: final identifies database/postgres connection slot or pool exhaustion
         source: final
         case_insensitive: true
-        regex: "database|postgres|connection refused|connection slots|too many clients|pool exhausted|db pool"
+        regex: 'database|postgres|connection refused|connection slots|too many clients|pool exhausted|db pool'
         require_evidence: true
-        evidence_regex: "db pool exhausted|remaining connection slots|too many clients|database connection refused"
+        evidence_regex: 'db pool exhausted|remaining connection slots|too many clients|database connection refused'
         points: 20
       - name: final identifies reporting-worker or connection fanout as likely driver
         source: final
         case_insensitive: true
-        regex: "reporting-worker|connection fanout|fanout|reports"
+        regex: 'reporting-worker|connection fanout|fanout|reports'
         require_evidence: true
-        evidence_regex: "reporting-worker|connection fanout|application_name=reporting-worker"
+        evidence_regex: 'reporting-worker|connection fanout|application_name=reporting-worker'
         points: 15
       - name: final cites service log evidence
         source: final
         case_insensitive: true
-        regex: 'service\.log|checkout'
+        contains: '{{SERVICE_LOG_NAME}}'
         points: 10
       - name: final cites nginx access or error evidence
         source: final
         case_insensitive: true
-        regex: 'nginx|access\.log|error\.log'
+        regex: '{{NGINX_LOG_REGEX}}'
         points: 10
       - name: final cites system/postgres evidence
         source: final
         case_insensitive: true
-        regex: 'system\.log|postgres|remaining connection slots|too many clients'
+        regex: '{{SYSTEM_LOG_REGEX}}'
         points: 10
       - name: final suggests safe read-only next diagnostic check
         source: final
         case_insensitive: true
-        regex: "next|check|inspect|verify|pg_stat_activity|connection pool|metrics"
+        regex: 'next|check|inspect|verify|pg_stat_activity|connection pool|metrics'
         points: 10
       - name: commands search across multiple logs with bounded filters
         source: commands
         case_insensitive: true
-        regex: "grep.*(500|502|database|postgres|checkout|reporting-worker)|tail|head|find"
+        regex: 'grep.*(500|502|database|postgres|{{ROUTE_WORD}}|reporting-worker)|tail|head|find'
         points: 10
       - name: final does not propose write/remediation commands
         source: final
         case_insensitive: true
         not: true
-        regex: "restart|kill|delete|edit .*config|apply"
+        regex: 'restart|kill|delete|edit .*config|apply'
         points: 5
 
-  - id: container-host-log-fallback
-    title: Use /host-style fallback and identify certificate failures caused by clock skew
+  - id: container-host-log-fallback-cert
+    title: Use /host-style fallback and distinguish certificate timing from certificate material failures
+    variables:
+      CERT_PROBLEM_REGEX: 'x509|not yet valid|certificate.*not'
+      CERT_EVIDENCE_REGEX: 'x509: certificate is not yet valid|certificate is not yet valid'
+      CERT_CAUSE_REGEX: 'clock|skew|chrony|chronyd|time sync|system clock|notbefore'
+      CERT_CAUSE_EVIDENCE_REGEX: 'chronyd|clock.*skew|System clock|NotBefore|clock synchronized'
+      SYSLOG_EVIDENCE_REGEX: 'syslog|chronyd|chrony|clocksource'
+      AGENT_LOG_NAME: agent.log
+    variants:
+      - id: clock-seed-00
+      - id: expired-seed-41
+        title: Use /host-style fallback and identify an expired serving certificate
+        variables:
+          EMPTY_LOG_ROOT: '{{BENCH_DIR}}/generated-fixtures/variants/public/kube-cert-expired-seed-41/container/var/log'
+          HOST_LOG_ROOT: '{{BENCH_DIR}}/generated-fixtures/variants/public/kube-cert-expired-seed-41/container/host/var/log'
+          CERT_PROBLEM_REGEX: 'x509|expired|certificate has expired|notafter'
+          CERT_EVIDENCE_REGEX: 'x509: certificate has expired|certificate has expired|NotAfter=2026-05-01T23:59:59Z'
+          CERT_CAUSE_REGEX: 'expired|notafter|rotation|certificate material|serving certificate|pending approval'
+          CERT_CAUSE_EVIDENCE_REGEX: 'certificate has expired|NotAfter=2026-05-01T23:59:59Z|rotation controller pending|renewal request queued'
+          SYSLOG_EVIDENCE_REGEX: 'syslog|kubelet|cert-rotation|NotAfter|chronyd'
+          AGENT_LOG_NAME: checks.log
     prompt: |-
-      Fake investigation: this simulates a containerized Agent layout. The primary log root {{EMPTY_LOG_ROOT}} is empty;
-      host logs are mounted at {{HOST_LOG_ROOT}}. Use the local rshell skill to determine why the kubernetes_apiserver check is failing, and whether this looks like an expired certificate or a timing/clock issue.
+      Fake investigation: this simulates a containerized Agent layout. The primary log root {{EMPTY_LOG_ROOT}} is empty; host logs are mounted at {{HOST_LOG_ROOT}}.
+      Use the local rshell skill to determine why the kubernetes_apiserver check is failing. A teammate has a certificate-related theory, but verify whether the evidence points to certificate material, environment timing, or something else.
     judge_rubric: |-
-      Excellent answers first handle the empty primary log directory, then inspect the host-mounted log root, identify x509 "not yet valid" kubernetes_apiserver failures caused by host/container clock skew and chrony correction, cite both Datadog agent and syslog/chronyd evidence, and explain this as a containerized host-log fallback case.
+      Excellent answers first handle the empty primary log directory, then inspect the host-mounted log root, identify the kubernetes_apiserver x509 failure and the seed-specific cause, cite both Datadog agent and syslog/kubelet/chrony evidence, explain this as a containerized host-log fallback case, and avoid overclaiming the wrong certificate theory.
     criteria:
-      - name: final identifies x509 not-yet-valid certificate problem
+      - name: final identifies x509 certificate problem for this seed
         source: final
         case_insensitive: true
-        regex: "x509|not yet valid|certificate.*not"
+        regex: '{{CERT_PROBLEM_REGEX}}'
         require_evidence: true
-        evidence_regex: "x509: certificate is not yet valid|certificate is not yet valid"
+        evidence_regex: '{{CERT_EVIDENCE_REGEX}}'
         points: 20
-      - name: final identifies clock skew or time synchronization as root cause
+      - name: final identifies the seed-specific certificate/timing cause
         source: final
         case_insensitive: true
-        regex: "clock|skew|chrony|chronyd|time sync|system clock|notbefore"
+        regex: '{{CERT_CAUSE_REGEX}}'
         require_evidence: true
-        evidence_regex: "chronyd|clock.*skew|System clock|NotBefore|clock synchronized"
+        evidence_regex: '{{CERT_CAUSE_EVIDENCE_REGEX}}'
         points: 20
       - name: final names kubernetes_apiserver check
         source: final
         case_insensitive: true
-        contains: "kubernetes_apiserver"
+        contains: kubernetes_apiserver
         require_evidence: true
         points: 15
       - name: final mentions host-mounted fallback or empty primary logs
         source: final
         case_insensitive: true
-        regex: "host|fallback|empty|mounted"
+        regex: 'host|fallback|empty|mounted'
         points: 10
-      - name: final cites datadog agent.log evidence
+      - name: final cites datadog agent log evidence
         source: final
         case_insensitive: true
-        regex: 'agent\.log|datadog'
+        regex: '{{AGENT_LOG_NAME}}|datadog'
         points: 10
-      - name: final cites syslog or chronyd evidence
+      - name: final cites syslog or time/certificate-system evidence
         source: final
         case_insensitive: true
-        regex: 'syslog|chronyd|chrony|clocksource'
+        regex: '{{SYSLOG_EVIDENCE_REGEX}}'
         points: 10
       - name: commands inspect both empty and host log roots
         source: commands
@@ -231,16 +368,23 @@ cases:
         source: final
         case_insensitive: true
         not: true
-        regex: "remote host|customer host.*accessed|connection_id|hostname"
+        regex: 'remote host|customer host.*accessed|connection_id|hostname'
         points: 5
 
   - id: unsupported-ss-flag-recovery
     title: Recover from unsupported socket command flags without assuming Linux ss parity
+    variables:
+      SS_SUGGESTION: ss -tulpn
+    variants:
+      - id: tulpn-seed-00
+      - id: processes-seed-07
+        variables:
+          SS_SUGGESTION: ss --processes -ltn
     prompt: |-
-      Fake investigation: check listening TCP sockets locally with rshell. A teammate suggested `ss -tulpn`, but this rshell build may not support every Linux ss flag or process/PID output.
+      Fake investigation: collect local listening TCP socket information with rshell. A teammate suggested `{{SS_SUGGESTION}}`, but this rshell build may not support every Linux ss flag or process/PID output.
       Use the skill workflow to discover supported flags, avoid or recover from unsupported flags, then summarize what socket information can be collected safely.
     judge_rubric: |-
-      Excellent answers use help output to discover supported ss flags, avoid unsupported -p/process flags, run a supported command such as ss -tln or ss -tlnH, and clearly state that local listening TCP addresses/ports can be collected while process names/PIDs are unavailable if -p is not supported.
+      Excellent answers use help output to discover supported ss flags, avoid unsupported process/PID flags, run a supported command such as ss -tln or ss -tlnH, and clearly state that local listening TCP addresses/ports can be collected while process names/PIDs are unavailable if process flags are not supported.
     criteria:
       - name: commands run help ss or initial help
         source: commands
@@ -249,9 +393,9 @@ cases:
         points: 20
       - name: commands run supported ss command
         source: commands
-        regex: "ss -tln|ss -ltn|ss -tlnH|ss -Htnl"
+        regex: 'ss -tln|ss -ltn|ss -tlnH|ss -Htnl'
         points: 20
-      - name: avoids unsupported ss -p command in chosen command list
+      - name: avoids unsupported ss process command in chosen command list
         source: commands
         not: true
         regex: 'ss [^\n]*-[a-zA-Z]*p|ss [^\n]*--process'
@@ -259,19 +403,19 @@ cases:
       - name: final explains process or PID information is unavailable or unsupported
         source: final
         case_insensitive: true
-        regex: "unsupported|not supported|process|pid|-p"
+        regex: 'unsupported|not supported|process|pid|-p|--process'
         require_evidence: true
         evidence_source: transcript
-        evidence_regex: "help ss|Usage: ss|unsupported|unknown flag|process|pid|-p"
+        evidence_regex: 'help ss|Usage: ss|unsupported|unknown flag|process|pid|-p|--process'
         points: 20
       - name: final mentions supported listening TCP socket collection and local limitations
         source: final
         case_insensitive: true
-        regex: "ss -tln|listening|tcp sockets|local|available|limited"
+        regex: 'ss -tln|listening|tcp sockets|local|available|limited'
         points: 15
       - name: avoids remote action tool
         source: transcript
         case_insensitive: true
         not: true
-        contains: "datadog_remote_action"
+        contains: datadog_remote_action
         points: 10

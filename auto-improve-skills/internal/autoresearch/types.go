@@ -34,6 +34,16 @@ type Case struct {
 	JudgeRubric string            `json:"judge_rubric,omitempty" yaml:"judge_rubric,omitempty"`
 	Variables   map[string]string `json:"variables,omitempty" yaml:"variables,omitempty"`
 	Criteria    []Criterion       `json:"criteria" yaml:"criteria"`
+	Variants    []CaseVariant     `json:"variants,omitempty" yaml:"variants,omitempty"`
+}
+
+// CaseVariant clones a case template with deterministic seed-specific
+// variables. Variants let benchmark suites cover many fixture realizations
+// without duplicating the full prompt/rubric/criteria block.
+type CaseVariant struct {
+	ID        string            `json:"id" yaml:"id"`
+	Title     string            `json:"title,omitempty" yaml:"title,omitempty"`
+	Variables map[string]string `json:"variables,omitempty" yaml:"variables,omitempty"`
 }
 
 // Criterion is a deterministic check over the final answer, command list, tool
@@ -182,8 +192,69 @@ func LoadSuite(path string) (Suite, error) {
 		if len(tc.Criteria) == 0 {
 			return Suite{}, fmt.Errorf("case %q has no criteria", tc.ID)
 		}
+		for j, variant := range tc.Variants {
+			if strings.TrimSpace(variant.ID) == "" {
+				return Suite{}, fmt.Errorf("case %q variant %d is missing id", tc.ID, j)
+			}
+		}
 	}
 	return suite, nil
+}
+
+// ExpandCaseVariants expands template cases with variants into concrete cases.
+// A case without variants is returned unchanged. A case with variants is treated
+// as a template and is not emitted by itself; include an explicit variant for a
+// baseline seed when the original fixture should remain in the suite.
+func ExpandCaseVariants(cases []Case) ([]Case, error) {
+	expanded := make([]Case, 0, len(cases))
+	seen := map[string]bool{}
+	add := func(tc Case) error {
+		if seen[tc.ID] {
+			return fmt.Errorf("duplicate case id %q after variant expansion", tc.ID)
+		}
+		seen[tc.ID] = true
+		expanded = append(expanded, tc)
+		return nil
+	}
+
+	for _, tc := range cases {
+		variants := tc.Variants
+		tc.Variants = nil
+		if len(variants) == 0 {
+			if err := add(tc); err != nil {
+				return nil, err
+			}
+			continue
+		}
+		for _, variant := range variants {
+			clone := tc
+			clone.ID = tc.ID + "-" + variant.ID
+			if variant.Title != "" {
+				clone.Title = variant.Title
+			} else if clone.Title != "" {
+				clone.Title = clone.Title + " (" + variant.ID + ")"
+			}
+			clone.Variables = mergeRawVariables(tc.Variables, variant.Variables)
+			if err := add(clone); err != nil {
+				return nil, err
+			}
+		}
+	}
+	return expanded, nil
+}
+
+func mergeRawVariables(base, override map[string]string) map[string]string {
+	if len(base) == 0 && len(override) == 0 {
+		return nil
+	}
+	merged := make(map[string]string, len(base)+len(override))
+	for k, v := range base {
+		merged[k] = v
+	}
+	for k, v := range override {
+		merged[k] = v
+	}
+	return merged
 }
 
 // WriteJSON writes v as pretty JSON, creating parent directories.

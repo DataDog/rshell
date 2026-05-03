@@ -165,6 +165,10 @@ func run(casesPath, skillPath, outputPath, rawDir, piBinary, model, mode string,
 	if err != nil {
 		return err
 	}
+	suite.Cases, err = autoresearch.ExpandCaseVariants(suite.Cases)
+	if err != nil {
+		return err
+	}
 	if strings.TrimSpace(logSuite) == "" {
 		logSuite = suiteLogLabel(casesAbs)
 	}
@@ -271,7 +275,7 @@ func ensureLocalRShell(root string) error {
 func selectCases(cases []autoresearch.Case, limit int, caseFilter string) []autoresearch.Case {
 	selected := make([]autoresearch.Case, 0, len(cases))
 	for _, tc := range cases {
-		if caseFilter != "" && tc.ID != caseFilter {
+		if caseFilter != "" && tc.ID != caseFilter && !strings.HasPrefix(tc.ID, caseFilter+"-") {
 			continue
 		}
 		if limit > 0 && len(selected) >= limit {
@@ -283,6 +287,8 @@ func selectCases(cases []autoresearch.Case, limit int, caseFilter string) []auto
 }
 
 func expandCase(tc autoresearch.Case, vars map[string]string) autoresearch.Case {
+	tc.ID = autoresearch.Expand(tc.ID, vars)
+	tc.Title = autoresearch.Expand(tc.Title, vars)
 	tc.Prompt = autoresearch.Expand(tc.Prompt, vars)
 	tc.JudgeRubric = autoresearch.Expand(tc.JudgeRubric, vars)
 	for i := range tc.Criteria {

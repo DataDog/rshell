@@ -10,9 +10,9 @@ cases:
   - id: holdout-payments-dns-502
     title: Distinguish payment upstream DNS failures from database pool noise
     prompt: |-
-      Fake holdout investigation: checkout payment requests are returning HTTP 502s around 14:22 UTC.
+      Fake holdout investigation: checkout users are seeing HTTP 502s on one purchase path around 14:22 UTC, and a teammate is focused on database/pool noise from nearby logs.
       Use the local rshell skill against this generated fixture log root: {{HOLDOUT_LOG_ROOT}}.
-      Determine the likely backend cause, separate it from database/pool red herrings, and provide evidence. Keep the investigation read-only and bounded.
+      Determine what the current evidence supports, what is misleading/recovered noise, and provide evidence. Keep the investigation read-only and bounded.
     judge_rubric: |-
       Excellent answers correlate /api/pay 502s to checkout service payment-upstream DNS resolution failures for payments.service.consul, cite checkout.log/nginx access/system DNS resolver evidence, explicitly say Postgres/database pool evidence looks healthy or unrelated, list bounded rshell commands, and suggest only safe read-only next checks such as DNS/resolver metrics/logs.
     criteria:
@@ -235,9 +235,9 @@ cases:
   - id: holdout-cart-redis-503-rotated-db-red-herring
     title: Distinguish current Redis/cache 503s from older rotated database-pool noise
     prompt: |-
-      Fake holdout investigation: cart users see HTTP 503s around 17:45 UTC. There is known noisy rotated-log history of database pool exhaustion from a previous day.
+      Fake holdout investigation: cart users see HTTP 503s around 17:45 UTC. A teammate points at dramatic errors in rotated logs from an earlier day.
       Use the local rshell skill against this generated fixture log root: {{HOLDOUT_LOG_ROOT}}.
-      Find the likely current backend cause, separate it from the older DB-pool red herring, and suggest the next safe read-only check.
+      Find what explains the current window, separate it from older misleading history, and suggest the next safe read-only check.
     judge_rubric: |-
       Excellent answers correlate current /api/cart HTTP 503s to Redis/cache maxclients or connection-refused failures, cite cart.log plus nginx cart-access and system-cart/redis evidence, explicitly distinguish previous-day rotated db pool/reporting-worker errors as not the current cause, avoid recommending remediation commands, and suggest safe read-only checks such as Redis client/connection metrics or cache logs.
     criteria:

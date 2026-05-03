@@ -6,7 +6,7 @@ Harness for improving `skills/remote-host-diagnostics/SKILL.md` with fixed bench
 
 - `program.md` — instructions given to researcher agents.
 - `skills/remote-host-diagnostics/SKILL.md` — skill being tuned.
-- `benchmarks/remote-host-diagnostics/` — public and holdout suites plus generated fixtures.
+- `benchmarks/remote-host-diagnostics/` — public and holdout suites plus generated fixtures. Public cases use deterministic seeded variants so prompts/fixtures are not one fixed memorization target.
 - `cmd/skillbench`, `cmd/skillfixtures`, `cmd/skilltrain` — Go CLIs. Run any command with `-h` for current flags and defaults.
 - `runs/` — generated benchmark/training outputs.
 
@@ -26,7 +26,7 @@ Training loop:
 go run ./cmd/skilltrain -iters 3 -judge
 ```
 
-`skilltrain` asks for a general skill improvement per iteration, benchmarks the candidate, and accepts it only when quality stays within tolerance and the objective improves.
+`skilltrain` asks for a general skill improvement per iteration, benchmarks the candidate, and accepts it only when quality stays within tolerance and the objective improves. Case templates with `variants:` are expanded into concrete seeded benchmark cases before selection/scoring.
 
 Researcher agents run from the repository root with read, bash, edit, and write tools so they can inspect the public benchmark suite and the best public `result.json`. The prompt forbids reading, listing, grepping, or editing holdout-related files, folders, fixtures, run outputs, or results.
 
