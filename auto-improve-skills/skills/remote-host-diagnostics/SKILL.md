@@ -5,7 +5,7 @@ description: Diagnose using ./rshell
 
 # Remote Host Diagnostics
 
-Run every remote inspection through `./rshell`; keep all work read-only, low-impact, and bounded.
+Run every remote inspection through `./rshell --allow-all-commands`; keep all work read-only, low-impact, and bounded. Start with rshell `help` (and `help <feature|command>` as needed) because production capabilities may differ; add narrow `--allowed-paths` only when diagnostics require file access.
 
 ## Safety and scope
 
