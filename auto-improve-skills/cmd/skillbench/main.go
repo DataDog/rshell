@@ -13,11 +13,13 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"sort"
 	"strings"
 	"sync"
@@ -396,10 +398,17 @@ func runCase(root, rawDir, skillPath, piBinary, model, mode string, tc autoresea
 		"--model", model,
 		prompt,
 	}
+	workspaceDir, cleanupWorkspace, workspaceErr := prepareBenchmarkCaseWorkspace(root)
+	if workspaceErr != nil {
+		result.Error = appendErr(result.Error, "prepare isolated benchmark workspace: "+workspaceErr.Error())
+		return result
+	}
+	defer cleanupWorkspace()
+
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, piBinary, args...)
-	cmd.Dir = root
+	cmd.Dir = workspaceDir
 	cmd.Env = autoresearch.EnvWithExecutableDir(piBinary)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
@@ -435,6 +444,78 @@ func runCase(root, rawDir, skillPath, piBinary, model, mode string, tc autoresea
 		}
 	}
 	return result
+}
+
+func prepareBenchmarkCaseWorkspace(root string) (string, func(), error) {
+	workspaceDir, err := os.MkdirTemp("", "skillbench-case-*")
+	if err != nil {
+		return "", nil, err
+	}
+	cleanup := func() { _ = os.RemoveAll(workspaceDir) }
+
+	rshellPath, err := localRShellExecutable(root)
+	if err != nil {
+		cleanup()
+		return "", nil, err
+	}
+	if err := linkOrCopyExecutable(rshellPath, filepath.Join(workspaceDir, "rshell")); err != nil {
+		cleanup()
+		return "", nil, err
+	}
+	return workspaceDir, cleanup, nil
+}
+
+func localRShellExecutable(root string) (string, error) {
+	candidates := []string{filepath.Join(root, "rshell")}
+	if runtime.GOOS == "windows" {
+		candidates = append(candidates, filepath.Join(root, "rshell.exe"))
+	}
+	for _, candidate := range candidates {
+		info, err := os.Stat(candidate)
+		if err != nil || info.IsDir() {
+			continue
+		}
+		if runtime.GOOS == "windows" || info.Mode()&0o111 != 0 {
+			return candidate, nil
+		}
+	}
+	return "", fmt.Errorf("./rshell not found or not executable under %s", root)
+}
+
+func linkOrCopyExecutable(src, dst string) error {
+	if err := os.Symlink(src, dst); err == nil {
+		return nil
+	} else if copyErr := copyExecutable(src, dst); copyErr != nil {
+		return fmt.Errorf("symlink %s to %s: %v; copy: %w", src, dst, err, copyErr)
+	}
+	return nil
+}
+
+func copyExecutable(src, dst string) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+
+	info, err := in.Stat()
+	if err != nil {
+		return err
+	}
+	mode := info.Mode().Perm()
+	if mode&0o111 == 0 {
+		mode |= 0o755
+	}
+	out, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_EXCL, mode)
+	if err != nil {
+		return err
+	}
+	_, copyErr := io.Copy(out, in)
+	closeErr := out.Close()
+	if copyErr != nil {
+		return copyErr
+	}
+	return closeErr
 }
 
 func benchmarkPrompt(tc autoresearch.Case) string {

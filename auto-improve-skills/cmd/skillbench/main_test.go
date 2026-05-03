@@ -8,8 +8,10 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/DataDog/rshell/auto-improve-skills/internal/autoresearch"
 )
@@ -104,6 +106,71 @@ func TestMeasureSkillSize(t *testing.T) {
 	}
 	if stats.Bytes != len(content) || stats.Chars != len(content) || stats.Words != 4 || stats.EstimatedTokens != 5 {
 		t.Fatalf("unexpected stats: %+v", stats)
+	}
+}
+
+func TestPrepareBenchmarkCaseWorkspaceIsolatesAgentCWD(t *testing.T) {
+	root := t.TempDir()
+	rshellPath := filepath.Join(root, "rshell")
+	if err := os.WriteFile(rshellPath, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	workspaceDir, cleanup, err := prepareBenchmarkCaseWorkspace(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cleanup()
+
+	if rel, err := filepath.Rel(root, workspaceDir); err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(os.PathSeparator)) {
+		t.Fatalf("workspace %q is inside repo root %q", workspaceDir, root)
+	}
+	if _, err := os.Stat(filepath.Join(workspaceDir, "rshell")); err != nil {
+		t.Fatalf("workspace does not expose ./rshell: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(workspaceDir, "=252"), []byte("junk"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "=252")); !os.IsNotExist(err) {
+		t.Fatalf("unexpected file written under repo root: %v", err)
+	}
+
+	cleanup()
+	if _, err := os.Stat(workspaceDir); !os.IsNotExist(err) {
+		t.Fatalf("workspace cleanup left %q: %v", workspaceDir, err)
+	}
+}
+
+func TestRunCaseUsesIsolatedWorkspaceForPiProcess(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("uses a POSIX shell script as the fake pi binary")
+	}
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "rshell"), []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	fakePI := filepath.Join(root, "fake-pi")
+	fakePIScript := `#!/bin/sh
+printf dirty > =252
+printf '%s\n' '{"type":"message_end","message":{"role":"assistant","content":[{"type":"text","text":"done"}]}}'
+`
+	if err := os.WriteFile(fakePI, []byte(fakePIScript), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	rawDir := filepath.Join(root, "raw")
+	if err := os.MkdirAll(rawDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	result := runCase(root, rawDir, filepath.Join(root, "skill"), fakePI, "test-model", "live", autoresearch.Case{ID: "case", Prompt: "prompt"}, 5*time.Second)
+	if result.Error != "" {
+		t.Fatalf("runCase error = %q", result.Error)
+	}
+	if result.FinalAnswer != "done" {
+		t.Fatalf("FinalAnswer = %q, want done", result.FinalAnswer)
+	}
+	if _, err := os.Stat(filepath.Join(root, "=252")); !os.IsNotExist(err) {
+		t.Fatalf("pi process wrote into repo root: %v", err)
 	}
 }
 

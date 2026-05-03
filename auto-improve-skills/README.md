@@ -57,4 +57,6 @@ Generated fixtures and run outputs are intentionally not committed.
 
 The harness starts nested `pi` agents with `--no-context-files` so they do not load `AGENTS.md`/`CLAUDE.md` from this directory, parent directories, or the global Pi agent directory. Benchmark/researcher runs also disable discovered extensions, prompt templates, and skills except for the explicitly supplied benchmark skill.
 
+Benchmark agents run from a disposable temporary working directory containing only a link/copy of `./rshell`, so accidental relative-path writes from model-generated shell commands do not dirty the checkout.
+
 If you start `pi` manually inside this nested directory and want the same behavior, use `pi --no-context-files` (or `pi -nc`).
