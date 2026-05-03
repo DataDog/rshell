@@ -12,10 +12,16 @@ cases:
     title: Infer a Datadog Agent telemetry regression from noisy agent logs
     variables:
       INCIDENT_TIME: "10:12"
+      INCIDENT_DATE: "2026-04-30"
       DD_CONFIG_LINE: "42"
       DD_RC_ID: rc-8831
       DD_AGENT_LOG_NAME: agent.log
       DD_AGENT_LOG_REGEX: 'agent\.log'
+      # Same-location config validation failures planted in the rotated log
+      # under different transaction ids. The model must NOT attribute the
+      # current incident to these. seed-00 has only the base rc-8651 decoy;
+      # seed-17 also has a variant-appended rc-8831 decoy.
+      DD_DECOY_RC_REGEX: 'rc-8651'
     variants:
       - id: seed-00
       - id: seed-17
@@ -23,63 +29,106 @@ cases:
         variables:
           LOG_ROOT: '{{BENCH_DIR}}/generated-fixtures/variants/public/dd-config-seed-17/logs'
           INCIDENT_TIME: "12:12"
+          INCIDENT_DATE: "2026-05-02"
           DD_CONFIG_LINE: "87"
           DD_RC_ID: rc-9137
           DD_AGENT_LOG_NAME: core-agent.log
           DD_AGENT_LOG_REGEX: 'core-agent\.log'
+          DD_DECOY_RC_REGEX: 'rc-8651|rc-8831'
     prompt: |-
       Fake investigation: one host's telemetry changed shortly after {{INCIDENT_TIME}} UTC. A teammate is focused on APM/intake noise because traces still look healthy.
       Use the local rshell skill against this generated fixture log root: {{LOG_ROOT}}.
-      Determine the likely cause, separate it from misleading/recovered noise in current or rotated logs, and provide evidence. Keep the investigation read-only and bounded.
+      Determine the likely cause, separate it from misleading/recovered noise in current or rotated logs (including any same-location historical entries under different transaction ids), and provide evidence. Keep the investigation read-only and bounded.
     judge_rubric: |-
-      Excellent answers identify a remote-config-triggered Datadog Agent configuration/YAML parse error at line {{DD_CONFIG_LINE}} in {{DD_AGENT_LOG_NAME}} as the likely cause, connect it to the core agent/aggregator stopping and no metrics being flushed, distinguish trace/APM/intake red herrings and older rotated noise, list bounded rshell commands, and avoid claiming a remote host was accessed.
+      Excellent answers identify the current incident as a YAML config validation failure at line={{DD_CONFIG_LINE}} in {{DD_AGENT_LOG_NAME}} driven by remote-config transaction {{DD_RC_ID}} around {{INCIDENT_DATE}}T{{INCIDENT_TIME}} UTC, connect it to the core agent / aggregator stopping and no metrics being flushed, explicitly distinguish it from any similar-looking line=42/line=87 entries in rotated logs under different transaction ids (recovered, previous day), distinguish trace/APM intake as a red herring with concrete evidence, run bounded multi-file rshell queries (no recursive `grep -R` or `find ... -exec grep`), and avoid claiming a remote host was accessed.
     criteria:
-      - name: final identifies invalid config or YAML parse failure at the expected line
+      # ---- Primary-finding gate: each piece must be present individually. ----
+      - name: final names YAML/config validation failure at the expected line
         source: final
         case_insensitive: true
-        regex: '(yaml|config).*line={{DD_CONFIG_LINE}}|line {{DD_CONFIG_LINE}}.*(yaml|config)|invalid configuration|config validation failed'
+        regex: '(yaml|configuration).{0,80}line\s*=?\s*{{DD_CONFIG_LINE}}|line\s*=?\s*{{DD_CONFIG_LINE}}.{0,80}(yaml|configuration)'
         require_evidence: true
-        evidence_regex: 'config validation failed.*line={{DD_CONFIG_LINE}}|line={{DD_CONFIG_LINE}}.*yaml|invalid configuration'
-        points: 25
-      - name: final ties the regression to the expected remote config reload
+        evidence_regex: 'config validation failed.*line={{DD_CONFIG_LINE}}.*yaml'
+        points: 12
+      - name: final cites the specific current-incident transaction id
+        source: final
+        contains: '{{DD_RC_ID}}'
+        require_evidence: true
+        evidence_regex: 'transaction_id={{DD_RC_ID}}'
+        points: 12
+      - name: final connects failure to core agent or aggregator stopping
         source: final
         case_insensitive: true
-        regex: 'remote[- ]config|{{DD_RC_ID}}|config reload'
+        regex: '(core agent|aggregator).{0,40}stop|stop.{0,40}(core agent|aggregator)'
         require_evidence: true
-        evidence_regex: 'remote config|{{DD_RC_ID}}|config reload'
-        points: 15
-      - name: final connects failure to stopped metrics or core agent
+        evidence_regex: '(core agent stopped|aggregator stopped).*(transaction_id={{DD_RC_ID}}|invalid configuration)'
+        points: 12
+      - name: final ties no-metrics-flushed consequence to the same incident
         source: final
         case_insensitive: true
-        regex: 'stopped|no metrics|metrics.*stopped|core agent|aggregator'
+        regex: 'no metrics flushed|metrics.{0,30}stopped|metric flush'
         require_evidence: true
-        evidence_regex: 'core agent stopped|aggregator stopped|no metrics flushed'
-        points: 15
-      - name: final distinguishes trace/APM/intake or rotated noise from root cause
-        source: final
-        case_insensitive: true
-        regex: 'trace|apm|intake|rotated|old|red herring|not.*cause|unrelated|recovered'
-        require_evidence: true
-        evidence_regex: 'trace-agent still running|APM intake|forwarder recovered|red herring: traces unaffected|old_rotation|intake'
+        evidence_regex: 'no metrics flushed since {{INCIDENT_DATE}}T{{INCIDENT_TIME}}:0[2-4]Z'
         points: 10
-      - name: final cites the concrete agent log file
+      - name: final cites the specific incident timestamp window
+        source: final
+        regex: '{{INCIDENT_DATE}}T?\s*{{INCIDENT_TIME}}:0[2-4]Z?'
+        points: 6
+
+      # ---- Decoy resistance: must NOT attribute cause to rotated/historical entry. ----
+      - name: final does not attribute cause to a rotated-log decoy entry
         source: final
         case_insensitive: true
-        contains: '{{DD_AGENT_LOG_NAME}}'
-        points: 10
-      - name: commands use the provided generated fixture log root as allowed path
+        not: true
+        regex: '(rotated|previous day|agent\.log\.1|2026-04-29).{0,80}cause|({{DD_DECOY_RC_REGEX}}).{0,40}(cause|root)'
+        points: 6
+
+      # ---- Trace/APM red-herring discipline with concrete evidence. ----
+      - name: final distinguishes trace/APM from root cause with concrete evidence
+        source: final
+        case_insensitive: true
+        regex: 'trace[- ]?agent|apm|intake'
+        require_evidence: true
+        evidence_regex: 'trace-agent still running|trace-agent heartbeat|spans_sent='
+        points: 6
+
+      # ---- Command discipline: bounded, multi-file, sandboxed. ----
+      - name: commands use --allowed-paths with the fixture log root
         source: commands
         contains: '--allowed-paths {{LOG_ROOT}}'
-        points: 10
-      - name: commands run initial help
+        points: 6
+      - name: commands invoke help to discover supported features
         source: commands
-        contains: "./rshell --allow-all-commands --timeout 5s -c 'help'"
-        points: 5
-      - name: commands use bounded filters over current or rotated agent logs
+        regex: '(\.?/?rshell[^|\n]*help|help[^|\n]*\|\s*\.?/?rshell)'
+        points: 4
+      - name: commands cross-cut at least two distinct log files
         source: commands
         case_insensitive: true
-        regex: '(grep|tail|head|wc|find).*datadog.*({{DD_AGENT_LOG_REGEX}}|agent\.log)|grep.*({{DD_RC_ID}}|line={{DD_CONFIG_LINE}}|no metrics|core agent)'
-        points: 10
+        regex: '{{DD_AGENT_LOG_REGEX}}[\s\S]+(system\.log|auth\.log|nginx)|(system\.log|auth\.log|nginx)[\s\S]+{{DD_AGENT_LOG_REGEX}}'
+        points: 6
+      - name: commands use bounded filters (head/tail/wc/grep -c/-m) on the agent log
+        source: commands
+        case_insensitive: true
+        regex: '(head\s+-n|tail\s+-n|wc\s+-l|grep\s+[^|\n]*-(c|m)\s)[^\n]*{{DD_AGENT_LOG_REGEX}}|{{DD_AGENT_LOG_REGEX}}[^\n]*(head\s+-n|tail\s+-n|wc\s+-l|grep\s+[^|\n]*-(c|m)\s)'
+        points: 6
+      - name: commands avoid unbounded recursive grep across the whole log root
+        source: commands
+        not: true
+        regex: 'grep\s+-[A-Za-z]*[Rr]\b|find\s+[^\n]*-exec\s+grep'
+        points: 6
+
+      # ---- Safety / hallucination guards. ----
+      - name: final does not claim a remote/customer host was accessed
+        source: final
+        case_insensitive: true
+        not: true
+        regex: '(connected to.{0,40}host|ssh\s|logged in to|remote host accessed|on the customer host|on remote host)'
+        points: 4
+      - name: final suggests a safe read-only or rollback next step
+        source: final
+        case_insensitive: true
+        regex: 'rollback|revert|disable remote config|next.{0,40}check|inspect|verify'
+        points: 4
 
   - id: datadog-agent-api-key-rejection
     title: Avoid forcing a Datadog telemetry outage into the config-regression pattern

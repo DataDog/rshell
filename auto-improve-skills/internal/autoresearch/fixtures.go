@@ -245,7 +245,7 @@ func generateContainerExpiredAgentLog() []string {
 		211: "ERROR collector check failed check=kubernetes_apiserver error=\"x509: certificate has expired or is not yet valid: current time 2026-05-02T06:03:31Z is after 2026-05-01T23:59:59Z\" endpoint=https://10.96.0.1:443",
 		212: "WARN collector skipped check=kubernetes_apiserver reason=\"tls handshake failure\" next_retry=15s",
 		286: "ERROR collector check failed check=kubernetes_apiserver error=\"x509: certificate has expired\" tls_server_name=kubernetes.default.svc cert_not_after=2026-05-01T23:59:59Z",
-		420: "INFO collector check completed check=container status=OK latency_ms=18 note=\"red herring: container check healthy\"",
+		420: "INFO collector check completed check=container status=OK latency_ms=18",
 		522: "ERROR collector check failed check=kubernetes_apiserver error=\"x509: certificate has expired\" endpoint=https://10.96.0.1:443",
 	}
 	checks := []string{"container", "docker", "kubelet", "process", "network", "kubernetes_state_core"}
@@ -337,7 +337,7 @@ func generateDatadogAgentLog() []string {
 		918:  "INFO remote config poll complete transaction_id=rc-8832 changed=false products=agent_config,apm_sampling",
 		969:  "ERROR collector scheduler disabled because core agent is not running",
 		1031: "WARN no metrics flushed since 2026-04-30T10:12:03Z reason=\"invalid configuration\"",
-		1120: "INFO trace-agent heartbeat status=OK spans_sent=293 note=\"red herring: traces unaffected\"",
+		1120: "INFO trace-agent heartbeat status=OK spans_sent=293",
 	}
 
 	lines := make([]string, 0, 1200)
@@ -365,12 +365,21 @@ func generateDatadogAgentLog() []string {
 func generateDatadogAgentRotatedLog() []string {
 	start := time.Date(2026, 4, 29, 23, 45, 0, 0, time.UTC)
 	checks := []string{"cpu", "disk", "network", "ntp", "postgres", "redisdb", "http_check", "process", "container"}
+	// Decoy: a same-location (datadog.yaml line=42) config validation failure on
+	// the previous day, recovered after a few retries. A naive grep "line=42"
+	// across agent.log* will surface this rotated entry alongside the current
+	// incident; the model must use timestamps and the transaction id to
+	// disambiguate. Indices reuse existing slots so total line count stays 700.
 	events := map[int]string{
 		14:  "INFO agent starting version=7.98.1 build=fixture host=checkout-01",
 		119: "ERROR config validation failed file=/etc/datadog-agent/conf.d/http_check.d/conf.yaml line=17 error=\"missing required field url\" check=http_check recovered=true",
 		131: "INFO collector check recovered check=http_check status=OK after_fix=true",
 		311: "WARN forwarder retryable error domain=logs endpoint=/api/v2/logs status=503 retry_in=15s recovered=true",
 		325: "INFO forwarder recovered domain=logs endpoint=/api/v2/logs status=202",
+		333: "ERROR config validation failed file=/etc/datadog-agent/datadog.yaml line=42 column=17 key=logs_config error=\"yaml: mapping values are not allowed in this context\" transaction_id=rc-8651",
+		334: "WARN aggregator paused; pending metric flush deferred transaction_id=rc-8651",
+		340: "INFO config validation recovered transaction_id=rc-8651 attempt=3 status=OK",
+		342: "INFO core agent resumed after config rollback transaction_id=rc-8651",
 		512: "INFO remote config poll complete transaction_id=rc-8799 changed=false",
 	}
 
@@ -464,8 +473,8 @@ func generateCheckoutServiceLog() []string {
 		614: "WARN service=checkout circuit breaker opened dependency=postgres route=/api/checkout failure_rate=0.86 window=60s",
 		639: "ERROR service=checkout request failed id=req-1021 route=/api/checkout status=502 error=\"upstream checkout worker unavailable after db timeout\"",
 		683: "INFO service=checkout healthcheck status=degraded dependency=postgres pool=checkout_rw active=120 max=120",
-		777: "WARN service=checkout cache miss spike cache=redis route=/api/cart note=\"not correlated with checkout 500s\"",
-		910: "INFO service=checkout payment gateway status=OK note=\"red herring resolved before incident\"",
+		777: "WARN service=checkout cache miss spike cache=redis route=/api/cart cache_hit_rate=0.71",
+		910: "INFO service=checkout payment gateway status=OK latency_ms=18",
 	}
 
 	lines := make([]string, 0, 1100)
@@ -497,7 +506,7 @@ func generateCheckoutServiceRotatedLog() []string {
 		case i == 188:
 			lines = append(lines, fmt.Sprintf("%s ERROR service=checkout request failed id=req-old-188 route=/api/checkout status=500 error=\"feature flag parse failed\" recovered=true", isoTime(dt)))
 		case i == 190:
-			lines = append(lines, fmt.Sprintf("%s INFO service=checkout recovered route=/api/checkout status=200 note=\"old rotation red herring\"", isoTime(dt)))
+			lines = append(lines, fmt.Sprintf("%s INFO service=checkout recovered route=/api/checkout status=200", isoTime(dt)))
 		case i%73 == 0:
 			lines = append(lines, fmt.Sprintf("%s WARN service=checkout slow request id=req-old-%d route=/api/cart latency_ms=%d recovered=true", isoTime(dt), i, 500+i%50))
 		default:
@@ -686,7 +695,7 @@ func generateContainerAgentLog() []string {
 		315: "WARN collector skipped check=kubernetes_apiserver reason=\"tls handshake failure\" next_retry=15s",
 		374: "ERROR collector check failed check=kubernetes_apiserver error=\"x509: certificate is not yet valid: current time 2026-04-30T03:06:14Z is before 2026-04-30T10:58:00Z\" endpoint=https://10.96.0.1:443",
 		438: "ERROR collector check failed check=kubernetes_apiserver error=\"x509: certificate is not yet valid\" tls_server_name=kubernetes.default.svc",
-		512: "INFO collector check completed check=container status=OK latency_ms=22 note=\"red herring: container check healthy\"",
+		512: "INFO collector check completed check=container status=OK latency_ms=22",
 		640: "WARN flare skipped reason=\"benchmark read-only fixture\"",
 		714: "ERROR collector check failed check=kubernetes_apiserver error=\"x509: certificate is not yet valid\" endpoint=https://10.96.0.1:443",
 	}
