@@ -25,4 +25,4 @@ train:
 		-iters 3 \
 		-judge \
 		-feedback-llm \
-		-loop-count 50
+		-loop-count 100
