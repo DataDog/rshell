@@ -28,5 +28,5 @@ reset-skill:
 train:
 	go run ./cmd/skilltrain \
 		-model openai-codex/gpt-5.5 \
-		-iters 3 \
+		-iters 100 \
 		-judge
