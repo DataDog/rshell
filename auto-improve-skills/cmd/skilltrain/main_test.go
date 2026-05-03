@@ -10,32 +10,35 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/DataDog/rshell/auto-improve-skills/internal/autoresearch"
 )
 
 func TestFormatSkilltrainLogUsesSemanticColors(t *testing.T) {
 	ctx := defaultLogContext()
-	plain := formatSkilltrainLog(logSemanticSuccess, ctx, "accepted skill change", false)
-	if plain != "skilltrain | ok    accepted skill change" {
+	at := time.Date(2026, 5, 4, 12, 34, 56, 789000000, time.UTC)
+	plain := formatSkilltrainLogAt(logSemanticSuccess, ctx, "accepted skill change", false, at)
+	if plain != "skilltrain | 2026-05-04T12:34:56.789Z | ok    accepted skill change" {
 		t.Fatalf("plain log line = %q", plain)
 	}
 
-	colored := formatSkilltrainLog(logSemanticSuccess, ctx, "accepted skill change", true)
-	want := ansiDim + "skilltrain" + ansiReset + " | " + ansiGreen + "ok    accepted skill change" + ansiReset
+	colored := formatSkilltrainLogAt(logSemanticSuccess, ctx, "accepted skill change", true, at)
+	want := ansiDim + "skilltrain" + ansiReset + " | " + ansiDim + "2026-05-04T12:34:56.789Z" + ansiReset + " | " + ansiGreen + "ok    accepted skill change" + ansiReset
 	if colored != want {
 		t.Fatalf("colored log line = %q, want %q", colored, want)
 	}
 }
 
 func TestFormatSkilltrainLogAddsUsefulContextOnlyWhenPresent(t *testing.T) {
-	plain := formatSkilltrainLog(logSemanticBenchmark, suiteLogContext("public"), "benchmark result", false)
-	if plain != "skilltrain | bench [public] benchmark result" {
+	at := time.Date(2026, 5, 4, 12, 34, 56, 789000000, time.UTC)
+	plain := formatSkilltrainLogAt(logSemanticBenchmark, suiteLogContext("public"), "benchmark result", false, at)
+	if plain != "skilltrain | 2026-05-04T12:34:56.789Z | bench [public] benchmark result" {
 		t.Fatalf("plain log line = %q", plain)
 	}
 
-	withoutSuite := formatSkilltrainLog(logSemanticBenchmark, suiteLogContext(""), "benchmark result", false)
-	if withoutSuite != "skilltrain | bench benchmark result" {
+	withoutSuite := formatSkilltrainLogAt(logSemanticBenchmark, suiteLogContext(""), "benchmark result", false, at)
+	if withoutSuite != "skilltrain | 2026-05-04T12:34:56.789Z | bench benchmark result" {
 		t.Fatalf("no-suite log line = %q", withoutSuite)
 	}
 }

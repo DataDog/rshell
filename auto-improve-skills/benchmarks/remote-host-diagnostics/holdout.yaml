@@ -33,7 +33,7 @@ cases:
       - name: final distinguishes database/postgres pool as not root cause
         source: final
         case_insensitive: true
-        regex: "database|postgres|pool|db"
+        regex: "(database|postgres|pool|db).{0,80}(healthy|OK|not.{0,40}cause|not supported|unrelated|noise|red herring)|(healthy|OK|not.{0,40}cause|not supported|unrelated|noise|red herring).{0,80}(database|postgres|pool|db)"
         require_evidence: true
         evidence_regex: "postgres health status=OK pool=checkout_rw active=43|connections active=43|max=120"
         points: 15
@@ -54,7 +54,7 @@ cases:
         points: 10
       - name: commands use provided holdout log root as allowed path
         source: commands
-        contains: "--allowed-paths {{HOLDOUT_LOG_ROOT}}"
+        regex: "--allowed-paths(?:=|\\s+){{HOLDOUT_LOG_ROOT}}"
         points: 5
       - name: commands use bounded filters across relevant logs
         source: commands
@@ -108,7 +108,7 @@ cases:
         points: 10
       - name: commands use provided holdout log root as allowed path
         source: commands
-        contains: "--allowed-paths {{HOLDOUT_LOG_ROOT}}"
+        regex: "--allowed-paths(?:=|\\s+){{HOLDOUT_LOG_ROOT}}"
         points: 5
       - name: commands inspect worker plus auth or deploy/system context with bounded filters
         source: commands
@@ -147,8 +147,8 @@ cases:
         case_insensitive: true
         regex: "\\b42\\b|\\b4[0-9]\\b|about 40|roughly 40|~40|dozens"
         require_evidence: true
-        evidence_source: transcript
-        evidence_regex: "\\b42\\b|203\\.0\\.113\\.66|Failed password"
+        evidence_source: tool_results
+        evidence_regex: "(?m)(^|\\n)\\s*(?:[^:\\n]+:)?(?:42|4[0-9])(?:\\s+[^ \\n]+)?\\s*(?:$|\\n)"
         points: 15
       - name: final states same source had accepted password login for backup
         source: final
@@ -175,7 +175,7 @@ cases:
         points: 5
       - name: commands use provided holdout log root as allowed path
         source: commands
-        contains: "--allowed-paths {{HOLDOUT_LOG_ROOT}}"
+        regex: "--allowed-paths(?:=|\\s+){{HOLDOUT_LOG_ROOT}}"
         points: 5
 
   - id: holdout-datadog-api-key-not-yaml
@@ -219,7 +219,7 @@ cases:
         points: 10
       - name: commands use provided holdout log root as allowed path
         source: commands
-        contains: "--allowed-paths {{HOLDOUT_LOG_ROOT}}"
+        regex: "--allowed-paths(?:=|\\s+){{HOLDOUT_LOG_ROOT}}"
         points: 5
       - name: commands use bounded filters for Datadog/API-key evidence
         source: commands
@@ -258,7 +258,7 @@ cases:
       - name: final distinguishes old database pool rotated-log noise
         source: final
         case_insensitive: true
-        regex: "old|rotated|previous day|red herring|not.*current|unrelated|db pool|database"
+        regex: "(old|rotated|previous day|red herring|not.{0,20}current|unrelated).{0,100}(db pool|database|postgres|cart\\.log\\.1|reporting-worker)|(db pool|database|postgres|cart\\.log\\.1|reporting-worker).{0,100}(old|rotated|previous day|red herring|not.{0,20}current|unrelated)"
         require_evidence: true
         evidence_regex: "cart\\.log\\.1|db pool exhausted.*active=100 max=100|2026-04-30T17:[34][0-9]|suspected_client=reporting-worker"
         points: 15
@@ -286,7 +286,7 @@ cases:
         source: final
         case_insensitive: true
         not: true
-        regex: '\b(restart|kill|delete|apply)\b|edit\s+\S+config'
+        regex: '(?m)(^|\n)\s*(?:[-*]\s*)?(?:(?:restart|kill|delete|apply)\b|edit\s+\S+config|(?:run|execute|use|issue|try|please|fix by|remediate by)\b[^\n]{0,120}(?:\brestart\b|\bkill\b|\bdelete\b|\bapply\b|edit\s+\S+config))'
         points: 5
       - name: final suggests safe read-only Redis/cache next check
         source: final

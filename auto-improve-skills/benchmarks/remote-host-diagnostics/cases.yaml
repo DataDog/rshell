@@ -95,7 +95,7 @@ cases:
       # ---- Command discipline: bounded, multi-file, sandboxed. ----
       - name: commands use --allowed-paths with the fixture log root
         source: commands
-        contains: '--allowed-paths {{LOG_ROOT}}'
+        regex: '--allowed-paths(?:=|\s+){{LOG_ROOT}}'
         points: 6
       - name: commands invoke help to discover supported features
         source: commands
@@ -196,7 +196,7 @@ cases:
       # ---- Command discipline: bounded, multi-file, sandboxed. ----
       - name: commands use --allowed-paths with the fixture log root
         source: commands
-        contains: '--allowed-paths {{LOG_ROOT}}'
+        regex: '--allowed-paths(?:=|\s+){{LOG_ROOT}}'
         points: 5
       - name: commands invoke help to discover supported features
         source: commands
@@ -241,6 +241,7 @@ cases:
     variables:
       SSH_SOURCE_IP: 198.51.100.23
       SSH_FAILURE_COUNT_REGEX: '\b96\b|\b9[0-9]\b|about 100|roughly 100|~100|hundred'
+      SSH_FAILURE_COUNT_EVIDENCE_REGEX: '(?m)(^|\n)\s*(?:[^:\n]+:)?(?:96|9[0-9])(?:\s+[^ \n]+)?\s*(?:$|\n)'
       AUTH_LOG_NAME: auth.log
       OTHER_ACCEPTED_REGEX: '203\.0\.113\.8|198\.51\.100\.77|different IP|different source'
       OTHER_ACCEPTED_EVIDENCE_REGEX: 'Accepted publickey.*(203\.0\.113\.8|198\.51\.100\.77)'
@@ -252,6 +253,7 @@ cases:
           LOG_ROOT: '{{BENCH_DIR}}/generated-fixtures/variants/public/ssh-seed-29/logs'
           SSH_SOURCE_IP: 192.0.2.88
           SSH_FAILURE_COUNT_REGEX: '\b73\b|\b7[0-9]\b|about 70|roughly 70|~70|dozens'
+          SSH_FAILURE_COUNT_EVIDENCE_REGEX: '(?m)(^|\n)\s*(?:[^:\n]+:)?(?:73|7[0-9])(?:\s+[^ \n]+)?\s*(?:$|\n)'
           AUTH_LOG_NAME: secure.log
           OTHER_ACCEPTED_REGEX: '203\.0\.113\.19|different IP|different source'
           OTHER_ACCEPTED_EVIDENCE_REGEX: 'Accepted publickey.*203\.0\.113\.19'
@@ -279,8 +281,8 @@ cases:
         case_insensitive: true
         regex: '{{SSH_FAILURE_COUNT_REGEX}}'
         require_evidence: true
-        evidence_source: transcript
-        evidence_regex: '{{SSH_FAILURE_COUNT_REGEX}}|{{SSH_SOURCE_IP}}|Failed password'
+        evidence_source: tool_results
+        evidence_regex: '{{SSH_FAILURE_COUNT_EVIDENCE_REGEX}}'
         points: 15
       - name: final says there was no current successful login from the suspicious source
         source: final
@@ -300,7 +302,7 @@ cases:
         points: 10
       - name: commands use --allowed-paths with the fixture log root
         source: commands
-        contains: '--allowed-paths {{LOG_ROOT}}'
+        regex: '--allowed-paths(?:=|\s+){{LOG_ROOT}}'
         points: 5
       - name: commands use grep/wc/sort/uniq or similarly bounded filters
         source: commands
@@ -311,7 +313,7 @@ cases:
         source: final
         case_insensitive: true
         not: true
-        regex: 'compromised|compromise confirmed|got in from {{SSH_SOURCE_IP}}'
+        regex: 'got in from {{SSH_SOURCE_IP}}|{{SSH_SOURCE_IP}}.{0,40}got in'
         points: 5
 
   - id: checkout-5xx-backend-correlation
@@ -399,7 +401,7 @@ cases:
       # ---- Command discipline. ----
       - name: commands use --allowed-paths with the fixture log root
         source: commands
-        contains: '--allowed-paths {{LOG_ROOT}}'
+        regex: '--allowed-paths(?:=|\s+){{LOG_ROOT}}'
         points: 5
       - name: commands invoke help to discover supported features
         source: commands
@@ -426,7 +428,7 @@ cases:
         source: final
         case_insensitive: true
         not: true
-        regex: '\b(restart|kill|delete|apply)\b|edit\s+\S+config'
+        regex: '(?m)(^|\n)\s*(?:[-*]\s*)?(?:(?:restart|kill|delete|apply)\b|edit\s+\S+config|(?:run|execute|use|issue|try|please|fix by|remediate by)\b[^\n]{0,120}(?:\brestart\b|\bkill\b|\bdelete\b|\bapply\b|edit\s+\S+config))'
         points: 5
       - name: final suggests a safe read-only next diagnostic check
         source: final
@@ -512,6 +514,7 @@ cases:
     title: Recover from unsupported socket command flags without assuming Linux ss parity
     variables:
       SS_SUGGESTION: ss -tulpn
+      SS_SUPPORTED_QUERY_REGEX: 'ss\s+(?:(?:-H\s+)?(?:-[Htln]*t[Htln]*l[Htln]*n[Htln]*|-[Htln]*t[Htln]*n[Htln]*l[Htln]*|-[Htln]*l[Htln]*t[Htln]*n[Htln]*|-[Htln]*l[Htln]*n[Htln]*t[Htln]*|-[Htln]*n[Htln]*t[Htln]*l[Htln]*|-[Htln]*n[Htln]*l[Htln]*t[Htln]*)|(?:--no-header\s+)?(?:--tcp\s+--listening\s+--numeric|--tcp\s+--numeric\s+--listening|--listening\s+--tcp\s+--numeric|--listening\s+--numeric\s+--tcp|--numeric\s+--tcp\s+--listening|--numeric\s+--listening\s+--tcp))(?:\s|$)'
     variants:
       - id: tulpn-seed-00
       - id: processes-seed-07
@@ -526,16 +529,16 @@ cases:
       - name: commands run help ss or initial help
         source: commands
         case_insensitive: true
-        regex: "help ss| -c 'help'"
+        regex: "help ss|\\s-c\\s+['\"]help['\"]|--command(?:=|\\s+)['\"]help['\"]"
         points: 20
       - name: commands run supported ss command
         source: commands
-        regex: 'ss -tln|ss -ltn|ss -tlnH|ss -Htnl'
+        regex: '{{SS_SUPPORTED_QUERY_REGEX}}'
         points: 20
       - name: commands use help-informed supported ss query
         source: commands
         case_insensitive: true
-        regex: '(help ss| -c ''help'')[\s\S]+(ss -tln|ss -ltn|ss -tlnH|ss -Htnl)|(ss -tln|ss -ltn|ss -tlnH|ss -Htnl)[\s\S]+(help ss| -c ''help'')'
+        regex: '(help ss|\s-c\s+[''" ]?help(?: ss)?[''" ]?|--command(?:=|\s+)[''" ]?help(?: ss)?[''" ]?)[\s\S]+{{SS_SUPPORTED_QUERY_REGEX}}|{{SS_SUPPORTED_QUERY_REGEX}}[\s\S]+(help ss|\s-c\s+[''" ]?help(?: ss)?[''" ]?|--command(?:=|\s+)[''" ]?help(?: ss)?[''" ]?)'
         points: 15
       - name: final explains process or PID information is unavailable or unsupported
         source: final

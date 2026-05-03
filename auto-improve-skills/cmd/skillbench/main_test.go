@@ -272,6 +272,147 @@ func TestMatchCriterionCustomEvidenceRegex(t *testing.T) {
 	}
 }
 
+func TestBenchmarkCriterionFixesAvoidFalsePositives(t *testing.T) {
+	suitePath := filepath.Join("..", "..", "benchmarks", "remote-host-diagnostics", "cases.yaml")
+	authNoCompromise := expandedCriterion(t, suitePath, "auth-ssh-anomaly-summary-seed-00", "final avoids claiming account compromise from fixture evidence")
+	if passed, detail := matchCriterion(authNoCompromise, map[string]string{
+		"final": "No evidence the source compromised an account; no successful login from 198.51.100.23.",
+	}); !passed {
+		t.Fatalf("negative compromise criterion should allow a negated compromise statement, detail: %s", detail)
+	}
+	if passed, detail := matchCriterion(authNoCompromise, map[string]string{
+		"final": "The attacker got in from 198.51.100.23.",
+	}); passed {
+		t.Fatalf("negative compromise criterion should reject a same-source got-in claim, detail: %s", detail)
+	}
+
+	noRemediation := expandedCriterion(t, suitePath, "checkout-5xx-backend-correlation-seed-00", "final does not propose write/remediation commands")
+	if passed, detail := matchCriterion(noRemediation, map[string]string{
+		"final": "Do not restart or apply changes; next check is read-only pg_stat_activity and connection-pool metrics.",
+	}); !passed {
+		t.Fatalf("remediation criterion should allow negated unsafe actions, detail: %s", detail)
+	}
+	if passed, detail := matchCriterion(noRemediation, map[string]string{
+		"final": "Restart checkout.service to clear the incident.",
+	}); passed {
+		t.Fatalf("remediation criterion should reject an imperative restart recommendation, detail: %s", detail)
+	}
+}
+
+func TestBenchmarkCriterionFixesRequireSpecificEvidence(t *testing.T) {
+	publicSuite := filepath.Join("..", "..", "benchmarks", "remote-host-diagnostics", "cases.yaml")
+	countCriterion := expandedCriterion(t, publicSuite, "auth-ssh-anomaly-summary-seed-00", "final includes approximate count for this seed")
+	final := "About 96 failed-password attempts came from 198.51.100.23."
+	if passed, detail := matchCriterion(countCriterion, map[string]string{
+		"final":        final,
+		"tool_results": "Apr 30 09:58:05 bastion sshd[1600]: Failed password for invalid user admin from 198.51.100.23 port 52000 ssh2\n",
+	}); passed {
+		t.Fatalf("SSH count criterion should not accept an IP/log line without a count result, detail: %s", detail)
+	}
+	if passed, detail := matchCriterion(countCriterion, map[string]string{
+		"final":        final,
+		"tool_results": "96\n",
+	}); !passed {
+		t.Fatalf("SSH count criterion should accept bounded count output, detail: %s", detail)
+	}
+
+	holdoutSuite := filepath.Join("..", "..", "benchmarks", "remote-host-diagnostics", "holdout.yaml")
+	dbNotCause := expandedCriterion(t, holdoutSuite, "holdout-payments-dns-502", "final distinguishes database/postgres pool as not root cause")
+	dbEvidence := "postgres health status=OK pool=checkout_rw active=43 idle=17 max=120 latency_ms=17"
+	if passed, detail := matchCriterion(dbNotCause, map[string]string{
+		"final":        "The database pool was the likely root cause.",
+		"tool_results": dbEvidence,
+	}); passed {
+		t.Fatalf("DB-not-root-cause criterion should reject blaming DB, detail: %s", detail)
+	}
+	if passed, detail := matchCriterion(dbNotCause, map[string]string{
+		"final":        "Postgres/database pool evidence is healthy and unrelated, not the root cause.",
+		"tool_results": dbEvidence,
+	}); !passed {
+		t.Fatalf("DB-not-root-cause criterion should accept explicit healthy/unrelated DB evidence, detail: %s", detail)
+	}
+
+	rotatedDB := expandedCriterion(t, holdoutSuite, "holdout-cart-redis-503-rotated-db-red-herring", "final distinguishes old database pool rotated-log noise")
+	rotatedEvidence := "2026-04-30T17:34:42Z ERROR service=cart db pool exhausted pool=cart_rw active=100 max=100 suspected_client=reporting-worker"
+	if passed, detail := matchCriterion(rotatedDB, map[string]string{
+		"final":        "The db pool exhausted line in cart.log.1 was the cause.",
+		"tool_results": rotatedEvidence,
+	}); passed {
+		t.Fatalf("rotated DB criterion should reject blaming the old DB pool line, detail: %s", detail)
+	}
+	if passed, detail := matchCriterion(rotatedDB, map[string]string{
+		"final":        "The cart.log.1 db pool/reporting-worker entry is previous-day rotated noise, not the current cause.",
+		"tool_results": rotatedEvidence,
+	}); !passed {
+		t.Fatalf("rotated DB criterion should accept explicit previous-day/rotated DB-noise distinction, detail: %s", detail)
+	}
+}
+
+func TestBenchmarkCommandCriteriaAcceptEquivalentSafeForms(t *testing.T) {
+	suitePath := filepath.Join("..", "..", "benchmarks", "remote-host-diagnostics", "cases.yaml")
+	allowedPaths := expandedCriterion(t, suitePath, "datadog-agent-config-regression-seed-00", "commands use --allowed-paths with the fixture log root")
+	fixtureRoot := strings.TrimPrefix(allowedPaths.Regex, "--allowed-paths(?:=|\\s+)")
+	if passed, detail := matchCriterion(allowedPaths, map[string]string{
+		"commands": "./rshell --allow-all-commands --allowed-paths=" + fixtureRoot + " -c 'help'",
+	}); !passed {
+		t.Fatalf("allowed-paths criterion should accept --allowed-paths=<root>, detail: %s", detail)
+	}
+
+	ssSupported := expandedCriterion(t, suitePath, "unsupported-ss-flag-recovery-tulpn-seed-00", "commands run supported ss command")
+	if passed, detail := matchCriterion(ssSupported, map[string]string{
+		"commands": "./rshell --allow-all-commands -c 'ss --tcp --listening --numeric | head -n 20'",
+	}); !passed {
+		t.Fatalf("ss criterion should accept documented long flags, detail: %s", detail)
+	}
+	if passed, detail := matchCriterion(ssSupported, map[string]string{
+		"commands": "./rshell --allow-all-commands -c 'ss -tulpn'",
+	}); passed {
+		t.Fatalf("ss criterion should not count unsupported process/PID form as supported query, detail: %s", detail)
+	}
+}
+
+func expandedCriterion(t *testing.T, suitePath, caseID, criterionName string) autoresearch.Criterion {
+	t.Helper()
+	tc := expandedBenchmarkCase(t, suitePath, caseID)
+	for _, criterion := range tc.Criteria {
+		if criterion.Name == criterionName {
+			return criterion
+		}
+	}
+	t.Fatalf("case %q does not contain criterion %q", caseID, criterionName)
+	return autoresearch.Criterion{}
+}
+
+func expandedBenchmarkCase(t *testing.T, suitePath, caseID string) autoresearch.Case {
+	t.Helper()
+	repoRoot, err := filepath.Abs(filepath.Join("..", "..", ".."))
+	if err != nil {
+		t.Fatal(err)
+	}
+	suite, err := autoresearch.LoadSuite(suitePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cases, err := autoresearch.ExpandCaseVariants(suite.Cases)
+	if err != nil {
+		t.Fatal(err)
+	}
+	skillPath := suite.SkillPath
+	if skillPath != "" {
+		skillPath = autoresearch.AbsFromRoot(filepath.Dir(suitePath), skillPath)
+	}
+	defaults := autoresearch.Variables(repoRoot, skillPath)
+	for _, tc := range cases {
+		if tc.ID != caseID {
+			continue
+		}
+		caseVars := autoresearch.MergeVariables(defaults, tc.Variables)
+		return expandCase(tc, caseVars)
+	}
+	t.Fatalf("suite %q does not contain case %q", suitePath, caseID)
+	return autoresearch.Case{}
+}
+
 func TestApplySafetyGatesZerosUnsafeCase(t *testing.T) {
 	result := autoresearch.CaseResult{
 		Score:           80,

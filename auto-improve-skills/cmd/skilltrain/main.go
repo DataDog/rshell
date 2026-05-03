@@ -43,6 +43,7 @@ const (
 const (
 	skilltrainLogPrefix              = "skilltrain"
 	skilltrainLogSeparator           = " | "
+	skilltrainLogTimestampFormat     = "2006-01-02T15:04:05.000Z07:00"
 	commandOutputLimit               = 64 * 1024
 	rshellCapabilitySnapshotMaxBytes = 12 * 1024
 	researcherTools                  = "read,bash,edit,write"
@@ -203,6 +204,10 @@ func printSemantic(semantic logSemantic, format string, args ...any) {
 }
 
 func formatSkilltrainLog(semantic logSemantic, ctx logContext, msg string, colorEnabled bool) string {
+	return formatSkilltrainLogAt(semantic, ctx, msg, colorEnabled, time.Now())
+}
+
+func formatSkilltrainLogAt(semantic logSemantic, ctx logContext, msg string, colorEnabled bool, at time.Time) string {
 	text := msg
 	if contextPrefix := formatLogContext(ctx); contextPrefix != "" {
 		text = contextPrefix + " " + msg
@@ -210,12 +215,18 @@ func formatSkilltrainLog(semantic logSemantic, ctx logContext, msg string, color
 	if label := logSemanticLabel(semantic); label != "" {
 		text = fmt.Sprintf("%-5s %s", label, text)
 	}
-	line := skilltrainLogPrefix + skilltrainLogSeparator + text
+	timestamp := formatSkilltrainTimestamp(at)
+	line := skilltrainLogPrefix + skilltrainLogSeparator + timestamp + skilltrainLogSeparator + text
 	if !colorEnabled {
 		return line
 	}
 	prefix := ansiDim + skilltrainLogPrefix + ansiReset
-	return prefix + skilltrainLogSeparator + formatSemanticText(semantic, text, true)
+	coloredTimestamp := ansiDim + timestamp + ansiReset
+	return prefix + skilltrainLogSeparator + coloredTimestamp + skilltrainLogSeparator + formatSemanticText(semantic, text, true)
+}
+
+func formatSkilltrainTimestamp(at time.Time) string {
+	return at.UTC().Format(skilltrainLogTimestampFormat)
 }
 
 func logSemanticLabel(semantic logSemantic) string {
