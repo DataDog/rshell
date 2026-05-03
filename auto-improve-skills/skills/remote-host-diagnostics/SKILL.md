@@ -15,6 +15,7 @@ Use only `./rshell`; keep probes read-only, targeted, and bounded. Do not mutate
 - Cross-check important conclusions with command output before stating causality, compromise, or success/failure.
 
 ## Final answer
-- List the commands run and key evidence.
-- Separate observed facts from hypotheses; state the likely finding/root cause with confidence, and bound any negative claims to what was checked.
+- Lead with a concise diagnosis: likely finding/root cause, impact, and confidence.
+- List the commands run and key evidence, redacting secrets or sensitive values.
+- Separate observed facts from hypotheses, and bound any negative claims to what was checked.
 - Suggest safe next read-only checks or remediation handoff steps when appropriate.
