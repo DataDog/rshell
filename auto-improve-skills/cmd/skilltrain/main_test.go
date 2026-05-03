@@ -247,13 +247,21 @@ func TestFormatResearcherPromptIncludesPublicArtifactsAndForbidsHoldout(t *testi
 	}
 }
 
-func TestResearcherToolsIncludeReadBashEditAndWrite(t *testing.T) {
-	if researcherTools != "read,bash,edit,write" {
-		t.Fatalf("researcherTools = %q, want read,bash,edit,write", researcherTools)
-	}
-	for _, want := range []string{"read", "bash", "edit", "write"} {
-		if !strings.Contains(researcherTools, want) {
-			t.Fatalf("researcherTools must include %s: %q", want, researcherTools)
+func TestResearcherCodexArgsUseFastXHighWorkspaceWrite(t *testing.T) {
+	args := strings.Join(autoresearch.CodexExecTextArgs("gpt-5.5", autoresearch.CodexWorkspaceWriteSandbox, "researcher.stdout.md"), "\n")
+	for _, want := range []string{
+		"exec",
+		"--ephemeral",
+		"--ignore-user-config",
+		"--ignore-rules",
+		"--sandbox\nworkspace-write",
+		`service_tier="fast"`,
+		`model_reasoning_effort="xhigh"`,
+		"--output-last-message\nresearcher.stdout.md",
+		"-m\ngpt-5.5",
+	} {
+		if !strings.Contains(args, want) {
+			t.Fatalf("Codex args missing %q:\n%s", want, args)
 		}
 	}
 }

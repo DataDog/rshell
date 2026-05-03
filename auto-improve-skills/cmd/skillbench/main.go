@@ -31,7 +31,7 @@ import (
 )
 
 const (
-	defaultModel         = "openai-codex/gpt-5.5"
+	defaultModel         = "gpt-5.5"
 	defaultParallelCases = 3
 )
 
@@ -40,9 +40,9 @@ func main() {
 		casesPath                = flag.String("cases", "auto-improve-skills/benchmarks/remote-host-diagnostics/cases.yaml", "YAML benchmark suite")
 		skillPath                = flag.String("skill", "auto-improve-skills/skills/remote-host-diagnostics", "skill directory or SKILL.md path")
 		outputPath               = flag.String("out", "", "write JSON report to this path")
-		rawDir                   = flag.String("raw-dir", "", "directory for raw pi JSONL transcripts")
-		piBinary                 = flag.String("pi", "pi", "pi executable")
-		model                    = flag.String("model", defaultModel, "pi model for benchmark agents and optional judge")
+		rawDir                   = flag.String("raw-dir", "", "directory for raw Codex JSONL transcripts")
+		codexBinary              = flag.String("codex", "codex", "codex executable")
+		model                    = flag.String("model", defaultModel, "Codex model for benchmark agents and optional judge")
 		mode                     = flag.String("mode", "live", "benchmark mode: live or prompts")
 		limit                    = flag.Int("limit", 0, "run at most N cases (0 = all)")
 		parallelCases            = flag.Int("parallel-cases", defaultParallelCases, "maximum benchmark cases to run concurrently (0 = all selected cases, 1 = serial)")
@@ -72,7 +72,7 @@ func main() {
 		SkillSizeTargetTokens:    *skillSizeTargetTokens,
 		SkillSizeHardLimitTokens: *skillSizeHardLimitTokens,
 	}
-	if err := run(*casesPath, *skillPath, *outputPath, *rawDir, *piBinary, *model, *mode, *limit, *parallelCases, *caseFilter, *caseTimeout, *judge, *judgeWeight, *ensureRShell, *generateFixtures, *logSuite, objective); err != nil {
+	if err := run(*casesPath, *skillPath, *outputPath, *rawDir, *codexBinary, *model, *mode, *limit, *parallelCases, *caseFilter, *caseTimeout, *judge, *judgeWeight, *ensureRShell, *generateFixtures, *logSuite, objective); err != nil {
 		fmt.Fprintf(os.Stderr, "skillbench: %s %v\n", formatLogContext(benchLogContext{Suite: *logSuite}), err)
 		os.Exit(1)
 	}
@@ -120,7 +120,7 @@ func suiteLogLabel(casesPath string) string {
 	}
 }
 
-func run(casesPath, skillPath, outputPath, rawDir, piBinary, model, mode string, limit, parallelCases int, caseFilter string, caseTimeout time.Duration, judge bool, judgeWeight float64, ensureRShell, generateFixtures bool, logSuite string, objective autoresearch.ObjectiveConfig) error {
+func run(casesPath, skillPath, outputPath, rawDir, codexBinary, model, mode string, limit, parallelCases int, caseFilter string, caseTimeout time.Duration, judge bool, judgeWeight float64, ensureRShell, generateFixtures bool, logSuite string, objective autoresearch.ObjectiveConfig) error {
 	if mode != "live" && mode != "prompts" {
 		return fmt.Errorf("unsupported -mode %q (want live or prompts)", mode)
 	}
@@ -139,11 +139,11 @@ func run(casesPath, skillPath, outputPath, rawDir, piBinary, model, mode string,
 		return err
 	}
 	if mode == "live" {
-		resolvedPI, err := autoresearch.ResolvePI(piBinary)
+		resolvedCodex, err := autoresearch.ResolveCodex(codexBinary)
 		if err != nil {
 			return err
 		}
-		piBinary = resolvedPI
+		codexBinary = resolvedCodex
 	}
 	casesAbs := autoresearch.AbsFromRoot(root, casesPath)
 	if generateFixtures && isRemoteHostDiagnosticsSuite(casesAbs) {
@@ -224,7 +224,7 @@ func run(casesPath, skillPath, outputPath, rawDir, piBinary, model, mode string,
 		caseVars := autoresearch.MergeVariables(vars, tc.Variables)
 		expandedCases = append(expandedCases, expandCase(tc, caseVars))
 	}
-	caseResults := runCases(root, rawDir, requestedSkillAbs, piBinary, model, mode, expandedCases, caseTimeout, judge, judgeWeight, objective, caseParallelism(parallelCases, len(expandedCases)), logCtx)
+	caseResults := runCases(root, rawDir, requestedSkillAbs, codexBinary, model, mode, expandedCases, caseTimeout, judge, judgeWeight, objective, caseParallelism(parallelCases, len(expandedCases)), logCtx)
 	for _, caseResult := range caseResults {
 		results.Cases = append(results.Cases, caseResult)
 		results.Score += caseResult.Score
@@ -300,7 +300,7 @@ func expandCase(tc autoresearch.Case, vars map[string]string) autoresearch.Case 
 	return tc
 }
 
-func runCases(root, rawDir, skillPath, piBinary, model, mode string, cases []autoresearch.Case, timeout time.Duration, judge bool, judgeWeight float64, objective autoresearch.ObjectiveConfig, parallelism int, logCtx benchLogContext) []autoresearch.CaseResult {
+func runCases(root, rawDir, skillPath, codexBinary, model, mode string, cases []autoresearch.Case, timeout time.Duration, judge bool, judgeWeight float64, objective autoresearch.ObjectiveConfig, parallelism int, logCtx benchLogContext) []autoresearch.CaseResult {
 	results := make([]autoresearch.CaseResult, len(cases))
 	if len(cases) == 0 {
 		return results
@@ -308,7 +308,7 @@ func runCases(root, rawDir, skillPath, piBinary, model, mode string, cases []aut
 	parallelism = caseParallelism(parallelism, len(cases))
 	if parallelism <= 1 {
 		for i, tc := range cases {
-			results[i] = runScoredCase(root, rawDir, skillPath, piBinary, model, mode, tc, timeout, judge, judgeWeight, objective, logCtx)
+			results[i] = runScoredCase(root, rawDir, skillPath, codexBinary, model, mode, tc, timeout, judge, judgeWeight, objective, logCtx)
 		}
 		return results
 	}
@@ -321,7 +321,7 @@ func runCases(root, rawDir, skillPath, piBinary, model, mode string, cases []aut
 		go func() {
 			defer wg.Done()
 			for idx := range jobs {
-				results[idx] = runScoredCase(root, rawDir, skillPath, piBinary, model, mode, cases[idx], timeout, judge, judgeWeight, objective, logCtx)
+				results[idx] = runScoredCase(root, rawDir, skillPath, codexBinary, model, mode, cases[idx], timeout, judge, judgeWeight, objective, logCtx)
 			}
 		}()
 	}
@@ -333,17 +333,17 @@ func runCases(root, rawDir, skillPath, piBinary, model, mode string, cases []aut
 	return results
 }
 
-func runScoredCase(root, rawDir, skillPath, piBinary, model, mode string, tc autoresearch.Case, timeout time.Duration, judge bool, judgeWeight float64, objective autoresearch.ObjectiveConfig, logCtx benchLogContext) autoresearch.CaseResult {
+func runScoredCase(root, rawDir, skillPath, codexBinary, model, mode string, tc autoresearch.Case, timeout time.Duration, judge bool, judgeWeight float64, objective autoresearch.ObjectiveConfig, logCtx benchLogContext) autoresearch.CaseResult {
 	caseCtx := logCtx
 	caseCtx.Case = tc.ID
 	benchLogf(caseCtx, "start")
-	caseResult := runCase(root, rawDir, skillPath, piBinary, model, mode, tc, timeout)
+	caseResult := runCase(root, rawDir, skillPath, codexBinary, model, mode, tc, timeout)
 	scoreCase(&caseResult, tc)
 	caseResult.DurationScore = boundedUpperScore(caseResult.DurationSeconds, objective.DurationBudgetSeconds, objective.DurationHardLimitSeconds)
 	applySafetyGates(&caseResult)
 	if judge && mode == "live" && strings.TrimSpace(caseResult.FinalAnswer) != "" && len(caseResult.SafetyViolations) == 0 {
 		benchLogf(caseCtx, "judge")
-		jr, err := runJudge(root, piBinary, model, tc, caseResult, timeout/2)
+		jr, err := runJudge(root, codexBinary, model, tc, caseResult, timeout/2)
 		if err != nil {
 			caseResult.Error = strings.TrimSpace(caseResult.Error + "; judge: " + err.Error())
 		} else {
@@ -365,7 +365,7 @@ func caseParallelism(configured, count int) int {
 	return configured
 }
 
-func runCase(root, rawDir, skillPath, piBinary, model, mode string, tc autoresearch.Case, timeout time.Duration) (result autoresearch.CaseResult) {
+func runCase(root, rawDir, skillPath, codexBinary, model, mode string, tc autoresearch.Case, timeout time.Duration) (result autoresearch.CaseResult) {
 	started := time.Now().UTC()
 	result = autoresearch.CaseResult{
 		ID:        tc.ID,
@@ -388,20 +388,13 @@ func runCase(root, rawDir, skillPath, piBinary, model, mode string, tc autoresea
 
 	rawPath := filepath.Join(rawDir, safeFileName(tc.ID)+".jsonl")
 	stderrPath := filepath.Join(rawDir, safeFileName(tc.ID)+".stderr")
-	prompt := benchmarkPrompt(tc)
-	args := []string{
-		"--mode", "json",
-		"--print",
-		"--no-session",
-		"--no-context-files",
-		"--no-extensions",
-		"--no-prompt-templates",
-		"--no-skills",
-		"--skill", skillPath,
-		"--tools", "read,bash",
-		"--model", model,
-		prompt,
+	skillInstructions, skillErr := readSkillInstructions(skillPath)
+	if skillErr != nil {
+		result.Error = appendErr(result.Error, "read benchmark skill instructions: "+skillErr.Error())
+		return result
 	}
+	prompt := benchmarkPrompt(skillInstructions, tc)
+	args := autoresearch.CodexExecJSONArgs(model, autoresearch.CodexReadOnlySandbox)
 	workspaceDir, cleanupWorkspace, workspaceErr := prepareBenchmarkCaseWorkspace(root)
 	if workspaceErr != nil {
 		result.Error = appendErr(result.Error, "prepare isolated benchmark workspace: "+workspaceErr.Error())
@@ -411,9 +404,10 @@ func runCase(root, rawDir, skillPath, piBinary, model, mode string, tc autoresea
 
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, piBinary, args...)
+	cmd := exec.CommandContext(ctx, codexBinary, args...)
 	cmd.Dir = workspaceDir
-	cmd.Env = autoresearch.EnvWithExecutableDir(piBinary)
+	cmd.Env = autoresearch.EnvWithExecutableDir(codexBinary)
+	cmd.Stdin = strings.NewReader(prompt)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
@@ -423,7 +417,7 @@ func runCase(root, rawDir, skillPath, piBinary, model, mode string, tc autoresea
 		_ = os.WriteFile(stderrPath, stderr.Bytes(), 0o644)
 	}
 	result.RawJSONLPath = rawPath
-	parsed, parseErr := parsePiJSONL(stdout.Bytes())
+	parsed, parseErr := parseCodexJSONL(stdout.Bytes())
 	result.FinalAnswer = parsed.FinalAnswer
 	result.Commands = parsed.Commands
 	result.ToolCalls = parsed.ToolCalls
@@ -435,13 +429,13 @@ func runCase(root, rawDir, skillPath, piBinary, model, mode string, tc autoresea
 		}
 	}
 	if parseErr != nil {
-		result.Error = appendErr(result.Error, "parse pi JSONL: "+parseErr.Error())
+		result.Error = appendErr(result.Error, "parse Codex JSONL: "+parseErr.Error())
 	}
 	if err != nil {
 		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-			result.Error = appendErr(result.Error, "pi timed out after "+timeout.String())
+			result.Error = appendErr(result.Error, "Codex timed out after "+timeout.String())
 		} else {
-			result.Error = appendErr(result.Error, "pi failed: "+err.Error())
+			result.Error = appendErr(result.Error, "Codex failed: "+err.Error())
 		}
 		if stderr.Len() > 0 {
 			result.Error = appendErr(result.Error, "stderr saved to "+stderrPath)
@@ -522,10 +516,26 @@ func copyExecutable(src, dst string) error {
 	return closeErr
 }
 
-func benchmarkPrompt(tc autoresearch.Case) string {
+func readSkillInstructions(skillPath string) (string, error) {
+	path := skillPath
+	info, err := os.Stat(path)
+	if err != nil {
+		return "", err
+	}
+	if info.IsDir() {
+		path = filepath.Join(path, "SKILL.md")
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(data)), nil
+}
+
+func benchmarkPrompt(skillInstructions string, tc autoresearch.Case) string {
 	return strings.TrimSpace(`You are running an automated benchmark of an Agent Skill.
 
-You must use the loaded remote-host-diagnostics skill. Load/read the skill instructions first, then follow the instructions. This is a fake local investigation using fixture logs, so do not use host tools directly to inspect the fixture contents; run diagnostics through local ./rshell as the skill instructs. Do not modify files.
+You must follow the remote-host-diagnostics skill instructions included below. This is a fake local investigation using fixture logs, so do not use host tools directly to inspect the fixture contents; run diagnostics through local ./rshell as the skill instructs. Do not modify files.
 
 Final answer quality is the primary metric. The benchmark also records end-to-end wall-clock duration, so be efficient and stop investigating once the answer is well supported. Your final answer should be concise but complete, with:
 - finding or likely root cause
@@ -533,18 +543,23 @@ Final answer quality is the primary metric. The benchmark also records end-to-en
 - commands you ran
 - any uncertainty or safe next steps
 
+Skill instructions:
+<skill>
+`+skillInstructions+`
+</skill>
+
 Benchmark case:
 `+tc.Prompt) + "\n"
 }
 
-type parsedPi struct {
+type parsedCodex struct {
 	FinalAnswer string
 	Commands    []string
 	ToolCalls   []autoresearch.ToolCall
 }
 
-func parsePiJSONL(data []byte) (parsedPi, error) {
-	var parsed parsedPi
+func parseCodexJSONL(data []byte) (parsedCodex, error) {
+	var parsed parsedCodex
 	calls := map[string]int{}
 	scanner := bufio.NewScanner(bytes.NewReader(data))
 	scanner.Buffer(make([]byte, 0, 64*1024), 20*1024*1024)
@@ -554,92 +569,75 @@ func parsePiJSONL(data []byte) (parsedPi, error) {
 			continue
 		}
 		var ev struct {
-			Type       string          `json:"type"`
-			ToolCallID string          `json:"toolCallId"`
-			ToolName   string          `json:"toolName"`
-			Args       json.RawMessage `json:"args"`
-			Result     json.RawMessage `json:"result"`
-			IsError    bool            `json:"isError"`
-			Message    json.RawMessage `json:"message"`
+			Type string        `json:"type"`
+			Item codexJSONItem `json:"item"`
 		}
 		if err := json.Unmarshal(line, &ev); err != nil {
 			continue
 		}
 		switch ev.Type {
-		case "tool_execution_start":
-			call := autoresearch.ToolCall{ID: ev.ToolCallID, Name: ev.ToolName, Args: ev.Args}
-			call.Command = commandFromArgs(ev.ToolName, ev.Args)
-			calls[ev.ToolCallID] = len(parsed.ToolCalls)
-			parsed.ToolCalls = append(parsed.ToolCalls, call)
-			if ev.ToolName == "bash" && call.Command != "" {
-				parsed.Commands = append(parsed.Commands, call.Command)
-			}
-		case "tool_execution_end":
-			idx, ok := calls[ev.ToolCallID]
-			if !ok {
-				continue
-			}
-			parsed.ToolCalls[idx].IsError = ev.IsError
-			parsed.ToolCalls[idx].Result = textFromToolResult(ev.Result)
-		case "message_end", "turn_end":
-			if text := assistantText(ev.Message); strings.TrimSpace(text) != "" {
-				parsed.FinalAnswer = text
+		case "item.started", "item.completed":
+			switch ev.Item.Type {
+			case "agent_message":
+				if text := strings.TrimSpace(ev.Item.Text); text != "" {
+					parsed.FinalAnswer = text
+				}
+			case "command_execution":
+				recordCodexCommand(&parsed, calls, ev.Item)
 			}
 		}
 	}
 	return parsed, scanner.Err()
 }
 
-func commandFromArgs(tool string, raw json.RawMessage) string {
-	if tool != "bash" || len(raw) == 0 {
-		return ""
+type codexJSONItem struct {
+	ID               string `json:"id"`
+	Type             string `json:"type"`
+	Text             string `json:"text"`
+	Command          string `json:"command"`
+	AggregatedOutput string `json:"aggregated_output"`
+	Status           string `json:"status"`
+	ExitCode         *int   `json:"exit_code"`
+}
+
+func recordCodexCommand(parsed *parsedCodex, calls map[string]int, item codexJSONItem) {
+	id := item.ID
+	if id == "" {
+		id = fmt.Sprintf("command-%d", len(parsed.ToolCalls))
 	}
-	var args struct {
+	idx, ok := calls[id]
+	if !ok {
+		idx = len(parsed.ToolCalls)
+		calls[id] = idx
+		parsed.ToolCalls = append(parsed.ToolCalls, autoresearch.ToolCall{
+			ID:   id,
+			Name: "bash",
+		})
+		if item.Command != "" {
+			parsed.Commands = append(parsed.Commands, item.Command)
+		}
+	}
+	call := &parsed.ToolCalls[idx]
+	if item.Command != "" {
+		call.Command = item.Command
+		call.Args = commandArgsRaw(item.Command)
+	}
+	if item.AggregatedOutput != "" {
+		call.Result = item.AggregatedOutput
+	}
+	if item.ExitCode != nil && *item.ExitCode != 0 {
+		call.IsError = true
+	}
+}
+
+func commandArgsRaw(command string) json.RawMessage {
+	data, err := json.Marshal(struct {
 		Command string `json:"command"`
+	}{Command: command})
+	if err != nil {
+		return nil
 	}
-	if err := json.Unmarshal(raw, &args); err != nil {
-		return ""
-	}
-	return args.Command
-}
-
-func textFromToolResult(raw json.RawMessage) string {
-	var res struct {
-		Content []struct {
-			Type string `json:"type"`
-			Text string `json:"text"`
-		} `json:"content"`
-	}
-	if err := json.Unmarshal(raw, &res); err != nil {
-		return ""
-	}
-	parts := make([]string, 0, len(res.Content))
-	for _, c := range res.Content {
-		if c.Type == "text" {
-			parts = append(parts, c.Text)
-		}
-	}
-	return strings.Join(parts, "\n")
-}
-
-func assistantText(raw json.RawMessage) string {
-	var msg struct {
-		Role    string `json:"role"`
-		Content []struct {
-			Type string `json:"type"`
-			Text string `json:"text"`
-		} `json:"content"`
-	}
-	if err := json.Unmarshal(raw, &msg); err != nil || msg.Role != "assistant" {
-		return ""
-	}
-	parts := make([]string, 0, len(msg.Content))
-	for _, c := range msg.Content {
-		if c.Type == "text" {
-			parts = append(parts, c.Text)
-		}
-	}
-	return strings.Join(parts, "\n")
+	return data
 }
 
 func scoreCase(result *autoresearch.CaseResult, tc autoresearch.Case) {
@@ -1337,7 +1335,7 @@ func referencesGeneratedFixture(s string) bool {
 	return strings.Contains(s, "generated-fixtures")
 }
 
-func runJudge(root, piBinary, model string, tc autoresearch.Case, result autoresearch.CaseResult, timeout time.Duration) (autoresearch.JudgeResult, error) {
+func runJudge(root, codexBinary, model string, tc autoresearch.Case, result autoresearch.CaseResult, timeout time.Duration) (autoresearch.JudgeResult, error) {
 	if timeout <= 0 {
 		timeout = 2 * time.Minute
 	}
@@ -1361,20 +1359,18 @@ Return only compact JSON with this schema: {"score": number, "reason": "short ex
 `, tc.Prompt, tc.JudgeRubric, strings.Join(result.Commands, "\n"), result.FinalAnswer)
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
-	args := []string{
-		"--print",
-		"--no-session",
-		"--no-context-files",
-		"--no-extensions",
-		"--no-prompt-templates",
-		"--no-skills",
-		"--no-tools",
-		"--model", model,
-		prompt,
+	lastMessage, err := os.CreateTemp("", "skillbench-judge-*.txt")
+	if err != nil {
+		return autoresearch.JudgeResult{}, err
 	}
-	cmd := exec.CommandContext(ctx, piBinary, args...)
+	lastMessagePath := lastMessage.Name()
+	_ = lastMessage.Close()
+	defer os.Remove(lastMessagePath)
+	args := autoresearch.CodexExecTextArgs(model, autoresearch.CodexReadOnlySandbox, lastMessagePath)
+	cmd := exec.CommandContext(ctx, codexBinary, args...)
 	cmd.Dir = root
-	cmd.Env = autoresearch.EnvWithExecutableDir(piBinary)
+	cmd.Env = autoresearch.EnvWithExecutableDir(codexBinary)
+	cmd.Stdin = strings.NewReader(prompt)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
@@ -1383,6 +1379,11 @@ Return only compact JSON with this schema: {"score": number, "reason": "short ex
 			return autoresearch.JudgeResult{}, fmt.Errorf("%w: %s", err, strings.TrimSpace(stderr.String()))
 		}
 		return autoresearch.JudgeResult{}, err
+	}
+	judgeOutput, readErr := os.ReadFile(lastMessagePath)
+	if readErr == nil && len(bytes.TrimSpace(judgeOutput)) > 0 {
+		stdout.Reset()
+		stdout.Write(judgeOutput)
 	}
 	jr, err := parseJudge(stdout.String())
 	if err != nil {

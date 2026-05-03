@@ -15,47 +15,94 @@ import (
 	"strings"
 )
 
-// ResolvePI resolves the pi executable. It first respects an explicit -pi value,
-// then PI_BIN, PATH, and common npm/nvm installation locations. The nvm fallback
-// matters when Go is launched from a shell that did not source nvm, so "pi" is
-// installed but not on PATH.
-func ResolvePI(pi string) (string, error) {
-	pi = strings.TrimSpace(pi)
-	if pi == "" {
-		pi = "pi"
+const (
+	CodexFastServiceTier       = "fast"
+	CodexReasoningEffort       = "xhigh"
+	CodexDefaultApprovalPolicy = "never"
+	CodexReadOnlySandbox       = "read-only"
+	CodexWorkspaceWriteSandbox = "workspace-write"
+)
+
+// CodexExecJSONArgs returns common non-interactive Codex args for JSONL output.
+func CodexExecJSONArgs(model, sandbox string) []string {
+	args := codexExecBaseArgs(model, sandbox)
+	return insertArgs(args, 1, "--json")
+}
+
+// CodexExecTextArgs returns common non-interactive Codex args for text output.
+func CodexExecTextArgs(model, sandbox, outputLastMessagePath string) []string {
+	args := codexExecBaseArgs(model, sandbox)
+	if outputLastMessagePath != "" {
+		args = insertArgs(args, len(args)-1, "--output-last-message", outputLastMessagePath)
+	}
+	return args
+}
+
+func insertArgs(args []string, idx int, values ...string) []string {
+	out := make([]string, 0, len(args)+len(values))
+	out = append(out, args[:idx]...)
+	out = append(out, values...)
+	out = append(out, args[idx:]...)
+	return out
+}
+
+func codexExecBaseArgs(model, sandbox string) []string {
+	return []string{
+		"exec",
+		"--ephemeral",
+		"--ignore-user-config",
+		"--ignore-rules",
+		"--skip-git-repo-check",
+		"--sandbox", sandbox,
+		"-c", `approval_policy="` + CodexDefaultApprovalPolicy + `"`,
+		"-c", `service_tier="` + CodexFastServiceTier + `"`,
+		"-c", `model_reasoning_effort="` + CodexReasoningEffort + `"`,
+		"-m", model,
+		"-",
+	}
+}
+
+// ResolveCodex resolves the codex executable. It first respects an explicit
+// -codex value, then CODEX_BIN, PATH, and common Homebrew/npm/nvm installation
+// locations. The nvm fallback matters when Go is launched from a shell that did
+// not source nvm, so "codex" is installed but not on PATH.
+func ResolveCodex(codex string) (string, error) {
+	codex = strings.TrimSpace(codex)
+	if codex == "" {
+		codex = "codex"
 	}
 
-	if hasPathSeparator(pi) || filepath.IsAbs(pi) {
-		return resolveExecutablePath(pi)
+	if hasPathSeparator(codex) || filepath.IsAbs(codex) {
+		return resolveExecutablePath(codex)
 	}
 
-	if pi != "pi" {
-		if path, err := exec.LookPath(pi); err == nil {
+	if codex != "codex" {
+		if path, err := exec.LookPath(codex); err == nil {
 			return path, nil
 		}
-		return "", fmt.Errorf("%q executable not found in PATH", pi)
+		return "", fmt.Errorf("%q executable not found in PATH", codex)
 	}
 
-	if env := strings.TrimSpace(os.Getenv("PI_BIN")); env != "" {
+	if env := strings.TrimSpace(os.Getenv("CODEX_BIN")); env != "" {
 		return resolveExecutablePath(env)
 	}
 
-	if path, err := exec.LookPath("pi"); err == nil {
+	if path, err := exec.LookPath("codex"); err == nil {
 		return path, nil
 	}
 
-	for _, candidate := range piCandidates() {
+	for _, candidate := range codexCandidates() {
 		if path, err := resolveExecutablePath(candidate); err == nil {
 			return path, nil
 		}
 	}
 
-	return "", fmt.Errorf("pi executable not found. Install pi, pass -pi /path/to/pi, or set PI_BIN=/path/to/pi. Current PATH=%q", os.Getenv("PATH"))
+	return "", fmt.Errorf("codex executable not found. Install Codex CLI, pass -codex /path/to/codex, or set CODEX_BIN=/path/to/codex. Current PATH=%q", os.Getenv("PATH"))
 }
 
 // EnvWithExecutableDir returns an environment that prepends the executable's
-// directory to PATH. This is important for npm/nvm-installed pi scripts whose
-// shebang uses /usr/bin/env node; node usually lives next to pi.
+// directory to PATH. This is important for npm/nvm-installed codex scripts
+// whose shebang uses /usr/bin/env node; node usually lives next to codex.
 func EnvWithExecutableDir(executable string) []string {
 	env := os.Environ()
 	if executable == "" || !hasPathSeparator(executable) && !filepath.IsAbs(executable) {
@@ -109,14 +156,14 @@ func executableVariants(path string) []string {
 	return []string{path, path + ".cmd", path + ".exe", path + ".bat"}
 }
 
-func piCandidates() []string {
+func codexCandidates() []string {
 	var candidates []string
 	if home := os.Getenv("HOME"); home != "" {
 		candidates = append(candidates,
-			filepath.Join(home, ".local", "bin", "pi"),
-			filepath.Join(home, ".npm-global", "bin", "pi"),
+			filepath.Join(home, ".local", "bin", "codex"),
+			filepath.Join(home, ".npm-global", "bin", "codex"),
 		)
-		if matches, err := filepath.Glob(filepath.Join(home, ".nvm", "versions", "node", "*", "bin", "pi")); err == nil {
+		if matches, err := filepath.Glob(filepath.Join(home, ".nvm", "versions", "node", "*", "bin", "codex")); err == nil {
 			// Prefer newest-looking versions by trying lexicographically later paths first.
 			for i := len(matches) - 1; i >= 0; i-- {
 				candidates = append(candidates, matches[i])
@@ -124,11 +171,11 @@ func piCandidates() []string {
 		}
 	}
 	candidates = append(candidates,
-		filepath.Join("/opt", "homebrew", "bin", "pi"),
-		filepath.Join("/usr", "local", "bin", "pi"),
+		filepath.Join("/opt", "homebrew", "bin", "codex"),
+		filepath.Join("/usr", "local", "bin", "codex"),
 	)
 	if npmPrefix := npmGlobalPrefix(); npmPrefix != "" {
-		candidates = append([]string{filepath.Join(npmPrefix, "bin", "pi")}, candidates...)
+		candidates = append([]string{filepath.Join(npmPrefix, "bin", "codex")}, candidates...)
 	}
 	return dedupe(candidates)
 }

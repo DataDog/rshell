@@ -1,4 +1,4 @@
-# auto-improve-skills guardrails
+# auto-improve-skills Codex guardrails
 
 Treat this directory as the Go project root for auto-improve-skills work.
 

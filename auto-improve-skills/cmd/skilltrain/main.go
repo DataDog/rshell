@@ -24,7 +24,7 @@ import (
 )
 
 const (
-	defaultModel         = "openai-codex/gpt-5.5"
+	defaultModel         = "gpt-5.5"
 	defaultParallelCases = 10
 )
 
@@ -45,7 +45,6 @@ const (
 	skilltrainLogTimestampFormat     = "2006-01-02T15:04:05.000Z07:00"
 	commandOutputLimit               = 64 * 1024
 	rshellCapabilitySnapshotMaxBytes = 12 * 1024
-	researcherTools                  = "read,bash,edit,write"
 	iterationSkillSnapshotPath       = "SKILL.candidate.md"
 	iterationPreviousSkillPath       = "SKILL.previous.md"
 	iterationSkillDiffPath           = "SKILL.md.diff"
@@ -65,8 +64,8 @@ func main() {
 	flag.IntVar(&cfg.iterations, "iters", 3, "maximum improvement iterations")
 	flag.StringVar(&cfg.casesPath, "cases", "auto-improve-skills/benchmarks/remote-host-diagnostics/cases.yaml", "benchmark suite")
 	flag.StringVar(&cfg.skillPath, "skill", "auto-improve-skills/skills/remote-host-diagnostics/SKILL.md", "skill file to improve")
-	flag.StringVar(&cfg.model, "model", defaultModel, "pi model for researcher and benchmark agents")
-	flag.StringVar(&cfg.piBinary, "pi", "pi", "pi executable")
+	flag.StringVar(&cfg.model, "model", defaultModel, "Codex model for researcher and benchmark agents")
+	flag.StringVar(&cfg.codexBinary, "codex", "codex", "codex executable")
 	flag.StringVar(&cfg.runDir, "run-dir", "", "directory for this training run")
 	flag.Float64Var(&cfg.minDelta, "min-delta", 0.001, "minimum normalized objective improvement to accept")
 	flag.Float64Var(&cfg.qualityTolerance, "quality-tolerance", 0.01, "maximum allowed quality drop from the best seen quality")
@@ -94,7 +93,7 @@ type trainConfig struct {
 	casesPath               string
 	skillPath               string
 	model                   string
-	piBinary                string
+	codexBinary             string
 	runDir                  string
 	minDelta                float64
 	qualityTolerance        float64
@@ -466,10 +465,10 @@ func commandOutputSummary(capture *commandCapture) string {
 
 func runConfig(cfg trainConfig) error {
 	setSkilltrainVerbose(cfg.verbose)
-	return run(cfg.iterations, cfg.casesPath, cfg.skillPath, cfg.model, cfg.piBinary, cfg.runDir, cfg.minDelta, cfg.qualityTolerance, cfg.holdoutCasesPath, cfg.holdoutQualityTolerance, cfg.parallelCases, cfg.limit, cfg.judge, cfg.parallelSuites, cfg.push, cfg.dryRun, cfg.allowDirty)
+	return run(cfg.iterations, cfg.casesPath, cfg.skillPath, cfg.model, cfg.codexBinary, cfg.runDir, cfg.minDelta, cfg.qualityTolerance, cfg.holdoutCasesPath, cfg.holdoutQualityTolerance, cfg.parallelCases, cfg.limit, cfg.judge, cfg.parallelSuites, cfg.push, cfg.dryRun, cfg.allowDirty)
 }
 
-func run(iterations int, casesPath, skillPath, model, piBinary, runDir string, minDelta, qualityTolerance float64, holdoutCasesPath string, holdoutQualityTolerance float64, parallelCases, limit int, judge, parallelSuites, push, dryRun, allowDirty bool) error {
+func run(iterations int, casesPath, skillPath, model, codexBinary, runDir string, minDelta, qualityTolerance float64, holdoutCasesPath string, holdoutQualityTolerance float64, parallelCases, limit int, judge, parallelSuites, push, dryRun, allowDirty bool) error {
 	if qualityTolerance < 0 {
 		return fmt.Errorf("-quality-tolerance must be non-negative")
 	}
@@ -479,18 +478,18 @@ func run(iterations int, casesPath, skillPath, model, piBinary, runDir string, m
 	if parallelCases < 0 {
 		return fmt.Errorf("-parallel-cases must be non-negative")
 	}
-	logVerbose("setup resolve repo/pi")
+	logVerbose("setup resolve repo/codex")
 	root, err := autoresearch.RepoRoot()
 	if err != nil {
 		return err
 	}
-	resolvedPI, err := autoresearch.ResolvePI(piBinary)
+	resolvedCodex, err := autoresearch.ResolveCodex(codexBinary)
 	if err != nil {
 		return err
 	}
-	piBinary = resolvedPI
+	codexBinary = resolvedCodex
 	logVerbose("setup repo=%s", root)
-	logVerbose("setup pi=%s", piBinary)
+	logVerbose("setup codex=%s", codexBinary)
 
 	casesAbs := autoresearch.AbsFromRoot(root, casesPath)
 	skillAbs := autoresearch.AbsFromRoot(root, skillPath)
@@ -524,7 +523,7 @@ func run(iterations int, casesPath, skillPath, model, piBinary, runDir string, m
 	}
 
 	logBenchmark("baseline cases-par=%d", parallelCases)
-	baseline, holdoutBaseline, haveHoldoutBaseline, err := runBaselineBenchmarks(root, casesAbs, holdoutCasesAbs, skillAbs, model, piBinary, runDir, limit, judge, parallelCases, parallelSuites)
+	baseline, holdoutBaseline, haveHoldoutBaseline, err := runBaselineBenchmarks(root, casesAbs, holdoutCasesAbs, skillAbs, model, codexBinary, runDir, limit, judge, parallelCases, parallelSuites)
 	if err != nil {
 		return err
 	}
@@ -566,7 +565,7 @@ func run(iterations int, casesPath, skillPath, model, piBinary, runDir string, m
 			logDryRunVerbose("iter %d/%d restore original skill", iter, iterations)
 			return os.WriteFile(skillAbs, previousSkill, 0o644)
 		}
-		if err := improveSkill(root, skillAbs, casesAbs, bestPath, iterDir, model, piBinary, iter, qualityTolerance); err != nil {
+		if err := improveSkill(root, skillAbs, casesAbs, bestPath, iterDir, model, codexBinary, iter, qualityTolerance); err != nil {
 			if restoreErr := restoreDryRun(); restoreErr != nil {
 				return restoreErr
 			}
@@ -586,7 +585,7 @@ func run(iterations int, casesPath, skillPath, model, piBinary, runDir string, m
 			return err
 		}
 		logBenchmark("iter %d/%d candidate", iter, iterations)
-		candidate, speculativeHoldout, speculativeHoldoutRan, speculativeHoldoutErr, err := runCandidateBenchmarks(root, casesAbs, holdoutCasesAbs, skillAbs, model, piBinary, iterDir, limit, judge, parallelCases, parallelSuites)
+		candidate, speculativeHoldout, speculativeHoldoutRan, speculativeHoldoutErr, err := runCandidateBenchmarks(root, casesAbs, holdoutCasesAbs, skillAbs, model, codexBinary, iterDir, limit, judge, parallelCases, parallelSuites)
 		if err != nil {
 			if restoreErr := restoreDryRun(); restoreErr != nil {
 				return restoreErr
@@ -622,7 +621,7 @@ func run(iterations int, casesPath, skillPath, model, piBinary, runDir string, m
 				holdoutSuite := suiteLogLabel(holdoutCasesAbs)
 				logBenchmarkCtx(suiteLogContext(holdoutSuite), "iter %d/%d holdout gate", iter, iterations)
 				var err error
-				holdoutCandidate, err = runBenchmark(root, holdoutCasesAbs, skillAbs, model, piBinary, filepath.Join(iterDir, "holdout"), holdoutSuite, limit, judge, parallelCases)
+				holdoutCandidate, err = runBenchmark(root, holdoutCasesAbs, skillAbs, model, codexBinary, filepath.Join(iterDir, "holdout"), holdoutSuite, limit, judge, parallelCases)
 				if err != nil {
 					if restoreErr := restoreDryRun(); restoreErr != nil {
 						return restoreErr
@@ -848,11 +847,11 @@ type benchmarkOutcome struct {
 	Err    error
 }
 
-func runBaselineBenchmarks(root, casesAbs, holdoutCasesAbs, skillAbs, model, piBinary, runDir string, limit int, judge bool, parallelCases int, parallelSuites bool) (autoresearch.SuiteResult, autoresearch.SuiteResult, bool, error) {
+func runBaselineBenchmarks(root, casesAbs, holdoutCasesAbs, skillAbs, model, codexBinary, runDir string, limit int, judge bool, parallelCases int, parallelSuites bool) (autoresearch.SuiteResult, autoresearch.SuiteResult, bool, error) {
 	baselineDir := filepath.Join(runDir, "iter-000-baseline")
 	baselineSuite := suiteLogLabel(casesAbs)
 	if holdoutCasesAbs == "" {
-		baseline, err := runBenchmark(root, casesAbs, skillAbs, model, piBinary, baselineDir, baselineSuite, limit, judge, parallelCases)
+		baseline, err := runBenchmark(root, casesAbs, skillAbs, model, codexBinary, baselineDir, baselineSuite, limit, judge, parallelCases)
 		return baseline, autoresearch.SuiteResult{}, false, err
 	}
 
@@ -860,8 +859,8 @@ func runBaselineBenchmarks(root, casesAbs, holdoutCasesAbs, skillAbs, model, piB
 	holdoutSuite := suiteLogLabel(holdoutCasesAbs)
 	if parallelSuites {
 		logBenchmarkVerbose("baseline public+holdout parallel")
-		baselineCh := runBenchmarkAsync(root, casesAbs, skillAbs, model, piBinary, baselineDir, baselineSuite, limit, judge, parallelCases)
-		holdoutCh := runBenchmarkAsync(root, holdoutCasesAbs, skillAbs, model, piBinary, holdoutDir, holdoutSuite, limit, judge, parallelCases)
+		baselineCh := runBenchmarkAsync(root, casesAbs, skillAbs, model, codexBinary, baselineDir, baselineSuite, limit, judge, parallelCases)
+		holdoutCh := runBenchmarkAsync(root, holdoutCasesAbs, skillAbs, model, codexBinary, holdoutDir, holdoutSuite, limit, judge, parallelCases)
 		baseline := <-baselineCh
 		holdout := <-holdoutCh
 		if baseline.Err != nil {
@@ -873,48 +872,48 @@ func runBaselineBenchmarks(root, casesAbs, holdoutCasesAbs, skillAbs, model, piB
 		return baseline.Result, holdout.Result, true, nil
 	}
 
-	baseline, err := runBenchmark(root, casesAbs, skillAbs, model, piBinary, baselineDir, baselineSuite, limit, judge, parallelCases)
+	baseline, err := runBenchmark(root, casesAbs, skillAbs, model, codexBinary, baselineDir, baselineSuite, limit, judge, parallelCases)
 	if err != nil {
 		return autoresearch.SuiteResult{}, autoresearch.SuiteResult{}, false, err
 	}
 	logBenchmarkCtx(suiteLogContext(holdoutSuite), "baseline holdout")
-	holdout, err := runBenchmark(root, holdoutCasesAbs, skillAbs, model, piBinary, holdoutDir, holdoutSuite, limit, judge, parallelCases)
+	holdout, err := runBenchmark(root, holdoutCasesAbs, skillAbs, model, codexBinary, holdoutDir, holdoutSuite, limit, judge, parallelCases)
 	if err != nil {
 		return autoresearch.SuiteResult{}, autoresearch.SuiteResult{}, false, err
 	}
 	return baseline, holdout, true, nil
 }
 
-func runCandidateBenchmarks(root, casesAbs, holdoutCasesAbs, skillAbs, model, piBinary, iterDir string, limit int, judge bool, parallelCases int, parallelSuites bool) (autoresearch.SuiteResult, autoresearch.SuiteResult, bool, error, error) {
+func runCandidateBenchmarks(root, casesAbs, holdoutCasesAbs, skillAbs, model, codexBinary, iterDir string, limit int, judge bool, parallelCases int, parallelSuites bool) (autoresearch.SuiteResult, autoresearch.SuiteResult, bool, error, error) {
 	candidateSuite := suiteLogLabel(casesAbs)
 	if holdoutCasesAbs == "" || !parallelSuites {
-		candidate, err := runBenchmark(root, casesAbs, skillAbs, model, piBinary, iterDir, candidateSuite, limit, judge, parallelCases)
+		candidate, err := runBenchmark(root, casesAbs, skillAbs, model, codexBinary, iterDir, candidateSuite, limit, judge, parallelCases)
 		return candidate, autoresearch.SuiteResult{}, false, nil, err
 	}
 
 	holdoutSuite := suiteLogLabel(holdoutCasesAbs)
 	logBenchmarkVerbose("candidate public+holdout parallel")
-	candidateCh := runBenchmarkAsync(root, casesAbs, skillAbs, model, piBinary, iterDir, candidateSuite, limit, judge, parallelCases)
-	holdoutCh := runBenchmarkAsync(root, holdoutCasesAbs, skillAbs, model, piBinary, filepath.Join(iterDir, "holdout"), holdoutSuite, limit, judge, parallelCases)
+	candidateCh := runBenchmarkAsync(root, casesAbs, skillAbs, model, codexBinary, iterDir, candidateSuite, limit, judge, parallelCases)
+	holdoutCh := runBenchmarkAsync(root, holdoutCasesAbs, skillAbs, model, codexBinary, filepath.Join(iterDir, "holdout"), holdoutSuite, limit, judge, parallelCases)
 	candidate := <-candidateCh
 	holdout := <-holdoutCh
 	return candidate.Result, holdout.Result, true, holdout.Err, candidate.Err
 }
 
-func runBenchmarkAsync(root, casesAbs, skillAbs, model, piBinary, outDir, suiteLabel string, limit int, judge bool, parallelCases int) <-chan benchmarkOutcome {
+func runBenchmarkAsync(root, casesAbs, skillAbs, model, codexBinary, outDir, suiteLabel string, limit int, judge bool, parallelCases int) <-chan benchmarkOutcome {
 	ch := make(chan benchmarkOutcome, 1)
 	go func() {
-		result, err := runBenchmark(root, casesAbs, skillAbs, model, piBinary, outDir, suiteLabel, limit, judge, parallelCases)
+		result, err := runBenchmark(root, casesAbs, skillAbs, model, codexBinary, outDir, suiteLabel, limit, judge, parallelCases)
 		ch <- benchmarkOutcome{Result: result, Err: err}
 	}()
 	return ch
 }
 
-func runBenchmark(root, casesAbs, skillAbs, model, piBinary, outDir, suiteLabel string, limit int, judge bool, parallelCases int) (autoresearch.SuiteResult, error) {
-	return runBenchmarkOnce(root, casesAbs, skillAbs, model, piBinary, outDir, suiteLabel, limit, judge, parallelCases)
+func runBenchmark(root, casesAbs, skillAbs, model, codexBinary, outDir, suiteLabel string, limit int, judge bool, parallelCases int) (autoresearch.SuiteResult, error) {
+	return runBenchmarkOnce(root, casesAbs, skillAbs, model, codexBinary, outDir, suiteLabel, limit, judge, parallelCases)
 }
 
-func runBenchmarkOnce(root, casesAbs, skillAbs, model, piBinary, outDir, suiteLabel string, limit int, judge bool, parallelCases int) (autoresearch.SuiteResult, error) {
+func runBenchmarkOnce(root, casesAbs, skillAbs, model, codexBinary, outDir, suiteLabel string, limit int, judge bool, parallelCases int) (autoresearch.SuiteResult, error) {
 	if err := os.MkdirAll(outDir, 0o755); err != nil {
 		return autoresearch.SuiteResult{}, err
 	}
@@ -926,7 +925,7 @@ func runBenchmarkOnce(root, casesAbs, skillAbs, model, piBinary, outDir, suiteLa
 		"-cases", casesAbs,
 		"-skill", filepath.Dir(skillAbs),
 		"-model", model,
-		"-pi", piBinary,
+		"-codex", codexBinary,
 		"-out", filepath.Join(outDir, "result.json"),
 		"-raw-dir", filepath.Join(outDir, "raw"),
 		"-parallel-cases", fmt.Sprint(parallelCases),
@@ -1020,37 +1019,31 @@ Task for iteration %d:
 `, skillPath, casesPath, bestResultPath, iter, skillPath, qualityTolerance*100, skillPath, rshellCapabilitySnapshot)
 }
 
-func improveSkill(root, skillAbs, casesAbs, bestResultPath, iterDir, model, piBinary string, iter int, qualityTolerance float64) error {
+func improveSkill(root, skillAbs, casesAbs, bestResultPath, iterDir, model, codexBinary string, iter int, qualityTolerance float64) error {
 	rshellCapabilitySnapshot := researcherRShellCapabilitySnapshot(root)
 	prompt := formatResearcherPrompt(skillAbs, casesAbs, bestResultPath, iter, qualityTolerance, rshellCapabilitySnapshot)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
 	defer cancel()
-	args := []string{
-		"--print",
-		"--no-session",
-		"--no-context-files",
-		"--no-extensions",
-		"--no-prompt-templates",
-		"--no-skills",
-		"--tools", researcherTools,
-		"--model", model,
-		prompt,
-	}
-	cmd := exec.CommandContext(ctx, piBinary, args...)
+	researcherOutput := filepath.Join(iterDir, "researcher.stdout.md")
+	args := autoresearch.CodexExecTextArgs(model, autoresearch.CodexWorkspaceWriteSandbox, researcherOutput)
+	cmd := exec.CommandContext(ctx, codexBinary, args...)
 	cmd.Dir = root
-	cmd.Env = autoresearch.EnvWithExecutableDir(piBinary)
+	cmd.Env = autoresearch.EnvWithExecutableDir(codexBinary)
+	cmd.Stdin = strings.NewReader(prompt)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
-	logVerbose("iter %d run researcher pi", iter)
+	logVerbose("iter %d run researcher codex", iter)
 	if err := cmd.Run(); err != nil {
-		_ = os.WriteFile(filepath.Join(iterDir, "researcher.stdout.md"), stdout.Bytes(), 0o644)
+		_ = os.WriteFile(researcherOutput, stdout.Bytes(), 0o644)
 		if stderr.Len() > 0 {
 			_ = os.WriteFile(filepath.Join(iterDir, "researcher.stderr.txt"), stderr.Bytes(), 0o644)
 		}
-		return fmt.Errorf("researcher pi failed: %w", err)
+		return fmt.Errorf("researcher Codex failed: %w", err)
 	}
-	_ = os.WriteFile(filepath.Join(iterDir, "researcher.stdout.md"), stdout.Bytes(), 0o644)
+	if data, err := os.ReadFile(researcherOutput); err != nil || len(bytes.TrimSpace(data)) == 0 {
+		_ = os.WriteFile(researcherOutput, stdout.Bytes(), 0o644)
+	}
 	if stderr.Len() > 0 {
 		_ = os.WriteFile(filepath.Join(iterDir, "researcher.stderr.txt"), stderr.Bytes(), 0o644)
 	}

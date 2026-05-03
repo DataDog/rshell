@@ -63,7 +63,7 @@ type Criterion struct {
 	Points           float64 `json:"points" yaml:"points"`
 }
 
-// ToolCall captures a tool invocation from pi's JSON event stream.
+// ToolCall captures a tool invocation from Codex's JSON event stream.
 type ToolCall struct {
 	ID       string          `json:"id"`
 	Name     string          `json:"name"`

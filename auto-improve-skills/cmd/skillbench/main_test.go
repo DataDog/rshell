@@ -201,20 +201,27 @@ func TestPrepareBenchmarkCaseWorkspaceIsolatesAgentCWD(t *testing.T) {
 	}
 }
 
-func TestRunCaseUsesIsolatedWorkspaceForPiProcess(t *testing.T) {
+func TestRunCaseUsesIsolatedWorkspaceForCodexProcess(t *testing.T) {
 	if runtime.GOOS == "windows" {
-		t.Skip("uses a POSIX shell script as the fake pi binary")
+		t.Skip("uses a POSIX shell script as the fake codex binary")
 	}
 	root := t.TempDir()
 	if err := os.WriteFile(filepath.Join(root, "rshell"), []byte("#!/bin/sh\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	fakePI := filepath.Join(root, "fake-pi")
-	fakePIScript := `#!/bin/sh
+	skillDir := filepath.Join(root, "skill")
+	if err := os.MkdirAll(skillDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte("# Test skill\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	fakeCodex := filepath.Join(root, "fake-codex")
+	fakeCodexScript := `#!/bin/sh
 printf dirty > =252
-printf '%s\n' '{"type":"message_end","message":{"role":"assistant","content":[{"type":"text","text":"done"}]}}'
+printf '%s\n' '{"type":"item.completed","item":{"id":"item_0","type":"agent_message","text":"done"}}'
 `
-	if err := os.WriteFile(fakePI, []byte(fakePIScript), 0o755); err != nil {
+	if err := os.WriteFile(fakeCodex, []byte(fakeCodexScript), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	rawDir := filepath.Join(root, "raw")
@@ -222,7 +229,7 @@ printf '%s\n' '{"type":"message_end","message":{"role":"assistant","content":[{"
 		t.Fatal(err)
 	}
 
-	result := runCase(root, rawDir, filepath.Join(root, "skill"), fakePI, "test-model", "live", autoresearch.Case{ID: "case", Prompt: "prompt"}, 5*time.Second)
+	result := runCase(root, rawDir, skillDir, fakeCodex, "test-model", "live", autoresearch.Case{ID: "case", Prompt: "prompt"}, 5*time.Second)
 	if result.Error != "" {
 		t.Fatalf("runCase error = %q", result.Error)
 	}
@@ -230,7 +237,28 @@ printf '%s\n' '{"type":"message_end","message":{"role":"assistant","content":[{"
 		t.Fatalf("FinalAnswer = %q, want done", result.FinalAnswer)
 	}
 	if _, err := os.Stat(filepath.Join(root, "=252")); !os.IsNotExist(err) {
-		t.Fatalf("pi process wrote into repo root: %v", err)
+		t.Fatalf("Codex process wrote into repo root: %v", err)
+	}
+}
+
+func TestParseCodexJSONLCapturesFinalAnswerAndCommands(t *testing.T) {
+	parsed, err := parseCodexJSONL([]byte(strings.Join([]string{
+		`{"type":"thread.started","thread_id":"t"}`,
+		`{"type":"item.started","item":{"id":"item_1","type":"command_execution","command":"/bin/zsh -lc ./rshell --help","aggregated_output":"","exit_code":null,"status":"in_progress"}}`,
+		`{"type":"item.completed","item":{"id":"item_1","type":"command_execution","command":"/bin/zsh -lc ./rshell --help","aggregated_output":"help output\n","exit_code":0,"status":"completed"}}`,
+		`{"type":"item.completed","item":{"id":"item_2","type":"agent_message","text":"final answer"}}`,
+	}, "\n")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if parsed.FinalAnswer != "final answer" {
+		t.Fatalf("FinalAnswer = %q, want final answer", parsed.FinalAnswer)
+	}
+	if len(parsed.Commands) != 1 || parsed.Commands[0] != "/bin/zsh -lc ./rshell --help" {
+		t.Fatalf("Commands = %#v, want one Codex command", parsed.Commands)
+	}
+	if len(parsed.ToolCalls) != 1 || parsed.ToolCalls[0].Result != "help output\n" {
+		t.Fatalf("ToolCalls = %#v, want command output", parsed.ToolCalls)
 	}
 }
 
