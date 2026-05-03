@@ -88,8 +88,8 @@ func TestDefaultTrainingSettings(t *testing.T) {
 	if defaultParallelRepeats != 3 {
 		t.Fatalf("defaultParallelRepeats = %d, want 3", defaultParallelRepeats)
 	}
-	if defaultParallelCases != 3 {
-		t.Fatalf("defaultParallelCases = %d, want 3", defaultParallelCases)
+	if defaultParallelCases != 10 {
+		t.Fatalf("defaultParallelCases = %d, want 10", defaultParallelCases)
 	}
 	if defaultStructuralInterval != 3 {
 		t.Fatalf("defaultStructuralInterval = %d, want 3", defaultStructuralInterval)

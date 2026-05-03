@@ -30,7 +30,7 @@ const (
 	defaultModel                 = "openai-codex/gpt-5.5"
 	defaultLoopCount             = 1
 	defaultParallelRepeats       = 3
-	defaultParallelCases         = 3
+	defaultParallelCases         = 10
 	defaultStructuralInterval    = 3
 	defaultRewriteInterval       = 5
 	defaultExplorationCandidates = 3
