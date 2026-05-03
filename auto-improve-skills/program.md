@@ -30,11 +30,12 @@ Do not encode exact case facts, prompt wording, paths, filenames, IPs, timestamp
 
 ## Required behavior
 
-- Use only `./rshell`.
+- Use only `./rshell --allow-all-commands` for diagnostics in this workspace.
 - If diagnostics need file access, keep it explicit and narrow with `--allowed-paths string` (a comma-separated list of allowed directories).
-- Use `./rshell help` to discover supported commands, and `./rshell help <cmd>` for command details and flags.
+- Use the `help` builtin inside rshell to discover available capabilities. `help` lists supported feature topics and builtins; `help <feature|command>` shows details for a specific topic, command, or flags.
 - Keep diagnostics read-only and bounded.
 - Prefer general workflow guidance over case-specific rules.
+- Mention that production rshell deployments may restrict or omit some commands/features; `help` in that environment is the source of truth for what is supported.
 
 ## Improvement workflow
 
