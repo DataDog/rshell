@@ -52,6 +52,7 @@ const (
 	skilltrainLogPrefix                   = "skilltrain"
 	skilltrainLogSeparator                = " | "
 	commandOutputLimit                    = 64 * 1024
+	rshellCapabilitySnapshotMaxBytes      = 12 * 1024
 	researcherProgramPath                 = "program.md"
 	researcherSanitizedFeedbackPath       = "sanitized-feedback.md"
 	researcherSanitizedFeedbackSourcePath = "sanitized-feedback.source.json"
@@ -940,7 +941,7 @@ func prepareBenchmarkPrerequisites(root string, casesPaths ...string) error {
 }
 
 func ensureSkilltrainRShell(root string) error {
-	if st, err := os.Stat(filepath.Join(root, "rshell")); err == nil && st.Mode()&0o111 != 0 {
+	if _, err := skilltrainRShellExecutable(root); err == nil {
 		return nil
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
@@ -953,7 +954,51 @@ func ensureSkilltrainRShell(root string) error {
 	if err := cmd.Run(); err != nil {
 		return commandError("building ./rshell", err, capture)
 	}
+	if _, err := skilltrainRShellExecutable(root); err != nil {
+		return err
+	}
 	return nil
+}
+
+func skilltrainRShellExecutable(root string) (string, error) {
+	for _, candidate := range []string{filepath.Join(root, "rshell"), filepath.Join(root, "rshell.exe")} {
+		if st, err := os.Stat(candidate); err == nil && !st.IsDir() && st.Mode()&0o111 != 0 {
+			return candidate, nil
+		}
+	}
+	return "", fmt.Errorf("./rshell not found or not executable under repo root")
+}
+
+func researcherRShellCapabilitySnapshot(root string) string {
+	snapshot, err := loadRShellCapabilitySnapshot(root)
+	if err != nil {
+		logVerbose("setup rshell capability snapshot unavailable: %v", err)
+		return "Static rshell capability snapshot unavailable. The skill should still tell agents to run rshell help in the target environment because deployments may differ."
+	}
+	return snapshot
+}
+
+func loadRShellCapabilitySnapshot(root string) (string, error) {
+	rshellPath, err := skilltrainRShellExecutable(root)
+	if err != nil {
+		return "", err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, rshellPath, "--allow-all-commands", "--timeout", "5s", "-c", "help")
+	cmd.Dir = root
+	stdout := newLimitedBuffer(rshellCapabilitySnapshotMaxBytes)
+	stderr := newLimitedBuffer(2 * 1024)
+	cmd.Stdout = stdout
+	cmd.Stderr = stderr
+	if err := cmd.Run(); err != nil {
+		return "", commandError("collecting static ./rshell help snapshot", err, &commandCapture{stdout: stdout, stderr: stderr})
+	}
+	snapshot := strings.TrimSpace(stdout.String())
+	if snapshot == "" {
+		return "", fmt.Errorf("static ./rshell help snapshot was empty")
+	}
+	return snapshot, nil
 }
 
 func isRemoteHostDiagnosticsSuite(casesPath string) bool {
@@ -1547,12 +1592,21 @@ func writeResearcherWorkspaceFile(workspaceDir, relPath string, data []byte) err
 }
 
 type sanitizedFeedbackSource struct {
-	Version       int                        `json:"version"`
-	LLMEnabled    bool                       `json:"llm_enabled,omitempty"`
-	LLMModel      string                     `json:"llm_model,omitempty"`
-	LLMError      string                     `json:"llm_error,omitempty"`
-	Feedback      string                     `json:"feedback,omitempty"`
-	SafeAggregate sanitizedFeedbackAggregate `json:"safe_aggregate"`
+	Version                   int                                  `json:"version"`
+	LLMEnabled                bool                                 `json:"llm_enabled,omitempty"`
+	LLMModel                  string                               `json:"llm_model,omitempty"`
+	LLMError                  string                               `json:"llm_error,omitempty"`
+	Feedback                  string                               `json:"feedback,omitempty"`
+	RShellProcedureCategories []sanitizedFeedbackProcedureCategory `json:"rshell_procedure_feedback_categories,omitempty"`
+	SafeAggregate             sanitizedFeedbackAggregate           `json:"safe_aggregate"`
+}
+
+// sanitizedFeedbackProcedureCategory is deterministic, benchmark-agnostic process
+// guidance derived only from safe aggregate counts. It intentionally avoids
+// command lines, flags, paths, identifiers, service names, and case facts.
+type sanitizedFeedbackProcedureCategory struct {
+	Category string `json:"category"`
+	Guidance string `json:"guidance"`
 }
 
 type sanitizedFeedbackAggregate struct {
@@ -1586,15 +1640,18 @@ type sanitizedFeedbackCriterionStats struct {
 }
 
 type sanitizedFeedbackLLMRequest struct {
-	Instructions  []string                   `json:"instructions"`
-	SafeAggregate sanitizedFeedbackAggregate `json:"safe_aggregate"`
-	OutputSchema  string                     `json:"output_schema"`
+	Instructions              []string                             `json:"instructions"`
+	SafeAggregate             sanitizedFeedbackAggregate           `json:"safe_aggregate"`
+	RShellProcedureCategories []sanitizedFeedbackProcedureCategory `json:"rshell_procedure_feedback_categories,omitempty"`
+	OutputSchema              string                               `json:"output_schema"`
 }
 
 func buildSanitizedFeedbackSource(result autoresearch.SuiteResult) sanitizedFeedbackSource {
+	aggregate := buildSanitizedFeedbackAggregate(result)
 	return sanitizedFeedbackSource{
-		Version:       3,
-		SafeAggregate: buildSanitizedFeedbackAggregate(result),
+		Version:                   4,
+		RShellProcedureCategories: buildSanitizedRShellProcedureCategories(aggregate),
+		SafeAggregate:             aggregate,
 	}
 }
 
@@ -1666,6 +1723,39 @@ func buildSanitizedFeedbackAggregate(result autoresearch.SuiteResult) sanitizedF
 		agg.AverageDurationSeconds = roundFloat(result.AverageCaseDurationSeconds, 2)
 	}
 	return agg
+}
+
+func buildSanitizedRShellProcedureCategories(aggregate sanitizedFeedbackAggregate) []sanitizedFeedbackProcedureCategory {
+	categories := make([]sanitizedFeedbackProcedureCategory, 0, 5)
+	add := func(category, guidance string) {
+		categories = append(categories, sanitizedFeedbackProcedureCategory{Category: category, Guidance: guidance})
+	}
+
+	commandStats := aggregate.CriteriaBySource["commands"]
+	finalStats := aggregate.CriteriaBySource["final"]
+	toolStats := aggregate.CriteriaBySource["tool_results"]
+	safetyStats := aggregate.CriteriaBySource["safety"]
+
+	if commandStats.FailedCriteria > 0 {
+		add("rshell capability discovery", "Use rshell help as the source of truth before relying on command-specific features, and adapt when a capability is unavailable.")
+		add("rshell command coverage", "Make each rshell probe purposeful, read-only, and tied to a hypothesis; gather enough targeted evidence before synthesis.")
+	}
+	if aggregate.AverageFailedToolCalls > 0 || aggregate.ErrorCases > 0 {
+		add("failed or partial rshell output", "Treat denied, unsupported, slow, partial, or empty results as evidence about uncertainty; do not retry the same failing probe unchanged.")
+	}
+	if aggregate.SafetyViolationCount > 0 || safetyStats.FailedCriteria > 0 || aggregate.NegativeAssertionCriteria.FailedCriteria > 0 {
+		add("read-only safety", "Keep diagnostics non-mutating and narrowly scoped; recommend remediation only as safe next steps rather than executing it.")
+	}
+	if aggregate.EvidenceRequiredCriteria.FailedCriteria > 0 || finalStats.FailedCriteria > 0 || toolStats.FailedCriteria > 0 {
+		add("evidence-grounded synthesis", "Base conclusions on observed rshell output, distinguish checked facts from hypotheses, and state uncertainty when evidence is absent or ambiguous.")
+	}
+	if aggregate.AverageCommandCount > 6 || aggregate.AverageToolOutputKB > 64 || aggregate.AverageDurationSeconds > 60 {
+		add("boundedness and stopping", "Prefer narrow filters, limits, and recent ranges; stop once the likely cause or next safe check is well supported.")
+	}
+	if len(categories) == 0 && sanitizedFeedbackHasSignal(aggregate) {
+		add("general rshell procedure", "Improve the balance of capability discovery, bounded read-only probes, evidence grounding, and concise final synthesis.")
+	}
+	return categories
 }
 
 func addSanitizedCriterionStat(stat *sanitizedFeedbackCriterionStats, failed bool, occurrences int, missed float64) {

@@ -1,5 +1,7 @@
 # Auto-Improve Program: remote-host-diagnostics
 
+rshell is a minimal, safety-oriented bash/POSIX-like shell interpreter for AI agents.
+
 Researcher-facing guidance for improving the `remote-host-diagnostics` skill. Keep changes general and auditable. Default iterations should be small; when the prompt explicitly asks for structural or full-rewrite exploration, larger reorganizations are allowed.
 
 ## Edit scope
