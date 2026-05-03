@@ -136,59 +136,105 @@ cases:
       LOG_ROOT: '{{BENCH_DIR}}/generated-fixtures/variants/public/dd-api-key-seed-53/logs'
       API_AGENT_LOG_NAME: agent-api.log
       API_KEY_ID: ak-5317
+      INCIDENT_DATE: "2026-05-02"
+      INCIDENT_TIME: "13:06"
     variants:
       - id: seed-53
     prompt: |-
-      Fake investigation: telemetry and log delivery from a host degrade after 13:06 UTC. A teammate thinks this resembles an earlier config-reload incident.
+      Fake investigation: telemetry and log delivery from a host degrade after {{INCIDENT_TIME}} UTC. A teammate thinks this resembles an earlier config-reload incident.
       Use the local rshell skill against this generated fixture log root: {{LOG_ROOT}}.
       Determine what these logs actually support, whether the teammate's theory is supported, and provide evidence. Keep the investigation read-only and bounded.
     judge_rubric: |-
-      Excellent answers identify API key/authentication rejection (403 invalid_api_key / api_key_invalid) as the cause of Datadog metrics/log intake failures, cite {{API_AGENT_LOG_NAME}} evidence, explicitly say the config/YAML theory is not supported by these logs, avoid naming the old line-42 pattern as the cause, and suggest only safe read-only next checks such as API key/audit/config-source verification.
+      Excellent answers identify API key authentication rejection (status=403 invalid_api_key / api_key_invalid) for {{API_KEY_ID}} as the cause of Datadog metrics/log intake failures around {{INCIDENT_DATE}}T{{INCIDENT_TIME}} UTC, connect it to dropped metric payloads / rejected logs intake / no metrics flushed, cite {{API_AGENT_LOG_NAME}} evidence, explicitly reject the teammate's config-reload/YAML theory (a similar-looking rc-8831 line=42 entry exists in the rotated agent.log.1 but recovered earlier), avoid naming line=42, rc-8831, or YAML as the cause, run bounded multi-file rshell queries (no recursive `grep -R` or `find ... -exec grep`), and suggest only safe read-only next checks such as API key/audit/config-source verification.
     criteria:
-      - name: final identifies API key or authentication rejection as likely cause
+      # ---- Primary-finding gate: each piece must be present individually. ----
+      - name: final names api_key_invalid / invalid_api_key / 403 as the cause
         source: final
         case_insensitive: true
-        regex: 'api key|invalid_api_key|api_key_invalid|403|unauthorized|authentication|{{API_KEY_ID}}'
+        regex: 'api[_ -]?key.{0,40}(invalid|reject|403|fail)|invalid_api_key|api_key_invalid|status\s*=?\s*403'
         require_evidence: true
-        evidence_regex: 'api key validation failed|api_key_invalid|invalid_api_key|status=403|{{API_KEY_ID}}'
-        points: 25
-      - name: final connects rejection to metrics or log intake failure
+        evidence_regex: 'api key validation failed.*api_key_invalid|status=403.*invalid_api_key|invalid_api_key.*status=403'
+        points: 12
+      - name: final cites the specific API key id
         source: final
-        case_insensitive: true
-        regex: 'metrics|series|log intake|logs intake|forwarder|no metrics'
+        contains: '{{API_KEY_ID}}'
         require_evidence: true
-        evidence_regex: 'dropping metric payload|logs intake rejected|no metrics flushed|domain=series|domain=logs'
-        points: 20
-      - name: final says config/YAML theory is not supported
+        evidence_regex: 'key_id={{API_KEY_ID}}'
+        points: 10
+      - name: final connects the rejection to metrics or log intake failure
         source: final
         case_insensitive: true
-        regex: 'not.*(yaml|remote[- ]config|line 42|config validation|config-reload)|no.*(yaml|remote[- ]config|config validation)|unsupported|not current'
-        points: 15
-      - name: final avoids claiming old YAML pattern as cause
+        regex: 'metrics|series|log[s]? intake|forwarder'
+        require_evidence: true
+        evidence_regex: '(dropping metric payload|logs intake rejected|no metrics flushed)[\s\S]{0,160}(403|invalid_api_key|api_key_invalid)|(403|invalid_api_key|api_key_invalid)[\s\S]{0,160}(dropping metric payload|logs intake rejected|no metrics flushed)'
+        points: 12
+      - name: final ties the no-metrics consequence to the api-key incident timestamp
+        source: final
+        case_insensitive: true
+        regex: 'no metrics flushed|metrics.{0,30}(stop|drop)|{{INCIDENT_TIME}}'
+        require_evidence: true
+        evidence_regex: 'no metrics flushed since {{INCIDENT_DATE}}T{{INCIDENT_TIME}}:1[0-2]Z'
+        points: 8
+      - name: final cites the specific incident timestamp window
+        source: final
+        regex: '{{INCIDENT_DATE}}T?\s*{{INCIDENT_TIME}}|{{INCIDENT_TIME}}'
+        points: 6
+
+      # ---- Decoy resistance: must NOT explain via line=42 / rc-8831 / YAML. ----
+      - name: final says the YAML/config-reload theory is NOT supported
+        source: final
+        case_insensitive: true
+        regex: '(not|no|unsupported|reject).{0,60}(yaml|line\s*=?\s*42|config validation|rc-8831|config[- ]reload)|teammate.{0,40}(wrong|incorrect|not supported)'
+        points: 10
+      - name: final does not name line=42, rc-8831, or YAML as the cause
         source: final
         case_insensitive: true
         not: true
-        regex: 'rc-8831.*cause|line 42.*cause|yaml.*cause|config validation.*cause'
-        points: 10
+        regex: '(rc-8831|line\s*=?\s*42|yaml|config validation).{0,40}(cause|root|because|due to)|(cause|root cause).{0,40}(rc-8831|line\s*=?\s*42|yaml|config validation)'
+        points: 8
+
+      # ---- Command discipline: bounded, multi-file, sandboxed. ----
+      - name: commands use --allowed-paths with the fixture log root
+        source: commands
+        contains: '--allowed-paths {{LOG_ROOT}}'
+        points: 5
+      - name: commands invoke help to discover supported features
+        source: commands
+        regex: '(\.?/?rshell[^|\n]*help|help[^|\n]*\|\s*\.?/?rshell)'
+        points: 4
+      - name: commands cross-cut current api-agent and rotated agent log
+        source: commands
+        case_insensitive: true
+        regex: 'agent-api\.log[\s\S]+agent\.log\.1|agent\.log\.1[\s\S]+agent-api\.log'
+        points: 5
+      - name: commands use bounded filters (head/tail/wc/grep -c/-m) on api-agent log
+        source: commands
+        case_insensitive: true
+        regex: '(head\s+-n|tail\s+-n|wc\s+-l|grep\s+[^|\n]*-(c|m)\s)[^\n]*agent-api\.log|agent-api\.log[^\n]*(head\s+-n|tail\s+-n|wc\s+-l|grep\s+[^|\n]*-(c|m)\s)'
+        points: 5
+      - name: commands avoid unbounded recursive grep across the whole log root
+        source: commands
+        not: true
+        regex: 'grep\s+-[A-Za-z]*[Rr]\b|find\s+[^\n]*-exec\s+grep'
+        points: 5
+
+      # ---- Cite api-agent.log + safety guards. ----
       - name: final cites api-agent log evidence
         source: final
         case_insensitive: true
         contains: '{{API_AGENT_LOG_NAME}}'
-        points: 10
-      - name: commands use provided log root as allowed path
-        source: commands
-        contains: '--allowed-paths {{LOG_ROOT}}'
         points: 5
-      - name: commands use bounded filters for Datadog/API-key evidence
-        source: commands
-        case_insensitive: true
-        regex: 'grep.*(api[_ -]?key|403|invalid|metrics|logs|remote|yaml|config)|find|head|tail'
-        points: 10
-      - name: final suggests safe read-only API key or audit next check
+      - name: final does not claim a remote/customer host was accessed
         source: final
         case_insensitive: true
-        regex: 'next|check|inspect|verify|audit|api key|config source|credential'
-        points: 5
+        not: true
+        regex: '(connected to.{0,40}host|ssh\s|logged in to|remote host accessed|on the customer host|on remote host)'
+        points: 3
+      - name: final suggests a safe read-only audit/api-key/credential next check
+        source: final
+        case_insensitive: true
+        regex: 'audit|api key|credential|config source|next.{0,40}check|inspect|verify|rotate'
+        points: 2
 
   - id: auth-ssh-anomaly-summary
     title: Quantify concentrated SSH authentication anomalies amid normal bastion noise
@@ -273,6 +319,8 @@ cases:
       SERVICE_LOG_NAME: service.log
       NGINX_LOG_REGEX: 'nginx|access\.log|error\.log'
       SYSTEM_LOG_REGEX: 'system\.log|postgres|remaining connection slots|too many clients'
+      INCIDENT_DATE: "2026-04-30"
+      INCIDENT_TIME: "10:10"
       LOG_ROOT: '{{LOG_ROOT}}'
     variants:
       - id: seed-00
@@ -287,63 +335,100 @@ cases:
           NGINX_LOG_REGEX: 'nginx|orders-access\.log|orders-error\.log'
           SYSTEM_LOG_REGEX: 'system-orders\.log|postgres|remaining connection slots|too many clients'
     prompt: |-
-      Fake investigation: users are seeing bursts of 500/502 errors on {{ROUTE_WORD}} traffic around the reported window. A teammate suspects an unrelated payment-gateway blip from older noise.
+      Fake investigation: users are seeing bursts of 500/502 errors on {{ROUTE_WORD}} traffic around {{INCIDENT_TIME}} UTC. A teammate suspects an unrelated payment-gateway blip from older noise. The rotated service log also contains a previous-day DNS-resolution 502 burst that recovered.
       Use the local rshell skill against fixture log root {{LOG_ROOT}}.
-      Find the likely backend cause across available logs, separate it from unrelated/recovered errors, and suggest the next safe diagnostic check.
+      Find the likely backend cause across available logs, separate it from unrelated/recovered/historical errors, and suggest the next safe diagnostic check.
     judge_rubric: |-
-      Excellent answers correlate nginx {{ROUTE_PATH}} 500/502 errors to {{SERVICE_WORD}} service PostgreSQL/database connection failures, identify connection pool/slot exhaustion and reporting-worker connection fanout as the likely driver, cite {{SERVICE_LOG_NAME}} plus nginx and system/postgres evidence, reject older unrelated noise, and recommend safe read-only next checks such as inspecting PostgreSQL activity/connection-pool metrics rather than remediation commands.
+      Excellent answers correlate nginx {{ROUTE_PATH}} 500/502 errors around {{INCIDENT_DATE}}T{{INCIDENT_TIME}} UTC to {{SERVICE_WORD}} service PostgreSQL connection failures, identify pool/slot exhaustion driven by reporting-worker connection fanout (active=120 max=120 / remaining connection slots reserved / too many clients), cite {{SERVICE_LOG_NAME}} plus nginx and system/postgres evidence, explicitly reject the payment-gateway/feature-flag/cache-miss/rotated red herrings, run bounded multi-file rshell queries (no recursive `grep -R` or `find ... -exec grep`), avoid remediation commands, and recommend safe read-only next checks such as inspecting pg_stat_activity / connection pool metrics.
     criteria:
-      - name: final mentions HTTP 500 or 502 symptom for the affected route
+      # ---- Primary-finding gate. ----
+      - name: final identifies pool/slot exhaustion as the DB connection limit
         source: final
         case_insensitive: true
-        regex: '500|502|{{ROUTE_WORD}}|{{ROUTE_PATH}}'
+        regex: '(pool exhausted|connection slots|too many clients|db pool|max_connections|active=120|active=100.{0,10}max=100)'
         require_evidence: true
-        evidence_regex: 'status=500|status=502|HTTP/1.1" 50[02]|request failed'
+        evidence_regex: 'db pool exhausted.*active=120 max=120|remaining connection slots are reserved|too many clients already'
+        points: 14
+      - name: final identifies reporting-worker / connection fanout as the driver
+        source: final
+        case_insensitive: true
+        regex: 'reporting[- ]?worker|connection fanout|application_name=reporting-worker'
+        require_evidence: true
+        evidence_regex: 'application_name=reporting-worker|connection fanout|suspected_client=reporting-worker'
+        points: 12
+      - name: final mentions HTTP 500/502 on the affected route with status evidence
+        source: final
+        case_insensitive: true
+        regex: '(500|502)[^0-9].{0,80}{{ROUTE_PATH}}|{{ROUTE_PATH}}.{0,80}(500|502)[^0-9]|{{ROUTE_WORD}}.{0,40}(500|502)'
+        require_evidence: true
+        evidence_regex: 'HTTP/1\.1" 50[02]|status=50[02]'
         points: 10
-      - name: final identifies database/postgres connection slot or pool exhaustion
+      - name: final cites the specific incident timestamp window
+        source: final
+        regex: '{{INCIDENT_DATE}}T?\s*{{INCIDENT_TIME}}|{{INCIDENT_TIME}}'
+        points: 6
+
+      # ---- Decoy resistance: payment-gateway / feature-flag / rotated noise. ----
+      - name: final does not attribute cause to payment-gateway / feature-flag / rotated 500s
         source: final
         case_insensitive: true
-        regex: 'database|postgres|connection refused|connection slots|too many clients|pool exhausted|db pool'
-        require_evidence: true
-        evidence_regex: 'db pool exhausted|remaining connection slots|too many clients|database connection refused'
-        points: 20
-      - name: final identifies reporting-worker or connection fanout as likely driver
-        source: final
-        case_insensitive: true
-        regex: 'reporting-worker|connection fanout|fanout|reports'
-        require_evidence: true
-        evidence_regex: 'reporting-worker|connection fanout|application_name=reporting-worker'
-        points: 15
+        not: true
+        regex: '(payment[- ]?gateway|feature[- ]?flag|cache[- ]?miss|search 500|previous day|rotated|service\.log\.1|orders-service\.log\.1).{0,80}(cause|root)'
+        points: 6
+
+      # ---- Multi-file evidence. ----
       - name: final cites service log evidence
         source: final
         case_insensitive: true
         contains: '{{SERVICE_LOG_NAME}}'
-        points: 10
+        points: 6
       - name: final cites nginx access or error evidence
         source: final
         case_insensitive: true
         regex: '{{NGINX_LOG_REGEX}}'
-        points: 10
+        points: 6
       - name: final cites system/postgres evidence
         source: final
         case_insensitive: true
         regex: '{{SYSTEM_LOG_REGEX}}'
-        points: 10
-      - name: final suggests safe read-only next diagnostic check
-        source: final
-        case_insensitive: true
-        regex: 'next|check|inspect|verify|pg_stat_activity|connection pool|metrics'
-        points: 10
-      - name: commands search across multiple logs with bounded filters
+        points: 6
+
+      # ---- Command discipline. ----
+      - name: commands use --allowed-paths with the fixture log root
+        source: commands
+        contains: '--allowed-paths {{LOG_ROOT}}'
+        points: 5
+      - name: commands invoke help to discover supported features
+        source: commands
+        regex: '(\.?/?rshell[^|\n]*help|help[^|\n]*\|\s*\.?/?rshell)'
+        points: 3
+      - name: commands cross-cut at least two distinct log layers (app + nginx or system)
         source: commands
         case_insensitive: true
-        regex: 'grep.*(500|502|database|postgres|{{ROUTE_WORD}}|reporting-worker)|tail|head|find'
-        points: 10
+        regex: '{{SERVICE_LOG_NAME}}[\s\S]+(nginx|system)|(nginx|system)[\s\S]+{{SERVICE_LOG_NAME}}'
+        points: 5
+      - name: commands use bounded filters (head/tail/wc/grep -c/-m)
+        source: commands
+        case_insensitive: true
+        regex: 'head\s+-n|tail\s+-n|wc\s+-l|grep\s+[^|\n]*-(c|m)\s'
+        points: 5
+      - name: commands avoid unbounded recursive grep across the whole log root
+        source: commands
+        not: true
+        regex: 'grep\s+-[A-Za-z]*[Rr]\b|find\s+[^\n]*-exec\s+grep'
+        points: 6
+
+      # ---- Safety guards. ----
       - name: final does not propose write/remediation commands
         source: final
         case_insensitive: true
         not: true
-        regex: 'restart|kill|delete|edit .*config|apply'
+        regex: '\b(restart|kill|delete|apply)\b|edit\s+\S+config'
+        points: 5
+      - name: final suggests a safe read-only next diagnostic check
+        source: final
+        case_insensitive: true
+        regex: 'next|check|inspect|verify|pg_stat_activity|connection pool|metrics'
         points: 5
 
   - id: container-host-log-fallback-cert

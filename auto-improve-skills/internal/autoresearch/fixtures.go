@@ -107,12 +107,17 @@ func remoteHostDiagnosticsPublicVariantFixtureFiles() []fixtureFile {
 			"line 42", "line 87",
 			"column=17", "column=9",
 		)},
+		// Decoy: a same-location (datadog.yaml line=42) YAML parse failure on
+		// 2026-05-01 under the canonical rc-8831 transaction id, recovered after
+		// retry. The current incident in this seed lives in core-agent.log under
+		// rc-9137 line=87, so any answer that points at line=42 / rc-8831 is
+		// reading the rotated decoy instead of the actual cause.
 		fixtureFile{path: ddConfigRoot + "/datadog/agent.log.1", lines: appendFixtureLines(generateDatadogAgentRotatedLog(),
-			"2026-05-01T23:51:14Z ERROR config validation failed file=/etc/datadog-agent/datadog.yaml line=42 column=17 error=\"yaml: mapping values are not allowed in this context\" transaction_id=rc-8831 recovered=true old_rotation=true note=adversarial-red-herring",
-			"2026-05-01T23:51:22Z INFO config validation recovered transaction_id=rc-8831 old_rotation=true",
+			"2026-05-01T23:51:14Z ERROR config validation failed file=/etc/datadog-agent/datadog.yaml line=42 column=17 error=\"yaml: mapping values are not allowed in this context\" transaction_id=rc-8831 recovered=true",
+			"2026-05-01T23:51:22Z INFO config validation recovered transaction_id=rc-8831 attempt=2 status=OK",
 		)},
 		fixtureFile{path: ddConfigRoot + "/debug-noise.log", lines: appendFixtureLines(generateDebugNoiseLog(),
-			"2026-05-02T11:58:00Z ERROR component=fixture-noise message=\"old api_key_invalid canary recovered before incident\" token=not-root-cause",
+			"2026-05-02T11:58:00Z ERROR component=fixture-noise message=\"transient api_key_invalid canary cleared\" token=variant-noise",
 		)},
 	)
 
@@ -130,8 +135,11 @@ func remoteHostDiagnosticsPublicVariantFixtureFiles() []fixtureFile {
 	}
 	files = append(files,
 		fixtureFile{path: ordersRoot + "/app/orders-service.log", lines: replaceFixtureLines(generateCheckoutServiceLog(), orderReplacements...)},
+		// Decoy: a previous-day DNS-resolution 502 on the orders payments
+		// upstream that recovered. The current incident is DB pool exhaustion;
+		// any answer that blames DNS is following the rotated red herring.
 		fixtureFile{path: ordersRoot + "/app/orders-service.log.1", lines: appendFixtureLines(replaceFixtureLines(generateCheckoutServiceRotatedLog(), orderReplacements...),
-			"2026-05-01T22:44:10Z ERROR service=orders request failed id=ord-old-900 route=/api/orders status=502 error=\"lookup payments.service.consul: no such host\" recovered=true old_rotation=true note=dns-red-herring",
+			"2026-05-01T22:44:10Z ERROR service=orders request failed id=ord-old-900 route=/api/orders status=502 error=\"lookup payments.service.consul: no such host\" recovered=true",
 		)},
 		fixtureFile{path: ordersRoot + "/nginx/orders-access.log", lines: replaceFixtureLines(generateNginxAccessLog(), orderReplacements...)},
 		fixtureFile{path: ordersRoot + "/nginx/orders-error.log", lines: replaceFixtureLines(generateNginxErrorLog(), orderReplacements...)},
@@ -153,8 +161,12 @@ func remoteHostDiagnosticsPublicVariantFixtureFiles() []fixtureFile {
 			"rc-9901", "rc-5311",
 			"rc-9902", "rc-5312",
 		)},
+		// Decoy: an early-day rc-8831 line=42 YAML failure that recovered.
+		// The current incident is API key rejection (api_key_invalid /
+		// status=403) for ak-5317, not a config validation failure; an answer
+		// that points at line=42 / rc-8831 is reading the rotated decoy.
 		fixtureFile{path: ddAPIKeyRoot + "/datadog/agent.log.1", lines: appendFixtureLines(generateDatadogAgentRotatedLog(),
-			"2026-05-01T03:18:22Z ERROR config validation failed file=/etc/datadog-agent/datadog.yaml line=42 column=17 transaction_id=rc-8831 recovered=true old_rotation=true note=not-current-incident",
+			"2026-05-01T03:18:22Z ERROR config validation failed file=/etc/datadog-agent/datadog.yaml line=42 column=17 transaction_id=rc-8831 recovered=true",
 		)},
 	)
 
@@ -213,7 +225,7 @@ func generateSSHAuthVariantLog(cfg sshAuthVariantConfig) []string {
 		} else if i%149 == 0 {
 			lines = append(lines, fmt.Sprintf("%s login-gw sshd[%d]: Failed password for invalid user scanner from 198.51.100.%d port %d ssh2", syslogTime(dt), 4200+i, 30+i%40, 47000+i))
 		} else if i%101 == 0 {
-			lines = append(lines, fmt.Sprintf("%s login-gw sudo:   deploy : TTY=pts/3 ; PWD=/srv/app ; USER=root ; COMMAND=/usr/bin/systemctl status ssh.service token=ssh-variant-red-herring", syslogTime(dt)))
+			lines = append(lines, fmt.Sprintf("%s login-gw sudo:   deploy : TTY=pts/3 ; PWD=/srv/app ; USER=root ; COMMAND=/usr/bin/systemctl status ssh.service token=ssh-variant-sudo", syslogTime(dt)))
 		} else {
 			lines = append(lines, fmt.Sprintf("%s login-gw CRON[%d]: pam_unix(cron:session): session closed for user root token=ssh-variant-noise-%04d", syslogTime(dt), 5000+i, i))
 		}
@@ -227,7 +239,11 @@ func generateSSHAuthVariantRotatedLog(sourceIP string, start time.Time) []string
 		dt := start.Add(time.Duration(i*2) * time.Second)
 		switch {
 		case i == 222:
-			lines = append(lines, fmt.Sprintf("%s login-gw sshd[5222]: Accepted password for backup from %s port 50022 ssh2 old_rotation=true note=previous-day-red-herring", syslogTime(dt), sourceIP))
+			// Decoy: an accepted password login for the same source IP from the
+			// previous day's rotated log. The current-window suspicious source
+			// did not get in; an answer that cites this rotated entry as a
+			// successful current login is reading the previous-day decoy.
+			lines = append(lines, fmt.Sprintf("%s login-gw sshd[5222]: Accepted password for backup from %s port 50022 ssh2", syslogTime(dt), sourceIP))
 		case i%83 == 0:
 			lines = append(lines, fmt.Sprintf("%s login-gw sshd[%d]: Failed password for invalid user temp from 203.0.113.%d port %d ssh2", syslogTime(dt), 6000+i, 40+i%20, 48000+i))
 		default:
@@ -266,7 +282,10 @@ func generateContainerExpiredAgentLog() []string {
 func generateContainerExpiredSyslog() []string {
 	start := time.Date(2026, 5, 2, 6, 0, 0, 0, time.UTC)
 	events := map[int]string{
-		18:  "node chronyd[801]: System clock synchronized stratum=2 offset=0.001s note=clock-healthy-red-herring",
+		// Decoy: clock is reported synchronized, but the apiserver serving
+		// certificate has expired (NotAfter has passed) -- the cert material
+		// problem is the actual cause, not clock skew.
+		18:  "node chronyd[801]: System clock synchronized stratum=2 offset=0.001s",
 		136: "node kubelet[22]: apiserver serving certificate NotAfter=2026-05-01T23:59:59Z has passed; rotation controller pending",
 		208: "node datadog-agent[17]: kubernetes_apiserver check failing: x509 certificate has expired (node clock synchronized)",
 		244: "node cert-rotation[77]: renewal request queued for kubernetes.default.svc serving certificate status=pending approval",
@@ -656,7 +675,7 @@ func generateSystemRotatedLog() []string {
 	for i := 0; i < 650; i++ {
 		dt := start.Add(time.Duration(i*2) * time.Second)
 		if i == 241 {
-			lines = append(lines, fmt.Sprintf("%s host postgres[1200]: FATAL: password authentication failed for user \"readonly\" recovered=true old_rotation=true", syslogTime(dt)))
+			lines = append(lines, fmt.Sprintf("%s host postgres[1200]: FATAL: password authentication failed for user \"readonly\" recovered=true", syslogTime(dt)))
 		} else {
 			lines = append(lines, fmt.Sprintf("%s host systemd[1]: previous rotation heartbeat sequence=%04d token=system-rotated-noise", syslogTime(dt), i))
 		}
@@ -756,7 +775,7 @@ func generateHoldoutCheckoutLog() []string {
 		414: "ERROR service=checkout request failed id=pay-2201 route=/api/pay status=502 upstream=payments error=\"lookup payments.service.consul: no such host\" resolver=10.0.0.53",
 		421: "ERROR service=checkout request failed id=pay-2202 route=/api/pay status=502 upstream=payments error=\"dial tcp: lookup payments.service.consul: i/o timeout\" resolver=10.0.0.53",
 		427: "WARN service=checkout circuit breaker opened dependency=payments reason=\"dns resolution failure\" window=60s",
-		456: "INFO service=checkout postgres health status=OK pool=checkout_rw active=43 idle=17 max=120 latency_ms=17 note=\"database not saturated during payment errors\"",
+		456: "INFO service=checkout postgres health status=OK pool=checkout_rw active=43 idle=17 max=120 latency_ms=17",
 		509: "ERROR service=checkout request failed id=pay-2211 route=/api/pay status=502 upstream=payments error=\"lookup payments.service.consul: server misbehaving\" resolver=10.0.0.53",
 		690: "INFO service=checkout dependency=payments recovered status=OK dns_cache_refreshed=true",
 	}
@@ -967,7 +986,7 @@ func generateHoldoutCartLog() []string {
 		318: "ERROR service=cart request failed id=cart-7784 route=/api/cart status=503 dependency=redis error=\"ERR max number of clients reached\" cache=cart-primary",
 		324: "ERROR service=cart request failed id=cart-7785 route=/api/cart status=503 dependency=redis error=\"dial tcp 10.2.4.19:6379: connection refused\" cache=cart-primary",
 		337: "WARN service=cart circuit breaker opened dependency=redis reason=cache dependency failure window=60s",
-		402: "INFO service=cart postgres health status=OK pool=cart_rw active=32 idle=25 max=100 latency_ms=11 note=\"database not saturated during cart 503s\"",
+		402: "INFO service=cart postgres health status=OK pool=cart_rw active=32 idle=25 max=100 latency_ms=11",
 		511: "INFO service=cart cache dependency recovered dependency=redis status=OK reconnects=3",
 	}
 	routes := []string{"/api/cart", "/api/profile", "/api/promotions", "/health"}
@@ -987,11 +1006,16 @@ func generateHoldoutCartLog() []string {
 
 func generateHoldoutCartRotatedLog() []string {
 	start := time.Date(2026, 4, 30, 17, 30, 0, 0, time.UTC)
+	// Previous-day (2026-04-30) DB pool exhaustion incident on the cart
+	// service. The current cart.log incident is on 2026-05-01 and is driven
+	// by Redis maxclients, not Postgres. The model must use the date and the
+	// dependency (redis vs postgres) to disambiguate; no "old_incident" or
+	// "previous-day-noise" labels are provided as hints.
 	events := map[int]string{
-		112: "WARN service=cart db pool wait high pool=cart_rw active=98 max=100 wait_ms=500 recovered=true note=previous-day-noise",
-		141: "ERROR service=cart db pool exhausted pool=cart_rw active=100 max=100 suspected_client=reporting-worker old_incident=true",
-		154: "ERROR service=cart request failed id=cart-old-331 route=/api/cart status=500 error=\"pq: remaining connection slots are reserved\" old_incident=true",
-		260: "INFO service=cart database recovered pool=cart_rw active=37 max=100 old_incident=true",
+		112: "WARN service=cart db pool wait high pool=cart_rw active=98 max=100 wait_ms=500 recovered=true",
+		141: "ERROR service=cart db pool exhausted pool=cart_rw active=100 max=100 suspected_client=reporting-worker",
+		154: "ERROR service=cart request failed id=cart-old-331 route=/api/cart status=500 error=\"pq: remaining connection slots are reserved\"",
+		260: "INFO service=cart database recovered pool=cart_rw active=37 max=100",
 	}
 	lines := make([]string, 0, 620)
 	for i := 0; i < 620; i++ {

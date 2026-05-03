@@ -165,11 +165,14 @@ func TestGenerateRemoteHostDiagnosticsFixtures(t *testing.T) {
 
 	holdoutCart := string(readGeneratedFixture(t, fixtureRoot, "holdout/logs/app/cart.log"))
 	assertContains(t, holdoutCart, "ERR max number of clients reached")
-	assertContains(t, holdoutCart, "database not saturated during cart 503s")
+	assertContains(t, holdoutCart, "postgres health status=OK pool=cart_rw active=32")
 
 	holdoutCartRotated := string(readGeneratedFixture(t, fixtureRoot, "holdout/logs/app/cart.log.1"))
 	assertContains(t, holdoutCartRotated, "db pool exhausted")
-	assertContains(t, holdoutCartRotated, "old_incident=true")
+	// Previous-day rotated decoy carries no "old_incident" hint -- the model
+	// must use the 2026-04-30 date and the dependency (postgres vs redis) to
+	// distinguish it from the current 2026-05-01 redis-driven incident.
+	assertContains(t, holdoutCartRotated, "suspected_client=reporting-worker")
 
 	holdoutCartSystem := string(readGeneratedFixture(t, fixtureRoot, "holdout/logs/system-cart.log"))
 	assertContains(t, holdoutCartSystem, "maxclients")
@@ -179,7 +182,11 @@ func TestGenerateRemoteHostDiagnosticsFixtures(t *testing.T) {
 	assertContains(t, ddConfigVariant, "transaction_id=rc-9137")
 	assertContains(t, ddConfigVariant, "line=87")
 	ddConfigVariantRotated := string(readGeneratedFixture(t, fixtureRoot, "variants/public/dd-config-seed-17/logs/datadog/agent.log.1"))
-	assertContains(t, ddConfigVariantRotated, "old_rotation=true note=adversarial-red-herring")
+	// Decoy: rc-8831 line=42 yaml failure on 2026-05-01 that recovered. No
+	// "adversarial" / "old_rotation" labels -- the model must disambiguate
+	// using the timestamp and recovered=true.
+	assertContains(t, ddConfigVariantRotated, "transaction_id=rc-8831 recovered=true")
+	assertContains(t, ddConfigVariantRotated, "line=42 column=17")
 
 	sshVariant := string(readGeneratedFixture(t, fixtureRoot, "variants/public/ssh-seed-29/logs/security/secure.log"))
 	if got := countLinesContaining(sshVariant, "Failed password for invalid user", "from 192.0.2.88"); got != 73 {
@@ -193,19 +200,30 @@ func TestGenerateRemoteHostDiagnosticsFixtures(t *testing.T) {
 	assertContains(t, ordersVariant, "db pool exhausted")
 	assertContains(t, ordersVariant, "suspected_client=reporting-worker")
 	ordersVariantRotated := string(readGeneratedFixture(t, fixtureRoot, "variants/public/orders-db-seed-33/logs/app/orders-service.log.1"))
-	assertContains(t, ordersVariantRotated, "dns-red-herring")
+	// Decoy: a previous-day DNS-resolution 502 that recovered. No
+	// "dns-red-herring" label is present.
+	assertContains(t, ordersVariantRotated, "lookup payments.service.consul: no such host")
+	assertContains(t, ordersVariantRotated, "recovered=true")
 
 	kubeExpiredAgent := string(readGeneratedFixture(t, fixtureRoot, "variants/public/kube-cert-expired-seed-41/container/host/var/log/datadog/checks.log"))
 	assertContains(t, kubeExpiredAgent, "x509: certificate has expired")
 	kubeExpiredSyslog := string(readGeneratedFixture(t, fixtureRoot, "variants/public/kube-cert-expired-seed-41/container/host/var/log/syslog"))
 	assertContains(t, kubeExpiredSyslog, "NotAfter=2026-05-01T23:59:59Z")
-	assertContains(t, kubeExpiredSyslog, "clock-healthy-red-herring")
+	// No "clock-healthy-red-herring" label: chronyd reports a synchronized
+	// clock; the cert material is the actual cause and the model must reason
+	// about cert NotAfter vs clock skew without a hint label.
+	assertContains(t, kubeExpiredSyslog, "System clock synchronized stratum=2")
 
 	apiKeyVariant := string(readGeneratedFixture(t, fixtureRoot, "variants/public/dd-api-key-seed-53/logs/datadog/agent-api.log"))
 	assertContains(t, apiKeyVariant, "key_id=ak-5317")
 	assertContains(t, apiKeyVariant, "api_key_invalid")
 	apiKeyVariantRotated := string(readGeneratedFixture(t, fixtureRoot, "variants/public/dd-api-key-seed-53/logs/datadog/agent.log.1"))
-	assertContains(t, apiKeyVariantRotated, "old_rotation=true note=not-current-incident")
+	// Decoy: an early-day rc-8831 line=42 yaml failure that recovered. No
+	// "not-current-incident" label -- the model must reject the teammate's
+	// config-reload theory using timestamps and the actual current cause
+	// (api_key_invalid in agent-api.log).
+	assertContains(t, apiKeyVariantRotated, "transaction_id=rc-8831 recovered=true")
+	assertContains(t, apiKeyVariantRotated, "line=42 column=17")
 }
 
 func readGeneratedFixture(t *testing.T, fixtureRoot, rel string) []byte {

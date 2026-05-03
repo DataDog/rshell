@@ -852,7 +852,10 @@ func runBenchmarkOnce(root, casesAbs, skillAbs, model, piBinary, outDir, suiteLa
 		"-raw-dir", filepath.Join(outDir, "raw"),
 		"-parallel-cases", fmt.Sprint(parallelCases),
 		"-log-suite", suiteLabel,
-		"-objective-skill-size-weight", "0",
+		// Inherit skillbench defaults for objective weights so skill size
+		// pressure is applied during training. Previously this override
+		// zeroed the skill-size weight, which let the optimizer accept
+		// arbitrarily verbose skills without cost.
 		"-ensure-rshell=false",
 		"-generate-fixtures=false",
 	}
