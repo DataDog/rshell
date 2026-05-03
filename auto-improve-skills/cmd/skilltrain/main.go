@@ -1894,7 +1894,7 @@ func commitSkill(root, skillAbs string, trainLoop, iter int, result autoresearch
 		return err
 	}
 	researcherSummary := readCommitSummary(researcherSummaryPath)
-	msg := formatCommitSubject(trainLoop, iter, benchmarkObjective(result))
+	msg := formatCommitSubject(trainLoop, iter, previousObjective, benchmarkObjective(result))
 	body := formatCommitBody(root, skillRel, iter, result, resultPath, holdoutGate, researcherSummary, previousObjective, diffStat, shortStat)
 	logSuccess("iter %d git commit", iter)
 	if err := runGit(root, "commit", "-m", msg, "-m", body, "--", skillRel); err != nil {
@@ -1908,11 +1908,11 @@ func commitSkill(root, skillAbs string, trainLoop, iter int, result autoresearch
 	return runGit(root, "push")
 }
 
-func formatCommitSubject(trainLoop, iter int, objective float64) string {
+func formatCommitSubject(trainLoop, iter int, previousObjective, objective float64) string {
 	if trainLoop <= 0 {
 		trainLoop = 1
 	}
-	return fmt.Sprintf("[update skill] loop %d - iter %d - obj %.2f%%", trainLoop, iter, objective*100)
+	return fmt.Sprintf("[update skill] loop %d - iter %d - obj %.2f%%->%.2f%%", trainLoop, iter, previousObjective*100, objective*100)
 }
 
 func formatCommitBody(root, skillRel string, iter int, result autoresearch.SuiteResult, resultPath string, holdoutGate *benchmarkGate, researcherSummary string, previousObjective float64, diffStat, shortStat string) string {
