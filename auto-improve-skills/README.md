@@ -26,7 +26,7 @@ Training loop:
 go run ./cmd/skilltrain -iters 3 -judge
 ```
 
-`skilltrain` asks for one focused, general skill improvement per iteration, benchmarks the candidate, and accepts it only when quality stays within tolerance and the objective improves.
+`skilltrain` asks for a general skill improvement per iteration, benchmarks the candidate, and accepts it only when quality stays within tolerance and the objective improves.
 
 Researcher agents run from the repository root with read, bash, edit, and write tools so they can inspect the public benchmark suite and the best public `result.json`. The prompt forbids reading, listing, grepping, or editing holdout-related files, folders, fixtures, run outputs, or results.
 

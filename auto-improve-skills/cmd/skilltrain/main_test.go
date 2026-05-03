@@ -244,7 +244,7 @@ func TestFormatResearcherPromptIncludesPublicArtifactsAndForbidsHoldout(t *testi
 		"rshell-capability-snapshot",
 		"Static rshell capability snapshot unavailable",
 		"Production deployments may restrict",
-		"\"Changes\", \"Why\", and \"Size\" sections",
+		"\"Changes\" and \"Why\" sections",
 		"explain the rationale for each material change",
 	} {
 		if !strings.Contains(prompt, want) {
@@ -254,6 +254,11 @@ func TestFormatResearcherPromptIncludesPublicArtifactsAndForbidsHoldout(t *testi
 	for _, forbidden := range []string{
 		"raw transcripts",
 		"result JSON",
+		"smallest useful",
+		"one focused",
+		"keeping the skill concise",
+		"\"Size\" sections",
+		"concision",
 	} {
 		if strings.Contains(prompt, forbidden) {
 			t.Fatalf("researcher prompt should not contain %q:\n%s", forbidden, prompt)

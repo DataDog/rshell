@@ -2,7 +2,7 @@
 
 rshell is a minimal, safety-oriented bash/POSIX-like shell interpreter for AI agents.
 
-Researcher-facing guidance for improving the `remote-host-diagnostics` skill. Keep changes small, general, and auditable.
+Researcher-facing guidance for improving the `remote-host-diagnostics` skill. Keep changes general and auditable.
 
 ## Edit scope
 
@@ -20,7 +20,7 @@ Optimize in this order:
 
 1. Final-answer quality: correct finding/root cause, grounded in command output, explicit about commands run, read-only/safe, clear about uncertainty and next steps.
 2. Efficiency: gather enough evidence, then stop; avoid broad or repetitive searches.
-3. Skill size: keep essential guidance, remove duplication and over-specific prose.
+3. Maintainability: remove duplication and over-specific prose.
 
 ## Anti-overfitting
 
@@ -41,4 +41,4 @@ Do not encode exact case facts, prompt wording, paths, filenames, IPs, timestamp
 
 ## Improvement workflow
 
-Read the current skill, make the smallest useful general improvement, and summarize what changed plus why each material change improves quality, efficiency, or concision. Avoid benchmark-specific facts and keep the result compact. If there is no clear safe improvement, leave the skill unchanged and say why.
+Read the current skill, make a useful general improvement, and summarize what changed plus why each material change improves quality or efficiency. Avoid benchmark-specific facts. If there is no clear safe improvement, leave the skill unchanged and say why.

@@ -1,4 +1,4 @@
-.PHONY: fmt test train train3 trainloop reset-remote-host-diagnostics
+.PHONY: fmt test train train3 trainloop reset-skill
 
 fmt:
 	go fmt ./...
@@ -6,7 +6,7 @@ fmt:
 test:
 	go test ./...
 
-reset-remote-host-diagnostics:
+reset-skill:
 	@printf '%s\n' \
 		'---' \
 		'name: datadog/remote-host-diagnostics' \
@@ -18,6 +18,12 @@ reset-remote-host-diagnostics:
 		'Use `./rshell`' \
 		'' \
 		> skills/remote-host-diagnostics/SKILL.md
+	@if git diff --quiet HEAD -- skills/remote-host-diagnostics/SKILL.md; then \
+		echo "No skill changes to commit"; \
+	else \
+		git commit --only -m "Reset skill" -- skills/remote-host-diagnostics/SKILL.md; \
+		git push; \
+	fi
 
 train:
 	go run ./cmd/skilltrain \

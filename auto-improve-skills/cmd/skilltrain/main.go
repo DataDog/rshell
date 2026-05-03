@@ -892,6 +892,7 @@ func runBenchmarkOnce(root, casesAbs, skillAbs, model, piBinary, outDir, suiteLa
 		"-raw-dir", filepath.Join(outDir, "raw"),
 		"-parallel-cases", fmt.Sprint(parallelCases),
 		"-log-suite", suiteLabel,
+		"-objective-skill-size-weight", "0",
 		"-ensure-rshell=false",
 		"-generate-fixtures=false",
 	}
@@ -959,17 +960,17 @@ Do not read, list, grep, inspect, or edit holdout-related files, folders, fixtur
 Task for iteration %d:
 - Improve only %s.
 - Optimize final-answer quality first. The trainer allows at most a %.1f percentage point quality drop from the best seen public quality.
-- Also improve the composite objective by reducing end-to-end investigation time and keeping the skill concise.
-- Make one focused, general improvement.
+- Also improve the composite objective by reducing end-to-end investigation time.
+- Make a general improvement; reorganize or rewrite the skill when that is the most useful general change.
 - Do not edit benchmark cases, fake logs, Go tooling, reports, run outputs, or unrelated files.
 - Treat public benchmark data as samples, not targets.
-- Prefer short, general diagnostics over long case-specific rules or overfitting exact answers.
+- Prefer general diagnostics over case-specific rules or overfitting exact answers.
 - Do not add exact case facts, paths, filenames, IDs, IPs, timestamps, services, commands, root causes, line numbers, or expected-answer text.
 - Use read/bash only to inspect allowed public artifacts and general repo context; never inspect holdout-related paths.
 - Use edit/write only on %s.
 - Use the static rshell capability snapshot below only as public implementation context, not as evidence about hidden tasks. Production deployments may restrict, omit, or extend features; the skill should keep telling diagnostic agents to run rshell help in the target environment.
-- After editing, write a brief researcher report with "Changes", "Why", and "Size" sections.
-- In "Why", explain the rationale for each material change in general terms tied to quality, efficiency, or concision, without evaluator-private details.
+- After editing, write a brief researcher report with "Changes" and "Why" sections.
+- In "Why", explain the rationale for each material change in general terms tied to quality or efficiency, without evaluator-private details.
 
 <rshell-capability-snapshot>
 %s
@@ -1086,8 +1087,8 @@ func formatCommitBody(root, skillRel string, iter int, result autoresearch.Suite
 	fmt.Fprintf(&b, "- Skill size: %d estimated tokens, %d bytes (score %.2f%%)\n", result.SkillSizeEstimatedTokens, result.SkillSizeBytes, result.SkillSizeScore*100)
 	cfg := result.ObjectiveConfig
 	if cfg.QualityWeight+cfg.DurationWeight+cfg.SkillSizeWeight > 0 {
-		fmt.Fprintf(&b, "- Objective config: quality=%.2f duration=%.2f skill_size=%.2f; duration budget/hard=%.0fs/%.0fs; skill-size target/hard=%d/%d tokens\n",
-			cfg.QualityWeight, cfg.DurationWeight, cfg.SkillSizeWeight, cfg.DurationBudgetSeconds, cfg.DurationHardLimitSeconds, cfg.SkillSizeTargetTokens, cfg.SkillSizeHardLimitTokens)
+		fmt.Fprintf(&b, "- Objective config: quality=%.2f duration=%.2f skill_size=%.2f; duration budget/hard=%.0fs/%.0fs\n",
+			cfg.QualityWeight, cfg.DurationWeight, cfg.SkillSizeWeight, cfg.DurationBudgetSeconds, cfg.DurationHardLimitSeconds)
 	}
 
 	if holdoutGate != nil {
