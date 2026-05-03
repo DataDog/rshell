@@ -29,14 +29,14 @@ func TestFormatSkilltrainLogUsesSemanticColors(t *testing.T) {
 }
 
 func TestFormatSkilltrainLogAddsUsefulContextOnlyWhenPresent(t *testing.T) {
-	plain := formatSkilltrainLog(logSemanticBenchmark, repeatLogContext("public", 2, 3), "benchmark repeat", false)
-	if plain != "skilltrain | bench [public 2/3] benchmark repeat" {
+	plain := formatSkilltrainLog(logSemanticBenchmark, suiteLogContext("public"), "benchmark result", false)
+	if plain != "skilltrain | bench [public] benchmark result" {
 		t.Fatalf("plain log line = %q", plain)
 	}
 
-	withoutRepeat := formatSkilltrainLog(logSemanticBenchmark, repeatLogContext("holdout", 1, 1), "benchmark result", false)
-	if withoutRepeat != "skilltrain | bench [holdout] benchmark result" {
-		t.Fatalf("single-repeat log line = %q", withoutRepeat)
+	withoutSuite := formatSkilltrainLog(logSemanticBenchmark, suiteLogContext(""), "benchmark result", false)
+	if withoutSuite != "skilltrain | bench benchmark result" {
+		t.Fatalf("no-suite log line = %q", withoutSuite)
 	}
 }
 
@@ -84,15 +84,12 @@ func TestDefaultTrainingSettings(t *testing.T) {
 	if defaultLoopCount != 1 {
 		t.Fatalf("defaultLoopCount = %d, want 1", defaultLoopCount)
 	}
-	if defaultParallelRepeats != 3 {
-		t.Fatalf("defaultParallelRepeats = %d, want 3", defaultParallelRepeats)
-	}
 	if defaultParallelCases != 10 {
 		t.Fatalf("defaultParallelCases = %d, want 10", defaultParallelCases)
 	}
 }
 
-func TestRunLoopWithRunnerRepeatsProvidedConfig(t *testing.T) {
+func TestRunLoopWithRunnerPreservesProvidedConfig(t *testing.T) {
 	cfg := trainConfig{
 		iterations:       3,
 		model:            "test/model",
@@ -102,7 +99,6 @@ func TestRunLoopWithRunnerRepeatsProvidedConfig(t *testing.T) {
 		push:             false,
 		allowDirty:       true,
 		verbose:          true,
-		parallelRepeats:  2,
 		parallelCases:    4,
 		qualityTolerance: 0.02,
 	}
@@ -126,7 +122,7 @@ func TestRunLoopWithRunnerRepeatsProvidedConfig(t *testing.T) {
 		if call.trainLoop != i+1 {
 			t.Fatalf("call %d trainLoop = %d, want %d", i+1, call.trainLoop, i+1)
 		}
-		if call.iterations != cfg.iterations || call.model != cfg.model || call.judge != cfg.judge || call.parallelRepeats != cfg.parallelRepeats || call.parallelCases != cfg.parallelCases || call.qualityTolerance != cfg.qualityTolerance || call.verbose != cfg.verbose {
+		if call.iterations != cfg.iterations || call.model != cfg.model || call.judge != cfg.judge || call.parallelCases != cfg.parallelCases || call.qualityTolerance != cfg.qualityTolerance || call.verbose != cfg.verbose {
 			t.Fatalf("call %d did not preserve supplied flags: %+v", i+1, call)
 		}
 	}
@@ -200,21 +196,6 @@ func TestSkillbenchGoRunTargetKeepsLegacyLayout(t *testing.T) {
 	dir, target := skillbenchGoRunTarget(root)
 	if dir != root || target != "./auto-improve-skills/cmd/skillbench" {
 		t.Fatalf("skillbenchGoRunTarget() = %q, %q; want %q, %q", dir, target, root, "./auto-improve-skills/cmd/skillbench")
-	}
-}
-
-func TestRepeatParallelismZeroMeansAllRepeats(t *testing.T) {
-	if got := repeatParallelism(0, 3); got != 3 {
-		t.Fatalf("repeatParallelism(0, 3) = %d, want 3", got)
-	}
-	if got := repeatParallelism(2, 3); got != 2 {
-		t.Fatalf("repeatParallelism(2, 3) = %d, want 2", got)
-	}
-	if got := repeatParallelism(99, 3); got != 3 {
-		t.Fatalf("repeatParallelism(99, 3) = %d, want 3", got)
-	}
-	if got := repeatParallelism(1, 3); got != 1 {
-		t.Fatalf("repeatParallelism(1, 3) = %d, want 1", got)
 	}
 }
 
@@ -304,57 +285,6 @@ func TestFormatCommitSubjectDefaultsTrainLoopToOne(t *testing.T) {
 	want := "[update skill] loop 1 - iter 2 - obj 10.00%->20.00%"
 	if got != want {
 		t.Fatalf("formatCommitSubject() = %q, want %q", got, want)
-	}
-}
-
-func TestAggregateBenchmarkRepeatsAveragesScoresAndCases(t *testing.T) {
-	results := []autoresearch.SuiteResult{
-		{
-			SuiteName:                  "suite",
-			Score:                      90,
-			MaxScore:                   100,
-			QualityScore:               90,
-			QualityMaxScore:            100,
-			ObjectiveScore:             91,
-			ObjectiveMaxScore:          100,
-			AverageCaseDurationSeconds: 80,
-			DurationScore:              1,
-			Cases: []autoresearch.CaseResult{{
-				ID: "case-a", Score: 90, MaxScore: 100, NormalizedScore: 0.90, CommandCount: 4,
-				Criteria: []autoresearch.CriterionResult{{Name: "finding", Passed: true, Points: 10, Max: 10}},
-			}},
-		},
-		{
-			SuiteName:                  "suite",
-			Score:                      96,
-			MaxScore:                   100,
-			QualityScore:               96,
-			QualityMaxScore:            100,
-			ObjectiveScore:             97,
-			ObjectiveMaxScore:          100,
-			AverageCaseDurationSeconds: 100,
-			DurationScore:              0.8,
-			Cases: []autoresearch.CaseResult{{
-				ID: "case-a", Score: 96, MaxScore: 100, NormalizedScore: 0.96, CommandCount: 6,
-				Criteria: []autoresearch.CriterionResult{{Name: "finding", Passed: true, Points: 10, Max: 10}},
-			}},
-		},
-	}
-	aggregate, err := aggregateBenchmarkRepeats(results, []string{"repeat-001/result.json", "repeat-002/result.json"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if aggregate.Repeats != 2 || aggregate.Score != 93 {
-		t.Fatalf("unexpected aggregate scores: %+v", aggregate)
-	}
-	if diff := aggregate.QualityNormalizedScore - 0.93; diff < -1e-9 || diff > 1e-9 {
-		t.Fatalf("QualityNormalizedScore = %v, want 0.93", aggregate.QualityNormalizedScore)
-	}
-	if diff := aggregate.ObjectiveNormalizedScore - 0.94; diff < -1e-9 || diff > 1e-9 {
-		t.Fatalf("ObjectiveNormalizedScore = %v, want 0.94", aggregate.ObjectiveNormalizedScore)
-	}
-	if len(aggregate.Cases) != 1 || aggregate.Cases[0].CommandCount != 5 || aggregate.Cases[0].Criteria[0].Detail != "passed in 2/2 repeats" {
-		t.Fatalf("unexpected aggregate cases: %+v", aggregate.Cases)
 	}
 }
 

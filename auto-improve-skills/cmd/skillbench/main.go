@@ -60,7 +60,6 @@ func main() {
 		ensureRShell             = flag.Bool("ensure-rshell", true, "run make build if ./rshell is missing")
 		generateFixtures         = flag.Bool("generate-fixtures", true, "generate deterministic remote-host-diagnostics fixture logs before running")
 		logSuite                 = flag.String("log-suite", "", "short suite label to include in log prefixes")
-		logRepeat                = flag.String("log-repeat", "", "repeat label to include in log prefixes")
 	)
 	flag.Parse()
 
@@ -73,22 +72,21 @@ func main() {
 		SkillSizeTargetTokens:    *skillSizeTargetTokens,
 		SkillSizeHardLimitTokens: *skillSizeHardLimitTokens,
 	}
-	if err := run(*casesPath, *skillPath, *outputPath, *rawDir, *piBinary, *model, *mode, *limit, *parallelCases, *caseFilter, *caseTimeout, *judge, *judgeWeight, *ensureRShell, *generateFixtures, *logSuite, *logRepeat, objective); err != nil {
-		fmt.Fprintf(os.Stderr, "skillbench: %s %v\n", formatLogContext(benchLogContext{Suite: *logSuite, Repeat: *logRepeat}), err)
+	if err := run(*casesPath, *skillPath, *outputPath, *rawDir, *piBinary, *model, *mode, *limit, *parallelCases, *caseFilter, *caseTimeout, *judge, *judgeWeight, *ensureRShell, *generateFixtures, *logSuite, objective); err != nil {
+		fmt.Fprintf(os.Stderr, "skillbench: %s %v\n", formatLogContext(benchLogContext{Suite: *logSuite}), err)
 		os.Exit(1)
 	}
 }
 
 type benchLogContext struct {
-	Suite  string
-	Repeat string
-	Case   string
+	Suite string
+	Case  string
 }
 
 var benchLogMu sync.Mutex
 
 func formatLogContext(ctx benchLogContext) string {
-	return "[" + logContextValue(ctx.Suite) + "|" + logContextValue(ctx.Repeat) + "|" + logContextValue(ctx.Case) + "]"
+	return "[" + logContextValue(ctx.Suite) + "|" + logContextValue(ctx.Case) + "]"
 }
 
 func logContextValue(s string) string {
@@ -122,7 +120,7 @@ func suiteLogLabel(casesPath string) string {
 	}
 }
 
-func run(casesPath, skillPath, outputPath, rawDir, piBinary, model, mode string, limit, parallelCases int, caseFilter string, caseTimeout time.Duration, judge bool, judgeWeight float64, ensureRShell, generateFixtures bool, logSuite, logRepeat string, objective autoresearch.ObjectiveConfig) error {
+func run(casesPath, skillPath, outputPath, rawDir, piBinary, model, mode string, limit, parallelCases int, caseFilter string, caseTimeout time.Duration, judge bool, judgeWeight float64, ensureRShell, generateFixtures bool, logSuite string, objective autoresearch.ObjectiveConfig) error {
 	if mode != "live" && mode != "prompts" {
 		return fmt.Errorf("unsupported -mode %q (want live or prompts)", mode)
 	}
@@ -170,7 +168,7 @@ func run(casesPath, skillPath, outputPath, rawDir, piBinary, model, mode string,
 	if strings.TrimSpace(logSuite) == "" {
 		logSuite = suiteLogLabel(casesAbs)
 	}
-	logCtx := benchLogContext{Suite: logSuite, Repeat: logRepeat}
+	logCtx := benchLogContext{Suite: logSuite}
 	if suite.SkillPath != "" && skillPath == "" {
 		requestedSkillAbs = autoresearch.AbsFromRoot(filepath.Dir(casesAbs), suite.SkillPath)
 	}
