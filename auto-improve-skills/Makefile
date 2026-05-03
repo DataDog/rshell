@@ -37,4 +37,4 @@ trainloop:
 		-iters 3 \
 		-judge \
 		-feedback-llm \
-		-loop-count 30
+		-loop-count 50
