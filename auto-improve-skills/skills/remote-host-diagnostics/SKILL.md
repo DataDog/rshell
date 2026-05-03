@@ -10,6 +10,7 @@ Use `./rshell` for every remote diagnostic command.
 ## Rules
 
 - Keep checks read-only, low-impact, and bounded; do not restart, modify state, write files, or run destructive probes.
+- Validate the target and narrow each command with time windows, filters, or limits before running it to reduce noisy or repeated probes.
 - Prefer a few targeted observations over broad searches; stop once the evidence supports a clear finding or the remaining uncertainty is explicit.
 - When a command fails or output is missing, record that fact and try one narrower safe alternative rather than repeating the same approach.
 
