@@ -5,10 +5,24 @@ description: Diagnose using ./rshell
 
 # Remote Host Diagnostics
 
-Use `./rshell` for all remote diagnostics.
+Use `./rshell` for every remote diagnostic command.
 
-- Start with a quick checklist before deep dives: confirm the symptom and timeframe, identify the affected component, sample host/service health, recent logs, relevant configuration, and resource signals, then pursue the strongest lead.
-- Stay safe and bounded: use read-only checks, avoid restarts/writes/destructive probes, and stop collecting once evidence is sufficient.
-- If a check fails, note the failure and adjust with a narrower alternative instead of repeating blindly.
-- Final answer: list commands run, key evidence, likely cause, and safe next steps; only rule out or call something absent if directly verified, otherwise state the uncertainty.
+## Rules
 
+- Keep checks read-only, low-impact, and bounded; do not restart, modify state, write files, or run destructive probes.
+- Prefer a few targeted observations over broad searches; stop once the evidence supports a clear finding or the remaining uncertainty is explicit.
+- When a command fails or output is missing, record that fact and try one narrower safe alternative rather than repeating the same approach.
+
+## Fast workflow
+
+1. Orient: restate the reported symptom, affected target, and timeframe you are using.
+2. Baseline: sample current health, resource pressure, process/service status, recent errors, and relevant configuration/metadata.
+3. Correlate: compare observations against the timeframe and each other; follow the strongest anomaly first.
+4. Narrow: use focused follow-up checks to confirm the likely cause and to test only necessary alternatives.
+5. Conclude: avoid negative claims unless directly checked; otherwise say what remains unknown.
+
+## Final answer
+
+- Include the `./rshell` commands run or a concise summary of them.
+- Ground the likely cause in the key observed evidence.
+- State confidence, uncertainty, and safe next steps without performing risky remediation.
