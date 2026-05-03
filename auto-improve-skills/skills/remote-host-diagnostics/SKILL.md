@@ -15,7 +15,7 @@ Use only `./rshell`; keep probes read-only, targeted, and bounded. Do not mutate
 - After each major result, update the leading hypotheses; cross-check conclusions with command output, rule out only what direct evidence supports, and stop once evidence is sufficient.
 
 ## Final answer
-- Lead with a concise diagnosis: likely finding/root cause, impact, and confidence.
+- Lead with a concise diagnosis: likely finding/root cause, impact, confidence, and the main remaining uncertainty.
 - List the commands run and key evidence, redacting secrets or sensitive values.
 - Separate observed facts from hypotheses, and bound any negative claims to what was checked.
 - Suggest safe next read-only checks or remediation handoff steps when appropriate.
