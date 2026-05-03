@@ -1821,14 +1821,29 @@ func formatSanitizedResearcherFeedback(result autoresearch.SuiteResult) string {
 
 func formatSanitizedResearcherFeedbackFromSource(source sanitizedFeedbackSource) string {
 	feedback := strings.TrimSpace(source.Feedback)
-	if feedback == "" {
+	procedureCategories := source.RShellProcedureCategories
+	if feedback == "" && len(procedureCategories) == 0 {
 		return ""
 	}
 	var b strings.Builder
-	b.WriteString("General hidden-task feedback (LLM-generated from sanitized aggregate metrics only; no prompts, outputs, criterion names, or task facts were disclosed):\n")
-	b.WriteString(feedback)
-	if !strings.HasSuffix(feedback, "\n") {
-		b.WriteString("\n")
+	b.WriteString("General hidden-task feedback (sanitized aggregate metrics only; no prompts, outputs, criterion names, commands, or task facts were disclosed):\n")
+	if feedback != "" {
+		b.WriteString("\nLLM-generated process guidance:\n")
+		b.WriteString(feedback)
+		if !strings.HasSuffix(feedback, "\n") {
+			b.WriteString("\n")
+		}
+	}
+	if len(procedureCategories) > 0 {
+		b.WriteString("\nGeneric rshell procedure categories indicated by aggregate metrics:\n")
+		for _, category := range procedureCategories {
+			categoryName := strings.TrimSpace(category.Category)
+			guidance := strings.TrimSpace(category.Guidance)
+			if categoryName == "" || guidance == "" {
+				continue
+			}
+			fmt.Fprintf(&b, "- %s: %s\n", categoryName, guidance)
+		}
 	}
 	b.WriteString("\nAnti-overfitting guardrails:\n")
 	b.WriteString("- Treat this feedback as process guidance only, not as evidence about hidden tasks.\n")
@@ -1848,13 +1863,14 @@ func sanitizedFeedbackFailureOccurrences(criterion autoresearch.CriterionResult)
 func generateSanitizedFeedbackWithLLM(piBinary, model string, source sanitizedFeedbackSource) (string, error) {
 	request := sanitizedFeedbackLLMRequest{
 		Instructions: []string{
-			"Use only the safe aggregate benchmark metrics below; raw prompts, outputs, case IDs, criterion names, commands, logs, judge reasons, paths, identifiers, timestamps, services, and root causes have intentionally been omitted.",
+			"Use only the safe aggregate benchmark metrics and generic rshell procedure categories below; raw prompts, outputs, case IDs, criterion names, commands, logs, judge reasons, paths, identifiers, timestamps, services, and root causes have intentionally been omitted.",
 			"Generate concise freeform process feedback for a researcher improving a diagnostic skill. Mention only generic categories inferred from aggregate metrics, such as evidence grounding, command/procedure coverage, safety, uncertainty handling, boundedness, or concision.",
 			"Do not invent or include task facts, expected answers, file names, paths, identifiers, IPs, timestamps, service names, command snippets, root causes, or benchmark case details.",
 			"If the aggregate signal is weak, say to make no change unless a safe general improvement is obvious.",
 		},
-		SafeAggregate: source.SafeAggregate,
-		OutputSchema:  `{"feedback":"short freeform researcher feedback, 1-5 bullets or a short paragraph"}`,
+		SafeAggregate:             source.SafeAggregate,
+		RShellProcedureCategories: source.RShellProcedureCategories,
+		OutputSchema:              `{"feedback":"short freeform researcher feedback, 1-5 bullets or a short paragraph"}`,
 	}
 	requestJSON, err := json.MarshalIndent(request, "", "  ")
 	if err != nil {
@@ -2094,11 +2110,15 @@ func fileExists(path string) bool {
 
 func formatResearcherPrompt(programContent, skillRel, skillContent string, iter int, sanitizedFeedback string) string {
 	plan := planIterationResearch(iter, 0, 0, 1)
-	return formatResearcherPromptForPlan(programContent, skillRel, skillContent, iter, sanitizedFeedback, plan, 1)
+	return formatResearcherPromptForPlan(programContent, skillRel, skillContent, iter, sanitizedFeedback, "", plan, 1)
 }
 
-func formatResearcherPromptForPlan(programContent, skillRel, skillContent string, iter int, sanitizedFeedback string, plan iterationResearchPlan, candidateIndex int) string {
+func formatResearcherPromptForPlan(programContent, skillRel, skillContent string, iter int, sanitizedFeedback, rshellCapabilitySnapshot string, plan iterationResearchPlan, candidateIndex int) string {
 	changeDirective := researcherCandidateDirective(plan, candidateIndex)
+	rshellCapabilitySnapshot = strings.TrimSpace(rshellCapabilitySnapshot)
+	if rshellCapabilitySnapshot == "" {
+		rshellCapabilitySnapshot = "Static rshell capability snapshot unavailable. The skill should still tell agents to run rshell help in the target environment because deployments may differ."
+	}
 	return fmt.Sprintf(`You are an autoresearch-style skill improvement agent.
 
 This isolated workspace contains only %s and the current skill at %s. To avoid granting file-read access, their contents are included below.
@@ -2113,6 +2133,7 @@ Task for iteration %d:
 - Do not add exact case facts, paths, filenames, IDs, IPs, timestamps, services, commands, root causes, line numbers, or expected-answer text.
 - Use the edit/write tools only on %s.
 - Use any LLM-generated sanitized aggregate feedback below only as generic process guidance; ignore it if no safe general change is clear.
+- Use the static rshell capability snapshot below only as public implementation context, not as hidden-task feedback. Production deployments may restrict, omit, or extend features; the skill should keep telling diagnostic agents to run rshell help in the target environment.
 - After editing, write a brief researcher report with "Changes", "Why", and "Size" sections.
 - In "Why", explain the rationale for each material change in general terms tied to quality, efficiency, or concision, without evaluator-private details.
 
@@ -2124,13 +2145,17 @@ Task for iteration %d:
 %s
 </program.md>
 
+<rshell-capability-snapshot>
+%s
+</rshell-capability-snapshot>
+
 <general-feedback>
 %s</general-feedback>
 
 <current-skill path=%q>
 %s
 </current-skill>
-`, researcherProgramPath, skillRel, iter, skillRel, skillRel, changeDirective, programContent, sanitizedFeedback, skillRel, skillContent)
+`, researcherProgramPath, skillRel, iter, skillRel, skillRel, changeDirective, programContent, rshellCapabilitySnapshot, sanitizedFeedback, skillRel, skillContent)
 }
 
 func improveSkill(root, skillAbs, iterDir, model, piBinary string, iter int, sanitizedFeedback string, plan iterationResearchPlan, candidateIndex int) error {
@@ -2148,7 +2173,8 @@ func improveSkill(root, skillAbs, iterDir, model, piBinary string, iter int, san
 	if err != nil {
 		return err
 	}
-	prompt := formatResearcherPromptForPlan(string(programContentBytes), workspace.SkillRel, string(skillContentBytes), iter, sanitizedFeedback, plan, candidateIndex)
+	rshellCapabilitySnapshot := researcherRShellCapabilitySnapshot(root)
+	prompt := formatResearcherPromptForPlan(string(programContentBytes), workspace.SkillRel, string(skillContentBytes), iter, sanitizedFeedback, rshellCapabilitySnapshot, plan, candidateIndex)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
 	defer cancel()
 	args := []string{

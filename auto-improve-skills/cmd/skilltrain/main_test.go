@@ -267,6 +267,9 @@ func TestFormatResearcherPromptDoesNotPassBenchmarkArtifacts(t *testing.T) {
 		"Do not inspect evaluator-private",
 		"general-feedback",
 		"General hidden-task feedback",
+		"rshell-capability-snapshot",
+		"Static rshell capability snapshot unavailable",
+		"Production deployments may restrict",
 		"\"Changes\", \"Why\", and \"Size\" sections",
 		"explain the rationale for each material change",
 	} {
@@ -313,7 +316,7 @@ func TestPlanIterationResearchSchedulesStructuralAndRewriteExploration(t *testin
 func TestFormatResearcherPromptForRewriteAllowsLargeDistinctCandidate(t *testing.T) {
 	skillRel := filepath.Join("skills", "remote-host-diagnostics", "SKILL.md")
 	plan := planIterationResearch(5, 3, 5, 3)
-	prompt := formatResearcherPromptForPlan("program content", skillRel, "skill content", 5, "General hidden-task feedback.\n", plan, 2)
+	prompt := formatResearcherPromptForPlan("program content", skillRel, "skill content", 5, "General hidden-task feedback.\n", "rshell help snapshot", plan, 2)
 	for _, want := range []string{
 		"change-directive",
 		"Full-rewrite exploration",
@@ -404,8 +407,11 @@ func TestBuildSanitizedFeedbackSourceIncludesOnlySafeAggregateMetrics(t *testing
 	}
 
 	source := buildSanitizedFeedbackSource(result)
-	if source.Version != 3 {
-		t.Fatalf("source version = %d, want 3", source.Version)
+	if source.Version != 4 {
+		t.Fatalf("source version = %d, want 4", source.Version)
+	}
+	if len(source.RShellProcedureCategories) == 0 {
+		t.Fatalf("expected generic rshell procedure categories")
 	}
 	agg := source.SafeAggregate
 	if agg.CaseCount != 2 || agg.CriteriaCount != 4 || agg.FailedCriteriaCount != 3 || agg.FailureOccurrences != 4 {
@@ -442,18 +448,35 @@ func TestBuildSanitizedFeedbackSourceIncludesOnlySafeAggregateMetrics(t *testing
 	}
 }
 
-func TestFormatSanitizedResearcherFeedbackRendersLLMProseAndGuardrails(t *testing.T) {
-	source := sanitizedFeedbackSource{Feedback: "- Focus final answers on nearby evidence and calibrated uncertainty.\n- Keep probes bounded before synthesizing."}
+func TestFormatSanitizedResearcherFeedbackRendersLLMProseCategoriesAndGuardrails(t *testing.T) {
+	source := sanitizedFeedbackSource{
+		Feedback: "- Focus final answers on nearby evidence and calibrated uncertainty.\n- Keep probes bounded before synthesizing.",
+		RShellProcedureCategories: []sanitizedFeedbackProcedureCategory{{
+			Category: "rshell capability discovery",
+			Guidance: "Use rshell help as the source of truth before relying on command-specific features.",
+		}},
+	}
 	feedback := formatSanitizedResearcherFeedbackFromSource(source)
 	for _, want := range []string{
-		"LLM-generated from sanitized aggregate metrics only",
+		"sanitized aggregate metrics only",
+		"LLM-generated process guidance",
 		"Focus final answers",
+		"Generic rshell procedure categories",
+		"rshell capability discovery",
 		"Anti-overfitting guardrails",
 		"Do not add exact case facts",
 	} {
 		if !strings.Contains(feedback, want) {
 			t.Fatalf("feedback missing %q:\n%s", want, feedback)
 		}
+	}
+
+	categoryOnly := formatSanitizedResearcherFeedbackFromSource(sanitizedFeedbackSource{RShellProcedureCategories: []sanitizedFeedbackProcedureCategory{{
+		Category: "boundedness and stopping",
+		Guidance: "Prefer narrow filters and stop once evidence is sufficient.",
+	}}})
+	if !strings.Contains(categoryOnly, "boundedness and stopping") || strings.Contains(categoryOnly, "LLM-generated process guidance") {
+		t.Fatalf("category-only feedback rendered incorrectly:\n%s", categoryOnly)
 	}
 
 	if got := formatSanitizedResearcherFeedbackFromSource(sanitizedFeedbackSource{}); got != "" {
