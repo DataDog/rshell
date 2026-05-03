@@ -8,6 +8,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 	"testing"
@@ -42,6 +43,61 @@ func TestBoundedUpperScore(t *testing.T) {
 func TestDefaultParallelCasesIsThree(t *testing.T) {
 	if defaultParallelCases != 3 {
 		t.Fatalf("defaultParallelCases = %d, want 3", defaultParallelCases)
+	}
+}
+
+func TestBenchmarkSuiteCriteriaValidate(t *testing.T) {
+	repoRoot, err := filepath.Abs(filepath.Join("..", "..", ".."))
+	if err != nil {
+		t.Fatal(err)
+	}
+	suitePaths := []string{
+		filepath.Join("..", "..", "benchmarks", "remote-host-diagnostics", "cases.yaml"),
+		filepath.Join("..", "..", "benchmarks", "remote-host-diagnostics", "holdout.yaml"),
+	}
+	for _, suitePath := range suitePaths {
+		t.Run(filepath.Base(suitePath), func(t *testing.T) {
+			suite, err := autoresearch.LoadSuite(suitePath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			cases, err := autoresearch.ExpandCaseVariants(suite.Cases)
+			if err != nil {
+				t.Fatal(err)
+			}
+			skillPath := suite.SkillPath
+			if skillPath != "" {
+				skillPath = autoresearch.AbsFromRoot(filepath.Dir(suitePath), skillPath)
+			}
+			defaults := autoresearch.Variables(repoRoot, skillPath)
+			for _, tc := range cases {
+				caseVars := autoresearch.MergeVariables(defaults, tc.Variables)
+				tc = expandCase(tc, caseVars)
+				total := 0.0
+				for _, criterion := range tc.Criteria {
+					compileCriterionRegex(t, tc.ID, criterion.Name, "regex", criterion.Regex, criterion.CaseInsensitive)
+					compileCriterionRegex(t, tc.ID, criterion.Name, "evidence_regex", criterion.EvidenceRegex, criterion.CaseInsensitive)
+					total += criterion.Points
+				}
+				if total != 100 {
+					t.Fatalf("case %q criteria total = %v, want 100", tc.ID, total)
+				}
+			}
+		})
+	}
+}
+
+func compileCriterionRegex(t *testing.T, caseID, criterionName, field, pattern string, caseInsensitive bool) {
+	t.Helper()
+	if pattern == "" {
+		return
+	}
+	compiledPattern := pattern
+	if caseInsensitive && !strings.HasPrefix(compiledPattern, "(?i)") {
+		compiledPattern = "(?i)" + compiledPattern
+	}
+	if _, err := regexp.Compile(compiledPattern); err != nil {
+		t.Fatalf("case %q criterion %q %s regex %q does not compile: %v", caseID, criterionName, field, pattern, err)
 	}
 }
 

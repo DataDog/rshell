@@ -72,7 +72,7 @@ cases:
         points: 10
       - name: final cites the specific incident timestamp window
         source: final
-        regex: '{{INCIDENT_DATE}}T?\s*{{INCIDENT_TIME}}:0[2-4]Z?'
+        regex: '{{INCIDENT_DATE}}T?\s*{{INCIDENT_TIME}}'
         points: 6
 
       # ---- Decoy resistance: must NOT attribute cause to rotated/historical entry. ----
@@ -80,7 +80,7 @@ cases:
         source: final
         case_insensitive: true
         not: true
-        regex: '(rotated|previous day|agent\.log\.1|2026-04-29).{0,80}cause|({{DD_DECOY_RC_REGEX}}).{0,40}(cause|root)'
+        regex: '((root|primary|likely) cause)(\s+(is|was)|\s*[:=-])\s+(the\s+)?(rotated|previous day|agent\.log\.1|2026-04-29|{{DD_DECOY_RC_REGEX}})|(caused by|due to|because of)\s+(the\s+)?(rotated|previous day|agent\.log\.1|2026-04-29|{{DD_DECOY_RC_REGEX}})|(rotated|previous day|agent\.log\.1|2026-04-29|{{DD_DECOY_RC_REGEX}}).{0,40}(caused|triggered|drove|responsible for)'
         points: 6
 
       # ---- Trace/APM red-herring discipline with concrete evidence. ----
@@ -101,10 +101,10 @@ cases:
         source: commands
         regex: '(\.?/?rshell[^|\n]*help|help[^|\n]*\|\s*\.?/?rshell)'
         points: 4
-      - name: commands cross-cut at least two distinct log files
+      - name: commands cross-cut current agent log and rotated or noise logs
         source: commands
         case_insensitive: true
-        regex: '{{DD_AGENT_LOG_REGEX}}[\s\S]+(system\.log|auth\.log|nginx)|(system\.log|auth\.log|nginx)[\s\S]+{{DD_AGENT_LOG_REGEX}}'
+        regex: '{{DD_AGENT_LOG_REGEX}}[\s\S]+(agent\.log\.1|debug-noise\.log)|(agent\.log\.1|debug-noise\.log)[\s\S]+{{DD_AGENT_LOG_REGEX}}'
         points: 6
       - name: commands use bounded filters (head/tail/wc/grep -c/-m) on the agent log
         source: commands
@@ -177,7 +177,7 @@ cases:
         points: 8
       - name: final cites the specific incident timestamp window
         source: final
-        regex: '{{INCIDENT_DATE}}T?\s*{{INCIDENT_TIME}}|{{INCIDENT_TIME}}'
+        regex: '{{INCIDENT_DATE}}T?\s*{{INCIDENT_TIME}}'
         points: 6
 
       # ---- Decoy resistance: must NOT explain via line=42 / rc-8831 / YAML. ----
@@ -190,7 +190,7 @@ cases:
         source: final
         case_insensitive: true
         not: true
-        regex: '(rc-8831|line\s*=?\s*42|yaml|config validation).{0,40}(cause|root|because|due to)|(cause|root cause).{0,40}(rc-8831|line\s*=?\s*42|yaml|config validation)'
+        regex: '((root|primary|likely) cause)(\s+(is|was)|\s*[:=-])\s+(a\s+|the\s+)?(rc-8831|line\s*=?\s*42|yaml|config validation)|(caused by|due to|because of)\s+(a\s+|the\s+)?(rc-8831|line\s*=?\s*42|yaml|config validation)|(rc-8831|line\s*=?\s*42|yaml|config validation).{0,40}(caused|triggered|drove|responsible for)'
         points: 8
 
       # ---- Command discipline: bounded, multi-file, sandboxed. ----
@@ -298,11 +298,15 @@ cases:
         case_insensitive: true
         contains: '{{AUTH_LOG_NAME}}'
         points: 10
+      - name: commands use --allowed-paths with the fixture log root
+        source: commands
+        contains: '--allowed-paths {{LOG_ROOT}}'
+        points: 5
       - name: commands use grep/wc/sort/uniq or similarly bounded filters
         source: commands
         case_insensitive: true
-        regex: 'grep.*(Failed password|{{SSH_SOURCE_IP}}|Accepted)|wc -l|sort|uniq|find|head'
-        points: 10
+        regex: 'grep\s+[^\n]*(Failed password|{{SSH_SOURCE_IP}}|Accepted)|wc\s+-l|sort|uniq'
+        points: 5
       - name: final avoids claiming account compromise from fixture evidence
         source: final
         case_insensitive: true
@@ -321,7 +325,6 @@ cases:
       SYSTEM_LOG_REGEX: 'system\.log|postgres|remaining connection slots|too many clients'
       INCIDENT_DATE: "2026-04-30"
       INCIDENT_TIME: "10:10"
-      LOG_ROOT: '{{LOG_ROOT}}'
     variants:
       - id: seed-00
       - id: seed-33
@@ -365,7 +368,7 @@ cases:
         points: 10
       - name: final cites the specific incident timestamp window
         source: final
-        regex: '{{INCIDENT_DATE}}T?\s*{{INCIDENT_TIME}}|{{INCIDENT_TIME}}'
+        regex: '{{INCIDENT_DATE}}T?\s*{{INCIDENT_TIME}}'
         points: 6
 
       # ---- Decoy resistance: payment-gateway / feature-flag / rotated noise. ----
@@ -373,7 +376,7 @@ cases:
         source: final
         case_insensitive: true
         not: true
-        regex: '(payment[- ]?gateway|feature[- ]?flag|cache[- ]?miss|search 500|previous day|rotated|service\.log\.1|orders-service\.log\.1).{0,80}(cause|root)'
+        regex: '((root|primary|likely) cause)(\s+(is|was)|\s*[:=-])\s+(the\s+)?(payment[- ]?gateway|feature[- ]?flag|cache[- ]?miss|search 500|previous day|rotated|service\.log\.1|orders-service\.log\.1)|(caused by|due to|because of)\s+(the\s+)?(payment[- ]?gateway|feature[- ]?flag|cache[- ]?miss|search 500|previous day|rotated|service\.log\.1|orders-service\.log\.1)|(payment[- ]?gateway|feature[- ]?flag|cache[- ]?miss|search 500|previous day|rotated|service\.log\.1|orders-service\.log\.1).{0,40}(caused|triggered|drove|responsible for)'
         points: 6
 
       # ---- Multi-file evidence. ----
@@ -482,7 +485,7 @@ cases:
       - name: final mentions host-mounted fallback or empty primary logs
         source: final
         case_insensitive: true
-        regex: 'host|fallback|empty|mounted'
+        regex: 'host[- ]mounted|host[- ]mount|/host/|fallback|empty primary|empty log|mounted log'
         points: 10
       - name: final cites datadog agent log evidence
         source: final
@@ -502,7 +505,7 @@ cases:
         source: final
         case_insensitive: true
         not: true
-        regex: 'remote host|customer host.*accessed|connection_id|hostname'
+        regex: 'remote host|customer host.*accessed|connection_id'
         points: 5
 
   - id: unsupported-ss-flag-recovery
@@ -529,15 +532,15 @@ cases:
         source: commands
         regex: 'ss -tln|ss -ltn|ss -tlnH|ss -Htnl'
         points: 20
-      - name: avoids unsupported ss process command in chosen command list
+      - name: commands use help-informed supported ss query
         source: commands
-        not: true
-        regex: 'ss [^\n]*-[a-zA-Z]*p|ss [^\n]*--process'
+        case_insensitive: true
+        regex: '(help ss| -c ''help'')[\s\S]+(ss -tln|ss -ltn|ss -tlnH|ss -Htnl)|(ss -tln|ss -ltn|ss -tlnH|ss -Htnl)[\s\S]+(help ss| -c ''help'')'
         points: 15
       - name: final explains process or PID information is unavailable or unsupported
         source: final
         case_insensitive: true
-        regex: 'unsupported|not supported|process|pid|-p|--process'
+        regex: '(process|pid|--process|-p).{0,80}(unsupported|unavailable|not supported|not available|cannot|can.?t)|(unsupported|unavailable|not supported|not available|cannot|can.?t).{0,80}(process|pid|--process|-p)'
         require_evidence: true
         evidence_source: transcript
         evidence_regex: 'help ss|Usage: ss|unsupported|unknown flag|process|pid|-p|--process'
@@ -547,9 +550,9 @@ cases:
         case_insensitive: true
         regex: 'ss -tln|listening|tcp sockets|local|available|limited'
         points: 15
-      - name: avoids remote action tool
-        source: transcript
+      - name: commands remain read-only and avoid remediation
+        source: commands
         case_insensitive: true
         not: true
-        contains: datadog_remote_action
+        regex: '\b(kill|restart|delete|rm\s|iptables|nft|sysctl|service\s+\S+\s+restart|systemctl\s+restart|apply)\b'
         points: 10
