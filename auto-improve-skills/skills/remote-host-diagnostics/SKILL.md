@@ -17,7 +17,7 @@ Use `./rshell` for every remote diagnostic command.
 ## Fast workflow
 
 1. Orient: restate the reported symptom, affected target, and timeframe you are using.
-2. Baseline: sample current health, resource pressure, process/service status, recent errors, and relevant configuration/metadata.
+2. Baseline: sample current health across core domains: resources, process/service state, connectivity/dependency signals, recent errors/events, and relevant configuration/metadata.
 3. Correlate: compare observations against the timeframe and each other; follow the strongest anomaly first.
 4. Narrow: use focused follow-up checks to confirm the likely cause and to test only necessary alternatives.
 5. Conclude: avoid negative claims unless directly checked; otherwise say what remains unknown.
