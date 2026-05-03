@@ -1,4 +1,4 @@
-.PHONY: fmt test train train3 trainloop reset-skill
+.PHONY: fmt test train reset-skill
 
 fmt:
 	go fmt ./...
@@ -29,5 +29,4 @@ train:
 	go run ./cmd/skilltrain \
 		-model openai-codex/gpt-5.5 \
 		-iters 3 \
-		-judge \
-		-loop-count 100
+		-judge
