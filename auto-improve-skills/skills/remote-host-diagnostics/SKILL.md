@@ -12,7 +12,7 @@ Use only `./rshell`; keep probes read-only, targeted, and bounded. Do not mutate
 - If the prompt provides files or directories to inspect, pass an explicit allowed-path scope for those roots on every `./rshell` command that touches them.
 - Plan a short read-only checklist up front: confirm safety/scope, clarify symptoms and timeframe, sample the relevant layers (health/resources, process/service/listener state, configuration, recent logs/events), then test the leading hypothesis; if a probe fails, use help/error text to choose a narrower documented alternative and note the limitation.
 - Before each probe, know the expected signal; bound output by path, time, unit, or row limit, and avoid rerunning equivalent checks unless new evidence changes the question.
-- Cross-check important conclusions with command output before stating causality, compromise, or success/failure.
+- After each major result, update the leading hypotheses; cross-check conclusions with command output, rule out only what direct evidence supports, and stop once evidence is sufficient.
 
 ## Final answer
 - Lead with a concise diagnosis: likely finding/root cause, impact, and confidence.
