@@ -5,23 +5,24 @@
 
 // Package help implements the help builtin command.
 //
-// help — display help for commands
+// help — display help for rshell features and commands
 //
-// Usage: help [--all] [command]
+// Usage: help [--all] [feature|command]
 //
-// With no arguments, list allowed builtin commands with descriptions
-// and a compact list of not-allowed builtins. When --all is given,
-// both sections are shown as full description tables. When a command
-// name is given, display detailed help for that command.
+// With no arguments, list rshell features with descriptions, a concise
+// unsupported-feature summary, allowed commands, and a compact list of
+// not-allowed commands. When --all is given, disabled commands are shown as a
+// full description table. When a feature or command name is given, display
+// detailed help for that topic.
 //
 // Flags:
 //
-//	--all   show all builtins (including not allowed) with descriptions
+//	--all   show all commands (including not allowed) with descriptions
 //
 // Exit codes:
 //
 //	0  Success.
-//	1  Unknown command or --help was requested.
+//	1  Unknown topic or --help was requested.
 package help
 
 import (
@@ -36,18 +37,18 @@ import (
 // Cmd is the help builtin command descriptor.
 var Cmd = builtins.Command{
 	Name:        "help",
-	Description: "display help for commands",
+	Description: "display help for features and commands",
 	MakeFlags:   registerFlags,
 }
 
 func printUsage(callCtx *builtins.CallContext) {
-	callCtx.Out("Usage: help [--all] [command]\n")
-	callCtx.Out("Display help for builtin commands.\n")
+	callCtx.Out("Usage: help [--all] [feature|command]\n")
+	callCtx.Out("Display help for rshell features and commands.\n")
 }
 
 func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 	helpFlag := fs.Bool("help", false, "print usage and exit")
-	allFlag := fs.Bool("all", false, "show all builtins (including not allowed) with descriptions")
+	allFlag := fs.Bool("all", false, "show all commands (including not allowed) with descriptions")
 
 	return func(ctx context.Context, callCtx *builtins.CallContext, args []string) builtins.Result {
 		if *helpFlag {
@@ -55,13 +56,17 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			return builtins.Result{Code: 1}
 		}
 
-		// help <command> — show detailed help for a specific command.
+		// help <feature|command> — show detailed help for a specific topic.
 		if len(args) > 1 {
 			printUsage(callCtx)
 			return builtins.Result{Code: 1}
 		}
 		if len(args) > 0 {
 			name := args[0]
+			if feature, ok := builtins.Feature(name); ok {
+				printFeatureDetails(callCtx, feature)
+				return builtins.Result{}
+			}
 			if callCtx.CommandAllowed != nil && !callCtx.CommandAllowed(name) {
 				callCtx.Errf("help: no help topics match '%s'\n", name)
 				return builtins.Result{Code: 1}
@@ -96,7 +101,7 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			return builtins.Result{}
 		}
 
-		// No arguments — list commands.
+		// No arguments — list features and commands.
 		allNames := builtins.Names()
 		var allowed, notAllowed []string
 		for _, name := range allNames {
@@ -110,17 +115,21 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 		// Header: version + command counts.
 		printHeader(callCtx, len(allowed), len(allNames))
 
-		// Print allowed commands with descriptions.
+		callCtx.Out("Features:\n")
+		printFeatureTable(callCtx, builtins.Features())
+		printUnsupportedSummary(callCtx, builtins.UnsupportedSummary())
+
+		callCtx.Out("\nCommands:\n")
 		printCommandTable(callCtx, allowed)
 
-		// Show disabled builtins when restrictions are active.
+		// Show disabled commands when restrictions are active.
 		if len(notAllowed) > 0 {
-			label := "Disabled builtins"
+			label := "Disabled commands"
 			if len(notAllowed) == 1 {
-				label = "Disabled builtin"
+				label = "Disabled command"
 			}
 			if *allFlag {
-				// --all: full description table for disabled builtins.
+				// --all: full description table for disabled commands.
 				callCtx.Outf("\n%s:\n", label)
 				printCommandTable(callCtx, notAllowed)
 			} else {
@@ -128,10 +137,10 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 				callCtx.Outf("\n%s: %s\n", label, wrapNames(notAllowed, 80))
 			}
 		} else if *allFlag {
-			callCtx.Out("\nAll builtins are allowed in this session.\n")
+			callCtx.Out("\nAll commands are allowed in this session.\n")
 		}
 
-		callCtx.Out("\nRun 'help <command>' for more information on a specific command.\n")
+		callCtx.Out("\nRun 'help <feature|command>' for more information on a specific topic.\n")
 		return builtins.Result{}
 	}
 }
@@ -147,9 +156,49 @@ func printHeader(callCtx *builtins.CallContext, allowed, total int) {
 	}
 	header.WriteString(" — ")
 	if allowed < total {
-		callCtx.Outf("%s%d of %d builtins enabled\n\n", header.String(), allowed, total)
+		callCtx.Outf("%s%d of %d commands enabled\n\n", header.String(), allowed, total)
 	} else {
-		callCtx.Outf("%sAll %d builtins available\n\n", header.String(), total)
+		callCtx.Outf("%sAll %d commands available\n\n", header.String(), total)
+	}
+}
+
+// printFeatureTable prints an aligned feature name/description table.
+func printFeatureTable(callCtx *builtins.CallContext, features []builtins.FeatureMeta) {
+	maxLen := 0
+	for _, feature := range features {
+		if len(feature.Name) > maxLen {
+			maxLen = len(feature.Name)
+		}
+	}
+	for _, feature := range features {
+		callCtx.Outf("%-*s  %s\n", maxLen, feature.Name, feature.Description)
+	}
+}
+
+func printUnsupportedSummary(callCtx *builtins.CallContext, items []string) {
+	if len(items) == 0 {
+		return
+	}
+	callCtx.Out("\nNot supported:\n")
+	for _, item := range items {
+		callCtx.Outf("  - %s\n", item)
+	}
+}
+
+func printFeatureDetails(callCtx *builtins.CallContext, feature builtins.FeatureMeta) {
+	callCtx.Outf("%s - %s\n", feature.Name, feature.Description)
+	printBulletSection(callCtx, "Supported", feature.Supported)
+	printBulletSection(callCtx, "Not supported", feature.Unsupported)
+	printBulletSection(callCtx, "Notes", feature.Notes)
+}
+
+func printBulletSection(callCtx *builtins.CallContext, title string, items []string) {
+	if len(items) == 0 {
+		return
+	}
+	callCtx.Outf("\n%s:\n", title)
+	for _, item := range items {
+		callCtx.Outf("  - %s\n", item)
 	}
 }
 
