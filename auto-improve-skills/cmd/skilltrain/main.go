@@ -41,7 +41,6 @@ const (
 )
 
 const (
-	skilltrainLogPrefix              = "skilltrain"
 	skilltrainLogSeparator           = " | "
 	skilltrainLogTimestampFormat     = "2006-01-02T15:04:05.000Z07:00"
 	commandOutputLimit               = 64 * 1024
@@ -216,13 +215,12 @@ func formatSkilltrainLogAt(semantic logSemantic, ctx logContext, msg string, col
 		text = fmt.Sprintf("%-5s %s", label, text)
 	}
 	timestamp := formatSkilltrainTimestamp(at)
-	line := skilltrainLogPrefix + skilltrainLogSeparator + timestamp + skilltrainLogSeparator + text
+	line := timestamp + skilltrainLogSeparator + text
 	if !colorEnabled {
 		return line
 	}
-	prefix := ansiDim + skilltrainLogPrefix + ansiReset
 	coloredTimestamp := ansiDim + timestamp + ansiReset
-	return prefix + skilltrainLogSeparator + coloredTimestamp + skilltrainLogSeparator + formatSemanticText(semantic, text, true)
+	return coloredTimestamp + skilltrainLogSeparator + formatSemanticText(semantic, text, true)
 }
 
 func formatSkilltrainTimestamp(at time.Time) string {

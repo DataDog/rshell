@@ -19,12 +19,12 @@ func TestFormatSkilltrainLogUsesSemanticColors(t *testing.T) {
 	ctx := defaultLogContext()
 	at := time.Date(2026, 5, 4, 12, 34, 56, 789000000, time.UTC)
 	plain := formatSkilltrainLogAt(logSemanticSuccess, ctx, "accepted skill change", false, at)
-	if plain != "skilltrain | 2026-05-04T12:34:56.789Z | ok    accepted skill change" {
+	if plain != "2026-05-04T12:34:56.789Z | ok    accepted skill change" {
 		t.Fatalf("plain log line = %q", plain)
 	}
 
 	colored := formatSkilltrainLogAt(logSemanticSuccess, ctx, "accepted skill change", true, at)
-	want := ansiDim + "skilltrain" + ansiReset + " | " + ansiDim + "2026-05-04T12:34:56.789Z" + ansiReset + " | " + ansiGreen + "ok    accepted skill change" + ansiReset
+	want := ansiDim + "2026-05-04T12:34:56.789Z" + ansiReset + " | " + ansiGreen + "ok    accepted skill change" + ansiReset
 	if colored != want {
 		t.Fatalf("colored log line = %q, want %q", colored, want)
 	}
@@ -33,12 +33,12 @@ func TestFormatSkilltrainLogUsesSemanticColors(t *testing.T) {
 func TestFormatSkilltrainLogAddsUsefulContextOnlyWhenPresent(t *testing.T) {
 	at := time.Date(2026, 5, 4, 12, 34, 56, 789000000, time.UTC)
 	plain := formatSkilltrainLogAt(logSemanticBenchmark, suiteLogContext("public"), "benchmark result", false, at)
-	if plain != "skilltrain | 2026-05-04T12:34:56.789Z | bench [public] benchmark result" {
+	if plain != "2026-05-04T12:34:56.789Z | bench [public] benchmark result" {
 		t.Fatalf("plain log line = %q", plain)
 	}
 
 	withoutSuite := formatSkilltrainLogAt(logSemanticBenchmark, suiteLogContext(""), "benchmark result", false, at)
-	if withoutSuite != "skilltrain | 2026-05-04T12:34:56.789Z | bench benchmark result" {
+	if withoutSuite != "2026-05-04T12:34:56.789Z | bench benchmark result" {
 		t.Fatalf("no-suite log line = %q", withoutSuite)
 	}
 }
