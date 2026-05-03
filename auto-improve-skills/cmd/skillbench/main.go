@@ -53,7 +53,7 @@ func main() {
 		objectiveQualityWeight   = flag.Float64("objective-quality-weight", 0.85, "composite objective weight for answer quality")
 		objectiveDurationWeight  = flag.Float64("objective-duration-weight", 0.10, "composite objective weight for wall-clock investigation duration")
 		objectiveSkillSizeWeight = flag.Float64("objective-skill-size-weight", 0.10, "composite objective weight for skill size")
-		durationBudget           = flag.Duration("duration-budget", 45*time.Second, "per-case wall-clock duration with no objective penalty")
+		durationBudget           = flag.Duration("duration-budget", 60*time.Second, "per-case wall-clock duration with no objective penalty")
 		durationHardLimit        = flag.Duration("duration-hard-limit", 5*time.Minute, "per-case wall-clock duration with full objective penalty")
 		skillSizeTargetTokens    = flag.Int("skill-size-target-tokens", 2000, "estimated skill tokens with no objective penalty")
 		skillSizeHardLimitTokens = flag.Int("skill-size-hard-limit-tokens", 3500, "estimated skill tokens with full objective penalty")
