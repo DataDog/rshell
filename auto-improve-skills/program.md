@@ -1,6 +1,6 @@
 # Auto-Improve Program: remote-host-diagnostics
 
-Researcher-facing guidance for improving the `remote-host-diagnostics` skill. Keep changes small, general, and auditable.
+Researcher-facing guidance for improving the `remote-host-diagnostics` skill. Keep changes general and auditable. Default iterations should be small; when the prompt explicitly asks for structural or full-rewrite exploration, larger reorganizations are allowed.
 
 ## Edit scope
 
@@ -36,4 +36,7 @@ Do not encode exact case facts, prompt wording, paths, filenames, IPs, timestamp
 
 ## Improvement workflow
 
-Read the current skill, make the smallest useful general improvement, and summarize what changed plus why each material change improves quality, efficiency, or concision. If there is no clear safe improvement, leave the skill unchanged and say why.
+- Default iterations: read the current skill, make the smallest useful general improvement, and summarize what changed plus why each material change improves quality, efficiency, or concision.
+- Structural exploration iterations: you may reorganize headings, merge/split bullets, replace clusters of guidance, or simplify the workflow if that produces a more coherent general skill.
+- Full-rewrite exploration iterations: you may rewrite the whole skill body from scratch using the current skill only as reference; preserve frontmatter and required safety constraints.
+- In all cases, avoid benchmark-specific facts and keep the result compact. If there is no clear safe improvement, leave the skill unchanged and say why.

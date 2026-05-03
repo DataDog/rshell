@@ -81,7 +81,7 @@ func TestLogSemanticStyleMapsStatusesToColors(t *testing.T) {
 	}
 }
 
-func TestDefaultParallelSettings(t *testing.T) {
+func TestDefaultTrainingSettings(t *testing.T) {
 	if defaultLoopCount != 1 {
 		t.Fatalf("defaultLoopCount = %d, want 1", defaultLoopCount)
 	}
@@ -91,21 +91,33 @@ func TestDefaultParallelSettings(t *testing.T) {
 	if defaultParallelCases != 3 {
 		t.Fatalf("defaultParallelCases = %d, want 3", defaultParallelCases)
 	}
+	if defaultStructuralInterval != 3 {
+		t.Fatalf("defaultStructuralInterval = %d, want 3", defaultStructuralInterval)
+	}
+	if defaultRewriteInterval != 5 {
+		t.Fatalf("defaultRewriteInterval = %d, want 5", defaultRewriteInterval)
+	}
+	if defaultExplorationCandidates != 3 {
+		t.Fatalf("defaultExplorationCandidates = %d, want 3", defaultExplorationCandidates)
+	}
 }
 
 func TestRunLoopWithRunnerRepeatsProvidedConfig(t *testing.T) {
 	cfg := trainConfig{
-		iterations:       3,
-		model:            "test/model",
-		runDir:           filepath.Join("auto-improve-skills", "runs", "trainloop"),
-		judge:            true,
-		parallelSuites:   true,
-		push:             false,
-		allowDirty:       true,
-		verbose:          true,
-		parallelRepeats:  2,
-		parallelCases:    4,
-		qualityTolerance: 0.02,
+		iterations:            3,
+		model:                 "test/model",
+		runDir:                filepath.Join("auto-improve-skills", "runs", "trainloop"),
+		judge:                 true,
+		parallelSuites:        true,
+		push:                  false,
+		allowDirty:            true,
+		verbose:               true,
+		parallelRepeats:       2,
+		parallelCases:         4,
+		structuralInterval:    3,
+		rewriteInterval:       5,
+		explorationCandidates: 4,
+		qualityTolerance:      0.02,
 	}
 	var calls []trainConfig
 	err := runLoopWithRunner(3, cfg, func(call trainConfig) error {
@@ -127,7 +139,7 @@ func TestRunLoopWithRunnerRepeatsProvidedConfig(t *testing.T) {
 		if call.trainLoop != i+1 {
 			t.Fatalf("call %d trainLoop = %d, want %d", i+1, call.trainLoop, i+1)
 		}
-		if call.iterations != cfg.iterations || call.model != cfg.model || call.judge != cfg.judge || call.parallelRepeats != cfg.parallelRepeats || call.parallelCases != cfg.parallelCases || call.qualityTolerance != cfg.qualityTolerance || call.verbose != cfg.verbose {
+		if call.iterations != cfg.iterations || call.model != cfg.model || call.judge != cfg.judge || call.parallelRepeats != cfg.parallelRepeats || call.parallelCases != cfg.parallelCases || call.structuralInterval != cfg.structuralInterval || call.rewriteInterval != cfg.rewriteInterval || call.explorationCandidates != cfg.explorationCandidates || call.qualityTolerance != cfg.qualityTolerance || call.verbose != cfg.verbose {
 			t.Fatalf("call %d did not preserve supplied flags: %+v", i+1, call)
 		}
 	}
@@ -278,6 +290,57 @@ func TestFormatResearcherPromptDoesNotPassBenchmarkArtifacts(t *testing.T) {
 		if strings.Contains(prompt, forbidden) {
 			t.Fatalf("researcher prompt leaked %q:\n%s", forbidden, prompt)
 		}
+	}
+}
+
+func TestPlanIterationResearchSchedulesStructuralAndRewriteExploration(t *testing.T) {
+	incremental := planIterationResearch(1, 3, 5, 3)
+	if incremental.Kind != "incremental" || incremental.CandidateCount != 1 {
+		t.Fatalf("iter 1 plan = %+v, want incremental single candidate", incremental)
+	}
+
+	structural := planIterationResearch(3, 3, 5, 3)
+	if structural.Kind != "structural" || structural.CandidateCount != 3 {
+		t.Fatalf("iter 3 plan = %+v, want structural 3 candidates", structural)
+	}
+
+	rewrite := planIterationResearch(15, 3, 5, 3)
+	if rewrite.Kind != "rewrite" || rewrite.CandidateCount != 3 {
+		t.Fatalf("iter 15 plan = %+v, want rewrite to take precedence", rewrite)
+	}
+}
+
+func TestFormatResearcherPromptForRewriteAllowsLargeDistinctCandidate(t *testing.T) {
+	skillRel := filepath.Join("skills", "remote-host-diagnostics", "SKILL.md")
+	plan := planIterationResearch(5, 3, 5, 3)
+	prompt := formatResearcherPromptForPlan("program content", skillRel, "skill content", 5, "General hidden-task feedback.\n", plan, 2)
+	for _, want := range []string{
+		"change-directive",
+		"Full-rewrite exploration",
+		"candidate 2 of 3",
+		"replace headings",
+		"Preserve the YAML frontmatter",
+	} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("rewrite prompt missing %q:\n%s", want, prompt)
+		}
+	}
+	if strings.Contains(prompt, "one small general improvement") {
+		t.Fatalf("rewrite prompt should not force tiny edits:\n%s", prompt)
+	}
+}
+
+func TestBetterCandidateSelectionPrefersQualityFloorThenObjective(t *testing.T) {
+	best := candidateSelection{Index: 1, Result: autoresearch.SuiteResult{QualityMaxScore: 1, QualityNormalizedScore: 0.70, ObjectiveMaxScore: 1, ObjectiveNormalizedScore: 0.95}}
+	candidate := candidateSelection{Index: 2, Result: autoresearch.SuiteResult{QualityMaxScore: 1, QualityNormalizedScore: 0.80, ObjectiveMaxScore: 1, ObjectiveNormalizedScore: 0.85}}
+	if !betterCandidateSelection(candidate, best, 0.75) {
+		t.Fatal("candidate above the quality floor should beat a higher-objective candidate below the floor")
+	}
+
+	best = candidate
+	candidate = candidateSelection{Index: 3, Result: autoresearch.SuiteResult{QualityMaxScore: 1, QualityNormalizedScore: 0.82, ObjectiveMaxScore: 1, ObjectiveNormalizedScore: 0.83}}
+	if betterCandidateSelection(candidate, best, 0.75) {
+		t.Fatal("when both pass the quality floor, lower objective should not win")
 	}
 }
 

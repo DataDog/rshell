@@ -26,6 +26,8 @@ Training loop:
 go run ./cmd/skilltrain -iters 3 -judge
 ```
 
+`skilltrain` normally asks for focused edits, but it also injects exploration to avoid purely local line-level search: every `-structural-interval` iterations (default 3) it permits larger structural mutations, and every `-rewrite-interval` iterations (default 5) it requests full rewrites from scratch. Those exploration iterations generate `-exploration-candidates` candidates (default 3), benchmark each on the public suite, then continue acceptance gating with the best candidate.
+
 `skilltrain` writes per-iteration `sanitized-feedback.md` plus an auditable `sanitized-feedback.source.json`. By default a nested no-tools Pi call generates concise freeform researcher feedback from safe aggregate metrics only (scores, criterion source/evidence/negative counts, runtime and safety counts). Raw benchmark prompts, outputs, criterion names/details, commands, tool output, judge reasons, case IDs, paths, identifiers, and task facts are not provided. The feedback is strict-JSON parsed and rejected if it contains overfitting-looking artifacts; on LLM failure or unsafe output, no feedback is supplied. Use `-feedback-llm=false` to disable feedback generation.
 
 Regenerate sanitized feedback artifacts after feedback prompt/validation changes. This invokes the feedback LLM by default; pass `-feedback-llm=false` to regenerate empty feedback/source artifacts without LLM prose.
