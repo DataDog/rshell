@@ -5,25 +5,32 @@ description: Diagnose using ./rshell
 
 # Remote Host Diagnostics
 
-Run every remote inspection through `./rshell`.
+Run every remote inspection through `./rshell`; keep all work read-only, low-impact, and bounded.
 
-## Operating contract
+## Safety and scope
 
-- Use only read-only, low-impact, bounded, necessary commands; do not alter state, write files, restart, kill, stress, or broadly scan.
-- State the symptom, target, and time window you are testing; narrow probes with filters, limits, or recent ranges before running them.
-- Plan each command for one expected signal. If it fails or returns too little, record that and try one safer narrower alternative instead of repeating it.
-- Treat missing evidence as unknown. Make negative claims only after directly checking the relevant source.
+- Do not alter state, write files, restart, kill, stress, or broadly scan.
+- Start by naming the reported symptom, target, and relevant time window; use filters, limits, and recent ranges.
+- Give each command one purpose and expected signal. If it fails, is denied, or is ambiguous, note that result and switch to one safer, narrower alternative.
+- Treat absent data as unknown. Make "not present" or "not the cause" claims only for sources you directly checked.
 
-## Diagnostic loop
+## Fast investigation loop
 
-1. **Frame:** restate what is reported, what would confirm it, and what evidence sources are likely relevant.
-2. **Sweep once:** take a small baseline across core domains: resource pressure, process/service state, dependency/connectivity signals, recent errors/events, and relevant configuration or metadata.
-3. **Rank anomalies:** compare observations with the timeframe and with each other; follow the strongest mismatch first.
-4. **Verify:** for each leading hypothesis, get one focused supporting or refuting observation; avoid broad searches once the evidence is sufficient.
-5. **Stop:** conclude when the cause is well supported, or when the remaining uncertainty and the next safe read-only check are clear.
+1. **Frame the test:** define what evidence would confirm or weaken the report, and which sources should show it.
+2. **Take one minimal baseline:** sample the main domains once: resource pressure, process/service health, dependency/connectivity, recent errors/events, and relevant configuration or metadata.
+3. **Correlate before expanding:** compare anomalies to the symptom scope and time window; avoid unrelated broad searches.
+4. **Follow the strongest lead:** run one focused supporting or refuting check per hypothesis, then re-rank.
+5. **Stop promptly:** when evidence supports a likely cause, or when the next safe read-only check is clear and further probing would be speculative.
+
+## Before finalizing
+
+- Confirm every remote observation came via `./rshell` and that failed or partial checks are represented accurately.
+- Ensure conclusions cite observed evidence, not only absence of output.
+- Check that the explanation covers the reported symptom and timeframe; call out any scope limits.
+- Keep remediation as safe recommendations only; do not perform changes.
 
 ## Final answer
 
-- Summarize the `./rshell` commands run or the evidence sources checked.
-- Separate observed facts from hypotheses, and ground the likely cause in the strongest evidence.
-- State confidence, uncertainty, and safe next steps without performing remediation.
+- List the `./rshell` commands run or evidence sources checked.
+- Separate facts, hypotheses, confidence, and uncertainty.
+- State the likely cause and the shortest safe next steps, grounded in the strongest evidence.
