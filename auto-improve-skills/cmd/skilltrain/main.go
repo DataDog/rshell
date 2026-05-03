@@ -762,7 +762,7 @@ func run(trainLoop, iterations, structuralInterval, rewriteInterval, exploration
 				printSemantic(logSemanticDryRun, "accept iter %d; would commit %s (candidate %s)", iter, displayPath(root, skillAbs), displayRunPath(runDir, filepath.Join(iterDir, iterationSkillSnapshotPath)))
 			} else {
 				logSuccess("iter %d/%d accepted; commit", iter, iterations)
-				if err := commitSkill(root, skillAbs, trainLoop, iter, candidate, candidatePath, holdoutGate, filepath.Join(iterDir, "researcher.stdout.md"), bestObjective, push); err != nil {
+				if err := commitSkill(root, skillAbs, trainLoop, iter, candidate, candidatePath, holdoutGate, filepath.Join(iterDir, "researcher.stdout.md"), filepath.Join(iterDir, researcherSanitizedFeedbackPath), bestObjective, push); err != nil {
 					return err
 				}
 			}
@@ -2094,7 +2094,7 @@ func improveSkill(root, skillAbs, iterDir, model, piBinary string, iter int, san
 	return os.WriteFile(skillAbs, candidateSkill, 0o644)
 }
 
-func commitSkill(root, skillAbs string, trainLoop, iter int, result autoresearch.SuiteResult, resultPath string, holdoutGate *benchmarkGate, researcherSummaryPath string, previousObjective float64, push bool) error {
+func commitSkill(root, skillAbs string, trainLoop, iter int, result autoresearch.SuiteResult, resultPath string, holdoutGate *benchmarkGate, researcherSummaryPath, sanitizedFeedbackPath string, previousObjective float64, push bool) error {
 	skillRel := gitPath(root, skillAbs)
 	logVerbose("iter %d stage %s", iter, skillRel)
 	if err := runGit(root, "add", skillRel); err != nil {
@@ -2115,8 +2115,9 @@ func commitSkill(root, skillAbs string, trainLoop, iter int, result autoresearch
 		return err
 	}
 	researcherSummary := readCommitSummary(researcherSummaryPath)
+	sanitizedFeedback := readCommitText(sanitizedFeedbackPath)
 	msg := formatCommitSubject(trainLoop, iter, previousObjective, benchmarkObjective(result))
-	body := formatCommitBody(root, skillRel, iter, result, resultPath, holdoutGate, researcherSummary, previousObjective, diffStat, shortStat)
+	body := formatCommitBody(root, skillRel, iter, result, resultPath, holdoutGate, researcherSummary, sanitizedFeedback, previousObjective, diffStat, shortStat)
 	logSuccess("iter %d git commit", iter)
 	if err := runGit(root, "commit", "-m", msg, "-m", body, "--", skillRel); err != nil {
 		return err
@@ -2136,7 +2137,7 @@ func formatCommitSubject(trainLoop, iter int, previousObjective, objective float
 	return fmt.Sprintf("[update skill] loop %d - iter %d - obj %.2f%%->%.2f%%", trainLoop, iter, previousObjective*100, objective*100)
 }
 
-func formatCommitBody(root, skillRel string, iter int, result autoresearch.SuiteResult, resultPath string, holdoutGate *benchmarkGate, researcherSummary string, previousObjective float64, diffStat, shortStat string) string {
+func formatCommitBody(root, skillRel string, iter int, result autoresearch.SuiteResult, resultPath string, holdoutGate *benchmarkGate, researcherSummary, sanitizedFeedback string, previousObjective float64, diffStat, shortStat string) string {
 	qualityScore, qualityMax, qualityPct := result.QualityScore, result.QualityMaxScore, benchmarkQuality(result)*100
 	if qualityMax == 0 {
 		qualityScore, qualityMax, qualityPct = result.Score, result.MaxScore, result.NormalizedScore*100
@@ -2187,22 +2188,11 @@ func formatCommitBody(root, skillRel string, iter int, result autoresearch.Suite
 		}
 	}
 
-	fmt.Fprintf(&b, "\nPer-case scores:\n")
-	if len(result.Cases) == 0 {
-		fmt.Fprintf(&b, "- none recorded\n")
-	}
-	for _, cr := range result.Cases {
-		fmt.Fprintf(&b, "- %s: %.1f/%.1f (%.1f%%), duration %.1fs, commands %d, failed tool calls %d",
-			cr.ID, cr.Score, cr.MaxScore, cr.NormalizedScore*100, cr.DurationSeconds, cr.CommandCount, cr.FailedToolCalls)
-		if cr.Judge != nil {
-			fmt.Fprintf(&b, ", judge %.1f", cr.Judge.Score)
-		}
-		if cr.Error != "" {
-			fmt.Fprintf(&b, ", error: %s", truncateOneLine(cr.Error, 160))
-		}
-		b.WriteByte('\n')
-		if criteria := criteriaSummary(cr); criteria != "" {
-			fmt.Fprintf(&b, "%s\n", indentLines(criteria, "  "))
+	if strings.TrimSpace(sanitizedFeedback) != "" {
+		fmt.Fprintf(&b, "\nSanitized feedback (raw sanitized-feedback.md):\n")
+		fmt.Fprint(&b, sanitizedFeedback)
+		if !strings.HasSuffix(sanitizedFeedback, "\n") {
+			b.WriteByte('\n')
 		}
 	}
 
@@ -2222,32 +2212,11 @@ func formatCommitBody(root, skillRel string, iter int, result autoresearch.Suite
 	return strings.TrimRight(b.String(), "\n")
 }
 
-func criteriaSummary(cr autoresearch.CaseResult) string {
-	if len(cr.Criteria) == 0 {
-		return ""
-	}
-	failed := make([]string, 0)
-	for _, criterion := range cr.Criteria {
-		if criterion.Passed {
-			continue
-		}
-		detail := criterion.Name
-		if criterion.Detail != "" {
-			detail += " (" + criterion.Detail + ")"
-		}
-		failed = append(failed, fmt.Sprintf("%s: %.1f/%.1f", detail, criterion.Points, criterion.Max))
-	}
-	if len(failed) == 0 {
-		return "Criteria: all deterministic checks passed"
-	}
-	const maxFailedCriteria = 5
-	if len(failed) > maxFailedCriteria {
-		failed = append(failed[:maxFailedCriteria], fmt.Sprintf("... and %d more failed criteria", len(failed)-maxFailedCriteria))
-	}
-	return "Failed criteria:\n- " + strings.Join(failed, "\n- ")
+func readCommitSummary(path string) string {
+	return strings.TrimSpace(readCommitText(path))
 }
 
-func readCommitSummary(path string) string {
+func readCommitText(path string) string {
 	if path == "" {
 		return ""
 	}
@@ -2255,7 +2224,7 @@ func readCommitSummary(path string) string {
 	if err != nil {
 		return ""
 	}
-	return strings.TrimSpace(string(data))
+	return string(data)
 }
 
 func gitPath(root, path string) string {
@@ -2303,11 +2272,6 @@ func indentLines(s, prefix string) string {
 		lines[i] = prefix + line
 	}
 	return strings.Join(lines, "\n")
-}
-
-func truncateOneLine(s string, limit int) string {
-	s = strings.Join(strings.Fields(s), " ")
-	return truncateText(s, limit)
 }
 
 func truncateText(s string, limit int) string {

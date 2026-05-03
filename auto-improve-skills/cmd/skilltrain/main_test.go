@@ -754,6 +754,7 @@ func TestFormatCommitBodyIncludesChangeAndScoreDetails(t *testing.T) {
 			},
 		},
 	}
+	sanitizedFeedback := "# Sanitized feedback\n- Improve evidence grounding.\n  Preserve raw Markdown formatting.\n"
 	body := formatCommitBody(
 		"/repo",
 		"auto-improve-skills/skills/remote-host-diagnostics/SKILL.md",
@@ -762,6 +763,7 @@ func TestFormatCommitBodyIncludesChangeAndScoreDetails(t *testing.T) {
 		"/repo/auto-improve-skills/runs/train/iter-002/result.json",
 		nil,
 		"Tightened the workflow and removed duplicated guidance.",
+		sanitizedFeedback,
 		0.9302,
 		" auto-improve-skills/skills/remote-host-diagnostics/SKILL.md | 12 ++++++------\n 1 file changed, 6 insertions(+), 6 deletions(-)\n",
 		" 1 file changed, 6 insertions(+), 6 deletions(-)\n",
@@ -774,11 +776,7 @@ func TestFormatCommitBodyIncludesChangeAndScoreDetails(t *testing.T) {
 		"Average case duration: 82.3s",
 		"Skill size: 2100 estimated tokens, 8400 bytes",
 		"Objective config: quality=0.85 duration=0.10 skill_size=0.05",
-		"datadog-agent-config-regression: 100.0/100.0 (100.0%)",
-		"auth-bruteforce-summary: 95.0/100.0 (95.0%)",
-		"Criteria: all deterministic checks passed",
-		"Failed criteria:",
-		"count near 96 (regex count): 0.0/5.0",
+		"Sanitized feedback (raw sanitized-feedback.md):\n# Sanitized feedback\n- Improve evidence grounding.\n  Preserve raw Markdown formatting.\n",
 		"Researcher summary:",
 		"Tightened the workflow",
 		"Change summary:",
@@ -786,6 +784,11 @@ func TestFormatCommitBodyIncludesChangeAndScoreDetails(t *testing.T) {
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("commit body missing %q:\n%s", want, body)
+		}
+	}
+	for _, forbidden := range []string{"Per-case scores:", "datadog-agent-config-regression", "auth-bruteforce-summary", "Failed criteria:"} {
+		if strings.Contains(body, forbidden) {
+			t.Fatalf("commit body should not contain %q:\n%s", forbidden, body)
 		}
 	}
 }
