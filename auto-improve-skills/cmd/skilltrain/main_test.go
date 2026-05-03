@@ -6,7 +6,6 @@
 package main
 
 import (
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -257,16 +256,22 @@ func TestBenchmarkObjectiveUsesNewFields(t *testing.T) {
 	}
 }
 
-func TestFormatResearcherPromptDoesNotPassBenchmarkArtifacts(t *testing.T) {
-	skillRel := filepath.Join("skills", "remote-host-diagnostics", "SKILL.md")
-	prompt := formatResearcherPrompt("program content", skillRel, "skill content", 2, "General hidden-task feedback.\n")
+func TestFormatResearcherPromptIncludesPublicArtifactsAndForbidsHoldout(t *testing.T) {
+	skillRel := filepath.Join("auto-improve-skills", "skills", "remote-host-diagnostics", "SKILL.md")
+	casesPath := filepath.Join("auto-improve-skills", "benchmarks", "remote-host-diagnostics", "cases.yaml")
+	bestResultPath := filepath.Join("auto-improve-skills", "runs", "train", "iter-000-baseline", "result.json")
+	prompt := formatResearcherPrompt(skillRel, casesPath, bestResultPath, 2, 0.01)
 	for _, want := range []string{
 		"program.md",
 		skillRel,
+		casesPath,
+		bestResultPath,
+		"best public benchmark result",
+		"Do not read, list, grep, inspect, or edit holdout-related",
+		"holdout.yaml",
+		"generated-fixtures/holdout",
 		"Improve only",
-		"Do not inspect evaluator-private",
-		"general-feedback",
-		"General hidden-task feedback",
+		"Treat public benchmark data as samples, not targets",
 		"rshell-capability-snapshot",
 		"Static rshell capability snapshot unavailable",
 		"Production deployments may restrict",
@@ -278,20 +283,11 @@ func TestFormatResearcherPromptDoesNotPassBenchmarkArtifacts(t *testing.T) {
 		}
 	}
 	for _, forbidden := range []string{
-		"/repo",
-		"auto-improve-skills",
-		"cases.yaml",
-		"holdout.yaml",
-		"benchmark suite",
-		"best benchmark result",
-		"researcher-feedback",
-		"generated-fixtures",
-		"raw/",
 		"raw transcripts",
 		"result JSON",
 	} {
 		if strings.Contains(prompt, forbidden) {
-			t.Fatalf("researcher prompt leaked %q:\n%s", forbidden, prompt)
+			t.Fatalf("researcher prompt should not contain %q:\n%s", forbidden, prompt)
 		}
 	}
 }
@@ -314,9 +310,11 @@ func TestPlanIterationResearchSchedulesStructuralAndRewriteExploration(t *testin
 }
 
 func TestFormatResearcherPromptForRewriteAllowsLargeDistinctCandidate(t *testing.T) {
-	skillRel := filepath.Join("skills", "remote-host-diagnostics", "SKILL.md")
+	skillRel := filepath.Join("auto-improve-skills", "skills", "remote-host-diagnostics", "SKILL.md")
+	casesPath := filepath.Join("auto-improve-skills", "benchmarks", "remote-host-diagnostics", "cases.yaml")
+	bestResultPath := filepath.Join("auto-improve-skills", "runs", "train", "iter-000-baseline", "result.json")
 	plan := planIterationResearch(5, 3, 5, 3)
-	prompt := formatResearcherPromptForPlan("program content", skillRel, "skill content", 5, "General hidden-task feedback.\n", "rshell help snapshot", plan, 2)
+	prompt := formatResearcherPromptForPlan(skillRel, casesPath, bestResultPath, 5, 0.01, "rshell help snapshot", plan, 2)
 	for _, want := range []string{
 		"change-directive",
 		"Full-rewrite exploration",
@@ -344,273 +342,6 @@ func TestBetterCandidateSelectionPrefersQualityFloorThenObjective(t *testing.T) 
 	candidate = candidateSelection{Index: 3, Result: autoresearch.SuiteResult{QualityMaxScore: 1, QualityNormalizedScore: 0.82, ObjectiveMaxScore: 1, ObjectiveNormalizedScore: 0.83}}
 	if betterCandidateSelection(candidate, best, 0.75) {
 		t.Fatal("when both pass the quality floor, lower objective should not win")
-	}
-}
-
-func TestBuildSanitizedFeedbackSourceIncludesOnlySafeAggregateMetrics(t *testing.T) {
-	result := autoresearch.SuiteResult{
-		QualityScore:               70,
-		QualityMaxScore:            100,
-		ObjectiveNormalizedScore:   0.68,
-		AverageCaseDurationSeconds: 12.345,
-		Repeats:                    3,
-		SkillSizeEstimatedTokens:   1234,
-		Cases: []autoresearch.CaseResult{
-			{
-				ID:              "case-alpha",
-				NormalizedScore: 0.4,
-				CommandCount:    4,
-				FailedToolCalls: 1,
-				ToolOutputBytes: 2048,
-				SafetyViolations: []string{
-					"fixture log rshell command missing --allowed-paths",
-				},
-				Criteria: []autoresearch.CriterionResult{
-					{
-						Name:             "contains 198.51.100.23 in auth.log",
-						Source:           "final",
-						Passed:           false,
-						Max:              10,
-						Detail:           "passed in 1/3 repeats; private detail /tmp/secret",
-						EvidenceRequired: true,
-					},
-					{
-						Name:   "commands use --allowed-paths {{LOG_ROOT}}",
-						Source: "commands",
-						Passed: false,
-						Max:    5,
-					},
-					{
-						Name:     "final avoids compromise claim",
-						Source:   "final",
-						Passed:   false,
-						Max:      2,
-						Negative: true,
-					},
-				},
-			},
-			{
-				ID:              "case-beta",
-				NormalizedScore: 1,
-				CommandCount:    2,
-				ToolOutputBytes: 1024,
-				Criteria: []autoresearch.CriterionResult{{
-					Name:             "passing private service evidence",
-					Source:           "final",
-					Passed:           true,
-					Points:           1,
-					Max:              1,
-					EvidenceRequired: true,
-				}},
-			},
-		},
-	}
-
-	source := buildSanitizedFeedbackSource(result)
-	if source.Version != 4 {
-		t.Fatalf("source version = %d, want 4", source.Version)
-	}
-	if len(source.RShellProcedureCategories) == 0 {
-		t.Fatalf("expected generic rshell procedure categories")
-	}
-	agg := source.SafeAggregate
-	if agg.CaseCount != 2 || agg.CriteriaCount != 4 || agg.FailedCriteriaCount != 3 || agg.FailureOccurrences != 4 {
-		t.Fatalf("aggregate counts = cases:%d criteria:%d failed:%d occurrences:%d", agg.CaseCount, agg.CriteriaCount, agg.FailedCriteriaCount, agg.FailureOccurrences)
-	}
-	if agg.CriteriaBySource["final"].TotalCriteria != 3 || agg.CriteriaBySource["final"].FailedCriteria != 2 || agg.CriteriaBySource["final"].FailureOccurrences != 3 {
-		t.Fatalf("final source stats = %#v", agg.CriteriaBySource["final"])
-	}
-	if agg.CriteriaBySource["commands"].TotalCriteria != 1 || agg.CriteriaBySource["commands"].FailedCriteria != 1 {
-		t.Fatalf("commands source stats = %#v", agg.CriteriaBySource["commands"])
-	}
-	if agg.EvidenceRequiredCriteria.TotalCriteria != 2 || agg.EvidenceRequiredCriteria.FailedCriteria != 1 || agg.EvidenceRequiredCriteria.FailureOccurrences != 2 {
-		t.Fatalf("evidence stats = %#v", agg.EvidenceRequiredCriteria)
-	}
-	if agg.NegativeAssertionCriteria.TotalCriteria != 1 || agg.NegativeAssertionCriteria.FailedCriteria != 1 {
-		t.Fatalf("negative stats = %#v", agg.NegativeAssertionCriteria)
-	}
-	if agg.SafetyViolationCases != 1 || agg.SafetyViolationCount != 1 {
-		t.Fatalf("safety stats = cases:%d count:%d", agg.SafetyViolationCases, agg.SafetyViolationCount)
-	}
-	if agg.CaseScoreBuckets["low"] != 1 || agg.CaseScoreBuckets["full"] != 1 {
-		t.Fatalf("case score buckets = %#v", agg.CaseScoreBuckets)
-	}
-
-	data, err := json.Marshal(source)
-	if err != nil {
-		t.Fatal(err)
-	}
-	serialized := string(data)
-	for _, forbidden := range []string{"case-alpha", "case-beta", "198.51.100.23", "auth.log", "--allowed-paths", "LOG_ROOT", "private service", "/tmp/secret"} {
-		if strings.Contains(serialized, forbidden) {
-			t.Fatalf("sanitized source leaked %q: %s", forbidden, serialized)
-		}
-	}
-}
-
-func TestFormatSanitizedResearcherFeedbackRendersLLMProseCategoriesAndGuardrails(t *testing.T) {
-	source := sanitizedFeedbackSource{
-		Feedback: "- Focus final answers on nearby evidence and calibrated uncertainty.\n- Keep probes bounded before synthesizing.",
-		RShellProcedureCategories: []sanitizedFeedbackProcedureCategory{{
-			Category: "rshell capability discovery",
-			Guidance: "Use rshell help as the source of truth before relying on command-specific features.",
-		}},
-	}
-	feedback := formatSanitizedResearcherFeedbackFromSource(source)
-	for _, want := range []string{
-		"sanitized aggregate metrics only",
-		"LLM-generated process guidance",
-		"Focus final answers",
-		"Generic rshell procedure categories",
-		"rshell capability discovery",
-		"Anti-overfitting guardrails",
-		"Do not add exact case facts",
-	} {
-		if !strings.Contains(feedback, want) {
-			t.Fatalf("feedback missing %q:\n%s", want, feedback)
-		}
-	}
-
-	categoryOnly := formatSanitizedResearcherFeedbackFromSource(sanitizedFeedbackSource{RShellProcedureCategories: []sanitizedFeedbackProcedureCategory{{
-		Category: "boundedness and stopping",
-		Guidance: "Prefer narrow filters and stop once evidence is sufficient.",
-	}}})
-	if !strings.Contains(categoryOnly, "boundedness and stopping") || strings.Contains(categoryOnly, "LLM-generated process guidance") {
-		t.Fatalf("category-only feedback rendered incorrectly:\n%s", categoryOnly)
-	}
-
-	if got := formatSanitizedResearcherFeedbackFromSource(sanitizedFeedbackSource{}); got != "" {
-		t.Fatalf("empty feedback should render no researcher feedback, got %q", got)
-	}
-}
-
-func TestParseSanitizedFeedbackLLMOutputRequiresStrictSchema(t *testing.T) {
-	feedback, err := parseSanitizedFeedbackLLMOutput(`{"feedback":"- Improve evidence grounding in final answers."}`)
-	if err != nil {
-		t.Fatalf("valid JSON failed: %v", err)
-	}
-	if !strings.Contains(feedback, "evidence grounding") {
-		t.Fatalf("feedback = %q", feedback)
-	}
-	for name, output := range map[string]string{
-		"extra field":    `{"feedback":"generic", "comment":"leak"}`,
-		"markdown fence": "```json\n{\"feedback\":\"generic\"}\n```",
-		"trailing text":  `{"feedback":"generic"} more`,
-		"empty feedback": `{"feedback":"   "}`,
-	} {
-		t.Run(name, func(t *testing.T) {
-			if _, err := parseSanitizedFeedbackLLMOutput(output); err == nil {
-				t.Fatalf("expected strict parse to reject %q", output)
-			}
-		})
-	}
-}
-
-func TestValidateSanitizedFeedbackTextRejectsOverfitArtifacts(t *testing.T) {
-	if _, err := validateSanitizedFeedbackText("Prefer bounded evidence summaries and calibrated uncertainty."); err != nil {
-		t.Fatalf("generic feedback should be allowed: %v", err)
-	}
-	for name, feedback := range map[string]string{
-		"ip":         "Mention 198.51.100.23 explicitly.",
-		"path":       "Check /tmp/generated-fixtures/logs first.",
-		"file":       "Always cite agent.log.",
-		"timestamp":  "Focus on events around 10:12 UTC.",
-		"identifier": "Handle rc-8831 carefully.",
-		"line":       "Look for line 42.",
-	} {
-		t.Run(name, func(t *testing.T) {
-			if _, err := validateSanitizedFeedbackText(feedback); err == nil {
-				t.Fatalf("expected feedback %q to be rejected", feedback)
-			}
-		})
-	}
-}
-
-func TestSanitizedFeedbackSourceResultPathUsesPreviousIteration(t *testing.T) {
-	runDir := filepath.Join("runs", "train")
-	if got := sanitizedFeedbackSourceResultPath(runDir, 1); got != filepath.Join(runDir, "iter-000-baseline", "result.json") {
-		t.Fatalf("iter 1 source = %q", got)
-	}
-	if got := sanitizedFeedbackSourceResultPath(runDir, 3); got != filepath.Join(runDir, "iter-002", "result.json") {
-		t.Fatalf("iter 3 source = %q", got)
-	}
-	if iter, ok := parseIterationDir("iter-003"); !ok || iter != 3 {
-		t.Fatalf("parse iter-003 = %d, %v", iter, ok)
-	}
-	if _, ok := parseIterationDir("iter-003-holdout"); ok {
-		t.Fatalf("holdout-style directory should not parse as iteration")
-	}
-}
-
-func TestPrepareResearcherWorkspaceCopiesOnlyResearcherFiles(t *testing.T) {
-	root := t.TempDir()
-	programPath := filepath.Join(root, "auto-improve-skills", "program.md")
-	skillPath := filepath.Join(root, "auto-improve-skills", "skills", "remote-host-diagnostics", "SKILL.md")
-	secretPath := filepath.Join(root, "auto-improve-skills", "benchmarks", "remote-host-diagnostics", "cases.yaml")
-	if err := os.MkdirAll(filepath.Dir(programPath), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(programPath, []byte("program"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.MkdirAll(filepath.Dir(skillPath), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(skillPath, []byte("skill"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.MkdirAll(filepath.Dir(secretPath), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(secretPath, []byte("secret"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-
-	workspace, err := prepareResearcherWorkspace(root, skillPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.RemoveAll(workspace.Dir)
-	if strings.HasPrefix(workspace.Dir, root) {
-		t.Fatalf("researcher workspace %q should not be inside repo root %q", workspace.Dir, root)
-	}
-	if workspace.SkillRel != filepath.Join("skills", "remote-host-diagnostics", "SKILL.md") {
-		t.Fatalf("SkillRel = %q", workspace.SkillRel)
-	}
-	programData, err := os.ReadFile(filepath.Join(workspace.Dir, researcherProgramPath))
-	if err != nil || string(programData) != "program" {
-		t.Fatalf("workspace program = %q, %v", string(programData), err)
-	}
-	skillData, err := os.ReadFile(filepath.Join(workspace.Dir, workspace.SkillRel))
-	if err != nil || string(skillData) != "skill" {
-		t.Fatalf("workspace skill = %q, %v", string(skillData), err)
-	}
-
-	files := map[string]bool{}
-	if err := filepath.WalkDir(workspace.Dir, func(path string, d os.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if d.IsDir() {
-			return nil
-		}
-		rel, err := filepath.Rel(workspace.Dir, path)
-		if err != nil {
-			return err
-		}
-		files[rel] = true
-		return nil
-	}); err != nil {
-		t.Fatal(err)
-	}
-	wantFiles := []string{researcherProgramPath, filepath.Join("skills", "remote-host-diagnostics", "SKILL.md")}
-	if len(files) != len(wantFiles) {
-		t.Fatalf("workspace files = %#v", files)
-	}
-	for _, want := range wantFiles {
-		if !files[want] {
-			t.Fatalf("workspace missing %q in %#v", want, files)
-		}
 	}
 }
 
@@ -664,13 +395,13 @@ func TestSaveBaselineSkillArtifactsWritesPublicAndHoldoutSnapshots(t *testing.T)
 	}
 }
 
-func TestResearcherToolsExcludeReadAndBash(t *testing.T) {
-	if researcherTools != "edit,write" {
-		t.Fatalf("researcherTools = %q, want edit,write", researcherTools)
+func TestResearcherToolsIncludeReadBashEditAndWrite(t *testing.T) {
+	if researcherTools != "read,bash,edit,write" {
+		t.Fatalf("researcherTools = %q, want read,bash,edit,write", researcherTools)
 	}
-	for _, forbidden := range []string{"bash", "read"} {
-		if strings.Contains(researcherTools, forbidden) {
-			t.Fatalf("researcherTools must not include %s: %q", forbidden, researcherTools)
+	for _, want := range []string{"read", "bash", "edit", "write"} {
+		if !strings.Contains(researcherTools, want) {
+			t.Fatalf("researcherTools must include %s: %q", want, researcherTools)
 		}
 	}
 }
@@ -777,7 +508,6 @@ func TestFormatCommitBodyIncludesChangeAndScoreDetails(t *testing.T) {
 			},
 		},
 	}
-	sanitizedFeedback := "# Sanitized feedback\n- Improve evidence grounding.\n  Preserve raw Markdown formatting.\n"
 	body := formatCommitBody(
 		"/repo",
 		"auto-improve-skills/skills/remote-host-diagnostics/SKILL.md",
@@ -786,7 +516,6 @@ func TestFormatCommitBodyIncludesChangeAndScoreDetails(t *testing.T) {
 		"/repo/auto-improve-skills/runs/train/iter-002/result.json",
 		nil,
 		"Tightened the workflow and removed duplicated guidance.",
-		sanitizedFeedback,
 		0.9302,
 		" auto-improve-skills/skills/remote-host-diagnostics/SKILL.md | 12 ++++++------\n 1 file changed, 6 insertions(+), 6 deletions(-)\n",
 		" 1 file changed, 6 insertions(+), 6 deletions(-)\n",
@@ -799,7 +528,6 @@ func TestFormatCommitBodyIncludesChangeAndScoreDetails(t *testing.T) {
 		"Average case duration: 82.3s",
 		"Skill size: 2100 estimated tokens, 8400 bytes",
 		"Objective config: quality=0.85 duration=0.10 skill_size=0.05",
-		"Sanitized feedback (raw sanitized-feedback.md):\n# Sanitized feedback\n- Improve evidence grounding.\n  Preserve raw Markdown formatting.\n",
 		"Researcher summary:",
 		"Tightened the workflow",
 		"Change summary:",

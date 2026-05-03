@@ -24,5 +24,4 @@ train:
 		-model openai-codex/gpt-5.5 \
 		-iters 3 \
 		-judge \
-		-feedback-llm \
 		-loop-count 100

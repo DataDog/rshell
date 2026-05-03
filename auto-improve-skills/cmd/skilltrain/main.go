@@ -13,12 +13,9 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
-	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -49,19 +46,14 @@ const (
 )
 
 const (
-	skilltrainLogPrefix                   = "skilltrain"
-	skilltrainLogSeparator                = " | "
-	commandOutputLimit                    = 64 * 1024
-	rshellCapabilitySnapshotMaxBytes      = 12 * 1024
-	researcherProgramPath                 = "program.md"
-	researcherSanitizedFeedbackPath       = "sanitized-feedback.md"
-	researcherSanitizedFeedbackSourcePath = "sanitized-feedback.source.json"
-	researcherTools                       = "edit,write"
-	sanitizedFeedbackMaxChars             = 2400
-	sanitizedFeedbackLLMTimeout           = 5 * time.Minute
-	iterationSkillSnapshotPath            = "SKILL.candidate.md"
-	iterationPreviousSkillPath            = "SKILL.previous.md"
-	iterationSkillDiffPath                = "SKILL.diff"
+	skilltrainLogPrefix              = "skilltrain"
+	skilltrainLogSeparator           = " | "
+	commandOutputLimit               = 64 * 1024
+	rshellCapabilitySnapshotMaxBytes = 12 * 1024
+	researcherTools                  = "read,bash,edit,write"
+	iterationSkillSnapshotPath       = "SKILL.candidate.md"
+	iterationPreviousSkillPath       = "SKILL.previous.md"
+	iterationSkillDiffPath           = "SKILL.diff"
 
 	ansiReset   = "\x1b[0m"
 	ansiBold    = "\x1b[1m"
@@ -83,7 +75,6 @@ func main() {
 	flag.StringVar(&cfg.casesPath, "cases", "auto-improve-skills/benchmarks/remote-host-diagnostics/cases.yaml", "benchmark suite")
 	flag.StringVar(&cfg.skillPath, "skill", "auto-improve-skills/skills/remote-host-diagnostics/SKILL.md", "skill file to improve")
 	flag.StringVar(&cfg.model, "model", defaultModel, "pi model for researcher and benchmark agents")
-	flag.StringVar(&cfg.feedbackModel, "feedback-model", "", "pi model for sanitized feedback generator (defaults to -model)")
 	flag.StringVar(&cfg.piBinary, "pi", "pi", "pi executable")
 	flag.StringVar(&cfg.runDir, "run-dir", "", "directory for this training run")
 	flag.Float64Var(&cfg.minDelta, "min-delta", 0.001, "minimum normalized objective improvement to accept")
@@ -99,24 +90,10 @@ func main() {
 	flag.BoolVar(&cfg.push, "push", true, "push accepted skill commits to the current branch; set -push=false to keep commits local")
 	flag.BoolVar(&cfg.dryRun, "dry-run", false, "run benchmark and researcher but do not commit/revert")
 	flag.BoolVar(&cfg.allowDirty, "allow-dirty", false, "allow starting with unrelated uncommitted changes")
-	flag.BoolVar(&cfg.feedbackLLM, "feedback-llm", true, "generate freeform sanitized researcher feedback with an LLM (default true; false writes no feedback)")
-	flag.StringVar(&cfg.regenerateFeedbackRunDir, "regenerate-feedback", "", "regenerate sanitized-feedback artifacts under an existing skilltrain run directory or parent runs directory, then exit")
 	flag.BoolVar(&cfg.verbose, "verbose", false, "show detailed per-step logs and stream nested skillbench output")
 	flag.Parse()
-	if strings.TrimSpace(cfg.feedbackModel) == "" {
-		cfg.feedbackModel = cfg.model
-	}
 
 	setSkilltrainVerbose(cfg.verbose)
-	if strings.TrimSpace(cfg.regenerateFeedbackRunDir) != "" {
-		count, err := regenerateSanitizedFeedbackArtifacts(cfg.regenerateFeedbackRunDir, cfg.piBinary, cfg.feedbackModel, cfg.feedbackLLM)
-		if err != nil {
-			logError("%v", err)
-			os.Exit(1)
-		}
-		logSuccess("regenerated sanitized feedback for %d iteration(s)", count)
-		return
-	}
 	if err := runLoop(*loopCount, cfg); err != nil {
 		logError("%v", err)
 		os.Exit(1)
@@ -124,33 +101,30 @@ func main() {
 }
 
 type trainConfig struct {
-	iterations               int
-	structuralInterval       int
-	rewriteInterval          int
-	explorationCandidates    int
-	casesPath                string
-	skillPath                string
-	model                    string
-	feedbackModel            string
-	piBinary                 string
-	runDir                   string
-	minDelta                 float64
-	qualityTolerance         float64
-	holdoutCasesPath         string
-	holdoutQualityTolerance  float64
-	repeats                  int
-	parallelRepeats          int
-	parallelCases            int
-	limit                    int
-	judge                    bool
-	parallelSuites           bool
-	push                     bool
-	dryRun                   bool
-	allowDirty               bool
-	feedbackLLM              bool
-	regenerateFeedbackRunDir string
-	verbose                  bool
-	trainLoop                int
+	iterations              int
+	structuralInterval      int
+	rewriteInterval         int
+	explorationCandidates   int
+	casesPath               string
+	skillPath               string
+	model                   string
+	piBinary                string
+	runDir                  string
+	minDelta                float64
+	qualityTolerance        float64
+	holdoutCasesPath        string
+	holdoutQualityTolerance float64
+	repeats                 int
+	parallelRepeats         int
+	parallelCases           int
+	limit                   int
+	judge                   bool
+	parallelSuites          bool
+	push                    bool
+	dryRun                  bool
+	allowDirty              bool
+	verbose                 bool
+	trainLoop               int
 }
 
 type logContext struct {
@@ -550,16 +524,10 @@ func loopRunDir(runDir string, loop int) string {
 
 func runConfig(cfg trainConfig) error {
 	setSkilltrainVerbose(cfg.verbose)
-	if strings.TrimSpace(cfg.feedbackModel) == "" {
-		cfg.feedbackModel = cfg.model
-	}
-	return run(cfg.trainLoop, cfg.iterations, cfg.structuralInterval, cfg.rewriteInterval, cfg.explorationCandidates, cfg.casesPath, cfg.skillPath, cfg.model, cfg.feedbackModel, cfg.piBinary, cfg.runDir, cfg.minDelta, cfg.qualityTolerance, cfg.holdoutCasesPath, cfg.holdoutQualityTolerance, cfg.repeats, cfg.parallelRepeats, cfg.parallelCases, cfg.limit, cfg.judge, cfg.parallelSuites, cfg.push, cfg.dryRun, cfg.allowDirty, cfg.feedbackLLM)
+	return run(cfg.trainLoop, cfg.iterations, cfg.structuralInterval, cfg.rewriteInterval, cfg.explorationCandidates, cfg.casesPath, cfg.skillPath, cfg.model, cfg.piBinary, cfg.runDir, cfg.minDelta, cfg.qualityTolerance, cfg.holdoutCasesPath, cfg.holdoutQualityTolerance, cfg.repeats, cfg.parallelRepeats, cfg.parallelCases, cfg.limit, cfg.judge, cfg.parallelSuites, cfg.push, cfg.dryRun, cfg.allowDirty)
 }
 
-func run(trainLoop, iterations, structuralInterval, rewriteInterval, explorationCandidates int, casesPath, skillPath, model, feedbackModel, piBinary, runDir string, minDelta, qualityTolerance float64, holdoutCasesPath string, holdoutQualityTolerance float64, repeats, parallelRepeats, parallelCases, limit int, judge, parallelSuites, push, dryRun, allowDirty, feedbackLLM bool) error {
-	if strings.TrimSpace(feedbackModel) == "" {
-		feedbackModel = model
-	}
+func run(trainLoop, iterations, structuralInterval, rewriteInterval, explorationCandidates int, casesPath, skillPath, model, piBinary, runDir string, minDelta, qualityTolerance float64, holdoutCasesPath string, holdoutQualityTolerance float64, repeats, parallelRepeats, parallelCases, limit int, judge, parallelSuites, push, dryRun, allowDirty bool) error {
 	if qualityTolerance < 0 {
 		return fmt.Errorf("-quality-tolerance must be non-negative")
 	}
@@ -652,9 +620,8 @@ func run(trainLoop, iterations, structuralInterval, rewriteInterval, exploration
 		printSemantic(logSemanticSummary, "baseline q=%.2f%% obj=%.2f%%", bestQuality*100, bestObjective*100)
 	}
 
-	feedbackSource := baseline
 	for iter := 1; iter <= iterations; iter++ {
-		logVerbose("iter %d/%d prepare workspace", iter, iterations)
+		logVerbose("iter %d/%d prepare iteration", iter, iterations)
 		iterDir := filepath.Join(runDir, fmt.Sprintf("iter-%03d", iter))
 		if err := os.MkdirAll(iterDir, 0o755); err != nil {
 			return err
@@ -662,19 +629,6 @@ func run(trainLoop, iterations, structuralInterval, rewriteInterval, exploration
 		logVerbose("iter %d/%d snapshot skill", iter, iterations)
 		previousSkill, err := os.ReadFile(skillAbs)
 		if err != nil {
-			return err
-		}
-		feedbackData := buildSanitizedFeedbackSource(feedbackSource)
-		if feedbackLLM {
-			if err := populateSanitizedFeedbackWithLLM(piBinary, feedbackModel, &feedbackData); err != nil {
-				logWarn("iter %d/%d feedback llm failed; no sanitized feedback generated: %v", iter, iterations, err)
-			}
-		}
-		if err := autoresearch.WriteJSON(filepath.Join(iterDir, researcherSanitizedFeedbackSourcePath), feedbackData); err != nil {
-			return err
-		}
-		feedback := formatSanitizedResearcherFeedbackFromSource(feedbackData)
-		if err := os.WriteFile(filepath.Join(iterDir, researcherSanitizedFeedbackPath), []byte(feedback), 0o644); err != nil {
 			return err
 		}
 		plan := planIterationResearch(iter, structuralInterval, rewriteInterval, explorationCandidates)
@@ -691,7 +645,7 @@ func run(trainLoop, iterations, structuralInterval, rewriteInterval, exploration
 			logDryRunVerbose("iter %d/%d restore original skill", iter, iterations)
 			return os.WriteFile(skillAbs, previousSkill, 0o644)
 		}
-		selection, err := improveAndBenchmarkCandidates(root, runDir, casesAbs, holdoutCasesAbs, skillAbs, model, piBinary, iterDir, iter, previousSkill, feedback, plan, qualityFloor, limit, judge, repeats, parallelRepeats, parallelCases, parallelSuites)
+		selection, err := improveAndBenchmarkCandidates(root, runDir, casesAbs, holdoutCasesAbs, skillAbs, model, piBinary, iterDir, iter, previousSkill, bestPath, plan, qualityFloor, qualityTolerance, limit, judge, repeats, parallelRepeats, parallelCases, parallelSuites)
 		if err != nil {
 			if restoreErr := restoreDryRun(); restoreErr != nil {
 				return restoreErr
@@ -754,8 +708,6 @@ func run(trainLoop, iterations, structuralInterval, rewriteInterval, exploration
 		if restoreErr := restoreDryRun(); restoreErr != nil {
 			return restoreErr
 		}
-		feedbackSource = candidate
-
 		if publicOK && holdoutOK {
 			acceptedIterations++
 			if dryRun {
@@ -763,7 +715,7 @@ func run(trainLoop, iterations, structuralInterval, rewriteInterval, exploration
 				printSemantic(logSemanticDryRun, "accept iter %d; would commit %s (candidate %s)", iter, displayPath(root, skillAbs), displayRunPath(runDir, filepath.Join(iterDir, iterationSkillSnapshotPath)))
 			} else {
 				logSuccess("iter %d/%d accepted; commit", iter, iterations)
-				if err := commitSkill(root, skillAbs, trainLoop, iter, candidate, candidatePath, holdoutGate, filepath.Join(iterDir, "researcher.stdout.md"), filepath.Join(iterDir, researcherSanitizedFeedbackPath), bestObjective, push); err != nil {
+				if err := commitSkill(root, skillAbs, trainLoop, iter, candidate, candidatePath, holdoutGate, filepath.Join(iterDir, "researcher.stdout.md"), bestObjective, push); err != nil {
 					return err
 				}
 			}
@@ -1077,10 +1029,10 @@ func runCandidateBenchmarks(root, casesAbs, holdoutCasesAbs, skillAbs, model, pi
 	return candidate.Result, holdout.Result, true, holdout.Err, candidate.Err
 }
 
-func improveAndBenchmarkCandidates(root, runDir, casesAbs, holdoutCasesAbs, skillAbs, model, piBinary, iterDir string, iter int, previousSkill []byte, sanitizedFeedback string, plan iterationResearchPlan, qualityFloor float64, limit int, judge bool, repeats, parallelRepeats, parallelCases int, parallelSuites bool) (candidateSelection, error) {
+func improveAndBenchmarkCandidates(root, runDir, casesAbs, holdoutCasesAbs, skillAbs, model, piBinary, iterDir string, iter int, previousSkill []byte, bestResultPath string, plan iterationResearchPlan, qualityFloor, qualityTolerance float64, limit int, judge bool, repeats, parallelRepeats, parallelCases int, parallelSuites bool) (candidateSelection, error) {
 	candidateCount := plan.CandidateCount
 	if candidateCount <= 1 {
-		if err := improveSkill(root, skillAbs, iterDir, model, piBinary, iter, sanitizedFeedback, plan, 1); err != nil {
+		if err := improveSkill(root, skillAbs, casesAbs, bestResultPath, iterDir, model, piBinary, iter, qualityTolerance, plan, 1); err != nil {
 			return candidateSelection{}, err
 		}
 		candidateSkill, err := os.ReadFile(skillAbs)
@@ -1120,7 +1072,7 @@ func improveAndBenchmarkCandidates(root, runDir, casesAbs, holdoutCasesAbs, skil
 		}
 		transcriptPath := filepath.Join(candidateDir, "researcher.stdout.md")
 		logStep("iter %d %s candidate %d/%d edit -> %s", iter, plan.Label, candidateIndex, candidateCount, displayRunPath(runDir, transcriptPath))
-		if err := improveSkill(root, skillAbs, candidateDir, model, piBinary, iter, sanitizedFeedback, plan, candidateIndex); err != nil {
+		if err := improveSkill(root, skillAbs, casesAbs, bestResultPath, candidateDir, model, piBinary, iter, qualityTolerance, plan, candidateIndex); err != nil {
 			return candidateSelection{}, err
 		}
 		candidateSkill, err := os.ReadFile(skillAbs)
@@ -1537,583 +1489,12 @@ func roundedAverage(sum, count int) int {
 	return (sum + count/2) / count
 }
 
-type researcherWorkspace struct {
-	Dir      string
-	SkillRel string
-}
-
-func prepareResearcherWorkspace(root, skillAbs string) (researcherWorkspace, error) {
-	workspaceDir, err := os.MkdirTemp("", "skilltrain-researcher-*")
-	if err != nil {
-		return researcherWorkspace{}, err
-	}
-	cleanupOnError := true
-	defer func() {
-		if cleanupOnError {
-			_ = os.RemoveAll(workspaceDir)
-		}
-	}()
-
-	programData, err := os.ReadFile(filepath.Join(root, "auto-improve-skills", "program.md"))
-	if err != nil {
-		return researcherWorkspace{}, err
-	}
-	if err := writeResearcherWorkspaceFile(workspaceDir, researcherProgramPath, programData); err != nil {
-		return researcherWorkspace{}, err
-	}
-
-	skillData, err := os.ReadFile(skillAbs)
-	if err != nil {
-		return researcherWorkspace{}, err
-	}
-	skillRel := researcherSkillRelPath(skillAbs)
-	if err := writeResearcherWorkspaceFile(workspaceDir, skillRel, skillData); err != nil {
-		return researcherWorkspace{}, err
-	}
-
-	cleanupOnError = false
-	return researcherWorkspace{Dir: workspaceDir, SkillRel: skillRel}, nil
-}
-
-func researcherSkillRelPath(skillAbs string) string {
-	skillDir := filepath.Base(filepath.Dir(skillAbs))
-	if strings.TrimSpace(skillDir) == "" || skillDir == "." || skillDir == string(filepath.Separator) {
-		skillDir = "skill"
-	}
-	return filepath.Join("skills", skillDir, "SKILL.md")
-}
-
-func writeResearcherWorkspaceFile(workspaceDir, relPath string, data []byte) error {
-	path := filepath.Join(workspaceDir, relPath)
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
-	}
-	return os.WriteFile(path, data, 0o644)
-}
-
-type sanitizedFeedbackSource struct {
-	Version                   int                                  `json:"version"`
-	LLMEnabled                bool                                 `json:"llm_enabled,omitempty"`
-	LLMModel                  string                               `json:"llm_model,omitempty"`
-	LLMError                  string                               `json:"llm_error,omitempty"`
-	Feedback                  string                               `json:"feedback,omitempty"`
-	RShellProcedureCategories []sanitizedFeedbackProcedureCategory `json:"rshell_procedure_feedback_categories,omitempty"`
-	SafeAggregate             sanitizedFeedbackAggregate           `json:"safe_aggregate"`
-}
-
-// sanitizedFeedbackProcedureCategory is deterministic, benchmark-agnostic process
-// guidance derived only from safe aggregate counts. It intentionally avoids
-// command lines, flags, paths, identifiers, service names, and case facts.
-type sanitizedFeedbackProcedureCategory struct {
-	Category string `json:"category"`
-	Guidance string `json:"guidance"`
-}
-
-type sanitizedFeedbackAggregate struct {
-	CaseCount                 int                                        `json:"case_count"`
-	CriteriaCount             int                                        `json:"criteria_count"`
-	FailedCriteriaCount       int                                        `json:"failed_criteria_count"`
-	FailureOccurrences        int                                        `json:"failure_occurrences"`
-	QualityNormalizedScore    float64                                    `json:"quality_normalized_score"`
-	ObjectiveNormalizedScore  float64                                    `json:"objective_normalized_score"`
-	QualityMissedPoints       float64                                    `json:"quality_missed_points,omitempty"`
-	CriteriaBySource          map[string]sanitizedFeedbackCriterionStats `json:"criteria_by_source,omitempty"`
-	EvidenceRequiredCriteria  sanitizedFeedbackCriterionStats            `json:"evidence_required_criteria,omitempty"`
-	NegativeAssertionCriteria sanitizedFeedbackCriterionStats            `json:"negative_assertion_criteria,omitempty"`
-	CaseScoreBuckets          map[string]int                             `json:"case_score_buckets,omitempty"`
-	AverageCommandCount       float64                                    `json:"average_command_count,omitempty"`
-	AverageFailedToolCalls    float64                                    `json:"average_failed_tool_calls,omitempty"`
-	AverageToolOutputKB       float64                                    `json:"average_tool_output_kb,omitempty"`
-	AverageDurationSeconds    float64                                    `json:"average_duration_seconds,omitempty"`
-	SafetyViolationCases      int                                        `json:"safety_violation_cases,omitempty"`
-	SafetyViolationCount      int                                        `json:"safety_violation_count,omitempty"`
-	ErrorCases                int                                        `json:"error_cases,omitempty"`
-	Repeats                   int                                        `json:"repeats,omitempty"`
-	SkillSizeEstimatedTokens  int                                        `json:"skill_size_estimated_tokens,omitempty"`
-}
-
-type sanitizedFeedbackCriterionStats struct {
-	TotalCriteria      int     `json:"total_criteria"`
-	FailedCriteria     int     `json:"failed_criteria"`
-	FailureOccurrences int     `json:"failure_occurrences,omitempty"`
-	MissedPoints       float64 `json:"missed_points,omitempty"`
-}
-
-type sanitizedFeedbackLLMRequest struct {
-	Instructions              []string                             `json:"instructions"`
-	SafeAggregate             sanitizedFeedbackAggregate           `json:"safe_aggregate"`
-	RShellProcedureCategories []sanitizedFeedbackProcedureCategory `json:"rshell_procedure_feedback_categories,omitempty"`
-	OutputSchema              string                               `json:"output_schema"`
-}
-
-func buildSanitizedFeedbackSource(result autoresearch.SuiteResult) sanitizedFeedbackSource {
-	aggregate := buildSanitizedFeedbackAggregate(result)
-	return sanitizedFeedbackSource{
-		Version:                   4,
-		RShellProcedureCategories: buildSanitizedRShellProcedureCategories(aggregate),
-		SafeAggregate:             aggregate,
-	}
-}
-
-func buildSanitizedFeedbackAggregate(result autoresearch.SuiteResult) sanitizedFeedbackAggregate {
-	agg := sanitizedFeedbackAggregate{
-		CaseCount:                len(result.Cases),
-		QualityNormalizedScore:   roundFloat(benchmarkQuality(result), 4),
-		ObjectiveNormalizedScore: roundFloat(benchmarkObjective(result), 4),
-		CriteriaBySource:         map[string]sanitizedFeedbackCriterionStats{},
-		CaseScoreBuckets:         map[string]int{},
-		Repeats:                  result.Repeats,
-		SkillSizeEstimatedTokens: result.SkillSizeEstimatedTokens,
-	}
-	qualityMax := result.QualityMaxScore
-	qualityScore := result.QualityScore
-	if qualityMax == 0 {
-		qualityMax = result.MaxScore
-		qualityScore = result.Score
-	}
-	if qualityMax > qualityScore {
-		agg.QualityMissedPoints = roundFloat(qualityMax-qualityScore, 2)
-	}
-
-	var totalCommands, totalFailedToolCalls, totalToolOutputBytes float64
-	for _, caseResult := range result.Cases {
-		agg.CaseScoreBuckets[sanitizedFeedbackCaseScoreBucket(caseResult.NormalizedScore)]++
-		totalCommands += float64(caseResult.CommandCount)
-		totalFailedToolCalls += float64(caseResult.FailedToolCalls)
-		totalToolOutputBytes += float64(caseResult.ToolOutputBytes)
-		if len(caseResult.SafetyViolations) > 0 {
-			agg.SafetyViolationCases++
-			agg.SafetyViolationCount += len(caseResult.SafetyViolations)
-		}
-		if strings.TrimSpace(caseResult.Error) != "" {
-			agg.ErrorCases++
-		}
-		for _, criterion := range caseResult.Criteria {
-			agg.CriteriaCount++
-			failed := !criterion.Passed
-			occurrences := 0
-			missed := 0.0
-			if failed {
-				agg.FailedCriteriaCount++
-				occurrences = sanitizedFeedbackFailureOccurrences(criterion)
-				agg.FailureOccurrences += occurrences
-				missed = criterion.Max - criterion.Points
-				if missed < 0 {
-					missed = 0
-				}
-			}
-
-			source := sanitizedCriterionSource(criterion.Source)
-			stats := agg.CriteriaBySource[source]
-			addSanitizedCriterionStat(&stats, failed, occurrences, missed)
-			agg.CriteriaBySource[source] = stats
-			if criterion.EvidenceRequired {
-				addSanitizedCriterionStat(&agg.EvidenceRequiredCriteria, failed, occurrences, missed)
-			}
-			if criterion.Negative {
-				addSanitizedCriterionStat(&agg.NegativeAssertionCriteria, failed, occurrences, missed)
-			}
-		}
-	}
-	if agg.CaseCount > 0 {
-		count := float64(agg.CaseCount)
-		agg.AverageCommandCount = roundFloat(totalCommands/count, 2)
-		agg.AverageFailedToolCalls = roundFloat(totalFailedToolCalls/count, 2)
-		agg.AverageToolOutputKB = roundFloat(totalToolOutputBytes/count/1024, 2)
-		agg.AverageDurationSeconds = roundFloat(result.AverageCaseDurationSeconds, 2)
-	}
-	return agg
-}
-
-func buildSanitizedRShellProcedureCategories(aggregate sanitizedFeedbackAggregate) []sanitizedFeedbackProcedureCategory {
-	categories := make([]sanitizedFeedbackProcedureCategory, 0, 5)
-	add := func(category, guidance string) {
-		categories = append(categories, sanitizedFeedbackProcedureCategory{Category: category, Guidance: guidance})
-	}
-
-	commandStats := aggregate.CriteriaBySource["commands"]
-	finalStats := aggregate.CriteriaBySource["final"]
-	toolStats := aggregate.CriteriaBySource["tool_results"]
-	safetyStats := aggregate.CriteriaBySource["safety"]
-
-	if commandStats.FailedCriteria > 0 {
-		add("rshell capability discovery", "Use rshell help as the source of truth before relying on command-specific features, and adapt when a capability is unavailable.")
-		add("rshell command coverage", "Make each rshell probe purposeful, read-only, and tied to a hypothesis; gather enough targeted evidence before synthesis.")
-	}
-	if aggregate.AverageFailedToolCalls > 0 || aggregate.ErrorCases > 0 {
-		add("failed or partial rshell output", "Treat denied, unsupported, slow, partial, or empty results as evidence about uncertainty; do not retry the same failing probe unchanged.")
-	}
-	if aggregate.SafetyViolationCount > 0 || safetyStats.FailedCriteria > 0 || aggregate.NegativeAssertionCriteria.FailedCriteria > 0 {
-		add("read-only safety", "Keep diagnostics non-mutating and narrowly scoped; recommend remediation only as safe next steps rather than executing it.")
-	}
-	if aggregate.EvidenceRequiredCriteria.FailedCriteria > 0 || finalStats.FailedCriteria > 0 || toolStats.FailedCriteria > 0 {
-		add("evidence-grounded synthesis", "Base conclusions on observed rshell output, distinguish checked facts from hypotheses, and state uncertainty when evidence is absent or ambiguous.")
-	}
-	if aggregate.AverageCommandCount > 6 || aggregate.AverageToolOutputKB > 64 || aggregate.AverageDurationSeconds > 60 {
-		add("boundedness and stopping", "Prefer narrow filters, limits, and recent ranges; stop once the likely cause or next safe check is well supported.")
-	}
-	if len(categories) == 0 && sanitizedFeedbackHasSignal(aggregate) {
-		add("general rshell procedure", "Improve the balance of capability discovery, bounded read-only probes, evidence grounding, and concise final synthesis.")
-	}
-	return categories
-}
-
-func addSanitizedCriterionStat(stat *sanitizedFeedbackCriterionStats, failed bool, occurrences int, missed float64) {
-	stat.TotalCriteria++
-	if !failed {
-		return
-	}
-	stat.FailedCriteria++
-	stat.FailureOccurrences += occurrences
-	stat.MissedPoints = roundFloat(stat.MissedPoints+missed, 2)
-}
-
-func sanitizedCriterionSource(source string) string {
-	switch strings.TrimSpace(source) {
-	case "final", "commands", "tool_results", "transcript", "safety":
-		return strings.TrimSpace(source)
-	case "":
-		return "unknown"
-	default:
-		return "other"
-	}
-}
-
-func sanitizedFeedbackCaseScoreBucket(score float64) string {
-	switch {
-	case score >= 1:
-		return "full"
-	case score >= 0.8:
-		return "high"
-	case score >= 0.5:
-		return "partial"
-	case score > 0:
-		return "low"
-	default:
-		return "zero"
-	}
-}
-
-func sanitizedFeedbackHasSignal(aggregate sanitizedFeedbackAggregate) bool {
-	return aggregate.FailedCriteriaCount > 0 || aggregate.SafetyViolationCount > 0 || aggregate.ErrorCases > 0
-}
-
-func populateSanitizedFeedbackWithLLM(piBinary, model string, source *sanitizedFeedbackSource) error {
-	source.LLMEnabled = true
-	source.LLMModel = model
-	source.LLMError = ""
-	source.Feedback = ""
-	if !sanitizedFeedbackHasSignal(source.SafeAggregate) {
-		return nil
-	}
-	feedback, err := generateSanitizedFeedbackWithLLM(piBinary, model, *source)
-	if err != nil {
-		source.LLMError = err.Error()
-		return err
-	}
-	source.Feedback = feedback
-	return nil
-}
-
-func formatSanitizedResearcherFeedback(result autoresearch.SuiteResult) string {
-	return formatSanitizedResearcherFeedbackFromSource(buildSanitizedFeedbackSource(result))
-}
-
-func formatSanitizedResearcherFeedbackFromSource(source sanitizedFeedbackSource) string {
-	feedback := strings.TrimSpace(source.Feedback)
-	procedureCategories := source.RShellProcedureCategories
-	if feedback == "" && len(procedureCategories) == 0 {
-		return ""
-	}
-	var b strings.Builder
-	b.WriteString("General hidden-task feedback (sanitized aggregate metrics only; no prompts, outputs, criterion names, commands, or task facts were disclosed):\n")
-	if feedback != "" {
-		b.WriteString("\nLLM-generated process guidance:\n")
-		b.WriteString(feedback)
-		if !strings.HasSuffix(feedback, "\n") {
-			b.WriteString("\n")
-		}
-	}
-	if len(procedureCategories) > 0 {
-		b.WriteString("\nGeneric rshell procedure categories indicated by aggregate metrics:\n")
-		for _, category := range procedureCategories {
-			categoryName := strings.TrimSpace(category.Category)
-			guidance := strings.TrimSpace(category.Guidance)
-			if categoryName == "" || guidance == "" {
-				continue
-			}
-			fmt.Fprintf(&b, "- %s: %s\n", categoryName, guidance)
-		}
-	}
-	b.WriteString("\nAnti-overfitting guardrails:\n")
-	b.WriteString("- Treat this feedback as process guidance only, not as evidence about hidden tasks.\n")
-	b.WriteString("- Do not add exact case facts, paths, filenames, IDs, IPs, timestamps, services, commands, root causes, line numbers, or expected-answer wording.\n")
-	b.WriteString("- Prefer focused broadly useful changes unless the iteration explicitly asks for structural/rewrite exploration; ignore any feedback point that is not clearly safe and general.\n")
-	return b.String()
-}
-
-func sanitizedFeedbackFailureOccurrences(criterion autoresearch.CriterionResult) int {
-	var passed, seen int
-	if _, err := fmt.Sscanf(criterion.Detail, "passed in %d/%d repeats", &passed, &seen); err == nil && seen > passed {
-		return seen - passed
-	}
-	return 1
-}
-
-func generateSanitizedFeedbackWithLLM(piBinary, model string, source sanitizedFeedbackSource) (string, error) {
-	request := sanitizedFeedbackLLMRequest{
-		Instructions: []string{
-			"Use only the safe aggregate benchmark metrics and generic rshell procedure categories below; raw prompts, outputs, case IDs, criterion names, commands, logs, judge reasons, paths, identifiers, timestamps, services, and root causes have intentionally been omitted.",
-			"Generate concise freeform process feedback for a researcher improving a diagnostic skill. Mention only generic categories inferred from aggregate metrics, such as evidence grounding, command/procedure coverage, safety, uncertainty handling, boundedness, or concision.",
-			"Do not invent or include task facts, expected answers, file names, paths, identifiers, IPs, timestamps, service names, command snippets, root causes, or benchmark case details.",
-			"If the aggregate signal is weak, say to make no change unless a safe general improvement is obvious.",
-		},
-		SafeAggregate:             source.SafeAggregate,
-		RShellProcedureCategories: source.RShellProcedureCategories,
-		OutputSchema:              `{"feedback":"short freeform researcher feedback, 1-5 bullets or a short paragraph"}`,
-	}
-	requestJSON, err := json.MarshalIndent(request, "", "  ")
-	if err != nil {
-		return "", err
-	}
-	prompt := fmt.Sprintf(`You generate sanitized freeform feedback for an autoresearch skill-improvement agent.
-
-Safety rules:
-- The JSON input contains only aggregate metrics that are safe to disclose.
-- Do not mention or infer hidden task facts, exact identifiers, file names, paths, IPs, timestamps, service names, command snippets, root causes, case names, criterion names, or expected-answer text.
-- Feedback must be generic process guidance that should help unseen incidents.
-- Return only strict JSON with exactly this schema: {"feedback":"..."}
-- The feedback string may contain Markdown bullets, but no other JSON fields are allowed.
-
-<safe-aggregate-json>
-%s
-</safe-aggregate-json>
-`, string(requestJSON))
-
-	workspaceDir, err := os.MkdirTemp("", "skilltrain-feedback-*")
-	if err != nil {
-		return "", err
-	}
-	defer os.RemoveAll(workspaceDir)
-
-	ctx, cancel := context.WithTimeout(context.Background(), sanitizedFeedbackLLMTimeout)
-	defer cancel()
-	args := []string{
-		"--print",
-		"--no-session",
-		"--no-context-files",
-		"--no-extensions",
-		"--no-prompt-templates",
-		"--no-skills",
-		"--no-tools",
-		"--model", model,
-		prompt,
-	}
-	cmd := exec.CommandContext(ctx, piBinary, args...)
-	cmd.Dir = workspaceDir
-	cmd.Env = autoresearch.EnvWithExecutableDir(piBinary)
-	stdout := newLimitedBuffer(commandOutputLimit)
-	stderr := newLimitedBuffer(commandOutputLimit)
-	cmd.Stdout = stdout
-	cmd.Stderr = stderr
-	if err := cmd.Run(); err != nil {
-		return "", commandError("feedback llm pi", err, &commandCapture{stdout: stdout, stderr: stderr})
-	}
-	return parseSanitizedFeedbackLLMOutput(stdout.String())
-}
-
-func parseSanitizedFeedbackLLMOutput(output string) (string, error) {
-	output = strings.TrimSpace(output)
-	if output == "" {
-		return "", fmt.Errorf("feedback llm returned empty output")
-	}
-	var response struct {
-		Feedback string `json:"feedback"`
-	}
-	decoder := json.NewDecoder(strings.NewReader(output))
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&response); err != nil {
-		return "", fmt.Errorf("feedback llm output is not strict JSON: %w", err)
-	}
-	if err := decoder.Decode(&struct{}{}); err != io.EOF {
-		return "", fmt.Errorf("feedback llm output contains trailing data")
-	}
-	return validateSanitizedFeedbackText(response.Feedback)
-}
-
-var sanitizedFeedbackForbiddenPatterns = []struct {
-	name string
-	re   *regexp.Regexp
-}{
-	{name: "IP address", re: regexp.MustCompile(`\b(?:\d{1,3}\.){3}\d{1,3}\b`)},
-	{name: "absolute path", re: regexp.MustCompile(`(?:^|\s)(?:/|~/|[A-Za-z]:\\)[^\s]+`)},
-	{name: "relative path", re: regexp.MustCompile("(?:^|\\s|[\"'])(?:\\.\\.?/)[^\\s]+")},
-	{name: "file name", re: regexp.MustCompile(`\b[\w.-]+\.(?:log|yaml|yml|json|conf|cfg|ini|txt|out|err)\b`)},
-	{name: "timestamp", re: regexp.MustCompile(`\b\d{1,2}:\d{2}(?::\d{2})?(?:\s?(?:UTC|Z))?\b`)},
-	{name: "date", re: regexp.MustCompile(`\b20\d{2}-\d{2}-\d{2}\b`)},
-	{name: "line number", re: regexp.MustCompile(`(?i)\bline\s+\d+\b`)},
-	{name: "case-like identifier", re: regexp.MustCompile(`\b[a-zA-Z]+-[a-zA-Z0-9]*\d[a-zA-Z0-9-]*\b`)},
-}
-
-func validateSanitizedFeedbackText(feedback string) (string, error) {
-	feedback = strings.TrimSpace(feedback)
-	if feedback == "" {
-		return "", fmt.Errorf("feedback llm returned empty feedback")
-	}
-	if len(feedback) > sanitizedFeedbackMaxChars {
-		return "", fmt.Errorf("feedback llm returned %d bytes; maximum is %d", len(feedback), sanitizedFeedbackMaxChars)
-	}
-	if strings.ContainsRune(feedback, '\x00') {
-		return "", fmt.Errorf("feedback llm returned control characters")
-	}
-	for _, forbidden := range sanitizedFeedbackForbiddenPatterns {
-		if forbidden.re.MatchString(feedback) {
-			return "", fmt.Errorf("feedback llm returned unsafe %s", forbidden.name)
-		}
-	}
-	return feedback, nil
-}
-
-func roundFloat(value float64, places int) float64 {
-	if places < 0 {
-		return value
-	}
-	factor := math.Pow10(places)
-	return math.Round(value*factor) / factor
-}
-
-func regenerateSanitizedFeedbackArtifacts(path, piBinary, feedbackModel string, feedbackLLM bool) (int, error) {
-	runDirs, err := discoverSkilltrainRunDirs(path)
-	if err != nil {
-		return 0, err
-	}
-	resolvedPI := piBinary
-	var feedbackResolveErr error
-	if feedbackLLM {
-		resolvedPI, feedbackResolveErr = autoresearch.ResolvePI(piBinary)
-	}
-	total := 0
-	for _, runDir := range runDirs {
-		count, err := regenerateSanitizedFeedbackArtifactsForRun(runDir, resolvedPI, feedbackModel, feedbackLLM, feedbackResolveErr)
-		if err != nil {
-			return total, err
-		}
-		total += count
-	}
-	return total, nil
-}
-
-func discoverSkilltrainRunDirs(path string) ([]string, error) {
-	path = filepath.Clean(path)
-	info, err := os.Stat(path)
-	if err != nil {
-		return nil, err
-	}
-	if !info.IsDir() {
-		return nil, fmt.Errorf("%s is not a directory", path)
-	}
-	if fileExists(filepath.Join(path, "iter-000-baseline", "result.json")) {
-		return []string{path}, nil
-	}
-	entries, err := os.ReadDir(path)
-	if err != nil {
-		return nil, err
-	}
-	runDirs := []string{}
-	for _, entry := range entries {
-		if !entry.IsDir() {
-			continue
-		}
-		candidate := filepath.Join(path, entry.Name())
-		if fileExists(filepath.Join(candidate, "iter-000-baseline", "result.json")) {
-			runDirs = append(runDirs, candidate)
-		}
-	}
-	sort.Strings(runDirs)
-	if len(runDirs) == 0 {
-		return nil, fmt.Errorf("no skilltrain run directories found under %s", path)
-	}
-	return runDirs, nil
-}
-
-func regenerateSanitizedFeedbackArtifactsForRun(runDir, piBinary, feedbackModel string, feedbackLLM bool, feedbackResolveErr error) (int, error) {
-	entries, err := os.ReadDir(runDir)
-	if err != nil {
-		return 0, err
-	}
-	count := 0
-	for _, entry := range entries {
-		if !entry.IsDir() {
-			continue
-		}
-		iter, ok := parseIterationDir(entry.Name())
-		if !ok || iter == 0 {
-			continue
-		}
-		sourcePath := sanitizedFeedbackSourceResultPath(runDir, iter)
-		if !fileExists(sourcePath) {
-			continue
-		}
-		data, err := os.ReadFile(sourcePath)
-		if err != nil {
-			return count, err
-		}
-		var result autoresearch.SuiteResult
-		if err := json.Unmarshal(data, &result); err != nil {
-			return count, fmt.Errorf("%s: %w", sourcePath, err)
-		}
-		feedbackData := buildSanitizedFeedbackSource(result)
-		if feedbackLLM {
-			if feedbackResolveErr != nil {
-				feedbackData.LLMEnabled = true
-				feedbackData.LLMModel = feedbackModel
-				feedbackData.LLMError = feedbackResolveErr.Error()
-			} else if err := populateSanitizedFeedbackWithLLM(piBinary, feedbackModel, &feedbackData); err != nil {
-				logWarn("%s feedback llm failed; no sanitized feedback generated: %v", displayPath("", filepath.Join(runDir, entry.Name())), err)
-			}
-		}
-		iterDir := filepath.Join(runDir, entry.Name())
-		if err := autoresearch.WriteJSON(filepath.Join(iterDir, researcherSanitizedFeedbackSourcePath), feedbackData); err != nil {
-			return count, err
-		}
-		feedback := formatSanitizedResearcherFeedbackFromSource(feedbackData)
-		if err := os.WriteFile(filepath.Join(iterDir, researcherSanitizedFeedbackPath), []byte(feedback), 0o644); err != nil {
-			return count, err
-		}
-		count++
-	}
-	return count, nil
-}
-
-func parseIterationDir(name string) (int, bool) {
-	if len(name) != len("iter-001") {
-		return 0, false
-	}
-	var iter int
-	if n, err := fmt.Sscanf(name, "iter-%d", &iter); n != 1 || err != nil {
-		return 0, false
-	}
-	return iter, true
-}
-
-func sanitizedFeedbackSourceResultPath(runDir string, iter int) string {
-	if iter <= 1 {
-		return filepath.Join(runDir, "iter-000-baseline", "result.json")
-	}
-	return filepath.Join(runDir, fmt.Sprintf("iter-%03d", iter-1), "result.json")
-}
-
-func fileExists(path string) bool {
-	info, err := os.Stat(path)
-	return err == nil && !info.IsDir()
-}
-
-func formatResearcherPrompt(programContent, skillRel, skillContent string, iter int, sanitizedFeedback string) string {
+func formatResearcherPrompt(skillPath, casesPath, bestResultPath string, iter int, qualityTolerance float64) string {
 	plan := planIterationResearch(iter, 0, 0, 1)
-	return formatResearcherPromptForPlan(programContent, skillRel, skillContent, iter, sanitizedFeedback, "", plan, 1)
+	return formatResearcherPromptForPlan(skillPath, casesPath, bestResultPath, iter, qualityTolerance, "", plan, 1)
 }
 
-func formatResearcherPromptForPlan(programContent, skillRel, skillContent string, iter int, sanitizedFeedback, rshellCapabilitySnapshot string, plan iterationResearchPlan, candidateIndex int) string {
+func formatResearcherPromptForPlan(skillPath, casesPath, bestResultPath string, iter int, qualityTolerance float64, rshellCapabilitySnapshot string, plan iterationResearchPlan, candidateIndex int) string {
 	changeDirective := researcherCandidateDirective(plan, candidateIndex)
 	rshellCapabilitySnapshot = strings.TrimSpace(rshellCapabilitySnapshot)
 	if rshellCapabilitySnapshot == "" {
@@ -2121,19 +1502,22 @@ func formatResearcherPromptForPlan(programContent, skillRel, skillContent string
 	}
 	return fmt.Sprintf(`You are an autoresearch-style skill improvement agent.
 
-This isolated workspace contains only %s and the current skill at %s. To avoid granting file-read access, their contents are included below.
+Run from the repository root. Read auto-improve-skills/program.md, the current skill at %s, the public benchmark suite at %s, and the best public benchmark result at %s.
+
+Do not read, list, grep, inspect, or edit holdout-related files, folders, fixtures, run outputs, or results. This includes holdout.yaml, generated-fixtures/holdout, iter-000-holdout, holdout benchmark directories, and any path segment named "holdout".
 
 Task for iteration %d:
 - Improve only %s.
-- Preserve existing quality while improving general diagnostic usefulness, end-to-end investigation time, and skill concision.
+- Optimize final-answer quality first. The trainer allows at most a %.1f percentage point quality drop from the best seen public quality.
+- Also improve the composite objective by reducing end-to-end investigation time and keeping the skill concise.
 - Follow the change directive below for the allowed edit size; default iterations should stay focused, while structural/rewrite directives may replace larger parts of the skill.
-- Do not inspect evaluator-private files or artifacts.
-- Do not edit evaluation inputs, evaluator artifacts, Go tooling, reports, run outputs, or unrelated files.
+- Do not edit benchmark cases, fake logs, Go tooling, reports, run outputs, or unrelated files.
+- Treat public benchmark data as samples, not targets.
 - Prefer short, general diagnostics over long case-specific rules or overfitting exact answers.
 - Do not add exact case facts, paths, filenames, IDs, IPs, timestamps, services, commands, root causes, line numbers, or expected-answer text.
-- Use the edit/write tools only on %s.
-- Use any LLM-generated sanitized aggregate feedback below only as generic process guidance; ignore it if no safe general change is clear.
-- Use the static rshell capability snapshot below only as public implementation context, not as hidden-task feedback. Production deployments may restrict, omit, or extend features; the skill should keep telling diagnostic agents to run rshell help in the target environment.
+- Use read/bash only to inspect allowed public artifacts and general repo context; never inspect holdout-related paths.
+- Use edit/write only on %s.
+- Use the static rshell capability snapshot below only as public implementation context, not as evidence about hidden tasks. Production deployments may restrict, omit, or extend features; the skill should keep telling diagnostic agents to run rshell help in the target environment.
 - After editing, write a brief researcher report with "Changes", "Why", and "Size" sections.
 - In "Why", explain the rationale for each material change in general terms tied to quality, efficiency, or concision, without evaluator-private details.
 
@@ -2141,40 +1525,15 @@ Task for iteration %d:
 %s
 </change-directive>
 
-<program.md>
-%s
-</program.md>
-
 <rshell-capability-snapshot>
 %s
 </rshell-capability-snapshot>
-
-<general-feedback>
-%s</general-feedback>
-
-<current-skill path=%q>
-%s
-</current-skill>
-`, researcherProgramPath, skillRel, iter, skillRel, skillRel, changeDirective, programContent, rshellCapabilitySnapshot, sanitizedFeedback, skillRel, skillContent)
+`, skillPath, casesPath, bestResultPath, iter, skillPath, qualityTolerance*100, skillPath, changeDirective, rshellCapabilitySnapshot)
 }
 
-func improveSkill(root, skillAbs, iterDir, model, piBinary string, iter int, sanitizedFeedback string, plan iterationResearchPlan, candidateIndex int) error {
-	workspace, err := prepareResearcherWorkspace(root, skillAbs)
-	if err != nil {
-		return err
-	}
-	defer os.RemoveAll(workspace.Dir)
-
-	programContentBytes, err := os.ReadFile(filepath.Join(workspace.Dir, researcherProgramPath))
-	if err != nil {
-		return err
-	}
-	skillContentBytes, err := os.ReadFile(filepath.Join(workspace.Dir, workspace.SkillRel))
-	if err != nil {
-		return err
-	}
+func improveSkill(root, skillAbs, casesAbs, bestResultPath, iterDir, model, piBinary string, iter int, qualityTolerance float64, plan iterationResearchPlan, candidateIndex int) error {
 	rshellCapabilitySnapshot := researcherRShellCapabilitySnapshot(root)
-	prompt := formatResearcherPromptForPlan(string(programContentBytes), workspace.SkillRel, string(skillContentBytes), iter, sanitizedFeedback, rshellCapabilitySnapshot, plan, candidateIndex)
+	prompt := formatResearcherPromptForPlan(skillAbs, casesAbs, bestResultPath, iter, qualityTolerance, rshellCapabilitySnapshot, plan, candidateIndex)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
 	defer cancel()
 	args := []string{
@@ -2189,28 +1548,27 @@ func improveSkill(root, skillAbs, iterDir, model, piBinary string, iter int, san
 		prompt,
 	}
 	cmd := exec.CommandContext(ctx, piBinary, args...)
-	cmd.Dir = workspace.Dir
+	cmd.Dir = root
 	cmd.Env = autoresearch.EnvWithExecutableDir(piBinary)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 	logVerbose("iter %d run researcher pi", iter)
-	err = cmd.Run()
+	if err := cmd.Run(); err != nil {
+		_ = os.WriteFile(filepath.Join(iterDir, "researcher.stdout.md"), stdout.Bytes(), 0o644)
+		if stderr.Len() > 0 {
+			_ = os.WriteFile(filepath.Join(iterDir, "researcher.stderr.txt"), stderr.Bytes(), 0o644)
+		}
+		return fmt.Errorf("researcher pi failed: %w", err)
+	}
 	_ = os.WriteFile(filepath.Join(iterDir, "researcher.stdout.md"), stdout.Bytes(), 0o644)
 	if stderr.Len() > 0 {
 		_ = os.WriteFile(filepath.Join(iterDir, "researcher.stderr.txt"), stderr.Bytes(), 0o644)
 	}
-	if err != nil {
-		return fmt.Errorf("researcher pi failed: %w", err)
-	}
-	candidateSkill, err := os.ReadFile(filepath.Join(workspace.Dir, workspace.SkillRel))
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(skillAbs, candidateSkill, 0o644)
+	return nil
 }
 
-func commitSkill(root, skillAbs string, trainLoop, iter int, result autoresearch.SuiteResult, resultPath string, holdoutGate *benchmarkGate, researcherSummaryPath, sanitizedFeedbackPath string, previousObjective float64, push bool) error {
+func commitSkill(root, skillAbs string, trainLoop, iter int, result autoresearch.SuiteResult, resultPath string, holdoutGate *benchmarkGate, researcherSummaryPath string, previousObjective float64, push bool) error {
 	skillRel := gitPath(root, skillAbs)
 	logVerbose("iter %d stage %s", iter, skillRel)
 	if err := runGit(root, "add", skillRel); err != nil {
@@ -2231,9 +1589,8 @@ func commitSkill(root, skillAbs string, trainLoop, iter int, result autoresearch
 		return err
 	}
 	researcherSummary := readCommitSummary(researcherSummaryPath)
-	sanitizedFeedback := readCommitText(sanitizedFeedbackPath)
 	msg := formatCommitSubject(trainLoop, iter, previousObjective, benchmarkObjective(result))
-	body := formatCommitBody(root, skillRel, iter, result, resultPath, holdoutGate, researcherSummary, sanitizedFeedback, previousObjective, diffStat, shortStat)
+	body := formatCommitBody(root, skillRel, iter, result, resultPath, holdoutGate, researcherSummary, previousObjective, diffStat, shortStat)
 	logSuccess("iter %d git commit", iter)
 	if err := runGit(root, "commit", "-m", msg, "-m", body, "--", skillRel); err != nil {
 		return err
@@ -2253,7 +1610,7 @@ func formatCommitSubject(trainLoop, iter int, previousObjective, objective float
 	return fmt.Sprintf("[update skill] loop %d - iter %d - obj %.2f%%->%.2f%%", trainLoop, iter, previousObjective*100, objective*100)
 }
 
-func formatCommitBody(root, skillRel string, iter int, result autoresearch.SuiteResult, resultPath string, holdoutGate *benchmarkGate, researcherSummary, sanitizedFeedback string, previousObjective float64, diffStat, shortStat string) string {
+func formatCommitBody(root, skillRel string, iter int, result autoresearch.SuiteResult, resultPath string, holdoutGate *benchmarkGate, researcherSummary string, previousObjective float64, diffStat, shortStat string) string {
 	qualityScore, qualityMax, qualityPct := result.QualityScore, result.QualityMaxScore, benchmarkQuality(result)*100
 	if qualityMax == 0 {
 		qualityScore, qualityMax, qualityPct = result.Score, result.MaxScore, result.NormalizedScore*100
@@ -2301,14 +1658,6 @@ func formatCommitBody(root, skillRel string, iter int, result autoresearch.Suite
 		fmt.Fprintf(&b, "- Objective: %.2f%%\n", benchmarkObjective(holdoutGate.Result)*100)
 		if holdoutGate.Result.Repeats > 1 {
 			fmt.Fprintf(&b, "- Repeats averaged: %d\n", holdoutGate.Result.Repeats)
-		}
-	}
-
-	if strings.TrimSpace(sanitizedFeedback) != "" {
-		fmt.Fprintf(&b, "\nSanitized feedback (raw sanitized-feedback.md):\n")
-		fmt.Fprint(&b, sanitizedFeedback)
-		if !strings.HasSuffix(sanitizedFeedback, "\n") {
-			b.WriteByte('\n')
 		}
 	}
 
