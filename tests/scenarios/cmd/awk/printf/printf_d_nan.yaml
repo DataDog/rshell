@@ -1,0 +1,10 @@
+description: printf "%d" with NaN (from sqrt(-1)) produces 0 (intentional divergence from gawk which returns platform-defined value).
+skip_assert_against_bash: true
+input:
+  script: |+
+    awk 'BEGIN { printf "%d\n", sqrt(-1) }'
+expect:
+  stdout: |+
+    0
+  stderr: |+
+  exit_code: 0

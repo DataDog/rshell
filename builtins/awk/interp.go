@@ -699,6 +699,16 @@ func (r *runtime) printLine(parts []string) error {
 			return err
 		}
 	default:
+		// Pre-check total output size to avoid a large intermediate allocation
+		// from strings.Join: each part is bounded at MaxStringBytes but with
+		// many parts (print s,s,...) the join could exceed safe limits.
+		total := int64(len(r.ofs)) * int64(len(parts)-1)
+		for _, p := range parts {
+			total += int64(len(p))
+			if total > MaxStringBytes {
+				return fmt.Errorf("print: output would exceed maximum string length %d", MaxStringBytes)
+			}
+		}
 		if _, err := io.WriteString(r.callCtx.Stdout, strings.Join(parts, r.ofs)); err != nil {
 			return err
 		}
