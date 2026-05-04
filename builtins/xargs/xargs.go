@@ -37,8 +37,9 @@
 //	-I REPLSTR
 //	    Insert input as the value of REPLSTR in each COMMAND argument.
 //	    Implies "one input item per command", "-L 1" semantics, and
-//	    "--no-run-if-empty"; switches tokenisation to newline-only
-//	    (matches GNU xargs).
+//	    "--no-run-if-empty"; applies the same quote/backslash processing
+//	    as default mode but treats each newline-terminated line as one
+//	    item (matches GNU xargs).
 //
 //	-L NUMBER
 //	    Use up to NUMBER non-empty input lines per command invocation.
@@ -198,7 +199,7 @@ const (
 	modeWhitespace modeKind = iota // POSIX-style whitespace + quoting
 	modeNull                       // NUL-separated, no quoting
 	modeDelim                      // single custom byte, no quoting
-	modeLine                       // newline-separated, no quoting (used by -I)
+	modeLine                       // newline-separated, with quoting (used by -I)
 )
 
 // options holds the resolved configuration for a single xargs invocation.
@@ -486,7 +487,7 @@ func runXargs(ctx context.Context, callCtx *builtins.CallContext, o options) bui
 	}
 	defer rc.Close()
 
-	tok := newTokenizer(rc, o)
+	tok := newTokenizer(rc, o, callCtx.Stderr)
 	finalCode := exitOK
 	totalItems := 0
 	// tokErr is set when the tokenizer reports a fatal parsing error
@@ -803,14 +804,17 @@ type tokenizer struct {
 	o         options
 	buf       []byte
 	eof       bool
-	bytesSeen int // running byte count for periodic ctx.Err() polling
+	bytesSeen int       // running byte count for periodic ctx.Err() polling
+	stderr    io.Writer // for NUL-byte warnings; may be nil
+	warnedNUL bool      // true after the first NUL warning (GNU emits at most once)
 }
 
-func newTokenizer(r io.Reader, o options) *tokenizer {
+func newTokenizer(r io.Reader, o options, stderr io.Writer) *tokenizer {
 	return &tokenizer{
-		r:   bufio.NewReaderSize(r, readChunk),
-		o:   o,
-		buf: make([]byte, 0, 256),
+		r:      bufio.NewReaderSize(r, readChunk),
+		o:      o,
+		buf:    make([]byte, 0, 256),
+		stderr: stderr,
 	}
 }
 
@@ -853,7 +857,7 @@ func (t *tokenizer) next(ctx context.Context) (item string, endedLine, more bool
 	case modeDelim:
 		return t.nextDelimited(ctx, t.o.delim, false)
 	case modeLine:
-		return t.nextDelimited(ctx, '\n', true)
+		return t.nextLineQuoted(ctx)
 	default:
 		return t.nextWhitespace(ctx)
 	}
@@ -901,6 +905,163 @@ func (t *tokenizer) nextDelimited(ctx context.Context, sep byte, skipBlank bool)
 	}
 }
 
+// warnNUL emits the GNU xargs NUL-character warning to stderr if available.
+// GNU xargs emits this warning at most once per invocation regardless of
+// how many NUL bytes are present.
+func (t *tokenizer) warnNUL() {
+	if t.stderr != nil && !t.warnedNUL {
+		t.warnedNUL = true
+		fmt.Fprintf(t.stderr,
+			"xargs: WARNING: a NUL character occurred in the input.  It cannot be passed through in the argument list.  Did you mean to use the --null option?\n")
+	}
+}
+
+// nextLineQuoted reads the next newline-terminated input line and applies the
+// same quote-stripping and backslash-escape rules as nextWhitespace, but
+// treats the whole (unquoted) content of the line — including internal
+// whitespace — as a single item. This matches GNU xargs -I behaviour:
+//
+//   - Quotes are stripped: 'hello world' → hello world
+//   - Backslash escapes are processed: a\b → ab (escape keeps next byte literal)
+//   - Newlines inside an unmatched quote are rejected (same as default mode)
+//   - NUL bytes terminate the token and emit a warning (matching GNU)
+//   - Leading space/tab are trimmed (GNU behaviour verified)
+//   - Empty/blank-only lines are skipped
+//
+// The returned endedLine is always true (each newline-terminated item counts
+// as one logical line for -L accounting).
+func (t *tokenizer) nextLineQuoted(ctx context.Context) (string, bool, bool, error) {
+	for {
+		t.buf = t.buf[:0]
+		var quote byte
+		foundContent := false // true once we have a non-blank, non-leading byte
+		sawLeading := false   // true once we leave the leading-whitespace region
+
+		for {
+			if err := t.pollCtx(ctx); err != nil {
+				return "", false, false, err
+			}
+			b, err := t.r.ReadByte()
+			if err != nil {
+				if errors.Is(err, io.EOF) {
+					t.eof = true
+					if quote != 0 {
+						return "", false, false, unmatchedQuoteErr(quote)
+					}
+					if len(t.buf) == 0 {
+						return "", false, false, nil
+					}
+					if sawLeading && isEofMarker(t.o, t.buf) {
+						return "", false, false, nil
+					}
+					return string(t.buf), true, true, nil
+				}
+				return "", false, false, err
+			}
+
+			// NUL byte: warn, end this token, discard rest of line.
+			if b == 0 {
+				t.warnNUL()
+				// If we already have content, return it; then discard to newline.
+				// Discard remaining bytes on this line.
+				for {
+					if err := t.pollCtx(ctx); err != nil {
+						return "", false, false, err
+					}
+					nb, nerr := t.r.ReadByte()
+					if nerr != nil {
+						if errors.Is(nerr, io.EOF) {
+							t.eof = true
+						}
+						break
+					}
+					if nb == '\n' {
+						break
+					}
+				}
+				if len(t.buf) == 0 {
+					// Blank-only before NUL: treat as empty line, skip
+					break // outer loop: try next line
+				}
+				return string(t.buf), true, true, nil
+			}
+
+			if quote != 0 {
+				if b == quote {
+					quote = 0
+					foundContent = true
+					continue
+				}
+				// GNU xargs rejects newlines inside an unmatched quote
+				// even in -I mode.
+				if b == '\n' {
+					return "", false, false, unmatchedQuoteErr(quote)
+				}
+				if err := t.pushByte(b); err != nil {
+					return "", false, false, err
+				}
+				continue
+			}
+
+			// End of this input line.
+			if b == '\n' {
+				if isEofMarker(t.o, t.buf) {
+					t.eof = true
+					return "", false, false, nil
+				}
+				if len(t.buf) == 0 && !foundContent {
+					break // empty line → skip (outer loop retries)
+				}
+				return string(t.buf), true, true, nil
+			}
+
+			switch b {
+			case '\'':
+				quote = b
+				foundContent = true
+				sawLeading = true
+				continue
+			case '"':
+				quote = b
+				foundContent = true
+				sawLeading = true
+				continue
+			case '\\':
+				n, errEsc := t.r.ReadByte()
+				if errEsc != nil {
+					if errors.Is(errEsc, io.EOF) {
+						t.eof = true
+						if len(t.buf) == 0 {
+							return "", false, false, nil
+						}
+						return string(t.buf), true, true, nil
+					}
+					return "", false, false, errEsc
+				}
+				sawLeading = true
+				if err := t.pushByte(n); err != nil {
+					return "", false, false, err
+				}
+				continue
+			}
+
+			// Leading space/tab trimming (GNU xargs -I trims leading blanks).
+			if !sawLeading && (b == ' ' || b == '\t') {
+				continue
+			}
+			sawLeading = true
+
+			if err := t.pushByte(b); err != nil {
+				return "", false, false, err
+			}
+		}
+		// Reached end of an empty/blank line; retry to get next line.
+		if t.eof {
+			return "", false, false, nil
+		}
+	}
+}
+
 func unmatchedQuoteErr(quote byte) error {
 	qname := "double"
 	if quote == '\'' {
@@ -925,9 +1086,25 @@ func isWhitespace(b byte) bool {
 // repeated newlines) are skipped silently and do not contribute to the
 // "endedLine" line counter — only lines that actually carry an item count.
 func (t *tokenizer) nextWhitespace(ctx context.Context) (string, bool, bool, error) {
+	for {
+		result, endedLine, more, err := t.nextWhitespaceOnce(ctx)
+		// If more==false and err==nil and result=="" we need to determine
+		// whether this was EOF (return as-is) or a NUL-induced empty-and-skip
+		// (which should not happen — nextWhitespaceOnce only returns empty on
+		// real EOF or error). So propagate directly.
+		return result, endedLine, more, err
+	}
+}
+
+// nextWhitespaceOnce reads exactly one token using POSIX whitespace+quoting
+// rules. A NUL byte terminates the token (with a warning) and discards the
+// rest of the current "word" (bytes until the next whitespace), matching GNU
+// xargs behaviour.
+func (t *tokenizer) nextWhitespaceOnce(ctx context.Context) (string, bool, bool, error) {
 	t.buf = t.buf[:0]
 
-	// Skip leading whitespace (including blank lines).
+	// Skip leading whitespace (including blank lines). NUL bytes in the
+	// leading region are treated as whitespace (just skipped with a warning).
 	for {
 		if err := t.pollCtx(ctx); err != nil {
 			return "", false, false, err
@@ -941,6 +1118,17 @@ func (t *tokenizer) nextWhitespace(ctx context.Context) (string, bool, bool, err
 			return "", false, false, err
 		}
 		if isWhitespace(b) {
+			continue
+		}
+		if b == 0 {
+			// NUL in leading whitespace: warn and skip until next whitespace.
+			t.warnNUL()
+			if err2 := t.discardUntilWhitespace(ctx); err2 != nil {
+				if errors.Is(err2, io.EOF) {
+					return "", false, false, nil
+				}
+				return "", false, false, err2
+			}
 			continue
 		}
 		if err := t.r.UnreadByte(); err != nil {
@@ -975,6 +1163,32 @@ func (t *tokenizer) nextWhitespace(ctx context.Context) (string, bool, bool, err
 				return string(t.buf), true, true, nil
 			}
 			return "", false, false, err
+		}
+
+		// NUL byte: warn (once), end current token, discard rest of word.
+		if b == 0 {
+			t.warnNUL()
+			// Discard bytes until the next whitespace (they are part of the
+			// same NUL-contaminated word and cannot be passed through).
+			discardErr := t.discardUntilWhitespace(ctx)
+			if discardErr != nil && !errors.Is(discardErr, io.EOF) {
+				return "", false, false, discardErr
+			}
+			if errors.Is(discardErr, io.EOF) {
+				t.eof = true
+			}
+			// Return whatever we buffered before the NUL (may be empty if NUL
+			// was the first non-whitespace byte — callers handle empty by
+			// falling through to the no-items path).
+			// If the token is empty, loop back to try the next non-NUL token.
+			if len(t.buf) == 0 {
+				if t.eof {
+					return "", false, false, nil
+				}
+				// Restart: skip whitespace and try again.
+				return t.nextWhitespaceOnce(ctx)
+			}
+			return string(t.buf), endedLine, true, nil
 		}
 
 		if quote != 0 {
@@ -1033,6 +1247,27 @@ func (t *tokenizer) nextWhitespace(ctx context.Context) (string, bool, bool, err
 		if err := t.pushByte(b); err != nil {
 			return "", false, false, err
 		}
+	}
+}
+
+// discardUntilWhitespace reads and discards bytes until it hits whitespace or
+// EOF, used after encountering a NUL byte to skip the rest of the
+// NUL-contaminated word. Returns io.EOF if the stream ends before whitespace.
+func (t *tokenizer) discardUntilWhitespace(ctx context.Context) error {
+	for {
+		if err := t.pollCtx(ctx); err != nil {
+			return err
+		}
+		b, err := t.r.ReadByte()
+		if err != nil {
+			return err // io.EOF or real error
+		}
+		if isWhitespace(b) {
+			// Push back the whitespace so the caller can see the boundary.
+			_ = t.r.UnreadByte()
+			return nil
+		}
+		// Discard non-whitespace byte (it was part of the NUL-contaminated word).
 	}
 }
 

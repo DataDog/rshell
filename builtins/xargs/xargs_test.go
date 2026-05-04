@@ -248,6 +248,58 @@ func TestXargsReplaceEmptyRejected(t *testing.T) {
 	assert.Contains(t, stderr, "xargs:")
 }
 
+func TestXargsReplaceStripsQuotes(t *testing.T) {
+	// GNU xargs -I applies the same quoting rules as default mode:
+	// single quotes are stripped and their contents used verbatim.
+	dir := t.TempDir()
+	stdout, _, code := cmdRun(t, `printf "'hello world'\n" | xargs -I {} printf '[%s]\n' {}`, dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "[hello world]\n", stdout)
+}
+
+func TestXargsReplaceStripsDoubleQuotes(t *testing.T) {
+	// Double-quoted strings in -I mode are also stripped.
+	dir := t.TempDir()
+	stdout, _, code := cmdRun(t, `printf '"hello world"\n' | xargs -I {} printf '[%s]\n' {}`, dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "[hello world]\n", stdout)
+}
+
+func TestXargsReplaceBackslashEscape(t *testing.T) {
+	// Backslash escapes are processed in -I mode (a\ b → "a b").
+	dir := t.TempDir()
+	stdout, _, code := cmdRun(t, `printf 'a\\ b\n' | xargs -I {} printf '[%s]\n' {}`, dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "[a b]\n", stdout)
+}
+
+func TestXargsDefaultModeNULWarning(t *testing.T) {
+	// GNU xargs warns about NUL bytes in default mode, truncates the token
+	// at the NUL, and discards the remainder of the word (bytes after NUL
+	// until the next whitespace are dropped). "a\x00b c" → items: "a", "c".
+	dir := t.TempDir()
+	// Use a file so the NUL byte is literal (not subject to printf escaping).
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "in.bin"),
+		[]byte{'a', 0, 'b', ' ', 'c', '\n'}, 0644))
+	stdout, stderr, code := cmdRun(t, "xargs echo < in.bin", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "a c\n", stdout)
+	assert.Contains(t, stderr, "xargs: WARNING: a NUL character occurred in the input")
+}
+
+func TestXargsDefaultModeNULWarnOnce(t *testing.T) {
+	// GNU xargs emits the NUL warning at most once per invocation even when
+	// there are multiple NUL bytes in the input.
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "in.bin"),
+		[]byte{'a', 0, 'b', ' ', 'c', 0, 'd', ' ', 'e', '\n'}, 0644))
+	_, stderr, code := cmdRun(t, "xargs echo < in.bin", dir)
+	assert.Equal(t, 0, code)
+	// Count occurrences of the warning — GNU emits at most once.
+	count := strings.Count(stderr, "xargs: WARNING: a NUL character occurred in the input")
+	assert.Equal(t, 1, count, "expected exactly one NUL warning, got %d", count)
+}
+
 // --- -s / --max-chars ---
 
 func TestXargsMaxCharsForcesBatching(t *testing.T) {

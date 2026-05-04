@@ -1,0 +1,16 @@
+description: xargs warns about NUL bytes in default whitespace mode; the NUL terminates the token and the rest of the word is discarded.
+skip_assert_against_bash: false
+setup:
+  files:
+    - path: in.bin
+      content: "a\0b c\n"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    xargs -a in.bin echo
+expect:
+  stdout: |+
+    a c
+  stderr: |+
+    xargs: WARNING: a NUL character occurred in the input.  It cannot be passed through in the argument list.  Did you mean to use the --null option?
+  exit_code: 0

@@ -262,7 +262,7 @@ func TestTokenizerInfiniteSafety(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			tok := newTokenizer(&infiniteReader{b: tc.b}, tc.o)
+			tok := newTokenizer(&infiniteReader{b: tc.b}, tc.o, nil)
 			ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
 			defer cancel()
 
@@ -305,7 +305,7 @@ func TestTokenizerInfiniteCancelOnSeparators(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			tok := newTokenizer(&infiniteReader{b: tc.b}, tc.o)
+			tok := newTokenizer(&infiniteReader{b: tc.b}, tc.o, nil)
 			ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
 			defer cancel()
 

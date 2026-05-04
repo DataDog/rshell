@@ -370,11 +370,13 @@ var builtinPerCommandSymbols = map[string][]string{
 		"errors.Is",                // 🟢 error comparison; pure function, no I/O.
 		"errors.New",               // 🟢 creates a simple error value; pure function, no I/O.
 		"fmt.Errorf",               // 🟢 error formatting; pure function, no I/O.
+		"fmt.Fprintf",              // 🟢 writes formatted NUL-byte warning to the stderr writer passed in from callCtx; bounded single-message emit, no filesystem access.
 		"fmt.Sprintf",              // 🟢 string formatting; pure function, no I/O.
 		"io.EOF",                   // 🟢 sentinel error value; pure constant.
 		"io.NopCloser",             // 🟢 wraps a Reader with a no-op Close; no side effects.
 		"io.ReadCloser",            // 🟢 interface type; no side effects.
 		"io.Reader",                // 🟢 interface type; no side effects.
+		"io.Writer",                // 🟢 interface type accepted as tokenizer.stderr for NUL-byte warning output; no direct I/O capability.
 		"os.O_RDONLY",              // 🟢 read-only file flag constant; cannot open files by itself.
 		"strconv.Atoi",             // 🟢 string-to-int conversion; used in orderedIntValue.Set to parse -n/-L values; pure function, no I/O.
 		"strconv.Itoa",             // 🟢 int-to-string conversion; used in orderedIntValue.String for pflag default display; pure function, no I/O.
@@ -457,6 +459,7 @@ var builtinAllowedSymbols = []string{
 	"errors.Is",                // 🟢 error comparison; pure function, no I/O.
 	"errors.New",               // 🟢 creates a simple error value; pure function, no I/O.
 	"fmt.Errorf",               // 🟢 error formatting; pure function, no I/O.
+	"fmt.Fprintf",              // 🟢 formatted write to an io.Writer (stderr for NUL warnings); no filesystem access, delegates to Write.
 	"fmt.Sprintf",              // 🟢 string formatting; pure function, no I/O.
 	"github.com/DataDog/rshell/internal/version.Version",  // 🟢 build version string; read-only package-level variable, no I/O.
 	"github.com/prometheus-community/pro-bing.NewPinger",  // 🔴 creates an ICMP pinger by resolving host; network I/O is the explicit purpose of the ping builtin.

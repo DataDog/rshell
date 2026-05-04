@@ -1,0 +1,9 @@
+description: xargs -I strips quotes from input lines (same quoting rules as default mode).
+input:
+  script: |+
+    printf "'hello world'\n" | xargs -I {} printf '[%s]\n' {}
+expect:
+  stdout: |+
+    [hello world]
+  stderr: ""
+  exit_code: 0
