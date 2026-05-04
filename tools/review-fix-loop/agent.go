@@ -87,6 +87,12 @@ func (a *Agent) Run(ctx context.Context, name, systemPrompt, userMessage string)
 	// dotsDirty tracks whether dots were printed to stdout without a trailing newline.
 	var dotsDirty bool
 	reachedFinalResponse := false
+	// Always terminate trailing dots so that log output from the caller never shares a line with them.
+	defer func() {
+		if !a.verbose && dotsDirty {
+			fmt.Fprintln(a.termOut)
+		}
+	}()
 
 	for round := 0; round < maxToolRounds; round++ {
 		stream := a.client.Messages.NewStreaming(ctx, anthropic.MessageNewParams{
@@ -172,12 +178,10 @@ func (a *Agent) Run(ctx context.Context, name, systemPrompt, userMessage string)
 		})
 	}
 
-	// Terminate any trailing dots (e.g. if the loop hit maxToolRounds).
+	// Terminate any trailing dots in verbose mode (non-verbose is handled by the defer above).
 	if a.verbose && lw.dirtyLine {
 		fmt.Fprintln(a.out)
 		lw.dirtyLine = false
-	} else if !a.verbose && dotsDirty {
-		fmt.Fprintln(a.termOut)
 	}
 
 	if a.verbose {
