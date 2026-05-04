@@ -250,6 +250,11 @@ func FuzzAwkVarAssignment(f *testing.F) {
 		if strings.ContainsAny(assign, "'\x00\n") {
 			return
 		}
+		// Skip invalid UTF-8: the mvdan.cc/sh parser rejects scripts containing
+		// invalid UTF-8 sequences, so such assignment values are out-of-scope.
+		if !utf8.ValidString(assign) {
+			return
+		}
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		_, _, code := cmdRunCtxFuzz(ctx, t,
