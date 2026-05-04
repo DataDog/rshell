@@ -350,12 +350,19 @@ func resolvePhysical(ctx context.Context, callCtx *builtins.CallContext, absPath
 	parts := strings.Split(filepath.ToSlash(absPath), "/")
 	// resolved accumulates the canonical prefix built so far.
 	// Start with the root (volume root on Windows, "/" on Unix).
-	resolved := filepath.VolumeName(absPath) + string(filepath.Separator)
+	volName := filepath.VolumeName(absPath)
+	resolved := volName + string(filepath.Separator)
 	hops := 0
 
 	for i := 0; i < len(parts); i++ {
 		seg := parts[i]
-		if seg == "" || seg == "." {
+		// Skip empty segments, ".", and the Windows volume prefix (e.g. "C:")
+		// which has already been absorbed into resolved above. Without this
+		// guard, filepath.Join(resolved, "C:") on Windows produces "C:\C:"
+		// (or similar) rather than the expected "C:\", causing candidate
+		// paths to diverge from the real on-disk paths and breaking symlink
+		// loop detection.
+		if seg == "" || seg == "." || seg == volName {
 			continue
 		}
 		if seg == ".." {
@@ -422,7 +429,11 @@ func resolvePhysical(ctx context.Context, callCtx *builtins.CallContext, absPath
 		i = -1 // will be incremented to 0 by the loop
 		// Reset resolved to the volume root so the new absolute path
 		// starting from newBase's root is walked from scratch.
-		resolved = filepath.VolumeName(newBase) + string(filepath.Separator)
+		// Also update volName so the volume-prefix skip (seg == volName)
+		// stays in sync when the symlink target is on a different Windows
+		// volume (e.g. resolving across drive letters).
+		volName = filepath.VolumeName(newBase)
+		resolved = volName + string(filepath.Separator)
 	}
 	return filepath.Clean(resolved), nil
 }

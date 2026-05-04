@@ -172,10 +172,14 @@ func TestResolvePhysicalCancelled(t *testing.T) {
 }
 
 func TestResolvePhysicalNoCallbacks(t *testing.T) {
+	// Use a platform-correct absolute path so that filepath.Clean returns
+	// the expected value (on Windows "/abs/path" becomes "\abs\path").
+	base := t.TempDir()
+	p := filepath.Join(base, "abs", "path")
 	cc := &builtins.CallContext{} // LstatFile / ReadlinkFile both nil
-	got, err := resolvePhysical(context.Background(), cc, "/abs/path")
+	got, err := resolvePhysical(context.Background(), cc, p)
 	assert.NoError(t, err)
-	assert.Equal(t, "/abs/path", got)
+	assert.Equal(t, filepath.Clean(p), got)
 }
 
 // fakeInfo is a minimal fs.FileInfo whose only meaningful field is mode;
