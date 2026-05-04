@@ -835,11 +835,13 @@ func TestContainerSymlinkRelativeTarget(t *testing.T) {
 	assert.Equal(t, "relative", string(buf[:n]))
 }
 
-// TestSandboxTruncateMethodFIFODoesNotBlock verifies that Sandbox.Truncate
-// rejects a FIFO target before the open syscall can block. Without the
-// non-regular-file pre-check, opening a FIFO with O_WRONLY would wait for
-// a reader and hang the shell until the executor timeout fires.
-func TestSandboxTruncateMethodFIFODoesNotBlock(t *testing.T) {
+// TestSandboxTruncateMethodFIFONoReaderDoesNotBlock verifies that
+// Sandbox.Truncate rejects a FIFO with no reader without blocking. The
+// O_NONBLOCK flag on the open call makes the kernel return ENXIO
+// immediately instead of waiting for a connection, which a plain
+// O_WRONLY open would do and which the in-builtin ctx.Err() loop cannot
+// interrupt.
+func TestSandboxTruncateMethodFIFONoReaderDoesNotBlock(t *testing.T) {
 	dir := t.TempDir()
 	fifoPath := filepath.Join(dir, "pipe")
 	require.NoError(t, syscall.Mkfifo(fifoPath, 0644))
@@ -856,8 +858,46 @@ func TestSandboxTruncateMethodFIFODoesNotBlock(t *testing.T) {
 	select {
 	case err := <-done:
 		assert.Error(t, err, "FIFO target must be rejected, not silently truncated")
-		assert.Contains(t, err.Error(), "not a regular file")
 	case <-time.After(2 * time.Second):
-		t.Fatal("Truncate blocked on FIFO — expected fast rejection via non-regular-file guard")
+		t.Fatal("Truncate blocked on FIFO without reader — O_NONBLOCK regressed")
+	}
+}
+
+// TestSandboxTruncateMethodFIFOWithReaderRejected verifies the post-fd
+// fstat guard: when a reader is connected, O_NONBLOCK no longer returns
+// ENXIO and the open succeeds, so the in-fd type check is the safety net
+// that rejects the FIFO before any ftruncate runs.
+//
+// This is the regression test for the Stat→Open TOCTOU window: a real
+// attacker would swap a regular file for a FIFO between resolution and
+// open, but a connected-reader FIFO at open time exercises the same
+// branch without needing a race.
+func TestSandboxTruncateMethodFIFOWithReaderRejected(t *testing.T) {
+	dir := t.TempDir()
+	fifoPath := filepath.Join(dir, "pipe")
+	require.NoError(t, syscall.Mkfifo(fifoPath, 0644))
+
+	// Open the read end so the kernel allows O_WRONLY|O_NONBLOCK opens
+	// to succeed instead of returning ENXIO.
+	reader, err := os.OpenFile(fifoPath, os.O_RDONLY|syscall.O_NONBLOCK, 0)
+	require.NoError(t, err)
+	defer reader.Close()
+
+	sb, _, err := New([]string{dir})
+	require.NoError(t, err)
+	defer sb.Close()
+
+	done := make(chan error, 1)
+	go func() {
+		done <- sb.Truncate("pipe", dir, 0, false)
+	}()
+
+	select {
+	case err := <-done:
+		require.Error(t, err, "FIFO with reader must be rejected post-open, not silently truncated")
+		assert.Contains(t, err.Error(), "not a regular file",
+			"post-fd fstat guard should be the rejection path here")
+	case <-time.After(2 * time.Second):
+		t.Fatal("Truncate blocked on FIFO with reader — post-fd fstat guard regressed")
 	}
 }

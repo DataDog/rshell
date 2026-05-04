@@ -379,12 +379,20 @@ func (s *Sandbox) Open(path string, cwd string, flag int, perm os.FileMode) (io.
 // resolved path is the classic TOCTOU footgun. Writes must stay within a
 // single allowed root.
 //
-// Non-regular targets (FIFO, socket, char/block device) are rejected before
-// the open syscall. Mirrors the redirect-side guard in
-// interp.Runner.rejectNonRegularRedirectTarget — opening a FIFO with
-// O_WRONLY blocks until a reader connects, which would hang the shell.
-// /dev/null and similar are handled by sandbox path resolution and never
-// reach this method through normal AllowedPaths.
+// Non-regular targets (FIFO, socket, char/block device) are rejected by an
+// atomic open-and-fstat sequence:
+//
+//  1. The open includes O_NONBLOCK so that an O_WRONLY open of a FIFO with
+//     no reader returns ENXIO immediately instead of blocking the shell
+//     waiting for a connection. (O_NONBLOCK is benign on regular files —
+//     it sets the fd's status flag but does not change open semantics —
+//     and is a no-op on platforms where the constant is zero, e.g. Windows.)
+//  2. After a successful open, fstat on the returned fd verifies the file
+//     is regular before any ftruncate runs. This closes the TOCTOU window
+//     that a pre-open Stat would have left open: even if a regular file
+//     is swapped for a FIFO between path resolution and the open syscall,
+//     the resulting fd is rejected before the size change reaches the
+//     kernel.
 //
 // Negative sizes are rejected with EINVAL. Sizes within int64 range are
 // passed through to the kernel; the kernel/filesystem rejects values it
@@ -405,17 +413,7 @@ func (s *Sandbox) Truncate(path string, cwd string, size int64, create bool) err
 		return &os.PathError{Op: "truncate", Path: path, Err: os.ErrPermission}
 	}
 
-	// Stat (follow symlinks within the root) so a symlink whose final
-	// target is a FIFO is caught here before OpenFile blocks on the
-	// open. Mirrors the policy in interp.Runner.rejectNonRegularRedirectTarget.
-	// ENOENT and other Stat errors are intentionally ignored: O_CREATE
-	// will produce a regular file, and any genuine permission error will
-	// surface from the subsequent OpenFile call.
-	if info, err := ar.root.Stat(relPath); err == nil && !info.Mode().IsRegular() {
-		return &os.PathError{Op: "truncate", Path: path, Err: errors.New("not a regular file")}
-	}
-
-	flag := os.O_WRONLY
+	flag := os.O_WRONLY | syscall.O_NONBLOCK
 	if create {
 		flag |= os.O_CREATE
 	}
@@ -429,11 +427,21 @@ func (s *Sandbox) Truncate(path string, cwd string, size int64, create bool) err
 		// would silently break the truncate -c silent-skip path.
 		return err
 	}
+	// fstat the fd we actually opened (not the path) so a swap between
+	// path resolution and open is caught before ftruncate runs.
+	info, err := f.Stat()
+	if err != nil {
+		f.Close()
+		return err
+	}
+	if !info.Mode().IsRegular() {
+		f.Close()
+		return &os.PathError{Op: "truncate", Path: path, Err: errors.New("not a regular file")}
+	}
 	truncErr := f.Truncate(size)
 	// Surface a deferred Close error only when Truncate itself succeeded;
-	// the open path is read-only-on-the-fd at this point so a failed Close
-	// after a successful ftruncate is the only case where a Close error
-	// reflects user-visible data loss (flush failure on write-back).
+	// a failed Close after a successful ftruncate is the only case where a
+	// Close error reflects user-visible data loss (flush failure on write-back).
 	closeErr := f.Close()
 	if truncErr != nil {
 		return truncErr
