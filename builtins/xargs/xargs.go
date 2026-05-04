@@ -735,6 +735,14 @@ func (t *tokenizer) nextDelimited(ctx context.Context, sep byte, skipBlank bool)
 	}
 }
 
+func unmatchedQuoteErr(quote byte) error {
+	qname := "double"
+	if quote == '\'' {
+		qname = "single"
+	}
+	return fmt.Errorf("unmatched %s quote; by default quotes are special to xargs unless you use the -0 option", qname)
+}
+
 // whitespace classification for default mode. Only space, tab, and newline
 // terminate items (matches GNU xargs default tokenisation). \r, \v, \f
 // are literal token bytes.
@@ -788,13 +796,7 @@ func (t *tokenizer) nextWhitespace(ctx context.Context) (string, bool, bool, err
 			if errors.Is(err, io.EOF) {
 				t.eof = true
 				if quote != 0 {
-					var qname string
-					if quote == '\'' {
-						qname = "single"
-					} else {
-						qname = "double"
-					}
-					return "", false, false, fmt.Errorf("unmatched %s quote; by default quotes are special to xargs unless you use the -0 option", qname)
+					return "", false, false, unmatchedQuoteErr(quote)
 				}
 				if len(t.buf) == 0 {
 					return "", false, false, nil
@@ -816,13 +818,7 @@ func (t *tokenizer) nextWhitespace(ctx context.Context) (string, bool, bool, err
 			}
 			// GNU xargs rejects newlines inside an unmatched quote.
 			if b == '\n' {
-				var qname string
-				if quote == '\'' {
-					qname = "single"
-				} else {
-					qname = "double"
-				}
-				return "", false, false, fmt.Errorf("unmatched %s quote; by default quotes are special to xargs unless you use the -0 option", qname)
+				return "", false, false, unmatchedQuoteErr(quote)
 			}
 			if err := t.pushByte(b); err != nil {
 				return "", false, false, err
