@@ -100,7 +100,6 @@ func (a *Agent) Run(ctx context.Context, name, systemPrompt, userMessage string)
 
 		// Execute all tool calls and collect results
 		var resultContent []anthropic.ContentBlockParamUnion
-		dotCount := 0
 		for _, block := range acc.Content {
 			if block.Type != "tool_use" {
 				continue
@@ -114,7 +113,7 @@ func (a *Agent) Run(ctx context.Context, name, systemPrompt, userMessage string)
 				fmt.Fprintf(a.out, "  $ %s\n", cmdInput.Command)
 			} else {
 				fmt.Fprint(a.out, dim("."))
-				dotCount++
+				lw.markMidLine()
 			}
 			output, isErr := a.executeBash(ctx, block.Input)
 			tr := anthropic.ToolResultBlockParam{
@@ -128,10 +127,6 @@ func (a *Agent) Run(ctx context.Context, name, systemPrompt, userMessage string)
 			}
 			resultContent = append(resultContent, anthropic.ContentBlockParamUnion{OfToolResult: &tr})
 		}
-		if dotCount > 0 {
-			fmt.Fprintln(a.out)
-		}
-
 		messages = append(messages, anthropic.MessageParam{
 			Role:    anthropic.MessageParamRoleUser,
 			Content: resultContent,
@@ -223,19 +218,32 @@ func bashToolParam() anthropic.ToolUnionParam {
 }
 
 // lineWriter prefixes every line of streamed text with a fixed prefix.
+// dirtyLine is set when dots were printed directly to out; write() emits a \n
+// before the next prefix so dots and text never share a line.
 type lineWriter struct {
 	out         io.Writer
 	prefix      string
 	atLineStart bool
+	dirtyLine   bool
 }
 
 func newLineWriter(out io.Writer, prefix string) *lineWriter {
 	return &lineWriter{out: out, prefix: prefix, atLineStart: true}
 }
 
+// markMidLine signals that content was written directly to out without a
+// trailing newline, so the next write must open a fresh line first.
+func (lw *lineWriter) markMidLine() {
+	lw.dirtyLine = true
+}
+
 func (lw *lineWriter) write(text string) {
 	for len(text) > 0 {
 		if lw.atLineStart {
+			if lw.dirtyLine {
+				fmt.Fprintln(lw.out)
+				lw.dirtyLine = false
+			}
 			fmt.Fprint(lw.out, lw.prefix)
 			lw.atLineStart = false
 		}
@@ -256,5 +264,8 @@ func (lw *lineWriter) flush() {
 	if !lw.atLineStart {
 		fmt.Fprintln(lw.out)
 		lw.atLineStart = true
+	} else if lw.dirtyLine {
+		fmt.Fprintln(lw.out)
+		lw.dirtyLine = false
 	}
 }

@@ -64,6 +64,45 @@ func TestLineWriter(t *testing.T) {
 	}
 }
 
+func TestLineWriterMarkMidLine(t *testing.T) {
+	t.Run("dots then text starts on new line", func(t *testing.T) {
+		var buf bytes.Buffer
+		lw := newLineWriter(&buf, "[a] ")
+		lw.write("first line\n")
+		lw.markMidLine()        // simulate dots printed directly
+		lw.write("second line") // must open a fresh line before prefix
+		want := "[a] first line\n\n[a] second line"
+		if got := buf.String(); got != want {
+			t.Errorf("got %q, want %q", got, want)
+		}
+	})
+
+	t.Run("multiple markMidLine calls collapse to one newline", func(t *testing.T) {
+		var buf bytes.Buffer
+		lw := newLineWriter(&buf, "[a] ")
+		lw.write("line\n")
+		lw.markMidLine()
+		lw.markMidLine()
+		lw.write("next\n")
+		want := "[a] line\n\n[a] next\n"
+		if got := buf.String(); got != want {
+			t.Errorf("got %q, want %q", got, want)
+		}
+	})
+
+	t.Run("flush with dirty line adds newline", func(t *testing.T) {
+		var buf bytes.Buffer
+		lw := newLineWriter(&buf, "[a] ")
+		lw.write("text\n")
+		lw.markMidLine()
+		lw.flush()
+		want := "[a] text\n\n"
+		if got := buf.String(); got != want {
+			t.Errorf("got %q, want %q", got, want)
+		}
+	})
+}
+
 func TestLineWriterFlush(t *testing.T) {
 	t.Run("flush adds newline when mid-line", func(t *testing.T) {
 		var buf bytes.Buffer
