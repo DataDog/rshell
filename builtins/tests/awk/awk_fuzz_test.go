@@ -40,10 +40,14 @@ func shellQuote(s string) (string, bool) {
 
 // awkSafe rejects an awk source that contains any byte that the shell or
 // our parser cannot represent reliably (NUL bytes, single quotes that
-// escape our shell-quoting). The fuzz function returns instead of failing —
-// "rejected input" is not a bug.
+// escape our shell-quoting, or invalid UTF-8 sequences that cause the
+// shell parser to return a non-ExitStatus error). The fuzz function
+// returns instead of failing — "rejected input" is not a bug.
 func awkSafe(src []byte) bool {
 	if len(src) == 0 || len(src) > 4096 {
+		return false
+	}
+	if !utf8.Valid(src) {
 		return false
 	}
 	for _, b := range src {

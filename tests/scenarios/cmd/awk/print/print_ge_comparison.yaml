@@ -1,4 +1,5 @@
 description: '>= comparison in print argument list is parsed as relational operator, not redirection.'
+skip_assert_against_bash: true  # mawk (debian default) parses 'print 2 >= 1' as output redirection; we intentionally handle >= correctly.
 input:
   script: |+
     awk 'BEGIN { print 2 >= 1; print 0 >= 1 }'
