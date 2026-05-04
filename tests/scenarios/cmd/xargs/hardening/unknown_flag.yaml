@@ -4,5 +4,6 @@ input:
     xargs --not-a-flag
 expect:
   stdout: ""
-  stderr_contains: ["xargs:"]
+  stderr: |+
+    xargs: unknown flag: --not-a-flag
   exit_code: 1

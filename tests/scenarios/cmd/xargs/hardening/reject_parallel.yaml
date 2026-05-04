@@ -7,5 +7,6 @@ input:
     echo a | xargs -P 4 echo
 expect:
   stdout: ""
-  stderr_contains: ["xargs:"]
+  stderr: |+
+    xargs: unknown shorthand flag: 'P' in -P
   exit_code: 1

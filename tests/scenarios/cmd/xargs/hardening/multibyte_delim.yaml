@@ -4,5 +4,6 @@ input:
     echo a | xargs -d ab echo
 expect:
   stdout: ""
-  stderr_contains: ["delimiter"]
+  stderr: |+
+    xargs: invalid delimiter: delimiter must be a single character: "ab"
   exit_code: 1

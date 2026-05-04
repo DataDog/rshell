@@ -4,5 +4,6 @@ input:
     echo a | xargs -n 0 echo
 expect:
   stdout: ""
-  stderr_contains: ["xargs:"]
+  stderr: |+
+    xargs: invalid -n value: 0
   exit_code: 1
