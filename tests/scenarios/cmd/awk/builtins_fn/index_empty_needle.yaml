@@ -1,0 +1,11 @@
+description: index(s, "") returns 1 (mawk-compatible; POSIX leaves this unspecified; gawk returns 0).
+skip_assert_against_bash: true
+input:
+  script: |+
+    awk 'BEGIN { print index("abc", ""); print index("", "") }'
+expect:
+  stdout: |+
+    1
+    1
+  stderr: |+
+  exit_code: 0

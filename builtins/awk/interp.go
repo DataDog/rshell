@@ -1211,6 +1211,14 @@ func (r *runtime) evalUnary(v *unaryExpr) (awkValue, error) {
 	return uninitValue, fmt.Errorf("internal: unknown unary op %s", tokenName(v.op))
 }
 
+// evalBinary evaluates a binary expression.
+//
+// Intentional divergence: division by zero (tkSlash, tkPercent, tkSlashAssign,
+// tkPercentAssign) returns a fatal runtime error here, whereas gawk and mawk
+// produce IEEE-754 special values (+Inf or NaN). This simplifies the
+// implementation by avoiding IEEE-754 special-value propagation through the
+// rest of the interpreter. Scripts that rely on 1/0 yielding inf will not work
+// with this implementation.
 func (r *runtime) evalBinary(v *binaryExpr) (awkValue, error) {
 	switch v.op {
 	case tkAnd:
@@ -1496,10 +1504,19 @@ func (r *runtime) evalMatch(v *matchExpr) (awkValue, error) {
 // =====================================================================
 
 // makeSplitFunc returns a bufio.SplitFunc that splits on the given record
-// separator. RS == "\n" uses the standard line-splitter (preserving \r\n
-// passthrough behaviour). RS == "" falls back to newline splitting (paragraph
-// mode is NOT implemented in v1 — blank lines become empty records, not
-// record separators). Single-char RS is the general case.
+// separator. RS == "\n" (or the default) uses the standard line-splitter
+// (preserving \r\n passthrough behaviour).
+//
+// RS == "" intentionally falls back to newline splitting — it is treated as
+// identical to RS == "\n". Paragraph mode (where consecutive blank lines act
+// as a single record separator and each record can span multiple lines) is NOT
+// implemented in v1. As a result, scripts that rely on RS="" paragraph
+// semantics will see each line as its own record and blank lines will appear
+// as empty records, not as record separators. This deliberate simplification
+// is documented in SHELL_FEATURES.md and covered by the
+// tests/scenarios/cmd/awk/edge/rs_empty_paragraph.yaml scenario.
+//
+// Single-character RS is the general case.
 func makeSplitFunc(rs string) bufio.SplitFunc {
 	if rs == "" || rs == "\n" {
 		return splitLines

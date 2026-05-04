@@ -29,7 +29,7 @@ func loadSkill(workDir, name, prRef string) string {
 	path := filepath.Join(workDir, ".claude", "skills", dir, "SKILL.md")
 	data, err := os.ReadFile(path)
 	if err != nil {
-		panic(fmt.Sprintf("read skill %s: %v", name, err))
+		panic(fmt.Sprintf("read skill %s from %s: %v\nhint: run the tool from the repo root with .claude/skills/ present", name, path, err))
 	}
 	content := stripFrontmatter(string(data))
 	return strings.ReplaceAll(content, "$ARGUMENTS", prRef)
