@@ -1,0 +1,9 @@
+description: xargs aborts when a single item cannot fit within the -s limit, even without -x.
+input:
+  script: |+
+    printf 'aaaaaaaaaa\n' | xargs -s 10 echo
+expect:
+  stdout: ""
+  stderr: |+
+    xargs: argument line too long
+  exit_code: 1

@@ -275,6 +275,12 @@ func buildOptions(fs *builtins.FlagSet, null bool, argFile, delim, eofStr, replS
 			return o, msg
 		}
 		o.maxArgs = maxArgs
+		// GNU xargs: -n and -L are mutually exclusive; -n takes precedence.
+		if fs.Changed("max-lines") {
+			o.warnings = append(o.warnings,
+				"warning: options --max-lines and --max-args/-n are mutually exclusive, ignoring previous --max-lines value")
+			o.maxLines = 0
+		}
 	}
 
 	if fs.Changed("max-chars") {
@@ -376,6 +382,14 @@ func runXargs(ctx context.Context, callCtx *builtins.CallContext, o options) bui
 	}
 	defer rc.Close()
 
+	// Upfront check: if the command itself (without any items) already
+	// exceeds the -s limit, fail immediately. Matches GNU xargs's
+	// "cannot fit single argument within argument list size limit" error.
+	if commandLineLen(o, nil) > o.maxChars {
+		callCtx.Errf("xargs: cannot fit single argument within argument list size limit\n")
+		return builtins.Result{Code: exitUsage}
+	}
+
 	tok := newTokenizer(rc, o)
 	finalCode := exitOK
 	totalItems := 0
@@ -424,22 +438,18 @@ func runXargs(ctx context.Context, callCtx *builtins.CallContext, o options) bui
 		add := len(item) + 1
 		if usedChars+add > o.maxChars {
 			if len(batch) == 0 {
-				// First item already too large for the budget. Without -x
-				// we follow GNU and warn but invoke anyway; with -x we
-				// abort.
-				if o.exitOnSize {
-					callCtx.Errf("xargs: argument line too long\n")
-					return builtins.Result{Code: exitUsage}
-				}
-				callCtx.Errf("xargs: argument line too long; invoking anyway\n")
-			} else {
-				if flush() {
-					return builtins.Result{Code: finalCode}
-				}
-				if usedChars+add > o.maxChars && o.exitOnSize {
-					callCtx.Errf("xargs: cannot fit single argument within -s limit\n")
-					return builtins.Result{Code: exitUsage}
-				}
+				// Single item already too large — always abort (GNU always
+				// exits 1 in this case, regardless of -x).
+				callCtx.Errf("xargs: argument line too long\n")
+				return builtins.Result{Code: exitUsage}
+			}
+			if flush() {
+				return builtins.Result{Code: finalCode}
+			}
+			if usedChars+add > o.maxChars {
+				// Item still doesn't fit even after flushing — always abort.
+				callCtx.Errf("xargs: argument line too long\n")
+				return builtins.Result{Code: exitUsage}
 			}
 		}
 

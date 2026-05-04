@@ -1,0 +1,12 @@
+description: xargs ignores -L when combined with -n, emitting a warning (GNU behavior).
+input:
+  script: |+
+    printf 'a b c\nd e f\n' | xargs -L 1 -n 2 echo
+expect:
+  stdout: |+
+    a b
+    c d
+    e f
+  stderr: |+
+    xargs: warning: options --max-lines and --max-args/-n are mutually exclusive, ignoring previous --max-lines value
+  exit_code: 0
