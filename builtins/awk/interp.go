@@ -769,6 +769,9 @@ func (r *runtime) execStmt(ctx context.Context, s stmt) error {
 		// Snapshot and sort keys for deterministic iteration order.
 		// Awk does not mandate a specific order, but deterministic output
 		// for the same input is required by repo convention.
+		// for…in iteration is bounded by MaxArrayEntries (the array cap), so no
+		// separate loop-iteration counter is needed here. ctx.Err() provides the
+		// final safety net via the shell's execution timeout.
 		keys := make([]string, 0, len(arr))
 		for k := range arr {
 			keys = append(keys, k)
@@ -778,7 +781,11 @@ func (r *runtime) execStmt(ctx context.Context, s stmt) error {
 			if ctx.Err() != nil {
 				return ctx.Err()
 			}
-			r.globals[v.loopVar] = strNumValue(k)
+			// Route through storeScalar so special-variable semantics (NF, FS, OFS,
+			// NR, FNR, …) are applied when the loop variable shadows a special name.
+			if err := r.storeScalar(v.loopVar, strNumValue(k)); err != nil {
+				return err
+			}
 			if err := r.execStmt(ctx, v.body); err != nil {
 				if errors.Is(err, errBreak) {
 					return nil

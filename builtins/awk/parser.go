@@ -418,7 +418,13 @@ func (p *parser) parseFor() (stmt, error) {
 
 	// Detect "for (var in array)" — needs lookahead.
 	if p.peek().kind == tkIdent && p.peekAt(1).kind == tkIn {
-		v := p.advance().val
+		loopVarTok := p.advance()
+		v := loopVarTok.val
+		// Validate the loop variable against blockedNames for consistency with
+		// the array-variable check below (e.g. "for (ENVIRON in arr)" should error).
+		if reason, blocked := blockedNames[v]; blocked {
+			return nil, fmt.Errorf("line %d: %s", loopVarTok.line, reason)
+		}
 		p.advance() // 'in'
 		arr, err := p.expect(tkIdent)
 		if err != nil {

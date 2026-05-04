@@ -1,0 +1,10 @@
+description: next in a BEGIN block is a runtime error (exit 1); diverges from gawk which exits 2 with "attempt to use next from BEGIN".
+skip_assert_against_bash: true
+input:
+  script: |+
+    awk 'BEGIN { next }'
+expect:
+  stdout: |+
+  stderr: |+
+    awk: next
+  exit_code: 1
