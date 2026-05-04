@@ -1,4 +1,4 @@
-description: Excess continue N in an until condition at the outermost loop is clamped to continue 1 — the condition is re-evaluated rather than propagated outward.
+description: In an until loop, continue N in the condition exits with status 0, which satisfies the until termination condition, so the loop exits after the first condition evaluation.
 input:
   script: |+
     i=
@@ -8,6 +8,6 @@ input:
     echo "i=$i"
 expect:
   stdout: |+
-    i=aaa
+    i=a
   stderr: |+
   exit_code: 0

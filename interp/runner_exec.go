@@ -360,18 +360,25 @@ func (r *Runner) execWhileClause(ctx context.Context, cm *syntax.WhileClause) {
 			r.contnEnclosing--
 			if r.contnEnclosing > 0 {
 				// continue targets a loop further out. If we are the
-				// outermost loop, clamp the excess level to 0 and
-				// re-evaluate cond — this matches bash's "continue 99"
-				// behaviour at the outermost loop. Otherwise, propagate
-				// outward.
+				// outermost loop, clamp the excess level to 0.
 				if !oldInLoop {
 					r.contnEnclosing = 0
+					// `continue` always exits with status 0. For `until`,
+					// exit 0 satisfies the termination condition — exit
+					// the loop. For `while`, re-evaluate the condition
+					// and skip the body.
+					if cm.Until {
+						break
+					}
 					continue
 				}
 				brokeEarly = true
 				break
 			}
-			// continue targets this loop: re-evaluate cond.
+			// continue targeting this loop: same rule applies.
+			if cm.Until {
+				break
+			}
 			continue
 		}
 
