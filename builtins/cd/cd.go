@@ -145,6 +145,11 @@ func registerFlags(flags *builtins.FlagSet) builtins.HandlerFunc {
 	flags.VarP(newLPFlag(&lastMode, modePhysical), "physical", "P", "resolve symbolic links to their targets")
 	flags.Lookup("logical").NoOptDefVal = "true"
 	flags.Lookup("physical").NoOptDefVal = "true"
+	// Bash rejects `cd sub -P` (too many arguments). Disable interspersed
+	// parsing so positional arguments are never re-interpreted as flags.
+	// Without this, pflag would parse `cd sub -P` as `cd -P sub`, silently
+	// changing behaviour compared to bash.
+	flags.SetInterspersed(false)
 	help := flags.BoolP("help", "h", false, "print usage and exit")
 
 	return func(ctx context.Context, callCtx *builtins.CallContext, args []string) builtins.Result {
@@ -215,15 +220,18 @@ func registerFlags(flags *builtins.FlagSet) builtins.HandlerFunc {
 			// fires.
 			// Use oldpwd as the display value in error messages so that
 			// errors read "cd: /no/exist: No such file or directory" (matching
-			// bash) rather than "cd: -: ...".
-			displayOverride = oldpwd
-			printDash = true
+			// bash) rather than "cd: -: ...". When OLDPWD is empty-but-set,
+			// fall back to "-" so that any error message shows "cd: -: ..."
+			// rather than exposing the runner's cwd path.
 			if oldpwd == "" {
+				displayOverride = "-"
 				target = currentDir()
 			} else {
+				displayOverride = oldpwd
 				target = oldpwd
 				printValue = oldpwd
 			}
+			printDash = true
 		default:
 			target = args[0]
 		}
@@ -427,7 +435,21 @@ func resolvePhysical(ctx context.Context, callCtx *builtins.CallContext, absPath
 		}
 		var newBase string
 		if filepath.IsAbs(target) {
-			newBase = target
+			// Container-style sandboxes mount the host filesystem under a
+			// prefix (e.g. /mnt/host). Symlink targets stored on disk are
+			// often host-absolute paths without that prefix, so apply
+			// HostPrefix when set — otherwise the resolved path would not
+			// be reachable through the sandbox (mirrors pwd -P's handling).
+			cleanedTarget := filepath.Clean(target)
+			if callCtx.HostPrefix != nil {
+				if hp := callCtx.HostPrefix(); hp != "" {
+					sep := string(filepath.Separator)
+					if !strings.HasPrefix(cleanedTarget, hp+sep) && cleanedTarget != hp {
+						cleanedTarget = filepath.Join(hp, cleanedTarget)
+					}
+				}
+			}
+			newBase = cleanedTarget
 		} else {
 			// Relative symlink target is relative to the directory
 			// containing the symlink (= resolved, not candidate).

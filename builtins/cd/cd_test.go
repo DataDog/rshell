@@ -266,6 +266,21 @@ func TestCdTooManyArgs(t *testing.T) {
 	assert.Equal(t, "cd: too many arguments\n", stderr)
 }
 
+// TestCdInterspersedFlagRejected verifies that SetInterspersed(false)
+// prevents pflag from reordering "cd sub -P" into "cd -P sub". bash
+// treats "sub" as the operand and "-P" as a second operand, producing
+// "too many arguments". Without the guard, pflag would parse -P as a
+// flag and silently change directories under physical mode.
+func TestCdInterspersedFlagRejected(t *testing.T) {
+	dir := t.TempDir()
+	sub := makeDir(t, dir, "sub")
+	_ = sub
+	// "cd sub -P" should fail with too many arguments, matching bash.
+	_, stderr, code := cmdRun(t, "cd sub -P", dir)
+	assert.Equal(t, 1, code, "cd sub -P should fail, not silently cd -P sub")
+	assert.Contains(t, stderr, "too many arguments")
+}
+
 func TestCdUnknownFlag(t *testing.T) {
 	dir := t.TempDir()
 	_, stderr, code := cmdRun(t, "cd --no-such-flag", dir)

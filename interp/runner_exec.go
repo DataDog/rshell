@@ -124,9 +124,13 @@ func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {
 				//   cd /a; cd /b; OLDPWD=/foo cd -
 				//   bash → echo $OLDPWD = /b   (cd's update wins)
 				// Skip PWD/OLDPWD in that case so cd's writes survive.
-				// NOTE: this guard fires for ANY builtin returning a
-				// non-empty Result.NewWorkDir — see builtins.Result.NewWorkDir
-				// for the full contract.
+				//
+				// CONTRACT: this guard fires for ANY builtin returning a
+				// non-empty Result.NewWorkDir — currently only "cd".
+				// A future builtin that (a) accepts an inline PWD/OLDPWD
+				// assignment AND (b) returns NewWorkDir for a different
+				// purpose would have its inline restore silently suppressed.
+				// See builtins.Result.NewWorkDir for the full contract.
 				if r.lastCallChangedWorkDir && (restore.name == "PWD" || restore.name == "OLDPWD") {
 					continue
 				}
