@@ -47,6 +47,12 @@ func TestDfHelp(t *testing.T) {
 	assert.Contains(t, stdout, "--human-readable")
 	assert.Contains(t, stdout, "--portability")
 	assert.Contains(t, stdout, "--inodes")
+	// -k has no long form (matches GNU df). The help line must
+	// render as a plain "-k", not the bogus "-k, --" pflag would
+	// emit for an empty long name.
+	assert.Contains(t, stdout, "-k ")
+	assert.NotContains(t, stdout, "-k, --")
+	assert.NotContains(t, stdout, "--kibibytes")
 }
 
 // --- Default output structure ---

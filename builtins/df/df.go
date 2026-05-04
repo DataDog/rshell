@@ -177,8 +177,14 @@ func makeFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 	// a long form would let scripts depend on rshell-only behavior.
 	registerUnitFlag(fs, &mode, unitsHuman1024, "human-readable", "h", "print sizes in powers of 1024 (e.g. 1023M)")
 	registerUnitFlag(fs, &mode, unitsHuman1000, "si", "H", "print sizes in powers of 1000 (e.g. 1.1G)")
+	// -k has no long form (GNU documents -k as the only spelling).
+	// pflag.PrintDefaults can't render a shorthand-only flag — it
+	// would emit "-k, --" with an empty long name — so we hide it
+	// from the auto-generated help and handle the line manually in
+	// printHelp.
 	kFlag := fs.VarPF(&unitFlag{target: &mode, value: unitsK}, "", "k", "use 1024-byte blocks (POSIX default)")
 	kFlag.NoOptDefVal = "true"
+	kFlag.Hidden = true
 
 	return func(ctx context.Context, callCtx *builtins.CallContext, args []string) builtins.Result {
 		if *f.help {
@@ -723,10 +729,17 @@ func printRows(callCtx *builtins.CallContext, header []string, rows []row, posix
 
 // printHelp emits the help text to stdout (per RULES.md, help is not an
 // error; exit 0 with output on stdout).
+//
+// pflag.PrintDefaults handles every flag except -k, which is registered
+// shorthand-only (GNU has no --kibibytes long form) and would otherwise
+// render as the bogus "-k, --" line. -k is marked Hidden so it is
+// skipped by PrintDefaults; we append the line manually so it still
+// appears in --help.
 func printHelp(callCtx *builtins.CallContext, fs *builtins.FlagSet) {
 	callCtx.Out("Usage: df [OPTION]...\n")
 	callCtx.Out("Show information about the file system on which each FILE resides,\n")
 	callCtx.Out("or all file systems by default.\n\n")
 	fs.SetOutput(callCtx.Stdout)
 	fs.PrintDefaults()
+	callCtx.Out("  -k                               use 1024-byte blocks (POSIX default)\n")
 }
