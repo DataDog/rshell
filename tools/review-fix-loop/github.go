@@ -172,12 +172,27 @@ func countUnresolvedInPage(out []byte, myLogin string) (count int, hasNextPage b
 func allCIPassing(workDir string, prNumber int) (bool, error) {
 	cmd := exec.Command("gh", "pr", "checks", fmt.Sprintf("%d", prNumber), "--json", "name,state")
 	cmd.Dir = workDir
-	out, _ := cmd.Output() // gh returns non-zero when checks fail but still emits JSON
+	// gh returns exit code 8 when checks are pending, non-zero on auth/network
+	// errors too. Use CombinedOutput to capture stderr for diagnostics, but
+	// keep the raw stdout for JSON parsing via cmd.Output semantics.
+	out, err := cmd.Output()
+	if err != nil {
+		// If stdout is non-empty we still got partial JSON — try to parse it.
+		// If stdout is empty the command truly failed (auth/network/missing PR)
+		// and we must not treat that as "CI passing".
+		if len(out) == 0 {
+			return false, fmt.Errorf("gh pr checks: %w", err)
+		}
+	}
 	return ciPassingFromJSON(out)
 }
 
 // ciPassingFromJSON parses the JSON emitted by `gh pr checks --json name,state`
-// and returns false if any check is in a failing state.
+// and returns false if any check is in a failing or non-clean terminal state.
+// Empty/nil input means no checks were found, which is treated as passing
+// (a PR with no CI configured is not failing).  Callers that obtain output via
+// an external command must propagate command errors before calling this function
+// to avoid masking auth/network failures.
 func ciPassingFromJSON(out []byte) (bool, error) {
 	if len(out) == 0 {
 		return true, nil
@@ -193,7 +208,9 @@ func ciPassingFromJSON(out []byte) (bool, error) {
 
 	for _, c := range checks {
 		s := strings.ToLower(c.State)
-		if s == "failing" || s == "failure" || s == "failed" || s == "error" {
+		switch s {
+		case "failing", "failure", "failed", "error",
+			"cancelled", "cancel", "timed_out", "action_required", "stale":
 			return false, nil
 		}
 	}

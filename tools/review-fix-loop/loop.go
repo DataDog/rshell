@@ -136,14 +136,17 @@ func run(ctx context.Context, cfg Config, prRef string) error {
 		result := IterationResult{Iteration: iter, ReviewFindings: reviewFindings, Unresolved: unresolved, CIClean: ciClean}
 		results = append(results, result)
 
-		statusLine := fmt.Sprintf("→ findings=%d  ci_clean=%v", reviewFindings, ciClean)
-		if reviewFindings == 0 && ciClean {
+		statusLine := fmt.Sprintf("→ findings=%d  unresolved=%d  ci_clean=%v", reviewFindings, unresolved, ciClean)
+		// A clean iteration requires: no new review findings, no unresolved review
+		// threads (from any prior iteration), and all CI checks passing.
+		iterClean := reviewFindings == 0 && unresolved == 0 && ciClean
+		if iterClean {
 			fmt.Fprintf(out, "\n  %s\n", boldGreen(statusLine))
 		} else {
 			fmt.Fprintf(out, "\n  %s\n", boldRed(statusLine))
 		}
 
-		if reviewFindings == 0 && ciClean {
+		if iterClean {
 			successCount++
 			fmt.Fprintf(out, "  %s\n", boldGreen(fmt.Sprintf("✓ clean (streak %d/%d)", successCount, cfg.TargetSuccess)))
 			if successCount >= cfg.TargetSuccess {

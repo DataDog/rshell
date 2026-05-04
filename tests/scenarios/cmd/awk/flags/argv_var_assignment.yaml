@@ -1,0 +1,10 @@
+description: Positional var=value arguments are treated as variable assignments (GNU awk compat), not filenames.
+skip_assert_against_bash: true
+input:
+  script: |+
+    printf 'hello world\n' | awk '{print x, $0}' x=42 -
+expect:
+  stdout: |+
+    42 hello world
+  stderr: |+
+  exit_code: 0

@@ -57,6 +57,31 @@ func TestCIPassingFromJSON(t *testing.T) {
 			want:  false,
 		},
 		{
+			name:  "cancelled check is not clean",
+			input: []byte(`[{"name":"test","state":"success"},{"name":"flaky","state":"cancelled"}]`),
+			want:  false,
+		},
+		{
+			name:  "cancel (gh spelling) is not clean",
+			input: []byte(`[{"name":"test","state":"cancel"}]`),
+			want:  false,
+		},
+		{
+			name:  "timed_out is not clean",
+			input: []byte(`[{"name":"test","state":"timed_out"}]`),
+			want:  false,
+		},
+		{
+			name:  "action_required is not clean",
+			input: []byte(`[{"name":"test","state":"action_required"}]`),
+			want:  false,
+		},
+		{
+			name:  "stale is not clean",
+			input: []byte(`[{"name":"test","state":"stale"}]`),
+			want:  false,
+		},
+		{
 			name:    "invalid JSON",
 			input:   []byte(`not json`),
 			wantErr: true,

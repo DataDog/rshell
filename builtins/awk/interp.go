@@ -181,6 +181,17 @@ func isValidVarName(s string) bool {
 	return true
 }
 
+// isArgvAssignment reports whether a positional argument is an awk variable
+// assignment of the form NAME=value, where NAME is a valid awk identifier.
+// Such arguments are treated as assignments (not filenames) by GNU awk.
+func isArgvAssignment(s string) bool {
+	eq := strings.IndexByte(s, '=')
+	if eq <= 0 {
+		return false
+	}
+	return isValidVarName(s[:eq])
+}
+
 // run is the main driver: BEGIN blocks, then each input file, then END.
 func run(ctx context.Context, r *runtime, prog *program, files []string) (uint8, error) {
 	// Run BEGIN blocks first.
@@ -213,6 +224,15 @@ func run(ctx context.Context, r *runtime, prog *program, files []string) (uint8,
 		for _, file := range files {
 			if ctx.Err() != nil {
 				return 1, ctx.Err()
+			}
+			// GNU awk treats positional arguments of the form var=value as
+			// variable assignments rather than filenames. Apply them between
+			// files so they take effect for subsequent input files.
+			if isArgvAssignment(file) {
+				if err := r.applyVarAssignment(file); err != nil {
+					return 1, fmt.Errorf("awk: argv assignment %q: %w", file, err)
+				}
+				continue
 			}
 			if err := r.processFile(ctx, prog, file); err != nil {
 				return finalizeAfterUnwind(ctx, r, prog, err)
