@@ -1,0 +1,12 @@
+# Unless explicitly stated otherwise all files in this repository are licensed
+# under the Apache License Version 2.0.
+# This product includes software developed at Datadog (https://www.datadoghq.com/).
+# Copyright 2026-present Datadog, Inc.
+description: exit inside the until body propagates the exit code to the shell.
+input:
+  script: |+
+    until false; do exit 5; done
+expect:
+  stdout: |+
+  stderr: |+
+  exit_code: 5
