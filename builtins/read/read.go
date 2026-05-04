@@ -600,6 +600,17 @@ func readInput(ctx context.Context, r io.Reader, delim rune, raw bool, charLimit
 			if nrn == '\n' {
 				continue
 			}
+			// NUL bytes are always stripped from the assigned value
+			// (the general "bash silently discards NULs unless they
+			// are the delimiter, and even with `-d ''` does not
+			// store them" rule from earlier in the loop). For a
+			// `\<NUL>` pair under `-d ''` this means we drop both
+			// the backslash and the NUL and keep reading — matching
+			// bash, which treats `\<NUL>` as if the backslash
+			// merely escapes a NUL that gets stripped.
+			if nrn == 0 {
+				continue
+			}
 			// Escape: drop the backslash, keep the next rune.
 			if aerr := tryAppend(nrb); aerr != nil {
 				return string(buf), false, aerr

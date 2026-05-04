@@ -1,0 +1,15 @@
+description: |+
+  With `-d ''` (NUL delimiter) in non-raw mode, a backslash followed by
+  a NUL byte does not let the NUL slip into the assigned value. Bash's
+  general "embedded NULs are stripped" rule applies even in escape
+  position, so the backslash is dropped, the NUL is dropped, and reading
+  continues until the next NUL (or EOF). Subsequent reads still see the
+  next record correctly.
+input:
+  script: |+
+    printf 'a\\\0b\0c' | { IFS= read -d '' x; IFS= read -d '' y; echo "x=[$x] y=[$y]"; }
+expect:
+  stdout: |+
+    x=[ab] y=[c]
+  stderr: ""
+  exit_code: 0
