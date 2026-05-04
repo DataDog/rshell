@@ -104,51 +104,62 @@ query($owner: String!, $repo: String!, $pr: Int!, $after: String) {
 			return 0, fmt.Errorf("graphql query: %w", err)
 		}
 
-		var resp struct {
-			Data struct {
-				Repository struct {
-					PullRequest struct {
-						ReviewThreads struct {
-							PageInfo struct {
-								HasNextPage bool   `json:"hasNextPage"`
-								EndCursor   string `json:"endCursor"`
-							} `json:"pageInfo"`
-							Nodes []struct {
-								IsResolved bool `json:"isResolved"`
-								Comments   struct {
-									Nodes []struct {
-										Author struct {
-											Login string `json:"login"`
-										} `json:"author"`
-									} `json:"nodes"`
-								} `json:"comments"`
-							} `json:"nodes"`
-						} `json:"reviewThreads"`
-					} `json:"pullRequest"`
-				} `json:"repository"`
-			} `json:"data"`
+		n, hasNext, next, err := countUnresolvedInPage(out, myLogin)
+		if err != nil {
+			return 0, err
 		}
-		if err := json.Unmarshal(out, &resp); err != nil {
-			return 0, fmt.Errorf("parse graphql response: %w", err)
-		}
-
-		threads := resp.Data.Repository.PullRequest.ReviewThreads
-		for _, node := range threads.Nodes {
-			if node.IsResolved || len(node.Comments.Nodes) == 0 {
-				continue
-			}
-			author := node.Comments.Nodes[0].Author.Login
-			if author == myLogin || author == "chatgpt-codex-connector[bot]" {
-				total++
-			}
-		}
-
-		if !threads.PageInfo.HasNextPage {
+		total += n
+		if !hasNext {
 			break
 		}
-		cursor = threads.PageInfo.EndCursor
+		cursor = next
 	}
 	return total, nil
+}
+
+// countUnresolvedInPage parses one page of the reviewThreads GraphQL response and
+// returns the count of unresolved threads from myLogin or chatgpt-codex-connector[bot],
+// plus pagination info.
+func countUnresolvedInPage(out []byte, myLogin string) (count int, hasNextPage bool, endCursor string, err error) {
+	var resp struct {
+		Data struct {
+			Repository struct {
+				PullRequest struct {
+					ReviewThreads struct {
+						PageInfo struct {
+							HasNextPage bool   `json:"hasNextPage"`
+							EndCursor   string `json:"endCursor"`
+						} `json:"pageInfo"`
+						Nodes []struct {
+							IsResolved bool `json:"isResolved"`
+							Comments   struct {
+								Nodes []struct {
+									Author struct {
+										Login string `json:"login"`
+									} `json:"author"`
+								} `json:"nodes"`
+							} `json:"comments"`
+						} `json:"nodes"`
+					} `json:"reviewThreads"`
+				} `json:"pullRequest"`
+			} `json:"repository"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(out, &resp); err != nil {
+		return 0, false, "", fmt.Errorf("parse graphql response: %w", err)
+	}
+
+	threads := resp.Data.Repository.PullRequest.ReviewThreads
+	for _, node := range threads.Nodes {
+		if node.IsResolved || len(node.Comments.Nodes) == 0 {
+			continue
+		}
+		author := node.Comments.Nodes[0].Author.Login
+		if author == myLogin || author == "chatgpt-codex-connector[bot]" {
+			count++
+		}
+	}
+	return count, threads.PageInfo.HasNextPage, threads.PageInfo.EndCursor, nil
 }
 
 // allCIPassing returns true if no CI checks are in a failing state.
@@ -157,6 +168,12 @@ func allCIPassing(workDir string, prNumber int) (bool, error) {
 	cmd := exec.Command("gh", "pr", "checks", fmt.Sprintf("%d", prNumber), "--json", "name,state")
 	cmd.Dir = workDir
 	out, _ := cmd.Output() // gh returns non-zero when checks fail but still emits JSON
+	return ciPassingFromJSON(out)
+}
+
+// ciPassingFromJSON parses the JSON emitted by `gh pr checks --json name,state`
+// and returns false if any check is in a failing state.
+func ciPassingFromJSON(out []byte) (bool, error) {
 	if len(out) == 0 {
 		return true, nil
 	}
