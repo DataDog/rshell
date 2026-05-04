@@ -1394,9 +1394,9 @@ func (r *runtime) evalMatch(v *matchExpr) (awkValue, error) {
 
 // makeSplitFunc returns a bufio.SplitFunc that splits on the given record
 // separator. RS == "\n" uses the standard line-splitter (preserving \r\n
-// passthrough behaviour). RS == "" turns on paragraph mode (we do NOT
-// implement paragraph mode in v1; treat as \n). Single-char RS is the
-// general case.
+// passthrough behaviour). RS == "" falls back to newline splitting (paragraph
+// mode is NOT implemented in v1 — blank lines become empty records, not
+// record separators). Single-char RS is the general case.
 func makeSplitFunc(rs string) bufio.SplitFunc {
 	if rs == "" || rs == "\n" {
 		return splitLines

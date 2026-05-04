@@ -1015,6 +1015,9 @@ func (p *parser) parsePrimary() (expr, error) {
 			if err != nil {
 				return nil, err
 			}
+			if reason, blocked := blockedNames[arr.val]; blocked {
+				return nil, fmt.Errorf("line %d: %s", arr.line, reason)
+			}
 			return &inExpr{keys: exprs, arrayVar: arr.val}, nil
 		}
 		if len(exprs) != 1 {
