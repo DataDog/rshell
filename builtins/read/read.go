@@ -259,14 +259,10 @@ func run(ctx context.Context, c *builtins.CallContext, args []string, opt runOpt
 		}
 	}
 
-	// Empty result: bash returns 1 on EOF, 142 on timeout, neither
-	// performs any assignment.
-	if line == "" && (eof || timedOut) {
-		if timedOut {
-			return builtins.Result{Code: 142}
-		}
-		return builtins.Result{Code: 1}
-	}
+	// On empty result + EOF or timeout, bash still assigns "" to every
+	// requested NAME (clearing any prior value) before surfacing the
+	// non-zero exit code. Falling through to the assignment loop with
+	// the zero-valued `values` slice produces the same result for us.
 
 	// Determine field values for each variable. Three cases, each matching
 	// bash exactly:
