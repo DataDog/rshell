@@ -333,9 +333,15 @@ func buildOptions(fs *builtins.FlagSet, null bool, argFile, delim, eofStr string
 			nLOrder, nLWinner = maxLinesVal.order, "lines"
 		}
 
-		if nLOrder > replStrVal.order {
-			// -n or -L was specified after -I → -n/-L wins, drop -I.
-			// GNU format: "options [earlier] and [winner] ... ignoring previous [earlier]".
+		// Determine whether the -n/-L specified after -I should drop -I.
+		// GNU special case: -n 1 after -I is treated as compatible (since
+		// -I already implies one item per invocation). In that case, keep
+		// replacement mode silently without a warning.
+		n1AfterI := nLOrder > replStrVal.order && nLWinner == "args" && o.maxArgs == 1
+		nLDropsReplace := nLOrder > replStrVal.order && !n1AfterI
+		if nLDropsReplace {
+			// -n or -L was specified after -I, and it is incompatible →
+			// -n/-L wins, drop -I.
 			o.replStr = ""
 			switch nLWinner {
 			case "args":
@@ -346,8 +352,10 @@ func buildOptions(fs *builtins.FlagSet, null bool, argFile, delim, eofStr string
 					"warning: options --replace and -L are mutually exclusive, ignoring previous --replace value")
 			}
 		} else {
-			// -I was specified last (or no -n/-L) → -I wins.
-			if o.maxArgs > 0 {
+			// -I was specified last, or no -n/-L, or -n 1 after -I (compatible)
+			// → -I wins. Warn about any incompatible earlier -n or -L, but
+			// suppress the warning for -n 1 after -I (that's the compatible case).
+			if o.maxArgs > 0 && !n1AfterI {
 				o.warnings = append(o.warnings,
 					"warning: options --max-args and --replace/-I/-i are mutually exclusive, ignoring previous --max-args value")
 			} else if o.maxLines > 0 {
