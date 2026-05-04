@@ -38,8 +38,10 @@
 //	echoing the resolved directory to stdout. If $OLDPWD is unset, the
 //	command fails with a non-zero exit and no state changes.
 //
-//	Path validation goes exclusively through callCtx.StatFile and
-//	callCtx.ReadlinkFile, both of which honour the AllowedPaths sandbox.
+//	Path validation goes exclusively through callCtx.StatFile,
+//	callCtx.LstatFile, and callCtx.ReadlinkFile, all of which honour
+//	the AllowedPaths sandbox. (LstatFile and ReadlinkFile are used only
+//	during -P symlink resolution; StatFile is used for all modes.)
 //	Targets that exist on the host filesystem but are outside the
 //	sandbox are rejected with the same "no such file or directory"
 //	message used for missing entries — the failure mode never reveals
@@ -172,11 +174,13 @@ func registerFlags(flags *builtins.FlagSet) builtins.HandlerFunc {
 
 		var (
 			target string
-			// printValue is set when `cd -` succeeds: bash prints the
-			// pre-cleaning OLDPWD value verbatim to stdout (so trailing
-			// slashes etc. survive). filepath.Clean would normalise that
-			// away, hence the separate field.
+			// printValue holds the value to print when cd - succeeds.
+			// Bash prints the raw OLDPWD verbatim (preserving trailing
+			// slashes etc. that filepath.Clean would strip), followed by a
+			// newline — even when OLDPWD is the empty string (one bare
+			// newline). printDash tracks whether to print at all.
 			printValue string
+			printDash  bool
 		)
 		switch {
 		case len(args) == 0:
@@ -200,9 +204,11 @@ func registerFlags(flags *builtins.FlagSet) builtins.HandlerFunc {
 				callCtx.Errf("cd: OLDPWD not set\n")
 				return builtins.Result{Code: 1}
 			}
-			// Empty-but-set OLDPWD: stay in place and update OLDPWD (no
-			// print, since the "destination" is the current dir). Route
-			// through the normal path so applyNewWorkDir fires.
+			// Bash always prints OLDPWD (even "") followed by a newline on
+			// successful cd -. Empty-but-set OLDPWD: stay in place and
+			// update OLDPWD. Route through the normal path so applyNewWorkDir
+			// fires.
+			printDash = true
 			if oldpwd == "" {
 				target = currentDir()
 			} else {
@@ -272,7 +278,7 @@ func registerFlags(flags *builtins.FlagSet) builtins.HandlerFunc {
 			return builtins.Result{Code: 1}
 		}
 
-		if printValue != "" {
+		if printDash {
 			callCtx.Out(printValue)
 			callCtx.Out("\n")
 		}

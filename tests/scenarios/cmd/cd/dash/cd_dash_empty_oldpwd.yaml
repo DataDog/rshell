@@ -1,0 +1,20 @@
+# Derived from bash: cd - with OLDPWD="" prints a bare newline and updates OLDPWD.
+description: cd - with empty OLDPWD succeeds, prints a bare newline, and updates OLDPWD.
+setup:
+  files:
+    - path: sub/keep
+      content: ""
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    cd sub
+    BEFORE=$PWD
+    OLDPWD=""
+    cd -
+    [ "$OLDPWD" = "$BEFORE" ] && echo "oldpwd_ok"
+expect:
+  stdout: |+
+
+    oldpwd_ok
+  stderr: ""
+  exit_code: 0
