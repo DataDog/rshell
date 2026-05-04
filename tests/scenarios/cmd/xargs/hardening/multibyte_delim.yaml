@@ -1,3 +1,5 @@
+# skip: error message wording differs from GNU xargs (rshell uses its own validation format).
+skip_assert_against_bash: true
 description: xargs rejects multi-byte delimiters that are not the documented escape forms.
 input:
   script: |+

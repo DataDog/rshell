@@ -1,3 +1,5 @@
+# skip: pflag error message format differs from GNU xargs's error wording.
+skip_assert_against_bash: true
 description: xargs rejects unknown flags with exit code 1.
 input:
   script: |+

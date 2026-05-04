@@ -1,3 +1,5 @@
+# skip: error message wording differs from GNU xargs (rshell uses its own validation format).
+skip_assert_against_bash: true
 description: xargs -n with a non-positive value is rejected.
 input:
   script: |+

@@ -5,5 +5,5 @@ input:
 expect:
   stdout: ""
   stderr: |+
-    xargs: unmatched ' quote; by default quotes are special to xargs unless you use the -0 option
+    xargs: unmatched single quote; by default quotes are special to xargs unless you use the -0 option
   exit_code: 1

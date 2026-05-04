@@ -810,7 +810,13 @@ func (t *tokenizer) nextWhitespace(ctx context.Context) (string, bool, bool, err
 			}
 			// GNU xargs rejects newlines inside an unmatched quote.
 			if b == '\n' {
-				return "", false, false, fmt.Errorf("unmatched %c quote; by default quotes are special to xargs unless you use the -0 option", quote)
+				var qname string
+				if quote == '\'' {
+					qname = "single"
+				} else {
+					qname = "double"
+				}
+				return "", false, false, fmt.Errorf("unmatched %s quote; by default quotes are special to xargs unless you use the -0 option", qname)
 			}
 			if err := t.pushByte(b); err != nil {
 				return "", false, false, err
