@@ -1,0 +1,11 @@
+description: An unbounded until-false producer in a three-stage pipeline (until | cat | head) terminates cleanly when the final consumer closes.
+input:
+  script: |+
+    until false; do echo x; done | cat | head -3
+expect:
+  stdout: |+
+    x
+    x
+    x
+  stderr: |+
+  exit_code: 0
