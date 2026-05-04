@@ -336,99 +336,105 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 
 	if isKnown {
 		r.dispatchedCount++
-		var runCmd func(context.Context, string, string, []string) (uint8, error)
-		// parentCallCtx is set below, after "call" is created, so that the
-		// runCmd closure can access the parent's RunCommandStdin override.
-		var parentCallCtx *builtins.CallContext
-		runCmd = func(ctx context.Context, dir string, cmdName string, cmdArgs []string) (uint8, error) {
-			if !r.allowAllCommands && !r.allowedCommands[cmdName] {
-				return 127, fmt.Errorf("rshell: %s: command not allowed", cmdName)
+		// makeRunCmd returns a RunCommand function that, when a child
+		// builtin is dispatched, inherits stdin from callerCtx.RunCommandStdin
+		// (if set) or from the runner's own stdin. Each level in a
+		// xargs-calls-xargs chain gets its own callerCtx so the override is
+		// scoped to the correct depth. Declared as a named var so the inner
+		// returned closure can reference makeRunCmd recursively.
+		var makeRunCmd func(callerCtx *builtins.CallContext) func(context.Context, string, string, []string) (uint8, error)
+		makeRunCmd = func(callerCtx *builtins.CallContext) func(context.Context, string, string, []string) (uint8, error) {
+			return func(ctx context.Context, dir string, cmdName string, cmdArgs []string) (uint8, error) {
+				if !r.allowAllCommands && !r.allowedCommands[cmdName] {
+					return 127, fmt.Errorf("rshell: %s: command not allowed", cmdName)
+				}
+				cmdFn, ok := builtins.Lookup(cmdName)
+				if !ok {
+					return 127, fmt.Errorf("rshell: %s: unknown command", cmdName)
+				}
+				child := &builtins.CallContext{
+					Stdout:  r.stdout,
+					Stderr:  r.stderr,
+					WorkDir: func() string { return dir },
+					HostPrefix: func() string {
+						// Return the sandbox's normalized prefix (filepath.Clean'd
+						// in SetHostPrefix) rather than the raw user-supplied
+						// value. A caller-provided trailing slash or "."/".."
+						// segment would otherwise break prefix-matching in
+						// builtins that consume this value.
+						if r.sandbox != nil {
+							return r.sandbox.HostPrefix()
+						}
+						return r.hostPrefix
+					},
+					CanonicalizeRootPrefix: func(absPath string) string {
+						if r.sandbox == nil {
+							return absPath
+						}
+						return r.sandbox.CanonicalizeRootPrefix(absPath)
+					},
+					OpenFile: func(ctx context.Context, path string, flags int, mode os.FileMode) (io.ReadWriteCloser, error) {
+						f, err := r.sandbox.Open(path, dir, flags, mode)
+						if err != nil {
+							return nil, err
+						}
+						return allowedpaths.WithContextClose(ctx, f), nil
+					},
+					ReadDir: func(ctx context.Context, path string) ([]fs.DirEntry, error) {
+						return r.sandbox.ReadDir(path, dir)
+					},
+					OpenDir: func(ctx context.Context, path string) (fs.ReadDirFile, error) {
+						return r.sandbox.OpenDir(path, dir)
+					},
+					IsDirEmpty: func(ctx context.Context, path string) (bool, error) {
+						return r.sandbox.IsDirEmpty(path, dir)
+					},
+					ReadDirLimited: func(ctx context.Context, path string, offset, maxRead int) ([]fs.DirEntry, bool, error) {
+						return r.sandbox.ReadDirLimited(path, dir, offset, maxRead)
+					},
+					StatFile: func(ctx context.Context, path string) (fs.FileInfo, error) {
+						return r.sandbox.Stat(path, dir)
+					},
+					LstatFile: func(ctx context.Context, path string) (fs.FileInfo, error) {
+						return r.sandbox.Lstat(path, dir)
+					},
+					ReadlinkFile: func(ctx context.Context, path string) (string, error) {
+						return r.sandbox.Readlink(path, dir)
+					},
+					AccessFile: func(ctx context.Context, path string, mode uint32) error {
+						return r.sandbox.Access(path, dir, mode)
+					},
+					PortableErr: allowedpaths.PortableErrMsg,
+					Now:         r.startTime,
+					FileIdentity: func(path string, info fs.FileInfo) (builtins.FileID, bool) {
+						absPath := path
+						if !filepath.IsAbs(absPath) {
+							absPath = filepath.Join(dir, absPath)
+						}
+						dev, ino, ok := allowedpaths.FileIdentity(absPath, info, r.sandbox)
+						if !ok {
+							return builtins.FileID{}, false
+						}
+						return builtins.FileID{Dev: dev, Ino: ino}, true
+					},
+					CommandAllowed: func(n string) bool {
+						return r.allowAllCommands || r.allowedCommands[n]
+					},
+					Proc: r.proc,
+				}
+				// If the caller has set RunCommandStdin (e.g. xargs does this to
+				// isolate child commands from its own input pipe), use that
+				// instead of the runner's stdin. Each nesting level uses its
+				// own callerCtx so nested xargs chains don't bleed across depths.
+				if callerCtx != nil && callerCtx.RunCommandStdin != nil {
+					child.Stdin = callerCtx.RunCommandStdin
+				} else if r.stdin != nil {
+					child.Stdin = r.stdin
+				}
+				child.RunCommand = makeRunCmd(child)
+				result := cmdFn(ctx, child, cmdArgs)
+				return result.Code, nil
 			}
-			cmdFn, ok := builtins.Lookup(cmdName)
-			if !ok {
-				return 127, fmt.Errorf("rshell: %s: unknown command", cmdName)
-			}
-			child := &builtins.CallContext{
-				Stdout:  r.stdout,
-				Stderr:  r.stderr,
-				WorkDir: func() string { return dir },
-				HostPrefix: func() string {
-					// Return the sandbox's normalized prefix (filepath.Clean'd
-					// in SetHostPrefix) rather than the raw user-supplied
-					// value. A caller-provided trailing slash or "."/".."
-					// segment would otherwise break prefix-matching in
-					// builtins that consume this value.
-					if r.sandbox != nil {
-						return r.sandbox.HostPrefix()
-					}
-					return r.hostPrefix
-				},
-				CanonicalizeRootPrefix: func(absPath string) string {
-					if r.sandbox == nil {
-						return absPath
-					}
-					return r.sandbox.CanonicalizeRootPrefix(absPath)
-				},
-				RunCommand: runCmd,
-				OpenFile: func(ctx context.Context, path string, flags int, mode os.FileMode) (io.ReadWriteCloser, error) {
-					f, err := r.sandbox.Open(path, dir, flags, mode)
-					if err != nil {
-						return nil, err
-					}
-					return allowedpaths.WithContextClose(ctx, f), nil
-				},
-				ReadDir: func(ctx context.Context, path string) ([]fs.DirEntry, error) {
-					return r.sandbox.ReadDir(path, dir)
-				},
-				OpenDir: func(ctx context.Context, path string) (fs.ReadDirFile, error) {
-					return r.sandbox.OpenDir(path, dir)
-				},
-				IsDirEmpty: func(ctx context.Context, path string) (bool, error) {
-					return r.sandbox.IsDirEmpty(path, dir)
-				},
-				ReadDirLimited: func(ctx context.Context, path string, offset, maxRead int) ([]fs.DirEntry, bool, error) {
-					return r.sandbox.ReadDirLimited(path, dir, offset, maxRead)
-				},
-				StatFile: func(ctx context.Context, path string) (fs.FileInfo, error) {
-					return r.sandbox.Stat(path, dir)
-				},
-				LstatFile: func(ctx context.Context, path string) (fs.FileInfo, error) {
-					return r.sandbox.Lstat(path, dir)
-				},
-				ReadlinkFile: func(ctx context.Context, path string) (string, error) {
-					return r.sandbox.Readlink(path, dir)
-				},
-				AccessFile: func(ctx context.Context, path string, mode uint32) error {
-					return r.sandbox.Access(path, dir, mode)
-				},
-				PortableErr: allowedpaths.PortableErrMsg,
-				Now:         r.startTime,
-				FileIdentity: func(path string, info fs.FileInfo) (builtins.FileID, bool) {
-					absPath := path
-					if !filepath.IsAbs(absPath) {
-						absPath = filepath.Join(dir, absPath)
-					}
-					dev, ino, ok := allowedpaths.FileIdentity(absPath, info, r.sandbox)
-					if !ok {
-						return builtins.FileID{}, false
-					}
-					return builtins.FileID{Dev: dev, Ino: ino}, true
-				},
-				CommandAllowed: func(n string) bool {
-					return r.allowAllCommands || r.allowedCommands[n]
-				},
-				Proc: r.proc,
-			}
-			// If the parent command has set RunCommandStdin (e.g. xargs
-			// does this to isolate child commands from its own input pipe),
-			// use that instead of the runner's stdin.
-			if parentCallCtx != nil && parentCallCtx.RunCommandStdin != nil {
-				child.Stdin = parentCallCtx.RunCommandStdin
-			} else if r.stdin != nil {
-				child.Stdin = r.stdin
-			}
-			result := cmdFn(ctx, child, cmdArgs)
-			return result.Code, nil
 		}
 		call := &builtins.CallContext{
 			Stdout:       r.stdout,
@@ -502,14 +508,12 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 			CommandAllowed: func(cmdName string) bool {
 				return r.allowAllCommands || r.allowedCommands[cmdName]
 			},
-			RunCommand: runCmd,
-			Proc:       r.proc,
+			Proc: r.proc,
 		}
 		if r.stdin != nil { // do not assign a typed nil into the io.Reader interface
 			call.Stdin = r.stdin
 		}
-		// Allow the runCmd closure to access the parent's RunCommandStdin.
-		parentCallCtx = call
+		call.RunCommand = makeRunCmd(call)
 		result := fn(ctx, call, args[1:])
 		r.exit.code = result.Code
 		r.exit.exiting = result.Exiting
