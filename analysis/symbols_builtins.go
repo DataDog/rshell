@@ -72,6 +72,7 @@ var builtinPerCommandSymbols = map[string][]string{
 		"strings.HasPrefix",   // 🟢 pure function for prefix matching; no I/O.
 		"strings.Index",       // 🟢 finds first occurrence of substring; pure function, no I/O.
 		"strings.IndexByte",   // 🟢 finds byte in string; pure function, no I/O.
+		"slices.Sort",         // 🟢 sorts a slice of ordered elements; pure function, no I/O.
 		"strings.Join",        // 🟢 concatenates a slice of strings with a separator; pure function, no I/O.
 		"strings.Repeat",      // 🟢 repeats a string n times; pure function, no I/O.
 		"strings.Split",       // 🟢 splits a string by separator into a slice; pure function, no I/O.
@@ -544,6 +545,7 @@ var builtinAllowedSymbols = []string{
 	"regexp.Regexp",                                       // 🟢 compiled regular expression type; no I/O side effects. All matching methods are linear-time (RE2).
 	"runtime.GOOS",                                        // 🟢 current OS name constant; pure constant, no I/O.
 	"slices.Reverse",                                      // 🟢 reverses a slice in-place; pure function, no I/O.
+	"slices.Sort",                                         // 🟢 sorts a slice of ordered elements; pure function, no I/O.
 	"slices.SortFunc",                                     // 🟢 sorts a slice with a comparison function; pure function, no I/O.
 	"slices.SortStableFunc",                               // 🟢 stable sort with a comparison function; pure function, no I/O.
 	"strconv.Atoi",                                        // 🟢 string-to-int conversion; pure function, no I/O.

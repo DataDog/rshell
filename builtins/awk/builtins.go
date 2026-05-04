@@ -275,7 +275,11 @@ func (r *runtime) bSub(args []expr, global bool) (awkValue, error) {
 		last := 0
 		for _, m := range compiled.FindAllStringSubmatchIndex(s, -1) {
 			sb.WriteString(s[last:m[0]])
-			sb.WriteString(expandAwkReplacement(replStr, s[m[0]:m[1]]))
+			expanded, expErr := expandAwkReplacement(replStr, s[m[0]:m[1]])
+			if expErr != nil {
+				return uninitValue, expErr
+			}
+			sb.WriteString(expanded)
 			last = m[1]
 			count++
 			if sb.Len() > MaxStringBytes {
@@ -290,7 +294,11 @@ func (r *runtime) bSub(args []expr, global bool) (awkValue, error) {
 			newStr = s
 		} else {
 			matched := s[loc[0]:loc[1]]
-			newStr = s[:loc[0]] + expandAwkReplacement(replStr, matched) + s[loc[1]:]
+			expanded, expErr := expandAwkReplacement(replStr, matched)
+			if expErr != nil {
+				return uninitValue, expErr
+			}
+			newStr = s[:loc[0]] + expanded + s[loc[1]:]
 			count = 1
 		}
 	}
@@ -309,7 +317,8 @@ func (r *runtime) bSub(args []expr, global bool) (awkValue, error) {
 }
 
 // expandAwkReplacement implements awk's & substitution and \& literal-amp.
-func expandAwkReplacement(repl, matched string) string {
+// Returns an error if the expanded replacement exceeds MaxStringBytes to prevent OOM.
+func expandAwkReplacement(repl, matched string) (string, error) {
 	var sb strings.Builder
 	for i := 0; i < len(repl); i++ {
 		c := repl[i]
@@ -325,15 +334,16 @@ func expandAwkReplacement(repl, matched string) string {
 				sb.WriteByte(n)
 			}
 			i++
-			continue
-		}
-		if c == '&' {
+		} else if c == '&' {
 			sb.WriteString(matched)
-			continue
+		} else {
+			sb.WriteByte(c)
 		}
-		sb.WriteByte(c)
+		if sb.Len() > MaxStringBytes {
+			return "", fmt.Errorf("sub/gsub replacement exceeds maximum string length %d", MaxStringBytes)
+		}
 	}
-	return sb.String()
+	return sb.String(), nil
 }
 
 func (r *runtime) bMatch(args []expr) (awkValue, error) {

@@ -14,7 +14,7 @@ import (
 	"math"
 	"os"
 	"regexp"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -694,7 +694,7 @@ func (r *runtime) execStmt(ctx context.Context, s stmt) error {
 		for k := range arr {
 			keys = append(keys, k)
 		}
-		sort.Strings(keys)
+		slices.Sort(keys)
 		for _, k := range keys {
 			if ctx.Err() != nil {
 				return ctx.Err()
@@ -965,7 +965,7 @@ func (r *runtime) storeScalar(name string, v awkValue) error {
 		}
 		return r.rebuildRecord()
 	case "FNR":
-		r.fnr = int64(v.toNumber())
+		r.fnr = floatToInt64Safe(v.toNumber())
 		return nil
 	case "FS":
 		return r.setFS(v.toString(r.convFmt))
@@ -995,10 +995,10 @@ func (r *runtime) storeScalar(name string, v awkValue) error {
 		r.ofmt = v.toString(r.convFmt)
 		return nil
 	case "RSTART":
-		r.rstart = int64(v.toNumber())
+		r.rstart = floatToInt64Safe(v.toNumber())
 		return nil
 	case "RLENGTH":
-		r.rlength = int64(v.toNumber())
+		r.rlength = floatToInt64Safe(v.toNumber())
 		return nil
 	}
 	r.globals[name] = v

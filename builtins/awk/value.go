@@ -195,7 +195,7 @@ func formatNumber(f float64, fmt string) string {
 	if math.IsInf(f, -1) {
 		return "-inf"
 	}
-	if f == math.Trunc(f) && !math.IsInf(f, 0) && f >= -2147483647 && f <= 2147483647 {
+	if f == math.Trunc(f) && !math.IsInf(f, 0) && f >= -9007199254740992 && f <= 9007199254740992 {
 		// Render as integer.
 		return strconv.FormatInt(int64(f), 10)
 	}

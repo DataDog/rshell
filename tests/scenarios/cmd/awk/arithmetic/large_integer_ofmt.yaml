@@ -1,9 +1,9 @@
-description: Integers outside the int32 range are printed in scientific notation (gawk compat).
+description: Integers in the float64-representable range are printed without scientific notation.
 input:
   script: |+
     awk 'BEGIN { print 2147483648 }'
 expect:
   stdout: |+
-    2.14748e+09
+    2147483648
   stderr: |+
   exit_code: 0

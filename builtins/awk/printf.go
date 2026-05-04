@@ -51,8 +51,8 @@ func awkSprintf(format string, values []awkValue, convFmt string) (string, error
 			}
 			if w < 0 {
 				spec.flagMinus = true
-				if w == math.MinInt {
-					w = math.MaxInt // avoid -MinInt overflow
+				if w == int(math.MinInt64) {
+					w = int(math.MaxInt64) // avoid -MinInt overflow
 				} else {
 					w = -w
 				}

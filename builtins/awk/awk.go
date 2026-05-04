@@ -52,7 +52,7 @@
 //	  var = expr,  arr[i] = expr,  delete arr[i],  delete arr
 //
 //	Expressions
-//	  Numeric literals (decimal/float/hex), string literals
+//	  Numeric literals (decimal/float), string literals
 //	  Field references: $0, $1, ..., $NF, $(expr)
 //	  Binary: + - * / % ^ ** == != < <= > >= ~ !~ && ||
 //	  Unary:  - + !
