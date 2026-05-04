@@ -1,0 +1,24 @@
+# Derived from bash: OLDPWD=X cd - uses the inline OLDPWD value (not the
+# pre-inline one) and cd's own OLDPWD update (to the directory we just left)
+# survives the inline-assignment restore — matching bash's observable behaviour.
+description: OLDPWD=X cd - uses the inline OLDPWD and cd's OLDPWD update survives the restore.
+setup:
+  files:
+    - path: a/keep
+      content: ""
+    - path: b/keep
+      content: ""
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    cd a
+    cd ../b
+    B="$PWD"
+    # inline OLDPWD equals current OLDPWD (a) — navigates back to a,
+    # sets OLDPWD=B. The inline-assignment restore must NOT revert OLDPWD.
+    OLDPWD="$OLDPWD" cd -
+    [ "$OLDPWD" = "$B" ] && echo ok
+expect:
+  stdout_contains: ["ok"]
+  stderr: ""
+  exit_code: 0
