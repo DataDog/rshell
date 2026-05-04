@@ -1,0 +1,11 @@
+description: An unbounded while-true producer in a three-stage pipeline (while | cat | head) terminates cleanly when the final consumer closes.
+input:
+  script: |+
+    while true; do echo x; done | cat | head -3
+expect:
+  stdout: |+
+    x
+    x
+    x
+  stderr: |+
+  exit_code: 0

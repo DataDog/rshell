@@ -316,8 +316,8 @@ func (r *Runner) execWhileClause(ctx context.Context, cm *syntax.WhileClause) {
 	iterationCount := 0
 	brokeEarly := false
 	defer func() {
-		span.SetTag("rshell.while.iteration_count", iterationCount)
-		span.SetTag("rshell.while.broke_early", brokeEarly)
+		span.SetTag("rshell.loop.iteration_count", iterationCount)
+		span.SetTag("rshell.loop.broke_early", brokeEarly)
 		span.Finish(nil)
 	}()
 
@@ -746,9 +746,10 @@ func (p *pipeBrokenWriter) Write(b []byte) (int, error) {
 		if p.flag != nil {
 			p.flag.Store(true)
 		}
-		// Suppress the EPIPE error itself — the writer's caller doesn't
-		// need to know; the runner-level signal is what matters.
-		return n, nil
+		// Suppress the EPIPE error — the runner-level signal is what matters.
+		// Report len(b) bytes written to satisfy the io.Writer contract
+		// (returning n < len(b) with nil error would be a short-write violation).
+		return len(b), nil
 	}
 	return n, err
 }
