@@ -53,6 +53,8 @@ Blocked features are rejected before execution with exit code 2.
 ## Control Flow
 
 - ✅ `for VAR in WORDS; do CMDS; done`
+- ✅ `while CONDITION; do CMDS; done` — runs CMDS while the last command of CONDITION exits 0
+- ✅ `until CONDITION; do CMDS; done` — runs CMDS while the last command of CONDITION exits non-zero
 - ✅ `&&` — AND list (short-circuit)
 - ✅ `||` — OR list (short-circuit)
 - ✅ `!` — negation (inverts exit code)
@@ -60,7 +62,6 @@ Blocked features are rejected before execution with exit code 2.
 - ✅ `;` and newline as command separators
 - ✅ `if` / `elif` / `else`
 - ✅ Subshells: `( CMDS )` — runs commands in an isolated child environment; variable changes do not propagate to the parent; exit does not terminate the parent
-- ❌ `while` / `until`
 - ❌ `case`
 - ❌ `select`
 - ❌ C-style for loop: `for (( i=0; i<N; i++ ))`

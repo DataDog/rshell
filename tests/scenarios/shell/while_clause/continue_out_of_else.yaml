@@ -1,16 +1,19 @@
-# skip: while loops are intentionally blocked in the restricted shell
-skip_assert_against_bash: true
-description: Continue inside else branch within while loop is blocked.
+description: continue inside an else-branch jumps to the next iteration of the enclosing while.
 input:
   script: |+
-    while true; do
+    i=
+    while [ "$i" != aa ]; do
+      i="${i}a"
       if false; then
         :
       else
         continue
       fi
+      echo unreachable
     done
+    echo "i=$i"
 expect:
-  stdout: ""
-  stderr: "while/until loops are not supported\n"
-  exit_code: 2
+  stdout: |+
+    i=aa
+  stderr: ""
+  exit_code: 0

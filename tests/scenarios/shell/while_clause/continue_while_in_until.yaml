@@ -1,14 +1,20 @@
-# skip: while loops are intentionally blocked in the restricted shell
-skip_assert_against_bash: true
-description: Continue in while loop nested inside until loop is blocked.
+description: continue 2 inside an inner while skips to the next iteration of the enclosing until.
 input:
   script: |+
-    until false; do
+    i=
+    until [ "$i" = aa ]; do
+      i="${i}a"
       while true; do
+        echo "iter $i"
         continue 2
       done
+      echo unreachable
     done
+    echo "done $i"
 expect:
-  stdout: ""
-  stderr: "while/until loops are not supported\n"
-  exit_code: 2
+  stdout: |+
+    iter a
+    iter aa
+    done aa
+  stderr: ""
+  exit_code: 0

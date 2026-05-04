@@ -1,6 +1,4 @@
-# skip: until loops are intentionally blocked in the restricted shell
-skip_assert_against_bash: true
-description: Break inside else branch within until loop is blocked.
+description: break inside an else-branch exits the enclosing until loop.
 input:
   script: |+
     until false; do
@@ -10,7 +8,9 @@ input:
         break
       fi
     done
+    echo done
 expect:
-  stdout: ""
-  stderr: "while/until loops are not supported\n"
-  exit_code: 2
+  stdout: |+
+    done
+  stderr: ""
+  exit_code: 0

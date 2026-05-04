@@ -1,6 +1,4 @@
-# skip: while/until loops are intentionally blocked in the restricted shell
-skip_assert_against_bash: true
-description: While true with break pattern is blocked.
+description: while true with break runs the body exactly once.
 input:
   script: |+
     while true; do
@@ -8,6 +6,7 @@ input:
       break
     done
 expect:
-  stdout: ""
-  stderr: "while/until loops are not supported\n"
-  exit_code: 2
+  stdout: |+
+    x
+  stderr: ""
+  exit_code: 0

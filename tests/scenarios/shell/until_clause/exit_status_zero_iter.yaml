@@ -1,8 +1,8 @@
-description: until with an immediately-true condition runs the body zero times and exits 0.
+description: An until loop that runs zero iterations exits 0.
 input:
   script: |+
     until true; do
-      echo should not print
+      false
     done
     echo "exit=$?"
 expect:

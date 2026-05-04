@@ -1,14 +1,15 @@
-# skip: while loops are intentionally blocked in the restricted shell
-skip_assert_against_bash: true
-description: Continue with numeric argument in while loop is blocked.
+description: continue with an explicit argument of 1 skips to the next iteration of the innermost while.
 input:
   script: |+
-    i=0
-    while [ $i -lt 5 ]; do
-      i=$((i+1))
+    i=
+    while [ "$i" != aaa ]; do
+      i="${i}a"
       continue 1
+      echo unreachable
     done
+    echo "i=$i"
 expect:
-  stdout: ""
-  stderr: "while/until loops are not supported\n"
-  exit_code: 2
+  stdout: |+
+    i=aaa
+  stderr: ""
+  exit_code: 0

@@ -1,14 +1,14 @@
-# skip: while/until loops are intentionally blocked in the restricted shell
-skip_assert_against_bash: true
-description: While loop with continue statement is blocked.
+description: while loop with continue iterates until its condition fails.
 input:
   script: |+
-    i=0
-    while [ $i -lt 3 ]; do
-      i=$((i+1))
+    i=
+    while [ "$i" != aaa ]; do
+      i="${i}a"
       continue
     done
+    echo "i=$i"
 expect:
-  stdout: ""
-  stderr: "while/until loops are not supported\n"
-  exit_code: 2
+  stdout: |+
+    i=aaa
+  stderr: ""
+  exit_code: 0

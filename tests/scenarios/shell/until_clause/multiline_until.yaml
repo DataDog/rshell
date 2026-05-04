@@ -1,6 +1,4 @@
-# skip: until loops are intentionally blocked in the restricted shell
-skip_assert_against_bash: true
-description: Multi-line until loop is blocked.
+description: Multi-line until loop with break runs the body once and exits.
 input:
   script: |+
     until false
@@ -9,7 +7,7 @@ input:
       break
     done
 expect:
-  stdout: ""
-  stderr: |+
-    while/until loops are not supported
-  exit_code: 2
+  stdout: |+
+    loop
+  stderr: ""
+  exit_code: 0

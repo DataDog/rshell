@@ -1,12 +1,12 @@
-# skip: while/until loops are intentionally blocked in the restricted shell
-skip_assert_against_bash: true
-description: Until loop with pipeline condition is blocked.
+description: until loop's condition can be a pipeline; only the trailing exit status matters.
 input:
   script: |+
     until echo test | grep -q match; do
+      echo body
       break
     done
 expect:
-  stdout: ""
-  stderr: "while/until loops are not supported\n"
-  exit_code: 2
+  stdout: |+
+    body
+  stderr: ""
+  exit_code: 0
