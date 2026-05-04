@@ -438,6 +438,9 @@ func (r *Runner) loopStmtsBroken(ctx context.Context, stmts []*syntax.Stmt) bool
 	defer func() { r.inLoop = oldInLoop }()
 	for _, stmt := range stmts {
 		r.stmt(ctx, stmt)
+		if r.exit.exiting {
+			return true
+		}
 		if r.contnEnclosing > 0 {
 			r.contnEnclosing--
 			return r.contnEnclosing > 0

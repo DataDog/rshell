@@ -121,6 +121,11 @@ func (r *Runner) cmdSubst(w io.Writer, cs *syntax.CmdSubst) error {
 	// echo a; done)`) is terminated via r.stop() when the 1 MiB output cap is
 	// reached, rather than spinning indefinitely on the discard path.
 	stopped := new(atomic.Bool)
+	// Preserve the parent's pipeBroken in parentPipeBroken so that constructs
+	// like `echo $(while true; do echo x; done) | head -1` can still observe
+	// the outer pipeline's broken signal via r.stop(). Without this, the parent
+	// flag is overwritten and the inner loop only terminates via the 1 MiB cap.
+	r2.parentPipeBroken = r2.pipeBroken
 	r2.pipeBroken = stopped
 	r2.stdout = &limitWriter{w: &buf, limit: maxCmdSubstOutput, stopFlag: stopped}
 	r2.stmts(r.ectx, cs.Stmts)

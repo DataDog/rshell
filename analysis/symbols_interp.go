@@ -68,6 +68,7 @@ var interpAllowedSymbols = []string{
 	"sync.Mutex",                  // 🟢 mutual exclusion lock; concurrency primitive, no I/O.
 	"sync.Once",                   // 🟢 ensures a function runs exactly once; concurrency primitive, no I/O.
 	"sync.WaitGroup",              // 🟢 waits for goroutines to finish; concurrency primitive, no I/O.
+	"sync/atomic.Bool",            // 🟢 atomic bool flag; concurrency primitive, no I/O; used for cross-goroutine pipeline-broken signalling.
 	"sync/atomic.Int64",           // 🟢 atomic int64 counter; concurrency primitive, no I/O.
 	"syscall.EPIPE",               // 🟢 errno constant for broken-pipe (write to a pipe with no readers); pure constant; used to detect SIGPIPE-equivalent state on producer pipeline stages.
 	"syscall.Errno",               // 🟢 errno integer type; pure type; used with errors.As to extract the underlying errno (e.g. to detect Windows ERROR_BROKEN_PIPE = 109 in pipe-close handling).
