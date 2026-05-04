@@ -28,7 +28,9 @@ func TestHardeningArrayEntryLimit(t *testing.T) {
 	// arrays cannot grow past the cap silently. We construct a tight loop
 	// and verify the iteration limit kicks in (the cap of 1M iterations
 	// guards against 1M+ array entries here too).
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	// 30 s: the race detector on a loaded CI runner can slow 1M map inserts
+	// enough to exceed a 10 s budget (observed at 10.01 s in CI).
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	_, stderr, code := runScriptCtx(ctx, t,
 		`awk 'BEGIN { for (i = 0; i < 100000000; i++) { a[i] = i } }'`,
