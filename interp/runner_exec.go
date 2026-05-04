@@ -337,6 +337,9 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 	if isKnown {
 		r.dispatchedCount++
 		var runCmd func(context.Context, string, string, []string) (uint8, error)
+		// parentCallCtx is set below, after "call" is created, so that the
+		// runCmd closure can access the parent's RunCommandStdin override.
+		var parentCallCtx *builtins.CallContext
 		runCmd = func(ctx context.Context, dir string, cmdName string, cmdArgs []string) (uint8, error) {
 			if !r.allowAllCommands && !r.allowedCommands[cmdName] {
 				return 127, fmt.Errorf("rshell: %s: command not allowed", cmdName)
@@ -414,8 +417,14 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 				CommandAllowed: func(n string) bool {
 					return r.allowAllCommands || r.allowedCommands[n]
 				},
+				Proc: r.proc,
 			}
-			if r.stdin != nil {
+			// If the parent command has set RunCommandStdin (e.g. xargs
+			// does this to isolate child commands from its own input pipe),
+			// use that instead of the runner's stdin.
+			if parentCallCtx != nil && parentCallCtx.RunCommandStdin != nil {
+				child.Stdin = parentCallCtx.RunCommandStdin
+			} else if r.stdin != nil {
 				child.Stdin = r.stdin
 			}
 			result := cmdFn(ctx, child, cmdArgs)
@@ -499,6 +508,8 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 		if r.stdin != nil { // do not assign a typed nil into the io.Reader interface
 			call.Stdin = r.stdin
 		}
+		// Allow the runCmd closure to access the parent's RunCommandStdin.
+		parentCallCtx = call
 		result := fn(ctx, call, args[1:])
 		r.exit.code = result.Code
 		r.exit.exiting = result.Exiting

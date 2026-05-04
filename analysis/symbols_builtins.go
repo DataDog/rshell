@@ -383,6 +383,7 @@ var builtinPerCommandSymbols = map[string][]string{
 		"strings.Builder",          // 🟢 efficient string concatenation; pure in-memory buffer, no I/O.
 		"strings.Contains",         // 🟢 substring search; pure function, no I/O.
 		"strings.HasPrefix",        // 🟢 prefix match; pure function, no I/O.
+		"strings.NewReader",        // 🟢 wraps a string as an io.Reader; used to provide an empty stdin for child commands; pure in-memory, no I/O.
 		"strings.ReplaceAll",       // 🟢 replaces all occurrences of REPLSTR in -I templates; pure function, no I/O.
 		"strings.TrimSpace",        // 🟢 trims leading/trailing whitespace; pure function, no I/O.
 	},
@@ -550,6 +551,7 @@ var builtinAllowedSymbols = []string{
 	"strings.HasPrefix",                                   // 🟢 pure function for prefix matching; no I/O.
 	"strings.IndexByte",                                   // 🟢 finds byte in string; pure function, no I/O.
 	"strings.Join",                                        // 🟢 concatenates a slice of strings with a separator; pure function, no I/O.
+	"strings.NewReader",                                   // 🟢 wraps a string as an io.Reader; used to provide an empty/devnull stdin for child commands; pure in-memory, no I/O.
 	"strings.ReplaceAll",                                  // 🟢 replaces all occurrences of a substring; pure function, no I/O.
 	"strings.Split",                                       // 🟢 splits a string by separator into a slice; pure function, no I/O.
 	"strings.ToLower",                                     // 🟢 converts string to lowercase; pure function, no I/O.

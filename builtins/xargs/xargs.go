@@ -487,6 +487,16 @@ func runXargs(ctx context.Context, callCtx *builtins.CallContext, o options) bui
 	}
 	defer rc.Close()
 
+	// GNU xargs redirects child stdin to /dev/null when reading items from
+	// stdin so child commands cannot consume the parent's unread input.
+	// When -a is used, child stdin is left unchanged (inherits the caller's
+	// stdin as GNU documents). We achieve this by setting RunCommandStdin on
+	// our own CallContext; the runner's runCmd closure reads this field and
+	// uses it instead of r.stdin when constructing the child context.
+	if o.argFile == "" {
+		callCtx.RunCommandStdin = strings.NewReader("")
+	}
+
 	tok := newTokenizer(rc, o, callCtx.Stderr)
 	finalCode := exitOK
 	totalItems := 0

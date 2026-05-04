@@ -202,6 +202,15 @@ type CallContext struct {
 	// dir overrides the working directory for path resolution.
 	// Returns the command's exit code.
 	RunCommand func(ctx context.Context, dir string, name string, args []string) (uint8, error)
+
+	// RunCommandStdin optionally overrides the stdin given to commands
+	// invoked via RunCommand. When non-nil, child commands receive this
+	// reader instead of the runner's current stdin. Builtins that consume
+	// stdin themselves (e.g. xargs reading from a pipe) should set this to
+	// an empty/nil reader so child invocations cannot steal the parent's
+	// unread input. When nil, the runner falls back to its own stdin.
+	RunCommandStdin io.Reader
+
 	// Proc provides access to the proc filesystem for the ps builtin.
 	// The path is fixed at construction time and cannot be overridden by callers.
 	Proc *ProcProvider
