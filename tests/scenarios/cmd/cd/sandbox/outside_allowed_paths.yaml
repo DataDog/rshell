@@ -1,0 +1,18 @@
+# Security: cd to a directory outside AllowedPaths must be rejected.
+# allowed_paths restricts to the 'sub' subdirectory only; cd .. from sub
+# tries to reach the parent, which is outside the sandbox.
+description: cd rejects a target directory outside the AllowedPaths sandbox.
+skip_assert_against_bash: true # bash has no AllowedPaths concept
+setup:
+  files:
+    - path: sub/keep
+      content: ""
+input:
+  allowed_paths: ["$DIR/sub"]
+  script: |+
+    cd sub
+    cd ..
+expect:
+  stdout: ""
+  stderr_contains: ["cd: "]
+  exit_code: 1

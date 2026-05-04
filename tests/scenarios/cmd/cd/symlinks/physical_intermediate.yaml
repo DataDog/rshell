@@ -1,0 +1,19 @@
+# Derived from bash: cd -P resolves intermediate symlinks, not just the leaf.
+# dir/alias -> dir/real, so cd -P alias/inside lands in real/inside.
+description: cd -P resolves an intermediate symlink component and sets PWD to the canonical path.
+setup:
+  files:
+    - path: real/inside/keep
+      content: ""
+    - path: alias
+      symlink: real
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    cd -P alias/inside
+    echo "$PWD"
+expect:
+  stdout_contains: ["/real/inside"]
+  stdout_contains_windows: ["\\real\\inside"]
+  stderr: ""
+  exit_code: 0
