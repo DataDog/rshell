@@ -1,0 +1,10 @@
+description: gsub with empty-matching pattern inserts replacement between every character.
+input:
+  script: |+
+    awk 'BEGIN { s = "abc"; n = gsub(/x*/, "[", s); print n, s }'
+expect:
+  stdout: |+
+    4 [a[b[c[
+  stderr: |+
+  exit_code: 0
+  skip_assert_against_bash: true

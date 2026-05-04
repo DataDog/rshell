@@ -1,0 +1,10 @@
+description: Iterating over a scalar variable with for-in is a fatal error.
+input:
+  script: |+
+    awk 'BEGIN { x = 1; for (i in x) print i; print "after" }'
+expect:
+  stdout: |+
+  stderr: |+
+    awk: illegal use of scalar "x" as array
+  exit_code: 1
+  skip_assert_against_bash: true

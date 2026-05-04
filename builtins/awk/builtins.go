@@ -302,6 +302,9 @@ func (r *runtime) bSub(args []expr, global bool) (awkValue, error) {
 			}
 		}
 		sb.WriteString(s[last:])
+		if sb.Len() > MaxStringBytes {
+			return uninitValue, fmt.Errorf("gsub: result exceeds maximum string length %d", MaxStringBytes)
+		}
 		newStr = sb.String()
 	} else {
 		loc := compiled.FindStringIndex(s)

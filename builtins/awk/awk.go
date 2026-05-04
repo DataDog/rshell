@@ -201,11 +201,6 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 
 		program := args[0]
 		files := args[1:]
-		// Strip a leading "--" from the file list — pflag passes it through when
-		// interspersed parsing is disabled and the program text precedes it.
-		if len(files) > 0 && files[0] == "--" {
-			files = files[1:]
-		}
 
 		prog, err := parseProgram(program)
 		if err != nil {

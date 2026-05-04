@@ -235,3 +235,14 @@ func getMyLogin(workDir string) (string, error) {
 	}
 	return strings.TrimSpace(string(out)), nil
 }
+
+// currentGitBranch returns the name of the currently checked-out branch in workDir.
+func currentGitBranch(workDir string) (string, error) {
+	cmd := exec.Command("git", "rev-parse", "--abbrev-ref", "HEAD")
+	cmd.Dir = workDir
+	out, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("git rev-parse: %w", err)
+	}
+	return strings.TrimSpace(string(out)), nil
+}

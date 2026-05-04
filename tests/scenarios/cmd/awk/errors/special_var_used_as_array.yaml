@@ -1,0 +1,10 @@
+description: Using a special scalar variable (NF, FS, etc.) as an array is a fatal error.
+input:
+  script: |+
+    awk 'BEGIN { NF[1] = 2; print "after" }'
+expect:
+  stdout: |+
+  stderr: |+
+    awk: illegal use of scalar "NF" as array
+  exit_code: 1
+  skip_assert_against_bash: true

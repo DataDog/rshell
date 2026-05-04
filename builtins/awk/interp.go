@@ -854,6 +854,13 @@ func (r *runtime) execStmt(ctx context.Context, s stmt) error {
 			}
 		}
 	case *forInStmt:
+		// Reject if the variable was previously used as a scalar.
+		if isSpecialScalar(v.arrayVar) {
+			return fmt.Errorf("illegal use of scalar %q as array", v.arrayVar)
+		}
+		if _, isScalar := r.globals[v.arrayVar]; isScalar {
+			return fmt.Errorf("illegal use of scalar %q as array", v.arrayVar)
+		}
 		arr := r.arrays[v.arrayVar]
 		if arr == nil {
 			return nil
@@ -909,6 +916,13 @@ func (r *runtime) execStmt(ctx context.Context, s stmt) error {
 		}
 		return &exitSignal{code: code}
 	case *deleteStmt:
+		// Reject delete on a scalar variable — that is a fatal error in awk.
+		if isSpecialScalar(v.arrayVar) {
+			return fmt.Errorf("illegal use of scalar %q as array", v.arrayVar)
+		}
+		if _, isScalar := r.globals[v.arrayVar]; isScalar {
+			return fmt.Errorf("illegal use of scalar %q as array", v.arrayVar)
+		}
 		if v.indices == nil {
 			delete(r.arrays, v.arrayVar)
 			return nil
@@ -1017,7 +1031,16 @@ func (r *runtime) evalExpr(e expr) (awkValue, error) {
 		if _, isArray := r.arrays[v.name]; isArray {
 			return uninitValue, fmt.Errorf("illegal use of array %q in a scalar context", v.name)
 		}
-		return r.lookupScalar(v.name), nil
+		val := r.lookupScalar(v.name)
+		// Record this variable as a scalar (if not already) so that a later
+		// array-use attempt produces a "use of scalar as array" error, matching
+		// gawk/mawk behaviour.
+		if !isSpecialScalar(v.name) {
+			if _, knownAsScalar := r.globals[v.name]; !knownAsScalar {
+				r.globals[v.name] = val
+			}
+		}
+		return val, nil
 	case *fieldExpr:
 		idxVal, err := r.evalExpr(v.index)
 		if err != nil {
@@ -1032,6 +1055,9 @@ func (r *runtime) evalExpr(e expr) (awkValue, error) {
 		key, err := r.indexKey(v.indices)
 		if err != nil {
 			return uninitValue, err
+		}
+		if isSpecialScalar(v.name) {
+			return uninitValue, fmt.Errorf("illegal use of scalar %q as array", v.name)
 		}
 		if _, isScalar := r.globals[v.name]; isScalar {
 			return uninitValue, fmt.Errorf("illegal use of scalar %q as array", v.name)
@@ -1122,6 +1148,19 @@ func (r *runtime) lookupScalar(name string) awkValue {
 		return numValue(float64(r.rlength))
 	}
 	return r.globals[name]
+}
+
+// isSpecialScalar reports whether name is a built-in special scalar variable
+// (NR, NF, FS, OFS, ORS, RS, FNR, FILENAME, SUBSEP, CONVFMT, OFMT, RSTART, RLENGTH).
+// These live in dedicated fields and are not in r.globals, so they need to be
+// checked separately when enforcing the scalar/array distinction.
+func isSpecialScalar(name string) bool {
+	switch name {
+	case "NR", "NF", "FNR", "FS", "OFS", "ORS", "RS",
+		"FILENAME", "SUBSEP", "CONVFMT", "OFMT", "RSTART", "RLENGTH":
+		return true
+	}
+	return false
 }
 
 func (r *runtime) storeScalar(name string, v awkValue) error {
@@ -1428,6 +1467,9 @@ func (r *runtime) assignLValue(l expr, val awkValue) (awkValue, error) {
 		key, err := r.indexKey(lv.indices)
 		if err != nil {
 			return uninitValue, err
+		}
+		if isSpecialScalar(lv.name) {
+			return uninitValue, fmt.Errorf("illegal use of scalar %q as array", lv.name)
 		}
 		if _, isScalar := r.globals[lv.name]; isScalar {
 			return uninitValue, fmt.Errorf("illegal use of scalar %q as array", lv.name)

@@ -78,7 +78,7 @@ func awkSprintf(format string, values []awkValue, convFmt string) (string, error
 		}
 		// Take the value argument (if needed).
 		var val awkValue
-		needsArg := spec.verb != ' '
+		needsArg := spec.verb != 0
 		if needsArg {
 			if argIdx >= len(values) {
 				val = uninitValue
