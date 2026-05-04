@@ -164,7 +164,7 @@ func (r *runtime) bIndex(args []expr) (awkValue, error) {
 	s := sv.toString(r.convFmt)
 	t := tv.toString(r.convFmt)
 	if t == "" {
-		return numValue(0), nil
+		return numValue(1), nil
 	}
 	idx := strings.Index(s, t)
 	if idx < 0 {

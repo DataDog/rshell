@@ -1,0 +1,14 @@
+description: -F'\t' splits tab-separated input on tab characters (command-line FS).
+setup:
+  files:
+    - path: tsv.txt
+      content: "name\tage\tcity\nalice\t30\tNYC\n"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    awk -F'\t' 'NR==2 {print $2}' tsv.txt
+expect:
+  stdout: |+
+    30
+  stderr: ""
+  exit_code: 0

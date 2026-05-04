@@ -91,9 +91,18 @@ func (r *runtime) setFS(s string) error {
 	if len(s) > MaxStringBytes {
 		return errors.New("FS too long")
 	}
+	// Expand backslash escapes that gawk/mawk accept on the command line.
+	switch s {
+	case `\t`:
+		s = "\t"
+	case `\n`:
+		s = "\n"
+	case `\r`:
+		s = "\r"
+	}
 	r.fs = s
 	r.fsRe = nil
-	if len(s) > 1 && s != "\\t" {
+	if len(s) > 1 {
 		re, err := regexp.Compile(s)
 		if err != nil {
 			return fmt.Errorf("invalid regex: %v", err)

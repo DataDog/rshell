@@ -53,6 +53,9 @@ func awkSprintf(format string, values []awkValue, convFmt string) (string, error
 				spec.flagMinus = true
 				spec.width = -w
 			}
+			if spec.width > MaxStringBytes {
+				spec.width = MaxStringBytes
+			}
 		}
 		if spec.precFromArg {
 			p, err := nextInt(&argIdx, values)
@@ -143,7 +146,7 @@ flagLoop:
 	} else {
 		for j < len(format) && format[j] >= '0' && format[j] <= '9' {
 			spec.width = spec.width*10 + int(format[j]-'0')
-			if spec.width > 1<<30 {
+			if spec.width > MaxStringBytes {
 				return j, spec, errors.New("printf: width too large")
 			}
 			j++
