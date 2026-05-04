@@ -1,0 +1,10 @@
+description: xargs -n wins over -I when -n is specified after -I (last-specified-wins).
+input:
+  script: |+
+    printf 'a\nb\n' | xargs -I {} -n 2 echo
+expect:
+  stdout: |+
+    a b
+  stderr: |+
+    xargs: warning: options --max-args and --replace/-I/-i are mutually exclusive, ignoring previous --replace value
+  exit_code: 0

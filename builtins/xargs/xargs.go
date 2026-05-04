@@ -153,8 +153,9 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 	argFile := fs.StringP("arg-file", "a", "", "read items from FILE instead of stdin")
 	delim := fs.StringP("delimiter", "d", "", "use DELIM as the single-byte item separator")
 	eofStr := fs.StringP("eof", "E", "", "treat EOF-STR as a logical end-of-input marker")
-	replStr := fs.StringP("replace", "I", "", "insert input as the value of REPLSTR in each argument")
 	var parseSeq int
+	replStrVal := &orderedStringValue{seq: &parseSeq}
+	fs.VarP(replStrVal, "replace", "I", "insert input as the value of REPLSTR in each argument")
 	maxLinesVal := &orderedIntValue{seq: &parseSeq}
 	maxArgsVal := &orderedIntValue{seq: &parseSeq}
 	fs.VarP(maxLinesVal, "max-lines", "L", "use at most NUMBER non-empty input lines per command")
@@ -173,7 +174,7 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			return builtins.Result{}
 		}
 
-		opts, errMsg := buildOptions(fs, *null, *argFile, *delim, *eofStr, *replStr,
+		opts, errMsg := buildOptions(fs, *null, *argFile, *delim, *eofStr, replStrVal,
 			maxLinesVal, maxArgsVal, *noRunIfEmpty, *maxChars, *verbose, *exitOnSize, args)
 		if errMsg != "" {
 			callCtx.Errf("xargs: %s\n", errMsg)
@@ -227,9 +228,9 @@ func (o *options) useMaxArgs() bool  { return o.maxArgs > 0 }
 
 // buildOptions validates the parsed flag values and resolves the command
 // to be executed. It returns a non-empty error string on validation failure.
-func buildOptions(fs *builtins.FlagSet, null bool, argFile, delim, eofStr, replStr string,
-	maxLinesVal, maxArgsVal *orderedIntValue, noRunEmpty bool, maxChars int,
-	verbose, exitOnSize bool, args []string) (options, string) {
+func buildOptions(fs *builtins.FlagSet, null bool, argFile, delim, eofStr string,
+	replStrVal *orderedStringValue, maxLinesVal, maxArgsVal *orderedIntValue,
+	noRunEmpty bool, maxChars int, verbose, exitOnSize bool, args []string) (options, string) {
 
 	o := options{
 		mode:       modeWhitespace,
@@ -258,13 +259,6 @@ func buildOptions(fs *builtins.FlagSet, null bool, argFile, delim, eofStr, replS
 			return o, "argument file path is empty"
 		}
 		o.argFile = argFile
-	}
-
-	if fs.Changed("replace") {
-		if replStr == "" {
-			return o, "replace string must be non-empty"
-		}
-		o.replStr = replStr
 	}
 
 	if maxLinesVal.changed() {
@@ -307,27 +301,52 @@ func buildOptions(fs *builtins.FlagSet, null bool, argFile, delim, eofStr, replS
 		o.maxChars = DefaultMaxChars
 	}
 
-	// -I forces single-arg-per-batch and per-line invocation, switches
-	// tokenisation to newline-only (matches GNU xargs: "unquoted blanks do
-	// not terminate input items; instead the separator is the newline"),
-	// and implies --no-run-if-empty. This overrides any user-supplied
-	// -n / -L values. GNU xargs emits a warning for whichever of -n/-L is
-	// currently active after conflict resolution.
-	if o.useReplace() {
-		// Warn for whichever of -n / -L is currently active.
-		if o.maxArgs > 0 {
-			o.warnings = append(o.warnings,
-				"warning: options --max-args and --replace/-I/-i are mutually exclusive, ignoring previous --max-args value")
-		} else if o.maxLines > 0 {
-			o.warnings = append(o.warnings,
-				"warning: options --max-lines and --replace/-I/-i are mutually exclusive, ignoring previous --max-lines value")
+	// Handle -I vs -n/-L with GNU last-specified-wins semantics. -I switches
+	// tokenisation to newline-only and implies --no-run-if-empty and
+	// maxArgs=maxLines=1; when -n or -L is specified after -I on the command
+	// line, that flag wins instead and -I is discarded.
+	if replStrVal.changed() {
+		if replStrVal.val == "" {
+			return o, "replace string must be non-empty"
 		}
-		o.maxArgs = 1
-		o.maxLines = 1
-		o.noRunEmpty = true
-		// Only override mode when the user did not request -0 or -d.
-		if !null && !fs.Changed("delimiter") {
-			o.mode = modeLine
+		o.replStr = replStrVal.val
+
+		// Find the effective order of the surviving -n/-L flag (if any).
+		nLOrder, nLWinner := 0, ""
+		if o.maxArgs > 0 && maxArgsVal.order > nLOrder {
+			nLOrder, nLWinner = maxArgsVal.order, "args"
+		}
+		if o.maxLines > 0 && maxLinesVal.order > nLOrder {
+			nLOrder, nLWinner = maxLinesVal.order, "lines"
+		}
+
+		if nLOrder > replStrVal.order {
+			// -n or -L was specified after -I → -n/-L wins, drop -I.
+			o.replStr = ""
+			switch nLWinner {
+			case "args":
+				o.warnings = append(o.warnings,
+					"warning: options --max-args and --replace/-I/-i are mutually exclusive, ignoring previous --replace value")
+			case "lines":
+				o.warnings = append(o.warnings,
+					"warning: options --max-lines and --replace/-I/-i are mutually exclusive, ignoring previous --replace value")
+			}
+		} else {
+			// -I was specified last (or no -n/-L) → -I wins.
+			if o.maxArgs > 0 {
+				o.warnings = append(o.warnings,
+					"warning: options --max-args and --replace/-I/-i are mutually exclusive, ignoring previous --max-args value")
+			} else if o.maxLines > 0 {
+				o.warnings = append(o.warnings,
+					"warning: options --max-lines and --replace/-I/-i are mutually exclusive, ignoring previous --max-lines value")
+			}
+			o.maxArgs = 1
+			o.maxLines = 1
+			o.noRunEmpty = true
+			// Only override mode when the user did not request -0 or -d.
+			if !null && !fs.Changed("delimiter") {
+				o.mode = modeLine
+			}
 		}
 	}
 
@@ -385,6 +404,25 @@ func (o *orderedIntValue) Set(s string) error {
 	return nil
 }
 func (o *orderedIntValue) changed() bool { return o.order > 0 }
+
+// orderedStringValue is a pflag.Value for string flags that records parse
+// position via a shared sequence counter, enabling last-specified-wins
+// conflict resolution between -I and -n/-L.
+type orderedStringValue struct {
+	val   string
+	order int // 0 = never set; >0 = value of *seq when Set was called
+	seq   *int
+}
+
+func (o *orderedStringValue) String() string { return o.val }
+func (o *orderedStringValue) Type() string   { return "string" }
+func (o *orderedStringValue) Set(s string) error {
+	o.val = s
+	*o.seq++
+	o.order = *o.seq
+	return nil
+}
+func (o *orderedStringValue) changed() bool { return o.order > 0 }
 
 // decodeDelim turns the -d argument into a single byte. Recognised escapes
 // match the GNU xargs manual: \n, \t, \r, \\, \0. Multi-character delimiters

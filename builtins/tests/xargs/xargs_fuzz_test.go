@@ -297,10 +297,8 @@ func FuzzXargsBatching(f *testing.F) {
 	})
 }
 
-// itoa is a tiny strconv replacement to avoid the strconv import (not on
-// the per-command allowlist for `xargs` test code; here we are inside a
-// _test package so the allowlist does not apply, but keeping it minimal
-// matches existing fuzz tests).
+// itoa is a minimal int-to-string helper used for script construction;
+// kept consistent with the approach in other fuzz tests in this repo.
 func itoa(n int) string {
 	if n == 0 {
 		return "0"
