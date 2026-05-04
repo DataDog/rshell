@@ -1,0 +1,10 @@
+description: xargs -t prints the resolved command line to stderr before each invocation.
+input:
+  script: |+
+    echo 'a b' | xargs -t echo
+expect:
+  stdout: |+
+    a b
+  stderr: |+
+    echo a b
+  exit_code: 0

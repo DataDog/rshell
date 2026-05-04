@@ -1,0 +1,10 @@
+description: xargs -I {} -t shell-quotes arguments that contain spaces in the verbose output.
+input:
+  script: |+
+    printf 'a b\n' | xargs -I {} -t echo {}
+expect:
+  stdout: |+
+    a b
+  stderr: |+
+    echo 'a b'
+  exit_code: 0

@@ -148,6 +148,12 @@ const (
 )
 
 func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
+	// Stop pflag from consuming flags after the first positional COMMAND.
+	// GNU xargs syntax is `xargs [OPTION]... [COMMAND [INITIAL-ARGS]...]`,
+	// so arguments after the command name belong to that command, not xargs.
+	// Without this, `xargs echo -n` would parse -n as xargs' --max-args.
+	fs.SetInterspersed(false)
+
 	help := fs.BoolP("help", "h", false, "print usage and exit")
 	null := fs.BoolP("null", "0", false, "input items are separated by a NUL character")
 	argFile := fs.StringP("arg-file", "a", "", "read items from FILE instead of stdin")
@@ -724,16 +730,51 @@ func resolveCmd(o options, batch []string) (string, []string) {
 }
 
 // printVerbose mirrors GNU xargs -t: writes the command line followed by a
-// newline to stderr before running it.
+// newline to stderr before running it. Arguments that contain whitespace or
+// single-quote characters are shell-quoted so the output can be reproduced
+// literally, matching GNU xargs -t quoting behaviour.
 func printVerbose(callCtx *builtins.CallContext, name string, args []string) {
 	var b strings.Builder
 	b.WriteString(name)
 	for _, a := range args {
 		b.WriteByte(' ')
-		b.WriteString(a)
+		b.WriteString(shellQuote(a))
 	}
 	b.WriteByte('\n')
 	callCtx.Errf("%s", b.String())
+}
+
+// shellQuote returns a POSIX shell-safe representation of s. If s contains
+// no characters that require quoting it is returned unchanged. Otherwise it
+// is wrapped in single quotes with any embedded single-quote characters
+// escaped as '\”, matching GNU xargs -t output.
+func shellQuote(s string) string {
+	// Fast path: safe chars only — no quoting needed.
+	safe := true
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if c == ' ' || c == '\t' || c == '\n' || c == '\'' || c == '"' ||
+			c == '\\' || c == '`' || c == '$' || c == '!' || c == '&' ||
+			c == '|' || c == ';' || c == '(' || c == ')' || c == '<' || c == '>' {
+			safe = false
+			break
+		}
+	}
+	if safe {
+		return s
+	}
+	// Wrap in single quotes, escaping embedded single quotes as '\''.
+	var b strings.Builder
+	b.WriteByte('\'')
+	for i := 0; i < len(s); i++ {
+		if s[i] == '\'' {
+			b.WriteString(`'\''`)
+		} else {
+			b.WriteByte(s[i])
+		}
+	}
+	b.WriteByte('\'')
+	return b.String()
 }
 
 // openInput opens the configured input source. Returns (nil, nil) if no

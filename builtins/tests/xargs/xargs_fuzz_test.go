@@ -298,7 +298,7 @@ func FuzzXargsBatching(f *testing.F) {
 }
 
 // itoa is a minimal int-to-string helper used for script construction;
-// kept consistent with the approach in other fuzz tests in this repo.
+// avoids importing strconv to stay consistent with other fuzz harnesses in this repo.
 func itoa(n int) string {
 	if n == 0 {
 		return "0"

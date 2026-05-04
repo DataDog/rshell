@@ -1,0 +1,10 @@
+description: xargs stops option parsing at COMMAND and passes remaining arguments to the subcommand.
+input:
+  script: |+
+    printf 'hello\nworld\n' | xargs printf 'val=%s\n'
+expect:
+  stdout: |+
+    val=hello
+    val=world
+  stderr: |+
+  exit_code: 0
