@@ -1,0 +1,11 @@
+description: xargs splits batches when -s budget is tight and -x is not set.
+input:
+  script: |+
+    printf 'a b c\n' | xargs -s 8 -n 3 echo
+expect:
+  stdout: |+
+    a
+    b
+    c
+  stderr: ""
+  exit_code: 0

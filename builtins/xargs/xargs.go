@@ -340,8 +340,10 @@ func buildOptions(fs *builtins.FlagSet, null bool, argFile, delim, eofStr, replS
 		}
 	}
 
-	// EOF-STR is meaningless outside whitespace mode (matches GNU xargs).
-	if o.mode != modeWhitespace {
+	// EOF-STR: GNU warns and clears it for -0 and -d (NUL/delimiter modes),
+	// but silently preserves it for modeLine (-I), where the whole-line item
+	// is compared against the marker.
+	if o.mode == modeNull || o.mode == modeDelim {
 		if o.eofStr != "" {
 			o.warnings = append(o.warnings, "warning: the -E option has no effect if -0 or -d is used.")
 		}
@@ -487,6 +489,11 @@ func runXargs(ctx context.Context, callCtx *builtins.CallContext, o options) bui
 				// Single item already too large — always abort (GNU always
 				// exits 1 in this case, regardless of -x).
 				callCtx.Errf("xargs: argument line too long\n")
+				return builtins.Result{Code: exitUsage}
+			}
+			if o.exitOnSize {
+				// -x: abort if the current batch won't fit within -s.
+				callCtx.Errf("xargs: argument list too long\n")
 				return builtins.Result{Code: exitUsage}
 			}
 			if flush() {
@@ -768,7 +775,7 @@ func (t *tokenizer) nextDelimited(ctx context.Context, sep byte, skipBlank bool)
 		if err != nil {
 			if errors.Is(err, io.EOF) {
 				t.eof = true
-				if len(t.buf) == 0 {
+				if len(t.buf) == 0 || (skipBlank && isEofMarker(t.o, t.buf)) {
 					return "", false, false, nil
 				}
 				return string(t.buf), true, true, nil
@@ -778,6 +785,11 @@ func (t *tokenizer) nextDelimited(ctx context.Context, sep byte, skipBlank bool)
 		if b == sep {
 			if skipBlank && len(t.buf) == 0 {
 				continue
+			}
+			// modeLine (-I) honors -E: a line matching eofStr terminates input.
+			if skipBlank && isEofMarker(t.o, t.buf) {
+				t.eof = true
+				return "", false, false, nil
 			}
 			return string(t.buf), true, true, nil
 		}

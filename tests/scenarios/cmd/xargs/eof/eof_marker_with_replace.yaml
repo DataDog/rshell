@@ -1,0 +1,9 @@
+description: xargs honors -E when -I is active (modeLine mode), stopping input at the marker.
+input:
+  script: |+
+    printf 'a\nSTOP\nb\n' | xargs -I {} -E STOP echo {}
+expect:
+  stdout: |+
+    a
+  stderr: ""
+  exit_code: 0
