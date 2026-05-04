@@ -40,6 +40,13 @@ func (r *Runner) stop(ctx context.Context) bool {
 	if r.exit.exiting {
 		return true
 	}
+	if r.pipeBroken {
+		// Downstream pipeline stage has closed its read end. Emulate
+		// bash's SIGPIPE-on-write behaviour: stop running statements,
+		// surface a clean exit (no error, no fatal state).
+		r.exit.exiting = true
+		return true
+	}
 	if err := ctx.Err(); err != nil {
 		r.exit.fatal(err)
 		return true

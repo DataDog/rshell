@@ -7,12 +7,14 @@ package interp
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"sync"
+	"syscall"
 
 	"mvdan.cc/sh/v3/expand"
 	"mvdan.cc/sh/v3/syntax"
@@ -152,7 +154,14 @@ func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {
 			// pipe can write to it concurrently without a data race.
 			safeStderr := &syncWriter{w: r.stderr}
 			rLeft := r.subshell(true)
-			rLeft.stdout = pw
+			// Wrap the producer's stdout in a writer that flags the producer's
+			// runner as exiting when a write returns EPIPE. Without this, an
+			// unbounded producer (e.g. `while true; do echo x; done | head`)
+			// keeps running after the consumer closes its read end — bash
+			// terminates the producer via SIGPIPE, but we are a single Go
+			// process and must turn the broken-pipe error into a graceful
+			// exit signal that the producer's loop can observe via r.stop().
+			rLeft.stdout = &pipeBrokenWriter{w: pw, runner: rLeft}
 			rLeft.stderr = safeStderr
 			rLeft.inPipeline = true
 			rRight := r.subshell(true)
@@ -685,4 +694,34 @@ func (sw *syncWriter) Write(p []byte) (int, error) {
 	sw.mu.Lock()
 	defer sw.mu.Unlock()
 	return sw.w.Write(p)
+}
+
+// pipeBrokenWriter wraps the producer side of an internal pipe and turns a
+// broken-pipe error into a graceful exit signal on the producer's runner. In
+// bash, the kernel delivers SIGPIPE to a writer when the read end is closed;
+// the default action is to terminate the writer. We approximate that here by
+// flagging the runner as exiting on the next r.stop(ctx) call once a write
+// has returned EPIPE.
+//
+// We do NOT propagate the EPIPE error back to the caller (so existing
+// builtins that ignore write errors continue to work unchanged), but we do
+// preserve the byte count and other error types.
+type pipeBrokenWriter struct {
+	w      io.Writer
+	runner *Runner
+}
+
+func (p *pipeBrokenWriter) Write(b []byte) (int, error) {
+	n, err := p.w.Write(b)
+	if err != nil && errors.Is(err, syscall.EPIPE) {
+		// Set the durable pipeBroken flag — r.stop() will pick it up on the
+		// next statement boundary and terminate the producer. We don't set
+		// r.exit.exiting directly here because that field is overwritten by
+		// each builtin's Result.Exiting (interp/runner_exec.go:619).
+		p.runner.pipeBroken = true
+		// Suppress the EPIPE error itself — the writer's caller doesn't
+		// need to know; the runner-level signal is what matters.
+		return n, nil
+	}
+	return n, err
 }

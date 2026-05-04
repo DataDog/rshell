@@ -175,6 +175,13 @@ type runnerState struct {
 
 	inLoop bool
 
+	// pipeBroken signals that a write to this runner's stdout returned EPIPE
+	// (the pipeline's downstream consumer has closed its read end). Set by
+	// pipeBrokenWriter; checked by r.stop(ctx) to terminate unbounded
+	// producers (e.g. `while true; do echo x; done | head -1`) the way bash
+	// terminates them via SIGPIPE.
+	pipeBroken bool
+
 	// The current and last exit statuses. They can only be different if
 	// the interpreter is in the middle of running a statement. In that
 	// scenario, 'exit' is the status for the current statement being run,

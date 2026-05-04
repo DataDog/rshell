@@ -316,6 +316,24 @@ func TestWhileExitsOnPreCancelledContext(t *testing.T) {
 	assert.Empty(t, stdout, "no body iterations should run when ctx is pre-cancelled")
 }
 
+// An unbounded while-loop producer feeding a finite consumer (head -N)
+// must terminate when the consumer closes its read end — bash terminates
+// the producer via SIGPIPE; we approximate that via the pipeBrokenWriter
+// + r.stop pipeBroken signal. Without this, the producer spins until the
+// ctx deadline.
+//
+// Regression test for a P2 finding from the codex review on PR #216.
+func TestWhilePipeProducerStopsWhenConsumerCloses(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	start := time.Now()
+	stdout, _, code := whileRunCtx(ctx, t, `while true; do echo x; done | head -3`)
+	// Should return well within the ctx budget (bash does this in <50ms).
+	assert.Less(t, time.Since(start), 2*time.Second, "pipeline did not terminate after consumer closed")
+	assert.Equal(t, "x\nx\nx\n", stdout)
+	assert.Equal(t, 0, code)
+}
+
 // Infinite-output while loop must respect the runner's stdout cap rather than
 // growing memory unbounded. We use a small ctx deadline as the outer bound
 // and assert stdout size stays under a generous upper bound that catches an

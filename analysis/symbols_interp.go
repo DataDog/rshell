@@ -69,6 +69,7 @@ var interpAllowedSymbols = []string{
 	"sync.Once",                   // 🟢 ensures a function runs exactly once; concurrency primitive, no I/O.
 	"sync.WaitGroup",              // 🟢 waits for goroutines to finish; concurrency primitive, no I/O.
 	"sync/atomic.Int64",           // 🟢 atomic int64 counter; concurrency primitive, no I/O.
+	"syscall.EPIPE",               // 🟢 errno constant for broken-pipe (write to a pipe with no readers); pure constant; used to detect SIGPIPE-equivalent state on producer pipeline stages.
 	"time.Duration",               // 🟢 numeric duration type; pure type, no side effects.
 	"time.Now",                    // 🟠 returns current time; read-only, no mutation.
 	"time.Time",                   // 🟢 time value type; pure data, no side effects.
