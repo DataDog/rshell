@@ -149,7 +149,11 @@ const MaxArrayEntries = 1_000_000
 // shell's execution timeout.
 const MaxLoopIterations = 1_000_000
 
-// MaxTotalReadBytes caps total bytes read from a non-regular-file input.
+// MaxTotalReadBytes caps total bytes read from a non-regular-file input
+// (e.g. /dev/zero, FIFOs, pipes). This is intentionally higher than
+// tail's 32 MiB cap: awk processes data record-by-record without buffering
+// the entire input, so a larger cap is safe and prevents premature truncation
+// on large legitimate inputs.
 const MaxTotalReadBytes = 256 << 20 // 256 MiB
 
 // MaxFields is the maximum number of fields a single record may produce.

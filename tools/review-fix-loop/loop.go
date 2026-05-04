@@ -64,7 +64,10 @@ func run(ctx context.Context, cfg Config, prRef string) error {
 			log.Printf("[pre-review threads] warning: %v", beforeErr)
 		}
 
-		// 2A1 (self-review) + 2A2 (trigger codex) in parallel
+		// 2A1 (self-review) + 2A2 (trigger codex) in parallel.
+		// Only the first goroutine writes to the shared agent writers; triggerCodex
+		// runs an external subprocess and does not touch agent state, so there is
+		// no data race on the shared writers today.
 		var wg sync.WaitGroup
 		wg.Add(2)
 		go func() {

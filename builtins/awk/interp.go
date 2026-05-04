@@ -664,15 +664,15 @@ func (r *runtime) openInput(ctx context.Context, name string) (io.ReadCloser, bo
 		}
 		return io.NopCloser(r.callCtx.Stdin), false, nil
 	}
-	// Note: there is a known TOCTOU window between StatFile and OpenFile —
-	// a file could be replaced by a symlink to a non-regular source between
-	// the two calls, causing isRegular=true and bypassing the 256 MiB cap.
-	// This is acceptable because:
-	//   1. The cap is a defence-in-depth hardening measure, not the primary
-	//      access control (AllowedPaths inside OpenFile is the primary guard).
-	//   2. Exploiting the race requires nanosecond-precision timing.
-	//   3. A file-descriptor-level stat (which would be race-free) is not
-	//      available through the callCtx API.
+	// Note: there is a known TOCTOU race between StatFile and OpenFile —
+	// a file could be replaced by a symlink or special file between the two
+	// calls, causing isRegular=true and bypassing the 256 MiB cap.
+	// This is accepted because:
+	//   1. AllowedPaths inside OpenFile is the primary sandbox guard.
+	//   2. The cap is defence-in-depth only; its bypass does not grant new
+	//      capabilities beyond what a regular large file already provides.
+	//   3. A race-free alternative (stat on the open fd) is unavailable
+	//      through the callCtx API.
 	regular := false
 	if r.callCtx.StatFile != nil {
 		if info, err := r.callCtx.StatFile(ctx, name); err == nil {
@@ -1325,6 +1325,14 @@ func (r *runtime) compare(op tokenKind, a, b awkValue) awkValue {
 		asNum = looksNumeric(a.s)
 	} else if a.kind == valUninit && b.kind == valNum {
 		asNum = true
+	} else if a.kind == valStrNum && b.kind == valUninit {
+		// A numeric-string from input vs uninitialized variable: compare as numbers
+		// if the string looks numeric (POSIX: uninit is numeric 0).
+		asNum = looksNumeric(a.s)
+	} else if a.kind == valUninit && b.kind == valStrNum {
+		// Uninitialized variable vs numeric-string from input: compare as numbers
+		// if the string looks numeric (POSIX: uninit is numeric 0).
+		asNum = looksNumeric(b.s)
 	} else if a.kind == valStrNum && b.kind == valStrNum {
 		asNum = looksNumeric(a.s) && looksNumeric(b.s)
 	} else if a.kind == valNum && b.kind == valStr {

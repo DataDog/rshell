@@ -1,0 +1,10 @@
+description: Numeric input field compared to uninitialized variable uses numeric comparison (POSIX strnum semantics).
+input:
+  script: |+
+    printf '0\nabc\n' | awk '{ print ($1 == x) }'
+expect:
+  stdout: |+
+    1
+    0
+  stderr: |+
+  exit_code: 0
