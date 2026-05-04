@@ -1,12 +1,12 @@
 # Derived from POSIX: cd with more than one operand is an error.
 description: cd with multiple positional arguments errors.
-skip_assert_against_bash: true # bash silently accepts >1 arg in some configurations.
 input:
   allowed_paths: ["$DIR"]
   script: |+
     cd a b
 expect:
   stdout: ""
-  stderr: |+
-    cd: too many arguments
+  # bash prefixes its error with "bash: line N:"; rshell does not. Use a
+  # substring assertion so the same scenario passes against both.
+  stderr_contains: ["cd: too many arguments"]
   exit_code: 1

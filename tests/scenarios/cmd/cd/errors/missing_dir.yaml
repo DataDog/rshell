@@ -6,5 +6,8 @@ input:
     cd does-not-exist
 expect:
   stdout: ""
-  stderr_contains: ["cd: does-not-exist", "no such file or directory"]
+  # rshell emits "no such file or directory"; bash emits "No such file
+  # or directory". The substring `o such file or directory` matches both
+  # so the same scenario validates against both implementations.
+  stderr_contains: ["cd: does-not-exist", "o such file or directory"]
   exit_code: 1

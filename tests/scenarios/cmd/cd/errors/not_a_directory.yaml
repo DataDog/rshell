@@ -10,6 +10,7 @@ input:
     cd regular.txt
 expect:
   stdout: ""
-  stderr: |+
-    cd: regular.txt: not a directory
+  # rshell emits "not a directory"; bash emits "Not a directory". Use
+  # substring assertions that match both.
+  stderr_contains: ["cd: regular.txt", "ot a directory"]
   exit_code: 1

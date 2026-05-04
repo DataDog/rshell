@@ -15,5 +15,6 @@ input:
 expect:
   stdout: |+
     ok
-  stderr_contains: ["no such file or directory"]
+  # Match both rshell ("no such ...") and bash ("No such ...") output.
+  stderr_contains: ["o such file or directory"]
   exit_code: 0
