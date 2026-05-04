@@ -21,8 +21,8 @@
 //
 // Exit codes:
 //
-//	0  Success.
-//	1  Unknown topic or --help was requested.
+//	0  Success (including when --help was requested).
+//	1  Unknown topic.
 package help
 
 import (
@@ -48,12 +48,12 @@ func printUsage(callCtx *builtins.CallContext) {
 
 func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 	helpFlag := fs.Bool("help", false, "print usage and exit")
-	allFlag := fs.Bool("all", false, "show all commands (including not allowed) with descriptions")
+	allFlag := fs.Bool("all", false, "show all commands (including not allowed) with descriptions; ignored when a topic is given")
 
 	return func(ctx context.Context, callCtx *builtins.CallContext, args []string) builtins.Result {
 		if *helpFlag {
 			printUsage(callCtx)
-			return builtins.Result{Code: 1}
+			return builtins.Result{}
 		}
 
 		// help <feature|command> — show detailed help for a specific topic.

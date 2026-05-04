@@ -21,7 +21,7 @@ type FeatureMeta struct {
 var featureRegistry = []FeatureMeta{
 	{
 		Name:        "commands",
-		Description: "Registered commands; unsupported: unregistered commands without explicit external handling.",
+		Description: "Registered commands run inside the interpreter; no unregistered commands without an external handler.",
 		Supported: []string{
 			"Registered rshell commands run inside the interpreter and under the active AllowedCommands policy.",
 			"Commands perform filesystem access through the AllowedPaths sandbox unless explicitly documented otherwise.",
@@ -29,7 +29,7 @@ var featureRegistry = []FeatureMeta{
 		},
 		Unsupported: []string{
 			"All other commands return exit code 127 unless an external command handler is configured and allows them.",
-			"Command options that would write files, execute programs, or bypass safety are rejected.",
+			"Command options that would write files or otherwise bypass sandbox safety are rejected. External program execution is gated by AllowedCommands (e.g. `find -exec`/`-execdir` runs only commands the policy allows).",
 		},
 	},
 	{
@@ -130,7 +130,7 @@ var featureRegistry = []FeatureMeta{
 	},
 	{
 		Name:        "bash-divergences",
-		Description: "Intentional bash differences, including one shared time reference per Run().",
+		Description: "Intentional bash differences captured here. Currently: one shared time reference per Run().",
 		Notes: []string{
 			"rshell captures time.Now() once at the start of each Run() call and shares it across commands that need a reference time, such as find -mmin/-mtime and ls -l.",
 			"Bash evaluates each command against its own invocation time. The difference matters only for long-running scripts where time-sensitive predicates are evaluated much later than Run() started.",
@@ -161,17 +161,38 @@ func buildFeatureIndex(features []FeatureMeta) map[string]FeatureMeta {
 	return index
 }
 
-// Features returns rshell features in display order.
+// Features returns rshell features in display order. The returned slice and
+// each FeatureMeta's Supported/Unsupported/Notes slices are independent copies
+// — callers may freely mutate them without affecting the registry.
 func Features() []FeatureMeta {
 	features := make([]FeatureMeta, len(featureRegistry))
-	copy(features, featureRegistry)
+	for i, f := range featureRegistry {
+		features[i] = FeatureMeta{
+			Name:        f.Name,
+			Description: f.Description,
+			Supported:   append([]string(nil), f.Supported...),
+			Unsupported: append([]string(nil), f.Unsupported...),
+			Notes:       append([]string(nil), f.Notes...),
+		}
+	}
 	return features
 }
 
-// Feature returns the metadata for a named rshell feature.
+// Feature returns the metadata for a named rshell feature. The returned
+// FeatureMeta's Supported/Unsupported/Notes slices are independent copies
+// — callers may freely mutate them without affecting the registry.
 func Feature(name string) (FeatureMeta, bool) {
 	feature, ok := featureByName[name]
-	return feature, ok
+	if !ok {
+		return FeatureMeta{}, false
+	}
+	return FeatureMeta{
+		Name:        feature.Name,
+		Description: feature.Description,
+		Supported:   append([]string(nil), feature.Supported...),
+		Unsupported: append([]string(nil), feature.Unsupported...),
+		Notes:       append([]string(nil), feature.Notes...),
+	}, true
 }
 
 // UnsupportedSummary returns a concise list of intentionally unsupported
