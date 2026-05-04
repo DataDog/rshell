@@ -10,5 +10,5 @@ expect:
   stdout: |+
     body
     done
-  stderr: ""
+  stderr: |+
   exit_code: 0

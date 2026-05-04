@@ -13,5 +13,5 @@ expect:
   stdout: |+
     inner
     done
-  stderr: ""
+  stderr: |+
   exit_code: 0

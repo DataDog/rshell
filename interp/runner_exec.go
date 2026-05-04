@@ -740,12 +740,14 @@ func (p *pipeBrokenWriter) Write(b []byte) (int, error) {
 // isBrokenPipeErr reports whether err is the broken-pipe error returned by
 // writing to a pipe whose read end has been closed. Cross-platform:
 //   - Unix: syscall.EPIPE (errno 32).
-//   - Windows: syscall.ERROR_BROKEN_PIPE (errno 109). Go's os.File.Write
-//     does NOT normalise this to EPIPE, so we have to check both.
+//   - Windows: ERROR_BROKEN_PIPE (errno 109) OR ERROR_NO_DATA (errno 232).
+//     Go's own os/pipe_test.go special-cases both; os.File.Write does NOT
+//     normalise either to syscall.EPIPE.
 //
-// The numeric Windows constant (109) is hardcoded rather than referenced
-// symbolically so this file remains buildable on every platform — the
-// alternative would be a build-tagged helper.
+// The numeric Windows constants are hardcoded rather than referenced
+// symbolically so this file remains buildable on every platform — using
+// syscall.ERROR_BROKEN_PIPE / syscall.ERROR_NO_DATA would require a
+// build-tagged helper (Windows-only constants).
 func isBrokenPipeErr(err error) bool {
 	if err == nil {
 		return false
@@ -754,8 +756,12 @@ func isBrokenPipeErr(err error) bool {
 		return true
 	}
 	var errno syscall.Errno
-	if errors.As(err, &errno) && errno == 109 {
-		return true
+	if errors.As(err, &errno) {
+		// 109 = ERROR_BROKEN_PIPE; 232 = ERROR_NO_DATA ("the pipe is
+		// being closed"). See Go src os/pipe_test.go.
+		if errno == 109 || errno == 232 {
+			return true
+		}
 	}
 	return false
 }
