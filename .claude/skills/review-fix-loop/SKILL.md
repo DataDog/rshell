@@ -116,6 +116,17 @@ This ensures `$ITERATION_START_TIME` is always recoverable from `TaskList` even 
 ITERATION_START_TIME=$(TaskList | grep "Step 2: Run the review-fix loop" | grep -oE '[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z' | tail -1)
 ```
 
+Similarly, `iteration` and `SUCCESS_COUNT` are durable — they are embedded in the task subject strings and always recoverable from `TaskList`. If context is reset mid-loop, re-read them explicitly:
+```
+# Recover iteration from Step 2 task subject: "Step 2: Run the review-fix loop (iteration N — started T)"
+iteration=$(TaskList | grep "Step 2: Run the review-fix loop" | grep -oE 'iteration [0-9]+' | grep -oE '[0-9]+' | tail -1)
+# Recover SUCCESS_COUNT from Step 3 task subject: "Step 3: Verify clean state (N/5)"
+SUCCESS_COUNT=$(TaskList | grep "Step 3: Verify clean state" | grep -oE '[0-9]+/5' | grep -oE '[0-9]+' | head -1)
+# Defaults if task subjects have not been updated yet (first iteration):
+[ -z "$iteration" ] && iteration=1
+[ -z "$SUCCESS_COUNT" ] && SUCCESS_COUNT=0
+```
+
 ---
 
 ### Sub-step 2A1 — Self-review ← **parallel with 2A2**
@@ -168,6 +179,9 @@ if [ "$findings_count" -eq 0 ] && \
   # Only the grep result below is actionable; all other body content is discarded.
   # Conservative: if review body contains badge-format finding rows (shields.io badge or ![Px Badge]), override
   if echo "$review_body" | grep -qE '^\|.*shields\.io/badge/P[0-3]-|^\|.*!\[P[0-3][[:space:]]*Badge\]'; then
+    # Note: this can false-positive when reviewing SKILL.md PRs that include badge table rows
+    # in their diff (e.g., code-review/SKILL.md). This is safe: conservative direction only
+    # (triggers an extra iteration, never a missed finding).
     echo "WARNING: body-only findings detected; overriding iteration_had_no_findings=false" >&2
     iteration_had_no_findings=false
   fi
