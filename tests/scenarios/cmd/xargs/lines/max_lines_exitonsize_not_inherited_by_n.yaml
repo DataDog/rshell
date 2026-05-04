@@ -1,0 +1,14 @@
+description: >
+  When -L (which implies -x) is overridden by a later -n, the -x implied by -L
+  must not survive. GNU xargs continues and splits the batch; rshell must not
+  abort with "argument list too long".
+input:
+  script: |+
+    printf 'a b c\n' | xargs -L 1 -n 3 -s 9 echo
+expect:
+  stdout: |+
+    a b
+    c
+  stderr: |+
+    xargs: warning: options --max-lines and --max-args/-n are mutually exclusive, ignoring previous --max-lines value
+  exit_code: 0

@@ -290,6 +290,9 @@ func buildOptions(fs *builtins.FlagSet, null bool, argFile, delim, eofStr string
 				o.warnings = append(o.warnings,
 					"warning: options --max-lines and --max-args/-n are mutually exclusive, ignoring previous --max-lines value")
 				o.maxLines = 0
+				// -L implied -x; now that -L is dropped, reset exitOnSize to
+				// whatever the user explicitly requested (or its default, false).
+				o.exitOnSize = exitOnSize
 			} else {
 				// -L was specified after -n → L wins, drop n.
 				o.warnings = append(o.warnings,
@@ -1110,6 +1113,10 @@ func (t *tokenizer) nextWhitespace(ctx context.Context) (string, bool, bool, err
 // rest of the current "word" (bytes until the next whitespace), matching GNU
 // xargs behaviour.
 func (t *tokenizer) nextWhitespaceOnce(ctx context.Context) (string, bool, bool, error) {
+	// outerLoop is labelled so that the NUL-inside-token path can restart
+	// iteratively rather than via a recursive tail-call, preventing unbounded
+	// goroutine stack growth on adversarial input (e.g. repeated quote+NUL).
+outerLoop:
 	t.buf = t.buf[:0]
 
 	// Skip leading whitespace (including blank lines). NUL bytes in the
@@ -1204,8 +1211,9 @@ func (t *tokenizer) nextWhitespaceOnce(ctx context.Context) (string, bool, bool,
 				if t.eof {
 					return "", false, false, nil
 				}
-				// Restart: skip whitespace and try again.
-				return t.nextWhitespaceOnce(ctx)
+				// Restart iteratively to avoid unbounded goroutine stack growth on
+				// adversarial input such as repeated quote+NUL patterns.
+				goto outerLoop
 			}
 			return string(t.buf), endedLine, true, nil
 		}
