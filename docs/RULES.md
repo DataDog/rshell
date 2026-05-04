@@ -148,48 +148,16 @@ only the filesystem-accessing *functions* are forbidden.
 - Security properties MUST be tested (path traversal, special files, large inputs)
 - Integration with shell features (pipes, for-loops, globs) MUST be tested
 
-### Cross-Platform Compatibility (Linux, macOS, Windows)
+### Platform Targeting
 
-#### General Path & File Handling
-- Commands MUST use `filepath` package functions for all path operations (never hardcode `/` or `\`)
-- Commands MUST use `filepath.Join()` to construct paths, NOT string concatenation
-- Commands MUST use `filepath.Clean()` to normalize paths before validation
-- Commands MUST handle case-insensitive filesystems (Windows/macOS default) vs case-sensitive (Linux)
-- Commands MUST handle Windows drive letters (e.g., `C:\path`) and UNC paths (e.g., `\\server\share`)
-- Commands MUST NOT exceed platform path length limits (historically 260 chars on Windows, verify with long path tests)
+**v0 primarily targets Linux.** macOS and Windows are not promised platforms for v0. Reviewers MUST NOT block PRs on hypothetical macOS or Windows breakage. When implementation decisions trade off cross-platform portability against Linux clarity or correctness, prefer Linux.
 
-#### Windows-Specific Issues
-- Commands MUST detect and reject Windows reserved filenames (CON, PRN, AUX, NUL, COM1-9, LPT1-9) to prevent hangs and security issues
-- Commands MUST be aware that Windows file locking is mandatory (not advisory like Unix) - reads may fail on locked files
-- Commands SHOULD validate for Windows Alternate Data Streams (ADS) syntax (`filename:stream`) and document behavior
-- Commands MUST handle Windows line endings (CRLF `\r\n`) in addition to Unix (LF `\n`)
-- Commands SHOULD document behavior when encountering ADS (reject, ignore stream suffix, or read the stream)
-
-#### macOS-Specific Issues
-- Commands MUST handle macOS Unicode NFD normalization (decomposed form) vs NFC on Linux/Windows
-- Commands SHOULD normalize Unicode when comparing filenames (use `golang.org/x/text/unicode/norm` if needed)
-- Commands MAY ignore AppleDouble files (`._*`) created by macOS on non-HFS filesystems (document if ignored)
-- Commands SHOULD be aware that macOS extended attributes (xattrs) may exceed 64KB causing issues on Linux
-- Commands MUST NOT assume resource forks or xattrs are preserved when reading files
-
-#### Unix-Specific Issues
-- Commands MUST NOT assume Unix-specific paths (e.g., `/dev/zero`, `/proc`) exist on all platforms
-- Commands testing special files SHOULD use build tags to skip tests on platforms without those files
-- Commands relying on Unix permissions MUST handle Windows ACL differences gracefully
-
-#### Line Ending Handling
-- Commands MUST handle all three line ending formats: LF (`\n`), CRLF (`\r\n`), and CR (`\r`)
-- Commands SHOULD normalize line endings when processing line-oriented data (or document which format is expected)
-- Commands that count lines MUST handle mixed line endings (e.g., some `\n`, some `\r\n` in same file)
-
-#### Testing Requirements
-- Tests MUST be runnable on Linux, macOS, and Windows without modification
-- Tests MUST use `filepath.Join()` for expected paths, never hardcoded separators
-- Tests MUST NOT rely on Unix-specific files (/dev/null) or behaviors without platform checks
-- Tests SHOULD use build tags (`//go:build unix` or `//go:build windows`) for platform-specific test cases
-- Tests SHOULD verify Unicode NFD/NFC handling if processing filenames with accented characters
-- Tests SHOULD include Windows reserved filename rejection tests
-- Tests SHOULD verify behavior with locked files on Windows (use build tags)
+- Commands MUST work correctly on Linux. Linux behaviour is the source of truth.
+- Commands MAY use Linux-only paths (`/dev/zero`, `/dev/null`, `/dev/random`, `/proc`, `/sys`) without platform guards.
+- Commands MAY use `//go:build linux` build tags freely when an implementation is inherently Linux-specific.
+- Commands SHOULD use the `filepath` package for path operations — it is cheap correctness and costs nothing.
+- Commands SHOULD handle CRLF (`\r\n`) line endings in input data, since Linux files often contain CRLF from cross-platform editors.
+- Tests SHOULD target Linux. Do not add macOS- or Windows-specific test fixtures, build tags, or assertion overrides unless a real bug on those platforms has been reported.
 
 ---
 
@@ -204,22 +172,6 @@ Research based on:
 - [Wikipedia: Time-of-check to time-of-use](https://en.wikipedia.org/wiki/Time-of-check_to_time-of-use)
 - [Special Device Files](https://en.wikipedia.org/wiki//dev/zero)
 
-**Cross-Platform Path Handling:**
+**Path Handling:**
 - [Go filepath Package Documentation](https://pkg.go.dev/path/filepath)
-- [Cross-Platform Go File Paths](https://www.slingacademy.com/article/exploring-the-path-filepath-package-for-cross-platform-file-path-handling-in-go/)
 - [Line Ending Types: LF vs CRLF vs CR](https://www.baeldung.com/linux/line-breaks-types)
-
-**Windows-Specific:**
-- [Windows Reserved Filenames](https://www.meziantou.net/reserved-filenames-on-windows-con-prn-aux-nul.htm)
-- [CVE-2025-27210: Windows Device Name Path Traversal](https://zeropath.com/blog/cve-2025-27210-nodejs-path-traversal-windows)
-- [Windows Alternate Data Streams Security](https://blog.netwrix.com/2022/12/16/alternate_data_stream/)
-- [Malware Hiding Using ADS](https://denwp.com/unveiling-the-stealth/)
-- [File Locking: Mandatory vs Advisory](https://en.wikipedia.org/wiki/File_locking)
-- [Microsoft: Enabling Advisory File Locking](https://learn.microsoft.com/en-us/previous-versions/windows/it-pro/windows-server-2003/cc778584(v=ws.10))
-
-**macOS-Specific:**
-- [macOS Unicode Normalization (NFD vs NFC)](https://eclecticlight.co/2021/05/08/explainer-unicode-normalization-and-apfs/)
-- [UTF-8 Hell of Mac OSX](https://medium.com/@sthadewald/the-utf-8-hell-of-mac-osx-feef5ea42407)
-- [APFS Extended Attributes](https://eclecticlight.co/2024/05/13/apfs-extended-attributes-revisited/)
-- [Resource Forks Wikipedia](https://en.wikipedia.org/wiki/Resource_fork)
-- [macOS xattr Deep Dive](https://rndt.pages.dev/posts/2023-calendar/d01/macos-xattr/)
