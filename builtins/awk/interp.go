@@ -996,12 +996,17 @@ func (r *runtime) execPrintf(args []expr) error {
 // indexKey builds the SUBSEP-joined string key for arr[i,j,...].
 func (r *runtime) indexKey(indices []expr) (string, error) {
 	parts := make([]string, len(indices))
+	totalLen := 0
 	for i, e := range indices {
 		v, err := r.evalExpr(e)
 		if err != nil {
 			return "", err
 		}
 		parts[i] = v.toString(r.convFmt)
+		totalLen += len(parts[i]) + len(r.subsep)
+		if totalLen > MaxStringBytes {
+			return "", fmt.Errorf("array key exceeds maximum length %d", MaxStringBytes)
+		}
 	}
 	return strings.Join(parts, r.subsep), nil
 }

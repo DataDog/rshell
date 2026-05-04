@@ -164,9 +164,17 @@ func parseAwkNumber(s string) float64 {
 
 // looksNumeric reports whether a string is a "numeric string" in awk's
 // terminology: the entire trimmed value is a valid number.
+// Note: IEEE-754 special values ("nan", "inf", etc.) are excluded because
+// mawk (the reference implementation on bookworm-slim) does not classify them
+// as numeric strings for comparison purposes.
 func looksNumeric(s string) bool {
 	t := strings.TrimSpace(s)
 	if t == "" {
+		return false
+	}
+	// Exclude nan/inf: mawk treats them as plain strings in comparison context.
+	lower := strings.ToLower(t)
+	if lower == "nan" || lower == "inf" || lower == "+inf" || lower == "-inf" {
 		return false
 	}
 	_, err := strconv.ParseFloat(t, 64)

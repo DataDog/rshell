@@ -7,4 +7,3 @@ expect:
     4 [a[b[c[
   stderr: |+
   exit_code: 0
-  skip_assert_against_bash: true
