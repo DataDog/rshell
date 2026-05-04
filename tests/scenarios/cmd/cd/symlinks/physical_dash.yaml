@@ -1,0 +1,22 @@
+# Derived from bash: cd -P - prints the raw OLDPWD string (the symlink path),
+# not the physically resolved path. -P only affects where PWD is set, not what
+# is printed by the cd - form.
+description: cd -P - prints raw OLDPWD (symlink path) and sets PWD to physical target.
+setup:
+  files:
+    - path: real/keep
+      content: ""
+    - path: alias
+      symlink: real
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    cd alias
+    cd ..
+    cd -P -
+    echo "PWD=$PWD"
+expect:
+  stdout_contains: ["/alias"]
+  stdout_contains_windows: ["\\alias"]
+  stderr: ""
+  exit_code: 0

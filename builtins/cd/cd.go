@@ -177,6 +177,11 @@ func registerFlags(flags *builtins.FlagSet) builtins.HandlerFunc {
 
 		var (
 			target string
+			// displayOverride, when non-empty, is used as the error-message
+			// label instead of the derived target path. Set for `cd -` so
+			// error messages always read "cd: -: ..." rather than exposing
+			// the internal cwd string.
+			displayOverride string
 			// printValue holds the value to print when cd - succeeds.
 			// Bash prints the raw OLDPWD verbatim (preserving trailing
 			// slashes etc. that filepath.Clean would strip), followed by a
@@ -211,6 +216,7 @@ func registerFlags(flags *builtins.FlagSet) builtins.HandlerFunc {
 			// successful cd -. Empty-but-set OLDPWD: stay in place and
 			// update OLDPWD. Route through the normal path so applyNewWorkDir
 			// fires.
+			displayOverride = "-"
 			printDash = true
 			if oldpwd == "" {
 				target = currentDir()
@@ -247,6 +253,9 @@ func registerFlags(flags *builtins.FlagSet) builtins.HandlerFunc {
 		// the displayed value (the caller's argument) for error messages so
 		// that bash-style "cd: foo: no such file or directory" is preserved.
 		display := target
+		if displayOverride != "" {
+			display = displayOverride
+		}
 		absPath := target
 		if !filepath.IsAbs(absPath) {
 			cwd := ""
