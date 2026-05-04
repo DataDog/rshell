@@ -15,6 +15,7 @@ import (
 
 	"mvdan.cc/sh/v3/syntax"
 
+	"github.com/DataDog/rshell/internal/interpoption"
 	"github.com/DataDog/rshell/interp"
 )
 
@@ -39,9 +40,17 @@ func dfRunFuzz(t *testing.T, script string) (string, string, int, error) {
 	defer cancel()
 
 	var outBuf, errBuf bytes.Buffer
+	// AllowAllCommands is required: the runner default is to reject
+	// every command (including builtins) as "command not allowed",
+	// which would mean every fuzz iteration prints that error and df
+	// is never actually exercised. testutil.RunScriptCtx adds this
+	// option for the same reason; we replicate the option set here
+	// (see commit history — testutil.RunScriptCtx was bypassed to
+	// avoid its require.NoError on shell-parse errors).
 	runner, err := interp.New(
 		interp.StdIO(nil, &outBuf, &errBuf),
 		interp.AllowedPaths(nil),
+		interpoption.AllowAllCommands().(interp.RunnerOption),
 	)
 	if err != nil {
 		t.Fatalf("interp.New: %v", err)

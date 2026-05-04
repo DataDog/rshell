@@ -266,14 +266,45 @@ func TestPreStatFilter_AllPlusLocalKeepsPseudo(t *testing.T) {
 	}
 }
 
-// An explicit -t TYPE filter must override the default pseudo-FS
-// suppression so scripts running `df -t tmpfs` see tmpfs mounts even
-// without -a. Matches GNU df behaviour.
-func TestPreStatFilter_TypeIncludeOverridesPseudoSuppression(t *testing.T) {
+// -t TYPE does NOT override the default pseudo-FS suppression — it
+// just narrows the type filter independently. GNU df 9.4: `df -t proc`
+// exits 1 with "no file systems processed" because proc is pseudo.
+// Only -a exposes pseudo filesystems. (`df -t tmpfs` works in
+// production because tmpfs is not classified as pseudo in our table —
+// see pseudoTypes — not because -t overrides the suppression.)
+func TestPreStatFilter_TypeIncludeRespectsPseudoSuppression(t *testing.T) {
+	in := []diskstats.Mount{
+		{MountPoint: "/proc", FSType: "proc", Pseudo: true, Local: true},
+		{MountPoint: "/sys", FSType: "sysfs", Pseudo: true, Local: true},
+	}
+	// -t proc without -a: pseudo filter still drops the proc mount,
+	// so the include-set match doesn't help.
+	out := keep(in, &flags{
+		all:          ptrBool(false),
+		local:        ptrBool(false),
+		includeTypes: ptrSlice([]string{"proc"}),
+		excludeTypes: ptrSlice([]string(nil)),
+	})
+	assert.Empty(t, out, "-t proc alone must NOT expose pseudo proc mounts")
+
+	// -a -t proc: -a exempts pseudo, then -t filters by type.
+	out = keep(in, &flags{
+		all:          ptrBool(true),
+		local:        ptrBool(false),
+		includeTypes: ptrSlice([]string{"proc"}),
+		excludeTypes: ptrSlice([]string(nil)),
+	})
+	assert.Len(t, out, 1)
+	assert.Equal(t, "proc", out[0].FSType)
+}
+
+// Non-pseudo types are unaffected: -t TYPE on ext4/tmpfs/etc. lists
+// them as expected without -a.
+func TestPreStatFilter_TypeIncludeForNonPseudoWorksWithoutA(t *testing.T) {
 	in := []diskstats.Mount{
 		{MountPoint: "/", FSType: "ext4", Local: true},
-		{MountPoint: "/dev/shm", FSType: "tmpfs", Pseudo: true, Local: true},
-		{MountPoint: "/run", FSType: "tmpfs", Pseudo: true, Local: true},
+		{MountPoint: "/dev/shm", FSType: "tmpfs", Local: true},
+		{MountPoint: "/proc", FSType: "proc", Pseudo: true, Local: true},
 	}
 	out := keep(in, &flags{
 		all:          ptrBool(false),
@@ -281,10 +312,8 @@ func TestPreStatFilter_TypeIncludeOverridesPseudoSuppression(t *testing.T) {
 		includeTypes: ptrSlice([]string{"tmpfs"}),
 		excludeTypes: ptrSlice([]string(nil)),
 	})
-	assert.Len(t, out, 2)
-	for _, m := range out {
-		assert.Equal(t, "tmpfs", m.FSType)
-	}
+	assert.Len(t, out, 1)
+	assert.Equal(t, "tmpfs", out[0].FSType)
 }
 
 // At the filter layer, exclude wins over include for the same TYPE.

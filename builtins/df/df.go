@@ -260,6 +260,13 @@ func makeFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 // from blocking on a stale NFS mount: without it, statfs(2) is called
 // on every mount in the table before any filter runs, and statfs on a
 // dead remote can hang indefinitely (and is not interrupted by ctx).
+//
+// Filter ordering matches GNU df: -t / -x are independent of the
+// pseudo / -a / -l filters. In particular, `df -t proc` does NOT
+// expose pseudo proc mounts — only `-a` exempts pseudo filesystems
+// from the default suppression. `df -t tmpfs` works because tmpfs is
+// not in the pseudoTypes table (RAM-backed but real storage), not
+// because -t overrides pseudo suppression.
 func makePreStatFilter(f *flags) diskstats.FilterFunc {
 	includeSet := stringSet(*f.includeTypes)
 	excludeSet := stringSet(*f.excludeTypes)
@@ -273,7 +280,10 @@ func makePreStatFilter(f *flags) diskstats.FilterFunc {
 			if _, ok := includeSet[m.FSType]; !ok {
 				return false
 			}
-		} else if !all && m.Pseudo {
+		}
+		// Pseudo filter applies regardless of -t (-a is the only
+		// flag that exposes pseudo filesystems).
+		if !all && m.Pseudo {
 			return false
 		}
 		if local && !m.Local {
