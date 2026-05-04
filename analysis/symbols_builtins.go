@@ -228,6 +228,8 @@ var builtinPerCommandSymbols = map[string][]string{
 		"io.Reader",                           // 🟢 interface type; no side effects.
 		"os.ErrDeadlineExceeded",              // 🟢 sentinel error returned by *os.File when SetReadDeadline fires; pure constant.
 		"os.File",                             // 🟠 *os.File type used for type-asserting callCtx.Stdin to access SetReadDeadline/Stat; no constructors invoked.
+		"strconv.Atoi",                        // 🟢 string-to-int conversion (used by orderedIntValue.Set for -n / -N); pure function, no I/O.
+		"strconv.Itoa",                        // 🟢 int-to-string conversion (used by orderedIntValue.String for pflag default-value display); pure function, no I/O.
 		"strconv.ParseFloat",                  // 🟢 string-to-float conversion (parses -t TIMEOUT seconds); pure function, no I/O.
 		"strings.ContainsRune",                // 🟢 checks if a rune is in IFS; pure function, no I/O.
 		"time.Duration",                       // 🟢 duration type; pure integer alias, no I/O.
@@ -241,6 +243,10 @@ var builtinPerCommandSymbols = map[string][]string{
 		"unicode/utf8.RuneSelf",               // 🟢 first byte value above which UTF-8 multi-byte encoding begins; pure constant.
 		"unicode/utf8.UTFMax",                 // 🟢 maximum number of bytes in a UTF-8 encoding; pure constant.
 		"golang.org/x/term.IsTerminal",        // 🟠 platform-specific isatty check (TIOCGETA / GetConsoleMode); used to gate -p prompt emission. Read-only inspection of the file descriptor; no I/O.
+		"golang.org/x/sys/unix.Poll",          // 🟠 Unix poll(2) with timeout 0; non-consuming readability probe for read -t 0. Read-only descriptor state; no data transferred.
+		"golang.org/x/sys/unix.PollFd",        // 🟢 PollFd struct passed to unix.Poll; pure data type, no I/O.
+		"golang.org/x/sys/unix.POLLIN",        // 🟢 poll event constant for "data available to read"; pure constant.
+		"golang.org/x/sys/unix.POLLHUP",       // 🟢 poll event constant for "peer hung up" (EOF); pure constant.
 	},
 	"sort": {
 		"bufio.NewScanner",      // 🟢 line-by-line input reading (e.g. head, cat); no write or exec capability.
@@ -467,6 +473,10 @@ var builtinAllowedSymbols = []string{
 	"github.com/prometheus-community/pro-bing.Packet",     // 🟢 ICMP packet descriptor struct (received packet data); pure data type, no I/O.
 	"github.com/prometheus-community/pro-bing.Pinger",     // 🔴 ICMP pinger struct; network I/O is the explicit purpose of the ping builtin.
 	"github.com/prometheus-community/pro-bing.Statistics", // 🟢 ping round-trip statistics struct; pure data type, no I/O.
+	"golang.org/x/sys/unix.POLLHUP",                       // 🟢 poll event constant for "peer hung up" (EOF); pure constant.
+	"golang.org/x/sys/unix.POLLIN",                        // 🟢 poll event constant for "data available to read"; pure constant.
+	"golang.org/x/sys/unix.Poll",                          // 🟠 Unix poll(2) with timeout 0; non-consuming readability probe for read -t 0. Read-only descriptor state; no data transferred.
+	"golang.org/x/sys/unix.PollFd",                        // 🟢 PollFd struct passed to unix.Poll; pure data type, no I/O.
 	"golang.org/x/sys/unix.SysctlRaw",                     // 🟠 macOS: reads kernel socket tables (read-only, no exec, no filesystem).
 	"golang.org/x/term.IsTerminal",                        // 🟠 platform-specific isatty check (TIOCGETA / GetConsoleMode); used to gate read -p prompt emission. Read-only inspection of the file descriptor; no I/O.
 	"io.EOF",                                              // 🟢 sentinel error value; pure constant.

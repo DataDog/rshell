@@ -43,9 +43,23 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 	raw := fs.BoolP("raw", "r", false, "do not interpret backslashes")
 	prompt := fs.StringP("prompt", "p", "", "print PROMPT to stderr before reading")
 	delim := fs.StringP("delim", "d", "", "use the first character of DELIM as the line terminator (empty = NUL)")
-	nChars := fs.IntP("nchars", "n", -1, fmt.Sprintf("return after reading at most NCHARS characters (max %d)", MaxReadBytes))
-	nBytes := fs.IntP("nbytes", "N", -1, fmt.Sprintf("return after reading exactly NBYTES bytes (max %d), ignoring delimiters", MaxReadBytes))
 	timeoutStr := fs.StringP("timeout", "t", "", "time out after TIMEOUT seconds (decimal allowed)")
+
+	// -n and -N must observe last-set-wins parse order to match bash:
+	// `read -n 1 -N 2` reads 2 chars (-N is later) while `read -N 2 -n 1`
+	// reads 1 char (-n is later). pflag tracks "was this flag set" via
+	// Changed() but does not preserve relative parse order between two
+	// flags, so we install a custom pflag.Value that records the order
+	// each time Set() fires.
+	nChars := -1
+	nBytes := -1
+	nCharsOrder := 0
+	nBytesOrder := 0
+	flagSeq := 0
+	fs.VarP(&orderedIntValue{val: &nChars, order: &nCharsOrder, seq: &flagSeq}, "nchars", "n",
+		fmt.Sprintf("return after reading at most NCHARS characters (max %d)", MaxReadBytes))
+	fs.VarP(&orderedIntValue{val: &nBytes, order: &nBytesOrder, seq: &flagSeq}, "nbytes", "N",
+		fmt.Sprintf("return after reading exactly NBYTES bytes (max %d), ignoring delimiters", MaxReadBytes))
 
 	return func(ctx context.Context, callCtx *builtins.CallContext, args []string) builtins.Result {
 		if *help {
@@ -58,25 +72,61 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			return builtins.Result{}
 		}
 		return run(ctx, callCtx, args, runOpts{
-			raw:        *raw,
-			prompt:     *prompt,
-			delim:      *delim,
-			delimSet:   fs.Changed("delim"),
-			nChars:     *nChars,
-			nBytes:     *nBytes,
-			timeoutStr: *timeoutStr,
+			raw:         *raw,
+			prompt:      *prompt,
+			delim:       *delim,
+			delimSet:    fs.Changed("delim"),
+			nChars:      nChars,
+			nBytes:      nBytes,
+			nCharsOrder: nCharsOrder,
+			nBytesOrder: nBytesOrder,
+			timeoutStr:  *timeoutStr,
 		})
 	}
 }
 
+// orderedIntValue is a pflag.Value implementation that records, in
+// addition to the parsed integer value, the relative parse-order
+// position at which Set() was called. Sharing a single seq counter
+// between two flags lets the handler determine which of `-n` / `-N`
+// was specified last, which bash uses to break the tie when both
+// length flags appear.
+type orderedIntValue struct {
+	val   *int
+	order *int // updated to *seq on each Set; 0 means "not set"
+	seq   *int // shared monotonic counter, incremented on each Set
+}
+
+func (v *orderedIntValue) String() string {
+	if v.val == nil {
+		return "-1"
+	}
+	return strconv.Itoa(*v.val)
+}
+
+func (v *orderedIntValue) Set(s string) error {
+	n, err := strconv.Atoi(s)
+	if err != nil {
+		return err
+	}
+	*v.val = n
+	*v.seq++
+	*v.order = *v.seq
+	return nil
+}
+
+func (v *orderedIntValue) Type() string { return "int" }
+
 type runOpts struct {
-	raw        bool
-	prompt     string
-	delim      string
-	delimSet   bool
-	nChars     int
-	nBytes     int
-	timeoutStr string
+	raw         bool
+	prompt      string
+	delim       string
+	delimSet    bool
+	nChars      int
+	nBytes      int
+	nCharsOrder int
+	nBytesOrder int
+	timeoutStr  string
 }
 
 func run(ctx context.Context, c *builtins.CallContext, args []string, opt runOpts) builtins.Result {
@@ -85,23 +135,27 @@ func run(ctx context.Context, c *builtins.CallContext, args []string, opt runOpt
 		return builtins.Result{Code: 2}
 	}
 
-	if opt.nChars != -1 {
-		if opt.nChars < 0 {
-			c.Errf("read: -n: count must be non-negative\n")
-			return builtins.Result{Code: 1}
-		}
-		if opt.nChars > MaxReadBytes {
-			c.Errf("read: -n: count exceeds maximum of %d\n", MaxReadBytes)
-			return builtins.Result{Code: 1}
-		}
-	}
-	if opt.nBytes != -1 {
+	// Resolve which of -n / -N applies: bash uses last-set-wins when both
+	// are present. If neither was set both order values are 0; the equal
+	// comparison falls through to the "no length limit" path.
+	nFixedMode := opt.nBytesOrder > opt.nCharsOrder
+	switch {
+	case nFixedMode:
 		if opt.nBytes < 0 {
 			c.Errf("read: -N: count must be non-negative\n")
 			return builtins.Result{Code: 1}
 		}
 		if opt.nBytes > MaxReadBytes {
 			c.Errf("read: -N: count exceeds maximum of %d\n", MaxReadBytes)
+			return builtins.Result{Code: 1}
+		}
+	case opt.nCharsOrder > 0:
+		if opt.nChars < 0 {
+			c.Errf("read: -n: count must be non-negative\n")
+			return builtins.Result{Code: 1}
+		}
+		if opt.nChars > MaxReadBytes {
+			c.Errf("read: -n: count exceeds maximum of %d\n", MaxReadBytes)
 			return builtins.Result{Code: 1}
 		}
 	}
@@ -152,16 +206,14 @@ func run(ctx context.Context, c *builtins.CallContext, args []string, opt runOpt
 		}
 	}
 
+	// Bash defers identifier validation until assignment time: invalid
+	// names do not prevent the read from running, and earlier valid
+	// names get assigned before the error fires. We replicate this in
+	// the assignment loop below — here we only set up the names slice.
 	noNames := len(args) == 0
 	names := args
 	if noNames {
 		names = []string{"REPLY"}
-	}
-	for _, n := range names {
-		if !validVarName(n) {
-			c.Errf("read: %s: not a valid identifier\n", n)
-			return builtins.Result{Code: 1}
-		}
 	}
 
 	// Poll mode (-t 0) returns immediately: 0 if input is available,
@@ -182,16 +234,14 @@ func run(ctx context.Context, c *builtins.CallContext, args []string, opt runOpt
 		return builtins.Result{Code: 1}
 	}
 
-	// -N counts characters (not bytes) and ignores the delimiter. Otherwise
-	// the read loop is identical to the default/-n path including escape
-	// handling, so we collapse the modes into one helper that takes a
-	// character limit and a "ignore delimiter" flag.
-	nFixedMode := opt.nBytes >= 0
+	// -N counts characters (not bytes) and ignores the delimiter. The
+	// length-flag selection (last-set-wins between -n and -N) was
+	// computed at the top of run() into nFixedMode.
 	charLimit := -1
 	switch {
 	case nFixedMode:
 		charLimit = opt.nBytes
-	case opt.nChars >= 0:
+	case opt.nCharsOrder > 0:
 		charLimit = opt.nChars
 	}
 	line, eof, err := readInput(readCtx, c.Stdin, delim, opt.raw, charLimit, nFixedMode)
@@ -240,7 +290,16 @@ func run(ctx context.Context, c *builtins.CallContext, args []string, opt runOpt
 		copy(values, fields)
 	}
 
+	// Assign each variable in order. Bash validates identifiers
+	// per-assignment: when an invalid name is encountered, the error
+	// fires immediately and remaining variables are left untouched, but
+	// any earlier valid names have already been assigned (and the read
+	// itself has already consumed input). Match that behaviour.
 	for i, name := range names {
+		if !validVarName(name) {
+			c.Errf("read: `%s': not a valid identifier\n", name)
+			return builtins.Result{Code: 1}
+		}
 		if err := c.SetVar(name, values[i]); err != nil {
 			c.Errf("read: %s\n", err)
 			return builtins.Result{Code: 1}
@@ -256,33 +315,37 @@ func run(ctx context.Context, c *builtins.CallContext, args []string, opt runOpt
 	return builtins.Result{}
 }
 
-// pollAvailable implements `read -t 0` semantics. Bash returns success
-// when a select(2) on stdin reports the descriptor is immediately
-// readable (data available or EOF), and 142 otherwise. Without
-// requiring the OS-specific select syscall here, we approximate the
-// check by setting an in-the-past read deadline on stdin and
-// attempting a one-byte read: a successful read (or EOF) means data is
-// available; a deadline-exceeded error means the descriptor would have
-// blocked.
+// pollAvailable implements `read -t 0` semantics. Bash uses select(2)
+// to report whether stdin is immediately readable without consuming
+// any data; we use the platform-specific pollInputNonConsuming for
+// the same effect on Unix, and fall back to a consume-based probe
+// where that helper is unsupported.
 //
-// Two intentional divergences from bash:
-//   - On success the byte read is consumed (bash leaves the stream
-//     untouched). This matters for callers that follow `read -t 0` with
-//     another `read` on the same stream; in practice `read -t 0` is
-//     used as a one-shot availability probe.
-//   - For non-*os.File readers (e.g. byte buffers in tests) we cannot
-//     set a deadline, so we report not-available (142) rather than
-//     guess.
+// Returns:
+//   - 0   — input is immediately available (data buffered or EOF).
+//   - 142 — would block, or stdin is not pollable (e.g. byte buffer).
+//
+// The fallback (Windows / non-File readers) consumes one byte on
+// success — an intentional divergence from bash documented inline.
+// Implementing non-consuming poll on Windows is a follow-up.
 func pollAvailable(c *builtins.CallContext) builtins.Result {
 	f, ok := c.Stdin.(*os.File)
 	if !ok {
 		return builtins.Result{Code: 142}
 	}
-	// Use c.Now (script-start reference) minus an hour to construct a
-	// deadline that is reliably in the past, avoiding a direct time.Now
-	// call. SetReadDeadline with a past time makes Read return
-	// immediately: with data if any is buffered, with
-	// os.ErrDeadlineExceeded if the descriptor would have blocked.
+	// Preferred path: non-consuming poll via the platform syscall.
+	if avail, supported := pollInputNonConsuming(f.Fd()); supported {
+		if avail {
+			return builtins.Result{Code: 0}
+		}
+		return builtins.Result{Code: 142}
+	}
+
+	// Fallback: set a deadline in the past and try a one-byte read.
+	// On success the byte is consumed; subsequent reads on the same
+	// stream will not see it. Documented as a Windows-only divergence.
+	// We use c.Now.Add(-time.Hour) to construct a deadline that is
+	// reliably in the past while avoiding a direct time.Now call.
 	pastDeadline := c.Now.Add(-time.Hour)
 	_ = f.SetReadDeadline(pastDeadline)
 	defer func() { _ = f.SetReadDeadline(time.Time{}) }()
