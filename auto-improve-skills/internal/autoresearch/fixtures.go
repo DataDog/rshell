@@ -38,6 +38,7 @@ func GenerateRemoteHostDiagnosticsFixtures(root string) error {
 
 	files := remoteHostDiagnosticsBaseFixtureFiles()
 	files = append(files, remoteHostDiagnosticsPublicVariantFixtureFiles()...)
+	files = append(files, remoteHostDiagnosticsHoldoutVariantFixtureFiles()...)
 
 	for _, file := range files {
 		if err := writeFixtureLines(filepath.Join(fixtureRoot, filepath.FromSlash(file.path)), file.lines); err != nil {
@@ -85,6 +86,7 @@ func remoteHostDiagnosticsBaseFixtureFiles() []fixtureFile {
 		{path: "holdout/logs/deploy.log", lines: generateHoldoutDeployLog()},
 		{path: "holdout/logs/security/auth-success.log", lines: generateHoldoutAuthSuccessLog()},
 		{path: "holdout/logs/datadog/api-agent.log", lines: generateHoldoutDatadogAPIKeyLog()},
+		{path: "holdout/logs/datadog/agent.log.1", lines: generateHoldoutDatadogYAMLDecoyLog()},
 		{path: "holdout/logs/app/cart.log", lines: generateHoldoutCartLog()},
 		{path: "holdout/logs/app/cart.log.1", lines: generateHoldoutCartRotatedLog()},
 		{path: "holdout/logs/nginx/cart-access.log", lines: generateHoldoutCartNginxAccessLog()},
@@ -167,6 +169,133 @@ func remoteHostDiagnosticsPublicVariantFixtureFiles() []fixtureFile {
 		// that points at line=42 / rc-8831 is reading the rotated decoy.
 		fixtureFile{path: ddAPIKeyRoot + "/datadog/agent.log.1", lines: appendFixtureLines(generateDatadogAgentRotatedLog(),
 			"2026-05-01T03:18:22Z ERROR config validation failed file=/etc/datadog-agent/datadog.yaml line=42 column=17 transaction_id=rc-8831 recovered=true",
+		)},
+	)
+
+	return files
+}
+
+func remoteHostDiagnosticsHoldoutVariantFixtureFiles() []fixtureFile {
+	files := []fixtureFile{}
+
+	refundsDNSRoot := "variants/holdout/refunds-dns-seed-41/logs"
+	files = append(files,
+		fixtureFile{path: refundsDNSRoot + "/app/billing.log", lines: replaceFixtureLines(generateHoldoutCheckoutLog(),
+			"2026-05-01T14", "2026-05-02T09",
+			"service=checkout", "service=billing",
+			"checkout users", "billing users",
+			"checkout_rw", "billing_rw",
+			"checkout", "billing",
+			"/api/pay", "/api/refund",
+			"pay-", "refund-",
+			"payments.service.consul", "ledger.service.consul",
+			"dependency=payments", "dependency=ledger",
+			"upstream=payments", "upstream=ledger",
+		)},
+		fixtureFile{path: refundsDNSRoot + "/nginx/refund-access.log", lines: replaceFixtureLines(generateHoldoutNginxAccessLog(),
+			"01/May/2026:14", "02/May/2026:09",
+			"/api/pay", "/api/refund",
+			"pay-", "refund-",
+			"holdout-client", "holdout-refund-client",
+		)},
+		fixtureFile{path: refundsDNSRoot + "/resolver.log", lines: replaceFixtureLines(generateHoldoutSystemLog(),
+			"May 01 14", "May 02 09",
+			"checkout.slice", "billing.slice",
+			"payments.service.consul", "ledger.service.consul",
+			"checkout_rw", "billing_rw",
+		)},
+	)
+
+	invoiceWorkerRoot := "variants/holdout/invoice-worker-seed-64/logs"
+	files = append(files,
+		fixtureFile{path: invoiceWorkerRoot + "/app/invoice-worker.log", lines: replaceFixtureLines(generateHoldoutWorkerLog(),
+			"2026-05-01T15", "2026-05-02T20",
+			"2026-05-01T16", "2026-05-02T21",
+			"async-worker", "invoice-worker",
+			"77ac21", "a92f04",
+			"emails", "invoices",
+		)},
+		fixtureFile{path: invoiceWorkerRoot + "/auth.log", lines: replaceFixtureLines(generateHoldoutAuthLog(),
+			"May 01 15", "May 02 20",
+			"May 01 16", "May 02 21",
+			"async-worker", "invoice-worker",
+			"holdout-deploy", "holdout-invoice-deploy",
+		)},
+		fixtureFile{path: invoiceWorkerRoot + "/deploy.log", lines: replaceFixtureLines(generateHoldoutDeployLog(),
+			"2026-05-01T15", "2026-05-02T20",
+			"finished_at=2026-05-01T15:02:12Z", "finished_at=2026-05-02T20:02:12Z",
+			"async-worker", "invoice-worker",
+			"checkout", "billing",
+			"dep-771", "dep-882",
+			"2026.05.01", "2026.05.02",
+		)},
+	)
+
+	acceptedSSHRoot := "variants/holdout/ssh-accepted-seed-82/logs"
+	files = append(files,
+		fixtureFile{path: acceptedSSHRoot + "/security/secure-success.log", lines: generateHoldoutAuthAcceptedVariantLog(holdoutAcceptedSSHConfig{
+			SourceIP:        "198.51.100.118",
+			FailureCount:    57,
+			AcceptedUser:    "deploy",
+			OtherAcceptedIP: "203.0.113.92",
+			Start:           time.Date(2026, 5, 2, 6, 20, 0, 0, time.UTC),
+		})},
+	)
+
+	apiKeyRoot := "variants/holdout/dd-api-key-seed-77/logs"
+	files = append(files,
+		fixtureFile{path: apiKeyRoot + "/datadog/intake-agent.log", lines: replaceFixtureLines(generateHoldoutDatadogAPIKeyLog(),
+			"2026-05-01T11", "2026-05-02T19",
+			"holdout-api", "holdout-api-seed-77",
+			"host=api-01", "host=intake-77",
+			"ak-2209", "ak-7704",
+			"rc-9901", "rc-7701",
+			"rc-9902", "rc-7702",
+		)},
+		fixtureFile{path: apiKeyRoot + "/datadog/agent.log.1", lines: replaceFixtureLines(generateHoldoutDatadogYAMLDecoyLog(),
+			"2026-05-01T03", "2026-05-02T04",
+			"rc-8831", "rc-7700",
+		)},
+	)
+
+	profileCacheRoot := "variants/holdout/profile-cache-seed-68/logs"
+	files = append(files,
+		fixtureFile{path: profileCacheRoot + "/app/profile.log", lines: replaceFixtureLines(generateHoldoutCartLog(),
+			"2026-05-01T17", "2026-05-02T12",
+			"service=cart", "service=profile",
+			"cart_rw", "profile_rw",
+			"/api/cart", "/api/profile",
+			"cart-", "profile-",
+			"cart-primary", "profile-primary",
+			"dependency=redis", "dependency=memcached",
+			"redis", "memcached",
+			"ERR max number of clients reached", "SERVER_ERROR max connections reached",
+			"10.2.4.19:6379", "10.2.5.19:11211",
+		)},
+		fixtureFile{path: profileCacheRoot + "/app/profile.log.1", lines: replaceFixtureLines(generateHoldoutCartRotatedLog(),
+			"2026-04-30T17", "2026-05-01T12",
+			"service=cart", "service=profile",
+			"cart_rw", "profile_rw",
+			"/api/cart", "/api/profile",
+			"cart-", "profile-",
+		)},
+		fixtureFile{path: profileCacheRoot + "/nginx/profile-access.log", lines: replaceFixtureLines(generateHoldoutCartNginxAccessLog(),
+			"01/May/2026:17", "02/May/2026:12",
+			"/api/cart", "/api/profile",
+			"cart-", "profile-",
+			"holdout-cart", "holdout-profile",
+		)},
+		fixtureFile{path: profileCacheRoot + "/system-profile.log", lines: replaceFixtureLines(generateHoldoutCartSystemLog(),
+			"May 01 17", "May 02 12",
+			"cart-node", "profile-node",
+			"cart.slice", "profile.slice",
+			"redis-server", "memcached",
+			"redis", "memcached",
+			"maxclients", "maxconns",
+			"ERR max number of clients reached", "SERVER_ERROR max connections reached",
+			"10.2.4.55:44821", "10.2.5.55:44821",
+			"6379", "11211",
+			"database=cart", "database=profile",
 		)},
 	)
 
@@ -943,6 +1072,57 @@ func generateHoldoutAuthSuccessLog() []string {
 		}
 	}
 	return lines
+}
+
+type holdoutAcceptedSSHConfig struct {
+	SourceIP        string
+	FailureCount    int
+	AcceptedUser    string
+	OtherAcceptedIP string
+	Start           time.Time
+}
+
+func generateHoldoutAuthAcceptedVariantLog(cfg holdoutAcceptedSSHConfig) []string {
+	users := []string{"deploy", "backup", "admin", "support", "oracle", "postgres", "mysql", "ci", "jenkins"}
+	failures := map[int]int{}
+	for n := 0; n < cfg.FailureCount; n++ {
+		failures[210+n*4] = n
+	}
+	acceptedAt := 210 + cfg.FailureCount*4 + 22
+	events := map[int]string{
+		96:             fmt.Sprintf("login02 sshd[7120]: Accepted publickey for release from %s port 61192 ssh2: ED25519 SHA256:holdout-release-82", cfg.OtherAcceptedIP),
+		acceptedAt - 8: fmt.Sprintf("login02 sshd[7810]: maximum authentication attempts exceeded for invalid user %s from %s port 55480 ssh2 [preauth]", cfg.AcceptedUser, cfg.SourceIP),
+		acceptedAt:     fmt.Sprintf("login02 sshd[7818]: Accepted password for %s from %s port 55502 ssh2", cfg.AcceptedUser, cfg.SourceIP),
+		acceptedAt + 2: fmt.Sprintf("login02 sshd[7818]: pam_unix(sshd:session): session opened for user %s(uid=1008) by (uid=0)", cfg.AcceptedUser),
+		acceptedAt + 66: fmt.Sprintf(
+			"login02 sudo:   %s : TTY=pts/4 ; PWD=/home/%s ; USER=root ; COMMAND=/usr/bin/id",
+			cfg.AcceptedUser,
+			cfg.AcceptedUser,
+		),
+		742: "login02 sshd[7910]: Accepted publickey for deploy from 203.0.113.42 port 61222 ssh2: RSA SHA256:holdout-deploy-82",
+	}
+	lines := make([]string, 0, 960)
+	for i := 0; i < 960; i++ {
+		dt := cfg.Start.Add(time.Duration(i) * time.Second)
+		if n, ok := failures[i]; ok {
+			user := users[n%len(users)]
+			lines = append(lines, fmt.Sprintf("%s login02 sshd[%d]: Failed password for invalid user %s from %s port %d ssh2", syslogTime(dt), 7500+n, user, cfg.SourceIP, 55200+n))
+		} else if event, ok := events[i]; ok {
+			lines = append(lines, fmt.Sprintf("%s %s", syslogTime(dt), event))
+		} else if i%149 == 0 {
+			lines = append(lines, fmt.Sprintf("%s login02 sshd[%d]: Failed password for invalid user temp from 192.0.2.%d port %d ssh2", syslogTime(dt), 8200+i, 30+i%20, 51000+i))
+		} else {
+			lines = append(lines, fmt.Sprintf("%s login02 CRON[%d]: pam_unix(cron:session): session closed for user root token=holdout-auth-accepted-%04d", syslogTime(dt), 9000+i, i))
+		}
+	}
+	return lines
+}
+
+func generateHoldoutDatadogYAMLDecoyLog() []string {
+	return appendFixtureLines(generateDatadogAgentRotatedLog(),
+		"2026-05-01T03:18:22Z ERROR config validation failed file=/etc/datadog-agent/datadog.yaml line=42 column=17 transaction_id=rc-8831 recovered=true",
+		"2026-05-01T03:18:31Z INFO config validation recovered transaction_id=rc-8831 attempt=2 status=OK",
+	)
 }
 
 func generateHoldoutDatadogAPIKeyLog() []string {

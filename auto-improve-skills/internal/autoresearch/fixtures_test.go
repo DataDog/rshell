@@ -77,6 +77,7 @@ func TestGenerateRemoteHostDiagnosticsFixtures(t *testing.T) {
 		"holdout/logs/deploy.log":                                              620,
 		"holdout/logs/security/auth-success.log":                               900,
 		"holdout/logs/datadog/api-agent.log":                                   900,
+		"holdout/logs/datadog/agent.log.1":                                     702,
 		"holdout/logs/app/cart.log":                                            780,
 		"holdout/logs/app/cart.log.1":                                          620,
 		"holdout/logs/nginx/cart-access.log":                                   900,
@@ -97,6 +98,19 @@ func TestGenerateRemoteHostDiagnosticsFixtures(t *testing.T) {
 		"variants/public/kube-cert-expired-seed-41/container/host/var/log/syslog":             680,
 		"variants/public/dd-api-key-seed-53/logs/datadog/agent-api.log":                       900,
 		"variants/public/dd-api-key-seed-53/logs/datadog/agent.log.1":                         701,
+		"variants/holdout/refunds-dns-seed-41/logs/app/billing.log":                           760,
+		"variants/holdout/refunds-dns-seed-41/logs/nginx/refund-access.log":                   1050,
+		"variants/holdout/refunds-dns-seed-41/logs/resolver.log":                              760,
+		"variants/holdout/invoice-worker-seed-64/logs/app/invoice-worker.log":                 620,
+		"variants/holdout/invoice-worker-seed-64/logs/auth.log":                               980,
+		"variants/holdout/invoice-worker-seed-64/logs/deploy.log":                             620,
+		"variants/holdout/ssh-accepted-seed-82/logs/security/secure-success.log":              960,
+		"variants/holdout/dd-api-key-seed-77/logs/datadog/intake-agent.log":                   900,
+		"variants/holdout/dd-api-key-seed-77/logs/datadog/agent.log.1":                        702,
+		"variants/holdout/profile-cache-seed-68/logs/app/profile.log":                         780,
+		"variants/holdout/profile-cache-seed-68/logs/app/profile.log.1":                       620,
+		"variants/holdout/profile-cache-seed-68/logs/nginx/profile-access.log":                900,
+		"variants/holdout/profile-cache-seed-68/logs/system-profile.log":                      760,
 	}
 	for rel, want := range wantLineCounts {
 		data := readGeneratedFixture(t, fixtureRoot, rel)
@@ -162,6 +176,9 @@ func TestGenerateRemoteHostDiagnosticsFixtures(t *testing.T) {
 	assertContains(t, holdoutAPIKey, "api key validation failed")
 	assertContains(t, holdoutAPIKey, "api_key_invalid")
 	assertContains(t, holdoutAPIKey, "no config validation errors observed")
+	holdoutAPIKeyRotated := string(readGeneratedFixture(t, fixtureRoot, "holdout/logs/datadog/agent.log.1"))
+	assertContains(t, holdoutAPIKeyRotated, "transaction_id=rc-8831 recovered=true")
+	assertContains(t, holdoutAPIKeyRotated, "line=42 column=17")
 
 	holdoutCart := string(readGeneratedFixture(t, fixtureRoot, "holdout/logs/app/cart.log"))
 	assertContains(t, holdoutCart, "ERR max number of clients reached")
@@ -224,6 +241,43 @@ func TestGenerateRemoteHostDiagnosticsFixtures(t *testing.T) {
 	// (api_key_invalid in agent-api.log).
 	assertContains(t, apiKeyVariantRotated, "transaction_id=rc-8831 recovered=true")
 	assertContains(t, apiKeyVariantRotated, "line=42 column=17")
+
+	holdoutRefunds := string(readGeneratedFixture(t, fixtureRoot, "variants/holdout/refunds-dns-seed-41/logs/app/billing.log"))
+	assertContains(t, holdoutRefunds, "ledger.service.consul")
+	assertContains(t, holdoutRefunds, "postgres health status=OK pool=billing_rw")
+	holdoutRefundsResolver := string(readGeneratedFixture(t, fixtureRoot, "variants/holdout/refunds-dns-seed-41/logs/resolver.log"))
+	assertContains(t, holdoutRefundsResolver, "SERVFAIL")
+	assertContains(t, holdoutRefundsResolver, "ledger.service.consul")
+
+	holdoutInvoiceWorker := string(readGeneratedFixture(t, fixtureRoot, "variants/holdout/invoice-worker-seed-64/logs/app/invoice-worker.log"))
+	assertContains(t, holdoutInvoiceWorker, "received signal signal=SIGTERM")
+	assertContains(t, holdoutInvoiceWorker, "build=a92f04")
+	holdoutInvoiceDeploy := string(readGeneratedFixture(t, fixtureRoot, "variants/holdout/invoice-worker-seed-64/logs/deploy.log"))
+	assertContains(t, holdoutInvoiceDeploy, "dep-882")
+	assertContains(t, holdoutInvoiceDeploy, "finished_at=2026-05-02T20:02:12Z")
+
+	holdoutAcceptedSSH := string(readGeneratedFixture(t, fixtureRoot, "variants/holdout/ssh-accepted-seed-82/logs/security/secure-success.log"))
+	if got := countLinesContaining(holdoutAcceptedSSH, "Failed password for invalid user", "from 198.51.100.118"); got != 57 {
+		t.Fatalf("holdout accepted-login variant brute-force failure count = %d, want 57", got)
+	}
+	assertContains(t, holdoutAcceptedSSH, "Accepted password for deploy from 198.51.100.118")
+
+	holdoutAPIKeyVariant := string(readGeneratedFixture(t, fixtureRoot, "variants/holdout/dd-api-key-seed-77/logs/datadog/intake-agent.log"))
+	assertContains(t, holdoutAPIKeyVariant, "key_id=ak-7704")
+	assertContains(t, holdoutAPIKeyVariant, "api_key_invalid")
+	holdoutAPIKeyVariantRotated := string(readGeneratedFixture(t, fixtureRoot, "variants/holdout/dd-api-key-seed-77/logs/datadog/agent.log.1"))
+	assertContains(t, holdoutAPIKeyVariantRotated, "transaction_id=rc-7700 recovered=true")
+	assertContains(t, holdoutAPIKeyVariantRotated, "line=42 column=17")
+
+	holdoutProfileCache := string(readGeneratedFixture(t, fixtureRoot, "variants/holdout/profile-cache-seed-68/logs/app/profile.log"))
+	assertContains(t, holdoutProfileCache, "SERVER_ERROR max connections reached")
+	assertContains(t, holdoutProfileCache, "postgres health status=OK pool=profile_rw")
+	holdoutProfileRotated := string(readGeneratedFixture(t, fixtureRoot, "variants/holdout/profile-cache-seed-68/logs/app/profile.log.1"))
+	assertContains(t, holdoutProfileRotated, "db pool exhausted")
+	assertContains(t, holdoutProfileRotated, "suspected_client=reporting-worker")
+	holdoutProfileSystem := string(readGeneratedFixture(t, fixtureRoot, "variants/holdout/profile-cache-seed-68/logs/system-profile.log"))
+	assertContains(t, holdoutProfileSystem, "maxconns")
+	assertContains(t, holdoutProfileSystem, "memcached")
 }
 
 func readGeneratedFixture(t *testing.T, fixtureRoot, rel string) []byte {

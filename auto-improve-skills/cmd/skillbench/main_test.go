@@ -345,7 +345,7 @@ func TestBenchmarkCriterionFixesRequireSpecificEvidence(t *testing.T) {
 	}
 
 	holdoutSuite := filepath.Join("..", "..", "benchmarks", "remote-host-diagnostics", "holdout.yaml")
-	dbNotCause := expandedCriterion(t, holdoutSuite, "holdout-payments-dns-502", "final distinguishes database/postgres pool as not root cause")
+	dbNotCause := expandedCriterion(t, holdoutSuite, "holdout-payments-dns-502-seed-00", "final distinguishes database/postgres pool as not root cause")
 	dbEvidence := "postgres health status=OK pool=checkout_rw active=43 idle=17 max=120 latency_ms=17"
 	if passed, detail := matchCriterion(dbNotCause, map[string]string{
 		"final":        "The database pool was the likely root cause.",
@@ -360,7 +360,7 @@ func TestBenchmarkCriterionFixesRequireSpecificEvidence(t *testing.T) {
 		t.Fatalf("DB-not-root-cause criterion should accept explicit healthy/unrelated DB evidence, detail: %s", detail)
 	}
 
-	rotatedDB := expandedCriterion(t, holdoutSuite, "holdout-cart-redis-503-rotated-db-red-herring", "final distinguishes old database pool rotated-log noise")
+	rotatedDB := expandedCriterion(t, holdoutSuite, "holdout-cart-redis-503-rotated-db-red-herring-seed-00", "final distinguishes old database pool rotated-log noise")
 	rotatedEvidence := "2026-04-30T17:34:42Z ERROR service=cart db pool exhausted pool=cart_rw active=100 max=100 suspected_client=reporting-worker"
 	if passed, detail := matchCriterion(rotatedDB, map[string]string{
 		"final":        "The db pool exhausted line in cart.log.1 was the cause.",

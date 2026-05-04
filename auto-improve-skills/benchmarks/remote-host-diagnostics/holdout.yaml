@@ -4,292 +4,552 @@ name: remote-host-diagnostics-holdout
 description: >-
   Holdout benchmarks for the local ./rshell remote-host-diagnostics skill.
   Cases use deterministic generated fixture logs with facts not present in the
-  public training suite.
+  public training suite, plus seeded variants so the private gate is closer in
+  breadth and difficulty to the public suite.
 skill_path: ../../skills/remote-host-diagnostics
 cases:
   - id: holdout-payments-dns-502
     title: Distinguish payment upstream DNS failures from database pool noise
+    variables:
+      LOG_ROOT: '{{HOLDOUT_LOG_ROOT}}'
+      SERVICE_WORD: checkout
+      ROUTE_PATH: /api/pay
+      UPSTREAM_WORD: payments
+      UPSTREAM_HOST: payments.service.consul
+      SERVICE_LOG_NAME: checkout.log
+      ACCESS_LOG_NAME: access.log
+      SYSTEM_LOG_NAME: system.log
+      DB_POOL: checkout_rw
+      INCIDENT_DATE: "2026-05-01"
+      INCIDENT_TIME: "14:22"
+    variants:
+      - id: seed-00
+      - id: seed-41
+        title: Distinguish refund upstream DNS failures from database pool noise
+        variables:
+          LOG_ROOT: '{{BENCH_DIR}}/generated-fixtures/variants/holdout/refunds-dns-seed-41/logs'
+          SERVICE_WORD: billing
+          ROUTE_PATH: /api/refund
+          UPSTREAM_WORD: ledger
+          UPSTREAM_HOST: ledger.service.consul
+          SERVICE_LOG_NAME: billing.log
+          ACCESS_LOG_NAME: refund-access.log
+          SYSTEM_LOG_NAME: resolver.log
+          DB_POOL: billing_rw
+          INCIDENT_DATE: "2026-05-02"
+          INCIDENT_TIME: "09:22"
     prompt: |-
-      Fake holdout investigation: checkout users are seeing HTTP 502s on one purchase path around 14:22 UTC, and a teammate is focused on database/pool noise from nearby logs.
-      Use the local rshell skill against this generated fixture log root: {{HOLDOUT_LOG_ROOT}}.
+      Fake holdout investigation: {{SERVICE_WORD}} users are seeing HTTP 502s on {{ROUTE_PATH}} around {{INCIDENT_TIME}} UTC, and a teammate is focused on database/pool noise from nearby logs.
+      Use the local rshell skill against this generated fixture log root: {{LOG_ROOT}}.
       Determine what the current evidence supports, what is misleading/recovered noise, and provide evidence. Keep the investigation read-only and bounded.
     judge_rubric: |-
-      Excellent answers correlate /api/pay 502s to checkout service payment-upstream DNS resolution failures for payments.service.consul, cite checkout.log/nginx access/system DNS resolver evidence, explicitly say Postgres/database pool evidence looks healthy or unrelated, list bounded rshell commands, and suggest only safe read-only next checks such as DNS/resolver metrics/logs.
+      Excellent answers correlate {{ROUTE_PATH}} 502s to {{SERVICE_WORD}} service {{UPSTREAM_WORD}} upstream DNS resolution failures for {{UPSTREAM_HOST}} around {{INCIDENT_DATE}}T{{INCIDENT_TIME}} UTC, cite {{SERVICE_LOG_NAME}}, {{ACCESS_LOG_NAME}}, and {{SYSTEM_LOG_NAME}} resolver evidence, explicitly say {{DB_POOL}} Postgres/database pool evidence is healthy or unrelated, run bounded multi-file rshell queries after help discovery, avoid recursive grep/full-log dumping, and suggest only safe read-only DNS/resolver next checks.
     criteria:
-      - name: final identifies payment upstream DNS resolution as likely cause
+      - name: final identifies upstream DNS resolution as likely cause
         source: final
         case_insensitive: true
-        regex: "dns|lookup|resolver|servfail|no such host|payments\\.service\\.consul"
+        regex: 'dns|lookup|resolver|servfail|no such host|{{UPSTREAM_HOST}}'
         require_evidence: true
-        evidence_regex: "lookup payments\\.service\\.consul|SERVFAIL|DNS server|server misbehaving|no such host"
-        points: 25
-      - name: final mentions HTTP 502 payment symptom
+        evidence_regex: 'lookup {{UPSTREAM_HOST}}|SERVFAIL|DNS server|server misbehaving|no such host'
+        points: 18
+      - name: final cites the specific upstream hostname
+        source: final
+        contains: '{{UPSTREAM_HOST}}'
+        require_evidence: true
+        evidence_regex: '{{UPSTREAM_HOST}}'
+        points: 10
+      - name: final mentions HTTP 502 on the affected route
         source: final
         case_insensitive: true
-        regex: "502|/api/pay|payment|payments"
+        regex: '502.{0,80}{{ROUTE_PATH}}|{{ROUTE_PATH}}.{0,80}502|{{UPSTREAM_WORD}}.{0,40}502'
         require_evidence: true
-        evidence_regex: "HTTP/1.1\" 502|status=502|route=/api/pay"
-        points: 15
+        evidence_regex: 'HTTP/1\.1" 502|status=502|route={{ROUTE_PATH}}'
+        points: 12
+      - name: final cites the specific incident timestamp window
+        source: final
+        regex: '{{INCIDENT_DATE}}T?\s*{{INCIDENT_TIME}}'
+        points: 6
       - name: final distinguishes database/postgres pool as not root cause
         source: final
         case_insensitive: true
-        regex: "(database|postgres|pool|db).{0,80}(healthy|OK|not.{0,40}cause|not supported|unrelated|noise|red herring)|(healthy|OK|not.{0,40}cause|not supported|unrelated|noise|red herring).{0,80}(database|postgres|pool|db)"
+        regex: '(database|postgres|pool|db|{{DB_POOL}}).{0,90}(healthy|OK|not.{0,40}cause|not supported|unrelated|noise|red herring)|(healthy|OK|not.{0,40}cause|not supported|unrelated|noise|red herring).{0,90}(database|postgres|pool|db|{{DB_POOL}})'
         require_evidence: true
-        evidence_regex: "postgres health status=OK pool=checkout_rw active=43|connections active=43|max=120"
-        points: 15
-      - name: final cites checkout service log evidence
+        evidence_regex: 'postgres health status=OK pool={{DB_POOL}} active=(42|43)|connections active=43|max=120'
+        points: 12
+      - name: final cites service log evidence
         source: final
         case_insensitive: true
-        regex: "checkout\\.log|service log|checkout"
-        points: 10
+        regex: '{{SERVICE_LOG_NAME}}|service={{SERVICE_WORD}}'
+        points: 6
       - name: final cites nginx access evidence
         source: final
         case_insensitive: true
-        regex: "nginx|access\\.log"
-        points: 10
+        regex: '{{ACCESS_LOG_NAME}}|nginx|access'
+        points: 6
       - name: final cites system resolver evidence
         source: final
         case_insensitive: true
-        regex: "system\\.log|systemd-resolved|dnsmasq|resolver"
-        points: 10
-      - name: commands use provided holdout log root as allowed path
+        regex: '{{SYSTEM_LOG_NAME}}|systemd-resolved|dnsmasq|resolver'
+        points: 6
+      - name: commands use provided log root as allowed path
         source: commands
-        regex: "--allowed-paths(?:=|\\s+){{HOLDOUT_LOG_ROOT}}"
+        regex: '--allowed-paths(?:=|\s+){{LOG_ROOT}}'
+        points: 5
+      - name: commands invoke help to discover supported features
+        source: commands
+        regex: '(\.?/?rshell[^|\n]*help|help[^|\n]*\|\s*\.?/?rshell)'
+        points: 3
+      - name: commands cross-cut service, access, or resolver logs
+        source: commands
+        case_insensitive: true
+        regex: '{{SERVICE_LOG_NAME}}[\s\S]+({{ACCESS_LOG_NAME}}|{{SYSTEM_LOG_NAME}})|({{ACCESS_LOG_NAME}}|{{SYSTEM_LOG_NAME}})[\s\S]+{{SERVICE_LOG_NAME}}'
         points: 5
       - name: commands use bounded filters across relevant logs
         source: commands
         case_insensitive: true
-        regex: 'grep\s+[^\n]*(502|dns|lookup|servfail|payments|postgres)|head\s+-n|tail\s+-n'
+        regex: 'head\s+-n|tail\s+-n|wc\s+-l|grep\s+[^|\n]*-(c|m)\s'
         points: 5
+      - name: commands avoid unbounded recursive grep across the whole log root
+        source: commands
+        not: true
+        regex: 'grep\s+-[A-Za-z]*[Rr]\b|find\s+[^\n]*-exec\s+grep'
+        points: 4
       - name: final suggests safe read-only DNS/resolver next check
         source: final
         case_insensitive: true
-        regex: "next|check|inspect|verify|dns|resolver|metrics|logs"
-        points: 5
+        regex: 'next|check|inspect|verify|dns|resolver|metrics|logs'
+        points: 2
 
   - id: holdout-ambiguous-worker-restart
     title: Avoid overclaiming when worker restart cause is not evidenced
+    variables:
+      LOG_ROOT: '{{HOLDOUT_LOG_ROOT}}'
+      WORKER_SERVICE: async-worker
+      WORKER_LOG_NAME: worker.log
+      AUTH_LOG_NAME: auth.log
+      DEPLOY_LOG_NAME: deploy.log
+      DEPLOY_ID: dep-771
+      BUILD_ID: 77ac21
+      DEPLOY_TIME: "15:02"
+      INCIDENT_DATE: "2026-05-01"
+      INCIDENT_TIME: "16:03"
+    variants:
+      - id: seed-00
+      - id: seed-64
+        title: Avoid overclaiming when an invoice worker restart cause is not evidenced
+        variables:
+          LOG_ROOT: '{{BENCH_DIR}}/generated-fixtures/variants/holdout/invoice-worker-seed-64/logs'
+          WORKER_SERVICE: invoice-worker
+          WORKER_LOG_NAME: invoice-worker.log
+          AUTH_LOG_NAME: auth.log
+          DEPLOY_LOG_NAME: deploy.log
+          DEPLOY_ID: dep-882
+          BUILD_ID: a92f04
+          DEPLOY_TIME: "20:02"
+          INCIDENT_DATE: "2026-05-02"
+          INCIDENT_TIME: "21:03"
     prompt: |-
-      Fake holdout investigation: an async worker restarted around 16:03 UTC, and a teammate suspects a bad deploy.
-      Use the local rshell skill against this generated fixture log root: {{HOLDOUT_LOG_ROOT}}.
+      Fake holdout investigation: {{WORKER_SERVICE}} restarted around {{INCIDENT_TIME}} UTC, and a teammate suspects a bad deploy.
+      Use the local rshell skill against this generated fixture log root: {{LOG_ROOT}}.
       Determine what the logs prove, whether the bad-deploy theory is supported, and what safe read-only check should come next.
     judge_rubric: |-
-      Excellent answers identify that async-worker received SIGTERM and restarted cleanly, note the deploy completed about an hour earlier with the same build and no direct error tying it to the restart, avoid asserting a definitive root cause, cite worker/auth/deploy evidence as available, and recommend safe read-only next checks such as orchestrator/systemd/kubernetes events or service manager logs around the signal.
+      Excellent answers identify that {{WORKER_SERVICE}} received SIGTERM and restarted cleanly around {{INCIDENT_DATE}}T{{INCIDENT_TIME}} UTC, note deploy {{DEPLOY_ID}} completed earlier at about {{DEPLOY_TIME}} with the same build {{BUILD_ID}} and no direct error tying it to the restart, avoid asserting a definitive root cause, cite {{WORKER_LOG_NAME}} plus deploy/auth context as available, run bounded multi-file rshell queries after help discovery, and recommend safe read-only checks such as orchestrator/systemd/kubernetes events or service-manager logs around the signal.
     criteria:
       - name: final identifies SIGTERM and clean restart evidence
         source: final
         case_insensitive: true
-        regex: "sigterm|restarted|shutdown complete|boot complete|restart"
+        regex: 'sigterm|shutdown complete|boot complete|restart'
         require_evidence: true
-        evidence_regex: "received signal signal=SIGTERM|shutdown complete|boot complete.*same build"
-        points: 25
+        evidence_regex: 'received signal signal=SIGTERM|shutdown complete|boot complete.*same build'
+        points: 18
+      - name: final identifies same build after restart
+        source: final
+        case_insensitive: true
+        regex: 'same build|{{BUILD_ID}}'
+        require_evidence: true
+        evidence_regex: 'build={{BUILD_ID}}|same build after restart'
+        points: 12
+      - name: final distinguishes deploy timing from direct cause
+        source: final
+        case_insensitive: true
+        regex: '{{DEPLOY_ID}}|deploy.*{{DEPLOY_TIME}}|completed|earlier'
+        require_evidence: true
+        evidence_regex: '{{DEPLOY_ID}}|completed status=success|finished_at={{INCIDENT_DATE}}T{{DEPLOY_TIME}}'
+        points: 12
+      - name: final states evidence is insufficient or cause is unknown
+        source: final
+        case_insensitive: true
+        regex: 'insufficient|not enough evidence|unknown|uncertain|cannot confirm|not proven|no direct evidence'
+        points: 14
       - name: final avoids claiming bad deploy as confirmed root cause
         source: final
         case_insensitive: true
         not: true
-        regex: "bad deploy caused the|deploy was the cause|root cause was.*deploy|definitive.*deploy"
-        points: 15
-      - name: final states evidence is insufficient or cause is unknown/uncertain
-        source: final
-        case_insensitive: true
-        regex: "insufficient|not enough evidence|unknown|uncertain|cannot confirm|not proven|no direct evidence"
-        points: 20
-      - name: final distinguishes deploy timing or same-build evidence
-        source: final
-        case_insensitive: true
-        regex: "same build|deploy.*earlier|completed|dep-771|15:02"
-        require_evidence: true
-        evidence_regex: "dep-771|completed status=success|same build after restart"
-        points: 15
+        regex: 'bad deploy caused the|deploy was the cause|root cause was.*deploy|definitive.*deploy'
+        points: 10
       - name: final cites worker log evidence
         source: final
         case_insensitive: true
-        regex: "worker\\.log|async-worker"
-        points: 10
-      - name: commands use provided holdout log root as allowed path
-        source: commands
-        regex: "--allowed-paths(?:=|\\s+){{HOLDOUT_LOG_ROOT}}"
+        regex: '{{WORKER_LOG_NAME}}|{{WORKER_SERVICE}}'
+        points: 6
+      - name: final cites deploy or auth context
+        source: final
+        case_insensitive: true
+        regex: '{{DEPLOY_LOG_NAME}}|{{AUTH_LOG_NAME}}|deploy|auth|sudo|journalctl'
         points: 5
-      - name: commands inspect worker plus auth or deploy/system context with bounded filters
+      - name: commands use provided log root as allowed path
+        source: commands
+        regex: '--allowed-paths(?:=|\s+){{LOG_ROOT}}'
+        points: 5
+      - name: commands invoke help to discover supported features
+        source: commands
+        regex: '(\.?/?rshell[^|\n]*help|help[^|\n]*\|\s*\.?/?rshell)'
+        points: 3
+      - name: commands inspect worker plus deploy or auth context
         source: commands
         case_insensitive: true
-        regex: 'grep\s+[^\n]*(SIGTERM|deploy|Accepted|sudo|restart|boot)|head\s+-n|tail\s+-n'
+        regex: '{{WORKER_LOG_NAME}}[\s\S]+({{DEPLOY_LOG_NAME}}|{{AUTH_LOG_NAME}})|({{DEPLOY_LOG_NAME}}|{{AUTH_LOG_NAME}})[\s\S]+{{WORKER_LOG_NAME}}'
         points: 5
+      - name: commands use bounded filters for restart evidence
+        source: commands
+        case_insensitive: true
+        regex: 'grep\s+[^\n]*(SIGTERM|deploy|Accepted|sudo|restart|boot)|head\s+-n|tail\s+-n|grep\s+[^|\n]*-(c|m)\s'
+        points: 4
+      - name: commands avoid unbounded recursive grep across the whole log root
+        source: commands
+        not: true
+        regex: 'grep\s+-[A-Za-z]*[Rr]\b|find\s+[^\n]*-exec\s+grep'
+        points: 3
       - name: final suggests safe read-only orchestrator or service-manager next check
         source: final
         case_insensitive: true
-        regex: "next|check|inspect|verify|systemd|orchestrator|kubernetes|events|service manager|journal"
-        points: 5
+        regex: 'next|check|inspect|verify|systemd|orchestrator|kubernetes|events|service manager|journal'
+        points: 3
 
   - id: holdout-ssh-accepted-after-failures
     title: Detect brute force where the suspicious source later has an accepted login
+    variables:
+      LOG_ROOT: '{{HOLDOUT_LOG_ROOT}}'
+      SSH_SOURCE_IP: 203.0.113.66
+      SSH_FAILURE_COUNT_REGEX: '\b42\b|\b4[0-9]\b|about 40|roughly 40|~40|dozens'
+      SSH_FAILURE_COUNT_EVIDENCE_REGEX: '(?m)(^|\n)\s*(?:[^:\n]+:)?(?:42|4[0-9])(?:\s+[^ \n]+)?\s*(?:$|\n)'
+      AUTH_LOG_NAME: auth-success.log
+      ACCEPTED_USER: backup
+      OTHER_ACCEPTED_REGEX: '198\.51\.100\.44|203\.0\.113\.42|different IP|different source'
+      OTHER_ACCEPTED_EVIDENCE_REGEX: 'Accepted publickey.*(198\.51\.100\.44|203\.0\.113\.42)'
+    variants:
+      - id: seed-00
+      - id: seed-82
+        title: Detect brute force where a different suspicious source later has an accepted login
+        variables:
+          LOG_ROOT: '{{BENCH_DIR}}/generated-fixtures/variants/holdout/ssh-accepted-seed-82/logs'
+          SSH_SOURCE_IP: 198.51.100.118
+          SSH_FAILURE_COUNT_REGEX: '\b57\b|\b5[0-9]\b|about 60|roughly 60|~60|dozens'
+          SSH_FAILURE_COUNT_EVIDENCE_REGEX: '(?m)(^|\n)\s*(?:[^:\n]+:)?(?:57|5[0-9])(?:\s+[^ \n]+)?\s*(?:$|\n)'
+          AUTH_LOG_NAME: secure-success.log
+          ACCEPTED_USER: deploy
+          OTHER_ACCEPTED_REGEX: '203\.0\.113\.92|203\.0\.113\.42|different IP|different source'
+          OTHER_ACCEPTED_EVIDENCE_REGEX: 'Accepted publickey.*(203\.0\.113\.92|203\.0\.113\.42)'
     prompt: |-
-      Fake holdout investigation: security sees SSH failures from 203.0.113.66 around 18:13 UTC and asks whether that same source also got in.
-      Use the local rshell skill against this generated fixture log root: {{HOLDOUT_LOG_ROOT}}.
+      Fake holdout investigation: security sees SSH failures from {{SSH_SOURCE_IP}} and asks whether that same source also got in.
+      Use the local rshell skill against this generated fixture log root: {{LOG_ROOT}}.
       Summarize the suspicious source, approximate scale/user pattern, and whether there was an accepted login from that same source. Keep the investigation read-only and bounded.
     judge_rubric: |-
-      Excellent answers identify repeated failed SSH password attempts from 203.0.113.66, estimate roughly 42 failures across invalid users, and explicitly report the same-source Accepted password login for user backup. They should avoid the usual negative no-accepted-login conclusion, distinguish other publickey logins from different sources, cite auth-success.log evidence, and avoid overstating beyond the logs.
+      Excellent answers identify repeated failed SSH password attempts from {{SSH_SOURCE_IP}}, estimate the expected approximate failure count, and explicitly report the same-source Accepted password login for user {{ACCEPTED_USER}}. They should avoid the usual negative no-accepted-login conclusion, distinguish other publickey logins from different sources, cite {{AUTH_LOG_NAME}} evidence, run bounded count/sample rshell queries, and avoid overstating full host or root compromise beyond the logs.
     criteria:
       - name: final identifies brute-force source IP
         source: final
-        contains: "203.0.113.66"
+        contains: '{{SSH_SOURCE_IP}}'
         require_evidence: true
-        points: 15
+        points: 14
       - name: final describes failed-password invalid-user pattern
         source: final
         case_insensitive: true
-        regex: "failed password|brute|invalid user|password attempts"
+        regex: 'failed password|brute|invalid user|password attempts'
         require_evidence: true
-        evidence_regex: "Failed password|Invalid user"
-        points: 15
-      - name: final includes approximate count near 42 failures
+        evidence_regex: 'Failed password|Invalid user'
+        points: 12
+      - name: final includes approximate count for this seed
         source: final
         case_insensitive: true
-        regex: "\\b42\\b|\\b4[0-9]\\b|about 40|roughly 40|~40|dozens"
+        regex: '{{SSH_FAILURE_COUNT_REGEX}}'
         require_evidence: true
         evidence_source: tool_results
-        evidence_regex: "(?m)(^|\\n)\\s*(?:[^:\\n]+:)?(?:42|4[0-9])(?:\\s+[^ \\n]+)?\\s*(?:$|\\n)"
-        points: 15
-      - name: final states same source had accepted password login for backup
+        evidence_regex: '{{SSH_FAILURE_COUNT_EVIDENCE_REGEX}}'
+        points: 14
+      - name: final states same source had accepted password login for expected user
         source: final
         case_insensitive: true
-        regex: "accepted password|accepted login|successful login|got in|backup"
+        regex: 'accepted password|accepted login|successful login|got in|{{ACCEPTED_USER}}'
         require_evidence: true
-        evidence_regex: "Accepted password for backup from 203\\.0\\.113\\.66"
-        points: 25
+        evidence_regex: 'Accepted password for {{ACCEPTED_USER}} from {{SSH_SOURCE_IP}}'
+        points: 22
+      - name: final mentions session or sudo evidence after accepted login
+        source: final
+        case_insensitive: true
+        regex: 'session opened|sudo|COMMAND=/usr/bin/id|{{ACCEPTED_USER}}'
+        require_evidence: true
+        evidence_regex: 'session opened for user {{ACCEPTED_USER}}|sudo:   {{ACCEPTED_USER}}'
+        points: 8
+      - name: final distinguishes accepted publickey login as a different source
+        source: final
+        regex: '{{OTHER_ACCEPTED_REGEX}}'
+        require_evidence: true
+        evidence_regex: '{{OTHER_ACCEPTED_EVIDENCE_REGEX}}'
+        points: 6
       - name: final avoids incorrect no-accepted-login conclusion
         source: final
         case_insensitive: true
         not: true
-        regex: "no accepted login from 203\\.0\\.113\\.66|no successful login from 203\\.0\\.113\\.66|no login.*203\\.0\\.113\\.66"
-        points: 10
-      - name: final cites auth-success log evidence
+        regex: 'no accepted login from {{SSH_SOURCE_IP}}|no successful login from {{SSH_SOURCE_IP}}|no login.*{{SSH_SOURCE_IP}}'
+        points: 8
+      - name: final cites auth log evidence
         source: final
         case_insensitive: true
-        regex: 'auth-success\.log|auth\.log'
-        points: 10
+        regex: '{{AUTH_LOG_NAME}}|auth'
+        points: 5
+      - name: commands use provided log root as allowed path
+        source: commands
+        regex: '--allowed-paths(?:=|\s+){{LOG_ROOT}}'
+        points: 5
       - name: commands use bounded grep/count filters
         source: commands
         case_insensitive: true
-        regex: 'grep\s+[^\n]*(203\.0\.113\.66|Failed password|Accepted)|wc\s+-l|sort|uniq'
-        points: 5
-      - name: commands use provided holdout log root as allowed path
-        source: commands
-        regex: "--allowed-paths(?:=|\\s+){{HOLDOUT_LOG_ROOT}}"
-        points: 5
+        regex: 'grep\s+[^\n]*({{SSH_SOURCE_IP}}|Failed password|Accepted)|wc\s+-l|sort|uniq'
+        points: 4
+      - name: final avoids overstating full host or root compromise
+        source: final
+        case_insensitive: true
+        not: true
+        regex: 'root compromise|full host compromise|complete compromise|exfiltrat'
+        points: 2
 
   - id: holdout-datadog-api-key-not-yaml
     title: Avoid overfitting Datadog metrics stoppage to YAML line-42 remote-config failures
+    variables:
+      LOG_ROOT: '{{HOLDOUT_LOG_ROOT}}'
+      API_AGENT_LOG_NAME: api-agent.log
+      API_AGENT_LOG_REGEX: 'api-agent\.log'
+      ROTATED_AGENT_LOG_NAME: agent.log.1
+      API_KEY_ID: ak-2209
+      INCIDENT_DATE: "2026-05-01"
+      INCIDENT_TIME: "11:06"
+    variants:
+      - id: seed-00
+      - id: seed-77
+        title: Avoid overfitting a renamed Datadog intake failure to YAML line-42
+        variables:
+          LOG_ROOT: '{{BENCH_DIR}}/generated-fixtures/variants/holdout/dd-api-key-seed-77/logs'
+          API_AGENT_LOG_NAME: intake-agent.log
+          API_AGENT_LOG_REGEX: 'intake-agent\.log'
+          ROTATED_AGENT_LOG_NAME: agent.log.1
+          API_KEY_ID: ak-7704
+          INCIDENT_DATE: "2026-05-02"
+          INCIDENT_TIME: "19:06"
     prompt: |-
-      Fake holdout investigation: Datadog metrics and log intake start failing around 11:06 UTC. A teammate suspects the known remote-config YAML line-42 failure pattern.
-      Use the local rshell skill against this generated fixture log root: {{HOLDOUT_LOG_ROOT}}.
+      Fake holdout investigation: Datadog metrics and log intake start failing around {{INCIDENT_TIME}} UTC. A teammate suspects the known remote-config YAML line-42 failure pattern.
+      Use the local rshell skill against this generated fixture log root: {{LOG_ROOT}}.
       Determine the likely cause, whether the YAML/remote-config theory is supported, and provide evidence. Keep the investigation read-only and bounded.
     judge_rubric: |-
-      Excellent answers identify API key/authentication rejection (403 invalid_api_key / api_key_invalid) as the cause of Datadog metrics/log intake failures, cite api-agent.log evidence, explicitly say the remote-config/YAML line-42 theory is not supported by these logs, avoid mentioning rc-8831 or line 42 as the cause, and suggest only safe read-only next checks such as API key/audit/config-source verification.
+      Excellent answers identify API key/authentication rejection (403 invalid_api_key / api_key_invalid) for {{API_KEY_ID}} as the cause of Datadog metrics/log intake failures around {{INCIDENT_DATE}}T{{INCIDENT_TIME}} UTC, cite {{API_AGENT_LOG_NAME}} evidence, explicitly say the remote-config/YAML line-42 theory is not supported by the current incident even if a recovered rotated {{ROTATED_AGENT_LOG_NAME}} decoy exists, avoid naming line 42, rc-8831, or YAML as the cause, run bounded multi-file rshell queries after help discovery, and suggest only safe read-only next checks such as API key/audit/config-source verification.
     criteria:
       - name: final identifies API key or authentication rejection as likely cause
         source: final
         case_insensitive: true
-        regex: "api key|invalid_api_key|api_key_invalid|403|unauthorized|authentication"
+        regex: 'api[_ -]?key.{0,40}(invalid|reject|403|fail)|invalid_api_key|api_key_invalid|status\s*=?\s*403|authentication'
         require_evidence: true
-        evidence_regex: "api key validation failed|api_key_invalid|invalid_api_key|status=403"
-        points: 25
+        evidence_regex: 'api key validation failed.*api_key_invalid|status=403.*invalid_api_key|invalid_api_key.*status=403'
+        points: 16
+      - name: final cites the specific API key id
+        source: final
+        contains: '{{API_KEY_ID}}'
+        require_evidence: true
+        evidence_regex: 'key_id={{API_KEY_ID}}'
+        points: 10
       - name: final connects rejection to metrics or log intake failure
         source: final
         case_insensitive: true
-        regex: "metrics|series|log intake|logs intake|forwarder|no metrics"
+        regex: 'metrics|series|log[s]? intake|forwarder|no metrics'
         require_evidence: true
-        evidence_regex: "dropping metric payload|logs intake rejected|no metrics flushed|domain=series|domain=logs"
-        points: 20
+        evidence_regex: '(dropping metric payload|logs intake rejected|no metrics flushed)[\s\S]{0,160}(403|invalid_api_key|api_key_invalid)|(403|invalid_api_key|api_key_invalid)[\s\S]{0,160}(dropping metric payload|logs intake rejected|no metrics flushed)'
+        points: 14
+      - name: final ties no-metrics consequence to the api-key incident timestamp
+        source: final
+        case_insensitive: true
+        regex: 'no metrics flushed|metrics.{0,30}(stop|drop)|{{INCIDENT_TIME}}'
+        require_evidence: true
+        evidence_regex: 'no metrics flushed since {{INCIDENT_DATE}}T{{INCIDENT_TIME}}:1[0-2]Z'
+        points: 8
       - name: final says YAML or remote-config theory is not supported
         source: final
         case_insensitive: true
-        regex: "not.*(yaml|remote[- ]config|line 42|config validation)|no.*(yaml|remote[- ]config|config validation)|unsupported"
-        points: 15
+        regex: '(not|no|unsupported|reject).{0,70}(yaml|remote[- ]config|line\s*=?\s*42|config validation)|teammate.{0,40}(wrong|incorrect|not supported)'
+        points: 10
       - name: final avoids claiming rc-8831 or line 42 as cause
         source: final
         case_insensitive: true
         not: true
         regex: '((root|primary|likely) cause)(\s+(is|was)|\s*[:=-])\s+(a\s+|the\s+)?(rc-8831|line\s*=?\s*42|yaml|config validation)|(caused by|due to|because of)\s+(a\s+|the\s+)?(rc-8831|line\s*=?\s*42|yaml|config validation)|(rc-8831|line\s*=?\s*42|yaml|config validation).{0,40}(caused|triggered|drove|responsible for)'
-        points: 10
+        points: 8
       - name: final cites api-agent log evidence
         source: final
         case_insensitive: true
-        regex: "api-agent\\.log|agent\\.log|datadog"
-        points: 10
-      - name: commands use provided holdout log root as allowed path
-        source: commands
-        regex: "--allowed-paths(?:=|\\s+){{HOLDOUT_LOG_ROOT}}"
+        regex: '{{API_AGENT_LOG_NAME}}|{{API_AGENT_LOG_REGEX}}|datadog'
         points: 5
+      - name: final distinguishes rotated YAML/config decoy as recovered or non-current
+        source: final
+        case_insensitive: true
+        regex: '(rotated|{{ROTATED_AGENT_LOG_NAME}}|recovered|non-current|not current|earlier).{0,100}(yaml|line\s*=?\s*42|config validation|remote[- ]config)|(yaml|line\s*=?\s*42|config validation|remote[- ]config).{0,100}(rotated|{{ROTATED_AGENT_LOG_NAME}}|recovered|non-current|not current|earlier)'
+        require_evidence: true
+        evidence_regex: 'config validation failed.*line=42|transaction_id=.*recovered=true'
+        points: 5
+      - name: commands use provided log root as allowed path
+        source: commands
+        regex: '--allowed-paths(?:=|\s+){{LOG_ROOT}}'
+        points: 5
+      - name: commands invoke help to discover supported features
+        source: commands
+        regex: '(\.?/?rshell[^|\n]*help|help[^|\n]*\|\s*\.?/?rshell)'
+        points: 3
+      - name: commands cross-cut current api-agent and rotated agent log
+        source: commands
+        case_insensitive: true
+        regex: '{{API_AGENT_LOG_REGEX}}[\s\S]+agent\.log\.1|agent\.log\.1[\s\S]+{{API_AGENT_LOG_REGEX}}'
+        points: 4
       - name: commands use bounded filters for Datadog/API-key evidence
         source: commands
         case_insensitive: true
-        regex: 'grep\s+[^\n]*(api[_ -]?key|403|invalid|metrics|logs|remote|yaml|config)|head\s+-n|tail\s+-n'
-        points: 10
+        regex: 'grep\s+[^\n]*(api[_ -]?key|403|invalid|metrics|logs|remote|yaml|config)|head\s+-n|tail\s+-n|grep\s+[^|\n]*-(c|m)\s'
+        points: 5
+      - name: commands avoid unbounded recursive grep across the whole log root
+        source: commands
+        not: true
+        regex: 'grep\s+-[A-Za-z]*[Rr]\b|find\s+[^\n]*-exec\s+grep'
+        points: 4
       - name: final suggests safe read-only API key or audit next check
         source: final
         case_insensitive: true
-        regex: "next|check|inspect|verify|audit|api key|config source|credential"
-        points: 5
+        regex: 'next|check|inspect|verify|audit|api key|config source|credential'
+        points: 3
 
   - id: holdout-cart-redis-503-rotated-db-red-herring
     title: Distinguish current Redis/cache 503s from older rotated database-pool noise
+    variables:
+      LOG_ROOT: '{{HOLDOUT_LOG_ROOT}}'
+      SERVICE_WORD: cart
+      ROUTE_PATH: /api/cart
+      SERVICE_LOG_NAME: cart.log
+      ROTATED_LOG_NAME: cart.log.1
+      ACCESS_LOG_NAME: cart-access.log
+      SYSTEM_LOG_NAME: system-cart.log
+      CACHE_NAME: redis
+      CACHE_CAUSE_REGEX: 'redis|cache|maxclients|max number of clients|connection refused'
+      CACHE_EVIDENCE_REGEX: 'ERR max number of clients reached|cache dependency failure|connection refused|clients nearing maxclients'
+      DB_POOL: cart_rw
+      INCIDENT_DATE: "2026-05-01"
+      INCIDENT_TIME: "17:45"
+    variants:
+      - id: seed-00
+      - id: seed-68
+        title: Distinguish current profile cache 503s from older rotated database-pool noise
+        variables:
+          LOG_ROOT: '{{BENCH_DIR}}/generated-fixtures/variants/holdout/profile-cache-seed-68/logs'
+          SERVICE_WORD: profile
+          ROUTE_PATH: /api/profile
+          SERVICE_LOG_NAME: profile.log
+          ROTATED_LOG_NAME: profile.log.1
+          ACCESS_LOG_NAME: profile-access.log
+          SYSTEM_LOG_NAME: system-profile.log
+          CACHE_NAME: memcached
+          CACHE_CAUSE_REGEX: 'memcached|cache|maxconns|max connections|connection refused'
+          CACHE_EVIDENCE_REGEX: 'SERVER_ERROR max connections reached|cache dependency failure|connection refused|clients nearing maxconns'
+          DB_POOL: profile_rw
+          INCIDENT_DATE: "2026-05-02"
+          INCIDENT_TIME: "12:45"
     prompt: |-
-      Fake holdout investigation: cart users see HTTP 503s around 17:45 UTC. A teammate points at dramatic errors in rotated logs from an earlier day.
-      Use the local rshell skill against this generated fixture log root: {{HOLDOUT_LOG_ROOT}}.
+      Fake holdout investigation: {{SERVICE_WORD}} users see HTTP 503s around {{INCIDENT_TIME}} UTC. A teammate points at dramatic errors in rotated logs from an earlier day.
+      Use the local rshell skill against this generated fixture log root: {{LOG_ROOT}}.
       Find what explains the current window, separate it from older misleading history, and suggest the next safe read-only check.
     judge_rubric: |-
-      Excellent answers correlate current /api/cart HTTP 503s to Redis/cache maxclients or connection-refused failures, cite cart.log plus nginx cart-access and system-cart/redis evidence, explicitly distinguish previous-day rotated db pool/reporting-worker errors as not the current cause, avoid recommending remediation commands, and suggest safe read-only checks such as Redis client/connection metrics or cache logs.
+      Excellent answers correlate current {{ROUTE_PATH}} HTTP 503s to {{CACHE_NAME}}/cache client-limit or connection failures around {{INCIDENT_DATE}}T{{INCIDENT_TIME}} UTC, cite {{SERVICE_LOG_NAME}} plus {{ACCESS_LOG_NAME}} and {{SYSTEM_LOG_NAME}} evidence, explicitly distinguish previous-day rotated {{ROTATED_LOG_NAME}} {{DB_POOL}}/reporting-worker errors as not the current cause, avoid recursive grep/full-log dumping and remediation commands, and suggest safe read-only checks such as cache client/connection metrics or logs.
     criteria:
-      - name: final identifies Redis/cache maxclients or connection failure as likely cause
+      - name: final identifies cache client-limit or connection failure as likely cause
         source: final
         case_insensitive: true
-        regex: "redis|cache|maxclients|max number of clients|connection refused"
+        regex: '{{CACHE_CAUSE_REGEX}}'
         require_evidence: true
-        evidence_regex: "ERR max number of clients reached|cache dependency failure|connection refused|clients nearing maxclients"
-        points: 25
-      - name: final mentions HTTP 503 cart symptom
+        evidence_regex: '{{CACHE_EVIDENCE_REGEX}}'
+        points: 18
+      - name: final mentions HTTP 503 on the affected route
         source: final
         case_insensitive: true
-        regex: "503|/api/cart|cart"
+        regex: '503.{0,80}{{ROUTE_PATH}}|{{ROUTE_PATH}}.{0,80}503|{{SERVICE_WORD}}.{0,40}503'
         require_evidence: true
-        evidence_regex: "HTTP/1.1\" 503|status=503|route=/api/cart"
-        points: 15
+        evidence_regex: 'HTTP/1\.1" 503|status=503|route={{ROUTE_PATH}}'
+        points: 12
+      - name: final cites the specific current incident timestamp window
+        source: final
+        regex: '{{INCIDENT_DATE}}T?\s*{{INCIDENT_TIME}}'
+        points: 5
       - name: final distinguishes old database pool rotated-log noise
         source: final
         case_insensitive: true
-        regex: "(old|rotated|previous day|red herring|not.{0,20}current|unrelated).{0,100}(db pool|database|postgres|cart\\.log\\.1|reporting-worker)|(db pool|database|postgres|cart\\.log\\.1|reporting-worker).{0,100}(old|rotated|previous day|red herring|not.{0,20}current|unrelated)"
+        regex: '(old|rotated|previous day|red herring|not.{0,20}current|unrelated|earlier).{0,110}(db pool|database|postgres|{{ROTATED_LOG_NAME}}|reporting-worker|{{DB_POOL}})|(db pool|database|postgres|{{ROTATED_LOG_NAME}}|reporting-worker|{{DB_POOL}}).{0,110}(old|rotated|previous day|red herring|not.{0,20}current|unrelated|earlier)'
         require_evidence: true
-        evidence_regex: "cart\\.log\\.1|db pool exhausted.*active=100 max=100|2026-04-30T17:[34][0-9]|suspected_client=reporting-worker"
-        points: 15
-      - name: final cites cart app log evidence
+        evidence_regex: '{{ROTATED_LOG_NAME}}|db pool exhausted.*active=100 max=100|2026-0(4-30|5-01)T(17|12):[34][0-9]|suspected_client=reporting-worker'
+        points: 12
+      - name: final does not attribute cause to rotated database pool line
         source: final
         case_insensitive: true
-        regex: "cart\\.log|service=cart|app"
-        points: 10
-      - name: final cites nginx cart access evidence
+        not: true
+        regex: '((root|primary|likely) cause)(\s+(is|was)|\s*[:=-])\s+(the\s+)?({{ROTATED_LOG_NAME}}|db pool|database|postgres|reporting-worker)|(caused by|due to|because of)\s+(the\s+)?({{ROTATED_LOG_NAME}}|db pool|database|postgres|reporting-worker)|({{ROTATED_LOG_NAME}}|db pool|database|postgres|reporting-worker).{0,40}(caused|triggered|drove|responsible for)'
+        points: 6
+      - name: final cites app log evidence
         source: final
         case_insensitive: true
-        regex: "cart-access\\.log|nginx|access"
-        points: 10
-      - name: final cites system redis evidence
+        regex: '{{SERVICE_LOG_NAME}}|service={{SERVICE_WORD}}|app'
+        points: 6
+      - name: final cites access log evidence
         source: final
         case_insensitive: true
-        regex: "system-cart\\.log|redis-server|system"
-        points: 10
+        regex: '{{ACCESS_LOG_NAME}}|nginx|access'
+        points: 6
+      - name: final cites system cache evidence
+        source: final
+        case_insensitive: true
+        regex: '{{SYSTEM_LOG_NAME}}|{{CACHE_NAME}}|system'
+        points: 6
+      - name: commands use provided log root as allowed path
+        source: commands
+        regex: '--allowed-paths(?:=|\s+){{LOG_ROOT}}'
+        points: 5
+      - name: commands invoke help to discover supported features
+        source: commands
+        regex: '(\.?/?rshell[^|\n]*help|help[^|\n]*\|\s*\.?/?rshell)'
+        points: 3
+      - name: commands cross-cut app with access, system, or rotated logs
+        source: commands
+        case_insensitive: true
+        regex: '{{SERVICE_LOG_NAME}}[\s\S]+({{ACCESS_LOG_NAME}}|{{SYSTEM_LOG_NAME}}|{{ROTATED_LOG_NAME}})|({{ACCESS_LOG_NAME}}|{{SYSTEM_LOG_NAME}}|{{ROTATED_LOG_NAME}})[\s\S]+{{SERVICE_LOG_NAME}}'
+        points: 5
       - name: commands use bounded filters across relevant logs
         source: commands
         case_insensitive: true
-        regex: 'grep\s+[^\n]*(503|redis|cache|maxclients|db pool|cart)|head\s+-n|tail\s+-n'
+        regex: 'grep\s+[^\n]*(503|{{CACHE_NAME}}|cache|maxclients|maxconns|db pool|{{SERVICE_WORD}})|head\s+-n|tail\s+-n|grep\s+[^|\n]*-(c|m)\s'
         points: 5
+      - name: commands avoid unbounded recursive grep across the whole log root
+        source: commands
+        not: true
+        regex: 'grep\s+-[A-Za-z]*[Rr]\b|find\s+[^\n]*-exec\s+grep'
+        points: 4
       - name: final does not propose write/remediation commands
         source: final
         case_insensitive: true
         not: true
         regex: '(?m)(^|\n)\s*(?:[-*]\s*)?(?:(?:restart|kill|delete|apply)\b|edit\s+\S+config|(?:run|execute|use|issue|try|please|fix by|remediate by)\b[^\n]{0,120}(?:\brestart\b|\bkill\b|\bdelete\b|\bapply\b|edit\s+\S+config))'
         points: 5
-      - name: final suggests safe read-only Redis/cache next check
+      - name: final suggests safe read-only cache next check
         source: final
         case_insensitive: true
-        regex: "next|check|inspect|verify|redis|cache|client|connection|metrics|logs"
-        points: 5
+        regex: 'next|check|inspect|verify|{{CACHE_NAME}}|cache|client|connection|metrics|logs'
+        points: 2
