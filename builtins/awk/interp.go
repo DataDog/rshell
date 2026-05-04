@@ -135,6 +135,9 @@ func (r *runtime) applyVarAssignment(s string) error {
 	case "OFS":
 		r.ofs = val
 	case "ORS":
+		if len(val) > MaxStringBytes {
+			return errors.New("ORS too long")
+		}
 		r.ors = val
 	case "RS":
 		if len(val) > 1 {
@@ -147,6 +150,16 @@ func (r *runtime) applyVarAssignment(s string) error {
 		r.convFmt = val
 	case "OFMT":
 		r.ofmt = val
+	case "NR":
+		r.nr = floatToInt64Safe(parseAwkNumber(val))
+	case "FNR":
+		r.fnr = floatToInt64Safe(parseAwkNumber(val))
+	case "NF":
+		return r.storeScalar("NF", strNumValue(val))
+	case "RSTART":
+		r.rstart = floatToInt64Safe(parseAwkNumber(val))
+	case "RLENGTH":
+		r.rlength = floatToInt64Safe(parseAwkNumber(val))
 	default:
 		r.globals[name] = strNumValue(val)
 	}
@@ -973,7 +986,11 @@ func (r *runtime) storeScalar(name string, v awkValue) error {
 		r.ofs = v.toString(r.convFmt)
 		return nil
 	case "ORS":
-		r.ors = v.toString(r.convFmt)
+		s := v.toString(r.convFmt)
+		if len(s) > MaxStringBytes {
+			return errors.New("ORS too long")
+		}
+		r.ors = s
 		return nil
 	case "RS":
 		s := v.toString(r.convFmt)
@@ -1103,9 +1120,13 @@ func (r *runtime) compare(op tokenKind, a, b awkValue) awkValue {
 	asNum := false
 	if a.kind == valNum && b.kind == valNum {
 		asNum = true
-	} else if a.kind == valNum && (b.kind == valStrNum || b.kind == valUninit) {
+	} else if a.kind == valNum && b.kind == valStrNum {
+		asNum = looksNumeric(b.s)
+	} else if a.kind == valNum && b.kind == valUninit {
 		asNum = true
-	} else if (a.kind == valStrNum || a.kind == valUninit) && b.kind == valNum {
+	} else if a.kind == valStrNum && b.kind == valNum {
+		asNum = looksNumeric(a.s)
+	} else if a.kind == valUninit && b.kind == valNum {
 		asNum = true
 	} else if a.kind == valStrNum && b.kind == valStrNum {
 		asNum = looksNumeric(a.s) && looksNumeric(b.s)

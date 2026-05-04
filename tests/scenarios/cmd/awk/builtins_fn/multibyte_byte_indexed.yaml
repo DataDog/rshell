@@ -1,0 +1,10 @@
+description: substr and index use byte positions, not character positions (mawk-compatible, differs from gawk in UTF-8 locale).
+skip_assert_against_bash: true  # intentional divergence: byte-based indexing differs from gawk's character-based indexing in a UTF-8 locale; mawk is also byte-based.
+input:
+  script: |+
+    awk 'BEGIN { s = "a\303\251b"; print length(s), index(s, "b") }'
+expect:
+  stdout: |+
+    4 4
+  stderr: |+
+  exit_code: 0

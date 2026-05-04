@@ -1,0 +1,11 @@
+description: Non-numeric input field compared to a number uses string comparison (POSIX).
+input:
+  script: |+
+    printf 'abc\n3.14abc\n3.14\n' | awk '{ print ($0 == 0), ($0 == 3.14) }'
+expect:
+  stdout: |+
+    0 0
+    0 0
+    0 1
+  stderr: |+
+  exit_code: 0

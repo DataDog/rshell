@@ -93,6 +93,9 @@ func (r *runtime) bLength(args []expr) (awkValue, error) {
 	return numValue(float64(len(v.toString(r.convFmt)))), nil
 }
 
+// bSubstr implements substr(s, m[, n]). Positions and lengths are byte-based,
+// not character-based. Multi-byte UTF-8 sequences are counted as multiple
+// positions, consistent with mawk but differing from gawk in a UTF-8 locale.
 func (r *runtime) bSubstr(args []expr) (awkValue, error) {
 	sv, err := r.evalExpr(args[0])
 	if err != nil {
@@ -157,6 +160,9 @@ func (r *runtime) bSubstr(args []expr) (awkValue, error) {
 	return strValue(s[m-1 : end-1]), nil
 }
 
+// bIndex implements index(s, t). Returns a byte position, not a character
+// position. Multi-byte UTF-8 input will produce byte offsets, consistent with
+// mawk but differing from gawk in a UTF-8 locale.
 func (r *runtime) bIndex(args []expr) (awkValue, error) {
 	sv, err := r.evalExpr(args[0])
 	if err != nil {
@@ -346,6 +352,9 @@ func expandAwkReplacement(repl, matched string) (string, error) {
 	return sb.String(), nil
 }
 
+// bMatch implements match(s, re). RSTART and RLENGTH are set to byte offsets
+// and lengths, not character positions. Multi-byte UTF-8 input will produce
+// byte-based values, consistent with mawk but differing from gawk in a UTF-8 locale.
 func (r *runtime) bMatch(args []expr) (awkValue, error) {
 	sv, err := r.evalExpr(args[0])
 	if err != nil {
