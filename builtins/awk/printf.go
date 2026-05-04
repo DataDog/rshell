@@ -203,15 +203,15 @@ func nextInt(idx *int, values []awkValue) (int, error) {
 func applyPrintfSpec(spec printfSpec, val awkValue, convFmt string) (string, error) {
 	switch spec.verb {
 	case 'd', 'i':
-		return formatInt(spec, int64(val.toNumber())), nil
+		return formatInt(spec, floatToInt64Safe(val.toNumber())), nil
 	case 'o':
-		return formatUnsigned(spec, uint64(int64(val.toNumber())), 8), nil
+		return formatUnsigned(spec, uint64(floatToInt64Safe(val.toNumber())), 8), nil
 	case 'u':
-		return formatUnsigned(spec, uint64(int64(val.toNumber())), 10), nil
+		return formatUnsigned(spec, uint64(floatToInt64Safe(val.toNumber())), 10), nil
 	case 'x':
-		return formatUnsigned(spec, uint64(int64(val.toNumber())), 16), nil
+		return formatUnsigned(spec, uint64(floatToInt64Safe(val.toNumber())), 16), nil
 	case 'X':
-		s := formatUnsigned(spec, uint64(int64(val.toNumber())), 16)
+		s := formatUnsigned(spec, uint64(floatToInt64Safe(val.toNumber())), 16)
 		return strings.ToUpper(s), nil
 	case 'c':
 		return formatChar(spec, val, convFmt), nil
@@ -294,7 +294,7 @@ func formatChar(spec printfSpec, v awkValue, convFmt string) string {
 	switch v.kind {
 	case valNum:
 		// POSIX awk: %c on a number emits the byte modulo 256, not a Unicode rune.
-		ch = string([]byte{byte(int(v.f) & 0xFF)})
+		ch = string([]byte{byte(floatToInt64Safe(v.f) & 0xFF)})
 	default:
 		s := v.toString(convFmt)
 		if s == "" {

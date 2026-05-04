@@ -1,0 +1,10 @@
+description: next in an END block is a runtime error (exit 1); diverges from gawk/mawk which error differently.
+skip_assert_against_bash: true
+input:
+  script: |+
+    printf '' | awk 'END { next; print NR }'
+expect:
+  stdout: |+
+  stderr: |+
+    awk: next
+  exit_code: 1
