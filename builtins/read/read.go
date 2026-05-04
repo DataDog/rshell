@@ -491,8 +491,13 @@ func readInput(ctx context.Context, r io.Reader, delim rune, raw bool, charLimit
 			if nerr != nil {
 				return string(buf), false, nerr
 			}
-			if !ignoreDelim && nrn == delim {
-				// Line continuation: discard both, keep reading.
+			// Line continuation applies only to backslash-newline. With
+			// a custom -d delimiter (e.g. `read -d ,`), bash treats
+			// `\<delim>` as an escaped literal delimiter rather than a
+			// continuation: `printf 'a\,b,c' | read -d , x` assigns
+			// `a,b`. Only the newline delimiter triggers the
+			// "discard the pair and keep reading" behaviour.
+			if !ignoreDelim && nrn == delim && delim == '\n' {
 				continue
 			}
 			// Escape: drop the backslash, keep the next rune.
