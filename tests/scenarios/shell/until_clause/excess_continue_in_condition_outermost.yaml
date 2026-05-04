@@ -1,0 +1,13 @@
+description: Excess continue N in an until condition at the outermost loop is clamped to continue 1 — the condition is re-evaluated rather than propagated outward.
+input:
+  script: |+
+    i=
+    until i="${i}a"; [ "$i" = aaa ] && break; continue 99; do
+      echo body
+    done
+    echo "i=$i"
+expect:
+  stdout: |+
+    i=aaa
+  stderr: |+
+  exit_code: 0

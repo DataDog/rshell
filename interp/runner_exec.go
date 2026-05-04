@@ -309,13 +309,12 @@ func (r *Runner) execWhileClause(ctx context.Context, cm *syntax.WhileClause) {
 	if cm.Until {
 		kind = "until"
 	}
-	// Resource name encodes the loop kind (while/until); no separate kind tag
-	// is needed.
 	span, loopCtx := telemetry.StartSpanFromContext(ctx, "control_flow")
 	span.SetResourceName(kind)
 	iterationCount := 0
 	brokeEarly := false
 	defer func() {
+		span.SetTag("rshell.loop.kind", kind)
 		span.SetTag("rshell.loop.iteration_count", iterationCount)
 		span.SetTag("rshell.loop.broke_early", brokeEarly)
 		span.Finish(nil)
@@ -345,7 +344,7 @@ func (r *Runner) execWhileClause(ctx context.Context, cm *syntax.WhileClause) {
 		// Evaluate the condition list. Per POSIX, only the trailing exit
 		// status decides whether to enter the body.
 		r.stmts(loopCtx, cm.Cond)
-		if r.exit.exiting || r.exit.fatalExit {
+		if r.exit.exiting {
 			break
 		}
 
@@ -413,7 +412,7 @@ func (r *Runner) execWhileClause(ctx context.Context, cm *syntax.WhileClause) {
 	// last body iteration, or 0 if the body never ran. If the loop is exiting
 	// via `exit` or a fatal error, we leave r.exit alone so the exit
 	// status/state propagates upward.
-	if r.exit.exiting || r.exit.fatalExit {
+	if r.exit.exiting {
 		return
 	}
 	if ranBody {
