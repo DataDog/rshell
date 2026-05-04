@@ -420,8 +420,19 @@ func pollAvailable(c *builtins.CallContext) builtins.Result {
 	// stream will not see it. Documented as a Windows-only divergence.
 	// We use c.Now.Add(-time.Hour) to construct a deadline that is
 	// reliably in the past while avoiding a direct time.Now call.
+	//
+	// IMPORTANT: SetReadDeadline can fail when the descriptor does
+	// not support deadlines (e.g. a Windows console handle, some
+	// character devices). If that happens we cannot safely call Read
+	// — without an in-the-past deadline, Read would block indefinitely
+	// when no input is buffered, which violates the documented `-t 0`
+	// "poll, never wait" contract and would hang the script. Return
+	// 142 (would-block) immediately in that case, matching the same
+	// "not pollable" path taken when stdin isn't *os.File.
 	pastDeadline := c.Now.Add(-time.Hour)
-	_ = f.SetReadDeadline(pastDeadline)
+	if err := f.SetReadDeadline(pastDeadline); err != nil {
+		return builtins.Result{Code: 142}
+	}
 	defer func() { _ = f.SetReadDeadline(time.Time{}) }()
 	var probe [1]byte
 	n, err := f.Read(probe[:])
