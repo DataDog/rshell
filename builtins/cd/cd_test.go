@@ -243,9 +243,10 @@ func TestCdShortRejectFlag(t *testing.T) {
 
 func TestCdEmptyArg(t *testing.T) {
 	dir := t.TempDir()
-	_, stderr, code := cmdRun(t, `cd ""`, dir)
-	assert.Equal(t, 1, code)
-	assert.Equal(t, "cd: : no such file or directory\n", stderr)
+	stdout, stderr, code := cmdRun(t, `cd ""; echo "$PWD"`, dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "", stderr)
+	assert.Contains(t, stdout, dir)
 }
 
 // --- Help ---
