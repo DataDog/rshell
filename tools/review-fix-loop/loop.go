@@ -45,7 +45,7 @@ func run(ctx context.Context, cfg Config, prRef string) error {
 	fmt.Fprintf(out, "%s\n", bold(fmt.Sprintf("PR #%d  %s", pr.Number, pr.URL)))
 	fmt.Fprintf(out, "Branch: %s → %s\n", pr.Head, pr.Base)
 
-	agent := newAgent(cfg, out, logFile)
+	agent := newAgent(cfg, out, logFile, os.Stdout)
 	var results []IterationResult
 	successCount := 0
 	converged := false

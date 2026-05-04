@@ -28,11 +28,12 @@ type Agent struct {
 	maxTokens int64
 	workDir   string
 	verbose   bool
-	out       io.Writer // terminal + log file (shared output)
-	logOut    io.Writer // log file only (verbose detail: commands, bash output)
+	out       io.Writer // dots + banners → stdout + log file
+	logOut    io.Writer // all streaming text (verbose detail) → log file only
+	termOut   io.Writer // per-skill summary → stdout only
 }
 
-func newAgent(cfg Config, out, logOut io.Writer) *Agent {
+func newAgent(cfg Config, out, logOut, termOut io.Writer) *Agent {
 	return &Agent{
 		client:    anthropic.NewClient(),
 		model:     cfg.Model,
@@ -41,12 +42,14 @@ func newAgent(cfg Config, out, logOut io.Writer) *Agent {
 		verbose:   cfg.Verbose,
 		out:       out,
 		logOut:    logOut,
+		termOut:   termOut,
 	}
 }
 
 // Run executes the skill identified by name with the given system prompt and user message.
-// In normal mode: Claude text is printed prefixed with [name], bash I/O is hidden.
-// In verbose mode: banners, raw Claude text, and full bash I/O are shown.
+// In normal mode: dots go to stdout for each tool call; only the final agent response
+// (the summary) is printed to stdout, prefixed with [name]. Everything goes to the log.
+// In verbose mode: banners, raw Claude text, and full bash I/O are shown on stdout.
 func (a *Agent) Run(ctx context.Context, name, systemPrompt, userMessage string) error {
 	colorCode := agentColor(name)
 	prefix := paint("["+name+"] ", colorCode)
@@ -55,9 +58,17 @@ func (a *Agent) Run(ctx context.Context, name, systemPrompt, userMessage string)
 		fmt.Fprintf(a.out, "\n╔═ %s ═══════════════════════\n", paint("["+name+"]", colorCode))
 	} else {
 		fmt.Fprintf(a.logOut, "\n╔═ [%s] ═══════════════════════\n", name)
+		fmt.Fprintf(a.termOut, "\n%s\n", paint("["+name+"]", colorCode))
 	}
 
-	lw := newLineWriter(a.out, prefix)
+	// lw writes prefixed text to the appropriate output depending on mode.
+	// In verbose mode it goes to a.out (terminal+log); in normal mode to a.logOut (log only).
+	var lw *lineWriter
+	if a.verbose {
+		lw = newLineWriter(a.out, prefix)
+	} else {
+		lw = newLineWriter(a.logOut, "["+name+"] ")
+	}
 
 	messages := []anthropic.MessageParam{
 		{
@@ -70,6 +81,11 @@ func (a *Agent) Run(ctx context.Context, name, systemPrompt, userMessage string)
 
 	tools := []anthropic.ToolUnionParam{bashToolParam()}
 
+	// lastRoundText buffers the final round's text so it can be printed to the terminal.
+	var lastRoundText strings.Builder
+	// dotsDirty tracks whether dots were printed to stdout without a trailing newline.
+	var dotsDirty bool
+
 	for round := 0; round < maxToolRounds; round++ {
 		stream := a.client.Messages.NewStreaming(ctx, anthropic.MessageNewParams{
 			Model:     a.model,
@@ -80,6 +96,7 @@ func (a *Agent) Run(ctx context.Context, name, systemPrompt, userMessage string)
 		})
 
 		var acc anthropic.Message
+		lastRoundText.Reset()
 		for stream.Next() {
 			event := stream.Current()
 			if err := acc.Accumulate(event); err != nil {
@@ -87,10 +104,9 @@ func (a *Agent) Run(ctx context.Context, name, systemPrompt, userMessage string)
 			}
 			if e, ok := event.AsAny().(anthropic.ContentBlockDeltaEvent); ok {
 				if d, ok := e.Delta.AsAny().(anthropic.TextDelta); ok {
-					if a.verbose {
-						fmt.Fprint(a.out, d.Text)
-					} else {
-						lw.write(d.Text)
+					lw.write(d.Text)
+					if !a.verbose {
+						lastRoundText.WriteString(d.Text)
 					}
 				}
 			}
@@ -98,9 +114,19 @@ func (a *Agent) Run(ctx context.Context, name, systemPrompt, userMessage string)
 		if err := stream.Err(); err != nil {
 			return fmt.Errorf("[%s] stream error (round %d): %w", name, round, err)
 		}
-		lw.flush() // ensure we end on a newline regardless of mode
+		lw.flush()
 
 		if acc.StopReason != anthropic.StopReasonToolUse {
+			if !a.verbose {
+				// Print the final round's text (the summary) to the terminal.
+				if dotsDirty {
+					fmt.Fprintln(a.termOut)
+					dotsDirty = false
+				}
+				summaryLW := newLineWriter(a.termOut, prefix)
+				summaryLW.write(lastRoundText.String())
+				summaryLW.flush()
+			}
 			break
 		}
 
@@ -122,7 +148,7 @@ func (a *Agent) Run(ctx context.Context, name, systemPrompt, userMessage string)
 			} else {
 				fmt.Fprintf(a.logOut, "  $ %s\n", cmdInput.Command)
 				fmt.Fprint(a.out, dim("."))
-				lw.markMidLine()
+				dotsDirty = true
 			}
 			output, isErr := a.executeBash(ctx, block.Input)
 			if !a.verbose {
@@ -145,10 +171,12 @@ func (a *Agent) Run(ctx context.Context, name, systemPrompt, userMessage string)
 		})
 	}
 
-	// Terminate any trailing dots that were never followed by text.
-	if lw.dirtyLine {
+	// Terminate any trailing dots (e.g. if the loop hit maxToolRounds).
+	if a.verbose && lw.dirtyLine {
 		fmt.Fprintln(a.out)
 		lw.dirtyLine = false
+	} else if !a.verbose && dotsDirty {
+		fmt.Fprintln(a.termOut)
 	}
 
 	if a.verbose {
