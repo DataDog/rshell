@@ -65,7 +65,7 @@
 //	emitting output. For non-regular-file inputs (pipes, stdin, character
 //	devices) without a context deadline, execution would hang indefinitely.
 //	To bound this, tail returns an error once total bytes read from such a
-//	source exceed MaxTotalReadBytes (256 MiB). Regular files are not subject
+//	source exceed MaxTotalReadBytes (32 MiB). Regular files are not subject
 //	to this limit because the OS guarantees they are finite.
 //
 //	Offset (+N) modes stream output incrementally and do not buffer to EOF,
@@ -125,7 +125,7 @@ const MaxBytesBuffer = 5 << 20 // 5 MiB
 // the entire input before emitting output, so an infinite source without a
 // context deadline would hang indefinitely. This limit bounds execution to a
 // finite amount of work regardless of whether a timeout is configured.
-const MaxTotalReadBytes = 256 << 20 // 256 MiB
+const MaxTotalReadBytes = 32 << 20 // 32 MiB
 
 // countMode holds the parsed value of a -n / -c argument.
 type countMode struct {
