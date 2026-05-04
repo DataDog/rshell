@@ -226,6 +226,9 @@ var builtinPerCommandSymbols = map[string][]string{
 		"fmt.Sprintf",                         // 🟢 string formatting; pure function, no I/O.
 		"io.EOF",                              // 🟢 sentinel error value; pure constant.
 		"io.Reader",                           // 🟢 interface type; no side effects.
+		"math.IsInf",                          // 🟢 IEEE 754 infinity check; pure function, no I/O.
+		"math.IsNaN",                          // 🟢 IEEE 754 NaN check; pure function, no I/O.
+		"math.MaxInt64",                       // 🟢 maximum int64 constant; used to bound -t TIMEOUT before time.Duration conversion.
 		"os.ErrDeadlineExceeded",              // 🟢 sentinel error returned by *os.File when SetReadDeadline fires; pure constant.
 		"os.File",                             // 🟠 *os.File type used for type-asserting callCtx.Stdin to access SetReadDeadline/Stat; no constructors invoked.
 		"strconv.Atoi",                        // 🟢 string-to-int conversion (used by orderedIntValue.Set for -n / -N); pure function, no I/O.

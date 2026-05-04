@@ -14,6 +14,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"strconv"
 	"strings"
@@ -180,9 +181,9 @@ func run(ctx context.Context, c *builtins.CallContext, args []string, opt runOpt
 	readCtx := ctx
 	pollMode := false
 	if opt.timeoutStr != "" {
-		secs, err := strconv.ParseFloat(opt.timeoutStr, 64)
-		if err != nil || secs < 0 {
-			c.Errf("read: -t: invalid timeout %q\n", opt.timeoutStr)
+		secs, ok := parseReadTimeout(opt.timeoutStr)
+		if !ok {
+			c.Errf("read: %s: invalid timeout specification\n", opt.timeoutStr)
 			return builtins.Result{Code: 1}
 		}
 		if secs == 0 {
@@ -369,6 +370,55 @@ func stdinIsTerminal(r io.Reader) bool {
 	return term.IsTerminal(int(f.Fd()))
 }
 
+// parseReadTimeout parses bash's -t TIMEOUT syntax: a non-negative
+// decimal number, optionally with a fractional part. Bash rejects
+// scientific notation, NaN, Inf, and negatives — verified empirically
+// by the "invalid timeout specification" error each of those produces.
+// Returns the parsed seconds and ok=true on success, ok=false otherwise.
+//
+// The function also rejects values whose nanosecond representation
+// would overflow time.Duration (a signed int64), so the conversion to
+// time.Duration in the caller cannot wrap into a negative duration
+// that would fire an immediate timeout.
+func parseReadTimeout(s string) (float64, bool) {
+	if s == "" {
+		return 0, false
+	}
+	// Accept only [0-9] and at most one '.', matching bash's parser
+	// which excludes signs, exponents, and special tokens.
+	seenDot := false
+	seenDigit := false
+	for _, r := range s {
+		switch {
+		case r >= '0' && r <= '9':
+			seenDigit = true
+		case r == '.' && !seenDot:
+			seenDot = true
+		default:
+			return 0, false
+		}
+	}
+	if !seenDigit {
+		return 0, false
+	}
+	secs, err := strconv.ParseFloat(s, 64)
+	if err != nil {
+		return 0, false
+	}
+	// Defensive: NaN/Inf are excluded by the char filter above, but
+	// guard anyway in case the float parser would accept some
+	// surprising input.
+	if math.IsNaN(secs) || math.IsInf(secs, 0) {
+		return 0, false
+	}
+	// Bound by what time.Duration can represent without wrapping.
+	maxSecs := float64(math.MaxInt64) / float64(time.Second)
+	if secs > maxSecs {
+		return 0, false
+	}
+	return secs, true
+}
+
 // validVarName reports whether name is a valid POSIX shell identifier:
 // non-empty, starts with a letter or underscore, then letters, digits,
 // or underscores.
@@ -426,10 +476,16 @@ func readInput(ctx context.Context, r io.Reader, delim rune, raw bool, charLimit
 	// of buf size guarantees the builtin always returns within
 	// MaxReadBytes of input regardless of how much of that input ends
 	// up assigned to a variable.
+	//
+	// The check uses `>` rather than `>=` so a record of exactly
+	// MaxReadBytes data bytes can still observe its delimiter or EOF on
+	// the next read attempt — only when consumed has already crossed
+	// the cap (i.e. the previous byte put us at the boundary and we'd
+	// be reading a non-terminator) does the error fire.
 	consumed := 0
 
 	readByte := func() (byte, error) {
-		if consumed >= MaxReadBytes {
+		if consumed > MaxReadBytes {
 			return 0, fmt.Errorf("input exceeds maximum of %d bytes", MaxReadBytes)
 		}
 		for {
