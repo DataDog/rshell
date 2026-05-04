@@ -139,6 +139,10 @@ iteration_had_no_findings=$([ "$findings_count" -eq 0 ] && echo true || echo fal
 
 Use the structurally derived value as the authoritative value of `iteration_had_no_findings`.
 
+> **Why inline comments are sufficient:** The `code-review` skill spec requires every finding to be posted as an inline comment tied to a specific diff line — findings that cannot be anchored to a line are not valid output. A review-summary-only finding (appearing only in the review's top-level `body`) would violate that contract, so `findings_count` will be `0` if and only if the self-review found nothing actionable.
+>
+> **Optional cross-check via review state:** If you want an additional sanity check, fetch the most recent review submitted by `$MY_LOGIN` after `$ITERATION_START_TIME`. If its `state` is `APPROVE`, `findings_count` must be `0` — a zero-inline-comment `APPROVE` review means the code is clean. If `state` is `COMMENT` or `REQUEST_CHANGES`, at least one inline finding should exist; if `findings_count` is `0` despite a `COMMENT`/`REQUEST_CHANGES` state, default conservatively to `iteration_had_no_findings=false`.
+
 ### Sub-step 2A2 — Request external reviews ← **parallel with 2A1**
 
 Post a comment to trigger @codex reviews:
@@ -372,11 +376,11 @@ Provide a summary in this exact format:
 
 ### Iteration log
 
-| # | Unresolved threads | Fixes applied | CI status |
-|---|--------------------|---------------|-----------|
-| 1 | 3 | 3 fixed | Passing |
-| 2 | 1 | 1 fixed | Passing |
-| 3 | 0 | — | Passing |
+| # | Unresolved threads | Fixes applied | CI status | No findings? |
+|---|--------------------|---------------|-----------|:------------:|
+| 1 | 3 | 3 fixed | Passing | ✗ |
+| 2 | 1 | 1 fixed | Passing | ✗ |
+| 3 | 0 | — | Passing | ✓ |
 
 ### Final state
 
