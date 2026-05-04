@@ -139,10 +139,11 @@ func (a *Agent) executeBash(ctx context.Context, rawInput json.RawMessage) (outp
 	cmd.Dir = a.workDir
 	cmd.Env = os.Environ()
 
-	if a.verbose {
-		fmt.Printf("\n$ %s\n", input.Command)
+	// Always show the command being run so the user can track progress.
+	fmt.Printf("  $ %s\n", input.Command)
 
-		// Tee: display to terminal in real time and capture for Claude
+	if a.verbose {
+		// Tee: display output to terminal in real time and capture for Claude
 		pr, pw := io.Pipe()
 		cmd.Stdout = pw
 		cmd.Stderr = pw
@@ -177,7 +178,7 @@ func (a *Agent) executeBash(ctx context.Context, rawInput json.RawMessage) (outp
 		return out, runErr != nil
 	}
 
-	// Non-verbose: capture only, no terminal output
+	// Non-verbose: capture only, no output to terminal
 	out, runErr := cmd.CombinedOutput()
 	result := string(out)
 	const maxOutput = 200_000
