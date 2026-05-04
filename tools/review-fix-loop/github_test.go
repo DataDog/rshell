@@ -154,6 +154,12 @@ func TestCountUnresolvedInPage(t *testing.T) {
 			wantCount: 1,
 		},
 		{
+			name:      "one unresolved from codex bot (bare login, no [bot] suffix)",
+			input:     page(thread(false, "chatgpt-codex-connector"), false, ""),
+			myLogin:   "alice",
+			wantCount: 1,
+		},
+		{
 			name:    "resolved thread is not counted",
 			input:   page(thread(true, "alice"), false, ""),
 			myLogin: "alice",

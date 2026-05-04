@@ -68,7 +68,8 @@ func identifyPR(workDir, prRef string) (PRInfo, error) {
 }
 
 // countUnresolvedThreads returns the number of unresolved review threads whose
-// first comment was posted by $MY_LOGIN or chatgpt-codex-connector[bot].
+// first comment was posted by $MY_LOGIN or chatgpt-codex-connector[bot] (or the
+// bare "chatgpt-codex-connector" login that GitHub's GraphQL API returns).
 // Only the thread count is used for loop control — comment bodies are never read.
 func countUnresolvedThreads(workDir string, pr PRInfo) (int, error) {
 	myLogin, err := getMyLogin(workDir)
@@ -129,7 +130,8 @@ query($owner: String!, $repo: String!, $pr: Int!, $after: String) {
 }
 
 // countUnresolvedInPage parses one page of the reviewThreads GraphQL response and
-// returns the count of unresolved threads from myLogin or chatgpt-codex-connector[bot],
+// returns the count of unresolved threads from myLogin or chatgpt-codex-connector[bot]
+// (or the bare login without [bot] suffix that GraphQL sometimes returns),
 // plus pagination info.
 func countUnresolvedInPage(out []byte, myLogin string) (count int, hasNextPage bool, endCursor string, err error) {
 	var resp struct {
@@ -166,7 +168,7 @@ func countUnresolvedInPage(out []byte, myLogin string) (count int, hasNextPage b
 			continue
 		}
 		author := node.Comments.Nodes[0].Author.Login
-		if author == myLogin || author == "chatgpt-codex-connector[bot]" {
+		if author == myLogin || author == "chatgpt-codex-connector[bot]" || author == "chatgpt-codex-connector" {
 			count++
 		}
 	}
