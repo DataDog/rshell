@@ -419,8 +419,11 @@ func run(ctx context.Context, c *builtins.CallContext, args []string, opt runOpt
 // where that helper is unsupported.
 //
 // Returns:
-//   - 0   — input is immediately available (data buffered or EOF).
-//   - 142 — would block, or stdin is not pollable (e.g. byte buffer).
+//   - 0 — input is immediately available (data buffered to read).
+//   - 1 — would block, no data buffered, or stdin is not pollable
+//     (e.g. byte buffer). Bash uses exit code 1 for `-t 0` "no data
+//     available", reserving 142 (128+SIGALRM) for the positive-
+//     timeout case where an alarm actually fired.
 //
 // The fallback (Windows / non-File readers) consumes one byte on
 // success — an intentional divergence from bash documented inline.
@@ -428,14 +431,14 @@ func run(ctx context.Context, c *builtins.CallContext, args []string, opt runOpt
 func pollAvailable(c *builtins.CallContext) builtins.Result {
 	f, ok := c.Stdin.(*os.File)
 	if !ok {
-		return builtins.Result{Code: 142}
+		return builtins.Result{Code: 1}
 	}
 	// Preferred path: non-consuming poll via the platform syscall.
 	if avail, supported := pollInputNonConsuming(f.Fd()); supported {
 		if avail {
 			return builtins.Result{Code: 0}
 		}
-		return builtins.Result{Code: 142}
+		return builtins.Result{Code: 1}
 	}
 
 	// Fallback: set a deadline in the past and try a one-byte read.
@@ -450,11 +453,11 @@ func pollAvailable(c *builtins.CallContext) builtins.Result {
 	// — without an in-the-past deadline, Read would block indefinitely
 	// when no input is buffered, which violates the documented `-t 0`
 	// "poll, never wait" contract and would hang the script. Return
-	// 142 (would-block) immediately in that case, matching the same
-	// "not pollable" path taken when stdin isn't *os.File.
+	// 1 (no data available) immediately in that case, matching the
+	// same "not pollable" path taken when stdin isn't *os.File.
 	pastDeadline := c.Now.Add(-time.Hour)
 	if err := f.SetReadDeadline(pastDeadline); err != nil {
-		return builtins.Result{Code: 142}
+		return builtins.Result{Code: 1}
 	}
 	defer func() { _ = f.SetReadDeadline(time.Time{}) }()
 	var probe [1]byte
@@ -462,7 +465,7 @@ func pollAvailable(c *builtins.CallContext) builtins.Result {
 	if errors.Is(err, io.EOF) || n == 1 {
 		return builtins.Result{Code: 0}
 	}
-	return builtins.Result{Code: 142}
+	return builtins.Result{Code: 1}
 }
 
 // stdinIsTerminal reports whether r is an *os.File whose descriptor
