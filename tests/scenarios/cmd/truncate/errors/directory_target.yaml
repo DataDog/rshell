@@ -1,0 +1,16 @@
+# skip: error wording for "is a directory" varies between GNU and our PortableErr.
+skip_assert_against_bash: true
+description: truncate refuses to act on a directory and exits 1.
+setup:
+  files:
+    - path: subdir/.keep
+      content: ""
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    truncate -s 0 subdir
+expect:
+  stdout: ""
+  stderr_contains:
+    - "truncate:"
+  exit_code: 1

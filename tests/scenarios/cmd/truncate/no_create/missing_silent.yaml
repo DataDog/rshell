@@ -1,0 +1,15 @@
+description: truncate -c silently skips missing files (exit 0, file not created).
+setup:
+  files:
+    - path: .keep
+      content: ""
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    truncate -c -s 0 missing.txt
+    test ! -e missing.txt && echo "not created"
+expect:
+  stdout: |+
+    not created
+  stderr: ""
+  exit_code: 0

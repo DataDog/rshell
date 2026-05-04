@@ -1,0 +1,15 @@
+description: K suffix is interpreted as 1024 bytes (binary).
+setup:
+  files:
+    - path: f.bin
+      content: ""
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    truncate -s 1K f.bin
+    wc -c < f.bin
+expect:
+  stdout: |+
+    1024
+  stderr: ""
+  exit_code: 0

@@ -1,0 +1,17 @@
+# skip: GNU truncate accepts -10 as a relative size modifier; we reject it as unsupported.
+skip_assert_against_bash: true
+description: A leading - is rejected (relative size modifiers are unsupported).
+setup:
+  files:
+    - path: a.txt
+      content: "abc"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    truncate -s=-10 a.txt
+expect:
+  stdout: ""
+  stderr_contains:
+    - "truncate:"
+    - "relative size operators not supported"
+  exit_code: 1

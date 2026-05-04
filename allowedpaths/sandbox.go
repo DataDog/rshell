@@ -17,6 +17,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"syscall"
 )
 
 // Access mode bits for permission checks.
@@ -365,6 +366,79 @@ func (s *Sandbox) Open(path string, cwd string, flag int, perm os.FileMode) (io.
 		return nil, PortablePathError(err)
 	}
 	return f, nil
+}
+
+// Truncate sets the size of the file at path to size bytes. When create is
+// true, a missing file is created with mode 0644; when create is false, a
+// missing file returns os.ErrNotExist (the caller, e.g. truncate -c, decides
+// whether to treat that as an error or a silent skip).
+//
+// Like Open, the operation goes through os.Root for atomic openat-based path
+// validation. The cross-root symlink fallback is intentionally NOT used:
+// resolving a symlink that escapes one root and then writing through the
+// resolved path is the classic TOCTOU footgun. Writes must stay within a
+// single allowed root.
+//
+// Non-regular targets (FIFO, socket, char/block device) are rejected before
+// the open syscall. Mirrors the redirect-side guard in
+// interp.Runner.rejectNonRegularRedirectTarget — opening a FIFO with
+// O_WRONLY blocks until a reader connects, which would hang the shell.
+// /dev/null and similar are handled by sandbox path resolution and never
+// reach this method through normal AllowedPaths.
+//
+// Negative sizes are rejected with EINVAL. Sizes within int64 range are
+// passed through to the kernel; the kernel/filesystem rejects values it
+// cannot represent (e.g. exceeding the filesystem's maximum file size).
+//
+// The flag passed to OpenFile is constructed locally from a fixed set of
+// constants, so the open-flag allowlist enforced in Open is not relevant
+// here — there is no caller-controlled flag bit that could leak through.
+func (s *Sandbox) Truncate(path string, cwd string, size int64, create bool) error {
+	if size < 0 {
+		return &os.PathError{Op: "truncate", Path: path, Err: syscall.EINVAL}
+	}
+
+	absPath := toAbs(path, cwd)
+
+	ar, relPath, ok := s.resolve(absPath)
+	if !ok {
+		return &os.PathError{Op: "truncate", Path: path, Err: os.ErrPermission}
+	}
+
+	// Stat (follow symlinks within the root) so a symlink whose final
+	// target is a FIFO is caught here before OpenFile blocks on the
+	// open. Mirrors the policy in interp.Runner.rejectNonRegularRedirectTarget.
+	// ENOENT and other Stat errors are intentionally ignored: O_CREATE
+	// will produce a regular file, and any genuine permission error will
+	// surface from the subsequent OpenFile call.
+	if info, err := ar.root.Stat(relPath); err == nil && !info.Mode().IsRegular() {
+		return &os.PathError{Op: "truncate", Path: path, Err: errors.New("not a regular file")}
+	}
+
+	flag := os.O_WRONLY
+	if create {
+		flag |= os.O_CREATE
+	}
+	f, err := ar.root.OpenFile(relPath, flag, 0644)
+	if err != nil {
+		// Return the raw error so callers can use errors.Is against
+		// fs.ErrNotExist / fs.ErrPermission. The handler renders user-
+		// facing messages via PortableErrMsg, so the wrapping that
+		// PortablePathError performs is not needed here. Wrapping would
+		// hide os.ErrNotExist behind a fresh errors.New value, which
+		// would silently break the truncate -c silent-skip path.
+		return err
+	}
+	truncErr := f.Truncate(size)
+	// Surface a deferred Close error only when Truncate itself succeeded;
+	// the open path is read-only-on-the-fd at this point so a failed Close
+	// after a successful ftruncate is the only case where a Close error
+	// reflects user-visible data loss (flush failure on write-back).
+	closeErr := f.Close()
+	if truncErr != nil {
+		return truncErr
+	}
+	return closeErr
 }
 
 // ReadDir implements the restricted directory-read policy.

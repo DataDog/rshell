@@ -1,0 +1,19 @@
+# skip: AllowedPaths sandbox restriction is rshell-specific; bash has no such concept.
+skip_assert_against_bash: true
+description: truncate refuses to act on files outside AllowedPaths.
+setup:
+  files:
+    - path: inside/.keep
+      content: ""
+    - path: outside.txt
+      content: "untouched\n"
+input:
+  allowed_paths: ["inside"]
+  script: |+
+    truncate -s 0 ../outside.txt
+expect:
+  stdout: ""
+  stderr_contains:
+    - "truncate:"
+    - "permission denied"
+  exit_code: 1

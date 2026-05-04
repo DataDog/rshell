@@ -1,0 +1,15 @@
+description: KB suffix is interpreted as 1000 bytes (decimal).
+setup:
+  files:
+    - path: f.bin
+      content: ""
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    truncate -s 1KB f.bin
+    wc -c < f.bin
+expect:
+  stdout: |+
+    1000
+  stderr: ""
+  exit_code: 0

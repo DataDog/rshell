@@ -1,0 +1,16 @@
+description: truncate rejects deferred flags (--reference, -o) as unknown flags.
+setup:
+  files:
+    - path: a.txt
+      content: ""
+    - path: ref.txt
+      content: "abc"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    truncate --reference=ref.txt a.txt
+expect:
+  stdout: ""
+  stderr_contains:
+    - "truncate:"
+  exit_code: 1

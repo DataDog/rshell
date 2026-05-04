@@ -834,3 +834,30 @@ func TestContainerSymlinkRelativeTarget(t *testing.T) {
 	n, _ := f.Read(buf)
 	assert.Equal(t, "relative", string(buf[:n]))
 }
+
+// TestSandboxTruncateMethodFIFODoesNotBlock verifies that Sandbox.Truncate
+// rejects a FIFO target before the open syscall can block. Without the
+// non-regular-file pre-check, opening a FIFO with O_WRONLY would wait for
+// a reader and hang the shell until the executor timeout fires.
+func TestSandboxTruncateMethodFIFODoesNotBlock(t *testing.T) {
+	dir := t.TempDir()
+	fifoPath := filepath.Join(dir, "pipe")
+	require.NoError(t, syscall.Mkfifo(fifoPath, 0644))
+
+	sb, _, err := New([]string{dir})
+	require.NoError(t, err)
+	defer sb.Close()
+
+	done := make(chan error, 1)
+	go func() {
+		done <- sb.Truncate("pipe", dir, 0, false)
+	}()
+
+	select {
+	case err := <-done:
+		assert.Error(t, err, "FIFO target must be rejected, not silently truncated")
+		assert.Contains(t, err.Error(), "not a regular file")
+	case <-time.After(2 * time.Second):
+		t.Fatal("Truncate blocked on FIFO — expected fast rejection via non-regular-file guard")
+	}
+}
