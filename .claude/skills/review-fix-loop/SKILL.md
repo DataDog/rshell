@@ -124,7 +124,7 @@ To guard against context drift or hallucination, verify this flag structurally b
 findings_count=$(gh api "repos/{owner}/{repo}/pulls/{pr-number}/comments" \
   --paginate \
   | jq --arg me "$MY_LOGIN" --arg since "$ITERATION_START_TIME" \
-  '[.[] | select(.user.login == $me and .created_at > $since)] | length')
+  '[.[] | select(.user.login == $me and .created_at >= $since)] | length')
 iteration_had_no_findings=$([ "$findings_count" -eq 0 ] && echo true || echo false)
 ```
 
