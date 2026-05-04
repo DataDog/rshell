@@ -347,10 +347,12 @@ func TestXargsUnterminatedQuote(t *testing.T) {
 }
 
 func TestXargsTrailingBackslash(t *testing.T) {
+	// GNU treats a trailing backslash as the end of the last token (the
+	// backslash itself is dropped). We do the same.
 	dir := t.TempDir()
-	_, stderr, code := cmdRun(t, `printf 'a\\' | xargs echo`, dir)
-	assert.Equal(t, 1, code)
-	assert.Contains(t, stderr, "xargs:")
+	stdout, _, code := cmdRun(t, `printf 'a\\' | xargs echo`, dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "a\n", stdout)
 }
 
 // --- Sandbox: command not allowed ---

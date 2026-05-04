@@ -84,11 +84,11 @@ func TestXargsDelimiterTokenTooLong(t *testing.T) {
 // --- nextWhitespace edge cases ---
 
 func TestXargsQuotedAcrossNewline(t *testing.T) {
-	// A single-quote group can span newlines in default mode.
+	// GNU rejects newlines inside an unmatched quote in default mode.
 	dir := t.TempDir()
-	stdout, _, code := cmdRun(t, "printf \"'line1\\nline2' more\\n\" | xargs echo", dir)
-	assert.Equal(t, 0, code)
-	assert.Equal(t, "line1\nline2 more\n", stdout)
+	_, stderr, code := cmdRun(t, "printf \"'line1\\nline2' more\\n\" | xargs echo", dir)
+	assert.Equal(t, 1, code)
+	assert.Contains(t, stderr, "unmatched")
 }
 
 func TestXargsBackslashEscapeNewline(t *testing.T) {
@@ -156,14 +156,25 @@ func TestXargsArgFilePathTraversal(t *testing.T) {
 // --- Output consistency: CRLF and CR-only handling ---
 
 func TestXargsCRLFInput(t *testing.T) {
-	// CRLF: \r is whitespace per POSIX in default mode, so "a\r\nb\r\n"
-	// tokenises to "a", "b" with -L 1 invoking once per line.
+	// GNU treats only space, tab, and newline as separators; \r is part
+	// of the token. CRLF input "a\r\nb\r\n" tokenises to "a\r" and "b\r".
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "in.txt"),
 		[]byte("a\r\nb\r\n"), 0644))
 	stdout, _, code := cmdRun(t, "xargs -a in.txt echo", dir)
 	assert.Equal(t, 0, code)
-	assert.Equal(t, "a b\n", stdout)
+	assert.Equal(t, "a\r b\r\n", stdout)
+}
+
+func TestXargsCRLFWithMaxLines(t *testing.T) {
+	// With -L 1, CRLF input emits one invocation per line. Each line still
+	// carries a trailing \r as part of its single token.
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "in.txt"),
+		[]byte("a\r\nb\r\n"), 0644))
+	stdout, _, code := cmdRun(t, "xargs -a in.txt -L 1 echo", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "a\r\nb\r\n", stdout)
 }
 
 // --- Pre-cancelled context must return promptly ---

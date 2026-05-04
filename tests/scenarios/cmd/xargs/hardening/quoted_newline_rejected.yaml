@@ -1,0 +1,8 @@
+description: xargs rejects newlines inside an unmatched quote (matches GNU).
+input:
+  script: |+
+    printf "'line1\nline2' more\n" | xargs echo
+expect:
+  stdout: ""
+  stderr_contains: ["unmatched"]
+  exit_code: 1

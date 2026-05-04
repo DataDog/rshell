@@ -54,8 +54,8 @@ func TestInvokeCommandNilRunCommand(t *testing.T) {
 }
 
 // TestInvokeCommandBlockedByPolicy verifies that CommandAllowed is consulted
-// before RunCommand and that a refusal yields exitSubCmdNotStart with stop=true
-// and the run callback is never invoked.
+// before RunCommand and that a refusal yields exit 126 (POSIX-style "command
+// found but not executable"), with stop=true and no RunCommand call.
 func TestInvokeCommandBlockedByPolicy(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	cc := newPentestCallCtx(&stdout, &stderr)
@@ -68,10 +68,25 @@ func TestInvokeCommandBlockedByPolicy(t *testing.T) {
 	o := options{cmdName: "echo", maxChars: DefaultMaxChars}
 
 	code, stop := invokeCommand(context.Background(), cc, o, []string{"a"})
-	assert.Equal(t, exitSubCmdNotStart, code)
+	assert.Equal(t, exitSubCmdNotAllowed, code)
 	assert.True(t, stop)
 	assert.False(t, called, "RunCommand must not be called when policy denies")
 	assert.Contains(t, stderr.String(), "not allowed")
+}
+
+// TestInvokeCommandUnknownCommandReturns127 verifies that "unknown command"
+// errors from RunCommand are mapped to POSIX-style exit 127.
+func TestInvokeCommandUnknownCommandReturns127(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	cc := newPentestCallCtx(&stdout, &stderr)
+	cc.RunCommand = func(_ context.Context, _ string, _ string, _ []string) (uint8, error) {
+		return 127, errors.New("rshell: foo: unknown command")
+	}
+	o := options{cmdName: "foo", maxChars: DefaultMaxChars}
+
+	code, stop := invokeCommand(context.Background(), cc, o, []string{"a"})
+	assert.Equal(t, exitSubCmdNotFound, code)
+	assert.True(t, stop)
 }
 
 // TestInvokeCommandSubProcess255Aborts verifies that an exit-255 sub-command
@@ -122,7 +137,9 @@ func TestInvokeCommandRunErrorAborts(t *testing.T) {
 }
 
 // TestInvokeCommandPreCancelledContext verifies that a cancelled context
-// exits the function before any RunCommand call.
+// exits the function silently before any RunCommand call. Cancellation is
+// not a failure — the returned code is 0 with stop=true so the caller
+// preserves any prior finalCode.
 func TestInvokeCommandPreCancelledContext(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	cc := newPentestCallCtx(&stdout, &stderr)
@@ -136,9 +153,10 @@ func TestInvokeCommandPreCancelledContext(t *testing.T) {
 	cancel()
 
 	code, stop := invokeCommand(ctx, cc, o, []string{"a"})
-	assert.Equal(t, exitUsage, code)
+	assert.Equal(t, exitOK, code)
 	assert.True(t, stop)
 	assert.False(t, called)
+	assert.Empty(t, stderr.String(), "cancellation must not write to stderr")
 }
 
 // TestDecodeDelimEmpty exercises the empty-string error path.

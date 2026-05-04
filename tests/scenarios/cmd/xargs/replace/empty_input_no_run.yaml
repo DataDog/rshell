@@ -1,0 +1,8 @@
+description: xargs -I implies --no-run-if-empty; empty input produces no output.
+input:
+  script: |+
+    printf '' | xargs -I {} echo done
+expect:
+  stdout: ""
+  stderr: ""
+  exit_code: 0

@@ -346,20 +346,23 @@ var builtinPerCommandSymbols = map[string][]string{
 		"unicode/utf8.Valid",      // 🟢 checks if a byte slice is valid UTF-8; pure function, no I/O.
 	},
 	"xargs": {
-		"bufio.NewReaderSize", // 🟢 buffered reader with caller-supplied size; pure wrapper, no I/O capability of its own.
-		"bufio.Reader",        // 🟢 buffered reader type; pure data, no side effects.
-		"context.Context",     // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
-		"errors.Is",           // 🟢 error comparison; pure function, no I/O.
-		"errors.New",          // 🟢 creates a simple error value; pure function, no I/O.
-		"fmt.Errorf",          // 🟢 error formatting; pure function, no I/O.
-		"fmt.Sprintf",         // 🟢 string formatting; pure function, no I/O.
-		"io.EOF",              // 🟢 sentinel error value; pure constant.
-		"io.NopCloser",        // 🟢 wraps a Reader with a no-op Close; no side effects.
-		"io.ReadCloser",       // 🟢 interface type; no side effects.
-		"io.Reader",           // 🟢 interface type; no side effects.
-		"os.O_RDONLY",         // 🟢 read-only file flag constant; cannot open files by itself.
-		"strings.Builder",     // 🟢 efficient string concatenation; pure in-memory buffer, no I/O.
-		"strings.ReplaceAll",  // 🟢 replaces all occurrences of REPLSTR in -I templates; pure function, no I/O.
+		"bufio.NewReaderSize",      // 🟢 buffered reader with caller-supplied size; pure wrapper, no I/O capability of its own.
+		"bufio.Reader",             // 🟢 buffered reader type; pure data, no side effects.
+		"context.Canceled",         // 🟢 sentinel error value for context cancellation; pure constant.
+		"context.Context",          // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
+		"context.DeadlineExceeded", // 🟢 sentinel error value for deadline cancellation; pure constant.
+		"errors.Is",                // 🟢 error comparison; pure function, no I/O.
+		"errors.New",               // 🟢 creates a simple error value; pure function, no I/O.
+		"fmt.Errorf",               // 🟢 error formatting; pure function, no I/O.
+		"fmt.Sprintf",              // 🟢 string formatting; pure function, no I/O.
+		"io.EOF",                   // 🟢 sentinel error value; pure constant.
+		"io.NopCloser",             // 🟢 wraps a Reader with a no-op Close; no side effects.
+		"io.ReadCloser",            // 🟢 interface type; no side effects.
+		"io.Reader",                // 🟢 interface type; no side effects.
+		"os.O_RDONLY",              // 🟢 read-only file flag constant; cannot open files by itself.
+		"strings.Builder",          // 🟢 efficient string concatenation; pure in-memory buffer, no I/O.
+		"strings.Contains",         // 🟢 substring search; pure function, no I/O.
+		"strings.ReplaceAll",       // 🟢 replaces all occurrences of REPLSTR in -I templates; pure function, no I/O.
 	},
 	"ping": {
 		"context.Context",         // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
@@ -417,22 +420,24 @@ var builtinPerCommandSymbols = map[string][]string{
 }
 
 var builtinAllowedSymbols = []string{
-	"bufio.NewReaderSize", // 🟢 buffered reader with caller-supplied size; pure wrapper, no I/O capability of its own.
-	"bufio.NewScanner",    // 🟢 line-by-line input reading (e.g. head, cat); no write or exec capability.
-	"bufio.Reader",        // 🟢 buffered reader type; pure data, no side effects.
-	"bufio.Scanner",       // 🟢 scanner type for buffered input reading; no write or exec capability.
-	"bufio.SplitFunc",     // 🟢 type for custom scanner split functions; pure type, no I/O.
-	"bytes.Buffer",        // 🟢 in-memory buffer to capture command output; no I/O side effects.
-	"bytes.Equal",         // 🟢 compares two byte slices for equality; pure function, no I/O.
-	"bytes.IndexByte",     // 🟢 finds a byte in a byte slice; pure function, no I/O.
-	"bytes.NewReader",     // 🟢 wraps a byte slice as an io.Reader; pure in-memory, no I/O.
-	"context.Context",     // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
-	"context.WithTimeout", // 🟢 creates a child context with a deadline; no filesystem or network I/O itself.
-	"errors.As",           // 🟢 error type assertion; pure function, no I/O.
-	"errors.Is",           // 🟢 error comparison; pure function, no I/O.
-	"errors.New",          // 🟢 creates a simple error value; pure function, no I/O.
-	"fmt.Errorf",          // 🟢 error formatting; pure function, no I/O.
-	"fmt.Sprintf",         // 🟢 string formatting; pure function, no I/O.
+	"bufio.NewReaderSize",      // 🟢 buffered reader with caller-supplied size; pure wrapper, no I/O capability of its own.
+	"bufio.NewScanner",         // 🟢 line-by-line input reading (e.g. head, cat); no write or exec capability.
+	"bufio.Reader",             // 🟢 buffered reader type; pure data, no side effects.
+	"bufio.Scanner",            // 🟢 scanner type for buffered input reading; no write or exec capability.
+	"bufio.SplitFunc",          // 🟢 type for custom scanner split functions; pure type, no I/O.
+	"bytes.Buffer",             // 🟢 in-memory buffer to capture command output; no I/O side effects.
+	"bytes.Equal",              // 🟢 compares two byte slices for equality; pure function, no I/O.
+	"bytes.IndexByte",          // 🟢 finds a byte in a byte slice; pure function, no I/O.
+	"bytes.NewReader",          // 🟢 wraps a byte slice as an io.Reader; pure in-memory, no I/O.
+	"context.Canceled",         // 🟢 sentinel error value for context cancellation; pure constant.
+	"context.Context",          // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
+	"context.DeadlineExceeded", // 🟢 sentinel error value for deadline cancellation; pure constant.
+	"context.WithTimeout",      // 🟢 creates a child context with a deadline; no filesystem or network I/O itself.
+	"errors.As",                // 🟢 error type assertion; pure function, no I/O.
+	"errors.Is",                // 🟢 error comparison; pure function, no I/O.
+	"errors.New",               // 🟢 creates a simple error value; pure function, no I/O.
+	"fmt.Errorf",               // 🟢 error formatting; pure function, no I/O.
+	"fmt.Sprintf",              // 🟢 string formatting; pure function, no I/O.
 	"github.com/DataDog/rshell/internal/version.Version",  // 🟢 build version string; read-only package-level variable, no I/O.
 	"github.com/prometheus-community/pro-bing.NewPinger",  // 🔴 creates an ICMP pinger by resolving host; network I/O is the explicit purpose of the ping builtin.
 	"github.com/prometheus-community/pro-bing.NoopLogger", // 🟢 no-op logger that discards pro-bing internal messages; no side effects.

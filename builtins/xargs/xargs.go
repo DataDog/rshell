@@ -63,11 +63,12 @@
 // Exit codes (POSIX):
 //
 //	0    success
-//	1    syntax / usage error or sub-command not allowed; also returned
-//	     when the context is cancelled mid-run.
+//	1    syntax / usage error
 //	123  any sub-command exited 1..125
 //	124  any sub-command exited 255 (xargs stops immediately)
-//	125  sub-command failed to start
+//	125  sub-command not invokable (RunCommand unavailable)
+//	126  sub-command rejected by sandbox policy (CommandAllowed)
+//	127  sub-command not found (no such builtin)
 //
 // Sandbox notes:
 //
@@ -135,11 +136,13 @@ const (
 	subCmdFatalCode uint8 = 255
 
 	// Exit codes per POSIX xargs.
-	exitOK             uint8 = 0
-	exitUsage          uint8 = 1
-	exitSubCmdFailed   uint8 = 123
-	exitSubCmd255      uint8 = 124
-	exitSubCmdNotStart uint8 = 125
+	exitOK               uint8 = 0
+	exitUsage            uint8 = 1
+	exitSubCmdFailed     uint8 = 123
+	exitSubCmd255        uint8 = 124
+	exitSubCmdNotStart   uint8 = 125
+	exitSubCmdNotAllowed uint8 = 126
+	exitSubCmdNotFound   uint8 = 127
 )
 
 func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
@@ -284,13 +287,15 @@ func buildOptions(fs *builtins.FlagSet, null bool, argFile, delim, eofStr, replS
 		o.maxChars = DefaultMaxChars
 	}
 
-	// -I forces single-arg-per-batch and per-line invocation, and switches
+	// -I forces single-arg-per-batch and per-line invocation, switches
 	// tokenisation to newline-only (matches GNU xargs: "unquoted blanks do
-	// not terminate input items; instead the separator is the newline").
-	// This overrides any user-supplied -n / -L values.
+	// not terminate input items; instead the separator is the newline"),
+	// and implies --no-run-if-empty. This overrides any user-supplied
+	// -n / -L values.
 	if o.useReplace() {
 		o.maxArgs = 1
 		o.maxLines = 1
+		o.noRunEmpty = true
 		// Only override mode when the user did not request -0 or -d.
 		if !null && !fs.Changed("delimiter") {
 			o.mode = modeLine
@@ -366,6 +371,7 @@ func runXargs(ctx context.Context, callCtx *builtins.CallContext, o options) bui
 	tok := newTokenizer(rc, o)
 	finalCode := exitOK
 	totalItems := 0
+	tokErr := false
 	var batch []string
 	batchLines := 0
 	usedChars := commandLineLen(o, nil) // running command-line length
@@ -383,14 +389,18 @@ func runXargs(ctx context.Context, callCtx *builtins.CallContext, o options) bui
 
 	for {
 		if err := ctx.Err(); err != nil {
-			return builtins.Result{Code: exitUsage}
+			return builtins.Result{Code: finalCode}
 		}
 		item, endedLine, more, err := tok.next(ctx)
 		if err != nil {
+			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+				return builtins.Result{Code: finalCode}
+			}
 			callCtx.Errf("xargs: %s\n", err.Error())
 			if finalCode < exitUsage {
 				finalCode = exitUsage
 			}
+			tokErr = true
 			break
 		}
 		if !more {
@@ -436,13 +446,13 @@ func runXargs(ctx context.Context, callCtx *builtins.CallContext, o options) bui
 		}
 	}
 
-	if len(batch) > 0 {
+	if len(batch) > 0 && !tokErr {
 		if flush() {
 			return builtins.Result{Code: finalCode}
 		}
 	}
 
-	if totalItems == 0 {
+	if totalItems == 0 && !tokErr {
 		return finishEmpty(ctx, callCtx, o, finalCode)
 	}
 
@@ -482,7 +492,7 @@ func commandLineLen(o options, batch []string) int {
 // other fatal condition).
 func invokeCommand(ctx context.Context, callCtx *builtins.CallContext, o options, batch []string) (uint8, bool) {
 	if err := ctx.Err(); err != nil {
-		return exitUsage, true
+		return exitOK, true
 	}
 
 	finalCmd, finalArgs := resolveCmd(o, batch)
@@ -497,7 +507,7 @@ func invokeCommand(ctx context.Context, callCtx *builtins.CallContext, o options
 	}
 	if callCtx.CommandAllowed != nil && !callCtx.CommandAllowed(finalCmd) {
 		callCtx.Errf("xargs: %s: command not allowed\n", finalCmd)
-		return exitSubCmdNotStart, true
+		return exitSubCmdNotAllowed, true
 	}
 
 	dir := ""
@@ -508,7 +518,18 @@ func invokeCommand(ctx context.Context, callCtx *builtins.CallContext, o options
 	exitCode, err := callCtx.RunCommand(ctx, dir, finalCmd, finalArgs)
 	if err != nil {
 		callCtx.Errf("xargs: %s: %s\n", finalCmd, err.Error())
-		return exitSubCmdNotStart, true
+		// The interp runner returns "unknown command" for an unregistered
+		// builtin and "command not allowed" for a policy denial. Map both
+		// to the POSIX-conventional codes (127 / 126).
+		msg := err.Error()
+		switch {
+		case strings.Contains(msg, "unknown command"):
+			return exitSubCmdNotFound, true
+		case strings.Contains(msg, "not allowed"):
+			return exitSubCmdNotAllowed, true
+		default:
+			return exitSubCmdNotStart, true
+		}
 	}
 	switch exitCode {
 	case 0:
@@ -616,17 +637,21 @@ func (t *tokenizer) pushByte(b byte) error {
 // next returns the next item, an "ended a line" flag (true if the item ends
 // with or sits on a line that was terminated by '\n'), a "more" flag (false
 // at EOF before producing any item), and any error.
+//
+// For -L counting purposes, every item in modeNull and modeDelim is
+// considered to end a line: the delimiter is the line boundary in those
+// modes, so each item occupies one logical line.
 func (t *tokenizer) next(ctx context.Context) (item string, endedLine, more bool, err error) {
 	if t.eof {
 		return "", false, false, nil
 	}
 	switch t.o.mode {
 	case modeNull:
-		return t.nextDelimited(ctx, 0, false)
+		return t.nextDelimited(ctx, 0, false, true)
 	case modeDelim:
-		return t.nextDelimited(ctx, t.o.delim, false)
+		return t.nextDelimited(ctx, t.o.delim, false, true)
 	case modeLine:
-		return t.nextDelimited(ctx, '\n', true)
+		return t.nextDelimited(ctx, '\n', true, true)
 	default:
 		return t.nextWhitespace(ctx)
 	}
@@ -634,9 +659,10 @@ func (t *tokenizer) next(ctx context.Context) (item string, endedLine, more bool
 
 // nextDelimited reads bytes until the next occurrence of sep or EOF.
 // When skipBlank is true (used by modeLine), an empty token between
-// adjacent separators is silently dropped. "endedLine" is meaningful only
-// when sep == '\n'.
-func (t *tokenizer) nextDelimited(ctx context.Context, sep byte, skipBlank bool) (string, bool, bool, error) {
+// adjacent separators is silently dropped. linePerItem causes endedLine
+// to always be true; otherwise endedLine is true only when sep == '\n'.
+func (t *tokenizer) nextDelimited(ctx context.Context, sep byte, skipBlank, linePerItem bool) (string, bool, bool, error) {
+	endedLine := linePerItem || sep == '\n'
 	t.buf = t.buf[:0]
 	for {
 		if err := t.pollCtx(ctx); err != nil {
@@ -649,7 +675,7 @@ func (t *tokenizer) nextDelimited(ctx context.Context, sep byte, skipBlank bool)
 				if len(t.buf) == 0 {
 					return "", false, false, nil
 				}
-				return string(t.buf), sep == '\n', true, nil
+				return string(t.buf), endedLine, true, nil
 			}
 			return "", false, false, err
 		}
@@ -657,7 +683,7 @@ func (t *tokenizer) nextDelimited(ctx context.Context, sep byte, skipBlank bool)
 			if skipBlank && len(t.buf) == 0 {
 				continue
 			}
-			return string(t.buf), sep == '\n', true, nil
+			return string(t.buf), endedLine, true, nil
 		}
 		if err := t.pushByte(b); err != nil {
 			return "", false, false, err
@@ -665,10 +691,12 @@ func (t *tokenizer) nextDelimited(ctx context.Context, sep byte, skipBlank bool)
 	}
 }
 
-// whitespace classification for default mode.
+// whitespace classification for default mode. Only space, tab, and newline
+// terminate items (matches GNU xargs default tokenisation). \r, \v, \f
+// are literal token bytes.
 func isWhitespace(b byte) bool {
 	switch b {
-	case ' ', '\t', '\n', '\v', '\f', '\r':
+	case ' ', '\t', '\n':
 		return true
 	}
 	return false
@@ -736,6 +764,10 @@ func (t *tokenizer) nextWhitespace(ctx context.Context) (string, bool, bool, err
 				quote = 0
 				continue
 			}
+			// GNU xargs rejects newlines inside an unmatched quote.
+			if b == '\n' {
+				return "", false, false, fmt.Errorf("unmatched %c quote; by default quotes are special to xargs unless you use the -0 option", quote)
+			}
 			if err := t.pushByte(b); err != nil {
 				return "", false, false, err
 			}
@@ -750,7 +782,16 @@ func (t *tokenizer) nextWhitespace(ctx context.Context) (string, bool, bool, err
 			n, errEsc := t.r.ReadByte()
 			if errEsc != nil {
 				if errors.Is(errEsc, io.EOF) {
-					return "", false, false, errors.New("trailing backslash")
+					// GNU treats a trailing backslash as the end of the
+					// last token (the backslash itself is dropped).
+					t.eof = true
+					if len(t.buf) == 0 {
+						return "", false, false, nil
+					}
+					if isEofMarker(t.o, t.buf) {
+						return "", false, false, nil
+					}
+					return string(t.buf), true, true, nil
 				}
 				return "", false, false, errEsc
 			}

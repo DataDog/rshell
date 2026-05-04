@@ -1,0 +1,10 @@
+description: xargs -L works under -d — each delimited item counts as one line.
+input:
+  script: |+
+    printf 'a,b,c,d,e,' | xargs -d , -L 3 echo
+expect:
+  stdout: |+
+    a b c
+    d e
+  stderr: ""
+  exit_code: 0
