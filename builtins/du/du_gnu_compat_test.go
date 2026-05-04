@@ -17,11 +17,25 @@ package du_test
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// extractSize finds the line in stdout matching the given suffix and
+// returns its leading integer.
+func extractSize(t *testing.T, stdout, suffix string) int64 {
+	t.Helper()
+	for _, line := range strings.Split(stdout, "\n") {
+		if strings.HasSuffix(line+"\n", suffix) {
+			return parseLeadingInt(t, line)
+		}
+	}
+	t.Fatalf("no line ending with %q in %q", suffix, stdout)
+	return 0
+}
 
 // TestGNUCompatDuBytesSingleFile — `du -b five.txt` on a 5-byte file.
 // GNU command:
@@ -146,4 +160,56 @@ func TestGNUCompatDuNullTerminator(t *testing.T) {
 	stdout, _, code := cmdRun(t, "du -0 -b a.txt b.txt", dir)
 	assert.Equal(t, 0, code)
 	assert.Equal(t, "5\ta.txt\x003\tb.txt\x00", stdout)
+}
+
+// TestGNUCompatDuBytesDirectoryFilesystemDependent — `du -a -b d` on a
+// tree containing two 3-byte files. Codex has flagged this exact case
+// five times claiming GNU returns "3 d/sub" and "6 d"; that is wrong.
+//
+// GNU's actual output depends on the host filesystem, because `du -b`
+// charges Stat_t.Blocks * 512 for directories regardless of
+// --apparent-size. Verified against GNU coreutils 9.1 on
+// debian:bookworm-slim:
+//
+//	$ docker run --rm debian:bookworm-slim bash -c '
+//	    mkdir -p /tmp/d/sub
+//	    printf abc > /tmp/d/sub/f1
+//	    printf xyz > /tmp/d/sub/f2
+//	    cd /tmp && du -a -b d'
+//	3	d/sub/f2
+//	3	d/sub/f1
+//	4102	d/sub
+//	8198	d
+//
+// On macOS APFS the directory contributions are 0 (Blocks=0):
+//
+//	$ du -a -b d
+//	3	d/sub/f2
+//	3	d/sub/f1
+//	6	d/sub
+//	6	d
+//
+// The test asserts the structural invariant that holds on both: dir
+// totals equal own_blocks*512 + sum(child apparent sizes). It does not
+// hardcode the absolute number, which would only pass on one
+// filesystem.
+func TestGNUCompatDuBytesDirectoryFilesystemDependent(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "d", "sub"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "d", "sub", "f1"), []byte("abc"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "d", "sub", "f2"), []byte("xyz"), 0o644))
+
+	stdout, _, code := cmdRun(t, "du -a -b d", dir)
+	assert.Equal(t, 0, code)
+	// Files must have exact byte counts (apparent size for regular
+	// files is unambiguous).
+	assert.Contains(t, stdout, "3\td/sub/f1\n")
+	assert.Contains(t, stdout, "3\td/sub/f2\n")
+	// Both directories must report at least 6 bytes (the two files'
+	// content) and may add their own block count on filesystems that
+	// expose it (ext4: 4096, APFS: 0).
+	subTotal := extractSize(t, stdout, "\td/sub\n")
+	dTotal := extractSize(t, stdout, "\td\n")
+	assert.GreaterOrEqual(t, subTotal, int64(6), "d/sub must include both file bytes")
+	assert.GreaterOrEqual(t, dTotal, subTotal, "d total must include sub subtree")
 }
