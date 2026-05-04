@@ -146,7 +146,9 @@ const MaxArrayEntries = 1_000_000
 // MaxLoopIterations caps iterations per loop construct (while, do-while, for)
 // to prevent runaway loops in user scripts. Each loop construct has its own
 // independent counter; the overall guard against unbounded execution is the
-// shell's execution timeout.
+// shell's execution timeout. Note: for k nested loops, the worst-case total
+// iterations is MaxLoopIterations^k; the shell execution timeout (30 s) is
+// the binding guard for deeply-nested cases.
 const MaxLoopIterations = 1_000_000
 
 // MaxTotalReadBytes caps total bytes read from a non-regular-file input
