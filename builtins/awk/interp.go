@@ -150,8 +150,14 @@ func (r *runtime) applyVarAssignment(s string) error {
 	case "SUBSEP":
 		r.subsep = val
 	case "CONVFMT":
+		if len(val) > MaxStringBytes {
+			return errors.New("CONVFMT too long")
+		}
 		r.convFmt = val
 	case "OFMT":
+		if len(val) > MaxStringBytes {
+			return errors.New("OFMT too long")
+		}
 		r.ofmt = val
 	case "NR":
 		r.nr = floatToInt64Safe(parseAwkNumber(val))
@@ -584,6 +590,12 @@ func (r *runtime) setField(i int, val string) error {
 // reader corresponds to a regular file (so the totalReadBytes cap can be
 // skipped). Non-regular sources (FIFOs, /dev/zero, /proc/* streams, stdin) get
 // the cap to bound infinite reads.
+//
+// Note: when callCtx.StatFile is nil (e.g. in some test harnesses), regular
+// remains false and every file is subject to the 256 MiB cumulative cap. This
+// is intentionally conservative — it avoids unbounded reads — but it means
+// large regular files could be truncated. In production, StatFile is always
+// non-nil so regular files are processed without the cap.
 func (r *runtime) openInput(ctx context.Context, name string) (io.ReadCloser, bool, error) {
 	if name == "-" {
 		if r.callCtx.Stdin == nil {
@@ -1080,13 +1092,25 @@ func (r *runtime) storeScalar(name string, v awkValue) error {
 		r.filename = v.toString(r.convFmt)
 		return nil
 	case "SUBSEP":
-		r.subsep = v.toString(r.convFmt)
+		s := v.toString(r.convFmt)
+		if len(s) > MaxStringBytes {
+			return errors.New("SUBSEP too long")
+		}
+		r.subsep = s
 		return nil
 	case "CONVFMT":
-		r.convFmt = v.toString(r.convFmt)
+		s := v.toString(r.convFmt)
+		if len(s) > MaxStringBytes {
+			return errors.New("CONVFMT too long")
+		}
+		r.convFmt = s
 		return nil
 	case "OFMT":
-		r.ofmt = v.toString(r.convFmt)
+		s := v.toString(r.convFmt)
+		if len(s) > MaxStringBytes {
+			return errors.New("OFMT too long")
+		}
+		r.ofmt = s
 		return nil
 	case "RSTART":
 		r.rstart = floatToInt64Safe(v.toNumber())

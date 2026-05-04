@@ -1047,8 +1047,14 @@ func (p *parser) parsePrimary() (expr, error) {
 			p.tokens[p.pos] = token{kind: tkFuncName, val: t.val, line: t.line}
 			return p.parseCall()
 		}
-		// POSIX legacy: `length` without parens means length($0).
+		// POSIX/gawk: `length` without parens — either length($0) or length(arr).
+		// If the next token is a plain identifier (not a bracket), treat it as
+		// length(arr), since gawk accepts `length arr` as a no-parens form.
 		if t.val == "length" && p.peek().kind != tkLBracket {
+			if p.peek().kind == tkIdent {
+				arrName := p.advance().val
+				return &callExpr{name: "length", args: []expr{&identExpr{name: arrName}}}, nil
+			}
 			return &callExpr{name: "length"}, nil
 		}
 		// Array subscript?

@@ -195,8 +195,16 @@ func nextInt(idx *int, values []awkValue) (int, error) {
 	}
 	v := values[*idx]
 	*idx++
-	// Use floatToInt64Safe to avoid implementation-defined behaviour for NaN/±Inf.
-	return int(floatToInt64Safe(v.toNumber())), nil
+	// Use floatToInt64Safe to avoid implementation-defined behaviour for NaN/±Inf,
+	// then clamp to [math.MinInt32, MaxStringBytes] before converting to int so
+	// the cast is safe on 32-bit platforms.
+	n64 := floatToInt64Safe(v.toNumber())
+	if n64 > int64(MaxStringBytes) {
+		n64 = int64(MaxStringBytes)
+	} else if n64 < math.MinInt32 {
+		n64 = math.MinInt32
+	}
+	return int(n64), nil
 }
 
 // applyPrintfSpec formats a single value using the parsed spec.

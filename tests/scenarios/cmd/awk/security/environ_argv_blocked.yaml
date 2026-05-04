@@ -1,0 +1,9 @@
+description: ENVIRON=val in argv-assignment position is rejected.
+skip_assert_against_bash: true
+input:
+  script: |+
+    printf 'x\n' | awk '{print}' ENVIRON=leaked -
+expect:
+  stdout: ""
+  stderr_contains: ["ENVIRON"]
+  exit_code: 1
