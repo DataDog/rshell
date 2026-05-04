@@ -13,6 +13,7 @@ package cd_test
 
 import (
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -24,6 +25,9 @@ import (
 // TestGNUCompatCdAbsolute — bash: `cd /tmp/dir; printf '%s\n' "$PWD"` prints
 // the absolute target with a trailing newline.
 func TestGNUCompatCdAbsolute(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("script embeds Windows path with backslashes that the shell parser strips as escapes")
+	}
 	dir := t.TempDir()
 	sub := makeDir(t, dir, "sub")
 	stdout, _, code := cmdRun(t, "cd "+sub+"\nprintf '%s\\n' \"$PWD\"", dir)
@@ -34,6 +38,9 @@ func TestGNUCompatCdAbsolute(t *testing.T) {
 // TestGNUCompatCdDashPrints — bash: `cd a; cd b; cd -` prints the directory
 // it's switching back to (`a`) on stdout, with a trailing newline.
 func TestGNUCompatCdDashPrints(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("script embeds Windows path with backslashes that the shell parser strips as escapes")
+	}
 	dir := t.TempDir()
 	a := makeDir(t, dir, "a")
 	b := makeDir(t, dir, "b")

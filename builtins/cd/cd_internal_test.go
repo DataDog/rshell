@@ -215,11 +215,17 @@ func TestResolvePhysicalLoop(t *testing.T) {
 }
 
 func TestResolvePhysicalRelativeTarget(t *testing.T) {
-	// /alias -> sub (relative target). After one hop resolvePhysical should
-	// land on /sub, which is a regular dir and ends the walk.
+	// alias -> sub (relative target). After one hop resolvePhysical should
+	// land on the sibling "sub", which is a regular dir and ends the walk.
+	// Use platform-correct absolute paths via t.TempDir so the test runs on
+	// Windows (where "/alias" is not absolute and filepath.Dir("/alias")
+	// returns "\\", giving a backslash-only result).
+	base := t.TempDir()
+	alias := filepath.Join(base, "alias")
+	expected := filepath.Join(base, "sub")
 	cc := &builtins.CallContext{
 		LstatFile: func(_ context.Context, p string) (fs.FileInfo, error) {
-			if p == "/alias" {
+			if p == alias {
 				return symlinkInfo(), nil
 			}
 			return fakeInfo{}, nil
@@ -228,9 +234,9 @@ func TestResolvePhysicalRelativeTarget(t *testing.T) {
 			return "sub", nil
 		},
 	}
-	got, err := resolvePhysical(context.Background(), cc, "/alias")
+	got, err := resolvePhysical(context.Background(), cc, alias)
 	assert.NoError(t, err)
-	assert.Equal(t, "/sub", got)
+	assert.Equal(t, expected, got)
 }
 
 func TestResolvePhysicalTargetTooLong(t *testing.T) {

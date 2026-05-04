@@ -9,6 +9,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -19,6 +20,20 @@ import (
 	"github.com/DataDog/rshell/builtins/testutil"
 	"github.com/DataDog/rshell/interp"
 )
+
+// skipIfWindowsBackslashScript skips the test on Windows when the script
+// embeds an absolute path that contains backslashes. The shell parser
+// treats backslash as an escape character in unquoted words, so a Windows
+// path like "C:\\Users\\foo" is parsed as "C:Usersfoo" and the cd target
+// no longer matches the directory created on disk. The cd builtin itself
+// is OS-agnostic; only the test scaffolding (interpolating raw paths into
+// scripts) is incompatible with Windows.
+func skipIfWindowsBackslashScript(t *testing.T) {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("script embeds Windows path with backslashes that the shell parser strips as escapes")
+	}
+}
 
 func runScript(t *testing.T, script, dir string, opts ...interp.RunnerOption) (string, string, int) {
 	t.Helper()
@@ -56,6 +71,7 @@ func makeFile(t *testing.T, base, rel, content string) string {
 // --- Basic positional argument ---
 
 func TestCdAbsoluteDir(t *testing.T) {
+	skipIfWindowsBackslashScript(t)
 	dir := t.TempDir()
 	sub := makeDir(t, dir, "sub")
 	stdout, stderr, code := cmdRun(t, "cd "+sub+"\necho $PWD", dir)
@@ -82,6 +98,7 @@ func TestCdRelativeDotDot(t *testing.T) {
 }
 
 func TestCdUpdatesPwdAndOldpwd(t *testing.T) {
+	skipIfWindowsBackslashScript(t)
 	dir := t.TempDir()
 	sub := makeDir(t, dir, "sub")
 	script := "cd " + sub + "\necho PWD=$PWD\necho OLDPWD=$OLDPWD"
@@ -94,6 +111,7 @@ func TestCdUpdatesPwdAndOldpwd(t *testing.T) {
 // --- cd - ---
 
 func TestCdDashSwitchesAndPrints(t *testing.T) {
+	skipIfWindowsBackslashScript(t)
 	dir := t.TempDir()
 	sub := makeDir(t, dir, "sub")
 	script := "cd " + sub + "\ncd -"
@@ -110,6 +128,7 @@ func TestCdDashWithoutOldpwd(t *testing.T) {
 }
 
 func TestCdDashSetsOldpwdToCurrent(t *testing.T) {
+	skipIfWindowsBackslashScript(t)
 	dir := t.TempDir()
 	sub := makeDir(t, dir, "sub")
 	script := "cd " + sub + "\ncd -\necho OLDPWD=$OLDPWD\necho PWD=$PWD"
@@ -127,6 +146,7 @@ func TestCdDashSetsOldpwdToCurrent(t *testing.T) {
 // test for the case where the inline-restore loop in interp/runner_exec
 // reverted cd's update.
 func TestCdInlineAssignmentSurvivesRestore(t *testing.T) {
+	skipIfWindowsBackslashScript(t)
 	dir := t.TempDir()
 	a := makeDir(t, dir, "a")
 	b := makeDir(t, dir, "b")
@@ -191,6 +211,7 @@ func TestCdNotADirectory(t *testing.T) {
 }
 
 func TestCdOutsideAllowedPaths(t *testing.T) {
+	skipIfWindowsBackslashScript(t)
 	allowed := t.TempDir()
 	other := t.TempDir()
 	_, stderr, code := cmdRun(t, "cd "+other, allowed)
@@ -413,6 +434,7 @@ func TestCdCancelledContext(t *testing.T) {
 // --- Long (non-cyclic) symlink chain ---
 
 func TestCdPhysicalLongSymlinkChain(t *testing.T) {
+	skipIfWindowsBackslashScript(t)
 	dir := t.TempDir()
 	target := makeDir(t, dir, "real")
 	// Build a chain link0 -> link1 -> ... -> link50 -> real, exceeding
