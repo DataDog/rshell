@@ -719,7 +719,7 @@ type pipeBrokenWriter struct {
 
 func (p *pipeBrokenWriter) Write(b []byte) (int, error) {
 	n, err := p.w.Write(b)
-	if err != nil && errors.Is(err, syscall.EPIPE) {
+	if err != nil && isBrokenPipeErr(err) {
 		// Set the durable pipeBroken flag — r.stop() will pick it up on the
 		// next statement boundary and terminate the producer. We don't set
 		// r.exit.exiting directly here because that field is overwritten by
@@ -735,4 +735,27 @@ func (p *pipeBrokenWriter) Write(b []byte) (int, error) {
 		return n, nil
 	}
 	return n, err
+}
+
+// isBrokenPipeErr reports whether err is the broken-pipe error returned by
+// writing to a pipe whose read end has been closed. Cross-platform:
+//   - Unix: syscall.EPIPE (errno 32).
+//   - Windows: syscall.ERROR_BROKEN_PIPE (errno 109). Go's os.File.Write
+//     does NOT normalise this to EPIPE, so we have to check both.
+//
+// The numeric Windows constant (109) is hardcoded rather than referenced
+// symbolically so this file remains buildable on every platform — the
+// alternative would be a build-tagged helper.
+func isBrokenPipeErr(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, syscall.EPIPE) {
+		return true
+	}
+	var errno syscall.Errno
+	if errors.As(err, &errno) && errno == 109 {
+		return true
+	}
+	return false
 }
