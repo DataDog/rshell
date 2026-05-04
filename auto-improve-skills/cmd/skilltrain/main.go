@@ -490,7 +490,7 @@ func runLoopWithRunner(loopCount int, cfg trainConfig, runner trainRunner) error
 		loopCfg := cfg
 		loopCfg.trainLoop = loop
 		loopCfg.runDir = loopRunDir(cfg.runDir, loop)
-		printSemantic(logSemanticSummary, "loop %d/%d start", loop, loopCount)
+		printSemantic(logSemanticSummary, "=== loop %d/%d start ===", loop, loopCount)
 		if err := runner(loopCfg); err != nil {
 			return fmt.Errorf("loop %d/%d: %w", loop, loopCount, err)
 		}
