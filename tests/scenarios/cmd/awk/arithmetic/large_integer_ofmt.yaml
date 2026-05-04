@@ -1,4 +1,5 @@
 description: Integers in the float64-representable range are printed without scientific notation.
+skip_assert_against_bash: true  # mawk (debian default) formats 2147483648 with OFMT="%.6g" as "2.14748e+09"; our awk follows gawk behaviour and prints the full integer.
 input:
   script: |+
     awk 'BEGIN { print 2147483648 }'
