@@ -121,9 +121,27 @@ type unitFlag struct {
 	value  unitMode
 }
 
-func (u *unitFlag) String() string   { return "" }
-func (u *unitFlag) Type() string     { return "bool" }
-func (u *unitFlag) Set(string) error { *u.target = u.value; return nil }
+func (u *unitFlag) String() string { return "" }
+func (u *unitFlag) Type() string   { return "bool" }
+
+// Set is called by pflag once per occurrence of the flag. It receives:
+//   - the NoOptDefVal sentinel ("true") for a bare flag, e.g. `-h` or
+//     `--human-readable`;
+//   - the user's literal value for `--name=value` / `-name=value`.
+//
+// GNU df rejects every explicit-value form (`gdf --human-readable=false`
+// errors with "option '--human-readable' doesn't allow an argument";
+// even `=true` is rejected). pflag.Set cannot distinguish "bare flag"
+// from "=true" because both pass the same string, so the closest
+// approximation is to reject everything that is not the sentinel —
+// catches `=false`, `=garbage`, and the empty `=` form.
+func (u *unitFlag) Set(s string) error {
+	if s != "true" {
+		return errors.New("flag does not allow an argument")
+	}
+	*u.target = u.value
+	return nil
+}
 
 // registerUnitFlag installs a unitFlag at name/shorthand and configures
 // NoOptDefVal so users can pass `-h` / `-H` (no argument). Without

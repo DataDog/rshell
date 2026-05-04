@@ -57,6 +57,7 @@ var builtinPerCommandSymbols = map[string][]string{
 	"df": {
 		"context.Context",    // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
 		"errors.Is",          // 🟢 error comparison via chain; pure function, no I/O.
+		"errors.New",         // 🟢 creates a sentinel error (unitFlag.Set rejects explicit values); pure function, no I/O.
 		"fmt.Sprintf",        // 🟢 string formatting; pure function, no I/O.
 		"math.Ceil",          // 🟢 ceiling of a float64; pure function, no I/O. Used for GNU-compatible round-up of human-readable sizes.
 		"sort.Slice",         // 🟢 in-place slice sort with comparison func; pure function, no I/O.
