@@ -23,10 +23,11 @@ type Agent struct {
 	maxTokens int64
 	workDir   string
 	verbose   bool
-	out       io.Writer
+	out       io.Writer // terminal + log file (shared output)
+	logOut    io.Writer // log file only (verbose detail: commands, bash output)
 }
 
-func newAgent(cfg Config, out io.Writer) *Agent {
+func newAgent(cfg Config, out, logOut io.Writer) *Agent {
 	return &Agent{
 		client:    anthropic.NewClient(),
 		model:     cfg.Model,
@@ -34,6 +35,7 @@ func newAgent(cfg Config, out io.Writer) *Agent {
 		workDir:   cfg.WorkDir,
 		verbose:   cfg.Verbose,
 		out:       out,
+		logOut:    logOut,
 	}
 }
 
@@ -46,6 +48,8 @@ func (a *Agent) Run(ctx context.Context, name, systemPrompt, userMessage string)
 
 	if a.verbose {
 		fmt.Fprintf(a.out, "\n╔═ %s ═══════════════════════\n", paint("["+name+"]", colorCode))
+	} else {
+		fmt.Fprintf(a.logOut, "\n╔═ [%s] ═══════════════════════\n", name)
 	}
 
 	lw := newLineWriter(a.out, prefix)
@@ -104,18 +108,21 @@ func (a *Agent) Run(ctx context.Context, name, systemPrompt, userMessage string)
 			if block.Type != "tool_use" {
 				continue
 			}
+			var cmdInput struct {
+				Command string `json:"command"`
+			}
+			json.Unmarshal(block.Input, &cmdInput) //nolint:errcheck
 			if a.verbose {
-				// Parse command for display
-				var cmdInput struct {
-					Command string `json:"command"`
-				}
-				json.Unmarshal(block.Input, &cmdInput) //nolint:errcheck
 				fmt.Fprintf(a.out, "  $ %s\n", cmdInput.Command)
 			} else {
+				fmt.Fprintf(a.logOut, "  $ %s\n", cmdInput.Command)
 				fmt.Fprint(a.out, dim("."))
 				lw.markMidLine()
 			}
 			output, isErr := a.executeBash(ctx, block.Input)
+			if !a.verbose {
+				fmt.Fprintf(a.logOut, "%s\n", output)
+			}
 			tr := anthropic.ToolResultBlockParam{
 				ToolUseID: block.ID,
 				Content: []anthropic.ToolResultBlockParamContentUnion{
@@ -133,8 +140,16 @@ func (a *Agent) Run(ctx context.Context, name, systemPrompt, userMessage string)
 		})
 	}
 
+	// Terminate any trailing dots that were never followed by text.
+	if lw.dirtyLine {
+		fmt.Fprintln(a.out)
+		lw.dirtyLine = false
+	}
+
 	if a.verbose {
 		fmt.Fprintf(a.out, "╚═ %s done ═══════════════════\n", paint("["+name+"]", colorCode))
+	} else {
+		fmt.Fprintf(a.logOut, "╚═ [%s] done ═══════════════════\n", name)
 	}
 	return nil
 }
@@ -258,14 +273,11 @@ func (lw *lineWriter) write(text string) {
 	}
 }
 
-// flush ensures output ends on a newline (prevents a garbled prompt if the
-// last delta had no trailing newline).
+// flush ensures any incomplete text line is terminated. It does not touch
+// dirtyLine — dot accumulation is resolved by write() or the post-loop cleanup.
 func (lw *lineWriter) flush() {
 	if !lw.atLineStart {
 		fmt.Fprintln(lw.out)
 		lw.atLineStart = true
-	} else if lw.dirtyLine {
-		fmt.Fprintln(lw.out)
-		lw.dirtyLine = false
 	}
 }

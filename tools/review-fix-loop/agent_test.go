@@ -90,13 +90,13 @@ func TestLineWriterMarkMidLine(t *testing.T) {
 		}
 	})
 
-	t.Run("flush with dirty line adds newline", func(t *testing.T) {
+	t.Run("flush does not emit newline for dirty line (caller handles it)", func(t *testing.T) {
 		var buf bytes.Buffer
 		lw := newLineWriter(&buf, "[a] ")
 		lw.write("text\n")
 		lw.markMidLine()
-		lw.flush()
-		want := "[a] text\n\n"
+		lw.flush() // dots not resolved by flush — no extra newline
+		want := "[a] text\n"
 		if got := buf.String(); got != want {
 			t.Errorf("got %q, want %q", got, want)
 		}
