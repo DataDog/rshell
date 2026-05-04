@@ -9,9 +9,9 @@ import (
 
 // skillDirName maps internal skill keys to their .claude/skills/ directory names.
 var skillDirName = map[string]string{
-	"code_review":          "code-review",
-	"address_pr_comments":  "address-pr-comments",
-	"fix_ci_tests":         "fix-ci-tests",
+	"code_review":         "code-review",
+	"address_pr_comments": "address-pr-comments",
+	"fix_ci_tests":        "fix-ci-tests",
 }
 
 // loadSkill reads .claude/skills/<dir>/SKILL.md from the repo root, strips
