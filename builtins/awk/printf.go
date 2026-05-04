@@ -319,6 +319,25 @@ func formatFloat(spec printfSpec, f float64) string {
 	if prec < 0 {
 		prec = 6
 	}
+	// Normalise special IEEE-754 values to match gawk/mawk output.
+	// Go's strconv.FormatFloat returns "+Inf"/"-Inf"/"NaN" (capitalised);
+	// gawk always outputs "+inf" for positive infinity (the "+" is always
+	// present, not conditional on flagPlus), "-inf" for negative infinity,
+	// and "nan" for NaN — all lowercase.
+	if math.IsInf(f, 1) {
+		// Positive infinity: gawk always prints "+inf", but respects the
+		// space flag by prepending a space before the "+".
+		if spec.flagSpace {
+			return padNumber(spec, " ", "+inf")
+		}
+		return padNumber(spec, "", "+inf")
+	}
+	if math.IsInf(f, -1) {
+		return padNumber(spec, "", "-inf")
+	}
+	if math.IsNaN(f) {
+		return padNumber(spec, "", "nan")
+	}
 	verb := spec.verb
 	digits := strconv.FormatFloat(f, byte(verb), prec, 64)
 	prefix := ""

@@ -1,0 +1,10 @@
+description: printf %f/%g/%e with negative Inf produces lowercase gawk-compatible output.
+skip_assert_against_bash: true
+input:
+  script: |+
+    awk -v x=-1e9999 'BEGIN { printf "%f %g %e\n", x, x, x }'
+expect:
+  stdout: |+
+    -inf -inf -inf
+  stderr: |+
+  exit_code: 0

@@ -664,6 +664,15 @@ func (r *runtime) openInput(ctx context.Context, name string) (io.ReadCloser, bo
 		}
 		return io.NopCloser(r.callCtx.Stdin), false, nil
 	}
+	// Note: there is a known TOCTOU window between StatFile and OpenFile —
+	// a file could be replaced by a symlink to a non-regular source between
+	// the two calls, causing isRegular=true and bypassing the 256 MiB cap.
+	// This is acceptable because:
+	//   1. The cap is a defence-in-depth hardening measure, not the primary
+	//      access control (AllowedPaths inside OpenFile is the primary guard).
+	//   2. Exploiting the race requires nanosecond-precision timing.
+	//   3. A file-descriptor-level stat (which would be race-free) is not
+	//      available through the callCtx API.
 	regular := false
 	if r.callCtx.StatFile != nil {
 		if info, err := r.callCtx.StatFile(ctx, name); err == nil {
