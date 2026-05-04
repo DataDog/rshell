@@ -1,0 +1,26 @@
+# Derived from bash: cd -P on a circular symlink chain must fail with
+# "too many levels of symbolic links" and must not mutate $PWD.
+# skip_assert_against_bash: true — bash's error includes "bash: line 1: cd: a:"
+# while rshell emits "cd: a:"; both say "too many levels of symbolic links"
+# but bash capitalises "Too" while rshell does not. Substring "oo many levels"
+# matches both forms, but the bash test harness cannot guarantee that the
+# circular symlinks are resolvable in the container environment.
+skip_assert_against_bash: true
+description: cd -P rejects a circular symlink chain with "too many levels of symbolic links".
+setup:
+  files:
+    - path: a
+      symlink: b
+    - path: b
+      symlink: a
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    BEFORE="$PWD"
+    cd -P a
+    [ "$PWD" = "$BEFORE" ] && echo "pwd unchanged"
+expect:
+  stdout: |+
+    pwd unchanged
+  stderr_contains: ["oo many levels of symbolic links"]
+  exit_code: 0

@@ -522,6 +522,14 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 			call.Stdin = r.stdin
 		}
 		result := fn(ctx, call, args[1:])
+		// Defensive: a builtin returning a non-zero exit with a non-empty
+		// NewWorkDir is a programming error — the builtin should clear
+		// NewWorkDir on failure. Enforce the invariant here so that a
+		// future builtin cannot accidentally set the runner's working
+		// directory to an unvalidated path on failure.
+		if result.Code != 0 && result.NewWorkDir != "" {
+			result.NewWorkDir = ""
+		}
 		r.exit.code = result.Code
 		r.exit.exiting = result.Exiting
 		r.breakEnclosing = result.BreakN
