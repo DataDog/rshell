@@ -65,6 +65,9 @@ func (c Command) Register() {
 	name := c.Name
 	factory := c.MakeFlags
 	normalize := c.NormalizeArgs
+	if _, exists := featureByName[name]; exists {
+		panic("builtin name conflicts with rshell feature: " + name)
+	}
 
 	// Probe whether the command registers any flags so we can record it
 	// in metadata (used by tests to enforce help-consistency invariants).
@@ -265,6 +268,12 @@ var metaRegistry = map[string]CommandMeta{}
 func addToRegistry(name string, fn HandlerFunc) {
 	if _, exists := registry[name]; exists {
 		panic("builtin already registered: " + name)
+	}
+	// Defense-in-depth: Register() already checks this before calling
+	// addToRegistry, so this branch is unreachable from current callers.
+	// Kept to guard against future callers that bypass Register().
+	if _, exists := featureByName[name]; exists {
+		panic("builtin name conflicts with rshell feature: " + name)
 	}
 	registry[name] = fn
 }

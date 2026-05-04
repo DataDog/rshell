@@ -1,4 +1,4 @@
-description: Help lists only commands allowed by the active policy.
+description: Help lists rshell features, unsupported functionality, and only commands allowed by the active policy.
 skip_assert_against_bash: true
 input:
   allowed_commands: ["rshell:echo", "rshell:help"]
@@ -6,14 +6,31 @@ input:
     help
 expect:
   stdout: |+
-    rshell (dev) — 2 of 29 builtins enabled
+    rshell (dev) — 2 of 29 commands enabled
 
+    Features:
+    commands            Registered commands run inside the interpreter; no unregistered commands without an external handler.
+    variables           Assignments, expansion, inline env, command substitution; no arrays/arithmetic/advanced params.
+    control-flow        for/if/&&/||/!/groups/subshells; no while/case/select/functions.
+    pipes-redirections  Pipes, stdin/heredocs, /dev/null redirects, fd dup; no arbitrary file writes.
+    quoting-expansion   Quotes, globbing, continuations, comments; no extglob/tilde/process substitution.
+    execution           AllowedCommands, AllowedPaths, timeouts, ProcPath; no background jobs/coprocs/time.
+    environment         Empty by default, caller Env, IFS/ALLOWED_PATHS; no host env inheritance/export.
+    bash-divergences    Intentional bash differences captured here. Currently: one shared time reference per Run().
+
+    Not supported:
+      - Expansions: arithmetic $((...)), arrays, advanced ${...} operations, tilde expansion, process substitution, extended globbing.
+      - Control flow: while/until, case, select, C-style for ((...)), and shell functions.
+      - Execution: external commands by default, background jobs, coprocesses, time, [[...]], ((...)), declare/export/local/readonly/let.
+      - I/O and environment: arbitrary output file redirects, |&, herestrings, read-write redirects, input fd duplication, host env inheritance.
+
+    Commands:
     echo  write arguments to stdout
-    help  display help for commands
+    help  display help for features and commands
 
-    Disabled builtins: [, break, cat, continue, cut, exit, false, find, grep, head, ip, ls, ping,
+    Disabled commands: [, break, cat, continue, cut, exit, false, find, grep, head, ip, ls, ping,
       printf, ps, pwd, sed, sort, ss, strings, tail, test, tr, true, uname, uniq, wc
 
-    Run 'help <command>' for more information on a specific command.
+    Run 'help <feature|command>' for more information on a specific topic.
   stderr: ""
   exit_code: 0
