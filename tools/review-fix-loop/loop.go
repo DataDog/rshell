@@ -45,6 +45,20 @@ func run(ctx context.Context, cfg Config, prRef string) error {
 	fmt.Fprintf(out, "%s\n", bold(fmt.Sprintf("PR #%d  %s", pr.Number, pr.URL)))
 	fmt.Fprintf(out, "Branch: %s → %s\n", pr.Head, pr.Base)
 
+	// Verify that the local working tree is on the PR branch before running any
+	// fix agents. If the user invoked the tool with a different PR while another
+	// branch is checked out, edits and commits would land on the wrong branch.
+	currentBranch, branchErr := currentGitBranch(cfg.WorkDir)
+	if branchErr != nil {
+		return fmt.Errorf("cannot determine current git branch: %w", branchErr)
+	}
+	if currentBranch != pr.Head {
+		return fmt.Errorf(
+			"current branch %q does not match PR branch %q — "+
+				"please run `gh pr checkout %d` before starting the loop",
+			currentBranch, pr.Head, pr.Number,
+		)
+	}
 	fmt.Fprintf(out, "Working on local branch: %s\n", pr.Head)
 
 	agent := newAgent(cfg, out, logFile, os.Stdout)
@@ -68,13 +82,17 @@ func run(ctx context.Context, cfg Config, prRef string) error {
 		// Only the first goroutine writes to the shared agent writers; triggerCodex
 		// runs an external subprocess and does not touch agent state, so there is
 		// no data race on the shared writers today.
-		var wg sync.WaitGroup
+		var (
+			wg             sync.WaitGroup
+			reviewAgentErr error
+		)
 		wg.Add(2)
 		go func() {
 			defer wg.Done()
 			userMsg := fmt.Sprintf("Review PR #%d. Focus on the diff vs the base branch.", pr.Number)
 			if err := agent.Run(ctx, "code-review", loadSkill(cfg.WorkDir, "code_review", fmt.Sprintf("#%d", pr.Number)), userMsg); err != nil {
 				log.Printf("[code-review] error: %v", err)
+				reviewAgentErr = err
 			}
 		}()
 		go func() {
@@ -102,9 +120,11 @@ func run(ctx context.Context, cfg Config, prRef string) error {
 			"Address all unresolved review comments on PR #%d. Prefix every commit message with \"[iter %d]\".",
 			pr.Number, iter,
 		)
+		var addrAgentErr error
 		if err := agent.Run(ctx, "address-pr-comments",
 			loadSkill(cfg.WorkDir, "address_pr_comments", fmt.Sprintf("#%d", pr.Number)), addrMsg); err != nil {
 			log.Printf("[address-pr-comments] error: %v", err)
+			addrAgentErr = err
 		}
 
 		// 2C: fix CI failures
@@ -112,9 +132,11 @@ func run(ctx context.Context, cfg Config, prRef string) error {
 			"Fix any CI failures on PR #%d. Prefix every commit message with \"[iter %d]\".",
 			pr.Number, iter,
 		)
+		var fixCIAgentErr error
 		if err := agent.Run(ctx, "fix-ci-tests",
 			loadSkill(cfg.WorkDir, "fix_ci_tests", fmt.Sprintf("#%d", pr.Number)), ciMsg); err != nil {
 			log.Printf("[fix-ci-tests] error: %v", err)
+			fixCIAgentErr = err
 		}
 
 		// 2D: decide — purely structural signals, no comment body text
@@ -135,7 +157,11 @@ func run(ctx context.Context, cfg Config, prRef string) error {
 		// threads (from any prior iteration), and all CI checks passing.
 		// If the thread-count or CI-status lookup failed, treat it as not clean
 		// to avoid advancing the streak on unknown state.
-		iterClean := reviewFindings == 0 && unresolved == 0 && ciClean && unresolvedErr == nil && ciErr == nil
+		// Agent errors (code-review, address-pr-comments, fix-ci-tests) are treated
+		// as non-clean: if a review or fix agent fails, we cannot be confident the
+		// iteration is valid even when thread counts and CI appear clean.
+		agentErr := reviewAgentErr != nil || addrAgentErr != nil || fixCIAgentErr != nil
+		iterClean := reviewFindings == 0 && unresolved == 0 && ciClean && unresolvedErr == nil && ciErr == nil && !agentErr
 		if iterClean {
 			fmt.Fprintf(out, "\n  %s\n", boldGreen(statusLine))
 		} else {
