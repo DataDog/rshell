@@ -16,13 +16,25 @@ import (
 
 	"github.com/DataDog/rshell/builtins/testutil"
 	"github.com/DataDog/rshell/interp"
+	"mvdan.cc/sh/v3/syntax"
 )
 
 // cmdRunCtxFuzz runs a script with the given context and AllowedPaths={dir}.
 // Suffixed "Fuzz" to avoid name collisions with the regular runScriptCtx in
 // awk_test.go.
+// cmdRunCtxFuzz is like cmdRunCtx but used in fuzz tests: if the shell
+// parser rejects the generated script (e.g. because the fuzz-generated
+// program text contains characters that break the shell quoting), the
+// function returns ("", "", -1) so the caller can skip it instead of failing.
 func cmdRunCtxFuzz(ctx context.Context, t *testing.T, script, dir string) (string, string, int) {
 	t.Helper()
+	// Pre-validate shell syntax. If the generated script is not valid shell
+	// (e.g. because the fuzz input contains characters that break the quoting
+	// when interpolated into the script), skip it instead of letting
+	// testutil.RunScriptCtx call require.NoError and fail the fuzz test.
+	if _, err := syntax.NewParser().Parse(strings.NewReader(script), ""); err != nil {
+		return "", "", -1
+	}
 	return testutil.RunScriptCtx(ctx, t, script, dir, interp.AllowedPaths([]string{dir}))
 }
 
@@ -50,8 +62,13 @@ func awkSafe(src []byte) bool {
 	if !utf8.Valid(src) {
 		return false
 	}
-	for _, b := range src {
-		if b == 0 || b == '\'' {
+	for _, r := range string(src) {
+		if r == 0 || r == '\'' {
+			return false
+		}
+		// Reject C1 control characters (U+0080..U+009F): mvdan.cc/sh\'s parser
+		// fails to parse single-quoted strings that contain these runes.
+		if r >= 0x80 && r <= 0x9f {
 			return false
 		}
 	}
@@ -127,6 +144,11 @@ func FuzzAwkProgramText(f *testing.F) {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		_, _, code := cmdRunCtxFuzz(ctx, t, "awk "+quoted, t.TempDir())
+		if code == -1 {
+			// Shell parse error: the generated script is not valid shell syntax.
+			// This is not a bug in the awk implementation; skip.
+			return
+		}
 		// Acceptable: 0 (success) or 1 (parse / runtime error).
 		if code != 0 && code != 1 {
 			t.Fatalf("unexpected exit code %d for src=%q", code, src)
@@ -167,6 +189,9 @@ func FuzzAwkInputData(f *testing.F) {
 		defer cancel()
 		_, _, code := cmdRunCtxFuzz(ctx, t,
 			`awk '{print NR, NF, $0}' input.txt`, dir)
+		if code == -1 {
+			return // shell parse error; not a bug
+		}
 		if code != 0 && code != 1 {
 			t.Fatalf("unexpected exit code %d", code)
 		}
@@ -216,6 +241,9 @@ func FuzzAwkFieldSep(f *testing.F) {
 		// behaviour but should still result in clean exit codes.
 		_, _, code := cmdRunCtxFuzz(ctx, t,
 			`awk -F '`+sep+`' '{print NF}' in.txt`, dir)
+		if code == -1 {
+			return // shell parse error; not a bug
+		}
 		if code != 0 && code != 1 {
 			t.Fatalf("unexpected exit code %d for sep=%q", code, sep)
 		}
@@ -260,6 +288,9 @@ func FuzzAwkVarAssignment(f *testing.F) {
 		_, _, code := cmdRunCtxFuzz(ctx, t,
 			`awk -v '`+assign+`' 'BEGIN {}'`,
 			t.TempDir())
+		if code == -1 {
+			return // shell parse error; not a bug
+		}
 		if code != 0 && code != 1 {
 			t.Fatalf("unexpected exit code %d for -v %q", code, assign)
 		}
