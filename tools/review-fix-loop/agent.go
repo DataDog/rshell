@@ -247,15 +247,22 @@ func (a *Agent) executeBash(ctx context.Context, rawInput json.RawMessage) (outp
 	return result, runErr != nil
 }
 
-// renderMarkdown renders markdown text as formatted terminal output.
-// Falls back to plain text if rendering fails.
+// renderMarkdown renders markdown text as formatted terminal output with a
+// 4-space left margin. Falls back to plain text if rendering fails.
 func renderMarkdown(w io.Writer, text string) {
 	rendered, err := glamour.Render(text, "dark")
 	if err != nil {
 		fmt.Fprint(w, text)
 		return
 	}
-	fmt.Fprint(w, rendered)
+	// Glamour's dark style already indents by 2; prepend 2 more for 4 total.
+	for _, line := range strings.SplitAfter(rendered, "\n") {
+		if strings.TrimRight(line, "\n\r") != "" {
+			fmt.Fprint(w, "  "+line)
+		} else {
+			fmt.Fprint(w, line)
+		}
+	}
 }
 
 func bashToolParam() anthropic.ToolUnionParam {
