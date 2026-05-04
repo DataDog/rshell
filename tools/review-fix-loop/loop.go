@@ -28,7 +28,8 @@ func run(ctx context.Context, cfg Config, prRef string) error {
 	defer logFile.Close()
 
 	out := io.MultiWriter(os.Stdout, logFile)
-	fmt.Fprintf(out, "%s\n\n", bold("Logging to: "+logFile.Name()))
+	fmt.Fprintf(out, "%s\n", bold("Logging to: "+logFile.Name()))
+	fmt.Fprintf(out, "Model:      %s\n\n", cfg.Model)
 
 	// Step 1: identify the PR
 	pr, err := identifyPR(cfg.WorkDir, prRef)
