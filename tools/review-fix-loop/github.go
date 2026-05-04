@@ -1,0 +1,189 @@
+package main
+
+import (
+	"encoding/json"
+	"fmt"
+	"os/exec"
+	"strings"
+)
+
+// PRInfo holds the resolved PR metadata.
+type PRInfo struct {
+	Number int
+	URL    string
+	Head   string
+	Base   string
+	Owner  string
+	Repo   string
+}
+
+func identifyPR(workDir, prRef string) (PRInfo, error) {
+	args := []string{"pr", "view", "--json", "number,url,headRefName,baseRefName"}
+	if prRef != "" {
+		args = append(args, prRef)
+	}
+	cmd := exec.Command("gh", args...)
+	cmd.Dir = workDir
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return PRInfo{}, fmt.Errorf("gh pr view: %s: %w", strings.TrimSpace(string(out)), err)
+	}
+	var pr struct {
+		Number      int    `json:"number"`
+		URL         string `json:"url"`
+		HeadRefName string `json:"headRefName"`
+		BaseRefName string `json:"baseRefName"`
+	}
+	if err := json.Unmarshal(out, &pr); err != nil {
+		return PRInfo{}, fmt.Errorf("parse PR JSON: %w", err)
+	}
+
+	repoCmd := exec.Command("gh", "repo", "view", "--json", "owner,name")
+	repoCmd.Dir = workDir
+	repoOut, err := repoCmd.Output()
+	if err != nil {
+		return PRInfo{}, fmt.Errorf("gh repo view: %w", err)
+	}
+	var repo struct {
+		Owner struct{ Login string } `json:"owner"`
+		Name  string                 `json:"name"`
+	}
+	if err := json.Unmarshal(repoOut, &repo); err != nil {
+		return PRInfo{}, fmt.Errorf("parse repo JSON: %w", err)
+	}
+
+	return PRInfo{
+		Number: pr.Number,
+		URL:    pr.URL,
+		Head:   pr.HeadRefName,
+		Base:   pr.BaseRefName,
+		Owner:  repo.Owner.Login,
+		Repo:   repo.Name,
+	}, nil
+}
+
+// countUnresolvedThreads returns the number of unresolved review threads whose
+// first comment was posted by $MY_LOGIN or chatgpt-codex-connector[bot].
+// Only the thread count is used for loop control — comment bodies are never read.
+func countUnresolvedThreads(workDir string, pr PRInfo) (int, error) {
+	myLogin, err := getMyLogin(workDir)
+	if err != nil {
+		return 0, err
+	}
+
+	const query = `
+query($owner: String!, $repo: String!, $pr: Int!, $after: String) {
+  repository(owner: $owner, name: $repo) {
+    pullRequest(number: $pr) {
+      reviewThreads(first: 100, after: $after) {
+        pageInfo { hasNextPage endCursor }
+        nodes {
+          isResolved
+          comments(first: 1) {
+            nodes { author { login } }
+          }
+        }
+      }
+    }
+  }
+}`
+
+	total := 0
+	cursor := ""
+	for {
+		cmd := exec.Command("gh", "api", "graphql",
+			"-f", "query="+query,
+			"-f", "owner="+pr.Owner,
+			"-f", "repo="+pr.Repo,
+			"-F", fmt.Sprintf("pr=%d", pr.Number),
+			"-f", "after="+cursor,
+		)
+		cmd.Dir = workDir
+		out, err := cmd.Output()
+		if err != nil {
+			return 0, fmt.Errorf("graphql query: %w", err)
+		}
+
+		var resp struct {
+			Data struct {
+				Repository struct {
+					PullRequest struct {
+						ReviewThreads struct {
+							PageInfo struct {
+								HasNextPage bool   `json:"hasNextPage"`
+								EndCursor   string `json:"endCursor"`
+							} `json:"pageInfo"`
+							Nodes []struct {
+								IsResolved bool `json:"isResolved"`
+								Comments   struct {
+									Nodes []struct {
+										Author struct {
+											Login string `json:"login"`
+										} `json:"author"`
+									} `json:"nodes"`
+								} `json:"comments"`
+							} `json:"nodes"`
+						} `json:"reviewThreads"`
+					} `json:"pullRequest"`
+				} `json:"repository"`
+			} `json:"data"`
+		}
+		if err := json.Unmarshal(out, &resp); err != nil {
+			return 0, fmt.Errorf("parse graphql response: %w", err)
+		}
+
+		threads := resp.Data.Repository.PullRequest.ReviewThreads
+		for _, node := range threads.Nodes {
+			if node.IsResolved || len(node.Comments.Nodes) == 0 {
+				continue
+			}
+			author := node.Comments.Nodes[0].Author.Login
+			if author == myLogin || author == "chatgpt-codex-connector[bot]" {
+				total++
+			}
+		}
+
+		if !threads.PageInfo.HasNextPage {
+			break
+		}
+		cursor = threads.PageInfo.EndCursor
+	}
+	return total, nil
+}
+
+// allCIPassing returns true if no CI checks are in a failing state.
+// Pending/queued checks are treated as non-blocking per the skill spec.
+func allCIPassing(workDir string, prNumber int) (bool, error) {
+	cmd := exec.Command("gh", "pr", "checks", fmt.Sprintf("%d", prNumber), "--json", "name,state")
+	cmd.Dir = workDir
+	out, _ := cmd.Output() // gh returns non-zero when checks fail but still emits JSON
+	if len(out) == 0 {
+		return true, nil
+	}
+
+	var checks []struct {
+		Name  string `json:"name"`
+		State string `json:"state"`
+	}
+	if err := json.Unmarshal(out, &checks); err != nil {
+		return false, fmt.Errorf("parse checks JSON: %w", err)
+	}
+
+	for _, c := range checks {
+		s := strings.ToLower(c.State)
+		if s == "failing" || s == "failure" || s == "failed" || s == "error" {
+			return false, nil
+		}
+	}
+	return true, nil
+}
+
+func getMyLogin(workDir string) (string, error) {
+	cmd := exec.Command("gh", "api", "user", "--jq", ".login")
+	cmd.Dir = workDir
+	out, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("gh api user: %w", err)
+	}
+	return strings.TrimSpace(string(out)), nil
+}

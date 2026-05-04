@@ -1,4 +1,4 @@
-.PHONY: build fmt test test_all test_against_bash compliance
+.PHONY: build fmt test test_all test_against_bash compliance review-fix-loop
 
 build:
 	go build -o rshell ./cmd/rshell
@@ -17,3 +17,6 @@ test_against_bash:
 
 compliance:
 	RSHELL_COMPLIANCE_TEST=1 go test -v ./tests/ -run TestCompliance -count=1
+
+review-fix-loop:
+	go -C tools/review-fix-loop run . $(ARGS)
