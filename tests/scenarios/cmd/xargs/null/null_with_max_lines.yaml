@@ -1,0 +1,15 @@
+description: xargs -0 -L treats each NUL-separated item as one logical line.
+setup:
+  files:
+    - path: in.bin
+      content: "a\0b\0c\0"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    xargs -0 -L 2 -a in.bin echo
+expect:
+  stdout: |+
+    a b
+    c
+  stderr: ""
+  exit_code: 0

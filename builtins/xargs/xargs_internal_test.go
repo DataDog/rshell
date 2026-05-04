@@ -87,6 +87,55 @@ func TestInvokeCommandUnknownCommandReturns127(t *testing.T) {
 	code, stop := invokeCommand(context.Background(), cc, o, []string{"a"})
 	assert.Equal(t, exitSubCmdNotFound, code)
 	assert.True(t, stop)
+	// stderr must not have a doubled "rshell: foo:" prefix.
+	assert.NotContains(t, stderr.String(), "rshell: foo:")
+	assert.Contains(t, stderr.String(), "xargs: foo: unknown command")
+}
+
+// TestInvokeCommandSubCmdExit126Propagates verifies that a sub-command
+// returning exit 126 cleanly (no error) is propagated as POSIX 126.
+func TestInvokeCommandSubCmdExit126Propagates(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	cc := newPentestCallCtx(&stdout, &stderr)
+	cc.RunCommand = func(_ context.Context, _ string, _ string, _ []string) (uint8, error) {
+		return 126, nil
+	}
+	o := options{cmdName: "echo", maxChars: DefaultMaxChars}
+
+	code, stop := invokeCommand(context.Background(), cc, o, []string{"a"})
+	assert.Equal(t, exitSubCmdNotAllowed, code)
+	assert.True(t, stop)
+}
+
+// TestInvokeCommandSubCmdExit127Propagates verifies that a sub-command
+// returning exit 127 cleanly (no error) is propagated as POSIX 127.
+func TestInvokeCommandSubCmdExit127Propagates(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	cc := newPentestCallCtx(&stdout, &stderr)
+	cc.RunCommand = func(_ context.Context, _ string, _ string, _ []string) (uint8, error) {
+		return 127, nil
+	}
+	o := options{cmdName: "echo", maxChars: DefaultMaxChars}
+
+	code, stop := invokeCommand(context.Background(), cc, o, []string{"a"})
+	assert.Equal(t, exitSubCmdNotFound, code)
+	assert.True(t, stop)
+}
+
+// TestStripRunnerPrefix verifies the prefix-stripping logic matches the
+// runner's "rshell: <cmd>:" wrapper.
+func TestStripRunnerPrefix(t *testing.T) {
+	cases := []struct {
+		msg, cmd, want string
+	}{
+		{"rshell: foo: unknown command", "foo", "unknown command"},
+		{"rshell: bar: command not allowed", "bar", "command not allowed"},
+		{"some other error", "foo", "some other error"},
+		{"rshell: other:  unknown command", "foo", "rshell: other:  unknown command"},
+	}
+	for _, tc := range cases {
+		assert.Equal(t, tc.want, stripRunnerPrefix(tc.msg, tc.cmd))
+	}
 }
 
 // TestInvokeCommandSubProcess255Aborts verifies that an exit-255 sub-command

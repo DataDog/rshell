@@ -36,8 +36,9 @@
 //
 //	-I REPLSTR
 //	    Insert input as the value of REPLSTR in each COMMAND argument.
-//	    Implies "one input item per command" and "-L 1" semantics, and
-//	    switches tokenisation to newline-only (matches GNU xargs).
+//	    Implies "one input item per command", "-L 1" semantics, and
+//	    "--no-run-if-empty"; switches tokenisation to newline-only
+//	    (matches GNU xargs).
 //
 //	-L NUMBER
 //	    Use up to NUMBER non-empty input lines per command invocation.
@@ -371,6 +372,11 @@ func runXargs(ctx context.Context, callCtx *builtins.CallContext, o options) bui
 	tok := newTokenizer(rc, o)
 	finalCode := exitOK
 	totalItems := 0
+	// tokErr is set when the tokenizer reports a fatal parsing error
+	// (e.g. unmatched quote, oversize token). It suppresses the
+	// no-items fallthrough so we don't run a spurious empty `echo`
+	// after a failure. Any partial batch already collected is still
+	// flushed to mirror GNU xargs's "best effort" behaviour.
 	tokErr := false
 	var batch []string
 	batchLines := 0
@@ -446,12 +452,18 @@ func runXargs(ctx context.Context, callCtx *builtins.CallContext, o options) bui
 		}
 	}
 
-	if len(batch) > 0 && !tokErr {
+	// Flush any items already collected, even if a tokenizer error fired
+	// later — matches GNU xargs's behaviour of running the partial batch
+	// before reporting the error.
+	if len(batch) > 0 {
 		if flush() {
 			return builtins.Result{Code: finalCode}
 		}
 	}
 
+	// Skip the "run once with no args" fallthrough on tokenizer error so
+	// we don't spuriously invoke the command with empty input after a
+	// parsing failure.
 	if totalItems == 0 && !tokErr {
 		return finishEmpty(ctx, callCtx, o, finalCode)
 	}
@@ -517,11 +529,16 @@ func invokeCommand(ctx context.Context, callCtx *builtins.CallContext, o options
 
 	exitCode, err := callCtx.RunCommand(ctx, dir, finalCmd, finalArgs)
 	if err != nil {
-		callCtx.Errf("xargs: %s: %s\n", finalCmd, err.Error())
-		// The interp runner returns "unknown command" for an unregistered
-		// builtin and "command not allowed" for a policy denial. Map both
-		// to the POSIX-conventional codes (127 / 126).
-		msg := err.Error()
+		// The interp runner formats unknown-command / not-allowed errors
+		// with a "rshell: <cmd>:" prefix. Strip it so xargs produces the
+		// POSIX-style "xargs: <cmd>: <reason>" line without doubled
+		// prefixes.
+		msg := stripRunnerPrefix(err.Error(), finalCmd)
+		callCtx.Errf("xargs: %s: %s\n", finalCmd, msg)
+		// Best-effort mapping to POSIX exit codes (127 / 126 / 125)
+		// based on the runner's error wording. This is brittle by
+		// design — see invokeCommand_test for the contract — and a
+		// future runner change will fall through to exit 125.
 		switch {
 		case strings.Contains(msg, "unknown command"):
 			return exitSubCmdNotFound, true
@@ -531,15 +548,32 @@ func invokeCommand(ctx context.Context, callCtx *builtins.CallContext, o options
 			return exitSubCmdNotStart, true
 		}
 	}
+	// Propagate POSIX-conventional exit codes 126/127/255 from the
+	// sub-command if it reports them via a clean (non-error) return.
 	switch exitCode {
 	case 0:
 		return exitOK, false
+	case 126:
+		return exitSubCmdNotAllowed, true
+	case 127:
+		return exitSubCmdNotFound, true
 	case subCmdFatalCode:
 		callCtx.Errf("xargs: %s: exited with status 255; aborting\n", finalCmd)
 		return exitSubCmd255, true
 	default:
 		return exitSubCmdFailed, false
 	}
+}
+
+// stripRunnerPrefix removes a leading "rshell: <cmd>:" prefix from an
+// error message produced by interp/runner_exec.go so the eventual
+// "xargs: <cmd>: <reason>" line doesn't carry a doubled prefix.
+func stripRunnerPrefix(msg, cmd string) string {
+	prefix := "rshell: " + cmd + ":"
+	if strings.HasPrefix(msg, prefix) {
+		return strings.TrimSpace(msg[len(prefix):])
+	}
+	return msg
 }
 
 // resolveCmd assembles the (cmdName, args) pair for a batch, applying -I
@@ -638,20 +672,20 @@ func (t *tokenizer) pushByte(b byte) error {
 // with or sits on a line that was terminated by '\n'), a "more" flag (false
 // at EOF before producing any item), and any error.
 //
-// For -L counting purposes, every item in modeNull and modeDelim is
-// considered to end a line: the delimiter is the line boundary in those
-// modes, so each item occupies one logical line.
+// In every delimited mode (null, custom delim, line), each item is one
+// logical line for -L counting purposes — the delimiter is the line
+// boundary, so each token occupies exactly one line.
 func (t *tokenizer) next(ctx context.Context) (item string, endedLine, more bool, err error) {
 	if t.eof {
 		return "", false, false, nil
 	}
 	switch t.o.mode {
 	case modeNull:
-		return t.nextDelimited(ctx, 0, false, true)
+		return t.nextDelimited(ctx, 0, false)
 	case modeDelim:
-		return t.nextDelimited(ctx, t.o.delim, false, true)
+		return t.nextDelimited(ctx, t.o.delim, false)
 	case modeLine:
-		return t.nextDelimited(ctx, '\n', true, true)
+		return t.nextDelimited(ctx, '\n', true)
 	default:
 		return t.nextWhitespace(ctx)
 	}
@@ -659,10 +693,9 @@ func (t *tokenizer) next(ctx context.Context) (item string, endedLine, more bool
 
 // nextDelimited reads bytes until the next occurrence of sep or EOF.
 // When skipBlank is true (used by modeLine), an empty token between
-// adjacent separators is silently dropped. linePerItem causes endedLine
-// to always be true; otherwise endedLine is true only when sep == '\n'.
-func (t *tokenizer) nextDelimited(ctx context.Context, sep byte, skipBlank, linePerItem bool) (string, bool, bool, error) {
-	endedLine := linePerItem || sep == '\n'
+// adjacent separators is silently dropped. The returned endedLine is
+// always true: each delimited item counts as one logical line for -L.
+func (t *tokenizer) nextDelimited(ctx context.Context, sep byte, skipBlank bool) (string, bool, bool, error) {
 	t.buf = t.buf[:0]
 	for {
 		if err := t.pollCtx(ctx); err != nil {
@@ -675,7 +708,7 @@ func (t *tokenizer) nextDelimited(ctx context.Context, sep byte, skipBlank, line
 				if len(t.buf) == 0 {
 					return "", false, false, nil
 				}
-				return string(t.buf), endedLine, true, nil
+				return string(t.buf), true, true, nil
 			}
 			return "", false, false, err
 		}
@@ -683,7 +716,7 @@ func (t *tokenizer) nextDelimited(ctx context.Context, sep byte, skipBlank, line
 			if skipBlank && len(t.buf) == 0 {
 				continue
 			}
-			return string(t.buf), endedLine, true, nil
+			return string(t.buf), true, true, nil
 		}
 		if err := t.pushByte(b); err != nil {
 			return "", false, false, err

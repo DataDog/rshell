@@ -362,7 +362,9 @@ var builtinPerCommandSymbols = map[string][]string{
 		"os.O_RDONLY",              // 🟢 read-only file flag constant; cannot open files by itself.
 		"strings.Builder",          // 🟢 efficient string concatenation; pure in-memory buffer, no I/O.
 		"strings.Contains",         // 🟢 substring search; pure function, no I/O.
+		"strings.HasPrefix",        // 🟢 prefix match; pure function, no I/O.
 		"strings.ReplaceAll",       // 🟢 replaces all occurrences of REPLSTR in -I templates; pure function, no I/O.
+		"strings.TrimSpace",        // 🟢 trims leading/trailing whitespace; pure function, no I/O.
 	},
 	"ping": {
 		"context.Context",         // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
