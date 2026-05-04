@@ -345,7 +345,7 @@ func buildOptions(fs *builtins.FlagSet, null bool, argFile, delim, eofStr, replS
 	// is compared against the marker.
 	if o.mode == modeNull || o.mode == modeDelim {
 		if o.eofStr != "" {
-			o.warnings = append(o.warnings, "warning: the -E option has no effect if -0 or -d is used.")
+			o.warnings = append(o.warnings, "warning: the -E option has no effect if -0 or -d is used.\n")
 		}
 		o.eofStr = ""
 	}

@@ -7,4 +7,5 @@ expect:
     a b
   stderr: |+
     xargs: warning: the -E option has no effect if -0 or -d is used.
+
   exit_code: 0
