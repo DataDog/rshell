@@ -334,6 +334,19 @@ func TestWhilePipeProducerStopsWhenConsumerCloses(t *testing.T) {
 	assert.Equal(t, 0, code)
 }
 
+// pipeBroken must propagate to subshells of the producer — `while true; do
+// (while true; do echo x; done); done | head` involves a nested while inside
+// a subshell, and the subshell's runner only sees pipeBroken because the
+// flag is shared via *bool through subshell().
+func TestWhilePipeNestedSubshellTerminates(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	start := time.Now()
+	_, _, code := whileRunCtx(ctx, t, `while true; do (while true; do echo x; done); done | head -1`)
+	assert.Less(t, time.Since(start), 2*time.Second, "nested subshell pipeline did not terminate")
+	assert.Equal(t, 0, code)
+}
+
 // Infinite-output while loop must respect the runner's stdout cap rather than
 // growing memory unbounded. We use a small ctx deadline as the outer bound
 // and assert stdout size stays under a generous upper bound that catches an

@@ -154,14 +154,20 @@ func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {
 			// pipe can write to it concurrently without a data race.
 			safeStderr := &syncWriter{w: r.stderr}
 			rLeft := r.subshell(true)
-			// Wrap the producer's stdout in a writer that flags the producer's
-			// runner as exiting when a write returns EPIPE. Without this, an
-			// unbounded producer (e.g. `while true; do echo x; done | head`)
-			// keeps running after the consumer closes its read end — bash
-			// terminates the producer via SIGPIPE, but we are a single Go
-			// process and must turn the broken-pipe error into a graceful
-			// exit signal that the producer's loop can observe via r.stop().
-			rLeft.stdout = &pipeBrokenWriter{w: pw, runner: rLeft}
+			// Allocate a shared pipeBroken flag for the producer pipeline
+			// stage. Wrap the producer's stdout in a writer that flips this
+			// flag when a write returns EPIPE; r.stop() then terminates the
+			// producer (and any of its subshells, since the *bool is
+			// inherited via subshell()).
+			//
+			// Without this, an unbounded producer
+			// (e.g. `while true; do echo x; done | head`) keeps running
+			// after the consumer closes its read end — bash terminates the
+			// producer via SIGPIPE, but we are a single Go process and must
+			// turn the broken-pipe error into a graceful exit signal.
+			pipeBroken := new(bool)
+			rLeft.pipeBroken = pipeBroken
+			rLeft.stdout = &pipeBrokenWriter{w: pw, flag: pipeBroken}
 			rLeft.stderr = safeStderr
 			rLeft.inPipeline = true
 			rRight := r.subshell(true)
@@ -707,8 +713,8 @@ func (sw *syncWriter) Write(p []byte) (int, error) {
 // builtins that ignore write errors continue to work unchanged), but we do
 // preserve the byte count and other error types.
 type pipeBrokenWriter struct {
-	w      io.Writer
-	runner *Runner
+	w    io.Writer
+	flag *bool // shared with the producer runner and its subshells
 }
 
 func (p *pipeBrokenWriter) Write(b []byte) (int, error) {
@@ -717,8 +723,13 @@ func (p *pipeBrokenWriter) Write(b []byte) (int, error) {
 		// Set the durable pipeBroken flag — r.stop() will pick it up on the
 		// next statement boundary and terminate the producer. We don't set
 		// r.exit.exiting directly here because that field is overwritten by
-		// each builtin's Result.Exiting (interp/runner_exec.go:619).
-		p.runner.pipeBroken = true
+		// each builtin's Result.Exiting (interp/runner_exec.go:619). The
+		// flag is shared via *bool with subshells of the producer so that
+		// nested constructs (e.g. `while true; do (while ...); done | head`)
+		// also unwind.
+		if p.flag != nil {
+			*p.flag = true
+		}
 		// Suppress the EPIPE error itself — the writer's caller doesn't
 		// need to know; the runner-level signal is what matters.
 		return n, nil

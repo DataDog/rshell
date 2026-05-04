@@ -180,7 +180,13 @@ type runnerState struct {
 	// pipeBrokenWriter; checked by r.stop(ctx) to terminate unbounded
 	// producers (e.g. `while true; do echo x; done | head -1`) the way bash
 	// terminates them via SIGPIPE.
-	pipeBroken bool
+	//
+	// Stored as a *bool so subshells of the producer share the flag with
+	// their parent — bash sends SIGPIPE to every process in the pipeline
+	// stage, including subshells, and we need the same effect for nested
+	// constructs like `while true; do (while ...); done | head`. Nil means
+	// "not part of a producer pipeline stage" (no propagation needed).
+	pipeBroken *bool
 
 	// The current and last exit statuses. They can only be different if
 	// the interpreter is in the middle of running a statement. In that
@@ -813,6 +819,7 @@ func (r *Runner) subshell(background bool) *Runner {
 			runStdin:         r.runStdin,
 			runStdout:        r.runStdout,
 			inPipeline:       r.inPipeline,
+			pipeBroken:       r.pipeBroken,
 			filename:         r.filename,
 			exit:             r.exit,
 			lastExit:         r.lastExit,
