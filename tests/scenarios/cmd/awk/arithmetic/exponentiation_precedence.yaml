@@ -1,0 +1,9 @@
+description: Exponentiation (^) has higher precedence than unary minus; -2^2 = -(2^2) = -4.
+input:
+  script: |+
+    awk 'BEGIN { print -2^2 }'
+expect:
+  stdout: |+
+    -4
+  stderr: |+
+  exit_code: 0

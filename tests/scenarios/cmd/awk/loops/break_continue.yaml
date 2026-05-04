@@ -13,5 +13,5 @@ expect:
     1
     2
     4
-  stderr: ""
+  stderr: |+
   exit_code: 0

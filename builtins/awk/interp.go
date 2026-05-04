@@ -14,6 +14,7 @@ import (
 	"math"
 	"os"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -265,7 +266,7 @@ func (r *runtime) processFile(ctx context.Context, prog *program, name string) e
 	}
 	defer rc.Close()
 	if name == "-" {
-		r.filename = ""
+		r.filename = "-"
 	} else {
 		r.filename = name
 	}
@@ -278,7 +279,11 @@ func (r *runtime) processFile(ctx context.Context, prog *program, name string) e
 
 	sc := bufio.NewScanner(reader)
 	sc.Buffer(make([]byte, 4096), MaxRecordBytes+1)
-	sc.Split(makeSplitFunc(r.rs))
+	// Use a dynamic split function that reads r.rs on every call so that
+	// assigning RS inside a rule takes effect for subsequent records.
+	sc.Split(func(data []byte, atEOF bool) (int, []byte, error) {
+		return makeSplitFunc(r.rs)(data, atEOF)
+	})
 
 	for sc.Scan() {
 		if ctx.Err() != nil {
@@ -682,11 +687,14 @@ func (r *runtime) execStmt(ctx context.Context, s stmt) error {
 		if arr == nil {
 			return nil
 		}
-		// Snapshot keys for stable iteration; awk does not specify order.
+		// Snapshot and sort keys for deterministic iteration order.
+		// Awk does not mandate a specific order, but deterministic output
+		// for the same input is required by repo convention.
 		keys := make([]string, 0, len(arr))
 		for k := range arr {
 			keys = append(keys, k)
 		}
+		sort.Strings(keys)
 		for _, k := range keys {
 			if ctx.Err() != nil {
 				return ctx.Err()
@@ -852,6 +860,12 @@ func (r *runtime) evalExpr(e expr) (awkValue, error) {
 		}
 		val, ok := arr[key]
 		if !ok {
+			// Reading a missing element creates it (awk semantics: array membership
+			// is established on first read, not just on write).
+			if len(arr) >= MaxArrayEntries {
+				return uninitValue, fmt.Errorf("array exceeds maximum entry count %d", MaxArrayEntries)
+			}
+			arr[key] = uninitValue
 			return uninitValue, nil
 		}
 		return val, nil

@@ -15,5 +15,5 @@ expect:
     big
     small
     big
-  stderr: ""
+  stderr: |+
   exit_code: 0

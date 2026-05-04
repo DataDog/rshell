@@ -17,5 +17,5 @@ expect:
     START
     middle
     END
-  stderr: ""
+  stderr: |+
   exit_code: 0

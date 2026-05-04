@@ -14,5 +14,5 @@ expect:
   stdout: |+
     keep this
     keep again
-  stderr: ""
+  stderr: |+
   exit_code: 0

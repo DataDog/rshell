@@ -1,0 +1,11 @@
+description: substr with m <= 0 returns characters from the start, adjusted for negative offset.
+input:
+  script: |+
+    awk 'BEGIN { print substr("hello", -1, 3); print substr("hello", -100, 5); print substr("hello", 0, 3) }'
+expect:
+  stdout: |+
+    hell
+    hello
+    hel
+  stderr: |+
+  exit_code: 0

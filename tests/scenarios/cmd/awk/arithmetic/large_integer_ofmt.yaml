@@ -1,0 +1,9 @@
+description: Integers outside the int32 range are printed in scientific notation (gawk compat).
+input:
+  script: |+
+    awk 'BEGIN { print 2147483648 }'
+expect:
+  stdout: |+
+    2.14748e+09
+  stderr: |+
+  exit_code: 0

@@ -17,5 +17,5 @@ expect:
     a.txt 1 1 x
     a.txt 2 2 y
     b.txt 1 3 z
-  stderr: ""
+  stderr: |+
   exit_code: 0

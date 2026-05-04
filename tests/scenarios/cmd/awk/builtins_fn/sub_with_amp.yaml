@@ -5,5 +5,5 @@ input:
 expect:
   stdout: |+
     he[ll]o
-  stderr: ""
+  stderr: |+
   exit_code: 0

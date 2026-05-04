@@ -14,5 +14,5 @@ expect:
   stdout: |+
     apple
     cherry
-  stderr: ""
+  stderr: |+
   exit_code: 0

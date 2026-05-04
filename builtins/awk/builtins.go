@@ -130,13 +130,18 @@ func (r *runtime) bSubstr(args []expr) (awkValue, error) {
 			return strValue(""), nil
 		}
 		if m < 1 {
-			n += m - 1
+			// When start position is <= 0, awk/mawk semantics: the conceptual
+			// range still extends n characters from the original m. So the
+			// effective end (1-based exclusive) = n - m + 1. The start is
+			// clamped to 1. Example: substr("hello",-1,3) => s[0:4] = "hell".
+			end = n - m + 1
 			m = 1
+		} else {
+			end = m + n
 		}
-		if n < 0 {
+		if end <= m {
 			return strValue(""), nil
 		}
-		end = m + n
 	} else if m < 1 {
 		m = 1
 	}
@@ -292,8 +297,13 @@ func (r *runtime) bSub(args []expr, global bool) (awkValue, error) {
 	if len(newStr) > MaxStringBytes {
 		return uninitValue, fmt.Errorf("sub/gsub: result exceeds maximum string length %d", MaxStringBytes)
 	}
-	if _, err := r.assignLValue(target, strValue(newStr)); err != nil {
-		return uninitValue, err
+	// Only write back to the lvalue when a substitution was actually made.
+	// Assigning $1 even with the same value rebuilds $0 with OFS, mutating the
+	// record for a no-op sub — which is wrong.
+	if count > 0 {
+		if _, err := r.assignLValue(target, strValue(newStr)); err != nil {
+			return uninitValue, err
+		}
 	}
 	return numValue(float64(count)), nil
 }

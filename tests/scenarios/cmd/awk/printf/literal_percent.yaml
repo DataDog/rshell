@@ -5,5 +5,5 @@ input:
 expect:
   stdout: |+
     50%
-  stderr: ""
+  stderr: |+
   exit_code: 0

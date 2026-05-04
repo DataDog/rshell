@@ -5,5 +5,5 @@ input:
 expect:
   stdout: |+
     3 beta
-  stderr: ""
+  stderr: |+
   exit_code: 0

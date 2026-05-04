@@ -196,7 +196,9 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 		}
 
 		runtime := newRuntime(callCtx)
-		if *fieldSep != "" {
+		// Use Changed() rather than a non-empty check so that an explicit
+		// -F '' (empty separator → character-by-character splitting) is honoured.
+		if fs.Changed("field-separator") {
 			if err := runtime.setFS(*fieldSep); err != nil {
 				callCtx.Errf("awk: -F: %s\n", err)
 				return builtins.Result{Code: 1}

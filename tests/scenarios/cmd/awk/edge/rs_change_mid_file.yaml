@@ -1,0 +1,12 @@
+description: Assigning RS inside a rule takes effect for subsequent records in the same file.
+input:
+  script: |+
+    printf 'a\nb:c:d' | awk 'NR==1{RS=":"}{print NR, $0}'
+expect:
+  stdout: |+
+    1 a
+    2 b
+    3 c
+    4 d
+  stderr: |+
+  exit_code: 0

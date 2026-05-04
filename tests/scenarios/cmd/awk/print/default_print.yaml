@@ -15,5 +15,5 @@ expect:
     alpha
     beta
     gamma
-  stderr: ""
+  stderr: |+
   exit_code: 0

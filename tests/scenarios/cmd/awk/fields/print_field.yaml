@@ -13,5 +13,5 @@ expect:
   stdout: |+
     beta
     two
-  stderr: ""
+  stderr: |+
   exit_code: 0

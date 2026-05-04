@@ -5,5 +5,5 @@ input:
 expect:
   stdout: |+
     hello WORLD
-  stderr: ""
+  stderr: |+
   exit_code: 0

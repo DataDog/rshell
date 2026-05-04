@@ -5,5 +5,5 @@ input:
 expect:
   stdout: |+
     3 1.4142 2.7183
-  stderr: ""
+  stderr: |+
   exit_code: 0

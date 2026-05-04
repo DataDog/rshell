@@ -1,0 +1,9 @@
+description: printf precision-from-arg (*) is capped at MaxStringBytes; exits with error rather than OOM.
+skip_assert_against_bash: true
+input:
+  script: |+
+    awk 'BEGIN { printf "%.*d\n", 9999999999, 1 }'
+expect:
+  stdout: ""
+  stderr_contains: ["printf output exceeds maximum string length"]
+  exit_code: 1

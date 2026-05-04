@@ -13,5 +13,5 @@ input:
 expect:
   stdout: |+
     total: 3
-  stderr: ""
+  stderr: |+
   exit_code: 0

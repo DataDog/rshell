@@ -788,8 +788,9 @@ func (p *parser) parseRelational() (expr, error) {
 		k := p.peek().kind
 		// In print/printf argument lists, '>' / '>>' / '|' are reserved for
 		// (blocked) output redirection. Stop here so the surrounding
-		// checkNoRedirect can produce a clear error.
-		if p.inPrintList && (k == tkGt || k == tkGe || k == tkAppend || k == tkPipe) {
+		// checkNoRedirect can produce a clear error. Note: '>=' (tkGe) is a
+		// normal relational operator and must NOT be treated as a redirect.
+		if p.inPrintList && (k == tkGt || k == tkAppend || k == tkPipe) {
 			break
 		}
 		switch k {
@@ -864,7 +865,7 @@ func (p *parser) parseAddSub() (expr, error) {
 }
 
 func (p *parser) parseMulDiv() (expr, error) {
-	left, err := p.parseExp()
+	left, err := p.parsePrefix()
 	if err != nil {
 		return nil, err
 	}
@@ -872,7 +873,7 @@ func (p *parser) parseMulDiv() (expr, error) {
 		switch p.peek().kind {
 		case tkStar, tkSlash, tkPercent:
 			op := p.advance().kind
-			right, err := p.parseExp()
+			right, err := p.parsePrefix()
 			if err != nil {
 				return nil, err
 			}
@@ -884,15 +885,22 @@ func (p *parser) parseMulDiv() (expr, error) {
 	return left, nil
 }
 
-// parseExp implements right-associative ^.
+// parseExp implements right-associative ^ (exponentiation).
+// Per awk's operator precedence, ^ binds tighter than unary minus:
+// -x^2 is -(x^2), not (-x)^2. To achieve this, parseExp is called
+// from parseMulDiv (via parsePrefix→parseExp for the unary case),
+// and unary operators call parseExp for their operand rather than
+// calling themselves recursively.
 func (p *parser) parseExp() (expr, error) {
-	left, err := p.parsePrefix()
+	left, err := p.parseField()
 	if err != nil {
 		return nil, err
 	}
 	if p.peek().kind == tkCaret {
 		p.advance()
-		right, err := p.parseExp()
+		// Right-associative: recurse through parsePrefix so that
+		// the right operand can itself start with a unary operator.
+		right, err := p.parsePrefix()
 		if err != nil {
 			return nil, err
 		}
@@ -905,7 +913,9 @@ func (p *parser) parsePrefix() (expr, error) {
 	switch p.peek().kind {
 	case tkNot, tkMinus, tkPlus:
 		op := p.advance().kind
-		operand, err := p.parsePrefix()
+		// Unary minus/plus/not bind LOOSER than ^ (exponentiation).
+		// Delegate to parseExp so that -x^2 is parsed as -(x^2).
+		operand, err := p.parseExp()
 		if err != nil {
 			return nil, err
 		}
@@ -921,7 +931,7 @@ func (p *parser) parsePrefix() (expr, error) {
 		}
 		return &incrExpr{post: false, op: op, expr: operand}, nil
 	}
-	return p.parseField()
+	return p.parseExp()
 }
 
 // parseField handles $ and post-increment/decrement.
@@ -1009,6 +1019,15 @@ func (p *parser) parsePrimary() (expr, error) {
 		// Reject blocked identifiers before any further usage.
 		if reason, blocked := blockedNames[t.val]; blocked {
 			return nil, fmt.Errorf("line %d: %s", t.line, reason)
+		}
+		// GNU awk allows whitespace between a built-in function name and its '('.
+		// The lexer only emits tkFuncName when '(' is immediate; handle the
+		// spaced case here by re-dispatching to parseCall.
+		if _, isBuiltin := builtinFuncs[t.val]; isBuiltin && p.peek().kind == tkLParen {
+			// Re-insert token and let parseCall handle it.
+			p.pos-- // unconsume the tkIdent
+			p.tokens[p.pos] = token{kind: tkFuncName, val: t.val, line: t.line}
+			return p.parseCall()
 		}
 		// POSIX legacy: `length` without parens means length($0).
 		if t.val == "length" && p.peek().kind != tkLBracket {

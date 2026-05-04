@@ -17,5 +17,5 @@ expect:
     odd
     odd
     odd
-  stderr: ""
+  stderr: |+
   exit_code: 0

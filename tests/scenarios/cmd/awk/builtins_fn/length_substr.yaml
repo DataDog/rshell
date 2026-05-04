@@ -5,5 +5,5 @@ input:
 expect:
   stdout: |+
     6 bcd
-  stderr: ""
+  stderr: |+
   exit_code: 0

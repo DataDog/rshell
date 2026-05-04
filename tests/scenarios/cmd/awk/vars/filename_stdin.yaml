@@ -1,0 +1,9 @@
+description: FILENAME is "-" when reading from standard input (gawk compat).
+input:
+  script: |+
+    printf 'x\n' | awk '{print FILENAME}'
+expect:
+  stdout: |+
+    -
+  stderr: |+
+  exit_code: 0

@@ -9,5 +9,5 @@ input:
     awk '{print "x"}' empty.txt
 expect:
   stdout: ""
-  stderr: ""
+  stderr: |+
   exit_code: 0

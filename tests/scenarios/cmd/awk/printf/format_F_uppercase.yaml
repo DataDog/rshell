@@ -1,0 +1,10 @@
+description: printf %F formats a float in uppercase fixed notation (gawk extension; skip bash comparison).
+skip_assert_against_bash: true
+input:
+  script: |+
+    awk 'BEGIN { printf "%F\n", 1.5 }'
+expect:
+  stdout: |+
+    1.500000
+  stderr: |+
+  exit_code: 0

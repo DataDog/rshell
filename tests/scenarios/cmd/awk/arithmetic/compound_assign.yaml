@@ -8,5 +8,5 @@ expect:
     12
     24
     6
-  stderr: ""
+  stderr: |+
   exit_code: 0

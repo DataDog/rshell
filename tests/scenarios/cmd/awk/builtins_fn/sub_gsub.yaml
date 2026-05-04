@@ -9,5 +9,5 @@ input:
 expect:
   stdout: |+
     3 X X X
-  stderr: ""
+  stderr: |+
   exit_code: 0

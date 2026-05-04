@@ -14,5 +14,5 @@ input:
 expect:
   stdout: |+
     100
-  stderr: ""
+  stderr: |+
   exit_code: 0

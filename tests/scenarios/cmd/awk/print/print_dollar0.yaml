@@ -13,5 +13,5 @@ expect:
   stdout: |+
     one two three
     four five six
-  stderr: ""
+  stderr: |+
   exit_code: 0

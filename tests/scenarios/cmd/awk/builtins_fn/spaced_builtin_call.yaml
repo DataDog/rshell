@@ -1,0 +1,10 @@
+description: Built-in function calls allow whitespace between name and opening parenthesis.
+input:
+  script: |+
+    awk 'BEGIN { print substr ("abc", 2); print length ("hello") }'
+expect:
+  stdout: |+
+    bc
+    5
+  stderr: |+
+  exit_code: 0

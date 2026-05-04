@@ -6,5 +6,5 @@ input:
     awk --help
 expect:
   stdout_contains: ["Usage: awk"]
-  stderr: ""
+  stderr: |+
   exit_code: 0

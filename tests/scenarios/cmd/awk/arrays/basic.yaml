@@ -8,5 +8,5 @@ input:
 expect:
   stdout: |+
     1 2
-  stderr: ""
+  stderr: |+
   exit_code: 0

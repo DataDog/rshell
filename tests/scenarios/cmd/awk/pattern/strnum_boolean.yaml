@@ -1,0 +1,10 @@
+description: Non-numeric input fields are truthy in boolean context when non-empty.
+input:
+  script: |+
+    printf 'abc\n0\nhello\n' | awk '$1 {print NR, $1}'
+expect:
+  stdout: |+
+    1 abc
+    3 hello
+  stderr: |+
+  exit_code: 0

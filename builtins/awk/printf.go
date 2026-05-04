@@ -8,6 +8,7 @@ package awk
 import (
 	"errors"
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 )
@@ -48,14 +49,18 @@ func awkSprintf(format string, values []awkValue, convFmt string) (string, error
 			if err != nil {
 				return "", err
 			}
-			spec.width = w
 			if w < 0 {
 				spec.flagMinus = true
-				spec.width = -w
+				if w == math.MinInt {
+					w = math.MaxInt // avoid -MinInt overflow
+				} else {
+					w = -w
+				}
 			}
-			if spec.width > MaxStringBytes {
-				spec.width = MaxStringBytes
+			if w > MaxStringBytes {
+				w = MaxStringBytes
 			}
+			spec.width = w
 		}
 		if spec.precFromArg {
 			p, err := nextInt(&argIdx, values)
@@ -215,8 +220,13 @@ func applyPrintfSpec(spec printfSpec, val awkValue, convFmt string) (string, err
 			s = s[:spec.precision]
 		}
 		return padString(s, spec), nil
-	case 'e', 'E', 'f', 'F', 'g', 'G':
+	case 'e', 'E', 'f', 'g', 'G':
 		return formatFloat(spec, val.toNumber()), nil
+	case 'F':
+		// Go's strconv.FormatFloat does not support 'F'; fold to 'f' and uppercase.
+		spec.verb = 'f'
+		s := formatFloat(spec, val.toNumber())
+		return strings.ToUpper(s), nil
 	}
 	// Unknown verb: emit the original spec literally.
 	return "%" + string(spec.verb), nil

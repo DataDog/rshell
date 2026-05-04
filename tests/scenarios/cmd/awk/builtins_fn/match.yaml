@@ -5,5 +5,5 @@ input:
 expect:
   stdout: |+
     5 3 bar
-  stderr: ""
+  stderr: |+
   exit_code: 0

@@ -1,0 +1,10 @@
+description: '>= comparison in print argument list is parsed as relational operator, not redirection.'
+input:
+  script: |+
+    awk 'BEGIN { print 2 >= 1; print 0 >= 1 }'
+expect:
+  stdout: |+
+    1
+    0
+  stderr: |+
+  exit_code: 0

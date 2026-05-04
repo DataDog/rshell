@@ -13,5 +13,5 @@ expect:
   stdout: |+
     green
     two
-  stderr: ""
+  stderr: |+
   exit_code: 0

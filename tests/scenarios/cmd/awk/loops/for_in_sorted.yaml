@@ -1,0 +1,12 @@
+description: for-in iterates array keys in sorted (deterministic) order.
+skip_assert_against_bash: true
+input:
+  script: |+
+    awk 'BEGIN { a["z"]=1; a["a"]=2; a["m"]=3; for (k in a) print k }'
+expect:
+  stdout: |+
+    a
+    m
+    z
+  stderr: |+
+  exit_code: 0

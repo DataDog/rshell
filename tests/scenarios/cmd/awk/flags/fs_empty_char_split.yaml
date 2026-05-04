@@ -1,0 +1,9 @@
+description: -F '' splits each character into a separate field.
+input:
+  script: |+
+    printf 'abc\n' | awk -F '' '{print NF, $1, $2, $3}'
+expect:
+  stdout: |+
+    3 a b c
+  stderr: |+
+  exit_code: 0

@@ -5,5 +5,5 @@ input:
 expect:
   stdout: |+
     a-X-c
-  stderr: ""
+  stderr: |+
   exit_code: 0

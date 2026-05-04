@@ -1,0 +1,9 @@
+description: sub() with no match does not rebuild $0 with OFS, preserving original separators.
+input:
+  script: |+
+    printf 'a\tb\n' | awk '{ sub(/z/, "x", $1); print $0 }'
+expect:
+  stdout: |+
+    a	b
+  stderr: |+
+  exit_code: 0
