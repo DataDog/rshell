@@ -284,6 +284,43 @@ func (r *Runner) loopStmtsBroken(ctx context.Context, stmts []*syntax.Stmt) bool
 	return false
 }
 
+// argvMatchesAllowedPattern reports whether args begins with any of the
+// configured AllowedCommandPatterns sequences. Each pattern is matched by
+// exact string equality on the leading tokens of args; argv elements after
+// the pattern length are not consulted.
+//
+// args is expected to be the full argv with the command name at args[0]
+// (the same shape passed to call()). Callers that hold the command name and
+// arguments separately must reconstruct the full argv before invoking this
+// matcher, so that a pattern like ["kubectl", "get"] can match an
+// invocation whose argv is ["kubectl", "get", "pods"].
+//
+// Returns false when no patterns are configured, when args is empty, or when
+// no pattern is a prefix of args. The matcher is called after shell
+// expansion, so command-substitution-derived argv elements are already
+// resolved.
+func (r *Runner) argvMatchesAllowedPattern(args []string) bool {
+	if len(args) == 0 {
+		return false
+	}
+	for _, pattern := range r.allowedCommandPatterns {
+		if len(pattern) > len(args) {
+			continue
+		}
+		match := true
+		for i, tok := range pattern {
+			if args[i] != tok {
+				match = false
+				break
+			}
+		}
+		if match {
+			return true
+		}
+	}
+	return false
+}
+
 func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 	name := args[0]
 	r.totalCount++
@@ -291,7 +328,7 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 	// Evaluate both policy checks upfront so the span tags reflect the
 	// independent facts about the command name regardless of which gate
 	// short-circuits dispatch.
-	isAllowed := r.allowAllCommands || r.allowedCommands[name]
+	isAllowed := r.allowAllCommands || r.allowedCommands[name] || r.argvMatchesAllowedPattern(args)
 	fn, isKnown := builtins.Lookup(name)
 
 	span, ctx := telemetry.StartSpanFromContext(ctx, "command")
@@ -338,7 +375,13 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 		r.dispatchedCount++
 		var runCmd func(context.Context, string, string, []string) (uint8, error)
 		runCmd = func(ctx context.Context, dir string, cmdName string, cmdArgs []string) (uint8, error) {
-			if !r.allowAllCommands && !r.allowedCommands[cmdName] {
+			// Pattern matching expects full argv with the command name at
+			// args[0]. cmdArgs by convention excludes cmdName, so we
+			// reconstruct the canonical argv before consulting patterns.
+			fullArgv := make([]string, 0, len(cmdArgs)+1)
+			fullArgv = append(fullArgv, cmdName)
+			fullArgv = append(fullArgv, cmdArgs...)
+			if !r.allowAllCommands && !r.allowedCommands[cmdName] && !r.argvMatchesAllowedPattern(fullArgv) {
 				return 127, fmt.Errorf("rshell: %s: command not allowed", cmdName)
 			}
 			cmdFn, ok := builtins.Lookup(cmdName)
@@ -411,8 +454,8 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 					}
 					return builtins.FileID{Dev: dev, Ino: ino}, true
 				},
-				CommandAllowed: func(n string) bool {
-					return r.allowAllCommands || r.allowedCommands[n]
+				CommandAllowed: func(n string, args []string) bool {
+					return r.allowAllCommands || r.allowedCommands[n] || r.argvMatchesAllowedPattern(args)
 				},
 			}
 			if r.stdin != nil {
@@ -490,8 +533,8 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 				}
 				return builtins.FileID{Dev: dev, Ino: ino}, true
 			},
-			CommandAllowed: func(cmdName string) bool {
-				return r.allowAllCommands || r.allowedCommands[cmdName]
+			CommandAllowed: func(cmdName string, args []string) bool {
+				return r.allowAllCommands || r.allowedCommands[cmdName] || r.argvMatchesAllowedPattern(args)
 			},
 			RunCommand: runCmd,
 			Proc:       r.proc,

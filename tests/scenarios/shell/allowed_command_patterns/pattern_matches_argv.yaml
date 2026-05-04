@@ -1,0 +1,12 @@
+skip_assert_against_bash: true
+description: An invocation whose argv prefix-matches a pattern is allowed.
+input:
+  allowed_command_patterns:
+    - ["echo", "hello"]
+  script: |+
+    echo hello world
+expect:
+  stdout: |+
+    hello world
+  stderr: ""
+  exit_code: 0

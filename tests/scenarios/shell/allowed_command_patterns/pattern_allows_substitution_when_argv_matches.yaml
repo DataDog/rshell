@@ -1,0 +1,18 @@
+skip_assert_against_bash: true
+description: |
+  Partner case to pattern_blocks_substitution_escape: a substitution that
+  expands to an argv MATCHING the pattern is allowed. This confirms the
+  matcher is not blanket-rejecting interpolation; it inspects the
+  resolved argv and admits invocations that fall within the policy.
+input:
+  allowed_commands:
+    - rshell:printf
+  allowed_command_patterns:
+    - ["echo", "hello"]
+  script: |+
+    $(printf echo) hello world
+expect:
+  stdout: |+
+    hello world
+  stderr: ""
+  exit_code: 0

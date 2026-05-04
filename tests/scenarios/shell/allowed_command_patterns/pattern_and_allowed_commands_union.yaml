@@ -1,0 +1,21 @@
+skip_assert_against_bash: true
+description: |
+  AllowedCommands and AllowedCommandPatterns are independent permit axes
+  joined by union: a command is allowed if its name is on the
+  AllowedCommands list OR its argv prefix-matches any pattern. Here
+  printf is allowed by name and admits all argv shapes, while echo is
+  only authorised when its argv begins with "echo hello".
+input:
+  allowed_commands:
+    - rshell:printf
+  allowed_command_patterns:
+    - ["echo", "hello"]
+  script: |+
+    printf "from-printf\n"
+    echo hello there
+expect:
+  stdout: |+
+    from-printf
+    hello there
+  stderr: ""
+  exit_code: 0

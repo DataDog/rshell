@@ -102,6 +102,7 @@ The in-shell `help` command mirrors these feature categories: run `help` for a c
 ## Execution
 
 - ✅ AllowedCommands — restricts which commands (builtins or external) may be executed; commands require the `rshell:` namespace prefix (e.g. `rshell:cat`); if not set, no commands are allowed
+- ✅ AllowedCommandPatterns — restricts execution to argv sequences whose leading tokens prefix-match a configured pattern (e.g. `["kubectl","get"]` permits `kubectl get pods` but not `kubectl delete pod foo`); patterns are matched after shell expansion so command-substitution cannot bypass them; combined with AllowedCommands by union (allow if name OR pattern matches)
 - ✅ AllowedPaths filesystem sandboxing — restricts all file access to specified directories
 - ✅ Whole-run execution timeout — callers can bound a `Run()` call via `context.Context`, `interp.MaxExecutionTime`, or the CLI `--timeout` flag; the deadline applies to the entire script, not each individual command
 - ✅ ProcPath — overrides the proc filesystem path used by `ps` (default `/proc`; Linux-only; useful for testing/container environments)

@@ -67,7 +67,14 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 				printFeatureDetails(callCtx, feature)
 				return builtins.Result{}
 			}
-			if callCtx.CommandAllowed != nil && !callCtx.CommandAllowed(name) {
+			// help shows information about a single command name; we don't
+			// have a full argv to consult, so we pass []string{name}. As a
+			// consequence, commands that are only authorised by a
+			// multi-token argv-prefix pattern (e.g. "kubectl get") will
+			// not appear here even if their name does match a pattern's
+			// first token. That's a documented cosmetic limitation, not a
+			// security one.
+			if callCtx.CommandAllowed != nil && !callCtx.CommandAllowed(name, []string{name}) {
 				callCtx.Errf("help: no help topics match '%s'\n", name)
 				return builtins.Result{Code: 1}
 			}
@@ -105,7 +112,11 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 		allNames := builtins.Names()
 		var allowed, notAllowed []string
 		for _, name := range allNames {
-			if callCtx.CommandAllowed != nil && !callCtx.CommandAllowed(name) {
+			// Same caveat as the single-name lookup above: argv-prefix
+			// pattern authorisations whose patterns have more than one
+			// token are not surfaced here, because the bare name is the
+			// only argv we have.
+			if callCtx.CommandAllowed != nil && !callCtx.CommandAllowed(name, []string{name}) {
 				notAllowed = append(notAllowed, name)
 				continue
 			}

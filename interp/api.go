@@ -78,6 +78,14 @@ type runnerConfig struct {
 	// false, no commands are allowed.
 	allowedCommands map[string]bool
 
+	// allowedCommandPatterns is a list of argv-prefix patterns that admit
+	// commands by their full argv rather than only by name. Each pattern is
+	// a non-empty token list; an invocation whose argv begins with the same
+	// tokens (in order, by exact equality) is allowed. Independent of
+	// allowedCommands — a command is allowed if its name appears in
+	// allowedCommands OR its argv prefix-matches any of these patterns.
+	allowedCommandPatterns [][]string
+
 	// allowAllCommands bypasses the allowedCommands check and permits any
 	// command. Intended for testing convenience.
 	allowAllCommands bool
@@ -761,6 +769,42 @@ func AllowedCommands(names []string) RunnerOption {
 			m[cmd] = true
 		}
 		r.allowedCommands = m
+		return nil
+	}
+}
+
+// AllowedCommandPatterns restricts command execution to argv sequences whose
+// leading tokens prefix-match one of the configured patterns. Each pattern is
+// a non-empty list of tokens; an invocation whose argv begins with the same
+// tokens (in order, by exact string equality) is allowed.
+//
+// Patterns are matched against argv after shell expansion, so command
+// substitution and other runtime-resolved values cannot bypass the check —
+// the matcher sees the resolved argv that would be handed to exec.
+//
+// Example: a pattern of []string{"kubectl", "get"} permits "kubectl get pods"
+// but not "kubectl delete pod foo".
+//
+// Patterns are an additional permit axis, independent of [AllowedCommands].
+// A command is allowed if its name appears in AllowedCommands OR if its argv
+// prefix-matches one of the patterns. Empty pattern slices and patterns
+// containing empty tokens are rejected.
+//
+// When not set (default), no command is allowed via pattern matching;
+// only AllowedCommands and allowAllCommands govern execution.
+func AllowedCommandPatterns(patterns [][]string) RunnerOption {
+	return func(r *Runner) error {
+		for i, p := range patterns {
+			if len(p) == 0 {
+				return fmt.Errorf("AllowedCommandPatterns: pattern %d is empty", i)
+			}
+			for j, tok := range p {
+				if tok == "" {
+					return fmt.Errorf("AllowedCommandPatterns: pattern %d token %d is empty", i, j)
+				}
+			}
+		}
+		r.allowedCommandPatterns = patterns
 		return nil
 	}
 }

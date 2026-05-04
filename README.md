@@ -58,13 +58,15 @@ Every access path is default-deny:
 
 | Resource             | Default                             | Opt-in                                       |
 |----------------------|-------------------------------------|----------------------------------------------|
-| Command execution    | All commands blocked (exit code 127)| `AllowedCommands` with namespaced command list (e.g. `rshell:cat`) |
+| Command execution    | All commands blocked (exit code 127)| `AllowedCommands` with namespaced command list (e.g. `rshell:cat`), and/or `AllowedCommandPatterns` with argv-prefix patterns (e.g. `["kubectl","get"]`) |
 | External commands    | Blocked (exit code 127)             | Provide an `ExecHandler`                     |
 | Filesystem access    | Blocked                             | Configure `AllowedPaths` with directory list |
 | Environment variables| Empty (no host env inherited)       | Pass variables via the `Env` option          |
 | Output redirections  | Only `/dev/null` allowed (exit code 2 for other targets) | `>/dev/null`, `2>/dev/null`, `&>/dev/null`, `2>&1` |
 
 **AllowedCommands** restricts which commands (builtins or external) the interpreter may execute. Commands must be specified with the `rshell:` namespace prefix (e.g. `rshell:cat`, `rshell:echo`). If not set, no commands are allowed.
+
+**AllowedCommandPatterns** restricts execution to argv sequences whose leading tokens prefix-match one of the configured patterns. Each pattern is a non-empty token list; an invocation whose argv begins with the same tokens (in order, by exact equality) is allowed. Example: a pattern of `["kubectl", "get"]` permits `kubectl get pods` but not `kubectl delete pod foo`. Patterns are matched after shell expansion, so command-substitution-derived values (`$(...)`) cannot bypass the check — the matcher sees the resolved argv that would be handed to exec. AllowedCommands and AllowedCommandPatterns are independent permit axes joined by union: a command is allowed if its name appears in AllowedCommands OR its argv prefix-matches any pattern.
 
 **AllowedPaths** restricts all file operations to specified directories using Go's `os.Root` API (`openat` syscalls), making it immune to symlink traversal, TOCTOU races, and `..` escape attacks. Configured directories that cannot be opened (missing, not a directory, no permission) are skipped with a diagnostic message; by default these messages are flushed once to the runner's stderr at construction time. Callers that need to keep stderr clean of sandbox diagnostics can route them to a dedicated sink with `WarningsWriter(io.Writer)` or retrieve them programmatically via `Runner.Warnings()`.
 

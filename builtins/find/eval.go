@@ -304,14 +304,21 @@ func evalExecLike(ec *evalContext, e *expr, name, replacement, dir string) evalR
 		return evalResult{}
 	}
 	cmd := strings.ReplaceAll(e.execCmd, "{}", replacement)
-	if ec.callCtx.CommandAllowed != nil && !ec.callCtx.CommandAllowed(cmd) {
-		ec.callCtx.Errf("find: %s: '%s': command not allowed\n", name, cmd)
-		ec.failed = true
-		return evalResult{}
-	}
 	args := make([]string, len(e.execArgs))
 	for i, a := range e.execArgs {
 		args[i] = strings.ReplaceAll(a, "{}", replacement)
+	}
+	// Construct the full argv (cmd + args) so the policy callback can
+	// consult both a name allowlist and an argv-prefix pattern allowlist.
+	// This is the authoritative check; the parse-time check at find.go is
+	// a name-only fast-fail.
+	fullArgv := make([]string, 0, len(args)+1)
+	fullArgv = append(fullArgv, cmd)
+	fullArgv = append(fullArgv, args...)
+	if ec.callCtx.CommandAllowed != nil && !ec.callCtx.CommandAllowed(cmd, fullArgv) {
+		ec.callCtx.Errf("find: %s: '%s': command not allowed\n", name, cmd)
+		ec.failed = true
+		return evalResult{}
 	}
 	exitCode, err := ec.callCtx.RunCommand(ec.ctx, dir, cmd, args)
 	if err != nil {

@@ -1,0 +1,20 @@
+skip_assert_against_bash: true
+description: |
+  Argv-prefix patterns are matched after shell expansion. A command name
+  produced by command substitution that resolves to an argv NOT matching
+  the pattern is rejected — the matcher sees the resolved argv at execve
+  time, not the static substitution syntax.
+input:
+  # printf is allowed by name so that $(printf ...) can run inside the
+  # substitution. echo is only authorised by the pattern below.
+  allowed_commands:
+    - rshell:printf
+  allowed_command_patterns:
+    - ["echo", "hello"]
+  script: |+
+    $(printf echo) goodbye
+expect:
+  stdout: ""
+  stderr: |+
+    rshell: echo: command not allowed
+  exit_code: 127

@@ -1,0 +1,12 @@
+skip_assert_against_bash: true
+description: An invocation whose argv does not match the pattern is blocked.
+input:
+  allowed_command_patterns:
+    - ["echo", "hello"]
+  script: |+
+    echo goodbye
+expect:
+  stdout: ""
+  stderr: |+
+    rshell: echo: command not allowed
+  exit_code: 127

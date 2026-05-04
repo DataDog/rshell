@@ -1,0 +1,12 @@
+skip_assert_against_bash: true
+description: An argv shorter than the pattern cannot match (length check).
+input:
+  allowed_command_patterns:
+    - ["echo", "hello"]
+  script: |+
+    echo
+expect:
+  stdout: ""
+  stderr: |+
+    rshell: echo: command not allowed
+  exit_code: 127
