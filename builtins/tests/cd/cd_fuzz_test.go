@@ -28,9 +28,12 @@ import (
 // shellSafe filters fuzz inputs that would crash the shell parser before
 // the cd builtin sees them. The parser rejects invalid UTF-8 and treats
 // embedded NUL/newlines as syntax errors — neither is interesting to the
-// cd-command pentest.
+// cd-command pentest. U+0080 (the first C1 control character, encoded as
+// 0xC2 0x80 in UTF-8) is also filtered: mvdan.cc/sh/v3's tokenizer
+// mishandles it inside single/double quotes and reports "reached EOF
+// without closing quote", so the parser fails before cd is ever invoked.
 func shellSafe(s string) bool {
-	if strings.ContainsAny(s, "\x00\n") {
+	if strings.ContainsAny(s, "\x00\n") {
 		return false
 	}
 	return utf8.ValidString(s)
