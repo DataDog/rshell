@@ -1,0 +1,11 @@
+description: An unbounded while-true producer piped to a finite consumer terminates cleanly.
+input:
+  script: |+
+    while true; do echo x; done | head -3
+expect:
+  stdout: |+
+    x
+    x
+    x
+  stderr: |+
+  exit_code: 0

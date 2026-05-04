@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -20,9 +21,9 @@ import (
 )
 
 // whileFuzzRun executes a script under a short ctx deadline so that runaway
-// loops the fuzzer constructs cannot hang the test. The exit code from a
-// well-behaved while/until execution is 0 or 1 (POSIX); a panic, fatal Go
-// error, or unexpected non-{0,1} exit code is surfaced as a test failure.
+// loops the fuzzer constructs cannot hang the test. Any exit code (0–255) is
+// acceptable; a panic, fatal Go error, or other unexpected non-ExitStatus
+// error is surfaced as a test failure.
 //
 // This deliberately diverges from the unit-test helpers: it does not call
 // require/assert, it does not Fatalf on parse errors (those are skipped), and
@@ -206,7 +207,7 @@ func FuzzWhileBreakContinueLevels(f *testing.F) {
 		// Two nested while loops with the inner doing `<kind> <n>`. For
 		// continue with n>=2 at outermost we'd hit the clamp branch; for
 		// break with n>=3 we'd hit the outermost-clamp.
-		script := "i=; while [ \"$i\" != aa ]; do i=\"${i}a\"; while true; do echo \"$i\"; " + kind + " " + itoa(n) + "; done; done"
+		script := "i=; while [ \"$i\" != aa ]; do i=\"${i}a\"; while true; do echo \"$i\"; " + kind + " " + strconv.Itoa(n) + "; done; done"
 		whileFuzzRun(t, script)
 	})
 }
@@ -235,7 +236,7 @@ func FuzzWhileNestingDepth(f *testing.F) {
 			b.WriteString("while true; do ")
 		}
 		b.WriteString("echo ok; break ")
-		b.WriteString(itoa(breakN))
+		b.WriteString(strconv.Itoa(breakN))
 		b.WriteString("; ")
 		for i := 0; i < depth; i++ {
 			b.WriteString("done; ")

@@ -188,6 +188,14 @@ type runnerState struct {
 	// "not part of a producer pipeline stage" (no propagation needed).
 	pipeBroken *bool
 
+	// parentPipeBroken is the pipeBroken flag inherited from an enclosing
+	// pipeline stage before the current pipeline overwrote pipeBroken with its
+	// own inner flag. r.stop() checks both so that a producer in a chained
+	// pipeline (e.g. `while true; do echo x; done | cat | head -1`) stops when
+	// the outer consumer (head) exits — even though the inner pipe (while→cat)
+	// is still open and the inner pipeBroken flag is never set.
+	parentPipeBroken *bool
+
 	// The current and last exit statuses. They can only be different if
 	// the interpreter is in the middle of running a statement. In that
 	// scenario, 'exit' is the status for the current statement being run,
@@ -820,6 +828,7 @@ func (r *Runner) subshell(background bool) *Runner {
 			runStdout:        r.runStdout,
 			inPipeline:       r.inPipeline,
 			pipeBroken:       r.pipeBroken,
+			parentPipeBroken: r.parentPipeBroken,
 			filename:         r.filename,
 			exit:             r.exit,
 			lastExit:         r.lastExit,

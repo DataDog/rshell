@@ -13,6 +13,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sync"
 	"syscall"
 
@@ -165,7 +166,16 @@ func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {
 			// after the consumer closes its read end — bash terminates the
 			// producer via SIGPIPE, but we are a single Go process and must
 			// turn the broken-pipe error into a graceful exit signal.
+			//
+			// Save the inherited pipeBroken (from an outer pipeline stage, if
+			// any) as parentPipeBroken before overwriting it. r.stop() checks
+			// both so that a chained producer like `while true | cat | head`
+			// also stops when the outer consumer closes — the while runner's
+			// own pipeBroken is never set in that case because cat keeps reading
+			// the inner pipe, but the outer pipeBroken (set when cat's write to
+			// head fails) is visible through parentPipeBroken.
 			pipeBroken := new(bool)
+			rLeft.parentPipeBroken = rLeft.pipeBroken
 			rLeft.pipeBroken = pipeBroken
 			rLeft.stdout = &pipeBrokenWriter{w: pw, flag: pipeBroken}
 			rLeft.stderr = safeStderr
@@ -744,10 +754,11 @@ func (p *pipeBrokenWriter) Write(b []byte) (int, error) {
 //     Go's own os/pipe_test.go special-cases both; os.File.Write does NOT
 //     normalise either to syscall.EPIPE.
 //
-// The numeric Windows constants are hardcoded rather than referenced
-// symbolically so this file remains buildable on every platform — using
-// syscall.ERROR_BROKEN_PIPE / syscall.ERROR_NO_DATA would require a
-// build-tagged helper (Windows-only constants).
+// The numeric Windows errno values are guarded by runtime.GOOS == "windows"
+// so we don't misidentify unrelated errors on other platforms (Linux errno 109
+// is ENOPROTOOPT; macOS errno 109 is ENOATTR — neither is pipe-related). The
+// constants are hardcoded rather than referenced symbolically because
+// syscall.ERROR_BROKEN_PIPE / syscall.ERROR_NO_DATA are Windows-only.
 func isBrokenPipeErr(err error) bool {
 	if err == nil {
 		return false
@@ -755,12 +766,12 @@ func isBrokenPipeErr(err error) bool {
 	if errors.Is(err, syscall.EPIPE) {
 		return true
 	}
-	var errno syscall.Errno
-	if errors.As(err, &errno) {
-		// 109 = ERROR_BROKEN_PIPE; 232 = ERROR_NO_DATA ("the pipe is
-		// being closed"). See Go src os/pipe_test.go.
-		if errno == 109 || errno == 232 {
-			return true
+	if runtime.GOOS == "windows" {
+		var errno syscall.Errno
+		if errors.As(err, &errno) {
+			// 109 = ERROR_BROKEN_PIPE; 232 = ERROR_NO_DATA ("the pipe is
+			// being closed"). See Go src os/pipe_test.go.
+			return errno == 109 || errno == 232
 		}
 	}
 	return false

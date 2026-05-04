@@ -40,10 +40,16 @@ func (r *Runner) stop(ctx context.Context) bool {
 	if r.exit.exiting {
 		return true
 	}
-	if r.pipeBroken != nil && *r.pipeBroken {
+	if (r.pipeBroken != nil && *r.pipeBroken) || (r.parentPipeBroken != nil && *r.parentPipeBroken) {
 		// Downstream pipeline stage has closed its read end. Emulate
 		// bash's SIGPIPE-on-write behaviour: stop running statements,
 		// surface a clean exit (no error, no fatal state).
+		//
+		// parentPipeBroken catches the chained-pipeline case
+		// (e.g. `while true; do echo x; done | cat | head -1`) where
+		// the outer consumer (head) has closed, setting pipeBroken on
+		// the outer pipeline, but the inner pipe (while→cat) is still
+		// open so the while runner's own pipeBroken flag is never set.
 		r.exit.exiting = true
 		return true
 	}

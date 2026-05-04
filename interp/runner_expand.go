@@ -115,7 +115,13 @@ func (r *Runner) cmdSubst(w io.Writer, cs *syntax.CmdSubst) error {
 	// General case: run statements in a subshell, capturing stdout.
 	var buf bytes.Buffer
 	r2 := r.subshell(false)
-	r2.stdout = &limitWriter{w: &buf, limit: maxCmdSubstOutput}
+	// Wire the limitWriter's stopFlag to r2.pipeBroken so that an unbounded
+	// loop writing into this command substitution (e.g. `x=$(while true; do
+	// echo a; done)`) is terminated via r.stop() when the 1 MiB output cap is
+	// reached, rather than spinning indefinitely on the discard path.
+	stopped := new(bool)
+	r2.pipeBroken = stopped
+	r2.stdout = &limitWriter{w: &buf, limit: maxCmdSubstOutput, stopFlag: stopped}
 	r2.stmts(r.ectx, cs.Stmts)
 	r2.exit.exiting = false
 	r.lastExpandExit = r2.exit
@@ -155,6 +161,12 @@ func catShortcutArg(stmt *syntax.Stmt) *syntax.Word {
 // errors mid-execution. The exceeded flag can be checked after execution
 // via isExceeded to surface the event as an error.
 //
+// If stopFlag is non-nil, limitWriter sets *stopFlag = true the first time the
+// limit is exceeded. Callers can use this with Runner.pipeBroken so that an
+// unbounded loop writing into a command substitution (e.g. `x=$(while true;
+// do echo a; done)`) terminates via r.stop() rather than spinning at CPU
+// speed consuming the discard path forever.
+//
 // limitWriter is safe for concurrent use: the mutex serialises writes so
 // that the byte counter and exceeded flag are always consistent, even when
 // background goroutines write to the same writer concurrently.
@@ -164,13 +176,19 @@ type limitWriter struct {
 	limit    int64
 	n        int64
 	exceeded bool
+	stopFlag *bool // optional: set to true once when limit is first exceeded
 }
 
 func (lw *limitWriter) Write(p []byte) (int, error) {
 	lw.mu.Lock()
 	defer lw.mu.Unlock()
 	if lw.n >= lw.limit {
-		lw.exceeded = true
+		if !lw.exceeded {
+			lw.exceeded = true
+			if lw.stopFlag != nil {
+				*lw.stopFlag = true
+			}
+		}
 		return len(p), nil // silently discard excess
 	}
 	remaining := lw.limit - lw.n
@@ -179,7 +197,12 @@ func (lw *limitWriter) Write(p []byte) (int, error) {
 			return int(remaining), err
 		}
 		lw.n = lw.limit
-		lw.exceeded = true
+		if !lw.exceeded {
+			lw.exceeded = true
+			if lw.stopFlag != nil {
+				*lw.stopFlag = true
+			}
+		}
 		return len(p), nil // report all bytes consumed to avoid short-write errors
 	}
 	n, err := lw.w.Write(p)
