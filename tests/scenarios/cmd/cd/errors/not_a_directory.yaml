@@ -1,5 +1,5 @@
 # Derived from POSIX: cd into a regular file is an error.
-description: cd into a regular file reports "not a directory".
+description: cd into a regular file reports "Not a directory".
 setup:
   files:
     - path: regular.txt
@@ -10,7 +10,6 @@ input:
     cd regular.txt
 expect:
   stdout: ""
-  # rshell emits "not a directory"; bash emits "Not a directory". Use
-  # substring assertions that match both.
-  stderr_contains: ["cd: regular.txt", "ot a directory"]
+  stderr: |+
+    cd: regular.txt: Not a directory
   exit_code: 1

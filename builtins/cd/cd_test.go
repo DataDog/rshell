@@ -207,7 +207,7 @@ func TestCdNotADirectory(t *testing.T) {
 	makeFile(t, dir, "afile", "x")
 	_, stderr, code := cmdRun(t, "cd afile", dir)
 	assert.Equal(t, 1, code)
-	assert.Equal(t, "cd: afile: not a directory\n", stderr)
+	assert.Equal(t, "cd: afile: Not a directory\n", stderr)
 }
 
 func TestCdOutsideAllowedPaths(t *testing.T) {

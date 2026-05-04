@@ -1,4 +1,9 @@
 # Derived from bash: cd - with OLDPWD="" prints a bare newline and updates OLDPWD.
+# skip_assert_against_bash: the bash harness inherits OLDPWD from the test environment;
+# we cannot reliably unset it in the scenario input block, so setting OLDPWD="" may
+# still leave bash with the inherited (non-empty) value and cause the bash run to
+# cd to an unexpected directory rather than staying in place.
+skip_assert_against_bash: true
 description: cd - with empty OLDPWD succeeds, prints a bare newline, and updates OLDPWD.
 setup:
   files:

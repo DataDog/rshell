@@ -1,0 +1,26 @@
+# Derived from bash: cd -P resolves symlinks before applying "..".
+# With "from/alias" -> "../real" (sibling directory), cd -P alias/.. must
+# land in the parent of "real" (i.e. $DIR), not in the parent of "alias"
+# (i.e. $DIR/from). bash resolves symlinks first: alias -> ../real = $DIR/real,
+# then ".." pops to $DIR.
+description: cd -P resolves symlink target before applying "..", landing in the real parent.
+setup:
+  files:
+    - path: real/keep
+      content: ""
+    - path: from/alias
+      symlink: ../real
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    cd from
+    cd -P alias/..
+    # The result should be $DIR (parent of real), not $DIR/from (parent of alias).
+    # We verify by doing cd again into "real" which should succeed if we're in $DIR.
+    cd real
+    echo "$PWD"
+expect:
+  stdout_contains: ["/real"]
+  stdout_contains_windows: ["\\real"]
+  stderr: ""
+  exit_code: 0

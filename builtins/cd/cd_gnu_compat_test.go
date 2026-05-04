@@ -61,14 +61,14 @@ func TestGNUCompatCdMissing(t *testing.T) {
 }
 
 // TestGNUCompatCdNotADir — bash: `cd file.txt` (regular file) prints
-// "bash: cd: file.txt: Not a directory" with exit 1. Our equivalent uses
-// the lowercase POSIX wording and drops the shell prefix.
+// "bash: cd: file.txt: Not a directory" with exit 1. We use the same
+// capitalisation as bash (capital N) and drop the shell prefix.
 func TestGNUCompatCdNotADir(t *testing.T) {
 	dir := t.TempDir()
 	makeFile(t, dir, "file.txt", "x")
 	_, stderr, code := cmdRun(t, "cd file.txt", dir)
 	assert.Equal(t, 1, code)
-	assert.Equal(t, "cd: file.txt: not a directory\n", stderr)
+	assert.Equal(t, "cd: file.txt: Not a directory\n", stderr)
 }
 
 // TestGNUCompatCdNoArgsHome — bash: `cd; printf '%s\n' "$PWD"` prints the

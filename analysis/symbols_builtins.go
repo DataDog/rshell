@@ -40,23 +40,25 @@ var builtinPerCommandSymbols = map[string][]string{
 		"os.O_RDONLY",      // 🟢 read-only file flag constant; cannot open files by itself.
 	},
 	"cd": {
-		"context.Context",       // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
-		"errors.As",             // 🟢 error type assertion; pure function, no I/O.
-		"errors.Is",             // 🟢 error comparison; pure function, no I/O.
-		"errors.New",            // 🟢 creates a simple error value; pure function, no I/O.
-		"io/fs.ErrNotExist",     // 🟢 sentinel error value; pure constant.
-		"io/fs.ErrPermission",   // 🟢 sentinel error value; pure constant.
-		"io/fs.ModeSymlink",     // 🟢 file mode bit constant for symlinks; pure constant.
-		"os.PathError",          // 🟢 error type for filesystem path errors; pure type, no I/O.
-		"path/filepath.Clean",   // 🟢 normalises a path string; pure function, no I/O.
-		"path/filepath.Dir",     // 🟢 returns the directory component of a path; pure function, no I/O.
-		"path/filepath.IsAbs",   // 🟢 reports whether a path is absolute; pure function, no I/O.
-		"path/filepath.Join",    // 🟢 joins path components; pure function, no I/O.
-		"path/filepath.ToSlash", // 🟢 converts OS path separators to forward slashes; pure function, no I/O.
-		"runtime.GOOS",          // 🟢 current OS name constant; pure constant, no I/O.
-		"strings.IndexByte",     // 🟢 finds byte in string; pure function, no I/O.
-		"strings.Split",         // 🟢 splits a string by separator into a slice; pure function, no I/O.
-		"strings.ToUpper",       // 🟢 converts string to uppercase; pure function, no I/O.
+		"context.Context",          // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
+		"errors.As",                // 🟢 error type assertion; pure function, no I/O.
+		"errors.Is",                // 🟢 error comparison; pure function, no I/O.
+		"errors.New",               // 🟢 creates a simple error value; pure function, no I/O.
+		"io/fs.ErrNotExist",        // 🟢 sentinel error value; pure constant.
+		"io/fs.ErrPermission",      // 🟢 sentinel error value; pure constant.
+		"io/fs.ModeSymlink",        // 🟢 file mode bit constant for symlinks; pure constant.
+		"os.PathError",             // 🟢 error type for filesystem path errors; pure type, no I/O.
+		"path/filepath.Clean",      // 🟢 normalises a path string; pure function, no I/O.
+		"path/filepath.Dir",        // 🟢 returns the directory component of a path; pure function, no I/O.
+		"path/filepath.IsAbs",      // 🟢 reports whether a path is absolute; pure function, no I/O.
+		"path/filepath.Join",       // 🟢 joins path components; pure function, no I/O.
+		"path/filepath.Separator",  // 🟢 OS path separator constant ('/' or '\\'); pure constant, no I/O.
+		"path/filepath.ToSlash",    // 🟢 converts OS path separators to forward slashes; pure function, no I/O.
+		"path/filepath.VolumeName", // 🟢 returns the volume prefix of a path (e.g. "C:" on Windows, "" on Unix); pure function, no I/O.
+		"runtime.GOOS",             // 🟢 current OS name constant; pure constant, no I/O.
+		"strings.IndexByte",        // 🟢 finds byte in string; pure function, no I/O.
+		"strings.Split",            // 🟢 splits a string by separator into a slice; pure function, no I/O.
+		"strings.ToUpper",          // 🟢 converts string to uppercase; pure function, no I/O.
 	},
 	"continue": {
 		"context.Context", // 🟢 deadline/cancellation plumbing; pure interface, no side effects.

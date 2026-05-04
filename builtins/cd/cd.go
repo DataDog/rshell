@@ -261,9 +261,26 @@ func registerFlags(flags *builtins.FlagSet) builtins.HandlerFunc {
 			if callCtx.WorkDir != nil {
 				cwd = callCtx.WorkDir()
 			}
-			absPath = filepath.Join(cwd, absPath)
+			// In logical mode use filepath.Join which cleans the path
+			// lexically (collapsing `..` etc.). In physical mode we must
+			// NOT clean before symlink resolution: bash resolves symlinks
+			// first and then applies `..` to the *real* directory, so
+			// `cd -P link/..` lands in the parent of the symlink's target,
+			// not the parent of the symlink itself. filepath.Join (which
+			// calls filepath.Clean internally) would collapse `link/..` to
+			// `.` before we ever see `link`, producing the wrong parent.
+			// Physical-mode cleaning is deferred to resolvePhysical.
+			if usePhysical {
+				// Raw concatenation: cwd + separator + target, preserving
+				// `..` for the component-by-component resolver.
+				absPath = cwd + string(filepath.Separator) + target
+			} else {
+				absPath = filepath.Join(cwd, absPath)
+			}
 		}
-		absPath = filepath.Clean(absPath)
+		if !usePhysical {
+			absPath = filepath.Clean(absPath)
+		}
 
 		if usePhysical {
 			resolved, err := resolvePhysical(ctx, callCtx, absPath)
@@ -285,7 +302,7 @@ func registerFlags(flags *builtins.FlagSet) builtins.HandlerFunc {
 			return builtins.Result{Code: 1}
 		}
 		if !info.IsDir() {
-			callCtx.Errf("cd: %s: not a directory\n", display)
+			callCtx.Errf("cd: %s: Not a directory\n", display)
 			return builtins.Result{Code: 1}
 		}
 
@@ -298,136 +315,116 @@ func registerFlags(flags *builtins.FlagSet) builtins.HandlerFunc {
 	}
 }
 
-// resolvePhysical resolves every symlink component in absPath — including
-// intermediate ones — so the returned path is fully canonical, matching
-// bash's `cd -P` behaviour. For `dir/symlink/sub` where `symlink → real`,
-// bash sets $PWD to `dir/real/sub`; a single Lstat on the leaf cannot
-// detect this because the kernel transparently follows intermediate
-// symlinks (only the final component is exempt under O_NOFOLLOW). To
-// catch intermediate symlinks we resolve the leaf first and then walk
-// back up the path looking for any ancestor that is itself a symlink,
-// substitute its target, and repeat from the leaf.
+// resolvePhysical resolves every symlink in absPath component by component,
+// mirroring bash's `cd -P` behaviour. bash says: for physical mode, resolve
+// each symlink in the path before applying `..`, so `cd -P link/..` lands in
+// the *real* parent of the link's target, not in the lexical parent of the
+// link itself.
+//
+// The algorithm walks the path left-to-right, accumulating a "resolved so
+// far" prefix. For each component:
+//   - `..` pops the last segment of the resolved prefix (after any symlinks
+//     at that prefix are already resolved).
+//   - any other component is appended, and if the resulting path is a
+//     symlink its target is substituted (and the walk restarts at the new
+//     leaf, still bounded by maxSymlinkHops).
 //
 // All filesystem access goes through callCtx.LstatFile and
 // callCtx.ReadlinkFile, both of which honour the AllowedPaths sandbox.
 // Ancestors that fall outside the sandbox return a permission error from
-// LstatFile; we treat that as "this prefix is opaque to us" and stop the
-// upward walk — there is nothing the user can do to make the sandbox
-// reveal more, and the leaf-side resolution is still applied.
+// LstatFile; we treat that as "this prefix is opaque — not a symlink" and
+// advance resolved without following, preserving the correct semantics for
+// paths within the sandbox while remaining bounded.
 //
-// Bounded by maxSymlinkHops across both leaf and intermediate hops; ctx
-// is checked between hops so cancellation is honoured.
+// Bounded by maxSymlinkHops total symlink hops; ctx is checked between
+// hops so cancellation is honoured.
+//
+// absPath must be absolute (filepath.IsAbs true); it may contain `..`
+// components that have not been cleaned.
 func resolvePhysical(ctx context.Context, callCtx *builtins.CallContext, absPath string) (string, error) {
 	if callCtx.LstatFile == nil || callCtx.ReadlinkFile == nil {
-		return absPath, nil
+		return filepath.Clean(absPath), nil
 	}
-	current := absPath
+
+	// Split into components, skipping empty segments.
+	parts := strings.Split(filepath.ToSlash(absPath), "/")
+	// resolved accumulates the canonical prefix built so far.
+	// Start with the root (volume root on Windows, "/" on Unix).
+	resolved := filepath.VolumeName(absPath) + string(filepath.Separator)
 	hops := 0
-	for {
-		if err := ctx.Err(); err != nil {
-			return "", err
+
+	for i := 0; i < len(parts); i++ {
+		seg := parts[i]
+		if seg == "" || seg == "." {
+			continue
 		}
-		// 1) Resolve the leaf if it is itself a symlink.
-		info, err := callCtx.LstatFile(ctx, current)
-		if err != nil {
-			return "", err
-		}
-		if info.Mode()&fs.ModeSymlink != 0 {
-			hops++
-			if hops > maxSymlinkHops {
-				return "", errors.New("too many levels of symbolic links")
-			}
-			target, err := callCtx.ReadlinkFile(ctx, current)
-			if err != nil {
-				return "", err
-			}
-			if filepath.IsAbs(target) {
-				current = filepath.Clean(target)
-			} else {
-				current = filepath.Clean(filepath.Join(filepath.Dir(current), target))
-			}
-			if len(current) > maxPathBytes {
-				return "", errors.New("path too long")
+		if seg == ".." {
+			// Pop the last segment off the resolved prefix (move to parent).
+			parent := filepath.Dir(resolved)
+			if parent != resolved { // guard against popping past root
+				resolved = parent
 			}
 			continue
 		}
-		// 2) Leaf is regular. Walk parents looking for the deepest
-		//    ancestor that is itself a symlink. If we find one, splice in
-		//    its target and re-enter the outer loop so the new path is
-		//    re-checked from the leaf.
-		rebuilt, replaced, err := substituteIntermediateSymlink(ctx, callCtx, current, &hops)
+
+		// Append this segment and check if it is a symlink.
+		candidate := filepath.Join(resolved, seg)
+		if len(candidate) > maxPathBytes {
+			return "", errors.New("path too long")
+		}
+		if err := ctx.Err(); err != nil {
+			return "", err
+		}
+		info, err := callCtx.LstatFile(ctx, candidate)
+		if err != nil {
+			// Sandbox boundary or path outside AllowedPaths: treat as
+			// a non-symlink regular entry. The final StatFile call
+			// will reject paths that are truly outside the sandbox.
+			// For any intermediate component that is opaque to us we
+			// simply advance resolved without attempting to follow it.
+			if errors.Is(err, fs.ErrPermission) {
+				resolved = candidate
+				continue
+			}
+			// Propagate any other error (not-found, etc.).
+			return "", err
+		}
+		if info.Mode()&fs.ModeSymlink == 0 {
+			// Regular entry: advance resolved.
+			resolved = candidate
+			continue
+		}
+		// Symlink: follow it, count the hop.
+		hops++
+		if hops > maxSymlinkHops {
+			return "", errors.New("too many levels of symbolic links")
+		}
+		target, err := callCtx.ReadlinkFile(ctx, candidate)
 		if err != nil {
 			return "", err
 		}
-		if !replaced {
-			return filepath.Clean(current), nil
-		}
-		if len(rebuilt) > maxPathBytes {
+		if len(target) > maxPathBytes {
 			return "", errors.New("path too long")
 		}
-		current = rebuilt
-	}
-}
-
-// substituteIntermediateSymlink walks the ancestry of absPath from leaf toward
-// root. The first ancestor that is itself a symlink is resolved and the path is
-// rebuilt with the target substituted (the suffix below the symlink ancestor is
-// preserved). On success returns (newPath, true, nil); when no ancestor is a
-// symlink (or LstatFile rejects an ancestor — typically the sandbox boundary),
-// returns ("", false, nil) to signal the outer loop that absPath is fully
-// canonical for the visible portion of the tree.
-func substituteIntermediateSymlink(ctx context.Context, callCtx *builtins.CallContext, absPath string, hops *int) (string, bool, error) {
-	current := absPath
-	suffix := ""
-	for {
-		if err := ctx.Err(); err != nil {
-			return "", false, err
-		}
-		parent := filepath.Dir(current)
-		if parent == current {
-			// Reached the volume root — no symlink in any ancestor.
-			return "", false, nil
-		}
-		// Extract the trailing component of `current` without using
-		// filepath.Base (which is not in cd's symbol allowlist). After
-		// normalising both sides to forward slashes the basename is the
-		// final segment of the slash-joined form.
-		baseSegments := strings.Split(filepath.ToSlash(current), "/")
-		base := baseSegments[len(baseSegments)-1]
-		if suffix == "" {
-			suffix = base
+		var newBase string
+		if filepath.IsAbs(target) {
+			newBase = target
 		} else {
-			suffix = filepath.Join(base, suffix)
+			// Relative symlink target is relative to the directory
+			// containing the symlink (= resolved, not candidate).
+			newBase = filepath.Join(resolved, target)
 		}
-		info, err := callCtx.LstatFile(ctx, parent)
-		if err != nil {
-			// Parent is opaque to us (sandbox boundary, permission
-			// denied, etc.). We cannot resolve symlinks above this
-			// point; treat the path as canonical from here up.
-			return "", false, nil
-		}
-		if info.Mode()&fs.ModeSymlink != 0 {
-			*hops++
-			if *hops > maxSymlinkHops {
-				return "", false, errors.New("too many levels of symbolic links")
-			}
-			target, err := callCtx.ReadlinkFile(ctx, parent)
-			if err != nil {
-				return "", false, err
-			}
-			if len(target) > maxPathBytes {
-				return "", false, errors.New("path too long")
-			}
-			var rebuilt string
-			if filepath.IsAbs(target) {
-				rebuilt = filepath.Clean(filepath.Join(target, suffix))
-			} else {
-				rebuilt = filepath.Clean(filepath.Join(filepath.Dir(parent), target, suffix))
-			}
-			return rebuilt, true, nil
-		}
-		current = parent
+		// Prepend the symlink's target to the remaining components and
+		// restart the walk so we re-resolve any symlinks within it.
+		rest := parts[i+1:]
+		newParts := strings.Split(filepath.ToSlash(newBase), "/")
+		parts = append(newParts, rest...)
+		i = -1 // will be incremented to 0 by the loop
+		// Reset resolved to the volume root so the new absolute path
+		// starting from newBase's root is walked from scratch.
+		resolved = filepath.VolumeName(newBase) + string(filepath.Separator)
 	}
+	return filepath.Clean(resolved), nil
 }
 
 // lookupVar reads name from the caller's shell environment. When LookupVar
