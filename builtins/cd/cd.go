@@ -177,9 +177,7 @@ func registerFlags(flags *builtins.FlagSet) builtins.HandlerFunc {
 		var (
 			target string
 			// displayOverride, when non-empty, is used as the error-message
-			// label instead of the derived target path. Set for `cd -` so
-			// error messages always read "cd: -: ..." rather than exposing
-			// the internal cwd string.
+			// label instead of the derived target path.
 			displayOverride string
 			// printValue holds the value to print when cd - succeeds.
 			// Bash prints the raw OLDPWD verbatim (preserving trailing
@@ -215,7 +213,10 @@ func registerFlags(flags *builtins.FlagSet) builtins.HandlerFunc {
 			// successful cd -. Empty-but-set OLDPWD: stay in place and
 			// update OLDPWD. Route through the normal path so applyNewWorkDir
 			// fires.
-			displayOverride = "-"
+			// Use oldpwd as the display value in error messages so that
+			// errors read "cd: /no/exist: No such file or directory" (matching
+			// bash) rather than "cd: -: ...".
+			displayOverride = oldpwd
 			printDash = true
 			if oldpwd == "" {
 				target = currentDir()
@@ -296,6 +297,13 @@ func registerFlags(flags *builtins.FlagSet) builtins.HandlerFunc {
 			return builtins.Result{Code: 1}
 		}
 
+		if callCtx.StatFile == nil {
+			// StatFile is always wired in production (via runner_exec.go),
+			// but guard against misconfigured CallContext in tests or
+			// embedded use to avoid a nil-pointer panic.
+			callCtx.Errf("cd: %s: stat not available\n", display)
+			return builtins.Result{Code: 1}
+		}
 		info, err := callCtx.StatFile(ctx, absPath)
 		if err != nil {
 			callCtx.Errf("cd: %s: %s\n", display, formatErr(callCtx, err))

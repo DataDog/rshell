@@ -127,6 +127,22 @@ func TestCdDashWithoutOldpwd(t *testing.T) {
 	assert.Equal(t, "cd: OLDPWD not set\n", stderr)
 }
 
+// TestCdDashErrorShowsOLDPWD verifies that when cd - fails because OLDPWD
+// points to a non-existent directory, the error message shows the OLDPWD
+// value (matching bash: "cd: /no/exist: No such file or directory") rather
+// than the literal dash ("cd: -: ...").
+func TestCdDashErrorShowsOLDPWD(t *testing.T) {
+	skipIfWindowsBackslashScript(t)
+	dir := t.TempDir()
+	// OLDPWD set to a path that does not exist
+	script := "OLDPWD=/no/exist/at/all cd -"
+	_, stderr, code := cmdRun(t, script, dir)
+	assert.Equal(t, 1, code)
+	// Error must name the OLDPWD path, not the literal "-"
+	assert.Contains(t, stderr, "/no/exist/at/all", "error should show the OLDPWD path")
+	assert.NotContains(t, stderr, "cd: -:", "error should not use the literal dash")
+}
+
 func TestCdDashSetsOldpwdToCurrent(t *testing.T) {
 	skipIfWindowsBackslashScript(t)
 	dir := t.TempDir()
