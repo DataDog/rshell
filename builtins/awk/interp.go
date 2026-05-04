@@ -25,6 +25,11 @@ import (
 type runtime struct {
 	callCtx *builtins.CallContext
 
+	// ctx is the execution context set at the start of run(); it is stored
+	// here so that evalExpr/evalCall helpers (e.g. bSub) can check ctx.Err()
+	// without threading a ctx argument through every call.
+	ctx context.Context
+
 	// Globals (scalars and arrays). Awk has no scope distinction.
 	globals map[string]awkValue
 	arrays  map[string]map[string]awkValue
@@ -262,6 +267,7 @@ func isArgvAssignment(s string) bool {
 
 // run is the main driver: BEGIN blocks, then each input file, then END.
 func run(ctx context.Context, r *runtime, prog *program, files []string) (uint8, error) {
+	r.ctx = ctx
 	// Run BEGIN blocks first.
 	for _, rule := range prog.rules {
 		if _, isBegin := rule.pat.(*beginPattern); !isBegin {
@@ -323,8 +329,8 @@ func run(ctx context.Context, r *runtime, prog *program, files []string) (uint8,
 		}
 		if hadFileError {
 			// Run END blocks. Even if END calls exit(N), the file-open error
-			// takes precedence and the exit code stays 2 — matching gawk, which
-			// exits 2 regardless of what END's explicit exit() argument is.
+			// takes precedence and the exit code stays 2 — matching mawk (gawk exits 0
+			// instead, regardless of what END's explicit exit() argument is).
 			if err := runEnd(ctx, r, prog); err != nil {
 				if _, ok := err.(*exitSignal); ok {
 					return 2, nil // END exit() does not override the file-error code

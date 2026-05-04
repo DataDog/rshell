@@ -288,7 +288,13 @@ func (r *runtime) bSub(args []expr, global bool) (awkValue, error) {
 		// replacement text; do it manually.
 		var sb strings.Builder
 		last := 0
-		for _, m := range compiled.FindAllStringSubmatchIndex(s, -1) {
+		for i, m := range compiled.FindAllStringSubmatchIndex(s, -1) {
+			// Check for context cancellation every 1024 iterations so that
+			// a large match set (e.g. gsub(/x*/, "", bigstr)) does not block
+			// the goroutine beyond the shell execution timeout.
+			if i%1024 == 0 && r.ctx != nil && r.ctx.Err() != nil {
+				return uninitValue, r.ctx.Err()
+			}
 			sb.WriteString(s[last:m[0]])
 			expanded, expErr := expandAwkReplacement(replStr, s[m[0]:m[1]])
 			if expErr != nil {

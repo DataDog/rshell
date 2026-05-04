@@ -39,6 +39,8 @@ var builtinFuncs = map[string][2]int{
 var blockedNames = map[string]string{
 	"system":   "system() (command execution) is blocked in the sandboxed shell",
 	"ENVIRON":  "ENVIRON (environment exposure) is blocked in the sandboxed shell",
+	"ARGV":     "ARGV (command-line argument vector) is not populated in the sandboxed shell",
+	"ARGC":     "ARGC (command-line argument count) is not populated in the sandboxed shell",
 	"close":    "close() is not supported (no I/O redirects allowed)",
 	"fflush":   "fflush() is not supported (no I/O redirects allowed)",
 	"getline":  "getline is not supported in this awk implementation",
