@@ -28,10 +28,15 @@ import (
 // shellSafe filters fuzz inputs that would crash the shell parser before
 // the cd builtin sees them. The parser rejects invalid UTF-8 and treats
 // embedded NUL/newlines as syntax errors — neither is interesting to the
-// cd-command pentest. U+0080 (the first C1 control character, encoded as
-// 0xC2 0x80 in UTF-8) is also filtered: mvdan.cc/sh/v3's tokenizer
-// mishandles it inside single/double quotes and reports "reached EOF
-// without closing quote", so the parser fails before cd is ever invoked.
+// cd-command pentest.
+//
+// Some C1 control characters (e.g. U+0080, encoded 0xC2 0x80) trigger a
+// known mvdan.cc/sh/v3 tokenizer quirk inside single/double quotes
+// ("reached EOF without closing quote"). We do *not* filter them here:
+// the parser surfaces a normal exit-1 error which the harness's
+// `code != 0 && code != 1` check tolerates. The seed corpus entry in
+// testdata/fuzz/FuzzCdFlags/be32d37903cefe74 exists as a regression to
+// confirm cd survives that parse failure without panicking.
 func shellSafe(s string) bool {
 	if strings.ContainsAny(s, "\x00\n") {
 		return false

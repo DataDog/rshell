@@ -10,6 +10,7 @@ import (
 	"errors"
 	"io/fs"
 	"os"
+	"path/filepath"
 	"runtime"
 	"testing"
 	"time"
@@ -189,9 +190,14 @@ func (f fakeInfo) IsDir() bool        { return f.mode.IsDir() }
 func (f fakeInfo) Sys() any           { return nil }
 
 func TestResolvePhysicalLoop(t *testing.T) {
-	// /a -> /b -> /a forms an infinite loop; resolvePhysical must stop
-	// after maxSymlinkHops and surface "too many levels of symbolic links".
-	links := map[string]string{"/a": "/b", "/b": "/a"}
+	// Build absolute, platform-correct symlink keys so the test runs on
+	// Windows too (filepath.IsAbs("/a") is false on Windows, which would
+	// otherwise cause resolvePhysical to take the relative-target branch
+	// and never hit the seeded loop). The values are arbitrary keys —
+	// only their relative shape matters for the loop.
+	keyA := filepath.Join(t.TempDir(), "a")
+	keyB := filepath.Join(filepath.Dir(keyA), "b")
+	links := map[string]string{keyA: keyB, keyB: keyA}
 	cc := &builtins.CallContext{
 		LstatFile: func(_ context.Context, p string) (fs.FileInfo, error) {
 			if _, ok := links[p]; ok {
@@ -203,7 +209,7 @@ func TestResolvePhysicalLoop(t *testing.T) {
 			return links[p], nil
 		},
 	}
-	_, err := resolvePhysical(context.Background(), cc, "/a")
+	_, err := resolvePhysical(context.Background(), cc, keyA)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "too many levels of symbolic links")
 }

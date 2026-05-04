@@ -161,12 +161,16 @@ func TestCdNoArgsWithoutHome(t *testing.T) {
 }
 
 func TestCdNoArgsEmptyHome(t *testing.T) {
+	// Bash distinguishes unset HOME (error) from set-but-empty
+	// (silent no-op success). Verify rshell matches: HOME="" cd
+	// returns 0 with no stderr and PWD untouched.
 	dir := t.TempDir()
-	_, stderr, code := runScript(t, "cd", dir,
+	stdout, stderr, code := runScript(t, "cd; echo $PWD", dir,
 		interp.AllowedPaths([]string{dir}),
 		interp.Env("HOME="))
-	assert.Equal(t, 1, code)
-	assert.Equal(t, "cd: HOME not set\n", stderr)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "", stderr)
+	assert.Equal(t, dir+"\n", stdout)
 }
 
 // --- Errors ---

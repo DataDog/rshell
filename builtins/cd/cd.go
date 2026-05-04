@@ -172,16 +172,29 @@ func registerFlags(flags *builtins.FlagSet) builtins.HandlerFunc {
 		switch {
 		case len(args) == 0:
 			home, ok := lookupVar(callCtx, "HOME")
-			if !ok || home == "" {
+			if !ok {
 				callCtx.Errf("cd: HOME not set\n")
 				return builtins.Result{Code: 1}
+			}
+			// Bash distinguishes unset (error) from set-but-empty
+			// (silent no-op success). Match that: if HOME is set
+			// to "", `cd` is a no-op that returns 0 without
+			// touching $PWD/$OLDPWD.
+			if home == "" {
+				return builtins.Result{}
 			}
 			target = home
 		case args[0] == "-":
 			oldpwd, ok := lookupVar(callCtx, "OLDPWD")
-			if !ok || oldpwd == "" {
+			if !ok {
 				callCtx.Errf("cd: OLDPWD not set\n")
 				return builtins.Result{Code: 1}
+			}
+			// Match bash: empty-but-set OLDPWD makes `cd -` a
+			// silent no-op success (rather than the "OLDPWD not
+			// set" error reserved for the unset case).
+			if oldpwd == "" {
+				return builtins.Result{}
 			}
 			target = oldpwd
 			printValue = oldpwd
