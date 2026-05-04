@@ -47,7 +47,7 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 	// interspersed-flag parsing so later -tokens remain NAMEs.
 	fs.SetInterspersed(false)
 
-	help := fs.Bool("help", false, "print usage and exit")
+	help := fs.BoolP("help", "h", false, "print usage and exit")
 	raw := fs.BoolP("raw", "r", false, "do not interpret backslashes")
 	prompt := fs.StringP("prompt", "p", "", "print PROMPT to stderr before reading")
 	delim := fs.StringP("delim", "d", "", "use the first character of DELIM as the line terminator (empty = NUL)")
@@ -256,10 +256,6 @@ func run(ctx context.Context, c *builtins.CallContext, args []string, opt runOpt
 		fmt.Fprint(c.Stderr, opt.prompt)
 	}
 
-	if c.Stdin == nil {
-		return builtins.Result{Code: 1}
-	}
-
 	// -N counts characters (not bytes) and ignores the delimiter. The
 	// length-flag selection (last-set-wins between -n and -N) was
 	// computed at the top of run() into nFixedMode.
@@ -270,11 +266,29 @@ func run(ctx context.Context, c *builtins.CallContext, args []string, opt runOpt
 	case opt.nCharsOrder > 0:
 		charLimit = opt.nChars
 	}
-	// If a deadline is in effect but we could not install it on the OS
-	// file (or stdin is not an *os.File), readInput needs an in-process
-	// poll path so ctx.Done() can interrupt a blocking Read.
-	needsGoroutinePoll := hasDeadline && !deadlineInstalled
+	// readInput needs the goroutine-based poll path whenever the
+	// context can be cancelled — not only when a deadline failed to
+	// install. A kernel-level deadline only fires on expiry; it does
+	// not interrupt a blocking Read in response to caller cancellation
+	// (e.g. an agent aborting the run before the deadline). Treat any
+	// context with a non-nil Done() channel as potentially
+	// cancellable. Direct-Read remains the fast path only when the
+	// context is uncancellable (typically context.Background() — rare
+	// in practice but cheap to keep).
+	needsGoroutinePoll := readCtx.Done() != nil
+	if c.Stdin == nil {
+		// Nil stdin is treated as immediate EOF: fall through to the
+		// assignment loop below so each NAME is cleared to "" before
+		// the function returns 1, matching the EOF behaviour of bash
+		// (and the explicit empty-line + EOF path further down).
+		needsGoroutinePoll = false
+	}
 	line, eof, err := readInput(readCtx, c.Stdin, delim, opt.raw, charLimit, nFixedMode, needsGoroutinePoll)
+	// Belt-and-braces: silence the unused-variable warning for
+	// hasDeadline / deadlineInstalled when their only consumer above
+	// has been simplified out. They remain useful for diagnostics.
+	_ = hasDeadline
+	_ = deadlineInstalled
 	timedOut := false
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, os.ErrDeadlineExceeded) {
@@ -496,6 +510,14 @@ func validVarName(name string) bool {
 // line exactly at the cap (e.g. read -n 1048576 over 1 MiB of ASCII)
 // succeeds; only a write that would exceed the cap is rejected.
 func readInput(ctx context.Context, r io.Reader, delim rune, raw bool, charLimit int, ignoreDelim, useGoroutinePoll bool) (string, bool, error) {
+	if r == nil {
+		// No stdin (default runner configuration): treat as immediate
+		// EOF. The caller's assignment loop will clear each requested
+		// NAME to "", matching bash's behaviour when read hits EOF
+		// before any data, and the empty-line + EOF return surfaces
+		// exit code 1.
+		return "", true, nil
+	}
 	var buf []byte
 
 	// consumed counts every byte we read from r, including bytes that
