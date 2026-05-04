@@ -17,27 +17,25 @@ description: Safe read-only host diagnostics through ./rshell with target help d
 
 ## Fast Workflow
 
-Most file/log investigations should finish in two successful rshell calls, and should almost never need more than three successful file/log calls.
+Most file/log investigations should finish in two successful rshell calls. A third successful file/log call is only for one named missing proof that can change the conclusion.
 
 1. **Discover and inventory.** If roots are provided, make the first root-touching call sandboxed and include `help` plus a labeled inventory for each root: `find <root> -maxdepth 3 -type f | sort | head -n 80`. A help-only call without allowed paths is acceptable only when no root is touched. If a root has no diagnostic logs, say so explicitly.
-2. **Select evidence files.** Pick the likely current component/security/app log, any prompt-named rotated or noise log, and at most two corroborating layers such as proxy, dependency, system, audit, health, or host-mounted logs. Do not inventory again unless the first inventory was incomplete.
-3. **Fuse proof in one call.** Run one labeled script over selected files that captures:
-   - line counts or short heads/tails only when useful for scope;
-   - one bounded `grep -H -n -m 80 -E`-style sample combining prompt terms, incident clock tokens, affected objects, status/error tokens, cause words, actor/source fields, IDs, and recovery words;
-   - `grep -H -c -E` counts for exact alternatives, prompt theories, negative claims, and historical/recovered lookalikes;
-   - one focused correlation or recovery check.
-
-Use a third call only when one missing proof can change the conclusion: source/driver attribution, same-source success absence, downstream impact, dependency/system corroboration, fallback-root proof, certificate time comparison, or supported socket collection. Before running it, name the single missing field it will answer. Do not run a fourth file/log call unless a previous command failed before producing usable evidence.
+2. **Build an evidence matrix.** Pick the likely current component/security/app log, any prompt-named rotated or noise log, and at most two corroborating layers such as proxy, dependency, system, audit, health, or host-mounted logs. In one labeled script over those files, collect:
+   - a short scope marker only if useful (`wc -l`, `head`, or `tail`);
+   - one bounded `grep -H -n -m <limit> -E` sample combining prompt terms, incident clock tokens, affected objects, raw status/error tokens, cause words, actor/source fields, IDs, and recovery words;
+   - `grep -H -c -E` counts for exact alternatives, negative claims, prompt theories, historical/rotated lookalikes, and recovery markers;
+   - one correlation check that joins the cause to user-visible impact or to another layer.
+3. **Stop or fill one gap.** Do not run separate broad, exact, and polishing passes over the same files. Use a third call only for one missing field such as driver/source attribution, same-source success absence, downstream impact, dependency/system corroboration, fallback-root proof, certificate time comparison, or supported socket collection. Before running it, name the single field it will answer.
 
 Stop when cause, time window, affected object, consequence, supported driver/source, and prompt-suggested alternatives are covered. Do not run another broad pass to look exhaustive.
 
 ## Probe Discipline
 
 - Use `probe || true` or final `true` so a non-matching grep does not erase useful output.
-- Search first with prompt terms and observed tokens. Once a likely cause appears, pivot to exact cause/impact/source/recovery counts instead of more generic sweeps.
-- Prefer `grep -H -n -m`, `grep -H -c`, `wc -l`, `head`, `tail`, and short `sed -n` after line numbers are known. Do not set `-m` so low that decisive current, impact, or recovery lines can be skipped; narrow the regex instead of repeating broad searches.
-- For source concentration, use selected-file filters plus `sort | uniq -c | sort` when target help supports the flags.
-- Avoid output blowups: no root-wide recursive grep, long dumps, wide `sed` windows before line numbers, repeated unchanged searches, unsupported shell features, or complex nested host-shell quoting.
+- Search first with prompt terms and observed tokens, then pivot to exact cause/impact/source/recovery counts. If a broad sample misses a prompt-named red herring, query that red herring explicitly before saying it is absent.
+- Prefer `grep -H -n -m`, `grep -H -c`, `wc -l`, `head`, `tail`, and short `sed -n` after line numbers are known. Do not set `-m` so low that decisive current, impact, recovery, or rotated-lookalike lines can be skipped; narrow the regex instead of repeating broad searches.
+- For source concentration, aggregate early with selected-file filters plus `sort | uniq -c | sort` when target help supports the flags, then print only the dominant source's first/last lines and accepted-success lines.
+- Avoid output blowups: no root-wide recursive grep, long dumps, wide `sed` windows before line numbers, repeated unchanged searches, unsupported shell features, unnecessary help pages for simple commands, or complex nested host-shell quoting.
 
 ## Evidence Requirements
 
@@ -46,19 +44,19 @@ Every finding needs transcript evidence for cause, timestamp/window, affected ob
 - Preserve observed filenames, line numbers, dates/times, raw status/error tokens, IDs, routes, check names, sources, users, counts, and key fields. Do not rename values to familiar defaults, correct odd-looking paths, or infer missing values.
 - Put supported drivers in the finding when fields such as source, user, owner, app, job, worker, fanout, pool, active/max, credential ID, transaction ID, or route are present.
 - If cause and user-visible impact start at different times, include both full windows.
-- Dispose of every prompt-named theory or noise source in `Not supported` with scoped counts, dates/windows, source, status, and recovery state when available.
-- Negative claims need exact zero counts or help/runtime evidence with the queried files/window. For authentication, use explicit wording: no successful/accepted login from the suspicious source in the current file/window; accepted successes were from other sources, with those sources listed separately.
-- For fallback layouts, make the empty/primary root and evidence-producing fallback root explicit in `Commands run`, `Finding`, `Evidence`, and `Not supported`.
+- Dispose of every prompt-named theory or noise source in `Not supported` with scoped counts, dates/windows, source, status, and recovery state when available. If a rotated or historical lookalike exists, label it as historical/recovered instead of summarizing it as zero.
+- Negative claims need exact zero counts or help/runtime evidence with the queried files/window. For authentication, write: no successful/accepted login from the suspicious source in the current file/window; accepted successes were from different sources, with their method, account, and source copied from the transcript.
+- For fallback layouts, make the empty/primary root and evidence-producing fallback root explicit in `Commands run`, `Finding`, `Evidence`, and `Not supported`, and say the conclusion uses host-mounted or fallback evidence.
 - For certificate failures, quote the exact certificate/x509 clause, compare observed current time with validity bounds when present, and cite timing, rotation, kubelet/syslog, renewal, or equivalent system evidence before choosing environment timing versus certificate material.
-- For multi-layer incidents, cite separate component/app, user-visible/proxy, and dependency/system/audit evidence when those layers exist. If a selected layer has no matches, say so in `Not supported`.
+- For multi-layer incidents, cite separate component/app, user-visible/proxy, and dependency/system/audit evidence when those layers exist. Include native dependency wording when present, not only the app's summary. If a selected layer has no matches, say so in `Not supported`.
 
-Before finalizing, check a small transcript ledger: evidence file/root, timestamp/window, object, raw cause token, impact token, driver/source, recovery state, and rejected theories. If a field is absent, say it is not proven instead of filling it from defaults or the prompt.
+Before finalizing, check a small transcript ledger: evidence file/root, timestamp/window, object, raw cause token, impact token, driver/source, recovery state, prompt alternatives, historical/rotated lookalikes, and selected layers with no matches. If a field is absent, say it is not proven instead of filling it from defaults or the prompt.
 
 ## Domain Focus
 
-- **Agent/telemetry:** Separate configuration, credential/auth, intake/APM, queue/aggregator/collector/flush, sibling health, and recovery. Pair the cause with same-incident delivery impact, raw status/reason, transaction/config/credential fields, and any exact `since` marker.
-- **HTTP/service:** Name route, numeric status, incident window, backend/dependency failure, and supported driver. Correlate service with proxy and one dependency/system line or count. For resource exhaustion, look for owner/client/fanout and saturation. Reject gateway, feature-flag, cache, DNS, and historical 5xx theories with scoped counts or dates; if a historical/rotated error exists and recovered, say so.
-- **Auth/security:** Aggregate failures by source early, report failed-password/invalid-user patterns and approximate scale, then prove same-source success absence and different-source accepted logins. Avoid compromise wording without same-source success evidence.
+- **Agent/telemetry:** Separate configuration, credential/auth, intake/APM, queue/aggregator/collector/flush, sibling health, and recovery. Pair the cause with same-incident delivery impact, raw status/reason, transaction/config/credential fields, and any exact `since` marker. Enumerate same-object historical lookalikes separately when they have different IDs, lines, dates, or recovery states.
+- **HTTP/service:** Name route, numeric status, incident window, backend/dependency failure, and supported driver. Correlate service with proxy and dependency/system/audit evidence when available. For resource exhaustion, look for owner/client/fanout, active/max or equivalent saturation, and dependency-native error clauses. Reject gateway, feature-flag, cache, DNS, and historical 5xx theories with scoped counts or dates; if a historical/rotated error exists and recovered, say so.
+- **Auth/security:** Aggregate failures by source early, report failed-password/invalid-user patterns and approximate scale, then prove same-source success absence and different-source accepted logins, including method/account/source. Avoid compromise wording without same-source success evidence.
 - **Certificates/container fallback:** Inspect primary and fallback roots in the same sandboxed call. Name the affected check/service, exact certificate error class, evidence-producing root type, and whether evidence points to environment timing or certificate material.
 - **Sockets:** One successful call is usually enough: run `help; help ss; ss -tlnH || ss -tln || true` unless help shows a better supported query. Do not try suggested process/PID flags unless `help ss` lists them. If process flags are absent or socket reads fail, say local listening TCP addresses/ports are the supported target when collection succeeds and process/PID attribution is unavailable; cite help/runtime output.
 
@@ -66,10 +64,10 @@ Before finalizing, check a small transcript ledger: evidence file/root, timestam
 
 Use concise sections:
 
-- `Commands run`: one bullet per recorded rshell invocation. Each bullet stands alone with the exact `./rshell --allow-all-commands` prefix, every literal `--allowed-paths=...`, selected files or socket query, and bounded operation labels/types. For long scripts, summarize labels and regex themes rather than writing fake code; never use ellipses, placeholders, omitted filenames, shortened paths, or `same prefix`.
+- `Commands run`: one bullet per recorded rshell invocation. Repeat the exact `./rshell --allow-all-commands` prefix in every bullet, including every literal `--allowed-paths=...`, selected files or socket query, and bounded operation labels/types. For long scripts, summarize labels and regex themes rather than writing fake code; never use ellipses, placeholders, omitted filenames, shortened paths, or `same prefix`.
 - `Finding`: one sentence naming the likely cause, affected service/check/route/source, supported actor/driver, raw cause/status token, and full incident window. Include user-visible impact time when different. Use only values copied from transcript evidence.
 - `Evidence`: concrete files, line numbers, full dates/times, decisive fragments, counts/statuses, IDs/fields, actor/source, downstream impact, and exact recovery, success, `since`, or zero-count markers.
-- `Not supported`: prompt theories, historical/rotated matches, recovered noise, different-source successes, missing same-source successes, unavailable capabilities, and selected layers with no matches.
+- `Not supported`: prompt theories, historical/rotated matches, recovered noise, different-source successes, missing same-source successes, unavailable capabilities, and selected layers with no matches. Do not omit a prompt-named alternative just because the main cause is clear.
 - `Uncertainty / next checks`: state what is not proven and suggest only safe read-only validation, audit, config/source review, rollback planning, owner follow-up, metric review, or capability follow-up. Do not propose remediation commands.
 
 Final check: recorded calls only; literal allowed paths; finding fields copied from transcript; scoped zero-counts for negative claims; current, historical, recovered, fallback, and different-source evidence labeled; no unsupported socket/PID, real-host, compromise, placeholder-command, shortened-path, invented-token, or remediation claims.
