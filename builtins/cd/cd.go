@@ -385,10 +385,14 @@ func resolvePhysical(ctx context.Context, callCtx *builtins.CallContext, absPath
 		info, err := callCtx.LstatFile(ctx, candidate)
 		if err != nil {
 			// Sandbox boundary or path outside AllowedPaths: treat as
-			// a non-symlink regular entry. The final StatFile call
-			// will reject paths that are truly outside the sandbox.
-			// For any intermediate component that is opaque to us we
-			// simply advance resolved without attempting to follow it.
+			// a non-symlink regular entry. SECURITY: setting
+			// resolved = candidate here does NOT grant access to this
+			// path — it only influences how subsequent ".." components
+			// are resolved. The mandatory StatFile call at the end of
+			// the cd handler is the actual access-control gate and will
+			// reject any out-of-sandbox final target.
+			// For any intermediate component opaque to the sandbox we
+			// simply advance resolved without following it.
 			if errors.Is(err, fs.ErrPermission) {
 				resolved = candidate
 				continue

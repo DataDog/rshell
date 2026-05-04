@@ -199,15 +199,21 @@ func TestCdNoArgsWithoutHome(t *testing.T) {
 
 func TestCdNoArgsEmptyHome(t *testing.T) {
 	// Bash distinguishes unset HOME (error) from set-but-empty
-	// (silent no-op success). Verify rshell matches: HOME="" cd
-	// returns 0 with no stderr and PWD untouched.
+	// (no-op success that still updates OLDPWD to the current dir).
+	// Verify rshell matches bash: HOME="" cd returns 0 with no stderr,
+	// PWD untouched, and OLDPWD updated to the current directory.
+	// Verified: docker run --rm debian:bookworm-slim bash -c
+	// 'cd /tmp; HOME="" cd; echo "exit=$? PWD=$PWD OLDPWD=$OLDPWD"'
+	// Output: exit=0 PWD=/tmp OLDPWD=/tmp
 	dir := t.TempDir()
-	stdout, stderr, code := runScript(t, "cd; echo $PWD", dir,
+	stdout, stderr, code := runScript(t,
+		`cd; printf '%s\n%s\n' "$PWD" "$OLDPWD"`, dir,
 		interp.AllowedPaths([]string{dir}),
 		interp.Env("HOME="))
 	assert.Equal(t, 0, code)
 	assert.Equal(t, "", stderr)
-	assert.Equal(t, dir+"\n", stdout)
+	// $PWD unchanged and $OLDPWD updated to the current dir (bash behaviour).
+	assert.Equal(t, dir+"\n"+dir+"\n", stdout)
 }
 
 // --- Errors ---
