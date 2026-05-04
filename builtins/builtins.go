@@ -12,6 +12,7 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"runtime"
 	"sort"
 	"syscall"
 	"time"
@@ -201,12 +202,28 @@ func (c *CallContext) Errf(format string, a ...any) {
 	fmt.Fprintf(c.Stderr, format, a...)
 }
 
-// IsBrokenPipe reports whether err is a broken-pipe (EPIPE) error,
-// which occurs when writing to a pipe whose read end has been closed.
-// In bash this triggers SIGPIPE which silently terminates the writer;
-// builtins should use this to suppress error messages on pipe closure.
+// IsBrokenPipe reports whether err is a broken-pipe error returned by
+// writing to a pipe whose read end has been closed. In bash this triggers
+// SIGPIPE which silently terminates the writer; builtins should use this
+// to suppress error messages on pipe closure. Cross-platform:
+//   - Unix: syscall.EPIPE (errno 32).
+//   - Windows: ERROR_BROKEN_PIPE (109) or ERROR_NO_DATA (232). Go's os.File.Write
+//     does not normalise these to syscall.EPIPE on Windows.
 func IsBrokenPipe(err error) bool {
-	return err != nil && errors.Is(err, syscall.EPIPE)
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, syscall.EPIPE) {
+		return true
+	}
+	if runtime.GOOS == "windows" {
+		var errno syscall.Errno
+		if errors.As(err, &errno) {
+			// 109 = ERROR_BROKEN_PIPE; 232 = ERROR_NO_DATA ("the pipe is being closed").
+			return errno == 109 || errno == 232
+		}
+	}
+	return false
 }
 
 // FileID is a comparable file identity for cycle detection.
