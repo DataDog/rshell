@@ -22,16 +22,14 @@
 //
 //	-s SIZE, --size=SIZE
 //	    Set or adjust the file size to SIZE bytes. SIZE is a non-negative
-//	    integer with an optional suffix:
+//	    integer with an optional suffix. The leading letter is case-
+//	    insensitive (K = k, M = m, G = g, T = t); the trailing characters
+//	    are case-sensitive ("B" and "iB" must use exact casing):
 //
-//	        K = k = KiB = 1024         KB = 1000
-//	        M = m = MiB = 1024^2       MB = 1000^2
-//	        G = g = GiB = 1024^3       GB = 1000^3
-//	        T = t = TiB = 1024^4       TB = 1000^4
-//
-//	    The bare single-letter forms accept either case. The "iB" and "B"
-//	    multi-letter forms are case-sensitive on the leading letter, as
-//	    GNU truncate does.
+//	        K = k = KiB = kiB = 1024         KB = kB = 1000
+//	        M = m = MiB = miB = 1024^2       MB = mB = 1000^2
+//	        G = g = GiB = giB = 1024^3       GB = gB = 1000^3
+//	        T = t = TiB = tiB = 1024^4       TB = tB = 1000^4
 //
 //	-c, --no-create
 //	    Do not create files that do not already exist. With -c, missing
@@ -167,10 +165,10 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 // sizeMultipliers maps suffix tokens accepted by -s to their byte
 // multipliers, matching GNU coreutils:
 //
-//   - bare single-letter binary forms accept either case (K=k=KiB=1024)
-//   - the explicit "B" decimal forms (KB, MB, GB, TB) and the "iB" forms
-//     (KiB, MiB, GiB, TiB) are case-sensitive on the leading letter, as
-//     GNU truncate does
+//   - the leading letter is case-insensitive (K = k, M = m, G = g, T = t)
+//   - the trailing characters are case-sensitive: "B" (decimal, 1000-based)
+//     and "iB" (binary, 1024-based) must use the exact casing shown — GNU
+//     accepts "kB" and "kiB" but rejects "KIB", "KIb", "kIB", etc.
 //
 // "" maps to 1 so a bare digit string falls through with no multiplication.
 var sizeMultipliers = map[string]int64{
@@ -178,19 +176,27 @@ var sizeMultipliers = map[string]int64{
 	"K":   1 << 10,
 	"k":   1 << 10,
 	"KiB": 1 << 10,
+	"kiB": 1 << 10,
 	"KB":  1000,
+	"kB":  1000,
 	"M":   1 << 20,
 	"m":   1 << 20,
 	"MiB": 1 << 20,
+	"miB": 1 << 20,
 	"MB":  1000 * 1000,
+	"mB":  1000 * 1000,
 	"G":   1 << 30,
 	"g":   1 << 30,
 	"GiB": 1 << 30,
+	"giB": 1 << 30,
 	"GB":  1000 * 1000 * 1000,
+	"gB":  1000 * 1000 * 1000,
 	"T":   1 << 40,
 	"t":   1 << 40,
 	"TiB": 1 << 40,
+	"tiB": 1 << 40,
 	"TB":  1000 * 1000 * 1000 * 1000,
+	"tB":  1000 * 1000 * 1000 * 1000,
 }
 
 // parseSize parses the value of -s/--size into a non-negative byte count.
@@ -198,14 +204,14 @@ var sizeMultipliers = map[string]int64{
 // The grammar matches GNU truncate:
 //
 //	size := digit+ suffix?
-//	suffix := "K" | "k" | "KB" | "KiB" |
-//	         "M" | "m" | "MB" | "MiB" |
-//	         "G" | "g" | "GB" | "GiB" |
-//	         "T" | "t" | "TB" | "TiB"
+//	suffix := [Kk] | [Kk]B | [Kk]iB |
+//	         [Mm] | [Mm]B | [Mm]iB |
+//	         [Gg] | [Gg]B | [Gg]iB |
+//	         [Tt] | [Tt]B | [Tt]iB
 //
-// The bare single-letter binary forms accept either case; the multi-letter
-// "B" decimal and "iB" binary forms are case-sensitive on the leading
-// letter (e.g. "KB" is accepted, "kB" is not — GNU rejects it too).
+// The leading letter is case-insensitive; the trailing "B" and "iB"
+// characters must use exact casing (GNU accepts "1kB" and "1kiB" but
+// rejects "1KIB", "1KIb", "1kIB", etc.).
 //
 // Leading +/-/<>//% modifiers (the GNU relative-size syntax) are rejected
 // with errRelativeSize so the caller can surface a hint that these forms

@@ -37,7 +37,7 @@ The in-shell `help` command mirrors these feature categories: run `help` for a c
 - ✅ `test EXPRESSION` / `[ EXPRESSION ]` — evaluate conditional expression (file tests, string/integer comparison, logical operators)
 - ✅ `tr [-cdsCt] SET1 [SET2]` — translate, squeeze, and/or delete characters from stdin
 - ✅ `true` — return exit code 0
-- ✅ `truncate [-c] -s SIZE FILE...` — shrink or extend each FILE to SIZE bytes inside `AllowedPaths` (creates files unless `-c`); `-s` accepts `K`/`k`/`KiB`/`KB`/`M`/`m`/`MiB`/`MB`/`G`/`g`/`GiB`/`GB`/`T`/`t`/`TiB`/`TB` suffixes (binary or decimal); `-r`/`--reference`, `-o`/`--io-blocks`, and the GNU relative-size modifiers (`+N`/`-N`/`<N`/`>N`/`/N`/`%N`) are rejected
+- ✅ `truncate [-c] -s SIZE FILE...` — shrink or extend each FILE to SIZE bytes inside `AllowedPaths` (creates files unless `-c`); `-s` accepts the GNU suffix grammar where the leading letter is case-insensitive and the trailing `B`/`iB` is case-sensitive (e.g. `1k`/`1K`/`1kiB`/`1KiB` = 1024, `1kB`/`1KB` = 1000, same for `M`/`G`/`T`); `-r`/`--reference`, `-o`/`--io-blocks`, and the GNU relative-size modifiers (`+N`/`-N`/`<N`/`>N`/`/N`/`%N`) are rejected
 - ✅ `uname [-asnrvm]` — print system information (Linux only; reads from `/proc/sys/kernel/`, respects `--proc-path`)
 - ✅ `uniq [OPTION]... [INPUT]` — report or omit repeated lines
 - ✅ `wc [-l] [-w] [-c] [-m] [-L] [FILE]...` — count lines, words, bytes, characters, or max line length

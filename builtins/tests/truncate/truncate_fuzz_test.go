@@ -32,12 +32,13 @@ func FuzzTruncateSize(f *testing.F) {
 	f.Add("99999999999999999999") // far past int64.
 	f.Add("00000000000000000000")
 
-	// Every accepted suffix.
+	// Every accepted suffix (the leading letter is case-insensitive in
+	// every form GNU truncate accepts).
 	for _, s := range []string{
-		"K", "k", "KB", "KiB",
-		"M", "m", "MB", "MiB",
-		"G", "g", "GB", "GiB",
-		"T", "t", "TB", "TiB",
+		"K", "k", "KB", "kB", "KiB", "kiB",
+		"M", "m", "MB", "mB", "MiB", "miB",
+		"G", "g", "GB", "gB", "GiB", "giB",
+		"T", "t", "TB", "tB", "TiB", "tiB",
 	} {
 		f.Add("0" + s)
 		f.Add("1" + s)
@@ -66,7 +67,8 @@ func FuzzTruncateSize(f *testing.F) {
 	f.Add("0x10")
 	f.Add("0b10")
 	f.Add("1KIB")
-	f.Add("1kB")
+	f.Add("1Kib")
+	f.Add("1kb")
 	f.Add("1MiB1")
 	f.Add("K")
 	f.Add("KB")

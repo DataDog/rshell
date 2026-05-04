@@ -25,26 +25,36 @@ func TestParseSizeAccepts(t *testing.T) {
 		{"123456", 123456},
 		{"9223372036854775807", math.MaxInt64}, // exact int64 ceiling.
 
-		// Binary suffixes (1024-based) — both cases.
+		// Binary suffixes (1024-based). Leading letter is case-insensitive;
+		// the trailing "iB" must keep exact casing.
 		{"1K", 1 << 10},
 		{"1k", 1 << 10},
 		{"1KiB", 1 << 10},
+		{"1kiB", 1 << 10},
 		{"2K", 2 << 10},
 		{"1M", 1 << 20},
 		{"1m", 1 << 20},
 		{"1MiB", 1 << 20},
+		{"1miB", 1 << 20},
 		{"1G", 1 << 30},
 		{"1g", 1 << 30},
 		{"1GiB", 1 << 30},
+		{"1giB", 1 << 30},
 		{"1T", 1 << 40},
 		{"1t", 1 << 40},
 		{"1TiB", 1 << 40},
+		{"1tiB", 1 << 40},
 
-		// Decimal suffixes (1000-based) — case-sensitive on the leading letter.
+		// Decimal suffixes (1000-based). Same rule: leading letter
+		// case-insensitive, trailing "B" must be uppercase.
 		{"1KB", 1000},
+		{"1kB", 1000},
 		{"1MB", 1000 * 1000},
+		{"1mB", 1000 * 1000},
 		{"1GB", 1000 * 1000 * 1000},
+		{"1gB", 1000 * 1000 * 1000},
 		{"1TB", 1000 * 1000 * 1000 * 1000},
+		{"1tB", 1000 * 1000 * 1000 * 1000},
 
 		// Zero with suffix is still zero.
 		{"0K", 0},
@@ -76,8 +86,12 @@ func TestParseSizeRejects(t *testing.T) {
 		{" 10", errInvalidSize}, // leading whitespace.
 		{"abc", errInvalidSize},
 		{"1.5", errInvalidSize},  // floats not supported.
-		{"1KIB", errInvalidSize}, // multi-letter suffix is case-sensitive.
-		{"1kB", errInvalidSize},  // GNU rejects mixed-case "kB" too.
+		{"1KIB", errInvalidSize}, // GNU rejects all-caps "iB".
+		{"1Kib", errInvalidSize}, // and lowercase "ib".
+		{"1KIb", errInvalidSize}, // and "Ib".
+		{"1kIB", errInvalidSize}, // any non-"iB" trailing form is invalid.
+		{"1kb", errInvalidSize},  // trailing "b" must be uppercase.
+		{"1Kb", errInvalidSize},
 		{"1XB", errInvalidSize},
 		{"1KB1", errInvalidSize},  // trailing junk.
 		{"1Ki", errInvalidSize},   // partial "iB" suffix.

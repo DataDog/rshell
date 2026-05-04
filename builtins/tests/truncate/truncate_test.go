@@ -275,7 +275,7 @@ func TestTruncateRejectsRelativeSize(t *testing.T) {
 // TestTruncateRejectsInvalidSize verifies non-numeric and overflow inputs
 // produce exit 1 with the generic "invalid size" message.
 func TestTruncateRejectsInvalidSize(t *testing.T) {
-	cases := []string{"abc", "1.5", "9999999999999999999999", "1KIB", "1kB"}
+	cases := []string{"abc", "1.5", "9999999999999999999999", "1KIB", "1kb", "1Kib"}
 	for _, c := range cases {
 		t.Run(c, func(t *testing.T) {
 			dir := t.TempDir()
