@@ -1,0 +1,9 @@
+description: using an array variable as a scalar in a scalar context is a fatal runtime error.
+skip_assert_against_bash: true  # mawk silently prints empty string; our awk follows gawk behaviour and errors.
+input:
+  script: |+
+    awk 'BEGIN{split("x", a); print a}'
+expect:
+  stdout: |+
+  stderr_contains: ["array"]
+  exit_code: 1

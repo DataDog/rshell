@@ -995,6 +995,9 @@ func (r *runtime) evalExpr(e expr) (awkValue, error) {
 		}
 		return numValue(0), nil
 	case *identExpr:
+		if _, isArray := r.arrays[v.name]; isArray {
+			return uninitValue, fmt.Errorf("illegal use of array %q in a scalar context", v.name)
+		}
 		return r.lookupScalar(v.name), nil
 	case *fieldExpr:
 		idxVal, err := r.evalExpr(v.index)
