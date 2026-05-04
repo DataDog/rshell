@@ -263,6 +263,12 @@ type Result struct {
 	// $PWD, and $OLDPWD. The builtin must validate accessibility (e.g. via
 	// callCtx.StatFile) before signalling a change.
 	//
+	// SECURITY: NewWorkDir is applied by the runner without a second sandbox
+	// check. Every builtin that sets this field MUST call callCtx.StatFile on
+	// the target path before returning, so the sandbox has already validated it.
+	// A future builtin returning a non-empty NewWorkDir without that call could
+	// set the runner's working directory to an unvalidated path.
+	//
 	// Side effect: when NewWorkDir is non-empty and Code is 0, the runner
 	// suppresses the inline-assignment restore of $PWD and $OLDPWD after
 	// the command returns (matching bash semantics for `OLDPWD=X cd -`).

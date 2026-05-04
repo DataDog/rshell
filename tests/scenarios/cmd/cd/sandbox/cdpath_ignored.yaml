@@ -1,0 +1,21 @@
+# Security: $CDPATH is intentionally not consulted by cd to prevent
+# environment-variable path injection (see SHELL_FEATURES.md).
+description: $CDPATH is ignored — cd resolves against $PWD only.
+skip_assert_against_bash: true # bash honours CDPATH; rshell intentionally does not
+setup:
+  files:
+    - path: sub/keep
+      content: ""
+    - path: trap/keep
+      content: ""
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    CDPATH="$DIR/trap"
+    cd sub
+    echo ok
+expect:
+  stdout: |+
+    ok
+  stderr: ""
+  exit_code: 0
