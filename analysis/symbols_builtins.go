@@ -51,6 +51,7 @@ var builtinPerCommandSymbols = map[string][]string{
 		"math.Log",             // 🟢 pure arithmetic function; no I/O.
 		"math.NaN",             // 🟢 returns IEEE 754 NaN value; pure function, no I/O.
 		"math.MaxInt64",        // 🟢 integer constant; no side effects.
+		"math.MaxUint32",       // 🟢 integer constant; no side effects.
 		"math.MinInt64",        // 🟢 integer constant; no side effects.
 		"math.Mod",             // 🟢 pure arithmetic function; no I/O.
 		"math.Pow",             // 🟢 pure arithmetic function; no I/O.
@@ -530,6 +531,7 @@ var builtinAllowedSymbols = []string{
 	"math.MaxInt32",                                       // 🟢 integer constant; no side effects.
 	"math.MaxInt64",                                       // 🟢 integer constant; no side effects.
 	"math.MaxUint64",                                      // 🟢 integer constant; no side effects.
+	"math.MaxUint32",                                      // 🟢 integer constant; no side effects.
 	"math.MinInt32",                                       // 🟢 integer constant; no side effects.
 	"math.MinInt64",                                       // 🟢 integer constant; no side effects.
 	"math.Mod",                                            // 🟢 pure arithmetic function; no I/O.
