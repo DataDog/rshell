@@ -1,0 +1,9 @@
+description: for (k in ENVIRON) is rejected at parse time.
+skip_assert_against_bash: true
+input:
+  script: |+
+    awk 'BEGIN { for (k in ENVIRON) print k }'
+expect:
+  stdout: ""
+  stderr_contains: ["ENVIRON"]
+  exit_code: 1

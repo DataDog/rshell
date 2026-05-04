@@ -1,0 +1,9 @@
+description: (k in ENVIRON) membership test is rejected at parse time.
+skip_assert_against_bash: true
+input:
+  script: |+
+    awk 'BEGIN { if ("PATH" in ENVIRON) print "yes" }'
+expect:
+  stdout: ""
+  stderr_contains: ["ENVIRON"]
+  exit_code: 1
