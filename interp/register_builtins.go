@@ -11,6 +11,7 @@ import (
 	"github.com/DataDog/rshell/builtins"
 	breakcmd "github.com/DataDog/rshell/builtins/break"
 	"github.com/DataDog/rshell/builtins/cat"
+	"github.com/DataDog/rshell/builtins/cd"
 	continuecmd "github.com/DataDog/rshell/builtins/continue"
 	"github.com/DataDog/rshell/builtins/cut"
 	"github.com/DataDog/rshell/builtins/echo"
@@ -45,6 +46,7 @@ func registerBuiltins() {
 		for _, cmd := range []builtins.Command{
 			breakcmd.Cmd,
 			cat.Cmd,
+			cd.Cmd,
 			cut.Cmd,
 			continuecmd.Cmd,
 			echo.Cmd,

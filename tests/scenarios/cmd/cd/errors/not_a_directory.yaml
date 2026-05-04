@@ -1,0 +1,15 @@
+# Derived from POSIX: cd into a regular file is an error.
+description: cd into a regular file reports "not a directory".
+setup:
+  files:
+    - path: regular.txt
+      content: "hello\n"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    cd regular.txt
+expect:
+  stdout: ""
+  stderr: |+
+    cd: regular.txt: not a directory
+  exit_code: 1

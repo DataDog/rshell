@@ -1,0 +1,11 @@
+# RULES.md mandate: every command must register -h alongside --help.
+description: cd -h prints usage to stdout and exits 0.
+skip_assert_against_bash: true # bash builtin cd does not accept -h.
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    cd -h
+expect:
+  stdout_contains: ["Usage: cd"]
+  stderr: ""
+  exit_code: 0

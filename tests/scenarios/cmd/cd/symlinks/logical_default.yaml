@@ -1,0 +1,17 @@
+# Derived from POSIX cd: -L keeps the symlink path in $PWD.
+description: cd -L (default) preserves the symlink path in $PWD.
+setup:
+  files:
+    - path: real/keep
+      content: ""
+    - path: alias
+      symlink: real
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    cd alias
+    echo "$PWD"
+expect:
+  stdout_contains: ["/alias"]
+  stderr: ""
+  exit_code: 0

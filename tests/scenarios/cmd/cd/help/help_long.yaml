@@ -1,0 +1,11 @@
+# RULES.md mandate: every command must register --help.
+description: cd --help prints usage to stdout and exits 0.
+skip_assert_against_bash: true # help wording differs across shells.
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    cd --help
+expect:
+  stdout_contains: ["Usage: cd", "--logical", "--physical"]
+  stderr: ""
+  exit_code: 0

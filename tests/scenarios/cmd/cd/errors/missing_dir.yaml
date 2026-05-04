@@ -1,0 +1,10 @@
+# Derived from GNU bash: cd into a nonexistent directory errors.
+description: cd into a nonexistent path reports "no such file or directory".
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    cd does-not-exist
+expect:
+  stdout: ""
+  stderr_contains: ["cd: does-not-exist", "no such file or directory"]
+  exit_code: 1

@@ -1,0 +1,19 @@
+# Derived from GNU bash: `cd -` swaps PWD and OLDPWD on success.
+description: cd - swaps the values of $PWD and $OLDPWD.
+setup:
+  files:
+    - path: sub/keep
+      content: ""
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    BEFORE="$PWD"
+    cd sub
+    AFTER="$PWD"
+    cd - >/dev/null
+    [ "$PWD" = "$BEFORE" ] && [ "$OLDPWD" = "$AFTER" ] && echo ok
+expect:
+  stdout: |+
+    ok
+  stderr: ""
+  exit_code: 0

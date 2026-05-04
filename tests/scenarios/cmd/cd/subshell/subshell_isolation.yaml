@@ -1,0 +1,16 @@
+# Derived from POSIX shell semantics: cd in a subshell does not affect the parent.
+description: cd inside a subshell does not change the parent's $PWD.
+setup:
+  files:
+    - path: sub/keep
+      content: ""
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    PARENT="$PWD"
+    (cd sub; echo "$PWD")
+    [ "$PWD" = "$PARENT" ] && echo ok
+expect:
+  stdout_contains: ["/sub", "ok"]
+  stderr: ""
+  exit_code: 0

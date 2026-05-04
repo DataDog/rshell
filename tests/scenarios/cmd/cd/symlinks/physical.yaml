@@ -1,0 +1,17 @@
+# Derived from POSIX cd -P: must resolve symlinks in $PWD.
+description: cd -P resolves the symlink in $PWD.
+setup:
+  files:
+    - path: real/keep
+      content: ""
+    - path: alias
+      symlink: real
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    cd -P alias
+    echo "$PWD"
+expect:
+  stdout_contains: ["/real"]
+  stderr: ""
+  exit_code: 0

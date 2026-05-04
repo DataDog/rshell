@@ -36,6 +36,36 @@ func (r *Runner) errf(format string, a ...any) {
 	fmt.Fprintf(r.stderr, format, a...)
 }
 
+// applyNewWorkDir is invoked by call() after a builtin (cd) returns a
+// non-empty Result.NewWorkDir on a successful exit. It rotates the
+// previous directory into $OLDPWD (only when non-empty, since an empty
+// $OLDPWD is the sentinel that disables `cd -`), installs the new
+// directory as r.Dir, and refreshes $PWD so that subsequent path
+// resolution and parameter expansion reflect the change.
+//
+// The builtin is expected to have already validated newDir against the
+// sandbox; this method only performs state mutation.
+func (r *Runner) applyNewWorkDir(newDir string) {
+	old := r.Dir
+	r.Dir = newDir
+	if old != "" {
+		r.setVarString("OLDPWD", old)
+	}
+	r.setVarString("PWD", newDir)
+}
+
+// lookupVarString returns the string value of a shell variable and a
+// boolean indicating whether it was set. It is the bridge between
+// builtins.CallContext.LookupVar and Runner.lookupVar so the closure does
+// not need to be duplicated at every CallContext construction site.
+func (r *Runner) lookupVarString(name string) (string, bool) {
+	vr := r.lookupVar(name)
+	if !vr.IsSet() {
+		return "", false
+	}
+	return vr.String(), true
+}
+
 func (r *Runner) stop(ctx context.Context) bool {
 	if r.exit.exiting {
 		return true

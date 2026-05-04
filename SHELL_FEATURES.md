@@ -7,6 +7,7 @@ Blocked features are rejected before execution with exit code 2.
 
 - ✅ `break` — exit the innermost `for` loop
 - ✅ `cat [-AbeEnstTuv] [FILE]...` — concatenate files to stdout; supports line numbering, blank squeezing, and non-printing character display
+- ✅ `cd [-L|-P] [DIR]` — change the working directory; bare `cd` uses `$HOME`, `cd -` switches to `$OLDPWD` and prints the new directory; `-P` resolves symlinks (capped at 40 hops); failure leaves `$PWD`/`$OLDPWD` untouched; subshell scope mirrors bash (`(cd …)` does not leak)
 - ✅ `continue` — skip to the next iteration of the innermost `for` loop
 - ✅ `cut [-b LIST|-c LIST|-f LIST] [-d DELIM] [-s] [-n] [--complement] [--output-delimiter=STRING] [FILE]...` — remove sections from each line of files
 - ✅ `echo [-neE] [ARG]...` — write arguments to stdout; `-n` suppresses trailing newline, `-e` enables backslash escapes, `-E` disables them (default)

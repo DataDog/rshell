@@ -1,0 +1,12 @@
+# Derived from POSIX: cd - without OLDPWD set is an error.
+description: cd - errors when OLDPWD is unset.
+skip_assert_against_bash: true # bash inherits an OLDPWD from the test harness env.
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    cd -
+expect:
+  stdout: ""
+  stderr: |+
+    cd: OLDPWD not set
+  exit_code: 1

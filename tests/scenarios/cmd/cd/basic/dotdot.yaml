@@ -1,0 +1,16 @@
+# Derived from GNU bash semantics: cd .. ascends one level.
+description: cd .. ascends out of a subdirectory.
+setup:
+  files:
+    - path: a/b/keep
+      content: ""
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    cd a/b
+    cd ..
+    echo "$PWD"
+expect:
+  stdout_contains: ["/a"]
+  stderr: ""
+  exit_code: 0

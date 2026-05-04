@@ -1,0 +1,19 @@
+# Hardening: a failed cd must not mutate $PWD/$OLDPWD.
+description: A failed cd leaves $PWD and $OLDPWD untouched.
+setup:
+  files:
+    - path: good/keep
+      content: ""
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    cd good
+    GOOD="$PWD"
+    GOOD_OLD="$OLDPWD"
+    cd does-not-exist
+    [ "$PWD" = "$GOOD" ] && [ "$OLDPWD" = "$GOOD_OLD" ] && echo ok
+expect:
+  stdout: |+
+    ok
+  stderr_contains: ["no such file or directory"]
+  exit_code: 0

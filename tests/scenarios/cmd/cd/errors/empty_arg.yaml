@@ -1,0 +1,12 @@
+# Hardening: an empty path is treated as a missing directory.
+description: cd with an empty-string argument errors with no-such-file.
+skip_assert_against_bash: true # bash treats empty arg as a no-op success on some versions.
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    cd ""
+expect:
+  stdout: ""
+  stderr: |+
+    cd: : no such file or directory
+  exit_code: 1

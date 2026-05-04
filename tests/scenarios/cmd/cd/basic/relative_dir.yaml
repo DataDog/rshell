@@ -1,0 +1,15 @@
+# Derived from GNU bash test: cd into a relative subdirectory and verify $PWD.
+description: cd into a relative subdirectory updates $PWD.
+setup:
+  files:
+    - path: child/keep
+      content: ""
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    cd child
+    echo "$PWD"
+expect:
+  stdout_contains: ["/child"]
+  stderr: ""
+  exit_code: 0

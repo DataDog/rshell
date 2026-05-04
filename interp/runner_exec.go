@@ -397,11 +397,16 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 				CommandAllowed: func(n string) bool {
 					return r.allowAllCommands || r.allowedCommands[n]
 				},
+				LookupVar: r.lookupVarString,
 			}
 			if r.stdin != nil {
 				child.Stdin = r.stdin
 			}
 			result := cmdFn(ctx, child, cmdArgs)
+			// NewWorkDir is intentionally NOT applied here. This closure
+			// runs builtins invoked from another builtin (e.g. find -exec)
+			// against a caller-supplied dir; mutating r.Dir would leak
+			// per-invocation state into the outer shell.
 			return result.Code, nil
 		}
 		call := &builtins.CallContext{
@@ -459,6 +464,13 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 			CommandAllowed: func(cmdName string) bool {
 				return r.allowAllCommands || r.allowedCommands[cmdName]
 			},
+			LookupVar: func(name string) (string, bool) {
+				vr := r.lookupVar(name)
+				if !vr.IsSet() {
+					return "", false
+				}
+				return vr.String(), true
+			},
 			RunCommand: runCmd,
 			Proc:       r.proc,
 		}
@@ -470,6 +482,9 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 		r.exit.exiting = result.Exiting
 		r.breakEnclosing = result.BreakN
 		r.contnEnclosing = result.ContinueN
+		if result.Code == 0 && result.NewWorkDir != "" {
+			r.applyNewWorkDir(result.NewWorkDir)
+		}
 		return
 	}
 	// Allowed but not known: the default execHandler (noExecHandler) will

@@ -177,6 +177,11 @@ type CallContext struct {
 	// Used by builtins that need to compute absolute paths for sub-operations.
 	WorkDir func() string
 
+	// LookupVar returns the value of a shell variable and whether it is set.
+	// Used by cd to read $HOME and $OLDPWD; the value is the empty string and
+	// ok is false when the variable has never been assigned.
+	LookupVar func(name string) (value string, ok bool)
+
 	// RunCommand executes a builtin command within the shell's sandbox.
 	// dir overrides the working directory for path resolution.
 	// Returns the command's exit code.
@@ -230,6 +235,13 @@ type Result struct {
 
 	// ContinueN > 0 means continue from N enclosing loops.
 	ContinueN int
+
+	// NewWorkDir, when non-empty, is an absolute, validated path that the
+	// runner adopts as the shell's new working directory before continuing.
+	// Set by the "cd" builtin; the runner is responsible for updating r.Dir,
+	// $PWD, and $OLDPWD. The builtin must validate accessibility (e.g. via
+	// callCtx.StatFile) before signalling a change.
+	NewWorkDir string
 }
 
 var registry = map[string]HandlerFunc{}

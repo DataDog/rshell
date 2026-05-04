@@ -1,0 +1,11 @@
+# Hardening: unknown flags must be rejected by pflag.
+description: cd rejects unknown long flags.
+skip_assert_against_bash: true # bash and pflag emit different error wording.
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    cd --no-such-flag
+expect:
+  stdout: ""
+  stderr_contains: ["cd:"]
+  exit_code: 1

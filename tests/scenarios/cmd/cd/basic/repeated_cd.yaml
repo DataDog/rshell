@@ -1,0 +1,20 @@
+# Derived from GNU bash: cd remembers only the immediate previous directory.
+description: Successive cd calls keep $OLDPWD as the immediate previous directory.
+setup:
+  files:
+    - path: a/keep
+      content: ""
+    - path: b/keep
+      content: ""
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    cd a
+    A_PWD="$PWD"
+    cd ../b
+    [ "$OLDPWD" = "$A_PWD" ] && echo ok
+expect:
+  stdout: |+
+    ok
+  stderr: ""
+  exit_code: 0

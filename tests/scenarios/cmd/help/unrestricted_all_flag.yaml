@@ -5,11 +5,12 @@ input:
     help --all
 expect:
   stdout: |+
-    rshell (dev) — All 28 builtins available
+    rshell (dev) — All 29 builtins available
 
     [         evaluate conditional expression
     break     exit from a loop
     cat       concatenate and print files
+    cd        change the working directory
     continue  continue a loop iteration
     cut       remove sections from each line
     echo      write arguments to stdout

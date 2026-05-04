@@ -6,7 +6,7 @@ input:
     help --all
 expect:
   stdout: |+
-    rshell (dev) — 2 of 28 builtins enabled
+    rshell (dev) — 2 of 29 builtins enabled
 
     echo  write arguments to stdout
     help  display help for commands
@@ -15,6 +15,7 @@ expect:
     [         evaluate conditional expression
     break     exit from a loop
     cat       concatenate and print files
+    cd        change the working directory
     continue  continue a loop iteration
     cut       remove sections from each line
     exit      exit the shell

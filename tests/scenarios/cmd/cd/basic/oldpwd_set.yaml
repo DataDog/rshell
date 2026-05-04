@@ -1,0 +1,17 @@
+# Derived from GNU bash: a successful cd records the previous directory in OLDPWD.
+description: A successful cd records the previous directory in $OLDPWD.
+setup:
+  files:
+    - path: sub/keep
+      content: ""
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    BEFORE="$PWD"
+    cd sub
+    [ "$OLDPWD" = "$BEFORE" ] && echo ok
+expect:
+  stdout: |+
+    ok
+  stderr: ""
+  exit_code: 0

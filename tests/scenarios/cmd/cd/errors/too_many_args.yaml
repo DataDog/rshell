@@ -1,0 +1,12 @@
+# Derived from POSIX: cd with more than one operand is an error.
+description: cd with multiple positional arguments errors.
+skip_assert_against_bash: true # bash silently accepts >1 arg in some configurations.
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    cd a b
+expect:
+  stdout: ""
+  stderr: |+
+    cd: too many arguments
+  exit_code: 1

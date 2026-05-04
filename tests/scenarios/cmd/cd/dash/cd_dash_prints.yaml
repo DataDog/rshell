@@ -1,0 +1,17 @@
+# Derived from POSIX cd -: must print the resolved directory after switching.
+description: cd - prints the resolved directory and switches to OLDPWD.
+setup:
+  files:
+    - path: sub/keep
+      content: ""
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    BEFORE="$PWD"
+    cd sub
+    cd -
+expect:
+  # The output is the dir we switched back to (BEFORE / the test temp dir).
+  stdout_contains: ["/"]
+  stderr: ""
+  exit_code: 0

@@ -1,0 +1,12 @@
+# Derived from POSIX cd: with no operand and HOME unset, cd is an error.
+description: cd with no argument and HOME unset reports "HOME not set".
+skip_assert_against_bash: true # bash inherits HOME from the test harness env.
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    cd
+expect:
+  stdout: ""
+  stderr: |+
+    cd: HOME not set
+  exit_code: 1

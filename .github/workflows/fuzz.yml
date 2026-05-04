@@ -24,6 +24,9 @@ jobs:
           - pkg: ./builtins/tests/cat/
             name: cat
             corpus_path: builtins/tests/cat
+          - pkg: ./builtins/tests/cd/
+            name: cd
+            corpus_path: builtins/tests/cd
           - pkg: ./builtins/tests/wc/
             name: wc
             corpus_path: builtins/tests/wc
