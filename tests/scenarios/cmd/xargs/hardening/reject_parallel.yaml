@@ -1,3 +1,6 @@
+# skip: GNU xargs accepts -P and runs the command in parallel; rshell does
+# not implement parallelism (rejected as an unknown flag).
+skip_assert_against_bash: true
 description: xargs rejects -P (parallel processes) with exit 1 — not implemented.
 input:
   script: |+

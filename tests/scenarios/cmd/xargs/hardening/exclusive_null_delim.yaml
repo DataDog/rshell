@@ -1,4 +1,7 @@
-description: xargs -0 and -d are mutually exclusive.
+# skip: GNU xargs accepts -0 and -d together (last flag wins). rshell rejects
+# the combination as a strict-validation safety measure.
+skip_assert_against_bash: true
+description: xargs -0 and -d are mutually exclusive (rshell strict validation).
 input:
   script: |+
     echo a | xargs -0 -d , echo
