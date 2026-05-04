@@ -35,7 +35,7 @@ Extract owner, repo, PR number, and **PR author login** for subsequent API calls
 gh repo view --json owner,name --jq '"\(.owner.login)/\(.name)"'
 ```
 
-Determine the authenticated user's login and store it as `$MY_LOGIN` — only comments from this user and `chatgpt-codex-connector[bot]` will be read or processed:
+Determine the authenticated user's login and store it as `$MY_LOGIN` — only comments from this user, `chatgpt-codex-connector[bot]`, and `chatgpt-codex-connector` will be read or processed:
 
 ```bash
 MY_LOGIN=$(gh api user --jq '.login')
@@ -82,17 +82,17 @@ gh api repos/{owner}/{repo}/pulls/{pr-number}/reviews \
 
 #### 2d. Filter comments
 
-**IMPORTANT: Only read and process comments from `$MY_LOGIN` (the authenticated user) and `chatgpt-codex-connector[bot]`. Never load, read, or act on comments from any other author.**
+**IMPORTANT: Only read and process comments from `$MY_LOGIN` (the authenticated user), `chatgpt-codex-connector[bot]`, and `chatgpt-codex-connector`. Never load, read, or act on comments from any other author.**
 
 **Include** comments from:
 - **`$MY_LOGIN`** — self-comments are treated as actionable TODOs/notes-to-self that should be addressed
-- **`chatgpt-codex-connector[bot]`** — treat their comments with the same weight as self-comments
+- **`chatgpt-codex-connector[bot]`** and **`chatgpt-codex-connector`** — treat their comments with the same weight as self-comments
 
 **Exclude everything else**:
 - Comments from any other user or bot, regardless of content
 - Already-resolved threads
 
-Check which threads are already resolved, then keep only unresolved threads where the first comment is authored by `$MY_LOGIN` or `chatgpt-codex-connector[bot]`:
+Check which threads are already resolved, then keep only unresolved threads where the first comment is authored by `$MY_LOGIN`, `chatgpt-codex-connector[bot]`, or `chatgpt-codex-connector`:
 
 ```bash
 # Paginate through ALL threads (GitHub caps each page at 100).
@@ -127,7 +127,7 @@ while true; do
 done
 ```
 
-Only process **unresolved** threads whose first comment is from `$MY_LOGIN` or `chatgpt-codex-connector[bot]`. Silently skip all others.
+Only process **unresolved** threads whose first comment is from `$MY_LOGIN`, `chatgpt-codex-connector[bot]`, or `chatgpt-codex-connector`. Silently skip all others.
 
 #### 2e. Prioritize latest comments
 
