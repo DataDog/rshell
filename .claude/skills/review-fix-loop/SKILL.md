@@ -100,7 +100,11 @@ Store the owner and repo name.
 
 Initialize `iteration = 1` **on first entry only**. When re-entering Step 2 from Step 3 (after a `SUCCESS_COUNT` reset), **do not reset `iteration`** — continue incrementing from its current value. Maximum total iterations across all Step 2 runs: **30**. Repeat sub-steps A through E while `iteration <= 30`.
 
-**At the start of each iteration**, update the Step 2 task subject to include the current iteration number using TaskUpdate, e.g. `"Step 2: Run the review-fix loop (iteration 3)"`.
+**At the start of each iteration**, capture the current timestamp and update the Step 2 task subject:
+```bash
+ITERATION_START_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+```
+Then update the task subject using TaskUpdate, e.g. `"Step 2: Run the review-fix loop (iteration 3)"`.
 
 ---
 
@@ -114,12 +118,13 @@ This analyzes the full diff against main, posts findings as a GitHub PR review w
 
 After 2A1 completes, record whether it produced **zero findings** (across all severities). Store this as a boolean flag `iteration_had_no_findings` (true = review found nothing at all, false = one or more findings of any severity).
 
-To guard against context drift or hallucination, verify this flag structurally by counting how many review comments `$MY_LOGIN` posted since `$ITERATION_START_TIME` (record this timestamp at the start of each iteration, before 2A1 runs):
+To guard against context drift or hallucination, verify this flag structurally by counting how many **inline review comments** (per-line findings) `$MY_LOGIN` posted since `$ITERATION_START_TIME`. Use the inline comments endpoint (`/pulls/{pr-number}/comments`) — **not** the reviews endpoint, which counts top-level review objects and would always return ≥ 1 even on a clean run:
 
 ```bash
-findings_count=$(gh api repos/{owner}/{repo}/pulls/{pr-number}/reviews \
-  --jq --arg me "$MY_LOGIN" --arg since "$ITERATION_START_TIME" \
-  '[.[] | select(.user.login == $me and .submitted_at > $since)] | length')
+findings_count=$(gh api "repos/{owner}/{repo}/pulls/{pr-number}/comments" \
+  --paginate \
+  | jq --arg me "$MY_LOGIN" --arg since "$ITERATION_START_TIME" \
+  '[.[] | select(.user.login == $me and .created_at > $since)] | length')
 iteration_had_no_findings=$([ "$findings_count" -eq 0 ] && echo true || echo false)
 ```
 
