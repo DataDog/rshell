@@ -11,6 +11,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -34,6 +35,62 @@ func TestDuDedupsHardlinks(t *testing.T) {
 	// total when a hardlinked inode has already been counted in this
 	// invocation. Confirmed against `du (GNU coreutils) 9.10`.
 	assert.Equal(t, "4096\tprimary.bin\n4096\ttotal\n", stdout)
+}
+
+// TestDuDedupsSymlinkAliasesUnderL confirms that two symlinks pointing
+// at the same regular file (nlink=1 on the target) are deduplicated
+// under -L, matching GNU's default behaviour. Regression for the
+// `nlink > 1` gate that previously prevented dedup of nlink=1 inodes.
+func TestDuDedupsSymlinkAliasesUnderL(t *testing.T) {
+	if !canSymlink() {
+		t.Skip("symlinks unavailable")
+	}
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "target"), []byte("abc"), 0o644))
+	require.NoError(t, os.Symlink("target", filepath.Join(dir, "l1")))
+	require.NoError(t, os.Symlink("target", filepath.Join(dir, "l2")))
+
+	stdout, _, code := cmdRun(t, "du -L -b l1 l2", dir)
+	assert.Equal(t, 0, code)
+	// l1 emitted once; l2 silently dropped because the target inode
+	// has already been counted.
+	assert.Equal(t, "3\tl1\n", stdout)
+}
+
+// TestDuSummarizeRejectsNegativeDepth ensures `du -s -d -1` is
+// rejected. The earlier validation order applied the -s/--max-depth=0
+// equivalence first, which overwrote the negative value before the
+// negative-depth check could run.
+func TestDuSummarizeRejectsNegativeDepth(t *testing.T) {
+	dir := t.TempDir()
+	_, stderr, code := cmdRun(t, "du -s -d -1 .", dir)
+	assert.Equal(t, 1, code, "du -s -d -1 must exit 1")
+	assert.Contains(t, stderr, "invalid maximum depth")
+}
+
+// TestDuSeparateDirsGrandTotalIncludesSubtrees regression-tests the
+// case where `-S -c` was using the parent's printed value (which
+// excludes subdirectory contributions) as the grand-total summand,
+// underreporting by exactly the subdirectory subtree size.
+func TestDuSeparateDirsGrandTotalIncludesSubtrees(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "p", "sub"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "p", "direct"), []byte("xyz"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "p", "sub", "deep"), []byte("abc"), 0o644))
+
+	stdout, _, code := cmdRun(t, "du -S -b -c p", dir)
+	assert.Equal(t, 0, code)
+	// Three lines: p/sub, p, total. Each uses bytes mode so file
+	// contributions are exact (3 each). Directory inode bytes vary by
+	// filesystem (APFS=0, ext4=4096), so assert structurally rather than
+	// numerically: the total must equal p_subtree + sub_subtree.
+	lines := strings.Split(strings.TrimRight(stdout, "\n"), "\n")
+	require.Len(t, lines, 3, "expected 3 lines: %q", stdout)
+	pSub := parseLeadingInt(t, lines[0])
+	pSep := parseLeadingInt(t, lines[1])
+	totalSep := parseLeadingInt(t, lines[2])
+	assert.Equal(t, pSub+pSep, totalSep, "GNU -c sums all printed entries")
+	assert.True(t, strings.HasSuffix(lines[2], "\ttotal"))
 }
 
 // --- Symlink-loop detection under -L ---

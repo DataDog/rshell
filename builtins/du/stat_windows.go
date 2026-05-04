@@ -17,13 +17,3 @@ import (
 func infoBlocks(_ iofs.FileInfo) (int64, bool) {
 	return 0, false
 }
-
-// infoNlink returns 1 on Windows because hard-link counts cannot be
-// obtained without the GetFileInformationByHandle path (used by ls/wc),
-// and du never opens individual files by handle. 1 means "treat as a
-// unique inode," which prevents accidental dedup of distinct files. This
-// is conservative and matches the apparent-size accounting we already
-// fall back to on Windows.
-func infoNlink(_ iofs.FileInfo) uint64 {
-	return 1
-}

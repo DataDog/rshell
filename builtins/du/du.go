@@ -295,6 +295,14 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			opts.apparentSize = true
 		}
 
+		// Validate the raw --max-depth value first. This must precede the
+		// `-s` normalisation below, which would otherwise overwrite a
+		// negative -d argument with 0 and silently accept `du -s -d -1`.
+		if opts.maxDepthSet && opts.maxDepth < 0 {
+			callCtx.Errf("du: invalid maximum depth %d\n", opts.maxDepth)
+			return builtins.Result{Code: 1}
+		}
+
 		// Mutual-exclusion checks (GNU semantics).
 		// `-s` and `--max-depth=N` are equivalent at N=0; GNU prints a
 		// warning for that case but exits 0. Any non-zero --max-depth
@@ -313,11 +321,6 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 		if opts.summarize {
 			opts.maxDepth = 0
 			opts.maxDepthSet = true
-		}
-		// max-depth must be non-negative.
-		if opts.maxDepthSet && opts.maxDepth < 0 {
-			callCtx.Errf("du: invalid maximum depth %d\n", opts.maxDepth)
-			return builtins.Result{Code: 1}
 		}
 
 		if len(paths) == 0 {
@@ -392,15 +395,21 @@ func walk(
 		return 0, false, err
 	}
 
-	// Hardlink dedup applies only to regular files. Directories with
-	// nlink>1 are physically distinct (parent-link / "." / ".." mechanics)
-	// and must not be skipped. Symlinks are leaves; let them through.
+	// Inode dedup applies to regular files. Directories with nlink>1 are
+	// physically distinct (parent-link / "." / ".." mechanics) and must
+	// not be skipped. Symlinks are leaves; let them through.
+	//
+	// The `nlink > 1` optimization that used to gate map insertion was
+	// wrong: under `-L` two distinct symlinks can dereference to the same
+	// inode whose nlink is still 1, and GNU still dedups those (matching
+	// `du -L l1 l2` to a single emission). Track every regular-file inode
+	// up to the maxDedupEntries cap.
 	if info.Mode().IsRegular() && callCtx.FileIdentity != nil {
 		if id, ok := callCtx.FileIdentity(fsPath, info); ok {
 			if visited[id] {
 				return 0, false, nil
 			}
-			if infoNlink(info) > 1 && len(visited) < maxDedupEntries {
+			if len(visited) < maxDedupEntries {
 				visited[id] = true
 			}
 		}
@@ -435,27 +444,31 @@ func walk(
 	}
 
 	dirOwn := entrySize(info, opts.apparentSize)
-	fileChildren, subdirChildren, failedAny := walkChildren(ctx, callCtx, fsPath, reportPath, depth, opts, visited, ancestorIDs)
+	fileChildren, subdirSubtrees, failedAny := walkChildren(ctx, callCtx, fsPath, reportPath, depth, opts, visited, ancestorIDs)
 
-	// Compute the directory's reported size:
-	//   - Always includes the directory's own bytes and direct file
-	//     children.
-	//   - Includes subdirectory subtrees unless --separate-dirs is set.
-	dirReport := saturatingAdd(dirOwn, fileChildren)
-	if !opts.separateDirs {
-		dirReport = saturatingAdd(dirReport, subdirChildren)
+	// fullSubtree is the recursive total: own bytes + direct files +
+	// every subdirectory's full subtree. This is what gets returned to
+	// the parent and ultimately summed into the grand total under -c.
+	fullSubtree := saturatingAdd(saturatingAdd(dirOwn, fileChildren), subdirSubtrees)
+
+	// printedSize is what gets emitted to stdout. Under --separate-dirs
+	// it excludes subdirectory subtrees; otherwise it equals fullSubtree.
+	printedSize := fullSubtree
+	if opts.separateDirs {
+		printedSize = saturatingAdd(dirOwn, fileChildren)
 	}
 	if shouldEmit(depth, true, opts) {
-		emit(callCtx, opts, dirReport, reportPath)
+		emit(callCtx, opts, printedSize, reportPath)
 	}
 
-	// The value passed to the parent is identical to what we just
-	// printed. Under --separate-dirs that means subdirectory subtrees are
-	// also excluded from the grandparent's total — matching GNU.
+	// Always return the full subtree so a `-c` grand total or a parent
+	// without `-S` sees the complete recursive value. GNU's grand total
+	// is the sum of operand subtrees regardless of `-S`, so returning
+	// the printed value (with subdirs stripped) here would underreport.
 	if failedAny {
-		return dirReport, true, errFailed
+		return fullSubtree, true, errFailed
 	}
-	return dirReport, true, nil
+	return fullSubtree, true, nil
 }
 
 // walkChildren iterates entries in dir via OpenDir/ReadDir(1), recursing

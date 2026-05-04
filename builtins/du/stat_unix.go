@@ -22,13 +22,3 @@ func infoBlocks(info iofs.FileInfo) (int64, bool) {
 	}
 	return int64(st.Blocks), true
 }
-
-// infoNlink returns the number of hard links to the file. Returns 1 when
-// Stat_t is unavailable (the safe default — treat as a non-shared inode).
-func infoNlink(info iofs.FileInfo) uint64 {
-	st, ok := info.Sys().(*syscall.Stat_t)
-	if !ok {
-		return 1
-	}
-	return uint64(st.Nlink)
-}
