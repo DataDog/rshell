@@ -20,6 +20,8 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"golang.org/x/term"
+
 	"github.com/DataDog/rshell/builtins"
 )
 
@@ -113,29 +115,39 @@ func run(ctx context.Context, c *builtins.CallContext, args []string, opt runOpt
 		}
 	}
 
+	// Resolve timeout. Bash treats -t 0 as a poll: returns 0 if input
+	// is immediately available, non-zero otherwise, without waiting and
+	// without consuming data. Positive timeouts wrap the read in a
+	// context.WithTimeout and propagate the deadline to *os.File via
+	// SetReadDeadline so a blocked syscall actually wakes up.
 	readCtx := ctx
+	pollMode := false
 	if opt.timeoutStr != "" {
 		secs, err := strconv.ParseFloat(opt.timeoutStr, 64)
 		if err != nil || secs < 0 {
 			c.Errf("read: -t: invalid timeout %q\n", opt.timeoutStr)
 			return builtins.Result{Code: 1}
 		}
-		dur := time.Duration(secs * float64(time.Second))
-		var cancel context.CancelFunc
-		readCtx, cancel = context.WithTimeout(ctx, dur)
-		defer cancel()
-		// Best-effort kernel-level read deadline: works for *os.File pipes,
-		// which is the typical stdin shape produced by the runner. Other
-		// readers fall back to context-driven cancellation between bytes.
-		// We pull the deadline from readCtx rather than computing one with
-		// time.Now to avoid a second time source: builtins read time only
-		// via callCtx.Now (script-start reference) or, for monotonic
-		// "from-now" deadlines like this one, via context.WithTimeout's
-		// internal clock surfaced through ctx.Deadline().
-		if dl, ok := readCtx.Deadline(); ok {
-			if f, fok := c.Stdin.(*os.File); fok {
-				_ = f.SetReadDeadline(dl)
-				defer func() { _ = f.SetReadDeadline(time.Time{}) }()
+		if secs == 0 {
+			pollMode = true
+		} else {
+			dur := time.Duration(secs * float64(time.Second))
+			var cancel context.CancelFunc
+			readCtx, cancel = context.WithTimeout(ctx, dur)
+			defer cancel()
+			// Best-effort kernel-level read deadline: works for *os.File pipes,
+			// which is the typical stdin shape produced by the runner. Other
+			// readers fall back to context-driven cancellation between bytes.
+			// We pull the deadline from readCtx rather than computing one with
+			// time.Now to avoid a second time source: builtins read time only
+			// via callCtx.Now (script-start reference) or, for monotonic
+			// "from-now" deadlines like this one, via context.WithTimeout's
+			// internal clock surfaced through ctx.Deadline().
+			if dl, ok := readCtx.Deadline(); ok {
+				if f, fok := c.Stdin.(*os.File); fok {
+					_ = f.SetReadDeadline(dl)
+					defer func() { _ = f.SetReadDeadline(time.Time{}) }()
+				}
 			}
 		}
 	}
@@ -152,11 +164,17 @@ func run(ctx context.Context, c *builtins.CallContext, args []string, opt runOpt
 		}
 	}
 
-	// Bash only displays the prompt when stdin is a terminal. In this
-	// non-interactive shell stdin is always a pipe, so the prompt is
-	// effectively suppressed; the check is here for parity in case stdin
-	// is ever wired to a TTY by a calling embedder.
-	if opt.prompt != "" && stdinIsTTY(c.Stdin) {
+	// Poll mode (-t 0) returns immediately: 0 if input is available,
+	// 142 otherwise. Performed before the prompt and before any read
+	// attempt to match bash, which neither prints nor consumes in this
+	// case.
+	if pollMode {
+		return pollAvailable(c)
+	}
+
+	// Bash only displays the -p prompt when stdin is an actual terminal,
+	// not just any character device (so /dev/null does not trigger it).
+	if opt.prompt != "" && stdinIsTerminal(c.Stdin) {
 		fmt.Fprint(c.Stderr, opt.prompt)
 	}
 
@@ -177,17 +195,26 @@ func run(ctx context.Context, c *builtins.CallContext, args []string, opt runOpt
 		charLimit = opt.nChars
 	}
 	line, eof, err := readInput(readCtx, c.Stdin, delim, opt.raw, charLimit, nFixedMode)
+	timedOut := false
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, os.ErrDeadlineExceeded) {
 			// Bash convention for read -t timeout: 128 + SIGALRM (14) = 142.
-			return builtins.Result{Code: 142}
+			// Bash still assigns any partially-read data on timeout, so we
+			// fall through to the assignment path and surface the 142 exit
+			// code at the end. Empty-line + timeout is handled below.
+			timedOut = true
+		} else {
+			c.Errf("read: %s\n", err)
+			return builtins.Result{Code: 1}
 		}
-		c.Errf("read: %s\n", err)
-		return builtins.Result{Code: 1}
 	}
 
-	// Bash returns 1 with no assignment when EOF is hit before any data.
-	if eof && line == "" {
+	// Empty result: bash returns 1 on EOF, 142 on timeout, neither
+	// performs any assignment.
+	if line == "" && (eof || timedOut) {
+		if timedOut {
+			return builtins.Result{Code: 142}
+		}
 		return builtins.Result{Code: 1}
 	}
 
@@ -220,24 +247,63 @@ func run(ctx context.Context, c *builtins.CallContext, args []string, opt runOpt
 		}
 	}
 
+	if timedOut {
+		return builtins.Result{Code: 142}
+	}
 	if eof {
 		return builtins.Result{Code: 1}
 	}
 	return builtins.Result{}
 }
 
-// stdinIsTTY reports whether r is an *os.File backed by a character
-// device (terminal). False for pipes, regular files, byte buffers, etc.
-func stdinIsTTY(r io.Reader) bool {
+// pollAvailable implements `read -t 0` semantics. Bash returns success
+// when a select(2) on stdin reports the descriptor is immediately
+// readable (data available or EOF), and 142 otherwise. Without
+// requiring the OS-specific select syscall here, we approximate the
+// check by setting an in-the-past read deadline on stdin and
+// attempting a one-byte read: a successful read (or EOF) means data is
+// available; a deadline-exceeded error means the descriptor would have
+// blocked.
+//
+// Two intentional divergences from bash:
+//   - On success the byte read is consumed (bash leaves the stream
+//     untouched). This matters for callers that follow `read -t 0` with
+//     another `read` on the same stream; in practice `read -t 0` is
+//     used as a one-shot availability probe.
+//   - For non-*os.File readers (e.g. byte buffers in tests) we cannot
+//     set a deadline, so we report not-available (142) rather than
+//     guess.
+func pollAvailable(c *builtins.CallContext) builtins.Result {
+	f, ok := c.Stdin.(*os.File)
+	if !ok {
+		return builtins.Result{Code: 142}
+	}
+	// Use c.Now (script-start reference) minus an hour to construct a
+	// deadline that is reliably in the past, avoiding a direct time.Now
+	// call. SetReadDeadline with a past time makes Read return
+	// immediately: with data if any is buffered, with
+	// os.ErrDeadlineExceeded if the descriptor would have blocked.
+	pastDeadline := c.Now.Add(-time.Hour)
+	_ = f.SetReadDeadline(pastDeadline)
+	defer func() { _ = f.SetReadDeadline(time.Time{}) }()
+	var probe [1]byte
+	n, err := f.Read(probe[:])
+	if errors.Is(err, io.EOF) || n == 1 {
+		return builtins.Result{Code: 0}
+	}
+	return builtins.Result{Code: 142}
+}
+
+// stdinIsTerminal reports whether r is an *os.File whose descriptor
+// refers to an actual terminal (TTY), as determined by the platform's
+// isatty equivalent. Returns false for pipes, regular files, /dev/null,
+// and other non-terminal character devices.
+func stdinIsTerminal(r io.Reader) bool {
 	f, ok := r.(*os.File)
 	if !ok {
 		return false
 	}
-	info, err := f.Stat()
-	if err != nil {
-		return false
-	}
-	return info.Mode()&os.ModeCharDevice != 0
+	return term.IsTerminal(int(f.Fd()))
 }
 
 // validVarName reports whether name is a valid POSIX shell identifier:

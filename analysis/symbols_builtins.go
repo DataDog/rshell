@@ -212,10 +212,10 @@ var builtinPerCommandSymbols = map[string][]string{
 		"io.Reader",                           // 🟢 interface type; no side effects.
 		"os.ErrDeadlineExceeded",              // 🟢 sentinel error returned by *os.File when SetReadDeadline fires; pure constant.
 		"os.File",                             // 🟠 *os.File type used for type-asserting callCtx.Stdin to access SetReadDeadline/Stat; no constructors invoked.
-		"os.ModeCharDevice",                   // 🟢 file mode bit constant for character devices (TTY detection for read -p); pure constant.
 		"strconv.ParseFloat",                  // 🟢 string-to-float conversion (parses -t TIMEOUT seconds); pure function, no I/O.
 		"strings.ContainsRune",                // 🟢 checks if a rune is in IFS; pure function, no I/O.
 		"time.Duration",                       // 🟢 duration type; pure integer alias, no I/O.
+		"time.Hour",                           // 🟢 constant representing one hour; used to construct an in-the-past read deadline for -t 0 polling. No side effects.
 		"time.Second",                         // 🟢 constant representing one second; no side effects.
 		"time.Time",                           // 🟢 time value type; pure data, no side effects.
 		"unicode/utf8.DecodeLastRuneInString", // 🟢 decodes last UTF-8 rune in a string (trailing IFS-whitespace strip); pure function, no I/O.
@@ -224,6 +224,7 @@ var builtinPerCommandSymbols = map[string][]string{
 		"unicode/utf8.FullRune",               // 🟢 reports whether a byte slice begins with a complete UTF-8 rune; pure function, no I/O.
 		"unicode/utf8.RuneSelf",               // 🟢 first byte value above which UTF-8 multi-byte encoding begins; pure constant.
 		"unicode/utf8.UTFMax",                 // 🟢 maximum number of bytes in a UTF-8 encoding; pure constant.
+		"golang.org/x/term.IsTerminal",        // 🟠 platform-specific isatty check (TIOCGETA / GetConsoleMode); used to gate -p prompt emission. Read-only inspection of the file descriptor; no I/O.
 	},
 	"sort": {
 		"bufio.NewScanner",      // 🟢 line-by-line input reading (e.g. head, cat); no write or exec capability.
@@ -451,6 +452,7 @@ var builtinAllowedSymbols = []string{
 	"github.com/prometheus-community/pro-bing.Pinger",     // 🔴 ICMP pinger struct; network I/O is the explicit purpose of the ping builtin.
 	"github.com/prometheus-community/pro-bing.Statistics", // 🟢 ping round-trip statistics struct; pure data type, no I/O.
 	"golang.org/x/sys/unix.SysctlRaw",                     // 🟠 macOS: reads kernel socket tables (read-only, no exec, no filesystem).
+	"golang.org/x/term.IsTerminal",                        // 🟠 platform-specific isatty check (TIOCGETA / GetConsoleMode); used to gate read -p prompt emission. Read-only inspection of the file descriptor; no I/O.
 	"io.EOF",                                              // 🟢 sentinel error value; pure constant.
 	"io.MultiReader",                                      // 🟢 combines multiple Readers into one sequential Reader; no I/O side effects.
 	"io.NopCloser",                                        // 🟢 wraps a Reader with a no-op Close; no side effects.
@@ -501,7 +503,6 @@ var builtinAllowedSymbols = []string{
 	"os.File",                                             // 🟠 *os.File type, used for type-asserting callCtx.Stdin to access SetReadDeadline/Stat (e.g. read -t timeout, TTY detection); no constructors invoked.
 	"os.FileInfo",                                         // 🟢 file metadata interface returned by Stat; no I/O side effects.
 	"os.IsNotExist",                                       // 🟢 checks if error is "not exist"; pure function, no I/O.
-	"os.ModeCharDevice",                                   // 🟢 file mode bit constant for character devices (TTY detection); pure constant.
 	"os.O_RDONLY",                                         // 🟢 read-only file flag constant; cannot open files by itself.
 	"os.PathError",                                        // 🟢 error type for filesystem path errors; pure type, no I/O.
 	"path/filepath.Dir",                                   // 🟢 returns the directory component of a path; pure function, no I/O.
