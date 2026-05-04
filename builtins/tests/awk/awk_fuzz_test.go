@@ -149,8 +149,10 @@ func FuzzAwkProgramText(f *testing.F) {
 			// This is not a bug in the awk implementation; skip.
 			return
 		}
-		// Acceptable: 0 (success) or 1 (parse / runtime error).
-		if code != 0 && code != 1 {
+		// Acceptable: any code 0-255, since user programs can call exit(N) for
+		// any N (e.g. "BEGIN{exit 2}"). Only negative codes or -1 (shell parse
+		// error, handled above) are unexpected.
+		if code < 0 {
 			t.Fatalf("unexpected exit code %d for src=%q", code, src)
 		}
 	})

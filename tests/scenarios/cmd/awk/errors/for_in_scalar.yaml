@@ -1,3 +1,4 @@
+skip_assert_against_bash: true
 description: Iterating over a scalar variable with for-in is a fatal error.
 input:
   script: |+
@@ -7,4 +8,3 @@ expect:
   stderr: |+
     awk: illegal use of scalar "x" as array
   exit_code: 1
-  skip_assert_against_bash: true
