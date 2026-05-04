@@ -2,6 +2,7 @@ description: split() with a scalar destination variable is a fatal error (gawk c
 input:
   script: |+
     awk 'BEGIN { x = 1; n = split("a b c", x); print n }'
+skip_assert_against_bash: true  # mawk returns exit code 2 with "illegal reference to variable x"; we match gawk (exit 1, "scalar")
 expect:
   stdout: |+
   stderr_contains:
