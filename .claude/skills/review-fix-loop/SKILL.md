@@ -226,7 +226,7 @@ Check **two** signals for remaining issues:
        }
      ' -f owner="{owner}" -f repo="{repo}" -F pr={pr-number} -f after="$cursor")
      unresolved=$((unresolved + $(echo "$page" | jq --arg me "$MY_LOGIN" \
-       '[.data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved == false) | select(.comments.nodes[0].author.login == $me or .comments.nodes[0].author.login == "chatgpt-codex-connector[bot]")] | length')))
+       '[.data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved == false) | select(.comments.nodes[0].author.login == $me or .comments.nodes[0].author.login == "chatgpt-codex-connector[bot]" or .comments.nodes[0].author.login == "chatgpt-codex-connector")] | length')))
      [ "$(echo "$page" | jq -r '.data.repository.pullRequest.reviewThreads.pageInfo.hasNextPage')" = "true" ] || break
      cursor=$(echo "$page" | jq -r '.data.repository.pullRequest.reviewThreads.pageInfo.endCursor')
    done
@@ -309,7 +309,7 @@ Run a final verification regardless of how the loop exited:
        }
      ' -f owner="{owner}" -f repo="{repo}" -F pr={pr-number} -f after="$cursor")
      unresolved=$((unresolved + $(echo "$page" | jq --arg me "$MY_LOGIN" \
-       '[.data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved == false) | select(.comments.nodes[0].author.login == $me or .comments.nodes[0].author.login == "chatgpt-codex-connector[bot]")] | length')))
+       '[.data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved == false) | select(.comments.nodes[0].author.login == $me or .comments.nodes[0].author.login == "chatgpt-codex-connector[bot]" or .comments.nodes[0].author.login == "chatgpt-codex-connector")] | length')))
      [ "$(echo "$page" | jq -r '.data.repository.pullRequest.reviewThreads.pageInfo.hasNextPage')" = "true" ] || break
      cursor=$(echo "$page" | jq -r '.data.repository.pullRequest.reviewThreads.pageInfo.endCursor')
    done
