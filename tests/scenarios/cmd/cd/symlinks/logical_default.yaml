@@ -13,5 +13,6 @@ input:
     echo "$PWD"
 expect:
   stdout_contains: ["/alias"]
+  stdout_contains_windows: ["\\alias"]
   stderr: ""
   exit_code: 0

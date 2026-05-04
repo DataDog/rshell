@@ -12,5 +12,6 @@ input:
     [ "$PWD" = "$PARENT" ] && echo ok
 expect:
   stdout_contains: ["/sub", "ok"]
+  stdout_contains_windows: ["\\sub", "ok"]
   stderr: ""
   exit_code: 0

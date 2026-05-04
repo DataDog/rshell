@@ -12,5 +12,6 @@ input:
     echo "$PWD"
 expect:
   stdout_contains: ["/a"]
+  stdout_contains_windows: ["\\a"]
   stderr: ""
   exit_code: 0

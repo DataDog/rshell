@@ -11,5 +11,6 @@ input:
     echo "$PWD"
 expect:
   stdout_contains: ["/child"]
+  stdout_contains_windows: ["\\child"]
   stderr: ""
   exit_code: 0
