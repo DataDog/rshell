@@ -34,9 +34,12 @@
 //	$PWD. On failure, neither the runner directory nor those variables
 //	are touched.
 //
-//	`cd -` is exclusive: it is equivalent to `cd "$OLDPWD"` followed by
-//	echoing the resolved directory to stdout. If $OLDPWD is unset, the
-//	command fails with a non-zero exit and no state changes.
+//	`cd -` changes to $OLDPWD and echoes the raw OLDPWD value to stdout
+//	(bash always prints the original OLDPWD string, even under -P, even
+//	when it is the empty string — in which case a bare newline is emitted).
+//	If $OLDPWD is unset the command fails with a non-zero exit. If
+//	$OLDPWD is set but empty, cd - stays in place, prints a bare newline,
+//	and updates $OLDPWD to the current directory.
 //
 //	Path validation goes exclusively through callCtx.StatFile,
 //	callCtx.LstatFile, and callCtx.ReadlinkFile, all of which honour
