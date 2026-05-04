@@ -50,23 +50,24 @@ func shellSafe(s string) bool {
 // list without reintroducing duplicates.
 var pathSeeds = []string{
 	// --- Implementation edges ---
-	"",             // empty: rejected with "no such file or directory"
-	".",            // self
-	"..",           // parent
-	"./.",          // redundant components
-	"sub",          // simple relative target (must exist for the target dir below)
-	"sub/",         // trailing slash
-	"./sub",        // explicit-relative
-	"sub/./.",      // redundant
-	"sub/../sub",   // round trip
-	"a/b/c",        // nested missing
-	"-",            // dash means OLDPWD; covered separately too
-	"--",           // pflag end-of-flags
-	"-funny",       // dash-prefixed name
-	" sub",         // leading whitespace
-	"sub\t",        // trailing tab
-	"sub\nname",    // embedded newline (file system rejects on Windows; allowed on Unix)
-	"sub\x00",      // embedded NUL (POSIX rejects)
+	"",           // empty: rejected with "no such file or directory"
+	".",          // self
+	"..",         // parent
+	"./.",        // redundant components
+	"sub",        // simple relative target (must exist for the target dir below)
+	"sub/",       // trailing slash
+	"./sub",      // explicit-relative
+	"sub/./.",    // redundant
+	"sub/../sub", // round trip
+	"a/b/c",      // nested missing
+	"-",          // dash means OLDPWD; covered separately too
+	"--",         // pflag end-of-flags
+	"-funny",     // dash-prefixed name
+	" sub",       // leading whitespace
+	"sub\t",      // trailing tab
+	// Note: paths with embedded newlines ("\n") or NULs ("\x00") are
+	// filtered by shellSafe() before reaching cd — the shell parser
+	// treats them as syntax errors. They are not useful seeds.
 	"sub/../../..", // upward escape attempts
 	"//double",     // duplicated separator
 	"/etc",         // absolute outside sandbox
