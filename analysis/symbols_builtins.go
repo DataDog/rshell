@@ -345,6 +345,22 @@ var builtinPerCommandSymbols = map[string][]string{
 		"unicode/utf8.UTFMax",     // 🟢 maximum number of bytes in a UTF-8 encoding; constant, no I/O.
 		"unicode/utf8.Valid",      // 🟢 checks if a byte slice is valid UTF-8; pure function, no I/O.
 	},
+	"xargs": {
+		"bufio.NewReaderSize", // 🟢 buffered reader with caller-supplied size; pure wrapper, no I/O capability of its own.
+		"bufio.Reader",        // 🟢 buffered reader type; pure data, no side effects.
+		"context.Context",     // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
+		"errors.Is",           // 🟢 error comparison; pure function, no I/O.
+		"errors.New",          // 🟢 creates a simple error value; pure function, no I/O.
+		"fmt.Errorf",          // 🟢 error formatting; pure function, no I/O.
+		"fmt.Sprintf",         // 🟢 string formatting; pure function, no I/O.
+		"io.EOF",              // 🟢 sentinel error value; pure constant.
+		"io.NopCloser",        // 🟢 wraps a Reader with a no-op Close; no side effects.
+		"io.ReadCloser",       // 🟢 interface type; no side effects.
+		"io.Reader",           // 🟢 interface type; no side effects.
+		"os.O_RDONLY",         // 🟢 read-only file flag constant; cannot open files by itself.
+		"strings.Builder",     // 🟢 efficient string concatenation; pure in-memory buffer, no I/O.
+		"strings.ReplaceAll",  // 🟢 replaces all occurrences of REPLSTR in -I templates; pure function, no I/O.
+	},
 	"ping": {
 		"context.Context",         // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
 		"context.WithTimeout",     // 🟢 creates a child context with a deadline; no filesystem or network I/O itself.
@@ -401,7 +417,9 @@ var builtinPerCommandSymbols = map[string][]string{
 }
 
 var builtinAllowedSymbols = []string{
+	"bufio.NewReaderSize", // 🟢 buffered reader with caller-supplied size; pure wrapper, no I/O capability of its own.
 	"bufio.NewScanner",    // 🟢 line-by-line input reading (e.g. head, cat); no write or exec capability.
+	"bufio.Reader",        // 🟢 buffered reader type; pure data, no side effects.
 	"bufio.Scanner",       // 🟢 scanner type for buffered input reading; no write or exec capability.
 	"bufio.SplitFunc",     // 🟢 type for custom scanner split functions; pure type, no I/O.
 	"bytes.Buffer",        // 🟢 in-memory buffer to capture command output; no I/O side effects.

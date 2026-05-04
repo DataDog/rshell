@@ -1,0 +1,8 @@
+description: xargs rejects -P (parallel processes) with exit 1 — not implemented.
+input:
+  script: |+
+    echo a | xargs -P 4 echo
+expect:
+  stdout: ""
+  stderr_contains: ["xargs:"]
+  exit_code: 1

@@ -1,0 +1,10 @@
+# skip: GNU xargs uses a system-installed `false`; rshell uses the builtin.
+skip_assert_against_bash: true
+description: xargs reports exit 123 when any sub-command exits non-zero.
+input:
+  script: |+
+    echo a | xargs false
+expect:
+  stdout: ""
+  stderr: ""
+  exit_code: 123

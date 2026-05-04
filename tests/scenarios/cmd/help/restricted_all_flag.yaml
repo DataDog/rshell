@@ -6,7 +6,7 @@ input:
     help --all
 expect:
   stdout: |+
-    rshell (dev) — 2 of 28 builtins enabled
+    rshell (dev) — 2 of 29 builtins enabled
 
     echo  write arguments to stdout
     help  display help for commands
@@ -38,6 +38,7 @@ expect:
     uname     print system information
     uniq      report or omit repeated lines
     wc        print newline, word, and byte counts
+    xargs     build and execute commands from standard input
 
     Run 'help <command>' for more information on a specific command.
   stderr: ""

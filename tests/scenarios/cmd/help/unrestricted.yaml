@@ -5,7 +5,7 @@ input:
     help
 expect:
   stdout: |+
-    rshell (dev) — All 28 builtins available
+    rshell (dev) — All 29 builtins available
 
     [         evaluate conditional expression
     break     exit from a loop
@@ -35,6 +35,7 @@ expect:
     uname     print system information
     uniq      report or omit repeated lines
     wc        print newline, word, and byte counts
+    xargs     build and execute commands from standard input
 
     Run 'help <command>' for more information on a specific command.
   stderr: ""
