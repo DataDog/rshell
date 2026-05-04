@@ -121,10 +121,11 @@ After 2A1 completes, record whether it produced **zero findings** (across all se
 To guard against context drift or hallucination, verify this flag structurally by counting how many **inline review comments** (per-line findings) `$MY_LOGIN` posted since `$ITERATION_START_TIME`. Use the inline comments endpoint (`/pulls/{pr-number}/comments`) — **not** the reviews endpoint, which counts top-level review objects and would always return ≥ 1 even on a clean run:
 
 ```bash
+MY_LOGIN=$(gh api user --jq '.login')
 findings_count=$(gh api "repos/{owner}/{repo}/pulls/{pr-number}/comments" \
-  --paginate \
+  --paginate --slurp \
   | jq --arg me "$MY_LOGIN" --arg since "$ITERATION_START_TIME" \
-  '[.[] | select(.user.login == $me and .created_at >= $since)] | length')
+  '[.[].[] | select(.user.login == $me and .created_at >= $since)] | length')
 iteration_had_no_findings=$([ "$findings_count" -eq 0 ] && echo true || echo false)
 ```
 
