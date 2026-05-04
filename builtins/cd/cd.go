@@ -162,8 +162,12 @@ func registerFlags(flags *builtins.FlagSet) builtins.HandlerFunc {
 		}
 
 		var (
-			target  string
-			printed bool
+			target string
+			// printValue is set when `cd -` succeeds: bash prints the
+			// pre-cleaning OLDPWD value verbatim to stdout (so trailing
+			// slashes etc. survive). filepath.Clean would normalise that
+			// away, hence the separate field.
+			printValue string
 		)
 		switch {
 		case len(args) == 0:
@@ -180,7 +184,7 @@ func registerFlags(flags *builtins.FlagSet) builtins.HandlerFunc {
 				return builtins.Result{Code: 1}
 			}
 			target = oldpwd
-			printed = true
+			printValue = oldpwd
 		default:
 			target = args[0]
 		}
@@ -238,8 +242,8 @@ func registerFlags(flags *builtins.FlagSet) builtins.HandlerFunc {
 			return builtins.Result{Code: 1}
 		}
 
-		if printed {
-			callCtx.Out(absPath)
+		if printValue != "" {
+			callCtx.Out(printValue)
 			callCtx.Out("\n")
 		}
 
@@ -247,43 +251,135 @@ func registerFlags(flags *builtins.FlagSet) builtins.HandlerFunc {
 	}
 }
 
-// resolvePhysical walks absPath component-by-component, following symlinks
-// via callCtx.ReadlinkFile so that the returned path contains no symlink
-// segments. The walk is bounded by maxSymlinkHops to defeat circular
-// symlinks. ctx is checked between hops so cancellation is honoured.
+// resolvePhysical resolves every symlink component in absPath — including
+// intermediate ones — so the returned path is fully canonical, matching
+// bash's `cd -P` behaviour. For `dir/symlink/sub` where `symlink → real`,
+// bash sets $PWD to `dir/real/sub`; a single Lstat on the leaf cannot
+// detect this because the kernel transparently follows intermediate
+// symlinks (only the final component is exempt under O_NOFOLLOW). To
+// catch intermediate symlinks we resolve the leaf first and then walk
+// back up the path looking for any ancestor that is itself a symlink,
+// substitute its target, and repeat from the leaf.
+//
+// All filesystem access goes through callCtx.LstatFile and
+// callCtx.ReadlinkFile, both of which honour the AllowedPaths sandbox.
+// Ancestors that fall outside the sandbox return a permission error from
+// LstatFile; we treat that as "this prefix is opaque to us" and stop the
+// upward walk — there is nothing the user can do to make the sandbox
+// reveal more, and the leaf-side resolution is still applied.
+//
+// Bounded by maxSymlinkHops across both leaf and intermediate hops; ctx
+// is checked between hops so cancellation is honoured.
 func resolvePhysical(ctx context.Context, callCtx *builtins.CallContext, absPath string) (string, error) {
-	hops := 0
+	if callCtx.LstatFile == nil || callCtx.ReadlinkFile == nil {
+		return absPath, nil
+	}
 	current := absPath
+	hops := 0
 	for {
 		if err := ctx.Err(); err != nil {
 			return "", err
 		}
-		if callCtx.LstatFile == nil || callCtx.ReadlinkFile == nil {
-			return current, nil
-		}
+		// 1) Resolve the leaf if it is itself a symlink.
 		info, err := callCtx.LstatFile(ctx, current)
 		if err != nil {
 			return "", err
 		}
-		if info.Mode()&fs.ModeSymlink == 0 {
-			return current, nil
+		if info.Mode()&fs.ModeSymlink != 0 {
+			hops++
+			if hops > maxSymlinkHops {
+				return "", errors.New("too many levels of symbolic links")
+			}
+			target, err := callCtx.ReadlinkFile(ctx, current)
+			if err != nil {
+				return "", err
+			}
+			if filepath.IsAbs(target) {
+				current = filepath.Clean(target)
+			} else {
+				current = filepath.Clean(filepath.Join(filepath.Dir(current), target))
+			}
+			if len(current) > maxPathBytes {
+				return "", errors.New("path too long")
+			}
+			continue
 		}
-		hops++
-		if hops > maxSymlinkHops {
-			return "", errors.New("too many levels of symbolic links")
-		}
-		target, err := callCtx.ReadlinkFile(ctx, current)
+		// 2) Leaf is regular. Walk parents looking for the deepest
+		//    ancestor that is itself a symlink. If we find one, splice in
+		//    its target and re-enter the outer loop so the new path is
+		//    re-checked from the leaf.
+		rebuilt, replaced, err := substituteIntermediateSymlink(ctx, callCtx, current, &hops)
 		if err != nil {
 			return "", err
 		}
-		if filepath.IsAbs(target) {
-			current = filepath.Clean(target)
-		} else {
-			current = filepath.Clean(filepath.Join(filepath.Dir(current), target))
+		if !replaced {
+			return filepath.Clean(current), nil
 		}
-		if len(current) > maxPathBytes {
+		if len(rebuilt) > maxPathBytes {
 			return "", errors.New("path too long")
 		}
+		current = rebuilt
+	}
+}
+
+// substituteIntermediateSymlink walks parents of absPath from deepest to
+// shallowest. The first parent that is itself a symlink is resolved and
+// the path is rebuilt with the target substituted (the suffix below the
+// symlink is preserved). On success returns (newPath, true, nil); when
+// no parent is a symlink (or LstatFile rejects a parent — typically the
+// sandbox boundary), returns ("", false, nil) to signal the outer loop
+// that absPath is fully canonical for the visible portion of the tree.
+func substituteIntermediateSymlink(ctx context.Context, callCtx *builtins.CallContext, absPath string, hops *int) (string, bool, error) {
+	current := absPath
+	suffix := ""
+	for {
+		if err := ctx.Err(); err != nil {
+			return "", false, err
+		}
+		parent := filepath.Dir(current)
+		if parent == current {
+			// Reached the volume root — no symlink in any ancestor.
+			return "", false, nil
+		}
+		// Extract the trailing component of `current` without using
+		// filepath.Base (which is not in cd's symbol allowlist). After
+		// normalising both sides to forward slashes the basename is the
+		// final segment of the slash-joined form.
+		baseSegments := strings.Split(filepath.ToSlash(current), "/")
+		base := baseSegments[len(baseSegments)-1]
+		if suffix == "" {
+			suffix = base
+		} else {
+			suffix = filepath.Join(base, suffix)
+		}
+		info, err := callCtx.LstatFile(ctx, parent)
+		if err != nil {
+			// Parent is opaque to us (sandbox boundary, permission
+			// denied, etc.). We cannot resolve symlinks above this
+			// point; treat the path as canonical from here up.
+			return "", false, nil
+		}
+		if info.Mode()&fs.ModeSymlink != 0 {
+			*hops++
+			if *hops > maxSymlinkHops {
+				return "", false, errors.New("too many levels of symbolic links")
+			}
+			target, err := callCtx.ReadlinkFile(ctx, parent)
+			if err != nil {
+				return "", false, err
+			}
+			if len(target) > maxPathBytes {
+				return "", false, errors.New("path too long")
+			}
+			var rebuilt string
+			if filepath.IsAbs(target) {
+				rebuilt = filepath.Clean(filepath.Join(target, suffix))
+			} else {
+				rebuilt = filepath.Clean(filepath.Join(filepath.Dir(parent), target, suffix))
+			}
+			return rebuilt, true, nil
+		}
+		current = parent
 	}
 }
 

@@ -120,6 +120,27 @@ func TestCdDashSetsOldpwdToCurrent(t *testing.T) {
 	assert.Equal(t, expected, stdout)
 }
 
+// TestCdInlineAssignmentSurvivesRestore covers `OLDPWD=X cd -`. Bash's
+// inline assignments are restored after the command returns, but cd's
+// own update to PWD/OLDPWD must survive the restore — otherwise the
+// inline value would overwrite cd's intended bookkeeping. Regression
+// test for the case where the inline-restore loop in interp/runner_exec
+// reverted cd's update.
+func TestCdInlineAssignmentSurvivesRestore(t *testing.T) {
+	dir := t.TempDir()
+	a := makeDir(t, dir, "a")
+	b := makeDir(t, dir, "b")
+	script := "cd " + a + "\ncd " + b + "\nOLDPWD=" + dir + " cd -\necho OLDPWD=$OLDPWD\necho PWD=$PWD"
+	stdout, _, code := cmdRun(t, script, dir)
+	assert.Equal(t, 0, code)
+	// After the inline `OLDPWD=$dir cd -`, bash sets:
+	//   OLDPWD = $b (cd's update — the directory we left)
+	//   PWD    = $dir (the inline OLDPWD we cd'd into)
+	// not OLDPWD = $a (the pre-inline value that the restore would clobber).
+	expected := dir + "\nOLDPWD=" + b + "\nPWD=" + dir + "\n"
+	assert.Equal(t, expected, stdout)
+}
+
 // --- cd with no args (HOME) ---
 
 func TestCdNoArgsWithHome(t *testing.T) {
@@ -262,6 +283,23 @@ func TestCdPhysicalResolvesSymlink(t *testing.T) {
 	stdout, _, code := cmdRun(t, "cd -P alias\necho $PWD", dir)
 	assert.Equal(t, 0, code)
 	assert.Equal(t, target+"\n", stdout)
+}
+
+// TestCdPhysicalResolvesIntermediateSymlink covers the case where an
+// *intermediate* path component (not the leaf) is a symlink. Bash's
+// `cd -P` resolves every symlink, including ancestors, so $PWD reflects
+// the canonical real path. Regression test for a bug where the resolver
+// only Lstat'd the full path and missed intermediate symlinks because
+// the kernel transparently follows them on Lstat.
+func TestCdPhysicalResolvesIntermediateSymlink(t *testing.T) {
+	dir := t.TempDir()
+	makeDir(t, dir, "real/inside")
+	link := filepath.Join(dir, "alias")
+	require.NoError(t, os.Symlink(filepath.Join(dir, "real"), link))
+	stdout, _, code := cmdRun(t, "cd -P alias/inside\necho $PWD", dir)
+	assert.Equal(t, 0, code)
+	expected := filepath.Join(dir, "real", "inside") + "\n"
+	assert.Equal(t, expected, stdout)
 }
 
 func TestCdLPLastWins_PWins(t *testing.T) {

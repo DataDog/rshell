@@ -116,6 +116,17 @@ func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {
 
 		defer func() {
 			for _, restore := range restores {
+				// When the builtin updated the working directory (cd
+				// returning Result.NewWorkDir), it has already written
+				// fresh values to PWD and OLDPWD via applyNewWorkDir.
+				// Restoring those to the pre-inline values here would
+				// silently undo cd's update, which diverges from bash:
+				//   cd /a; cd /b; OLDPWD=/foo cd -
+				//   bash → echo $OLDPWD = /b   (cd's update wins)
+				// Skip PWD/OLDPWD in that case so cd's writes survive.
+				if r.lastCallChangedWorkDir && (restore.name == "PWD" || restore.name == "OLDPWD") {
+					continue
+				}
 				r.setVarRestore(restore.name, restore.vr)
 			}
 		}()
@@ -287,6 +298,8 @@ func (r *Runner) loopStmtsBroken(ctx context.Context, stmts []*syntax.Stmt) bool
 func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 	name := args[0]
 	r.totalCount++
+	// Reset per-call workdir-change flag so callers see a fresh value.
+	r.lastCallChangedWorkDir = false
 
 	// Evaluate both policy checks upfront so the span tags reflect the
 	// independent facts about the command name regardless of which gate
@@ -484,6 +497,7 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 		r.contnEnclosing = result.ContinueN
 		if result.Code == 0 && result.NewWorkDir != "" {
 			r.applyNewWorkDir(result.NewWorkDir)
+			r.lastCallChangedWorkDir = true
 		}
 		return
 	}

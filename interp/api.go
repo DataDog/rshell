@@ -193,6 +193,14 @@ type runnerState struct {
 	// (including concurrent pipe subshells) via pointer, and must be
 	// accessed atomically.
 	globReadDirCount *atomic.Int64
+
+	// lastCallChangedWorkDir is set by [call] when a builtin (e.g. cd)
+	// returns a non-empty Result.NewWorkDir, signalling that PWD and
+	// OLDPWD were updated by [applyNewWorkDir]. The inline-assignment
+	// restore loop in [stmtSync] consults this so it does not stomp those
+	// builtin-side updates with the pre-inline values, matching bash's
+	// observable behaviour for `OLDPWD=X cd -`.
+	lastCallChangedWorkDir bool
 }
 
 // A Runner interprets shell programs. It can be reused, but it is not safe for
