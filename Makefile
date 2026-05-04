@@ -19,4 +19,4 @@ compliance:
 	RSHELL_COMPLIANCE_TEST=1 go test -v ./tests/ -run TestCompliance -count=1
 
 review-fix-loop:
-	go -C tools/review-fix-loop run . $(ARGS)
+	go -C tools/review-fix-loop run . --dir "$(PWD)" $(ARGS)
