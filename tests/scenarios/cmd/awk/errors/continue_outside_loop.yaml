@@ -1,0 +1,9 @@
+description: continue outside a loop is a runtime error (exit 1); diverges from mawk which gives a cleaner message and exits 2.
+skip_assert_against_bash: true
+input:
+  script: |+
+    printf 'x\n' | awk '{ continue }'
+expect:
+  stdout: |+
+  stderr_contains: ["awk:"]
+  exit_code: 1

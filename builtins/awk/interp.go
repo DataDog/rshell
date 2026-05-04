@@ -674,11 +674,17 @@ func (r *runtime) openInput(ctx context.Context, name string) (io.ReadCloser, bo
 	// a file could be replaced by a symlink or special file between the two
 	// calls, causing isRegular=true and bypassing the 256 MiB cap.
 	// This is accepted because:
-	//   1. AllowedPaths inside OpenFile is the primary sandbox guard.
+	//   1. AllowedPaths inside OpenFile is the primary sandbox guard and is
+	//      not affected by the race.
 	//   2. The cap is defence-in-depth only; its bypass does not grant new
 	//      capabilities beyond what a regular large file already provides.
 	//   3. A race-free alternative (stat on the open fd) is unavailable
 	//      through the callCtx API.
+	// Concrete worst-case: a symlink swap between StatFile and OpenFile
+	// would cause the cap to be skipped for that file, allowing up to the
+	// OS-defined file size to be read — bounded by the file system, not our
+	// 256 MiB cap. The AllowedPaths check inside OpenFile still limits which
+	// files can be opened.
 	regular := false
 	if r.callCtx.StatFile != nil {
 		if info, err := r.callCtx.StatFile(ctx, name); err == nil {
@@ -695,6 +701,12 @@ func (r *runtime) openInput(ctx context.Context, name string) (io.ReadCloser, bo
 // printLine writes the joined args followed by ORS. Returns the first write
 // error so callers (including the BEGIN/END drivers) can surface broken-pipe
 // or other I/O failures.
+//
+// Note: ORS is written unconditionally after each print without a separate
+// per-call output-size check. ORS is capped at MaxStringBytes (1 MiB) by the
+// storeScalar / applyVarAssignment guards, so each print call emits at most
+// ~2 MiB (payload cap + ORS cap). This known amplification factor is bounded
+// by the execution timeout and the OS's stdout buffer limits.
 func (r *runtime) printLine(parts []string) error {
 	switch len(parts) {
 	case 0:

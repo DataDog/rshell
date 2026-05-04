@@ -292,7 +292,7 @@ func (r *runtime) bSub(args []expr, global bool) (awkValue, error) {
 			// Check for context cancellation every 1024 iterations so that
 			// a large match set (e.g. gsub(/x*/, "", bigstr)) does not block
 			// the goroutine beyond the shell execution timeout.
-			if i%1024 == 0 && r.ctx != nil && r.ctx.Err() != nil {
+			if i%1024 == 0 && r.ctx.Err() != nil {
 				return uninitValue, r.ctx.Err()
 			}
 			sb.WriteString(s[last:m[0]])

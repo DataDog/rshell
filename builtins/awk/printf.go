@@ -31,6 +31,12 @@ func awkSprintf(format string, values []awkValue, convFmt string) (string, error
 		c := format[i]
 		if c != '%' {
 			sb.WriteByte(c)
+			// Check size after each literal byte to ensure the format string
+			// itself (which may consist entirely of literal chars) cannot grow
+			// sb beyond the 1 MiB cap before a %-spec is encountered.
+			if sb.Len() > MaxStringBytes {
+				return "", fmt.Errorf("printf output exceeds maximum string length %d", MaxStringBytes)
+			}
 			continue
 		}
 		// Find the end of the conversion specifier.
