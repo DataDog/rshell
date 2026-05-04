@@ -415,29 +415,16 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 				CommandAllowed: func(n string) bool {
 					return r.allowAllCommands || r.allowedCommands[n]
 				},
-				SetVar: func(name, value string) error {
-					if len(value) > MaxVarBytes {
-						return fmt.Errorf("%s: value too large (limit %d bytes)", name, MaxVarBytes)
-					}
-					err := r.setVarErr(name, expand.Variable{Set: true, Kind: expand.String, Str: value})
-					if err == nil {
-						return nil
-					}
-					// Total-storage exhaustion is script-aborting (matches the
-					// AST setVar behaviour in interp/vars.go). Translate the
-					// internal sentinel to the public builtins.ErrVarStorageExceeded
-					// so state-mutating builtins can surface Result.Exiting=true
-					// without needing access to the private interp type.
-					var storageErr *errTotalVarStorageExceeded
-					if errors.As(err, &storageErr) {
-						return fmt.Errorf("%s: %w", err, builtins.ErrVarStorageExceeded)
-					}
-					return err
-				},
-				GetVar: func(name string) (string, bool) {
-					vr := r.writeEnv.Get(name)
-					return vr.Str, vr.IsSet()
-				},
+				// Intentionally not exposing SetVar / GetVar in the
+				// RunCommand callback. find -exec / -execdir treat
+				// each invocation as a separate command (bash forks
+				// and execs a new process), so any environment
+				// mutation must not leak back to the calling shell.
+				// State-mutating builtins like read detect the absent
+				// SetVar and refuse to run with "variable access is
+				// not available", which is the closest analogue to
+				// bash's "exec read fails because read is a builtin,
+				// not an executable on PATH" behaviour.
 			}
 			if r.stdin != nil {
 				child.Stdin = r.stdin
