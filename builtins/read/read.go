@@ -303,6 +303,13 @@ func run(ctx context.Context, c *builtins.CallContext, args []string, opt runOpt
 		}
 		if err := c.SetVar(name, values[i]); err != nil {
 			c.Errf("read: %s\n", err)
+			// Total-storage exhaustion is the same script-aborting
+			// resource-cap violation that AST-level assignment treats
+			// as fatal. Surface it via Result.Exiting so the runner
+			// stops the script rather than continuing past the cap.
+			if errors.Is(err, builtins.ErrVarStorageExceeded) {
+				return builtins.Result{Code: 1, Exiting: true}
+			}
 			return builtins.Result{Code: 1}
 		}
 	}
@@ -554,6 +561,15 @@ func readInput(ctx context.Context, r io.Reader, delim rune, raw bool, charLimit
 
 		if !ignoreDelim && rn == delim {
 			return string(buf), false, nil
+		}
+
+		// Bash strips embedded NUL bytes from the assigned value. The
+		// only case where NUL is meaningful is as the delimiter
+		// (`read -d ''`), and that's handled by the delim check above.
+		// In any other configuration — including -N mode with -d '' —
+		// bash discards NULs without counting them toward charLimit.
+		if rn == 0 {
+			continue
 		}
 
 		if !raw && rn == '\\' {
