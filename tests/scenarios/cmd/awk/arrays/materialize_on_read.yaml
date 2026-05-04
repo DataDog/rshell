@@ -1,5 +1,4 @@
 description: Reading an unset array element creates it, so membership tests see it afterward.
-skip_assert_against_bash: true  # intentional divergence from POSIX and gawk (POSIX §9.5.10 specifies that reading an unset element returns "" but does NOT create the element; gawk follows POSIX). mawk also creates the element on read. This implementation follows mawk behavior.
 input:
   script: |+
     awk 'BEGIN { x = a[1]; print (1 in a), length(a) }'
