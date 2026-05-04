@@ -155,7 +155,7 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 	// Without this, `xargs echo -n` would parse -n as xargs' --max-args.
 	fs.SetInterspersed(false)
 
-	help := fs.BoolP("help", "h", false, "print usage and exit")
+	help := fs.BoolP("help", "h", false, "print usage and exit (rshell extension: -h is not recognised by GNU xargs)")
 	null := fs.BoolP("null", "0", false, "input items are separated by a NUL character")
 	argFile := fs.StringP("arg-file", "a", "", "read items from FILE instead of stdin")
 	delim := fs.StringP("delimiter", "d", "", "use DELIM as the single-byte item separator")
