@@ -63,7 +63,7 @@ Retrieve inline review comments, keeping only those authored by `$MY_LOGIN` or `
 gh api repos/{owner}/{repo}/pulls/{pr-number}/comments \
   --paginate \
   --jq --arg me "$MY_LOGIN" \
-  '[.[] | select(.user.login == $me or .user.login == "chatgpt-codex-connector[bot]")] | .[] | {id: .id, node_id: .node_id, user: .user.login, path: .path, line: .line, original_line: .original_line, side: .side, body: .body, in_reply_to_id: .in_reply_to_id, created_at: .created_at}' \
+  '[.[] | select(.user.login == $me or .user.login == "chatgpt-codex-connector[bot]" or .user.login == "chatgpt-codex-connector")] | .[] | {id: .id, node_id: .node_id, user: .user.login, path: .path, line: .line, original_line: .original_line, side: .side, body: .body, in_reply_to_id: .in_reply_to_id, created_at: .created_at}' \
   2>&1 | head -500
 ```
 
@@ -74,7 +74,7 @@ Fetch top-level review summaries, keeping only those authored by `$MY_LOGIN` or 
 ```bash
 gh api repos/{owner}/{repo}/pulls/{pr-number}/reviews \
   --jq --arg me "$MY_LOGIN" \
-  '[.[] | select((.body != "" and .body != null) and (.user.login == $me or .user.login == "chatgpt-codex-connector[bot]"))] | .[] | {id: .id, user: .user.login, state: .state, body: .body, submitted_at: .submitted_at}' \
+  '[.[] | select((.body != "" and .body != null) and (.user.login == $me or .user.login == "chatgpt-codex-connector[bot]" or .user.login == "chatgpt-codex-connector"))] | .[] | {id: .id, user: .user.login, state: .state, body: .body, submitted_at: .submitted_at}' \
   2>&1 | head -200
 ```
 
@@ -121,7 +121,7 @@ while true; do
     }
   ' -f owner="{owner}" -f repo="{repo}" -F pr={pr-number} -f after="$cursor")
   echo "$page" | jq --arg me "$MY_LOGIN" \
-    '.data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved == false) | select(.comments.nodes[0].author.login == $me or .comments.nodes[0].author.login == "chatgpt-codex-connector[bot]")'
+    '.data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved == false) | select(.comments.nodes[0].author.login == $me or .comments.nodes[0].author.login == "chatgpt-codex-connector[bot]" or .comments.nodes[0].author.login == "chatgpt-codex-connector")'
   [ "$(echo "$page" | jq -r '.data.repository.pullRequest.reviewThreads.pageInfo.hasNextPage')" = "true" ] || break
   cursor=$(echo "$page" | jq -r '.data.repository.pullRequest.reviewThreads.pageInfo.endCursor')
 done

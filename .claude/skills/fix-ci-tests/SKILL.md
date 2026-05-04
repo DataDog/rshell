@@ -224,7 +224,7 @@ MY_LOGIN=$(gh api user --jq '.login')
 # Fetch review comments, filtered to trusted authors only
 gh api repos/{owner}/{repo}/pulls/{pr-number}/comments \
   --jq --arg me "$MY_LOGIN" \
-  '.[] | select(.user.login == $me or .user.login == "chatgpt-codex-connector[bot]") | {id, body, path, line}' \
+  '.[] | select(.user.login == $me or .user.login == "chatgpt-codex-connector[bot]" or .user.login == "chatgpt-codex-connector") | {id, body, path, line}' \
   2>&1 | head -100
 ```
 
