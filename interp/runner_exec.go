@@ -362,9 +362,26 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 				return 127, fmt.Errorf("rshell: %s: unknown command", cmdName)
 			}
 			child := &builtins.CallContext{
-				Stdout:     r.stdout,
-				Stderr:     r.stderr,
-				WorkDir:    func() string { return dir },
+				Stdout:  r.stdout,
+				Stderr:  r.stderr,
+				WorkDir: func() string { return dir },
+				HostPrefix: func() string {
+					// Return the sandbox's normalized prefix (filepath.Clean'd
+					// in SetHostPrefix) rather than the raw user-supplied
+					// value. A caller-provided trailing slash or "."/".."
+					// segment would otherwise break prefix-matching in
+					// builtins that consume this value.
+					if r.sandbox != nil {
+						return r.sandbox.HostPrefix()
+					}
+					return r.hostPrefix
+				},
+				CanonicalizeRootPrefix: func(absPath string) string {
+					if r.sandbox == nil {
+						return absPath
+					}
+					return r.sandbox.CanonicalizeRootPrefix(absPath)
+				},
 				RunCommand: runCmd,
 				OpenFile: func(ctx context.Context, path string, flags int, mode os.FileMode) (io.ReadWriteCloser, error) {
 					f, err := r.sandbox.Open(path, dir, flags, mode)
@@ -432,6 +449,23 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 			LastExitCode: r.lastExit.code,
 			WorkDir: func() string {
 				return HandlerCtx(r.handlerCtx(ctx, todoPos)).Dir
+			},
+			HostPrefix: func() string {
+				// Return the sandbox's normalized prefix (filepath.Clean'd
+				// in SetHostPrefix) rather than the raw user-supplied
+				// value. A caller-provided trailing slash or "."/".."
+				// segment would otherwise break prefix-matching in
+				// builtins that consume this value.
+				if r.sandbox != nil {
+					return r.sandbox.HostPrefix()
+				}
+				return r.hostPrefix
+			},
+			CanonicalizeRootPrefix: func(absPath string) string {
+				if r.sandbox == nil {
+					return absPath
+				}
+				return r.sandbox.CanonicalizeRootPrefix(absPath)
 			},
 			OpenFile: func(ctx context.Context, path string, flags int, mode os.FileMode) (io.ReadWriteCloser, error) {
 				f, err := r.open(ctx, path, flags, mode, false)

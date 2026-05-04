@@ -32,9 +32,17 @@ const (
 const MaxGlobEntries = 10_000
 
 // root pairs an absolute directory path with its opened os.Root handle.
+//
+// canonicalAbsPath is the symlink-resolved form of absPath (computed
+// via filepath.EvalSymlinks at sandbox-setup time). It equals absPath
+// when absPath is not a symlink. Builtins that compute canonical
+// paths (e.g. pwd -P) use this to translate the configured-root
+// prefix back to its on-disk canonical form, which os.Root has
+// already followed implicitly when opening the root.
 type root struct {
-	absPath string
-	root    *os.Root
+	absPath          string
+	canonicalAbsPath string
+	root             *os.Root
 }
 
 // Sandbox restricts filesystem access to a set of allowed directories.
@@ -68,7 +76,18 @@ func New(paths []string) (sb *Sandbox, warnings []byte, err error) {
 			fmt.Fprintf(&buf, "AllowedPaths: skipping %q: %v\n", abs, err)
 			continue
 		}
-		roots = append(roots, root{absPath: abs, root: r})
+		// Record the canonical (symlink-resolved) form of the configured
+		// root. os.OpenRoot already follows symlinks at the path itself,
+		// so the opened handle observes the target directory; we capture
+		// that resolution here so builtins like `pwd -P` can translate
+		// the configured-root prefix back to its canonical form.
+		// EvalSymlinks failure is not fatal — fall back to the configured
+		// path, matching prior behavior.
+		canonical, evalErr := filepath.EvalSymlinks(abs)
+		if evalErr != nil {
+			canonical = abs
+		}
+		roots = append(roots, root{absPath: abs, canonicalAbsPath: canonical, root: r})
 	}
 	return &Sandbox{roots: roots}, buf.Bytes(), nil
 }
@@ -621,6 +640,42 @@ func (s *Sandbox) SetHostPrefix(prefix string) {
 // HostPrefix returns the current host mount prefix.
 func (s *Sandbox) HostPrefix() string {
 	return s.hostPrefix
+}
+
+// CanonicalizeRootPrefix returns absPath with any matching sandbox-root
+// prefix replaced by that root's canonical (symlink-resolved) form. If
+// absPath is outside every root, or its containing root is not a
+// symlink, the input is returned unchanged.
+//
+// Use case: builtins like `pwd -P` walk symlinks within the sandbox
+// via callCtx.LstatFile/ReadlinkFile, but the *root itself* may be a
+// symlink (e.g. AllowedPaths=/tmp/link with /tmp/link -> /tmp/real).
+// os.OpenRoot follows the root symlink at open time, so per-component
+// LstatFile cannot detect it. This helper applies the missing
+// translation by mapping the configured-root prefix to the canonical
+// one captured at New() time.
+func (s *Sandbox) CanonicalizeRootPrefix(absPath string) string {
+	if s == nil {
+		return absPath
+	}
+	for i := range s.roots {
+		r := &s.roots[i]
+		if r.canonicalAbsPath == "" || r.canonicalAbsPath == r.absPath {
+			continue
+		}
+		rel, err := filepath.Rel(r.absPath, absPath)
+		if err != nil {
+			continue
+		}
+		if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			continue
+		}
+		if rel == "." {
+			return r.canonicalAbsPath
+		}
+		return filepath.Join(r.canonicalAbsPath, rel)
+	}
+	return absPath
 }
 
 // Paths returns the resolved absolute paths of all allowed directories.
