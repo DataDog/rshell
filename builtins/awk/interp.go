@@ -240,7 +240,7 @@ func run(ctx context.Context, r *runtime, prog *program, files []string) (uint8,
 			// files so they take effect for subsequent input files.
 			if isArgvAssignment(file) {
 				if err := r.applyVarAssignment(file); err != nil {
-					return 1, fmt.Errorf("awk: argv assignment %q: %w", file, err)
+					return 1, fmt.Errorf("argv assignment %q: %w", file, err)
 				}
 				continue
 			}
