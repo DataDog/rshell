@@ -18,9 +18,10 @@ import (
 
 // IterationResult records the outcome of one loop iteration.
 type IterationResult struct {
-	Iteration  int
-	Unresolved int
-	CIClean    bool
+	Iteration      int
+	ReviewFindings int // new threads opened by the code-review step
+	Unresolved     int // unresolved threads at end of iteration
+	CIClean        bool
 }
 
 // run is the main entry point after flag parsing.
@@ -55,6 +56,12 @@ func run(ctx context.Context, cfg Config, prRef string) error {
 			iter, cfg.MaxIterations, successCount, cfg.TargetSuccess,
 		)))
 
+		// Count threads before review so we can detect new findings below.
+		beforeReview, beforeErr := countUnresolvedThreads(cfg.WorkDir, pr)
+		if beforeErr != nil {
+			log.Printf("[pre-review threads] warning: %v", beforeErr)
+		}
+
 		// 2A1 (self-review) + 2A2 (trigger codex) in parallel
 		var wg sync.WaitGroup
 		wg.Add(2)
@@ -70,6 +77,16 @@ func run(ctx context.Context, cfg Config, prRef string) error {
 			triggerCodex(cfg.WorkDir, pr.Number)
 		}()
 		wg.Wait()
+
+		// Count threads after review to measure new findings.
+		afterReview, afterErr := countUnresolvedThreads(cfg.WorkDir, pr)
+		if afterErr != nil {
+			log.Printf("[post-review threads] warning: %v", afterErr)
+		}
+		reviewFindings := afterReview - beforeReview
+		if reviewFindings < 0 {
+			reviewFindings = 0
+		}
 
 		// Post a brief iteration comment so the outcome is visible on the PR
 		postComment(cfg.WorkDir, pr.Number,
@@ -116,17 +133,17 @@ func run(ctx context.Context, cfg Config, prRef string) error {
 			log.Printf("[CI status] warning: %v", ciErr)
 		}
 
-		result := IterationResult{Iteration: iter, Unresolved: unresolved, CIClean: ciClean}
+		result := IterationResult{Iteration: iter, ReviewFindings: reviewFindings, Unresolved: unresolved, CIClean: ciClean}
 		results = append(results, result)
 
-		statusLine := fmt.Sprintf("→ unresolved=%d  ci_clean=%v", unresolved, ciClean)
-		if unresolved == 0 && ciClean {
+		statusLine := fmt.Sprintf("→ findings=%d  ci_clean=%v", reviewFindings, ciClean)
+		if reviewFindings == 0 && ciClean {
 			fmt.Fprintf(out, "\n  %s\n", boldGreen(statusLine))
 		} else {
 			fmt.Fprintf(out, "\n  %s\n", boldRed(statusLine))
 		}
 
-		if unresolved == 0 && ciClean {
+		if reviewFindings == 0 && ciClean {
 			successCount++
 			fmt.Fprintf(out, "  %s\n", boldGreen(fmt.Sprintf("✓ clean (streak %d/%d)", successCount, cfg.TargetSuccess)))
 			if successCount >= cfg.TargetSuccess {
@@ -197,14 +214,14 @@ func buildSummary(pr PRInfo, results []IterationResult, converged bool) string {
 	fmt.Fprintf(&sb, "- **Iterations completed**: %d\n", len(results))
 	fmt.Fprintf(&sb, "- **Final status**: %s\n\n", status)
 	fmt.Fprintf(&sb, "### Iteration log\n\n")
-	fmt.Fprintf(&sb, "| # | Unresolved threads | CI |\n")
-	fmt.Fprintf(&sb, "|---|--------------------|---------|\n")
+	fmt.Fprintf(&sb, "| # | Review findings | Unresolved threads | CI |\n")
+	fmt.Fprintf(&sb, "|---|-----------------|--------------------|---------|\n")
 	for _, r := range results {
 		ci := "Passing"
 		if !r.CIClean {
 			ci = "Failing"
 		}
-		fmt.Fprintf(&sb, "| %d | %d | %s |\n", r.Iteration, r.Unresolved, ci)
+		fmt.Fprintf(&sb, "| %d | %d | %d | %s |\n", r.Iteration, r.ReviewFindings, r.Unresolved, ci)
 	}
 	return sb.String()
 }

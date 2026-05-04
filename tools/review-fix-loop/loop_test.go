@@ -18,9 +18,9 @@ func TestBuildSummary(t *testing.T) {
 
 	t.Run("converged with clean iterations", func(t *testing.T) {
 		results := []IterationResult{
-			{Iteration: 1, Unresolved: 3, CIClean: false},
-			{Iteration: 2, Unresolved: 1, CIClean: true},
-			{Iteration: 3, Unresolved: 0, CIClean: true},
+			{Iteration: 1, ReviewFindings: 4, Unresolved: 3, CIClean: false},
+			{Iteration: 2, ReviewFindings: 2, Unresolved: 1, CIClean: true},
+			{Iteration: 3, ReviewFindings: 0, Unresolved: 0, CIClean: true},
 		}
 		got := buildSummary(pr, results, true)
 
@@ -29,14 +29,14 @@ func TestBuildSummary(t *testing.T) {
 		assertContains(t, got, "#42")
 		assertContains(t, got, "https://github.com/org/repo/pull/42")
 		assertContains(t, got, "Iterations completed**: 3")
-		assertContains(t, got, "| 1 | 3 | Failing |")
-		assertContains(t, got, "| 2 | 1 | Passing |")
-		assertContains(t, got, "| 3 | 0 | Passing |")
+		assertContains(t, got, "| 1 | 4 | 3 | Failing |")
+		assertContains(t, got, "| 2 | 2 | 1 | Passing |")
+		assertContains(t, got, "| 3 | 0 | 0 | Passing |")
 	})
 
 	t.Run("hit iteration limit", func(t *testing.T) {
 		results := []IterationResult{
-			{Iteration: 1, Unresolved: 2, CIClean: true},
+			{Iteration: 1, ReviewFindings: 2, Unresolved: 2, CIClean: true},
 		}
 		got := buildSummary(pr, results, false)
 
@@ -52,10 +52,10 @@ func TestBuildSummary(t *testing.T) {
 
 	t.Run("CI failing row", func(t *testing.T) {
 		results := []IterationResult{
-			{Iteration: 1, Unresolved: 0, CIClean: false},
+			{Iteration: 1, ReviewFindings: 0, Unresolved: 0, CIClean: false},
 		}
 		got := buildSummary(pr, results, false)
-		assertContains(t, got, "| 1 | 0 | Failing |")
+		assertContains(t, got, "| 1 | 0 | 0 | Failing |")
 	})
 }
 
