@@ -50,4 +50,7 @@ This shell is intended to be used by AI Agents.
 - In test scenarios, use `expect.stderr` when possible instead of `stderr_contains`.
 - Always use the YAML `|+` block scalar for `input.script`, `expect.stdout`, and `expect.stderr` values, even single-line ones.
 - Test scenarios are asserted against bash by default. Only set `skip_assert_against_bash: true` for features that intentionally diverge from standard bash behavior (e.g. blocked commands, restricted redirects, readonly enforcement).
-- Write tests for Linux behavior. Windows-specific assertion fields (`stdout_windows`, `stderr_windows`, `stdout_contains_windows`, `stderr_contains_windows`) exist in the framework but should not be added proactively.
+- When expected output differs on Windows (e.g. path separators `\` vs `/`), use Windows-specific assertion fields:
+  - `stdout_windows` / `stderr_windows` — override `stdout` / `stderr` on Windows.
+  - `stdout_contains_windows` / `stderr_contains_windows` — override `stdout_contains` / `stderr_contains` on Windows.
+  - If the Windows field is not set, the non-Windows field is used as fallback.
