@@ -6,8 +6,8 @@ input:
     help --all
 expect:
   stdout: |+
-    rshell (dev) — 2 of 28 commands enabled
-    
+    rshell (dev) — 2 of 29 commands enabled
+
     Features:
     commands            Registered commands run inside the interpreter; no unregistered commands without an external handler.
     variables           Assignments, expansion, inline env, command substitution; no arrays/arithmetic/advanced params.
@@ -17,13 +17,13 @@ expect:
     execution           AllowedCommands, AllowedPaths, timeouts, ProcPath; no background jobs/coprocs/time.
     environment         Empty by default, caller Env, IFS/ALLOWED_PATHS; no host env inheritance/export.
     bash-divergences    Intentional bash differences captured here. Currently: one shared time reference per Run().
-    
+
     Not supported:
       - Expansions: arithmetic $((...)), arrays, advanced ${...} operations, tilde expansion, process substitution, extended globbing.
       - Control flow: while/until, case, select, C-style for ((...)), and shell functions.
       - Execution: external commands by default, background jobs, coprocesses, time, [[...]], ((...)), declare/export/local/readonly/let.
       - I/O and environment: arbitrary output file redirects, |&, herestrings, read-write redirects, input fd duplication, host env inheritance.
-    
+
     Commands:
     echo  write arguments to stdout
     help  display help for features and commands
@@ -44,6 +44,7 @@ expect:
     ping      send ICMP echo requests to a network host
     printf    format and print data
     ps        report process status
+    pwd       print working directory
     sed       stream editor for filtering and transforming text
     sort      sort lines of text files
     ss        display socket statistics
