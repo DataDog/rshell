@@ -1053,6 +1053,10 @@ func (p *parser) parsePrimary() (expr, error) {
 		if t.val == "length" && p.peek().kind != tkLBracket {
 			if p.peek().kind == tkIdent {
 				arrName := p.advance().val
+				// Check that the identifier is not a blocked name (e.g. ENVIRON).
+				if reason, blocked := blockedNames[arrName]; blocked {
+					return nil, p.errorf("%s", reason)
+				}
 				return &callExpr{name: "length", args: []expr{&identExpr{name: arrName}}}, nil
 			}
 			return &callExpr{name: "length"}, nil

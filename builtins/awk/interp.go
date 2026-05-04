@@ -823,9 +823,8 @@ func (r *runtime) execStmt(ctx context.Context, s stmt) error {
 				return err
 			}
 			n := floatToInt64Safe(val.toNumber())
-			if n < 0 {
-				n = 0
-			}
+			// Wrap negative exit codes mod 256 (mawk/POSIX behavior):
+			// exit -5 → 251, matching how the OS truncates to uint8.
 			code = uint8(n & 0xFF)
 		}
 		return &exitSignal{code: code}

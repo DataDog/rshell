@@ -1,0 +1,8 @@
+description: exit with a negative code wraps mod 256 (e.g. exit -5 → exit code 251).
+input:
+  script: |+
+    awk 'BEGIN { exit -5 }'
+expect:
+  stdout: |+
+  stderr: |+
+  exit_code: 251

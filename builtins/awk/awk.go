@@ -105,8 +105,10 @@
 //   - String values are capped at 1 MiB (MaxStringBytes); operations that
 //     would produce a longer string return an error.
 //   - Arrays are capped at 1 000 000 entries (MaxArrayEntries).
-//   - Per-record loop iterations capped at 1 000 000 (MaxLoopIterations)
-//     to prevent infinite loops in user scripts.
+//   - Per-loop-construct iteration cap at 1 000 000 (MaxLoopIterations)
+//     to prevent runaway loops in user scripts. Each loop construct (while,
+//     do-while, for) has its own independent counter; nested loops each get
+//     their own cap.
 //   - Non-regular-file inputs are subject to a 256 MiB total read cap.
 //   - All read and statement loops check ctx.Err() each iteration to honour
 //     the shell's 30-second execution timeout.
@@ -141,8 +143,10 @@ const MaxStringBytes = 1 << 20 // 1 MiB
 // MaxArrayEntries caps the number of keys per associative array.
 const MaxArrayEntries = 1_000_000
 
-// MaxLoopIterations caps the per-record loop iterations to prevent
-// infinite loops in user scripts.
+// MaxLoopIterations caps iterations per loop construct (while, do-while, for)
+// to prevent runaway loops in user scripts. Each loop construct has its own
+// independent counter; the overall guard against unbounded execution is the
+// shell's execution timeout.
 const MaxLoopIterations = 1_000_000
 
 // MaxTotalReadBytes caps total bytes read from a non-regular-file input.
