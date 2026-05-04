@@ -57,24 +57,24 @@ Store this as `$LAST_PUSH_DATE`. Comments created **after** this timestamp are f
 
 #### 2b. Fetch inline review comments
 
-Retrieve inline review comments, keeping only those authored by `$MY_LOGIN` or `chatgpt-codex-connector[bot]`:
+Retrieve inline review comments, keeping only those authored by `$MY_LOGIN`, `chatgpt-codex-connector[bot]`, or `chatgpt-codex-connector`:
 
 ```bash
 gh api repos/{owner}/{repo}/pulls/{pr-number}/comments \
   --paginate \
   --jq --arg me "$MY_LOGIN" \
-  '[.[] | select(.user.login == $me or .user.login == "chatgpt-codex-connector[bot]")] | .[] | {id: .id, node_id: .node_id, user: .user.login, path: .path, line: .line, original_line: .original_line, side: .side, body: .body, in_reply_to_id: .in_reply_to_id, created_at: .created_at}' \
+  '[.[] | select(.user.login == $me or .user.login == "chatgpt-codex-connector[bot]" or .user.login == "chatgpt-codex-connector")] | .[] | {id: .id, node_id: .node_id, user: .user.login, path: .path, line: .line, original_line: .original_line, side: .side, body: .body, in_reply_to_id: .in_reply_to_id, created_at: .created_at}' \
   2>&1 | head -500
 ```
 
 #### 2c. Fetch review summaries
 
-Fetch top-level review summaries, keeping only those authored by `$MY_LOGIN` or `chatgpt-codex-connector[bot]`:
+Fetch top-level review summaries, keeping only those authored by `$MY_LOGIN`, `chatgpt-codex-connector[bot]`, or `chatgpt-codex-connector`:
 
 ```bash
 gh api repos/{owner}/{repo}/pulls/{pr-number}/reviews \
   --jq --arg me "$MY_LOGIN" \
-  '[.[] | select((.body != "" and .body != null) and (.user.login == $me or .user.login == "chatgpt-codex-connector[bot]"))] | .[] | {id: .id, user: .user.login, state: .state, body: .body, submitted_at: .submitted_at}' \
+  '[.[] | select((.body != "" and .body != null) and (.user.login == $me or .user.login == "chatgpt-codex-connector[bot]" or .user.login == "chatgpt-codex-connector"))] | .[] | {id: .id, user: .user.login, state: .state, body: .body, submitted_at: .submitted_at}' \
   2>&1 | head -200
 ```
 
