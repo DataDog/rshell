@@ -40,7 +40,7 @@ func (r *Runner) stop(ctx context.Context) bool {
 	if r.exit.exiting {
 		return true
 	}
-	if (r.pipeBroken != nil && *r.pipeBroken) || (r.parentPipeBroken != nil && *r.parentPipeBroken) {
+	if (r.pipeBroken != nil && r.pipeBroken.Load()) || (r.parentPipeBroken != nil && r.parentPipeBroken.Load()) {
 		// Downstream pipeline stage has closed its read end. Emulate
 		// bash's SIGPIPE-on-write behaviour: stop running statements,
 		// surface a clean exit (no error, no fatal state).

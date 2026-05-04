@@ -15,6 +15,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"mvdan.cc/sh/v3/expand"
 	"mvdan.cc/sh/v3/syntax"
@@ -119,7 +120,7 @@ func (r *Runner) cmdSubst(w io.Writer, cs *syntax.CmdSubst) error {
 	// loop writing into this command substitution (e.g. `x=$(while true; do
 	// echo a; done)`) is terminated via r.stop() when the 1 MiB output cap is
 	// reached, rather than spinning indefinitely on the discard path.
-	stopped := new(bool)
+	stopped := new(atomic.Bool)
 	r2.pipeBroken = stopped
 	r2.stdout = &limitWriter{w: &buf, limit: maxCmdSubstOutput, stopFlag: stopped}
 	r2.stmts(r.ectx, cs.Stmts)
@@ -176,7 +177,7 @@ type limitWriter struct {
 	limit    int64
 	n        int64
 	exceeded bool
-	stopFlag *bool // optional: set to true once when limit is first exceeded
+	stopFlag *atomic.Bool // optional: set to true once when limit is first exceeded
 }
 
 func (lw *limitWriter) Write(p []byte) (int, error) {
@@ -186,7 +187,7 @@ func (lw *limitWriter) Write(p []byte) (int, error) {
 		if !lw.exceeded {
 			lw.exceeded = true
 			if lw.stopFlag != nil {
-				*lw.stopFlag = true
+				lw.stopFlag.Store(true)
 			}
 		}
 		return len(p), nil // silently discard excess
@@ -200,7 +201,7 @@ func (lw *limitWriter) Write(p []byte) (int, error) {
 		if !lw.exceeded {
 			lw.exceeded = true
 			if lw.stopFlag != nil {
-				*lw.stopFlag = true
+				lw.stopFlag.Store(true)
 			}
 		}
 		return len(p), nil // report all bytes consumed to avoid short-write errors

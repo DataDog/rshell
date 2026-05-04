@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"sync"
+	"sync/atomic"
 	"syscall"
 
 	"mvdan.cc/sh/v3/expand"
@@ -174,7 +175,7 @@ func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {
 			// own pipeBroken is never set in that case because cat keeps reading
 			// the inner pipe, but the outer pipeBroken (set when cat's write to
 			// head fails) is visible through parentPipeBroken.
-			pipeBroken := new(bool)
+			pipeBroken := new(atomic.Bool)
 			rLeft.parentPipeBroken = rLeft.pipeBroken
 			rLeft.pipeBroken = pipeBroken
 			rLeft.stdout = &pipeBrokenWriter{w: pw, flag: pipeBroken}
@@ -724,7 +725,7 @@ func (sw *syncWriter) Write(p []byte) (int, error) {
 // preserve the byte count and other error types.
 type pipeBrokenWriter struct {
 	w    io.Writer
-	flag *bool // shared with the producer runner and its subshells
+	flag *atomic.Bool // shared with the producer runner and its subshells
 }
 
 func (p *pipeBrokenWriter) Write(b []byte) (int, error) {
@@ -734,11 +735,13 @@ func (p *pipeBrokenWriter) Write(b []byte) (int, error) {
 		// next statement boundary and terminate the producer. We don't set
 		// r.exit.exiting directly here because that field is overwritten by
 		// each builtin's Result.Exiting (interp/runner_exec.go:619). The
-		// flag is shared via *bool with subshells of the producer so that
-		// nested constructs (e.g. `while true; do (while ...); done | head`)
-		// also unwind.
+		// flag is shared via *atomic.Bool with subshells of the producer so
+		// that nested constructs (e.g. `while true; do (while ...); done | head`)
+		// also unwind, and so writes from one goroutine are visible to reads
+		// in another (e.g. chained pipelines where the inner while and outer
+		// cat run in different goroutines).
 		if p.flag != nil {
-			*p.flag = true
+			p.flag.Store(true)
 		}
 		// Suppress the EPIPE error itself — the writer's caller doesn't
 		// need to know; the runner-level signal is what matters.

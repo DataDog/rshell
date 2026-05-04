@@ -181,12 +181,12 @@ type runnerState struct {
 	// producers (e.g. `while true; do echo x; done | head -1`) the way bash
 	// terminates them via SIGPIPE.
 	//
-	// Stored as a *bool so subshells of the producer share the flag with
-	// their parent — bash sends SIGPIPE to every process in the pipeline
-	// stage, including subshells, and we need the same effect for nested
-	// constructs like `while true; do (while ...); done | head`. Nil means
-	// "not part of a producer pipeline stage" (no propagation needed).
-	pipeBroken *bool
+	// Stored as *atomic.Bool so the flag can be safely written from a pipeline
+	// goroutine (pipeBrokenWriter.Write) and read from a different goroutine
+	// (r.stop) without a data race. Subshells of the producer share the same
+	// pointer so nested constructs (`while true; do (while ...); done | head`)
+	// also observe the signal. Nil means "not in a producer pipeline stage".
+	pipeBroken *atomic.Bool
 
 	// parentPipeBroken is the pipeBroken flag inherited from an enclosing
 	// pipeline stage before the current pipeline overwrote pipeBroken with its
@@ -194,7 +194,8 @@ type runnerState struct {
 	// pipeline (e.g. `while true; do echo x; done | cat | head -1`) stops when
 	// the outer consumer (head) exits — even though the inner pipe (while→cat)
 	// is still open and the inner pipeBroken flag is never set.
-	parentPipeBroken *bool
+	// Uses *atomic.Bool for the same cross-goroutine safety reason as pipeBroken.
+	parentPipeBroken *atomic.Bool
 
 	// The current and last exit statuses. They can only be different if
 	// the interpreter is in the middle of running a statement. In that
