@@ -102,7 +102,8 @@ Initialize `iteration = 1` **on first entry only**. When re-entering Step 2 from
 
 **At the start of each iteration**, capture the current timestamp and update the Step 2 task subject:
 ```bash
-ITERATION_START_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+ITERATION_START_TIME=$(date -u -d "5 seconds ago" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null \
+  || date -u -v-5S +%Y-%m-%dT%H:%M:%SZ)  # macOS fallback
 ```
 Then update the task subject using TaskUpdate, e.g. `"Step 2: Run the review-fix loop (iteration 3)"`.
 
@@ -126,6 +127,13 @@ findings_count=$(gh api "repos/{owner}/{repo}/pulls/{pr-number}/comments" \
   --paginate --slurp \
   | jq --arg me "$MY_LOGIN" --arg since "$ITERATION_START_TIME" \
   '[.[].[] | select(.user.login == $me and .created_at >= $since)] | length')
+# Guard: if gh api or jq fails, findings_count may be empty/non-integer.
+# Default to 1 (findings present) — conservative/safe: keeps iteration_had_no_findings=false
+# and does not advance SUCCESS_COUNT on a failed API check.
+if ! [[ "$findings_count" =~ ^[0-9]+$ ]]; then
+  echo "WARNING: findings_count is not a valid integer ('$findings_count'); defaulting to 1 (findings present)" >&2
+  findings_count=1
+fi
 iteration_had_no_findings=$([ "$findings_count" -eq 0 ] && echo true || echo false)
 ```
 
