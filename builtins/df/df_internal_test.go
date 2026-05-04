@@ -60,16 +60,20 @@ func TestHumanBytes_1024(t *testing.T) {
 }
 
 func TestHumanBytes_1000(t *testing.T) {
+	// SI mode uses lowercase "k" for the kilo suffix (matches GNU
+	// df / lib/human.c). Other suffixes stay uppercase.
 	cases := []struct {
 		v    uint64
 		want string
 	}{
 		{0, "0"},
 		{999, "999"},
-		{1000, "1.0K"},
-		{1500, "1.5K"},
+		{1000, "1.0k"},
+		{1500, "1.5k"},
+		{25_000, "25k"}, // Codex's scenario: small mount in SI mode
 		{1_000_000, "1.0M"},
 		{1_000_000_000, "1.0G"},
+		{1_000_000_000_000, "1.0T"},
 	}
 	for _, c := range cases {
 		assert.Equal(t, c.want, humanBytes(c.v, 1000), "v=%d", c.v)
@@ -140,9 +144,10 @@ func TestFormatCount(t *testing.T) {
 	// wrap to 0 — must remain a sane integer count of 1K blocks.
 	assert.Equal(t, "18014398509481984", formatCount(^uint64(0), unitsK, false))
 
-	// Human modes delegate to humanBytes.
+	// Human modes delegate to humanBytes. SI mode uses lowercase "k"
+	// for the kilo suffix; IEC keeps uppercase "K".
 	assert.Equal(t, "1.0K", formatCount(1024, unitsHuman1024, false))
-	assert.Equal(t, "1.0K", formatCount(1000, unitsHuman1000, false))
+	assert.Equal(t, "1.0k", formatCount(1000, unitsHuman1000, false))
 }
 
 // TestPercentUsed_NoDivByZero — every combination of zero inputs and

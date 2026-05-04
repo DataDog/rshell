@@ -566,6 +566,11 @@ func formatCount(v uint64, mode unitMode, inodeMode bool) string {
 // otherwise. Suffixes go up to E (exa); larger sizes are clamped at "E"
 // to avoid overflow.
 //
+// Suffix case follows GNU's lib/human.c convention: in SI / -H mode the
+// kilo suffix is lowercase ("k") to match the SI symbol, while the
+// kibi / -h mode keeps the uppercase "K". M, G, T, P, E stay uppercase
+// in both modes — only K differs.
+//
 // GNU df rounds *up* on every non-integer remainder so that "Used"
 // never under-reports. We mirror that with math.Ceil after scaling
 // rather than fmt.Sprintf's round-to-nearest. Example: 1,576,960 bytes
@@ -576,7 +581,10 @@ func formatCount(v uint64, mode unitMode, inodeMode bool) string {
 // "1.0M". Promotion can chain (e.g. ".999...K" → "1.0M" → at the very
 // top we clamp at "E" to avoid escaping the suffix table).
 func humanBytes(v uint64, base uint64) string {
-	const suffixes = "KMGTPE"
+	suffixes := "KMGTPE"
+	if base == 1000 {
+		suffixes = "kMGTPE"
+	}
 	if v < base {
 		return strconv.FormatUint(v, 10)
 	}
