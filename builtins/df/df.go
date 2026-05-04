@@ -456,18 +456,35 @@ func selectColumns(m diskstats.Mount, inodeMode bool) (uint64, uint64, uint64) {
 // percentUsed renders the "Capacity" column.
 //
 // Edge cases:
-//   - used + free == 0 → "-" (matches GNU df for empty pseudo filesystems)
+//   - used + available == 0 → "-" (matches GNU df for empty pseudo
+//     filesystems)
 //   - rounds up so any non-zero usage shows ≥1%.
 //
-// Right-shifts numerator and denominator together until `used * 100` fits
-// in a uint64. Halving both sides identically preserves whole-percent
-// answers. Ceiling is computed as floor-plus-remainder-bump (rather than
+// Two scaling steps:
+//
+//  1. If `used + available` would overflow uint64 (which happens for
+//     --total rows where each component already saturated), halve both
+//     inputs first. The percentage is invariant under scaling both
+//     sides by the same factor, so we lose at most one bit of
+//     precision — far below the integer-percent rounding tolerance.
+//     Without this step, saturatingAdd clamps the denominator to
+//     MaxUint64 and equal totals get misreported as 100%.
+//  2. If `used * 100` would still overflow, right-shift used and the
+//     denominator together until it fits.
+//
+// Ceiling is computed as floor-plus-remainder-bump (rather than
 // `(num + denom - 1) / denom`) because num can itself sit near MaxUint64.
 func percentUsed(used, available uint64) string {
-	denom := saturatingAdd(used, available)
+	// Step 1: scale down if sum would wrap.
+	if used > ^uint64(0)-available {
+		used >>= 1
+		available >>= 1
+	}
+	denom := used + available
 	if denom == 0 {
 		return "-"
 	}
+	// Step 2: shift used and denom together until used*100 fits.
 	for used > (^uint64(0))/100 {
 		used >>= 1
 		denom >>= 1

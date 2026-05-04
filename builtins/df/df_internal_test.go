@@ -98,6 +98,12 @@ func TestPercentUsed(t *testing.T) {
 		// Used > free at extreme magnitudes → 100%.
 		{^uint64(0), 1, "100%"},
 		{^uint64(0) / 2, ^uint64(0) / 4, "67%"},
+		// Sum-overflow case: with --total, each accumulator can
+		// saturate to MaxUint64. Saturating the denominator would
+		// misreport equal halves as 100%; the scale-down step
+		// preserves the true ratio.
+		{^uint64(0), ^uint64(0), "50%"},
+		{^uint64(0), ^uint64(0) / 2, "67%"}, // used=MaxU, free=MaxU/2 → 2/3
 	}
 	for _, c := range cases {
 		assert.Equal(t, c.want, percentUsed(c.used, c.free), "u=%d f=%d", c.used, c.free)
