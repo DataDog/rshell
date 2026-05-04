@@ -209,14 +209,26 @@ func TestBenchmarkObjectiveUsesNewFields(t *testing.T) {
 func TestFormatResearcherPromptIncludesPublicArtifactsAndForbidsHoldout(t *testing.T) {
 	skillRel := filepath.Join("auto-improve-skills", "skills", "remote-host-diagnostics", "SKILL.md")
 	casesPath := filepath.Join("auto-improve-skills", "benchmarks", "remote-host-diagnostics", "cases.yaml")
-	bestResultPath := filepath.Join("auto-improve-skills", "runs", "train", "iter-000-baseline", "result.json")
-	prompt := formatResearcherPrompt(skillRel, casesPath, bestResultPath, 2, 0.01, "")
+	runDir := filepath.Join("auto-improve-skills", "runs", "train")
+	bestResultPath := filepath.Join(runDir, "iter-000-baseline", "result.json")
+	prompt := formatResearcherPrompt(skillRel, casesPath, runDir, bestResultPath, 2, 0.01, "")
 	for _, want := range []string{
 		"program.md",
 		skillRel,
 		casesPath,
+		runDir,
 		bestResultPath,
 		"best public benchmark result",
+		"current training run artifact directory",
+		"previous public iterations",
+		"report.md",
+		"raw outputs",
+		"researcher.stderr.txt",
+		"researcher.stdout.md",
+		"result.json",
+		"SKILL.candidate.md",
+		"SKILL.md.diff",
+		"SKILL.previous.md",
 		"Do not read, list, grep, inspect, or edit holdout-related",
 		"holdout.yaml",
 		"generated-fixtures/holdout",
@@ -233,8 +245,6 @@ func TestFormatResearcherPromptIncludesPublicArtifactsAndForbidsHoldout(t *testi
 		}
 	}
 	for _, forbidden := range []string{
-		"raw transcripts",
-		"result JSON",
 		"smallest useful",
 		"one focused",
 		"keeping the skill concise",
@@ -244,6 +254,81 @@ func TestFormatResearcherPromptIncludesPublicArtifactsAndForbidsHoldout(t *testi
 		if strings.Contains(prompt, forbidden) {
 			t.Fatalf("researcher prompt should not contain %q:\n%s", forbidden, prompt)
 		}
+	}
+}
+
+func TestFormatIterationReportPromptAllowsReportsAndHidesPrivateDetails(t *testing.T) {
+	runDir := filepath.Join("auto-improve-skills", "runs", "train")
+	iterDir := filepath.Join(runDir, "iter-002")
+	ctx := iterationReportContext{
+		Root:                   "/repo",
+		SkillPath:              filepath.Join("auto-improve-skills", "skills", "remote-host-diagnostics", "SKILL.md"),
+		CasesPath:              filepath.Join("auto-improve-skills", "benchmarks", "remote-host-diagnostics", "cases.yaml"),
+		RunDir:                 runDir,
+		IterDir:                iterDir,
+		Iter:                   2,
+		ResultPath:             filepath.Join(iterDir, "result.json"),
+		PreviousBestResultPath: filepath.Join(runDir, "iter-001", "result.json"),
+		CurrentBestResultPath:  filepath.Join(iterDir, "result.json"),
+		PreviousObjective:      0.91,
+		CandidateObjective:     0.93,
+		PreviousBestQuality:    0.95,
+		CandidateQuality:       0.96,
+		PreviousQualityFloor:   0.94,
+		MinDelta:               0.001,
+		QualityOK:              true,
+		PublicOK:               true,
+		FinalAccepted:          true,
+		FinalReason:            iterationDecisionReason(true, true, true, true, true, false),
+		PrivateGateConfigured:  true,
+		PrivateGateEvaluated:   true,
+	}
+
+	prompt := formatIterationReportPrompt(ctx, filepath.Join(iterDir, iterationReportPath))
+	for _, want := range []string{
+		"report.md",
+		"raw outputs",
+		"researcher.stderr.txt",
+		"researcher.stdout.md",
+		"SKILL.candidate.md",
+		"SKILL.md.diff",
+		"SKILL.previous.md",
+		"Do not include the word \"holdout\" in the report body",
+		"Private gate configured=true, evaluated=true",
+		"Summary",
+		"Case-Level Findings",
+	} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("iteration report prompt missing %q:\n%s", want, prompt)
+		}
+	}
+}
+
+func TestIterationDecisionReasonAvoidsHoldoutSpecifics(t *testing.T) {
+	reason := iterationDecisionReason(false, true, true, true, true, false)
+	if strings.Contains(strings.ToLower(reason), "holdout") {
+		t.Fatalf("decision reason leaked holdout wording: %q", reason)
+	}
+	if !strings.Contains(reason, "private acceptance gate") {
+		t.Fatalf("decision reason = %q, want private gate wording", reason)
+	}
+}
+
+func TestValidateIterationReportRejectsHoldoutReferences(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, iterationReportPath)
+	if err := os.WriteFile(path, []byte("# Report\n\nPrivate gate details omitted.\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := validateIterationReport(path); err != nil {
+		t.Fatalf("validateIterationReport() unexpected error: %v", err)
+	}
+
+	if err := os.WriteFile(path, []byte("# Report\n\nholdout score leaked\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := validateIterationReport(path); err == nil {
+		t.Fatal("validateIterationReport() succeeded for forbidden holdout reference")
 	}
 }
 

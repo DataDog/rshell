@@ -48,6 +48,7 @@ const (
 	iterationSkillSnapshotPath       = "SKILL.candidate.md"
 	iterationPreviousSkillPath       = "SKILL.previous.md"
 	iterationSkillDiffPath           = "SKILL.md.diff"
+	iterationReportPath              = "report.md"
 
 	ansiReset   = "\x1b[0m"
 	ansiBold    = "\x1b[1m"
@@ -641,10 +642,20 @@ func run(iterations int, casesPath, skillPath, model, codexBinary, runDir string
 		} else if speculativeHoldoutRan && speculativeHoldoutErr != nil {
 			logWarn("iter %d/%d speculative holdout failed after public reject; ignored: %v", iter, iterations, speculativeHoldoutErr)
 		}
+
 		if restoreErr := restoreDryRun(); restoreErr != nil {
 			return restoreErr
 		}
-		if publicOK && holdoutOK {
+
+		previousBestPath := bestPath
+		previousBestObjective := bestObjective
+		previousBestQuality := bestQuality
+		previousQualityFloor := qualityFloor
+		finalAccepted := publicOK && holdoutOK
+		privateGateConfigured := holdoutCasesAbs != ""
+		privateGateEvaluated := holdoutGate != nil
+		finalReason := iterationDecisionReason(finalAccepted, qualityOK, publicOK, privateGateConfigured, privateGateEvaluated, dryRun)
+		if finalAccepted {
 			acceptedIterations++
 			if dryRun {
 				logSuccess("iter %d/%d accepted (dry-run)", iter, iterations)
@@ -686,6 +697,34 @@ func run(iterations int, casesPath, skillPath, model, codexBinary, runDir string
 				}
 			}
 		}
+		reportCtx := iterationReportContext{
+			Root:                   root,
+			SkillPath:              skillAbs,
+			CasesPath:              casesAbs,
+			RunDir:                 runDir,
+			IterDir:                iterDir,
+			Iter:                   iter,
+			ResultPath:             candidatePath,
+			PreviousBestResultPath: previousBestPath,
+			CurrentBestResultPath:  bestPath,
+			PreviousObjective:      previousBestObjective,
+			CandidateObjective:     candidateObjective,
+			PreviousBestQuality:    previousBestQuality,
+			CandidateQuality:       candidateQuality,
+			PreviousQualityFloor:   previousQualityFloor,
+			MinDelta:               minDelta,
+			QualityOK:              qualityOK,
+			PublicOK:               publicOK,
+			FinalAccepted:          finalAccepted,
+			FinalReason:            finalReason,
+			DryRun:                 dryRun,
+			PrivateGateConfigured:  privateGateConfigured,
+			PrivateGateEvaluated:   privateGateEvaluated,
+		}
+		if err := writeIterationReportWithCodex(reportCtx, model, codexBinary); err != nil {
+			return err
+		}
+		logStep("iter %d/%d report -> %s", iter, iterations, displayRunPath(runDir, filepath.Join(iterDir, iterationReportPath)))
 	}
 	printSemantic(logSemanticSummary, "done iters=%d accepted=%d rejected=%d best obj=%.2f%% q=%.2f%% -> %s", iterations, acceptedIterations, rejectedIterations, bestObjective*100, bestQuality*100, displayRunPath(runDir, bestPath))
 	if holdoutCasesAbs != "" {
@@ -987,7 +1026,141 @@ func hasDir(path string) bool {
 	return err == nil && st.IsDir()
 }
 
-func formatResearcherPrompt(skillPath, casesPath, bestResultPath string, iter int, qualityTolerance float64, rshellCapabilitySnapshot string) string {
+type iterationReportContext struct {
+	Root                   string
+	SkillPath              string
+	CasesPath              string
+	RunDir                 string
+	IterDir                string
+	Iter                   int
+	ResultPath             string
+	PreviousBestResultPath string
+	CurrentBestResultPath  string
+	PreviousObjective      float64
+	CandidateObjective     float64
+	PreviousBestQuality    float64
+	CandidateQuality       float64
+	PreviousQualityFloor   float64
+	MinDelta               float64
+	QualityOK              bool
+	PublicOK               bool
+	FinalAccepted          bool
+	FinalReason            string
+	DryRun                 bool
+	PrivateGateConfigured  bool
+	PrivateGateEvaluated   bool
+}
+
+func iterationDecisionReason(finalAccepted, qualityOK, publicOK, privateGateConfigured, privateGateEvaluated, dryRun bool) string {
+	switch {
+	case finalAccepted && dryRun:
+		return "accepted in dry-run; skill was restored after evaluation"
+	case finalAccepted:
+		return "accepted"
+	case !qualityOK:
+		return "rejected because public quality was below the quality floor"
+	case !publicOK:
+		return "rejected because public objective improvement was below the minimum delta"
+	case privateGateConfigured && privateGateEvaluated:
+		return "rejected by private acceptance gate; details omitted"
+	default:
+		return "rejected"
+	}
+}
+
+func formatIterationReportPrompt(ctx iterationReportContext, outputPath string) string {
+	return fmt.Sprintf(`You are an autoresearch-style report-writing agent.
+
+Run from the repository root. Write a comprehensive Markdown report for training iteration %d as your final answer. The harness will save your final answer to %s.
+
+Read-only scope:
+- You may read, list, grep, and inspect non-holdout artifacts in the current training run directory: %s.
+- You may analyze the current iteration directory: %s.
+- You may analyze previous public iteration reports and artifacts in the same run, including report.md, raw outputs, researcher.stderr.txt, researcher.stdout.md, result.json, SKILL.candidate.md, SKILL.md.diff, and SKILL.previous.md.
+- You may read the public benchmark suite at %s, the skill at %s, the current public result at %s, the previous best public result at %s, and the current best public result at %s.
+
+Strict private-data rules:
+- Do not read, list, grep, inspect, quote, summarize, or infer from holdout-related files, folders, results, raw outputs, or path names. This includes holdout.yaml, generated-fixtures/holdout, iter-000-holdout, any benchmark directory named holdout, and any path segment named "holdout".
+- The report must not contain holdout-specific information: no holdout paths, scores, thresholds, case names, failure details, excerpts, or conclusions.
+- Do not include the word "holdout" in the report body. If needed, refer only to "private gate" and say details are omitted.
+- Do not edit any files. Produce the report as your final answer only.
+
+Decision context from the trainer:
+- Final decision: %s.
+- Decision reason: %s.
+- Public quality: previous best %.2f%%, candidate %.2f%%, floor %.2f%%, pass=%t.
+- Public objective: previous best %.2f%%, candidate %.2f%%, delta %+0.2f pp, minimum delta %+0.2f pp, pass=%t.
+- Private gate configured=%t, evaluated=%t. Do not include private gate details beyond this generic status.
+
+Report requirements:
+- Be comprehensive but audit-focused.
+- Include sections for Summary, Decision, Public Score Movement, Skill Change Analysis, Case-Level Findings, Researcher Behavior, Artifacts Reviewed, Risks, and Next Iteration Suggestions.
+- Ground claims in the public artifacts you inspected.
+- Distinguish accepted/rejected public benchmark behavior from the final training decision.
+- Treat public benchmark data as samples, not targets; do not recommend adding exact benchmark facts to the skill.
+- Avoid long raw dumps; summarize evidence and cite artifact paths.
+`, ctx.Iter, outputPath, ctx.RunDir, ctx.IterDir, ctx.CasesPath, ctx.SkillPath, ctx.ResultPath, ctx.PreviousBestResultPath, ctx.CurrentBestResultPath, iterationDecisionStatus(ctx.FinalAccepted), ctx.FinalReason, ctx.PreviousBestQuality*100, ctx.CandidateQuality*100, ctx.PreviousQualityFloor*100, ctx.QualityOK, ctx.PreviousObjective*100, ctx.CandidateObjective*100, (ctx.CandidateObjective-ctx.PreviousObjective)*100, ctx.MinDelta*100, ctx.PublicOK, ctx.PrivateGateConfigured, ctx.PrivateGateEvaluated)
+}
+
+func iterationDecisionStatus(accepted bool) string {
+	if accepted {
+		return "accepted"
+	}
+	return "rejected"
+}
+
+func writeIterationReportWithCodex(ctx iterationReportContext, model, codexBinary string) error {
+	reportPath := filepath.Join(ctx.IterDir, iterationReportPath)
+	prompt := formatIterationReportPrompt(ctx, reportPath)
+	runCtx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
+	defer cancel()
+	args := autoresearch.CodexExecTextArgs(model, autoresearch.CodexReadOnlySandbox, reportPath)
+	cmd := exec.CommandContext(runCtx, codexBinary, args...)
+	cmd.Dir = ctx.Root
+	cmd.Env = autoresearch.EnvWithExecutableDir(codexBinary)
+	cmd.Stdin = strings.NewReader(prompt)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	logVerbose("iter %d run report codex", ctx.Iter)
+	if err := cmd.Run(); err != nil {
+		if stdout.Len() > 0 {
+			_ = os.WriteFile(filepath.Join(ctx.IterDir, "report.stdout.md"), stdout.Bytes(), 0o644)
+		}
+		if stderr.Len() > 0 {
+			_ = os.WriteFile(filepath.Join(ctx.IterDir, "report.stderr.txt"), stderr.Bytes(), 0o644)
+		}
+		return fmt.Errorf("report Codex failed: %w", err)
+	}
+	if data, err := os.ReadFile(reportPath); err != nil || len(bytes.TrimSpace(data)) == 0 {
+		if stdout.Len() == 0 {
+			return fmt.Errorf("report Codex produced empty report at %s", reportPath)
+		}
+		if err := os.WriteFile(reportPath, stdout.Bytes(), 0o644); err != nil {
+			return err
+		}
+	}
+	if err := validateIterationReport(reportPath); err != nil {
+		return err
+	}
+	if stderr.Len() > 0 {
+		_ = os.WriteFile(filepath.Join(ctx.IterDir, "report.stderr.txt"), stderr.Bytes(), 0o644)
+	}
+	return nil
+}
+
+func validateIterationReport(path string) error {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	if bytes.Contains(bytes.ToLower(data), []byte("holdout")) {
+		return fmt.Errorf("report %s contains forbidden private-artifact term %q", path, "holdout")
+	}
+	return nil
+}
+
+func formatResearcherPrompt(skillPath, casesPath, runDir, bestResultPath string, iter int, qualityTolerance float64, rshellCapabilitySnapshot string) string {
 	rshellCapabilitySnapshot = strings.TrimSpace(rshellCapabilitySnapshot)
 	if rshellCapabilitySnapshot == "" {
 		rshellCapabilitySnapshot = "Static rshell capability snapshot unavailable. The skill should still tell agents to run rshell help in the target environment because deployments may differ."
@@ -995,6 +1168,8 @@ func formatResearcherPrompt(skillPath, casesPath, bestResultPath string, iter in
 	return fmt.Sprintf(`You are an autoresearch-style skill improvement agent.
 
 Run from the repository root. Read auto-improve-skills/program.md, the current skill at %s, the public benchmark suite at %s, and the best public benchmark result at %s.
+
+The current training run artifact directory is %s. You may read, list, grep, and inspect non-holdout files from previous public iterations in this same training run, including report.md, raw outputs, researcher.stderr.txt, researcher.stdout.md, result.json, SKILL.candidate.md, SKILL.md.diff, and SKILL.previous.md.
 
 Do not read, list, grep, inspect, or edit holdout-related files, folders, fixtures, run outputs, or results. This includes holdout.yaml, generated-fixtures/holdout, iter-000-holdout, holdout benchmark directories, and any path segment named "holdout".
 
@@ -1007,7 +1182,7 @@ Task for iteration %d:
 - Treat public benchmark data as samples, not targets.
 - Prefer general diagnostics over case-specific rules or overfitting exact answers.
 - Do not add exact case facts, paths, filenames, IDs, IPs, timestamps, services, commands, root causes, line numbers, or expected-answer text.
-- Use read/bash only to inspect allowed public artifacts and general repo context; never inspect holdout-related paths.
+- Use read/bash only to inspect allowed public artifacts, non-holdout current-run artifacts, and general repo context; never inspect holdout-related paths.
 - Use edit/write only on %s.
 - Use the static rshell capability snapshot below only as public implementation context, not as evidence about hidden tasks. Production deployments may restrict, omit, or extend features; the skill should keep telling diagnostic agents to run rshell help in the target environment.
 - After editing, write a brief researcher report with "Changes" and "Why" sections.
@@ -1016,12 +1191,12 @@ Task for iteration %d:
 <rshell-capability-snapshot>
 %s
 </rshell-capability-snapshot>
-`, skillPath, casesPath, bestResultPath, iter, skillPath, qualityTolerance*100, skillPath, rshellCapabilitySnapshot)
+`, skillPath, casesPath, bestResultPath, runDir, iter, skillPath, qualityTolerance*100, skillPath, rshellCapabilitySnapshot)
 }
 
 func improveSkill(root, skillAbs, casesAbs, bestResultPath, iterDir, model, codexBinary string, iter int, qualityTolerance float64) error {
 	rshellCapabilitySnapshot := researcherRShellCapabilitySnapshot(root)
-	prompt := formatResearcherPrompt(skillAbs, casesAbs, bestResultPath, iter, qualityTolerance, rshellCapabilitySnapshot)
+	prompt := formatResearcherPrompt(skillAbs, casesAbs, filepath.Dir(iterDir), bestResultPath, iter, qualityTolerance, rshellCapabilitySnapshot)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
 	defer cancel()
 	researcherOutput := filepath.Join(iterDir, "researcher.stdout.md")

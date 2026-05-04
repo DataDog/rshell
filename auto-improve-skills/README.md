@@ -28,9 +28,9 @@ go run ./cmd/skilltrain -iters 3 -judge
 
 `skilltrain` asks for a general skill improvement per iteration, benchmarks the candidate, and accepts it only when quality stays within tolerance and the objective improves. Case templates with `variants:` are expanded into concrete seeded benchmark cases before selection/scoring.
 
-Each training iteration writes skill artifacts under `runs/`: `SKILL.previous.md`, `SKILL.candidate.md`, and `SKILL.md.diff`. Baseline directories include `SKILL.candidate.md` for the starting skill snapshot.
+Each training iteration writes skill artifacts under `runs/`: `SKILL.previous.md`, `SKILL.candidate.md`, `SKILL.md.diff`, and an LLM-authored `report.md`. Baseline directories include `SKILL.candidate.md` for the starting skill snapshot.
 
-Researcher agents run from the repository root with Codex in workspace-write mode so they can inspect the public benchmark suite, inspect the best public `result.json`, and edit the skill. The prompt forbids reading, listing, grepping, or editing holdout-related files, folders, fixtures, run outputs, or results.
+Researcher agents run from the repository root with Codex in workspace-write mode so they can inspect the public benchmark suite, inspect the best public `result.json`, analyze non-holdout artifacts from past public iterations in the same training run (`report.md`, `raw/`, researcher stdout/stderr, `result.json`, and skill snapshots/diffs), and edit the skill. The prompt forbids reading, listing, grepping, or editing holdout-related files, folders, fixtures, run outputs, or results.
 
 Generate fixtures only:
 

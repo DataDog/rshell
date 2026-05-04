@@ -12,7 +12,7 @@ Edit only the skill file named in the researcher prompt. In this repository this
 auto-improve-skills/skills/remote-host-diagnostics/SKILL.md
 ```
 
-Do not edit evaluator artifacts, Go tooling, reports, run outputs, or unrelated files. Do not read, inspect, list, grep, or edit holdout-related files/folders/results, including `holdout.yaml`, `generated-fixtures/holdout`, `iter-000-holdout`, or any path segment named `holdout`.
+Do not edit evaluator artifacts, Go tooling, reports, run outputs, or unrelated files. You may read, inspect, list, and grep non-holdout run artifacts from the current training run when the researcher prompt identifies that run directory, including prior `report.md` files. Do not read, inspect, list, grep, or edit holdout-related files/folders/results, including `holdout.yaml`, `generated-fixtures/holdout`, `iter-000-holdout`, or any path segment named `holdout`.
 
 ## Objective
 
@@ -24,7 +24,7 @@ Optimize in this order:
 
 ## Anti-overfitting
 
-Use only this program, the current skill file, the public benchmark suite, and the public benchmark result named in the researcher prompt. Do not inspect evaluator-private or holdout files or artifacts.
+Use only this program, the current skill file, the public benchmark suite, and non-holdout public benchmark artifacts from the current training run identified in the researcher prompt. Do not inspect evaluator-private or holdout files or artifacts.
 
 Treat public benchmark data as samples, not targets.
 
