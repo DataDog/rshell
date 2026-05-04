@@ -251,6 +251,9 @@ func addToRegistry(name string, fn HandlerFunc) {
 	if _, exists := registry[name]; exists {
 		panic("builtin already registered: " + name)
 	}
+	// Defense-in-depth: Register() already checks this before calling
+	// addToRegistry, so this branch is unreachable from current callers.
+	// Kept to guard against future callers that bypass Register().
 	if _, exists := featureByName[name]; exists {
 		panic("builtin name conflicts with rshell feature: " + name)
 	}

@@ -21,7 +21,7 @@ type FeatureMeta struct {
 var featureRegistry = []FeatureMeta{
 	{
 		Name:        "commands",
-		Description: "Registered commands; unsupported: unregistered commands without explicit external handling.",
+		Description: "Registered commands run inside the interpreter; no unregistered commands without an external handler.",
 		Supported: []string{
 			"Registered rshell commands run inside the interpreter and under the active AllowedCommands policy.",
 			"Commands perform filesystem access through the AllowedPaths sandbox unless explicitly documented otherwise.",
@@ -130,7 +130,7 @@ var featureRegistry = []FeatureMeta{
 	},
 	{
 		Name:        "bash-divergences",
-		Description: "Intentional bash differences, including one shared time reference per Run().",
+		Description: "Intentional bash differences captured here. Currently: one shared time reference per Run().",
 		Notes: []string{
 			"rshell captures time.Now() once at the start of each Run() call and shares it across commands that need a reference time, such as find -mmin/-mtime and ls -l.",
 			"Bash evaluates each command against its own invocation time. The difference matters only for long-running scripts where time-sensitive predicates are evaluated much later than Run() started.",
@@ -161,10 +161,20 @@ func buildFeatureIndex(features []FeatureMeta) map[string]FeatureMeta {
 	return index
 }
 
-// Features returns rshell features in display order.
+// Features returns rshell features in display order. The returned slice and
+// each FeatureMeta's Supported/Unsupported/Notes slices are independent copies
+// — callers may freely mutate them without affecting the registry.
 func Features() []FeatureMeta {
 	features := make([]FeatureMeta, len(featureRegistry))
-	copy(features, featureRegistry)
+	for i, f := range featureRegistry {
+		features[i] = FeatureMeta{
+			Name:        f.Name,
+			Description: f.Description,
+			Supported:   append([]string(nil), f.Supported...),
+			Unsupported: append([]string(nil), f.Unsupported...),
+			Notes:       append([]string(nil), f.Notes...),
+		}
+	}
 	return features
 }
 

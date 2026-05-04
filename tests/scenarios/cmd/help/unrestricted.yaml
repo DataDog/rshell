@@ -8,14 +8,14 @@ expect:
     rshell (dev) — All 28 commands available
     
     Features:
-    commands            Registered commands; unsupported: unregistered commands without explicit external handling.
+    commands            Registered commands run inside the interpreter; no unregistered commands without an external handler.
     variables           Assignments, expansion, inline env, command substitution; no arrays/arithmetic/advanced params.
     control-flow        for/if/&&/||/!/groups/subshells; no while/case/select/functions.
     pipes-redirections  Pipes, stdin/heredocs, /dev/null redirects, fd dup; no arbitrary file writes.
     quoting-expansion   Quotes, globbing, continuations, comments; no extglob/tilde/process substitution.
     execution           AllowedCommands, AllowedPaths, timeouts, ProcPath; no background jobs/coprocs/time.
     environment         Empty by default, caller Env, IFS/ALLOWED_PATHS; no host env inheritance/export.
-    bash-divergences    Intentional bash differences, including one shared time reference per Run().
+    bash-divergences    Intentional bash differences captured here. Currently: one shared time reference per Run().
     
     Not supported:
       - Expansions: arithmetic $((...)), arrays, advanced ${...} operations, tilde expansion, process substitution, extended globbing.
