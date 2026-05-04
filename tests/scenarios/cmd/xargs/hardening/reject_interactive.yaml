@@ -1,8 +1,11 @@
+# GNU xargs accepts -p as interactive mode; rshell rejects it as an unknown flag.
+skip_assert_against_bash: true
 description: xargs rejects -p (interactive) with exit 1 — not implemented in the sandbox.
 input:
   script: |+
     echo a | xargs -p echo
 expect:
   stdout: ""
-  stderr_contains: ["xargs:"]
+  stderr: |+
+    xargs: unknown shorthand flag: 'p' in -p
   exit_code: 1

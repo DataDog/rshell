@@ -92,9 +92,10 @@ func TestInvokeCommandUnknownCommandReturns127(t *testing.T) {
 	assert.Contains(t, stderr.String(), "xargs: foo: unknown command")
 }
 
-// TestInvokeCommandSubCmdExit126Propagates verifies that a sub-command
-// returning exit 126 cleanly (no error) is propagated as POSIX 126.
-func TestInvokeCommandSubCmdExit126Propagates(t *testing.T) {
+// TestInvokeCommandSubCmdExit126Continues verifies that a sub-command
+// returning exit 126 cleanly (no error) causes xargs to continue (GNU compat).
+// Only runner-level 126 (CommandAllowed block) stops processing.
+func TestInvokeCommandSubCmdExit126Continues(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	cc := newPentestCallCtx(&stdout, &stderr)
 	cc.RunCommand = func(_ context.Context, _ string, _ string, _ []string) (uint8, error) {
@@ -103,13 +104,14 @@ func TestInvokeCommandSubCmdExit126Propagates(t *testing.T) {
 	o := options{cmdName: "echo", maxChars: DefaultMaxChars}
 
 	code, stop := invokeCommand(context.Background(), cc, o, []string{"a"})
-	assert.Equal(t, exitSubCmdNotAllowed, code)
-	assert.True(t, stop)
+	assert.Equal(t, exitSubCmdFailed, code)
+	assert.False(t, stop)
 }
 
-// TestInvokeCommandSubCmdExit127Propagates verifies that a sub-command
-// returning exit 127 cleanly (no error) is propagated as POSIX 127.
-func TestInvokeCommandSubCmdExit127Propagates(t *testing.T) {
+// TestInvokeCommandSubCmdExit127Continues verifies that a sub-command
+// returning exit 127 cleanly (no error) causes xargs to continue (GNU compat).
+// Only runner-level 127 (unknown command) stops processing.
+func TestInvokeCommandSubCmdExit127Continues(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	cc := newPentestCallCtx(&stdout, &stderr)
 	cc.RunCommand = func(_ context.Context, _ string, _ string, _ []string) (uint8, error) {
@@ -118,8 +120,8 @@ func TestInvokeCommandSubCmdExit127Propagates(t *testing.T) {
 	o := options{cmdName: "echo", maxChars: DefaultMaxChars}
 
 	code, stop := invokeCommand(context.Background(), cc, o, []string{"a"})
-	assert.Equal(t, exitSubCmdNotFound, code)
-	assert.True(t, stop)
+	assert.Equal(t, exitSubCmdFailed, code)
+	assert.False(t, stop)
 }
 
 // TestStripRunnerPrefix verifies the prefix-stripping logic matches the
@@ -223,10 +225,11 @@ func TestDecodeDelimMultiByteRejected(t *testing.T) {
 // TestResolveCmdReplaceWithEmptyBatch verifies the safe path when -I is set
 // but the batch arrives empty (defensive fallthrough — must not panic).
 func TestResolveCmdReplaceWithEmptyBatch(t *testing.T) {
-	o := options{replStr: "{}", cmdName: "echo {}", initialArgs: []string{"x{}"}}
+	o := options{replStr: "{}", cmdName: "echo", initialArgs: []string{"x{}"}}
 	cmd, args := resolveCmd(o, nil)
-	// Empty item replaces every {} with "".
-	assert.Equal(t, "echo ", cmd)
+	// GNU: replStr is NOT substituted in the command name; only in args.
+	assert.Equal(t, "echo", cmd)
+	// Empty item replaces {} with "" in args.
 	assert.Equal(t, []string{"x"}, args)
 }
 

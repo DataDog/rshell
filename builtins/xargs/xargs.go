@@ -212,6 +212,7 @@ type options struct {
 
 	cmdName     string
 	initialArgs []string
+	warnings    []string // diagnostic messages to emit before processing
 }
 
 // useReplace, useMaxLines, useMaxArgs are derived predicates kept as
@@ -314,6 +315,9 @@ func buildOptions(fs *builtins.FlagSet, null bool, argFile, delim, eofStr, replS
 
 	// EOF-STR is meaningless outside whitespace mode (matches GNU xargs).
 	if o.mode != modeWhitespace {
+		if o.eofStr != "" {
+			o.warnings = append(o.warnings, "warning: the -E option has no effect if -0 or -d is used.")
+		}
 		o.eofStr = ""
 	}
 
@@ -357,6 +361,9 @@ func decodeDelim(s string) (byte, error) {
 // runXargs reads items from the configured source, batches them, and invokes
 // the resolved command for each batch via callCtx.RunCommand.
 func runXargs(ctx context.Context, callCtx *builtins.CallContext, o options) builtins.Result {
+	for _, w := range o.warnings {
+		callCtx.Errf("xargs: %s\n", w)
+	}
 	rc, err := openInput(ctx, callCtx, o)
 	if err != nil {
 		callCtx.Errf("xargs: %s\n", err.Error())
@@ -553,10 +560,10 @@ func invokeCommand(ctx context.Context, callCtx *builtins.CallContext, o options
 	switch exitCode {
 	case 0:
 		return exitOK, false
-	case 126:
-		return exitSubCmdNotAllowed, true
-	case 127:
-		return exitSubCmdNotFound, true
+	case 126, 127:
+		// GNU xargs continues on 126/127 from sub-command logic and returns 123.
+		// Only runner-level 126/127 (CommandAllowed block, unknown command) stop.
+		return exitSubCmdFailed, false
 	case subCmdFatalCode:
 		callCtx.Errf("xargs: %s: exited with status 255; aborting\n", finalCmd)
 		return exitSubCmd255, true
@@ -586,7 +593,7 @@ func resolveCmd(o options, batch []string) (string, []string) {
 		if len(batch) > 0 {
 			item = batch[0]
 		}
-		cmd := strings.ReplaceAll(o.cmdName, o.replStr, item)
+		cmd := o.cmdName // GNU: replStr is NOT substituted in the command name
 		args := make([]string, len(o.initialArgs))
 		for i, a := range o.initialArgs {
 			args[i] = strings.ReplaceAll(a, o.replStr, item)
@@ -717,6 +724,10 @@ func (t *tokenizer) nextDelimited(ctx context.Context, sep byte, skipBlank bool)
 				continue
 			}
 			return string(t.buf), true, true, nil
+		}
+		// In modeLine (-I), GNU trims leading space/tab from each item.
+		if skipBlank && len(t.buf) == 0 && (b == ' ' || b == '\t') {
+			continue
 		}
 		if err := t.pushByte(b); err != nil {
 			return "", false, false, err
