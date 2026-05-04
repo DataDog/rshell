@@ -23,15 +23,17 @@ type Agent struct {
 	maxTokens int64
 	workDir   string
 	verbose   bool
+	out       io.Writer
 }
 
-func newAgent(cfg Config) *Agent {
+func newAgent(cfg Config, out io.Writer) *Agent {
 	return &Agent{
 		client:    anthropic.NewClient(),
 		model:     cfg.Model,
 		maxTokens: cfg.MaxTokens,
 		workDir:   cfg.WorkDir,
 		verbose:   cfg.Verbose,
+		out:       out,
 	}
 }
 
@@ -39,11 +41,14 @@ func newAgent(cfg Config) *Agent {
 // In normal mode: Claude text is printed prefixed with [name], bash I/O is hidden.
 // In verbose mode: banners, raw Claude text, and full bash I/O are shown.
 func (a *Agent) Run(ctx context.Context, name, systemPrompt, userMessage string) error {
+	colorCode := agentColor(name)
+	prefix := paint("["+name+"] ", colorCode)
+
 	if a.verbose {
-		fmt.Printf("\n╔═ [%s] ═══════════════════════\n", name)
+		fmt.Fprintf(a.out, "\n╔═ %s ═══════════════════════\n", paint("["+name+"]", colorCode))
 	}
 
-	lw := newLineWriter(os.Stdout, "["+name+"] ")
+	lw := newLineWriter(a.out, prefix)
 
 	messages := []anthropic.MessageParam{
 		{
@@ -74,7 +79,7 @@ func (a *Agent) Run(ctx context.Context, name, systemPrompt, userMessage string)
 			if e, ok := event.AsAny().(anthropic.ContentBlockDeltaEvent); ok {
 				if d, ok := e.Delta.AsAny().(anthropic.TextDelta); ok {
 					if a.verbose {
-						fmt.Print(d.Text)
+						fmt.Fprint(a.out, d.Text)
 					} else {
 						lw.write(d.Text)
 					}
@@ -95,9 +100,21 @@ func (a *Agent) Run(ctx context.Context, name, systemPrompt, userMessage string)
 
 		// Execute all tool calls and collect results
 		var resultContent []anthropic.ContentBlockParamUnion
+		dotCount := 0
 		for _, block := range acc.Content {
 			if block.Type != "tool_use" {
 				continue
+			}
+			if a.verbose {
+				// Parse command for display
+				var cmdInput struct {
+					Command string `json:"command"`
+				}
+				json.Unmarshal(block.Input, &cmdInput) //nolint:errcheck
+				fmt.Fprintf(a.out, "  $ %s\n", cmdInput.Command)
+			} else {
+				fmt.Fprint(a.out, dim("."))
+				dotCount++
 			}
 			output, isErr := a.executeBash(ctx, block.Input)
 			tr := anthropic.ToolResultBlockParam{
@@ -111,6 +128,9 @@ func (a *Agent) Run(ctx context.Context, name, systemPrompt, userMessage string)
 			}
 			resultContent = append(resultContent, anthropic.ContentBlockParamUnion{OfToolResult: &tr})
 		}
+		if dotCount > 0 {
+			fmt.Fprintln(a.out)
+		}
 
 		messages = append(messages, anthropic.MessageParam{
 			Role:    anthropic.MessageParamRoleUser,
@@ -119,7 +139,7 @@ func (a *Agent) Run(ctx context.Context, name, systemPrompt, userMessage string)
 	}
 
 	if a.verbose {
-		fmt.Printf("╚═ [%s] done ═══════════════════\n", name)
+		fmt.Fprintf(a.out, "╚═ %s done ═══════════════════\n", paint("["+name+"]", colorCode))
 	}
 	return nil
 }
@@ -139,11 +159,8 @@ func (a *Agent) executeBash(ctx context.Context, rawInput json.RawMessage) (outp
 	cmd.Dir = a.workDir
 	cmd.Env = os.Environ()
 
-	// Always show the command being run so the user can track progress.
-	fmt.Printf("  $ %s\n", input.Command)
-
 	if a.verbose {
-		// Tee: display output to terminal in real time and capture for Claude
+		// Tee: display output to a.out in real time and capture for Claude
 		pr, pw := io.Pipe()
 		cmd.Stdout = pw
 		cmd.Stderr = pw
@@ -157,7 +174,7 @@ func (a *Agent) executeBash(ctx context.Context, rawInput json.RawMessage) (outp
 				n, err := pr.Read(buf)
 				if n > 0 {
 					chunk := buf[:n]
-					os.Stdout.Write(chunk)
+					a.out.Write(chunk) //nolint:errcheck
 					captured.Write(chunk)
 				}
 				if err != nil {

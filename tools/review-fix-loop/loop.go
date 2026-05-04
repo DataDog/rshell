@@ -3,7 +3,9 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"log"
+	"os"
 	"os/exec"
 	"strings"
 	"sync"
@@ -18,24 +20,34 @@ type IterationResult struct {
 
 // run is the main entry point after flag parsing.
 func run(ctx context.Context, cfg Config, prRef string) error {
+	// Create a temp log file so the user can tail -f it for full details.
+	logFile, err := os.CreateTemp("", "review-fix-loop-*.log")
+	if err != nil {
+		return fmt.Errorf("create log file: %w", err)
+	}
+	defer logFile.Close()
+
+	out := io.MultiWriter(os.Stdout, logFile)
+	fmt.Fprintf(out, "%s\n\n", bold("Logging to: "+logFile.Name()))
+
 	// Step 1: identify the PR
 	pr, err := identifyPR(cfg.WorkDir, prRef)
 	if err != nil {
 		return fmt.Errorf("identify PR: %w", err)
 	}
-	fmt.Printf("PR #%d  %s\n", pr.Number, pr.URL)
-	fmt.Printf("Branch: %s → %s\n", pr.Head, pr.Base)
+	fmt.Fprintf(out, "%s\n", bold(fmt.Sprintf("PR #%d  %s", pr.Number, pr.URL)))
+	fmt.Fprintf(out, "Branch: %s → %s\n", pr.Head, pr.Base)
 
-	agent := newAgent(cfg)
+	agent := newAgent(cfg, out)
 	var results []IterationResult
 	successCount := 0
 	converged := false
 
 	for iter := 1; iter <= cfg.MaxIterations; iter++ {
-		fmt.Printf("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
-		fmt.Printf("  Iteration %d / %d   (clean streak: %d/%d)\n",
-			iter, cfg.MaxIterations, successCount, cfg.TargetSuccess)
-		fmt.Printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+		fmt.Fprintf(out, "\n%s\n", boldBlue(fmt.Sprintf(
+			"━━━ Iteration %d / %d   (clean streak: %d/%d) ━━━",
+			iter, cfg.MaxIterations, successCount, cfg.TargetSuccess,
+		)))
 
 		// 2A1 (self-review) + 2A2 (trigger codex) in parallel
 		var wg sync.WaitGroup
@@ -101,11 +113,16 @@ func run(ctx context.Context, cfg Config, prRef string) error {
 		result := IterationResult{Iteration: iter, Unresolved: unresolved, CIClean: ciClean}
 		results = append(results, result)
 
-		fmt.Printf("\n  → unresolved=%d  ci_clean=%v\n", unresolved, ciClean)
+		statusLine := fmt.Sprintf("→ unresolved=%d  ci_clean=%v", unresolved, ciClean)
+		if unresolved == 0 && ciClean {
+			fmt.Fprintf(out, "\n  %s\n", boldGreen(statusLine))
+		} else {
+			fmt.Fprintf(out, "\n  %s\n", boldRed(statusLine))
+		}
 
 		if unresolved == 0 && ciClean {
 			successCount++
-			fmt.Printf("  ✓ clean (streak %d/%d)\n", successCount, cfg.TargetSuccess)
+			fmt.Fprintf(out, "  %s\n", boldGreen(fmt.Sprintf("✓ clean (streak %d/%d)", successCount, cfg.TargetSuccess)))
 			if successCount >= cfg.TargetSuccess {
 				converged = true
 				break
@@ -117,7 +134,7 @@ func run(ctx context.Context, cfg Config, prRef string) error {
 
 	// Step 4: final summary
 	summary := buildSummary(pr, results, converged)
-	fmt.Print(summary)
+	fmt.Fprint(out, summary)
 	postComment(cfg.WorkDir, pr.Number, summary)
 	return nil
 }
