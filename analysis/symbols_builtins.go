@@ -44,9 +44,11 @@ var builtinPerCommandSymbols = map[string][]string{
 		"math.MinInt32",       // 🟢 integer constant; no side effects.
 		"math.Cos",            // 🟢 pure arithmetic function; no I/O.
 		"math.Exp",            // 🟢 pure arithmetic function; no I/O.
+		"math.Inf",            // 🟢 returns positive or negative infinity; pure function, no I/O.
 		"math.IsInf",          // 🟢 IEEE 754 infinity check; pure function, no I/O.
 		"math.IsNaN",          // 🟢 IEEE 754 NaN check; pure function, no I/O.
 		"math.Log",            // 🟢 pure arithmetic function; no I/O.
+		"math.NaN",            // 🟢 returns IEEE 754 NaN value; pure function, no I/O.
 		"math.MaxInt64",       // 🟢 integer constant; no side effects.
 		"math.MinInt64",       // 🟢 integer constant; no side effects.
 		"math.Mod",            // 🟢 pure arithmetic function; no I/O.

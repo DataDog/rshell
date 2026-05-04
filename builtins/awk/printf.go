@@ -65,6 +65,9 @@ func awkSprintf(format string, values []awkValue, convFmt string) (string, error
 			if p < 0 {
 				spec.precision = -1 // negative precision is "no precision"
 			} else {
+				if p > MaxStringBytes {
+					p = MaxStringBytes
+				}
 				spec.precision = p
 			}
 		}

@@ -105,8 +105,20 @@ func parseAwkNumber(s string) float64 {
 	}
 	i := 0
 	// Optional sign.
+	sign := 1.0
 	if i < len(s) && (s[i] == '+' || s[i] == '-') {
+		if s[i] == '-' {
+			sign = -1.0
+		}
 		i++
+	}
+	// Detect inf/nan (case-insensitive) — gawk treats these as numeric.
+	lower := strings.ToLower(s[i:])
+	if strings.HasPrefix(lower, "inf") {
+		return math.Inf(int(sign))
+	}
+	if strings.HasPrefix(lower, "nan") {
+		return math.NaN()
 	}
 	start := i
 	for i < len(s) && s[i] >= '0' && s[i] <= '9' {

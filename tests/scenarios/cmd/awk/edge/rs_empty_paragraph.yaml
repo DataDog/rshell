@@ -1,0 +1,14 @@
+description: RS="" is treated as RS="\n" (paragraph mode not implemented in v1); blank lines are separate records.
+skip_assert_against_bash: true
+input:
+  script: |+
+    printf 'a\nb\n\nc\nd\n' | awk 'BEGIN{RS=""} {print NR, $0}'
+expect:
+  stdout: |+
+    1 a
+    2 b
+    3 
+    4 c
+    5 d
+  stderr: ""
+  exit_code: 0

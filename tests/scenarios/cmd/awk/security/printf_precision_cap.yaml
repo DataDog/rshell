@@ -1,0 +1,10 @@
+description: printf precision-from-arg is capped; no OOM/panic on huge * value.
+skip_assert_against_bash: true
+input:
+  script: |+
+    awk 'BEGIN { printf "%.*d\n", 9999999999, 1 }'
+expect:
+  exit_code: 1
+  stdout: ""
+  stderr: |+
+    awk: printf output exceeds maximum string length 1048576
