@@ -161,6 +161,23 @@ func TestCdInlineAssignmentSurvivesRestore(t *testing.T) {
 	assert.Equal(t, expected, stdout)
 }
 
+// TestCdInlineEmptyPWDLeavesOLDPWDEmpty verifies that when $PWD is set to
+// the empty string before cd (via an inline assignment), bash records an
+// empty OLDPWD rather than falling back to the internal runner directory.
+// Regression test for applyNewWorkDir distinguishing unset vs empty $PWD.
+func TestCdInlineEmptyPWDLeavesOLDPWDEmpty(t *testing.T) {
+	skipIfWindowsBackslashScript(t)
+	dir := t.TempDir()
+	sub := makeDir(t, dir, "sub")
+	// `PWD="" cd sub` — bash sets OLDPWD="" (the empty inline value),
+	// not OLDPWD=dir (the internal runner directory).
+	script := "cd " + dir + "\nPWD='' cd sub\necho OLDPWD=\"$OLDPWD\""
+	stdout, _, code := cmdRun(t, script, dir)
+	assert.Equal(t, 0, code)
+	_ = sub
+	assert.Equal(t, "OLDPWD=\n", stdout, "empty PWD assignment should leave OLDPWD empty")
+}
+
 // --- cd with no args (HOME) ---
 
 func TestCdNoArgsWithHome(t *testing.T) {

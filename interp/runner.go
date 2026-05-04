@@ -48,21 +48,30 @@ func (r *Runner) errf(format string, a ...any) {
 // /sentinel as OLDPWD. We therefore read $PWD from the shell variables
 // rather than r.Dir.
 //
-// The OLDPWD update is skipped when the shell $PWD is empty (runner has
-// no prior working directory). When $PWD is not set we fall back to
-// r.Dir (which is always kept in sync with $PWD by this function).
+// The distinction between unset and empty $PWD matters: bash uses the
+// empty string as-is for OLDPWD when $PWD is set-but-empty (e.g. after
+// `PWD="" cd sub`), but falls back to internal bookkeeping only when
+// $PWD is truly unset.
 //
 // The builtin is expected to have already validated newDir against the
 // sandbox; this method only performs state mutation.
 func (r *Runner) applyNewWorkDir(newDir string) {
 	// Prefer the shell $PWD variable as the old directory to record in
 	// OLDPWD, matching bash's behaviour for inline PWD assignments.
-	old, _ := r.lookupVarString("PWD")
-	if old == "" {
-		old = r.Dir // fall back to the internal directory if $PWD is unset
+	// Use the ok boolean to distinguish truly-unset $PWD (fall back to
+	// r.Dir) from set-but-empty $PWD (use the empty string as-is,
+	// matching bash: `PWD="" cd x` leaves OLDPWD empty).
+	old, ok := r.lookupVarString("PWD")
+	if !ok {
+		// $PWD is truly unset: fall back to internal dir but skip the
+		// OLDPWD update when that is also empty (runner has no prior dir).
+		old = r.Dir
 	}
 	r.Dir = newDir
-	if old != "" {
+	// Always set OLDPWD when $PWD was explicitly set (even to empty),
+	// matching bash: `PWD="" cd sub` sets OLDPWD="". Only skip the
+	// OLDPWD update when $PWD was unset AND the fallback is also empty.
+	if ok || old != "" {
 		r.setVarString("OLDPWD", old)
 	}
 	r.setVarString("PWD", newDir)
