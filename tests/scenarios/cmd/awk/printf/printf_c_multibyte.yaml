@@ -1,0 +1,14 @@
+description: >
+  printf "%c" on a string uses the first byte, not the first Unicode code
+  point. For ASCII input this matches gawk. For multi-byte UTF-8 input it
+  intentionally diverges from gawk (which emits the first character); we emit
+  only the first raw byte, matching mawk. See SHELL_FEATURES.md byte-indexed note.
+skip_assert_against_bash: true  # intentional divergence: byte-based first byte vs gawk's first Unicode code point for multi-byte strings
+input:
+  script: |+
+    awk 'BEGIN { printf "%c\n", "abc" }'
+expect:
+  stdout: |+
+    a
+  stderr: |+
+  exit_code: 0

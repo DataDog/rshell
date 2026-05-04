@@ -1,0 +1,11 @@
+description: printf %F with Inf/NaN outputs lowercase "+inf"/"-inf"/"nan" matching gawk/mawk (not "+INF"/"-INF"/"NAN").
+skip_assert_against_bash: true  # intentional: -v x=1e9999 is gawk-specific; we test the awk value path
+input:
+  script: |+
+    awk -v x=1e9999 'BEGIN { printf "%F\n", x; printf "%F\n", -x }'
+expect:
+  stdout: |+
+    +inf
+    -inf
+  stderr: |+
+  exit_code: 0

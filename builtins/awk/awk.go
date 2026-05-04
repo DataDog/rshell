@@ -109,7 +109,7 @@
 //     to prevent runaway loops in user scripts. Each loop construct (while,
 //     do-while, for) has its own independent counter; nested loops each get
 //     their own cap.
-//   - Non-regular-file inputs are subject to a 256 MiB total read cap.
+//   - Non-regular-file inputs are subject to a MaxTotalReadBytes total read cap.
 //   - All read and statement loops check ctx.Err() each iteration to honour
 //     the shell's 30-second execution timeout.
 //

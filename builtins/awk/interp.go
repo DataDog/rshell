@@ -1181,6 +1181,10 @@ func (r *runtime) storeScalar(name string, v awkValue) error {
 		case int(r.nf) < len(r.fields):
 			r.fields = r.fields[:r.nf]
 		case int(r.nf) > len(r.fields):
+			// No ctx.Err() check per iteration: appending up to MaxFields (1 M)
+			// pre-allocated empty strings takes < 1 ms — far less than the
+			// shell's execution timeout would guard against. The outer statement
+			// loop re-checks ctx.Err() on the next iteration.
 			for int64(len(r.fields)) < r.nf {
 				r.fields = append(r.fields, "")
 			}

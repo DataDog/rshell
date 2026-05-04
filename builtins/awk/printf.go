@@ -233,9 +233,15 @@ func applyPrintfSpec(spec printfSpec, val awkValue, convFmt string) (string, err
 		return formatFloat(spec, val.toNumber()), nil
 	case 'F':
 		// Go's strconv.FormatFloat does not support 'F'; fold to 'f' and uppercase.
+		// However, for ±Inf and NaN, gawk/mawk output lowercase "+inf"/"-inf"/"nan"
+		// even for %F — the ToUpper only applies to finite-number digits.
+		f := val.toNumber()
 		spec.verb = 'f'
-		s := formatFloat(spec, val.toNumber())
-		return strings.ToUpper(s), nil
+		s := formatFloat(spec, f)
+		if !math.IsInf(f, 0) && !math.IsNaN(f) {
+			s = strings.ToUpper(s)
+		}
+		return s, nil
 	}
 	// Unknown verb: emit the original spec literally.
 	return "%" + string(spec.verb), nil
