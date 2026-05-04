@@ -313,6 +313,15 @@ func (r *Runner) execWhileClause(ctx context.Context, cm *syntax.WhileClause) {
 	span.SetResourceName(kind)
 	iterationCount := 0
 	brokeEarly := false
+	// brokeFromCond is set when a break/continue fires from inside a `while`
+	// condition list and the body ran at least once. For `while`, the
+	// condition exits 0 on a `break` (which would normally mean "run body"),
+	// so break's own exit status (0) is the meaningful last-command status —
+	// do NOT overwrite it with lastBody at the end.
+	// For `until`, break/continue in the condition also exits with 0, which
+	// is the `until` termination condition (identical to a natural loop exit),
+	// so bash reports lastBody — brokeFromCond stays false for `until`.
+	brokeFromCond := false
 	defer func() {
 		span.SetTag("rshell.loop.kind", kind)
 		span.SetTag("rshell.loop.iteration_count", iterationCount)
@@ -354,6 +363,12 @@ func (r *Runner) execWhileClause(ctx context.Context, cm *syntax.WhileClause) {
 		if r.breakEnclosing > 0 {
 			r.breakEnclosing--
 			brokeEarly = true
+			// For while: break exits with 0, condition exit 0 would normally
+			// mean "run body" — break's 0 is the meaningful status, not lastBody.
+			// For until: break exits with 0, condition exit 0 is the natural
+			// termination condition — equivalent to a normal loop exit, so
+			// bash uses lastBody; brokeFromCond stays false.
+			brokeFromCond = !cm.Until
 			break
 		}
 		if r.contnEnclosing > 0 {
@@ -365,17 +380,19 @@ func (r *Runner) execWhileClause(ctx context.Context, cm *syntax.WhileClause) {
 					r.contnEnclosing = 0
 					// `continue` always exits with status 0. For `until`,
 					// exit 0 satisfies the termination condition — exit
-					// the loop. For `while`, re-evaluate the condition
-					// and skip the body.
+					// the loop (natural exit semantics, bash uses lastBody).
+					// For `while`, re-evaluate the condition and skip the body.
 					if cm.Until {
 						break
 					}
 					continue
 				}
 				brokeEarly = true
+				brokeFromCond = !cm.Until
 				break
 			}
-			// continue targeting this loop: same rule applies.
+			// continue targeting this loop: for until, exit 0 = natural
+			// termination (bash uses lastBody); for while, re-evaluate cond.
 			if cm.Until {
 				break
 			}
@@ -422,9 +439,14 @@ func (r *Runner) execWhileClause(ctx context.Context, cm *syntax.WhileClause) {
 	if r.exit.exiting {
 		return
 	}
-	if ranBody {
+	// brokeFromCond is true only for `while` loops where break/continue fired
+	// from the condition. In that case r.exit already holds the break/continue
+	// status (0) and must not be overwritten with lastBody. For `until` loops,
+	// break/continue in the condition exits with 0 which is the natural
+	// termination condition, so bash uses lastBody — brokeFromCond is false.
+	if ranBody && !brokeFromCond {
 		r.exit = lastBody
-	} else {
+	} else if !ranBody && !brokeFromCond {
 		r.exit = exitStatus{}
 	}
 }
@@ -752,10 +774,12 @@ func (p *pipeBrokenWriter) Write(b []byte) (int, error) {
 		if p.flag != nil {
 			p.flag.Store(true)
 		}
-		// Suppress the EPIPE error — the runner-level signal is what matters.
-		// Report len(b) bytes written to satisfy the io.Writer contract
-		// (returning n < len(b) with nil error would be a short-write violation).
-		return len(b), nil
+		// Return the error rather than suppressing it: builtins that already
+		// check write errors (e.g. cat's inner read-write loop) rely on seeing
+		// EPIPE to terminate promptly. Suppressing it would keep those builtins
+		// spinning until the context deadline. The runner-level signal
+		// (p.flag) handles termination of while/until loops between iterations,
+		// while the propagated error handles termination inside a single builtin.
 	}
 	return n, err
 }

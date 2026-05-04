@@ -1,0 +1,13 @@
+description: When break fires from the until condition list, the until termination condition (exit 0) is also satisfied, so bash uses the last body command's exit status, not break's own status.
+input:
+  script: |+
+    n=
+    until [ "$n" = a ]; n="${n}a"; [ "$n" = aaa ] && break; do
+      false
+    done
+    echo "exit=$?"
+expect:
+  stdout: |+
+    exit=1
+  stderr: |+
+  exit_code: 0

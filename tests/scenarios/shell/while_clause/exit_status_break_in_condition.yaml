@@ -1,0 +1,13 @@
+description: When break fires from the while condition list, the loop exit status is break's own status (0), not the last body command's status.
+input:
+  script: |+
+    m=
+    while m="${m}a"; [ "$m" != aaa ] && true || break; do
+      false
+    done
+    echo "exit=$?"
+expect:
+  stdout: |+
+    exit=0
+  stderr: |+
+  exit_code: 0
