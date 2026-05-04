@@ -5,5 +5,6 @@ input:
     pwd --version
 expect:
   stdout: ""
-  stderr_contains: ["pwd:", "unknown flag"]
+  stderr: |+
+    pwd: unknown flag: --version
   exit_code: 1
