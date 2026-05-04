@@ -172,8 +172,11 @@ func run(ctx context.Context, c *builtins.CallContext, args []string, opt runOpt
 	// Resolve timeout. Bash treats -t 0 as a poll: returns 0 if input
 	// is immediately available, non-zero otherwise, without waiting and
 	// without consuming data. Positive timeouts wrap the read in a
-	// context.WithTimeout and propagate the deadline to *os.File via
-	// SetReadDeadline so a blocked syscall actually wakes up.
+	// context.WithTimeout. We also honour any deadline already on the
+	// parent context (e.g. from interp.MaxExecutionTime or a CLI
+	// --timeout) by propagating it to *os.File stdin via
+	// SetReadDeadline so a blocking read syscall actually wakes up
+	// when the run as a whole is cancelled, not only when -t fires.
 	readCtx := ctx
 	pollMode := false
 	if opt.timeoutStr != "" {
@@ -189,20 +192,21 @@ func run(ctx context.Context, c *builtins.CallContext, args []string, opt runOpt
 			var cancel context.CancelFunc
 			readCtx, cancel = context.WithTimeout(ctx, dur)
 			defer cancel()
-			// Best-effort kernel-level read deadline: works for *os.File pipes,
-			// which is the typical stdin shape produced by the runner. Other
-			// readers fall back to context-driven cancellation between bytes.
-			// We pull the deadline from readCtx rather than computing one with
-			// time.Now to avoid a second time source: builtins read time only
-			// via callCtx.Now (script-start reference) or, for monotonic
-			// "from-now" deadlines like this one, via context.WithTimeout's
-			// internal clock surfaced through ctx.Deadline().
-			if dl, ok := readCtx.Deadline(); ok {
-				if f, fok := c.Stdin.(*os.File); fok {
-					_ = f.SetReadDeadline(dl)
-					defer func() { _ = f.SetReadDeadline(time.Time{}) }()
-				}
-			}
+		}
+	}
+	// Best-effort kernel-level read deadline: works for *os.File pipes,
+	// which is the typical stdin shape produced by the runner. We pull
+	// the deadline from readCtx rather than computing one with
+	// time.Now to avoid a second time source: builtins read time only
+	// via callCtx.Now (script-start reference) or, for monotonic
+	// "from-now" deadlines like this one, via context.WithTimeout's
+	// internal clock surfaced through ctx.Deadline(). When both -t and
+	// an inherited deadline apply, ctx.Deadline() returns the earlier of
+	// the two, which is the correct fused deadline.
+	if dl, ok := readCtx.Deadline(); ok {
+		if f, fok := c.Stdin.(*os.File); fok {
+			_ = f.SetReadDeadline(dl)
+			defer func() { _ = f.SetReadDeadline(time.Time{}) }()
 		}
 	}
 
@@ -413,13 +417,28 @@ func readInput(ctx context.Context, r io.Reader, delim rune, raw bool, charLimit
 	var buf []byte
 	one := make([]byte, 1)
 
+	// consumed counts every byte we read from r, including bytes that
+	// are later discarded (line continuations, the backslash before an
+	// escape, runes that exceed charLimit). It is the primary memory /
+	// CPU bound for this builtin: an attacker-controlled stdin made of
+	// repeated backslash-newline pairs would never grow buf and would
+	// otherwise drain unbounded input. Capping consumed independently
+	// of buf size guarantees the builtin always returns within
+	// MaxReadBytes of input regardless of how much of that input ends
+	// up assigned to a variable.
+	consumed := 0
+
 	readByte := func() (byte, error) {
+		if consumed >= MaxReadBytes {
+			return 0, fmt.Errorf("input exceeds maximum of %d bytes", MaxReadBytes)
+		}
 		for {
 			if err := ctx.Err(); err != nil {
 				return 0, err
 			}
 			n, err := r.Read(one)
 			if n == 1 {
+				consumed++
 				return one[0], nil
 			}
 			if err != nil {
