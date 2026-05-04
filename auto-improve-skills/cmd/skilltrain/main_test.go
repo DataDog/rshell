@@ -84,8 +84,100 @@ func TestLogSemanticStyleMapsStatusesToColors(t *testing.T) {
 }
 
 func TestDefaultTrainingSettings(t *testing.T) {
+	if defaultIterations != 5 {
+		t.Fatalf("defaultIterations = %d, want 5", defaultIterations)
+	}
+	if defaultLoopCount != 1 {
+		t.Fatalf("defaultLoopCount = %d, want 1", defaultLoopCount)
+	}
 	if defaultParallelCases != 10 {
 		t.Fatalf("defaultParallelCases = %d, want 10", defaultParallelCases)
+	}
+}
+
+func TestRunLoopWithRunnerPreservesProvidedConfig(t *testing.T) {
+	cfg := trainConfig{
+		iterations:       3,
+		model:            "test/model",
+		runDir:           filepath.Join("auto-improve-skills", "runs", "trainloop"),
+		judge:            true,
+		parallelSuites:   true,
+		push:             false,
+		allowDirty:       true,
+		verbose:          true,
+		parallelCases:    4,
+		qualityTolerance: 0.02,
+	}
+	var calls []trainConfig
+	err := runLoopWithRunner(3, cfg, func(call trainConfig) error {
+		calls = append(calls, call)
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(calls) != 3 {
+		t.Fatalf("runner calls = %d, want 3", len(calls))
+	}
+	wantRunDirs := []string{"loop-001", "loop-002", "loop-003"}
+	for i, call := range calls {
+		wantRunDir := filepath.Join(cfg.runDir, wantRunDirs[i])
+		if call.runDir != wantRunDir {
+			t.Fatalf("call %d runDir = %q, want %q", i+1, call.runDir, wantRunDir)
+		}
+		if call.trainLoop != i+1 {
+			t.Fatalf("call %d trainLoop = %d, want %d", i+1, call.trainLoop, i+1)
+		}
+		if call.iterations != cfg.iterations || call.model != cfg.model || call.judge != cfg.judge || call.parallelCases != cfg.parallelCases || call.qualityTolerance != cfg.qualityTolerance || call.verbose != cfg.verbose {
+			t.Fatalf("call %d did not preserve supplied flags: %+v", i+1, call)
+		}
+	}
+}
+
+func TestRunLoopWithRunnerLeavesDefaultRunDirEmpty(t *testing.T) {
+	var calls []trainConfig
+	err := runLoopWithRunner(2, trainConfig{iterations: 3, judge: true}, func(call trainConfig) error {
+		calls = append(calls, call)
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i, call := range calls {
+		if call.runDir != "" {
+			t.Fatalf("call %d runDir = %q, want empty default", i+1, call.runDir)
+		}
+		if call.trainLoop != i+1 {
+			t.Fatalf("call %d trainLoop = %d, want %d", i+1, call.trainLoop, i+1)
+		}
+	}
+}
+
+func TestRunLoopWithRunnerSetsTrainLoopForSingleRun(t *testing.T) {
+	var got trainConfig
+	err := runLoopWithRunner(1, trainConfig{iterations: 3}, func(call trainConfig) error {
+		got = call
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.trainLoop != 1 {
+		t.Fatalf("trainLoop = %d, want 1", got.trainLoop)
+	}
+}
+
+func TestRunLoopWithRunnerRejectsNonPositiveLoopCount(t *testing.T) {
+	called := false
+	err := runLoopWithRunner(0, trainConfig{}, func(trainConfig) error {
+		called = true
+		return nil
+	})
+	if err == nil || !strings.Contains(err.Error(), "-loop-count must be positive") {
+		t.Fatalf("runLoopWithRunner error = %v, want loop-count validation", err)
+	}
+	if called {
+		t.Fatal("runner was called after loop-count validation failed")
 	}
 }
 
@@ -351,9 +443,17 @@ func TestResearcherCodexArgsUseFastXHighWorkspaceWrite(t *testing.T) {
 	}
 }
 
-func TestFormatCommitSubjectIncludesIterationAndObjectiveTransition(t *testing.T) {
-	got := formatCommitSubject(7, 0.8027, 0.84567)
-	want := "[update skill] iter 7 - obj 80.27%->84.57%"
+func TestFormatCommitSubjectIncludesTrainLoopIterationAndObjectiveTransition(t *testing.T) {
+	got := formatCommitSubject(3, 7, 0.8027, 0.84567)
+	want := "[update skill] loop 3 - iter 7 - obj 80.27%->84.57%"
+	if got != want {
+		t.Fatalf("formatCommitSubject() = %q, want %q", got, want)
+	}
+}
+
+func TestFormatCommitSubjectDefaultsTrainLoopToOne(t *testing.T) {
+	got := formatCommitSubject(0, 2, 0.1, 0.2)
+	want := "[update skill] loop 1 - iter 2 - obj 10.00%->20.00%"
 	if got != want {
 		t.Fatalf("formatCommitSubject() = %q, want %q", got, want)
 	}

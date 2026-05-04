@@ -24,7 +24,9 @@ import (
 )
 
 const (
+	defaultIterations    = 5
 	defaultModel         = "gpt-5.5"
+	defaultLoopCount     = 1
 	defaultParallelCases = 10
 )
 
@@ -62,7 +64,8 @@ const (
 
 func main() {
 	var cfg trainConfig
-	flag.IntVar(&cfg.iterations, "iters", 3, "maximum improvement iterations")
+	loopCount := flag.Int("loop-count", defaultLoopCount, "number of full training runs to execute with the same supplied flags")
+	flag.IntVar(&cfg.iterations, "iters", defaultIterations, "maximum improvement iterations")
 	flag.StringVar(&cfg.casesPath, "cases", "auto-improve-skills/benchmarks/remote-host-diagnostics/cases.yaml", "benchmark suite")
 	flag.StringVar(&cfg.skillPath, "skill", "auto-improve-skills/skills/remote-host-diagnostics/SKILL.md", "skill file to improve")
 	flag.StringVar(&cfg.model, "model", defaultModel, "Codex model for researcher and benchmark agents")
@@ -83,7 +86,7 @@ func main() {
 	flag.Parse()
 
 	setSkilltrainVerbose(cfg.verbose)
-	if err := runConfig(cfg); err != nil {
+	if err := runLoop(*loopCount, cfg); err != nil {
 		logError("%v", err)
 		os.Exit(1)
 	}
@@ -108,6 +111,7 @@ type trainConfig struct {
 	dryRun                  bool
 	allowDirty              bool
 	verbose                 bool
+	trainLoop               int
 }
 
 type logContext struct {
@@ -464,12 +468,49 @@ func commandOutputSummary(capture *commandCapture) string {
 	return strings.Join(parts, "\n")
 }
 
-func runConfig(cfg trainConfig) error {
-	setSkilltrainVerbose(cfg.verbose)
-	return run(cfg.iterations, cfg.casesPath, cfg.skillPath, cfg.model, cfg.codexBinary, cfg.runDir, cfg.minDelta, cfg.qualityTolerance, cfg.holdoutCasesPath, cfg.holdoutQualityTolerance, cfg.parallelCases, cfg.limit, cfg.judge, cfg.parallelSuites, cfg.push, cfg.dryRun, cfg.allowDirty)
+type trainRunner func(trainConfig) error
+
+func runLoop(loopCount int, cfg trainConfig) error {
+	return runLoopWithRunner(loopCount, cfg, runConfig)
 }
 
-func run(iterations int, casesPath, skillPath, model, codexBinary, runDir string, minDelta, qualityTolerance float64, holdoutCasesPath string, holdoutQualityTolerance float64, parallelCases, limit int, judge, parallelSuites, push, dryRun, allowDirty bool) error {
+func runLoopWithRunner(loopCount int, cfg trainConfig, runner trainRunner) error {
+	if loopCount <= 0 {
+		return fmt.Errorf("-loop-count must be positive")
+	}
+	if runner == nil {
+		return fmt.Errorf("internal error: training runner is nil")
+	}
+	if loopCount == 1 {
+		loopCfg := cfg
+		loopCfg.trainLoop = 1
+		return runner(loopCfg)
+	}
+	for loop := 1; loop <= loopCount; loop++ {
+		loopCfg := cfg
+		loopCfg.trainLoop = loop
+		loopCfg.runDir = loopRunDir(cfg.runDir, loop)
+		printSemantic(logSemanticSummary, "loop %d/%d start", loop, loopCount)
+		if err := runner(loopCfg); err != nil {
+			return fmt.Errorf("loop %d/%d: %w", loop, loopCount, err)
+		}
+	}
+	return nil
+}
+
+func loopRunDir(runDir string, loop int) string {
+	if strings.TrimSpace(runDir) == "" {
+		return runDir
+	}
+	return filepath.Join(runDir, fmt.Sprintf("loop-%03d", loop))
+}
+
+func runConfig(cfg trainConfig) error {
+	setSkilltrainVerbose(cfg.verbose)
+	return run(cfg.trainLoop, cfg.iterations, cfg.casesPath, cfg.skillPath, cfg.model, cfg.codexBinary, cfg.runDir, cfg.minDelta, cfg.qualityTolerance, cfg.holdoutCasesPath, cfg.holdoutQualityTolerance, cfg.parallelCases, cfg.limit, cfg.judge, cfg.parallelSuites, cfg.push, cfg.dryRun, cfg.allowDirty)
+}
+
+func run(trainLoop, iterations int, casesPath, skillPath, model, codexBinary, runDir string, minDelta, qualityTolerance float64, holdoutCasesPath string, holdoutQualityTolerance float64, parallelCases, limit int, judge, parallelSuites, push, dryRun, allowDirty bool) error {
 	if qualityTolerance < 0 {
 		return fmt.Errorf("-quality-tolerance must be non-negative")
 	}
@@ -662,7 +703,7 @@ func run(iterations int, casesPath, skillPath, model, codexBinary, runDir string
 				printSemantic(logSemanticDryRun, "accept iter %d; would commit %s (candidate %s)", iter, displayPath(root, skillAbs), displayRunPath(runDir, filepath.Join(iterDir, iterationSkillSnapshotPath)))
 			} else {
 				logSuccess("iter %d/%d accepted; commit", iter, iterations)
-				if err := commitSkill(root, skillAbs, iter, candidate, candidatePath, holdoutGate, filepath.Join(iterDir, "researcher.stdout.md"), bestObjective, push); err != nil {
+				if err := commitSkill(root, skillAbs, trainLoop, iter, candidate, candidatePath, holdoutGate, filepath.Join(iterDir, "researcher.stdout.md"), bestObjective, push); err != nil {
 					return err
 				}
 			}
@@ -1225,7 +1266,7 @@ func improveSkill(root, skillAbs, casesAbs, bestResultPath, iterDir, model, code
 	return nil
 }
 
-func commitSkill(root, skillAbs string, iter int, result autoresearch.SuiteResult, resultPath string, holdoutGate *benchmarkGate, researcherSummaryPath string, previousObjective float64, push bool) error {
+func commitSkill(root, skillAbs string, trainLoop, iter int, result autoresearch.SuiteResult, resultPath string, holdoutGate *benchmarkGate, researcherSummaryPath string, previousObjective float64, push bool) error {
 	skillRel := gitPath(root, skillAbs)
 	logVerbose("iter %d stage %s", iter, skillRel)
 	if err := runGit(root, "add", skillRel); err != nil {
@@ -1246,7 +1287,7 @@ func commitSkill(root, skillAbs string, iter int, result autoresearch.SuiteResul
 		return err
 	}
 	researcherSummary := readCommitSummary(researcherSummaryPath)
-	msg := formatCommitSubject(iter, previousObjective, benchmarkObjective(result))
+	msg := formatCommitSubject(trainLoop, iter, previousObjective, benchmarkObjective(result))
 	body := formatCommitBody(root, skillRel, iter, result, resultPath, holdoutGate, researcherSummary, previousObjective, diffStat, shortStat)
 	logSuccess("iter %d git commit", iter)
 	if err := runGit(root, "commit", "-m", msg, "-m", body, "--", skillRel); err != nil {
@@ -1260,8 +1301,11 @@ func commitSkill(root, skillAbs string, iter int, result autoresearch.SuiteResul
 	return runGit(root, "push")
 }
 
-func formatCommitSubject(iter int, previousObjective, objective float64) string {
-	return fmt.Sprintf("[update skill] iter %d - obj %.2f%%->%.2f%%", iter, previousObjective*100, objective*100)
+func formatCommitSubject(trainLoop, iter int, previousObjective, objective float64) string {
+	if trainLoop <= 0 {
+		trainLoop = 1
+	}
+	return fmt.Sprintf("[update skill] loop %d - iter %d - obj %.2f%%->%.2f%%", trainLoop, iter, previousObjective*100, objective*100)
 }
 
 func formatCommitBody(root, skillRel string, iter int, result autoresearch.SuiteResult, resultPath string, holdoutGate *benchmarkGate, researcherSummary string, previousObjective float64, diffStat, shortStat string) string {

@@ -1,4 +1,4 @@
-.PHONY: fmt test train reset-skill
+.PHONY: fmt test train train3 trainloop reset-skill
 
 fmt:
 	go fmt ./...
@@ -28,5 +28,6 @@ reset-skill:
 train:
 	go run ./cmd/skilltrain \
 		-model gpt-5.5 \
-		-iters 100 \
-		-judge
+		-iters 5 \
+		-judge \
+		-loop-count 100
