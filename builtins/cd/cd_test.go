@@ -348,6 +348,34 @@ func TestCdLPLastWins_LWins(t *testing.T) {
 	assert.Equal(t, filepath.Join(dir, "alias")+"\n", stdout)
 }
 
+// TestCdPhysicalDashPrintsRawOldpwd guards the printValue-before-resolution
+// invariant: cd -P - must print the raw OLDPWD string, not the physically
+// resolved path. Bash prints the symlink path even under -P.
+func TestCdPhysicalDashPrintsRawOldpwd(t *testing.T) {
+	skipIfWindowsBackslashScript(t)
+	dir := t.TempDir()
+	target := makeDir(t, dir, "real")
+	link := filepath.Join(dir, "alias")
+	require.NoError(t, os.Symlink(target, link))
+	// cd to the symlink (logical), then cd somewhere else, then cd -P -.
+	// OLDPWD should be the symlink path; cd -P - should print the symlink
+	// path (raw OLDPWD) while landing in the resolved target.
+	script := strings.Join([]string{
+		"cd " + link, // PWD = .../alias, OLDPWD = dir
+		"cd ..",      // PWD = dir,       OLDPWD = .../alias
+		"cd -P -",    // prints OLDPWD (= .../alias), lands in .../alias physical = .../real
+		"echo PWD=$PWD",
+	}, "\n")
+	stdout, _, code := cmdRun(t, script, dir)
+	assert.Equal(t, 0, code)
+	// First line is the printed OLDPWD (the symlink path, not the real path).
+	// Second line is the echo of $PWD after landing.
+	lines := strings.SplitN(stdout, "\n", 3)
+	assert.GreaterOrEqual(t, len(lines), 2)
+	assert.Equal(t, link, lines[0], "cd -P - must print raw OLDPWD (symlink path)")
+	assert.Equal(t, "PWD="+target, lines[1], "cd -P - must set PWD to the resolved path")
+}
+
 // --- Path-too-long hardening ---
 
 func TestCdPathTooLong(t *testing.T) {

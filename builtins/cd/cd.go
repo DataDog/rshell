@@ -11,7 +11,7 @@
 //
 // Change the shell's working directory to DIR. With no argument, cd
 // changes to $HOME. The special argument "-" switches to $OLDPWD and
-// prints the new working directory.
+// prints the raw OLDPWD value to stdout.
 //
 // Accepted flags:
 //
