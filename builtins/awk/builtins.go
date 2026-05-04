@@ -195,6 +195,12 @@ func (r *runtime) bSplit(args []expr) (awkValue, error) {
 	if !ok {
 		return uninitValue, errors.New("split: second argument must be an array name")
 	}
+	// Reject the call when the name is already in use as a scalar variable.
+	// In awk, scalars and arrays share a namespace; using a scalar as a split
+	// destination is a fatal error (gawk: "attempt to use scalar as an array").
+	if _, isScalar := r.globals[id.name]; isScalar {
+		return uninitValue, fmt.Errorf("split: illegal use of scalar %q as array", id.name)
+	}
 	// Reset the destination array.
 	delete(r.arrays, id.name)
 	if s == "" {

@@ -1,0 +1,9 @@
+description: split() with a scalar destination variable is a fatal error (gawk compat).
+input:
+  script: |+
+    awk 'BEGIN { x = 1; n = split("a b c", x); print n }'
+expect:
+  stdout: |+
+  stderr_contains:
+    - "scalar"
+  exit_code: 1
