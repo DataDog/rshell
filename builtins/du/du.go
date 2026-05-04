@@ -560,16 +560,38 @@ func shouldEmit(depth int, isDir bool, opts options) bool {
 // entrySize returns the raw byte count attributed to an entry.
 //
 // Behaviour matches GNU du across platforms:
+//
 //   - Non-directory files in apparent-size mode use info.Size().
+//
 //   - Non-directory files in disk-usage mode use Stat_t.Blocks * 512, or
 //     (when Blocks is unavailable) info.Size() rounded up to the nearest
 //     1024-byte block.
-//   - Directories use Stat_t.Blocks * 512 in *both* modes. This matches
-//     GNU's observed behaviour: on macOS APFS dirs report Blocks=0 and
-//     contribute 0 bytes; on Linux ext4 dirs report Blocks=8 and
-//     contribute 4096 bytes. GNU du --apparent-size mirrors this exactly
-//     (verified against coreutils 9.10 on both filesystems). On
-//     platforms without Blocks (Windows), directories report 0.
+//
+//   - Directories use Stat_t.Blocks * 512 in *both* modes. The GNU
+//     manual's wording about apparent-size being "for regular files and
+//     symbolic links" describes the *typical* outcome — not a special
+//     case in the code path. GNU treats every entry uniformly:
+//     apparent_size mode uses info.Size() for non-dirs and Blocks*512
+//     for dirs (where Blocks captures whatever the filesystem reports).
+//     This produces filesystem-dependent dir totals, which is GNU's
+//     actual observable behaviour:
+//
+//     | Filesystem | dir Blocks | du -b empty/ | du -b dir/ (3-byte child) |
+//     |------------|-----------:|-------------:|---------------------------:|
+//     | macOS APFS |          0 |            0 |                          3 |
+//     | Linux ext4 |          8 |         4096 |                       4099 |
+//     | Linux tmp  |          0 |            0 |                          3 |
+//     | Windows    |        n/a |            0 |                          3 |
+//
+//     Verified against `du (GNU coreutils) 9.1` on debian:bookworm-slim:
+//
+//     $ mkdir d; printf abc > d/file
+//     $ du -b d
+//     4099	d
+//
+//     This means rshell's `du -b dir` matches GNU on the host's
+//     filesystem rather than producing a normalized cross-platform
+//     value — same trade-off GNU itself makes.
 //
 // The Blocks * 512 multiplication is clamped to math.MaxInt64 to defend
 // against pathological filesystems (e.g. FUSE) that report bogus values.
