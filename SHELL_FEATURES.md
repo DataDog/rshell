@@ -124,6 +124,8 @@ Blocked features are rejected before execution with exit code 2.
 
 - **Time reference for `find -mmin`/`-mtime` and `ls -l`**: rshell captures `time.Now()` once at the start of each `Run()` call and shares it across all builtins in that run. Bash evaluates each command against its own invocation time. In practice this only matters for long-running scripts (e.g. `sleep 61; find . -mmin -1`) where the reference time drifts from the actual command start. Short-lived AI agent scripts are unaffected.
 
+- **`xargs -n`/`-L` upper cap (HardMaxArgs = 1 MiB)**: rshell rejects `-n`/`-L` values larger than `1 MiB` (1,048,576) with a usage error. GNU xargs accepts arbitrarily large values (up to system limits). The cap is a safety guard against runaway batch sizes in agent-driven scripts.
+
 ## Appendix
 
 Formatting: In each category, supported features should be listed first, and the most useful ones first.

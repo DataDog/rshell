@@ -322,14 +322,15 @@ func buildOptions(fs *builtins.FlagSet, null bool, argFile, delim, eofStr string
 
 		if nLOrder > replStrVal.order {
 			// -n or -L was specified after -I → -n/-L wins, drop -I.
+			// GNU format: "options [earlier] and [winner] ... ignoring previous [earlier]".
 			o.replStr = ""
 			switch nLWinner {
 			case "args":
 				o.warnings = append(o.warnings,
-					"warning: options --max-args and --replace/-I/-i are mutually exclusive, ignoring previous --replace value")
+					"warning: options --replace and --max-args/-n are mutually exclusive, ignoring previous --replace value")
 			case "lines":
 				o.warnings = append(o.warnings,
-					"warning: options --max-lines and --replace/-I/-i are mutually exclusive, ignoring previous --replace value")
+					"warning: options --replace and -L are mutually exclusive, ignoring previous --replace value")
 			}
 		} else {
 			// -I was specified last (or no -n/-L) → -I wins.
