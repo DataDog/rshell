@@ -38,10 +38,10 @@ func (r *Runner) errf(format string, a ...any) {
 
 // applyNewWorkDir is invoked by call() after a builtin (cd) returns a
 // non-empty Result.NewWorkDir on a successful exit. It rotates the
-// previous directory into $OLDPWD (only when non-empty, since an empty
-// $OLDPWD is the sentinel that disables `cd -`), installs the new
-// directory as r.Dir, and refreshes $PWD so that subsequent path
-// resolution and parameter expansion reflect the change.
+// previous directory into $OLDPWD (skipping the update if the old
+// directory is empty, e.g. when the runner has no prior working directory),
+// installs the new directory as r.Dir, and refreshes $PWD so that
+// subsequent path resolution and parameter expansion reflect the change.
 //
 // The builtin is expected to have already validated newDir against the
 // sandbox; this method only performs state mutation.

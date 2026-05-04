@@ -477,13 +477,7 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 			CommandAllowed: func(cmdName string) bool {
 				return r.allowAllCommands || r.allowedCommands[cmdName]
 			},
-			LookupVar: func(name string) (string, bool) {
-				vr := r.lookupVar(name)
-				if !vr.IsSet() {
-					return "", false
-				}
-				return vr.String(), true
-			},
+			LookupVar:  r.lookupVarString,
 			RunCommand: runCmd,
 			Proc:       r.proc,
 		}

@@ -9,9 +9,10 @@ input:
   script: |+
     BEFORE="$PWD"
     cd sub
-    cd -
+    PRINTED=$(cd -)
+    [ "$PRINTED" = "$BEFORE" ] && echo ok
 expect:
-  # The output is the dir we switched back to (BEFORE / the test temp dir).
-  stdout_contains: ["/"]
+  stdout: |+
+    ok
   stderr: ""
   exit_code: 0

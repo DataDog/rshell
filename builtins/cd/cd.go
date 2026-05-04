@@ -85,8 +85,8 @@ var Cmd = builtins.Command{
 const maxPathBytes = 1 << 16 // 64 KiB
 
 // maxSymlinkHops caps the number of symlink expansions performed during
-// `cd -P`. Matches allowedpaths.maxSymlinkHops so that any path the
-// sandbox would accept is also walkable here.
+// `cd -P`. Capped at 40 to prevent unbounded work on deep or circular
+// symlink chains while remaining well above any realistic directory tree depth.
 const maxSymlinkHops = 40
 
 // cdMode encodes the current -L vs -P selection. Using a typed enum (vs.
