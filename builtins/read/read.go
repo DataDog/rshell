@@ -209,12 +209,26 @@ func run(ctx context.Context, c *builtins.CallContext, args []string, opt runOpt
 	// via callCtx.Now (script-start reference) or, for monotonic
 	// "from-now" deadlines like this one, via context.WithTimeout's
 	// internal clock surfaced through ctx.Deadline(). When both -t and
-	// an inherited deadline apply, ctx.Deadline() returns the earlier of
-	// the two, which is the correct fused deadline.
-	if dl, ok := readCtx.Deadline(); ok {
+	// an inherited deadline apply, ctx.Deadline() returns the earlier
+	// of the two, which is the correct fused deadline.
+	//
+	// SetReadDeadline returns "file type does not support deadline" for
+	// regular files and /dev/null. Those types don't block on Read, so
+	// the failure is harmless. For pollable types where Read CAN block
+	// (TTYs, sockets, named pipes via the runtime poller, etc.) the
+	// call generally succeeds. If it does not — rare, but possible for
+	// some specialised character devices — readInput's per-byte
+	// goroutine fallback kicks in to keep ctx-cancellation working
+	// without depending on the kernel deadline.
+	deadlineInstalled := false
+	_, hasDeadline := readCtx.Deadline()
+	if hasDeadline {
 		if f, fok := c.Stdin.(*os.File); fok {
-			_ = f.SetReadDeadline(dl)
-			defer func() { _ = f.SetReadDeadline(time.Time{}) }()
+			dl, _ := readCtx.Deadline()
+			if err := f.SetReadDeadline(dl); err == nil {
+				deadlineInstalled = true
+				defer func() { _ = f.SetReadDeadline(time.Time{}) }()
+			}
 		}
 	}
 
@@ -256,7 +270,11 @@ func run(ctx context.Context, c *builtins.CallContext, args []string, opt runOpt
 	case opt.nCharsOrder > 0:
 		charLimit = opt.nChars
 	}
-	line, eof, err := readInput(readCtx, c.Stdin, delim, opt.raw, charLimit, nFixedMode)
+	// If a deadline is in effect but we could not install it on the OS
+	// file (or stdin is not an *os.File), readInput needs an in-process
+	// poll path so ctx.Done() can interrupt a blocking Read.
+	needsGoroutinePoll := hasDeadline && !deadlineInstalled
+	line, eof, err := readInput(readCtx, c.Stdin, delim, opt.raw, charLimit, nFixedMode, needsGoroutinePoll)
 	timedOut := false
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, os.ErrDeadlineExceeded) {
@@ -477,9 +495,8 @@ func validVarName(name string) bool {
 // The MaxReadBytes cap is checked just before each append so a value or
 // line exactly at the cap (e.g. read -n 1048576 over 1 MiB of ASCII)
 // succeeds; only a write that would exceed the cap is rejected.
-func readInput(ctx context.Context, r io.Reader, delim rune, raw bool, charLimit int, ignoreDelim bool) (string, bool, error) {
+func readInput(ctx context.Context, r io.Reader, delim rune, raw bool, charLimit int, ignoreDelim, useGoroutinePoll bool) (string, bool, error) {
 	var buf []byte
-	one := make([]byte, 1)
 
 	// consumed counts every byte we read from r, including bytes that
 	// are later discarded (line continuations, the backslash before an
@@ -498,23 +515,88 @@ func readInput(ctx context.Context, r io.Reader, delim rune, raw bool, charLimit
 	// be reading a non-terminator) does the error fire.
 	consumed := 0
 
-	readByte := func() (byte, error) {
-		if consumed > MaxReadBytes {
-			return 0, fmt.Errorf("input exceeds maximum of %d bytes", MaxReadBytes)
+	var readByte func() (byte, error)
+	if useGoroutinePoll {
+		// Goroutine-based fallback for the rare case where the caller
+		// has a deadline but couldn't install it via SetReadDeadline
+		// (e.g. specialised character devices). A single producer
+		// goroutine reads bytes asynchronously and feeds them through
+		// a buffered channel; the consumer selects on the channel
+		// versus ctx.Done() so cancellation interrupts a blocking
+		// Read.
+		//
+		// Trade-off: if Read is currently stuck in the kernel when
+		// ctx fires, the producer can't be force-cancelled — it
+		// will eventually unblock when stdin produces data or
+		// closes. The leaked goroutine is harmless (channel send is
+		// guarded by another ctx.Done() select) but persists for the
+		// lifetime of the underlying reader.
+		type byteResult struct {
+			b   byte
+			err error
 		}
-		for {
-			if err := ctx.Err(); err != nil {
-				return 0, err
+		byteCh := make(chan byteResult, 1)
+		go func() {
+			var buf [1]byte
+			for {
+				n, err := r.Read(buf[:])
+				if n == 1 {
+					select {
+					case byteCh <- byteResult{buf[0], nil}:
+					case <-ctx.Done():
+						return
+					}
+				}
+				if err != nil {
+					if n == 0 {
+						select {
+						case byteCh <- byteResult{0, err}:
+						case <-ctx.Done():
+						}
+					}
+					return
+				}
 			}
-			n, err := r.Read(one)
-			if n == 1 {
+		}()
+		readByte = func() (byte, error) {
+			if consumed > MaxReadBytes {
+				return 0, fmt.Errorf("input exceeds maximum of %d bytes", MaxReadBytes)
+			}
+			select {
+			case <-ctx.Done():
+				return 0, ctx.Err()
+			case res := <-byteCh:
+				if res.err != nil {
+					return 0, res.err
+				}
 				consumed++
-				return one[0], nil
+				return res.b, nil
 			}
-			if err != nil {
-				return 0, err
+		}
+	} else {
+		// Direct path: either no deadline at all, or SetReadDeadline
+		// has installed a kernel-level deadline that will surface as
+		// os.ErrDeadlineExceeded from r.Read. ctx.Err() between
+		// retries handles the io.Reader-contract case of n=0,err=nil.
+		one := make([]byte, 1)
+		readByte = func() (byte, error) {
+			if consumed > MaxReadBytes {
+				return 0, fmt.Errorf("input exceeds maximum of %d bytes", MaxReadBytes)
 			}
-			// n == 0 && err == nil: io.Reader contract permits this; retry.
+			for {
+				if err := ctx.Err(); err != nil {
+					return 0, err
+				}
+				n, err := r.Read(one)
+				if n == 1 {
+					consumed++
+					return one[0], nil
+				}
+				if err != nil {
+					return 0, err
+				}
+				// n == 0 && err == nil: io.Reader contract permits this; retry.
+			}
 		}
 	}
 
