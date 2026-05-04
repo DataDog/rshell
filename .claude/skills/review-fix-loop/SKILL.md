@@ -98,7 +98,7 @@ Store the owner and repo name.
 
 **GATE CHECK**: Call TaskList. Step 1 must be `completed`. Set Step 2 to `in_progress`.
 
-Set `iteration = 1`. Maximum iterations: **30**. Repeat sub-steps A through E while `iteration <= 30`.
+Initialize `iteration = 1` **on first entry only**. When re-entering Step 2 from Step 3 (after a `SUCCESS_COUNT` reset), **do not reset `iteration`** — continue incrementing from its current value. Maximum total iterations across all Step 2 runs: **30**. Repeat sub-steps A through E while `iteration <= 30`.
 
 **At the start of each iteration**, update the Step 2 task subject to include the current iteration number using TaskUpdate, e.g. `"Step 2: Run the review-fix loop (iteration 3)"`.
 
