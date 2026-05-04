@@ -45,10 +45,9 @@
 //	callCtx.LstatFile, and callCtx.ReadlinkFile, all of which honour
 //	the AllowedPaths sandbox. (LstatFile and ReadlinkFile are used only
 //	during -P symlink resolution; StatFile is used for all modes.)
-//	Targets that exist on the host filesystem but are outside the
-//	sandbox are rejected with the same "no such file or directory"
-//	message used for missing entries — the failure mode never reveals
-//	whether a denied directory exists.
+//	Targets outside the sandbox are rejected with a "permission denied"
+//	error from the AllowedPaths sandbox (not "no such file or directory"),
+//	so scripts can distinguish a denied path from a missing one.
 //
 // Exit codes:
 //
