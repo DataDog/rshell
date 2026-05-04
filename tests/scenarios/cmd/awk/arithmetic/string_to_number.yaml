@@ -1,0 +1,9 @@
+description: Strings auto-convert to numbers in arithmetic context.
+input:
+  script: |+
+    awk 'BEGIN { print "42abc" + 0, "  -3.14e1  " + 0 }'
+expect:
+  stdout: |+
+    42 -31.4
+  stderr: ""
+  exit_code: 0

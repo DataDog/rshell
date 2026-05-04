@@ -1,0 +1,9 @@
+description: Basic arithmetic operators work on integers and floats.
+input:
+  script: |+
+    awk 'BEGIN { print 1 + 2, 10 / 4, 7 % 3, 2 ^ 10 }'
+expect:
+  stdout: |+
+    3 2.5 1 1024
+  stderr: ""
+  exit_code: 0

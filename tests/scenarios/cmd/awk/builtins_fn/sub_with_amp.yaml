@@ -1,0 +1,9 @@
+description: sub/gsub & in replacement expands to the matched text.
+input:
+  script: |+
+    awk 'BEGIN { s = "hello"; sub(/ll/, "[&]", s); print s }'
+expect:
+  stdout: |+
+    he[ll]o
+  stderr: ""
+  exit_code: 0

@@ -1,0 +1,9 @@
+description: printf formats values without a trailing newline.
+input:
+  script: |+
+    awk 'BEGIN { printf "%s=%d\n", "x", 42 }'
+expect:
+  stdout: |+
+    x=42
+  stderr: ""
+  exit_code: 0

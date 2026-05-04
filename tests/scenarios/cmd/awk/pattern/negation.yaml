@@ -1,0 +1,18 @@
+description: ! inverts a pattern.
+setup:
+  files:
+    - path: input.txt
+      content: |+
+        keep this
+        skip this
+        keep again
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    awk '!/skip/' input.txt
+expect:
+  stdout: |+
+    keep this
+    keep again
+  stderr: ""
+  exit_code: 0

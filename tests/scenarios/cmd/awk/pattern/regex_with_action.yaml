@@ -1,0 +1,17 @@
+description: A /regex/ { action } pair runs only on matching records.
+setup:
+  files:
+    - path: input.txt
+      content: |+
+        log:info:starting
+        log:warn:slow
+        log:error:failed
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    awk -F: '/error/ {print $3}' input.txt
+expect:
+  stdout: |+
+    failed
+  stderr: ""
+  exit_code: 0

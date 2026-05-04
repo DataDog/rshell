@@ -1,0 +1,19 @@
+description: if/else selects a branch on a condition.
+setup:
+  files:
+    - path: input.txt
+      content: |+
+        10
+        5
+        20
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    awk '{ if ($1 > 8) print "big"; else print "small" }' input.txt
+expect:
+  stdout: |+
+    big
+    small
+    big
+  stderr: ""
+  exit_code: 0

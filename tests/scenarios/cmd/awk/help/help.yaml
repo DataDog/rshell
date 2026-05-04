@@ -1,0 +1,10 @@
+description: The --help flag prints usage information and exits 0.
+# skip: rshell builtin help output differs from gawk
+skip_assert_against_bash: true
+input:
+  script: |+
+    awk --help
+expect:
+  stdout_contains: ["Usage: awk"]
+  stderr: ""
+  exit_code: 0

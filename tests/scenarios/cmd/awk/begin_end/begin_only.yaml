@@ -1,0 +1,9 @@
+description: BEGIN block runs once before any input.
+input:
+  script: |+
+    awk 'BEGIN { print "hello world" }'
+expect:
+  stdout: |+
+    hello world
+  stderr: ""
+  exit_code: 0

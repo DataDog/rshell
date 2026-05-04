@@ -1,0 +1,9 @@
+description: Unary minus negates a numeric value.
+input:
+  script: |+
+    awk 'BEGIN { x = 5; print -x, -(-x) }'
+expect:
+  stdout: |+
+    -5 5
+  stderr: ""
+  exit_code: 0

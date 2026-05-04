@@ -1,0 +1,14 @@
+description: A single line without a trailing newline is still treated as one record.
+setup:
+  files:
+    - path: noeol.txt
+      content: "lonely"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    awk 'END {print NR}' noeol.txt
+expect:
+  stdout: |+
+    1
+  stderr: ""
+  exit_code: 0

@@ -1,0 +1,9 @@
+description: printf > "file" is also blocked.
+skip_assert_against_bash: true
+input:
+  script: |+
+    awk 'BEGIN { printf "%s\n", "x" > "/tmp/awk_pwn" }'
+expect:
+  stdout: ""
+  stderr_contains: ["output redirection"]
+  exit_code: 1

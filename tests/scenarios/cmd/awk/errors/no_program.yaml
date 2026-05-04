@@ -1,0 +1,9 @@
+description: awk with no arguments errors out cleanly.
+skip_assert_against_bash: true
+input:
+  script: |+
+    awk
+expect:
+  stdout: ""
+  stderr_contains: ["awk: missing program text"]
+  exit_code: 1

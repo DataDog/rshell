@@ -1,0 +1,9 @@
+description: Unknown flags are rejected with exit 1 and error to stderr.
+skip_assert_against_bash: true
+input:
+  script: |+
+    awk --no-such-flag '{print}'
+expect:
+  stdout: ""
+  stderr_contains: ["awk: "]
+  exit_code: 1

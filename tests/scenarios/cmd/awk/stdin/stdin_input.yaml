@@ -1,0 +1,17 @@
+description: With no FILE, awk reads from standard input via a pipe.
+setup:
+  files:
+    - path: input.txt
+      content: |+
+        apple
+        banana
+        cherry
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    cat input.txt | awk '/an/ {print}'
+expect:
+  stdout: |+
+    banana
+  stderr: ""
+  exit_code: 0

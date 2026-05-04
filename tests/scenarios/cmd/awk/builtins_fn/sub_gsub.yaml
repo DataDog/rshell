@@ -1,0 +1,13 @@
+description: sub replaces first match; gsub replaces all matches and returns count.
+input:
+  script: |+
+    awk 'BEGIN {
+      s = "abc abc abc"
+      n = gsub(/abc/, "X", s)
+      print n, s
+    }'
+expect:
+  stdout: |+
+    3 X X X
+  stderr: ""
+  exit_code: 0

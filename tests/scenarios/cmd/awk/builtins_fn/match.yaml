@@ -1,0 +1,9 @@
+description: match() sets RSTART and RLENGTH from the first regex match.
+input:
+  script: |+
+    awk 'BEGIN { match("foo bar baz", /b../); print RSTART, RLENGTH, substr("foo bar baz", RSTART, RLENGTH) }'
+expect:
+  stdout: |+
+    5 3 bar
+  stderr: ""
+  exit_code: 0

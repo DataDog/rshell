@@ -1,0 +1,19 @@
+description: NR is the running record number across all input.
+setup:
+  files:
+    - path: input.txt
+      content: |+
+        a
+        b
+        c
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    awk '{print NR, $0}' input.txt
+expect:
+  stdout: |+
+    1 a
+    2 b
+    3 c
+  stderr: ""
+  exit_code: 0

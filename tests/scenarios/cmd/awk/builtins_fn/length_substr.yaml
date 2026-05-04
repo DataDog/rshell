@@ -1,0 +1,9 @@
+description: length() returns string length; substr() takes a 1-based slice.
+input:
+  script: |+
+    awk 'BEGIN { s="abcdef"; print length(s), substr(s, 2, 3) }'
+expect:
+  stdout: |+
+    6 bcd
+  stderr: ""
+  exit_code: 0

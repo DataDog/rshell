@@ -1,0 +1,19 @@
+description: Logical && and || combine pattern conditions.
+setup:
+  files:
+    - path: input.txt
+      content: |+
+        1 ok
+        2 fail
+        3 ok
+        4 ok
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    awk '$1 > 1 && $2 == "ok"' input.txt
+expect:
+  stdout: |+
+    3 ok
+    4 ok
+  stderr: ""
+  exit_code: 0

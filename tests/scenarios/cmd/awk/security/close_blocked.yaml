@@ -1,0 +1,9 @@
+description: close() is rejected since it implies redirected I/O is in use.
+skip_assert_against_bash: true
+input:
+  script: |+
+    awk 'BEGIN { close("foo") }'
+expect:
+  stdout: ""
+  stderr_contains: ["close"]
+  exit_code: 1

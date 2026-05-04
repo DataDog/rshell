@@ -1,0 +1,9 @@
+description: printf %% emits a literal percent sign.
+input:
+  script: |+
+    awk 'BEGIN { printf "%d%%\n", 50 }'
+expect:
+  stdout: |+
+    50%
+  stderr: ""
+  exit_code: 0

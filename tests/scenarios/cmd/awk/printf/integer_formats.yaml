@@ -1,0 +1,9 @@
+description: printf supports decimal, octal, and hex integer formats.
+input:
+  script: |+
+    awk 'BEGIN { printf "%d %o %x %X\n", 255, 255, 255, 255 }'
+expect:
+  stdout: |+
+    255 377 ff FF
+  stderr: ""
+  exit_code: 0

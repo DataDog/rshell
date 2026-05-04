@@ -1,0 +1,17 @@
+description: NF reports the number of fields.
+setup:
+  files:
+    - path: input.txt
+      content: |+
+        a b c
+        a b c d e
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    awk '{print NF}' input.txt
+expect:
+  stdout: |+
+    3
+    5
+  stderr: ""
+  exit_code: 0

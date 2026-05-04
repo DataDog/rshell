@@ -1,0 +1,9 @@
+description: Assigning to $N rebuilds $0 with OFS.
+input:
+  script: |+
+    awk 'BEGIN { OFS = "-"; $0 = "a b c"; $2 = "X"; print }'
+expect:
+  stdout: |+
+    a-X-c
+  stderr: ""
+  exit_code: 0

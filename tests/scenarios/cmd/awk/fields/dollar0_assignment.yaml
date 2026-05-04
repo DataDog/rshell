@@ -1,0 +1,9 @@
+description: Assigning to $0 re-splits into fields.
+input:
+  script: |+
+    awk 'BEGIN { $0 = "alpha beta gamma"; print NF, $2 }'
+expect:
+  stdout: |+
+    3 beta
+  stderr: ""
+  exit_code: 0

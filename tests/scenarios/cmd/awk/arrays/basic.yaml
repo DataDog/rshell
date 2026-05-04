@@ -1,0 +1,12 @@
+description: Associative arrays store and retrieve by string key.
+input:
+  script: |+
+    awk 'BEGIN {
+      a["apple"]=1; a["banana"]=2
+      print a["apple"], a["banana"]
+    }'
+expect:
+  stdout: |+
+    1 2
+  stderr: ""
+  exit_code: 0

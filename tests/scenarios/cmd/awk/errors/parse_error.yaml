@@ -1,0 +1,9 @@
+description: A syntactically invalid program reports a parse error and exits 1.
+skip_assert_against_bash: true
+input:
+  script: |+
+    awk '{print +'
+expect:
+  stdout: ""
+  stderr_contains: ["awk:"]
+  exit_code: 1

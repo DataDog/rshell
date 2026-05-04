@@ -1,0 +1,9 @@
+description: sprintf returns a formatted string without printing.
+input:
+  script: |+
+    awk 'BEGIN { s = sprintf("[%5.2f]", 3.14159); print s }'
+expect:
+  stdout: |+
+    [ 3.14]
+  stderr: ""
+  exit_code: 0

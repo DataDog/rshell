@@ -5,6 +5,7 @@ Blocked features are rejected before execution with exit code 2.
 
 ## Builtins
 
+- ✅ `awk [-F sepstring] [-v var=value]... 'program' [FILE]...` — pattern scanning and processing language; supports BEGIN/END blocks, /regex/ patterns, fields (`$0`..`$NF`), special variables (`NR`, `NF`, `FS`, `OFS`, `ORS`, `RS`, `FILENAME`, `SUBSEP`, `CONVFMT`, `OFMT`, `RSTART`, `RLENGTH`), arithmetic, control flow (`if`/`while`/`for`/`for…in`/`do…while`/`break`/`continue`/`next`/`exit`/`delete`), associative arrays, and built-in functions (`length`, `substr`, `index`, `split`, `sub`, `gsub`, `match`, `sprintf`, `tolower`, `toupper`, `int`, `sqrt`, `exp`, `log`, `sin`, `cos`, `atan2`, `rand`, `srand`). Uses Go's RE2 regex engine (linear-time, no backtracking). Blocks: `system()`, `print > file` / `>> file`, `print | cmd`, `getline`, `ENVIRON`, user-defined `function ... { }`. Per-record cap 1 MiB; arrays capped at 1 M entries; per-record loops capped at 1 M iterations.
 - ✅ `break` — exit the innermost `for` loop
 - ✅ `cat [-AbeEnstTuv] [FILE]...` — concatenate files to stdout; supports line numbering, blank squeezing, and non-printing character display
 - ✅ `continue` — skip to the next iteration of the innermost `for` loop

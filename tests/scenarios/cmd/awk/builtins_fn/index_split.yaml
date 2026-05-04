@@ -1,0 +1,14 @@
+description: index() returns 1-based offset; split() fills an array.
+input:
+  script: |+
+    awk 'BEGIN {
+      print index("hello world", "world")
+      n = split("a:b:c", parts, ":")
+      print n, parts[1], parts[2], parts[3]
+    }'
+expect:
+  stdout: |+
+    7
+    3 a b c
+  stderr: ""
+  exit_code: 0

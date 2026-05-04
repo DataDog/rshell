@@ -1,0 +1,17 @@
+description: Print a single field by index.
+setup:
+  files:
+    - path: input.txt
+      content: |+
+        alpha beta gamma
+        one two three
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    awk '{print $2}' input.txt
+expect:
+  stdout: |+
+    beta
+    two
+  stderr: ""
+  exit_code: 0

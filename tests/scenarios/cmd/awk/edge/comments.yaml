@@ -1,0 +1,12 @@
+description: # comments are ignored to end of line.
+input:
+  script: |+
+    awk '
+      # This is a comment.
+      BEGIN { print "ok" }  # trailing comment
+    '
+expect:
+  stdout: |+
+    ok
+  stderr: ""
+  exit_code: 0

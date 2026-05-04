@@ -5,9 +5,10 @@ input:
     help
 expect:
   stdout: |+
-    rshell (dev) — All 28 builtins available
+    rshell (dev) — All 29 builtins available
 
     [         evaluate conditional expression
+    awk       pattern scanning and processing language
     break     exit from a loop
     cat       concatenate and print files
     continue  continue a loop iteration

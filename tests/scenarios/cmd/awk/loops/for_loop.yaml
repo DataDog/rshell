@@ -1,0 +1,11 @@
+description: A classic for loop iterates with init/cond/post.
+input:
+  script: |+
+    awk 'BEGIN { for (i = 1; i <= 3; i++) print i }'
+expect:
+  stdout: |+
+    1
+    2
+    3
+  stderr: ""
+  exit_code: 0

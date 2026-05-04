@@ -1,0 +1,9 @@
+description: do-while runs the body at least once.
+input:
+  script: |+
+    awk 'BEGIN { i = 5; do { print i; i++ } while (i < 5) }'
+expect:
+  stdout: |+
+    5
+  stderr: ""
+  exit_code: 0

@@ -1,0 +1,9 @@
+description: printf width and precision specifiers work for floats and strings.
+input:
+  script: |+
+    awk 'BEGIN { printf "%-8s%6.2f\n", "pi", 3.14159 }'
+expect:
+  stdout: |+
+    pi        3.14
+  stderr: ""
+  exit_code: 0

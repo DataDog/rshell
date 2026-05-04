@@ -1,0 +1,9 @@
+description: -f (read program from file) is not supported and is rejected.
+skip_assert_against_bash: true
+input:
+  script: |+
+    awk -f script.awk
+expect:
+  stdout: ""
+  stderr_contains: ["awk: "]
+  exit_code: 1

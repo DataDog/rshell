@@ -1,0 +1,9 @@
+description: printf %e and %g format floats in scientific and general notation.
+input:
+  script: |+
+    awk 'BEGIN { printf "%e %g\n", 12345.678, 0.0001234 }'
+expect:
+  stdout: |+
+    1.234568e+04 0.0001234
+  stderr: ""
+  exit_code: 0

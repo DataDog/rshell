@@ -1,0 +1,18 @@
+description: !~ inverts a regex match.
+setup:
+  files:
+    - path: input.txt
+      content: |+
+        apple
+        banana
+        cherry
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    awk '$0 !~ /an/' input.txt
+expect:
+  stdout: |+
+    apple
+    cherry
+  stderr: ""
+  exit_code: 0

@@ -1,0 +1,9 @@
+description: Division by zero is reported as a runtime error with exit 1.
+skip_assert_against_bash: true
+input:
+  script: |+
+    awk 'BEGIN { print 1 / 0 }'
+expect:
+  stdout: ""
+  stderr_contains: ["awk: division by zero"]
+  exit_code: 1

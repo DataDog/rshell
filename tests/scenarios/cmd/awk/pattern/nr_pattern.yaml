@@ -1,0 +1,17 @@
+description: NR-based pattern selects a specific line.
+setup:
+  files:
+    - path: input.txt
+      content: |+
+        first
+        second
+        third
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    awk 'NR == 2' input.txt
+expect:
+  stdout: |+
+    second
+  stderr: ""
+  exit_code: 0

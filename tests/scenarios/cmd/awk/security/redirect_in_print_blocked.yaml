@@ -1,0 +1,9 @@
+description: print expr > "file" is rejected even when expr looks comparison-like.
+skip_assert_against_bash: true
+input:
+  script: |+
+    awk 'BEGIN { print "x" > "/tmp/should_not_happen" }'
+expect:
+  stdout: ""
+  stderr_contains: ["output redirection"]
+  exit_code: 1

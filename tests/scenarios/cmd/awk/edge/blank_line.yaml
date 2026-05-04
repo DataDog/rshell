@@ -1,0 +1,17 @@
+description: Blank lines are records with NF==0.
+setup:
+  files:
+    - path: input.txt
+      content: |+
+        first
+
+        third
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    awk 'NF == 0 {print "blank at " NR}' input.txt
+expect:
+  stdout: |+
+    blank at 2
+  stderr: ""
+  exit_code: 0

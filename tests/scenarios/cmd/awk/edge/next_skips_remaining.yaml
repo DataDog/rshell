@@ -1,0 +1,18 @@
+description: The next statement skips remaining patterns and reads the next record.
+setup:
+  files:
+    - path: input.txt
+      content: |+
+        keep
+        skip
+        keep
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    awk '/skip/ {next} {print}' input.txt
+expect:
+  stdout: |+
+    keep
+    keep
+  stderr: ""
+  exit_code: 0

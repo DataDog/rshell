@@ -1,0 +1,14 @@
+description: BEGIN { FS = "\t" } splits TSV input on tab characters.
+setup:
+  files:
+    - path: tsv.txt
+      content: "name\tage\tcity\nalice\t30\tNYC\n"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    awk 'BEGIN { FS = "\t" } NR==2 {print $2}' tsv.txt
+expect:
+  stdout: |+
+    30
+  stderr: ""
+  exit_code: 0

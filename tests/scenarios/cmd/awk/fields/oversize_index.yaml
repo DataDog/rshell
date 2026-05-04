@@ -1,0 +1,15 @@
+description: Field index beyond NF returns the empty string.
+setup:
+  files:
+    - path: input.txt
+      content: |+
+        a b c
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    awk '{print "[" $5 "]"}' input.txt
+expect:
+  stdout: |+
+    []
+  stderr: ""
+  exit_code: 0

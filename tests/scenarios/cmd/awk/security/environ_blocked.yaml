@@ -1,0 +1,9 @@
+description: ENVIRON access is rejected at parse time.
+skip_assert_against_bash: true
+input:
+  script: |+
+    awk 'BEGIN { print ENVIRON["PATH"] }'
+expect:
+  stdout: ""
+  stderr_contains: ["ENVIRON"]
+  exit_code: 1

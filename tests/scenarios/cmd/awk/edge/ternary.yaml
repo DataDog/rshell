@@ -1,0 +1,21 @@
+description: Ternary expression returns one of two values.
+setup:
+  files:
+    - path: nums.txt
+      content: |+
+        2
+        7
+        1
+        9
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    awk '{print $1 % 2 == 0 ? "even" : "odd"}' nums.txt
+expect:
+  stdout: |+
+    even
+    odd
+    odd
+    odd
+  stderr: ""
+  exit_code: 0

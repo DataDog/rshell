@@ -1,0 +1,17 @@
+description: END block runs once after all input is read.
+setup:
+  files:
+    - path: input.txt
+      content: |+
+        a
+        b
+        c
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    awk 'END { print "total:", NR }' input.txt
+expect:
+  stdout: |+
+    total: 3
+  stderr: ""
+  exit_code: 0

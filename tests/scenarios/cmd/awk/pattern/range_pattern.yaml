@@ -1,0 +1,21 @@
+description: Range pattern /start/,/end/ selects an inclusive block.
+setup:
+  files:
+    - path: input.txt
+      content: |+
+        before
+        START
+        middle
+        END
+        after
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    awk '/START/,/END/' input.txt
+expect:
+  stdout: |+
+    START
+    middle
+    END
+  stderr: ""
+  exit_code: 0

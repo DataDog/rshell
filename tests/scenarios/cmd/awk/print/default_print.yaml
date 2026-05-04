@@ -1,0 +1,19 @@
+description: A bare action `{print}` prints every record.
+setup:
+  files:
+    - path: input.txt
+      content: |+
+        alpha
+        beta
+        gamma
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    awk '{print}' input.txt
+expect:
+  stdout: |+
+    alpha
+    beta
+    gamma
+  stderr: ""
+  exit_code: 0

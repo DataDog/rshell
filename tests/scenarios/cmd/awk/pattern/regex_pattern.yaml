@@ -1,0 +1,18 @@
+description: A bare /regex/ pattern prints matching records.
+setup:
+  files:
+    - path: input.txt
+      content: |+
+        apple
+        banana
+        cherry
+        date
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    awk '/an/' input.txt
+expect:
+  stdout: |+
+    banana
+  stderr: ""
+  exit_code: 0

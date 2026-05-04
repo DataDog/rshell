@@ -1,0 +1,9 @@
+description: tolower/toupper change string case.
+input:
+  script: |+
+    awk 'BEGIN { print tolower("Hello"), toupper("world") }'
+expect:
+  stdout: |+
+    hello WORLD
+  stderr: ""
+  exit_code: 0

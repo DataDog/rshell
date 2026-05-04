@@ -27,6 +27,57 @@ package analysis
 // Every symbol listed here must also appear in builtinAllowedSymbols
 // (which acts as the global ceiling).
 var builtinPerCommandSymbols = map[string][]string{
+	"awk": {
+		"bufio.NewScanner",    // 🟢 line-by-line input reading; no write or exec capability.
+		"bufio.SplitFunc",     // 🟢 type for custom scanner split functions; pure type, no I/O.
+		"bufio.ErrTooLong",    // 🟢 sentinel error for scanner buffer overflow; pure constant.
+		"context.Context",     // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
+		"errors.Is",           // 🟢 error comparison; pure function, no I/O.
+		"errors.New",          // 🟢 creates a simple error value; pure function, no I/O.
+		"fmt.Errorf",          // 🟢 error formatting; pure function, no I/O.
+		"fmt.Sprintf",         // 🟢 string formatting; pure function, no I/O.
+		"io.NopCloser",        // 🟢 wraps a Reader with a no-op Close; no side effects.
+		"io.ReadCloser",       // 🟢 interface type; no side effects.
+		"io.Reader",           // 🟢 interface type; no side effects.
+		"io.WriteString",      // 🟠 writes a string to a writer; no filesystem access, delegates to Write.
+		"math.Atan2",          // 🟢 pure arithmetic function; no I/O.
+		"math.MinInt32",       // 🟢 integer constant; no side effects.
+		"math.Cos",            // 🟢 pure arithmetic function; no I/O.
+		"math.Exp",            // 🟢 pure arithmetic function; no I/O.
+		"math.IsInf",          // 🟢 IEEE 754 infinity check; pure function, no I/O.
+		"math.IsNaN",          // 🟢 IEEE 754 NaN check; pure function, no I/O.
+		"math.Log",            // 🟢 pure arithmetic function; no I/O.
+		"math.MaxInt64",       // 🟢 integer constant; no side effects.
+		"math.MinInt64",       // 🟢 integer constant; no side effects.
+		"math.Mod",            // 🟢 pure arithmetic function; no I/O.
+		"math.Pow",            // 🟢 pure arithmetic function; no I/O.
+		"math.Sin",            // 🟢 pure arithmetic function; no I/O.
+		"math.Sqrt",           // 🟢 pure arithmetic function; no I/O.
+		"math.Trunc",          // 🟢 pure arithmetic function; no I/O.
+		"os.O_RDONLY",         // 🟢 read-only file flag constant; cannot open files by itself.
+		"regexp.Compile",      // 🟢 compiles a regular expression; pure function, no I/O. Uses RE2 engine (linear-time, no backtracking).
+		"regexp.Regexp",       // 🟢 compiled regular expression type; no I/O side effects. All matching methods are linear-time (RE2).
+		"strconv.ErrRange",    // 🟢 sentinel error value for overflow; pure constant.
+		"strconv.FormatFloat", // 🟢 float-to-string conversion; pure function, no I/O.
+		"strconv.FormatInt",   // 🟢 int-to-string conversion; pure function, no I/O.
+		"strconv.FormatUint",  // 🟢 uint-to-string conversion; pure function, no I/O.
+		"strconv.Itoa",        // 🟢 int-to-string conversion; pure function, no I/O.
+		"strconv.NumError",    // 🟢 error type for numeric conversion failures; pure type.
+		"strconv.ParseFloat",  // 🟢 string-to-float conversion; pure function, no I/O.
+		"strings.Builder",     // 🟢 efficient string concatenation; pure in-memory buffer, no I/O.
+		"strings.Compare",     // 🟢 lexicographic byte comparison; pure function, no I/O.
+		"strings.Fields",      // 🟢 splits a string on whitespace; pure function, no I/O.
+		"strings.HasPrefix",   // 🟢 pure function for prefix matching; no I/O.
+		"strings.Index",       // 🟢 finds first occurrence of substring; pure function, no I/O.
+		"strings.IndexByte",   // 🟢 finds byte in string; pure function, no I/O.
+		"strings.Join",        // 🟢 concatenates a slice of strings with a separator; pure function, no I/O.
+		"strings.Repeat",      // 🟢 repeats a string n times; pure function, no I/O.
+		"strings.Split",       // 🟢 splits a string by separator into a slice; pure function, no I/O.
+		"strings.ToLower",     // 🟢 converts string to lowercase; pure function, no I/O.
+		"strings.ToUpper",     // 🟢 converts string to uppercase; pure function, no I/O.
+		"strings.TrimLeft",    // 🟢 removes leading characters; pure function, no I/O.
+		"strings.TrimSpace",   // 🟢 removes leading/trailing whitespace; pure function, no I/O.
+	},
 	"break": {
 		"context.Context", // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
 	},
@@ -401,6 +452,7 @@ var builtinPerCommandSymbols = map[string][]string{
 }
 
 var builtinAllowedSymbols = []string{
+	"bufio.ErrTooLong",    // 🟢 sentinel error for scanner buffer overflow; pure constant, no I/O.
 	"bufio.NewScanner",    // 🟢 line-by-line input reading (e.g. head, cat); no write or exec capability.
 	"bufio.Scanner",       // 🟢 scanner type for buffered input reading; no write or exec capability.
 	"bufio.SplitFunc",     // 🟢 type for custom scanner split functions; pure type, no I/O.
@@ -444,16 +496,26 @@ var builtinAllowedSymbols = []string{
 	"io/fs.ModeSticky",                                    // 🟢 file mode bit constant for sticky bit; pure constant.
 	"io/fs.ModeSymlink",                                   // 🟢 file mode bit constant for symlinks; pure constant.
 	"io/fs.ReadDirFile",                                   // 🟢 read-only directory handle interface; no write capability.
+	"math.Atan2",                                          // 🟢 pure arithmetic function; no I/O.
 	"math.Ceil",                                           // 🟢 pure arithmetic; no side effects.
+	"math.Cos",                                            // 🟢 pure arithmetic function; no I/O.
+	"math.Exp",                                            // 🟢 pure arithmetic function; no I/O.
 	"math.Floor",                                          // 🟢 pure arithmetic; no side effects.
 	"math.Inf",                                            // 🟢 returns positive or negative infinity; pure function, no I/O.
 	"math.IsInf",                                          // 🟢 IEEE 754 infinity check; pure function, no I/O.
 	"math.IsNaN",                                          // 🟢 IEEE 754 NaN check; pure function, no I/O.
+	"math.Log",                                            // 🟢 pure arithmetic function; no I/O.
 	"math.MaxInt32",                                       // 🟢 integer constant; no side effects.
 	"math.MaxInt64",                                       // 🟢 integer constant; no side effects.
 	"math.MaxUint64",                                      // 🟢 integer constant; no side effects.
+	"math.MinInt32",                                       // 🟢 integer constant; no side effects.
 	"math.MinInt64",                                       // 🟢 integer constant; no side effects.
+	"math.Mod",                                            // 🟢 pure arithmetic function; no I/O.
 	"math.NaN",                                            // 🟢 returns IEEE 754 NaN value; pure function, no I/O.
+	"math.Pow",                                            // 🟢 pure arithmetic function; no I/O.
+	"math.Sin",                                            // 🟢 pure arithmetic function; no I/O.
+	"math.Sqrt",                                           // 🟢 pure arithmetic function; no I/O.
+	"math.Trunc",                                          // 🟢 pure arithmetic function; no I/O.
 	"net.DefaultResolver",                                 // 🔴 default system DNS resolver; used for context-aware address lookup; network I/O is the explicit purpose of the ping builtin.
 	"net.FlagBroadcast",                                   // 🟢 interface flag constant: broadcast capability; pure constant, no network connections.
 	"net.IPAddr",                                          // 🟢 resolved IP address struct (IP + Zone); pure data type, no I/O.
@@ -484,6 +546,7 @@ var builtinAllowedSymbols = []string{
 	"slices.SortStableFunc",                               // 🟢 stable sort with a comparison function; pure function, no I/O.
 	"strconv.Atoi",                                        // 🟢 string-to-int conversion; pure function, no I/O.
 	"strconv.ErrRange",                                    // 🟢 sentinel error value for overflow; pure constant.
+	"strconv.FormatFloat",                                 // 🟢 float-to-string conversion; pure function, no I/O.
 	"strconv.FormatInt",                                   // 🟢 int-to-string conversion; pure function, no I/O.
 	"strconv.FormatUint",                                  // 🟢 uint-to-string conversion; pure function, no I/O.
 	"strconv.IntSize",                                     // 🟢 platform int size constant (32 or 64); pure constant, no I/O.
@@ -494,15 +557,20 @@ var builtinAllowedSymbols = []string{
 	"strconv.ParseInt",                                    // 🟢 string-to-int conversion with base/bit-size; pure function, no I/O.
 	"strconv.ParseUint",                                   // 🟢 string-to-unsigned-int conversion; pure function, no I/O.
 	"strings.Builder",                                     // 🟢 efficient string concatenation; pure in-memory buffer, no I/O.
+	"strings.Compare",                                     // 🟢 lexicographic byte comparison; pure function, no I/O.
 	"strings.Contains",                                    // 🟢 substring search; pure function, no I/O.
 	"strings.ContainsRune",                                // 🟢 checks if a rune is in a string; pure function, no I/O.
 	"strings.Fields",                                      // 🟢 splits a string on whitespace into a slice; pure function, no I/O.
 	"strings.HasPrefix",                                   // 🟢 pure function for prefix matching; no I/O.
+	"strings.Index",                                       // 🟢 finds first occurrence of substring; pure function, no I/O.
 	"strings.IndexByte",                                   // 🟢 finds byte in string; pure function, no I/O.
 	"strings.Join",                                        // 🟢 concatenates a slice of strings with a separator; pure function, no I/O.
+	"strings.Repeat",                                      // 🟢 repeats a string n times; pure function, no I/O.
 	"strings.ReplaceAll",                                  // 🟢 replaces all occurrences of a substring; pure function, no I/O.
 	"strings.Split",                                       // 🟢 splits a string by separator into a slice; pure function, no I/O.
 	"strings.ToLower",                                     // 🟢 converts string to lowercase; pure function, no I/O.
+	"strings.ToUpper",                                     // 🟢 converts string to uppercase; pure function, no I/O.
+	"strings.TrimLeft",                                    // 🟢 removes leading characters; pure function, no I/O.
 	"strings.TrimSpace",                                   // 🟢 removes leading/trailing whitespace; pure function.
 	"syscall.ByHandleFileInformation",                     // 🟢 Windows file info struct for extracting nlink; read-only type, no I/O.
 	"syscall.EACCES",                                      // 🟢 POSIX errno constant for permission denied; pure constant, no I/O.

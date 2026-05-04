@@ -1,0 +1,17 @@
+description: An empty pattern with default action prints every record.
+setup:
+  files:
+    - path: input.txt
+      content: |+
+        one two three
+        four five six
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    awk '1' input.txt
+expect:
+  stdout: |+
+    one two three
+    four five six
+  stderr: ""
+  exit_code: 0

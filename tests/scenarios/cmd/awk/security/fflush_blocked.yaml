@@ -1,0 +1,9 @@
+description: fflush() is rejected for the same reason as close().
+skip_assert_against_bash: true
+input:
+  script: |+
+    awk 'BEGIN { fflush("foo") }'
+expect:
+  stdout: ""
+  stderr_contains: ["fflush"]
+  exit_code: 1

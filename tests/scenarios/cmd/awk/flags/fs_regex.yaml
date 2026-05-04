@@ -1,0 +1,14 @@
+description: -F accepts a regex as the input field separator.
+setup:
+  files:
+    - path: input.txt
+      content: "alpha,beta:gamma|delta"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    awk -F'[,:|]' '{print $1, $2, $3, $4}' input.txt
+expect:
+  stdout: |+
+    alpha beta gamma delta
+  stderr: ""
+  exit_code: 0

@@ -18,6 +18,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          - pkg: ./builtins/tests/awk/
+            name: awk
+            corpus_path: builtins/tests/awk
           - pkg: ./builtins/tests/head/
             name: head
             corpus_path: builtins/tests/head

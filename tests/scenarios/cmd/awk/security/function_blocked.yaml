@@ -1,0 +1,9 @@
+description: User-defined functions are not supported and rejected at parse time.
+skip_assert_against_bash: true
+input:
+  script: |+
+    awk 'function foo() { return 1 } BEGIN { print foo() }'
+expect:
+  stdout: ""
+  stderr_contains: ["functions"]
+  exit_code: 1

@@ -1,0 +1,9 @@
+description: getline (in any form) is rejected at parse time.
+skip_assert_against_bash: true
+input:
+  script: |+
+    awk 'BEGIN { getline x < "/etc/passwd"; print x }'
+expect:
+  stdout: ""
+  stderr_contains: ["getline"]
+  exit_code: 1

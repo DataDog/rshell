@@ -1,0 +1,17 @@
+description: exit from a main rule still triggers END.
+setup:
+  files:
+    - path: input.txt
+      content: |+
+        a
+        b
+        c
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    awk 'NR == 2 {exit} END {print "saw", NR}' input.txt
+expect:
+  stdout: |+
+    saw 2
+  stderr: ""
+  exit_code: 0

@@ -1,0 +1,8 @@
+description: exit N sets the program's exit status.
+input:
+  script: |+
+    awk 'BEGIN { exit 3 }'
+expect:
+  stdout: ""
+  stderr: ""
+  exit_code: 3

@@ -1,0 +1,9 @@
+description: Juxtaposition concatenates strings.
+input:
+  script: |+
+    awk 'BEGIN { a = "foo"; b = "bar"; print a b, a "_" b }'
+expect:
+  stdout: |+
+    foobar foo_bar
+  stderr: ""
+  exit_code: 0

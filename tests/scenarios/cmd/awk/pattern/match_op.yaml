@@ -1,0 +1,18 @@
+description: ~ tests a regex against an arbitrary expression.
+setup:
+  files:
+    - path: input.txt
+      content: |+
+        apple 100
+        banana 50
+        cherry 25
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    awk '$1 ~ /a/ {print $2}' input.txt
+expect:
+  stdout: |+
+    100
+    50
+  stderr: ""
+  exit_code: 0

@@ -1,0 +1,9 @@
+description: -v pre-assigns a variable before BEGIN runs.
+input:
+  script: |+
+    awk -v who=world 'BEGIN { print "hello", who }'
+expect:
+  stdout: |+
+    hello world
+  stderr: ""
+  exit_code: 0

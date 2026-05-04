@@ -6,13 +6,14 @@ input:
     help --all
 expect:
   stdout: |+
-    rshell (dev) — 2 of 28 builtins enabled
+    rshell (dev) — 2 of 29 builtins enabled
 
     echo  write arguments to stdout
     help  display help for commands
 
     Disabled builtins:
     [         evaluate conditional expression
+    awk       pattern scanning and processing language
     break     exit from a loop
     cat       concatenate and print files
     continue  continue a loop iteration

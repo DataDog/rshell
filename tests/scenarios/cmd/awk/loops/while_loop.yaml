@@ -1,0 +1,11 @@
+description: A while loop executes while its condition is true.
+input:
+  script: |+
+    awk 'BEGIN { i=3; while (i > 0) { print i; i-- } }'
+expect:
+  stdout: |+
+    3
+    2
+    1
+  stderr: ""
+  exit_code: 0

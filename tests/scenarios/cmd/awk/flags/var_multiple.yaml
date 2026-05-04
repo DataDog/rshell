@@ -1,0 +1,9 @@
+description: Multiple -v assignments are honoured in order.
+input:
+  script: |+
+    awk -v a=1 -v b=2 'BEGIN { print a + b }'
+expect:
+  stdout: |+
+    3
+  stderr: ""
+  exit_code: 0

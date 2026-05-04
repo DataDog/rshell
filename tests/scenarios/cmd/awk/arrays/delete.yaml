@@ -1,0 +1,13 @@
+description: delete removes an array entry.
+input:
+  script: |+
+    awk 'BEGIN {
+      a["x"]=1; a["y"]=2
+      delete a["x"]
+      print ("x" in a), a["y"]
+    }'
+expect:
+  stdout: |+
+    0 2
+  stderr: ""
+  exit_code: 0

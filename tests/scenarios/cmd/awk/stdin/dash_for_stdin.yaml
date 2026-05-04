@@ -1,0 +1,17 @@
+description: A literal "-" filename also reads from standard input.
+setup:
+  files:
+    - path: input.txt
+      content: |+
+        one
+        two
+        three
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    cat input.txt | awk 'NR == 2' -
+expect:
+  stdout: |+
+    two
+  stderr: ""
+  exit_code: 0

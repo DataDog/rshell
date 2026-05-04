@@ -1,0 +1,17 @@
+description: -F sets the input field separator.
+setup:
+  files:
+    - path: csv.txt
+      content: |+
+        red,green,blue
+        one,two,three
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    awk -F, '{print $2}' csv.txt
+expect:
+  stdout: |+
+    green
+    two
+  stderr: ""
+  exit_code: 0

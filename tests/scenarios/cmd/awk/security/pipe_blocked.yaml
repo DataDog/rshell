@@ -1,0 +1,9 @@
+description: print | "cmd" pipe is blocked.
+skip_assert_against_bash: true
+input:
+  script: |+
+    awk 'BEGIN { print "x" | "wc -l" }'
+expect:
+  stdout: ""
+  stderr_contains: ["pipe"]
+  exit_code: 1
