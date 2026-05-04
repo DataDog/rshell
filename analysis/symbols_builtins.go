@@ -62,7 +62,6 @@ var builtinPerCommandSymbols = map[string][]string{
 		"sort.Slice",         // 🟢 in-place slice sort with comparison func; pure function, no I/O.
 		"strconv.FormatUint", // 🟢 uint-to-string conversion; pure function, no I/O.
 		"strings.Builder",    // 🟢 efficient string concatenation; pure in-memory buffer, no I/O.
-		"strings.Join",       // 🟢 joins string slices; pure function, no I/O.
 		"strings.Repeat",     // 🟢 returns a string of n repetitions; pure function, no I/O.
 		// Note: builtins/internal/diskstats symbols are exempt from this
 		// allowlist (internal packages are not checked by the

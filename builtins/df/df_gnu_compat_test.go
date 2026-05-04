@@ -20,17 +20,29 @@ import (
 // strings and structural invariants byte-for-byte rather than full row
 // content.
 
-// TestGNUCompatHeaderPosix — `gdf -P` always emits this exact header.
+// TestGNUCompatHeaderPosix — `gdf -P` uses POSIX header labels with
+// the same aligned-column layout as the default format (column widths
+// adapt to data).
 //
 // Reference: `gdf -P / | head -n 1` →
 //
-//	"Filesystem 1024-blocks Used Available Capacity Mounted on"
+//	"Filesystem     1024-blocks      Used Available Capacity Mounted on"
+//
+// Spacing varies with the longest filesystem name, so we assert each
+// expected word appears in order rather than comparing byte-for-byte.
 func TestGNUCompatHeaderPosix(t *testing.T) {
 	requireSupported(t)
 	stdout, _, code := testutil.RunScript(t, "df -P", "")
 	assert.Equal(t, 0, code)
 	header := firstLine(stdout)
-	assert.Equal(t, "Filesystem 1024-blocks Used Available Capacity Mounted on", header)
+	wantOrder := []string{"Filesystem", "1024-blocks", "Used", "Available", "Capacity", "Mounted on"}
+	prev := -1
+	for _, w := range wantOrder {
+		idx := strings.Index(header, w)
+		assert.GreaterOrEqual(t, idx, 0, "%q missing from header %q", w, header)
+		assert.Greater(t, idx, prev, "%q out of order in header %q", w, header)
+		prev = idx
+	}
 }
 
 // TestGNUCompatHeaderDefault — `gdf` default header.
@@ -110,13 +122,15 @@ func TestGNUCompatHeaderType(t *testing.T) {
 		"Type must be between Filesystem and 1K-blocks: %q", header)
 }
 
-// TestGNUCompatPosixSingleSpace — POSIX format uses single-space field
-// separators (no tab alignment). Verifies a row's separator byte is
-// exactly one space.
+// TestGNUCompatPosixNoTabs — POSIX format must not use tab characters
+// (it uses spaces, possibly multiple, for column alignment). Earlier
+// versions of this test also forbade double spaces under the
+// (incorrect) belief that POSIX format is single-space separated; in
+// fact GNU df's `-P` keeps the default aligned-column layout — only
+// the column *labels* change. So we just assert no tabs appear.
 //
-// Reference: `gdf -P / | sed -n '2p' | od -c | head -1` shows single
-// space separators between every field.
-func TestGNUCompatPosixSingleSpace(t *testing.T) {
+// Reference: `gdf -P / | od -c | grep \\t` returns nothing.
+func TestGNUCompatPosixNoTabs(t *testing.T) {
 	requireSupported(t)
 	stdout, _, _ := testutil.RunScript(t, "df -P", "")
 	lines := strings.Split(strings.TrimRight(stdout, "\n"), "\n")
@@ -125,10 +139,6 @@ func TestGNUCompatPosixSingleSpace(t *testing.T) {
 	}
 	for _, l := range lines {
 		assert.False(t, strings.Contains(l, "\t"), "POSIX row contains tab: %q", l)
-		// No "double space + non-space" sequence (would mean column
-		// alignment padding, which POSIX format must not do).
-		assert.False(t, strings.Contains(l, "  "),
-			"POSIX row %q contains double space (must be single-space separated)", l)
 	}
 }
 

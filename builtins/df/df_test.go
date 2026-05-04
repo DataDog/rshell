@@ -91,9 +91,18 @@ func TestDfPosix(t *testing.T) {
 	requireSupported(t)
 	stdout, _, code := dfRun(t, "df -P")
 	assert.Equal(t, 0, code)
-	// POSIX format: single-space-separated header.
+	// POSIX format: -P changes the column labels but keeps GNU's
+	// aligned column layout. Verify the header words appear in
+	// order and "Capacity" replaces "Use%".
 	header := firstLine(stdout)
-	assert.Equal(t, "Filesystem 1024-blocks Used Available Capacity Mounted on", header)
+	wantOrder := []string{"Filesystem", "1024-blocks", "Used", "Available", "Capacity", "Mounted on"}
+	prev := -1
+	for _, w := range wantOrder {
+		idx := strings.Index(header, w)
+		assert.GreaterOrEqual(t, idx, 0, "%q missing from header %q", w, header)
+		assert.Greater(t, idx, prev, "%q out of order in header %q", w, header)
+		prev = idx
+	}
 }
 
 func TestDfPrintType(t *testing.T) {

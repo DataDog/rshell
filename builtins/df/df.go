@@ -436,13 +436,11 @@ func writeOutput(callCtx *builtins.CallContext, mounts []diskstats.Mount, f *fla
 		})
 	}
 
-	// GNU df uses the strict POSIX single-space row format only when
-	// -P is the *sole* format-affecting flag. Combining -P with -T,
-	// -i, -h, or -H reverts to the default aligned column layout
-	// even though the POSIX header names (e.g. "Capacity") may stay.
-	human := mode == unitsHuman1024 || mode == unitsHuman1000
-	posixLayout := posix && !withType && !inodeMode && !human
-	printRows(callCtx, header, rows, posixLayout, withType)
+	// GNU df always uses an aligned column layout, even with -P (which
+	// only changes header names like "Capacity" and "1024-blocks", not
+	// row spacing). printRows pads each column to the width of the
+	// widest cell.
+	printRows(callCtx, header, rows, withType)
 }
 
 // selectColumns returns the (total, used, available) values that go into
@@ -660,27 +658,16 @@ func buildHeader(posix, withType, inodeMode bool, mode unitMode) []string {
 	return cols
 }
 
-// printRows emits the header row and each data row.
+// printRows emits the header row and each data row using GNU df's
+// aligned column layout: every column is padded to the width of the
+// widest cell in that column.
 //
-// POSIX format (-P): single-space-separated, no padding beyond a single
-// space between fields, with the header printed verbatim.
-//
-// Default format: hand-aligned. Each column's width is the max of its
-// header and the longest data row, capped at a sane upper bound.
-func printRows(callCtx *builtins.CallContext, header []string, rows []row, posix, withType bool) {
-	if posix {
-		callCtx.Out(strings.Join(header, " ") + "\n")
-		for _, r := range rows {
-			fields := []string{r.source}
-			if withType {
-				fields = append(fields, r.fstype)
-			}
-			fields = append(fields, r.col1, r.col2, r.col3, r.capacity, r.mountpoint)
-			callCtx.Out(strings.Join(fields, " ") + "\n")
-		}
-		return
-	}
-
+// We do NOT emit a strict single-space POSIX row even when -P is set.
+// GNU df 9.x's `-P` documents only "one-line filesystem rows + POSIX
+// header labels" — it keeps the GNU-default aligned columns. Earlier
+// rshell versions emitted single-space rows for -P which diverged
+// from `gdf -P` byte layout and broke bash-comparison expectations.
+func printRows(callCtx *builtins.CallContext, header []string, rows []row, withType bool) {
 	// Build a 2D table for column-width computation. The header is
 	// always present, so len(table) is never zero.
 	table := make([][]string, 0, len(rows)+1)
