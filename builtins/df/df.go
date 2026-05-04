@@ -152,6 +152,45 @@ func registerUnitFlag(fs *builtins.FlagSet, target *unitMode, value unitMode, na
 	flag.NoOptDefVal = "true"
 }
 
+// noArgBool is a pflag.Value that mirrors GNU getopt's no_argument
+// behaviour: bare `--flag` and `-f` work, but `--flag=value` and
+// `-f=value` are rejected with "flag does not allow an argument" — for
+// any value, including `=true`. pflag.BoolP treats the explicit-value
+// form as a successful parse, which silently diverges from GNU.
+//
+// As with unitFlag, pflag.Value.Set cannot distinguish a bare flag
+// from `=true` because both pass the literal string "true", so the
+// closest approximation is to reject anything that isn't the
+// NoOptDefVal sentinel — catches `=false`, `=garbage`, `=`.
+type noArgBool struct {
+	target *bool
+}
+
+func (b *noArgBool) String() string {
+	if b.target != nil && *b.target {
+		return "true"
+	}
+	return "false"
+}
+func (b *noArgBool) Type() string { return "bool" }
+func (b *noArgBool) Set(s string) error {
+	if s != "true" {
+		return errors.New("flag does not allow an argument")
+	}
+	*b.target = true
+	return nil
+}
+
+// registerNoArgBool installs a noArgBool flag and returns the *bool
+// target so the caller can read it like an ordinary fs.Bool result.
+// Pass an empty shorthand for long-only flags (e.g. --total).
+func registerNoArgBool(fs *builtins.FlagSet, name, shorthand, usage string) *bool {
+	target := new(bool)
+	flag := fs.VarPF(&noArgBool{target: target}, name, shorthand, usage)
+	flag.NoOptDefVal = "true"
+	return target
+}
+
 // flags carries the parsed flag state. It is constructed once per
 // invocation by makeFlags and consumed by the bound handler.
 type flags struct {
@@ -170,16 +209,20 @@ type flags struct {
 
 func makeFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 	mode := unitsK
+	// All boolean options use registerNoArgBool so explicit-value
+	// forms (`--all=false`, `--portability=false`, etc.) are
+	// rejected with "flag does not allow an argument" — matching GNU
+	// df's getopt(1)-style refusal for no-argument options.
 	f := &flags{
-		help:         fs.Bool("help", false, "print usage and exit"),
+		help:         registerNoArgBool(fs, "help", "", "print usage and exit"),
 		mode:         &mode,
-		posix:        fs.BoolP("portability", "P", false, "use the POSIX output format"),
-		printType:    fs.BoolP("print-type", "T", false, "print file system type"),
-		inodes:       fs.BoolP("inodes", "i", false, "list inode information instead of block usage"),
-		all:          fs.BoolP("all", "a", false, "include pseudo, duplicate, inaccessible file systems"),
-		local:        fs.BoolP("local", "l", false, "limit listing to local file systems"),
-		total:        fs.Bool("total", false, "append a grand total row"),
-		noSync:       fs.Bool("no-sync", false, "do not invoke sync before getting usage info (default; accepted for compatibility)"),
+		posix:        registerNoArgBool(fs, "portability", "P", "use the POSIX output format"),
+		printType:    registerNoArgBool(fs, "print-type", "T", "print file system type"),
+		inodes:       registerNoArgBool(fs, "inodes", "i", "list inode information instead of block usage"),
+		all:          registerNoArgBool(fs, "all", "a", "include pseudo, duplicate, inaccessible file systems"),
+		local:        registerNoArgBool(fs, "local", "l", "limit listing to local file systems"),
+		total:        registerNoArgBool(fs, "total", "", "append a grand total row"),
+		noSync:       registerNoArgBool(fs, "no-sync", "", "do not invoke sync before getting usage info (default; accepted for compatibility)"),
 		includeTypes: fs.StringArrayP("type", "t", nil, "limit listing to file systems of type TYPE"),
 		excludeTypes: fs.StringArrayP("exclude-type", "x", nil, "limit listing to file systems not of type TYPE"),
 	}
