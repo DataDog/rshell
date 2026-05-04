@@ -538,6 +538,18 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 		r.exit.exiting = result.Exiting
 		r.breakEnclosing = result.BreakN
 		r.contnEnclosing = result.ContinueN
+		// If the run-level context was cancelled while the builtin was
+		// blocked (MaxExecutionTime, CLI --timeout, parent cancellation),
+		// surface that error to Run() so callers can distinguish a
+		// timeout-driven termination from an ordinary failing exit code.
+		// Without this, a long-blocking builtin that happens to be the
+		// last command in a script would leave Run() returning the
+		// builtin's status (e.g. `read -t`'s 142) instead of the
+		// underlying context.DeadlineExceeded that cmd/rshell main checks
+		// for to print "execution timed out".
+		if err := ctx.Err(); err != nil {
+			r.exit.fatal(err)
+		}
 		return
 	}
 	// Allowed but not known: the default execHandler (noExecHandler) will

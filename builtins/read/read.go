@@ -40,6 +40,13 @@ var Cmd = builtins.Command{
 }
 
 func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
+	// Bash documents `read [OPTION]... [NAME...]` and stops parsing flags
+	// once the first NAME is seen — `read var -n 1` over `abc` assigns
+	// var="abc" then errors on `-n` as an invalid identifier rather than
+	// re-interpreting `-n 1` as a length flag. Disable pflag's default
+	// interspersed-flag parsing so later -tokens remain NAMEs.
+	fs.SetInterspersed(false)
+
 	help := fs.Bool("help", false, "print usage and exit")
 	raw := fs.BoolP("raw", "r", false, "do not interpret backslashes")
 	prompt := fs.StringP("prompt", "p", "", "print PROMPT to stderr before reading")
