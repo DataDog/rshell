@@ -1,0 +1,10 @@
+description: xargs -0 -E emits a warning and ignores -E (NUL mode does not support EOF markers).
+input:
+  script: |+
+    printf 'a\0b\0' | xargs -0 -E STOP echo
+expect:
+  stdout: |+
+    a b
+  stderr: |+
+    xargs: warning: the -E option has no effect if -0 or -d is used.
+  exit_code: 0

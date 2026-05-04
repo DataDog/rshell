@@ -1,0 +1,9 @@
+description: xargs -L treats a line ending with trailing whitespace as continuing to the next line (GNU line-continuation behavior).
+input:
+  script: |+
+    printf 'a \nb\n' | xargs -L 1 echo
+expect:
+  stdout: |+
+    a b
+  stderr: ""
+  exit_code: 0

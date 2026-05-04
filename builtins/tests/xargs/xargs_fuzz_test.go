@@ -33,10 +33,11 @@ import (
 )
 
 // allowedXargsExit returns true for any exit code xargs can legitimately
-// produce — 0 / 1 / 123 / 124 / 125 — and false otherwise.
+// produce — 0 / 1 / 123 / 124 / 125 / 126 / 127 — and false otherwise.
+// 126 = sub-command blocked by CommandAllowed; 127 = sub-command not found.
 func allowedXargsExit(code int) bool {
 	switch code {
-	case 0, 1, 123, 124, 125:
+	case 0, 1, 123, 124, 125, 126, 127:
 		return true
 	}
 	return false

@@ -34,7 +34,7 @@ Blocked features are rejected before execution with exit code 2.
 - ✅ `uname [-asnrvm]` — print system information (Linux only; reads from `/proc/sys/kernel/`, respects `--proc-path`)
 - ✅ `uniq [OPTION]... [INPUT]` — report or omit repeated lines
 - ✅ `wc [-l] [-w] [-c] [-m] [-L] [FILE]...` — count lines, words, bytes, characters, or max line length
-- ✅ `xargs [-0] [-a FILE] [-d DELIM] [-E EOF-STR] [-I REPLSTR] [-L N] [-n N] [-r] [-s N] [-t] [-x] [COMMAND [INITIAL-ARGS]...]` — build and execute commands from standard input; only invokes other registered builtins (subject to `CommandAllowed`), so the GTFOBins shell-escape `xargs … /bin/sh` is rejected; `-p` (interactive), `-P` (parallel), `-o`/`--open-tty`, and `--show-limits` are rejected
+- ✅ `xargs [-0] [-a FILE] [-d DELIM] [-E EOF-STR] [-I REPLSTR] [-L N] [-n N] [-r] [-s N] [-t] [-x] [COMMAND [INITIAL-ARGS]...]` — build and execute commands from standard input; only invokes other registered builtins (subject to `CommandAllowed`), so the GTFOBins shell-escape `xargs … /bin/sh` is rejected; `-p` (interactive), `-P` (parallel), `-o`/`--open-tty`, and `--show-limits` are rejected; `-0` and `-d` are mutually exclusive (error if both specified — GNU last-wins instead)
 - ❌ All other commands — return exit code 127 with `<cmd>: not found` unless an ExecHandler is configured
 
 ## Variables
