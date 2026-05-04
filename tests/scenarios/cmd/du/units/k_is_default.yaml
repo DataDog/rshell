@@ -10,5 +10,5 @@ input:
 expect:
   stdout: |+
     1	f.txt
-  stderr: ""
+  stderr: |+
   exit_code: 0

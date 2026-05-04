@@ -57,6 +57,28 @@ func TestDuDedupsSymlinkAliasesUnderL(t *testing.T) {
 	assert.Equal(t, "3\tl1\n", stdout)
 }
 
+// TestDuDedupsRepeatedDirectoryOperands guards against the bug where
+// the visited-inode map only tracked regular files, so passing the
+// same directory twice (or two -L symlinks pointing at the same
+// directory) emitted both with their own block contributions. GNU
+// suppresses the second occurrence by default.
+func TestDuDedupsRepeatedDirectoryOperands(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "f"), []byte("abc"), 0o644))
+
+	stdout, _, code := cmdRun(t, "du -b -c . .", dir)
+	assert.Equal(t, 0, code)
+	// Exactly two lines: one operand line and the total. The duplicate
+	// operand must be silently dropped from both the per-operand emit
+	// and the grand total.
+	lines := strings.Split(strings.TrimRight(stdout, "\n"), "\n")
+	require.Len(t, lines, 2, "expected dir dedup; got %q", stdout)
+	operand := parseLeadingInt(t, lines[0])
+	total := parseLeadingInt(t, lines[1])
+	assert.Equal(t, operand, total, "grand total must equal single-operand value, not 2x")
+	assert.True(t, strings.HasSuffix(lines[1], "\ttotal"))
+}
+
 // TestDuSummarizeRejectsNegativeDepth ensures `du -s -d -1` is
 // rejected. The earlier validation order applied the -s/--max-depth=0
 // equivalence first, which overwrote the negative value before the

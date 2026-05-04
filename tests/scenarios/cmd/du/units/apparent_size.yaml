@@ -10,5 +10,5 @@ input:
 expect:
   stdout: |+
     1	small.txt
-  stderr: ""
+  stderr: |+
   exit_code: 0

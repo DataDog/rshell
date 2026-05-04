@@ -14,5 +14,5 @@ expect:
     5	a.txt
     3	b.txt
     8	total
-  stderr: ""
+  stderr: |+
   exit_code: 0

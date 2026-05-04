@@ -9,5 +9,5 @@ input:
     du --apparent-size empty
 expect:
   stdout_contains: ["\tempty\n"]
-  stderr: ""
+  stderr: |+
   exit_code: 0

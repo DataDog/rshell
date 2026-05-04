@@ -8,6 +8,6 @@ input:
   script: |+
     du -d -1 .
 expect:
-  stdout: ""
+  stdout: |+
   stderr_contains: ["du:"]
   exit_code: 1

@@ -9,5 +9,5 @@ input:
     du
 expect:
   stdout_contains: ["\t.\n"]
-  stderr: ""
+  stderr: |+
   exit_code: 0

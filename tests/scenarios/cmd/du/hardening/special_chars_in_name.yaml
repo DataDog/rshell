@@ -14,5 +14,5 @@ expect:
   stdout_contains:
     - "5\twith space.txt\n"
     - "3\tcafé.txt\n"
-  stderr: ""
+  stderr: |+
   exit_code: 0

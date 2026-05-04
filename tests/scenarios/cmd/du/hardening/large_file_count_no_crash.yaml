@@ -28,5 +28,5 @@ input:
 expect:
   # Directory inode bytes vary by filesystem; just assert the operand line.
   stdout_contains: ["\tmany\n"]
-  stderr: ""
+  stderr: |+
   exit_code: 0

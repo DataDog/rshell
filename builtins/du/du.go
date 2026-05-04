@@ -395,15 +395,12 @@ func walk(
 		return 0, false, err
 	}
 
-	// Inode dedup applies to regular files. Directories with nlink>1 are
-	// physically distinct (parent-link / "." / ".." mechanics) and must
-	// not be skipped. Symlinks are leaves; let them through.
-	//
-	// The `nlink > 1` optimization that used to gate map insertion was
-	// wrong: under `-L` two distinct symlinks can dereference to the same
-	// inode whose nlink is still 1, and GNU still dedups those (matching
-	// `du -L l1 l2` to a single emission). Track every regular-file inode
-	// up to the maxDedupEntries cap.
+	// Regular-file dedup. GNU du suppresses any inode it has already
+	// counted in the same invocation (the opposite of `--count-links`,
+	// which we don't implement). This covers hard-linked files visited
+	// via different paths and regular files reached via two `-L`
+	// symlinks. Non-regular non-dir leaves (symlinks under -P, device
+	// nodes, FIFOs) are not deduped.
 	if info.Mode().IsRegular() && callCtx.FileIdentity != nil {
 		if id, ok := callCtx.FileIdentity(fsPath, info); ok {
 			if visited[id] {
@@ -426,20 +423,36 @@ func walk(
 		return fileSize, false, nil
 	}
 
-	// Directory: cycle-check (only relevant under -L).
-	if opts.dereference && callCtx.FileIdentity != nil {
+	// Directory dedup + cycle detection. Cycle detection must precede
+	// dedup so that a symlink loop reported via `du -L` still surfaces
+	// the loop error rather than silently terminating at "we've already
+	// visited this inode". Both checks key off the same FileID.
+	if callCtx.FileIdentity != nil {
 		if id, ok := callCtx.FileIdentity(fsPath, info); ok {
-			if firstPath, seen := ancestorIDs[id]; seen {
-				callCtx.Errf("du: File system loop detected; '%s' is part of the same file system loop as '%s'.\n",
-					reportPath, firstPath)
-				return 0, true, errFailed
+			// Cycle: the directory is on the current recursion stack.
+			if opts.dereference {
+				if firstPath, seen := ancestorIDs[id]; seen {
+					callCtx.Errf("du: File system loop detected; '%s' is part of the same file system loop as '%s'.\n",
+						reportPath, firstPath)
+					return 0, true, errFailed
+				}
+				// Push this directory onto the ancestor map for the duration
+				// of the recursion below; pop on the way back up via defer.
+				// This avoids an O(depth²) clone per level — the map is
+				// shared across the whole recursion tree.
+				ancestorIDs = pushAncestor(ancestorIDs, id, reportPath)
+				defer delete(ancestorIDs, id)
 			}
-			// Push this directory onto the ancestor map for the duration of
-			// the recursion below, then pop on the way back up. This avoids
-			// an O(depth²) clone per level — the map is shared across the
-			// whole recursion tree.
-			ancestorIDs = pushAncestor(ancestorIDs, id, reportPath)
-			defer delete(ancestorIDs, id)
+			// Dedup: the directory has already been walked in a different
+			// branch of this invocation (e.g. `du d d` or two -L symlinks
+			// pointing at the same dir). GNU suppresses the second
+			// occurrence; we do the same.
+			if visited[id] {
+				return 0, true, nil
+			}
+			if len(visited) < maxDedupEntries {
+				visited[id] = true
+			}
 		}
 	}
 

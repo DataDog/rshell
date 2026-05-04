@@ -15,5 +15,5 @@ expect:
   stdout_contains:
     - "\ttop/sub\n"
     - "\ttop\n"
-  stderr: ""
+  stderr: |+
   exit_code: 0

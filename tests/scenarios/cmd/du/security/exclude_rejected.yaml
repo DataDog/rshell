@@ -5,6 +5,6 @@ input:
   script: |+
     du --exclude=*.o .
 expect:
-  stdout: ""
+  stdout: |+
   stderr_contains: ["du:"]
   exit_code: 1

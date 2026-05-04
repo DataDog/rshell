@@ -11,5 +11,5 @@ input:
     du -0 -b a.txt b.txt
 expect:
   stdout: "5\ta.txt\x002\tb.txt\x00"
-  stderr: ""
+  stderr: |+
   exit_code: 0

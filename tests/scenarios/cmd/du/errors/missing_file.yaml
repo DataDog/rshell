@@ -4,6 +4,6 @@ input:
   script: |+
     du nope
 expect:
-  stdout: ""
+  stdout: |+
   stderr_contains: ["du: cannot access 'nope':"]
   exit_code: 1

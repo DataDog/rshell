@@ -9,5 +9,5 @@ expect:
     - "Usage: du"
     - "Summarize device usage"
     - "--max-depth"
-  stderr: ""
+  stderr: |+
   exit_code: 0

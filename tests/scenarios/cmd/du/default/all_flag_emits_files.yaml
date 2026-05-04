@@ -16,5 +16,5 @@ expect:
   stdout_contains:
     - "5\ttop/a.txt\n"
     - "3\ttop/b.txt\n"
-  stderr: ""
+  stderr: |+
   exit_code: 0

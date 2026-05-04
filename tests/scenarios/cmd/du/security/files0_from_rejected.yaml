@@ -5,6 +5,6 @@ input:
   script: |+
     du --files0-from=foo
 expect:
-  stdout: ""
+  stdout: |+
   stderr_contains: ["du:"]
   exit_code: 1

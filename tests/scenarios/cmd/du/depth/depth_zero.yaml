@@ -13,5 +13,5 @@ expect:
   # Directory inode bytes vary by filesystem, so assert only the line
   # ending and that there is exactly one line.
   stdout_contains: ["\ttop\n"]
-  stderr: ""
+  stderr: |+
   exit_code: 0

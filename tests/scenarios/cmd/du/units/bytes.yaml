@@ -10,5 +10,5 @@ input:
 expect:
   stdout: |+
     10	data.bin
-  stderr: ""
+  stderr: |+
   exit_code: 0
