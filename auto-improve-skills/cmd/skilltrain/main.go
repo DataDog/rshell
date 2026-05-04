@@ -24,9 +24,9 @@ import (
 )
 
 const (
-	defaultIterations    = 5
+	defaultIterations    = 3
 	defaultModel         = "gpt-5.5"
-	defaultLoopCount     = 1
+	defaultLoopCount     = 30
 	defaultParallelCases = 10
 )
 

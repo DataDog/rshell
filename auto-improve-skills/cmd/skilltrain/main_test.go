@@ -84,11 +84,11 @@ func TestLogSemanticStyleMapsStatusesToColors(t *testing.T) {
 }
 
 func TestDefaultTrainingSettings(t *testing.T) {
-	if defaultIterations != 5 {
-		t.Fatalf("defaultIterations = %d, want 5", defaultIterations)
+	if defaultIterations != 3 {
+		t.Fatalf("defaultIterations = %d, want 3", defaultIterations)
 	}
-	if defaultLoopCount != 1 {
-		t.Fatalf("defaultLoopCount = %d, want 1", defaultLoopCount)
+	if defaultLoopCount != 30 {
+		t.Fatalf("defaultLoopCount = %d, want 30", defaultLoopCount)
 	}
 	if defaultParallelCases != 10 {
 		t.Fatalf("defaultParallelCases = %d, want 10", defaultParallelCases)

@@ -28,6 +28,6 @@ reset-skill:
 train:
 	go run ./cmd/skilltrain \
 		-model gpt-5.5 \
-		-iters 5 \
+		-iters 3 \
 		-judge \
-		-loop-count 100
+		-loop-count 30
