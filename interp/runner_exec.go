@@ -522,7 +522,20 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 				if len(value) > MaxVarBytes {
 					return fmt.Errorf("%s: value too large (limit %d bytes)", name, MaxVarBytes)
 				}
-				return r.setVarErr(name, expand.Variable{Set: true, Kind: expand.String, Str: value})
+				err := r.setVarErr(name, expand.Variable{Set: true, Kind: expand.String, Str: value})
+				if err == nil {
+					return nil
+				}
+				// Total-storage exhaustion is script-aborting (matches the
+				// AST setVar behaviour in interp/vars.go). Translate the
+				// internal sentinel to the public builtins.ErrVarStorageExceeded
+				// so state-mutating builtins can surface Result.Exiting=true
+				// without needing access to the private interp type.
+				var storageErr *errTotalVarStorageExceeded
+				if errors.As(err, &storageErr) {
+					return fmt.Errorf("%s: %w", err, builtins.ErrVarStorageExceeded)
+				}
+				return err
 			},
 			GetVar: func(name string) (string, bool) {
 				vr := r.writeEnv.Get(name)
