@@ -1,0 +1,9 @@
+description: bare length without parens means length($0); "length x" is concatenation, not length(x).
+input:
+  script: |+
+    awk 'BEGIN{x="abc"; print length x}'
+expect:
+  stdout: |+
+    0abc
+  stderr: |+
+  exit_code: 0

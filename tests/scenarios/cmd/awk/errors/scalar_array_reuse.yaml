@@ -1,0 +1,9 @@
+description: reusing a scalar name as an array is a fatal runtime error.
+skip_assert_against_bash: true
+input:
+  script: |+
+    awk 'BEGIN{x=1; x[1]=2; print x}'
+expect:
+  stdout: |+
+  stderr_contains: ["scalar"]
+  exit_code: 1

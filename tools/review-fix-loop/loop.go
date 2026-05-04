@@ -45,6 +45,14 @@ func run(ctx context.Context, cfg Config, prRef string) error {
 	fmt.Fprintf(out, "%s\n", bold(fmt.Sprintf("PR #%d  %s", pr.Number, pr.URL)))
 	fmt.Fprintf(out, "Branch: %s → %s\n", pr.Head, pr.Base)
 
+	// Ensure we are on the PR head branch before making any changes. Fetch the
+	// branch from origin first so that the local ref is up-to-date even when
+	// started from a different branch (e.g. from main with a PR number arg).
+	if err := ensurePRHead(cfg.WorkDir, pr.Head); err != nil {
+		return fmt.Errorf("checkout PR head: %w", err)
+	}
+	fmt.Fprintf(out, "Checked out branch: %s\n", pr.Head)
+
 	agent := newAgent(cfg, out, logFile, os.Stdout)
 	var results []IterationResult
 	successCount := 0
@@ -139,7 +147,9 @@ func run(ctx context.Context, cfg Config, prRef string) error {
 		statusLine := fmt.Sprintf("→ findings=%d  unresolved=%d  ci_clean=%v", reviewFindings, unresolved, ciClean)
 		// A clean iteration requires: no new review findings, no unresolved review
 		// threads (from any prior iteration), and all CI checks passing.
-		iterClean := reviewFindings == 0 && unresolved == 0 && ciClean
+		// If the thread-count or CI-status lookup failed, treat it as not clean
+		// to avoid advancing the streak on unknown state.
+		iterClean := reviewFindings == 0 && unresolved == 0 && ciClean && unresolvedErr == nil && ciErr == nil
 		if iterClean {
 			fmt.Fprintf(out, "\n  %s\n", boldGreen(statusLine))
 		} else {
@@ -178,6 +188,31 @@ func postComment(workDir string, prNumber int, body string) {
 	cmd := exec.Command("gh", "pr", "comment", fmt.Sprintf("%d", prNumber), "--body", body)
 	cmd.Dir = workDir
 	_ = cmd.Run()
+}
+
+// ensurePRHead fetches and checks out the named branch from origin so that
+// the tool always operates on the correct PR branch, even when invoked from
+// an unrelated local branch.
+func ensurePRHead(workDir, branch string) error {
+	// Fetch the branch ref from origin.
+	fetchCmd := exec.Command("git", "fetch", "origin", branch)
+	fetchCmd.Dir = workDir
+	if out, err := fetchCmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("git fetch origin %s: %s: %w", branch, strings.TrimSpace(string(out)), err)
+	}
+	// Check out the branch (creates it tracking origin if it doesn't exist locally).
+	checkoutCmd := exec.Command("git", "checkout", branch)
+	checkoutCmd.Dir = workDir
+	if out, err := checkoutCmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("git checkout %s: %s: %w", branch, strings.TrimSpace(string(out)), err)
+	}
+	// Reset to match origin to avoid stale local state.
+	resetCmd := exec.Command("git", "reset", "--hard", "origin/"+branch)
+	resetCmd.Dir = workDir
+	if out, err := resetCmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("git reset --hard origin/%s: %s: %w", branch, strings.TrimSpace(string(out)), err)
+	}
+	return nil
 }
 
 func gitPullRebase(workDir, branch string) error {

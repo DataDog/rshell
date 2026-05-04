@@ -86,6 +86,7 @@ func (a *Agent) Run(ctx context.Context, name, systemPrompt, userMessage string)
 	var lastRoundText strings.Builder
 	// dotsDirty tracks whether dots were printed to stdout without a trailing newline.
 	var dotsDirty bool
+	reachedFinalResponse := false
 
 	for round := 0; round < maxToolRounds; round++ {
 		stream := a.client.Messages.NewStreaming(ctx, anthropic.MessageNewParams{
@@ -126,6 +127,7 @@ func (a *Agent) Run(ctx context.Context, name, systemPrompt, userMessage string)
 				}
 				renderMarkdown(a.termOut, lastRoundText.String())
 			}
+			reachedFinalResponse = true
 			break
 		}
 
@@ -182,6 +184,9 @@ func (a *Agent) Run(ctx context.Context, name, systemPrompt, userMessage string)
 		fmt.Fprintf(a.out, "╚═ %s done ═══════════════════\n", paint("["+name+"]", colorCode))
 	} else {
 		fmt.Fprintf(a.logOut, "╚═ [%s] done ═══════════════════\n", name)
+	}
+	if !reachedFinalResponse {
+		return fmt.Errorf("[%s] tool-use loop exhausted (%d rounds) without a final text response", name, maxToolRounds)
 	}
 	return nil
 }

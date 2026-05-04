@@ -168,6 +168,11 @@ func (v *varAssignmentSlice) Type() string { return "string" }
 // registerFlags registers awk flags on the supplied flagset and returns the
 // bound handler.
 func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
+	// Disable interspersed flags: awk flags must appear before the program
+	// text.  Options after the program text (e.g. -F, after "program") are
+	// file arguments, not awk flags, matching GNU awk invocation order.
+	fs.SetInterspersed(false)
+
 	help := fs.BoolP("help", "h", false, "print usage and exit")
 
 	fieldSep := fs.StringP("field-separator", "F", "", "input field separator (FS)")
@@ -192,6 +197,11 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 
 		program := args[0]
 		files := args[1:]
+		// Strip a leading "--" from the file list — pflag passes it through when
+		// interspersed parsing is disabled and the program text precedes it.
+		if len(files) > 0 && files[0] == "--" {
+			files = files[1:]
+		}
 
 		prog, err := parseProgram(program)
 		if err != nil {

@@ -96,13 +96,19 @@ query($owner: String!, $repo: String!, $pr: Int!, $after: String) {
 	total := 0
 	cursor := ""
 	for {
-		cmd := exec.Command("gh", "api", "graphql",
-			"-f", "query="+query,
-			"-f", "owner="+pr.Owner,
-			"-f", "repo="+pr.Repo,
+		// Omit the "after" argument on the first request (empty string is not a
+		// valid GraphQL cursor; GitHub returns an error for after:"").
+		cursorArgs := []string{
+			"-f", "query=" + query,
+			"-f", "owner=" + pr.Owner,
+			"-f", "repo=" + pr.Repo,
 			"-F", fmt.Sprintf("pr=%d", pr.Number),
-			"-f", "after="+cursor,
-		)
+		}
+		if cursor != "" {
+			cursorArgs = append(cursorArgs, "-f", "after="+cursor)
+		}
+		cmd := exec.Command("gh", "api", "graphql")
+		cmd.Args = append(cmd.Args, cursorArgs...)
 		cmd.Dir = workDir
 		out, err := cmd.Output()
 		if err != nil {
@@ -210,7 +216,8 @@ func ciPassingFromJSON(out []byte) (bool, error) {
 		s := strings.ToLower(c.State)
 		switch s {
 		case "failing", "failure", "failed", "error",
-			"cancelled", "cancel", "timed_out", "action_required", "stale":
+			"cancelled", "cancel", "timed_out", "action_required", "stale",
+			"startup_failure":
 			return false, nil
 		}
 	}

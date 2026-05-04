@@ -1,0 +1,10 @@
+description: file-open failure exits with code 2 even when END calls exit(0).
+skip_assert_against_bash: true
+input:
+  script: |+
+    printf 'hello\n' | awk '{print} END{exit 0}' - /nonexistent/file
+expect:
+  stdout: |+
+    hello
+  stderr_contains: ["/nonexistent/file"]
+  exit_code: 2

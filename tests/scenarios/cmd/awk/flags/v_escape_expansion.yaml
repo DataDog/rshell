@@ -1,0 +1,9 @@
+description: -v var=value expands awk escape sequences (\t, \n) matching gawk.
+input:
+  script: |+
+    awk -v 'sep=\t' 'BEGIN{printf "%d\n", length(sep)}'
+expect:
+  stdout: |+
+    1
+  stderr: |+
+  exit_code: 0

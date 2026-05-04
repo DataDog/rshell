@@ -127,12 +127,14 @@ func TestHardeningDirectoryAsInput(t *testing.T) {
 	assert.NotEqual(t, "", stderr)
 }
 
-// TestHardeningCRLFInput — \r\n line endings are tolerated by the line scanner.
+// TestHardeningCRLFInput — \r\n line endings: RS="\n" removes only the newline;
+// the \r is preserved in $0 to match GNU awk / POSIX behaviour.
 func TestHardeningCRLFInput(t *testing.T) {
 	dir := setupDir(t, map[string]string{"crlf.txt": "alpha\r\nbeta\r\ngamma\r\n"})
 	stdout, _, code := cmdRun(t, `awk '{print NR, $0}' crlf.txt`, dir)
 	assert.Equal(t, 0, code)
-	assert.Equal(t, "1 alpha\n2 beta\n3 gamma\n", stdout)
+	// \r is preserved in $0; the output lines therefore end in \r\n.
+	assert.Equal(t, "1 alpha\r\n2 beta\r\n3 gamma\r\n", stdout)
 }
 
 // TestHardeningBinaryPassthrough — binary content (NUL bytes) does not crash.

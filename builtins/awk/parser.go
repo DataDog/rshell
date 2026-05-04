@@ -1047,18 +1047,13 @@ func (p *parser) parsePrimary() (expr, error) {
 			p.tokens[p.pos] = token{kind: tkFuncName, val: t.val, line: t.line}
 			return p.parseCall()
 		}
-		// POSIX/gawk: `length` without parens — either length($0) or length(arr).
-		// If the next token is a plain identifier (not a bracket), treat it as
-		// length(arr), since gawk accepts `length arr` as a no-parens form.
-		if t.val == "length" && p.peek().kind != tkLBracket {
-			if p.peek().kind == tkIdent {
-				arrName := p.advance().val
-				// Check that the identifier is not a blocked name (e.g. ENVIRON).
-				if reason, blocked := blockedNames[arrName]; blocked {
-					return nil, p.errorf("%s", reason)
-				}
-				return &callExpr{name: "length", args: []expr{&identExpr{name: arrName}}}, nil
-			}
+		// POSIX/gawk: bare `length` (no parentheses) means length($0).
+		// Unlike user-defined functions, `length x` does NOT pass x as the
+		// argument: gawk and mawk parse it as concat(length($0), x), so we emit
+		// a no-arg call and let the concatenation context consume any following
+		// identifier token.  Only `length(arr)` with explicit parens computes
+		// the length of an array.
+		if t.val == "length" && p.peek().kind != tkLBracket && p.peek().kind != tkLParen {
 			return &callExpr{name: "length"}, nil
 		}
 		// Array subscript?

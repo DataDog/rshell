@@ -86,6 +86,11 @@ func TestCIPassingFromJSON(t *testing.T) {
 			input:   []byte(`not json`),
 			wantErr: true,
 		},
+		{
+			name:  "startup_failure is not clean",
+			input: []byte(`[{"name":"test","state":"startup_failure"}]`),
+			want:  false,
+		},
 	}
 
 	for _, tt := range tests {

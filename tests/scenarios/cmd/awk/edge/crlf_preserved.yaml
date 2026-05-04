@@ -1,0 +1,11 @@
+description: CRLF input - carriage return is preserved in $0 (RS="\n" strips only the newline).
+skip_assert_against_bash: true
+input:
+  script: |+
+    printf 'a\r\nb\r\n' | awk '{print length($0)}'
+expect:
+  stdout: |+
+    2
+    2
+  stderr: |+
+  exit_code: 0

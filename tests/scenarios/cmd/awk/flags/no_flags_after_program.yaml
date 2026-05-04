@@ -1,0 +1,9 @@
+description: -F appearing after the program text is treated as a filename, not a flag.
+skip_assert_against_bash: true
+input:
+  script: |+
+    awk '{print $1}' -F, 2>&1 | head -1
+expect:
+  stdout_contains: ["-F,"]
+  stderr: |+
+  exit_code: 0

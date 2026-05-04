@@ -113,9 +113,9 @@ func (r *runtime) setFS(s string) error {
 	return nil
 }
 
-// applyVarAssignment handles -v var=value. The value is treated as a string
-// literal (escapes are NOT expanded, matching POSIX) — but this is awk-style:
-// it is treated as a string-number, so numeric coercion works naturally.
+// applyVarAssignment handles -v var=value and positional name=value assignments.
+// The value part is interpreted for awk escape sequences (\t, \n, \r, octal, etc.)
+// as documented in the GNU awk manual §6.1.4 (Assignment Options).
 func (r *runtime) applyVarAssignment(s string) error {
 	eq := strings.IndexByte(s, '=')
 	if eq <= 0 {
@@ -125,7 +125,8 @@ func (r *runtime) applyVarAssignment(s string) error {
 	if !isValidVarName(name) {
 		return fmt.Errorf("invalid variable name %q", name)
 	}
-	val := s[eq+1:]
+	rawVal := s[eq+1:]
+	val := expandAwkCmdEscapes(rawVal)
 	if reason, blocked := blockedNames[name]; blocked {
 		return errors.New(reason)
 	}
@@ -173,6 +174,64 @@ func (r *runtime) applyVarAssignment(s string) error {
 		r.globals[name] = strNumValue(val)
 	}
 	return nil
+}
+
+// expandAwkCmdEscapes processes awk-style escape sequences in command-line
+// assignment values (-v var=value and positional var=value arguments). This
+// matches the behaviour documented in the GNU awk manual §6.1.4: \n becomes
+// a newline, \t a tab, \r a carriage-return, \ooo an octal byte, etc.
+// Unknown escapes (e.g. \q) keep the backslash and the character.
+func expandAwkCmdEscapes(s string) string {
+	if !strings.ContainsRune(s, '\\') {
+		return s // fast path — no backslash at all
+	}
+	var sb strings.Builder
+	sb.Grow(len(s))
+	i := 0
+	for i < len(s) {
+		if s[i] != '\\' || i+1 >= len(s) {
+			sb.WriteByte(s[i])
+			i++
+			continue
+		}
+		esc := s[i+1]
+		i += 2
+		switch esc {
+		case 'n':
+			sb.WriteByte('\n')
+		case 't':
+			sb.WriteByte('\t')
+		case 'r':
+			sb.WriteByte('\r')
+		case '\\':
+			sb.WriteByte('\\')
+		case '"':
+			sb.WriteByte('"')
+		case '/':
+			sb.WriteByte('/')
+		case 'a':
+			sb.WriteByte('\a')
+		case 'b':
+			sb.WriteByte('\b')
+		case 'f':
+			sb.WriteByte('\f')
+		case 'v':
+			sb.WriteByte('\v')
+		case '0', '1', '2', '3', '4', '5', '6', '7':
+			// Octal escape: 1–3 digits.
+			v := int(esc - '0')
+			for j := 0; j < 2 && i < len(s) && s[i] >= '0' && s[i] <= '7'; j++ {
+				v = v*8 + int(s[i]-'0')
+				i++
+			}
+			sb.WriteByte(byte(v))
+		default:
+			// Unknown escape: preserve backslash and character.
+			sb.WriteByte('\\')
+			sb.WriteByte(esc)
+		}
+	}
+	return sb.String()
 }
 
 func isValidVarName(s string) bool {
@@ -263,10 +322,12 @@ func run(ctx context.Context, r *runtime, prog *program, files []string) (uint8,
 			}
 		}
 		if hadFileError {
-			// Run END blocks but exit with code 2 (same as gawk for file errors).
+			// Run END blocks. Even if END calls exit(N), the file-open error
+			// takes precedence and the exit code stays 2 — matching gawk, which
+			// exits 2 regardless of what END's explicit exit() argument is.
 			if err := runEnd(ctx, r, prog); err != nil {
-				if ee, ok := err.(*exitSignal); ok {
-					return ee.code, nil
+				if _, ok := err.(*exitSignal); ok {
+					return 2, nil // END exit() does not override the file-error code
 				}
 				return 1, err
 			}
@@ -950,6 +1011,9 @@ func (r *runtime) evalExpr(e expr) (awkValue, error) {
 		if err != nil {
 			return uninitValue, err
 		}
+		if _, isScalar := r.globals[v.name]; isScalar {
+			return uninitValue, fmt.Errorf("illegal use of scalar %q as array", v.name)
+		}
 		arr := r.arrays[v.name]
 		if arr == nil {
 			arr = make(map[string]awkValue)
@@ -1117,6 +1181,9 @@ func (r *runtime) storeScalar(name string, v awkValue) error {
 	case "RLENGTH":
 		r.rlength = floatToInt64Safe(v.toNumber())
 		return nil
+	}
+	if _, isArray := r.arrays[name]; isArray {
+		return fmt.Errorf("illegal use of array %q as scalar", name)
 	}
 	r.globals[name] = v
 	return nil
@@ -1324,6 +1391,9 @@ func (r *runtime) assignLValue(l expr, val awkValue) (awkValue, error) {
 		if err != nil {
 			return uninitValue, err
 		}
+		if _, isScalar := r.globals[lv.name]; isScalar {
+			return uninitValue, fmt.Errorf("illegal use of scalar %q as array", lv.name)
+		}
 		arr := r.arrays[lv.name]
 		if arr == nil {
 			arr = make(map[string]awkValue)
@@ -1448,18 +1518,16 @@ func makeSplitFunc(rs string) bufio.SplitFunc {
 	}
 }
 
-// splitLines is bufio.ScanLines but tolerant to \r\n.
+// splitLines splits on \n (the default RS). The record token includes any
+// preceding \r so that \r\n files preserve the carriage-return in ash, matching
+// GNU awk / POSIX behaviour: RS="\n" removes only the newline, not the \r.
 func splitLines(data []byte, atEOF bool) (advance int, token []byte, err error) {
 	if atEOF && len(data) == 0 {
 		return 0, nil, nil
 	}
 	for i, b := range data {
 		if b == '\n' {
-			tok := data[:i]
-			if len(tok) > 0 && tok[len(tok)-1] == '\r' {
-				tok = tok[:len(tok)-1]
-			}
-			return i + 1, tok, nil
+			return i + 1, data[:i], nil
 		}
 	}
 	if atEOF {
