@@ -61,7 +61,6 @@ func whileFuzzRun(t *testing.T, script string) {
 		// Any non-zero exit is acceptable for shell scripts; the spec doesn't
 		// constrain user-program exit codes. We only rule out explicit
 		// internal-error sentinels.
-		_ = es
 		return
 	}
 	// Non-ExitStatus errors (ctx.Canceled, ctx.DeadlineExceeded, fatal panics)

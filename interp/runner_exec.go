@@ -304,6 +304,12 @@ func (r *Runner) execWhileClause(ctx context.Context, cm *syntax.WhileClause) {
 	r.inLoop = true
 	defer func() { r.inLoop = oldInLoop }()
 
+	// ranBody tracks whether the body executed at least once, independently
+	// of iterationCount (which is informational/telemetry). Using a bool
+	// here avoids a theoretical wraparound: if iterationCount overflows int,
+	// "iterationCount > 0" would silently flip false and the loop's exit
+	// status would be reset to 0 instead of the last body's exit.
+	ranBody := false
 	var lastBody exitStatus
 	for {
 		if err := loopCtx.Err(); err != nil {
@@ -349,12 +355,10 @@ func (r *Runner) execWhileClause(ctx context.Context, cm *syntax.WhileClause) {
 		if r.exit.ok() == cm.Until {
 			break
 		}
-		// Reset the cond's exit so the body sees a clean status (mirrors how
-		// r.stmt() resets r.exit before each statement).
-		r.exit = exitStatus{}
 
 		broken := r.loopStmtsBroken(loopCtx, cm.Do)
 		iterationCount++
+		ranBody = true
 		// Capture the body's last-command exit; per POSIX this becomes the
 		// loop's exit status if no further iteration runs.
 		lastBody = r.exit
@@ -386,7 +390,7 @@ func (r *Runner) execWhileClause(ctx context.Context, cm *syntax.WhileClause) {
 	if r.exit.exiting || r.exit.fatalExit {
 		return
 	}
-	if iterationCount > 0 {
+	if ranBody {
 		r.exit = lastBody
 	} else {
 		r.exit = exitStatus{}
