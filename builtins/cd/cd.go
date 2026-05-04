@@ -203,8 +203,8 @@ func registerFlags(flags *builtins.FlagSet) builtins.HandlerFunc {
 		}
 
 		if target == "" {
-			callCtx.Errf("cd: : no such file or directory\n")
-			return builtins.Result{Code: 1}
+			// Match bash: cd "" is a no-op success (stays in $PWD, exits 0).
+			return builtins.Result{}
 		}
 		if len(target) > maxPathBytes {
 			callCtx.Errf("cd: path too long\n")

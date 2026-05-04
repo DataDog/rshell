@@ -1,12 +1,13 @@
-# Hardening: an empty path is treated as a missing directory.
-description: cd with an empty-string argument errors with no-such-file.
-skip_assert_against_bash: true # bash treats empty arg as a no-op success on some versions.
+# Derived from bash: cd "" is a no-op success — stays in $PWD and returns 0.
+description: cd with an empty-string argument is a no-op success.
 input:
   allowed_paths: ["$DIR"]
   script: |+
+    BEFORE="$PWD"
     cd ""
+    [ "$PWD" = "$BEFORE" ] && echo ok
 expect:
-  stdout: ""
-  stderr: |+
-    cd: : no such file or directory
-  exit_code: 1
+  stdout: |+
+    ok
+  stderr: ""
+  exit_code: 0
