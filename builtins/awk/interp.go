@@ -50,7 +50,7 @@ type runtime struct {
 
 	// Current record.
 	record string
-	fields []string // fields[0] is the whole record; fields[i] is $i
+	fields []string // 0-indexed: fields[i-1] is $i (so $1=fields[0], $2=fields[1], ...); $0 is stored separately in record
 
 	// rng is the pseudo-random number generator for rand() / srand().
 	rng *deterministicRand

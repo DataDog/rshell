@@ -213,13 +213,13 @@ func applyPrintfSpec(spec printfSpec, val awkValue, convFmt string) (string, err
 	case 'd', 'i':
 		return formatInt(spec, floatToInt64Safe(val.toNumber())), nil
 	case 'o':
-		return formatUnsigned(spec, uint64(floatToInt64Safe(val.toNumber())), 8), nil
+		return formatUnsigned(spec, awkToUint32(val.toNumber()), 8), nil
 	case 'u':
-		return formatUnsigned(spec, uint64(floatToInt64Safe(val.toNumber())), 10), nil
+		return formatUnsigned(spec, awkToUint32(val.toNumber()), 10), nil
 	case 'x':
-		return formatUnsigned(spec, uint64(floatToInt64Safe(val.toNumber())), 16), nil
+		return formatUnsigned(spec, awkToUint32(val.toNumber()), 16), nil
 	case 'X':
-		s := formatUnsigned(spec, uint64(floatToInt64Safe(val.toNumber())), 16)
+		s := formatUnsigned(spec, awkToUint32(val.toNumber()), 16)
 		return strings.ToUpper(s), nil
 	case 'c':
 		return formatChar(spec, val, convFmt), nil
@@ -278,6 +278,23 @@ func formatInt(spec printfSpec, n int64) string {
 		prefix = " "
 	}
 	return padNumber(spec, prefix, digits)
+}
+
+// awkToUint32 converts a float to a uint32 value matching gawk/mawk semantics:
+//   - NaN or negative values → 0
+//   - Values > math.MaxUint32 → math.MaxUint32 (saturate, not wrap)
+//   - Otherwise truncate toward zero to uint32
+//
+// This differs from a raw uint64(floatToInt64Safe(f)) cast, which would give
+// 64-bit wrap-around semantics.
+func awkToUint32(f float64) uint64 {
+	if math.IsNaN(f) || f < 0 || math.IsInf(f, -1) {
+		return 0
+	}
+	if f > math.MaxUint32 || math.IsInf(f, 1) {
+		return math.MaxUint32
+	}
+	return uint64(uint32(f))
 }
 
 func formatUnsigned(spec printfSpec, n uint64, base int) string {
