@@ -788,7 +788,13 @@ func (t *tokenizer) nextWhitespace(ctx context.Context) (string, bool, bool, err
 			if errors.Is(err, io.EOF) {
 				t.eof = true
 				if quote != 0 {
-					return "", false, false, fmt.Errorf("unterminated %c-quoted string", quote)
+					var qname string
+					if quote == '\'' {
+						qname = "single"
+					} else {
+						qname = "double"
+					}
+					return "", false, false, fmt.Errorf("unmatched %s quote; by default quotes are special to xargs unless you use the -0 option", qname)
 				}
 				if len(t.buf) == 0 {
 					return "", false, false, nil

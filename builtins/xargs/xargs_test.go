@@ -343,7 +343,7 @@ func TestXargsUnterminatedQuote(t *testing.T) {
 	dir := t.TempDir()
 	_, stderr, code := cmdRun(t, `echo "'oops" | xargs echo`, dir)
 	assert.Equal(t, 1, code)
-	assert.Contains(t, stderr, "xargs:")
+	assert.Contains(t, stderr, "unmatched single quote")
 }
 
 func TestXargsTrailingBackslash(t *testing.T) {
