@@ -475,7 +475,7 @@ func TestFormatCommitBodyIncludesChangeAndScoreDetails(t *testing.T) {
 		SkillSizeBytes:             8400,
 		SkillSizeScore:             0.93,
 		ObjectiveConfig: autoresearch.ObjectiveConfig{
-			QualityWeight:            0.85,
+			QualityWeight:            0.80,
 			DurationWeight:           0.10,
 			SkillSizeWeight:          0.05,
 			DurationBudgetSeconds:    120,
@@ -513,7 +513,7 @@ func TestFormatCommitBodyIncludesChangeAndScoreDetails(t *testing.T) {
 		"Objective: 94.25/100.00 (93.02% -> 94.25%, delta +1.23 pp)",
 		"Average case duration: 82.3s",
 		"Skill size: 2100 estimated tokens, 8400 bytes",
-		"Objective config: quality=0.85 duration=0.10 skill_size=0.05",
+		"Objective config: quality=0.80 duration=0.10 skill_size=0.05",
 		"Researcher summary:",
 		"Tightened the workflow",
 		"Change summary:",

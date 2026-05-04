@@ -50,7 +50,7 @@ func main() {
 		caseTimeout              = flag.Duration("case-timeout", 6*time.Minute, "timeout per benchmark case")
 		judge                    = flag.Bool("judge", false, "run optional LLM-as-judge scoring pass")
 		judgeWeight              = flag.Float64("judge-weight", 0.3, "when -judge is set, final score weight for judge score (0..1)")
-		objectiveQualityWeight   = flag.Float64("objective-quality-weight", 0.85, "composite objective weight for answer quality")
+		objectiveQualityWeight   = flag.Float64("objective-quality-weight", 0.80, "composite objective weight for answer quality")
 		objectiveDurationWeight  = flag.Float64("objective-duration-weight", 0.10, "composite objective weight for wall-clock investigation duration")
 		objectiveSkillSizeWeight = flag.Float64("objective-skill-size-weight", 0.10, "composite objective weight for skill size")
 		durationBudget           = flag.Duration("duration-budget", 60*time.Second, "per-case wall-clock duration with no objective penalty")
