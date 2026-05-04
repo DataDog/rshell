@@ -177,14 +177,33 @@ func run(ctx context.Context, c *builtins.CallContext, args []string, opt runOpt
 		}
 	}
 
+	// Bash explicitly documents that `-t TIMEOUT` has no effect when
+	// stdin is a regular file: regular-file reads don't block (the
+	// kernel returns data or EOF immediately), so a timeout is
+	// meaningless and bash skips its alarm path entirely. Setting up
+	// context.WithTimeout here would cause `read -t 0.001 var <
+	// bigfile` to spuriously return 142 with a partial assignment
+	// when the timer expires while we're scanning a large line.
+	// Detect the regular-file shape via fstat and skip the positive-
+	// timeout setup; the syntactic validation of the -t value still
+	// runs (matching bash, which rejects `read -t abc` even when
+	// stdin is a regular file).
+	stdinIsRegularFile := false
+	if f, fok := c.Stdin.(*os.File); fok {
+		if info, err := f.Stat(); err == nil && info.Mode().IsRegular() {
+			stdinIsRegularFile = true
+		}
+	}
+
 	// Resolve timeout. Bash treats -t 0 as a poll: returns 0 if input
 	// is immediately available, non-zero otherwise, without waiting and
 	// without consuming data. Positive timeouts wrap the read in a
-	// context.WithTimeout. We also honour any deadline already on the
-	// parent context (e.g. from interp.MaxExecutionTime or a CLI
-	// --timeout) by propagating it to *os.File stdin via
-	// SetReadDeadline so a blocking read syscall actually wakes up
-	// when the run as a whole is cancelled, not only when -t fires.
+	// context.WithTimeout (skipped for regular-file stdin per the
+	// rule above). We also honour any deadline already on the parent
+	// context (e.g. from interp.MaxExecutionTime or a CLI --timeout)
+	// by propagating it to *os.File stdin via SetReadDeadline so a
+	// blocking read syscall actually wakes up when the run as a
+	// whole is cancelled, not only when -t fires.
 	readCtx := ctx
 	pollMode := false
 	if opt.timeoutStr != "" {
@@ -193,9 +212,13 @@ func run(ctx context.Context, c *builtins.CallContext, args []string, opt runOpt
 			c.Errf("read: %s: invalid timeout specification\n", opt.timeoutStr)
 			return builtins.Result{Code: 1}
 		}
-		if secs == 0 {
+		switch {
+		case secs == 0:
 			pollMode = true
-		} else {
+		case stdinIsRegularFile:
+			// Bash: -t is ignored on regular files. Run the read
+			// without a timeout-derived deadline.
+		default:
 			dur := time.Duration(secs * float64(time.Second))
 			var cancel context.CancelFunc
 			readCtx, cancel = context.WithTimeout(ctx, dur)
