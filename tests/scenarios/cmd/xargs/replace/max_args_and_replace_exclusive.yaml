@@ -1,0 +1,11 @@
+description: xargs emits a warning and ignores -n when both -n and -I are specified.
+input:
+  script: |+
+    printf 'a\nb\n' | xargs -n 2 -I {} echo {}
+expect:
+  stdout: |+
+    a
+    b
+  stderr: |+
+    xargs: warning: options --max-args and --replace/-I/-i are mutually exclusive, ignoring previous --max-args value
+  exit_code: 0

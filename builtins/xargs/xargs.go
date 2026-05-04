@@ -299,8 +299,13 @@ func buildOptions(fs *builtins.FlagSet, null bool, argFile, delim, eofStr, replS
 	// tokenisation to newline-only (matches GNU xargs: "unquoted blanks do
 	// not terminate input items; instead the separator is the newline"),
 	// and implies --no-run-if-empty. This overrides any user-supplied
-	// -n / -L values.
+	// -n / -L values. GNU xargs emits a warning when both -n and -I are
+	// specified.
 	if o.useReplace() {
+		if fs.Changed("max-args") {
+			o.warnings = append(o.warnings,
+				"warning: options --max-args and --replace/-I/-i are mutually exclusive, ignoring previous --max-args value")
+		}
 		o.maxArgs = 1
 		o.maxLines = 1
 		o.noRunEmpty = true
@@ -370,6 +375,15 @@ func runXargs(ctx context.Context, callCtx *builtins.CallContext, o options) bui
 	for _, w := range o.warnings {
 		callCtx.Errf("xargs: %s\n", w)
 	}
+	// Upfront check: if the command itself (without any items) already
+	// exceeds the -s limit, fail immediately — even on empty input. Matches
+	// GNU xargs's "cannot fit single argument within argument list size limit"
+	// error and must be checked before the nil-stdin early-return path.
+	if commandLineLen(o, nil) > o.maxChars {
+		callCtx.Errf("xargs: cannot fit single argument within argument list size limit\n")
+		return builtins.Result{Code: exitUsage}
+	}
+
 	rc, err := openInput(ctx, callCtx, o)
 	if err != nil {
 		callCtx.Errf("xargs: %s\n", err.Error())
@@ -381,14 +395,6 @@ func runXargs(ctx context.Context, callCtx *builtins.CallContext, o options) bui
 		return finishEmpty(ctx, callCtx, o, exitOK)
 	}
 	defer rc.Close()
-
-	// Upfront check: if the command itself (without any items) already
-	// exceeds the -s limit, fail immediately. Matches GNU xargs's
-	// "cannot fit single argument within argument list size limit" error.
-	if commandLineLen(o, nil) > o.maxChars {
-		callCtx.Errf("xargs: cannot fit single argument within argument list size limit\n")
-		return builtins.Result{Code: exitUsage}
-	}
 
 	tok := newTokenizer(rc, o)
 	finalCode := exitOK
