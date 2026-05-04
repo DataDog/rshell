@@ -551,14 +551,16 @@ func runXargs(ctx context.Context, callCtx *builtins.CallContext, o options) bui
 			add = len(item) + 1
 		}
 		if usedChars+add > o.maxChars {
-			if len(batch) == 0 {
+			if len(batch) == 0 && !o.useReplace() {
 				// Single item already too large — always abort (GNU always
-				// exits 1 in this case, regardless of -x).
+				// exits 1 in this case, regardless of -x). Not applicable
+				// in -I mode where the batch is always empty at this point.
 				callCtx.Errf("xargs: argument line too long\n")
 				return builtins.Result{Code: exitUsage}
 			}
-			if o.exitOnSize {
-				// -x: abort if the current batch won't fit within -s.
+			if o.exitOnSize || o.useReplace() {
+				// -x / -I: abort if the current expansion won't fit within -s.
+				// GNU uses "argument list too long" for both cases.
 				callCtx.Errf("xargs: argument list too long\n")
 				return builtins.Result{Code: exitUsage}
 			}
@@ -810,21 +812,25 @@ func openInput(ctx context.Context, callCtx *builtins.CallContext, o options) (i
 // tokenizer reads items from r according to opts.mode, honouring quoting
 // and backslash escapes only in modeWhitespace.
 type tokenizer struct {
-	r         *bufio.Reader
-	o         options
-	buf       []byte
-	eof       bool
-	bytesSeen int       // running byte count for periodic ctx.Err() polling
-	stderr    io.Writer // for NUL-byte warnings; may be nil
-	warnedNUL bool      // true after the first NUL warning (GNU emits at most once)
+	r           *bufio.Reader
+	o           options
+	buf         []byte
+	eof         bool
+	bytesSeen   int       // running byte count for periodic ctx.Err() polling
+	stderr      io.Writer // for NUL-byte warnings; may be nil
+	warnedNUL   bool      // true after the first NUL warning (GNU emits at most once)
+	atLineStart bool      // true at stream-start and after any '\n'; used to gate
+	// the -E EOF-marker check: GNU only suppresses the marker
+	// when it is at the start of a logical line.
 }
 
 func newTokenizer(r io.Reader, o options, stderr io.Writer) *tokenizer {
 	return &tokenizer{
-		r:      bufio.NewReaderSize(r, readChunk),
-		o:      o,
-		buf:    make([]byte, 0, 256),
-		stderr: stderr,
+		r:           bufio.NewReaderSize(r, readChunk),
+		o:           o,
+		buf:         make([]byte, 0, 256),
+		stderr:      stderr,
+		atLineStart: true, // stream start counts as "beginning of a line"
 	}
 }
 
@@ -1096,14 +1102,7 @@ func isWhitespace(b byte) bool {
 // repeated newlines) are skipped silently and do not contribute to the
 // "endedLine" line counter — only lines that actually carry an item count.
 func (t *tokenizer) nextWhitespace(ctx context.Context) (string, bool, bool, error) {
-	for {
-		result, endedLine, more, err := t.nextWhitespaceOnce(ctx)
-		// If more==false and err==nil and result=="" we need to determine
-		// whether this was EOF (return as-is) or a NUL-induced empty-and-skip
-		// (which should not happen — nextWhitespaceOnce only returns empty on
-		// real EOF or error). So propagate directly.
-		return result, endedLine, more, err
-	}
+	return t.nextWhitespaceOnce(ctx)
 }
 
 // nextWhitespaceOnce reads exactly one token using POSIX whitespace+quoting
@@ -1115,6 +1114,9 @@ func (t *tokenizer) nextWhitespaceOnce(ctx context.Context) (string, bool, bool,
 
 	// Skip leading whitespace (including blank lines). NUL bytes in the
 	// leading region are treated as whitespace (just skipped with a warning).
+	// t.atLineStart is maintained across calls: true at stream-start or when
+	// the inter-token whitespace included a '\n'. The -E EOF-marker is only
+	// honoured when atLineStart is true, matching GNU xargs semantics.
 	for {
 		if err := t.pollCtx(ctx); err != nil {
 			return "", false, false, err
@@ -1128,6 +1130,9 @@ func (t *tokenizer) nextWhitespaceOnce(ctx context.Context) (string, bool, bool,
 			return "", false, false, err
 		}
 		if isWhitespace(b) {
+			if b == '\n' {
+				t.atLineStart = true
+			}
 			continue
 		}
 		if b == 0 {
@@ -1165,7 +1170,11 @@ func (t *tokenizer) nextWhitespaceOnce(ctx context.Context) (string, bool, bool,
 				if len(t.buf) == 0 {
 					return "", false, false, nil
 				}
-				if isEofMarker(t.o, t.buf) {
+				// GNU xargs only suppresses the EOF-marker token when it is
+				// at the start of a logical line (preceded by a newline or
+				// the very start of input). A same-line token like "a STOP"
+				// (space before STOP, no newline) is NOT suppressed.
+				if t.atLineStart && isEofMarker(t.o, t.buf) {
 					t.eof = true
 					return "", false, false, nil
 				}
@@ -1251,6 +1260,9 @@ func (t *tokenizer) nextWhitespaceOnce(ctx context.Context) (string, bool, bool,
 				t.eof = true
 				return "", false, false, nil
 			}
+			// Update atLineStart for the next token: if the terminating
+			// whitespace was a newline, the next token begins a new line.
+			t.atLineStart = (b == '\n')
 			return string(t.buf), endedLine, true, nil
 		}
 

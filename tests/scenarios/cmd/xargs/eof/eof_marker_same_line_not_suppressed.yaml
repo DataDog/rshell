@@ -1,0 +1,9 @@
+description: xargs -E does not suppress an EOF-terminated token when it is on the same line as a prior token (no newline between them). GNU xargs only suppresses the EOF-marker when it begins a new logical line.
+input:
+  script: |+
+    printf 'a STOP' | xargs -E STOP echo
+expect:
+  stdout: |+
+    a STOP
+  stderr: ""
+  exit_code: 0

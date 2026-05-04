@@ -1,0 +1,9 @@
+description: xargs -I aborts with "argument list too long" (not "argument line too long") when the substituted expansion exceeds the -s budget. GNU always uses the "list too long" message in replace mode.
+input:
+  script: |+
+    echo 'hello' | xargs -I {} -s 9 echo '{}'
+expect:
+  stdout: ""
+  stderr: |+
+    xargs: argument list too long
+  exit_code: 1
