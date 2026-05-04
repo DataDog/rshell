@@ -3,6 +3,8 @@
 This document lists every shell feature and whether it is supported (✅) or blocked (❌).
 Blocked features are rejected before execution with exit code 2.
 
+The in-shell `help` command mirrors these feature categories: run `help` for a concise supported/unsupported summary plus commands, or `help <feature|command>` for details about a specific feature or command.
+
 ## Builtins
 
 - ✅ `break` — exit the innermost `for` loop
@@ -15,7 +17,7 @@ Blocked features are rejected before execution with exit code 2.
 - ✅ `find [-L] [-P] [PATH...] [EXPRESSION]` — search for files in a directory hierarchy; supports `--help`, `-name`, `-iname`, `-path`, `-ipath`, `-type` (b,c,d,f,l,p,s), `-size`, `-empty`, `-newer`, `-mtime`, `-mmin`, `-perm`, `-maxdepth`, `-mindepth`, `-print`, `-print0`, `-exec CMD {} \;`, `-execdir CMD {} \;`, `-prune`, `-quit`, logical operators (`!`, `-a`, `-o`, `()`); blocks `-delete`, `-regex` for sandbox safety
 - ✅ `grep [-EFGivclLnHhoqsxw] [-e PATTERN] [-m NUM] [-A NUM] [-B NUM] [-C NUM] PATTERN [FILE]...` — print lines that match patterns; uses RE2 regex engine (linear-time, no backtracking)
 - ✅ `head [-n N|-c N] [-q|-v] [FILE]...` — output the first part of files (default: first 10 lines); `-z`/`--zero-terminated` and `--follow` are rejected
-- ✅ `help` — display all available builtin commands with brief descriptions; for detailed flag info, use `<command> --help`
+- ✅ `help [--all] [feature|command]` — display rshell features, a concise unsupported-feature summary, and available commands; with a topic, show detailed help for that feature or command
 - ✅ `ip [-o|-4|-6|--brief] addr|link [show] [dev IFNAME]` — show network interface addresses and link-layer info (read-only); write ops (`add`, `del`, `flush`, `set`), namespace ops (`netns`, `-n`), and batch mode (`-b`/`-B`/`--force`) are blocked
 - ✅ `ip route [show|list]` — show IPv4 routing table (Linux only; reads `/proc/net/route` directly via `os.Open`, bypassing `AllowedPaths`); at most 10 000 entries loaded; lines longer than 1 MiB abort parsing with an error (exit 1)
 - ✅ `ip route get ADDRESS` — show the route selected by longest-prefix-match for ADDRESS (Linux only); write ops (`add`, `del`, `flush`, `replace`, `change`, `save`, `restore`) are blocked; `-6` (IPv6 routing) is not supported
@@ -25,6 +27,7 @@ Blocked features are rejected before execution with exit code 2.
 - ✅ `ping [-c N] [-W DURATION] [-i DURATION] [-q] [-4|-6] [-h] HOST` — send ICMP echo requests to a network host and report round-trip statistics; `-f` (flood), `-b` (broadcast), `-s` (packet size), `-I` (interface), `-p` (pattern), and `-R` (record route) are blocked; count/wait/interval are clamped to safe ranges with a warning; multicast, unspecified (`0.0.0.0`/`::`), and broadcast addresses (IPv4 last-octet `.255`) are rejected — note: directed broadcasts on non-standard subnets (e.g. `.127` on a `/25`) are not blocked without subnet-mask knowledge
 - ✅ `ps [-e|-A] [-f] [-p PIDLIST]` — report process status; default shows current-session processes; `-e`/`-A` shows all; `-f` adds UID/PPID/STIME columns; `-p` selects by PID list
 - ✅ `printf FORMAT [ARGUMENT]...` — format and print data to stdout; supports `%s`, `%b`, `%c`, `%d`, `%i`, `%o`, `%u`, `%x`, `%X`, `%e`, `%E`, `%f`, `%F`, `%g`, `%G`, `%%`; format reuse for excess arguments; `%n` rejected (security risk); `-v` rejected
+- ✅ `pwd [-LP]` — print the absolute pathname of the current working directory; `-L` (default) prints the shell's tracked logical path, `-P` resolves all symlinks; `-P` is best-effort within the sandbox (path components above `AllowedPaths` pass through unresolved); `--version` rejected
 - ✅ `read [-r] [-p PROMPT] [-d DELIM] [-n N] [-N N] [-t SECS] [NAME...]` — read one delimited chunk from stdin and assign each IFS-split field to a shell variable (defaulting to `REPLY` when no NAME is given); `-n`/`-N` are capped at 1 MiB; non-raw mode interprets `\<delim>` as line continuation and `\<X>` as `X`; `-p` is suppressed unless stdin is a terminal (matches bash); `-a` (array), `-s` (silent), `-u` (read from FD), `-e` (readline), and `-i` (initial text) are not implemented
 - ✅ `sed [-n] [-e SCRIPT] [-E|-r] [SCRIPT] [FILE]...` — stream editor for filtering and transforming text; uses RE2 regex engine; `-i`/`-f` rejected; `e`/`w`/`W`/`r`/`R` commands blocked
 - ✅ `strings [-a] [-n MIN] [-t o|d|x] [-o] [-f] [-s SEP] [FILE]...` — print printable character sequences in files (default min length 4); offsets via `-t`/`-o`; filename prefix via `-f`; custom separator via `-s`
