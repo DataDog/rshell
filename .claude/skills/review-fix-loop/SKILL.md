@@ -326,7 +326,7 @@ Maintain a `SUCCESS_COUNT` integer (starts at 0) tracking how many times Step 3 
 
 **If all verifications pass BUT `iteration_had_no_findings` is false** (the self-review found issues that were then resolved), set `SUCCESS_COUNT = 0`. If `iteration > 30`, proceed directly to **Step 4** (iteration limit reached). Otherwise reset Step 2 and all its sub-steps to `pending` and go back for another iteration.
 
-**If all verifications pass AND `iteration_had_no_findings` is true** (the self-review found zero findings), increment `SUCCESS_COUNT` and update the Step 3 task subject to `"Step 3: Verify clean state (SUCCESS_COUNT/5)"`. If `SUCCESS_COUNT = 5` → proceed to **Step 4**. Otherwise → reset Step 2 and all its sub-steps to `pending`, and go back to **Step 2: Run the review-fix loop** for another full iteration before returning here.
+**If all verifications pass AND `iteration_had_no_findings` is true** (the self-review found zero findings), increment `SUCCESS_COUNT` and update the Step 3 task subject to `"Step 3: Verify clean state (SUCCESS_COUNT/5)"`. If `SUCCESS_COUNT = 5` → proceed to **Step 4**. If `iteration > 30` → proceed directly to **Step 4** (iteration limit reached — additional iterations are not possible). Otherwise → reset Step 2 and all its sub-steps to `pending`, and go back to **Step 2: Run the review-fix loop** for another full iteration before returning here.
 
 **Completion check:** `SUCCESS_COUNT` has reached 5. Mark Step 3 as `completed`.
 
