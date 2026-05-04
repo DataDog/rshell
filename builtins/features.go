@@ -178,10 +178,21 @@ func Features() []FeatureMeta {
 	return features
 }
 
-// Feature returns the metadata for a named rshell feature.
+// Feature returns the metadata for a named rshell feature. The returned
+// FeatureMeta's Supported/Unsupported/Notes slices are independent copies
+// — callers may freely mutate them without affecting the registry.
 func Feature(name string) (FeatureMeta, bool) {
 	feature, ok := featureByName[name]
-	return feature, ok
+	if !ok {
+		return FeatureMeta{}, false
+	}
+	return FeatureMeta{
+		Name:        feature.Name,
+		Description: feature.Description,
+		Supported:   append([]string(nil), feature.Supported...),
+		Unsupported: append([]string(nil), feature.Unsupported...),
+		Notes:       append([]string(nil), feature.Notes...),
+	}, true
 }
 
 // UnsupportedSummary returns a concise list of intentionally unsupported
