@@ -347,6 +347,18 @@ func TestWhilePipeNestedSubshellTerminates(t *testing.T) {
 	assert.Equal(t, 0, code)
 }
 
+// until false is symmetric to while true: the pipeline producer must also stop
+// when the consumer (head) closes its read end.
+func TestUntilPipeProducerStopsWhenConsumerCloses(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	start := time.Now()
+	stdout, _, code := whileRunCtx(ctx, t, `until false; do echo x; done | head -3`)
+	assert.Less(t, time.Since(start), 2*time.Second, "until pipeline did not terminate after consumer closed")
+	assert.Equal(t, "x\nx\nx\n", stdout)
+	assert.Equal(t, 0, code)
+}
+
 // Infinite-output while loop must respect the runner's stdout cap rather than
 // growing memory unbounded. We use a small ctx deadline as the outer bound
 // and assert stdout size stays under a generous upper bound that catches an
