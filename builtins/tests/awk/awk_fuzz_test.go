@@ -12,6 +12,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/DataDog/rshell/builtins/testutil"
 	"github.com/DataDog/rshell/interp"
@@ -190,8 +191,13 @@ func FuzzAwkFieldSep(f *testing.F) {
 		if len(sep) > 256 {
 			return
 		}
-		// Skip values that would break our shell-quoting.
+		// Skip values that would break our shell-quoting or shell parsing.
 		if strings.ContainsAny(sep, "'\x00") {
+			return
+		}
+		// Skip invalid UTF-8: the mvdan.cc/sh parser rejects scripts containing
+		// invalid UTF-8 sequences, so such separators are out-of-scope.
+		if !utf8.ValidString(sep) {
 			return
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
