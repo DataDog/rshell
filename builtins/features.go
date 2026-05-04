@@ -29,7 +29,7 @@ var featureRegistry = []FeatureMeta{
 		},
 		Unsupported: []string{
 			"All other commands return exit code 127 unless an external command handler is configured and allows them.",
-			"Command options that would write files, execute programs, or bypass safety are rejected.",
+			"Command options that would write files or otherwise bypass sandbox safety are rejected. External program execution is gated by AllowedCommands (e.g. `find -exec`/`-execdir` runs only commands the policy allows).",
 		},
 	},
 	{
