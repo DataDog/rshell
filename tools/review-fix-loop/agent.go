@@ -22,6 +22,7 @@ type Agent struct {
 	model     string
 	maxTokens int64
 	workDir   string
+	verbose   bool
 }
 
 func newAgent(cfg Config) *Agent {
@@ -30,13 +31,19 @@ func newAgent(cfg Config) *Agent {
 		model:     cfg.Model,
 		maxTokens: cfg.MaxTokens,
 		workDir:   cfg.WorkDir,
+		verbose:   cfg.Verbose,
 	}
 }
 
 // Run executes the skill identified by name with the given system prompt and user message.
-// It streams Claude's text output to stdout and executes any bash tool calls.
+// In normal mode: Claude text is printed prefixed with [name], bash I/O is hidden.
+// In verbose mode: banners, raw Claude text, and full bash I/O are shown.
 func (a *Agent) Run(ctx context.Context, name, systemPrompt, userMessage string) error {
-	fmt.Printf("\n╔═ [%s] ═══════════════════════\n", name)
+	if a.verbose {
+		fmt.Printf("\n╔═ [%s] ═══════════════════════\n", name)
+	}
+
+	lw := newLineWriter(os.Stdout, "["+name+"] ")
 
 	messages := []anthropic.MessageParam{
 		{
@@ -64,18 +71,20 @@ func (a *Agent) Run(ctx context.Context, name, systemPrompt, userMessage string)
 			if err := acc.Accumulate(event); err != nil {
 				return fmt.Errorf("accumulate stream: %w", err)
 			}
-			switch e := event.AsAny().(type) {
-			case anthropic.ContentBlockDeltaEvent:
-				switch d := e.Delta.AsAny().(type) {
-				case anthropic.TextDelta:
-					fmt.Print(d.Text)
+			if e, ok := event.AsAny().(anthropic.ContentBlockDeltaEvent); ok {
+				if d, ok := e.Delta.AsAny().(anthropic.TextDelta); ok {
+					if a.verbose {
+						fmt.Print(d.Text)
+					} else {
+						lw.write(d.Text)
+					}
 				}
 			}
 		}
 		if err := stream.Err(); err != nil {
 			return fmt.Errorf("[%s] stream error (round %d): %w", name, round, err)
 		}
-		fmt.Println()
+		lw.flush() // ensure we end on a newline regardless of mode
 
 		if acc.StopReason != anthropic.StopReasonToolUse {
 			break
@@ -109,7 +118,9 @@ func (a *Agent) Run(ctx context.Context, name, systemPrompt, userMessage string)
 		})
 	}
 
-	fmt.Printf("╚═ [%s] done ═══════════════════\n", name)
+	if a.verbose {
+		fmt.Printf("╚═ [%s] done ═══════════════════\n", name)
+	}
 	return nil
 }
 
@@ -121,8 +132,6 @@ func (a *Agent) executeBash(ctx context.Context, rawInput json.RawMessage) (outp
 		return fmt.Sprintf("tool input parse error: %v", err), true
 	}
 
-	fmt.Printf("\n$ %s\n", input.Command)
-
 	cmdCtx, cancel := context.WithTimeout(ctx, 10*time.Minute)
 	defer cancel()
 
@@ -130,39 +139,52 @@ func (a *Agent) executeBash(ctx context.Context, rawInput json.RawMessage) (outp
 	cmd.Dir = a.workDir
 	cmd.Env = os.Environ()
 
-	// Tee output: display to terminal and capture for Claude
-	pr, pw := io.Pipe()
-	cmd.Stdout = pw
-	cmd.Stderr = pw
+	if a.verbose {
+		fmt.Printf("\n$ %s\n", input.Command)
 
-	var captured strings.Builder
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		buf := make([]byte, 4096)
-		for {
-			n, err := pr.Read(buf)
-			if n > 0 {
-				chunk := buf[:n]
-				os.Stdout.Write(chunk)
-				captured.Write(chunk)
+		// Tee: display to terminal in real time and capture for Claude
+		pr, pw := io.Pipe()
+		cmd.Stdout = pw
+		cmd.Stderr = pw
+
+		var captured strings.Builder
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			buf := make([]byte, 4096)
+			for {
+				n, err := pr.Read(buf)
+				if n > 0 {
+					chunk := buf[:n]
+					os.Stdout.Write(chunk)
+					captured.Write(chunk)
+				}
+				if err != nil {
+					break
+				}
 			}
-			if err != nil {
-				break
-			}
+		}()
+
+		runErr := cmd.Run()
+		pw.Close()
+		<-done
+
+		out := captured.String()
+		const maxOutput = 200_000
+		if len(out) > maxOutput {
+			out = out[:maxOutput] + "\n[output truncated]"
 		}
-	}()
-
-	runErr := cmd.Run()
-	pw.Close()
-	<-done
-
-	out := captured.String()
-	const maxOutput = 200_000
-	if len(out) > maxOutput {
-		out = out[:maxOutput] + "\n[output truncated]"
+		return out, runErr != nil
 	}
-	return out, runErr != nil
+
+	// Non-verbose: capture only, no terminal output
+	out, runErr := cmd.CombinedOutput()
+	result := string(out)
+	const maxOutput = 200_000
+	if len(result) > maxOutput {
+		result = result[:maxOutput] + "\n[output truncated]"
+	}
+	return result, runErr != nil
 }
 
 func bashToolParam() anthropic.ToolUnionParam {
@@ -180,4 +202,41 @@ func bashToolParam() anthropic.ToolUnionParam {
 		},
 	}
 	return anthropic.ToolUnionParam{OfTool: &tool}
+}
+
+// lineWriter prefixes every line of streamed text with a fixed prefix.
+type lineWriter struct {
+	out         io.Writer
+	prefix      string
+	atLineStart bool
+}
+
+func newLineWriter(out io.Writer, prefix string) *lineWriter {
+	return &lineWriter{out: out, prefix: prefix, atLineStart: true}
+}
+
+func (lw *lineWriter) write(text string) {
+	for len(text) > 0 {
+		if lw.atLineStart {
+			fmt.Fprint(lw.out, lw.prefix)
+			lw.atLineStart = false
+		}
+		idx := strings.IndexByte(text, '\n')
+		if idx == -1 {
+			fmt.Fprint(lw.out, text)
+			return
+		}
+		fmt.Fprint(lw.out, text[:idx+1])
+		text = text[idx+1:]
+		lw.atLineStart = true
+	}
+}
+
+// flush ensures output ends on a newline (prevents a garbled prompt if the
+// last delta had no trailing newline).
+func (lw *lineWriter) flush() {
+	if !lw.atLineStart {
+		fmt.Fprintln(lw.out)
+		lw.atLineStart = true
+	}
 }

@@ -17,6 +17,7 @@ type Config struct {
 	MaxIterations int
 	TargetSuccess int // consecutive clean checks required to stop
 	WorkDir       string
+	Verbose       bool
 }
 
 func main() {
@@ -26,6 +27,7 @@ func main() {
 		model         = flag.String("model", "claude-sonnet-4-6", "Anthropic model to use")
 		maxTokens     = flag.Int("max-tokens", 32768, "max output tokens per agent call")
 		workDir       = flag.String("dir", "", "repo root (default: auto-detect via git)")
+		verbose       = flag.Bool("verbose", false, "show bash commands and their output")
 	)
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Usage: review-fix-loop [flags] [pr-number|pr-url]\n\n")
@@ -53,6 +55,7 @@ func main() {
 		MaxIterations: *maxIter,
 		TargetSuccess: *targetSuccess,
 		WorkDir:       dir,
+		Verbose:       *verbose,
 	}
 
 	prRef := strings.Join(flag.Args(), " ")
