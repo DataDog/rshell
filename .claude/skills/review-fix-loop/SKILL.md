@@ -141,7 +141,7 @@ Use the structurally derived value as the authoritative value of `iteration_had_
 
 > **Why inline comments are sufficient:** The `code-review` skill spec requires every finding to be posted as an inline comment tied to a specific diff line — findings that cannot be anchored to a line are not valid output. A review-summary-only finding (appearing only in the review's top-level `body`) would violate that contract, so `findings_count` will be `0` if and only if the self-review found nothing actionable.
 >
-> **Optional cross-check via review state:** If you want an additional sanity check, fetch the most recent review submitted by `$MY_LOGIN` after `$ITERATION_START_TIME`. If its `state` is `APPROVE`, `findings_count` must be `0` — a zero-inline-comment `APPROVE` review means the code is clean. If `state` is `COMMENT` or `REQUEST_CHANGES`, at least one inline finding should exist; if `findings_count` is `0` despite a `COMMENT`/`REQUEST_CHANGES` state, default conservatively to `iteration_had_no_findings=false`.
+> **Optional cross-check via review state:** If you want an additional sanity check, fetch the most recent review submitted by `$MY_LOGIN` after `$ITERATION_START_TIME`. Because this is always a self-review, the state will be `COMMENT` regardless of whether findings exist — GitHub does not permit self-approval. Only use this cross-check to detect an anomaly where `findings_count > 0` but no review was posted at all (state is absent) — in that case, default conservatively to `iteration_had_no_findings=false`. Do **not** use `COMMENT` state alone as a signal that findings are present.
 
 ### Sub-step 2A2 — Request external reviews ← **parallel with 2A1**
 
