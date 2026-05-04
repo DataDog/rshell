@@ -322,9 +322,9 @@ Record the final state of each dimension (unresolved thread count, CI).
 
 Maintain a `SUCCESS_COUNT` integer (starts at 0) tracking how many times Step 3 has passed all three verifications **AND** the last iteration had no findings from the self-review. Each success must be separated by exactly one full Step 2 iteration — never increment `SUCCESS_COUNT` twice from the same iteration.
 
-**If any verification fails**, set `SUCCESS_COUNT = 0`, reset Step 2 and all its sub-steps to `pending`, and go back to **Step 2: Run the review-fix loop** for another iteration.
+**If any verification fails**, set `SUCCESS_COUNT = 0`. If `iteration > 30`, proceed directly to **Step 4** (iteration limit already reached — further passes are not possible). Otherwise reset Step 2 and all its sub-steps to `pending` and go back to **Step 2: Run the review-fix loop** for another iteration.
 
-**If all verifications pass BUT `iteration_had_no_findings` is false** (the self-review found issues that were then resolved), set `SUCCESS_COUNT = 0`. The iteration was not genuinely clean — findings existed but were fixed. Reset Step 2 and all its sub-steps to `pending` and go back for another iteration.
+**If all verifications pass BUT `iteration_had_no_findings` is false** (the self-review found issues that were then resolved), set `SUCCESS_COUNT = 0`. If `iteration > 30`, proceed directly to **Step 4** (iteration limit reached). Otherwise reset Step 2 and all its sub-steps to `pending` and go back for another iteration.
 
 **If all verifications pass AND `iteration_had_no_findings` is true** (the self-review found zero findings), increment `SUCCESS_COUNT` and update the Step 3 task subject to `"Step 3: Verify clean state (SUCCESS_COUNT/5)"`. If `SUCCESS_COUNT = 5` → proceed to **Step 4**. Otherwise → reset Step 2 and all its sub-steps to `pending`, and go back to **Step 2: Run the review-fix loop** for another full iteration before returning here.
 
