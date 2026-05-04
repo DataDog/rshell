@@ -369,13 +369,13 @@ func resolvePhysical(ctx context.Context, callCtx *builtins.CallContext, absPath
 	}
 }
 
-// substituteIntermediateSymlink walks parents of absPath from deepest to
-// shallowest. The first parent that is itself a symlink is resolved and
-// the path is rebuilt with the target substituted (the suffix below the
-// symlink is preserved). On success returns (newPath, true, nil); when
-// no parent is a symlink (or LstatFile rejects a parent — typically the
-// sandbox boundary), returns ("", false, nil) to signal the outer loop
-// that absPath is fully canonical for the visible portion of the tree.
+// substituteIntermediateSymlink walks the ancestry of absPath from leaf toward
+// root. The first ancestor that is itself a symlink is resolved and the path is
+// rebuilt with the target substituted (the suffix below the symlink ancestor is
+// preserved). On success returns (newPath, true, nil); when no ancestor is a
+// symlink (or LstatFile rejects an ancestor — typically the sandbox boundary),
+// returns ("", false, nil) to signal the outer loop that absPath is fully
+// canonical for the visible portion of the tree.
 func substituteIntermediateSymlink(ctx context.Context, callCtx *builtins.CallContext, absPath string, hops *int) (string, bool, error) {
 	current := absPath
 	suffix := ""

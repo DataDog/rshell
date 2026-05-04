@@ -241,6 +241,12 @@ type Result struct {
 	// Set by the "cd" builtin; the runner is responsible for updating r.Dir,
 	// $PWD, and $OLDPWD. The builtin must validate accessibility (e.g. via
 	// callCtx.StatFile) before signalling a change.
+	//
+	// Side effect: when NewWorkDir is non-empty and Code is 0, the runner
+	// suppresses the inline-assignment restore of $PWD and $OLDPWD after
+	// the command returns (matching bash semantics for `OLDPWD=X cd -`).
+	// Any future builtin returning a non-empty NewWorkDir inherits this
+	// behaviour.
 	NewWorkDir string
 }
 

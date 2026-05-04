@@ -1,0 +1,20 @@
+# Derived from bash: HOME=/path cd uses the inline HOME assignment to navigate.
+# This covers the symmetric case of TestCdInlineAssignmentSurvivesRestore
+# (which tests OLDPWD=X cd -): here HOME is provided as an inline assignment,
+# and cd should navigate to the inline value while PWD/OLDPWD are updated.
+description: HOME=/path cd uses the inline HOME assignment to change directories.
+setup:
+  files:
+    - path: myhome/keep
+      content: ""
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    BEFORE="$PWD"
+    HOME="$BEFORE/myhome" cd
+    [ "$PWD" = "$BEFORE/myhome" ] && echo ok
+expect:
+  stdout: |+
+    ok
+  stderr: ""
+  exit_code: 0
