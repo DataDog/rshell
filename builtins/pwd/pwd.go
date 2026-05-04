@@ -140,6 +140,16 @@ func makeFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			case ctx.Err() != nil:
 				return builtins.Result{Code: 1}
 			}
+			// If the AllowedPaths root containing cwd is itself a
+			// symlink, os.Root has already followed it at sandbox
+			// init, but the per-component walk in resolveSymlinks
+			// cannot see that resolution (LstatFile sees the opened
+			// target dir, not the original link). Translate the root
+			// prefix here so `pwd -P` reflects the resolution that
+			// the sandbox is already enforcing under the hood.
+			if callCtx.CanonicalizeRootPrefix != nil {
+				cwd = callCtx.CanonicalizeRootPrefix(cwd)
+			}
 		}
 
 		callCtx.Outf("%s\n", cwd)

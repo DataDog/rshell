@@ -360,6 +360,12 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 					}
 					return r.hostPrefix
 				},
+				CanonicalizeRootPrefix: func(absPath string) string {
+					if r.sandbox == nil {
+						return absPath
+					}
+					return r.sandbox.CanonicalizeRootPrefix(absPath)
+				},
 				RunCommand: runCmd,
 				OpenFile: func(ctx context.Context, path string, flags int, mode os.FileMode) (io.ReadWriteCloser, error) {
 					f, err := r.sandbox.Open(path, dir, flags, mode)
@@ -433,6 +439,12 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 					return r.sandbox.HostPrefix()
 				}
 				return r.hostPrefix
+			},
+			CanonicalizeRootPrefix: func(absPath string) string {
+				if r.sandbox == nil {
+					return absPath
+				}
+				return r.sandbox.CanonicalizeRootPrefix(absPath)
 			},
 			OpenFile: func(ctx context.Context, path string, flags int, mode os.FileMode) (io.ReadWriteCloser, error) {
 				f, err := r.open(ctx, path, flags, mode, false)

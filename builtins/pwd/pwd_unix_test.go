@@ -32,7 +32,7 @@ func pwdRunDirAllowed(t *testing.T, script, dir, allowedRoot string) (string, st
 // TestPwdPhysicalResolvesSymlink: when the cwd is reached via a symlink
 // inside the sandbox, "pwd -P" must print the canonical (target) path.
 func TestPwdPhysicalResolvesSymlink(t *testing.T) {
-	root := t.TempDir()
+	root := canonicalTempDir(t)
 	target := filepath.Join(root, "real")
 	link := filepath.Join(root, "lnk")
 	require.NoError(t, os.Mkdir(target, 0755))
@@ -46,7 +46,7 @@ func TestPwdPhysicalResolvesSymlink(t *testing.T) {
 // TestPwdLogicalKeepsSymlink: when the cwd is reached via a symlink,
 // "pwd -L" must print the logical (symlink) path, not the canonical one.
 func TestPwdLogicalKeepsSymlink(t *testing.T) {
-	root := t.TempDir()
+	root := canonicalTempDir(t)
 	target := filepath.Join(root, "real")
 	link := filepath.Join(root, "lnk")
 	require.NoError(t, os.Mkdir(target, 0755))
@@ -64,7 +64,7 @@ func TestPwdLogicalKeepsSymlink(t *testing.T) {
 // — without the boolSeqFlag pos-tracking, the wrong mode is selected
 // even though both flags are present.
 func TestPwdLastWinsPThenLWithSymlink(t *testing.T) {
-	root := t.TempDir()
+	root := canonicalTempDir(t)
 	target := filepath.Join(root, "real")
 	link := filepath.Join(root, "lnk")
 	require.NoError(t, os.Mkdir(target, 0755))
@@ -78,7 +78,7 @@ func TestPwdLastWinsPThenLWithSymlink(t *testing.T) {
 // TestPwdLastWinsLThenPWithSymlink: the mirror case — -L then -P picks
 // physical (the resolved target).
 func TestPwdLastWinsLThenPWithSymlink(t *testing.T) {
-	root := t.TempDir()
+	root := canonicalTempDir(t)
 	target := filepath.Join(root, "real")
 	link := filepath.Join(root, "lnk")
 	require.NoError(t, os.Mkdir(target, 0755))
@@ -91,7 +91,7 @@ func TestPwdLastWinsLThenPWithSymlink(t *testing.T) {
 
 // TestPwdPhysicalChainedSymlinks: A -> B -> C resolves to C.
 func TestPwdPhysicalChainedSymlinks(t *testing.T) {
-	root := t.TempDir()
+	root := canonicalTempDir(t)
 	c := filepath.Join(root, "c")
 	require.NoError(t, os.Mkdir(c, 0755))
 	b := filepath.Join(root, "b")
@@ -107,7 +107,7 @@ func TestPwdPhysicalChainedSymlinks(t *testing.T) {
 // TestPwdPhysicalRelativeSymlink: relative symlink targets are resolved
 // against the link's directory, not the cwd.
 func TestPwdPhysicalRelativeSymlink(t *testing.T) {
-	root := t.TempDir()
+	root := canonicalTempDir(t)
 	require.NoError(t, os.Mkdir(filepath.Join(root, "real"), 0755))
 	// "lnk" → "real" (relative). When at $root/lnk, -P must yield $root/real.
 	require.NoError(t, os.Symlink("real", filepath.Join(root, "lnk")))
@@ -120,7 +120,7 @@ func TestPwdPhysicalRelativeSymlink(t *testing.T) {
 // TestPwdPhysicalSymlinkCycle: A -> B -> A loops; -P must error with a
 // loop diagnostic and exit 1, not hang or recurse forever.
 func TestPwdPhysicalSymlinkCycle(t *testing.T) {
-	root := t.TempDir()
+	root := canonicalTempDir(t)
 	a := filepath.Join(root, "a")
 	b := filepath.Join(root, "b")
 	require.NoError(t, os.Symlink(b, a))
@@ -135,7 +135,7 @@ func TestPwdPhysicalSymlinkCycle(t *testing.T) {
 // TestPwdPhysicalNestedSymlinks: link inside a real dir, with components
 // after the link.  $root/real/lnk → $root/real/sub.
 func TestPwdPhysicalNestedSymlinks(t *testing.T) {
-	root := t.TempDir()
+	root := canonicalTempDir(t)
 	realDir := filepath.Join(root, "real")
 	sub := filepath.Join(realDir, "sub")
 	require.NoError(t, os.MkdirAll(sub, 0755))
@@ -150,7 +150,7 @@ func TestPwdPhysicalNestedSymlinks(t *testing.T) {
 // TestPwdPhysicalWithDotDotInTarget: a symlink whose target contains
 // ".." resolves correctly. $root/sibling/lnk → "../target".
 func TestPwdPhysicalWithDotDotInTarget(t *testing.T) {
-	root := t.TempDir()
+	root := canonicalTempDir(t)
 	target := filepath.Join(root, "target")
 	sibling := filepath.Join(root, "sibling")
 	require.NoError(t, os.Mkdir(target, 0755))
@@ -167,7 +167,7 @@ func TestPwdPhysicalWithDotDotInTarget(t *testing.T) {
 // whose target is inside the sandbox resolves correctly (target is
 // absolute, so we reset the resolved prefix to the absolute root).
 func TestPwdPhysicalAbsoluteSymlinkTargetInsideSandbox(t *testing.T) {
-	root := t.TempDir()
+	root := canonicalTempDir(t)
 	target := filepath.Join(root, "real")
 	link := filepath.Join(root, "abslnk")
 	require.NoError(t, os.Mkdir(target, 0755))
@@ -182,7 +182,7 @@ func TestPwdPhysicalAbsoluteSymlinkTargetInsideSandbox(t *testing.T) {
 // segments is canonicalized.  $root/d1/d2/lnk → "../../d3", which lands
 // at $root/d3.
 func TestPwdPhysicalDotDotResolvesAcrossDepth(t *testing.T) {
-	root := t.TempDir()
+	root := canonicalTempDir(t)
 	require.NoError(t, os.MkdirAll(filepath.Join(root, "d1", "d2"), 0755))
 	require.NoError(t, os.Mkdir(filepath.Join(root, "d3"), 0755))
 	link := filepath.Join(root, "d1", "d2", "lnk")
@@ -210,7 +210,7 @@ func TestPwdPhysicalDotDotResolvesAcrossDepth(t *testing.T) {
 // cd into containers/app, then `pwd -P` must emit
 // $root/host/var/log/pods/app, not /var/log/pods/app.
 func TestPwdPhysicalAppliesHostPrefixToAbsoluteSymlinkTarget(t *testing.T) {
-	root := t.TempDir()
+	root := canonicalTempDir(t)
 	hostPrefix := filepath.Join(root, "host")
 	pods := filepath.Join(hostPrefix, "var", "log", "pods", "app")
 	containers := filepath.Join(hostPrefix, "var", "log", "containers")
@@ -236,7 +236,7 @@ func TestPwdPhysicalAppliesHostPrefixToAbsoluteSymlinkTarget(t *testing.T) {
 // stayed within the prefixed tree), HostPrefix should not be applied
 // again.
 func TestPwdPhysicalSkipsHostPrefixWhenAlreadyApplied(t *testing.T) {
-	root := t.TempDir()
+	root := canonicalTempDir(t)
 	hostPrefix := filepath.Join(root, "host")
 	target := filepath.Join(hostPrefix, "real")
 	link := filepath.Join(hostPrefix, "lnk")
@@ -253,6 +253,46 @@ func TestPwdPhysicalSkipsHostPrefixWhenAlreadyApplied(t *testing.T) {
 	assert.Equal(t, target+"\n", stdout)
 }
 
+// TestPwdPhysicalSymlinkedSandboxRoot: when the AllowedPaths root is
+// itself a symlink (e.g. /tmp/link -> /tmp/real), `pwd -P` must emit
+// the canonical (resolved) path. The sandbox follows the root symlink
+// at os.OpenRoot time, so the per-component LstatFile walk doesn't
+// see it; the CanonicalizeRootPrefix accessor restores the missing
+// resolution.
+func TestPwdPhysicalSymlinkedSandboxRoot(t *testing.T) {
+	parent := canonicalTempDir(t)
+	realRoot := filepath.Join(parent, "real")
+	linkRoot := filepath.Join(parent, "link")
+	require.NoError(t, os.MkdirAll(filepath.Join(realRoot, "sub"), 0755))
+	// /parent/link -> /parent/real
+	require.NoError(t, os.Symlink(realRoot, linkRoot))
+
+	// cwd is the symlinked root + a subdir; AllowedPaths is the
+	// symlinked root (the realistic case described by Codex's review).
+	cwd := filepath.Join(linkRoot, "sub")
+	stdout, stderr, code := testutil.RunScript(t, "pwd -P", cwd,
+		interp.AllowedPaths([]string{linkRoot}),
+	)
+	require.Equal(t, 0, code, "stderr=%q", stderr)
+	want := filepath.Join(realRoot, "sub") + "\n"
+	assert.Equal(t, want, stdout, "pwd -P must resolve a symlinked AllowedPaths root")
+}
+
+// TestPwdPhysicalNonSymlinkedSandboxRootUnchanged: control case — when
+// the AllowedPaths root is not a symlink, the resolved path is the
+// configured path verbatim.
+func TestPwdPhysicalNonSymlinkedSandboxRootUnchanged(t *testing.T) {
+	root := canonicalTempDir(t)
+	require.NoError(t, os.MkdirAll(filepath.Join(root, "sub"), 0755))
+
+	cwd := filepath.Join(root, "sub")
+	stdout, stderr, code := testutil.RunScript(t, "pwd -P", cwd,
+		interp.AllowedPaths([]string{root}),
+	)
+	require.Equal(t, 0, code, "stderr=%q", stderr)
+	assert.Equal(t, cwd+"\n", stdout)
+}
+
 // TestPwdPhysicalHostPrefixWithTrailingSlash: a HostPrefix passed with
 // a trailing separator must be normalized before pwd -P uses it for
 // prefix-matching. Without normalization, a target that already
@@ -262,7 +302,7 @@ func TestPwdPhysicalSkipsHostPrefixWhenAlreadyApplied(t *testing.T) {
 // returns the sandbox's filepath.Clean'd prefix, so this test pins
 // the contract.
 func TestPwdPhysicalHostPrefixWithTrailingSlash(t *testing.T) {
-	root := t.TempDir()
+	root := canonicalTempDir(t)
 	hostPrefix := filepath.Join(root, "host")
 	target := filepath.Join(hostPrefix, "real")
 	link := filepath.Join(hostPrefix, "lnk")

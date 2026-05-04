@@ -23,6 +23,24 @@ func pwdRun(t *testing.T, script, dir string) (string, string, int) {
 	return testutil.RunScript(t, script, dir, interp.AllowedPaths([]string{dir}))
 }
 
+// canonicalTempDir returns a fresh per-test temp dir with all symlinks
+// in the path already resolved. On macOS t.TempDir() returns a
+// /var/folders/... path that is itself a symlink to /private/var/...;
+// pwd -P (correctly) translates the AllowedPaths root prefix to its
+// canonical form via the sandbox, so any test that compares against
+// an absolute path produced by pwd -P must use the canonical form.
+// On Linux/Windows where t.TempDir() is already canonical, this is a
+// no-op.
+func canonicalTempDir(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	real, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		return dir
+	}
+	return real
+}
+
 // --- Basic invocation ---
 
 func TestPwdNoArgsPrintsAbsolutePath(t *testing.T) {
