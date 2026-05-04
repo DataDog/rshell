@@ -7,79 +7,68 @@ description: Use when diagnosing remote host, service, network, or system issues
 
 Use this skill for host, service, log, socket, certificate, authentication, or system diagnostics through this repository's `./rshell`.
 
-## Non-Negotiables
+## Hard Rules
 
-- Run diagnostic commands only through `./rshell --allow-all-commands -c '<script>'`.
-- If reading files, put every literal root in `--allowed-paths=<root>` on every file-reading invocation. For primary plus fallback roots, use `--allowed-paths=<primary>,<fallback>`.
-- Keep the investigation read-only and bounded. Do not write files, install packages, mutate services, restart processes, or run broad repeated scans.
-- Use `help` inside rshell before relying on a command, feature, or flag. Production rshell deployments may restrict, omit, or extend features, so target-environment `help` is the source of truth.
-- Actually run rshell and answer from transcript evidence. Do not answer from the prompt, repository knowledge, or a static capability snapshot.
-- Do not claim you connected to, SSHed into, or accessed a real remote or customer host unless the user provided that evidence. Usually you are inspecting local fixtures or mounted logs.
+- Run diagnostics only as actual tool calls to `./rshell --allow-all-commands -c '<script>'`. Do not answer from planned commands, prompt facts, repository knowledge, or a static capability snapshot.
+- For file reads, put every literal root in `--allowed-paths=<root>` on every invocation. For primary plus fallback roots, use `--allowed-paths=<primary>,<fallback>`.
+- Keep work read-only and bounded. Do not write files, install packages, mutate services, restart, kill, delete, or run broad repeated scans.
+- Run `help` inside rshell before relying on a command, feature, or flag. Production deployments may restrict, omit, or extend features; target-environment `help` is the source of truth.
+- Do not claim you connected to, SSHed into, or accessed a real remote/customer host unless the user provided that evidence.
 
-## Fast Investigation Pattern
+## Fast Pattern
 
 Aim for two rshell invocations; use a third only when a decisive claim is still unevidenced.
 
-1. **Discover and inventory.** Put `help` on the same command line as `-c`, with no leading newline, so the transcript clearly shows capability discovery. Inventory prompt-provided roots once with `find -maxdepth` and `head`; prove an empty primary root and inspect any fallback root in the same pass.
-2. **Triage selected files once.** Pick a small candidate set: the current component log, a rotated or named-noise log for the user's theory, and one independent layer such as proxy, system, dependency, audit, or sibling-agent logs. In one script collect counts and samples for symptom, cause, impact, source/actor, recovery, and counter-hypothesis terms.
-3. **Confirm only decisive tokens.** If needed, run short `sed -n` windows around known line numbers or focused greps for IDs, status codes, source actors, certificate fields, socket flags, or recovery markers already found.
+1. **Discover/inventory:** put `help` on the same `-c` command line, with no leading newline. Include `help <command>` for tools you will use. Inventory prompt-provided roots once with bounded `find ... | sort | head -n N`. For container/fallback layouts, inspect primary and fallback roots in the same invocation with both roots allowlisted.
+2. **Triage candidates:** choose a small set from inventory: current component log, rotated or named-noise file for the user's theory, and one independent layer such as proxy, system, dependency, audit, or sibling-agent logs. In one script collect counts and capped samples for symptom, cause, impact, source/actor, recovery, and counter-hypothesis terms.
+3. **Confirm tokens:** if needed, run short `sed -n` windows or focused greps for IDs, statuses, source actors, certificate fields, socket flags, recovery markers, and same-source success/failure probes already suggested by output.
 
-Stop when cause, consequence, counter-hypothesis disposition, current or recovery state, and remaining uncertainty are evidenced. Do not keep broadening the search after that.
+Stop when cause, consequence, counter-hypothesis disposition, current/recovery state, and uncertainty are evidenced. Combine prompt-named alternative checks into the triage/confirm script instead of spending separate invocations on each red herring.
 
-## Transcript-Friendly Command Shape
+## Command Shape
 
-Prefer compact scripts that make boundedness obvious. Use separate grep flags instead of combined short flags because they are easier to audit:
-
-```sh
-./rshell --allow-all-commands --allowed-paths=<root> -c 'help; help find; help grep; help sed; find <root> -maxdepth 3 -type f | sort | head -n 80'
-./rshell --allow-all-commands --allowed-paths=<root> -c 'grep -H -c "<pattern>" <file>; grep -H -n -m 20 "<pattern>" <file>; sed -n "<start>,<end>p" <file>'
-```
-
-For socket-only diagnostics, no file allowlist is needed. Discover flags first, then run a help-advertised listening TCP query:
+Keep scripts compact and transcript-friendly:
 
 ```sh
-./rshell --allow-all-commands -c 'help ss; ss -tlnH'
+./rshell --allow-all-commands --allowed-paths=<root> -c 'help; help find; help grep; help sed; help head; help wc; find <root> -maxdepth 3 -type f | sort | head -n 80'
+./rshell --allow-all-commands --allowed-paths=<root> -c 'grep -H -c "<pattern>" <file1> <file2>; grep -H -n -m 20 "<pattern>" <file1> <file2>; sed -n "<start>,<end>p" <file1>'
 ```
 
-If a command or flag fails, run `help <command>` and then one supported subset. Quote the limitation only if it appears in the transcript.
+Use rshell-supported shell only. Avoid `while`, `case`, functions, process substitution, background jobs, recursive grep, and `find ... -exec grep`. Prefer separate grep flags (`grep -H -n -m 20`) over dense combined flags. Use `printf '%s\n' '<label>'` labels that do not begin with `-`.
 
-## Command Discipline
+For socket-only diagnostics, no file allowlist is needed, but an actual rshell call is still required:
 
-- Keep output small. Use `printf '%s\n' '<label>'` labels and bounded commands: `grep -H -c`, `grep -H -n -m`, `head -n`, `tail -n`, `wc -l`, and short `sed -n` windows.
-- Aggregate before sampling high-volume logs. Count status/source/cause terms first; then sample representative lines.
-- Prefer prompt-grounded and evidence-grounded patterns over generic `error|warn`: absolute time windows, route/check names, status classes, auth phrases, certificate terms, failure verbs, source/client fields, IDs, and recovery/success words.
-- After inventory, do not rescan every file. Query explicit candidates. Avoid recursive greps and `find ... -exec grep`.
-- Shell variables inside rshell scripts are fine, but the command line must still show literal `--allowed-paths` roots, and the final answer must name the files actually queried.
-- If exact time or filename assumptions produce zero matches, say so and search nearby discovered dates/files rather than forcing the prompt wording into the conclusion.
+```sh
+./rshell --allow-all-commands -c 'help; help ss; ss -tlnH'
+```
 
-## Evidence Ledger
+Do not run or claim process/PID socket flags unless `help ss` advertises them. If a help-supported socket query is runtime-blocked, say local listening TCP address/port collection is the supported target, process/PID attribution is unavailable when unsupported, and this run could not collect rows because of the transcript error.
 
-For every important claim, preserve the raw fields that make it auditable:
+## Evidence Discipline
 
-- Location: file and line when available.
-- Time: date plus time together when available, and whether evidence is current, old, rotated, recovered, or from a different source.
-- Cause: exact error/status/check/route/source/actor/config/certificate/socket field.
-- Impact: stopped components, failed checks, dropped or rejected payloads, no-flush or "since" markers, affected routes/statuses, unavailable fields, or current success/recovery markers.
-- Counter-hypothesis: the user's proposed cause, historical lookalikes, healthy sibling paths, different-source successes, and unsupported command capabilities.
-
-Short decisive quotes are better than paraphrases. For long lines, copy only distinguishing tokens.
+- Keep output small: `grep -H -c`, `grep -H -n -m`, `wc -l`, `head -n`, `tail -n`, and short `sed -n` windows. Keep most samples to 5-20 lines per file.
+- Aggregate before sampling high-volume logs. Prefer exact route/check names, status classes, auth phrases, certificate terms, failure verbs, source/client fields, IDs, time windows, and recovery/success words over generic `error|warn`.
+- After inventory, query explicit candidate files. Do not rescan every file unless inventory failed to identify candidates.
+- If filename or time assumptions produce zero matches, say so and search nearby discovered dates/files rather than forcing prompt wording into the conclusion.
+- Negative claims require evidence: same-source accepted/success greps or counts for "no current success"; rotated/historical plus recovery markers for "old noise".
+- For every important claim, preserve file/line, full date plus time when available, exact error/status/check/route/source/actor/config/certificate/socket field, downstream impact, and whether evidence is current, old, rotated, recovered, different-source, or unavailable.
 
 ## Diagnostic Cues
 
-- **Agent or telemetry degradation:** Search current logs and rotated/noise logs for config, credential/auth, intake, trace/APM, forwarder, aggregator, and no-flush terms. Pair the causal line with downstream impact from the same incident. Separately cite healthy or recovered sibling paths so they do not become false causes.
-- **Authentication anomalies:** Aggregate failures by source early, cite the count line, sample failed-password or invalid-user lines, then check accepted/success events for that same source. Cite successful logins from other sources separately and state "no current successful/accepted login from that source" only when supported.
-- **HTTP/service errors:** Correlate access/proxy status with service/backend evidence and one independent dependency or system layer. After finding a resource limit, search nearby lines for the exposed actor/client/check/application name or fanout driver. Explicitly dispose of named older, recovered, feature-flag, cache, DNS, gateway, or external-service alternatives.
-- **Certificates and container layouts:** If the primary container log root is empty and host logs are mounted elsewhere, inspect both roots in one command with both roots in `--allowed-paths` and say which root produced evidence. Distinguish timing/environment failures from expired or wrong certificate material by pairing x509/check lines with clock-sync, NotBefore/NotAfter, kubelet/syslog, rotation, or renewal evidence.
-- **Sockets:** Run `help ss` before socket probes. Use a supported listening TCP address/port query such as `ss -tlnH` or `ss -tln`. Do not run or claim process/PID flags unless `help ss` advertises them. If process details are absent from help or unsupported, say listening local TCP addresses/ports are available but process/PID attribution is unavailable.
+- **Agent/telemetry:** Search current and rotated/noise logs for config, credential/auth, intake, trace/APM, forwarder, aggregator, flush, and recovery terms. Pair the causal line with downstream impact from the same incident, then cite healthy or recovered sibling paths separately.
+- **Authentication:** Aggregate failures by source early, cite the count, sample failed-password or invalid-user lines, then probe accepted/success events for that same source. Cite successful logins from other sources separately and avoid claiming compromise without same-source success evidence.
+- **HTTP/service:** Correlate access/proxy status with service/backend evidence and one independent dependency/system layer. After finding a resource limit, search nearby lines for exposed actor/client/check/application or fanout driver. Dispose of named older, recovered, feature-flag, cache, DNS, gateway, or external-service alternatives.
+- **Certificates/container layouts:** If a primary log root is empty and host logs are mounted elsewhere, inspect both roots in one command and say which root produced evidence. Distinguish timing/environment failures from expired or wrong certificate material by pairing check lines with clock-sync, validity-window, rotation, renewal, kubelet/syslog, or equivalent system evidence.
+- **Sockets:** Run `help ss` before socket probes. Use only help-advertised filters. If process details are absent or unsupported, say listening local TCP addresses/ports are the safe supported socket data while process/PID attribution is unavailable.
 
 ## Final Answer Contract
 
-Use these sections and keep them concise:
+Use concise sections:
 
-- `Commands run`: exact rshell shape, actual number of invocations, literal `--allowed-paths` roots, key files queried, help or unsupported-capability evidence, and no probes you only considered.
+- `Commands run`: actual number of rshell invocations, exact command shape, literal `--allowed-paths` roots with no ellipses, key files queried, help/unsupported-capability evidence, and no probes you only considered.
 - `Finding`: one sentence naming the likely cause and affected service/check/traffic/source.
-- `Evidence`: concrete files, dates/times, message fragments, counts/statuses, IDs, fields, actor/source, and downstream impact. Include "since", recovery, or success markers when they prove duration or state.
-- `Not supported`: dispose of misleading user hypotheses, historical or rotated matches, recovered noise, different-source successes, missing same-source successes, or unavailable command capabilities.
+- `Evidence`: concrete files, full dates/times, message fragments, counts/statuses, IDs, fields, actor/source, downstream impact, and exact "since", recovery, or success markers when they prove duration or state.
+- `Not supported`: dispose of misleading hypotheses, historical/rotated matches, recovered noise, different-source successes, missing same-source successes, or unavailable command capabilities.
 - `Uncertainty / next checks`: state what is not proven and suggest only safe read-only validation, audit, config/source review, rollback planning, owner follow-up, or capability follow-up. Do not propose remediation commands.
 
-Before finalizing, check that every cause, consequence, and counter-hypothesis claim has transcript evidence; counts appear when scale matters; historical/recovered/different-source evidence is labeled; `Commands run` matches the actual transcript; and there are no real-host access claims, remediation commands, or unsupported process/PID/socket claims. If no rshell transcript exists, say diagnostics could not be completed.
+Before finalizing, verify that every cause, consequence, timestamp/window, and counter-hypothesis has transcript evidence; counts appear when scale matters; historical/recovered/different-source evidence is labeled; `Commands run` matches actual tool calls; and there are no real-host access claims, remediation commands, or unsupported process/PID/socket claims. If no rshell tool call exists, say diagnostics could not be completed and do not list reconstructed commands or quote results.
