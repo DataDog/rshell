@@ -148,7 +148,7 @@ const (
 )
 
 func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
-	help := fs.Bool("help", false, "print usage and exit")
+	help := fs.BoolP("help", "h", false, "print usage and exit")
 	null := fs.BoolP("null", "0", false, "input items are separated by a NUL character")
 	argFile := fs.StringP("arg-file", "a", "", "read items from FILE instead of stdin")
 	delim := fs.StringP("delimiter", "d", "", "use DELIM as the single-byte item separator")

@@ -10,7 +10,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"testing"
 	"time"
 
@@ -340,6 +339,3 @@ func TestTokenizerInfiniteCancelOnSeparators(t *testing.T) {
 		})
 	}
 }
-
-// silence unused imports when the file is open in isolation.
-var _ = io.EOF
