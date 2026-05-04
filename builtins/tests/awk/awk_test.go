@@ -669,7 +669,7 @@ BEGIN { print "ok" }  # trailing
 
 func TestMissingFile(t *testing.T) {
 	_, stderr, code := cmdRun(t, `awk '{print}' missing.txt`, t.TempDir())
-	assert.Equal(t, 1, code)
+	assert.Equal(t, 2, code) // exit 2 matches gawk: non-fatal file error, END blocks run
 	assert.Contains(t, stderr, "missing.txt")
 }
 

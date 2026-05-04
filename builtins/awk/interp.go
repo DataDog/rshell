@@ -52,7 +52,7 @@ type runtime struct {
 	record string
 	fields []string // fields[0] is the whole record; fields[i] is $i
 
-	// Array iteration order tracking.
+	// rng is the pseudo-random number generator for rand() / srand().
 	rng *deterministicRand
 
 	// Cumulative bytes read across all non-regular-file inputs.
@@ -133,6 +133,9 @@ func (r *runtime) applyVarAssignment(s string) error {
 	case "FS":
 		return r.setFS(val)
 	case "OFS":
+		if len(val) > MaxStringBytes {
+			return errors.New("OFS too long")
+		}
 		r.ofs = val
 	case "ORS":
 		if len(val) > MaxStringBytes {
@@ -221,6 +224,7 @@ func run(ctx context.Context, r *runtime, prog *program, files []string) (uint8,
 		if len(files) == 0 {
 			files = []string{"-"}
 		}
+		hadFileError := false
 		for _, file := range files {
 			if ctx.Err() != nil {
 				return 1, ctx.Err()
@@ -235,8 +239,32 @@ func run(ctx context.Context, r *runtime, prog *program, files []string) (uint8,
 				continue
 			}
 			if err := r.processFile(ctx, prog, file); err != nil {
-				return finalizeAfterUnwind(ctx, r, prog, err)
+				var fileOpenErr *fileOpenError
+				if errors.As(err, &fileOpenErr) {
+					// Non-fatal: file could not be opened. Print to stderr and
+					// continue with remaining files (gawk/mawk behaviour).
+					r.callCtx.Errf("awk: %s\n", fileOpenErr.msg)
+					hadFileError = true
+					continue
+				}
+				var exitSig *exitSignal
+				if errors.As(err, &exitSig) || ctx.Err() != nil || builtins.IsBrokenPipe(err) {
+					// Fatal: propagate immediately (exit, context cancel, broken pipe).
+					return finalizeAfterUnwind(ctx, r, prog, err)
+				}
+				// Other fatal runtime error (record too large, etc.): abort.
+				return 1, err
 			}
+		}
+		if hadFileError {
+			// Run END blocks but exit with code 2 (same as gawk for file errors).
+			if err := runEnd(ctx, r, prog); err != nil {
+				if ee, ok := err.(*exitSignal); ok {
+					return ee.code, nil
+				}
+				return 1, err
+			}
+			return 2, nil
 		}
 	}
 
@@ -284,14 +312,20 @@ func runEnd(ctx context.Context, r *runtime, prog *program) error {
 	return nil
 }
 
+// fileOpenError wraps a file-open failure so that the caller (run()) can
+// distinguish it from fatal runtime errors and continue with remaining files.
+type fileOpenError struct{ msg string }
+
+func (e *fileOpenError) Error() string { return e.msg }
+
 // processFile reads a file (or stdin when name == "-"), splits it into
 // records, and applies the program rules to each record.
 func (r *runtime) processFile(ctx context.Context, prog *program, name string) error {
 	rc, isRegular, err := r.openInput(ctx, name)
 	if err != nil {
-		// Per awk convention, a missing file is an error but we continue
-		// to other files. Handled by callers; we return immediately here.
-		return fmt.Errorf("%s: %s", displayName(name), r.callCtx.PortableErr(err))
+		// Wrap as fileOpenError so run() can print the message and continue
+		// to the next file (matching gawk/mawk behaviour for missing files).
+		return &fileOpenError{fmt.Sprintf("%s: %s", displayName(name), r.callCtx.PortableErr(err))}
 	}
 	if rc == nil {
 		// stdin not available; treat as empty.
@@ -469,10 +503,11 @@ func (r *runtime) splitFields(rec string) []string {
 		// Default: split on runs of whitespace, leading/trailing trimmed.
 		return strings.Fields(rec)
 	case r.fs == "":
-		// Empty FS: each character is a field.
+		// Empty FS: each byte is a field (byte-based, consistent with
+		// bSubstr/bIndex/bMatch; mawk behaviour).
 		out := make([]string, 0, len(rec))
-		for _, ch := range rec {
-			out = append(out, string(ch))
+		for i := 0; i < len(rec); i++ {
+			out = append(out, string(rec[i]))
 		}
 		return out
 	case r.fs == "\t":
@@ -487,6 +522,17 @@ func (r *runtime) splitFields(rec string) []string {
 // the result at MaxRecordBytes so a script cannot grow $0 unboundedly via
 // repeated field assignments.
 func (r *runtime) rebuildRecord() error {
+	// Guard against OOM: if OFS is wide and NF is large, strings.Join could
+	// attempt a multi-GiB allocation before the length check fires. Pre-check
+	// that the joined length could possibly fit within MaxRecordBytes.
+	nFields := int64(len(r.fields))
+	if nFields > 1 && len(r.ofs) > 0 {
+		ofsLen := int64(len(r.ofs))
+		if ofsLen > (int64(MaxRecordBytes)+nFields-1)/(nFields-1) {
+			return fmt.Errorf("rebuilt record would exceed maximum size %d (OFS too wide for NF=%d)",
+				MaxRecordBytes, nFields)
+		}
+	}
 	rec := strings.Join(r.fields, r.ofs)
 	if len(rec) > MaxRecordBytes {
 		return fmt.Errorf("rebuilt record exceeds maximum size %d", MaxRecordBytes)
@@ -1003,7 +1049,11 @@ func (r *runtime) storeScalar(name string, v awkValue) error {
 	case "FS":
 		return r.setFS(v.toString(r.convFmt))
 	case "OFS":
-		r.ofs = v.toString(r.convFmt)
+		s := v.toString(r.convFmt)
+		if len(s) > MaxStringBytes {
+			return errors.New("OFS too long")
+		}
+		r.ofs = s
 		return nil
 	case "ORS":
 		s := v.toString(r.convFmt)

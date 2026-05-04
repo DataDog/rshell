@@ -11,6 +11,7 @@ import (
 	"math"
 	"regexp"
 	"strings"
+	"time"
 )
 
 // resolveRegexArg returns a compiled *regexp.Regexp for an argument used as a
@@ -229,9 +230,11 @@ func (r *runtime) bSplit(args []expr) (awkValue, error) {
 	case sep == " ":
 		parts = strings.Fields(s)
 	case sep == "":
+		// Byte-based split (consistent with byte-based substr/index/match).
+		// Each byte becomes a separate field.
 		parts = make([]string, 0, len(s))
-		for _, ch := range s {
-			parts = append(parts, string(ch))
+		for i := 0; i < len(s); i++ {
+			parts = append(parts, string(s[i]))
 		}
 	default:
 		parts = strings.Split(s, sep)
@@ -449,7 +452,10 @@ func (r *runtime) bRand() (awkValue, error) {
 func (r *runtime) bSrand(args []expr) (awkValue, error) {
 	prev := r.rng.seed
 	if len(args) == 0 {
-		r.rng.setSeed(0)
+		// POSIX: srand() with no args seeds from the current time.
+		// Use monotonic nanoseconds to allow variation across invocations
+		// while preserving determinism within a single run.
+		r.rng.setSeed(time.Now().UnixNano())
 	} else {
 		v, err := r.evalExpr(args[0])
 		if err != nil {

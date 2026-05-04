@@ -113,7 +113,7 @@ func TestHardeningPathTraversal(t *testing.T) {
 	dir := setupDir(t, map[string]string{"allowed.txt": "ok\n"})
 	// Try to read a file outside the allowed dir using a relative path.
 	_, stderr, code := cmdRun(t, `awk '{print}' ../../../../etc/passwd`, dir)
-	assert.Equal(t, 1, code)
+	assert.Equal(t, 2, code) // exit 2 matches gawk: non-fatal file-open error, END blocks run
 	assert.NotEqual(t, "", stderr)
 }
 

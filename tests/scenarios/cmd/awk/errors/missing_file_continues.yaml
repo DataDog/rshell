@@ -1,0 +1,15 @@
+description: A missing input file is non-fatal; remaining files are still processed (gawk/mawk compat).
+setup:
+  files:
+    - path: good.txt
+      content: "hello\n"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    awk '{print FILENAME, $0}' good.txt nope.txt good.txt
+expect:
+  stdout: |+
+    good.txt hello
+    good.txt hello
+  stderr_contains: ["awk: nope.txt"]
+  exit_code: 2

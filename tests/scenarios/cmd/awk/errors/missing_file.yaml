@@ -7,4 +7,4 @@ input:
 expect:
   stdout: ""
   stderr_contains: ["awk: nope.txt"]
-  exit_code: 1
+  exit_code: 2

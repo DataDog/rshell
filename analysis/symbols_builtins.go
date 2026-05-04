@@ -33,6 +33,7 @@ var builtinPerCommandSymbols = map[string][]string{
 		"bufio.ErrTooLong",    // 🟢 sentinel error for scanner buffer overflow; pure constant.
 		"context.Context",     // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
 		"errors.Is",           // 🟢 error comparison; pure function, no I/O.
+		"errors.As",           // 🟢 error type assertion via interface; pure function, no I/O.
 		"errors.New",          // 🟢 creates a simple error value; pure function, no I/O.
 		"fmt.Errorf",          // 🟢 error formatting; pure function, no I/O.
 		"fmt.Sprintf",         // 🟢 string formatting; pure function, no I/O.
@@ -80,6 +81,7 @@ var builtinPerCommandSymbols = map[string][]string{
 		"strings.ToUpper",     // 🟢 converts string to uppercase; pure function, no I/O.
 		"strings.TrimLeft",    // 🟢 removes leading characters; pure function, no I/O.
 		"strings.TrimSpace",   // 🟢 removes leading/trailing whitespace; pure function, no I/O.
+		"time.Now",            // 🟢 returns the current local time; used only for srand() seeding (no I/O).
 	},
 	"break": {
 		"context.Context", // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
@@ -587,6 +589,7 @@ var builtinAllowedSymbols = []string{
 	"syscall.Handle",                                      // 🟢 Windows file handle type; pure type alias, no I/O.
 	"syscall.Stat_t",                                      // 🟢 file stat struct for extracting UID/GID/nlink; read-only type, no I/O.
 	"time.Duration",                                       // 🟢 duration type; pure integer alias, no I/O.
+	"time.Now",                                            // 🟢 returns current wall-clock time; used for PRNG seeding; no filesystem or network I/O.
 	"time.Hour",                                           // 🟢 constant representing one hour; no side effects.
 	"time.Millisecond",                                    // 🟢 constant representing one millisecond; no side effects.
 	"time.Minute",                                         // 🟢 constant representing one minute; no side effects.

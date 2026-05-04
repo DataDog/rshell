@@ -195,7 +195,8 @@ func nextInt(idx *int, values []awkValue) (int, error) {
 	}
 	v := values[*idx]
 	*idx++
-	return int(v.toNumber()), nil
+	// Use floatToInt64Safe to avoid implementation-defined behaviour for NaN/±Inf.
+	return int(floatToInt64Safe(v.toNumber())), nil
 }
 
 // applyPrintfSpec formats a single value using the parsed spec.

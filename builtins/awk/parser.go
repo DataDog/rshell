@@ -424,6 +424,9 @@ func (p *parser) parseFor() (stmt, error) {
 		if err != nil {
 			return nil, err
 		}
+		if reason, blocked := blockedNames[arr.val]; blocked {
+			return nil, fmt.Errorf("line %d: %s", arr.line, reason)
+		}
 		if _, err := p.expect(tkRParen); err != nil {
 			return nil, err
 		}
@@ -492,6 +495,9 @@ func (p *parser) parseDelete() (stmt, error) {
 	id, err := p.expect(tkIdent)
 	if err != nil {
 		return nil, err
+	}
+	if reason, blocked := blockedNames[id.val]; blocked {
+		return nil, fmt.Errorf("line %d: %s", id.line, reason)
 	}
 	st := &deleteStmt{arrayVar: id.val}
 	if p.accept(tkLBracket) {
@@ -745,6 +751,9 @@ func (p *parser) parseInExpr() (expr, error) {
 		arr, err := p.expect(tkIdent)
 		if err != nil {
 			return nil, err
+		}
+		if reason, blocked := blockedNames[arr.val]; blocked {
+			return nil, fmt.Errorf("line %d: %s", arr.line, reason)
 		}
 		left = &inExpr{keys: []expr{left}, arrayVar: arr.val}
 	}
