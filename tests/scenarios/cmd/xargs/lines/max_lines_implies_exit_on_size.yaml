@@ -1,0 +1,9 @@
+description: xargs -L implies -x — fails when a logical line exceeds the -s budget (GNU behaviour).
+input:
+  script: |+
+    printf 'a b c\n' | xargs -s 8 -L 1 echo
+expect:
+  stdout: |+
+  stderr: |+
+    xargs: argument list too long
+  exit_code: 1

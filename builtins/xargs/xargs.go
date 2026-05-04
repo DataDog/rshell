@@ -272,6 +272,9 @@ func buildOptions(fs *builtins.FlagSet, null bool, argFile, delim, eofStr string
 			return o, msg
 		}
 		o.maxLines = maxLinesVal.val
+		// GNU xargs documents that -L implies -x: when a logical line exceeds
+		// the -s budget the command fails rather than splitting the batch.
+		o.exitOnSize = true
 	}
 
 	if maxArgsVal.changed() {
