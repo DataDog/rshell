@@ -1,0 +1,13 @@
+description: continue 1 in an until condition exits with status 0, satisfying the until termination condition, so the loop exits after the first condition evaluation.
+input:
+  script: |+
+    i=
+    until i="${i}a"; [ "$i" = aaa ] && break; continue 1; do
+      echo body
+    done
+    echo "i=$i"
+expect:
+  stdout: |+
+    i=a
+  stderr: |+
+  exit_code: 0

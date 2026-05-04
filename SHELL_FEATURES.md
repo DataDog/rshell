@@ -5,9 +5,9 @@ Blocked features are rejected before execution with exit code 2.
 
 ## Builtins
 
-- ✅ `break` — exit the innermost `for` loop
+- ✅ `break` — exit the innermost `for`, `while`, or `until` loop
 - ✅ `cat [-AbeEnstTuv] [FILE]...` — concatenate files to stdout; supports line numbering, blank squeezing, and non-printing character display
-- ✅ `continue` — skip to the next iteration of the innermost `for` loop
+- ✅ `continue` — skip to the next iteration of the innermost `for`, `while`, or `until` loop
 - ✅ `cut [-b LIST|-c LIST|-f LIST] [-d DELIM] [-s] [-n] [--complement] [--output-delimiter=STRING] [FILE]...` — remove sections from each line of files
 - ✅ `echo [-neE] [ARG]...` — write arguments to stdout; `-n` suppresses trailing newline, `-e` enables backslash escapes, `-E` disables them (default)
 - ✅ `exit [N]` — exit the shell with status N (default 0)
