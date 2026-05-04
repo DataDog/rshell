@@ -16,7 +16,7 @@ input:
     cd -P -
     echo "PWD=$PWD"
 expect:
-  stdout_contains: ["/alias"]
-  stdout_contains_windows: ["\\alias"]
+  stdout_contains: ["/alias", "/real"]
+  stdout_contains_windows: ["\\alias", "\\real"]
   stderr: ""
   exit_code: 0
