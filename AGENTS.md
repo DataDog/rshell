@@ -11,7 +11,7 @@ This shell is intended to be used by AI Agents.
 
 ## Platform Support
 
-**v0 primarily targets Linux.** macOS and Windows compatibility is best-effort and **not promised** for v0. Reviewers should not block PRs on hypothetical macOS or Windows breakage; real bugs reported against those platforms can be triaged later. When making implementation choices, optimise for Linux correctness first.
+**Linux is the primary target.** macOS and Windows are not prioritised for now — compatibility on those platforms is best-effort. Reviewers should not block PRs on hypothetical macOS or Windows breakage; real bugs reported against those platforms can be triaged later. When making implementation choices, optimise for Linux correctness first.
 
 ## Documentation
 
@@ -50,4 +50,4 @@ This shell is intended to be used by AI Agents.
 - In test scenarios, use `expect.stderr` when possible instead of `stderr_contains`.
 - Always use the YAML `|+` block scalar for `input.script`, `expect.stdout`, and `expect.stderr` values, even single-line ones.
 - Test scenarios are asserted against bash by default. Only set `skip_assert_against_bash: true` for features that intentionally diverge from standard bash behavior (e.g. blocked commands, restricted redirects, readonly enforcement).
-- Write tests for Linux behavior. Windows-specific assertion fields (`stdout_windows`, `stderr_windows`, `stdout_contains_windows`, `stderr_contains_windows`) exist in the framework but should not be added proactively for v0.
+- Write tests for Linux behavior. Windows-specific assertion fields (`stdout_windows`, `stderr_windows`, `stdout_contains_windows`, `stderr_contains_windows`) exist in the framework but should not be added proactively.

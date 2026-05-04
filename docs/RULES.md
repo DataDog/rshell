@@ -150,14 +150,14 @@ only the filesystem-accessing *functions* are forbidden.
 
 ### Platform Targeting
 
-**v0 primarily targets Linux.** macOS and Windows are not promised platforms for v0. Reviewers MUST NOT block PRs on hypothetical macOS or Windows breakage. When implementation decisions trade off cross-platform portability against Linux clarity or correctness, prefer Linux.
+**Linux is the primary target.** macOS and Windows are not prioritised for now. Reviewers MUST NOT block PRs on hypothetical macOS or Windows breakage. When implementation decisions trade off cross-platform portability against Linux clarity or correctness, prefer Linux.
 
 - Commands MUST work correctly on Linux. Linux behaviour is the source of truth.
 - Commands MAY use Linux-only paths (`/dev/zero`, `/dev/null`, `/dev/random`, `/proc`, `/sys`) without platform guards.
 - Commands MAY use `//go:build linux` build tags freely when an implementation is inherently Linux-specific.
 - Commands SHOULD use the `filepath` package for path operations — it is cheap correctness and costs nothing.
 - Commands SHOULD handle CRLF (`\r\n`) line endings in input data, since Linux files often contain CRLF from cross-platform editors.
-- Tests SHOULD target Linux. Do not add macOS- or Windows-specific test fixtures, build tags, or assertion overrides unless a real bug on those platforms has been reported.
+- Tests SHOULD target Linux. Do not add macOS- or Windows-specific test fixtures, build tags, or assertion overrides proactively — wait until a real bug on those platforms is reported.
 
 ---
 
