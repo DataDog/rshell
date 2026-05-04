@@ -1,11 +1,16 @@
-# Derived from bash: cd "" is a no-op success — stays in $PWD and returns 0.
-description: cd with an empty-string argument is a no-op success.
+# Derived from bash: cd "" stays in $PWD but also updates $OLDPWD to current dir.
+description: cd with an empty-string argument is a no-op that still updates OLDPWD.
+setup:
+  files:
+    - path: sub/keep
+      content: ""
 input:
   allowed_paths: ["$DIR"]
   script: |+
+    cd sub
     BEFORE="$PWD"
     cd ""
-    [ "$PWD" = "$BEFORE" ] && echo ok
+    [ "$PWD" = "$BEFORE" ] && [ "$OLDPWD" = "$BEFORE" ] && echo ok
 expect:
   stdout: |+
     ok

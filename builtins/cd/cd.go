@@ -161,6 +161,15 @@ func registerFlags(flags *builtins.FlagSet) builtins.HandlerFunc {
 			return builtins.Result{Code: 1}
 		}
 
+		// currentDir returns the runner's current working directory.
+		// Used for no-op cases where bash still rotates OLDPWD.
+		currentDir := func() string {
+			if callCtx.WorkDir == nil {
+				return ""
+			}
+			return callCtx.WorkDir()
+		}
+
 		var (
 			target string
 			// printValue is set when `cd -` succeeds: bash prints the
@@ -176,35 +185,43 @@ func registerFlags(flags *builtins.FlagSet) builtins.HandlerFunc {
 				callCtx.Errf("cd: HOME not set\n")
 				return builtins.Result{Code: 1}
 			}
-			// Bash distinguishes unset (error) from set-but-empty
-			// (silent no-op success). Match that: if HOME is set
-			// to "", `cd` is a no-op that returns 0 without
-			// touching $PWD/$OLDPWD.
+			// Bash distinguishes unset (error) from set-but-empty. When HOME
+			// is set but empty, `cd` stays in place AND updates OLDPWD to the
+			// current directory (same as a no-move cd). Route through the
+			// normal stat+NewWorkDir path so applyNewWorkDir fires.
 			if home == "" {
-				return builtins.Result{}
+				target = currentDir()
+			} else {
+				target = home
 			}
-			target = home
 		case args[0] == "-":
 			oldpwd, ok := lookupVar(callCtx, "OLDPWD")
 			if !ok {
 				callCtx.Errf("cd: OLDPWD not set\n")
 				return builtins.Result{Code: 1}
 			}
-			// Match bash: empty-but-set OLDPWD makes `cd -` a
-			// silent no-op success (rather than the "OLDPWD not
-			// set" error reserved for the unset case).
+			// Empty-but-set OLDPWD: stay in place and update OLDPWD (no
+			// print, since the "destination" is the current dir). Route
+			// through the normal path so applyNewWorkDir fires.
 			if oldpwd == "" {
-				return builtins.Result{}
+				target = currentDir()
+			} else {
+				target = oldpwd
+				printValue = oldpwd
 			}
-			target = oldpwd
-			printValue = oldpwd
 		default:
 			target = args[0]
 		}
 
 		if target == "" {
-			// Match bash: cd "" is a no-op success (stays in $PWD, exits 0).
-			return builtins.Result{}
+			// cd "" or currentDir() returned "" (no working dir set): stay
+			// in place and update OLDPWD to cwd. But if cwd itself is
+			// unknown, there is nothing to stat — return no-op.
+			cwd := currentDir()
+			if cwd == "" {
+				return builtins.Result{}
+			}
+			target = cwd
 		}
 		if len(target) > maxPathBytes {
 			callCtx.Errf("cd: path too long\n")
