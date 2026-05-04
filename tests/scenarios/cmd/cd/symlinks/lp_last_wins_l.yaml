@@ -1,0 +1,19 @@
+# Derived from bash: when -L and -P are both given, the last flag wins.
+# -P -L → -L preserves the symlink path in $PWD.
+description: cd -P -L uses the logical mode (last flag wins) and preserves the symlink path.
+setup:
+  files:
+    - path: real/keep
+      content: ""
+    - path: alias
+      symlink: real
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    cd -P -L alias
+    echo "$PWD"
+expect:
+  stdout_contains: ["/alias"]
+  stdout_contains_windows: ["\\alias"]
+  stderr: ""
+  exit_code: 0
