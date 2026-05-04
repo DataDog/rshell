@@ -17,6 +17,7 @@ import (
 
 	anthropic "github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/packages/param"
+	"github.com/charmbracelet/glamour"
 )
 
 const maxToolRounds = 300
@@ -118,14 +119,12 @@ func (a *Agent) Run(ctx context.Context, name, systemPrompt, userMessage string)
 
 		if acc.StopReason != anthropic.StopReasonToolUse {
 			if !a.verbose {
-				// Print the final round's text (the summary) to the terminal.
+				// Render the final round's text as formatted markdown on the terminal.
 				if dotsDirty {
 					fmt.Fprintln(a.termOut)
 					dotsDirty = false
 				}
-				summaryLW := newLineWriter(a.termOut, prefix)
-				summaryLW.write(lastRoundText.String())
-				summaryLW.flush()
+				renderMarkdown(a.termOut, lastRoundText.String())
 			}
 			break
 		}
@@ -246,6 +245,17 @@ func (a *Agent) executeBash(ctx context.Context, rawInput json.RawMessage) (outp
 		result = result[:maxOutput] + "\n[output truncated]"
 	}
 	return result, runErr != nil
+}
+
+// renderMarkdown renders markdown text as formatted terminal output.
+// Falls back to plain text if rendering fails.
+func renderMarkdown(w io.Writer, text string) {
+	rendered, err := glamour.Render(text, "dark")
+	if err != nil {
+		fmt.Fprint(w, text)
+		return
+	}
+	fmt.Fprint(w, rendered)
 }
 
 func bashToolParam() anthropic.ToolUnionParam {
