@@ -70,8 +70,6 @@ var interpAllowedSymbols = []string{
 	"sync.WaitGroup",              // 🟢 waits for goroutines to finish; concurrency primitive, no I/O.
 	"sync/atomic.Bool",            // 🟢 atomic bool flag; concurrency primitive, no I/O; used for cross-goroutine pipeline-broken signalling.
 	"sync/atomic.Int64",           // 🟢 atomic int64 counter; concurrency primitive, no I/O.
-	"syscall.EPIPE",               // 🟢 errno constant for broken-pipe (write to a pipe with no readers); pure constant; used to detect SIGPIPE-equivalent state on producer pipeline stages.
-	"syscall.Errno",               // 🟢 errno integer type; pure type; used with errors.As to extract the underlying errno (e.g. to detect Windows ERROR_BROKEN_PIPE = 109 in pipe-close handling).
 	"time.Duration",               // 🟢 numeric duration type; pure type, no side effects.
 	"time.Now",                    // 🟠 returns current time; read-only, no mutation.
 	"time.Time",                   // 🟢 time value type; pure data, no side effects.

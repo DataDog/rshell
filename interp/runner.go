@@ -50,6 +50,15 @@ func (r *Runner) stop(ctx context.Context) bool {
 		// the outer consumer (head) has closed, setting pipeBroken on
 		// the outer pipeline, but the inner pipe (while→cat) is still
 		// open so the while runner's own pipeBroken flag is never set.
+		//
+		// Known divergence from bash: bash exits the SIGPIPE'd producer
+		// with status 141 (128+SIGPIPE). Here we set exiting=true without
+		// touching r.exit.code, so the loop's exit status is whatever the
+		// last body statement left — typically 0 for `echo`. In practice
+		// the pipeline's overall $? comes from the consumer (head), not the
+		// producer, so this difference is invisible to scripts that inspect
+		// $? after the pipeline. See while_true_pipe_exit_code.yaml for
+		// the bash-comparison scenario.
 		r.exit.exiting = true
 		return true
 	}

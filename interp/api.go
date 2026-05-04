@@ -594,9 +594,20 @@ func (r *Runner) Run(ctx context.Context, node syntax.Node) (retErr error) {
 	// the caller after the script finishes. Restore r.stdout on return so
 	// that repeated Run() calls without Reset() do not double-wrap the writer.
 	prevStdout := r.stdout
-	stdoutCap := &limitWriter{w: prevStdout, limit: maxStdoutBytes}
+	prevPipeBroken := r.pipeBroken
+	// Wire the Run-level stdout cap's stopFlag to r.pipeBroken so that an
+	// unbounded while/until loop writing directly to stdout (not inside a
+	// pipeline or command substitution) is terminated via r.stop() when the
+	// output cap is first exceeded, instead of spinning at CPU speed on the
+	// silent-discard path until the context deadline.
+	runCapStopped := new(atomic.Bool)
+	r.pipeBroken = runCapStopped
+	stdoutCap := &limitWriter{w: prevStdout, limit: maxStdoutBytes, stopFlag: runCapStopped}
 	r.stdout = stdoutCap
-	defer func() { r.stdout = prevStdout }()
+	defer func() {
+		r.stdout = prevStdout
+		r.pipeBroken = prevPipeBroken
+	}()
 	// Capture the stdin/stdout baseline at Run() start (after wrapping) so
 	// per-command telemetry can detect pipe and redirect reassignments
 	// without tripping on the Run-level limitWriter wrap.

@@ -7,16 +7,13 @@ package interp
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
-	"runtime"
 	"sync"
 	"sync/atomic"
-	"syscall"
 
 	"mvdan.cc/sh/v3/expand"
 	"mvdan.cc/sh/v3/syntax"
@@ -309,6 +306,19 @@ func (r *Runner) execWhileClause(ctx context.Context, cm *syntax.WhileClause) {
 	if cm.Until {
 		kind = "until"
 	}
+	// The condition list is part of the loop's lexical scope, so `break` and
+	// `continue` invoked inside it are valid (they should not error out as
+	// "only useful in a loop"). Mark the runner as in-loop for the duration
+	// of the entire while/until evaluation; loopStmtsBroken redundantly re-
+	// sets this flag for the body, which is harmless.
+	//
+	// Save/restore oldInLoop before opening the span so that if
+	// StartSpanFromContext ever panics the defer(restore) is already
+	// registered and r.inLoop cannot leak permanently.
+	oldInLoop := r.inLoop
+	r.inLoop = true
+	defer func() { r.inLoop = oldInLoop }()
+
 	span, loopCtx := telemetry.StartSpanFromContext(ctx, "control_flow")
 	span.SetResourceName(kind)
 	iterationCount := 0
@@ -328,15 +338,6 @@ func (r *Runner) execWhileClause(ctx context.Context, cm *syntax.WhileClause) {
 		span.SetTag("rshell.loop.broke_early", brokeEarly)
 		span.Finish(nil)
 	}()
-
-	// The condition list is part of the loop's lexical scope, so `break` and
-	// `continue` invoked inside it are valid (they should not error out as
-	// "only useful in a loop"). Mark the runner as in-loop for the duration
-	// of the entire while/until evaluation; loopStmtsBroken redundantly re-
-	// sets this flag for the body, which is harmless.
-	oldInLoop := r.inLoop
-	r.inLoop = true
-	defer func() { r.inLoop = oldInLoop }()
 
 	// ranBody tracks whether the body executed at least once, independently
 	// of iterationCount (which is informational/telemetry). Using a bool
@@ -380,7 +381,8 @@ func (r *Runner) execWhileClause(ctx context.Context, cm *syntax.WhileClause) {
 					r.contnEnclosing = 0
 					// `continue` always exits with status 0. For `until`,
 					// exit 0 satisfies the termination condition — exit
-					// the loop (natural exit semantics, bash uses lastBody).
+					// the loop cleanly. No body ran yet (ranBody is false),
+					// so lastBody is zero — the loop reports 0 either way.
 					// For `while`, re-evaluate the condition and skip the body.
 					if cm.Until {
 						break
@@ -392,7 +394,7 @@ func (r *Runner) execWhileClause(ctx context.Context, cm *syntax.WhileClause) {
 				break
 			}
 			// continue targeting this loop: for until, exit 0 = natural
-			// termination (bash uses lastBody); for while, re-evaluate cond.
+			// termination; for while, re-evaluate cond.
 			if cm.Until {
 				break
 			}
@@ -784,32 +786,10 @@ func (p *pipeBrokenWriter) Write(b []byte) (int, error) {
 	return n, err
 }
 
-// isBrokenPipeErr reports whether err is the broken-pipe error returned by
-// writing to a pipe whose read end has been closed. Cross-platform:
-//   - Unix: syscall.EPIPE (errno 32).
-//   - Windows: ERROR_BROKEN_PIPE (errno 109) OR ERROR_NO_DATA (errno 232).
-//     Go's own os/pipe_test.go special-cases both; os.File.Write does NOT
-//     normalise either to syscall.EPIPE.
-//
-// The numeric Windows errno values are guarded by runtime.GOOS == "windows"
-// so we don't misidentify unrelated errors on other platforms (Linux errno 109
-// is ENOPROTOOPT; macOS errno 109 is ENOATTR — neither is pipe-related). The
-// constants are hardcoded rather than referenced symbolically because
-// syscall.ERROR_BROKEN_PIPE / syscall.ERROR_NO_DATA are Windows-only.
+// isBrokenPipeErr reports whether err is a broken-pipe error. Delegates to
+// builtins.IsBrokenPipe so that both the interpreter loop and builtins share
+// a single canonical implementation — a divergence (e.g. a new Windows errno)
+// only needs to be fixed in one place.
 func isBrokenPipeErr(err error) bool {
-	if err == nil {
-		return false
-	}
-	if errors.Is(err, syscall.EPIPE) {
-		return true
-	}
-	if runtime.GOOS == "windows" {
-		var errno syscall.Errno
-		if errors.As(err, &errno) {
-			// 109 = ERROR_BROKEN_PIPE; 232 = ERROR_NO_DATA ("the pipe is
-			// being closed"). See Go src os/pipe_test.go.
-			return errno == 109 || errno == 232
-		}
-	}
-	return false
+	return builtins.IsBrokenPipe(err)
 }

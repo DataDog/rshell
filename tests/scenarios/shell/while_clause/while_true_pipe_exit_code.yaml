@@ -1,0 +1,11 @@
+description: Exit code after while-true pipe-to-head is taken from the consumer (head), not the SIGPIPE'd producer.
+input:
+  script: |+
+    while true; do echo x; done | head -1
+    echo "exit=$?"
+expect:
+  stdout: |+
+    x
+    exit=0
+  stderr: |+
+  exit_code: 0

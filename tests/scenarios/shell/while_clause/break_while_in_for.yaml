@@ -1,0 +1,17 @@
+description: break 2 from a while inside a for exits both loops.
+input:
+  script: |+
+    for x in a b c; do
+      while true; do
+        echo "$x"
+        break 2
+      done
+      echo unreachable
+    done
+    echo done
+expect:
+  stdout: |+
+    a
+    done
+  stderr: |+
+  exit_code: 0
