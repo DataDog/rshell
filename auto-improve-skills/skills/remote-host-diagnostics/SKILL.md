@@ -15,52 +15,43 @@ Use this skill for remote host, service, log, socket, or system diagnostics that
 - Use `help` inside rshell before assuming support for a command, feature, or flag. Production rshell deployments may restrict, omit, or extend capabilities; `help` in the target environment is the source of truth.
 - Do not claim you connected to, SSHed into, or accessed a real remote/customer host unless the user explicitly provided such evidence. Usually you are inspecting local fixture or mounted logs through rshell.
 
-## Default Run Plan
+## Fast Run Plan
 
-Use two or three rshell invocations; add a fourth only for an empty-root fallback, socket limitation, or missing independent layer.
+Prefer two or three rshell invocations. Add another only when the first command proves an empty primary root, a supported command fails, or an independent layer is still missing.
 
-1. **Capabilities and map**: run `help` plus only expected command topics, then inventory every prompt-provided root once with bounded `find`/`ls`. Include each root literally in `--allowed-paths`; if a primary root is empty and a mounted/fallback root exists, inspect both in the same command and say which root produced evidence.
-2. **Focused triage**: choose the current component log, one rotated/noise file for the named hypothesis, and one independent layer when available. In one script, collect `wc -l`, counts, and a few representative matches. Prefer anchored symptom/time/status/source patterns over bare timestamp windows or broad `error|warn` sweeps.
-3. **Confirmation**: query only decisive tokens already found: cause, downstream impact, current/recovery state, and the teammate hypothesis. Use small `sed -n` windows around known line numbers only.
+1. **Discover and map**: run `help` plus only command topics you expect to use, then inventory each prompt-provided root once with bounded `find`/`ls`. Include all primary and fallback roots literally in `--allowed-paths`. If one root is empty, prove that and inspect the fallback in the same pass when possible.
+2. **Triage once, across layers**: after inventory, choose explicit candidate files: the current component log, any rotated/noise file needed for the user's hypothesis, and one independent layer such as proxy, system, dependency, or agent logs. In one script collect `wc -l`, targeted `grep -Hc` counts, and a few `grep -Hn -m` or `head`/`tail` samples for symptom, time, status/source, causal, recovery, and teammate-hypothesis tokens.
+3. **Confirm only decisive tokens**: query identifiers, status codes, source actors, check names, certificate fields, request/transaction/session IDs, and recovery/success markers already found. Use small `sed -n` windows around known line numbers only. Stop after you have cause, consequence, alternative-hypothesis disposition, current/recovery state, and remaining uncertainty.
 
-Stop when you have the cause line, consequence line, top alternative-hypothesis disposition, current/recovery state, and remaining uncertainty. More searches usually add noise.
+## Command Discipline
 
-## Command Shape
-
-- Combine related read-only checks for the same allowlisted root in one rshell script when output stays small.
-- Keep file lists explicit after inventory. With many files, narrow by filename first, then query only candidate current, rotated/noise, and independent-layer files.
-- For high-volume logs, aggregate before sampling: use `grep -Hc`, `wc -l`, or `grep ... | sort | uniq -c` to find scale/top sources, then print representative matches with `-m`, `head`, or `tail`. Avoid dumping every request in a window.
-- Use prompt/evidence patterns: timestamps, route/check names, status classes, failure verbs, auth phrases, certificate words, transaction/request IDs, actor/source fields, and recovery/success words. Give each named alternate hypothesis one narrow check; stop after it is disposed.
-- When a command or flag fails, read `help <command>`, run one supported subset, and record the limitation. In the final answer, mention only commands actually run and outputs actually observed.
-- If a command uses shell variables for shorter scripts, still put the exact prompt root in `--allowed-paths` and the exact files/roots in the final answer. If quoting or expansion breaks a query, rerun a corrected bounded query rather than reasoning from partial output.
-- Never use `grep -R` or `find ... -exec grep`. Do not keep repeating all-file scans after candidate files are known.
+- Keep output small and transcript-clean. Use `echo` labels or `printf '%s\n' "label"`; do not let a label or quoting error hide diagnostic output.
+- Aggregate before sampling high-volume logs: `grep -Hc`, `wc -l`, or `grep ... | sort | uniq -c` first, then representative lines with `-m`, `head`, or `tail`.
+- Prefer anchored prompt/evidence patterns over broad `error|warn` sweeps: absolute time windows, route/check names, status classes, auth phrases, certificate terms, failure verbs, source/client fields, and recovery/success words.
+- After inventory, do not rescan every file. Query the explicit candidates. Never use `grep -R` or `find ... -exec grep`.
+- If a command or flag fails, run `help <command>`, then one supported subset. Record the exact limitation, and mention only commands actually run and outputs actually observed.
+- Shell variables are fine inside scripts, but final answers must still name the literal allowed roots and files. If expansion or quoting breaks a query, rerun a corrected bounded query before reasoning from it.
 
 ## Evidence Ledger
 
-For every important claim, preserve the raw fields that make it auditable: file name, line number if available, absolute timestamp/window, component/check/route/source, status/code, count, request/transaction/session/key ID, config/certificate field, actor/client field, and "since", "recovered", or success state. Quote short decisive lines exactly; for long lines, copy the exact tokens that distinguish the current event from historical or unrelated decoys.
+For every important claim, preserve the raw fields that make it auditable: file, line number if available, absolute date/time window, component/check/route/source, status/code, count, request/transaction/session/key ID, config/certificate field, actor/client field, and embedded "since", "recovered", "resumed", "accepted", or success state. Quote short decisive lines exactly; for long lines, copy the exact distinguishing tokens.
 
-## Domain Checks
+## Branch Guidance
 
-- Authentication anomalies: aggregate failures by source early, include the numeric count, quote `Failed password`/`Invalid user` samples, check accepted/success events for the same source, and cite successes from different sources. Do not infer compromise from failures alone.
-- HTTP/service outages: tie route/status evidence to backend/service evidence and one independent layer such as proxy, system, dependency, database, or agent logs. Identify the limiting resource and actor/client if exposed. Explicitly dispose of named older, recovered, or unrelated decoys by timestamp/source/status, including feature-flag, cache, DNS, and external-service theories when raised.
-- Agent/check failures: connect configuration, credential, certificate/timing, network, or dependency errors to affected behavior. Preserve decisive structured fields from causal and downstream lines. Separate healthy siblings from the failing path. For certificates, pair the x509 line with `NotBefore`/`NotAfter`, clock/time-sync evidence, and kubelet/syslog/agent lines before choosing bad material versus timing.
-- Containerized layouts: if the primary in-container log path is empty and host logs are mounted elsewhere, explicitly inventory both and base the finding on the host-mounted evidence.
-- Socket checks: run `help ss`, then run a help-advertised listening TCP query using supported TCP, listening, numeric, and optional no-header flags. If process/PID flags are absent, do not run teammate-proposed process flags; say process names/PIDs are unavailable. If the supported query fails, quote the exact error and still explain the supported capability. Do not claim socket rows, fallback commands, or summary output unless the transcript contains them.
+- Authentication anomalies: aggregate failures by source early, include the numeric count line, quote failed-password/invalid-user samples, check accepted/success events for the same source in the current window, and cite successes from different sources separately. Say "no current successful/accepted login from that source" when supported; do not infer compromise from failures alone.
+- HTTP/service outages: correlate affected route/status samples from proxy or access logs with service/backend evidence and one independent layer. Identify the limiting resource and actor/client if exposed. In the same triage pass, dispose of named older, recovered, feature-flag, cache, DNS, external-service, or rotated-log alternatives by timestamp/source/status.
+- Agent/check failures: distinguish configuration, credential/auth, certificate/timing, network, and dependency causes. Pair the causal line with downstream impact such as stopped components, paused or dropped payloads, rejected intake, no-flush/since markers, or failing checks. Separately cite healthy sibling paths so they do not become false causes.
+- Certificates and container layouts: if the primary container log root is empty and host logs are mounted elsewhere, inventory both roots and say which root produced evidence. Pair the exact x509/check line with certificate bounds, clock/time-sync, kubelet/syslog/system, or rotation evidence before choosing timing/environment versus certificate material.
+- Socket checks: run `help ss`, then actually run a help-advertised canonical listening TCP query such as `ss -tln` or `ss -tlnH` before optional IPv4/IPv6/summary variants. Do not run teammate-proposed process/PID flags unless `help ss` advertises them. If the supported query fails, quote the exact error and still explain that listening TCP addresses/ports are the supported target while process names/PIDs are unavailable when absent from help.
 
 ## Final Answer Contract
 
-Use this concise structure. Keep it short, but do not compress away the fields that prove the diagnosis.
+Use this concise structure. Keep it short, but keep the fields that prove the diagnosis.
 
-- `Commands run`: exact commands or a faithful compact summary, including literal `--allowed-paths` roots, key files queried, and any unsupported-command evidence. Do not list probes you considered but did not run.
+- `Commands run`: faithful transcript summary with exact `./rshell` shape, literal `--allowed-paths` roots, key files queried, supported/unsupported command evidence, and no probes you only considered.
 - `Finding`: one sentence naming the likely cause and affected service/check/traffic/source.
-- `Evidence`: cite concrete file names, absolute date/time windows, exact message fragments, identifiers, line/config/certificate fields, counts/statuses, and downstream symptoms. Include date and time together when available, and preserve embedded "since" or recovery timestamps when they prove duration or recovery.
-- `Not supported`: explicitly dispose of misleading hypotheses named by the user, historical rotated-log matches, recovered noise, different-source successes, missing same-source successes, or unavailable command capabilities.
+- `Evidence`: cite concrete files, date and time together when available, exact message fragments, identifiers, line/config/certificate fields, counts/statuses, and downstream symptoms. Preserve embedded "since" or recovery timestamps when they prove duration or recovery.
+- `Not supported`: explicitly dispose of misleading hypotheses named by the user, historical rotated matches, recovered noise, different-source successes, missing same-source successes, or unavailable command capabilities.
 - `Uncertainty / next checks`: state what is not proven and suggest only safe read-only validation, audit, config/source review, rollback planning, owner follow-up, or capability follow-up. Do not propose remediation commands.
 
-Before finalizing, verify:
-
-- The cause, consequence, and counter-hypothesis each have a source file or command output.
-- The final answer includes exact raw wording for the decisive event and exact numeric counts when counts matter.
-- Any historical/recovered/different-source evidence is labeled that way, not left implicit.
-- The `Commands run` section matches the transcript exactly; remove any command, failure, row, or count not actually observed.
-- You avoid real-host access claims, remediation commands, and unsupported process/PID/socket claims.
+Before finalizing, verify that cause, consequence, and counter-hypothesis each have source output; exact numeric counts appear when counts matter; historical/recovered/different-source evidence is labeled; `Commands run` matches the transcript exactly; and there are no real-host access claims, remediation commands, or unsupported process/PID/socket claims.
