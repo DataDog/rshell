@@ -56,6 +56,7 @@ var builtinPerCommandSymbols = map[string][]string{
 		"path/filepath.ToSlash",    // 🟢 converts OS path separators to forward slashes; pure function, no I/O.
 		"path/filepath.VolumeName", // 🟢 returns the volume prefix of a path (e.g. "C:" on Windows, "" on Unix); pure function, no I/O.
 		"runtime.GOOS",             // 🟢 current OS name constant; pure constant, no I/O.
+		"strings.HasPrefix",        // 🟢 pure function for prefix matching; no I/O.
 		"strings.IndexByte",        // 🟢 finds byte in string; pure function, no I/O.
 		"strings.Split",            // 🟢 splits a string by separator into a slice; pure function, no I/O.
 		"strings.ToUpper",          // 🟢 converts string to uppercase; pure function, no I/O.
