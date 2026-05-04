@@ -1,0 +1,9 @@
+description: xargs -I {} -s N counts the expanded arg length, not template + item.
+input:
+  script: |+
+    printf 'abc\n' | xargs -I {} -s 13 echo 'AB{}CD'
+expect:
+  stdout: |+
+    ABabcCD
+  stderr: ""
+  exit_code: 0

@@ -522,7 +522,14 @@ func runXargs(ctx context.Context, callCtx *builtins.CallContext, o options) bui
 		}
 
 		// Will this item still fit in the current batch's -s budget?
-		add := len(item) + 1
+		// In -I mode the item expands within existing args, so compute the
+		// delta from the fixed base rather than treating it as a new arg.
+		var add int
+		if o.useReplace() {
+			add = commandLineLen(o, []string{item}) - usedChars
+		} else {
+			add = len(item) + 1
+		}
 		if usedChars+add > o.maxChars {
 			if len(batch) == 0 {
 				// Single item already too large — always abort (GNU always
@@ -594,15 +601,23 @@ func finishEmpty(ctx context.Context, callCtx *builtins.CallContext, o options, 
 
 // commandLineLen estimates the length of the command line that would be
 // formed by COMMAND + INITIAL-ARGS + batch + a NUL terminator per arg.
-// Approximation matches the way GNU xargs accounts for arguments
-// (each token counted by length + 1 for the separator/terminator).
+// Matches the way GNU xargs accounts for arguments (each token counted by
+// length + 1 for the separator/terminator). In -I mode the item replaces
+// replStr in each initial arg rather than being appended as a new arg.
 func commandLineLen(o options, batch []string) int {
 	total := len(o.cmdName) + 1
-	for _, a := range o.initialArgs {
-		total += len(a) + 1
-	}
-	for _, a := range batch {
-		total += len(a) + 1
+	if o.useReplace() && len(batch) > 0 {
+		item := batch[0]
+		for _, a := range o.initialArgs {
+			total += len(strings.ReplaceAll(a, o.replStr, item)) + 1
+		}
+	} else {
+		for _, a := range o.initialArgs {
+			total += len(a) + 1
+		}
+		for _, a := range batch {
+			total += len(a) + 1
+		}
 	}
 	return total
 }
