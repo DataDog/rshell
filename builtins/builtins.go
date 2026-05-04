@@ -65,6 +65,9 @@ func (c Command) Register() {
 	name := c.Name
 	factory := c.MakeFlags
 	normalize := c.NormalizeArgs
+	if _, exists := featureByName[name]; exists {
+		panic("builtin name conflicts with rshell feature: " + name)
+	}
 
 	// Probe whether the command registers any flags so we can record it
 	// in metadata (used by tests to enforce help-consistency invariants).
@@ -177,6 +180,24 @@ type CallContext struct {
 	// Used by builtins that need to compute absolute paths for sub-operations.
 	WorkDir func() string
 
+	// HostPrefix returns the configured host-mount prefix used by
+	// container-style sandboxes to translate host-absolute paths
+	// (e.g. /var/log/pods/...) into the prefixed paths the sandbox can
+	// open (e.g. /mnt/host/var/log/pods/...). Returns "" when no prefix
+	// is configured. Builtins that resolve absolute symlink targets
+	// (e.g. pwd -P) use this to keep their output consistent with what
+	// the sandbox itself accepts.
+	HostPrefix func() string
+
+	// CanonicalizeRootPrefix translates a configured AllowedPaths root
+	// prefix in absPath to that root's canonical (symlink-resolved)
+	// form. Used by `pwd -P` so that when the sandbox root is itself a
+	// symlink (e.g. /tmp/link -> /tmp/real), the printed path reflects
+	// the resolution that os.Root has already followed implicitly. If
+	// absPath is outside every root or the matching root is not a
+	// symlink, the input is returned unchanged.
+	CanonicalizeRootPrefix func(absPath string) string
+
 	// RunCommand executes a builtin command within the shell's sandbox.
 	// dir overrides the working directory for path resolution.
 	// Returns the command's exit code.
@@ -247,6 +268,12 @@ var metaRegistry = map[string]CommandMeta{}
 func addToRegistry(name string, fn HandlerFunc) {
 	if _, exists := registry[name]; exists {
 		panic("builtin already registered: " + name)
+	}
+	// Defense-in-depth: Register() already checks this before calling
+	// addToRegistry, so this branch is unreachable from current callers.
+	// Kept to guard against future callers that bypass Register().
+	if _, exists := featureByName[name]; exists {
+		panic("builtin name conflicts with rshell feature: " + name)
 	}
 	registry[name] = fn
 }
