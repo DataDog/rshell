@@ -239,6 +239,7 @@ var builtinPerCommandSymbols = map[string][]string{
 		"time.Hour",                           // 🟢 constant representing one hour; used to construct an in-the-past read deadline for -t 0 polling. No side effects.
 		"time.Second",                         // 🟢 constant representing one second; no side effects.
 		"time.Time",                           // 🟢 time value type; pure data, no side effects.
+		"time.Unix",                           // 🟢 constructs an absolute Time at Unix-epoch + (sec, nsec); used by the cancellation watchdog to set an "in the past" SetReadDeadline. Pure constructor, no side effects.
 		"unicode/utf8.DecodeLastRuneInString", // 🟢 decodes last UTF-8 rune in a string (trailing IFS-whitespace strip); pure function, no I/O.
 		"unicode/utf8.DecodeRune",             // 🟢 decodes first UTF-8 rune from a byte slice; pure function, no I/O.
 		"unicode/utf8.DecodeRuneInString",     // 🟢 decodes first UTF-8 rune from a string; pure function, no I/O.
@@ -588,6 +589,7 @@ var builtinAllowedSymbols = []string{
 	"time.ParseDuration",                                  // 🟢 parses Go duration strings (e.g. "1s"); pure function, no I/O.
 	"time.Second",                                         // 🟢 constant representing one second; no side effects.
 	"time.Time",                                           // 🟢 time value type; pure data, no side effects.
+	"time.Unix",                                           // 🟢 constructs an absolute Time at Unix-epoch + (sec, nsec); pure constructor, no I/O or side effects.
 	"unicode.Cc",                                          // 🟢 control character category range table; pure data, no I/O.
 	"unicode.Cf",                                          // 🟢 format character category range table; pure data, no I/O.
 	"unicode.Co",                                          // 🟢 private-use character category range table; pure data, no I/O.

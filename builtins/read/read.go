@@ -202,32 +202,64 @@ func run(ctx context.Context, c *builtins.CallContext, args []string, opt runOpt
 			defer cancel()
 		}
 	}
-	// Best-effort kernel-level read deadline: works for *os.File pipes,
-	// which is the typical stdin shape produced by the runner. We pull
-	// the deadline from readCtx rather than computing one with
-	// time.Now to avoid a second time source: builtins read time only
-	// via callCtx.Now (script-start reference) or, for monotonic
-	// "from-now" deadlines like this one, via context.WithTimeout's
-	// internal clock surfaced through ctx.Deadline(). When both -t and
-	// an inherited deadline apply, ctx.Deadline() returns the earlier
-	// of the two, which is the correct fused deadline.
+	// Best-effort kernel-level cancellation for blocking stdin reads.
+	// Works for *os.File pipes (the typical runner-supplied stdin shape).
+	// Two layers:
+	//
+	//   1. Kernel deadline: when readCtx has a deadline (-t or
+	//      MaxExecutionTime), install it via SetReadDeadline so the
+	//      Read syscall wakes up on timeout. We pull the deadline from
+	//      readCtx rather than computing one with time.Now to avoid a
+	//      second time source — context.WithTimeout's internal clock,
+	//      surfaced via Deadline(), is authoritative. When both -t and
+	//      an inherited deadline apply, Deadline() returns the earlier
+	//      of the two, which is the correct fused deadline.
+	//
+	//   2. Watchdog goroutine: any cancellable readCtx (deadline OR
+	//      bare parent.Cancel()) is mirrored to the kernel-level
+	//      deadline by setting it to a past time on ctx.Done(), forcing
+	//      a blocked Read to unblock immediately even when no timeout
+	//      is configured.
 	//
 	// SetReadDeadline returns "file type does not support deadline" for
 	// regular files and /dev/null. Those types don't block on Read, so
 	// the failure is harmless. For pollable types where Read CAN block
 	// (TTYs, sockets, named pipes via the runtime poller, etc.) the
-	// call generally succeeds. If it does not — rare, but possible for
-	// some specialised character devices — readInput's per-byte
-	// goroutine fallback kicks in to keep ctx-cancellation working
-	// without depending on the kernel deadline.
-	deadlineInstalled := false
-	_, hasDeadline := readCtx.Deadline()
-	if hasDeadline {
+	// call generally succeeds. When kernelCancel is established, we
+	// stay on the direct read path — which crucially does NOT prefetch
+	// past the consumer's request and therefore preserves bytes for
+	// subsequent reads on the shared stdin (e.g. `while read line`).
+	// Only when neither the *os.File assertion nor SetReadDeadline
+	// support holds do we fall back to the request-response goroutine
+	// path in readInput.
+	kernelCancel := false
+	if c.Stdin != nil && readCtx.Done() != nil {
 		if f, fok := c.Stdin.(*os.File); fok {
-			dl, _ := readCtx.Deadline()
-			if err := f.SetReadDeadline(dl); err == nil {
-				deadlineInstalled = true
-				defer func() { _ = f.SetReadDeadline(time.Time{}) }()
+			// Probe SetReadDeadline support by attempting to clear.
+			// This is a no-op for descriptors that already have no
+			// deadline and a quick failure for unsupported types.
+			if err := f.SetReadDeadline(time.Time{}); err == nil {
+				if dl, ok := readCtx.Deadline(); ok {
+					_ = f.SetReadDeadline(dl)
+				}
+				stop := make(chan struct{})
+				watchdogDone := make(chan struct{})
+				go func() {
+					defer close(watchdogDone)
+					select {
+					case <-readCtx.Done():
+						// Past time; any future blocked Read on f
+						// returns ErrDeadlineExceeded immediately.
+						_ = f.SetReadDeadline(time.Unix(1, 0))
+					case <-stop:
+					}
+				}()
+				defer func() {
+					close(stop)
+					<-watchdogDone
+					_ = f.SetReadDeadline(time.Time{})
+				}()
+				kernelCancel = true
 			}
 		}
 	}
@@ -266,16 +298,16 @@ func run(ctx context.Context, c *builtins.CallContext, args []string, opt runOpt
 	case opt.nCharsOrder > 0:
 		charLimit = opt.nChars
 	}
-	// readInput needs the goroutine-based poll path whenever the
-	// context can be cancelled — not only when a deadline failed to
-	// install. A kernel-level deadline only fires on expiry; it does
-	// not interrupt a blocking Read in response to caller cancellation
-	// (e.g. an agent aborting the run before the deadline). Treat any
-	// context with a non-nil Done() channel as potentially
-	// cancellable. Direct-Read remains the fast path only when the
-	// context is uncancellable (typically context.Background() — rare
-	// in practice but cheap to keep).
-	needsGoroutinePoll := readCtx.Done() != nil
+	// readInput needs the goroutine-based fallback only when the
+	// context is cancellable AND we couldn't wire kernel-level
+	// cancellation through SetReadDeadline above. Staying on the
+	// direct Read path whenever possible is critical for correctness:
+	// the goroutine path cannot avoid leaving a leaked goroutine
+	// blocked inside Read on cancellation, which on a shared stdin
+	// (the typical `while read line` shape) would consume bytes that
+	// the next read iteration must observe. Kernel cancellation lets
+	// us interrupt the blocked Read directly without prefetching.
+	needsGoroutinePoll := readCtx.Done() != nil && !kernelCancel
 	if c.Stdin == nil {
 		// Nil stdin is treated as immediate EOF: fall through to the
 		// assignment loop below so each NAME is cleared to "" before
@@ -284,11 +316,6 @@ func run(ctx context.Context, c *builtins.CallContext, args []string, opt runOpt
 		needsGoroutinePoll = false
 	}
 	line, eof, err := readInput(readCtx, c.Stdin, delim, opt.raw, charLimit, nFixedMode, needsGoroutinePoll)
-	// Belt-and-braces: silence the unused-variable warning for
-	// hasDeadline / deadlineInstalled when their only consumer above
-	// has been simplified out. They remain useful for diagnostics.
-	_ = hasDeadline
-	_ = deadlineInstalled
 	timedOut := false
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, os.ErrDeadlineExceeded) {
@@ -539,43 +566,57 @@ func readInput(ctx context.Context, r io.Reader, delim rune, raw bool, charLimit
 
 	var readByte func() (byte, error)
 	if useGoroutinePoll {
-		// Goroutine-based fallback for the rare case where the caller
-		// has a deadline but couldn't install it via SetReadDeadline
-		// (e.g. specialised character devices). A single producer
-		// goroutine reads bytes asynchronously and feeds them through
-		// a buffered channel; the consumer selects on the channel
-		// versus ctx.Done() so cancellation interrupts a blocking
-		// Read.
+		// Goroutine-based fallback used only when the context is
+		// cancellable AND kernel-level cancellation via
+		// SetReadDeadline was unavailable (e.g. non-*os.File stdin or
+		// a specialised character device that rejects deadlines).
 		//
-		// Trade-off: if Read is currently stuck in the kernel when
-		// ctx fires, the producer can't be force-cancelled — it
-		// will eventually unblock when stdin produces data or
-		// closes. The leaked goroutine is harmless (channel send is
-		// guarded by another ctx.Done() select) but persists for the
-		// lifetime of the underlying reader.
+		// IMPORTANT: this path uses a request-response pattern, not a
+		// prefetch loop. A naive prefetch would call r.Read in a tight
+		// loop and queue bytes ahead of the consumer; on a shared
+		// stdin (the typical `while read line` shape) the producer
+		// would consume bytes past the delimiter and the next read
+		// iteration would see EOF or skip data. Instead, the producer
+		// performs exactly one r.Read per request from the consumer
+		// and sends the result on an unbuffered channel — bytes are
+		// never read speculatively.
+		//
+		// Trade-off: if Read is stuck in the kernel when ctx fires,
+		// the producer can't be force-cancelled. It will eventually
+		// unblock when stdin produces data or closes; AT MOST ONE
+		// byte is lost in that scenario (the byte the producer was
+		// reading at the moment of cancellation). The leaked
+		// goroutine exits via the stop signal once Read returns.
 		type byteResult struct {
 			b   byte
 			err error
 		}
-		byteCh := make(chan byteResult, 1)
+		reqCh := make(chan struct{})
+		resCh := make(chan byteResult)
+		stop := make(chan struct{})
+		defer close(stop)
 		go func() {
-			var buf [1]byte
+			var rbuf [1]byte
 			for {
-				n, err := r.Read(buf[:])
-				if n == 1 {
-					select {
-					case byteCh <- byteResult{buf[0], nil}:
-					case <-ctx.Done():
+				select {
+				case <-stop:
+					return
+				case _, ok := <-reqCh:
+					if !ok {
 						return
 					}
 				}
+				n, err := r.Read(rbuf[:])
+				var b byte
+				if n == 1 {
+					b = rbuf[0]
+				}
+				select {
+				case resCh <- byteResult{b, err}:
+				case <-stop:
+					return
+				}
 				if err != nil {
-					if n == 0 {
-						select {
-						case byteCh <- byteResult{0, err}:
-						case <-ctx.Done():
-						}
-					}
 					return
 				}
 			}
@@ -585,14 +626,19 @@ func readInput(ctx context.Context, r io.Reader, delim rune, raw bool, charLimit
 				return 0, fmt.Errorf("input exceeds maximum of %d bytes", MaxReadBytes)
 			}
 			select {
+			case reqCh <- struct{}{}:
 			case <-ctx.Done():
 				return 0, ctx.Err()
-			case res := <-byteCh:
+			}
+			select {
+			case res := <-resCh:
 				if res.err != nil {
 					return 0, res.err
 				}
 				consumed++
 				return res.b, nil
+			case <-ctx.Done():
+				return 0, ctx.Err()
 			}
 		}
 	} else {
