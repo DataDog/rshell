@@ -1,7 +1,7 @@
 description: xargs fails with exit 1 when -s is smaller than the command name overhead, even on empty input.
 input:
   script: |+
-    echo -n '' | xargs -s 1 echo
+    printf '' | xargs -s 1 echo
 expect:
   stdout: ""
   stderr: |+

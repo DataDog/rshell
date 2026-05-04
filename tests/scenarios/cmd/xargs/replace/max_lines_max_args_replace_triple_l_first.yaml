@@ -1,0 +1,12 @@
+description: xargs emits two warnings when -L, -n, and -I are all specified (L first, n middle, I last).
+input:
+  script: |+
+    printf 'a\nb\n' | xargs -L 1 -n 2 -I {} echo {}
+expect:
+  stdout: |+
+    a
+    b
+  stderr: |+
+    xargs: warning: options --max-lines and --max-args/-n are mutually exclusive, ignoring previous --max-lines value
+    xargs: warning: options --max-args and --replace/-I/-i are mutually exclusive, ignoring previous --max-args value
+  exit_code: 0

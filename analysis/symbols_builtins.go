@@ -360,6 +360,8 @@ var builtinPerCommandSymbols = map[string][]string{
 		"io.ReadCloser",            // 🟢 interface type; no side effects.
 		"io.Reader",                // 🟢 interface type; no side effects.
 		"os.O_RDONLY",              // 🟢 read-only file flag constant; cannot open files by itself.
+		"strconv.Atoi",             // 🟢 string-to-int conversion; used in orderedIntValue.Set to parse -n/-L values; pure function, no I/O.
+		"strconv.Itoa",             // 🟢 int-to-string conversion; used in orderedIntValue.String for pflag default display; pure function, no I/O.
 		"strings.Builder",          // 🟢 efficient string concatenation; pure in-memory buffer, no I/O.
 		"strings.Contains",         // 🟢 substring search; pure function, no I/O.
 		"strings.HasPrefix",        // 🟢 prefix match; pure function, no I/O.

@@ -96,6 +96,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/DataDog/rshell/builtins"
@@ -153,8 +154,11 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 	delim := fs.StringP("delimiter", "d", "", "use DELIM as the single-byte item separator")
 	eofStr := fs.StringP("eof", "E", "", "treat EOF-STR as a logical end-of-input marker")
 	replStr := fs.StringP("replace", "I", "", "insert input as the value of REPLSTR in each argument")
-	maxLines := fs.IntP("max-lines", "L", 0, "use at most NUMBER non-empty input lines per command")
-	maxArgs := fs.IntP("max-args", "n", 0, "use at most N arguments per command invocation")
+	var parseSeq int
+	maxLinesVal := &orderedIntValue{seq: &parseSeq}
+	maxArgsVal := &orderedIntValue{seq: &parseSeq}
+	fs.VarP(maxLinesVal, "max-lines", "L", "use at most NUMBER non-empty input lines per command")
+	fs.VarP(maxArgsVal, "max-args", "n", "use at most N arguments per command invocation")
 	noRunIfEmpty := fs.BoolP("no-run-if-empty", "r", false, "do not run command if input is empty")
 	maxChars := fs.IntP("max-chars", "s", 0, "limit a single command line to N characters")
 	verbose := fs.BoolP("verbose", "t", false, "print the command line on stderr before running")
@@ -170,7 +174,7 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 		}
 
 		opts, errMsg := buildOptions(fs, *null, *argFile, *delim, *eofStr, *replStr,
-			*maxLines, *maxArgs, *noRunIfEmpty, *maxChars, *verbose, *exitOnSize, args)
+			maxLinesVal, maxArgsVal, *noRunIfEmpty, *maxChars, *verbose, *exitOnSize, args)
 		if errMsg != "" {
 			callCtx.Errf("xargs: %s\n", errMsg)
 			return builtins.Result{Code: exitUsage}
@@ -224,7 +228,7 @@ func (o *options) useMaxArgs() bool  { return o.maxArgs > 0 }
 // buildOptions validates the parsed flag values and resolves the command
 // to be executed. It returns a non-empty error string on validation failure.
 func buildOptions(fs *builtins.FlagSet, null bool, argFile, delim, eofStr, replStr string,
-	maxLines, maxArgs int, noRunEmpty bool, maxChars int,
+	maxLinesVal, maxArgsVal *orderedIntValue, noRunEmpty bool, maxChars int,
 	verbose, exitOnSize bool, args []string) (options, string) {
 
 	o := options{
@@ -263,23 +267,31 @@ func buildOptions(fs *builtins.FlagSet, null bool, argFile, delim, eofStr, replS
 		o.replStr = replStr
 	}
 
-	if fs.Changed("max-lines") {
-		if msg := validatePositive("L", maxLines, HardMaxArgs); msg != "" {
+	if maxLinesVal.changed() {
+		if msg := validatePositive("L", maxLinesVal.val, HardMaxArgs); msg != "" {
 			return o, msg
 		}
-		o.maxLines = maxLines
+		o.maxLines = maxLinesVal.val
 	}
 
-	if fs.Changed("max-args") {
-		if msg := validatePositive("n", maxArgs, HardMaxArgs); msg != "" {
+	if maxArgsVal.changed() {
+		if msg := validatePositive("n", maxArgsVal.val, HardMaxArgs); msg != "" {
 			return o, msg
 		}
-		o.maxArgs = maxArgs
-		// GNU xargs: -n and -L are mutually exclusive; -n takes precedence.
-		if fs.Changed("max-lines") {
-			o.warnings = append(o.warnings,
-				"warning: options --max-lines and --max-args/-n are mutually exclusive, ignoring previous --max-lines value")
-			o.maxLines = 0
+		o.maxArgs = maxArgsVal.val
+		if maxLinesVal.changed() {
+			// Both -n and -L were specified; last-specified wins (GNU semantics).
+			if maxArgsVal.order > maxLinesVal.order {
+				// -n was specified after -L → n wins, drop L.
+				o.warnings = append(o.warnings,
+					"warning: options --max-lines and --max-args/-n are mutually exclusive, ignoring previous --max-lines value")
+				o.maxLines = 0
+			} else {
+				// -L was specified after -n → L wins, drop n.
+				o.warnings = append(o.warnings,
+					"warning: options --max-args and -L are mutually exclusive, ignoring previous --max-args value")
+				o.maxArgs = 0
+			}
 		}
 	}
 
@@ -299,12 +311,16 @@ func buildOptions(fs *builtins.FlagSet, null bool, argFile, delim, eofStr, replS
 	// tokenisation to newline-only (matches GNU xargs: "unquoted blanks do
 	// not terminate input items; instead the separator is the newline"),
 	// and implies --no-run-if-empty. This overrides any user-supplied
-	// -n / -L values. GNU xargs emits a warning when both -n and -I are
-	// specified.
+	// -n / -L values. GNU xargs emits a warning for whichever of -n/-L is
+	// currently active after conflict resolution.
 	if o.useReplace() {
-		if fs.Changed("max-args") {
+		// Warn for whichever of -n / -L is currently active.
+		if o.maxArgs > 0 {
 			o.warnings = append(o.warnings,
 				"warning: options --max-args and --replace/-I/-i are mutually exclusive, ignoring previous --max-args value")
+		} else if o.maxLines > 0 {
+			o.warnings = append(o.warnings,
+				"warning: options --max-lines and --replace/-I/-i are mutually exclusive, ignoring previous --max-lines value")
 		}
 		o.maxArgs = 1
 		o.maxLines = 1
@@ -343,6 +359,30 @@ func validatePositive(name string, v, max int) string {
 	}
 	return ""
 }
+
+// orderedIntValue is a pflag.Value for integer flags that records parse
+// position via a shared sequence counter. This lets buildOptions determine
+// which of -n and -L was specified last on the command line, enabling
+// GNU-compatible last-specified-wins conflict resolution.
+type orderedIntValue struct {
+	val   int
+	order int // 0 = never set; >0 = value of *seq when Set was called
+	seq   *int
+}
+
+func (o *orderedIntValue) String() string { return strconv.Itoa(o.val) }
+func (o *orderedIntValue) Type() string   { return "int" }
+func (o *orderedIntValue) Set(s string) error {
+	v, err := strconv.Atoi(s)
+	if err != nil {
+		return fmt.Errorf("invalid integer %q", s)
+	}
+	o.val = v
+	*o.seq++
+	o.order = *o.seq
+	return nil
+}
+func (o *orderedIntValue) changed() bool { return o.order > 0 }
 
 // decodeDelim turns the -d argument into a single byte. Recognised escapes
 // match the GNU xargs manual: \n, \t, \r, \\, \0. Multi-character delimiters

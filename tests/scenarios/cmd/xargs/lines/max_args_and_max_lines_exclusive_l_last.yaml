@@ -1,0 +1,11 @@
+description: xargs ignores -n when -L is specified after -n, emitting a warning (GNU last-specified-wins behavior).
+input:
+  script: |+
+    printf 'a b c\nd e f\n' | xargs -n 2 -L 1 echo
+expect:
+  stdout: |+
+    a b c
+    d e f
+  stderr: |+
+    xargs: warning: options --max-args and -L are mutually exclusive, ignoring previous --max-args value
+  exit_code: 0
