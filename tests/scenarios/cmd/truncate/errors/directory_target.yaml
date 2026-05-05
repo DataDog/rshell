@@ -10,7 +10,7 @@ input:
   script: |+
     truncate -s 0 subdir
 expect:
-  stdout: ""
+  stdout: |+
   stderr_contains:
     - "truncate:"
   exit_code: 1

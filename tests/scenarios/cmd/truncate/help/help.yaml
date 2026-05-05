@@ -9,5 +9,5 @@ expect:
     - "Usage: truncate"
     - "--size"
     - "--no-create"
-  stderr: ""
+  stderr: |+
   exit_code: 0

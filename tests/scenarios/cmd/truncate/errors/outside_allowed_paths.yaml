@@ -12,7 +12,7 @@ input:
   script: |+
     truncate -s 0 ../outside.txt
 expect:
-  stdout: ""
+  stdout: |+
   stderr_contains:
     - "truncate:"
     - "permission denied"

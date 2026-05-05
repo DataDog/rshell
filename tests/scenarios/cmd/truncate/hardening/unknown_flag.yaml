@@ -14,7 +14,7 @@ input:
   script: |+
     truncate --reference=ref.txt a.txt
 expect:
-  stdout: ""
+  stdout: |+
   stderr_contains:
     - "truncate:"
   exit_code: 1

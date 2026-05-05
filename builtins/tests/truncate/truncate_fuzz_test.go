@@ -32,17 +32,30 @@ func FuzzTruncateSize(f *testing.F) {
 	f.Add("99999999999999999999") // far past int64.
 	f.Add("00000000000000000000")
 
-	// Every accepted suffix (the leading letter is case-insensitive in
-	// every form GNU truncate accepts).
+	// Every accepted suffix. K/M/G/T accept either case on the leading
+	// letter; P/E are uppercase-only (matching GNU truncate).
 	for _, s := range []string{
 		"K", "k", "KB", "kB", "KiB", "kiB",
 		"M", "m", "MB", "mB", "MiB", "miB",
 		"G", "g", "GB", "gB", "GiB", "giB",
 		"T", "t", "TB", "tB", "TiB", "tiB",
+		"P", "PB", "PiB",
+		"E", "EB", "EiB",
 	} {
 		f.Add("0" + s)
 		f.Add("1" + s)
 		f.Add("123" + s)
+	}
+	// Lowercase P/E and the Z/Y/R/Q suffixes — must always reject.
+	for _, s := range []string{
+		"p", "pB", "piB",
+		"e", "eB", "eiB",
+		"Z", "ZB", "ZiB", "z", "zB",
+		"Y", "YB", "YiB", "y",
+		"R", "RB", "RiB",
+		"Q", "QB", "QiB",
+	} {
+		f.Add("1" + s)
 	}
 
 	// Suffix-overflow neighbours.

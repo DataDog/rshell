@@ -10,7 +10,7 @@ input:
   script: |+
     truncate -s xyz a.txt
 expect:
-  stdout: ""
+  stdout: |+
   stderr_contains:
     - "truncate:"
     - "invalid size"

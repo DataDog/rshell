@@ -6,7 +6,7 @@ input:
   script: |+
     truncate -s 0
 expect:
-  stdout: ""
+  stdout: |+
   stderr_contains:
     - "truncate:"
     - "missing file operand"

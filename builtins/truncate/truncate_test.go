@@ -56,9 +56,18 @@ func TestParseSizeAccepts(t *testing.T) {
 		{"1TB", 1000 * 1000 * 1000 * 1000},
 		{"1tB", 1000 * 1000 * 1000 * 1000},
 
+		// P/E: uppercase-only leading letter, matching GNU.
+		{"1P", 1 << 50},
+		{"1PiB", 1 << 50},
+		{"1PB", 1000 * 1000 * 1000 * 1000 * 1000},
+		{"1E", 1 << 60},
+		{"1EiB", 1 << 60},
+		{"1EB", 1000 * 1000 * 1000 * 1000 * 1000 * 1000},
+
 		// Zero with suffix is still zero.
 		{"0K", 0},
 		{"0MB", 0},
+		{"0P", 0},
 	}
 	for _, tc := range cases {
 		got, err := parseSize(tc.input)
@@ -92,6 +101,20 @@ func TestParseSizeRejects(t *testing.T) {
 		{"1kIB", errInvalidSize}, // any non-"iB" trailing form is invalid.
 		{"1kb", errInvalidSize},  // trailing "b" must be uppercase.
 		{"1Kb", errInvalidSize},
+		// P and E are uppercase-only on the leading letter (matches GNU).
+		{"1p", errInvalidSize},
+		{"1pB", errInvalidSize},
+		{"1piB", errInvalidSize},
+		{"1e", errInvalidSize},
+		{"1eB", errInvalidSize},
+		{"1eiB", errInvalidSize},
+		// Z/Y/R/Q multipliers exceed int64; rejected as unknown suffix
+		// (GNU rejects them too on 64-bit-uintmax_t systems).
+		{"1Z", errInvalidSize},
+		{"1ZB", errInvalidSize},
+		{"1Y", errInvalidSize},
+		{"1R", errInvalidSize},
+		{"1Q", errInvalidSize},
 		{"1XB", errInvalidSize},
 		{"1KB1", errInvalidSize},  // trailing junk.
 		{"1Ki", errInvalidSize},   // partial "iB" suffix.

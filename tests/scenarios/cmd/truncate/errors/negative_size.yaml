@@ -10,7 +10,7 @@ input:
   script: |+
     truncate -s=-10 a.txt
 expect:
-  stdout: ""
+  stdout: |+
   stderr_contains:
     - "truncate:"
     - "relative size operators not supported"
