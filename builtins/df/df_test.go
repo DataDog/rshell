@@ -53,6 +53,13 @@ func TestDfHelp(t *testing.T) {
 	assert.Contains(t, stdout, "-k ")
 	assert.NotContains(t, stdout, "-k, --")
 	assert.NotContains(t, stdout, "--kibibytes")
+	// No-argument flags use a NUL-byte NoOptDefVal sentinel so
+	// `--all=true` etc. are rejected. pflag.PrintDefaults would
+	// otherwise render that NUL into the help text — make sure the
+	// printHelp wrapper clears NoOptDefVal first so the help stream
+	// stays plain ASCII.
+	assert.NotContains(t, stdout, "\x00")
+	assert.NotContains(t, stdout, "[= ]")
 }
 
 // --- Default output structure ---

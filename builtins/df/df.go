@@ -819,10 +819,22 @@ func printRows(callCtx *builtins.CallContext, header []string, rows []row, withT
 // render as the bogus "-k, --" line. -k is marked Hidden so it is
 // skipped by PrintDefaults; we append the line manually so it still
 // appears in --help.
+//
+// Every no-argument flag uses noArgSentinel (a NUL byte) as its
+// NoOptDefVal so that explicit-value forms (--all=true, etc.) are
+// rejected. PrintDefaults would happily render that NUL byte into the
+// help text as `--all[= ]\x00…`, producing binary garbage. Clear the
+// NoOptDefVal of every flag before printing — Parse has already run, so
+// this only affects the rendered output, not parsing.
 func printHelp(callCtx *builtins.CallContext, fs *builtins.FlagSet) {
 	callCtx.Out("Usage: df [OPTION]...\n")
 	callCtx.Out("Show information about the file system on which each FILE resides,\n")
 	callCtx.Out("or all file systems by default.\n\n")
+	fs.VisitAll(func(flag *builtins.Flag) {
+		if flag.NoOptDefVal == noArgSentinel {
+			flag.NoOptDefVal = ""
+		}
+	})
 	fs.SetOutput(callCtx.Stdout)
 	fs.PrintDefaults()
 	callCtx.Out("  -k                               use 1024-byte blocks (POSIX default)\n")
