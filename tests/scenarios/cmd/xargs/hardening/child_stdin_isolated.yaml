@@ -3,7 +3,6 @@
 # so nested xargs commands receive an empty reader instead of the live input pipe.
 # Without isolation, the inner xargs would drain the outer pipe and produce
 # fewer invocations.
-skip_assert_against_bash: true
 description: nested xargs demonstrates stdin isolation — each inner invocation sees empty stdin.
 input:
   script: |+

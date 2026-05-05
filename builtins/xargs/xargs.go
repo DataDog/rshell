@@ -865,8 +865,9 @@ type tokenizer struct {
 	stderr      io.Writer // for NUL-byte warnings; may be nil
 	warnedNUL   bool      // true after the first NUL warning (GNU emits at most once)
 	atLineStart bool      // true at stream-start and after any '\n'; used to gate
-	// the -E EOF-marker check: GNU only suppresses the marker
-	// when it is at the start of a logical line.
+	// the -E EOF-marker check at end-of-stream: when a token is terminated by EOF
+	// (no trailing newline), it is only suppressed if atLineStart=true. Tokens
+	// terminated by whitespace are always suppressed unconditionally (GNU semantics).
 }
 
 func newTokenizer(r io.Reader, o options, stderr io.Writer) *tokenizer {
