@@ -179,9 +179,9 @@ func TestGNUCompatSingleQuotedItem(t *testing.T) {
 
 // TestGNUCompatRejectedFlag — unknown long flags exit 1 and write stderr.
 //
-// NOTE: this tests rshell's stricter behaviour. GNU xargs exits 0 for unknown
-// flags (writing the error to stderr) whereas rshell treats unknown flags as a
-// hard usage error and exits 1.
+// Both GNU xargs and rshell exit 1 for unrecognised flags; this test
+// confirms rshell's pflag integration produces the expected exit code and
+// a non-empty stderr message.
 func TestGNUCompatRejectedFlag(t *testing.T) {
 	dir := t.TempDir()
 	_, stderr, code := cmdRun(t, "xargs --not-a-flag", dir)

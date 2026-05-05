@@ -242,6 +242,22 @@ func TestCommandLineLenAccountsForAllParts(t *testing.T) {
 	assert.Equal(t, want, got)
 }
 
+// TestCommandLineLenReplaceNoPlaceholder verifies that in -I mode with no
+// placeholder in initialArgs, the item is still counted toward the -s budget
+// (item+NUL). Verified against GNU: printf "aaaaa" | xargs -I {} -s 6 echo
+// exits 0; a 6-char item fails. So GNU counts item+1 even when no placeholder.
+func TestCommandLineLenReplaceNoPlaceholder(t *testing.T) {
+	o := options{
+		cmdName:     "echo",
+		initialArgs: []string{}, // no {} placeholder anywhere
+		replStr:     "{}",       // replStr non-empty => useReplace() == true
+	}
+	// Item "aaaaa" (5 chars): total = len("echo")+1 + len("aaaaa")+1 = 12.
+	got := commandLineLen(o, []string{"aaaaa"})
+	want := len("echo") + 1 + len("aaaaa") + 1
+	assert.Equal(t, want, got)
+}
+
 // TestTokenizerInfiniteSafety feeds each tokenizer mode an infinite stream
 // and asserts that next() returns within a short bound — either because
 // ctx.Err() fired (preferred) or because the per-token cap fired (also a

@@ -575,8 +575,21 @@ func runXargs(ctx context.Context, callCtx *builtins.CallContext, o options) bui
 			}
 			if o.exitOnSize || o.useReplace() {
 				// -x / -I: abort if the current expansion won't fit within -s.
-				// GNU uses "argument list too long" for both cases.
-				callCtx.Errf("xargs: argument list too long\n")
+				// GNU uses "argument list too long" when a {} placeholder
+				// actually expands in an arg, and "argument line too long"
+				// when -I is active but no placeholder appears in initialArgs.
+				hasPlaceholder := false
+				for _, a := range o.initialArgs {
+					if strings.Contains(a, o.replStr) {
+						hasPlaceholder = true
+						break
+					}
+				}
+				if o.useReplace() && !hasPlaceholder {
+					callCtx.Errf("xargs: argument line too long\n")
+				} else {
+					callCtx.Errf("xargs: argument list too long\n")
+				}
 				return builtins.Result{Code: exitUsage}
 			}
 			if flush() {
@@ -645,12 +658,16 @@ func commandLineLen(o options, batch []string) int {
 	total := len(o.cmdName) + 1
 	if o.useReplace() && len(batch) > 0 {
 		item := batch[0]
-		// Substitute item into each initial arg. If initialArgs is empty,
-		// the item has nowhere to expand and does not contribute to the
-		// command-line length (matching GNU: the item is silently dropped
-		// unless the replace string appears in an argument).
-		for _, a := range o.initialArgs {
-			total += len(strings.ReplaceAll(a, o.replStr, item)) + 1
+		if len(o.initialArgs) > 0 {
+			// Substitute item into each initial arg.
+			for _, a := range o.initialArgs {
+				total += len(strings.ReplaceAll(a, o.replStr, item)) + 1
+			}
+		} else {
+			// No placeholder in any argument. GNU xargs still counts the
+			// item towards the -s budget (verified: 5-char item at -s 6
+			// passes; 6-char item fails). Add item+NUL to match GNU.
+			total += len(item) + 1
 		}
 	} else {
 		for _, a := range o.initialArgs {

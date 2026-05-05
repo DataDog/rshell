@@ -1,0 +1,9 @@
+description: "xargs -I with no {} placeholder in args still counts the item towards the -s budget (matches GNU). A 9-char item exceeds -s 9 (echo+NUL=5, item+NUL=10, total>9)."
+input:
+  script: |+
+    printf 'aaaaaaaaa\n' | xargs -I {} -s 9 echo
+expect:
+  stdout: ""
+  stderr: |+
+    xargs: argument line too long
+  exit_code: 1
