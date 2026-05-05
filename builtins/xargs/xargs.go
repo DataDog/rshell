@@ -1168,10 +1168,15 @@ func (t *tokenizer) skipToNewline(ctx context.Context) error {
 	}
 }
 
-// whitespace classification for default mode.
+// isWhitespace reports whether b is one of the bytes GNU xargs treats as
+// an item terminator in default mode: space, tab, or newline. \r, \v,
+// and \f are intentionally NOT included — GNU xargs documents the
+// separators as "blanks or newlines", and treating other bytes as
+// separators corrupts arguments from CRLF files (e.g. `printf
+// 'a\r\nb\r\n' | xargs ...` should pass "a\r" and "b\r", not "a"/"b").
 func isWhitespace(b byte) bool {
 	switch b {
-	case ' ', '\t', '\n', '\v', '\f', '\r':
+	case ' ', '\t', '\n':
 		return true
 	}
 	return false

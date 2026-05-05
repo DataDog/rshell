@@ -171,15 +171,33 @@ func TestXargsArgFilePathTraversal(t *testing.T) {
 
 // --- Output consistency: CRLF and CR-only handling ---
 
+func TestXargsVerticalTabIsNotSeparator(t *testing.T) {
+	// \v (0x0B) is not a token separator in GNU xargs. "a\vb" stays
+	// one argument that includes the vertical tab.
+	dir := t.TempDir()
+	stdout, _, code := cmdRun(t, "printf 'a\\vb\\n' | xargs printf '[%s]\\n'", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "[a\vb]\n", stdout)
+}
+
+func TestXargsFormFeedIsNotSeparator(t *testing.T) {
+	// \f (0x0C) is not a token separator in GNU xargs.
+	dir := t.TempDir()
+	stdout, _, code := cmdRun(t, "printf 'a\\fb\\n' | xargs printf '[%s]\\n'", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "[a\fb]\n", stdout)
+}
+
 func TestXargsCRLFInput(t *testing.T) {
-	// CRLF: \r is whitespace per POSIX in default mode, so "a\r\nb\r\n"
-	// tokenises to "a", "b" with -L 1 invoking once per line.
+	// GNU xargs treats only space, tab, and newline as item terminators.
+	// \r is NOT a separator: a CRLF-terminated line "a\r\nb\r\n"
+	// tokenises to "a\r" and "b\r" so the data round-trips losslessly.
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "in.txt"),
 		[]byte("a\r\nb\r\n"), 0644))
 	stdout, _, code := cmdRun(t, "xargs -a in.txt echo", dir)
 	assert.Equal(t, 0, code)
-	assert.Equal(t, "a b\n", stdout)
+	assert.Equal(t, "a\r b\r\n", stdout)
 }
 
 // --- Pre-cancelled context must return promptly ---
