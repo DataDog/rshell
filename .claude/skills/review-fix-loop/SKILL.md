@@ -26,8 +26,8 @@ Your very first action — before reading ANY files, before running ANY commands
 
 1. "Step 1: Identify the PR"
 2. "Step 2: Run the review-fix loop" ← **Update subject with iteration number each loop** (e.g. "Step 2: Run the review-fix loop (iteration 1)")
-3. "Step 2A1: Self-review (code-review)" ← **parallel with 2A2**
-4. "Step 2A2: Request external reviews (@codex)" ← **parallel with 2A1**
+3. "Step 2A1: Request external reviews (@codex)"
+4. "Step 2A2: Self-review (code-review)"
 5. "Step 2B: Address PR comments (address-pr-comments)"
 6. "Step 2C: Fix CI failures (fix-ci-tests)"
 7. "Step 2D: Verify push and resolve conflicts"
@@ -42,9 +42,9 @@ Your very first action — before reading ANY files, before running ANY commands
 Steps run strictly in this order:
 
 ```
-Step 1 → Step 2 (loop: [2A1 ∥ 2A2] → 2B → 2C → 2D → 2E) → Step 3 → Step 4
-                    ↑                                    ↓
-                    └──────────── repeat ────────────────┘
+Step 1 → Step 2 (loop: 2A1 → 2A2 → 2B → 2C → 2D → 2E) → Step 3 → Step 4
+                    ↑                                  ↓
+                    └──────────── repeat ──────────────┘
 ```
 
 **Top-level steps** are sequential: before starting step N, call TaskList and verify step N-1 is `completed`. Set step N to `in_progress`.
@@ -53,15 +53,16 @@ Step 1 → Step 2 (loop: [2A1 ∥ 2A2] → 2B → 2C → 2D → 2E) → Step 3 �
 
 | Phase | Sub-steps | Execution |
 |-------|-----------|-----------|
-| Review | **2A1** ∥ **2A2** | **Parallel** — launch both, wait for both |
-| Fix comments | **2B** | Sequential |
+| Trigger external review | **2A1** | Sequential |
+| Self-review | **2A2** | Sequential — run after 2A1 completes |
+| Fix comments | **2B** | Sequential — run after 2A2 completes |
 | Fix CI | **2C** | Sequential — run after 2B completes |
 | Verify | **2D** | Sequential |
 | Decide | **2E** | Sequential |
 
 ### 3. Never skip steps
 
-- Do NOT skip the review (Step 2A1) because you think the code is fine
+- Do NOT skip the external review trigger (Step 2A1) or the self-review (Step 2A2) because you think the code is fine
 - Do NOT skip verification (Step 3) because tests passed during fixes
 - Do NOT mark a step completed until every sub-bullet in that step is satisfied
 
@@ -102,15 +103,7 @@ Set `iteration = 1`. Maximum iterations: **30**. Repeat sub-steps A through E wh
 
 ---
 
-### Sub-step 2A1 — Self-review ← **parallel with 2A2**
-
-Run the **code-review** skill on the PR:
-```
-/code-review <pr-number>
-```
-This analyzes the full diff against main, posts findings as a GitHub PR review with inline comments, and classifies findings by severity (P0–P3).
-
-### Sub-step 2A2 — Request external reviews ← **parallel with 2A1**
+### Sub-step 2A1 — Request external reviews
 
 Post a comment to trigger @codex reviews:
 ```bash
@@ -127,11 +120,15 @@ Include a summary table at the top with columns: # | Priority | File | Finding."
 ```
 The external reviews arrive asynchronously — their comments will be picked up by **address-pr-comments** in Sub-step 2B.
 
-### After 2A1 ∥ 2A2 complete
+### Sub-step 2A2 — Self-review
 
-Wait for **both** to complete before proceeding.
+Run the **code-review** skill on the PR:
+```
+/code-review <pr-number>
+```
+This analyzes the full diff against main, posts findings as a GitHub PR review with inline comments, and classifies findings by severity (P0–P3).
 
-**Post the self-review outcome (from 2A1) as a GitHub PR comment** so it is always visible on the PR:
+**Post the self-review outcome as a GitHub PR comment** so it is always visible on the PR:
 ```bash
 gh pr comment <pr-number> --body "<iteration N self-review result: number of findings by severity, and a brief summary>"
 ```
@@ -250,7 +247,7 @@ Check **two** signals for remaining issues:
 
 - If `iteration > 30` → **STOP — iteration limit reached**
 - If unresolved thread count = `0` AND no failing CI checks AND `P0_P1_P2_COUNT = 0` → **STOP — PR is clean**
-- Otherwise → **Continue** → go back to Sub-step 2A1 ∥ 2A2
+- Otherwise → **Continue** → go back to Sub-step 2A1
 
 > P3 findings do not gate loop continuation. Only P0/P1/P2 findings (tracked via `P0_P1_P2_COUNT`) count toward the clean-state requirement.
 
@@ -324,7 +321,7 @@ Run a final verification regardless of how the loop exited:
 
    Verification passes when the result is `0`.
 
-4. **Confirm `P0_P1_P2_COUNT = 0`** from the last self-review (2A1). P3 findings do not fail this check.
+4. **Confirm `P0_P1_P2_COUNT = 0`** from the last self-review (2A2). P3 findings do not fail this check.
 
 Record the final state of each dimension (unresolved thread count, CI, `P0_P1_P2_COUNT`).
 
