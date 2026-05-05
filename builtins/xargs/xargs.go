@@ -505,10 +505,12 @@ func runXargs(ctx context.Context, callCtx *builtins.CallContext, o options) bui
 		// correctly for the -I path.
 		add := len(item) + 1
 		if !o.useReplace() && usedChars+add > o.maxChars {
-			// With -x and a -n/-L target, the user requires the full batch
-			// to fit; splitting it under -s pressure violates that contract,
-			// so abort.
-			if o.exitOnSize && (o.useMaxArgs() || o.useMaxLines()) && len(batch) > 0 {
+			// -L treats each input line as an indivisible batch (GNU
+			// "implies -x"); -n with -x also requires the full batch to
+			// fit. In either case we abort instead of silently splitting.
+			lImpliedExit := o.useMaxLines()
+			explicitExit := o.exitOnSize && o.useMaxArgs()
+			if (lImpliedExit || explicitExit) && len(batch) > 0 {
 				callCtx.Errf("xargs: argument list too long\n")
 				return builtins.Result{Code: exitUsage}
 			}
@@ -788,13 +790,20 @@ type tokenizer struct {
 	buf       []byte
 	eof       bool
 	bytesSeen int // running byte count for periodic ctx.Err() polling
+	// atLineStart is true when the next token will start at a "line
+	// boundary" — either start-of-input or immediately after a '\n'
+	// separator. GNU xargs only recognises -E EOF-STR at EOF when the
+	// matching token starts at such a boundary; any whitespace
+	// terminator (space/tab/newline) recognises it unconditionally.
+	atLineStart bool
 }
 
 func newTokenizer(r io.Reader, o options) *tokenizer {
 	return &tokenizer{
-		r:   bufio.NewReaderSize(r, readChunk),
-		o:   o,
-		buf: make([]byte, 0, 256),
+		r:           bufio.NewReaderSize(r, readChunk),
+		o:           o,
+		buf:         make([]byte, 0, 256),
+		atLineStart: true,
 	}
 }
 
@@ -894,7 +903,8 @@ func isWhitespace(b byte) bool {
 func (t *tokenizer) nextWhitespace(ctx context.Context) (string, bool, bool, error) {
 	t.buf = t.buf[:0]
 
-	// Skip leading whitespace (including blank lines).
+	// Skip leading whitespace (including blank lines). Track whether we
+	// cross a newline so the next token's "atLineStart" reflects it.
 	for {
 		if err := t.pollCtx(ctx); err != nil {
 			return "", false, false, err
@@ -908,6 +918,9 @@ func (t *tokenizer) nextWhitespace(ctx context.Context) (string, bool, bool, err
 			return "", false, false, err
 		}
 		if isWhitespace(b) {
+			if b == '\n' {
+				t.atLineStart = true
+			}
 			continue
 		}
 		if err := t.r.UnreadByte(); err != nil {
@@ -915,6 +928,13 @@ func (t *tokenizer) nextWhitespace(ctx context.Context) (string, bool, bool, err
 		}
 		break
 	}
+
+	// Snapshot whether this token starts at a line boundary; the EOF
+	// path uses it to decide whether a trailing token equal to EOF-STR
+	// should be treated as the marker (GNU only recognises it when the
+	// token is on its own line — i.e. not wedged onto the same line as
+	// earlier content with only a non-newline whitespace separator).
+	tokenStartsLine := t.atLineStart
 
 	// quote state: 0 = none, '\'' = single quote, '"' = double quote
 	var quote byte
@@ -934,7 +954,11 @@ func (t *tokenizer) nextWhitespace(ctx context.Context) (string, bool, bool, err
 				if len(t.buf) == 0 {
 					return "", false, false, nil
 				}
-				if isEofMarker(t.o, t.buf) {
+				// Drop as EOF marker only when the token is on its own
+				// line (matches GNU). A trailing token that shares its
+				// line with prior content (e.g. `a STOP` with no newline)
+				// is treated as a literal item.
+				if isEofMarker(t.o, t.buf) && tokenStartsLine {
 					t.eof = true
 					return "", false, false, nil
 				}
@@ -978,6 +1002,9 @@ func (t *tokenizer) nextWhitespace(ctx context.Context) (string, bool, bool, err
 		if isWhitespace(b) {
 			if b == '\n' {
 				endedLine = true
+				t.atLineStart = true
+			} else {
+				t.atLineStart = false
 			}
 			if isEofMarker(t.o, t.buf) {
 				t.eof = true
@@ -986,6 +1013,10 @@ func (t *tokenizer) nextWhitespace(ctx context.Context) (string, bool, bool, err
 			return string(t.buf), endedLine, true, nil
 		}
 
+		// Consuming a non-whitespace byte: the next token (after this
+		// one's terminator) is no longer at a line boundary unless the
+		// terminator is '\n' (handled above).
+		t.atLineStart = false
 		if err := t.pushByte(b); err != nil {
 			return "", false, false, err
 		}
