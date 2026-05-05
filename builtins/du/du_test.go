@@ -9,6 +9,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -458,6 +459,31 @@ func TestDuLastDereferenceFlagWins(t *testing.T) {
 	})
 }
 
+// TestDuExplicitFalseClearsFlag guards against the seqBool bug where
+// `--flag=false` still recorded a position in the last-wins sequence,
+// causing it to be picked even though the user explicitly disabled
+// the option.
+func TestDuExplicitFalseClearsFlag(t *testing.T) {
+	if !canSymlink() {
+		t.Skip("symlinks unavailable")
+	}
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "target"), make([]byte, 4096), 0o644))
+	require.NoError(t, os.Symlink("target", filepath.Join(dir, "link")))
+
+	// `du --dereference=false link` must NOT follow the symlink — the
+	// explicit false should cancel any -L-equivalent semantics.
+	stdout, _, code := cmdRun(t, "du --dereference=false -b link", dir)
+	assert.Equal(t, 0, code)
+	assert.NotEqual(t, "4096\tlink\n", stdout, "--dereference=false must not follow link")
+
+	// `du --bytes=false --apparent-size link` should NOT enable bytes
+	// mode (it should fall back to apparent-size in default kilobytes).
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "f.bin"), make([]byte, 1500), 0o644))
+	stdoutBytes, _, _ := cmdRun(t, "du --bytes=false --apparent-size f.bin", dir)
+	assert.NotEqual(t, "1500\tf.bin\n", stdoutBytes, "--bytes=false must not enable bytes mode")
+}
+
 // TestDuRepeatedSizeFlagWins covers the same last-wins property for
 // repeated size-format flags.
 func TestDuRepeatedSizeFlagWins(t *testing.T) {
@@ -536,6 +562,13 @@ func TestDuDoesNotCrashOnDeepTree(t *testing.T) {
 }
 
 func TestDuRespectsRecursionLimit(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		// Windows MAX_PATH historically caps at 260 chars, and long-path
+		// support requires opt-in via manifest or `\\?\` prefix. 270 nested
+		// `os.Mkdir` calls would fail with an mkdir error well before
+		// reaching the recursion-limit assertion.
+		t.Skip("windows MAX_PATH would block the deeply-nested mkdir setup")
+	}
 	dir := t.TempDir()
 	deep := dir
 	// 270 levels — comfortably above maxRecursionDepth (256) but small

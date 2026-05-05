@@ -73,10 +73,14 @@ func TestDuDedupsRepeatedDirectoryOperands(t *testing.T) {
 	// and the grand total.
 	lines := strings.Split(strings.TrimRight(stdout, "\n"), "\n")
 	require.Len(t, lines, 2, "expected dir dedup; got %q", stdout)
+	// Assert structural invariants (which line is the total) before
+	// numeric parsing so an unexpected ordering surfaces a clear message
+	// rather than parseLeadingInt fataling on the literal "total".
+	require.True(t, strings.HasSuffix(lines[1], "\ttotal"), "line 1 must be the grand total: %q", stdout)
+	require.False(t, strings.HasSuffix(lines[0], "\ttotal"), "line 0 must be the operand, not the total: %q", stdout)
 	operand := parseLeadingInt(t, lines[0])
 	total := parseLeadingInt(t, lines[1])
 	assert.Equal(t, operand, total, "grand total must equal single-operand value, not 2x")
-	assert.True(t, strings.HasSuffix(lines[1], "\ttotal"))
 }
 
 // TestDuSummarizeRejectsNegativeDepth ensures `du -s -d -1` is

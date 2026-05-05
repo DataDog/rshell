@@ -70,13 +70,20 @@
 //	--help
 //	    Print this usage message to stdout and exit 0.
 //
-// Rejected for security:
+// Rejected for security or scope:
 //
 //	--files0-from=FILE     Reads filenames from another file; data
 //	                       exfiltration risk in sandboxed environments.
 //	                       Same rationale as wc --files0-from.
 //	--exclude-from=FILE    Reads exclude patterns from a file; same class.
 //	-X, --exclude-from     (alias of --exclude-from)
+//	--exclude=PATTERN      Glob-pattern filter; deferred until a safe
+//	                       glob implementation lands. The shell's
+//	                       glob→regex translator is currently sensitive
+//	                       to certain multi-byte sequences (see fuzz
+//	                       findings) and shipping --exclude before
+//	                       hardening that path would expose pattern-
+//	                       triggered failures to the du surface.
 //
 // All unknown flags are rejected by pflag with exit code 1, so
 // security-sensitive flags above are simply not registered.
@@ -171,17 +178,21 @@ type options struct {
 	unit         unitMode
 }
 
-// seqBool is a pflag.Value that records the sequence number of every
-// Set() call. Multiple invocations of the same flag (e.g. `-P -L -P`)
-// each increment the shared counter, so the largest lastSet across a
-// group of mutually-exclusive flags identifies the user's final choice.
+// seqBool is a pflag.Value that records the sequence number of the most
+// recent Set(true) call. Multiple invocations of the same flag
+// (e.g. `-P -L -P`) each increment the shared counter, so the largest
+// lastSet across a group of mutually-exclusive flags identifies the
+// user's final choice.
+//
+// Set(false) — invoked via `--flag=false` — clears lastSet so the
+// resolver does not pick this flag based on position alone.
 //
 // pflag.Visit only reports each flag once (at its first-set position),
 // which loses repeated occurrences. seqBool is the workaround.
 type seqBool struct {
 	val     bool
 	seq     *int // shared counter across all flags in this invocation
-	lastSet int  // 0 = never set
+	lastSet int  // 0 = never set, or explicitly cleared via `--flag=false`
 }
 
 func (b *seqBool) Set(s string) error {
@@ -190,8 +201,17 @@ func (b *seqBool) Set(s string) error {
 		return err
 	}
 	b.val = v
-	*b.seq++
-	b.lastSet = *b.seq
+	if v {
+		*b.seq++
+		b.lastSet = *b.seq
+	} else {
+		// Explicit `--flag=false` clears any prior position so the
+		// resolver does not select this flag based solely on parse
+		// order. Without this, `du --dereference=false link` would
+		// still enable dereference-equivalent behaviour because
+		// derefL.lastSet would be the highest in the group.
+		b.lastSet = 0
+	}
 	return nil
 }
 

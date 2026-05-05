@@ -161,6 +161,13 @@ func FuzzDuFlags(f *testing.F) {
 		//   2   shell parse/syntax error (e.g. unsupported ~user expansion)
 		//   127 command-not-found from shell expansion oddities
 		// Anything else (a panic, SIGSEGV, OOM kill, etc.) is a real bug.
+		//
+		// NOTE: 127 is broad — it intentionally accepts shell-side issues
+		// (e.g. ~user expansion, glob translator quirks) that surface as
+		// command-not-found. If the fuzzer stops producing 127 exits over
+		// many runs (because the shell tightens those paths), revisit
+		// whether 127 should still be in the allowlist; at that point a
+		// real du regression producing 127 would otherwise be masked.
 		if code != 0 && code != 1 && code != 2 && code != 127 {
 			t.Errorf("du unexpected exit code %d for script %q", code, script)
 		}
