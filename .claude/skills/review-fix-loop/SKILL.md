@@ -127,6 +127,7 @@ ITERATION_START_TIME=$(TaskList | grep "Step 2: Run the review-fix loop" | grep 
 # Defaults if task subjects have not been updated yet (first iteration):
 [ -z "$iteration" ] && iteration=1
 [ -z "$SUCCESS_COUNT" ] && SUCCESS_COUNT=0
+[ -z "$ITERATION_START_TIME" ] && ITERATION_START_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 ```
 
 `iteration_had_no_findings` is persisted in the 2A1 task subject (e.g., `"Step 2A1: Self-review (code-review) — findings=N no_findings=true/false"`). If context resets after 2E but before Step 3 consumes it, recover it from that subject first:
@@ -202,6 +203,10 @@ if [ "$findings_count" -eq 0 ] && \
     # in the review body when reviewing such a PR.
     # Note: on SKILL.md PRs the warning below is expected and can be safely ignored
     # when findings_count is reliably 0 (the cross-check fires conservatively on quoted badge text).
+    # Accepted trade-off: on every SKILL.md PR review this false-positive will trigger,
+    # causing SUCCESS_COUNT to reset and requiring at least one extra iteration. This is a
+    # known liveness cost (not a security or correctness issue) — the loop will still terminate
+    # via the 30-iteration cap in the worst case. No action required; treat this as expected behavior.
     echo "WARNING: body-only findings detected; overriding iteration_had_no_findings=false" >&2
     iteration_had_no_findings=false
   fi
@@ -430,7 +435,7 @@ iteration_had_no_findings=$(TaskList | grep "Step 2A1: Self-review" | grep -oE '
 # Default to false (conservative: do not advance SUCCESS_COUNT if value is missing):
 [ -z "$iteration_had_no_findings" ] && iteration_had_no_findings=false
 ```
-If that yields no value (or the default is used), re-derive it structurally by re-running the findings-count snippet from 2A1 using the recovered `$ITERATION_START_TIME`. **Never assume `true` for an undefined value** — the safe default is `false` (conservative: does not advance `SUCCESS_COUNT`). The re-run is always safe: it queries the API and counts inline comments; it never reads comment bodies.
+If that yields no value (or the default is used), first recover `$ITERATION_START_TIME` from the Step 2 task subject (see the Step 2 recovery block above), then re-derive it structurally by re-running the findings-count snippet from 2A1 using the recovered `$ITERATION_START_TIME`. **Never assume `true` for an undefined value** — the safe default is `false` (conservative: does not advance `SUCCESS_COUNT`). The re-run is always safe: it queries the API and counts inline comments; it never reads comment bodies.
 
 Maintain a `SUCCESS_COUNT` integer (initialize to `0` on first entry into Step 3; never re-initialize thereafter) tracking how many times Step 3 has passed all three verifications **AND** the last iteration had no findings from the self-review. Each success must be separated by exactly one full Step 2 iteration — never increment `SUCCESS_COUNT` twice from the same iteration.
 
