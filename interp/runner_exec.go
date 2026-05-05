@@ -349,11 +349,14 @@ func (r *Runner) execWhileClause(ctx context.Context, cm *syntax.WhileClause) {
 	defer func() { r.inLoop = oldInLoop }()
 
 	var lastBody exitStatus
-	// condBroke is set when `break` is invoked inside the condition list and
-	// terminates this loop. In that case the loop's exit status must be the
-	// `break` builtin's exit status (typically 0), NOT the previous body's
+	// condBroke is set when the loop terminates because of a `break` invoked
+	// inside the condition list, OR because `continue` invoked in the cond
+	// short-circuits the cond list with status 0 and the cond-status check
+	// then says "exit loop" (e.g. `until ...; continue` — until exits when
+	// cond is 0). In those cases the loop's exit status must be the
+	// builtin's exit status (typically 0), NOT the previous body's
 	// last-command status — this matches bash. Without the flag, we would
-	// overwrite the cond-break's status with stale lastBody at loop exit.
+	// overwrite the cond's status with stale lastBody at loop exit.
 	condBroke := false
 	for {
 		if err := loopCtx.Err(); err != nil {
@@ -367,31 +370,45 @@ func (r *Runner) execWhileClause(ctx context.Context, cm *syntax.WhileClause) {
 			break
 		}
 
-		// break/continue inside the condition list: consume one nesting level
-		// for this loop, then either restart cond (continue targeting this
-		// loop) or propagate outward.
+		// `break` invoked inside the cond list short-circuits the rest of
+		// the cond and exits the loop regardless of cond's last status.
+		// Preserve break's exit status (typically 0) as the loop's exit.
 		if r.breakEnclosing > 0 {
 			r.breakEnclosing--
 			brokeEarly = true
 			condBroke = true
 			break
 		}
+
+		// `continue` invoked inside the cond list. Order matters here vs.
+		// the cond-status check: when `continue` is invoked in an `until`
+		// cond, continue's status (0) means until's cond-status check says
+		// "exit loop", and bash then exits the loop rather than re-
+		// evaluating. We mirror that by deferring to the cond-status check
+		// after consuming nesting levels.
 		if r.contnEnclosing > 0 {
 			r.contnEnclosing--
 			if r.contnEnclosing > 0 {
-				// continue targets a loop further out. If we are the
-				// outermost loop, clamp the excess level to 0 and
-				// re-evaluate cond — this matches bash's "continue 99"
-				// behaviour at the outermost loop. Otherwise, propagate
-				// outward.
+				// continue targets a loop further out.
 				if !oldInLoop {
+					// outermost: clamp excess (treat as continue 1).
 					r.contnEnclosing = 0
-					continue
+				} else {
+					// nested: propagate to outer regardless of cond
+					// status. The outer loop will see contnEnclosing>0
+					// and continue its own iteration.
+					brokeEarly = true
+					break
 				}
-				brokeEarly = true
+			}
+			// continue 1 (or clamped excess at outermost). Cond status
+			// decides: if cond says exit loop (e.g. until + status 0),
+			// exit and preserve continue's status. Otherwise re-evaluate
+			// cond, skipping the body for this iteration.
+			if r.exit.ok() == cm.Until {
+				condBroke = true
 				break
 			}
-			// continue targets this loop: re-evaluate cond.
 			continue
 		}
 

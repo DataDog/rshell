@@ -412,6 +412,40 @@ func TestWhileExcessContinueInCondClampedAtOutermost(t *testing.T) {
 	assert.Equal(t, "i=aaa\n", stdout)
 }
 
+// `continue` invoked inside an `until` condition list short-circuits the rest
+// of the cond and gives the cond list a status of 0 (continue's own status).
+// For `until`, status 0 means "exit the loop", so the loop must exit rather
+// than re-evaluate the cond. An earlier version of this code unconditionally
+// re-evaluated cond on continue, which made `until` execute body commands
+// that bash skips.
+func TestUntilContinueInCondExitsLoop(t *testing.T) {
+	stdout, _, code := whileRun(t, `i=; until i=${i}a; [ "$i" != aa ] && continue; do echo body; break; done; echo "i=$i status=$?"`)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "i=a status=0\n", stdout)
+}
+
+// Symmetric check: in a `while` cond, `continue` gives status 0, which for
+// `while` means "enter body" — the continue flag then re-evaluates cond
+// (skipping body). The loop iterates until the cond evaluates non-zero.
+func TestWhileContinueInCondReEvaluates(t *testing.T) {
+	stdout, _, code := whileRun(t, `i=; while i=${i}a; [ "$i" != aaa ] && continue; do echo body; break; done; echo "i=$i"`)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "i=aaa\n", stdout)
+}
+
+// `continue 2` invoked inside an inner `until` cond: the inner loop exits
+// (regardless of cond status) and the remaining level (1) propagates to the
+// enclosing loop, which continues its own iteration.
+func TestUntilContinue2InCondPropagates(t *testing.T) {
+	stdout, _, code := whileRun(t, `o=; while [ "$o" != aaa ]; do o=${o}a; i=; until i=${i}a; [ "$i" != aa ] && continue 2; do echo body; break; done; echo "post-inner o=$o"; done; echo "after o=$o"`)
+	assert.Equal(t, 0, code)
+	// The inner until's cond runs `continue 2` on the first iteration, which
+	// peels one level (now contnEnclosing=1) and breaks out of inner; outer's
+	// `loopStmtsBroken` then sees contnEnclosing=1 and continues outer. So
+	// the "post-inner" line is never printed.
+	assert.Equal(t, "after o=aaa\n", stdout)
+}
+
 // --- ctx cancellation ---
 
 // Long-running while-true terminates within the ctx deadline rather than
