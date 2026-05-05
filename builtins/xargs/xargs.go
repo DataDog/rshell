@@ -689,16 +689,67 @@ func resolveCmd(o options, batch []string) (string, []string) {
 }
 
 // printVerbose mirrors GNU xargs -t: writes the command line followed by a
-// newline to stderr before running it.
+// newline to stderr before running it. Each argv element is shell-quoted so
+// the printed line is unambiguous when items contain whitespace or other
+// shell metacharacters (matches GNU's behavior of tracing
+// `echo 'a b'` rather than `echo a b`).
 func printVerbose(callCtx *builtins.CallContext, name string, args []string) {
 	var b strings.Builder
-	b.WriteString(name)
+	b.WriteString(shellQuote(name))
 	for _, a := range args {
 		b.WriteByte(' ')
-		b.WriteString(a)
+		b.WriteString(shellQuote(a))
 	}
 	b.WriteByte('\n')
 	callCtx.Errf("%s", b.String())
+}
+
+// shellQuote returns s suitable for printing as a shell-readable argument.
+// Empty strings render as `”`; strings without any shell-special characters
+// pass through untouched; everything else is wrapped in single quotes with
+// internal single quotes escaped via the standard `'\”` sequence.
+func shellQuote(s string) string {
+	if s == "" {
+		return "''"
+	}
+	if !containsShellMeta(s) {
+		return s
+	}
+	var b strings.Builder
+	b.Grow(len(s) + 2)
+	b.WriteByte('\'')
+	for i := 0; i < len(s); i++ {
+		if s[i] == '\'' {
+			b.WriteString(`'\''`)
+		} else {
+			b.WriteByte(s[i])
+		}
+	}
+	b.WriteByte('\'')
+	return b.String()
+}
+
+// containsShellMeta reports whether s contains any byte that would change
+// meaning under typical shell parsing if rendered unquoted.
+func containsShellMeta(s string) bool {
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		switch {
+		case c == ' ', c == '\t', c == '\n', c == '\r', c == '\v', c == '\f':
+		case c == '\'', c == '"', c == '\\':
+		case c == '$', c == '`':
+		case c == '|', c == '&', c == ';':
+		case c == '<', c == '>':
+		case c == '(', c == ')', c == '{', c == '}':
+		case c == '[', c == ']':
+		case c == '*', c == '?', c == '~':
+		case c == '#', c == '!':
+		default:
+			continue
+		}
+		return true
+	}
+	return false
 }
 
 // openInput opens the configured input source. Returns (nil, nil) if no
