@@ -182,14 +182,25 @@ optLoop:
 	}
 
 	// Post-parse validation: check -exec/-execdir commands are allowed.
-	// Commands containing {} are skipped here — the substituted name is
-	// validated at eval-time when the replacement is known.
-	for _, cmd := range collectExecCmds(expression) {
-		if strings.Contains(cmd, "{}") {
+	// Commands whose name contains {} are skipped here — the substituted
+	// name is validated at eval-time when the replacement is known.
+	//
+	// We pass the unsubstituted argv (cmd + args, possibly including {}
+	// placeholders in trailing positions) to CommandAllowed so that
+	// argv-prefix patterns like ["echo","hello"] can match this fast-fail
+	// gate. The leading tokens of an unsubstituted argv are stable across
+	// {} substitution, so no false-positives slip through here that would
+	// be rejected at eval-time. evalExecLike still re-checks with the
+	// fully substituted argv before invocation.
+	for _, inv := range collectExecInvocations(expression) {
+		if strings.Contains(inv.cmd, "{}") {
 			continue
 		}
-		if callCtx.CommandAllowed != nil && !callCtx.CommandAllowed(cmd) {
-			callCtx.Errf("find: '%s': command not allowed\n", cmd)
+		fullArgv := make([]string, 0, len(inv.args)+1)
+		fullArgv = append(fullArgv, inv.cmd)
+		fullArgv = append(fullArgv, inv.args...)
+		if callCtx.CommandAllowed != nil && !callCtx.CommandAllowed(inv.cmd, fullArgv) {
+			callCtx.Errf("find: '%s': command not allowed\n", inv.cmd)
 			return builtins.Result{Code: 1}
 		}
 	}
@@ -610,6 +621,37 @@ func collectExecCmds(e *expr) []string {
 	var cmds []string
 	collectExecCmdsInto(e, &cmds)
 	return cmds
+}
+
+// execInvocation captures one -exec/-execdir clause as its command name plus
+// the (still unsubstituted) argument template. Both fields are taken from the
+// expression node verbatim, so {} placeholders are preserved in args.
+type execInvocation struct {
+	cmd  string
+	args []string
+}
+
+// collectExecInvocations walks the expression tree and returns one entry per
+// -exec/-execdir clause. Used by the parse-time policy check to construct
+// the unsubstituted argv (cmd + args) for pattern matching, so that a
+// multi-token pattern such as ["echo","hello"] can match an invocation
+// whose argv is ["echo","hello","{}"].
+func collectExecInvocations(e *expr) []execInvocation {
+	var inv []execInvocation
+	collectExecInvocationsInto(e, &inv)
+	return inv
+}
+
+func collectExecInvocationsInto(e *expr, inv *[]execInvocation) {
+	if e == nil {
+		return
+	}
+	if e.kind == exprExecDir || e.kind == exprExec {
+		*inv = append(*inv, execInvocation{cmd: e.execCmd, args: e.execArgs})
+	}
+	collectExecInvocationsInto(e.left, inv)
+	collectExecInvocationsInto(e.right, inv)
+	collectExecInvocationsInto(e.operand, inv)
 }
 
 func collectExecCmdsInto(e *expr, cmds *[]string) {

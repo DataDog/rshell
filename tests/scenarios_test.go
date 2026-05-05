@@ -80,6 +80,15 @@ type input struct {
 	// scenario, no commands are allowed. When omitted, the test harness
 	// defaults to allowing all commands for backward compatibility.
 	AllowAllCommands *bool `yaml:"allow_all_commands"`
+	// AllowedCommandPatterns lists argv-prefix patterns that authorise
+	// invocations whose argv begins with the same tokens. Each pattern is
+	// a non-empty token list. When set, the harness treats this as an
+	// explicit configuration and does NOT fall back to allow-all.
+	AllowedCommandPatterns [][]string `yaml:"allowed_command_patterns"`
+	// DeniedCommandPatterns lists argv-prefix patterns that BLOCK the
+	// invocation regardless of any allow rule. Same shape as
+	// AllowedCommandPatterns; deny-first precedence at the gate.
+	DeniedCommandPatterns [][]string `yaml:"denied_command_patterns"`
 }
 
 // expected holds the expected output for a scenario.
@@ -207,18 +216,28 @@ func runScenario(t *testing.T, sc scenario) {
 		// runner unrestricted.
 		opts = append(opts, interp.AllowedPaths(resolved))
 	}
+	hasExplicitAllowConfig := (sc.Input.AllowAllCommands != nil) ||
+		len(sc.Input.AllowedCommands) > 0 ||
+		len(sc.Input.AllowedCommandPatterns) > 0
 	if sc.Input.AllowAllCommands != nil && *sc.Input.AllowAllCommands {
 		opts = append(opts, interpoption.AllowAllCommands().(interp.RunnerOption))
-	} else if len(sc.Input.AllowedCommands) > 0 {
-		opts = append(opts, interp.AllowedCommands(sc.Input.AllowedCommands))
-	} else if sc.Input.AllowAllCommands == nil {
+	} else if !hasExplicitAllowConfig {
 		// Default: allow all commands for backward compatibility with
 		// existing scenarios that predate the allowedCommands feature.
 		opts = append(opts, interpoption.AllowAllCommands().(interp.RunnerOption))
 	}
-	// When allow_all_commands is explicitly false and allowed_commands is
-	// empty, no AllowedCommands/AllowAllCommands option is added, so the
-	// interpreter defaults to blocking all commands.
+	if len(sc.Input.AllowedCommands) > 0 {
+		opts = append(opts, interp.AllowedCommands(sc.Input.AllowedCommands))
+	}
+	if len(sc.Input.AllowedCommandPatterns) > 0 {
+		opts = append(opts, interp.AllowedCommandPatterns(sc.Input.AllowedCommandPatterns))
+	}
+	if len(sc.Input.DeniedCommandPatterns) > 0 {
+		opts = append(opts, interp.DeniedCommandPatterns(sc.Input.DeniedCommandPatterns))
+	}
+	// When no allow_all_commands / allowed_commands / allowed_command_patterns
+	// are configured (explicit closed config), no allow option is added, so
+	// the interpreter defaults to blocking all commands.
 	if sc.Containerized {
 		opts = append(opts, interp.HostPrefix(filepath.Join(dir, "host")))
 	}

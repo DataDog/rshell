@@ -254,7 +254,7 @@ func TestFileArgWithAllowedPath(t *testing.T) {
 func TestDefaultNoCommandsAllowed(t *testing.T) {
 	code, _, stderr := runCLI(t, "-c", `echo hello`)
 	assert.Equal(t, 127, code)
-	assert.Contains(t, stderr, "command not allowed")
+	assert.Contains(t, stderr, "not permitted by policy")
 }
 
 func TestAllowedCommandsFlag(t *testing.T) {
@@ -266,7 +266,7 @@ func TestAllowedCommandsFlag(t *testing.T) {
 func TestAllowedCommandsBlocksOther(t *testing.T) {
 	code, _, stderr := runCLI(t, "--allowed-commands", "rshell:echo", "-c", `cat /dev/null`)
 	assert.Equal(t, 127, code)
-	assert.Contains(t, stderr, "command not allowed")
+	assert.Contains(t, stderr, "not permitted by policy")
 }
 
 func TestAllowedCommandsMissingNamespace(t *testing.T) {

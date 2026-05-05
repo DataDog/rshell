@@ -1,0 +1,16 @@
+skip_assert_against_bash: true
+description: |
+  An invocation whose subcommand does not match the pattern is blocked.
+  Pattern (ip, route) does NOT admit "ip link show" because the leading
+  structural token is "link", not "route".
+input:
+  allowed_command_patterns:
+    - ["ip", "route"]
+  script: |+
+    ip link show
+expect:
+  stdout: ""
+  stderr_contains:
+    - "ip link show: invocation not permitted by policy"
+    - "allowed patterns for \"ip\": 'ip route'"
+  exit_code: 127

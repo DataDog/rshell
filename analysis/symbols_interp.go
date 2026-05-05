@@ -56,6 +56,7 @@ var interpAllowedSymbols = []string{
 	"runtime.GOOS",                // 🟢 current OS name constant; pure constant, no I/O.
 	"strconv.Itoa",                // 🟢 int-to-string conversion; pure function, no I/O.
 	"strings.Builder",             // 🟢 efficient string concatenation; pure in-memory buffer, no I/O.
+	"strings.Contains",            // 🟢 checks if a substring is in a string; pure function, no I/O.
 	"strings.ContainsRune",        // 🟢 checks if a rune is in a string; pure function, no I/O.
 	"strings.NewReader",           // 🟢 wraps a string as an io.Reader; pure function, no I/O; used by ParseScript.
 	"strings.Index",               // 🟢 finds substring index; pure function, no I/O.
@@ -65,6 +66,7 @@ var interpAllowedSymbols = []string{
 	"strings.Split",               // 🟢 splits a string by separator; pure function, no I/O.
 	"strings.ToUpper",             // 🟢 converts string to uppercase; pure function, no I/O.
 	"strings.TrimLeft",            // 🟢 trims leading characters; pure function, no I/O.
+	"strings.TrimRight",           // 🟢 trims trailing characters; pure function, no I/O.
 	"sync.Mutex",                  // 🟢 mutual exclusion lock; concurrency primitive, no I/O.
 	"sync.Once",                   // 🟢 ensures a function runs exactly once; concurrency primitive, no I/O.
 	"sync.WaitGroup",              // 🟢 waits for goroutines to finish; concurrency primitive, no I/O.

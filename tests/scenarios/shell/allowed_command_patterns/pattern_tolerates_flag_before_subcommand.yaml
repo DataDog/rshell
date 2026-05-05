@@ -1,0 +1,21 @@
+skip_assert_against_bash: true
+description: |
+  An argv with a flag (and value) interleaved between the command name
+  and the subcommand still matches a (command, subcommand) pattern. This
+  is the canonical kubectl-style usage: a pattern of [ip, route] admits
+  "ip -4 route show" because argv[0] equals pattern[0] and the
+  subcommand token "route" appears somewhere in argv[1..].
+input:
+  allowed_command_patterns:
+    - ["ip", "route"]
+  script: |+
+    ip -4 route show
+expect:
+  # ip route is a real builtin, but route table reading isn't supported
+  # on every platform; the gate ALLOWS the call (exit != 127) and the
+  # builtin reports its own error. The point of this scenario is to
+  # confirm the policy gate admitted the invocation.
+  stdout: ""
+  stderr_contains:
+    - "route table reading is not supported"
+  exit_code: 1

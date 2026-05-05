@@ -171,10 +171,15 @@ type CallContext struct {
 	// where FileInfo.Sys() lacks identity fields; Unix ignores it.
 	FileIdentity func(path string, info fs.FileInfo) (FileID, bool)
 
-	// CommandAllowed reports whether a command name is permitted under the
-	// current shell policy. Used by the help builtin to list only executable
-	// commands.
-	CommandAllowed func(name string) bool
+	// CommandAllowed reports whether the given invocation is permitted under
+	// the current shell policy. name is the command name (args[0]) and args
+	// is the full argv. Both are provided so callers may consult either a
+	// name-based allowlist or an argv-prefix pattern allowlist; pass a
+	// single-element argv (e.g. []string{name}) when only the name is known.
+	//
+	// Used by the help builtin to filter the list of allowed commands and
+	// by find -exec/-execdir to validate child commands before invocation.
+	CommandAllowed func(name string, args []string) bool
 
 	// WorkDir returns the shell's current working directory (absolute path).
 	// Used by builtins that need to compute absolute paths for sub-operations.

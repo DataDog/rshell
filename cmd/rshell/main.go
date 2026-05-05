@@ -34,12 +34,14 @@ func main() {
 
 func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	var (
-		command         string
-		allowedPaths    string
-		allowedCommands string
-		allowAllCmds    bool
-		timeout         time.Duration
-		procPath        string
+		command                string
+		allowedPaths           string
+		allowedCommands        string
+		allowedCommandPatterns string
+		deniedCommandPatterns  string
+		allowAllCmds           bool
+		timeout                time.Duration
+		procPath               string
 	)
 
 	cmd := &cobra.Command{
@@ -80,11 +82,35 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 				cmds = strings.Split(allowedCommands, ",")
 			}
 
+			// Parse argv-prefix patterns: comma-separates patterns,
+			// whitespace-separates tokens within a pattern. Empty entries
+			// (e.g. trailing comma) are skipped so `"a,b,"` is two
+			// patterns, not three. Same parser for both allow and deny
+			// inputs.
+			parsePatterns := func(raw string) [][]string {
+				if raw == "" {
+					return nil
+				}
+				var out [][]string
+				for _, entry := range strings.Split(raw, ",") {
+					tokens := strings.Fields(entry)
+					if len(tokens) == 0 {
+						continue
+					}
+					out = append(out, tokens)
+				}
+				return out
+			}
+			patterns := parsePatterns(allowedCommandPatterns)
+			deniedPatterns := parsePatterns(deniedCommandPatterns)
+
 			execOpts := executeOpts{
-				allowedPaths:     paths,
-				allowedCommands:  cmds,
-				allowAllCommands: allowAllCmds,
-				procPath:         procPath,
+				allowedPaths:           paths,
+				allowedCommands:        cmds,
+				allowedCommandPatterns: patterns,
+				deniedCommandPatterns:  deniedPatterns,
+				allowAllCommands:       allowAllCmds,
+				procPath:               procPath,
 			}
 
 			if commandSet {
@@ -134,6 +160,8 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 	cmd.Flags().MarkHidden("command") //nolint:errcheck // flag is guaranteed to exist
 	cmd.Flags().StringVarP(&allowedPaths, "allowed-paths", "p", "", "comma-separated list of directories the shell is allowed to access")
 	cmd.Flags().StringVar(&allowedCommands, "allowed-commands", "", "comma-separated list of namespaced commands (e.g. rshell:cat,rshell:find)")
+	cmd.Flags().StringVar(&allowedCommandPatterns, "allowed-command-patterns", "", "comma-separated argv-prefix patterns; tokens within a pattern are space-separated (e.g. \"kubectl get,ls,echo hello\")")
+	cmd.Flags().StringVar(&deniedCommandPatterns, "denied-command-patterns", "", "comma-separated argv-prefix patterns to BLOCK regardless of allow rules; same syntax as --allowed-command-patterns (e.g. \"ip route,kubectl delete\")")
 	cmd.Flags().BoolVar(&allowAllCmds, "allow-all-commands", false, "allow execution of all commands (builtins and external)")
 	cmd.Flags().DurationVar(&timeout, "timeout", 0, "maximum execution time for the entire shell run (e.g. 100ms, 5s, 1m)")
 	cmd.Flags().StringVar(&procPath, "proc-path", "", "path to the proc filesystem used by ps (default \"/proc\")")
@@ -202,10 +230,12 @@ func rejectLongCommand(rawArgs []string) error {
 
 // executeOpts holds options for the execute function.
 type executeOpts struct {
-	allowedPaths     []string
-	allowedCommands  []string
-	allowAllCommands bool
-	procPath         string
+	allowedPaths           []string
+	allowedCommands        []string
+	allowedCommandPatterns [][]string
+	deniedCommandPatterns  [][]string
+	allowAllCommands       bool
+	procPath               string
 }
 
 func execute(ctx context.Context, script, name string, opts executeOpts, stdin io.Reader, stdout, stderr io.Writer) error {
@@ -226,8 +256,22 @@ func execute(ctx context.Context, script, name string, opts executeOpts, stdin i
 	}
 	if opts.allowAllCommands {
 		runOpts = append(runOpts, interpoption.AllowAllCommands().(interp.RunnerOption))
-	} else if len(opts.allowedCommands) > 0 {
-		runOpts = append(runOpts, interp.AllowedCommands(opts.allowedCommands))
+	} else {
+		// AllowedCommands and AllowedCommandPatterns are independent
+		// permit axes joined by union. Apply each when set; either alone
+		// is enough to authorise matching invocations.
+		if len(opts.allowedCommands) > 0 {
+			runOpts = append(runOpts, interp.AllowedCommands(opts.allowedCommands))
+		}
+		if len(opts.allowedCommandPatterns) > 0 {
+			runOpts = append(runOpts, interp.AllowedCommandPatterns(opts.allowedCommandPatterns))
+		}
+	}
+	// Deny patterns are always applied — they're a refusal axis, not an
+	// allow axis. If allow-all-commands is set, deny patterns still
+	// override individual invocations.
+	if len(opts.deniedCommandPatterns) > 0 {
+		runOpts = append(runOpts, interp.DeniedCommandPatterns(opts.deniedCommandPatterns))
 	}
 	if opts.procPath != "" {
 		runOpts = append(runOpts, interp.ProcPath(opts.procPath))

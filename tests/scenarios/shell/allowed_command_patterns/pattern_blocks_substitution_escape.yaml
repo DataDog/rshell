@@ -1,0 +1,21 @@
+skip_assert_against_bash: true
+description: |
+  The architectural test: command substitution cannot bypass argv-prefix
+  patterns. The literal command text "$(printf ip) addr" is opaque to
+  any static caller; rshell expands it at runtime to ["ip","addr"],
+  applies pattern (ip, route), and refuses because the leading
+  structural token is "addr", not "route". printf is allowed by name so
+  the substitution itself can run.
+input:
+  allowed_commands:
+    - rshell:printf
+  allowed_command_patterns:
+    - ["ip", "route"]
+  script: |+
+    $(printf ip) addr
+expect:
+  stdout: ""
+  stderr_contains:
+    - "ip addr: invocation not permitted by policy"
+    - "allowed patterns for \"ip\": 'ip route'"
+  exit_code: 127
