@@ -1,11 +1,9 @@
-# skip: until loops are intentionally blocked in the restricted shell
-skip_assert_against_bash: true
-description: Until loop with brace group body is blocked.
+description: until loop with a brace-group body runs the group and exits via break.
 input:
   script: |+
     until false; do { echo foo; break; } done
 expect:
-  stdout: ""
+  stdout: |+
+    foo
   stderr: |+
-    while/until loops are not supported
-  exit_code: 2
+  exit_code: 0

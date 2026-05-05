@@ -1,8 +1,8 @@
-description: until loop with break exits before the next iteration.
+description: An until loop that runs zero iterations exits 0.
 input:
   script: |+
-    until false; do
-      break
+    until true; do
+      false
     done
     echo "exit=$?"
 expect:

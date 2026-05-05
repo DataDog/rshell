@@ -1,8 +1,8 @@
-description: while with a false condition runs the body zero times and exits 0.
+description: A while loop that runs zero iterations exits 0 even if its condition fails.
 input:
   script: |+
     while false; do
-      echo should not print
+      false
     done
     echo "exit=$?"
 expect:

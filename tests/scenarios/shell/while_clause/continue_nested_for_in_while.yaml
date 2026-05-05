@@ -1,14 +1,20 @@
-# skip: while loops are intentionally blocked in the restricted shell
-skip_assert_against_bash: true
-description: Continue in for loop nested inside while loop is blocked.
+description: continue inside a for nested in a while affects only the for; the while keeps iterating until its cond fails.
 input:
   script: |+
-    while true; do
-      for i in 1 2; do
+    i=
+    while [ "$i" != aa ]; do
+      i="${i}a"
+      for j in 1 2; do
         continue
+        echo unreachable
       done
+      echo "after-for $i"
     done
+    echo done
 expect:
-  stdout: ""
-  stderr: "while/until loops are not supported\n"
-  exit_code: 2
+  stdout: |+
+    after-for a
+    after-for aa
+    done
+  stderr: |+
+  exit_code: 0
