@@ -249,7 +249,6 @@ var builtinPerCommandSymbols = map[string][]string{
 		"strconv.ParseFloat",                  // 🟢 string-to-float conversion (parses -t TIMEOUT seconds); pure function, no I/O.
 		"strings.ContainsRune",                // 🟢 checks if a rune is in IFS; pure function, no I/O.
 		"time.Duration",                       // 🟢 duration type; pure integer alias, no I/O.
-		"time.Hour",                           // 🟢 constant representing one hour; used to construct an in-the-past read deadline for -t 0 polling. No side effects.
 		"time.Second",                         // 🟢 constant representing one second; no side effects.
 		"time.Time",                           // 🟢 time value type; pure data, no side effects.
 		"time.Unix",                           // 🟢 constructs an absolute Time at Unix-epoch + (sec, nsec); used by the cancellation watchdog to set an "in the past" SetReadDeadline. Pure constructor, no side effects.

@@ -471,56 +471,41 @@ func run(ctx context.Context, c *builtins.CallContext, args []string, opt runOpt
 // pollAvailable implements `read -t 0` semantics. Bash uses select(2)
 // to report whether stdin is immediately readable without consuming
 // any data; we use the platform-specific pollInputNonConsuming for
-// the same effect on Unix, and fall back to a consume-based probe
-// where that helper is unsupported.
+// the same effect on Unix.
+//
+// On platforms without a non-consuming poll syscall (e.g. Windows),
+// we conservatively return "not available" — consuming a probe byte
+// would silently drop input that subsequent reads would otherwise
+// observe. Concretely, `printf x | { read -t 0 ready; read rest; }`
+// must not lose the 'x' because the poll consumed it. Scripts that
+// relied on the previous consume-based fallback would only see false
+// negatives (we say "not available" when data actually is buffered),
+// which causes them to fall through to a regular blocking read that
+// then succeeds. A non-consuming Windows implementation (e.g. via
+// PeekNamedPipe) is a follow-up.
 //
 // Returns:
 //   - 0 — input is immediately available (data buffered to read).
 //   - 1 — would block, no data buffered, or stdin is not pollable
-//     (e.g. byte buffer). Bash uses exit code 1 for `-t 0` "no data
-//     available", reserving 142 (128+SIGALRM) for the positive-
-//     timeout case where an alarm actually fired.
+//     (e.g. byte buffer, non-File reader, or any descriptor on a
+//     platform without non-consuming poll). Bash uses exit code 1
+//     for `-t 0` "no data available", reserving 142 (128+SIGALRM)
+//     for the positive-timeout case where an alarm actually fired.
 //
-// The fallback (Windows / non-File readers) consumes one byte on
-// success — an intentional divergence from bash documented inline.
-// Implementing non-consuming poll on Windows is a follow-up.
+// Regular-file stdin is short-circuited to Code 0 by the caller in
+// run() — pollAvailable here only handles pipes/sockets/TTYs/etc.
 func pollAvailable(c *builtins.CallContext) builtins.Result {
 	f, ok := c.Stdin.(*os.File)
 	if !ok {
 		return builtins.Result{Code: 1}
 	}
-	// Preferred path: non-consuming poll via the platform syscall.
 	if avail, supported := pollInputNonConsuming(f.Fd()); supported {
 		if avail {
 			return builtins.Result{Code: 0}
 		}
 		return builtins.Result{Code: 1}
 	}
-
-	// Fallback: set a deadline in the past and try a one-byte read.
-	// On success the byte is consumed; subsequent reads on the same
-	// stream will not see it. Documented as a Windows-only divergence.
-	// We use c.Now.Add(-time.Hour) to construct a deadline that is
-	// reliably in the past while avoiding a direct time.Now call.
-	//
-	// IMPORTANT: SetReadDeadline can fail when the descriptor does
-	// not support deadlines (e.g. a Windows console handle, some
-	// character devices). If that happens we cannot safely call Read
-	// — without an in-the-past deadline, Read would block indefinitely
-	// when no input is buffered, which violates the documented `-t 0`
-	// "poll, never wait" contract and would hang the script. Return
-	// 1 (no data available) immediately in that case, matching the
-	// same "not pollable" path taken when stdin isn't *os.File.
-	pastDeadline := c.Now.Add(-time.Hour)
-	if err := f.SetReadDeadline(pastDeadline); err != nil {
-		return builtins.Result{Code: 1}
-	}
-	defer func() { _ = f.SetReadDeadline(time.Time{}) }()
-	var probe [1]byte
-	n, err := f.Read(probe[:])
-	if errors.Is(err, io.EOF) || n == 1 {
-		return builtins.Result{Code: 0}
-	}
+	// Non-Unix fallback: report not-available rather than consume.
 	return builtins.Result{Code: 1}
 }
 
