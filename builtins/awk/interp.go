@@ -563,31 +563,45 @@ func (r *runtime) setRecord(rec string) error {
 	return nil
 }
 
+// capFields truncates a slice of fields to MaxFields if needed.
+// splitFields guarantees the returned slice is within the MaxFields limit.
+func capFields(fields []string) []string {
+	if len(fields) > MaxFields {
+		return fields[:MaxFields]
+	}
+	return fields
+}
+
 // splitFields splits the current record into fields per FS.
+// The returned slice always has at most MaxFields entries.
 func (r *runtime) splitFields(rec string) []string {
 	if rec == "" {
 		return nil
 	}
 	if r.fsRe != nil {
-		return r.fsRe.Split(rec, -1)
+		return capFields(r.fsRe.Split(rec, -1))
 	}
 	switch {
 	case r.fs == " ":
 		// Default: split on runs of whitespace, leading/trailing trimmed.
-		return strings.Fields(rec)
+		return capFields(strings.Fields(rec))
 	case r.fs == "":
 		// Empty FS: each byte is a field (byte-based, consistent with
 		// bSubstr/bIndex/bMatch; mawk behaviour).
-		out := make([]string, 0, len(rec))
-		for i := 0; i < len(rec); i++ {
+		maxBytes := len(rec)
+		if maxBytes > MaxFields {
+			maxBytes = MaxFields
+		}
+		out := make([]string, 0, maxBytes)
+		for i := 0; i < len(rec) && len(out) < MaxFields; i++ {
 			out = append(out, string(rec[i]))
 		}
 		return out
 	case r.fs == "\t":
-		return strings.Split(rec, "\t")
+		return capFields(strings.Split(rec, "\t"))
 	default:
 		// Single character or fixed string.
-		return strings.Split(rec, r.fs)
+		return capFields(strings.Split(rec, r.fs))
 	}
 }
 

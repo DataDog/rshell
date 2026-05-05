@@ -55,13 +55,11 @@ func awkSprintf(format string, values []awkValue, convFmt string) (string, error
 			if err != nil {
 				return "", err
 			}
+			// nextInt clamps to [math.MinInt32, MaxStringBytes], so w == math.MinInt64
+			// is unreachable; plain -w is safe for all values nextInt can return.
 			if w < 0 {
 				spec.flagMinus = true
-				if w == int(math.MinInt64) {
-					w = int(math.MaxInt64) // avoid -MinInt overflow
-				} else {
-					w = -w
-				}
+				w = -w
 			}
 			if w > MaxStringBytes {
 				w = MaxStringBytes
