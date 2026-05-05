@@ -376,6 +376,8 @@ var builtinPerCommandSymbols = map[string][]string{
 		"io.Reader",           // 🟢 interface type; no side effects.
 		"os.O_RDONLY",         // 🟢 read-only file flag constant; cannot open files by itself.
 		"strconv.Atoi",        // 🟢 parses int flag values for the custom -n/-L pflag.Value type; pure parsing.
+		"strconv.FormatBool",  // 🟢 stringifies the -0 flag's stored bool value; pure formatting, no I/O.
+		"strconv.ParseBool",   // 🟢 parses bool flag values for the custom -0 pflag.Value type; pure parsing.
 		"strconv.ParseUint",   // 🟢 parses hex/octal -d delimiter escapes (\xNN, \NNN); pure parsing, no I/O.
 		"strings.Builder",     // 🟢 efficient string concatenation; pure in-memory buffer, no I/O.
 		"strings.ReplaceAll",  // 🟢 replaces all occurrences of REPLSTR in -I templates; pure function, no I/O.
@@ -525,6 +527,7 @@ var builtinAllowedSymbols = []string{
 	"slices.SortStableFunc",                               // 🟢 stable sort with a comparison function; pure function, no I/O.
 	"strconv.Atoi",                                        // 🟢 string-to-int conversion; pure function, no I/O.
 	"strconv.ErrRange",                                    // 🟢 sentinel error value for overflow; pure constant.
+	"strconv.FormatBool",                                  // 🟢 bool-to-string conversion; pure function, no I/O.
 	"strconv.FormatInt",                                   // 🟢 int-to-string conversion; pure function, no I/O.
 	"strconv.FormatUint",                                  // 🟢 uint-to-string conversion; pure function, no I/O.
 	"strconv.IntSize",                                     // 🟢 platform int size constant (32 or 64); pure constant, no I/O.
