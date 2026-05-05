@@ -89,6 +89,7 @@ package xargs
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -143,6 +144,11 @@ const (
 )
 
 func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
+	// Stop flag parsing at the first positional so flags after the COMMAND
+	// name (e.g. `xargs echo -n hello`) are passed through to the sub-command
+	// rather than re-interpreted by xargs.
+	fs.SetInterspersed(false)
+
 	help := fs.Bool("help", false, "print usage and exit")
 	null := fs.BoolP("null", "0", false, "input items are separated by a NUL character")
 	argFile := fs.StringP("arg-file", "a", "", "read items from FILE instead of stdin")
@@ -459,6 +465,12 @@ func finishEmpty(ctx context.Context, callCtx *builtins.CallContext, o options, 
 	if o.noRunEmpty {
 		return builtins.Result{Code: prior}
 	}
+	// -I implies "one invocation per input item"; with zero items, GNU xargs
+	// runs nothing. Without -I we fall back to a single invocation with no
+	// extra args (POSIX default).
+	if o.useReplace() {
+		return builtins.Result{Code: prior}
+	}
 	code, _ := invokeCommand(ctx, callCtx, o, nil)
 	if code > prior {
 		prior = code
@@ -510,7 +522,20 @@ func invokeCommand(ctx context.Context, callCtx *builtins.CallContext, o options
 		dir = callCtx.WorkDir()
 	}
 
-	exitCode, err := callCtx.RunCommand(ctx, dir, finalCmd, finalArgs)
+	// POSIX/GNU xargs reads its items from stdin (or -a FILE) but redirects
+	// the *child* command's stdin from /dev/null, so a stdin-reading sub-
+	// command can't consume bytes that xargs hasn't yet tokenised. We
+	// preserve this contract by passing an empty reader as the child's
+	// stdin via RunCommandWithStdin when the runner exposes it. Older
+	// runners that don't wire RunCommandWithStdin fall back to RunCommand
+	// (parent-stdin pass-through) so we don't break compatibility.
+	var exitCode uint8
+	var err error
+	if callCtx.RunCommandWithStdin != nil {
+		exitCode, err = callCtx.RunCommandWithStdin(ctx, dir, finalCmd, finalArgs, bytes.NewReader(nil))
+	} else {
+		exitCode, err = callCtx.RunCommand(ctx, dir, finalCmd, finalArgs)
+	}
 	if err != nil {
 		callCtx.Errf("xargs: %s: %s\n", finalCmd, err.Error())
 		return exitSubCmdNotStart, true

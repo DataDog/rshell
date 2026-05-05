@@ -336,8 +336,8 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 
 	if isKnown {
 		r.dispatchedCount++
-		var runCmd func(context.Context, string, string, []string) (uint8, error)
-		runCmd = func(ctx context.Context, dir string, cmdName string, cmdArgs []string) (uint8, error) {
+		var runCmdWithStdin func(context.Context, string, string, []string, io.Reader) (uint8, error)
+		runCmdWithStdin = func(ctx context.Context, dir string, cmdName string, cmdArgs []string, childStdin io.Reader) (uint8, error) {
 			if !r.allowAllCommands && !r.allowedCommands[cmdName] {
 				return 127, fmt.Errorf("rshell: %s: command not allowed", cmdName)
 			}
@@ -366,7 +366,6 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 					}
 					return r.sandbox.CanonicalizeRootPrefix(absPath)
 				},
-				RunCommand: runCmd,
 				OpenFile: func(ctx context.Context, path string, flags int, mode os.FileMode) (io.ReadWriteCloser, error) {
 					f, err := r.sandbox.Open(path, dir, flags, mode)
 					if err != nil {
@@ -414,12 +413,21 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 				CommandAllowed: func(n string) bool {
 					return r.allowAllCommands || r.allowedCommands[n]
 				},
+				RunCommand: func(ctx context.Context, dir string, name string, args []string) (uint8, error) {
+					return runCmdWithStdin(ctx, dir, name, args, nil)
+				},
+				RunCommandWithStdin: runCmdWithStdin,
 			}
-			if r.stdin != nil {
+			if childStdin != nil {
+				child.Stdin = childStdin
+			} else if r.stdin != nil {
 				child.Stdin = r.stdin
 			}
 			result := cmdFn(ctx, child, cmdArgs)
 			return result.Code, nil
+		}
+		runCmd := func(ctx context.Context, dir string, cmdName string, cmdArgs []string) (uint8, error) {
+			return runCmdWithStdin(ctx, dir, cmdName, cmdArgs, nil)
 		}
 		call := &builtins.CallContext{
 			Stdout:       r.stdout,
@@ -493,8 +501,9 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 			CommandAllowed: func(cmdName string) bool {
 				return r.allowAllCommands || r.allowedCommands[cmdName]
 			},
-			RunCommand: runCmd,
-			Proc:       r.proc,
+			RunCommand:          runCmd,
+			RunCommandWithStdin: runCmdWithStdin,
+			Proc:                r.proc,
 		}
 		if r.stdin != nil { // do not assign a typed nil into the io.Reader interface
 			call.Stdin = r.stdin

@@ -364,6 +364,7 @@ var builtinPerCommandSymbols = map[string][]string{
 	"xargs": {
 		"bufio.NewReaderSize", // 🟢 buffered reader with caller-supplied size; pure wrapper, no I/O capability of its own.
 		"bufio.Reader",        // 🟢 buffered reader type; pure data, no side effects.
+		"bytes.NewReader",     // 🟢 in-memory empty stdin for sub-command (POSIX /dev/null analogue); pure constructor, no I/O.
 		"context.Context",     // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
 		"errors.Is",           // 🟢 error comparison; pure function, no I/O.
 		"errors.New",          // 🟢 creates a simple error value; pure function, no I/O.
