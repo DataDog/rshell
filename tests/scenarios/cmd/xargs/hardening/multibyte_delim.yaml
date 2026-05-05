@@ -3,6 +3,6 @@ input:
   script: |+
     echo a | xargs -d ab echo
 expect:
-  stdout: ""
+  stdout: |+
   stderr_contains: ["delimiter"]
   exit_code: 1

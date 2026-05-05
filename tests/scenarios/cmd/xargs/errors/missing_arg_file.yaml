@@ -6,6 +6,6 @@ input:
   script: |+
     xargs -a nonexistent.txt echo
 expect:
-  stdout: ""
+  stdout: |+
   stderr_contains: ["xargs:"]
   exit_code: 1

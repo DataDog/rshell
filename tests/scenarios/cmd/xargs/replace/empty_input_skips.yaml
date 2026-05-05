@@ -3,6 +3,6 @@ input:
   script: |+
     printf '' | xargs -I {} echo hi
 expect:
-  stdout: ""
+  stdout: |+
   stderr: |+
   exit_code: 0
