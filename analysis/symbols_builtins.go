@@ -60,7 +60,6 @@ var builtinPerCommandSymbols = map[string][]string{
 		"errors.New",         // 🟢 creates a sentinel error (unitFlag.Set rejects explicit values); pure function, no I/O.
 		"fmt.Sprintf",        // 🟢 string formatting; pure function, no I/O.
 		"math.Ceil",          // 🟢 ceiling of a float64; pure function, no I/O. Used for GNU-compatible round-up of human-readable sizes.
-		"sort.Slice",         // 🟢 in-place slice sort with comparison func; pure function, no I/O.
 		"strconv.FormatUint", // 🟢 uint-to-string conversion; pure function, no I/O.
 		"strings.Builder",    // 🟢 efficient string concatenation; pure in-memory buffer, no I/O.
 		"strings.Repeat",     // 🟢 returns a string of n repetitions; pure function, no I/O.
@@ -529,7 +528,6 @@ var builtinAllowedSymbols = []string{
 	"slices.Reverse",                                      // 🟢 reverses a slice in-place; pure function, no I/O.
 	"slices.SortFunc",                                     // 🟢 sorts a slice with a comparison function; pure function, no I/O.
 	"slices.SortStableFunc",                               // 🟢 stable sort with a comparison function; pure function, no I/O.
-	"sort.Slice",                                          // 🟢 in-place slice sort with a comparison function; pure function, no I/O.
 	"strings.Repeat",                                      // 🟢 returns a string of n repetitions; pure function, no I/O.
 	"strconv.Atoi",                                        // 🟢 string-to-int conversion; pure function, no I/O.
 	"strconv.ErrRange",                                    // 🟢 sentinel error value for overflow; pure constant.

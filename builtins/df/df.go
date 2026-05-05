@@ -83,7 +83,6 @@ import (
 	"errors"
 	"fmt"
 	"math"
-	"sort"
 	"strconv"
 	"strings"
 
@@ -304,10 +303,13 @@ func makeFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 		// from "no mounts at all" (still success).
 		filterRequested := len(*f.includeTypes) > 0 || len(*f.excludeTypes) > 0
 
+		// Preserve the kernel-reported order (mountinfo on Linux,
+		// getfsstat on macOS). GNU df does not sort: it walks the
+		// mount table as the kernel returned it, so /dev appears
+		// before /System/Volumes/* on macOS and /proc before /dev
+		// on most Linux hosts. Sorting alphabetically breaks scripts
+		// that compare row order against /usr/bin/df.
 		mounts = filterMounts(mounts, f)
-		sort.Slice(mounts, func(i, j int) bool {
-			return mounts[i].MountPoint < mounts[j].MountPoint
-		})
 
 		if err := ctx.Err(); err != nil {
 			return builtins.Result{Code: 1}
