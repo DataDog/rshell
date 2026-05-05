@@ -301,6 +301,47 @@ func TestForContinueInGroupedPipelineStageContinuesStage(t *testing.T) {
 	assert.Contains(t, stderr, "loop")
 }
 
+// Nested pipelines must propagate loop context to non-rightmost stages. The
+// AST for `a | b | c` is left-associative: Pipe(Pipe(a, b), c). Without
+// inheriting inLoop into the intermediate Pipe node, the inner pipeline
+// runner sees inLoop=false and bare `break`/`continue` in `a` or `b` would
+// emit a spurious diagnostic. Verified against bash 5.2.
+func TestWhileBreakInNestedPipelineFirstStageNoDiagnostic(t *testing.T) {
+	stdout, stderr, code := whileRun(t,
+		`while true; do break | cat | cat; echo after; break; done`)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "after\n", stdout)
+	assert.Empty(t, stderr, "break in first stage of nested pipeline must not print a diagnostic when inside a loop")
+}
+
+func TestWhileContinueInNestedPipelineFirstStageNoDiagnostic(t *testing.T) {
+	stdout, stderr, code := whileRun(t,
+		`while true; do continue | cat | cat; echo after; break; done`)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "after\n", stdout)
+	assert.Empty(t, stderr, "continue in first stage of nested pipeline must not print a diagnostic when inside a loop")
+}
+
+func TestWhileBreakInFourStagePipelineNoDiagnostic(t *testing.T) {
+	stdout, stderr, code := whileRun(t,
+		`while true; do break | cat | cat | cat; echo after; break; done`)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "after\n", stdout)
+	assert.Empty(t, stderr)
+}
+
+// Compound stage inside a nested pipeline still prints the diagnostic and
+// keeps running the rest of the stage's statements — propagation only kicks
+// in for simple commands and pipelines, never for compound stages.
+func TestWhileBreakInGroupedFirstStageOfNestedPipelinePrintsDiagnostic(t *testing.T) {
+	stdout, stderr, code := whileRun(t,
+		`while true; do { break; echo never; } | cat | cat; echo after; break; done`)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "never\nafter\n", stdout)
+	assert.Contains(t, stderr, "break")
+	assert.Contains(t, stderr, "loop")
+}
+
 // --- exit propagates out of the loop ---
 
 func TestExitInsideWhileBody(t *testing.T) {

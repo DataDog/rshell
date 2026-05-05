@@ -156,23 +156,27 @@ func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {
 			rLeft.stderr = safeStderr
 			rLeft.inPipeline = true
 			// Pipeline stages inherit the parent's loop context only when the
-			// stage is a simple command. Bash silently no-ops a bare
-			// `break`/`continue` invoked as an entire pipeline stage, but
-			// when the stage is a compound command (`{...}`, `(...)`, an if
-			// chain, etc.) bash prints the "only useful in a loop"
-			// diagnostic AND keeps executing the rest of the stage.
+			// stage is a simple command or another pipeline. Bash silently
+			// no-ops a bare `break`/`continue` invoked as an entire pipeline
+			// stage, but when the stage is a compound command (`{...}`,
+			// `(...)`, an if chain, etc.) bash prints the "only useful in
+			// a loop" diagnostic AND keeps executing the rest of the stage.
 			// Inheriting inLoop unconditionally would suppress the
 			// diagnostic for compound stages and — worse — let the
 			// stage-internal break/continue counter abort the rest of the
 			// stage's statements, dropping commands that bash still runs.
-			if isSimpleCmd(cm.X) {
+			// A nested pipeline must inherit so the recursive case applies
+			// the same per-stage rule to its own leaves; otherwise non-
+			// rightmost stages of 3+ stage pipelines (`break | cat | cat`)
+			// would lose loop context and emit spurious diagnostics.
+			if pipelineStageInheritsInLoop(cm.X) {
 				rLeft.inLoop = r.inLoop
 			}
 			rRight := r.subshell(true)
 			rRight.stdin = pr
 			rRight.stderr = safeStderr
 			rRight.inPipeline = true
-			if isSimpleCmd(cm.Y) {
+			if pipelineStageInheritsInLoop(cm.Y) {
 				rRight.inLoop = r.inLoop
 			}
 			var wg sync.WaitGroup
@@ -275,17 +279,28 @@ func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {
 	}
 }
 
-// isSimpleCmd reports whether a pipeline stage is a simple command (a single
-// CallExpr) versus a compound command (block, subshell, if-chain, loop, etc.).
-// Bash silently no-ops a bare `break`/`continue` invoked as the entirety of a
-// pipeline stage, but prints the diagnostic when the stage is compound — so we
-// only inherit the parent loop context for simple-command stages.
-func isSimpleCmd(st *syntax.Stmt) bool {
+// pipelineStageInheritsInLoop reports whether a pipeline stage should inherit
+// the parent's loop context. Bash silently no-ops a bare `break`/`continue`
+// invoked as the entirety of a pipeline stage, but prints the "only useful in
+// a loop" diagnostic when the stage is compound (block, subshell, if chain,
+// loop) — so loop context is propagated for simple commands only.
+//
+// A nested pipeline (e.g. the `a | b` inside `a | b | c`) must also inherit
+// the loop context: the recursive Pipe case re-runs this check on each leaf
+// stage, so without propagation through intermediate pipeline nodes any non-
+// rightmost stage of a 3+ stage pipeline would lose its loop context and
+// `break`/`continue` would emit spurious diagnostics.
+func pipelineStageInheritsInLoop(st *syntax.Stmt) bool {
 	if st == nil {
 		return false
 	}
-	_, ok := st.Cmd.(*syntax.CallExpr)
-	return ok
+	switch c := st.Cmd.(type) {
+	case *syntax.CallExpr:
+		return true
+	case *syntax.BinaryCmd:
+		return c.Op == syntax.Pipe
+	}
+	return false
 }
 
 // execWhileClause runs a while or until loop. Both share the same AST node;
