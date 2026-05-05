@@ -1094,9 +1094,8 @@ func (r *runtime) execPrintf(args []expr) error {
 }
 
 // indexKey builds the SUBSEP-joined string key for arr[i,j,...].
-// Note: the running totalLen accumulates len(subsep) for every key part
-// (N parts → N separators counted instead of N-1). This makes the cap fire
-// slightly earlier than strictly necessary but is conservative and safe.
+// The running totalLen counts each SUBSEP only between parts (N-1 separators
+// for N parts), matching the exact number that strings.Join inserts.
 func (r *runtime) indexKey(indices []expr) (string, error) {
 	parts := make([]string, len(indices))
 	totalLen := 0
@@ -1106,7 +1105,10 @@ func (r *runtime) indexKey(indices []expr) (string, error) {
 			return "", err
 		}
 		parts[i] = v.toString(r.convFmt)
-		totalLen += len(parts[i]) + len(r.subsep)
+		if i > 0 {
+			totalLen += len(r.subsep)
+		}
+		totalLen += len(parts[i])
 		if totalLen > MaxStringBytes {
 			return "", fmt.Errorf("array key exceeds maximum length %d", MaxStringBytes)
 		}

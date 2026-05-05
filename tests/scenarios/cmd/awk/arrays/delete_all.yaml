@@ -1,0 +1,9 @@
+description: delete arr deletes the entire array; length() returns 0 afterward.
+input:
+  script: |+
+    awk 'BEGIN { a[1]=10; a[2]=20; delete a; print length(a) }'
+expect:
+  stdout: |+
+    0
+  stderr: |+
+  exit_code: 0

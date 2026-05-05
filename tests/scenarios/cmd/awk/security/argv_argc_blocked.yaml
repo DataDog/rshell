@@ -1,0 +1,9 @@
+description: ARGV and ARGC are blocked at parse time.
+skip_assert_against_bash: true
+input:
+  script: |+
+    awk 'BEGIN { print ARGV[0] }'
+expect:
+  stdout: ""
+  stderr_contains: ["ARGV"]
+  exit_code: 1

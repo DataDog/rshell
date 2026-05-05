@@ -79,9 +79,9 @@ func run(ctx context.Context, cfg Config, prRef string) error {
 		}
 
 		// 2A1 (self-review) + 2A2 (trigger codex) in parallel.
-		// Only the first goroutine writes to the shared agent writers; triggerCodex
-		// runs an external subprocess and does not touch agent state, so there is
-		// no data race on the shared writers today.
+		// Only the code-review goroutine writes to the shared agent writers.
+		// triggerCodex runs an independent subprocess (exec.Command) and never
+		// accesses agent state, so the two goroutines are race-free.
 		var (
 			wg             sync.WaitGroup
 			reviewAgentErr error
