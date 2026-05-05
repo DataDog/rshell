@@ -196,12 +196,14 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			return builtins.Result{}
 		}
 
-		// Apply GNU's mutex: only the last-set among -n / -L / -I is honored.
-		// Earlier ones are silently dropped (we skip GNU's warning to avoid
-		// adding stderr noise that scenarios would have to assert on).
+		// Apply GNU's mutex: only the last-set among -n / -L / -I is
+		// honored. Emit the matching "options X and Y are mutually
+		// exclusive" warning to stderr for each ignored option so the
+		// stderr stream stays bash-compatible.
 		nSet := fs.Changed("max-args") && batch.last == batchN
 		lSet := fs.Changed("max-lines") && batch.last == batchL
 		iSet := fs.Changed("replace") && batch.last == batchI
+		warnMutex(callCtx, fs, batch.last)
 		effectiveMaxArgs := 0
 		if nSet {
 			effectiveMaxArgs = *maxArgs
@@ -232,6 +234,45 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 		}
 
 		return runXargs(ctx, callCtx, opts)
+	}
+}
+
+// warnMutex emits GNU-style "options X and Y are mutually exclusive,
+// ignoring previous X value" stderr warnings for each ignored flag in
+// the -n / -L / -I mutex group. Format matches GNU findutils 4.9 so
+// scenarios can stay bash-compatible.
+func warnMutex(callCtx *builtins.CallContext, fs *builtins.FlagSet, winner batchKey) {
+	type spec struct {
+		key   batchKey
+		flag  string
+		label string
+	}
+	all := []spec{
+		{batchN, "max-args", "--max-args"},
+		{batchL, "max-lines", "-L"},
+		{batchI, "replace", "--replace/-I/-i"},
+	}
+	winnerLabel := ""
+	for _, s := range all {
+		if s.key == winner {
+			winnerLabel = s.label
+			break
+		}
+	}
+	if winnerLabel == "" {
+		return
+	}
+	for _, s := range all {
+		if s.key == winner {
+			continue
+		}
+		if !fs.Changed(s.flag) {
+			continue
+		}
+		// GNU writes the loser's name with the winner's label following
+		// the conjunction, in the order set on the command line.
+		callCtx.Errf("xargs: warning: options %s and %s are mutually exclusive, ignoring previous %s value\n",
+			s.label, winnerLabel, s.label)
 	}
 }
 

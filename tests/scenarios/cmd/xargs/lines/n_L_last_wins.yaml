@@ -1,13 +1,10 @@
-# Intentional stderr divergence: GNU xargs emits a "previous --max-lines
-# value ignored" warning; rshell drops the loser silently. The behavior on
-# stdout and exit code is identical.
-skip_assert_against_bash: true
-description: xargs -n / -L / -I are mutually exclusive; the last one specified wins (matches GNU last-wins on stdout/exit; rshell drops the loser silently instead of warning).
+description: xargs -n / -L / -I are mutually exclusive; the last one specified wins. The earlier flag is ignored and a GNU-style "options X and Y are mutually exclusive" warning is emitted to stderr (matches GNU bash behavior byte-for-byte).
 input:
   script: |+
     printf 'a\nb\nc\n' | xargs -L1 -n3 echo
 expect:
   stdout: |+
     a b c
-  stderr: ""
+  stderr: |+
+    xargs: warning: options -L and --max-args are mutually exclusive, ignoring previous -L value
   exit_code: 0
