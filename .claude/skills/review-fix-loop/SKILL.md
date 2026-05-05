@@ -350,23 +350,27 @@ Provide a summary in this exact format:
 - **PR**: #<number> (<url>)
 - **Iterations completed**: <N>
 - **Final status**: <CLEAN | ITERATION_LIMIT_REACHED>
+- **Stopped because**: <one of:
+    - "SUCCESS_COUNT reached 5 consecutive clean iterations"
+    - "Iteration limit (30) reached — <N> unresolved threads / P0_P1_P2_COUNT=<N> / CI <Passing|Failing> at exit">
 
 ### Iteration log
 
-| # | Unresolved threads | Fixes applied | CI status |
-|---|--------------------|---------------|-----------|
-| 1 | 3 | 3 fixed | Passing |
-| 2 | 1 | 1 fixed | Passing |
-| 3 | 0 | — | Passing |
+| # | Unresolved threads | P0/P1/P2 findings | Fixes applied | CI status |
+|---|--------------------|-------------------|---------------|-----------|
+| 1 | 3 | 2 | 3 fixed | Passing |
+| 2 | 1 | 0 | 1 fixed | Passing |
+| 3 | 0 | 0 | — | Passing |
 
 ### Final state
 
 - **Unresolved threads**: <count> (list authors)
+- **P0/P1/P2 findings**: <count> (P3 findings are not blocking)
 - **CI**: Passing / Failing (list failing checks)
 
 ### Remaining issues (if any)
 
-- <list any unresolved threads or CI failures>
+- <list any unresolved threads, P0/P1/P2 findings, or CI failures; omit if none>
 ```
 
 **Post the summary as a GitHub PR comment** so it is visible on the PR itself:
