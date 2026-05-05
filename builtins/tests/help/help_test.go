@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -123,18 +124,33 @@ func TestHelpHeaderRestrictedShowsCount(t *testing.T) {
 // --- Output content ---
 
 func TestHelpListsAllCommands(t *testing.T) {
+	// Drive registration so builtins.Names()/Meta() are populated.
+	r, err := interp.New()
+	require.NoError(t, err)
+	r.Close()
+
 	stdout, _, code := runScript(t, "help", "", interpoption.AllowAllCommands().(interp.RunnerOption))
 	assert.Equal(t, 0, code)
 
-	// Every registered command should appear in the output.
-	expected := []string{
-		"[", "break", "cat", "continue", "cut", "echo", "exit",
-		"false", "find", "grep", "head", "help", "ip", "ls", "ping",
-		"printf", "ps", "sed", "sort", "ss", "strings", "tail", "test",
-		"tr", "true", "uname", "uniq", "wc",
-	}
-	for _, cmd := range expected {
-		assert.Contains(t, stdout, cmd, "help output should list %q", cmd)
+	// Drive the inventory check off the registry itself so adding a builtin
+	// never requires editing this test (or a YAML scenario) — registering the
+	// command is what makes it expected.
+	names := builtins.Names()
+	require.NotEmpty(t, names, "registry should not be empty")
+	for _, name := range names {
+		meta, ok := builtins.Meta(name)
+		require.True(t, ok, "Meta(%q) should exist", name)
+		// Every registered builtin must carry a non-empty Description so it
+		// shows up in `help`. Without this guard the row regex below would
+		// collapse to `^name\s+$` and silently match the blank padded row
+		// that printCommandTable emits when Description is empty.
+		require.NotEmpty(t, meta.Description, "builtin %q must set a non-empty Description", name)
+		// Match the rendered table row (name, ≥2 spaces of column padding,
+		// then description) so missing rows are caught even when descriptions
+		// repeat across builtins (e.g. "[" and "test" both describe
+		// "evaluate conditional expression").
+		rowRe := regexp.MustCompile(`(?m)^` + regexp.QuoteMeta(name) + `\s+` + regexp.QuoteMeta(meta.Description) + `$`)
+		assert.Regexp(t, rowRe, stdout, "help output should render row for %q", name)
 	}
 }
 
