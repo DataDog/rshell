@@ -6,10 +6,15 @@
 package interp_test
 
 import (
+	"bytes"
+	"context"
+	"errors"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"mvdan.cc/sh/v3/syntax"
 
 	"github.com/DataDog/rshell/interp"
 )
@@ -61,4 +66,58 @@ func TestAllowedCommandsEmpty(t *testing.T) {
 	_, err := interp.New(interp.AllowedCommands([]string{""}))
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "empty command name")
+}
+
+// TestHostEntryDoesNotAuthorizeBuiltin is a regression test: a host: entry
+// whose name collides with a builtin must NOT silently authorize the
+// builtin. Without the !isKnown gate in call(), an entry like
+// "host:cat=/bin/false" would flip isAllowed=true and the builtin cat
+// would run with stdin/AllowedPaths access, never executing /bin/false.
+// Cross-platform: this exercises the dispatch gate, not the actual host
+// exec, so it runs on darwin/windows too.
+func TestHostEntryDoesNotAuthorizeBuiltin(t *testing.T) {
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+	r, err := interp.New(
+		interp.AllowedCommands([]string{"host:cat=/bin/false"}),
+		interp.StdIO(strings.NewReader(""), stdout, stderr),
+	)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = r.Close() })
+
+	prog, err := syntax.NewParser().Parse(strings.NewReader("cat"), "")
+	require.NoError(t, err)
+
+	runErr := r.Run(context.Background(), prog)
+	var status interp.ExitStatus
+	require.True(t, errors.As(runErr, &status), "expected ExitStatus error, got %v", runErr)
+	assert.Equal(t, interp.ExitStatus(127), status)
+	assert.Contains(t, stderr.String(), "command not allowed")
+	assert.Empty(t, stdout.String(), "cat builtin must not have run")
+}
+
+// TestHostEntryAuthorizesNonBuiltin verifies the positive case for the
+// dispatch gate — a host: entry whose name does NOT collide with a
+// builtin still passes the allowlist check (it would fail with
+// "command not allowed" if the gate were too strict). The actual exec
+// path is platform-specific and tested in host_exec_test.go (linux);
+// here we only assert that dispatch reaches it (on darwin/windows the
+// host-exec stub returns 127 with a different message).
+func TestHostEntryAuthorizesNonBuiltin(t *testing.T) {
+	stderr := &bytes.Buffer{}
+	r, err := interp.New(
+		interp.AllowedCommands([]string{"host:somenonsensename=/usr/bin/true"}),
+		interp.StdIO(strings.NewReader(""), &bytes.Buffer{}, stderr),
+	)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = r.Close() })
+
+	prog, err := syntax.NewParser().Parse(strings.NewReader("somenonsensename"), "")
+	require.NoError(t, err)
+
+	_ = r.Run(context.Background(), prog)
+	// Whatever exit code we got, the rejection path ("command not
+	// allowed") must NOT have been taken — that's the only thing the
+	// dispatch gate is responsible for here.
+	assert.NotContains(t, stderr.String(), "command not allowed")
 }
