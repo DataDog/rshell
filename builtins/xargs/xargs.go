@@ -531,16 +531,16 @@ func invokeCommand(ctx context.Context, callCtx *builtins.CallContext, o options
 		dir = callCtx.WorkDir()
 	}
 
-	// POSIX/GNU xargs reads its items from stdin (or -a FILE) but redirects
-	// the *child* command's stdin from /dev/null, so a stdin-reading sub-
-	// command can't consume bytes that xargs hasn't yet tokenised. We
-	// preserve this contract by passing an empty reader as the child's
-	// stdin via RunCommandWithStdin when the runner exposes it. Older
-	// runners that don't wire RunCommandWithStdin fall back to RunCommand
-	// (parent-stdin pass-through) so we don't break compatibility.
+	// POSIX/GNU xargs only redirects the child's stdin from /dev/null when
+	// xargs itself is reading items from the parent's stdin. With -a FILE,
+	// items come from FILE and the parent's stdin remains available to the
+	// child (e.g. `printf 'payload\n' | xargs -a empty.txt cat` must print
+	// `payload`). When the runner exposes RunCommandWithStdin we explicitly
+	// pass `emptyChildStdin` only in the non-(-a) case; older runners that
+	// don't wire it fall back to RunCommand (parent-stdin pass-through).
 	var exitCode uint8
 	var err error
-	if callCtx.RunCommandWithStdin != nil {
+	if callCtx.RunCommandWithStdin != nil && o.argFile == "" {
 		exitCode, err = callCtx.RunCommandWithStdin(ctx, dir, finalCmd, finalArgs, emptyChildStdin)
 	} else {
 		exitCode, err = callCtx.RunCommand(ctx, dir, finalCmd, finalArgs)
