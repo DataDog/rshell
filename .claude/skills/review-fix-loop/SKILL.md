@@ -259,6 +259,8 @@ if [ "$findings_count" -eq 0 ] && \
 fi
 ```
 
+> ⚠️ **Operator note (SKILL.md PRs):** When this loop runs on a PR that modifies `.claude/skills/*/SKILL.md` files and the self-review produces no inline findings (`findings_count = 0`) with no inline comments attached to the review (`has_inline = 0`), the body cross-check uses a stricter table-row pattern (see the `skill_md_pr` guard in the bash block above). In that edge case, a genuine body-only finding could be missed, allowing `SUCCESS_COUNT` to advance incorrectly. **Manual verification is recommended** when the loop exits cleanly on a SKILL.md PR with zero inline findings.
+
 To make `iteration_had_no_findings` durable across context resets, embed the **final** value (after all cross-checks) in the Step 2A1 task subject immediately after the cross-check block:
 ```
 TaskUpdate "Step 2A1: Self-review (code-review) — findings=$findings_count no_findings=$iteration_had_no_findings"
@@ -579,7 +581,7 @@ Maintain a `SUCCESS_COUNT` integer (initialize to `0` on first entry into Step 3
 
 **If all verifications pass BUT `iteration_had_no_findings` is false** (the self-review found issues that were then resolved), **reset** `SUCCESS_COUNT = 0` (this is a full reset, not merely skipping an increment — partial streaks are discarded to enforce that all 5 streak iterations must be consecutively clean) and immediately update the Step 3 task subject to `"Step 3: Verify clean state (0/5)"` so the reset is durable across context resets. If `iteration > 30`, mark Step 3 as `completed` (ITERATION_LIMIT_REACHED) and proceed to **Step 4**. Otherwise reset Step 2 and all its sub-steps to `pending` and go back for another iteration.
 
-**If all verifications pass AND `iteration_had_no_findings` is true** (the self-review found zero findings), increment `SUCCESS_COUNT` and update the Step 3 task subject to `"Step 3: Verify clean state (SUCCESS_COUNT/5)"`. If `SUCCESS_COUNT = 5` → proceed to **Step 4**. If `iteration > 30` → mark Step 3 as `completed` (ITERATION_LIMIT_REACHED) and proceed to **Step 4**. Otherwise → reset Step 2 and all its sub-steps to `pending`, and go back to **Step 2: Run the review-fix loop** for another full iteration before returning here.
+**If all verifications pass AND `iteration_had_no_findings` is true** (the self-review found zero findings), increment `SUCCESS_COUNT` and update the Step 3 task subject to `"Step 3: Verify clean state (SUCCESS_COUNT/5)"`. If `SUCCESS_COUNT = 5` → **mark Step 3 as `completed` and proceed to Step 4**. If `iteration > 30` → mark Step 3 as `completed` (ITERATION_LIMIT_REACHED) and proceed to **Step 4**. Otherwise → reset Step 2 and all its sub-steps to `pending`, and go back to **Step 2: Run the review-fix loop** for another full iteration before returning here.
 
 **Completion check:** Either `SUCCESS_COUNT` has reached 5, or `iteration > 30` (iteration limit). Mark Step 3 as `completed`.
 
