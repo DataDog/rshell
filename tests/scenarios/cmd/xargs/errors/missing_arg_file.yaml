@@ -7,5 +7,9 @@ input:
     xargs -a nonexistent.txt echo
 expect:
   stdout: ""
+  # stderr_contains used intentionally: the OS-level error suffix (e.g. "no such
+  # file or directory" vs "The system cannot find the file specified") varies
+  # across platforms. The xargs: prefix is stable and sufficient to verify the
+  # error was reported.
   stderr_contains: ["xargs:"]
   exit_code: 1

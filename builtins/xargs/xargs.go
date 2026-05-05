@@ -796,7 +796,8 @@ func printVerbose(callCtx *builtins.CallContext, name string, args []string) {
 // shellQuote returns a POSIX shell-safe representation of s. If s contains
 // no characters that require quoting it is returned unchanged. Otherwise it
 // is wrapped in single quotes with any embedded single-quote characters
-// escaped as '\”, matching GNU xargs -t output.
+// escaped using the POSIX shell idiom (close-quote backslash open-quote),
+// matching GNU xargs -t output.
 func shellQuote(s string) string {
 	// Fast path: safe chars only — no quoting needed.
 	safe := true

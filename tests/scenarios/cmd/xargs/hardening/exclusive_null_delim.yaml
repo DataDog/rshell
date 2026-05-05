@@ -7,5 +7,6 @@ input:
     echo a | xargs -0 -d , echo
 expect:
   stdout: ""
-  stderr_contains: ["mutually exclusive"]
+  stderr: |
+    xargs: options -0 and -d are mutually exclusive
   exit_code: 1
