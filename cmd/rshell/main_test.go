@@ -276,7 +276,7 @@ func TestAllowedCommandsMissingNamespace(t *testing.T) {
 }
 
 func TestAllowedCommandsUnknownNamespace(t *testing.T) {
-	code, _, stderr := runCLI(t, "--allowed-commands", "host:echo", "-c", `echo hello`)
+	code, _, stderr := runCLI(t, "--allowed-commands", "bogus:echo", "-c", `echo hello`)
 	assert.Equal(t, 1, code)
 	assert.Contains(t, stderr, "unknown namespace")
 }

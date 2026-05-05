@@ -21,7 +21,7 @@ func TestAllowedCommandsNamespaceRequired(t *testing.T) {
 }
 
 func TestAllowedCommandsUnknownNamespace(t *testing.T) {
-	_, err := interp.New(interp.AllowedCommands([]string{"host:echo"}))
+	_, err := interp.New(interp.AllowedCommands([]string{"bogus:echo"}))
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "unknown namespace")
 }

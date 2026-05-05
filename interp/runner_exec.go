@@ -502,7 +502,8 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 	// Evaluate both policy checks upfront so the span tags reflect the
 	// independent facts about the command name regardless of which gate
 	// short-circuits dispatch.
-	isAllowed := r.allowAllCommands || r.allowedCommands[name]
+	hostBinaryPath, isHostAllowed := r.hostCommands[name]
+	isAllowed := r.allowAllCommands || r.allowedCommands[name] || isHostAllowed
 	fn, isKnown := builtins.Lookup(name)
 
 	span, ctx := telemetry.StartSpanFromContext(ctx, "command")
@@ -511,6 +512,12 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 	span.SetTag("rshell.command.argc", len(args)-1)
 	span.SetTag("rshell.command.is_allowed", isAllowed)
 	span.SetTag("rshell.command.is_known", isKnown)
+	if isHostAllowed {
+		// DEMO ONLY: tag invocations that reach for a host binary so the
+		// demo narrative ("look, we can see exactly when the agent
+		// reached for the host") is visible in trace data.
+		span.SetTag("rshell.command.host_exec", true)
+	}
 	// has_stdin_pipe / has_output_redirect reflect whether the command's
 	// stdin/stdout were reassigned from the Runner's originals — true for
 	// both pipeline stages and file redirects.
@@ -783,6 +790,16 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 		if err := ctx.Err(); err != nil {
 			r.exit.fatal(err)
 		}
+		return
+	}
+	// DEMO ONLY: a host-binary entry takes precedence over the default
+	// execHandler so that an allowlisted host:<name>=<path> entry actually
+	// runs the binary instead of being rejected as "command not allowed".
+	// host: entries are intentionally only consulted when the name is not
+	// also a known builtin, so builtins always win.
+	if isHostAllowed {
+		r.dispatchedCount++
+		r.exit.code = r.runHostCommand(ctx, hostBinaryPath, args)
 		return
 	}
 	// Allowed but not known: the default execHandler (noExecHandler) will
