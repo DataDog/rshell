@@ -307,7 +307,19 @@ func run(ctx context.Context, c *builtins.CallContext, args []string, opt runOpt
 	// `printf 'a\n' | { read -t 0 1bad; read rest; }` returns the
 	// poll status with no error and leaves rest=a). Done before the
 	// prompt too, since poll mode never consumes input.
+	//
+	// Regular files are trivially "available" because their reads
+	// don't block. Short-circuit to Code 0 here — this is required
+	// for cross-platform correctness: pollAvailable on Windows uses
+	// the SetReadDeadline+Read fallback (since the unix poll(2)
+	// path doesn't exist), and SetReadDeadline rejects regular
+	// files, so without this short-circuit `read -t 0 X < file`
+	// would incorrectly return 1 on Windows for a deterministic
+	// "always pollable" input shape.
 	if pollMode {
+		if stdinIsRegularFile {
+			return builtins.Result{Code: 0}
+		}
 		return pollAvailable(c)
 	}
 
@@ -824,6 +836,20 @@ func readInput(ctx context.Context, r io.Reader, delim rune, raw bool, charLimit
 			return string(buf), true, nil
 		}
 		if err != nil {
+			// Non-EOF error (timeout, ctx cancellation, transport
+			// error). When the byte stream stalled mid-UTF-8 — for
+			// example, a producer wrote 0xc3 then blocked until the
+			// `-t` deadline fired — readRune still returns the
+			// already-consumed bytes in rb. Bash includes those bytes
+			// in the assigned value before surfacing the timeout exit
+			// code (142); dropping them silently loses data that has
+			// already been read from stdin. Append the partial bytes
+			// (best-effort, ignoring cap errors which are even worse
+			// to surface here than the original timeout) before
+			// returning the error.
+			if len(rb) > 0 {
+				_ = tryAppend(rb)
+			}
 			return string(buf), false, err
 		}
 

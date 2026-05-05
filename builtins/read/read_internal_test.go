@@ -6,6 +6,7 @@
 package read
 
 import (
+	"bytes"
 	"context"
 	"io"
 	"testing"
@@ -98,5 +99,53 @@ func TestReadInput_GoroutinePath_EOFWithDataNoDelim(t *testing.T) {
 	}
 	if line != "abc" {
 		t.Fatalf("got line=%q, want %q (last byte must not be dropped)", line, "abc")
+	}
+}
+
+// stallAfterReader returns up to `data` then blocks on subsequent
+// Read calls until the test's context fires. Used to simulate a
+// producer that writes a partial UTF-8 sequence then stalls past
+// the consumer's `-t` deadline.
+type stallAfterReader struct {
+	data    []byte
+	pos     int
+	stallCh chan struct{} // never sent to; closed in test cleanup to unblock the goroutine
+}
+
+func (r *stallAfterReader) Read(p []byte) (int, error) {
+	if r.pos < len(r.data) {
+		n := copy(p, r.data[r.pos:])
+		r.pos += n
+		return n, nil
+	}
+	// All buffered bytes delivered; block until the test signals shutdown.
+	<-r.stallCh
+	return 0, io.EOF
+}
+
+// TestReadInput_GoroutinePath_PartialUTF8OnTimeout verifies that
+// when a producer writes the first byte(s) of a multi-byte UTF-8
+// sequence and then stalls past the read deadline, readInput
+// includes those partial bytes in the assigned value before
+// returning the deadline error. Bash 5.2.0 preserves the bytes
+// (verified empirically); silently dropping them would lose data
+// that has already been consumed from stdin.
+func TestReadInput_GoroutinePath_PartialUTF8OnTimeout(t *testing.T) {
+	stall := make(chan struct{})
+	defer close(stall)
+	r := &stallAfterReader{data: []byte{0xc3}, stallCh: stall}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+
+	line, eof, err := readInput(ctx, r, '\n', true, -1, false, true)
+	if err == nil {
+		t.Fatalf("expected deadline error, got nil")
+	}
+	if eof {
+		t.Fatalf("expected eof=false on deadline timeout")
+	}
+	if got, want := []byte(line), []byte{0xc3}; !bytes.Equal(got, want) {
+		t.Fatalf("got line=%x, want %x (partial UTF-8 byte must be preserved)", got, want)
 	}
 }
