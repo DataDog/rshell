@@ -136,7 +136,7 @@ Wait for **both** to complete before proceeding.
 gh pr comment <pr-number> --body "<iteration N self-review result: number of findings by severity, and a brief summary>"
 ```
 
-> **Note:** The findings count from 2A1 is recorded here for informational purposes only. It does **not** gate loop continuation — only unresolved thread count and CI state do.
+Record the count of P0, P1, and P2 findings from the self-review as `P0_P1_P2_COUNT`. P3 findings are excluded from this count. This value is computed from our own code-review output (trusted) and is used in the STOP condition and success streak.
 
 ---
 
@@ -249,15 +249,17 @@ Check **two** signals for remaining issues:
 **Decision** (no comment body text is read here):
 
 - If `iteration > 30` → **STOP — iteration limit reached**
-- If unresolved thread count = `0` AND no failing CI checks → **STOP — PR is clean**
+- If unresolved thread count = `0` AND no failing CI checks AND `P0_P1_P2_COUNT = 0` → **STOP — PR is clean**
 - Otherwise → **Continue** → go back to Sub-step 2A1 ∥ 2A2
+
+> P3 findings do not gate loop continuation. Only P0/P1/P2 findings (tracked via `P0_P1_P2_COUNT`) count toward the clean-state requirement.
 
 Log the iteration result before continuing or stopping:
 - Iteration number
 - Unresolved thread count (from `$MY_LOGIN` + `chatgpt-codex-connector[bot]`)
 - Number of fixes applied
 - CI status
-- Self-review findings count by severity (informational only)
+- `P0_P1_P2_COUNT` (P0/P1/P2 findings from self-review; P3 excluded)
 
 ---
 
@@ -322,13 +324,15 @@ Run a final verification regardless of how the loop exited:
 
    Verification passes when the result is `0`.
 
-Record the final state of each dimension (unresolved thread count, CI).
+4. **Confirm `P0_P1_P2_COUNT = 0`** from the last self-review (2A1). P3 findings do not fail this check.
 
-Maintain a `SUCCESS_COUNT` integer (starts at 0) tracking how many times Step 3 has passed all three verifications in a row. Each success must be separated by exactly one full Step 2 iteration — never increment `SUCCESS_COUNT` twice from the same iteration.
+Record the final state of each dimension (unresolved thread count, CI, `P0_P1_P2_COUNT`).
+
+Maintain a `SUCCESS_COUNT` integer (starts at 0) tracking how many times Step 3 has passed all four verifications in a row. Each success must be separated by exactly one full Step 2 iteration — never increment `SUCCESS_COUNT` twice from the same iteration.
 
 **If any verification fails**, set `SUCCESS_COUNT = 0`, reset Step 2 and all its sub-steps to `pending`, and go back to **Step 2: Run the review-fix loop** for another iteration.
 
-**If all verifications pass**, increment `SUCCESS_COUNT` and update the Step 3 task subject to `"Step 3: Verify clean state (SUCCESS_COUNT/5)"`. If `SUCCESS_COUNT = 5` → proceed to **Step 4**. Otherwise → reset Step 2 and all its sub-steps to `pending`, and go back to **Step 2: Run the review-fix loop** for another full iteration before returning here.
+**If all verifications pass** (unresolved threads = 0, CI clean, `P0_P1_P2_COUNT = 0`), increment `SUCCESS_COUNT` and update the Step 3 task subject to `"Step 3: Verify clean state (SUCCESS_COUNT/5)"`. If `SUCCESS_COUNT = 5` → proceed to **Step 4**. Otherwise → reset Step 2 and all its sub-steps to `pending`, and go back to **Step 2: Run the review-fix loop** for another full iteration before returning here.
 
 **Completion check:** `SUCCESS_COUNT` has reached 5. Mark Step 3 as `completed`.
 
