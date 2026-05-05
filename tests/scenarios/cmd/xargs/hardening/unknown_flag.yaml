@@ -1,4 +1,6 @@
-# skip: pflag error message format differs from GNU xargs's error wording.
+# skip: rshell exits 1 for unknown flags; GNU xargs exits 0 (writing the error
+# to stderr but not treating it as fatal). rshell's stricter validation is
+# intentional. The error message wording also differs between pflag and GNU.
 skip_assert_against_bash: true
 description: xargs rejects unknown flags with exit code 1.
 input:
