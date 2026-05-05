@@ -172,7 +172,12 @@ func looksNumeric(s string) bool {
 	if t == "" {
 		return false
 	}
-	// Exclude nan/inf: mawk treats them as plain strings in comparison context.
+	// Exclude nan/inf: our implementation uses string comparison for these
+	// special tokens rather than converting them to IEEE-754 NaN/±Infinity.
+	// Note: both gawk and mawk do treat "inf"/"nan" as numeric strings, so
+	// this is an intentional divergence. The practical impact is that
+	// "nan" == "nan" returns 1 here (string equality) whereas gawk/mawk return
+	// 0 (NaN ≠ NaN by IEEE-754). The divergence is documented in SHELL_FEATURES.md.
 	lower := strings.ToLower(t)
 	if lower == "nan" || lower == "inf" || lower == "+inf" || lower == "-inf" {
 		return false

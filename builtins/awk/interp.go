@@ -1133,6 +1133,13 @@ func (r *runtime) evalExpr(e expr) (awkValue, error) {
 			if len(arr) >= MaxArrayEntries {
 				return uninitValue, fmt.Errorf("array exceeds maximum entry count %d", MaxArrayEntries)
 			}
+			// Account for the key bytes even though the value is uninit (empty),
+			// so MaxArrayTotalBytes catches large-key read-materialisation attacks.
+			added := int64(len(key))
+			if r.arrayTotalBytes+added > MaxArrayTotalBytes {
+				return uninitValue, fmt.Errorf("array memory limit (%d bytes) exceeded", MaxArrayTotalBytes)
+			}
+			r.arrayTotalBytes += added
 			arr[key] = uninitValue
 			return uninitValue, nil
 		}
