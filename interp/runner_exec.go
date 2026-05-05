@@ -12,6 +12,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 
 	"mvdan.cc/sh/v3/expand"
@@ -284,41 +285,122 @@ func (r *Runner) loopStmtsBroken(ctx context.Context, stmts []*syntax.Stmt) bool
 	return false
 }
 
-// argvMatchesAllowedPattern reports whether args begins with any of the
-// configured AllowedCommandPatterns sequences. Each pattern is matched by
-// exact string equality on the leading tokens of args; argv elements after
-// the pattern length are not consulted.
+// argvMatchesAllowedPattern reports whether args satisfies any of the
+// configured AllowedCommandPatterns. A pattern is shaped like
+// (command [, subcommand_path...]) and matches when:
+//
+//  1. args[0] equals pattern[0] exactly (the command name).
+//  2. The leading structural tokens of args[1..] equal pattern[1..],
+//     where "structural tokens" are extracted by skipping flag tokens
+//     according to the CommandSpec registered for args[0]. See
+//     [CommandSpec] for the classification rules.
+//
+// Single-token patterns trivially match on argv[0] alone — no spec is
+// consulted. Multi-token patterns require a spec for args[0]; New()
+// rejects multi-token patterns whose command lacks a spec, so by the time
+// this method runs we expect the lookup to succeed.
 //
 // args is expected to be the full argv with the command name at args[0]
 // (the same shape passed to call()). Callers that hold the command name and
 // arguments separately must reconstruct the full argv before invoking this
-// matcher, so that a pattern like ["kubectl", "get"] can match an
-// invocation whose argv is ["kubectl", "get", "pods"].
+// matcher.
 //
-// Returns false when no patterns are configured, when args is empty, or when
-// no pattern is a prefix of args. The matcher is called after shell
-// expansion, so command-substitution-derived argv elements are already
-// resolved.
+// The matcher is called after shell expansion, so command-substitution-
+// derived argv elements are already resolved — this is the architectural
+// guarantee of the feature.
+//
+// Why structural matching matters: a naive presence-only matcher would
+// admit "ip addr show" against a pattern of (ip, route) if the literal
+// token "route" appeared anywhere in argv (e.g. as a positional value
+// like "ip addr show route"). The structural matcher checks pattern[1..]
+// against the leading subcommand-path tokens only, so positional values
+// at later positions cannot satisfy pattern slots.
 func (r *Runner) argvMatchesAllowedPattern(args []string) bool {
 	if len(args) == 0 {
 		return false
 	}
 	for _, pattern := range r.allowedCommandPatterns {
-		if len(pattern) > len(args) {
+		if len(pattern) == 0 {
+			// Defensive: option validator already rejects empty
+			// patterns, so we never expect to see one here.
 			continue
 		}
-		match := true
-		for i, tok := range pattern {
-			if args[i] != tok {
-				match = false
+		// First token must match args[0] exactly.
+		if args[0] != pattern[0] {
+			continue
+		}
+		// Single-token pattern: argv[0] match is sufficient.
+		if len(pattern) == 1 {
+			return true
+		}
+		// Multi-token pattern: walk argv[1..] and extract structural
+		// tokens using the spec for args[0]. validateAllowedCommandPatterns
+		// guarantees the spec exists; defensive check returns false if it
+		// somehow doesn't (e.g. spec was unregistered between option
+		// processing and dispatch).
+		spec, ok := r.commandSpecs[args[0]]
+		if !ok {
+			continue
+		}
+		structural := extractStructuralTokens(args[1:], spec)
+		if len(pattern)-1 > len(structural) {
+			continue
+		}
+		matched := true
+		for i, ptok := range pattern[1:] {
+			if structural[i] != ptok {
+				matched = false
 				break
 			}
 		}
-		if match {
+		if matched {
 			return true
 		}
 	}
 	return false
+}
+
+// extractStructuralTokens returns the structural-token sequence (subcommand
+// path followed by positional arguments) derived from the trailing-args
+// portion of argv (i.e. args[1:] in the caller's view), using spec to
+// classify flags. See [CommandSpec] for the classification rules.
+//
+// Tokens are returned in the order they appear in input, with classified
+// flag tokens (and the next-token values of recognised value flags)
+// elided. The matcher consumes only the leading prefix of the result.
+func extractStructuralTokens(args []string, spec CommandSpec) []string {
+	out := make([]string, 0, len(args))
+	for i := 0; i < len(args); i++ {
+		tok := args[i]
+		if !strings.HasPrefix(tok, "-") || tok == "-" || tok == "--" {
+			// Plain positional / subcommand token. (A bare "-" or "--"
+			// is a positional separator in shell convention, not a
+			// flag.)
+			out = append(out, tok)
+			continue
+		}
+		// Flag of some kind.
+		if strings.Contains(tok, "=") {
+			// "--flag=value" or "-f=value" form: the value is bundled
+			// into this single token, so we don't need to consume the
+			// next argv token regardless of spec classification.
+			continue
+		}
+		if spec.ValueFlags[tok] {
+			// Skip the flag and its value (next argv token, if any).
+			if i+1 < len(args) {
+				i++
+			}
+			continue
+		}
+		// BooleanFlags or unknown flag: skip just the flag token. We
+		// treat unknown flags as boolean to avoid false negatives if
+		// the spec is incomplete; the trade-off is a possible false
+		// negative if the flag actually takes a value (its assumed
+		// "value" would then be misclassified as a structural token).
+		_ = spec.BooleanFlags // documented behaviour, no branch needed
+	}
+	return out
 }
 
 func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {

@@ -33,6 +33,80 @@ import (
 )
 
 // runnerConfig holds the immutable configuration of a [Runner].
+// CommandSpec describes the flag conventions of a single command, used by
+// [AllowedCommandPatterns] to distinguish flag tokens (which the matcher
+// skips when locating the subcommand path) from structural tokens
+// (subcommand path and positional arguments).
+//
+// A token in argv is classified as follows during structural extraction:
+//
+//   - A token containing '=' that starts with '-' (e.g. "--output=json") is
+//     skipped as a single token, regardless of whether it appears in
+//     BooleanFlags or ValueFlags.
+//   - A token in BooleanFlags is skipped by itself; the next argv token is
+//     considered a candidate structural token.
+//   - A token in ValueFlags is skipped together with the next argv token,
+//     which is treated as the flag's value.
+//   - A token starting with '-' that does NOT appear in either set is
+//     conservatively treated as a boolean flag (skipped alone). This keeps
+//     unknown future flags from causing matcher failures, at the cost of
+//     potential under-skipping if the unknown flag actually takes a value.
+//   - Any other token is structural.
+//
+// AllowedCommandPatterns matches against the leading structural tokens
+// only. Positional arguments at later structural positions cannot satisfy
+// pattern slots, so a value that happens to equal a subcommand token (the
+// "kubectl delete pod get" bypass) does not match a pattern targeting that
+// subcommand.
+type CommandSpec struct {
+	// BooleanFlags is the set of flag tokens that do not take a value.
+	// Keys must include the leading '-' or '--', e.g. "-h", "--help".
+	BooleanFlags map[string]bool
+
+	// ValueFlags is the set of flag tokens that take the next argv token as
+	// their value. Keys must include the leading '-' or '--', e.g. "-n",
+	// "--namespace". Flags written in "--key=value" form are recognised
+	// regardless of whether the key appears here.
+	ValueFlags map[string]bool
+}
+
+// builtinCommandSpecs is the default CommandSpec registry, seeded with the
+// rshell builtins that have multi-token subcommand structure. Today that's
+// only `ip` — its global flags are all boolean (no -X TAKES-VALUE forms),
+// so the spec is small and unambiguous. Integrators that wire rshell into
+// a larger system (e.g. a runner that supports external commands like
+// kubectl, git, docker) should provide their own specs via the
+// [CommandSpecs] option.
+//
+// Built-in entries are merged with operator-supplied specs; duplicate keys
+// are overridden by the operator-supplied value.
+var builtinCommandSpecs = map[string]CommandSpec{
+	"ip": {
+		BooleanFlags: map[string]bool{
+			"-o":        true,
+			"--oneline": true,
+			"--brief":   true,
+			"-4":        true,
+			"-6":        true,
+			"-h":        true,
+			"--help":    true,
+		},
+		// ip has no global flags that take a value.
+		ValueFlags: map[string]bool{},
+	},
+}
+
+// cloneCommandSpecs returns a shallow copy of in. Map values (the inner
+// flag sets) are aliased; we treat them as immutable after option
+// processing completes.
+func cloneCommandSpecs(in map[string]CommandSpec) map[string]CommandSpec {
+	out := make(map[string]CommandSpec, len(in))
+	for k, v := range in {
+		out[k] = v
+	}
+	return out
+}
+
 // These fields are set during construction ([New]) and first [Runner.Reset],
 // and never change afterwards.
 type runnerConfig struct {
@@ -78,13 +152,20 @@ type runnerConfig struct {
 	// false, no commands are allowed.
 	allowedCommands map[string]bool
 
-	// allowedCommandPatterns is a list of argv-prefix patterns that admit
-	// commands by their full argv rather than only by name. Each pattern is
-	// a non-empty token list; an invocation whose argv begins with the same
-	// tokens (in order, by exact equality) is allowed. Independent of
-	// allowedCommands — a command is allowed if its name appears in
-	// allowedCommands OR its argv prefix-matches any of these patterns.
+	// allowedCommandPatterns is a list of (command [, subcommand_path...])
+	// patterns that admit commands by their structural argv rather than only
+	// by name. Independent of allowedCommands — a command is allowed if its
+	// name appears in allowedCommands OR its argv satisfies any of these
+	// patterns under the structural matcher (see argvMatchesAllowedPattern).
 	allowedCommandPatterns [][]string
+
+	// commandSpecs maps a command name to the CommandSpec that describes its
+	// flag conventions. Used by argvMatchesAllowedPattern to distinguish flag
+	// tokens (skipped during matching) from structural tokens (subcommand
+	// path and positional arguments). Initialised at New() to a copy of
+	// builtinCommandSpecs; the CommandSpecs option merges additional or
+	// overriding entries on top.
+	commandSpecs map[string]CommandSpec
 
 	// allowAllCommands bypasses the allowedCommands check and permits any
 	// command. Intended for testing convenience.
@@ -274,13 +355,27 @@ func (e *exitStatus) fromHandlerError(err error) {
 func New(opts ...RunnerOption) (*Runner, error) {
 	registerBuiltins()
 	r := &Runner{
-		runnerConfig: runnerConfig{usedNew: true},
+		runnerConfig: runnerConfig{
+			usedNew: true,
+			// Seed the spec registry with the built-in defaults before
+			// any option runs so that CommandSpecs() merges over them
+			// rather than replacing them. Operators that need to drop a
+			// built-in entry can pass an explicit empty CommandSpec for
+			// that key.
+			commandSpecs: cloneCommandSpecs(builtinCommandSpecs),
+		},
 	}
 	for _, opt := range opts {
 		if err := opt(r); err != nil {
 			_ = r.Close()
 			return nil, err
 		}
+	}
+	// Validate AllowedCommandPatterns against the assembled spec registry
+	// AFTER all options have been applied, so option order doesn't matter.
+	if err := validateAllowedCommandPatterns(r); err != nil {
+		_ = r.Close()
+		return nil, err
 	}
 
 	// Default to an empty environment to avoid propagating parent env vars.
@@ -771,6 +866,55 @@ func AllowedCommands(names []string) RunnerOption {
 		r.allowedCommands = m
 		return nil
 	}
+}
+
+// CommandSpecs registers command specs used by [AllowedCommandPatterns] to
+// distinguish flag tokens from structural tokens during pattern matching.
+// Specs are merged on top of the built-in registry (which seeds entries for
+// rshell builtins with multi-token subcommand structure); keys present in
+// `specs` override built-in entries for the same command.
+//
+// A CommandSpec is required for every command name that appears as the
+// leading token of a multi-token pattern. Single-token patterns (which
+// only match argv[0]) do not require a spec; multi-token patterns
+// referencing a command without a spec cause [New] to return an error so
+// the misconfiguration is surfaced at runner construction rather than at
+// dispatch.
+//
+// Operators wiring rshell into a larger system should call this option to
+// register their CLIs of interest (kubectl, git, docker, internal tools).
+// The matcher's behaviour for any given argv is fully determined by the
+// spec: missing flag entries cause that flag's positional neighbours to be
+// misclassified as structural tokens, which in turn causes pattern
+// matches to fail. Failure mode is therefore false-negative (a
+// well-formed invocation is rejected), not false-positive — keep specs up
+// to date with the CLIs they describe.
+func CommandSpecs(specs map[string]CommandSpec) RunnerOption {
+	return func(r *Runner) error {
+		for name, spec := range specs {
+			if name == "" {
+				return fmt.Errorf("CommandSpecs: empty command name")
+			}
+			r.commandSpecs[name] = spec
+		}
+		return nil
+	}
+}
+
+// validateAllowedCommandPatterns ensures every multi-token pattern in
+// r.allowedCommandPatterns has a registered CommandSpec for its command
+// name. Single-token patterns do not require a spec. Called from [New]
+// after all options have been applied.
+func validateAllowedCommandPatterns(r *Runner) error {
+	for i, p := range r.allowedCommandPatterns {
+		if len(p) <= 1 {
+			continue
+		}
+		if _, ok := r.commandSpecs[p[0]]; !ok {
+			return fmt.Errorf("AllowedCommandPatterns: pattern %d references command %q which has no registered CommandSpec; pass interp.CommandSpecs(map[string]interp.CommandSpec{%q: {...}}) to register one (multi-token patterns require a spec so the matcher can distinguish flags from subcommands)", i, p[0], p[0])
+		}
+	}
+	return nil
 }
 
 // AllowedCommandPatterns restricts command execution to argv sequences whose

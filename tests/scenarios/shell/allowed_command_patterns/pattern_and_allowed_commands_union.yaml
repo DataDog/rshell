@@ -2,20 +2,23 @@ skip_assert_against_bash: true
 description: |
   AllowedCommands and AllowedCommandPatterns are independent permit axes
   joined by union: a command is allowed if its name is on the
-  AllowedCommands list OR its argv prefix-matches any pattern. Here
-  printf is allowed by name and admits all argv shapes, while echo is
-  only authorised when its argv begins with "echo hello".
+  AllowedCommands list OR its argv satisfies a pattern. Here printf is
+  allowed by name and admits all argv shapes, while ip is only
+  authorised when its argv satisfies (ip, route).
 input:
   allowed_commands:
     - rshell:printf
   allowed_command_patterns:
-    - ["echo", "hello"]
+    - ["ip", "route"]
   script: |+
     printf "from-printf\n"
-    echo hello there
+    ip route show
 expect:
+  # printf prints "from-printf"; ip route show reports its own error.
+  # Both calls admitted by the policy. The script exits with the last
+  # statement's exit code (ip's 1 on macOS).
   stdout: |+
     from-printf
-    hello there
-  stderr: ""
-  exit_code: 0
+  stderr_contains:
+    - "route table reading is not supported"
+  exit_code: 1

@@ -1,12 +1,15 @@
 skip_assert_against_bash: true
-description: An invocation whose argv does not match the pattern is blocked.
+description: |
+  An invocation whose subcommand does not match the pattern is blocked.
+  Pattern (ip, route) does NOT admit "ip link show" because the leading
+  structural token is "link", not "route".
 input:
   allowed_command_patterns:
-    - ["echo", "hello"]
+    - ["ip", "route"]
   script: |+
-    echo goodbye
+    ip link show
 expect:
   stdout: ""
   stderr: |+
-    rshell: echo: command not allowed
+    rshell: ip: command not allowed
   exit_code: 127

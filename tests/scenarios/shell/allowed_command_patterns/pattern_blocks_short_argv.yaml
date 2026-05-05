@@ -1,12 +1,15 @@
 skip_assert_against_bash: true
-description: An argv shorter than the pattern cannot match (length check).
+description: |
+  An argv shorter than the pattern cannot match (length check). Pattern
+  (ip, route) requires a structural token after "ip"; bare "ip" with no
+  subcommand does not satisfy it.
 input:
   allowed_command_patterns:
-    - ["echo", "hello"]
+    - ["ip", "route"]
   script: |+
-    echo
+    ip
 expect:
   stdout: ""
   stderr: |+
-    rshell: echo: command not allowed
+    rshell: ip: command not allowed
   exit_code: 127

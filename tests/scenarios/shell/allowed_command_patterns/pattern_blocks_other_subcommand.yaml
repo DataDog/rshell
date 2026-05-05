@@ -1,0 +1,16 @@
+skip_assert_against_bash: true
+description: |
+  Pattern targets a specific subcommand; invocations of a sibling
+  subcommand are blocked. Pattern [ip, route] admits "ip route show"
+  but rejects "ip addr show" because the token "route" does not appear
+  anywhere in the argv.
+input:
+  allowed_command_patterns:
+    - ["ip", "route"]
+  script: |+
+    ip addr
+expect:
+  stdout: ""
+  stderr: |+
+    rshell: ip: command not allowed
+  exit_code: 127

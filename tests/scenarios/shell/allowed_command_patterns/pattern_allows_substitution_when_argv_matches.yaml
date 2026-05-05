@@ -1,18 +1,21 @@
 skip_assert_against_bash: true
 description: |
   Partner case to pattern_blocks_substitution_escape: a substitution that
-  expands to an argv MATCHING the pattern is allowed. This confirms the
-  matcher is not blanket-rejecting interpolation; it inspects the
-  resolved argv and admits invocations that fall within the policy.
+  expands to an argv satisfying the pattern is allowed. Confirms the
+  matcher inspects the resolved argv rather than blanket-rejecting
+  interpolation.
 input:
   allowed_commands:
     - rshell:printf
   allowed_command_patterns:
-    - ["echo", "hello"]
+    - ["ip", "route"]
   script: |+
-    $(printf echo) hello world
+    $(printf ip) route show
 expect:
-  stdout: |+
-    hello world
-  stderr: ""
-  exit_code: 0
+  # ip route reports its own platform-specific error on macOS; the
+  # important thing is that the policy gate ALLOWED the call (exit
+  # code is whatever ip returns, NOT 127).
+  stdout: ""
+  stderr_contains:
+    - "route table reading is not supported"
+  exit_code: 1

@@ -66,7 +66,18 @@ Every access path is default-deny:
 
 **AllowedCommands** restricts which commands (builtins or external) the interpreter may execute. Commands must be specified with the `rshell:` namespace prefix (e.g. `rshell:cat`, `rshell:echo`). If not set, no commands are allowed.
 
-**AllowedCommandPatterns** restricts execution to argv sequences whose leading tokens prefix-match one of the configured patterns. Each pattern is a non-empty token list; an invocation whose argv begins with the same tokens (in order, by exact equality) is allowed. Example: a pattern of `["kubectl", "get"]` permits `kubectl get pods` but not `kubectl delete pod foo`. Patterns are matched after shell expansion, so command-substitution-derived values (`$(...)`) cannot bypass the check — the matcher sees the resolved argv that would be handed to exec. AllowedCommands and AllowedCommandPatterns are independent permit axes joined by union: a command is allowed if its name appears in AllowedCommands OR its argv prefix-matches any pattern.
+**AllowedCommandPatterns** restricts execution to argv sequences shaped like `(command [, subcommand_path...])`. Each pattern is a non-empty token list; an invocation is admitted when:
+
+1. `argv[0]` equals `pattern[0]` exactly (the command name).
+2. The leading **structural** tokens of `argv[1..]` equal `pattern[1..]`, where structural tokens are derived by skipping flag tokens according to the [`CommandSpec`](#commandspec) registered for the command.
+
+For example, with the built-in `ip` spec, pattern `["ip", "route"]` admits all of `ip route show`, `ip -4 route show`, `ip --brief route show` — the spec recognises `-4` and `--brief` as boolean global flags, so they're skipped during structural extraction. The same pattern blocks `ip addr show` and `ip link list` because the leading structural token after `ip` is `addr` / `link`, not `route`.
+
+Patterns are matched **after shell expansion**, so command-substitution-derived values (`$(...)`) cannot bypass the check — the matcher sees the resolved argv that would be handed to exec. `AllowedCommands` and `AllowedCommandPatterns` are independent permit axes joined by union: a command is allowed if its name appears in `AllowedCommands` OR its argv satisfies any pattern.
+
+**CommandSpec** describes the flag conventions of a single command so the matcher can distinguish flag tokens from structural tokens. The `ip` builtin is shipped with a default spec; integrators register additional specs (kubectl, git, docker, etc.) via the `CommandSpecs(map[string]CommandSpec{...})` option. Multi-token patterns whose command lacks a spec are rejected at `New()` — single-token patterns (matching only `argv[0]`) require no spec.
+
+> Without a spec, the matcher would have to guess which argv tokens are flag values vs. positional arguments, and that guess is the only way `kubectl delete pod get` could ever masquerade as a `kubectl get` invocation. The spec-driven matcher closes that bypass by inspecting only the leading structural position for the subcommand, so positional arguments at later positions cannot satisfy pattern slots.
 
 **AllowedPaths** restricts all file operations to specified directories using Go's `os.Root` API (`openat` syscalls), making it immune to symlink traversal, TOCTOU races, and `..` escape attacks. Configured directories that cannot be opened (missing, not a directory, no permission) are skipped with a diagnostic message; by default these messages are flushed once to the runner's stderr at construction time. Callers that need to keep stderr clean of sandbox diagnostics can route them to a dedicated sink with `WarningsWriter(io.Writer)` or retrieve them programmatically via `Runner.Warnings()`.
 

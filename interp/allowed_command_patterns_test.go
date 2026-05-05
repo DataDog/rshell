@@ -22,8 +22,7 @@ import (
 
 func TestAllowedCommandPatternsEmptySliceIsValid(t *testing.T) {
 	// Zero patterns is a valid configuration: it just contributes no
-	// authorisations. Combined with an empty AllowedCommands, no command
-	// runs — that's the existing default-deny behaviour.
+	// authorisations.
 	_, err := interp.New(interp.AllowedCommandPatterns(nil))
 	require.NoError(t, err)
 
@@ -38,33 +37,70 @@ func TestAllowedCommandPatternsRejectsEmptyPattern(t *testing.T) {
 }
 
 func TestAllowedCommandPatternsRejectsEmptyToken(t *testing.T) {
-	_, err := interp.New(interp.AllowedCommandPatterns([][]string{{"kubectl", ""}}))
+	_, err := interp.New(interp.AllowedCommandPatterns([][]string{{"ip", ""}}))
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "pattern 0 token 1 is empty")
 }
 
 func TestAllowedCommandPatternsRejectsLeadingEmptyToken(t *testing.T) {
-	_, err := interp.New(interp.AllowedCommandPatterns([][]string{{"", "get"}}))
+	_, err := interp.New(interp.AllowedCommandPatterns([][]string{{"", "route"}}))
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "pattern 0 token 0 is empty")
 }
 
-func TestAllowedCommandPatternsAcceptsSingleTokenPattern(t *testing.T) {
+func TestAllowedCommandPatternsAcceptsSingleTokenWithoutSpec(t *testing.T) {
+	// Single-token patterns don't need a spec — they only check argv[0].
 	_, err := interp.New(interp.AllowedCommandPatterns([][]string{{"echo"}}))
 	require.NoError(t, err)
 }
 
-func TestAllowedCommandPatternsAcceptsMultiTokenPattern(t *testing.T) {
-	_, err := interp.New(interp.AllowedCommandPatterns([][]string{{"kubectl", "get"}}))
+func TestAllowedCommandPatternsAcceptsMultiTokenWithBuiltinSpec(t *testing.T) {
+	// "ip" is in the built-in spec registry, so a (ip, route) pattern is
+	// accepted out of the box.
+	_, err := interp.New(interp.AllowedCommandPatterns([][]string{{"ip", "route"}}))
 	require.NoError(t, err)
 }
 
-// --- End-to-end pattern matching ---
+func TestAllowedCommandPatternsRejectsMultiTokenWithoutSpec(t *testing.T) {
+	// "echo" has no spec; a multi-token pattern referencing it is rejected
+	// at runner construction time so the misconfiguration is surfaced
+	// early.
+	_, err := interp.New(interp.AllowedCommandPatterns([][]string{{"echo", "hello"}}))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "no registered CommandSpec")
+	assert.Contains(t, err.Error(), `"echo"`)
+}
 
-// runWithPatterns runs a script with the given AllowedCommands and
-// AllowedCommandPatterns. AllowedPaths is set to the working directory so
-// builtins that touch the filesystem don't fail for unrelated reasons.
-func runWithPatterns(t *testing.T, script string, allowedCommands []string, patterns [][]string) (stdout, stderr string, code int) {
+func TestAllowedCommandPatternsAcceptsMultiTokenWithUserSpec(t *testing.T) {
+	// Operator-supplied specs unlock multi-token patterns for any command.
+	_, err := interp.New(
+		interp.CommandSpecs(map[string]interp.CommandSpec{
+			"echo": {}, // empty spec = no flags; positional-only command
+		}),
+		interp.AllowedCommandPatterns([][]string{{"echo", "hello"}}),
+	)
+	require.NoError(t, err)
+}
+
+func TestAllowedCommandPatternsValidationRunsRegardlessOfOptionOrder(t *testing.T) {
+	// Patterns first, specs second — validation runs at the end of New(),
+	// so the order doesn't matter.
+	_, err := interp.New(
+		interp.AllowedCommandPatterns([][]string{{"echo", "hello"}}),
+		interp.CommandSpecs(map[string]interp.CommandSpec{
+			"echo": {},
+		}),
+	)
+	require.NoError(t, err)
+}
+
+// --- End-to-end pattern matching against the structural matcher ---
+
+// runWithPatterns runs a script with the given AllowedCommands,
+// AllowedCommandPatterns, and CommandSpecs. AllowedPaths is set to the
+// working directory so builtins that touch the filesystem don't fail for
+// unrelated reasons.
+func runWithPatterns(t *testing.T, script string, allowedCommands []string, patterns [][]string, extraSpecs map[string]interp.CommandSpec) (stdout, stderr string, code int) {
 	t.Helper()
 
 	prog, err := syntax.NewParser().Parse(strings.NewReader(script), "")
@@ -74,6 +110,9 @@ func runWithPatterns(t *testing.T, script string, allowedCommands []string, patt
 	opts := []interp.RunnerOption{
 		interp.StdIO(nil, &outBuf, &errBuf),
 		interp.AllowedPaths([]string{t.TempDir()}),
+	}
+	if extraSpecs != nil {
+		opts = append(opts, interp.CommandSpecs(extraSpecs))
 	}
 	if allowedCommands != nil {
 		opts = append(opts, interp.AllowedCommands(allowedCommands))
@@ -121,33 +160,73 @@ func rerrAs(err error, target *interp.ExitStatus) bool {
 	return false
 }
 
-func TestPatternsAllowMatchingArgv(t *testing.T) {
-	stdout, _, code := runWithPatterns(t,
-		`echo hello world`,
-		nil, // no name-allowlist; pattern is the only authorisation
-		[][]string{{"echo", "hello"}},
+func TestPatternsAdmitMatchingSubcommand(t *testing.T) {
+	// Pattern (ip, route) admits "ip route show". The builtin reports its
+	// own platform-specific error (route table reading not supported on
+	// macOS), but the policy gate did its job — exit code is whatever the
+	// builtin returns, NOT 127.
+	_, _, code := runWithPatterns(t,
+		`ip route show`,
+		nil,
+		[][]string{{"ip", "route"}},
+		nil,
 	)
-	assert.Equal(t, 0, code)
-	assert.Equal(t, "hello world\n", stdout)
+	assert.NotEqual(t, 127, code, "expected policy to ALLOW the call (non-127 exit)")
 }
 
-func TestPatternsBlockNonMatchingArgv(t *testing.T) {
+func TestPatternsBlockSiblingSubcommand(t *testing.T) {
+	// Pattern (ip, route) does NOT admit "ip addr show": the structural
+	// position 0 is "addr", not "route".
 	_, stderr, code := runWithPatterns(t,
-		`echo goodbye`,
+		`ip addr show`,
 		nil,
-		[][]string{{"echo", "hello"}},
+		[][]string{{"ip", "route"}},
+		nil,
 	)
 	assert.Equal(t, 127, code)
 	assert.Contains(t, stderr, "command not allowed")
 }
 
-func TestPatternsBlockNameWhenNoArgsMatch(t *testing.T) {
-	// Pattern is multi-token; bare "echo" without args has argv ["echo"]
-	// which is shorter than the pattern, so it must not match.
+func TestPatternsTolerateBooleanGlobalFlagBeforeSubcommand(t *testing.T) {
+	// "-4" is a boolean global flag in the ip spec; it appears between
+	// argv[0] and the subcommand. Pattern (ip, route) should still match
+	// because the structural extractor skips -4.
+	_, _, code := runWithPatterns(t,
+		`ip -4 route show`,
+		nil,
+		[][]string{{"ip", "route"}},
+		nil,
+	)
+	assert.NotEqual(t, 127, code, "expected boolean flag interleaving to be tolerated")
+}
+
+func TestPatternsTolerateMultipleBooleanFlags(t *testing.T) {
+	// Two boolean flags both interleaved between argv[0] and the
+	// subcommand.
+	_, _, code := runWithPatterns(t,
+		`ip -o -4 route show`,
+		nil,
+		[][]string{{"ip", "route"}},
+		nil,
+	)
+	assert.NotEqual(t, 127, code)
+}
+
+func TestPatternsBlockedWhenSubcommandIsPositionalArgValue(t *testing.T) {
+	// The structural matcher checks pattern[1..] against the LEADING
+	// structural tokens, not against any structural token. A positional
+	// arg whose value happens to equal a pattern token does NOT satisfy
+	// the slot — this is the bypass that the spec-driven matcher closes.
+	//
+	// Here we register an "echo" spec (no flags, all tokens structural)
+	// and pattern (echo, hello). argv ["echo","goodbye","hello"] has
+	// structural tokens ["goodbye","hello"]; pattern[1]="hello" must
+	// match structural[0]="goodbye" and does not. Block.
 	_, stderr, code := runWithPatterns(t,
-		`echo`,
+		`echo goodbye hello`,
 		nil,
 		[][]string{{"echo", "hello"}},
+		map[string]interp.CommandSpec{"echo": {}},
 	)
 	assert.Equal(t, 127, code)
 	assert.Contains(t, stderr, "command not allowed")
@@ -155,15 +234,18 @@ func TestPatternsBlockNameWhenNoArgsMatch(t *testing.T) {
 
 func TestPatternsAndAllowedCommandsAreUnion(t *testing.T) {
 	// "cat" is allowed by name (any args).
-	// "echo" is only allowed when argv begins with ["echo", "hello"].
-	// Both should work side by side.
+	// "ip" is only allowed when its argv satisfies (ip, route).
 	stdout, _, code := runWithPatterns(t,
-		`echo hello there`,
+		`cat /dev/null && ip route show`,
 		[]string{"rshell:cat"},
-		[][]string{{"echo", "hello"}},
+		[][]string{{"ip", "route"}},
+		nil,
 	)
-	assert.Equal(t, 0, code)
-	assert.Equal(t, "hello there\n", stdout)
+	// cat /dev/null produces no output; the && short-circuits to ip route
+	// show, which the policy admits. The eventual exit code is whatever
+	// the ip builtin returns (1 on macOS), not 127.
+	_ = stdout
+	assert.NotEqual(t, 127, code)
 }
 
 func TestPatternsDoNotShadowAllowedCommands(t *testing.T) {
@@ -172,7 +254,8 @@ func TestPatternsDoNotShadowAllowedCommands(t *testing.T) {
 	stdout, _, code := runWithPatterns(t,
 		`echo whatever`,
 		[]string{"rshell:echo"},
-		[][]string{{"kubectl", "get"}},
+		[][]string{{"ip", "route"}},
+		nil,
 	)
 	assert.Equal(t, 0, code)
 	assert.Equal(t, "whatever\n", stdout)
@@ -180,32 +263,121 @@ func TestPatternsDoNotShadowAllowedCommands(t *testing.T) {
 
 // --- The architectural test: substitution-defeat ---
 
-// TestPatternsBlockSubstitutionEscape is the canonical demonstration that
-// argv-prefix pattern matching enforces post-expansion. The script forms
-// the command name via $(printf echo) — opaque to any static caller — and
-// then attempts to invoke it with an argv that does NOT match the pattern.
-// The matcher sees the resolved argv ["echo","goodbye"] at execve time
-// and refuses.
+// TestPatternsBlockSubstitutionEscape proves that argv-prefix pattern
+// matching enforces post-expansion. The script forms the command name via
+// $(printf ip) — opaque to any static caller — and then attempts an addr
+// invocation. The matcher sees the resolved argv ["ip","addr"] at execve
+// time and refuses against pattern (ip, route).
 func TestPatternsBlockSubstitutionEscape(t *testing.T) {
 	_, stderr, code := runWithPatterns(t,
-		`$(printf echo) goodbye`,
-		[]string{"rshell:printf"}, // printf must be allowed for the $(...) to succeed
-		[][]string{{"echo", "hello"}},
+		`$(printf ip) addr`,
+		[]string{"rshell:printf"}, // printf must be allowed for $(...) to succeed
+		[][]string{{"ip", "route"}},
+		nil,
 	)
 	assert.Equal(t, 127, code)
 	assert.Contains(t, stderr, "command not allowed")
 }
 
 // TestPatternsAllowSubstitutionWhenArgvMatches is the partner case: a
-// substitution that produces an argv matching the pattern is allowed.
-// Confirms the matcher isn't blanket-rejecting interpolation — it inspects
-// the expanded argv.
+// substitution that produces a matching argv is allowed. Confirms the
+// matcher inspects the expanded argv rather than blanket-rejecting
+// interpolation.
 func TestPatternsAllowSubstitutionWhenArgvMatches(t *testing.T) {
-	stdout, _, code := runWithPatterns(t,
-		`$(printf echo) hello world`,
+	_, _, code := runWithPatterns(t,
+		`$(printf ip) route show`,
 		[]string{"rshell:printf"},
-		[][]string{{"echo", "hello"}},
+		[][]string{{"ip", "route"}},
+		nil,
+	)
+	assert.NotEqual(t, 127, code, "expected post-expansion matcher to admit the call")
+}
+
+func TestPatternsSingleTokenPatternAdmitsAnyArgs(t *testing.T) {
+	// Single-token pattern (echo) — no spec required, no structural
+	// extraction, just argv[0] equality.
+	stdout, _, code := runWithPatterns(t,
+		`echo whatever args you like`,
+		nil,
+		[][]string{{"echo"}},
+		nil,
 	)
 	assert.Equal(t, 0, code)
-	assert.Equal(t, "hello world\n", stdout)
+	assert.Equal(t, "whatever args you like\n", stdout)
+}
+
+// --- Spec-driven flag classification (unit-level) ---
+
+// TestSpecValueFlagSkipsTwoTokens checks that a registered ValueFlag
+// consumes the next argv token (its value), so the structural-token
+// stream begins after both. We use echo as the test binary with a
+// synthetic spec that pretends -n is a value flag (the real echo's -n
+// is boolean, but the policy gate doesn't care — the spec dictates
+// classification).
+//
+// argv: ["echo","-n","ns","route","show"]. With ValueFlags={"-n"},
+// the matcher consumes "-n" and "ns" as a flag/value pair, leaving
+// structural ["route","show"]. Pattern (echo, route) matches.
+func TestSpecValueFlagSkipsTwoTokens(t *testing.T) {
+	_, _, code := runWithPatterns(t,
+		`echo -n ns route show`,
+		nil,
+		[][]string{{"echo", "route"}},
+		map[string]interp.CommandSpec{
+			"echo": {ValueFlags: map[string]bool{"-n": true}},
+		},
+	)
+	assert.Equal(t, 0, code, "value-flag pair should be skipped, leaving 'route' as the leading structural token")
+}
+
+// TestSpecValueFlagDoesNotMatchWhenValueIsExpectedSubcommand confirms
+// the partner case: when the value-flag's value happens to equal what
+// would have been a matching subcommand, the matcher correctly skips it
+// rather than counting it as structural. argv ["echo","-n","route","show"]
+// with -n as a value flag → structural ["show"] → pattern (echo, route)
+// blocked because "route" was consumed as -n's value, not as the
+// subcommand.
+func TestSpecValueFlagDoesNotMatchWhenValueIsExpectedSubcommand(t *testing.T) {
+	_, stderr, code := runWithPatterns(t,
+		`echo -n route show`,
+		nil,
+		[][]string{{"echo", "route"}},
+		map[string]interp.CommandSpec{
+			"echo": {ValueFlags: map[string]bool{"-n": true}},
+		},
+	)
+	assert.Equal(t, 127, code)
+	assert.Contains(t, stderr, "command not allowed")
+}
+
+// TestSpecLongFlagWithEqualsIsSelfContained checks that "--flag=value" is
+// always treated as a single skip token regardless of the spec's
+// classification of "--flag".
+func TestSpecLongFlagWithEqualsIsSelfContained(t *testing.T) {
+	// Spec doesn't even know about --output. The matcher treats any
+	// "--key=value" token as a single skip and continues.
+	_, _, code := runWithPatterns(t,
+		`echo --output=json route show`,
+		nil,
+		[][]string{{"echo", "route"}},
+		map[string]interp.CommandSpec{"echo": {}},
+	)
+	assert.Equal(t, 0, code)
+}
+
+// TestSpecUnknownFlagTreatedAsBoolean checks the conservative default:
+// a flag-shaped token not in the spec is treated as boolean (skipped
+// alone). This is more permissive than strictly correct but avoids
+// breaking matches when the spec is incomplete.
+func TestSpecUnknownFlagTreatedAsBoolean(t *testing.T) {
+	// Spec has no flags. argv: echo --debug route show. --debug skipped
+	// as boolean → structural ["route","show"] → pattern (echo, route)
+	// matches.
+	_, _, code := runWithPatterns(t,
+		`echo --debug route show`,
+		nil,
+		[][]string{{"echo", "route"}},
+		map[string]interp.CommandSpec{"echo": {}},
+	)
+	assert.Equal(t, 0, code)
 }
