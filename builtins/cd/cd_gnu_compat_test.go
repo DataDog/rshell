@@ -3,11 +3,13 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2026-present Datadog, Inc.
 
-// Reference outputs in this file were captured against GNU bash 5.2 on
-// Linux. Each test embeds the captured bytes as a string literal and
-// asserts byte-for-byte equality, so the suite runs without bash present
-// on CI. See the per-test comment for the exact bash invocation used to
-// capture the reference output.
+// Reference outputs in this file describe the expected rshell behaviour for
+// GNU bash 5.2-compatible scenarios. Where rshell matches GNU bash 5.2
+// (captured on Linux), the per-test comment documents the exact bash
+// invocation. Where rshell intentionally diverges from bash (e.g. the
+// shell-name prefix is dropped, error-message capitalisation may differ),
+// the per-test comment explains the divergence so the test remains
+// unambiguous.
 
 package cd_test
 

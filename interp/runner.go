@@ -59,9 +59,12 @@ func (r *Runner) errf(format string, a ...any) {
 //
 // All three state updates (OLDPWD, r.Dir, PWD) are committed together:
 // r.Dir is not changed until both variable writes succeed. This prevents
-// a partial-update where the runner's working directory has moved but the
-// shell variables are stale (which can happen when the variable store is
-// near MaxTotalVarsBytes and a write is rejected).
+// the runner's working directory from diverging from $PWD (which would
+// cause broken relative-path resolution). Note: if the OLDPWD write
+// succeeds but the subsequent PWD write fails (possible when the variable
+// store is near MaxTotalVarsBytes), OLDPWD will have been updated without
+// PWD changing — that edge case is accepted since r.Dir is always
+// consistent with $PWD after a successful return.
 func (r *Runner) applyNewWorkDir(newDir string) {
 	// Prefer the shell $PWD variable as the old directory to record in
 	// OLDPWD, matching bash's behaviour for inline PWD assignments.
