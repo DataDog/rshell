@@ -369,9 +369,11 @@ func (s *Sandbox) Open(path string, cwd string, flag int, perm os.FileMode) (io.
 }
 
 // Truncate sets the size of the file at path to size bytes. When create is
-// true, a missing file is created with mode 0644; when create is false, a
-// missing file returns os.ErrNotExist (the caller, e.g. truncate -c, decides
-// whether to treat that as an error or a silent skip).
+// true, a missing file is created with the open(2) permissive default
+// (0666 & ~umask), matching GNU truncate and bash redirect semantics; the
+// process umask is what actually decides the mode. When create is false,
+// a missing file returns os.ErrNotExist (the caller, e.g. truncate -c,
+// decides whether to treat that as an error or a silent skip).
 //
 // Like Open, the operation goes through os.Root for atomic openat-based path
 // validation. The cross-root symlink fallback is intentionally NOT used:
@@ -417,7 +419,10 @@ func (s *Sandbox) Truncate(path string, cwd string, size int64, create bool) err
 	if create {
 		flag |= os.O_CREATE
 	}
-	f, err := ar.root.OpenFile(relPath, flag, 0644)
+	// 0666 lets the process umask determine the final mode (open(2) applies
+	// mode & ~umask). This matches GNU truncate and bash >FILE behaviour:
+	// `umask 000; truncate -s 0 f` produces 0666; `umask 022` yields 0644.
+	f, err := ar.root.OpenFile(relPath, flag, 0666)
 	if err != nil {
 		// Return the raw error so callers can use errors.Is against
 		// fs.ErrNotExist / fs.ErrPermission. The handler renders user-

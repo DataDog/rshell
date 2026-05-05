@@ -8,6 +8,7 @@
 package allowedpaths
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"syscall"
@@ -860,6 +861,44 @@ func TestSandboxTruncateMethodFIFONoReaderDoesNotBlock(t *testing.T) {
 		assert.Error(t, err, "FIFO target must be rejected, not silently truncated")
 	case <-time.After(2 * time.Second):
 		t.Fatal("Truncate blocked on FIFO without reader — O_NONBLOCK regressed")
+	}
+}
+
+// TestSandboxTruncateMethodCreatesHonourUmask verifies that newly-created
+// files use 0666 & ~umask, matching GNU truncate and bash redirect
+// semantics. Hard-coding 0644 on the OpenFile call would make the result
+// more restrictive than coreutils when umask is permissive (umask 000
+// should produce 0666, not 0644).
+//
+// syscall.Umask is process-global so this test cannot run in parallel
+// with other umask-sensitive tests. The defer restores the saved value.
+func TestSandboxTruncateMethodCreatesHonourUmask(t *testing.T) {
+	cases := []struct {
+		umaskBits int
+		wantMode  os.FileMode
+	}{
+		{0o022, 0o644},
+		{0o000, 0o666},
+		{0o077, 0o600},
+	}
+	for _, tc := range cases {
+		name := fmt.Sprintf("umask_%03o", tc.umaskBits)
+		t.Run(name, func(t *testing.T) {
+			old := syscall.Umask(tc.umaskBits)
+			defer syscall.Umask(old)
+
+			dir := t.TempDir()
+			sb, _, err := New([]string{dir})
+			require.NoError(t, err)
+			defer sb.Close()
+
+			require.NoError(t, sb.Truncate("fresh.txt", dir, 0, true))
+
+			info, err := os.Stat(filepath.Join(dir, "fresh.txt"))
+			require.NoError(t, err)
+			assert.Equal(t, tc.wantMode, info.Mode().Perm(),
+				"umask %03o should yield mode %03o", tc.umaskBits, tc.wantMode)
+		})
 	}
 }
 

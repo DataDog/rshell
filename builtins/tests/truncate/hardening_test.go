@@ -114,10 +114,18 @@ func TestHardenDirectoryTarget(t *testing.T) {
 	}
 }
 
-// TestHardenCreatePreservesMode verifies that newly-created files use a
-// reasonable default mode (0644 minus umask). This guards against an
-// accidental switch to 0666 or 0777.
+// TestHardenCreatePreservesMode verifies that newly-created files use the
+// open(2) default of 0666 & ~umask, matching GNU truncate and bash. We
+// also assert that no execute or special bits are set under any umask.
+//
+// Umask is locked to 022 in the test (the typical operator environment)
+// so the mode comparison is deterministic. The umask-honouring property
+// itself is verified directly against the sandbox API in
+// allowedpaths.TestSandboxTruncateMethodCreatesHonourUmask.
 func TestHardenCreatePreservesMode(t *testing.T) {
+	old := umaskOrSkip(t, 0o022)
+	defer restoreUmask(old)
+
 	dir := t.TempDir()
 	_, _, code := truncateRun(t, "truncate -s 0 fresh.bin", dir)
 	if code != 0 {
@@ -128,14 +136,10 @@ func TestHardenCreatePreservesMode(t *testing.T) {
 		t.Fatal(err)
 	}
 	mode := info.Mode().Perm()
-	// On Unix the umask reduces the requested 0644 to whatever the test
-	// process's umask permits. We require: no setuid/setgid/sticky bits,
-	// no group-/world-writable bits, no execute bits.
-	if mode&0o111 != 0 {
-		t.Errorf("created file should not be executable: mode=%o", mode)
-	}
-	if mode&0o022 != 0 {
-		t.Errorf("created file should not be group/world writable: mode=%o", mode)
+	// 0666 & ~022 == 0644. Execute/setuid/setgid/sticky bits should not
+	// appear under any umask.
+	if mode != 0o644 {
+		t.Errorf("mode = %#o, want 0644 under umask 022", mode)
 	}
 	if info.Mode()&(os.ModeSetuid|os.ModeSetgid|os.ModeSticky) != 0 {
 		t.Errorf("created file should have no special bits: mode=%o", info.Mode())
