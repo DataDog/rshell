@@ -1,0 +1,18 @@
+# When a NUL byte appears in the leading-whitespace region (before any token
+# content), rshell warns and discards the NUL-contaminated word via
+# discardUntilWhitespace, producing zero tokens for input like "\x00b\n".
+# GNU xargs emits an empty-string token for the NUL-contaminated word
+# (one invocation with an empty argument).
+# This is an intentional divergence: our implementation discards the
+# NUL-contaminated token rather than emitting an empty-string argument.
+skip_assert_against_bash: true
+description: NUL in leading whitespace region is discarded; rshell emits no token (GNU emits empty token).
+input:
+  script: |+
+    printf '\x00b\n' | xargs echo
+expect:
+  stdout: |+
+
+  stderr: |+
+    xargs: WARNING: a NUL character occurred in the input.  It cannot be passed through in the argument list.  Did you mean to use the --null option?
+  exit_code: 0

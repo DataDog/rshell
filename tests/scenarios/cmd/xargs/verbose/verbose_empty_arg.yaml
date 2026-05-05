@@ -1,0 +1,14 @@
+# GNU xargs -t represents an empty argument as '' in the verbose output.
+# An empty string passes the "safe" check in shellQuote (no special chars),
+# so without the explicit empty-string guard it would emit a bare space
+# instead of the quoted form.
+skip_assert_against_bash: true
+description: xargs -t quotes empty-string arguments as '' in verbose output.
+input:
+  script: |+
+    printf '\0' | xargs -0 -t echo
+expect:
+  stdout: "\n"
+  stderr: |+
+    echo ''
+  exit_code: 0

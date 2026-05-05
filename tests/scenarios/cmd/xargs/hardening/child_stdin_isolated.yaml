@@ -1,0 +1,16 @@
+# GNU xargs detaches child stdin from the xargs input pipe (redirects to /dev/null).
+# rshell implements this via callCtx.RunCommandStdin = strings.NewReader(""),
+# so nested xargs commands receive an empty reader instead of the live input pipe.
+# Without isolation, the inner xargs would drain the outer pipe and produce
+# fewer invocations.
+skip_assert_against_bash: true
+description: nested xargs demonstrates stdin isolation — each inner invocation sees empty stdin.
+input:
+  script: |+
+    printf 'a\nb\n' | xargs -n 1 xargs echo
+expect:
+  stdout: |+
+    a
+    b
+  stderr: ""
+  exit_code: 0

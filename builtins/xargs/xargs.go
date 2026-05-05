@@ -788,6 +788,9 @@ func shellQuote(s string) string {
 		}
 	}
 	if safe {
+		if len(s) == 0 {
+			return "''"
+		}
 		return s
 	}
 	// Wrap in single quotes, escaping embedded single quotes as '\''.

@@ -426,7 +426,7 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 				// isolate child commands from its own input pipe), use that
 				// instead of the runner's stdin. Each nesting level uses its
 				// own callerCtx so nested xargs chains don't bleed across depths.
-				if callerCtx != nil && callerCtx.RunCommandStdin != nil {
+				if callerCtx.RunCommandStdin != nil {
 					child.Stdin = callerCtx.RunCommandStdin
 				} else if r.stdin != nil {
 					child.Stdin = r.stdin
