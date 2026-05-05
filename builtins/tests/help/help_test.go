@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -139,10 +140,12 @@ func TestHelpListsAllCommands(t *testing.T) {
 	for _, name := range names {
 		meta, ok := builtins.Meta(name)
 		require.True(t, ok, "Meta(%q) should exist", name)
-		// Match the rendered table row so we don't get false positives from
-		// short names (e.g. "[") appearing elsewhere in the output.
-		assert.Contains(t, stdout, meta.Description,
-			"help output should describe %q", name)
+		// Match the rendered table row (name, ≥2 spaces of column padding,
+		// then description) so missing rows are caught even when descriptions
+		// repeat across builtins (e.g. "[" and "test" both describe
+		// "evaluate conditional expression").
+		rowRe := regexp.MustCompile(`(?m)^` + regexp.QuoteMeta(name) + `\s+` + regexp.QuoteMeta(meta.Description) + `$`)
+		assert.Regexp(t, rowRe, stdout, "help output should render row for %q", name)
 	}
 }
 
