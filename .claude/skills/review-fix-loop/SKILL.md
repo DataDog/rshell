@@ -68,6 +68,22 @@ Step 1 → Step 2 (loop: 2A1 → 2A2 → 2B → 2C → 2D → 2E) → Step 3 →
 
 If you catch yourself wanting to skip a step, STOP and do the step anyway.
 
+### 4. Execution continuity — never stall between steps
+
+The moment a task's completion check is satisfied, you MUST in the same turn:
+
+1. Call TaskUpdate to mark that task `completed`.
+2. Call TaskUpdate to set the next task `in_progress` (per the execution order in section 2).
+3. Begin executing that next task — issue its first tool call without waiting.
+
+Do NOT stop, summarize, or wait for user acknowledgement after:
+- posting a PR comment or review,
+- finishing a sub-skill (`code-review`, `address-pr-comments`, `fix-ci-tests`),
+- pushing commits,
+- recording a count or status.
+
+The only legitimate stopping points are: (a) an unrecoverable error, (b) Step 4 has been marked `completed`, or (c) the iteration limit was reached and Step 4's summary has been posted. Anything else is a stall and is a bug.
+
 ---
 
 ## Step 1: Identify the PR
@@ -156,8 +172,6 @@ This reads all unresolved review comments, evaluates validity, implements fixes,
 
 **Commit message prefix:** All commits created in this sub-step MUST be prefixed with the current loop iteration number, e.g. `[iter 3] Fix null check in parser`.
 
-Wait for completion before proceeding to 2C.
-
 ### Sub-step 2C — Fix CI failures
 
 Run the **fix-ci-tests** skill:
@@ -167,8 +181,6 @@ Run the **fix-ci-tests** skill:
 This checks for failing CI jobs, downloads logs, reproduces failures locally, fixes them, and pushes.
 
 **Commit message prefix:** All commits created in this sub-step MUST be prefixed with the current loop iteration number, e.g. `[iter 3] Fix flaky test timeout`.
-
-Wait for completion before proceeding to 2D.
 
 ---
 
