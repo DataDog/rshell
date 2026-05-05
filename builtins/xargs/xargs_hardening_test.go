@@ -237,6 +237,52 @@ func TestXargsReplaceTrailingNoNewline(t *testing.T) {
 	assert.Equal(t, "a\nb\n", stdout)
 }
 
+// --- -I quote / backslash processing (matches GNU xargs) ---
+
+func TestXargsReplaceSingleQuoted(t *testing.T) {
+	dir := t.TempDir()
+	stdout, _, code := cmdRun(t, "printf \"'a b'\\n\" | xargs -I {} echo X{}X", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "Xa bX\n", stdout)
+}
+
+func TestXargsReplaceDoubleQuoted(t *testing.T) {
+	dir := t.TempDir()
+	stdout, _, code := cmdRun(t, "printf '\"a b\"\\n' | xargs -I {} echo X{}X", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "Xa bX\n", stdout)
+}
+
+func TestXargsReplaceBackslashEscape(t *testing.T) {
+	dir := t.TempDir()
+	// `a\ b` is one token (the backslash escapes the space).
+	stdout, _, code := cmdRun(t, "printf 'a\\\\ b\\n' | xargs -I {} echo X{}X", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "Xa bX\n", stdout)
+}
+
+func TestXargsReplaceBackslashJoinsLines(t *testing.T) {
+	dir := t.TempDir()
+	// `a\<NL>b<NL>` is one record with an embedded newline.
+	stdout, _, code := cmdRun(t, "printf 'a\\\\\\nb\\n' | xargs -I {} printf 'X%sX\\n' {}", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "Xa\nbX\n", stdout)
+}
+
+func TestXargsReplaceUnmatchedSingleQuote(t *testing.T) {
+	dir := t.TempDir()
+	_, stderr, code := cmdRun(t, "printf \"'a b\\n\" | xargs -I {} echo {}", dir)
+	assert.NotEqual(t, 0, code)
+	assert.Contains(t, stderr, "unterminated")
+}
+
+func TestXargsReplaceUnmatchedDoubleQuote(t *testing.T) {
+	dir := t.TempDir()
+	_, stderr, code := cmdRun(t, "printf '\"a b\\n' | xargs -I {} echo {}", dir)
+	assert.NotEqual(t, 0, code)
+	assert.Contains(t, stderr, "unterminated")
+}
+
 // --- nextDelimited memory: trailing token without separator ---
 
 func TestXargsNullTrailingNoSeparator(t *testing.T) {

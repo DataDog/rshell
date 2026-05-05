@@ -926,27 +926,23 @@ func (t *tokenizer) next(ctx context.Context) (item string, endedLine, more bool
 	}
 	switch t.o.mode {
 	case modeNull:
-		return t.nextDelimited(ctx, 0, false)
+		return t.nextDelimited(ctx, 0)
 	case modeDelim:
-		return t.nextDelimited(ctx, t.o.delim, false)
+		return t.nextDelimited(ctx, t.o.delim)
 	case modeLine:
-		return t.nextDelimited(ctx, '\n', true)
+		return t.nextLine(ctx)
 	default:
 		return t.nextWhitespace(ctx)
 	}
 }
 
 // nextDelimited reads bytes until the next occurrence of sep or EOF.
-// When skipBlank is true (used by modeLine), an empty token between
-// adjacent separators is silently dropped. In modeLine, leading
-// whitespace (space/tab) is also trimmed from each line, matching GNU
-// xargs -I semantics. The "endedLine" flag is true whenever the item
-// terminates a logical record so -L correctly counts batches: '\n'
-// always counts; under -d / -0 each delimiter-separated record is also
-// treated as ending a line (matches GNU `xargs -d , -L1` semantics).
-func (t *tokenizer) nextDelimited(ctx context.Context, sep byte, skipBlank bool) (string, bool, bool, error) {
+// Used by -0 (sep == 0) and -d (sep == o.delim). Quotes and backslashes
+// are NOT processed — every byte except sep is taken literally. Each
+// delimiter-terminated record is treated as ending a line so -L
+// correctly counts batches under `xargs -d , -L1`.
+func (t *tokenizer) nextDelimited(ctx context.Context, sep byte) (string, bool, bool, error) {
 	t.buf = t.buf[:0]
-	endedLine := sep == '\n' || t.o.mode == modeDelim || t.o.mode == modeNull
 	for {
 		if err := t.pollCtx(ctx); err != nil {
 			return "", false, false, err
@@ -958,21 +954,108 @@ func (t *tokenizer) nextDelimited(ctx context.Context, sep byte, skipBlank bool)
 				if len(t.buf) == 0 {
 					return "", false, false, nil
 				}
-				return string(t.buf), endedLine, true, nil
+				return string(t.buf), true, true, nil
 			}
 			return "", false, false, err
 		}
 		if b == sep {
-			if skipBlank && len(t.buf) == 0 {
-				continue
-			}
-			return string(t.buf), endedLine, true, nil
+			return string(t.buf), true, true, nil
 		}
-		// In modeLine (-I), drop leading whitespace on each line. Trailing
-		// and internal whitespace is preserved.
-		if t.o.mode == modeLine && len(t.buf) == 0 && (b == ' ' || b == '\t') {
+		if err := t.pushByte(b); err != nil {
+			return "", false, false, err
+		}
+	}
+}
+
+// nextLine handles -I tokenisation: records are newline-separated, but
+// quotes and backslash escapes are still processed within each line
+// (matching GNU xargs semantics). Leading whitespace on each record is
+// stripped; trailing/internal whitespace is preserved. A backslash
+// outside quotes escapes the next byte (including newlines, which joins
+// the current record with the following line). A literal '\n' inside an
+// open quote is treated as an unterminated quote, matching GNU.
+func (t *tokenizer) nextLine(ctx context.Context) (string, bool, bool, error) {
+	t.buf = t.buf[:0]
+
+	// Skip leading whitespace, including blank lines.
+	for {
+		if err := t.pollCtx(ctx); err != nil {
+			return "", false, false, err
+		}
+		b, err := t.r.ReadByte()
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				t.eof = true
+				return "", false, false, nil
+			}
+			return "", false, false, err
+		}
+		if b == ' ' || b == '\t' || b == '\n' {
 			continue
 		}
+		if err := t.r.UnreadByte(); err != nil {
+			return "", false, false, err
+		}
+		break
+	}
+
+	var quote byte
+	for {
+		if err := t.pollCtx(ctx); err != nil {
+			return "", false, false, err
+		}
+		b, err := t.r.ReadByte()
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				t.eof = true
+				if quote != 0 {
+					return "", false, false, fmt.Errorf("unterminated %c-quoted string", quote)
+				}
+				if len(t.buf) == 0 {
+					return "", false, false, nil
+				}
+				return string(t.buf), true, true, nil
+			}
+			return "", false, false, err
+		}
+
+		if quote != 0 {
+			if b == quote {
+				quote = 0
+				continue
+			}
+			if b == '\n' {
+				return "", false, false, fmt.Errorf("unterminated %c-quoted string", quote)
+			}
+			if err := t.pushByte(b); err != nil {
+				return "", false, false, err
+			}
+			continue
+		}
+
+		switch b {
+		case '\'', '"':
+			quote = b
+			continue
+		case '\\':
+			n, errEsc := t.r.ReadByte()
+			if errEsc != nil {
+				if errors.Is(errEsc, io.EOF) {
+					// GNU silently consumes a trailing backslash at EOF.
+					continue
+				}
+				return "", false, false, errEsc
+			}
+			// Preserve the escaped byte literally (including newline,
+			// which joins the current record with the next line).
+			if err := t.pushByte(n); err != nil {
+				return "", false, false, err
+			}
+			continue
+		case '\n':
+			return string(t.buf), true, true, nil
+		}
+
 		if err := t.pushByte(b); err != nil {
 			return "", false, false, err
 		}
