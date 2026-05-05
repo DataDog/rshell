@@ -254,7 +254,6 @@ var builtinPerCommandSymbols = map[string][]string{
 		"time.Time",                           // 🟢 time value type; pure data, no side effects.
 		"time.Unix",                           // 🟢 constructs an absolute Time at Unix-epoch + (sec, nsec); used by the cancellation watchdog to set an "in the past" SetReadDeadline. Pure constructor, no side effects.
 		"unicode/utf8.DecodeLastRuneInString", // 🟢 decodes last UTF-8 rune in a string (trailing IFS-whitespace strip); pure function, no I/O.
-		"unicode/utf8.DecodeRune",             // 🟢 decodes first UTF-8 rune from a byte slice; pure function, no I/O.
 		"unicode/utf8.DecodeRuneInString",     // 🟢 decodes first UTF-8 rune from a string; pure function, no I/O.
 		"unicode/utf8.FullRune",               // 🟢 reports whether a byte slice begins with a complete UTF-8 rune; pure function, no I/O.
 		"unicode/utf8.RuneSelf",               // 🟢 first byte value above which UTF-8 multi-byte encoding begins; pure constant.

@@ -170,12 +170,26 @@ func run(ctx context.Context, c *builtins.CallContext, args []string, opt runOpt
 		}
 	}
 
-	var delim rune = '\n'
+	// The delimiter is a single BYTE, not a rune: bash 5.2 treats `-d
+	// DELIM` as "the first character of DELIM", but in practice it
+	// scans the input byte-by-byte and stops at the first byte equal
+	// to the first byte of DELIM. With a multi-byte UTF-8 DELIM (e.g.
+	// `é` = 0xC3 0xA9), bash matches and consumes only the leading
+	// byte (0xC3), leaving the trailing 0xA9 in the stream for
+	// subsequent reads. Verified empirically:
+	//
+	//   printf 'a\xc3\xa9b' | { read -d $'\xc3' x; cat; }
+	//     bash 5.2: x="a"; cat shows '\xa9 b'  (1 byte consumed for delim)
+	//
+	// A previous rune-based implementation consumed BOTH bytes of the
+	// multi-byte char, which silently dropped one byte from any
+	// downstream consumer. Use byte semantics to match bash.
+	var delim byte = '\n'
 	if opt.delimSet {
 		if opt.delim == "" {
 			delim = 0
 		} else {
-			delim, _ = utf8.DecodeRuneInString(opt.delim)
+			delim = opt.delim[0]
 		}
 	}
 
@@ -233,6 +247,39 @@ func run(ctx context.Context, c *builtins.CallContext, args []string, opt runOpt
 			}
 		}
 	}
+	noNames := len(args) == 0
+	names := args
+	if noNames {
+		names = []string{"REPLY"}
+	}
+
+	// Poll mode (-t 0 or -t "") returns immediately: 0 if input is
+	// available, 1 otherwise. Performed before any other validation —
+	// bash 5.2 does NOT validate identifier names in poll mode (e.g.
+	// `printf 'a\n' | { read -t 0 1bad; read rest; }` returns the
+	// poll status with no error and leaves rest=a). Done before the
+	// prompt too, since poll mode never consumes input.
+	//
+	// Regular files are trivially "available" because their reads
+	// don't block. Short-circuit to Code 0 here — this is required
+	// for cross-platform correctness: pollAvailable on Windows uses
+	// the SetReadDeadline+Read fallback (since the unix poll(2)
+	// path doesn't exist), and SetReadDeadline rejects regular
+	// files, so without this short-circuit `read -t 0 X < file`
+	// would incorrectly return 1 on Windows for a deterministic
+	// "always pollable" input shape.
+	//
+	// Run pollMode BEFORE the kernel-cancel block below: pollAvailable
+	// returns instantly via poll(2) and never enters a blocking Read,
+	// so the watchdog goroutine + SetReadDeadline syscalls would be
+	// pure overhead.
+	if pollMode {
+		if stdinIsRegularFile {
+			return builtins.Result{Code: 0}
+		}
+		return pollAvailable(c)
+	}
+
 	// Best-effort kernel-level cancellation for blocking stdin reads.
 	// Works for *os.File pipes (the typical runner-supplied stdin shape).
 	// Two layers:
@@ -293,34 +340,6 @@ func run(ctx context.Context, c *builtins.CallContext, args []string, opt runOpt
 				kernelCancel = true
 			}
 		}
-	}
-
-	noNames := len(args) == 0
-	names := args
-	if noNames {
-		names = []string{"REPLY"}
-	}
-
-	// Poll mode (-t 0 or -t "") returns immediately: 0 if input is
-	// available, 1 otherwise. Performed before any other validation —
-	// bash 5.2 does NOT validate identifier names in poll mode (e.g.
-	// `printf 'a\n' | { read -t 0 1bad; read rest; }` returns the
-	// poll status with no error and leaves rest=a). Done before the
-	// prompt too, since poll mode never consumes input.
-	//
-	// Regular files are trivially "available" because their reads
-	// don't block. Short-circuit to Code 0 here — this is required
-	// for cross-platform correctness: pollAvailable on Windows uses
-	// the SetReadDeadline+Read fallback (since the unix poll(2)
-	// path doesn't exist), and SetReadDeadline rejects regular
-	// files, so without this short-circuit `read -t 0 X < file`
-	// would incorrectly return 1 on Windows for a deterministic
-	// "always pollable" input shape.
-	if pollMode {
-		if stdinIsRegularFile {
-			return builtins.Result{Code: 0}
-		}
-		return pollAvailable(c)
 	}
 
 	// Bash validates identifiers per-assignment but with one special
@@ -599,21 +618,32 @@ func validVarName(name string) bool {
 	return true
 }
 
-// readInput reads from r rune-by-rune until one of:
-//   - the delimiter rune is encountered (and ignoreDelim is false)
+// readInput reads from r byte-by-byte until one of:
+//   - the delimiter byte is encountered (and ignoreDelim is false)
 //   - charLimit characters have been read (when charLimit >= 0)
 //   - EOF
 //   - context cancellation or timeout
-//   - the next character would push the output buffer past MaxReadBytes
+//   - the next byte would push the output buffer past MaxReadBytes
 //
 // The returned line excludes the trailing delimiter. eof reports whether
 // the underlying reader reached EOF.
 //
+// Delimiter, NUL stripping, and backslash escapes all operate at the BYTE
+// level, matching bash 5.2 — see the detailed comment on `delim` in run()
+// for the bash-compat rationale. charLimit, in contrast, counts characters
+// (UTF-8 code points): when -n N is given, we accumulate bytes into the
+// buffer and increment the rune counter only when the trailing bytes form
+// a complete rune (or when 4 bytes have piled up without completion, in
+// which case bash counts the run as a single replacement char).
+//
 // In non-raw mode (raw=false), backslash sequences are interpreted:
-//   - "\<delim>" is a line continuation: both runes are dropped and reading
-//     continues on the next physical line.
-//   - "\<X>" for any other X reduces to X (the backslash is removed, X
-//     is appended verbatim and counts as one character).
+//   - "\<newline>" is a line continuation: both bytes are dropped and
+//     reading continues on the next physical line.
+//   - "\<X>" for any other byte X reduces to X (the backslash is removed,
+//     X is appended verbatim). Crucially, the escape suppresses delim
+//     and NUL handling on X — `read -d , x` over `a\,b,c` produces
+//     x="a,b" because the `,` after the backslash is preserved as a
+//     literal byte.
 //
 // Reads happen one byte at a time. This is slow but correct: a buffered
 // reader would consume bytes past the delimiter and prevent subsequent
@@ -622,7 +652,7 @@ func validVarName(name string) bool {
 // The MaxReadBytes cap is checked just before each append so a value or
 // line exactly at the cap (e.g. read -n 1048576 over 1 MiB of ASCII)
 // succeeds; only a write that would exceed the cap is rejected.
-func readInput(ctx context.Context, r io.Reader, delim rune, raw bool, charLimit int, ignoreDelim, useGoroutinePoll bool) (string, bool, error) {
+func readInput(ctx context.Context, r io.Reader, delim byte, raw bool, charLimit int, ignoreDelim, useGoroutinePoll bool) (string, bool, error) {
 	if r == nil {
 		// No stdin (default runner configuration): treat as immediate
 		// EOF. The caller's assignment loop will clear each requested
@@ -725,10 +755,17 @@ func readInput(ctx context.Context, r io.Reader, delim rune, raw bool, charLimit
 						break
 					}
 					// n=0, err=nil per io.Reader contract: retry.
-					// Check stop so cancellation isn't ignored if a
-					// misbehaving reader spins this loop.
+					// Watch both stop AND ctx.Done() — without the
+					// ctx.Done() arm, a misbehaving reader that spins
+					// (0, nil) indefinitely could pin a CPU until the
+					// consumer's `defer close(stop)` fires (which only
+					// happens after readInput returns, possibly after
+					// the consumer has already given up via ctx
+					// cancellation).
 					select {
 					case <-stop:
+						return
+					case <-ctx.Done():
 						return
 					default:
 					}
@@ -791,125 +828,123 @@ func readInput(ctx context.Context, r io.Reader, delim rune, raw bool, charLimit
 		}
 	}
 
-	readRune := func() (rune, []byte, error) {
-		b, err := readByte()
-		if err != nil {
-			return 0, nil, err
-		}
-		if b < utf8.RuneSelf {
-			return rune(b), []byte{b}, nil
-		}
-		rb := []byte{b}
-		for !utf8.FullRune(rb) && len(rb) < utf8.UTFMax {
-			b2, err := readByte()
-			if err != nil {
-				rn, _ := utf8.DecodeRune(rb)
-				return rn, rb, err
-			}
-			rb = append(rb, b2)
-		}
-		rn, _ := utf8.DecodeRune(rb)
-		return rn, rb, nil
-	}
-
-	tryAppend := func(rb []byte) error {
-		if len(buf)+len(rb) > MaxReadBytes {
+	tryAppendByte := func(b byte) error {
+		if len(buf)+1 > MaxReadBytes {
 			return fmt.Errorf("input exceeds maximum of %d bytes", MaxReadBytes)
 		}
-		buf = append(buf, rb...)
+		buf = append(buf, b)
 		return nil
 	}
 
+	// Rune accounting for charLimit (`-n N` chars). Bash counts
+	// characters in the user's locale; in a UTF-8 locale that means
+	// code points. We track `lastRuneStart` as the index in `buf`
+	// where the in-progress UTF-8 sequence began. Each appended byte
+	// is tested against utf8.FullRune (or a 4-byte invalid-sequence
+	// fallback that bash treats as a single replacement char) and
+	// `runes` is incremented when the trailing bytes complete a rune.
+	// Escaped bytes use the same accounting — the post-escape byte
+	// becomes the next byte in the rune-progress stream.
 	runes := 0
+	lastRuneStart := 0
+	maybeRuneComplete := func(b byte) {
+		if b < utf8.RuneSelf {
+			runes++
+			lastRuneStart = len(buf)
+			return
+		}
+		pending := buf[lastRuneStart:]
+		if utf8.FullRune(pending) {
+			runes++
+			lastRuneStart = len(buf)
+			return
+		}
+		// Bound at UTFMax bytes: a malformed multi-byte sequence
+		// (overlong, missing continuation, lone start byte) gets
+		// counted as a single replacement-char rune to keep the
+		// rune-counter and charLimit comparison from running away.
+		if len(pending) >= utf8.UTFMax {
+			runes++
+			lastRuneStart = len(buf)
+		}
+	}
+
+	// inEscape tracks whether the previous byte was an unescaped
+	// backslash awaiting its escapee. Hoisted out of the loop so
+	// errors mid-escape (e.g., timeout after the backslash byte but
+	// before the escapee arrived) can be reported without losing
+	// state.
+	inEscape := false
 	for {
 		if charLimit >= 0 && runes >= charLimit {
 			return string(buf), false, nil
 		}
 
-		rn, rb, err := readRune()
+		b, err := readByte()
 		if errors.Is(err, io.EOF) {
-			if len(rb) > 0 {
-				if aerr := tryAppend(rb); aerr != nil {
-					return string(buf), false, aerr
-				}
-			}
+			// Trailing backslash with no escapee: bash drops the
+			// backslash and treats input as terminated. Any partial
+			// UTF-8 bytes already in buf stay (the rune is left
+			// truncated, matching bash byte-level semantics).
 			return string(buf), true, nil
 		}
 		if err != nil {
 			// Non-EOF error (timeout, ctx cancellation, transport
-			// error). When the byte stream stalled mid-UTF-8 — for
-			// example, a producer wrote 0xc3 then blocked until the
-			// `-t` deadline fired — readRune still returns the
-			// already-consumed bytes in rb. Bash includes those bytes
-			// in the assigned value before surfacing the timeout exit
-			// code (142); dropping them silently loses data that has
-			// already been read from stdin. Append the partial bytes
-			// (best-effort, ignoring cap errors which are even worse
-			// to surface here than the original timeout) before
-			// returning the error.
-			if len(rb) > 0 {
-				_ = tryAppend(rb)
-			}
+			// error). Any bytes already in buf stay — bash includes
+			// already-consumed data in the assigned value before
+			// surfacing the timeout exit code (142). The unconsumed
+			// `b` (if any) is discarded; readByte signalled an
+			// error rather than a successful byte.
 			return string(buf), false, err
 		}
 
-		if !ignoreDelim && rn == delim {
+		if inEscape {
+			inEscape = false
+			// Escape suppresses delim and NUL detection on the
+			// escaped byte, mirroring bash: `\<delim>` is preserved
+			// as a literal delim byte in the buffer, and `\<NUL>`
+			// is dropped (NULs are always stripped regardless of
+			// position).
+			if b == '\n' {
+				// Backslash-newline: line continuation. Drop both.
+				continue
+			}
+			if b == 0 {
+				continue
+			}
+			if aerr := tryAppendByte(b); aerr != nil {
+				return string(buf), false, aerr
+			}
+			maybeRuneComplete(b)
+			continue
+		}
+
+		// Byte-level delim check. With a multi-byte UTF-8 delim, only
+		// the first byte (passed in here) matches; the trailing bytes
+		// of the multi-byte sequence stay in the input stream for
+		// subsequent reads. Matches bash 5.2 byte-scan semantics.
+		if !ignoreDelim && b == delim {
 			return string(buf), false, nil
 		}
 
-		// Bash strips embedded NUL bytes from the assigned value. The
-		// only case where NUL is meaningful is as the delimiter
-		// (`read -d ''`), and that's handled by the delim check above.
-		// In any other configuration — including -N mode with -d '' —
-		// bash discards NULs without counting them toward charLimit.
-		if rn == 0 {
+		// Bash strips embedded NUL bytes from the assigned value.
+		// The only case where NUL is meaningful is as the delimiter
+		// (`read -d ''`), handled by the delim check above. In any
+		// other configuration — including -N mode with -d '' — bash
+		// discards NULs without counting them toward charLimit.
+		if b == 0 {
 			continue
 		}
 
-		if !raw && rn == '\\' {
-			nrn, nrb, nerr := readRune()
-			if errors.Is(nerr, io.EOF) {
-				// Trailing backslash with no escapee: bash drops the
-				// backslash and treats input as terminated by EOF.
-				return string(buf), true, nil
-			}
-			if nerr != nil {
-				return string(buf), false, nerr
-			}
-			// Backslash-newline is always a line continuation in non-raw
-			// mode, regardless of the active delimiter or whether -N is
-			// in effect (verified empirically against bash 5.3). With a
-			// custom -d delimiter, `\<delim>` (where delim != '\n') is
-			// instead an escape that preserves the literal delimiter:
-			// `printf 'a\,b,c' | read -d , x` assigns `a,b`. Both the
-			// continuation and the escape branches drop the backslash;
-			// the difference is whether the next rune is appended.
-			if nrn == '\n' {
-				continue
-			}
-			// NUL bytes are always stripped from the assigned value
-			// (the general "bash silently discards NULs unless they
-			// are the delimiter, and even with `-d ''` does not
-			// store them" rule from earlier in the loop). For a
-			// `\<NUL>` pair under `-d ''` this means we drop both
-			// the backslash and the NUL and keep reading — matching
-			// bash, which treats `\<NUL>` as if the backslash
-			// merely escapes a NUL that gets stripped.
-			if nrn == 0 {
-				continue
-			}
-			// Escape: drop the backslash, keep the next rune.
-			if aerr := tryAppend(nrb); aerr != nil {
-				return string(buf), false, aerr
-			}
-			runes++
+		if !raw && b == '\\' {
+			inEscape = true
 			continue
 		}
 
-		if aerr := tryAppend(rb); aerr != nil {
+		if aerr := tryAppendByte(b); aerr != nil {
 			return string(buf), false, aerr
 		}
-		runes++
+		maybeRuneComplete(b)
 	}
 }
 
