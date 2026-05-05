@@ -132,6 +132,34 @@ func TestAllowedPathCommaSeparated(t *testing.T) {
 	assert.Contains(t, stdout, "hello from testfile")
 }
 
+// TestDefaultDirIsFirstAllowedPath verifies that when AllowedPaths is set, the
+// shell starts in the first allowed path so relative file access works without
+// the caller having to chdir first.
+func TestDefaultDirIsFirstAllowedPath(t *testing.T) {
+	dir, _ := setupTestFile(t)
+	// "testfile.txt" is a path relative to the working directory. If the
+	// shell defaults to the first allowed path, this resolves to dir/testfile.txt.
+	code, stdout, stderr := runCLI(t, "--allow-all-commands", "-c", `cat testfile.txt`, "-p", dir)
+	assert.Equal(t, 0, code, "stderr: %s", stderr)
+	assert.Contains(t, stdout, "hello from testfile")
+}
+
+// TestDefaultDirPicksFirstOfMany verifies that the shell starts in the *first*
+// allowed path when several are configured, not a later one.
+func TestDefaultDirPicksFirstOfMany(t *testing.T) {
+	first := t.TempDir()
+	second := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(first, "marker.txt"), []byte("first"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(second, "marker.txt"), []byte("second"), 0o644))
+	if runtime.GOOS == "windows" {
+		first = filepath.ToSlash(first)
+		second = filepath.ToSlash(second)
+	}
+	code, stdout, stderr := runCLI(t, "--allow-all-commands", "-c", `cat marker.txt`, "-p", first+","+second)
+	assert.Equal(t, 0, code, "stderr: %s", stderr)
+	assert.Equal(t, "first", stdout, "should read marker.txt from the first allowed path")
+}
+
 func TestMultipleStatements(t *testing.T) {
 	code, stdout, _ := runCLI(t, "--allow-all-commands", "-c", "echo first\necho second")
 	assert.Equal(t, 0, code)
