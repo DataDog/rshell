@@ -3,10 +3,10 @@
 # discardUntilWhitespace, producing zero tokens for input like "\x00b\n".
 # GNU xargs emits an empty-string token for the NUL-contaminated word
 # (one invocation with an empty argument).
-# This is an intentional divergence: our implementation discards the
-# NUL-contaminated token rather than emitting an empty-string argument.
-skip_assert_against_bash: true
-description: NUL in leading whitespace region is discarded; rshell emits no token (GNU emits empty token).
+# Although the internal paths differ (rshell: finishEmpty -> echo with no args;
+# GNU: one invocation with empty-string arg), both produce identical visible output:
+# stdout=\n (blank line), stderr=NUL warning, exit=0.
+description: NUL in leading whitespace region — rshell and GNU both produce a blank line and NUL warning.
 input:
   script: |+
     printf '\x00b\n' | xargs echo

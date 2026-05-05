@@ -387,6 +387,8 @@ func buildOptions(fs *builtins.FlagSet, null bool, argFile, delim, eofStr string
 	if o.mode == modeNull || o.mode == modeDelim {
 		if o.eofStr != "" {
 			o.warnings = append(o.warnings, "warning: the -E option has no effect if -0 or -d is used.\n")
+			// The embedded \n is intentional: GNU xargs emits a blank line after this specific
+			// warning. Combined with the \n in Errf("xargs: %s\n", w), the total is \n\n.
 		}
 		o.eofStr = ""
 	}
