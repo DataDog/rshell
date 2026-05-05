@@ -521,6 +521,20 @@ func invokeCommand(ctx context.Context, callCtx *builtins.CallContext, o options
 
 	finalCmd, finalArgs := resolveCmd(o, batch)
 
+	// With -I the template may repeat the marker, so the resolved command
+	// line can exceed -s even though the raw template + raw item fit.
+	// GNU xargs aborts in that case with "command too long".
+	if o.useReplace() {
+		resolved := len(finalCmd) + 1
+		for _, a := range finalArgs {
+			resolved += len(a) + 1
+		}
+		if resolved > o.maxChars {
+			callCtx.Errf("xargs: argument line too long\n")
+			return exitUsage, true
+		}
+	}
+
 	if o.verbose {
 		printVerbose(callCtx, finalCmd, finalArgs)
 	}
@@ -681,8 +695,9 @@ func (t *tokenizer) next(ctx context.Context) (item string, endedLine, more bool
 
 // nextDelimited reads bytes until the next occurrence of sep or EOF.
 // When skipBlank is true (used by modeLine), an empty token between
-// adjacent separators is silently dropped. "endedLine" is meaningful only
-// when sep == '\n'.
+// adjacent separators is silently dropped. In modeLine, leading
+// whitespace (space/tab) is also trimmed from each line, matching GNU
+// xargs -I semantics. "endedLine" is meaningful only when sep == '\n'.
 func (t *tokenizer) nextDelimited(ctx context.Context, sep byte, skipBlank bool) (string, bool, bool, error) {
 	t.buf = t.buf[:0]
 	for {
@@ -705,6 +720,11 @@ func (t *tokenizer) nextDelimited(ctx context.Context, sep byte, skipBlank bool)
 				continue
 			}
 			return string(t.buf), sep == '\n', true, nil
+		}
+		// In modeLine (-I), drop leading whitespace on each line. Trailing
+		// and internal whitespace is preserved.
+		if t.o.mode == modeLine && len(t.buf) == 0 && (b == ' ' || b == '\t') {
+			continue
 		}
 		if err := t.pushByte(b); err != nil {
 			return "", false, false, err
