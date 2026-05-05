@@ -136,7 +136,7 @@ Wait for **both** to complete before proceeding.
 gh pr comment <pr-number> --body "<iteration N self-review result: number of findings by severity, and a brief summary>"
 ```
 
-Record the count of P0, P1, and P2 findings from the self-review as `P0_P1_P2_COUNT`. P3 findings are excluded from this count. This value is computed from our own code-review output (trusted) and is used in the STOP condition and success streak.
+Record the count of P0, P1, and P2 findings from the self-review as `P0_P1_P2_COUNT`. P3 findings are excluded from this count. This value is captured **before** 2B runs any fixes — it reflects all P0/P1/P2 findings the self-review raised this iteration, resolved or not. An iteration where fixes were applied to P0/P1/P2 findings still has a non-zero `P0_P1_P2_COUNT` and will not count toward the success streak; the next iteration must re-review from scratch and find zero P0/P1/P2 issues before the streak can grow.
 
 ---
 
