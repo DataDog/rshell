@@ -31,6 +31,7 @@ var builtinPerCommandSymbols = map[string][]string{
 		"bufio.NewScanner",     // 🟢 line-by-line input reading; no write or exec capability.
 		"bufio.SplitFunc",      // 🟢 type for custom scanner split functions; pure type, no I/O.
 		"bufio.ErrTooLong",     // 🟢 sentinel error for scanner buffer overflow; pure constant.
+		"context.Background",   // 🟢 returns a non-nil, empty Context; used as safe default in newRuntime().
 		"context.Context",      // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
 		"errors.Is",            // 🟢 error comparison; pure function, no I/O.
 		"errors.As",            // 🟢 error type assertion via interface; pure function, no I/O.
@@ -483,6 +484,7 @@ var builtinAllowedSymbols = []string{
 	"bytes.Equal",         // 🟢 compares two byte slices for equality; pure function, no I/O.
 	"bytes.IndexByte",     // 🟢 finds a byte in a byte slice; pure function, no I/O.
 	"bytes.NewReader",     // 🟢 wraps a byte slice as an io.Reader; pure in-memory, no I/O.
+	"context.Background",  // 🟢 returns a non-nil, empty Context; used as safe default in newRuntime().
 	"context.Context",     // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
 	"context.WithTimeout", // 🟢 creates a child context with a deadline; no filesystem or network I/O itself.
 	"errors.As",           // 🟢 error type assertion; pure function, no I/O.

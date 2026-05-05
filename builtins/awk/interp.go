@@ -95,6 +95,10 @@ func newRuntime(callCtx *builtins.CallContext) *runtime {
 		ofmt:        "%.6g",
 		rng:         newDeterministicRand(0),
 		rangeStates: make(map[int]bool),
+		// ctx is overridden by run() before any user program executes.
+		// Initialising to context.Background() prevents a nil-panic if a
+		// builtin (e.g. bSub) is ever called outside of run() in tests.
+		ctx:         context.Background(),
 	}
 }
 

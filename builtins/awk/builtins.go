@@ -248,6 +248,11 @@ func (r *runtime) bSplit(args []expr) (awkValue, error) {
 	case sep == "":
 		// Byte-based split (consistent with byte-based substr/index/match).
 		// Each byte becomes a separate field.
+		// Pre-check before allocating the slice to avoid a transient ~33 MB
+		// allocation for a 1 MiB string that would be rejected anyway.
+		if len(s) > MaxArrayEntries {
+			return uninitValue, fmt.Errorf("split: result exceeds maximum array entries %d", MaxArrayEntries)
+		}
 		parts = make([]string, 0, len(s))
 		for i := 0; i < len(s); i++ {
 			parts = append(parts, string(s[i]))
