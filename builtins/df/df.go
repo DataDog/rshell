@@ -107,6 +107,18 @@ const (
 	unitsHuman1000                 // -H: powers of 1000
 )
 
+// noArgSentinel is the NoOptDefVal we set on every no-argument flag
+// (unitFlag and noArgBool). pflag passes this exact string to Set when
+// the user writes the bare flag (`-h`, `--all`); for the explicit-value
+// form (`--all=true`) pflag passes the user's literal value instead.
+//
+// We use a single NUL byte so the two cases are distinguishable: NUL
+// is the C-string terminator and POSIX execve(2) refuses to pass argv
+// elements containing it, so the user cannot forge this string from a
+// shell. That lets Set reject every `=value` form — including `=true`
+// — to match GNU df's "doesn't allow an argument" exit-1 error.
+const noArgSentinel = "\x00"
+
 // unitFlag is a pflag.Value that writes a fixed unitMode into a shared
 // target each time the flag is set. We use one instance for -h (writes
 // unitsHuman1024) and one for -H (writes unitsHuman1000) sharing a
@@ -125,18 +137,16 @@ func (u *unitFlag) String() string { return "" }
 func (u *unitFlag) Type() string   { return "bool" }
 
 // Set is called by pflag once per occurrence of the flag. It receives:
-//   - the NoOptDefVal sentinel ("true") for a bare flag, e.g. `-h` or
-//     `--human-readable`;
+//   - noArgSentinel for a bare flag (e.g. `-h`, `--human-readable`);
 //   - the user's literal value for `--name=value` / `-name=value`.
 //
 // GNU df rejects every explicit-value form (`gdf --human-readable=false`
 // errors with "option '--human-readable' doesn't allow an argument";
-// even `=true` is rejected). pflag.Set cannot distinguish "bare flag"
-// from "=true" because both pass the same string, so the closest
-// approximation is to reject everything that is not the sentinel —
-// catches `=false`, `=garbage`, and the empty `=` form.
+// even `=true` is rejected). The sentinel is unforgeable from a shell
+// argv (NUL bytes can't be passed through execve), so any non-sentinel
+// value here means the user wrote `--flag=value` and must be rejected.
 func (u *unitFlag) Set(s string) error {
-	if s != "true" {
+	if s != noArgSentinel {
 		return errors.New("flag does not allow an argument")
 	}
 	*u.target = u.value
@@ -149,19 +159,18 @@ func (u *unitFlag) Set(s string) error {
 // and rejects `-h` with "flag needs an argument".
 func registerUnitFlag(fs *builtins.FlagSet, target *unitMode, value unitMode, name, shorthand, usage string) {
 	flag := fs.VarPF(&unitFlag{target: target, value: value}, name, shorthand, usage)
-	flag.NoOptDefVal = "true"
+	flag.NoOptDefVal = noArgSentinel
 }
 
 // noArgBool is a pflag.Value that mirrors GNU getopt's no_argument
 // behaviour: bare `--flag` and `-f` work, but `--flag=value` and
-// `-f=value` are rejected with "flag does not allow an argument" — for
-// any value, including `=true`. pflag.BoolP treats the explicit-value
-// form as a successful parse, which silently diverges from GNU.
+// `-f=value` are rejected with "flag does not allow an argument" for
+// every value (including `=true`). pflag.BoolP treats the
+// explicit-value form as a successful parse, which silently diverges
+// from GNU.
 //
-// As with unitFlag, pflag.Value.Set cannot distinguish a bare flag
-// from `=true` because both pass the literal string "true", so the
-// closest approximation is to reject anything that isn't the
-// NoOptDefVal sentinel — catches `=false`, `=garbage`, `=`.
+// Like unitFlag, this relies on noArgSentinel (a NUL byte) to
+// distinguish a bare flag from an explicit `=value`.
 type noArgBool struct {
 	target *bool
 }
@@ -174,7 +183,7 @@ func (b *noArgBool) String() string {
 }
 func (b *noArgBool) Type() string { return "bool" }
 func (b *noArgBool) Set(s string) error {
-	if s != "true" {
+	if s != noArgSentinel {
 		return errors.New("flag does not allow an argument")
 	}
 	*b.target = true
@@ -187,7 +196,7 @@ func (b *noArgBool) Set(s string) error {
 func registerNoArgBool(fs *builtins.FlagSet, name, shorthand, usage string) *bool {
 	target := new(bool)
 	flag := fs.VarPF(&noArgBool{target: target}, name, shorthand, usage)
-	flag.NoOptDefVal = "true"
+	flag.NoOptDefVal = noArgSentinel
 	return target
 }
 
@@ -244,7 +253,7 @@ func makeFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 	// from the auto-generated help and handle the line manually in
 	// printHelp.
 	kFlag := fs.VarPF(&unitFlag{target: &mode, value: unitsK}, "", "k", "use 1024-byte blocks (POSIX default)")
-	kFlag.NoOptDefVal = "true"
+	kFlag.NoOptDefVal = noArgSentinel
 	kFlag.Hidden = true
 
 	return func(ctx context.Context, callCtx *builtins.CallContext, args []string) builtins.Result {
