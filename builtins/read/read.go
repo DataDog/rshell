@@ -1007,29 +1007,34 @@ func splitIFS(s, ifs string, n int) []string {
 	// Last field absorbs the remainder with trailing IFS-whitespace stripped.
 	s = trimTrailingFunc(s, inIFSWS)
 
-	// Strip a lone trailing non-ws IFS character that represents an empty
-	// trailing field bash drops. Only applies when the absorbed string has
-	// exactly one such character; multiple non-ws IFS chars indicate the
-	// absorbed remainder spans multiple separator-bounded sub-fields and
-	// must be preserved verbatim.
+	// Strip a lone trailing non-ws IFS character only when removing it
+	// (along with any orphan IFS-whitespace between the data and the
+	// trailing separator) leaves a single-field absorbed remainder with
+	// NO IFS characters at all. Bash treats the trailing non-ws IFS
+	// char as the start of an empty trailing field that gets dropped
+	// only in this single-field shape; with multiple internal IFS
+	// chars (ws or non-ws) the absorbed remainder represents data
+	// from multiple fields and is preserved verbatim, including the
+	// trailing delim. Verified empirically against bash 5.2:
 	//
-	// After stripping the trailing separator, also trim any IFS-whitespace
-	// that sat between the field's data and that separator (the
-	// "separator + spaces" pattern). For example, with IFS=' :' over
-	// ` a : b : `, after the per-field loop the remainder is `b : `;
-	// the first trimTrailingFunc above turns it into `b :`, then this
-	// branch strips `:` to leave `b `, and the second trim collapses
-	// the orphan space so the assigned value matches bash's `b`.
-	nonWSIFSCount := 0
-	for _, r := range s {
-		if inIFSNonWS(r) {
-			nonWSIFSCount++
+	//   IFS=' ,' read a    <<< 'a,'      → a="a"   (strip)
+	//   IFS=' ,' read a    <<< 'a ,'     → a="a"   (strip; trailing ws collapses too)
+	//   IFS=' ,' read a    <<< 'b a,'    → a="b a," (preserve; internal ' ' is IFS-ws)
+	//   IFS=' ,' read a    <<< 'b,a,'    → a="b,a," (preserve; multiple non-ws IFS)
+	//   IFS=':'  read a    <<< 'b a:'    → a="b a"  (strip; ' ' is NOT IFS)
+	//   IFS=' :' read a b  <<< ' a : b : ' → b="b" (strip; absorbed "b" has no IFS)
+	//   IFS=' ,' read a b  <<< 'a b c,'  → b="b c," (preserve; absorbed has internal ' ')
+	if r, size := utf8.DecodeLastRuneInString(s); inIFSNonWS(r) {
+		candidate := trimTrailingFunc(s[:len(s)-size], inIFSWS)
+		hasIFS := false
+		for _, cr := range candidate {
+			if inIFS(cr) {
+				hasIFS = true
+				break
+			}
 		}
-	}
-	if nonWSIFSCount == 1 {
-		if r, size := utf8.DecodeLastRuneInString(s); inIFSNonWS(r) {
-			s = s[:len(s)-size]
-			s = trimTrailingFunc(s, inIFSWS)
+		if !hasIFS {
+			s = candidate
 		}
 	}
 
