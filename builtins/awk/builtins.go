@@ -318,12 +318,20 @@ func (r *runtime) bSub(args []expr, global bool) (awkValue, error) {
 		// Substitute all matches; track count.
 		// We can't use ReplaceAllStringFunc because we need to expand & in the
 		// replacement text; do it manually.
+		//
+		// Note: FindAllStringSubmatchIndex collects all matches eagerly before
+		// returning, so context cancellation cannot interrupt the regex scan
+		// itself. RE2's linear-time guarantee bounds this to O(len(s)) work,
+		// keeping the window short even for dense match patterns. We check
+		// ctx.Err() before the call and every 1024 iterations while processing
+		// results to honour cancellation at the earliest practical point.
+		if r.ctx.Err() != nil {
+			return uninitValue, r.ctx.Err()
+		}
 		var sb strings.Builder
 		last := 0
 		for i, m := range compiled.FindAllStringSubmatchIndex(s, -1) {
-			// Check for context cancellation every 1024 iterations so that
-			// a large match set (e.g. gsub(/x*/, "", bigstr)) does not block
-			// the goroutine beyond the shell execution timeout.
+			// Check for context cancellation every 1024 iterations.
 			if i%1024 == 0 && r.ctx.Err() != nil {
 				return uninitValue, r.ctx.Err()
 			}

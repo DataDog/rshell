@@ -1,0 +1,14 @@
+description: srand(n) returns prior seed; rand() returns values in [0,1) and consecutive calls differ.
+skip_assert_against_bash: true
+input:
+  script: |+
+    awk 'BEGIN {
+      srand(42)
+      r1 = rand(); r2 = rand()
+      print (r1 >= 0 && r1 < 1), (r2 >= 0 && r2 < 1), (r1 != r2)
+    }'
+expect:
+  stdout: |+
+    1 1 1
+  stderr: |+
+  exit_code: 0

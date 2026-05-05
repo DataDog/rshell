@@ -172,15 +172,16 @@ func looksNumeric(s string) bool {
 	if t == "" {
 		return false
 	}
-	// Exclude nan/inf from looksNumeric so that input fields containing
-	// "nan" or "inf" are treated as strings for comparison purposes.
-	// This matches mawk behaviour: comparisons against string "nan"/"inf"
+	// Exclude nan/inf/infinity from looksNumeric so that input fields containing
+	// "nan", "inf", or "infinity" are treated as strings for comparison purposes.
+	// This matches mawk behaviour: comparisons against string "nan"/"inf"/"infinity"
 	// use lexicographic ordering rather than IEEE-754 NaN/Inf semantics.
 	// gawk also returns 0 for NaN==NaN (IEEE-754), but that divergence only
 	// matters when the value has been forced into a numeric context (x+0);
 	// for raw string fields both mawk and rshell use string comparison.
 	lower := strings.ToLower(t)
-	if lower == "nan" || lower == "inf" || lower == "+inf" || lower == "-inf" {
+	if lower == "nan" || lower == "inf" || lower == "+inf" || lower == "-inf" ||
+		lower == "infinity" || lower == "+infinity" || lower == "-infinity" {
 		return false
 	}
 	_, err := strconv.ParseFloat(t, 64)

@@ -1,0 +1,10 @@
+description: split() with empty explicit separator splits each character into its own element.
+skip_assert_against_bash: true
+input:
+  script: |+
+    awk 'BEGIN { n = split("abc", a, ""); print n, a[1], a[2], a[3] }'
+expect:
+  stdout: |+
+    3 a b c
+  stderr: |+
+  exit_code: 0
