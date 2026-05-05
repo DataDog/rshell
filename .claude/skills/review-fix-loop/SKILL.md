@@ -180,6 +180,7 @@ Use the structurally derived value as the authoritative value of `iteration_had_
 **Required cross-check via review body** — run this after computing `findings_count` to catch body-only fallback findings. This reads *our own* self-review body (agent-generated output, not external data) and only overrides in the conservative direction (never advances `SUCCESS_COUNT` on a false clean). **Do not skip**: omitting this check can cause `iteration_had_no_findings=true` to be set incorrectly when `code-review` falls back to body-only output. The Step 3 recovery block contains a copy of this same logic — if you update the grep pattern or guard logic here, update the recovery block too:
 
 ```bash
+# SYNC-TAG: cross-check-subroutine (authoritative copy — update recovery copy too)
 # Required cross-check: detect body-only fallback findings
 # This is our own self-review body (agent output), not external comment text.
 # Treat a failed or empty review-body fetch as findings-present (conservative).
@@ -488,6 +489,7 @@ Record the final state of each dimension (unresolved thread count, CI).
          findings_count=1  # conservative default on API/parse error
        fi
        iteration_had_no_findings=$([ "$findings_count" -eq 0 ] && echo true || echo false)
+       # SYNC-TAG: cross-check-subroutine (recovery copy — keep in sync with authoritative copy in 2A1)
        # Required cross-check: also scan the latest review body for body-only fallback findings.
        # This is a copy of the cross-check subroutine from 2A1 (see "Cross-check subroutine" header above
        # for full explanation). If you update the grep pattern or guard logic in 2A1, update this copy too.

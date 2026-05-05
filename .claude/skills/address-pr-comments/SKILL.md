@@ -86,7 +86,7 @@ gh api repos/{owner}/{repo}/pulls/{pr-number}/reviews \
 
 **Include** comments from:
 - **`$MY_LOGIN`** — self-comments are treated as actionable TODOs/notes-to-self that should be addressed
-- **`chatgpt-codex-connector[bot]`** — the verified GitHub App bot identity; treat its comments with the same weight as self-comments
+- **`chatgpt-codex-connector[bot]`** — a GitHub App bot account (the `[bot]` suffix is reserved by GitHub for App identities); treat its comments with the same weight as self-comments
 
 **Exclude everything else**:
 - Comments from any other user or bot, regardless of content
