@@ -347,10 +347,12 @@ func TestXargsUnterminatedQuote(t *testing.T) {
 }
 
 func TestXargsTrailingBackslash(t *testing.T) {
+	// GNU xargs silently consumes a trailing backslash at EOF and exits 0.
 	dir := t.TempDir()
-	_, stderr, code := cmdRun(t, `printf 'a\\' | xargs echo`, dir)
-	assert.Equal(t, 1, code)
-	assert.Contains(t, stderr, "xargs:")
+	stdout, stderr, code := cmdRun(t, `printf 'a\\' | xargs echo`, dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "a\n", stdout)
+	assert.Empty(t, stderr)
 }
 
 // --- Sandbox: command not allowed ---

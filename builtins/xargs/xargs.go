@@ -366,6 +366,7 @@ func runXargs(ctx context.Context, callCtx *builtins.CallContext, o options) bui
 	tok := newTokenizer(rc, o)
 	finalCode := exitOK
 	totalItems := 0
+	tokErr := false
 	var batch []string
 	batchLines := 0
 	usedChars := commandLineLen(o, nil) // running command-line length
@@ -391,6 +392,7 @@ func runXargs(ctx context.Context, callCtx *builtins.CallContext, o options) bui
 			if finalCode < exitUsage {
 				finalCode = exitUsage
 			}
+			tokErr = true
 			break
 		}
 		if !more {
@@ -413,9 +415,12 @@ func runXargs(ctx context.Context, callCtx *builtins.CallContext, o options) bui
 				if flush() {
 					return builtins.Result{Code: finalCode}
 				}
-				if usedChars+add > o.maxChars && o.exitOnSize {
-					callCtx.Errf("xargs: cannot fit single argument within -s limit\n")
-					return builtins.Result{Code: exitUsage}
+				if usedChars+add > o.maxChars {
+					if o.exitOnSize {
+						callCtx.Errf("xargs: cannot fit single argument within -s limit\n")
+						return builtins.Result{Code: exitUsage}
+					}
+					callCtx.Errf("xargs: argument line too long; invoking anyway\n")
 				}
 			}
 		}
@@ -442,7 +447,7 @@ func runXargs(ctx context.Context, callCtx *builtins.CallContext, o options) bui
 		}
 	}
 
-	if totalItems == 0 {
+	if totalItems == 0 && !tokErr {
 		return finishEmpty(ctx, callCtx, o, finalCode)
 	}
 
@@ -750,7 +755,9 @@ func (t *tokenizer) nextWhitespace(ctx context.Context) (string, bool, bool, err
 			n, errEsc := t.r.ReadByte()
 			if errEsc != nil {
 				if errors.Is(errEsc, io.EOF) {
-					return "", false, false, errors.New("trailing backslash")
+					// GNU xargs silently consumes a trailing backslash at EOF
+					// rather than treating it as an error.
+					continue
 				}
 				return "", false, false, errEsc
 			}
