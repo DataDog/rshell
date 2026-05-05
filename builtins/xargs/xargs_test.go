@@ -268,11 +268,14 @@ func TestXargsMaxCharsZeroRejected(t *testing.T) {
 	assert.Contains(t, stderr, "xargs:")
 }
 
-func TestXargsMaxCharsTooSmallWithExit(t *testing.T) {
+func TestXargsMaxCharsTooSmall(t *testing.T) {
+	// GNU xargs always exits 1 when -s is too small to fit a single arg.
+	// -x is unnecessary for this case (it only governs -n/-L batch
+	// overflow, which we never hit because items are added one at a time).
 	dir := t.TempDir()
 	long := strings.Repeat("a", 100)
 	writeFile(t, dir, "in.txt", long+"\n")
-	stdout, stderr, code := cmdRun(t, "xargs -a in.txt -s 10 -x echo", dir)
+	stdout, stderr, code := cmdRun(t, "xargs -a in.txt -s 10 echo", dir)
 	assert.Equal(t, 1, code)
 	assert.Contains(t, stderr, "xargs:")
 	assert.Empty(t, stdout)

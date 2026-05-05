@@ -417,26 +417,19 @@ func runXargs(ctx context.Context, callCtx *builtins.CallContext, o options) bui
 		// Will this item still fit in the current batch's -s budget?
 		add := len(item) + 1
 		if usedChars+add > o.maxChars {
-			if len(batch) == 0 {
-				// First item already too large for the budget. Without -x
-				// we follow GNU and warn but invoke anyway; with -x we
-				// abort.
-				if o.exitOnSize {
-					callCtx.Errf("xargs: argument line too long\n")
-					return builtins.Result{Code: exitUsage}
-				}
-				callCtx.Errf("xargs: argument line too long; invoking anyway\n")
-			} else {
+			// Try to make room by flushing any pending batch first.
+			if len(batch) > 0 {
 				if flush() {
 					return builtins.Result{Code: finalCode}
 				}
-				if usedChars+add > o.maxChars {
-					if o.exitOnSize {
-						callCtx.Errf("xargs: argument line too long\n")
-						return builtins.Result{Code: exitUsage}
-					}
-					callCtx.Errf("xargs: argument line too long; invoking anyway\n")
-				}
+			}
+			// If a single item still can't fit alongside the command name,
+			// GNU xargs always exits 1 — the `-x` flag does not gate this
+			// case, only the -n/-L batch-overflow case (which we don't
+			// hit because items are added one at a time).
+			if usedChars+add > o.maxChars {
+				callCtx.Errf("xargs: argument line too long\n")
+				return builtins.Result{Code: exitUsage}
 			}
 		}
 
