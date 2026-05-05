@@ -9,5 +9,5 @@ expect:
   stdout: |+
     a
     aa
-  stderr: ""
+  stderr: |+
   exit_code: 0

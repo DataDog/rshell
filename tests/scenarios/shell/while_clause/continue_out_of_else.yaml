@@ -15,5 +15,5 @@ input:
 expect:
   stdout: |+
     i=aa
-  stderr: ""
+  stderr: |+
   exit_code: 0

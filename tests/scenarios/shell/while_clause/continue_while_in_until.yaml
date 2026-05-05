@@ -16,5 +16,5 @@ expect:
     iter a
     iter aa
     done aa
-  stderr: ""
+  stderr: |+
   exit_code: 0

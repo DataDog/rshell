@@ -11,5 +11,5 @@ expect:
   stdout: |+
     outer a
     outer aa
-  stderr: ""
+  stderr: |+
   exit_code: 0

@@ -15,5 +15,5 @@ expect:
     a 1
     aa 1
     done
-  stderr: ""
+  stderr: |+
   exit_code: 0

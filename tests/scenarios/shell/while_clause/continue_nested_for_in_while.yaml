@@ -16,5 +16,5 @@ expect:
     after-for a
     after-for aa
     done
-  stderr: ""
+  stderr: |+
   exit_code: 0
