@@ -1,0 +1,10 @@
+description: CONVFMT/OFMT width fields are not honoured (intentional divergence — only %.Ng forms supported).
+skip_assert_against_bash: true
+input:
+  script: |+
+    awk 'BEGIN { CONVFMT="%10.6g"; x=1.5+0; print x "" }'
+expect:
+  stdout: |+
+    1.5
+  stderr: |+
+  exit_code: 0

@@ -354,7 +354,14 @@ func (r *runtime) bSub(args []expr, global bool) (awkValue, error) {
 			if expErr != nil {
 				return uninitValue, expErr
 			}
-			newStr = s[:loc[0]] + expanded + s[loc[1]:]
+			// Use a Builder to avoid a transient concatenation of up to
+			// 3 × MaxStringBytes (prefix + expanded + suffix).
+			var sb strings.Builder
+			sb.Grow(loc[0] + len(expanded) + len(s) - loc[1])
+			sb.WriteString(s[:loc[0]])
+			sb.WriteString(expanded)
+			sb.WriteString(s[loc[1]:])
+			newStr = sb.String()
 			count = 1
 		}
 	}

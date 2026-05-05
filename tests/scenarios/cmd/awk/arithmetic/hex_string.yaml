@@ -1,0 +1,10 @@
+description: Hex-format strings in arithmetic context (intentional divergence from mawk which parses 0x10 as 16).
+skip_assert_against_bash: true
+input:
+  script: |+
+    awk 'BEGIN { x="0x10"; print x+0 }'
+expect:
+  stdout: |+
+    0
+  stderr: |+
+  exit_code: 0
