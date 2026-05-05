@@ -140,6 +140,11 @@ func TestHelpListsAllCommands(t *testing.T) {
 	for _, name := range names {
 		meta, ok := builtins.Meta(name)
 		require.True(t, ok, "Meta(%q) should exist", name)
+		// Every registered builtin must carry a non-empty Description so it
+		// shows up in `help`. Without this guard the row regex below would
+		// collapse to `^name\s+$` and silently match the blank padded row
+		// that printCommandTable emits when Description is empty.
+		require.NotEmpty(t, meta.Description, "builtin %q must set a non-empty Description", name)
 		// Match the rendered table row (name, ≥2 spaces of column padding,
 		// then description) so missing rows are caught even when descriptions
 		// repeat across builtins (e.g. "[" and "test" both describe
