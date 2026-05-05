@@ -184,11 +184,13 @@ func TestXargsDelimiterEscapeNewline(t *testing.T) {
 	assert.Equal(t, "a b c\n", stdout)
 }
 
-func TestXargsDelimiterAndNullExclusive(t *testing.T) {
+func TestXargsDelimiterAndNullLastWins(t *testing.T) {
+	// GNU xargs treats -0 and -d as mutex with last-wins. `-0 -d ,`
+	// honors -d; comma-separated tokens.
 	dir := t.TempDir()
-	_, stderr, code := cmdRun(t, "echo a | xargs -0 -d , echo", dir)
-	assert.Equal(t, 1, code)
-	assert.Contains(t, stderr, "mutually exclusive")
+	stdout, _, code := cmdRun(t, "printf 'a,b' | xargs -0 -d , echo", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "a b\n", stdout)
 }
 
 func TestXargsMultiByteDelimiterRejected(t *testing.T) {

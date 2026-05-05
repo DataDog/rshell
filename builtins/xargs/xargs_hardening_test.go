@@ -83,12 +83,15 @@ func TestXargsDelimiterTokenTooLong(t *testing.T) {
 
 // --- nextWhitespace edge cases ---
 
-func TestXargsQuotedAcrossNewline(t *testing.T) {
-	// A single-quote group can span newlines in default mode.
+func TestXargsQuotedAcrossNewlineRejected(t *testing.T) {
+	// GNU xargs treats a newline inside a quoted item as an unterminated
+	// quote (matches bash behavior; the test previously enshrined a
+	// bash-incompatible behavior).
 	dir := t.TempDir()
-	stdout, _, code := cmdRun(t, "printf \"'line1\\nline2' more\\n\" | xargs echo", dir)
-	assert.Equal(t, 0, code)
-	assert.Equal(t, "line1\nline2 more\n", stdout)
+	stdout, stderr, code := cmdRun(t, "printf \"'line1\\nline2' more\\n\" | xargs echo", dir)
+	assert.Equal(t, 1, code)
+	assert.Contains(t, stderr, "xargs:")
+	assert.Empty(t, stdout)
 }
 
 func TestXargsBackslashEscapeNewline(t *testing.T) {

@@ -160,10 +160,18 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 	fs.SetInterspersed(false)
 
 	help := fs.Bool("help", false, "print usage and exit")
-	null := fs.BoolP("null", "0", false, "input items are separated by a NUL character")
 	argFile := fs.StringP("arg-file", "a", "", "read items from FILE instead of stdin")
-	delim := fs.StringP("delimiter", "d", "", "use DELIM as the single-byte item separator")
 	eofStr := fs.StringP("eof", "E", "", "treat EOF-STR as a logical end-of-input marker")
+
+	// -0 / -d are mutually exclusive (GNU last-wins). Track which was set
+	// most recently and honor only that one in buildOptions.
+	var sep sepTracker
+	null := new(bool)
+	fs.VarP(&trackedBool{p: null, key: sepNull, t: &sep}, "null", "0", "input items are separated by a NUL character")
+	// Mark as a no-argument boolean flag so `-0` (no value) is accepted.
+	fs.Lookup("null").NoOptDefVal = "true"
+	delim := new(string)
+	fs.VarP(&trackedString2{p: delim, key: sepDelim, t: &sep}, "delimiter", "d", "use DELIM as the single-byte item separator")
 	noRunIfEmpty := fs.BoolP("no-run-if-empty", "r", false, "do not run command if input is empty")
 	maxChars := fs.IntP("max-chars", "s", 0, "limit a single command line to N characters")
 	verbose := fs.BoolP("verbose", "t", false, "print the command line on stderr before running")
@@ -207,9 +215,17 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			effectiveReplStr = *replStr
 		}
 
-		opts, errMsg := buildOptions(fs, *null, *argFile, *delim, *eofStr, effectiveReplStr,
+		// Apply GNU last-wins for -0 / -d as well.
+		nullSet := fs.Changed("null") && sep.last == sepNull && *null
+		delimSet := fs.Changed("delimiter") && sep.last == sepDelim
+		effectiveNull := nullSet
+		effectiveDelim := ""
+		if delimSet {
+			effectiveDelim = *delim
+		}
+		opts, errMsg := buildOptions(fs, effectiveNull, *argFile, effectiveDelim, *eofStr, effectiveReplStr,
 			effectiveMaxLines, effectiveMaxArgs, *noRunIfEmpty, *maxChars, *verbose, *exitOnSize, args,
-			nSet, lSet, iSet)
+			nSet, lSet, iSet, delimSet)
 		if errMsg != "" {
 			callCtx.Errf("xargs: %s\n", errMsg)
 			return builtins.Result{Code: exitUsage}
@@ -269,6 +285,56 @@ func (b *trackedString) Set(s string) error {
 }
 func (b *trackedString) Type() string { return "string" }
 
+// sepKey identifies which input-mode flag (-0 or -d) was last set.
+type sepKey int
+
+const (
+	sepNone sepKey = iota
+	sepNull
+	sepDelim
+)
+
+// sepTracker records the last-set among -0 / -d so registerFlags can
+// honor GNU xargs's "last-wins" semantics for these mutex separator flags.
+type sepTracker struct{ last sepKey }
+
+// trackedBool wraps a *bool target with an order-tracking side effect.
+type trackedBool struct {
+	p   *bool
+	key sepKey
+	t   *sepTracker
+}
+
+func (b *trackedBool) String() string { return strconv.FormatBool(*b.p) }
+func (b *trackedBool) Set(s string) error {
+	v, err := strconv.ParseBool(s)
+	if err != nil {
+		return err
+	}
+	*b.p = v
+	if v {
+		b.t.last = b.key
+	}
+	return nil
+}
+func (b *trackedBool) Type() string     { return "bool" }
+func (b *trackedBool) IsBoolFlag() bool { return true }
+
+// trackedString2 wraps a *string target for -d, sharing the sep tracker.
+type trackedString2 struct {
+	p   *string
+	key sepKey
+	t   *sepTracker
+}
+
+func (b *trackedString2) String() string { return *b.p }
+func (b *trackedString2) Set(s string) error {
+	*b.p = s
+	b.t.last = b.key
+	return nil
+}
+func (b *trackedString2) Type() string { return "string" }
+
 // modeKind classifies how items are tokenised from the input.
 type modeKind int
 
@@ -315,10 +381,13 @@ func (o *options) useMaxArgs() bool  { return o.maxArgs > 0 }
 // nSet / lSet / iSet reflect whether -n / -L / -I were the last-specified
 // among that mutex group on the command line. Only the winner contributes
 // to the resolved options; the others are dropped silently.
+//
+// delimSet is the analogue for -d (with `null` already reflecting the
+// last-wins resolution for -0 vs -d).
 func buildOptions(fs *builtins.FlagSet, null bool, argFile, delim, eofStr, replStr string,
 	maxLines, maxArgs int, noRunEmpty bool, maxChars int,
 	verbose, exitOnSize bool, args []string,
-	nSet, lSet, iSet bool) (options, string) {
+	nSet, lSet, iSet, delimSet bool) (options, string) {
 
 	o := options{
 		mode:       modeWhitespace,
@@ -328,12 +397,9 @@ func buildOptions(fs *builtins.FlagSet, null bool, argFile, delim, eofStr, replS
 		exitOnSize: exitOnSize,
 	}
 
-	if null && fs.Changed("delimiter") {
-		return o, "options -0 and -d are mutually exclusive"
-	}
 	if null {
 		o.mode = modeNull
-	} else if fs.Changed("delimiter") {
+	} else if delimSet {
 		b, err := decodeDelim(delim)
 		if err != nil {
 			return o, fmt.Sprintf("invalid delimiter: %s", err)
@@ -390,7 +456,7 @@ func buildOptions(fs *builtins.FlagSet, null bool, argFile, delim, eofStr, replS
 		o.maxArgs = 1
 		o.maxLines = 1
 		// Only override mode when the user did not request -0 or -d.
-		if !null && !fs.Changed("delimiter") {
+		if !null && !delimSet {
 			o.mode = modeLine
 		}
 	}
@@ -991,6 +1057,11 @@ func (t *tokenizer) nextWhitespace(ctx context.Context) (string, bool, bool, err
 			if b == quote {
 				quote = 0
 				continue
+			}
+			// GNU xargs treats a newline inside a quoted item as an
+			// unterminated quote; the input is malformed.
+			if b == '\n' {
+				return "", false, false, fmt.Errorf("unterminated %c-quoted string", quote)
 			}
 			if err := t.pushByte(b); err != nil {
 				return "", false, false, err
