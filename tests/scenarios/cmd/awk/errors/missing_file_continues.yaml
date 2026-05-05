@@ -1,5 +1,5 @@
 description: A missing input file is non-fatal; remaining files are still processed (gawk-compatible).
-skip_assert_against_bash: true  # mawk (debian default) stops processing at the first missing file; our awk follows gawk behaviour and continues to the next file.
+skip_assert_against_bash: true  # mawk (debian default) stops processing at the first missing file; rshell follows gawk behaviour and continues processing remaining files. The CI runner uses mawk, so this test would fail bash comparison.
 setup:
   files:
     - path: good.txt

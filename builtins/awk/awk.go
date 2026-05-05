@@ -163,6 +163,12 @@ const MaxArrayTotalBytes = 256 << 20 // 256 MiB
 // belt-and-suspenders guard for any deeply-nested case that slips through.
 const MaxLoopIterations = 1_000_000
 
+// MaxGsubMatches caps the number of regex matches per gsub() call. It is
+// kept equal to MaxLoopIterations and defined as a separate constant to make
+// the intent explicit: gsub match-count limiting is semantically distinct
+// from loop-iteration limiting, even though the numeric cap is the same.
+const MaxGsubMatches = MaxLoopIterations
+
 // MaxTotalReadBytes caps total bytes read from a non-regular-file input
 // (e.g. /dev/zero, FIFOs, pipes). This is intentionally higher than
 // tail's 32 MiB cap (see builtins/tail/tail.go MaxTotalReadBytes): awk

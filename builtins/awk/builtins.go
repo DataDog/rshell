@@ -329,8 +329,8 @@ func (r *runtime) bSub(args []expr, global bool) (awkValue, error) {
 			return uninitValue, r.ctx.Err()
 		}
 		allMatches := compiled.FindAllStringSubmatchIndex(s, -1)
-		if len(allMatches) > MaxLoopIterations {
-			return uninitValue, fmt.Errorf("gsub: match count %d exceeds maximum %d", len(allMatches), MaxLoopIterations)
+		if len(allMatches) > MaxGsubMatches {
+			return uninitValue, fmt.Errorf("gsub: match count %d exceeds maximum %d", len(allMatches), MaxGsubMatches)
 		}
 		var sb strings.Builder
 		last := 0

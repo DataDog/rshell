@@ -371,8 +371,9 @@ func run(ctx context.Context, r *runtime, prog *program, files []string) (uint8,
 		}
 		if hadFileError {
 			// Run END blocks. Even if END calls exit(N), the file-open error
-			// takes precedence and the exit code stays 2 — matching mawk (gawk exits 0
-			// instead, regardless of what END's explicit exit() argument is).
+			// takes precedence and the exit code stays 2 — matching mawk; gawk instead
+			// honours END's explicit exit() code (e.g. `END{exit 5}` with a missing file
+			// exits 5 under gawk but still exits 2 under mawk/rshell).
 			if err := runEnd(ctx, r, prog); err != nil {
 				if _, ok := err.(*exitSignal); ok {
 					return 2, nil // END exit() does not override the file-error code
