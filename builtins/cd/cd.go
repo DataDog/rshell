@@ -289,13 +289,14 @@ func registerFlags(flags *builtins.FlagSet) builtins.HandlerFunc {
 			// Physical-mode cleaning is deferred to resolvePhysical.
 			if usePhysical {
 				if cwd == "" {
-					// No working directory: pass target through as-is so
-					// the error message names the target, not "/target"
-					// (which filepath.IsAbs would treat as absolute and
-					// pass into resolvePhysical as a pseudo-root path).
-					// The final StatFile call remains the access-control
-					// gate regardless.
-					absPath = target
+					// No working directory: cannot resolve a relative path
+					// in physical mode. Fail fast here so resolvePhysical
+					// is not called with a non-absolute path (violating its
+					// documented contract that absPath must be absolute).
+					// The StatFile gate would catch this too, but explicit
+					// rejection is cleaner and gives a more accurate error.
+					callCtx.Errf("cd: %s: no such file or directory\n", display)
+					return builtins.Result{Code: 1}
 				} else {
 					// Raw concatenation: cwd + separator + target, preserving
 					// `..` for the component-by-component resolver.
@@ -386,17 +387,29 @@ func resolvePhysical(ctx context.Context, callCtx *builtins.CallContext, absPath
 	// Start with the root (volume root on Windows, "/" on Unix).
 	volName := filepath.VolumeName(absPath)
 	resolved := volName + string(filepath.Separator)
+	// volNameParts holds the non-empty components that make up the volume name
+	// after filepath.ToSlash normalisation. For a regular Windows drive "C:"
+	// the set is {"C:"}. For a UNC path "\\\\server\\share", ToSlash produces
+	// "//server/share" and the set is {"server", "share"}. The loop below
+	// skips any segment in this set so that UNC host/share components are not
+	// treated as ordinary path components. On Unix volName is "" so the set
+	// is empty and there is no overhead.
+	volNameParts := make(map[string]bool)
+	for _, vp := range strings.Split(filepath.ToSlash(volName), "/") {
+		if vp != "" {
+			volNameParts[vp] = true
+		}
+	}
 	hops := 0
 
 	for i := 0; i < len(parts); i++ {
 		seg := parts[i]
-		// Skip empty segments, ".", and the Windows volume prefix (e.g. "C:")
-		// which has already been absorbed into resolved above. Without this
-		// guard, filepath.Join(resolved, "C:") on Windows produces "C:\C:"
-		// (or similar) rather than the expected "C:\", causing candidate
-		// paths to diverge from the real on-disk paths and breaking symlink
-		// loop detection.
-		if seg == "" || seg == "." || seg == volName {
+		// Skip empty segments, ".", and Windows volume-prefix components
+		// (e.g. drive "C:" or UNC host+share "server","share") that are
+		// already absorbed into resolved. volNameParts is built from the
+		// ToSlash-split volume name so it matches both C: paths and UNC
+		// paths correctly regardless of path separator used.
+		if seg == "" || seg == "." || volNameParts[seg] {
 			continue
 		}
 		if seg == ".." {
@@ -493,6 +506,14 @@ func resolvePhysical(ctx context.Context, callCtx *builtins.CallContext, absPath
 		// volume (e.g. resolving across drive letters).
 		volName = filepath.VolumeName(newBase)
 		resolved = volName + string(filepath.Separator)
+		// Rebuild volNameParts for the new volume (needed when an absolute
+		// symlink target is on a different Windows volume, e.g. cross-drive).
+		volNameParts = make(map[string]bool)
+		for _, vp := range strings.Split(filepath.ToSlash(volName), "/") {
+			if vp != "" {
+				volNameParts[vp] = true
+			}
+		}
 	}
 	return filepath.Clean(resolved), nil
 }

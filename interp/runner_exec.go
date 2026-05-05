@@ -538,17 +538,25 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 		r.breakEnclosing = result.BreakN
 		r.contnEnclosing = result.ContinueN
 		if result.Code == 0 && result.NewWorkDir != "" {
-			// SECURITY: NewWorkDir is applied without a second sandbox
-			// re-validation here. The builtin is responsible for having
-			// already called callCtx.StatFile on NewWorkDir before
-			// returning, so the sandbox has already verified the path.
-			// Any future builtin that forgets this step could set the
-			// runner's working directory to an unvalidated path.
+			// Defense-in-depth: re-validate NewWorkDir against the sandbox
+			// before applying it. A well-behaved builtin (currently only "cd")
+			// already calls callCtx.StatFile before returning NewWorkDir, so
+			// this check is normally redundant and fast (the Stat result is
+			// not cached, but the path was already opened via os.Root).
+			// The guard exists to catch future builtins that return NewWorkDir
+			// without the required prior StatFile call — in that case the
+			// sandbox rejects the path here instead of silently adopting an
+			// unvalidated working directory.
 			// See builtins.Result.NewWorkDir for the full contract.
-			//
-			// INVARIANT: the builtin MUST have called callCtx.StatFile(ctx, NewWorkDir)
-			// before returning this result. The runner does not re-validate here.
-			// Currently only "cd" sets this field.
+			if r.sandbox != nil {
+				if _, err := r.sandbox.Stat(result.NewWorkDir, ""); err != nil {
+					// The builtin returned a path that the sandbox cannot
+					// validate. Treat this as a command failure.
+					r.errf("rshell: internal: NewWorkDir %q rejected by sandbox: %v\n", result.NewWorkDir, err)
+					r.exit.code = 1
+					return
+				}
+			}
 			r.applyNewWorkDir(result.NewWorkDir)
 			r.lastCallChangedWorkDir = true
 		}
