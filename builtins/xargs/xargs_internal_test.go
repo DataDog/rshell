@@ -39,6 +39,34 @@ func newPentestCallCtx(stdout, stderr *bytes.Buffer) *builtins.CallContext {
 	}
 }
 
+// TestInvokeCommandPrefersWithStdin verifies that when both RunCommand and
+// RunCommandWithStdin are wired, xargs prefers the stdin-aware variant and
+// passes a non-nil empty reader (POSIX /dev/null analogue).
+func TestInvokeCommandPrefersWithStdin(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	cc := newPentestCallCtx(&stdout, &stderr)
+	cc.RunCommand = func(_ context.Context, _ string, _ string, _ []string) (uint8, error) {
+		t.Fatal("RunCommand should not be called when RunCommandWithStdin is set")
+		return 0, nil
+	}
+	withStdinCalled := false
+	cc.RunCommandWithStdin = func(_ context.Context, _ string, _ string, _ []string, stdin io.Reader) (uint8, error) {
+		withStdinCalled = true
+		require.NotNil(t, stdin, "child stdin must be a real reader, not nil")
+		buf := make([]byte, 4)
+		n, err := stdin.Read(buf)
+		assert.Equal(t, 0, n, "child stdin must immediately yield zero bytes")
+		assert.Equal(t, io.EOF, err, "child stdin must immediately yield EOF")
+		return 0, nil
+	}
+	o := options{cmdName: "echo", maxChars: DefaultMaxChars}
+
+	code, stop := invokeCommand(context.Background(), cc, o, []string{"a"})
+	assert.Equal(t, exitOK, code)
+	assert.False(t, stop)
+	assert.True(t, withStdinCalled, "RunCommandWithStdin must be the preferred path")
+}
+
 // TestInvokeCommandNilRunCommand verifies that a CallContext with no
 // RunCommand wired surfaces an error and reports exit 125 (failed-to-start)
 // without panicking.

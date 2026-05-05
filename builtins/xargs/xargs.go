@@ -134,6 +134,15 @@ const (
 	// subCmdFatalCode is the sub-command exit value that triggers
 	// xargs's "abort everything" code path (POSIX).
 	subCmdFatalCode uint8 = 255
+)
+
+// emptyChildStdin is the POSIX-style /dev/null analogue passed as the child
+// command's stdin via RunCommandWithStdin. Reuse one stateless reader across
+// all invocations: the underlying buffer is nil, so Read always returns
+// (0, io.EOF) and there is no offset state to corrupt across calls.
+var emptyChildStdin io.Reader = bytes.NewReader(nil)
+
+const (
 
 	// Exit codes per POSIX xargs.
 	exitOK             uint8 = 0
@@ -532,7 +541,7 @@ func invokeCommand(ctx context.Context, callCtx *builtins.CallContext, o options
 	var exitCode uint8
 	var err error
 	if callCtx.RunCommandWithStdin != nil {
-		exitCode, err = callCtx.RunCommandWithStdin(ctx, dir, finalCmd, finalArgs, bytes.NewReader(nil))
+		exitCode, err = callCtx.RunCommandWithStdin(ctx, dir, finalCmd, finalArgs, emptyChildStdin)
 	} else {
 		exitCode, err = callCtx.RunCommand(ctx, dir, finalCmd, finalArgs)
 	}
