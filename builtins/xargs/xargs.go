@@ -640,8 +640,8 @@ func runXargs(ctx context.Context, callCtx *builtins.CallContext, o options) bui
 		// at end-of-input.
 		if tok.nulSeen && !tok.nulWarned {
 			tok.nulWarned = true
-			callCtx.Errf("xargs: WARNING: a NUL character occurred in the input. " +
-				"It cannot be passed through in the argument list. Did you mean to use the --null option?\n")
+			callCtx.Errf("xargs: WARNING: a NUL character occurred in the input.  " +
+				"It cannot be passed through in the argument list.  Did you mean to use the --null option?\n")
 		}
 		if !more {
 			break
