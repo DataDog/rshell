@@ -73,13 +73,13 @@ func TestInvokeCommandBlockedByPolicy(t *testing.T) {
 	assert.Contains(t, stderr.String(), "not allowed")
 }
 
-// TestInvokeCommandUnknownCommandReturns127 verifies that "unknown command"
-// errors from RunCommand are mapped to POSIX-style exit 127.
+// TestInvokeCommandUnknownCommandReturns127 verifies that errors wrapping
+// builtins.ErrCommandNotFound are mapped to POSIX-style exit 127.
 func TestInvokeCommandUnknownCommandReturns127(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	cc := newPentestCallCtx(&stdout, &stderr)
 	cc.RunCommand = func(_ context.Context, _ string, _ string, _ []string) (uint8, error) {
-		return 127, errors.New("rshell: foo: unknown command")
+		return 127, fmt.Errorf("rshell: foo: %w", builtins.ErrCommandNotFound)
 	}
 	o := options{cmdName: "foo", maxChars: DefaultMaxChars}
 
@@ -186,21 +186,19 @@ func TestInvokeCommandRunErrorAborts(t *testing.T) {
 	assert.Contains(t, stderr.String(), "boom")
 }
 
-// TestInvokeCommandNotAllowedViaRunCommandError exercises the "not allowed"
-// classification branch in invokeCommand when CommandAllowed is nil and
-// RunCommand returns an error containing "not allowed". In production the
-// runner always populates CommandAllowed, so the pre-check fires first;
-// this test ensures the fallback string-match branch is also covered so a
-// future wording change breaks CI clearly rather than silently downgrading
-// to exit 125.
+// TestInvokeCommandNotAllowedViaRunCommandError exercises the ErrCommandNotAllowed
+// sentinel path in invokeCommand when CommandAllowed is nil and RunCommand returns
+// a wrapped builtins.ErrCommandNotAllowed error. In production the runner always
+// populates CommandAllowed so the pre-check fires first; this test ensures the
+// errors.Is sentinel branch is also covered.
 func TestInvokeCommandNotAllowedViaRunCommandError(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	cc := newPentestCallCtx(&stdout, &stderr)
 	cc.RunCommand = func(_ context.Context, _ string, _ string, _ []string) (uint8, error) {
-		return 127, errors.New("rshell: bar: command not allowed")
+		return 127, fmt.Errorf("rshell: bar: %w", builtins.ErrCommandNotAllowed)
 	}
 	// CommandAllowed is nil, so the pre-check is skipped; classification
-	// falls through to the error-text switch.
+	// falls through to the errors.Is sentinel switch.
 	cc.CommandAllowed = nil
 	o := options{cmdName: "bar", maxChars: DefaultMaxChars}
 

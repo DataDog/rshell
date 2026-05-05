@@ -262,6 +262,16 @@ type Result struct {
 	ContinueN int
 }
 
+// ErrCommandNotFound is wrapped by the runner when a sub-command name is not
+// registered. Callers can use errors.Is to distinguish "not found" (127) from
+// other run-time errors without relying on string matching.
+var ErrCommandNotFound = errors.New("unknown command")
+
+// ErrCommandNotAllowed is wrapped by the runner when CommandAllowed returns
+// false for the requested sub-command. Callers can use errors.Is to map this
+// to exit code 126 reliably.
+var ErrCommandNotAllowed = errors.New("command not allowed")
+
 var registry = map[string]HandlerFunc{}
 
 // CommandMeta holds metadata about a registered builtin command.

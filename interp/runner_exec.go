@@ -346,11 +346,11 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 		makeRunCmd = func(callerCtx *builtins.CallContext) func(context.Context, string, string, []string) (uint8, error) {
 			return func(ctx context.Context, dir string, cmdName string, cmdArgs []string) (uint8, error) {
 				if !r.allowAllCommands && !r.allowedCommands[cmdName] {
-					return 127, fmt.Errorf("rshell: %s: command not allowed", cmdName)
+					return 127, fmt.Errorf("rshell: %s: %w", cmdName, builtins.ErrCommandNotAllowed)
 				}
 				cmdFn, ok := builtins.Lookup(cmdName)
 				if !ok {
-					return 127, fmt.Errorf("rshell: %s: unknown command", cmdName)
+					return 127, fmt.Errorf("rshell: %s: %w", cmdName, builtins.ErrCommandNotFound)
 				}
 				child := &builtins.CallContext{
 					Stdout:  r.stdout,

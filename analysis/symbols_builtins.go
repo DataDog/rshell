@@ -381,7 +381,7 @@ var builtinPerCommandSymbols = map[string][]string{
 		"strconv.Atoi",             // 🟢 string-to-int conversion; used in orderedIntValue.Set to parse -n/-L values; pure function, no I/O.
 		"strconv.Itoa",             // 🟢 int-to-string conversion; used in orderedIntValue.String for pflag default display; pure function, no I/O.
 		"strings.Builder",          // 🟢 efficient string concatenation; pure in-memory buffer, no I/O.
-		"strings.Contains",         // 🟢 substring search; pure function, no I/O.
+		"strings.Count",            // 🟢 counts non-overlapping instances of substr; used in commandLineLen for allocation-free replacement-length estimation; pure function, no I/O.
 		"strings.HasPrefix",        // 🟢 prefix match; pure function, no I/O.
 		"strings.NewReader",        // 🟢 wraps a string as an io.Reader; used to provide an empty stdin for child commands; pure in-memory, no I/O.
 		"strings.ReplaceAll",       // 🟢 replaces all occurrences of REPLSTR in -I templates; pure function, no I/O.
@@ -547,6 +547,7 @@ var builtinAllowedSymbols = []string{
 	"strings.Builder",                                     // 🟢 efficient string concatenation; pure in-memory buffer, no I/O.
 	"strings.Contains",                                    // 🟢 substring search; pure function, no I/O.
 	"strings.ContainsRune",                                // 🟢 checks if a rune is in a string; pure function, no I/O.
+	"strings.Count",                                       // 🟢 counts non-overlapping instances of substr; pure function, no I/O.
 	"strings.Fields",                                      // 🟢 splits a string on whitespace into a slice; pure function, no I/O.
 	"strings.HasPrefix",                                   // 🟢 pure function for prefix matching; no I/O.
 	"strings.IndexByte",                                   // 🟢 finds byte in string; pure function, no I/O.

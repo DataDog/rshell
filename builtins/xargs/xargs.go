@@ -651,12 +651,23 @@ func finishEmpty(ctx context.Context, callCtx *builtins.CallContext, o options, 
 // Matches the way GNU xargs accounts for arguments (each token counted by
 // length + 1 for the separator/terminator). In -I mode the item replaces
 // replStr in each initial arg rather than being appended as a new arg.
+//
+// In replace mode we use an allocation-free formula instead of
+// strings.ReplaceAll to avoid potentially huge allocations before the
+// maxChars guard fires: if the template arg contains many occurrences of
+// replStr and the item is large (up to MaxTokenBytes = 1 MiB), calling
+// ReplaceAll would allocate count(replStr)*len(item) bytes per initial arg.
+// The formula len(a) + strings.Count(a, o.replStr)*(len(item)-len(o.replStr))
+// gives the exact post-expansion length without any allocation.
 func commandLineLen(o options, batch []string) int {
 	total := len(o.cmdName) + 1
 	if o.useReplace() && len(batch) > 0 {
 		item := batch[0]
+		delta := len(item) - len(o.replStr)
 		for _, a := range o.initialArgs {
-			total += len(strings.ReplaceAll(a, o.replStr, item)) + 1
+			// Allocation-free: each occurrence of replStr grows/shrinks the
+			// arg by (len(item) - len(replStr)) bytes.
+			total += len(a) + strings.Count(a, o.replStr)*delta + 1
 		}
 	} else {
 		for _, a := range o.initialArgs {
@@ -706,24 +717,14 @@ func invokeCommand(ctx context.Context, callCtx *builtins.CallContext, o options
 		// prefixes.
 		msg := stripRunnerPrefix(err.Error(), finalCmd)
 		callCtx.Errf("xargs: %s: %s\n", finalCmd, msg)
-		// Best-effort mapping to POSIX exit codes (127 / 126 / 125)
-		// based on the runner's error wording. This is brittle by design:
-		// if interp/runner_exec.go ever renames "unknown command" or "not allowed"
-		// to different strings, the mapping silently falls through to exitSubCmdNotStart
-		// (125) instead of the intended 127 or 126. The stop-on-error behaviour is
-		// not affected — all switch arms set stop=true — so this cannot cause a
-		// security regression; the worst outcome is a slightly wrong exit code.
-		//
-		// A more robust approach would be to define sentinel error types in the
-		// builtins or interp package and use errors.Is / errors.As instead of
-		// string matching. The existing unit tests (TestInvokeCommandUnknownCommandReturns127
-		// and TestInvokeCommandNotAllowedViaRunCommandError in xargs_internal_test.go)
-		// serve as the contract — a runner rename will break them before it silently
-		// degrades production behaviour.
+		// Use sentinel errors (builtins.ErrCommandNotFound / ErrCommandNotAllowed)
+		// wrapped by the runner via fmt.Errorf("…: %w", sentinel) to map to
+		// POSIX exit codes 127 / 126 / 125 reliably, without fragile string
+		// matching on runner-internal wording.
 		switch {
-		case strings.Contains(msg, "unknown command"):
+		case errors.Is(err, builtins.ErrCommandNotFound):
 			return exitSubCmdNotFound, true
-		case strings.Contains(msg, "not allowed"):
+		case errors.Is(err, builtins.ErrCommandNotAllowed):
 			return exitSubCmdNotAllowed, true
 		default:
 			return exitSubCmdNotStart, true

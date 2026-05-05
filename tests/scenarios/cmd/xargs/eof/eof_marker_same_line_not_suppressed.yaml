@@ -1,4 +1,4 @@
-description: xargs -E does not suppress an EOF-terminated token when it is on the same line as a prior token (no newline between them). GNU xargs only suppresses the EOF-marker when it begins a new logical line.
+description: "xargs -E does not suppress an EOF-terminated token when it is EOF-terminated on the same line as a prior token (atLineStart=false). The code is correct: GNU suppresses -E markers at any whitespace boundary unconditionally; the atLineStart restriction applies only when the marker token is terminated by EOF with no trailing newline or whitespace, which is what this scenario tests."
 input:
   script: |+
     printf 'a STOP' | xargs -E STOP echo

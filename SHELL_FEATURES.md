@@ -131,6 +131,8 @@ The in-shell `help` command mirrors these feature categories: run `help` for a c
 
 - **`xargs -a -` (dash as stdin source)**: GNU xargs treats `-a -` as reading from standard input (identical to omitting `-a`). rshell does not implement this shorthand; it tries to open a file literally named `-` via `callCtx.OpenFile`, which fails with a path error. Use the pipe form (`... | xargs ...`) instead of `xargs -a -`.
 
+- **`xargs -a FILE` child stdin inheritance**: When `-a FILE` is used to supply items from a file, child commands inherit the runner's original stdin (matching GNU xargs semantics — only the item source changes, not child stdin). Without `-a`, child stdin is isolated to an empty reader so children cannot steal unread input from the xargs pipe. Workaround when you want children to see no input with `-a`: `xargs -a items.txt cmd < /dev/null` (not applicable in the rshell sandbox, where `/dev/null` is accessed via `callCtx.OpenFile`).
+
 ## Appendix
 
 Formatting: In each category, supported features should be listed first, and the most useful ones first.
