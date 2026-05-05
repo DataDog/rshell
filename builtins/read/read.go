@@ -939,6 +939,14 @@ func splitIFS(s, ifs string, n int) []string {
 	// exactly one such character; multiple non-ws IFS chars indicate the
 	// absorbed remainder spans multiple separator-bounded sub-fields and
 	// must be preserved verbatim.
+	//
+	// After stripping the trailing separator, also trim any IFS-whitespace
+	// that sat between the field's data and that separator (the
+	// "separator + spaces" pattern). For example, with IFS=' :' over
+	// ` a : b : `, after the per-field loop the remainder is `b : `;
+	// the first trimTrailingFunc above turns it into `b :`, then this
+	// branch strips `:` to leave `b `, and the second trim collapses
+	// the orphan space so the assigned value matches bash's `b`.
 	nonWSIFSCount := 0
 	for _, r := range s {
 		if inIFSNonWS(r) {
@@ -948,6 +956,7 @@ func splitIFS(s, ifs string, n int) []string {
 	if nonWSIFSCount == 1 {
 		if r, size := utf8.DecodeLastRuneInString(s); inIFSNonWS(r) {
 			s = s[:len(s)-size]
+			s = trimTrailingFunc(s, inIFSWS)
 		}
 	}
 
