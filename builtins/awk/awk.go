@@ -104,7 +104,8 @@
 //     this abort with an error rather than allocating unbounded memory.
 //   - String values are capped at 1 MiB (MaxStringBytes); operations that
 //     would produce a longer string return an error.
-//   - Arrays are capped at 1 000 000 entries (MaxArrayEntries).
+//   - Arrays are capped at 1 000 000 entries (MaxArrayEntries) and at 256 MiB
+//     total key+value bytes (MaxArrayTotalBytes) to prevent large-key DoS.
 //   - Per-loop-construct iteration cap at 1 000 000 (MaxLoopIterations)
 //     to prevent runaway loops in user scripts. Each loop construct (while,
 //     do-while, for) has its own independent counter; nested loops each get
@@ -142,6 +143,15 @@ const MaxStringBytes = 1 << 20 // 1 MiB
 
 // MaxArrayEntries caps the number of keys per associative array.
 const MaxArrayEntries = 1_000_000
+
+// MaxArrayTotalBytes caps the total memory consumed by all array keys and
+// values across the entire awk program. This prevents DoS via arrays with
+// large string keys/values that stay within the MaxArrayEntries count limit
+// but consume unbounded memory (e.g. 1M entries each with a ~512 KiB key
+// approaches hundreds of GiB). Set to 256 MiB — the same limit as
+// MaxTotalReadBytes — so the awk program cannot allocate more array memory
+// than the total input it is allowed to read.
+const MaxArrayTotalBytes = 256 << 20 // 256 MiB
 
 // MaxLoopIterations caps iterations per loop construct (while, do-while, for)
 // to prevent runaway loops in user scripts. Each loop construct has its own

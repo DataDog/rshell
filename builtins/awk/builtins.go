@@ -198,10 +198,20 @@ func (r *runtime) bSplit(args []expr) (awkValue, error) {
 	// Reject the call when the name is already in use as a scalar variable.
 	// In awk, scalars and arrays share a namespace; using a scalar as a split
 	// destination is a fatal error (gawk: "attempt to use scalar as an array").
+	// Special-variable scalars (NR, NF, FS, …) live in dedicated runtime fields
+	// rather than r.globals, so they must be checked separately.
+	if isSpecialScalar(id.name) {
+		return uninitValue, fmt.Errorf("split: illegal use of scalar %q as array", id.name)
+	}
 	if _, isScalar := r.globals[id.name]; isScalar {
 		return uninitValue, fmt.Errorf("split: illegal use of scalar %q as array", id.name)
 	}
-	// Reset the destination array.
+	// Reset the destination array, freeing its byte footprint first.
+	if old := r.arrays[id.name]; old != nil {
+		for k, v := range old {
+			r.arrayTotalBytes -= int64(len(k)) + int64(len(v.s))
+		}
+	}
 	delete(r.arrays, id.name)
 	if s == "" {
 		return numValue(0), nil
@@ -248,11 +258,20 @@ func (r *runtime) bSplit(args []expr) (awkValue, error) {
 	if len(parts) > MaxArrayEntries {
 		return uninitValue, fmt.Errorf("split: result exceeds maximum array entries %d", MaxArrayEntries)
 	}
+	// Pre-check total byte budget before committing the new array.
+	var newBytes int64
+	for i, p := range parts {
+		newBytes += int64(len(itoa(i+1))) + int64(len(p))
+	}
+	if r.arrayTotalBytes+newBytes > MaxArrayTotalBytes {
+		return uninitValue, fmt.Errorf("split: result would exceed array memory limit (%d bytes)", MaxArrayTotalBytes)
+	}
 	arr := make(map[string]awkValue, len(parts))
 	for i, p := range parts {
 		arr[itoa(i+1)] = strNumValue(p)
 	}
 	r.arrays[id.name] = arr
+	r.arrayTotalBytes += newBytes
 	return numValue(float64(len(parts))), nil
 }
 

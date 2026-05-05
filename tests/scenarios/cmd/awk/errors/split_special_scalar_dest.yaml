@@ -1,0 +1,10 @@
+skip_assert_against_bash: true  # mawk: "illegal reference to variable NR"; gawk/rshell: fatal "scalar" error
+description: split() with a special scalar variable as destination is a fatal error.
+input:
+  script: |+
+    awk 'BEGIN { n = split("a b c", NR); print n, NR }'
+expect:
+  stdout: |+
+  stderr_contains:
+    - "scalar"
+  exit_code: 1

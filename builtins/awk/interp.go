@@ -63,6 +63,12 @@ type runtime struct {
 	// Cumulative bytes read across all non-regular-file inputs.
 	totalReadBytes int64
 
+	// arrayTotalBytes tracks the cumulative byte footprint of all array keys
+	// and values stored across all arrays in this runtime. It enforces
+	// MaxArrayTotalBytes to prevent large-key DoS even when entry count is
+	// within MaxArrayEntries.
+	arrayTotalBytes int64
+
 	// rangeStates tracks per-rule "in range" state for range patterns.
 	rangeStates map[int]bool
 
@@ -906,8 +912,9 @@ func (r *runtime) execStmt(ctx context.Context, s stmt) error {
 		// Snapshot and sort keys for deterministic iteration order.
 		// Awk does not mandate a specific order, but deterministic output
 		// for the same input is required by repo convention.
-		// for…in iteration is bounded by MaxArrayEntries (the array cap), so no
-		// separate loop-iteration counter is needed here. ctx.Err() provides the
+		// Iteration count is bounded by MaxArrayEntries; total memory of this
+		// snapshot is bounded by MaxArrayTotalBytes (enforced on each insert),
+		// which limits the combined key size to 256 MiB. ctx.Err() provides the
 		// final safety net via the shell's execution timeout.
 		keys := make([]string, 0, len(arr))
 		for k := range arr {
@@ -962,6 +969,12 @@ func (r *runtime) execStmt(ctx context.Context, s stmt) error {
 			return fmt.Errorf("illegal use of scalar %q as array", v.arrayVar)
 		}
 		if v.indices == nil {
+			// Deleting the entire array: subtract its total byte footprint.
+			if arr := r.arrays[v.arrayVar]; arr != nil {
+				for k, v := range arr {
+					r.arrayTotalBytes -= int64(len(k)) + int64(len(v.s))
+				}
+			}
 			delete(r.arrays, v.arrayVar)
 			return nil
 		}
@@ -970,6 +983,9 @@ func (r *runtime) execStmt(ctx context.Context, s stmt) error {
 			return err
 		}
 		if arr := r.arrays[v.arrayVar]; arr != nil {
+			if old, ok := arr[key]; ok {
+				r.arrayTotalBytes -= int64(len(key)) + int64(len(old.s))
+			}
 			delete(arr, key)
 		}
 		return nil
@@ -1526,10 +1542,23 @@ func (r *runtime) assignLValue(l expr, val awkValue) (awkValue, error) {
 			arr = make(map[string]awkValue)
 			r.arrays[lv.name] = arr
 		}
-		if _, exists := arr[key]; !exists {
+		if old, exists := arr[key]; !exists {
 			if len(arr) >= MaxArrayEntries {
 				return uninitValue, fmt.Errorf("array %q exceeds maximum entries %d", lv.name, MaxArrayEntries)
 			}
+			// New entry: account for key + value bytes.
+			added := int64(len(key)) + int64(len(val.s))
+			if r.arrayTotalBytes+added > MaxArrayTotalBytes {
+				return uninitValue, fmt.Errorf("array memory limit (%d bytes) exceeded", MaxArrayTotalBytes)
+			}
+			r.arrayTotalBytes += added
+		} else {
+			// Existing entry: adjust for value size change.
+			delta := int64(len(val.s)) - int64(len(old.s))
+			if delta > 0 && r.arrayTotalBytes+delta > MaxArrayTotalBytes {
+				return uninitValue, fmt.Errorf("array memory limit (%d bytes) exceeded", MaxArrayTotalBytes)
+			}
+			r.arrayTotalBytes += delta
 		}
 		arr[key] = val
 		return val, nil
