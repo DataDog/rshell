@@ -694,8 +694,9 @@ func invokeCommand(ctx context.Context, callCtx *builtins.CallContext, o options
 		callCtx.Errf("xargs: %s: %s\n", finalCmd, msg)
 		// Best-effort mapping to POSIX exit codes (127 / 126 / 125)
 		// based on the runner's error wording. This is brittle by
-		// design — see invokeCommand_test for the contract — and a
-		// future runner change will fall through to exit 125.
+		// design — see TestInvokeCommandUnknownCommandReturns127 and
+		// TestInvokeCommandNotAllowedViaRunCommandError in xargs_internal_test.go
+		// for the contract — and a future runner change will fall through to exit 125.
 		switch {
 		case strings.Contains(msg, "unknown command"):
 			return exitSubCmdNotFound, true
@@ -782,7 +783,8 @@ func shellQuote(s string) string {
 		c := s[i]
 		if c == ' ' || c == '\t' || c == '\n' || c == '\'' || c == '"' ||
 			c == '\\' || c == '`' || c == '$' || c == '!' || c == '&' ||
-			c == '|' || c == ';' || c == '(' || c == ')' || c == '<' || c == '>' {
+			c == '|' || c == ';' || c == '(' || c == ')' || c == '<' || c == '>' ||
+			c == '*' || c == '?' || c == '[' || c == '~' {
 			safe = false
 			break
 		}

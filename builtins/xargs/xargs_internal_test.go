@@ -186,6 +186,33 @@ func TestInvokeCommandRunErrorAborts(t *testing.T) {
 	assert.Contains(t, stderr.String(), "boom")
 }
 
+// TestInvokeCommandNotAllowedViaRunCommandError exercises the "not allowed"
+// classification branch in invokeCommand when CommandAllowed is nil and
+// RunCommand returns an error containing "not allowed". In production the
+// runner always populates CommandAllowed, so the pre-check fires first;
+// this test ensures the fallback string-match branch is also covered so a
+// future wording change breaks CI clearly rather than silently downgrading
+// to exit 125.
+func TestInvokeCommandNotAllowedViaRunCommandError(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	cc := newPentestCallCtx(&stdout, &stderr)
+	cc.RunCommand = func(_ context.Context, _ string, _ string, _ []string) (uint8, error) {
+		return 127, errors.New("rshell: bar: command not allowed")
+	}
+	// CommandAllowed is nil, so the pre-check is skipped; classification
+	// falls through to the error-text switch.
+	cc.CommandAllowed = nil
+	o := options{cmdName: "bar", maxChars: DefaultMaxChars}
+
+	code, stop := invokeCommand(context.Background(), cc, o, []string{"a"})
+	assert.Equal(t, exitSubCmdNotAllowed, code)
+	assert.True(t, stop)
+	// The doubled "rshell: bar:" prefix must be stripped.
+	assert.NotContains(t, stderr.String(), "rshell: bar:")
+	assert.Contains(t, stderr.String(), "xargs: bar:")
+	assert.Contains(t, stderr.String(), "not allowed")
+}
+
 // TestInvokeCommandPreCancelledContext verifies that a cancelled context
 // exits the function silently before any RunCommand call. Cancellation is
 // not a failure — the returned code is 0 with stop=true so the caller
