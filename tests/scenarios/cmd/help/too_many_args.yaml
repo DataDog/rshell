@@ -1,4 +1,4 @@
-description: Help prints error for unknown command.
+description: Help prints an error for an unknown topic.
 skip_assert_against_bash: true
 input:
   script: |+

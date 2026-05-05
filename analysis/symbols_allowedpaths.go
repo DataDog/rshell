@@ -49,6 +49,7 @@ var allowedpathsAllowedSymbols = []string{
 	"path/filepath.Abs",                  // 🟢 returns absolute path; pure path computation.
 	"path/filepath.Clean",                // 🟢 normalizes a path; pure function, no I/O.
 	"path/filepath.Dir",                  // 🟢 returns directory portion of a path; pure function, no I/O.
+	"path/filepath.EvalSymlinks",         // 🟠 resolves symlinks via os.Lstat; the sandbox uses this at setup time to record canonical root paths so builtins like `pwd -P` can reflect the symlink resolution that os.Root has implicitly followed.
 	"path/filepath.IsAbs",                // 🟢 checks if path is absolute; pure function, no I/O.
 	"path/filepath.Join",                 // 🟢 joins path elements; pure function, no I/O.
 	"path/filepath.Rel",                  // 🟢 returns relative path; pure path computation.

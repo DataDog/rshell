@@ -4,6 +4,8 @@ input:
   script: |+
     help --help
 expect:
-  stdout_contains: ["Usage: help"]
+  stdout: |+
+    Usage: help [--all] [feature|command]
+    Display help for rshell features and commands.
   stderr: ""
-  exit_code: 1
+  exit_code: 0
