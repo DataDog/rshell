@@ -375,6 +375,7 @@ var builtinPerCommandSymbols = map[string][]string{
 		"io.ReadCloser",       // 🟢 interface type; no side effects.
 		"io.Reader",           // 🟢 interface type; no side effects.
 		"os.O_RDONLY",         // 🟢 read-only file flag constant; cannot open files by itself.
+		"strconv.Atoi",        // 🟢 parses int flag values for the custom -n/-L pflag.Value type; pure parsing.
 		"strings.Builder",     // 🟢 efficient string concatenation; pure in-memory buffer, no I/O.
 		"strings.ReplaceAll",  // 🟢 replaces all occurrences of REPLSTR in -I templates; pure function, no I/O.
 	},

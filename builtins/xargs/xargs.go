@@ -95,6 +95,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/DataDog/rshell/builtins"
@@ -163,13 +164,20 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 	argFile := fs.StringP("arg-file", "a", "", "read items from FILE instead of stdin")
 	delim := fs.StringP("delimiter", "d", "", "use DELIM as the single-byte item separator")
 	eofStr := fs.StringP("eof", "E", "", "treat EOF-STR as a logical end-of-input marker")
-	replStr := fs.StringP("replace", "I", "", "insert input as the value of REPLSTR in each argument")
-	maxLines := fs.IntP("max-lines", "L", 0, "use at most NUMBER non-empty input lines per command")
-	maxArgs := fs.IntP("max-args", "n", 0, "use at most N arguments per command invocation")
 	noRunIfEmpty := fs.BoolP("no-run-if-empty", "r", false, "do not run command if input is empty")
 	maxChars := fs.IntP("max-chars", "s", 0, "limit a single command line to N characters")
 	verbose := fs.BoolP("verbose", "t", false, "print the command line on stderr before running")
 	exitOnSize := fs.BoolP("exit", "x", false, "abort if -s is too small to fit a -n/-L batch")
+
+	// -n / -L / -I are mutually exclusive (GNU "last-wins" + warning). A
+	// single tracker lets us tell which of the three was set most recently.
+	var batch batchTracker
+	maxLines := new(int)
+	fs.VarP(&trackedInt{p: maxLines, key: batchL, t: &batch}, "max-lines", "L", "use at most NUMBER non-empty input lines per command")
+	maxArgs := new(int)
+	fs.VarP(&trackedInt{p: maxArgs, key: batchN, t: &batch}, "max-args", "n", "use at most N arguments per command invocation")
+	replStr := new(string)
+	fs.VarP(&trackedString{p: replStr, key: batchI, t: &batch}, "replace", "I", "insert input as the value of REPLSTR in each argument")
 
 	return func(ctx context.Context, callCtx *builtins.CallContext, args []string) builtins.Result {
 		if *help {
@@ -180,8 +188,28 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			return builtins.Result{}
 		}
 
-		opts, errMsg := buildOptions(fs, *null, *argFile, *delim, *eofStr, *replStr,
-			*maxLines, *maxArgs, *noRunIfEmpty, *maxChars, *verbose, *exitOnSize, args)
+		// Apply GNU's mutex: only the last-set among -n / -L / -I is honored.
+		// Earlier ones are silently dropped (we skip GNU's warning to avoid
+		// adding stderr noise that scenarios would have to assert on).
+		nSet := fs.Changed("max-args") && batch.last == batchN
+		lSet := fs.Changed("max-lines") && batch.last == batchL
+		iSet := fs.Changed("replace") && batch.last == batchI
+		effectiveMaxArgs := 0
+		if nSet {
+			effectiveMaxArgs = *maxArgs
+		}
+		effectiveMaxLines := 0
+		if lSet {
+			effectiveMaxLines = *maxLines
+		}
+		effectiveReplStr := ""
+		if iSet {
+			effectiveReplStr = *replStr
+		}
+
+		opts, errMsg := buildOptions(fs, *null, *argFile, *delim, *eofStr, effectiveReplStr,
+			effectiveMaxLines, effectiveMaxArgs, *noRunIfEmpty, *maxChars, *verbose, *exitOnSize, args,
+			nSet, lSet, iSet)
 		if errMsg != "" {
 			callCtx.Errf("xargs: %s\n", errMsg)
 			return builtins.Result{Code: exitUsage}
@@ -190,6 +218,56 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 		return runXargs(ctx, callCtx, opts)
 	}
 }
+
+// batchKey identifies which of the mutex-grouped flags (-n / -L / -I) was
+// last set on the command line.
+type batchKey int
+
+const (
+	batchNone batchKey = iota
+	batchN
+	batchL
+	batchI
+)
+
+// batchTracker records the last-set among -n / -L / -I so registerFlags can
+// honor GNU xargs's "last-wins" semantics for these mutually-exclusive flags.
+type batchTracker struct{ last batchKey }
+
+// trackedInt wraps a *int target with a side-effect that updates the shared
+// batchTracker on Set. Used as the pflag.Value for -n / -L.
+type trackedInt struct {
+	p   *int
+	key batchKey
+	t   *batchTracker
+}
+
+func (b *trackedInt) String() string { return fmt.Sprintf("%d", *b.p) }
+func (b *trackedInt) Set(s string) error {
+	v, err := strconv.Atoi(s)
+	if err != nil {
+		return fmt.Errorf("invalid integer %q: %w", s, err)
+	}
+	*b.p = v
+	b.t.last = b.key
+	return nil
+}
+func (b *trackedInt) Type() string { return "int" }
+
+// trackedString wraps a *string target for -I.
+type trackedString struct {
+	p   *string
+	key batchKey
+	t   *batchTracker
+}
+
+func (b *trackedString) String() string { return *b.p }
+func (b *trackedString) Set(s string) error {
+	*b.p = s
+	b.t.last = b.key
+	return nil
+}
+func (b *trackedString) Type() string { return "string" }
 
 // modeKind classifies how items are tokenised from the input.
 type modeKind int
@@ -233,9 +311,14 @@ func (o *options) useMaxArgs() bool  { return o.maxArgs > 0 }
 
 // buildOptions validates the parsed flag values and resolves the command
 // to be executed. It returns a non-empty error string on validation failure.
+//
+// nSet / lSet / iSet reflect whether -n / -L / -I were the last-specified
+// among that mutex group on the command line. Only the winner contributes
+// to the resolved options; the others are dropped silently.
 func buildOptions(fs *builtins.FlagSet, null bool, argFile, delim, eofStr, replStr string,
 	maxLines, maxArgs int, noRunEmpty bool, maxChars int,
-	verbose, exitOnSize bool, args []string) (options, string) {
+	verbose, exitOnSize bool, args []string,
+	nSet, lSet, iSet bool) (options, string) {
 
 	o := options{
 		mode:       modeWhitespace,
@@ -266,21 +349,21 @@ func buildOptions(fs *builtins.FlagSet, null bool, argFile, delim, eofStr, replS
 		o.argFile = argFile
 	}
 
-	if fs.Changed("replace") {
+	if iSet {
 		if replStr == "" {
 			return o, "replace string must be non-empty"
 		}
 		o.replStr = replStr
 	}
 
-	if fs.Changed("max-lines") {
+	if lSet {
 		if msg := validatePositive("L", maxLines, HardMaxArgs); msg != "" {
 			return o, msg
 		}
 		o.maxLines = maxLines
 	}
 
-	if fs.Changed("max-args") {
+	if nSet {
 		if msg := validatePositive("n", maxArgs, HardMaxArgs); msg != "" {
 			return o, msg
 		}
