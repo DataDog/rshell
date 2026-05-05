@@ -260,6 +260,15 @@ func registerFlags(flags *builtins.FlagSet) builtins.HandlerFunc {
 			// cd "" or currentDir() returned "" (no working dir set): stay
 			// in place and update OLDPWD to cwd. But if cwd itself is
 			// unknown, there is nothing to stat — return no-op.
+			//
+			// NOTE: if this is the cd - path (printDash == true) and
+			// currentDir() returns "", we return early without printing the
+			// bare newline. In production the runner always wires WorkDir, so
+			// currentDir() is never empty on the hot path. For embedded use
+			// (hand-constructed CallContext with WorkDir == nil), the
+			// bare-newline print is intentionally skipped because we have no
+			// cwd to validate against — bash semantics can't apply without a
+			// working directory.
 			cwd := currentDir()
 			if cwd == "" {
 				return builtins.Result{}
@@ -483,14 +492,19 @@ func resolvePhysical(ctx context.Context, callCtx *builtins.CallContext, absPath
 			// are resolved. The mandatory StatFile call at the end of
 			// the cd handler is the actual access-control gate and will
 			// reject any out-of-sandbox final target.
-			// NOTE: sandbox.LstatFile also returns ErrPermission for
-			// real filesystem permission errors (e.g. a symlink with
-			// mode 000). In that case we also skip following — the
-			// final StatFile call rejects with permission denied
-			// regardless. This means the component is treated as
-			// non-symlink, which is correct: we cannot follow a
-			// symlink we cannot read.
-			// For any intermediate component opaque to the sandbox we
+			// NOTE: this branch fires ONLY for out-of-sandbox paths.
+			// sandbox.LstatFile returns the raw os.ErrPermission sentinel
+			// (not PortablePathError-wrapped) ONLY when s.resolve() fails
+			// (i.e. the path is outside AllowedPaths) — see sandbox.go:Lstat.
+			// Real filesystem permission errors (e.g. EACCES on a mode-000
+			// symlink inside the sandbox) go through PortablePathError which
+			// wraps with errors.New("permission denied") — that does NOT
+			// satisfy errors.Is(_, fs.ErrPermission) and is therefore
+			// propagated via the "return \"\", err" path below, causing cd
+			// to fail with "permission denied" as bash would.
+			// So this skip is correctly scoped to out-of-sandbox intermediate
+			// components only.
+			// For any intermediate component outside the sandbox we
 			// simply advance resolved without following it.
 			if errors.Is(err, fs.ErrPermission) {
 				resolved = candidate
