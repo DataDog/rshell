@@ -237,6 +237,15 @@ func TestXargsReplaceTrailingNoNewline(t *testing.T) {
 	assert.Equal(t, "a\nb\n", stdout)
 }
 
+// --- -E EOF-STR is honoured in -I mode (regression for codex P2) ---
+
+func TestXargsEofMarkerInReplaceMode(t *testing.T) {
+	dir := t.TempDir()
+	stdout, _, code := cmdRun(t, "printf 'a\\nSTOP\\nb\\n' | xargs -E STOP -I{} echo X{}X", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "XaX\n", stdout)
+}
+
 // --- NUL byte rejection in non -0/-d modes (matches GNU xargs) ---
 
 func TestXargsNULInDefaultModeRejected(t *testing.T) {

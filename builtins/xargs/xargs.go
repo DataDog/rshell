@@ -470,8 +470,12 @@ func buildOptions(fs *builtins.FlagSet, null bool, argFile, delim, eofStr, replS
 		}
 	}
 
-	// EOF-STR is meaningless outside whitespace mode (matches GNU xargs).
-	if o.mode != modeWhitespace {
+	// EOF-STR is honoured in whitespace and -I (line) modes; GNU xargs
+	// only ignores -E when -0 or -d is in use (a delimiter explicitly
+	// disables quote/escape processing, so an EOF-STR token cannot be
+	// recognised reliably). -I keeps quote/escape semantics, so its
+	// per-line tokens can still be matched against EOF-STR.
+	if o.mode == modeNull || o.mode == modeDelim {
 		o.eofStr = ""
 	}
 
@@ -1033,6 +1037,10 @@ func (t *tokenizer) nextLine(ctx context.Context) (string, bool, bool, error) {
 				if len(t.buf) == 0 {
 					return "", false, false, nil
 				}
+				if isEofMarker(t.o, t.buf) {
+					t.eof = true
+					return "", false, false, nil
+				}
 				return string(t.buf), true, true, nil
 			}
 			return "", false, false, err
@@ -1072,6 +1080,10 @@ func (t *tokenizer) nextLine(ctx context.Context) (string, bool, bool, error) {
 			}
 			continue
 		case '\n':
+			if isEofMarker(t.o, t.buf) {
+				t.eof = true
+				return "", false, false, nil
+			}
 			return string(t.buf), true, true, nil
 		case 0:
 			// See -0-mode comment in nextWhitespace.
@@ -1083,6 +1095,10 @@ func (t *tokenizer) nextLine(ctx context.Context) (string, bool, bool, error) {
 				// NUL hit before any data was buffered for this record;
 				// resume on the next record rather than signalling EOF.
 				return t.next(ctx)
+			}
+			if isEofMarker(t.o, t.buf) {
+				t.eof = true
+				return "", false, false, nil
 			}
 			return string(t.buf), true, true, nil
 		}
@@ -1278,8 +1294,8 @@ func (t *tokenizer) nextWhitespace(ctx context.Context) (string, bool, bool, err
 	}
 }
 
-// isEofMarker reports whether buf equals the configured EOF-STR (only when
-// non-empty and we are in whitespace mode).
+// isEofMarker reports whether buf equals the configured EOF-STR. Returns
+// false when -E was not set or was cleared (e.g. -0/-d disable -E).
 func isEofMarker(o options, buf []byte) bool {
 	if o.eofStr == "" {
 		return false
