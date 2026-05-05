@@ -624,7 +624,13 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 					return r.allowAllCommands || r.allowedCommands[n]
 				},
 				RunCommand: func(ctx context.Context, dir string, name string, args []string) (uint8, error) {
-					return runCmdWithStdin(ctx, dir, name, args, nil)
+					// Inherit the parent's overridden stdin so grandchildren
+					// dispatched via RunCommand (the no-stdin variant) stay
+					// isolated from the top-level r.stdin. When the parent
+					// has no override (childStdin == nil), this is the same
+					// fallback as before — the grandchild's CallContext
+					// picks up r.stdin via the default branch below.
+					return runCmdWithStdin(ctx, dir, name, args, childStdin)
 				},
 				RunCommandWithStdin: runCmdWithStdin,
 				Proc:                r.proc,
