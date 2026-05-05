@@ -443,6 +443,21 @@ func decodeDelim(s string) (byte, error) {
 	if len(s) == 1 {
 		return s[0], nil
 	}
+	// GNU xargs additionally accepts hex (`\xNN` / `\xN`) and octal
+	// (`\NNN` / `\NN` / `\N`) escapes — the raw byte value of the
+	// resulting code point is used as the single-byte delimiter.
+	if len(s) >= 3 && s[0] == '\\' && (s[1] == 'x' || s[1] == 'X') {
+		v, err := strconv.ParseUint(s[2:], 16, 8)
+		if err == nil {
+			return byte(v), nil
+		}
+	}
+	if len(s) >= 2 && s[0] == '\\' && s[1] >= '0' && s[1] <= '7' {
+		v, err := strconv.ParseUint(s[1:], 8, 8)
+		if err == nil {
+			return byte(v), nil
+		}
+	}
 	return 0, fmt.Errorf("delimiter must be a single character: %q", s)
 }
 
