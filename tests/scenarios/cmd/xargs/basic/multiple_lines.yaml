@@ -13,5 +13,5 @@ input:
 expect:
   stdout: |+
     alpha beta gamma
-  stderr: ""
+  stderr: |+
   exit_code: 0

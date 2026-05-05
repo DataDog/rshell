@@ -6,5 +6,5 @@ input:
     xargs --help
 expect:
   stdout_contains: ["Usage:", "--max-args"]
-  stderr: ""
+  stderr: |+
   exit_code: 0

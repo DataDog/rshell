@@ -4,5 +4,5 @@ input:
     printf '' | xargs -r echo done
 expect:
   stdout: ""
-  stderr: ""
+  stderr: |+
   exit_code: 0

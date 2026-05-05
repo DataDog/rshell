@@ -7,5 +7,5 @@ expect:
     item: a
     item: b
     item: c
-  stderr: ""
+  stderr: |+
   exit_code: 0

@@ -5,5 +5,5 @@ input:
 expect:
   stdout: |+
     a STOP
-  stderr: ""
+  stderr: |+
   exit_code: 0

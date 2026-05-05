@@ -7,5 +7,5 @@ expect:
     a b
     c d
     e
-  stderr: ""
+  stderr: |+
   exit_code: 0
