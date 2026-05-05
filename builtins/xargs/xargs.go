@@ -1086,15 +1086,14 @@ func (t *tokenizer) nextLine(ctx context.Context) (string, bool, bool, error) {
 			}
 			return string(t.buf), true, true, nil
 		case 0:
-			// See -0-mode comment in nextWhitespace.
+			// In -I (line) mode, NUL truncates the entire record:
+			// emit the current token (possibly empty), warn once, and
+			// drop the rest of the line. Subsequent NUL-free lines are
+			// tokenised normally. Empty tokens are emitted (matches
+			// GNU; e.g. `\0bad\ngood\n` produces `[]\n[good]`).
 			t.nulSeen = true
 			if err := t.skipToNewline(ctx); err != nil {
 				return "", false, false, err
-			}
-			if len(t.buf) == 0 {
-				// NUL hit before any data was buffered for this record;
-				// resume on the next record rather than signalling EOF.
-				return t.next(ctx)
 			}
 			if isEofMarker(t.o, t.buf) {
 				t.eof = true
@@ -1105,6 +1104,42 @@ func (t *tokenizer) nextLine(ctx context.Context) (string, bool, bool, error) {
 
 		if err := t.pushByte(b); err != nil {
 			return "", false, false, err
+		}
+	}
+}
+
+// skipToWhitespace drains bytes from t.r until the next whitespace byte
+// (space, tab, newline, etc.) or EOF, then unreads the whitespace so the
+// outer tokenisation loop can use it as a record terminator. Returns
+// true if the terminator was '\n'. Used by the default-mode NUL handler
+// so a NUL-contaminated word is dropped only up to the next whitespace
+// boundary, leaving subsequent words on the same line intact (matches
+// GNU xargs).
+func (t *tokenizer) skipToWhitespace(ctx context.Context) (sawNewline bool, err error) {
+	for {
+		if err := t.pollCtx(ctx); err != nil {
+			return false, err
+		}
+		b, err := t.r.ReadByte()
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				t.eof = true
+				return false, nil
+			}
+			return false, err
+		}
+		if isWhitespace(b) {
+			if b == '\n' {
+				t.atLineStart = true
+				if err := t.r.UnreadByte(); err != nil {
+					return false, err
+				}
+				return true, nil
+			}
+			if err := t.r.UnreadByte(); err != nil {
+				return false, err
+			}
+			return false, nil
 		}
 	}
 }
@@ -1249,23 +1284,23 @@ func (t *tokenizer) nextWhitespace(ctx context.Context) (string, bool, bool, err
 			}
 			continue
 		case 0:
-			// GNU xargs rejects NUL in non-NUL/-d modes: emit current
-			// token (if any), set the warn flag (caller emits a stderr
-			// warning once), and skip the rest of the current line so
-			// NUL bytes never reach the child argv.
+			// GNU xargs rejects NUL in non-NUL/-d modes: emit the
+			// current token (possibly empty) for the NUL-contaminated
+			// word, set the warn flag (caller emits a stderr warning
+			// once), and skip remaining bytes up to the next
+			// whitespace boundary so the rest of the line (other
+			// whitespace-separated words) keeps being tokenised.
 			t.nulSeen = true
-			if err := t.skipToNewline(ctx); err != nil {
+			sawNewline, err := t.skipToWhitespace(ctx)
+			if err != nil {
 				return "", false, false, err
 			}
-			endedLine = true
+			if sawNewline {
+				endedLine = true
+			}
 			if isEofMarker(t.o, t.buf) {
 				t.eof = true
 				return "", false, false, nil
-			}
-			if len(t.buf) == 0 {
-				// NUL hit before any data was buffered for this token;
-				// resume on the next record rather than signalling EOF.
-				return t.next(ctx)
 			}
 			return string(t.buf), endedLine, true, nil
 		}

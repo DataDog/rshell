@@ -1,4 +1,5 @@
-description: xargs -I mode warns on NUL bytes and drops the rest of the line; subsequent NUL-free lines are processed normally (matches GNU).
+description: xargs -I mode warns on NUL bytes and emits the token truncated at NUL; subsequent NUL-free lines are processed normally. rshell never passes NUL bytes through to the child argv (Go strings have no implicit C-string truncation), so the visible substitution differs from GNU which passes the raw bytes and relies on exec to terminate at NUL.
+skip_assert_against_bash: true
 input:
   script: |+
     printf 'a\0b\nc\n' | xargs -I{} echo X{}X

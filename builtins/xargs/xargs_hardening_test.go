@@ -268,13 +268,35 @@ func TestXargsNULInReplaceModeRejected(t *testing.T) {
 	assert.Contains(t, stderr, "NUL character")
 }
 
+func TestXargsNULDefaultModeContinuesAfterEmptyRecord(t *testing.T) {
+	dir := t.TempDir()
+	// printf '\0bad\ngood\n' — GNU emits an empty arg for the NUL'd
+	// word, drops the rest of that word ("bad"), then processes "good".
+	// Output: `[]` `[good]`.
+	stdout, stderr, code := cmdRun(t, "printf '\\0bad\\ngood\\n' | xargs printf '[%s]\\n'", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "[]\n[good]\n", stdout)
+	assert.Contains(t, stderr, "NUL character")
+}
+
+func TestXargsNULDefaultModePreservesLaterWords(t *testing.T) {
+	dir := t.TempDir()
+	// printf 'a\0b c\n' — NUL only discards the rest of *the current
+	// word* (b), not the rest of the line, so "c" survives.
+	stdout, stderr, code := cmdRun(t, "printf 'a\\0b c\\n' | xargs printf '[%s]\\n'", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "[a]\n[c]\n", stdout)
+	assert.Contains(t, stderr, "NUL character")
+}
+
 func TestXargsNULAtStartOfLineDoesNotTerminateInput(t *testing.T) {
 	dir := t.TempDir()
-	// NUL right at the start of the first line — must not be mistaken for
-	// EOF; the second NUL-free line ("b") must still be processed.
+	// NUL right at the start of the first line — must not be mistaken
+	// for EOF. GNU emits an empty token for the NUL'd record, then
+	// processes subsequent NUL-free records normally.
 	stdout, stderr, code := cmdRun(t, "printf '\\0a\\nb\\n' | xargs -I{} echo X{}X", dir)
 	assert.Equal(t, 0, code)
-	assert.Equal(t, "XbX\n", stdout)
+	assert.Equal(t, "XX\nXbX\n", stdout)
 	assert.Contains(t, stderr, "NUL character")
 }
 
