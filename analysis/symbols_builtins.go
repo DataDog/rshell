@@ -59,6 +59,7 @@ var builtinPerCommandSymbols = map[string][]string{
 		"math.Sin",             // 🟢 pure arithmetic function; no I/O.
 		"math.Sqrt",            // 🟢 pure arithmetic function; no I/O.
 		"math.Trunc",           // 🟢 pure arithmetic function; no I/O.
+		"os.ErrInvalid",        // 🟢 sentinel error for invalid operations; used to detect directory reads; pure constant.
 		"os.O_RDONLY",          // 🟢 read-only file flag constant; cannot open files by itself.
 		"regexp.Compile",       // 🟢 compiles a regular expression; pure function, no I/O. Uses RE2 engine (linear-time, no backtracking).
 		"regexp.Regexp",        // 🟢 compiled regular expression type; no I/O side effects. All matching methods are linear-time (RE2).
@@ -81,6 +82,7 @@ var builtinPerCommandSymbols = map[string][]string{
 		"strings.Split",        // 🟢 splits a string by separator into a slice; pure function, no I/O.
 		"strings.ToLower",      // 🟢 converts string to lowercase; pure function, no I/O.
 		"strings.ToUpper",      // 🟢 converts string to uppercase; pure function, no I/O.
+		"strings.Contains",     // 🟢 substring search; pure function, no I/O.
 		"strings.ContainsRune", // 🟢 checks if a rune is in a string; pure function, no I/O.
 		"strings.TrimLeft",     // 🟢 removes leading characters; pure function, no I/O.
 		"strings.TrimSpace",    // 🟢 removes leading/trailing whitespace; pure function, no I/O.
@@ -556,6 +558,7 @@ var builtinAllowedSymbols = []string{
 	"net.ParseIP",                                         // 🟢 parses an IP address string into a net.IP; pure function, no I/O.
 	"net.Interface",                                       // 🟢 OS network interface descriptor; read-only struct, no network connections.
 	"net.Interfaces",                                      // 🟠 read-only OS interface enumeration function; no network connections or writes.
+	"os.ErrInvalid",                                       // 🟢 sentinel error for invalid operations (e.g. reading a directory); pure constant.
 	"os.FileInfo",                                         // 🟢 file metadata interface returned by Stat; no I/O side effects.
 	"os.IsNotExist",                                       // 🟢 checks if error is "not exist"; pure function, no I/O.
 	"os.O_RDONLY",                                         // 🟢 read-only file flag constant; cannot open files by itself.
