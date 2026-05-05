@@ -341,9 +341,11 @@ func TestXargsBackslashEscape(t *testing.T) {
 
 func TestXargsUnterminatedQuote(t *testing.T) {
 	dir := t.TempDir()
-	_, stderr, code := cmdRun(t, `echo "'oops" | xargs echo`, dir)
+	stdout, stderr, code := cmdRun(t, `echo "'oops" | xargs echo`, dir)
 	assert.Equal(t, 1, code)
 	assert.Contains(t, stderr, "xargs:")
+	// Tokenizer errors must not fall through to a default echo invocation.
+	assert.Empty(t, stdout)
 }
 
 func TestXargsTrailingBackslash(t *testing.T) {
@@ -439,9 +441,11 @@ func TestXargsTokenTooLong(t *testing.T) {
 		huge[i] = 'x'
 	}
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "huge.txt"), huge, 0644))
-	_, stderr, code := cmdRun(t, "xargs -a huge.txt echo", dir)
+	stdout, stderr, code := cmdRun(t, "xargs -a huge.txt echo", dir)
 	assert.NotEqual(t, 0, code)
 	assert.Contains(t, stderr, "xargs:")
+	// Tokenizer errors must not fall through to a default echo invocation.
+	assert.Empty(t, stdout)
 }
 
 func TestXargsClampMaxArgs(t *testing.T) {

@@ -417,7 +417,7 @@ func runXargs(ctx context.Context, callCtx *builtins.CallContext, o options) bui
 				}
 				if usedChars+add > o.maxChars {
 					if o.exitOnSize {
-						callCtx.Errf("xargs: cannot fit single argument within -s limit\n")
+						callCtx.Errf("xargs: argument line too long\n")
 						return builtins.Result{Code: exitUsage}
 					}
 					callCtx.Errf("xargs: argument line too long; invoking anyway\n")
