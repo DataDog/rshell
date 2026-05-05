@@ -660,6 +660,14 @@ func readInput(ctx context.Context, r io.Reader, delim rune, raw bool, charLimit
 		defer close(stop)
 		go func() {
 			var rbuf [1]byte
+			// savedErr defers an error that arrived in the same Read
+			// call as a successful byte (n=1 with err != nil — io.Reader
+			// is allowed to return data and io.EOF together). The byte
+			// is delivered this turn; the error surfaces on the next
+			// readByte request, mirroring the direct-read path's
+			// behaviour of returning the byte first and the EOF on the
+			// subsequent Read.
+			var savedErr error
 			for {
 				select {
 				case <-stop:
@@ -669,17 +677,46 @@ func readInput(ctx context.Context, r io.Reader, delim rune, raw bool, charLimit
 						return
 					}
 				}
-				n, err := r.Read(rbuf[:])
+				if savedErr != nil {
+					select {
+					case resCh <- byteResult{0, savedErr}:
+					case <-stop:
+					}
+					return
+				}
 				var b byte
-				if n == 1 {
-					b = rbuf[0]
+				var sendErr error
+				gotData := false
+				for {
+					n, err := r.Read(rbuf[:])
+					if n == 1 {
+						b = rbuf[0]
+						gotData = true
+						if err != nil {
+							savedErr = err
+						}
+						break
+					}
+					if err != nil {
+						sendErr = err
+						break
+					}
+					// n=0, err=nil per io.Reader contract: retry.
+					// Check stop so cancellation isn't ignored if a
+					// misbehaving reader spins this loop.
+					select {
+					case <-stop:
+						return
+					default:
+					}
 				}
 				select {
-				case resCh <- byteResult{b, err}:
+				case resCh <- byteResult{b, sendErr}:
 				case <-stop:
 					return
 				}
-				if err != nil {
+				if !gotData && sendErr != nil {
+					// Pure error result delivered; nothing more to do.
 					return
 				}
 			}
