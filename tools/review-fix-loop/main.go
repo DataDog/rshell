@@ -28,7 +28,7 @@ type Config struct {
 func main() {
 	var (
 		maxIter       = flag.Int("max-iterations", 30, "maximum loop iterations")
-		targetSuccess = flag.Int("success-count", 5, "consecutive clean iterations required to stop")
+		targetSuccess = flag.Int("success-count", 3, "consecutive clean iterations required to stop")
 		model         = flag.String("model", "claude-sonnet-4-6", "Anthropic model to use")
 		maxTokens     = flag.Int("max-tokens", 32768, "max output tokens per agent call")
 		workDir       = flag.String("dir", "", "repo root (default: auto-detect via git)")

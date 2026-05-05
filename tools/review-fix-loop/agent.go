@@ -51,7 +51,7 @@ func newAgent(cfg Config, out, logOut, termOut io.Writer) *Agent {
 // In normal mode: dots go to stdout for each tool call; only the final agent response
 // (the summary) is printed to stdout, prefixed with [name]. Everything goes to the log.
 // In verbose mode: banners, raw Claude text, and full bash I/O are shown on stdout.
-func (a *Agent) Run(ctx context.Context, name, systemPrompt, userMessage string) error {
+func (a *Agent) Run(ctx context.Context, name, systemPrompt, userMessage string) (string, error) {
 	colorCode := agentColor(name)
 	prefix := paint("["+name+"] ", colorCode)
 
@@ -108,7 +108,7 @@ func (a *Agent) Run(ctx context.Context, name, systemPrompt, userMessage string)
 		for stream.Next() {
 			event := stream.Current()
 			if err := acc.Accumulate(event); err != nil {
-				return fmt.Errorf("accumulate stream: %w", err)
+				return "", fmt.Errorf("accumulate stream: %w", err)
 			}
 			if e, ok := event.AsAny().(anthropic.ContentBlockDeltaEvent); ok {
 				if d, ok := e.Delta.AsAny().(anthropic.TextDelta); ok {
@@ -120,7 +120,7 @@ func (a *Agent) Run(ctx context.Context, name, systemPrompt, userMessage string)
 			}
 		}
 		if err := stream.Err(); err != nil {
-			return fmt.Errorf("[%s] stream error (round %d): %w", name, round, err)
+			return "", fmt.Errorf("[%s] stream error (round %d): %w", name, round, err)
 		}
 		lw.flush()
 
@@ -190,9 +190,9 @@ func (a *Agent) Run(ctx context.Context, name, systemPrompt, userMessage string)
 		fmt.Fprintf(a.logOut, "╚═ [%s] done ═══════════════════\n", name)
 	}
 	if !reachedFinalResponse {
-		return fmt.Errorf("[%s] tool-use loop exhausted (%d rounds) without a final text response", name, maxToolRounds)
+		return "", fmt.Errorf("[%s] tool-use loop exhausted (%d rounds) without a final text response", name, maxToolRounds)
 	}
-	return nil
+	return lastRoundText.String(), nil
 }
 
 func (a *Agent) executeBash(ctx context.Context, rawInput json.RawMessage) (output string, isErr bool) {

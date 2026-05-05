@@ -18,10 +18,11 @@ import (
 
 // IterationResult records the outcome of one loop iteration.
 type IterationResult struct {
-	Iteration      int
-	ReviewFindings int // new threads opened by the code-review step
-	Unresolved     int // unresolved threads at end of iteration
-	CIClean        bool
+	Iteration            int
+	ReviewFindings       int  // new threads opened by the code-review step (informational)
+	HighPriorityFindings bool // true if any P0/P1 found in self-review or Codex
+	Unresolved           int  // total unresolved threads at end of iteration (informational)
+	CIClean              bool
 }
 
 // run is the main entry point after flag parsing.
@@ -85,12 +86,15 @@ func run(ctx context.Context, cfg Config, prRef string) error {
 		var (
 			wg             sync.WaitGroup
 			reviewAgentErr error
+			reviewText     string
 		)
 		wg.Add(2)
 		go func() {
 			defer wg.Done()
 			userMsg := fmt.Sprintf("Review PR #%d. Focus on the diff vs the base branch.", pr.Number)
-			if err := agent.Run(ctx, "code-review", loadSkill(cfg.WorkDir, "code_review", fmt.Sprintf("#%d", pr.Number)), userMsg); err != nil {
+			var err error
+			reviewText, err = agent.Run(ctx, "code-review", loadSkill(cfg.WorkDir, "code_review", fmt.Sprintf("#%d", pr.Number)), userMsg)
+			if err != nil {
 				log.Printf("[code-review] error: %v", err)
 				reviewAgentErr = err
 			}
@@ -121,7 +125,7 @@ func run(ctx context.Context, cfg Config, prRef string) error {
 			pr.Number, iter,
 		)
 		var addrAgentErr error
-		if err := agent.Run(ctx, "address-pr-comments",
+		if _, err := agent.Run(ctx, "address-pr-comments",
 			loadSkill(cfg.WorkDir, "address_pr_comments", fmt.Sprintf("#%d", pr.Number)), addrMsg); err != nil {
 			log.Printf("[address-pr-comments] error: %v", err)
 			addrAgentErr = err
@@ -133,35 +137,43 @@ func run(ctx context.Context, cfg Config, prRef string) error {
 			pr.Number, iter,
 		)
 		var fixCIAgentErr error
-		if err := agent.Run(ctx, "fix-ci-tests",
+		if _, err := agent.Run(ctx, "fix-ci-tests",
 			loadSkill(cfg.WorkDir, "fix_ci_tests", fmt.Sprintf("#%d", pr.Number)), ciMsg); err != nil {
 			log.Printf("[fix-ci-tests] error: %v", err)
 			fixCIAgentErr = err
 		}
 
-		// 2D: decide — purely structural signals, no comment body text
-		unresolved, unresolvedErr := countUnresolvedThreads(cfg.WorkDir, pr)
-		if unresolvedErr != nil {
-			log.Printf("[unresolved threads] warning: %v", unresolvedErr)
+		// 2D: decide — P0/P1 badge detection for both self-review and Codex.
+		// Only P0/P1 findings block the clean streak; P2/P3 are addressed but
+		// do not reset it. Unresolved thread count is informational only.
+		selfHighPriority := reviewHasHighPriorityFindings(reviewText)
+		codexHighPriority, codexErr := codexHasHighPriorityFindings(cfg.WorkDir, pr)
+		if codexErr != nil {
+			log.Printf("[codex high-priority] warning: %v", codexErr)
 		}
+		highPriority := selfHighPriority || codexHighPriority
+
+		unresolved, _ := countUnresolvedThreads(cfg.WorkDir, pr)
 		ciClean, ciErr := allCIPassing(cfg.WorkDir, pr.Number)
 		if ciErr != nil {
 			log.Printf("[CI status] warning: %v", ciErr)
 		}
 
-		result := IterationResult{Iteration: iter, ReviewFindings: reviewFindings, Unresolved: unresolved, CIClean: ciClean}
+		result := IterationResult{
+			Iteration:            iter,
+			ReviewFindings:       reviewFindings,
+			HighPriorityFindings: highPriority,
+			Unresolved:           unresolved,
+			CIClean:              ciClean,
+		}
 		results = append(results, result)
 
-		statusLine := fmt.Sprintf("→ findings=%d  unresolved=%d  ci_clean=%v", reviewFindings, unresolved, ciClean)
-		// A clean iteration requires: no new review findings, no unresolved review
-		// threads (from any prior iteration), and all CI checks passing.
-		// If the thread-count or CI-status lookup failed, treat it as not clean
-		// to avoid advancing the streak on unknown state.
-		// Agent errors (code-review, address-pr-comments, fix-ci-tests) are treated
-		// as non-clean: if a review or fix agent fails, we cannot be confident the
-		// iteration is valid even when thread counts and CI appear clean.
+		statusLine := fmt.Sprintf("→ high_priority=%v  findings=%d  unresolved=%d  ci_clean=%v",
+			highPriority, reviewFindings, unresolved, ciClean)
+		// A clean iteration requires no P0/P1 findings (self-review or Codex) and CI passing.
+		// Agent errors are treated as non-clean: a failed review agent cannot be trusted.
 		agentErr := reviewAgentErr != nil || addrAgentErr != nil || fixCIAgentErr != nil
-		iterClean := reviewFindings == 0 && unresolved == 0 && ciClean && unresolvedErr == nil && ciErr == nil && !agentErr
+		iterClean := !highPriority && ciClean && ciErr == nil && !agentErr
 		if iterClean {
 			fmt.Fprintf(out, "\n  %s\n", boldGreen(statusLine))
 		} else {
@@ -214,14 +226,24 @@ func buildSummary(pr PRInfo, results []IterationResult, converged bool) string {
 	fmt.Fprintf(&sb, "- **Iterations completed**: %d\n", len(results))
 	fmt.Fprintf(&sb, "- **Final status**: %s\n\n", status)
 	fmt.Fprintf(&sb, "### Iteration log\n\n")
-	fmt.Fprintf(&sb, "| # | Review findings | Unresolved threads | CI |\n")
-	fmt.Fprintf(&sb, "|---|-----------------|--------------------|---------|\n")
+	fmt.Fprintf(&sb, "| # | P0/P1 findings | Total findings | Unresolved threads | CI |\n")
+	fmt.Fprintf(&sb, "|---|----------------|----------------|--------------------|---------|\n")
 	for _, r := range results {
 		ci := "Passing"
 		if !r.CIClean {
 			ci = "Failing"
 		}
-		fmt.Fprintf(&sb, "| %d | %d | %d | %s |\n", r.Iteration, r.ReviewFindings, r.Unresolved, ci)
+		hp := "none"
+		if r.HighPriorityFindings {
+			hp = "YES"
+		}
+		fmt.Fprintf(&sb, "| %d | %s | %d | %d | %s |\n", r.Iteration, hp, r.ReviewFindings, r.Unresolved, ci)
 	}
 	return sb.String()
+}
+
+// reviewHasHighPriorityFindings returns true if the self-review agent output
+// contains P0 or P1 badge markers. P2/P3 findings do not block the streak.
+func reviewHasHighPriorityFindings(reviewText string) bool {
+	return strings.Contains(reviewText, "/badge/P0-") || strings.Contains(reviewText, "/badge/P1-")
 }

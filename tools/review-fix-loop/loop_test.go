@@ -29,9 +29,9 @@ func TestBuildSummary(t *testing.T) {
 		assertContains(t, got, "#42")
 		assertContains(t, got, "https://github.com/org/repo/pull/42")
 		assertContains(t, got, "Iterations completed**: 3")
-		assertContains(t, got, "| 1 | 4 | 3 | Failing |")
-		assertContains(t, got, "| 2 | 2 | 1 | Passing |")
-		assertContains(t, got, "| 3 | 0 | 0 | Passing |")
+		assertContains(t, got, "| 1 | none | 4 | 3 | Failing |")
+		assertContains(t, got, "| 2 | none | 2 | 1 | Passing |")
+		assertContains(t, got, "| 3 | none | 0 | 0 | Passing |")
 	})
 
 	t.Run("hit iteration limit", func(t *testing.T) {
@@ -55,8 +55,39 @@ func TestBuildSummary(t *testing.T) {
 			{Iteration: 1, ReviewFindings: 0, Unresolved: 0, CIClean: false},
 		}
 		got := buildSummary(pr, results, false)
-		assertContains(t, got, "| 1 | 0 | 0 | Failing |")
+		assertContains(t, got, "| 1 | none | 0 | 0 | Failing |")
 	})
+
+	t.Run("high priority findings row", func(t *testing.T) {
+		results := []IterationResult{
+			{Iteration: 1, ReviewFindings: 2, HighPriorityFindings: true, Unresolved: 2, CIClean: true},
+		}
+		got := buildSummary(pr, results, false)
+		assertContains(t, got, "| 1 | YES | 2 | 2 | Passing |")
+	})
+}
+
+func TestReviewHasHighPriorityFindings(t *testing.T) {
+	cases := []struct {
+		name  string
+		input string
+		want  bool
+	}{
+		{"empty", "", false},
+		{"P2 only", "shields.io/badge/P2-yellow?style=flat", false},
+		{"P3 only", "shields.io/badge/P3-blue?style=flat", false},
+		{"P0 badge", "shields.io/badge/P0-red?style=flat", true},
+		{"P1 badge", "shields.io/badge/P1-orange?style=flat", true},
+		{"P0 and P2", "shields.io/badge/P0-red shields.io/badge/P2-yellow", true},
+		{"prose mention only", "no P0/P1 issues found", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := reviewHasHighPriorityFindings(tc.input); got != tc.want {
+				t.Errorf("reviewHasHighPriorityFindings(%q) = %v, want %v", tc.input, got, tc.want)
+			}
+		})
+	}
 }
 
 func assertContains(t *testing.T, s, substr string) {

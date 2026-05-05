@@ -175,6 +175,112 @@ func countUnresolvedInPage(out []byte, myLogin string) (count int, hasNextPage b
 	return count, threads.PageInfo.HasNextPage, threads.PageInfo.EndCursor, nil
 }
 
+// codexHasHighPriorityFindings returns true if any unresolved thread from
+// chatgpt-codex-connector[bot] (or the bare login) contains a P0 or P1 badge
+// pattern in its first comment body. On API error it returns (true, err) so
+// that callers treat unknown state conservatively.
+func codexHasHighPriorityFindings(workDir string, pr PRInfo) (bool, error) {
+	const query = `
+query($owner: String!, $repo: String!, $pr: Int!, $after: String) {
+  repository(owner: $owner, name: $repo) {
+    pullRequest(number: $pr) {
+      reviewThreads(first: 100, after: $after) {
+        pageInfo { hasNextPage endCursor }
+        nodes {
+          isResolved
+          comments(first: 1) {
+            nodes {
+              body
+              author { login }
+            }
+          }
+        }
+      }
+    }
+  }
+}`
+	cursor := ""
+	for {
+		cursorArgs := []string{
+			"-f", "query=" + query,
+			"-f", "owner=" + pr.Owner,
+			"-f", "repo=" + pr.Repo,
+			"-F", fmt.Sprintf("pr=%d", pr.Number),
+		}
+		if cursor != "" {
+			cursorArgs = append(cursorArgs, "-f", "after="+cursor)
+		}
+		cmd := exec.Command("gh", "api", "graphql")
+		cmd.Args = append(cmd.Args, cursorArgs...)
+		cmd.Dir = workDir
+		out, err := cmd.Output()
+		if err != nil {
+			return true, fmt.Errorf("graphql query: %w", err)
+		}
+
+		found, hasNext, next, err := codexHighPriorityInPage(out)
+		if err != nil {
+			return true, err
+		}
+		if found {
+			return true, nil
+		}
+		if !hasNext {
+			break
+		}
+		cursor = next
+	}
+	return false, nil
+}
+
+// codexHighPriorityInPage checks one page of reviewThreads for unresolved
+// chatgpt-codex-connector threads whose first comment body contains a P0 or P1 badge.
+func codexHighPriorityInPage(out []byte) (found bool, hasNextPage bool, endCursor string, err error) {
+	var resp struct {
+		Data struct {
+			Repository struct {
+				PullRequest struct {
+					ReviewThreads struct {
+						PageInfo struct {
+							HasNextPage bool   `json:"hasNextPage"`
+							EndCursor   string `json:"endCursor"`
+						} `json:"pageInfo"`
+						Nodes []struct {
+							IsResolved bool `json:"isResolved"`
+							Comments   struct {
+								Nodes []struct {
+									Body   string `json:"body"`
+									Author struct {
+										Login string `json:"login"`
+									} `json:"author"`
+								} `json:"nodes"`
+							} `json:"comments"`
+						} `json:"nodes"`
+					} `json:"reviewThreads"`
+				} `json:"pullRequest"`
+			} `json:"repository"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(out, &resp); err != nil {
+		return false, false, "", fmt.Errorf("parse graphql response: %w", err)
+	}
+
+	threads := resp.Data.Repository.PullRequest.ReviewThreads
+	for _, node := range threads.Nodes {
+		if node.IsResolved || len(node.Comments.Nodes) == 0 {
+			continue
+		}
+		c := node.Comments.Nodes[0]
+		if c.Author.Login != "chatgpt-codex-connector[bot]" && c.Author.Login != "chatgpt-codex-connector" {
+			continue
+		}
+		if strings.Contains(c.Body, "/badge/P0-") || strings.Contains(c.Body, "/badge/P1-") {
+			return true, threads.PageInfo.HasNextPage, threads.PageInfo.EndCursor, nil
+		}
+	}
+	return false, threads.PageInfo.HasNextPage, threads.PageInfo.EndCursor, nil
+}
+
 // allCIPassing returns true if no CI checks are in a failing state.
 // Pending/queued checks are treated as non-blocking per the skill spec.
 func allCIPassing(workDir string, prNumber int) (bool, error) {

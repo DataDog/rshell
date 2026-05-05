@@ -224,3 +224,48 @@ func TestCountUnresolvedInPage(t *testing.T) {
 		})
 	}
 }
+
+func TestCodexHighPriorityInPage(t *testing.T) {
+	thread := func(resolved bool, login, body string) string {
+		r := "false"
+		if resolved {
+			r = "true"
+		}
+		return `{"isResolved":` + r + `,"comments":{"nodes":[{"body":"` + body + `","author":{"login":"` + login + `"}}]}}`
+	}
+	page := func(nodes string, hasNext bool) []byte {
+		next := "false"
+		if hasNext {
+			next = "true"
+		}
+		return []byte(`{"data":{"repository":{"pullRequest":{"reviewThreads":{"pageInfo":{"hasNextPage":` +
+			next + `,"endCursor":""},"nodes":[` + nodes + `]}}}}}`)
+	}
+
+	cases := []struct {
+		name      string
+		input     []byte
+		wantFound bool
+		wantErr   bool
+	}{
+		{"no threads", page("", false), false, false},
+		{"codex P0 badge", page(thread(false, "chatgpt-codex-connector[bot]", "see /badge/P0-red"), false), true, false},
+		{"codex P1 badge", page(thread(false, "chatgpt-codex-connector", "see /badge/P1-orange"), false), true, false},
+		{"codex P2 only", page(thread(false, "chatgpt-codex-connector[bot]", "see /badge/P2-yellow"), false), false, false},
+		{"non-codex P0", page(thread(false, "other-bot", "see /badge/P0-red"), false), false, false},
+		{"resolved codex P0", page(thread(true, "chatgpt-codex-connector[bot]", "see /badge/P0-red"), false), false, false},
+		{"invalid JSON", []byte(`not json`), false, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			found, _, _, err := codexHighPriorityInPage(tc.input)
+			if (err != nil) != tc.wantErr {
+				t.Errorf("error = %v, wantErr %v", err, tc.wantErr)
+				return
+			}
+			if !tc.wantErr && found != tc.wantFound {
+				t.Errorf("found = %v, want %v", found, tc.wantFound)
+			}
+		})
+	}
+}
