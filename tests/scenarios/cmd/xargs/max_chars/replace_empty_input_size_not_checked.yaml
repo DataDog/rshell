@@ -1,0 +1,9 @@
+description: xargs -I with tiny -s and empty stdin exits 0 — GNU skips the -s upfront check when no items will be processed (noRunEmpty implied by -I).
+skip_assert_against_bash: false
+input:
+  script: |+
+    printf '' | xargs -I {} -s 5 echo {}
+expect:
+  stdout: ""
+  stderr: |+
+  exit_code: 0

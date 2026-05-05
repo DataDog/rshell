@@ -493,15 +493,6 @@ func runXargs(ctx context.Context, callCtx *builtins.CallContext, o options) bui
 	for _, w := range o.warnings {
 		callCtx.Errf("xargs: %s\n", w)
 	}
-	// Upfront check: if the command itself (without any items) already
-	// exceeds the -s limit, fail immediately — even on empty input. Matches
-	// GNU xargs's "cannot fit single argument within argument list size limit"
-	// error and must be checked before the nil-stdin early-return path.
-	if commandLineLen(o, nil) > o.maxChars {
-		callCtx.Errf("xargs: cannot fit single argument within argument list size limit\n")
-		return builtins.Result{Code: exitUsage}
-	}
-
 	rc, err := openInput(ctx, callCtx, o)
 	if err != nil {
 		callCtx.Errf("xargs: %s\n", err.Error())
@@ -510,7 +501,19 @@ func runXargs(ctx context.Context, callCtx *builtins.CallContext, o options) bui
 	if rc == nil {
 		// No stdin available and no -a file given. POSIX xargs reads from
 		// /dev/null in that case, which produces zero items.
+		// When -I (or -r) is active, no-run-if-empty also triggers here —
+		// GNU xargs skips the -s upfront check in this case (verified).
 		return finishEmpty(ctx, callCtx, o, exitOK)
+	}
+
+	// Upfront check: if the command itself (without any items) already
+	// exceeds the -s limit, fail immediately. GNU xargs performs this check
+	// even with empty stdin and -r (no-run-if-empty), but skips it when
+	// -I (replace mode) is active with empty input — because -I implies
+	// no-run-if-empty and the command won't run. Verified against GNU xargs.
+	if commandLineLen(o, nil) > o.maxChars && !o.useReplace() {
+		callCtx.Errf("xargs: cannot fit single argument within argument list size limit\n")
+		return builtins.Result{Code: exitUsage}
 	}
 	defer rc.Close()
 

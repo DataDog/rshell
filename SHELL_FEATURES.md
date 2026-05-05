@@ -129,6 +129,8 @@ The in-shell `help` command mirrors these feature categories: run `help` for a c
 
 - **`xargs -n`/`-L` upper cap (HardMaxArgs = 1 MiB)**: rshell rejects `-n`/`-L` values larger than `1 MiB` (1,048,576) with a usage error. GNU xargs accepts arbitrarily large values (up to system limits). The cap is a safety guard against runaway batch sizes in agent-driven scripts.
 
+- **`xargs -s` upper cap (HardMaxChars = 1 MiB)**: rshell silently clamps `-s` values larger than `1 MiB` (1,048,576) to `1 MiB`. GNU xargs accepts arbitrarily large values. The cap prevents unbounded command-line allocations driven by agent-supplied scripts.
+
 ## Appendix
 
 Formatting: In each category, supported features should be listed first, and the most useful ones first.
