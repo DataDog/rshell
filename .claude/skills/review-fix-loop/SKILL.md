@@ -196,7 +196,7 @@ latest_review=$(gh api "repos/{owner}/{repo}/pulls/$PR_NUMBER/reviews" \
 # body-only fallback findings — an acceptable trade-off because the body-only scenario is
 # already rare, and SKILL.md files themselves never contain executable code.
 skill_md_pr=$(gh pr view "$PR_NUMBER" --json files \
-  --jq '[.files[].path] | any(endswith("SKILL.md"))' 2>/dev/null || echo false)
+  --jq '[.files[].path] | any(startswith(".claude/skills/") and endswith("/SKILL.md"))' 2>/dev/null || echo false)
 if [ "$findings_count" -eq 0 ] && [ "$skill_md_pr" != "true" ] && \
    [ "$(echo "$latest_review" | jq -r '.state // "NONE"' 2>/dev/null || echo "NONE")" != "NONE" ]; then
   review_body=$(echo "$latest_review" | jq -r '.body // ""')
@@ -436,9 +436,25 @@ iteration_had_no_findings=$(TaskList | grep "Step 2A1: Self-review" | grep -oE '
 ```
 Follow this deterministic decision tree — each step is only reached if the previous step yields no value:
 
-1. **Try TaskList** — grep for `no_findings=(true|false)` in the 2A1 task subject (see snippet above). If found → use it (authoritative; already cross-checked in 2A1). Apply `false` as the default if the grep returns empty.
-2. **If step 1 yields no value (task subject not yet written or unparseable)** — recover `$ITERATION_START_TIME` from the Step 2 task subject (see the Step 2 recovery block above). Then re-run the full findings-count snippet from 2A1 (including the integer-validity guard). The re-run is always safe: it queries the API and counts inline comments; it never reads comment bodies.
+1. **Try TaskList** — grep for `no_findings=(true|false)` in the 2A1 task subject (see snippet above). If found → use it (authoritative; already cross-checked in 2A1).
+2. **If step 1 yields no value (task subject not yet written or unparseable)** — recover `$ITERATION_START_TIME` (first recover it from the Step 2 task subject — see the Step 2 recovery block above), then re-run the full findings-count snippet from 2A1 (including the integer-validity guard and the required cross-check). The re-run is always safe: it queries the API and counts inline comments; it never reads comment bodies.
+   ```bash
+   # Step 2 of recovery: re-derive iteration_had_no_findings structurally
+   ITERATION_START_TIME=$(TaskList | grep "Step 2: Run the review-fix loop" | grep -oE '[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z' | tail -1)
+   if [ -n "$ITERATION_START_TIME" ]; then
+     MY_LOGIN=$(gh api user --jq '.login')
+     findings_count=$(gh api "repos/{owner}/{repo}/pulls/$PR_NUMBER/comments" \
+       --paginate --slurp \
+       | jq --arg me "$MY_LOGIN" --arg since "$ITERATION_START_TIME" \
+       '[.[].[] | select(.user.login == $me and .created_at >= $since and .in_reply_to_id == null)] | length')
+     if ! [[ "$findings_count" =~ ^[0-9]+$ ]]; then
+       findings_count=1  # conservative default on API/parse error
+     fi
+     iteration_had_no_findings=$([ "$findings_count" -eq 0 ] && echo true || echo false)
+   fi
+   ```
 3. **If `$ITERATION_START_TIME` is also unrecoverable** — default `iteration_had_no_findings=false` (conservative). **Never assume `true` for an undefined value.**
+   > **Note:** The `false` default in the step 1 snippet (`[ -z "$iteration_had_no_findings" ] && iteration_had_no_findings=false`) only fires when the TaskList grep produces an empty string AND the step 1 snippet is used standalone. In a full recovery context, step 2 above should be attempted before falling through to the `false` default.
 
 Maintain a `SUCCESS_COUNT` integer (initialize to `0` on first entry into Step 3; never re-initialize thereafter) tracking how many times Step 3 has passed all three verifications **AND** the last iteration had no findings from the self-review. Each success must be separated by exactly one full Step 2 iteration — never increment `SUCCESS_COUNT` twice from the same iteration.
 
