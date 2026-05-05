@@ -89,6 +89,7 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			nCharsOrder: nCharsOrder,
 			nBytesOrder: nBytesOrder,
 			timeoutStr:  *timeoutStr,
+			timeoutSet:  fs.Changed("timeout"),
 		})
 	}
 }
@@ -135,6 +136,7 @@ type runOpts struct {
 	nCharsOrder int
 	nBytesOrder int
 	timeoutStr  string
+	timeoutSet  bool
 }
 
 func run(ctx context.Context, c *builtins.CallContext, args []string, opt runOpts) builtins.Result {
@@ -197,32 +199,38 @@ func run(ctx context.Context, c *builtins.CallContext, args []string, opt runOpt
 
 	// Resolve timeout. Bash treats -t 0 as a poll: returns 0 if input
 	// is immediately available, non-zero otherwise, without waiting and
-	// without consuming data. Positive timeouts wrap the read in a
-	// context.WithTimeout (skipped for regular-file stdin per the
-	// rule above). We also honour any deadline already on the parent
-	// context (e.g. from interp.MaxExecutionTime or a CLI --timeout)
-	// by propagating it to *os.File stdin via SetReadDeadline so a
-	// blocking read syscall actually wakes up when the run as a
-	// whole is cancelled, not only when -t fires.
+	// without consuming data. An explicit empty `-t ""` is also treated
+	// as a zero-timeout poll (bash 5.2 verified empirically: `read -t
+	// "" X` does not consume stdin or assign X). Positive timeouts wrap
+	// the read in a context.WithTimeout (skipped for regular-file stdin
+	// per the rule above). We also honour any deadline already on the
+	// parent context (e.g. from interp.MaxExecutionTime or a CLI
+	// --timeout) by propagating it to *os.File stdin via
+	// SetReadDeadline so a blocking read syscall actually wakes up
+	// when the run as a whole is cancelled, not only when -t fires.
 	readCtx := ctx
 	pollMode := false
-	if opt.timeoutStr != "" {
-		secs, ok := parseReadTimeout(opt.timeoutStr)
-		if !ok {
-			c.Errf("read: %s: invalid timeout specification\n", opt.timeoutStr)
-			return builtins.Result{Code: 1}
-		}
-		switch {
-		case secs == 0:
+	if opt.timeoutSet {
+		if opt.timeoutStr == "" {
 			pollMode = true
-		case stdinIsRegularFile:
-			// Bash: -t is ignored on regular files. Run the read
-			// without a timeout-derived deadline.
-		default:
-			dur := time.Duration(secs * float64(time.Second))
-			var cancel context.CancelFunc
-			readCtx, cancel = context.WithTimeout(ctx, dur)
-			defer cancel()
+		} else {
+			secs, ok := parseReadTimeout(opt.timeoutStr)
+			if !ok {
+				c.Errf("read: %s: invalid timeout specification\n", opt.timeoutStr)
+				return builtins.Result{Code: 1}
+			}
+			switch {
+			case secs == 0:
+				pollMode = true
+			case stdinIsRegularFile:
+				// Bash: -t is ignored on regular files. Run the read
+				// without a timeout-derived deadline.
+			default:
+				dur := time.Duration(secs * float64(time.Second))
+				var cancel context.CancelFunc
+				readCtx, cancel = context.WithTimeout(ctx, dur)
+				defer cancel()
+			}
 		}
 	}
 	// Best-effort kernel-level cancellation for blocking stdin reads.
@@ -287,6 +295,22 @@ func run(ctx context.Context, c *builtins.CallContext, args []string, opt runOpt
 		}
 	}
 
+	noNames := len(args) == 0
+	names := args
+	if noNames {
+		names = []string{"REPLY"}
+	}
+
+	// Poll mode (-t 0 or -t "") returns immediately: 0 if input is
+	// available, 1 otherwise. Performed before any other validation —
+	// bash 5.2 does NOT validate identifier names in poll mode (e.g.
+	// `printf 'a\n' | { read -t 0 1bad; read rest; }` returns the
+	// poll status with no error and leaves rest=a). Done before the
+	// prompt too, since poll mode never consumes input.
+	if pollMode {
+		return pollAvailable(c)
+	}
+
 	// Bash validates identifiers per-assignment but with one special
 	// case: if the FIRST NAME is invalid, the command aborts WITHOUT
 	// reading any input, leaving the stream untouched for the next
@@ -301,22 +325,9 @@ func run(ctx context.Context, c *builtins.CallContext, args []string, opt runOpt
 	// Run the upfront leading-name check before readInput so the
 	// stream stays intact in the leading-invalid case; defer the
 	// rest to the assignment loop below.
-	noNames := len(args) == 0
-	names := args
-	if noNames {
-		names = []string{"REPLY"}
-	}
 	if !noNames && !validVarName(names[0]) {
 		c.Errf("read: `%s': not a valid identifier\n", names[0])
 		return builtins.Result{Code: 1}
-	}
-
-	// Poll mode (-t 0) returns immediately: 0 if input is available,
-	// 142 otherwise. Performed before the prompt and before any read
-	// attempt to match bash, which neither prints nor consumes in this
-	// case.
-	if pollMode {
-		return pollAvailable(c)
 	}
 
 	// Bash only displays the -p prompt when stdin is an actual terminal,
