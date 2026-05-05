@@ -1,13 +1,13 @@
-# skip: while/until loops are intentionally blocked in the restricted shell
-skip_assert_against_bash: true
-description: While loop with command list in condition is blocked.
+description: while loop with a multi-statement condition uses only the trailing exit status to decide entry.
 input:
   script: |+
-    i=0
-    while i=$((i+1)); [ $i -le 2 ]; do
-      echo $i
+    i=
+    while i="${i}a"; [ "$i" != aaa ]; do
+      echo "$i"
     done
 expect:
-  stdout: ""
-  stderr: "while/until loops are not supported\n"
-  exit_code: 2
+  stdout: |+
+    a
+    aa
+  stderr: |+
+  exit_code: 0

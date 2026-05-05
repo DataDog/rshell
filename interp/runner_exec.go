@@ -156,10 +156,30 @@ func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {
 			rLeft.stdout = pw
 			rLeft.stderr = safeStderr
 			rLeft.inPipeline = true
+			// Pipeline stages inherit the parent's loop context only when the
+			// stage is a simple command or another pipeline. Bash silently
+			// no-ops a bare `break`/`continue` invoked as an entire pipeline
+			// stage, but when the stage is a compound command (`{...}`,
+			// `(...)`, an if chain, etc.) bash prints the "only useful in
+			// a loop" diagnostic AND keeps executing the rest of the stage.
+			// Inheriting inLoop unconditionally would suppress the
+			// diagnostic for compound stages and — worse — let the
+			// stage-internal break/continue counter abort the rest of the
+			// stage's statements, dropping commands that bash still runs.
+			// A nested pipeline must inherit so the recursive case applies
+			// the same per-stage rule to its own leaves; otherwise non-
+			// rightmost stages of 3+ stage pipelines (`break | cat | cat`)
+			// would lose loop context and emit spurious diagnostics.
+			if pipelineStageInheritsInLoop(cm.X) {
+				rLeft.inLoop = r.inLoop
+			}
 			rRight := r.subshell(true)
 			rRight.stdin = pr
 			rRight.stderr = safeStderr
 			rRight.inPipeline = true
+			if pipelineStageInheritsInLoop(cm.Y) {
+				rRight.inLoop = r.inLoop
+			}
 			var wg sync.WaitGroup
 			wg.Add(1)
 			go func() {
@@ -253,8 +273,198 @@ func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {
 		default:
 			r.exit.fatal(fmt.Errorf("unsupported loop type: %T", cm.Loop))
 		}
+	case *syntax.WhileClause:
+		r.execWhileClause(ctx, cm)
 	default:
 		r.exit.fatal(fmt.Errorf("unsupported command node: %T", cm))
+	}
+}
+
+// pipelineStageInheritsInLoop reports whether a pipeline stage should inherit
+// the parent's loop context. Bash silently no-ops a bare `break`/`continue`
+// invoked as the entirety of a pipeline stage, but prints the "only useful in
+// a loop" diagnostic when the stage is compound (block, subshell, if chain,
+// loop) — so loop context is propagated for simple commands only.
+//
+// A nested pipeline (e.g. the `a | b` inside `a | b | c`) must also inherit
+// the loop context: the recursive Pipe case re-runs this check on each leaf
+// stage, so without propagation through intermediate pipeline nodes any non-
+// rightmost stage of a 3+ stage pipeline would lose its loop context and
+// `break`/`continue` would emit spurious diagnostics.
+func pipelineStageInheritsInLoop(st *syntax.Stmt) bool {
+	if st == nil {
+		return false
+	}
+	switch c := st.Cmd.(type) {
+	case *syntax.CallExpr:
+		return true
+	case *syntax.BinaryCmd:
+		return c.Op == syntax.Pipe
+	}
+	return false
+}
+
+// execWhileClause runs a while or until loop. Both share the same AST node;
+// cm.Until inverts the condition's exit-status check (`while` runs the body
+// while the condition's last command exits 0; `until` runs the body while it
+// exits non-zero).
+//
+// Per POSIX 1003.1-2024 §2.9.4.1/§2.9.4.2, the loop's exit status is the exit
+// status of the last command of the last body iteration, or 0 if the body
+// never executed.
+//
+// Termination is bounded by the runner's existing safety machinery: every
+// r.stmt() invocation calls r.stop(ctx), which short-circuits on shell exit
+// or context cancellation. We also explicitly check loopCtx.Err() at the top
+// of each iteration so a cancelled context exits the loop with a fatal error
+// even if the body and cond happen to be fast no-ops.
+//
+// Per-iteration spans are deliberately omitted (unlike for `for`): while/until
+// can iterate unboundedly and emitting one span per iteration would be a
+// memory cliff on long-running loops. Iteration count and broke-early are
+// reported on the outer span instead.
+func (r *Runner) execWhileClause(ctx context.Context, cm *syntax.WhileClause) {
+	kind := "while"
+	if cm.Until {
+		kind = "until"
+	}
+	// Resource name encodes the loop kind (while/until); no separate kind tag
+	// is needed.
+	span, loopCtx := telemetry.StartSpanFromContext(ctx, "control_flow")
+	span.SetResourceName(kind)
+	iterationCount := 0
+	brokeEarly := false
+	defer func() {
+		span.SetTag("rshell.while.iteration_count", iterationCount)
+		span.SetTag("rshell.while.broke_early", brokeEarly)
+		span.Finish(nil)
+	}()
+
+	// The condition list is part of the loop's lexical scope, so `break` and
+	// `continue` invoked inside it are valid (they should not error out as
+	// "only useful in a loop"). Mark the runner as in-loop for the duration
+	// of the entire while/until evaluation; loopStmtsBroken redundantly re-
+	// sets this flag for the body, which is harmless.
+	oldInLoop := r.inLoop
+	r.inLoop = true
+	defer func() { r.inLoop = oldInLoop }()
+
+	var lastBody exitStatus
+	// condBroke is set when the loop terminates because of a `break` invoked
+	// inside the condition list, OR because `continue` invoked in the cond
+	// short-circuits the cond list with status 0 and the cond-status check
+	// then says "exit loop" (e.g. `until ...; continue` — until exits when
+	// cond is 0). In those cases the loop's exit status must be the
+	// builtin's exit status (typically 0), NOT the previous body's
+	// last-command status — this matches bash. Without the flag, we would
+	// overwrite the cond's status with stale lastBody at loop exit.
+	condBroke := false
+	for {
+		if err := loopCtx.Err(); err != nil {
+			r.exit.fatal(err)
+			break
+		}
+		// Evaluate the condition list. Per POSIX, only the trailing exit
+		// status decides whether to enter the body.
+		r.stmts(loopCtx, cm.Cond)
+		if r.exit.exiting || r.exit.fatalExit {
+			break
+		}
+
+		// `break` invoked inside the cond list short-circuits the rest of
+		// the cond and exits the loop regardless of cond's last status.
+		// Preserve break's exit status (typically 0) as the loop's exit.
+		if r.breakEnclosing > 0 {
+			r.breakEnclosing--
+			brokeEarly = true
+			condBroke = true
+			break
+		}
+
+		// `continue` invoked inside the cond list. Order matters here vs.
+		// the cond-status check: when `continue` is invoked in an `until`
+		// cond, continue's status (0) means until's cond-status check says
+		// "exit loop", and bash then exits the loop rather than re-
+		// evaluating. We mirror that by deferring to the cond-status check
+		// after consuming nesting levels.
+		if r.contnEnclosing > 0 {
+			r.contnEnclosing--
+			if r.contnEnclosing > 0 {
+				// continue targets a loop further out.
+				if !oldInLoop {
+					// outermost: clamp excess (treat as continue 1).
+					r.contnEnclosing = 0
+				} else {
+					// nested: propagate to outer regardless of cond
+					// status. The outer loop will see contnEnclosing>0
+					// and continue its own iteration.
+					brokeEarly = true
+					break
+				}
+			}
+			// continue 1 (or clamped excess at outermost). Cond status
+			// decides: if cond says exit loop (e.g. until + status 0),
+			// exit and preserve continue's status. Otherwise re-evaluate
+			// cond, skipping the body for this iteration.
+			if r.exit.ok() == cm.Until {
+				condBroke = true
+				break
+			}
+			continue
+		}
+
+		// while: run body when cond.ok(); until: run body when !cond.ok().
+		// Equivalently, exit the loop when ok() == cm.Until.
+		if r.exit.ok() == cm.Until {
+			break
+		}
+		// Reset the cond's exit so the body sees a clean status (mirrors how
+		// r.stmt() resets r.exit before each statement).
+		r.exit = exitStatus{}
+
+		broken := r.loopStmtsBroken(loopCtx, cm.Do)
+		iterationCount++
+		// Capture the body's last-command exit; per POSIX this becomes the
+		// loop's exit status if no further iteration runs.
+		lastBody = r.exit
+
+		if broken {
+			// Excess continue at the outermost loop: clamp and keep iterating
+			// (bash treats "continue 99" in a single loop like "continue 1").
+			// oldInLoop is the in-loop flag from BEFORE this loop started, so
+			// it tells us whether we're nested inside another loop.
+			if r.contnEnclosing > 0 && !oldInLoop {
+				r.contnEnclosing = 0
+				continue
+			}
+			brokeEarly = true
+			break
+		}
+	}
+	// Clamp excess break/continue levels at the outermost loop, matching
+	// bash's behaviour of discarding excess levels (e.g. "break 99" in a
+	// single loop).
+	if !oldInLoop {
+		r.breakEnclosing = 0
+		r.contnEnclosing = 0
+	}
+	// Loop's exit status (POSIX 2.9.4): exit status of the last command of the
+	// last body iteration, or 0 if the body never ran. If the loop is exiting
+	// via `exit` or a fatal error, we leave r.exit alone so the exit
+	// status/state propagates upward. If the loop exited via a break in the
+	// condition list, r.exit currently holds the break builtin's exit status
+	// — leave it alone so the cond-break status (matching bash) is preserved
+	// rather than overwritten by the stale previous-body status.
+	if r.exit.exiting || r.exit.fatalExit {
+		return
+	}
+	if condBroke {
+		return
+	}
+	if iterationCount > 0 {
+		r.exit = lastBody
+	} else {
+		r.exit = exitStatus{}
 	}
 }
 

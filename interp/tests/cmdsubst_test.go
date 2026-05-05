@@ -226,6 +226,26 @@ func TestCmdSubstInForLoop(t *testing.T) {
 	assert.Equal(t, "a\nb\nc\n", stdout)
 }
 
+// --- While loop integration ---
+
+// While loop body output is captured by command substitution. Exercises the
+// $(...) -> subshell -> while loop -> limitWriter path now that while/until
+// are no longer rejected at parse time.
+func TestCmdSubstWhileInSubst(t *testing.T) {
+	dir := t.TempDir()
+	stdout, _, code := cmdSubstRun(t, `x=$(i=; while [ "$i" != aaa ]; do i="${i}a"; echo "$i"; done); echo "$x"`, dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "a\naa\naaa\n", stdout)
+}
+
+// Until loop inside $(...) — symmetric coverage with TestCmdSubstWhileInSubst.
+func TestCmdSubstUntilInSubst(t *testing.T) {
+	dir := t.TempDir()
+	stdout, _, code := cmdSubstRun(t, `x=$(i=; until [ "$i" = aaa ]; do i="${i}a"; echo "$i"; done); echo "$x"`, dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "a\naa\naaa\n", stdout)
+}
+
 // --- If condition ---
 
 func TestCmdSubstInIfCondition(t *testing.T) {

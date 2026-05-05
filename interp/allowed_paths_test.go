@@ -87,6 +87,39 @@ func TestAllowedPathsOption(t *testing.T) {
 	})
 }
 
+func TestDefaultDirFromAllowedPaths(t *testing.T) {
+	t.Run("defaults to first allowed path when Dir is unset", func(t *testing.T) {
+		first := t.TempDir()
+		second := t.TempDir()
+		runner, err := interp.New(
+			interp.AllowedPaths([]string{first, second}),
+		)
+		require.NoError(t, err)
+		defer runner.Close()
+		assert.Equal(t, first, runner.Dir, "Dir should default to the first allowed path")
+	})
+
+	t.Run("falls back to os.Getwd when no allowed paths configured", func(t *testing.T) {
+		runner, err := interp.New()
+		require.NoError(t, err)
+		defer runner.Close()
+		cwd, err := os.Getwd()
+		require.NoError(t, err)
+		assert.Equal(t, cwd, runner.Dir, "Dir should fall back to os.Getwd() when no sandbox is configured")
+	})
+
+	t.Run("falls back to os.Getwd when all allowed paths are skipped", func(t *testing.T) {
+		runner, err := interp.New(
+			interp.AllowedPaths([]string{"/nonexistent/path/that/does/not/exist"}),
+		)
+		require.NoError(t, err)
+		defer runner.Close()
+		cwd, err := os.Getwd()
+		require.NoError(t, err)
+		assert.Equal(t, cwd, runner.Dir, "Dir should fall back to os.Getwd() when all paths are skipped")
+	})
+}
+
 func TestAllowedPathsCatInside(t *testing.T) {
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "hello.txt"), []byte("hello world\n"), 0644))

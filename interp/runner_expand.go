@@ -116,6 +116,11 @@ func (r *Runner) cmdSubst(w io.Writer, cs *syntax.CmdSubst) error {
 	var buf bytes.Buffer
 	r2 := r.subshell(false)
 	r2.stdout = &limitWriter{w: &buf, limit: maxCmdSubstOutput}
+	// $(...) inherits the parent's loop context: bash silently no-ops
+	// break/continue invoked inside a command substitution rather than
+	// printing the "only useful in a loop" diagnostic. Counters do not
+	// escape the subshell — only the diagnostic is suppressed.
+	r2.inLoop = r.inLoop
 	r2.stmts(r.ectx, cs.Stmts)
 	r2.exit.exiting = false
 	r.lastExpandExit = r2.exit

@@ -1,14 +1,15 @@
-# skip: until loops are intentionally blocked in the restricted shell
-skip_assert_against_bash: true
-description: Continue with numeric argument in until loop is blocked.
+description: continue with an explicit argument of 1 skips to the next iteration of the innermost until.
 input:
   script: |+
-    i=0
-    until [ $i -gt 5 ]; do
-      i=$((i+1))
+    i=
+    until [ "$i" = aaa ]; do
+      i="${i}a"
       continue 1
+      echo unreachable
     done
+    echo "i=$i"
 expect:
-  stdout: ""
-  stderr: "while/until loops are not supported\n"
-  exit_code: 2
+  stdout: |+
+    i=aaa
+  stderr: |+
+  exit_code: 0

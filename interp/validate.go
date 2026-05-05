@@ -44,9 +44,6 @@ func validateNode(node syntax.Node) error {
 			}
 
 		// Blocked command-level nodes.
-		case *syntax.WhileClause:
-			err = fmt.Errorf("while/until loops are not supported")
-			return false
 		case *syntax.CaseClause:
 			err = fmt.Errorf("case statements are not supported")
 			return false
@@ -129,7 +126,7 @@ func validateNode(node syntax.Node) error {
 		// version of mvdan.cc/sh/v3 is caught by the catch-all below.
 		// NOTE: *syntax.BinaryCmd and *syntax.ForClause are handled by their
 		// own cases above (with partial restrictions) and must not appear here.
-		case *syntax.CallExpr, *syntax.IfClause, *syntax.Block, *syntax.Subshell:
+		case *syntax.CallExpr, *syntax.IfClause, *syntax.WhileClause, *syntax.Block, *syntax.Subshell:
 			// allowed — no action
 
 		// Catch-all for unknown Command types not explicitly listed above.

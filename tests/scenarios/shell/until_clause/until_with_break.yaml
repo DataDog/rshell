@@ -1,12 +1,12 @@
-# skip: while/until loops are intentionally blocked in the restricted shell
-skip_assert_against_bash: true
-description: Until loop with break statement is blocked.
+description: until loop with break exits before the next iteration.
 input:
   script: |+
     until false; do
       break
     done
+    echo "exit=$?"
 expect:
-  stdout: ""
-  stderr: "while/until loops are not supported\n"
-  exit_code: 2
+  stdout: |+
+    exit=0
+  stderr: |+
+  exit_code: 0

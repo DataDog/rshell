@@ -1,14 +1,15 @@
-# skip: while/until loops are intentionally blocked in the restricted shell
-skip_assert_against_bash: true
-description: Nested while loops are blocked at the outer loop.
+description: A while loop nested inside another while runs to completion on each outer iteration.
 input:
   script: |+
-    while true
-    do
+    i=
+    while [ "$i" != aa ]; do
+      i="${i}a"
       while false; do echo inner; done
+      echo "outer $i"
     done
 expect:
-  stdout: ""
+  stdout: |+
+    outer a
+    outer aa
   stderr: |+
-    while/until loops are not supported
-  exit_code: 2
+  exit_code: 0
