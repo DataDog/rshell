@@ -393,6 +393,15 @@ func TestXargsHelp(t *testing.T) {
 	assert.Empty(t, stderr)
 }
 
+func TestXargsHelpShortFlag(t *testing.T) {
+	// docs/RULES.md requires every command to register both -h and --help.
+	dir := t.TempDir()
+	stdout, stderr, code := cmdRun(t, "xargs -h", dir)
+	assert.Equal(t, 0, code)
+	assert.Contains(t, stdout, "Usage:")
+	assert.Empty(t, stderr)
+}
+
 // --- Unknown flag ---
 
 func TestXargsUnknownFlag(t *testing.T) {

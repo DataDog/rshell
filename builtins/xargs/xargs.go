@@ -159,7 +159,7 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 	// rather than re-interpreted by xargs.
 	fs.SetInterspersed(false)
 
-	help := fs.Bool("help", false, "print usage and exit")
+	help := fs.BoolP("help", "h", false, "print usage and exit")
 	argFile := fs.StringP("arg-file", "a", "", "read items from FILE instead of stdin")
 	eofStr := fs.StringP("eof", "E", "", "treat EOF-STR as a logical end-of-input marker")
 
