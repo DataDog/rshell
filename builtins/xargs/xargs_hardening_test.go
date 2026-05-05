@@ -255,6 +255,36 @@ func TestXargsReplaceTrailingNoNewline(t *testing.T) {
 	assert.Equal(t, "a\nb\n", stdout)
 }
 
+// --- -d C-style escapes (matches GNU xargs) ---
+
+func TestXargsDelimBackspaceEscape(t *testing.T) {
+	dir := t.TempDir()
+	stdout, _, code := cmdRun(t, "printf 'a\\bb' | xargs -d '\\b' echo", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "a b\n", stdout)
+}
+
+func TestXargsDelimAlertEscape(t *testing.T) {
+	dir := t.TempDir()
+	stdout, _, code := cmdRun(t, "printf 'a\\ab' | xargs -d '\\a' echo", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "a b\n", stdout)
+}
+
+func TestXargsDelimFormFeedEscape(t *testing.T) {
+	dir := t.TempDir()
+	stdout, _, code := cmdRun(t, "printf 'a\\fb' | xargs -d '\\f' echo", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "a b\n", stdout)
+}
+
+func TestXargsDelimVerticalTabEscape(t *testing.T) {
+	dir := t.TempDir()
+	stdout, _, code := cmdRun(t, "printf 'a\\vb' | xargs -d '\\v' echo", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "a b\n", stdout)
+}
+
 // --- -E EOF-STR is honoured in -I mode (regression for codex P2) ---
 
 func TestXargsEofMarkerInReplaceMode(t *testing.T) {

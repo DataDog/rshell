@@ -239,23 +239,30 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 
 // warnMutex emits GNU-style "options X and Y are mutually exclusive,
 // ignoring previous X value" stderr warnings for each ignored flag in
-// the -n / -L / -I mutex group. Format matches GNU findutils 4.9 so
-// scenarios can stay bash-compatible.
+// the -n / -L / -I mutex group. GNU findutils 4.9.0 renders the
+// winning option with both long and short names (or short only for
+// -L) and the ignored option with the long name only — preserved here
+// so scenarios can stay byte-for-byte bash-compatible:
+//
+//	-n winner: "--max-args/-n",     loser: "--max-args"
+//	-L winner: "-L",                loser: "--max-lines"
+//	-I winner: "--replace/-I/-i",   loser: "--replace"
 func warnMutex(callCtx *builtins.CallContext, fs *builtins.FlagSet, winner batchKey) {
 	type spec struct {
-		key   batchKey
-		flag  string
-		label string
+		key         batchKey
+		flag        string
+		winnerLabel string
+		loserLabel  string
 	}
 	all := []spec{
-		{batchN, "max-args", "--max-args"},
-		{batchL, "max-lines", "-L"},
-		{batchI, "replace", "--replace/-I/-i"},
+		{batchN, "max-args", "--max-args/-n", "--max-args"},
+		{batchL, "max-lines", "-L", "--max-lines"},
+		{batchI, "replace", "--replace/-I/-i", "--replace"},
 	}
 	winnerLabel := ""
 	for _, s := range all {
 		if s.key == winner {
-			winnerLabel = s.label
+			winnerLabel = s.winnerLabel
 			break
 		}
 	}
@@ -269,10 +276,8 @@ func warnMutex(callCtx *builtins.CallContext, fs *builtins.FlagSet, winner batch
 		if !fs.Changed(s.flag) {
 			continue
 		}
-		// GNU writes the loser's name with the winner's label following
-		// the conjunction, in the order set on the command line.
 		callCtx.Errf("xargs: warning: options %s and %s are mutually exclusive, ignoring previous %s value\n",
-			s.label, winnerLabel, s.label)
+			s.loserLabel, winnerLabel, s.loserLabel)
 	}
 }
 
@@ -533,19 +538,28 @@ func validatePositive(name string, v, max int) string {
 }
 
 // decodeDelim turns the -d argument into a single byte. Recognised escapes
-// match the GNU xargs manual: \n, \t, \r, \\, \0. Multi-character delimiters
+// match the GNU xargs manual: \a, \b, \f, \n, \r, \t, \v, \\, \0, plus
+// hex (\xNN) and octal (\NNN) numeric escapes. Multi-character delimiters
 // other than these escapes are rejected (POSIX leaves the behaviour for
 // multi-byte delimiters undefined; we choose explicit rejection).
 func decodeDelim(s string) (byte, error) {
 	switch s {
 	case "":
 		return 0, errors.New("empty delimiter")
+	case `\a`:
+		return '\a', nil
+	case `\b`:
+		return '\b', nil
+	case `\f`:
+		return '\f', nil
 	case `\n`:
 		return '\n', nil
-	case `\t`:
-		return '\t', nil
 	case `\r`:
 		return '\r', nil
+	case `\t`:
+		return '\t', nil
+	case `\v`:
+		return '\v', nil
 	case `\\`:
 		return '\\', nil
 	case `\0`:
