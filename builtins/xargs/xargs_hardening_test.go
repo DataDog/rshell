@@ -294,6 +294,36 @@ func TestXargsEofMarkerInReplaceMode(t *testing.T) {
 	assert.Equal(t, "XaX\n", stdout)
 }
 
+// --- NUL byte truncation in -d mode (matches GNU effective behavior) ---
+
+func TestXargsDelimNULTruncatesRecord(t *testing.T) {
+	dir := t.TempDir()
+	// printf 'a\0b,' | xargs -d, printf '[%s]\n' — GNU writes the bytes
+	// to argv but execve's C-string argv is terminated at NUL, so users
+	// only see "[a]". rshell uses Go strings (no auto-truncation), so we
+	// truncate the token at the first NUL ourselves to match.
+	stdout, _, code := cmdRun(t, "printf 'a\\0b,' | xargs -d, printf '[%s]\\n'", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "[a]\n", stdout)
+}
+
+func TestXargsDelimNULAtStartEmitsEmpty(t *testing.T) {
+	dir := t.TempDir()
+	// `\0a,` truncates immediately → empty arg, like GNU.
+	stdout, _, code := cmdRun(t, "printf '\\0a,' | xargs -d, printf '[%s]\\n'", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "[]\n", stdout)
+}
+
+func TestXargsNullModeKeepsNULAsSeparator(t *testing.T) {
+	dir := t.TempDir()
+	// -0 mode must NOT truncate at NUL — NUL is the separator. The two
+	// records "a" and "b" are each emitted in full.
+	stdout, _, code := cmdRun(t, "printf 'a\\0b\\0' | xargs -0 printf '[%s]\\n'", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "[a]\n[b]\n", stdout)
+}
+
 // --- NUL byte rejection in non -0/-d modes (matches GNU xargs) ---
 
 func TestXargsNULInDefaultModeRejected(t *testing.T) {

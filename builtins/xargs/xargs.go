@@ -1019,8 +1019,17 @@ func (t *tokenizer) next(ctx context.Context) (item string, endedLine, more bool
 // are NOT processed — every byte except sep is taken literally. Each
 // delimiter-terminated record is treated as ending a line so -L
 // correctly counts batches under `xargs -d , -L1`.
+//
+// In -d mode (sep != 0), an embedded NUL byte truncates the current
+// token at the NUL — GNU xargs lets the bytes flow into argv but real
+// `execve` argv is C-string-terminated, so the user-visible token is
+// always the prefix up to the first NUL. We mirror that behavior
+// silently (no warning) so rshell's Go-string argv matches GNU's
+// effective output. -0 mode is unaffected because NUL is the separator.
 func (t *tokenizer) nextDelimited(ctx context.Context, sep byte) (string, bool, bool, error) {
 	t.buf = t.buf[:0]
+	truncated := false
+	sawByte := false
 	for {
 		if err := t.pollCtx(ctx); err != nil {
 			return "", false, false, err
@@ -1029,15 +1038,24 @@ func (t *tokenizer) nextDelimited(ctx context.Context, sep byte) (string, bool, 
 		if err != nil {
 			if errors.Is(err, io.EOF) {
 				t.eof = true
-				if len(t.buf) == 0 {
+				if !sawByte {
 					return "", false, false, nil
 				}
 				return string(t.buf), true, true, nil
 			}
 			return "", false, false, err
 		}
+		sawByte = true
 		if b == sep {
 			return string(t.buf), true, true, nil
+		}
+		if b == 0 {
+			// sep != 0 here (sep == 0 took the branch above).
+			truncated = true
+			continue
+		}
+		if truncated {
+			continue
 		}
 		if err := t.pushByte(b); err != nil {
 			return "", false, false, err
