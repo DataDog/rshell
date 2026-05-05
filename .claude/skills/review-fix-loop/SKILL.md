@@ -114,7 +114,16 @@ This analyzes the full diff against main, posts findings as a GitHub PR review w
 
 Post a comment to trigger @codex reviews:
 ```bash
-gh pr comment <pr-number> --body "@codex review this PR"
+gh pr comment <pr-number> --body "@codex review this PR
+
+Please use the following severity format for all findings:
+- P0 (red): Exploitable vulnerability with high impact (RCE, sandbox bypass, data breach). Blocking merge.
+- P1 (orange): Likely exploitable or high-risk — correctness bugs vs bash, data races, panics.
+- P2 (yellow): Potential vulnerability, bash divergence, missing test coverage, missing docs.
+- P3 (blue): Style, minor simplification, hardening suggestion, nice-to-have test.
+
+Prefix each finding title with its priority label, e.g. \"P0: ...\", \"P1: ...\", etc.
+Include a summary table at the top with columns: # | Priority | File | Finding."
 ```
 The external reviews arrive asynchronously — their comments will be picked up by **address-pr-comments** in Sub-step 2B.
 
