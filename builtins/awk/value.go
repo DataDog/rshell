@@ -172,12 +172,13 @@ func looksNumeric(s string) bool {
 	if t == "" {
 		return false
 	}
-	// Exclude nan/inf: our implementation uses string comparison for these
-	// special tokens rather than converting them to IEEE-754 NaN/±Infinity.
-	// Note: both gawk and mawk do treat "inf"/"nan" as numeric strings, so
-	// this is an intentional divergence. The practical impact is that
-	// "nan" == "nan" returns 1 here (string equality) whereas gawk/mawk return
-	// 0 (NaN ≠ NaN by IEEE-754). The divergence is documented in SHELL_FEATURES.md.
+	// Exclude nan/inf from looksNumeric so that input fields containing
+	// "nan" or "inf" are treated as strings for comparison purposes.
+	// This matches mawk behaviour: comparisons against string "nan"/"inf"
+	// use lexicographic ordering rather than IEEE-754 NaN/Inf semantics.
+	// gawk also returns 0 for NaN==NaN (IEEE-754), but that divergence only
+	// matters when the value has been forced into a numeric context (x+0);
+	// for raw string fields both mawk and rshell use string comparison.
 	lower := strings.ToLower(t)
 	if lower == "nan" || lower == "inf" || lower == "+inf" || lower == "-inf" {
 		return false

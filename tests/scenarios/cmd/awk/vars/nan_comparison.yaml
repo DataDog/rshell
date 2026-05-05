@@ -1,0 +1,13 @@
+description: >-
+  "nan" and "inf" input fields are treated as non-numeric strings for comparison
+  purposes (lexicographic ordering). This matches mawk behaviour. Intentional
+  divergence from gawk which uses IEEE-754 NaN/Inf semantics.
+skip_assert_against_bash: true
+input:
+  script: |+
+    printf 'nan\n' | awk '{ print ($1 > 0), ($1 == $1) }'
+expect:
+  stdout: |+
+    1 1
+  stderr: |+
+  exit_code: 0
