@@ -91,6 +91,28 @@ func TestInvokeCommandUnknownCommandReturns127(t *testing.T) {
 	assert.Contains(t, stderr.String(), "xargs: foo: unknown command")
 }
 
+// TestInvokeCommandNotAllowedViaRunCommand verifies that a RunCommand error
+// returning exit code 126 is mapped to exitSubCmdNotAllowed (not the substring
+// match that previously looked for "not allowed" in the error message). The
+// runner returns 126 for "command not allowed" per interp/runner_exec.go.
+func TestInvokeCommandNotAllowedViaRunCommand(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	cc := newPentestCallCtx(&stdout, &stderr)
+	cc.RunCommand = func(_ context.Context, _ string, _ string, _ []string) (uint8, error) {
+		// Runner now returns 126 for "command not allowed" per POSIX.
+		return 126, fmt.Errorf("rshell: bar: command not allowed")
+	}
+	cc.CommandAllowed = nil // No pre-check; classification relies solely on exit code.
+	o := options{cmdName: "bar", maxChars: DefaultMaxChars}
+
+	code, stop := invokeCommand(context.Background(), cc, o, []string{"a"})
+	assert.Equal(t, exitSubCmdNotAllowed, code)
+	assert.True(t, stop)
+	// stderr must not have a doubled "rshell: bar:" prefix.
+	assert.NotContains(t, stderr.String(), "rshell: bar:")
+	assert.Contains(t, stderr.String(), "xargs: bar: command not allowed")
+}
+
 // TestInvokeCommandSubCmdExit126Continues verifies that a sub-command
 // returning exit 126 cleanly (no error) causes xargs to continue (GNU compat).
 // Only runner-level 126 (CommandAllowed block) stops processing.

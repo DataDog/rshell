@@ -1,0 +1,9 @@
+description: xargs -r does not suppress invocation when input is non-empty.
+input:
+  script: |+
+    echo 'a b' | xargs -r echo done
+expect:
+  stdout: |
+    done a b
+  stderr: ""
+  exit_code: 0

@@ -670,9 +670,10 @@ func commandLineLen(o options, batch []string) int {
 				total += len(strings.ReplaceAll(a, o.replStr, item)) + 1
 			}
 		} else {
-			// No placeholder in any argument. GNU xargs still counts the
-			// item towards the -s budget (verified: 5-char item at -s 6
-			// passes; 6-char item fails). Add item+NUL to match GNU.
+			// No initial args at all: the item has no template to expand into.
+			// GNU xargs still counts item+NUL towards the -s budget in this
+			// case (verified: printf "aaaaa" | xargs -I {} -s 6 echo succeeds;
+			// -s 5 fails). Add item+NUL to match GNU.
 			total += len(item) + 1
 		}
 	} else {
@@ -723,14 +724,14 @@ func invokeCommand(ctx context.Context, callCtx *builtins.CallContext, o options
 		// prefixes.
 		msg := stripRunnerPrefix(err.Error(), finalCmd)
 		callCtx.Errf("xargs: %s: %s\n", finalCmd, msg)
-		// Best-effort mapping to POSIX exit codes (127 / 126 / 125)
-		// based on the runner's error wording. This is brittle by
-		// design — see invokeCommand_test for the contract — and a
-		// future runner change will fall through to exit 125.
-		switch {
-		case strings.Contains(msg, "unknown command"):
+		// Map to POSIX exit codes using the numeric exit code returned by
+		// the runner (interp/runner_exec.go returns 126 for "command not
+		// allowed" and 127 for "unknown command"), avoiding fragile
+		// substring matching on error messages.
+		switch exitCode {
+		case 127:
 			return exitSubCmdNotFound, true
-		case strings.Contains(msg, "not allowed"):
+		case 126:
 			return exitSubCmdNotAllowed, true
 		default:
 			return exitSubCmdNotStart, true
