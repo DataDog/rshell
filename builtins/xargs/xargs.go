@@ -852,9 +852,13 @@ func (t *tokenizer) next(ctx context.Context) (item string, endedLine, more bool
 // When skipBlank is true (used by modeLine), an empty token between
 // adjacent separators is silently dropped. In modeLine, leading
 // whitespace (space/tab) is also trimmed from each line, matching GNU
-// xargs -I semantics. "endedLine" is meaningful only when sep == '\n'.
+// xargs -I semantics. The "endedLine" flag is true whenever the item
+// terminates a logical record so -L correctly counts batches: '\n'
+// always counts; under -d / -0 each delimiter-separated record is also
+// treated as ending a line (matches GNU `xargs -d , -L1` semantics).
 func (t *tokenizer) nextDelimited(ctx context.Context, sep byte, skipBlank bool) (string, bool, bool, error) {
 	t.buf = t.buf[:0]
+	endedLine := sep == '\n' || t.o.mode == modeDelim || t.o.mode == modeNull
 	for {
 		if err := t.pollCtx(ctx); err != nil {
 			return "", false, false, err
@@ -866,7 +870,7 @@ func (t *tokenizer) nextDelimited(ctx context.Context, sep byte, skipBlank bool)
 				if len(t.buf) == 0 {
 					return "", false, false, nil
 				}
-				return string(t.buf), sep == '\n', true, nil
+				return string(t.buf), endedLine, true, nil
 			}
 			return "", false, false, err
 		}
@@ -874,7 +878,7 @@ func (t *tokenizer) nextDelimited(ctx context.Context, sep byte, skipBlank bool)
 			if skipBlank && len(t.buf) == 0 {
 				continue
 			}
-			return string(t.buf), sep == '\n', true, nil
+			return string(t.buf), endedLine, true, nil
 		}
 		// In modeLine (-I), drop leading whitespace on each line. Trailing
 		// and internal whitespace is preserved.
