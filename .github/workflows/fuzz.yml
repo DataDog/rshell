@@ -48,6 +48,9 @@ jobs:
           - pkg: ./builtins/tests/testcmd/
             name: testcmd
             corpus_path: builtins/tests/testcmd
+          - pkg: ./builtins/tests/du/
+            name: du
+            corpus_path: builtins/tests/du
           - pkg: ./builtins/tests/ls/
             name: ls
             corpus_path: builtins/tests/ls

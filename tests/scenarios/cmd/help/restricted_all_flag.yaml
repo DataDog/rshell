@@ -6,7 +6,7 @@ input:
     help --all
 expect:
   stdout: |+
-    rshell (dev) — 2 of 29 commands enabled
+    rshell (dev) — 2 of 30 commands enabled
 
     Features:
     commands            Registered commands run inside the interpreter; no unregistered commands without an external handler.
@@ -34,6 +34,7 @@ expect:
     cat       concatenate and print files
     continue  continue a loop iteration
     cut       remove sections from each line
+    du        estimate file space usage
     exit      exit the shell
     false     return unsuccessful exit status
     find      search for files in a directory hierarchy
