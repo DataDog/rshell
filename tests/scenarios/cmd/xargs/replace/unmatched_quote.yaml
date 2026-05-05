@@ -1,4 +1,5 @@
 description: xargs -I rejects unmatched single/double quotes in input with an error (matches GNU's "unmatched quote" diagnostic).
+skip_assert_against_bash: true
 input:
   script: |+
     printf "'a b\n" | xargs -I{} echo X{}X
@@ -8,4 +9,3 @@ expect:
     done=1
   stderr_contains: ["unterminated"]
   exit_code: 0
-  skip_assert_against_bash: true
