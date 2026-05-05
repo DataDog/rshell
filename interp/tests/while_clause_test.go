@@ -233,13 +233,15 @@ func TestWhilePipeOutputToHead(t *testing.T) {
 
 // --- break/continue inside subshells nested within a loop ---
 //
-// In bash, a subshell (pipeline stage, `(...)`, or `$(...)`) created inside a
-// loop inherits the "inside a loop" context for the purpose of validating
-// break/continue: bash silently no-ops break/continue in the subshell rather
-// than printing "break: only meaningful in a loop". The subshell still cannot
-// actually break out of the parent loop (its break counters do not propagate
-// back), but the diagnostic is suppressed. These tests guard against the
-// regression where a subshell loses inLoop and emits a spurious diagnostic.
+// Bash distinguishes between subshell flavors when validating break/continue:
+//
+//   - Pipeline stages and command substitutions ($(...) and `…`) silently
+//     no-op break/continue when nested inside a loop (no diagnostic, the
+//     break/continue counters cannot escape the subshell anyway).
+//   - Bare subshells `(...)` always print the diagnostic, even when the bare
+//     subshell itself runs inside a loop in the parent shell.
+//
+// Verified against bash 5.2 (debian:bookworm-slim) — see PR #223 review.
 
 func TestWhileBreakInPipelineSubshellNoDiagnostic(t *testing.T) {
 	stdout, stderr, code := whileRun(t, `while break | cat; do echo body; break; done`)
@@ -255,16 +257,17 @@ func TestWhileBreakInCmdSubstNoDiagnostic(t *testing.T) {
 	assert.Empty(t, stderr, "break in $(...) should not print a diagnostic when the substitution runs inside a loop")
 }
 
-func TestWhileBreakInBareSubshellNoDiagnostic(t *testing.T) {
+// Bare subshells `(...)` print the diagnostic even when nested inside a loop —
+// matching bash 5.2.
+func TestWhileBreakInBareSubshellPrintsDiagnostic(t *testing.T) {
 	stdout, stderr, code := whileRun(t, `while true; do (break); echo after; break; done`)
 	assert.Equal(t, 0, code)
 	assert.Equal(t, "after\n", stdout)
-	assert.Empty(t, stderr, "break in (...) should not print a diagnostic when the subshell runs inside a loop")
+	assert.Contains(t, stderr, "break")
+	assert.Contains(t, stderr, "loop")
 }
 
-// Outside any loop, a subshell's break must still print the diagnostic. The
-// subshell does not synthesize a loop context out of thin air — it inherits
-// whatever the parent has.
+// Outside any loop, a bare subshell's break must also print the diagnostic.
 func TestBreakInBareSubshellOutsideLoopStillDiagnoses(t *testing.T) {
 	_, stderr, _ := whileRun(t, `(break)`)
 	assert.Contains(t, stderr, "break is only useful in a loop")

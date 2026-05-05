@@ -806,7 +806,6 @@ func (r *Runner) subshell(background bool) *Runner {
 			runStdin:         r.runStdin,
 			runStdout:        r.runStdout,
 			inPipeline:       r.inPipeline,
-			inLoop:           r.inLoop,
 			filename:         r.filename,
 			exit:             r.exit,
 			lastExit:         r.lastExit,

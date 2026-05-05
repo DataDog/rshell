@@ -155,10 +155,17 @@ func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {
 			rLeft.stdout = pw
 			rLeft.stderr = safeStderr
 			rLeft.inPipeline = true
+			// Pipeline stages inherit the parent's loop context: bash silently
+			// no-ops break/continue invoked inside a pipeline stage rather than
+			// printing the "only useful in a loop" diagnostic. The break/
+			// continue counters stay in the subshell — they cannot escape — but
+			// the diagnostic is suppressed.
+			rLeft.inLoop = r.inLoop
 			rRight := r.subshell(true)
 			rRight.stdin = pr
 			rRight.stderr = safeStderr
 			rRight.inPipeline = true
+			rRight.inLoop = r.inLoop
 			var wg sync.WaitGroup
 			wg.Add(1)
 			go func() {

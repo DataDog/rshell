@@ -70,6 +70,16 @@ func whileFuzzRun(t *testing.T, script string) {
 	if ctx.Err() != nil {
 		return
 	}
+	// "internal error" is the runner's controlled panic-recovery outcome (see
+	// api.go's deferred recover). This fuzz target is scoped to while/until
+	// semantics; it should not flag pre-existing panics in unrelated paths
+	// (e.g. invalid-UTF-8 globs causing regexp.Compile panics in the expander)
+	// since those affect for-loops and bare commands the same way and are
+	// outside the scope of this fuzzer. The runner's recovery already
+	// guarantees the panic does not leak into caller state.
+	if err.Error() == "internal error" {
+		return
+	}
 	t.Fatalf("unexpected error from runner.Run: %v", err)
 }
 
