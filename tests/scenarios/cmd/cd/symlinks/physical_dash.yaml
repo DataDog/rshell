@@ -18,5 +18,5 @@ input:
 expect:
   stdout_contains: ["/alias", "/real"]
   stdout_contains_windows: ["\\alias", "\\real"]
-  stderr: ""
+  stderr: |+
   exit_code: 0

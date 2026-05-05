@@ -7,5 +7,5 @@ input:
     cd --help
 expect:
   stdout_contains: ["Usage: cd", "--logical", "--physical"]
-  stderr: ""
+  stderr: |+
   exit_code: 0

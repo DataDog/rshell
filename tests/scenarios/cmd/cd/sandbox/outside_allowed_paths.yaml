@@ -13,6 +13,6 @@ input:
     cd sub
     cd ..
 expect:
-  stdout: ""
+  stdout: |+
   stderr_contains: ["cd: "]
   exit_code: 1

@@ -6,7 +6,7 @@ input:
   script: |+
     cd
 expect:
-  stdout: ""
+  stdout: |+
   stderr: |+
     cd: HOME not set
   exit_code: 1

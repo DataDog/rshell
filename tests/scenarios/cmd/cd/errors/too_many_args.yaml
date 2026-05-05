@@ -5,7 +5,7 @@ input:
   script: |+
     cd a b
 expect:
-  stdout: ""
+  stdout: |+
   # bash prefixes its error with "bash: line N:"; rshell does not. Use a
   # substring assertion so the same scenario passes against both.
   stderr_contains: ["cd: too many arguments"]

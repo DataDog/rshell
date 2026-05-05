@@ -20,5 +20,5 @@ input:
     [ "$OLDPWD" = "$B" ] && echo ok
 expect:
   stdout_contains: ["ok"]
-  stderr: ""
+  stderr: |+
   exit_code: 0

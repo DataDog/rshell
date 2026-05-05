@@ -360,6 +360,19 @@ func registerFlags(flags *builtins.FlagSet) builtins.HandlerFunc {
 			return builtins.Result{Code: 1}
 		}
 
+		// On Unix, entering a directory requires execute (search) permission.
+		// StatFile can succeed even when the user lacks that permission, so
+		// check access explicitly via AccessFile. This is a no-op on platforms
+		// where AccessFile is nil (Windows, embedded use) or when the
+		// permission check is not meaningful.
+		if callCtx.AccessFile != nil {
+			// 0x01 = X_OK (execute/search permission)
+			if err := callCtx.AccessFile(ctx, absPath, 0x01); err != nil {
+				callCtx.Errf("cd: %s: %s\n", display, formatErr(callCtx, err))
+				return builtins.Result{Code: 1}
+			}
+		}
+
 		if printDash {
 			callCtx.Out(printValue)
 			callCtx.Out("\n")

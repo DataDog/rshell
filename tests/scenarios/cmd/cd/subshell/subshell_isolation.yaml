@@ -13,5 +13,5 @@ input:
 expect:
   stdout_contains: ["/sub", "ok"]
   stdout_contains_windows: ["\\sub", "ok"]
-  stderr: ""
+  stderr: |+
   exit_code: 0

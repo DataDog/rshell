@@ -15,6 +15,6 @@ input:
     OLDPWD=""
     cd -P -
 expect:
-  stdout: ""
+  stdout: |+
   stderr_contains: ["No such file or directory"]
   exit_code: 1

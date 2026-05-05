@@ -6,7 +6,7 @@ input:
   script: |+
     cd -
 expect:
-  stdout: ""
+  stdout: |+
   stderr: |+
     cd: OLDPWD not set
   exit_code: 1

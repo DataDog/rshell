@@ -9,7 +9,7 @@ input:
   script: |+
     cd regular.txt
 expect:
-  stdout: ""
+  stdout: |+
   # bash prefixes with the script filename; rshell does not.
   # Use a substring assertion so the same scenario passes against both.
   stderr_contains: ["cd: regular.txt: Not a directory"]

@@ -7,5 +7,5 @@ input:
     cd -h
 expect:
   stdout_contains: ["Usage: cd"]
-  stderr: ""
+  stderr: |+
   exit_code: 0

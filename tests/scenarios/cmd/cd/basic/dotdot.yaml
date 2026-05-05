@@ -13,5 +13,5 @@ input:
 expect:
   stdout_contains: ["/a"]
   stdout_contains_windows: ["\\a"]
-  stderr: ""
+  stderr: |+
   exit_code: 0

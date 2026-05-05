@@ -11,6 +11,7 @@ import (
 	"io"
 	"os"
 
+	"mvdan.cc/sh/v3/expand"
 	"mvdan.cc/sh/v3/syntax"
 
 	"github.com/DataDog/rshell/allowedpaths"
@@ -55,6 +56,12 @@ func (r *Runner) errf(format string, a ...any) {
 //
 // The builtin is expected to have already validated newDir against the
 // sandbox; this method only performs state mutation.
+//
+// All three state updates (OLDPWD, r.Dir, PWD) are committed together:
+// r.Dir is not changed until both variable writes succeed. This prevents
+// a partial-update where the runner's working directory has moved but the
+// shell variables are stale (which can happen when the variable store is
+// near MaxTotalVarsBytes and a write is rejected).
 func (r *Runner) applyNewWorkDir(newDir string) {
 	// Prefer the shell $PWD variable as the old directory to record in
 	// OLDPWD, matching bash's behaviour for inline PWD assignments.
@@ -67,14 +74,25 @@ func (r *Runner) applyNewWorkDir(newDir string) {
 		// OLDPWD update when that is also empty (runner has no prior dir).
 		old = r.Dir
 	}
-	r.Dir = newDir
+	// Write OLDPWD before committing r.Dir so that a storage-limit failure
+	// leaves the runner in a consistent state (unchanged Dir, no partial update).
 	// Always set OLDPWD when $PWD was explicitly set (even to empty),
 	// matching bash: `PWD="" cd sub` sets OLDPWD="". Only skip the
 	// OLDPWD update when $PWD was unset AND the fallback is also empty.
 	if ok || old != "" {
-		r.setVarString("OLDPWD", old)
+		if err := r.setVarErr("OLDPWD", expand.Variable{Set: true, Kind: expand.String, Str: old}); err != nil {
+			r.errf("OLDPWD: %v\n", err)
+			r.exit.code = 1
+			return
+		}
 	}
-	r.setVarString("PWD", newDir)
+	if err := r.setVarErr("PWD", expand.Variable{Set: true, Kind: expand.String, Str: newDir}); err != nil {
+		r.errf("PWD: %v\n", err)
+		r.exit.code = 1
+		return
+	}
+	// Only update the internal directory after both variable writes succeeded.
+	r.Dir = newDir
 }
 
 // lookupVarString returns the string value of a shell variable and a

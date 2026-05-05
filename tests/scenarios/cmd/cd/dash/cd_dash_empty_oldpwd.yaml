@@ -21,5 +21,5 @@ expect:
   stdout: |+
 
     oldpwd_ok
-  stderr: ""
+  stderr: |+
   exit_code: 0

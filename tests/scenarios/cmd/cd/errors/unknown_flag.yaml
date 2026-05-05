@@ -6,6 +6,6 @@ input:
   script: |+
     cd --no-such-flag
 expect:
-  stdout: ""
+  stdout: |+
   stderr_contains: ["cd:"]
   exit_code: 1
