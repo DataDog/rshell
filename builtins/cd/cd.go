@@ -239,6 +239,8 @@ func registerFlags(flags *builtins.FlagSet) builtins.HandlerFunc {
 					// Note: `display` is not yet initialised here (it is set
 					// after the switch); use "" to match bash's message:
 					// "cd: : No such file or directory" (empty-path label).
+					// bash emits "cd: : No such file or directory" (capital N) for
+					// this case — match exactly so stderr is byte-for-byte stable.
 					callCtx.Errf("cd: %s: No such file or directory\n", "")
 					return builtins.Result{Code: 1}
 				}
@@ -514,6 +516,11 @@ func resolvePhysical(ctx context.Context, callCtx *builtins.CallContext, absPath
 			// Relative symlink target is relative to the directory
 			// containing the symlink (= resolved, not candidate).
 			newBase = filepath.Join(resolved, target)
+		}
+		// Guard against a HostPrefix or resolved prefix pushing newBase
+		// over the size limit even when target itself was within bounds.
+		if len(newBase) > maxPathBytes {
+			return "", errors.New("path too long")
 		}
 		// Prepend the symlink's target to the remaining components and
 		// restart the walk so we re-resolve any symlinks within it.

@@ -1,0 +1,22 @@
+# rshell intentionally normalises //path to /path via filepath.Clean.
+# bash preserves the leading // in $PWD (POSIX implementation-defined).
+# See SHELL_FEATURES.md for the documented divergence.
+skip_assert_against_bash: true
+description: cd normalises a leading double-slash to a single slash in $PWD (intentional bash divergence).
+setup:
+  files:
+    - path: sub/keep
+      content: ""
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    DIR="$PWD"
+    cd sub
+    cd ..
+    cd "$DIR//sub"
+    echo "$PWD"
+expect:
+  stdout_contains: ["/sub"]
+  stdout_contains_windows: ["\\sub"]
+  stderr: ""
+  exit_code: 0
