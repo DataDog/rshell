@@ -138,7 +138,16 @@ func listImpl(ctx context.Context, filter FilterFunc) ([]Mount, error) {
 			// between the mountinfo read and the statfs call.
 			continue
 		}
-		bsize := uint64(st.Bsize)
+		// Per statfs(2): f_blocks/f_bfree/f_bavail are counted in
+		// f_frsize units (the fragment size); f_bsize is only the
+		// optimal transfer block size. They are usually equal, but
+		// can differ on FUSE-backed mounts — using Bsize there would
+		// scale the reported sizes incorrectly. Match GNU coreutils:
+		// prefer Frsize when non-zero, fall back to Bsize otherwise.
+		bsize := uint64(st.Frsize)
+		if bsize == 0 {
+			bsize = uint64(st.Bsize)
+		}
 		if bsize == 0 {
 			bsize = 1
 		}
