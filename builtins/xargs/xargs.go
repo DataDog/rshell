@@ -386,6 +386,10 @@ func buildOptions(fs *builtins.FlagSet, null bool, argFile, delim, eofStr string
 	// is compared against the marker.
 	if o.mode == modeNull || o.mode == modeDelim {
 		if o.eofStr != "" {
+			// The trailing \n is intentional: GNU xargs emits a blank line
+			// after this particular warning. callCtx.Errf("xargs: %s\n", w)
+			// then adds a second \n, reproducing GNU's double-newline output.
+			// Do not "fix" this to a single \n or it will diverge from GNU.
 			o.warnings = append(o.warnings, "warning: the -E option has no effect if -0 or -d is used.\n")
 		}
 		o.eofStr = ""
@@ -641,6 +645,10 @@ func commandLineLen(o options, batch []string) int {
 	total := len(o.cmdName) + 1
 	if o.useReplace() && len(batch) > 0 {
 		item := batch[0]
+		// Substitute item into each initial arg. If initialArgs is empty,
+		// the item has nowhere to expand and does not contribute to the
+		// command-line length (matching GNU: the item is silently dropped
+		// unless the replace string appears in an argument).
 		for _, a := range o.initialArgs {
 			total += len(strings.ReplaceAll(a, o.replStr, item)) + 1
 		}

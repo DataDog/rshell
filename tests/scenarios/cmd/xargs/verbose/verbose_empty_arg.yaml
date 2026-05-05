@@ -2,7 +2,7 @@
 # An empty string passes the "safe" check in shellQuote (no special chars),
 # so without the explicit empty-string guard it would emit a bare space
 # instead of the quoted form.
-skip_assert_against_bash: true
+# Verified against debian:bookworm-slim: output is byte-for-byte identical to GNU xargs.
 description: xargs -t quotes empty-string arguments as '' in verbose output.
 input:
   script: |+
