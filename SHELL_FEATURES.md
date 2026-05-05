@@ -9,7 +9,7 @@ The in-shell `help` command mirrors these feature categories: run `help` for a c
 
 - ✅ `break` — exit the innermost `for` loop
 - ✅ `cat [-AbeEnstTuv] [FILE]...` — concatenate files to stdout; supports line numbering, blank squeezing, and non-printing character display
-- ✅ `cd [-L|-P] [DIR]` — change the working directory; bare `cd` uses `$HOME`, `cd -` switches to `$OLDPWD` and prints the raw OLDPWD value; `-P` resolves symlinks physically (capped at 40 hops); failure leaves `$PWD`/`$OLDPWD` untouched; subshell scope mirrors bash (`(cd …)` does not leak); `$CDPATH` is intentionally not implemented (prevents environment-variable path injection)
+- ✅ `cd [-L|-P] [DIR]` — change the working directory; bare `cd` uses `$HOME`, `cd -` switches to `$OLDPWD` and prints the raw OLDPWD value; `-P` resolves symlinks physically (capped at 40 hops); failure leaves `$PWD`/`$OLDPWD` untouched; subshell scope mirrors bash (`(cd …)` does not leak); `$CDPATH` is intentionally not implemented (prevents environment-variable path injection); paths beginning with `//` are normalised to `/` by `filepath.Clean` (POSIX allows this; bash preserves `//` but rshell intentionally diverges since the cleaned path is required for sandbox validation)
 - ✅ `continue` — skip to the next iteration of the innermost `for` loop
 - ✅ `cut [-b LIST|-c LIST|-f LIST] [-d DELIM] [-s] [-n] [--complement] [--output-delimiter=STRING] [FILE]...` — remove sections from each line of files
 - ✅ `echo [-neE] [ARG]...` — write arguments to stdout; `-n` suppresses trailing newline, `-e` enables backslash escapes, `-E` disables them (default)

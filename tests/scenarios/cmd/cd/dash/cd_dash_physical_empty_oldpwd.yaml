@@ -1,0 +1,20 @@
+# Derived from bash: cd -P - with empty OLDPWD fails with "No such file or directory".
+# Bash -P treats "" as a path to physically resolve, which fails:
+#   bash: cd: : No such file or directory  (exit 1)
+# Without -P, bash (and rshell) treat empty OLDPWD as "stay in place" (exit 0).
+skip_assert_against_bash: true # bash harness inherits OLDPWD from env; can't reliably set to "".
+description: cd -P - with empty OLDPWD fails with "No such file or directory" (bash compat).
+setup:
+  files:
+    - path: sub/keep
+      content: ""
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    cd sub
+    OLDPWD=""
+    cd -P -
+expect:
+  stdout: ""
+  stderr_contains: ["No such file or directory"]
+  exit_code: 1

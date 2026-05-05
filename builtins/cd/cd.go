@@ -232,6 +232,16 @@ func registerFlags(flags *builtins.FlagSet) builtins.HandlerFunc {
 			// fall back to "-" so that any error message shows "cd: -: ..."
 			// rather than exposing the runner's cwd path.
 			if oldpwd == "" {
+				if usePhysical {
+					// bash -P fails for an empty OLDPWD: it treats "" as a
+					// path to resolve physically, which fails. Without -P,
+					// bash accepts "" and stays in place (exit 0).
+					// Note: `display` is not yet initialised here (it is set
+					// after the switch); use "" to match bash's message:
+					// "cd: : No such file or directory" (empty-path label).
+					callCtx.Errf("cd: %s: No such file or directory\n", "")
+					return builtins.Result{Code: 1}
+				}
 				displayOverride = "-"
 				target = currentDir()
 			} else {
@@ -307,6 +317,12 @@ func registerFlags(flags *builtins.FlagSet) builtins.HandlerFunc {
 			}
 		}
 		if !usePhysical {
+			// filepath.Clean collapses double-slash prefixes (//foo → /foo).
+			// POSIX allows implementations to treat a path beginning with exactly
+			// "//" as implementation-defined — bash preserves "//foo" in $PWD.
+			// rshell intentionally diverges here: the cleaned path is required
+			// for sandbox validation and the double-slash form is vanishingly rare
+			// in practice. This divergence is documented in SHELL_FEATURES.md.
 			absPath = filepath.Clean(absPath)
 		}
 
@@ -325,9 +341,10 @@ func registerFlags(flags *builtins.FlagSet) builtins.HandlerFunc {
 		}
 
 		if callCtx.StatFile == nil {
-			// StatFile is always wired in production (via runner_exec.go),
-			// but guard against misconfigured CallContext in tests or
-			// embedded use to avoid a nil-pointer panic.
+			// StatFile is always wired in production (via runner_exec.go,
+			// which wraps r.sandbox.Stat in a non-nil closure). This guard
+			// targets the embedded/no-sandbox use-case (hand-constructed
+			// CallContext in tests or library use) to avoid a nil-pointer panic.
 			callCtx.Errf("cd: %s: stat not available\n", display)
 			return builtins.Result{Code: 1}
 		}
@@ -409,6 +426,11 @@ func resolvePhysical(ctx context.Context, callCtx *builtins.CallContext, absPath
 		// already absorbed into resolved. volNameParts is built from the
 		// ToSlash-split volume name so it matches both C: paths and UNC
 		// paths correctly regardless of path separator used.
+		// NOTE: volNameParts is keyed on the exact volume-name string (e.g.
+		// "C:"), so a directory literally named "C:" inside the path would also
+		// be skipped. Such names are invalid on Windows, so this is acceptable;
+		// even if it occurred, the final StatFile call rejects any incorrectly
+		// resolved path before it is adopted.
 		if seg == "" || seg == "." || volNameParts[seg] {
 			continue
 		}
