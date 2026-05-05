@@ -481,7 +481,9 @@ func runXargs(ctx context.Context, callCtx *builtins.CallContext, o options) bui
 	// exceeds the -s limit, fail immediately — even on empty input. Matches
 	// GNU xargs's "cannot fit single argument within argument list size limit"
 	// error and must be checked before the nil-stdin early-return path.
-	if commandLineLen(o, nil) > o.maxChars {
+	// Skip this check in -I mode: the marker will be replaced by actual items,
+	// so the template length is irrelevant — only the expanded command counts.
+	if !o.useReplace() && commandLineLen(o, nil) > o.maxChars {
 		callCtx.Errf("xargs: cannot fit single argument within argument list size limit\n")
 		return builtins.Result{Code: exitUsage}
 	}
@@ -562,25 +564,35 @@ func runXargs(ctx context.Context, callCtx *builtins.CallContext, o options) bui
 			add = len(item) + 1
 		}
 		if usedChars+add > o.maxChars {
-			if len(batch) == 0 && !o.useReplace() {
-				// Single item already too large — always abort (GNU always
-				// exits 1 in this case, regardless of -x). Not applicable
-				// in -I mode where the batch is always empty at this point.
-				callCtx.Errf("xargs: argument line too long\n")
-				return builtins.Result{Code: exitUsage}
+			if len(batch) > 0 {
+				// There are already items in the batch. Decide whether to abort
+				// immediately or flush and retry.
+				//
+				// Abort immediately when:
+				//   • -x is set and -n/-L is active — the batch was constrained
+				//     and doesn't fit within -s (GNU "argument list too long").
+				//   • -L is active and we are mid-line — flushing would split the
+				//     line, violating the per-line batch invariant.
+				mustAbort := (o.exitOnSize && (o.useMaxLines() || o.useMaxArgs())) ||
+					(o.useMaxLines())
+				if mustAbort {
+					callCtx.Errf("xargs: argument list too long\n")
+					return builtins.Result{Code: exitUsage}
+				}
+				// Otherwise flush the existing batch and retry with a fresh one.
+				if flush() {
+					return builtins.Result{Code: finalCode}
+				}
 			}
-			if o.exitOnSize || o.useReplace() {
-				// -x / -I: abort if the current expansion won't fit within -s.
-				// GNU uses "argument list too long" for both cases.
-				callCtx.Errf("xargs: argument list too long\n")
-				return builtins.Result{Code: exitUsage}
-			}
-			if flush() {
-				return builtins.Result{Code: finalCode}
-			}
+			// After flushing (or if batch was empty), check if the item fits in
+			// a fresh invocation.
 			if usedChars+add > o.maxChars {
-				// Item still doesn't fit even after flushing — always abort.
-				callCtx.Errf("xargs: argument line too long\n")
+				// Item doesn't fit alone — always abort.
+				if o.useReplace() {
+					callCtx.Errf("xargs: argument list too long\n")
+				} else {
+					callCtx.Errf("xargs: argument line too long\n")
+				}
 				return builtins.Result{Code: exitUsage}
 			}
 		}
@@ -908,6 +920,10 @@ func (t *tokenizer) next(ctx context.Context) (item string, endedLine, more bool
 // Used by modeNull and modeDelim; modeLine uses nextLineQuoted instead.
 // The returned endedLine is always true: each delimited item counts as
 // one logical line for -L.
+//
+// In non-null modes (modeDelim), NUL bytes are rejected: GNU xargs
+// truncates the item at the first NUL and emits a warning (matching the
+// behaviour of nextWhitespace/nextLineQuoted).
 func (t *tokenizer) nextDelimited(ctx context.Context, sep byte) (string, bool, bool, error) {
 	t.buf = t.buf[:0]
 	for {
@@ -926,6 +942,37 @@ func (t *tokenizer) nextDelimited(ctx context.Context, sep byte) (string, bool, 
 			return "", false, false, err
 		}
 		if b == sep {
+			return string(t.buf), true, true, nil
+		}
+		// In non-null delimited mode, a NUL byte truncates the current item
+		// and discards the rest up to the next separator (matches GNU xargs).
+		if b == 0 && sep != 0 {
+			t.warnNUL()
+			// Discard bytes until the separator or EOF.
+			for {
+				if err := t.pollCtx(ctx); err != nil {
+					return "", false, false, err
+				}
+				nb, nerr := t.r.ReadByte()
+				if nerr != nil {
+					if errors.Is(nerr, io.EOF) {
+						t.eof = true
+					}
+					break
+				}
+				if nb == sep {
+					break
+				}
+			}
+			// Return whatever we accumulated before the NUL (possibly empty).
+			if len(t.buf) == 0 {
+				// Empty token before NUL — skip it, try next.
+				t.buf = t.buf[:0]
+				if t.eof {
+					return "", false, false, nil
+				}
+				continue
+			}
 			return string(t.buf), true, true, nil
 		}
 		if err := t.pushByte(b); err != nil {

@@ -1,0 +1,12 @@
+description: >
+  -x without -n/-L does not abort when items overflow -s: GNU xargs simply splits
+  items into single-item invocations. -x only aborts when a -n/-L batch doesn't fit.
+input:
+  script: |+
+    printf 'abc def ghi\n' | xargs -s 10 -x echo
+expect:
+  stdout: |+
+    abc
+    def
+    ghi
+  exit_code: 0

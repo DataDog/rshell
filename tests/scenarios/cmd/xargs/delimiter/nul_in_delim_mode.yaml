@@ -1,0 +1,14 @@
+skip_assert_against_bash: true
+description: >
+  In non-null delimiter mode, a NUL byte truncates the current item and discards
+  the rest of the token up to the next delimiter — matches GNU xargs behavior.
+  skip_assert_against_bash because printf '\0' varies across shells.
+input:
+  script: |+
+    printf 'a\0b\n' | xargs -d '\n' printf '<%s>\n'
+expect:
+  stdout: |+
+    <a>
+  stderr: |+
+    xargs: WARNING: a NUL character occurred in the input.  It cannot be passed through in the argument list.  Did you mean to use the --null option?
+  exit_code: 0

@@ -1,0 +1,11 @@
+description: >
+  -I with a long replacement marker and a small -s: the size check uses the
+  substituted command, not the template. GNU xargs accepts when the expanded
+  command fits, even if the template with the marker is longer than -s.
+input:
+  script: |+
+    printf 'a\n' | xargs -s 9 -I LONG echo LONG
+expect:
+  stdout: |+
+    a
+  exit_code: 0
