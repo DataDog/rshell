@@ -17,6 +17,8 @@ import (
 // resolveRegexArg returns a compiled *regexp.Regexp for an argument used as a
 // regex. If the argument is a regex literal, its pre-compiled form is returned;
 // otherwise the argument is evaluated as a string and compiled on the fly.
+// A one-entry cache (dynReKey/dynRe) avoids re-compiling the same pattern in
+// tight loops (e.g. gsub with a variable pattern called once per record).
 func (r *runtime) resolveRegexArg(e expr) (*regexp.Regexp, error) {
 	if reLit, ok := e.(*regexExpr); ok {
 		return reLit.re, nil
@@ -25,10 +27,16 @@ func (r *runtime) resolveRegexArg(e expr) (*regexp.Regexp, error) {
 	if err != nil {
 		return nil, err
 	}
-	compiled, cerr := compileERE(v.toString(r.convFmt))
+	key := v.toString(r.convFmt)
+	if r.dynRe != nil && r.dynReKey == key {
+		return r.dynRe, nil
+	}
+	compiled, cerr := compileERE(key)
 	if cerr != nil {
 		return nil, fmt.Errorf("invalid regex: %v", cerr)
 	}
+	r.dynReKey = key
+	r.dynRe = compiled
 	return compiled, nil
 }
 

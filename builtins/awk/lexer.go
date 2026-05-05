@@ -436,6 +436,9 @@ func (l *lexer) lexString() (token, error) {
 			continue
 		}
 		sb.WriteByte(c)
+		if sb.Len() > MaxStringBytes {
+			return token{}, fmt.Errorf("line %d: string literal exceeds maximum length %d", startLine, MaxStringBytes)
+		}
 		l.pos++
 	}
 	return token{}, fmt.Errorf("line %d: unterminated string literal", startLine)
@@ -471,6 +474,9 @@ func (l *lexer) lexRegex() (token, error) {
 			continue
 		}
 		sb.WriteByte(c)
+		if sb.Len() > MaxStringBytes {
+			return token{}, fmt.Errorf("line %d: regex literal exceeds maximum length %d", startLine, MaxStringBytes)
+		}
 		l.pos++
 	}
 	return token{}, fmt.Errorf("line %d: unterminated regex", startLine)

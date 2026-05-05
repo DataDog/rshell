@@ -75,6 +75,12 @@ type runtime struct {
 	// callDepth bounds runtime recursion in execStmt/evalExpr to prevent
 	// stack-overflow via deeply nested constructs that survived parsing.
 	callDepth int
+
+	// dynReKey and dynRe implement a one-entry cache for dynamically-compiled
+	// regexes in resolveRegexArg. When sub/gsub/match is called with the same
+	// string pattern in a tight loop, this avoids recompiling on every record.
+	dynReKey string
+	dynRe    *regexp.Regexp
 }
 
 // maxRuntimeDepth caps execution recursion. Defense-in-depth alongside
@@ -98,7 +104,7 @@ func newRuntime(callCtx *builtins.CallContext) *runtime {
 		// ctx is overridden by run() before any user program executes.
 		// Initialising to context.Background() prevents a nil-panic if a
 		// builtin (e.g. bSub) is ever called outside of run() in tests.
-		ctx:         context.Background(),
+		ctx: context.Background(),
 	}
 }
 
