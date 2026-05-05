@@ -1,4 +1,8 @@
-description: xargs -0 and -d are mutually exclusive.
+# Intentional hardening divergence: GNU xargs accepts both flags (last-wins);
+# the rshell sandbox rejects the combination to avoid an ambiguous tokenizer
+# mode.
+skip_assert_against_bash: true
+description: xargs -0 and -d are mutually exclusive (rshell hardening).
 input:
   script: |+
     echo a | xargs -0 -d , echo
