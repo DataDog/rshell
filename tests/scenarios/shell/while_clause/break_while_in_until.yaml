@@ -1,14 +1,17 @@
-# skip: while loops are intentionally blocked in the restricted shell
-skip_assert_against_bash: true
-description: Break in while loop nested inside until loop is blocked.
+description: break 2 from a while inside an until exits both loops.
 input:
   script: |+
     until false; do
       while true; do
+        echo inner
         break 2
       done
+      echo unreachable
     done
+    echo done
 expect:
-  stdout: ""
-  stderr: "while/until loops are not supported\n"
-  exit_code: 2
+  stdout: |+
+    inner
+    done
+  stderr: |+
+  exit_code: 0

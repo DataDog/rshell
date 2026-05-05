@@ -1,11 +1,10 @@
-# skip: while/until loops are intentionally blocked in the restricted shell
-skip_assert_against_bash: true
-description: Single-line until loop is blocked.
+description: Single-line until loop with an immediately-true condition does not run the body.
 input:
   script: |+
     until true; do echo loop; done
+    echo "exit=$?"
 expect:
-  stdout: ""
+  stdout: |+
+    exit=0
   stderr: |+
-    while/until loops are not supported
-  exit_code: 2
+  exit_code: 0

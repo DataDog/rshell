@@ -6,7 +6,7 @@ input:
     help
 expect:
   stdout: |+
-    rshell (dev) — 2 of 30 commands enabled
+    rshell (dev) — 2 of 31 commands enabled
 
     Features:
     commands            Registered commands run inside the interpreter; no unregistered commands without an external handler.
@@ -28,7 +28,7 @@ expect:
     echo  write arguments to stdout
     help  display help for features and commands
 
-    Disabled commands: [, break, cat, continue, cut, exit, false, find, grep, head, ip, ls, ping,
+    Disabled commands: [, break, cat, continue, cut, du, exit, false, find, grep, head, ip, ls, ping,
       printf, ps, pwd, sed, sort, ss, strings, tail, test, tr, true, uname, uniq,
       wc, xargs
 

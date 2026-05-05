@@ -13,6 +13,7 @@ import (
 	"github.com/DataDog/rshell/builtins/cat"
 	continuecmd "github.com/DataDog/rshell/builtins/continue"
 	"github.com/DataDog/rshell/builtins/cut"
+	"github.com/DataDog/rshell/builtins/du"
 	"github.com/DataDog/rshell/builtins/echo"
 	"github.com/DataDog/rshell/builtins/exit"
 	falsecmd "github.com/DataDog/rshell/builtins/false"
@@ -49,6 +50,7 @@ func registerBuiltins() {
 			cat.Cmd,
 			cut.Cmd,
 			continuecmd.Cmd,
+			du.Cmd,
 			echo.Cmd,
 			exit.Cmd,
 			falsecmd.Cmd,

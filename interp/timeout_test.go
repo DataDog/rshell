@@ -67,8 +67,8 @@ func TestMaxExecutionTimeRespectsEarlierParentDeadline(t *testing.T) {
 func TestMaxExecutionTimeStopsForLoop(t *testing.T) {
 	// Exercises the interpreter's own ctx.Err() check inside the for-loop body
 	// (runner_exec.go), not just the execHandler cooperative-cancellation path.
-	// while/until loops are not supported, so we use a for loop with an
-	// execHandler that sleeps per iteration to make the loop outlast the timeout.
+	// We use a for loop with an execHandler that sleeps per iteration to make
+	// the loop outlast the timeout.
 	r := newTimeoutRunner(t, MaxExecutionTime(50*time.Millisecond))
 	r.execHandler = func(ctx context.Context, _ []string) error {
 		select {

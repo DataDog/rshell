@@ -1,15 +1,15 @@
-# skip: while loops are intentionally blocked in the restricted shell
-skip_assert_against_bash: true
-description: Continue in while loop is blocked because while loops are not supported.
+description: continue inside a while body skips the rest of the iteration and re-evaluates the condition.
 input:
   script: |+
-    i=0
-    while [ $i -lt 5 ]; do
-      i=$((i+1))
+    i=
+    while [ "$i" != aaa ]; do
+      i="${i}a"
       continue
       echo unreachable
     done
+    echo "i=$i"
 expect:
-  stdout: ""
-  stderr: "while/until loops are not supported\n"
-  exit_code: 2
+  stdout: |+
+    i=aaa
+  stderr: |+
+  exit_code: 0

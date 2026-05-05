@@ -11,6 +11,7 @@ The in-shell `help` command mirrors these feature categories: run `help` for a c
 - ✅ `cat [-AbeEnstTuv] [FILE]...` — concatenate files to stdout; supports line numbering, blank squeezing, and non-printing character display
 - ✅ `continue` — skip to the next iteration of the innermost `for` loop
 - ✅ `cut [-b LIST|-c LIST|-f LIST] [-d DELIM] [-s] [-n] [--complement] [--output-delimiter=STRING] [FILE]...` — remove sections from each line of files
+- ✅ `du [-asScSLP0bhkm] [-d N] [--apparent-size|--si] [FILE]...` — estimate file space usage; recursion capped at depth 256 and hardlink-dedup tracking capped at 2²⁰ entries; `--files0-from`, `--exclude-from`/`-X`, `--exclude` are rejected (data-exfiltration / file-driven control); `-B`/`--block-size`, `-t`/`--threshold`, `-x`/`--one-file-system`, `--inodes`, `--time`, `-l`/`--count-links` are not implemented
 - ✅ `echo [-neE] [ARG]...` — write arguments to stdout; `-n` suppresses trailing newline, `-e` enables backslash escapes, `-E` disables them (default)
 - ✅ `exit [N]` — exit the shell with status N (default 0)
 - ✅ `false` — return exit code 1
@@ -57,6 +58,8 @@ The in-shell `help` command mirrors these feature categories: run `help` for a c
 ## Control Flow
 
 - ✅ `for VAR in WORDS; do CMDS; done`
+- ✅ `while CONDITION; do CMDS; done` — runs CMDS while the last command of CONDITION exits 0
+- ✅ `until CONDITION; do CMDS; done` — runs CMDS while the last command of CONDITION exits non-zero
 - ✅ `&&` — AND list (short-circuit)
 - ✅ `||` — OR list (short-circuit)
 - ✅ `!` — negation (inverts exit code)
@@ -64,7 +67,6 @@ The in-shell `help` command mirrors these feature categories: run `help` for a c
 - ✅ `;` and newline as command separators
 - ✅ `if` / `elif` / `else`
 - ✅ Subshells: `( CMDS )` — runs commands in an isolated child environment; variable changes do not propagate to the parent; exit does not terminate the parent
-- ❌ `while` / `until`
 - ❌ `case`
 - ❌ `select`
 - ❌ C-style for loop: `for (( i=0; i<N; i++ ))`

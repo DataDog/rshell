@@ -1,12 +1,12 @@
-# skip: while loops are intentionally blocked in the restricted shell
-skip_assert_against_bash: true
-description: Break in while loop is blocked because while loops are not supported.
+description: break exits a while-true loop without entering the next iteration.
 input:
   script: |+
     while true; do
       break
     done
+    echo done
 expect:
-  stdout: ""
-  stderr: "while/until loops are not supported\n"
-  exit_code: 2
+  stdout: |+
+    done
+  stderr: |+
+  exit_code: 0

@@ -4,9 +4,10 @@ description: A blocked command prevents all execution including prior valid comm
 input:
   script: |+
     echo before
-    while true; do echo x; done
+    case x in x) echo y;; esac
     echo after
 expect:
-  stdout: ""
-  stderr: "while/until loops are not supported\n"
+  stdout: |+
+  stderr: |+
+    case statements are not supported
   exit_code: 2
