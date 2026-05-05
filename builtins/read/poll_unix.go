@@ -9,25 +9,21 @@ package read
 
 import "golang.org/x/sys/unix"
 
-// pollInputNonConsuming reports whether reading from the given file
-// descriptor would yield input data without blocking — i.e. there are
-// bytes buffered to be read. It does NOT consider a drained closed
-// pipe (POLLHUP without POLLIN) as available, matching bash 5.2's
-// `read -t 0` semantics: `printf ” | { read -t 0 v; echo $?; }`
-// returns 1 because the peer closed without producing data, not 0.
+// pollInputNonConsuming reports whether a Read on the given file
+// descriptor would return without blocking — meaning either input
+// is buffered (POLLIN) OR the peer has closed and Read would see
+// EOF (POLLHUP). Both are treated as "available" because bash 5.2's
+// `read -t 0` returns 0 in either case: data-ready and EOF-ready
+// scripts can both legitimately rely on `-t 0` as a non-consuming
+// readiness check, and bash treats EOF as an "I can complete the
+// read without waiting" condition.
 //
-// Linux poll(2) sets revents bits independently:
-//   - POLLIN — data is buffered for reading (or EOF on a regular
-//     file, which is always immediately readable).
-//   - POLLHUP — peer closed the channel; subsequent reads will see
-//     buffered data first, then EOF. POLLHUP can be set with or
-//     without POLLIN.
-//
-// When a pipe has buffered data AND the peer has closed, both
-// POLLIN and POLLHUP are set — POLLIN alone is enough to recognise
-// this as available. When a pipe is fully drained and closed, only
-// POLLHUP is set; treating that as available would lie to scripts
-// that use `read -t 0` to guard a subsequent read.
+// Verified empirically against bash 5.2.0:
+//   - printf with no output piped into `read -t 0` returns rc=0
+//     (closed pipe, POLLHUP only, EOF-ready).
+//   - A still-open producer that has not yet written data into the
+//     pipe makes `read -t 0` return rc=1 (poll times out, neither
+//     POLLIN nor POLLHUP is set).
 //
 // The supported return reports whether the platform implementation
 // could perform the check; on platforms without a non-blocking poll
@@ -42,5 +38,5 @@ func pollInputNonConsuming(fd uintptr) (available, supported bool) {
 	if n == 0 {
 		return false, true
 	}
-	return fds[0].Revents&unix.POLLIN != 0, true
+	return fds[0].Revents&(unix.POLLIN|unix.POLLHUP) != 0, true
 }

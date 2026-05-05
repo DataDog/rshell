@@ -250,6 +250,7 @@ var builtinPerCommandSymbols = map[string][]string{
 		"golang.org/x/sys/unix.Poll",          // 🟠 Unix poll(2) with timeout 0; non-consuming readability probe for read -t 0. Read-only descriptor state; no data transferred.
 		"golang.org/x/sys/unix.PollFd",        // 🟢 PollFd struct passed to unix.Poll; pure data type, no I/O.
 		"golang.org/x/sys/unix.POLLIN",        // 🟢 poll event constant for "data available to read"; pure constant.
+		"golang.org/x/sys/unix.POLLHUP",       // 🟢 poll event constant for "peer hung up" (EOF-ready); pure constant.
 	},
 	"sort": {
 		"bufio.NewScanner",      // 🟢 line-by-line input reading (e.g. head, cat); no write or exec capability.
@@ -477,6 +478,7 @@ var builtinAllowedSymbols = []string{
 	"github.com/prometheus-community/pro-bing.Pinger",     // 🔴 ICMP pinger struct; network I/O is the explicit purpose of the ping builtin.
 	"github.com/prometheus-community/pro-bing.Statistics", // 🟢 ping round-trip statistics struct; pure data type, no I/O.
 	"golang.org/x/sys/unix.POLLIN",                        // 🟢 poll event constant for "data available to read"; pure constant.
+	"golang.org/x/sys/unix.POLLHUP",                       // 🟢 poll event constant for "peer hung up" (EOF-ready); pure constant.
 	"golang.org/x/sys/unix.Poll",                          // 🟠 Unix poll(2) with timeout 0; non-consuming readability probe for read -t 0. Read-only descriptor state; no data transferred.
 	"golang.org/x/sys/unix.PollFd",                        // 🟢 PollFd struct passed to unix.Poll; pure data type, no I/O.
 	"golang.org/x/sys/unix.SysctlRaw",                     // 🟠 macOS: reads kernel socket tables (read-only, no exec, no filesystem).
