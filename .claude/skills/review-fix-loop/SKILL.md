@@ -172,18 +172,12 @@ iteration_had_no_findings=$([ "$findings_count" -eq 0 ] && echo true || echo fal
 
 Use the structurally derived value as the authoritative value of `iteration_had_no_findings`.
 
-To make `iteration_had_no_findings` durable across context resets, embed it in the Step 2A1 task subject immediately after computing it:
-```
-TaskUpdate "Step 2A1: Self-review (code-review) — findings=$findings_count no_findings=$iteration_had_no_findings"
-```
-This allows Step 3 to recover the flag from `TaskList` without needing to re-run the API snippet, though re-running is always an option if the task subject is not parseable.
-
 > **Why inline comments are the primary signal:** The `code-review` skill spec requires every finding to be posted as an inline comment tied to a specific diff line. In practice this means `findings_count` correctly reflects the number of actionable findings. However, the spec does not explicitly forbid a fallback where a finding is written only to the review body when GitHub rejects all inline placement attempts (e.g., the diff line falls outside every hunk). In that rare edge case `findings_count` would be `0` even though the review body contains a findings table — making the conservative cross-check below important.
 
-**Recommended cross-check via review body** — run this after computing `findings_count` to catch body-only fallback findings. This reads *our own* self-review body (agent-generated output, not external data) and only overrides in the conservative direction (never advances `SUCCESS_COUNT` on a false clean). **Do not skip**: omitting this check can cause `iteration_had_no_findings=true` to be set incorrectly when `code-review` falls back to body-only output:
+**Required cross-check via review body** — run this after computing `findings_count` to catch body-only fallback findings. This reads *our own* self-review body (agent-generated output, not external data) and only overrides in the conservative direction (never advances `SUCCESS_COUNT` on a false clean). **Do not skip**: omitting this check can cause `iteration_had_no_findings=true` to be set incorrectly when `code-review` falls back to body-only output:
 
 ```bash
-# Recommended cross-check: detect body-only fallback findings
+# Required cross-check: detect body-only fallback findings
 # This is our own self-review body (agent output), not external comment text.
 latest_review=$(gh api "repos/{owner}/{repo}/pulls/$PR_NUMBER/reviews" \
   --paginate --slurp \
@@ -203,11 +197,19 @@ if [ "$findings_count" -eq 0 ] && \
     # in their diff (e.g., review-fix-loop/SKILL.md, code-review/SKILL.md, or any SKILL.md that
     # documents findings tables). This is safe: conservative direction only
     # (triggers an extra iteration, never a missed finding).
+    # Note: on SKILL.md PRs the warning below is expected and can be safely ignored
+    # when findings_count is reliably 0 (the cross-check fires conservatively on quoted badge text).
     echo "WARNING: body-only findings detected; overriding iteration_had_no_findings=false" >&2
     iteration_had_no_findings=false
   fi
 fi
 ```
+
+To make `iteration_had_no_findings` durable across context resets, embed the **final** value (after all cross-checks) in the Step 2A1 task subject immediately after the cross-check block:
+```
+TaskUpdate "Step 2A1: Self-review (code-review) — findings=$findings_count no_findings=$iteration_had_no_findings"
+```
+This ensures the persisted value reflects any overrides from the cross-check, so the Step 3 recovery path always reads the correct final value. Step 3 can recover the flag from `TaskList` without needing to re-run the API snippet, though re-running is always an option if the task subject is not parseable.
 
 Because this is always a self-review, the state will be `COMMENT` regardless of findings — `COMMENT` state alone is not a signal that findings are present. The useful anomaly to detect is the *opposite*: a review was posted but `findings_count == 0` — which could mean findings were written to the review body only. Do **not** use `COMMENT` state alone as a signal that findings are present.
 
@@ -427,9 +429,9 @@ If that yields no value, re-derive it structurally by re-running the findings-co
 
 Maintain a `SUCCESS_COUNT` integer (initialize to `0` on first entry into Step 3; never re-initialize thereafter) tracking how many times Step 3 has passed all three verifications **AND** the last iteration had no findings from the self-review. Each success must be separated by exactly one full Step 2 iteration — never increment `SUCCESS_COUNT` twice from the same iteration.
 
-**If any verification fails**, set `SUCCESS_COUNT = 0`. If `iteration > 30`, mark Step 3 as `completed` (ITERATION_LIMIT_REACHED) and proceed to **Step 4**. Otherwise reset Step 2 and all its sub-steps to `pending` and go back to **Step 2: Run the review-fix loop** for another iteration.
+**If any verification fails**, set `SUCCESS_COUNT = 0` and immediately update the Step 3 task subject to `"Step 3: Verify clean state (0/5)"` so the reset is durable across context resets. If `iteration > 30`, mark Step 3 as `completed` (ITERATION_LIMIT_REACHED) and proceed to **Step 4**. Otherwise reset Step 2 and all its sub-steps to `pending` and go back to **Step 2: Run the review-fix loop** for another iteration.
 
-**If all verifications pass BUT `iteration_had_no_findings` is false** (the self-review found issues that were then resolved), set `SUCCESS_COUNT = 0`. If `iteration > 30`, mark Step 3 as `completed` (ITERATION_LIMIT_REACHED) and proceed to **Step 4**. Otherwise reset Step 2 and all its sub-steps to `pending` and go back for another iteration.
+**If all verifications pass BUT `iteration_had_no_findings` is false** (the self-review found issues that were then resolved), set `SUCCESS_COUNT = 0` and immediately update the Step 3 task subject to `"Step 3: Verify clean state (0/5)"` so the reset is durable across context resets. If `iteration > 30`, mark Step 3 as `completed` (ITERATION_LIMIT_REACHED) and proceed to **Step 4**. Otherwise reset Step 2 and all its sub-steps to `pending` and go back for another iteration.
 
 **If all verifications pass AND `iteration_had_no_findings` is true** (the self-review found zero findings), increment `SUCCESS_COUNT` and update the Step 3 task subject to `"Step 3: Verify clean state (SUCCESS_COUNT/5)"`. If `SUCCESS_COUNT = 5` → proceed to **Step 4**. If `iteration > 30` → mark Step 3 as `completed` (ITERATION_LIMIT_REACHED) and proceed to **Step 4**. Otherwise → reset Step 2 and all its sub-steps to `pending`, and go back to **Step 2: Run the review-fix loop** for another full iteration before returning here.
 
