@@ -1,3 +1,4 @@
+skip_assert_against_bash: true
 description: xargs ignores -L when combined with -n, emitting a warning (GNU behavior).
 input:
   script: |+

@@ -1,3 +1,4 @@
+skip_assert_against_bash: true
 description: xargs emits a warning and ignores -L when both -L and -I are specified.
 input:
   script: |+

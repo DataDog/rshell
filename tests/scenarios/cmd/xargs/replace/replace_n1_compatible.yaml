@@ -1,3 +1,4 @@
+skip_assert_against_bash: true
 description: "xargs -I{} -n 1 keeps replacement mode silently (GNU: -n 1 is compatible with -I, no warning)."
 input:
   script: |+

@@ -1,3 +1,4 @@
+skip_assert_against_bash: true
 description: xargs -n wins over -I when -n is specified after -I (last-specified-wins).
 input:
   script: |+

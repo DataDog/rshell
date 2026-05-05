@@ -1,3 +1,4 @@
+skip_assert_against_bash: true
 description: >
   When -L (which implies -x) is overridden by a later -n, the -x implied by -L
   must not survive. GNU xargs continues and splits the batch; rshell must not

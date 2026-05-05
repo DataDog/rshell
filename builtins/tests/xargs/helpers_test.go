@@ -13,12 +13,7 @@ import (
 	"github.com/DataDog/rshell/interp"
 )
 
-func runScriptCtx(ctx context.Context, t *testing.T, script, dir string, opts ...interp.RunnerOption) (string, string, int) {
-	t.Helper()
-	return testutil.RunScriptCtx(ctx, t, script, dir, opts...)
-}
-
 func cmdRunCtxFuzz(ctx context.Context, t *testing.T, script, dir string) (string, string, int) {
 	t.Helper()
-	return runScriptCtx(ctx, t, script, dir, interp.AllowedPaths([]string{dir}))
+	return testutil.RunScriptCtx(ctx, t, script, dir, interp.AllowedPaths([]string{dir}))
 }

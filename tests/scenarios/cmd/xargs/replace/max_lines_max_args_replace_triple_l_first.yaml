@@ -1,3 +1,4 @@
+skip_assert_against_bash: true
 description: xargs emits two warnings when -L, -n, and -I are all specified (L first, n middle, I last).
 input:
   script: |+

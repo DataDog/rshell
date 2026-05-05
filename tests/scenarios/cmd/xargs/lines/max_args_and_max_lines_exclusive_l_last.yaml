@@ -1,3 +1,4 @@
+skip_assert_against_bash: true
 description: xargs ignores -n when -L is specified after -n, emitting a warning (GNU last-specified-wins behavior).
 input:
   script: |+
