@@ -175,9 +175,11 @@ Use the structurally derived value as the authoritative value of `iteration_had_
 
 > **Why inline comments are the primary signal:** The `code-review` skill spec requires every finding to be posted as an inline comment tied to a specific diff line. In practice this means `findings_count` correctly reflects the number of actionable findings. However, the spec does not explicitly forbid a fallback where a finding is written only to the review body when GitHub rejects all inline placement attempts (e.g., the diff line falls outside every hunk). In that rare edge case `findings_count` would be `0` even though the review body contains a findings table — making the conservative cross-check below important.
 
-#### Cross-check subroutine — body-only fallback findings (authoritative copy; Step 3 recovery references this)
+#### Cross-check subroutine — body-only fallback findings (authoritative copy — single definition; Step 3 recovery copy references this section)
 
-**Required cross-check via review body** — run this after computing `findings_count` to catch body-only fallback findings. This reads *our own* self-review body (agent-generated output, not external data) and only overrides in the conservative direction (never advances `SUCCESS_COUNT` on a false clean). **Do not skip**: omitting this check can cause `iteration_had_no_findings=true` to be set incorrectly when `code-review` falls back to body-only output. The Step 3 recovery block contains a copy of this same logic — if you update the grep pattern or guard logic here, update the recovery block too:
+**Required cross-check via review body** — run this after computing `findings_count` to catch body-only fallback findings. This reads *our own* self-review body (agent-generated output, not external data) and only overrides in the conservative direction (never advances `SUCCESS_COUNT` on a false clean). **Do not skip**: omitting this check can cause `iteration_had_no_findings=true` to be set incorrectly when `code-review` falls back to body-only output.
+
+> **Maintenance note:** This is the **single authoritative definition** of the cross-check subroutine. The Step 3 recovery block (search for `SYNC-TAG: cross-check-subroutine (recovery copy)`) contains a required duplicate — necessary because Step 3 may run in a different context from 2A1. When updating the grep pattern, guard conditions, or error messages here, **also update the recovery copy**. The SYNC-TAG comments in both copies serve as the maintenance enforcement mechanism.
 
 ```bash
 # SYNC-TAG: cross-check-subroutine (authoritative copy — update recovery copy too)
@@ -190,7 +192,11 @@ latest_review=$(gh api "repos/{owner}/{repo}/pulls/$PR_NUMBER/reviews" \
   --paginate --slurp \
   | jq --arg me "$MY_LOGIN" --arg since "$ITERATION_START_TIME" \
     '[.[].[] | select(.user.login == $me and .submitted_at >= $since)] | last' 2>/dev/null)
-if [ $? -ne 0 ] || [ -z "$latest_review" ] || [ "$latest_review" = "null" ]; then
+# Note: $? is NOT checked here — when `gh api` fails the pipe delivers empty input to jq,
+# and `jq --slurp ... | last` on empty input yields `null` with exit code 0 (jq successfully
+# processes the empty array). The `2>/dev/null` suppresses any jq stderr. So $? is always 0
+# here regardless of whether `gh api` succeeded. The real failure guard is the `null` check below.
+if [ -z "$latest_review" ] || [ "$latest_review" = "null" ]; then
   # API call failed or produced no output — cannot verify body; treat as findings-present when
   # inline count was 0 (we can't rule out body-only findings).
   if [ "$findings_count" -eq 0 ]; then
@@ -217,11 +223,17 @@ if [ "$findings_count" -eq 0 ] && \
   # Note: when findings_count > 0 we would not be in this block at all, so has_inline > 0 implies
   # a review-level inline count mismatch (edge case) rather than the normal path.
   #
-  # Known limitation: when skill_md_pr=true AND has_inline=0, the grep is skipped entirely.
-  # This means a genuine body-only finding (one that code-review could not attach inline) on a
-  # SKILL.md PR is silently missed and iteration_had_no_findings remains true. The 30-iteration
-  # ceiling is the safety net for this edge case — the loop will exhaust iterations rather than
-  # achieving 5 genuinely clean passes with an undetected body-only finding.
+  # Known limitation (prominently documented):
+  # When skill_md_pr=true AND has_inline=0, the grep uses a stricter table-row pattern
+  # (requiring the badge to appear in a Markdown table row `| ... ![Px Badge]... |`) to
+  # distinguish genuine body-only findings from badge text quoted from the diff. This pattern
+  # may miss a body-only finding that is not formatted as a table row. The 30-iteration
+  # ceiling provides a safety net — if body-only findings cause SUCCESS_COUNT to advance
+  # incorrectly on one iteration, the next iterations' inline-comment counts or CI failures
+  # will eventually prevent the full 5-clean-streak from completing without genuine cleanliness.
+  # However, a single undetected body-only finding in a 5-iteration streak could allow
+  # premature exit if all 5 iterations are otherwise clean. Reviewers should be aware that
+  # SKILL.md PRs with no inline findings require manual verification if the loop exits cleanly.
   skill_md_pr=$(gh pr view "$PR_NUMBER" --json files \
     --jq '[.files[].path] | any(startswith(".claude/skills/") and endswith("/SKILL.md"))' 2>/dev/null || echo false)
   review_id=$(echo "$latest_review" | jq -r '.id // empty' 2>/dev/null || echo "")
@@ -231,8 +243,16 @@ if [ "$findings_count" -eq 0 ] && \
       --jq 'length' 2>/dev/null || echo 0)
     if ! [[ "$has_inline" =~ ^[0-9]+$ ]]; then has_inline=0; fi
   fi
-  if { [ "$skill_md_pr" != "true" ] || [ "$has_inline" -gt 0 ]; } && \
-     printf '%s\n' "$review_body" | grep -qE 'shields\.io/badge/P[0-3]-|!\[P[0-3][[:space:]]*Badge\]'; then
+  # On SKILL.md PRs with no inline comments: use a stricter pattern requiring the badge to
+  # appear in a Markdown table row (| ... badge ... |), which is unlikely to match quoted
+  # diff content. On non-SKILL.md PRs or reviews with inline comments: use the broad pattern.
+  if [ "$skill_md_pr" = "true" ] && [ "$has_inline" -eq 0 ]; then
+    # Stricter pattern: badge must appear in a Markdown table row
+    if printf '%s\n' "$review_body" | grep -qE '^\|.*shields\.io/badge/P[0-3]-|^\|.*!\[P[0-3][[:space:]]*Badge\]'; then
+      echo "WARNING: body-only findings detected (table-row pattern); overriding iteration_had_no_findings=false" >&2
+      iteration_had_no_findings=false
+    fi
+  elif printf '%s\n' "$review_body" | grep -qE 'shields\.io/badge/P[0-3]-|!\[P[0-3][[:space:]]*Badge\]'; then
     echo "WARNING: body-only findings detected; overriding iteration_had_no_findings=false" >&2
     iteration_had_no_findings=false
   fi
@@ -330,6 +350,15 @@ Increment `iteration`. Immediately persist the incremented value in the Step 2 t
 ```
 TaskUpdate "Step 2: Run the review-fix loop (iteration $iteration — started $ITERATION_START_TIME)"
 ```
+> **Known conservative skew:** The `$ITERATION_START_TIME` embedded here is the start time of the
+> iteration that just *ended* (not the next one). If a context reset occurs between this `TaskUpdate`
+> and the next iteration's `ITERATION_START_TIME=$(date ...)` capture, the recovered timestamp will
+> be from the previous iteration — making the findings-count window span two iterations instead of one.
+> This is **conservative**: it can only *over*-count findings (never under-count), so
+> `iteration_had_no_findings` may be set to `false` on a genuinely clean iteration. The 5-second
+> back-date already makes the window intentionally generous; this stale-timestamp case is an
+> additional conservative widening in the same direction. It does not affect correctness of the
+> safety guarantee (the loop never exits early on a false clean).
 
 Check **two** signals for remaining issues:
 
@@ -490,15 +519,21 @@ Record the final state of each dimension (unresolved thread count, CI).
        fi
        iteration_had_no_findings=$([ "$findings_count" -eq 0 ] && echo true || echo false)
        # SYNC-TAG: cross-check-subroutine (recovery copy — keep in sync with authoritative copy in 2A1)
-       # Required cross-check: also scan the latest review body for body-only fallback findings.
-       # This is a copy of the cross-check subroutine from 2A1 (see "Cross-check subroutine" header above
-       # for full explanation). If you update the grep pattern or guard logic in 2A1, update this copy too.
+       # Run the cross-check subroutine defined in Sub-step 2A1 under the header
+       # "Cross-check subroutine — body-only fallback findings (authoritative copy)".
+       # This recovery copy must mirror that definition exactly.
+       # If you update the grep pattern or guard logic in 2A1, update this copy too.
+       # (Technical debt: ideally this would be a single definition referenced from two sites.
+       # Until the spec format supports that, the SYNC-TAG comment is the enforcement mechanism.)
        if [ "$findings_count" -eq 0 ] && [ "$iteration_had_no_findings" = "true" ]; then
          latest_review=$(gh api "repos/{owner}/{repo}/pulls/$PR_NUMBER/reviews" \
            --paginate --slurp \
            | jq --arg me "$MY_LOGIN" --arg since "$ITERATION_START_TIME" \
              '[.[].[] | select(.user.login == $me and .submitted_at >= $since)] | last' 2>/dev/null)
-         if [ $? -ne 0 ] || [ -z "$latest_review" ] || [ "$latest_review" = "null" ]; then
+         # Note: $? is NOT checked here for the same reason as the authoritative copy — jq --slurp
+         # always exits 0 even on empty input, so $? is always 0 regardless of gh api success.
+         # The null check below is the real failure guard.
+         if [ -z "$latest_review" ] || [ "$latest_review" = "null" ]; then
            echo "WARNING: recovery reviews API failed; defaulting to findings-present (conservative)" >&2
            findings_count=1
            iteration_had_no_findings=false
@@ -514,8 +549,13 @@ Record the final state of each dimension (unresolved thread count, CI).
              if ! [[ "$has_inline" =~ ^[0-9]+$ ]]; then has_inline=0; fi
            fi
            if [ "$(echo "$latest_review" | jq -r '.state // "NONE"' 2>/dev/null || echo "NONE")" != "NONE" ]; then
-             if { [ "$skill_md_pr" != "true" ] || [ "$has_inline" -gt 0 ]; } && \
-                printf '%s\n' "$review_body" | grep -qE 'shields\.io/badge/P[0-3]-|!\[P[0-3][[:space:]]*Badge\]'; then
+             # On SKILL.md PRs with no inline comments: use stricter table-row pattern (same as authoritative copy)
+             if [ "$skill_md_pr" = "true" ] && [ "$has_inline" -eq 0 ]; then
+               if printf '%s\n' "$review_body" | grep -qE '^\|.*shields\.io/badge/P[0-3]-|^\|.*!\[P[0-3][[:space:]]*Badge\]'; then
+                 echo "WARNING: recovery body-only findings (table-row pattern); overriding iteration_had_no_findings=false" >&2
+                 iteration_had_no_findings=false
+               fi
+             elif printf '%s\n' "$review_body" | grep -qE 'shields\.io/badge/P[0-3]-|!\[P[0-3][[:space:]]*Badge\]'; then
                echo "WARNING: recovery body-only findings detected; overriding iteration_had_no_findings=false" >&2
                iteration_had_no_findings=false
              fi
