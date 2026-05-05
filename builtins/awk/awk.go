@@ -153,9 +153,11 @@ const MaxLoopIterations = 1_000_000
 
 // MaxTotalReadBytes caps total bytes read from a non-regular-file input
 // (e.g. /dev/zero, FIFOs, pipes). This is intentionally higher than
-// tail's 32 MiB cap: awk processes data record-by-record without buffering
-// the entire input, so a larger cap is safe and prevents premature truncation
-// on large legitimate inputs.
+// tail's 32 MiB cap (see builtins/tail/tail.go MaxTotalReadBytes): awk
+// processes data record-by-record without buffering the entire input, so a
+// larger cap is safe and prevents premature truncation on large legitimate
+// inputs. The per-record cap (MaxRecordBytes = 1 MiB) ensures that no single
+// record allocation is excessive even when the total input is large.
 const MaxTotalReadBytes = 256 << 20 // 256 MiB
 
 // MaxFields is the maximum number of fields a single record may produce.

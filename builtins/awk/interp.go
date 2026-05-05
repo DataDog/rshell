@@ -596,12 +596,14 @@ func (r *runtime) splitFields(rec string) []string {
 // repeated field assignments.
 func (r *runtime) rebuildRecord() error {
 	// Guard against OOM: if OFS is wide and NF is large, strings.Join could
-	// attempt a multi-GiB allocation before the length check fires. Pre-check
-	// that the joined length could possibly fit within MaxRecordBytes.
+	// attempt a large allocation before the length check fires. Pre-check
+	// using the direct product to avoid the ceiling-arithmetic off-by-one
+	// (the ceiling formula allows ofsLen == ceiling, which still permits a
+	// transient allocation of up to ~2×MaxRecordBytes before the final check).
 	nFields := int64(len(r.fields))
 	if nFields > 1 && len(r.ofs) > 0 {
 		ofsLen := int64(len(r.ofs))
-		if ofsLen > (int64(MaxRecordBytes)+nFields-1)/(nFields-1) {
+		if ofsLen*(nFields-1) > int64(MaxRecordBytes) {
 			return fmt.Errorf("rebuilt record would exceed maximum size %d (OFS too wide for NF=%d)",
 				MaxRecordBytes, nFields)
 		}
@@ -680,6 +682,10 @@ func (r *runtime) openInput(ctx context.Context, name string) (io.ReadCloser, bo
 	//      capabilities beyond what a regular large file already provides.
 	//   3. A race-free alternative (stat on the open fd) is unavailable
 	//      through the callCtx API.
+	//   4. The race is only exploitable if the attacker can also write to the
+	//      AllowedPaths directory to swap the file. In typical deployments
+	//      those directories are read-only for the awk process, making the
+	//      race unexploitable in practice.
 	// Concrete worst-case: a symlink swap between StatFile and OpenFile
 	// would cause the cap to be skipped for that file, allowing up to the
 	// OS-defined file size to be read — bounded by the file system, not our
