@@ -497,9 +497,14 @@ func runXargs(ctx context.Context, callCtx *builtins.CallContext, o options) bui
 			break
 		}
 
-		// Will this item still fit in the current batch's -s budget?
+		// Will this item still fit in the current batch's -s budget? Skip
+		// this preflight when -I is active: the resolved command line after
+		// REPLSTR substitution can be much shorter than the raw template +
+		// item (e.g. a long REPLSTR replaced by a short item). The
+		// post-substitution length check inside `invokeCommand` handles -s
+		// correctly for the -I path.
 		add := len(item) + 1
-		if usedChars+add > o.maxChars {
+		if !o.useReplace() && usedChars+add > o.maxChars {
 			// With -x and a -n/-L target, the user requires the full batch
 			// to fit; splitting it under -s pressure violates that contract,
 			// so abort.
@@ -641,11 +646,14 @@ func invokeCommand(ctx context.Context, callCtx *builtins.CallContext, o options
 	// items come from FILE and the parent's stdin remains available to the
 	// child (e.g. `printf 'payload\n' | xargs -a empty.txt cat` must print
 	// `payload`). When the runner exposes RunCommandWithStdin we explicitly
-	// pass `emptyChildStdin` only in the non-(-a) case; older runners that
-	// don't wire it fall back to RunCommand (parent-stdin pass-through).
+	// pass `emptyChildStdin` only when xargs reads its items from stdin
+	// itself (no -a, or `-a -` which is the GNU "stdin" alias); older
+	// runners that don't wire RunCommandWithStdin fall back to RunCommand
+	// (parent-stdin pass-through).
+	xargsReadsStdin := o.argFile == "" || o.argFile == "-"
 	var exitCode uint8
 	var err error
-	if callCtx.RunCommandWithStdin != nil && o.argFile == "" {
+	if callCtx.RunCommandWithStdin != nil && xargsReadsStdin {
 		exitCode, err = callCtx.RunCommandWithStdin(ctx, dir, finalCmd, finalArgs, emptyChildStdin)
 	} else {
 		exitCode, err = callCtx.RunCommand(ctx, dir, finalCmd, finalArgs)
@@ -754,8 +762,12 @@ func containsShellMeta(s string) bool {
 
 // openInput opens the configured input source. Returns (nil, nil) if no
 // stdin is available and no -a file was specified.
+//
+// `-a -` (or `--arg-file=-`) is the GNU convention for "read items from
+// stdin" — it shares the parent's stdin rather than opening a file named
+// `-` through the sandbox.
 func openInput(ctx context.Context, callCtx *builtins.CallContext, o options) (io.ReadCloser, error) {
-	if o.argFile != "" {
+	if o.argFile != "" && o.argFile != "-" {
 		f, err := callCtx.OpenFile(ctx, o.argFile, os.O_RDONLY, 0)
 		if err != nil {
 			return nil, err
