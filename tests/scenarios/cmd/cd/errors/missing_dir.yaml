@@ -1,13 +1,12 @@
 # Derived from GNU bash: cd into a nonexistent directory errors.
-description: cd into a nonexistent path reports "no such file or directory".
+description: cd into a nonexistent path reports "No such file or directory".
 input:
   allowed_paths: ["$DIR"]
   script: |+
     cd does-not-exist
 expect:
   stdout: |+
-  # rshell emits "no such file or directory"; bash emits "No such file
-  # or directory". The substring `o such file or directory` matches both
-  # so the same scenario validates against both implementations.
-  stderr_contains: ["cd: does-not-exist", "o such file or directory"]
+  # bash prefixes its error with "bash: line N:"; rshell does not. Use a
+  # substring assertion so the same scenario passes against both.
+  stderr_contains: ["cd: does-not-exist: No such file or directory"]
   exit_code: 1

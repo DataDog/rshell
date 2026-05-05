@@ -15,6 +15,7 @@ input:
 expect:
   stdout: |+
     ok
-  # Match both rshell ("no such ...") and bash ("No such ...") output.
-  stderr_contains: ["o such file or directory"]
+  # bash prefixes its error with "bash: line N:"; rshell does not. Use a
+  # substring assertion so the same scenario passes against both.
+  stderr_contains: ["No such file or directory"]
   exit_code: 0

@@ -1,0 +1,24 @@
+# Security: even when resolvePhysical treats an out-of-sandbox intermediate
+# component as opaque (ErrPermission-skip), the final StatFile gate must
+# still reject a target that lies outside AllowedPaths.
+#
+# This complements physical_nonexist_intermediate.yaml (which shows the
+# success case where the final target IS inside AllowedPaths). Here the
+# intermediate is the same opaque segment but the final target is ALSO
+# outside — proving the ErrPermission-skip does not grant access.
+description: cd -P rejects a final target outside AllowedPaths even when intermediate is opaque.
+skip_assert_against_bash: true # bash has no AllowedPaths concept
+setup:
+  files:
+    - path: inside/keep
+      content: ""
+input:
+  # AllowedPaths set to inside/ only; the parent ($DIR itself) is outside.
+  allowed_paths: ["inside"]
+  script: |+
+    ROOT="$PWD"
+    cd -P "${ROOT}/outside"
+expect:
+  stdout: |+
+  stderr_contains: ["cd:"]
+  exit_code: 1

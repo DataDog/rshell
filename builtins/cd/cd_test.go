@@ -238,7 +238,7 @@ func TestCdMissingDir(t *testing.T) {
 	dir := t.TempDir()
 	_, stderr, code := cmdRun(t, "cd does-not-exist", dir)
 	assert.Equal(t, 1, code)
-	assert.Equal(t, "cd: does-not-exist: no such file or directory\n", stderr)
+	assert.Equal(t, "cd: does-not-exist: No such file or directory\n", stderr)
 }
 
 func TestCdNotADirectory(t *testing.T) {
@@ -295,6 +295,24 @@ func TestCdShortRejectFlag(t *testing.T) {
 	assert.Contains(t, stderr, "cd:")
 }
 
+// TestCdEFlagCompat verifies that the bash compat flag -e is silently accepted
+// without producing an error. Bash ≥ 4.0 accepts -e as a modifier for -P (exit
+// non-zero if the physical path cannot be determined); rshell accepts but ignores
+// it so scripts using `cd -e dir` or `cd -Pe dir` do not break.
+func TestCdEFlagCompat(t *testing.T) {
+	dir := t.TempDir()
+	sub := makeDir(t, dir, "sub")
+	_ = sub
+	// `cd -e sub` should succeed (treat -e as no-op compat flag).
+	_, stderr, code := cmdRun(t, "cd -e sub", dir)
+	assert.Equal(t, 0, code, "cd -e sub should succeed (bash compat no-op flag)")
+	assert.Equal(t, "", stderr)
+	// `cd -Pe sub` should also succeed.
+	_, stderr, code = cmdRun(t, "cd -Pe sub", dir)
+	assert.Equal(t, 0, code, "cd -Pe sub should succeed (bash compat no-op flag)")
+	assert.Equal(t, "", stderr)
+}
+
 func TestCdEmptyArg(t *testing.T) {
 	dir := t.TempDir()
 	stdout, stderr, code := cmdRun(t, `cd ""; echo "$PWD"`, dir)
@@ -337,7 +355,7 @@ func TestCdFailureLeavesPwdAndOldpwdUntouched(t *testing.T) {
 	// `cd does-not-exist` exits 1 but the script then reports the unchanged state.
 	// The interpreter ends with the last command's exit code.
 	assert.Equal(t, 0, code)
-	assert.Contains(t, stderr, "no such file or directory")
+	assert.Contains(t, stderr, "No such file or directory")
 	expected := "PWD=" + filepath.Join(dir, "good") + "\nOLDPWD=" + dir + "\n"
 	assert.Equal(t, expected, stdout)
 }
@@ -451,7 +469,7 @@ func TestCdPhysicalSymlinkLoop(t *testing.T) {
 	_, stderr, code := cmdRun(t, "cd -P a", dir)
 	assert.Equal(t, 1, code)
 	assert.Contains(t, stderr, "cd: a:")
-	assert.Contains(t, stderr, "too many levels of symbolic links")
+	assert.Contains(t, stderr, "Too many levels of symbolic links")
 }
 
 // --- Sandbox preserved across cd ---
@@ -531,5 +549,5 @@ func TestCdPhysicalLongSymlinkChain(t *testing.T) {
 	}
 	_, stderr, code := cmdRun(t, "cd -P "+prev, dir)
 	assert.Equal(t, 1, code)
-	assert.Contains(t, stderr, "too many levels of symbolic links")
+	assert.Contains(t, stderr, "Too many levels of symbolic links")
 }

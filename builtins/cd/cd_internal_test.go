@@ -100,23 +100,23 @@ func TestFormatErrPathErrorWithPortable(t *testing.T) {
 		},
 	}
 	pe := &os.PathError{Op: "stat", Path: "x", Err: fs.ErrNotExist}
-	assert.Equal(t, "no such file or directory", formatErr(cc, pe))
+	assert.Equal(t, "No such file or directory", formatErr(cc, pe))
 }
 
 func TestFormatErrPathErrorWithoutPortable(t *testing.T) {
 	cc := &builtins.CallContext{}
 	pe := &os.PathError{Op: "stat", Path: "x", Err: errors.New("custom")}
-	assert.Equal(t, "custom", formatErr(cc, pe))
+	assert.Equal(t, "Custom", formatErr(cc, pe))
 }
 
 func TestFormatErrNonPathErrorNotExist(t *testing.T) {
 	cc := &builtins.CallContext{}
-	assert.Equal(t, "no such file or directory", formatErr(cc, fs.ErrNotExist))
+	assert.Equal(t, "No such file or directory", formatErr(cc, fs.ErrNotExist))
 }
 
 func TestFormatErrNonPathErrorPermission(t *testing.T) {
 	cc := &builtins.CallContext{}
-	assert.Equal(t, "permission denied", formatErr(cc, fs.ErrPermission))
+	assert.Equal(t, "Permission denied", formatErr(cc, fs.ErrPermission))
 }
 
 func TestFormatErrPortableFallback(t *testing.T) {
@@ -124,7 +124,7 @@ func TestFormatErrPortableFallback(t *testing.T) {
 		PortableErr: func(err error) string { return "portable: " + err.Error() },
 	}
 	custom := errors.New("plain error")
-	assert.Equal(t, "portable: plain error", formatErr(cc, custom))
+	assert.Equal(t, "Portable: plain error", formatErr(cc, custom))
 }
 
 func TestFormatErrFinalFallback(t *testing.T) {
@@ -132,7 +132,7 @@ func TestFormatErrFinalFallback(t *testing.T) {
 		PortableErr: func(err error) string { return "" },
 	}
 	custom := errors.New("raw error")
-	assert.Equal(t, "raw error", formatErr(cc, custom))
+	assert.Equal(t, "Raw error", formatErr(cc, custom))
 }
 
 // --- lookupVar ---

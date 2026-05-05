@@ -55,11 +55,14 @@ func TestGNUCompatCdDashPrints(t *testing.T) {
 // line beginning "bash: cd: doesnotexist:" with exit 1. We deliberately
 // drop the shell-name prefix and use the canonical "cd:" form so the
 // message format is stable across embeddings.
+// rshell matches bash's capitalisation ("No such file or directory").
 func TestGNUCompatCdMissing(t *testing.T) {
 	dir := t.TempDir()
 	_, stderr, code := cmdRun(t, "cd doesnotexist", dir)
 	assert.Equal(t, 1, code)
-	assert.Equal(t, "cd: doesnotexist: no such file or directory\n", stderr)
+	// rshell matches bash 5.2: capital N in "No such file or directory".
+	// (bash drops the capitalisation from PortableErrMsg; cd.formatErr capitalises.)
+	assert.Equal(t, "cd: doesnotexist: No such file or directory\n", stderr)
 }
 
 // TestGNUCompatCdNotADir — bash: `cd file.txt` (regular file) prints

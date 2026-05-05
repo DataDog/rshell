@@ -273,13 +273,13 @@ func registerFlags(flags *builtins.FlagSet) builtins.HandlerFunc {
 		// Windows reserved device names (CON, NUL, COM1, ...) hang on
 		// Stat — refuse them up front. RULES.md cross-platform mandate.
 		if isReservedWindowsPath(target) {
-			callCtx.Errf("cd: %s: no such file or directory\n", target)
+			callCtx.Errf("cd: %s: No such file or directory\n", target)
 			return builtins.Result{Code: 1}
 		}
 
 		// Resolve to absolute against the current working directory. We use
 		// the displayed value (the caller's argument) for error messages so
-		// that bash-style "cd: foo: no such file or directory" is preserved.
+		// that bash-style "cd: foo: No such file or directory" is preserved.
 		display := target
 		if displayOverride != "" {
 			display = displayOverride
@@ -307,7 +307,7 @@ func registerFlags(flags *builtins.FlagSet) builtins.HandlerFunc {
 					// documented contract that absPath must be absolute).
 					// The StatFile gate would catch this too, but explicit
 					// rejection is cleaner and gives a more accurate error.
-					callCtx.Errf("cd: %s: no such file or directory\n", display)
+					callCtx.Errf("cd: %s: No such file or directory\n", display)
 					return builtins.Result{Code: 1}
 				} else {
 					// Raw concatenation: cwd + separator + target, preserving
@@ -343,10 +343,15 @@ func registerFlags(flags *builtins.FlagSet) builtins.HandlerFunc {
 		}
 
 		if callCtx.StatFile == nil {
-			// StatFile is always wired in production (via runner_exec.go,
-			// which wraps r.sandbox.Stat in a non-nil closure). This guard
-			// targets the embedded/no-sandbox use-case (hand-constructed
-			// CallContext in tests or library use) to avoid a nil-pointer panic.
+			// StatFile is nil only when a CallContext is hand-constructed
+			// without wiring it — unit tests that exercise internal helpers
+			// or library users that build a bare CallContext. In production
+			// the runner always sets StatFile to a non-nil closure
+			// (runner_exec.go wraps r.sandbox.Stat). Note: if r.sandbox
+			// itself is nil (no AllowedPaths configured), the closure is
+			// non-nil but panics on call; that case is not guarded here —
+			// a nil sandbox in production is a misconfiguration and should
+			// surface as a panic rather than a silent no-op.
 			callCtx.Errf("cd: %s: stat not available\n", display)
 			return builtins.Result{Code: 1}
 		}
@@ -573,12 +578,18 @@ func lookupVar(callCtx *builtins.CallContext, name string) (string, bool) {
 	return callCtx.LookupVar(name)
 }
 
-// formatErr maps a sandbox/IO error onto a stable, POSIX-style message
+// formatErr maps a sandbox/IO error onto a stable, bash-compatible message
 // suitable for "cd: <path>: <msg>" formatting. The sandbox returns
 // *os.PathError values whose String() form includes the syscall name and
 // path (e.g. "statat foo: no such file or directory"); we strip those so
 // that callers can format the path themselves and the message is stable
 // across platforms.
+//
+// Error messages are capitalised to match bash 5.2 output
+// (e.g. "No such file or directory", "Permission denied").
+// PortableErrMsg returns lowercase; we capitalise the first letter here so
+// cd messages are consistent with bash without changing the project-wide
+// PortableErrMsg convention used by other builtins.
 func formatErr(callCtx *builtins.CallContext, err error) string {
 	if err == nil {
 		return ""
@@ -587,23 +598,37 @@ func formatErr(callCtx *builtins.CallContext, err error) string {
 	if errors.As(err, &pe) {
 		if callCtx.PortableErr != nil {
 			if msg := callCtx.PortableErr(pe.Err); msg != "" {
-				return msg
+				return capitalizeFirst(msg)
 			}
 		}
-		return pe.Err.Error()
+		return capitalizeFirst(pe.Err.Error())
 	}
 	if errors.Is(err, fs.ErrNotExist) {
-		return "no such file or directory"
+		return "No such file or directory"
 	}
 	if errors.Is(err, fs.ErrPermission) {
-		return "permission denied"
+		return "Permission denied"
 	}
 	if callCtx.PortableErr != nil {
 		if msg := callCtx.PortableErr(err); msg != "" {
-			return msg
+			return capitalizeFirst(msg)
 		}
 	}
-	return err.Error()
+	return capitalizeFirst(err.Error())
+}
+
+// capitalizeFirst returns s with its first ASCII letter uppercased.
+// This is used to match bash error-message capitalisation (e.g. "No such file
+// or directory" vs the project-wide PortableErrMsg convention of lowercase).
+func capitalizeFirst(s string) string {
+	if s == "" {
+		return s
+	}
+	b := []byte(s)
+	if b[0] >= 'a' && b[0] <= 'z' {
+		b[0] -= 32
+	}
+	return string(b)
 }
 
 // lpFlag is a boolean-shaped pflag.Value that writes its own mode into a
