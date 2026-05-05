@@ -259,6 +259,16 @@ func TestXargsNULInReplaceModeRejected(t *testing.T) {
 	assert.Contains(t, stderr, "NUL character")
 }
 
+func TestXargsNULAtStartOfLineDoesNotTerminateInput(t *testing.T) {
+	dir := t.TempDir()
+	// NUL right at the start of the first line — must not be mistaken for
+	// EOF; the second NUL-free line ("b") must still be processed.
+	stdout, stderr, code := cmdRun(t, "printf '\\0a\\nb\\n' | xargs -I{} echo X{}X", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "XbX\n", stdout)
+	assert.Contains(t, stderr, "NUL character")
+}
+
 func TestXargsNULWarningEmittedOnce(t *testing.T) {
 	dir := t.TempDir()
 	stdout, stderr, code := cmdRun(t, "printf 'a\\0b\\nc\\0d\\n' | xargs -I{} echo X{}X", dir)

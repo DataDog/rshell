@@ -1080,7 +1080,9 @@ func (t *tokenizer) nextLine(ctx context.Context) (string, bool, bool, error) {
 				return "", false, false, err
 			}
 			if len(t.buf) == 0 {
-				return "", false, false, nil
+				// NUL hit before any data was buffered for this record;
+				// resume on the next record rather than signalling EOF.
+				return t.next(ctx)
 			}
 			return string(t.buf), true, true, nil
 		}
@@ -1245,7 +1247,9 @@ func (t *tokenizer) nextWhitespace(ctx context.Context) (string, bool, bool, err
 				return "", false, false, nil
 			}
 			if len(t.buf) == 0 {
-				return "", false, false, nil
+				// NUL hit before any data was buffered for this token;
+				// resume on the next record rather than signalling EOF.
+				return t.next(ctx)
 			}
 			return string(t.buf), endedLine, true, nil
 		}
