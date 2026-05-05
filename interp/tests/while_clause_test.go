@@ -295,6 +295,17 @@ func TestWhileBreakInCondition(t *testing.T) {
 	assert.Equal(t, "cond\nexit=0\n", stdout)
 }
 
+// When a body iteration ran (with a non-zero last command), and a SUBSEQUENT
+// condition triggers `break`, the loop's exit status must be the break's
+// (0) — NOT the stale previous-body status. Bash matches this; an earlier
+// version of this code overwrote the break status with the stale body
+// status (POSIX §2.9.4 reading too literally).
+func TestWhileCondBreakDoesNotInheritStaleBodyExit(t *testing.T) {
+	stdout, _, code := whileRun(t, `i=; while [ "$i" != a ] || break; do i=a; false; done; echo "exit=$?"`)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "exit=0\n", stdout)
+}
+
 // `continue` inside the condition list of a while re-evaluates the condition
 // (the body is not entered).
 func TestWhileContinueInCondition(t *testing.T) {

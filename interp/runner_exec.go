@@ -312,6 +312,12 @@ func (r *Runner) execWhileClause(ctx context.Context, cm *syntax.WhileClause) {
 	defer func() { r.inLoop = oldInLoop }()
 
 	var lastBody exitStatus
+	// condBroke is set when `break` is invoked inside the condition list and
+	// terminates this loop. In that case the loop's exit status must be the
+	// `break` builtin's exit status (typically 0), NOT the previous body's
+	// last-command status — this matches bash. Without the flag, we would
+	// overwrite the cond-break's status with stale lastBody at loop exit.
+	condBroke := false
 	for {
 		if err := loopCtx.Err(); err != nil {
 			r.exit.fatal(err)
@@ -330,6 +336,7 @@ func (r *Runner) execWhileClause(ctx context.Context, cm *syntax.WhileClause) {
 		if r.breakEnclosing > 0 {
 			r.breakEnclosing--
 			brokeEarly = true
+			condBroke = true
 			break
 		}
 		if r.contnEnclosing > 0 {
@@ -389,8 +396,14 @@ func (r *Runner) execWhileClause(ctx context.Context, cm *syntax.WhileClause) {
 	// Loop's exit status (POSIX 2.9.4): exit status of the last command of the
 	// last body iteration, or 0 if the body never ran. If the loop is exiting
 	// via `exit` or a fatal error, we leave r.exit alone so the exit
-	// status/state propagates upward.
+	// status/state propagates upward. If the loop exited via a break in the
+	// condition list, r.exit currently holds the break builtin's exit status
+	// — leave it alone so the cond-break status (matching bash) is preserved
+	// rather than overwritten by the stale previous-body status.
 	if r.exit.exiting || r.exit.fatalExit {
+		return
+	}
+	if condBroke {
 		return
 	}
 	if iterationCount > 0 {
