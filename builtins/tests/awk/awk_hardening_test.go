@@ -120,10 +120,11 @@ func TestHardeningPathTraversal(t *testing.T) {
 }
 
 // TestHardeningDirectoryAsInput — opening a directory should fail.
+// Exit code is 2, matching mawk behaviour (file-open error on a directory).
 func TestHardeningDirectoryAsInput(t *testing.T) {
 	dir := t.TempDir()
 	_, stderr, code := cmdRun(t, `awk '{print}' .`, dir)
-	assert.Equal(t, 1, code)
+	assert.Equal(t, 2, code)
 	assert.NotEqual(t, "", stderr)
 }
 

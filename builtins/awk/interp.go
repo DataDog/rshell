@@ -319,6 +319,9 @@ func run(ctx context.Context, r *runtime, prog *program, files []string) (uint8,
 			continue
 		}
 		if err := r.execBlock(ctx, rule.action); err != nil {
+			if errors.Is(err, errNextRecord) {
+				return 1, fmt.Errorf("next is not valid inside a BEGIN or END block")
+			}
 			return finalizeAfterUnwind(ctx, r, prog, err)
 		}
 	}
@@ -422,6 +425,9 @@ func runEnd(ctx context.Context, r *runtime, prog *program) error {
 			continue
 		}
 		if err := r.execBlock(ctx, rule.action); err != nil {
+			if errors.Is(err, errNextRecord) {
+				return fmt.Errorf("next is not valid inside a BEGIN or END block")
+			}
 			return err
 		}
 	}
@@ -487,6 +493,12 @@ func (r *runtime) processFile(ctx context.Context, prog *program, name string) e
 	if scErr := sc.Err(); scErr != nil {
 		if errors.Is(scErr, bufio.ErrTooLong) {
 			return fmt.Errorf("%s: record exceeds maximum size of %d bytes", displayName(name), MaxRecordBytes)
+		}
+		// A directory opens successfully but fails on read; wrap as
+		// fileOpenError so run() treats it as a non-fatal file error (exit 2
+		// when it is the only error, matching mawk behaviour).
+		if errors.Is(scErr, os.ErrInvalid) || strings.Contains(scErr.Error(), "is a directory") {
+			return &fileOpenError{fmt.Sprintf("%s: Is a directory", displayName(name))}
 		}
 		return fmt.Errorf("%s: %s", displayName(name), r.callCtx.PortableErr(scErr))
 	}

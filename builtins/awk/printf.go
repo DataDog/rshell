@@ -96,7 +96,7 @@ func awkSprintf(format string, values []awkValue, convFmt string) (string, error
 			return "", err
 		}
 		sb.WriteString(out)
-		if sb.Len() > MaxStringBytes {
+		if sb.Len() >= MaxStringBytes {
 			return "", fmt.Errorf("printf output exceeds maximum string length %d", MaxStringBytes)
 		}
 		i = j

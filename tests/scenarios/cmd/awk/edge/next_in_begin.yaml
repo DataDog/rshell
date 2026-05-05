@@ -6,5 +6,5 @@ input:
 expect:
   stdout: |+
   stderr: |+
-    awk: next
+    awk: next is not valid inside a BEGIN or END block
   exit_code: 1

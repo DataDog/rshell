@@ -1,4 +1,4 @@
-description: printf %u/%o/%x/%X clamps values matching gawk - negatives become 0, values above UINT32_MAX saturate to UINT32_MAX.
+description: printf %u/%o/%x/%X clamps values matching mawk - negatives become 0, values above UINT32_MAX saturate to UINT32_MAX (intentional divergence from gawk which wraps to uint64).
 input:
   script: |+
     awk 'BEGIN { printf "%u\n", -1; printf "%u\n", -4294967296; printf "%u\n", 4294967296; printf "%o\n", -1; printf "%x\n", -1 }'
