@@ -10,6 +10,7 @@ input:
     ip
 expect:
   stdout: ""
-  stderr: |+
-    rshell: ip: command not allowed
+  stderr_contains:
+    - "rshell: ip: command not allowed"
+    - "allowed patterns for \"ip\": 'ip route'"
   exit_code: 127

@@ -184,7 +184,7 @@ func TestPatternsBlockSiblingSubcommand(t *testing.T) {
 		nil,
 	)
 	assert.Equal(t, 127, code)
-	assert.Contains(t, stderr, "command not allowed")
+	assert.Contains(t, stderr, "not permitted by policy")
 }
 
 func TestPatternsTolerateBooleanGlobalFlagBeforeSubcommand(t *testing.T) {
@@ -229,7 +229,7 @@ func TestPatternsBlockedWhenSubcommandIsPositionalArgValue(t *testing.T) {
 		map[string]interp.CommandSpec{"echo": {}},
 	)
 	assert.Equal(t, 127, code)
-	assert.Contains(t, stderr, "command not allowed")
+	assert.Contains(t, stderr, "not permitted by policy")
 }
 
 func TestPatternsAndAllowedCommandsAreUnion(t *testing.T) {
@@ -276,7 +276,7 @@ func TestPatternsBlockSubstitutionEscape(t *testing.T) {
 		nil,
 	)
 	assert.Equal(t, 127, code)
-	assert.Contains(t, stderr, "command not allowed")
+	assert.Contains(t, stderr, "not permitted by policy")
 }
 
 // TestPatternsAllowSubstitutionWhenArgvMatches is the partner case: a
@@ -347,7 +347,7 @@ func TestSpecValueFlagDoesNotMatchWhenValueIsExpectedSubcommand(t *testing.T) {
 		},
 	)
 	assert.Equal(t, 127, code)
-	assert.Contains(t, stderr, "command not allowed")
+	assert.Contains(t, stderr, "not permitted by policy")
 }
 
 // TestSpecLongFlagWithEqualsIsSelfContained checks that "--flag=value" is

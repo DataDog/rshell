@@ -6,6 +6,6 @@ input:
     echo hello
 expect:
   stdout: ""
-  stderr: |+
-    rshell: echo: command not allowed
+  stderr_contains:
+    - "echo hello: invocation not permitted by policy"
   exit_code: 127

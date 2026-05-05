@@ -9,6 +9,6 @@ input:
 expect:
   stdout: |+
     after
-  stderr: |+
-    rshell: cat: command not allowed
+  stderr_contains:
+    - "cat /dev/null: invocation not permitted by policy"
   exit_code: 0

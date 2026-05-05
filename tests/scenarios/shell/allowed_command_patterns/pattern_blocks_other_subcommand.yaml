@@ -11,6 +11,7 @@ input:
     ip addr
 expect:
   stdout: ""
-  stderr: |+
-    rshell: ip: command not allowed
+  stderr_contains:
+    - "ip addr: invocation not permitted by policy"
+    - "allowed patterns for \"ip\": 'ip route'"
   exit_code: 127

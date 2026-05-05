@@ -360,6 +360,53 @@ func (r *Runner) argvMatchesAllowedPattern(args []string) bool {
 	return false
 }
 
+// formatPolicyDenial returns a human-readable message explaining why
+// args was rejected. Includes the full attempted invocation and, when
+// patterns target the command name, the patterns the operator could
+// have matched.
+//
+// The message is intentionally short: at most two lines, one for the
+// rejection itself and one optional hint listing the configured
+// patterns for that command name. Designed for stderr where a script
+// may produce many such errors and verbose multi-line output gets in
+// the way.
+func (r *Runner) formatPolicyDenial(args []string) string {
+	if len(args) == 0 {
+		return "rshell: command not allowed\n"
+	}
+	name := args[0]
+	invocation := strings.Join(args, " ")
+
+	// Collect patterns whose first token equals the command name. These
+	// are the patterns the operator could have intended to match — if
+	// any are configured, they're worth surfacing as a hint.
+	var matchingPatterns []string
+	for _, p := range r.allowedCommandPatterns {
+		if len(p) > 0 && p[0] == name {
+			matchingPatterns = append(matchingPatterns, "'"+strings.Join(p, " ")+"'")
+		}
+	}
+
+	var msg strings.Builder
+	if invocation == name {
+		// Bare command (no args); the prior format is still the
+		// clearest thing to print.
+		fmt.Fprintf(&msg, "rshell: %s: command not allowed\n", name)
+	} else {
+		fmt.Fprintf(&msg, "rshell: %s: invocation not permitted by policy (command name: %s)\n", invocation, name)
+	}
+	if len(matchingPatterns) > 0 {
+		fmt.Fprintf(&msg, "  hint: allowed patterns for %q: %s\n", name, strings.Join(matchingPatterns, ", "))
+	} else if r.allowedCommands[name] {
+		// Reachable only as a defence-in-depth message: name IS in the
+		// allowlist but isAllowed is false, which shouldn't happen
+		// under current logic. Keep the branch so the message stays
+		// honest if the gate composition changes.
+		fmt.Fprintf(&msg, "  hint: %q is in AllowedCommands but the call was still refused\n", name)
+	}
+	return msg.String()
+}
+
 // extractStructuralTokens returns the structural-token sequence (subcommand
 // path followed by positional arguments) derived from the trailing-args
 // portion of argv (i.e. args[1:] in the caller's view), using spec to
@@ -445,7 +492,7 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 	}
 
 	if !isAllowed {
-		r.errf("rshell: %s: command not allowed\n", name)
+		r.errf("%s", r.formatPolicyDenial(args))
 		if r.allowedCommands["help"] {
 			r.errf("Run 'help' to see allowed commands.\n")
 		}
@@ -464,7 +511,11 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 			fullArgv = append(fullArgv, cmdName)
 			fullArgv = append(fullArgv, cmdArgs...)
 			if !r.allowAllCommands && !r.allowedCommands[cmdName] && !r.argvMatchesAllowedPattern(fullArgv) {
-				return 127, fmt.Errorf("rshell: %s: command not allowed", cmdName)
+				// Strip the trailing newline because callers (notably
+				// find -exec) wrap the error in their own "find: '%s':
+				// %s\n" template; keeping the embedded newline would
+				// produce a stray blank line.
+				return 127, fmt.Errorf("%s", strings.TrimRight(r.formatPolicyDenial(fullArgv), "\n"))
 			}
 			cmdFn, ok := builtins.Lookup(cmdName)
 			if !ok {
