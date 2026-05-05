@@ -538,13 +538,19 @@ func parseReadTimeout(s string) (float64, bool) {
 	// Bash accepts an optional leading `+` on -t TIMEOUT (verified
 	// empirically: `read -t +1 v` and `read -t +0 v` both work in
 	// bash 5.2). Strip it before the digit-only filter so the rest
-	// of the parser doesn't have to special-case the sign. A bare
-	// `+` (no digits after) is rejected by the seenDigit check.
+	// of the parser doesn't have to special-case the sign.
 	if len(s) > 0 && s[0] == '+' {
 		s = s[1:]
 	}
 	if s == "" {
-		return 0, false
+		// Bash treats bare `+` (the original input was just `+`,
+		// nothing else) the same as the empty-string and `0`/`+0`
+		// cases: a zero-timeout poll. Verified empirically against
+		// bash 5.2.21:
+		//   printf x | { read -t + v; read rest; }
+		//     → rc=0, v="", rest="x"
+		// Symmetric with the `.` / `+.` short-circuit below.
+		return 0, true
 	}
 	// Accept only [0-9] and at most one '.', matching bash's parser
 	// which excludes minus signs, exponents, and special tokens
