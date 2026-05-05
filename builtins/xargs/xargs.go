@@ -417,16 +417,21 @@ func runXargs(ctx context.Context, callCtx *builtins.CallContext, o options) bui
 		// Will this item still fit in the current batch's -s budget?
 		add := len(item) + 1
 		if usedChars+add > o.maxChars {
-			// Try to make room by flushing any pending batch first.
+			// With -x and a -n/-L target, the user requires the full batch
+			// to fit; splitting it under -s pressure violates that contract,
+			// so abort.
+			if o.exitOnSize && (o.useMaxArgs() || o.useMaxLines()) && len(batch) > 0 {
+				callCtx.Errf("xargs: argument list too long\n")
+				return builtins.Result{Code: exitUsage}
+			}
+			// Otherwise, try to make room by flushing any pending batch.
 			if len(batch) > 0 {
 				if flush() {
 					return builtins.Result{Code: finalCode}
 				}
 			}
 			// If a single item still can't fit alongside the command name,
-			// GNU xargs always exits 1 — the `-x` flag does not gate this
-			// case, only the -n/-L batch-overflow case (which we don't
-			// hit because items are added one at a time).
+			// GNU xargs always exits 1 (regardless of -x).
 			if usedChars+add > o.maxChars {
 				callCtx.Errf("xargs: argument line too long\n")
 				return builtins.Result{Code: exitUsage}
@@ -471,6 +476,16 @@ func finishEmpty(ctx context.Context, callCtx *builtins.CallContext, o options, 
 	// runs nothing. Without -I we fall back to a single invocation with no
 	// extra args (POSIX default).
 	if o.useReplace() {
+		return builtins.Result{Code: prior}
+	}
+	// The command name + initial args alone must still fit within -s; GNU
+	// xargs aborts before invoking when even the bare command exceeds the
+	// size budget (e.g. `xargs -s 1 echo`).
+	if commandLineLen(o, nil) > o.maxChars {
+		callCtx.Errf("xargs: argument line too long\n")
+		if exitUsage > prior {
+			prior = exitUsage
+		}
 		return builtins.Result{Code: prior}
 	}
 	code, _ := invokeCommand(ctx, callCtx, o, nil)
