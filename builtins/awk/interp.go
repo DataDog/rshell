@@ -74,6 +74,10 @@ type runtime struct {
 
 	// callDepth bounds runtime recursion in execStmt/evalExpr to prevent
 	// stack-overflow via deeply nested constructs that survived parsing.
+	// NOTE: execStmt and evalExpr share this counter, so the effective
+	// nesting budget is roughly maxRuntimeDepth/2 for mixed stmt+expr
+	// chains. In practice maxParseDepth (256) is the binding constraint,
+	// since the parser rejects programs deeper than that before execution.
 	callDepth int
 
 	// dynReKey and dynRe implement a one-entry cache for dynamically-compiled
@@ -84,7 +88,9 @@ type runtime struct {
 }
 
 // maxRuntimeDepth caps execution recursion. Defense-in-depth alongside
-// parser-side maxParseDepth.
+// parser-side maxParseDepth. Both execStmt and evalExpr share the same
+// counter, so the effective nesting limit for mixed stmt+expr chains is
+// roughly maxRuntimeDepth/2 ≈ 512; maxParseDepth (256) is the tighter bound.
 const maxRuntimeDepth = 1024
 
 func newRuntime(callCtx *builtins.CallContext) *runtime {
@@ -594,25 +600,28 @@ func (r *runtime) setRecord(rec string) error {
 		return fmt.Errorf("record exceeds maximum size of %d bytes", MaxRecordBytes)
 	}
 	r.record = rec
-	r.fields = r.splitFields(rec)
+	fields, err := r.splitFields(rec)
+	r.fields = fields
 	r.nf = int64(len(r.fields))
-	return nil
+	return err
 }
 
 // capFields truncates a slice of fields to MaxFields if needed.
-// splitFields guarantees the returned slice is within the MaxFields limit.
-func capFields(fields []string) []string {
+// Returns an error when truncation actually occurs so callers can surface the
+// issue to the script author; silent truncation can produce subtly wrong results.
+func capFields(fields []string) ([]string, error) {
 	if len(fields) > MaxFields {
-		return fields[:MaxFields]
+		return fields[:MaxFields], fmt.Errorf("field count %d exceeds maximum %d; record truncated", len(fields), MaxFields)
 	}
-	return fields
+	return fields, nil
 }
 
 // splitFields splits the current record into fields per FS.
-// The returned slice always has at most MaxFields entries.
-func (r *runtime) splitFields(rec string) []string {
+// The returned slice always has at most MaxFields entries. An error is returned
+// when the record produces more than MaxFields fields and truncation occurs.
+func (r *runtime) splitFields(rec string) ([]string, error) {
 	if rec == "" {
-		return nil
+		return nil, nil
 	}
 	if r.fsRe != nil {
 		return capFields(r.fsRe.Split(rec, -1))
@@ -625,14 +634,19 @@ func (r *runtime) splitFields(rec string) []string {
 		// Empty FS: each byte is a field (byte-based, consistent with
 		// bSubstr/bIndex/bMatch; mawk behaviour).
 		maxBytes := len(rec)
+		truncated := false
 		if maxBytes > MaxFields {
 			maxBytes = MaxFields
+			truncated = true
 		}
 		out := make([]string, 0, maxBytes)
 		for i := 0; i < len(rec) && len(out) < MaxFields; i++ {
 			out = append(out, string(rec[i]))
 		}
-		return out
+		if truncated {
+			return out, fmt.Errorf("field count exceeds maximum %d; record truncated", MaxFields)
+		}
+		return out, nil
 	default:
 		// Single character or fixed string (including "\t").
 		return capFields(strings.Split(rec, r.fs))
@@ -691,9 +705,10 @@ func (r *runtime) setField(i int, val string) error {
 			return fmt.Errorf("$0 assignment exceeds maximum record size %d", MaxRecordBytes)
 		}
 		r.record = val
-		r.fields = r.splitFields(val)
+		fields, err := r.splitFields(val)
+		r.fields = fields
 		r.nf = int64(len(r.fields))
-		return nil
+		return err
 	}
 	if len(val) > MaxRecordBytes {
 		return fmt.Errorf("field $%d value exceeds maximum record size %d", i, MaxRecordBytes)

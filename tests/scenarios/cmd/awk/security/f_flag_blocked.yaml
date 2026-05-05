@@ -1,0 +1,9 @@
+description: -f progfile is not supported; the flag is unknown and awk exits with an error.
+skip_assert_against_bash: true
+input:
+  script: |+
+    awk -f /dev/null '{print}'
+expect:
+  stdout: |+
+  stderr_contains: ["awk:"]
+  exit_code: 1

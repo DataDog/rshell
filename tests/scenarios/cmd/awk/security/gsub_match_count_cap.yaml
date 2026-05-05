@@ -1,0 +1,9 @@
+description: gsub with an empty-matching pattern on a record > MaxLoopIterations chars hits the match-count cap.
+skip_assert_against_bash: true
+input:
+  script: |+
+    awk 'BEGIN { s="xx"; for (i=0;i<19;i++) s=s s; gsub(/y*/, "z", s); print "done" }'
+expect:
+  stdout: |+
+  stderr_contains: ["gsub"]
+  exit_code: 1
