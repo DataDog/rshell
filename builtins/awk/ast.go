@@ -15,7 +15,6 @@ type expr interface{ exprNode() }
 
 type numExpr struct {
 	val float64
-	src string // original lexeme, preserved so toString can use it for OFMT
 }
 
 type strExpr struct {
@@ -26,8 +25,7 @@ type strExpr struct {
 // In any other context (e.g. as an expression value), it is implicitly
 // $0 ~ /re/, but we keep the parsing simple by handling that in the parser.
 type regexExpr struct {
-	re  *regexp.Regexp
-	src string
+	re *regexp.Regexp
 }
 
 type identExpr struct {
@@ -208,8 +206,7 @@ type exprPattern struct {
 
 // regexPattern is shorthand for $0 ~ /re/.
 type regexPattern struct {
-	re  *regexp.Regexp
-	src string
+	re *regexp.Regexp
 }
 
 // rangePattern matches between start (inclusive) and end (inclusive), then

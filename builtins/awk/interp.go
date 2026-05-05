@@ -17,6 +17,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"syscall"
 
 	"github.com/DataDog/rshell/builtins"
 )
@@ -440,6 +441,17 @@ type fileOpenError struct{ msg string }
 
 func (e *fileOpenError) Error() string { return e.msg }
 
+// isDirectoryError reports whether err indicates that a path is a directory.
+// It uses syscall.EISDIR when available (Linux, macOS, BSD) and falls back to
+// a string match for portability.
+func isDirectoryError(err error) bool {
+	var pathErr *os.PathError
+	if errors.As(err, &pathErr) {
+		return errors.Is(pathErr.Err, syscall.EISDIR)
+	}
+	return strings.Contains(err.Error(), "is a directory")
+}
+
 // processFile reads a file (or stdin when name == "-"), splits it into
 // records, and applies the program rules to each record.
 func (r *runtime) processFile(ctx context.Context, prog *program, name string) error {
@@ -497,7 +509,7 @@ func (r *runtime) processFile(ctx context.Context, prog *program, name string) e
 		// A directory opens successfully but fails on read; wrap as
 		// fileOpenError so run() treats it as a non-fatal file error (exit 2
 		// when it is the only error, matching mawk behaviour).
-		if errors.Is(scErr, os.ErrInvalid) || strings.Contains(scErr.Error(), "is a directory") {
+		if errors.Is(scErr, os.ErrInvalid) || isDirectoryError(scErr) {
 			return &fileOpenError{fmt.Sprintf("%s: Is a directory", displayName(name))}
 		}
 		return fmt.Errorf("%s: %s", displayName(name), r.callCtx.PortableErr(scErr))

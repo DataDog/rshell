@@ -223,7 +223,7 @@ func (p *parser) parsePatternExpr() (pattern, error) {
 		if err != nil {
 			return nil, fmt.Errorf("line %d: invalid regex /%s/: %v", t.line, t.val, err)
 		}
-		return &regexPattern{re: re, src: t.val}, nil
+		return &regexPattern{re: re}, nil
 	}
 	// General expression.
 	e, err := p.parseExpr()
@@ -990,7 +990,7 @@ func (p *parser) parsePrimary() (expr, error) {
 	switch t.kind {
 	case tkNumber:
 		p.advance()
-		return &numExpr{val: t.num, src: t.val}, nil
+		return &numExpr{val: t.num}, nil
 	case tkString:
 		p.advance()
 		return &strExpr{val: t.val}, nil
@@ -1000,7 +1000,7 @@ func (p *parser) parsePrimary() (expr, error) {
 		if err != nil {
 			return nil, fmt.Errorf("line %d: invalid regex /%s/: %v", t.line, t.val, err)
 		}
-		return &regexExpr{re: re, src: t.val}, nil
+		return &regexExpr{re: re}, nil
 	case tkLParen:
 		p.advance()
 		// "(a,b,...) in arr" form.
