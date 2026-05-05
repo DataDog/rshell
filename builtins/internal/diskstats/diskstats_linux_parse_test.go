@@ -141,7 +141,8 @@ func TestParseMountInfoLine_PostSeparatorTooFew(t *testing.T) {
 	assert.False(t, ok)
 }
 
-func TestIsRemoteType(t *testing.T) {
+func TestIsRemoteSource_TypeOnly(t *testing.T) {
+	// Source omitted (empty) — only the type prefix list applies.
 	for _, fs := range []string{
 		"nfs", "nfs4", "cifs", "smb3", "smbfs", "afs", "ceph",
 		"glusterfs", "sshfs", "davfs",
@@ -152,14 +153,42 @@ func TestIsRemoteType(t *testing.T) {
 		"fuse.glusterfs", "fuse.cephfs", "fuse.nfsv4", "fuse.s3fs",
 		"fuse.rclone",
 	} {
-		assert.True(t, isRemoteType(fs), fs)
+		assert.True(t, isRemoteSource("/dev/local", fs), fs)
 	}
 	for _, fs := range []string{
 		"ext4", "btrfs", "xfs", "tmpfs", "apfs",
 		// FUSE local backends must NOT be classified remote.
 		"fuse.gvfsd-fuse", "fuse.portal", "fuse.archivemount",
 	} {
-		assert.False(t, isRemoteType(fs), fs)
+		assert.False(t, isRemoteSource("/dev/local", fs), fs)
+	}
+}
+
+// Mounts whose type is generic (gpfs, acfs, "auto", custom NFS-flavored
+// types) but whose source carries a network signature must still be
+// classified remote, mirroring GNU me_remote (lib/mountlist.c). Without
+// this, `df -l` would keep the mount and statfs(2) could hang on a
+// stale network mount.
+func TestIsRemoteSource_BySourceShape(t *testing.T) {
+	for _, src := range []string{
+		"server:/export",        // classic NFS
+		"user@host:/path",       // sshfs / autofs SSHFS
+		"//server/share",        // SMB / CIFS UNC
+		"nfs.example.com:/data", // NFS with FQDN
+	} {
+		assert.True(t, isRemoteSource(src, "ext4"), src)
+		assert.True(t, isRemoteSource(src, "auto"), src)
+		assert.True(t, isRemoteSource(src, "gpfs"), src)
+	}
+	// Local sources must remain local even with otherwise-suspicious
+	// types (no colon, no leading "//").
+	for _, src := range []string{
+		"/dev/sda1",
+		"/dev/disk/by-uuid/abcd",
+		"tmpfs",
+	} {
+		assert.False(t, isRemoteSource(src, "ext4"), src)
+		assert.False(t, isRemoteSource(src, "tmpfs"), src)
 	}
 }
 

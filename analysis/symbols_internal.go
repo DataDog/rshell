@@ -20,10 +20,11 @@ var internalPerPackageSymbols = map[string][]string{
 		"io.Reader",            // 🟢 interface type used to feed parseMountInfo from arbitrary readers (tests use strings.NewReader); pure type, no I/O.
 		"os.Open",              // 🟠 opens /proc/self/mountinfo read-only. Bypasses AllowedPaths by design — the path is hardcoded and never derived from user input, mirroring procnetsocket's documented exception.
 		"strings.Builder",      // 🟢 in-memory buffer for octal-escape unescape of mountinfo paths; no I/O.
+		"strings.Contains",     // 🟢 checks for ":" in a mount source string to detect host:/export remote mounts; pure function, no I/O.
 		"strings.ContainsRune", // 🟢 fast-path check for backslash before unescape; pure function, no I/O.
 		"strings.Cut",          // 🟢 splits a string at the first separator; pure function, no I/O.
 		"strings.Fields",       // 🟢 splits whitespace-separated mountinfo fields; pure function, no I/O.
-		"strings.HasPrefix",    // 🟢 checks remote-FS-type prefix; pure function, no I/O.
+		"strings.HasPrefix",    // 🟢 checks remote-FS-type prefix and "//" UNC source prefix; pure function, no I/O.
 		"golang.org/x/sys/unix.ByteSliceToString", // 🟢 converts a NUL-terminated kernel byte buffer to a Go string; pure function, no I/O.
 		"golang.org/x/sys/unix.Getfsstat",         // 🟠 (darwin) read-only enumeration of mounted filesystems via getfsstat(2); no exec or write capability.
 		"golang.org/x/sys/unix.MNT_LOCAL",         // 🟢 (darwin) flag constant indicating a local-only filesystem; pure constant.

@@ -252,7 +252,7 @@ func parseMountInfoLine(line string) (Mount, bool) {
 	// `df -al`: GNU includes local pseudo mounts when -a re-enables
 	// them, and -l only filters out actually-remote (NFS / CIFS /
 	// fuse.sshfs) entries.
-	local := !isRemoteType(fsType)
+	local := !isRemoteSource(source, fsType)
 
 	return Mount{
 		Source:     source,
@@ -264,9 +264,29 @@ func parseMountInfoLine(line string) (Mount, bool) {
 	}, true
 }
 
-// isRemoteType reports whether a filesystem type indicates a remote /
-// network mount.
-func isRemoteType(fsType string) bool {
+// isRemoteSource reports whether a mount is remote / network-backed.
+//
+// Mirrors GNU coreutils' me_remote (lib/mountlist.c): a mount is
+// remote if its source name carries a network signature OR its type
+// is in the explicit remote-type list. Checking the source is
+// load-bearing because some remote mounts surface under generic types
+// (e.g. NFS reported as "nfs4" without our prefix matching, gpfs/acfs,
+// or "auto" mounts), but the source string still encodes the network
+// origin:
+//   - "host:/export" → NFS
+//   - "//server/share" → SMB / CIFS
+//   - "user@host:/path" → sshfs / autofs-mounted SSHFS
+//
+// Without this check `df -l` would silently keep stale remote mounts
+// and listImpl would still call statfs(2) on them, defeating the
+// documented pre-stat hang protection.
+func isRemoteSource(source, fsType string) bool {
+	if strings.HasPrefix(source, "//") {
+		return true
+	}
+	if strings.Contains(source, ":") {
+		return true
+	}
 	for _, p := range remoteTypePrefixes {
 		if strings.HasPrefix(fsType, p) {
 			return true
