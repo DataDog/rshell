@@ -11,6 +11,7 @@ description: Safe, fast, transcript-grounded host diagnostics through ./rshell w
 - Run rshell from the repository root. Do not run separate host-shell preflights such as `pwd`, `ls ./rshell`, or wrapper probes unless rshell itself fails.
 - Put `help` in the first rshell call, and run `help <command>` before uncertain flags or after unsupported-flag failures. Production deployments may restrict, omit, or extend features; target `help` is authoritative.
 - If files are needed, every rshell call includes exact literal prompt roots in `--allowed-paths=<root>` before `-c`. For primary/fallback layouts, include both roots in `--allowed-paths` and in the first file-reading script.
+- Copy prompt roots exactly in commands and final answers. Do not shorten, normalize, replace with a remembered default, drop variant/subdirectory segments, or use `Same`, `...`, `<root>`, or other placeholders.
 - Keep diagnostics read-only and bounded. Do not write files, install packages, mutate services, restart, kill, delete, use recursive grep, use `find ... -exec grep`, or repeat broad searches over the same files.
 - Final answers may describe only recorded calls and output. Do not claim real remote/customer-host access unless the transcript proves it.
 
@@ -20,8 +21,8 @@ Default budget: one inventory call plus one proof call. Use a third call only fo
 
 1. **Inventory once.** First root-touching call includes `help`, shallow `find` for each literal root, counts, and tiny `head`/`tail`/`grep -m` probes for prompt-named files/tokens. Inventory is truth: use discovered renamed files and stop probing absent default names.
 2. **Choose the ledger before call 2.** From inventory select current, rotated/history, noise/red-herring, fallback, and cross-layer files. Write down the fields needed for the answer: productive root, file names, incident window, affected object, raw cause/status tokens, driver/source, impact, recovery or absence, rejected alternatives, historical matches, selected zero counts, and counts for scale.
-3. **Prove in one labeled script.** Collect decisive raw samples with `grep -H -n -m 12..40` and scale/absence with `grep -c`. Label every block and count (`current_cause`, `count_same_source_success`, `rotated_recovered`, `dependency_driver`, etc.). Query each prompt-named theory or red herring once.
-4. **Stop or fill one gap.** If the ledger is complete, stop. If not, run one narrow follow-up for the missing field only. Prefer an explicit uncertainty statement over another discovery pass.
+3. **Prove in one labeled script.** Collect decisive raw samples with `grep -H -n -m 12..40` and scale/absence with `grep -c`. Label every block and count (`current_cause`, `count_same_source_success`, `rotated_recovered`, `dependency_driver`, etc.). Query each prompt-named theory or red herring once. Use counts for scale instead of large sample dumps.
+4. **Stop or fill one evidence gap.** Stop only after the transcript contains the raw cause line, source/driver if claimed, impact/status line, and scoped zero counts for negative claims. If one of those is missing, run one narrow follow-up for that field. If they are already present, do not run a confirmation call just to restate tokens.
 
 ## Rshell Mechanics
 
@@ -41,7 +42,7 @@ For two roots:
 - Stay within target `help`: avoid `while`, `read`, `xargs`, arrays, functions, process substitution, background jobs, `[[...]]`, and external utilities not listed by `help`.
 - Query literal files selected from inventory:
   `CUR="$R/path/from/inventory.log"; ROT="$R/path/from/inventory.log.1"; grep -H -n -m 30 -E "specific|tokens" "$CUR" "$ROT" || true`
-- Use `probe || true` or a final `true` so non-matches do not discard useful output. Avoid broad globs, large `sed` windows, unbounded `grep | tail`, and full-date regexes until the actual date prefix is observed.
+- Use `probe || true` or a final `true` so non-matches do not discard useful output. Avoid broad globs, large `sed` windows, unbounded `grep | tail`, proof-pass catch-all `tail`, `grep -m` above 60, and full-date regexes until the actual date prefix is observed.
 
 ## Evidence Discipline
 
@@ -63,8 +64,8 @@ For two roots:
 
 Use concise sections:
 
-- `Commands run`: one bullet per recorded rshell invocation. Repeat the exact `./rshell --allow-all-commands` and literal full `--allowed-paths=...`; include exact `-c` only if it is readable. Do not quote shortened, placeholder, reconstructed, variable-expanded, or prose-inside-quote commands.
-- `Finding`: one stand-alone sentence with likely cause, affected service/check/route/source, driver/actor if present, raw cause token, raw impact/status token or count, and the observed incident window.
+- `Commands run`: one bullet per recorded rshell invocation. Repeat the exact `./rshell --allow-all-commands` and literal full `--allowed-paths=...` every time; include exact `-c` only if it is readable. Never write `Same`, `.../logs`, `<root>`, shortened roots, reconstructed commands, variable-expanded commands, or prose-inside-quote commands.
+- `Finding`: one stand-alone sentence with likely cause, affected service/check/route/source, driver/actor if present, raw cause token, raw impact/status token or count, and the full observed incident date/time window when logs provide one.
 - `Evidence`: compact bullets with actual files, lines, timestamps, decisive fragments, count labels, IDs/fields, actor/source, impact, recovery, success, and zero-count markers.
 - `Not supported`: prompt theories, historical/rotated matches, recovered noise, different-source successes, missing same-source successes, unavailable capabilities, and selected zero-match layers. Label file/window.
 - `Uncertainty / next checks`: state what is not proven and suggest only safe read-only validation, audit, config/source review, rollback planning, owner follow-up, metric review, or capability follow-up. Do not propose remediation commands.
