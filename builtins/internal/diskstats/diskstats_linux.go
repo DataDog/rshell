@@ -38,6 +38,10 @@ const mountInfoPath = "/proc/self/mountinfo"
 //     (think /dev/shm or /run). GNU df lists nonzero tmpfs mounts in
 //     the default output; hiding them would make scripts that watch
 //     shared-memory or run-state usage fail silently.
+//   - "squashfs": real read-only filesystem (snap packages, AppImage,
+//     live CDs). Reports real on-disk usage. GNU df does not classify
+//     it as dummy; hiding it would make snap loop mounts disappear
+//     from `df` and `df -t squashfs` on a typical Ubuntu desktop.
 var pseudoTypes = map[string]bool{
 	"autofs":          true,
 	"binfmt_misc":     true,
@@ -62,7 +66,6 @@ var pseudoTypes = map[string]bool{
 	"rpc_pipefs":      true,
 	"securityfs":      true,
 	"selinuxfs":       true,
-	"squashfs":        true,
 	"sysfs":           true,
 	"tracefs":         true,
 }
