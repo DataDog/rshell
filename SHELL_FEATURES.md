@@ -129,6 +129,8 @@ The in-shell `help` command mirrors these feature categories: run `help` for a c
 
 - **`xargs -n`/`-L` upper cap (HardMaxArgs = 1 MiB)**: rshell rejects `-n`/`-L` values larger than `1 MiB` (1,048,576) with a usage error. GNU xargs accepts arbitrarily large values (up to system limits). The cap is a safety guard against runaway batch sizes in agent-driven scripts.
 
+- **`xargs -a -` (dash as stdin source)**: GNU xargs treats `-a -` as reading from standard input (identical to omitting `-a`). rshell does not implement this shorthand; it tries to open a file literally named `-` via `callCtx.OpenFile`, which fails with a path error. Use the pipe form (`... | xargs ...`) instead of `xargs -a -`.
+
 ## Appendix
 
 Formatting: In each category, supported features should be listed first, and the most useful ones first.

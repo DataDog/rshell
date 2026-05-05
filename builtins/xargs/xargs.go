@@ -693,10 +693,19 @@ func invokeCommand(ctx context.Context, callCtx *builtins.CallContext, o options
 		msg := stripRunnerPrefix(err.Error(), finalCmd)
 		callCtx.Errf("xargs: %s: %s\n", finalCmd, msg)
 		// Best-effort mapping to POSIX exit codes (127 / 126 / 125)
-		// based on the runner's error wording. This is brittle by
-		// design — see TestInvokeCommandUnknownCommandReturns127 and
-		// TestInvokeCommandNotAllowedViaRunCommandError in xargs_internal_test.go
-		// for the contract — and a future runner change will fall through to exit 125.
+		// based on the runner's error wording. This is brittle by design:
+		// if interp/runner_exec.go ever renames "unknown command" or "not allowed"
+		// to different strings, the mapping silently falls through to exitSubCmdNotStart
+		// (125) instead of the intended 127 or 126. The stop-on-error behaviour is
+		// not affected — all switch arms set stop=true — so this cannot cause a
+		// security regression; the worst outcome is a slightly wrong exit code.
+		//
+		// A more robust approach would be to define sentinel error types in the
+		// builtins or interp package and use errors.Is / errors.As instead of
+		// string matching. The existing unit tests (TestInvokeCommandUnknownCommandReturns127
+		// and TestInvokeCommandNotAllowedViaRunCommandError in xargs_internal_test.go)
+		// serve as the contract — a runner rename will break them before it silently
+		// degrades production behaviour.
 		switch {
 		case strings.Contains(msg, "unknown command"):
 			return exitSubCmdNotFound, true

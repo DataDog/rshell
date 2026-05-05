@@ -1,0 +1,14 @@
+# skip: GNU xargs requires an external command that exits 255; rshell simulates
+# this with `exit 255` (the exit builtin). The -I mode is used so exit only
+# receives 255 as its sole argument (no item is substituted — the {} is in a
+# discarded position).
+skip_assert_against_bash: true
+description: xargs exits 124 and aborts immediately when a sub-command exits 255 (POSIX fatal exit code).
+input:
+  script: |+
+    printf 'a\nb\n' | xargs -I{} exit 255
+expect:
+  stdout: |+
+  stderr: |+
+    xargs: exit: exited with status 255; aborting
+  exit_code: 124
