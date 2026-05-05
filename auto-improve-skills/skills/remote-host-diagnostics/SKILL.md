@@ -1,70 +1,68 @@
 ---
 name: datadog/remote-host-diagnostics
-description: Safe, fast, transcript-grounded host diagnostics through ./rshell with target help discovery, literal allowed paths, two-pass evidence proof, and concise answers.
+description: Safe, fast, transcript-grounded host diagnostics through ./rshell with target help discovery, exact allowed paths, inventory-driven proof, and concise final answers.
 ---
 
 # Remote Host Diagnostics
 
 ## Contract
 
-- Base every conclusion on completed `./rshell --allow-all-commands ...` output, not prompt hints, repository knowledge, local host state, static capability notes, or planned commands.
-- Put `help` in the first rshell call; use `help <command>` before uncertain flags or after unsupported-flag failures. Production deployments may restrict, omit, or extend features, so target `help` is authoritative.
-- If files are needed, every rshell call must include the exact literal prompt root in `--allowed-paths=<root>` before `-c`. For primary/fallback layouts, include both literal roots from the first file-reading call. No parent roots, variables, shorthands, ellipses, or "same path" wording.
+- Base conclusions only on completed `./rshell --allow-all-commands ...` output. Prompt hints, repository knowledge, static capability notes, local host state, and planned commands are not evidence.
+- Put `help` in the first rshell call. Use `help <command>` before uncertain flags or after unsupported-flag failures. Production deployments may restrict, omit, or extend features; target `help` is authoritative.
+- If files are needed, every rshell call must include the exact literal prompt root in `--allowed-paths=<root>` before `-c`. For primary/fallback layouts, include both literal roots in `--allowed-paths` and in the rshell script from the first file-reading call onward.
 - Keep diagnostics read-only and bounded. Do not write files, install packages, mutate services, restart, kill, delete, use recursive grep, use `find ... -exec grep`, or repeat broad scans over the same files.
-- Failed syntax/flag probes are not evidence about the incident. Record the failure, simplify once with supported syntax, and ground findings only in productive output.
-- Final answers may describe only recorded calls and output. Never claim real remote/customer-host access unless the transcript proves it. Never list placeholder, shortened-path, reconstructed, prose-inside-quote, or variable-expanded commands.
+- Final answers may describe only recorded calls and output. Do not claim real remote/customer-host access unless the transcript proves it. Do not list shortened, placeholder, reconstructed, variable-expanded, or prose-inside-quote commands.
 
-## Fast Investigation
+## Fast Workflow
 
-Most file/log tasks should finish in two productive rshell calls; socket-only tasks usually finish in one. Use a third file/log call only for one named missing proof: source/driver, same-source success absence, recovery absence, fallback-root proof, certificate timing/material, downstream impact, or supported socket detail.
+Most file/log investigations should finish in two productive rshell calls; socket-only tasks usually need one. Use a third file/log call only for one named missing proof, such as source/driver, current same-source success absence, recovery absence, fallback-root proof, certificate timing/material, or downstream impact.
 
-1. **Inventory once.** First root-touching call: `help`, shallow `find` for each literal root, and tiny `head`/`tail`/`grep -m` probes only for prompt-named literal files. Do not use `grep "$R"/*`, `find | while`, `read`, `xargs`, functions, or host-shell helpers; they waste time, miss nested files, or may be unsupported. Label empty/fallback roots immediately.
-2. **Prove once.** Before call 2, choose primary, historical/noise, and fallback files from inventory. In one labeled script collect current cause and impact lines, source/driver fields, prompt-theory counts, same-source success/absence counts, recovery/absence counts, historical/rotated lookalikes, and one correlation or aggregation. Cover relevant layers, but do not sweep every file by default.
-3. **Stop or fill one gap.** Before any third call, name the single missing ledger field and query only that field. Prefer a clear uncertainty statement over another discovery pass.
+1. **Inventory once.** First root-touching call: `help`, shallow `find` for each literal root, small file counts, and tiny `head`/`tail`/`grep -m` probes only for prompt-named files that exist or for discovering the date prefix. Treat inventory as truth: if a generic prompt file is absent and a renamed file exists, switch to the discovered file names and stop probing the absent default.
+2. **Prove once.** Before call 2, choose a small set of current, rotated/history, noise, fallback, and cross-layer files from inventory. In one labeled script collect raw cause/status lines, impact lines, driver/source fields, prompt-theory evidence, same-source success/absence counts, recovery/absence counts, historical lookalikes, and one correlation or aggregation. Prefer `grep -c` for scale and `grep -H -n -m 12..40` for decisive samples; avoid 80+ line dumps unless the file is tiny.
+3. **Stop or fill one gap.** Before any third call, name the missing ledger field and query only that field. Prefer a clear uncertainty statement over another discovery pass.
 
-Stop when the ledger has: productive root/file, incident window, affected object, raw cause and impact/status tokens, driver/source if present, recovery/absence, rejected alternatives, historical/rotated matches, selected zero-count layers, and counts needed for the final answer.
+Stop when the ledger has: productive root and file names, observed incident window, affected object, raw cause and impact/status tokens, driver/source if present, recovery/absence, rejected alternatives, historical/rotated matches, selected zero-count layers, and counts needed for the final answer.
 
 ## Rshell Mechanics
 
-- Run from the repository root when possible:
-  `./rshell --allow-all-commands --allowed-paths=<literal-root>[,<literal-root>] -c 'help; R="<literal-root>"; ...; true'`
-- Define path variables only inside the rshell script. Keep `-c` as one quoted string; do not splice host-shell variables, host `$(...)`, or partially quoted host paths.
-- The recorded shell command should contain the literal root inside both `--allowed-paths=` and the rshell script. Avoid nested host-shell quoting patterns that leave `'$R'` or host-expanded command substitutions in the transcript.
+- Run rshell directly from the repository root when possible:
+  `./rshell --allow-all-commands --allowed-paths=/literal/root -c 'help; R="/literal/root"; printf "inventory\n"; find "$R" -maxdepth 3 -type f | sort | head -n 80; true'`
+- For two roots:
+  `./rshell --allow-all-commands --allowed-paths=/primary/root,/fallback/root -c 'help; P="/primary/root"; H="/fallback/root"; find "$P" -maxdepth 3 -type f | sort | head -n 40; find "$H" -maxdepth 3 -type f | sort | head -n 80; true'`
+- Define path variables only inside the rshell script. Keep `-c` as one quoted string. Do not use host-shell variables, host `$(...)`, nested quote splicing such as `'"$R"'`, or wrappers like `/bin/sh -lc` to construct the rshell command.
 - Stay within target `help`: avoid `while`, `read`, `xargs`, arrays, functions, process substitution, background jobs, `[[...]]`, and external utilities not listed by `help`.
-- Inventory first, then query literal files:
-  `find "$R" -maxdepth 3 -type f | sort | head -n 80`
-  `AG="$R/path/from/inventory.log"; grep -H -n -m 40 -E "specific|tokens" "$AG" || true`
-- Make proof output self-labeling and count-based where useful:
-  `printf "same_source_success_current="; grep -c -E "accepted|success" "$CUR" || true`
-  `printf "alt_theory_current="; grep -c -E "prompt|named|tokens" "$CUR" "$ROT" || true`
-- Every sample `grep` needs `-m` unless it is `grep -c` or a tight aggregation. Avoid broad globs, large `sed` windows, unbounded `grep | tail`, repeated all-file token sweeps, and full-date regexes until the date prefix is observed. Use `probe || true` or final `true` so non-matches do not discard output.
+- Query literal files selected from inventory:
+  `CUR="$R/path/from/inventory.log"; ROT="$R/path/from/inventory.log.1"; grep -H -n -m 30 -E "specific|tokens" "$CUR" "$ROT" || true`
+- Make proof output self-labeling and count-based:
+  `printf "current_same_source_success="; grep -c -E "Accepted|success" "$CUR" || true`
+  `printf "current_prompt_theory="; grep -c -E "prompt|theory|tokens" "$CUR" "$SYS" || true`
+- Every sample `grep` needs `-m` unless it is `grep -c` or a tight aggregation. Avoid broad globs, large `sed` windows, unbounded `grep | tail`, repeated all-file token sweeps, and full-date regexes until the actual date prefix is observed. Use `probe || true` or a final `true` so non-matches do not discard useful output.
 
 ## Evidence Discipline
 
 - Query every prompt-named theory or red herring before rejecting it. Label current, rotated, previous-window, recovered, fallback, empty-root, different-object, and different-source evidence.
-- Negative claims require exact scoped zero counts or help/runtime evidence tied to queried files and window.
 - Preserve observed basenames/paths, lines, timestamps, raw tokens, IDs, routes, checks, sources, users, counts, and key fields. Do not rename values, correct odd paths, infer defaults, or paraphrase away decisive wording.
-- Every raw error/status/validity/check/source token named in the final answer must appear as an actual recorded output line; counts alone support scale, not the exact message text.
-- If scale matters, produce a count label with `grep -c`, `wc -l`, or supported `sort`/`uniq` aggregation, then repeat the observed count or approximation in the final answer. If absence matters, cite the zero count and also write the plain sentence, e.g. no matching current success/recovery was found in that scope.
-- Use prompt times as search hints, not facts. Verify the actual date/time prefix, file role, source, and object from output before narrowing queries or writing the finding.
-- Make `Finding` stand alone: affected object, incident window, raw cause token, source/driver if present, raw impact/status token or count, and decisive line/status/validity/route/key/check/source fields.
+- Every raw error/status/validity/check/source token named in the final answer must appear in recorded output. Counts support scale; they do not substitute for the exact decisive message.
+- Negative claims require exact scoped zero counts or help/runtime evidence tied to queried files and window. In the final, cite the count label and also write the plain sentence, e.g. `No current successful/accepted login from <source> was found in <file/window>.`
+- Use prompt times only as search hints. Verify actual date/time prefix, file role, source, and object from output before narrowing queries or writing the finding.
+- Make `Finding` stand alone: affected object, observed incident window, raw cause token, source/driver if present, raw impact/status token or count, and decisive line/status/validity/route/key/check/source fields.
 
 ## Domain Playbooks
 
-- **Agent/telemetry:** Separate config, credential/auth, intake/APM, queue/aggregator/collector/forwarder, sibling health, and recovery. Include current plus rotated/noise matches for validation, auth/status, flush/drop/queue/no-flush, source/transaction/config, and sibling-health terms.
-- **HTTP/service:** Correlate route plus numeric status across access/proxy, service, and dependency/system layers. For dependency exhaustion, search dependency/system logs for owner/client/job/fanout/application fields, active/max values, reserved-slot wording, and native errors.
-- **Auth/security:** Aggregate failures by source early, then prove the suspicious source's current accepted-success count. Report failed-password/invalid-user pattern, approximate scale, different-source accepted logins, and historical same-source success separately. If zero, write plainly that there was no current accepted/successful login from that source and cite the `0` scope.
-- **Certificates/container fallback:** Inspect primary and fallback roots together in the first file-reading call with both literal roots in `--allowed-paths` and in the script. State which root was empty, which produced evidence, and preserve at least one raw certificate/x509 line. Compare current time with validity fields when present, and cite timing, renewal/rotation, system, or service evidence before choosing timing versus certificate material.
-- **Sockets:** Usually one call is enough: `help; help ss; ss -tlnH || ss -tln || true`. Do not try process/PID flags unless `help ss` lists them. If flags are supported but runtime socket reads fail, say syntax is supported but collection failed in this run. If process flags are absent, state that PID/program attribution is unavailable.
+- **Agent/telemetry:** Separate config, credential/auth, intake/APM, queue/aggregator/collector/forwarder, sibling health, and recovery. Include current plus rotated/noise matches for validation, auth/status, flush/drop/queue/no-flush, source/transaction/config, and sibling-health terms. If metrics stopped, preserve the raw `no metrics flushed`/flush line and its `since` or last-success field.
+- **HTTP/service:** Correlate affected route plus numeric 500/502/status evidence across access/proxy, service, and dependency/system layers. For dependency exhaustion, search dependency/system logs for owner/client/job/fanout/application fields, active/max values, reserved-slot wording, and native errors.
+- **Auth/security:** Aggregate current failures by source early, choose the suspicious current source from the observed concentration, then prove its current accepted/success count. Report failed-password/invalid-user pattern, approximate scale, different-source accepted logins, and historical same-source success separately. Do not imply compromise when current same-source success is zero.
+- **Certificates/container fallback:** Inspect primary and fallback roots together in the first file-reading call. State which root was empty and which produced evidence. Preserve at least one raw `x509`/certificate line exactly, including `NotBefore`/`NotAfter` or current-time wording when present; then compare timing evidence with certificate material, rotation, kubelet/syslog, chrony/NTP, or service evidence before choosing a cause.
+- **Sockets:** Usually one call is enough: `help; help ss; ss -tlnH || ss -tln || true`. Do not try process/PID flags unless `help ss` lists them. If runtime socket reads fail, say syntax was supported but collection failed in this run. If process flags are absent, state that PID/program attribution is unavailable.
 
 ## Final Answer
 
 Use concise sections:
 
-- `Commands run`: one bullet per recorded rshell invocation. Each bullet independently repeats exact `./rshell --allow-all-commands`, literal full `--allowed-paths=...`, and a short purpose. Include exact `-c` only when readable; if omitted, do not quote a fake command. Never write "same command", "same path", shortened roots, or `...`.
-- `Finding`: one sentence naming likely cause, affected service/check/route/source, actor/driver, raw cause/status token, full incident window, and impact. Include raw line/status/reason/validity/source/count fields when present.
-- `Evidence`: cite actual basenames/paths, lines, timestamps, decisive fragments, counts/statuses, IDs/fields, actor/source, impact, recovery, success, `since`, and zero-count markers. Use compact label/value bullets for counts.
+- `Commands run`: one bullet per recorded rshell invocation. Each bullet repeats exact `./rshell --allow-all-commands`, the literal full `--allowed-paths=...`, and the purpose. Include exact `-c` only when readable; otherwise do not quote a fake command.
+- `Finding`: one sentence naming likely cause, affected service/check/route/source, actor/driver, raw cause/status token, full observed incident window, and impact.
+- `Evidence`: compact bullets with actual basenames/paths, lines, timestamps, decisive fragments, counts/statuses, IDs/fields, actor/source, impact, recovery, success, `since`, and zero-count markers.
 - `Not supported`: prompt theories, historical/rotated matches, recovered noise, different-source successes, missing same-source successes, unavailable capabilities, and selected zero-match layers. Label file/window.
 - `Uncertainty / next checks`: state what is not proven and suggest only safe read-only validation, audit, config/source review, rollback planning, owner follow-up, metric review, or capability follow-up. Do not propose remediation commands.
 
-Final check: concise commands, recorded output only, literal allowed paths in every command bullet, raw tokens in finding/evidence, actual file names per layer, count labels repeated, scoped zero-counts, labeled current/historical/recovered/fallback/different-source evidence, no unsupported socket/PID, real-host, compromise, placeholder-command, invented-token, or remediation claims.
+Final audit: exact prompt roots in command bullets, inventory-derived file names, raw tokens in finding/evidence, count labels repeated, scoped zero-counts plus plain absence sentences, labeled current/historical/recovered/fallback/different-source evidence, no unsupported socket/PID, real-host, compromise, placeholder-command, invented-token, or remediation claims.
