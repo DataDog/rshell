@@ -706,6 +706,10 @@ func invokeCommand(ctx context.Context, callCtx *builtins.CallContext, o options
 		callCtx.Errf("xargs: command execution not available\n")
 		return exitSubCmdNotStart, true
 	}
+	// Pre-check CommandAllowed here (before RunCommand) so xargs can emit its
+	// own "command not allowed" message; RunCommand also enforces the policy
+	// and returns (126, error), but the pre-check gives a cleaner error path
+	// without relying on parsing the runner's generic error text.
 	if callCtx.CommandAllowed != nil && !callCtx.CommandAllowed(finalCmd) {
 		callCtx.Errf("xargs: %s: command not allowed\n", finalCmd)
 		return exitSubCmdNotAllowed, true
@@ -916,9 +920,9 @@ func (t *tokenizer) next(ctx context.Context) (item string, endedLine, more bool
 	}
 	switch t.o.mode {
 	case modeNull:
-		return t.nextDelimited(ctx, 0, false)
+		return t.nextDelimited(ctx, 0)
 	case modeDelim:
-		return t.nextDelimited(ctx, t.o.delim, false)
+		return t.nextDelimited(ctx, t.o.delim)
 	case modeLine:
 		return t.nextLineQuoted(ctx)
 	default:
@@ -927,10 +931,10 @@ func (t *tokenizer) next(ctx context.Context) (item string, endedLine, more bool
 }
 
 // nextDelimited reads bytes until the next occurrence of sep or EOF.
-// When skipBlank is true (used by modeLine), an empty token between
-// adjacent separators is silently dropped. The returned endedLine is
-// always true: each delimited item counts as one logical line for -L.
-func (t *tokenizer) nextDelimited(ctx context.Context, sep byte, skipBlank bool) (string, bool, bool, error) {
+// Each delimited item counts as one logical line for -L. The skipBlank
+// parameter was removed: both callers (modeNull and modeDelim) always
+// pass false, and modeLine dispatches to nextLineQuoted instead.
+func (t *tokenizer) nextDelimited(ctx context.Context, sep byte) (string, bool, bool, error) {
 	t.buf = t.buf[:0]
 	for {
 		if err := t.pollCtx(ctx); err != nil {
@@ -940,7 +944,7 @@ func (t *tokenizer) nextDelimited(ctx context.Context, sep byte, skipBlank bool)
 		if err != nil {
 			if errors.Is(err, io.EOF) {
 				t.eof = true
-				if len(t.buf) == 0 || (skipBlank && isEofMarker(t.o, t.buf)) {
+				if len(t.buf) == 0 {
 					return "", false, false, nil
 				}
 				return string(t.buf), true, true, nil
@@ -948,19 +952,7 @@ func (t *tokenizer) nextDelimited(ctx context.Context, sep byte, skipBlank bool)
 			return "", false, false, err
 		}
 		if b == sep {
-			if skipBlank && len(t.buf) == 0 {
-				continue
-			}
-			// modeLine (-I) honors -E: a line matching eofStr terminates input.
-			if skipBlank && isEofMarker(t.o, t.buf) {
-				t.eof = true
-				return "", false, false, nil
-			}
 			return string(t.buf), true, true, nil
-		}
-		// In modeLine (-I), GNU trims leading space/tab from each item.
-		if skipBlank && len(t.buf) == 0 && (b == ' ' || b == '\t') {
-			continue
 		}
 		if err := t.pushByte(b); err != nil {
 			return "", false, false, err
