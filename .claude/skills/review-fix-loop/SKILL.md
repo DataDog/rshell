@@ -122,10 +122,14 @@ Similarly, `iteration` and `SUCCESS_COUNT` are durable — they are embedded in 
 iteration=$(TaskList | grep "Step 2: Run the review-fix loop" | grep -oE 'iteration [0-9]+' | grep -oE '[0-9]+' | tail -1)
 # Recover SUCCESS_COUNT from Step 3 task subject: "Step 3: Verify clean state (N/5)"
 SUCCESS_COUNT=$(TaskList | grep "Step 3: Verify clean state" | grep -oE '[0-9]+/5' | grep -oE '[0-9]+' | head -1)
+# Recover ITERATION_START_TIME from Step 2 task subject (it is embedded there for exactly this purpose):
+ITERATION_START_TIME=$(TaskList | grep "Step 2: Run the review-fix loop" | grep -oE '[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z' | tail -1)
 # Defaults if task subjects have not been updated yet (first iteration):
 [ -z "$iteration" ] && iteration=1
 [ -z "$SUCCESS_COUNT" ] && SUCCESS_COUNT=0
 ```
+
+`iteration_had_no_findings` is **not** embedded in task state (it is an in-memory variable). If context resets after 2E but before Step 3 consumes it, re-derive it structurally at Step 3 entry by re-running the findings-count snippet above using the recovered `$ITERATION_START_TIME`. This is always safe to re-run (queries the API, never reads comment bodies). See the Step 3 entry note for the explicit instruction.
 
 ---
 
@@ -180,7 +184,8 @@ if [ "$findings_count" -eq 0 ] && \
   # Conservative: if review body contains badge-format finding rows (shields.io badge or ![Px Badge]), override
   if echo "$review_body" | grep -qE '^\|.*shields\.io/badge/P[0-3]-|^\|.*!\[P[0-3][[:space:]]*Badge\]'; then
     # Note: this can false-positive when reviewing SKILL.md PRs that include badge table rows
-    # in their diff (e.g., code-review/SKILL.md). This is safe: conservative direction only
+    # in their diff (e.g., review-fix-loop/SKILL.md, code-review/SKILL.md, or any SKILL.md that
+    # documents findings tables). This is safe: conservative direction only
     # (triggers an extra iteration, never a missed finding).
     echo "WARNING: body-only findings detected; overriding iteration_had_no_findings=false" >&2
     iteration_had_no_findings=false
@@ -397,6 +402,8 @@ Run a final verification regardless of how the loop exited:
 Record the final state of each dimension (unresolved thread count, CI).
 
 > ⚠️ **`SUCCESS_COUNT` is initialized to `0` exactly once — on the very first entry into Step 3 for this loop run. It is NEVER reset by re-entering Step 2, and NEVER re-initialized when Step 3 is re-entered from Step 2. Only the explicit `SUCCESS_COUNT = 0` assignments in the failure branches below may reset it.**
+
+**Step 3 entry — re-derive `iteration_had_no_findings` if not in context:** If `iteration_had_no_findings` is not already set (e.g., because the agent's context was reset between 2E and Step 3), treat it as `false` and re-derive it structurally by re-running the findings-count snippet from 2A1 using the recovered `$ITERATION_START_TIME`. **Never assume `true` for an undefined value** — the safe default is `false` (conservative: does not advance `SUCCESS_COUNT`). The re-run is always safe: it queries the API and counts inline comments; it never reads comment bodies.
 
 Maintain a `SUCCESS_COUNT` integer (initialize to `0` on first entry into Step 3; never re-initialize thereafter) tracking how many times Step 3 has passed all three verifications **AND** the last iteration had no findings from the self-review. Each success must be separated by exactly one full Step 2 iteration — never increment `SUCCESS_COUNT` twice from the same iteration.
 
