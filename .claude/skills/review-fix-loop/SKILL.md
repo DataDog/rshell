@@ -120,8 +120,6 @@ Include a summary table at the top with columns: # | Priority | File | Finding."
 ```
 The external reviews arrive asynchronously — their comments will be picked up by **address-pr-comments** in Sub-step 2B.
 
-**Completion check:** Comment posted. Mark Sub-step 2A1 as `completed`. ▶ Immediately proceed to Sub-step 2A2.
-
 ### Sub-step 2A2 — Self-review
 
 Run the **code-review** skill on the PR:
@@ -136,8 +134,6 @@ gh pr comment <pr-number> --body "<iteration N self-review result: number of fin
 ```
 
 Record the count of P0, P1, and P2 findings from the self-review as `P0_P1_P2_COUNT`. P3 findings are excluded from this count. This value is captured **before** 2B runs any fixes — it reflects all P0/P1/P2 findings the self-review raised this iteration, resolved or not. An iteration where fixes were applied to P0/P1/P2 findings still has a non-zero `P0_P1_P2_COUNT` and will not count toward the success streak; the next iteration must re-review from scratch and find zero P0/P1/P2 issues before the streak can grow.
-
-**Completion check:** Self-review done and PR comment posted. Mark Sub-step 2A2 as `completed`. ▶ Immediately proceed to the Pre-check before 2B.
 
 ---
 
@@ -160,7 +156,7 @@ This reads all unresolved review comments, evaluates validity, implements fixes,
 
 **Commit message prefix:** All commits created in this sub-step MUST be prefixed with the current loop iteration number, e.g. `[iter 3] Fix null check in parser`.
 
-**Completion check:** All valid PR comments addressed and pushed. Mark Sub-step 2B as `completed`. ▶ Immediately proceed to Sub-step 2C.
+Wait for completion before proceeding to 2C.
 
 ### Sub-step 2C — Fix CI failures
 
@@ -172,7 +168,7 @@ This checks for failing CI jobs, downloads logs, reproduces failures locally, fi
 
 **Commit message prefix:** All commits created in this sub-step MUST be prefixed with the current loop iteration number, e.g. `[iter 3] Fix flaky test timeout`.
 
-**Completion check:** All CI failures fixed and pushed (or no failures found). Mark Sub-step 2C as `completed`. ▶ Immediately proceed to Sub-step 2D.
+Wait for completion before proceeding to 2D.
 
 ---
 
