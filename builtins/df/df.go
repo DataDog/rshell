@@ -778,7 +778,15 @@ func printRows(callCtx *builtins.CallContext, header []string, rows []row, withT
 		table = append(table, fields)
 	}
 
-	widths := make([]int, len(table[0]))
+	// Seed widths with GNU coreutils' minimum column widths
+	// (lib/df.c, field_data). On hosts where every filesystem name
+	// fits in fewer than 14 chars (typical containers with sources
+	// like /dev/vda, tmpfs, shm) the source column would otherwise
+	// collapse to "Filesystem 1K-blocks ..." instead of GNU's padded
+	// "Filesystem      1K-blocks ...". The Used minimum (5) keeps the
+	// column from undercutting the header when the host has only
+	// tiny filesystems.
+	widths := minColumnWidths(withType)
 	for _, row := range table {
 		for i, cell := range row {
 			widths[i] = max(widths[i], len(cell))
@@ -809,6 +817,19 @@ func printRows(callCtx *builtins.CallContext, header []string, rows []row, withT
 		b.WriteByte('\n')
 		callCtx.Out(b.String())
 	}
+}
+
+// minColumnWidths returns the per-column minimum widths used by GNU
+// coreutils df (see lib/df.c field_data: SOURCE_FIELD=14, FSTYPE=4,
+// SIZE/USED/AVAIL=5, USE%=4). Headers are always at least the label
+// width, so the only minimums that exceed their header are SOURCE
+// (14 vs "Filesystem"=10) and USED (5 vs "Used"=4).
+func minColumnWidths(withType bool) []int {
+	if withType {
+		// Filesystem, Type, blocks, Used, Available, Use%, Mounted on
+		return []int{14, 4, 5, 5, 5, 4, 0}
+	}
+	return []int{14, 5, 5, 5, 4, 0}
 }
 
 // printHelp emits the help text to stdout (per RULES.md, help is not an
