@@ -633,10 +633,8 @@ func (r *runtime) splitFields(rec string) []string {
 			out = append(out, string(rec[i]))
 		}
 		return out
-	case r.fs == "\t":
-		return capFields(strings.Split(rec, "\t"))
 	default:
-		// Single character or fixed string.
+		// Single character or fixed string (including "\t").
 		return capFields(strings.Split(rec, r.fs))
 	}
 }
@@ -696,6 +694,9 @@ func (r *runtime) setField(i int, val string) error {
 		r.fields = r.splitFields(val)
 		r.nf = int64(len(r.fields))
 		return nil
+	}
+	if len(val) > MaxRecordBytes {
+		return fmt.Errorf("field $%d value exceeds maximum record size %d", i, MaxRecordBytes)
 	}
 	for len(r.fields) < i {
 		r.fields = append(r.fields, "")

@@ -328,9 +328,13 @@ func (r *runtime) bSub(args []expr, global bool) (awkValue, error) {
 		if r.ctx.Err() != nil {
 			return uninitValue, r.ctx.Err()
 		}
+		allMatches := compiled.FindAllStringSubmatchIndex(s, -1)
+		if len(allMatches) > MaxLoopIterations {
+			return uninitValue, fmt.Errorf("gsub: match count %d exceeds maximum %d", len(allMatches), MaxLoopIterations)
+		}
 		var sb strings.Builder
 		last := 0
-		for i, m := range compiled.FindAllStringSubmatchIndex(s, -1) {
+		for i, m := range allMatches {
 			// Check for context cancellation every 1024 iterations.
 			if i%1024 == 0 && r.ctx.Err() != nil {
 				return uninitValue, r.ctx.Err()
