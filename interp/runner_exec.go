@@ -531,6 +531,13 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 		r.breakEnclosing = result.BreakN
 		r.contnEnclosing = result.ContinueN
 		if result.Code == 0 && result.NewWorkDir != "" {
+			// SECURITY: NewWorkDir is applied without a second sandbox
+			// re-validation here. The builtin is responsible for having
+			// already called callCtx.StatFile on NewWorkDir before
+			// returning, so the sandbox has already verified the path.
+			// Any future builtin that forgets this step could set the
+			// runner's working directory to an unvalidated path.
+			// See builtins.Result.NewWorkDir for the full contract.
 			r.applyNewWorkDir(result.NewWorkDir)
 			r.lastCallChangedWorkDir = true
 		}

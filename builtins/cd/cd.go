@@ -150,6 +150,14 @@ func registerFlags(flags *builtins.FlagSet) builtins.HandlerFunc {
 	// Without this, pflag would parse `cd sub -P` as `cd -P sub`, silently
 	// changing behaviour compared to bash.
 	flags.SetInterspersed(false)
+	// -e is a bash extension: with -P, exit non-zero if the physical path
+	// cannot be determined. Without -P it is a no-op. We accept but ignore
+	// it so scripts using `cd -e dir` or `cd -Pe dir` do not fail with
+	// "unknown flag". Matches bash ≥ 4.0 behaviour.
+	_ = flags.BoolP("_e", "e", false, "(ignored) bash compat: exit non-zero if physical path cannot be determined")
+	if f := flags.Lookup("_e"); f != nil {
+		f.Hidden = true
+	}
 	help := flags.BoolP("help", "h", false, "print usage and exit")
 
 	return func(ctx context.Context, callCtx *builtins.CallContext, args []string) builtins.Result {
@@ -407,6 +415,13 @@ func resolvePhysical(ctx context.Context, callCtx *builtins.CallContext, absPath
 			// are resolved. The mandatory StatFile call at the end of
 			// the cd handler is the actual access-control gate and will
 			// reject any out-of-sandbox final target.
+			// NOTE: sandbox.LstatFile also returns ErrPermission for
+			// real filesystem permission errors (e.g. a symlink with
+			// mode 000). In that case we also skip following — the
+			// final StatFile call rejects with permission denied
+			// regardless. This means the component is treated as
+			// non-symlink, which is correct: we cannot follow a
+			// symlink we cannot read.
 			// For any intermediate component opaque to the sandbox we
 			// simply advance resolved without following it.
 			if errors.Is(err, fs.ErrPermission) {

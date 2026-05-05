@@ -1,0 +1,18 @@
+# Derived from bash: cd . stays in the same directory and updates $OLDPWD.
+description: cd . stays in the current directory and updates OLDPWD.
+setup:
+  files:
+    - path: sub/keep
+      content: ""
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    cd sub
+    BEFORE="$PWD"
+    cd .
+    [ "$PWD" = "$BEFORE" ] && [ "$OLDPWD" = "$BEFORE" ] && echo ok
+expect:
+  stdout: |+
+    ok
+  stderr: ""
+  exit_code: 0
