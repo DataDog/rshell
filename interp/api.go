@@ -280,11 +280,15 @@ func New(opts ...RunnerOption) (*Runner, error) {
 		r.Env = expand.ListEnviron()
 	}
 	if r.Dir == "" {
-		dir, err := os.Getwd()
-		if err != nil {
-			return nil, fmt.Errorf("could not get current dir: %w", err)
+		if paths := r.sandbox.Paths(); len(paths) > 0 {
+			r.Dir = paths[0]
+		} else {
+			dir, err := os.Getwd()
+			if err != nil {
+				return nil, fmt.Errorf("could not get current dir: %w", err)
+			}
+			r.Dir = dir
 		}
-		r.Dir = dir
 	}
 	if r.stdout == nil || r.stderr == nil {
 		StdIO(r.stdin, r.stdout, r.stderr)(r)
