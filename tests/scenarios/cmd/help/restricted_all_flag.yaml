@@ -1,63 +1,19 @@
-description: Help --all shows features, unsupported functionality, and allowed/not-allowed commands with descriptions.
+description: Help --all with a restricted allowed_commands set shows allowed commands and a full description table for disabled commands. Uses stdout_contains so the test does not need editing each time a new builtin is added — exact registry coverage lives in builtins/tests/help/help_test.go.
 skip_assert_against_bash: true
 input:
   allowed_commands: ["rshell:echo", "rshell:help"]
   script: |+
     help --all
 expect:
-  stdout: |+
-    rshell (dev) — 2 of 30 commands enabled
-
-    Features:
-    commands            Registered commands run inside the interpreter; no unregistered commands without an external handler.
-    variables           Assignments, expansion, inline env, command substitution; no arrays/arithmetic/advanced params.
-    control-flow        for/if/&&/||/!/groups/subshells; no while/case/select/functions.
-    pipes-redirections  Pipes, stdin/heredocs, /dev/null redirects, fd dup; no arbitrary file writes.
-    quoting-expansion   Quotes, globbing, continuations, comments; no extglob/tilde/process substitution.
-    execution           AllowedCommands, AllowedPaths, timeouts, ProcPath; no background jobs/coprocs/time.
-    environment         Empty by default, caller Env, IFS/ALLOWED_PATHS; no host env inheritance/export.
-    bash-divergences    Intentional bash differences captured here. Currently: one shared time reference per Run().
-
-    Not supported:
-      - Expansions: arithmetic $((...)), arrays, advanced ${...} operations, tilde expansion, process substitution, extended globbing.
-      - Control flow: while/until, case, select, C-style for ((...)), and shell functions.
-      - Execution: external commands by default, background jobs, coprocesses, time, [[...]], ((...)), declare/export/local/readonly/let.
-      - I/O and environment: arbitrary output file redirects, |&, herestrings, read-write redirects, input fd duplication, host env inheritance.
-
-    Commands:
-    echo  write arguments to stdout
-    help  display help for features and commands
-    
-    Disabled commands:
-    [         evaluate conditional expression
-    break     exit from a loop
-    cat       concatenate and print files
-    continue  continue a loop iteration
-    cut       remove sections from each line
-    du        estimate file space usage
-    exit      exit the shell
-    false     return unsuccessful exit status
-    find      search for files in a directory hierarchy
-    grep      print lines that match patterns
-    head      output the first part of files
-    ip        show network interface and routing information
-    ls        list directory contents
-    ping      send ICMP echo requests to a network host
-    printf    format and print data
-    ps        report process status
-    pwd       print working directory
-    sed       stream editor for filtering and transforming text
-    sort      sort lines of text files
-    ss        display socket statistics
-    strings   print printable character sequences
-    tail      output the last part of files
-    test      evaluate conditional expression
-    tr        translate or delete characters
-    true      return successful exit status
-    uname     print system information
-    uniq      report or omit repeated lines
-    wc        print newline, word, and byte counts
-    
-    Run 'help <feature|command>' for more information on a specific topic.
+  stdout_contains:
+    - "rshell"
+    - "commands enabled"
+    - "Features:"
+    - "Not supported:"
+    - "Commands:"
+    - "echo  write arguments to stdout"
+    - "help  display help for features and commands"
+    - "Disabled commands:\n"
+    - "Run 'help <feature|command>' for more information on a specific topic."
   stderr: ""
   exit_code: 0
