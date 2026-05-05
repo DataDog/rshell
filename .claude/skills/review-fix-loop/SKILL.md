@@ -215,6 +215,12 @@ if [ "$findings_count" -eq 0 ] && \
   # genuine body-only finding from quoted diff context, so we skip the grep (false-positive avoidance).
   # Note: when findings_count > 0 we would not be in this block at all, so has_inline > 0 implies
   # a review-level inline count mismatch (edge case) rather than the normal path.
+  #
+  # Known limitation: when skill_md_pr=true AND has_inline=0, the grep is skipped entirely.
+  # This means a genuine body-only finding (one that code-review could not attach inline) on a
+  # SKILL.md PR is silently missed and iteration_had_no_findings remains true. The 30-iteration
+  # ceiling is the safety net for this edge case — the loop will exhaust iterations rather than
+  # achieving 5 genuinely clean passes with an undetected body-only finding.
   skill_md_pr=$(gh pr view "$PR_NUMBER" --json files \
     --jq '[.files[].path] | any(startswith(".claude/skills/") and endswith("/SKILL.md"))' 2>/dev/null || echo false)
   review_id=$(echo "$latest_review" | jq -r '.id // empty' 2>/dev/null || echo "")
@@ -394,7 +400,16 @@ Log the iteration result before continuing or stopping:
 
 **GATE CHECK**: Call TaskList. Step 2 must be `completed`. Set Step 3 to `in_progress`.
 
-Update the Step 3 task subject to reflect the current `SUCCESS_COUNT`: `"Step 3: Verify clean state (SUCCESS_COUNT/5)"`.
+**Immediately recover durable variables before reading or updating Step 3** — an agent entering sequentially after a context reset must recover `SUCCESS_COUNT` from the existing task subject *before* overwriting it, or a real streak value will be lost:
+```
+# Always recover before any Step 3 update — a stale/zero value overwrites a valid streak:
+SUCCESS_COUNT=$(TaskList | grep "Step 3: Verify clean state" | grep -oE '[0-9]+/5' | grep -oE '[0-9]+' | head -1)
+[ -z "$SUCCESS_COUNT" ] && SUCCESS_COUNT=0
+iteration=$(TaskList | grep "Step 2: Run the review-fix loop" | grep -oE 'iteration [0-9]+' | grep -oE '[0-9]+' | tail -1)
+[ -z "$iteration" ] && iteration=1
+```
+
+Now update the Step 3 task subject to reflect the recovered `SUCCESS_COUNT`: `"Step 3: Verify clean state (SUCCESS_COUNT/5)"`.
 
 Run a final verification regardless of how the loop exited:
 
@@ -451,16 +466,7 @@ Record the final state of each dimension (unresolved thread count, CI).
 
 > ⚠️ **`SUCCESS_COUNT` is initialized to `0` exactly once — on the very first entry into Step 3 for this loop run. It is NEVER reset by re-entering Step 2, and NEVER re-initialized when Step 3 is re-entered from Step 2. Only the explicit `SUCCESS_COUNT = 0` assignments in the failure branches below may reset it.**
 
-**Step 3 entry — recover durable variables before making any decisions:** If context was reset between 2E and Step 3, recover `SUCCESS_COUNT` and `iteration` from their task subjects before reading or updating Step 3:
-```
-# Always recover these before any Step 3 branch decision — a stale/zero value overwrites a valid streak:
-SUCCESS_COUNT=$(TaskList | grep "Step 3: Verify clean state" | grep -oE '[0-9]+/5' | grep -oE '[0-9]+' | head -1)
-[ -z "$SUCCESS_COUNT" ] && SUCCESS_COUNT=0
-iteration=$(TaskList | grep "Step 2: Run the review-fix loop" | grep -oE 'iteration [0-9]+' | grep -oE '[0-9]+' | tail -1)
-[ -z "$iteration" ] && iteration=1
-```
-
-**Step 3 entry — recover or re-derive `iteration_had_no_findings` if not in context:** If `iteration_had_no_findings` is not already set (e.g., because the agent's context was reset between 2E and Step 3), follow this deterministic decision tree — each step is only reached if the previous step yields no value:
+**Step 3 entry — recover or re-derive `iteration_had_no_findings` if not in context** (do this after recovering `SUCCESS_COUNT` and `iteration` above): If `iteration_had_no_findings` is not already set (e.g., because the agent's context was reset between 2E and Step 3), follow this deterministic decision tree — each step is only reached if the previous step yields no value:
 
 1. **Try TaskList** — grep for `no_findings=(true|false)` in the 2A1 task subject. If found → use it (authoritative; already cross-checked in 2A1):
    ```bash
@@ -505,11 +511,12 @@ iteration=$(TaskList | grep "Step 2: Run the review-fix loop" | grep -oE 'iterat
                --jq 'length' 2>/dev/null || echo 0)
              if ! [[ "$has_inline" =~ ^[0-9]+$ ]]; then has_inline=0; fi
            fi
-           if { [ "$skill_md_pr" != "true" ] || [ "$has_inline" -gt 0 ]; } && \
-              [ "$(echo "$latest_review" | jq -r '.state // "NONE"' 2>/dev/null || echo "NONE")" != "NONE" ] && \
-              printf '%s\n' "$review_body" | grep -qE 'shields\.io/badge/P[0-3]-|!\[P[0-3][[:space:]]*Badge\]'; then
-             echo "WARNING: recovery body-only findings detected; overriding iteration_had_no_findings=false" >&2
-             iteration_had_no_findings=false
+           if [ "$(echo "$latest_review" | jq -r '.state // "NONE"' 2>/dev/null || echo "NONE")" != "NONE" ]; then
+             if { [ "$skill_md_pr" != "true" ] || [ "$has_inline" -gt 0 ]; } && \
+                printf '%s\n' "$review_body" | grep -qE 'shields\.io/badge/P[0-3]-|!\[P[0-3][[:space:]]*Badge\]'; then
+               echo "WARNING: recovery body-only findings detected; overriding iteration_had_no_findings=false" >&2
+               iteration_had_no_findings=false
+             fi
            fi
          fi
        fi
