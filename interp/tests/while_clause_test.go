@@ -231,6 +231,45 @@ func TestWhilePipeOutputToHead(t *testing.T) {
 	assert.Equal(t, "a\naa\naaa\n", stdout)
 }
 
+// --- break/continue inside subshells nested within a loop ---
+//
+// In bash, a subshell (pipeline stage, `(...)`, or `$(...)`) created inside a
+// loop inherits the "inside a loop" context for the purpose of validating
+// break/continue: bash silently no-ops break/continue in the subshell rather
+// than printing "break: only meaningful in a loop". The subshell still cannot
+// actually break out of the parent loop (its break counters do not propagate
+// back), but the diagnostic is suppressed. These tests guard against the
+// regression where a subshell loses inLoop and emits a spurious diagnostic.
+
+func TestWhileBreakInPipelineSubshellNoDiagnostic(t *testing.T) {
+	stdout, stderr, code := whileRun(t, `while break | cat; do echo body; break; done`)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "body\n", stdout)
+	assert.Empty(t, stderr, "break in pipeline subshell should not print a diagnostic when inside a loop")
+}
+
+func TestWhileBreakInCmdSubstNoDiagnostic(t *testing.T) {
+	stdout, stderr, code := whileRun(t, `while true; do x=$(break); echo body; break; done`)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "body\n", stdout)
+	assert.Empty(t, stderr, "break in $(...) should not print a diagnostic when the substitution runs inside a loop")
+}
+
+func TestWhileBreakInBareSubshellNoDiagnostic(t *testing.T) {
+	stdout, stderr, code := whileRun(t, `while true; do (break); echo after; break; done`)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "after\n", stdout)
+	assert.Empty(t, stderr, "break in (...) should not print a diagnostic when the subshell runs inside a loop")
+}
+
+// Outside any loop, a subshell's break must still print the diagnostic. The
+// subshell does not synthesize a loop context out of thin air — it inherits
+// whatever the parent has.
+func TestBreakInBareSubshellOutsideLoopStillDiagnoses(t *testing.T) {
+	_, stderr, _ := whileRun(t, `(break)`)
+	assert.Contains(t, stderr, "break is only useful in a loop")
+}
+
 // --- exit propagates out of the loop ---
 
 func TestExitInsideWhileBody(t *testing.T) {

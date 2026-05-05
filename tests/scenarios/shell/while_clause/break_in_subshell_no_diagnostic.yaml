@@ -1,0 +1,13 @@
+description: A break inside a subshell nested within a loop must not print "only useful in a loop". The subshell inherits the loop context for break/continue validation, even though break does not actually escape the subshell.
+input:
+  script: |+
+    while true; do
+      (break)
+      echo after
+      break
+    done
+expect:
+  stdout: |+
+    after
+  stderr: |+
+  exit_code: 0
