@@ -170,6 +170,9 @@ func (r *runtime) applyVarAssignment(s string) error {
 		}
 		r.rs = val
 	case "SUBSEP":
+		if len(val) > MaxStringBytes {
+			return errors.New("SUBSEP too long")
+		}
 		r.subsep = val
 	case "CONVFMT":
 		if len(val) > MaxStringBytes {
@@ -192,6 +195,9 @@ func (r *runtime) applyVarAssignment(s string) error {
 	case "RLENGTH":
 		r.rlength = floatToInt64Safe(parseAwkNumber(val))
 	default:
+		if len(val) > MaxStringBytes {
+			return fmt.Errorf("variable value too long (max %d bytes)", MaxStringBytes)
+		}
 		r.globals[name] = strNumValue(val)
 	}
 	return nil
@@ -1072,6 +1078,9 @@ func (r *runtime) execPrintf(args []expr) error {
 }
 
 // indexKey builds the SUBSEP-joined string key for arr[i,j,...].
+// Note: the running totalLen accumulates len(subsep) for every key part
+// (N parts → N separators counted instead of N-1). This makes the cap fire
+// slightly earlier than strictly necessary but is conservative and safe.
 func (r *runtime) indexKey(indices []expr) (string, error) {
 	parts := make([]string, len(indices))
 	totalLen := 0
