@@ -273,6 +273,34 @@ func TestBreakInBareSubshellOutsideLoopStillDiagnoses(t *testing.T) {
 	assert.Contains(t, stderr, "break is only useful in a loop")
 }
 
+// Bash treats a `break` invoked inside a `{...}` pipeline stage as
+// out-of-context: it prints the "only useful in a loop" diagnostic AND keeps
+// running the rest of the stage's statements. Pipeline subshells must not
+// inherit the parent's loop context for compound stages — otherwise the
+// stage-internal break/continue counter aborts the rest of the stage's
+// statements and silently drops commands that bash still runs.
+func TestWhileBreakInGroupedPipelineStageContinuesStage(t *testing.T) {
+	stdout, stderr, code := whileRun(t,
+		`while true; do echo before; true | { break; echo bothered; }; echo afterpipe; break; done`)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "before\nbothered\nafterpipe\n", stdout)
+	assert.Contains(t, stderr, "break")
+	assert.Contains(t, stderr, "loop")
+}
+
+// Same property for `continue` inside a `{...}` pipeline stage. We use a
+// `for` loop because the while-loop test helper here does not support `((…))`
+// arithmetic commands; the property under test is the same regardless of
+// loop kind.
+func TestForContinueInGroupedPipelineStageContinuesStage(t *testing.T) {
+	stdout, stderr, code := whileRun(t,
+		`for i in 1 2; do echo before $i; { continue; echo bothered $i; } | cat; echo afterpipe $i; done`)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "before 1\nbothered 1\nafterpipe 1\nbefore 2\nbothered 2\nafterpipe 2\n", stdout)
+	assert.Contains(t, stderr, "continue")
+	assert.Contains(t, stderr, "loop")
+}
+
 // --- exit propagates out of the loop ---
 
 func TestExitInsideWhileBody(t *testing.T) {

@@ -155,17 +155,26 @@ func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {
 			rLeft.stdout = pw
 			rLeft.stderr = safeStderr
 			rLeft.inPipeline = true
-			// Pipeline stages inherit the parent's loop context: bash silently
-			// no-ops break/continue invoked inside a pipeline stage rather than
-			// printing the "only useful in a loop" diagnostic. The break/
-			// continue counters stay in the subshell — they cannot escape — but
-			// the diagnostic is suppressed.
-			rLeft.inLoop = r.inLoop
+			// Pipeline stages inherit the parent's loop context only when the
+			// stage is a simple command. Bash silently no-ops a bare
+			// `break`/`continue` invoked as an entire pipeline stage, but
+			// when the stage is a compound command (`{...}`, `(...)`, an if
+			// chain, etc.) bash prints the "only useful in a loop"
+			// diagnostic AND keeps executing the rest of the stage.
+			// Inheriting inLoop unconditionally would suppress the
+			// diagnostic for compound stages and — worse — let the
+			// stage-internal break/continue counter abort the rest of the
+			// stage's statements, dropping commands that bash still runs.
+			if isSimpleCmd(cm.X) {
+				rLeft.inLoop = r.inLoop
+			}
 			rRight := r.subshell(true)
 			rRight.stdin = pr
 			rRight.stderr = safeStderr
 			rRight.inPipeline = true
-			rRight.inLoop = r.inLoop
+			if isSimpleCmd(cm.Y) {
+				rRight.inLoop = r.inLoop
+			}
 			var wg sync.WaitGroup
 			wg.Add(1)
 			go func() {
@@ -264,6 +273,19 @@ func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {
 	default:
 		r.exit.fatal(fmt.Errorf("unsupported command node: %T", cm))
 	}
+}
+
+// isSimpleCmd reports whether a pipeline stage is a simple command (a single
+// CallExpr) versus a compound command (block, subshell, if-chain, loop, etc.).
+// Bash silently no-ops a bare `break`/`continue` invoked as the entirety of a
+// pipeline stage, but prints the diagnostic when the stage is compound — so we
+// only inherit the parent loop context for simple-command stages.
+func isSimpleCmd(st *syntax.Stmt) bool {
+	if st == nil {
+		return false
+	}
+	_, ok := st.Cmd.(*syntax.CallExpr)
+	return ok
 }
 
 // execWhileClause runs a while or until loop. Both share the same AST node;
