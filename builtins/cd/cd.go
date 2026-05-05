@@ -362,10 +362,13 @@ func registerFlags(flags *builtins.FlagSet) builtins.HandlerFunc {
 
 		// On Unix, entering a directory requires execute (search) permission.
 		// StatFile can succeed even when the user lacks that permission, so
-		// check access explicitly via AccessFile. This is a no-op on platforms
-		// where AccessFile is nil (Windows, embedded use) or when the
-		// permission check is not meaningful.
-		if callCtx.AccessFile != nil {
+		// check access explicitly via AccessFile. This is skipped on Windows
+		// because Windows has no POSIX execute bits for directories — the
+		// sandbox always denies X_OK checks on Windows (see
+		// allowedpaths.accessCheck), so applying the check here would break
+		// every cd on Windows. On Unix, AccessFile is nil only for embedded
+		// use (hand-constructed CallContext); the runner always wires it.
+		if callCtx.AccessFile != nil && runtime.GOOS != "windows" {
 			// 0x01 = X_OK (execute/search permission)
 			if err := callCtx.AccessFile(ctx, absPath, 0x01); err != nil {
 				callCtx.Errf("cd: %s: %s\n", display, formatErr(callCtx, err))
