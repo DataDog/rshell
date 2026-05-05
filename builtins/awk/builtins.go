@@ -250,7 +250,32 @@ func (r *runtime) bSplit(args []expr) (awkValue, error) {
 	var parts []string
 	switch {
 	case sepRe != nil:
-		parts = sepRe.Split(s, -1)
+		// Use FindAllStringIndex to replicate mawk: only split on non-empty matches.
+		// Go's regexp.Split includes zero-width match points (e.g. /x*/ matches
+		// every position), while mawk ignores empty-string matches and returns the
+		// original string as a single field when no non-empty match is found.
+		allIdx := sepRe.FindAllStringIndex(s, -1)
+		if allIdx == nil {
+			parts = []string{s}
+		} else {
+			var nonEmpty [][2]int
+			for _, m := range allIdx {
+				if m[0] != m[1] {
+					nonEmpty = append(nonEmpty, [2]int{m[0], m[1]})
+				}
+			}
+			if len(nonEmpty) == 0 {
+				parts = []string{s}
+			} else {
+				parts = make([]string, 0, len(nonEmpty)+1)
+				last := 0
+				for _, m := range nonEmpty {
+					parts = append(parts, s[last:m[0]])
+					last = m[1]
+				}
+				parts = append(parts, s[last:])
+			}
+		}
 	case sep == " ":
 		parts = strings.Fields(s)
 	case sep == "":

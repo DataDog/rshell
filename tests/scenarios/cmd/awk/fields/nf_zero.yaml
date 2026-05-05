@@ -1,0 +1,9 @@
+description: NF=0 clears all fields and sets $0 to empty string.
+input:
+  script: |+
+    echo 'a b c' | awk '{NF=0; print NF, "[" $0 "]"}'
+expect:
+  stdout: |+
+    0 []
+  stderr: |+
+  exit_code: 0

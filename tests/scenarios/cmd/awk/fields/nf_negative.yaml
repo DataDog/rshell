@@ -1,0 +1,9 @@
+description: NF=-N is a runtime error (matching mawk behavior on Debian bookworm-slim).
+input:
+  script: |+
+    echo 'a b c' | awk '{NF=-1; print NF}'
+expect:
+  stdout: |+
+  stderr: |+
+    awk: negative value assigned to NF
+  exit_code: 1

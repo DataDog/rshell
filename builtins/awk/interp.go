@@ -1018,8 +1018,8 @@ func (r *runtime) execStmt(ctx context.Context, s stmt) error {
 		if v.indices == nil {
 			// Deleting the entire array: subtract its total byte footprint.
 			if arr := r.arrays[v.arrayVar]; arr != nil {
-				for k, v := range arr {
-					r.arrayTotalBytes -= int64(len(k)) + int64(len(v.s))
+				for k, entry := range arr {
+					r.arrayTotalBytes -= int64(len(k)) + int64(len(entry.s))
 				}
 			}
 			delete(r.arrays, v.arrayVar)
@@ -1292,7 +1292,9 @@ func (r *runtime) storeScalar(name string, v awkValue) error {
 	case "NF":
 		nf := floatToInt64Safe(v.toNumber())
 		if nf < 0 {
-			nf = 0
+			// mawk (Debian bookworm-slim) treats negative NF as a runtime error.
+			// gawk clamps to 0. We match mawk here so bash-comparison tests pass.
+			return fmt.Errorf("negative value assigned to NF")
 		}
 		if nf > MaxFields {
 			return fmt.Errorf("NF exceeds maximum %d", MaxFields)
