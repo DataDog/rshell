@@ -1,0 +1,9 @@
+description: Setting NF to a large value grows the fields array without hanging.
+input:
+  script: |+
+    awk 'BEGIN { NF = 100000; print NF }'
+expect:
+  stdout: |+
+    100000
+  stderr: |+
+  exit_code: 0

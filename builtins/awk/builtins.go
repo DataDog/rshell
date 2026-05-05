@@ -328,6 +328,9 @@ func (r *runtime) bSub(args []expr, global bool) (awkValue, error) {
 				return uninitValue, r.ctx.Err()
 			}
 			sb.WriteString(s[last:m[0]])
+			if sb.Len() > MaxStringBytes {
+				return uninitValue, fmt.Errorf("gsub: result exceeds maximum string length %d", MaxStringBytes)
+			}
 			expanded, expErr := expandAwkReplacement(replStr, s[m[0]:m[1]])
 			if expErr != nil {
 				return uninitValue, expErr
