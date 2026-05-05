@@ -288,9 +288,19 @@ func registerFlags(flags *builtins.FlagSet) builtins.HandlerFunc {
 			// `.` before we ever see `link`, producing the wrong parent.
 			// Physical-mode cleaning is deferred to resolvePhysical.
 			if usePhysical {
-				// Raw concatenation: cwd + separator + target, preserving
-				// `..` for the component-by-component resolver.
-				absPath = cwd + string(filepath.Separator) + target
+				if cwd == "" {
+					// No working directory: pass target through as-is so
+					// the error message names the target, not "/target"
+					// (which filepath.IsAbs would treat as absolute and
+					// pass into resolvePhysical as a pseudo-root path).
+					// The final StatFile call remains the access-control
+					// gate regardless.
+					absPath = target
+				} else {
+					// Raw concatenation: cwd + separator + target, preserving
+					// `..` for the component-by-component resolver.
+					absPath = cwd + string(filepath.Separator) + target
+				}
 			} else {
 				absPath = filepath.Join(cwd, absPath)
 			}

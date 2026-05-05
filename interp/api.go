@@ -819,6 +819,11 @@ func (r *Runner) subshell(background bool) *Runner {
 			lastExit:         r.lastExit,
 			startTime:        r.startTime,
 			globReadDirCount: r.globReadDirCount,
+			// lastCallChangedWorkDir tracks "did the current call update the
+			// working dir" — it is a per-call signal, not inherited state.
+			// Explicitly zero it so a subshell that starts right after a
+			// successful cd does not inherit a stale true value.
+			lastCallChangedWorkDir: false,
 		},
 	}
 	r2.writeEnv = newOverlayEnviron(r.writeEnv, background)

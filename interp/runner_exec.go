@@ -137,6 +137,13 @@ func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {
 				r.setVarRestore(restore.name, restore.vr)
 			}
 		}()
+		// Reset the workdir-change flag here too (not just at the top of
+		// call()). If a command-substitution expansion in an inline
+		// assignment causes a fatal exit, call() is skipped entirely but
+		// the defer above still fires. Without this reset, the defer
+		// would read a stale true from a *previous* cd and incorrectly
+		// skip restoring PWD/OLDPWD from their inline values.
+		r.lastCallChangedWorkDir = false
 		if r.exit.ok() {
 			r.call(ctx, cm.Args[0].Pos(), fields)
 		}
@@ -538,6 +545,10 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 			// Any future builtin that forgets this step could set the
 			// runner's working directory to an unvalidated path.
 			// See builtins.Result.NewWorkDir for the full contract.
+			//
+			// INVARIANT: the builtin MUST have called callCtx.StatFile(ctx, NewWorkDir)
+			// before returning this result. The runner does not re-validate here.
+			// Currently only "cd" sets this field.
 			r.applyNewWorkDir(result.NewWorkDir)
 			r.lastCallChangedWorkDir = true
 		}
