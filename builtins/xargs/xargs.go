@@ -743,6 +743,13 @@ func invokeCommand(ctx context.Context, callCtx *builtins.CallContext, o options
 	}
 	if err != nil {
 		callCtx.Errf("xargs: %s: %s\n", finalCmd, err.Error())
+		// POSIX/GNU xargs distinguishes 127 (command not found) from 125
+		// (other fatal startup failure). The runner returns (127, err) for
+		// both "command not allowed" and "unknown command"; pass that
+		// through unchanged so callers can branch on the canonical code.
+		if exitCode == 127 {
+			return 127, true
+		}
 		return exitSubCmdNotStart, true
 	}
 	switch exitCode {
