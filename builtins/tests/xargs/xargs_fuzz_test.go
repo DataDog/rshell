@@ -25,6 +25,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strconv"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -297,19 +298,7 @@ func FuzzXargsBatching(f *testing.F) {
 	})
 }
 
-// itoa is a minimal int-to-string helper used for script construction;
-// avoids importing strconv to stay consistent with other fuzz harnesses in this repo.
+// itoa converts an int to its decimal string representation.
 func itoa(n int) string {
-	if n == 0 {
-		return "0"
-	}
-	var buf [20]byte
-	i := len(buf)
-	v := n
-	for v > 0 {
-		i--
-		buf[i] = byte('0' + v%10)
-		v /= 10
-	}
-	return string(buf[i:])
+	return strconv.Itoa(n)
 }

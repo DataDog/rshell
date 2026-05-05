@@ -222,9 +222,10 @@ type options struct {
 	verbose    bool
 	exitOnSize bool
 
-	cmdName     string
-	initialArgs []string
-	warnings    []string // diagnostic messages to emit before processing
+	cmdName          string
+	initialArgs      []string
+	warnings         []string // diagnostic messages to emit before processing
+	hasReplStrInArgs bool     // true when any initialArg contains replStr (precomputed in buildOptions)
 }
 
 // useReplace, useMaxLines, useMaxArgs are derived predicates kept as
@@ -378,6 +379,17 @@ func buildOptions(fs *builtins.FlagSet, null bool, argFile, delim, eofStr string
 		o.cmdName = args[0]
 		if len(args) > 1 {
 			o.initialArgs = append([]string(nil), args[1:]...)
+		}
+	}
+
+	// Precompute whether any initial arg contains the replacement marker.
+	// This avoids re-scanning initialArgs on every oversize-item error path.
+	if o.useReplace() {
+		for _, a := range o.initialArgs {
+			if strings.Contains(a, o.replStr) {
+				o.hasReplStrInArgs = true
+				break
+			}
 		}
 	}
 
@@ -578,14 +590,8 @@ func runXargs(ctx context.Context, callCtx *builtins.CallContext, o options) bui
 				// GNU uses "argument list too long" when a {} placeholder
 				// actually expands in an arg, and "argument line too long"
 				// when -I is active but no placeholder appears in initialArgs.
-				hasPlaceholder := false
-				for _, a := range o.initialArgs {
-					if strings.Contains(a, o.replStr) {
-						hasPlaceholder = true
-						break
-					}
-				}
-				if o.useReplace() && !hasPlaceholder {
+				// hasReplStrInArgs is precomputed in buildOptions.
+				if o.useReplace() && !o.hasReplStrInArgs {
 					callCtx.Errf("xargs: argument line too long\n")
 				} else {
 					callCtx.Errf("xargs: argument list too long\n")
