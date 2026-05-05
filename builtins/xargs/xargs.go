@@ -574,6 +574,16 @@ func runXargs(ctx context.Context, callCtx *builtins.CallContext, o options) bui
 			tokErr = true
 			break
 		}
+		// Emit GNU's "NUL character occurred" warning to stderr exactly
+		// once per invocation when the tokenizer rejected NUL bytes in
+		// a non-NUL mode. Polled here so the warning is emitted as soon
+		// as the offending record is processed (or skipped) rather than
+		// at end-of-input.
+		if tok.nulSeen && !tok.nulWarned {
+			tok.nulWarned = true
+			callCtx.Errf("xargs: WARNING: a NUL character occurred in the input. " +
+				"It cannot be passed through in the argument list. Did you mean to use the --null option?\n")
+		}
 		if !more {
 			break
 		}
@@ -884,6 +894,15 @@ type tokenizer struct {
 	// matching token starts at such a boundary; any whitespace
 	// terminator (space/tab/newline) recognises it unconditionally.
 	atLineStart bool
+	// nulSeen is set when a NUL byte was encountered in modeWhitespace
+	// or modeLine. The xargs caller polls this after each next() call
+	// and emits the GNU-style "NUL character occurred in the input"
+	// warning to stderr exactly once per invocation.
+	nulSeen bool
+	// nulWarned tracks whether the caller has already emitted the
+	// stderr warning for this run, so subsequent NUL sightings do not
+	// re-warn.
+	nulWarned bool
 }
 
 func newTokenizer(r io.Reader, o options) *tokenizer {
@@ -1054,10 +1073,44 @@ func (t *tokenizer) nextLine(ctx context.Context) (string, bool, bool, error) {
 			continue
 		case '\n':
 			return string(t.buf), true, true, nil
+		case 0:
+			// See -0-mode comment in nextWhitespace.
+			t.nulSeen = true
+			if err := t.skipToNewline(ctx); err != nil {
+				return "", false, false, err
+			}
+			if len(t.buf) == 0 {
+				return "", false, false, nil
+			}
+			return string(t.buf), true, true, nil
 		}
 
 		if err := t.pushByte(b); err != nil {
 			return "", false, false, err
+		}
+	}
+}
+
+// skipToNewline drains bytes from t.r until '\n' or EOF, leaving the
+// reader positioned just after the newline. Used by the NUL-handling
+// path so a record containing a NUL byte does not leak its tail bytes
+// into the next item.
+func (t *tokenizer) skipToNewline(ctx context.Context) error {
+	for {
+		if err := t.pollCtx(ctx); err != nil {
+			return err
+		}
+		b, err := t.r.ReadByte()
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				t.eof = true
+				return nil
+			}
+			return err
+		}
+		if b == '\n' {
+			t.atLineStart = true
+			return nil
 		}
 	}
 }
@@ -1177,6 +1230,24 @@ func (t *tokenizer) nextWhitespace(ctx context.Context) (string, bool, bool, err
 				return "", false, false, err
 			}
 			continue
+		case 0:
+			// GNU xargs rejects NUL in non-NUL/-d modes: emit current
+			// token (if any), set the warn flag (caller emits a stderr
+			// warning once), and skip the rest of the current line so
+			// NUL bytes never reach the child argv.
+			t.nulSeen = true
+			if err := t.skipToNewline(ctx); err != nil {
+				return "", false, false, err
+			}
+			endedLine = true
+			if isEofMarker(t.o, t.buf) {
+				t.eof = true
+				return "", false, false, nil
+			}
+			if len(t.buf) == 0 {
+				return "", false, false, nil
+			}
+			return string(t.buf), endedLine, true, nil
 		}
 
 		if isWhitespace(b) {

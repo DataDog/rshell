@@ -237,6 +237,37 @@ func TestXargsReplaceTrailingNoNewline(t *testing.T) {
 	assert.Equal(t, "a\nb\n", stdout)
 }
 
+// --- NUL byte rejection in non -0/-d modes (matches GNU xargs) ---
+
+func TestXargsNULInDefaultModeRejected(t *testing.T) {
+	dir := t.TempDir()
+	// `printf 'a\0b\0c\n'` – under default whitespace mode GNU xargs
+	// emits a "NUL character occurred" warning to stderr and only
+	// processes bytes up to the first NUL on each line.
+	stdout, stderr, code := cmdRun(t, "printf 'a\\0b\\0c\\n' | xargs echo", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "a\n", stdout)
+	assert.Contains(t, stderr, "NUL character")
+}
+
+func TestXargsNULInReplaceModeRejected(t *testing.T) {
+	dir := t.TempDir()
+	// `printf 'a\0b\nc\n'` – -I mode treats NUL the same way.
+	stdout, stderr, code := cmdRun(t, "printf 'a\\0b\\nc\\n' | xargs -I{} echo X{}X", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "XaX\nXcX\n", stdout)
+	assert.Contains(t, stderr, "NUL character")
+}
+
+func TestXargsNULWarningEmittedOnce(t *testing.T) {
+	dir := t.TempDir()
+	stdout, stderr, code := cmdRun(t, "printf 'a\\0b\\nc\\0d\\n' | xargs -I{} echo X{}X", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "XaX\nXcX\n", stdout)
+	// One warning even though two records contained NUL.
+	assert.Equal(t, 1, strings.Count(stderr, "NUL character"))
+}
+
 // --- -I quote / backslash processing (matches GNU xargs) ---
 
 func TestXargsReplaceSingleQuoted(t *testing.T) {

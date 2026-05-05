@@ -1,0 +1,9 @@
+description: xargs in default (whitespace) mode warns on NUL bytes and drops the rest of the line so NUL never reaches the child argv (matches GNU).
+input:
+  script: |+
+    printf 'a\0b\0c\n' | xargs echo
+expect:
+  stdout: |+
+    a
+  stderr_contains: ["NUL character"]
+  exit_code: 0

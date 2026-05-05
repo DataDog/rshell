@@ -1,0 +1,10 @@
+description: xargs -I mode warns on NUL bytes and drops the rest of the line; subsequent NUL-free lines are processed normally (matches GNU).
+input:
+  script: |+
+    printf 'a\0b\nc\n' | xargs -I{} echo X{}X
+expect:
+  stdout: |+
+    XaX
+    XcX
+  stderr_contains: ["NUL character"]
+  exit_code: 0
