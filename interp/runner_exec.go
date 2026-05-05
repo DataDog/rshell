@@ -316,10 +316,34 @@ func (r *Runner) loopStmtsBroken(ctx context.Context, stmts []*syntax.Stmt) bool
 // against the leading subcommand-path tokens only, so positional values
 // at later positions cannot satisfy pattern slots.
 func (r *Runner) argvMatchesAllowedPattern(args []string) bool {
+	_, ok := r.firstMatchingPattern(args, r.allowedCommandPatterns)
+	return ok
+}
+
+// argvMatchesDeniedPattern reports whether args satisfies any of the
+// configured DeniedCommandPatterns. Used by the gate to short-circuit
+// dispatch with a refusal even when an allow rule would otherwise admit
+// the call. Same matching algorithm as argvMatchesAllowedPattern.
+//
+// Returns the matching pattern (for use in error messages) so the caller
+// can tell the operator exactly which deny rule fired.
+func (r *Runner) firstMatchingDeniedPattern(args []string) ([]string, bool) {
+	return r.firstMatchingPattern(args, r.deniedCommandPatterns)
+}
+
+// firstMatchingPattern returns the first pattern in patterns that args
+// satisfies under the spec-driven structural matcher. The boolean second
+// return is true iff a match was found. Patterns is iterated in
+// configuration order so the returned pattern is deterministic for a
+// given input.
+//
+// Both AllowedCommandPatterns and DeniedCommandPatterns share this matcher
+// — only the precedence at the gate distinguishes them.
+func (r *Runner) firstMatchingPattern(args []string, patterns [][]string) ([]string, bool) {
 	if len(args) == 0 {
-		return false
+		return nil, false
 	}
-	for _, pattern := range r.allowedCommandPatterns {
+	for _, pattern := range patterns {
 		if len(pattern) == 0 {
 			// Defensive: option validator already rejects empty
 			// patterns, so we never expect to see one here.
@@ -331,13 +355,13 @@ func (r *Runner) argvMatchesAllowedPattern(args []string) bool {
 		}
 		// Single-token pattern: argv[0] match is sufficient.
 		if len(pattern) == 1 {
-			return true
+			return pattern, true
 		}
 		// Multi-token pattern: walk argv[1..] and extract structural
 		// tokens using the spec for args[0]. validateAllowedCommandPatterns
-		// guarantees the spec exists; defensive check returns false if it
-		// somehow doesn't (e.g. spec was unregistered between option
-		// processing and dispatch).
+		// guarantees the spec exists; defensive check skips this pattern
+		// if it somehow doesn't (e.g. spec was unregistered between
+		// option processing and dispatch).
 		spec, ok := r.commandSpecs[args[0]]
 		if !ok {
 			continue
@@ -354,10 +378,10 @@ func (r *Runner) argvMatchesAllowedPattern(args []string) bool {
 			}
 		}
 		if matched {
-			return true
+			return pattern, true
 		}
 	}
-	return false
+	return nil, false
 }
 
 // formatPolicyDenial returns a human-readable message explaining why
@@ -365,21 +389,31 @@ func (r *Runner) argvMatchesAllowedPattern(args []string) bool {
 // patterns target the command name, the patterns the operator could
 // have matched.
 //
+// If matchedDeny is non-nil, the message identifies the deny pattern
+// that fired (the highest-precedence reason). Otherwise the message
+// says the call wasn't permitted by any allow rule and lists the
+// configured allow patterns for the command name as a hint.
+//
 // The message is intentionally short: at most two lines, one for the
-// rejection itself and one optional hint listing the configured
-// patterns for that command name. Designed for stderr where a script
-// may produce many such errors and verbose multi-line output gets in
-// the way.
-func (r *Runner) formatPolicyDenial(args []string) string {
+// rejection itself and one optional hint. Designed for stderr where a
+// script may produce many such errors and verbose multi-line output
+// gets in the way.
+func (r *Runner) formatPolicyDenial(args []string, matchedDeny []string) string {
 	if len(args) == 0 {
 		return "rshell: command not allowed\n"
 	}
 	name := args[0]
 	invocation := strings.Join(args, " ")
 
-	// Collect patterns whose first token equals the command name. These
-	// are the patterns the operator could have intended to match — if
-	// any are configured, they're worth surfacing as a hint.
+	var msg strings.Builder
+	if matchedDeny != nil {
+		fmt.Fprintf(&msg, "rshell: %s: blocked by deny pattern %q\n",
+			invocation, strings.Join(matchedDeny, " "))
+		return msg.String()
+	}
+
+	// Allow-side denial: list the patterns the operator could have
+	// intended to match for this command name.
 	var matchingPatterns []string
 	for _, p := range r.allowedCommandPatterns {
 		if len(p) > 0 && p[0] == name {
@@ -387,7 +421,6 @@ func (r *Runner) formatPolicyDenial(args []string) string {
 		}
 	}
 
-	var msg strings.Builder
 	if invocation == name {
 		// Bare command (no args); the prior format is still the
 		// clearest thing to print.
@@ -454,10 +487,12 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 	name := args[0]
 	r.totalCount++
 
-	// Evaluate both policy checks upfront so the span tags reflect the
-	// independent facts about the command name regardless of which gate
-	// short-circuits dispatch.
-	isAllowed := r.allowAllCommands || r.allowedCommands[name] || r.argvMatchesAllowedPattern(args)
+	// Evaluate the deny axis first: a deny-pattern match overrides every
+	// allow rule. Then evaluate the allow axes in their usual order. The
+	// boolean isAllowed is the final gate decision; matchedDeny is held
+	// so the policy-denial error can identify the rule that fired.
+	matchedDeny, deniedByPattern := r.firstMatchingDeniedPattern(args)
+	isAllowed := !deniedByPattern && (r.allowAllCommands || r.allowedCommands[name] || r.argvMatchesAllowedPattern(args))
 	fn, isKnown := builtins.Lookup(name)
 
 	span, ctx := telemetry.StartSpanFromContext(ctx, "command")
@@ -492,8 +527,11 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 	}
 
 	if !isAllowed {
-		r.errf("%s", r.formatPolicyDenial(args))
-		if r.allowedCommands["help"] {
+		r.errf("%s", r.formatPolicyDenial(args, matchedDeny))
+		if r.allowedCommands["help"] && matchedDeny == nil {
+			// Don't suggest 'help' when the call was specifically
+			// denied by a deny pattern — the help listing won't show
+			// why the deny fired and the suggestion is misleading.
 			r.errf("Run 'help' to see allowed commands.\n")
 		}
 		r.exit.code = 127
@@ -510,12 +548,14 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 			fullArgv := make([]string, 0, len(cmdArgs)+1)
 			fullArgv = append(fullArgv, cmdName)
 			fullArgv = append(fullArgv, cmdArgs...)
-			if !r.allowAllCommands && !r.allowedCommands[cmdName] && !r.argvMatchesAllowedPattern(fullArgv) {
+			matchedDeny, deniedByPattern := r.firstMatchingDeniedPattern(fullArgv)
+			allowed := !deniedByPattern && (r.allowAllCommands || r.allowedCommands[cmdName] || r.argvMatchesAllowedPattern(fullArgv))
+			if !allowed {
 				// Strip the trailing newline because callers (notably
 				// find -exec) wrap the error in their own "find: '%s':
 				// %s\n" template; keeping the embedded newline would
 				// produce a stray blank line.
-				return 127, fmt.Errorf("%s", strings.TrimRight(r.formatPolicyDenial(fullArgv), "\n"))
+				return 127, fmt.Errorf("%s", strings.TrimRight(r.formatPolicyDenial(fullArgv, matchedDeny), "\n"))
 			}
 			cmdFn, ok := builtins.Lookup(cmdName)
 			if !ok {
@@ -588,6 +628,9 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 					return builtins.FileID{Dev: dev, Ino: ino}, true
 				},
 				CommandAllowed: func(n string, args []string) bool {
+					if _, denied := r.firstMatchingDeniedPattern(args); denied {
+						return false
+					}
 					return r.allowAllCommands || r.allowedCommands[n] || r.argvMatchesAllowedPattern(args)
 				},
 			}
@@ -667,6 +710,9 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 				return builtins.FileID{Dev: dev, Ino: ino}, true
 			},
 			CommandAllowed: func(cmdName string, args []string) bool {
+				if _, denied := r.firstMatchingDeniedPattern(args); denied {
+					return false
+				}
 				return r.allowAllCommands || r.allowedCommands[cmdName] || r.argvMatchesAllowedPattern(args)
 			},
 			RunCommand: runCmd,

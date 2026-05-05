@@ -159,6 +159,16 @@ type runnerConfig struct {
 	// patterns under the structural matcher (see argvMatchesAllowedPattern).
 	allowedCommandPatterns [][]string
 
+	// deniedCommandPatterns is a list of (command [, subcommand_path...])
+	// patterns that BLOCK commands regardless of any allow rule. Evaluated
+	// before allowedCommands and allowedCommandPatterns; a deny match
+	// short-circuits the gate to a refusal. Useful for "allow X but carve
+	// out Y" policies — e.g. allowedCommands={ip} plus
+	// deniedCommandPatterns=[(ip, route)] permits `ip addr` and `ip link`
+	// but forbids `ip route`. Same spec-driven structural matcher as
+	// allowedCommandPatterns.
+	deniedCommandPatterns [][]string
+
 	// commandSpecs maps a command name to the CommandSpec that describes its
 	// flag conventions. Used by argvMatchesAllowedPattern to distinguish flag
 	// tokens (skipped during matching) from structural tokens (subcommand
@@ -902,16 +912,29 @@ func CommandSpecs(specs map[string]CommandSpec) RunnerOption {
 }
 
 // validateAllowedCommandPatterns ensures every multi-token pattern in
-// r.allowedCommandPatterns has a registered CommandSpec for its command
-// name. Single-token patterns do not require a spec. Called from [New]
-// after all options have been applied.
+// r.allowedCommandPatterns and r.deniedCommandPatterns has a registered
+// CommandSpec for its command name. Single-token patterns do not require
+// a spec. Called from [New] after all options have been applied.
 func validateAllowedCommandPatterns(r *Runner) error {
-	for i, p := range r.allowedCommandPatterns {
+	if err := validatePatternList(r, "AllowedCommandPatterns", r.allowedCommandPatterns); err != nil {
+		return err
+	}
+	if err := validatePatternList(r, "DeniedCommandPatterns", r.deniedCommandPatterns); err != nil {
+		return err
+	}
+	return nil
+}
+
+// validatePatternList runs the spec-presence check on a single pattern
+// list. Used for both allowed and denied patterns since they have the
+// same structural shape and the same need for a spec.
+func validatePatternList(r *Runner, optionName string, patterns [][]string) error {
+	for i, p := range patterns {
 		if len(p) <= 1 {
 			continue
 		}
 		if _, ok := r.commandSpecs[p[0]]; !ok {
-			return fmt.Errorf("AllowedCommandPatterns: pattern %d references command %q which has no registered CommandSpec; pass interp.CommandSpecs(map[string]interp.CommandSpec{%q: {...}}) to register one (multi-token patterns require a spec so the matcher can distinguish flags from subcommands)", i, p[0], p[0])
+			return fmt.Errorf("%s: pattern %d references command %q which has no registered CommandSpec; pass interp.CommandSpecs(map[string]interp.CommandSpec{%q: {...}}) to register one (multi-token patterns require a spec so the matcher can distinguish flags from subcommands)", optionName, i, p[0], p[0])
 		}
 	}
 	return nil
@@ -938,19 +961,58 @@ func validateAllowedCommandPatterns(r *Runner) error {
 // only AllowedCommands and allowAllCommands govern execution.
 func AllowedCommandPatterns(patterns [][]string) RunnerOption {
 	return func(r *Runner) error {
-		for i, p := range patterns {
-			if len(p) == 0 {
-				return fmt.Errorf("AllowedCommandPatterns: pattern %d is empty", i)
-			}
-			for j, tok := range p {
-				if tok == "" {
-					return fmt.Errorf("AllowedCommandPatterns: pattern %d token %d is empty", i, j)
-				}
-			}
+		if err := validatePatternSlice("AllowedCommandPatterns", patterns); err != nil {
+			return err
 		}
 		r.allowedCommandPatterns = patterns
 		return nil
 	}
+}
+
+// DeniedCommandPatterns blocks command execution for argv sequences that
+// satisfy any of the given patterns, regardless of whether AllowedCommands
+// or AllowedCommandPatterns would otherwise admit the call. Denies are
+// evaluated FIRST: a deny match short-circuits the gate to a refusal even
+// if every other axis would permit the invocation.
+//
+// Pattern shape and matching are identical to [AllowedCommandPatterns]:
+// each pattern is a non-empty token list (command [, subcommand_path...]),
+// matched against the argv's leading structural tokens using the same
+// CommandSpec-driven flag classification. Multi-token deny patterns
+// require a registered CommandSpec; [New] returns an error otherwise.
+//
+// Use case: "allow ip in general but forbid ip route specifically" can be
+// expressed as AllowedCommands=[rshell:ip] plus
+// DeniedCommandPatterns=[["ip","route"]]. ip addr and ip link still
+// admit; ip route is refused at the gate.
+//
+// When not set (default), no commands are denied by patterns; only the
+// usual allow-rule absence (default deny) applies.
+func DeniedCommandPatterns(patterns [][]string) RunnerOption {
+	return func(r *Runner) error {
+		if err := validatePatternSlice("DeniedCommandPatterns", patterns); err != nil {
+			return err
+		}
+		r.deniedCommandPatterns = patterns
+		return nil
+	}
+}
+
+// validatePatternSlice runs the shared option-time validation (non-empty
+// patterns, non-empty tokens) used by both AllowedCommandPatterns and
+// DeniedCommandPatterns.
+func validatePatternSlice(optionName string, patterns [][]string) error {
+	for i, p := range patterns {
+		if len(p) == 0 {
+			return fmt.Errorf("%s: pattern %d is empty", optionName, i)
+		}
+		for j, tok := range p {
+			if tok == "" {
+				return fmt.Errorf("%s: pattern %d token %d is empty", optionName, i, j)
+			}
+		}
+	}
+	return nil
 }
 
 // allowAllCommandsOpt is a convenience for tests within the interp package.

@@ -1,0 +1,20 @@
+skip_assert_against_bash: true
+description: |
+  The architectural property — post-expansion enforcement — applies
+  to denies as well as allows. A substitution that resolves at runtime
+  to a denied argv is blocked, even though the literal command text
+  was opaque to any static caller.
+input:
+  allowed_commands:
+    - rshell:ip
+    - rshell:printf
+  denied_command_patterns:
+    - ["ip", "route"]
+  script: |+
+    $(printf ip) route show
+expect:
+  stdout: ""
+  stderr_contains:
+    - "ip route show: blocked by deny pattern"
+    - '"ip route"'
+  exit_code: 127

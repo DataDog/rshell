@@ -8,6 +8,7 @@ package interp_test
 import (
 	"bytes"
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
@@ -380,4 +381,194 @@ func TestSpecUnknownFlagTreatedAsBoolean(t *testing.T) {
 		map[string]interp.CommandSpec{"echo": {}},
 	)
 	assert.Equal(t, 0, code)
+}
+
+// --- DeniedCommandPatterns ---
+
+// runWithPolicy is a richer variant of runWithPatterns that also accepts
+// denied patterns. Used exclusively by the deny-pattern tests so the
+// existing helper signature stays stable for the allow-only suite.
+func runWithPolicy(t *testing.T, script string, allowedCommands []string, allowedPatterns, deniedPatterns [][]string, extraSpecs map[string]interp.CommandSpec) (stdout, stderr string, code int) {
+	t.Helper()
+
+	prog, err := syntax.NewParser().Parse(strings.NewReader(script), "")
+	require.NoError(t, err)
+
+	var outBuf, errBuf bytes.Buffer
+	opts := []interp.RunnerOption{
+		interp.StdIO(nil, &outBuf, &errBuf),
+		interp.AllowedPaths([]string{t.TempDir()}),
+	}
+	if extraSpecs != nil {
+		opts = append(opts, interp.CommandSpecs(extraSpecs))
+	}
+	if allowedCommands != nil {
+		opts = append(opts, interp.AllowedCommands(allowedCommands))
+	}
+	if allowedPatterns != nil {
+		opts = append(opts, interp.AllowedCommandPatterns(allowedPatterns))
+	}
+	if deniedPatterns != nil {
+		opts = append(opts, interp.DeniedCommandPatterns(deniedPatterns))
+	}
+
+	runner, err := interp.New(opts...)
+	require.NoError(t, err)
+	defer runner.Close()
+
+	runErr := runner.Run(context.Background(), prog)
+	exitCode := 0
+	if runErr != nil {
+		var es interp.ExitStatus
+		if rerrAs(runErr, &es) {
+			exitCode = int(es)
+		} else {
+			t.Fatalf("unexpected non-ExitStatus error: %v", runErr)
+		}
+	}
+	return outBuf.String(), errBuf.String(), exitCode
+}
+
+func TestDeniedPatternsValidationRejectsEmpty(t *testing.T) {
+	_, err := interp.New(interp.DeniedCommandPatterns([][]string{{}}))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "DeniedCommandPatterns: pattern 0 is empty")
+}
+
+func TestDeniedPatternsValidationRejectsEmptyToken(t *testing.T) {
+	_, err := interp.New(interp.DeniedCommandPatterns([][]string{{"ip", ""}}))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "DeniedCommandPatterns: pattern 0 token 1 is empty")
+}
+
+func TestDeniedPatternsRequiresSpecForMultiToken(t *testing.T) {
+	// Same rule as allow patterns: multi-token deny needs a spec for
+	// the command name. Surfaces misconfiguration at New() time.
+	_, err := interp.New(interp.DeniedCommandPatterns([][]string{{"echo", "secret"}}))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "DeniedCommandPatterns")
+	assert.Contains(t, err.Error(), "no registered CommandSpec")
+}
+
+func TestDeniedPatternsAcceptsSingleTokenWithoutSpec(t *testing.T) {
+	// Single-token denies don't need a spec — they only check argv[0].
+	_, err := interp.New(interp.DeniedCommandPatterns([][]string{{"echo"}}))
+	require.NoError(t, err)
+}
+
+// TestDenyOverridesNameAllowlist is the headline use case: allow ip in
+// general, but carve out ip route. ip addr admits; ip route is refused
+// at the gate.
+func TestDenyOverridesNameAllowlist(t *testing.T) {
+	// ip addr show — allow rule (name) admits, no deny matches → run.
+	_, _, code := runWithPolicy(t,
+		`ip addr show`,
+		[]string{"rshell:ip"}, // allow ip wholesale by name
+		nil,
+		[][]string{{"ip", "route"}}, // but block ip route
+		nil,
+	)
+	assert.NotEqual(t, 127, code, "ip addr should not match the deny pattern")
+
+	// ip route show — deny matches → block, regardless of name allowlist.
+	_, stderr, code := runWithPolicy(t,
+		`ip route show`,
+		[]string{"rshell:ip"},
+		nil,
+		[][]string{{"ip", "route"}},
+		nil,
+	)
+	assert.Equal(t, 127, code)
+	assert.Contains(t, stderr, "blocked by deny pattern")
+	assert.Contains(t, stderr, `"ip route"`)
+}
+
+// TestDenyOverridesAllowPattern covers the dual case: allow patterns
+// admit, but a more specific deny carves out a sub-subcommand. Pattern
+// (ip, route) admits ip route show; deny pattern (ip, route, get)
+// blocks just ip route get.
+func TestDenyOverridesAllowPattern(t *testing.T) {
+	// ip route show — allow admits, deny doesn't match.
+	_, _, code := runWithPolicy(t,
+		`ip route show`,
+		nil,
+		[][]string{{"ip", "route"}},
+		[][]string{{"ip", "route", "get"}},
+		nil,
+	)
+	assert.NotEqual(t, 127, code)
+
+	// ip route get 8.8.8.8 — deny matches → block.
+	_, stderr, code := runWithPolicy(t,
+		`ip route get 8.8.8.8`,
+		nil,
+		[][]string{{"ip", "route"}},
+		[][]string{{"ip", "route", "get"}},
+		nil,
+	)
+	assert.Equal(t, 127, code)
+	assert.Contains(t, stderr, "blocked by deny pattern")
+}
+
+// TestDenySurvivesShellSubstitution confirms the architectural property
+// extends to the deny axis: a substitution that resolves to a denied
+// argv at execve time is blocked even though the literal text was
+// opaque.
+func TestDenySurvivesShellSubstitution(t *testing.T) {
+	_, stderr, code := runWithPolicy(t,
+		`$(printf ip) route show`,
+		[]string{"rshell:ip", "rshell:printf"},
+		nil,
+		[][]string{{"ip", "route"}},
+		nil,
+	)
+	assert.Equal(t, 127, code)
+	assert.Contains(t, stderr, "blocked by deny pattern")
+}
+
+// TestDenyDoesNotMatchWhenSubcommandAtPositionalSlot confirms the deny
+// matcher uses the same structural rules as the allow matcher: a
+// positional argument value at a non-leading structural position does
+// not satisfy a deny pattern.
+//
+// Pattern deny (ip, route) should NOT block "ip addr show route" —
+// "route" appears as a positional value at structural[2], not at the
+// subcommand slot. Without this property, the deny axis would be even
+// more permissive than positional-presence matching, which would be a
+// regression.
+func TestDenyDoesNotMatchWhenSubcommandAtPositionalSlot(t *testing.T) {
+	_, _, code := runWithPolicy(t,
+		`ip addr show route`,
+		[]string{"rshell:ip"},
+		nil,
+		[][]string{{"ip", "route"}},
+		nil,
+	)
+	assert.NotEqual(t, 127, code, "deny should not match when 'route' is a positional value, not the subcommand")
+}
+
+// TestDenyAppliesUnderAllowAllCommands — denies override even the
+// permissive allow-all-commands escape hatch. Useful for "let me run
+// anything except this dangerous thing" policies in dev environments.
+func TestDenyAppliesUnderAllowAllCommands(t *testing.T) {
+	prog, err := syntax.NewParser().Parse(strings.NewReader(`ip route show`), "")
+	require.NoError(t, err)
+
+	var outBuf, errBuf bytes.Buffer
+	runner, err := interp.New(
+		interp.StdIO(nil, &outBuf, &errBuf),
+		interp.AllowedPaths([]string{t.TempDir()}),
+		// Bypass-everything switch on…
+		interp.AllowedCommands([]string{"rshell:ip"}),
+		// …but the deny still fires.
+		interp.DeniedCommandPatterns([][]string{{"ip", "route"}}),
+	)
+	require.NoError(t, err)
+	defer runner.Close()
+
+	runErr := runner.Run(context.Background(), prog)
+	var es interp.ExitStatus
+	require.True(t, errors.As(runErr, &es))
+	assert.Equal(t, 127, int(es))
+	assert.Contains(t, errBuf.String(), "blocked by deny pattern")
 }

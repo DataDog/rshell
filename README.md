@@ -56,9 +56,9 @@ rshell --allow-all-commands --timeout 5s -c 'echo "hello from rshell"'
 
 Every access path is default-deny:
 
-| Resource             | Default                             | Opt-in                                       |
+| Resource             | Default                             | Opt-in / Opt-out                             |
 |----------------------|-------------------------------------|----------------------------------------------|
-| Command execution    | All commands blocked (exit code 127)| `AllowedCommands` with namespaced command list (e.g. `rshell:cat`), and/or `AllowedCommandPatterns` with argv-prefix patterns (e.g. `["kubectl","get"]`) |
+| Command execution    | All commands blocked (exit code 127)| `AllowedCommands` (namespaced names), `AllowedCommandPatterns` (argv-prefix patterns), and `DeniedCommandPatterns` (deny-first carve-outs from the allow rules) |
 | External commands    | Blocked (exit code 127)             | Provide an `ExecHandler`                     |
 | Filesystem access    | Blocked                             | Configure `AllowedPaths` with directory list |
 | Environment variables| Empty (no host env inherited)       | Pass variables via the `Env` option          |
@@ -78,6 +78,8 @@ Patterns are matched **after shell expansion**, so command-substitution-derived 
 **CommandSpec** describes the flag conventions of a single command so the matcher can distinguish flag tokens from structural tokens. The `ip` builtin is shipped with a default spec; integrators register additional specs (kubectl, git, docker, etc.) via the `CommandSpecs(map[string]CommandSpec{...})` option. Multi-token patterns whose command lacks a spec are rejected at `New()` — single-token patterns (matching only `argv[0]`) require no spec.
 
 > Without a spec, the matcher would have to guess which argv tokens are flag values vs. positional arguments, and that guess is the only way `kubectl delete pod get` could ever masquerade as a `kubectl get` invocation. The spec-driven matcher closes that bypass by inspecting only the leading structural position for the subcommand, so positional arguments at later positions cannot satisfy pattern slots.
+
+**DeniedCommandPatterns** blocks invocations whose argv satisfies any of the given patterns, regardless of whether `AllowedCommands` or `AllowedCommandPatterns` would otherwise admit the call. Denies are evaluated **first**: a deny match short-circuits the gate to a refusal even if every other axis would permit the invocation. Same shape and matching semantics as `AllowedCommandPatterns` (pattern is a token list, multi-token patterns require a registered `CommandSpec`, etc.). Used to express "allow X but carve out Y" policies — for example, `AllowedCommands={rshell:ip}` plus `DeniedCommandPatterns=[["ip","route"]]` permits `ip addr` and `ip link` but forbids `ip route`. The architectural property that allow patterns survive shell substitution applies here equally: a substitution that resolves at runtime to a denied argv is blocked.
 
 **AllowedPaths** restricts all file operations to specified directories using Go's `os.Root` API (`openat` syscalls), making it immune to symlink traversal, TOCTOU races, and `..` escape attacks. Configured directories that cannot be opened (missing, not a directory, no permission) are skipped with a diagnostic message; by default these messages are flushed once to the runner's stderr at construction time. Callers that need to keep stderr clean of sandbox diagnostics can route them to a dedicated sink with `WarningsWriter(io.Writer)` or retrieve them programmatically via `Runner.Warnings()`.
 

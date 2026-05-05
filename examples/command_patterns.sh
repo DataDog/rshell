@@ -191,4 +191,31 @@ run_case "10. Name allowlist overrides patterns" \
   --allowed-command-patterns "ip route" \
   -p /tmp
 
+# -----------------------------------------------------------------------
+# 11. Deny pattern overrides a name allowlist. Allow ip wholesale, but
+#     carve out ip route specifically. ip addr admits; ip route refused.
+# -----------------------------------------------------------------------
+run_case "11. Deny pattern carves out a subcommand from a name allowlist" \
+  "ip addr show" \
+  --allowed-commands rshell:ip \
+  --denied-command-patterns "ip route" \
+  -p /tmp
+
+run_case "12. Deny fires for the carved-out subcommand" \
+  "ip route show" \
+  --allowed-commands rshell:ip \
+  --denied-command-patterns "ip route" \
+  -p /tmp
+
+# -----------------------------------------------------------------------
+# 13. Deny is evaluated post-expansion (architectural test, deny axis).
+#     A substitution that resolves to a denied argv at runtime is blocked
+#     regardless of how opaque the literal command text was.
+# -----------------------------------------------------------------------
+run_case "13. Substitution can't bypass a deny pattern" \
+  '$(printf ip) route show' \
+  --allowed-commands rshell:ip,rshell:printf \
+  --denied-command-patterns "ip route" \
+  -p /tmp
+
 printf "${BOLD}Done.${RESET} Edit examples/command_patterns.sh to add your own cases.\n"

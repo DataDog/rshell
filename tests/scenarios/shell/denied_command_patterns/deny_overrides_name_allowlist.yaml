@@ -1,0 +1,19 @@
+skip_assert_against_bash: true
+description: |
+  The headline use case for DeniedCommandPatterns: an operator allows
+  `ip` wholesale by name but carves out `ip route` specifically. ip
+  addr admits; ip route is refused even though the name allowlist
+  would otherwise permit it.
+input:
+  allowed_commands:
+    - rshell:ip
+  denied_command_patterns:
+    - ["ip", "route"]
+  script: |+
+    ip route show
+expect:
+  stdout: ""
+  stderr_contains:
+    - "ip route show: blocked by deny pattern"
+    - '"ip route"'
+  exit_code: 127

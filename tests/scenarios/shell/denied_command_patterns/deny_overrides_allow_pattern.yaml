@@ -1,0 +1,18 @@
+skip_assert_against_bash: true
+description: |
+  Allow pattern (ip, route) admits the route subcommand in general; a
+  more specific deny pattern (ip, route, get) carves out the get
+  sub-subcommand. ip route show admits; ip route get is refused.
+input:
+  allowed_command_patterns:
+    - ["ip", "route"]
+  denied_command_patterns:
+    - ["ip", "route", "get"]
+  script: |+
+    ip route get 8.8.8.8
+expect:
+  stdout: ""
+  stderr_contains:
+    - "ip route get 8.8.8.8: blocked by deny pattern"
+    - '"ip route get"'
+  exit_code: 127

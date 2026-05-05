@@ -1,0 +1,20 @@
+skip_assert_against_bash: true
+description: |
+  Partner case to deny_overrides_name_allowlist: with the same allow
+  rule and same deny pattern, a sibling subcommand still admits. The
+  deny is targeted, not blanket.
+input:
+  allowed_commands:
+    - rshell:ip
+  denied_command_patterns:
+    - ["ip", "route"]
+  script: |+
+    ip addr show
+expect:
+  # The loopback interface exists on every platform we run on, and
+  # `ip addr show` always reports it with the LOOPBACK flag in the
+  # output. Using stdout_contains lets us assert "the call ran" on
+  # both macOS and Linux without coupling to interface lists.
+  stdout_contains:
+    - "LOOPBACK"
+  exit_code: 0
