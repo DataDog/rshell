@@ -417,6 +417,7 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 					return runCmdWithStdin(ctx, dir, name, args, nil)
 				},
 				RunCommandWithStdin: runCmdWithStdin,
+				Proc:                r.proc,
 			}
 			if childStdin != nil {
 				child.Stdin = childStdin

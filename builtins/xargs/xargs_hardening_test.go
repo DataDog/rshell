@@ -100,6 +100,19 @@ func TestXargsBackslashEscapeNewline(t *testing.T) {
 	assert.Equal(t, "a\nb\n", stdout)
 }
 
+// --- Child CallContext must populate Proc so ps doesn't panic ---
+
+func TestXargsChildCanRunPs(t *testing.T) {
+	// Regression: xargs's child CallContext (built by runCmdWithStdin in
+	// runner_exec.go) used to omit Proc, causing `xargs ps` to panic with
+	// nil pointer dereference. ps with no args lists processes; we just
+	// check that exit is 0 (or non-panic) and there is some stdout.
+	dir := t.TempDir()
+	stdout, _, code := cmdRun(t, "printf '' | xargs ps", dir)
+	assert.Equal(t, 0, code)
+	assert.NotEmpty(t, stdout, "ps should produce process listing, not panic")
+}
+
 // --- invokeCommand error paths ---
 
 func TestXargsRunCommandReturnsError(t *testing.T) {
