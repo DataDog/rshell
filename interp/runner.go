@@ -57,14 +57,11 @@ func (r *Runner) errf(format string, a ...any) {
 // The builtin is expected to have already validated newDir against the
 // sandbox; this method only performs state mutation.
 //
-// All three state updates (OLDPWD, r.Dir, PWD) are committed together:
-// r.Dir is not changed until both variable writes succeed. This prevents
-// the runner's working directory from diverging from $PWD (which would
-// cause broken relative-path resolution). Note: if the OLDPWD write
-// succeeds but the subsequent PWD write fails (possible when the variable
-// store is near MaxTotalVarsBytes), OLDPWD will have been updated without
-// PWD changing — that edge case is accepted since r.Dir is always
-// consistent with $PWD after a successful return.
+// All three state updates (OLDPWD, r.Dir, PWD) are committed atomically:
+// if OLDPWD is written successfully but the subsequent PWD write fails,
+// OLDPWD is rolled back to its previous value so that the variable store
+// remains consistent. r.Dir is not changed until both variable writes
+// succeed, preventing the runner's working directory from diverging from $PWD.
 func (r *Runner) applyNewWorkDir(newDir string) {
 	// Prefer the shell $PWD variable as the old directory to record in
 	// OLDPWD, matching bash's behaviour for inline PWD assignments.
@@ -77,21 +74,33 @@ func (r *Runner) applyNewWorkDir(newDir string) {
 		// OLDPWD update when that is also empty (runner has no prior dir).
 		old = r.Dir
 	}
-	// Write OLDPWD before committing r.Dir so that a storage-limit failure
-	// leaves the runner in a consistent state (unchanged Dir, no partial update).
+	// Write OLDPWD and PWD atomically: if PWD write fails after OLDPWD
+	// succeeds, roll back OLDPWD so that the variable store remains
+	// consistent (no partial update where OLDPWD changed but PWD did not).
 	// Always set OLDPWD when $PWD was explicitly set (even to empty),
 	// matching bash: `PWD="" cd sub` sets OLDPWD="". Only skip the
 	// OLDPWD update when $PWD was unset AND the fallback is also empty.
+	var prevOLDPWD string
+	var prevOLDPWDSet bool
+	wroteOLDPWD := false
 	if ok || old != "" {
+		// Capture prior OLDPWD before overwriting it so we can roll back.
+		prevOLDPWD, prevOLDPWDSet = r.lookupVarString("OLDPWD")
 		if err := r.setVarErr("OLDPWD", expand.Variable{Set: true, Kind: expand.String, Str: old}); err != nil {
 			r.errf("OLDPWD: %v\n", err)
 			r.exit.code = 1
 			return
 		}
+		wroteOLDPWD = true
 	}
 	if err := r.setVarErr("PWD", expand.Variable{Set: true, Kind: expand.String, Str: newDir}); err != nil {
 		r.errf("PWD: %v\n", err)
 		r.exit.code = 1
+		// Roll back OLDPWD so the variable store stays consistent:
+		// the cd did not complete, so OLDPWD should be unchanged.
+		if wroteOLDPWD {
+			_ = r.setVarErr("OLDPWD", expand.Variable{Set: prevOLDPWDSet, Kind: expand.String, Str: prevOLDPWD})
+		}
 		return
 	}
 	// Only update the internal directory after both variable writes succeeded.

@@ -1,0 +1,38 @@
+# Documents a known bash divergence in cd -P physical mode.
+#
+# When resolvePhysical encounters an intermediate path component outside
+# AllowedPaths, sandbox.LstatFile returns ErrPermission (not ErrNotExist).
+# The resolver treats this as "opaque non-symlink" and advances past it.
+# This allows a path whose non-existent intermediate component sits outside
+# the sandbox to still succeed, provided the final destination is inside
+# AllowedPaths.
+#
+# In bash, the same path fails because bash actually attempts to chdir into
+# the non-existent intermediate, getting ENOENT.
+#
+# This is NOT a sandbox escape: the mandatory StatFile gate at the end of the
+# cd handler still validates that the final target is within AllowedPaths.
+# The divergence is a deliberate trade-off to support HostPrefix container
+# sandboxes where intermediate path components may be outside the sandbox root.
+#
+# Setup: AllowedPaths=["inside"] (only the subdirectory, not its parent).
+# The script builds an absolute path that goes through a non-existent segment
+# ("outside") which is outside AllowedPaths, then backs up with ".." to reach
+# "inside". bash would fail on the non-existent intermediate; rshell succeeds.
+description: cd -P with non-existent out-of-sandbox intermediate succeeds (bash divergence).
+skip_assert_against_bash: true # bash fails on the non-existent intermediate; rshell's ErrPermission-skip allows it to succeed (intentional trade-off for HostPrefix support)
+setup:
+  files:
+    - path: inside/keep
+      content: ""
+input:
+  allowed_paths: ["inside"]
+  script: |+
+    ROOT="$PWD"
+    cd -P "${ROOT}/outside/../inside"
+    echo "ok"
+expect:
+  stdout: |+
+    ok
+  stderr: ""
+  exit_code: 0
