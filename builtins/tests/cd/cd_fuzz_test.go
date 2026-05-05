@@ -50,7 +50,7 @@ func shellSafe(s string) bool {
 // list without reintroducing duplicates.
 var pathSeeds = []string{
 	// --- Implementation edges ---
-	"",           // empty: rejected with "no such file or directory"
+	"",           // empty: bash no-op (stays in $PWD, exit 0)
 	".",          // self
 	"..",         // parent
 	"./.",        // redundant components
