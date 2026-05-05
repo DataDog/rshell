@@ -287,14 +287,28 @@ func run(ctx context.Context, c *builtins.CallContext, args []string, opt runOpt
 		}
 	}
 
-	// Bash defers identifier validation until assignment time: invalid
-	// names do not prevent the read from running, and earlier valid
-	// names get assigned before the error fires. We replicate this in
-	// the assignment loop below — here we only set up the names slice.
+	// Bash validates identifiers per-assignment but with one special
+	// case: if the FIRST NAME is invalid, the command aborts WITHOUT
+	// reading any input, leaving the stream untouched for the next
+	// read. Any subsequent invalid NAME (positions 2..n) only fires
+	// after the read has already happened — earlier valid names are
+	// assigned, then the error stops further assignment. Verified
+	// empirically against bash 5.2.0:
+	//   `printf 'a\nb\n' | { read 1bad; read next; }` → next="a"
+	//     (first NAME invalid, no read consumed).
+	//   `printf 'a b c\n' | { read x 2bad z; }` → x="a", error,
+	//     z unset; next read sees the second record.
+	// Run the upfront leading-name check before readInput so the
+	// stream stays intact in the leading-invalid case; defer the
+	// rest to the assignment loop below.
 	noNames := len(args) == 0
 	names := args
 	if noNames {
 		names = []string{"REPLY"}
+	}
+	if !noNames && !validVarName(names[0]) {
+		c.Errf("read: `%s': not a valid identifier\n", names[0])
+		return builtins.Result{Code: 1}
 	}
 
 	// Poll mode (-t 0) returns immediately: 0 if input is available,
