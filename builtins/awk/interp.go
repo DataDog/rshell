@@ -246,6 +246,20 @@ func expandAwkCmdEscapes(s string) string {
 				i++
 			}
 			sb.WriteByte(byte(v))
+		case 'x':
+			// Hex escape: \xNN (1 or 2 hex digits), gawk/mawk compatible.
+			if i < len(s) && isHexDigit(s[i]) {
+				v := hexDigitVal(s[i])
+				i++
+				if i < len(s) && isHexDigit(s[i]) {
+					v = v*16 + hexDigitVal(s[i])
+					i++
+				}
+				sb.WriteByte(byte(v))
+			} else {
+				sb.WriteByte('\\')
+				sb.WriteByte('x')
+			}
 		default:
 			// Unknown escape: preserve backslash and character.
 			sb.WriteByte('\\')
@@ -1116,7 +1130,10 @@ func (r *runtime) evalExpr(e expr) (awkValue, error) {
 			return uninitValue, err
 		}
 		idx := floatToInt64Safe(idxVal.toNumber())
-		if idx < 0 || idx > MaxFields {
+		if idx < 0 {
+			return uninitValue, fmt.Errorf("negative field index $%d", idx)
+		}
+		if idx > MaxFields {
 			return strValue(""), nil
 		}
 		return strNumValue(r.getField(int(idx))), nil

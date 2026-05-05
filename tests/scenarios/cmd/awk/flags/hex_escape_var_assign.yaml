@@ -1,0 +1,9 @@
+description: '\x hex escapes in -v variable assignments are expanded (gawk/mawk compatible).'
+input:
+  script: |+
+    awk -v 'x=\x41\x42\x43' 'BEGIN { print x }'
+expect:
+  stdout: |+
+    ABC
+  stderr: |+
+  exit_code: 0

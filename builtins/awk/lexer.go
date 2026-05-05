@@ -428,6 +428,20 @@ func (l *lexer) lexString() (token, error) {
 					l.pos++
 				}
 				sb.WriteByte(byte(v))
+			case 'x':
+				// Hex escape: \xNN (1 or 2 hex digits), gawk/mawk compatible.
+				if l.pos < len(l.src) && isHexDigit(l.src[l.pos]) {
+					v := hexDigitVal(l.src[l.pos])
+					l.pos++
+					if l.pos < len(l.src) && isHexDigit(l.src[l.pos]) {
+						v = v*16 + hexDigitVal(l.src[l.pos])
+						l.pos++
+					}
+					sb.WriteByte(byte(v))
+				} else {
+					sb.WriteByte('\\')
+					sb.WriteByte('x')
+				}
 			default:
 				// Unknown escape: keep backslash and char (matches awk behaviour).
 				sb.WriteByte('\\')
@@ -618,4 +632,17 @@ func isIdentCont(c byte) bool {
 }
 func isDigit(c byte) bool {
 	return c >= '0' && c <= '9'
+}
+func isHexDigit(c byte) bool {
+	return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')
+}
+func hexDigitVal(c byte) int {
+	switch {
+	case c >= '0' && c <= '9':
+		return int(c - '0')
+	case c >= 'a' && c <= 'f':
+		return int(c-'a') + 10
+	default: // A-F
+		return int(c-'A') + 10
+	}
 }

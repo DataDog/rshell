@@ -1,0 +1,9 @@
+description: '\x hex escapes in string literals are expanded (gawk/mawk compatible).'
+input:
+  script: |+
+    awk 'BEGIN { print "\x41\x42\x43" }'
+expect:
+  stdout: |+
+    ABC
+  stderr: |+
+  exit_code: 0
