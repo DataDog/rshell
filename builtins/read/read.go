@@ -577,6 +577,16 @@ func parseReadTimeout(s string) (float64, bool) {
 		}
 	}
 	if !seenDigit {
+		// Bash treats `.` and `+.` (lone dot, possibly with the
+		// sign already stripped above) as a 0-timeout poll —
+		// verified empirically against bash 5.2.0:
+		//   echo x | { read -t . v; read rest; }   → v="" rest="x"
+		// strconv.ParseFloat below would reject these tokens, so
+		// short-circuit here. Anything without a digit AND without
+		// a dot (i.e. empty after `+` strip) remains invalid.
+		if seenDot {
+			return 0, true
+		}
 		return 0, false
 	}
 	secs, err := strconv.ParseFloat(s, 64)
