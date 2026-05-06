@@ -1,0 +1,13 @@
+# skip: -p is intentionally not registered (PID disclosure / GTFOBins concern).
+# The real ss(8) accepts it; rshell rejects it via pflag's unknown-flag handling.
+description: ss -p is rejected to prevent process information disclosure.
+skip_assert_against_bash: true
+input:
+  script: |+
+    ss -p; echo "exit:$?"
+expect:
+  stdout_contains:
+    - "exit:1"
+  stderr_contains:
+    - "ss:"
+  exit_code: 0

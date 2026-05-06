@@ -1,0 +1,12 @@
+# skip: rshell ss has no --version output; it is rejected as an unknown flag.
+description: ss --version is rejected as an unknown flag.
+skip_assert_against_bash: true
+input:
+  script: |+
+    ss --version
+expect:
+  stdout: ""
+  stderr_contains:
+    - "ss:"
+    - "--version"
+  exit_code: 1

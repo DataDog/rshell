@@ -1,0 +1,13 @@
+# skip: output depends on live kernel socket state which differs between hosts.
+description: ss -t restricts output to TCP sockets and exits 0.
+skip_assert_against_bash: true
+input:
+  allowed_paths: ["/proc/net"]
+  script: |+
+    ss -t; echo "exit:$?"
+expect:
+  stdout_contains:
+    - "Netid"
+    - "exit:0"
+  stderr: ""
+  exit_code: 0

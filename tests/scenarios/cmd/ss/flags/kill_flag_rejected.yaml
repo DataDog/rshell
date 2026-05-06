@@ -1,0 +1,13 @@
+# skip: -K is intentionally not registered (kernel write/socket-kill concern).
+# The real ss(8) accepts it; rshell rejects it via pflag's unknown-flag handling.
+description: ss -K is rejected to prevent destructive socket operations.
+skip_assert_against_bash: true
+input:
+  script: |+
+    ss -K; echo "exit:$?"
+expect:
+  stdout_contains:
+    - "exit:1"
+  stderr_contains:
+    - "ss:"
+  exit_code: 0

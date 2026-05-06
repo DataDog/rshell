@@ -1,0 +1,13 @@
+# skip: output depends on live kernel socket state which differs between hosts.
+description: ss --tcp accepts the long-form flag and exits 0.
+skip_assert_against_bash: true
+input:
+  allowed_paths: ["/proc/net"]
+  script: |+
+    ss --tcp; echo "exit:$?"
+expect:
+  stdout_contains:
+    - "Netid"
+    - "exit:0"
+  stderr: ""
+  exit_code: 0
