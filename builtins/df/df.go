@@ -678,7 +678,12 @@ func humanBytes(v uint64, base uint64) string {
 	if v < base {
 		return strconv.FormatUint(v, 10)
 	}
-	// Walk through suffix levels until v fits in 4 digits.
+	// Walk through suffix levels until v fits in 4 digits. The loop
+	// always exits via the break before reaching the last iteration
+	// for any v that fits in uint64 (max suffix level needed for
+	// MaxUint64 in base-1024 is "E" at index 5, well within the
+	// "KMGTPE" range), so the post-loop fallback to len(suffixes)-1
+	// is unreachable in practice.
 	val := float64(v)
 	div := float64(base)
 	suffixIdx := 0
@@ -688,7 +693,6 @@ func humanBytes(v uint64, base uint64) string {
 			break
 		}
 		div *= float64(base)
-		suffixIdx = len(suffixes) - 1
 	}
 
 	// Round up. The granularity depends on the pre-rounded magnitude:
@@ -882,16 +886,27 @@ func minColumnWidths(withType bool) []int {
 // rejected. PrintDefaults would happily render that NUL byte into the
 // help text as `--all[= ]\x00…`, producing binary garbage. Clear the
 // NoOptDefVal of every flag before printing — Parse has already run, so
-// this only affects the rendered output, not parsing.
+// the cleared value cannot affect parsing for this invocation. The
+// defer-restore is defensive: makeFlags currently builds a fresh
+// FlagSet per invocation, but a future refactor that reuses or caches
+// the FlagSet would silently regress the explicit-value rejection
+// without it (--all=true would start being accepted).
 func printHelp(callCtx *builtins.CallContext, fs *builtins.FlagSet) {
 	callCtx.Out("Usage: df [OPTION]...\n")
 	callCtx.Out("Show information about the file system on which each FILE resides,\n")
 	callCtx.Out("or all file systems by default.\n\n")
+	saved := make(map[*builtins.Flag]string)
 	fs.VisitAll(func(flag *builtins.Flag) {
 		if flag.NoOptDefVal == noArgSentinel {
+			saved[flag] = flag.NoOptDefVal
 			flag.NoOptDefVal = ""
 		}
 	})
+	defer func() {
+		for f, v := range saved {
+			f.NoOptDefVal = v
+		}
+	}()
 	fs.SetOutput(callCtx.Stdout)
 	fs.PrintDefaults()
 	callCtx.Out("  -k                               use 1024-byte blocks (POSIX default)\n")

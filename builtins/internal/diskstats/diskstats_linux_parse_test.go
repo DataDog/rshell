@@ -220,10 +220,14 @@ func TestList_LiveHost_Linux(t *testing.T) {
 		}
 		// Permit no-root environments (some sandboxes) but if root
 		// is present, validate that its block fields are populated.
+		// NotZero on Total / BlockSize would catch silent statfs
+		// failures or regressions in the Frsize-vs-Bsize fallback.
 		if foundRoot {
 			for _, m := range mounts {
 				if m.MountPoint == "/" {
 					assert.NotEmpty(t, m.FSType)
+					assert.NotZero(t, m.Total, "root must report non-zero total")
+					assert.NotZero(t, m.BlockSize, "root must report non-zero block size")
 					break
 				}
 			}

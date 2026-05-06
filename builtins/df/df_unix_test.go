@@ -104,9 +104,30 @@ func TestDfTotalSumIsConsistent(t *testing.T) {
 		return
 	}
 	totalFields := strings.Fields(totalLine)
-	assert.Equal(t, strconv.FormatUint(sumBlocks, 10), totalFields[len(totalFields)-5])
-	assert.Equal(t, strconv.FormatUint(sumUsed, 10), totalFields[len(totalFields)-4])
-	assert.Equal(t, strconv.FormatUint(sumAvail, 10), totalFields[len(totalFields)-3])
+	gotBlocks, _ := strconv.ParseUint(totalFields[len(totalFields)-5], 10, 64)
+	gotUsed, _ := strconv.ParseUint(totalFields[len(totalFields)-4], 10, 64)
+	gotAvail, _ := strconv.ParseUint(totalFields[len(totalFields)-3], 10, 64)
+	// Per-row 1K-blocks values are ceil(bytes/1024); the total row
+	// is computed as ceil(totalBytes/1024). On a filesystem whose
+	// f_frsize is not a multiple of 1024 (some FUSE backends), the
+	// sum-of-rounded-rows can differ from the rounded-total by up
+	// to one block per row. Real Linux/macOS filesystems use ≥4 KiB
+	// blocks so this never surfaces in practice, but a tolerance
+	// hardens the assertion against pathological FUSE drivers.
+	tolerance := uint64(len(lines) - 2) // header + total row are excluded
+	assert.LessOrEqual(t, absDiff(gotBlocks, sumBlocks), tolerance,
+		"blocks total %d differs from sum %d by more than %d", gotBlocks, sumBlocks, tolerance)
+	assert.LessOrEqual(t, absDiff(gotUsed, sumUsed), tolerance,
+		"used total %d differs from sum %d by more than %d", gotUsed, sumUsed, tolerance)
+	assert.LessOrEqual(t, absDiff(gotAvail, sumAvail), tolerance,
+		"avail total %d differs from sum %d by more than %d", gotAvail, sumAvail, tolerance)
+}
+
+func absDiff(a, b uint64) uint64 {
+	if a >= b {
+		return a - b
+	}
+	return b - a
 }
 
 // TestDfTypeFilterMatchesAtLeastOne picks a type from the unfiltered
