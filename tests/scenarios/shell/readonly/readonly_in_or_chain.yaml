@@ -1,0 +1,10 @@
+# skip: readonly is intentionally blocked in the restricted shell
+description: Readonly in an OR chain is rejected at parse time even if it would never be reached.
+skip_assert_against_bash: true
+input:
+  script: |+
+    true || readonly X=1
+expect:
+  stdout: ""
+  stderr: "readonly is not supported\n"
+  exit_code: 2

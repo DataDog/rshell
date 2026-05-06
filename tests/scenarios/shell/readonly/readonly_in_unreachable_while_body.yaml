@@ -1,0 +1,11 @@
+# skip: readonly is intentionally blocked in the restricted shell
+description: Readonly is rejected even when nested in a while body that would never execute at runtime.
+skip_assert_against_bash: true
+input:
+  script: |+
+    while false; do readonly X=1; done
+    echo done
+expect:
+  stdout: ""
+  stderr: "readonly is not supported\n"
+  exit_code: 2

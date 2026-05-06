@@ -1,0 +1,10 @@
+# skip: readonly is intentionally blocked in the restricted shell
+description: Readonly used as an if condition is rejected before evaluation.
+skip_assert_against_bash: true
+input:
+  script: |+
+    if readonly X=1; then echo yes; fi
+expect:
+  stdout: ""
+  stderr: "readonly is not supported\n"
+  exit_code: 2

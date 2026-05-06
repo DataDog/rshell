@@ -1,0 +1,10 @@
+# skip: readonly is intentionally blocked in the restricted shell
+description: Readonly inside a for-loop body is rejected before any iteration runs.
+skip_assert_against_bash: true
+input:
+  script: |+
+    for x in 1; do readonly Y=$x; done
+expect:
+  stdout: ""
+  stderr: "readonly is not supported\n"
+  exit_code: 2

@@ -1,0 +1,10 @@
+# skip: readonly is intentionally blocked in the restricted shell
+description: Readonly used as a stage of a pipeline is rejected before the pipe runs.
+skip_assert_against_bash: true
+input:
+  script: |+
+    echo hello | readonly X=1
+expect:
+  stdout: ""
+  stderr: "readonly is not supported\n"
+  exit_code: 2

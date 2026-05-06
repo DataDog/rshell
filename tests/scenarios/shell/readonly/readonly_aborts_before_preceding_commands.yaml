@@ -1,0 +1,12 @@
+# skip: readonly is intentionally blocked in the restricted shell
+description: Readonly aborts the script at parse time so preceding commands do not run.
+skip_assert_against_bash: true
+input:
+  script: |+
+    echo before
+    readonly X=1
+    echo after
+expect:
+  stdout: ""
+  stderr: "readonly is not supported\n"
+  exit_code: 2
