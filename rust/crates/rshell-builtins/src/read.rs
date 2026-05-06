@@ -49,10 +49,7 @@ impl Builtin for Read_ {
             .map_or(b" \t\n".to_vec(), |v| v.to_vec());
         let fields = split_fields(&processed, &ifs, names.len());
         for (idx, name) in names.iter().enumerate() {
-            let value = fields
-                .get(idx)
-                .cloned()
-                .unwrap_or_else(BString::default);
+            let value = fields.get(idx).cloned().unwrap_or_else(BString::default);
             ctx.env.set(name.clone(), value, false, false);
         }
         0
