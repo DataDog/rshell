@@ -110,7 +110,9 @@ func (p *parser) parseStatement() (stmt, error) {
 	if p.atIdent("printf") {
 		return nil, fmt.Errorf("printf is not supported")
 	}
-	if p.atIdent("if") || p.atIdent("while") || p.atIdent("for") {
+	if p.atIdent("if") || p.atIdent("while") || p.atIdent("for") ||
+		p.atIdent("next") || p.atIdent("nextfile") || p.atIdent("exit") ||
+		p.atIdent("break") || p.atIdent("continue") {
 		return nil, fmt.Errorf("control flow statements are not supported")
 	}
 	if p.atIdent("delete") {

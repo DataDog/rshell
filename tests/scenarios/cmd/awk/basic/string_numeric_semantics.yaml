@@ -1,0 +1,19 @@
+description: awk preserves GNU awk string and numeric-string comparison semantics.
+setup:
+  files:
+    - path: input.txt
+      content: |+
+        0
+        10
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    awk 'BEGIN { print ("10" < "2"), (x == 0), (x == ""), !"0" } $1 { print "truthy", $1 } { print ($1 == 0), ($1 < 2), ($1 < "2") }' input.txt
+expect:
+  stdout: |+
+    1 1 1 0
+    1 1 1
+    truthy 10
+    0 0 1
+  stderr: |+
+  exit_code: 0

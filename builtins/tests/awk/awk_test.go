@@ -96,6 +96,23 @@ func TestAwkPatternsAndRegexMatch(t *testing.T) {
 	assert.Equal(t, "error\n", stdout)
 }
 
+func TestAwkStringNumericSemantics(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "input.txt", "0\n10\n")
+	stdout, stderr, code := cmdRun(t, `awk 'BEGIN { print ("10" < "2"), (x == 0), (x == ""), !"0" } $1 { print "truthy", $1 } { print ($1 == 0), ($1 < 2), ($1 < "2") }' input.txt`, dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "", stderr)
+	assert.Equal(t, "1 1 1 0\n1 1 1\ntruthy 10\n0 0 1\n", stdout)
+}
+
+func TestAwkBeginOnlySkipsInputFiles(t *testing.T) {
+	dir := t.TempDir()
+	stdout, stderr, code := cmdRun(t, `awk 'BEGIN { print "x" }' missing.txt`, dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "", stderr)
+	assert.Equal(t, "x\n", stdout)
+}
+
 func TestAwkProgramFileAndDashStdin(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, dir, "prog.awk", `{ print NR ":" $2 }`)
@@ -120,6 +137,10 @@ func TestAwkRejectsUnsafeFeatures(t *testing.T) {
 		`awk '{ system("sh") }' input.txt`,
 		`awk '{ print $1 > "out" }' input.txt`,
 		`awk '{ $1 = "x" }' input.txt`,
+		`awk '{ next; print $1 }' input.txt`,
+		`awk '{ exit 0 }' input.txt`,
+		`awk '{ print 1 / 0 }' input.txt`,
+		`awk -F '' '{ print $1 }' input.txt`,
 	} {
 		_, stderr, code := cmdRun(t, script, dir)
 		assert.Equal(t, 1, code, script)
