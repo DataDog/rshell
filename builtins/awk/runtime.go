@@ -43,10 +43,18 @@ type value struct {
 }
 
 func stringValue(s string) value {
+	return value{kind: valueString, s: s}
+}
+
+func inputStringValue(s string) value {
 	if n, ok := parseNumericString(s); ok {
 		return value{kind: valueStrNum, s: s, n: n}
 	}
 	return value{kind: valueString, s: s}
+}
+
+func unassignedValue() value {
+	return value{kind: valueStrNum, s: "", n: 0}
 }
 
 func numberValue(n float64) value {
@@ -89,7 +97,7 @@ func (v value) Bool() bool {
 	case valueNumber:
 		return v.n != 0
 	case valueStrNum:
-		return v.n != 0 || v.s != ""
+		return v.n != 0
 	case valueRegex:
 		return v.pattern != ""
 	default:
@@ -137,21 +145,31 @@ func (rt *runtime) run(ctx context.Context, files []string) builtins.Result {
 		rt.callCtx.Errf("awk: %v\n", err)
 		return builtins.Result{Code: 1}
 	}
-	status := uint8(0)
-	if len(files) == 0 {
-		files = []string{"-"}
-	}
-	for _, file := range files {
-		if err := rt.runFile(ctx, file); err != nil {
-			rt.callCtx.Errf("awk: %s: %v\n", file, err)
-			status = 1
+	if rt.needsInput() {
+		if len(files) == 0 {
+			files = []string{"-"}
+		}
+		for _, file := range files {
+			if err := rt.runFile(ctx, file); err != nil {
+				rt.callCtx.Errf("awk: %s: %v\n", file, err)
+				return builtins.Result{Code: 1}
+			}
 		}
 	}
 	if err := rt.runRules(ctx, ruleEnd); err != nil {
 		rt.callCtx.Errf("awk: %v\n", err)
 		return builtins.Result{Code: 1}
 	}
-	return builtins.Result{Code: status}
+	return builtins.Result{}
+}
+
+func (rt *runtime) needsInput() bool {
+	for _, r := range rt.prog.rules {
+		if r.kind == ruleNormal || r.kind == ruleEnd {
+			return true
+		}
+	}
+	return false
 }
 
 func (rt *runtime) runFile(ctx context.Context, file string) error {
@@ -265,12 +283,12 @@ func (rt *runtime) setRecord(rec string) error {
 
 func (rt *runtime) field(n int) value {
 	if n == 0 {
-		return stringValue(rt.record)
+		return inputStringValue(rt.record)
 	}
 	if n < 0 || n > len(rt.fields) {
 		return stringValue("")
 	}
-	return stringValue(rt.fields[n-1])
+	return inputStringValue(rt.fields[n-1])
 }
 
 func (rt *runtime) getVar(name string) value {
@@ -287,7 +305,7 @@ func (rt *runtime) getVar(name string) value {
 		if v, ok := rt.vars[name]; ok {
 			return v
 		}
-		return stringValue("")
+		return unassignedValue()
 	}
 }
 

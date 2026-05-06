@@ -73,8 +73,8 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			return builtins.Result{Code: 1}
 		}
 		rt := newRuntime(callCtx, prog)
-		if *fieldSep != "" {
-			if err := rt.setVar("FS", stringValue(DecodeAwkEscapes(*fieldSep))); err != nil {
+		if fs.Changed("field-separator") {
+			if err := rt.setVar("FS", inputStringValue(DecodeAwkEscapes(*fieldSep))); err != nil {
 				callCtx.Errf("awk: %v\n", err)
 				return builtins.Result{Code: 1}
 			}
@@ -85,7 +85,7 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 				callCtx.Errf("awk: invalid -v assignment %q\n", assignment)
 				return builtins.Result{Code: 1}
 			}
-			if err := rt.setVar(name, stringValue(DecodeAwkEscapes(value))); err != nil {
+			if err := rt.setVar(name, inputStringValue(DecodeAwkEscapes(value))); err != nil {
 				callCtx.Errf("awk: %v\n", err)
 				return builtins.Result{Code: 1}
 			}
