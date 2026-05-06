@@ -7,12 +7,14 @@
 
 package read
 
-// pollInputNonConsuming returns supported=false on platforms where
-// rshell does not implement a non-blocking poll. The caller falls back
-// to a consume-based probe (read one byte with a deadline in the past)
-// — that fallback is best-effort and consumes one byte on success,
-// diverging from bash's non-consuming semantics. Implementing
-// non-consuming poll on Windows is left for a follow-up.
+import "github.com/DataDog/rshell/builtins/internal/winpoll"
+
+// pollInputNonConsuming dispatches to the platform-specific implementation
+// for non-Unix builds. On Windows, builtins/internal/winpoll uses
+// GetFileType + PeekNamedPipe / GetNumberOfConsoleInputEvents to
+// report buffered-data availability without consuming input. On other
+// non-Unix platforms (e.g. plan9), the stub returns supported=false and
+// the caller falls back to a conservative Code 1.
 func pollInputNonConsuming(fd uintptr) (available, supported bool) {
-	return false, false
+	return winpoll.PollNonConsuming(fd)
 }
