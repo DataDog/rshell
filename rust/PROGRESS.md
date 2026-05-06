@@ -28,8 +28,8 @@ Statuses: `[ ]` not started · `[~]` in progress / blocked · `[x]` done.
 
 ## Snapshot
 
-- **Active phase:** Phase 4 — port the 29 builtins
-- **Last updated:** 2026-05-06 (Phase 3 done — 293/293 smoke set passes; 906/2643 of full corpus passes against `rshell-rs`)
+- **Active phase:** Phase 4 — port the 29 builtins (in progress)
+- **Last updated:** 2026-05-06 (Phase 4 wave 3 — 504/504 smoke; ~17 builtins ported; cmdsubst + arith + brace-expansion modifiers landed)
 - **Branch:** `alex/rust`
 - **Binary name during cohabitation:** `rshell-rs`
 - **Go removal:** out of scope for this branch; handled separately by the user
@@ -43,7 +43,9 @@ Statuses: `[ ]` not started · `[~]` in progress / blocked · `[x]` done.
 | 1     | done   | `56d803dc` → `c7ac2339` | `25426561894`      | success |
 | 2     | done   | `87a91da6` → `96d84887` | `25428530678`      | success |
 | 3     | done   | `1a95ca5e`              | `25430933209`      | success |
-| 4     | not started |                     |                    |               |
+| 4w1   | done   | `47884460`              |                    |               |
+| 4w2   | done   | `00ca756e` → `621976e1` |                    |               |
+| 4w3   | done   | `ac11d441` → `ece73af5` |                    | success |
 | 5     | not started |                     |                    |               |
 | 6     | not started |                     |                    |               |
 
@@ -298,36 +300,37 @@ done only when its scenarios pass under `rshell-rs`.
 
 Trivial / control:
 
-- [ ] `true`
-- [ ] `false`
-- [ ] `:` (no-op, may be parser-level)
-- [ ] `exit`
-- [ ] `echo`
-- [ ] `pwd`
-- [ ] `printf`
-- [ ] `help`
-- [ ] `testcmd` (`[ ]` / `test`)
-- [ ] `uname`
+- [x] `true` (Phase 3)
+- [x] `false` (Phase 3)
+- [x] `:` (Phase 3)
+- [x] `exit` (Phase 3)
+- [x] `echo` (Phase 3)
+- [x] `pwd` (Phase 3)
+- [x] `printf` (Phase 4w1)
+- [x] `help` (Phase 4w1)
+- [x] `testcmd` / `test` / `[` (Phase 4w1)
+- [x] `uname` (Phase 4w1)
+- [x] `read` (Phase 4w3)
 
 File readers:
 
-- [ ] `cat`
-- [ ] `head`
-- [ ] `tail`
-- [ ] `wc`
-- [ ] `cut`
-- [ ] `tr`
-- [ ] `uniq`
-- [ ] `sort`
-- [ ] `grep`
-- [ ] `sed`
-- [ ] `strings_cmd`
+- [x] `cat` (Phase 3)
+- [x] `head` (Phase 4w1)
+- [x] `tail` (Phase 4w1)
+- [x] `wc` (Phase 4w1)
+- [x] `cut` (Phase 4w1)
+- [x] `tr` (Phase 4w1)
+- [x] `uniq` (Phase 4w1)
+- [x] `sort` (Phase 4w1)
+- [x] `grep` (Phase 4w1)
+- [x] `sed` (Phase 4w1)
+- [x] `strings` (Phase 4w2)
 
 Filesystem walkers:
 
-- [ ] `ls`
-- [ ] `find`
-- [ ] `du`
+- [x] `ls` (Phase 4w1)
+- [x] `find` (Phase 4w2)
+- [x] `du` (Phase 4w2)
 
 System / network (Linux-heavy):
 
