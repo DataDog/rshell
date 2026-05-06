@@ -7,6 +7,7 @@ package interp
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -633,7 +634,18 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 					return runCmdWithStdin(ctx, dir, name, args, childStdin)
 				},
 				RunCommandWithStdin: runCmdWithStdin,
-				Proc:                r.proc,
+				// Intentionally not exposing SetVar / GetVar in the
+				// child CallContext used for find -exec / -execdir
+				// grandchildren. find treats each invocation as a
+				// separate command (bash forks and execs a new
+				// process), so any environment mutation must not
+				// leak back to the calling shell. State-mutating
+				// builtins like read detect the absent SetVar and
+				// refuse to run with "variable access is not
+				// available", which is the closest analogue to bash's
+				// "exec read fails because read is a builtin, not an
+				// executable on PATH" behaviour.
+				Proc: r.proc,
 			}
 			if childStdin != nil {
 				child.Stdin = childStdin
@@ -720,7 +732,30 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 			},
 			RunCommand:          runCmd,
 			RunCommandWithStdin: runCmdWithStdin,
-			Proc:                r.proc,
+			SetVar: func(name, value string) error {
+				if len(value) > MaxVarBytes {
+					return fmt.Errorf("%s: value too large (limit %d bytes)", name, MaxVarBytes)
+				}
+				err := r.setVarErr(name, expand.Variable{Set: true, Kind: expand.String, Str: value})
+				if err == nil {
+					return nil
+				}
+				// Total-storage exhaustion is script-aborting (matches the
+				// AST setVar behaviour in interp/vars.go). Translate the
+				// internal sentinel to the public builtins.ErrVarStorageExceeded
+				// so state-mutating builtins can surface Result.Exiting=true
+				// without needing access to the private interp type.
+				var storageErr *errTotalVarStorageExceeded
+				if errors.As(err, &storageErr) {
+					return fmt.Errorf("%s: %w", err, builtins.ErrVarStorageExceeded)
+				}
+				return err
+			},
+			GetVar: func(name string) (string, bool) {
+				vr := r.writeEnv.Get(name)
+				return vr.Str, vr.IsSet()
+			},
+			Proc: r.proc,
 		}
 		if r.stdin != nil { // do not assign a typed nil into the io.Reader interface
 			call.Stdin = r.stdin
@@ -730,6 +765,18 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 		r.exit.exiting = result.Exiting
 		r.breakEnclosing = result.BreakN
 		r.contnEnclosing = result.ContinueN
+		// If the run-level context was cancelled while the builtin was
+		// blocked (MaxExecutionTime, CLI --timeout, parent cancellation),
+		// surface that error to Run() so callers can distinguish a
+		// timeout-driven termination from an ordinary failing exit code.
+		// Without this, a long-blocking builtin that happens to be the
+		// last command in a script would leave Run() returning the
+		// builtin's status (e.g. `read -t`'s 142) instead of the
+		// underlying context.DeadlineExceeded that cmd/rshell main checks
+		// for to print "execution timed out".
+		if err := ctx.Err(); err != nil {
+			r.exit.fatal(err)
+		}
 		return
 	}
 	// Allowed but not known: the default execHandler (noExecHandler) will
