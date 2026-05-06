@@ -17,14 +17,13 @@ package interp
 import (
 	"context"
 	"errors"
-	"os"
 	"os/exec"
 )
 
-// hostEnvAllowlist is the set of environment variables forwarded to host
-// binaries. Anything else from the parent process env is stripped so that
-// host invocations do not leak ambient configuration that the rest of the
-// shell deliberately keeps out.
+// hostEnvAllowlist is the set of environment variable names forwarded to
+// host binaries. Anything else in the runner environment is stripped so
+// that host invocations do not leak ambient configuration that the rest
+// of the shell deliberately keeps out.
 var hostEnvAllowlist = []string{"PATH", "HOME", "LANG"}
 
 // runHostCommand executes the host binary at path with args[1:] as its argv,
@@ -40,7 +39,7 @@ var hostEnvAllowlist = []string{"PATH", "HOME", "LANG"}
 func (r *Runner) runHostCommand(ctx context.Context, path string, args []string) uint8 {
 	cmd := exec.CommandContext(ctx, path, args[1:]...)
 	cmd.Dir = r.Dir
-	cmd.Env = filterHostEnv()
+	cmd.Env = r.filterHostEnv()
 	if r.stdin != nil {
 		cmd.Stdin = r.stdin
 	}
@@ -86,14 +85,23 @@ func (r *Runner) runHostCommand(ctx context.Context, path string, args []string)
 }
 
 // filterHostEnv builds a minimal env slice for host binaries from the
-// process env, forwarding only the names in hostEnvAllowlist. Variables
-// that are unset are simply omitted from the result.
-func filterHostEnv() []string {
+// runner's environment overlay (r.writeEnv) — NOT the ambient Go
+// process env — forwarding only the names in hostEnvAllowlist.
+// Reading from r.writeEnv is what makes the runner's documented
+// "empty by default, no host env inherited" guarantee hold for host
+// binaries: an unset PATH/HOME/LANG in the runner is simply omitted,
+// regardless of what the surrounding Go process exports. It also lets
+// caller-provided values (interp.Env) and inline assignments
+// (PATH=/safe hostcmd) take effect — those flow through r.writeEnv,
+// where call() applies inline assigns before dispatch.
+func (r *Runner) filterHostEnv() []string {
 	out := make([]string, 0, len(hostEnvAllowlist))
 	for _, name := range hostEnvAllowlist {
-		if v, ok := os.LookupEnv(name); ok {
-			out = append(out, name+"="+v)
+		vr := r.writeEnv.Get(name)
+		if !vr.Declared() {
+			continue
 		}
+		out = append(out, name+"="+vr.String())
 	}
 	return out
 }

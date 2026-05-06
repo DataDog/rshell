@@ -59,15 +59,28 @@ func parseHostExecScript(t *testing.T, src string) *syntax.File {
 // real stdin keeps the host-exec path identical to production.
 func newHostExecRunner(t *testing.T, hostEntries []string, stdin io.Reader) (*interp.Runner, *bytes.Buffer, *bytes.Buffer) {
 	t.Helper()
+	return newHostExecRunnerWithEnv(t, hostEntries, stdin, nil)
+}
+
+// newHostExecRunnerWithEnv is like newHostExecRunner but also seeds the
+// runner environment via interp.Env. The host-exec env-filtering tests
+// must provide env this way (NOT via t.Setenv) because the
+// implementation reads from r.writeEnv, not the ambient Go process env.
+func newHostExecRunnerWithEnv(t *testing.T, hostEntries []string, stdin io.Reader, envPairs []string) (*interp.Runner, *bytes.Buffer, *bytes.Buffer) {
+	t.Helper()
 	stdout := &bytes.Buffer{}
 	stderr := &bytes.Buffer{}
 	if stdin == nil {
 		stdin = strings.NewReader("")
 	}
-	r, err := interp.New(
+	opts := []interp.RunnerOption{
 		interp.AllowedCommands(hostEntries),
 		interp.StdIO(stdin, stdout, stderr),
-	)
+	}
+	if envPairs != nil {
+		opts = append(opts, interp.Env(envPairs...))
+	}
+	r, err := interp.New(opts...)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = r.Close() })
 	return r, stdout, stderr
@@ -160,30 +173,71 @@ func TestHostExecDeadlineSurfacesAsDeadlineExceeded(t *testing.T) {
 }
 
 func TestHostExecEnvFilteredToAllowlist(t *testing.T) {
-	// Set a sentinel env var that should NOT propagate, and one that
-	// should. /usr/bin/env prints the resulting environment; we assert
-	// that PATH (allowlisted) shows up and the sentinel does not.
-	t.Setenv("PATH", "/usr/bin:/bin")
+	// Env values come from the runner's environment overlay (interp.Env),
+	// not the ambient Go process env. Use t.Setenv to plant a sentinel in
+	// the process env that must NOT leak through, and provide a
+	// runner-scoped PATH that the host binary should see.
 	t.Setenv("RSHELL_HOST_EXEC_LEAK_CHECK", "should-not-appear")
 
-	r, stdout, _ := newHostExecRunner(t, []string{"host:env=/usr/bin/env"}, nil)
+	r, stdout, _ := newHostExecRunnerWithEnv(t,
+		[]string{"host:env=/usr/bin/env"}, nil,
+		[]string{"PATH=/usr/bin:/bin"},
+	)
 	err := r.Run(context.Background(), parseHostExecScript(t, `env`))
 	require.NoError(t, err)
 	out := stdout.String()
-	assert.Contains(t, out, "PATH=/usr/bin:/bin", "PATH must be forwarded")
-	assert.NotContains(t, out, "RSHELL_HOST_EXEC_LEAK_CHECK", "non-allowlisted env vars must be stripped")
+	assert.Contains(t, out, "PATH=/usr/bin:/bin", "PATH must be forwarded from runner env")
+	assert.NotContains(t, out, "RSHELL_HOST_EXEC_LEAK_CHECK",
+		"ambient Go process env must NOT leak — host binaries see only the runner env")
 }
 
 func TestHostExecForwardsHomeAndLang(t *testing.T) {
-	t.Setenv("HOME", "/tmp/host-exec-home")
-	t.Setenv("LANG", "C.UTF-8")
-
-	r, stdout, _ := newHostExecRunner(t, []string{"host:env=/usr/bin/env"}, nil)
+	r, stdout, _ := newHostExecRunnerWithEnv(t,
+		[]string{"host:env=/usr/bin/env"}, nil,
+		[]string{"HOME=/tmp/host-exec-home", "LANG=C.UTF-8"},
+	)
 	err := r.Run(context.Background(), parseHostExecScript(t, `env`))
 	require.NoError(t, err)
 	out := stdout.String()
 	assert.Contains(t, out, "HOME=/tmp/host-exec-home")
 	assert.Contains(t, out, "LANG=C.UTF-8")
+}
+
+// TestHostExecDefaultEnvIsEmpty verifies the runner's "no host env
+// inherited by default" guarantee: with no interp.Env option, even
+// allowlisted names (PATH/HOME/LANG) must not be forwarded to the host
+// binary, regardless of the ambient Go process env. Regression for the
+// previous os.LookupEnv-based filter that ignored runner env.
+func TestHostExecDefaultEnvIsEmpty(t *testing.T) {
+	// Plant ambient env that must be ignored.
+	t.Setenv("PATH", "/should/not/leak")
+	t.Setenv("HOME", "/should/not/leak/home")
+	t.Setenv("LANG", "should-not-leak")
+
+	r, stdout, _ := newHostExecRunner(t, []string{"host:env=/usr/bin/env"}, nil)
+	err := r.Run(context.Background(), parseHostExecScript(t, `env`))
+	require.NoError(t, err)
+	out := stdout.String()
+	assert.NotContains(t, out, "/should/not/leak",
+		"runner default env is empty; host binary must not see ambient PATH/HOME/LANG")
+}
+
+// TestHostExecInlineAssignmentTakesEffect verifies that inline command
+// assignments (PATH=/safe hostcmd) are visible to host binaries. They
+// flow through r.writeEnv before call() dispatches, which is exactly
+// where filterHostEnv now reads from.
+func TestHostExecInlineAssignmentTakesEffect(t *testing.T) {
+	r, stdout, _ := newHostExecRunnerWithEnv(t,
+		[]string{"host:env=/usr/bin/env"}, nil,
+		[]string{"PATH=/initial"},
+	)
+	err := r.Run(context.Background(), parseHostExecScript(t, `PATH=/inline-override env`))
+	require.NoError(t, err)
+	out := stdout.String()
+	assert.Contains(t, out, "PATH=/inline-override",
+		"inline assignment must override the runner env for that command")
+	assert.NotContains(t, out, "PATH=/initial",
+		"the original PATH must not also appear")
 }
 
 // TestHostExecBuiltinTakesPrecedence verifies that when a name is both an
@@ -200,8 +254,10 @@ func TestHostExecBuiltinTakesPrecedence(t *testing.T) {
 	assert.Equal(t, "from-builtin\n", stdout.String())
 }
 
-// Sanity: make sure os.Environ has an unrelated value we can rely on for the
-// negative side of TestHostExecEnvFilteredToAllowlist.
+// Sanity: make sure t.Setenv actually plants the var in the ambient Go
+// process env. Used as a baseline for tests that assert host binaries
+// do NOT see ambient process env (so we can be sure the negative
+// assertion isn't trivially satisfied by t.Setenv being a no-op).
 func TestHostExecOSEnvironHasUnrelatedVar(t *testing.T) {
 	t.Setenv("RSHELL_HOST_EXEC_LEAK_CHECK", "yes")
 	found := false
