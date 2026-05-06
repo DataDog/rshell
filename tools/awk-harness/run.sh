@@ -17,6 +17,7 @@ Targets:
 
 Required for test runs:
   AWK_UNDER_TEST=/path/to/awk-like-binary
+  For rshell, use: RSHELL_BIN=./rshell AWK_UNDER_TEST=tools/awk-harness/rshell-awk
 
 Oracle:
   The harness compares candidate behavior to GNU awk, not mawk or system awk.
