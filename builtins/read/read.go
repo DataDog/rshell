@@ -3,10 +3,64 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2026-present Datadog, Inc.
 
-// Package read implements the `read` shell builtin: it consumes a line
-// (or bounded chunk) from standard input, applies POSIX field-splitting
-// based on IFS, and assigns the resulting fields to one or more shell
-// variables in the calling shell's scope.
+// Package read implements the read builtin command.
+//
+// read — read a line from standard input and assign to shell variables
+//
+// Usage: read [-r] [-p PROMPT] [-d DELIM] [-n NCHARS] [-N NBYTES] [-t TIMEOUT] [NAME...]
+//
+// Read one record from standard input (terminated by newline by default,
+// or by DELIM with -d), apply POSIX field-splitting based on IFS, and
+// assign each field to a shell variable named by NAME. With no NAME the
+// whole line is assigned to REPLY. EOF returns exit code 1; a positive
+// -t TIMEOUT that fires returns 142 with any partially-read data still
+// assigned (matching bash's 128 + SIGALRM convention).
+//
+// Flags:
+//
+//	-r          Raw mode. Disable backslash-escape interpretation:
+//	            backslashes are kept verbatim, no line continuation.
+//	-p PROMPT   Print PROMPT to stderr before reading. Suppressed unless
+//	            stdin is a terminal (matches bash).
+//	-d DELIM    Use the first byte of DELIM as the line terminator
+//	            instead of newline. An empty DELIM means NUL.
+//	-n NCHARS   Return after reading at most NCHARS characters (max
+//	            1 MiB). Counts UTF-8 code points; partial multi-byte
+//	            sequences are preserved as-is.
+//	-N NBYTES   Return after reading exactly NBYTES bytes (max 1 MiB),
+//	            ignoring the delimiter. Last-set wins between -n and -N.
+//	-t TIMEOUT  Time out after TIMEOUT seconds (decimal allowed).
+//	            -t 0 / -t "" / -t . / -t + is a non-consuming poll:
+//	            exit 0 if input is available, 1 otherwise. Ignored for
+//	            regular-file stdin (bash's documented behaviour).
+//	-h, --help  Print usage and exit.
+//
+// Field splitting:
+//
+//	Whitespace IFS chars (space, tab, newline) coalesce into a single
+//	separator; non-whitespace IFS chars do not coalesce. With more
+//	NAMEs than fields, missing names are assigned "". With more fields
+//	than NAMEs, the last NAME absorbs the remainder verbatim.
+//
+// Backslash escapes (non-raw mode):
+//
+//	\<newline>       Line continuation — both bytes dropped.
+//	\<X>             Literal X (escape suppresses delim and NUL on X).
+//	\<NUL>           Both bytes dropped (NULs are always stripped).
+//
+// Exit codes:
+//
+//	0  Read completed (or -t 0 found input ready).
+//	1  EOF before any byte / -t 0 with no input available / invalid
+//	   identifier / value-too-large.
+//	2  Variable access not available (find -exec / -execdir grandchild).
+//	142  Positive -t TIMEOUT expired (128 + SIGALRM).
+//
+// Unsupported flags (vs. bash): -a (array), -s (silent), -u (read from
+// FD), -e (readline), -i (initial text). These are not implemented
+// because the underlying shell features (arrays, terminal-mode
+// manipulation, FD redirection beyond pipe/file, line editor) are
+// outside rshell's scope.
 package read
 
 import (
@@ -32,7 +86,13 @@ import (
 // arbitrary amount of memory.
 const MaxReadBytes = 1 << 20 // 1 MiB
 
-// Cmd is the read builtin command.
+// Cmd is the read builtin command descriptor.
+//
+// No Help field is set: read registers its own --help flag (handled in
+// registerFlags), and the convention enforced by
+// builtins/tests/help.TestHelpFieldOnlyOnNoFlagsCommands is that
+// flag-having commands surface help via --help so `help read` and
+// `read --help` produce the same output.
 var Cmd = builtins.Command{
 	Name:        "read",
 	Description: "read a line from standard input and assign to shell variables",
@@ -74,9 +134,30 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			callCtx.Out("Usage: read [OPTION]... [NAME...]\n")
 			callCtx.Out("Read one line from standard input and assign each field to a shell\n")
 			callCtx.Out("variable named by NAME, splitting on the characters in IFS. With no\n")
-			callCtx.Out("NAME, the line is assigned to REPLY.\n\n")
+			callCtx.Out("NAME, the whole line is assigned to REPLY.\n")
+			callCtx.Out("\n")
+			callCtx.Out("Options:\n")
 			fs.SetOutput(callCtx.Stdout)
 			fs.PrintDefaults()
+			callCtx.Out("\n")
+			callCtx.Out("Field splitting: whitespace IFS chars (space, tab, newline) coalesce\n")
+			callCtx.Out("into one separator; non-whitespace IFS chars do not. With more NAMEs\n")
+			callCtx.Out("than fields, missing names are assigned \"\". With more fields than\n")
+			callCtx.Out("NAMEs, the last NAME absorbs the remainder.\n")
+			callCtx.Out("\n")
+			callCtx.Out("Backslash escapes (non-raw mode): \\<newline> is a line continuation;\n")
+			callCtx.Out("\\<X> for any other byte X is preserved as a literal X (suppressing\n")
+			callCtx.Out("delim/NUL handling on X). NUL bytes are always stripped.\n")
+			callCtx.Out("\n")
+			callCtx.Out("Exit Status:\n")
+			callCtx.Out("  0    Read completed (or -t 0 found input ready).\n")
+			callCtx.Out("  1    EOF before any byte / -t 0 with no input / invalid identifier /\n")
+			callCtx.Out("       value too large.\n")
+			callCtx.Out("  2    Variable access not available (find -exec / -execdir grandchild).\n")
+			callCtx.Out("  142  Positive -t TIMEOUT expired (128 + SIGALRM).\n")
+			callCtx.Out("\n")
+			callCtx.Out("Unsupported (vs. bash): -a (array), -s (silent), -u (read from FD),\n")
+			callCtx.Out("-e (readline), -i (initial text).\n")
 			return builtins.Result{}
 		}
 		return run(ctx, callCtx, args, runOpts{
