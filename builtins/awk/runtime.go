@@ -332,7 +332,11 @@ func (rt *runtime) setRecord(rec string) error {
 		if err := validateFS(fs); err != nil {
 			return err
 		}
-		rt.fields = strings.Split(rec, fs)
+		if rec == "" {
+			rt.fields = nil
+		} else {
+			rt.fields = strings.Split(rec, fs)
+		}
 	}
 	if len(rt.fields) > MaxFields {
 		return fmt.Errorf("record has too many fields")

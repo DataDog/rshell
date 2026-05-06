@@ -82,7 +82,7 @@ func lex(src string) ([]token, error) {
 		if tok.kind == tokEOF {
 			return toks, nil
 		}
-		if tok.kind != tokNewline {
+		if tok.kind != tokEOF {
 			l.last = tok.kind
 		}
 	}

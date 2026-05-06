@@ -245,7 +245,10 @@ func (p *parser) parsePrefix() (expr, error) {
 		return p.parseFieldRef()
 	case tokLParen:
 		p.advance()
+		old := p.stopPrintRedirect
+		p.stopPrintRedirect = false
 		x, err := p.parseExpression(0)
+		p.stopPrintRedirect = old
 		if err != nil {
 			return nil, err
 		}
