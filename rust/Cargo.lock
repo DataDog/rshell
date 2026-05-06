@@ -514,7 +514,10 @@ name = "rshell-parser"
 version = "0.1.0"
 dependencies = [
  "bstr",
+ "serde",
+ "serde_yaml_ng",
  "thiserror",
+ "walkdir",
 ]
 
 [[package]]

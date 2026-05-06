@@ -11,5 +11,10 @@ publish.workspace = true
 thiserror.workspace = true
 bstr.workspace = true
 
+[dev-dependencies]
+walkdir.workspace = true
+serde.workspace = true
+serde_yaml_ng.workspace = true
+
 [lints]
 workspace = true
