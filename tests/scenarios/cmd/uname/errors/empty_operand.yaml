@@ -1,0 +1,10 @@
+description: uname rejects an empty-string positional operand
+input:
+  script: |+
+    uname ''
+expect:
+  stdout: ""
+  stderr: |+
+    uname: extra operand ''
+    Try 'uname --help' for more information.
+  exit_code: 1

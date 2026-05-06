@@ -1,0 +1,12 @@
+# skip: GNU uname supports --processor, --hardware-platform, and
+# --operating-system; our implementation does not. Bash succeeds with this
+# flag, while we reject it as an unknown flag.
+description: uname rejects GNU-specific flags we do not implement
+skip_assert_against_bash: true
+input:
+  script: |+
+    uname --processor
+expect:
+  stdout: ""
+  stderr_contains: ["uname:", "--processor"]
+  exit_code: 1

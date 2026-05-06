@@ -1,0 +1,11 @@
+# skip: pflag formats unknown-flag errors differently from GNU coreutils
+# ("unknown flag" vs "unrecognized option"). Exit code matches (1).
+description: uname rejects an unknown long flag
+skip_assert_against_bash: true
+input:
+  script: |+
+    uname --bogus
+expect:
+  stdout: ""
+  stderr_contains: ["uname:", "--bogus"]
+  exit_code: 1

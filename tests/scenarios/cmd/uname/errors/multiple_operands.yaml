@@ -1,0 +1,10 @@
+description: uname rejects multiple positional operands and reports the first one
+input:
+  script: |+
+    uname foo bar baz
+expect:
+  stdout: ""
+  stderr: |+
+    uname: extra operand 'foo'
+    Try 'uname --help' for more information.
+  exit_code: 1

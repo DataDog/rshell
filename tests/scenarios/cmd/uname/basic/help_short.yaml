@@ -1,0 +1,11 @@
+# skip: GNU uname rejects -h as an invalid option; our shell treats -h as the
+# short form of --help. Help format also intentionally differs.
+description: uname -h prints usage to stdout
+skip_assert_against_bash: true
+input:
+  script: |+
+    uname -h
+expect:
+  stdout_contains: ["uname", "kernel-name", "nodename", "kernel-release", "kernel-version", "machine"]
+  stderr: ""
+  exit_code: 0

@@ -1,0 +1,10 @@
+description: uname treats --help after -- as a positional operand and rejects it
+input:
+  script: |+
+    uname -- --help
+expect:
+  stdout: ""
+  stderr: |+
+    uname: extra operand '--help'
+    Try 'uname --help' for more information.
+  exit_code: 1

@@ -1,0 +1,11 @@
+# skip: GNU uname --help body differs from ours (extra flags, footer text).
+# Both implementations agree --help wins over a stray operand and exits 0.
+description: uname --help wins over a positional operand
+skip_assert_against_bash: true
+input:
+  script: |+
+    uname --help foo
+expect:
+  stdout_contains: ["uname", "kernel-name", "machine"]
+  stderr: ""
+  exit_code: 0
