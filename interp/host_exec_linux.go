@@ -48,13 +48,28 @@ func (r *Runner) runHostCommand(ctx context.Context, path string, args []string)
 	cmd.Stderr = r.stderr
 
 	err := cmd.Run()
+	// If the runner's context expired (MaxExecutionTime, parent cancel,
+	// or builtin-style cooperative cancel), exec.CommandContext kills
+	// the child with SIGKILL and cmd.Run returns *exec.ExitError with
+	// ExitCode() == -1. We must surface ctx.Err() back through Run()
+	// rather than mapping the signal to a numeric exit code, otherwise
+	// Run() returns ExitStatus(130) and the CLI's timeout path
+	// (context.DeadlineExceeded → "execution timed out", exit 124)
+	// never fires and run-span telemetry is misclassified as success.
+	// Use exit.fatal so the err is recorded; the returned uint8 is only
+	// observed when r.exit.err is nil, so the value is symbolic here.
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		r.exit.fatal(ctxErr)
+		return 130
+	}
 	if err == nil {
 		return 0
 	}
 	var exitErr *exec.ExitError
 	if errors.As(err, &exitErr) {
 		// ExitCode returns -1 if the process was terminated by a signal
-		// (e.g. SIGKILL on context cancellation). Map that to 130 — the
+		// without a context cancel having fired (e.g. an external
+		// SIGKILL from outside this process). Map that to 130 — the
 		// shell-conventional "terminated" code — so the caller can still
 		// observe a non-zero exit.
 		code := exitErr.ExitCode()

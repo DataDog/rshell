@@ -126,11 +126,37 @@ func TestHostExecContextCancellationKillsProcess(t *testing.T) {
 	cancel()
 
 	select {
-	case <-done:
-		// success: the run returned within the deadline below.
+	case err := <-done:
+		// The cancellation must propagate as context.Canceled, not as a
+		// numeric exit status. Otherwise the CLI's timeout/cancel path
+		// would be skipped and run telemetry would be misclassified.
+		require.ErrorIs(t, err, context.Canceled)
 	case <-time.After(2 * time.Second):
 		t.Fatal("host process was not killed within 2s of context cancel")
 	}
+}
+
+// TestHostExecDeadlineSurfacesAsDeadlineExceeded verifies that a parent
+// context deadline kills the host binary AND surfaces as
+// context.DeadlineExceeded back through Run(), so that the CLI's
+// --timeout path ("execution timed out after Xms" / exit 124) and
+// run-span outcome classification both work for host-binary invocations
+// the same way they do for builtins.
+func TestHostExecDeadlineSurfacesAsDeadlineExceeded(t *testing.T) {
+	r, _, _ := newHostExecRunner(t, []string{"host:sleep=/bin/sleep"}, nil)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+
+	start := time.Now()
+	err := r.Run(ctx, parseHostExecScript(t, `sleep 30`))
+	elapsed := time.Since(start)
+
+	require.ErrorIs(t, err, context.DeadlineExceeded,
+		"host-exec context deadline must surface as context.DeadlineExceeded, "+
+			"not ExitStatus(130). Got %v", err)
+	assert.Less(t, elapsed, 2*time.Second,
+		"deadline should fire within ~100ms, but Run() took %s", elapsed)
 }
 
 func TestHostExecEnvFilteredToAllowlist(t *testing.T) {
