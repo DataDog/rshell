@@ -12,12 +12,16 @@ pub mod find;
 pub mod grep;
 pub mod head;
 pub mod help;
+pub mod ip;
 pub mod ls;
+pub mod ping;
 pub mod printf;
+pub mod ps;
 pub mod pwd;
 pub mod read;
 pub mod sed;
 pub mod sort;
+pub mod ss;
 pub mod strings_cmd;
 pub mod tail;
 pub mod testcmd;
@@ -55,4 +59,8 @@ pub fn register_all(reg: &mut BuiltinRegistry) {
     reg.register("du", du::Du);
     reg.register("strings", strings_cmd::Strings);
     reg.register("read", read::Read_);
+    reg.register("ps", ps::Ps);
+    reg.register("ip", ip::Ip);
+    reg.register("ss", ss::Ss);
+    reg.register("ping", ping::Ping);
 }
