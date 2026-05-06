@@ -77,11 +77,10 @@ fn round_trips_every_script() {
     }
 
     let failed = failures.len();
-    let pct = if total > 0 {
-        (ok * 10000 / total) as f64 / 100.0
-    } else {
-        0.0
-    };
+    let pct = (ok * 10000)
+        .checked_div(total)
+        .map(|v| v as f64 / 100.0)
+        .unwrap_or(0.0);
     eprintln!("\nPhase 2 corpus coverage: {ok}/{total} ({pct:.2}%)  failures={failed}");
 
     if failed > 0 {
