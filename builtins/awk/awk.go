@@ -133,18 +133,32 @@ func loadProgram(ctx context.Context, callCtx *builtins.CallContext, args []stri
 }
 
 func readProgramFile(ctx context.Context, callCtx *builtins.CallContext, path string, total *int) (string, error) {
+	if path == "-" {
+		if callCtx.Stdin == nil {
+			return "", nil
+		}
+		return readProgram(ctx, callCtx.Stdin, total)
+	}
 	rc, err := callCtx.OpenFile(ctx, path, os.O_RDONLY, 0)
 	if err != nil {
 		return "", err
 	}
 	defer rc.Close()
+	return readProgram(ctx, rc, total)
+}
+
+type byteReader interface {
+	Read([]byte) (int, error)
+}
+
+func readProgram(ctx context.Context, r byteReader, total *int) (string, error) {
 	var b strings.Builder
 	buf := make([]byte, 32*1024)
 	for {
 		if err := ctx.Err(); err != nil {
 			return "", err
 		}
-		n, err := rc.Read(buf)
+		n, err := r.Read(buf)
 		if n > 0 {
 			*total += n
 			if *total > MaxProgramBytes {
