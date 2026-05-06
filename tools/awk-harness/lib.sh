@@ -5,7 +5,16 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
-AWK_HARNESS_CACHE="${AWK_HARNESS_CACHE:-$REPO_ROOT/.superset/awk-harness}"
+awk_harness_default_platform() {
+	local kernel
+	local machine
+	kernel="$(uname -s | tr '[:upper:]' '[:lower:]')"
+	machine="$(uname -m | tr '[:upper:]' '[:lower:]')"
+	printf '%s-%s\n' "$kernel" "$machine"
+}
+
+AWK_HARNESS_PLATFORM="${AWK_HARNESS_PLATFORM:-$(awk_harness_default_platform)}"
+AWK_HARNESS_CACHE="${AWK_HARNESS_CACHE:-$REPO_ROOT/.superset/awk-harness/$AWK_HARNESS_PLATFORM}"
 AWK_HARNESS_RESULTS="${AWK_HARNESS_RESULTS:-$AWK_HARNESS_CACHE/results}"
 AWK_HARNESS_BOOTSTRAP="${AWK_HARNESS_BOOTSTRAP:-}"
 AWK_HARNESS_TIMEOUT="${AWK_HARNESS_TIMEOUT:-}"
