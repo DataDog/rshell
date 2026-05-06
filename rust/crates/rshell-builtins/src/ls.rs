@@ -105,13 +105,9 @@ impl Builtin for Ls {
                 }
             }
             if sort_size {
-                items.sort_by(|a, b| b.1.len().cmp(&a.1.len()));
+                items.sort_by_key(|item| std::cmp::Reverse(item.1.len()));
             } else if sort_mtime {
-                items.sort_by(|a, b| {
-                    let am = a.1.modified().ok();
-                    let bm = b.1.modified().ok();
-                    bm.cmp(&am)
-                });
+                items.sort_by_key(|item| std::cmp::Reverse(item.1.modified().ok()));
             } else {
                 items.sort_by(|a, b| a.0.cmp(&b.0));
             }
