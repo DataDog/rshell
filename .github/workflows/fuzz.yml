@@ -91,6 +91,9 @@ jobs:
             # in df. Fuzzing it directly is much faster than going
             # through the shell runner.
             corpus_path: builtins/internal/diskstats
+          - pkg: ./builtins/tests/xargs/
+            name: xargs
+            corpus_path: builtins/tests/xargs
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0

@@ -82,22 +82,6 @@ See [SHELL_FEATURES.md](SHELL_FEATURES.md) for the complete list of supported an
 
 Linux, macOS, and Windows.
 
-## Testing
-
-**900+ YAML-driven test scenarios** cover builtins, shell features, and security restrictions.
-
-```
-tests/scenarios/
-├── cmd/          # builtin command tests (echo, cat, grep, head, tail, test, uniq, wc, ...)
-└── shell/        # shell feature tests (pipes, variables, control flow, ...)
-```
-
-By default, each scenario is executed twice: once in rshell and once in a real bash shell, ensuring output parity with POSIX behavior. Scenarios that test rshell-specific restrictions (blocked commands, readonly enforcement, etc.) opt out of the bash comparison.
-
-```bash
-go test ./...
-```
-
 ## Publishing Changes
 
 After merging changes to `main` create a release by:

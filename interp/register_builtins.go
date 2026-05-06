@@ -39,6 +39,7 @@ import (
 	"github.com/DataDog/rshell/builtins/uname"
 	"github.com/DataDog/rshell/builtins/uniq"
 	"github.com/DataDog/rshell/builtins/wc"
+	"github.com/DataDog/rshell/builtins/xargs"
 )
 
 var registerOnce sync.Once
@@ -77,6 +78,7 @@ func registerBuiltins() {
 			uname.Cmd,
 			uniq.Cmd,
 			wc.Cmd,
+			xargs.Cmd,
 		} {
 			cmd.Register()
 		}
