@@ -7,6 +7,7 @@ The in-shell `help` command mirrors these feature categories: run `help` for a c
 
 ## Builtins
 
+- ✅ `awk [-F SEP] [-v NAME=VALUE] ['PROGRAM'|-f PROGRAM-FILE] [FILE]...` — pattern scanning and text processing; Phase 1 supports BEGIN/main/END rules, read-only fields (`$0`, `$1`, `$NF`), `NF`/`NR`/`FNR`/`FILENAME`, `FS`/`OFS`/`ORS`, `print`, scalar assignment, arithmetic/comparison/boolean expressions, regex patterns and `~`/`!~`, and string concatenation; `system()`, command pipes, output redirection, `getline`, arrays, control flow, `printf`, regex `FS`, and field mutation are rejected or deferred
 - ✅ `break` — exit the innermost `for` loop
 - ✅ `cat [-AbeEnstTuv] [FILE]...` — concatenate files to stdout; supports line numbering, blank squeezing, and non-printing character display
 - ✅ `continue` — skip to the next iteration of the innermost `for` loop

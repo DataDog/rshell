@@ -1,0 +1,16 @@
+description: awk rejects multi-character field separators in Phase 1.
+setup:
+  files:
+    - path: input.txt
+      content: |+
+        a::b
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    awk -F:: '{ print $1 }' input.txt
+expect:
+  stdout: ""
+  stderr: |+
+    awk: multi-character and regex FS values are not supported
+  exit_code: 1
+
