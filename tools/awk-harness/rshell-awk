@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+RSHELL_BIN="${RSHELL_BIN:-./rshell}"
+RSHELL_ALLOWED_PATHS="${RSHELL_ALLOWED_PATHS:-/}"
+
+die() {
+	printf '[rshell-awk] error: %s\n' "$*" >&2
+	exit 1
+}
+
+resolve_rshell() {
+	case "$RSHELL_BIN" in
+		*/*)
+			if [ ! -x "$RSHELL_BIN" ]; then
+				die "RSHELL_BIN is not executable: $RSHELL_BIN"
+			fi
+			printf '%s\n' "$RSHELL_BIN"
+			;;
+		*)
+			if ! command -v "$RSHELL_BIN" >/dev/null 2>&1; then
+				die "RSHELL_BIN is not on PATH: $RSHELL_BIN"
+			fi
+			command -v "$RSHELL_BIN"
+			;;
+	esac
+}
+
+shell_quote() {
+	printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"
+}
+
+awk_command="awk"
+for arg in "$@"; do
+	awk_command="$awk_command $(shell_quote "$arg")"
+done
+
+rshell="$(resolve_rshell)"
+rshell_args=(--allow-all-commands)
+if [ -n "$RSHELL_ALLOWED_PATHS" ]; then
+	rshell_args+=(--allowed-paths "$RSHELL_ALLOWED_PATHS")
+fi
+
+exec "$rshell" "${rshell_args[@]}" -c "$awk_command"

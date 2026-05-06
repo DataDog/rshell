@@ -70,6 +70,25 @@ AWK_UNDER_TEST=/path/to/awk tools/awk-harness/run.sh onetrueawk
 AWK_UNDER_TEST=/path/to/awk tools/awk-harness/run.sh all
 ```
 
+For rshell, use the adapter that turns awk argv into an rshell `-c` command:
+
+```bash
+make build
+RSHELL_BIN=./rshell AWK_UNDER_TEST=tools/awk-harness/rshell-awk tools/awk-harness/run.sh all
+```
+
+The adapter defaults to:
+
+```bash
+./rshell --allow-all-commands --allowed-paths / -c 'awk ...'
+```
+
+Override the binary or allowed paths when needed:
+
+```bash
+RSHELL_BIN=/path/to/rshell RSHELL_ALLOWED_PATHS=/tmp,/var/tmp AWK_UNDER_TEST=tools/awk-harness/rshell-awk tools/awk-harness/run.sh gawk
+```
+
 To validate fetching and test discovery before rshell has an `awk` builtin:
 
 ```bash

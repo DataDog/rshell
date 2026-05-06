@@ -74,8 +74,8 @@ Run this sequence after every coherent implementation step:
 ```bash
 make fmt
 go test ./...
-AWK_UNDER_TEST=./rshell tools/awk-harness/run.sh gawk
-AWK_UNDER_TEST=./rshell tools/awk-harness/run.sh onetrueawk
+RSHELL_BIN=./rshell AWK_UNDER_TEST=tools/awk-harness/rshell-awk tools/awk-harness/run.sh gawk
+RSHELL_BIN=./rshell AWK_UNDER_TEST=tools/awk-harness/rshell-awk tools/awk-harness/run.sh onetrueawk
 ```
 
 If `./rshell` does not exist, build it first:
