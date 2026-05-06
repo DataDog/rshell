@@ -15,6 +15,7 @@ pub mod help;
 pub mod ls;
 pub mod printf;
 pub mod pwd;
+pub mod read;
 pub mod sed;
 pub mod sort;
 pub mod strings_cmd;
@@ -53,4 +54,5 @@ pub fn register_all(reg: &mut BuiltinRegistry) {
     reg.register("find", find::Find);
     reg.register("du", du::Du);
     reg.register("strings", strings_cmd::Strings);
+    reg.register("read", read::Read_);
 }
