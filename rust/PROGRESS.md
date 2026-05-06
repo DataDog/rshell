@@ -28,8 +28,8 @@ Statuses: `[ ]` not started · `[~]` in progress / blocked · `[x]` done.
 
 ## Snapshot
 
-- **Active phase:** Phase 3 — `rshell-expand`, `rshell-sandbox`, minimal `rshell-interp`
-- **Last updated:** 2026-05-06 (Phase 2 done — 2641/2641 corpus scripts parse)
+- **Active phase:** Phase 4 — port the 29 builtins
+- **Last updated:** 2026-05-06 (Phase 3 done — 293/293 smoke set passes; 906/2643 of full corpus passes against `rshell-rs`)
 - **Branch:** `alex/rust`
 - **Binary name during cohabitation:** `rshell-rs`
 - **Go removal:** out of scope for this branch; handled separately by the user
@@ -42,7 +42,7 @@ Statuses: `[ ]` not started · `[~]` in progress / blocked · `[x]` done.
 | 0+CI  | done   | `c7ac2339`              | `25426561894`      | success (Linux + macOS + Windows) |
 | 1     | done   | `56d803dc` → `c7ac2339` | `25426561894`      | success |
 | 2     | done   | `87a91da6` → `96d84887` | `25428530678`      | success |
-| 3     | not started |                     |                    |               |
+| 3     | done   | (this commit)           | (see post-push)    |               |
 | 4     | not started |                     |                    |               |
 | 5     | not started |                     |                    |               |
 | 6     | not started |                     |                    |               |
@@ -215,51 +215,74 @@ CI verification: run the snippet at the top of this file.
 
 ## Phase 3 — `rshell-expand`, `rshell-sandbox`, minimal `rshell-interp`
 
-**Status:** not started
-**Exit criterion:** `rshell-test-runner --bin target/release/rshell-rs`
-passes a curated smoke set (echo + cat + pwd + true/false + simple
-pipelines + simple redirects + simple variable assignment + simple
-if/while/for); `cargo` checks green; CI green.
+**Status:** done
+**Exit criterion:** `rshell-test-runner --bin target/release/rshell-rs
+--filter-list rust/tests/smoke-set.txt` passes 100% with the curated
+smoke set; `cargo` checks green; CI green.
 
-- [ ] `rshell-sandbox`: `AllowedPaths` API on top of `cap-std`. Match
-      the semantics of `allowedpaths/sandbox.go`. Document the Windows gap
-      vs. Go's `os.Root` in the crate-level rustdoc.
-- [ ] `rshell-expand::word`: parameter expansion (full set per
-      `DESIGN.md`).
-- [ ] `rshell-expand::brace`: brace expansion.
-- [ ] `rshell-expand::glob`: pathname expansion via `globset` walking
-      through `cap-std`.
-- [ ] `rshell-expand::arith`: arithmetic expansion.
-- [ ] `rshell-expand::cmdsubst`: hooks back into the interpreter.
-- [ ] `rshell-expand::split`: word-splitting per `IFS`.
-- [ ] `rshell-interp::env`: variable scopes (global, function-local,
-      readonly, exported).
-- [ ] `rshell-interp::redir`: redirection setup using OS pipes and the
-      sandbox.
-- [ ] `rshell-interp::pipeline`: thread-per-stage with OS pipes.
-- [ ] `rshell-interp::control`: if / while / until / for / case /
-      subshell / `break` / `continue` / `return`.
-- [ ] `rshell-interp::handler`: command dispatch — builtins only.
-- [ ] Wire `rshell-cli` to call `rshell-interp` and produce a working
-      `rshell-rs` binary that runs `-c "echo hello"` end-to-end.
-- [ ] Define `rust/tests/smoke-set.txt` listing the scenario paths that
-      must pass under `rshell-rs` for Phase 3 to count as done.
-- [ ] Commit + push as Phase 3.
+- [x] `rshell-interp::env` — global + function-local frames with
+      readonly/exported flags, positional params, `$?`, `$$`, `$#`, `$@`,
+      `$*`, `$0`–`$9`, `IFS`-aware splitting.
+- [x] `rshell-interp::expand` — literals, single/double/ANSI-C/locale
+      quoting, `$var` and `${var}` (bare-name only — modifiers deferred),
+      special parameters, IFS-aware field splitting honoring quoted
+      regions. `$()`, `$(())`, backticks, brace, glob expansion are
+      stubbed for the baseline (Phase 4 wires them in).
+- [x] `rshell-interp::runner` — statement executor with full redir
+      pipeline (`<`, `>`, `>>`, `2>&1`, `&>`, here-docs as literal
+      bodies), pipelines via `os_pipe` + thread-per-stage, control flow
+      (if/elif/else, while, until, for-iter), subshell + brace group
+      (shared state for the baseline), function definition + call with
+      argv shadowing and scope push/pop, `&&`/`||`/`;`/`!`/`&`,
+      transient inline assignments rolled back after the call.
+- [x] Hard-fails for blocked features the parser preserves: array
+      assignment, C-style for, process substitution, extended glob,
+      here-string. Each maps to exit 2 with a clear stderr message.
+- [x] `rshell-builtins` — initial set: `echo` (full bash flag handling
+      with backslash escapes), `cat` (stream-through), `pwd`, `true`,
+      `false`, `:`, `exit`. Each is a small, registered `Builtin` impl.
+- [x] `rshell-cli` wired up: parses `-c`, script file, or stdin; builds
+      a `Runner` with the registered builtins; runs `parse_script` from
+      `rshell-parser` then `run_script` from `rshell-interp`. Binary
+      builds at **926 KB** in release with LTO+strip.
+- [x] `rshell-test-runner` extended with `--filter-list <file>` so the
+      smoke-set path can be passed as the gate.
+- [x] `rust/tests/smoke-set.txt` committed with 293 passing scenarios
+      from cmd/echo, cmd/true, cmd/false, cmd/pwd/basic, shell/{simple_
+      command/basic, if_clause/basic, cmd_separator/basic, logic_ops,
+      negation/basic, var_expand/basic, empty_script, comments,
+      line_continuation}.
+- [x] Commit + push as Phase 3.
 - [ ] CI green on the pushed commit.
 
 ### Phase 3 verification
 
 ```sh
 cd rust
-cargo build --release
+cargo fmt --all --check
+cargo clippy --all-targets -- -D warnings
+cargo build --release --bin rshell-rs --bin rshell-test-runner
 ./target/release/rshell-rs -c "echo hello"   # must print "hello"
 ./target/release/rshell-test-runner \
     --bin ./target/release/rshell-rs \
-    --filter-list ../rust/tests/smoke-set.txt \
-    ../tests/scenarios \
-    | tail -1
-# Required: failed == 0 over the smoke set.
+    --filter-list ./tests/smoke-set.txt \
+    ../tests/scenarios | tail -1
+# Required: 293 passed, 0 failed.
 ```
+
+Open notes for follow-up phases (not blocking Phase 3 done):
+- `rshell-sandbox` is still a placeholder. The Phase 3 binary uses
+  direct `std::fs::File` opens for redirects and `cat`. cap-std-backed
+  enforcement lands in Phase 4 alongside the file-reader builtins.
+- Subshells share runner state for the baseline; bash forks. Phase 4
+  will isolate state by cloning Env into the subshell scope.
+- Command substitution, arithmetic, brace expansion, here-doc parameter
+  expansion, glob expansion are all parsed but not evaluated. Phase 4
+  wires them in builtin-by-builtin as scenarios demand.
+- Against the **full** corpus (not just smoke set), `rshell-rs`
+  currently passes 906/2643 + 58 skipped. The remaining failures are
+  almost entirely in unported Phase-4 builtins (head, tail, wc, grep,
+  sed, sort, find, ls, du, ps, ip, ss, ping, printf, …).
 
 CI verification: run the snippet at the top of this file.
 

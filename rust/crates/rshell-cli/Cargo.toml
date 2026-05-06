@@ -15,6 +15,9 @@ path = "src/main.rs"
 anyhow.workspace = true
 clap.workspace = true
 tracing.workspace = true
+rshell-interp.workspace = true
+rshell-builtins.workspace = true
+rshell-parser.workspace = true
 
 [lints]
 workspace = true

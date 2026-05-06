@@ -24,6 +24,11 @@ struct Cli {
     /// Substring filter — only run scenarios whose path contains this string.
     #[arg(long)]
     filter: Option<String>,
+    /// Path to a file listing scenario paths (relative to scenarios_dir),
+    /// one per line. Lines starting with `#` and blank lines are ignored.
+    /// Mutually exclusive with --filter.
+    #[arg(long)]
+    filter_list: Option<PathBuf>,
     /// Stop after the first failure.
     #[arg(long)]
     fail_fast: bool,
@@ -38,7 +43,27 @@ fn main() -> anyhow::Result<()> {
         timeout: Duration::from_secs(cli.timeout_secs),
     };
 
-    let scenarios = collect_scenarios(&cli.scenarios_dir, cli.filter.as_deref())?;
+    let allow_list: Option<std::collections::HashSet<PathBuf>> =
+        if let Some(p) = cli.filter_list.as_deref() {
+            let text = std::fs::read_to_string(p)
+                .map_err(|e| anyhow::anyhow!("read {}: {e}", p.display()))?;
+            let mut set = std::collections::HashSet::new();
+            for line in text.lines() {
+                let line = line.trim();
+                if line.is_empty() || line.starts_with('#') {
+                    continue;
+                }
+                set.insert(cli.scenarios_dir.join(line));
+            }
+            Some(set)
+        } else {
+            None
+        };
+    let scenarios = collect_scenarios(
+        &cli.scenarios_dir,
+        cli.filter.as_deref(),
+        allow_list.as_ref(),
+    )?;
     if scenarios.is_empty() {
         anyhow::bail!("no scenarios found under {:?}", cli.scenarios_dir);
     }
@@ -93,6 +118,7 @@ fn main() -> anyhow::Result<()> {
 fn collect_scenarios(
     root: &std::path::Path,
     filter: Option<&str>,
+    allow_list: Option<&std::collections::HashSet<PathBuf>>,
 ) -> anyhow::Result<Vec<(PathBuf, Scenario)>> {
     let mut out = Vec::new();
     for entry in walkdir::WalkDir::new(root) {
@@ -108,6 +134,11 @@ fn collect_scenarios(
         let path_str = path.to_string_lossy();
         if let Some(needle) = filter
             && !path_str.contains(needle)
+        {
+            continue;
+        }
+        if let Some(set) = allow_list
+            && !set.contains(path)
         {
             continue;
         }

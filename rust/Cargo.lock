@@ -382,6 +382,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "384b8ab6d37215f3c5301a95a4accb5d64aa607f1fcb26a11b5303878451b4fe"
 
 [[package]]
+name = "os_pipe"
+version = "1.2.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7d8fae84b431384b68627d0f9b3b1245fcf9f46f6c0e3dc902e9dce64edd1967"
+dependencies = [
+ "libc",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
 name = "pin-project-lite"
 version = "0.2.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -479,6 +489,7 @@ dependencies = [
  "bstr",
  "clap",
  "regex",
+ "rshell-interp",
  "thiserror",
 ]
 
@@ -488,6 +499,9 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "clap",
+ "rshell-builtins",
+ "rshell-interp",
+ "rshell-parser",
  "tracing",
 ]
 
@@ -505,6 +519,9 @@ name = "rshell-interp"
 version = "0.1.0"
 dependencies = [
  "bstr",
+ "os_pipe",
+ "rshell-parser",
+ "rshell-sandbox",
  "thiserror",
  "tracing",
 ]

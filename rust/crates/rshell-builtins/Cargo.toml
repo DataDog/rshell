@@ -12,6 +12,7 @@ thiserror.workspace = true
 bstr.workspace = true
 clap.workspace = true
 regex.workspace = true
+rshell-interp.workspace = true
 
 [lints]
 workspace = true
