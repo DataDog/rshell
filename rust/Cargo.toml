@@ -39,6 +39,10 @@ globset = "0.4"
 # YAML scenario harness (Phase 1)
 serde = { version = "1", features = ["derive"] }
 serde_yaml_ng = "0.10"
+walkdir = "2"
+tempfile = "3"
+indexmap = { version = "2", features = ["serde"] }
+filetime = "0.2"
 
 # Pipes and unix syscalls
 os_pipe = "1"

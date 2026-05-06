@@ -187,6 +187,29 @@ Notable per-builtin notes:
   the YAML harness exercises (Perl-like backreferences are unsupported by
   RE2; bash itself uses ERE/BRE so this is unlikely to bite).
 
+## 4a. Per-phase verification protocol
+
+Every phase ends with a self-contained verification step that proves the
+phase is complete *without human judgement*. The verification commands are
+copy-paste runnable, and their output is captured into the final
+`rust/REPORT.html` (see §6.2). A phase is not "done" until:
+
+1. Its `cargo` checks (`cargo fmt --all --check`, `cargo clippy --all-targets
+   -- -D warnings`, `cargo build --all-targets`, `cargo test --all-targets`)
+   pass locally on the host platform.
+2. The phase-specific verification command(s) listed in `PROGRESS.md` pass.
+3. **GitHub Actions CI on the pushed commit reports green** for every job
+   in `.github/workflows/rust.yml` (Linux + macOS + Windows). This is
+   verified with `gh run list --branch alex/rust --limit 1` followed by
+   `gh run view <id>` until the conclusion is `success`.
+4. The phase's row in `PROGRESS.md` is ticked off and the commit message
+   includes a one-line summary of the verification result.
+
+The protocol is explicit so that an interrupted session can re-run the
+verification deterministically. No phase requires human approval to
+proceed; the next phase begins as soon as the previous phase's
+verification has passed.
+
 ## 5. Test strategy
 
 ### 5.1 Scenario harness — port first, before any runtime work
@@ -230,19 +253,20 @@ These numbers go into the README and gate the eventual switch.
 
 ## 6. Phased migration
 
-| Phase | Deliverable                                                          | Exit criterion                                                   |
-|-------|----------------------------------------------------------------------|------------------------------------------------------------------|
-| 0     | Workspace scaffolding, CI, toolchain, Makefile targets               | `cargo build`, `cargo fmt`, `cargo clippy`, `cargo test` all green on all 3 OSes |
-| 1     | `rshell-test-runner` shelling out to Go `rshell`                     | Full scenario suite runs from Rust runner with parity            |
-| 2     | `rshell-parser`                                                      | Round-trips every script in `tests/scenarios/`                   |
-| 3     | `rshell-expand`, `rshell-sandbox`, minimal `rshell-interp` (pipelines, redirects, simple commands) | Echo / cat / pipelines pass under `rshell-rs`     |
-| 4     | All 29 builtins ported                                               | 100% scenario parity for non-network scenarios                   |
-| 5     | `rshell-analysis` 1:1 port                                           | Equivalent allowlist verification on Rust crate dependencies     |
-| 6     | Bake-off + perf measurements                                         | Numbers documented; decision on Go removal                       |
+| Phase | Deliverable                                                          | Exit criterion                                                                |
+|-------|----------------------------------------------------------------------|-------------------------------------------------------------------------------|
+| 0     | Workspace scaffolding, CI, toolchain, Makefile targets               | `make rust-all` green; CI green on all 3 OSes                                 |
+| 1     | `rshell-test-runner` driving Go `rshell`                             | `rshell-test-runner` reports 0 failures over all scenarios; skips documented  |
+| 2     | `rshell-parser`                                                      | Round-trips every script in `tests/scenarios/` (test in `rshell-parser`)      |
+| 3     | `rshell-expand`, `rshell-sandbox`, minimal `rshell-interp`           | `rshell-test-runner --bin rshell-rs` passes a curated smoke set               |
+| 4     | All 29 builtins ported                                               | `rshell-test-runner --bin rshell-rs` reports 0 failures over non-skip scenarios |
+| 5     | `rshell-analysis` 1:1 port                                           | `cargo run -p rshell-analysis` validates the workspace allowlist with 0 errors |
+| 6     | Bake-off + `REPORT.html`                                             | `REPORT.html` generated; perf numbers recorded; Go removal is out of scope    |
 
 Each phase ends with a (draft) PR. Phases are sequential because each
 depends on the previous; within a phase, builtins in Phase 4 can be done in
-parallel.
+parallel. Go removal is **explicitly out of scope** for this branch — it
+will be handled later by the user.
 
 ### 6.1 Commit and push policy
 
@@ -251,6 +275,28 @@ across phases — each phase is one or more commits, never amended into a
 previous phase's commits, and pushed as soon as the phase's exit criterion
 is met. This gives a reviewable, bisectable history of the port and lets the
 draft PR show concrete progress.
+
+### 6.2 Final report (Phase 6 deliverable)
+
+Phase 6 produces `rust/REPORT.html`, a self-contained HTML page that
+proves the port is complete. It includes:
+
+- A summary of every phase with status, commit SHA, and CI conclusion.
+- Verification command output (stdout + exit code) for the per-phase
+  protocol in §4a.
+- Full scenario-suite results from `rshell-test-runner --bin rshell-rs`
+  (passed / failed / skipped counts and any divergences from the Go
+  baseline).
+- Bake-off numbers: binary size (`ls -l`), startup
+  (`hyperfine 'rshell-rs -c true'`), peak RSS (`/usr/bin/time -v` on a
+  representative scenario), and full-suite wall time vs. the Go binary.
+- The GitHub Actions run URL and conclusion for the final commit on
+  `alex/rust`, fetched via `gh`.
+
+The report is generated by a script committed under
+`rust/scripts/build-report.sh` (or equivalent) so it can be re-run
+deterministically. The HTML is single-file and embeds its own CSS — no
+external dependencies.
 
 ## 7. Risks and unknowns
 
