@@ -4,14 +4,19 @@ on:
   push:
     branches: [main]
   pull_request:
+    branches: [main]
     paths:
       - 'rust/**'
       - '.github/workflows/rust.yml'
 
+permissions:
+  contents: read
+
 jobs:
   build-test:
-    name: ${{ matrix.os }}
+    name: Rust (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -20,19 +25,34 @@ jobs:
       run:
         working-directory: rust
     steps:
-      - uses: actions/checkout@v4
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Cache cargo registry and target
+        uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
         with:
-          components: rustfmt, clippy
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: rust
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            rust/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('rust/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-
+      - name: Show toolchain
+        shell: bash
+        run: |
+          rustup show active-toolchain
+          rustc --version
+          cargo --version
+          cargo fmt --version
+          cargo clippy --version
       - name: Format
+        shell: bash
         run: cargo fmt --all --check
       - name: Lint
+        shell: bash
         run: cargo clippy --all-targets -- -D warnings
       - name: Build
+        shell: bash
         run: cargo build --all-targets
       - name: Test
+        shell: bash
         run: cargo test --all-targets
