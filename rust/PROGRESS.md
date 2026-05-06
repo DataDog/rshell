@@ -48,8 +48,8 @@ Statuses: `[ ]` not started · `[~]` in progress / blocked · `[x]` done.
 | 4w3   | done   | `ac11d441` → `ece73af5` |                    | success |
 | 4w4   | done   | `fe370dcf`              | `25436706826`      | success |
 | 4w5   | done   | `7f232b28`              | `25448134981`      | success |
-| 5     | done   | (this commit)           | (see post-push)    |               |
-| 6     | scripted | (this commit)         |                    |               |
+| 5     | done   | `ea7df056`              | `25448900807`      | success |
+| 6     | done   | `ea7df056`              | `25448900807`      | success |
 | 5     | not started |                     |                    |               |
 | 6     | not started |                     |                    |               |
 
