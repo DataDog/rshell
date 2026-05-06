@@ -9,6 +9,13 @@ argument-hint: "[feature-or-failure-filter]"
 Use this skill when implementing, extending, or fixing the rshell `awk`
 builtin.
 
+## Shared Implementation Plan
+
+Before starting or resuming implementation work, read
+`docs/AWK_IMPLEMENTATION_PLAN.md`. That document captures the agreed rshell awk
+profile, the long-lived parser strategy, Phase 1 Practical awk scope, safety
+policy, test plan, and later-phase roadmap.
+
 ## Compatibility Target
 
 The implementation target is GNU awk (`gawk`), not POSIX awk alone, One True

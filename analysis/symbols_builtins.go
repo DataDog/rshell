@@ -27,6 +27,29 @@ package analysis
 // Every symbol listed here must also appear in builtinAllowedSymbols
 // (which acts as the global ceiling).
 var builtinPerCommandSymbols = map[string][]string{
+	"awk": {
+		"bufio.NewScanner",                // 🟢 line-by-line record reading; no write or exec capability.
+		"context.Context",                 // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
+		"fmt.Errorf",                      // 🟢 error formatting; pure function, no I/O.
+		"io.EOF",                          // 🟢 sentinel error value; pure constant.
+		"io.NopCloser",                    // 🟢 wraps a Reader with a no-op Close; no side effects.
+		"io.ReadCloser",                   // 🟢 interface type; no side effects.
+		"math.Mod",                        // 🟢 pure arithmetic modulo for awk % operator; no side effects.
+		"os.O_RDONLY",                     // 🟢 read-only file flag constant; cannot open files by itself.
+		"regexp.Compile",                  // 🟢 compiles a regular expression; pure function, no I/O. Uses RE2 engine (linear-time, no backtracking).
+		"regexp.Regexp",                   // 🟢 compiled regular expression type; no I/O side effects. All matching methods are linear-time (RE2).
+		"strconv.FormatFloat",             // 🟢 float-to-string conversion for awk numeric output; pure function.
+		"strconv.ParseFloat",              // 🟢 string-to-float conversion; pure function, no I/O.
+		"strings.Builder",                 // 🟢 efficient string concatenation; pure in-memory buffer, no I/O.
+		"strings.Cut",                     // 🟢 splits a string around the first separator; pure function, no I/O.
+		"strings.Fields",                  // 🟢 splits a string on whitespace; pure function, no I/O.
+		"strings.Join",                    // 🟢 concatenates a slice of strings with a separator; pure function, no I/O.
+		"strings.NewReader",               // 🟢 wraps a string as an io.Reader; pure in-memory, no I/O.
+		"strings.Split",                   // 🟢 splits a string by separator into a slice; pure function, no I/O.
+		"strings.TrimSpace",               // 🟢 removes leading/trailing whitespace; pure function.
+		"unicode/utf8.DecodeRuneInString", // 🟢 decodes first UTF-8 rune from a string; pure function, no I/O.
+		"unicode/utf8.RuneError",          // 🟢 replacement character returned for invalid UTF-8; constant, no I/O.
+	},
 	"break": {
 		"context.Context", // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
 	},
@@ -561,6 +584,7 @@ var builtinAllowedSymbols = []string{
 	"math.MaxInt64",                                       // 🟢 integer constant; no side effects.
 	"math.MaxUint64",                                      // 🟢 integer constant; no side effects.
 	"math.MinInt64",                                       // 🟢 integer constant; no side effects.
+	"math.Mod",                                            // 🟢 pure arithmetic modulo; no side effects.
 	"math.NaN",                                            // 🟢 returns IEEE 754 NaN value; pure function, no I/O.
 	"net.DefaultResolver",                                 // 🔴 default system DNS resolver; used for context-aware address lookup; network I/O is the explicit purpose of the ping builtin.
 	"net.FlagBroadcast",                                   // 🟢 interface flag constant: broadcast capability; pure constant, no network connections.
@@ -600,6 +624,7 @@ var builtinAllowedSymbols = []string{
 	"strconv.Atoi",                                        // 🟢 string-to-int conversion; pure function, no I/O.
 	"strconv.ErrRange",                                    // 🟢 sentinel error value for overflow; pure constant.
 	"strconv.FormatBool",                                  // 🟢 bool-to-string conversion; pure function, no I/O.
+	"strconv.FormatFloat",                                 // 🟢 float-to-string conversion; pure function, no I/O.
 	"strconv.FormatInt",                                   // 🟢 int-to-string conversion; pure function, no I/O.
 	"strconv.FormatUint",                                  // 🟢 uint-to-string conversion; pure function, no I/O.
 	"strconv.IntSize",                                     // 🟢 platform int size constant (32 or 64); pure constant, no I/O.
@@ -612,10 +637,12 @@ var builtinAllowedSymbols = []string{
 	"strings.Builder",                                     // 🟢 efficient string concatenation; pure in-memory buffer, no I/O.
 	"strings.Contains",                                    // 🟢 substring search; pure function, no I/O.
 	"strings.ContainsRune",                                // 🟢 checks if a rune is in a string; pure function, no I/O.
+	"strings.Cut",                                         // 🟢 splits a string around the first separator; pure function, no I/O.
 	"strings.Fields",                                      // 🟢 splits a string on whitespace into a slice; pure function, no I/O.
 	"strings.HasPrefix",                                   // 🟢 pure function for prefix matching; no I/O.
 	"strings.IndexByte",                                   // 🟢 finds byte in string; pure function, no I/O.
 	"strings.Join",                                        // 🟢 concatenates a slice of strings with a separator; pure function, no I/O.
+	"strings.NewReader",                                   // 🟢 wraps a string as an io.Reader; pure in-memory, no I/O.
 	"strings.ReplaceAll",                                  // 🟢 replaces all occurrences of a substring; pure function, no I/O.
 	"strings.Split",                                       // 🟢 splits a string by separator into a slice; pure function, no I/O.
 	"strings.ToLower",                                     // 🟢 converts string to lowercase; pure function, no I/O.

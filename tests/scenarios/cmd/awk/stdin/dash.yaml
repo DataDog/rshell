@@ -1,0 +1,17 @@
+description: awk reads standard input when the file operand is dash.
+setup:
+  files:
+    - path: prog.awk
+      content: |+
+        { print NR ":" $2 }
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    printf 'a b\nc d\n' | awk -f prog.awk -
+expect:
+  stdout: |+
+    1:b
+    2:d
+  stderr: ""
+  exit_code: 0
+
