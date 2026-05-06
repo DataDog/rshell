@@ -42,7 +42,7 @@ Statuses: `[ ]` not started · `[~]` in progress / blocked · `[x]` done.
 | 0+CI  | done   | `c7ac2339`              | `25426561894`      | success (Linux + macOS + Windows) |
 | 1     | done   | `56d803dc` → `c7ac2339` | `25426561894`      | success |
 | 2     | done   | `87a91da6` → `96d84887` | `25428530678`      | success |
-| 3     | done   | (this commit)           | (see post-push)    |               |
+| 3     | done   | `1a95ca5e`              | `25430933209`      | success |
 | 4     | not started |                     |                    |               |
 | 5     | not started |                     |                    |               |
 | 6     | not started |                     |                    |               |
@@ -253,7 +253,7 @@ smoke set; `cargo` checks green; CI green.
       negation/basic, var_expand/basic, empty_script, comments,
       line_continuation}.
 - [x] Commit + push as Phase 3.
-- [ ] CI green on the pushed commit.
+- [x] CI green on the pushed commit (run `25430933209`, all 3 OSes).
 
 ### Phase 3 verification
 
