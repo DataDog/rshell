@@ -72,6 +72,34 @@ impl Runner {
     }
 }
 
+impl crate::expand::Evaluator for Runner {
+    fn env(&self) -> &Env {
+        &self.env
+    }
+    fn env_mut(&mut self) -> &mut Env {
+        &mut self.env
+    }
+
+    fn eval_cmdsubst(&mut self, stmts: &[Stmt]) -> Vec<u8> {
+        // Run the statements with stdout captured into a buffer; stderr
+        // and stdin are inherited from the host (bash behaviour).
+        let mut buf = Vec::<u8>::new();
+        let mut stdin = std::io::empty();
+        let mut stderr = std::io::sink();
+        for s in stmts {
+            let _ = run_stmt(self, s, &mut stdin, &mut buf, &mut stderr);
+        }
+        buf
+    }
+
+    fn eval_arith(&mut self, body: &[u8]) -> Vec<u8> {
+        match crate::arith::eval(body, &self.env) {
+            Ok(n) => n.to_string().into_bytes(),
+            Err(_) => b"0".to_vec(),
+        }
+    }
+}
+
 /// Run a parsed script. Returns the exit code of the last command.
 pub fn run_script(
     runner: &mut Runner,
@@ -228,14 +256,14 @@ fn run_simple_inner(
         // Pure assignment statement: persist in the global env and
         // succeed.
         for a in &cmd.assigns {
-            apply_assignment(&mut runner.env, a);
+            apply_assignment(runner, a);
         }
         return Ok(0);
     }
     // Expand the words into argv, splitting on IFS where unquoted.
     let mut argv: Vec<BString> = Vec::new();
     for w in &cmd.words {
-        for f in expand::expand_to_fields(&runner.env, w) {
+        for f in expand::expand_to_fields(runner, w) {
             argv.push(f);
         }
     }
@@ -270,7 +298,7 @@ fn run_simple_inner(
         .map(|a| (a.name.clone(), runner.env.get(a.name.as_slice()).cloned()))
         .collect();
     for a in &cmd.assigns {
-        apply_assignment(&mut runner.env, a);
+        apply_assignment(runner, a);
     }
 
     let code = {
@@ -301,12 +329,12 @@ fn run_simple_inner(
     Ok(code)
 }
 
-fn apply_assignment(env: &mut Env, a: &Assign) {
-    let value = expand::expand_to_string(env, &a.value);
+fn apply_assignment(runner: &mut Runner, a: &Assign) {
+    let value = expand::expand_to_string(runner, &a.value);
     if a.append {
-        env.append(a.name.clone(), value.as_slice());
+        runner.env.append(a.name.clone(), value.as_slice());
     } else {
-        env.set(a.name.clone(), value, false, false);
+        runner.env.set(a.name.clone(), value, false, false);
     }
 }
 
@@ -560,7 +588,7 @@ fn run_for(
         Some(words) => {
             let mut v = Vec::new();
             for w in words {
-                for f in expand::expand_to_fields(&runner.env, w) {
+                for f in expand::expand_to_fields(runner, w) {
                     v.push(f);
                 }
             }
@@ -611,7 +639,7 @@ where
     // stdin/stdout/stderr handles for the body.
     let mut opened: Vec<OpenedRedir> = Vec::new();
     for r in redirs {
-        let target_str = expand::expand_to_string(&runner.env, &r.target);
+        let target_str = expand::expand_to_string(runner, &r.target);
         opened.push(open_redir(r, &target_str)?);
     }
     // Build effective fds. We start with parent stdin/stdout/stderr and

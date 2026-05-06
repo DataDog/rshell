@@ -2,6 +2,7 @@
 //!
 //! Phase 3 baseline. See `rust/PROGRESS.md`.
 
+pub mod arith;
 pub mod builtin;
 pub mod env;
 pub mod expand;
