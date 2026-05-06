@@ -41,7 +41,7 @@ Statuses: `[ ]` not started · `[~]` in progress / blocked · `[x]` done.
 | 0     | done   | `6678c83b`              | `25425396174`      | startup_failure (workflow fix landed in `c7ac2339`) |
 | 0+CI  | done   | `c7ac2339`              | `25426561894`      | success (Linux + macOS + Windows) |
 | 1     | done   | `56d803dc` → `c7ac2339` | `25426561894`      | success |
-| 2     | done   | (this commit)           | (see post-push)    |               |
+| 2     | done   | `87a91da6` → `96d84887` | `25428530678`      | success |
 | 3     | not started |                     |                    |               |
 | 4     | not started |                     |                    |               |
 | 5     | not started |                     |                    |               |
@@ -195,7 +195,7 @@ the parser without error; `cargo` checks green; CI green.
       `tests/scenarios/`, parses every `input.script`, asserts 0
       failures. **Result: 2641/2641 (100.00%).**
 - [x] Commit + push as Phase 2.
-- [ ] CI green on the pushed commit.
+- [x] CI green on the pushed commit (run `25428530678`, all 3 OSes).
 
 ### Phase 2 verification
 
