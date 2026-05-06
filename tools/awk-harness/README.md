@@ -9,8 +9,10 @@ harness cache. The harness never uses macOS `/usr/bin/awk`, mawk, BusyBox awk,
 a distro-provided `gawk` with a different version, or a built One True Awk
 binary as the reference implementation.
 
-The harness fetches upstream repositories into `.superset/awk-harness` by
-default. That directory is ignored by git.
+The harness fetches upstream repositories into a platform-specific directory
+under `.superset/awk-harness` by default, such as
+`.superset/awk-harness/darwin-arm64` or `.superset/awk-harness/linux-x86_64`.
+That directory is ignored by git.
 
 ## Upstreams
 
@@ -34,7 +36,7 @@ By default this builds GNU awk `5.4.0` from the official GNU release tarball and
 installs it under:
 
 ```text
-.superset/awk-harness/oracle/gawk-5.4.0/bin/gawk
+.superset/awk-harness/<platform>/oracle/gawk-5.4.0/bin/gawk
 ```
 
 The installer can install build dependencies on supported systems:
@@ -93,6 +95,12 @@ Use a different cache directory with:
 AWK_HARNESS_CACHE=/tmp/rshell-awk-harness tools/awk-harness/run.sh fetch
 ```
 
+Override the platform segment only when sharing cache policy deliberately:
+
+```bash
+AWK_HARNESS_PLATFORM=linux-x86_64 tools/awk-harness/run.sh install-gawk
+```
+
 ## One True Awk Suites
 
 `ONETRUEAWK_SUITE=core` runs `t`, `p`, and `T` suites. This is the default.
@@ -130,7 +138,7 @@ test harness. It may require GNU build tools and is not the default.
 Results and logs are written under:
 
 ```text
-.superset/awk-harness/results/
+.superset/awk-harness/<platform>/results/
 ```
 
 Each upstream writes a `summary.json` with the resolved commit SHA and counts.
