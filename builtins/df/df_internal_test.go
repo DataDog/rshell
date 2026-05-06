@@ -175,6 +175,39 @@ func TestPercentUsed_NoDivByZero(t *testing.T) {
 	}
 }
 
+// Mount paths can legally contain control characters (the kernel
+// stores newlines, tabs, and other bytes in mountinfo using octal
+// escapes such as \012). After unescapeMountField decodes them, the
+// raw byte is fed to statfs(2), but the printer must replace these
+// bytes with '?' or an attacker who can mount a filesystem at a
+// crafted path could inject a fake row into df output that scripts
+// and AI agents parse line-by-line. Mirrors GNU coreutils df, which
+// also replaces unprintable bytes with '?'.
+func TestReplaceUnprintable(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{"plain", "plain"},
+		{"/tmp/path with space", "/tmp/path with space"},
+		{"/tmp/a\nb", "/tmp/a?b"},      // newline → ?
+		{"/tmp/a\tb", "/tmp/a?b"},      // tab → ?
+		{"/tmp/a\rb", "/tmp/a?b"},      // CR → ?
+		{"/tmp/a\x00b", "/tmp/a?b"},    // NUL → ?
+		{"/tmp/a\x01b", "/tmp/a?b"},    // SOH → ?
+		{"/tmp/a\x1fb", "/tmp/a?b"},    // unit separator → ?
+		{"/tmp/a\x7fb", "/tmp/a?b"},    // DEL → ?
+		{"/tmp/a\x20b", "/tmp/a\x20b"}, // space (0x20) preserved
+		{"/tmp/a\x7eb", "/tmp/a\x7eb"}, // ~ (0x7E) preserved
+		// Multiple replacements in a row
+		{"\n\n\n", "???"},
+		// A control char at start, middle, end
+		{"\nhead", "?head"},
+		{"tail\n", "tail?"},
+		{"mid\ndle", "mid?dle"},
+	}
+	for _, c := range cases {
+		assert.Equal(t, c.want, replaceUnprintable(c.in), "in=%q", c.in)
+	}
+}
+
 func TestStringSet(t *testing.T) {
 	assert.Nil(t, stringSet(nil))
 	assert.Nil(t, stringSet([]string{}))

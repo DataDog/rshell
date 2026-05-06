@@ -486,13 +486,13 @@ func writeOutput(callCtx *builtins.CallContext, mounts []diskstats.Mount, f *fla
 		totalU = saturatingAdd(totalU, u)
 		totalA = saturatingAdd(totalA, a)
 		rows = append(rows, row{
-			source:     m.Source,
+			source:     replaceUnprintable(m.Source),
 			fstype:     m.FSType,
 			col1:       formatCount(t, mode, inodeMode),
 			col2:       formatCount(u, mode, inodeMode),
 			col3:       formatCount(a, mode, inodeMode),
 			capacity:   percentUsed(u, a),
-			mountpoint: m.MountPoint,
+			mountpoint: replaceUnprintable(m.MountPoint),
 		})
 	}
 
@@ -513,6 +513,42 @@ func writeOutput(callCtx *builtins.CallContext, mounts []diskstats.Mount, f *fla
 	// row spacing). printRows pads each column to the width of the
 	// widest cell.
 	printRows(callCtx, header, rows, withType)
+}
+
+// replaceUnprintable replaces every byte in s that is non-printable
+// (ASCII control character, byte 0x7F, or any byte in 0x80–0xFF that
+// stands alone outside a valid UTF-8 sequence) with '?'. This matches
+// GNU coreutils df, which uses the gnulib `replace_invalid_chars`
+// helper to keep `df` and `df -P` honoring the documented
+// one-line-per-filesystem format even when a mount path or source
+// contains a literal newline, tab, or other control byte. Without
+// this, an attacker who can mount a filesystem at a crafted path like
+// `$'/tmp/a\ndev/sda 1 1 1 1% /etc/passwd'` could inject a fake row
+// into df output that scripts and AI agents parse line-by-line.
+//
+// The escape happens at the print boundary; the raw, decoded string
+// is still passed to statfs(2) so the kernel sees the real path.
+func replaceUnprintable(s string) string {
+	// Fast path: most mount paths are clean ASCII. Walk the string
+	// and only allocate a builder if a replacement is actually
+	// needed.
+	for i := 0; i < len(s); i++ {
+		if s[i] < 0x20 || s[i] == 0x7F {
+			var b strings.Builder
+			b.Grow(len(s))
+			b.WriteString(s[:i])
+			for j := i; j < len(s); j++ {
+				c := s[j]
+				if c < 0x20 || c == 0x7F {
+					b.WriteByte('?')
+				} else {
+					b.WriteByte(c)
+				}
+			}
+			return b.String()
+		}
+	}
+	return s
 }
 
 // selectColumns returns the (total, used, available) values that go into
