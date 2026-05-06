@@ -1,0 +1,7 @@
+description: A comment with trailing whitespace exits cleanly.
+input:
+  script: "# trailing spaces follow:    \t\t  \n"
+expect:
+  stdout: ""
+  stderr: ""
+  exit_code: 0
