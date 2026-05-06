@@ -27,7 +27,9 @@ impl Builtin for Sort {
                 break;
             }
             if a == b"--help" {
-                let _ = ctx.stdout.write_all(b"Usage: sort [-r] [-n] [-u] [-f] [FILE]...\n");
+                let _ = ctx
+                    .stdout
+                    .write_all(b"Usage: sort [-r] [-n] [-u] [-f] [FILE]...\n");
                 return 0;
             }
             if a.starts_with(b"-") && a.len() > 1 {

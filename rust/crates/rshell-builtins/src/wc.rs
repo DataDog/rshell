@@ -26,10 +26,17 @@ impl Builtin for Wc {
                 break;
             }
             if a == b"--help" {
-                let _ = ctx.stdout.write_all(b"Usage: wc [-l] [-w] [-c] [-m] [-L] [FILE]...\n");
+                let _ = ctx
+                    .stdout
+                    .write_all(b"Usage: wc [-l] [-w] [-c] [-m] [-L] [FILE]...\n");
                 return 0;
             }
-            if a.starts_with(b"-") && a.len() > 1 && !a[1..].iter().any(|c| !matches!(c, b'l' | b'w' | b'c' | b'm' | b'L')) {
+            if a.starts_with(b"-")
+                && a.len() > 1
+                && !a[1..]
+                    .iter()
+                    .any(|c| !matches!(c, b'l' | b'w' | b'c' | b'm' | b'L'))
+            {
                 for f in &a[1..] {
                     match f {
                         b'l' => lines = true,
@@ -60,7 +67,13 @@ impl Builtin for Wc {
         let mut total_long = 0u64;
         let mut rc = 0;
 
-        let show = Show { lines, words, bytes, chars, max_line };
+        let show = Show {
+            lines,
+            words,
+            bytes,
+            chars,
+            max_line,
+        };
         if files.is_empty() {
             let counts = match count_stream(ctx.stdin) {
                 Ok(c) => c,
@@ -110,7 +123,13 @@ impl Builtin for Wc {
             print_line(ctx.stdout, &counts, Some(path), &show);
         }
         if multiple {
-            let total = Counts { lines: total_l, words: total_w, bytes: total_b, chars: total_m, max_line: total_long };
+            let total = Counts {
+                lines: total_l,
+                words: total_w,
+                bytes: total_b,
+                chars: total_m,
+                max_line: total_long,
+            };
             print_line(ctx.stdout, &total, Some("total"), &show);
         }
         rc

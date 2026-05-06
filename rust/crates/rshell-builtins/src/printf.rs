@@ -10,7 +10,9 @@ pub struct Printf;
 impl Builtin for Printf {
     fn run(&self, ctx: &mut CallCtx<'_>) -> i32 {
         if ctx.args.len() < 2 {
-            let _ = ctx.stderr.write_all(b"printf: usage: printf format [arguments]\n");
+            let _ = ctx
+                .stderr
+                .write_all(b"printf: usage: printf format [arguments]\n");
             return 2;
         }
         let format = ctx.args[1].to_vec();

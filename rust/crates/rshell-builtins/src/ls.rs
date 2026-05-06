@@ -126,7 +126,13 @@ impl Builtin for Ls {
     }
 }
 
-fn emit_one(ctx: &mut CallCtx<'_>, name: &str, meta: &std::fs::Metadata, long: bool, one_per_line: bool) {
+fn emit_one(
+    ctx: &mut CallCtx<'_>,
+    name: &str,
+    meta: &std::fs::Metadata,
+    long: bool,
+    one_per_line: bool,
+) {
     if long {
         let kind = if meta.is_dir() {
             'd'
@@ -135,12 +141,7 @@ fn emit_one(ctx: &mut CallCtx<'_>, name: &str, meta: &std::fs::Metadata, long: b
         } else {
             '-'
         };
-        let _ = writeln!(
-            ctx.stdout,
-            "{kind}--------- {:>8} {}",
-            meta.len(),
-            name
-        );
+        let _ = writeln!(ctx.stdout, "{kind}--------- {:>8} {}", meta.len(), name);
     } else {
         // Phase 4 baseline: emit one per line whether `-1` is set or not.
         let _ = one_per_line;

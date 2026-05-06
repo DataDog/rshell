@@ -10,10 +10,9 @@ impl Builtin for Help {
         // emit a static summary. Future iterations can plumb the registry
         // through CallCtx.
         let names = [
-            ":", "cat", "cut", "du", "echo", "exit", "false", "find", "grep",
-            "head", "help", "ip", "ls", "ping", "printf", "ps", "pwd", "sed",
-            "sort", "ss", "strings", "tail", "test", "[", "tr", "true",
-            "uname", "uniq", "wc",
+            ":", "cat", "cut", "du", "echo", "exit", "false", "find", "grep", "head", "help", "ip",
+            "ls", "ping", "printf", "ps", "pwd", "sed", "sort", "ss", "strings", "tail", "test",
+            "[", "tr", "true", "uname", "uniq", "wc",
         ];
         for n in names {
             let _ = writeln!(ctx.stdout, "{n}");

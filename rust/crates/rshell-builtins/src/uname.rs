@@ -49,12 +49,24 @@ impl Builtin for Uname {
         }
         let info = SysInfo::detect();
         let mut parts = Vec::new();
-        if want.kernel { parts.push(info.kernel.clone()); }
-        if want.node { parts.push(info.node.clone()); }
-        if want.release { parts.push(info.release.clone()); }
-        if want.version { parts.push(info.version.clone()); }
-        if want.machine { parts.push(info.machine.clone()); }
-        if want.os { parts.push(info.os.clone()); }
+        if want.kernel {
+            parts.push(info.kernel.clone());
+        }
+        if want.node {
+            parts.push(info.node.clone());
+        }
+        if want.release {
+            parts.push(info.release.clone());
+        }
+        if want.version {
+            parts.push(info.version.clone());
+        }
+        if want.machine {
+            parts.push(info.machine.clone());
+        }
+        if want.os {
+            parts.push(info.os.clone());
+        }
         let _ = writeln!(ctx.stdout, "{}", parts.join(" "));
         0
     }
@@ -104,6 +116,13 @@ impl SysInfo {
             "windows" => "Windows".to_string(),
             o => o.to_string(),
         };
-        Self { kernel, node, release, version, machine, os }
+        Self {
+            kernel,
+            node,
+            release,
+            version,
+            machine,
+            os,
+        }
     }
 }

@@ -4,9 +4,11 @@ use rshell_interp::BuiltinRegistry;
 
 pub mod cat;
 pub mod cut;
+pub mod du;
 pub mod echo;
 pub mod exit;
 pub mod false_;
+pub mod find;
 pub mod grep;
 pub mod head;
 pub mod help;
@@ -15,6 +17,7 @@ pub mod printf;
 pub mod pwd;
 pub mod sed;
 pub mod sort;
+pub mod strings_cmd;
 pub mod tail;
 pub mod testcmd;
 pub mod tr;
@@ -47,4 +50,7 @@ pub fn register_all(reg: &mut BuiltinRegistry) {
     reg.register("grep", grep::Grep);
     reg.register("sed", sed::Sed);
     reg.register("ls", ls::Ls);
+    reg.register("find", find::Find);
+    reg.register("du", du::Du);
+    reg.register("strings", strings_cmd::Strings);
 }

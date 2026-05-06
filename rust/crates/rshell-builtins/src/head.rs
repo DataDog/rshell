@@ -45,14 +45,18 @@ impl Builtin for Head {
                 continue;
             }
             if a == b"--help" {
-                let _ = ctx.stdout.write_all(b"Usage: head [-n NUM] [-c NUM] [-q] [-v] [FILE]...\n");
+                let _ = ctx
+                    .stdout
+                    .write_all(b"Usage: head [-n NUM] [-c NUM] [-q] [-v] [FILE]...\n");
                 return 0;
             }
             if let Some(rest) = a.strip_prefix(b"-n") {
                 let value: &[u8] = if rest.is_empty() {
                     i += 1;
                     if i >= ctx.args.len() {
-                        let _ = ctx.stderr.write_all(b"head: option requires an argument -- 'n'\n");
+                        let _ = ctx
+                            .stderr
+                            .write_all(b"head: option requires an argument -- 'n'\n");
                         return 1;
                     }
                     ctx.args[i].as_slice()
@@ -67,7 +71,9 @@ impl Builtin for Head {
                 let value: &[u8] = if rest.is_empty() {
                     i += 1;
                     if i >= ctx.args.len() {
-                        let _ = ctx.stderr.write_all(b"head: option requires an argument -- 'c'\n");
+                        let _ = ctx
+                            .stderr
+                            .write_all(b"head: option requires an argument -- 'c'\n");
                         return 1;
                     }
                     ctx.args[i].as_slice()
@@ -148,7 +154,12 @@ fn parse_uint(s: &[u8]) -> usize {
     s.trim().parse().unwrap_or(0)
 }
 
-fn head_stream(src: &mut dyn Read, dst: &mut dyn Write, lines: usize, bytes: Option<usize>) -> std::io::Result<()> {
+fn head_stream(
+    src: &mut dyn Read,
+    dst: &mut dyn Write,
+    lines: usize,
+    bytes: Option<usize>,
+) -> std::io::Result<()> {
     if let Some(n) = bytes {
         // Read up to n bytes and write.
         let mut remaining = n;

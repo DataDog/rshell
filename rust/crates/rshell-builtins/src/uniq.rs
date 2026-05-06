@@ -27,7 +27,9 @@ impl Builtin for Uniq {
                 break;
             }
             if a == b"--help" {
-                let _ = ctx.stdout.write_all(b"Usage: uniq [-c] [-d] [-u] [-i] [FILE]\n");
+                let _ = ctx
+                    .stdout
+                    .write_all(b"Usage: uniq [-c] [-d] [-u] [-i] [FILE]\n");
                 return 0;
             }
             if a.starts_with(b"-") && a.len() > 1 {
@@ -97,7 +99,9 @@ impl Builtin for Uniq {
         let mut run = 0u32;
         for line in &lines {
             let key = if ignore_case {
-                line.iter().map(|b| b.to_ascii_lowercase()).collect::<Vec<_>>()
+                line.iter()
+                    .map(|b| b.to_ascii_lowercase())
+                    .collect::<Vec<_>>()
             } else {
                 line.to_vec()
             };

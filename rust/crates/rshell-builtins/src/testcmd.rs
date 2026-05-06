@@ -14,7 +14,7 @@ impl Builtin for Test {
         // For `[`, drop the leading `[` argv[0] and require the closing `]`.
         if argv[0] == b"[" {
             if argv.last() != Some(&b"]".as_slice()) {
-let _ = ctx.stderr.write_all(b"[: missing ']'\n");
+                let _ = ctx.stderr.write_all(b"[: missing ']'\n");
                 return 2;
             }
             argv = argv[1..argv.len() - 1].to_vec();
@@ -25,7 +25,7 @@ let _ = ctx.stderr.write_all(b"[: missing ']'\n");
             Ok(true) => 0,
             Ok(false) => 1,
             Err(e) => {
-let _ = writeln!(ctx.stderr, "test: {e}");
+                let _ = writeln!(ctx.stderr, "test: {e}");
                 2
             }
         }
@@ -57,7 +57,10 @@ fn eval_expr(args: &[&[u8]]) -> Result<bool, String> {
         1 => Ok(!args[0].is_empty()),
         2 => unary(args[0], args[1]),
         3 => binary(args[0], args[1], args[2]),
-        _ => Err(format!("unsupported test expression of length {}", args.len())),
+        _ => Err(format!(
+            "unsupported test expression of length {}",
+            args.len()
+        )),
     }
 }
 
@@ -76,7 +79,12 @@ fn unary(op: &[u8], arg: &[u8]) -> Result<bool, String> {
         b"-d" => metadata().map(|m| m.is_dir()).unwrap_or(false),
         b"-s" => metadata().map(|m| m.len() > 0).unwrap_or(false),
         b"-r" | b"-w" | b"-x" => metadata().is_ok(), // simplified — we don't check perms
-        _ => return Err(format!("unknown unary operator: {}", String::from_utf8_lossy(op))),
+        _ => {
+            return Err(format!(
+                "unknown unary operator: {}",
+                String::from_utf8_lossy(op)
+            ));
+        }
     })
 }
 
@@ -92,7 +100,12 @@ fn binary(left: &[u8], op: &[u8], right: &[u8]) -> Result<bool, String> {
         b"-le" => parse_int(left)? <= parse_int(right)?,
         b"-gt" => parse_int(left)? > parse_int(right)?,
         b"-ge" => parse_int(left)? >= parse_int(right)?,
-        _ => return Err(format!("unknown binary operator: {}", String::from_utf8_lossy(op))),
+        _ => {
+            return Err(format!(
+                "unknown binary operator: {}",
+                String::from_utf8_lossy(op)
+            ));
+        }
     })
 }
 

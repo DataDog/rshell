@@ -28,7 +28,9 @@ impl Builtin for Sed {
                 break;
             }
             if a == b"--help" {
-                let _ = ctx.stdout.write_all(b"Usage: sed [-n] [-e SCRIPT] SCRIPT [FILE]...\n");
+                let _ = ctx
+                    .stdout
+                    .write_all(b"Usage: sed [-n] [-e SCRIPT] SCRIPT [FILE]...\n");
                 return 0;
             }
             if a == b"-n" {
@@ -40,7 +42,9 @@ impl Builtin for Sed {
                 let value: &[u8] = if rest.is_empty() {
                     i += 1;
                     if i >= ctx.args.len() {
-                        let _ = ctx.stderr.write_all(b"sed: option requires an argument -- 'e'\n");
+                        let _ = ctx
+                            .stderr
+                            .write_all(b"sed: option requires an argument -- 'e'\n");
                         return 1;
                     }
                     ctx.args[i].as_slice()
@@ -66,7 +70,11 @@ impl Builtin for Sed {
             return 1;
         }
 
-        let parsed: Vec<SubScript> = match scripts.iter().map(|s| parse_subst(s)).collect::<Result<Vec<_>, _>>() {
+        let parsed: Vec<SubScript> = match scripts
+            .iter()
+            .map(|s| parse_subst(s))
+            .collect::<Result<Vec<_>, _>>()
+        {
             Ok(v) => v,
             Err(e) => {
                 let _ = writeln!(ctx.stderr, "sed: {e}");

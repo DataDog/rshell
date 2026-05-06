@@ -26,7 +26,9 @@ impl Builtin for Tail {
                 break;
             }
             if a == b"--help" {
-                let _ = ctx.stdout.write_all(b"Usage: tail [-n NUM] [-c NUM] [-q] [-v] [FILE]...\n");
+                let _ = ctx
+                    .stdout
+                    .write_all(b"Usage: tail [-n NUM] [-c NUM] [-q] [-v] [FILE]...\n");
                 return 0;
             }
             if let Some(rest) = a.strip_prefix(b"--lines=") {
@@ -57,7 +59,9 @@ impl Builtin for Tail {
                 let value: &[u8] = if rest.is_empty() {
                     i += 1;
                     if i >= ctx.args.len() {
-                        let _ = ctx.stderr.write_all(b"tail: option requires an argument -- 'n'\n");
+                        let _ = ctx
+                            .stderr
+                            .write_all(b"tail: option requires an argument -- 'n'\n");
                         return 1;
                     }
                     ctx.args[i].as_slice()
@@ -74,7 +78,9 @@ impl Builtin for Tail {
                 let value: &[u8] = if rest.is_empty() {
                     i += 1;
                     if i >= ctx.args.len() {
-                        let _ = ctx.stderr.write_all(b"tail: option requires an argument -- 'c'\n");
+                        let _ = ctx
+                            .stderr
+                            .write_all(b"tail: option requires an argument -- 'c'\n");
                         return 1;
                     }
                     ctx.args[i].as_slice()
@@ -177,7 +183,13 @@ fn read_all(src: &mut dyn Read) -> std::io::Result<Vec<u8>> {
     Ok(v)
 }
 
-fn tail_bytes(dst: &mut dyn Write, buf: &[u8], lines: usize, bytes: Option<usize>, from_start: bool) {
+fn tail_bytes(
+    dst: &mut dyn Write,
+    buf: &[u8],
+    lines: usize,
+    bytes: Option<usize>,
+    from_start: bool,
+) {
     if let Some(n) = bytes {
         if from_start {
             let start = n.saturating_sub(1).min(buf.len());

@@ -37,7 +37,9 @@ impl Builtin for Cut {
                 break;
             }
             if a == b"--help" {
-                let _ = ctx.stdout.write_all(b"Usage: cut -d DELIM -f LIST [FILE]...\n");
+                let _ = ctx
+                    .stdout
+                    .write_all(b"Usage: cut -d DELIM -f LIST [FILE]...\n");
                 return 0;
             }
             if a == b"--complement" {
@@ -54,7 +56,9 @@ impl Builtin for Cut {
                 let value: &[u8] = if rest.is_empty() {
                     i += 1;
                     if i >= ctx.args.len() {
-                        let _ = ctx.stderr.write_all(b"cut: option requires an argument -- 'd'\n");
+                        let _ = ctx
+                            .stderr
+                            .write_all(b"cut: option requires an argument -- 'd'\n");
                         return 1;
                     }
                     ctx.args[i].as_slice()
@@ -70,7 +74,9 @@ impl Builtin for Cut {
                 spec = if rest.is_empty() {
                     i += 1;
                     if i >= ctx.args.len() {
-                        let _ = ctx.stderr.write_all(b"cut: option requires an argument -- 'f'\n");
+                        let _ = ctx
+                            .stderr
+                            .write_all(b"cut: option requires an argument -- 'f'\n");
                         return 1;
                     }
                     ctx.args[i].to_vec()
@@ -85,7 +91,9 @@ impl Builtin for Cut {
                 spec = if rest.is_empty() {
                     i += 1;
                     if i >= ctx.args.len() {
-                        let _ = ctx.stderr.write_all(b"cut: option requires an argument -- 'c'\n");
+                        let _ = ctx
+                            .stderr
+                            .write_all(b"cut: option requires an argument -- 'c'\n");
                         return 1;
                     }
                     ctx.args[i].to_vec()
@@ -100,7 +108,9 @@ impl Builtin for Cut {
                 spec = if rest.is_empty() {
                     i += 1;
                     if i >= ctx.args.len() {
-                        let _ = ctx.stderr.write_all(b"cut: option requires an argument -- 'b'\n");
+                        let _ = ctx
+                            .stderr
+                            .write_all(b"cut: option requires an argument -- 'b'\n");
                         return 1;
                     }
                     ctx.args[i].to_vec()
@@ -145,7 +155,14 @@ impl Builtin for Cut {
         for i in 0..=buf.len() {
             if i == buf.len() || buf[i] == b'\n' {
                 let line = &buf[start..i];
-                let out_line = process_line(line, mode, &ranges, delim, output_delim.as_deref(), complement);
+                let out_line = process_line(
+                    line,
+                    mode,
+                    &ranges,
+                    delim,
+                    output_delim.as_deref(),
+                    complement,
+                );
                 let _ = ctx.stdout.write_all(&out_line);
                 let _ = ctx.stdout.write_all(b"\n");
                 start = i + 1;
@@ -168,8 +185,16 @@ fn parse_spec(s: &[u8]) -> Vec<(usize, usize)> {
             continue;
         }
         if let Some(idx) = s.find('-') {
-            let lo = if idx == 0 { 1 } else { s[..idx].parse().unwrap_or(1) };
-            let hi = if idx == s.len() - 1 { usize::MAX } else { s[idx + 1..].parse().unwrap_or(usize::MAX) };
+            let lo = if idx == 0 {
+                1
+            } else {
+                s[..idx].parse().unwrap_or(1)
+            };
+            let hi = if idx == s.len() - 1 {
+                usize::MAX
+            } else {
+                s[idx + 1..].parse().unwrap_or(usize::MAX)
+            };
             out.push((lo, hi));
         } else if let Ok(n) = s.parse::<usize>() {
             out.push((n, n));
@@ -207,7 +232,9 @@ fn process_line(
             if fields.len() == 1 {
                 return line.to_vec();
             }
-            let sep = output_delim.map(|s| s.to_vec()).unwrap_or_else(|| vec![delim]);
+            let sep = output_delim
+                .map(|s| s.to_vec())
+                .unwrap_or_else(|| vec![delim]);
             let mut out = Vec::new();
             let mut first = true;
             for (i, f) in fields.iter().enumerate() {

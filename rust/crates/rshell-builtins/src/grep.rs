@@ -33,7 +33,9 @@ impl Builtin for Grep {
                 break;
             }
             if a == b"--help" {
-                let _ = ctx.stdout.write_all(b"Usage: grep [-i] [-v] [-c] [-l] [-n] [-E] [-F] [-q] PATTERN [FILE]...\n");
+                let _ = ctx.stdout.write_all(
+                    b"Usage: grep [-i] [-v] [-c] [-l] [-n] [-E] [-F] [-q] PATTERN [FILE]...\n",
+                );
                 return 0;
             }
             if a.starts_with(b"-") && a.len() > 1 {
@@ -77,7 +79,11 @@ impl Builtin for Grep {
                 return 2;
             }
         };
-        let pat = if fixed { regex::escape(pat) } else { pat.to_string() };
+        let pat = if fixed {
+            regex::escape(pat)
+        } else {
+            pat.to_string()
+        };
         let mut builder = regex::bytes::RegexBuilder::new(&pat);
         builder.case_insensitive(ignore_case);
         let regex = match builder.build() {
@@ -105,9 +111,7 @@ impl Builtin for Grep {
                         any = true;
                         count += 1;
                         if !quiet && !count_only && !filenames_only {
-                            if multi
-                                && let Some(p) = path
-                            {
+                            if multi && let Some(p) = path {
                                 let _ = ctx.stdout.write_all(p.as_bytes());
                                 let _ = ctx.stdout.write_all(b":");
                             }
@@ -124,16 +128,15 @@ impl Builtin for Grep {
                     }
                 }
             }
-            if filenames_only && any
+            if filenames_only
+                && any
                 && let Some(p) = path
             {
                 let _ = ctx.stdout.write_all(p.as_bytes());
                 let _ = ctx.stdout.write_all(b"\n");
             }
             if count_only {
-                if multi
-                    && let Some(p) = path
-                {
+                if multi && let Some(p) = path {
                     let _ = ctx.stdout.write_all(p.as_bytes());
                     let _ = ctx.stdout.write_all(b":");
                 }

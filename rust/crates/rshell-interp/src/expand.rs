@@ -256,8 +256,8 @@ fn push_dollar_brace<E: Evaluator>(eval: &mut E, body: &[u8], out: &mut Vec<u8>)
     // Resolve `name` to a value (may be empty or unset).
     let mut value = Vec::new();
     push_dollar_var(eval, name, &mut value);
-    let unset = eval.env().get(name).is_none()
-        && !matches!(name, b"?" | b"$" | b"#" | b"@" | b"*" | b"0");
+    let unset =
+        eval.env().get(name).is_none() && !matches!(name, b"?" | b"$" | b"#" | b"@" | b"*" | b"0");
     let empty_or_unset = unset || value.is_empty();
 
     match op_kind {
@@ -357,21 +357,21 @@ fn push_dollar_brace<E: Evaluator>(eval: &mut E, body: &[u8], out: &mut Vec<u8>)
 #[derive(Debug, Clone, Copy)]
 enum BraceOp {
     Plain,
-    DefaultIfEmpty,    // :-
-    DefaultIfUnset,    // -
-    AssignIfEmpty,     // :=
-    AssignIfUnset,     // =
-    ErrorIfEmpty,      // :?
-    ErrorIfUnset,      // ?
-    AltIfEmpty,        // :+
-    AltIfUnset,        // +
-    Substring,         // :OFFSET[:LENGTH]
-    StripShortPrefix,  // #
-    StripLongPrefix,   // ##
-    StripShortSuffix,  // %
-    StripLongSuffix,   // %%
-    ReplaceFirst,      // /pat/repl
-    ReplaceAll,        // //pat/repl
+    DefaultIfEmpty,   // :-
+    DefaultIfUnset,   // -
+    AssignIfEmpty,    // :=
+    AssignIfUnset,    // =
+    ErrorIfEmpty,     // :?
+    ErrorIfUnset,     // ?
+    AltIfEmpty,       // :+
+    AltIfUnset,       // +
+    Substring,        // :OFFSET[:LENGTH]
+    StripShortPrefix, // #
+    StripLongPrefix,  // ##
+    StripShortSuffix, // %
+    StripLongSuffix,  // %%
+    ReplaceFirst,     // /pat/repl
+    ReplaceAll,       // //pat/repl
 }
 
 fn split_brace_body(body: &[u8]) -> (&[u8], BraceOp, &[u8]) {
@@ -498,7 +498,11 @@ fn expand_inline_text<E: Evaluator>(eval: &mut E, text: &[u8]) -> Vec<u8> {
     out
 }
 
-fn parse_substring_args<E: Evaluator>(eval: &mut E, rhs: &[u8], _len: usize) -> (usize, Option<usize>) {
+fn parse_substring_args<E: Evaluator>(
+    eval: &mut E,
+    rhs: &[u8],
+    _len: usize,
+) -> (usize, Option<usize>) {
     // Split rhs at the first `:` that's not inside parens.
     let mut depth: i32 = 0;
     let mut split = None;

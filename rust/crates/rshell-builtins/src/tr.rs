@@ -28,7 +28,9 @@ impl Builtin for Tr {
                 break;
             }
             if a == b"--help" {
-                let _ = ctx.stdout.write_all(b"Usage: tr [-d] [-s] [-c] [-t] SET1 [SET2]\n");
+                let _ = ctx
+                    .stdout
+                    .write_all(b"Usage: tr [-d] [-s] [-c] [-t] SET1 [SET2]\n");
                 return 0;
             }
             if a.starts_with(b"-") && a.len() > 1 {
@@ -78,9 +80,7 @@ impl Builtin for Tr {
                     out.push(*b);
                 }
             }
-            if squeeze
-                && let Some(s2) = &set2
-            {
+            if squeeze && let Some(s2) = &set2 {
                 out = squeeze_run(&out, s2);
             }
         } else if let Some(s2) = &set2 {
@@ -178,9 +178,7 @@ fn expand_set(s: &[u8]) -> Vec<u8> {
 }
 
 fn find_subseq(haystack: &[u8], needle: &[u8]) -> Option<usize> {
-    haystack
-        .windows(needle.len())
-        .position(|w| w == needle)
+    haystack.windows(needle.len()).position(|w| w == needle)
 }
 
 fn expand_class(name: &[u8], out: &mut Vec<u8>) {
