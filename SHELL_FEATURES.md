@@ -38,6 +38,7 @@ The in-shell `help` command mirrors these feature categories: run `help` for a c
 - ✅ `uname [-asnrvm]` — print system information (Linux only; reads from `/proc/sys/kernel/`, respects `--proc-path`)
 - ✅ `uniq [OPTION]... [INPUT]` — report or omit repeated lines
 - ✅ `wc [-l] [-w] [-c] [-m] [-L] [FILE]...` — count lines, words, bytes, characters, or max line length
+- ✅ `xargs [-0] [-a FILE] [-d DELIM] [-E EOF-STR] [-I REPLSTR] [-L N] [-n N] [-r] [-s N] [-t] [-x] [COMMAND [INITIAL-ARGS]...]` — build and execute commands from standard input; only invokes other registered builtins (subject to `CommandAllowed`), so the GTFOBins shell-escape `xargs … /bin/sh` is rejected; flags outside the supported set above (e.g. `-p` interactive, `-P` parallel, `-o`/`--open-tty`, `--show-limits`) are rejected as unknown
 - ❌ All other commands — return exit code 127 with `<cmd>: not found` unless an ExecHandler is configured
 
 ## Variables
