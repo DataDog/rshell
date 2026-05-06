@@ -47,7 +47,7 @@ func stringValue(s string) value {
 }
 
 func inputStringValue(s string) value {
-	if n, ok := parseNumericString(s); ok {
+	if n, ok := parseFullNumericString(s); ok {
 		return value{kind: valueStrNum, s: s, n: n}
 	}
 	return value{kind: valueString, s: s}
@@ -81,11 +81,11 @@ func (v value) Number() float64 {
 	case valueNumber, valueStrNum:
 		return v.n
 	case valueRegex:
-		if n, ok := parseNumericString(v.pattern); ok {
+		if n, ok := parseNumericPrefix(v.pattern); ok {
 			return n
 		}
 	default:
-		if n, ok := parseNumericString(v.s); ok {
+		if n, ok := parseNumericPrefix(v.s); ok {
 			return n
 		}
 	}
@@ -105,12 +105,71 @@ func (v value) Bool() bool {
 	}
 }
 
-func parseNumericString(s string) (float64, bool) {
+func parseFullNumericString(s string) (float64, bool) {
 	if s == "" {
 		return 0, false
 	}
 	n, err := strconv.ParseFloat(strings.TrimSpace(s), 64)
 	return n, err == nil
+}
+
+func parseNumericPrefix(s string) (float64, bool) {
+	prefix := numericPrefix(trimLeadingAwkSpace(s))
+	if prefix == "" {
+		return 0, false
+	}
+	n, err := strconv.ParseFloat(prefix, 64)
+	return n, err == nil
+}
+
+func trimLeadingAwkSpace(s string) string {
+	for len(s) > 0 {
+		switch s[0] {
+		case ' ', '\t', '\n', '\r', '\f', '\v':
+			s = s[1:]
+		default:
+			return s
+		}
+	}
+	return s
+}
+
+func numericPrefix(s string) string {
+	i := 0
+	if i < len(s) && (s[i] == '+' || s[i] == '-') {
+		i++
+	}
+	digits := 0
+	for i < len(s) && s[i] >= '0' && s[i] <= '9' {
+		i++
+		digits++
+	}
+	if i < len(s) && s[i] == '.' {
+		i++
+		for i < len(s) && s[i] >= '0' && s[i] <= '9' {
+			i++
+			digits++
+		}
+	}
+	if digits == 0 {
+		return ""
+	}
+	end := i
+	if i < len(s) && (s[i] == 'e' || s[i] == 'E') {
+		j := i + 1
+		if j < len(s) && (s[j] == '+' || s[j] == '-') {
+			j++
+		}
+		expDigits := 0
+		for j < len(s) && s[j] >= '0' && s[j] <= '9' {
+			j++
+			expDigits++
+		}
+		if expDigits > 0 {
+			end = j
+		}
+	}
+	return s[:end]
 }
 
 type runtime struct {

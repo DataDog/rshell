@@ -98,11 +98,11 @@ func TestAwkPatternsAndRegexMatch(t *testing.T) {
 
 func TestAwkStringNumericSemantics(t *testing.T) {
 	dir := t.TempDir()
-	writeFile(t, dir, "input.txt", "0\n10\n")
-	stdout, stderr, code := cmdRun(t, `awk 'BEGIN { print ("10" < "2"), (x == 0), (x == ""), !"0" } $1 { print "truthy", $1 } { print ($1 == 0), ($1 < 2), ($1 < "2") }' input.txt`, dir)
+	writeFile(t, dir, "input.txt", "0\n10\n123abc\n-4.5x\nabc123\n")
+	stdout, stderr, code := cmdRun(t, `awk 'BEGIN { print ("10" < "2"), (x == 0), (x == ""), !"0", "123abc" + 1 } $1 { print "truthy", $1 } { print $1 + 1, ($1 == 0), ($1 < 2), ($1 < "2") }' input.txt`, dir)
 	assert.Equal(t, 0, code)
 	assert.Equal(t, "", stderr)
-	assert.Equal(t, "1 1 1 0\n1 1 1\ntruthy 10\n0 0 1\n", stdout)
+	assert.Equal(t, "1 1 1 0 124\n1 1 1 1\ntruthy 10\n11 0 0 1\ntruthy 123abc\n124 0 1 1\ntruthy -4.5x\n-3.5 0 1 1\ntruthy abc123\n1 0 0 0\n", stdout)
 }
 
 func TestAwkBeginOnlySkipsInputFiles(t *testing.T) {
@@ -119,6 +119,16 @@ func TestAwkProgramFileAndDashStdin(t *testing.T) {
 	stdout, _, code := runScript(t, `printf 'a b\nc d\n' | awk -f prog.awk -`, dir, interp.AllowedPaths([]string{dir}))
 	assert.Equal(t, 0, code)
 	assert.Equal(t, "1:b\n2:d\n", stdout)
+}
+
+func TestAwkDashProgramFileReadsStdin(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "prog.awk", `{ print $1 + 1 }`)
+	writeFile(t, dir, "input.txt", "123abc\n")
+	stdout, stderr, code := runScript(t, `awk -f - input.txt < prog.awk`, dir, interp.AllowedPaths([]string{dir}))
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "", stderr)
+	assert.Equal(t, "124\n", stdout)
 }
 
 func TestAwkVariablesTabFSAndMultipleFiles(t *testing.T) {
