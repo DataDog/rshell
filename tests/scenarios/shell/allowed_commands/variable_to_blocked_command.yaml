@@ -1,0 +1,14 @@
+# skip: AllowedCommands is rshell-specific; bash has no equivalent.
+description: A variable that expands to a disallowed command name is still blocked.
+skip_assert_against_bash: true
+input:
+  allowed_commands:
+    - rshell:echo
+  script: |+
+    c=cat
+    $c /dev/null
+expect:
+  stdout: ""
+  stderr: |+
+    rshell: cat: command not allowed
+  exit_code: 127

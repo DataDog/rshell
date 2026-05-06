@@ -1,0 +1,13 @@
+# skip: AllowedCommands is rshell-specific; bash has no equivalent.
+description: A path-containing command name does not match a bare allowlist entry.
+skip_assert_against_bash: true
+input:
+  allowed_commands:
+    - rshell:echo
+  script: |+
+    /bin/echo hello
+expect:
+  stdout: ""
+  stderr: |+
+    rshell: /bin/echo: command not allowed
+  exit_code: 127

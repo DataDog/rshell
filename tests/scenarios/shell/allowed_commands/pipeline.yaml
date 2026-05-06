@@ -1,0 +1,13 @@
+# skip: AllowedCommands is rshell-specific; bash has no equivalent.
+description: An allowed command runs in both stages of a pipeline.
+skip_assert_against_bash: true
+input:
+  allowed_commands:
+    - rshell:echo
+  script: |+
+    echo a | echo b
+expect:
+  stdout: |+
+    b
+  stderr: ""
+  exit_code: 0

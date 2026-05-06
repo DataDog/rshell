@@ -1,0 +1,14 @@
+# skip: AllowedCommands is rshell-specific; bash has no equivalent.
+description: A variable that expands to an allowed command name is permitted.
+skip_assert_against_bash: true
+input:
+  allowed_commands:
+    - rshell:echo
+  script: |+
+    c=echo
+    $c hi
+expect:
+  stdout: |+
+    hi
+  stderr: ""
+  exit_code: 0

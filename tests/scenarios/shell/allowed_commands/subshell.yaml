@@ -1,0 +1,13 @@
+# skip: AllowedCommands is rshell-specific; bash has no equivalent.
+description: An allowed command runs inside a subshell.
+skip_assert_against_bash: true
+input:
+  allowed_commands:
+    - rshell:echo
+  script: |+
+    (echo from-subshell)
+expect:
+  stdout: |+
+    from-subshell
+  stderr: ""
+  exit_code: 0

@@ -1,0 +1,14 @@
+# skip: AllowedCommands is rshell-specific; bash has no equivalent.
+description: A blocked command in an OR chain falls through to the allowed fallback.
+skip_assert_against_bash: true
+input:
+  allowed_commands:
+    - rshell:echo
+  script: |+
+    cat /dev/null || echo fallback
+expect:
+  stdout: |+
+    fallback
+  stderr: |+
+    rshell: cat: command not allowed
+  exit_code: 0

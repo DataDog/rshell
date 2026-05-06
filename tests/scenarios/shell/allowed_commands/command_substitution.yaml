@@ -1,0 +1,14 @@
+# skip: AllowedCommands is rshell-specific; bash has no equivalent.
+description: An allowed command runs inside command substitution.
+skip_assert_against_bash: true
+input:
+  allowed_commands:
+    - rshell:echo
+  script: |+
+    x=$(echo hi)
+    echo "got:$x"
+expect:
+  stdout: |+
+    got:hi
+  stderr: ""
+  exit_code: 0

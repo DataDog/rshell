@@ -1,0 +1,16 @@
+# skip: AllowedCommands is rshell-specific; bash has no equivalent.
+description: An allowed command runs in both an if condition and its body.
+skip_assert_against_bash: true
+input:
+  allowed_commands:
+    - rshell:echo
+  script: |+
+    if echo cond; then
+      echo body
+    fi
+expect:
+  stdout: |+
+    cond
+    body
+  stderr: ""
+  exit_code: 0
