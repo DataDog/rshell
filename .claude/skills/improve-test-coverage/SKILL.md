@@ -29,7 +29,7 @@ Your very first action — before reading ANY files, before writing ANY code —
 1. "Step 1: Enumerate all targets"
 2. "Step 2: Download reference test suites"
 
-Then for each target discovered in Step 1, you will dynamically create tasks for Steps 3–11 (see "Per-target loop" below).
+Then for each target discovered in Step 1, you will dynamically create tasks for Steps 3–10 (see "Per-target loop" below).
 
 ### 2. Execution order
 
@@ -49,7 +49,7 @@ Before marking any step as `completed`:
 
 ## Context
 
-The safe shell interpreter (`interp/`) implements all commands as Go builtins — it never executes host binaries. Test scenarios are YAML files in `tests/scenarios/` that are automatically validated against both the shell and bash (via Docker).
+The safe shell interpreter lives in `interp/`. Builtin command implementations live in top-level `builtins/` packages and are registered from `interp/register_builtins.go`; the interpreter never executes host binaries unless an explicitly configured external handler and AllowedCommands policy permit it. Test scenarios are YAML files in `tests/scenarios/` that are automatically validated against both the shell and bash (via Docker).
 
 ### Reference test suites
 
@@ -63,13 +63,13 @@ Three external test suites serve as coverage references:
 2. **GNU coreutils** — reference implementation tests for command-line utilities
    - Repository: https://github.com/coreutils/coreutils/tree/master/tests
    - License: GPL v3; use for test **design** reference only
-   - Offline: `resources/gnu-coreutils-tests/`
+   - Optional offline cache: `resources/gnu-coreutils-tests/`
    - Strengths: flag combinations, edge cases, error handling, multi-file behavior
 
 3. **uutils/coreutils** — Rust rewrite of coreutils with MIT-licensed tests
    - Repository: https://github.com/uutils/coreutils/tree/main/tests
    - License: MIT; test logic can be freely adapted
-   - Offline: `resources/uutils-tests/`
+   - Optional offline cache: `resources/uutils-tests/`
    - Strengths: integer edge cases, Unicode, binary input, overflow guards, cross-platform
 
 ### How to decide which suite to consult
@@ -88,19 +88,25 @@ Three external test suites serve as coverage references:
 
 Based on the argument (`$ARGUMENTS`), build the ordered list of targets to process:
 
-- **A specific command** (e.g. `cat`, `head`, `grep`): The target list is just that one command. Verify it exists as an implemented builtin by checking `interp/builtins/`.
+- **A specific command** (e.g. `cat`, `head`, `grep`): The target list is just that one command. Verify it exists as a registered builtin in `interp/register_builtins.go`, then map it to its implementation package under `builtins/` (for example, `strings` is implemented in `builtins/strings_cmd`, and `test`/`[` are implemented in `builtins/testcmd`).
 - **A shell feature** (e.g. `var_expand`, `globbing`, `pipe`): The target list is just that one feature. Verify the directory exists in `tests/scenarios/shell/`.
 - **`all`**: Enumerate **every** command and shell feature:
 
 ```bash
-# List all implemented builtin commands
-ls interp/builtins/ | grep -v _test.go | sed 's/\.go$//' | sort
+# Source of truth for registered builtin commands.
+sed -n '/for _, cmd := range \[\]builtins.Command{/,/}/p' interp/register_builtins.go
+
+# List builtin implementation packages. Package names are not always command
+# names: strings_cmd -> strings, testcmd -> test and [.
+find builtins -mindepth 1 -maxdepth 1 -type d -exec basename {} \; \
+  | grep -Ev '^(internal|tests|testutil)$' \
+  | sort
 
 # List all shell feature test directories
-ls tests/scenarios/shell/ | sort
+find tests/scenarios/shell -mindepth 1 -maxdepth 1 -type d -exec basename {} \; | sort
 
 # List all command test directories
-ls tests/scenarios/cmd/ | sort
+find tests/scenarios/cmd -mindepth 1 -maxdepth 1 -type d -exec basename {} \; | sort
 ```
 
 For each target, count its current scenario tests and note the count. Sort targets by test count ascending (fewest tests first) to prioritize the least-covered targets.
@@ -125,18 +131,18 @@ Set up blockedBy dependencies so each target's Step 3 is blocked by the previous
 
 ### Step 2: Download reference test suites
 
-Download all reference suites once, before starting the per-target loop.
+Fetch the needed reference suites once, before starting the per-target loop.
 
 #### For builtin commands
 
-First check if offline resources exist:
+First check if optional offline resources exist. This repository may not have a `resources/` directory in a fresh worktree.
 
 ```bash
 ls resources/gnu-coreutils-tests/ 2>/dev/null | head -5
 ls resources/uutils-tests/ 2>/dev/null | head -5
 ```
 
-If offline resources are available, use them. Otherwise download:
+If offline resources are available, use them. Otherwise download the needed suites:
 
 ```bash
 # GNU coreutils tests
@@ -163,7 +169,7 @@ Only download the suites needed for the targets in the list. If all targets are 
 
 ## Phase B — Per-target loop
 
-For each target in the ordered list from Step 1, execute Steps 3–11 sequentially. Replace `<target>` below with the current command or shell feature name.
+For each target in the ordered list from Step 1, execute Steps 3–10 sequentially. Replace `<target>` below with the current command or shell feature name.
 
 ### Step 3: Audit existing coverage
 
@@ -185,9 +191,12 @@ Read each YAML file and build a coverage matrix. For each test, note:
 Also read the Go test files if they exist:
 
 ```bash
-# For a command:
-find interp/builtins/ -path "*<target>*_test.go" | sort
-find interp/ -name "builtin_<target>*_test.go" | sort
+# For a command, inspect the implementation package and any shared command
+# tests. Remember package-name exceptions such as strings -> strings_cmd and
+# test/[ -> testcmd.
+find builtins/<package>/ -name "*_test.go" 2>/dev/null | sort
+find builtins/tests/<target>/ -name "*_test.go" 2>/dev/null | sort
+find interp/ -name "*<target>*_test.go" 2>/dev/null | sort
 ```
 
 Read the relevant reference test files for this specific target (from the suites downloaded in Step 2):
@@ -298,8 +307,9 @@ For each new test, determine the correct expected output:
 
 **Method A — Run in our shell first:**
 ```bash
-go run . -c '<script>'
+go run ./cmd/rshell --allow-all-commands -c '<script>'
 ```
+Add `--allowed-paths <dir>` when the script reads files, matching the scenario's `input.allowed_paths`.
 
 **Method B — Run in bash (Docker):**
 ```bash
@@ -405,11 +415,16 @@ For each unnecessary Windows-specific assertion removed, the non-Windows asserti
 
 ### Step 9: Fix failing tests
 
-Run the `/fix-ci-tests` skill to verify all tests pass and fix any failures. This will:
-- Run scenario tests and Go tests
-- Run bash comparison tests
-- Fix test expectations or shell implementation as needed
-- Re-run until all tests pass
+Run `make fmt` after edits, then run the relevant tests and fix any failures. The `/fix-ci-tests` skill can be used for the iterative failure-analysis workflow, but the verification commands for scenario or builtin changes are:
+
+```bash
+make fmt
+go test ./tests/ -run TestShellScenarios -timeout 120s
+RSHELL_BASH_TEST=1 go test ./tests/ -run TestShellScenariosAgainstBash -timeout 120s
+go test ./builtins/... ./interp/... -timeout 120s
+```
+
+Fix shell implementation bugs before changing expectations when bash comparison shows a behavioral mismatch.
 
 If `skip_assert_against_bash: true` is added to any test, ensure a YAML comment explains why.
 
