@@ -71,7 +71,7 @@ func PollNonConsuming(fd uintptr) (available, supported bool) {
 		//               lpBytesLeftThisMessage=NULL)
 		// Returns BOOL: nonzero on success. With NULL lpBuffer the
 		// call only reports counts and never consumes data.
-		r1, _, _ := peekNamedPipeProc.Call(
+		r1, _, callErr := peekNamedPipeProc.Call(
 			uintptr(h),                      // hNamedPipe
 			0,                               // lpBuffer
 			0,                               // nBufferSize
@@ -80,6 +80,16 @@ func PollNonConsuming(fd uintptr) (available, supported bool) {
 			0,                               // lpBytesLeftThisMessage
 		)
 		if r1 == 0 {
+			// PeekNamedPipe failure. ERROR_BROKEN_PIPE means the
+			// writer end has closed — the pipe is EOF-ready, which
+			// matches the Unix POLLHUP semantics: bash 5.2 returns
+			// rc=0 for `read -t 0` on a drained closed pipe because
+			// the next Read would complete immediately with EOF
+			// (no blocking). Treat as available so cross-platform
+			// behaviour stays consistent for `printf '' | read -t 0`.
+			if errno, ok := callErr.(syscall.Errno); ok && errno == windows.ERROR_BROKEN_PIPE {
+				return true, true
+			}
 			return false, false
 		}
 		return avail > 0, true

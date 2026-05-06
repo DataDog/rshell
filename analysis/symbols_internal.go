@@ -117,8 +117,10 @@ var internalPerPackageSymbols = map[string][]string{
 		"unsafe.Pointer",               // 🔴 passes buffer/size pointers to DLL via syscall ABI. No pointer arithmetic; buffer parsed with encoding/binary after the call.
 	},
 	"winpoll": {
-		"syscall.MustLoadDLL",                                    // 🔴 (windows) loads kernel32.dll once at program init for PeekNamedPipe; read-only OS loader call.
-		"unsafe.Pointer",                                         // 🔴 (windows) passes &avail to PeekNamedPipe via syscall ABI for non-consuming readability probe. Single call site; no pointer arithmetic — the returned uint32 is consumed directly.
+		"syscall.Errno",       // 🟢 (windows) error number type for distinguishing ERROR_BROKEN_PIPE from other PeekNamedPipe failures; pure type.
+		"syscall.MustLoadDLL", // 🔴 (windows) loads kernel32.dll once at program init for PeekNamedPipe; read-only OS loader call.
+		"unsafe.Pointer",      // 🔴 (windows) passes &avail to PeekNamedPipe via syscall ABI for non-consuming readability probe. Single call site; no pointer arithmetic — the returned uint32 is consumed directly.
+		"golang.org/x/sys/windows.ERROR_BROKEN_PIPE",             // 🟢 (windows) sentinel error indicating the pipe's writer end has closed — used to recognize EOF-ready pipes for `read -t 0` POLLHUP-equivalent semantics; pure constant.
 		"golang.org/x/sys/windows.FILE_TYPE_CHAR",                // 🟢 (windows) GetFileType result for console/character devices; pure constant.
 		"golang.org/x/sys/windows.FILE_TYPE_DISK",                // 🟢 (windows) GetFileType result for regular files; pure constant.
 		"golang.org/x/sys/windows.FILE_TYPE_PIPE",                // 🟢 (windows) GetFileType result for anonymous and named pipes; pure constant.
@@ -196,6 +198,7 @@ var internalAllowedSymbols = []string{
 	"golang.org/x/sys/unix.SysctlRaw",                        // 🟠 procinfo (darwin): reads raw kern.procargs2 sysctl buffer per-PID to obtain argv; read-only, no exec capability.
 	"golang.org/x/sys/windows.CloseHandle",                   // 🟠 procinfo (windows): closes a process-snapshot handle after enumeration; no data read or exec capability.
 	"golang.org/x/sys/windows.CreateToolhelp32Snapshot",      // 🟠 procinfo (windows): creates a read-only snapshot of the process table; no exec or write capability.
+	"golang.org/x/sys/windows.ERROR_BROKEN_PIPE",             // 🟢 winpoll (windows): sentinel error from PeekNamedPipe when the writer end has closed — used to recognize EOF-ready pipes; pure constant.
 	"golang.org/x/sys/windows.ERROR_NO_MORE_FILES",           // 🟢 procinfo (windows): sentinel error indicating end of process enumeration; pure constant.
 	"golang.org/x/sys/windows.FILE_TYPE_CHAR",                // 🟢 winpoll (windows): GetFileType result for console/character devices; pure constant.
 	"golang.org/x/sys/windows.FILE_TYPE_DISK",                // 🟢 winpoll (windows): GetFileType result for regular files; pure constant.
