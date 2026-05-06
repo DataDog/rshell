@@ -28,8 +28,8 @@ Statuses: `[ ]` not started · `[~]` in progress / blocked · `[x]` done.
 
 ## Snapshot
 
-- **Active phase:** Phase 4 — port the 29 builtins (in progress)
-- **Last updated:** 2026-05-06 (Phase 4 wave 3 — 504/504 smoke; ~17 builtins ported; cmdsubst + arith + brace-expansion modifiers landed)
+- **Active phase:** Phase 6 — bake-off + REPORT.html (in progress)
+- **Last updated:** 2026-05-06 (Phases 4 & 5 done — all 29 builtins, analyzer in CI)
 - **Branch:** `alex/rust`
 - **Binary name during cohabitation:** `rshell-rs`
 - **Go removal:** out of scope for this branch; handled separately by the user
@@ -46,6 +46,10 @@ Statuses: `[ ]` not started · `[~]` in progress / blocked · `[x]` done.
 | 4w1   | done   | `47884460`              |                    |               |
 | 4w2   | done   | `00ca756e` → `621976e1` |                    |               |
 | 4w3   | done   | `ac11d441` → `ece73af5` |                    | success |
+| 4w4   | done   | `fe370dcf`              | `25436706826`      | success |
+| 4w5   | done   | `7f232b28`              | `25448134981`      | success |
+| 5     | done   | (this commit)           | (see post-push)    |               |
+| 6     | scripted | (this commit)         |                    |               |
 | 5     | not started |                     |                    |               |
 | 6     | not started |                     |                    |               |
 

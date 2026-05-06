@@ -7,8 +7,15 @@ license.workspace = true
 repository.workspace = true
 publish.workspace = true
 
+[[bin]]
+name = "rshell-analysis"
+path = "src/main.rs"
+
 [dependencies]
 thiserror.workspace = true
+walkdir.workspace = true
+syn = { version = "2", features = ["full", "visit"] }
+proc-macro2 = { version = "1", default-features = false, features = ["span-locations"] }
 
 [lints]
 workspace = true

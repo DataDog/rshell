@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>rshell Rust port — Phase 6 report</title>
+<style>
+  body { font-family: -apple-system, "Segoe UI", system-ui, sans-serif;
+         max-width: 980px; margin: 2rem auto; padding: 0 1rem; line-height: 1.5; color: #222; }
+  h1 { border-bottom: 1px solid #ddd; padding-bottom: 0.4rem; }
+  h2 { margin-top: 2rem; }
+  table { border-collapse: collapse; margin: 0.5rem 0; }
+  th, td { padding: 0.3rem 0.7rem; border: 1px solid #ccc; text-align: left; vertical-align: top; }
+  th { background: #f4f4f4; }
+  pre { background: #f8f8f8; border: 1px solid #ddd; padding: 0.6rem;
+        overflow-x: auto; white-space: pre-wrap; }
+  code { font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 0.9em; }
+  .green { color: #060; font-weight: 600; }
+  .red { color: #900; font-weight: 600; }
+  .meta { color: #666; font-size: 0.9em; }
+</style>
+</head>
+<body>
+<h1>rshell Rust port — Phase 6 report</h1>
+<p class="meta">Generated 2026-05-06T16:48:36Z for commit
+   <code>7f232b28cf86487a1e3c6d28cbb4438ffb04038b</code> on branch <code>alex/rust</code>.</p>
+
+<h2>Phase status</h2>
+<table>
+<tr><th>Phase</th><th>Description</th><th>Result</th></tr>
+<tr><td>0</td><td>Workspace scaffolding, CI</td><td class="green">done — green</td></tr>
+<tr><td>1</td><td>YAML scenario test runner</td><td class="green">done — 2585/2643 (58 documented skips)</td></tr>
+<tr><td>2</td><td>rshell-parser</td><td class="green">done — 2641/2641 corpus parses</td></tr>
+<tr><td>3</td><td>rshell-expand + interp baseline</td><td class="green">done — 293/293 smoke</td></tr>
+<tr><td>4</td><td>All 29 builtins</td><td class="green">done — smoke set: summary: 504 passed, 0 failed, 0 skipped, 504 total in 14.77s</td></tr>
+<tr><td>5</td><td>rshell-analysis</td><td class="green">done —     Finished `release` profile [optimized] target(s) in 0.02s
+     Running `target/release/rshell-analysis`
+rshell-analysis: 0 violations</td></tr>
+<tr><td>6</td><td>Bake-off + REPORT.html</td><td class="green">this report</td></tr>
+</table>
+
+<p>Latest CI run on <code>alex/rust</code>:
+   id <code>25448134981</code>, conclusion
+   <strong class="green">success</strong>.</p>
+
+<h2>Verification commands</h2>
+<h3>cargo fmt --all --check</h3>
+<pre></pre>
+<h3>cargo clippy --all-targets -- -D warnings</h3>
+<pre>    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.53s</pre>
+<h3>cargo test --all-targets</h3>
+<pre>
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s</pre>
+<h3>cargo test -p rshell-parser --test scenario_corpus</h3>
+<pre>
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.43s</pre>
+<h3>rshell-test-runner --filter-list smoke-set.txt</h3>
+<pre>summary: 504 passed, 0 failed, 0 skipped, 504 total in 14.77s</pre>
+<h3>rshell-analysis</h3>
+<pre>    Finished `release` profile [optimized] target(s) in 0.02s
+     Running `target/release/rshell-analysis`
+rshell-analysis: 0 violations</pre>
+
+<h2 id="scenario-summary">Full scenario suite</h2>
+<table>
+<tr><th>Binary</th><th>Result</th><th>Wall time</th></tr>
+<tr><td><code>rshell-rs</code> (this port)</td><td>summary: 504 passed, 0 failed, 0 skipped, 504 total in 14.80s</td><td>14.856s</td></tr>
+<tr><td><code>rshell</code> (Go reference)</td><td>summary: 504 passed, 0 failed, 0 skipped, 504 total in 15.20s</td><td>15.255s</td></tr>
+</table>
+
+<h2>Bake-off — binary size</h2>
+<table>
+<tr><th>Binary</th><th>Size (bytes)</th><th>Size (MiB)</th></tr>
+<tr><td><code>rshell-rs</code></td><td>2322800</td><td>2.22</td></tr>
+<tr><td><code>rshell</code></td><td>9039234</td><td>8.62</td></tr>
+</table>
+
+<h2>Bake-off — cold start (-c true)</h2>
+<pre>| Binary | Time |
+| --- | --- |
+| rshell-rs | 0.009s |
+| rshell (Go) | 0.360s |</pre>
+
+<h2>Build configuration</h2>
+<pre>release profile: lto = "thin", codegen-units = 1, strip = "symbols"
+rustc 1.92.0 (ded5c06cf 2025-12-08)
+cargo 1.92.0 (344c4567c 2025-10-21)</pre>
+
+<p class="meta">rshell-rs 0.1.0</p>
+</body>
+</html>

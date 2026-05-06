@@ -56,3 +56,6 @@ jobs:
       - name: Test
         shell: bash
         run: cargo test --all-targets
+      - name: Symbol-allowlist analysis
+        shell: bash
+        run: cargo run --release -p rshell-analysis
