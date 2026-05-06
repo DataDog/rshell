@@ -17,6 +17,8 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"mvdan.cc/sh/v3/syntax"
+
 	"github.com/DataDog/rshell/builtins/testutil"
 )
 
@@ -131,9 +133,12 @@ func FuzzDuFlags(f *testing.F) {
 		if strings.ContainsAny(script, "&;|<>$`(){}\\\n\r*?[") {
 			return
 		}
-		// Filter inputs that would cause shell parse errors. Unbalanced
-		// quotes are a common one and not a useful test of du itself.
-		if strings.Count(script, `"`)%2 != 0 || strings.Count(script, `'`)%2 != 0 {
+		// Filter inputs that would cause shell parse errors. A naive
+		// per-quote count is insufficient — quotes nest across single/
+		// double contexts (e.g. `"'"'` is balanced byte-for-byte but
+		// the trailing `'` opens an unclosed single-quoted string).
+		// Pre-parse with the actual parser and drop scripts it rejects.
+		if _, err := syntax.NewParser().Parse(strings.NewReader(script), ""); err != nil {
 			return
 		}
 

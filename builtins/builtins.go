@@ -211,6 +211,13 @@ type CallContext struct {
 	// Returns the command's exit code.
 	RunCommand func(ctx context.Context, dir string, name string, args []string) (uint8, error)
 
+	// RunCommandWithStdin is like RunCommand but lets the caller supply a
+	// stdin reader for the child. Used by xargs to give children empty
+	// stdin (matching POSIX behavior of redirecting child stdin from
+	// /dev/null) while still reading items from the parent's stdin itself.
+	// If nil, callers should fall back to RunCommand.
+	RunCommandWithStdin func(ctx context.Context, dir string, name string, args []string, stdin io.Reader) (uint8, error)
+
 	// SetVar assigns a value to a shell variable in the calling shell's
 	// scope. Returns an error if the value exceeds the per-variable size
 	// limit or if the total variable-storage cap would be exceeded.
