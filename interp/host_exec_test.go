@@ -73,29 +73,36 @@ func newHostExecRunner(t *testing.T, hostEntries []string, stdin io.Reader) (*in
 	return r, stdout, stderr
 }
 
+// Tests below intentionally use command names that do NOT collide with
+// rshell builtins (echo/cat/false/true are all registered builtins). The
+// !isKnown gate in call() means a host: entry is honored only when the
+// name does not resolve to a builtin, so binding host:echo=/bin/echo and
+// then running `echo` would dispatch the rshell echo builtin and never
+// touch the host path under test.
+
 func TestHostExecStdoutPlumbed(t *testing.T) {
-	r, stdout, _ := newHostExecRunner(t, []string{"host:echo=/bin/echo"}, nil)
-	err := r.Run(context.Background(), parseHostExecScript(t, `echo hello world`))
+	r, stdout, _ := newHostExecRunner(t, []string{"host:hostecho=/bin/echo"}, nil)
+	err := r.Run(context.Background(), parseHostExecScript(t, `hostecho hello world`))
 	require.NoError(t, err)
 	assert.Equal(t, "hello world\n", stdout.String())
 }
 
 func TestHostExecExitCodePropagated(t *testing.T) {
-	r, _, _ := newHostExecRunner(t, []string{"host:false=/usr/bin/false"}, nil)
-	code := runExitCode(t, r, parseHostExecScript(t, `false`))
+	r, _, _ := newHostExecRunner(t, []string{"host:hostfalse=/usr/bin/false"}, nil)
+	code := runExitCode(t, r, parseHostExecScript(t, `hostfalse`))
 	assert.Equal(t, uint8(1), code)
 }
 
 func TestHostExecStdinPlumbed(t *testing.T) {
 	stdin := strings.NewReader("piped-input\n")
-	r, stdout, _ := newHostExecRunner(t, []string{"host:cat=/bin/cat"}, stdin)
-	err := r.Run(context.Background(), parseHostExecScript(t, `cat`))
+	r, stdout, _ := newHostExecRunner(t, []string{"host:hostcat=/bin/cat"}, stdin)
+	err := r.Run(context.Background(), parseHostExecScript(t, `hostcat`))
 	require.NoError(t, err)
 	assert.Equal(t, "piped-input\n", stdout.String())
 }
 
 func TestHostExecRejectsNonAllowlistedName(t *testing.T) {
-	r, _, stderr := newHostExecRunner(t, []string{"host:echo=/bin/echo"}, nil)
+	r, _, stderr := newHostExecRunner(t, []string{"host:hostecho=/bin/echo"}, nil)
 	code := runExitCode(t, r, parseHostExecScript(t, `notallowlisted`))
 	assert.Equal(t, uint8(127), code)
 	assert.Contains(t, stderr.String(), "command not allowed")
@@ -153,19 +160,17 @@ func TestHostExecForwardsHomeAndLang(t *testing.T) {
 	assert.Contains(t, out, "LANG=C.UTF-8")
 }
 
-// TestHostExecOnlyApprovedNamesDispatch ensures that an allowlisted *builtin*
-// name still dispatches to the builtin and does not reach the host-exec path
-// — the host: namespace is consulted only when the name is not a known
-// builtin.
+// TestHostExecBuiltinTakesPrecedence verifies that when a name is both an
+// allowlisted builtin (rshell:echo) AND a configured host: entry, the
+// builtin runs and the host binary is never exec'd. The host: entry
+// points at /usr/bin/false on purpose: if the host path were
+// erroneously preferred, the script would exit 1; because the builtin
+// wins it exits 0 with the expected stdout.
 func TestHostExecBuiltinTakesPrecedence(t *testing.T) {
-	// "echo" is a known builtin in rshell. If the host:echo entry were
-	// erroneously preferred, /bin/echo would emit "FROM_HOST" via its
-	// argv, but because we pass the literal string and rely on builtin
-	// echo, the output ends with a single newline produced by the builtin.
 	r, stdout, _ := newHostExecRunner(t,
-		[]string{"rshell:echo", "host:echo=/bin/echo"}, nil)
+		[]string{"rshell:echo", "host:echo=/usr/bin/false"}, nil)
 	err := r.Run(context.Background(), parseHostExecScript(t, `echo from-builtin`))
-	require.NoError(t, err)
+	require.NoError(t, err, "builtin echo must win — non-zero exit means /usr/bin/false ran")
 	assert.Equal(t, "from-builtin\n", stdout.String())
 }
 

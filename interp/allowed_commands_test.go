@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -71,15 +72,19 @@ func TestAllowedCommandsEmpty(t *testing.T) {
 // TestHostEntryDoesNotAuthorizeBuiltin is a regression test: a host: entry
 // whose name collides with a builtin must NOT silently authorize the
 // builtin. Without the !isKnown gate in call(), an entry like
-// "host:cat=/bin/false" would flip isAllowed=true and the builtin cat
-// would run with stdin/AllowedPaths access, never executing /bin/false.
+// "host:cat=<path>" would flip isAllowed=true and the builtin cat would
+// run with stdin/AllowedPaths access, never executing the host path.
 // Cross-platform: this exercises the dispatch gate, not the actual host
-// exec, so it runs on darwin/windows too.
+// exec, so it runs on darwin/windows too. The host path uses
+// t.TempDir() rather than a hardcoded /bin/... so AllowedCommands'
+// filepath.IsAbs check passes on every OS (Windows requires drive
+// letter or UNC).
 func TestHostEntryDoesNotAuthorizeBuiltin(t *testing.T) {
+	hostPath := filepath.Join(t.TempDir(), "fake-binary")
 	stdout := &bytes.Buffer{}
 	stderr := &bytes.Buffer{}
 	r, err := interp.New(
-		interp.AllowedCommands([]string{"host:cat=/bin/false"}),
+		interp.AllowedCommands([]string{"host:cat=" + hostPath}),
 		interp.StdIO(strings.NewReader(""), stdout, stderr),
 	)
 	require.NoError(t, err)
@@ -102,11 +107,14 @@ func TestHostEntryDoesNotAuthorizeBuiltin(t *testing.T) {
 // "command not allowed" if the gate were too strict). The actual exec
 // path is platform-specific and tested in host_exec_test.go (linux);
 // here we only assert that dispatch reaches it (on darwin/windows the
-// host-exec stub returns 127 with a different message).
+// host-exec stub returns 127 with a different message). t.TempDir()
+// produces an absolute path on every OS so AllowedCommands accepts it
+// on Windows too.
 func TestHostEntryAuthorizesNonBuiltin(t *testing.T) {
+	hostPath := filepath.Join(t.TempDir(), "fake-binary")
 	stderr := &bytes.Buffer{}
 	r, err := interp.New(
-		interp.AllowedCommands([]string{"host:somenonsensename=/usr/bin/true"}),
+		interp.AllowedCommands([]string{"host:somenonsensename=" + hostPath}),
 		interp.StdIO(strings.NewReader(""), &bytes.Buffer{}, stderr),
 	)
 	require.NoError(t, err)
