@@ -1,0 +1,17 @@
+description: awk print supports parenthesized comparison expressions.
+setup:
+  files:
+    - path: input.txt
+      content: |+
+        1
+        2
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    awk '{ print ($1 > 1) }' input.txt
+expect:
+  stdout: |+
+    0
+    1
+  stderr: |+
+  exit_code: 0

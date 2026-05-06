@@ -96,6 +96,33 @@ func TestAwkPatternsAndRegexMatch(t *testing.T) {
 	assert.Equal(t, "error\n", stdout)
 }
 
+func TestAwkRegexRuleAfterNewline(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "input.txt", "bar\nfoo\n")
+	stdout, stderr, code := cmdRun(t, "awk 'BEGIN { print \"h\" }\n/foo/ { print $1 }' input.txt", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "", stderr)
+	assert.Equal(t, "h\nfoo\n", stdout)
+}
+
+func TestAwkPrintParenthesizedComparison(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "input.txt", "1\n2\n")
+	stdout, stderr, code := cmdRun(t, `awk '{ print ($1 > 1) }' input.txt`, dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "", stderr)
+	assert.Equal(t, "0\n1\n", stdout)
+}
+
+func TestAwkLiteralFieldSeparatorBlankRecordNF(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "input.txt", "a:b\n\n:\n")
+	stdout, stderr, code := cmdRun(t, `awk -F: '{ print NF }' input.txt`, dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "", stderr)
+	assert.Equal(t, "2\n0\n2\n", stdout)
+}
+
 func TestAwkStringNumericSemantics(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, dir, "input.txt", "0\n10\n123abc\n-4.5x\nabc123\n")
