@@ -1,0 +1,10 @@
+description: Subshell exit status reflects the last command, not earlier failures.
+input:
+  script: |+
+    (false; true)
+    echo "$?"
+expect:
+  stdout: |+
+    0
+  stderr: ""
+  exit_code: 0

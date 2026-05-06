@@ -1,0 +1,10 @@
+description: Logic operators inside a subshell determine the subshell's exit status.
+input:
+  script: |+
+    (true && false)
+    echo "$?"
+expect:
+  stdout: |+
+    1
+  stderr: ""
+  exit_code: 0

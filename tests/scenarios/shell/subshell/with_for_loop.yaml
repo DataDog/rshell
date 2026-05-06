@@ -1,0 +1,11 @@
+description: A for-loop runs to completion inside a subshell.
+input:
+  script: |+
+    (for x in a b c; do echo $x; done)
+expect:
+  stdout: |+
+    a
+    b
+    c
+  stderr: ""
+  exit_code: 0

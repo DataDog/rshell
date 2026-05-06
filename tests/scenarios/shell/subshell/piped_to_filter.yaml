@@ -1,0 +1,9 @@
+description: A subshell that produces multiple lines can be filtered through tail.
+input:
+  script: |+
+    (echo a; echo b; echo c) | tail -n 1
+expect:
+  stdout: |+
+    c
+  stderr: ""
+  exit_code: 0

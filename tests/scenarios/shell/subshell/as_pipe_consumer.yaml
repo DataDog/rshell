@@ -1,0 +1,9 @@
+description: A subshell on the right side of a pipe consumes the producer's stdout.
+input:
+  script: |+
+    echo hello | (cat)
+expect:
+  stdout: |+
+    hello
+  stderr: ""
+  exit_code: 0

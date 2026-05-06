@@ -1,0 +1,11 @@
+description: An explicit exit inside a subshell sets the parent's $? but does not exit the parent.
+input:
+  script: |+
+    (echo hi; exit 5)
+    echo "$?"
+expect:
+  stdout: |+
+    hi
+    5
+  stderr: ""
+  exit_code: 0

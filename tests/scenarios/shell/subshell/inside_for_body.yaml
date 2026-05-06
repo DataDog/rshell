@@ -1,0 +1,13 @@
+description: A subshell can appear inside a for-loop body and runs once per iteration.
+input:
+  script: |+
+    for i in 1 2 3; do
+      (echo iter-$i)
+    done
+expect:
+  stdout: |+
+    iter-1
+    iter-2
+    iter-3
+  stderr: ""
+  exit_code: 0
