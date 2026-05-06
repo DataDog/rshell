@@ -34,6 +34,25 @@ Statuses: `[ ]` not started · `[~]` in progress / blocked · `[x]` done.
 - **Binary name during cohabitation:** `rshell-rs`
 - **Go removal:** out of scope for this branch; handled separately by the user
 
+### Phase status table
+
+| Phase | Status | Last commit             | CI run             | CI conclusion |
+|-------|--------|-------------------------|--------------------|---------------|
+| 0     | done   | `6678c83b`              | `25425396174`      | startup_failure (workflow fix landed in `c7ac2339`) |
+| 0+CI  | done   | `c7ac2339`              | `25426561894`      | success (Linux + macOS + Windows) |
+| 1     | done   | `56d803dc` → `c7ac2339` | `25426561894`      | success |
+| 2     | not started |                     |                    |               |
+| 3     | not started |                     |                    |               |
+| 4     | not started |                     |                    |               |
+| 5     | not started |                     |                    |               |
+| 6     | not started |                     |                    |               |
+
+After every phase, append a row here with the commit SHA, CI run ID
+(`gh run list --branch alex/rust --workflow Rust --limit 1 --json
+databaseId --jq '.[0].databaseId'`), and the CI conclusion
+(`gh run view <id> --json conclusion --jq '.conclusion'`). The row is
+not allowed to claim "done" unless the conclusion is `success`.
+
 ## CI verification snippet (used after every push)
 
 ```sh
