@@ -21,40 +21,40 @@ Statuses: `[ ]` not started · `[~]` in progress / blocked · `[x]` done.
 
 ## Snapshot
 
-- **Active phase:** Phase 0 — scaffolding
-- **Last updated:** 2026-05-06 (initial draft)
+- **Active phase:** Phase 1 — test runner shelling out to Go `rshell`
+- **Last updated:** 2026-05-06 (Phase 0 done)
 - **Branch:** `alex/rust`
 - **Binary name during cohabitation:** `rshell-rs`
 
 ## Phase 0 — scaffolding
 
-**Status:** in progress
+**Status:** done
 **Exit criterion:** `cargo build`, `cargo fmt --check`, `cargo clippy`,
 `cargo test` all green on Linux, macOS, and Windows.
 
 - [x] Write `rust/DESIGN.md`
 - [x] Write `rust/PROGRESS.md` (this file)
-- [ ] Create `rust/Cargo.toml` (virtual workspace)
-- [ ] Create `rust/rust-toolchain.toml` (stable, edition 2024, MSRV 1.85)
-- [ ] Create `rust/.gitignore` (`target/`, `Cargo.lock` policy decision)
-- [ ] Create empty crate skeletons under `rust/crates/`:
-  - [ ] `rshell-cli` (binary)
-  - [ ] `rshell-interp`
-  - [ ] `rshell-parser`
-  - [ ] `rshell-expand`
-  - [ ] `rshell-builtins`
-  - [ ] `rshell-sandbox`
-  - [ ] `rshell-analysis`
-  - [ ] `rshell-test-runner`
-- [ ] Wire `rshell-cli` to print a placeholder `--version` so we can verify
+- [x] Create `rust/Cargo.toml` (virtual workspace)
+- [x] Create `rust/rust-toolchain.toml` (stable)
+- [x] Create `rust/.gitignore`
+- [x] Create empty crate skeletons under `rust/crates/`:
+  - [x] `rshell-cli` (binary, prints `--version` and `--help`)
+  - [x] `rshell-interp`
+  - [x] `rshell-parser`
+  - [x] `rshell-expand`
+  - [x] `rshell-builtins`
+  - [x] `rshell-sandbox`
+  - [x] `rshell-analysis`
+  - [x] `rshell-test-runner`
+- [x] Wire `rshell-cli` to print a placeholder `--version` so we can verify
       the binary builds and runs.
-- [ ] Add `rust/Makefile` (or extend top-level `Makefile`) with `make
-      rust-build`, `rust-test`, `rust-fmt`, `rust-lint` targets.
-- [ ] Add `.github/workflows/rust.yml` (or extend existing CI) for the
-      Linux + macOS + Windows × stable matrix.
-- [ ] Confirm `cargo fmt`, `cargo clippy -- -D warnings`, and `cargo test`
-      all pass locally on macOS.
-- [ ] Commit + push as Phase 0.
+- [x] Extend top-level `Makefile` with `rust-build`, `rust-test`,
+      `rust-fmt`, `rust-fmt-check`, `rust-lint`, `rust-all` targets.
+- [x] Add `.github/workflows/rust.yml` for the Linux + macOS + Windows ×
+      stable matrix.
+- [x] Confirm `cargo fmt --all --check`, `cargo clippy -- -D warnings`,
+      `cargo build`, `cargo test` all green locally on macOS.
+- [x] Commit + push as Phase 0.
 
 ## Phase 1 — test runner shelling out to Go `rshell`
 

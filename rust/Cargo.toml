@@ -1,0 +1,66 @@
+[workspace]
+resolver = "3"
+members = [
+    "crates/rshell-cli",
+    "crates/rshell-interp",
+    "crates/rshell-parser",
+    "crates/rshell-expand",
+    "crates/rshell-builtins",
+    "crates/rshell-sandbox",
+    "crates/rshell-analysis",
+    "crates/rshell-test-runner",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+license = "Apache-2.0"
+repository = "https://github.com/DataDog/rshell"
+publish = false
+
+[workspace.dependencies]
+# Shared utilities
+anyhow = "1"
+thiserror = "2"
+bstr = "1"
+tracing = "0.1"
+
+# CLI parsing
+clap = { version = "4.5", features = ["derive"] }
+
+# Filesystem capability sandbox
+cap-std = "3"
+
+# Regex and globbing
+regex = "1"
+globset = "0.4"
+
+# YAML scenario harness (Phase 1)
+serde = { version = "1", features = ["derive"] }
+serde_yaml_ng = "0.10"
+
+# Pipes and unix syscalls
+os_pipe = "1"
+nix = { version = "0.29", default-features = false }
+
+# Internal crate references
+rshell-interp = { path = "crates/rshell-interp" }
+rshell-parser = { path = "crates/rshell-parser" }
+rshell-expand = { path = "crates/rshell-expand" }
+rshell-builtins = { path = "crates/rshell-builtins" }
+rshell-sandbox = { path = "crates/rshell-sandbox" }
+rshell-analysis = { path = "crates/rshell-analysis" }
+rshell-test-runner = { path = "crates/rshell-test-runner" }
+
+[workspace.lints.rust]
+unsafe_code = "deny"
+unused_must_use = "deny"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = "symbols"
