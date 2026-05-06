@@ -86,19 +86,23 @@ func (r *Runner) runHostCommand(ctx context.Context, path string, args []string)
 
 // filterHostEnv builds a minimal env slice for host binaries from the
 // runner's environment overlay (r.writeEnv) — NOT the ambient Go
-// process env — forwarding only the names in hostEnvAllowlist.
+// process env — forwarding only the names in hostEnvAllowlist that
+// are also marked Exported. Matches bash semantics: a script-level
+// assignment like `PATH=/tmp; hostcmd` does not propagate to the
+// child unless PATH was previously exported (via interp.Env or an
+// `export` statement). Inline command assignments
+// (`PATH=/safe hostcmd`) propagate because call() forces
+// vr.Exported = true before dispatch.
+//
 // Reading from r.writeEnv is what makes the runner's documented
 // "empty by default, no host env inherited" guarantee hold for host
 // binaries: an unset PATH/HOME/LANG in the runner is simply omitted,
-// regardless of what the surrounding Go process exports. It also lets
-// caller-provided values (interp.Env) and inline assignments
-// (PATH=/safe hostcmd) take effect — those flow through r.writeEnv,
-// where call() applies inline assigns before dispatch.
+// regardless of what the surrounding Go process exports.
 func (r *Runner) filterHostEnv() []string {
 	out := make([]string, 0, len(hostEnvAllowlist))
 	for _, name := range hostEnvAllowlist {
 		vr := r.writeEnv.Get(name)
-		if !vr.Declared() {
+		if !vr.Declared() || !vr.Exported {
 			continue
 		}
 		out = append(out, name+"="+vr.String())

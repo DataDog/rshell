@@ -240,6 +240,26 @@ func TestHostExecInlineAssignmentTakesEffect(t *testing.T) {
 		"the original PATH must not also appear")
 }
 
+// TestHostExecUnexportedAssignmentNotForwarded mirrors bash semantics:
+// a standalone assignment without a prior export (e.g.
+// `LANG=fresh; hostcmd`) is shell-local and must NOT propagate to
+// child processes. Verified against
+// `bash -c 'CUSTOM_VAR=/tmp; env | grep CUSTOM_VAR'` which prints
+// nothing. filterHostEnv now requires vr.Exported in addition to
+// vr.Declared().
+func TestHostExecUnexportedAssignmentNotForwarded(t *testing.T) {
+	// LANG is not in the runner's initial env, so a script-level
+	// assignment to it creates a fresh, unexported variable.
+	r, stdout, _ := newHostExecRunner(t, []string{"host:env=/usr/bin/env"}, nil)
+	err := r.Run(context.Background(),
+		parseHostExecScript(t, `LANG=should-not-leak
+env`))
+	require.NoError(t, err)
+	out := stdout.String()
+	assert.NotContains(t, out, "should-not-leak",
+		"unexported script-level assignment must not propagate to host binaries (matches bash)")
+}
+
 // TestHostExecBuiltinTakesPrecedence verifies that when a name is both an
 // allowlisted builtin (rshell:echo) AND a configured host: entry, the
 // builtin runs and the host binary is never exec'd. The host: entry
