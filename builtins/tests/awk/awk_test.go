@@ -336,6 +336,7 @@ func TestAwkRejectsUnsafeFeatures(t *testing.T) {
 		`awk 'BEGIN { print tolower(), toupper(), int() }' input.txt`,
 		`awk 'BEGIN { printf "%1000000000s", "x" }' input.txt`,
 		`awk 'BEGIN { printf "%.1000000000s", "x" }' input.txt`,
+		`awk 'BEGIN { printf "%1048576s%1048576s", "x", "y" }' input.txt`,
 		`awk 'BEGIN { BEGIN=1; print BEGIN }' input.txt`,
 		`awk 'BEGIN { END=1; print END }' input.txt`,
 		`awk '{ print $BEGIN }' input.txt`,

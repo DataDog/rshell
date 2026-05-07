@@ -16,6 +16,7 @@ import (
 const (
 	MaxPrintfWidth     = 1 << 20
 	MaxPrintfPrecision = 1 << 20
+	MaxPrintfOutput    = 1 << 20
 
 	minInt64Float          = -9223372036854775808.0
 	maxInt64ExclusiveFloat = 9223372036854775808.0
@@ -27,7 +28,9 @@ func formatPrintf(format string, args []value) (string, error) {
 	arg := 0
 	for i := 0; i < len(format); i++ {
 		if format[i] != '%' {
-			b.WriteByte(format[i])
+			if err := appendPrintfByte(&b, format[i]); err != nil {
+				return "", err
+			}
 			continue
 		}
 		start := i
@@ -36,7 +39,9 @@ func formatPrintf(format string, args []value) (string, error) {
 			return "", fmt.Errorf("unterminated printf format")
 		}
 		if format[i] == '%' {
-			b.WriteByte('%')
+			if err := appendPrintfByte(&b, '%'); err != nil {
+				return "", err
+			}
 			continue
 		}
 		for i < len(format) && strings.ContainsRune("-+ #0", rune(format[i])) {
@@ -64,28 +69,48 @@ func formatPrintf(format string, args []value) (string, error) {
 		}
 		v := args[arg]
 		arg++
+		var out string
 		switch verb {
 		case 's':
-			b.WriteString(fmt.Sprintf(spec, v.String()))
+			out = fmt.Sprintf(spec, v.String())
 		case 'd', 'i':
 			if verb == 'i' {
 				spec = spec[:len(spec)-1] + "d"
 			}
-			b.WriteString(fmt.Sprintf(spec, printfSigned(v)))
+			out = fmt.Sprintf(spec, printfSigned(v))
 		case 'u':
 			spec = spec[:len(spec)-1] + "d"
-			b.WriteString(fmt.Sprintf(spec, printfUnsigned(v)))
+			out = fmt.Sprintf(spec, printfUnsigned(v))
 		case 'o', 'x', 'X':
-			b.WriteString(fmt.Sprintf(spec, printfUnsigned(v)))
+			out = fmt.Sprintf(spec, printfUnsigned(v))
 		case 'e', 'E', 'f', 'F', 'g', 'G':
-			b.WriteString(fmt.Sprintf(spec, v.Number()))
+			out = fmt.Sprintf(spec, v.Number())
 		case 'c':
-			b.WriteString(fmt.Sprintf(spec, printfRune(v)))
+			out = fmt.Sprintf(spec, printfRune(v))
 		default:
 			return "", fmt.Errorf("unsupported printf format %%%c", verb)
 		}
+		if err := appendPrintfString(&b, out); err != nil {
+			return "", err
+		}
 	}
 	return b.String(), nil
+}
+
+func appendPrintfByte(b *strings.Builder, c byte) error {
+	if b.Len() >= MaxPrintfOutput {
+		return fmt.Errorf("printf output exceeds %d bytes", MaxPrintfOutput)
+	}
+	b.WriteByte(c)
+	return nil
+}
+
+func appendPrintfString(b *strings.Builder, s string) error {
+	if len(s) > MaxPrintfOutput-b.Len() {
+		return fmt.Errorf("printf output exceeds %d bytes", MaxPrintfOutput)
+	}
+	b.WriteString(s)
+	return nil
 }
 
 func consumePrintfBound(format string, idx *int, max int, name string) error {
