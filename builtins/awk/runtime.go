@@ -222,9 +222,25 @@ func (rt *runtime) run(ctx context.Context, files []string) builtins.Result {
 		if len(files) == 0 {
 			files = []string{"-"}
 		}
+		ranInput := false
 		for _, file := range files {
+			assigned, err := rt.applyOperandAssignment(file)
+			if err != nil {
+				rt.callCtx.Errf("awk: %v\n", err)
+				return builtins.Result{Code: 1}
+			}
+			if assigned {
+				continue
+			}
+			ranInput = true
 			if err := rt.runFile(ctx, file); err != nil {
 				rt.callCtx.Errf("awk: %s: %v\n", file, err)
+				return builtins.Result{Code: 1}
+			}
+		}
+		if !ranInput {
+			if err := rt.runFile(ctx, "-"); err != nil {
+				rt.callCtx.Errf("awk: -: %v\n", err)
 				return builtins.Result{Code: 1}
 			}
 		}
@@ -234,6 +250,17 @@ func (rt *runtime) run(ctx context.Context, files []string) builtins.Result {
 		return builtins.Result{Code: 1}
 	}
 	return builtins.Result{}
+}
+
+func (rt *runtime) applyOperandAssignment(arg string) (bool, error) {
+	name, value, ok := strings.Cut(arg, "=")
+	if !ok || !validVarName(name) {
+		return false, nil
+	}
+	if err := rt.setVar(name, inputStringValue(DecodeAwkEscapes(value))); err != nil {
+		return true, err
+	}
+	return true, nil
 }
 
 func (rt *runtime) needsInput() bool {
