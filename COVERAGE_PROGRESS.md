@@ -39,7 +39,7 @@ Legend: ⏳ pending · 🔄 in progress · ✅ done · ⏭️ skipped (no high-v
 | 29 | environment         | shell |             41 | 41            | ⏭️     | already comprehensive — covers IFS, $HOME, empty vs unset, Env option (override/special chars/empty/no-pollution) |
 | 30 | false               | cmd   |             42 | 42            | ⏭️     | already overcomprehensive — false is a no-flag no-arg always-1 builtin; 19 scenarios more than enough |
 | 31 | heredoc             | shell |             42 | 42            | ⏭️     | already comprehensive — covers basic, EOF/custom delimiters, expansion suppression, var/cmd-subst expansion, in for/&&/pipe |
-| 32 | blocked_commands    | shell |             43 | —             | ⏳     |       |
+| 32 | blocked_commands    | shell |             43 | 43            | ⏭️     | already comprehensive — covers every blocked syntactic construct (case/declare/eval/let/coproc/&/(()) etc.) |
 | 33 | pwd                 | cmd   |             44 | —             | ⏳     |       |
 | 34 | true                | cmd   |             45 | —             | ⏳     |       |
 | 35 | du                  | cmd   |             51 | —             | ⏳     |       |
@@ -75,7 +75,7 @@ Legend: ⏳ pending · 🔄 in progress · ✅ done · ⏭️ skipped (no high-v
 
 ## Summary
 
-- Targets processed: 31 / 64
+- Targets processed: 32 / 64
 - Tests added: 0 (scenario: 0, unit: 0)
 - Duplicate tests removed: 0 (scenario: 0, unit: 0)
 - Low-value tests removed: 0 (scenario: 0, unit: 0)
