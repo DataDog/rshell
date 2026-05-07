@@ -35,7 +35,7 @@ Legend: ⏳ pending · 🔄 in progress · ✅ done · ⏭️ skipped (no high-v
 | 25 | help                | cmd   |             34 | 34            | ⏭️     | already comprehensive — 31 Go tests + 10 scenarios cover restricted/unrestricted, --all, footer/header, alignment |
 | 26 | ss                  | cmd   |             35 | 35            | ⏭️     | already comprehensive — 27 Go tests (incl. fuzz, linux, pentest) + 8 scenarios cover the surface |
 | 27 | field_splitting     | shell |             37 | 37            | ⏭️     | already comprehensive — covers IFS variations, empty fields, special chars, prevents-glob, quoted preservation |
-| 28 | ps                  | cmd   |             38 | —             | ⏳     |       |
+| 28 | ps                  | cmd   |             38 | 38            | ⏭️     | already comprehensive — 26 Go tests (incl. fuzz, linux proc-path) + 12 scenarios cover the surface |
 | 29 | environment         | shell |             41 | —             | ⏳     |       |
 | 30 | false               | cmd   |             42 | —             | ⏳     |       |
 | 31 | heredoc             | shell |             42 | —             | ⏳     |       |
@@ -75,7 +75,7 @@ Legend: ⏳ pending · 🔄 in progress · ✅ done · ⏭️ skipped (no high-v
 
 ## Summary
 
-- Targets processed: 27 / 64
+- Targets processed: 28 / 64
 - Tests added: 0 (scenario: 0, unit: 0)
 - Duplicate tests removed: 0 (scenario: 0, unit: 0)
 - Low-value tests removed: 0 (scenario: 0, unit: 0)
