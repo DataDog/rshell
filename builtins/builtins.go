@@ -19,6 +19,14 @@ import (
 	"github.com/spf13/pflag"
 )
 
+// ErrVarStorageExceeded is returned by CallContext.SetVar when the
+// assignment would push the runner's total variable storage past its
+// cap. This is a script-aborting condition: AST-level assignments
+// treat it the same way (see interp/vars.go), so state-mutating
+// builtins should propagate it via Result.Exiting=true rather than
+// continuing with status 1, matching bash's resource-cap DoS guard.
+var ErrVarStorageExceeded = errors.New("variable storage limit exceeded")
+
 // FlagSet is a type alias for pflag.FlagSet. Command files receive a *FlagSet
 // from the framework without needing to import pflag directly (the builtins
 // package is always allowed by the import allowlist).
@@ -202,12 +210,26 @@ type CallContext struct {
 	// dir overrides the working directory for path resolution.
 	// Returns the command's exit code.
 	RunCommand func(ctx context.Context, dir string, name string, args []string) (uint8, error)
+
 	// RunCommandWithStdin is like RunCommand but lets the caller supply a
 	// stdin reader for the child. Used by xargs to give children empty
 	// stdin (matching POSIX behavior of redirecting child stdin from
 	// /dev/null) while still reading items from the parent's stdin itself.
 	// If nil, callers should fall back to RunCommand.
 	RunCommandWithStdin func(ctx context.Context, dir string, name string, args []string, stdin io.Reader) (uint8, error)
+
+	// SetVar assigns a value to a shell variable in the calling shell's
+	// scope. Returns an error if the value exceeds the per-variable size
+	// limit or if the total variable-storage cap would be exceeded.
+	// Used by builtins that mutate parent-shell state, such as read.
+	SetVar func(name, value string) error
+
+	// GetVar returns the value of a shell variable. The bool reports
+	// whether the variable was set; an unset variable returns ("", false).
+	// Used by builtins that need to consult shell state, such as read
+	// reading IFS for field-splitting.
+	GetVar func(name string) (value string, ok bool)
+
 	// Proc provides access to the proc filesystem for the ps builtin.
 	// The path is fixed at construction time and cannot be overridden by callers.
 	Proc *ProcProvider

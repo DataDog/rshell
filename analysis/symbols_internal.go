@@ -139,6 +139,19 @@ var internalPerPackageSymbols = map[string][]string{
 		"syscall.Proc",                 // 🟢 DLL procedure handle type used in function signature; pure type, no I/O.
 		"unsafe.Pointer",               // 🔴 passes buffer/size pointers to DLL via syscall ABI. No pointer arithmetic; buffer parsed with encoding/binary after the call.
 	},
+	"winpoll": {
+		"syscall.Errno",       // 🟢 (windows) error number type for distinguishing ERROR_BROKEN_PIPE from other PeekNamedPipe failures; pure type.
+		"syscall.MustLoadDLL", // 🔴 (windows) loads kernel32.dll once at program init for PeekNamedPipe; read-only OS loader call.
+		"unsafe.Pointer",      // 🔴 (windows) passes &avail to PeekNamedPipe via syscall ABI for non-consuming readability probe. Single call site; no pointer arithmetic — the returned uint32 is consumed directly.
+		"golang.org/x/sys/windows.ERROR_BROKEN_PIPE",             // 🟢 (windows) sentinel error indicating the pipe's writer end has closed — used to recognize EOF-ready pipes for `read -t 0` POLLHUP-equivalent semantics; pure constant.
+		"golang.org/x/sys/windows.FILE_TYPE_CHAR",                // 🟢 (windows) GetFileType result for console/character devices; pure constant.
+		"golang.org/x/sys/windows.FILE_TYPE_DISK",                // 🟢 (windows) GetFileType result for regular files; pure constant.
+		"golang.org/x/sys/windows.FILE_TYPE_PIPE",                // 🟢 (windows) GetFileType result for anonymous and named pipes; pure constant.
+		"golang.org/x/sys/windows.FILE_TYPE_REMOTE",              // 🟢 (windows) GetFileType modifier bit for remote-mounted volumes; pure constant.
+		"golang.org/x/sys/windows.GetFileType",                   // 🟠 (windows) returns the type (disk/pipe/char/remote/unknown) of an open handle; read-only metadata, no I/O.
+		"golang.org/x/sys/windows.GetNumberOfConsoleInputEvents", // 🟠 (windows) reports the count of queued console input events without consuming them; read-only inspection.
+		"golang.org/x/sys/windows.Handle",                        // 🟢 (windows) opaque file/handle type used to call PeekNamedPipe and GetFileType; pure type.
+	},
 }
 
 // internalAllowedSymbols lists every "importpath.Symbol" permitted in
@@ -186,14 +199,14 @@ var internalAllowedSymbols = []string{
 	"strconv.FormatUint",           // 🟢 procnetsocket: uint-to-string conversion for port/inode formatting; pure function, no I/O.
 	"strconv.ParseUint",            // 🟢 procnetroute/procnetsocket: parses hex/decimal route and socket fields; pure function, no I/O.
 	"strings.Builder",              // 🟢 procnetsocket/diskstats: efficient string concatenation; pure in-memory buffer, no I/O.
-	"strings.Contains",             // 🟢 procnetroute: checks for ".." in procPath safety guard; pure function, no I/O.
+	"strings.Contains",             // 🟢 procnetroute/diskstats: substring check; pure function, no I/O.
 	"strings.ContainsRune",         // 🟢 diskstats: fast-path check for backslash before unescape; pure function, no I/O.
 	"strings.Cut",                  // 🟢 diskstats: splits a string at the first separator; pure function, no I/O.
 	"strings.Fields",               // 🟢 procinfo/procnetroute/procnetsocket/diskstats: splits a string on whitespace; pure function, no I/O.
 	"strings.Join",                 // 🟢 procnetsocket: reconstructs space-containing Unix socket paths from Fields tokens; pure function, no I/O.
 	"strings.Split",                // 🟢 procnetsocket: splits address:port fields on ":"; pure function, no I/O.
 	"strings.ToUpper",              // 🟢 procnetsocket: normalises hex state field to uppercase for map lookup; pure function, no I/O.
-	"strings.HasPrefix",            // 🟢 procinfo: checks string prefix; pure function, no I/O.
+	"strings.HasPrefix",            // 🟢 procinfo/diskstats: checks string prefix; pure function, no I/O.
 	"strings.Index",                // 🟢 procinfo: finds first occurrence of a substring; pure function, no I/O.
 	"strings.LastIndex",            // 🟢 procinfo: finds last occurrence of a substring; pure function, no I/O.
 	"strings.TrimRight",            // 🟢 procinfo: trims trailing characters; pure function, no I/O.
@@ -206,22 +219,30 @@ var internalAllowedSymbols = []string{
 	"time.Now",                     // 🟠 procinfo: returns the current wall-clock time; read-only, no side effects.
 	"time.Unix",                    // 🟢 procinfo: constructs a Time from Unix seconds; pure function, no I/O.
 	"unsafe.Pointer",               // 🔴 winnet: passes buffer/size pointers to DLL via syscall ABI. No pointer arithmetic; buffer parsed with encoding/binary after the call.
-	"golang.org/x/sys/unix.ByteSliceToString",           // 🟢 diskstats (darwin): converts a NUL-terminated kernel byte buffer to a Go string; pure function, no I/O.
-	"golang.org/x/sys/unix.Getfsstat",                   // 🟠 diskstats (darwin): read-only enumeration of mounted filesystems via getfsstat(2); no exec or write capability.
-	"golang.org/x/sys/unix.KinfoProc",                   // 🟢 procinfo (darwin): struct type carrying per-process kinfo_proc data from sysctl; read-only data, no exec capability.
-	"golang.org/x/sys/unix.MNT_LOCAL",                   // 🟢 diskstats (darwin): flag constant indicating a local-only filesystem; pure constant.
-	"golang.org/x/sys/unix.MNT_NOWAIT",                  // 🟢 diskstats (darwin): flag constant: do not block on remote FS for getfsstat; pure constant.
-	"golang.org/x/sys/unix.Statfs",                      // 🟠 diskstats (linux): read-only filesystem usage syscall; no exec or write capability.
-	"golang.org/x/sys/unix.Statfs_t",                    // 🟢 diskstats: struct type carrying filesystem usage data from statfs/getfsstat; pure data type.
-	"golang.org/x/sys/unix.SysctlKinfoProc",             // 🟠 procinfo (darwin): reads a single process's kinfo_proc via kern.proc.pid sysctl; read-only, no exec or write capability.
-	"golang.org/x/sys/unix.SysctlKinfoProcSlice",        // 🟠 procinfo (darwin): reads all processes' kinfo_proc via kern.proc.all sysctl; read-only, no exec or write capability.
-	"golang.org/x/sys/unix.SysctlRaw",                   // 🟠 procinfo (darwin): reads raw kern.procargs2 sysctl buffer per-PID to obtain argv; read-only, no exec capability.
-	"golang.org/x/sys/windows.CloseHandle",              // 🟠 procinfo (windows): closes a process-snapshot handle after enumeration; no data read or exec capability.
-	"golang.org/x/sys/windows.CreateToolhelp32Snapshot", // 🟠 procinfo (windows): creates a read-only snapshot of the process table; no exec or write capability.
-	"golang.org/x/sys/windows.ERROR_NO_MORE_FILES",      // 🟢 procinfo (windows): sentinel error indicating end of process enumeration; pure constant.
-	"golang.org/x/sys/windows.Process32First",           // 🟠 procinfo (windows): reads the first entry from a process snapshot; read-only, no exec capability.
-	"golang.org/x/sys/windows.Process32Next",            // 🟠 procinfo (windows): advances to the next entry in a process snapshot; read-only, no exec capability.
-	"golang.org/x/sys/windows.ProcessEntry32",           // 🟢 procinfo (windows): struct type holding process snapshot entry data; pure data type, no I/O.
-	"golang.org/x/sys/windows.TH32CS_SNAPPROCESS",       // 🟢 procinfo (windows): flag constant selecting process entries for CreateToolhelp32Snapshot; pure constant.
-	"golang.org/x/sys/windows.UTF16ToString",            // 🟢 procinfo (windows): converts a null-terminated UTF-16 slice to a Go string; pure function, no I/O.
+	"golang.org/x/sys/unix.ByteSliceToString",                // 🟢 diskstats (darwin): converts a NUL-terminated kernel byte buffer to a Go string; pure function, no I/O.
+	"golang.org/x/sys/unix.Getfsstat",                        // 🟠 diskstats (darwin): read-only enumeration of mounted filesystems via getfsstat(2); no exec or write capability.
+	"golang.org/x/sys/unix.KinfoProc",                        // 🟢 procinfo (darwin): struct type carrying per-process kinfo_proc data from sysctl; read-only data, no exec capability.
+	"golang.org/x/sys/unix.MNT_LOCAL",                        // 🟢 diskstats (darwin): flag constant indicating a local-only filesystem; pure constant.
+	"golang.org/x/sys/unix.MNT_NOWAIT",                       // 🟢 diskstats (darwin): flag constant: do not block on remote FS for getfsstat; pure constant.
+	"golang.org/x/sys/unix.Statfs",                           // 🟠 diskstats (linux): read-only filesystem usage syscall; no exec or write capability.
+	"golang.org/x/sys/unix.Statfs_t",                         // 🟢 diskstats: struct type carrying filesystem usage data from statfs/getfsstat; pure data type.
+	"golang.org/x/sys/unix.SysctlKinfoProc",                  // 🟠 procinfo (darwin): reads a single process's kinfo_proc via kern.proc.pid sysctl; read-only, no exec or write capability.
+	"golang.org/x/sys/unix.SysctlKinfoProcSlice",             // 🟠 procinfo (darwin): reads all processes' kinfo_proc via kern.proc.all sysctl; read-only, no exec or write capability.
+	"golang.org/x/sys/unix.SysctlRaw",                        // 🟠 procinfo (darwin): reads raw kern.procargs2 sysctl buffer per-PID to obtain argv; read-only, no exec capability.
+	"golang.org/x/sys/windows.CloseHandle",                   // 🟠 procinfo (windows): closes a process-snapshot handle after enumeration; no data read or exec capability.
+	"golang.org/x/sys/windows.CreateToolhelp32Snapshot",      // 🟠 procinfo (windows): creates a read-only snapshot of the process table; no exec or write capability.
+	"golang.org/x/sys/windows.ERROR_BROKEN_PIPE",             // 🟢 winpoll (windows): sentinel error from PeekNamedPipe when the writer end has closed — used to recognize EOF-ready pipes; pure constant.
+	"golang.org/x/sys/windows.ERROR_NO_MORE_FILES",           // 🟢 procinfo (windows): sentinel error indicating end of process enumeration; pure constant.
+	"golang.org/x/sys/windows.FILE_TYPE_CHAR",                // 🟢 winpoll (windows): GetFileType result for console/character devices; pure constant.
+	"golang.org/x/sys/windows.FILE_TYPE_DISK",                // 🟢 winpoll (windows): GetFileType result for regular files; pure constant.
+	"golang.org/x/sys/windows.FILE_TYPE_PIPE",                // 🟢 winpoll (windows): GetFileType result for anonymous and named pipes; pure constant.
+	"golang.org/x/sys/windows.FILE_TYPE_REMOTE",              // 🟢 winpoll (windows): GetFileType modifier bit for remote-mounted volumes; pure constant.
+	"golang.org/x/sys/windows.GetFileType",                   // 🟠 winpoll (windows): returns the type (disk/pipe/char/remote/unknown) of an open handle; read-only metadata, no I/O.
+	"golang.org/x/sys/windows.GetNumberOfConsoleInputEvents", // 🟠 winpoll (windows): reports the count of queued console input events without consuming them; read-only inspection.
+	"golang.org/x/sys/windows.Handle",                        // 🟢 winpoll (windows): opaque file/handle type used to call PeekNamedPipe and GetFileType; pure type.
+	"golang.org/x/sys/windows.Process32First",                // 🟠 procinfo (windows): reads the first entry from a process snapshot; read-only, no exec capability.
+	"golang.org/x/sys/windows.Process32Next",                 // 🟠 procinfo (windows): advances to the next entry in a process snapshot; read-only, no exec capability.
+	"golang.org/x/sys/windows.ProcessEntry32",                // 🟢 procinfo (windows): struct type holding process snapshot entry data; pure data type, no I/O.
+	"golang.org/x/sys/windows.TH32CS_SNAPPROCESS",            // 🟢 procinfo (windows): flag constant selecting process entries for CreateToolhelp32Snapshot; pure constant.
+	"golang.org/x/sys/windows.UTF16ToString",                 // 🟢 procinfo (windows): converts a null-terminated UTF-16 slice to a Go string; pure function, no I/O.
 }
