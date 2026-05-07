@@ -108,6 +108,12 @@ func TestPercentUsed(t *testing.T) {
 		// preserves the true ratio.
 		{^uint64(0), ^uint64(0), "50%"},
 		{^uint64(0), ^uint64(0) / 2, "67%"}, // used=MaxU, free=MaxU/2 → 2/3
+		// Tiny-used / huge-available: the step-1 right-shift drops
+		// used from 1 to 0, but the "any non-zero usage rounds up
+		// to ≥1%" contract must still hold. Without the
+		// nonzero-usage bump, this case under-reports as "0%".
+		{1, ^uint64(0), "1%"},
+		{1, ^uint64(0) - 1, "1%"},
 	}
 	for _, c := range cases {
 		assert.Equal(t, c.want, percentUsed(c.used, c.free), "u=%d f=%d", c.used, c.free)

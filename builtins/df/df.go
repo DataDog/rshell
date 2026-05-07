@@ -583,6 +583,11 @@ func selectColumns(m diskstats.Mount, inodeMode bool) (uint64, uint64, uint64) {
 // Ceiling is computed as floor-plus-remainder-bump (rather than
 // `(num + denom - 1) / denom`) because num can itself sit near MaxUint64.
 func percentUsed(used, available uint64) string {
+	// Remember whether usage was non-zero before any scaling; both
+	// scale steps can truncate a tiny `used` to 0 (e.g. used=1 with
+	// available=MaxUint64), and the "any non-zero usage rounds up to
+	// ≥1%" contract must be preserved across the scale-down.
+	nonzeroUsage := used > 0
 	// Step 1: scale down if sum would wrap.
 	if used > ^uint64(0)-available {
 		used >>= 1
@@ -601,6 +606,12 @@ func percentUsed(used, available uint64) string {
 	pct := num / denom
 	if num%denom != 0 {
 		pct++
+	}
+	// If the original usage was non-zero but scaling truncated the
+	// numerator to zero, restore the round-up so we don't silently
+	// hide actual usage as "0%".
+	if pct == 0 && nonzeroUsage {
+		pct = 1
 	}
 	return strconv.FormatUint(pct, 10) + "%"
 }
