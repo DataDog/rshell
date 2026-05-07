@@ -278,14 +278,8 @@ func (p *parser) parsePrefix() (expr, error) {
 		return &regexExpr{pattern: tok.lit}, nil
 	case tokIdent:
 		p.advance()
-		if msg, ok := unsupportedExpressionKeyword(tok.lit); ok {
-			return nil, fmt.Errorf("%s", msg)
-		}
-		if tok.lit == "system" {
-			return nil, fmt.Errorf("system() is not supported")
-		}
-		if _, ok := unsupportedBuiltinFunctions[tok.lit]; ok {
-			return nil, fmt.Errorf("function calls are not supported")
+		if err := validateIdentifierReference(tok.lit); err != nil {
+			return nil, err
 		}
 		if p.at(tokLParen) {
 			return nil, fmt.Errorf("function calls are not supported")
@@ -331,6 +325,19 @@ func (p *parser) parsePrefix() (expr, error) {
 	}
 }
 
+func validateIdentifierReference(name string) error {
+	if msg, ok := unsupportedExpressionKeyword(name); ok {
+		return fmt.Errorf("%s", msg)
+	}
+	if name == "system" {
+		return fmt.Errorf("system() is not supported")
+	}
+	if _, ok := unsupportedBuiltinFunctions[name]; ok {
+		return fmt.Errorf("function calls are not supported")
+	}
+	return nil
+}
+
 func unsupportedExpressionKeyword(name string) (string, bool) {
 	switch name {
 	case "BEGIN", "END":
@@ -371,6 +378,9 @@ func (p *parser) parseFieldRef() (expr, error) {
 		return &fieldExpr{index: &numberExpr{text: tok.lit, num: n}}, nil
 	case tokIdent:
 		p.advance()
+		if err := validateIdentifierReference(tok.lit); err != nil {
+			return nil, err
+		}
 		return &fieldExpr{index: &varExpr{name: tok.lit}}, nil
 	case tokLParen:
 		p.advance()
