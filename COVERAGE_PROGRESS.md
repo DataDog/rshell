@@ -32,7 +32,7 @@ Legend: ⏳ pending · 🔄 in progress · ✅ done · ⏭️ skipped (no high-v
 | 22 | line_continuation   | shell |             28 | 28            | ⏭️     | already comprehensive — covers backslash-newline across pipes, &&/\|\|, in assignments, in heredoc, multiple consecutive |
 | 23 | while_clause        | shell |             28 | 28            | ⏭️     | already comprehensive — covers loop semantics, break/continue at all levels, pipeline-stage loop-context propagation |
 | 24 | brace_group         | shell |             33 | 33            | ⏭️     | already comprehensive — covers {} groups in &&/\|\| chains, nesting, exit-code prop, with assign+exit |
-| 25 | help                | cmd   |             34 | —             | ⏳     |       |
+| 25 | help                | cmd   |             34 | 34            | ⏭️     | already comprehensive — 31 Go tests + 10 scenarios cover restricted/unrestricted, --all, footer/header, alignment |
 | 26 | ss                  | cmd   |             35 | —             | ⏳     |       |
 | 27 | field_splitting     | shell |             37 | —             | ⏳     |       |
 | 28 | ps                  | cmd   |             38 | —             | ⏳     |       |
@@ -75,7 +75,7 @@ Legend: ⏳ pending · 🔄 in progress · ✅ done · ⏭️ skipped (no high-v
 
 ## Summary
 
-- Targets processed: 24 / 64
+- Targets processed: 25 / 64
 - Tests added: 0 (scenario: 0, unit: 0)
 - Duplicate tests removed: 0 (scenario: 0, unit: 0)
 - Low-value tests removed: 0 (scenario: 0, unit: 0)
