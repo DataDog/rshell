@@ -23,7 +23,7 @@ Legend: ⏳ pending · 🔄 in progress · ✅ done · ⏭️ skipped (no high-v
 | 13 | heredoc_dash        | shell |             20 | 20            | ⏭️     | already comprehensive — covers tab-stripping, quoted-delim, blanks, nesting, brace, for, pipe, && |
 | 14 | simple_command      | shell |             21 | 21            | ⏭️     | already comprehensive — covers assignments, multiple, expansion, quoting, persistence, overwrite, with cmd-subst |
 | 15 | until_clause        | shell |             21 | 21            | ⏭️     | already comprehensive — covers loop semantics, break/continue (incl. multi-level), pipeline cond, brace body, nesting |
-| 16 | break               | cmd   |             23 | —             | ⏳     |       |
+| 16 | break               | cmd   |             23 | 23            | ⏭️     | exhaustively covered by 77+ loop scenarios across for/while/until clauses |
 | 17 | continue            | cmd   |             23 | —             | ⏳     |       |
 | 18 | redirections        | shell |             26 | —             | ⏳     |       |
 | 19 | uname               | cmd   |             27 | —             | ⏳     |       |
@@ -75,7 +75,7 @@ Legend: ⏳ pending · 🔄 in progress · ✅ done · ⏭️ skipped (no high-v
 
 ## Summary
 
-- Targets processed: 15 / 64
+- Targets processed: 16 / 64
 - Tests added: 0 (scenario: 0, unit: 0)
 - Duplicate tests removed: 0 (scenario: 0, unit: 0)
 - Low-value tests removed: 0 (scenario: 0, unit: 0)
