@@ -1,11 +1,12 @@
 description: cd with no operand errors when HOME is not set.
-skip_assert_against_bash: true
 input:
   allowed_paths: ["$DIR"]
   script: |+
+    unset HOME
     cd
 expect:
   stdout: ""
-  stderr: |+
-    cd: HOME not set
+  # bash: "bash: line 2: cd: HOME not set"
+  # ours: "cd: HOME not set"
+  stderr_contains: ["cd:", "HOME not set"]
   exit_code: 1

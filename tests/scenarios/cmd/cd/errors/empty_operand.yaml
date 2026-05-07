@@ -1,10 +1,13 @@
 description: cd with an empty-string operand is rejected with exit 1.
-skip_assert_against_bash: true
 input:
   allowed_paths: ["$DIR"]
   script: |+
     cd ""
 expect:
   stdout: ""
+  # bash: "bash: line 1: cd: null directory" (exit 1)
+  # ours: "cd: invalid empty operand" (exit 1)
+  # Different wording but both exit 1 with a "cd:" prefix; lock the
+  # observable contract (exit 1 + cd-prefixed stderr).
   stderr_contains: ["cd:"]
   exit_code: 1

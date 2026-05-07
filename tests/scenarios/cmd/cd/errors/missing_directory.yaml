@@ -1,5 +1,4 @@
 description: cd to a non-existent directory fails with exit 1; the working directory is unchanged.
-skip_assert_against_bash: true
 input:
   allowed_paths: ["$DIR"]
   script: |+
@@ -10,5 +9,9 @@ input:
 expect:
   stdout: |+
     unchanged
+  # bash: "bash: line N: cd: no-such-dir: No such file or directory"
+  # ours: "cd: no-such-dir: no such file or directory"
+  # Both contain "cd:" and the operand; case differs on "No such" so we
+  # match the operand only.
   stderr_contains: ["cd:", "no-such-dir"]
   exit_code: 0
