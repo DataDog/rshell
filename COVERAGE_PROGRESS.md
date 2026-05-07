@@ -43,7 +43,7 @@ Legend: ⏳ pending · 🔄 in progress · ✅ done · ⏭️ skipped (no high-v
 | 33 | pwd                 | cmd   |             44 | 44            | ⏭️     | already comprehensive — 27 Go tests (incl. fuzz, pentest, internal symlink-loop) + 17 scenarios |
 | 34 | true                | cmd   |             45 | 45            | ⏭️     | already overcomprehensive — true is a no-flag no-arg always-0 builtin; 22 scenarios more than enough |
 | 35 | du                  | cmd   |             51 | 51            | ⏭️     | already comprehensive — 27 Go tests + 24 scenarios cover flags, units, errors, hardening |
-| 36 | allowed_paths       | shell |             51 | —             | ⏳     |       |
+| 36 | allowed_paths       | shell |             51 | 51            | ⏭️     | already comprehensive — covers sandbox path resolution, symlink escape, dot-dot, multiple paths, denials |
 | 37 | cmd_separator       | shell |             52 | —             | ⏳     |       |
 | 38 | globbing            | shell |             52 | —             | ⏳     |       |
 | 39 | pipe                | shell |             56 | —             | ⏳     |       |
@@ -75,7 +75,7 @@ Legend: ⏳ pending · 🔄 in progress · ✅ done · ⏭️ skipped (no high-v
 
 ## Summary
 
-- Targets processed: 35 / 64
+- Targets processed: 36 / 64
 - Tests added: 0 (scenario: 0, unit: 0)
 - Duplicate tests removed: 0 (scenario: 0, unit: 0)
 - Low-value tests removed: 0 (scenario: 0, unit: 0)
