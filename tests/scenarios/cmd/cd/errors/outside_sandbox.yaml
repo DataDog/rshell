@@ -2,8 +2,11 @@ description: cd to a directory outside AllowedPaths fails with permission denied
 skip_assert_against_bash: true
 input:
   allowed_paths: ["$DIR"]
+  # Climbing past the AllowedPaths root with .. produces a path outside
+  # the sandbox on every platform (unlike '/', which is not absolute on
+  # Windows). 30 levels is enough to escape any plausible test root.
   script: |+
-    cd /
+    cd ../../../../../../../../../../../../../../../../../../../../../../../../../../../../..
 expect:
   stdout: ""
   stderr_contains: ["cd:", "permission denied"]
