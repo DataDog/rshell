@@ -69,12 +69,22 @@ func regexValue(pattern string) value {
 func (v value) String() string {
 	switch v.kind {
 	case valueNumber:
-		return strconv.FormatFloat(v.n, 'g', 6, 64)
+		return formatAwkNumber(v.n)
 	case valueRegex:
 		return v.pattern
 	default:
 		return v.s
 	}
+}
+
+func formatAwkNumber(n float64) string {
+	fixed := strconv.FormatFloat(n, 'f', -1, 64)
+	for i := 0; i < len(fixed); i++ {
+		if fixed[i] == '.' {
+			return strconv.FormatFloat(n, 'g', 6, 64)
+		}
+	}
+	return fixed
 }
 
 func (v value) Number() float64 {

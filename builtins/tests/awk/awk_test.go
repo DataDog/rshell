@@ -106,6 +106,15 @@ func TestAwkBeginEndAndAggregation(t *testing.T) {
 	assert.Equal(t, "start\nsum 5\n", stdout)
 }
 
+func TestAwkExplicitEmptyActionDoesNothing(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "input.txt", "alpha\n")
+	stdout, stderr, code := cmdRun(t, `awk 'BEGIN {} 1 {}' input.txt`, dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "", stderr)
+	assert.Equal(t, "", stdout)
+}
+
 func TestAwkPatternsAndRegexMatch(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, dir, "input.txt", "ok 1\nerror 2\nwarn 3\n")
@@ -157,6 +166,13 @@ func TestAwkStringNumericSemantics(t *testing.T) {
 	assert.Equal(t, 0, code)
 	assert.Equal(t, "", stderr)
 	assert.Equal(t, "1 1 1 0 124\n1 1 1 1\ntruthy 10\n11 0 0 1\ntruthy 123abc\n124 0 1 1\ntruthy -4.5x\n-3.5 0 1 1\ntruthy abc123\n1 0 0 0\n", stdout)
+}
+
+func TestAwkIntegerNumberFormatting(t *testing.T) {
+	stdout, stderr, code := cmdRun(t, `awk 'BEGIN { print 999999, 1000000, 123456789, 1000000.5 }'`, t.TempDir())
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "", stderr)
+	assert.Equal(t, "999999 1000000 123456789 1e+06\n", stdout)
 }
 
 func TestAwkBeginOnlySkipsInputFiles(t *testing.T) {
