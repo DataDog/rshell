@@ -21,7 +21,7 @@ Legend: ⏳ pending · 🔄 in progress · ✅ done · ⏭️ skipped (no high-v
 | 11 | allowed_redirects | shell | 17 | 19 | ✅ | added 2 P2 tests (fd0 explicit, multi-input-last-wins) |
 | 12 | blocked_redirects | shell | 17 | 17 | ⏭️ | comprehensive: write/append/dup/close/herestring/redir-variable/read-write all covered |
 | 13 | inline_var | shell | 18 | 18 | ⏭️ | comprehensive: scope, restore, POSIX order, empty/special/cross-ref, on builtins, in pipeline |
-| 14 | false | cmd | 20 | — | ⏳ | |
+| 14 | false | cmd | 20 | 19 | ✅ | removed exact duplicate (top-level exit_status.yaml dup of exit_status/exit_status_captured.yaml) |
 | 15 | command_substitution | shell | 20 | — | ⏳ | |
 | 16 | heredoc_dash | shell | 20 | — | ⏳ | |
 | 17 | simple_command | shell | 21 | — | ⏳ | |
@@ -75,9 +75,9 @@ Legend: ⏳ pending · 🔄 in progress · ✅ done · ⏭️ skipped (no high-v
 
 ## Summary
 
-- Targets processed: 13 / 64
+- Targets processed: 14 / 64
 - Tests added: 9 (scenario: 9, unit: 0)
-- Duplicate tests removed: 1 (scenario: 1, unit: 0)
+- Duplicate tests removed: 2 (scenario: 2, unit: 0)
 - Low-value tests removed: 0 (scenario: 0, unit: 0)
 - `skip_assert_against_bash` flags removed: 0
 - Windows-specific assertions removed: 0
