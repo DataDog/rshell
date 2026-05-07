@@ -1,0 +1,11 @@
+description: df --help on the right side of a pipe must not block waiting for stdin — even when the upstream stage produces data. Help output is printed immediately and exit 0.
+skip_assert_against_bash: true
+input:
+  script: |+
+    echo ignore | df --help; echo "code:$?"
+expect:
+  stdout_contains:
+    - "Usage: df"
+    - "code:0"
+  stderr: ""
+  exit_code: 0

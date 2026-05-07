@@ -1,0 +1,13 @@
+description: df rejects --type=TYPE --exclude-type=TYPE for the same TYPE — long-form variant of type-overlap rejection, mirrors GNU df. Asserted before the platform check so it works cross-platform.
+skip_assert_against_bash: true
+input:
+  script: |+
+    df --type=apfs --exclude-type=apfs; echo "code:$?"
+expect:
+  stdout_contains:
+    - "code:1"
+  stderr_contains:
+    - "df:"
+    - "both selected and excluded"
+    - "apfs"
+  exit_code: 0

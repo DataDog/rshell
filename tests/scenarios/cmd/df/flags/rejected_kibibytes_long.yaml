@@ -1,0 +1,12 @@
+description: df rejects --kibibytes (no GNU long form for -k; only the -k short form is recognised).
+skip_assert_against_bash: true
+input:
+  script: |+
+    df --kibibytes; echo "code:$?"
+expect:
+  stdout_contains:
+    - "code:1"
+  stderr_contains:
+    - "df:"
+    - "kibibytes"
+  exit_code: 0
