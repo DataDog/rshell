@@ -127,7 +127,7 @@ func (p *parser) parseAction() ([]stmt, error) {
 	if !p.match(tokLBrace) {
 		return nil, fmt.Errorf("expected action")
 	}
-	var stmts []stmt
+	stmts := []stmt{}
 	p.skipSeparators()
 	for !p.at(tokRBrace) {
 		if p.at(tokEOF) {
