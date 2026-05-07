@@ -16,6 +16,14 @@ Improve test coverage for **$ARGUMENTS** by mining reference test suites from ya
 
 ---
 
+## 🎯 High-value tests only
+
+Every scenario runs in Docker against bash on every CI run, forever. Coverage is not the goal — **risk reduction per CI second** is. Default to NOT adding a test; when in doubt, skip it.
+
+Do NOT add a test if any of these apply: it duplicates an existing scenario or Go test (including cosmetic variants), the "edge case" is unreachable in practice, the behavior is a GNU/platform extension we don't implement, or it would need `skip_assert_against_bash: true` for no real product reason.
+
+---
+
 ## ⛔ STOP — READ THIS BEFORE DOING ANYTHING ELSE ⛔
 
 You MUST follow this execution protocol. Skipping steps causes missed coverage gaps or broken tests.
@@ -236,22 +244,25 @@ Skip reference tests that:
 - Test GNU-specific extensions beyond POSIX that we don't support
 - Rely on external commands we don't implement
 
+#### High-value filter
+
+For every surviving gap, write one sentence on why a regression would break real scripts. If you can't, drop it. Also drop gaps that overlap existing scenario/Go tests or are unreachable due to parser/sandbox validation.
+
 #### Priority
 
-Rank gaps by importance:
-1. **P1 — Missing basic coverage**: A flag or feature has zero scenario tests
-2. **P2 — Missing edge cases**: Basic behavior is tested but edge cases from reference suites are not
-3. **P3 — Missing error paths**: Error conditions referenced in test suites are not covered
-4. **P4 — Missing combinations**: Flag combinations or integration scenarios are not covered
+Rank surviving gaps. Only **P1/P2** are eligible by default:
 
-Log the gap analysis as a summary table (do NOT ask for confirmation — proceed directly to writing tests). Include:
-- The gap description
-- The priority level
-- Whether it needs `skip_assert_against_bash: true`
+1. **P1 — Critical missing coverage**: core flag or load-bearing behavior has zero coverage anywhere.
+2. **P2 — Important edge case**: real-world edge case (empty input, stdin pipe, multi-file) for a load-bearing flag.
+3. **P3/P4 — Nice-to-have / speculative**: **default skip.**
+
+Log the analysis as a table with: gap, priority, regression-impact sentence, decision (add/skip + reason), and whether it needs `skip_assert_against_bash: true`. An empty "add" list is a valid outcome — proceed to Step 6.
 
 ### Step 5: Write new scenario tests
 
-For each identified gap, create a YAML scenario test file. Follow the project conventions:
+Only write tests for P1/P2 gaps marked "add". Adding zero tests is valid. Before writing each one, re-grep `tests/scenarios/cmd/<target>/` and `interp/builtins/` to confirm it isn't a duplicate.
+
+For each remaining gap, create a YAML scenario test file. Follow the project conventions:
 
 #### File organization
 
@@ -459,14 +470,21 @@ Compose the report and post it as a PR comment:
 **Reference suites consulted**: <list>
 
 ### New tests added
-| File | Category | Description |
-|------|----------|-------------|
-| ... | ... | ... |
+| File | Priority | Why a regression here would matter |
+|------|----------|------------------------------------|
+| ... | P1/P2 | ... |
+
+If nothing was added, say so and why existing coverage was sufficient.
+
+### Candidates skipped
+| Candidate gap | Reason |
+|--------------|--------|
+| ... | duplicate / cosmetic variant / unreachable / etc. |
 
 ### Coverage before/after
 - Before: N scenario tests
 - After: M scenario tests (+X new)
-- New categories covered: <list>
+- Evaluated: Y; added: X; skipped: Y-X
 
 ### Cleanup
 - Duplicate tests removed: <count>
