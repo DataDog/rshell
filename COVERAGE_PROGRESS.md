@@ -46,7 +46,7 @@ Legend: ⏳ pending · 🔄 in progress · ✅ done · ⏭️ skipped (no high-v
 | 36 | allowed_paths       | shell |             51 | 51            | ⏭️     | already comprehensive — covers sandbox path resolution, symlink escape, dot-dot, multiple paths, denials |
 | 37 | cmd_separator       | shell |             52 | 52            | ⏭️     | already comprehensive — covers ;, &&, \|\|, newline, mixed, with comments, in groups |
 | 38 | globbing            | shell |             52 | 52            | ⏭️     | already comprehensive — covers *, ?, [...], escaped glob chars, no-match, dotfiles, in for/word-list |
-| 39 | pipe                | shell |             56 | —             | ⏳     |       |
+| 39 | pipe                | shell |             56 | 56            | ⏭️     | already comprehensive — covers basic, multi-stage, exit-status (last/negated), with cmd-subst, with redirs |
 | 40 | ping                | cmd   |             59 | —             | ⏳     |       |
 | 41 | strings             | cmd   |             62 | —             | ⏳     |       |
 | 42 | exit                | cmd   |             63 | —             | ⏳     |       |
@@ -75,7 +75,7 @@ Legend: ⏳ pending · 🔄 in progress · ✅ done · ⏭️ skipped (no high-v
 
 ## Summary
 
-- Targets processed: 38 / 64
+- Targets processed: 39 / 64
 - Tests added: 0 (scenario: 0, unit: 0)
 - Duplicate tests removed: 0 (scenario: 0, unit: 0)
 - Low-value tests removed: 0 (scenario: 0, unit: 0)
