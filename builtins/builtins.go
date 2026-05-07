@@ -98,25 +98,18 @@ func (c Command) Register() {
 			args = normalize(args)
 		}
 		hasHelp := fs.Lookup("help") != nil
-		// Honor a leading `--help` in argv order to match GNU coreutils:
+		// Honor a leading `--help` to match GNU coreutils:
 		// `cmd --help --bogus` should print help and exit 0, even though
-		// pflag would otherwise scan the whole argv and fail on --bogus
-		// first. We truncate args at the first `--help` (inclusive) so:
-		//   args = [..., --help, --bogus] → [..., --help]; parse succeeds
-		//   args = [--bad, --help]        → unchanged; parse still fails
-		//                                   on --bad before reaching --help,
-		//                                   matching GNU's leftmost-error rule.
-		// No-op when the command does not register a `help` flag.
-		if hasHelp {
-			for i, a := range args {
-				if a == "--" {
-					break
-				}
-				if a == "--help" {
-					args = args[:i+1]
-					break
-				}
-			}
+		// pflag would otherwise scan the whole argv and fail on --bogus.
+		// We restrict the trim to the case where `--help` is the very
+		// first argument — anything else (e.g. `cmd -n nope --help
+		// --bogus`) keeps the full argv so pflag still validates the
+		// earlier `-n` value and surfaces its error. GNU validates each
+		// option's value as it scans left-to-right, so an invalid value
+		// before `--help` MUST keep failing; trimming would silently
+		// turn that into a successful help print.
+		if hasHelp && len(args) > 0 && args[0] == "--help" {
+			args = args[:1]
 		}
 		if err := fs.Parse(args); err != nil {
 			callCtx.Errf("%s: %s\n", name, rewritePflagError(err, args))
