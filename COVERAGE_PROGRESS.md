@@ -37,7 +37,7 @@ Legend: ⏳ pending · 🔄 in progress · ✅ done · ⏭️ skipped (no high-v
 | 27 | field_splitting     | shell |             37 | 37            | ⏭️     | already comprehensive — covers IFS variations, empty fields, special chars, prevents-glob, quoted preservation |
 | 28 | ps                  | cmd   |             38 | 38            | ⏭️     | already comprehensive — 26 Go tests (incl. fuzz, linux proc-path) + 12 scenarios cover the surface |
 | 29 | environment         | shell |             41 | 41            | ⏭️     | already comprehensive — covers IFS, $HOME, empty vs unset, Env option (override/special chars/empty/no-pollution) |
-| 30 | false               | cmd   |             42 | —             | ⏳     |       |
+| 30 | false               | cmd   |             42 | 42            | ⏭️     | already overcomprehensive — false is a no-flag no-arg always-1 builtin; 19 scenarios more than enough |
 | 31 | heredoc             | shell |             42 | —             | ⏳     |       |
 | 32 | blocked_commands    | shell |             43 | —             | ⏳     |       |
 | 33 | pwd                 | cmd   |             44 | —             | ⏳     |       |
@@ -75,7 +75,7 @@ Legend: ⏳ pending · 🔄 in progress · ✅ done · ⏭️ skipped (no high-v
 
 ## Summary
 
-- Targets processed: 29 / 64
+- Targets processed: 30 / 64
 - Tests added: 0 (scenario: 0, unit: 0)
 - Duplicate tests removed: 0 (scenario: 0, unit: 0)
 - Low-value tests removed: 0 (scenario: 0, unit: 0)
