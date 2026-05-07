@@ -215,6 +215,7 @@ func (p *parser) parseIf() (stmt, error) {
 }
 
 func (p *parser) parseStatementGroup() ([]stmt, error) {
+	p.skipSeparators()
 	if p.match(tokLBrace) {
 		return p.parseStatementList()
 	}

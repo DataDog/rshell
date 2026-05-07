@@ -1,0 +1,23 @@
+description: awk accepts newlines before if and else branch bodies.
+setup:
+  files:
+    - path: input.txt
+      content: |+
+        a
+        skip
+        b
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    awk '{
+      if ($1 == "skip")
+        next
+      else
+        print $1
+    }' input.txt
+expect:
+  stdout: |+
+    a
+    b
+  stderr: |+
+  exit_code: 0

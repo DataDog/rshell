@@ -235,6 +235,11 @@ func TestAwkIfNextPrintfAndScalarBuiltins(t *testing.T) {
 	assert.Equal(t, 0, code)
 	assert.Equal(t, "", stderr)
 	assert.Equal(t, "small:a:1:3:3:1: 1\nB:022:42\n", stdout)
+
+	stdout, stderr, code = cmdRun(t, "awk '{ if ($1 == \"skip\")\nnext\nelse\nprintf \"%s:%x\\n\", $1, -1 }' input.txt", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "", stderr)
+	assert.Equal(t, "a:ffffffffffffffff\nb:ffffffffffffffff\n", stdout)
 }
 
 func TestAwkBeginOnlySkipsInputFiles(t *testing.T) {

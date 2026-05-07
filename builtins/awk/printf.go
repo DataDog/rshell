@@ -68,9 +68,9 @@ func formatPrintf(format string, args []value) (string, error) {
 			b.WriteString(fmt.Sprintf(spec, int64(v.Number())))
 		case 'u':
 			spec = spec[:len(spec)-1] + "d"
-			b.WriteString(fmt.Sprintf(spec, uint64(v.Number())))
+			b.WriteString(fmt.Sprintf(spec, printfUnsigned(v)))
 		case 'o', 'x', 'X':
-			b.WriteString(fmt.Sprintf(spec, int64(v.Number())))
+			b.WriteString(fmt.Sprintf(spec, printfUnsigned(v)))
 		case 'e', 'E', 'f', 'F', 'g', 'G':
 			b.WriteString(fmt.Sprintf(spec, v.Number()))
 		case 'c':
@@ -96,6 +96,10 @@ func consumePrintfBound(format string, idx *int, max int, name string) error {
 		return fmt.Errorf("printf %s exceeds %d", name, max)
 	}
 	return nil
+}
+
+func printfUnsigned(v value) uint64 {
+	return uint64(int64(v.Number()))
 }
 
 func printfRune(v value) rune {
