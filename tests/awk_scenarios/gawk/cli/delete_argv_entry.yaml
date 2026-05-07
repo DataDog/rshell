@@ -1,0 +1,36 @@
+description: deleting an ARGV element skips that input file
+upstream:
+  suite: gawk
+  id: test/delargv.awk
+  ref: gawk-5.4.0
+covers:
+  - ARGV entries can be deleted before input processing
+  - deleted ARGV entries are skipped when awk opens input files
+  - ARGC still bounds the argument scan after ARGV deletion
+setup:
+  files:
+    - path: one.txt
+      content: |
+        first
+    - path: two.txt
+      content: |
+        second
+    - path: three.txt
+      content: |
+        third
+input:
+  program: |
+    BEGIN {
+      ARGV[1] = "one.txt"
+      ARGV[2] = "two.txt"
+      ARGV[3] = "three.txt"
+      ARGC = 4
+      delete ARGV[2]
+    }
+
+    { print FILENAME ":" $0 }
+expect:
+  stdout: |
+    one.txt:first
+    three.txt:third
+  exit_code: 0

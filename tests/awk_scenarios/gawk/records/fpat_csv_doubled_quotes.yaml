@@ -1,0 +1,26 @@
+description: FPAT keeps doubled quotes inside a quoted field match
+upstream:
+  suite: gawk
+  id: test/fpat9.awk
+  ref: gawk-5.4.0
+covers:
+  - FPAT can match quoted fields containing doubled quotes
+  - empty comma-separated fields are retained beside quoted fields
+input:
+  program: |
+    BEGIN { FPAT = "([^,]*)|(\"([^\"]|\"\")+\")" }
+    {
+      print "NF=" NF
+      for (i = 1; i <= NF; i++)
+        print i "=<" $i ">"
+    }
+  stdin: |
+    "alpha ""beta""",plain,,tail
+expect:
+  stdout: |
+    NF=4
+    1=<"alpha ""beta""">
+    2=<plain>
+    3=<>
+    4=<tail>
+  exit_code: 0

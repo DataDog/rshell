@@ -1,0 +1,15 @@
+description: numeric strings participate in division without false divide-by-zero errors
+upstream:
+  suite: gawk
+  id: test/divzero2.awk
+  ref: gawk-5.4.0
+covers:
+  - numeric strings are coerced to numbers for division
+  - non-zero string denominators do not trigger divide-by-zero diagnostics
+input:
+  program: |
+    BEGIN { print "2" / "3" }
+expect:
+  stdout: |
+    0.666667
+  exit_code: 0

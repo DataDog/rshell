@@ -1,0 +1,32 @@
+description: functions use local parameters while numeric loops transform their argument
+upstream:
+  suite: onetrueawk
+  id: testdir/t.fun3
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "function parameters receive scalar values"
+  - "while loops inside functions can update parameter variables"
+  - "calling another function sees the original field value"
+input:
+  program: |
+    function shrink(n) {
+      while ((n /= 2) >= 2) print "step", n
+    }
+
+    function echo(label, value) {
+      print label, value
+    }
+
+    { shrink($1); echo("orig", $1) }
+  stdin: |
+    20
+    5
+expect:
+  stdout: |
+    step 10
+    step 5
+    step 2.5
+    orig 20
+    step 2.5
+    orig 5
+  exit_code: 0

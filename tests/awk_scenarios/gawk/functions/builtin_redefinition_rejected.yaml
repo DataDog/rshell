@@ -1,0 +1,21 @@
+description: A user function cannot redefine a built-in function name
+upstream:
+  suite: gawk
+  id: test/fnmisc.awk
+  ref: gawk-5.4.0
+covers:
+  - built-in function names are reserved from user function definitions
+  - redefining a built-in function is rejected during parsing
+input:
+  program: |
+    function toupper(value) {
+      return value
+    }
+
+    BEGIN {
+      print toupper("abc")
+    }
+expect:
+  stderr_contains:
+    - "`toupper' is a built-in function, it cannot be redefined"
+  exit_code: 1

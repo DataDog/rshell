@@ -1,0 +1,26 @@
+description: FPAT may define the spaces themselves as fields
+upstream:
+  suite: gawk
+  id: test/fpat2.awk
+  ref: gawk-5.4.0
+covers:
+  - assigning $0 in BEGIN recomputes fields from FPAT
+  - FPAT matches field contents even when they are separator-like characters
+input:
+  program: |
+    BEGIN {
+      FPAT = "[ ]"
+      samples[1] = ""
+      samples[2] = "abc"
+      samples[3] = "a b c"
+      for (i = 1; i <= 3; i++) {
+        $0 = samples[i]
+        printf "%d:%d:<%s>:<%s>\n", i, NF, $1, $2
+      }
+    }
+expect:
+  stdout: |
+    1:0:<>:<>
+    2:0:<>:<>
+    3:2:< >:< >
+  exit_code: 0

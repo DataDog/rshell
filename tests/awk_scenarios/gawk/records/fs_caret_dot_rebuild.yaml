@@ -1,0 +1,21 @@
+description: an FS anchored at the first character leaves an empty first field
+upstream:
+  suite: gawk
+  id: test/fscaret.awk
+  ref: gawk-5.4.0
+covers:
+  - an FS regexp using ^ matches only at the start of the record
+  - rebuilding preserves an empty first field through OFS
+input:
+  program: |
+    BEGIN {
+      FS = "^."
+      OFS = "|"
+    }
+    { $1 = $1; print NF ":" $0 }
+  stdin: |
+    zulu
+expect:
+  stdout: |
+    2:|ulu
+  exit_code: 0

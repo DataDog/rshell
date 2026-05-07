@@ -1,0 +1,23 @@
+description: anchored negated character classes select records with a constrained middle shape
+upstream:
+  suite: onetrueawk
+  id: testdir/t.aeiou
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "anchored regex patterns can combine negated character classes and literals"
+  - "pattern-only matches can be made explicit with an action"
+input:
+  program: |
+    /^[^135]*[135][^135][135][135]*[^135]*$/ { print "shape", $0 }
+  stdin: |
+    aa1b3cc
+    no digits here
+    p5q13r
+    44x5
+    z3k5
+expect:
+  stdout: |
+    shape aa1b3cc
+    shape p5q13r
+    shape z3k5
+  exit_code: 0

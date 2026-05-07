@@ -1,0 +1,27 @@
+description: FPAT captures empty fields at the edges of comma-separated records
+upstream:
+  suite: gawk
+  id: test/fpat6.awk
+  ref: gawk-5.4.0
+covers:
+  - FPAT patterns that allow empty matches preserve leading empty fields
+  - FPAT patterns that allow empty matches preserve trailing empty fields
+input:
+  program: |
+    BEGIN { FPAT = "([^,]*)|(\"[^\"]+\")" }
+    {
+      print "NF=" NF
+      for (i = 1; i <= NF; i++)
+        print i "=<" $i ">"
+    }
+  stdin: |
+    ,,seed,,
+expect:
+  stdout: |
+    NF=5
+    1=<>
+    2=<>
+    3=<seed>
+    4=<>
+    5=<>
+  exit_code: 0

@@ -1,0 +1,20 @@
+description: printf supports unsigned, octal, hexadecimal, character, and precision formats
+upstream:
+  suite: onetrueawk
+  id: testdir/t.printf2
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "%u, %o, and %x format numeric values in different bases"
+  - "%c emits a character for a numeric code"
+  - "string precision truncates printf arguments"
+input:
+  program: |
+    BEGIN {
+      printf "%u %o %x %c\n", 255, 255, 255, 65
+      printf "%d %.3s\n", -7, "abcdef"
+    }
+expect:
+  stdout: |
+    255 377 ff A
+    -7 abc
+  exit_code: 0

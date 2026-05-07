@@ -1,0 +1,22 @@
+description: A function body cannot assign through the function's own name
+upstream:
+  suite: gawk
+  id: test/fnasgnm.awk
+  ref: gawk-5.4.0
+covers:
+  - function names cannot be reused as scalar variables
+  - assigning to a function symbol is rejected before execution
+input:
+  program: |
+    function marker() {
+      marker = 1
+    }
+
+    BEGIN {
+      marker()
+    }
+expect:
+  stderr_contains:
+    - "function `marker'"
+    - "used as a variable or an array"
+  exit_code: 1

@@ -1,0 +1,28 @@
+description: sprintf formats NaN and infinities consistently across numeric formats
+upstream:
+  suite: gawk
+  id: test/fmtspcl.awk
+  ref: gawk-5.4.0
+covers:
+  - sprintf renders NaN as a special nonnumeric value
+  - positive and negative infinities keep their signs through formatting
+  - integer formatting of infinity preserves the special value marker
+input:
+  program: |
+    BEGIN {
+      nan = sqrt(-1)
+      inf = -log(0)
+      print tolower(sprintf("%f", nan))
+      print tolower(sprintf("%G", inf))
+      print tolower(sprintf("%e", -inf))
+      print sprintf("%d", inf)
+    }
+expect:
+  stdout: |
+    +nan
+    +inf
+    -inf
+    +inf
+  stderr_contains:
+    - "sqrt: received negative argument -1"
+  exit_code: 0

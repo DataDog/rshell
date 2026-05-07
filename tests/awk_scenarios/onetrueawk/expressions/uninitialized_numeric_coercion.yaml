@@ -1,0 +1,24 @@
+description: uninitialized variables coerce to numeric zero in END comparisons
+upstream:
+  suite: onetrueawk
+  id: testdir/t.coerce
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "uninitialized scalars print as empty strings unless coerced numerically"
+  - "numeric comparisons coerce uninitialized values to zero"
+  - "END observes the final NR"
+input:
+  program: |
+    END {
+      print missing + 0, NR
+      if (missing < NR) print "less"
+    }
+  stdin: |
+    alpha
+    beta
+    gamma
+expect:
+  stdout: |
+    0 3
+    less
+  exit_code: 0

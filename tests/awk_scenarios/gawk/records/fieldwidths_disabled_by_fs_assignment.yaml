@@ -1,0 +1,22 @@
+description: assigning FS after FIELDWIDTHS switches back to FS splitting
+upstream:
+  suite: gawk
+  id: test/fsfwfs.awk
+  ref: gawk-5.4.0
+covers:
+  - FIELDWIDTHS initially selects fixed-width splitting
+  - assigning FS disables fixed-width splitting for later records
+input:
+  program: |
+    BEGIN {
+      FIELDWIDTHS = "2 3"
+      OFS = "|"
+      FS = FS
+    }
+    { print NF "|" $1 "|" $2 }
+  stdin: |
+    aaabbb ccc
+expect:
+  stdout: |
+    2|aaabbb|ccc
+  exit_code: 0

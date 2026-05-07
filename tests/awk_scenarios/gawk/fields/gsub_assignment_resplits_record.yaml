@@ -1,0 +1,26 @@
+description: Assigning $0 after a substitution resplits fields from the changed record
+upstream:
+  suite: gawk
+  id: test/fieldassign.awk
+  ref: gawk-5.4.0
+covers:
+  - gsub updates the current record before later field references
+  - assigning to $0 rebuilds the field list from the assigned text
+  - NF reflects the reassigned record rather than the original record
+input:
+  program: |
+    BEGIN { FS = ":" }
+    {
+      gsub(/[^:]/, "X")
+      picked = $2
+      $0 = picked
+      print $0 "|" NF "|" $1
+    }
+  stdin: |
+    ab:cd:ef
+    north:south
+expect:
+  stdout: |
+    XX|1|XX
+    XXXXX|1|XXXXX
+  exit_code: 0

@@ -1,0 +1,20 @@
+description: anchored repeated atoms match only strings with enough repeated text
+upstream:
+  suite: gawk
+  id: test/dfacheck2.awk
+  ref: gawk-5.4.0
+covers:
+  - adjacent + repetitions are matched across the whole record
+  - anchors prevent partial matches from satisfying a repeated regexp
+input:
+  program: |
+    $0 ~ /^m+m+m+n$/ { print "ok:" length($0) }
+  stdin: |
+    mmn
+    mmmn
+    mmmmn
+expect:
+  stdout: |
+    ok:4
+    ok:5
+  exit_code: 0

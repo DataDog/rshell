@@ -1,0 +1,19 @@
+description: an equivalence class for e matches plain e in bracket expressions
+upstream:
+  suite: gawk
+  id: test/equiv.awk
+  ref: gawk-5.4.0
+covers:
+  - bracket equivalence classes are accepted in regexps
+  - the C locale e equivalence class matches the plain letter e
+input:
+  program: |
+    $0 ~ /b[[=e=]]t/ { print "eq:" $0 }
+  stdin: |
+    bet
+    bit
+    beet
+expect:
+  stdout: |
+    eq:bet
+  exit_code: 0

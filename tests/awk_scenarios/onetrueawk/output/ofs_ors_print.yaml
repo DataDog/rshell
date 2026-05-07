@@ -1,0 +1,23 @@
+description: OFS and ORS control print separators and record terminators
+upstream:
+  suite: onetrueawk
+  id: testdir/t.ofs
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "print inserts OFS between comma-separated expressions"
+  - "print appends ORS after each output record"
+  - "string concatenation inside print bypasses OFS insertion"
+input:
+  program: |
+    BEGIN { OFS = " | "; ORS = "<EOR>\n" }
+    { print $1, $NF; print "raw:" $0 }
+  stdin: |
+    alpha beta gamma
+    one two
+expect:
+  stdout: |
+    alpha | gamma<EOR>
+    raw:alpha beta gamma<EOR>
+    one | two<EOR>
+    raw:one two<EOR>
+  exit_code: 0

@@ -1,0 +1,35 @@
+description: regex patterns stored in arrays can be selected and applied to records
+upstream:
+  suite: onetrueawk
+  id: testdir/t.re5
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "array elements can hold regex pattern strings"
+  - "numeric loops can apply several stored patterns deterministically"
+  - "nonmatching stored patterns simply contribute no hit"
+input:
+  program: |
+    BEGIN {
+      pats[1] = "^[A-Z]+$"
+      pats[2] = "[0-9][0-9]"
+      pats[3] = "end$"
+    }
+
+    {
+      hits = ""
+      for (i = 1; i <= 3; i++)
+        if ($0 ~ pats[i]) hits = hits i
+      print $0 ":" hits
+    }
+  stdin: |
+    ABC
+    item42
+    weekend
+    none
+expect:
+  stdout: |
+    ABC:1
+    item42:2
+    weekend:3
+    none:
+  exit_code: 0

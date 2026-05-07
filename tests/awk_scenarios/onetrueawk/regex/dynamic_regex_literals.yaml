@@ -1,0 +1,35 @@
+description: BEGIN-assigned strings can act as reusable regex patterns
+upstream:
+  suite: onetrueawk
+  id: testdir/t.re4
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "regex pattern strings can be initialized in BEGIN"
+  - "dynamic regex values may include anchors"
+  - "multiple dynamic regex rules can match one record"
+input:
+  program: |
+    BEGIN {
+      word = "sun"
+      pair = "sun:"
+      anchored = "^moon"
+      ending = "[ae]nd$"
+    }
+
+    $0 ~ word { print "word", $0 }
+    $0 ~ pair { print "pair", $0 }
+    $0 ~ anchored { print "anchored", $0 }
+    $0 ~ ending { print "ending", $0 }
+  stdin: |
+    sun:rise
+    moonbeam
+    bend
+    sand
+expect:
+  stdout: |
+    word sun:rise
+    pair sun:rise
+    anchored moonbeam
+    ending bend
+    ending sand
+  exit_code: 0

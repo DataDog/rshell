@@ -1,0 +1,26 @@
+description: an incomplete first -f source file is rejected at EOF
+upstream:
+  suite: gawk
+  id: test/eofsrc1a.awk
+  ref: gawk-5.4.0
+covers:
+  - each -f source file must contain complete rules before its own EOF
+  - a later source file does not complete an unterminated earlier rule
+setup:
+  files:
+    - path: before.awk
+      content: |-
+        BEGIN {
+          value = 9
+input:
+  awk_args:
+    - -f
+    - before.awk
+  program_file: after.awk
+  program: |
+    print value
+    }
+expect:
+  stderr_contains:
+    - source files / command-line arguments must contain complete functions or rules
+  exit_code: 1

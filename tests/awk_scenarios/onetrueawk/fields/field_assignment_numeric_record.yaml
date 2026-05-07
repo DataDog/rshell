@@ -1,0 +1,23 @@
+description: field assignment rebuilds $0 and numeric use of the record reads its leading number
+upstream:
+  suite: onetrueawk
+  id: testdir/t.getval
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "assigning a field changes $0"
+  - "rebuilt records can be used in numeric expressions"
+  - "field values can be derived from string lengths"
+input:
+  program: |
+    {
+      $1 = length($1) + length($2)
+      print "numeric", $0 + 0, "record", $0
+    }
+  stdin: |
+    aa bbb tail
+    north east west
+expect:
+  stdout: |
+    numeric 5 record 5 bbb tail
+    numeric 9 record 9 east west
+  exit_code: 0

@@ -1,0 +1,31 @@
+description: split does not mutate paragraph records split on newlines
+upstream:
+  suite: gawk
+  id: test/fsrs.awk
+  ref: gawk-5.4.0
+covers:
+  - an empty RS groups paragraphs into records
+  - FS can split paragraph records on newlines
+  - split on a field leaves the original record unchanged
+input:
+  program: |
+    BEGIN {
+      RS = ""
+      FS = "\n"
+    }
+    {
+      before = $0
+      split($2, words, " ")
+      print NR ":" NF ":" words[2] ":" ($0 == before ? "same" : "changed")
+    }
+  stdin: |
+    north south
+    east west
+
+    red blue
+    green gold
+expect:
+  stdout: |
+    1:2:west:same
+    2:2:gold:same
+  exit_code: 0

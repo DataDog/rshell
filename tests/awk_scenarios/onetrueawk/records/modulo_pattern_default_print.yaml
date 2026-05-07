@@ -1,0 +1,24 @@
+description: a modulo expression used as a pattern selects matching records for default printing
+upstream:
+  suite: onetrueawk
+  id: testdir/t.mod
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "numeric modulo can be used in a pattern expression"
+  - "true pattern-only rules print the current record"
+  - "NR participates in numeric pattern expressions"
+input:
+  program: |
+    NR % 3 == 2
+  stdin: |
+    one
+    two
+    three
+    four
+    five
+    six
+expect:
+  stdout: |
+    two
+    five
+  exit_code: 0

@@ -1,0 +1,25 @@
+description: string comparisons in patterns select lexicographic ranges
+upstream:
+  suite: onetrueawk
+  id: testdir/t.strcmp
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "string constants force lexicographic comparisons"
+  - "logical AND and OR combine string comparison ranges"
+  - "matching pattern-only conditions can be reported with actions"
+input:
+  program: |
+    $2 >= "m" && $2 < "t" { print "middle", $2 }
+    $2 >= "t" || $2 < "d" { print "edge", $2 }
+  stdin: |
+    a apple
+    b mango
+    c pear
+    d zebra
+expect:
+  stdout: |
+    edge apple
+    middle mango
+    middle pear
+    edge zebra
+  exit_code: 0

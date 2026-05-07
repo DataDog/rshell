@@ -1,0 +1,26 @@
+description: an unterminated function body is rejected before later source files run
+upstream:
+  suite: gawk
+  id: test/eofsrc1b.awk
+  ref: gawk-5.4.0
+covers:
+  - a function definition must be complete within its source file
+  - parse errors in an earlier source file stop execution before following sources
+setup:
+  files:
+    - path: helpers.awk
+      content: |-
+        function decorate(s) {
+          return "[" s "]"
+input:
+  awk_args:
+    - -f
+    - helpers.awk
+  program_file: main.awk
+  program: |
+    }
+    BEGIN { print decorate("ok") }
+expect:
+  stderr_contains:
+    - source files / command-line arguments must contain complete functions or rules
+  exit_code: 1

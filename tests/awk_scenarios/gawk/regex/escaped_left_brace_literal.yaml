@@ -1,0 +1,18 @@
+description: an escaped left brace is treated as a literal regexp character
+upstream:
+  suite: gawk
+  id: test/escapebrace.awk
+  ref: gawk-5.4.0
+covers:
+  - \{ in a regexp matches a literal left brace
+  - escaping a brace does not produce a warning
+input:
+  program: |
+    /\{/ { print "brace:" $0 }
+  stdin: |
+    plain
+    set { value
+expect:
+  stdout: |
+    brace:set { value
+  exit_code: 0

@@ -1,0 +1,25 @@
+description: Numeric conversion of a field stops at the field separator terminator
+upstream:
+  suite: gawk
+  id: test/fldterm.awk
+  ref: gawk-5.4.0
+covers:
+  - a numeric field separator terminates the stored field text
+  - numeric conversion uses only the characters in the field
+  - the terminated field remains available as its original string value
+input:
+  program: |
+    BEGIN { FS = "7" }
+    {
+      print $1 + 0
+      print "[" $1 "]"
+      print $2
+    }
+  stdin: |
+    18.257suffix
+expect:
+  stdout: |
+    18.25
+    [18.25]
+    suffix
+  exit_code: 0

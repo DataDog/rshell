@@ -1,0 +1,28 @@
+description: comments are ignored around BEGIN, pattern, and END rules
+upstream:
+  suite: onetrueawk
+  id: testdir/t.comment1
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "full-line comments do not create actions"
+  - "comments can appear between rules"
+  - "BEGIN and END still run with commented lines around them"
+input:
+  program: |
+    # leading comment
+    BEGIN { print "begin" }
+    # another comment
+    /keep/ { print "hit", $0 }
+    # trailing comment
+    END { print "end", NR }
+  stdin: |
+    skip this
+    keep this one
+    keep another
+expect:
+  stdout: |
+    begin
+    hit keep this one
+    hit keep another
+    end 3
+  exit_code: 0

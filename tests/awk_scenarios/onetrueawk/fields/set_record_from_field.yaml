@@ -1,0 +1,35 @@
+description: assigning $0 and indirect field references rebuilds field state
+upstream:
+  suite: onetrueawk
+  id: testdir/t.set0
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "$0 assignment replaces the current record and recomputes fields"
+  - "$(0) behaves as an indirect reference to the whole record"
+  - "indirect numbered field assignment rebuilds $0"
+input:
+  program: |
+    {
+      original = $0
+      $0 = $2
+      print "record", NF, $0, "[" $2 "]"
+      $0 = original
+      $(0) = $3
+      print "indirect", NF, $0, "[" $2 "]"
+      $0 = original
+      i = 1
+      $(i) = $(i) + 10
+      print "field", $0
+    }
+  stdin: |
+    5 six seven
+    8 nine ten
+expect:
+  stdout: |
+    record 1 six []
+    indirect 1 seven []
+    field 15 six seven
+    record 1 nine []
+    indirect 1 ten []
+    field 18 nine ten
+  exit_code: 0

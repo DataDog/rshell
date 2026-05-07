@@ -1,0 +1,33 @@
+description: getline to EOF with one FS leaves later field splitting usable
+upstream:
+  suite: gawk
+  id: test/eofsplit.awk
+  ref: gawk-5.4.0
+covers:
+  - getline from a redirected file updates fields using the current FS
+  - changing FS after redirected input reaches EOF does not corrupt later splitting
+setup:
+  files:
+    - path: accounts.txt
+      content: |
+        alice:x:101:staff
+        bob:x:202:ops
+input:
+  program: |
+    BEGIN {
+      FS = ":"
+      while ((getline < "accounts.txt") > 0) {
+        ids = ids (ids == "" ? "" : ",") $3
+        seen[0] = "loaded"
+      }
+      close("accounts.txt")
+      FS = " "
+      $0 = "alpha beta"
+      print ids
+      print seen[0] ":" NF ":" $2
+    }
+expect:
+  stdout: |
+    101,202
+    loaded:2:beta
+  exit_code: 0

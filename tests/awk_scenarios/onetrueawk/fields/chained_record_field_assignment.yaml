@@ -1,0 +1,29 @@
+description: chained assignments involving fields and records return the assigned value
+upstream:
+  suite: onetrueawk
+  id: testdir/t.set0b
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "assignment expressions can be chained through fields and $0"
+  - "$0 assignment recomputes NF before later output"
+  - "$(0) can participate in chained assignment"
+input:
+  program: |
+    {
+      saved = $0
+      left = ($1 = $0 = $2)
+      print "a", left, NF, $0
+      $0 = saved
+      right = ($(0) = $(2) = $(1))
+      print "b", right, NF, $0
+    }
+  stdin: |
+    red blue green
+    10 20 30
+expect:
+  stdout: |
+    a blue 1 blue
+    b red 1 red
+    a 20 1 20
+    b 10 1 10
+  exit_code: 0

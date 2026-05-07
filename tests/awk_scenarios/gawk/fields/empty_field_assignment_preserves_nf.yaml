@@ -1,0 +1,24 @@
+description: Assigning an empty field keeps NF while rebuilding the record
+upstream:
+  suite: gawk
+  id: test/fldchgnf.awk
+  ref: gawk-5.4.0
+covers:
+  - assigning an empty string to an existing field keeps that field position
+  - NF does not shrink when a middle field becomes empty
+  - the rebuilt record includes adjacent OFS separators around the empty field
+input:
+  program: |
+    BEGIN { OFS = "|" }
+    {
+      $3 = ""
+      print NF ":" $0
+      print "[" $3 "]"
+    }
+  stdin: |
+    oak pine cedar birch
+expect:
+  stdout: |
+    4:oak|pine||birch
+    []
+  exit_code: 0

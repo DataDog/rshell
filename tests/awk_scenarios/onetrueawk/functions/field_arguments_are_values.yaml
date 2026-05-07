@@ -1,0 +1,30 @@
+description: field expressions passed to scalar function parameters are values, not assignable aliases
+upstream:
+  suite: onetrueawk
+  id: testdir/t.set1
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "functions can accept $0 and numbered fields as scalar arguments"
+  - "assigning a scalar parameter does not change the caller record"
+  - "field state survives scalar parameter reassignment"
+input:
+  program: |
+    function mark(value) {
+      value = "changed"
+      print value
+    }
+
+    {
+      before = $0
+      mark($0)
+      mark($1)
+      print ($0 == before), $1
+    }
+  stdin: |
+    alpha beta
+expect:
+  stdout: |
+    changed
+    changed
+    1 alpha
+  exit_code: 0

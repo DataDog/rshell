@@ -1,0 +1,22 @@
+description: A function name cannot also be used as an array
+upstream:
+  suite: gawk
+  id: test/fnarray.awk
+  ref: gawk-5.4.0
+covers:
+  - function symbols are not array variables
+  - indexing a function name is rejected during parsing
+input:
+  program: |
+    function choose(value) {
+      return value
+    }
+
+    BEGIN {
+      choose["left"] = 1
+    }
+expect:
+  stderr_contains:
+    - "function `choose'"
+    - "used as a variable or an array"
+  exit_code: 1

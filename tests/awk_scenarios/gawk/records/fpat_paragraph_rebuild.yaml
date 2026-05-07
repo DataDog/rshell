@@ -1,0 +1,28 @@
+description: FPAT fields in paragraph records rebuild with OFS
+upstream:
+  suite: gawk
+  id: test/fpat8.awk
+  ref: gawk-5.4.0
+covers:
+  - FPAT is applied within paragraph records when RS is empty
+  - assigning an FPAT field rebuilds the paragraph from fields
+input:
+  program: |
+    BEGIN {
+      RS = ""
+      FPAT = "[[:alnum:]_]+"
+      OFS = "|"
+    }
+    {
+      print NF ":" $1 ":" $2
+      $2 = "MIDDLE"
+      print $0
+    }
+  stdin: |
+    one two
+    three
+expect:
+  stdout: |
+    3:one:two
+    one|MIDDLE|three
+  exit_code: 0

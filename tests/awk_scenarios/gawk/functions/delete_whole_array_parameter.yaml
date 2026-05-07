@@ -1,0 +1,36 @@
+description: Deleting an array parameter clears the caller array and allows reuse
+upstream:
+  suite: gawk
+  id: test/fnarydel.awk
+  ref: gawk-5.4.0
+covers:
+  - delete on an array parameter removes all elements from the aliased caller array
+  - an array parameter can be repopulated after whole-array delete
+  - whole-array delete can empty a global array after parameter reuse
+input:
+  program: |
+    function reset(items, k, n) {
+      delete items
+      items["fresh"] = 7
+      for (k in items)
+        n++
+      return n
+    }
+
+    BEGIN {
+      stash["old"] = 1
+      stash["keep"] = 2
+      print reset(stash)
+      print ("old" in stash), ("fresh" in stash), stash["fresh"]
+      delete stash
+      count = 0
+      for (key in stash)
+        count++
+      print count
+    }
+expect:
+  stdout: |
+    1
+    0 1 7
+    0
+  exit_code: 0

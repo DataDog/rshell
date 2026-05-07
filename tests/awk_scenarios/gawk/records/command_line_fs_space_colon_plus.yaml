@@ -1,0 +1,20 @@
+description: command-line FS assignments accept bracket classes with plus
+upstream:
+  suite: gawk
+  id: test/fsspcoln.awk
+  ref: gawk-5.4.0
+covers:
+  - a command-line FS assignment can contain a bracket expression
+  - + repetition in a command-line FS regexp is preserved
+input:
+  program: |
+    { print NF ":" $2 ":" $3 }
+  args:
+    - "FS=[ :]+"
+    - "-"
+  stdin: |
+    aa:bb cc
+expect:
+  stdout: |
+    3:bb:cc
+  exit_code: 0

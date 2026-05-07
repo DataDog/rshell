@@ -1,0 +1,27 @@
+description: Assigning a scalar to an array parameter through nested calls is fatal
+upstream:
+  suite: gawk
+  id: test/fnaryscl.awk
+  ref: gawk-5.4.0
+covers:
+  - array-ness is preserved when an array parameter is passed through another function
+  - assigning a scalar to the aliased array parameter is rejected
+input:
+  program: |
+    function pass(values) {
+      coerce(values)
+    }
+
+    function coerce(alias) {
+      alias = 6
+    }
+
+    BEGIN {
+      data["first"] = 1
+      pass(data)
+    }
+expect:
+  stderr_contains:
+    - "fatal: attempt to use array"
+    - "in a scalar context"
+  exit_code: 2

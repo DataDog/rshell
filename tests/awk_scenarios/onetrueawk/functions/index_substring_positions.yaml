@@ -1,0 +1,23 @@
+description: index locates substrings and substr can recover the matched text
+upstream:
+  suite: onetrueawk
+  id: testdir/t.index
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "index returns the first one-based substring position"
+  - "index returns zero when the substring is absent"
+  - "substr can extract text at the returned index"
+input:
+  program: |
+    {
+      pos = index($0, $2)
+      print pos, index($0, "zz"), substr($0, pos, length($2))
+    }
+  stdin: |
+    red redwood wood
+    alpha ph alphabet
+expect:
+  stdout: |
+    5 0 redwood
+    3 0 ph
+  exit_code: 0

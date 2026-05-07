@@ -1,0 +1,21 @@
+description: sqrt computes square roots for numeric field values
+upstream:
+  suite: onetrueawk
+  id: testdir/t.rec
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "sqrt accepts numeric field input"
+  - "default numeric formatting is used by print"
+input:
+  program: |
+    { print $1, sqrt($1) }
+  stdin: |
+    9
+    2
+    0.25
+expect:
+  stdout: |
+    9 3
+    2 1.41421
+    0.25 0.5
+  exit_code: 0

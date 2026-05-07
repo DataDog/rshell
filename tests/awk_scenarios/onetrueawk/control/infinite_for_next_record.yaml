@@ -1,0 +1,34 @@
+description: an unbounded for loop can use next to advance after all fields are handled
+upstream:
+  suite: onetrueawk
+  id: testdir/t.for1
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "for (;;) creates an unbounded loop"
+  - "next skips the remainder of the current action"
+  - "loop state can decide when to advance to the next record"
+input:
+  program: |
+    {
+      i = 1
+      for (;;) {
+        if (i > NF) {
+          print "done", NR
+          next
+        }
+        print NR ":" i ":" $i
+        i++
+      }
+      print "unreachable"
+    }
+  stdin: |
+    a b
+    c
+expect:
+  stdout: |
+    1:1:a
+    1:2:b
+    done 1
+    2:1:c
+    done 2
+  exit_code: 0

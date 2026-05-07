@@ -1,0 +1,26 @@
+description: regex patterns can include an empty group and a separate nonempty check
+upstream:
+  suite: onetrueawk
+  id: testdir/t.re2
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "empty regex groups can participate in a larger match"
+  - "negated empty-line regex tests distinguish nonempty records"
+  - "a record can satisfy more than one regex rule"
+input:
+  program: |
+    /[A-Z]()[0-9]/ { print "token", $0 }
+    $0 !~ /^$/ { print "seen", NR }
+  stdin: |
+    A1
+
+    code
+    B2-tail
+expect:
+  stdout: |
+    token A1
+    seen 1
+    seen 3
+    token B2-tail
+    seen 4
+  exit_code: 0

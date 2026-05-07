@@ -1,0 +1,25 @@
+description: compound pattern expressions combine regex and numeric conditions
+upstream:
+  suite: onetrueawk
+  id: testdir/t.pat
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "logical AND combines regex and numeric conditions in patterns"
+  - "logical OR runs a rule when either side is true"
+  - "multiple pattern rules can match the same record"
+input:
+  program: |
+    /blue/ && $2 > 2 { print "blue-high", $0 }
+    /red/ || $3 == "yes" { print "red-or-yes", $0 }
+  stdin: |
+    red 1 no
+    blue 3 no
+    gray 5 yes
+    blue 1 yes
+expect:
+  stdout: |
+    red-or-yes red 1 no
+    blue-high blue 3 no
+    red-or-yes gray 5 yes
+    red-or-yes blue 1 yes
+  exit_code: 0

@@ -1,0 +1,22 @@
+description: END can report the longest record seen during input processing
+upstream:
+  suite: onetrueawk
+  id: testdir/t.max
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "length without an argument measures the current record"
+  - "record actions can retain the longest value seen so far"
+  - "END prints aggregate state from the input pass"
+input:
+  program: |
+    length($0) > longest { longest = length($0); saved = $0 }
+    END { print longest ":" saved }
+  stdin: |
+    tiny
+    medium words
+    the longest record here
+    short
+expect:
+  stdout: |
+    23:the longest record here
+  exit_code: 0

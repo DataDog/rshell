@@ -1,0 +1,20 @@
+description: field regex conditions match only records whose field satisfies the pattern
+upstream:
+  suite: onetrueawk
+  id: testdir/t.f0
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "numbered fields can be matched against regular expressions"
+  - "regex conditions can guard an action"
+input:
+  program: |
+    $2 ~ /^x/ { print NR ":" $1 ":" $2 }
+  stdin: |
+    one xray
+    two amber
+    three xeno
+expect:
+  stdout: |
+    1:one:xray
+    3:three:xeno
+  exit_code: 0

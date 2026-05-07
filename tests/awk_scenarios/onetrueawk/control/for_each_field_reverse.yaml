@@ -1,0 +1,25 @@
+description: for loops can walk fields with explicit initialization, condition, and decrement
+upstream:
+  suite: onetrueawk
+  id: testdir/t.for
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "for loop clauses control numeric iteration"
+  - "numbered field references can use the loop variable"
+input:
+  program: |
+    {
+      for (i = NF; i >= 1; i--)
+        print NR, i, $i
+    }
+  stdin: |
+    red green blue
+    north south
+expect:
+  stdout: |
+    1 3 blue
+    1 2 green
+    1 1 red
+    2 2 south
+    2 1 north
+  exit_code: 0

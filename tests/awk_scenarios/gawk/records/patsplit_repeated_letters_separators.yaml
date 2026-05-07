@@ -1,0 +1,24 @@
+description: patsplit returns matched fields and surrounding separators
+upstream:
+  suite: gawk
+  id: test/fpat4.awk
+  ref: gawk-5.4.0
+covers:
+  - patsplit accepts an explicit field pattern
+  - patsplit fills the separator array before, between, and after fields
+input:
+  program: |
+    BEGIN {
+      n = patsplit("xxaaa-aaaa!", f, "aa+", s)
+      print "n=" n
+      for (i = 1; i <= n; i++)
+        print i ":" f[i] ":" s[i - 1]
+      print "tail:" s[n]
+    }
+expect:
+  stdout: |
+    n=2
+    1:aaa:xx
+    2:aaaa:-
+    tail:!
+  exit_code: 0

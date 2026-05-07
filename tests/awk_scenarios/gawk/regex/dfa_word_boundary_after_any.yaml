@@ -1,0 +1,18 @@
+description: DFA matching honors a word-boundary assertion after a consumed character
+upstream:
+  suite: gawk
+  id: test/dfacheck1.awk
+  ref: gawk-5.4.0
+covers:
+  - the \< word-boundary operator can follow another regexp atom
+  - matches are found only when the next character starts a word
+input:
+  program: |
+    /.\<tag/ { print "hit:" $0 }
+  stdin: |
+    pre tag
+    retag
+expect:
+  stdout: |
+    hit:pre tag
+  exit_code: 0

@@ -1,0 +1,24 @@
+description: split accepts a regex literal separator for whitespace runs
+upstream:
+  suite: onetrueawk
+  id: testdir/t.split4
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "regex literal separators can be passed to split"
+  - "runs of spaces and tabs can act as one separator"
+  - "split populates array fields in order"
+input:
+  program: |
+    {
+      text = $1 "  " $2 "\t" $3
+      n = split(text, out, /[ \t]+/)
+      print n, out[1], out[2], out[3]
+    }
+  stdin: |
+    alpha beta gamma
+    one two three
+expect:
+  stdout: |
+    3 alpha beta gamma
+    3 one two three
+  exit_code: 0

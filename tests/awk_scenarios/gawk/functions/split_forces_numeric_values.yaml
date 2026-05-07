@@ -1,0 +1,29 @@
+description: Values produced by split keep numeric-string typing during conversion
+upstream:
+  suite: gawk
+  id: test/forcenum.awk
+  ref: gawk-5.4.0
+covers:
+  - split-created values that are fully numeric have strnum type
+  - numeric prefixes in nonnumeric strings still convert to numbers
+  - forcing a strnum to number does not change its original string text
+input:
+  program: |
+    BEGIN {
+      n = split("14z| 9|-3.5|nan|0x2g|042", item, "|")
+      for (i = 1; i <= n; i++) {
+        value = item[i] + 0
+        label = tolower(value "")
+        sub(/^[-+]/, "", label)
+        print "[" item[i] "]", label, typeof(item[i])
+      }
+    }
+expect:
+  stdout: |
+    [14z] 14 string
+    [ 9] 9 strnum
+    [-3.5] 3.5 strnum
+    [nan] 0 string
+    [0x2g] 0 string
+    [042] 42 strnum
+  exit_code: 0

@@ -1,0 +1,21 @@
+description: assigning the first field rebuilds the current record with OFS
+upstream:
+  suite: onetrueawk
+  id: testdir/t.f1
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "field assignment updates the selected field"
+  - "field assignment rebuilds $0 using OFS"
+  - "NF remains the count of rebuilt fields"
+input:
+  program: |
+    BEGIN { OFS = "|" }
+    { $1 = "[" $1 "]"; print NF, $0 }
+  stdin: |
+    alpha beta gamma
+    one two
+expect:
+  stdout: |
+    3|[alpha]|beta|gamma
+    2|[one]|two
+  exit_code: 0

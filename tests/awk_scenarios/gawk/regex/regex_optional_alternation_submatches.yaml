@@ -1,0 +1,23 @@
+description: repeated optional alternations populate submatches without failing
+upstream:
+  suite: gawk
+  id: test/dfamb1.awk
+  ref: gawk-5.4.0
+covers:
+  - match handles a repeated group containing alternation and literals
+  - submatch arrays are populated for the selected repeated alternative
+input:
+  program: |
+    {
+      match($0, /(([^ ]+@(left|right) |([^ ]+@(north|south) )pivot@mid ){0,2})/, m)
+      if (m[0] != "") {
+        dir = (m[3] != "" ? m[3] : m[5])
+        print "match:<" m[1] "> dir=" dir
+      }
+    }
+  stdin: |
+    gate@north pivot@mid rail@south pivot@mid rest
+expect:
+  stdout: |
+    match:<gate@north pivot@mid rail@south pivot@mid > dir=south
+  exit_code: 0

@@ -1,0 +1,33 @@
+description: Whole-array delete is allowed inside a for-in loop body
+upstream:
+  suite: gawk
+  id: test/fordel.awk
+  ref: gawk-5.4.0
+covers:
+  - a for-in loop can have delete array as its body
+  - deleting an empty loop target array is harmless
+  - deleting a populated loop target array leaves it empty afterward
+input:
+  program: |
+    function members(array, k, n) {
+      n = 0
+      for (k in array)
+        n++
+      return n
+    }
+
+    BEGIN {
+      for (k in missing)
+        delete missing
+      print "empty", members(missing)
+
+      data["only"] = 1
+      for (k in data)
+        delete data
+      print "filled", members(data)
+    }
+expect:
+  stdout: |
+    empty 0
+    filled 0
+  exit_code: 0

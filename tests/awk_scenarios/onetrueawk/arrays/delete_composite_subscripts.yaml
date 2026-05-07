@@ -1,0 +1,31 @@
+description: delete removes selected composite-subscript elements from an array
+upstream:
+  suite: onetrueawk
+  id: testdir/t.delete2
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "multi-index array subscripts are stored as associative keys"
+  - "delete removes individual composite keys"
+  - "for-in iteration sees only remaining array elements"
+input:
+  program: |
+    {
+      delete grid
+      n = split($0, part)
+      for (r = 1; r <= n; r++)
+        for (c = 1; c <= n; c++)
+          grid[r,c] = r ":" c
+      for (r = 1; r <= n; r++)
+        delete grid[r,r]
+      left = 0
+      for (k in grid) left++
+      print NR, n, left
+    }
+  stdin: |
+    a b c
+    red blue
+expect:
+  stdout: |
+    1 3 6
+    2 2 2
+  exit_code: 0

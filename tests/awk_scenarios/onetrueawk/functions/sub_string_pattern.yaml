@@ -1,0 +1,24 @@
+description: sub can use a pattern string derived from substr
+upstream:
+  suite: onetrueawk
+  id: testdir/t.sub3
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "substr returns strings that can be used as sub patterns"
+  - "sub replaces only the first match"
+  - "replacement strings can include the selected text"
+input:
+  program: |
+    length($1) {
+      target = substr($1, 2, 1)
+      sub(target, "[" target "]")
+      print $0
+    }
+  stdin: |
+    plant pot
+    stone path
+expect:
+  stdout: |
+    p[l]ant pot
+    s[t]one path
+  exit_code: 0

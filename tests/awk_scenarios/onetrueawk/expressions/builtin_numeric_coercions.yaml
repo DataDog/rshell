@@ -1,0 +1,30 @@
+description: builtins and operators coerce numeric values to strings where needed
+upstream:
+  suite: onetrueawk
+  id: testdir/t.coerce2
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "index and substr accept numeric arguments through string conversion"
+  - "numeric and string subscripts address the same array element"
+  - "numeric regex operands are converted before matching"
+  - "adjacent numeric expressions concatenate as strings"
+input:
+  program: |
+    {
+      seen[7] = "seven"
+      print index(2024, $1)
+      print substr(987654, 2, 4)
+      print (7 in seen), ("7" in seen), (8 in seen)
+      print 12 34 "x"
+      print (987654 ~ 765), (987654 ~ "cat")
+    }
+  stdin: |
+    24
+expect:
+  stdout: |
+    3
+    8765
+    1 1 0
+    1234x
+    1 0
+  exit_code: 0

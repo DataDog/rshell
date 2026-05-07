@@ -1,0 +1,29 @@
+description: sub expands ampersand replacements and honors escaped literal ampersands
+upstream:
+  suite: onetrueawk
+  id: testdir/t.sub2
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "& in a replacement expands to the matched text"
+  - "escaped ampersand in a replacement is literal"
+  - "sub updates the current record by default"
+input:
+  program: |
+    {
+      original = $0
+      sub(/[0-9]+/, "<&>")
+      print $0
+      $0 = original
+      sub(/[0-9]+/, "\\&")
+      print $0
+    }
+  stdin: |
+    item42
+    room7b
+expect:
+  stdout: |
+    item<42>
+    item&
+    room<7>b
+    room&b
+  exit_code: 0

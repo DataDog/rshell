@@ -1,0 +1,35 @@
+description: function parameters can delete and repopulate caller arrays
+upstream:
+  suite: gawk
+  id: test/delarpm2.awk
+  ref: gawk-5.4.0
+covers:
+  - user functions can delete all elements of an array parameter
+  - arrays cleared through parameters can be repopulated
+  - caller-visible arrays remain arrays after parameter deletion loops
+input:
+  program: |
+    function clear(values, key) {
+      for (key in values)
+        delete values[key]
+    }
+
+    function fill(values) {
+      values["one"] = 1
+      values["two"] = 2
+    }
+
+    BEGIN {
+      clear(table)
+      fill(table)
+      for (key in table)
+        print key, table[key]
+      clear(table)
+      print length(table)
+    }
+expect:
+  stdout_contains:
+    - one 1
+    - two 2
+    - "0"
+  exit_code: 0

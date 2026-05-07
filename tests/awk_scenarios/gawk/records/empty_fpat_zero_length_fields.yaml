@@ -1,0 +1,26 @@
+description: an empty FPAT yields zero-length fields around each character
+upstream:
+  suite: gawk
+  id: test/fpatnull.awk
+  ref: gawk-5.4.0
+covers:
+  - FPAT may be assigned the empty string
+  - an empty FPAT produces zero-length field matches
+input:
+  program: |
+    BEGIN { FPAT = "" }
+    {
+      print "NF=" NF
+      for (i = 1; i <= NF; i++)
+        print i "=<" $i ">"
+    }
+  stdin: |
+    abc
+expect:
+  stdout: |
+    NF=4
+    1=<>
+    2=<>
+    3=<>
+    4=<>
+  exit_code: 0

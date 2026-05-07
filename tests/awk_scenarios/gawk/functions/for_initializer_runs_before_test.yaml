@@ -1,0 +1,20 @@
+description: A for-loop initializer runs even when the test expression is false
+upstream:
+  suite: gawk
+  id: test/forsimp.awk
+  ref: gawk-5.4.0
+covers:
+  - the initializer expression of a for loop executes first
+  - a false test expression prevents the loop body and increment from running
+input:
+  program: |
+    BEGIN {
+      for (print "init"; 0; print "step")
+        print "body"
+      print "after"
+    }
+expect:
+  stdout: |
+    init
+    after
+  exit_code: 0

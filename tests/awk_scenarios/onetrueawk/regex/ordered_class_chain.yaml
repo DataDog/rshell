@@ -1,0 +1,23 @@
+description: anchored regex requires selected letters to appear in order with other letters between them
+upstream:
+  suite: onetrueawk
+  id: testdir/t.aeiouy
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "negated character classes can exclude the target letters between matches"
+  - "anchors make the ordered regex consume the whole record"
+input:
+  program: |
+    /^[^xyz]*x[^xyz]*y[^xyz]*z[^xyz]*$/ { print "ordered", $0 }
+  stdin: |
+    axbycz
+    xyz
+    xylophone z
+    yxz
+    axbyczz
+expect:
+  stdout: |
+    ordered axbycz
+    ordered xyz
+    ordered xylophone z
+  exit_code: 0

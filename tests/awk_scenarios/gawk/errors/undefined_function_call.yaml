@@ -1,0 +1,15 @@
+description: calling an undefined function is fatal
+upstream:
+  suite: gawk
+  id: test/defref.awk
+  ref: gawk-5.4.0
+covers:
+  - missing function definitions are reported at runtime
+  - undefined function calls produce a fatal exit status
+input:
+  program: |
+    BEGIN { missing() }
+expect:
+  stderr_contains:
+    - function `missing' not defined
+  exit_code: 2

@@ -1,0 +1,31 @@
+description: Deleting elements while iterating an array parameter empties the caller array
+upstream:
+  suite: gawk
+  id: test/fnparydl.awk
+  ref: gawk-5.4.0
+covers:
+  - an array parameter can be iterated with for-in
+  - deleting each visited parameter element removes it from the caller array
+  - the caller array is empty after the parameter deletion loop
+input:
+  program: |
+    function drain(values, k) {
+      for (k in values)
+        delete values[k]
+    }
+
+    BEGIN {
+      values["north"] = 1
+      values["south"] = 2
+      drain(values)
+      count = 0
+      for (k in values)
+        count++
+      print count
+      print ("north" in values), ("south" in values)
+    }
+expect:
+  stdout: |
+    0
+    0 0
+  exit_code: 0

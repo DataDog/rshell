@@ -1,0 +1,29 @@
+description: deleting the current associative key leaves the array empty for iteration
+upstream:
+  suite: onetrueawk
+  id: testdir/t.delete3
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "delete removes a string-keyed array member"
+  - "the in operator reports the deleted key as absent"
+  - "for-in iteration skips deleted elements"
+input:
+  program: |
+    {
+      bag[$1] = NR
+      print "before", ($1 in bag)
+      delete bag[$1]
+      count = 0
+      for (key in bag) count++
+      print "after", ($1 in bag), count
+    }
+  stdin: |
+    alpha
+    beta
+expect:
+  stdout: |
+    before 1
+    after 0 0
+    before 1
+    after 0 0
+  exit_code: 0

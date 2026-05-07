@@ -1,0 +1,23 @@
+description: A function cannot use its own name as an array from its body
+upstream:
+  suite: gawk
+  id: test/fnarray2.awk
+  ref: gawk-5.4.0
+covers:
+  - a function body cannot index the function's own symbol
+  - function names remain distinct from arrays even inside that function
+input:
+  program: |
+    function count_seen(key, total) {
+      total = ++count_seen[key]
+      return total
+    }
+
+    BEGIN {
+      print count_seen("alpha")
+    }
+expect:
+  stderr_contains:
+    - "function `count_seen'"
+    - "used as a variable or an array"
+  exit_code: 1

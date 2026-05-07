@@ -1,0 +1,15 @@
+description: constant division by zero is reported as an error
+upstream:
+  suite: gawk
+  id: test/divzero.awk
+  ref: gawk-5.4.0
+covers:
+  - division by zero is diagnosed
+  - fatal arithmetic diagnostics produce a non-zero exit status
+input:
+  program: |
+    BEGIN { print (0 && (4 / 0)) }
+expect:
+  stderr_contains:
+    - division by zero
+  exit_code: 1

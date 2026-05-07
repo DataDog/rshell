@@ -1,0 +1,38 @@
+description: getline from the main input can consume additional records inside an action
+upstream:
+  suite: onetrueawk
+  id: testdir/t.getline1
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "getline variable reads the next input record"
+  - "getline from current input advances NR"
+  - "the main record loop resumes after records consumed by getline"
+input:
+  program: |
+    {
+      group = $1
+      for (i = 1; i <= 2; i++) {
+        if ((getline extra) > 0) {
+          split(extra, fields)
+          group = group "," fields[1]
+        }
+      }
+      print NR ":" group
+    }
+
+    END { print "done", NR }
+  stdin: |
+    a 1
+    b 2
+    c 3
+    d 4
+    e 5
+    f 6
+    g 7
+expect:
+  stdout: |
+    3:a,b,c
+    6:d,e,f
+    7:g
+    done 7
+  exit_code: 0

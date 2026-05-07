@@ -1,0 +1,23 @@
+description: printf and sprintf apply width, padding, and precision formats
+upstream:
+  suite: onetrueawk
+  id: testdir/t.printf
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "sprintf returns a formatted string"
+  - "printf writes formatted output without implicit ORS"
+  - "string precision and numeric padding are honored"
+input:
+  program: |
+    {
+      line = sprintf("%-6s %04d %.2f", $1, $2, $3)
+      printf "[%s]\n", line
+    }
+  stdin: |
+    cat 7 3.14159
+    horse 42 2
+expect:
+  stdout: |
+    [cat    0007 3.14]
+    [horse  0042 2.00]
+  exit_code: 0

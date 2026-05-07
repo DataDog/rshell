@@ -1,0 +1,34 @@
+description: arrays produced by split can be passed to user functions
+upstream:
+  suite: onetrueawk
+  id: testdir/t.fun4
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "split populates an array argument"
+  - "array parameters are visible inside user functions"
+  - "function-local loop variables can traverse array elements"
+input:
+  program: |
+    function show(items, n,    i) {
+      for (i = n; i >= 1; i--)
+        print i ":" items[i]
+    }
+
+    {
+      n = split($0, parts, ",")
+      print "line", NR
+      show(parts, n)
+    }
+  stdin: |
+    red,green,blue
+    one,two
+expect:
+  stdout: |
+    line 1
+    3:blue
+    2:green
+    1:red
+    line 2
+    2:two
+    1:one
+  exit_code: 0

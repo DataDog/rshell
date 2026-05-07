@@ -1,0 +1,24 @@
+description: printf applies character, width, precision, and base conversions
+upstream:
+  suite: gawk
+  id: test/fmttest.awk
+  ref: gawk-5.4.0
+covers:
+  - c conversion uses the first character of a string and numeric character codes
+  - width and left/right padding are honored for integer and string formats
+  - precision and alternate base formatting work for floating-point and integer values
+input:
+  program: |
+    BEGIN {
+      printf "[%c][%c]\n", "Kiwi", 66
+      printf "[%08d][%-6s]\n", 42, "go"
+      printf "[%.3f][%.4g][%#x]\n", 7 / 3, 12345, 255
+      printf "[%10.4e][%07o]\n", 12.5, 9
+    }
+expect:
+  stdout: |
+    [K][B]
+    [00000042][go    ]
+    [2.333][1.234e+04][0xff]
+    [1.2500e+01][0000011]
+  exit_code: 0

@@ -1,0 +1,18 @@
+description: tab-plus FS treats repeated tabs as one separator
+upstream:
+  suite: gawk
+  id: test/fstabplus.awk
+  ref: gawk-5.4.0
+covers:
+  - FS can use \t in a regexp string
+  - + repetition coalesces adjacent tab separators
+input:
+  program: |
+    BEGIN { FS = "\t+" }
+    { print NF ":" $1 ":" $2 }
+  stdin: |
+    left			right
+expect:
+  stdout: |
+    2:left:right
+  exit_code: 0

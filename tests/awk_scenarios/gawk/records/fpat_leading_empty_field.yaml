@@ -1,0 +1,24 @@
+description: a leading zero-length FPAT match becomes the first field
+upstream:
+  suite: gawk
+  id: test/fpat7.awk
+  ref: gawk-5.4.0
+covers:
+  - zero-length FPAT matches at the start of a record are retained
+  - later non-empty FPAT matches remain addressable by field number
+input:
+  program: |
+    BEGIN { FPAT = "[^,]*" }
+    {
+      print "NF=" NF
+      print "one=<" $1 ">"
+      print "two=<" $2 ">"
+    }
+  stdin: |
+    ,start
+expect:
+  stdout: |
+    NF=2
+    one=<>
+    two=<start>
+  exit_code: 0

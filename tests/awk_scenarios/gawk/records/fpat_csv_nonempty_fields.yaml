@@ -1,0 +1,28 @@
+description: FPAT extracts non-empty CSV-like fields and skips empty gaps
+upstream:
+  suite: gawk
+  id: test/fpat1.awk
+  ref: gawk-5.4.0
+covers:
+  - FPAT defines fields by matching field text instead of separators
+  - quoted text containing commas is kept as one field
+  - a field pattern that excludes empty strings skips empty CSV gaps
+input:
+  program: |
+    BEGIN { FPAT = "([^,]+)|(\"[^\"]+\")" }
+    {
+      print "first=" $1
+      print "third=" $3
+      for (i = 1; i <= NF; i++)
+        print i ":" $i
+    }
+  stdin: |
+    alpha,,"bravo,charlie",delta
+expect:
+  stdout: |
+    first=alpha
+    third=delta
+    1:alpha
+    2:"bravo,charlie"
+    3:delta
+  exit_code: 0

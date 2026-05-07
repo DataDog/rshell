@@ -1,0 +1,23 @@
+description: the in operator checks split array indexes without comparing values
+upstream:
+  suite: onetrueawk
+  id: testdir/t.intest
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "split creates numeric array indexes starting at one"
+  - "the in operator checks array membership by subscript"
+  - "missing numeric subscripts are reported absent"
+input:
+  program: |
+    {
+      n = split($0, words)
+      print $1, (($1 in words) ? "index" : "missing"), ((n in words) ? "last" : "no-last")
+    }
+  stdin: |
+    2 alpha beta
+    5 gamma
+expect:
+  stdout: |
+    2 index last
+    5 missing last
+  exit_code: 0

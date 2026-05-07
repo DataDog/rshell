@@ -1,0 +1,24 @@
+description: The fnmatch extension reports glob matches and nomatches
+upstream:
+  suite: gawk
+  id: test/fnmatch.awk
+  ref: gawk-5.4.0
+covers:
+  - "@load can load the fnmatch extension"
+  - fnmatch returns zero for a matching glob
+  - FNM_NOMATCH identifies a failed glob match
+input:
+  program: |
+    @load "fnmatch"
+
+    BEGIN {
+      print fnmatch("logs/*.txt", "logs/may.txt", 0)
+      print fnmatch("logs/*.txt", "logs/may.csv", 0) == FNM_NOMATCH
+      print ("PATHNAME" in FNM), ("CASEFOLD" in FNM)
+    }
+expect:
+  stdout: |
+    0
+    1
+    1 1
+  exit_code: 0

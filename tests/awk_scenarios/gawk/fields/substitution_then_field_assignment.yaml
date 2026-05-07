@@ -1,0 +1,27 @@
+description: Field assignment after gsub uses the refreshed fields and rebuilds $0
+upstream:
+  suite: gawk
+  id: test/fldchg.awk
+  ref: gawk-5.4.0
+covers:
+  - gsub changes $0 before subsequent field references are evaluated
+  - assigning to a numbered field uses the field value produced by the substitution
+  - rebuilding $0 after field assignment uses the current OFS
+input:
+  program: |
+    BEGIN { OFS = "/" }
+    {
+      gsub(/red/, "R")
+      print "after", $0
+      $3 = "[" $3 "]"
+      print "rebuilt", $0
+      print "fields", $1, $2, $3, $4
+    }
+  stdin: |
+    red redwood blue gold
+expect:
+  stdout: |
+    after/R Rwood blue gold
+    rebuilt/R/Rwood/[blue]/gold
+    fields/R/Rwood/[blue]/gold
+  exit_code: 0

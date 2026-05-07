@@ -1,0 +1,26 @@
+description: substr results can drive regex and string pattern filters
+upstream:
+  suite: onetrueawk
+  id: testdir/t.substr
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "substr can test prefixes of a field"
+  - "substr with length($field) can inspect the final character"
+  - "substr results can be matched against regexes"
+input:
+  program: |
+    substr($2, 1, 2) == "ab" { print "prefix", $2 }
+    substr($2, length($2)) !~ /[[:lower:]]/ { print "notlower", $2 }
+    substr($2, 2, 2) ~ /[0-9]/ { print "digit", $2 }
+  stdin: |
+    one abc
+    two road9
+    three a5c
+    four end!
+expect:
+  stdout: |
+    prefix abc
+    notlower road9
+    digit a5c
+    notlower end!
+  exit_code: 0

@@ -1,0 +1,19 @@
+description: NUL can be used as a field separator in awk strings
+upstream:
+  suite: gawk
+  id: test/fsnul1.awk
+  ref: gawk-5.4.0
+covers:
+  - FS can be set to a NUL character
+  - records containing NUL characters split into separate fields
+input:
+  program: |
+    BEGIN {
+      FS = "\0"
+      $0 = "left\0right"
+      print NF ":" $1 ":" $2
+    }
+expect:
+  stdout: |
+    2:left:right
+  exit_code: 0

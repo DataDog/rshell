@@ -1,0 +1,22 @@
+description: nested closures with alternatives evaluate without runaway matching
+upstream:
+  suite: gawk
+  id: test/dfastress.awk
+  ref: gawk-5.4.0
+covers:
+  - dynamic regexps can combine empty-prefix alternatives with repeated groups
+  - the regexp result is false when the required final alternative is absent
+input:
+  program: |
+    BEGIN {
+      r = "(^|;)*(red|blue)*(go|stop)(;|$)"
+      print ("redbluego;" ~ r)
+      print ("bluebluepause" ~ r)
+      print (";stop" ~ r)
+    }
+expect:
+  stdout: |
+    1
+    0
+    1
+  exit_code: 0

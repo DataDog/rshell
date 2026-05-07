@@ -1,0 +1,20 @@
+description: delete cannot target a function name
+upstream:
+  suite: gawk
+  id: test/delfunc.awk
+  ref: gawk-5.4.0
+covers:
+  - function names cannot be used as delete targets
+  - function-name misuse is reported as an error
+input:
+  program: |
+    function zap() {
+      delete zap
+    }
+
+    BEGIN { zap() }
+expect:
+  stderr_contains:
+    - function `zap'
+    - used as a variable or an array
+  exit_code: 1
