@@ -222,10 +222,10 @@ func TestAwkEmptyProgramIsNoOp(t *testing.T) {
 }
 
 func TestAwkIntegerNumberFormatting(t *testing.T) {
-	stdout, stderr, code := cmdRun(t, `awk 'BEGIN { print 999999, 1000000, 123456789, 1000000.5 }'`, t.TempDir())
+	stdout, stderr, code := cmdRun(t, `awk 'BEGIN { print 999999, 1000000, 123456789, 1000000.5; x=-0; print x, -1e-400 }'`, t.TempDir())
 	assert.Equal(t, 0, code)
 	assert.Equal(t, "", stderr)
-	assert.Equal(t, "999999 1000000 123456789 1e+06\n", stdout)
+	assert.Equal(t, "999999 1000000 123456789 1e+06\n0 0\n", stdout)
 }
 
 func TestAwkBeginOnlySkipsInputFiles(t *testing.T) {
