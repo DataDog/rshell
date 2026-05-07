@@ -47,7 +47,7 @@ Legend: ⏳ pending · 🔄 in progress · ✅ done · ⏭️ skipped (no high-v
 | 37 | cmd_separator | shell | 52 | 52 | ⏭️ | comprehensive: basic, control_flow, exit_code, var_sharing, with_ops categories |
 | 38 | globbing | shell | 52 | 52 | ⏭️ | comprehensive: bracket (range/set/negation), ?, *, quoting, for-loop iteration |
 | 39 | pipe | shell | 57 | 56 | ✅ | removed exact dupe (two_command_pipeline = advanced/two_cmd_pipeline) |
-| 40 | if_clause | shell | 71 | — | ⏳ | |
+| 40 | if_clause | shell | 71 | 71 | ⏭️ | comprehensive: basic, conditions (test/and/or/pipeline), edge_cases, exit_code, loop_interaction; mild top-level/basic overlap accepted |
 | 41 | ss | cmd | 75 | — | ⏳ | |
 | 42 | logic_ops | shell | 76 | — | ⏳ | |
 | 43 | pwd | cmd | 96 | — | ⏳ | |
@@ -75,7 +75,7 @@ Legend: ⏳ pending · 🔄 in progress · ✅ done · ⏭️ skipped (no high-v
 
 ## Summary
 
-- Targets processed: 39 / 64
+- Targets processed: 40 / 64
 - Tests added: 8 (scenario: 8, unit: 0)
 - Duplicate tests removed: 13 (scenario: 13, unit: 0)
 - Low-value tests removed: 0 (scenario: 0, unit: 0)
