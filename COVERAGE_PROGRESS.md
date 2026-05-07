@@ -32,7 +32,7 @@ Legend: ⏳ pending · 🔄 in progress · ✅ done · ⏭️ skipped (no high-v
 | 22 | comments | shell | 28 | 27 | ✅ | removed exact duplicate (backslash_no_continuation = backslash_ending) |
 | 23 | line_continuation | shell | 28 | 28 | ⏭️ | comprehensive: across/in operators (&&, \|\|, \|), in command/var name/assignment/value/quotes/heredoc/keywords, multiple consecutive |
 | 24 | while_clause | shell | 28 | 28 | ⏭️ | comprehensive: break/continue with args, nested, exit status, pipeline cond, multiline, brace, redirects, subtle bash-aligned cases |
-| 25 | uname | cmd | 32 | — | ⏳ | recently audited (Go tests cover surface) |
+| 25 | uname | cmd | 32 | 32 | ⏭️ | recently audited in commit 9b3f876a; 29 Go tests cover the full surface |
 | 26 | brace_group | shell | 35 | — | ⏳ | |
 | 27 | field_splitting | shell | 37 | — | ⏳ | |
 | 28 | environment | shell | 41 | — | ⏳ | |
@@ -75,7 +75,7 @@ Legend: ⏳ pending · 🔄 in progress · ✅ done · ⏭️ skipped (no high-v
 
 ## Summary
 
-- Targets processed: 24 / 64
+- Targets processed: 25 / 64
 - Tests added: 8 (scenario: 8, unit: 0)
 - Duplicate tests removed: 5 (scenario: 5, unit: 0)
 - Low-value tests removed: 0 (scenario: 0, unit: 0)
