@@ -9,7 +9,7 @@ Legend: ⏳ pending · 🔄 in progress · ✅ done · ⏭️ skipped (no high-v
 | #  | Target              | Type  | Tests (before) | Tests (after) | Status | Notes |
 |---:|---------------------|-------|---------------:|--------------:|--------|-------|
 | 1  | readonly            | shell |              8 | 8             | ⏭️     | already comprehensive — 8 scenarios cover every variant of intentionally-blocked keyword |
-| 2  | case_clause         | shell |             10 | —             | ⏳     |       |
+| 2  | case_clause         | shell |             10 | 10            | ⏭️     | already comprehensive — 10 scenarios cover every pattern variant of intentionally-blocked syntax |
 | 3  | errors              | shell |             10 | —             | ⏳     |       |
 | 4  | function            | shell |             10 | —             | ⏳     |       |
 | 5  | empty_script        | shell |             11 | —             | ⏳     |       |
@@ -75,7 +75,7 @@ Legend: ⏳ pending · 🔄 in progress · ✅ done · ⏭️ skipped (no high-v
 
 ## Summary
 
-- Targets processed: 1 / 64
+- Targets processed: 2 / 64
 - Tests added: 0 (scenario: 0, unit: 0)
 - Duplicate tests removed: 0 (scenario: 0, unit: 0)
 - Low-value tests removed: 0 (scenario: 0, unit: 0)
