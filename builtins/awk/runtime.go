@@ -254,6 +254,7 @@ func (rt *runtime) runFile(ctx context.Context, file string) error {
 	rt.filename = file
 	rt.fnr = 0
 	sc := bufio.NewScanner(rc)
+	sc.Split(scanAwkRecord)
 	sc.Buffer(make([]byte, 4096), MaxRecordBytes+1)
 	for sc.Scan() {
 		if err := ctx.Err(); err != nil {
@@ -276,6 +277,21 @@ func (rt *runtime) runFile(ctx context.Context, file string) error {
 		return err
 	}
 	return nil
+}
+
+func scanAwkRecord(data []byte, atEOF bool) (int, []byte, error) {
+	for i, b := range data {
+		if b == '\n' {
+			return i + 1, data[:i], nil
+		}
+	}
+	if atEOF {
+		if len(data) == 0 {
+			return 0, nil, nil
+		}
+		return len(data), data, nil
+	}
+	return 0, nil, nil
 }
 
 func (rt *runtime) openInput(ctx context.Context, file string) (io.ReadCloser, error) {
@@ -341,7 +357,7 @@ func (rt *runtime) setRecord(rec string) error {
 	rt.record = rec
 	fs := rt.getVar("FS").String()
 	if fs == " " {
-		rt.fields = strings.Fields(rec)
+		rt.fields = splitAwkWhitespaceFields(rec)
 	} else {
 		if err := validateFS(fs); err != nil {
 			return err
@@ -356,6 +372,27 @@ func (rt *runtime) setRecord(rec string) error {
 		return fmt.Errorf("record has too many fields")
 	}
 	return nil
+}
+
+func splitAwkWhitespaceFields(rec string) []string {
+	var fields []string
+	for i := 0; i < len(rec); {
+		for i < len(rec) && isAwkFieldBlank(rec[i]) {
+			i++
+		}
+		start := i
+		for i < len(rec) && !isAwkFieldBlank(rec[i]) {
+			i++
+		}
+		if start < i {
+			fields = append(fields, rec[start:i])
+		}
+	}
+	return fields
+}
+
+func isAwkFieldBlank(b byte) bool {
+	return b == ' ' || b == '\t' || b == '\n'
 }
 
 func (rt *runtime) field(n int) value {
