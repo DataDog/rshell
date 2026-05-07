@@ -1,4 +1,4 @@
-.PHONY: build fmt test test_all test_against_bash test_awk_rewritten test_awk_rewrite_map compliance
+.PHONY: build fmt test test_all test_against_bash test_awk_rewritten compliance
 
 build:
 	go build -o rshell ./cmd/rshell
@@ -17,9 +17,6 @@ test_against_bash:
 
 test_awk_rewritten: build
 	RSHELL_BIN=./rshell AWK_UNDER_TEST=tools/awk-harness/rshell-awk tools/awk-harness/run.sh rewritten
-
-test_awk_rewrite_map:
-	tools/awk-harness/run.sh check-rewrite-map
 
 compliance:
 	RSHELL_COMPLIANCE_TEST=1 go test -v ./tests/ -run TestCompliance -count=1

@@ -15,21 +15,14 @@ awk_harness_default_platform() {
 
 AWK_HARNESS_PLATFORM="${AWK_HARNESS_PLATFORM:-$(awk_harness_default_platform)}"
 AWK_HARNESS_CACHE="${AWK_HARNESS_CACHE:-$REPO_ROOT/.superset/awk-harness/$AWK_HARNESS_PLATFORM}"
-AWK_HARNESS_RESULTS="${AWK_HARNESS_RESULTS:-$AWK_HARNESS_CACHE/results}"
-AWK_HARNESS_BOOTSTRAP="${AWK_HARNESS_BOOTSTRAP:-}"
 AWK_HARNESS_TIMEOUT="${AWK_HARNESS_TIMEOUT:-}"
 
-ONETRUEAWK_REPO="${ONETRUEAWK_REPO:-https://github.com/onetrueawk/awk.git}"
-ONETRUEAWK_REF="${ONETRUEAWK_REF:-3c2e168a8f794ed61c93131b05fb998d79d155df}"
-
 GAWK_VERSION="${GAWK_VERSION:-5.4.0}"
-GAWK_REPO="${GAWK_REPO:-https://git.savannah.gnu.org/git/gawk.git}"
-GAWK_REF="${GAWK_REF:-gawk-$GAWK_VERSION}"
 GAWK_RELEASE_URL="${GAWK_RELEASE_URL:-https://ftp.gnu.org/gnu/gawk/gawk-$GAWK_VERSION.tar.gz}"
 GAWK_ORACLE_PREFIX="${GAWK_ORACLE_PREFIX:-$AWK_HARNESS_CACHE/oracle/gawk-$GAWK_VERSION}"
 GAWK_ORACLE_BIN="$GAWK_ORACLE_PREFIX/bin/gawk"
 
-mkdir -p "$AWK_HARNESS_CACHE" "$AWK_HARNESS_RESULTS"
+mkdir -p "$AWK_HARNESS_CACHE"
 
 log() {
 	printf '[awk-harness] %s\n' "$*" >&2
@@ -51,37 +44,7 @@ abs_path() {
 	esac
 }
 
-fetch_git_repo() {
-	local name="$1"
-	local repo="$2"
-	local ref="$3"
-	local target="$4"
-
-	mkdir -p "$(dirname "$target")"
-
-	if [ -d "$target/.git" ]; then
-		log "updating $name in $target"
-		git -C "$target" remote set-url origin "$repo"
-	else
-		if [ -e "$target" ]; then
-			rm -rf "$target"
-		fi
-		log "cloning $name from $repo into $target"
-		git clone --no-checkout "$repo" "$target"
-	fi
-
-	log "fetching $name ref $ref"
-	git -C "$target" fetch --depth 1 origin "$ref"
-	git -C "$target" checkout --detach FETCH_HEAD >/dev/null
-	git -C "$target" rev-parse HEAD
-}
-
 resolve_awk_under_test() {
-	if [ -n "$AWK_HARNESS_BOOTSTRAP" ]; then
-		printf '\n'
-		return 0
-	fi
-
 	if [ -z "${AWK_UNDER_TEST:-}" ]; then
 		die "AWK_UNDER_TEST must point to the awk binary under test"
 	fi
@@ -159,29 +122,4 @@ resolve_gawk_oracle() {
 	fi
 
 	die "GNU awk $GAWK_VERSION is required; run tools/awk-harness/run.sh install-gawk or set GAWK_ORACLE=/path/to/gawk-$GAWK_VERSION"
-}
-
-write_json_summary() {
-	local path="$1"
-	local suite="$2"
-	local upstream="$3"
-	local ref="$4"
-	local commit="$5"
-	local total="$6"
-	local passed="$7"
-	local failed="$8"
-	local skipped="$9"
-
-	cat >"$path" <<JSON
-{
-  "suite": "$suite",
-  "upstream": "$upstream",
-  "ref": "$ref",
-  "commit": "$commit",
-  "total": $total,
-  "passed": $passed,
-  "failed": $failed,
-  "skipped": $skipped
-}
-JSON
 }

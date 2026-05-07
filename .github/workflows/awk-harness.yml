@@ -1,4 +1,4 @@
-name: AWK External Harness
+name: AWK Scenario Harness
 
 on:
   push:
@@ -10,8 +10,8 @@ permissions:
   contents: read
 
 jobs:
-  bootstrap:
-    name: Fetch external AWK tests
+  rewritten:
+    name: Run rewritten AWK scenarios
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -20,18 +20,10 @@ jobs:
         run: tools/awk-harness/run.sh install-gawk
       - name: Build rshell
         run: make build
+      - name: Check rewritten AWK scenario metadata
+        run: go test ./tests -run TestAwkScenarioMetadata -count=1
       - name: Run rewritten AWK scenarios against rshell awk
         env:
           RSHELL_BIN: ./rshell
           AWK_UNDER_TEST: tools/awk-harness/rshell-awk
         run: tools/awk-harness/run.sh rewritten
-      - name: Fetch One True Awk tests
-        env:
-          AWK_HARNESS_BOOTSTRAP: "1"
-        run: tools/awk-harness/run.sh onetrueawk
-      - name: Fetch gawk tests matching pinned oracle
-        env:
-          AWK_HARNESS_BOOTSTRAP: "1"
-        run: tools/awk-harness/run.sh gawk
-      - name: Check AWK rewrite map coverage
-        run: tools/awk-harness/run.sh check-rewrite-map
