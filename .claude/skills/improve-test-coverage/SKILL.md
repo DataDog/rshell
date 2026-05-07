@@ -26,24 +26,43 @@ You MUST follow this execution protocol. Skipping steps causes missed coverage g
 
 Your very first action — before reading ANY files, before writing ANY code — is to create the task list. Call TaskCreate for each step:
 
-1. "Step 1: Enumerate all targets"
-2. "Step 2: Download reference test suites"
+1. "Step 1: Enumerate all targets (or resume from COVERAGE_PROGRESS.md)"
+2. "Step 2: Initialize COVERAGE_PROGRESS.md"
+3. "Step 3: Download reference test suites"
 
-Then for each target discovered in Step 1, you will dynamically create tasks for Steps 3–11 (see "Per-target loop" below).
+Then for each target discovered in Step 1, you will dynamically create tasks for the per-target loop (Steps 4–11). After all targets are processed, two finalization tasks run once:
+
+- "Step 12: Post final coverage report to PR"
+- "Step 13: Remove COVERAGE_PROGRESS.md from the PR"
 
 ### 2. Execution order
 
-The workflow has two phases:
+The workflow has three phases:
 
-**Phase A — Setup (once):** Step 1 → Step 2
+**Phase A — Setup (once):** Step 1 → Step 2 → Step 3
 
-**Phase B — Per-target loop:** Process targets ONE AT A TIME, in sequence. For each target, run Steps 3 → 4 → 5 → 6 → 7 → 8 → 9 → 10 sequentially. Complete ALL steps for one target before starting the next. Do NOT process multiple targets in parallel.
+**Phase B — Per-target loop:** Process targets ONE AT A TIME, in sequence. For each target, run Steps 4 → 5 → 6 → 7 → 8 → 9 → 10 → 11 sequentially. Complete ALL steps for one target before starting the next. Do NOT process multiple targets in parallel.
+
+**Phase C — Finalization (once, after all targets):** Step 12 → Step 13.
 
 Before starting step N, call TaskList and verify step N-1 is `completed`. Set step N to `in_progress`.
 
 Before marking any step as `completed`:
 - Re-read the step description and verify every sub-bullet is satisfied
 - If any sub-bullet is not done, keep working — do NOT mark it completed
+
+### 3. Progress tracking and resumability
+
+`COVERAGE_PROGRESS.md` (at the repo root) is the durable progress tracker for this skill. It is committed to the branch on every per-target iteration so a crashed/interrupted run can be resumed cleanly. It is **deleted** in the final commit of Phase C — it is a working document, not part of the merged change set.
+
+**On every invocation of this skill, the very first thing you do (before TaskCreate) is check whether `COVERAGE_PROGRESS.md` exists at the repo root.**
+
+```bash
+test -f COVERAGE_PROGRESS.md && echo "RESUME" || echo "FRESH"
+```
+
+- If it exists → **resume mode**: read it, identify the next ⏳ pending target, and skip Step 1's enumeration. Jump straight to Step 2 (verifying/refreshing the file) and Step 3 (downloads), then resume the per-target loop at the first pending row.
+- If it does not exist → **fresh mode**: proceed normally with Step 1.
 
 ---
 
@@ -84,9 +103,11 @@ Three external test suites serve as coverage references:
 
 ## Phase A — Setup
 
-### Step 1: Enumerate all targets
+### Step 1: Enumerate all targets (or resume)
 
-Based on the argument (`$ARGUMENTS`), build the ordered list of targets to process:
+**Resume short-circuit:** if `COVERAGE_PROGRESS.md` already exists, do NOT re-enumerate. Parse the existing target table from the file and use that as the authoritative ordered target list. Skip the rest of this step and move to Step 2.
+
+Otherwise (fresh run), based on the argument (`$ARGUMENTS`), build the ordered list of targets to process:
 
 - **A specific command** (e.g. `cat`, `head`, `grep`): The target list is just that one command. Verify it exists as an implemented builtin by checking `interp/builtins/`.
 - **A shell feature** (e.g. `var_expand`, `globbing`, `pipe`): The target list is just that one feature. Verify the directory exists in `tests/scenarios/shell/`.
@@ -112,18 +133,64 @@ Log the full target list as a table (do NOT ask for confirmation — always proc
 | 1 | ... | cmd/shell | N | GNU+uutils / yash |
 
 Then immediately create tasks for the per-target loop. For each target, call TaskCreate for:
-- "Step 3: Audit existing coverage — <target>"
-- "Step 4: Identify coverage gaps — <target>"
-- "Step 5: Write new scenario tests — <target>"
-- "Step 6: Check for duplicate tests — <target>"
-- "Step 7: Review skip_assert_against_bash flags — <target>"
-- "Step 8: Review unnecessary Windows-specific assertions — <target>"
-- "Step 9: Fix failing tests — <target>"
-- "Step 10: Commit, push, and post report — <target>"
+- "Step 4: Audit existing coverage — <target>"
+- "Step 5: Identify coverage gaps — <target>"
+- "Step 6: Write new scenario tests — <target>"
+- "Step 7: Check for duplicate tests — <target>"
+- "Step 8: Review skip_assert_against_bash flags — <target>"
+- "Step 9: Review unnecessary Windows-specific assertions — <target>"
+- "Step 10: Fix failing tests — <target>"
+- "Step 11: Commit, push, update COVERAGE_PROGRESS.md, post per-target report — <target>"
 
-Set up blockedBy dependencies so each target's Step 3 is blocked by the previous target's Step 10 (and by Step 2 for the first target).
+Set up blockedBy dependencies so each target's Step 4 is blocked by the previous target's Step 11 (and by Step 3 for the first target). Step 12 is blocked by the final target's Step 11.
 
-### Step 2: Download reference test suites
+### Step 2: Initialize COVERAGE_PROGRESS.md
+
+Create or refresh `COVERAGE_PROGRESS.md` at the repo root. This file is committed to the branch and used to resume an interrupted run. It is removed in the finalization phase.
+
+If you are resuming (the file already existed), validate that the table contents still match the present targets and update only the header date if needed — do NOT overwrite per-target status from a fresh enumeration.
+
+If you are starting fresh, write the file using this template:
+
+```markdown
+# Coverage Improvement Progress
+
+Tracking progress of `/improve-test-coverage <ARGUMENTS>` run started YYYY-MM-DD.
+
+## Target list (sorted by current test count, ascending)
+
+Legend: ⏳ pending · 🔄 in progress · ✅ done · ⏭️ skipped (no high-value gaps)
+
+| # | Target | Type | Tests (before) | Tests (after) | Status | Notes |
+|---|--------|------|---------------:|--------------:|--------|-------|
+| 1 | <target> | cmd/shell | <N> | — | ⏳ | |
+| ... | ... | ... | ... | ... | ⏳ | |
+
+## Summary
+
+- Targets processed: 0 / <total>
+- Total tests added: 0
+- Duplicate tests removed: 0
+- `skip_assert_against_bash` flags removed: 0
+- Windows-specific assertions removed: 0
+```
+
+Then commit the initial state to the branch (subsequent updates are folded into each target's commit in Step 11):
+
+```bash
+git add COVERAGE_PROGRESS.md
+git commit -m "chore: initialize COVERAGE_PROGRESS.md for /improve-test-coverage run
+
+Tracking file for /improve-test-coverage. This file is committed during
+the run for resumability and removed in the finalization commit.
+
+Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>"
+git push || git push -u origin "$(git branch --show-current)"
+```
+
+If resuming, no commit is needed at this step — the file is already on the branch.
+
+### Step 3: Download reference test suites
 
 Download all reference suites once, before starting the per-target loop.
 
@@ -163,9 +230,11 @@ Only download the suites needed for the targets in the list. If all targets are 
 
 ## Phase B — Per-target loop
 
-For each target in the ordered list from Step 1, execute Steps 3–11 sequentially. Replace `<target>` below with the current command or shell feature name.
+For each target in the ordered list from Step 1, execute Steps 4–11 sequentially. Replace `<target>` below with the current command or shell feature name.
 
-### Step 3: Audit existing coverage
+**Before starting Step 4 for a target**, mark its row in `COVERAGE_PROGRESS.md` as `🔄` (in progress). This change is folded into the target's Step 11 commit; no separate commit is required.
+
+### Step 4: Audit existing coverage
 
 Read all existing scenario tests for the current target:
 
@@ -190,15 +259,15 @@ find interp/builtins/ -path "*<target>*_test.go" | sort
 find interp/ -name "builtin_<target>*_test.go" | sort
 ```
 
-Read the relevant reference test files for this specific target (from the suites downloaded in Step 2):
+Read the relevant reference test files for this specific target (from the suites downloaded in Step 3):
 - For commands: read GNU coreutils and uutils test files for `<target>`, plus skim yash for integration patterns
 - For shell features: read the relevant yash test files
 
 Build a summary table of what is currently tested.
 
-### Step 4: Identify coverage gaps
+### Step 5: Identify coverage gaps
 
-Cross-reference the reference test suites against existing coverage (Step 3) to find gaps.
+Cross-reference the reference test suites against existing coverage (Step 4) to find gaps.
 
 #### Gap categories to look for
 
@@ -248,9 +317,9 @@ Rank surviving gaps. Only **P1/P2** are eligible by default:
 2. **P2 — Important edge case**: real-world edge case (empty input, stdin pipe, multi-file) for a load-bearing flag.
 3. **P3/P4 — Nice-to-have / speculative**: **default skip.**
 
-Log the analysis as a table with: gap, priority, regression-impact sentence, decision (add/skip + reason), and whether it needs `skip_assert_against_bash: true`. An empty "add" list is a valid outcome — proceed to Step 6.
+Log the analysis as a table with: gap, priority, regression-impact sentence, decision (add/skip + reason), and whether it needs `skip_assert_against_bash: true`. An empty "add" list is a valid outcome — proceed to Step 7.
 
-### Step 5: Write new scenario tests
+### Step 6: Write new scenario tests
 
 Only write tests for P1/P2 gaps marked "add". Adding zero tests is valid. Before writing each one, re-grep `tests/scenarios/cmd/<target>/` and `interp/builtins/` to confirm it isn't a duplicate.
 
@@ -318,9 +387,9 @@ Always verify that our shell output matches bash for tests without `skip_assert_
 
 #### Batch size
 
-Write tests in batches of 10-15 files, then run verification (Step 9) before writing more. This catches format errors early.
+Write tests in batches of 10-15 files, then run verification (Step 10) before writing more. This catches format errors early.
 
-### Step 6: Check for duplicate tests
+### Step 7: Check for duplicate tests
 
 Scan all scenario tests for the target (including newly written ones) and identify duplicates — tests that exercise the same behavior with the same or nearly identical scripts and expected output.
 
@@ -345,7 +414,7 @@ For each duplicate found:
 
 If no duplicates are found, note that and move on.
 
-### Step 7: Review skip_assert_against_bash flags
+### Step 8: Review skip_assert_against_bash flags
 
 Scan all scenario tests for the target that have `skip_assert_against_bash: true` and evaluate whether the flag is still needed.
 
@@ -378,7 +447,7 @@ For each test where the flag is removed, verify it passes against bash:
 RSHELL_BASH_TEST=1 go test ./tests/ -run "TestShellScenariosAgainstBash/<scenario_name>" -timeout 120s -v
 ```
 
-### Step 8: Review unnecessary Windows-specific assertions
+### Step 9: Review unnecessary Windows-specific assertions
 
 Scan all scenario tests for the target that use Windows-specific assertion fields and evaluate whether they are actually needed.
 
@@ -406,7 +475,7 @@ For each test with Windows-specific assertions:
 
 For each unnecessary Windows-specific assertion removed, the non-Windows assertion serves as the fallback and will be used on all platforms.
 
-### Step 9: Fix failing tests
+### Step 10: Fix failing tests
 
 Run the `/fix-ci-tests` skill to verify all tests pass and fix any failures. This will:
 - Run scenario tests and Go tests
@@ -416,24 +485,37 @@ Run the `/fix-ci-tests` skill to verify all tests pass and fix any failures. Thi
 
 If `skip_assert_against_bash: true` is added to any test, ensure a YAML comment explains why.
 
-### Step 10: Commit, push, and post report
+### Step 11: Commit, push, update COVERAGE_PROGRESS.md, post per-target report
 
-After all tests pass for the current target, commit, push, and post a coverage report.
+After all tests pass for the current target, update the progress tracker, commit everything together, push, and post a per-target report.
 
-#### 1. Commit and push
+#### 1. Update COVERAGE_PROGRESS.md
+
+Edit the row for the current target:
+- Set `Tests (after)` to the new count
+- Set `Status` to ✅ if work was done, or ⏭️ if no high-value gaps existed (no tests were added/changed)
+- Add a one-line note in the `Notes` column summarizing the outcome (e.g. "added 4 P1 tests, removed 1 duplicate" or "no high-value gaps — Go tests cover the surface")
+
+Update the `## Summary` block at the bottom:
+- Increment `Targets processed`
+- Add this target's deltas to the totals (tests added, duplicates removed, skip flags removed, Windows-specific assertions removed)
+
+#### 2. Commit and push
+
+The commit must include the test scenario changes **and** the COVERAGE_PROGRESS.md update in a single commit. **One commit per target** — do not bundle multiple targets into one commit.
 
 ```bash
-# Stage all new and modified test scenario files
-git add tests/scenarios/
+# Stage scenario test changes plus the progress tracker
+git add tests/scenarios/ COVERAGE_PROGRESS.md
 
-# Commit with a descriptive message
+# (If the target had no test changes, still commit the progress update alone.)
 git commit -m "test: improve coverage for <target>
 
 Add scenario tests to improve coverage. See PR comment for full report.
+Update COVERAGE_PROGRESS.md with this target's results.
 
 Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>"
 
-# Push to the current branch
 git push
 ```
 
@@ -443,7 +525,7 @@ If the push fails (e.g. no upstream branch), set the upstream:
 git push -u origin "$(git branch --show-current)"
 ```
 
-#### 2. Determine the PR number
+#### 3. Determine the PR number
 
 ```bash
 gh pr view --json number --jq '.number'
@@ -451,7 +533,7 @@ gh pr view --json number --jq '.number'
 
 If no PR exists for the current branch, skip posting and print the report to the console instead.
 
-#### 3. Build and post the report
+#### 4. Build and post the per-target report
 
 Compose the report and post it as a PR comment:
 
@@ -500,6 +582,70 @@ EOF
 
 If posting fails (e.g. permissions), print the report to the console as a fallback.
 
-#### 4. Proceed to next target
+#### 5. Proceed to next target
 
-After posting, move to the next target in the list and start its Step 3. Continue until all targets are processed.
+After posting, move to the next target in the list and start its Step 4. Continue until all targets are processed, then move to Phase C.
+
+---
+
+## Phase C — Finalization
+
+Phase C runs once, after every target in the list has reached Step 11. It posts the consolidated report and removes the progress tracker from the branch.
+
+### Step 12: Post final coverage report to PR
+
+Read the now-fully-populated `COVERAGE_PROGRESS.md` and post a single PR comment that embeds it as the final summary.
+
+```bash
+PR_NUMBER=$(gh pr view --json number --jq '.number')
+```
+
+If no PR exists for the current branch, skip posting and print the report to the console instead.
+
+The comment body has this structure (the entire `COVERAGE_PROGRESS.md` content is included verbatim inside the fenced section):
+
+```markdown
+## Final Coverage Improvement Report
+
+This run of `/improve-test-coverage` is complete. Per-target detail comments are posted above; the table below is the consolidated tracker that drove this run.
+
+<embedded contents of COVERAGE_PROGRESS.md, verbatim>
+
+---
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+```
+
+Post it:
+
+```bash
+gh pr comment "$PR_NUMBER" --body-file <(cat <<EOF
+## Final Coverage Improvement Report
+
+This run of \`/improve-test-coverage\` is complete. Per-target detail comments are posted above; the table below is the consolidated tracker that drove this run.
+
+$(cat COVERAGE_PROGRESS.md)
+
+---
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+EOF
+)
+```
+
+If posting fails, print the report to the console.
+
+### Step 13: Remove COVERAGE_PROGRESS.md from the PR
+
+`COVERAGE_PROGRESS.md` is a working document for the run, not part of the merged change set. Remove it in a final commit on the same branch.
+
+```bash
+git rm COVERAGE_PROGRESS.md
+git commit -m "chore: remove COVERAGE_PROGRESS.md after coverage run
+
+Final coverage report has been posted as a PR comment. The tracker file
+is no longer needed on the branch.
+
+Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>"
+git push
+```
+
+After this commit lands, the PR no longer carries the tracker file but the final report comment preserves the full progress history.
