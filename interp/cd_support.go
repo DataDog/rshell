@@ -50,6 +50,13 @@ func (r *Runner) changeDir(absDir string) error {
 	if !info.IsDir() {
 		return &os.PathError{Op: "chdir", Path: absDir, Err: errNotDirectory}
 	}
+	// bash's cd refuses to enter a directory the user lacks search
+	// (execute) permission on. Stat alone does not check this, so verify
+	// access through the sandbox before committing the change. The
+	// 0x01 mode is the same execute bit accepted by AccessFile callers.
+	if err := r.sandbox.Access(cleaned, r.Dir, 0x01); err != nil {
+		return err
+	}
 
 	oldDir := r.Dir
 	r.Dir = cleaned

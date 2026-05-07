@@ -623,7 +623,15 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 				CommandAllowed: func(n string) bool {
 					return r.allowAllCommands || r.allowedCommands[n]
 				},
-				ChangeDir:    r.changeDir,
+				// ChangeDir is intentionally nil for RunCommand children
+				// (find -exec, find -execdir, xargs). bash forks a child
+				// process for each invocation, so cd inside such a child
+				// can never propagate to the parent shell. We model the
+				// same isolation by making cd unavailable in this path —
+				// the cd handler returns "cd: not supported in this
+				// runner" rather than silently mutating the top-level
+				// r.Dir, which would have leaked the child's directory
+				// change back into the caller (the bug Codex flagged).
 				LookupEnvVar: r.lookupEnvVar,
 				RunCommand: func(ctx context.Context, dir string, name string, args []string) (uint8, error) {
 					// Inherit the parent's overridden stdin so grandchildren

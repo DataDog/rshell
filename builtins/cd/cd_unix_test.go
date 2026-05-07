@@ -123,6 +123,27 @@ func TestCdPhysicalSelfReferentialSymlink(t *testing.T) {
 		"expected loop or stat error, got %q", stderr)
 }
 
+// --- A directory without search/execute permission is rejected ---
+
+// TestCdNoSearchPermissionRejected verifies cd refuses a directory the
+// user lacks the execute (search) bit on, matching bash. Without this
+// check, sandbox.Stat alone would let cd commit even though the
+// resulting working directory is unusable for any subsequent operation.
+func TestCdNoSearchPermissionRejected(t *testing.T) {
+	if os.Getuid() == 0 {
+		t.Skip("root bypasses permission bits — test exercises the non-root path")
+	}
+	root := canonicalTempDir(t)
+	nox := filepath.Join(root, "nox")
+	require.NoError(t, os.Mkdir(nox, 0o644)) // rw-r--r-- — no search bit
+	t.Cleanup(func() { _ = os.Chmod(nox, 0o755) })
+
+	_, stderr, code := cdRunFromAllowedRoot(t, "cd "+nox, root, root)
+	assert.Equal(t, 1, code)
+	assert.Contains(t, stderr, "cd:")
+	assert.Contains(t, stderr, "permission denied")
+}
+
 // --- Dangling symlink (target does not exist) is rejected ---
 
 func TestCdToDanglingSymlinkRejected(t *testing.T) {
