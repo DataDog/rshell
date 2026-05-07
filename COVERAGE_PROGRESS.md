@@ -69,13 +69,13 @@ Legend: ⏳ pending · 🔄 in progress · ✅ done · ⏭️ skipped (no high-v
 | 59 | tail                | cmd   |            108 | 108           | ⏭️     | already comprehensive — 29 Go tests + 79 scenarios cover -n/-c, +N offset, -f reject, multi-file, stdin |
 | 60 | for_clause          | shell |            137 | 137           | ⏭️     | already comprehensive across 6 categories — covers iter forms, $@, $*, glob, cmd-subst, break/continue |
 | 61 | printf              | cmd   |            149 | 149           | ⏭️     | already comprehensive — 26 Go tests + 123 scenarios cover all conversion specifiers and edge cases |
-| 62 | sed                 | cmd   |            170 | —             | ⏳     |       |
+| 62 | sed                 | cmd   |            170 | 170           | ⏭️     | already comprehensive — 27 Go tests + 143 scenarios cover s///, address ranges, p/d/n/y/=, flags |
 | 63 | var_expand          | shell |            172 | —             | ⏳     |       |
 | 64 | find                | cmd   |            249 | —             | ⏳     |       |
 
 ## Summary
 
-- Targets processed: 61 / 64
+- Targets processed: 62 / 64
 - Tests added: 0 (scenario: 0, unit: 0)
 - Duplicate tests removed: 0 (scenario: 0, unit: 0)
 - Low-value tests removed: 0 (scenario: 0, unit: 0)
