@@ -52,7 +52,7 @@ Legend: ⏳ pending · 🔄 in progress · ✅ done · ⏭️ skipped (no high-v
 | 42 | logic_ops | shell | 76 | 76 | ⏭️ | comprehensive: and/or basic, chains, exit_code, mixed and-or, output, var_interact |
 | 43 | pwd | cmd | 96 | 96 | ⏭️ | 17 scenarios + 79 Go tests cover -L/-P, last-wins, hardening, errors, help |
 | 44 | ping | cmd | 97 | 97 | ⏭️ | 33 scenarios + 64 Go tests cover blocked-flag rejection, address rejection (broadcast/multicast/unspec), flag clamping, IPv4/6 selection |
-| 45 | ls | cmd | 103 | — | ⏳ | |
+| 45 | ls | cmd | 103 | 103 | ⏭️ | 60 scenarios + 43 Go tests cover flags (-a/-A/-d/-F/-l/-h/-r/-R/-S/-t), long-format, pagination, sandbox |
 | 46 | du | cmd | 107 | — | ⏳ | |
 | 47 | echo | cmd | 127 | — | ⏳ | |
 | 48 | wc | cmd | 134 | — | ⏳ | |
@@ -75,7 +75,7 @@ Legend: ⏳ pending · 🔄 in progress · ✅ done · ⏭️ skipped (no high-v
 
 ## Summary
 
-- Targets processed: 44 / 64
+- Targets processed: 45 / 64
 - Tests added: 8 (scenario: 8, unit: 0)
 - Duplicate tests removed: 13 (scenario: 13, unit: 0)
 - Low-value tests removed: 0 (scenario: 0, unit: 0)
