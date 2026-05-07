@@ -1,0 +1,16 @@
+description: awk supports parenthesized printf args, empty if bodies, and oversized substr lengths.
+input:
+  script: |+
+    awk 'BEGIN {
+      if (0);
+      print "x"
+      printf("%s:%d\n", "y", 2)
+      print substr("abc", 1, 1e20)
+    }'
+expect:
+  stdout: |+
+    x
+    y:2
+    abc
+  stderr: |+
+  exit_code: 0

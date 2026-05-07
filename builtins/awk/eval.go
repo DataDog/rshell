@@ -77,6 +77,26 @@ func (rt *runtime) execStatements(stmts []stmt) error {
 	return nil
 }
 
+func substrStart(n float64, length int) int {
+	if n <= 1 || math.IsNaN(n) {
+		return 0
+	}
+	if n > float64(length) {
+		return length
+	}
+	return int(n) - 1
+}
+
+func substrEnd(start, length int, count float64) int {
+	if count <= 0 || math.IsNaN(count) {
+		return start
+	}
+	if count >= float64(length-start) {
+		return length
+	}
+	return start + int(count)
+}
+
 func (rt *runtime) printValues(vals []value) error {
 	parts := make([]string, len(vals))
 	for i, v := range vals {
@@ -168,22 +188,13 @@ func (rt *runtime) evalCall(e *callExpr) (value, error) {
 			return value{}, fmt.Errorf("substr expects 2 or 3 arguments")
 		}
 		s := []rune(args[0].String())
-		start := int(args[1].Number()) - 1
-		if start < 0 {
-			start = 0
-		}
+		start := substrStart(args[1].Number(), len(s))
 		if start >= len(s) {
 			return stringValue(""), nil
 		}
 		end := len(s)
 		if len(args) == 3 {
-			count := int(args[2].Number())
-			if count <= 0 {
-				return stringValue(""), nil
-			}
-			if start+count < end {
-				end = start + count
-			}
+			end = substrEnd(start, len(s), args[2].Number())
 		}
 		return stringValue(string(s[start:end])), nil
 	case "index":

@@ -215,7 +215,10 @@ func (p *parser) parseIf() (stmt, error) {
 }
 
 func (p *parser) parseStatementGroup() ([]stmt, error) {
-	p.skipSeparators()
+	p.skipNewlines()
+	if p.match(tokSemicolon) {
+		return nil, nil
+	}
 	if p.match(tokLBrace) {
 		return p.parseStatementList()
 	}
@@ -255,7 +258,11 @@ func (p *parser) parsePrint() (stmt, error) {
 func (p *parser) parsePrintf() (stmt, error) {
 	p.advance()
 	ps := &printfStmt{}
-	if p.at(tokRBrace) || p.at(tokEOF) || isSeparator(p.cur().kind) {
+	parenthesized := p.match(tokLParen)
+	if parenthesized {
+		p.skipSeparators()
+	}
+	if p.at(tokRBrace) || p.at(tokEOF) || isSeparator(p.cur().kind) || p.at(tokRParen) {
 		return nil, fmt.Errorf("printf requires a format expression")
 	}
 	old := p.stopPrintRedirect
@@ -270,12 +277,29 @@ func (p *parser) parsePrintf() (stmt, error) {
 		if p.at(tokGT) || p.at(tokAppend) || p.at(tokPipe) {
 			return nil, fmt.Errorf("print redirection and command pipes are not supported")
 		}
+		if parenthesized {
+			p.skipSeparators()
+			if p.match(tokRParen) {
+				break
+			}
+			if !p.match(tokComma) {
+				return nil, fmt.Errorf("expected , or ) in printf")
+			}
+			p.skipSeparators()
+			continue
+		}
 		if !p.match(tokComma) {
 			break
 		}
 		p.skipSeparators()
 	}
 	return ps, nil
+}
+
+func (p *parser) skipNewlines() {
+	for p.at(tokNewline) {
+		p.advance()
+	}
 }
 
 func (p *parser) parseExpression(minPrec int) (expr, error) {
