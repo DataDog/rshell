@@ -22,7 +22,7 @@ Legend: ⏳ pending · 🔄 in progress · ✅ done · ⏭️ skipped (no high-v
 | 12 | command_substitution| shell |             20 | 20            | ⏭️     | already comprehensive — covers $() and ``, $(<file) shortcut, exit-status propagation, nesting, pipes, word splitting |
 | 13 | heredoc_dash        | shell |             20 | 20            | ⏭️     | already comprehensive — covers tab-stripping, quoted-delim, blanks, nesting, brace, for, pipe, && |
 | 14 | simple_command      | shell |             21 | 21            | ⏭️     | already comprehensive — covers assignments, multiple, expansion, quoting, persistence, overwrite, with cmd-subst |
-| 15 | until_clause        | shell |             21 | —             | ⏳     |       |
+| 15 | until_clause        | shell |             21 | 21            | ⏭️     | already comprehensive — covers loop semantics, break/continue (incl. multi-level), pipeline cond, brace body, nesting |
 | 16 | break               | cmd   |             23 | —             | ⏳     |       |
 | 17 | continue            | cmd   |             23 | —             | ⏳     |       |
 | 18 | redirections        | shell |             26 | —             | ⏳     |       |
@@ -75,7 +75,7 @@ Legend: ⏳ pending · 🔄 in progress · ✅ done · ⏭️ skipped (no high-v
 
 ## Summary
 
-- Targets processed: 14 / 64
+- Targets processed: 15 / 64
 - Tests added: 0 (scenario: 0, unit: 0)
 - Duplicate tests removed: 0 (scenario: 0, unit: 0)
 - Low-value tests removed: 0 (scenario: 0, unit: 0)
