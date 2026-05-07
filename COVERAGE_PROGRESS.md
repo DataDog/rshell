@@ -60,7 +60,7 @@ Legend: ⏳ pending · 🔄 in progress · ✅ done · ⏭️ skipped (no high-v
 | 50 | wc                  | cmd   |             76 | 76            | ⏭️     | already comprehensive — 29 Go tests + 47 scenarios cover -l/-w/-c/-m/-L flags, multi-file totals, stdin |
 | 51 | logic_ops           | shell |             76 | 76            | ⏭️     | already comprehensive 7-category coverage of && / \|\| short-circuit and chaining |
 | 52 | xargs               | cmd   |             78 | 78            | ⏭️     | already comprehensive — 28 Go tests + 50 scenarios cover -n/-I/-d/-r/-0/-t/-p/-L/-s flags |
-| 53 | cut                 | cmd   |             80 | —             | ⏳     |       |
+| 53 | cut                 | cmd   |             80 | 80            | ⏭️     | already comprehensive — 27 Go tests + 53 scenarios cover -b/-c/-f/-d/--complement/--output-delimiter |
 | 54 | grep                | cmd   |             80 | —             | ⏳     |       |
 | 55 | sort                | cmd   |             84 | —             | ⏳     |       |
 | 56 | ls                  | cmd   |             86 | —             | ⏳     |       |
@@ -75,7 +75,7 @@ Legend: ⏳ pending · 🔄 in progress · ✅ done · ⏭️ skipped (no high-v
 
 ## Summary
 
-- Targets processed: 52 / 64
+- Targets processed: 53 / 64
 - Tests added: 0 (scenario: 0, unit: 0)
 - Duplicate tests removed: 0 (scenario: 0, unit: 0)
 - Low-value tests removed: 0 (scenario: 0, unit: 0)
