@@ -8,6 +8,7 @@ package awk
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -303,6 +304,9 @@ func (rt *runtime) runFile(ctx context.Context, file string) error {
 		rt.nr++
 		rt.fnr++
 		if err := rt.runRules(ctx, ruleNormal); err != nil {
+			if errors.Is(err, errNextRecord) {
+				continue
+			}
 			return err
 		}
 	}
@@ -365,6 +369,12 @@ func (rt *runtime) runRules(ctx context.Context, kind ruleKind) error {
 			continue
 		}
 		if err := rt.execStatements(r.action); err != nil {
+			if errors.Is(err, errNextRecord) {
+				if kind == ruleNormal {
+					return err
+				}
+				return fmt.Errorf("next is not allowed in BEGIN or END")
+			}
 			return err
 		}
 	}

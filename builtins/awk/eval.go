@@ -6,10 +6,13 @@
 package awk
 
 import (
+	"errors"
 	"fmt"
 	"math"
 	"strings"
 )
+
+var errNextRecord = errors.New("next record")
 
 func (rt *runtime) execStatements(stmts []stmt) error {
 	for _, st := range stmts {
@@ -30,6 +33,39 @@ func (rt *runtime) execStatements(stmts []stmt) error {
 			if err := rt.printValues(vals); err != nil {
 				return err
 			}
+		case *printfStmt:
+			if len(s.args) == 0 {
+				return fmt.Errorf("printf requires a format expression")
+			}
+			vals := make([]value, 0, len(s.args))
+			for _, arg := range s.args {
+				v, err := rt.eval(arg)
+				if err != nil {
+					return err
+				}
+				vals = append(vals, v)
+			}
+			out, err := formatPrintf(vals[0].String(), vals[1:])
+			if err != nil {
+				return err
+			}
+			rt.callCtx.Out(out)
+		case *ifStmt:
+			cond, err := rt.eval(s.cond)
+			if err != nil {
+				return err
+			}
+			if cond.Bool() {
+				if err := rt.execStatements(s.thenStmts); err != nil {
+					return err
+				}
+			} else if len(s.elseStmts) > 0 {
+				if err := rt.execStatements(s.elseStmts); err != nil {
+					return err
+				}
+			}
+		case *nextStmt:
+			return errNextRecord
 		case *exprStmt:
 			if _, err := rt.eval(s.x); err != nil {
 				return err
@@ -101,8 +137,98 @@ func (rt *runtime) eval(x expr) (value, error) {
 		return rt.evalAssign(e)
 	case *incDecExpr:
 		return rt.evalIncDec(e)
+	case *callExpr:
+		return rt.evalCall(e)
 	default:
 		return value{}, fmt.Errorf("unknown expression")
+	}
+}
+
+func (rt *runtime) evalCall(e *callExpr) (value, error) {
+	args := make([]value, 0, len(e.args))
+	for _, arg := range e.args {
+		v, err := rt.eval(arg)
+		if err != nil {
+			return value{}, err
+		}
+		args = append(args, v)
+	}
+	switch e.name {
+	case "length":
+		if len(args) > 1 {
+			return value{}, fmt.Errorf("length expects at most 1 argument")
+		}
+		s := rt.field(0).String()
+		if len(args) == 1 {
+			s = args[0].String()
+		}
+		return numberValue(float64(len([]rune(s)))), nil
+	case "substr":
+		if len(args) != 2 && len(args) != 3 {
+			return value{}, fmt.Errorf("substr expects 2 or 3 arguments")
+		}
+		s := []rune(args[0].String())
+		start := int(args[1].Number()) - 1
+		if start < 0 {
+			start = 0
+		}
+		if start >= len(s) {
+			return stringValue(""), nil
+		}
+		end := len(s)
+		if len(args) == 3 {
+			count := int(args[2].Number())
+			if count <= 0 {
+				return stringValue(""), nil
+			}
+			if start+count < end {
+				end = start + count
+			}
+		}
+		return stringValue(string(s[start:end])), nil
+	case "index":
+		if len(args) != 2 {
+			return value{}, fmt.Errorf("index expects 2 arguments")
+		}
+		haystack := args[0].String()
+		needle := args[1].String()
+		if needle == "" {
+			return numberValue(0), nil
+		}
+		pos := strings.Index(haystack, needle)
+		if pos < 0 {
+			return numberValue(0), nil
+		}
+		return numberValue(float64(len([]rune(haystack[:pos])) + 1)), nil
+	case "tolower":
+		if len(args) > 1 {
+			return value{}, fmt.Errorf("tolower expects at most 1 argument")
+		}
+		s := rt.field(0).String()
+		if len(args) == 1 {
+			s = args[0].String()
+		}
+		return stringValue(strings.ToLower(s)), nil
+	case "toupper":
+		if len(args) > 1 {
+			return value{}, fmt.Errorf("toupper expects at most 1 argument")
+		}
+		s := rt.field(0).String()
+		if len(args) == 1 {
+			s = args[0].String()
+		}
+		return stringValue(strings.ToUpper(s)), nil
+	case "int":
+		if len(args) > 1 {
+			return value{}, fmt.Errorf("int expects at most 1 argument")
+		}
+		v := rt.field(0)
+		if len(args) == 1 {
+			v = args[0]
+		}
+		return numberValue(math.Trunc(v.Number())), nil
+	default:
+		return value{}, fmt.Errorf("function calls are not supported")
 	}
 }
 

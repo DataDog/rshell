@@ -37,10 +37,7 @@ var unsupportedBuiltinFunctions = map[string]struct{}{
 	"fflush":         {},
 	"gensub":         {},
 	"gsub":           {},
-	"index":          {},
-	"int":            {},
 	"isarray":        {},
-	"length":         {},
 	"log":            {},
 	"lshift":         {},
 	"match":          {},
@@ -57,13 +54,19 @@ var unsupportedBuiltinFunctions = map[string]struct{}{
 	"strftime":       {},
 	"strtonum":       {},
 	"sub":            {},
-	"substr":         {},
 	"system":         {},
 	"systime":        {},
-	"tolower":        {},
-	"toupper":        {},
 	"typeof":         {},
 	"xor":            {},
+}
+
+var supportedBuiltinFunctions = map[string]struct{}{
+	"index":   {},
+	"int":     {},
+	"length":  {},
+	"substr":  {},
+	"tolower": {},
+	"toupper": {},
 }
 
 type parser struct {
@@ -124,6 +127,10 @@ func (p *parser) parseAction() ([]stmt, error) {
 	if !p.match(tokLBrace) {
 		return nil, fmt.Errorf("expected action")
 	}
+	return p.parseStatementList()
+}
+
+func (p *parser) parseStatementList() ([]stmt, error) {
 	stmts := []stmt{}
 	p.skipSeparators()
 	for !p.at(tokRBrace) {
@@ -145,14 +152,21 @@ func (p *parser) parseAction() ([]stmt, error) {
 }
 
 func (p *parser) parseStatement() (stmt, error) {
+	if p.atIdent("if") {
+		return p.parseIf()
+	}
+	if p.atIdent("next") {
+		p.advance()
+		return &nextStmt{}, nil
+	}
 	if p.atIdent("print") {
 		return p.parsePrint()
 	}
 	if p.atIdent("printf") {
-		return nil, fmt.Errorf("printf is not supported")
+		return p.parsePrintf()
 	}
 	if p.atIdent("if") || p.atIdent("while") || p.atIdent("for") ||
-		p.atIdent("next") || p.atIdent("nextfile") || p.atIdent("exit") ||
+		p.atIdent("nextfile") || p.atIdent("exit") ||
 		p.atIdent("break") || p.atIdent("continue") {
 		return nil, fmt.Errorf("control flow statements are not supported")
 	}
@@ -169,11 +183,79 @@ func (p *parser) parseStatement() (stmt, error) {
 	return &exprStmt{x: x}, nil
 }
 
+func (p *parser) parseIf() (stmt, error) {
+	p.advance()
+	if !p.match(tokLParen) {
+		return nil, fmt.Errorf("expected ( after if")
+	}
+	cond, err := p.parseExpression(0)
+	if err != nil {
+		return nil, err
+	}
+	if !p.match(tokRParen) {
+		return nil, fmt.Errorf("expected ) after if condition")
+	}
+	thenStmts, err := p.parseStatementGroup()
+	if err != nil {
+		return nil, err
+	}
+	save := p.pos
+	p.skipSeparators()
+	var elseStmts []stmt
+	if p.atIdent("else") {
+		p.advance()
+		elseStmts, err = p.parseStatementGroup()
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		p.pos = save
+	}
+	return &ifStmt{cond: cond, thenStmts: thenStmts, elseStmts: elseStmts}, nil
+}
+
+func (p *parser) parseStatementGroup() ([]stmt, error) {
+	if p.match(tokLBrace) {
+		return p.parseStatementList()
+	}
+	st, err := p.parseStatement()
+	if err != nil {
+		return nil, err
+	}
+	return []stmt{st}, nil
+}
+
 func (p *parser) parsePrint() (stmt, error) {
 	p.advance()
 	ps := &printStmt{}
 	if p.at(tokRBrace) || p.at(tokEOF) || isSeparator(p.cur().kind) {
 		return ps, nil
+	}
+	old := p.stopPrintRedirect
+	p.stopPrintRedirect = true
+	defer func() { p.stopPrintRedirect = old }()
+	for {
+		x, err := p.parseExpression(0)
+		if err != nil {
+			return nil, err
+		}
+		ps.args = append(ps.args, x)
+		if p.at(tokGT) || p.at(tokAppend) || p.at(tokPipe) {
+			return nil, fmt.Errorf("print redirection and command pipes are not supported")
+		}
+		if !p.match(tokComma) {
+			break
+		}
+		p.skipSeparators()
+	}
+	return ps, nil
+}
+
+func (p *parser) parsePrintf() (stmt, error) {
+	p.advance()
+	ps := &printfStmt{}
+	if p.at(tokRBrace) || p.at(tokEOF) || isSeparator(p.cur().kind) {
+		return nil, fmt.Errorf("printf requires a format expression")
 	}
 	old := p.stopPrintRedirect
 	p.stopPrintRedirect = true
@@ -278,11 +360,14 @@ func (p *parser) parsePrefix() (expr, error) {
 		return &regexExpr{pattern: tok.lit}, nil
 	case tokIdent:
 		p.advance()
+		if p.at(tokLParen) {
+			return p.parseFunctionCall(tok.lit)
+		}
+		if tok.lit == "length" {
+			return &callExpr{name: tok.lit}, nil
+		}
 		if err := validateIdentifierReference(tok.lit); err != nil {
 			return nil, err
-		}
-		if p.at(tokLParen) {
-			return nil, fmt.Errorf("function calls are not supported")
 		}
 		if p.at(tokLBracket) {
 			return nil, fmt.Errorf("arrays are not supported")
@@ -325,12 +410,46 @@ func (p *parser) parsePrefix() (expr, error) {
 	}
 }
 
+func (p *parser) parseFunctionCall(name string) (expr, error) {
+	if _, ok := supportedBuiltinFunctions[name]; !ok {
+		if name == "system" {
+			return nil, fmt.Errorf("system() is not supported")
+		}
+		return nil, fmt.Errorf("function calls are not supported")
+	}
+	p.advance()
+	args := []expr{}
+	p.skipSeparators()
+	if p.match(tokRParen) {
+		return &callExpr{name: name}, nil
+	}
+	for {
+		p.skipSeparators()
+		arg, err := p.parseExpression(0)
+		if err != nil {
+			return nil, err
+		}
+		args = append(args, arg)
+		p.skipSeparators()
+		if p.match(tokRParen) {
+			break
+		}
+		if !p.match(tokComma) {
+			return nil, fmt.Errorf("expected , or ) in function call")
+		}
+	}
+	return &callExpr{name: name, args: args}, nil
+}
+
 func validateIdentifierReference(name string) error {
 	if msg, ok := unsupportedExpressionKeyword(name); ok {
 		return fmt.Errorf("%s", msg)
 	}
 	if name == "system" {
 		return fmt.Errorf("system() is not supported")
+	}
+	if _, ok := supportedBuiltinFunctions[name]; ok {
+		return fmt.Errorf("function calls are not supported")
 	}
 	if _, ok := unsupportedBuiltinFunctions[name]; ok {
 		return fmt.Errorf("function calls are not supported")

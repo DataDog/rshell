@@ -228,6 +228,15 @@ func TestAwkIntegerNumberFormatting(t *testing.T) {
 	assert.Equal(t, "999999 1000000 123456789 1e+06\n0 0\n", stdout)
 }
 
+func TestAwkIfNextPrintfAndScalarBuiltins(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "input.txt", "a 1\nb 22\nskip 5\n")
+	stdout, stderr, code := cmdRun(t, `awk '{ if ($1 == "skip") next; if ($2 > 9) { printf "%s:%03d\n", toupper($1), $2 } else printf "small:%s:%d:%d:%d:%s\n", tolower($1), int($2 + .9), length, index($0, $2), substr($0, 2, 2) }' input.txt`, dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "", stderr)
+	assert.Equal(t, "small:a:1:3:3: 1\nB:022\n", stdout)
+}
+
 func TestAwkBeginOnlySkipsInputFiles(t *testing.T) {
 	dir := t.TempDir()
 	stdout, stderr, code := cmdRun(t, `awk 'BEGIN { print "x" }' missing.txt`, dir)
@@ -308,11 +317,12 @@ func TestAwkRejectsUnsafeFeatures(t *testing.T) {
 	for _, script := range []string{
 		`awk '{ system("sh") }' input.txt`,
 		`awk '{ print $1 > "out" }' input.txt`,
+		`awk '{ printf "%s", $1 > "out" }' input.txt`,
 		`awk '{ $1 = "x" }' input.txt`,
-		`awk '{ next; print $1 }' input.txt`,
 		`awk '{ print getline }' input.txt`,
 		`awk '{ x = next }' input.txt`,
 		`awk '{ exit 0 }' input.txt`,
+		`awk 'BEGIN { next }' input.txt`,
 		`awk 'BEGIN { BEGIN=1; print BEGIN }' input.txt`,
 		`awk 'BEGIN { END=1; print END }' input.txt`,
 		`awk '{ print $BEGIN }' input.txt`,
@@ -333,7 +343,7 @@ func TestAwkRejectsUnsafeFeatures(t *testing.T) {
 func TestAwkRejectsUnsupportedBuiltinWithoutParens(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, dir, "input.txt", "abc\n")
-	_, stderr, code := cmdRun(t, `awk '{ print length }' input.txt`, dir)
+	_, stderr, code := cmdRun(t, `awk '{ print split }' input.txt`, dir)
 	assert.Equal(t, 1, code)
 	assert.Contains(t, stderr, "awk: function calls are not supported")
 }

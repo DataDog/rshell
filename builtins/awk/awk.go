@@ -11,16 +11,17 @@
 //
 //	awk [OPTION]... -f program-file [FILE]...
 //
-// Phase 1 implements a practical, intentionally restricted awk profile:
-// program loading from an inline argument or -f files, -F one-character field
-// separators, -v scalar variables, BEGIN/main/END rules, print, scalar
-// assignment, arithmetic/comparison/boolean expressions, regex patterns and
-// match operators, string concatenation, and read-only fields/built-in
-// variables such as $0, $1, NF, NR, FNR, FILENAME, FS, OFS, and ORS.
+// This implements a practical, intentionally restricted awk profile: program
+// loading from an inline argument or -f files, -F one-character field
+// separators, -v scalar variables, BEGIN/main/END rules, print and printf,
+// scalar assignment, if/else, next, arithmetic/comparison/boolean expressions,
+// regex patterns and match operators, string concatenation, scalar built-in
+// functions, and read-only fields/built-in variables such as $0, $1, NF, NR,
+// FNR, FILENAME, FS, OFS, and ORS.
 //
 // Blocked or deferred features include system(), command pipes, output
-// redirection, getline, arrays, control flow statements, printf, user-defined
-// functions, regex FS, and field mutation/$0 rebuilding.
+// redirection, getline, arrays, loops, user-defined functions, regex FS, and
+// field mutation/$0 rebuilding.
 package awk
 
 import (

@@ -33,6 +33,24 @@ type printStmt struct {
 
 func (*printStmt) stmtNode() {}
 
+type printfStmt struct {
+	args []expr
+}
+
+func (*printfStmt) stmtNode() {}
+
+type ifStmt struct {
+	cond      expr
+	thenStmts []stmt
+	elseStmts []stmt
+}
+
+func (*ifStmt) stmtNode() {}
+
+type nextStmt struct{}
+
+func (*nextStmt) stmtNode() {}
+
 type exprStmt struct {
 	x expr
 }
@@ -110,3 +128,10 @@ type incDecExpr struct {
 }
 
 func (*incDecExpr) exprNode() {}
+
+type callExpr struct {
+	name string
+	args []expr
+}
+
+func (*callExpr) exprNode() {}

@@ -350,16 +350,21 @@ RSHELL_BASH_TEST=1 go test ./tests/ -run TestShellScenariosAgainstBash -timeout 
 
 ## Later Phases
 
-Phase 2 candidates:
+Phase 2 started scope:
 
 - `printf`
 - `if`
 - `next`
+- common scalar builtins: `length`, `substr`, `index`, `tolower`, `toupper`,
+  `int`
+
+Remaining Phase 2 candidates:
+
 - range patterns
 - regex `FS`
 - field assignment and `$0` rebuilding
-- common string builtins: `length`, `substr`, `index`, `split`, `tolower`,
-  `toupper`, `int`
+- `split`, once array support is available or a narrow safe representation is
+  chosen
 
 Phase 3 candidates:
 

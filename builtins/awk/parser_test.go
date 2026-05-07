@@ -13,7 +13,7 @@ import (
 )
 
 func TestParsePracticalAwkProgram(t *testing.T) {
-	prog, err := parseProgram(`BEGIN { label = "sum=" } $2 > 1 { total += $2; print label total } END { print total }`)
+	prog, err := parseProgram(`BEGIN { label = "sum=" } $2 > 1 { if ($1 == "skip") next; total += $2; printf "%s%d\n", label, total } END { print length($0), total }`)
 	require.NoError(t, err)
 	require.Len(t, prog.rules, 3)
 	assert.Equal(t, ruleBegin, prog.rules[0].kind)
@@ -27,7 +27,6 @@ func TestParseRejectsUnsafeFeatures(t *testing.T) {
 		`{ print $1 > "out" }`,
 		`{ "cmd" | getline }`,
 		`{ $1 = "x" }`,
-		`{ next; print $1 }`,
 		`{ exit 1 }`,
 	} {
 		_, err := parseProgram(src)
