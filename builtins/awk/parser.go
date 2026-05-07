@@ -88,9 +88,6 @@ func parseProgram(src string) (*program, error) {
 		prog.rules = append(prog.rules, r)
 		p.skipSeparators()
 	}
-	if len(prog.rules) == 0 {
-		return nil, fmt.Errorf("empty program")
-	}
 	return prog, nil
 }
 
@@ -231,6 +228,11 @@ func (p *parser) parseExpression(minPrec int) (expr, error) {
 			if err != nil {
 				return nil, err
 			}
+			if isComparisonOp(op) {
+				if b, ok := left.(*binaryExpr); ok && isComparisonOp(b.op) {
+					return nil, fmt.Errorf("chained comparisons are not supported")
+				}
+			}
 			if isAssignOp(op) {
 				if _, ok := left.(*fieldExpr); ok {
 					return nil, fmt.Errorf("field assignment is not supported")
@@ -305,7 +307,7 @@ func (p *parser) parsePrefix() (expr, error) {
 		if !p.match(tokRParen) {
 			return nil, fmt.Errorf("expected )")
 		}
-		return x, nil
+		return &groupedExpr{x: x}, nil
 	case tokPlus, tokMinus, tokBang:
 		p.advance()
 		x, err := p.parseExpression(precPrefix)
@@ -342,6 +344,15 @@ func unsupportedExpressionKeyword(name string) (string, bool) {
 		return "print is not supported in expressions", true
 	default:
 		return "", false
+	}
+}
+
+func isComparisonOp(op string) bool {
+	switch op {
+	case "==", "!=", "<", ">", "<=", ">=":
+		return true
+	default:
+		return false
 	}
 }
 

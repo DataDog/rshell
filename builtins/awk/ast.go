@@ -74,6 +74,12 @@ type fieldExpr struct {
 
 func (*fieldExpr) exprNode() {}
 
+type groupedExpr struct {
+	x expr
+}
+
+func (*groupedExpr) exprNode() {}
+
 type unaryExpr struct {
 	op string
 	x  expr
