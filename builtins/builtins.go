@@ -225,7 +225,10 @@ func safeHelpTrimIndex(fs *pflag.FlagSet, args []string) (int, bool) {
 // isNoArgFlagToken reports whether a is a registered flag (long or
 // shorthand cluster) whose every component takes no value. Tokens
 // containing `=` (explicit-value form) or matching value-taking flags
-// return false — both can fail at parse time.
+// return false — both can fail at parse time. Non-ASCII bytes in a
+// shorthand cluster also return false: pflag's ShorthandLookup panics
+// on inputs longer than one byte and `string(byte)` for any byte ≥
+// 0x80 produces a 2-byte UTF-8 encoding.
 func isNoArgFlagToken(fs *pflag.FlagSet, a string) bool {
 	if len(a) < 2 || a[0] != '-' || a == "-" {
 		return false
@@ -238,7 +241,11 @@ func isNoArgFlagToken(fs *pflag.FlagSet, a string) bool {
 		return f != nil && f.NoOptDefVal != ""
 	}
 	for i := 1; i < len(a); i++ {
-		f := fs.ShorthandLookup(string(a[i]))
+		c := a[i]
+		if c > 0x7E || c <= ' ' {
+			return false
+		}
+		f := fs.ShorthandLookup(string(c))
 		if f == nil || f.NoOptDefVal == "" {
 			return false
 		}

@@ -39,6 +39,11 @@ func TestSafeHelpTrimIndex(t *testing.T) {
 		{"--help after -- is unsafe", []string{"--", "--help"}, 0, false},
 		{"no --help in args", []string{"--verbose"}, 0, false},
 		{"empty args", nil, 0, false},
+		// Multi-byte UTF-8 in a shorthand cluster MUST not crash:
+		// `string(byte)` for byte ≥ 0x80 produces 2-byte UTF-8, and
+		// pflag.ShorthandLookup panics on inputs longer than one byte.
+		// Caught by FuzzPwdArgs/9386e59311458487.
+		{"non-ASCII byte in cluster", []string{"-˞", "--help"}, 0, false},
 	}
 
 	for _, tt := range tests {
