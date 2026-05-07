@@ -16,7 +16,7 @@ Legend: ⏳ pending · 🔄 in progress · ✅ done · ⏭️ skipped (no high-v
 | 6 | case_clause | shell | 10 | 10 | ⏭️ | case is intentionally blocked at parse validation; all syntactic forms covered |
 | 7 | errors | shell | 10 | 10 | ✅ | replaced misnamed dupe with cmd-subst error test; framework parses scripts so syntax-error tests can't be scenarios |
 | 8 | function | shell | 10 | 10 | ⏭️ | function declarations intentionally blocked at parse; all syntactic forms covered |
-| 9 | allowed_commands | shell | 12 | — | ⏳ | recently improved |
+| 9 | allowed_commands | shell | 12 | 12 | ⏭️ | recently improved (commit fc86a688); 12 scenarios + 8 Go API tests cover surface |
 | 10 | input_processing | shell | 13 | — | ⏳ | |
 | 11 | allowed_redirects | shell | 17 | — | ⏳ | |
 | 12 | blocked_redirects | shell | 17 | — | ⏳ | |
@@ -75,7 +75,7 @@ Legend: ⏳ pending · 🔄 in progress · ✅ done · ⏭️ skipped (no high-v
 
 ## Summary
 
-- Targets processed: 8 / 64
+- Targets processed: 9 / 64
 - Tests added: 7 (scenario: 7, unit: 0)
 - Duplicate tests removed: 1 (scenario: 1, unit: 0)
 - Low-value tests removed: 0 (scenario: 0, unit: 0)
