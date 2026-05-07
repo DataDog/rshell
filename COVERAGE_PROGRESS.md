@@ -41,7 +41,7 @@ Legend: ⏳ pending · 🔄 in progress · ✅ done · ⏭️ skipped (no high-v
 | 31 | exit | cmd | 44 | 40 | ✅ | removed 4 byte-identical dupes (exit_*.yaml mirrored basic/*.yaml and codes/17.yaml) |
 | 32 | strings_cmd | cmd | 44 | 44 | ⏭️ | 37 scenarios + 7 Go tests cover flags, offset radices, stdin, multi-file, pathological inputs |
 | 33 | blocked_commands | shell | 44 | 43 | ✅ | removed near-dupe (select_statement = select_clause); kept POSIX-terminology version |
-| 34 | ps | cmd | 44 | — | ⏳ | |
+| 34 | ps | cmd | 44 | 44 | ⏭️ | 12 scenarios + 32 Go tests cover flags, PID parsing, error paths, format modes |
 | 35 | read | cmd | 50 | — | ⏳ | |
 | 36 | allowed_paths | shell | 51 | — | ⏳ | |
 | 37 | cmd_separator | shell | 52 | — | ⏳ | |
@@ -75,7 +75,7 @@ Legend: ⏳ pending · 🔄 in progress · ✅ done · ⏭️ skipped (no high-v
 
 ## Summary
 
-- Targets processed: 33 / 64
+- Targets processed: 34 / 64
 - Tests added: 8 (scenario: 8, unit: 0)
 - Duplicate tests removed: 12 (scenario: 12, unit: 0)
 - Low-value tests removed: 0 (scenario: 0, unit: 0)
