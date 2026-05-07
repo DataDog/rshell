@@ -25,7 +25,7 @@ Legend: ⏳ pending · 🔄 in progress · ✅ done · ⏭️ skipped (no high-v
 | 15 | command_substitution | shell | 20 | 20 | ⏭️ | comprehensive: $(...), backtick, $(<file) variants, nested, pipes, exit status, word splitting |
 | 16 | heredoc_dash | shell | 20 | 20 | ⏭️ | comprehensive: tab stripping, indented delimiter, var expansion, quoted/unquoted, pipe, brace, for-loop |
 | 17 | simple_command | shell | 21 | 21 | ⏭️ | comprehensive: assignment, multi-assign, expansion, exit-status, special-chars, persistence |
-| 18 | until_clause | shell | 21 | — | ⏳ | |
+| 18 | until_clause | shell | 21 | 21 | ⏭️ | comprehensive: break/continue with args, nested, exit status, pipeline cond, single/multi-line, brace body, negation |
 | 19 | true | cmd | 23 | — | ⏳ | |
 | 20 | redirections | shell | 26 | — | ⏳ | |
 | 21 | negation | shell | 27 | — | ⏳ | |
@@ -75,7 +75,7 @@ Legend: ⏳ pending · 🔄 in progress · ✅ done · ⏭️ skipped (no high-v
 
 ## Summary
 
-- Targets processed: 17 / 64
+- Targets processed: 18 / 64
 - Tests added: 9 (scenario: 9, unit: 0)
 - Duplicate tests removed: 2 (scenario: 2, unit: 0)
 - Low-value tests removed: 0 (scenario: 0, unit: 0)
