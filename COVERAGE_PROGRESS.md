@@ -36,7 +36,7 @@ Legend: ⏳ pending · 🔄 in progress · ✅ done · ⏭️ skipped (no high-v
 | 26 | brace_group | shell | 35 | 33 | ✅ | removed 2 byte-identical dupes (brace_group_nested = nested; brace_group_pipe = with_pipe) |
 | 27 | field_splitting | shell | 37 | 37 | ⏭️ | comprehensive: standard/custom IFS, ws/non-ws delimiters, empty IFS, ws coalescing, quoting, for-loop |
 | 28 | environment | shell | 41 | 41 | ⏭️ | comprehensive: standard vars, IFS, tilde rules, --env option, special $?, no-parent-propagation |
-| 29 | help | cmd | 41 | — | ⏳ | |
+| 29 | help | cmd | 41 | 41 | ⏭️ | 10 scenarios + 31 Go tests cover full surface (modes, flags, feature detail, restricted vs unrestricted) |
 | 30 | heredoc | shell | 42 | — | ⏳ | |
 | 31 | exit | cmd | 44 | — | ⏳ | |
 | 32 | strings_cmd | cmd | 44 | — | ⏳ | |
@@ -75,7 +75,7 @@ Legend: ⏳ pending · 🔄 in progress · ✅ done · ⏭️ skipped (no high-v
 
 ## Summary
 
-- Targets processed: 28 / 64
+- Targets processed: 29 / 64
 - Tests added: 8 (scenario: 8, unit: 0)
 - Duplicate tests removed: 7 (scenario: 7, unit: 0)
 - Low-value tests removed: 0 (scenario: 0, unit: 0)
