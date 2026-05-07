@@ -28,7 +28,7 @@ Legend: ⏳ pending · 🔄 in progress · ✅ done · ⏭️ skipped (no high-v
 | 18 | until_clause | shell | 21 | 21 | ⏭️ | comprehensive: break/continue with args, nested, exit status, pipeline cond, single/multi-line, brace body, negation |
 | 19 | true | cmd | 23 | 22 | ✅ | removed exact duplicate exit_status.yaml (mirror of false fix) |
 | 20 | redirections | shell | 26 | 26 | ⏭️ | comprehensive: /dev/null variants, heredoc forms, fd0 explicit; mild "redirect_*" vs "devnull/" overlap each tests distinct angle |
-| 21 | negation | shell | 27 | — | ⏳ | |
+| 21 | negation | shell | 27 | 27 | ⏭️ | comprehensive: basic, compound (brace/for), exit_code (zero/one), with_logic_ops (and/or chains), with_pipe (success/failure/3-stage) |
 | 22 | comments | shell | 28 | — | ⏳ | |
 | 23 | line_continuation | shell | 28 | — | ⏳ | |
 | 24 | while_clause | shell | 28 | — | ⏳ | |
@@ -75,7 +75,7 @@ Legend: ⏳ pending · 🔄 in progress · ✅ done · ⏭️ skipped (no high-v
 
 ## Summary
 
-- Targets processed: 20 / 64
+- Targets processed: 21 / 64
 - Tests added: 8 (scenario: 8, unit: 0)
 - Duplicate tests removed: 4 (scenario: 4, unit: 0)
 - Low-value tests removed: 0 (scenario: 0, unit: 0)
