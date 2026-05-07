@@ -58,7 +58,7 @@ Legend: ⏳ pending · 🔄 in progress · ✅ done · ⏭️ skipped (no high-v
 | 48 | wc | cmd | 134 | 134 | ⏭️ | 47 scenarios + 87 Go tests cover -l/-w/-c/-m/-L flags, multi-file, stdin, errors |
 | 49 | tr | cmd | 137 | 137 | ⏭️ | 41 scenarios + 96 Go tests cover translate/squeeze/delete/complement, char classes, ranges |
 | 50 | for_clause | shell | 137 | 137 | ⏭️ | comprehensive: basic, break_cont (advanced subdir), edge_cases, exit_code, nested, var_scoping |
-| 51 | sort | cmd | 141 | — | ⏳ | |
+| 51 | sort | cmd | 141 | 141 | ⏭️ | 56 scenarios + 85 Go tests cover -n/-r/-u/-k/-t/-h/-V/-c/-b/-d/-f, multi-file |
 | 52 | cut | cmd | 144 | — | ⏳ | |
 | 53 | ip | cmd | 144 | — | ⏳ | |
 | 54 | cat | cmd | 145 | — | ⏳ | |
@@ -75,7 +75,7 @@ Legend: ⏳ pending · 🔄 in progress · ✅ done · ⏭️ skipped (no high-v
 
 ## Summary
 
-- Targets processed: 50 / 64
+- Targets processed: 51 / 64
 - Tests added: 8 (scenario: 8, unit: 0)
 - Duplicate tests removed: 13 (scenario: 13, unit: 0)
 - Low-value tests removed: 0 (scenario: 0, unit: 0)
