@@ -62,7 +62,7 @@ Legend: ⏳ pending · 🔄 in progress · ✅ done · ⏭️ skipped (no high-v
 | 52 | xargs               | cmd   |             78 | 78            | ⏭️     | already comprehensive — 28 Go tests + 50 scenarios cover -n/-I/-d/-r/-0/-t/-p/-L/-s flags |
 | 53 | cut                 | cmd   |             80 | 80            | ⏭️     | already comprehensive — 27 Go tests + 53 scenarios cover -b/-c/-f/-d/--complement/--output-delimiter |
 | 54 | grep                | cmd   |             80 | 80            | ⏭️     | already comprehensive — 26 Go tests + 54 scenarios cover -E/-i/-v/-c/-l/-n/-r/--include flags |
-| 55 | sort                | cmd   |             84 | —             | ⏳     |       |
+| 55 | sort                | cmd   |             84 | 84            | ⏭️     | already comprehensive — 28 Go tests + 56 scenarios cover -n/-r/-u/-k/-t/-f/-b/-h/-V flags |
 | 56 | ls                  | cmd   |             86 | —             | ⏳     |       |
 | 57 | echo                | cmd   |             87 | —             | ⏳     |       |
 | 58 | head                | cmd   |             89 | —             | ⏳     |       |
@@ -75,7 +75,7 @@ Legend: ⏳ pending · 🔄 in progress · ✅ done · ⏭️ skipped (no high-v
 
 ## Summary
 
-- Targets processed: 54 / 64
+- Targets processed: 55 / 64
 - Tests added: 0 (scenario: 0, unit: 0)
 - Duplicate tests removed: 0 (scenario: 0, unit: 0)
 - Low-value tests removed: 0 (scenario: 0, unit: 0)
