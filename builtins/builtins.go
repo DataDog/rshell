@@ -98,18 +98,20 @@ func (c Command) Register() {
 			args = normalize(args)
 		}
 		hasHelp := fs.Lookup("help") != nil
-		// Honor a leading `--help` to match GNU coreutils:
-		// `cmd --help --bogus` should print help and exit 0, even though
-		// pflag would otherwise scan the whole argv and fail on --bogus.
-		// We restrict the trim to the case where `--help` is the very
-		// first argument — anything else (e.g. `cmd -n nope --help
-		// --bogus`) keeps the full argv so pflag still validates the
-		// earlier `-n` value and surfaces its error. GNU validates each
-		// option's value as it scans left-to-right, so an invalid value
-		// before `--help` MUST keep failing; trimming would silently
-		// turn that into a successful help print.
-		if hasHelp && len(args) > 0 && args[0] == "--help" {
-			args = args[:1]
+		// Honor `--help` once it's reached in argv to match GNU coreutils:
+		// `cmd --no-arg-flag --help --bogus` should print help and exit 0.
+		// We trim args at the first `--help` only when every preceding
+		// token is a registered no-argument flag. Value-takers (`-n 5`),
+		// explicit-value forms (`--foo=bar`), positionals, and unknown
+		// flags all preclude the trim — those tokens may still fail
+		// later validation (e.g. `head -n nope`'s numeric check), and
+		// trimming would silently swallow that error by short-circuiting
+		// on `--help`. GNU's left-to-right semantics require the earlier
+		// failure to surface even when `--help` follows it.
+		if hasHelp {
+			if idx, ok := safeHelpTrimIndex(fs, args); ok {
+				args = args[:idx+1]
+			}
 		}
 		if err := fs.Parse(args); err != nil {
 			callCtx.Errf("%s: %s\n", name, rewritePflagError(err, args))
@@ -197,6 +199,51 @@ func rewritePflagError(err error, args []string) string {
 	}
 
 	return msg
+}
+
+// safeHelpTrimIndex returns the index of the first `--help` in args if
+// trimming at it is provably safe — i.e. every preceding token is a
+// registered no-argument flag and the scan does not cross a `--`
+// end-of-flags marker. Returns false otherwise, signalling the caller
+// to leave args alone and let pflag report any earlier validation
+// error.
+func safeHelpTrimIndex(fs *pflag.FlagSet, args []string) (int, bool) {
+	for i, a := range args {
+		if a == "--" {
+			return 0, false
+		}
+		if a == "--help" {
+			return i, true
+		}
+		if !isNoArgFlagToken(fs, a) {
+			return 0, false
+		}
+	}
+	return 0, false
+}
+
+// isNoArgFlagToken reports whether a is a registered flag (long or
+// shorthand cluster) whose every component takes no value. Tokens
+// containing `=` (explicit-value form) or matching value-taking flags
+// return false — both can fail at parse time.
+func isNoArgFlagToken(fs *pflag.FlagSet, a string) bool {
+	if len(a) < 2 || a[0] != '-' || a == "-" {
+		return false
+	}
+	if strings.Contains(a, "=") {
+		return false
+	}
+	if strings.HasPrefix(a, "--") {
+		f := fs.Lookup(a[2:])
+		return f != nil && f.NoOptDefVal != ""
+	}
+	for i := 1; i < len(a); i++ {
+		f := fs.ShorthandLookup(string(a[i]))
+		if f == nil || f.NoOptDefVal == "" {
+			return false
+		}
+	}
+	return true
 }
 
 // recoverLongFlagToken returns the original argv token for an unknown

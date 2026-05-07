@@ -8,7 +8,48 @@ package builtins
 import (
 	"errors"
 	"testing"
+
+	"github.com/spf13/pflag"
 )
+
+func TestSafeHelpTrimIndex(t *testing.T) {
+	makeFS := func() *pflag.FlagSet {
+		fs := pflag.NewFlagSet("t", pflag.ContinueOnError)
+		fs.BoolP("help", "", false, "")
+		fs.BoolP("verbose", "v", false, "")
+		fs.BoolP("quiet", "q", false, "")
+		fs.StringP("name", "n", "", "")
+		return fs
+	}
+
+	tests := []struct {
+		name    string
+		args    []string
+		wantIdx int
+		wantOK  bool
+	}{
+		{"--help first", []string{"--help"}, 0, true},
+		{"--help after no-arg long", []string{"--verbose", "--help", "--bogus"}, 1, true},
+		{"--help after no-arg short", []string{"-q", "--help", "--bogus"}, 1, true},
+		{"--help after cluster of no-arg shorts", []string{"-qv", "--help", "--bogus"}, 1, true},
+		{"--help after value-taker is unsafe", []string{"-n", "5", "--help"}, 0, false},
+		{"--help after =value is unsafe", []string{"--verbose=true", "--help"}, 0, false},
+		{"--help after positional is unsafe", []string{"foo", "--help"}, 0, false},
+		{"--help after unknown flag is unsafe", []string{"--bogus", "--help"}, 0, false},
+		{"--help after -- is unsafe", []string{"--", "--help"}, 0, false},
+		{"no --help in args", []string{"--verbose"}, 0, false},
+		{"empty args", nil, 0, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			idx, ok := safeHelpTrimIndex(makeFS(), tt.args)
+			if idx != tt.wantIdx || ok != tt.wantOK {
+				t.Errorf("safeHelpTrimIndex(%v) = (%d, %v), want (%d, %v)", tt.args, idx, ok, tt.wantIdx, tt.wantOK)
+			}
+		})
+	}
+}
 
 func TestRewritePflagError(t *testing.T) {
 	tests := []struct {
