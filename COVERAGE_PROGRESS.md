@@ -40,7 +40,7 @@ Legend: ⏳ pending · 🔄 in progress · ✅ done · ⏭️ skipped (no high-v
 | 30 | heredoc | shell | 42 | 42 | ⏭️ | comprehensive: variable expansion (quoted/unquoted/partial), delimiter forms, command-sub, line-continuation, in compound contexts, tabs, special chars |
 | 31 | exit | cmd | 44 | 40 | ✅ | removed 4 byte-identical dupes (exit_*.yaml mirrored basic/*.yaml and codes/17.yaml) |
 | 32 | strings_cmd | cmd | 44 | 44 | ⏭️ | 37 scenarios + 7 Go tests cover flags, offset radices, stdin, multi-file, pathological inputs |
-| 33 | blocked_commands | shell | 44 | — | ⏳ | |
+| 33 | blocked_commands | shell | 44 | 43 | ✅ | removed near-dupe (select_statement = select_clause); kept POSIX-terminology version |
 | 34 | ps | cmd | 44 | — | ⏳ | |
 | 35 | read | cmd | 50 | — | ⏳ | |
 | 36 | allowed_paths | shell | 51 | — | ⏳ | |
@@ -75,9 +75,9 @@ Legend: ⏳ pending · 🔄 in progress · ✅ done · ⏭️ skipped (no high-v
 
 ## Summary
 
-- Targets processed: 32 / 64
+- Targets processed: 33 / 64
 - Tests added: 8 (scenario: 8, unit: 0)
-- Duplicate tests removed: 11 (scenario: 11, unit: 0)
+- Duplicate tests removed: 12 (scenario: 12, unit: 0)
 - Low-value tests removed: 0 (scenario: 0, unit: 0)
 - `skip_assert_against_bash` flags removed: 0
 - Windows-specific assertions removed: 0
