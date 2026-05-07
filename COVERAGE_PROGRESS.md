@@ -17,7 +17,7 @@ Legend: ⏳ pending · 🔄 in progress · ✅ done · ⏭️ skipped (no high-v
 | 7  | subshell            | shell |             12 | 12            | ⏭️     | already comprehensive — covers basic/nested/triple-nested-isolation, exit, var-isolation, pipe, redirect, &&/\|\| |
 | 8  | input_processing    | shell |             13 | 13            | ⏭️     | already comprehensive — covers blank lines, comments, whitespace handling, tabs/spaces, long lines, no-trailing-newline |
 | 9  | blocked_redirects   | shell |             17 | 17            | ⏭️     | already comprehensive — covers every blocked redir form (>, >>, &>, &>>, 2>, <>, >\|, <&, >&, etc.) |
-| 10 | allowed_redirects   | shell |             18 | —             | ⏳     |       |
+| 10 | allowed_redirects   | shell |             18 | 18            | ⏭️     | already comprehensive — input redir + heredoc combinations (pipes, &&, brace, for, multi-input, special chars) |
 | 11 | inline_var          | shell |             18 | —             | ⏳     |       |
 | 12 | command_substitution| shell |             20 | —             | ⏳     |       |
 | 13 | heredoc_dash        | shell |             20 | —             | ⏳     |       |
@@ -75,7 +75,7 @@ Legend: ⏳ pending · 🔄 in progress · ✅ done · ⏭️ skipped (no high-v
 
 ## Summary
 
-- Targets processed: 9 / 64
+- Targets processed: 10 / 64
 - Tests added: 0 (scenario: 0, unit: 0)
 - Duplicate tests removed: 0 (scenario: 0, unit: 0)
 - Low-value tests removed: 0 (scenario: 0, unit: 0)
