@@ -41,7 +41,7 @@ Legend: ⏳ pending · 🔄 in progress · ✅ done · ⏭️ skipped (no high-v
 | 31 | heredoc             | shell |             42 | 42            | ⏭️     | already comprehensive — covers basic, EOF/custom delimiters, expansion suppression, var/cmd-subst expansion, in for/&&/pipe |
 | 32 | blocked_commands    | shell |             43 | 43            | ⏭️     | already comprehensive — covers every blocked syntactic construct (case/declare/eval/let/coproc/&/(()) etc.) |
 | 33 | pwd                 | cmd   |             44 | 44            | ⏭️     | already comprehensive — 27 Go tests (incl. fuzz, pentest, internal symlink-loop) + 17 scenarios |
-| 34 | true                | cmd   |             45 | —             | ⏳     |       |
+| 34 | true                | cmd   |             45 | 45            | ⏭️     | already overcomprehensive — true is a no-flag no-arg always-0 builtin; 22 scenarios more than enough |
 | 35 | du                  | cmd   |             51 | —             | ⏳     |       |
 | 36 | allowed_paths       | shell |             51 | —             | ⏳     |       |
 | 37 | cmd_separator       | shell |             52 | —             | ⏳     |       |
@@ -75,7 +75,7 @@ Legend: ⏳ pending · 🔄 in progress · ✅ done · ⏭️ skipped (no high-v
 
 ## Summary
 
-- Targets processed: 33 / 64
+- Targets processed: 34 / 64
 - Tests added: 0 (scenario: 0, unit: 0)
 - Duplicate tests removed: 0 (scenario: 0, unit: 0)
 - Low-value tests removed: 0 (scenario: 0, unit: 0)
