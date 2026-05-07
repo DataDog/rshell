@@ -43,10 +43,11 @@ Your very first action — before reading ANY files, before writing ANY code —
 2. "Step 2: Initialize COVERAGE_PROGRESS.md"
 3. "Step 3: Download reference test suites"
 
-Then for each target discovered in Step 1, you will dynamically create tasks for the per-target loop (Steps 4–11). After all targets are processed, two finalization tasks run once:
+Then for each target discovered in Step 1, you will dynamically create tasks for the per-target loop (Steps 4–11). After all targets are processed, three finalization tasks run once:
 
-- "Step 12: Post final coverage report to PR"
-- "Step 13: Remove COVERAGE_PROGRESS.md from the PR"
+- "Step 12: Run /fix-ci-tests to clear CI failures"
+- "Step 13: Post final coverage report to PR"
+- "Step 14: Remove COVERAGE_PROGRESS.md from the PR"
 
 ### 2. Execution order
 
@@ -56,7 +57,7 @@ The workflow has three phases:
 
 **Phase B — Per-target loop:** Process targets ONE AT A TIME, in sequence. For each target, run Steps 4 → 5 → 6 → 7 → 8 → 9 → 10 → 11 sequentially. Complete ALL steps for one target before starting the next. Do NOT process multiple targets in parallel.
 
-**Phase C — Finalization (once, after all targets):** Step 12 → Step 13.
+**Phase C — Finalization (once, after all targets):** Step 12 → Step 13 → Step 14.
 
 Before starting step N, call TaskList and verify step N-1 is `completed`. Set step N to `in_progress`.
 
@@ -155,7 +156,7 @@ Then immediately create tasks for the per-target loop. For each target, call Tas
 - "Step 10: Fix failing tests — <target>"
 - "Step 11: Commit, push, update COVERAGE_PROGRESS.md, post per-target report — <target>"
 
-Set up blockedBy dependencies so each target's Step 4 is blocked by the previous target's Step 11 (and by Step 3 for the first target). Step 12 is blocked by the final target's Step 11.
+Set up blockedBy dependencies so each target's Step 4 is blocked by the previous target's Step 11 (and by Step 3 for the first target). Step 12 is blocked by the final target's Step 11; Step 13 is blocked by Step 12; Step 14 is blocked by Step 13.
 
 ### Step 2: Initialize COVERAGE_PROGRESS.md
 
@@ -703,9 +704,32 @@ After posting, move to the next target in the list and start its Step 4. Continu
 
 ## Phase C — Finalization
 
-Phase C runs once, after every target in the list has reached Step 11. It posts the consolidated report and removes the progress tracker from the branch.
+Phase C runs once, after every target in the list has reached Step 11. It clears any CI failures introduced during the run, posts the consolidated report, and removes the progress tracker from the branch.
 
-### Step 12: Post final coverage report to PR
+### Step 12: Run /fix-ci-tests to clear CI failures
+
+Per-target Step 10 only runs the local test suite. Remote CI may still fail (lint, vet, formatting, bash-comparison jobs that local Docker skipped, platform-specific runners, etc.). Before posting the final report, invoke the `/fix-ci-tests` skill to diagnose and fix any failing CI checks on this branch's PR.
+
+```bash
+PR_NUMBER=$(gh pr view --json number --jq '.number')
+```
+
+If a PR exists, invoke the skill (it reads failing checks from `gh`, fixes them, and re-pushes until green):
+
+- Use the Skill tool with `skill: fix-ci-tests` and pass the PR number as the argument.
+- Let it run to completion. It may push additional commits to the branch — that is expected.
+
+If no PR exists for the current branch, skip this step (there is no remote CI to fix) and proceed to Step 13.
+
+After `/fix-ci-tests` returns, confirm the branch is green:
+
+```bash
+gh pr checks "$PR_NUMBER"
+```
+
+If checks are still failing for reasons outside the skill's scope (e.g. the `verified/allowed_symbols` label, which is reserved for human approval — see `AGENTS.md`), note them in the Step 13 final report's "Findings" section and proceed. Do **not** attempt to bypass labels reserved for human review.
+
+### Step 13: Post final coverage report to PR
 
 Read the now-fully-populated `COVERAGE_PROGRESS.md` and post a single PR comment that embeds it as the final summary.
 
@@ -713,7 +737,7 @@ Read the now-fully-populated `COVERAGE_PROGRESS.md` and post a single PR comment
 PR_NUMBER=$(gh pr view --json number --jq '.number')
 ```
 
-If no PR exists for the current branch, skip posting and print the report to the console instead.
+If no PR exists for the current branch, skip posting and print the report to the console instead. (You can reuse the `PR_NUMBER` looked up in Step 12.)
 
 The comment body has this structure (the entire `COVERAGE_PROGRESS.md` content is included verbatim inside the fenced section):
 
@@ -746,7 +770,7 @@ EOF
 
 If posting fails, print the report to the console.
 
-### Step 13: Remove COVERAGE_PROGRESS.md from the PR
+### Step 14: Remove COVERAGE_PROGRESS.md from the PR
 
 `COVERAGE_PROGRESS.md` is a working document for the run, not part of the merged change set. Remove it in a final commit on the same branch.
 
