@@ -1,0 +1,38 @@
+description: deleted and missing element parameters both become unassigned after parent deletion
+upstream:
+  suite: gawk
+  id: test/ar2fn_unxptyp_val.awk
+  ref: gawk-5.4.0
+covers:
+  - a deleted element passed as a parameter remains unassigned after scalar use
+  - a never-created element follows the same type path
+  - deleting the parent keeps each global name classified as an array
+input:
+  program: |
+    function from_deleted(slot) {
+      delete shelf
+      slot
+      print typeof(shelf)
+      print typeof(slot)
+    }
+
+    function from_missing(slot) {
+      delete bin
+      slot
+      print typeof(bin)
+      print typeof(slot)
+    }
+
+    BEGIN {
+      shelf["old"] = "x"
+      delete shelf["old"]
+      from_deleted(shelf["old"])
+      from_missing(bin["new"])
+    }
+expect:
+  stdout: |
+    array
+    unassigned
+    array
+    unassigned
+  exit_code: 0

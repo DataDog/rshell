@@ -1,0 +1,25 @@
+description: adjacent expressions concatenate after preincrement
+upstream:
+  suite: onetrueawk
+  id: testdir/t.concat
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "scalar values concatenate with numeric expressions"
+  - "preincrement updates before concatenation"
+  - "the incremented counter persists across records"
+input:
+  program: |
+    {
+      token = $2
+      print token (++seq)
+    }
+  stdin: |
+    a cat
+    b dog
+    c eel
+expect:
+  stdout: |
+    cat1
+    dog2
+    eel3
+  exit_code: 0

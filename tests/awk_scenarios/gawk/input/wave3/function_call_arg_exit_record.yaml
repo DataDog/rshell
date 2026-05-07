@@ -1,0 +1,34 @@
+description: exit while evaluating a function argument in a record rule stops later records
+upstream:
+  suite: gawk
+  id: test/fcall_exit2.awk
+  ref: gawk-5.4.0
+covers:
+  - argument evaluation in a normal rule can exit before the function body runs
+  - exit from a rule stops reading further input and still runs END with the current NR
+input:
+  program: |
+    function stop_argument() {
+      print "stop:" NR
+      exit 9
+    }
+    function collect(value, sentinel) {
+      print "callee should not run"
+    }
+    {
+      print "record:" $0
+      collect($1, stop_argument())
+      print "after record"
+    }
+    END {
+      print "end:" NR
+    }
+  stdin: |
+    first
+    second
+expect:
+  stdout: |
+    record:first
+    stop:1
+    end:1
+  exit_code: 9

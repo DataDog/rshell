@@ -1,0 +1,29 @@
+description: concatenation keeps the left operand value stable across function side effects
+upstream:
+  suite: gawk
+  id: test/nasty.awk
+  ref: gawk-5.4.0
+covers:
+  - concatenation evaluates the left operand before the function call
+  - a function can mutate the global used by the left operand
+  - assignment receives the concatenated value, not a corrupted buffer
+input:
+  program: |
+    BEGIN {
+      a = "aaaaa"
+      a = a a
+      a = a a
+      old = a
+      a = a "|" f()
+      print (a == old "|X")
+      print (index(a, "123") > 0)
+    }
+    function f() {
+      gsub(/a/, "123", a)
+      return "X"
+    }
+expect:
+  stdout: |
+    1
+    0
+  exit_code: 0

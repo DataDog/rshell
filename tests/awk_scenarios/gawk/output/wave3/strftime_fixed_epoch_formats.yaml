@@ -1,0 +1,25 @@
+description: strftime formats a fixed UTC epoch with date, time, timezone, and weekday fields
+upstream:
+  suite: gawk
+  id: test/strftime.awk
+  ref: gawk-5.4.0
+covers:
+  - strftime formats a timestamp supplied as its second argument
+  - date and time directives are evaluated in the pinned timezone
+  - weekday and timezone names are stable under TZ=UTC
+input:
+  envs:
+    TZ: UTC
+  program: |
+    BEGIN {
+      t = mktime("2026 05 07 13 14 15", 0)
+      print strftime("%Y-%m-%d", t)
+      print strftime("%H:%M:%S %Z", t)
+      print strftime("%A", t)
+    }
+expect:
+  stdout: |
+    2026-05-07
+    13:14:15 UTC
+    Thursday
+  exit_code: 0

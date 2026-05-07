@@ -1,0 +1,24 @@
+description: powers of two around 64-bit boundaries format consistently
+upstream:
+  suite: gawk
+  id: test/double2.awk
+  ref: gawk-5.4.0
+covers:
+  - exponentiation produces exact powers of two near 64-bit boundaries
+  - string, decimal, general, and octal printf conversions agree for large values
+input:
+  program: |
+    BEGIN {
+      x = 2 ^ 60
+      for (i = 60; i <= 63; i++) {
+        printf "2^%d= %s %d %g %o\n", i, x, x, x, x
+        x *= 2
+      }
+    }
+expect:
+  stdout: |
+    2^60= 1152921504606846976 1152921504606846976 1.15292e+18 100000000000000000000
+    2^61= 2305843009213693952 2305843009213693952 2.30584e+18 200000000000000000000
+    2^62= 4611686018427387904 4611686018427387904 4.61169e+18 400000000000000000000
+    2^63= 9223372036854775808 9223372036854775808 9.22337e+18 1000000000000000000000
+  exit_code: 0

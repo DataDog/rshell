@@ -1,0 +1,23 @@
+description: exit from a main action still runs END with the current NR
+upstream:
+  suite: onetrueawk
+  id: testdir/p.41
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "exit stops input processing from a main action"
+  - "END actions still run after exit"
+  - "NR records how many records were read before exit"
+input:
+  program: |
+    NR >= 4 { exit }
+    END { print "stopped at", NR }
+  stdin: |
+    one
+    two
+    three
+    four
+    five
+expect:
+  stdout: |
+    stopped at 4
+  exit_code: 0

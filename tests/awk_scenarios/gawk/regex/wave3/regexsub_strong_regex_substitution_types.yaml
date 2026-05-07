@@ -1,0 +1,36 @@
+description: substitution on strong regexps and numbers updates values and types like gawk
+upstream:
+  suite: gawk
+  id: test/regexsub.awk
+  ref: gawk-5.4.0
+covers:
+  - gsub can mutate a strongly typed regexp variable
+  - gsub on a numeric value with a replacement converts it to a string
+  - gensub on a strongly typed regexp returns a string without mutating the source
+input:
+  program: |
+    BEGIN {
+      regex = @/red|blue/
+      copy = regex
+      print typeof(regex), regex
+      gsub(/blue/, "green", copy)
+      print typeof(regex), regex
+      print typeof(copy), copy
+
+      number = 8080
+      gsub(/0/, "x", number)
+      print typeof(number), number
+
+      out = gensub(/red/, "R", 1, regex)
+      print typeof(regex), regex
+      print typeof(out), out
+    }
+expect:
+  stdout: |
+    regexp red|blue
+    regexp red|blue
+    regexp red|green
+    string 8x8x
+    regexp red|blue
+    string R|blue
+  exit_code: 0

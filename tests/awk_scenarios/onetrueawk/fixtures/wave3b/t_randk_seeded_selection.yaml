@@ -1,0 +1,15 @@
+description: seeded random selection updates loop counters and k
+upstream:
+  suite: onetrueawk
+  id: testdir/t.randk
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "srand makes rand output deterministic for the scenario"
+  - "k and n updates affect later random-selection probabilities"
+input:
+  program: |
+    BEGIN { srand(2) } { k = 2; n = NF; i = 1; while (i <= n) { if (rand() < k / n) { print i; k-- } n--; i++ } }
+  stdin: "a b c d e\n"
+expect:
+  stdout: "2\n3\n"
+  exit_code: 0

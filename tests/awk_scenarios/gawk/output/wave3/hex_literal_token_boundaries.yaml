@@ -1,0 +1,28 @@
+description: hexadecimal-looking tokens split between numeric literals and concatenation
+upstream:
+  suite: gawk
+  id: test/hex.awk
+  ref: gawk-5.4.0
+covers:
+  - hexadecimal constants are recognized when digits follow the 0x prefix
+  - a bare 0 followed by variables remains concatenation
+  - exponent-looking decimal literals are parsed before adjacent names
+input:
+  program: |
+    BEGIN {
+      e = "2(e)"
+      x = "4e1(x)"
+      print e + 0, x + 0
+      print 0x
+      print 0e + x
+      print 0ex
+      print 07e1
+    }
+expect:
+  stdout: |
+    2 40
+    04e1(x)
+    042
+    0
+    70
+  exit_code: 0

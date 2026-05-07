@@ -1,0 +1,30 @@
+description: function parameters survive NF increments and field appends
+upstream:
+  suite: gawk
+  id: test/tweakfld.awk
+  ref: gawk-5.4.0
+covers:
+  - incrementing NF inside a function extends the caller's current record
+  - assigning $NF after NF++ does not clobber the function parameter
+  - repeated appends rebuild $0 with OFS
+input:
+  program: |
+    BEGIN { FS = OFS = "," }
+    function append_field(value) {
+      NF++
+      $NF = value
+    }
+    {
+      saved = $2
+      append_field(saved)
+      append_field("tail-" saved)
+      print NF ":" $0
+    }
+  stdin: |
+    row1,keep
+    row2,more
+expect:
+  stdout: |
+    4:row1,keep,keep,tail-keep
+    4:row2,more,more,tail-more
+  exit_code: 0

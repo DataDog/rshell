@@ -1,0 +1,26 @@
+description: A parameter name cannot call a previously defined function with the same name
+upstream:
+  suite: gawk
+  id: test/paramasfunc2.awk
+  ref: gawk-5.4.0
+covers:
+  - a parameter can shadow a function name that was defined earlier
+  - calling the shadowing parameter as a function is rejected
+input:
+  program: |
+    function word() {
+      return "south"
+    }
+
+    function prior(word) {
+      word = "north"
+      print word word()
+    }
+
+    BEGIN {
+      prior()
+    }
+expect:
+  stderr_contains:
+    - "attempt to use non-function `word' in function call"
+  exit_code: 1

@@ -1,0 +1,20 @@
+description: a start-anchored regex record separator with repetition stays input-anchored
+upstream:
+  suite: gawk
+  id: test/rsstart2.awk
+  ref: gawk-5.4.0
+covers:
+  - caret in RS anchors a regexp separator to the input start
+  - repetition after the anchored literal is part of the separator match
+input:
+  program: |
+    BEGIN { RS = "^Ax*\n" }
+    END { print NR }
+  stdin: |
+    Axxxxxx
+    Axxxxxx
+    Axxxxxx
+expect:
+  stdout: |
+    2
+  exit_code: 0

@@ -1,0 +1,22 @@
+description: match can use the first field as a regexp against the last field
+upstream:
+  suite: gawk
+  id: test/match5.awk
+  ref: gawk-5.4.0
+covers:
+  - match accepts dynamic regexps from fields
+  - RSTART and RLENGTH describe the match in the target field
+input:
+  program: |
+    NF > 0 && match($NF, $1) {
+      print $0, RSTART, RLENGTH
+    }
+  stdin: |
+    ^ab abacus
+    cat concatenate
+    zeta omega
+expect:
+  stdout: |
+    ^ab abacus 1 2
+    cat concatenate 4 3
+  exit_code: 0

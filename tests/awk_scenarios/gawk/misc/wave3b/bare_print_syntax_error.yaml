@@ -1,0 +1,15 @@
+description: a bare print statement at top level is diagnosed as a syntax error
+upstream:
+  suite: gawk
+  id: test/synerr1.awk
+  ref: gawk-5.4.0
+covers:
+  - invalid top-level statements produce syntax diagnostics
+  - syntax errors exit non-zero
+input:
+  program: |
+    print "hi"
+expect:
+  stderr_contains:
+    - syntax error
+  exit_code: 1

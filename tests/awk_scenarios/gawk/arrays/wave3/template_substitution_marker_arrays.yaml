@@ -1,0 +1,42 @@
+description: marker arrays drive template substitution without creating missing replacement values
+upstream:
+  suite: gawk
+  id: test/mdim4.awk
+  ref: gawk-5.4.0
+covers:
+  - one array can hold replacement values while another tracks defined keys
+  - split results can drive dynamic array lookups
+  - missing replacement keys are preserved rather than materialized from the value array
+input:
+  program: |
+    BEGIN {
+      repl["NAME"] = "rshell"
+      repl["CITY"] = "nyc"
+      repl["EMPTY"] = ""
+      for (key in repl)
+        present[key] = 1
+    }
+
+    {
+      line = $0
+      count = split(line, part, "@")
+      out = part[1]
+      for (i = 2; i < count; i += 2) {
+        key = part[i]
+        if (present[key])
+          out = out repl[key] part[i + 1]
+        else
+          out = out "@" key "@" part[i + 1]
+      }
+      print out
+    }
+  stdin: |
+    Hi @NAME@ from @CITY@.
+    No change @MISSING@.
+    Empty:@EMPTY@!
+expect:
+  stdout: |
+    Hi rshell from nyc.
+    No change @MISSING@.
+    Empty:!
+  exit_code: 0

@@ -1,0 +1,16 @@
+description: integer precision pads decimal, hexadecimal, and octal conversions with zeroes
+upstream:
+  suite: gawk
+  id: test/intprec.awk
+  ref: gawk-5.4.0
+covers:
+  - decimal integer precision controls minimum digits
+  - hexadecimal precision pads after base conversion
+  - octal precision pads after base conversion
+input:
+  program: |
+    BEGIN { printf "%.8d:%.8x:%.8o\n", 12, 31, 9 }
+expect:
+  stdout: |
+    00000012:0000001f:00000011
+  exit_code: 0

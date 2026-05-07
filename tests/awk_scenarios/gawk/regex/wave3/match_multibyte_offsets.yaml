@@ -1,0 +1,31 @@
+description: match records offsets in characters around a multibyte UTF-8 character
+upstream:
+  suite: gawk
+  id: test/mtchi18n2.awk
+  ref: gawk-5.4.0
+covers:
+  - RSTART and RLENGTH count characters for multibyte strings
+  - match capture start and length metadata uses character offsets
+  - empty captures around a multibyte character have stable offsets
+input:
+  envs:
+    LC_ALL: en_US.UTF-8
+  program: |
+    BEGIN {
+      narrow = "\u202F"
+      match(narrow, /^/, offsets)
+      print RSTART, RLENGTH
+      match(narrow, /^(a?)\u202F(b?)$/, offsets)
+      print RSTART, RLENGTH, offsets[1, "start"], offsets[1, "length"], offsets[2, "start"], offsets[2, "length"]
+      match(narrow, /$/, offsets)
+      print RSTART, RLENGTH
+      match(narrow "ac", /a(b?)c/, offsets)
+      print RSTART, RLENGTH, offsets[1, "start"], offsets[1, "length"]
+    }
+expect:
+  stdout: |
+    1 0
+    1 1 1 0 2 0
+    2 0
+    2 2 3 0
+  exit_code: 0

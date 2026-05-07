@@ -1,0 +1,47 @@
+description: patsplit records both fields and separators for CSV-like and repeated matches
+upstream:
+  suite: gawk
+  id: test/patsplit.awk
+  ref: gawk-5.4.0
+covers:
+  - patsplit returns fields matched by FPAT-style regexps
+  - patsplit records separators before, between, and after fields
+  - repeated regexp matches leave unmatched text in the separators array
+input:
+  program: |
+    BEGIN {
+      csv = "Red,,\"Blue,Green\",Gold"
+      n = patsplit(csv, field, "([^,]*)|(\"[^\"]+\")", sep)
+      print "csv n", n
+      for (i = 1; i <= n; i++)
+        print "f" i "=" field[i]
+      for (i = 0; i <= n; i++)
+        print "s" i "=" sep[i]
+
+      letters = "xxmmmyymmmmz"
+      n = patsplit(letters, field, "m+", sep)
+      print "letters n", n
+      for (i = 1; i <= n; i++)
+        print "f" i "=" field[i]
+      for (i = 0; i <= n; i++)
+        print "s" i "=" sep[i]
+    }
+expect:
+  stdout: |
+    csv n 4
+    f1=Red
+    f2=
+    f3="Blue,Green"
+    f4=Gold
+    s0=
+    s1=,
+    s2=,
+    s3=,
+    s4=
+    letters n 2
+    f1=mmm
+    f2=mmmm
+    s0=xx
+    s1=yy
+    s2=z
+  exit_code: 0

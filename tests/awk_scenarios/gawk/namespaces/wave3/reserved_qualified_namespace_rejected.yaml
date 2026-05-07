@@ -1,0 +1,17 @@
+description: reserved words cannot be used as qualified namespace prefixes
+upstream:
+  suite: gawk
+  id: test/nsbad3.awk
+  ref: gawk-5.4.0
+covers:
+  - qualified variable names validate their namespace component
+  - reserved words used as namespace prefixes are syntax errors
+input:
+  program_file: bad_qualified.awk
+  program: |
+    BEGIN { while::value = 3 }
+expect:
+  stderr_contains:
+    - "using reserved identifier `while' as a namespace is not allowed"
+    - "syntax error"
+  exit_code: 1

@@ -1,0 +1,32 @@
+description: lowercase word extraction records distinct long words
+upstream:
+  suite: gawk
+  id: test/longwrds.awk
+  ref: gawk-5.4.0
+covers:
+  - match can extract alphabetic and hyphenated words from fields
+  - tolower-normalized strings can be used as array keys
+  - long-word counting is independent of input punctuation
+input:
+  program: |
+    {
+      for (i = 1; i <= NF; i++) {
+        word = tolower($i)
+        if (match(word, /([[:lower:]]|-)+/))
+          seen[substr(word, RSTART, RLENGTH)] = 1
+      }
+    }
+    END {
+      print ("extraordinary" in seen), ("well-designed" in seen), ("tiny" in seen)
+      for (word in seen)
+        if (length(word) > 10)
+          count++
+      print count
+    }
+  stdin: |
+    Tiny extraordinary well-designed plans; ordinary.
+expect:
+  stdout: |
+    1 1 1
+    2
+  exit_code: 0

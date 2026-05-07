@@ -1,0 +1,20 @@
+description: gsub removes punctuation with a bracket class without consuming word starts
+upstream:
+  suite: gawk
+  id: test/gsubtst5.awk
+  ref: gawk-5.4.0
+covers:
+  - bracket classes can include slash, backslash, dollar, and hyphen literals
+  - gsub removes all matching punctuation while preserving neighboring letters
+input:
+  program: |
+    {
+      gsub(/[[:space:]"\/\\:;@?.,$-]/, "", $0)
+      print
+    }
+  stdin: |
+    Alpha Beta: A/B? $C-D.
+expect:
+  stdout: |
+    AlphaBetaABCD
+  exit_code: 0

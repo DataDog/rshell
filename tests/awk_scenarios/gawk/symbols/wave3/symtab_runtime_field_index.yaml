@@ -1,0 +1,21 @@
+description: a runtime SYMTAB assignment can select a field through an existing global
+upstream:
+  suite: gawk
+  id: test/symtab4.awk
+  ref: gawk-5.4.0
+covers:
+  - assigning an existing global through SYMTAB during record processing is allowed
+  - field references use the updated global value as the field number
+  - NF can be used as the assigned field selector
+input:
+  program: |
+    {
+      SYMTAB["pick"] = NF
+      print $pick
+    }
+  stdin: |
+    red blue green
+expect:
+  stdout: |
+    green
+  exit_code: 0

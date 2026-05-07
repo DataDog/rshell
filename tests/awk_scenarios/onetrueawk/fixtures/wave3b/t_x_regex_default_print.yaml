@@ -1,0 +1,15 @@
+description: a bare regex pattern uses the default print action
+upstream:
+  suite: onetrueawk
+  id: testdir/t.x
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "regex pattern-only rules print matching records"
+  - "non-matching records produce no output"
+input:
+  program: |
+    /x/
+  stdin: "box\nalpha\nexit\n"
+expect:
+  stdout: "box\nexit\n"
+  exit_code: 0

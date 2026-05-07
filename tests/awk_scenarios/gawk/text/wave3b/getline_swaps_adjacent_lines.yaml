@@ -1,0 +1,29 @@
+description: getline inside the main action can swap adjacent input lines
+upstream:
+  suite: gawk
+  id: test/swaplns.awk
+  ref: gawk-5.4.0
+covers:
+  - getline into a variable consumes the next record
+  - the current record remains available after getline into a variable
+  - an odd final record is printed when no following record exists
+input:
+  program: |
+    {
+      if ((getline tmp) > 0) {
+        print tmp
+        print
+      } else {
+        print
+      }
+    }
+  stdin: |
+    one
+    two
+    three
+expect:
+  stdout: |
+    two
+    one
+    three
+  exit_code: 0

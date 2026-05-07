@@ -1,0 +1,27 @@
+description: a record separator containing dot-caret does not split on interior text
+upstream:
+  suite: gawk
+  id: test/regexpuparrow.awk
+  ref: gawk-5.4.0
+covers:
+  - RS can be a regexp containing an anchor after a wildcard
+  - gsub with the same dot-caret regexp leaves interior literal text unchanged
+  - RT is empty when no regexp record separator matched
+input:
+  program: |
+    BEGIN { RS = ".^" }
+    {
+      gsub(/.^/, ">&<")
+      print NR, $0
+      print "RT=<" RT ">"
+    }
+  stdin: |
+    a.^b
+    a.^b
+expect:
+  stdout: |
+    1 a.^b
+    a.^b
+
+    RT=<>
+  exit_code: 0

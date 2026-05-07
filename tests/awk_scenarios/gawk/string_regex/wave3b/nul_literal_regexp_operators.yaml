@@ -1,0 +1,35 @@
+description: NUL regexps match consistently across literal regexp operators
+upstream:
+  suite: gawk
+  id: test/regnul1.awk
+  ref: gawk-5.4.0
+covers:
+  - literal regexps containing NUL match a NUL string with match
+  - split and gsub accept literal NUL regexps
+  - the match operator and switch regexp cases accept literal NUL regexps
+input:
+  program: |
+    function show(label, ok) {
+      print label, ok ? "+" : "-"
+    }
+    BEGIN {
+      text = "\0"
+      show("match", match(text, /^\0$/))
+      show("split", split(text, fields, /^\0$/) > 1)
+      show("gsub", gsub(/^\0$/, "&", text))
+      show("tilde", text ~ /^\0$/)
+      ok = 0
+      switch (text) {
+      case /^\0$/:
+        ok = 1
+      }
+      show("switch", ok)
+    }
+expect:
+  stdout: |
+    match +
+    split +
+    gsub +
+    tilde +
+    switch +
+  exit_code: 0

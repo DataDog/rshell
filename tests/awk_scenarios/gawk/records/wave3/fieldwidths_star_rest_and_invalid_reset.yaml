@@ -1,0 +1,23 @@
+description: FIELDWIDTHS star captures the rest only when it is the final designator
+upstream:
+  suite: gawk
+  id: test/fwtest6.awk
+  ref: gawk-5.4.0
+covers:
+  - a trailing star designator captures the remaining record text
+  - assigning a FIELDWIDTHS value with star before another field is fatal
+input:
+  program: |
+    BEGIN { FIELDWIDTHS = "3 2 * " }
+    {
+      print NF ":" $1 ":" $2 ":" $3
+    }
+    END { FIELDWIDTHS = "1 * 1" }
+  stdin: |
+    abc12tail
+expect:
+  stdout: |
+    3:abc:12:tail
+  stderr_contains:
+    - "`*' must be the last designator in FIELDWIDTHS"
+  exit_code: 2

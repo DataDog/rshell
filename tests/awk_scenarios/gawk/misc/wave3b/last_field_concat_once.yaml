@@ -1,0 +1,20 @@
+description: $NF is evaluated once when printed directly and through concatenation
+upstream:
+  suite: gawk
+  id: test/prdupval.awk
+  ref: gawk-5.4.0
+covers:
+  - NF reflects each current record
+  - $NF selects the last field
+  - concatenating a literal with $NF does not duplicate or lose the field value
+input:
+  program: |
+    { print NF, $NF, "abc" $NF }
+  stdin: |
+    red blue
+    one two three
+expect:
+  stdout: |
+    2 blue abcblue
+    3 three abcthree
+  exit_code: 0

@@ -1,0 +1,24 @@
+description: interval regexps can repeat groups containing POSIX classes
+upstream:
+  suite: gawk
+  id: test/reint2.awk
+  ref: gawk-5.4.0
+covers:
+  - counted repetition can apply to parenthesized groups
+  - POSIX digit and space classes work inside repeated groups
+input:
+  awk_args:
+    - --re-interval
+  envs:
+    LC_ALL: en_US.UTF-8
+  program: |
+    /^([[:digit:]]+[[:space:]]+){2}/ {
+      print "matched", $0
+    }
+  stdin: |
+    1 2 3
+    1 x 3
+expect:
+  stdout: |
+    matched 1 2 3
+  exit_code: 0

@@ -1,0 +1,29 @@
+description: uninitialized scalars and array elements match empty-string regexps
+upstream:
+  suite: gawk
+  id: test/matchuninitialized.awk
+  ref: gawk-5.4.0
+covers:
+  - uninitialized scalars are empty strings for regex matching
+  - uninitialized array elements are empty strings for regex matching
+  - nonempty regexps do not match uninitialized values
+input:
+  program: |
+    BEGIN {
+      if (match(blank, /^$/))
+        print "scalar empty"
+      if (! match(blank, /./))
+        print "scalar no dot"
+      delete bucket
+      if (match(bucket["missing"], /^\s*$/))
+        print "array empty"
+      if (! match(bucket["missing"], /\S/))
+        print "array no nonspace"
+    }
+expect:
+  stdout: |
+    scalar empty
+    scalar no dot
+    array empty
+    array no nonspace
+  exit_code: 0

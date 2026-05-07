@@ -1,0 +1,20 @@
+description: escaped dollar signs match literal dollar characters
+upstream:
+  suite: onetrueawk
+  id: testdir/p.14
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "escaped dollar signs match literal dollar characters"
+  - "uses original rshell fixture data rather than upstream country records"
+input:
+  program: |
+    /\$/ { print }
+  stdin: |
+    cost $5
+    plain
+    end$
+expect:
+  stdout: |
+    cost $5
+    end$
+  exit_code: 0

@@ -1,0 +1,24 @@
+description: dynamic field assignment can target $0 or $1
+upstream:
+  suite: onetrueawk
+  id: testdir/t.set2
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "computed field number zero assigns the whole record"
+  - "computed field number one assigns the first field"
+  - "field assignment rebuilds NF and $0"
+input:
+  program: |
+    {
+      target = length($0) % 2
+      $target = $2
+      print "target", target, "nf", NF, "rec", $0
+    }
+  stdin: |
+    aa bb
+    one two
+expect:
+  stdout: |
+    target 1 nf 2 rec bb bb
+    target 1 nf 2 rec two two
+  exit_code: 0

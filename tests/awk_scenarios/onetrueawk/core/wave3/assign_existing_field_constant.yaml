@@ -1,0 +1,23 @@
+description: assigning an existing field rebuilds the record with OFS
+upstream:
+  suite: onetrueawk
+  id: testdir/t.f2
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "field assignment changes the selected field"
+  - "print sees the rebuilt current record"
+  - "OFS separates rebuilt fields"
+input:
+  program: |
+    {
+      $2 = "fixed"
+      print $0
+    }
+  stdin: |
+    alpha beta gamma
+    north south east
+expect:
+  stdout: |
+    alpha fixed gamma
+    north fixed east
+  exit_code: 0

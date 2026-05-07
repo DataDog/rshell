@@ -1,0 +1,15 @@
+description: a dynamic dot-end regex matches nonempty records
+upstream:
+  suite: onetrueawk
+  id: testdir/tt.10a
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "a string variable can supply the right-hand regex for ~"
+  - ".$ matches records with at least one character"
+input:
+  program: |
+    BEGIN { x = ".$" } $0 ~ x { print }
+  stdin: "nonempty\n\nlast\n"
+expect:
+  stdout: "nonempty\nlast\n"
+  exit_code: 0

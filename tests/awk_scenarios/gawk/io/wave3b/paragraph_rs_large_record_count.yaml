@@ -1,0 +1,25 @@
+description: paragraph mode handles many newline-terminated physical lines as one record
+upstream:
+  suite: gawk
+  id: test/rsnulbig.ok
+  ref: gawk-5.4.0
+covers:
+  - "RS empty string groups nonblank lines into one paragraph"
+  - "many physical lines in one paragraph do not create extra records"
+  - "a blank line terminates the paragraph"
+input:
+  program: |
+    BEGIN { RS = "" }
+    { records++; lines += split($0, fields, "\n") }
+    END { print records; print lines }
+  stdin: |
+    abcdefgh123456
+    abcdefgh123456
+    abcdefgh123456
+    abcdefgh123456
+
+expect:
+  stdout: |
+    1
+    4
+  exit_code: 0

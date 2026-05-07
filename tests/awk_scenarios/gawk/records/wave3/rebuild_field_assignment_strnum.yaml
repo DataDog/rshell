@@ -1,0 +1,22 @@
+description: field assignment rebuilds the record while preserving strnum field type
+upstream:
+  suite: gawk
+  id: test/rebuild.awk
+  ref: gawk-5.4.0
+covers:
+  - assigning a numbered field rebuilds $0
+  - untouched numeric-looking fields retain strnum type
+input:
+  program: |
+    {
+      $1 = "done"
+      print $0
+      print typeof($2)
+    }
+  stdin: |
+    start 8.50
+expect:
+  stdout: |
+    done 8.50
+    strnum
+  exit_code: 0

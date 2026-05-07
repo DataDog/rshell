@@ -1,0 +1,19 @@
+description: gsub replaces every non-word-boundary position between word characters
+upstream:
+  suite: gawk
+  id: test/gsubtst6.awk
+  ref: gawk-5.4.0
+covers:
+  - GNU \B matches internal non-word-boundary positions
+  - zero-width gsub replacements make progress through a word
+input:
+  program: |
+    BEGIN {
+      text = "wxyz"
+      gsub(/\B/, ".", text)
+      print text
+    }
+expect:
+  stdout: |
+    w.x.y.z
+  exit_code: 0

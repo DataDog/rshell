@@ -1,0 +1,27 @@
+description: substring-derived keys accumulate array totals
+upstream:
+  suite: onetrueawk
+  id: testdir/t.in2
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "substr results can be array subscripts"
+  - "numeric fields add into associative array elements"
+  - "missing keys read as zero in numeric output"
+input:
+  program: |
+    { total[substr($2, 1, 1)] += $1 }
+    END {
+      print "a", total["a"] + 0
+      print "b", total["b"] + 0
+      print "c", total["c"] + 0
+    }
+  stdin: |
+    4 apple
+    6 berry
+    2 apricot
+expect:
+  stdout: |
+    a 6
+    b 6
+    c 0
+  exit_code: 0

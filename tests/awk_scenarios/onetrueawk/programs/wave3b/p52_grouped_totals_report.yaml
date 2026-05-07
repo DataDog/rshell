@@ -1,0 +1,47 @@
+description: grouped colon records print subtotals and a final grand total
+upstream:
+  suite: onetrueawk
+  id: testdir/p.52
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "group changes flush a subtotal before starting the next group"
+  - "per-group and whole-input totals accumulate independently"
+  - "END prints the final subtotal and grand total"
+input:
+  program: |
+    BEGIN { FS = ":" }
+    {
+      if ($1 != prev) {
+        if (prev) {
+          printf ">%-10s %6d\n", "total", subtotal
+          subtotal = 0
+        }
+        print "\n" $1 ":"
+        prev = $1
+      }
+      printf ">%-10s %6d\n", $2, $3
+      wtotal += $3
+      subtotal += $3
+    }
+    END {
+      printf ">%-10s %6d\n", "total", subtotal
+      printf "\n%-10s %6d\n", "World Total", wtotal
+    }
+  stdin: |
+    North:June:12
+    North:July:18
+    South:May:5
+expect:
+  stdout: |
+
+    North:
+    >June           12
+    >July           18
+    >total          30
+
+    South:
+    >May             5
+    >total           5
+
+    World Total     35
+  exit_code: 0

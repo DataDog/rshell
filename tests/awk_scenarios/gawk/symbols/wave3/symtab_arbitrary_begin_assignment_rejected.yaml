@@ -1,0 +1,17 @@
+description: SYMTAB rejects assigning a variable name that the program never references
+upstream:
+  suite: gawk
+  id: test/symtab6.awk
+  ref: gawk-5.4.0
+covers:
+  - arbitrary new SYMTAB elements cannot be created by assignment
+  - the rejection happens even in BEGIN
+input:
+  program: |
+    BEGIN {
+      SYMTAB["made_late"] = 9
+    }
+expect:
+  stderr_contains:
+    - "cannot assign to arbitrary elements of SYMTAB"
+  exit_code: 2

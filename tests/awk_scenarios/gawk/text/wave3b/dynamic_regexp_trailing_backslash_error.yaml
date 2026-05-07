@@ -1,0 +1,17 @@
+description: dynamic regexp conversion rejects a trailing backslash at run time
+upstream:
+  suite: gawk
+  id: test/trailbs.awk
+  ref: gawk-5.4.0
+covers:
+  - the right operand of ~ can be taken from the current record
+  - a dynamic regexp ending in backslash is a fatal invalid-regexp error
+input:
+  program: |
+    0 ~ $0
+  stdin: "abc\\"
+expect:
+  stderr_contains:
+    - "invalid regexp"
+    - "invalid trailing backslash"
+  exit_code: 2

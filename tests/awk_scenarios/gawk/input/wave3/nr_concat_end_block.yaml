@@ -1,0 +1,30 @@
+description: NR remains stable in END after scalar reassignment and concatenation
+upstream:
+  suite: gawk
+  id: test/getnr2tm.awk
+  ref: gawk-5.4.0
+covers:
+  - NR keeps the final record count inside END
+  - string concatenation and numeric coercion of NR agree after scalar variable churn
+input:
+  program: |
+    function touch(word) {
+      seen[word]++
+    }
+    {
+      touch($1)
+      nlines++
+    }
+    END {
+      old = word
+      word = nextword
+      nextword = ""
+      print NR " rows; numeric=" (NR + 0) "; counted=" nlines
+    }
+  stdin: |
+    alpha
+    beta
+expect:
+  stdout: |
+    2 rows; numeric=2; counted=2
+  exit_code: 0

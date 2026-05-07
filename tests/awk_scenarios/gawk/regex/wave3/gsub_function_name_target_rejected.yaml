@@ -1,0 +1,20 @@
+description: gsub rejects using the current function name as an assignment target
+upstream:
+  suite: gawk
+  id: test/gsubasgn.awk
+  ref: gawk-5.4.0
+covers:
+  - gsub's third argument must be assignable storage
+  - a function identifier cannot be used as a variable target
+input:
+  program: |
+    function rewrite() {
+      gsub(/x/, "y", rewrite)
+    }
+    BEGIN {
+      rewrite()
+    }
+expect:
+  stderr_contains:
+    - "function `rewrite' called with space between name"
+  exit_code: 1

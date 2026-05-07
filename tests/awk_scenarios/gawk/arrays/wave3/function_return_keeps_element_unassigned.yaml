@@ -1,0 +1,27 @@
+description: returning a missing element argument leaves the caller element unassigned
+upstream:
+  suite: gawk
+  id: test/elemnew3.awk
+  ref: gawk-5.4.0
+covers:
+  - a missing element argument is created when passed to a function
+  - returning that value does not assign a string or number to the caller element
+  - typeof reports the caller element as unassigned
+input:
+  program: |
+    function via_return(value) {
+      return value
+    }
+
+    BEGIN {
+      print ("k" in data)
+      via_return(data["k"])
+      print ("k" in data)
+      print typeof(data["k"]), "[" data["k"] "]"
+    }
+expect:
+  stdout: |
+    0
+    1
+    unassigned []
+  exit_code: 0

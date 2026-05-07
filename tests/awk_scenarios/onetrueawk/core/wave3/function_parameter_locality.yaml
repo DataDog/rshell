@@ -1,0 +1,32 @@
+description: function parameter updates do not change the caller value
+upstream:
+  suite: onetrueawk
+  id: testdir/t.fun2
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "function parameters are local scalar variables"
+  - "while loops inside functions can update parameters"
+  - "uninitialized globals remain empty after parameter updates"
+input:
+  program: |
+    function rise(value) {
+      while (value < 4) {
+        print "rise", value
+        value++
+      }
+    }
+    function show(value) { print "show", value }
+    {
+      rise($1)
+      show($1)
+      print "global-n=<" n ">"
+    }
+  stdin: |
+    2
+expect:
+  stdout: |
+    rise 2
+    rise 3
+    show 2
+    global-n=<>
+  exit_code: 0

@@ -1,0 +1,15 @@
+description: dynamic assignment to the first field rebuilds the record
+upstream:
+  suite: onetrueawk
+  id: testdir/t.5.x
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "$(1) can be assigned through a dynamic field reference"
+  - "printing $0 after field assignment uses the rebuilt record"
+input:
+  program: |
+    { $(1) = "xxx"; print $1, $0 }
+  stdin: "old middle end\n"
+expect:
+  stdout: "xxx xxx middle end\n"
+  exit_code: 0

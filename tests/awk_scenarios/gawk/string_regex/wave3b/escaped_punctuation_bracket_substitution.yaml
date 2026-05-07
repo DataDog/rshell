@@ -1,0 +1,25 @@
+description: gsub can remove backslash-punctuation pairs selected by bracket expressions
+upstream:
+  suite: gawk
+  id: test/regexpbrack2.awk
+  ref: gawk-5.4.0
+covers:
+  - bracket expressions can include escaped right bracket and left bracket members
+  - bracket expressions can include caret as a literal non-leading member
+  - gsub replaces every matching backslash-punctuation pair
+input:
+  program: |
+    BEGIN {
+      first = "test: \\; \\? \\! \\["
+      gsub(/\\[;?!,()<>|+@%\]\[]/, " ", first)
+      print "\"" first "\""
+
+      second = "test: \\; \\? \\! \\^"
+      gsub(/\\[;?!,()<>|+@%\]\[^]/, " ", second)
+      print "\"" second "\""
+    }
+expect:
+  stdout: |
+    "test:        "
+    "test:        "
+  exit_code: 0

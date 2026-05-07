@@ -1,0 +1,20 @@
+description: a multi-character string RS separates main input records
+upstream:
+  suite: gawk
+  id: test/rstest6.awk
+  ref: gawk-5.4.0
+covers:
+  - "RS can be a multi-character string"
+  - "main input is split at the string record separator"
+  - "RT contains the string separator for terminated records"
+input:
+  program: |
+    BEGIN { RS = "XYZ" }
+    { print NR ":" $0 ":rt=" RT }
+  stdin: "leftXYZmiddleXYZright"
+expect:
+  stdout: |
+    1:left:rt=XYZ
+    2:middle:rt=XYZ
+    3:right:rt=
+  exit_code: 0

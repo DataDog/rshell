@@ -1,0 +1,20 @@
+description: a start-anchored record separator only matches at the beginning of input
+upstream:
+  suite: gawk
+  id: test/rsstart1.awk
+  ref: gawk-5.4.0
+covers:
+  - caret in RS anchors to the start of the input stream
+  - later lines beginning with the same text do not create more separator matches
+input:
+  program: |
+    BEGIN { RS = "^A" }
+    END { print NR }
+  stdin: |
+    Axxxxxx
+    Axxxxxx
+    Axxxxxx
+expect:
+  stdout: |
+    2
+  exit_code: 0

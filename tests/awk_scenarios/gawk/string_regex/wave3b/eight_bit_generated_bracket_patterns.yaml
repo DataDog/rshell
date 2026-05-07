@@ -1,0 +1,26 @@
+description: generated 8-bit bracket regexps match and substitute consistently
+upstream:
+  suite: gawk
+  id: test/rebt8b2.awk
+  ref: gawk-5.4.0
+covers:
+  - sprintf-generated octal escapes can appear inside dynamic regexps
+  - dynamic bracket regexps with high-byte members work in gsub and match operators
+input:
+  program: |
+    BEGIN {
+      s = "bananas and ananases in canaan"
+      for (c = 0367; c <= 0372; c++) {
+        pat = sprintf("[an\\%03o]*n", c)
+        t = s
+        gsub(pat, "AN", t)
+        print c, t, (s ~ pat)
+      }
+    }
+expect:
+  stdout: |
+    247 bANas ANd ANases iAN cAN 1
+    248 bANas ANd ANases iAN cAN 1
+    249 bANas ANd ANases iAN cAN 1
+    250 bANas ANd ANases iAN cAN 1
+  exit_code: 0

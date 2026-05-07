@@ -1,0 +1,19 @@
+description: POSIX mode rejects C integer length modifiers in printf formats
+upstream:
+  suite: gawk
+  id: test/modifiers.sh
+  ref: gawk-5.4.0
+covers:
+  - POSIX awk formats do not permit C integer length modifiers
+  - lint reports the ignored modifier before the fatal POSIX-format error
+input:
+  awk_args:
+    - --posix
+    - --lint
+  program: |
+    BEGIN { printf "%hu\n", 12 }
+expect:
+  stderr_contains:
+    - "`h' is meaningless in awk formats; ignored"
+    - "`h' is not permitted in POSIX awk formats"
+  exit_code: 2

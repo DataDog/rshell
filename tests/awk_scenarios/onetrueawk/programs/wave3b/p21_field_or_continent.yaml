@@ -1,0 +1,21 @@
+description: boolean OR selects records from either named field value
+upstream:
+  suite: onetrueawk
+  id: testdir/p.21
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "boolean OR combines field equality patterns"
+  - "default action prints matching records"
+input:
+  program: |
+    $4 == "Asia" || $4 == "Europe"
+  stdin: |
+    Arden	10	3	Asia
+    Beryl	20	7	Europe
+    Cairn	30	11	Africa
+    Dover	40	13	Oceania
+expect:
+  stdout: |
+    Arden	10	3	Asia
+    Beryl	20	7	Europe
+  exit_code: 0

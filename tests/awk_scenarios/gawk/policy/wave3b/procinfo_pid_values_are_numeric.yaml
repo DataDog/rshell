@@ -1,0 +1,22 @@
+description: PROCINFO exposes numeric process identifiers for the running awk process
+upstream:
+  suite: gawk
+  id: test/pid.awk
+  ref: gawk-5.4.0
+covers:
+  - PROCINFO["pid"] is present and numeric
+  - PROCINFO["ppid"] is present and numeric
+  - the process id and parent process id are distinct positive values
+input:
+  program: |
+    BEGIN {
+      print (("pid" in PROCINFO) + 0), (PROCINFO["pid"] ~ /^[0-9]+$/), (PROCINFO["pid"] + 0 > 0)
+      print (("ppid" in PROCINFO) + 0), (PROCINFO["ppid"] ~ /^[0-9]+$/), (PROCINFO["ppid"] + 0 > 0)
+      print (PROCINFO["pid"] != PROCINFO["ppid"])
+    }
+expect:
+  stdout: |
+    1 1 1
+    1 1 1
+    1
+  exit_code: 0

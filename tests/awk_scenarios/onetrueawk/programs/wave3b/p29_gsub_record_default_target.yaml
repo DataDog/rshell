@@ -1,0 +1,21 @@
+description: gsub without an explicit target rewrites the current record
+upstream:
+  suite: onetrueawk
+  id: testdir/p.29
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "gsub defaults to replacing text in $0"
+  - "all non-overlapping matches in the record are replaced"
+input:
+  program: |
+    { gsub(/USA/, "United States"); print }
+  stdin: |
+    USA team
+    notusa
+    USA-USA
+expect:
+  stdout: |
+    United States team
+    notusa
+    United States-United States
+  exit_code: 0

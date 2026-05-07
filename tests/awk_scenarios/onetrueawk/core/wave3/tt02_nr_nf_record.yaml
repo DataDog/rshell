@@ -1,0 +1,20 @@
+description: NR, NF, and the current record can be printed together
+upstream:
+  suite: onetrueawk
+  id: testdir/tt.02
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "NR increments for each record"
+  - "NF reports the field count"
+  - "$0 retains the original record text before assignment"
+input:
+  program: |
+    { print NR ":" NF ":" $0 }
+  stdin: |
+    one two
+    three
+expect:
+  stdout: |
+    1:2:one two
+    2:1:three
+  exit_code: 0

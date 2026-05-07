@@ -1,0 +1,20 @@
+description: strtonum accepts hexadecimal floating-point strings with binary exponents
+upstream:
+  suite: gawk
+  id: test/hex3.awk
+  ref: gawk-5.4.0
+covers:
+  - strtonum recognizes a hexadecimal significand
+  - binary p-exponents scale hexadecimal floating values
+  - fractional hexadecimal values convert to decimal numbers
+input:
+  program: |
+    BEGIN {
+      print strtonum("0x1.8p+2")
+      print strtonum("0x1p-2")
+    }
+expect:
+  stdout: |
+    6
+    0.25
+  exit_code: 0

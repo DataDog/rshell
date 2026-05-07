@@ -1,0 +1,17 @@
+description: POSIX mode rejects gawk multidimensional array syntax
+upstream:
+  suite: gawk
+  id: test/muldimposix.awk
+  ref: gawk-5.4.0
+covers:
+  - --posix disables multidimensional array extensions
+  - using nested array syntax in POSIX mode is fatal
+input:
+  awk_args:
+    - --posix
+  program: |
+    BEGIN { a[1][2] = 3 }
+expect:
+  stderr_contains:
+    - multidimensional arrays are a gawk extension
+  exit_code: 2

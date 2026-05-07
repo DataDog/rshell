@@ -1,0 +1,28 @@
+description: a block action with if tracks the largest numeric field
+upstream:
+  suite: onetrueawk
+  id: testdir/p.38
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "if statements inside actions can guard multiple assignments"
+  - "END prints state captured from the largest record"
+input:
+  program: |
+    {
+      if (maxpop < $3) {
+        maxpop = $3
+        country = $1
+      }
+    }
+    END { print country, maxpop }
+  stdin: |
+    Aster	40	12	inner
+    Boreal	80	66	outer
+    Crux	55	101	outer
+    Dune	20	9	Dune
+    Mica	12	5	inner
+    Nova	70	70	Nova
+expect:
+  stdout: |
+    Crux 101
+  exit_code: 0

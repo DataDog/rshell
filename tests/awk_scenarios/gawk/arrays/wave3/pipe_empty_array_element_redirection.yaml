@@ -1,0 +1,17 @@
+description: pipe redirection rejects an unassigned array element command
+upstream:
+  suite: gawk
+  id: test/elemnew6.awk
+  ref: gawk-5.4.0
+covers:
+  - missing array element pipe operands evaluate to the empty string
+  - print pipe redirection rejects a null command
+input:
+  program: |
+    BEGIN {
+      print "payload" | commands["sink"]
+    }
+expect:
+  stderr_contains:
+    - "fatal: expression for `|' redirection has null string value"
+  exit_code: 2

@@ -1,0 +1,17 @@
+description: unary minus coerces string operands before arithmetic
+upstream:
+  suite: gawk
+  id: test/minusstr.awk
+  ref: gawk-5.4.0
+covers:
+  - unary minus converts numeric strings to numbers
+  - coerced negative values can participate in surrounding arithmetic
+input:
+  program: |
+    BEGIN {
+      print -"9", 3 + -"4"
+    }
+expect:
+  stdout: |
+    -9 -1
+  exit_code: 0

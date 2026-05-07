@@ -1,0 +1,17 @@
+description: Deleting an element from FUNCTAB is fatal
+upstream:
+  suite: gawk
+  id: test/functab1.awk
+  ref: gawk-5.4.0
+covers:
+  - FUNCTAB is a read-only reflection table
+  - delete operations are forbidden even when targeting one FUNCTAB element
+input:
+  program: |
+    BEGIN {
+      delete FUNCTAB["length"]
+    }
+expect:
+  stderr_contains:
+    - "`delete' is not allowed with FUNCTAB"
+  exit_code: 2

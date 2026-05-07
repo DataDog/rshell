@@ -1,0 +1,27 @@
+description: record actions maintain a running numeric total
+upstream:
+  suite: onetrueawk
+  id: testdir/t.cum
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "numeric fields accumulate in a scalar"
+  - "main actions can print the running value"
+  - "END sees the final accumulated value"
+input:
+  program: |
+    {
+      total += $2
+      print "running", NR, total
+    }
+    END { print "final", total }
+  stdin: |
+    a 3
+    b 4
+    c -2
+expect:
+  stdout: |
+    running 1 3
+    running 2 7
+    running 3 5
+    final 5
+  exit_code: 0

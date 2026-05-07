@@ -1,0 +1,22 @@
+description: -F with a multi-character separator splits input records
+upstream:
+  suite: onetrueawk
+  id: testdir/T.main
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "-F accepts a separate multi-character field separator argument"
+  - "records are split using the command-line separator before actions run"
+input:
+  awk_args:
+    - -F
+    - "::"
+  program: |
+    { print NF, $2 }
+  stdin: |
+    a::b::c
+    left::right
+expect:
+  stdout: |
+    3 b
+    2 right
+  exit_code: 0

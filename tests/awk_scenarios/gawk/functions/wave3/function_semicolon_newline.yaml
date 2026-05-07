@@ -1,0 +1,19 @@
+description: A semicolon after a function definition may be followed by a newline
+upstream:
+  suite: gawk
+  id: test/funsemnl.awk
+  ref: gawk-5.4.0
+covers:
+  - a function definition can be followed by an empty statement semicolon
+  - the following newline does not prevent later BEGIN actions from calling the function
+input:
+  program: |
+    function hello() { print "hello" };
+
+    BEGIN {
+      hello()
+    }
+expect:
+  stdout: |
+    hello
+  exit_code: 0

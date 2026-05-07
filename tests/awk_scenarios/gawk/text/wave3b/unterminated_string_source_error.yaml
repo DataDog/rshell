@@ -1,0 +1,14 @@
+description: an unterminated string literal is a source parse error
+upstream:
+  suite: gawk
+  id: test/unterm.awk
+  ref: gawk-5.4.0
+covers:
+  - source parsing detects a missing closing quote
+  - unterminated strings fail before program execution
+input:
+  program: "BEGIN{x=\"unterminated}"
+expect:
+  stderr_contains:
+    - "unterminated string"
+  exit_code: 1

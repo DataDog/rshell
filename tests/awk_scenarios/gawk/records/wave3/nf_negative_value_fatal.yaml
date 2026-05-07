@@ -1,0 +1,18 @@
+description: assigning a negative NF is fatal
+upstream:
+  suite: gawk
+  id: test/nfneg.awk
+  ref: gawk-5.4.0
+covers:
+  - NF cannot be assigned a negative value
+  - a negative NF assignment stops the program with a fatal error
+input:
+  program: |
+    BEGIN {
+      NF = -1
+      print "unreachable"
+    }
+expect:
+  stderr_contains:
+    - "fatal: NF set to negative value"
+  exit_code: 2

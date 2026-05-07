@@ -1,0 +1,31 @@
+description: paragraph mode RT length distinguishes EOF from one and two final newlines
+upstream:
+  suite: gawk
+  id: test/rtlen01.sh
+  ref: gawk-5.4.0
+covers:
+  - "a paragraph ending at EOF has empty RT"
+  - "a final single newline is reported in RT"
+  - "a final blank-line separator has length two"
+setup:
+  files:
+    - path: no_newline.txt
+      content: "0"
+    - path: one_newline.txt
+      content: "0\n"
+    - path: blank_line.txt
+      content: "0\n\n"
+input:
+  program: |
+    BEGIN { RS = "" }
+    { print FILENAME ":" length(RT) }
+  args:
+    - no_newline.txt
+    - one_newline.txt
+    - blank_line.txt
+expect:
+  stdout: |
+    no_newline.txt:0
+    one_newline.txt:1
+    blank_line.txt:2
+  exit_code: 0

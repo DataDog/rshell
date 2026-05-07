@@ -1,0 +1,30 @@
+description: sub and gsub handle literal, string, and ampersand replacements
+upstream:
+  suite: onetrueawk
+  id: testdir/t.sub0
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "sub replaces only the first regex match"
+  - "string patterns can be used for substitution"
+  - "escaped ampersand produces literal replacement text"
+input:
+  program: |
+    {
+      original = $0
+      sub(/[aeiou]/, "X", original)
+      print original
+      text = $0
+      sub("[aeiou]", "&X", text)
+      print text
+      all = $0
+      gsub(/[aeiou]/, "\\&", all)
+      print all
+    }
+  stdin: |
+    stone
+expect:
+  stdout: |
+    stXne
+    stoXne
+    st&n&
+  exit_code: 0

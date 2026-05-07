@@ -1,0 +1,29 @@
+description: dynamic regexps containing NUL match consistently across operators
+upstream:
+  suite: gawk
+  id: test/regnul2.awk
+  ref: gawk-5.4.0
+covers:
+  - dynamic regexps containing NUL match a NUL string with match
+  - split and gsub accept dynamic NUL regexps
+  - the dynamic regexp match operator accepts NUL regexps
+input:
+  program: |
+    function show(label, ok) {
+      print label, ok ? "+" : "-"
+    }
+    BEGIN {
+      text = "\0"
+      regex = "^\0$"
+      show("match", match(text, regex))
+      show("split", split(text, fields, regex) > 1)
+      show("gsub", gsub(regex, "&", text))
+      show("tilde", text ~ regex)
+    }
+expect:
+  stdout: |
+    match +
+    split +
+    gsub +
+    tilde +
+  exit_code: 0

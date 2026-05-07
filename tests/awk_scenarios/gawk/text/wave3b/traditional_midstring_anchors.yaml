@@ -1,0 +1,19 @@
+description: traditional regex mode keeps anchors active in the middle of patterns
+upstream:
+  suite: gawk
+  id: test/tradanch.awk
+  ref: gawk-5.4.0
+covers:
+  - --traditional parsing accepts regexps with middle anchors
+  - middle ^ and $ anchors do not match literal caret or dollar input
+input:
+  awk_args:
+    - --traditional
+  program: |
+    /foo^bar/
+    /foo$bar/
+  stdin: |
+    foo^bar
+    foo$bar
+expect:
+  exit_code: 0

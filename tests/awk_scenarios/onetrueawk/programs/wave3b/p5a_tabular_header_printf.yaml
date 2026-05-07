@@ -1,0 +1,25 @@
+description: BEGIN emits a formatted header before tab-separated data rows
+upstream:
+  suite: onetrueawk
+  id: testdir/p.5a
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "BEGIN can set FS and print a header before records"
+  - "printf applies fixed widths to tab-separated fields"
+  - "numeric format specifiers coerce field values"
+input:
+  program: |
+    BEGIN {
+      FS = "	"
+      printf "%10s\t%6s\t%6s\t%10s\n", "NAME", "AREA", "POP", "ZONE"
+    }
+    { printf "%10s\t%6d\t%6d\t%10s\n", $1, $2, $3, $4 }
+  stdin: |
+    Aster	40	12	inner
+    Boreal	80	66	outer
+expect:
+  stdout: |2
+          NAME	  AREA	   POP	      ZONE
+         Aster	    40	    12	     inner
+        Boreal	    80	    66	     outer
+  exit_code: 0

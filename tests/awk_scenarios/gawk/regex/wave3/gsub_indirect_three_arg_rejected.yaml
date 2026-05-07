@@ -1,0 +1,24 @@
+description: indirect calls to gsub are fatal when a target argument is supplied
+upstream:
+  suite: gawk
+  id: test/gsubind.awk
+  ref: gawk-5.4.0
+covers:
+  - strongly typed regexps can be used as direct gsub patterns
+  - indirect gsub calls are limited to the two-argument form
+input:
+  program: |
+    BEGIN {
+      text = "banana"
+      pat = @/a/
+      gsub(pat, "o", text)
+      print text
+      fn = "gsub"
+      @fn(pat, "u", text)
+    }
+expect:
+  stdout: |
+    bonono
+  stderr_contains:
+    - "gsub: can be called indirectly only with two arguments"
+  exit_code: 2

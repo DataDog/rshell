@@ -1,0 +1,38 @@
+description: getline in BEGIN consumes command-line input files before record rules run
+upstream:
+  suite: gawk
+  id: test/getline2.awk
+  ref: gawk-5.4.0
+covers:
+  - getline in BEGIN advances through ARGV input files
+  - FILENAME, FNR, and NR are updated while BEGIN reads file records
+  - records consumed by BEGIN are not processed again by normal rules
+setup:
+  files:
+    - path: left.txt
+      content: |
+        north
+        south
+    - path: right.txt
+      content: |
+        east
+input:
+  program: |
+    BEGIN {
+      while ((getline) > 0)
+        print FILENAME ":" FNR ":" NR ":" $0
+      print "done:" FILENAME ":" FNR ":" NR
+    }
+    {
+      print "rule should not run"
+    }
+  args:
+    - left.txt
+    - right.txt
+expect:
+  stdout: |
+    left.txt:1:1:north
+    left.txt:2:2:south
+    right.txt:1:3:east
+    done:right.txt:1:3
+  exit_code: 0

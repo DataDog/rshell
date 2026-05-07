@@ -1,0 +1,16 @@
+description: printf rejects formats that mix positional and non-positional conversions
+upstream:
+  suite: gawk
+  id: test/printfbad4.awk
+  ref: gawk-5.4.0
+covers:
+  - positional count-dollar conversions cannot be mixed with ordinary conversions
+  - the validation happens before any partial output is written
+  - mixed positional printf formats exit with status 2
+input:
+  program: |
+    BEGIN { printf "%2$d %d\n", 11, 22 }
+expect:
+  stderr_contains:
+    - "fatal: must use `count$' on all formats or none"
+  exit_code: 2

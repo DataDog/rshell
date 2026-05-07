@@ -1,0 +1,27 @@
+description: paragraph mode keeps surrounding record text while fields ignore surrounding spaces
+upstream:
+  suite: gawk
+  id: test/rsnulw.awk
+  ref: gawk-5.4.0
+covers:
+  - "RS empty string records retain leading and trailing spaces in $0"
+  - "default field splitting ignores surrounding whitespace"
+  - "RT contains the paragraph terminator"
+input:
+  program: |
+    BEGIN { RS = "" }
+    {
+      print NF, "<" $0 ":" RT ">"
+      for (i = 1; i <= NF; i++)
+        print i, "[" $i "]"
+    }
+  stdin: " a b c \n\n"
+expect:
+  stdout: |
+    3 < a b c :
+
+    >
+    1 [a]
+    2 [b]
+    3 [c]
+  exit_code: 0

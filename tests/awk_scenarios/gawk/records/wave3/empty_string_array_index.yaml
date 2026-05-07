@@ -1,0 +1,24 @@
+description: an empty string is a normal associative array subscript
+upstream:
+  suite: gawk
+  id: test/nlstrina.awk
+  ref: gawk-5.4.0
+covers:
+  - the empty string can be used as an array subscript
+  - membership tests find an empty-string subscript
+  - iteration visits an empty-string subscript once
+input:
+  program: |
+    BEGIN {
+      key = ""
+      seen[key]++
+      if (key in seen)
+        print "member", ++seen[key], seen[key]
+      for (item in seen)
+        print "loop", ++count, "[" item "]", seen[item]
+    }
+expect:
+  stdout: |
+    member 2 2
+    loop 1 [] 2
+  exit_code: 0

@@ -1,0 +1,25 @@
+description: assigning through SYMTAB updates the referenced global scalar
+upstream:
+  suite: gawk
+  id: test/symtab2.awk
+  ref: gawk-5.4.0
+covers:
+  - SYMTAB scalar entries alias the real global variable
+  - compound assignment through SYMTAB updates the global
+  - assigning the global later is reflected through SYMTAB
+input:
+  program: |
+    BEGIN {
+      total = 3
+      print total, SYMTAB["total"]
+      SYMTAB["total"] += 4
+      print total, SYMTAB["total"]
+      total = SYMTAB["total"] * 2
+      print total, SYMTAB["total"]
+    }
+expect:
+  stdout: |
+    3 3
+    7 7
+    14 14
+  exit_code: 0

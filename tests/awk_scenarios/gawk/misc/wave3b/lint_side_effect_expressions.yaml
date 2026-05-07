@@ -1,0 +1,32 @@
+description: lint mode accepts expressions whose operators still have side effects
+upstream:
+  suite: gawk
+  id: test/noeffect.awk
+  ref: gawk-5.4.0
+covers:
+  - post-increment and post-decrement in comparisons are considered side effects
+  - short-circuited logical expressions do not mutate skipped operands
+  - self assignments and compound assignments leave values stable
+input:
+  awk_args:
+    - --lint
+  program: |
+    BEGIN {
+      a = b = 42
+      a++ == a--
+      f_without_side_effect(a)
+      f_with_side_effect(b) == 2
+      1 == 2 && a++
+      1 == 1 || b--
+      a = a
+      a *= 1
+      a += 0
+      a*a < 0 && b = 1001
+      print a, b
+    }
+    function f_without_side_effect(x) { }
+    function f_with_side_effect(x) { }
+expect:
+  stdout: |
+    42 42
+  exit_code: 0

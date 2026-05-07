@@ -1,0 +1,36 @@
+description: getline into a variable after a marker suppresses normal processing of that record
+upstream:
+  suite: gawk
+  id: test/gtlnbufv.awk
+  ref: gawk-5.4.0
+covers:
+  - getline var reads the next record into var without changing $0
+  - next skips the rest of the current pattern-action cycle after the manual getline
+setup:
+  files:
+    - path: markers.txt
+      content: |
+        alpha
+        @K@CODE
+        beta payload
+        omega
+input:
+  program: |
+    /@K@CODE/ {
+      print "seen:" $0
+      getline temp
+      print "next:" temp
+      next
+    }
+    {
+      print "keep:" $0
+    }
+  args:
+    - markers.txt
+expect:
+  stdout: |
+    keep:alpha
+    seen:@K@CODE
+    next:beta payload
+    keep:omega
+  exit_code: 0

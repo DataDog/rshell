@@ -1,0 +1,46 @@
+description: formatter-style functions wrap words and preserve verbatim lines
+upstream:
+  suite: onetrueawk
+  id: testdir/tt.15
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "functions can share and reset global line state"
+  - "next can route verbatim records around normal word handling"
+  - "END flushes a pending accumulated line"
+input:
+  program: |
+    BEGIN { width = 18 }
+    /^[ \t]/ { flush(); print "keep:" $0; next }
+    /./ {
+      for (i = 1; i <= NF; i++) {
+        addword($i)
+      }
+      next
+    }
+    /^$/ { flush(); print "blank" }
+    END { flush() }
+    function addword(word) {
+      if (length(line) + length(word) + (line == "" ? 0 : 1) > width) {
+        flush()
+      }
+      line = line (line == "" ? "" : " ") word
+    }
+    function flush() {
+      if (line != "") {
+        print "line:" line
+        line = ""
+      }
+    }
+  stdin: |
+    alpha beta gamma delta
+      literal block
+
+    epsilon zeta eta
+expect:
+  stdout: |
+    line:alpha beta gamma
+    line:delta
+    keep:  literal block
+    blank
+    line:epsilon zeta eta
+  exit_code: 0

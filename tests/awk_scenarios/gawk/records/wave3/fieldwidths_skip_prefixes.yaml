@@ -1,0 +1,18 @@
+description: FIELDWIDTHS offset designators skip padding before each fixed field
+upstream:
+  suite: gawk
+  id: test/fwtest3.awk
+  ref: gawk-5.4.0
+covers:
+  - FIELDWIDTHS n:m entries skip n characters before taking m characters
+  - skipped characters are not included in numbered fields
+input:
+  program: |
+    BEGIN { FIELDWIDTHS = "1:3 2:4" }
+    { printf "%s/%s\n", $1, $2 }
+  stdin: |
+    xcat--lion
+expect:
+  stdout: |
+    cat/lion
+  exit_code: 0

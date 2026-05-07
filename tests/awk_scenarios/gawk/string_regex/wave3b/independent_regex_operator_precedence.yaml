@@ -1,0 +1,22 @@
+description: a leading plus in a regexp is treated with POSIX regexp semantics
+upstream:
+  suite: gawk
+  id: test/reindops.awk
+  ref: gawk-5.4.0
+covers:
+  - a leading plus is not treated as a GNU regexp operator in default mode
+  - negated regexp matches follow POSIX-compatible parsing
+input:
+  program: |
+    {
+      if ($1 !~ /^+[2-9]/)
+        print "posix"
+      else
+        print "gnu"
+    }
+  stdin: |
+    +44 123
+expect:
+  stdout: |
+    posix
+  exit_code: 0

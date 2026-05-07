@@ -1,0 +1,33 @@
+description: numeric-looking string subscripts keep their original spelling after numeric coercion
+upstream:
+  suite: gawk
+  id: test/intarray.awk
+  ref: gawk-5.4.0
+covers:
+  - string subscripts are not rewritten by later numeric coercion of the same value
+  - hexadecimal-looking strings remain string keys
+  - signed and zero-padded strings retain their original key spelling
+input:
+  program: |
+    BEGIN {
+      samples = "7|07|0x8| 7|-0x2|010|-010|2.0|6.2e1|-7|-07|+4"
+      n = split(samples, item, "|")
+      bad = 0
+      for (i = 1; i <= n; i++) {
+        delete seen
+        seen[item[i]]
+        for (key in seen)
+          if (key "" != item[i] "") bad++
+
+        delete seen
+        number = item[i] + 0
+        seen[item[i]]
+        for (key in seen)
+          if (key "" != item[i] "") bad++
+      }
+      print bad ? "changed" : "all preserved"
+    }
+expect:
+  stdout: |
+    all preserved
+  exit_code: 0

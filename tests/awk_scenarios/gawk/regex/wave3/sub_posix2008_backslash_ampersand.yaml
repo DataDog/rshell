@@ -1,0 +1,23 @@
+description: sub applies POSIX 2008 backslash and ampersand replacement rules
+upstream:
+  suite: gawk
+  id: test/posix2008sub.awk
+  ref: gawk-5.4.0
+covers:
+  - ampersand in a replacement expands to the matched text
+  - escaped ampersands can remain literal in sub replacements
+  - backslashes before ampersands follow GNU awk POSIX 2008 replacement rules
+input:
+  program: |
+    BEGIN {
+      text = "one token two"
+      repl = "[A&B \\z \\ \\\\ \\& \\\\& \\\\\\&]"
+      print "repl=" repl
+      sub(/token/, repl, text)
+      print text
+    }
+expect:
+  stdout: |
+    repl=[A&B \z \ \\ \& \\& \\\&]
+    one [AtokenB \z \ \\ & \token \&] two
+  exit_code: 0

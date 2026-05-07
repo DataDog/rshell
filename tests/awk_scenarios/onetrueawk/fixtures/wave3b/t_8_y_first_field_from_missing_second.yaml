@@ -1,0 +1,15 @@
+description: assigning $1 from missing $2 leaves empty records empty
+upstream:
+  suite: onetrueawk
+  id: testdir/t.8.y
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "referencing missing $2 does not create it"
+  - "assigning $1 from an empty field can rebuild to an empty record"
+input:
+  program: |
+    { $1 = $2; print }
+  stdin: "alpha beta\n\nsolo\n"
+expect:
+  stdout: "beta beta\n\n\n"
+  exit_code: 0

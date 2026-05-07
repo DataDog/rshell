@@ -1,0 +1,22 @@
+description: Special variables cannot be used as function parameter names
+upstream:
+  suite: gawk
+  id: test/paramres.awk
+  ref: gawk-5.4.0
+covers:
+  - special awk variables are reserved from function parameter lists
+  - gawk rejects special-variable parameters as a POSIX compatibility error
+input:
+  program: |
+    function sample(item, NR) {
+      print item
+    }
+
+    BEGIN {
+      sample(1, 2)
+    }
+expect:
+  stderr_contains:
+    - "parameter `NR'"
+    - "POSIX disallows using a special variable as a function parameter"
+  exit_code: 1

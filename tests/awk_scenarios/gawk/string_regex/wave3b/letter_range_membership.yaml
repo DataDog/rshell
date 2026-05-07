@@ -1,0 +1,27 @@
+description: disjoint letter ranges match only their bracket members
+upstream:
+  suite: gawk
+  id: test/regexprange.awk
+  ref: gawk-5.4.0
+covers:
+  - bracket expressions can contain multiple alphabetic ranges
+  - uppercase letters do not match lowercase ranges in the C locale
+input:
+  program: |
+    BEGIN {
+      range = "[a-dx-z]"
+      chars = "AdexmZ"
+      for (i = 1; i <= length(chars); i++) {
+        c = substr(chars, i, 1)
+        print c, (c ~ range) ? "yes" : "no"
+      }
+    }
+expect:
+  stdout: |
+    A no
+    d yes
+    e no
+    x yes
+    m no
+    Z no
+  exit_code: 0

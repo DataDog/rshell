@@ -1,0 +1,23 @@
+description: split sees the fields produced by strftime format expansion
+upstream:
+  suite: gawk
+  id: test/strftfld.awk
+  ref: gawk-5.4.0
+covers:
+  - strftime can receive its format string from input
+  - the formatted epoch string can be split with the default separator
+  - date, time, and timezone directives produce three default fields here
+input:
+  envs:
+    TZ: UTC
+  program: |
+    {
+      n = split(strftime($0, 0), parts)
+      print n "|" parts[1] "|" parts[2] "|" parts[3]
+    }
+  stdin: |
+    %Y-%m-%d %H:%M:%S %Z
+expect:
+  stdout: |
+    3|1970-01-01|00:00:00|UTC
+  exit_code: 0

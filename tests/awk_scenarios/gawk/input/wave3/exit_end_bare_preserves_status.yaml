@@ -1,0 +1,23 @@
+description: a bare exit in END preserves the status chosen before END
+upstream:
+  suite: gawk
+  id: test/exitval3.awk
+  ref: gawk-5.4.0
+covers:
+  - exit in BEGIN sets the process status
+  - exit without an expression in END does not reset that status
+input:
+  program: |
+    BEGIN {
+      print "begin"
+      exit 42
+    }
+    END {
+      print "end"
+      exit
+    }
+expect:
+  stdout: |
+    begin
+    end
+  exit_code: 42

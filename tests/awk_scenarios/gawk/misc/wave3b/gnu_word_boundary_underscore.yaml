@@ -1,0 +1,28 @@
+description: GNU word-boundary operators treat underscore as a word character
+upstream:
+  suite: gawk
+  id: test/gnuops2.awk
+  ref: gawk-5.4.0
+covers:
+  - word-start operators match before an underscore-starting word
+  - word-end operators match after an underscore-ending word
+  - non-boundary and word-character operators treat underscore consistently
+input:
+  program: |
+    BEGIN {
+      print match("X _abc Y", /\<_abc/)
+      print match("X _abc Y", /\y_abc/)
+      print match("X abc_ Y", /abc_\>/)
+      print match("X abc_def Y", /abc_\Bdef/)
+      print match("X a_c Y", /a\wc/)
+      print match("X a.c Y", /a\Wc/)
+    }
+expect:
+  stdout: |
+    3
+    3
+    3
+    3
+    3
+    3
+  exit_code: 0

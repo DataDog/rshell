@@ -1,0 +1,29 @@
+description: do-while loops process fields at least once
+upstream:
+  suite: onetrueawk
+  id: testdir/t.do
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "do-while executes the body before testing the condition"
+  - "numbered field references can be assembled in loop order"
+  - "gsub can build a separator-free comparison string"
+input:
+  program: |
+    {
+      compact = $0
+      gsub(/[ \t]+/, "", compact)
+      built = ""
+      i = 1
+      do {
+        built = built $i
+      } while (++i <= NF)
+      print NR, (built == compact ? "ok" : "bad")
+    }
+  stdin: |
+    ab cd ef
+    12 34
+expect:
+  stdout: |
+    1 ok
+    2 ok
+  exit_code: 0

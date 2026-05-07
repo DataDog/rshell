@@ -1,0 +1,18 @@
+description: Reading a missing FUNCTAB element is fatal
+upstream:
+  suite: gawk
+  id: test/functab6.awk
+  ref: gawk-5.4.0
+covers:
+  - FUNCTAB does not auto-create missing elements
+  - reading an uninitialized FUNCTAB key is rejected
+input:
+  program: |
+    BEGIN {
+      print FUNCTAB["made_up"]
+    }
+expect:
+  stderr_contains:
+    - "fatal: reference to uninitialized element"
+    - "FUNCTAB[\"made_up\"]"
+  exit_code: 2

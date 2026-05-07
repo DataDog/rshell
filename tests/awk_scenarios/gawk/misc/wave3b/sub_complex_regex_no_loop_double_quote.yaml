@@ -1,0 +1,18 @@
+description: sub with a nested repetition regex terminates on doubled quote markup
+upstream:
+  suite: gawk
+  id: test/noloop1.awk
+  ref: gawk-5.4.0
+covers:
+  - sub terminates for nested quantified groups
+  - replacement preserves the matched text through ampersand expansion
+  - the first balanced quoted span is replaced
+input:
+  program: |
+    /''/ { sub(/''(.?[^']+)*''/, "<em>&</em>"); print }
+  stdin: |
+    ''Italics with an apostrophe'' embedded''
+expect:
+  stdout: |
+    <em>''Italics with an apostrophe''</em> embedded''
+  exit_code: 0

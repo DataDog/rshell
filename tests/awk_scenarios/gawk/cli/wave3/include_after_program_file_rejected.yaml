@@ -1,0 +1,28 @@
+description: a source file cannot be both a program file and an include
+upstream:
+  suite: gawk
+  id: test/incdupe4.ok
+  ref: gawk-5.4.0
+covers:
+  - a file first loaded with -f cannot later be loaded with -i
+  - gawk reports a fatal duplicate source role error
+setup:
+  files:
+    - path: lib/greet.awk
+      content: |
+        BEGIN { print "hi from file" }
+input:
+  envs:
+    AWKPATH: lib
+  awk_args:
+    - --lint
+    - -f
+    - greet
+    - -i
+    - greet.awk
+  program: |
+    BEGIN { print "unreached" }
+expect:
+  stderr_contains:
+    - "cannot include `greet.awk' and use it as a program file"
+  exit_code: 2

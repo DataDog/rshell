@@ -1,0 +1,25 @@
+description: RS can be assigned a strongly typed regexp and updates RT
+upstream:
+  suite: gawk
+  id: test/typedregex6.awk
+  ref: gawk-5.4.0
+covers:
+  - RS accepts a strongly typed regexp value
+  - records are split at matches of the regexp pattern
+  - RT contains the text that matched the typed regexp separator
+input:
+  program: |
+    BEGIN {
+      RS = @/[,:]/
+    }
+    {
+      print "<" $0 ">", "[" RT "]"
+    }
+  stdin: |-
+    aa,bb:cc
+expect:
+  stdout: |
+    <aa> [,]
+    <bb> [:]
+    <cc> []
+  exit_code: 0

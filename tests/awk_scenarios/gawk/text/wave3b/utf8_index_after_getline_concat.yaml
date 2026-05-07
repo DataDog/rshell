@@ -1,0 +1,27 @@
+description: index uses character offsets after concatenating UTF-8 input records
+upstream:
+  suite: gawk
+  id: test/wideidx.awk
+  ref: gawk-5.4.0
+covers:
+  - getline can append a following record to a saved string
+  - index reports character offsets for UTF-8 text
+input:
+  envs:
+    LC_ALL: en_US.UTF-8
+  program: |
+    {
+      a = $0
+      print index(a, "b")
+      getline
+      a = a $0
+      print index(a, "b")
+    }
+  stdin: |
+    aé
+    b
+expect:
+  stdout: |
+    0
+    3
+  exit_code: 0

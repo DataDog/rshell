@@ -1,0 +1,22 @@
+description: Indirect gensub preserves the warning for an empty replacement selector
+upstream:
+  suite: gawk
+  id: test/indirectbuiltin4.awk
+  ref: gawk-5.4.0
+covers:
+  - qualified built-in names can be used for indirect calls
+  - gensub called indirectly warns when the third argument is an empty string
+  - an empty gensub selector is treated as replacement number one
+input:
+  program: |
+    BEGIN {
+      f = "awk::gensub"
+      print @f("a", "X", "", "banana")
+    }
+expect:
+  stdout: |
+    bXnana
+  stderr_contains:
+    - "warning: gensub: third argument"
+    - "treated as 1"
+  exit_code: 0

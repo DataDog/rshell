@@ -1,0 +1,16 @@
+description: integer precision overrides zero padding while width still applies
+upstream:
+  suite: gawk
+  id: test/zeroflag.awk
+  ref: gawk-5.4.0
+covers:
+  - an integer precision disables the zero flag
+  - field width still pads the precision-expanded integer
+  - larger width and precision combinations preserve leading spaces before zeroes
+input:
+  program: |
+    BEGIN { printf "|%03.2d| |%3.2d| |%05.3d|\n", 4, 4, 4 }
+expect:
+  stdout: |
+    | 04| | 04| |  004|
+  exit_code: 0

@@ -1,0 +1,20 @@
+description: an incomplete --source fragment is rejected before later source text
+upstream:
+  suite: gawk
+  id: test/sourcesplit.ok
+  ref: gawk-5.4.0
+covers:
+  - each --source argument is parsed as its own source fragment
+  - a later --source argument does not complete an unterminated earlier fragment
+input:
+  awk_args:
+    - --source
+    - 'BEGIN { token = 8;'
+    - --source
+    - 'print token }'
+  program: |
+    BEGIN { print "unreachable" }
+expect:
+  stderr_contains:
+    - unexpected newline or end of string
+  exit_code: 1

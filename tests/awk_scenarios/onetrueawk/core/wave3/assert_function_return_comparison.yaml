@@ -1,0 +1,33 @@
+description: function return values keep numeric comparison semantics
+upstream:
+  suite: onetrueawk
+  id: testdir/t.assert
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "user functions return values usable in numeric comparisons"
+  - "length results keep their numeric value after a function call"
+  - "assert-style helper functions can report failed conditions"
+input:
+  program: |
+    function check(ok, label) {
+      if (!ok) {
+        print "fail", label
+      } else {
+        passed++
+      }
+    }
+    function keep(value) { return value }
+    {
+      left = length($1)
+      right = keep(length($2))
+      check(left > right, NR ":" $1)
+    }
+    END { print "checks", passed }
+  stdin: |
+    alphabet ant
+    window win
+    planet plan
+expect:
+  stdout: |
+    checks 3
+  exit_code: 0

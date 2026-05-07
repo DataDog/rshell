@@ -1,0 +1,18 @@
+description: -v can assign a variable in the awk namespace
+upstream:
+  suite: gawk
+  id: test/nsawk2.awk
+  ref: gawk-5.4.0
+covers:
+  - "command-line -v accepts awk:: qualified variable names"
+  - "awk:: qualified values are visible to BEGIN actions"
+input:
+  awk_args:
+    - -v
+    - awk::answer=fine
+  program: |
+    BEGIN { print awk::answer }
+expect:
+  stdout: |
+    fine
+  exit_code: 0

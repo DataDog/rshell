@@ -1,0 +1,23 @@
+description: lint warns when uninitialized variables are used in arithmetic
+upstream:
+  suite: gawk
+  id: test/uninit2.awk
+  ref: gawk-5.4.0
+covers:
+  - reading an uninitialized scalar in addition emits a lint warning
+  - preincrement of an uninitialized scalar emits a lint warning
+  - uninitialized numeric values coerce to zero before arithmetic
+input:
+  awk_args:
+    - --lint
+  program: |
+    BEGIN { a = a + 1; x = a; print a }
+    BEGIN { ++b; x = b; print b }
+expect:
+  stdout: |
+    1
+    1
+  stderr_contains:
+    - "reference to uninitialized variable `a'"
+    - "reference to uninitialized variable `b'"
+  exit_code: 0

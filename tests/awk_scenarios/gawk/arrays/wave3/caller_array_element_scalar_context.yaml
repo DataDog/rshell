@@ -1,0 +1,23 @@
+description: caller sees an array element created through a function parameter
+upstream:
+  suite: gawk
+  id: test/ar2fn_elnew_sc2.awk
+  ref: gawk-5.4.0
+covers:
+  - subarray creation through a function parameter updates the caller array
+  - caller scalar use of the subarray element is rejected
+input:
+  program: |
+    function seed(slot) {
+      slot["count"] = 1
+    }
+
+    BEGIN {
+      seed(inventory["box"])
+      print inventory["box"]
+    }
+expect:
+  stderr_contains:
+    - "fatal: attempt to use array"
+    - "in a scalar context"
+  exit_code: 2

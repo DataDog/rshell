@@ -1,0 +1,25 @@
+description: tab-separated fields are conditionally rewritten with tab output
+upstream:
+  suite: onetrueawk
+  id: testdir/p.35
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "BEGIN can set FS and OFS to tab"
+  - "field regex patterns select records for replacement"
+  - "field assignment rebuilds records with OFS"
+input:
+  program: |
+    BEGIN { FS = OFS = "	" }
+    $4 ~ /^North$/ { $4 = "N" }
+    $4 ~ /^South$/ { $4 = "S" }
+    { print }
+  stdin: |
+    Aster	40	12	North
+    Boreal	80	66	South
+    Crux	55	101	East
+expect:
+  stdout: |
+    Aster	40	12	N
+    Boreal	80	66	S
+    Crux	55	101	East
+  exit_code: 0

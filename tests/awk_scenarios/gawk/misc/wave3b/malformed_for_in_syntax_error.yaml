@@ -1,0 +1,15 @@
+description: malformed for-in syntax is diagnosed without looping
+upstream:
+  suite: gawk
+  id: test/synerr3.awk
+  ref: gawk-5.4.0
+covers:
+  - malformed for-in headers produce syntax diagnostics
+  - parser recovery terminates with a non-zero exit
+input:
+  program: |
+    for (i = ) in foo bar baz
+expect:
+  stderr_contains:
+    - syntax error
+  exit_code: 1

@@ -1,0 +1,27 @@
+description: formatting an untyped array element turns it into an unassigned scalar
+upstream:
+  suite: gawk
+  id: test/typeof7.awk
+  ref: gawk-5.4.0
+covers:
+  - a referenced but unset array element starts as untyped
+  - numeric formatting of the element changes its type to unassigned
+  - string formatting leaves the element unassigned
+input:
+  program: |
+    BEGIN {
+      slot["x"]
+      print typeof(slot["x"])
+      printf "num=%d\n", slot["x"]
+      print typeof(slot["x"])
+      printf "str=<%s>\n", slot["x"]
+      print typeof(slot["x"])
+    }
+expect:
+  stdout: |
+    untyped
+    num=0
+    unassigned
+    str=<>
+    unassigned
+  exit_code: 0

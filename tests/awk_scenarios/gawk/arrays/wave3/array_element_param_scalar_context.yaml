@@ -1,0 +1,23 @@
+description: array element parameters reject later scalar use after subscript assignment
+upstream:
+  suite: gawk
+  id: test/ar2fn_elnew_sc.awk
+  ref: gawk-5.4.0
+covers:
+  - passing an uncreated array element can materialize it as a subarray parameter
+  - a parameter that has become an array cannot be used in scalar context
+input:
+  program: |
+    function paint(cell) {
+      cell["shade"] = "blue"
+      print cell
+    }
+
+    BEGIN {
+      paint(grid["tile"])
+    }
+expect:
+  stderr_contains:
+    - "fatal: attempt to use array"
+    - "in a scalar context"
+  exit_code: 2

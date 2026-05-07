@@ -1,0 +1,25 @@
+description: getline inside a function does not mutate a scalar parameter copy
+upstream:
+  suite: gawk
+  id: test/inpref.awk
+  ref: gawk-5.4.0
+covers:
+  - function arguments receive scalar value copies
+  - getline advances input inside a function
+  - advancing input does not change the saved parameter value
+input:
+  program: |
+    function test(x) {
+      print x
+      getline
+      print x
+    }
+    { test($0) }
+  stdin: |
+    first
+    second
+expect:
+  stdout: |
+    first
+    first
+  exit_code: 0

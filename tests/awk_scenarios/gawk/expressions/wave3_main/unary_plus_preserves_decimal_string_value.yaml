@@ -1,0 +1,22 @@
+description: unary plus and minus coerce leading-zero decimal strings without octal semantics
+upstream:
+  suite: gawk
+  id: test/uplus.awk
+  ref: gawk-5.4.0
+covers:
+  - binary addition converts leading-zero strings as decimal
+  - unary plus converts leading-zero strings as decimal
+  - unary minus converts leading-zero strings as decimal before negation
+input:
+  program: |
+    BEGIN {
+      print "09" + 0
+      print +"09"
+      print -"09"
+    }
+expect:
+  stdout: |
+    9
+    9
+    -9
+  exit_code: 0

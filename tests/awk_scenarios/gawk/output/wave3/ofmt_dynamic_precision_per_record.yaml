@@ -1,0 +1,24 @@
+description: assigning OFMT from the current record number changes later print formatting
+upstream:
+  suite: gawk
+  id: test/ofmtfidl.awk
+  ref: gawk-5.4.0
+covers:
+  - OFMT can be rebuilt dynamically while processing records
+  - a numeric print immediately uses the newly assigned OFMT
+  - increasing precision produces progressively longer fixed-point output
+input:
+  program: |
+    { OFMT = "%." FNR "f"; print 1 + 0.25 }
+  stdin: |
+    a
+    b
+    c
+    d
+expect:
+  stdout: |
+    1.2
+    1.25
+    1.250
+    1.2500
+  exit_code: 0

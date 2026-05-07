@@ -1,0 +1,28 @@
+description: miscellaneous record, field, and END-state behavior remains stable
+upstream:
+  suite: onetrueawk
+  id: testdir/T.misc
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "post-increment on a field updates the field value, not the index variable"
+  - "length filters use the current record text"
+  - "END sees the final record field state"
+input:
+  program: |
+    length($0) > 5 { print "long", $0 }
+    NR == 1 {
+      i = 1
+      print "inc", $i++, $1, i
+    }
+    { lastNF = NF; last = $0 }
+    END { print "end", lastNF, last }
+  stdin: |
+    3 5
+    abcdef
+    xy z
+expect:
+  stdout: |
+    inc 3 4 1
+    long abcdef
+    end 2 xy z
+  exit_code: 0

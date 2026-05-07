@@ -1,0 +1,20 @@
+description: length of the first field drives a longest-name selection
+upstream:
+  suite: onetrueawk
+  id: testdir/p.31
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "length can measure a specific field"
+  - "actions update saved state when a larger value is found"
+input:
+  program: |
+    length($1) > max { max = length($1); name = $1 }
+    END { print name }
+  stdin: |
+    red 1
+    magenta 2
+    blue 3
+expect:
+  stdout: |
+    magenta
+  exit_code: 0

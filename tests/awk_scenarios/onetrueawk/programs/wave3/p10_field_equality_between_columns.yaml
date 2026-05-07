@@ -1,0 +1,23 @@
+description: field-to-field equality can compare names and zones
+upstream:
+  suite: onetrueawk
+  id: testdir/p.10
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "field-to-field equality can compare names and zones"
+  - "uses original rshell fixture data rather than upstream country records"
+input:
+  program: |
+    $1 == $4 { print $0 }
+  stdin: |
+    Aster	40	12	inner
+    Boreal	80	66	outer
+    Crux	55	101	outer
+    Dune	abc	9	Dune
+    Mica	12	5	inner
+    Nova	70	70	Nova
+expect:
+  stdout: |
+    Dune	abc	9	Dune
+    Nova	70	70	Nova
+  exit_code: 0

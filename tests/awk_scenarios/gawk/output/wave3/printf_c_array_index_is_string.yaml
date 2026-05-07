@@ -1,0 +1,19 @@
+description: percent-c formats array indexes from for-in iteration as strings
+upstream:
+  suite: gawk
+  id: test/printfchar.awk
+  ref: gawk-5.4.0
+covers:
+  - numeric-looking array indexes iterated by for-in are string values
+  - percent-c with a string argument emits the first character of that string
+  - the array index 82 therefore formats as the character 8, not code point 82
+input:
+  program: |
+    BEGIN {
+      idx[82]
+      for (k in idx) printf "%c\n", k
+    }
+expect:
+  stdout: |
+    8
+  exit_code: 0

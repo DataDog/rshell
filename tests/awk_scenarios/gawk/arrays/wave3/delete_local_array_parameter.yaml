@@ -1,0 +1,27 @@
+description: deleting a local array parameter clears it without corrupting other parameters
+upstream:
+  suite: gawk
+  id: test/delarprm.awk
+  ref: gawk-5.4.0
+covers:
+  - an omitted function argument can become a local array
+  - delete of the whole local array parameter is allowed
+  - an adjacent unused parameter does not affect deletion
+input:
+  program: |
+    function clear_local(bucket, ignored) {
+      bucket["red"] = 1
+      bucket["blue"] = 2
+      delete bucket
+      print length(bucket)
+      return "cleared"
+    }
+
+    BEGIN {
+      print clear_local()
+    }
+expect:
+  stdout: |
+    0
+    cleared
+  exit_code: 0

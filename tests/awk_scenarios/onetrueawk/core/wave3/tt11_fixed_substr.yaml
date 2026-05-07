@@ -1,0 +1,20 @@
+description: substr extracts a fixed window from each record
+upstream:
+  suite: onetrueawk
+  id: testdir/tt.11
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "substr uses one-based start positions"
+  - "substr length limits the extracted text"
+  - "short records produce the available suffix"
+input:
+  program: |
+    { print substr($0, 5, 4) }
+  stdin: |
+    abcdefghijk
+    123456
+expect:
+  stdout: |
+    efgh
+    56
+  exit_code: 0

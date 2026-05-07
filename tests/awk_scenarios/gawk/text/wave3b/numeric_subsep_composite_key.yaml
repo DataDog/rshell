@@ -1,0 +1,19 @@
+description: numeric SUBSEP participates in composite array subscripts
+upstream:
+  suite: gawk
+  id: test/subsepnm.awk
+  ref: gawk-5.4.0
+covers:
+  - SUBSEP can be assigned a numeric value
+  - comma subscripts and explicit concatenated subscripts resolve to the same key
+input:
+  program: |
+    BEGIN {
+      SUBSEP = 10
+      a[1, 1] = 100
+      print a[1 SUBSEP 1]
+    }
+expect:
+  stdout: |
+    100
+  exit_code: 0

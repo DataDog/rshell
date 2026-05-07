@@ -1,0 +1,44 @@
+description: ARGV entries expose operands and can skip a later input file
+upstream:
+  suite: onetrueawk
+  id: testdir/T.argv
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "ARGC and ARGV include command-line assignment and file operands"
+  - "assignment operands are applied when input scanning reaches them, not during BEGIN"
+  - "emptying an ARGV file operand prevents that file from being read"
+setup:
+  files:
+    - path: first.txt
+      content: |
+        one
+    - path: second.txt
+      content: |
+        two
+input:
+  program: |
+    BEGIN {
+      print "begin-prefix", prefix == ""
+      print "argc", ARGC
+      print "argv", ARGV[1], ARGV[2], ARGV[3], ARGV[4]
+      ARGV[4] = ""
+    }
+    {
+      print "record", FILENAME, FNR, NR, prefix, $0
+    }
+    END {
+      print "end", prefix, NR
+    }
+  args:
+    - "prefix=red"
+    - first.txt
+    - "prefix=blue"
+    - second.txt
+expect:
+  stdout: |
+    begin-prefix 1
+    argc 5
+    argv prefix=red first.txt prefix=blue second.txt
+    record first.txt 1 1 red one
+    end blue 1
+  exit_code: 0

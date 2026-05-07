@@ -1,0 +1,15 @@
+description: a while loop can print each field after the full record
+upstream:
+  suite: onetrueawk
+  id: testdir/t.vf1
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "while loops can iterate from 1 through NF"
+  - "field references inside the loop use the current index"
+input:
+  program: |
+    { print; i = 1; while (i <= NF) { print "\t" $i; i = i + 1 } }
+  stdin: "red green\nblue\n"
+expect:
+  stdout: "red green\n\tred\n\tgreen\nblue\n\tblue\n"
+  exit_code: 0

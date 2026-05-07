@@ -1,0 +1,20 @@
+description: paragraph mode skips a run of blank lines before the next record
+upstream:
+  suite: gawk
+  id: test/rsnulbig2.ok
+  ref: gawk-5.4.0
+covers:
+  - "RS empty string treats repeated blank lines as separators"
+  - "leading blank lines do not produce empty records"
+  - "the following nonblank paragraph is read as one record"
+input:
+  program: |
+    BEGIN { RS = "" }
+    { print NR ":" $0 }
+    END { print "records=" NR }
+  stdin: "\n\n\n\nabc\n"
+expect:
+  stdout: |
+    1:abc
+    records=1
+  exit_code: 0

@@ -1,0 +1,29 @@
+description: length of an uninitialized array argument is zero under lint
+upstream:
+  suite: gawk
+  id: test/uninit5.awk
+  ref: gawk-5.4.0
+covers:
+  - an uninitialized value passed as an array parameter warns when inspected
+  - length of that uninitialized argument is zero
+input:
+  awk_args:
+    - --lint
+  program: |
+    function count(a, len) {
+      len = length(a)
+      print "length", len
+      for (i = 1; i <= len; i++) {
+        print i, a[i]
+      }
+    }
+
+    BEGIN {
+      count(missing)
+    }
+expect:
+  stdout: |
+    length 0
+  stderr_contains:
+    - "reference to uninitialized argument `a'"
+  exit_code: 0

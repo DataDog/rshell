@@ -1,0 +1,28 @@
+description: negated regex and boolean expressions select records
+upstream:
+  suite: onetrueawk
+  id: testdir/t.not
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "!~ negates a regex match"
+  - "parenthesized comparisons can be negated"
+  - "the ! operator binds before a following regex match expression"
+input:
+  program: |
+    $2 !~ /drop|omit/ { print "not-regex", NR }
+    !($1 < 10) { print "not-less", NR }
+    !($2 ~ /drop/) { print "not-match", NR }
+    !$3 ~ /yes/ { print "not-field-precedence", NR }
+  stdin: |
+    5 keep yes
+    12 drop no
+    20 hold no
+expect:
+  stdout: |
+    not-regex 1
+    not-match 1
+    not-less 2
+    not-regex 3
+    not-less 3
+    not-match 3
+  exit_code: 0

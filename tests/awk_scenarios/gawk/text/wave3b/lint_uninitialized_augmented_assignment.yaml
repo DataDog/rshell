@@ -1,0 +1,19 @@
+description: lint warns when augmented assignment reads an uninitialized variable
+upstream:
+  suite: gawk
+  id: test/uninitialized.awk
+  ref: gawk-5.4.0
+covers:
+  - augmented assignment reads the previous scalar value
+  - reading an uninitialized scalar for augmented assignment emits a lint warning
+input:
+  awk_args:
+    - --lint
+  program: |
+    BEGIN {
+      a += 2
+    }
+expect:
+  stderr_contains:
+    - "reference to uninitialized variable `a'"
+  exit_code: 0

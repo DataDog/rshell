@@ -1,0 +1,24 @@
+description: Variables holding built-in names can dispatch numeric and string functions
+upstream:
+  suite: gawk
+  id: test/indirectcall2.awk
+  ref: gawk-5.4.0
+covers:
+  - an indirect call can invoke a one-argument numeric built-in
+  - an indirect call can invoke a multi-argument string built-in
+  - direct and indirect built-in calls produce the same values
+input:
+  program: |
+    BEGIN {
+      angle = 3.1415927 / 3
+      trig = "cos"
+      print cos(angle), @trig(angle)
+
+      cut = "substr"
+      print substr("violet", 2, 3), @cut("violet", 2, 3)
+    }
+expect:
+  stdout: |
+    0.5 0.5
+    iol iol
+  exit_code: 0

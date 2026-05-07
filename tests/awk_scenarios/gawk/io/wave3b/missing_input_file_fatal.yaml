@@ -1,0 +1,19 @@
+description: a missing command-line input file is a fatal error
+upstream:
+  suite: gawk
+  id: test/nofile.ok
+  ref: gawk-5.4.0
+covers:
+  - "ARGV input files are opened before record processing"
+  - "missing input files produce a fatal diagnostic"
+  - "a missing input file exits with status 2"
+input:
+  program: |
+    { print "unreachable" }
+  args:
+    - no/such/file
+expect:
+  stderr_contains:
+    - "cannot open file `no/such/file' for reading"
+    - "No such file or directory"
+  exit_code: 2

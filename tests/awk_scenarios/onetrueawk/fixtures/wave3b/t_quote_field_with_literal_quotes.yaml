@@ -1,0 +1,15 @@
+description: literal quote characters concatenate around a field
+upstream:
+  suite: onetrueawk
+  id: testdir/t.quote
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "escaped double quotes are valid inside string literals"
+  - "string concatenation can surround a field value"
+input:
+  program: |
+    { print "\"" $1 "\"" }
+  stdin: "alpha beta\n spaced\n"
+expect:
+  stdout: "\"alpha\"\n\"spaced\"\n"
+  exit_code: 0

@@ -1,0 +1,22 @@
+description: Duplicate function parameter names are rejected
+upstream:
+  suite: gawk
+  id: test/paramdup.awk
+  ref: gawk-5.4.0
+covers:
+  - function parameter names must be unique
+  - duplicate parameter diagnostics identify the later and earlier positions
+input:
+  program: |
+    function combine(left, right, left) {
+      print left
+    }
+
+    BEGIN {
+      combine(1, 2, 3)
+    }
+expect:
+  stderr_contains:
+    - "function `combine'"
+    - "parameter #3, `left', duplicates parameter #1"
+  exit_code: 1

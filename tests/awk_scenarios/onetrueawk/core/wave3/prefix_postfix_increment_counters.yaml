@@ -1,0 +1,21 @@
+description: prefix and postfix increment operators update counters
+upstream:
+  suite: onetrueawk
+  id: testdir/t.incr
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "prefix increment updates a scalar"
+  - "prefix decrement updates a scalar"
+  - "postfix increment and decrement update after value use"
+input:
+  program: |
+    { ++pre; --down; post++; tail-- }
+    END { print NR, pre, down, post, tail }
+  stdin: |
+    a
+    b
+    c
+expect:
+  stdout: |
+    3 3 -3 3 -3
+  exit_code: 0

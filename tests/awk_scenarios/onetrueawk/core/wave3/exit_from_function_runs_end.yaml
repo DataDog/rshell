@@ -1,0 +1,34 @@
+description: exit from a function still runs END and can be overridden there
+upstream:
+  suite: onetrueawk
+  id: testdir/t.exit1
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "exit inside a called function stops later statements"
+  - "END runs after exit from BEGIN"
+  - "exit inside END determines the final status"
+input:
+  program: |
+    BEGIN {
+      print "begin"
+      quit(4)
+      print "never-begin"
+    }
+    function quit(code) {
+      print "quit", code
+      exit code
+      print "never-func"
+    }
+    { print "record" }
+    END {
+      print "end"
+      quit(6)
+      print "never-end"
+    }
+expect:
+  stdout: |
+    begin
+    quit 4
+    end
+    quit 6
+  exit_code: 6

@@ -1,0 +1,35 @@
+description: printf combines classic flags, width, precision, and base conversions
+upstream:
+  suite: gawk
+  id: test/hsprint.awk
+  ref: gawk-5.4.0
+covers:
+  - integer, octal, hexadecimal, floating, string, and character conversions share printf flag handling
+  - alternate form and zero padding interact for non-decimal integer formats
+  - left adjustment, explicit signs, and leading-space signs affect field padding
+input:
+  program: |
+    BEGIN {
+      split("%6d %#6x %06o %-7.2f %+8.2e %5s %3c", fmt, " ")
+      vals[1] = 58
+      vals[2] = 48879
+      vals[3] = 9
+      vals[4] = 4.25
+      vals[5] = -0.03125
+      vals[6] = "plum"
+      vals[7] = "XY"
+      for (i = 1; i <= 7; i++)
+        printf "[%s]=|" fmt[i] "|\n", fmt[i], vals[i]
+      printf "|%#08x| |% -6d| |%+06.1f|\n", 31, 12, 3.5
+    }
+expect:
+  stdout: |
+    [%6d]=|    58|
+    [%#6x]=|0xbeef|
+    [%06o]=|000011|
+    [%-7.2f]=|4.25   |
+    [%+8.2e]=|-3.12e-02|
+    [%5s]=| plum|
+    [%3c]=|  X|
+    |0x00001f| | 12   | |+003.5|
+  exit_code: 0

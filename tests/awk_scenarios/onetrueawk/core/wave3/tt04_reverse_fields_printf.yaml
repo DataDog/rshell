@@ -1,0 +1,24 @@
+description: printf can emit fields in reverse order
+upstream:
+  suite: onetrueawk
+  id: testdir/tt.04
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "for loops can count down from NF"
+  - "dynamic field references read fields by loop index"
+  - "printf does not add an implicit separator or newline"
+input:
+  program: |
+    {
+      for (i = NF; i > 0; i--) {
+        printf "%s%s", $i, (i == 1 ? ORS : OFS)
+      }
+    }
+  stdin: |
+    one two three
+    red blue
+expect:
+  stdout: |
+    three two one
+    blue red
+  exit_code: 0

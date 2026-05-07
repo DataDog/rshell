@@ -1,0 +1,34 @@
+description: uninitialized variables and missing fields compare as zero or empty
+upstream:
+  suite: onetrueawk
+  id: testdir/t.null0
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "uninitialized scalars compare equal to zero"
+  - "uninitialized scalars compare equal to the empty string"
+  - "missing fields can compare as both empty string and numeric zero"
+input:
+  program: |
+    BEGIN { FS = ":" }
+    {
+      if (unset == 0) print "unset-zero"
+      if (unset == "") print "unset-empty"
+      if ($1 == 0) print "f1-zero"
+      if ($1 == "0") print "f1-string-zero"
+      if ($4 == "") print "missing-empty"
+      if ($4 == 0) print "missing-zero"
+    }
+  stdin: |
+    0:alpha:
+    text:beta:
+expect:
+  stdout: |
+    unset-zero
+    unset-empty
+    f1-zero
+    f1-string-zero
+    missing-empty
+    unset-zero
+    unset-empty
+    missing-empty
+  exit_code: 0

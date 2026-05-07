@@ -1,0 +1,19 @@
+description: substr sees the string form of arithmetic results with preserved leading padding
+upstream:
+  suite: gawk
+  id: test/numsubstr.awk
+  ref: gawk-5.4.0
+covers:
+  - arithmetic can be used to normalize numeric input before string slicing
+  - substr operates on the converted string form of the expression
+input:
+  program: |
+    { print substr(5000 + $1, 2) }
+  stdin: |
+    8
+    42
+expect:
+  stdout: |
+    008
+    042
+  exit_code: 0

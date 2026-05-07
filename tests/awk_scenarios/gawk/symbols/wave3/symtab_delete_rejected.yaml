@@ -1,0 +1,18 @@
+description: delete is rejected when applied to SYMTAB
+upstream:
+  suite: gawk
+  id: test/symtab3.awk
+  ref: gawk-5.4.0
+covers:
+  - SYMTAB entries cannot be removed with delete
+  - a delete attempt on SYMTAB is a fatal runtime error
+input:
+  program: |
+    BEGIN {
+      victim = 1
+      delete SYMTAB["victim"]
+    }
+expect:
+  stderr_contains:
+    - "`delete' is not allowed with SYMTAB"
+  exit_code: 2

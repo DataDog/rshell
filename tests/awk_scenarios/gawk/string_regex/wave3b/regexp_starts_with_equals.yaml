@@ -1,0 +1,19 @@
+description: regexps beginning with equals are parsed as regexp constants
+upstream:
+  suite: gawk
+  id: test/regeq.awk
+  ref: gawk-5.4.0
+covers:
+  - match accepts a regexp constant whose first character is equals
+  - match returns the one-based position of the equals-prefixed text
+input:
+  program: |
+    { print match($0, /=a/) }
+  stdin: |
+    plain
+    has=a
+expect:
+  stdout: |
+    0
+    4
+  exit_code: 0

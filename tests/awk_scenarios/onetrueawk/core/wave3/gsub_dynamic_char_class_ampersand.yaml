@@ -1,0 +1,26 @@
+description: gsub handles dynamic character classes and escaped ampersands
+upstream:
+  suite: onetrueawk
+  id: testdir/t.gsub4
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "a dynamic string can form a character class pattern"
+  - "ampersand in replacement expands to matched text"
+  - "escaped ampersand in replacement is literal text"
+input:
+  program: |
+    length($1) {
+      pattern = "[" $1 "]"
+      line = $0
+      gsub(pattern, "{&}", line)
+      print line
+      gsub(pattern, "{\\&}")
+      print
+    }
+  stdin: |
+    abc cab
+expect:
+  stdout: |
+    {a}{b}{c} {c}{a}{b}
+    {&}{&}{&} {&}{&}{&}
+  exit_code: 0

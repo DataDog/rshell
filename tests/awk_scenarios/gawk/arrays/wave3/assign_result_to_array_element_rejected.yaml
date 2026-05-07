@@ -1,0 +1,23 @@
+description: assigning a function result to an element made into an array is rejected
+upstream:
+  suite: gawk
+  id: test/mdim6.awk
+  ref: gawk-5.4.0
+covers:
+  - a function parameter can turn the target element into an array
+  - the surrounding assignment then tries to use that array element as a scalar
+  - gawk rejects the scalar assignment to an array element
+input:
+  program: |
+    function make_array(cell) {
+      cell["value"] = 42
+    }
+
+    BEGIN {
+      bucket["slot"] = make_array(bucket["slot"])
+    }
+expect:
+  stderr_contains:
+    - "fatal: attempt to use array"
+    - "in a scalar context"
+  exit_code: 2

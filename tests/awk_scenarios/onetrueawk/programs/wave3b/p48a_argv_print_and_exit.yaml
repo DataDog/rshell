@@ -1,0 +1,25 @@
+description: BEGIN can inspect ARGV operands and exit before reading input
+upstream:
+  suite: onetrueawk
+  id: testdir/p.48a
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "ARGV exposes command-line operands in BEGIN"
+  - "ARGC bounds iteration across ARGV entries"
+  - "exit in BEGIN prevents input processing"
+input:
+  program: |
+    BEGIN {
+      for (i = 1; i < ARGC; i++)
+        printf "%s%s", (i == 1 ? "" : " "), ARGV[i]
+      printf "\n"
+      exit
+    }
+  args:
+    - red
+    - blue=2
+    - green
+expect:
+  stdout: |
+    red blue=2 green
+  exit_code: 0

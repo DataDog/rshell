@@ -1,0 +1,17 @@
+description: getline redirection rejects an unassigned array element filename
+upstream:
+  suite: gawk
+  id: test/elemnew5.awk
+  ref: gawk-5.4.0
+covers:
+  - missing array element redirection operands evaluate to the empty string
+  - getline input redirection rejects a null filename
+input:
+  program: |
+    BEGIN {
+      getline line < files["inbox"]
+    }
+expect:
+  stderr_contains:
+    - "fatal: expression for `<' redirection has null string value"
+  exit_code: 2

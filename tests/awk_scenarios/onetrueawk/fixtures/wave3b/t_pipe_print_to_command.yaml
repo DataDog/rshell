@@ -1,0 +1,14 @@
+description: print piped to a command reaches the command stdout
+upstream:
+  suite: onetrueawk
+  id: testdir/t.pipe
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "print redirection to a command pipe is flushed on close"
+  - "close(command) waits for the pipe command to finish"
+input:
+  program: |
+    BEGIN { print "pipe payload" | "cat"; close("cat") }
+expect:
+  stdout: "pipe payload\n"
+  exit_code: 0

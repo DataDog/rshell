@@ -1,0 +1,20 @@
+description: a nonnumeric split field remains a string after numeric coercion
+upstream:
+  suite: gawk
+  id: test/mpgforcenum.awk
+  ref: gawk-5.4.0
+covers:
+  - split creates a string value for a nonnumeric token
+  - numeric coercion of a copy does not retype the original array element
+  - typeof reports the original element as a string
+input:
+  program: |
+    BEGIN {
+      split("5apple", f)
+      x = f[1] + 0
+      print typeof(f[1])
+    }
+expect:
+  stdout: |
+    string
+  exit_code: 0

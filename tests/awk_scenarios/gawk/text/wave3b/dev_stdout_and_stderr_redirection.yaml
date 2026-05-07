@@ -1,0 +1,24 @@
+description: /dev/stdout and /dev/stderr redirections reach the process streams
+upstream:
+  suite: gawk
+  id: test/messages.awk
+  ref: gawk-5.4.0
+covers:
+  - ordinary print writes to stdout
+  - redirection to /dev/stdout is captured on stdout
+  - redirection to /dev/stderr is captured on stderr
+input:
+  program: |
+    BEGIN {
+      print "Goes to a file out1" > "_out1"
+      print "Normal print statement"
+      print "This printed on stdout" > "/dev/stdout"
+      print "You blew it!" > "/dev/stderr"
+    }
+expect:
+  stdout: |
+    Normal print statement
+    This printed on stdout
+  stderr: |
+    You blew it!
+  exit_code: 0

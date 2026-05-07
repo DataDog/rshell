@@ -1,0 +1,24 @@
+description: field assignment and decrement rebuild the current record
+upstream:
+  suite: onetrueawk
+  id: testdir/tt.12
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "string concatenation can build a field replacement"
+  - "post-decrement can update a numeric field"
+  - "print emits the rebuilt record"
+input:
+  program: |
+    {
+      $2 = "<<" $2 ">>"
+      $3--
+      print
+    }
+  stdin: |
+    item name 9 tail
+    row label 1 end
+expect:
+  stdout: |
+    item <<name>> 8 tail
+    row <<label>> 0 end
+  exit_code: 0

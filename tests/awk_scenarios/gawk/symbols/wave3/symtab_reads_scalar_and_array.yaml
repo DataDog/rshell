@@ -1,0 +1,25 @@
+description: SYMTAB exposes existing scalar globals and nested arrays
+upstream:
+  suite: gawk
+  id: test/symtab1.awk
+  ref: gawk-5.4.0
+covers:
+  - existing scalar variables can be read through SYMTAB
+  - existing arrays can be traversed through SYMTAB
+  - built-in array variables such as ARGV are visible as arrays
+input:
+  program: |
+    BEGIN {
+      scalar = 7
+      nested["outer"]["leaf"] = "green"
+
+      print "scalar", SYMTAB["scalar"]
+      print "nested", SYMTAB["nested"]["outer"]["leaf"]
+      print "argv-array", isarray(SYMTAB["ARGV"])
+    }
+expect:
+  stdout: |
+    scalar 7
+    nested green
+    argv-array 1
+  exit_code: 0

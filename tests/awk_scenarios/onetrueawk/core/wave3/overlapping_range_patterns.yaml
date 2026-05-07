@@ -1,0 +1,34 @@
+description: overlapping range patterns can be active together
+upstream:
+  suite: onetrueawk
+  id: testdir/t.pp2
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "separate range rules maintain separate active state"
+  - "one record can satisfy multiple active ranges"
+  - "different ending patterns close different ranges"
+input:
+  program: |
+    /open/,/close/ { print "a", NR, $0 }
+    /open/,/stop/ { print "b", NR, $0 }
+    /mid/,/done/ { print "c", NR, $0 }
+  stdin: |
+    open gate
+    mid point
+    close gate
+    stop sign
+    done now
+expect:
+  stdout: |
+    a 1 open gate
+    b 1 open gate
+    a 2 mid point
+    b 2 mid point
+    c 2 mid point
+    a 3 close gate
+    b 3 close gate
+    c 3 close gate
+    b 4 stop sign
+    c 4 stop sign
+    c 5 done now
+  exit_code: 0

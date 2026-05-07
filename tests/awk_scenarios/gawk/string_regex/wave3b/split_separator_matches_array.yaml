@@ -1,0 +1,28 @@
+description: split records separator matches and clears the separators array on empty input
+upstream:
+  suite: gawk
+  id: test/splitarg4.awk
+  ref: gawk-5.4.0
+covers:
+  - split can populate a fourth separators array
+  - regexp separators with runs are recorded by position
+  - splitting an empty string clears prior separator array contents
+input:
+  program: |
+    BEGIN {
+      n = split("a::b:c", field, /:+/, sep)
+      print n
+      for (i = 1; i <= n; i++)
+        print i, field[i], ((i in sep) ? sep[i] : "<none>")
+      sep[1] = "old"
+      split("", empty, /:+/, sep)
+      print length(sep), (1 in sep)
+    }
+expect:
+  stdout: |
+    3
+    1 a ::
+    2 b :
+    3 c <none>
+    0 0
+  exit_code: 0

@@ -1,0 +1,27 @@
+description: PROCINFO["FS"] follows the active field-splitting mechanism
+upstream:
+  suite: gawk
+  id: test/procinfs.awk
+  ref: gawk-5.4.0
+covers:
+  - PROCINFO["FS"] reports the default FS splitter before overrides
+  - assigning FPAT changes the reported splitter mode
+  - FIELDWIDTHS and FS assignments replace the previous splitter mode
+input:
+  program: |
+    BEGIN {
+      print "start", PROCINFO["FS"]
+      FPAT = "[[:alpha:]]+"
+      print "after-fpat", PROCINFO["FS"]
+      FIELDWIDTHS = "2 3"
+      print "after-widths", PROCINFO["FS"]
+      FS = ":"
+      print "after-fs", PROCINFO["FS"]
+    }
+expect:
+  stdout: |
+    start FS
+    after-fpat FPAT
+    after-widths FIELDWIDTHS
+    after-fs FS
+  exit_code: 0

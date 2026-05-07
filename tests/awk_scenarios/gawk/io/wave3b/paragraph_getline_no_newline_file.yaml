@@ -1,0 +1,27 @@
+description: paragraph mode getline accepts a file whose final record has no newline
+upstream:
+  suite: gawk
+  id: test/rstest3.awk
+  ref: gawk-5.4.0
+covers:
+  - "RS empty string is valid before getline"
+  - "getline reads a record that ends at EOF"
+  - "a record without a trailing newline has empty RT"
+setup:
+  files:
+    - path: chunk.txt
+      content: "x"
+input:
+  program: |
+    BEGIN {
+      RS = ""
+      print getline < "chunk.txt"
+      print $0
+      print "rt=" length(RT)
+    }
+expect:
+  stdout: |
+    1
+    x
+    rt=0
+  exit_code: 0

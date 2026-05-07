@@ -1,0 +1,19 @@
+description: octal escapes in regexps are interpreted as character codes
+upstream:
+  suite: gawk
+  id: test/litoct.awk
+  ref: gawk-5.4.0
+covers:
+  - regexp octal escape \52 matches an asterisk
+  - escaped metacharacters are treated as literal input characters
+input:
+  program: |
+    { if (/a\52b/) print "match"; else print "no match" }
+  stdin: |
+    a*b
+    a52b
+expect:
+  stdout: |
+    match
+    match
+  exit_code: 0

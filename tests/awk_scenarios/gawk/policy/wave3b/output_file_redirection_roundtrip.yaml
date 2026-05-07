@@ -1,0 +1,20 @@
+description: print redirection writes a named file that can be closed and read back
+upstream:
+  suite: gawk
+  id: test/out1.ok
+  ref: gawk-5.4.0
+covers:
+  - print can redirect output to a regular file
+  - close flushes a written file before redirected getline reads it
+input:
+  program: |
+    BEGIN {
+      print "saved line" > "message.out"
+      close("message.out")
+      getline line < "message.out"
+      print line
+    }
+expect:
+  stdout: |
+    saved line
+  exit_code: 0

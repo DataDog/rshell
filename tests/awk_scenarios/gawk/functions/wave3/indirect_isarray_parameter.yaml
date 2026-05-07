@@ -1,0 +1,23 @@
+description: Indirect isarray sees a function parameter as an array after element assignment
+upstream:
+  suite: gawk
+  id: test/indirectbuiltin3.awk
+  ref: gawk-5.4.0
+covers:
+  - assigning an element makes a function parameter an array
+  - isarray can be invoked indirectly on that array parameter
+input:
+  program: |
+    function probe(values, f) {
+      values["x"] = 1
+      f = "isarray"
+      return @f(values)
+    }
+
+    BEGIN {
+      print probe(sample)
+    }
+expect:
+  stdout: |
+    1
+  exit_code: 0

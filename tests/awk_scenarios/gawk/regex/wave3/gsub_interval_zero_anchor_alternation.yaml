@@ -1,0 +1,27 @@
+description: interval expressions that can match empty strings work with anchored gsub
+upstream:
+  suite: gawk
+  id: test/gsubtst4.awk
+  ref: gawk-5.4.0
+covers:
+  - zero-count interval expressions can participate in gsub matches
+  - anchored alternatives still make progress after zero-width matches
+input:
+  program: |
+    BEGIN {
+      text = "code"
+      gsub(/x{0}$/, "+", text)
+      print text
+      text = "code"
+      gsub(/(x{0}^)|o/, "+", text)
+      print text
+      text = "code"
+      gsub(/x{0}((o)|($))/, "+", text)
+      print text
+    }
+expect:
+  stdout: |
+    code+
+    +c+de
+    c+de+
+  exit_code: 0

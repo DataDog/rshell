@@ -1,0 +1,32 @@
+description: program-file loads are checked against earlier nested includes
+upstream:
+  suite: gawk
+  id: test/incdupe7.ok
+  ref: gawk-5.4.0
+covers:
+  - nested @include sources are recorded before later -f arguments are processed
+  - later program-file loads conflict with already included nested sources
+setup:
+  files:
+    - path: lib/loader.awk
+      content: |
+        @include "leaf"
+    - path: lib/leaf.awk
+      content: |
+        BEGIN { print "leaf" }
+input:
+  envs:
+    AWKPATH: lib
+  awk_args:
+    - --lint
+    - -f
+    - leaf
+    - -i
+    - loader
+  program: |
+    BEGIN { print "unreached" }
+expect:
+  stderr_contains:
+    - "`include' is a gawk extension"
+    - "cannot include `leaf' and use it as a program file"
+  exit_code: 2

@@ -1,0 +1,20 @@
+description: gsub can replace the end-of-record anchor
+upstream:
+  suite: onetrueawk
+  id: testdir/t.gsub1
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "the end anchor can be a substitution target"
+  - "gsub applies a zero-width end match once"
+  - "the current record is updated in place"
+input:
+  program: |
+    { gsub(/$/, "#"); print }
+  stdin: |
+    alpha
+    beta
+expect:
+  stdout: |
+    alpha#
+    beta#
+  exit_code: 0

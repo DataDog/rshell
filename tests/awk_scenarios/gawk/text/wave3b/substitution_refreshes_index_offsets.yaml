@@ -1,0 +1,23 @@
+description: sub refreshes the string state used by later index calls
+upstream:
+  suite: gawk
+  id: test/widesub2.awk
+  ref: gawk-5.4.0
+covers:
+  - index before substitution reports the original match position
+  - index after substitution reports the new match position
+input:
+  envs:
+    LC_ALL: en_US.UTF-8
+  program: |
+    BEGIN {
+      Value = "abc"
+      print "Before <" Value "> ", index(Value, "bc")
+      sub(/bc/, "bbc", Value)
+      print "After  <" Value ">", index(Value, "bc")
+    }
+expect:
+  stdout: |
+    Before <abc>  2
+    After  <abbc> 3
+  exit_code: 0

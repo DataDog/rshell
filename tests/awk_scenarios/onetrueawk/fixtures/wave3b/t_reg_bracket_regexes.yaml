@@ -1,0 +1,16 @@
+description: bracket characters work inside positive and negated regex tests
+upstream:
+  suite: onetrueawk
+  id: testdir/t.reg
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "escaped brackets are recognized inside character classes"
+  - "negated bracket classes distinguish bracket-only lines"
+  - "negated regex conditions can be combined with positive matches"
+input:
+  program: |
+    { if ($0 ~ /[^\[\]]/) print "nonbracket:" $0; if ($0 !~ /^\[/) print "not-left:" $0; if ($0 !~ /^[\[\]]/) print "not-bracket-start:" $0; if ($0 ~ /[\[\]]/) print "has-bracket:" $0 }
+  stdin: "[tag]\nplain\n]close\n[]\n"
+expect:
+  stdout: "nonbracket:[tag]\nhas-bracket:[tag]\nnonbracket:plain\nnot-left:plain\nnot-bracket-start:plain\nnonbracket:]close\nnot-left:]close\nhas-bracket:]close\nhas-bracket:[]\n"
+  exit_code: 0

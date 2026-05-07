@@ -1,0 +1,25 @@
+description: NR remains stable when used in both concatenation and arithmetic per record
+upstream:
+  suite: gawk
+  id: test/getnr2tb.awk
+  ref: gawk-5.4.0
+covers:
+  - NR can be converted to a string for concatenation without corrupting its numeric value
+  - repeated NR references in one print statement observe the current record number
+input:
+  program: |
+    {
+      print NR ":" 12 / NR ":" (NR + 0)
+    }
+  stdin: |
+    one
+    two
+    three
+    four
+expect:
+  stdout: |
+    1:12:1
+    2:6:2
+    3:4:3
+    4:3:4
+  exit_code: 0

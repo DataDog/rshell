@@ -1,0 +1,22 @@
+description: in-operator membership against a scalar is fatal
+upstream:
+  suite: gawk
+  id: test/sclifin.awk
+  ref: gawk-5.4.0
+covers:
+  - the right operand of in must be an array
+  - scalar membership tests are rejected before either branch prints
+input:
+  program: |
+    BEGIN {
+      j = 4
+      if ("foo" in j)
+        print "ouch"
+      else
+        print "ok"
+    }
+expect:
+  stderr_contains:
+    - attempt to use scalar
+    - as an array
+  exit_code: 2

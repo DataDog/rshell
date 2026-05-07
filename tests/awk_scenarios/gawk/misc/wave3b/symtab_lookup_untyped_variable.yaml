@@ -1,0 +1,28 @@
+description: SYMTAB lookup of an untyped variable can be copied without crashing
+upstream:
+  suite: gawk
+  id: test/stupid1.awk
+  ref: gawk-5.4.0
+covers:
+  - an untyped variable name is present in SYMTAB
+  - copying a SYMTAB entry for an untyped variable does not crash
+  - the original variable remains untyped after the lookup
+input:
+  program: |
+    BEGIN {
+      abc("varname")
+      print typeof(varname)
+    }
+    func abc(n) {
+      if (n in SYMTAB) {
+        print "before"
+        is = SYMTAB[n]
+        print "after"
+      }
+    }
+expect:
+  stdout: |
+    before
+    after
+    untyped
+  exit_code: 0

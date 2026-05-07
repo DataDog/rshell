@@ -1,0 +1,24 @@
+description: UTF-8 strings count and slice by character in a UTF-8 locale
+upstream:
+  suite: onetrueawk
+  id: testdir/T.utf
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "length counts multibyte characters rather than bytes in a UTF-8 locale"
+  - "index and substr report character positions"
+  - "printf percent-c emits the first multibyte character of a string"
+input:
+  envs:
+    LC_ALL: en_US.UTF-8
+  program: |
+    BEGIN {
+      s = "现在是时候了"
+      print length(s), index(s, "是时"), substr(s, 2, 3)
+      t = "😀🖕"
+      printf "%c %s\n", t, substr(t, 2, 1)
+    }
+expect:
+  stdout: |
+    6 3 在是时
+    😀 🖕
+  exit_code: 0

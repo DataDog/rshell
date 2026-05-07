@@ -1,0 +1,27 @@
+description: lint mode warns but permits the same file name as output and input redirection
+upstream:
+  suite: gawk
+  id: test/iolint.awk
+  ref: gawk-5.4.0
+covers:
+  - "LINT diagnoses a string reused for input and output redirections"
+  - "fflush makes redirected output visible to a later getline"
+  - "closing an opened redirection succeeds"
+input:
+  program: |
+    BEGIN {
+      LINT = 1
+      print "hi" > "f1"
+      fflush("f1")
+      print (getline x < "f1"), x
+      print close("f1")
+      print close("f1")
+    }
+expect:
+  stdout: |
+    1 hi
+    0
+    0
+  stderr_contains:
+    - "used for input file and for output file"
+  exit_code: 0

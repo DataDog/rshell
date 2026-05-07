@@ -1,0 +1,27 @@
+description: strings containing NUL bytes compare lexicographically through the byte after the NUL
+upstream:
+  suite: gawk
+  id: test/posix_compare.awk
+  ref: gawk-5.4.0
+covers:
+  - strings can contain NUL characters
+  - comparison examines bytes after an embedded NUL
+  - strings with a longer suffix after a common NUL prefix compare larger
+input:
+  program: |
+    function shown(s,    i, n, a, r) {
+      n = split(s, a, "")
+      for (i = 1; i <= n; i++)
+        r = r (a[i] == sprintf("%c", 0) ? "\\0" : a[i])
+      return r
+    }
+    BEGIN {
+      nul = sprintf("%c", 0)
+      left = "abc" nul "z2"
+      right = "abc" nul "z21"
+      print shown(left), shown(right), (left < right), (right > left)
+    }
+expect:
+  stdout: |
+    abc\0z2 abc\0z21 1 1
+  exit_code: 0

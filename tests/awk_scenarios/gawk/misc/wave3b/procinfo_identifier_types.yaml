@@ -1,0 +1,24 @@
+description: PROCINFO identifiers classify user symbols by kind
+upstream:
+  suite: gawk
+  id: test/id.awk
+  ref: gawk-5.4.0
+covers:
+  - PROCINFO["identifiers"] records user-defined functions
+  - array variables are classified after element assignment
+  - PROCINFO itself is exposed as an array identifier
+input:
+  program: |
+    function function1() { }
+    BEGIN {
+      an_array[1] = 1
+      print PROCINFO["identifiers"]["function1"]
+      print PROCINFO["identifiers"]["an_array"]
+      print PROCINFO["identifiers"]["PROCINFO"]
+    }
+expect:
+  stdout: |
+    user
+    untyped
+    array
+  exit_code: 0

@@ -1,0 +1,35 @@
+description: --dump-variables emits final scalar and array state for a small program
+upstream:
+  suite: gawk
+  id: test/dumpvars.ok
+  ref: gawk-5.4.0
+covers:
+  - --dump-variables can write the final variable table to standard output
+  - scalar values updated from input appear in the variable dump
+  - user arrays are reported separately from scalar variables
+input:
+  awk_args:
+    - --dump-variables=-
+  program: |
+    BEGIN {
+      label = "start"
+      counts["alpha"] = 1
+    }
+    {
+      total += $1
+      last = $2
+    }
+    END {
+      print "records", NR, "total", total
+    }
+  stdin: |
+    4 red
+    6 blue
+expect:
+  stdout_contains:
+    - "records 2 total 10"
+    - "counts: array, 1 elements"
+    - "label: \"start\""
+    - "last: \"blue\""
+    - "total: 10"
+  exit_code: 0

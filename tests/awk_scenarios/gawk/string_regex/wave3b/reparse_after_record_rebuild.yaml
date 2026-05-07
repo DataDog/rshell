@@ -1,0 +1,26 @@
+description: rebuilding a record after gsub reparses whitespace-separated fields
+upstream:
+  suite: gawk
+  id: test/reparse.awk
+  ref: gawk-5.4.0
+covers:
+  - gsub can introduce field separators into the current record
+  - assigning $0 to itself forces field reparsing
+  - subsequent field references reflect the rebuilt record
+input:
+  program: |
+    {
+      gsub(/x/, " ")
+      $0 = $0
+      print $1
+      print $0
+      print $1, $2, $3
+    }
+  stdin: |
+    1 axbxc 2
+expect:
+  stdout: |
+    1
+    1 a b c 2
+    1 a b
+  exit_code: 0

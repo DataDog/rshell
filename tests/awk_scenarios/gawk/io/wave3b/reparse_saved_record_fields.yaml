@@ -1,0 +1,27 @@
+description: assigning a saved record back to $0 reparses fields immediately
+upstream:
+  suite: gawk
+  id: test/readdir_retest.awk
+  ref: gawk-5.4.0
+covers:
+  - "assigning to $0 reparses field values"
+  - "fields from an earlier saved record can replace current fields"
+  - "field values remain consistent after reparsing"
+input:
+  program: |
+    FNR == 1 { record1 = $0 }
+    {
+      printf "[%s] [%s] [%s] [%s]\n", $1, $2, $3, $4
+      $0 = record1
+      printf "[%s] [%s] [%s] [%s]\n", $1, $2, $3, $4
+    }
+  stdin: |
+    one two three four
+    alpha beta gamma delta
+expect:
+  stdout: |
+    [one] [two] [three] [four]
+    [one] [two] [three] [four]
+    [alpha] [beta] [gamma] [delta]
+    [one] [two] [three] [four]
+  exit_code: 0

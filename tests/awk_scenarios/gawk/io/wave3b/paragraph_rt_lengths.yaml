@@ -1,0 +1,20 @@
+description: paragraph mode RT length reflects the full blank-line separator
+upstream:
+  suite: gawk
+  id: test/rtlen.sh
+  ref: gawk-5.4.0
+covers:
+  - "RT stores the paragraph separator matched by RS empty string"
+  - "length(RT) includes all separator newlines"
+  - "records with different blank-line separators report different RT lengths"
+input:
+  program: |
+    BEGIN { RS = "" }
+    { print length(RT) }
+  stdin: "0\n\n\n1\n\n\n\n\n2\n\n"
+expect:
+  stdout: |
+    3
+    5
+    2
+  exit_code: 0

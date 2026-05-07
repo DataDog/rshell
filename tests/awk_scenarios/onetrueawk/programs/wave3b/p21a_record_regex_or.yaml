@@ -1,0 +1,21 @@
+description: boolean OR combines whole-record regular expression patterns
+upstream:
+  suite: onetrueawk
+  id: testdir/p.21a
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "boolean OR combines regular expression patterns"
+  - "regular expression patterns match the whole current record"
+input:
+  program: |
+    /Asia/ || /Africa/
+  stdin: |
+    Asia minor
+    plain row
+    west Africa
+    Europe only
+expect:
+  stdout: |
+    Asia minor
+    west Africa
+  exit_code: 0

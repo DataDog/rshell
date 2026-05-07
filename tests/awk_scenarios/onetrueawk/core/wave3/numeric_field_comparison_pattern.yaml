@@ -1,0 +1,20 @@
+description: numeric field comparisons can select records
+upstream:
+  suite: onetrueawk
+  id: testdir/t.cmp
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "field values compare numerically with other fields"
+  - "comparison expressions can guard actions"
+  - "nonmatching records are skipped"
+input:
+  program: |
+    $3 > $1 { print "gt", $0 }
+  stdin: |
+    2 low 5
+    7 high 3
+    4 mid 4
+expect:
+  stdout: |
+    gt 2 low 5
+  exit_code: 0

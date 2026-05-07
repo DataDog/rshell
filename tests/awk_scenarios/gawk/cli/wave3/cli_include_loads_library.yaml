@@ -1,0 +1,28 @@
+description: --include loads a library before the command-line program
+upstream:
+  suite: gawk
+  id: test/include2.ok
+  ref: gawk-5.4.0
+covers:
+  - --include resolves source files through AWKPATH
+  - included BEGIN actions run before the command-line program BEGIN action
+  - functions from --include are available to command-line source
+setup:
+  files:
+    - path: lib/joins.awk
+      content: |
+        BEGIN { print "joins loaded" }
+        function join3(a, b, c) { return a b c }
+input:
+  envs:
+    AWKPATH: lib
+  awk_args:
+    - --include
+    - joins
+  program: |
+    BEGIN { print join3("m", "n", "o") }
+expect:
+  stdout: |
+    joins loaded
+    mno
+  exit_code: 0

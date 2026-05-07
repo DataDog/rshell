@@ -1,0 +1,18 @@
+description: hexadecimal floating-point literals evaluate to ordinary awk numbers
+upstream:
+  suite: gawk
+  id: test/hexfloat.awk
+  ref: gawk-5.4.0
+covers:
+  - hexadecimal floating literals accept fractional significands
+  - positive and negative binary exponents are applied
+  - formatted output prints the resulting decimal values
+input:
+  program: |
+    BEGIN {
+      printf "%.6g %.6g %.6g %.6g\n", 0x1.8p+3, -0x1.cp-1, 0xAp0, 0x1p-4
+    }
+expect:
+  stdout: |
+    12 -0.875 10 0.0625
+  exit_code: 0

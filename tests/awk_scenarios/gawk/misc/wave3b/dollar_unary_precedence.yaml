@@ -1,0 +1,21 @@
+description: dollar references bind correctly with unary plus, unary minus, and post-increment
+upstream:
+  suite: gawk
+  id: test/prec.awk
+  ref: gawk-5.4.0
+covers:
+  - $ followed by unary plus is parsed as a field reference
+  - $ followed by unary minus and pre/post increments is parsed consistently
+  - field-reference side effects leave the rebuilt record stable
+input:
+  program: |
+    BEGIN {
+      $1 = i = 1
+      $+i++
+      $- -i++
+      print
+    }
+expect:
+  stdout: |
+    1
+  exit_code: 0

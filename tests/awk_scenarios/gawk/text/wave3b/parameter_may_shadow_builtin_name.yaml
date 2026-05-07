@@ -1,0 +1,25 @@
+description: a function parameter may have the same name as a builtin
+upstream:
+  suite: gawk
+  id: test/shadowbuiltin.awk
+  ref: gawk-5.4.0
+covers:
+  - a parameter can be named like a builtin function
+  - unrelated builtin calls remain available in the same function
+input:
+  program: |
+    function foo(gensub)
+    {
+      print gensub
+      print lshift(1, 1)
+    }
+
+    BEGIN {
+      x = 5
+      foo(x)
+    }
+expect:
+  stdout: |
+    5
+    2
+  exit_code: 0

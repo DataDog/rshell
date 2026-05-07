@@ -1,0 +1,27 @@
+description: invalid multibyte byte strings keep byte-oriented length and index positions
+upstream:
+  suite: gawk
+  id: test/mbstr1.awk
+  ref: gawk-5.4.0
+covers:
+  - invalid multibyte data emits a warning in a UTF-8 locale
+  - length still reports stable positions for invalid byte strings
+  - index can find invalid byte subsequences
+input:
+  envs:
+    LC_ALL: en_US.UTF-8
+  program: |
+    BEGIN {
+      s = "\x81\x82\x83\x84"
+      print length(s)
+      print index(s, "\x81\x82")
+      print index(s, "\x83")
+    }
+expect:
+  stdout: |
+    4
+    1
+    1
+  stderr_contains:
+    - "Invalid multibyte data detected"
+  exit_code: 0

@@ -1,0 +1,17 @@
+description: next remains fatal when a function called from BEGIN invokes it
+upstream:
+  suite: gawk
+  id: test/next.sh
+  ref: gawk-5.4.0
+covers:
+  - "next cannot be called from BEGIN"
+  - "the BEGIN context is preserved through function calls"
+  - "invalid next usage exits nonzero"
+input:
+  program: |
+    function f() { next }
+    BEGIN { f() }
+expect:
+  stderr_contains:
+    - "`next' cannot be called from a `BEGIN' rule"
+  exit_code: 2

@@ -1,0 +1,25 @@
+description: FS alternation with a start anchor can produce a leading empty field
+upstream:
+  suite: gawk
+  id: test/uparrfs.awk
+  ref: gawk-5.4.0
+covers:
+  - an FS alternative anchored at the start can match before the first field
+  - a leading separator match leaves an empty first field
+  - the other FS alternative continues splitting later spaces
+input:
+  program: |
+    BEGIN { FS = "(^z+)|( +)" }
+    {
+      for (i = 1; i <= NF; i++)
+        print "[" i "]" $i
+    }
+  stdin: |
+    zzONE  zzTWO  THREE
+expect:
+  stdout: |
+    [1]
+    [2]ONE
+    [3]zzTWO
+    [4]THREE
+  exit_code: 0

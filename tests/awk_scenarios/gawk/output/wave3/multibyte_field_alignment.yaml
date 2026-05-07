@@ -1,0 +1,22 @@
+description: multibyte first fields align correctly before a following string
+upstream:
+  suite: gawk
+  id: test/mbprintf5.awk
+  ref: gawk-5.4.0
+covers:
+  - field splitting keeps UTF-8 field values intact
+  - left-adjusted string width pads multibyte first fields
+  - following fields begin at the expected aligned column
+input:
+  envs:
+    LC_ALL: en_US.UTF-8
+  program: |
+    { printf "%-4s:%s\n", $1, $2 }
+  stdin: |
+    é zz
+    Ω mega
+expect:
+  stdout: |
+    é   :zz
+    Ω   :mega
+  exit_code: 0

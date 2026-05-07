@@ -1,0 +1,19 @@
+description: /dev/stdout redirection writes to the same stdout stream as ordinary print
+upstream:
+  suite: gawk
+  id: test/out2.ok
+  ref: gawk-5.4.0
+covers:
+  - ordinary print writes to stdout
+  - print redirection to /dev/stdout also appears on stdout
+input:
+  program: |
+    BEGIN {
+      print "ordinary output"
+      print "special output" > "/dev/stdout"
+    }
+expect:
+  stdout: |
+    ordinary output
+    special output
+  exit_code: 0

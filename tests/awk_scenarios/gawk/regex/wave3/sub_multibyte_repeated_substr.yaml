@@ -1,0 +1,27 @@
+description: repeated sub calls keep substr results correct in a UTF-8 locale
+upstream:
+  suite: gawk
+  id: test/subi18n.awk
+  ref: gawk-5.4.0
+covers:
+  - sub updates a string that is also inspected with substr
+  - repeated sub calls do not leave stale wide-character state
+input:
+  envs:
+    LC_ALL: en_US.UTF-8
+  program: |
+    BEGIN {
+      text = "kind=\"file\" mode=\"rw\""
+      while (text != "") {
+        sub(/^[^=]*/, "", text)
+        value = substr(text, 2)
+        print value
+        sub(/^="[^"]*"/, "", text)
+        sub(/^[ \t]*/, "", text)
+      }
+    }
+expect:
+  stdout: |
+    "file" mode="rw"
+    "rw"
+  exit_code: 0

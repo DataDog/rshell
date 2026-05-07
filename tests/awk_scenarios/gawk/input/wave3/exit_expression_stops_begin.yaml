@@ -1,0 +1,24 @@
+description: exit during expression evaluation stops BEGIN before the assignment completes
+upstream:
+  suite: gawk
+  id: test/exit2.awk
+  ref: gawk-5.4.0
+covers:
+  - exit can be triggered while evaluating an array subscript expression
+  - a bare exit from BEGIN still runs END and exits successfully
+input:
+  program: |
+    function stop_now() {
+      exit
+    }
+    BEGIN {
+      marks[stop_now()] = "unreached"
+      print "after assignment"
+    }
+    END {
+      print "end"
+    }
+expect:
+  stdout: |
+    end
+  exit_code: 0

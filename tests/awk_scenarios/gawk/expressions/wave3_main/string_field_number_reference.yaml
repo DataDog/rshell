@@ -1,0 +1,19 @@
+description: string numeric values can select numbered fields
+upstream:
+  suite: gawk
+  id: test/strfieldnum.awk
+  ref: gawk-5.4.0
+covers:
+  - a string containing a field number can be used after $
+  - dynamic field references coerce string numbers to numeric field indexes
+input:
+  program: |
+    { idx = "2"; print $idx }
+  stdin: |
+    alpha beta gamma
+    red blue green
+expect:
+  stdout: |
+    beta
+    blue
+  exit_code: 0

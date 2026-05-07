@@ -1,0 +1,20 @@
+description: asort on an empty array returns zero
+upstream:
+  suite: gawk
+  id: test/sortempty.awk
+  ref: gawk-5.4.0
+covers:
+  - asort accepts an empty array
+  - empty array sorting returns zero elements
+  - sorting an empty array leaves it empty
+input:
+  program: |
+    BEGIN {
+      print "count:" asort(a)
+      print "after:" length(a)
+    }
+expect:
+  stdout: |
+    count:0
+    after:0
+  exit_code: 0

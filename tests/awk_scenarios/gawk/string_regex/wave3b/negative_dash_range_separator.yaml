@@ -1,0 +1,23 @@
+description: a dash at the start of a bracket range acts as a literal separator member
+upstream:
+  suite: gawk
+  id: test/negrange.awk
+  ref: gawk-5.4.0
+covers:
+  - bracket expressions can include a literal dash beside alphanumeric ranges
+  - split with a negated bracket expression preserves dash-containing tokens
+input:
+  program: |
+    BEGIN {
+      n = split("A-1 two/three", part, "[^-A-Za-z0-9]+")
+      print n
+      for (i = 1; i <= n; i++)
+        print i, part[i]
+    }
+expect:
+  stdout: |
+    3
+    1 A-1
+    2 two
+    3 three
+  exit_code: 0

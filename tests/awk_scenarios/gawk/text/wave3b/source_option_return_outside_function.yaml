@@ -1,0 +1,18 @@
+description: --source after an empty -f file still rejects return outside functions
+upstream:
+  suite: gawk
+  id: test/mixed1.ok
+  ref: gawk-5.4.0
+covers:
+  - command-line --source text is parsed after -f sources
+  - return outside a function body is a parse-time error
+input:
+  awk_args:
+    - -f
+    - /dev/null
+    - --source
+  program: "BEGIN {return junk}"
+expect:
+  stderr_contains:
+    - "`return' used outside function context"
+  exit_code: 1

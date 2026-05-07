@@ -1,0 +1,23 @@
+description: FIELDWIDTHS counts multibyte characters as characters in UTF-8
+upstream:
+  suite: gawk
+  id: test/mbfw1.awk
+  ref: gawk-5.4.0
+covers:
+  - FIELDWIDTHS splits records by character width in a UTF-8 locale
+  - multibyte characters do not shift later fixed-width fields by byte count
+input:
+  envs:
+    LC_ALL: en_US.UTF-8
+  program: |
+    BEGIN {
+      e = sprintf("%c", 233)
+      o = sprintf("%c", 248)
+      FIELDWIDTHS = "2 4 2"
+      $0 = "AB" e o "CDwx"
+      print $1 "|" $2 "|" $3
+    }
+expect:
+  stdout: |
+    AB|éøCD|wx
+  exit_code: 0

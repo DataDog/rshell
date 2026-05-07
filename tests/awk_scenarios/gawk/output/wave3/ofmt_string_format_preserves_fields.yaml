@@ -1,0 +1,19 @@
+description: OFMT set to percent-s does not corrupt numeric field strings or sums
+upstream:
+  suite: gawk
+  id: test/ofmts.awk
+  ref: gawk-5.4.0
+covers:
+  - OFMT may be assigned a string conversion format
+  - numeric use of fields does not rewrite the field strings
+  - printing a numeric expression still emits its numeric string value
+input:
+  program: |
+    BEGIN { OFMT = "%s" }
+    { $1 + $2; print $1, $2, ($1 + $2) }
+  stdin: |
+    3.5 4.25
+expect:
+  stdout: |
+    3.5 4.25 7.75
+  exit_code: 0

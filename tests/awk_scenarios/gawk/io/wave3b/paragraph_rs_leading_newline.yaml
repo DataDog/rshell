@@ -1,0 +1,22 @@
+description: paragraph mode ignores a leading newline before the first record
+upstream:
+  suite: gawk
+  id: test/rsnul1nl.awk
+  ref: gawk-5.4.0
+covers:
+  - "RS empty string enables paragraph mode"
+  - "leading newlines before the first paragraph are ignored"
+  - "the paragraph record is printed without the leading separator"
+input:
+  program: |
+    BEGIN { RS = "" }
+    { print }
+  stdin: |
+
+    This is...
+    the first record.
+expect:
+  stdout: |
+    This is...
+    the first record.
+  exit_code: 0

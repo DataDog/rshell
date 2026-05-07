@@ -1,0 +1,60 @@
+description: valgrind log scanner reports nonzero definitely-lost records
+upstream:
+  suite: gawk
+  id: test/valgrind.awk
+  ref: gawk-5.4.0
+covers:
+  - getline-free log scanning can collect a multi-field command line
+  - definitely-lost records with nonzero bytes are reported once
+input:
+  program: |
+    function show()
+    {
+      error_count++
+      if (cmd) {
+        printf "%s: %s\n", FILENAME, cmd
+        cmd = ""
+      }
+      sub(/^ +/, "", $0)
+      printf "detail:%s\n", $0
+    }
+
+    FNR == 1 {
+      error_count = 0
+    }
+
+    { $1 = "" }
+
+    $2 == "Command:" {
+      incmd = 1
+      $2 = ""
+      cmd = $0
+      next
+    }
+
+    incmd {
+      if (/Parent PID:/)
+        incmd = 0
+      else {
+        cmd = (cmd $0)
+        next
+      }
+    }
+
+    /ERROR SUMMARY:/ && !/: 0 errors from 0 contexts/ && error_count > 0 {
+      show()
+    }
+
+    /definitely lost:/ && !/: 0 bytes in 0 blocks/ { show() }
+
+    /[Ii]nvalid (read|write)/ { show() }
+  stdin: |
+    ==1== Command: ./awk test
+    ==1== Parent PID: 10
+    ==1== definitely lost: 4 bytes in 1 blocks
+    ==1== ERROR SUMMARY: 0 errors from 0 contexts
+expect:
+  stdout: |
+    -:   ./awk test
+    detail:definitely lost: 4 bytes in 1 blocks
+  exit_code: 0

@@ -1,0 +1,21 @@
+description: records with an even field count can be selected by pattern
+upstream:
+  suite: onetrueawk
+  id: testdir/tt.07
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "NF participates in numeric expressions"
+  - "modulo can be used in a pattern"
+  - "only records with even field counts run the action"
+input:
+  program: |
+    NF % 2 == 0 { print "even-fields", $0 }
+  stdin: |
+    one two
+    one two three
+    a b c d
+expect:
+  stdout: |
+    even-fields one two
+    even-fields a b c d
+  exit_code: 0

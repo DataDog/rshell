@@ -1,0 +1,27 @@
+description: passing a missing element creates it but keeps its false scalar value
+upstream:
+  suite: gawk
+  id: test/elemnew2.awk
+  ref: gawk-5.4.0
+covers:
+  - function argument evaluation materializes a missing array element
+  - the materialized element tests false
+  - printing the element yields the empty string
+input:
+  program: |
+    function identity(value) {
+      return value
+    }
+
+    BEGIN {
+      print ("token" in slots)
+      identity(slots["token"])
+      print ("token" in slots), (slots["token"] ? "true" : "false")
+      print "[" slots["token"] "]", typeof(slots["token"])
+    }
+expect:
+  stdout: |
+    0
+    1 false
+    [] unassigned
+  exit_code: 0

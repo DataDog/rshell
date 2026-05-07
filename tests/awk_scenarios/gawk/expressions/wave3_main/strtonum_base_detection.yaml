@@ -1,0 +1,22 @@
+description: strtonum honors hexadecimal, octal, and decimal string bases
+upstream:
+  suite: gawk
+  id: test/strtonum.awk
+  ref: gawk-5.4.0
+covers:
+  - strtonum converts hexadecimal strings
+  - strtonum converts leading-zero strings as octal
+  - strtonum leaves decimal strings as decimal values
+input:
+  program: |
+    BEGIN {
+      print strtonum("0x2a")
+      print strtonum("052")
+      print strtonum("42")
+    }
+expect:
+  stdout: |
+    42
+    42
+    42
+  exit_code: 0

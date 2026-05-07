@@ -1,0 +1,27 @@
+description: loading the same program file twice with -f can redefine functions fatally
+upstream:
+  suite: gawk
+  id: test/incdupe2.ok
+  ref: gawk-5.4.0
+covers:
+  - -f uses AWKPATH and optional .awk suffix lookup
+  - duplicate program files are not treated as duplicate includes
+  - repeated function definitions from -f sources are rejected
+setup:
+  files:
+    - path: lib/tools.awk
+      content: |
+        BEGIN { print "tools ready" }
+        function pair(a, b) { return a "+" b }
+input:
+  envs:
+    AWKPATH: lib
+  awk_args:
+    - --lint
+    - -f
+    - tools
+  program_file: tools.awk
+expect:
+  stderr_contains:
+    - "function name `pair' previously defined"
+  exit_code: 1

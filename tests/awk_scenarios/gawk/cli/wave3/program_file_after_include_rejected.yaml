@@ -1,0 +1,28 @@
+description: a source file cannot be used as a program file after being included
+upstream:
+  suite: gawk
+  id: test/incdupe5.ok
+  ref: gawk-5.4.0
+covers:
+  - a file first loaded with -i cannot later be loaded with -f
+  - gawk rejects mixed include and program-file roles in either order
+setup:
+  files:
+    - path: lib/greet.awk
+      content: |
+        BEGIN { print "hi from file" }
+input:
+  envs:
+    AWKPATH: lib
+  awk_args:
+    - --lint
+    - -i
+    - greet
+    - -f
+    - greet.awk
+  program: |
+    BEGIN { print "unreached" }
+expect:
+  stderr_contains:
+    - "cannot include `greet.awk' and use it as a program file"
+  exit_code: 2

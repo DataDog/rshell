@@ -1,0 +1,32 @@
+description: asort can sort values into a separate destination array
+upstream:
+  suite: gawk
+  id: test/sort1.awk
+  ref: gawk-5.4.0
+covers:
+  - asort returns the number of sorted elements
+  - asort can write sorted values into a distinct destination array
+  - IGNORECASE affects value string ordering
+input:
+  program: |
+    BEGIN {
+      a["z"] = "beta"
+      a["m"] = "Alpha"
+      a["n"] = "alpha"
+      IGNORECASE = 1
+      count = asort(a, b, "@val_str_asc")
+      print "count:" count
+      for (i = 1; i <= count; i++)
+        print i ":" b[i]
+      print "source-z:" ("z" in a)
+      print "dest-1:" (1 in b)
+    }
+expect:
+  stdout: |
+    count:3
+    1:Alpha
+    2:alpha
+    3:beta
+    source-z:1
+    dest-1:1
+  exit_code: 0

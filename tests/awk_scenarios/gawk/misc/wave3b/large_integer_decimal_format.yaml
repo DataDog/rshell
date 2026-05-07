@@ -1,0 +1,19 @@
+description: integers just above signed 64-bit range print without wrapping
+upstream:
+  suite: gawk
+  id: test/double1.awk
+  ref: gawk-5.4.0
+covers:
+  - large integer literals retain their decimal value
+  - printf %d formats values above signed 64-bit maximum without wrapping
+input:
+  program: |
+    BEGIN {
+      print 9223372036854775808
+      printf("%d\n", 9223372036854775808)
+    }
+expect:
+  stdout: |
+    9223372036854775808
+    9223372036854775808
+  exit_code: 0

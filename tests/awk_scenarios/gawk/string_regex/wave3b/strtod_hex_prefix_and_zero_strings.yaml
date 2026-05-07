@@ -1,0 +1,24 @@
+description: string-to-number conversion keeps prefixed hex-looking text at zero
+upstream:
+  suite: gawk
+  id: test/strtod.awk
+  ref: gawk-5.4.0
+covers:
+  - concatenated 0x-prefixed decimal text is not parsed as a nonzero number
+  - numeric-looking zero strings are false in numeric boolean context
+input:
+  program: |
+    {
+      x = "0x" $1
+      print x, x + 0
+      for (i = 1; i <= NF; i++)
+        if ($i)
+          print $i, "is not zero"
+    }
+  stdin: |
+    345 0 00 0e0 0E1 00E0 000e-5 .0e+0
+expect:
+  stdout: |
+    0x345 0
+    345 is not zero
+  exit_code: 0

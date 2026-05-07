@@ -1,0 +1,34 @@
+description: GNU regex operators recognize word edges and string anchors
+upstream:
+  suite: gawk
+  id: test/gnureops.awk
+  ref: gawk-5.4.0
+covers:
+  - \y recognizes word boundaries on both sides of a word
+  - \B recognizes non-boundary word positions
+  - GNU word and string anchor operators work in regexps
+input:
+  program: |
+    BEGIN {
+      print ("the cat sat" ~ /\ycat\y/)
+      print ("scatter" !~ /\ycat\y/)
+      print ("concatenate" ~ /\Bcat/)
+      print ("cat" !~ /\Bcat/)
+      print ("word!" ~ /\<word\>/)
+      print ("_" ~ /\w/)
+      print ("-" ~ /\W/)
+      print ("start" ~ /\`sta/)
+      print ("finish" ~ /ish\'/)
+    }
+expect:
+  stdout: |
+    1
+    1
+    1
+    1
+    1
+    1
+    1
+    1
+    1
+  exit_code: 0

@@ -1,0 +1,28 @@
+description: getline input redirection binds before adjacent string concatenation
+upstream:
+  suite: gawk
+  id: test/inputred.awk
+  ref: gawk-5.4.0
+covers:
+  - "getline redirection target is the immediate expression after <"
+  - "an adjacent string is concatenated with the getline return value"
+  - "getline reads from file rather than file.txt"
+setup:
+  files:
+    - path: file
+      content: |
+        from-file
+    - path: file.txt
+      content: |
+        from-file-dot-txt
+input:
+  program: |
+    BEGIN {
+      print getline rec < "file" ".txt"
+      print "record=" rec
+    }
+expect:
+  stdout: |
+    1.txt
+    record=from-file
+  exit_code: 0

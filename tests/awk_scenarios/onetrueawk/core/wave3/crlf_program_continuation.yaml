@@ -1,0 +1,16 @@
+description: CRLF program lines can include a continued print statement
+upstream:
+  suite: onetrueawk
+  id: testdir/t.crlf
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "program files with CRLF line endings parse successfully"
+  - "backslash-newline continuation works with CRLF"
+  - "records still run after a CRLF BEGIN block"
+input:
+  program_file: crlf_line_continuation.awk
+  program: "BEGIN {\r\n  print \\\r\n    \"crlf-ok\"\r\n}\r\n{ print NR \":\" $0 }\r\n"
+  stdin: "first\r\nsecond\r\n"
+expect:
+  stdout: "crlf-ok\n1:first\r\n2:second\r\n"
+  exit_code: 0

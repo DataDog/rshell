@@ -1,0 +1,23 @@
+description: function output occurs before print finishes the containing print statement
+upstream:
+  suite: gawk
+  id: test/prtoeval.awk
+  ref: gawk-5.4.0
+covers:
+  - print arguments are evaluated before the outer print emits its line
+  - a function called as a print argument can print its own line first
+  - returned strings then participate in the outer print
+input:
+  program: |
+    function returns_a_str() {
+      print "<in function>"
+      return "'A STRING'"
+    }
+    BEGIN {
+      print "partial line:", returns_a_str()
+    }
+expect:
+  stdout: |
+    <in function>
+    partial line: 'A STRING'
+  exit_code: 0

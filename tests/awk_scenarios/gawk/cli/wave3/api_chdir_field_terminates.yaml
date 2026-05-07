@@ -1,0 +1,25 @@
+description: extension calls receive field strings without trailing record text
+upstream:
+  suite: gawk
+  id: test/apiterm.awk
+  ref: gawk-5.4.0
+covers:
+  - fields passed to extension functions are terminated at the field boundary
+  - filefuncs chdir succeeds when the first field names an existing directory
+setup:
+  files:
+    - path: exactdir/.keep
+      content: ""
+input:
+  program: |
+    @load "filefuncs"
+    {
+      print $1
+      print chdir($1)
+      print ERRNO
+    }
+  stdin: |
+    exactdir trailing-text
+expect:
+  stdout: "exactdir\n0\n\n"
+  exit_code: 0

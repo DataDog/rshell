@@ -1,0 +1,37 @@
+description: infinity and NaN spellings coerce only when the whole field is numeric
+upstream:
+  suite: gawk
+  id: test/inf-nan-torture.awk
+  ref: gawk-5.4.0
+covers:
+  - signed infinity strings coerce to infinities
+  - signed NaN strings coerce to NaN values
+  - words that merely contain inf or nan coerce to zero
+  - signed decimal strings coerce to their numeric values
+input:
+  program: |
+    {
+      for (i = 1; i <= NF; i++)
+        print i, $i, $i + 0
+    }
+  stdin: |
+    -inf -inform inform -nan -nancy nancy -123 0 123 +123 nancy +nancy +nan inform +inform +inf
+expect:
+  stdout: |
+    1 -inf -inf
+    2 -inform 0
+    3 inform 0
+    4 -nan -nan
+    5 -nancy 0
+    6 nancy 0
+    7 -123 -123
+    8 0 0
+    9 123 123
+    10 +123 123
+    11 nancy 0
+    12 +nancy 0
+    13 +nan +nan
+    14 inform 0
+    15 +inform 0
+    16 +inf +inf
+  exit_code: 0

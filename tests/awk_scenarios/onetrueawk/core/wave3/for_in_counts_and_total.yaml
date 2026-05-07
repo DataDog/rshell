@@ -1,0 +1,25 @@
+description: for-in iterates over associative array members
+upstream:
+  suite: onetrueawk
+  id: testdir/t.in
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "string keys can index associative arrays"
+  - "for-in visits each present element"
+  - "array values can be aggregated independent of iteration order"
+input:
+  program: |
+    BEGIN {
+      bag["red"] = 2
+      bag["blue"] = 3
+      bag["green"] = 5
+      for (name in bag) {
+        count++
+        total += bag[name]
+      }
+      print "bag", count, total
+    }
+expect:
+  stdout: |
+    bag 3 10
+  exit_code: 0

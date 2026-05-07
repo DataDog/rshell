@@ -1,0 +1,34 @@
+description: changing to paragraph mode after an exhausted getline source does not corrupt later reads
+upstream:
+  suite: gawk
+  id: test/rstest4.awk
+  ref: gawk-5.4.0
+covers:
+  - "getline can exhaust one input source before RS changes"
+  - "a later paragraph-mode getline reads the next source correctly"
+  - "uninitialized variables remain empty after the getline sequence"
+setup:
+  files:
+    - path: drain.txt
+      content: |
+        ignored
+    - path: paragraphs.txt
+      content: |
+        a
+
+        b
+input:
+  program: |
+    BEGIN {
+      while ((getline < "drain.txt") == 1) {
+      }
+      RS = ""
+      getline y < "paragraphs.txt"
+      printf "y = <%s>\n", y
+      printf "x = <%s>\n", x
+    }
+expect:
+  stdout: |
+    y = <a>
+    x = <>
+  exit_code: 0

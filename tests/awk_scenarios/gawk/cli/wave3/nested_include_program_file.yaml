@@ -1,0 +1,24 @@
+description: a program file can consist of an include directive that loads another file
+upstream:
+  suite: gawk
+  id: test/inchello.awk
+  ref: gawk-5.4.0
+covers:
+  - program files may use @include as their source
+  - AWKPATH can search both the current directory and library directories
+  - included BEGIN actions run even when the including file has no actions
+setup:
+  files:
+    - path: lib/part.awk
+      content: |
+        BEGIN { print "part included" }
+input:
+  envs:
+    AWKPATH: ".:lib"
+  program_file: main.awk
+  program: |
+    @include "part"
+expect:
+  stdout: |
+    part included
+  exit_code: 0

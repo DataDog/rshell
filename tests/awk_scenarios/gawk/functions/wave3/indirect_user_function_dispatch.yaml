@@ -1,0 +1,101 @@
+description: Record-selected user function names dispatch through indirect calls
+upstream:
+  suite: gawk
+  id: test/indirectcall.awk
+  ref: gawk-5.4.0
+covers:
+  - user function names can be taken from input and invoked indirectly
+  - an indirect user function can itself use another indirect comparator function
+  - array parameters remain usable while sorting values for indirect dispatch
+input:
+  program: |
+    function total(first, last,    i, sum) {
+      for (i = first; i <= last; i++)
+        sum += $i
+      return sum
+    }
+
+    function mean(first, last) {
+      return total(first, last) / (last - first + 1)
+    }
+
+    function ascending(first, last,    data, n) {
+      n = collect(first, last, data)
+      order(data, n, "less")
+      return join(data, n)
+    }
+
+    function descending(first, last,    data, n) {
+      n = collect(first, last, data)
+      order(data, n, "greater")
+      return join(data, n)
+    }
+
+    function collect(first, last, data,    i, n) {
+      delete data
+      for (i = first; i <= last; i++)
+        data[++n] = $i
+      return n
+    }
+
+    function order(data, n, cmp,    i, j, tmp) {
+      for (i = 1; i <= n; i++) {
+        for (j = i + 1; j <= n; j++) {
+          if (@cmp(data[j], data[i])) {
+            tmp = data[i]
+            data[i] = data[j]
+            data[j] = tmp
+          }
+        }
+      }
+    }
+
+    function less(a, b) {
+      return a + 0 < b + 0
+    }
+
+    function greater(a, b) {
+      return a + 0 > b + 0
+    }
+
+    function join(data, n,    i, out) {
+      out = data[1]
+      for (i = 2; i <= n; i++)
+        out = out " " data[i]
+      return out
+    }
+
+    {
+      if (NR > 1)
+        print ""
+
+      label = $1
+      gsub(/_/, " ", label)
+      for (start = 2; start <= NF; start++) {
+        if ($start == "values:")
+          break
+      }
+
+      print label ":"
+      for (i = 2; i < start; i++) {
+        fn = $i
+        print "  " fn "=" @fn(start + 1, NF)
+      }
+    }
+  stdin: |
+    North_room total mean ascending descending values: 7 3 11 5
+    South_room mean descending total values: 2.5 4.5 1.5
+expect:
+  stdout: |
+    North room:
+      total=26
+      mean=6.5
+      ascending=3 5 7 11
+      descending=11 7 5 3
+
+    South room:
+      mean=2.83333
+      descending=4.5 2.5 1.5
+      total=8.5
+
+  exit_code: 0

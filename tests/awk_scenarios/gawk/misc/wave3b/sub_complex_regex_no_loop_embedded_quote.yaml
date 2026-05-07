@@ -1,0 +1,18 @@
+description: sub with a nested repetition regex terminates when the quote is embedded
+upstream:
+  suite: gawk
+  id: test/noloop2.awk
+  ref: gawk-5.4.0
+covers:
+  - sub terminates for nested quantified groups with embedded quotes
+  - replacement can span through a single quote inside the matched text
+  - ampersand replacement expands to the full match
+input:
+  program: |
+    /''/ { sub(/''(.?[^']+)*''/, "<em>&</em>"); print }
+  stdin: |
+    ''Italics with an apostrophe' embedded''
+expect:
+  stdout: |
+    <em>''Italics with an apostrophe' embedded''</em>
+  exit_code: 0

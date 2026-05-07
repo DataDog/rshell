@@ -1,0 +1,20 @@
+description: strtonum still applies base detection after ordinary numeric conversion cached a value
+upstream:
+  suite: gawk
+  id: test/strtonum1.awk
+  ref: gawk-5.4.0
+covers:
+  - ordinary arithmetic conversion treats leading-zero strings as decimal
+  - strtonum applies octal base detection to the same string later
+input:
+  program: |
+    BEGIN {
+      x = "021"
+      print x + 0
+      print strtonum(x)
+    }
+expect:
+  stdout: |
+    21
+    17
+  exit_code: 0

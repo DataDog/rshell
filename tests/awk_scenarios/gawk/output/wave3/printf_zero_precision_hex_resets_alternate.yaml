@@ -1,0 +1,16 @@
+description: a zero-precision empty hex conversion does not corrupt later alternate hex conversions
+upstream:
+  suite: gawk
+  id: test/printfbad3.awk
+  ref: gawk-5.4.0
+covers:
+  - zero with precision zero formats as an empty hexadecimal string
+  - alternate lowercase hexadecimal still prefixes the next nonzero value
+  - alternate uppercase hexadecimal still prefixes the next nonzero value
+input:
+  program: |
+    BEGIN { printf "[%.0x] [%#x] [%#X]\n", 0, 255, 255 }
+expect:
+  stdout: |
+    [] [0xff] [0XFF]
+  exit_code: 0

@@ -1,0 +1,32 @@
+description: formatted NaN and infinities can be substituted into template records
+upstream:
+  suite: gawk
+  id: test/fix-fmtspcl.awk
+  ref: gawk-5.4.0
+covers:
+  - sprintf exposes GNU awk spellings for NaN and infinities
+  - formatted special values remain ordinary strings for substitution
+  - toupper and tolower preserve special-value signs while changing case
+input:
+  program: |
+    BEGIN {
+      nan = sprintf("%.3g", sqrt(-1))
+      pinf = sprintf("%.3g", -log(0))
+      ninf = sprintf("%.3g", log(0))
+    }
+    {
+      gsub(/LOW_NAN/, tolower(nan))
+      gsub(/UP_INF/, toupper(pinf))
+      gsub(/LOW_NINF/, tolower(ninf))
+      print
+    }
+  stdin: |
+    alpha LOW_NAN
+    beta UP_INF LOW_NINF
+expect:
+  stdout: |
+    alpha +nan
+    beta +INF -inf
+  stderr_contains:
+    - "sqrt: received negative argument -1"
+  exit_code: 0

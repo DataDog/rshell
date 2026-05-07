@@ -1,0 +1,35 @@
+description: asorti can order keyed sections independently of input order
+upstream:
+  suite: gawk
+  id: test/sortglos.awk
+  ref: gawk-5.4.0
+covers:
+  - asorti returns string keys in sorted order
+  - sorted keys can be used to emit stored record groups
+  - input order and output order can differ without losing grouped lines
+input:
+  program: |
+    /^title/ {
+      section++
+      entry[$2] = section
+    }
+    {
+      line[section] = line[section] $0 ORS
+    }
+    END {
+      n = asorti(entry, order)
+      for (i = 1; i <= n; i++)
+        printf "%s", line[entry[order[i]]]
+    }
+  stdin: |
+    title z
+    body z
+    title a
+    body a
+expect:
+  stdout: |
+    title a
+    body a
+    title z
+    body z
+  exit_code: 0

@@ -1,0 +1,20 @@
+description: for-in iteration over a scalar is fatal
+upstream:
+  suite: gawk
+  id: test/sclforin.awk
+  ref: gawk-5.4.0
+covers:
+  - scalar variables cannot be iterated with for-in
+  - scalar-as-array misuse is diagnosed at runtime
+input:
+  program: |
+    BEGIN {
+      j = 4
+      for (i in j)
+        print j[i]
+    }
+expect:
+  stderr_contains:
+    - attempt to use scalar
+    - as an array
+  exit_code: 2

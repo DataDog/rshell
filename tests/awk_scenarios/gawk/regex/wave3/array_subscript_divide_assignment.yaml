@@ -1,0 +1,20 @@
+description: slash-equals divides an array element selected by a computed subscript
+upstream:
+  suite: gawk
+  id: test/subslash.awk
+  ref: gawk-5.4.0
+covers:
+  - array elements can be updated with the /= assignment operator
+  - computed subscripts identify the element being divided
+input:
+  program: |
+    BEGIN {
+      key = "item"
+      value[key] = 9
+      value[key] /= 4
+      printf "%s=%.2f\n", key, value[key]
+    }
+expect:
+  stdout: |
+    item=2.25
+  exit_code: 0

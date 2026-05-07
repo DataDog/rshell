@@ -1,0 +1,25 @@
+description: sub honors IGNORECASE for regexp matches
+upstream:
+  suite: gawk
+  id: test/ignrcase.awk
+  ref: gawk-5.4.0
+covers:
+  - IGNORECASE affects sub regexp matching
+  - only the first case-insensitive occurrence is replaced
+input:
+  program: |
+    BEGIN { IGNORECASE = 1 }
+    {
+      sub(/y/, "")
+      print
+    }
+  stdin: |
+    yodel
+    Yodel
+    byte
+expect:
+  stdout: |
+    odel
+    odel
+    bte
+  exit_code: 0

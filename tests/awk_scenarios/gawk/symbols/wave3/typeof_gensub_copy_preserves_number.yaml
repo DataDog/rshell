@@ -1,0 +1,23 @@
+description: gensub on a copied array value does not corrupt the source element type
+upstream:
+  suite: gawk
+  id: test/typeof6.awk
+  ref: gawk-5.4.0
+covers:
+  - numeric array elements keep their number type after gensub uses a copy
+  - an ignored gensub result does not mutate its target expression
+  - scalar copies keep their numeric type when not assigned the gensub result
+input:
+  program: |
+    BEGIN {
+      values["idx"] = 7
+      copy = values["idx"]
+      gensub(/^/, "x", 1, copy)
+      print typeof(values["idx"]), values["idx"]
+      print typeof(copy), copy
+    }
+expect:
+  stdout: |
+    number 7
+    number 7
+  exit_code: 0

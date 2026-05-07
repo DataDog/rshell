@@ -1,0 +1,23 @@
+description: adjacent constant strings concatenate before runtime values are printed
+upstream:
+  suite: onetrueawk
+  id: testdir/T.csconcat
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "adjacent string constants are concatenated"
+  - "parenthesized adjacent constants concatenate inside expressions"
+  - "concatenating an empty string leaves the visible value unchanged"
+input:
+  program: |
+    BEGIN {
+      part = "field"
+      print "red" "blue", part
+      print "left" ("-" "right")
+      print "solo" ""
+    }
+expect:
+  stdout: |
+    redblue field
+    left-right
+    solo
+  exit_code: 0

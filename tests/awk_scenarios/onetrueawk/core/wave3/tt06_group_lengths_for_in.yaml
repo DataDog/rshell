@@ -1,0 +1,27 @@
+description: associative arrays can group record lengths by first field
+upstream:
+  suite: onetrueawk
+  id: testdir/tt.06
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "array values can accumulate length($0)"
+  - "for-in can count populated groups"
+  - "known keys can be read after for-in aggregation"
+input:
+  program: |
+    { by[$1] += length($0) }
+    END {
+      for (key in by) {
+        groups++
+        total += by[key]
+      }
+      print groups, total, by["alpha"], by["beta"]
+    }
+  stdin: |
+    alpha red
+    beta blue
+    alpha green
+expect:
+  stdout: |
+    2 29 20 9
+  exit_code: 0

@@ -1,0 +1,25 @@
+description: string and numeric coercion change a strong regexp variable's type
+upstream:
+  suite: gawk
+  id: test/typedregex2.awk
+  ref: gawk-5.4.0
+covers:
+  - assigning a strong regexp produces a regexp-typed value
+  - concatenating a regexp value creates a string copy
+  - incrementing a regexp variable coerces it to a number
+input:
+  program: |
+    BEGIN {
+      rx = @/left|right/
+      text = rx ""
+      print typeof(rx), rx
+      print typeof(text), text
+      rx++
+      print typeof(rx), rx
+    }
+expect:
+  stdout: |
+    regexp left|right
+    string left|right
+    number 1
+  exit_code: 0

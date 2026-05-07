@@ -1,0 +1,28 @@
+description: split without a separator still uses FS after FPAT field parsing
+upstream:
+  suite: gawk
+  id: test/split_after_fpat.awk
+  ref: gawk-5.4.0
+covers:
+  - FPAT controls record field parsing
+  - split without an explicit separator uses ordinary FS whitespace semantics
+  - FPAT does not leak into later split calls
+input:
+  program: |
+    BEGIN { FPAT = "\"[^\"]*\"" }
+    { print $1 }
+    END {
+      n = split("hi there", part)
+      print n
+      for (i = 1; i <= n; i++)
+        print part[i]
+    }
+  stdin: |
+    a"stuff"b
+expect:
+  stdout: |
+    "stuff"
+    2
+    hi
+    there
+  exit_code: 0

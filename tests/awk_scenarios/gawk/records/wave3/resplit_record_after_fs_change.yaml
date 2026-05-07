@@ -1,0 +1,22 @@
+description: assigning $0 to itself resplits fields after FS changes
+upstream:
+  suite: gawk
+  id: test/resplit.awk
+  ref: gawk-5.4.0
+covers:
+  - changing FS alone does not immediately resplit existing fields
+  - assigning $0 to itself forces fields to be rebuilt using the new FS
+input:
+  program: |
+    {
+      old = $2
+      FS = ":"
+      $0 = $0
+      print old "|" $2
+    }
+  stdin: |
+    aa:bb:cc dd
+expect:
+  stdout: |
+    dd|bb
+  exit_code: 0

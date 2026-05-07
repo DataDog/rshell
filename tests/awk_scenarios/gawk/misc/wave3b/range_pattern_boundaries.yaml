@@ -1,0 +1,27 @@
+description: range patterns print records from the start match through the end match
+upstream:
+  suite: gawk
+  id: test/range1.awk
+  ref: gawk-5.4.0
+covers:
+  - range patterns begin when the first regexp matches
+  - range patterns include the record that matches the ending regexp
+  - a record matching both endpoints forms a one-record range
+input:
+  program: |
+    /foo/,/bar/ { print }
+  stdin: |
+    skip
+    foo
+    one
+    bar
+    two
+    foo and bar
+    after
+expect:
+  stdout: |
+    foo
+    one
+    bar
+    foo and bar
+  exit_code: 0

@@ -1,0 +1,27 @@
+description: dollar expressions ending in post-increment parse as nested field references
+upstream:
+  suite: gawk
+  id: test/parse1.awk
+  ref: gawk-5.4.0
+covers:
+  - $$a++++ parses as $($a++)++
+  - the nested field reference prints the selected field before incrementing it
+  - field and scalar post-increments update the record state
+input:
+  program: |
+    BEGIN { a = 3 }
+    {
+      print "in:", $0
+      print "a =", a
+      print $$a++++
+      print "out:", $0
+    }
+  stdin: |
+    3 4 5 6 7 8 9
+expect:
+  stdout: |
+    in: 3 4 5 6 7 8 9
+    a = 3
+    7
+    out: 3 4 6 6 8 8 9
+  exit_code: 0

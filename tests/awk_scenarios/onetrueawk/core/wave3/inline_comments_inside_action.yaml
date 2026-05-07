@@ -1,0 +1,24 @@
+description: comments inside and around actions do not change execution
+upstream:
+  suite: onetrueawk
+  id: testdir/t.comment
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "full-line comments are ignored"
+  - "inline comments after statements are ignored"
+  - "a hash character in input remains normal record data"
+input:
+  program: |
+    # ignored before the rule
+    /#/ {
+      print "hash:" $0 # ignored after a statement
+      print "again:" $1
+    }
+  stdin: |
+    plain line
+    ticket #42 open
+expect:
+  stdout: |
+    hash:ticket #42 open
+    again:ticket
+  exit_code: 0

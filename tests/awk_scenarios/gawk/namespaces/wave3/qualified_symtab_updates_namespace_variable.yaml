@@ -1,0 +1,24 @@
+description: SYMTAB qualified keys can read and update namespace variables
+upstream:
+  suite: gawk
+  id: test/nsindirect1.awk
+  ref: gawk-5.4.0
+covers:
+  - SYMTAB exposes namespaced variables under qualified keys
+  - writing a qualified SYMTAB key updates the corresponding namespace variable
+input:
+  program: |
+    @namespace "store"
+    BEGIN { value = 10 }
+
+    @namespace "awk"
+    BEGIN {
+      print store::value, SYMTAB["store::value"]
+      SYMTAB["store::value"] += 5
+      print store::value, SYMTAB["store::value"]
+    }
+expect:
+  stdout: |
+    10 10
+    15 15
+  exit_code: 0

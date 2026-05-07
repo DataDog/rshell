@@ -1,0 +1,22 @@
+description: BEGIN-time field arguments survive a later $0 reassignment
+upstream:
+  suite: gawk
+  id: test/setrec1.awk
+  ref: gawk-5.4.0
+covers:
+  - fields can be created from a BEGIN-time $0 assignment
+  - a field argument is evaluated before a called function reassigns $0
+input:
+  program: |
+    function reset_record(new_text, old_first) {
+      $0 = new_text
+      print old_first ":" $1
+    }
+    BEGIN {
+      $0 = substr("alphabet", 2, 3)
+      reset_record(" 99", $1)
+    }
+expect:
+  stdout: |
+    lph:99
+  exit_code: 0

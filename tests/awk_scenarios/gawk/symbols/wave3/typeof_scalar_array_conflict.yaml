@@ -1,0 +1,27 @@
+description: an unassigned scalar element cannot later be used as an array
+upstream:
+  suite: gawk
+  id: test/typeof8.awk
+  ref: gawk-5.4.0
+covers:
+  - formatting an untyped element leaves it as an unassigned scalar
+  - using that scalar as an array is a fatal error
+  - stdout emitted before the fatal error is preserved
+input:
+  program: |
+    BEGIN {
+      slot["x"]
+      print typeof(slot["x"])
+      printf "num=%d\n", slot["x"]
+      print typeof(slot["x"])
+      slot["x"]["child"] = 5
+      print "never"
+    }
+expect:
+  stdout: |
+    untyped
+    num=0
+    unassigned
+  stderr_contains:
+    - "attempt to use scalar `slot[\"x\"]' as an array"
+  exit_code: 2

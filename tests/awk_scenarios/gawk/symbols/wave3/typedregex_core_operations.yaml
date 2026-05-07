@@ -1,0 +1,39 @@
+description: strongly typed regexps work in matching and string builtins
+upstream:
+  suite: gawk
+  id: test/typedregex1.awk
+  ref: gawk-5.4.0
+covers:
+  - a strongly typed regexp variable works with match operators
+  - strong regexps can be passed to sub, gsub, gensub, split, and patsplit
+  - indirect built-in calls accept strong regexp arguments where supported
+input:
+  program: |
+    BEGIN {
+      rx = @/gr(a|e)y/
+      print ("grey" ~ rx), ("blue" !~ rx), typeof(rx), "<" rx ">"
+
+      target = "gray grey green"
+      print sub(rx, "X", target), target
+      target = "gray grey green"
+      print gsub(rx, "Y", target), target
+      print gensub(rx, "Z", "g", "gray grey")
+
+      split("aa::bb::cc", parts, @/::/, seps)
+      print length(parts), parts[2], seps[1]
+      patsplit("r12s34", digs, @/[0-9]+/, gaps)
+      print length(digs), digs[1], gaps[1]
+
+      fn = "match"
+      print @fn("grey", rx)
+    }
+expect:
+  stdout: |
+    1 1 regexp <gr(a|e)y>
+    1 X grey green
+    2 Y Y green
+    Z Z
+    3 bb ::
+    2 12 s
+    1
+  exit_code: 0

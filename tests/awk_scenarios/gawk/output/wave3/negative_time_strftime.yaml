@@ -1,0 +1,23 @@
+description: pre-epoch times round trip through mktime and strftime in UTC
+upstream:
+  suite: gawk
+  id: test/negtime.awk
+  ref: gawk-5.4.0
+covers:
+  - mktime can return negative epoch seconds
+  - strftime accepts negative timestamps
+  - UTC timezone formatting is deterministic for pre-1970 dates
+input:
+  envs:
+    TZ: UTC
+  program: |
+    BEGIN {
+      ts = mktime("1965 07 14 01 02 03", 0)
+      print ts
+      print strftime("%Y-%m-%d %H:%M:%S %Z", ts)
+    }
+expect:
+  stdout: |
+    -141001077
+    1965-07-14 01:02:03 UTC
+  exit_code: 0

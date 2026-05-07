@@ -1,0 +1,28 @@
+description: IGNORECASE applies to POSIX character classes in FS
+upstream:
+  suite: gawk
+  id: test/igncfs.awk
+  ref: gawk-5.4.0
+covers:
+  - POSIX lower-case character classes in FS honor IGNORECASE
+  - uppercase letters are retained inside fields when IGNORECASE is active
+input:
+  program: |
+    BEGIN {
+      IGNORECASE = 1
+      FS = "[^[:lower:]]+"
+    }
+    {
+      for (i = 1; i <= NF; i++)
+        print i ":" $i
+      print "--"
+    }
+  stdin: |
+    alpha BETA mixEd
+expect:
+  stdout: |
+    1:alpha
+    2:BETA
+    3:mixEd
+    --
+  exit_code: 0

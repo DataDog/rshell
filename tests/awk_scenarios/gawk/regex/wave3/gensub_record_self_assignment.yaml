@@ -1,0 +1,24 @@
+description: self-assigning a matched record keeps the record text available later
+upstream:
+  suite: gawk
+  id: test/gensub3.awk
+  ref: gawk-5.4.0
+covers:
+  - assigning $0 to itself does not clear the current record
+  - regex pattern actions can save a rebuilt record for END
+input:
+  program: |
+    /mango/ {
+      $0 = $0
+      saved = $0
+    }
+    END {
+      print saved
+    }
+  stdin: |
+    mango
+    guava
+expect:
+  stdout: |
+    mango
+  exit_code: 0

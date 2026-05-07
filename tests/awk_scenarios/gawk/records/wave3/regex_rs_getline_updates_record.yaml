@@ -1,0 +1,25 @@
+description: getline with regex RS updates $0 and RT to the next record
+upstream:
+  suite: gawk
+  id: test/rsgetline.awk
+  ref: gawk-5.4.0
+covers:
+  - regex RS stores the matched separator in RT
+  - getline from the main input advances to the next regex-separated record
+  - successful getline updates $0 and RT before the action continues
+input:
+  program: |
+    BEGIN { RS = ";+" }
+    {
+      print "before=" $0 ",rt=" RT
+      status = getline
+      print "getline=" status
+      print "after=" $0 ",rt=" RT
+    }
+  stdin: "alpha;;beta;;"
+expect:
+  stdout: |
+    before=alpha,rt=;;
+    getline=1
+    after=beta,rt=;;
+  exit_code: 0

@@ -1,0 +1,18 @@
+description: Indirect built-in calls enforce the built-in arity
+upstream:
+  suite: gawk
+  id: test/indirectbuiltin2.awk
+  ref: gawk-5.4.0
+covers:
+  - a built-in reached through an indirect call still validates argument count
+  - fatal arity errors report the underlying built-in name
+input:
+  program: |
+    BEGIN {
+      f = "length"
+      print @f("left", "right")
+    }
+expect:
+  stderr_contains:
+    - "fatal: length: called with 2 arguments"
+  exit_code: 2

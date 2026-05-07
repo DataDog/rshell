@@ -1,0 +1,26 @@
+description: long numeric-looking strings remain distinct array keys
+upstream:
+  suite: gawk
+  id: test/numindex.awk
+  ref: gawk-5.4.0
+covers:
+  - associative array keys preserve long digit-string identity
+  - repeated records can be detected by string key without numeric collapse
+input:
+  program: |
+    {
+      if ($0 in seen)
+        print "repeat", NR, seen[$0]
+      else
+        seen[$0] = NR
+    }
+    END { print length(seen) }
+  stdin: |
+    322322111111112232231111
+    322322111111112213223111
+    322322111111112232231111
+expect:
+  stdout: |
+    repeat 3 1
+    2
+  exit_code: 0

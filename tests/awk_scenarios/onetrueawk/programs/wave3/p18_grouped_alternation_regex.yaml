@@ -1,0 +1,21 @@
+description: grouped alternation matches paired words
+upstream:
+  suite: onetrueawk
+  id: testdir/p.18
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "grouped alternation matches paired words"
+  - "uses original rshell fixture data rather than upstream country records"
+input:
+  program: |
+    /(tea|coffee) (cake|pie)/ { print }
+  stdin: |
+    tea cake
+    coffee pie
+    tea bowl
+    juice cake
+expect:
+  stdout: |
+    tea cake
+    coffee pie
+  exit_code: 0

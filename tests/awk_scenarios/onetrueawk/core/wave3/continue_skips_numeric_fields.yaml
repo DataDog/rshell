@@ -1,0 +1,31 @@
+description: continue skips numeric fields while next skips the record
+upstream:
+  suite: onetrueawk
+  id: testdir/t.contin
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "continue advances to the next loop iteration"
+  - "next stops processing the current record"
+  - "a loop can distinguish all-numeric records from mixed records"
+input:
+  program: |
+    {
+      for (pos = 1; pos <= NF; pos++) {
+        if ($pos ~ /^-?[0-9]+$/) {
+          continue
+        }
+        print "first-text", pos, $pos
+        next
+      }
+      print "all-numbers", NR
+    }
+  stdin: |
+    10 20 30
+    8 label 9
+    x 1 2
+expect:
+  stdout: |
+    all-numbers 1
+    first-text 2 label
+    first-text 1 x
+  exit_code: 0

@@ -1,0 +1,34 @@
+description: sorted_in can name a user comparator for deterministic ordering
+upstream:
+  suite: gawk
+  id: test/sortu.awk
+  ref: gawk-5.4.0
+covers:
+  - PROCINFO["sorted_in"] can name a user-defined comparator
+  - comparator arguments receive both indexes and values
+  - comparator return values define a deterministic descending value order
+input:
+  program: |
+    function cmp(i1, v1, i2, v2) {
+      return (v1 != v2) ? (v2 - v1) : (i2 - i1)
+    }
+    BEGIN {
+      a[11] = 10
+      a[100] = 5
+      a[2] = 200
+      a[4] = 1
+      a[20] = 10
+      a[14] = 10
+      PROCINFO["sorted_in"] = "cmp"
+      for (i in a)
+        print i ":" a[i]
+    }
+expect:
+  stdout: |
+    2:200
+    20:10
+    14:10
+    11:10
+    100:5
+    4:1
+  exit_code: 0

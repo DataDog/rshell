@@ -1,0 +1,15 @@
+description: dynamic field assignment copies one field into another
+upstream:
+  suite: onetrueawk
+  id: testdir/t.vf3
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "variables can select both destination and source fields"
+  - "assigning through $i rebuilds the printed record"
+input:
+  program: |
+    BEGIN { i = 1; j = 2 } { $i = $j; print }
+  stdin: "left right tail\nsolo duo\n"
+expect:
+  stdout: "right right tail\nduo duo\n"
+  exit_code: 0

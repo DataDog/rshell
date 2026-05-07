@@ -1,0 +1,19 @@
+description: compound division on a field rebuilds the record numerically
+upstream:
+  suite: onetrueawk
+  id: testdir/p.34
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "compound division assignment updates a field numerically"
+  - "printing after field assignment uses the rebuilt record"
+input:
+  program: |
+    { $2 /= 1000; print }
+  stdin: |
+    Aster 12000 inner
+    Boreal 500 outer
+expect:
+  stdout: |
+    Aster 12 inner
+    Boreal 0.5 outer
+  exit_code: 0

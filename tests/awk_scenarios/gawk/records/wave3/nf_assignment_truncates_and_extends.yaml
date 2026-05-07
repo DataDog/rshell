@@ -1,0 +1,24 @@
+description: assigning NF truncates long records and extends short records
+upstream:
+  suite: gawk
+  id: test/nfset.awk
+  ref: gawk-5.4.0
+covers:
+  - assigning NF above the current field count appends empty fields
+  - assigning NF below the current field count truncates fields
+  - rebuilding $0 after NF assignment uses OFS
+input:
+  program: |
+    BEGIN { OFS = "|" }
+    {
+      NF = 4
+      print "[" $0 "]"
+    }
+  stdin: |
+    alpha beta
+    gamma delta epsilon zeta eta
+expect:
+  stdout: |
+    [alpha|beta||]
+    [gamma|delta|epsilon|zeta]
+  exit_code: 0

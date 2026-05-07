@@ -1,0 +1,20 @@
+description: match rejects a function name where the capture array belongs
+upstream:
+  suite: gawk
+  id: test/match2.awk
+  ref: gawk-5.4.0
+covers:
+  - match's third argument must be an array
+  - a function identifier cannot be used as the captures target
+input:
+  program: |
+    function capture(value) {
+      print match("alpha", /a/, capture)
+    }
+    BEGIN {
+      capture(0)
+    }
+expect:
+  stderr_contains:
+    - "function `capture' called with space between name"
+  exit_code: 1

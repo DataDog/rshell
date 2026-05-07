@@ -1,0 +1,18 @@
+description: hexadecimal and octal-looking constants parse as numeric literals in default mode
+upstream:
+  suite: gawk
+  id: test/nondec.awk
+  ref: gawk-5.4.0
+covers:
+  - hexadecimal constants are accepted as numeric literals
+  - leading-zero integer constants use octal interpretation
+  - invalid octal-looking decimals still parse as decimal numbers
+input:
+  program: |
+    BEGIN {
+      print 0x20, 077, 08.5
+    }
+expect:
+  stdout: |
+    32 63 8.5
+  exit_code: 0

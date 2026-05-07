@@ -1,0 +1,56 @@
+description: argument side effects can turn later scalar parameters into arrays
+upstream:
+  suite: gawk
+  id: test/nastyparm.awk
+  ref: gawk-5.4.0
+covers:
+  - function arguments are evaluated with visible assignment side effects
+  - split can populate an array that is also passed through aliased parameters
+  - aliased array parameters share writes
+  - using an array argument in a scalar parameter context is rejected
+input:
+  program: |
+    function show(value, flag) {
+      print "[" value "]", flag
+    }
+
+    function count(items, n) {
+      print length(items), n
+    }
+
+    function merge(left, right, n, again) {
+      print length(left), length(right), n, length(again)
+      again[0] = "kept"
+    }
+
+    function alias(items) {
+      merge(items, items, split("rs", items, ""), items)
+    }
+
+    BEGIN {
+      show(raw, raw != "")
+      show(word, word = "word")
+      show(num = 2, num = 3)
+      print num
+      count(chars, split("abc", chars, ""))
+      merge(box, box, split("xy", box, ""), box)
+      print box[0], length(box)
+      alias(other)
+      print other[0], length(other)
+      show(final, split("pq", final, ""))
+    }
+expect:
+  stdout: |
+    [] 0
+    [] word
+    [2] 3
+    3
+    3 3
+    2 2 2 2
+    kept 3
+    2 2 2 2
+    kept 3
+  stderr_contains:
+    - "fatal: attempt to use array"
+    - "in a scalar context"
+  exit_code: 2

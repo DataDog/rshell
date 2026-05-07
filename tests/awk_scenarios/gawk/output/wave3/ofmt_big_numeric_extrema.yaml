@@ -1,0 +1,39 @@
+description: OFMT handles very large decimal-looking input while computing extrema
+upstream:
+  suite: gawk
+  id: test/ofmtbig.awk
+  ref: gawk-5.4.0
+covers:
+  - high-precision OFMT prints large integer-valued doubles without scientific notation here
+  - numeric extrema reset when a new label record is seen
+  - a section with one numeric value uses it as both high and low
+input:
+  program: |
+    BEGIN {
+      OFMT = "%.12g"
+      high = 0
+      low = 99999999999
+    }
+    /^[[:alpha:]]/ {
+      if (label != "") print label, high, low
+      label = $0
+      high = 0
+      low = 99999999999
+      next
+    }
+    /^[0-9]+$/ {
+      if ($1 > high) high = $1
+      if ($1 < low) low = $1
+    }
+    END { print label, high, low }
+  stdin: |
+    first
+    99999999998
+    99999999991
+    second
+    3
+expect:
+  stdout: |
+    first 99999999998 99999999991
+    second 3 3
+  exit_code: 0

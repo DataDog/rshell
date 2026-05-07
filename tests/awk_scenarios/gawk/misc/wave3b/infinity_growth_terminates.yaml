@@ -1,0 +1,24 @@
+description: repeated multiplication eventually reaches infinity and terminates comparison growth
+upstream:
+  suite: gawk
+  id: test/inftest.awk
+  ref: gawk-5.4.0
+covers:
+  - repeated numeric growth can reach positive infinity
+  - infinity compares equal to a larger scaled infinity
+  - loops depending on strict numeric growth can terminate
+input:
+  program: |
+    BEGIN {
+      x = 1
+      k = 0
+      while (x < x * 1000 && k < 2000) {
+        x *= 1000
+        k++
+      }
+      print (x == x * 1000), x, (k > 0)
+    }
+expect:
+  stdout: |
+    1 +inf 1
+  exit_code: 0

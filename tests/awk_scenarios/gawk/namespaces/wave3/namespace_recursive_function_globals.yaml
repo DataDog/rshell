@@ -1,0 +1,28 @@
+description: recursive namespace functions share namespace globals across calls
+upstream:
+  suite: gawk
+  id: test/nsfuncrecurse.awk
+  ref: gawk-5.4.0
+covers:
+  - namespace functions can recurse by unqualified name
+  - namespace global variables preserve state across recursive calls
+input:
+  program: |
+    @namespace "walk"
+
+    function down(n) {
+      if (n < 1)
+        return
+      depth++
+      print "depth", depth, "n", n
+      down(n - 1)
+      depth--
+    }
+
+    BEGIN { down(3) }
+expect:
+  stdout: |
+    depth 1 n 3
+    depth 2 n 2
+    depth 3 n 1
+  exit_code: 0

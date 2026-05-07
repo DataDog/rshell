@@ -1,0 +1,27 @@
+description: switch handles regexp cases without recursing when no case matches
+upstream:
+  suite: gawk
+  id: test/switch2.awk
+  ref: gawk-5.4.0
+covers:
+  - switch expressions can be compared with regexp cases
+  - unmatched regexp and string cases fall through to default
+  - switch evaluation terminates without recursion
+input:
+  program: |
+    BEGIN {
+      switch (substr("x", 1, 1)) {
+      case /ask.com/:
+        print "regex"
+        break
+      case "google":
+        print "string"
+        break
+      default:
+        print "default"
+      }
+    }
+expect:
+  stdout: |
+    default
+  exit_code: 0

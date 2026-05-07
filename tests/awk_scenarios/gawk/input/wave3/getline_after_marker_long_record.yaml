@@ -1,0 +1,37 @@
+description: getline after a marker rule captures the following long record intact
+upstream:
+  suite: gawk
+  id: test/getlnbuf.awk
+  ref: gawk-5.4.0
+covers:
+  - getline inside a pattern action reads the next physical record
+  - the record read into a variable is not also processed by later rules
+  - a longer record following a marker is preserved without truncation
+setup:
+  files:
+    - path: script.txt
+      content: |
+        preamble
+        @K@CODE
+        payload-abcdefghijklmnopqrstuvwxyz-0123456789-ABCDEFGHIJKLMNOPQRSTUVWXYZ-end
+        tail
+input:
+  program: |
+    /@K@CODE/ {
+      got = getline hold
+      print "marker:" NR ":" got
+      print "held:" length(hold) ":" substr(hold, 1, 12) ":" substr(hold, length(hold) - 9)
+      next
+    }
+    {
+      print "line:" NR ":" $0
+    }
+  args:
+    - script.txt
+expect:
+  stdout: |
+    line:1:preamble
+    marker:3:1
+    held:76:payload-abcd:UVWXYZ-end
+    line:4:tail
+  exit_code: 0

@@ -1,0 +1,30 @@
+description: values assigned from split results remain visible after nested blocks and increments
+upstream:
+  suite: gawk
+  id: test/nested.awk
+  ref: gawk-5.4.0
+covers:
+  - "split populates array elements inside a nested block"
+  - "assignment from a split element survives block exit"
+  - "nearby increment expressions do not clobber scalar assignments"
+input:
+  program: |
+    BEGIN { total = 0 }
+    {
+      total++
+      {
+        split($1, parts, "_")
+        first = parts[1]
+      }
+      print parts[1]
+      print first
+      print "total=" total
+    }
+  stdin: |
+    alpha_beta
+expect:
+  stdout: |
+    alpha
+    alpha
+    total=1
+  exit_code: 0

@@ -1,0 +1,22 @@
+description: FIELDWIDTHS preserves padded numeric columns as field text
+upstream:
+  suite: gawk
+  id: test/fwtest2.awk
+  ref: gawk-5.4.0
+covers:
+  - fixed-width fields retain leading padding
+  - assigning fixed-width fields to variables preserves their text
+input:
+  program: |
+    BEGIN { FIELDWIDTHS = "8 8 8" }
+    {
+      left = $1
+      middle = $2
+      right = $3
+      print "[" left "][" middle "][" right "]"
+    }
+  stdin: "    4.25  -7.50  12.00\n"
+expect:
+  stdout: |
+    [    4.25][  -7.50 ][ 12.00]
+  exit_code: 0

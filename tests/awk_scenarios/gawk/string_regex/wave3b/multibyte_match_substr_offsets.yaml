@@ -1,0 +1,24 @@
+description: substr after regexp match extracts the year from UTF-8 records
+upstream:
+  suite: gawk
+  id: test/mbstr2.awk
+  ref: gawk-5.4.0
+covers:
+  - match sets RSTART and RLENGTH for a regexp embedded in a longer record
+  - substr offsets derived from match metadata work on UTF-8 input records
+input:
+  envs:
+    LC_ALL: en_US.UTF-8
+  program: |
+    match($0, /:deathdate=2007....:/) {
+      print substr($0, RSTART + 11, RLENGTH - 16)
+    }
+  stdin: |
+    alpha:deathdate=20070306:
+    wide:deathdate=20071103:
+    old:deathdate=19991231:
+expect:
+  stdout: |
+    2007
+    2007
+  exit_code: 0

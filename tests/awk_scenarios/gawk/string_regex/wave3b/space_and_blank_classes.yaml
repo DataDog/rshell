@@ -1,0 +1,32 @@
+description: POSIX space and blank classes distinguish newline from horizontal blank
+upstream:
+  suite: gawk
+  id: test/spacere.awk
+  ref: gawk-5.4.0
+covers:
+  - POSIX space class matches space, tab, and newline
+  - POSIX blank class matches horizontal blanks but not newline
+  - non-whitespace characters do not match either class
+input:
+  program: |
+    BEGIN {
+      c[" "] = "space"
+      c["\t"] = "tab"
+      c["\n"] = "newline"
+      c["x"] = "x"
+      order[1] = " "
+      order[2] = "\t"
+      order[3] = "\n"
+      order[4] = "x"
+      for (i = 1; i <= 4; i++) {
+        ch = order[i]
+        print c[ch], ch ~ /[[:space:]]/, ch ~ /[[:blank:]]/
+      }
+    }
+expect:
+  stdout: |
+    space 1 1
+    tab 1 1
+    newline 1 0
+    x 0 0
+  exit_code: 0

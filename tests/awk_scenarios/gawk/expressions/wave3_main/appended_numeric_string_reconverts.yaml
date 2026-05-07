@@ -1,0 +1,22 @@
+description: appended numeric strings are reconverted after their string value changes
+upstream:
+  suite: gawk
+  id: test/strnum1.awk
+  ref: gawk-5.4.0
+covers:
+  - concatenating onto a numeric string changes later numeric conversion
+  - prior numeric use does not freeze the old numeric interpretation
+input:
+  program: |
+    BEGIN {
+      t = ""
+      t = t "4"
+      print 0 + t
+      t = t "2"
+      print 0 + t
+    }
+expect:
+  stdout: |
+    4
+    42
+  exit_code: 0

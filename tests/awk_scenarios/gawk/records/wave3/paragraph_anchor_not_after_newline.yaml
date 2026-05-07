@@ -1,0 +1,27 @@
+description: record anchors in paragraph mode do not restart after embedded newlines
+upstream:
+  suite: gawk
+  id: test/nlinstr.awk
+  ref: gawk-5.4.0
+covers:
+  - paragraph mode records can contain embedded newlines
+  - ^ matches only the start of the paragraph record
+  - a marker after an embedded newline is not treated as record-start anchored
+input:
+  program: |
+    BEGIN { RS = "" }
+    {
+      if (/^#/)
+        print "anchored"
+      else if ($0 ~ /\n#/)
+        print "embedded-only"
+      else
+        print "missing"
+    }
+  stdin: |
+    title line
+    # detail line
+expect:
+  stdout: |
+    embedded-only
+  exit_code: 0

@@ -1,0 +1,20 @@
+description: uninitialized scalar concatenates as an empty prefix
+upstream:
+  suite: onetrueawk
+  id: testdir/t.cat1
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "uninitialized variables have empty string value in concatenation"
+  - "the current record can be concatenated without separators"
+  - "record text is preserved by simple concatenation"
+input:
+  program: |
+    { print "[" prefix $0 "]" }
+  stdin: |
+    north wind
+    south rain
+expect:
+  stdout: |
+    [north wind]
+    [south rain]
+  exit_code: 0

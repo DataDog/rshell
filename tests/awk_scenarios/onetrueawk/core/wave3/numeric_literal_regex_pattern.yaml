@@ -1,0 +1,26 @@
+description: a numeric-string regex accepts decimals and exponents
+upstream:
+  suite: onetrueawk
+  id: testdir/t.re7
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "alternation can distinguish integer and leading-dot forms"
+  - "optional decimal fractions are accepted"
+  - "optional signed exponents are accepted"
+input:
+  program: |
+    /^(([0-9]+)([.][0-9]*)?|[.][0-9]+)([eE][+-]?[0-9]+)?$/ {
+      print "number", $0
+    }
+  stdin: |
+    42
+    3.5
+    .25e+2
+    x12
+    8e-
+expect:
+  stdout: |
+    number 42
+    number 3.5
+    number .25e+2
+  exit_code: 0

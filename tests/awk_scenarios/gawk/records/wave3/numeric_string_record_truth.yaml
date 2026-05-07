@@ -1,0 +1,23 @@
+description: assigning string zero to $0 keeps record truth separate from field numeric truth
+upstream:
+  suite: gawk
+  id: test/nfldstr.awk
+  ref: gawk-5.4.0
+covers:
+  - a string value "0" assigned to $0 is true in boolean record context
+  - the first field split from "0" has numeric-zero truth
+input:
+  program: |
+    BEGIN {
+      $0 = "0"
+      print (!$0 ? "bad-record" : "record-true")
+      $0 = saved = "0"
+      print (!$0 ? "bad-copy" : "copy-true")
+      print ($1 ? "bad-field" : "field-false")
+    }
+expect:
+  stdout: |
+    record-true
+    copy-true
+    field-false
+  exit_code: 0

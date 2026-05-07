@@ -1,0 +1,21 @@
+description: compound assignment evaluates the array subscript before post-increment side effects finish
+upstream:
+  suite: gawk
+  id: test/opasnidx.awk
+  ref: gawk-5.4.0
+covers:
+  - compound assignment updates the selected array element
+  - post-increment in a subscript increments the scalar afterward
+  - the original index receives the arithmetic update
+input:
+  program: |
+    BEGIN {
+      b = 1
+      a[b] = 2
+      a[b++] += 1
+      print b, a[1]
+    }
+expect:
+  stdout: |
+    2 3
+  exit_code: 0

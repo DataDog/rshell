@@ -1,0 +1,14 @@
+description: sprintf width padding can be measured and sliced
+upstream:
+  suite: onetrueawk
+  id: testdir/t.format4
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "sprintf with a field width pads on the left"
+  - "substr of a padded string preserves spaces and has the requested length"
+input:
+  program: |
+    BEGIN { text = sprintf("%25s", "edge"); print length(text); print text; piece = substr(text, 1, 18); print length(piece); print piece }
+expect:
+  stdout: "25\n                     edge\n18\n                  \n"
+  exit_code: 0

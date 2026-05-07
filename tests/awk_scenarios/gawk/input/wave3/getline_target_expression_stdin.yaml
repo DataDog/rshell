@@ -1,0 +1,29 @@
+description: getline target expressions bind before surrounding concatenation and arithmetic
+upstream:
+  suite: gawk
+  id: test/getline.awk
+  ref: gawk-5.4.0
+covers:
+  - getline x y is parsed as getline into x followed by concatenation
+  - arithmetic around a getline target uses the getline return value after x is updated
+input:
+  program: |
+    BEGIN {
+      x = y = "seed"
+      a = (getline x y)
+      print a, x
+      a = (getline x + 10)
+      print a, x
+      a = (getline x - 3)
+      print a, x
+    }
+  stdin: |
+    red
+    green
+    blue
+expect:
+  stdout: |
+    1seed red
+    11 green
+    -2 blue
+  exit_code: 0

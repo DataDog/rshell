@@ -1,0 +1,19 @@
+description: numeric conversion accepts leading digits without treating an incomplete exponent as numeric equality
+upstream:
+  suite: gawk
+  id: test/leaddig.awk
+  ref: gawk-5.4.0
+covers:
+  - strings with leading digits convert numerically for arithmetic
+  - incomplete exponent text does not compare equal to a complete numeric constant
+  - numeric conversion stops before the incomplete exponent suffix
+input:
+  program: |
+    BEGIN {
+      x = "7E"
+      print x, (x == 7), (x == 7E0), x + 0
+    }
+expect:
+  stdout: |
+    7E 0 0 7
+  exit_code: 0

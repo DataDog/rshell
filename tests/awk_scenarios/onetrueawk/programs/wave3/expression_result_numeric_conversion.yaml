@@ -1,0 +1,18 @@
+description: comparison expression results convert to numeric 1 and 0 values
+upstream:
+  suite: onetrueawk
+  id: testdir/T.exprconv
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "true relational expressions print as 1"
+  - "false relational expressions print as 0"
+  - "numeric equality handles integer and floating zero equally"
+input:
+  program: |
+    BEGIN {
+      print (3 > 2), (3 < 2), ("cat" >= "dog"), ("dog" >= "cat"), (0 == 0.0)
+    }
+expect:
+  stdout: |
+    1 0 0 1 1
+  exit_code: 0

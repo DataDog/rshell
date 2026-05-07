@@ -1,0 +1,20 @@
+description: srand with a fixed seed produces a deterministic rand sequence
+upstream:
+  suite: gawk
+  id: test/rand.awk
+  ref: gawk-5.4.0
+covers:
+  - srand sets the random number generator seed
+  - rand produces deterministic values for the pinned GNU awk oracle
+  - int truncates scaled random values before printing
+input:
+  program: |
+    BEGIN {
+      srand(2)
+      for (i = 0; i < 5; i++)
+        printf "%3d ", (1 + int(100 * rand()))
+      print ""
+    }
+expect:
+  stdout: " 90  23   5  64  38 \n"
+  exit_code: 0

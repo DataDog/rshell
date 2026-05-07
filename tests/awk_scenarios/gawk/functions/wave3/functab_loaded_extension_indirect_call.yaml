@@ -1,0 +1,29 @@
+description: A loaded extension function appears in FUNCTAB and can be called indirectly
+upstream:
+  suite: gawk
+  id: test/functab4.awk
+  ref: gawk-5.4.0
+covers:
+  - "@load can add extension functions to FUNCTAB"
+  - an extension function name read from FUNCTAB can be used for an indirect call
+  - the filefuncs stat extension fills an array result when called indirectly
+input:
+  program: |
+    @load "filefuncs"
+
+    BEGIN {
+      f = FUNCTAB["stat"]
+      print f
+      print ("stat" in FUNCTAB)
+      print @f(".", info)
+      print ("type" in info), info["type"]
+      print (length(info) > 0)
+    }
+expect:
+  stdout: |
+    stat
+    1
+    0
+    1 directory
+    1
+  exit_code: 0

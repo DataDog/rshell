@@ -1,0 +1,33 @@
+description: namespaced variables appear with qualified names in symbol tables
+upstream:
+  suite: gawk
+  id: test/nsidentifier.awk
+  ref: gawk-5.4.0
+covers:
+  - namespaced identifiers are present in SYMTAB using qualified names
+  - namespaced identifiers are present in PROCINFO["identifiers"]
+  - "variables in awk namespace appear without an awk:: prefix in the default symbol table"
+input:
+  program: |
+    @namespace "pkg"
+    pkgvar = 1
+    awk::rootvar = 2
+
+    @namespace "awk"
+    BEGIN {
+      print ("pkg::pkgvar" in SYMTAB)
+      print ("pkg::pkgvar" in PROCINFO["identifiers"])
+      print ("pkgvar" in SYMTAB)
+      print ("rootvar" in SYMTAB)
+      print ("rootvar" in PROCINFO["identifiers"])
+      print ("awk::rootvar" in PROCINFO["identifiers"])
+    }
+expect:
+  stdout: |
+    1
+    1
+    0
+    1
+    1
+    0
+  exit_code: 0

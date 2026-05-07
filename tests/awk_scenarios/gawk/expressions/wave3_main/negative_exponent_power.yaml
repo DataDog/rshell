@@ -1,0 +1,20 @@
+description: exponentiation accepts negative exponent expressions
+upstream:
+  suite: gawk
+  id: test/negexp.awk
+  ref: gawk-5.4.0
+covers:
+  - exponentiation with a negative variable exponent
+  - parenthesized negative exponents produce fractional results
+input:
+  program: |
+    BEGIN {
+      n = -2
+      print 3 ^ n
+      print 2 ^ (-3)
+    }
+expect:
+  stdout: |
+    0.111111
+    0.125
+  exit_code: 0

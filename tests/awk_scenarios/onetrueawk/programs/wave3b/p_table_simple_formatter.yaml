@@ -1,0 +1,38 @@
+description: a stored table is printed with computed column widths
+upstream:
+  suite: onetrueawk
+  id: testdir/p.table
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "records can be stored and replayed in END"
+  - "column widths can be computed from all records before printing"
+  - "numeric-looking cells can use right alignment while text cells use left alignment"
+input:
+  program: |
+    BEGIN { FS = "	" }
+    {
+      row[NR] = $0
+      for (i = 1; i <= NF; i++) {
+        if (length($i) > width[i])
+          width[i] = length($i)
+      }
+    }
+    END {
+      for (r = 1; r <= NR; r++) {
+        n = split(row[r], cell)
+        for (i = 1; i <= n; i++) {
+          fmt = (cell[i] ~ /^[+-]?([0-9]+([.][0-9]*)?|[.][0-9]+)$/) ? "%" width[i] "s" : "%-" width[i] "s"
+          printf fmt "%s", cell[i], (i == n ? "\n" : "   ")
+        }
+      }
+    }
+  stdin: |
+    item	qty	price
+    bolt	12	1.5
+    longname	3	10
+expect:
+  stdout: |
+    item       qty   price
+    bolt        12     1.5
+    longname     3      10
+  exit_code: 0

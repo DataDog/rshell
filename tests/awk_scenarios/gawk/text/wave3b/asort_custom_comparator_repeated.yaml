@@ -1,0 +1,28 @@
+description: asort repeatedly accepts a user-defined comparator
+upstream:
+  suite: gawk
+  id: test/memleak.awk
+  ref: gawk-5.4.0
+covers:
+  - asort can call a named user comparator
+  - repeated asort calls populate the destination array consistently
+input:
+  program: |
+    function descending(i1, v1, i2, v2) {
+      return v2 - v1
+    }
+    BEGIN {
+      a[1] = "3"
+      a[2] = "2"
+      a[3] = "4"
+      for (i = 0; i < 3; i++) {
+        total += asort(a, b, "descending")
+      }
+      print total
+      print b[1], b[2], b[3]
+    }
+expect:
+  stdout: |
+    9
+    4 3 2
+  exit_code: 0

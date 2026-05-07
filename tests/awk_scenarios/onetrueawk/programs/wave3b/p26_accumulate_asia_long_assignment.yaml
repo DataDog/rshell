@@ -1,0 +1,21 @@
+description: explicit assignments accumulate matching records and report in END
+upstream:
+  suite: onetrueawk
+  id: testdir/p.26
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "regex patterns guard accumulation actions"
+  - "ordinary assignment updates numeric totals and counters"
+  - "END observes accumulated state"
+input:
+  program: |
+    /Asia/ { pop = pop + $3; n = n + 1 }
+    END { print "population of", n, "Asian countries in millions is", pop }
+  stdin: |
+    Arden	10	3	Asia
+    Beryl	20	7	Europe
+    Cairn	30	11	South Asia
+expect:
+  stdout: |
+    population of 2 Asian countries in millions is 14
+  exit_code: 0

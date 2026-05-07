@@ -1,0 +1,21 @@
+description: computed fields are appended and printed with tab OFS
+upstream:
+  suite: onetrueawk
+  id: testdir/p.36
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "BEGIN can set FS and OFS to tab"
+  - "assigning a new high field appends it to the record"
+  - "print with comma-separated arguments uses OFS"
+input:
+  program: |
+    BEGIN { FS = OFS = "	" }
+    { $5 = 1000 * $3 / $2; print $1, $2, $3, $4, $5 }
+  stdin: |
+    Aster	40	12	inner
+    Boreal	80	66	outer
+expect:
+  stdout: |
+    Aster	40	12	inner	300
+    Boreal	80	66	outer	825
+  exit_code: 0

@@ -1,0 +1,25 @@
+description: awk::typeof can be called indirectly and from a wrapper function
+upstream:
+  suite: gawk
+  id: test/typeof9.awk
+  ref: gawk-5.4.0
+covers:
+  - a namespaced builtin can be called indirectly with @
+  - awk::typeof reports untyped for an unset global
+  - wrapper functions can dispatch to awk::typeof indirectly
+input:
+  program: |
+    function type_of(value, fn) {
+      fn = "awk::typeof"
+      return @fn(value)
+    }
+    BEGIN {
+      fn = "awk::typeof"
+      print "direct", @fn(sample)
+      print "wrapped", type_of(sample)
+    }
+expect:
+  stdout: |
+    direct untyped
+    wrapped untyped
+  exit_code: 0

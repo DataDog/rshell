@@ -1,0 +1,19 @@
+description: adjacent field references concatenate without OFS
+upstream:
+  suite: onetrueawk
+  id: testdir/p.46
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "adjacent expressions concatenate as strings"
+  - "OFS is not inserted by implicit concatenation"
+input:
+  program: |
+    { print $1 $2 }
+  stdin: |
+    red 10
+    blue 20
+expect:
+  stdout: |
+    red10
+    blue20
+  exit_code: 0

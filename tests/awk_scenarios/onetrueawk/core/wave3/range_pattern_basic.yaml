@@ -1,0 +1,24 @@
+description: range patterns stay active from start through end record
+upstream:
+  suite: onetrueawk
+  id: testdir/t.pp
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "a pattern range begins when the first regex matches"
+  - "the ending record is included in the range"
+  - "records outside the range are skipped"
+input:
+  program: |
+    /start/,/end/ { print "range", NR, $0 }
+  stdin: |
+    before
+    start here
+    middle
+    end here
+    after
+expect:
+  stdout: |
+    range 2 start here
+    range 3 middle
+    range 4 end here
+  exit_code: 0

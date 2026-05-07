@@ -1,0 +1,18 @@
+description: gensub preserves a replacement string that ends with a backslash
+upstream:
+  suite: gawk
+  id: test/gensub4.awk
+  ref: gawk-5.4.0
+covers:
+  - gensub replacement strings can end in a literal backslash
+  - a replacement held in a variable is used without dropping the trailing byte
+input:
+  program: |
+    BEGIN {
+      repl = "done\\"
+      print gensub(/token/, repl, 1, "token")
+    }
+expect:
+  stdout: |
+    done\
+  exit_code: 0

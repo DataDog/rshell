@@ -1,0 +1,33 @@
+description: paragraph mode ignores leading newlines before the first record
+upstream:
+  suite: gawk
+  id: test/leadnl.awk
+  ref: gawk-5.4.0
+covers:
+  - RS empty string uses paragraph mode
+  - leading blank lines do not create an empty first record
+  - FS can split paragraph records into newline-separated fields
+input:
+  program: |
+    BEGIN {
+      RS = ""
+      FS = "\n"
+    }
+    {
+      print NR ":" $1 ":" $2 ":" $3
+    }
+  stdin: |
+
+
+    Ada
+    1 First
+    Town
+
+    Bob
+    2 Second
+    City
+expect:
+  stdout: |
+    1:Ada:1 First:Town
+    2:Bob:2 Second:City
+  exit_code: 0

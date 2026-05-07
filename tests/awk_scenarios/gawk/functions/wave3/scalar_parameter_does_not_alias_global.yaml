@@ -1,0 +1,28 @@
+description: A scalar parameter does not alias the same global variable passed by value
+upstream:
+  suite: gawk
+  id: test/paramuninitglobal.awk
+  ref: gawk-5.4.0
+covers:
+  - scalar function parameters are passed by value
+  - assigning to a global with the same name as the actual argument remains visible after return
+  - incrementing the scalar parameter does not overwrite the global variable
+input:
+  program: |
+    function touch(x) {
+      value = 4
+      x = 20
+      print "inside", x, value
+      value++
+      x++
+    }
+
+    BEGIN {
+      touch(value)
+      print "outside", value
+    }
+expect:
+  stdout: |
+    inside 20 4
+    outside 5
+  exit_code: 0

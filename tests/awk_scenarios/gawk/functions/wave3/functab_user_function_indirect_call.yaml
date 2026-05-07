@@ -1,0 +1,24 @@
+description: A user function name read from FUNCTAB can be called indirectly
+upstream:
+  suite: gawk
+  id: test/functab3.awk
+  ref: gawk-5.4.0
+covers:
+  - FUNCTAB maps user function names to callable function names
+  - indirect calls can invoke a user function whose name came from FUNCTAB
+input:
+  program: |
+    function shout(word) {
+      print toupper(word)
+    }
+
+    BEGIN {
+      f = FUNCTAB["shout"]
+      print "name=" f
+      @f("cedar")
+    }
+expect:
+  stdout: |
+    name=shout
+    CEDAR
+  exit_code: 0

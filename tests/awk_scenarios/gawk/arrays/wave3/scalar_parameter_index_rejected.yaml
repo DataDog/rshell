@@ -1,0 +1,23 @@
+description: scalar arguments passed to array-using parameters are rejected
+upstream:
+  suite: gawk
+  id: test/prmarscl.awk
+  ref: gawk-5.4.0
+covers:
+  - a scalar variable can be passed to a function parameter
+  - indexing that scalar parameter as an array is a fatal error
+input:
+  program: |
+    function inspect(value) {
+      print value["field"]
+    }
+
+    BEGIN {
+      total = 4
+      inspect(total)
+    }
+expect:
+  stderr_contains:
+    - "fatal: attempt to use scalar parameter"
+    - "as an array"
+  exit_code: 2

@@ -1,0 +1,22 @@
+description: split treats string-space separator differently from a regexp space separator
+upstream:
+  suite: gawk
+  id: test/splitwht.awk
+  ref: gawk-5.4.0
+covers:
+  - split with separator string space uses whitespace field splitting semantics
+  - split with regexp slash-space splits only on literal spaces
+input:
+  program: |
+    BEGIN {
+      str = "a   b\t\tc d"
+      n = split(str, a, " ")
+      print n
+      m = split(str, b, / /)
+      print m
+    }
+expect:
+  stdout: |
+    4
+    5
+  exit_code: 0

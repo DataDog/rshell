@@ -1,0 +1,31 @@
+description: SYMTAB and FUNCTAB expose globals and function names
+upstream:
+  suite: gawk
+  id: test/symtab11.awk
+  ref: gawk-5.4.0
+covers:
+  - SYMTAB scalar and array entries can be inspected without corrupting traversal
+  - FUNCTAB contains GNU awk builtins
+  - FUNCTAB contains user-defined functions
+input:
+  program: |
+    function helper() {
+      return 1
+    }
+    BEGIN {
+      scalar = 11
+      vector[1] = 22
+      PROCINFO["sorted_in"] = "@val_type_asc"
+
+      print "scalar", SYMTAB["scalar"]
+      print "vector", isarray(SYMTAB["vector"])
+      print "builtin", ("typeof" in FUNCTAB), FUNCTAB["typeof"]
+      print "user", ("helper" in FUNCTAB), FUNCTAB["helper"]
+    }
+expect:
+  stdout: |
+    scalar 11
+    vector 1
+    builtin 1 typeof
+    user 1 helper
+  exit_code: 0

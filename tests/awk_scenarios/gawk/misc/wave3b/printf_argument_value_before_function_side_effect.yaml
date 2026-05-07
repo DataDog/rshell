@@ -1,0 +1,27 @@
+description: printf keeps an earlier argument value stable across later function side effects
+upstream:
+  suite: gawk
+  id: test/nasty2.awk
+  ref: gawk-5.4.0
+covers:
+  - printf evaluates and stores argument values independently
+  - a later function argument can mutate a global used by an earlier argument
+  - the mutation remains visible after printf finishes
+input:
+  program: |
+    BEGIN {
+      a = "aaaaa"
+      a = a a
+      a = a a
+      printf("%s|%s\n", a, f())
+      print (index(a, "123") > 0)
+    }
+    function f() {
+      gsub(/a/, "123", a)
+      return "X"
+    }
+expect:
+  stdout: |
+    aaaaaaaaaaaaaaaaaaaa|X
+    1
+  exit_code: 0

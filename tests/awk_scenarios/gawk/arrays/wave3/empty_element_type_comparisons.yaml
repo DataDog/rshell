@@ -1,0 +1,36 @@
+description: empty string, unassigned, and untyped elements compare equal while retaining types
+upstream:
+  suite: gawk
+  id: test/elemnew4.awk
+  ref: gawk-5.4.0
+covers:
+  - reading missing elements creates untyped entries
+  - assigning the empty string records a string value
+  - passing a missing element by value records an unassigned value
+  - empty string, untyped, and unassigned values compare equal
+input:
+  program: |
+    function peek(value) {
+      print "peek", "[" value "]", typeof(value)
+    }
+
+    function put(arr, key) {
+      arr[key] = ""
+    }
+
+    BEGIN {
+      print ("left" in bag), typeof(bag["left"]), typeof(bag["right"])
+      print bag["left"] == bag["right"]
+      put(bag, "left")
+      peek(bag["right"])
+      print typeof(bag["left"]), typeof(bag["right"]), bag["left"] == bag["right"]
+      print ("left" in bag), ("right" in bag)
+    }
+expect:
+  stdout: |
+    0 untyped untyped
+    1
+    peek [] unassigned
+    string unassigned 1
+    1 1
+  exit_code: 0

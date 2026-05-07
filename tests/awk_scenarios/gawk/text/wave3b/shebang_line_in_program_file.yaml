@@ -1,0 +1,20 @@
+description: shebang at the start of an awk source file is treated as a comment
+upstream:
+  suite: gawk
+  id: test/poundbang.awk
+  ref: gawk-5.4.0
+covers:
+  - a leading pound-bang line is accepted in a program file
+  - the remaining program can process that same source file as input
+input:
+  program_file: poundbang.awk
+  program: |
+    #! /tmp/gawk -f
+    { print }
+  args:
+    - poundbang.awk
+expect:
+  stdout: |
+    #! /tmp/gawk -f
+    { print }
+  exit_code: 0

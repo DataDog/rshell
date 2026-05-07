@@ -1,0 +1,18 @@
+description: paragraph mode ignores input made only of blank lines
+upstream:
+  suite: gawk
+  id: test/onlynl.awk
+  ref: gawk-5.4.0
+covers:
+  - RS empty string enables paragraph mode
+  - runs of newlines alone do not produce empty paragraph records
+input:
+  program: |
+    BEGIN { RS = "" }
+    { records++ }
+    END { print "records=" records + 0 }
+  stdin: "\n\n\n\n"
+expect:
+  stdout: |
+    records=0
+  exit_code: 0

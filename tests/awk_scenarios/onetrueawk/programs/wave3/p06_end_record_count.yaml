@@ -1,0 +1,22 @@
+description: END reports the number of input records
+upstream:
+  suite: onetrueawk
+  id: testdir/p.6
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "END reports the number of input records"
+  - "uses original rshell fixture data rather than upstream country records"
+input:
+  program: |
+    END { print "rows", NR }
+  stdin: |
+    Aster	40	12	inner
+    Boreal	80	66	outer
+    Crux	55	101	outer
+    Dune	abc	9	Dune
+    Mica	12	5	inner
+    Nova	70	70	Nova
+expect:
+  stdout: |
+    rows 6
+  exit_code: 0

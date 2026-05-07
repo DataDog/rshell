@@ -1,0 +1,15 @@
+description: suffix-matched records update a length summary
+upstream:
+  suite: onetrueawk
+  id: testdir/t.time
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "FS can split records for suffix-derived length calculations"
+  - "END prints an aggregate only when records matched"
+input:
+  program: |
+    BEGIN { FS = "-" } /sh$/ { n++; l = length($NF); s += l; ck %= l; totck += ck; print } END { if (n > 0) printf "%d %d %d %fn\n", totck, n, s, s / n; else print "n is zero" }
+  stdin: "bin-sh\nusr-local-zsh\nplain-txt\n"
+expect:
+  stdout: "bin-sh\nusr-local-zsh\n0 2 5 2.500000n\n"
+  exit_code: 0

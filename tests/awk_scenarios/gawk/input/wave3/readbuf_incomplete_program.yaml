@@ -1,0 +1,17 @@
+description: an unterminated program read from a file is reported as a syntax error
+upstream:
+  suite: gawk
+  id: test/readbuf.awk
+  ref: gawk-5.4.0
+covers:
+  - source loaded from a program file must end with a complete rule
+  - an unexpected EOF while reading source returns a syntax-error exit status
+input:
+  program_file: unterminated.awk
+  program: |
+
+    {
+expect:
+  stderr_contains:
+    - unexpected newline or end of string
+  exit_code: 1

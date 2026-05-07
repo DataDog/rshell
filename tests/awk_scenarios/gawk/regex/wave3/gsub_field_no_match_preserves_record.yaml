@@ -1,0 +1,21 @@
+description: gsub on a field with no match does not rebuild away leading separators
+upstream:
+  suite: gawk
+  id: test/gsubtst7.awk
+  ref: gawk-5.4.0
+covers:
+  - gsub targeting a field reports no change when the pattern is absent
+  - a no-op field substitution does not rebuild $0
+input:
+  program: |
+    {
+      for (i = 1; i <= NF; i++) {
+        gsub(/absent/, "hit", $i)
+        print "[" $0 "]"
+      }
+    }
+  stdin: "  lead\n"
+expect:
+  stdout: |
+    [  lead]
+  exit_code: 0

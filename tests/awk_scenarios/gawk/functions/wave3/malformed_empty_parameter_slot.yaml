@@ -1,0 +1,22 @@
+description: Empty slots in a function parameter list are syntax errors
+upstream:
+  suite: gawk
+  id: test/noparms.awk
+  ref: gawk-5.4.0
+covers:
+  - function parameter lists cannot contain adjacent comma separators
+  - malformed parameter lists fail during parsing
+input:
+  program: |
+    function broken(first, , third) {
+      print first, third
+    }
+
+    BEGIN {
+      broken(1, 2)
+    }
+expect:
+  stderr_contains:
+    - "function broken(first, , third)"
+    - "syntax error"
+  exit_code: 1

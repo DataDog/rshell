@@ -1,0 +1,23 @@
+description: a dynamic SYMTAB key may update a global that is referenced elsewhere
+upstream:
+  suite: gawk
+  id: test/symtab8.awk
+  ref: gawk-5.4.0
+covers:
+  - SYMTAB assignment through a string subscript works for an existing global
+  - the updated global can drive an indirect field reference
+  - reading the same SYMTAB entry reflects the assigned value
+input:
+  program: |
+    {
+      SYMTAB[$1] = 3
+    }
+    END {
+      print $choice, SYMTAB["choice"]
+    }
+  stdin: |
+    choice one two
+expect:
+  stdout: |
+    two 3
+  exit_code: 0

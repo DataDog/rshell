@@ -1,0 +1,38 @@
+description: toggling RS at a paragraph boundary reaches end of input cleanly
+upstream:
+  suite: gawk
+  id: test/nulrsend.awk
+  ref: gawk-5.4.0
+covers:
+  - RS can switch from paragraph mode to newline mode during input
+  - switching RS back to paragraph mode near end of file does not hang
+input:
+  program: |
+    BEGIN {
+      RS = ""
+    }
+    NR == 1 {
+      print 1
+      RS = "\n"
+      next
+    }
+    NR == 2 {
+      print 2
+      RS = ""
+      next
+    }
+    NR == 3 {
+      print 3
+      RS = "\n"
+      next
+    }
+  stdin: |
+    1111
+
+    2222
+
+expect:
+  stdout: |
+    1
+    2
+  exit_code: 0

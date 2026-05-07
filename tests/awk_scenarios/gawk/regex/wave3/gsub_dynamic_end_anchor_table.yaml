@@ -1,0 +1,24 @@
+description: dynamic regexps with anchors produce the same trailing gsub matches
+upstream:
+  suite: gawk
+  id: test/gsubtst3.awk
+  ref: gawk-5.4.0
+covers:
+  - gsub accepts dynamic regexp strings
+  - dynamic end-anchor alternations replace the trailing empty match
+input:
+  program: |
+    {
+      re = $1
+      value = $2
+      gsub(re, "@", value)
+      print re ":" value
+    }
+  stdin: |
+    q|$ aqua
+    ^|x box
+expect:
+  stdout: |
+    q|$:a@ua@
+    ^|x:@bo@
+  exit_code: 0

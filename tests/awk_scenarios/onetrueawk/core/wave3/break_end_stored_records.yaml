@@ -1,0 +1,31 @@
+description: break stops an END-loop scan over stored records
+upstream:
+  suite: onetrueawk
+  id: testdir/t.break1
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "records can be stored for later END processing"
+  - "break exits the enclosing for loop in END"
+  - "the loop index keeps the value that triggered break"
+input:
+  program: |
+    { line[NR] = $0 }
+    END {
+      for (n = 1; n <= NR; n++) {
+        print "scan", n, line[n]
+        if (line[n] ~ /stop/) {
+          break
+        }
+      }
+      print "after", n, line[n]
+    }
+  stdin: |
+    alpha
+    beta stop here
+    gamma
+expect:
+  stdout: |
+    scan 1 alpha
+    scan 2 beta stop here
+    after 2 beta stop here
+  exit_code: 0

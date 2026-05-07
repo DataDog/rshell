@@ -1,0 +1,24 @@
+description: print and printf preserve a UTF-8 record without byte splitting
+upstream:
+  suite: gawk
+  id: test/mbprintf3.awk
+  ref: gawk-5.4.0
+covers:
+  - print emits multibyte input records intact
+  - printf percent-s emits the same multibyte record
+  - UTF-8 data survives record-to-format round trips
+input:
+  envs:
+    LC_ALL: en_US.UTF-8
+  program: |
+    {
+      print "[" $0 "]"
+      printf "[%s]\n", $0
+    }
+  stdin: |
+    café μ
+expect:
+  stdout: |
+    [café μ]
+    [café μ]
+  exit_code: 0

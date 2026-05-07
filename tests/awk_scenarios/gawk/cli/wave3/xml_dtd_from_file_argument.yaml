@@ -1,0 +1,72 @@
+description: an AWK XML scanner can summarize elements and attributes as DTD declarations
+upstream:
+  suite: gawk
+  id: test/dtdgport.awk
+  ref: gawk-5.4.0
+covers:
+  - AWK programs can read an XML input file named by ARGV
+  - element parent-child relationships can be accumulated in associative arrays
+  - attribute occurrence counts distinguish required and implied attributes
+setup:
+  files:
+    - path: catalog.xml
+      content: |
+        <catalog region="west">
+          <item sku="A1"><name>Alpha</name></item>
+          <item><name>Beta</name></item>
+        </catalog>
+input:
+  program: |
+    BEGIN {
+      file = ARGV[1]
+      ARGV[1] = ""
+      while ((getline line < file) > 0) {
+        while (match(line, /<[^>]+>/)) {
+          token = substr(line, RSTART + 1, RLENGTH - 2)
+          line = substr(line, RSTART + RLENGTH)
+          if (token ~ /^[/]/) {
+            depth--
+            continue
+          }
+          selfclose = (substr(token, length(token), 1) == "/")
+          sub(/[/]$/, "", token)
+          n = split(token, part, /[[:space:]]+/)
+          elem[part[1]]++
+          if (depth > 0)
+            child[stack[depth], part[1]] = 1
+          for (i = 2; i <= n; i++) {
+            split(part[i], kv, /=/)
+            if (kv[1] != "")
+              attr[part[1], kv[1]]++
+          }
+          if (! selfclose)
+            stack[++depth] = part[1]
+        }
+      }
+      close(file)
+      PROCINFO["sorted_in"] = "@ind_str_asc"
+      for (e in elem) {
+        kids = ""
+        for (k in child) {
+          split(k, pair, SUBSEP)
+          if (pair[1] == e)
+            kids = kids (kids == "" ? pair[2] : " | " pair[2])
+        }
+        print "<!ELEMENT", e, (kids == "" ? "(#PCDATA)>" : "(" kids ")*>")
+        for (a in attr) {
+          split(a, pair, SUBSEP)
+          if (pair[1] == e)
+            print "<!ATTLIST", e, pair[2], "CDATA", (attr[a] == elem[e] ? "#REQUIRED>" : "#IMPLIED>")
+        }
+      }
+    }
+  args:
+    - catalog.xml
+expect:
+  stdout: |
+    <!ELEMENT catalog (item)*>
+    <!ATTLIST catalog region CDATA #REQUIRED>
+    <!ELEMENT item (name)*>
+    <!ATTLIST item sku CDATA #IMPLIED>
+    <!ELEMENT name (#PCDATA)>
+  exit_code: 0

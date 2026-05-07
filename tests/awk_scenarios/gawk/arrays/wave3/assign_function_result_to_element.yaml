@@ -1,0 +1,23 @@
+description: assigning a scalar function result back to the source element succeeds
+upstream:
+  suite: gawk
+  id: test/mdim5.awk
+  ref: gawk-5.4.0
+covers:
+  - an unassigned array element can be passed as a scalar argument
+  - boolean tests on that argument see false
+  - the function result can be assigned back to the same array element
+input:
+  program: |
+    function choose(old) {
+      return old ? "kept" : "created"
+    }
+
+    BEGIN {
+      flags["zero"] = choose(flags["zero"])
+      print flags["zero"], typeof(flags["zero"])
+    }
+expect:
+  stdout: |
+    created string
+  exit_code: 0

@@ -1,0 +1,30 @@
+description: getline errors update ERRNO and PROCINFO errno without disturbing successful reads
+upstream:
+  suite: gawk
+  id: test/errno.awk
+  ref: gawk-5.4.0
+covers:
+  - a successful redirected getline leaves PROCINFO errno at zero
+  - closing an unopened redirection reports an ERRNO message without setting PROCINFO errno
+  - getline from an invalid nested path returns -1 and sets ERRNO
+setup:
+  files:
+    - path: plain.txt
+      content: |
+        alpha
+input:
+  program: |
+    BEGIN {
+      status = getline first < "plain.txt"
+      print "read", status, first, PROCINFO["errno"] + 0
+      rc = close("not-open.txt")
+      print "close", rc, PROCINFO["errno"] + 0, ERRNO
+      missing = (getline junk < "plain.txt/missing")
+      print "missing", missing, (PROCINFO["errno"] > 0), ERRNO
+    }
+expect:
+  stdout: |
+    read 1 alpha 0
+    close -1 0 close of redirection that was never opened
+    missing -1 1 Not a directory
+  exit_code: 0

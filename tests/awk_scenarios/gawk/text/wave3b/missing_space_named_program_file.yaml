@@ -1,0 +1,15 @@
+description: a source file name containing only a space is opened literally
+upstream:
+  suite: gawk
+  id: test/space.ok
+  ref: gawk-5.4.0
+covers:
+  - -f does not trim a source file operand that is a single space
+  - missing source files are fatal before input processing
+input:
+  program_file: " "
+expect:
+  stderr_contains:
+    - "cannot open source file"
+    - "No such file or directory"
+  exit_code: 2

@@ -1,0 +1,41 @@
+description: local split arrays coexist with scalar buffer parameters across records
+upstream:
+  suite: gawk
+  id: test/manglprm.awk
+  ref: gawk-5.4.0
+covers:
+  - scalar function parameters can be modified with gsub without changing globals
+  - a local array parameter can be reused as the split destination
+  - accumulated scalar buffers remain visible across records
+input:
+  program: |
+    function protect(text) {
+      gsub("\n", "|", text)
+      return text
+    }
+
+    function process_line(text, count, pieces) {
+      print "before=[" protect(buffer) "]"
+      buffer = buffer text "\n"
+      count = split(buffer, pieces, "\n")
+      print "parts", count, pieces[count - 1]
+    }
+
+    {
+      process_line($0)
+    }
+
+    END {
+      print "final=[" protect(buffer) "]"
+    }
+  stdin: |
+    alpha
+    beta
+expect:
+  stdout: |
+    before=[]
+    parts 2 alpha
+    before=[alpha|]
+    parts 3 beta
+    final=[alpha|beta|]
+  exit_code: 0

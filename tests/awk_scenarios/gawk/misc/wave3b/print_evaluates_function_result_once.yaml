@@ -1,0 +1,23 @@
+description: print evaluates a function result once before formatting it
+upstream:
+  suite: gawk
+  id: test/prt1eval.awk
+  ref: gawk-5.4.0
+covers:
+  - print evaluates a function call used as an argument
+  - function side effects happen exactly once
+  - OFMT controls numeric print formatting
+input:
+  program: |
+    function tst() {
+      sum += 1
+      return sum
+    }
+    BEGIN {
+      OFMT = "%.0f"
+      print tst()
+    }
+expect:
+  stdout: |
+    1
+  exit_code: 0

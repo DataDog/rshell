@@ -1,0 +1,27 @@
+description: dynamic regex cache churn does not corrupt a later sub replacement expression
+upstream:
+  suite: onetrueawk
+  id: testdir/T.recache
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "many runtime regular expressions can be evaluated before another match"
+  - "a sub replacement expression may evaluate a second dynamic regexp"
+  - "the original sub regexp still applies after cache churn"
+input:
+  program: |
+    BEGIN {
+      for (i = 1; i <= 80; i++) {
+        r = "q" i
+        "" ~ r
+        "" ~ r
+      }
+      x = "a"
+      first = "[Aa]"
+      second = "^A$"
+      sub(first, ("a" ~ second ? "B" : "b"), x)
+      print x
+    }
+expect:
+  stdout: |
+    b
+  exit_code: 0

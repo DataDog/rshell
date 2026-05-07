@@ -1,0 +1,22 @@
+description: PROCINFO NONFATAL keeps a failed output redirection from aborting the program
+upstream:
+  suite: gawk
+  id: test/nonfatal2.awk
+  ref: gawk-5.4.0
+covers:
+  - "PROCINFO[\"NONFATAL\"] makes output redirection failures nonfatal"
+  - "ERRNO records the failed redirection error"
+  - "execution continues after the failed print redirection"
+input:
+  program: |
+    BEGIN {
+      PROCINFO["NONFATAL"] = 1
+      print "payload" > "missing/out"
+      print "errno=" ERRNO
+      print "still-running"
+    }
+expect:
+  stdout: |
+    errno=No such file or directory
+    still-running
+  exit_code: 0

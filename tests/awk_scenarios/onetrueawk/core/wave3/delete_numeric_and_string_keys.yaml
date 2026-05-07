@@ -1,0 +1,25 @@
+description: delete works for numeric and string subscripts
+upstream:
+  suite: onetrueawk
+  id: testdir/t.delete1
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "numeric subscripts can be deleted"
+  - "string subscripts can be deleted"
+  - "remaining elements keep their values after unrelated deletes"
+input:
+  program: |
+    BEGIN {
+      cell[1] = "one"
+      cell[2.5] = "two"
+      cell["word"] = "three"
+      cell["10"]++
+      delete cell[1]
+      delete cell[2.5]
+      delete cell["word"]
+      print (1 in cell), (2.5 in cell), ("word" in cell), cell["10"]
+    }
+expect:
+  stdout: |
+    0 0 0 1
+  exit_code: 0

@@ -1,0 +1,26 @@
+description: match captures keep numeric-string comparison behavior
+upstream:
+  suite: gawk
+  id: test/match3.awk
+  ref: gawk-5.4.0
+covers:
+  - match can populate an array with the full matched text
+  - captured user input that looks numeric compares numerically
+input:
+  program: |
+    {
+      match($0, /^[-+]?[0-9]*\.?[0-9]+$/, parts)
+      print parts[0] == parts[0] + 0 ? "numeric" : "not numeric"
+    }
+  stdin: |
+    12
+    12.0
+    .75
+    +8.5
+expect:
+  stdout: |
+    numeric
+    numeric
+    numeric
+    numeric
+  exit_code: 0

@@ -1,0 +1,26 @@
+description: regular-expression operators handle anchors, alternation, brackets, and classes
+upstream:
+  suite: onetrueawk
+  id: testdir/T.re
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "anchored alternation matches only complete color-number records"
+  - "a bracket escaped inside a class is matched literally"
+  - "POSIX character classes participate in negated matches"
+input:
+  program: |
+    {
+      print $0, ($0 ~ /^(red|blue)[0-9]+$/), ($0 ~ /x[[]y/), ($0 !~ /[[:digit:]]/)
+    }
+  stdin: |
+    red12
+    blue
+    x[y
+    plain
+expect:
+  stdout: |
+    red12 1 0 0
+    blue 0 0 1
+    x[y 0 1 1
+    plain 0 0 1
+  exit_code: 0

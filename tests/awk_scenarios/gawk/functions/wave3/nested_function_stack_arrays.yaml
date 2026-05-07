@@ -1,0 +1,37 @@
+description: Nested function calls preserve array parameters through the call stack
+upstream:
+  suite: gawk
+  id: test/funstack.awk
+  ref: gawk-5.4.0
+covers:
+  - recursive user function calls can pass an array parameter through multiple stack frames
+  - local scalar variables in nested functions do not corrupt the shared array argument
+  - the final frame can read all elements written by earlier frames
+input:
+  program: |
+    function enter(n, trail) {
+      trail[n] = "E" n
+      if (n == 0)
+        return finish(trail)
+      return bounce(n - 1, trail) ":" trail[n]
+    }
+
+    function bounce(n, trail) {
+      return enter(n, trail)
+    }
+
+    function finish(trail,    i, out) {
+      for (i = 0; i <= 4; i++)
+        out = out (i ? "," : "") trail[i]
+      return out
+    }
+
+    BEGIN {
+      print enter(4, stack)
+      print length(stack)
+    }
+expect:
+  stdout: |
+    E0,E1,E2,E3,E4:E1:E2:E3:E4
+    5
+  exit_code: 0

@@ -1,0 +1,18 @@
+description: negating a beginning-character regex selects empty records
+upstream:
+  suite: onetrueawk
+  id: testdir/tt.09
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "regex /^./ matches nonempty records"
+  - "logical negation can select records that do not match"
+  - "empty input records still have an NR value"
+input:
+  program: |
+    ! /^./ { print "blank", NR }
+  stdin: "alpha\n\nbeta\n\n"
+expect:
+  stdout: |
+    blank 2
+    blank 4
+  exit_code: 0

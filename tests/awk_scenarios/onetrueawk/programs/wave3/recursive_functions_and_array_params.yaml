@@ -1,0 +1,31 @@
+description: user functions recurse and update array parameters by reference
+upstream:
+  suite: onetrueawk
+  id: testdir/T.func
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "recursive functions return numeric results"
+  - "array parameters updated inside a function are visible to callers"
+  - "END still runs after function-heavy record processing"
+input:
+  program: |
+    function fact(n) { return n < 2 ? 1 : n * fact(n - 1) }
+    function put(a, k, v) { a[k] = v }
+    BEGIN {
+      put(cache, "name", "delta")
+      print cache["name"]
+    }
+    { print $1, fact($1) }
+    END { print "done" }
+  stdin: |
+    0
+    4
+    6
+expect:
+  stdout: |
+    delta
+    0 1
+    4 24
+    6 720
+    done
+  exit_code: 0

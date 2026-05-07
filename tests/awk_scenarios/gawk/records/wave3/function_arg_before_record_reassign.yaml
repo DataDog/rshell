@@ -1,0 +1,21 @@
+description: function arguments keep old field values when the function reassigns $0
+upstream:
+  suite: gawk
+  id: test/setrec0.awk
+  ref: gawk-5.4.0
+covers:
+  - field arguments are evaluated before a function body reassigns $0
+  - reassigning $0 inside the function does not mutate the saved argument value
+input:
+  program: |
+    function reset_record(new_text, old_first) {
+      $0 = new_text
+      print old_first ":" $0
+    }
+    { reset_record("changed record", $1) }
+  stdin: |
+    alpha beta
+expect:
+  stdout: |
+    alpha:changed record
+  exit_code: 0

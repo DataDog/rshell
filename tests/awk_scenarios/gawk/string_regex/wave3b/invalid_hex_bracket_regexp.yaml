@@ -1,0 +1,17 @@
+description: a malformed bracket expression with a hex escape is rejected
+upstream:
+  suite: gawk
+  id: test/regexpbad.awk
+  ref: gawk-5.4.0
+covers:
+  - malformed bracket expressions are diagnosed during regexp compilation
+  - regexp compilation errors exit nonzero without stdout
+input:
+  program: |
+    BEGIN {
+      print match("a[", /^[^[]\x5b/)
+    }
+expect:
+  stderr_contains:
+    - "unbalanced ["
+  exit_code: 1

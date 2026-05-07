@@ -1,0 +1,28 @@
+description: string concatenation inside function parameters does not mutate the caller variable
+upstream:
+  suite: gawk
+  id: test/strcat1.awk
+  ref: gawk-5.4.0
+covers:
+  - scalar function parameters are passed by value
+  - concatenating onto a parameter can feed another function call
+  - caller scalar variables are unchanged by parameter concatenation
+input:
+  program: |
+    function wrap(x) {
+      x = x "-mid"
+      return suffix(x)
+    }
+    function suffix(y) {
+      return y "-end"
+    }
+    BEGIN {
+      value = "start"
+      print wrap(value)
+      print value
+    }
+expect:
+  stdout: |
+    start-mid-end
+    start
+  exit_code: 0

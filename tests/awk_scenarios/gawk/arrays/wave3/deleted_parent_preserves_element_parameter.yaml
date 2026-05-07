@@ -1,0 +1,30 @@
+description: deleting the parent array preserves the element parameter type
+upstream:
+  suite: gawk
+  id: test/ar2fn_fmod.awk
+  ref: gawk-5.4.0
+covers:
+  - a parameter bound to a missing array element survives parent array deletion
+  - scalar use through another function leaves the parameter unassigned
+  - delete of the parent keeps the global name classified as an array
+input:
+  program: |
+    function touch(value) {
+      value
+    }
+
+    function probe(slot) {
+      delete root
+      touch(slot)
+      print typeof(root)
+      print typeof(slot)
+    }
+
+    BEGIN {
+      probe(root["leaf"])
+    }
+expect:
+  stdout: |
+    array
+    unassigned
+  exit_code: 0

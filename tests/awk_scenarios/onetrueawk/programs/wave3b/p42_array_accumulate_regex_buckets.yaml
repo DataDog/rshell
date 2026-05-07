@@ -1,0 +1,26 @@
+description: regex-selected records accumulate into named array buckets
+upstream:
+  suite: onetrueawk
+  id: testdir/p.42
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "separate regex actions can update separate array elements"
+  - "uninitialized array elements start as numeric zero"
+  - "END prints accumulated array totals"
+input:
+  program: |
+    /Asia/ { pop["Asia"] += $3 }
+    /Africa/ { pop["Africa"] += $3 }
+    END {
+      print "Asian population in millions is", pop["Asia"]
+      print "African population in millions is", pop["Africa"]
+    }
+  stdin: |
+    Arden	10	3	Asia
+    Beryl	20	7	Africa
+    Cairn	30	11	South Asia
+expect:
+  stdout: |
+    Asian population in millions is 14
+    African population in millions is 7
+  exit_code: 0

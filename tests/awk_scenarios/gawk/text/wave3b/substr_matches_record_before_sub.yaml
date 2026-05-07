@@ -1,0 +1,28 @@
+description: substr comparisons still see the original record before sub mutates it
+upstream:
+  suite: gawk
+  id: test/widesub3.awk
+  ref: gawk-5.4.0
+covers:
+  - substr of a field and the full record agree before substitution
+  - sub without an explicit target mutates the current record
+input:
+  envs:
+    LC_ALL: en_US.UTF-8
+  program: |
+    {
+      if (substr($1, 1, 1) == substr($0, 1, 1))
+        print "substr matches"
+      sub(/foo/, "bar")
+      print nr++
+    }
+  stdin: |
+    test
+    foo
+expect:
+  stdout: |
+    substr matches
+    0
+    substr matches
+    1
+  exit_code: 0

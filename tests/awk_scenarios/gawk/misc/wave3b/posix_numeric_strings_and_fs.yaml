@@ -1,0 +1,47 @@
+description: POSIX numeric-string comparisons and delayed field splitting match gawk behavior
+upstream:
+  suite: gawk
+  id: test/posix.awk
+  ref: gawk-5.4.0
+covers:
+  - string constants with signs and spaces compare as strings until forced
+  - numeric coercion does not retroactively make those constants strnums
+  - array subscripts remain addressable after OFMT changes
+  - changing FS before field access controls how the current record splits
+input:
+  program: |
+    BEGIN {
+      a = "+2"; b = 2; c = "+2a"; d = "+2 "; e = " 2"
+      print (b == a), (b == c), (b == d), (b == e)
+      f = a + b + c + d + e
+      print (b == a), (b == c), (b == d), (b == e)
+      if ("3e5" > "5") print "lex greater"; else print "lex less"
+      x = 32.14
+      y[x] = "test"
+      OFMT = "%e"
+      print y[x]
+      x = x + 0
+      print y[x]
+      OFMT = "%f"
+      CONVFMT = "%e"
+      print 1.5, 1.5 ""
+    }
+    {
+      FS = ":"
+      print $1
+      FS = ","
+      print $2
+    }
+  stdin: |
+    1:2,3 4
+expect:
+  stdout: |
+    0 0 0 0
+    0 0 0 0
+    lex less
+    test
+    test
+    1.500000 1.500000e+00
+    1:2,3
+    4
+  exit_code: 0

@@ -1,0 +1,22 @@
+description: a BEGIN-time SYMTAB assignment can initialize an existing field selector
+upstream:
+  suite: gawk
+  id: test/symtab5.awk
+  ref: gawk-5.4.0
+covers:
+  - assigning an existing global through SYMTAB in BEGIN is allowed
+  - the assigned value is available to field references in record actions
+input:
+  program: |
+    BEGIN {
+      SYMTAB["col"] = 2
+    }
+    {
+      print $col
+    }
+  stdin: |
+    left middle right
+expect:
+  stdout: |
+    middle
+  exit_code: 0

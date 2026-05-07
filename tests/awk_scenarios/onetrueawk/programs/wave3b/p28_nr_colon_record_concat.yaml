@@ -1,0 +1,21 @@
+description: NR and the current record concatenate around a literal colon
+upstream:
+  suite: onetrueawk
+  id: testdir/p.28
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "NR increments for each input record"
+  - "string concatenation combines numbers, literals, and $0"
+input:
+  program: |
+    { print NR ":" $0 }
+  stdin: |
+    red
+    green
+    blue
+expect:
+  stdout: |
+    1:red
+    2:green
+    3:blue
+  exit_code: 0

@@ -1,0 +1,35 @@
+description: sorted iteration remains stable while another array is populated
+upstream:
+  suite: gawk
+  id: test/sortfor2.awk
+  ref: gawk-5.4.0
+covers:
+  - numeric index sorted_in order is used for for-in loops
+  - copying one array into another during sorted iteration does not disturb the source order
+  - a later loop over the source array still uses the selected sort mode
+input:
+  program: |
+    BEGIN {
+      PROCINFO["sorted_in"] = "@ind_num_asc"
+    }
+    {
+      a[$1] = 0
+    }
+    END {
+      for (i in a)
+        b[i] = a[i]
+      for (i in b)
+        scratch = a[i]
+      for (i in a)
+        print i
+    }
+  stdin: |
+    10
+    2
+    1
+expect:
+  stdout: |
+    1
+    2
+    10
+  exit_code: 0

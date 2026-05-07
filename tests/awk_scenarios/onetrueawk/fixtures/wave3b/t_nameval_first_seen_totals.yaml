@@ -1,0 +1,15 @@
+description: array totals print in first-seen key order
+upstream:
+  suite: onetrueawk
+  id: testdir/t.nameval
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "empty-string array lookup can identify first occurrence"
+  - "parallel arrays preserve first-seen names for END output"
+input:
+  program: |
+    { if (amount[$2] == "") name[++n] = $2; amount[$2] += $1 } END { for (i = 1; i <= n; i++) print name[i], amount[name[i]] }
+  stdin: "5 ada\n7 bob\n3 ada\n"
+expect:
+  stdout: "ada 8\nbob 7\n"
+  exit_code: 0

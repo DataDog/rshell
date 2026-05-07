@@ -1,0 +1,20 @@
+description: huge exponent strings overflow consistently when coerced through unary operators
+upstream:
+  suite: gawk
+  id: test/numrange.awk
+  ref: gawk-5.4.0
+covers:
+  - split creates numeric strings from huge exponent fields
+  - unary plus and unary minus coerce huge numeric strings to infinities
+input:
+  program: |
+    BEGIN {
+      n = split("-1.2e+931 1.2e+931", a)
+      for (i = 1; i <= n; i++)
+        print a[i], +a[i], -a[i]
+    }
+expect:
+  stdout: |
+    -1.2e+931 -inf +inf
+    1.2e+931 +inf -inf
+  exit_code: 0

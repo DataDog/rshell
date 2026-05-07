@@ -1,0 +1,14 @@
+description: a long string literal is preserved exactly
+upstream:
+  suite: onetrueawk
+  id: testdir/t.longstr
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "long string literals keep their length"
+  - "printing a long literal does not truncate or split it"
+input:
+  program: |
+    BEGIN { x = "alpha-0123456789-beta-ABCDEFGHIJ-gamma-klmnopqrst-delta-UVWXYZ"; print length(x); print x }
+expect:
+  stdout: "62\nalpha-0123456789-beta-ABCDEFGHIJ-gamma-klmnopqrst-delta-UVWXYZ\n"
+  exit_code: 0

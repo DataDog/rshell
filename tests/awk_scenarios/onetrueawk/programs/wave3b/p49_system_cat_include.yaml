@@ -1,0 +1,31 @@
+description: system executes a shell command built from fields on include records
+upstream:
+  suite: onetrueawk
+  id: testdir/p.49
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "field equality selects include directives"
+  - "system executes an external command"
+  - "system output is interleaved with awk stdout"
+setup:
+  files:
+    - path: first.txt
+      content: |
+        alpha
+        beta
+    - path: third.txt
+      content: |
+        gamma
+input:
+  program: |
+    $1 == "include" { system("cat " $2) }
+  stdin: |
+    include first.txt
+    skip second.txt
+    include third.txt
+expect:
+  stdout: |
+    alpha
+    beta
+    gamma
+  exit_code: 0

@@ -1,0 +1,16 @@
+description: word-wrapping state flushes on width and blank records
+upstream:
+  suite: onetrueawk
+  id: testdir/t.roff
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "state accumulated across fields can be flushed mid-record"
+  - "blank input records can flush accumulated output"
+  - "END flushes any final pending line"
+input:
+  program: |
+    NF { for (i = 1; i <= NF; i++) { w = $i; if (line != "" && length(line) + 1 + length(w) > 16) { print line; line = w } else line = (line == "" ? w : line " " w) } } !NF { if (line != "") print line; line = "" } END { if (line != "") print line }
+  stdin: "alpha beta gamma delta\n\nshort words fit\nlast line wraps here\n"
+expect:
+  stdout: "alpha beta gamma\ndelta\nshort words fit\nlast line wraps\nhere\n"
+  exit_code: 0

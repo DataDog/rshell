@@ -1,0 +1,17 @@
+description: match warns when a regexp constant is used as the first argument
+upstream:
+  suite: gawk
+  id: test/matchbadarg1.awk
+  ref: gawk-5.4.0
+covers:
+  - a regexp constant in match's first argument position is suspicious
+  - the warning is emitted even when no input record is processed
+input:
+  program: |
+    match(/task [[:alnum:]_]+/, $0) {
+      print "hit"
+    }
+expect:
+  stderr_contains:
+    - "match: regexp constant as first argument is probably not what you want"
+  exit_code: 0

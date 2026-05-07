@@ -1,0 +1,24 @@
+description: sprintf percent-c converts numeric fields and string fields to their first character
+upstream:
+  suite: gawk
+  id: test/sprintfc.awk
+  ref: gawk-5.4.0
+covers:
+  - numeric string fields are used as character code points for percent-c
+  - nonnumeric string fields use their first character for percent-c
+  - sprintf returns the converted character without printing by itself
+input:
+  envs:
+    LC_ALL: en_US.UTF-8
+  program: |
+    { print sprintf("%c", $1) ":" $1 }
+  stdin: |
+    67
+    Delta
+    9731
+expect:
+  stdout: |
+    C:67
+    D:Delta
+    ☃:9731
+  exit_code: 0

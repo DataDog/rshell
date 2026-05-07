@@ -1,0 +1,15 @@
+description: split using a literal FS preserves empty edge fields
+upstream:
+  suite: onetrueawk
+  id: testdir/t.split9a
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "FS set in BEGIN affects both fields and split"
+  - "split with a literal separator preserves leading and trailing empty fields"
+input:
+  program: |
+    BEGIN { FS = "a" } { n = split($0, x, FS); print n, NF, "<" x[1] ">", "<" x[n] ">"; if (n != NF) print "botch", NR, n, NF; for (i = 1; i <= n; i++) if ($i != x[i]) print "diff", i, x[i], $i }
+  stdin: "banana\nalpha\n"
+expect:
+  stdout: "4 4 <b> <>\n3 3 <> <>\n"
+  exit_code: 0

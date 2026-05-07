@@ -1,0 +1,21 @@
+description: toggling IGNORECASE changes regex RS matching for later records
+upstream:
+  suite: gawk
+  id: test/icasers.awk
+  ref: gawk-5.4.0
+covers:
+  - regular-expression RS observes IGNORECASE during input scanning
+  - changing IGNORECASE in an action affects subsequent record splitting
+input:
+  program: |
+    BEGIN { RS = "[[:upper:]\n]+" }
+    {
+      print "[" $0 "]"
+      IGNORECASE = !IGNORECASE
+    }
+  stdin: "77ZZ88qq"
+expect:
+  stdout: |
+    [77]
+    [88]
+  exit_code: 0

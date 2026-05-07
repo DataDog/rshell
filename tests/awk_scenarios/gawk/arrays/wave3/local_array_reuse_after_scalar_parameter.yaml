@@ -1,0 +1,28 @@
+description: local array parameters can be reused after earlier scalar parameter calls
+upstream:
+  suite: gawk
+  id: test/prmreuse.awk
+  ref: gawk-5.4.0
+covers:
+  - a function parameter used as a scalar does not poison later local array parameters
+  - split can populate a later local array parameter with the same call frame machinery
+  - the populated local array returns expected element values
+input:
+  program: |
+    function scalar(arg) {
+      return arg
+    }
+
+    function build(    scratch) {
+      split("red green blue", scratch)
+      return scratch[2] ":" length(scratch)
+    }
+
+    BEGIN {
+      scalar(7)
+      print build()
+    }
+expect:
+  stdout: |
+    green:3
+  exit_code: 0

@@ -1,0 +1,26 @@
+description: printf handles alternate form, zero precision, signs, and positional width together
+upstream:
+  suite: gawk
+  id: test/printf-corners.awk
+  ref: gawk-5.4.0
+covers:
+  - alternate octal and hexadecimal forms interact with explicit precision
+  - signed zero-precision integer formats may still print a sign or a blank
+  - positional width and precision arguments combine with integer conversion
+input:
+  program: |
+    BEGIN {
+      printf "<%#.3o>\n", 0
+      printf "<%#.2x>\n", 10
+      printf "<%+.d>|<% .d>|<%+.u>\n", 0, 0, 0
+      printf "<%#g>|<%#.f>\n", "0", "0"
+      printf "<%3$*2$.*1$d>\n", 4, 7, 23
+    }
+expect:
+  stdout: |
+    <000>
+    <0x0a>
+    <+>|< >|<>
+    <0.00000>|<0.>
+    <   0023>
+  exit_code: 0

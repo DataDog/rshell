@@ -1,0 +1,28 @@
+description: sub and gsub handle ampersands, repeated matches, and empty regexps
+upstream:
+  suite: onetrueawk
+  id: testdir/T.sub
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "sub replacement ampersands expand to the matched text"
+  - "gsub replaces non-overlapping matches"
+  - "an empty regexp visits string boundaries"
+input:
+  program: |
+    BEGIN {
+      s = "banana"
+      n = sub(/ana/, "(&)", s)
+      print n, s
+      s = "banana"
+      n = gsub(/ana/, "X", s)
+      print n, s
+      s = "abc"
+      gsub(//, "-", s)
+      print s
+    }
+expect:
+  stdout: |
+    1 b(ana)na
+    1 bXna
+    -a-b-c-
+  exit_code: 0

@@ -1,0 +1,25 @@
+description: interval regexps still match under traditional mode with re-interval enabled
+upstream:
+  suite: gawk
+  id: test/reginttrad.awk
+  ref: gawk-5.4.0
+covers:
+  - --traditional can be combined with -r to enable interval expressions
+  - an interval lower bound matches two or more repeated characters
+input:
+  awk_args:
+    - --traditional
+    - -r
+  program: |
+    BEGIN {
+      str1 = "aabbbc"
+      str2 = "aaabcc"
+      if (str1 ~ /b{2,}/)
+        print "str1"
+      if (str2 ~ /b{2,}/)
+        print "str2"
+    }
+expect:
+  stdout: |
+    str1
+  exit_code: 0

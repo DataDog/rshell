@@ -1,0 +1,36 @@
+description: regex record separators preserve the prior value across empty records
+upstream:
+  suite: gawk
+  id: test/rebuf.awk
+  ref: gawk-5.4.0
+covers:
+  - RS can be a regexp with an optional group
+  - records between repeated separators can be empty
+  - state from the previous nonempty record is preserved across empty records
+input:
+  program: |
+    BEGIN {
+      RS = "ti1\n(dwv,)?"
+      last = 0
+    }
+    {
+      if ($1 != "")
+        last = $1
+      print NR, last
+    }
+  stdin: |
+    ti1
+    dwv,10
+    ti1
+    dwv,20
+    ti1
+    ti1
+    dwv,30
+expect:
+  stdout: |
+    1 0
+    2 10
+    3 20
+    4 20
+    5 30
+  exit_code: 0

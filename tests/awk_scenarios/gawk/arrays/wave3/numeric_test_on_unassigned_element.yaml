@@ -1,0 +1,27 @@
+description: numeric predicates can inspect unassigned array element arguments
+upstream:
+  suite: gawk
+  id: test/mdim7.awk
+  ref: gawk-5.4.0
+covers:
+  - an unassigned array element can be passed to a numeric scalar function
+  - int conversion of the unassigned value behaves like zero
+  - later assigned numeric values follow the same predicate path
+input:
+  program: |
+    function truthy(value) {
+      if (value == int(value))
+        return int(value) != 0
+      return "fraction"
+    }
+
+    BEGIN {
+      print truthy(store["missing"])
+      store["missing"] = 5
+      print truthy(store["missing"])
+    }
+expect:
+  stdout: |
+    0
+    1
+  exit_code: 0

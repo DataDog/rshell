@@ -1,0 +1,15 @@
+description: field assignment rebuilds the record while saved field values stay unchanged
+upstream:
+  suite: onetrueawk
+  id: testdir/t.2.x
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "assigning $1 updates $0 and the addressed field"
+  - "variables assigned before field mutation keep their values"
+input:
+  program: |
+    { i = 2; j = $3; $1 = i; print i, j, $1, $0 }
+  stdin: "one two three\nalpha beta gamma\n"
+expect:
+  stdout: "2 three 2 2 two three\n2 gamma 2 2 beta gamma\n"
+  exit_code: 0

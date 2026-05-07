@@ -1,0 +1,35 @@
+description: bracket literals and character classes combine in match expressions
+upstream:
+  suite: gawk
+  id: test/rebrackloc.awk
+  ref: gawk-5.4.0
+covers:
+  - literal left and right brackets are accepted inside bracket expressions
+  - match captures around optional bracket or parenthesis prefixes
+  - POSIX upper character classes compose with bracket literals
+input:
+  program: |
+    match($0, /([Nn]ew) Value +[\([]? *([[:upper:]]+)/, f) {
+      print "name", NR, f[1], f[2]
+    }
+    match($0, /([][])/, f) {
+      print "bracket", NR, f[1]
+    }
+    /[\[]/ { print "left", NR }
+    /[]]/ { print "right", NR }
+    /[\([][[:upper:]]*/ { print "paren-or-bracket", NR }
+  stdin: |
+    New Value (ALPHA]
+    old value [BETA
+    new Value GAMMA
+expect:
+  stdout: |
+    name 1 New ALPHA
+    bracket 1 ]
+    right 1
+    paren-or-bracket 1
+    bracket 2 [
+    left 2
+    paren-or-bracket 2
+    name 3 new GAMMA
+  exit_code: 0

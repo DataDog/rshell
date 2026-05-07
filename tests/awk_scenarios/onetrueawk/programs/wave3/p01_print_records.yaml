@@ -1,0 +1,19 @@
+description: print records unchanged
+upstream:
+  suite: onetrueawk
+  id: testdir/p.1
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "print records unchanged"
+  - "uses original rshell fixture data rather than upstream country records"
+input:
+  program: |
+    { print $0 }
+  stdin: |
+    Mercury	1	rocky
+    Venus	2	cloudy
+expect:
+  stdout: |
+    Mercury	1	rocky
+    Venus	2	cloudy
+  exit_code: 0

@@ -1,0 +1,32 @@
+description: fields split across embedded newlines when RS is a non-newline character
+upstream:
+  suite: gawk
+  id: test/nlfldsep.awk
+  ref: gawk-5.4.0
+covers:
+  - a custom RS can create records containing embedded newlines
+  - the default FS treats embedded newlines as field separators
+input:
+  program: |
+    BEGIN { RS = "Z" }
+    {
+      print "NF=" NF
+      for (i = 1; i <= NF; i++)
+        print i ":" $i
+      print "--"
+    }
+  stdin: |
+    red blue
+    greenZ
+    solo
+expect:
+  stdout: |
+    NF=3
+    1:red
+    2:blue
+    3:green
+    --
+    NF=1
+    1:solo
+    --
+  exit_code: 0

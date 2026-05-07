@@ -1,0 +1,30 @@
+description: fields can be copied into an array and printed later
+upstream:
+  suite: onetrueawk
+  id: testdir/tt.13
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "for loops can copy each field into an array"
+  - "array elements preserve copied field values"
+  - "a second loop can emit stored elements in order"
+input:
+  program: |
+    {
+      for (i = 1; i <= NF; i++) {
+        cache[i] = $i
+      }
+      for (i = 1; i <= NF; i++) {
+        print "word", i, cache[i]
+      }
+    }
+  stdin: |
+    red blue
+    one two three
+expect:
+  stdout: |
+    word 1 red
+    word 2 blue
+    word 1 one
+    word 2 two
+    word 3 three
+  exit_code: 0

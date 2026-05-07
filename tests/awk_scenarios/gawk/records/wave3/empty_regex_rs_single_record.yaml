@@ -1,0 +1,24 @@
+description: empty-regex RS yields the available input as a record with empty RT
+upstream:
+  suite: gawk
+  id: test/rsnullre.awk
+  ref: gawk-5.4.0
+covers:
+  - RS can be assigned an empty regular expression
+  - input is still delivered as a record
+  - RT is empty for an empty-regex record separator
+input:
+  program: |
+    BEGIN { RS = "()" }
+    {
+      printf "record=<%s>\n", $0
+      printf "rt=<%s>\n", RT
+    }
+  stdin: |
+    bar
+expect:
+  stdout: |
+    record=<bar
+    >
+    rt=<>
+  exit_code: 0

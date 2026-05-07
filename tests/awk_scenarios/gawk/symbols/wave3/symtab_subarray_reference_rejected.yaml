@@ -1,0 +1,20 @@
+description: unknown SYMTAB entries cannot be created as subarrays
+upstream:
+  suite: gawk
+  id: test/symtab12.awk
+  ref: gawk-5.4.0
+covers:
+  - membership tests on SYMTAB are allowed
+  - assigning through a subarray of an unknown SYMTAB entry is fatal
+input:
+  program: |
+    BEGIN {
+      print ("ARGV" in SYMTAB)
+      SYMTAB["fresh"]["x"] = 1
+    }
+expect:
+  stdout: |
+    1
+  stderr_contains:
+    - "reference to uninitialized element `SYMTAB[\"fresh\"] is not allowed"
+  exit_code: 2

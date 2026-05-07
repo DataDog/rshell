@@ -1,0 +1,30 @@
+description: indirect function calls honor explicit namespace qualification
+upstream:
+  suite: gawk
+  id: test/nsindirect2.awk
+  ref: gawk-5.4.0
+covers:
+  - indirect calls can target a function in the awk namespace
+  - indirect calls can target a function in a non-awk namespace by qualified name
+  - unqualified indirect user function names resolve through the awk namespace
+input:
+  program: |
+    function root(n) { return n + 100 }
+
+    @namespace "calc"
+    function root(n) { return n * 2 }
+
+    BEGIN {
+      fn = "root"
+      print @fn(7)
+      fn = "awk::root"
+      print @fn(7)
+      fn = "calc::root"
+      print @fn(8)
+    }
+expect:
+  stdout: |
+    107
+    107
+    16
+  exit_code: 0

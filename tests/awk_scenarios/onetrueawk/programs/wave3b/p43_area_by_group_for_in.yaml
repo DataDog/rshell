@@ -1,0 +1,24 @@
+description: array keys derived from a field are accumulated and printed in END
+upstream:
+  suite: onetrueawk
+  id: testdir/p.43
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "BEGIN can set FS to tab"
+  - "array elements indexed by field values accumulate numeric fields"
+  - "for-in loops visit accumulated array keys"
+input:
+  program: |
+    BEGIN { FS = "	" }
+    { area[$4] += $2 }
+    END {
+      for (name in area)
+        print name ":" area[name]
+    }
+  stdin: |
+    Aster	40	12	inner
+    Mica	12	5	inner
+expect:
+  stdout: |
+    inner:52
+  exit_code: 0

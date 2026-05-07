@@ -1,0 +1,22 @@
+description: --csv splits quoted commas, doubled quotes, and trailing empty fields
+upstream:
+  suite: onetrueawk
+  id: testdir/T.csv
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "CSV mode treats commas inside quoted fields as data"
+  - "doubled quotes inside quoted fields become a single quote"
+  - "empty CSV fields at record edges are retained"
+input:
+  awk_args:
+    - --csv
+  program: |
+    { for (i = 1; i <= NF; i++) printf "<%s>", $i; print "|NF=" NF }
+  stdin: |
+    a,"b,c","d""e",
+    "",plain,,tail
+expect:
+  stdout: |
+    <a><b,c><d"e><>|NF=4
+    <><plain><><tail>|NF=4
+  exit_code: 0

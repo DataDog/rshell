@@ -1,0 +1,29 @@
+description: An indirect call result can be passed as an argument to another indirect call
+upstream:
+  suite: gawk
+  id: test/indirectcall3.awk
+  ref: gawk-5.4.0
+covers:
+  - indirect call expressions can appear inside another indirect call argument list
+  - nested indirect calls evaluate before the outer indirect call receives the value
+input:
+  program: |
+    function pair(a, b) {
+      return a ":" b
+    }
+
+    function upper(x) {
+      return toupper(x)
+    }
+
+    function nested(f1, f2, arg) {
+      return @f1(arg, @f2(arg))
+    }
+
+    BEGIN {
+      print nested("pair", "upper", "id")
+    }
+expect:
+  stdout: |
+    id:ID
+  exit_code: 0

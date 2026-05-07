@@ -1,0 +1,22 @@
+description: integer printf formats truncate numbers and honor very large precision
+upstream:
+  suite: gawk
+  id: test/intformat.awk
+  ref: gawk-5.4.0
+covers:
+  - integer formats truncate floating inputs toward zero
+  - alternate hexadecimal output prefixes nonzero values
+  - large integer precision pads with leading zeroes without failing
+input:
+  program: |
+    BEGIN {
+      printf "%d %d %#x\n", 12.9, -12.9, 47.2
+      printf "%.45d\n", 7
+      printf "%o %x\n", 2 ^ 10, 2 ^ 16 - 1
+    }
+expect:
+  stdout: |
+    12 -12 0x2f
+    000000000000000000000000000000000000000000007
+    2000 ffff
+  exit_code: 0

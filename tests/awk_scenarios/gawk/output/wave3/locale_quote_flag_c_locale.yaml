@@ -1,0 +1,23 @@
+description: the printf apostrophe flag is accepted in the C locale without grouping
+upstream:
+  suite: gawk
+  id: test/lc_num1.awk
+  ref: gawk-5.4.0
+covers:
+  - the apostrophe flag is accepted for decimal integer formatting
+  - the apostrophe flag is accepted for fixed floating formatting
+  - LC_ALL=C produces ungrouped numeric output
+input:
+  envs:
+    LC_ALL: C
+  program: |
+    BEGIN {
+      s = sprintf("%'d|%'0.1f", 9876, 9876.5)
+      print s
+      print (s ~ /^[0-9]+[|][0-9]+[.][0-9]$/ ? "ungrouped" : "grouped")
+    }
+expect:
+  stdout: |
+    9876|9876.5
+    ungrouped
+  exit_code: 0

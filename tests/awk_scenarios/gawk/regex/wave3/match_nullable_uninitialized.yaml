@@ -1,0 +1,17 @@
+description: match returns the first position for a nullable regexp on an empty value
+upstream:
+  suite: gawk
+  id: test/match4.awk
+  ref: gawk-5.4.0
+covers:
+  - uninitialized scalar values behave like empty strings for match
+  - a nullable regexp can match at position one with zero length
+input:
+  program: |
+    BEGIN {
+      print match(value, /z?/), RSTART, RLENGTH
+    }
+expect:
+  stdout: |
+    1 1 0
+  exit_code: 0

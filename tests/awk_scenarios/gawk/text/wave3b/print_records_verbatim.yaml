@@ -1,0 +1,21 @@
+description: default record printing preserves input text
+upstream:
+  suite: gawk
+  id: test/mmap8k.awk
+  ref: gawk-5.4.0
+covers:
+  - a bare print action emits each input record
+  - record contents are not changed by simple streaming
+input:
+  program: |
+    { print }
+  stdin: |
+    alpha 100
+    beta  200
+    gamma 300
+expect:
+  stdout: |
+    alpha 100
+    beta  200
+    gamma 300
+  exit_code: 0

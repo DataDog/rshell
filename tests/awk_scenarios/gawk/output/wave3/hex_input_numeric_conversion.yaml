@@ -1,0 +1,20 @@
+description: input strings with hex prefixes convert numerically through their decimal prefix
+upstream:
+  suite: gawk
+  id: test/hex2.awk
+  ref: gawk-5.4.0
+covers:
+  - ordinary input fields are not parsed as hexadecimal constants
+  - numeric conversion of 0x-prefixed fields stops before the x
+  - signed hexadecimal-looking fields also convert to zero through ordinary coercion
+input:
+  program: |
+    { print $1 + 11 }
+  stdin: |
+    0x9
+    -0x9
+expect:
+  stdout: |
+    11
+    11
+  exit_code: 0

@@ -1,0 +1,28 @@
+description: built-in math functions produce deterministic formatted values
+upstream:
+  suite: gawk
+  id: test/math.awk
+  ref: gawk-5.4.0
+covers:
+  - trigonometric functions operate on radians
+  - exp and log compose predictably
+  - sqrt and atan2 results format through printf
+input:
+  program: |
+    BEGIN {
+      pi = atan2(0, -1)
+      printf "cos=%.6f\n", cos(pi / 3)
+      printf "sin=%.6f\n", sin(pi / 6)
+      e = exp(1)
+      printf "log-exp=%.6f\n", log(e ^ 2)
+      printf "sqrt=%.6f\n", sqrt(144)
+      printf "atan2=%.6f\n", atan2(-1, 1)
+    }
+expect:
+  stdout: |
+    cos=0.500000
+    sin=0.500000
+    log-exp=2.000000
+    sqrt=12.000000
+    atan2=-0.785398
+  exit_code: 0

@@ -1,0 +1,19 @@
+description: a scalar created by sub cannot later be indexed as an array
+upstream:
+  suite: gawk
+  id: test/scalar.awk
+  ref: gawk-5.4.0
+covers:
+  - sub creates or uses its target as a scalar value
+  - indexing that scalar as an array is fatal
+input:
+  program: |
+    BEGIN {
+      sub(/x/, "", a)
+      a[1]
+    }
+expect:
+  stderr_contains:
+    - attempt to use scalar
+    - as an array
+  exit_code: 2

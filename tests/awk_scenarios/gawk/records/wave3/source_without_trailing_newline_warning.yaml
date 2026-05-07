@@ -1,0 +1,21 @@
+description: a program file without a trailing newline emits a warning
+upstream:
+  suite: gawk
+  id: test/nonl.awk
+  ref: gawk-5.4.0
+covers:
+  - gawk warns when a source file has no trailing newline
+  - the warning does not prevent a syntactically valid program from running
+input:
+  awk_args:
+    - --lint
+  program_file: no_newline.awk
+  program: "1"
+  stdin: |
+    visible
+expect:
+  stdout: |
+    visible
+  stderr_contains:
+    - "warning: source file does not end in newline"
+  exit_code: 0

@@ -1,0 +1,27 @@
+description: -f basename and -f basename.awk may load the same action source twice
+upstream:
+  suite: gawk
+  id: test/incdupe3.ok
+  ref: gawk-5.4.0
+covers:
+  - -f resolves a basename by adding the .awk suffix through AWKPATH
+  - the same action-only program source can be loaded twice
+  - BEGIN rules from both loaded sources run
+setup:
+  files:
+    - path: lib/greet.awk
+      content: |
+        BEGIN { print "hi from file" }
+input:
+  envs:
+    AWKPATH: lib
+  awk_args:
+    - --lint
+    - -f
+    - greet
+  program_file: greet.awk
+expect:
+  stdout: |
+    hi from file
+    hi from file
+  exit_code: 0

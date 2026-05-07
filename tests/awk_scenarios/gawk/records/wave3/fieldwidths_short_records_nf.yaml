@@ -1,0 +1,24 @@
+description: FIELDWIDTHS reports only fields present in short records
+upstream:
+  suite: gawk
+  id: test/fwtest5.awk
+  ref: gawk-5.4.0
+covers:
+  - a partial first fixed-width field still counts as one field
+  - NF stops at the last fixed-width field present in the record
+input:
+  program: |
+    BEGIN { FIELDWIDTHS = "3 2 5" }
+    { print length($0) ":" NF }
+  stdin: |
+    hi
+    abcde
+    abcdefghij
+    abcdefghijklm
+expect:
+  stdout: |
+    2:1
+    5:2
+    10:3
+    13:3
+  exit_code: 0

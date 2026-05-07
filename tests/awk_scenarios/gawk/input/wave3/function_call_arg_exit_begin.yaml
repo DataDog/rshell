@@ -1,0 +1,31 @@
+description: exit while evaluating a function argument in BEGIN skips the callee body
+upstream:
+  suite: gawk
+  id: test/fcall_exit.awk
+  ref: gawk-5.4.0
+covers:
+  - function arguments are evaluated before the callee body runs
+  - exit from an argument expression stops evaluation and still runs END
+input:
+  program: |
+    function stop_argument() {
+      print "stop argument"
+      exit 7
+    }
+    function collect(left, middle, right) {
+      print "callee should not run"
+    }
+    BEGIN {
+      print "before call"
+      collect("left", stop_argument(), "right")
+      print "after call"
+    }
+    END {
+      print "end"
+    }
+expect:
+  stdout: |
+    before call
+    stop argument
+    end
+  exit_code: 7

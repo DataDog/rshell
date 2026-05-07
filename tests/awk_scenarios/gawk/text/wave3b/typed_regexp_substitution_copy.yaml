@@ -1,0 +1,27 @@
+description: typed regexp values survive assignment and sub replacement
+upstream:
+  suite: gawk
+  id: test/memleak2.awk
+  ref: gawk-5.4.0
+covers:
+  - strongly typed regexp constants can be assigned to variables
+  - sub accepts a strongly typed regexp replacement value
+  - copying a typed regexp value preserves its regexp type
+input:
+  program: |
+    function exercise(r, q, rp, c, s) {
+      q = 3
+      rp = @/ /
+      for (c = 0; c < q; c++) {
+        s = r
+        sub(//, rp, s)
+      }
+      print typeof(s), length(s)
+    }
+    BEGIN {
+      exercise(@//)
+    }
+expect:
+  stdout: |
+    regexp 1
+  exit_code: 0

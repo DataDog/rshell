@@ -1,0 +1,23 @@
+description: a regexp stored in a variable can be used with !~
+upstream:
+  suite: onetrueawk
+  id: testdir/p.19
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "a regexp stored in a variable can be used with !~"
+  - "uses original rshell fixture data rather than upstream country records"
+input:
+  program: |
+    BEGIN { digits = "^[0-9]+$" }
+    $2 !~ digits { print $1 }
+  stdin: |
+    Aster	40	12	inner
+    Boreal	80	66	outer
+    Crux	55	101	outer
+    Dune	abc	9	Dune
+    Mica	12	5	inner
+    Nova	70	70	Nova
+expect:
+  stdout: |
+    Dune
+  exit_code: 0

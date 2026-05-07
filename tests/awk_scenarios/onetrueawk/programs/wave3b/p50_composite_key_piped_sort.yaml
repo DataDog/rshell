@@ -1,0 +1,29 @@
+description: composite array keys are sorted by group and numeric total
+upstream:
+  suite: onetrueawk
+  id: testdir/p.50
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "array subscripts can be built by string concatenation"
+  - "numeric fields accumulate under composite keys"
+  - "pipeline output can use a custom sort command"
+input:
+  program: |
+    BEGIN { FS = "	" }
+    { pop[$4 ":" $1] += $3 }
+    END {
+      for (cc in pop)
+        print cc ":" pop[cc] | "sort -t: -k 1,1 -k 3nr"
+    }
+  stdin: |
+    Aster	40	12	North
+    Boreal	80	66	North
+    Crux	55	101	South
+    Mica	12	5	South
+expect:
+  stdout: |
+    North:Boreal:66
+    North:Aster:12
+    South:Crux:101
+    South:Mica:5
+  exit_code: 0

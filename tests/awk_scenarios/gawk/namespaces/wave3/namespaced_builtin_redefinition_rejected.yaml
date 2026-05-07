@@ -1,0 +1,17 @@
+description: built-in functions cannot be redefined inside another namespace
+upstream:
+  suite: gawk
+  id: test/nsbad2.awk
+  ref: gawk-5.4.0
+covers:
+  - built-in function names remain reserved in non-awk namespaces
+  - attempts to define a namespaced built-in function are parse-time errors
+input:
+  program_file: bad_builtin.awk
+  program: |
+    @namespace "tools"
+    function length(x) { return x }
+expect:
+  stderr_contains:
+    - "`length' is a built-in function, it cannot be redefined"
+  exit_code: 1

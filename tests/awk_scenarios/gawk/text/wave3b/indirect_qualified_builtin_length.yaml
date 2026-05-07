@@ -1,0 +1,18 @@
+description: indirect calls can target a qualified awk builtin name
+upstream:
+  suite: gawk
+  id: test/memleak3.awk
+  ref: gawk-5.4.0
+covers:
+  - indirect call syntax accepts a string naming an awk namespace builtin
+  - length of an uninitialized argument through indirect dispatch is zero
+input:
+  program: |
+    BEGIN {
+      f = "awk::length"
+      print @f(thearg)
+    }
+expect:
+  stdout: |
+    0
+  exit_code: 0

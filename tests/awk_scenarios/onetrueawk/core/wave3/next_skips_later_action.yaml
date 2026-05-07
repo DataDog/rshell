@@ -1,0 +1,22 @@
+description: next skips later actions for the current record
+upstream:
+  suite: onetrueawk
+  id: testdir/t.next
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "next stops processing the current record"
+  - "subsequent rules run for later records"
+  - "NR still reflects skipped records"
+input:
+  program: |
+    $1 == "skip" { next }
+    { print "kept", NR, $0 }
+  stdin: |
+    keep alpha
+    skip beta
+    keep gamma
+expect:
+  stdout: |
+    kept 1 keep alpha
+    kept 3 keep gamma
+  exit_code: 0

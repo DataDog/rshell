@@ -1,0 +1,31 @@
+description: an unbounded for loop can use next after the last field
+upstream:
+  suite: onetrueawk
+  id: testdir/t.for2
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "for loops can omit the test expression"
+  - "next exits record processing from inside a loop"
+  - "field loops can emit all fields before advancing input"
+input:
+  program: |
+    {
+      for (i = 1; ; i++) {
+        if (i > NF) {
+          next
+        }
+        print "field", i, $i
+      }
+      print "unreachable"
+    }
+  stdin: |
+    a b
+    c d e
+expect:
+  stdout: |
+    field 1 a
+    field 2 b
+    field 1 c
+    field 2 d
+    field 3 e
+  exit_code: 0

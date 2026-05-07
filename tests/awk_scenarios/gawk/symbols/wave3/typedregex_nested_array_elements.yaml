@@ -1,0 +1,29 @@
+description: strong regexp array elements keep their type unless the element is assigned
+upstream:
+  suite: gawk
+  id: test/typedregex3.awk
+  ref: gawk-5.4.0
+covers:
+  - array elements can hold strongly typed regexp values
+  - nested array elements can hold strongly typed regexp values
+  - assigning numeric coercion changes only the targeted element
+input:
+  program: |
+    BEGIN {
+      bank["one"] = @/sun/
+      bank["deep"]["leaf"] = @/moon/
+      print typeof(bank["one"]), typeof(bank["deep"]["leaf"])
+      print bank["one"], bank["deep"]["leaf"]
+
+      bank["one"] += 0
+      text = bank["deep"]["leaf"] ""
+      print typeof(bank["one"]), typeof(bank["deep"]["leaf"]), typeof(text)
+      print bank["one"], bank["deep"]["leaf"], text
+    }
+expect:
+  stdout: |
+    regexp regexp
+    sun moon
+    number regexp string
+    0 moon moon
+  exit_code: 0

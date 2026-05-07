@@ -1,0 +1,17 @@
+description: Assigning to a FUNCTAB element is fatal
+upstream:
+  suite: gawk
+  id: test/functab2.awk
+  ref: gawk-5.4.0
+covers:
+  - FUNCTAB elements cannot be overwritten
+  - assignment to a built-in function entry is rejected at runtime
+input:
+  program: |
+    BEGIN {
+      FUNCTAB["length"] = "not_length"
+    }
+expect:
+  stderr_contains:
+    - "fatal: cannot assign to elements of FUNCTAB"
+  exit_code: 2

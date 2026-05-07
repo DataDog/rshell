@@ -1,0 +1,15 @@
+description: anchored optional regex chains recognize monotone letter runs
+upstream:
+  suite: onetrueawk
+  id: testdir/t.monotone
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "anchored alternation can match increasing or decreasing runs"
+  - "non-matching permutations are excluded"
+input:
+  program: |
+    /^(a*b*c*|c*b*a*)$/ { print "monotone", $0 }
+  stdin: "abc\naaabbc\ncba\nacb\nzz\n\n"
+expect:
+  stdout: "monotone abc\nmonotone aaabbc\nmonotone cba\nmonotone \n"
+  exit_code: 0

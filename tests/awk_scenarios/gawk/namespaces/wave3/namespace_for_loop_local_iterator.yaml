@@ -1,0 +1,29 @@
+description: namespace functions can iterate namespace globals with local loop variables
+upstream:
+  suite: gawk
+  id: test/nsforloop.awk
+  ref: gawk-5.4.0
+covers:
+  - unqualified array names inside a namespace function resolve to that namespace
+  - for-in loop variables can be function parameters or locals
+  - PROCINFO sorted_in makes namespace array iteration deterministic
+input:
+  program: |
+    @namespace "box"
+
+    function dump(k) {
+      PROCINFO["sorted_in"] = "@ind_num_asc"
+      for (k in Items)
+        print k ":" Items[k]
+    }
+
+    BEGIN {
+      Items[2] = "two"
+      Items[1] = "one"
+      dump()
+    }
+expect:
+  stdout: |
+    1:one
+    2:two
+  exit_code: 0

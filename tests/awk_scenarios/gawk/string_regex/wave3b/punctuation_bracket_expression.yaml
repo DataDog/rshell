@@ -1,0 +1,21 @@
+description: bracket expressions can include punctuation and a literal closing bracket
+upstream:
+  suite: gawk
+  id: test/regexpbrack.awk
+  ref: gawk-5.4.0
+covers:
+  - a literal closing bracket can be the first member of a bracket expression
+  - punctuation-heavy bracket expressions match at the end of a record
+input:
+  program: |
+    /[]+()0-9.,$%/'"-]*$/ { print "tail", NR }
+    /^[]+()0-9.,$%/'"-]*$/ { print "whole", NR }
+  stdin: |
+    ]+)0-9.,$%'-
+    abc]+)
+expect:
+  stdout: |
+    tail 1
+    whole 1
+    tail 2
+  exit_code: 0

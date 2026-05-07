@@ -1,0 +1,30 @@
+description: 8-bit byte strings match octal escapes and byte ranges in the C locale
+upstream:
+  suite: onetrueawk
+  id: testdir/T.latin1
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "sprintf percent-c can create Latin-1 byte values"
+  - "octal escapes match those byte values in regexps"
+  - "byte range character classes can retain only 8-bit values"
+input:
+  program: |
+    BEGIN {
+      eacute = sprintf("%c", 233)
+      oslash = sprintf("%c", 248)
+      s = "caf" eacute " and sm" oslash "r"
+      print length(s)
+      t = s
+      gsub(/\351/, "e", t)
+      gsub(/\370/, "o", t)
+      print t
+      u = s
+      gsub(/[^\300-\370]/, "", u)
+      print length(u)
+    }
+expect:
+  stdout: |
+    13
+    cafe and smor
+    2
+  exit_code: 0

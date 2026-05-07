@@ -1,0 +1,22 @@
+description: OFS and ORS customize print separators and record terminators
+upstream:
+  suite: onetrueawk
+  id: testdir/p.45
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "OFS separates comma-delimited print arguments"
+  - "ORS is appended after each print statement"
+input:
+  program: |
+    BEGIN { OFS = ":"; ORS = "\n\n" }
+    { print $1, $2 }
+  stdin: |
+    red 10
+    blue 20
+expect:
+  stdout: |+
+    red:10
+
+    blue:20
+
+  exit_code: 0

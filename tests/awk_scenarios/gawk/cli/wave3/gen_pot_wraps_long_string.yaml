@@ -1,0 +1,23 @@
+description: --gen-pot emits wrapped gettext strings without dropping text
+upstream:
+  suite: gawk
+  id: test/genpot.awk
+  ref: gawk-5.4.0
+covers:
+  - --gen-pot extracts marked strings from program files
+  - generated POT output wraps long msgid text across adjacent string fragments
+  - wrapping preserves text at the split points
+input:
+  awk_args:
+    - --gen-pot
+  program_file: po_case.awk
+  program: |
+    { print _"A deliberately long translatable sentence for checking that generated POT output wraps the literal without dropping bytes near the split point." }
+expect:
+  stdout_contains:
+    - "#: po_case.awk:1"
+    - "msgid \"A deliberately long translatable sentence for checking that generated\""
+    - "\" POT output wraps the literal without dropping bytes near the split po\""
+    - "\"int.\""
+    - "msgstr \"\""
+  exit_code: 0

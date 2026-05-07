@@ -1,0 +1,28 @@
+description: dynamic regex strings can hold bracket classes
+upstream:
+  suite: onetrueawk
+  id: testdir/t.re1a
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "string variables can be used as regex patterns"
+  - "dynamic bracket ranges match included characters"
+  - "dynamic negated classes match characters outside the set"
+input:
+  program: |
+    BEGIN {
+      r1 = "[m-p7-9]"
+      r2 = "[^abc]"
+    }
+    $0 ~ r1 { print "class", $0 }
+    $0 ~ r2 { print "notabc", $0 }
+  stdin: |
+    aaa
+    moon
+    78
+expect:
+  stdout: |
+    class moon
+    notabc moon
+    class 78
+    notabc 78
+  exit_code: 0

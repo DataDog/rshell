@@ -1,0 +1,24 @@
+description: ranges with the same start and end regex match single records
+upstream:
+  suite: onetrueawk
+  id: testdir/t.pp1
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "a range can use the same regex for start and end"
+  - "multiple range rules can run on one input stream"
+  - "matching range actions can inspect fields"
+input:
+  program: |
+    /red/,/red/ { print "r", $1 }
+    /blue/,/blue/ { print "b", $1 }
+  stdin: |
+    red apple
+    green pear
+    blue plum
+    red cherry
+expect:
+  stdout: |
+    r red
+    b blue
+    r red
+  exit_code: 0

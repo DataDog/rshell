@@ -1,0 +1,19 @@
+description: split handles the destination array also being the source array
+upstream:
+  suite: gawk
+  id: test/splitarr.awk
+  ref: gawk-5.4.0
+covers:
+  - split evaluates source and separator values before replacing destination array contents
+  - split can reuse an existing array as its destination
+input:
+  program: |
+    BEGIN {
+      a[1] = "elephantie"
+      a[2] = "e"
+      print split(a[1], a, a[2]), a[2], a[3], split(a[2], a, a[2])
+    }
+expect:
+  stdout: |
+    4 l phanti 2
+  exit_code: 0

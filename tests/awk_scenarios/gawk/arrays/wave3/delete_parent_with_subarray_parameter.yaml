@@ -1,0 +1,27 @@
+description: subarray parameters remain usable after the parent array is deleted
+upstream:
+  suite: gawk
+  id: test/delsub.awk
+  ref: gawk-5.4.0
+covers:
+  - a function can receive both an array and one of its subarrays
+  - deleting the parent array does not crash later subarray parameter reads
+  - reads through the detached subarray parameter produce empty scalar values
+input:
+  program: |
+    function zap(root, branch, tmp) {
+      delete root
+      tmp = branch["leaf"]
+      print typeof(branch), "[" tmp "]"
+    }
+
+    BEGIN {
+      tree["node"]["leaf"] = "green"
+      zap(tree, tree["node"])
+      print "still here"
+    }
+expect:
+  stdout: |
+    array []
+    still here
+  exit_code: 0

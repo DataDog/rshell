@@ -1,0 +1,33 @@
+description: colon-separated input is grouped when the first field changes
+upstream:
+  suite: onetrueawk
+  id: testdir/p.51
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "BEGIN can set FS to colon"
+  - "state tracks when a grouping field changes"
+  - "printf formats indented rows under each group"
+input:
+  program: |
+    BEGIN { FS = ":" }
+    {
+      if ($1 != prev) {
+        print "\n" $1 ":"
+        prev = $1
+      }
+      printf ">%-10s %6d\n", $2, $3
+    }
+  stdin: |
+    North:June:12
+    North:July:18
+    South:May:5
+expect:
+  stdout: |
+
+    North:
+    >June           12
+    >July           18
+
+    South:
+    >May             5
+  exit_code: 0

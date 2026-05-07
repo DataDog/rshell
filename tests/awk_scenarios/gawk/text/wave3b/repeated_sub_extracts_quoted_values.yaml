@@ -1,0 +1,27 @@
+description: repeated sub calls can peel key names and quoted values
+upstream:
+  suite: gawk
+  id: test/widesub.awk
+  ref: gawk-5.4.0
+covers:
+  - sub can remove a prefix from a working string repeatedly
+  - substr after sub sees the updated string contents
+input:
+  envs:
+    LC_ALL: en_US.UTF-8
+  program: |
+    BEGIN {
+      str = "type=\"directory\" version=\"1.0\""
+      while (str) {
+        sub(/^[^=]*/, "", str)
+        s = substr(str, 2)
+        print s
+        sub(/^="[^"]*"/, "", str)
+        sub(/^[ \t]*/, "", str)
+      }
+    }
+expect:
+  stdout: |
+    "directory" version="1.0"
+    "1.0"
+  exit_code: 0

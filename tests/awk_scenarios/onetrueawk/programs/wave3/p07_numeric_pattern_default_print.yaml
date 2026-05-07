@@ -1,0 +1,24 @@
+description: numeric field patterns select matching records
+upstream:
+  suite: onetrueawk
+  id: testdir/p.7
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "numeric field patterns select matching records"
+  - "uses original rshell fixture data rather than upstream country records"
+input:
+  program: |
+    $3 >= 50 { print $1, $3 }
+  stdin: |
+    Aster	40	12	inner
+    Boreal	80	66	outer
+    Crux	55	101	outer
+    Dune	abc	9	Dune
+    Mica	12	5	inner
+    Nova	70	70	Nova
+expect:
+  stdout: |
+    Boreal 66
+    Crux 101
+    Nova 70
+  exit_code: 0

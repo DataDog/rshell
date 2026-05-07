@@ -1,0 +1,15 @@
+description: BEGIN-only programs print their output without input records
+upstream:
+  suite: gawk
+  id: test/hello.awk
+  ref: gawk-5.4.0
+covers:
+  - BEGIN actions run before input is read
+  - print emits a trailing record separator
+input:
+  program: |
+    BEGIN { print "Hello" }
+expect:
+  stdout: |
+    Hello
+  exit_code: 0

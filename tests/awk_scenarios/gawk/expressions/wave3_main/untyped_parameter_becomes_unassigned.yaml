@@ -1,0 +1,24 @@
+description: passing an uninitialized scalar to a function preserves untyped until value use
+upstream:
+  suite: gawk
+  id: test/stupid3.awk
+  ref: gawk-5.4.0
+covers:
+  - uninitialized actual arguments arrive as untyped parameters
+  - evaluating the parameter changes it to unassigned
+input:
+  program: |
+    BEGIN { probe(missing) }
+    function probe(p) {
+      show(p)
+      p
+      show(p)
+    }
+    function show(v) {
+      print typeof(v)
+    }
+expect:
+  stdout: |
+    untyped
+    unassigned
+  exit_code: 0

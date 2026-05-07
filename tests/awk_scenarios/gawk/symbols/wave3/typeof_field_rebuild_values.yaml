@@ -1,0 +1,31 @@
+description: typeof reports unassigned fields and string fields after record rebuild
+upstream:
+  suite: gawk
+  id: test/typeof5.awk
+  ref: gawk-5.4.0
+covers:
+  - fields are unassigned before any input record is read
+  - missing fields in a record report unassigned
+  - assigning a field from another field creates a string-valued field and rebuilds $0
+input:
+  program: |
+    BEGIN {
+      print typeof($0)
+      print typeof($1)
+    }
+    {
+      print typeof($3)
+      $4 = $2
+      print typeof($4)
+      print $0
+    }
+  stdin: |
+    9 blue
+expect:
+  stdout: |
+    unassigned
+    unassigned
+    unassigned
+    string
+    9 blue  blue
+  exit_code: 0

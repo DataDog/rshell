@@ -1,0 +1,21 @@
+description: malformed namespace separators in -v assignments are rejected
+upstream:
+  suite: gawk
+  id: test/nsbad_cmd.ok
+  ref: gawk-5.4.0
+covers:
+  - a single colon is not accepted as a namespace separator
+  - triple-colon qualified names are rejected before program execution
+input:
+  awk_args:
+    - -v
+    - team:name=3
+    - -v
+    - team:::name=4
+  program: |
+    BEGIN { print "unreached" }
+expect:
+  stderr_contains:
+    - "namespace separator is two colons, not one"
+    - "qualified identifier `team:::name' is badly formed"
+  exit_code: 1

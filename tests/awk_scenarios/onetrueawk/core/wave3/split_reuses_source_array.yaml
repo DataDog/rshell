@@ -1,0 +1,19 @@
+description: split can replace the array that supplied the source string
+upstream:
+  suite: onetrueawk
+  id: testdir/t.split2a
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "an array element can supply the string passed to split"
+  - "split clears and repopulates the destination array"
+  - "the split return value reports the new element count"
+input:
+  program: |
+    BEGIN {
+      data[2] = "left right"
+      print split(data[2], data), data[1], data[2]
+    }
+expect:
+  stdout: |
+    2 left right
+  exit_code: 0

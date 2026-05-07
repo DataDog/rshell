@@ -1,0 +1,22 @@
+description: printf string widths count multibyte characters for left and right padding
+upstream:
+  suite: gawk
+  id: test/mbprintf1.awk
+  ref: gawk-5.4.0
+covers:
+  - UTF-8 strings are padded by character width rather than byte count
+  - left-adjusted string fields pad after multibyte text
+  - right-adjusted string fields pad before multibyte text
+input:
+  envs:
+    LC_ALL: en_US.UTF-8
+  program: |
+    { printf "%-6s|%6s|\n", $0, $0 }
+  stdin: |
+    éé
+    猫
+expect:
+  stdout: |
+    éé    |    éé|
+    猫     |     猫|
+  exit_code: 0

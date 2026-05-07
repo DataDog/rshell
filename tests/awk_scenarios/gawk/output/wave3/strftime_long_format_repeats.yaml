@@ -1,0 +1,22 @@
+description: strftime emits a long repeated format string without truncating it
+upstream:
+  suite: gawk
+  id: test/strftlng.awk
+  ref: gawk-5.4.0
+covers:
+  - strftime accepts a format string assembled at runtime
+  - long format strings can contain many repeated directives
+  - the full expanded string is printed on one line
+input:
+  envs:
+    TZ: UTC
+  program: |
+    BEGIN {
+      fmt = "%Y/%m/%d"
+      for (i = 1; i <= 12; i++) fmt = fmt " %H:%M:%S"
+      print strftime(fmt, 0)
+    }
+expect:
+  stdout: |
+    1970/01/01 00:00:00 00:00:00 00:00:00 00:00:00 00:00:00 00:00:00 00:00:00 00:00:00 00:00:00 00:00:00 00:00:00 00:00:00
+  exit_code: 0

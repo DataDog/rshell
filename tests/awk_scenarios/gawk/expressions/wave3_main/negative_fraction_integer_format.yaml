@@ -1,0 +1,21 @@
+description: integer formatting of negative fractional values truncates to zero
+upstream:
+  suite: gawk
+  id: test/zero2.awk
+  ref: gawk-5.4.0
+covers:
+  - printf integer conversion truncates negative fractions toward zero
+  - negative zero formats as integer zero
+input:
+  program: |
+    BEGIN {
+      printf "%d\n", -.2
+      printf "%d\n", -0.0
+      printf "%d\n", -.8
+    }
+expect:
+  stdout: |
+    0
+    0
+    0
+  exit_code: 0

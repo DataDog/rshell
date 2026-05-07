@@ -1,0 +1,21 @@
+description: invalid and reserved namespace names are rejected
+upstream:
+  suite: gawk
+  id: test/nsbad.awk
+  ref: gawk-5.4.0
+covers:
+  - namespace names must meet identifier naming rules
+  - reserved words are not valid namespace names
+  - reserved built-in names cannot be used as the second qualified component
+input:
+  program_file: bad_namespace.awk
+  program: |
+    @namespace "9bad"
+    @namespace "while"
+    BEGIN { demo::match = 1 }
+expect:
+  stderr_contains:
+    - "namespace name `9bad' must meet identifier naming rules"
+    - "using reserved identifier `while' as a namespace is not allowed"
+    - "using reserved identifier `match' as second component of a qualified name is not allowed"
+  exit_code: 1

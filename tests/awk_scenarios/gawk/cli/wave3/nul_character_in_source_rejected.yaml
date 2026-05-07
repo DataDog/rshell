@@ -1,0 +1,16 @@
+description: NUL bytes in program source are rejected as fatal source errors
+upstream:
+  suite: gawk
+  id: test/nulinsrc.awk
+  ref: gawk-5.4.0
+covers:
+  - program files may contain bytes that are not valid AWK source
+  - a NUL byte in source produces a fatal invalid-character diagnostic
+input:
+  program_file: nul_source.awk
+  program: "BEGIN { print \"before\" }\0\n"
+expect:
+  stderr_contains:
+    - "invalid character"
+    - "\\000"
+  exit_code: 2

@@ -1,0 +1,15 @@
+description: printf %+d emits an explicit plus sign for positive decimal values
+upstream:
+  suite: gawk
+  id: test/pcntplus.awk
+  ref: gawk-5.4.0
+covers:
+  - printf recognizes the + flag for signed decimal conversion
+  - ordinary decimal conversion omits the plus sign
+input:
+  program: |
+    BEGIN { printf "%+d %d\n", 3, 4 }
+expect:
+  stdout: |
+    +3 4
+  exit_code: 0

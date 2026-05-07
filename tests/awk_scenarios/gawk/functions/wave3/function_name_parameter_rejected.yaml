@@ -1,0 +1,25 @@
+description: A function cannot declare a parameter with the same name as itself
+upstream:
+  suite: gawk
+  id: test/funsmnam.awk
+  ref: gawk-5.4.0
+covers:
+  - parameter declarations share the function symbol namespace
+  - a continued parameter list is checked for reuse of the function name
+input:
+  program_file: function_name_parameter.awk
+  program: |
+    function again( \
+      again)
+    {
+      print again
+    }
+
+    BEGIN {
+      again("value")
+    }
+expect:
+  stderr_contains:
+    - "function `again'"
+    - "cannot use function name as parameter name"
+  exit_code: 1

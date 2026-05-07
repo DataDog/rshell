@@ -1,0 +1,33 @@
+description: nextfile skips the rest of each current input file
+upstream:
+  suite: onetrueawk
+  id: testdir/T.nextfile
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "nextfile advances from the first record of one file to the next file"
+  - "records after nextfile in the skipped file are not processed"
+  - "NR reflects only records actually read before each nextfile"
+setup:
+  files:
+    - path: a.txt
+      content: |
+        a1
+        a2
+    - path: b.txt
+      content: |
+        b1
+        b2
+input:
+  program: |
+    FNR == 1 { print FILENAME ":" $0; nextfile }
+    { print "skip", $0 }
+    END { print "records", NR }
+  args:
+    - a.txt
+    - b.txt
+expect:
+  stdout: |
+    a.txt:a1
+    b.txt:b1
+    records 2
+  exit_code: 0

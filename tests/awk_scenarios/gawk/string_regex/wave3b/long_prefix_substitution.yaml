@@ -1,0 +1,20 @@
+description: anchored greedy substitution handles a long prefix before the final marker
+upstream:
+  suite: gawk
+  id: test/longsub.awk
+  ref: gawk-5.4.0
+covers:
+  - sub uses the leftmost longest match for an anchored greedy regexp
+  - replacement after a long prefix preserves the suffix after the final marker
+input:
+  program: |
+    {
+      sub(/^.*AA/, "BB")
+      print length($0), substr($0, 1, 8), substr($0, length($0) - 2)
+    }
+  stdin: |
+    AAxxxxxxxxxxxxxxxxxxxxAAzz
+expect:
+  stdout: |
+    4 BBzz Bzz
+  exit_code: 0

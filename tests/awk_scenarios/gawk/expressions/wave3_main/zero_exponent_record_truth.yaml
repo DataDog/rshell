@@ -1,0 +1,21 @@
+description: zero-exponent-looking strings remain true when nonempty
+upstream:
+  suite: gawk
+  id: test/zeroe0.awk
+  ref: gawk-5.4.0
+covers:
+  - nonempty numeric-looking records are true in boolean context
+  - assigned fields with zero-exponent-looking text are true in boolean context
+input:
+  program: |
+    BEGIN {
+      $0 = "00E5"
+      print $0, ($0 && 1), ($0 != "")
+      $1 = "00E7"
+      print $1, ($1 && 1), ($1 != "")
+    }
+expect:
+  stdout: |
+    00E5 1 1
+    00E7 1 1
+  exit_code: 0

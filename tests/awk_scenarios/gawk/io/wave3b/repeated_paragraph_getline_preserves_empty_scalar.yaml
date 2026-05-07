@@ -1,0 +1,39 @@
+description: repeated paragraph-mode getline operations do not create data in unrelated scalars
+upstream:
+  suite: gawk
+  id: test/rstest5.awk
+  ref: gawk-5.4.0
+covers:
+  - "paragraph-mode getline updates $0 for each source"
+  - "closing a redirection allows rereading a paragraph file"
+  - "uninitialized scalars remain empty after repeated getline calls"
+setup:
+  files:
+    - path: foo.txt
+      content: |
+        foo
+
+        baz
+    - path: bar.txt
+      content: |
+        bar
+
+        baz
+input:
+  program: |
+    BEGIN {
+      RS = ""
+      getline < "foo.txt"; print
+      close("foo.txt")
+      getline < "foo.txt"; print
+      close("foo.txt")
+      getline < "bar.txt"; print
+      printf "x = <%s>\n", x
+    }
+expect:
+  stdout: |
+    foo
+    foo
+    bar
+    x = <>
+  exit_code: 0

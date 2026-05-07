@@ -1,0 +1,29 @@
+description: a scalar copy of an unassigned element cannot later become a subarray
+upstream:
+  suite: gawk
+  id: test/mdim1.awk
+  ref: gawk-5.4.0
+covers:
+  - missing multidimensional elements start untyped
+  - scalar assignment from a missing element produces an unassigned scalar
+  - a sibling element can become a subarray
+  - the scalar copy cannot be indexed as an array later
+input:
+  program: |
+    BEGIN {
+      print typeof(matrix["source"])
+      matrix["copy"] = matrix["source"]
+      print typeof(matrix["copy"])
+      matrix["source"]["leaf"] = "ok"
+      print typeof(matrix["source"]), matrix["source"]["leaf"]
+      matrix["copy"]["leaf"] = "bad"
+    }
+expect:
+  stdout: |
+    untyped
+    unassigned
+    array ok
+  stderr_contains:
+    - "fatal: attempt to use scalar"
+    - "as an array"
+  exit_code: 2

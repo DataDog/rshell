@@ -1,0 +1,27 @@
+description: field splitting uses current records while split handles character and blank separators
+upstream:
+  suite: onetrueawk
+  id: testdir/T.split
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "changing FS after assigning $0 does not force a resplit until the record changes"
+  - "split with an empty separator returns individual characters"
+  - "split with a single-space separator coalesces whitespace"
+input:
+  program: |
+    BEGIN {
+      FS = ":"
+      $0 = "a:bb:ccc"
+      FS = "-"
+      print FS, $1, NF
+      n = split("xy", chars, "")
+      print n, chars[1] chars[2]
+      m = split("a  b	c", fields, " ")
+      print m, fields[2]
+    }
+expect:
+  stdout: |
+    - a 3
+    2 xy
+    3 b
+  exit_code: 0

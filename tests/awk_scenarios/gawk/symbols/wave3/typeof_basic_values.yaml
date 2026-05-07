@@ -1,0 +1,25 @@
+description: typeof distinguishes numbers, strings, regexps, arrays, and untyped values
+upstream:
+  suite: gawk
+  id: test/typeof1.awk
+  ref: gawk-5.4.0
+covers:
+  - typeof reports number and string scalar values
+  - typeof reports untyped globals before use
+  - typeof reports strongly typed regexps and arrays
+input:
+  program: |
+    BEGIN {
+      n = 8
+      text = "eight"
+      re = @/eight/
+      arr["k"] = n
+
+      print typeof(n), typeof(text), typeof(re), typeof(missing)
+      print typeof(arr), typeof(arr["k"])
+    }
+expect:
+  stdout: |
+    number string regexp untyped
+    array number
+  exit_code: 0

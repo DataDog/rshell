@@ -1,0 +1,27 @@
+description: printf aligns string and integer fields
+upstream:
+  suite: onetrueawk
+  id: testdir/p.3
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "printf aligns string and integer fields"
+  - "uses original rshell fixture data rather than upstream country records"
+input:
+  program: |
+    { printf "<%-8s>|%04d\n", $1, $2 }
+  stdin: |
+    Aster	40	12	inner
+    Boreal	80	66	outer
+    Crux	55	101	outer
+    Dune	abc	9	Dune
+    Mica	12	5	inner
+    Nova	70	70	Nova
+expect:
+  stdout: |
+    <Aster   >|0040
+    <Boreal  >|0080
+    <Crux    >|0055
+    <Dune    >|0000
+    <Mica    >|0012
+    <Nova    >|0070
+  exit_code: 0

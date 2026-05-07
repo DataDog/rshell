@@ -1,0 +1,23 @@
+description: nested compound assignments to the same scalar use gawk evaluation order
+upstream:
+  suite: gawk
+  id: test/opasnslf.awk
+  ref: gawk-5.4.0
+covers:
+  - nested += assignments to the same variable are evaluated consistently
+  - post-increment can be used as the right operand of compound assignment
+  - the final scalar value matches the printed compound assignment result
+input:
+  program: |
+    BEGIN {
+      print b += b += 1
+      b = 6
+      print b += b++
+      print b
+    }
+expect:
+  stdout: |
+    2
+    13
+    13
+  exit_code: 0

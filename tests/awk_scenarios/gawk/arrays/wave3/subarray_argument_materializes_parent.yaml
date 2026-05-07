@@ -1,0 +1,23 @@
+description: a function can materialize and fill a missing subarray argument
+upstream:
+  suite: gawk
+  id: test/mdim2.awk
+  ref: gawk-5.4.0
+covers:
+  - passing a missing subarray element creates the parent path
+  - writes through the function parameter are visible at the caller
+  - the caller element is classified as an array after return
+input:
+  program: |
+    function place(bucket) {
+      bucket["count"] = 9
+    }
+
+    BEGIN {
+      place(report["row"])
+      print typeof(report["row"]), report["row"]["count"]
+    }
+expect:
+  stdout: |
+    array 9
+  exit_code: 0

@@ -1,0 +1,22 @@
+description: extending NF inside a loop creates assignable empty fields
+upstream:
+  suite: gawk
+  id: test/nfloop.awk
+  ref: gawk-5.4.0
+covers:
+  - assigning a larger NF extends the current field list
+  - fields introduced by NF extension can be assigned in a loop
+  - printing the record rebuilds it from the extended fields
+input:
+  program: |
+    BEGIN {
+      $0 = "seed"
+      NF = 6
+      for (i = 2; i <= NF; i++)
+        $i = "x" i
+      print
+    }
+expect:
+  stdout: |
+    seed x2 x3 x4 x5 x6
+  exit_code: 0

@@ -1,0 +1,18 @@
+description: FIELDWIDTHS can skip characters before capturing the rest of a record
+upstream:
+  suite: gawk
+  id: test/fwtest7.awk
+  ref: gawk-5.4.0
+covers:
+  - a n:* FIELDWIDTHS entry skips n characters before the rest field
+  - the rest field consumes all remaining text
+input:
+  program: |
+    BEGIN { FIELDWIDTHS = "3 2:*" }
+    { print $1 "|" $2 }
+  stdin: |
+    catXXtail-value
+expect:
+  stdout: |
+    cat|tail-value
+  exit_code: 0

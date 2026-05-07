@@ -1,0 +1,32 @@
+description: Reusing the same array argument across functions preserves array type
+upstream:
+  suite: gawk
+  id: test/paramtyp.awk
+  ref: gawk-5.4.0
+covers:
+  - an array passed to one function remains an array for later calls
+  - assigning array elements through different function parameters mutates the same array
+input:
+  program: |
+    function paint(a, b) {
+      a["tone"] = "blue"
+      print "paint", a["tone"]
+    }
+
+    function wash(a, b) {
+      a["tone"] = "green"
+      a["shade"] = "dark"
+      print "wash", a["tone"], length(a)
+    }
+
+    BEGIN {
+      paint(canvas)
+      wash(canvas)
+      print "final", canvas["tone"], canvas["shade"]
+    }
+expect:
+  stdout: |
+    paint blue
+    wash green 2
+    final green dark
+  exit_code: 0

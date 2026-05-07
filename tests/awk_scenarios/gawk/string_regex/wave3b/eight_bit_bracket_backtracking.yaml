@@ -1,0 +1,28 @@
+description: an 8-bit bracket member does not prevent quantified regexp backtracking
+upstream:
+  suite: gawk
+  id: test/rebt8b1.awk
+  ref: gawk-5.4.0
+covers:
+  - bracket expressions with octal 8-bit escapes can be quantified
+  - gsub backtracks from a quantified bracket expression to match a following literal
+input:
+  program: |
+    BEGIN {
+      s = "bananas and ananases in canaan"
+      t = s
+      gsub(/[an]*n/, "AN", t)
+      print t
+      t = s
+      gsub(/[an\372]*n/, "AN", t)
+      print t
+      t = s
+      gsub(/[a\372]*n/, "AN", t)
+      print t
+    }
+expect:
+  stdout: |
+    bANas ANd ANases iAN cAN
+    bANas ANd ANases iAN cAN
+    bANANas ANd ANANases iAN cANAN
+  exit_code: 0

@@ -1,0 +1,25 @@
+description: getline from stdin preserves RT when RS is a computed regular expression
+upstream:
+  suite: gawk
+  id: test/rsglstdin.ok
+  ref: gawk-5.4.0
+covers:
+  - "regular expression RS splits stdin records"
+  - "getline inside a rule advances to the next regex-delimited record"
+  - "RT is updated for the record read by getline"
+input:
+  program: |
+    BEGIN { RS = "[,]+" }
+    {
+      printf "[%s] [%s]\n", $0, RT
+      status = getline
+      print "-" status "-"
+      printf "[%s] [%s]\n", $0, RT
+    }
+  stdin: "1,2,"
+expect:
+  stdout: |
+    [1] [,]
+    -1-
+    [2] [,]
+  exit_code: 0

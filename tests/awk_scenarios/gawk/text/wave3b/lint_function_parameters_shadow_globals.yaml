@@ -1,0 +1,44 @@
+description: lint warns when function parameters shadow global variables
+upstream:
+  suite: gawk
+  id: test/shadow.awk
+  ref: gawk-5.4.0
+covers:
+  - lint reports parameters that shadow existing globals
+  - functions still execute after shadowing warnings
+input:
+  awk_args:
+    - --lint
+  program: |
+    function foo()
+    {
+      print "foo"
+    }
+
+    function bar(A, Z, q)
+    {
+      print "bar"
+    }
+
+    function baz(C, D)
+    {
+      print "baz"
+    }
+
+    BEGIN {
+      A = C = D = Z = y = 1
+      foo()
+      bar()
+      baz()
+    }
+expect:
+  stdout: |
+    foo
+    bar
+    baz
+  stderr_contains:
+    - "parameter `A' shadows global variable"
+    - "parameter `Z' shadows global variable"
+    - "parameter `C' shadows global variable"
+    - "parameter `D' shadows global variable"
+  exit_code: 0

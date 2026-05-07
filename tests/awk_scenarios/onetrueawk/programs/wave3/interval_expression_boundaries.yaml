@@ -1,0 +1,36 @@
+description: interval regular expressions honor zero, bounded, and open repetitions
+upstream:
+  suite: onetrueawk
+  id: testdir/T.int-expr
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "zero-or-more interval forms match an omitted middle character"
+  - "bounded intervals reject strings above the upper bound"
+  - "one-or-more intervals reject missing repeated characters"
+input:
+  program: |
+    BEGIN {
+      pats[1] = "ab{0,2}c"
+      pats[2] = "ab{1,3}c"
+      words[1] = "ac"
+      words[2] = "abc"
+      words[3] = "abbc"
+      words[4] = "abbbc"
+      words[5] = "abbbbc"
+      for (p = 1; p <= 2; p++)
+        for (w = 1; w <= 5; w++)
+          print pats[p], words[w], words[w] ~ pats[p]
+    }
+expect:
+  stdout: |
+    ab{0,2}c ac 1
+    ab{0,2}c abc 1
+    ab{0,2}c abbc 1
+    ab{0,2}c abbbc 0
+    ab{0,2}c abbbbc 0
+    ab{1,3}c ac 0
+    ab{1,3}c abc 1
+    ab{1,3}c abbc 1
+    ab{1,3}c abbbc 1
+    ab{1,3}c abbbbc 0
+  exit_code: 0

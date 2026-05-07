@@ -1,0 +1,21 @@
+description: a nonempty numeric string enables IGNORECASE after numeric use
+upstream:
+  suite: gawk
+  id: test/ignrcas4.awk
+  ref: gawk-5.4.0
+covers:
+  - a string value of "0" remains true when assigned to IGNORECASE
+  - prior numeric coercion does not make the value false for IGNORECASE
+input:
+  program: |
+    BEGIN {
+      x = "0"
+      print x + 0
+      IGNORECASE = x
+      print ("aBc" ~ /^abc$/)
+    }
+expect:
+  stdout: |
+    0
+    1
+  exit_code: 0

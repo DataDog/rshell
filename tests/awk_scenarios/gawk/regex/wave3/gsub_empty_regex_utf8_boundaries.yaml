@@ -1,0 +1,23 @@
+description: gsub with an empty regexp visits UTF-8 character boundaries
+upstream:
+  suite: gawk
+  id: test/gsubnulli18n.awk
+  ref: gawk-5.4.0
+covers:
+  - an empty regexp matches before, between, and after characters
+  - multibyte characters are counted as characters in a UTF-8 locale
+input:
+  envs:
+    LC_ALL: en_US.UTF-8
+  program: |
+    BEGIN {
+      text = "\u00e9\u00f8"
+      replacements = gsub(//, "|", text)
+      print replacements
+      print length(text)
+    }
+expect:
+  stdout: |
+    3
+    5
+  exit_code: 0

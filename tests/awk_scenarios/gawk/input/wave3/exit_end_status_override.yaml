@@ -1,0 +1,23 @@
+description: an explicit END exit status overrides an earlier exit status
+upstream:
+  suite: gawk
+  id: test/exitval1.awk
+  ref: gawk-5.4.0
+covers:
+  - exit in BEGIN records a pending status
+  - exit with an explicit status in END replaces the earlier status
+input:
+  program: |
+    BEGIN {
+      print "begin"
+      exit 12
+    }
+    END {
+      print "end"
+      exit 0
+    }
+expect:
+  stdout: |
+    begin
+    end
+  exit_code: 0

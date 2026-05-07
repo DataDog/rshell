@@ -1,0 +1,28 @@
+description: GNU non-boundary operator works in matching and substitution
+upstream:
+  suite: gawk
+  id: test/gnuops3.awk
+  ref: gawk-5.4.0
+covers:
+  - \B matches positions that are not word boundaries
+  - \B behaves consistently in pattern matching
+  - gsub can replace all non-boundary positions
+input:
+  program: |
+    BEGIN {
+      print ("  " ~ / \B /)
+      print ("a b" ~ /\B/)
+      print (" b" ~ /\B/)
+      print ("a " ~ /\B/)
+      a = "  "
+      gsub(/\B/, "x", a)
+      print a
+    }
+expect:
+  stdout: |
+    1
+    0
+    1
+    1
+    x x x
+  exit_code: 0

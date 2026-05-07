@@ -1,0 +1,30 @@
+description: dynamic regexps honor the current IGNORECASE value on each match
+upstream:
+  suite: gawk
+  id: test/igncdym.awk
+  ref: gawk-5.4.0
+covers:
+  - regexp strings are recompiled when IGNORECASE changes
+  - case-folded dynamic matches do not poison later case-sensitive matches
+input:
+  program: |
+    BEGIN {
+      pat[1] = "delta"; fold[1] = 1
+      pat[2] = "beta"; fold[2] = 0
+    }
+    {
+      for (i = 1; i <= 2; i++) {
+        IGNORECASE = fold[i]
+        print match($0, pat[i]) ":" pat[i] ":" $0
+      }
+    }
+  stdin: |
+    Alpha DELTA
+    Alpha BETA
+expect:
+  stdout: |
+    7:delta:Alpha DELTA
+    0:beta:Alpha DELTA
+    0:delta:Alpha BETA
+    0:beta:Alpha BETA
+  exit_code: 0

@@ -1,0 +1,25 @@
+description: assigning an uninitialized parameter produces unassigned scalar values
+upstream:
+  suite: gawk
+  id: test/stupid5.awk
+  ref: gawk-5.4.0
+covers:
+  - a global starts as untyped before it is passed as an argument
+  - assigning an uninitialized parameter marks both parameter and target as unassigned
+input:
+  program: |
+    BEGIN {
+      print typeof(seed)
+      copy(seed)
+    }
+    function copy(x) {
+      y = x
+      print typeof(x)
+      print typeof(y)
+    }
+expect:
+  stdout: |
+    untyped
+    unassigned
+    unassigned
+  exit_code: 0

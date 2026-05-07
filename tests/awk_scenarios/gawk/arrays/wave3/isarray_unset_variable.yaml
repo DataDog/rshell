@@ -1,0 +1,23 @@
+description: isarray returns false for an unset variable before it becomes an array
+upstream:
+  suite: gawk
+  id: test/isarrayunset.awk
+  ref: gawk-5.4.0
+covers:
+  - isarray reports zero for an untyped variable
+  - probing with isarray does not turn the variable into an array
+  - later indexing changes the variable to an array
+input:
+  program: |
+    BEGIN {
+      print isarray(candidate)
+      print typeof(candidate)
+      candidate["x"] = 1
+      print isarray(candidate), typeof(candidate)
+    }
+expect:
+  stdout: |
+    0
+    untyped
+    1 array
+  exit_code: 0

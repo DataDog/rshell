@@ -1,0 +1,27 @@
+description: UTF-8 bytes in regexp constants participate in word-boundary matching
+upstream:
+  suite: gawk
+  id: test/regx8bit.awk
+  ref: gawk-5.4.0
+covers:
+  - octal UTF-8 byte escapes can build non-ASCII text
+  - GNU word-boundary regexps can match before UTF-8 text
+  - literal UTF-8 byte regexps match inside the same string
+input:
+  envs:
+    LC_ALL: en_US.UTF-8
+  program: |
+    BEGIN {
+      s = "s\303\245 \303\244r det"
+      print match(s, /\ys\303\245/)
+      print s ~ /\303\244/
+      print s ~ /s\303\245/
+      print s ~ /\ys\303\245/
+    }
+expect:
+  stdout: |
+    1
+    1
+    1
+    1
+  exit_code: 0

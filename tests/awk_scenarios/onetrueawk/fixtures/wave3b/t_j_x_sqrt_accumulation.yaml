@@ -1,0 +1,15 @@
+description: sqrt results accumulate across records and are used in END
+upstream:
+  suite: onetrueawk
+  id: testdir/t.j.x
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "sqrt returns numeric values that can be accumulated"
+  - "END can compute from an aggregate built during record processing"
+input:
+  program: |
+    { i = i + sqrt($1); print i, sqrt($1) } END { print sqrt(i), i }
+  stdin: "4\n9\n16\n"
+expect:
+  stdout: "2 2\n5 3\n9 4\n3 9\n"
+  exit_code: 0

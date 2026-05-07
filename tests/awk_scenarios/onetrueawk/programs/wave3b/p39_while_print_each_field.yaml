@@ -1,0 +1,28 @@
+description: a while loop iterates across every field in each record
+upstream:
+  suite: onetrueawk
+  id: testdir/p.39
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "while loops can index fields from one through NF"
+  - "field references using a variable index produce each field value"
+input:
+  program: |
+    {
+      i = 1
+      while (i <= NF) {
+        print $i
+        i++
+      }
+    }
+  stdin: |
+    one two
+    three four five
+expect:
+  stdout: |
+    one
+    two
+    three
+    four
+    five
+  exit_code: 0

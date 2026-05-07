@@ -1,0 +1,21 @@
+description: OFMT controls string conversion for numeric print expressions
+upstream:
+  suite: onetrueawk
+  id: testdir/t.ofmt
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "OFMT can be assigned in BEGIN"
+  - "numeric expressions printed with print use OFMT"
+  - "different magnitudes are formatted through the same OFMT"
+input:
+  program: |
+    BEGIN { OFMT = "%.4g" }
+    { print $1 + 0 }
+  stdin: |
+    12345
+    3.1415926
+expect:
+  stdout: |
+    12345
+    3.142
+  exit_code: 0

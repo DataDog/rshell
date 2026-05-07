@@ -1,0 +1,33 @@
+description: PROCINFO sorted_in can change string iteration order
+upstream:
+  suite: gawk
+  id: test/sortfor.awk
+  ref: gawk-5.4.0
+covers:
+  - PROCINFO["sorted_in"] supports ascending string index order
+  - PROCINFO["sorted_in"] supports descending string index order
+  - changing sorted_in between loops changes subsequent iteration
+input:
+  program: |
+    { seen[$0]++ }
+    END {
+      PROCINFO["sorted_in"] = "@ind_str_asc"
+      for (k in seen)
+        print "asc:" k ":" seen[k]
+      PROCINFO["sorted_in"] = "@ind_str_desc"
+      for (k in seen)
+        print "desc:" k ":" seen[k]
+    }
+  stdin: |
+    pear
+    apple
+    Pear
+expect:
+  stdout: |
+    asc:Pear:1
+    asc:apple:1
+    asc:pear:1
+    desc:pear:1
+    desc:apple:1
+    desc:Pear:1
+  exit_code: 0

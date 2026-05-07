@@ -1,0 +1,33 @@
+description: FNR range patterns restart for each input file
+upstream:
+  suite: onetrueawk
+  id: testdir/p.24
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "FNR counts records separately for each input file"
+  - "range patterns based on FNR restart on each new file"
+setup:
+  files:
+    - path: first.tsv
+      content: |
+        a1
+        a2
+        a3
+    - path: second.tsv
+      content: |
+        b1
+        b2
+        b3
+input:
+  program: |
+    FNR == 1, FNR == 2 { print FILENAME, $0 }
+  args:
+    - first.tsv
+    - second.tsv
+expect:
+  stdout: |
+    first.tsv a1
+    first.tsv a2
+    second.tsv b1
+    second.tsv b2
+  exit_code: 0

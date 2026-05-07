@@ -1,0 +1,22 @@
+description: functions accept multiple scalar arguments
+upstream:
+  suite: onetrueawk
+  id: testdir/t.fun1
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "user functions can declare several parameters"
+  - "call arguments are evaluated for each matching record"
+  - "records not satisfying the condition skip the function call"
+input:
+  program: |
+    function touch(a, b, c) { print "called", a + b + c }
+    NR <= 2 { touch(2, 3, 4) }
+  stdin: |
+    one
+    two
+    three
+expect:
+  stdout: |
+    called 9
+    called 9
+  exit_code: 0

@@ -1,0 +1,41 @@
+description: many output redirections can be written, closed, and read back
+upstream:
+  suite: gawk
+  id: test/manyfiles.awk
+  ref: gawk-5.4.0
+covers:
+  - awk can keep many distinct output redirections usable in one program
+  - closing redirected output files flushes data before redirected getline reads it back
+setup:
+  files:
+    - path: out/.keep
+      content: ""
+input:
+  program: |
+    BEGIN {
+      total = 32
+      for (i = 1; i <= total; i++) {
+        path = "out/" i
+        print "payload-" i > path
+        print "payload-" i > path
+      }
+      for (i = 1; i <= total; i++)
+        close("out/" i)
+      for (i = 1; i <= total; i++) {
+        path = "out/" i
+        count = 0
+        while ((getline line < path) > 0) {
+          count++
+          if (line != "payload-" i)
+            bad = bad " value:" i ":" line
+        }
+        close(path)
+        if (count != 2)
+          bad = bad " count:" i ":" count
+      }
+      print (bad == "" ? "verified " total " files" : bad)
+    }
+expect:
+  stdout: |
+    verified 32 files
+  exit_code: 0

@@ -1,0 +1,23 @@
+description: FS can be assigned a strongly typed regexp
+upstream:
+  suite: gawk
+  id: test/typedregex5.awk
+  ref: gawk-5.4.0
+covers:
+  - FS accepts a strongly typed regexp value
+  - typeof reports FS as regexp after the assignment
+  - field splitting uses the regexp pattern text
+input:
+  program: |
+    BEGIN {
+      FS = @/-+/
+    }
+    {
+      print typeof(FS), NF, "[" $1 "]", "[" $2 "]"
+    }
+  stdin: |
+    ab--cd
+expect:
+  stdout: |
+    regexp 2 [ab] [cd]
+  exit_code: 0

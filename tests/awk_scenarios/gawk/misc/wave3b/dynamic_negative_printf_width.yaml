@@ -1,0 +1,15 @@
+description: negative dynamic printf width left-justifies the string argument
+upstream:
+  suite: gawk
+  id: test/dynlj.awk
+  ref: gawk-5.4.0
+covers:
+  - dynamic printf width accepts negative values
+  - negative width left-justifies within the requested field
+input:
+  program: |
+    BEGIN { printf "%*sworld\n", -20, "hello" }
+expect:
+  stdout: |
+    hello               world
+  exit_code: 0

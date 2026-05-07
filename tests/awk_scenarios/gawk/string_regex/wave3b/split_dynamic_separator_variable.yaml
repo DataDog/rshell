@@ -1,0 +1,27 @@
+description: split accepts a regexp separator stored in a variable
+upstream:
+  suite: gawk
+  id: test/splitvar.awk
+  ref: gawk-5.4.0
+covers:
+  - a string variable can supply a regexp separator to split
+  - repeated separator matches are treated as one regexp match
+input:
+  program: |
+    {
+      sep = "=+"
+      n = split($0, part, sep)
+      print n
+      for (i = 1; i <= n; i++)
+        print i ":" part[i]
+    }
+  stdin: |
+    Here===Is=Some=====Data
+expect:
+  stdout: |
+    4
+    1:Here
+    2:Is
+    3:Some
+    4:Data
+  exit_code: 0

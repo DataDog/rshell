@@ -1,0 +1,34 @@
+description: length reports array size for arrays passed to functions
+upstream:
+  suite: gawk
+  id: test/funlen.awk
+  ref: gawk-5.4.0
+covers:
+  - length(array) returns the number of elements in a global array
+  - length(array_parameter) works inside a user function
+  - arrays passed to functions remain arrays for built-in length
+input:
+  program: |
+    function count_items(items) {
+      print "inside", length(items)
+    }
+
+    NR > 1 {
+      seen[$1] = $2
+    }
+
+    END {
+      print "outside", length(seen)
+      count_items(seen)
+    }
+  stdin: |
+    code label
+    AA alpha
+    BB beta
+    CC gamma
+    DD delta
+expect:
+  stdout: |
+    outside 4
+    inside 4
+  exit_code: 0

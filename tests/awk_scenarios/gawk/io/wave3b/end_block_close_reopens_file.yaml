@@ -1,0 +1,37 @@
+description: a file read by getline in END can be closed and reread repeatedly
+upstream:
+  suite: gawk
+  id: test/redfilnm.awk
+  ref: gawk-5.4.0
+covers:
+  - "getline from a file works inside END"
+  - "close(file) resets the file redirection EOF state"
+  - "the same file can be reread after close"
+setup:
+  files:
+    - path: hello.txt
+      content: |
+        one
+        two
+input:
+  program: |
+    END {
+      f = "hello.txt"
+      for (i = 1; i <= 3; i++) {
+        while ((getline < f) > 0)
+          print i ":" $0
+        print "close=" close(f)
+      }
+    }
+expect:
+  stdout: |
+    1:one
+    1:two
+    close=0
+    2:one
+    2:two
+    close=0
+    3:one
+    3:two
+    close=0
+  exit_code: 0

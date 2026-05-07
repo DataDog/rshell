@@ -1,0 +1,20 @@
+description: slash-equals tokens parse as regexp constants in field expressions
+upstream:
+  suite: gawk
+  id: test/parsefld.awk
+  ref: gawk-5.4.0
+covers:
+  - a regexp constant can provide the numeric expression for a field reference
+  - slash-equals text after concatenation is parsed as a regexp constant
+  - standalone regexp constants in expressions match the current record
+input:
+  program: |
+    { print $/= v/ marker /= missing/ }
+    { print /k/ + /v/ + !/z/ }
+  stdin: |
+    k = v
+expect:
+  stdout: |
+    k0
+    3
+  exit_code: 0

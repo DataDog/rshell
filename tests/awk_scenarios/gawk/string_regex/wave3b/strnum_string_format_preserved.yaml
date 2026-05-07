@@ -1,0 +1,24 @@
+description: numeric strings from split preserve their original text when printed and concatenated
+upstream:
+  suite: gawk
+  id: test/strnum2.awk
+  ref: gawk-5.4.0
+covers:
+  - split produces a strnum value for numeric-looking text
+  - printing and concatenating a strnum preserve the original string form
+  - numeric coercion does not change later string output of the strnum
+input:
+  program: |
+    BEGIN {
+      split(" 1.234 ", f, "|")
+      OFMT = "%.1f"
+      CONVFMT = "%.2f"
+      print f[1]
+      print (f[1] "")
+      x = f[1] + 0
+      print f[1]
+      print (f[1] "")
+    }
+expect:
+  stdout: " 1.234 \n 1.234 \n 1.234 \n 1.234 \n"
+  exit_code: 0

@@ -1,0 +1,29 @@
+description: SYMTAB exposes updated NR after getline reads ARGV input
+upstream:
+  suite: gawk
+  id: test/symtab9.awk
+  ref: gawk-5.4.0
+covers:
+  - BEGIN can seed ARGV and ARGC for subsequent getline calls
+  - plain getline updates NR while reading an ARGV file
+  - SYMTAB["NR"] matches the built-in NR after input reads
+setup:
+  files:
+    - path: items.txt
+      content: |
+        red
+        green
+        blue
+input:
+  program: |
+    BEGIN {
+      ARGV[1] = "items.txt"
+      ARGC = 2
+      while ((getline line) > 0)
+        last = line
+      print "nr", SYMTAB["NR"], NR, last
+    }
+expect:
+  stdout: |
+    nr 3 3 blue
+  exit_code: 0

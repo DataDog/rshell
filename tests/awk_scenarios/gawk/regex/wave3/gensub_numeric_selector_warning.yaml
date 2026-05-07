@@ -1,0 +1,25 @@
+description: gensub accepts numeric string selectors and warns for nonnumeric selectors
+upstream:
+  suite: gawk
+  id: test/gensub2.awk
+  ref: gawk-5.4.0
+covers:
+  - gensub replaces the selected numeric occurrence
+  - a numeric string selector is treated like the same number
+  - a nonnumeric selector warns and is treated as the first occurrence
+input:
+  program: |
+    BEGIN {
+      source = "cat cat cat"
+      print gensub(/cat/, "dog", 2, source)
+      print gensub(/cat/, "dog", "2", source)
+      print gensub(/cat/, "dog", "later", source)
+    }
+expect:
+  stdout: |
+    cat dog cat
+    cat dog cat
+    dog cat cat
+  stderr_contains:
+    - "gensub: third argument `later' treated as 1"
+  exit_code: 0

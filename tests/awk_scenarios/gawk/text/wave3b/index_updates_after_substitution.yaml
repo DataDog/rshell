@@ -1,0 +1,23 @@
+description: index observes new character positions after sub changes a string
+upstream:
+  suite: gawk
+  id: test/wideidx2.awk
+  ref: gawk-5.4.0
+covers:
+  - sub updates the target string contents
+  - index uses the updated string after substitution
+input:
+  envs:
+    LC_ALL: en_US.UTF-8
+  program: |
+    BEGIN {
+      Value = "abc"
+      print "Before <" Value "> ", index(Value, "bc")
+      sub(/bc/, "bbc", Value)
+      print "After  <" Value ">", index(Value, "bc")
+    }
+expect:
+  stdout: |
+    Before <abc>  2
+    After  <abbc> 3
+  exit_code: 0

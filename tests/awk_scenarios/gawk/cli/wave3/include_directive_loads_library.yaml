@@ -1,0 +1,26 @@
+description: "@include loads a library found through AWKPATH before BEGIN actions run"
+upstream:
+  suite: gawk
+  id: test/include.awk
+  ref: gawk-5.4.0
+covers:
+  - "@include resolves library files through AWKPATH"
+  - BEGIN rules in included files run
+  - functions from included files are callable by the main program
+setup:
+  files:
+    - path: lib/joins.awk
+      content: |
+        BEGIN { print "joins loaded" }
+        function join3(a, b, c) { return a ":" b ":" c }
+input:
+  envs:
+    AWKPATH: lib
+  program: |
+    @include "joins.awk"
+    BEGIN { print join3("x", "y", "z") }
+expect:
+  stdout: |
+    joins loaded
+    x:y:z
+  exit_code: 0

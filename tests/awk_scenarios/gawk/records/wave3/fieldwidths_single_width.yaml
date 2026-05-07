@@ -1,0 +1,18 @@
+description: a single FIELDWIDTHS width extracts one fixed-width field
+upstream:
+  suite: gawk
+  id: test/fwtest4.awk
+  ref: gawk-5.4.0
+covers:
+  - a one-entry FIELDWIDTHS value creates one field
+  - characters beyond the listed width are not part of that field
+input:
+  program: |
+    BEGIN { FIELDWIDTHS = "4" }
+    { print "<" $1 ">" }
+  stdin: |
+    northbound
+expect:
+  stdout: |
+    <nort>
+  exit_code: 0

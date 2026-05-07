@@ -1,0 +1,51 @@
+description: OFMT with high precision formats computed extrema in sectioned input
+upstream:
+  suite: gawk
+  id: test/ofmt.awk
+  ref: gawk-5.4.0
+covers:
+  - OFMT controls printing of computed numeric maxima and minima
+  - numeric-looking records are compared numerically within sections
+  - empty sections print string placeholders beside numeric sections
+input:
+  program: |
+    BEGIN {
+      OFMT = "%.12g"
+      high = 0
+      low = 99999999999
+    }
+    function flush() {
+      if (section != "")
+        print section, (seen ? high : "-"), (seen ? low : "-")
+    }
+    $0 ~ /:$/ {
+      flush()
+      section = substr($0, 1, length($0) - 1)
+      high = 0
+      low = 99999999999
+      seen = 0
+      next
+    }
+    $0 ~ /^[0-9]+$/ {
+      n = $1 + 0
+      if (!seen || n > high) high = n
+      if (!seen || n < low) low = n
+      seen = 1
+    }
+    END { flush() }
+  stdin: |
+    alpha:
+    42
+    7
+    100
+    beta:
+    name
+    gamma:
+    99999999998
+    99999999997
+expect:
+  stdout: |
+    alpha 100 7
+    beta - -
+    gamma 99999999998 99999999997
+  exit_code: 0

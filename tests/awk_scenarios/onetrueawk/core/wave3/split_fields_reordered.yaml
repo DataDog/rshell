@@ -1,0 +1,24 @@
+description: split populates fields that can be read in another order
+upstream:
+  suite: onetrueawk
+  id: testdir/t.split1
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "split uses the default field separator when none is supplied"
+  - "split array indexes begin at one"
+  - "existing scalar state is unaffected by split"
+input:
+  program: |
+    BEGIN { marker = "ready" }
+    {
+      split($0, part)
+      print part[3], part[1], marker
+    }
+  stdin: |
+    red green blue
+    one two three
+expect:
+  stdout: |
+    blue red ready
+    three one ready
+  exit_code: 0

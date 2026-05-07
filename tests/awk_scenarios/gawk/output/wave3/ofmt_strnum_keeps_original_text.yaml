@@ -1,0 +1,25 @@
+description: numeric-string values keep their original text after numeric use under OFMT
+upstream:
+  suite: gawk
+  id: test/ofmtstrnum.awk
+  ref: gawk-5.4.0
+covers:
+  - split-created string values retain leading spaces
+  - numeric coercion does not replace a string-number value's printable text
+  - a separately stored numeric result is formatted through OFMT
+input:
+  program: |
+    BEGIN {
+      split(" 2.50", f, "|")
+      OFMT = "%.1f"
+      print "[" f[1] "]"
+      tmp = f[1] + 0
+      print "[" f[1] "]"
+      print tmp
+    }
+expect:
+  stdout: |
+    [ 2.50]
+    [ 2.50]
+    2.5
+  exit_code: 0

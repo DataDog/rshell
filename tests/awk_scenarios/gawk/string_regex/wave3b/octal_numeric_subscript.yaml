@@ -1,0 +1,18 @@
+description: octal numeric literals use their numeric value as array subscripts
+upstream:
+  suite: gawk
+  id: test/octsub.awk
+  ref: gawk-5.4.0
+covers:
+  - an octal literal subscript 03 indexes the same element as numeric 3
+  - numeric zero remains a distinct array subscript
+input:
+  program: |
+    BEGIN {
+      ++x[03]
+      print "/" x[0] "/" x[3] "/"
+    }
+expect:
+  stdout: |
+    //1/
+  exit_code: 0

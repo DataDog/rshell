@@ -1,0 +1,23 @@
+description: sprintf with a huge character code produces one byte and warns in C locale
+upstream:
+  suite: gawk
+  id: test/printhuge.awk
+  ref: gawk-5.4.0
+covers:
+  - sprintf("%c") accepts a large numeric character value
+  - invalid multibyte output is diagnosed while the produced string still has length one
+input:
+  envs:
+    LC_ALL: en_US.UTF-8
+  program: |
+    BEGIN {
+      c = sprintf("%c", 0xffffff00 + 255)
+      print length(c)
+      printf "%s\n", c > "/dev/stderr"
+    }
+expect:
+  stdout: |
+    1
+  stderr_contains:
+    - "Invalid multibyte data detected"
+  exit_code: 0

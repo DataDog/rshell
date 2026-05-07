@@ -1,0 +1,21 @@
+description: FIELDWIDTHS splits each record into fixed-size columns
+upstream:
+  suite: gawk
+  id: test/fwtest.awk
+  ref: gawk-5.4.0
+covers:
+  - FIELDWIDTHS enables fixed-width field splitting
+  - fixed-width fields are exposed through numbered field references
+input:
+  program: |
+    BEGIN {
+      FIELDWIDTHS = "2 1 3"
+      OFS = "|"
+    }
+    { print NF, $1, $2, $3 }
+  stdin: |
+    abCdef
+expect:
+  stdout: |
+    3|ab|C|def
+  exit_code: 0

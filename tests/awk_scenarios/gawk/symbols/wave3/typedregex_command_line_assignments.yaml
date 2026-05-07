@@ -1,0 +1,28 @@
+description: command-line variable assignments can carry strongly typed regexps
+upstream:
+  suite: gawk
+  id: test/typedregex4.awk
+  ref: gawk-5.4.0
+covers:
+  - -v assignments can create regexp-typed variables before BEGIN
+  - file-argument variable assignments can create regexp-typed variables before END
+  - printing a regexp-typed variable yields its pattern text
+input:
+  awk_args:
+    - -v
+    - rx1=@/north|south/
+  program: |
+    BEGIN {
+      print "begin", typeof(rx1), rx1
+    }
+    END {
+      print "end", typeof(rx2), rx2
+    }
+  args:
+    - rx2=@/east|west/
+    - /dev/null
+expect:
+  stdout: |
+    begin regexp north|south
+    end regexp east|west
+  exit_code: 0

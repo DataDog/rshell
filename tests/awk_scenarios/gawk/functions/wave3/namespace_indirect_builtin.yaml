@@ -1,0 +1,20 @@
+description: A namespace can indirectly call a built-in through its awk-qualified name
+upstream:
+  suite: gawk
+  id: test/indirectbuiltin6.awk
+  ref: gawk-5.4.0
+covers:
+  - code inside another namespace can refer to awk namespace built-ins
+  - an awk-qualified built-in name stored in a variable is callable indirectly
+input:
+  program: |
+    @namespace "box"
+
+    BEGIN {
+      fn = "awk::length"
+      print @fn("crate")
+    }
+expect:
+  stdout: |
+    5
+  exit_code: 0

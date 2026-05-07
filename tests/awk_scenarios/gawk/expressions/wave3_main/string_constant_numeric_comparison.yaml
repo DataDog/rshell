@@ -1,0 +1,17 @@
+description: string constants keep string-comparison behavior even when compared with numeric constants
+upstream:
+  suite: gawk
+  id: test/strsubscript.awk
+  ref: gawk-5.4.0
+covers:
+  - non-strnum string constants compare lexically against numeric constants
+  - zero-padded string constants do not compare equal to their numeric value
+input:
+  program: |
+    BEGIN {
+      print ("10" < 2), ("2" < 10), ("02" == 2)
+    }
+expect:
+  stdout: |
+    1 0 0
+  exit_code: 0

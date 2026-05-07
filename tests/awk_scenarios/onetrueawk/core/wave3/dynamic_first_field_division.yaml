@@ -1,0 +1,24 @@
+description: dynamic field assignment can store arithmetic results
+upstream:
+  suite: onetrueawk
+  id: testdir/t.set3
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "a variable can select a numbered field"
+  - "field values can be used in arithmetic before assignment"
+  - "print observes the rebuilt record"
+input:
+  program: |
+    {
+      idx = 1
+      $idx = $idx / 10
+      print
+    }
+  stdin: |
+    50 apples
+    7 pears
+expect:
+  stdout: |
+    5 apples
+    0.7 pears
+  exit_code: 0

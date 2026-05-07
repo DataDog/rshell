@@ -1,0 +1,15 @@
+description: /dev/stderr redirection writes diagnostics to stderr without stdout
+upstream:
+  suite: gawk
+  id: test/out3.ok
+  ref: gawk-5.4.0
+covers:
+  - print redirection to /dev/stderr appears on stderr
+  - stdout remains empty when only stderr is targeted
+input:
+  program: |
+    BEGIN { print "diagnostic output" > "/dev/stderr" }
+expect:
+  stderr: |
+    diagnostic output
+  exit_code: 0

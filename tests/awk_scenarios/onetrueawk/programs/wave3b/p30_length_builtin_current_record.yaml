@@ -1,0 +1,19 @@
+description: bare length reports the length of the current record
+upstream:
+  suite: onetrueawk
+  id: testdir/p.30
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "length without an argument uses the current record"
+  - "print can combine builtin results with $0"
+input:
+  program: |
+    { print length, $0 }
+  stdin: |
+    abc
+    longer row
+expect:
+  stdout: |
+    3 abc
+    10 longer row
+  exit_code: 0

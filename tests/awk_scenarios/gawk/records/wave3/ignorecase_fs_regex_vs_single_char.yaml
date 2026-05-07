@@ -1,0 +1,53 @@
+description: IGNORECASE affects regexp FS but not single-character literal FS
+upstream:
+  suite: gawk
+  id: test/icasefs.awk
+  ref: gawk-5.4.0
+covers:
+  - regexp field separators honor the current IGNORECASE value when records split
+  - single-character field separators remain literal and case-sensitive
+  - split without an explicit separator follows the current FS behavior
+input:
+  program: |
+    BEGIN {
+      IGNORECASE = 1
+      FS = "[m]"
+      IGNORECASE = 0
+      $0 = "uMu"
+      print $1
+
+      IGNORECASE = 1
+      FS = "[m]"
+      $0 = "uMu"
+      print $1
+
+      IGNORECASE = 1
+      FS = "M"
+      IGNORECASE = 0
+      $0 = "uMu"
+      print $1
+
+      IGNORECASE = 1
+      FS = "m"
+      $0 = "uMu"
+      print $1
+
+      FS = "zz"
+      IGNORECASE = 0
+      FS = "m"
+      IGNORECASE = 1
+      $0 = "uMu"
+      print $1
+
+      split("uMu", parts)
+      print parts[1]
+    }
+expect:
+  stdout: |
+    uMu
+    u
+    u
+    uMu
+    uMu
+    uMu
+  exit_code: 0

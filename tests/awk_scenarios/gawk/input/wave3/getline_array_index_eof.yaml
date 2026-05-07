@@ -1,0 +1,26 @@
+description: redirected getline into a preincremented array slot leaves the EOF slot visible
+upstream:
+  suite: gawk
+  id: test/getline5.awk
+  ref: gawk-5.4.0
+covers:
+  - a getline lvalue expression is evaluated before EOF is detected
+  - an array element selected for a failed getline is still created
+setup:
+  files:
+    - path: inbox.txt
+      content: |
+        parcel
+input:
+  program: |
+    BEGIN {
+      c = 0
+      while ((getline slot[++c] < "inbox.txt") > 0)
+        print "stored:" c ":" slot[c]
+      print "after:" c ":" ((c in slot) ? "present" : "absent") ":" slot[c]
+    }
+expect:
+  stdout: |
+    stored:1:parcel
+    after:2:present:
+  exit_code: 0

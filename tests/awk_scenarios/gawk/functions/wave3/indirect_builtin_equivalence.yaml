@@ -1,0 +1,41 @@
+description: Indirect calls to built-ins match direct calls for scalar and array results
+upstream:
+  suite: gawk
+  id: test/indirectbuiltin.awk
+  ref: gawk-5.4.0
+covers:
+  - numeric built-ins can be invoked through an indirect function name
+  - string built-ins can be invoked through an indirect function name
+  - split can receive an array argument through an indirect built-in call
+input:
+  program: |
+    function check(label, direct, indirect) {
+      print label, (direct == indirect ? "same" : "different"), indirect
+    }
+
+    BEGIN {
+      f = "and"
+      check(f, and(14, 10), @f(14, 10))
+
+      f = "tolower"
+      check(f, tolower("MiXeD"), @f("MiXeD"))
+
+      f = "split"
+      delete left
+      delete right
+      d = split("red,blue,,gold", left, ",")
+      i = @f("red,blue,,gold", right, ",")
+      check(f, d, i)
+      print right[2], (3 in right), "[" right[3] "]"
+
+      f = "sprintf"
+      check(f, sprintf("%04d", 23), @f("%04d", 23))
+    }
+expect:
+  stdout: |
+    and same 10
+    tolower same mixed
+    split same 4
+    blue 1 []
+    sprintf same 0023
+  exit_code: 0

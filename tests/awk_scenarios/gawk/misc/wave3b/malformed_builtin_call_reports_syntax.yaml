@@ -1,0 +1,15 @@
+description: malformed built-in call syntax is rejected without crashing
+upstream:
+  suite: gawk
+  id: test/parseme.awk
+  ref: gawk-5.4.0
+covers:
+  - malformed function-call syntax is diagnosed
+  - parse errors exit non-zero
+input:
+  program: |
+    BEGIN { toupper(substr*line,1,12)) }
+expect:
+  stderr_contains:
+    - syntax error
+  exit_code: 1

@@ -1,0 +1,16 @@
+description: byte-range regexes do not match plain ASCII outside the range in the C locale
+upstream:
+  suite: gawk
+  id: test/range2.awk
+  ref: gawk-5.4.0
+covers:
+  - bracket ranges can use octal byte escapes
+  - ASCII a is outside the octal 300 through 337 range
+  - regex matching reports false as zero
+input:
+  program: |
+    BEGIN { print("a" ~ /^[\300-\337]/) }
+expect:
+  stdout: |
+    0
+  exit_code: 0

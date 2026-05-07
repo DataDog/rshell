@@ -1,0 +1,36 @@
+description: break exits only the innermost nested loop
+upstream:
+  suite: onetrueawk
+  id: testdir/t.break3
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "nested for loops maintain independent control flow"
+  - "break exits the inner loop without ending the outer loop"
+  - "loop variables retain their values after an inner break"
+input:
+  program: |
+    {
+      for (row = 1; row <= NF; row++) {
+        for (col = 1; col <= NF; col++) {
+          if ($(row) == $(col) && col > 1) {
+            break
+          }
+        }
+        print "pair", row, col
+      }
+      print "done", row, col
+    }
+  stdin: |
+    aa bb aa
+    red red blue
+expect:
+  stdout: |
+    pair 1 3
+    pair 2 2
+    pair 3 3
+    done 4 3
+    pair 1 2
+    pair 2 2
+    pair 3 3
+    done 4 3
+  exit_code: 0

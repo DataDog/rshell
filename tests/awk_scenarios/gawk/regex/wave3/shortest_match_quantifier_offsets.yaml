@@ -1,0 +1,31 @@
+description: shortest-match quantifiers choose different capture lengths than greedy quantifiers
+upstream:
+  suite: gawk
+  id: test/shortest-match.awk
+  ref: gawk-5.4.0
+covers:
+  - the +? quantifier uses shortest-match behavior
+  - capture metadata reflects shortest and greedy allocation choices
+  - gensub accepts strongly typed shortest-match regexps
+input:
+  program: |
+    BEGIN {
+      text = "zzxxxxzz"
+      short = @/(x+?)(x+)/
+      long = @/(x+)(x+)/
+
+      match(text, short, m)
+      print "short", RSTART, RLENGTH, m[1], m[1, "start"], m[1, "length"], m[2], m[2, "start"], m[2, "length"]
+      print gensub(short, "X", 1, text)
+
+      match(text, long, m)
+      print "long", RSTART, RLENGTH, m[1], m[1, "start"], m[1, "length"], m[2], m[2, "start"], m[2, "length"]
+      print gensub(long, "X", 1, text)
+    }
+expect:
+  stdout: |
+    short 3 4 x 3 1 xxx 4 3
+    zzXzz
+    long 3 4 xxx 3 3 x 6 1
+    zzXzz
+  exit_code: 0

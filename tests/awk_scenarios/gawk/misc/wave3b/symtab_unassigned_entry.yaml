@@ -1,0 +1,21 @@
+description: reading an uninitialized variable through SYMTAB yields an unassigned value
+upstream:
+  suite: gawk
+  id: test/stupid2.awk
+  ref: gawk-5.4.0
+covers:
+  - SYMTAB can address a variable by a computed name
+  - reading that SYMTAB slot yields an unassigned value
+  - the named variable remains untyped afterward
+input:
+  program: |
+    BEGIN {
+      n = "varname"
+      print typeof(SYMTAB[n])
+      print typeof(varname)
+    }
+expect:
+  stdout: |
+    unassigned
+    untyped
+  exit_code: 0

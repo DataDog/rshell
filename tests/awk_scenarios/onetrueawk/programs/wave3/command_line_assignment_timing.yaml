@@ -1,0 +1,31 @@
+description: command-line variable assignments occur before the following input source is read
+upstream:
+  suite: onetrueawk
+  id: testdir/T.clv
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "ordinary assignment operands are not visible during BEGIN"
+  - "assignment operands before a file affect that file records"
+  - "assignment operands after the final file are visible during END"
+setup:
+  files:
+    - path: items.txt
+      content: |
+        one
+        two
+input:
+  program: |
+    BEGIN { printf "begin=<%s>\n", phase }
+    { print "row", phase, $0 }
+    END { print "end", phase }
+  args:
+    - "phase=alpha"
+    - items.txt
+    - "phase=omega"
+expect:
+  stdout: |
+    begin=<>
+    row alpha one
+    row alpha two
+    end omega
+  exit_code: 0

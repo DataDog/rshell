@@ -1,0 +1,31 @@
+description: untyped element parameters print empty after the parent is deleted
+upstream:
+  suite: gawk
+  id: test/ar2fn_unxptyp_aref.awk
+  ref: gawk-5.4.0
+covers:
+  - deleting the parent array before scalar use leaves the element parameter untyped
+  - scalar printing of that element yields the empty string
+  - the same empty scalar value can be passed to another function
+input:
+  program: |
+    function echo(value) {
+      print "echo=[" value "]"
+    }
+
+    function report(node) {
+      delete tree
+      print typeof(node)
+      print "value=[" node "]"
+      echo(node)
+    }
+
+    BEGIN {
+      report(tree["missing"])
+    }
+expect:
+  stdout: |
+    untyped
+    value=[]
+    echo=[]
+  exit_code: 0

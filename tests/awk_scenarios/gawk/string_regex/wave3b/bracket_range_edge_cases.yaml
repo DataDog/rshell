@@ -1,0 +1,30 @@
+description: bracket ranges handle literal punctuation and collating-symbol-like text
+upstream:
+  suite: gawk
+  id: test/regrange.awk
+  ref: gawk-5.4.0
+covers:
+  - dash ranges can include punctuation endpoints
+  - escaped bracket endpoints can match a literal backslash
+  - nested bracket syntax in ranges is parsed consistently
+input:
+  program: |
+    BEGIN {
+      char[1] = "."
+      pat[1] = "[--\\/]"
+      char[2] = "a"
+      pat[2] = "]-c]"
+      char[3] = "c"
+      pat[3] = "[[a-d]"
+      char[4] = "\\"
+      pat[4] = "[\\[-\\]]"
+      for (i = 1; i in char; i++)
+        print char[i], pat[i], char[i] ~ pat[i]
+    }
+expect:
+  stdout: |
+    . [--\/] 1
+    a ]-c] 0
+    c [[a-d] 1
+    \ [\[-\]] 1
+  exit_code: 0

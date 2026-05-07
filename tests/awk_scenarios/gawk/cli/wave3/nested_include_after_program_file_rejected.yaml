@@ -1,0 +1,33 @@
+description: nested includes are checked against earlier program-file loads
+upstream:
+  suite: gawk
+  id: test/incdupe6.ok
+  ref: gawk-5.4.0
+covers:
+  - a file included indirectly through -i is tracked as an include
+  - prior -f loads conflict with nested includes of the same source
+  - --lint warns about the include directive before the fatal duplicate-role error
+setup:
+  files:
+    - path: lib/loader.awk
+      content: |
+        @include "leaf"
+    - path: lib/leaf.awk
+      content: |
+        BEGIN { print "leaf" }
+input:
+  envs:
+    AWKPATH: lib
+  awk_args:
+    - --lint
+    - -i
+    - loader
+    - -f
+    - leaf.awk
+  program: |
+    BEGIN { print "unreached" }
+expect:
+  stderr_contains:
+    - "`include' is a gawk extension"
+    - "cannot include `leaf' and use it as a program file"
+  exit_code: 2

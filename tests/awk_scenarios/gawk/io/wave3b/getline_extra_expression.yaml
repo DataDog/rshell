@@ -1,0 +1,25 @@
+description: getline with an extra adjacent expression reads into only the first variable
+upstream:
+  suite: gawk
+  id: test/getline3.awk
+  ref: gawk-5.4.0
+covers:
+  - "getline var expr is parsed as getline into var followed by concatenation"
+  - "the adjacent expression is not a second getline destination"
+  - "the read record is stored in the first variable"
+input:
+  program: |
+    BEGIN {
+      y = 7
+      print getline x y
+      print "x=" x
+      print "y=" y
+    }
+  stdin: |
+    three
+expect:
+  stdout: |
+    17
+    x=three
+    y=7
+  exit_code: 0

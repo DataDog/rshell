@@ -1,0 +1,26 @@
+description: an incomplete -f source fragment is rejected before the next file
+upstream:
+  suite: gawk
+  id: test/eofsrc1.ok
+  ref: gawk-5.4.0
+covers:
+  - a -f source file must be syntactically complete at its own EOF
+  - a following -f source file does not finish an unterminated earlier rule
+setup:
+  files:
+    - path: opener.awk
+      content: |-
+        BEGIN {
+          label = "first"
+input:
+  awk_args:
+    - -f
+    - opener.awk
+  program_file: closer.awk
+  program: |
+    print label
+    }
+expect:
+  stderr_contains:
+    - source files / command-line arguments must contain complete functions or rules
+  exit_code: 1

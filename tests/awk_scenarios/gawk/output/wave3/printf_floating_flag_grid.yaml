@@ -1,0 +1,38 @@
+description: floating printf conversions combine sign, alternate, zero, width, and precision flags
+upstream:
+  suite: gawk
+  id: test/printfloat.awk
+  ref: gawk-5.4.0
+covers:
+  - zero padding applies to fixed floating fields
+  - alternate form keeps trailing decimal detail for general format
+  - explicit sign and leading-space flags affect positive and negative values
+input:
+  program: |
+    BEGIN {
+      vals[1] = 0
+      vals[2] = 1.25
+      vals[3] = -1234.5
+      fmts[1] = "%08.2f"
+      fmts[2] = "%-#10.3g"
+      fmts[3] = "%+12.4e"
+      fmts[4] = "% .0f"
+      for (f = 1; f <= 4; f++)
+        for (v = 1; v <= 3; v++)
+          printf "%s -> |" fmts[f] "|\n", fmts[f], vals[v]
+    }
+expect:
+  stdout: |
+    %08.2f -> |00000.00|
+    %08.2f -> |00001.25|
+    %08.2f -> |-1234.50|
+    %-#10.3g -> |0.00      |
+    %-#10.3g -> |1.25      |
+    %-#10.3g -> |-1.23e+03 |
+    %+12.4e -> | +0.0000e+00|
+    %+12.4e -> | +1.2500e+00|
+    %+12.4e -> | -1.2345e+03|
+    % .0f -> | 0|
+    % .0f -> | 1|
+    % .0f -> |-1234|
+  exit_code: 0

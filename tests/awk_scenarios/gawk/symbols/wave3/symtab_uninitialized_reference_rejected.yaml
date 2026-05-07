@@ -1,0 +1,17 @@
+description: referencing an unknown SYMTAB entry is fatal
+upstream:
+  suite: gawk
+  id: test/symtab10.awk
+  ref: gawk-5.4.0
+covers:
+  - unknown SYMTAB entries cannot be referenced as untyped variables
+  - typeof does not mask an invalid SYMTAB reference
+input:
+  program: |
+    BEGIN {
+      print typeof(SYMTAB["ghost"])
+    }
+expect:
+  stderr_contains:
+    - "reference to uninitialized element `SYMTAB[\"ghost\"] is not allowed"
+  exit_code: 2

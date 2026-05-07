@@ -1,0 +1,31 @@
+description: typeof tracks argument calls that leave a variable untyped or promote it to array
+upstream:
+  suite: gawk
+  id: test/typeof2.awk
+  ref: gawk-5.4.0
+covers:
+  - an uninitialized global reports as untyped
+  - passing an extra argument to a function with no parameters does not type the variable
+  - assigning through an array parameter promotes the caller variable to array
+input:
+  program: |
+    function noargs() {
+    }
+    function fill(x) {
+      x["made"] = 1
+    }
+    BEGIN {
+      print typeof(candidate)
+      noargs(candidate)
+      print typeof(candidate)
+      fill(candidate)
+      print typeof(candidate)
+    }
+expect:
+  stdout: |
+    untyped
+    untyped
+    array
+  stderr_contains:
+    - "function `noargs' called with more arguments than declared"
+  exit_code: 0

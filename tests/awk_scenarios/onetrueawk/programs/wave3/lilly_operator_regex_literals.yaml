@@ -1,0 +1,27 @@
+description: operator-like text is matched literally inside regular expressions
+upstream:
+  suite: onetrueawk
+  id: testdir/T.lilly
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "escaped plus-equals and slash-equals patterns match literal operator text"
+  - "!~ rejects records containing equals signs"
+  - "match with an anchored equals pattern reports leading equals records"
+input:
+  program: |
+    /\+=/ { print "plus", $0 }
+    /\/=/{ print "divide", $0 }
+    $0 !~ /=/ { print "none", $0 }
+    { if (match($0, /^=/)) print "starts", $0 }
+  stdin: |
+    a+=b
+    a/=b
+    plain
+    =lead
+expect:
+  stdout: |
+    plus a+=b
+    divide a/=b
+    none plain
+    starts =lead
+  exit_code: 0

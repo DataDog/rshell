@@ -1,0 +1,21 @@
+description: records with an even character length can be selected
+upstream:
+  suite: onetrueawk
+  id: testdir/tt.08
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "length without arguments measures the current record"
+  - "modulo can test record length parity"
+  - "only records with even lengths run the action"
+input:
+  program: |
+    length($0) % 2 == 0 { print "even-length", length($0), $0 }
+  stdin: |
+    four
+    five5
+    sixsix
+expect:
+  stdout: |
+    even-length 4 four
+    even-length 6 sixsix
+  exit_code: 0

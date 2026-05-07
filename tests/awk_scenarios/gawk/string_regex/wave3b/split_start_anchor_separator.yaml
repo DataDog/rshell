@@ -1,0 +1,35 @@
+description: split with start-anchor separators leaves a nonempty string unsplit
+upstream:
+  suite: gawk
+  id: test/splitwht2.awk
+  ref: gawk-5.4.0
+covers:
+  - split with a start-anchor regexp separator on a nonempty string produces one field
+  - string and strong-regexp forms of the same anchor behave consistently
+input:
+  program: |
+    BEGIN {
+      str = "ABCDE"
+      print str, split(str, arr, /^/)
+      for (i = 1; i in arr; i++)
+        print i, arr[i]
+      print "---"
+      print str, split(str, arr, "^")
+      for (i = 1; i in arr; i++)
+        print i, arr[i]
+      print "---"
+      print str, split(str, arr, @/^/)
+      for (i = 1; i in arr; i++)
+        print i, arr[i]
+    }
+expect:
+  stdout: |
+    ABCDE 1
+    1 ABCDE
+    ---
+    ABCDE 1
+    1 ABCDE
+    ---
+    ABCDE 1
+    1 ABCDE
+  exit_code: 0

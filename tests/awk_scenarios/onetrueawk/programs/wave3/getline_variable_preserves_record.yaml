@@ -1,0 +1,28 @@
+description: getline into a variable consumes input without replacing the current record
+upstream:
+  suite: onetrueawk
+  id: testdir/T.getline
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "getline variable reads from standard input in BEGIN"
+  - "getline variable does not rebuild $0 or existing fields"
+  - "records consumed by BEGIN are not processed again by main rules"
+input:
+  program: |
+    BEGIN {
+      $0 = "old current"
+      $1 = "new"
+      getline saved
+      print "saved", saved
+      print "record", $0
+    }
+    { print "rule", $0 }
+  stdin: |
+    first
+    second
+expect:
+  stdout: |
+    saved first
+    record new current
+    rule second
+  exit_code: 0

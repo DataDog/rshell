@@ -1,0 +1,25 @@
+description: lint warns when an uninitialized argument is read inside a function
+upstream:
+  suite: gawk
+  id: test/uninit3.awk
+  ref: gawk-5.4.0
+covers:
+  - passing an uninitialized global to a function emits an argument warning
+  - an uninitialized argument prints as an empty string
+input:
+  awk_args:
+    - --lint
+  program: |
+    function f(x) {
+      print x
+    }
+
+    BEGIN {
+      f(x)
+    }
+expect:
+  stdout: "\n"
+  stderr_contains:
+    - "parameter `x' shadows global variable"
+    - "reference to uninitialized argument `x'"
+  exit_code: 0

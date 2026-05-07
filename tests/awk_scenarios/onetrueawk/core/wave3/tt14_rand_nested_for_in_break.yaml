@@ -1,0 +1,31 @@
+description: nested for-in loops can break after comparing random samples
+upstream:
+  suite: onetrueawk
+  id: testdir/tt.14
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "rand populates numeric array values"
+  - "a user absolute-value function can compare those values"
+  - "break exits the inner loop during nested for-in scans"
+input:
+  program: |
+    function absval(value) { return (value < 0) ? -value : value }
+    BEGIN {
+      srand(3)
+      for (i = 1; i <= 12; i++) {
+        sample[i] = rand()
+      }
+      for (i in sample) {
+        for (j in sample) {
+          if (i != j && absval(sample[i] - sample[j]) < .2) {
+            close_hits++
+            break
+          }
+        }
+      }
+      print (close_hits > 0 ? "close" : "none")
+    }
+expect:
+  stdout: |
+    close
+  exit_code: 0

@@ -1,0 +1,19 @@
+description: leading-zero literals keep octal semantics only while their digits are valid octal
+upstream:
+  suite: gawk
+  id: test/octdec.awk
+  ref: gawk-5.4.0
+covers:
+  - valid leading-zero integer literals are octal
+  - invalid octal digits cause decimal interpretation for the literal
+input:
+  program: |
+    BEGIN {
+      print 012, 019
+      print 00012, 00019
+    }
+expect:
+  stdout: |
+    10 19
+    10 19
+  exit_code: 0

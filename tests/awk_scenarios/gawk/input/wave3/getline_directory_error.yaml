@@ -1,0 +1,29 @@
+description: getline from a directory fails and leaves the destination unchanged
+upstream:
+  suite: gawk
+  id: test/getlndir.awk
+  ref: gawk-5.4.0
+covers:
+  - redirected getline from a directory returns -1
+  - the target variable is unchanged when getline fails
+  - ERRNO reports the directory read failure
+setup:
+  files:
+    - path: folder/anchor.txt
+      content: |
+        present
+input:
+  program: |
+    BEGIN {
+      value = "unchanged"
+      rc = (getline value < "folder")
+      print "result:" rc
+      print "value:" value
+      print "errno:" ERRNO
+    }
+expect:
+  stdout: |
+    result:-1
+    value:unchanged
+    errno:Is a directory
+  exit_code: 0

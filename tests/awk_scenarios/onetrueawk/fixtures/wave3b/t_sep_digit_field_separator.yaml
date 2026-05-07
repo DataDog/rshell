@@ -1,0 +1,15 @@
+description: a digit string can be used as FS
+upstream:
+  suite: onetrueawk
+  id: testdir/t.sep
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "FS can be assigned to a literal digit"
+  - "records with multiple digit-separated fields match NF > 1"
+input:
+  program: |
+    BEGIN { FS = "1"; print "field separator is", FS } NF > 1 { print $0 " has " NF " fields" }
+  stdin: "a1b1c\nno ones\n1edge\n"
+expect:
+  stdout: "field separator is 1\na1b1c has 3 fields\n1edge has 2 fields\n"
+  exit_code: 0

@@ -1,0 +1,25 @@
+description: data-driven SYMTAB names are rejected when they are not known globals
+upstream:
+  suite: gawk
+  id: test/symtab7.awk
+  ref: gawk-5.4.0
+covers:
+  - assigning SYMTAB elements from input text cannot invent arbitrary globals
+  - the fatal error reports the record where the assignment was attempted
+input:
+  program: |
+    BEGIN {
+      getline
+      for (i = 1; i <= NF; i++)
+        SYMTAB[$i] = i
+    }
+    {
+      print $Age
+    }
+  stdin: |
+    Name Age
+    Ada 36
+expect:
+  stderr_contains:
+    - "cannot assign to arbitrary elements of SYMTAB"
+  exit_code: 2

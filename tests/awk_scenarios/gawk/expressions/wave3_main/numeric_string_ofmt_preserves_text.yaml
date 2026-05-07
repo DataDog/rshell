@@ -1,0 +1,25 @@
+description: numeric strings produced by split preserve their original text after numeric use
+upstream:
+  suite: gawk
+  id: test/numstr1.awk
+  ref: gawk-5.4.0
+covers:
+  - split-created numeric strings retain their string value
+  - using a strnum in arithmetic does not rewrite the stored string
+  - OFMT affects numeric output but not the retained string text
+input:
+  program: |
+    BEGIN {
+      split("9.876", f)
+      OFMT = "%.2f"
+      print f[1]
+      y = f[1] + 0
+      print f[1]
+      print y
+    }
+expect:
+  stdout: |
+    9.876
+    9.876
+    9.88
+  exit_code: 0

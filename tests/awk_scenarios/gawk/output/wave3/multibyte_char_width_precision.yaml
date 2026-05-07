@@ -1,0 +1,27 @@
+description: UTF-8 percent-c and percent-s honor character width and string precision
+upstream:
+  suite: gawk
+  id: test/mbprintf4.awk
+  ref: gawk-5.4.0
+covers:
+  - percent-c selects the first multibyte character
+  - percent-c width pads around a whole multibyte character
+  - percent-s precision truncates by characters rather than bytes
+input:
+  envs:
+    LC_ALL: en_US.UTF-8
+  program: |
+    {
+      printf "c|%3c|%-3c|\n", $0, $0
+      printf "s|%4.2s|%-4.2s|\n", $0, $0
+    }
+  stdin: |
+    åßç
+    漢字語
+expect:
+  stdout: |
+    c|  å|å  |
+    s|  åß|åß  |
+    c|  漢|漢  |
+    s|  漢字|漢字  |
+  exit_code: 0

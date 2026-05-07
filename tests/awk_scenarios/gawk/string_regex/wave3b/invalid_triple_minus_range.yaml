@@ -1,0 +1,17 @@
+description: invalid bracket ranges with repeated minus signs fail during regexp compilation
+upstream:
+  suite: gawk
+  id: test/regex3minus.awk
+  ref: gawk-5.4.0
+covers:
+  - malformed bracket ranges are rejected
+  - regexp compilation failure exits nonzero before producing stdout
+input:
+  program: |
+    BEGIN {
+      print match("abc-def", /[qrs---tuv]/)
+    }
+expect:
+  stderr_contains:
+    - "invalid range endpoint"
+  exit_code: 1

@@ -1,0 +1,41 @@
+description: numeric and string-looking subscripts keep gawk's distinct key classes
+upstream:
+  suite: gawk
+  id: test/arrdbg.awk
+  ref: gawk-5.4.0
+covers:
+  - numeric subscripts use canonical numeric string keys
+  - string subscripts that look noncanonical remain separate keys
+  - canonical integer strings share keys with their numeric equivalents
+input:
+  program: |
+    function classify(key,    seen) {
+      seen[key] = key
+      return (key in seen) ":" length(seen)
+    }
+
+    BEGIN {
+      values[3.0] = "number"
+      values["3.0"] = "string"
+      values[-3] = "numeric-neg"
+      values["-3"] = "string-neg"
+      values["0"] = "string-zero"
+      values[0] = "numeric-zero"
+      split(" 3", parts, "|")
+      values[parts[1]] = "spaced"
+      print length(values)
+      print values[3], values["3.0"]
+      print values[-3], values["-3"]
+      print values[0], values["0"]
+      print values[" 3"]
+      print classify("05")
+    }
+expect:
+  stdout: |
+    5
+    number string
+    string-neg string-neg
+    numeric-zero numeric-zero
+    spaced
+    1:1
+  exit_code: 0

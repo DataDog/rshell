@@ -1,0 +1,27 @@
+description: typeof follows regexp reassignment and untyped subarray probing
+upstream:
+  suite: gawk
+  id: test/typeof3.awk
+  ref: gawk-5.4.0
+covers:
+  - a regexp-typed variable reports regexp before reassignment
+  - assigning a number changes the variable's reported type
+  - probing an untyped element as a subarray promotes it to array without fatal error
+input:
+  program: |
+    BEGIN {
+      r = @/east/
+      print typeof(r), r
+      r = 42
+      print typeof(@/west/), typeof(42), typeof(r)
+      print typeof(box[1])
+      box[1][2]
+      print typeof(box[1])
+    }
+expect:
+  stdout: |
+    regexp east
+    regexp number number
+    untyped
+    array
+  exit_code: 0

@@ -1,0 +1,19 @@
+description: assigning a new field rebuilds the record with the original fields
+upstream:
+  suite: gawk
+  id: test/asgext.awk
+  ref: gawk-5.4.0
+covers:
+  - reading an existing field before assignment sees the original record
+  - assigning to a later field rebuilds $0
+  - rebuilt records use the output field separator between fields
+input:
+  program: |
+    { print $3; $4 = "a"; print }
+  stdin: |
+    one two three four
+expect:
+  stdout: |
+    three
+    one two three a
+  exit_code: 0

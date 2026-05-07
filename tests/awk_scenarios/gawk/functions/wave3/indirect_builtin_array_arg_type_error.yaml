@@ -1,0 +1,28 @@
+description: An indirect patsplit call rejects a scalar passed where an array is required
+upstream:
+  suite: gawk
+  id: test/indirectbuiltin5.awk
+  ref: gawk-5.4.0
+covers:
+  - a qualified built-in name can be stored and invoked through a user wrapper
+  - indirect patsplit preserves array-argument type checks
+  - a scalar actual parameter cannot satisfy patsplit's array output argument
+input:
+  program: |
+    function callit(name, text, out) {
+      return @name(text, out)
+    }
+
+    BEGIN {
+      target = "awk::patsplit"
+      bucket = 7
+      print "before"
+      print callit(target, "aa bb", bucket)
+      print "after"
+    }
+expect:
+  stdout: |
+    before
+  stderr_contains:
+    - "fatal: patsplit: second argument is not an array"
+  exit_code: 2

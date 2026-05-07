@@ -1,0 +1,29 @@
+description: typeof can distinguish arrays from scalar leaves during recursive traversal
+upstream:
+  suite: gawk
+  id: test/typeof4.awk
+  ref: gawk-5.4.0
+covers:
+  - typeof returns array for subarray values
+  - recursive code can use typeof to avoid treating arrays as scalars
+  - scalar leaves inside nested arrays print normally
+input:
+  program: |
+    function walk(arr, name, i) {
+      for (i in arr) {
+        if (typeof(arr[i]) == "array")
+          walk(arr[i], name "[" i "]")
+        else
+          print name "[" i "]=" arr[i]
+      }
+    }
+    BEGIN {
+      tree["branch"]["leaf"]["shade"] = "cool"
+      tree["branch"]["fruit"] = 3
+      walk(tree, "tree")
+    }
+expect:
+  stdout: |
+    tree[branch][fruit]=3
+    tree[branch][leaf][shade]=cool
+  exit_code: 0

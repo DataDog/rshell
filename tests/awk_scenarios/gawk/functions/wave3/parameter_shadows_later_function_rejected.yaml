@@ -1,0 +1,26 @@
+description: A parameter name cannot later be called as a function in the same body
+upstream:
+  suite: gawk
+  id: test/paramasfunc1.awk
+  ref: gawk-5.4.0
+covers:
+  - a parameter declared before a later function definition is treated as local data
+  - calling that parameter name as a function is rejected
+input:
+  program: |
+    function later(word) {
+      word = "north"
+      print word word()
+    }
+
+    function word() {
+      return "south"
+    }
+
+    BEGIN {
+      later()
+    }
+expect:
+  stderr_contains:
+    - "attempt to use non-function `word' in function call"
+  exit_code: 1

@@ -1,0 +1,18 @@
+description: getline rejects an increment expression as a field target
+upstream:
+  suite: gawk
+  id: test/getlnfa.awk
+  ref: gawk-5.4.0
+covers:
+  - getline requires an assignable target expression
+  - repeated post-increment operators after a field reference are a syntax error
+input:
+  program: |
+    BEGIN {
+      $0 = "left right"
+      getline $2+++++
+    }
+expect:
+  stderr_contains:
+    - syntax error
+  exit_code: 1

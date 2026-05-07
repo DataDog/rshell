@@ -1,0 +1,32 @@
+description: UTF-8 regular expressions handle anchors, alternation, and multibyte ranges
+upstream:
+  suite: onetrueawk
+  id: testdir/T.utfre
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "anchored multibyte literals match complete records"
+  - "alternation works with Greek UTF-8 words"
+  - "ASCII digit classes combine with multibyte surrounding literals"
+input:
+  envs:
+    LC_ALL: en_US.UTF-8
+  program: |
+    BEGIN {
+      tests[1] = "λ"
+      tests[2] = "xλ"
+      tests[3] = "στο"
+      tests[4] = "τους"
+      tests[5] = "の23に"
+      for (i = 1; i <= 5; i++) {
+        s = tests[i]
+        print s, (s ~ /^λ$/), (s ~ /^(στο|τους)$/), (s ~ /の[0-9]+に/)
+      }
+    }
+expect:
+  stdout: |
+    λ 1 0 0
+    xλ 0 0 0
+    στο 0 1 0
+    τους 0 1 0
+    の23に 0 0 1
+  exit_code: 0

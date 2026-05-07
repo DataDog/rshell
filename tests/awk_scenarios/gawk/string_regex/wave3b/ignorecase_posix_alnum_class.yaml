@@ -1,0 +1,20 @@
+description: IGNORECASE applies to POSIX character classes in regexps
+upstream:
+  suite: gawk
+  id: test/ignrcas2.awk
+  ref: gawk-5.4.0
+covers:
+  - IGNORECASE can be enabled before a POSIX character class match
+  - bracket character classes still reject nonmatching punctuation
+input:
+  program: |
+    BEGIN {
+      IGNORECASE = 1
+      print ("A9" ~ /^[[:alnum:]]+$/)
+      print ("-" ~ /[[:alnum:]]/)
+    }
+expect:
+  stdout: |
+    1
+    0
+  exit_code: 0

@@ -1,0 +1,15 @@
+description: an unterminated regular expression reports a diagnostic and fails
+upstream:
+  suite: onetrueawk
+  id: testdir/T.errmsg
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "invalid regular expression syntax is rejected before execution"
+  - "regex diagnostics produce a non-zero exit status"
+input:
+  program: |
+    BEGIN { if ("x" ~ /[/) print "bad" }
+expect:
+  stderr_contains:
+    - "unterminated regexp"
+  exit_code: 1

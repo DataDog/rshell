@@ -1,0 +1,15 @@
+description: colon field separator changes NF while OFS joins print arguments
+upstream:
+  suite: onetrueawk
+  id: testdir/t.d.x
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "BEGIN can set FS and OFS before records are read"
+  - "NF reflects colon-separated fields"
+input:
+  program: |
+    BEGIN { FS = ":"; OFS = ":" } { print NF "\t", $0 }
+  stdin: "a:b:c\nplain\n:edge:\n"
+expect:
+  stdout: "3\t:a:b:c\n1\t:plain\n3\t::edge:\n"
+  exit_code: 0

@@ -1,0 +1,26 @@
+description: assigning $0 recomputes fields from the new record text
+upstream:
+  suite: onetrueawk
+  id: testdir/t.set0a
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "$0 assignment replaces the current record"
+  - "fields are recomputed from the new $0 value"
+  - "NF reflects the reassigned record"
+input:
+  program: |
+    {
+      $0 = $2
+      print "rec", $0
+      print "fields", NF, $1
+    }
+  stdin: |
+    a alpha b
+    x two_words y
+expect:
+  stdout: |
+    rec alpha
+    fields 1 alpha
+    rec two_words
+    fields 1 two_words
+  exit_code: 0

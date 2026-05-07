@@ -1,0 +1,21 @@
+description: untyped function parameters become unassigned after direct expression use
+upstream:
+  suite: gawk
+  id: test/stupid4.awk
+  ref: gawk-5.4.0
+covers:
+  - typeof reports untyped before an uninitialized parameter is evaluated
+  - direct evaluation changes the parameter state to unassigned
+input:
+  program: |
+    BEGIN { inspect(ghost) }
+    function inspect(x) {
+      print typeof(x)
+      x
+      print typeof(x)
+    }
+expect:
+  stdout: |
+    untyped
+    unassigned
+  exit_code: 0

@@ -1,0 +1,27 @@
+description: recursive user functions return computed values per record
+upstream:
+  suite: onetrueawk
+  id: testdir/p.44
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "user-defined functions can call themselves recursively"
+  - "return values participate in string concatenation for print"
+input:
+  program: |
+    function fact(n) {
+      if (n <= 1)
+        return 1
+      else
+        return n * fact(n-1)
+    }
+    { print $1 "! is " fact($1) }
+  stdin: |
+    1
+    4
+    6
+expect:
+  stdout: |
+    1! is 1
+    4! is 24
+    6! is 720
+  exit_code: 0

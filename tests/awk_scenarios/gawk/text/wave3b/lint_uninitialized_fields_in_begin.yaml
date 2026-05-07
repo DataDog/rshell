@@ -1,0 +1,33 @@
+description: lint warns when fields are referenced before any input record
+upstream:
+  suite: gawk
+  id: test/uninit4.awk
+  ref: gawk-5.4.0
+covers:
+  - bare print in BEGIN reads uninitialized $0
+  - explicit $0, $1, and computed field references warn before input
+  - assigning NF creates empty fields that still warn when read
+input:
+  awk_args:
+    - --lint
+  program: |
+    function pr()
+    {
+      print
+    }
+
+    BEGIN {
+      pr()
+      print $0
+      print $(1 - 1)
+      print $1
+      NF = 3
+      print $2
+    }
+expect:
+  stdout: "\n\n\n\n\n"
+  stderr_contains:
+    - "reference to uninitialized field `$0'"
+    - "reference to uninitialized field `$1'"
+    - "reference to uninitialized field `$2'"
+  exit_code: 0

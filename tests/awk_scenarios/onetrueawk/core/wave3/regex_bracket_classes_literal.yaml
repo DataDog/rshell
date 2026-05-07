@@ -1,0 +1,26 @@
+description: literal regex bracket classes match included and excluded characters
+upstream:
+  suite: onetrueawk
+  id: testdir/t.re1
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "bracket ranges match included characters"
+  - "negated bracket classes match characters outside the set"
+  - "multiple regex rules can match the same record"
+input:
+  program: |
+    /[d-f2-4]/ { print "class", $0 }
+    /[^xyz]/ { print "notxyz", $0 }
+  stdin: |
+    abc
+    def
+    xxx
+    24
+expect:
+  stdout: |
+    notxyz abc
+    class def
+    notxyz def
+    class 24
+    notxyz 24
+  exit_code: 0

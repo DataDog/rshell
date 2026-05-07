@@ -1,0 +1,23 @@
+description: split uses FS normally while paragraph mode is active
+upstream:
+  suite: gawk
+  id: test/rstest1.awk
+  ref: gawk-5.4.0
+covers:
+  - "RS empty string does not disable explicit FS splitting"
+  - "split uses a single-character FS string"
+  - "embedded newlines remain part of split fields"
+input:
+  program: |
+    BEGIN {
+      RS = ""
+      FS = ":"
+      s = "a:b\nc:d"
+      print split(s, a)
+      print length(a[2])
+    }
+expect:
+  stdout: |
+    3
+    3
+  exit_code: 0

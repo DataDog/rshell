@@ -1,0 +1,33 @@
+description: lint mode warns when the same include is loaded twice by equivalent names
+upstream:
+  suite: gawk
+  id: test/incdupe.ok
+  ref: gawk-5.4.0
+covers:
+  - -i uses AWKPATH and optional .awk suffix lookup
+  - duplicate includes are skipped after the first load
+  - --lint reports a warning for the duplicate include
+setup:
+  files:
+    - path: lib/tools.awk
+      content: |
+        BEGIN { print "tools ready" }
+        function pair(a, b) { return a "+" b }
+input:
+  envs:
+    AWKPATH: lib
+  awk_args:
+    - --lint
+    - -i
+    - tools
+    - -i
+    - tools.awk
+  program: |
+    BEGIN { print pair("left", "right") }
+expect:
+  stdout: |
+    tools ready
+    left+right
+  stderr_contains:
+    - "already included source file `tools.awk'"
+  exit_code: 0

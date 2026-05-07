@@ -1,0 +1,22 @@
+description: mktime converts UTC date fields to epoch seconds with an explicit DST flag
+upstream:
+  suite: gawk
+  id: test/mktime.awk
+  ref: gawk-5.4.0
+covers:
+  - mktime parses six-field date strings from input
+  - a positive DST flag is accepted in UTC
+  - leap-day and post-epoch dates convert to stable epoch seconds
+input:
+  envs:
+    TZ: UTC
+  program: |
+    { printf "%s -> %d\n", $0, mktime($0, 1) }
+  stdin: |
+    2024 02 29 12 34 56
+    1970 01 02 00 00 00
+expect:
+  stdout: |
+    2024 02 29 12 34 56 -> 1709210096
+    1970 01 02 00 00 00 -> 86400
+  exit_code: 0

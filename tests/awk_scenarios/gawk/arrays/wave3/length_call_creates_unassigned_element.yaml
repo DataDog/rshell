@@ -1,0 +1,29 @@
+description: length on an array element argument creates an unassigned element
+upstream:
+  suite: gawk
+  id: test/elemnew1.awk
+  ref: gawk-5.4.0
+covers:
+  - passing a missing array element to a scalar function creates the element
+  - length of that element is zero
+  - self-assignment preserves the unassigned element state
+input:
+  program: |
+    function size(text) {
+      return length(text)
+    }
+
+    BEGIN {
+      print size(labels["missing"])
+      print typeof(labels["missing"])
+      labels["missing"] = labels["missing"]
+      print typeof(labels["missing"]), "[" labels["missing"] "]"
+      print ("missing" in labels)
+    }
+expect:
+  stdout: |
+    0
+    unassigned
+    unassigned []
+    1
+  exit_code: 0

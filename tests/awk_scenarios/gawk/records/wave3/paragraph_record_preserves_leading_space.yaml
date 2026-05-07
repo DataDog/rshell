@@ -1,0 +1,18 @@
+description: paragraph mode preserves leading spaces inside the record text
+upstream:
+  suite: gawk
+  id: test/rswhite.awk
+  ref: gawk-5.4.0
+covers:
+  - RS empty string groups adjacent nonblank lines into one record
+  - paragraph record text preserves leading spaces and embedded newlines
+input:
+  program: |
+    BEGIN { RS = "" }
+    { printf "[%s]\n", $0 }
+  stdin: "  indented line\nnext line\n"
+expect:
+  stdout: |
+    [  indented line
+    next line]
+  exit_code: 0

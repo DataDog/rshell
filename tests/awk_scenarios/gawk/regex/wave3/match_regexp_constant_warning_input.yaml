@@ -1,0 +1,19 @@
+description: match warns for a regexp first argument even when input is present
+upstream:
+  suite: gawk
+  id: test/matchbadarg2.awk
+  ref: gawk-5.4.0
+covers:
+  - regexp constants are evaluated before being passed as match strings
+  - match warns about the likely argument order mistake
+input:
+  program: |
+    match(/task [[:alnum:]_]+/, $0) {
+      print "hit"
+    }
+  stdin: |
+    task build
+expect:
+  stderr_contains:
+    - "match: regexp constant as first argument is probably not what you want"
+  exit_code: 0

@@ -1,0 +1,15 @@
+description: numeric while loop repeatedly divides the first field
+upstream:
+  suite: onetrueawk
+  id: testdir/t.3.x
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "numeric field values drive while-loop conditions"
+  - "division results are reused in the next iteration"
+input:
+  program: |
+    { x = $1; while (x > 1) { print x; x = x / 10 } }
+  stdin: "250\n9\n0\n"
+expect:
+  stdout: "250\n25\n2.5\n9\n"
+  exit_code: 0

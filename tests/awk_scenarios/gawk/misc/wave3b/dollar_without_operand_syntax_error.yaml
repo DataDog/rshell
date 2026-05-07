@@ -1,0 +1,15 @@
+description: a dollar operator without an expression operand is diagnosed as syntax
+upstream:
+  suite: gawk
+  id: test/synerr2.awk
+  ref: gawk-5.4.0
+covers:
+  - malformed field references inside function arguments are syntax errors
+  - syntax diagnostics do not crash the parser
+input:
+  program: |
+    BEGIN { sprintf("%s", $) }
+expect:
+  stderr_contains:
+    - syntax error
+  exit_code: 1

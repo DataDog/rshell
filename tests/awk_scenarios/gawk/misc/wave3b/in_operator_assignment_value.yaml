@@ -1,0 +1,19 @@
+description: assignment in an array membership expression preserves the assigned scalar value
+upstream:
+  suite: gawk
+  id: test/intest.awk
+  ref: gawk-5.4.0
+covers:
+  - assignment expressions can be used as array membership keys
+  - the in operator reports missing keys as false
+  - the left-hand variable keeps the assigned value
+input:
+  program: |
+    BEGIN {
+      bool_result = ((b = 1) in c)
+      print bool_result, b
+    }
+expect:
+  stdout: |
+    0 1
+  exit_code: 0

@@ -1,0 +1,22 @@
+description: A function name cannot also be read as scalar data
+upstream:
+  suite: gawk
+  id: test/fnamedat.awk
+  ref: gawk-5.4.0
+covers:
+  - function symbols are reserved from scalar variable use
+  - a function body that reads its own function name is rejected before execution
+input:
+  program: |
+    function marker() {
+      return marker
+    }
+
+    BEGIN {
+      print marker()
+    }
+expect:
+  stderr_contains:
+    - "function `marker'"
+    - "used as a variable or an array"
+  exit_code: 1

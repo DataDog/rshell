@@ -1,0 +1,19 @@
+description: interval regexps report the starting position of a counted repeat
+upstream:
+  suite: gawk
+  id: test/reint.awk
+  ref: gawk-5.4.0
+covers:
+  - --re-interval enables counted repetition syntax
+  - match returns the one-based position of the interval match
+input:
+  awk_args:
+    - --re-interval
+  program: |
+    { print match($0, /a{3}/) }
+  stdin: |
+    match this: aaa
+expect:
+  stdout: |
+    13
+  exit_code: 0

@@ -1,0 +1,23 @@
+description: gsub applies a trailing empty match when $ is part of an alternation
+upstream:
+  suite: gawk
+  id: test/gsubtst2.awk
+  ref: gawk-5.4.0
+covers:
+  - gsub handles end anchors inside alternation
+  - gsub can replace both nonempty matches and the final zero-width match
+input:
+  program: |
+    BEGIN {
+      text = "maze"
+      gsub(/z|$/, "*", text)
+      print text
+      text = "maze"
+      gsub(/$|z/, "*", text)
+      print text
+    }
+expect:
+  stdout: |
+    ma*e*
+    ma*e*
+  exit_code: 0

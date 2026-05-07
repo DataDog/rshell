@@ -1,0 +1,39 @@
+description: sub and gensub both update string length after removing characters
+upstream:
+  suite: gawk
+  id: test/widesub4.awk
+  ref: gawk-5.4.0
+covers:
+  - repeated sub updates the target string length
+  - repeated gensub reassignment updates the target string length
+input:
+  envs:
+    LC_ALL: en_US.UTF-8
+  program: |
+    BEGIN {
+      A = "1234567890abcdef"
+      for (i = 1; i < 6; i++) {
+        print length(A), "A=" A "."
+        sub("....", "", A)
+      }
+    }
+    BEGIN {
+      A = "1234567890abcdef"
+      for (i = 1; i < 6; i++) {
+        print length(A), "A=" A "."
+        A = gensub("....", "", 1, A)
+      }
+    }
+expect:
+  stdout: |
+    16 A=1234567890abcdef.
+    12 A=567890abcdef.
+    8 A=90abcdef.
+    4 A=cdef.
+    0 A=.
+    16 A=1234567890abcdef.
+    12 A=567890abcdef.
+    8 A=90abcdef.
+    4 A=cdef.
+    0 A=.
+  exit_code: 0

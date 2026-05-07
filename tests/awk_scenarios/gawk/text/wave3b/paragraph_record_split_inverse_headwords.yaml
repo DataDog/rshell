@@ -1,0 +1,47 @@
+description: paragraph records can be duplicated for slash-separated field values
+upstream:
+  suite: gawk
+  id: test/wjposer1.awk
+  ref: gawk-5.4.0
+covers:
+  - paragraph mode records can be split into percent-prefixed fields
+  - array state is cleared between records
+  - a slash-separated field can drive multiple output records
+input:
+  program: |
+    function CleanUp() {
+      for (i in rec) {
+        delete rec[i]
+      }
+    }
+
+    BEGIN {
+      RS = ""
+      FS = "\n?%"
+    }
+
+    {
+      for (i = 2; i <= NF; i++) {
+        split($i, f, ":")
+        rec[f[1]] = substr($i, index($i, ":") + 1)
+      }
+
+      if (!("IH" in rec)) {
+        next
+      }
+
+      items = split(rec["IH"], ihs, "/")
+      sub(/%IH:/, "%OIH:", $0)
+
+      for (i = 1; i <= items; i++) {
+        printf("%%IH:%s\n", ihs[i])
+        printf("%s\n\n", $0)
+      }
+      CleanUp()
+    }
+  stdin: |
+    %IH:one/two
+    %P:word
+expect:
+  stdout: "%IH:one\n%OIH:one/two\n%P:word\n\n%IH:two\n%OIH:one/two\n%P:word\n\n"
+  exit_code: 0

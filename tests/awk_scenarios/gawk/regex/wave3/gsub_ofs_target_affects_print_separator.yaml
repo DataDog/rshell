@@ -1,0 +1,23 @@
+description: changing OFS with gsub affects later comma-separated print output
+upstream:
+  suite: gawk
+  id: test/gsubtst8.awk
+  ref: gawk-5.4.0
+covers:
+  - OFS can be used as the target of gsub
+  - print with comma arguments observes the mutated OFS value
+input:
+  program: |
+    {
+      OFS = ":" $2 ":"
+      gsub(/dash/, "D", OFS)
+      print $1, $3
+    }
+  stdin: |
+    left dash right
+    left keep right
+expect:
+  stdout: |
+    left:D:right
+    left:keep:right
+  exit_code: 0

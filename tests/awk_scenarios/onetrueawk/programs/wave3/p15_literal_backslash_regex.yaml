@@ -1,0 +1,20 @@
+description: escaped backslashes match literal backslash characters
+upstream:
+  suite: onetrueawk
+  id: testdir/p.15
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "escaped backslashes match literal backslash characters"
+  - "uses original rshell fixture data rather than upstream country records"
+input:
+  program: |
+    /\\/ { print }
+  stdin: |
+    c:\tmp
+    slash / only
+    name\value
+expect:
+  stdout: |
+    c:\tmp
+    name\value
+  exit_code: 0

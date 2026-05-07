@@ -1,0 +1,18 @@
+description: FIELDWIDTHS rejects negative skip lengths
+upstream:
+  suite: gawk
+  id: test/fwtest8.awk
+  ref: gawk-5.4.0
+covers:
+  - invalid negative FIELDWIDTHS offsets are rejected
+  - invalid FIELDWIDTHS values fail before records are processed
+input:
+  program: |
+    BEGIN { FIELDWIDTHS = "1:2 2:-3 4" }
+    { print "unreachable" }
+  stdin: |
+    aabbcc
+expect:
+  stderr_contains:
+    - "fatal: invalid FIELDWIDTHS value"
+  exit_code: 2

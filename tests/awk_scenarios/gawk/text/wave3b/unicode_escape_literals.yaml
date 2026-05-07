@@ -1,0 +1,25 @@
+description: Unicode escape sequences produce UTF-8 string literals
+upstream:
+  suite: gawk
+  id: test/unicode1.awk
+  ref: gawk-5.4.0
+covers:
+  - Unicode escapes can represent BMP characters
+  - Unicode escapes can represent non-BMP characters
+input:
+  envs:
+    LC_ALL: en_US.UTF-8
+  program: |
+    BEGIN {
+      print "\u03b1"
+      print "\u05d0"
+      print "\u20b9f"
+      print "\u1f648"
+    }
+expect:
+  stdout: |
+    α
+    א
+    𠮟
+    🙈
+  exit_code: 0

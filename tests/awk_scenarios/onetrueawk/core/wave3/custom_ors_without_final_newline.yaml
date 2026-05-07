@@ -1,0 +1,19 @@
+description: print appends the current ORS after each output record
+upstream:
+  suite: onetrueawk
+  id: testdir/t.ors
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "ORS can be changed in BEGIN"
+  - "print appends ORS instead of a newline"
+  - "OFS still separates comma-separated print arguments"
+input:
+  program: |
+    BEGIN { ORS = "|" }
+    { print $1, $2 }
+  stdin: |
+    alpha beta
+    gamma delta
+expect:
+  stdout: "alpha beta|gamma delta|"
+  exit_code: 0

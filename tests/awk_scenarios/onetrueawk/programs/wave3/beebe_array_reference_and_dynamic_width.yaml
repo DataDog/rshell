@@ -1,0 +1,26 @@
+description: array parameters and dynamic printf width behave like the Beebe-derived cases
+upstream:
+  suite: onetrueawk
+  id: testdir/T.beebe
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "arrays passed through nested functions retain updates in the caller"
+  - "negative dynamic printf width left-justifies output"
+  - "assignment expressions used with in retain their assigned value"
+input:
+  program: |
+    function touch(a) { fill(a) }
+    function fill(b) { b["k"] = "v" }
+    BEGIN {
+      touch(box)
+      print box["k"]
+      printf "[%*s]\n", -8, "go"
+      present = ((idx = 7) in seen)
+      print present, idx
+    }
+expect:
+  stdout: |
+    v
+    [go      ]
+    0 7
+  exit_code: 0

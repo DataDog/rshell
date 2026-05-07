@@ -1,0 +1,25 @@
+description: final records without trailing newlines are processed across stdin and files
+upstream:
+  suite: gawk
+  id: test/nors.ok
+  ref: gawk-5.4.0
+covers:
+  - a stdin record without a final record separator is still processed
+  - a following file argument is read after a no-newline stdin record
+  - a file record without a final record separator is still processed
+setup:
+  files:
+    - path: later.txt
+      content: "four five six"
+input:
+  program: |
+    { print FILENAME ":" FNR ":" $NF }
+  args:
+    - "-"
+    - later.txt
+  stdin: "one two three"
+expect:
+  stdout: |
+    -:1:three
+    later.txt:1:six
+  exit_code: 0

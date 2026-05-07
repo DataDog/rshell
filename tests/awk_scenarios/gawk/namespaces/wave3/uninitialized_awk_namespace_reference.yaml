@@ -1,0 +1,19 @@
+description: repeated references to an unset awk namespace variable are stable
+upstream:
+  suite: gawk
+  id: test/nsawk1.awk
+  ref: gawk-5.4.0
+covers:
+  - "awk:: qualified variables can be read from default namespace source"
+  - repeated reads of an uninitialized qualified variable do not create errors
+input:
+  program: |
+    BEGIN {
+      first = awk::unset_value
+      second = awk::unset_value
+      print (first == second), length(first)
+    }
+expect:
+  stdout: |
+    1 0
+  exit_code: 0

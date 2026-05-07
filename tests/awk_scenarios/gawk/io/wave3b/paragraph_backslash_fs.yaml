@@ -1,0 +1,21 @@
+description: a literal backslash field separator still reparses records in paragraph mode
+upstream:
+  suite: gawk
+  id: test/rstest2.awk
+  ref: gawk-5.4.0
+covers:
+  - "FS can be a literal backslash"
+  - "assigning $0 reparses fields while RS is empty"
+  - "$1 is available after reparsing"
+input:
+  program: |
+    BEGIN {
+      RS = ""
+      FS = "\\"
+      $0 = "a\\b"
+      print $1
+    }
+expect:
+  stdout: |
+    a
+  exit_code: 0

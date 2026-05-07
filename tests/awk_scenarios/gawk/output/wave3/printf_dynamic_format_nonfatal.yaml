@@ -1,0 +1,19 @@
+description: a dynamic printf format with a bad conversion is emitted literally without crashing
+upstream:
+  suite: gawk
+  id: test/printfbad2.awk
+  ref: gawk-5.4.0
+covers:
+  - printf accepts a format string computed from input fields
+  - an unsupported conversion letter in a dynamic format is preserved literally
+  - a literal percent sequence after the bad conversion does not force a missing-argument fatal error
+input:
+  program: |
+    BEGIN { FS = "z" }
+    { printf($2 "\n") }
+  stdin: |
+    z%17b%18%c
+expect:
+  stdout: |
+    %17b%c
+  exit_code: 0

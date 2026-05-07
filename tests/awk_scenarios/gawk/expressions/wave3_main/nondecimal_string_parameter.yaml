@@ -1,0 +1,18 @@
+description: nondecimal-looking string values convert as decimal strings in normal arithmetic
+upstream:
+  suite: gawk
+  id: test/nondec2.awk
+  ref: gawk-5.4.0
+covers:
+  - hexadecimal-looking strings do not use base prefixes during implicit arithmetic conversion
+  - string-to-number conversion stops before nondecimal prefix text
+input:
+  program: |
+    BEGIN {
+      a = "0x1f"
+      print a + 0
+    }
+expect:
+  stdout: |
+    0
+  exit_code: 0

@@ -1,0 +1,19 @@
+description: printf formats a computed ratio with width and precision
+upstream:
+  suite: onetrueawk
+  id: testdir/p.25
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "arithmetic expressions can be passed directly to printf"
+  - "printf applies string width and floating precision"
+input:
+  program: |
+    { printf "%10s %6.1f\n", $1, 1000 * $3 / $2 }
+  stdin: |
+    Aster 40 12
+    Boreal 80 66
+expect:
+  stdout: |2
+         Aster  300.0
+        Boreal  825.0
+  exit_code: 0

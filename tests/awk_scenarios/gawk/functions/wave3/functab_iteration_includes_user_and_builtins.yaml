@@ -1,0 +1,32 @@
+description: Iterating FUNCTAB exposes both user-defined and built-in function names
+upstream:
+  suite: gawk
+  id: test/functab5.awk
+  ref: gawk-5.4.0
+covers:
+  - FUNCTAB membership includes user-defined functions
+  - FUNCTAB membership includes built-in functions
+  - FUNCTAB can be iterated without mutating its entries
+input:
+  program: |
+    function localfn() {
+      return 1
+    }
+
+    BEGIN {
+      print ("localfn" in FUNCTAB), FUNCTAB["localfn"]
+      print ("split" in FUNCTAB), FUNCTAB["split"]
+
+      seen = 0
+      for (name in FUNCTAB) {
+        if (name == "localfn" || name == "split" || name == "length")
+          seen++
+      }
+      print "selected=" seen
+    }
+expect:
+  stdout: |
+    1 localfn
+    1 split
+    selected=3
+  exit_code: 0

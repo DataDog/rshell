@@ -1,0 +1,15 @@
+description: assigning length($2) rebuilds the record
+upstream:
+  suite: onetrueawk
+  id: testdir/tt.02a
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "length(field) returns the field string length"
+  - "assigning $2 rebuilds $0 with OFS"
+input:
+  program: |
+    { $2 = length($2); print }
+  stdin: "aa bbbb cc\nleft q right\n"
+expect:
+  stdout: "aa 4 cc\nleft 1 right\n"
+  exit_code: 0

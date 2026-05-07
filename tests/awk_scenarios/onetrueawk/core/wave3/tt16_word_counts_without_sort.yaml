@@ -1,0 +1,33 @@
+description: word counts accumulate across fields and can be inspected deterministically
+upstream:
+  suite: onetrueawk
+  id: testdir/tt.16
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "each field can increment an associative word count"
+  - "for-in can count the number of distinct words"
+  - "known keys retain their accumulated counts"
+input:
+  program: |
+    {
+      for (i = 1; i <= NF; i++) {
+        words[$i]++
+      }
+    }
+    END {
+      for (word in words) {
+        unique++
+      }
+      print "unique", unique
+      print "red", words["red"] + 0
+      print "blue", words["blue"] + 0
+    }
+  stdin: |
+    red blue red
+    green red
+expect:
+  stdout: |
+    unique 3
+    red 3
+    blue 1
+  exit_code: 0

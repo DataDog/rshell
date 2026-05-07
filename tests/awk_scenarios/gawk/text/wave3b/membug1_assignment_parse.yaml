@@ -1,0 +1,16 @@
+description: comparison next to assignment parses and runs without output
+upstream:
+  suite: gawk
+  id: test/membug1.awk
+  ref: gawk-5.4.0
+covers:
+  - assignment expressions may appear as the right operand of comparison syntax
+  - a no-effect expression action can execute for input records without printing
+input:
+  program: |
+    { one != one = $1 }
+  stdin: |
+    yes
+    yes
+expect:
+  exit_code: 0

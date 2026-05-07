@@ -1,0 +1,21 @@
+description: printf warns when a format specifier has no conversion character
+upstream:
+  suite: gawk
+  id: test/nofmtch.awk
+  ref: gawk-5.4.0
+covers:
+  - printf emits a warning for incomplete format specifiers
+  - the incomplete percent sequence is printed literally
+input:
+  awk_args:
+    - --lint
+  program: |
+    BEGIN {
+      printf "edge:%5\n"
+    }
+expect:
+  stdout: |
+    edge:%5
+  stderr_contains:
+    - "format specifier does not have control letter"
+  exit_code: 0

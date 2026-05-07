@@ -1,0 +1,17 @@
+description: printf reports a fatal error when positional width requests a missing argument
+upstream:
+  suite: gawk
+  id: test/printfbad1.awk
+  ref: gawk-5.4.0
+covers:
+  - positional printf formats validate referenced argument numbers
+  - a missing width argument makes printf fail instead of reading invalid memory
+  - fatal printf format errors exit with status 2
+input:
+  program: |
+    BEGIN { printf "%2$*6$.*1$s\n", 3, "abcdef" }
+expect:
+  stderr_contains:
+    - "fatal: not enough arguments to satisfy format string"
+    - "ran out for this one"
+  exit_code: 2

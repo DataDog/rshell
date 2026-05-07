@@ -1,0 +1,24 @@
+description: paragraph records split fields across embedded newlines
+upstream:
+  suite: gawk
+  id: test/rs.awk
+  ref: gawk-5.4.0
+covers:
+  - RS empty string groups nonblank lines into paragraph records
+  - default FS splits paragraph records on spaces and embedded newlines
+input:
+  program: |
+    BEGIN { RS = "" }
+    { print $1 ":" $2 ":" NF }
+  stdin: |
+
+    north
+    south
+
+    east west
+
+expect:
+  stdout: |
+    north:south:2
+    east:west:2
+  exit_code: 0

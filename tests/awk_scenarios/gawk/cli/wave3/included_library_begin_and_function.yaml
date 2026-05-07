@@ -1,0 +1,25 @@
+description: included libraries may contain both BEGIN rules and reusable functions
+upstream:
+  suite: gawk
+  id: test/inclib.awk
+  ref: gawk-5.4.0
+covers:
+  - included library BEGIN rules are executed
+  - included library function definitions are visible to later source
+setup:
+  files:
+    - path: lib/tools.awk
+      content: |
+        BEGIN { print "tools ready" }
+        function bracket(s) { return "[" s "]" }
+input:
+  envs:
+    AWKPATH: lib
+  program: |
+    @include "tools"
+    BEGIN { print bracket("item") }
+expect:
+  stdout: |
+    tools ready
+    [item]
+  exit_code: 0

@@ -1,0 +1,46 @@
+description: multidimensional table slots survive scratch-array deletion
+upstream:
+  suite: gawk
+  id: test/mdim8.awk
+  ref: gawk-5.4.0
+covers:
+  - multidimensional array keys can combine numeric lanes and string opcodes
+  - scratch arrays can be deleted after their values are copied into tuple keys
+  - flag strings can be accumulated before the table copy
+input:
+  program: |
+    function clear_work() {
+      delete slots
+      delete lane1
+      delete lane2
+      table_name = ""
+    }
+
+    function add_flags(old, new) {
+      if (old && new) return old " | " new
+      if (old) return old
+      return new
+    }
+
+    BEGIN {
+      clear_work()
+      table_name = "primary"
+      slots["0x01"] = add_flags(slots["0x01"], "LOAD")
+      slots["0x01"] = add_flags(slots["0x01"], "MODRM")
+      lane1["0x02"] = "PREFIX"
+      for (key in slots) saved[1,key] = slots[key]
+      for (key in lane1) saved[2,key] = lane1[key]
+
+      clear_work()
+      print saved[1,"0x01"]
+      print saved[2,"0x02"]
+      print ((1,"0x03") in saved)
+      print length(slots), length(lane1)
+    }
+expect:
+  stdout: |
+    LOAD | MODRM
+    PREFIX
+    0
+    0 0
+  exit_code: 0

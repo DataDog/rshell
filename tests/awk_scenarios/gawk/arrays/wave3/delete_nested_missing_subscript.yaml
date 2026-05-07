@@ -1,0 +1,29 @@
+description: deleting through a nested missing subscript leaves a materialized subarray
+upstream:
+  suite: gawk
+  id: test/delmessy.awk
+  ref: gawk-5.4.0
+covers:
+  - delete can evaluate nested missing array references
+  - the intermediate element becomes an array
+  - the missing lookup key remains present after the delete expression
+input:
+  program: |
+    function drop(key) {
+      delete outer[""][outer[""][key]]
+      print typeof(outer[""])
+      print (key in outer[""])
+      print ("" in outer[""])
+      print length(outer[""])
+    }
+
+    BEGIN {
+      drop("missing")
+    }
+expect:
+  stdout: |
+    array
+    1
+    0
+    1
+  exit_code: 0

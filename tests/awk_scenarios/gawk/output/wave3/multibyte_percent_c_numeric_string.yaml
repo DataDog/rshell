@@ -1,0 +1,18 @@
+description: percent-c emits numeric code points and the first character of strings in UTF-8
+upstream:
+  suite: gawk
+  id: test/mbprintf2.awk
+  ref: gawk-5.4.0
+covers:
+  - numeric percent-c arguments are treated as character code points
+  - string percent-c arguments use the first multibyte character
+  - ASCII numeric character codes still format as single-byte characters
+input:
+  envs:
+    LC_ALL: en_US.UTF-8
+  program: |
+    BEGIN { printf "%c|%c|%c\n", 9731, "éclair", 65 }
+expect:
+  stdout: |
+    ☃|é|A
+  exit_code: 0

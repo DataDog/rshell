@@ -1,0 +1,32 @@
+description: break leaves loop state on the first matching stored value
+upstream:
+  suite: onetrueawk
+  id: testdir/t.break2
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - "stored field values can be scanned after input"
+  - "break skips later loop iterations"
+  - "post-loop code can inspect the value that stopped the loop"
+input:
+  program: |
+    { saved[NR] = $2 }
+    END {
+      for (idx = 1; idx <= NR; idx++) {
+        if (saved[idx] == "halt") {
+          break
+        }
+        print "kept", idx, saved[idx]
+      }
+      print "stopped", idx, saved[idx]
+    }
+  stdin: |
+    one go
+    two keep
+    three halt
+    four after
+expect:
+  stdout: |
+    kept 1 go
+    kept 2 keep
+    stopped 3 halt
+  exit_code: 0
