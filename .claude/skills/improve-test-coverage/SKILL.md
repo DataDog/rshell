@@ -22,6 +22,19 @@ You MUST follow this execution protocol. Skipping steps causes missed coverage g
 
 **IMPORTANT: Never ask the user questions or wait for confirmation. Always process ALL targets autonomously from start to finish.**
 
+### Do NOT stop the run voluntarily
+
+Once started, continue through every ⏳ target until Phase C completes. Resume-via-`COVERAGE_PROGRESS.md` is for actual crashes/interrupts, not for voluntary pauses.
+
+Do **not**:
+
+- Stop because you "feel low on context budget." The harness auto-compresses prior messages; you don't run out, you just lose old details. Each per-target commit is a self-contained checkpoint.
+- Stop because the run is "taking long" or has used "many tool calls." The user invoked `all` knowing the scope.
+- Ask the user whether to continue, or emit a "session checkpoint / resume next time" mid-run summary. If you're typing those words, you're violating the protocol.
+- Jump to Phase C before every target reaches ✅ or ⏭️.
+
+Valid halts before Phase C: explicit user interrupt, or an unrecoverable hard failure (e.g. push rejected, repo broken). Otherwise: when one target finishes, the next action is the next target's Step 4. The per-target commit + PR comment **is** the user-visible progress — no separate status update needed.
+
 ### 1. Create the full task list FIRST
 
 Your very first action — before reading ANY files, before writing ANY code — is to create the task list. Call TaskCreate for each step:
