@@ -67,7 +67,7 @@ Legend: ⏳ pending · 🔄 in progress · ✅ done · ⏭️ skipped (no high-v
 | 57 | testcmd | cmd | 168 | 168 | ⏭️ | 43 scenarios + 125 Go tests cover string/integer/file ops, -a/-o, [ ] form, all operators |
 | 58 | var_expand | shell | 172 | 172 | ⏭️ | comprehensive: basic, blocked_features, blocked_variables, quoting, quoting_and_escaping, special_variables |
 | 59 | xargs | cmd | 193 | 193 | ⏭️ | 50 scenarios + 143 Go tests cover -n/-I/-d/-0/-r/-t/-s, blocked-cmd handling, errors |
-| 60 | head | cmd | 194 | — | ⏳ | |
+| 60 | head | cmd | 194 | 194 | ⏭️ | 60 scenarios + 134 Go tests cover -n/-c (positive/negative/+N), multi-file, GNU compat |
 | 61 | tail | cmd | 213 | — | ⏳ | |
 | 62 | sed | cmd | 261 | — | ⏳ | |
 | 63 | printf | cmd | 301 | — | ⏳ | |
@@ -75,7 +75,7 @@ Legend: ⏳ pending · 🔄 in progress · ✅ done · ⏭️ skipped (no high-v
 
 ## Summary
 
-- Targets processed: 59 / 64
+- Targets processed: 60 / 64
 - Tests added: 8 (scenario: 8, unit: 0)
 - Duplicate tests removed: 13 (scenario: 13, unit: 0)
 - Low-value tests removed: 0 (scenario: 0, unit: 0)
