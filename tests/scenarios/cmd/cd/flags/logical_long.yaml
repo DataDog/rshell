@@ -1,4 +1,6 @@
 description: cd --logical is the default mode and resolves .. lexically.
+# bash's cd builtin does not accept --logical (only -L); intentional rshell extension.
+skip_assert_against_bash: true
 setup:
   files:
     - path: a/b/leaf

@@ -52,12 +52,19 @@ func mkSubdir(t *testing.T, dir, name string) string {
 // trim is shorthand for the trailing-newline strip used in pwd-style asserts.
 func trim(s string) string { return strings.TrimRight(s, "\n") }
 
+// shPath returns a path that is safe to embed inside a shell-script
+// string. On Windows, native paths use backslashes which the shell
+// parser treats as escape characters (eating the path separators);
+// converting to forward slashes avoids that since Windows file APIs
+// accept both. On Unix this is a no-op.
+func shPath(p string) string { return filepath.ToSlash(p) }
+
 // --- Basic forms ---
 
 func TestCdAbsolutePathChangesDir(t *testing.T) {
 	dir := canonicalTempDir(t)
 	mkSubdir(t, dir, "child")
-	stdout, stderr, code := cdRun(t, "cd "+filepath.Join(dir, "child")+"; pwd", dir)
+	stdout, stderr, code := cdRun(t, "cd "+shPath(filepath.Join(dir, "child"))+"; pwd", dir)
 	assert.Equal(t, 0, code, "stderr=%q", stderr)
 	assert.Equal(t, filepath.Join(dir, "child"), trim(stdout))
 }
@@ -91,7 +98,7 @@ func TestCdNoArgsUsesHome(t *testing.T) {
 	dir := canonicalTempDir(t)
 	mkSubdir(t, dir, "homedir")
 	homeAbs := filepath.Join(dir, "homedir")
-	stdout, stderr, code := cdRun(t, "HOME="+homeAbs+"; cd; pwd", dir)
+	stdout, stderr, code := cdRun(t, "HOME="+shPath(homeAbs)+"; cd; pwd", dir)
 	assert.Equal(t, 0, code, "stderr=%q", stderr)
 	assert.Equal(t, homeAbs, trim(stdout))
 }
@@ -109,7 +116,7 @@ func TestCdDashUsesOldpwdAndPrints(t *testing.T) {
 	mkSubdir(t, dir, "b")
 	a := filepath.Join(dir, "a")
 	b := filepath.Join(dir, "b")
-	stdout, stderr, code := cdRun(t, "cd "+a+"; cd "+b+"; cd -", dir)
+	stdout, stderr, code := cdRun(t, "cd "+shPath(a)+"; cd "+shPath(b)+"; cd -", dir)
 	assert.Equal(t, 0, code, "stderr=%q", stderr)
 	// `cd -` prints the new directory.
 	assert.Equal(t, a, trim(stdout))
@@ -128,7 +135,7 @@ func TestCdUpdatesPwdEnvVar(t *testing.T) {
 	dir := canonicalTempDir(t)
 	mkSubdir(t, dir, "child")
 	child := filepath.Join(dir, "child")
-	stdout, _, code := cdRun(t, "cd "+child+"; echo $PWD", dir)
+	stdout, _, code := cdRun(t, "cd "+shPath(child)+"; echo $PWD", dir)
 	assert.Equal(t, 0, code)
 	assert.Equal(t, child, trim(stdout))
 }
@@ -137,7 +144,7 @@ func TestCdSetsOldpwd(t *testing.T) {
 	dir := canonicalTempDir(t)
 	mkSubdir(t, dir, "child")
 	child := filepath.Join(dir, "child")
-	stdout, _, code := cdRun(t, "start=$(pwd); cd "+child+"; echo $OLDPWD", dir)
+	stdout, _, code := cdRun(t, "start=$(pwd); cd "+shPath(child)+"; echo $OLDPWD", dir)
 	assert.Equal(t, 0, code)
 	// $OLDPWD should equal the original pwd (which was dir).
 	assert.Equal(t, dir, trim(stdout))
@@ -295,7 +302,7 @@ func TestCdFailedDoesNotSetOldpwd(t *testing.T) {
 	first := filepath.Join(dir, "first")
 	// First successful cd sets OLDPWD = dir. Then a failed cd should
 	// leave OLDPWD alone.
-	stdout, _, code := cdRun(t, "cd "+first+"; cd nowhere 2>/dev/null; echo $OLDPWD", dir)
+	stdout, _, code := cdRun(t, "cd "+shPath(first)+"; cd nowhere 2>/dev/null; echo $OLDPWD", dir)
 	assert.Equal(t, 0, code)
 	assert.Equal(t, dir, trim(stdout))
 }
@@ -306,7 +313,7 @@ func TestCdInSubshellDoesNotEscape(t *testing.T) {
 	dir := canonicalTempDir(t)
 	mkSubdir(t, dir, "child")
 	child := filepath.Join(dir, "child")
-	stdout, _, code := cdRun(t, "p1=$(pwd); ( cd "+child+" ); p2=$(pwd); [ \"$p1\" = \"$p2\" ] && echo unchanged", dir)
+	stdout, _, code := cdRun(t, "p1=$(pwd); ( cd "+shPath(child)+" ); p2=$(pwd); [ \"$p1\" = \"$p2\" ] && echo unchanged", dir)
 	assert.Equal(t, 0, code)
 	assert.Equal(t, "unchanged", trim(stdout))
 }

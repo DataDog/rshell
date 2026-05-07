@@ -26,7 +26,7 @@ import (
 func TestBashCompatCdAbsoluteThenPwd(t *testing.T) {
 	dir := canonicalTempDir(t)
 	require.NoError(t, os.MkdirAll(filepath.Join(dir, "real"), 0o755))
-	stdout, _, code := cdRun(t, "cd "+filepath.Join(dir, "real")+"; pwd", dir)
+	stdout, _, code := cdRun(t, "cd "+shPath(filepath.Join(dir, "real"))+"; pwd", dir)
 	assert.Equal(t, 0, code)
 	assert.Equal(t, filepath.Join(dir, "real")+"\n", stdout)
 }
@@ -54,7 +54,7 @@ func TestBashCompatCdDashPrintsNewDir(t *testing.T) {
 	b := filepath.Join(dir, "b")
 	require.NoError(t, os.Mkdir(a, 0o755))
 	require.NoError(t, os.Mkdir(b, 0o755))
-	stdout, _, code := cdRun(t, "cd "+a+"; cd "+b+"; cd -", dir)
+	stdout, _, code := cdRun(t, "cd "+shPath(a)+"; cd "+shPath(b)+"; cd -", dir)
 	assert.Equal(t, 0, code)
 	assert.Equal(t, a+"\n", stdout)
 }
