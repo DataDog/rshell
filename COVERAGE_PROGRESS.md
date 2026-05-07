@@ -13,7 +13,7 @@ Legend: ⏳ pending · 🔄 in progress · ✅ done · ⏭️ skipped (no high-v
 | 3 | readonly | shell | 8 | 8 | ⏭️ | parse-block + 3 Go runtime API tests cover the surface |
 | 4 | subshell | shell | 8 | 12 | ✅ | added 4 P2 tests (multiline, pipe-target, triple-nested isolation, input redirect) |
 | 5 | empty_script | shell | 9 | 11 | ✅ | added 2 P2 tests for CRLF (Windows-saved) scripts |
-| 6 | case_clause | shell | 10 | — | ⏳ | |
+| 6 | case_clause | shell | 10 | 10 | ⏭️ | case is intentionally blocked at parse validation; all syntactic forms covered |
 | 7 | errors | shell | 10 | — | ⏳ | |
 | 8 | function | shell | 10 | — | ⏳ | |
 | 9 | allowed_commands | shell | 12 | — | ⏳ | recently improved |
@@ -75,7 +75,7 @@ Legend: ⏳ pending · 🔄 in progress · ✅ done · ⏭️ skipped (no high-v
 
 ## Summary
 
-- Targets processed: 5 / 64
+- Targets processed: 6 / 64
 - Tests added: 6 (scenario: 6, unit: 0)
 - Duplicate tests removed: 0 (scenario: 0, unit: 0)
 - Low-value tests removed: 0 (scenario: 0, unit: 0)
