@@ -33,7 +33,7 @@ Legend: ⏳ pending · 🔄 in progress · ✅ done · ⏭️ skipped (no high-v
 | 23 | line_continuation | shell | 28 | 28 | ⏭️ | comprehensive: across/in operators (&&, \|\|, \|), in command/var name/assignment/value/quotes/heredoc/keywords, multiple consecutive |
 | 24 | while_clause | shell | 28 | 28 | ⏭️ | comprehensive: break/continue with args, nested, exit status, pipeline cond, multiline, brace, redirects, subtle bash-aligned cases |
 | 25 | uname | cmd | 32 | 32 | ⏭️ | recently audited in commit 9b3f876a; 29 Go tests cover the full surface |
-| 26 | brace_group | shell | 35 | — | ⏳ | |
+| 26 | brace_group | shell | 35 | 33 | ✅ | removed 2 byte-identical dupes (brace_group_nested = nested; brace_group_pipe = with_pipe) |
 | 27 | field_splitting | shell | 37 | — | ⏳ | |
 | 28 | environment | shell | 41 | — | ⏳ | |
 | 29 | help | cmd | 41 | — | ⏳ | |
@@ -75,9 +75,9 @@ Legend: ⏳ pending · 🔄 in progress · ✅ done · ⏭️ skipped (no high-v
 
 ## Summary
 
-- Targets processed: 25 / 64
+- Targets processed: 26 / 64
 - Tests added: 8 (scenario: 8, unit: 0)
-- Duplicate tests removed: 5 (scenario: 5, unit: 0)
+- Duplicate tests removed: 7 (scenario: 7, unit: 0)
 - Low-value tests removed: 0 (scenario: 0, unit: 0)
 - `skip_assert_against_bash` flags removed: 0
 - Windows-specific assertions removed: 0
