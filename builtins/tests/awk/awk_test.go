@@ -80,6 +80,15 @@ func TestAwkFieldSeparatorAndConcat(t *testing.T) {
 	assert.Equal(t, "user=root:0\nuser=agent:42\n", stdout)
 }
 
+func TestAwkStopsOptionParsingAfterProgram(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "-F,", "a,b c\n")
+	stdout, stderr, code := cmdRun(t, `awk '{ print $1 }' -F,`, dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "", stderr)
+	assert.Equal(t, "a,b\n", stdout)
+}
+
 func TestAwkBeginEndAndAggregation(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, dir, "input.txt", "a 2\nb 3\n")
@@ -112,6 +121,15 @@ func TestAwkPrintParenthesizedComparison(t *testing.T) {
 	assert.Equal(t, 0, code)
 	assert.Equal(t, "", stderr)
 	assert.Equal(t, "0\n1\n", stdout)
+}
+
+func TestAwkRegexLiteralExpression(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "input.txt", "bar\nfoo\n")
+	stdout, stderr, code := cmdRun(t, `awk '{ print (/foo/) } /foo/ == 1 { print "matched", $0 }' input.txt`, dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "", stderr)
+	assert.Equal(t, "0\n1\nmatched foo\n", stdout)
 }
 
 func TestAwkLiteralFieldSeparatorBlankRecordNF(t *testing.T) {

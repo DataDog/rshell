@@ -58,7 +58,11 @@ func (rt *runtime) eval(x expr) (value, error) {
 	case *stringExpr:
 		return stringValue(e.value), nil
 	case *regexExpr:
-		return regexValue(e.pattern), nil
+		re, err := compileRegex(e.pattern)
+		if err != nil {
+			return value{}, err
+		}
+		return boolValue(re.MatchString(rt.record)), nil
 	case *varExpr:
 		return rt.getVar(e.name), nil
 	case *fieldExpr:
@@ -139,6 +143,17 @@ func (rt *runtime) evalBinary(e *binaryExpr) (value, error) {
 	if err != nil {
 		return value{}, err
 	}
+	switch e.op {
+	case "~", "!~":
+		matched, err := rt.matchRegexExpr(left, e.right)
+		if err != nil {
+			return value{}, err
+		}
+		if e.op == "!~" {
+			matched = !matched
+		}
+		return boolValue(matched), nil
+	}
 	right, err := rt.eval(e.right)
 	if err != nil {
 		return value{}, err
@@ -164,18 +179,28 @@ func (rt *runtime) evalBinary(e *binaryExpr) (value, error) {
 		return numberValue(math.Mod(left.Number(), right.Number())), nil
 	case "==", "!=", "<", "<=", ">", ">=":
 		return boolValue(compareValues(left, right, e.op)), nil
-	case "~", "!~":
-		matched, err := matchRegex(left, right)
-		if err != nil {
-			return value{}, err
-		}
-		if e.op == "!~" {
-			matched = !matched
-		}
-		return boolValue(matched), nil
 	default:
 		return value{}, fmt.Errorf("unknown binary operator %s", e.op)
 	}
+}
+
+func (rt *runtime) matchRegexExpr(left value, rightExpr expr) (bool, error) {
+	if rx, ok := rightExpr.(*regexExpr); ok {
+		re, err := compileRegex(rx.pattern)
+		if err != nil {
+			return false, err
+		}
+		return re.MatchString(left.String()), nil
+	}
+	right, err := rt.eval(rightExpr)
+	if err != nil {
+		return false, err
+	}
+	re, err := compileRegex(right.String())
+	if err != nil {
+		return false, err
+	}
+	return re.MatchString(left.String()), nil
 }
 
 func (rt *runtime) evalAssign(e *assignExpr) (value, error) {
@@ -295,12 +320,4 @@ func valuesAreNumeric(left, right value) bool {
 		}
 	}
 	return false
-}
-
-func matchRegex(left, right value) (bool, error) {
-	re, err := compileRegex(right.String())
-	if err != nil {
-		return false, err
-	}
-	return re.MatchString(left.String()), nil
 }
