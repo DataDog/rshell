@@ -466,9 +466,55 @@ func validateFS(fs string) error {
 }
 
 func compileRegex(pattern string) (*regexp.Regexp, error) {
-	re, err := regexp.Compile(pattern)
+	normalized := normalizeAwkRegex(pattern)
+	re, err := regexp.Compile(normalized)
 	if err != nil {
 		return nil, fmt.Errorf("invalid regular expression %q: %v", pattern, err)
 	}
 	return re, nil
+}
+
+func normalizeAwkRegex(pattern string) string {
+	var b strings.Builder
+	for i := 0; i < len(pattern); i++ {
+		ch := pattern[i]
+		if ch != '\\' {
+			b.WriteByte(ch)
+			continue
+		}
+		if i+1 >= len(pattern) {
+			b.WriteByte(ch)
+			continue
+		}
+		i++
+		writeAwkRegexEscape(&b, pattern[i])
+	}
+	return b.String()
+}
+
+func writeAwkRegexEscape(b *strings.Builder, esc byte) {
+	switch esc {
+	case 'n':
+		b.WriteString(`\n`)
+	case 't':
+		b.WriteString(`\t`)
+	case 'r':
+		b.WriteString(`\r`)
+	case 'b':
+		b.WriteString(`\x08`)
+	case 'f':
+		b.WriteString(`\f`)
+	case 'a':
+		b.WriteString(`\x07`)
+	case 'v':
+		b.WriteString(`\x0b`)
+	case '.', '[', ']', '(', ')', '{', '}', '*', '+', '?', '|', '^', '$', '\\':
+		b.WriteByte('\\')
+		b.WriteByte(esc)
+	case 'w', 'W', 's', 'S':
+		b.WriteByte('\\')
+		b.WriteByte(esc)
+	default:
+		b.WriteByte(esc)
+	}
 }
