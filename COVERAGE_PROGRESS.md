@@ -10,7 +10,7 @@ Legend: ⏳ pending · 🔄 in progress · ✅ done · ⏭️ skipped (no high-v
 |---:|---------------------|-------|---------------:|--------------:|--------|-------|
 | 1  | readonly            | shell |              8 | 8             | ⏭️     | already comprehensive — 8 scenarios cover every variant of intentionally-blocked keyword |
 | 2  | case_clause         | shell |             10 | 10            | ⏭️     | already comprehensive — 10 scenarios cover every pattern variant of intentionally-blocked syntax |
-| 3  | errors              | shell |             10 | —             | ⏳     |       |
+| 3  | errors              | shell |             10 | 10            | ⏭️     | already comprehensive — covers cmd-not-found in script/if/pipeline/cmd-subst plus exit-code propagation and recovery |
 | 4  | function            | shell |             10 | —             | ⏳     |       |
 | 5  | empty_script        | shell |             11 | —             | ⏳     |       |
 | 6  | allowed_commands    | shell |             12 | —             | ⏳     |       |
@@ -75,7 +75,7 @@ Legend: ⏳ pending · 🔄 in progress · ✅ done · ⏭️ skipped (no high-v
 
 ## Summary
 
-- Targets processed: 2 / 64
+- Targets processed: 3 / 64
 - Tests added: 0 (scenario: 0, unit: 0)
 - Duplicate tests removed: 0 (scenario: 0, unit: 0)
 - Low-value tests removed: 0 (scenario: 0, unit: 0)
