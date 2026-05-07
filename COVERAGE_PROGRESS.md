@@ -26,7 +26,7 @@ Legend: ⏳ pending · 🔄 in progress · ✅ done · ⏭️ skipped (no high-v
 | 16 | heredoc_dash | shell | 20 | 20 | ⏭️ | comprehensive: tab stripping, indented delimiter, var expansion, quoted/unquoted, pipe, brace, for-loop |
 | 17 | simple_command | shell | 21 | 21 | ⏭️ | comprehensive: assignment, multi-assign, expansion, exit-status, special-chars, persistence |
 | 18 | until_clause | shell | 21 | 21 | ⏭️ | comprehensive: break/continue with args, nested, exit status, pipeline cond, single/multi-line, brace body, negation |
-| 19 | true | cmd | 23 | — | ⏳ | |
+| 19 | true | cmd | 23 | 22 | ✅ | removed exact duplicate exit_status.yaml (mirror of false fix) |
 | 20 | redirections | shell | 26 | — | ⏳ | |
 | 21 | negation | shell | 27 | — | ⏳ | |
 | 22 | comments | shell | 28 | — | ⏳ | |
@@ -75,9 +75,9 @@ Legend: ⏳ pending · 🔄 in progress · ✅ done · ⏭️ skipped (no high-v
 
 ## Summary
 
-- Targets processed: 18 / 64
+- Targets processed: 19 / 64
 - Tests added: 9 (scenario: 9, unit: 0)
-- Duplicate tests removed: 2 (scenario: 2, unit: 0)
+- Duplicate tests removed: 3 (scenario: 3, unit: 0)
 - Low-value tests removed: 0 (scenario: 0, unit: 0)
 - `skip_assert_against_bash` flags removed: 0
 - Windows-specific assertions removed: 0
