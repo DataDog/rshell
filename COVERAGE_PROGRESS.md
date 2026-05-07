@@ -38,7 +38,7 @@ Legend: ⏳ pending · 🔄 in progress · ✅ done · ⏭️ skipped (no high-v
 | 28 | environment | shell | 41 | 41 | ⏭️ | comprehensive: standard vars, IFS, tilde rules, --env option, special $?, no-parent-propagation |
 | 29 | help | cmd | 41 | 41 | ⏭️ | 10 scenarios + 31 Go tests cover full surface (modes, flags, feature detail, restricted vs unrestricted) |
 | 30 | heredoc | shell | 42 | 42 | ⏭️ | comprehensive: variable expansion (quoted/unquoted/partial), delimiter forms, command-sub, line-continuation, in compound contexts, tabs, special chars |
-| 31 | exit | cmd | 44 | — | ⏳ | |
+| 31 | exit | cmd | 44 | 40 | ✅ | removed 4 byte-identical dupes (exit_*.yaml mirrored basic/*.yaml and codes/17.yaml) |
 | 32 | strings_cmd | cmd | 44 | — | ⏳ | |
 | 33 | blocked_commands | shell | 44 | — | ⏳ | |
 | 34 | ps | cmd | 44 | — | ⏳ | |
@@ -75,9 +75,9 @@ Legend: ⏳ pending · 🔄 in progress · ✅ done · ⏭️ skipped (no high-v
 
 ## Summary
 
-- Targets processed: 30 / 64
+- Targets processed: 31 / 64
 - Tests added: 8 (scenario: 8, unit: 0)
-- Duplicate tests removed: 7 (scenario: 7, unit: 0)
+- Duplicate tests removed: 11 (scenario: 11, unit: 0)
 - Low-value tests removed: 0 (scenario: 0, unit: 0)
 - `skip_assert_against_bash` flags removed: 0
 - Windows-specific assertions removed: 0
