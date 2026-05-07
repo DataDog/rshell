@@ -245,6 +245,8 @@ func TestAwkRejectsUnsafeFeatures(t *testing.T) {
 		`awk '{ print $1 > "out" }' input.txt`,
 		`awk '{ $1 = "x" }' input.txt`,
 		`awk '{ next; print $1 }' input.txt`,
+		`awk '{ print getline }' input.txt`,
+		`awk '{ x = next }' input.txt`,
 		`awk '{ exit 0 }' input.txt`,
 		`awk '{ print 1 / 0 }' input.txt`,
 		`awk -F '' '{ print $1 }' input.txt`,

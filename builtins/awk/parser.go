@@ -275,6 +275,9 @@ func (p *parser) parsePrefix() (expr, error) {
 		return &regexExpr{pattern: tok.lit}, nil
 	case tokIdent:
 		p.advance()
+		if msg, ok := unsupportedExpressionKeyword(tok.lit); ok {
+			return nil, fmt.Errorf("%s", msg)
+		}
 		if tok.lit == "system" {
 			return nil, fmt.Errorf("system() is not supported")
 		}
@@ -322,6 +325,23 @@ func (p *parser) parsePrefix() (expr, error) {
 		return &incDecExpr{op: tok.lit, x: x, prefix: true}, nil
 	default:
 		return nil, fmt.Errorf("expected expression")
+	}
+}
+
+func unsupportedExpressionKeyword(name string) (string, bool) {
+	switch name {
+	case "if", "while", "for", "next", "nextfile", "exit", "break", "continue":
+		return "control flow statements are not supported", true
+	case "delete":
+		return "arrays are not supported", true
+	case "getline":
+		return "getline is not supported", true
+	case "printf":
+		return "printf is not supported", true
+	case "print":
+		return "print is not supported in expressions", true
+	default:
+		return "", false
 	}
 }
 
