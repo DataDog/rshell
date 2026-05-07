@@ -13,7 +13,7 @@ Legend: ⏳ pending · 🔄 in progress · ✅ done · ⏭️ skipped (no high-v
 | 3  | errors              | shell |             10 | 10            | ⏭️     | already comprehensive — covers cmd-not-found in script/if/pipeline/cmd-subst plus exit-code propagation and recovery |
 | 4  | function            | shell |             10 | 10            | ⏭️     | already comprehensive — 10 scenarios cover every variant of intentionally-blocked syntax |
 | 5  | empty_script        | shell |             11 | 11            | ⏭️     | already comprehensive — covers empty/comments/whitespace/CRLF/tabs combinations |
-| 6  | allowed_commands    | shell |             12 | —             | ⏳     |       |
+| 6  | allowed_commands    | shell |             12 | 12            | ⏭️     | already comprehensive — covers allow_all, allow-list, blocked-in-pipe/subshell/cmdsubst, special builtins |
 | 7  | subshell            | shell |             12 | —             | ⏳     |       |
 | 8  | input_processing    | shell |             13 | —             | ⏳     |       |
 | 9  | blocked_redirects   | shell |             17 | —             | ⏳     |       |
@@ -75,7 +75,7 @@ Legend: ⏳ pending · 🔄 in progress · ✅ done · ⏭️ skipped (no high-v
 
 ## Summary
 
-- Targets processed: 5 / 64
+- Targets processed: 6 / 64
 - Tests added: 0 (scenario: 0, unit: 0)
 - Duplicate tests removed: 0 (scenario: 0, unit: 0)
 - Low-value tests removed: 0 (scenario: 0, unit: 0)
