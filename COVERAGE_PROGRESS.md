@@ -50,7 +50,7 @@ Legend: ⏳ pending · 🔄 in progress · ✅ done · ⏭️ skipped (no high-v
 | 40 | ping                | cmd   |             59 | 59            | ⏭️     | already comprehensive — 26 Go tests + 33 scenarios cover flags, IPv4/IPv6, count/timeout, errors |
 | 41 | strings             | cmd   |             62 | 62            | ⏭️     | already comprehensive — 25 Go tests + 37 scenarios cover -n/--bytes, encoding, binary input, errors |
 | 42 | exit                | cmd   |             63 | 63            | ⏭️     | already comprehensive — 40 scenarios cover exit codes, status propagation, no-arg, in subshell/group |
-| 43 | ip                  | cmd   |             67 | —             | ⏳     |       |
+| 43 | ip                  | cmd   |             67 | 67            | ⏭️     | already comprehensive — 26 Go tests (linux+pentest) + 41 scenarios cover ip route/addr/link |
 | 44 | tr                  | cmd   |             68 | —             | ⏳     |       |
 | 45 | cat                 | cmd   |             71 | —             | ⏳     |       |
 | 46 | read                | cmd   |             71 | —             | ⏳     |       |
@@ -75,7 +75,7 @@ Legend: ⏳ pending · 🔄 in progress · ✅ done · ⏭️ skipped (no high-v
 
 ## Summary
 
-- Targets processed: 42 / 64
+- Targets processed: 43 / 64
 - Tests added: 0 (scenario: 0, unit: 0)
 - Duplicate tests removed: 0 (scenario: 0, unit: 0)
 - Low-value tests removed: 0 (scenario: 0, unit: 0)
