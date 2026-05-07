@@ -446,6 +446,9 @@ func (p *parser) parseFunctionCall(name string) (expr, error) {
 	args := []expr{}
 	p.skipSeparators()
 	if p.match(tokRParen) {
+		if err := validateBuiltinCallArity(name, len(args)); err != nil {
+			return nil, err
+		}
 		return &callExpr{name: name}, nil
 	}
 	for {
@@ -463,7 +466,32 @@ func (p *parser) parseFunctionCall(name string) (expr, error) {
 			return nil, fmt.Errorf("expected , or ) in function call")
 		}
 	}
+	if err := validateBuiltinCallArity(name, len(args)); err != nil {
+		return nil, err
+	}
 	return &callExpr{name: name, args: args}, nil
+}
+
+func validateBuiltinCallArity(name string, argc int) error {
+	switch name {
+	case "length":
+		if argc > 1 {
+			return fmt.Errorf("length expects at most 1 argument")
+		}
+	case "substr":
+		if argc != 2 && argc != 3 {
+			return fmt.Errorf("substr expects 2 or 3 arguments")
+		}
+	case "index":
+		if argc != 2 {
+			return fmt.Errorf("index expects 2 arguments")
+		}
+	case "tolower", "toupper", "int":
+		if argc != 1 {
+			return fmt.Errorf("%s expects 1 argument", name)
+		}
+	}
+	return nil
 }
 
 func validateIdentifierReference(name string) error {

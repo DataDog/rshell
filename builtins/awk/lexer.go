@@ -322,7 +322,7 @@ func (l *lexer) scanRegex(start int) (token, error) {
 }
 
 func canStartRegex(prev tokenKind, prevLit string) bool {
-	if prev == tokIdent && prevLit == "print" {
+	if prev == tokIdent && (prevLit == "print" || prevLit == "printf") {
 		return true
 	}
 	switch prev {

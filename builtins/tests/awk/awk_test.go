@@ -324,6 +324,7 @@ func TestAwkRejectsNaNAndInfNumericStrings(t *testing.T) {
 func TestAwkRejectsUnsafeFeatures(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, dir, "input.txt", "a b\n")
+	writeFile(t, dir, "empty.txt", "")
 	for _, script := range []string{
 		`awk '{ system("sh") }' input.txt`,
 		`awk '{ print $1 > "out" }' input.txt`,
@@ -334,6 +335,8 @@ func TestAwkRejectsUnsafeFeatures(t *testing.T) {
 		`awk '{ exit 0 }' input.txt`,
 		`awk 'BEGIN { next }' input.txt`,
 		`awk 'BEGIN { print tolower(), toupper(), int() }' input.txt`,
+		`awk '{ print int() }' empty.txt`,
+		`awk '$1 == "missing" { print length(1, 2) }' input.txt`,
 		`awk 'BEGIN { printf "%1000000000s", "x" }' input.txt`,
 		`awk 'BEGIN { printf "%.1000000000s", "x" }' input.txt`,
 		`awk 'BEGIN { printf "%1048576s%1048576s", "x", "y" }' input.txt`,

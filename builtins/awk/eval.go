@@ -173,20 +173,17 @@ func (rt *runtime) evalCall(e *callExpr) (value, error) {
 		}
 		args = append(args, v)
 	}
+	if err := validateBuiltinCallArity(e.name, len(args)); err != nil {
+		return value{}, err
+	}
 	switch e.name {
 	case "length":
-		if len(args) > 1 {
-			return value{}, fmt.Errorf("length expects at most 1 argument")
-		}
 		s := rt.field(0).String()
 		if len(args) == 1 {
 			s = args[0].String()
 		}
 		return numberValue(float64(len([]rune(s)))), nil
 	case "substr":
-		if len(args) != 2 && len(args) != 3 {
-			return value{}, fmt.Errorf("substr expects 2 or 3 arguments")
-		}
 		s := []rune(args[0].String())
 		start := substrStart(args[1].Number(), len(s))
 		if start >= len(s) {
@@ -198,9 +195,6 @@ func (rt *runtime) evalCall(e *callExpr) (value, error) {
 		}
 		return stringValue(string(s[start:end])), nil
 	case "index":
-		if len(args) != 2 {
-			return value{}, fmt.Errorf("index expects 2 arguments")
-		}
 		haystack := args[0].String()
 		needle := args[1].String()
 		if needle == "" {
@@ -212,21 +206,12 @@ func (rt *runtime) evalCall(e *callExpr) (value, error) {
 		}
 		return numberValue(float64(len([]rune(haystack[:pos])) + 1)), nil
 	case "tolower":
-		if len(args) != 1 {
-			return value{}, fmt.Errorf("tolower expects 1 argument")
-		}
 		s := args[0].String()
 		return stringValue(strings.ToLower(s)), nil
 	case "toupper":
-		if len(args) != 1 {
-			return value{}, fmt.Errorf("toupper expects 1 argument")
-		}
 		s := args[0].String()
 		return stringValue(strings.ToUpper(s)), nil
 	case "int":
-		if len(args) != 1 {
-			return value{}, fmt.Errorf("int expects 1 argument")
-		}
 		v := args[0]
 		return numberValue(math.Trunc(v.Number())), nil
 	default:
