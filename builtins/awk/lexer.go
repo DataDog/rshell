@@ -291,10 +291,11 @@ func (l *lexer) scanString(start int) (token, error) {
 
 func (l *lexer) scanRegex(start int) (token, error) {
 	var b strings.Builder
+	inClass := false
 	for l.pos < len(l.src) {
 		ch := l.src[l.pos]
 		l.pos++
-		if ch == '/' {
+		if ch == '/' && !inClass {
 			return token{kind: tokRegex, lit: b.String(), pos: start}, nil
 		}
 		if ch == '\n' {
@@ -309,6 +310,11 @@ func (l *lexer) scanRegex(start int) (token, error) {
 			b.WriteRune('\\')
 			b.WriteRune(next)
 			continue
+		}
+		if ch == '[' {
+			inClass = true
+		} else if ch == ']' && inClass {
+			inClass = false
 		}
 		b.WriteRune(ch)
 	}

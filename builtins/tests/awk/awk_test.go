@@ -168,6 +168,24 @@ func TestAwkPrintRegexLiteralExpression(t *testing.T) {
 	assert.Equal(t, "1\n0\n", stdout)
 }
 
+func TestAwkRegexBracketClassCanContainSlash(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "input.txt", "/\nx\n")
+	stdout, stderr, code := cmdRun(t, `awk '/[/]/ { print }' input.txt`, dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "", stderr)
+	assert.Equal(t, "/\n", stdout)
+}
+
+func TestAwkRegexUnknownEscapesBecomeLiterals(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "input.txt", "5\nd\n")
+	stdout, stderr, code := cmdRun(t, `awk '/\d/ { print }' input.txt`, dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "", stderr)
+	assert.Equal(t, "d\n", stdout)
+}
+
 func TestAwkLiteralFieldSeparatorBlankRecordNF(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, dir, "input.txt", "a:b\n\n:\n")

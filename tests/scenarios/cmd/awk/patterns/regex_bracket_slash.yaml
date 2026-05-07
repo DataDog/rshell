@@ -1,0 +1,16 @@
+description: awk regex bracket classes may contain slash literals.
+setup:
+  files:
+    - path: input.txt
+      content: |+
+        /
+        x
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    awk '/[/]/ { print }' input.txt
+expect:
+  stdout: |+
+    /
+  stderr: |+
+  exit_code: 0
