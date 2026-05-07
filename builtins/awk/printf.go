@@ -7,6 +7,8 @@ package awk
 
 import (
 	"fmt"
+	"math"
+	"math/big"
 	"strings"
 	"unicode/utf8"
 )
@@ -14,6 +16,10 @@ import (
 const (
 	MaxPrintfWidth     = 1 << 20
 	MaxPrintfPrecision = 1 << 20
+
+	minInt64Float          = -9223372036854775808.0
+	maxInt64ExclusiveFloat = 9223372036854775808.0
+	maxUint64Exclusive     = 18446744073709551616.0
 )
 
 func formatPrintf(format string, args []value) (string, error) {
@@ -65,7 +71,7 @@ func formatPrintf(format string, args []value) (string, error) {
 			if verb == 'i' {
 				spec = spec[:len(spec)-1] + "d"
 			}
-			b.WriteString(fmt.Sprintf(spec, int64(v.Number())))
+			b.WriteString(fmt.Sprintf(spec, printfSigned(v)))
 		case 'u':
 			spec = spec[:len(spec)-1] + "d"
 			b.WriteString(fmt.Sprintf(spec, printfUnsigned(v)))
@@ -98,8 +104,41 @@ func consumePrintfBound(format string, idx *int, max int, name string) error {
 	return nil
 }
 
-func printfUnsigned(v value) uint64 {
-	return uint64(int64(v.Number()))
+func printfSigned(v value) any {
+	n := v.Number()
+	if n >= minInt64Float && n < maxInt64ExclusiveFloat {
+		return int64(n)
+	}
+	return printfBigInt(n)
+}
+
+func printfUnsigned(v value) any {
+	n := v.Number()
+	if n >= 0 && n < maxUint64Exclusive {
+		return uint64(n)
+	}
+	if n >= minInt64Float && n < 0 {
+		return uint64(int64(n))
+	}
+	return printfBigInt(n)
+}
+
+func printfBigInt(n float64) *big.Int {
+	if math.IsNaN(n) {
+		return big.NewInt(0)
+	}
+	if math.IsInf(n, 1) {
+		return new(big.Int).SetUint64(^uint64(0))
+	}
+	if math.IsInf(n, -1) {
+		return big.NewInt(-9223372036854775807 - 1)
+	}
+	f := new(big.Float).SetPrec(64).SetFloat64(n)
+	i, _ := f.Int(nil)
+	if i == nil {
+		return big.NewInt(0)
+	}
+	return i
 }
 
 func printfRune(v value) rune {

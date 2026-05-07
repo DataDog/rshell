@@ -37,6 +37,11 @@ var builtinPerCommandSymbols = map[string][]string{
 		"io.EOF",                          // 🟢 sentinel error value; pure constant.
 		"io.NopCloser",                    // 🟢 wraps a Reader with a no-op Close; no side effects.
 		"io.ReadCloser",                   // 🟢 interface type; no side effects.
+		"math/big.Float",                  // 🟢 arbitrary-precision float type used to convert large awk printf integers; pure in-memory arithmetic.
+		"math/big.Int",                    // 🟢 arbitrary-precision integer type used for large awk printf integers; pure in-memory arithmetic.
+		"math/big.NewInt",                 // 🟢 constructs an in-memory integer value; pure function, no I/O.
+		"math.IsInf",                      // 🟢 IEEE 754 infinity check; pure function, no I/O.
+		"math.IsNaN",                      // 🟢 IEEE 754 NaN check; pure function, no I/O.
 		"math.Mod",                        // 🟢 pure arithmetic modulo for awk % operator; no side effects.
 		"math.Trunc",                      // 🟢 pure arithmetic truncation for awk int(); no side effects.
 		"os.O_RDONLY",                     // 🟢 read-only file flag constant; cannot open files by itself.
@@ -582,6 +587,9 @@ var builtinAllowedSymbols = []string{
 	"io/fs.ModeSticky",                                    // 🟢 file mode bit constant for sticky bit; pure constant.
 	"io/fs.ModeSymlink",                                   // 🟢 file mode bit constant for symlinks; pure constant.
 	"io/fs.ReadDirFile",                                   // 🟢 read-only directory handle interface; no write capability.
+	"math/big.Float",                                      // 🟢 arbitrary-precision float type; pure in-memory arithmetic.
+	"math/big.Int",                                        // 🟢 arbitrary-precision integer type; pure in-memory arithmetic.
+	"math/big.NewInt",                                     // 🟢 constructs an in-memory integer value; pure function, no I/O.
 	"math.Ceil",                                           // 🟢 pure arithmetic; no side effects.
 	"math.Floor",                                          // 🟢 pure arithmetic; no side effects.
 	"math.Inf",                                            // 🟢 returns positive or negative infinity; pure function, no I/O.
