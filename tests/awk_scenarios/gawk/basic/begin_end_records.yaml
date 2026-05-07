@@ -1,0 +1,25 @@
+description: BEGIN and END blocks wrap per-record actions
+upstream:
+  suite: gawk
+  id: test/beginfile1.awk
+  ref: gawk-5.4.0
+covers:
+  - BEGIN actions run before input records are processed
+  - END actions run after all input records are processed
+  - NR is incremented for each input record
+  - $1 and $NF read the first and last fields of the current record
+input:
+  program: |
+    BEGIN { print "start" }
+    { print NR ":" $1 "-" $NF }
+    END { print "count=" NR }
+  stdin: |
+    alpha beta
+    gamma delta epsilon
+expect:
+  stdout: |
+    start
+    1:alpha-beta
+    2:gamma-epsilon
+    count=2
+  exit_code: 0

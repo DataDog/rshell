@@ -1,0 +1,26 @@
+description: Regular expression patterns and !~ select records
+upstream:
+  suite: gawk
+  id: test/re_test.awk
+  ref: gawk-5.4.0
+covers:
+  - regex patterns select matching input records
+  - anchors constrain regex matches to the whole record
+  - !~ negates a regex match expression
+input:
+  program: |
+    /^[[:alpha:]]+[0-9]$/ { print NR ":" $0 }
+    $0 !~ /[aeiou]/ { print "no-vowel:" $0 }
+  stdin: |
+    abc1
+    sky
+    lake2
+    B7
+expect:
+  stdout: |
+    1:abc1
+    no-vowel:sky
+    3:lake2
+    4:B7
+    no-vowel:B7
+  exit_code: 0

@@ -1,4 +1,4 @@
-.PHONY: build fmt test test_all test_against_bash compliance
+.PHONY: build fmt test test_all test_against_bash test_awk_rewritten compliance
 
 build:
 	go build -o rshell ./cmd/rshell
@@ -14,6 +14,9 @@ test_all:
 
 test_against_bash:
 	RSHELL_BASH_TEST=1 go test -v ./tests/ -run TestShellScenariosAgainstBash -count=1
+
+test_awk_rewritten:
+	tools/awk-harness/run.sh rewritten
 
 compliance:
 	RSHELL_COMPLIANCE_TEST=1 go test -v ./tests/ -run TestCompliance -count=1

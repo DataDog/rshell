@@ -1,0 +1,30 @@
+description: Arithmetic and comparison expressions drive conditional actions
+upstream:
+  suite: gawk
+  id: test/compare.awk
+  ref: gawk-5.4.0
+covers:
+  - numeric addition updates an accumulator
+  - modulo participates in equality comparisons
+  - if and else choose actions from numeric comparisons
+input:
+  program: |
+    {
+      total += $1
+      if ($1 % 2 == 0)
+        print $1, "even"
+      else
+        print $1, "odd"
+    }
+    END { print "total", total }
+  stdin: |
+    3
+    4
+    9
+expect:
+  stdout: |
+    3 odd
+    4 even
+    9 odd
+    total 16
+  exit_code: 0

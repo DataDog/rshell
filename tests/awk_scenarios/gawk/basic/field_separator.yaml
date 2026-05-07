@@ -1,0 +1,20 @@
+description: FS controls field splitting and NF for comma-separated records
+upstream:
+  suite: gawk
+  id: test/fieldwdth.awk
+  ref: gawk-5.4.0
+covers:
+  - FS controls field splitting for subsequent records
+  - NF reflects the number of fields in the current record
+input:
+  program: |
+    BEGIN { FS = "," }
+    { print $2 ":" NF }
+  stdin: |
+    a,b,c
+    x,y
+expect:
+  stdout: |
+    b:3
+    y:2
+  exit_code: 0

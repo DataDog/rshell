@@ -1,0 +1,20 @@
+description: print uses OFS between arguments and ORS after each record
+upstream:
+  suite: gawk
+  id: test/ofs1.awk
+  ref: gawk-5.4.0
+covers:
+  - print inserts OFS between arguments
+  - print appends ORS after the output record
+  - numeric arguments are formatted for print output
+input:
+  program: |
+    BEGIN {
+      OFS = "::"
+      ORS = "<end>\n"
+      print "left", "right", 7
+    }
+expect:
+  stdout: |
+    left::right::7<end>
+  exit_code: 0

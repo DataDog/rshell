@@ -1,0 +1,101 @@
+# Tracks which upstream AWK tests have been represented by original rshell tests.
+# This file is an audit ledger only; tests/awk_scenarios/enabled.txt controls
+# which rewritten tests are executed.
+entries:
+  - suite: gawk
+    id: test/beginfile1.awk
+    ref: gawk-5.4.0
+    status: rewritten
+    tests:
+      - gawk/basic/begin_end_records.yaml
+    covers:
+      - BEGIN and END action ordering
+      - record processing updates NR
+
+  - suite: gawk
+    id: test/fieldwdth.awk
+    ref: gawk-5.4.0
+    status: rewritten
+    tests:
+      - gawk/basic/field_separator.yaml
+    covers:
+      - field splitting
+      - NF updates for the current record
+
+  - suite: gawk
+    id: test/argtest.awk
+    ref: gawk-5.4.0
+    status: rewritten
+    tests:
+      - gawk/cli/variable_assignment.yaml
+    covers:
+      - -v assignment timing
+      - FILENAME and FNR for file input
+
+  - suite: gawk
+    id: test/splitargv.awk
+    ref: gawk-5.4.0
+    status: rewritten
+    tests:
+      - gawk/functions/split.yaml
+    covers:
+      - split return value
+      - split array indexing
+
+  - suite: gawk
+    id: test/assignnumfield.awk
+    ref: gawk-5.4.0
+    status: rewritten
+    tests:
+      - gawk/fields/assign_rebuilds_record.yaml
+    covers:
+      - numbered field assignment
+      - record rebuilding after field assignment
+
+  - suite: gawk
+    id: test/compare.awk
+    ref: gawk-5.4.0
+    status: rewritten
+    tests:
+      - gawk/expressions/arithmetic_comparison.yaml
+    covers:
+      - arithmetic expressions
+      - numeric comparisons
+
+  - suite: gawk
+    id: test/ofs1.awk
+    ref: gawk-5.4.0
+    status: rewritten
+    tests:
+      - gawk/output/print_separators.yaml
+    covers:
+      - OFS in print output
+      - ORS in print output
+
+  - suite: gawk
+    id: test/re_test.awk
+    ref: gawk-5.4.0
+    status: rewritten
+    tests:
+      - gawk/regex/pattern_match.yaml
+    covers:
+      - regex pattern matching
+      - negated regex matching
+
+  - suite: onetrueawk
+    id: testdir/t.3
+    ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+    status: rewritten
+    tests:
+      - onetrueawk/basic/pattern_action.yaml
+    covers:
+      - pattern-only rules
+
+  - suite: onetrueawk
+    id: testdir/t.0
+    ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+    status: rewritten
+    tests:
+      - onetrueawk/basic/pattern_action.yaml
+    covers:
+      - action-only rules

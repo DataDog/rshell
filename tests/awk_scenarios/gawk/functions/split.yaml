@@ -1,0 +1,23 @@
+description: split populates array elements and returns the element count
+upstream:
+  suite: gawk
+  id: test/splitargv.awk
+  ref: gawk-5.4.0
+covers:
+  - split returns the number of elements it created
+  - split stores array elements using one-based numeric indexes
+  - split accepts a string field separator argument
+input:
+  program: |
+    BEGIN {
+      n = split("north:south:east", parts, ":")
+      print n
+      for (i = 1; i <= n; i++) print i "=" parts[i]
+    }
+expect:
+  stdout: |
+    3
+    1=north
+    2=south
+    3=east
+  exit_code: 0
