@@ -42,7 +42,6 @@ var builtinPerCommandSymbols = map[string][]string{
 		"strconv.ParseFloat",              // 🟢 string-to-float conversion; pure function, no I/O.
 		"strings.Builder",                 // 🟢 efficient string concatenation; pure in-memory buffer, no I/O.
 		"strings.Cut",                     // 🟢 splits a string around the first separator; pure function, no I/O.
-		"strings.Fields",                  // 🟢 splits a string on whitespace; pure function, no I/O.
 		"strings.Join",                    // 🟢 concatenates a slice of strings with a separator; pure function, no I/O.
 		"strings.NewReader",               // 🟢 wraps a string as an io.Reader; pure in-memory, no I/O.
 		"strings.Split",                   // 🟢 splits a string by separator into a slice; pure function, no I/O.
