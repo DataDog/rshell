@@ -115,7 +115,19 @@ func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {
 		}
 
 		defer func() {
+			// cd intentionally writes $PWD and $OLDPWD as part of
+			// its semantics. Reverting those after a successful cd
+			// would leave the env vars disagreeing with the shell's
+			// tracked working directory — bash skips the revert in
+			// the same case (e.g. `PWD=/bogus cd b` keeps PWD at
+			// the new dir afterwards). The skip is scoped to a
+			// successful cd so a cd that errored still gets its
+			// temp PWD assignment reverted normally.
+			isCd := len(fields) > 0 && fields[0] == "cd" && r.exit.ok()
 			for _, restore := range restores {
+				if isCd && (restore.name == "PWD" || restore.name == "OLDPWD") {
+					continue
+				}
 				r.setVarRestore(restore.name, restore.vr)
 			}
 		}()

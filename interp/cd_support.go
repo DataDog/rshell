@@ -66,7 +66,17 @@ func (r *Runner) changeDir(absDir string) error {
 		}
 	}
 
+	// bash's OLDPWD source is the **env var** $PWD, not the shell's
+	// tracked working directory. The two normally agree, but they can
+	// differ when a temporary assignment precedes cd
+	// (e.g. `PWD=/bogus cd b`) — bash captures /bogus as OLDPWD even
+	// though the actual cwd was /tmp/parent. Fall back to r.Dir only
+	// when $PWD is unset.
 	oldDir := r.Dir
+	if v := r.writeEnv.Get("PWD"); v.IsSet() && v.Str != "" {
+		oldDir = v.Str
+	}
+
 	r.Dir = cleaned
 	// Use setVarString so the new values count toward MaxVarBytes /
 	// MaxTotalVarsBytes the same way as a script-driven assignment.
