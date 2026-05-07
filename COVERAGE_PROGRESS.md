@@ -56,7 +56,7 @@ Legend: ⏳ pending · 🔄 in progress · ✅ done · ⏭️ skipped (no high-v
 | 46 | read                | cmd   |             71 | 71            | ⏭️     | already comprehensive — 47 scenarios + 3 Go tests cover -r, IFS splitting, multi-var, EOF, stdin |
 | 47 | test                | cmd   |             71 | 71            | ⏭️     | already comprehensive — 28 Go tests (incl. unix/windows/pentest/gnu_compat) + 43 scenarios |
 | 48 | if_clause           | shell |             71 | 71            | ⏭️     | already comprehensive — covers if/elif/else, nesting, multi-line, with cmd-subst, with pipelines |
-| 49 | uniq                | cmd   |             73 | —             | ⏳     |       |
+| 49 | uniq                | cmd   |             73 | 73            | ⏭️     | already comprehensive — 27 Go tests + 46 scenarios cover -c/-d/-u/-i/-f/-s/-w flags, sorted assumption |
 | 50 | wc                  | cmd   |             76 | —             | ⏳     |       |
 | 51 | logic_ops           | shell |             76 | —             | ⏳     |       |
 | 52 | xargs               | cmd   |             78 | —             | ⏳     |       |
@@ -75,7 +75,7 @@ Legend: ⏳ pending · 🔄 in progress · ✅ done · ⏭️ skipped (no high-v
 
 ## Summary
 
-- Targets processed: 48 / 64
+- Targets processed: 49 / 64
 - Tests added: 0 (scenario: 0, unit: 0)
 - Duplicate tests removed: 0 (scenario: 0, unit: 0)
 - Low-value tests removed: 0 (scenario: 0, unit: 0)
