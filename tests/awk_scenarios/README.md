@@ -34,23 +34,16 @@ explicit `todo` entries:
 tools/awk-harness/run.sh sync-rewrite-map
 ```
 
-Run the rewritten scenarios against the pinned GNU awk oracle:
+Run the rewritten scenarios against rshell's `awk` adapter:
 
 ```bash
 tools/awk-harness/run.sh install-gawk
-tools/awk-harness/run.sh rewritten
+make build
+RSHELL_BIN=./rshell AWK_UNDER_TEST=tools/awk-harness/rshell-awk tools/awk-harness/run.sh rewritten
 ```
 
 If `enabled.txt` is empty, the rewritten scenario run is skipped. Use
 `upstream-map.yaml` to track rewritten coverage that is not active yet.
 
-Run the same scenarios against rshell's `awk` adapter once the builtin exists:
-
-```bash
-make build
-RSHELL_BIN=./rshell AWK_UNDER_TEST=tools/awk-harness/rshell-awk tools/awk-harness/run.sh rewritten
-```
-
-The runner still compares rshell output to the pinned GNU awk oracle when
-`GAWK_ORACLE` is set, so expected output in these files and live GNU awk
-behavior must stay aligned.
+The runner still compares rshell output to the pinned GNU awk oracle, so
+expected output in these files and live GNU awk behavior must stay aligned.

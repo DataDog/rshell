@@ -7,10 +7,9 @@ source "$SCRIPT_DIR/lib.sh"
 
 oracle="$(resolve_gawk_oracle)"
 if [ -z "${AWK_UNDER_TEST:-}" ]; then
-	AWK_UNDER_TEST="$oracle"
-else
-	AWK_UNDER_TEST="$(resolve_awk_under_test)"
+	die "AWK_UNDER_TEST must point to the awk binary under test; for rshell use RSHELL_BIN=./rshell AWK_UNDER_TEST=tools/awk-harness/rshell-awk"
 fi
+AWK_UNDER_TEST="$(resolve_awk_under_test)"
 
 export GAWK_ORACLE="$oracle"
 export AWK_UNDER_TEST

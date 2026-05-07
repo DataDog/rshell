@@ -62,11 +62,12 @@ The harness rejects a `GAWK_ORACLE` whose `gawk --version` does not match
 
 ## Usage
 
-Run the rshell-owned rewritten AWK scenarios against the pinned GNU awk oracle:
+Run the rshell-owned rewritten AWK scenarios against rshell's `awk` adapter:
 
 ```bash
 tools/awk-harness/run.sh install-gawk
-tools/awk-harness/run.sh rewritten
+make build
+RSHELL_BIN=./rshell AWK_UNDER_TEST=tools/awk-harness/rshell-awk tools/awk-harness/run.sh rewritten
 ```
 
 Check whether the rewrite ledger accounts for every fetched upstream test:
@@ -194,12 +195,10 @@ The ledger uses these statuses:
 - `todo`: fetched upstream test is accounted for, but an original rewrite has
   not been written yet.
 
-When `AWK_UNDER_TEST` is unset, `rewritten` runs the scenarios against the
-pinned GNU awk oracle. This lets CI validate the local test definitions before
-rshell has an `awk` builtin.
-
-When `AWK_UNDER_TEST` is set, `rewritten` runs the candidate and compares it to
-both the scenario's expected result and the pinned GNU awk oracle.
+`rewritten` requires `AWK_UNDER_TEST`. CI points it at
+`tools/awk-harness/rshell-awk` so enabled scenarios are implementation gates for
+rshell's awk. The pinned GNU awk binary is still required, but only as the
+trusted comparison oracle.
 
 ## Outputs
 
