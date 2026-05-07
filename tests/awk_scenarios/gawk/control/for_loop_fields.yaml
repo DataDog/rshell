@@ -1,0 +1,26 @@
+description: for loops can iterate over fields in each record
+upstream:
+  suite: gawk
+  id: test/forref.awk
+  ref: gawk-5.4.0
+covers:
+  - for loop initialization, condition, and increment execute in order
+  - NF can bound a loop over current-record fields
+  - dynamic field references read each selected field
+input:
+  program: |
+    {
+      for (i = 1; i <= NF; i++)
+        print NR ":" i "=" $i
+    }
+  stdin: |
+    red blue
+    one two three
+expect:
+  stdout: |
+    1:1=red
+    1:2=blue
+    2:1=one
+    2:2=two
+    2:3=three
+  exit_code: 0

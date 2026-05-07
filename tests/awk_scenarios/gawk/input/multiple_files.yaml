@@ -1,0 +1,30 @@
+description: FILENAME, FNR, and NR distinguish multiple input files
+upstream:
+  suite: gawk
+  id: test/argcasfile.awk
+  ref: gawk-5.4.0
+covers:
+  - FILENAME is updated for each input file
+  - FNR resets for each input file
+  - NR continues across input files
+setup:
+  files:
+    - path: alpha.txt
+      content: |
+        north
+        south
+    - path: beta.txt
+      content: |
+        east
+input:
+  program: |
+    { print FILENAME ":" FNR ":" NR ":" $0 }
+  args:
+    - alpha.txt
+    - beta.txt
+expect:
+  stdout: |
+    alpha.txt:1:1:north
+    alpha.txt:2:2:south
+    beta.txt:1:3:east
+  exit_code: 0

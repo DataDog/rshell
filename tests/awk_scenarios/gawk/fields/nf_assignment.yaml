@@ -1,0 +1,25 @@
+description: Assigning NF rebuilds the current record and extending fields fills gaps
+upstream:
+  suite: gawk
+  id: test/assignnumfield2.awk
+  ref: gawk-5.4.0
+covers:
+  - assigning NF truncates the current field list
+  - assigning a field past NF extends NF
+  - rebuilding $0 after NF and field assignment uses OFS
+input:
+  program: |
+    BEGIN { OFS = "," }
+    {
+      NF = 2
+      print NF ":" $0
+      $4 = "tail"
+      print NF ":" $0
+    }
+  stdin: |
+    a b c d
+expect:
+  stdout: |
+    2:a,b
+    4:a,b,,tail
+  exit_code: 0

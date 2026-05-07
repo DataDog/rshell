@@ -20,6 +20,19 @@ onetrueawk/basic/pattern_action.yaml
 `upstream-map.yaml` is an audit ledger for rewrite progress. It does not decide
 which tests run.
 
+Run this to verify the ledger accounts for every fetched upstream test:
+
+```bash
+tools/awk-harness/run.sh check-rewrite-map
+```
+
+Run this after changing upstream refs to append any newly discovered tests as
+explicit `todo` entries:
+
+```bash
+tools/awk-harness/run.sh sync-rewrite-map
+```
+
 Run the rewritten scenarios against the pinned GNU awk oracle:
 
 ```bash

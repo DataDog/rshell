@@ -69,6 +69,19 @@ tools/awk-harness/run.sh install-gawk
 tools/awk-harness/run.sh rewritten
 ```
 
+Check whether the rewrite ledger accounts for every fetched upstream test:
+
+```bash
+tools/awk-harness/run.sh check-rewrite-map
+```
+
+When upstream refs change, or when bootstrapping the ledger, append missing
+entries as explicit `todo` work:
+
+```bash
+tools/awk-harness/run.sh sync-rewrite-map
+```
+
 Point `AWK_UNDER_TEST` at the candidate binary to test:
 
 ```bash
@@ -171,6 +184,15 @@ list so we can track which GNU awk or One True Awk behavior it rewrites.
 `tests/awk_scenarios/upstream-map.yaml` is an audit ledger for upstream rewrite
 coverage. It is not a run list; `enabled.txt` is the single source of truth for
 which rewritten tests execute.
+
+The ledger uses these statuses:
+
+- `rewritten`: represented by original rshell-owned AWK scenario tests.
+- `policy`: represented by rshell safety or integration scenarios instead of
+  GNU-compatible success behavior.
+- `deferred`: deliberately postponed with a reason.
+- `todo`: fetched upstream test is accounted for, but an original rewrite has
+  not been written yet.
 
 When `AWK_UNDER_TEST` is unset, `rewritten` runs the scenarios against the
 pinned GNU awk oracle. This lets CI validate the local test definitions before

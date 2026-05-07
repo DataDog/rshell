@@ -1,0 +1,24 @@
+description: Associative array indexes can be strings and values accumulate
+upstream:
+  suite: gawk
+  id: test/arrayind1.awk
+  ref: gawk-5.4.0
+covers:
+  - string keys address associative array elements
+  - numeric values stored in arrays can be incremented
+  - array values can be read through a computed key
+input:
+  program: |
+    BEGIN {
+      seen["tea"]++
+      seen["coffee"] += 2
+      order[1] = "tea"
+      order[2] = "coffee"
+      for (i = 1; i <= 2; i++)
+        print order[i], seen[order[i]]
+    }
+expect:
+  stdout: |
+    tea 1
+    coffee 2
+  exit_code: 0

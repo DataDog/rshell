@@ -28,3 +28,5 @@ jobs:
         env:
           AWK_HARNESS_BOOTSTRAP: "1"
         run: tools/awk-harness/run.sh gawk
+      - name: Check AWK rewrite map coverage
+        run: tools/awk-harness/run.sh check-rewrite-map

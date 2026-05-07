@@ -1,0 +1,23 @@
+description: length, substr, and index operate on string values
+upstream:
+  suite: gawk
+  id: test/substr.awk
+  ref: gawk-5.4.0
+covers:
+  - length returns the number of characters in a string
+  - substr uses one-based string positions
+  - index returns the one-based position of a substring
+input:
+  program: |
+    BEGIN {
+      value = "rshell-awk"
+      print length(value)
+      print substr(value, 8)
+      print index(value, "awk")
+    }
+expect:
+  stdout: |
+    10
+    awk
+    8
+  exit_code: 0

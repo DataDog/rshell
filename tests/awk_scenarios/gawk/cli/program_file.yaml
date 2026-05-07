@@ -1,0 +1,23 @@
+description: -f loads an AWK program from a file
+upstream:
+  suite: onetrueawk
+  id: testdir/T.-f-f
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - -f loads program text from a file
+  - program files can include BEGIN and record actions
+  - stdin records are processed by a loaded program
+input:
+  program_file: scripts/loaded.awk
+  program: |
+    BEGIN { print "loaded" }
+    { print NR ":" $0 }
+  stdin: |
+    first
+    second
+expect:
+  stdout: |
+    loaded
+    1:first
+    2:second
+  exit_code: 0

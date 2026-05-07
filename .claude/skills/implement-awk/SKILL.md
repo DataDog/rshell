@@ -74,6 +74,7 @@ Run this sequence after every coherent implementation step:
 ```bash
 make fmt
 go test ./...
+tools/awk-harness/run.sh check-rewrite-map
 RSHELL_BIN=./rshell AWK_UNDER_TEST=tools/awk-harness/rshell-awk tools/awk-harness/run.sh rewritten
 RSHELL_BIN=./rshell AWK_UNDER_TEST=tools/awk-harness/rshell-awk tools/awk-harness/run.sh gawk
 RSHELL_BIN=./rshell AWK_UNDER_TEST=tools/awk-harness/rshell-awk tools/awk-harness/run.sh onetrueawk
@@ -107,6 +108,9 @@ make build
 7. Add or update original rshell tests for the intended behavior.
    Prefer `tests/awk_scenarios` for GNU awk behavior that came from upstream
    AWK coverage, and include upstream metadata for traceability.
+   When replacing `todo` entries in `tests/awk_scenarios/upstream-map.yaml`,
+   change the status to `rewritten`, `policy`, or `deferred` and keep the map
+   complete with `tools/awk-harness/run.sh check-rewrite-map`.
 8. Implement the smallest code change that addresses the cluster.
 9. Run `make fmt`.
 10. Run focused tests.

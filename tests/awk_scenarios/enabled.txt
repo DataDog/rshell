@@ -1,10 +1,18 @@
 # Each non-comment line is a path relative to tests/awk_scenarios.
 gawk/basic/begin_end_records.yaml
 gawk/basic/field_separator.yaml
+gawk/arrays/associative_count.yaml
+gawk/cli/program_file.yaml
 gawk/cli/variable_assignment.yaml
+gawk/control/for_loop_fields.yaml
 gawk/expressions/arithmetic_comparison.yaml
 gawk/fields/assign_rebuilds_record.yaml
+gawk/fields/nf_assignment.yaml
 gawk/functions/split.yaml
+gawk/functions/string_core.yaml
+gawk/input/multiple_files.yaml
+gawk/output/printf_format.yaml
 gawk/output/print_separators.yaml
+gawk/regex/gsub_replacement.yaml
 gawk/regex/pattern_match.yaml
 onetrueawk/basic/pattern_action.yaml

@@ -10,6 +10,9 @@ Usage: tools/awk-harness/run.sh TARGET
 
 Targets:
   rewritten    Run rshell-owned AWK scenario rewrites.
+  inventory    List upstream tests that need rewrite-map coverage.
+  sync-rewrite-map Add todo entries for fetched upstream tests missing from upstream-map.yaml.
+  check-rewrite-map Verify upstream-map.yaml covers every fetched upstream test.
   onetrueawk   Fetch and run One True Awk tests against the GNU awk oracle.
   gawk         Fetch and run GNU awk tests against the GNU awk oracle.
   all          Run gawk, then onetrueawk.
@@ -48,6 +51,15 @@ fi
 case "$target" in
 	rewritten)
 		exec "$SCRIPT_DIR/run-rewritten.sh"
+		;;
+	inventory)
+		exec "$SCRIPT_DIR/list-rewrite-inventory.sh"
+		;;
+	sync-rewrite-map)
+		exec "$SCRIPT_DIR/sync-rewrite-map.sh"
+		;;
+	check-rewrite-map)
+		exec "$SCRIPT_DIR/check-rewrite-map.sh"
 		;;
 	onetrueawk)
 		exec "$SCRIPT_DIR/run-onetrueawk.sh"

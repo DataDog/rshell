@@ -77,6 +77,11 @@ type awkUpstreamMapEntry struct {
 	Reason string   `yaml:"reason"`
 }
 
+type awkUpstreamInventoryItem struct {
+	suite string
+	id    string
+}
+
 func TestAwkScenarioMetadata(t *testing.T) {
 	scenariosDir := filepath.Join("awk_scenarios")
 	enabledPaths := loadEnabledAwkScenarios(t, filepath.Join(scenariosDir, "enabled.txt"), scenariosDir)
@@ -92,6 +97,55 @@ func TestAwkScenarioMetadata(t *testing.T) {
 		require.True(t, mappedTests[enabledPath], "enabled awk scenario %s is missing from upstream-map.yaml", enabledPath)
 		loadAwkScenario(t, filepath.Join(scenariosDir, enabledPath))
 	}
+}
+
+func TestAwkUpstreamMapCompleteness(t *testing.T) {
+	if os.Getenv("RSHELL_AWK_UPSTREAM_MAP_TEST") == "" {
+		t.Skip("skipping awk upstream map completeness test (set RSHELL_AWK_UPSTREAM_MAP_TEST=1 to enable)")
+	}
+
+	scenariosDir := filepath.Join("awk_scenarios")
+	mapEntries := loadAwkUpstreamMap(t, filepath.Join(scenariosDir, "upstream-map.yaml"), scenariosDir)
+
+	var inventory []awkUpstreamInventoryItem
+	inventory = append(inventory, discoverGawkUpstreamTests(t, requiredSourceDir(t, "GAWK_SOURCE_DIR"))...)
+	inventory = append(inventory, discoverOneTrueAwkUpstreamTests(t, requiredSourceDir(t, "ONETRUEAWK_SOURCE_DIR"))...)
+	require.NotEmpty(t, inventory, "upstream inventory is empty")
+
+	inventorySet := map[string]bool{}
+	for _, item := range inventory {
+		inventorySet[awkUpstreamKey(item.suite, item.id)] = true
+	}
+
+	mappedSet := map[string]bool{}
+	var duplicateMapped []string
+	for _, entry := range mapEntries {
+		key := awkUpstreamKey(entry.Suite, entry.ID)
+		if mappedSet[key] {
+			duplicateMapped = append(duplicateMapped, entry.Suite+"\t"+entry.ID)
+		}
+		mappedSet[key] = true
+	}
+
+	var missing []string
+	for _, item := range inventory {
+		key := awkUpstreamKey(item.suite, item.id)
+		if !mappedSet[key] {
+			missing = append(missing, item.suite+"\t"+item.id)
+		}
+	}
+
+	var stale []string
+	for _, entry := range mapEntries {
+		key := awkUpstreamKey(entry.Suite, entry.ID)
+		if !inventorySet[key] {
+			stale = append(stale, entry.Suite+"\t"+entry.ID)
+		}
+	}
+
+	assert.Empty(t, duplicateMapped, "duplicate upstream-map.yaml entries")
+	assert.Empty(t, missing, "upstream tests missing from upstream-map.yaml")
+	assert.Empty(t, stale, "upstream-map.yaml entries not present in fetched upstream inventory")
 }
 
 func TestAwkScenarios(t *testing.T) {
@@ -167,6 +221,9 @@ func loadAwkUpstreamMap(t *testing.T, path, scenariosDir string) []awkUpstreamMa
 		if entry.Status == "deferred" {
 			require.NotEmpty(t, entry.Reason, "awk upstream map entry %d must explain deferral", index)
 		}
+		if entry.Status == "todo" {
+			require.NotEmpty(t, entry.Reason, "awk upstream map entry %d must explain pending rewrite work", index)
+		}
 		for _, testPath := range entry.Tests {
 			require.False(t, filepath.IsAbs(testPath), "awk upstream map entry %d test path must be relative: %s", index, testPath)
 			cleaned := filepath.Clean(filepath.FromSlash(testPath))
@@ -177,6 +234,92 @@ func loadAwkUpstreamMap(t *testing.T, path, scenariosDir string) []awkUpstreamMa
 		}
 	}
 	return upstreamMap.Entries
+}
+
+func discoverGawkUpstreamTests(t *testing.T, sourceDir string) []awkUpstreamInventoryItem {
+	t.Helper()
+
+	testDir := filepath.Join(sourceDir, "test")
+	require.DirExists(t, testDir, "gawk source must contain a test directory")
+
+	seen := map[string]bool{}
+	add := func(name string) {
+		seen["test/"+name] = true
+	}
+
+	entries, err := os.ReadDir(testDir)
+	require.NoError(t, err, "failed to read gawk test directory")
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		name := entry.Name()
+		ext := filepath.Ext(name)
+		switch ext {
+		case ".awk", ".sh":
+			add(name)
+		case ".ok":
+			base := strings.TrimSuffix(name, ".ok")
+			if !fileExists(filepath.Join(testDir, base+".awk")) && !fileExists(filepath.Join(testDir, base+".sh")) {
+				add(name)
+			}
+		}
+	}
+
+	return sortedAwkInventory("gawk", seen)
+}
+
+func discoverOneTrueAwkUpstreamTests(t *testing.T, sourceDir string) []awkUpstreamInventoryItem {
+	t.Helper()
+
+	testDir := filepath.Join(sourceDir, "testdir")
+	require.DirExists(t, testDir, "One True Awk source must contain a testdir directory")
+
+	seen := map[string]bool{}
+	entries, err := os.ReadDir(testDir)
+	require.NoError(t, err, "failed to read One True Awk testdir")
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		name := entry.Name()
+		if strings.HasPrefix(name, "t.") || strings.HasPrefix(name, "p.") || strings.HasPrefix(name, "T.") || strings.HasPrefix(name, "tt.") {
+			seen["testdir/"+name] = true
+		}
+	}
+
+	return sortedAwkInventory("onetrueawk", seen)
+}
+
+func sortedAwkInventory(suite string, ids map[string]bool) []awkUpstreamInventoryItem {
+	keys := make([]string, 0, len(ids))
+	for id := range ids {
+		keys = append(keys, id)
+	}
+	sort.Strings(keys)
+
+	items := make([]awkUpstreamInventoryItem, 0, len(keys))
+	for _, id := range keys {
+		items = append(items, awkUpstreamInventoryItem{suite: suite, id: id})
+	}
+	return items
+}
+
+func requiredSourceDir(t *testing.T, envName string) string {
+	t.Helper()
+	sourceDir := os.Getenv(envName)
+	require.NotEmpty(t, sourceDir, "%s must point to a fetched upstream source tree", envName)
+	require.DirExists(t, sourceDir, "%s must point to a fetched upstream source tree", envName)
+	return sourceDir
+}
+
+func awkUpstreamKey(suite, id string) string {
+	return suite + "\x00" + id
+}
+
+func fileExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
 }
 
 func loadAwkScenario(t *testing.T, path string) awkScenario {

@@ -1,0 +1,23 @@
+description: gsub replaces every regex match in the target string
+upstream:
+  suite: gawk
+  id: test/gsubtest.awk
+  ref: gawk-5.4.0
+covers:
+  - gsub replaces all non-overlapping regex matches
+  - gsub updates the target string in place
+  - character classes can be used in substitution regexps
+input:
+  program: |
+    {
+      gsub(/[0-9]+/, "#", $0)
+      print $0
+    }
+  stdin: |
+    a12 b34
+    no digits
+expect:
+  stdout: |
+    a# b#
+    no digits
+  exit_code: 0

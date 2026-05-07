@@ -1,0 +1,16 @@
+description: printf applies string, zero-padded integer, and fixed float formats
+upstream:
+  suite: gawk
+  id: test/printf1.awk
+  ref: gawk-5.4.0
+covers:
+  - printf does not append ORS automatically
+  - printf formats strings, integers, and floating-point numbers
+  - zero-padded integer width is honored
+input:
+  program: |
+    BEGIN { printf "%s:%03d:%.2f\n", "item", 7, 3.14159 }
+expect:
+  stdout: |
+    item:007:3.14
+  exit_code: 0
