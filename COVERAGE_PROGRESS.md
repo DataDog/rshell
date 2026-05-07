@@ -8,7 +8,7 @@ Legend: ⏳ pending · 🔄 in progress · ✅ done · ⏭️ skipped (no high-v
 
 | # | Target | Type | Tests (before) | Tests (after) | Status | Notes |
 |---|--------|------|---------------:|--------------:|--------|-------|
-| 1 | uname | cmd | 3 | — | ⏳ | |
+| 1 | uname | cmd | 3 | 3 | ⏭️ | scenario tests can't mock `/proc`; Go tests cover the surface (28 tests with fake proc) |
 | 2 | allowed_commands | shell | 6 | — | ⏳ | |
 | 3 | readonly | shell | 8 | — | ⏳ | |
 | 4 | ss | cmd | 8 | — | ⏳ | |
@@ -74,7 +74,7 @@ Legend: ⏳ pending · 🔄 in progress · ✅ done · ⏭️ skipped (no high-v
 
 ## Summary
 
-- Targets processed: 0 / 63
+- Targets processed: 1 / 63
 - Total tests added: 0
 - Duplicate tests removed: 0
 - `skip_assert_against_bash` flags removed: 0
