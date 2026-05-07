@@ -71,7 +71,7 @@ func (rt *runtime) eval(x expr) (value, error) {
 			return value{}, err
 		}
 		n := int(v.Number())
-		if float64(n) != v.Number() || n < 0 {
+		if n < 0 {
 			return value{}, fmt.Errorf("invalid field index")
 		}
 		return rt.field(n), nil

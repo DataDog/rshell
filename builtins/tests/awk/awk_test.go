@@ -80,6 +80,15 @@ func TestAwkFieldSeparatorAndConcat(t *testing.T) {
 	assert.Equal(t, "user=root:0\nuser=agent:42\n", stdout)
 }
 
+func TestAwkFieldIndexTruncatesTowardZero(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "input.txt", "alpha beta gamma\n")
+	stdout, stderr, code := cmdRun(t, `awk '{ print $(NF/2), $(-0.5) }' input.txt`, dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "", stderr)
+	assert.Equal(t, "alpha alpha beta gamma\n", stdout)
+}
+
 func TestAwkStopsOptionParsingAfterProgram(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, dir, "-F,", "a,b c\n")
@@ -201,4 +210,12 @@ func TestAwkRejectsUnsafeFeatures(t *testing.T) {
 		assert.Equal(t, 1, code, script)
 		assert.Contains(t, stderr, "awk:", script)
 	}
+}
+
+func TestAwkRejectsUnsupportedBuiltinWithoutParens(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "input.txt", "abc\n")
+	_, stderr, code := cmdRun(t, `awk '{ print length }' input.txt`, dir)
+	assert.Equal(t, 1, code)
+	assert.Contains(t, stderr, "awk: function calls are not supported")
 }
