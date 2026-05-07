@@ -243,6 +243,14 @@ func TestCdToFileFailsNotADirectory(t *testing.T) {
 }
 
 func TestCdOutsideSandboxFails(t *testing.T) {
+	if filepath.Separator == '\\' {
+		// On Windows the bare separator ('\\') is an escape character
+		// in the shell parser, not an absolute path. The Unix test
+		// uses '/' which is the absolute root; the equivalent on
+		// Windows requires a drive letter and is exercised in the
+		// platform-specific test file.
+		t.Skip("Unix-only: '/' as absolute root does not exist on Windows")
+	}
 	dir := canonicalTempDir(t)
 	_, stderr, code := cdRun(t, "cd "+string(filepath.Separator), dir)
 	assert.Equal(t, 1, code)
