@@ -191,11 +191,13 @@ func numericPrefix(s string) string {
 }
 
 type runtime struct {
-	callCtx  *builtins.CallContext
-	prog     *program
-	vars     map[string]value
-	varSizes map[string]int
-	varBytes int
+	callCtx    *builtins.CallContext
+	prog       *program
+	vars       map[string]value
+	arrays     map[string]map[string]value
+	varSizes   map[string]int
+	arraySizes map[arraySlot]int
+	varBytes   int
 
 	record   string
 	fields   []string
@@ -204,12 +206,19 @@ type runtime struct {
 	fnr      int
 }
 
+type arraySlot struct {
+	name string
+	key  string
+}
+
 func newRuntime(callCtx *builtins.CallContext, prog *program) *runtime {
 	rt := &runtime{
-		callCtx:  callCtx,
-		prog:     prog,
-		vars:     make(map[string]value),
-		varSizes: make(map[string]int),
+		callCtx:    callCtx,
+		prog:       prog,
+		vars:       make(map[string]value),
+		arrays:     make(map[string]map[string]value),
+		varSizes:   make(map[string]int),
+		arraySizes: make(map[arraySlot]int),
 	}
 	rt.vars["FS"] = stringValue(" ")
 	rt.vars["OFS"] = stringValue(" ")
@@ -467,6 +476,9 @@ func (rt *runtime) getVar(name string) value {
 }
 
 func (rt *runtime) setVar(name string, v value) error {
+	if rt.isArray(name) {
+		return fmt.Errorf("cannot use array %s as scalar", name)
+	}
 	switch name {
 	case "NF":
 		return fmt.Errorf("assignment to NF is not supported")
@@ -489,6 +501,66 @@ func (rt *runtime) setVar(name string, v value) error {
 	rt.varSizes[name] = size
 	rt.vars[name] = v
 	return nil
+}
+
+func (rt *runtime) isArray(name string) bool {
+	arr, ok := rt.arrays[name]
+	return ok && arr != nil
+}
+
+func (rt *runtime) getArrayElem(name, key string) (value, error) {
+	if err := rt.validateArrayName(name); err != nil {
+		return value{}, err
+	}
+	if v, ok := rt.arrays[name][key]; ok {
+		return v, nil
+	}
+	v := unassignedValue()
+	if err := rt.setArrayElem(name, key, v); err != nil {
+		return value{}, err
+	}
+	return v, nil
+}
+
+func (rt *runtime) setArrayElem(name, key string, v value) error {
+	if err := rt.validateArrayName(name); err != nil {
+		return err
+	}
+	size := len(key) + len(v.String())
+	if size > MaxVariableBytes {
+		return fmt.Errorf("array element exceeds %d bytes", MaxVariableBytes)
+	}
+	slot := arraySlot{name: name, key: key}
+	old := rt.arraySizes[slot]
+	if rt.varBytes-old+size > MaxVariableBytes {
+		return fmt.Errorf("variable storage limit exceeded (%d bytes total)", rt.varBytes-old+size)
+	}
+	if rt.arrays[name] == nil {
+		rt.arrays[name] = make(map[string]value)
+	}
+	rt.varBytes = rt.varBytes - old + size
+	rt.arraySizes[slot] = size
+	rt.arrays[name][key] = v
+	return nil
+}
+
+func (rt *runtime) validateArrayName(name string) error {
+	if isBuiltinScalarName(name) {
+		return fmt.Errorf("cannot use scalar %s as array", name)
+	}
+	if _, ok := rt.vars[name]; ok {
+		return fmt.Errorf("cannot use scalar %s as array", name)
+	}
+	return nil
+}
+
+func isBuiltinScalarName(name string) bool {
+	switch name {
+	case "NF", "NR", "FNR", "FILENAME":
+		return true
+	default:
+		return false
+	}
 }
 
 func validateFS(fs string) error {

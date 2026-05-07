@@ -358,23 +358,35 @@ Phase 2 started scope:
 - common scalar builtins: `length`, `substr`, `index`, `tolower`, `toupper`,
   `int`
 
-Remaining Phase 2 candidates:
+Phase 3 scope:
 
-- range patterns
-- regex `FS`
-- field assignment and `$0` rebuilding
-- `split`, once array support is available or a narrow safe representation is
-  chosen
-
-Phase 3 candidates:
+Phase 3 should bundle the remaining practical awk features that make the
+builtin useful for real aggregation and log processing. This includes the
+leftover Phase 2 candidates where they naturally depend on the same runtime
+machinery.
 
 - arrays, including `count[$1]++`
-- `ENVIRON`, populated from the rshell environment snapshot
+- `split`, writing into awk arrays
 - `in`
 - `delete`
 - `for (k in array)`
 - `for` and `while`
 - `break` and `continue`
+- range patterns such as `/start/,/end/`
+- regex `FS`, including values from `-F` and `FS = value`
+- field assignment and `$0` rebuilding: `$1 = value`, `$0 = value`, and
+  `NF = value`
+- `ENVIRON`, populated from the rshell environment snapshot
+
+Recommended implementation order:
+
+1. Add associative arrays and array element expressions.
+2. Add `in`, `delete`, `for (k in array)`, and `split`.
+3. Add `while`, C-style `for`, `break`, and `continue`.
+4. Add range patterns.
+5. Add regex `FS`.
+6. Add field assignment and `$0`/field rebuilding.
+7. Add `ENVIRON` using the rshell environment snapshot API.
 
 Phase 4 candidates:
 

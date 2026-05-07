@@ -314,8 +314,8 @@ func (p *parser) parseExpression(minPrec int) (expr, error) {
 			}
 			op := p.cur().lit
 			p.advance()
-			if _, ok := left.(*varExpr); !ok {
-				return nil, fmt.Errorf("increment and decrement require scalar variables")
+			if !isAssignableExpr(left) {
+				return nil, fmt.Errorf("increment and decrement require variables")
 			}
 			left = &incDecExpr{op: op, x: left}
 			continue
@@ -345,8 +345,8 @@ func (p *parser) parseExpression(minPrec int) (expr, error) {
 				if _, ok := left.(*fieldExpr); ok {
 					return nil, fmt.Errorf("field assignment is not supported")
 				}
-				if _, ok := left.(*varExpr); !ok {
-					return nil, fmt.Errorf("assignment requires a scalar variable")
+				if !isAssignableExpr(left) {
+					return nil, fmt.Errorf("assignment requires a variable")
 				}
 				left = &assignExpr{op: op, left: left, right: right}
 			} else {
@@ -395,7 +395,7 @@ func (p *parser) parsePrefix() (expr, error) {
 			return nil, err
 		}
 		if p.at(tokLBracket) {
-			return nil, fmt.Errorf("arrays are not supported")
+			return p.parseArrayRef(tok.lit)
 		}
 		return &varExpr{name: tok.lit}, nil
 	case tokDollar:
@@ -426,13 +426,25 @@ func (p *parser) parsePrefix() (expr, error) {
 		if err != nil {
 			return nil, err
 		}
-		if _, ok := x.(*varExpr); !ok {
-			return nil, fmt.Errorf("increment and decrement require scalar variables")
+		if !isAssignableExpr(x) {
+			return nil, fmt.Errorf("increment and decrement require variables")
 		}
 		return &incDecExpr{op: tok.lit, x: x, prefix: true}, nil
 	default:
 		return nil, fmt.Errorf("expected expression")
 	}
+}
+
+func (p *parser) parseArrayRef(name string) (expr, error) {
+	p.advance()
+	index, err := p.parseExpression(0)
+	if err != nil {
+		return nil, err
+	}
+	if !p.match(tokRBracket) {
+		return nil, fmt.Errorf("expected ] after array index")
+	}
+	return &arrayRefExpr{name: name, index: index}, nil
 }
 
 func (p *parser) parseFunctionCall(name string) (expr, error) {
@@ -492,6 +504,15 @@ func validateBuiltinCallArity(name string, argc int) error {
 		}
 	}
 	return nil
+}
+
+func isAssignableExpr(x expr) bool {
+	switch x.(type) {
+	case *varExpr, *arrayRefExpr:
+		return true
+	default:
+		return false
+	}
 }
 
 func validateIdentifierReference(name string) error {

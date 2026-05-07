@@ -120,7 +120,12 @@ func (rt *runtime) eval(x expr) (value, error) {
 		}
 		return boolValue(re.MatchString(rt.record)), nil
 	case *varExpr:
+		if rt.isArray(e.name) {
+			return value{}, fmt.Errorf("cannot use array %s as scalar", e.name)
+		}
 		return rt.getVar(e.name), nil
+	case *arrayRefExpr:
+		return rt.evalArrayRef(e)
 	case *fieldExpr:
 		v, err := rt.eval(e.index)
 		if err != nil {
@@ -319,16 +324,15 @@ func (rt *runtime) matchRegexExpr(left value, rightExpr expr) (bool, error) {
 }
 
 func (rt *runtime) evalAssign(e *assignExpr) (value, error) {
-	lhs, ok := e.left.(*varExpr)
-	if !ok {
-		return value{}, fmt.Errorf("assignment requires a scalar variable")
+	target, left, err := rt.resolveAssignable(e.left)
+	if err != nil {
+		return value{}, err
 	}
 	right, err := rt.eval(e.right)
 	if err != nil {
 		return value{}, err
 	}
 	if e.op != "=" {
-		left := rt.getVar(lhs.name)
 		switch e.op {
 		case "+=":
 			right = numberValue(left.Number() + right.Number())
@@ -350,18 +354,17 @@ func (rt *runtime) evalAssign(e *assignExpr) (value, error) {
 			return value{}, fmt.Errorf("unknown assignment operator %s", e.op)
 		}
 	}
-	if err := rt.setVar(lhs.name, right); err != nil {
+	if err := rt.setResolvedAssignable(target, right); err != nil {
 		return value{}, err
 	}
 	return right, nil
 }
 
 func (rt *runtime) evalIncDec(e *incDecExpr) (value, error) {
-	vref, ok := e.x.(*varExpr)
-	if !ok {
-		return value{}, fmt.Errorf("increment and decrement require scalar variables")
+	target, old, err := rt.resolveAssignable(e.x)
+	if err != nil {
+		return value{}, err
 	}
-	old := rt.getVar(vref.name)
 	next := old.Number()
 	if e.op == "++" {
 		next++
@@ -369,13 +372,57 @@ func (rt *runtime) evalIncDec(e *incDecExpr) (value, error) {
 		next--
 	}
 	nv := numberValue(next)
-	if err := rt.setVar(vref.name, nv); err != nil {
+	if err := rt.setResolvedAssignable(target, nv); err != nil {
 		return value{}, err
 	}
 	if e.prefix {
 		return nv, nil
 	}
 	return old, nil
+}
+
+type assignTarget struct {
+	name  string
+	key   string
+	array bool
+}
+
+func (rt *runtime) resolveAssignable(x expr) (assignTarget, value, error) {
+	switch v := x.(type) {
+	case *varExpr:
+		if rt.isArray(v.name) {
+			return assignTarget{}, value{}, fmt.Errorf("cannot use array %s as scalar", v.name)
+		}
+		return assignTarget{name: v.name}, rt.getVar(v.name), nil
+	case *arrayRefExpr:
+		key, err := rt.eval(v.index)
+		if err != nil {
+			return assignTarget{}, value{}, err
+		}
+		keyString := key.String()
+		current, err := rt.getArrayElem(v.name, keyString)
+		if err != nil {
+			return assignTarget{}, value{}, err
+		}
+		return assignTarget{name: v.name, key: keyString, array: true}, current, nil
+	default:
+		return assignTarget{}, value{}, fmt.Errorf("expected variable")
+	}
+}
+
+func (rt *runtime) setResolvedAssignable(target assignTarget, v value) error {
+	if target.array {
+		return rt.setArrayElem(target.name, target.key, v)
+	}
+	return rt.setVar(target.name, v)
+}
+
+func (rt *runtime) evalArrayRef(ref *arrayRefExpr) (value, error) {
+	key, err := rt.eval(ref.index)
+	if err != nil {
+		return value{}, err
+	}
+	return rt.getArrayElem(ref.name, key.String())
 }
 
 func boolValue(ok bool) value {

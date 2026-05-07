@@ -106,6 +106,29 @@ func TestAwkBeginEndAndAggregation(t *testing.T) {
 	assert.Equal(t, "start\nsum 5\n", stdout)
 }
 
+func TestAwkAssociativeArrayElements(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "input.txt", "api 200\napi 500\nworker 200\n")
+	stdout, stderr, code := cmdRun(t, `awk '{ count[$1]++; status[$2] += 1 } END { print count["api"], count["worker"], status[200], status[500], missing["x"] }' input.txt`, dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "", stderr)
+	assert.Equal(t, "2 1 2 1 \n", stdout)
+}
+
+func TestAwkRejectsScalarArrayNameConflicts(t *testing.T) {
+	dir := t.TempDir()
+	for _, script := range []string{
+		`awk 'BEGIN { x = 1; print x[1] }'`,
+		`awk 'BEGIN { a[1] = 2; print a }'`,
+		`awk 'BEGIN { FS[1] = 2 }'`,
+		`awk 'BEGIN { NF[1] = 2 }'`,
+	} {
+		_, stderr, code := cmdRun(t, script, dir)
+		assert.Equal(t, 1, code, script)
+		assert.Contains(t, stderr, "awk:", script)
+	}
+}
+
 func TestAwkExplicitEmptyActionDoesNothing(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, dir, "input.txt", "alpha\n")

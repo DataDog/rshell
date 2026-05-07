@@ -86,6 +86,13 @@ type varExpr struct {
 
 func (*varExpr) exprNode() {}
 
+type arrayRefExpr struct {
+	name  string
+	index expr
+}
+
+func (*arrayRefExpr) exprNode() {}
+
 type fieldExpr struct {
 	index expr
 }

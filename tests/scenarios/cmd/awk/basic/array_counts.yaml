@@ -1,0 +1,17 @@
+description: awk associative array elements support aggregation by field value.
+setup:
+  files:
+    - path: input.txt
+      content: |+
+        api 200
+        api 500
+        worker 200
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    awk '{ count[$1]++; status[$2] += 1 } END { print count["api"], count["worker"], status[200], status[500] }' input.txt
+expect:
+  stdout: |+
+    2 1 2 1
+  stderr: |+
+  exit_code: 0
