@@ -177,6 +177,14 @@ func TestAwkStringNumericSemantics(t *testing.T) {
 	assert.Equal(t, "1 1 1 0 124\n1 1 1 1\ntruthy 10\n11 0 0 1\ntruthy 123abc\n124 0 1 1\ntruthy -4.5x\n-3.5 0 1 1\ntruthy abc123\n1 0 0 0\n", stdout)
 }
 
+func TestAwkEmptyProgramIsNoOp(t *testing.T) {
+	dir := t.TempDir()
+	stdout, stderr, code := cmdRun(t, `awk '' missing.txt`, dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "", stderr)
+	assert.Equal(t, "", stdout)
+}
+
 func TestAwkIntegerNumberFormatting(t *testing.T) {
 	stdout, stderr, code := cmdRun(t, `awk 'BEGIN { print 999999, 1000000, 123456789, 1000000.5 }'`, t.TempDir())
 	assert.Equal(t, 0, code)
@@ -248,6 +256,7 @@ func TestAwkRejectsUnsafeFeatures(t *testing.T) {
 		`awk '{ print getline }' input.txt`,
 		`awk '{ x = next }' input.txt`,
 		`awk '{ exit 0 }' input.txt`,
+		`awk 'BEGIN { print 1 < 2 < 3 }' input.txt`,
 		`awk '{ print 1 / 0 }' input.txt`,
 		`awk -F '' '{ print $1 }' input.txt`,
 	} {

@@ -75,6 +75,8 @@ func (rt *runtime) eval(x expr) (value, error) {
 			return value{}, fmt.Errorf("invalid field index")
 		}
 		return rt.field(n), nil
+	case *groupedExpr:
+		return rt.eval(e.x)
 	case *unaryExpr:
 		v, err := rt.eval(e.x)
 		if err != nil {
