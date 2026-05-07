@@ -30,7 +30,7 @@ Legend: ⏳ pending · 🔄 in progress · ✅ done · ⏭️ skipped (no high-v
 | 20 | redirections | shell | 26 | 26 | ⏭️ | comprehensive: /dev/null variants, heredoc forms, fd0 explicit; mild "redirect_*" vs "devnull/" overlap each tests distinct angle |
 | 21 | negation | shell | 27 | 27 | ⏭️ | comprehensive: basic, compound (brace/for), exit_code (zero/one), with_logic_ops (and/or chains), with_pipe (success/failure/3-stage) |
 | 22 | comments | shell | 28 | 27 | ✅ | removed exact duplicate (backslash_no_continuation = backslash_ending) |
-| 23 | line_continuation | shell | 28 | — | ⏳ | |
+| 23 | line_continuation | shell | 28 | 28 | ⏭️ | comprehensive: across/in operators (&&, \|\|, \|), in command/var name/assignment/value/quotes/heredoc/keywords, multiple consecutive |
 | 24 | while_clause | shell | 28 | — | ⏳ | |
 | 25 | uname | cmd | 32 | — | ⏳ | recently audited (Go tests cover surface) |
 | 26 | brace_group | shell | 35 | — | ⏳ | |
@@ -75,7 +75,7 @@ Legend: ⏳ pending · 🔄 in progress · ✅ done · ⏭️ skipped (no high-v
 
 ## Summary
 
-- Targets processed: 22 / 64
+- Targets processed: 23 / 64
 - Tests added: 8 (scenario: 8, unit: 0)
 - Duplicate tests removed: 5 (scenario: 5, unit: 0)
 - Low-value tests removed: 0 (scenario: 0, unit: 0)
