@@ -22,7 +22,7 @@ Legend: ⏳ pending · 🔄 in progress · ✅ done · ⏭️ skipped (no high-v
 | 12 | blocked_redirects | shell | 17 | 17 | ⏭️ | comprehensive: write/append/dup/close/herestring/redir-variable/read-write all covered |
 | 13 | inline_var | shell | 18 | 18 | ⏭️ | comprehensive: scope, restore, POSIX order, empty/special/cross-ref, on builtins, in pipeline |
 | 14 | false | cmd | 20 | 19 | ✅ | removed exact duplicate (top-level exit_status.yaml dup of exit_status/exit_status_captured.yaml) |
-| 15 | command_substitution | shell | 20 | — | ⏳ | |
+| 15 | command_substitution | shell | 20 | 20 | ⏭️ | comprehensive: $(...), backtick, $(<file) variants, nested, pipes, exit status, word splitting |
 | 16 | heredoc_dash | shell | 20 | — | ⏳ | |
 | 17 | simple_command | shell | 21 | — | ⏳ | |
 | 18 | until_clause | shell | 21 | — | ⏳ | |
@@ -75,7 +75,7 @@ Legend: ⏳ pending · 🔄 in progress · ✅ done · ⏭️ skipped (no high-v
 
 ## Summary
 
-- Targets processed: 14 / 64
+- Targets processed: 15 / 64
 - Tests added: 9 (scenario: 9, unit: 0)
 - Duplicate tests removed: 2 (scenario: 2, unit: 0)
 - Low-value tests removed: 0 (scenario: 0, unit: 0)
