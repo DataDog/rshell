@@ -1,5 +1,4 @@
-description: df --help lists every flag we support and excludes flags we deliberately reject (--sync, --version, --output, --block-size, --kibibytes). Locks in the supported-flag surface as part of the user-facing contract.
-skip_assert_against_bash: true
+description: df --help lists every flag we support. Locks in the supported-flag surface as part of the user-facing contract. Listed flags also appear in GNU df's help, so the assertion passes against bash too. We do NOT assert the absence of GNU-only flags here (--sync, --version, etc.), since stdout_contains can't express that — that coverage lives in builtins/df/df_test.go (TestDfHelp).
 input:
   script: |+
     df --help

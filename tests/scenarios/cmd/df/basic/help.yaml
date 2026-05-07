@@ -1,7 +1,4 @@
-description: df --help prints usage to stdout
-# skip: GNU df --help includes flags we don't implement (-B, --output,
-# --version) and a different footer; we keep the help format minimal.
-skip_assert_against_bash: true
+description: df --help prints usage to stdout. Uses stdout_contains so it matches both rshell's minimal help and GNU's longer help (which includes additional flags we don't implement). All listed substrings appear in both.
 input:
   script: |+
     df --help

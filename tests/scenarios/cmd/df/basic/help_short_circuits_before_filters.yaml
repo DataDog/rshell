@@ -1,5 +1,4 @@
-description: --help short-circuits before any filter or platform check is applied. Even with -t/-x and a combination of flags, --help wins and prints usage. Verifies the early-return order in the bound handler.
-skip_assert_against_bash: true
+description: '--help short-circuits before any filter or platform check is applied. Even with -t/-x and a combination of flags, --help wins and prints usage. Verifies the early-return order in the bound handler. Matches bash via "Usage: df" substring present in both.'
 input:
   script: |+
     df -t apfs -x apfs -PThi --total --no-sync --help
