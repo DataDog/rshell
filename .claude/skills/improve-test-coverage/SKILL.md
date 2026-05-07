@@ -135,8 +135,8 @@ Log the full target list as a table (do NOT ask for confirmation — always proc
 Then immediately create tasks for the per-target loop. For each target, call TaskCreate for:
 - "Step 4: Audit existing coverage — <target>"
 - "Step 5: Identify coverage gaps — <target>"
-- "Step 6: Write new scenario tests — <target>"
-- "Step 7: Check for duplicate tests — <target>"
+- "Step 6: Write new tests (scenario preferred, unit when needed) — <target>"
+- "Step 7: Prune duplicate and low-value tests (unit + scenario) — <target>"
 - "Step 8: Review skip_assert_against_bash flags — <target>"
 - "Step 9: Review unnecessary Windows-specific assertions — <target>"
 - "Step 10: Fix failing tests — <target>"
@@ -169,8 +169,9 @@ Legend: ⏳ pending · 🔄 in progress · ✅ done · ⏭️ skipped (no high-v
 ## Summary
 
 - Targets processed: 0 / <total>
-- Total tests added: 0
-- Duplicate tests removed: 0
+- Tests added: 0 (scenario: 0, unit: 0)
+- Duplicate tests removed: 0 (scenario: 0, unit: 0)
+- Low-value tests removed: 0 (scenario: 0, unit: 0)
 - `skip_assert_against_bash` flags removed: 0
 - Windows-specific assertions removed: 0
 ```
@@ -236,46 +237,33 @@ For each target in the ordered list from Step 1, execute Steps 4–11 sequential
 
 ### Step 4: Audit existing coverage
 
-Read all existing scenario tests for the current target:
+Audit **both** layers and treat them as one body of coverage — a behavior tested in either layer counts as covered.
 
 ```bash
-# For a command:
-find tests/scenarios/cmd/<target>/ -name "*.yaml" | sort
+# Scenario tests (YAML)
+find tests/scenarios/cmd/<target>/ tests/scenarios/shell/<target>/ -name "*.yaml" 2>/dev/null | sort
 
-# For a shell feature:
-find tests/scenarios/shell/<target>/ -name "*.yaml" | sort
+# Go unit tests
+find interp/builtins/ -path "*<target>*_test.go" 2>/dev/null | sort
+find interp/builtins/tests/<target>/ -name "*_test.go" 2>/dev/null | sort
+find interp/ -name "builtin_<target>*_test.go" 2>/dev/null | sort
 ```
 
-Read each YAML file and build a coverage matrix. For each test, note:
-- What flag/feature/behavior it exercises
-- Whether it covers happy path, edge cases, or error cases
-- Whether it has `skip_assert_against_bash: true`
+For each test (YAML file or `func Test…` / table row), note the flag/behavior it exercises, whether it covers happy path / edge / error, and any `skip_assert_against_bash` or build-tag constraints. Build a single coverage matrix listing each behavior and which layer(s) cover it.
 
-Also read the Go test files if they exist:
-
-```bash
-# For a command:
-find interp/builtins/ -path "*<target>*_test.go" | sort
-find interp/ -name "builtin_<target>*_test.go" | sort
-```
-
-Read the relevant reference test files for this specific target (from the suites downloaded in Step 3):
-- For commands: read GNU coreutils and uutils test files for `<target>`, plus skim yash for integration patterns
-- For shell features: read the relevant yash test files
-
-Build a summary table of what is currently tested.
+Read the relevant reference test files from the suites downloaded in Step 3 (GNU coreutils + uutils for commands, yash for shell features and integration patterns).
 
 ### Step 5: Identify coverage gaps
 
-Cross-reference the reference test suites against existing coverage (Step 4) to find gaps.
+Cross-reference the reference test suites **and our internal API surface** against existing coverage (Step 4, both layers) to find gaps.
 
 #### Gap categories to look for
 
-**For commands:**
+**User-visible behavior (commands):**
 
 | Category | What to check |
 |----------|--------------|
-| **Untested flags** | Flags that are implemented but have no scenario test exercising them |
+| **Untested flags** | Flags that are implemented but have no test (scenario or unit) exercising them |
 | **Flag combinations** | Pairs/triples of flags used together (reference suites often test these) |
 | **Edge case inputs** | Empty file, single-line file, no trailing newline, binary input, very long lines |
 | **Error conditions** | Missing file, directory as argument, permission denied, invalid flag values |
@@ -284,7 +272,7 @@ Cross-reference the reference test suites against existing coverage (Step 4) to 
 | **Numeric boundaries** | Zero, one, large values, negative values (where applicable) |
 | **Special characters** | Filenames with spaces, newlines, Unicode, glob characters |
 
-**For shell features:**
+**User-visible behavior (shell features):**
 
 | Category | What to check |
 |----------|--------------|
@@ -296,18 +284,21 @@ Cross-reference the reference test suites against existing coverage (Step 4) to 
 | **Word splitting** | IFS variations, empty fields, splitting with special characters |
 | **Globbing** | No matches, dot files, special patterns, escaped glob characters |
 
+**Internal behavior (unit-test-only candidates):** typed errors, goroutine context propagation, sandbox API contracts, build-tag-gated platform behavior, resource limits, parser invariants — anything not observable through stdout/stderr/exit-code. See the Step 6 layer-selection table for the full rubric.
+
 #### Filtering
 
-Skip reference tests that:
+Skip candidate gaps that:
 - Test flags we intentionally do not implement (check the builtin's doc comment or `--help` output)
 - Test write/execute operations that our sandbox blocks
-- Test platform-specific kernel features (`/proc`, `/sys`, inotify)
+- Test platform-specific kernel features (`/proc`, `/sys`, inotify) we don't implement
 - Test GNU-specific extensions beyond POSIX that we don't support
 - Rely on external commands we don't implement
+- Are **already covered in either layer** — a behavior tested by a Go unit test is just as covered as one tested by a scenario, and vice versa. Do not propose a duplicate scenario test for something a Go test already pins down (and do not propose a Go test for something a scenario already pins down) unless Step 6's layer-selection rubric independently justifies the second layer.
 
 #### High-value filter
 
-For every surviving gap, write one sentence on why a regression would break real scripts. If you can't, drop it. Also drop gaps that overlap existing scenario/Go tests or are unreachable due to parser/sandbox validation.
+For every surviving gap, write one sentence on why a regression would break real scripts (for user-visible gaps) or break an internal contract that scripts depend on indirectly (for internal gaps). If you can't, drop it.
 
 #### Priority
 
@@ -317,22 +308,44 @@ Rank surviving gaps. Only **P1/P2** are eligible by default:
 2. **P2 — Important edge case**: real-world edge case (empty input, stdin pipe, multi-file) for a load-bearing flag.
 3. **P3/P4 — Nice-to-have / speculative**: **default skip.**
 
-Log the analysis as a table with: gap, priority, regression-impact sentence, decision (add/skip + reason), and whether it needs `skip_assert_against_bash: true`. An empty "add" list is a valid outcome — proceed to Step 7.
+Log the analysis as a table with: gap, priority, regression-impact sentence, decision (add/skip + reason), **proposed test layer** (scenario / unit / both — default scenario unless one of the unit-test justifications in Step 6 applies), and whether it needs `skip_assert_against_bash: true`. An empty "add" list is a valid outcome — proceed to Step 7.
 
-### Step 6: Write new scenario tests
+### Step 6: Write new tests (scenario preferred, unit when needed)
 
-Only write tests for P1/P2 gaps marked "add". Adding zero tests is valid. Before writing each one, re-grep `tests/scenarios/cmd/<target>/` and `interp/builtins/` to confirm it isn't a duplicate.
+Only write tests for P1/P2 gaps marked "add". Adding zero tests is valid. Before writing each one, re-grep `tests/scenarios/cmd/<target>/`, `tests/scenarios/shell/<target>/`, and `interp/builtins/` to confirm it isn't a duplicate.
 
-For each remaining gap, create a YAML scenario test file. Follow the project conventions:
+#### Layer selection: scenario by default, unit only when justified
 
-#### File organization
+**Scenario tests are the default.** A new test should be a YAML scenario unless the gap genuinely cannot be expressed there. This matches the project rule "Prefer scenario tests (`tests/scenarios/`) over Go tests" in `AGENTS.md`.
+
+Write a **Go unit test** instead of (or in addition to) a scenario test only when at least one of these applies — and document which one in the per-target report:
+
+| Justified reason for a unit test | Example |
+|----------------------------------|---------|
+| **Behavior is not observable through the shell surface** | An internal helper or method on `builtins.Command` whose result never reaches stdout/stderr/exit-code |
+| **Specific Go-typed error or wrapping must be asserted** | `errors.Is(err, fs.ErrNotExist)`, custom error types from `interp/builtins/internal/...` |
+| **Concurrency / goroutine context propagation** | Verifying `ctx.Err()` is checked between chunks in a goroutine, race-detector-only tests |
+| **Sandbox/internal API contract** | Direct test of `callCtx.OpenFile` plumbing, `os.Root` interaction, `AllowedPaths` resolution that isn't user-visible |
+| **Build-tag-gated platform behavior that scenarios can't express** | `//go:build windows` reserved-filename rejection, `//go:build linux` `/proc/net/*` parsing |
+| **Bash divergence is intentional and the assertion would noise up scenarios** | An invariant of our parser/evaluator that has no bash equivalent and would force `skip_assert_against_bash: true` for trivial reasons |
+| **Performance / resource-bound assertion** | Verifying memory cap or output limit at the API level rather than via 1MB script output |
+
+If none of these apply: **write a scenario test, not a Go test.** "It's easier to write in Go" or "the scenario YAML feels verbose" are not valid reasons.
+
+If both layers are warranted (e.g. user-visible behavior plus an internal invariant), write the scenario as the primary test and the Go test as a focused supplement — do not duplicate the same surface across both.
+
+#### Scenario test (default path)
+
+Create a YAML scenario test file. Follow the project conventions.
+
+##### File organization
 
 ```
 tests/scenarios/cmd/<command>/<category>/<test_name>.yaml
 tests/scenarios/shell/<feature>/<category>/<test_name>.yaml
 ```
 
-#### YAML format
+##### YAML format
 
 ```yaml
 description: One sentence describing what this scenario tests.
@@ -352,7 +365,7 @@ expect:
   exit_code: 0
 ```
 
-#### Rules
+##### Rules
 
 - **No source attribution**: Do NOT include comments referencing external test suites in YAML test files
 - **`stdout_contains` and `stderr_contains` must be YAML lists**, not scalar strings
@@ -364,7 +377,7 @@ expect:
 - Do **not** use `echo -n` — the echo builtin does not support `-n` and will emit `-n ` literally. Use `printf` instead for newline-free output
 - When testing error messages from our builtins, the error format is typically `<command>: <message>` — verify by running the command in the shell first
 
-#### Determining expected output
+##### Determining expected output
 
 For each new test, determine the correct expected output:
 
@@ -385,34 +398,93 @@ bash -c '<script>'
 
 Always verify that our shell output matches bash for tests without `skip_assert_against_bash: true`.
 
+#### Go unit test (fallback path)
+
+Only when the gap matches one of the justified-reason rows above.
+
+##### File organization
+
+Add the test next to the existing tests for the target. Common locations:
+
+```
+interp/builtins/<target>_test.go
+interp/builtins/tests/<target>/<focus>_test.go
+interp/builtin_<target>_test.go
+```
+
+Pick the location that already holds tests for the same target — do not introduce a new file unless none exists.
+
+##### Conventions
+
+Match the style of nearby tests in the chosen file. Key rules: prefer table-driven tests for flag/edge matrices; use build tags for platform-specific files; never bypass `callCtx.OpenFile` with direct `os.Open`/`os.Stat` in setup; standard-library assertions only (`if got != want { t.Errorf(...) }`). Run `make fmt` and `go vet ./...` after each batch.
+
 #### Batch size
 
-Write tests in batches of 10-15 files, then run verification (Step 10) before writing more. This catches format errors early.
+Write tests in batches of 10-15 files (counting scenario YAMLs and Go test files together), then run verification (Step 10) before writing more. This catches format errors early.
 
-### Step 7: Check for duplicate tests
+### Step 7: Prune duplicate and low-value tests (unit + scenario)
 
-Scan all scenario tests for the target (including newly written ones) and identify duplicates — tests that exercise the same behavior with the same or nearly identical scripts and expected output.
+Scan **both** Go unit tests and YAML scenario tests for the target — including newly written ones — and remove tests that don't earn their keep. Two categories qualify for removal:
 
-#### How to detect duplicates
+1. **Duplicates** — tests that exercise the same behavior as another test
+2. **Low-value tests** — tests whose failure would not signal a real regression
 
-1. **Exact duplicates**: Two YAML files with identical `input.script` and `expect` sections (possibly different descriptions or filenames)
-2. **Near duplicates**: Tests with functionally equivalent scripts that test the same behavior (e.g. same command with same flags, just different variable names or file content that doesn't change the behavior being tested)
-3. **Subset duplicates**: A test that is a strict subset of another test — everything it validates is already covered by a more comprehensive test
+This step covers both test layers:
+
+```bash
+# Scenario tests (YAML)
+find tests/scenarios/cmd/<target>/ -name "*.yaml" 2>/dev/null | sort
+find tests/scenarios/shell/<target>/ -name "*.yaml" 2>/dev/null | sort
+
+# Go unit tests
+find interp/builtins/ -path "*<target>*_test.go" 2>/dev/null | sort
+find interp/ -name "builtin_<target>*_test.go" 2>/dev/null | sort
+find interp/builtins/tests/<target>/ -name "*_test.go" 2>/dev/null | sort
+```
+
+For Go unit tests, examine each `func Test...` and each row in any table-driven test slices (the inner test cases, not just the parent function).
+
+#### Detecting duplicates
+
+| Type | What it looks like |
+|------|--------------------|
+| **Exact duplicates** | Two YAML files with identical `input.script` and `expect`, or two Go test cases with identical inputs/assertions |
+| **Near duplicates** | Functionally equivalent scripts/inputs that exercise the same code path — only cosmetic differences (variable names, file content that doesn't change behavior, equivalent flag spellings) |
+| **Subset duplicates** | A test whose every assertion is already covered by a more comprehensive test |
+| **Cross-layer duplicates** | A scenario test that exercises exactly the same surface as a Go unit test (or vice versa). Prefer the scenario test if it asserts user-visible behavior that bash would also validate; prefer the Go test if it asserts an internal API that scenarios can't reach |
+
+#### Detecting low-value tests
+
+A test is low-value if a regression that breaks it would not break a real script. Concrete signals:
+
+| Signal | Example |
+|--------|---------|
+| **Tests an implementation detail, not behavior** | Asserts on internal struct field, or that a private helper was called |
+| **Asserts on something that cannot vary** | Hardcoded constants, version strings checked against themselves, tautologies (`assert x == x`) |
+| **Permissive assertions that catch nothing** | `stdout_contains: ""`, `stderr_contains: ""`, only checks `exit_code: 0` with no output assertion when output is the actual contract |
+| **P3/P4 gap that snuck in** | Speculative edge case with no real-world script that would hit it (re-apply the Step 5 high-value filter) |
+| **Trivial smoke for a flag already covered by richer tests** | A standalone `cmd --help` test when a richer test already exercises help output and exit code |
+| **Tests blocked behavior the sandbox already rejects elsewhere** | If `interp/` rejects the syntax at parse time and other tests already cover that rejection, don't repeat it per-builtin |
+
+A test is **not** low-value just because it is short or simple — short tests of load-bearing behavior are good. The question is always: *if this test started failing tomorrow, would that signal a real bug?* If no, prune it.
 
 #### Process
 
-```bash
-# For each pair of YAML files, compare the script and expected output
-# Look for files with identical or near-identical scripts
-find tests/scenarios/cmd/<target>/ -name "*.yaml" -exec grep -l "script:" {} \; | sort
-```
+For each candidate (duplicate or low-value):
 
-For each duplicate found:
-- Note which files are duplicates and why
-- Recommend which one to keep (prefer the one with better description, more complete assertions, or better file organization)
-- Remove the duplicate file
+1. **Identify the candidate** and write one sentence stating why it's a duplicate or low-value.
+2. **Pick a winner if it's a duplicate**: prefer the test with clearer description, stricter assertions (`expect.stdout` over `stdout_contains`), better file organization, or the layer (scenario vs unit) that better matches the behavior.
+3. **For Go test removals**: delete the table row or the whole `func Test...` cleanly — don't leave dangling helpers, fixtures, or imports. Run `go vet ./...` after each batch.
+4. **For YAML removals**: `git rm` the file.
+5. **Document the decision**: log to the per-target report (Step 11) so reviewers can see what was pruned and why.
 
-If no duplicates are found, note that and move on.
+Be conservative on low-value pruning. When in doubt, keep the test — false-positive removal of a test you don't fully understand is worse than keeping a marginal test. If a test looks low-value but you can't articulate the regression-signal sentence in either direction, leave it alone.
+
+Tally the removals separately for the per-target report:
+- Duplicates removed (scenario count, unit count)
+- Low-value tests removed (scenario count, unit count)
+
+If nothing qualifies for removal, note that and move on.
 
 ### Step 8: Review skip_assert_against_bash flags
 
@@ -498,15 +570,16 @@ Edit the row for the current target:
 
 Update the `## Summary` block at the bottom:
 - Increment `Targets processed`
-- Add this target's deltas to the totals (tests added, duplicates removed, skip flags removed, Windows-specific assertions removed)
+- Add this target's deltas to the totals — tests added split as `(scenario: n, unit: n)`, duplicates and low-value removals split the same way, plus skip-flag and Windows-assertion removals
 
 #### 2. Commit and push
 
 The commit must include the test scenario changes **and** the COVERAGE_PROGRESS.md update in a single commit. **One commit per target** — do not bundle multiple targets into one commit.
 
 ```bash
-# Stage scenario test changes plus the progress tracker
-git add tests/scenarios/ COVERAGE_PROGRESS.md
+# Stage scenario test changes, any unit-test changes from Step 7 pruning,
+# and the progress tracker
+git add tests/scenarios/ interp/ COVERAGE_PROGRESS.md
 
 # (If the target had no test changes, still commit the progress update alone.)
 git commit -m "test: improve coverage for <target>
@@ -544,11 +617,11 @@ Compose the report and post it as a PR comment:
 **Reference suites consulted**: <list>
 
 ### New tests added
-| File | Priority | Why a regression here would matter |
-|------|----------|------------------------------------|
-| ... | P1/P2 | ... |
+| File | Layer | Priority | Why a regression here would matter |
+|------|-------|----------|------------------------------------|
+| ... | scenario / unit | P1/P2 | ... |
 
-If nothing was added, say so and why existing coverage was sufficient.
+For each unit-test row, also note the Step 6 unit-test justification (e.g. "concurrency", "typed error", "build-tag platform"). If nothing was added, say so and why existing coverage was sufficient.
 
 ### Candidates skipped
 | Candidate gap | Reason |
@@ -556,14 +629,17 @@ If nothing was added, say so and why existing coverage was sufficient.
 | ... | duplicate / cosmetic variant / unreachable / etc. |
 
 ### Coverage before/after
-- Before: N scenario tests
-- After: M scenario tests (+X new)
-- Evaluated: Y; added: X; skipped: Y-X
+- Scenario tests: N → M (+X new)
+- Unit tests / cases: P → Q (+Y new)
+- Evaluated: Z; added: X+Y; skipped: Z-(X+Y)
 
 ### Cleanup
-- Duplicate tests removed: <count>
+- Duplicate tests removed: <count> (scenario: <n>, unit: <n>)
+- Low-value tests removed: <count> (scenario: <n>, unit: <n>)
 - `skip_assert_against_bash` flags removed: <count>
 - Unnecessary Windows-specific assertions removed: <count>
+
+For each removal, list the file/test name and a one-sentence reason (duplicate of X / low-value because Y).
 
 ### Findings
 - <any shell bugs discovered>
