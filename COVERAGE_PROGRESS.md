@@ -34,7 +34,7 @@ Legend: ⏳ pending · 🔄 in progress · ✅ done · ⏭️ skipped (no high-v
 | 24 | brace_group         | shell |             33 | 33            | ⏭️     | already comprehensive — covers {} groups in &&/\|\| chains, nesting, exit-code prop, with assign+exit |
 | 25 | help                | cmd   |             34 | 34            | ⏭️     | already comprehensive — 31 Go tests + 10 scenarios cover restricted/unrestricted, --all, footer/header, alignment |
 | 26 | ss                  | cmd   |             35 | 35            | ⏭️     | already comprehensive — 27 Go tests (incl. fuzz, linux, pentest) + 8 scenarios cover the surface |
-| 27 | field_splitting     | shell |             37 | —             | ⏳     |       |
+| 27 | field_splitting     | shell |             37 | 37            | ⏭️     | already comprehensive — covers IFS variations, empty fields, special chars, prevents-glob, quoted preservation |
 | 28 | ps                  | cmd   |             38 | —             | ⏳     |       |
 | 29 | environment         | shell |             41 | —             | ⏳     |       |
 | 30 | false               | cmd   |             42 | —             | ⏳     |       |
@@ -75,7 +75,7 @@ Legend: ⏳ pending · 🔄 in progress · ✅ done · ⏭️ skipped (no high-v
 
 ## Summary
 
-- Targets processed: 26 / 64
+- Targets processed: 27 / 64
 - Tests added: 0 (scenario: 0, unit: 0)
 - Duplicate tests removed: 0 (scenario: 0, unit: 0)
 - Low-value tests removed: 0 (scenario: 0, unit: 0)
