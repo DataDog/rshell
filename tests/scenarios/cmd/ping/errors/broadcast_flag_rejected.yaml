@@ -5,6 +5,6 @@ input:
     ping -b 255.255.255.255
 expect:
   stdout: ""
-  stderr: "ping: unknown shorthand flag: 'b' in -b\n"
+  stderr: "ping: invalid option -- 'b'\nTry 'ping --help' for more information.\n"
   exit_code: 1
 skip_assert_against_bash: true

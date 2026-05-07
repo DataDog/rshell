@@ -26,17 +26,19 @@ fs.SetOutput(io.Discard) // suppress pflag's own error output; format errors you
 **Flags that need `+N` offset support** (e.g. `tail -n +5`): register as `StringP`, then
 post-process the value with a helper that detects the `+` prefix.
 
-**Error handling:** pflag parse errors (unknown flag, missing argument) should be written
-to `r.stderr` with a `"cmdname: "` prefix and set `r.exitCode = 1; return nil`. This
-matches POSIX command-failure semantics — a bad flag fails the command but does not abort
-the script.
+**Error handling:** pflag parse errors (unknown flag, missing argument) are caught
+by the shared wrapper in `builtins/builtins.go`, which rewrites them to the GNU
+getopt wording (`unrecognized option '--foo'`, `invalid option -- 'X'`,
+`option '--foo' doesn't allow an argument`, `option '--foo' requires an argument`)
+and appends a `Try 'cmdname --help' for more information.` line. The command
+exits 1 — a bad flag fails the command but does not abort the script.
 
 ### Supported Flags Only
 
 Commands MUST only implement the flags listed in their supported flag set. Any flag not
-explicitly registered with pflag is automatically rejected with an "unknown flag" error
-written to stderr and exit code 1. Do NOT add pre-scan loops or special-case logic to
-reject specific flags by name — rely on pflag's unknown-flag handling instead.
+explicitly registered with pflag is automatically rejected with an "unrecognized option"
+error written to stderr and exit code 1. Do NOT add pre-scan loops or special-case logic
+to reject specific flags by name — rely on pflag's unknown-flag handling instead.
 
 ### Help Flag
 

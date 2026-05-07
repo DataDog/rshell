@@ -11,5 +11,5 @@ input:
     strings --radix= data.bin
 expect:
   stdout: ""
-  stderr: "strings: invalid argument \"\" for \"-t, --radix\" flag: invalid radix\n"
+  stderr: "strings: invalid argument \"\" for \"-t, --radix\" flag: invalid radix\nTry 'strings --help' for more information.\n"
   exit_code: 1

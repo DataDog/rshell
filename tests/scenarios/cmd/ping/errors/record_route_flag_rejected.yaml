@@ -5,6 +5,6 @@ input:
     ping -R localhost
 expect:
   stdout: ""
-  stderr: "ping: unknown shorthand flag: 'R' in -R\n"
+  stderr: "ping: invalid option -- 'R'\nTry 'ping --help' for more information.\n"
   exit_code: 1
 skip_assert_against_bash: true

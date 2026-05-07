@@ -6,5 +6,6 @@ input:
 expect:
   stdout: ""
   stderr: |+
-    pwd: unknown flag: --no-such-flag
+    pwd: unrecognized option '--no-such-flag'
+    Try 'pwd --help' for more information.
   exit_code: 1

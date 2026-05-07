@@ -1,12 +1,11 @@
 description: df rejects --total=true — locks in the noArgBool sentinel for --total, the only no-argument bool flag without a short form.
-skip_assert_against_bash: true
 input:
   script: |+
     df --total=true; echo "code:$?"
 expect:
-  stdout_contains:
-    - "code:1"
-  stderr_contains:
-    - "df:"
-    - "does not allow an argument"
+  stdout: |+
+    code:1
+  stderr: |+
+    df: option '--total' doesn't allow an argument
+    Try 'df --help' for more information.
   exit_code: 0

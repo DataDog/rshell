@@ -13,6 +13,7 @@ import (
 	"io/fs"
 	"os"
 	"sort"
+	"strings"
 	"syscall"
 	"time"
 
@@ -96,12 +97,114 @@ func (c Command) Register() {
 		if normalize != nil {
 			args = normalize(args)
 		}
+		hasHelp := fs.Lookup("help") != nil
+		// Honor a leading `--help` in argv order to match GNU coreutils:
+		// `cmd --help --bogus` should print help and exit 0, even though
+		// pflag would otherwise scan the whole argv and fail on --bogus
+		// first. We truncate args at the first `--help` (inclusive) so:
+		//   args = [..., --help, --bogus] → [..., --help]; parse succeeds
+		//   args = [--bad, --help]        → unchanged; parse still fails
+		//                                   on --bad before reaching --help,
+		//                                   matching GNU's leftmost-error rule.
+		// No-op when the command does not register a `help` flag.
+		if hasHelp {
+			for i, a := range args {
+				if a == "--" {
+					break
+				}
+				if a == "--help" {
+					args = args[:i+1]
+					break
+				}
+			}
+		}
 		if err := fs.Parse(args); err != nil {
-			callCtx.Errf("%s: %v\n", name, err)
+			callCtx.Errf("%s: %s\n", name, rewritePflagError(err))
+			if hasHelp {
+				callCtx.Errf("Try '%s --help' for more information.\n", name)
+			}
 			return Result{Code: 1}
 		}
 		return handler(ctx, callCtx, fs.Args())
 	})
+}
+
+// rewritePflagError translates pflag's default error messages to the
+// GNU-getopt-style wording that matches GNU coreutils byte-for-byte.
+// It returns the rewritten message without a trailing newline or any
+// "cmd:" prefix; callers prepend the builtin name themselves.
+//
+// Patterns covered:
+//
+//	pflag                                       → GNU
+//	"unknown flag: --foo"                       → "unrecognized option '--foo'"
+//	"unknown shorthand flag: 'X' in -..."       → "invalid option -- 'X'"
+//	"flag needs an argument: --foo"             → "option '--foo' requires an argument"
+//	`invalid argument "..." for "DESC" flag:    → "option '--LONG' doesn't allow
+//	   flag does not allow an argument`              an argument"
+//
+// Unknown messages are returned unchanged.
+func rewritePflagError(err error) string {
+	msg := err.Error()
+
+	// pflag wraps errors returned by a Var's Set(value) as
+	//   `invalid argument "VALUE" for "DESC" flag: INNER`
+	// where DESC is e.g. `-h, --human-readable` or `--total`. df's
+	// noArgBool / unitFlag.Set returns the literal "flag does not
+	// allow an argument" so users (and tests) see GNU's "doesn't"
+	// instead of the wrapped pflag verbosity.
+	if strings.HasPrefix(msg, "invalid argument ") &&
+		strings.HasSuffix(msg, "flag does not allow an argument") {
+		if d, ok := extractFlagDescriptor(msg); ok {
+			return "option '" + longFlagName(d) + "' doesn't allow an argument"
+		}
+	}
+
+	if rest, ok := strings.CutPrefix(msg, "unknown flag: "); ok {
+		return "unrecognized option '" + rest + "'"
+	}
+
+	const shortPrefix = "unknown shorthand flag: '"
+	if rest, ok := strings.CutPrefix(msg, shortPrefix); ok {
+		if char, _, ok := strings.Cut(rest, "'"); ok {
+			return "invalid option -- '" + char + "'"
+		}
+	}
+
+	if rest, ok := strings.CutPrefix(msg, "flag needs an argument: "); ok {
+		// pflag emits either `--foo` or `-X` here. Both forms are
+		// handed to GNU's "option '...' requires an argument"
+		// without re-mapping shorthand to long form, since pflag
+		// has already chosen the canonical name.
+		return "option '" + rest + "' requires an argument"
+	}
+
+	return msg
+}
+
+// extractFlagDescriptor parses pflag's `invalid argument "..." for
+// "DESC" flag: ...` wrapper and returns the DESC segment.
+func extractFlagDescriptor(msg string) (string, bool) {
+	_, after, found := strings.Cut(msg, ` for "`)
+	if !found {
+		return "", false
+	}
+	desc, _, found := strings.Cut(after, `" flag:`)
+	if !found {
+		return "", false
+	}
+	return desc, true
+}
+
+// longFlagName returns the long-form (--name) flag name from a pflag
+// descriptor like `-X, --LONG` or `--LONG`. For shorthand-only flags
+// (rare; e.g. df's hidden `-k`) the descriptor is just `-X` and we
+// return it unchanged.
+func longFlagName(descriptor string) string {
+	if i := strings.LastIndex(descriptor, ", "); i >= 0 {
+		return descriptor[i+2:]
+	}
+	return descriptor
 }
 
 // CallContext provides the capabilities available to builtin commands.

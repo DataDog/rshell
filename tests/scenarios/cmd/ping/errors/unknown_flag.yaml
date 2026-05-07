@@ -5,6 +5,6 @@ input:
     ping --no-such-flag localhost
 expect:
   stdout: ""
-  stderr: "ping: unknown flag: --no-such-flag\n"
+  stderr: "ping: unrecognized option '--no-such-flag'\nTry 'ping --help' for more information.\n"
   exit_code: 1
 skip_assert_against_bash: true
