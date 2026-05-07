@@ -24,6 +24,7 @@ const (
 	MaxRecordBytes   = 1 << 20
 	MaxFields        = 16_384
 	MaxVariableBytes = 1 << 20
+	maxFiniteFloat64 = 1.79769313486231570814527423731704357e+308
 )
 
 type valueKind int
@@ -110,7 +111,10 @@ func parseFullNumericString(s string) (float64, bool) {
 		return 0, false
 	}
 	n, err := strconv.ParseFloat(strings.TrimSpace(s), 64)
-	return n, err == nil
+	if err != nil || n != n || n > maxFiniteFloat64 || n < -maxFiniteFloat64 {
+		return 0, false
+	}
+	return n, true
 }
 
 func parseNumericPrefix(s string) (float64, bool) {
