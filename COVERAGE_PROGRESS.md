@@ -18,7 +18,7 @@ Legend: ⏳ pending · 🔄 in progress · ✅ done · ⏭️ skipped (no high-v
 | 8 | function | shell | 10 | 10 | ⏭️ | function declarations intentionally blocked at parse; all syntactic forms covered |
 | 9 | allowed_commands | shell | 12 | 12 | ⏭️ | recently improved (commit fc86a688); 12 scenarios + 8 Go API tests cover surface |
 | 10 | input_processing | shell | 13 | 13 | ⏭️ | comprehensive coverage of blanks/comments/whitespace/tabs/multi-cmd; minor overlap with empty_script accepted |
-| 11 | allowed_redirects | shell | 17 | 19 | ✅ | added 2 P2 tests (fd0 explicit, multi-input-last-wins) |
+| 11 | allowed_redirects | shell | 17 | 18 | ✅ | added 1 P2 test (multi-input-last-wins); fd0_explicit was dupe of redirections/input_fd0_explicit.yaml — removed |
 | 12 | blocked_redirects | shell | 17 | 17 | ⏭️ | comprehensive: write/append/dup/close/herestring/redir-variable/read-write all covered |
 | 13 | inline_var | shell | 18 | 18 | ⏭️ | comprehensive: scope, restore, POSIX order, empty/special/cross-ref, on builtins, in pipeline |
 | 14 | false | cmd | 20 | 19 | ✅ | removed exact duplicate (top-level exit_status.yaml dup of exit_status/exit_status_captured.yaml) |
@@ -27,7 +27,7 @@ Legend: ⏳ pending · 🔄 in progress · ✅ done · ⏭️ skipped (no high-v
 | 17 | simple_command | shell | 21 | 21 | ⏭️ | comprehensive: assignment, multi-assign, expansion, exit-status, special-chars, persistence |
 | 18 | until_clause | shell | 21 | 21 | ⏭️ | comprehensive: break/continue with args, nested, exit status, pipeline cond, single/multi-line, brace body, negation |
 | 19 | true | cmd | 23 | 22 | ✅ | removed exact duplicate exit_status.yaml (mirror of false fix) |
-| 20 | redirections | shell | 26 | — | ⏳ | |
+| 20 | redirections | shell | 26 | 26 | ⏭️ | comprehensive: /dev/null variants, heredoc forms, fd0 explicit; mild "redirect_*" vs "devnull/" overlap each tests distinct angle |
 | 21 | negation | shell | 27 | — | ⏳ | |
 | 22 | comments | shell | 28 | — | ⏳ | |
 | 23 | line_continuation | shell | 28 | — | ⏳ | |
@@ -75,9 +75,9 @@ Legend: ⏳ pending · 🔄 in progress · ✅ done · ⏭️ skipped (no high-v
 
 ## Summary
 
-- Targets processed: 19 / 64
-- Tests added: 9 (scenario: 9, unit: 0)
-- Duplicate tests removed: 3 (scenario: 3, unit: 0)
+- Targets processed: 20 / 64
+- Tests added: 8 (scenario: 8, unit: 0)
+- Duplicate tests removed: 4 (scenario: 4, unit: 0)
 - Low-value tests removed: 0 (scenario: 0, unit: 0)
 - `skip_assert_against_bash` flags removed: 0
 - Windows-specific assertions removed: 0
