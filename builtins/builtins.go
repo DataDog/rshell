@@ -146,6 +146,7 @@ func (c Command) Register() {
 //	                                              ("--foo=value" if the original argv used =value)
 //	"unknown shorthand flag: 'X' in -..."       → "invalid option -- 'X'"
 //	"flag needs an argument: --foo"             → "option '--foo' requires an argument"
+//	"flag needs an argument: 'X' in -Y"         → "option requires an argument -- 'X'"
 //	`invalid argument "..." for "DESC" flag:    → "option '--LONG' doesn't allow
 //	   flag does not allow an argument`              an argument"
 //
@@ -181,10 +182,16 @@ func rewritePflagError(err error, args []string) string {
 	}
 
 	if rest, ok := strings.CutPrefix(msg, "flag needs an argument: "); ok {
-		// pflag emits either `--foo` or `-X` here. Both forms are
-		// handed to GNU's "option '...' requires an argument"
-		// without re-mapping shorthand to long form, since pflag
-		// has already chosen the canonical name.
+		// pflag emits two distinct payloads depending on the form:
+		//   long form:  `--foo`
+		//   short form: `'X' in -Y` (X is the char, Y is the run
+		//                            of shorthand letters)
+		// GNU getopt uses different wording for each: long flags get
+		// `option '--foo' requires an argument`, short flags get
+		// `option requires an argument -- 'X'`.
+		if char, found := shortMissingArg(rest); found {
+			return "option requires an argument -- '" + char + "'"
+		}
 		return "option '" + rest + "' requires an argument"
 	}
 
@@ -207,6 +214,21 @@ func recoverLongFlagToken(flag string, args []string) string {
 		}
 	}
 	return flag
+}
+
+// shortMissingArg parses pflag's short-form payload for
+// `flag needs an argument: 'X' in -Y` and returns the bare char
+// (`X`). The second return is false when payload is in the long-form
+// (`--foo`), letting the caller fall through.
+func shortMissingArg(payload string) (string, bool) {
+	if !strings.HasPrefix(payload, "'") {
+		return "", false
+	}
+	char, _, found := strings.Cut(payload[1:], "'")
+	if !found {
+		return "", false
+	}
+	return char, true
 }
 
 // extractFlagDescriptor parses pflag's `invalid argument "..." for

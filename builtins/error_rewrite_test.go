@@ -60,10 +60,16 @@ func TestRewritePflagError(t *testing.T) {
 			want: "option '--type' requires an argument",
 		},
 		{
-			name: "missing argument short",
-			in:   "flag needs an argument: -t",
-			args: []string{"-t"},
-			want: "option '-t' requires an argument",
+			name: "missing argument short single",
+			in:   "flag needs an argument: 'n' in -n",
+			args: []string{"-n"},
+			want: "option requires an argument -- 'n'",
+		},
+		{
+			name: "missing argument short combined",
+			in:   "flag needs an argument: 'n' in -an",
+			args: []string{"-an"},
+			want: "option requires an argument -- 'n'",
 		},
 		{
 			name: "no-arg with long+short descriptor",
