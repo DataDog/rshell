@@ -231,10 +231,10 @@ func TestAwkIntegerNumberFormatting(t *testing.T) {
 func TestAwkIfNextPrintfAndScalarBuiltins(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, dir, "input.txt", "a 1\nb 22\nskip 5\n")
-	stdout, stderr, code := cmdRun(t, `awk '{ if ($1 == "skip") next; if ($2 > 9) { printf "%s:%03d\n", toupper($1), $2 } else printf "small:%s:%d:%d:%d:%d:%s\n", tolower($1), int($2 + .9), length, index($0, $2), index($0, ""), substr($0, 2, 2) }' input.txt`, dir)
+	stdout, stderr, code := cmdRun(t, `awk '{ if ($1 == "skip") next; if ($2 > 9) { printf "%s:%03d:%u\n", toupper($1), $2, 42 } else printf "small:%s:%d:%d:%d:%d:%s\n", tolower($1), int($2 + .9), length, index($0, $2), index($0, ""), substr($0, 2, 2) }' input.txt`, dir)
 	assert.Equal(t, 0, code)
 	assert.Equal(t, "", stderr)
-	assert.Equal(t, "small:a:1:3:3:1: 1\nB:022\n", stdout)
+	assert.Equal(t, "small:a:1:3:3:1: 1\nB:022:42\n", stdout)
 }
 
 func TestAwkBeginOnlySkipsInputFiles(t *testing.T) {
@@ -324,6 +324,8 @@ func TestAwkRejectsUnsafeFeatures(t *testing.T) {
 		`awk '{ exit 0 }' input.txt`,
 		`awk 'BEGIN { next }' input.txt`,
 		`awk 'BEGIN { print tolower(), toupper(), int() }' input.txt`,
+		`awk 'BEGIN { printf "%1000000000s", "x" }' input.txt`,
+		`awk 'BEGIN { printf "%.1000000000s", "x" }' input.txt`,
 		`awk 'BEGIN { BEGIN=1; print BEGIN }' input.txt`,
 		`awk 'BEGIN { END=1; print END }' input.txt`,
 		`awk '{ print $BEGIN }' input.txt`,

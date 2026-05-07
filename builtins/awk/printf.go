@@ -11,6 +11,11 @@ import (
 	"unicode/utf8"
 )
 
+const (
+	MaxPrintfWidth     = 1 << 20
+	MaxPrintfPrecision = 1 << 20
+)
+
 func formatPrintf(format string, args []value) (string, error) {
 	var b strings.Builder
 	arg := 0
@@ -31,13 +36,13 @@ func formatPrintf(format string, args []value) (string, error) {
 		for i < len(format) && strings.ContainsRune("-+ #0", rune(format[i])) {
 			i++
 		}
-		for i < len(format) && format[i] >= '0' && format[i] <= '9' {
-			i++
+		if err := consumePrintfBound(format, &i, MaxPrintfWidth, "width"); err != nil {
+			return "", err
 		}
 		if i < len(format) && format[i] == '.' {
 			i++
-			for i < len(format) && format[i] >= '0' && format[i] <= '9' {
-				i++
+			if err := consumePrintfBound(format, &i, MaxPrintfPrecision, "precision"); err != nil {
+				return "", err
 			}
 		}
 		if i >= len(format) {
@@ -62,6 +67,7 @@ func formatPrintf(format string, args []value) (string, error) {
 			}
 			b.WriteString(fmt.Sprintf(spec, int64(v.Number())))
 		case 'u':
+			spec = spec[:len(spec)-1] + "d"
 			b.WriteString(fmt.Sprintf(spec, uint64(v.Number())))
 		case 'o', 'x', 'X':
 			b.WriteString(fmt.Sprintf(spec, int64(v.Number())))
@@ -74,6 +80,22 @@ func formatPrintf(format string, args []value) (string, error) {
 		}
 	}
 	return b.String(), nil
+}
+
+func consumePrintfBound(format string, idx *int, max int, name string) error {
+	n := 0
+	for *idx < len(format) && format[*idx] >= '0' && format[*idx] <= '9' {
+		digit := int(format[*idx] - '0')
+		if n > (max-digit)/10 {
+			return fmt.Errorf("printf %s exceeds %d", name, max)
+		}
+		n = n*10 + digit
+		(*idx)++
+	}
+	if n > max {
+		return fmt.Errorf("printf %s exceeds %d", name, max)
+	}
+	return nil
 }
 
 func printfRune(v value) rune {
