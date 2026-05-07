@@ -50,7 +50,7 @@ Legend: ⏳ pending · 🔄 in progress · ✅ done · ⏭️ skipped (no high-v
 | 40 | if_clause | shell | 71 | 71 | ⏭️ | comprehensive: basic, conditions (test/and/or/pipeline), edge_cases, exit_code, loop_interaction; mild top-level/basic overlap accepted |
 | 41 | ss | cmd | 75 | 75 | ⏭️ | 8 scenarios + 67 Go tests cover /proc/net parsing, flags, output formatting |
 | 42 | logic_ops | shell | 76 | 76 | ⏭️ | comprehensive: and/or basic, chains, exit_code, mixed and-or, output, var_interact |
-| 43 | pwd | cmd | 96 | — | ⏳ | |
+| 43 | pwd | cmd | 96 | 96 | ⏭️ | 17 scenarios + 79 Go tests cover -L/-P, last-wins, hardening, errors, help |
 | 44 | ping | cmd | 97 | — | ⏳ | |
 | 45 | ls | cmd | 103 | — | ⏳ | |
 | 46 | du | cmd | 107 | — | ⏳ | |
@@ -75,7 +75,7 @@ Legend: ⏳ pending · 🔄 in progress · ✅ done · ⏭️ skipped (no high-v
 
 ## Summary
 
-- Targets processed: 42 / 64
+- Targets processed: 43 / 64
 - Tests added: 8 (scenario: 8, unit: 0)
 - Duplicate tests removed: 13 (scenario: 13, unit: 0)
 - Low-value tests removed: 0 (scenario: 0, unit: 0)
