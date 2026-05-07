@@ -54,7 +54,7 @@ Legend: ⏳ pending · 🔄 in progress · ✅ done · ⏭️ skipped (no high-v
 | 44 | ping | cmd | 97 | 97 | ⏭️ | 33 scenarios + 64 Go tests cover blocked-flag rejection, address rejection (broadcast/multicast/unspec), flag clamping, IPv4/6 selection |
 | 45 | ls | cmd | 103 | 103 | ⏭️ | 60 scenarios + 43 Go tests cover flags (-a/-A/-d/-F/-l/-h/-r/-R/-S/-t), long-format, pagination, sandbox |
 | 46 | du | cmd | 107 | 107 | ⏭️ | 24 scenarios + 83 Go tests cover flags, sandbox, recursion, error paths |
-| 47 | echo | cmd | 127 | — | ⏳ | |
+| 47 | echo | cmd | 127 | 127 | ⏭️ | 62 scenarios + 65 Go tests cover args, quoting, special chars, no-flag-handling |
 | 48 | wc | cmd | 134 | — | ⏳ | |
 | 49 | tr | cmd | 137 | — | ⏳ | |
 | 50 | for_clause | shell | 137 | — | ⏳ | |
@@ -75,7 +75,7 @@ Legend: ⏳ pending · 🔄 in progress · ✅ done · ⏭️ skipped (no high-v
 
 ## Summary
 
-- Targets processed: 46 / 64
+- Targets processed: 47 / 64
 - Tests added: 8 (scenario: 8, unit: 0)
 - Duplicate tests removed: 13 (scenario: 13, unit: 0)
 - Low-value tests removed: 0 (scenario: 0, unit: 0)
