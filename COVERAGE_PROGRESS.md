@@ -48,7 +48,7 @@ Legend: ⏳ pending · 🔄 in progress · ✅ done · ⏭️ skipped (no high-v
 | 38 | globbing            | shell |             52 | 52            | ⏭️     | already comprehensive — covers *, ?, [...], escaped glob chars, no-match, dotfiles, in for/word-list |
 | 39 | pipe                | shell |             56 | 56            | ⏭️     | already comprehensive — covers basic, multi-stage, exit-status (last/negated), with cmd-subst, with redirs |
 | 40 | ping                | cmd   |             59 | 59            | ⏭️     | already comprehensive — 26 Go tests + 33 scenarios cover flags, IPv4/IPv6, count/timeout, errors |
-| 41 | strings             | cmd   |             62 | —             | ⏳     |       |
+| 41 | strings             | cmd   |             62 | 62            | ⏭️     | already comprehensive — 25 Go tests + 37 scenarios cover -n/--bytes, encoding, binary input, errors |
 | 42 | exit                | cmd   |             63 | —             | ⏳     |       |
 | 43 | ip                  | cmd   |             67 | —             | ⏳     |       |
 | 44 | tr                  | cmd   |             68 | —             | ⏳     |       |
@@ -75,7 +75,7 @@ Legend: ⏳ pending · 🔄 in progress · ✅ done · ⏭️ skipped (no high-v
 
 ## Summary
 
-- Targets processed: 40 / 64
+- Targets processed: 41 / 64
 - Tests added: 0 (scenario: 0, unit: 0)
 - Duplicate tests removed: 0 (scenario: 0, unit: 0)
 - Low-value tests removed: 0 (scenario: 0, unit: 0)
