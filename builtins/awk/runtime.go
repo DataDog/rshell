@@ -397,7 +397,7 @@ func (rt *runtime) runRules(ctx context.Context, kind ruleKind) error {
 			}
 			continue
 		}
-		if err := rt.execStatements(r.action); err != nil {
+		if err := rt.execStatements(ctx, r.action); err != nil {
 			if errors.Is(err, errNextRecord) {
 				if kind == ruleNormal {
 					return err

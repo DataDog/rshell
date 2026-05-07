@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -138,6 +139,40 @@ func TestAwkForWhileBreakAndContinue(t *testing.T) {
 	assert.Equal(t, 0, code)
 	assert.Equal(t, "", stderr)
 	assert.Equal(t, "8 13\n", stdout)
+}
+
+func TestAwkLoopsObserveContextCancellation(t *testing.T) {
+	for _, script := range []string{
+		`awk 'BEGIN { while (1) {} }'`,
+		`awk 'BEGIN { for (i = 1; 1; i++) {} }'`,
+	} {
+		t.Run(script, func(t *testing.T) {
+			parser := syntax.NewParser()
+			prog, err := parser.Parse(strings.NewReader(script), "")
+			require.NoError(t, err)
+			var outBuf, errBuf bytes.Buffer
+			runner, err := interp.New(interp.StdIO(nil, &outBuf, &errBuf), interpoption.AllowAllCommands().(interp.RunnerOption))
+			require.NoError(t, err)
+			defer runner.Close()
+
+			ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+			defer cancel()
+			done := make(chan error, 1)
+			go func() {
+				done <- runner.Run(ctx, prog)
+			}()
+
+			select {
+			case runErr := <-done:
+				var exitStatus interp.ExitStatus
+				require.ErrorAs(t, runErr, &exitStatus)
+				assert.NotEqual(t, 0, int(exitStatus))
+				assert.Contains(t, errBuf.String(), "context deadline exceeded")
+			case <-time.After(2 * time.Second):
+				t.Fatal("awk loop did not observe context cancellation")
+			}
+		})
+	}
 }
 
 func TestAwkRejectsScalarArrayNameConflicts(t *testing.T) {

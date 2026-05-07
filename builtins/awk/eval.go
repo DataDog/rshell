@@ -6,6 +6,7 @@
 package awk
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"math"
@@ -17,8 +18,11 @@ var errNextRecord = errors.New("next record")
 var errBreakLoop = errors.New("break loop")
 var errContinueLoop = errors.New("continue loop")
 
-func (rt *runtime) execStatements(stmts []stmt) error {
+func (rt *runtime) execStatements(ctx context.Context, stmts []stmt) error {
 	for _, st := range stmts {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		switch s := st.(type) {
 		case *printStmt:
 			vals := make([]value, 0, len(s.args))
@@ -59,11 +63,11 @@ func (rt *runtime) execStatements(stmts []stmt) error {
 				return err
 			}
 			if cond.Bool() {
-				if err := rt.execStatements(s.thenStmts); err != nil {
+				if err := rt.execStatements(ctx, s.thenStmts); err != nil {
 					return err
 				}
 			} else if len(s.elseStmts) > 0 {
-				if err := rt.execStatements(s.elseStmts); err != nil {
+				if err := rt.execStatements(ctx, s.elseStmts); err != nil {
 					return err
 				}
 			}
@@ -76,7 +80,7 @@ func (rt *runtime) execStatements(stmts []stmt) error {
 				if err := rt.setVar(s.varName, stringValue(key)); err != nil {
 					return err
 				}
-				if err := rt.execStatements(s.body); err != nil {
+				if err := rt.execStatements(ctx, s.body); err != nil {
 					if errors.Is(err, errBreakLoop) {
 						break
 					}
@@ -87,11 +91,11 @@ func (rt *runtime) execStatements(stmts []stmt) error {
 				}
 			}
 		case *forStmt:
-			if err := rt.execFor(s); err != nil {
+			if err := rt.execFor(ctx, s); err != nil {
 				return err
 			}
 		case *whileStmt:
-			if err := rt.execWhile(s); err != nil {
+			if err := rt.execWhile(ctx, s); err != nil {
 				return err
 			}
 		case *nextStmt:
@@ -125,13 +129,16 @@ func (rt *runtime) execStatements(stmts []stmt) error {
 	return nil
 }
 
-func (rt *runtime) execFor(s *forStmt) error {
+func (rt *runtime) execFor(ctx context.Context, s *forStmt) error {
 	if s.init != nil {
 		if _, err := rt.eval(s.init); err != nil {
 			return err
 		}
 	}
 	for {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		if s.cond != nil {
 			cond, err := rt.eval(s.cond)
 			if err != nil {
@@ -141,7 +148,7 @@ func (rt *runtime) execFor(s *forStmt) error {
 				return nil
 			}
 		}
-		err := rt.execStatements(s.body)
+		err := rt.execStatements(ctx, s.body)
 		if errors.Is(err, errBreakLoop) {
 			return nil
 		}
@@ -156,8 +163,11 @@ func (rt *runtime) execFor(s *forStmt) error {
 	}
 }
 
-func (rt *runtime) execWhile(s *whileStmt) error {
+func (rt *runtime) execWhile(ctx context.Context, s *whileStmt) error {
 	for {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		cond, err := rt.eval(s.cond)
 		if err != nil {
 			return err
@@ -165,7 +175,7 @@ func (rt *runtime) execWhile(s *whileStmt) error {
 		if !cond.Bool() {
 			return nil
 		}
-		err = rt.execStatements(s.body)
+		err = rt.execStatements(ctx, s.body)
 		if errors.Is(err, errBreakLoop) {
 			return nil
 		}
