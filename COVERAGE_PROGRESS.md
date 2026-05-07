@@ -14,7 +14,7 @@ Legend: ⏳ pending · 🔄 in progress · ✅ done · ⏭️ skipped (no high-v
 | 4 | subshell | shell | 8 | 12 | ✅ | added 4 P2 tests (multiline, pipe-target, triple-nested isolation, input redirect) |
 | 5 | empty_script | shell | 9 | 11 | ✅ | added 2 P2 tests for CRLF (Windows-saved) scripts |
 | 6 | case_clause | shell | 10 | 10 | ⏭️ | case is intentionally blocked at parse validation; all syntactic forms covered |
-| 7 | errors | shell | 10 | — | ⏳ | |
+| 7 | errors | shell | 10 | 10 | ✅ | replaced misnamed dupe with cmd-subst error test; framework parses scripts so syntax-error tests can't be scenarios |
 | 8 | function | shell | 10 | — | ⏳ | |
 | 9 | allowed_commands | shell | 12 | — | ⏳ | recently improved |
 | 10 | input_processing | shell | 13 | — | ⏳ | |
@@ -75,9 +75,9 @@ Legend: ⏳ pending · 🔄 in progress · ✅ done · ⏭️ skipped (no high-v
 
 ## Summary
 
-- Targets processed: 6 / 64
-- Tests added: 6 (scenario: 6, unit: 0)
-- Duplicate tests removed: 0 (scenario: 0, unit: 0)
+- Targets processed: 7 / 64
+- Tests added: 7 (scenario: 7, unit: 0)
+- Duplicate tests removed: 1 (scenario: 1, unit: 0)
 - Low-value tests removed: 0 (scenario: 0, unit: 0)
 - `skip_assert_against_bash` flags removed: 0
 - Windows-specific assertions removed: 0
