@@ -333,6 +333,8 @@ func (p *parser) parsePrefix() (expr, error) {
 
 func unsupportedExpressionKeyword(name string) (string, bool) {
 	switch name {
+	case "BEGIN", "END":
+		return "BEGIN and END are reserved patterns", true
 	case "if", "while", "for", "next", "nextfile", "exit", "break", "continue":
 		return "control flow statements are not supported", true
 	case "delete":

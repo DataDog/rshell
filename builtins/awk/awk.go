@@ -217,6 +217,10 @@ func readProgram(ctx context.Context, r byteReader, total *int) (string, error) 
 }
 
 func validVarName(name string) bool {
+	return validIdentifierName(name) && !isSpecialPatternName(name)
+}
+
+func validIdentifierName(name string) bool {
 	if name == "" || !isIdentStart(rune(name[0])) {
 		return false
 	}
@@ -226,4 +230,8 @@ func validVarName(name string) bool {
 		}
 	}
 	return true
+}
+
+func isSpecialPatternName(name string) bool {
+	return name == "BEGIN" || name == "END"
 }

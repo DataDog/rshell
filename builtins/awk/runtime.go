@@ -254,8 +254,11 @@ func (rt *runtime) run(ctx context.Context, files []string) builtins.Result {
 
 func (rt *runtime) applyOperandAssignment(arg string) (bool, error) {
 	name, value, ok := strings.Cut(arg, "=")
-	if !ok || !validVarName(name) {
+	if !ok || !validIdentifierName(name) {
 		return false, nil
+	}
+	if !validVarName(name) {
+		return true, fmt.Errorf("invalid variable assignment %q", arg)
 	}
 	if err := rt.setVar(name, inputStringValue(DecodeAwkEscapes(value))); err != nil {
 		return true, err
