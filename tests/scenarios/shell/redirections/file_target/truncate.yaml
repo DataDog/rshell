@@ -1,0 +1,11 @@
+description: Truncating output redirect (>) writes a file inside AllowedPaths.
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    echo hi > out.txt
+    cat out.txt
+expect:
+  stdout: |+
+    hi
+  stderr: ""
+  exit_code: 0

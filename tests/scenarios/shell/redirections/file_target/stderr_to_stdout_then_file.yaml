@@ -1,0 +1,11 @@
+description: Combining > file with 2>&1 sends both streams into the same file.
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    cat missing > combined.log 2>&1
+    cat combined.log
+expect:
+  stdout_contains:
+    - "such file or directory"
+  stderr: ""
+  exit_code: 0

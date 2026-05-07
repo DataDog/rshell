@@ -200,6 +200,44 @@ func (r *Runner) hdocReader(ctx context.Context, rd *syntax.Redirect) (*os.File,
 	return pr, nil
 }
 
+// rejectNonRegularRedirectTarget guards against opening a non-regular
+// redirect target (FIFO, socket, char/block device) for output. Opening
+// a FIFO with O_WRONLY blocks until a reader connects, which would hang
+// the script during redirect setup before the command runs and before
+// context cancellation can fire. Sandbox.Stat is metadata-only (openat-
+// based) and never blocks.
+//
+// /dev/null is handled by callers via the io.Discard fast path and never
+// reaches this helper. ENOENT and other Stat errors are ignored — if the
+// file does not exist, O_CREATE will create a regular file; any genuine
+// failure (permission denied, etc.) will surface from the subsequent
+// Open call.
+//
+// When a custom openHandler is installed (r.sandbox is nil), the caller
+// is responsible for the file-type check; we skip the guard rather than
+// silently misbehave.
+//
+// There is a TOCTOU window between Stat and Open. It is not a sandbox-
+// escape concern: the sandbox enforces that the path stays within
+// AllowedPaths, and an attacker who can swap a regular file for a FIFO
+// already has write access to the parent directory. The check defends
+// against accidental hangs on operator-created FIFOs in the common case.
+func (r *Runner) rejectNonRegularRedirectTarget(path string) error {
+	if r.sandbox == nil {
+		return nil
+	}
+	info, err := r.sandbox.Stat(path, r.Dir)
+	if err != nil {
+		return nil
+	}
+	if info.Mode().IsRegular() {
+		return nil
+	}
+	werr := fmt.Errorf("open %s: not a regular file", path)
+	r.errf("%v\n", werr)
+	return werr
+}
+
 func (r *Runner) redir(ctx context.Context, rd *syntax.Redirect) (io.Closer, error) {
 	if rd.Hdoc != nil {
 		pr, err := r.hdocReader(ctx, rd)
@@ -219,9 +257,11 @@ func (r *Runner) redir(ctx context.Context, rd *syntax.Redirect) (io.Closer, err
 		return pr, nil
 	}
 
-	arg := r.literal(rd.Word)
-
 	// Determine which fd this redirect targets (default: stdout for output ops).
+	// This check runs BEFORE expanding the redirect word so that an unsupported
+	// fd rejects the redirect without triggering any command substitution or
+	// other expansion side effects in the target. rd.N is a parser literal,
+	// not an expansion, so this is safe to inspect early.
 	orig := &r.stdout
 	if rd.N != nil {
 		switch rd.N.Value {
@@ -241,31 +281,57 @@ func (r *Runner) redir(ctx context.Context, rd *syntax.Redirect) (io.Closer, err
 		}
 	}
 
+	arg := r.literal(rd.Word)
+
 	switch rd.Op {
 	case syntax.RdrIn:
 		// done further below
 
 	case syntax.RdrOut, syntax.ClbOut, syntax.AppOut:
-		// Output redirects are only allowed to /dev/null (enforced at validation).
-		// Re-check at runtime after variable expansion for defense-in-depth.
-		if !isDevNull(arg) {
-			r.errf("> %s: file redirection is only supported for /dev/null\n", arg)
-			return nil, fmt.Errorf("> %s: file redirection is only supported for /dev/null", arg)
+		// /dev/null is short-circuited to io.Discard. The sandbox does not
+		// add /dev/null to AllowedPaths automatically, so going through
+		// r.open would require operators to whitelist it explicitly.
+		if isDevNull(arg) {
+			*orig = io.Discard
+			return nil, nil
 		}
-		*orig = io.Discard
-		return nil, nil
+		if err := r.rejectNonRegularRedirectTarget(arg); err != nil {
+			return nil, err
+		}
+		flags := os.O_WRONLY | os.O_CREATE | os.O_TRUNC
+		if rd.Op == syntax.AppOut {
+			flags = os.O_WRONLY | os.O_CREATE | os.O_APPEND
+		}
+		f, err := r.open(ctx, arg, flags, 0644, true)
+		if err != nil {
+			return nil, err
+		}
+		*orig = f
+		return f, nil
 
 	case syntax.RdrAll, syntax.AppAll:
 		// Note: these ops redirect both stdout and stderr, so they assign
 		// r.stdout and r.stderr directly rather than going through *orig.
 		// Bash does not allow an explicit fd prefix on &>/&>>.
-		if !isDevNull(arg) {
-			r.errf("&> %s: file redirection is only supported for /dev/null\n", arg)
-			return nil, fmt.Errorf("&> %s: file redirection is only supported for /dev/null", arg)
+		if isDevNull(arg) {
+			r.stdout = io.Discard
+			r.stderr = io.Discard
+			return nil, nil
 		}
-		r.stdout = io.Discard
-		r.stderr = io.Discard
-		return nil, nil
+		if err := r.rejectNonRegularRedirectTarget(arg); err != nil {
+			return nil, err
+		}
+		flags := os.O_WRONLY | os.O_CREATE | os.O_TRUNC
+		if rd.Op == syntax.AppAll {
+			flags = os.O_WRONLY | os.O_CREATE | os.O_APPEND
+		}
+		f, err := r.open(ctx, arg, flags, 0644, true)
+		if err != nil {
+			return nil, err
+		}
+		r.stdout = f
+		r.stderr = f
+		return f, nil
 
 	case syntax.DplOut:
 		switch arg {

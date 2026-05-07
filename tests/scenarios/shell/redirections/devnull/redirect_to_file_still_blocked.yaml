@@ -1,11 +1,11 @@
-# skip: redirect restrictions are an rshell-specific security feature
+# skip: sandbox redirect support is rshell-specific; bash has no AllowedPaths restriction
 skip_assert_against_bash: true
-description: Output redirection to a real file (not /dev/null) is still blocked.
+description: Output redirection to a path outside AllowedPaths is blocked at runtime.
 input:
   script: |+
     echo hello > /tmp/output.txt
 expect:
   stdout: ""
   stderr: |+
-    > file redirection is not supported
-  exit_code: 2
+    open /tmp/output.txt: permission denied
+  exit_code: 1

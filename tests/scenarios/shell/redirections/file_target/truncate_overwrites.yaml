@@ -1,0 +1,15 @@
+description: Truncating output redirect overwrites an existing file.
+setup:
+  files:
+    - path: out.txt
+      content: "old contents that are longer than the new ones"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    echo new > out.txt
+    cat out.txt
+expect:
+  stdout: |+
+    new
+  stderr: ""
+  exit_code: 0

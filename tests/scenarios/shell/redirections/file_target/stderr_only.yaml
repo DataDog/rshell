@@ -1,0 +1,13 @@
+description: Stderr-only redirect (2>) captures stderr without touching stdout.
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    cat missing 2> err.log
+    echo --
+    cat err.log
+expect:
+  stdout_contains:
+    - "--"
+    - "such file or directory"
+  stderr: ""
+  exit_code: 0

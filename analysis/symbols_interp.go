@@ -47,7 +47,11 @@ var interpAllowedSymbols = []string{
 	"os.File",                     // 🟠 file handle type; interpreter needs file I/O for redirects and pipes.
 	"os.FileMode",                 // 🟢 file permission bits type; pure type.
 	"os.Getwd",                    // 🟠 returns current working directory; read-only.
+	"os.O_APPEND",                 // 🟢 append-on-write flag constant; pure integer. Capability gate is allowedpaths.Sandbox.Open, not the flag itself.
+	"os.O_CREATE",                 // 🟢 create-if-missing flag constant; pure integer. Capability gate is allowedpaths.Sandbox.Open, not the flag itself.
 	"os.O_RDONLY",                 // 🟢 read-only file flag constant; pure constant.
+	"os.O_TRUNC",                  // 🟢 truncate-on-open flag constant; pure integer. Capability gate is allowedpaths.Sandbox.Open, not the flag itself.
+	"os.O_WRONLY",                 // 🟢 write-only file flag constant; pure integer. Capability gate is allowedpaths.Sandbox.Open, not the flag itself.
 	"os.PathError",                // 🟢 error type wrapping path and operation; pure type.
 	"os.Pipe",                     // 🟠 creates an OS pipe pair; needed for shell pipelines.
 	"path/filepath.IsAbs",         // 🟢 checks if path is absolute; pure function, no I/O.

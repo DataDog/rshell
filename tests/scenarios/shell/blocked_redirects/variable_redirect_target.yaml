@@ -1,11 +1,12 @@
-# skip: redirect type is intentionally blocked in the restricted shell
+# skip: sandbox redirect support is rshell-specific; bash has no AllowedPaths restriction
 skip_assert_against_bash: true
-description: Variable expansion in redirect target is blocked (even if it resolves to /dev/null).
+description: Variable expansion in redirect target works at runtime; sandbox blocks writes outside AllowedPaths.
 input:
   script: |+
-    TARGET=/dev/null; echo hello > $TARGET
+    TARGET=out.txt
+    echo hello > $TARGET
 expect:
   stdout: ""
   stderr: |+
-    > file redirection is not supported
-  exit_code: 2
+    open out.txt: permission denied
+  exit_code: 1

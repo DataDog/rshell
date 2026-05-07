@@ -1,0 +1,16 @@
+description: '&>> appends both stdout and stderr to the same file.'
+setup:
+  files:
+    - path: combined.log
+      content: "header\n"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    echo body &>> combined.log
+    cat combined.log
+expect:
+  stdout: |+
+    header
+    body
+  stderr: ""
+  exit_code: 0
