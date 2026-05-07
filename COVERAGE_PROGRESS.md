@@ -44,7 +44,7 @@ Legend: ⏳ pending · 🔄 in progress · ✅ done · ⏭️ skipped (no high-v
 | 34 | ps | cmd | 44 | 44 | ⏭️ | 12 scenarios + 32 Go tests cover flags, PID parsing, error paths, format modes |
 | 35 | read | cmd | 50 | 50 | ⏭️ | 47 scenarios + 3 Go tests cover flags (-r/-n/-N/-d/-t/-p), IFS handling, errors, hardening |
 | 36 | allowed_paths | shell | 51 | 51 | ⏭️ | 51 scenarios + 39 Go tests cover symlinks, traversal, container-host-prefix, glob, redirect, env var |
-| 37 | cmd_separator | shell | 52 | — | ⏳ | |
+| 37 | cmd_separator | shell | 52 | 52 | ⏭️ | comprehensive: basic, control_flow, exit_code, var_sharing, with_ops categories |
 | 38 | globbing | shell | 52 | — | ⏳ | |
 | 39 | pipe | shell | 57 | — | ⏳ | |
 | 40 | if_clause | shell | 71 | — | ⏳ | |
@@ -75,7 +75,7 @@ Legend: ⏳ pending · 🔄 in progress · ✅ done · ⏭️ skipped (no high-v
 
 ## Summary
 
-- Targets processed: 36 / 64
+- Targets processed: 37 / 64
 - Tests added: 8 (scenario: 8, unit: 0)
 - Duplicate tests removed: 12 (scenario: 12, unit: 0)
 - Low-value tests removed: 0 (scenario: 0, unit: 0)
