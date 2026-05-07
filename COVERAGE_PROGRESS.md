@@ -64,7 +64,7 @@ Legend: ⏳ pending · 🔄 in progress · ✅ done · ⏭️ skipped (no high-v
 | 54 | cat | cmd | 145 | 145 | ⏭️ | 44 scenarios + 101 Go tests cover -n/-b/-s/-A/-E/-T/-v, multi-file, errors, hardening, GNU compat |
 | 55 | grep | cmd | 151 | 151 | ⏭️ | 54 scenarios + 97 Go tests cover -i/-v/-c/-l/-n/-w/-x/-r/-E/-F/-A/-B/-C, regex |
 | 56 | uniq | cmd | 161 | 161 | ⏭️ | 46 scenarios + 115 Go tests cover -c/-d/-D/-u/-i/-f/-s/-w, all combinations |
-| 57 | testcmd | cmd | 168 | — | ⏳ | |
+| 57 | testcmd | cmd | 168 | 168 | ⏭️ | 43 scenarios + 125 Go tests cover string/integer/file ops, -a/-o, [ ] form, all operators |
 | 58 | var_expand | shell | 172 | — | ⏳ | |
 | 59 | xargs | cmd | 193 | — | ⏳ | |
 | 60 | head | cmd | 194 | — | ⏳ | |
@@ -75,7 +75,7 @@ Legend: ⏳ pending · 🔄 in progress · ✅ done · ⏭️ skipped (no high-v
 
 ## Summary
 
-- Targets processed: 56 / 64
+- Targets processed: 57 / 64
 - Tests added: 8 (scenario: 8, unit: 0)
 - Duplicate tests removed: 13 (scenario: 13, unit: 0)
 - Low-value tests removed: 0 (scenario: 0, unit: 0)
