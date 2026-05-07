@@ -1,12 +1,11 @@
-description: df rejects -h=true (the short shorthand also goes through the unitFlag NUL-byte sentinel guard, so the explicit-value form fails just like the long form --human-readable=true). Wording diverges from GNU here — GNU getopt parses `-h=...` as `-h` followed by a `=` shorthand and emits `invalid option -- '='`; pflag treats `=` as the value separator and routes through the unitFlag.Set guard.
-skip_assert_against_bash: true
+description: df rejects -h=true. The error wording matches GNU getopt's shorthand-=-as-invalid behaviour after the rewriter in builtins/builtins.go detects the `-X=value` argv shape and substitutes `invalid option -- '='` for pflag's wrapped no-arg error.
 input:
   script: |+
     df -h=true; echo "code:$?"
 expect:
-  stdout_contains:
-    - "code:1"
-  stderr_contains:
-    - "df:"
-    - "doesn't allow an argument"
+  stdout: |+
+    code:1
+  stderr: |+
+    df: invalid option -- '='
+    Try 'df --help' for more information.
   exit_code: 0

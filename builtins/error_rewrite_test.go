@@ -78,16 +78,28 @@ func TestRewritePflagError(t *testing.T) {
 			want: "option '--all' doesn't allow an argument",
 		},
 		{
+			name: "shorthand =value form maps to GNU's invalid =",
+			in:   `invalid argument "true" for "-h, --human-readable" flag: flag does not allow an argument`,
+			args: []string{"-h=true"},
+			want: "invalid option -- '='",
+		},
+		{
+			name: "shorthand =value form requires shorthand match",
+			in:   `invalid argument "true" for "-a, --all" flag: flag does not allow an argument`,
+			args: []string{"--all=true"},
+			want: "option '--all' doesn't allow an argument",
+		},
+		{
 			name: "no-arg with long-only descriptor",
 			in:   `invalid argument "true" for "--total" flag: flag does not allow an argument`,
 			args: []string{"--total=true"},
 			want: "option '--total' doesn't allow an argument",
 		},
 		{
-			name: "no-arg with short-only descriptor",
+			name: "no-arg with short-only descriptor — argv used -X=value",
 			in:   `invalid argument "true" for "-k" flag: flag does not allow an argument`,
 			args: []string{"-k=true"},
-			want: "option '-k' doesn't allow an argument",
+			want: "invalid option -- '='",
 		},
 		{
 			name: "wrapped Var.Set error not the no-arg case is left alone",

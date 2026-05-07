@@ -156,6 +156,14 @@ func rewritePflagError(err error, args []string) string {
 	if strings.HasPrefix(msg, "invalid argument ") &&
 		strings.HasSuffix(msg, "flag does not allow an argument") {
 		if d, ok := extractFlagDescriptor(msg); ok {
+			// `-X=value` for a no-arg shorthand: GNU getopt iterates
+			// shorthand chars and treats `=` as an unknown shorthand,
+			// emitting `invalid option -- '='`. pflag instead routes
+			// the value through Set, hitting our no-arg guard. Match
+			// GNU when the original argv used the shorthand=value form.
+			if shortFlagEqualsValueIn(d, args) {
+				return "invalid option -- '='"
+			}
 			return "option '" + longFlagName(d) + "' doesn't allow an argument"
 		}
 	}
@@ -207,6 +215,36 @@ func recoverLongFlagToken(flag string, args []string) string {
 		}
 	}
 	return flag
+}
+
+// shortFlagEqualsValueIn reports whether args contains a token of the
+// form `-X=...` whose shorthand char X matches the shorthand encoded
+// in descriptor (e.g. `-h, --human-readable` → X=`h`). Used to detect
+// the GNU-getopt shorthand=value error class.
+func shortFlagEqualsValueIn(descriptor string, args []string) bool {
+	short, ok := shortFlagFromDescriptor(descriptor)
+	if !ok {
+		return false
+	}
+	for _, a := range args {
+		if a == "--" {
+			break
+		}
+		if len(a) >= 3 && a[0] == '-' && a[1] != '-' && a[1] == short && a[2] == '=' {
+			return true
+		}
+	}
+	return false
+}
+
+// shortFlagFromDescriptor extracts the single shorthand char from a
+// pflag descriptor like `-h, --human-readable`. Returns false for
+// long-only descriptors (`--total`).
+func shortFlagFromDescriptor(d string) (byte, bool) {
+	if len(d) >= 2 && d[0] == '-' && d[1] != '-' {
+		return d[1], true
+	}
+	return 0, false
 }
 
 // shortMissingArg parses pflag's short-form payload for
