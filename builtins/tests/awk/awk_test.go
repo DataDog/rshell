@@ -132,6 +132,15 @@ func TestAwkRegexRuleAfterNewline(t *testing.T) {
 	assert.Equal(t, "h\nfoo\n", stdout)
 }
 
+func TestAwkPrintSkipsNewlineAfterComma(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "input.txt", "a b\n")
+	stdout, stderr, code := cmdRun(t, "awk '{ print $1,\n$2 }' input.txt", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "", stderr)
+	assert.Equal(t, "a b\n", stdout)
+}
+
 func TestAwkPreservesCarriageReturnInRecords(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, dir, "input.txt", "a\r\n")

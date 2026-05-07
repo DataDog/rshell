@@ -190,6 +190,7 @@ func (p *parser) parsePrint() (stmt, error) {
 		if !p.match(tokComma) {
 			break
 		}
+		p.skipSeparators()
 	}
 	return ps, nil
 }
