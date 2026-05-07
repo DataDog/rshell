@@ -1,0 +1,13 @@
+# skip: GNU truncate's exact error wording differs; we test our own message.
+skip_assert_against_bash: true
+description: truncate -s SIZE without an operand rejects with exit 1.
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    truncate -s 0
+expect:
+  stdout: |+
+  stderr_contains:
+    - "truncate:"
+    - "missing file operand"
+  exit_code: 1

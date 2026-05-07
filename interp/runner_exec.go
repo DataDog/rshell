@@ -608,6 +608,9 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 				AccessFile: func(ctx context.Context, path string, mode uint32) error {
 					return r.sandbox.Access(path, dir, mode)
 				},
+				Truncate: func(ctx context.Context, path string, size int64, create bool) error {
+					return r.sandbox.Truncate(path, dir, size, create)
+				},
 				PortableErr: allowedpaths.PortableErrMsg,
 				Now:         r.startTime,
 				FileIdentity: func(path string, info fs.FileInfo) (builtins.FileID, bool) {
@@ -713,6 +716,9 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 			},
 			AccessFile: func(ctx context.Context, path string, mode uint32) error {
 				return r.sandbox.Access(path, HandlerCtx(r.handlerCtx(ctx, todoPos)).Dir, mode)
+			},
+			Truncate: func(ctx context.Context, path string, size int64, create bool) error {
+				return r.sandbox.Truncate(path, HandlerCtx(r.handlerCtx(ctx, todoPos)).Dir, size, create)
 			},
 			PortableErr: allowedpaths.PortableErrMsg,
 			Now:         r.startTime,

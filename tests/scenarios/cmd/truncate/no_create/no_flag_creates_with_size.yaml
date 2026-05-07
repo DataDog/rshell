@@ -1,0 +1,15 @@
+description: Without -c, missing files are created and extended to SIZE.
+setup:
+  files:
+    - path: .keep
+      content: ""
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    truncate -s 100 fresh.bin
+    wc -c < fresh.bin
+expect:
+  stdout: |+
+    100
+  stderr: |+
+  exit_code: 0

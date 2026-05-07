@@ -1,0 +1,23 @@
+description: truncate -s 0 zeros every operand.
+setup:
+  files:
+    - path: a.txt
+      content: "alpha\n"
+    - path: b.txt
+      content: "beta\n"
+    - path: c.txt
+      content: "gamma\n"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    truncate -s 0 a.txt b.txt c.txt
+    wc -c < a.txt
+    wc -c < b.txt
+    wc -c < c.txt
+expect:
+  stdout: |+
+    0
+    0
+    0
+  stderr: |+
+  exit_code: 0

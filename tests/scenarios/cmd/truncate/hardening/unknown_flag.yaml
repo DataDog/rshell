@@ -1,0 +1,20 @@
+# skip: GNU truncate accepts --reference; rshell intentionally rejects it as
+# out of scope for this PR (deferred flag), so the bash-comparison suite would
+# diverge.
+skip_assert_against_bash: true
+description: truncate rejects deferred flags (--reference, -o) as unknown flags.
+setup:
+  files:
+    - path: a.txt
+      content: ""
+    - path: ref.txt
+      content: "abc"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    truncate --reference=ref.txt a.txt
+expect:
+  stdout: |+
+  stderr_contains:
+    - "truncate:"
+  exit_code: 1

@@ -1,0 +1,15 @@
+description: -- separates flags from a filename literally starting with a dash.
+setup:
+  files:
+    - path: -dashfile
+      content: "abcdef"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    truncate -s 0 -- -dashfile
+    wc -c < -dashfile
+expect:
+  stdout: |+
+    0
+  stderr: |+
+  exit_code: 0

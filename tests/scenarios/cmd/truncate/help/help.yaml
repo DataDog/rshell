@@ -1,0 +1,13 @@
+# skip: --help output format is implementation-specific.
+skip_assert_against_bash: true
+description: truncate --help prints usage to stdout and exits 0.
+input:
+  script: |+
+    truncate --help
+expect:
+  stdout_contains:
+    - "Usage: truncate"
+    - "--size"
+    - "--no-create"
+  stderr: |+
+  exit_code: 0

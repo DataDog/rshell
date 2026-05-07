@@ -160,6 +160,137 @@ func TestSandboxWriteRejectsUnknownFlag(t *testing.T) {
 	assert.ErrorIs(t, err, os.ErrPermission)
 }
 
+// TestSandboxTruncateMethodShrink covers the happy path of the new
+// Sandbox.Truncate API: an existing file in an allowed root is shrunk to
+// the requested size, leaving the leading bytes intact.
+func TestSandboxTruncateMethodShrink(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "log.txt")
+	require.NoError(t, os.WriteFile(path, []byte("0123456789"), 0644))
+
+	sb, _, err := New([]string{dir})
+	require.NoError(t, err)
+	defer sb.Close()
+
+	require.NoError(t, sb.Truncate("log.txt", dir, 4, false))
+
+	got, err := os.ReadFile(path)
+	require.NoError(t, err)
+	assert.Equal(t, "0123", string(got))
+}
+
+// TestSandboxTruncateMethodExtend covers the case where SIZE is larger
+// than the current file: the file is zero-extended.
+func TestSandboxTruncateMethodExtend(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "log.txt")
+	require.NoError(t, os.WriteFile(path, []byte("abc"), 0644))
+
+	sb, _, err := New([]string{dir})
+	require.NoError(t, err)
+	defer sb.Close()
+
+	require.NoError(t, sb.Truncate("log.txt", dir, 1024, false))
+
+	info, err := os.Stat(path)
+	require.NoError(t, err)
+	assert.Equal(t, int64(1024), info.Size())
+}
+
+// TestSandboxTruncateMethodCreates covers the create-by-default behaviour
+// used when truncate is invoked without -c.
+func TestSandboxTruncateMethodCreates(t *testing.T) {
+	dir := t.TempDir()
+
+	sb, _, err := New([]string{dir})
+	require.NoError(t, err)
+	defer sb.Close()
+
+	require.NoError(t, sb.Truncate("fresh.txt", dir, 100, true))
+
+	info, err := os.Stat(filepath.Join(dir, "fresh.txt"))
+	require.NoError(t, err)
+	assert.Equal(t, int64(100), info.Size())
+}
+
+// TestSandboxTruncateMethodNoCreate covers create=false: the call returns
+// os.ErrNotExist for missing files (the truncate -c silent-skip path
+// depends on errors.Is matching).
+func TestSandboxTruncateMethodNoCreate(t *testing.T) {
+	dir := t.TempDir()
+
+	sb, _, err := New([]string{dir})
+	require.NoError(t, err)
+	defer sb.Close()
+
+	err = sb.Truncate("missing.txt", dir, 0, false)
+	assert.ErrorIs(t, err, fs.ErrNotExist)
+	_, statErr := os.Stat(filepath.Join(dir, "missing.txt"))
+	assert.True(t, os.IsNotExist(statErr), "no-create must not create missing.txt")
+}
+
+// TestSandboxTruncateMethodOutsideAllowedPath verifies that paths outside
+// the sandbox are rejected with a permission error before any I/O.
+func TestSandboxTruncateMethodOutsideAllowedPath(t *testing.T) {
+	allowed := t.TempDir()
+	outside := t.TempDir()
+	target := filepath.Join(outside, "log.txt")
+	require.NoError(t, os.WriteFile(target, []byte("untouched"), 0644))
+
+	sb, _, err := New([]string{allowed})
+	require.NoError(t, err)
+	defer sb.Close()
+
+	err = sb.Truncate(target, allowed, 0, true)
+	assert.ErrorIs(t, err, os.ErrPermission)
+
+	got, ferr := os.ReadFile(target)
+	require.NoError(t, ferr)
+	assert.Equal(t, "untouched", string(got), "outside file must not be touched")
+}
+
+// TestSandboxTruncateMethodNegativeSize verifies that negative sizes are
+// rejected with EINVAL.
+func TestSandboxTruncateMethodNegativeSize(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "log.txt")
+	require.NoError(t, os.WriteFile(path, []byte("data"), 0644))
+
+	sb, _, err := New([]string{dir})
+	require.NoError(t, err)
+	defer sb.Close()
+
+	err = sb.Truncate("log.txt", dir, -1, false)
+	assert.Error(t, err)
+	got, ferr := os.ReadFile(path)
+	require.NoError(t, ferr)
+	assert.Equal(t, "data", string(got), "negative size must not modify the file")
+}
+
+// TestSandboxTruncateMethodSymlinkEscapeRejected mirrors
+// TestSandboxWriteThroughSymlinkEscapeRejected for the new API: writes
+// must not follow a symlink that escapes the os.Root, even via the
+// Truncate code path.
+func TestSandboxTruncateMethodSymlinkEscapeRejected(t *testing.T) {
+	allowed := t.TempDir()
+	outside := t.TempDir()
+	linkPath := filepath.Join(allowed, "escape")
+	target := filepath.Join(outside, "target.txt")
+	require.NoError(t, os.WriteFile(target, []byte("untouched"), 0644))
+	require.NoError(t, os.Symlink(target, linkPath))
+
+	sb, _, err := New([]string{allowed})
+	require.NoError(t, err)
+	defer sb.Close()
+
+	err = sb.Truncate("escape", allowed, 0, true)
+	assert.Error(t, err)
+
+	got, ferr := os.ReadFile(target)
+	require.NoError(t, ferr)
+	assert.Equal(t, "untouched", string(got), "symlink target must not be reachable for writes")
+}
+
 func TestSandboxOpenReadStillWorks(t *testing.T) {
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "test.txt"), []byte("data"), 0644))

@@ -1,0 +1,17 @@
+# skip: GNU truncate's exact error wording differs; we test our own message.
+skip_assert_against_bash: true
+description: truncate without -s rejects with exit 1.
+setup:
+  files:
+    - path: a.txt
+      content: ""
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    truncate a.txt
+expect:
+  stdout: |+
+  stderr_contains:
+    - "truncate:"
+    - "--size"
+  exit_code: 1

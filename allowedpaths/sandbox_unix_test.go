@@ -8,6 +8,7 @@
 package allowedpaths
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"syscall"
@@ -833,4 +834,109 @@ func TestContainerSymlinkRelativeTarget(t *testing.T) {
 	buf := make([]byte, 64)
 	n, _ := f.Read(buf)
 	assert.Equal(t, "relative", string(buf[:n]))
+}
+
+// TestSandboxTruncateMethodFIFONoReaderDoesNotBlock verifies that
+// Sandbox.Truncate rejects a FIFO with no reader without blocking. The
+// O_NONBLOCK flag on the open call makes the kernel return ENXIO
+// immediately instead of waiting for a connection, which a plain
+// O_WRONLY open would do and which the in-builtin ctx.Err() loop cannot
+// interrupt.
+func TestSandboxTruncateMethodFIFONoReaderDoesNotBlock(t *testing.T) {
+	dir := t.TempDir()
+	fifoPath := filepath.Join(dir, "pipe")
+	require.NoError(t, syscall.Mkfifo(fifoPath, 0644))
+
+	sb, _, err := New([]string{dir})
+	require.NoError(t, err)
+	defer sb.Close()
+
+	done := make(chan error, 1)
+	go func() {
+		done <- sb.Truncate("pipe", dir, 0, false)
+	}()
+
+	select {
+	case err := <-done:
+		assert.Error(t, err, "FIFO target must be rejected, not silently truncated")
+	case <-time.After(2 * time.Second):
+		t.Fatal("Truncate blocked on FIFO without reader — O_NONBLOCK regressed")
+	}
+}
+
+// TestSandboxTruncateMethodCreatesHonourUmask verifies that newly-created
+// files use 0666 & ~umask, matching GNU truncate and bash redirect
+// semantics. Hard-coding 0644 on the OpenFile call would make the result
+// more restrictive than coreutils when umask is permissive (umask 000
+// should produce 0666, not 0644).
+//
+// syscall.Umask is process-global so this test cannot run in parallel
+// with other umask-sensitive tests. The defer restores the saved value.
+func TestSandboxTruncateMethodCreatesHonourUmask(t *testing.T) {
+	cases := []struct {
+		umaskBits int
+		wantMode  os.FileMode
+	}{
+		{0o022, 0o644},
+		{0o000, 0o666},
+		{0o077, 0o600},
+	}
+	for _, tc := range cases {
+		name := fmt.Sprintf("umask_%03o", tc.umaskBits)
+		t.Run(name, func(t *testing.T) {
+			old := syscall.Umask(tc.umaskBits)
+			defer syscall.Umask(old)
+
+			dir := t.TempDir()
+			sb, _, err := New([]string{dir})
+			require.NoError(t, err)
+			defer sb.Close()
+
+			require.NoError(t, sb.Truncate("fresh.txt", dir, 0, true))
+
+			info, err := os.Stat(filepath.Join(dir, "fresh.txt"))
+			require.NoError(t, err)
+			assert.Equal(t, tc.wantMode, info.Mode().Perm(),
+				"umask %03o should yield mode %03o", tc.umaskBits, tc.wantMode)
+		})
+	}
+}
+
+// TestSandboxTruncateMethodFIFOWithReaderRejected verifies the post-fd
+// fstat guard: when a reader is connected, O_NONBLOCK no longer returns
+// ENXIO and the open succeeds, so the in-fd type check is the safety net
+// that rejects the FIFO before any ftruncate runs.
+//
+// This is the regression test for the Stat→Open TOCTOU window: a real
+// attacker would swap a regular file for a FIFO between resolution and
+// open, but a connected-reader FIFO at open time exercises the same
+// branch without needing a race.
+func TestSandboxTruncateMethodFIFOWithReaderRejected(t *testing.T) {
+	dir := t.TempDir()
+	fifoPath := filepath.Join(dir, "pipe")
+	require.NoError(t, syscall.Mkfifo(fifoPath, 0644))
+
+	// Open the read end so the kernel allows O_WRONLY|O_NONBLOCK opens
+	// to succeed instead of returning ENXIO.
+	reader, err := os.OpenFile(fifoPath, os.O_RDONLY|syscall.O_NONBLOCK, 0)
+	require.NoError(t, err)
+	defer reader.Close()
+
+	sb, _, err := New([]string{dir})
+	require.NoError(t, err)
+	defer sb.Close()
+
+	done := make(chan error, 1)
+	go func() {
+		done <- sb.Truncate("pipe", dir, 0, false)
+	}()
+
+	select {
+	case err := <-done:
+		require.Error(t, err, "FIFO with reader must be rejected post-open, not silently truncated")
+		assert.Contains(t, err.Error(), "not a regular file",
+			"post-fd fstat guard should be the rejection path here")
+	case <-time.After(2 * time.Second):
+		t.Fatal("Truncate blocked on FIFO with reader — post-fd fstat guard regressed")
+	}
 }
