@@ -126,10 +126,10 @@ func TestAwkArrayMembershipDeleteForInAndSplit(t *testing.T) {
 
 func TestAwkSplitRegexAndCharacterSeparator(t *testing.T) {
 	dir := t.TempDir()
-	stdout, stderr, code := cmdRun(t, `awk 'BEGIN { n = split("a,b:c", fields, /[,:]/); print n, fields[1], fields[2], fields[3]; m = split("xy", chars, ""); print m, chars[1], chars[2]; print split("a  b", special, " "), split("a  b", literal, / /) }'`, dir)
+	stdout, stderr, code := cmdRun(t, `awk 'BEGIN { n = split("a,b:c", fields, /[,:]/); print n, fields[1], fields[2], fields[3]; m = split("xy", chars, ""); print m, chars[1], chars[2]; print split("a  b", special, " "), split("a  b", literal, / /); print split("abc", dotLiteral, "."), split("a.b", dotted, "."), split("a|b", pipeLiteral, "|"), split("abc", dotRegex, /./) }'`, dir)
 	assert.Equal(t, 0, code)
 	assert.Equal(t, "", stderr)
-	assert.Equal(t, "3 a b c\n2 x y\n2 3\n", stdout)
+	assert.Equal(t, "3 a b c\n2 x y\n2 3\n1 2 2 4\n", stdout)
 }
 
 func TestAwkForWhileBreakAndContinue(t *testing.T) {
@@ -261,6 +261,16 @@ func TestAwkRegexFieldSeparator(t *testing.T) {
 	assert.Equal(t, "3 a b c\n", stdout)
 }
 
+func TestAwkSingleCharacterFieldSeparatorIsLiteral(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "plain.txt", "abc\n")
+	writeFile(t, dir, "pipe.txt", "a|b\n")
+	stdout, stderr, code := cmdRun(t, `awk -F . '{ print NF }' plain.txt; awk -F '|' '{ print NF, $1, $2 }' pipe.txt`, dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "", stderr)
+	assert.Equal(t, "1\n2 a b\n", stdout)
+}
+
 func TestAwkRangePatterns(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, dir, "input.txt", "ignore\nstart\nmiddle\nend\ntail\nstart end\nafter\n")
@@ -285,6 +295,15 @@ func TestAwkEnvironUsesRshellEnvironment(t *testing.T) {
 	assert.Equal(t, 0, code)
 	assert.Equal(t, "", stderr)
 	assert.Equal(t, "provided script 0 1\n", stdout)
+}
+
+func TestAwkLargeEnvironDoesNotConsumeVariableBudget(t *testing.T) {
+	dir := t.TempDir()
+	big := strings.Repeat("x", 1<<20)
+	stdout, stderr, code := runScript(t, `awk 'BEGIN { print 1; print length(ENVIRON["BIG"]) }'`, dir, interp.Env("BIG="+big))
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "", stderr)
+	assert.Equal(t, "1\n1048576\n", stdout)
 }
 
 func TestAwkStringNumericSemantics(t *testing.T) {

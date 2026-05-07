@@ -16,6 +16,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/DataDog/rshell/builtins"
 )
@@ -199,7 +200,7 @@ type runtime struct {
 	arraySizes map[arraySlot]int
 	varBytes   int
 	rangeOn    map[int]bool
-	initErr    error
+	environSet bool
 
 	record   string
 	fields   []string
@@ -226,15 +227,10 @@ func newRuntime(callCtx *builtins.CallContext, prog *program) *runtime {
 	rt.vars["FS"] = stringValue(" ")
 	rt.vars["OFS"] = stringValue(" ")
 	rt.vars["ORS"] = stringValue("\n")
-	rt.initErr = rt.populateEnviron()
 	return rt
 }
 
 func (rt *runtime) run(ctx context.Context, files []string) builtins.Result {
-	if rt.initErr != nil {
-		rt.callCtx.Errf("awk: %v\n", rt.initErr)
-		return builtins.Result{Code: 1}
-	}
 	if err := rt.runRules(ctx, ruleBegin); err != nil {
 		rt.callCtx.Errf("awk: %v\n", err)
 		return builtins.Result{Code: 1}
@@ -273,16 +269,19 @@ func (rt *runtime) run(ctx context.Context, files []string) builtins.Result {
 	return builtins.Result{}
 }
 
-func (rt *runtime) populateEnviron() error {
-	if rt.callCtx.Env == nil {
-		return nil
+func (rt *runtime) ensureEnviron() {
+	if rt.environSet {
+		return
 	}
+	rt.environSet = true
 	elems := make(map[string]value)
-	rt.callCtx.Env(func(name, value string) bool {
-		elems[name] = stringValue(value)
-		return true
-	})
-	return rt.replaceArray("ENVIRON", elems)
+	if rt.callCtx.Env != nil {
+		rt.callCtx.Env(func(name, value string) bool {
+			elems[name] = stringValue(value)
+			return true
+		})
+	}
+	rt.arrays["ENVIRON"] = elems
 }
 
 func (rt *runtime) applyOperandAssignment(arg string) (bool, error) {
@@ -525,6 +524,9 @@ func splitAwkFields(s, fs string) ([]string, error) {
 	if s == "" {
 		return nil, nil
 	}
+	if isSingleRune(fs) {
+		return strings.Split(s, fs), nil
+	}
 	return splitAwkRegex(s, fs)
 }
 
@@ -606,6 +608,9 @@ func (rt *runtime) setVar(name string, v value) error {
 	if rt.isArray(name) {
 		return fmt.Errorf("cannot use array %s as scalar", name)
 	}
+	if isBuiltinArrayName(name) {
+		return fmt.Errorf("cannot use array %s as scalar", name)
+	}
 	switch name {
 	case "NF":
 		return rt.setNF(int(v.Number()))
@@ -636,6 +641,7 @@ func (rt *runtime) isArray(name string) bool {
 }
 
 func (rt *runtime) getArrayElem(name, key string) (value, error) {
+	rt.ensureBuiltinArray(name)
 	if err := rt.validateArrayName(name); err != nil {
 		return value{}, err
 	}
@@ -650,6 +656,7 @@ func (rt *runtime) getArrayElem(name, key string) (value, error) {
 }
 
 func (rt *runtime) hasArrayElem(name, key string) (bool, error) {
+	rt.ensureBuiltinArray(name)
 	if err := rt.validateArrayName(name); err != nil {
 		return false, err
 	}
@@ -662,6 +669,7 @@ func (rt *runtime) hasArrayElem(name, key string) (bool, error) {
 }
 
 func (rt *runtime) setArrayElem(name, key string, v value) error {
+	rt.ensureBuiltinArray(name)
 	if err := rt.validateArrayName(name); err != nil {
 		return err
 	}
@@ -699,6 +707,7 @@ func (rt *runtime) replaceArray(name string, elems map[string]value) error {
 }
 
 func (rt *runtime) deleteArrayElem(name, key string) error {
+	rt.ensureBuiltinArray(name)
 	if err := rt.validateArrayName(name); err != nil {
 		return err
 	}
@@ -719,6 +728,7 @@ func (rt *runtime) deleteArrayElem(name, key string) error {
 }
 
 func (rt *runtime) deleteArray(name string) error {
+	rt.ensureBuiltinArray(name)
 	if err := rt.validateArrayName(name); err != nil {
 		return err
 	}
@@ -737,6 +747,7 @@ func (rt *runtime) deleteArray(name string) error {
 }
 
 func (rt *runtime) arrayKeys(name string) ([]string, error) {
+	rt.ensureBuiltinArray(name)
 	if err := rt.validateArrayName(name); err != nil {
 		return nil, err
 	}
@@ -750,6 +761,12 @@ func (rt *runtime) arrayKeys(name string) ([]string, error) {
 	}
 	sort.Strings(keys)
 	return keys, nil
+}
+
+func (rt *runtime) ensureBuiltinArray(name string) {
+	if name == "ENVIRON" {
+		rt.ensureEnviron()
+	}
 }
 
 func (rt *runtime) validateArrayName(name string) error {
@@ -771,12 +788,19 @@ func isBuiltinScalarName(name string) bool {
 	}
 }
 
+func isBuiltinArrayName(name string) bool {
+	return name == "ENVIRON"
+}
+
 func validateFS(fs string) error {
 	if fs == " " {
 		return nil
 	}
 	if fs == "" {
 		return fmt.Errorf("empty FS is not supported")
+	}
+	if isSingleRune(fs) {
+		return nil
 	}
 	re, err := compileRegex(fs)
 	if err != nil {
@@ -786,6 +810,14 @@ func validateFS(fs string) error {
 		return fmt.Errorf("FS regular expression must not match the empty string")
 	}
 	return nil
+}
+
+func isSingleRune(s string) bool {
+	if s == "" {
+		return false
+	}
+	_, size := utf8.DecodeRuneInString(s)
+	return size == len(s)
 }
 
 func compileRegex(pattern string) (*regexp.Regexp, error) {

@@ -360,7 +360,11 @@ func (rt *runtime) evalSplit(e *callExpr) (value, error) {
 	if charSplit {
 		parts = splitAwkChars(input.String())
 	} else if regexSplit || sep != " " {
-		parts, err = splitAwkRegex(input.String(), sep)
+		if regexSplit {
+			parts, err = splitAwkRegex(input.String(), sep)
+		} else {
+			parts, err = splitAwkFields(input.String(), sep)
+		}
 		if err != nil {
 			return value{}, err
 		}

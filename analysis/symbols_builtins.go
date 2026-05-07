@@ -57,6 +57,7 @@ var builtinPerCommandSymbols = map[string][]string{
 		"strings.Index",                   // 🟢 substring search for awk index(); pure function, no I/O.
 		"strings.Join",                    // 🟢 concatenates a slice of strings with a separator; pure function, no I/O.
 		"strings.NewReader",               // 🟢 wraps a string as an io.Reader; pure in-memory, no I/O.
+		"strings.Split",                   // 🟢 splits a string by literal separator; pure function, no I/O.
 		"strings.ToLower",                 // 🟢 converts string to lowercase for awk tolower(); pure function, no I/O.
 		"strings.ToUpper",                 // 🟢 converts string to uppercase for awk toupper(); pure function, no I/O.
 		"strings.TrimSpace",               // 🟢 removes leading/trailing whitespace; pure function.
