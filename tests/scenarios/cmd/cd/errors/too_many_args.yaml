@@ -1,11 +1,11 @@
 description: cd with two operands is rejected with exit 1.
-skip_assert_against_bash: true
 input:
   allowed_paths: ["$DIR"]
   script: |+
     cd a b
 expect:
   stdout: ""
-  stderr: |+
-    cd: too many arguments
+  # bash 5.2 (debian-bookworm): "bash: line 1: cd: too many arguments" exit 1
+  # ours:                       "cd: too many arguments"               exit 1
+  stderr_contains: ["cd:", "too many arguments"]
   exit_code: 1

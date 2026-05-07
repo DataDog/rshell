@@ -110,6 +110,14 @@ const boolSeqSentinel = "\x00rshell:cd:bare\x00"
 func makeFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 	helpFlag := fs.BoolP("help", "h", false, "print usage and exit")
 
+	// Disable interspersed flag parsing: once the directory operand
+	// is seen, any following token (including flag-shaped ones like
+	// `-P`) must be treated as another positional. bash 5.2 rejects
+	// `cd /tmp -P` with "too many arguments"; pflag's default would
+	// silently consume the trailing -P as a flag. Setting this to
+	// false makes the first positional terminate flag parsing.
+	fs.SetInterspersed(false)
+
 	// -L and -P share a sequence counter so that after parsing we can
 	// compare their pos fields to determine which appeared last on the
 	// command line. pflag calls Set() in parse order, so the last flag
