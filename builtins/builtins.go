@@ -119,7 +119,7 @@ func (c Command) Register() {
 			}
 		}
 		if err := fs.Parse(args); err != nil {
-			callCtx.Errf("%s: %s\n", name, rewritePflagError(err))
+			callCtx.Errf("%s: %s\n", name, rewritePflagError(err, args))
 			if hasHelp {
 				callCtx.Errf("Try '%s --help' for more information.\n", name)
 			}
@@ -134,17 +134,23 @@ func (c Command) Register() {
 // It returns the rewritten message without a trailing newline or any
 // "cmd:" prefix; callers prepend the builtin name themselves.
 //
+// args is the argv that was handed to fs.Parse. It is consulted only
+// for the unknown-long-flag case, where pflag strips the `=value`
+// suffix from its error string but GNU getopt reports the full token
+// (`--no-such=value`, not just `--no-such`).
+//
 // Patterns covered:
 //
 //	pflag                                       → GNU
 //	"unknown flag: --foo"                       → "unrecognized option '--foo'"
+//	                                              ("--foo=value" if the original argv used =value)
 //	"unknown shorthand flag: 'X' in -..."       → "invalid option -- 'X'"
 //	"flag needs an argument: --foo"             → "option '--foo' requires an argument"
 //	`invalid argument "..." for "DESC" flag:    → "option '--LONG' doesn't allow
 //	   flag does not allow an argument`              an argument"
 //
 // Unknown messages are returned unchanged.
-func rewritePflagError(err error) string {
+func rewritePflagError(err error, args []string) string {
 	msg := err.Error()
 
 	// pflag wraps errors returned by a Var's Set(value) as
@@ -161,7 +167,10 @@ func rewritePflagError(err error) string {
 	}
 
 	if rest, ok := strings.CutPrefix(msg, "unknown flag: "); ok {
-		return "unrecognized option '" + rest + "'"
+		// pflag's error carries only the flag name; GNU's reports the
+		// full token, so we recover `--foo=value` from argv when the
+		// user wrote it that way.
+		return "unrecognized option '" + recoverLongFlagToken(rest, args) + "'"
 	}
 
 	const shortPrefix = "unknown shorthand flag: '"
@@ -180,6 +189,24 @@ func rewritePflagError(err error) string {
 	}
 
 	return msg
+}
+
+// recoverLongFlagToken returns the original argv token for an unknown
+// long flag whose stripped name (e.g. `--no-such`) appears in pflag's
+// error. If the user wrote `--no-such=value`, the full token is
+// returned; otherwise the bare flag is returned. Stops at `--` so a
+// later positional like `-- --no-such=foo` is never misclassified.
+func recoverLongFlagToken(flag string, args []string) string {
+	prefix := flag + "="
+	for _, a := range args {
+		if a == "--" {
+			break
+		}
+		if a == flag || strings.HasPrefix(a, prefix) {
+			return a
+		}
+	}
+	return flag
 }
 
 // extractFlagDescriptor parses pflag's `invalid argument "..." for
