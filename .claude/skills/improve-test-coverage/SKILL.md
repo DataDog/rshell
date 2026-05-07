@@ -501,36 +501,46 @@ If nothing qualifies for removal, note that and move on.
 
 ### Step 8: Review skip_assert_against_bash flags
 
-Scan all scenario tests for the target that have `skip_assert_against_bash: true` and evaluate whether the flag is still needed.
+Scan all scenario tests for the target that have `skip_assert_against_bash: true` and evaluate whether the flag is still needed by **diffing our shell against bash side-by-side**.
 
 ```bash
-grep -rl "skip_assert_against_bash: true" tests/scenarios/cmd/<target>/ 2>/dev/null
-grep -rl "skip_assert_against_bash: true" tests/scenarios/shell/<target>/ 2>/dev/null
+grep -rl "skip_assert_against_bash: true" tests/scenarios/cmd/<target>/ tests/scenarios/shell/<target>/ 2>/dev/null
 ```
 
-For each flagged test:
+For each flagged test, run the script in **both** shells and compare stdout, stderr, and exit code:
 
-1. **Read the test** to understand what behavior it tests
-2. **Determine if the divergence is still intentional**: Run the script in bash to see what bash produces
-   ```bash
-   bash -c '<script from test>'
-   # or
-   docker run --rm debian:bookworm-slim bash -c '<script>'
-   ```
-3. **Classify the result**:
+```bash
+# Our shell
+go run . -c '<script>' >/tmp/rsh.out 2>/tmp/rsh.err; echo $? > /tmp/rsh.exit
 
-| Result | Action |
-|--------|--------|
-| Our shell now matches bash | Remove `skip_assert_against_bash: true` |
-| Divergence is a bug in our shell | Note the bug, keep the flag for now, add to findings |
-| Divergence is intentional (sandbox, blocked commands, readonly) | Keep the flag, ensure a YAML comment explains why (add one if missing) |
-| Test scenario is wrong (neither matches bash nor tests intentional divergence) | Fix the test expectations |
+# Bash (local or Docker)
+bash -c '<script>' >/tmp/bash.out 2>/tmp/bash.err; echo $? > /tmp/bash.exit
+# or: docker run --rm debian:bookworm-slim bash -c '<script>' …
 
-For each test where the flag is removed, verify it passes against bash:
+# Diff
+diff /tmp/rsh.out /tmp/bash.out
+diff /tmp/rsh.err /tmp/bash.err
+diff /tmp/rsh.exit /tmp/bash.exit
+```
+
+Read the test's existing `# skip: …` YAML comment (if any) — that comment names the divergence the original author intended the flag to cover. Then classify based on the diff:
+
+| Diff result vs. existing `# skip:` comment | Action |
+|--------------------------------------------|--------|
+| **No diff** (stdout, stderr, exit code all match) | Flag is stale → remove `skip_assert_against_bash: true` |
+| **Diff exists and matches the existing `# skip:` comment** | Keep flag; no action needed |
+| **Diff exists but the `# skip:` comment is missing or describes a different divergence** | Update the comment to accurately describe the current divergence; if no comment exists, add one |
+| **Diff is purely a sandbox / blocked-command / readonly rejection** (e.g. our shell prints `command not allowed: <cmd>` while bash runs it) | Keep flag; normalise the YAML comment wording (e.g. `# skip: sandbox blocks <cmd>`) |
+| **Diff is a real shell bug** (our shell produces wrong output for behaviour that should match bash) | Keep flag for now, **add an entry to the per-target report's "Findings" section** describing the bug and the diff; do not silently leave it |
+| **Test scenario is wrong** (neither matches bash nor tests intentional divergence) | Fix the test expectations |
+
+For each test where the flag is removed, verify it now passes against bash:
 
 ```bash
 RSHELL_BASH_TEST=1 go test ./tests/ -run "TestShellScenariosAgainstBash/<scenario_name>" -timeout 120s -v
 ```
+
+**Reporting:** every divergence surfaced by the diff — even ones that keep the flag — flows into Step 11's "Findings" section with the specific stdout/stderr/exit diff. This is the main channel by which `/improve-test-coverage` discovers shell bugs that the test suite has been silently masking.
 
 ### Step 9: Review unnecessary Windows-specific assertions
 
