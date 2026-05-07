@@ -39,7 +39,7 @@ Legend: ⏳ pending · 🔄 in progress · ✅ done · ⏭️ skipped (no high-v
 | 29 | help | cmd | 41 | 41 | ⏭️ | 10 scenarios + 31 Go tests cover full surface (modes, flags, feature detail, restricted vs unrestricted) |
 | 30 | heredoc | shell | 42 | 42 | ⏭️ | comprehensive: variable expansion (quoted/unquoted/partial), delimiter forms, command-sub, line-continuation, in compound contexts, tabs, special chars |
 | 31 | exit | cmd | 44 | 40 | ✅ | removed 4 byte-identical dupes (exit_*.yaml mirrored basic/*.yaml and codes/17.yaml) |
-| 32 | strings_cmd | cmd | 44 | — | ⏳ | |
+| 32 | strings_cmd | cmd | 44 | 44 | ⏭️ | 37 scenarios + 7 Go tests cover flags, offset radices, stdin, multi-file, pathological inputs |
 | 33 | blocked_commands | shell | 44 | — | ⏳ | |
 | 34 | ps | cmd | 44 | — | ⏳ | |
 | 35 | read | cmd | 50 | — | ⏳ | |
@@ -75,7 +75,7 @@ Legend: ⏳ pending · 🔄 in progress · ✅ done · ⏭️ skipped (no high-v
 
 ## Summary
 
-- Targets processed: 31 / 64
+- Targets processed: 32 / 64
 - Tests added: 8 (scenario: 8, unit: 0)
 - Duplicate tests removed: 11 (scenario: 11, unit: 0)
 - Low-value tests removed: 0 (scenario: 0, unit: 0)
