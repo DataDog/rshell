@@ -20,7 +20,7 @@ Legend: ⏳ pending · 🔄 in progress · ✅ done · ⏭️ skipped (no high-v
 | 10 | allowed_redirects   | shell |             18 | 18            | ⏭️     | already comprehensive — input redir + heredoc combinations (pipes, &&, brace, for, multi-input, special chars) |
 | 11 | inline_var          | shell |             18 | 18            | ⏭️     | already comprehensive — covers scope, restore, POSIX-order, pipeline, special chars, persistence-on-empty-cmd |
 | 12 | command_substitution| shell |             20 | 20            | ⏭️     | already comprehensive — covers $() and ``, $(<file) shortcut, exit-status propagation, nesting, pipes, word splitting |
-| 13 | heredoc_dash        | shell |             20 | —             | ⏳     |       |
+| 13 | heredoc_dash        | shell |             20 | 20            | ⏭️     | already comprehensive — covers tab-stripping, quoted-delim, blanks, nesting, brace, for, pipe, && |
 | 14 | simple_command      | shell |             21 | —             | ⏳     |       |
 | 15 | until_clause        | shell |             21 | —             | ⏳     |       |
 | 16 | break               | cmd   |             23 | —             | ⏳     |       |
@@ -75,7 +75,7 @@ Legend: ⏳ pending · 🔄 in progress · ✅ done · ⏭️ skipped (no high-v
 
 ## Summary
 
-- Targets processed: 12 / 64
+- Targets processed: 13 / 64
 - Tests added: 0 (scenario: 0, unit: 0)
 - Duplicate tests removed: 0 (scenario: 0, unit: 0)
 - Low-value tests removed: 0 (scenario: 0, unit: 0)
