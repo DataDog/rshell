@@ -263,6 +263,21 @@ func TestAwkVariablesTabFSAndMultipleFiles(t *testing.T) {
 	assert.Equal(t, "row:one.tsv:1:1:1\nrow:two.tsv:1:2:2\n", stdout)
 }
 
+func TestAwkOperandAssignments(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "one.txt", "a\n")
+	writeFile(t, dir, "two.txt", "b\n")
+	stdout, stderr, code := cmdRun(t, `awk '{ print x ":" $0 }' one.txt x=foo two.txt`, dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "", stderr)
+	assert.Equal(t, ":a\nfoo:b\n", stdout)
+
+	stdout, stderr, code = runScript(t, `awk '{ print x, $0 }' x=foo < one.txt`, dir, interp.AllowedPaths([]string{dir}))
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "", stderr)
+	assert.Equal(t, "foo a\n", stdout)
+}
+
 func TestAwkAppliesFieldSeparatorOptionsInOrder(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, dir, "input.txt", "a:b,c\n")
