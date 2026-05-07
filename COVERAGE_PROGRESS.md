@@ -30,7 +30,7 @@ Legend: ⏳ pending · 🔄 in progress · ✅ done · ⏭️ skipped (no high-v
 | 20 | comments            | shell |             27 | 27            | ⏭️     | already comprehensive — covers # in/outside quotes, after operators, with backslash, after redirect, in pipelines |
 | 21 | negation            | shell |             27 | 27            | ⏭️     | already comprehensive — covers ! on simple cmds, pipelines, in if-cond, with &&/\|\|, in else, with cmd-subst |
 | 22 | line_continuation   | shell |             28 | 28            | ⏭️     | already comprehensive — covers backslash-newline across pipes, &&/\|\|, in assignments, in heredoc, multiple consecutive |
-| 23 | while_clause        | shell |             28 | —             | ⏳     |       |
+| 23 | while_clause        | shell |             28 | 28            | ⏭️     | already comprehensive — covers loop semantics, break/continue at all levels, pipeline-stage loop-context propagation |
 | 24 | brace_group         | shell |             33 | —             | ⏳     |       |
 | 25 | help                | cmd   |             34 | —             | ⏳     |       |
 | 26 | ss                  | cmd   |             35 | —             | ⏳     |       |
@@ -75,7 +75,7 @@ Legend: ⏳ pending · 🔄 in progress · ✅ done · ⏭️ skipped (no high-v
 
 ## Summary
 
-- Targets processed: 22 / 64
+- Targets processed: 23 / 64
 - Tests added: 0 (scenario: 0, unit: 0)
 - Duplicate tests removed: 0 (scenario: 0, unit: 0)
 - Low-value tests removed: 0 (scenario: 0, unit: 0)
