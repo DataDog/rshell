@@ -127,10 +127,10 @@ func TestAwkArrayMembershipDeleteForInAndSplit(t *testing.T) {
 
 func TestAwkSplitRegexAndCharacterSeparator(t *testing.T) {
 	dir := t.TempDir()
-	stdout, stderr, code := cmdRun(t, `awk 'BEGIN { n = split("a,b:c", fields, /[,:]/); print n, fields[1], fields[2], fields[3]; m = split("xy", chars, ""); print m, chars[1], chars[2]; print split("a  b", special, " "), split("a  b", literal, / /); print split("abc", dotLiteral, "."), split("a.b", dotted, "."), split("a|b", pipeLiteral, "|"), split("abc", dotRegex, /./) }'`, dir)
+	stdout, stderr, code := cmdRun(t, `awk 'BEGIN { n = split("a,b:c", fields, /[,:]/); print n, fields[1], fields[2], fields[3]; m = split("xy", chars, ""); print m, chars[1], chars[2]; print split("a  b", special, " "), split("a  b", literal, / /); print split("abc", dotLiteral, "."), split("a.b", dotted, "."), split("a|b", pipeLiteral, "|"), split("abc", dotRegex, /./); print split("abc", nullRegex, //), nullRegex[1], nullRegex[2], nullRegex[3] }'`, dir)
 	assert.Equal(t, 0, code)
 	assert.Equal(t, "", stderr)
-	assert.Equal(t, "3 a b c\n2 x y\n2 3\n1 2 2 4\n", stdout)
+	assert.Equal(t, "3 a b c\n2 x y\n2 3\n1 2 2 4\n3 a b c\n", stdout)
 }
 
 func TestAwkForWhileBreakAndContinue(t *testing.T) {
@@ -179,7 +179,12 @@ func TestAwkRejectsScalarArrayNameConflicts(t *testing.T) {
 	dir := t.TempDir()
 	for _, script := range []string{
 		`awk 'BEGIN { x = 1; print x[1] }'`,
+		`awk 'BEGIN { print x; x[1] = 1 }'`,
 		`awk 'BEGIN { a[1] = 2; print a }'`,
+		`awk 'BEGIN { for (k in a) {}; print a }'`,
+		`awk 'BEGIN { print ("x" in a); print a }'`,
+		`awk 'BEGIN { delete a; print a }'`,
+		`awk 'BEGIN { print ENVIRON }'`,
 		`awk 'BEGIN { FS[1] = 2 }'`,
 		`awk 'BEGIN { NF[1] = 2 }'`,
 	} {

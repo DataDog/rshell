@@ -566,6 +566,9 @@ func splitAwkRegex(s, pattern string) ([]string, error) {
 	if s == "" {
 		return nil, nil
 	}
+	if pattern == "" {
+		return splitAwkChars(s), nil
+	}
 	re, err := compileRegex(pattern)
 	if err != nil {
 		return nil, err
@@ -600,7 +603,12 @@ func (rt *runtime) getVar(name string) value {
 		if v, ok := rt.vars[name]; ok {
 			return v
 		}
-		return unassignedValue()
+		if isBuiltinArrayName(name) {
+			return unassignedValue()
+		}
+		v := unassignedValue()
+		rt.vars[name] = v
+		return v
 	}
 }
 
@@ -636,8 +644,8 @@ func (rt *runtime) setVar(name string, v value) error {
 }
 
 func (rt *runtime) isArray(name string) bool {
-	arr, ok := rt.arrays[name]
-	return ok && arr != nil
+	_, ok := rt.arrays[name]
+	return ok
 }
 
 func (rt *runtime) getArrayElem(name, key string) (value, error) {
@@ -645,6 +653,7 @@ func (rt *runtime) getArrayElem(name, key string) (value, error) {
 	if err := rt.validateArrayName(name); err != nil {
 		return value{}, err
 	}
+	rt.markArrayName(name)
 	if v, ok := rt.arrays[name][key]; ok {
 		return v, nil
 	}
@@ -660,11 +669,8 @@ func (rt *runtime) hasArrayElem(name, key string) (bool, error) {
 	if err := rt.validateArrayName(name); err != nil {
 		return false, err
 	}
-	arr := rt.arrays[name]
-	if arr == nil {
-		return false, nil
-	}
-	_, ok := arr[key]
+	rt.markArrayName(name)
+	_, ok := rt.arrays[name][key]
 	return ok, nil
 }
 
@@ -673,6 +679,7 @@ func (rt *runtime) setArrayElem(name, key string, v value) error {
 	if err := rt.validateArrayName(name); err != nil {
 		return err
 	}
+	rt.markArrayName(name)
 	size := len(key) + len(v.String())
 	if size > MaxVariableBytes {
 		return fmt.Errorf("array element exceeds %d bytes", MaxVariableBytes)
@@ -681,9 +688,6 @@ func (rt *runtime) setArrayElem(name, key string, v value) error {
 	old := rt.arraySizes[slot]
 	if rt.varBytes-old+size > MaxVariableBytes {
 		return fmt.Errorf("variable storage limit exceeded (%d bytes total)", rt.varBytes-old+size)
-	}
-	if rt.arrays[name] == nil {
-		rt.arrays[name] = make(map[string]value)
 	}
 	rt.varBytes = rt.varBytes - old + size
 	rt.arraySizes[slot] = size
@@ -711,10 +715,7 @@ func (rt *runtime) deleteArrayElem(name, key string) error {
 	if err := rt.validateArrayName(name); err != nil {
 		return err
 	}
-	arr := rt.arrays[name]
-	if arr == nil {
-		return nil
-	}
+	rt.markArrayName(name)
 	slot := arraySlot{name: name, key: key}
 	if old := rt.arraySizes[slot]; old > 0 {
 		rt.varBytes -= old
@@ -723,7 +724,7 @@ func (rt *runtime) deleteArrayElem(name, key string) error {
 		}
 	}
 	delete(rt.arraySizes, slot)
-	delete(arr, key)
+	delete(rt.arrays[name], key)
 	return nil
 }
 
@@ -732,6 +733,7 @@ func (rt *runtime) deleteArray(name string) error {
 	if err := rt.validateArrayName(name); err != nil {
 		return err
 	}
+	rt.markArrayName(name)
 	for slot, size := range rt.arraySizes {
 		if slot.name != name {
 			continue
@@ -742,7 +744,7 @@ func (rt *runtime) deleteArray(name string) error {
 	if rt.varBytes < 0 {
 		rt.varBytes = 0
 	}
-	delete(rt.arrays, name)
+	rt.arrays[name] = make(map[string]value)
 	return nil
 }
 
@@ -751,12 +753,9 @@ func (rt *runtime) arrayKeys(name string) ([]string, error) {
 	if err := rt.validateArrayName(name); err != nil {
 		return nil, err
 	}
-	arr := rt.arrays[name]
-	if arr == nil {
-		return nil, nil
-	}
-	keys := make([]string, 0, len(arr))
-	for key := range arr {
+	rt.markArrayName(name)
+	keys := make([]string, 0, len(rt.arrays[name]))
+	for key := range rt.arrays[name] {
 		keys = append(keys, key)
 	}
 	sort.Strings(keys)
@@ -766,6 +765,12 @@ func (rt *runtime) arrayKeys(name string) ([]string, error) {
 func (rt *runtime) ensureBuiltinArray(name string) {
 	if name == "ENVIRON" {
 		rt.ensureEnviron()
+	}
+}
+
+func (rt *runtime) markArrayName(name string) {
+	if rt.arrays[name] == nil {
+		rt.arrays[name] = make(map[string]value)
 	}
 }
 

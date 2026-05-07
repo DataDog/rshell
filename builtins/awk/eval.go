@@ -231,7 +231,7 @@ func (rt *runtime) eval(x expr) (value, error) {
 		}
 		return boolValue(re.MatchString(rt.record)), nil
 	case *varExpr:
-		if rt.isArray(e.name) {
+		if rt.isArray(e.name) || isBuiltinArrayName(e.name) {
 			return value{}, fmt.Errorf("cannot use array %s as scalar", e.name)
 		}
 		return rt.getVar(e.name), nil

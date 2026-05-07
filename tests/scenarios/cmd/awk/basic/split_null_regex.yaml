@@ -1,0 +1,9 @@
+description: awk split with a null regular expression separates characters.
+input:
+  script: |+
+    awk 'BEGIN { n = split("abc", chars, //); print n, chars[1], chars[2], chars[3] }'
+expect:
+  stdout: |+
+    3 a b c
+  stderr: |+
+  exit_code: 0
