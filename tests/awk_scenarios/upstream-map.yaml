@@ -105,8 +105,12 @@ entries:
   - suite: gawk
     id: test/aadelete1.awk
     ref: gawk-5.4.0
-    status: todo
-    reason: Original rshell rewrite not written yet.
+    status: rewritten
+    tests:
+      - gawk/arrays/delete_index.yaml
+    covers:
+      - delete removes an array element
+      - the in operator reports deleted keys as absent
 
   - suite: gawk
     id: test/aadelete2.awk
@@ -189,8 +193,12 @@ entries:
   - suite: gawk
     id: test/argarray.awk
     ref: gawk-5.4.0
-    status: todo
-    reason: Original rshell rewrite not written yet.
+    status: rewritten
+    tests:
+      - gawk/cli/argv_argc.yaml
+    covers:
+      - ARGC includes command-line operands
+      - ARGV exposes operands by numeric index
 
   - suite: gawk
     id: test/argcasfile.awk
@@ -215,8 +223,12 @@ entries:
   - suite: gawk
     id: test/arrayind2.awk
     ref: gawk-5.4.0
-    status: todo
-    reason: Original rshell rewrite not written yet.
+    status: rewritten
+    tests:
+      - gawk/arrays/in_operator.yaml
+    covers:
+      - the in operator checks computed array keys
+      - missing keys are not created by an in check
 
   - suite: gawk
     id: test/arrayind3.awk
@@ -621,8 +633,12 @@ entries:
   - suite: gawk
     id: test/compare2.awk
     ref: gawk-5.4.0
-    status: todo
-    reason: Original rshell rewrite not written yet.
+    status: rewritten
+    tests:
+      - gawk/expressions/string_numeric_compare.yaml
+    covers:
+      - string comparisons
+      - numeric-string equality comparisons
 
   - suite: gawk
     id: test/concat1.awk
@@ -1393,8 +1409,12 @@ entries:
   - suite: gawk
     id: test/gensub.awk
     ref: gawk-5.4.0
-    status: todo
-    reason: Original rshell rewrite not written yet.
+    status: rewritten
+    tests:
+      - gawk/regex/gensub_capture.yaml
+    covers:
+      - gensub group replacement
+      - numeric gensub replacement selector
 
   - suite: gawk
     id: test/gensub2.awk
@@ -1441,8 +1461,12 @@ entries:
   - suite: gawk
     id: test/getline4.awk
     ref: gawk-5.4.0
-    status: todo
-    reason: Original rshell rewrite not written yet.
+    status: rewritten
+    tests:
+      - gawk/functions/getline_current_input.yaml
+    covers:
+      - getline reads from the main input stream
+      - getline in BEGIN updates NR
 
   - suite: gawk
     id: test/getline5.awk
@@ -2141,8 +2165,12 @@ entries:
   - suite: gawk
     id: test/match1.awk
     ref: gawk-5.4.0
-    status: todo
-    reason: Original rshell rewrite not written yet.
+    status: rewritten
+    tests:
+      - gawk/functions/match_position.yaml
+    covers:
+      - match return value
+      - RSTART and RLENGTH after match
 
   - suite: gawk
     id: test/match2.awk
@@ -3071,8 +3099,12 @@ entries:
   - suite: gawk
     id: test/printf0.awk
     ref: gawk-5.4.0
-    status: todo
-    reason: Original rshell rewrite not written yet.
+    status: rewritten
+    tests:
+      - gawk/output/sprintf_value.yaml
+    covers:
+      - sprintf returns formatted strings
+      - numeric format width and precision
 
   - suite: gawk
     id: test/printf1.awk
@@ -3801,8 +3833,12 @@ entries:
   - suite: gawk
     id: test/splitdef.awk
     ref: gawk-5.4.0
-    status: todo
-    reason: Original rshell rewrite not written yet.
+    status: rewritten
+    tests:
+      - gawk/functions/split_default_separator.yaml
+    covers:
+      - split defaults to FS
+      - default FS collapses whitespace
 
   - suite: gawk
     id: test/splitvar.awk
@@ -3933,14 +3969,22 @@ entries:
   - suite: gawk
     id: test/subamp.awk
     ref: gawk-5.4.0
-    status: todo
-    reason: Original rshell rewrite not written yet.
+    status: rewritten
+    tests:
+      - gawk/regex/sub_ampersand.yaml
+    covers:
+      - ampersand replacement expands to matched text
+      - sub replaces the first match
 
   - suite: gawk
     id: test/subback.awk
     ref: gawk-5.4.0
-    status: todo
-    reason: Original rshell rewrite not written yet.
+    status: rewritten
+    tests:
+      - gawk/regex/sub_escaped_ampersand.yaml
+    covers:
+      - escaped ampersand replacement is literal
+      - sub updates its target variable
 
   - suite: gawk
     id: test/subi18n.awk
@@ -5074,8 +5118,12 @@ entries:
   - suite: onetrueawk
     id: testdir/t.break
     ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
-    status: todo
-    reason: Original rshell rewrite not written yet.
+    status: rewritten
+    tests:
+      - gawk/control/while_break.yaml
+    covers:
+      - break exits while loops
+      - while loop condition and increment flow
 
   - suite: onetrueawk
     id: testdir/t.break1
@@ -5110,8 +5158,12 @@ entries:
   - suite: onetrueawk
     id: testdir/t.cat
     ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
-    status: todo
-    reason: Original rshell rewrite not written yet.
+    status: rewritten
+    tests:
+      - gawk/expressions/string_concatenation.yaml
+    covers:
+      - adjacent expression concatenation
+      - concatenated values in function calls
 
   - suite: onetrueawk
     id: testdir/t.cat1
@@ -5164,8 +5216,12 @@ entries:
   - suite: onetrueawk
     id: testdir/t.cond
     ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
-    status: todo
-    reason: Original rshell rewrite not written yet.
+    status: rewritten
+    tests:
+      - gawk/expressions/conditional_operator.yaml
+    covers:
+      - ternary conditional expressions
+      - numeric comparisons in conditionals
 
   - suite: onetrueawk
     id: testdir/t.contin
@@ -5236,14 +5292,22 @@ entries:
   - suite: onetrueawk
     id: testdir/t.else
     ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
-    status: todo
-    reason: Original rshell rewrite not written yet.
+    status: rewritten
+    tests:
+      - gawk/control/if_else.yaml
+    covers:
+      - if and else branch selection
+      - numeric conditions in control flow
 
   - suite: onetrueawk
     id: testdir/t.exit
     ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
-    status: todo
-    reason: Original rshell rewrite not written yet.
+    status: rewritten
+    tests:
+      - gawk/control/exit_runs_end.yaml
+    covers:
+      - exit stops input processing
+      - END runs after exit from a main action
 
   - suite: onetrueawk
     id: testdir/t.exit1

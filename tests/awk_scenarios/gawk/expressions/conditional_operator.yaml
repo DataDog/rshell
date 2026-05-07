@@ -1,0 +1,22 @@
+description: Conditional expressions choose one of two result expressions
+upstream:
+  suite: onetrueawk
+  id: testdir/t.cond
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - the ternary conditional operator evaluates the selected branch
+  - numeric comparisons can drive conditional expressions
+  - conditional expression results can be printed directly
+input:
+  program: |
+    { print ($1 >= 10 ? $1 ":large" : $1 ":small") }
+  stdin: |
+    9
+    10
+    12
+expect:
+  stdout: |
+    9:small
+    10:large
+    12:large
+  exit_code: 0

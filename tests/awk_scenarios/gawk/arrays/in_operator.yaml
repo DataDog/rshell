@@ -1,0 +1,25 @@
+description: in checks whether a computed key is present in an array
+upstream:
+  suite: gawk
+  id: test/arrayind2.awk
+  ref: gawk-5.4.0
+covers:
+  - the in operator checks key presence without reading the value
+  - array indexes can be computed from string variables
+  - missing array keys do not become present after an in check
+input:
+  program: |
+    BEGIN {
+      present["alpha"] = 1
+      keys[1] = "alpha"
+      keys[2] = "beta"
+      for (i = 1; i <= 2; i++)
+        print keys[i], (keys[i] in present ? "yes" : "no")
+      print ("beta" in present)
+    }
+expect:
+  stdout: |
+    alpha yes
+    beta no
+    0
+  exit_code: 0

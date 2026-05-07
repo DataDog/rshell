@@ -1,0 +1,20 @@
+description: String and numeric comparisons follow AWK expression coercion
+upstream:
+  suite: gawk
+  id: test/compare2.awk
+  ref: gawk-5.4.0
+covers:
+  - strings compare lexicographically when both operands are strings
+  - numeric-looking strings compare equal to their numeric value
+  - conditional expressions can report comparison outcomes
+input:
+  program: |
+    BEGIN {
+      print ("apple" < "banana" ? "ordered" : "bad")
+      print (10 == "10" ? "numeric-equal" : "different")
+    }
+expect:
+  stdout: |
+    ordered
+    numeric-equal
+  exit_code: 0

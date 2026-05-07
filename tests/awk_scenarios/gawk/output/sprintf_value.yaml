@@ -1,0 +1,19 @@
+description: sprintf returns a formatted string without printing it
+upstream:
+  suite: gawk
+  id: test/printf0.awk
+  ref: gawk-5.4.0
+covers:
+  - sprintf applies printf-style formatting
+  - sprintf returns a string value
+  - zero-padded width and fixed float precision are honored
+input:
+  program: |
+    BEGIN {
+      formatted = sprintf("%s:%04d:%.1f", "node", 23, 2.75)
+      print formatted
+    }
+expect:
+  stdout: |
+    node:0023:2.8
+  exit_code: 0

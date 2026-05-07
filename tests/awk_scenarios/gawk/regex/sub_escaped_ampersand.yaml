@@ -1,0 +1,20 @@
+description: escaped ampersand in a sub replacement is literal
+upstream:
+  suite: gawk
+  id: test/subback.awk
+  ref: gawk-5.4.0
+covers:
+  - backslash escapes ampersand in replacement text
+  - sub replacement escaping affects the target string
+  - escaped ampersand does not expand to the matched text
+input:
+  program: |
+    BEGIN {
+      value = "cat"
+      sub(/cat/, "dog\\&", value)
+      print value
+    }
+expect:
+  stdout: |
+    dog&
+  exit_code: 0

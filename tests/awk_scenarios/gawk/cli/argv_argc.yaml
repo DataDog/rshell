@@ -1,0 +1,26 @@
+description: ARGC and ARGV expose AWK command-line operands
+upstream:
+  suite: gawk
+  id: test/argarray.awk
+  ref: gawk-5.4.0
+covers:
+  - ARGC includes the awk command and file operands
+  - ARGV contains command-line operands by numeric index
+  - exit in BEGIN avoids opening ARGV file operands
+input:
+  program: |
+    BEGIN {
+      print ARGC
+      print ARGV[1]
+      print ARGV[2]
+      exit
+    }
+  args:
+    - one.data
+    - two.data
+expect:
+  stdout: |
+    3
+    one.data
+    two.data
+  exit_code: 0

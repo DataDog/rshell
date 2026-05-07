@@ -1,0 +1,27 @@
+description: exit from a record action stops input processing and still runs END
+upstream:
+  suite: onetrueawk
+  id: testdir/t.exit
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - exit stops later input records from being processed
+  - END actions still run after exit from a main action
+  - exit can set the awk process exit status
+input:
+  program: |
+    {
+      print $0
+      if (NR == 2)
+        exit 7
+    }
+    END { print "end", NR }
+  stdin: |
+    first
+    second
+    third
+expect:
+  stdout: |
+    first
+    second
+    end 2
+  exit_code: 7

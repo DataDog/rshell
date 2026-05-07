@@ -1,0 +1,23 @@
+description: delete removes an array index without changing other indexes
+upstream:
+  suite: gawk
+  id: test/aadelete1.awk
+  ref: gawk-5.4.0
+covers:
+  - delete removes a selected associative array element
+  - the in operator reports a deleted key as absent
+  - other array elements remain accessible after delete
+input:
+  program: |
+    BEGIN {
+      bag["red"] = 2
+      bag["blue"] = 3
+      delete bag["red"]
+      print ("red" in bag)
+      print bag["blue"]
+    }
+expect:
+  stdout: |
+    0
+    3
+  exit_code: 0

@@ -1,0 +1,26 @@
+description: getline in BEGIN consumes one record from the main input stream
+upstream:
+  suite: gawk
+  id: test/getline4.awk
+  ref: gawk-5.4.0
+covers:
+  - getline can read the next record from the main input stream
+  - getline updates NR when it reads a main input record
+  - later main actions continue with the following input record
+input:
+  program: |
+    BEGIN {
+      getline first
+      print "begin:" first
+      print "nr=" NR
+    }
+    { print "main:" NR ":" $0 }
+  stdin: |
+    first
+    second
+expect:
+  stdout: |
+    begin:first
+    nr=1
+    main:2:second
+  exit_code: 0

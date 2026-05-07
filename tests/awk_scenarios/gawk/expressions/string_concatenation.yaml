@@ -1,0 +1,23 @@
+description: Adjacent expressions concatenate as strings
+upstream:
+  suite: onetrueawk
+  id: testdir/t.cat
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - adjacent expressions concatenate without an operator
+  - concatenated field values can be passed to functions
+  - print arguments remain separated by OFS
+input:
+  program: |
+    {
+      joined = $2 "-" $1
+      print joined
+      print length($1 $2)
+    }
+  stdin: |
+    red blue
+expect:
+  stdout: |
+    blue-red
+    7
+  exit_code: 0

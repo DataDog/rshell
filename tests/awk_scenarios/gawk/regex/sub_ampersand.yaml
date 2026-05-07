@@ -1,0 +1,20 @@
+description: sub replacement ampersand expands to the matched text
+upstream:
+  suite: gawk
+  id: test/subamp.awk
+  ref: gawk-5.4.0
+covers:
+  - sub replaces only the first matching substring
+  - ampersand in a replacement expands to the matched text
+  - sub updates the target variable in place
+input:
+  program: |
+    BEGIN {
+      value = "red blue blue"
+      sub(/blue/, "<&>", value)
+      print value
+    }
+expect:
+  stdout: |
+    red <blue> blue
+  exit_code: 0

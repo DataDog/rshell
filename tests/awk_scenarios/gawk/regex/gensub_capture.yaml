@@ -1,0 +1,18 @@
+description: gensub can reorder captured groups in a selected match
+upstream:
+  suite: gawk
+  id: test/gensub.awk
+  ref: gawk-5.4.0
+covers:
+  - gensub is available as a GNU awk extension
+  - parenthesized regex groups can be referenced in replacements
+  - a numeric selector replaces the selected match
+input:
+  program: |
+    BEGIN {
+      print gensub(/([a-z]+)([0-9]+)/, "\\2-\\1", 1, "ab12 cd34")
+    }
+expect:
+  stdout: |
+    12-ab cd34
+  exit_code: 0

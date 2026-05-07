@@ -1,0 +1,23 @@
+description: match sets RSTART and RLENGTH for the matched substring
+upstream:
+  suite: gawk
+  id: test/match1.awk
+  ref: gawk-5.4.0
+covers:
+  - match returns the one-based start position of a match
+  - RSTART records the match start position
+  - RLENGTH records the matched string length
+input:
+  program: |
+    BEGIN {
+      text = "abc123def"
+      print match(text, /[0-9]+/)
+      print RSTART, RLENGTH
+      print substr(text, RSTART, RLENGTH)
+    }
+expect:
+  stdout: |
+    4
+    4 3
+    123
+  exit_code: 0

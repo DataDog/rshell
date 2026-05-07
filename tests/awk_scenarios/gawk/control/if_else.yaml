@@ -1,0 +1,25 @@
+description: if and else select the correct branch for each record
+upstream:
+  suite: onetrueawk
+  id: testdir/t.else
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - if conditions use numeric comparisons
+  - else actions run when the condition is false
+  - branch decisions are reevaluated for each record
+input:
+  program: |
+    {
+      if ($1 > 5)
+        print "high:" $1
+      else
+        print "low:" $1
+    }
+  stdin: |
+    3
+    8
+expect:
+  stdout: |
+    low:3
+    high:8
+  exit_code: 0
