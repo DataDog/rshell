@@ -54,6 +54,19 @@ var builtinPerCommandSymbols = map[string][]string{
 		"strings.IndexByte", // 🟢 finds byte in string; pure function, no I/O.
 		"strings.Split",     // 🟢 splits a string by separator into a slice; pure function, no I/O.
 	},
+	"df": {
+		"context.Context",    // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
+		"errors.Is",          // 🟢 error comparison via chain; pure function, no I/O.
+		"errors.New",         // 🟢 creates a sentinel error (unitFlag.Set rejects explicit values); pure function, no I/O.
+		"fmt.Sprintf",        // 🟢 string formatting; pure function, no I/O.
+		"math.Ceil",          // 🟢 ceiling of a float64; pure function, no I/O. Used for GNU-compatible round-up of human-readable sizes.
+		"strconv.FormatUint", // 🟢 uint-to-string conversion; pure function, no I/O.
+		"strings.Builder",    // 🟢 efficient string concatenation; pure in-memory buffer, no I/O.
+		"strings.Repeat",     // 🟢 returns a string of n repetitions; pure function, no I/O.
+		// Note: builtins/internal/diskstats symbols are exempt from this
+		// allowlist (internal packages are not checked by the
+		// builtinAllowedSymbols test).
+	},
 	"echo": {
 		"context.Context", // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
 		"strings.Builder", // 🟢 efficient string concatenation; pure in-memory buffer, no I/O.
@@ -583,6 +596,7 @@ var builtinAllowedSymbols = []string{
 	"slices.Reverse",                                      // 🟢 reverses a slice in-place; pure function, no I/O.
 	"slices.SortFunc",                                     // 🟢 sorts a slice with a comparison function; pure function, no I/O.
 	"slices.SortStableFunc",                               // 🟢 stable sort with a comparison function; pure function, no I/O.
+	"strings.Repeat",                                      // 🟢 returns a string of n repetitions; pure function, no I/O.
 	"strconv.Atoi",                                        // 🟢 string-to-int conversion; pure function, no I/O.
 	"strconv.ErrRange",                                    // 🟢 sentinel error value for overflow; pure constant.
 	"strconv.FormatBool",                                  // 🟢 bool-to-string conversion; pure function, no I/O.
