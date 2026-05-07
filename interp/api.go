@@ -82,6 +82,15 @@ type runnerConfig struct {
 	// command. Intended for testing convenience.
 	allowAllCommands bool
 
+	// hostCommands maps allowlisted host-binary names (e.g. "logrotate") to
+	// the absolute path of the binary on disk (e.g. "/usr/sbin/logrotate").
+	// Populated by AllowedCommands entries of the form "host:<name>=<path>".
+	//
+	// DEMO ONLY: running host binaries fundamentally changes rshell's threat
+	// model. This entry-point exists for the host-remediation demo and is not
+	// intended to ship as a product feature.
+	hostCommands map[string]string
+
 	// maxExecutionTime bounds the duration of each Run call. Zero disables
 	// the limit. When non-zero, Run derives a child context with this timeout.
 	maxExecutionTime time.Duration
@@ -734,10 +743,19 @@ func HostPrefix(prefix string) RunnerOption {
 }
 
 // AllowedCommands restricts command execution to the specified command names.
-// Names must use the "rshell:" namespace prefix (e.g. "rshell:cat",
-// "rshell:find"). Names without a colon separator or with an unknown namespace
-// are rejected. The bare command name (after the prefix) is stored internally
-// and matched exactly against the command name (args[0]) at execution time.
+// Names must use a namespace prefix.
+//
+// Two namespaces are accepted:
+//   - "rshell:<name>" — allowlist a builtin (e.g. "rshell:cat", "rshell:find").
+//     The bare command name (after the prefix) is matched exactly against
+//     args[0] at execution time.
+//   - "host:<name>=<absolute-path>" — DEMO ONLY: allowlist a host binary at
+//     the given absolute path (e.g. "host:logrotate=/usr/sbin/logrotate").
+//     When dispatch sees a non-builtin command name matching <name>, the
+//     binary at <absolute-path> is exec'd. See [hostCommands] for the threat-
+//     model caveat. Linux-only.
+//
+// Names without a colon separator or with an unknown namespace are rejected.
 //
 // Only commands whose name appears in the list may be executed; all others are
 // rejected with "<cmd>: command not allowed".
@@ -750,28 +768,52 @@ func HostPrefix(prefix string) RunnerOption {
 func AllowedCommands(names []string) RunnerOption {
 	return func(r *Runner) error {
 		m := make(map[string]bool, len(names))
+		var hostMap map[string]string
 		for _, n := range names {
 			if n == "" {
 				return fmt.Errorf("AllowedCommands: empty command name")
 			}
 			idx := strings.Index(n, ":")
 			if idx < 0 {
-				return fmt.Errorf("AllowedCommands: %q missing namespace prefix (expected \"rshell:<command>\")", n)
+				return fmt.Errorf("AllowedCommands: %q missing namespace prefix (expected \"rshell:<command>\" or \"host:<name>=<path>\")", n)
 			}
 			ns := n[:idx]
-			cmd := n[idx+1:]
-			if strings.Index(cmd, ":") >= 0 {
-				return fmt.Errorf("AllowedCommands: %q contains multiple colons; expected format \"rshell:<command>\"", n)
+			rest := n[idx+1:]
+			switch ns {
+			case "rshell":
+				if strings.Index(rest, ":") >= 0 { //nolint:gosimple // strings.Contains is not on the interp allowlist
+					return fmt.Errorf("AllowedCommands: %q contains multiple colons; expected format \"rshell:<command>\"", n)
+				}
+				if rest == "" {
+					return fmt.Errorf("AllowedCommands: %q has empty command name", n)
+				}
+				m[rest] = true
+			case "host":
+				eq := strings.Index(rest, "=")
+				if eq < 0 {
+					return fmt.Errorf("AllowedCommands: %q missing \"=<path>\" (expected format \"host:<name>=<absolute-path>\")", n)
+				}
+				name := rest[:eq]
+				path := rest[eq+1:]
+				if name == "" {
+					return fmt.Errorf("AllowedCommands: %q has empty host command name", n)
+				}
+				if path == "" {
+					return fmt.Errorf("AllowedCommands: %q has empty host binary path", n)
+				}
+				if !filepath.IsAbs(path) {
+					return fmt.Errorf("AllowedCommands: %q host binary path must be absolute, got %q", n, path)
+				}
+				if hostMap == nil {
+					hostMap = make(map[string]string)
+				}
+				hostMap[name] = path
+			default:
+				return fmt.Errorf("AllowedCommands: %q has unknown namespace %q (only \"rshell\" and \"host\" are supported)", n, ns)
 			}
-			if ns != "rshell" {
-				return fmt.Errorf("AllowedCommands: %q has unknown namespace %q (only \"rshell\" is supported)", n, ns)
-			}
-			if cmd == "" {
-				return fmt.Errorf("AllowedCommands: %q has empty command name", n)
-			}
-			m[cmd] = true
 		}
 		r.allowedCommands = m
+		r.hostCommands = hostMap
 		return nil
 	}
 }

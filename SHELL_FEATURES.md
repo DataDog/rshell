@@ -104,6 +104,7 @@ The in-shell `help` command mirrors these feature categories: run `help` for a c
 ## Execution
 
 - ✅ AllowedCommands — restricts which commands (builtins or external) may be executed; commands require the `rshell:` namespace prefix (e.g. `rshell:cat`); if not set, no commands are allowed
+- ⚠️ **Demo only:** `host:<name>=<absolute-path>` AllowedCommands entries (e.g. `host:logrotate=/usr/sbin/logrotate`) allowlist a single host binary that rshell will exec directly when invoked. Linux-only. Plumbs stdin/stdout/stderr, propagates exit code, kills via `SIGKILL` on context cancel, forwards only `PATH`/`HOME`/`LANG`. This fundamentally changes rshell's threat model and is intended for the host-remediation demo, not production — see README "demo only" section.
 - ✅ AllowedPaths filesystem sandboxing — restricts all file access (read and write) to specified directories; cross-root symlink fallback is read-only to avoid TOCTOU on writes
 - ✅ Whole-run execution timeout — callers can bound a `Run()` call via `context.Context`, `interp.MaxExecutionTime`, or the CLI `--timeout` flag; the deadline applies to the entire script, not each individual command
 - ✅ ProcPath — overrides the proc filesystem path used by `ps` (default `/proc`; Linux-only; useful for testing/container environments)

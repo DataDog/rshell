@@ -502,8 +502,19 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 	// Evaluate both policy checks upfront so the span tags reflect the
 	// independent facts about the command name regardless of which gate
 	// short-circuits dispatch.
-	isAllowed := r.allowAllCommands || r.allowedCommands[name]
 	fn, isKnown := builtins.Lookup(name)
+	hostBinaryPath, isHostAllowed := r.hostCommands[name]
+	// A host: entry is honoured for dispatch only when the name does not
+	// resolve to a builtin. Otherwise an entry like
+	// "host:cat=/bin/false" would silently authorize the cat builtin
+	// (because isAllowed would flip true) and the isKnown branch below
+	// would run cat with stdin/AllowedPaths access — never executing the
+	// host binary the entry actually pointed at. Builtins still take
+	// precedence when the name is also explicitly allowlisted via
+	// rshell:<name>; this gate just prevents a host: entry from
+	// laundering builtin access.
+	hostDispatch := isHostAllowed && !isKnown
+	isAllowed := r.allowAllCommands || r.allowedCommands[name] || hostDispatch
 
 	span, ctx := telemetry.StartSpanFromContext(ctx, "command")
 	span.SetResourceName(name)
@@ -511,6 +522,15 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 	span.SetTag("rshell.command.argc", len(args)-1)
 	span.SetTag("rshell.command.is_allowed", isAllowed)
 	span.SetTag("rshell.command.is_known", isKnown)
+	if hostDispatch {
+		// DEMO ONLY: tag invocations that reach for a host binary so the
+		// demo narrative ("look, we can see exactly when the agent
+		// reached for the host") is visible in trace data. Tagged on
+		// hostDispatch (not isHostAllowed) so the tag reflects whether
+		// the host path was actually exec'd, not just whether an entry
+		// was configured.
+		span.SetTag("rshell.command.host_exec", true)
+	}
 	// has_stdin_pipe / has_output_redirect reflect whether the command's
 	// stdin/stdout were reassigned from the Runner's originals — true for
 	// both pipeline stages and file redirects.
@@ -783,6 +803,15 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 		if err := ctx.Err(); err != nil {
 			r.exit.fatal(err)
 		}
+		return
+	}
+	// DEMO ONLY: a host-binary entry takes precedence over the default
+	// execHandler so that an allowlisted host:<name>=<path> entry actually
+	// runs the binary instead of being rejected as "command not allowed".
+	// hostDispatch is already gated on !isKnown above, so builtins always win.
+	if hostDispatch {
+		r.dispatchedCount++
+		r.exit.code = r.runHostCommand(ctx, hostBinaryPath, args)
 		return
 	}
 	// Allowed but not known: the default execHandler (noExecHandler) will
