@@ -193,7 +193,7 @@ func (rt *runtime) evalCall(e *callExpr) (value, error) {
 		haystack := args[0].String()
 		needle := args[1].String()
 		if needle == "" {
-			return numberValue(0), nil
+			return numberValue(1), nil
 		}
 		pos := strings.Index(haystack, needle)
 		if pos < 0 {
@@ -201,31 +201,22 @@ func (rt *runtime) evalCall(e *callExpr) (value, error) {
 		}
 		return numberValue(float64(len([]rune(haystack[:pos])) + 1)), nil
 	case "tolower":
-		if len(args) > 1 {
-			return value{}, fmt.Errorf("tolower expects at most 1 argument")
+		if len(args) != 1 {
+			return value{}, fmt.Errorf("tolower expects 1 argument")
 		}
-		s := rt.field(0).String()
-		if len(args) == 1 {
-			s = args[0].String()
-		}
+		s := args[0].String()
 		return stringValue(strings.ToLower(s)), nil
 	case "toupper":
-		if len(args) > 1 {
-			return value{}, fmt.Errorf("toupper expects at most 1 argument")
+		if len(args) != 1 {
+			return value{}, fmt.Errorf("toupper expects 1 argument")
 		}
-		s := rt.field(0).String()
-		if len(args) == 1 {
-			s = args[0].String()
-		}
+		s := args[0].String()
 		return stringValue(strings.ToUpper(s)), nil
 	case "int":
-		if len(args) > 1 {
-			return value{}, fmt.Errorf("int expects at most 1 argument")
+		if len(args) != 1 {
+			return value{}, fmt.Errorf("int expects 1 argument")
 		}
-		v := rt.field(0)
-		if len(args) == 1 {
-			v = args[0]
-		}
+		v := args[0]
 		return numberValue(math.Trunc(v.Number())), nil
 	default:
 		return value{}, fmt.Errorf("function calls are not supported")
