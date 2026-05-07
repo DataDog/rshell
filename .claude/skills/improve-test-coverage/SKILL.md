@@ -16,14 +16,6 @@ Improve test coverage for **$ARGUMENTS** by mining reference test suites from ya
 
 ---
 
-## 🎯 High-value tests only
-
-Every scenario runs in Docker against bash on every CI run, forever. Coverage is not the goal — **risk reduction per CI second** is. Default to NOT adding a test; when in doubt, skip it.
-
-Do NOT add a test if any of these apply: it duplicates an existing scenario or Go test (including cosmetic variants), the "edge case" is unreachable in practice, the behavior is a GNU/platform extension we don't implement, or it would need `skip_assert_against_bash: true` for no real product reason.
-
----
-
 ## ⛔ STOP — READ THIS BEFORE DOING ANYTHING ELSE ⛔
 
 You MUST follow this execution protocol. Skipping steps causes missed coverage gaps or broken tests.
