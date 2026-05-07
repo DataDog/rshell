@@ -1,0 +1,25 @@
+description: Pattern-only and action-only rules compose across records
+upstream:
+  suite: onetrueawk
+  id: testdir/t.3
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+  notes: Also covers the default action behavior represented by testdir/t.0.
+covers:
+  - pattern-only rules print the current record
+  - action-only rules run for every record
+  - END actions can observe accumulated values
+input:
+  program: |
+    /keep/
+    { total += $2 }
+    END { print "total=" total }
+  stdin: |
+    keep 4
+    drop 7
+    keep 2
+expect:
+  stdout: |
+    keep 4
+    keep 2
+    total=13
+  exit_code: 0

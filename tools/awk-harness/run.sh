@@ -9,6 +9,7 @@ usage() {
 Usage: tools/awk-harness/run.sh TARGET
 
 Targets:
+  rewritten    Run rshell-owned AWK scenario rewrites.
   onetrueawk   Fetch and run One True Awk tests against the GNU awk oracle.
   gawk         Fetch and run GNU awk tests against the GNU awk oracle.
   all          Run gawk, then onetrueawk.
@@ -26,6 +27,7 @@ Oracle:
 Useful environment variables:
   AWK_HARNESS_BOOTSTRAP=1       Fetch and summarize upstream tests only.
   AWK_HARNESS_CACHE=DIR         Cache external repos and results.
+  RSHELL_AWK_SCENARIO_TIMEOUT=D Duration or seconds for local rewritten tests.
   ONETRUEAWK_REF=REF            One True Awk commit, tag, or branch.
   ONETRUEAWK_SUITE=core|all|... One True Awk suites to run.
   GAWK_ORACLE=/path/to/gawk     Trusted GNU awk binary used as oracle.
@@ -44,6 +46,9 @@ if [ -z "$target" ] || [ "$target" = "-h" ] || [ "$target" = "--help" ]; then
 fi
 
 case "$target" in
+	rewritten)
+		exec "$SCRIPT_DIR/run-rewritten.sh"
+		;;
 	onetrueawk)
 		exec "$SCRIPT_DIR/run-onetrueawk.sh"
 		;;

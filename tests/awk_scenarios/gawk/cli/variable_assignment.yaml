@@ -1,0 +1,30 @@
+description: -v assignments are visible before BEGIN and file arguments set FILENAME and FNR
+upstream:
+  suite: gawk
+  id: test/argtest.awk
+  ref: gawk-5.4.0
+covers:
+  - -v assignments are visible before BEGIN runs
+  - FILENAME is set to the current input file path
+  - FNR counts records within the current input file
+setup:
+  files:
+    - path: records.txt
+      content: |
+        red
+        blue
+input:
+  awk_args:
+    - -v
+    - label=color
+  program: |
+    BEGIN { print label }
+    { print FILENAME ":" FNR ":" $0 }
+  args:
+    - records.txt
+expect:
+  stdout: |
+    color
+    records.txt:1:red
+    records.txt:2:blue
+  exit_code: 0

@@ -62,9 +62,17 @@ The harness rejects a `GAWK_ORACLE` whose `gawk --version` does not match
 
 ## Usage
 
+Run the rshell-owned rewritten AWK scenarios against the pinned GNU awk oracle:
+
+```bash
+tools/awk-harness/run.sh install-gawk
+tools/awk-harness/run.sh rewritten
+```
+
 Point `AWK_UNDER_TEST` at the candidate binary to test:
 
 ```bash
+AWK_UNDER_TEST=/path/to/awk tools/awk-harness/run.sh rewritten
 AWK_UNDER_TEST=/path/to/awk tools/awk-harness/run.sh gawk
 AWK_UNDER_TEST=/path/to/awk tools/awk-harness/run.sh onetrueawk
 AWK_UNDER_TEST=/path/to/awk tools/awk-harness/run.sh all
@@ -74,6 +82,7 @@ For rshell, use the adapter that turns awk argv into an rshell `-c` command:
 
 ```bash
 make build
+RSHELL_BIN=./rshell AWK_UNDER_TEST=tools/awk-harness/rshell-awk tools/awk-harness/run.sh rewritten
 RSHELL_BIN=./rshell AWK_UNDER_TEST=tools/awk-harness/rshell-awk tools/awk-harness/run.sh all
 ```
 
@@ -151,6 +160,24 @@ GAWK_TEST_LIMIT=25 AWK_UNDER_TEST=/path/to/awk tools/awk-harness/run.sh gawk
 
 `GAWK_TEST_MODE=make-check` is available for experiments with gawk's native
 test harness. It may require GNU build tools and is not the default.
+
+## Rewritten Local Scenarios
+
+`tools/awk-harness/run.sh rewritten` runs the local AWK scenario rewrites listed
+in `tests/awk_scenarios/enabled.txt`. These files are rshell-owned tests, not
+vendored upstream tests. Each scenario carries upstream metadata and a `covers`
+list so we can track which GNU awk or One True Awk behavior it rewrites.
+
+`tests/awk_scenarios/upstream-map.yaml` is an audit ledger for upstream rewrite
+coverage. It is not a run list; `enabled.txt` is the single source of truth for
+which rewritten tests execute.
+
+When `AWK_UNDER_TEST` is unset, `rewritten` runs the scenarios against the
+pinned GNU awk oracle. This lets CI validate the local test definitions before
+rshell has an `awk` builtin.
+
+When `AWK_UNDER_TEST` is set, `rewritten` runs the candidate and compares it to
+both the scenario's expected result and the pinned GNU awk oracle.
 
 ## Outputs
 

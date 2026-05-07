@@ -18,6 +18,8 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - name: Install pinned GNU awk oracle
         run: tools/awk-harness/run.sh install-gawk
+      - name: Run rewritten AWK scenarios against pinned GNU awk
+        run: tools/awk-harness/run.sh rewritten
       - name: Fetch One True Awk tests
         env:
           AWK_HARNESS_BOOTSTRAP: "1"

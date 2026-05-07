@@ -1,0 +1,27 @@
+description: Assigning a numbered field rebuilds $0 using OFS
+upstream:
+  suite: gawk
+  id: test/assignnumfield.awk
+  ref: gawk-5.4.0
+covers:
+  - assigning to a numbered field changes that field
+  - rebuilding $0 after a field assignment uses OFS
+  - NF remains the number of fields when assigning an existing field
+input:
+  program: |
+    BEGIN { OFS = "|" }
+    {
+      $2 = "patched"
+      print $0
+      print NF
+    }
+  stdin: |
+    alpha beta gamma
+    solo pair
+expect:
+  stdout: |
+    alpha|patched|gamma
+    3
+    solo|patched
+    2
+  exit_code: 0
