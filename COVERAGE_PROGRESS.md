@@ -46,7 +46,7 @@ Legend: ⏳ pending · 🔄 in progress · ✅ done · ⏭️ skipped (no high-v
 | 36 | allowed_paths | shell | 51 | 51 | ⏭️ | 51 scenarios + 39 Go tests cover symlinks, traversal, container-host-prefix, glob, redirect, env var |
 | 37 | cmd_separator | shell | 52 | 52 | ⏭️ | comprehensive: basic, control_flow, exit_code, var_sharing, with_ops categories |
 | 38 | globbing | shell | 52 | 52 | ⏭️ | comprehensive: bracket (range/set/negation), ?, *, quoting, for-loop iteration |
-| 39 | pipe | shell | 57 | — | ⏳ | |
+| 39 | pipe | shell | 57 | 56 | ✅ | removed exact dupe (two_command_pipeline = advanced/two_cmd_pipeline) |
 | 40 | if_clause | shell | 71 | — | ⏳ | |
 | 41 | ss | cmd | 75 | — | ⏳ | |
 | 42 | logic_ops | shell | 76 | — | ⏳ | |
@@ -75,9 +75,9 @@ Legend: ⏳ pending · 🔄 in progress · ✅ done · ⏭️ skipped (no high-v
 
 ## Summary
 
-- Targets processed: 38 / 64
+- Targets processed: 39 / 64
 - Tests added: 8 (scenario: 8, unit: 0)
-- Duplicate tests removed: 12 (scenario: 12, unit: 0)
+- Duplicate tests removed: 13 (scenario: 13, unit: 0)
 - Low-value tests removed: 0 (scenario: 0, unit: 0)
 - `skip_assert_against_bash` flags removed: 0
 - Windows-specific assertions removed: 0
