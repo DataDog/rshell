@@ -25,7 +25,7 @@ Legend: ⏳ pending · 🔄 in progress · ✅ done · ⏭️ skipped (no high-v
 | 15 | until_clause        | shell |             21 | 21            | ⏭️     | already comprehensive — covers loop semantics, break/continue (incl. multi-level), pipeline cond, brace body, nesting |
 | 16 | break               | cmd   |             23 | 23            | ⏭️     | exhaustively covered by 77+ loop scenarios across for/while/until clauses |
 | 17 | continue            | cmd   |             23 | 23            | ⏭️     | exhaustively covered by loop scenarios across for/while/until clauses |
-| 18 | redirections        | shell |             26 | —             | ⏳     |       |
+| 18 | redirections        | shell |             26 | 26            | ⏭️     | already comprehensive — covers /dev/null target, heredoc variants, delimiter quoting, dup, multi-heredoc |
 | 19 | uname               | cmd   |             27 | —             | ⏳     |       |
 | 20 | comments            | shell |             27 | —             | ⏳     |       |
 | 21 | negation            | shell |             27 | —             | ⏳     |       |
@@ -75,7 +75,7 @@ Legend: ⏳ pending · 🔄 in progress · ✅ done · ⏭️ skipped (no high-v
 
 ## Summary
 
-- Targets processed: 17 / 64
+- Targets processed: 18 / 64
 - Tests added: 0 (scenario: 0, unit: 0)
 - Duplicate tests removed: 0 (scenario: 0, unit: 0)
 - Low-value tests removed: 0 (scenario: 0, unit: 0)
