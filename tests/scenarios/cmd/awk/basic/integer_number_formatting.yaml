@@ -1,9 +1,10 @@
 description: awk prints integer-valued numbers without exponent notation.
 input:
   script: |+
-    awk 'BEGIN { print 999999, 1000000, 123456789, 1000000.5 }'
+    awk 'BEGIN { print 999999, 1000000, 123456789, 1000000.5; x=-0; print x, -1e-400 }'
 expect:
   stdout: |+
     999999 1000000 123456789 1e+06
+    0 0
   stderr: |+
   exit_code: 0

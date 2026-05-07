@@ -78,6 +78,9 @@ func (v value) String() string {
 }
 
 func formatAwkNumber(n float64) string {
+	if n == 0 {
+		n = 0
+	}
 	fixed := strconv.FormatFloat(n, 'f', -1, 64)
 	for i := 0; i < len(fixed); i++ {
 		if fixed[i] == '.' {
