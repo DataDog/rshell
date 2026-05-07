@@ -17,7 +17,7 @@ Legend: ⏳ pending · 🔄 in progress · ✅ done · ⏭️ skipped (no high-v
 | 7 | errors | shell | 10 | 10 | ✅ | replaced misnamed dupe with cmd-subst error test; framework parses scripts so syntax-error tests can't be scenarios |
 | 8 | function | shell | 10 | 10 | ⏭️ | function declarations intentionally blocked at parse; all syntactic forms covered |
 | 9 | allowed_commands | shell | 12 | 12 | ⏭️ | recently improved (commit fc86a688); 12 scenarios + 8 Go API tests cover surface |
-| 10 | input_processing | shell | 13 | — | ⏳ | |
+| 10 | input_processing | shell | 13 | 13 | ⏭️ | comprehensive coverage of blanks/comments/whitespace/tabs/multi-cmd; minor overlap with empty_script accepted |
 | 11 | allowed_redirects | shell | 17 | — | ⏳ | |
 | 12 | blocked_redirects | shell | 17 | — | ⏳ | |
 | 13 | inline_var | shell | 18 | — | ⏳ | |
@@ -75,7 +75,7 @@ Legend: ⏳ pending · 🔄 in progress · ✅ done · ⏭️ skipped (no high-v
 
 ## Summary
 
-- Targets processed: 9 / 64
+- Targets processed: 10 / 64
 - Tests added: 7 (scenario: 7, unit: 0)
 - Duplicate tests removed: 1 (scenario: 1, unit: 0)
 - Low-value tests removed: 0 (scenario: 0, unit: 0)
