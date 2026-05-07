@@ -22,6 +22,50 @@ const (
 	precPostfix = 90
 )
 
+var unsupportedBuiltinFunctions = map[string]struct{}{
+	"and":            {},
+	"asort":          {},
+	"asorti":         {},
+	"atan2":          {},
+	"bindtextdomain": {},
+	"close":          {},
+	"compl":          {},
+	"cos":            {},
+	"dcgettext":      {},
+	"dcngettext":     {},
+	"exp":            {},
+	"fflush":         {},
+	"gensub":         {},
+	"gsub":           {},
+	"index":          {},
+	"int":            {},
+	"isarray":        {},
+	"length":         {},
+	"log":            {},
+	"lshift":         {},
+	"match":          {},
+	"mktime":         {},
+	"or":             {},
+	"patsplit":       {},
+	"rand":           {},
+	"rshift":         {},
+	"sin":            {},
+	"split":          {},
+	"sprintf":        {},
+	"sqrt":           {},
+	"srand":          {},
+	"strftime":       {},
+	"strtonum":       {},
+	"sub":            {},
+	"substr":         {},
+	"system":         {},
+	"systime":        {},
+	"tolower":        {},
+	"toupper":        {},
+	"typeof":         {},
+	"xor":            {},
+}
+
 type parser struct {
 	toks              []token
 	pos               int
@@ -231,10 +275,13 @@ func (p *parser) parsePrefix() (expr, error) {
 		return &regexExpr{pattern: tok.lit}, nil
 	case tokIdent:
 		p.advance()
+		if tok.lit == "system" {
+			return nil, fmt.Errorf("system() is not supported")
+		}
+		if _, ok := unsupportedBuiltinFunctions[tok.lit]; ok {
+			return nil, fmt.Errorf("function calls are not supported")
+		}
 		if p.at(tokLParen) {
-			if tok.lit == "system" {
-				return nil, fmt.Errorf("system() is not supported")
-			}
 			return nil, fmt.Errorf("function calls are not supported")
 		}
 		if p.at(tokLBracket) {
