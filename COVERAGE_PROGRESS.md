@@ -67,7 +67,7 @@ Legend: ⏳ pending · 🔄 in progress · ✅ done · ⏭️ skipped (no high-v
 | 57 | echo                | cmd   |             87 | 87            | ⏭️     | already comprehensive — 25 Go tests + 62 scenarios cover all-args-as-literals (no -n/-e/-E support) |
 | 58 | head                | cmd   |             89 | 89            | ⏭️     | already comprehensive — 29 Go tests + 60 scenarios cover -n/-c/-q/-v, +N offset, multi-file, stdin |
 | 59 | tail                | cmd   |            108 | 108           | ⏭️     | already comprehensive — 29 Go tests + 79 scenarios cover -n/-c, +N offset, -f reject, multi-file, stdin |
-| 60 | for_clause          | shell |            137 | —             | ⏳     |       |
+| 60 | for_clause          | shell |            137 | 137           | ⏭️     | already comprehensive across 6 categories — covers iter forms, $@, $*, glob, cmd-subst, break/continue |
 | 61 | printf              | cmd   |            149 | —             | ⏳     |       |
 | 62 | sed                 | cmd   |            170 | —             | ⏳     |       |
 | 63 | var_expand          | shell |            172 | —             | ⏳     |       |
@@ -75,7 +75,7 @@ Legend: ⏳ pending · 🔄 in progress · ✅ done · ⏭️ skipped (no high-v
 
 ## Summary
 
-- Targets processed: 59 / 64
+- Targets processed: 60 / 64
 - Tests added: 0 (scenario: 0, unit: 0)
 - Duplicate tests removed: 0 (scenario: 0, unit: 0)
 - Low-value tests removed: 0 (scenario: 0, unit: 0)
