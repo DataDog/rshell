@@ -9,8 +9,9 @@ which upstream suite or coverage area it belongs to and what behavior it covers.
 The tests run through the AWK-specific Go runner in
 `tests/awk_scenarios_test.go`.
 
-`enabled.txt` is the only run list. Each non-comment line is a path relative to
-this directory:
+`enabled.txt` is the only implementation run list. It starts empty and should
+grow as GNU awk support lands in rshell. Each non-comment line is a path
+relative to this directory:
 
 ```text
 gawk/basic/begin_end_records.yaml
@@ -39,6 +40,9 @@ Run the rewritten scenarios against the pinned GNU awk oracle:
 tools/awk-harness/run.sh install-gawk
 tools/awk-harness/run.sh rewritten
 ```
+
+If `enabled.txt` is empty, the rewritten scenario run is skipped. Use
+`upstream-map.yaml` to track rewritten coverage that is not active yet.
 
 Run the same scenarios against rshell's `awk` adapter once the builtin exists:
 
