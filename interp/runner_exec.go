@@ -623,6 +623,8 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 				CommandAllowed: func(n string) bool {
 					return r.allowAllCommands || r.allowedCommands[n]
 				},
+				ChangeDir:    r.changeDir,
+				LookupEnvVar: r.lookupEnvVar,
 				RunCommand: func(ctx context.Context, dir string, name string, args []string) (uint8, error) {
 					// Inherit the parent's overridden stdin so grandchildren
 					// dispatched via RunCommand (the no-stdin variant) stay
@@ -718,6 +720,8 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 			CommandAllowed: func(cmdName string) bool {
 				return r.allowAllCommands || r.allowedCommands[cmdName]
 			},
+			ChangeDir:           r.changeDir,
+			LookupEnvVar:        r.lookupEnvVar,
 			RunCommand:          runCmd,
 			RunCommandWithStdin: runCmdWithStdin,
 			Proc:                r.proc,

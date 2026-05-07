@@ -39,6 +39,23 @@ var builtinPerCommandSymbols = map[string][]string{
 		"io.ReadCloser",    // 🟢 interface type; no side effects.
 		"os.O_RDONLY",      // 🟢 read-only file flag constant; cannot open files by itself.
 	},
+	"cd": {
+		"context.Context",          // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
+		"errors.As",                // 🟢 error type assertion; pure function, no I/O.
+		"errors.New",               // 🟢 creates a simple error value; pure function, no I/O.
+		"fmt.Errorf",               // 🟢 error formatting; pure function, no I/O.
+		"io/fs.ModeSymlink",        // 🟢 file mode bit constant for symlinks; pure constant.
+		"os.PathError",             // 🟢 error type wrapping path and operation; pure type, no I/O.
+		"path/filepath.Clean",      // 🟢 normalizes a path lexically (collapses ".", "..", duplicate separators); pure function, no I/O.
+		"path/filepath.Dir",        // 🟢 returns the directory component of a path; pure function, no I/O.
+		"path/filepath.IsAbs",      // 🟢 reports whether a path is absolute; pure function, no I/O.
+		"path/filepath.Join",       // 🟢 lexically joins path components with the OS separator; pure function, no I/O.
+		"path/filepath.Separator",  // 🟢 OS path separator constant ('/' or '\\'); pure constant, no I/O.
+		"path/filepath.VolumeName", // 🟢 returns the volume prefix of a path (e.g. "C:" on Windows, "" on Unix); pure function, no I/O.
+		"strings.HasPrefix",        // 🟢 pure function for prefix matching; no I/O.
+		"strings.IndexByte",        // 🟢 finds byte in string; pure function, no I/O.
+		"strings.TrimPrefix",       // 🟢 removes a leading prefix from a string; pure function, no I/O.
+	},
 	"continue": {
 		"context.Context", // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
 	},

@@ -1,0 +1,10 @@
+description: cd with an empty-string operand is rejected with exit 1.
+skip_assert_against_bash: true
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    cd ""
+expect:
+  stdout: ""
+  stderr_contains: ["cd:"]
+  exit_code: 1

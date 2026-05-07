@@ -1,0 +1,14 @@
+description: cd to a regular file fails with exit 1 and "not a directory".
+skip_assert_against_bash: true
+setup:
+  files:
+    - path: notadir.txt
+      content: "hello"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    cd notadir.txt
+expect:
+  stdout: ""
+  stderr_contains: ["cd:", "notadir.txt", "not a directory"]
+  exit_code: 1

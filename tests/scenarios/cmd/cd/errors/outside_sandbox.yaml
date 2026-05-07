@@ -1,0 +1,10 @@
+description: cd to a directory outside AllowedPaths fails with permission denied; sandbox restriction.
+skip_assert_against_bash: true
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    cd /
+expect:
+  stdout: ""
+  stderr_contains: ["cd:", "permission denied"]
+  exit_code: 1
