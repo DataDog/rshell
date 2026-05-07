@@ -159,6 +159,15 @@ func TestAwkRegexLiteralExpression(t *testing.T) {
 	assert.Equal(t, "0\n1\nmatched foo\n", stdout)
 }
 
+func TestAwkPrintRegexLiteralExpression(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "input.txt", "foo\nbar\n")
+	stdout, stderr, code := cmdRun(t, `awk '{ print /foo/ }' input.txt`, dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "", stderr)
+	assert.Equal(t, "1\n0\n", stdout)
+}
+
 func TestAwkLiteralFieldSeparatorBlankRecordNF(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, dir, "input.txt", "a:b\n\n:\n")

@@ -65,9 +65,10 @@ type token struct {
 }
 
 type lexer struct {
-	src  []rune
-	pos  int
-	last tokenKind
+	src     []rune
+	pos     int
+	last    tokenKind
+	lastLit string
 }
 
 func lex(src string) ([]token, error) {
@@ -84,6 +85,7 @@ func lex(src string) ([]token, error) {
 		}
 		if tok.kind != tokEOF {
 			l.last = tok.kind
+			l.lastLit = tok.lit
 		}
 	}
 }
@@ -157,7 +159,7 @@ func (l *lexer) next() (token, error) {
 		if l.match('=') {
 			return token{kind: tokSlashAssign, lit: "/=", pos: start}, nil
 		}
-		if canStartRegex(l.last) {
+		if canStartRegex(l.last, l.lastLit) {
 			return l.scanRegex(start)
 		}
 		return token{kind: tokSlash, lit: "/", pos: start}, nil
@@ -313,7 +315,10 @@ func (l *lexer) scanRegex(start int) (token, error) {
 	return token{}, fmt.Errorf("unterminated regular expression")
 }
 
-func canStartRegex(prev tokenKind) bool {
+func canStartRegex(prev tokenKind, prevLit string) bool {
+	if prev == tokIdent && prevLit == "print" {
+		return true
+	}
 	switch prev {
 	case tokEOF, tokNewline, tokLBrace, tokRBrace, tokLParen, tokComma, tokSemicolon,
 		tokAssign, tokPlus, tokMinus, tokStar, tokSlash, tokPercent, tokBang,
