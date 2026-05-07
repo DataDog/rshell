@@ -12,7 +12,7 @@ Legend: ⏳ pending · 🔄 in progress · ✅ done · ⏭️ skipped (no high-v
 | 2 | continue | cmd | 0 | 0 | ⏭️ | 62 continue-related scenarios across loop/if dirs cover all behavior |
 | 3 | readonly | shell | 8 | 8 | ⏭️ | parse-block + 3 Go runtime API tests cover the surface |
 | 4 | subshell | shell | 8 | 12 | ✅ | added 4 P2 tests (multiline, pipe-target, triple-nested isolation, input redirect) |
-| 5 | empty_script | shell | 9 | — | ⏳ | |
+| 5 | empty_script | shell | 9 | 11 | ✅ | added 2 P2 tests for CRLF (Windows-saved) scripts |
 | 6 | case_clause | shell | 10 | — | ⏳ | |
 | 7 | errors | shell | 10 | — | ⏳ | |
 | 8 | function | shell | 10 | — | ⏳ | |
@@ -75,8 +75,8 @@ Legend: ⏳ pending · 🔄 in progress · ✅ done · ⏭️ skipped (no high-v
 
 ## Summary
 
-- Targets processed: 4 / 64
-- Tests added: 4 (scenario: 4, unit: 0)
+- Targets processed: 5 / 64
+- Tests added: 6 (scenario: 6, unit: 0)
 - Duplicate tests removed: 0 (scenario: 0, unit: 0)
 - Low-value tests removed: 0 (scenario: 0, unit: 0)
 - `skip_assert_against_bash` flags removed: 0

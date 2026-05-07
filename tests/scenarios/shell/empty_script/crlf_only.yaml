@@ -1,0 +1,7 @@
+description: A script with only CRLF line endings (Windows-saved empty file) exits cleanly.
+input:
+  script: "\r\n\r\n\r\n"
+expect:
+  stdout: ""
+  stderr: ""
+  exit_code: 0
