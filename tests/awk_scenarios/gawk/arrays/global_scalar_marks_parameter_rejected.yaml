@@ -1,0 +1,23 @@
+description: scalar use of a global argument makes array indexing through its parameter invalid
+upstream:
+  suite: gawk
+  id: test/aryprm6.awk
+  ref: gawk-5.4.0
+covers:
+  - evaluating a global variable in scalar context fixes its scalar type
+  - a parameter alias to that variable cannot then be used as an array
+input:
+  program: |
+    function load(x) {
+      registry
+      x["item"] = 1
+    }
+
+    BEGIN {
+      load(registry)
+    }
+expect:
+  stderr_contains:
+    - "fatal: attempt to use scalar parameter"
+    - "as an array"
+  exit_code: 2

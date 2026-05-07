@@ -1,0 +1,28 @@
+description: --csv keeps quoted embedded newlines inside a single record
+upstream:
+  suite: gawk
+  id: test/csv3.awk
+  ref: gawk-5.4.0
+covers:
+  - quoted newlines do not end CSV records
+  - doubled quotes inside multiline CSV fields are unescaped
+input:
+  awk_args:
+    - --csv
+  program: |
+    {
+      middle = $2
+      gsub(/\n/, "|", middle)
+      print NR ":" NF ":" $1 ":" middle ":" $3
+    }
+  stdin: |
+    id,notes,tag
+    1,"line one
+    line two",ok
+    2,"quoted ""word""",done
+expect:
+  stdout: |
+    1:3:id:notes:tag
+    2:3:1:line one|line two:ok
+    3:3:2:quoted "word":done
+  exit_code: 0

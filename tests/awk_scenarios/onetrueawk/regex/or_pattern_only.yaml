@@ -1,0 +1,21 @@
+description: pattern-only rules print records whose field matches either regex branch
+upstream:
+  suite: onetrueawk
+  id: testdir/t.4
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - pattern-only rules default to printing the current record
+  - regex matches can target numbered fields
+  - logical OR combines pattern conditions
+input:
+  program: |
+    $1 ~ /north/ || $1 ~ /west/
+  stdin: |
+    north 10
+    east 20
+    west 30
+expect:
+  stdout: |
+    north 10
+    west 30
+  exit_code: 0

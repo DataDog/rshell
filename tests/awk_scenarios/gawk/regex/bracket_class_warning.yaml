@@ -1,0 +1,23 @@
+description: bare POSIX class-looking bracket text warns and acts as a character set
+upstream:
+  suite: gawk
+  id: test/colonwarn.awk
+  ref: gawk-5.4.0
+covers:
+  - a bracket expression like [:lower:] emits gawk's class-shape warning
+  - the malformed class still behaves as a set of literal characters
+  - sub performs the replacement after reporting the warning
+input:
+  program: |
+    BEGIN {
+      text = "A:B"
+      sub(/[:lower:]/, "#", text)
+      print text
+    }
+expect:
+  stdout: |
+    A#B
+  stderr_contains:
+    - regexp component
+    - should probably be
+  exit_code: 0

@@ -1,0 +1,20 @@
+description: -F removes a command-line backslash-newline continuation from FS
+upstream:
+  suite: gawk
+  id: test/cmdlinefsbacknl.sh
+  ref: gawk-5.4.0
+covers:
+  - -F receives a command-line argument containing backslash followed by newline
+  - FS is assigned after command-line continuation processing
+input:
+  awk_args:
+    - -F
+    - |-
+      \
+      a
+  program: |
+    BEGIN { print "fs:" FS ":" length(FS) }
+expect:
+  stdout: |
+    fs:a:1
+  exit_code: 0

@@ -1,0 +1,19 @@
+description: a final input record without a newline is still matched
+upstream:
+  suite: gawk
+  id: test/datanonl.awk
+  ref: gawk-5.4.0
+covers:
+  - input without a trailing newline is processed as a record
+  - IGNORECASE applies to bracket-expression based address matching
+input:
+  program: |
+    BEGIN { IGNORECASE = 1 }
+    /[[:alnum:]_.+-]+@([[:alnum:]-]+\.)+[[:alpha:]]+[[:blank:]]+/ {
+      print "matched:" $1 ":" $2
+    }
+  stdin: "ADMIN@Example.COM\tallow"
+expect:
+  stdout: |
+    matched:ADMIN@Example.COM:allow
+  exit_code: 0

@@ -1,0 +1,16 @@
+description: a scalar function parameter cannot be invoked as a function
+upstream:
+  suite: gawk
+  id: test/callparam.awk
+  ref: gawk-5.4.0
+covers:
+  - function parameters default to scalar values
+  - calling a scalar parameter as a function is a runtime error
+input:
+  program: |
+    function invoke(candidate) { return candidate() }
+    BEGIN { invoke(42) }
+expect:
+  stderr_contains:
+    - "attempt to use non-function `candidate' in function call"
+  exit_code: 1

@@ -115,44 +115,72 @@ entries:
   - suite: gawk
     id: test/aadelete2.awk
     ref: gawk-5.4.0
-    status: todo
-    reason: Original rshell rewrite not written yet.
+    status: rewritten
+    tests:
+      - gawk/arrays/nested_delete_parameter.yaml
+    covers:
+      - deleting nested array elements through function parameters
+      - arrays of arrays remain usable after nested deletion
 
   - suite: gawk
     id: test/aarray1.awk
     ref: gawk-5.4.0
-    status: todo
-    reason: Original rshell rewrite not written yet.
+    status: rewritten
+    tests:
+      - gawk/arrays/nested_arrays_function_arg.yaml
+    covers:
+      - arrays can contain scalar and nested array members
+      - subarrays can be passed to user functions by reference
 
   - suite: gawk
     id: test/aasort.awk
     ref: gawk-5.4.0
-    status: todo
-    reason: Original rshell rewrite not written yet.
+    status: rewritten
+    tests:
+      - gawk/arrays/asort_subarray_ignorecase.yaml
+    covers:
+      - asort can operate on nested arrays
+      - IGNORECASE affects asort string ordering
 
   - suite: gawk
     id: test/aasorti.awk
     ref: gawk-5.4.0
-    status: todo
-    reason: Original rshell rewrite not written yet.
+    status: rewritten
+    tests:
+      - gawk/arrays/asorti_subarray_ignorecase.yaml
+    covers:
+      - asorti can operate on nested arrays
+      - IGNORECASE affects asorti index ordering
 
   - suite: gawk
     id: test/addcomma.awk
     ref: gawk-5.4.0
-    status: todo
-    reason: Original rshell rewrite not written yet.
+    status: rewritten
+    tests:
+      - gawk/functions/comma_formatting.yaml
+    covers:
+      - recursive user functions
+      - sprintf and repeated sub calls for numeric string formatting
 
   - suite: gawk
     id: test/anchgsub.awk
     ref: gawk-5.4.0
-    status: todo
-    reason: Original rshell rewrite not written yet.
+    status: rewritten
+    tests:
+      - gawk/regex/gsub_anchor_trim.yaml
+    covers:
+      - gsub honors beginning anchors
+      - gsub without a target updates the current record
 
   - suite: gawk
     id: test/anchor.awk
     ref: gawk-5.4.0
-    status: todo
-    reason: Original rshell rewrite not written yet.
+    status: rewritten
+    tests:
+      - gawk/records/paragraph_anchor_regex.yaml
+    covers:
+      - paragraph records when RS is empty
+      - ^ and $ anchors match whole-record boundaries
 
   - suite: gawk
     id: test/apiterm.awk
@@ -233,44 +261,71 @@ entries:
   - suite: gawk
     id: test/arrayind3.awk
     ref: gawk-5.4.0
-    status: todo
-    reason: Original rshell rewrite not written yet.
+    status: rewritten
+    tests:
+      - gawk/arrays/string_numeric_subscript.yaml
+    covers:
+      - string-numeric array subscripts preserve string identity
+      - numeric comparisons do not rewrite existing string subscripts
 
   - suite: gawk
     id: test/arrayparm.awk
     ref: gawk-5.4.0
-    status: todo
-    reason: Original rshell rewrite not written yet.
+    status: rewritten
+    tests:
+      - gawk/arrays/array_parameter_delete_iteration.yaml
+    covers:
+      - arrays are passed to functions by reference
+      - deleting array entries through a function parameter mutates the caller
 
   - suite: gawk
     id: test/arrayprm2.awk
     ref: gawk-5.4.0
-    status: todo
-    reason: Original rshell rewrite not written yet.
+    status: rewritten
+    tests:
+      - gawk/arrays/split_into_array_parameter.yaml
+    covers:
+      - split can materialize an array through a function parameter
+      - array values created by split are visible to the caller
 
   - suite: gawk
     id: test/arrayprm3.awk
     ref: gawk-5.4.0
-    status: todo
-    reason: Original rshell rewrite not written yet.
+    status: rewritten
+    tests:
+      - gawk/arrays/array_creation_through_nested_call.yaml
+    covers:
+      - nested function calls preserve array references
+      - inner functions can create caller-visible array elements
 
   - suite: gawk
     id: test/arrayref.awk
     ref: gawk-5.4.0
-    status: todo
-    reason: Original rshell rewrite not written yet.
+    status: rewritten
+    tests:
+      - gawk/arrays/array_reference_side_effect.yaml
+    covers:
+      - helper functions can create elements through shared array references
+      - membership checks observe array updates made by callees
 
   - suite: gawk
     id: test/arraysort.awk
     ref: gawk-5.4.0
-    status: todo
-    reason: Original rshell rewrite not written yet.
+    status: rewritten
+    tests:
+      - gawk/arrays/procinfo_sorted_index_modes.yaml
+    covers:
+      - PROCINFO sorted_in supports numeric and string index order
 
   - suite: gawk
     id: test/arraysort2.awk
     ref: gawk-5.4.0
-    status: todo
-    reason: Original rshell rewrite not written yet.
+    status: rewritten
+    tests:
+      - gawk/arrays/nested_asort_destination_ignorecase.yaml
+    covers:
+      - asort can copy nested source arrays into nested destinations
+      - IGNORECASE affects nested asort ordering
 
   - suite: gawk
     id: test/arraytype-mpfr.ok
@@ -281,8 +336,11 @@ entries:
   - suite: gawk
     id: test/arraytype.awk
     ref: gawk-5.4.0
-    status: todo
-    reason: Original rshell rewrite not written yet.
+    status: rewritten
+    tests:
+      - gawk/arrays/typeof_array_index_classification.yaml
+    covers:
+      - typeof metadata reports array subscript classes
 
   - suite: gawk
     id: test/arrdbg.awk
@@ -293,110 +351,164 @@ entries:
   - suite: gawk
     id: test/arrymem1.awk
     ref: gawk-5.4.0
-    status: todo
-    reason: Original rshell rewrite not written yet.
+    status: rewritten
+    tests:
+      - gawk/arrays/empty_key_global_alias.yaml
+    covers:
+      - global array updates are visible through parameter aliases
 
   - suite: gawk
     id: test/arryref2.awk
     ref: gawk-5.4.0
-    status: todo
-    reason: Original rshell rewrite not written yet.
+    status: rewritten
+    tests:
+      - gawk/arrays/global_parameter_array_updates.yaml
+    covers:
+      - nested calls can update one array through global and parameter aliases
 
   - suite: gawk
     id: test/arryref3.awk
     ref: gawk-5.4.0
-    status: todo
-    reason: Original rshell rewrite not written yet.
+    status: rewritten
+    tests:
+      - gawk/arrays/array_parameter_scalar_assignment_rejected.yaml
+    covers:
+      - array parameters cannot be reassigned as scalars
 
   - suite: gawk
     id: test/arryref4.awk
     ref: gawk-5.4.0
-    status: todo
-    reason: Original rshell rewrite not written yet.
+    status: rewritten
+    tests:
+      - gawk/arrays/scalar_global_breaks_array_parameter.yaml
+    covers:
+      - scalar global assignment rejects later array use through an alias
 
   - suite: gawk
     id: test/arryref5.awk
     ref: gawk-5.4.0
-    status: todo
-    reason: Original rshell rewrite not written yet.
+    status: rewritten
+    tests:
+      - gawk/arrays/array_parameter_blocks_scalar_global.yaml
+    covers:
+      - array parameter use rejects later scalar assignment through the global name
 
   - suite: gawk
     id: test/arynasty.awk
     ref: gawk-5.4.0
-    status: todo
-    reason: Original rshell rewrite not written yet.
+    status: rewritten
+    tests:
+      - gawk/arrays/numeric_subscript_convfmt_stability.yaml
+    covers:
+      - changing CONVFMT does not rename existing numeric subscripts
 
   - suite: gawk
     id: test/arynocls.awk
     ref: gawk-5.4.0
-    status: todo
-    reason: Original rshell rewrite not written yet.
+    status: rewritten
+    tests:
+      - gawk/arrays/getline_delete_array_reuse.yaml
+    covers:
+      - arrays can be deleted and repopulated while rereading closed files
 
   - suite: gawk
     id: test/aryprm1.awk
     ref: gawk-5.4.0
-    status: todo
-    reason: Original rshell rewrite not written yet.
+    status: rewritten
+    tests:
+      - gawk/arrays/array_membership_then_scalar_rejected.yaml
+    covers:
+      - membership tests fix a parameter as an array
 
   - suite: gawk
     id: test/aryprm2.awk
     ref: gawk-5.4.0
-    status: todo
-    reason: Original rshell rewrite not written yet.
+    status: rewritten
+    tests:
+      - gawk/arrays/deleted_parameter_scalar_math_rejected.yaml
+    covers:
+      - deleted array parameters still reject scalar math
 
   - suite: gawk
     id: test/aryprm3.awk
     ref: gawk-5.4.0
-    status: todo
-    reason: Original rshell rewrite not written yet.
+    status: rewritten
+    tests:
+      - gawk/arrays/emptied_parameter_scalar_compare_rejected.yaml
+    covers:
+      - emptied array parameters remain arrays
 
   - suite: gawk
     id: test/aryprm4.awk
     ref: gawk-5.4.0
-    status: todo
-    reason: Original rshell rewrite not written yet.
+    status: rewritten
+    tests:
+      - gawk/arrays/scalar_argument_later_array_rejected.yaml
+    covers:
+      - scalar arguments later reject array indexing
 
   - suite: gawk
     id: test/aryprm5.awk
     ref: gawk-5.4.0
-    status: todo
-    reason: Original rshell rewrite not written yet.
+    status: rewritten
+    tests:
+      - gawk/arrays/scalar_parameter_used_as_array_rejected.yaml
+    covers:
+      - scalar parameters reject later array indexing
 
   - suite: gawk
     id: test/aryprm6.awk
     ref: gawk-5.4.0
-    status: todo
-    reason: Original rshell rewrite not written yet.
+    status: rewritten
+    tests:
+      - gawk/arrays/global_scalar_marks_parameter_rejected.yaml
+    covers:
+      - scalar global use marks a parameter alias as scalar
 
   - suite: gawk
     id: test/aryprm7.awk
     ref: gawk-5.4.0
-    status: todo
-    reason: Original rshell rewrite not written yet.
+    status: rewritten
+    tests:
+      - gawk/arrays/aliased_scalar_array_params_rejected.yaml
+    covers:
+      - the same variable passed as scalar and array parameters is rejected
 
   - suite: gawk
     id: test/aryprm8.awk
     ref: gawk-5.4.0
-    status: todo
-    reason: Original rshell rewrite not written yet.
+    status: rewritten
+    tests:
+      - gawk/arrays/aliased_array_params_share_updates.yaml
+    covers:
+      - multiple parameters aliasing one array share updates
 
   - suite: gawk
     id: test/aryprm9.awk
     ref: gawk-5.4.0
-    status: todo
-    reason: Original rshell rewrite not written yet.
+    status: rewritten
+    tests:
+      - gawk/arrays/missing_argument_passed_as_scalar.yaml
+    covers:
+      - omitted arguments passed onward can be assigned as scalars
 
   - suite: gawk
     id: test/arysubnm.awk
     ref: gawk-5.4.0
-    status: todo
-    reason: Original rshell rewrite not written yet.
+    status: rewritten
+    tests:
+      - gawk/arrays/subscript_name_keeps_scalar_value.yaml
+    covers:
+      - scalar variables used as subscripts keep their scalar value
 
   - suite: gawk
     id: test/aryunasgn.awk
     ref: gawk-5.4.0
-    status: todo
-    reason: Original rshell rewrite not written yet.
+    status: rewritten
+    tests:
+      - gawk/arrays/unassigned_subscript_empty_string.yaml
+    covers:
+      - unassigned subscript expressions create the empty-string key
 
   - suite: gawk
     id: test/asgext.awk
@@ -407,20 +519,29 @@ entries:
   - suite: gawk
     id: test/asort.awk
     ref: gawk-5.4.0
-    status: todo
-    reason: Original rshell rewrite not written yet.
+    status: rewritten
+    tests:
+      - gawk/arrays/asort_ignorecase_value_order.yaml
+    covers:
+      - asort supports case-sensitive and IGNORECASE value ordering
 
   - suite: gawk
     id: test/asortbool.awk
     ref: gawk-5.4.0
-    status: todo
-    reason: Original rshell rewrite not written yet.
+    status: rewritten
+    tests:
+      - gawk/arrays/asort_value_type_order.yaml
+    covers:
+      - asort can order values by GNU awk value type
 
   - suite: gawk
     id: test/asorti.awk
     ref: gawk-5.4.0
-    status: todo
-    reason: Original rshell rewrite not written yet.
+    status: rewritten
+    tests:
+      - gawk/arrays/asorti_ignorecase_index_order.yaml
+    covers:
+      - asorti supports case-sensitive and IGNORECASE index ordering
 
   - suite: gawk
     id: test/asortsymtab-mpfr.ok
@@ -431,8 +552,11 @@ entries:
   - suite: gawk
     id: test/asortsymtab.awk
     ref: gawk-5.4.0
-    status: todo
-    reason: Original rshell rewrite not written yet.
+    status: rewritten
+    tests:
+      - gawk/arrays/asort_symbol_tables_nonempty.yaml
+    covers:
+      - asort can copy special SYMTAB and FUNCTAB arrays
 
   - suite: gawk
     id: test/assignnumfield2.awk
@@ -447,188 +571,258 @@ entries:
   - suite: gawk
     id: test/awkpath.ok
     ref: gawk-5.4.0
-    status: todo
-    reason: Original rshell rewrite not written yet.
+    status: rewritten
+    tests:
+      - gawk/cli/awkpath_search_path.yaml
+    covers:
+      - AWKPATH resolves program files for -f
 
   - suite: gawk
     id: test/back89.awk
     ref: gawk-5.4.0
-    status: todo
-    reason: Original rshell rewrite not written yet.
+    status: rewritten
+    tests:
+      - gawk/regex/backslash_digit_escape_literal.yaml
+    covers:
+      - unknown numeric regexp escapes warn
+      - escaped digits match as literal digits
 
   - suite: gawk
     id: test/backbigs1.awk
     ref: gawk-5.4.0
-    status: todo
-    reason: Original rshell rewrite not written yet.
+    status: rewritten
+    tests:
+      - gawk/regex/backslash_big_s_nonspace.yaml
+    covers:
+      - GNU regexp shorthand matches non-whitespace characters
 
   - suite: gawk
     id: test/backgsub.awk
     ref: gawk-5.4.0
-    status: todo
-    reason: Original rshell rewrite not written yet.
+    status: rewritten
+    tests:
+      - gawk/regex/gsub_backslash_replacement.yaml
+    covers:
+      - gsub replacement strings can emit literal backslashes
 
   - suite: gawk
     id: test/backsmalls1.awk
     ref: gawk-5.4.0
-    status: todo
-    reason: Original rshell rewrite not written yet.
+    status: rewritten
+    tests:
+      - gawk/regex/backslash_small_s_single_whitespace.yaml
+    covers:
+      - GNU regexp shorthand matches a single whitespace character
 
   - suite: gawk
     id: test/backsmalls2.awk
     ref: gawk-5.4.0
-    status: todo
-    reason: Original rshell rewrite not written yet.
+    status: rewritten
+    tests:
+      - gawk/regex/backslash_small_s_repetition.yaml
+    covers:
+      - dynamic regexps can use GNU whitespace shorthand with repetition
 
   - suite: gawk
     id: test/backw.awk
     ref: gawk-5.4.0
-    status: todo
-    reason: Original rshell rewrite not written yet.
+    status: rewritten
+    tests:
+      - gawk/regex/backslash_w_word_match.yaml
+    covers:
+      - GNU regexp shorthand matches word characters
 
   - suite: gawk
     id: test/badargs.ok
     ref: gawk-5.4.0
-    status: todo
-    reason: Original rshell rewrite not written yet.
+    status: deferred
+    reason: Needs runner support for option-only invocations without an appended awk program.
 
   - suite: gawk
     id: test/badassign1.awk
     ref: gawk-5.4.0
-    status: todo
-    reason: Original rshell rewrite not written yet.
+    status: rewritten
+    tests:
+      - gawk/errors/field_increment_assignment_error.yaml
+    covers:
+      - post-incremented field references are not assignment targets
 
   - suite: gawk
     id: test/badbuild.awk
     ref: gawk-5.4.0
-    status: todo
-    reason: Original rshell rewrite not written yet.
+    status: rewritten
+    tests:
+      - gawk/errors/chained_comparison_syntax_error.yaml
+    covers:
+      - chained equality comparisons are syntax errors
 
   - suite: gawk
     id: test/beginfile2.sh
     ref: gawk-5.4.0
-    status: todo
-    reason: Original rshell rewrite not written yet.
+    status: rewritten
+    tests:
+      - gawk/input/beginfile_nextfile_events.yaml
+    covers:
+      - nextfile from BEGINFILE still runs ENDFILE
 
   - suite: gawk
     id: test/binmode1.ok
     ref: gawk-5.4.0
-    status: todo
-    reason: Original rshell rewrite not written yet.
+    status: rewritten
+    tests:
+      - gawk/cli/binmode_variable_assignment.yaml
+    covers:
+      - -v initializes BINMODE before BEGIN
 
   - suite: gawk
     id: test/callparam.awk
     ref: gawk-5.4.0
-    status: todo
-    reason: Original rshell rewrite not written yet.
+    status: rewritten
+    tests:
+      - gawk/errors/scalar_parameter_call_error.yaml
+    covers:
+      - scalar function parameters cannot be invoked
 
   - suite: gawk
     id: test/charasbytes.awk
     ref: gawk-5.4.0
-    status: todo
-    reason: Original rshell rewrite not written yet.
+    status: rewritten
+    tests:
+      - gawk/cli/characters_as_bytes_utf8.yaml
+    covers:
+      - --characters-as-bytes treats UTF-8 input as bytes
 
   - suite: gawk
     id: test/check_retest.awk
     ref: gawk-5.4.0
-    status: todo
-    reason: Original rshell rewrite not written yet.
+    status: rewritten
+    tests:
+      - gawk/expressions/saved_record_string_compare.yaml
+    covers:
+      - saved records retain string comparison behavior
 
   - suite: gawk
     id: test/checknegtime.awk
     ref: gawk-5.4.0
-    status: todo
-    reason: Original rshell rewrite not written yet.
+    status: rewritten
+    tests:
+      - gawk/cli/time_pre_epoch_utc.yaml
+    covers:
+      - negative timestamps round-trip through mktime and strftime
 
   - suite: gawk
     id: test/childin.awk
     ref: gawk-5.4.0
-    status: todo
-    reason: Original rshell rewrite not written yet.
+    status: deferred
+    reason: Needs policy harness support for command pipes without executing shell subprocesses.
 
   - suite: gawk
     id: test/clobber.awk
     ref: gawk-5.4.0
-    status: todo
-    reason: Original rshell rewrite not written yet.
+    status: rewritten
+    tests:
+      - gawk/io/overwrite_current_input_file.yaml
+    covers:
+      - writing to the current input path does not corrupt the current record
 
   - suite: gawk
     id: test/clos1way.awk
     ref: gawk-5.4.0
-    status: todo
-    reason: Original rshell rewrite not written yet.
+    status: deferred
+    reason: Needs policy harness support for two-way command pipes without executing shell subprocesses.
 
   - suite: gawk
     id: test/clos1way2.awk
     ref: gawk-5.4.0
-    status: todo
-    reason: Original rshell rewrite not written yet.
+    status: deferred
+    reason: Needs policy harness support for two-way command pipes without executing shell subprocesses.
 
   - suite: gawk
     id: test/clos1way3.awk
     ref: gawk-5.4.0
-    status: todo
-    reason: Original rshell rewrite not written yet.
+    status: deferred
+    reason: Needs policy harness support for two-way command pipes without executing shell subprocesses.
 
   - suite: gawk
     id: test/clos1way4.awk
     ref: gawk-5.4.0
-    status: todo
-    reason: Original rshell rewrite not written yet.
+    status: deferred
+    reason: Needs policy harness support for two-way command pipes without executing shell subprocesses.
 
   - suite: gawk
     id: test/clos1way5.awk
     ref: gawk-5.4.0
-    status: todo
-    reason: Original rshell rewrite not written yet.
+    status: deferred
+    reason: Needs policy harness support for two-way command pipes without executing shell subprocesses.
 
   - suite: gawk
     id: test/clos1way6.awk
     ref: gawk-5.4.0
-    status: todo
-    reason: Original rshell rewrite not written yet.
+    status: deferred
+    reason: Needs policy harness support for two-way command pipes without executing shell subprocesses.
 
   - suite: gawk
     id: test/close_status.awk
     ref: gawk-5.4.0
-    status: todo
-    reason: Original rshell rewrite not written yet.
+    status: deferred
+    reason: Needs policy harness support for command pipe exit status without executing shell subprocesses.
 
   - suite: gawk
     id: test/closebad.awk
     ref: gawk-5.4.0
-    status: todo
-    reason: Original rshell rewrite not written yet.
+    status: rewritten
+    tests:
+      - gawk/io/close_missing_input_redirection.yaml
+    covers:
+      - failed and unopened input redirections close with -1
 
   - suite: gawk
     id: test/clsflnam.awk
     ref: gawk-5.4.0
-    status: todo
-    reason: Original rshell rewrite not written yet.
+    status: rewritten
+    tests:
+      - gawk/io/close_current_filename_not_redirection.yaml
+    covers:
+      - close of normal FILENAME reports no opened redirection
 
   - suite: gawk
     id: test/cmdlinefsbacknl.sh
     ref: gawk-5.4.0
-    status: todo
-    reason: Original rshell rewrite not written yet.
+    status: rewritten
+    tests:
+      - gawk/cli/field_separator_backslash_newline_option.yaml
+      - gawk/cli/field_separator_backslash_newline_assignment.yaml
+    covers:
+      - command-line backslash-newline handling for FS
 
   - suite: gawk
     id: test/cmdlinefsbacknl2.sh
     ref: gawk-5.4.0
-    status: todo
-    reason: Original rshell rewrite not written yet.
+    status: rewritten
+    tests:
+      - gawk/cli/terminal_backslash_argument.yaml
+      - gawk/errors/invalid_unicode_escape_literal.yaml
+    covers:
+      - terminal backslash arguments
+      - invalid Unicode escapes
 
   - suite: gawk
     id: test/colonwarn.awk
     ref: gawk-5.4.0
-    status: todo
-    reason: Original rshell rewrite not written yet.
+    status: rewritten
+    tests:
+      - gawk/regex/bracket_class_warning.yaml
+    covers:
+      - POSIX-class-shaped bracket expressions warn
 
   - suite: gawk
     id: test/commas.awk
     ref: gawk-5.4.0
-    status: todo
-    reason: Original rshell rewrite not written yet.
+    status: rewritten
+    tests:
+      - gawk/expressions/printf_grouping_locale.yaml
+    covers:
+      - printf apostrophe flag requests locale digit grouping
 
   - suite: gawk
     id: test/compare2.awk
@@ -643,74 +837,110 @@ entries:
   - suite: gawk
     id: test/concat1.awk
     ref: gawk-5.4.0
-    status: todo
-    reason: Original rshell rewrite not written yet.
+    status: rewritten
+    tests:
+      - gawk/expressions/concat_literal_punctuation.yaml
+    covers:
+      - string concatenation preserves punctuation literals
 
   - suite: gawk
     id: test/concat2.awk
     ref: gawk-5.4.0
-    status: todo
-    reason: Original rshell rewrite not written yet.
+    status: rewritten
+    tests:
+      - gawk/expressions/function_local_concat.yaml
+    covers:
+      - user-function locals can participate in numeric concatenation
 
   - suite: gawk
     id: test/concat3.awk
     ref: gawk-5.4.0
-    status: todo
-    reason: Original rshell rewrite not written yet.
+    status: rewritten
+    tests:
+      - gawk/expressions/concat_parenthesized_uninitialized.yaml
+    covers:
+      - parenthesized concatenation handles uninitialized variables
 
   - suite: gawk
     id: test/concat4.awk
     ref: gawk-5.4.0
-    status: todo
-    reason: Original rshell rewrite not written yet.
+    status: rewritten
+    tests:
+      - gawk/expressions/concat_after_getline_index.yaml
+    covers:
+      - getline can update a string used by later concatenation and index
 
   - suite: gawk
     id: test/concat5.awk
     ref: gawk-5.4.0
-    status: todo
-    reason: Original rshell rewrite not written yet.
+    status: rewritten
+    tests:
+      - gawk/expressions/concat_numeric_uses_convfmt.yaml
+    covers:
+      - numeric concatenation uses CONVFMT while print uses OFMT
 
   - suite: gawk
     id: test/convfmt.awk
     ref: gawk-5.4.0
-    status: todo
-    reason: Original rshell rewrite not written yet.
+    status: rewritten
+    tests:
+      - gawk/expressions/convfmt_string_conversion.yaml
+    covers:
+      - changing CONVFMT affects later numeric-to-string conversion
 
   - suite: gawk
     id: test/crlf.awk
     ref: gawk-5.4.0
-    status: todo
-    reason: Original rshell rewrite not written yet.
+    status: rewritten
+    tests:
+      - gawk/cli/crlf_program_line_continuations.yaml
+    covers:
+      - CRLF program files honor line continuations
 
   - suite: gawk
     id: test/csv1.awk
     ref: gawk-5.4.0
-    status: todo
-    reason: Original rshell rewrite not written yet.
+    status: rewritten
+    tests:
+      - gawk/input/csv_quoted_fields.yaml
+    covers:
+      - CSV parsing handles quoted fields, empty fields, and doubled quotes
 
   - suite: gawk
     id: test/csv2.awk
     ref: gawk-5.4.0
-    status: todo
-    reason: Original rshell rewrite not written yet.
+    status: rewritten
+    tests:
+      - gawk/input/csv_split_function.yaml
+    covers:
+      - split uses CSV rules under --csv
 
   - suite: gawk
     id: test/csv3.awk
     ref: gawk-5.4.0
-    status: todo
-    reason: Original rshell rewrite not written yet.
+    status: rewritten
+    tests:
+      - gawk/input/csv_multiline_records.yaml
+    covers:
+      - quoted embedded newlines stay in one CSV record
 
   - suite: gawk
     id: test/csvodd.awk
     ref: gawk-5.4.0
-    status: todo
-    reason: Original rshell rewrite not written yet.
+    status: rewritten
+    tests:
+      - gawk/input/csv_record_terminators.yaml
+    covers:
+      - CSV record terminators and final unterminated records are handled
 
   - suite: gawk
     id: test/datanonl.awk
     ref: gawk-5.4.0
-    status: todo
-    reason: Original rshell rewrite not written yet.
+    status: rewritten
+    tests:
+      - gawk/input/no_trailing_newline_regex.yaml
+    covers:
+      - final input without a trailing newline is processed
 
   - suite: gawk
     id: test/dbugarray1.awk
@@ -4938,14 +5168,22 @@ entries:
   - suite: onetrueawk
     id: testdir/t.0a
     ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
-    status: todo
-    reason: Original rshell rewrite not written yet.
+    status: rewritten
+    tests:
+      - onetrueawk/basic/record_counter_nr.yaml
+    covers:
+      - actions run once per input record
+      - user counters and NR advance across records
 
   - suite: onetrueawk
     id: testdir/t.1
     ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
-    status: todo
-    reason: Original rshell rewrite not written yet.
+    status: rewritten
+    tests:
+      - onetrueawk/fields/colon_field_separator.yaml
+    covers:
+      - BEGIN sets FS before input
+      - numbered fields reflect colon splitting
 
   - suite: onetrueawk
     id: testdir/t.1.x
@@ -4956,8 +5194,12 @@ entries:
   - suite: onetrueawk
     id: testdir/t.2
     ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
-    status: todo
-    reason: Original rshell rewrite not written yet.
+    status: rewritten
+    tests:
+      - onetrueawk/output/custom_ofs.yaml
+    covers:
+      - OFS controls separators in print output
+      - comma-separated print expressions use OFS
 
   - suite: onetrueawk
     id: testdir/t.2.x
@@ -4974,8 +5216,12 @@ entries:
   - suite: onetrueawk
     id: testdir/t.4
     ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
-    status: todo
-    reason: Original rshell rewrite not written yet.
+    status: rewritten
+    tests:
+      - onetrueawk/regex/or_pattern_only.yaml
+    covers:
+      - pattern-only rules print matching records
+      - logical OR combines regex conditions
 
   - suite: onetrueawk
     id: testdir/t.4.x
@@ -4992,8 +5238,12 @@ entries:
   - suite: onetrueawk
     id: testdir/t.6
     ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
-    status: todo
-    reason: Original rshell rewrite not written yet.
+    status: rewritten
+    tests:
+      - onetrueawk/control/division_loop_variants.yaml
+    covers:
+      - while loops update numeric loop variables
+      - regex-matched actions can contain loops
 
   - suite: onetrueawk
     id: testdir/t.6.x
@@ -5004,14 +5254,22 @@ entries:
   - suite: onetrueawk
     id: testdir/t.6a
     ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
-    status: todo
-    reason: Original rshell rewrite not written yet.
+    status: rewritten
+    tests:
+      - onetrueawk/control/division_loop_variants.yaml
+    covers:
+      - for loops can update numeric loop state in the body
+      - division assignment can drive loop progress
 
   - suite: onetrueawk
     id: testdir/t.6b
     ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
-    status: todo
-    reason: Original rshell rewrite not written yet.
+    status: rewritten
+    tests:
+      - onetrueawk/control/division_loop_variants.yaml
+    covers:
+      - for loop conditions can update numeric loop state
+      - division in the loop condition controls iteration
 
   - suite: onetrueawk
     id: testdir/t.8.x
@@ -5028,20 +5286,32 @@ entries:
   - suite: onetrueawk
     id: testdir/t.NF
     ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
-    status: todo
-    reason: Original rshell rewrite not written yet.
+    status: rewritten
+    tests:
+      - onetrueawk/fields/nf_assignment_rebuild.yaml
+    covers:
+      - assigning NF truncates records
+      - assigning high-numbered fields extends records with OFS
 
   - suite: onetrueawk
     id: testdir/t.a
     ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
-    status: todo
-    reason: Original rshell rewrite not written yet.
+    status: rewritten
+    tests:
+      - onetrueawk/arrays/first_seen_totals.yaml
+    covers:
+      - associative arrays accumulate totals by key
+      - a second array preserves first-seen key order
 
   - suite: onetrueawk
     id: testdir/t.addops
     ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
-    status: todo
-    reason: Original rshell rewrite not written yet.
+    status: rewritten
+    tests:
+      - onetrueawk/expressions/assignment_operators.yaml
+    covers:
+      - compound arithmetic assignments
+      - exponentiation assignment with ^ and **
 
   - suite: onetrueawk
     id: testdir/t.aeiou
@@ -5058,26 +5328,42 @@ entries:
   - suite: onetrueawk
     id: testdir/t.arith
     ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
-    status: todo
-    reason: Original rshell rewrite not written yet.
+    status: rewritten
+    tests:
+      - onetrueawk/expressions/arithmetic_operators.yaml
+    covers:
+      - core arithmetic operators
+      - exponentiation with ^ and **
 
   - suite: onetrueawk
     id: testdir/t.array
     ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
-    status: todo
-    reason: Original rshell rewrite not written yet.
+    status: rewritten
+    tests:
+      - onetrueawk/arrays/record_storage_split.yaml
+    covers:
+      - arrays can store records by numeric index
+      - split can parse stored records during END
 
   - suite: onetrueawk
     id: testdir/t.array1
     ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
-    status: todo
-    reason: Original rshell rewrite not written yet.
+    status: rewritten
+    tests:
+      - onetrueawk/arrays/unique_field_counts.yaml
+    covers:
+      - loops over NF can count each field
+      - associative arrays track first-seen field values
 
   - suite: onetrueawk
     id: testdir/t.array2
     ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
-    status: todo
-    reason: Original rshell rewrite not written yet.
+    status: rewritten
+    tests:
+      - onetrueawk/arrays/regex_bucket_counts.yaml
+    covers:
+      - multiple regex actions update shared array counters
+      - negated regex actions populate fallback buckets
 
   - suite: onetrueawk
     id: testdir/t.assert
@@ -5088,32 +5374,52 @@ entries:
   - suite: onetrueawk
     id: testdir/t.avg
     ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
-    status: todo
-    reason: Original rshell rewrite not written yet.
+    status: rewritten
+    tests:
+      - onetrueawk/records/sum_count_average.yaml
+    covers:
+      - record actions accumulate sums and counts
+      - END computes aggregate averages
 
   - suite: onetrueawk
     id: testdir/t.b.x
     ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
-    status: todo
-    reason: Original rshell rewrite not written yet.
+    status: rewritten
+    tests:
+      - onetrueawk/fields/assign_high_field.yaml
+    covers:
+      - assigning high-numbered fields extends NF
+      - field assignment rebuilds the current record
 
   - suite: onetrueawk
     id: testdir/t.be
     ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
-    status: todo
-    reason: Original rshell rewrite not written yet.
+    status: rewritten
+    tests:
+      - onetrueawk/basic/begin_filename_and_end_nr.yaml
+    covers:
+      - BEGIN executes before stdin FILENAME is set
+      - END observes the final NR
 
   - suite: onetrueawk
     id: testdir/t.beginexit
     ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
-    status: todo
-    reason: Original rshell rewrite not written yet.
+    status: rewritten
+    tests:
+      - onetrueawk/control/begin_getline_exit.yaml
+    covers:
+      - getline in BEGIN consumes main input
+      - exit in BEGIN skips normal record actions
 
   - suite: onetrueawk
     id: testdir/t.beginnext
     ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
-    status: todo
-    reason: Original rshell rewrite not written yet.
+    status: rewritten
+    tests:
+      - onetrueawk/control/begin_getline_then_main.yaml
+    covers:
+      - getline in BEGIN advances NR
+      - normal actions resume after BEGIN consumes input
 
   - suite: onetrueawk
     id: testdir/t.break

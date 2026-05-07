@@ -1,0 +1,36 @@
+description: asort with @val_type_asc orders numbers, booleans, strings, and arrays by value type
+upstream:
+  suite: gawk
+  id: test/asortbool.awk
+  ref: gawk-5.4.0
+covers:
+  - asort accepts the @val_type_asc comparator
+  - boolean values retain their boolean type during sorting
+  - array values sort after scalar values and remain arrays
+input:
+  program: |
+    BEGIN {
+      values["word"] = "kiwi"
+      values["neg"] = -3
+      values["truth"] = mkbool(1)
+      values["falsehood"] = mkbool(0)
+      values["nested"]["x"] = 12
+      values["pos"] = 9
+
+      n = asort(values, sorted, "@val_type_asc")
+      for (i = 1; i <= n; i++) {
+        if (isarray(sorted[i]))
+          print i ":" typeof(sorted[i]) ":" sorted[i]["x"]
+        else
+          print i ":" typeof(sorted[i]) ":" sorted[i]
+      }
+    }
+expect:
+  stdout: |
+    1:number:-3
+    2:number|bool:0
+    3:number|bool:1
+    4:number:9
+    5:string:kiwi
+    6:array:12
+  exit_code: 0

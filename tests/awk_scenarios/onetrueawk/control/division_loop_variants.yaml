@@ -1,0 +1,40 @@
+description: while and for loop conditions can update numeric loop variables
+upstream:
+  suite: onetrueawk
+  id: testdir/t.6
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - regex actions can contain while loops
+  - for loops can update variables in the body or condition
+  - numeric division updates loop state
+input:
+  program: |
+    /keep/ {
+      value = $1
+      while (value >= 1) {
+        print "w", value
+        value = value / 10
+      }
+
+      for (value = $1; value >= 1; ) {
+        value /= 10
+        print "f-body", value
+      }
+
+      for (value = $1; (value /= 10) >= 1; ) {
+        print "f-cond", value
+      }
+    }
+  stdin: |
+    100 keep
+expect:
+  stdout: |
+    w 100
+    w 10
+    w 1
+    f-body 10
+    f-body 1
+    f-body 0.1
+    f-cond 10
+    f-cond 1
+  exit_code: 0

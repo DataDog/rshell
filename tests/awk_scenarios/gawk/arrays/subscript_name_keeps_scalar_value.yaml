@@ -1,0 +1,21 @@
+description: using a scalar variable as an array subscript leaves the scalar value intact
+upstream:
+  suite: gawk
+  id: test/arysubnm.awk
+  ref: gawk-5.4.0
+covers:
+  - a variable used as an array subscript keeps its scalar value
+  - subsequent numeric comparisons use the original scalar value
+input:
+  program: |
+    BEGIN {
+      limit = 4
+      marks[limit] = "edge"
+      print "cmp=" (3 < limit)
+      print "value=" marks[4]
+    }
+expect:
+  stdout: |
+    cmp=1
+    value=edge
+  exit_code: 0

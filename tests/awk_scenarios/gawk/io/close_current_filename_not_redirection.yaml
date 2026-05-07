@@ -1,0 +1,32 @@
+description: close(FILENAME) after normal input getline reports that no redirection was opened
+upstream:
+  suite: gawk
+  id: test/clsflnam.awk
+  ref: gawk-5.4.0
+covers:
+  - non-redirected getline in BEGIN sets FILENAME from the current input file
+  - close(FILENAME) does not close the main input stream as a redirection
+  - ERRNO explains the failed close call
+setup:
+  files:
+    - path: current.txt
+      content: |
+        one
+        two
+input:
+  program: |
+    BEGIN {
+      getline
+      print "first=" $0
+      print "close=" close(FILENAME)
+      print "errno=" ERRNO
+      exit
+    }
+  args:
+    - current.txt
+expect:
+  stdout: |
+    first=one
+    close=-1
+    errno=close of redirection that was never opened
+  exit_code: 0

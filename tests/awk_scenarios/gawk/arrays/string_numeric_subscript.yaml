@@ -1,0 +1,27 @@
+description: string-numeric array subscripts keep their original string form
+upstream:
+  suite: gawk
+  id: test/arrayind3.awk
+  ref: gawk-5.4.0
+covers:
+  - a string-numeric value used as an array subscript remains a string key
+  - numeric comparisons on a loop variable do not rewrite the array key
+  - numeric and string spellings of a subscript can address different elements
+input:
+  program: |
+    BEGIN {
+      split("00042", key)
+      seen[0] = "zero"
+      seen[key[1]] = "padded"
+      for (slot in seen) {
+        if (slot != 0)
+          copied[slot] = seen[slot]
+      }
+      print copied[42] == "" ? "numeric-empty" : copied[42]
+      print copied["00042"]
+    }
+expect:
+  stdout: |
+    numeric-empty
+    padded
+  exit_code: 0

@@ -1,0 +1,37 @@
+description: arithmetic operators combine fields and record numbers
+upstream:
+  suite: onetrueawk
+  id: testdir/t.arith
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - addition, subtraction, multiplication, division, and modulo operators
+  - unary minus negates numeric values
+  - ^ and ** both perform exponentiation
+input:
+  program: |
+    {
+      print NR, $1 + $1, $1 - $1, $1 * $1
+      print NR, $1 / NR, $1 % NR
+      print NR, -$1
+    }
+
+    $1 > 0 {
+      print NR, $1 ^ 0.5
+      print NR, $1 ** 0.5
+    }
+  stdin: |
+    9
+    10
+expect:
+  stdout: |
+    1 18 0 81
+    1 9 0
+    1 -9
+    1 3
+    1 3
+    2 20 0 100
+    2 5 0
+    2 -10
+    2 3.16228
+    2 3.16228
+  exit_code: 0

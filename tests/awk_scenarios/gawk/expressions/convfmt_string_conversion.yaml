@@ -1,0 +1,27 @@
+description: changing CONVFMT affects later numeric-to-string conversion
+upstream:
+  suite: gawk
+  id: test/convfmt.awk
+  ref: gawk-5.4.0
+covers:
+  - CONVFMT controls numeric conversion for string contexts
+  - changing CONVFMT affects subsequent string-format requests
+  - arithmetic refreshes the numeric value before another string conversion
+input:
+  program: |
+    BEGIN {
+      CONVFMT = "%.1f"
+      value = 7.25
+      shadow = value ""
+      printf "%s\n", value
+      CONVFMT = "%.4f"
+      printf "%s\n", value
+      value += 0
+      printf "%s\n", value
+    }
+expect:
+  stdout: |
+    7.2
+    7.2500
+    7.2500
+  exit_code: 0

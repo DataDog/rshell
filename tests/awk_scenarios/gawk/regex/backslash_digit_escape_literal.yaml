@@ -1,0 +1,24 @@
+description: unknown digit escapes in regexp literals are parsed as literal digits
+upstream:
+  suite: gawk
+  id: test/back89.awk
+  ref: gawk-5.4.0
+covers:
+  - unrecognized numeric regexp escapes produce a warning
+  - the escaped digit is matched as the digit itself
+  - a backslash before the input digit is not required for the match
+input:
+  program: |
+    /node\8/ {
+      print "hit:" $0
+    }
+  stdin: |
+    node8
+    node\8
+expect:
+  stdout: |
+    hit:node8
+  stderr_contains:
+    - regexp escape sequence
+    - treated as plain
+  exit_code: 0

@@ -1,0 +1,23 @@
+description: a parameter first assigned as a scalar cannot be indexed as an array
+upstream:
+  suite: gawk
+  id: test/aryprm5.awk
+  ref: gawk-5.4.0
+covers:
+  - scalar assignment fixes a function parameter as scalar
+  - subsequent array indexing of that parameter is rejected
+input:
+  program: |
+    function mix(x) {
+      x = "label"
+      x["item"] = 1
+    }
+
+    BEGIN {
+      mix(flag)
+    }
+expect:
+  stderr_contains:
+    - "fatal: attempt to use scalar parameter"
+    - "as an array"
+  exit_code: 2

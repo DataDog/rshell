@@ -1,0 +1,21 @@
+description: AWKPATH is searched when a program file is not in the current directory
+upstream:
+  suite: gawk
+  id: test/awkpath.ok
+  ref: gawk-5.4.0
+covers:
+  - AWKPATH directories are used to resolve -f program files
+  - a program loaded through AWKPATH runs as the main awk program
+setup:
+  files:
+    - path: modules/search_case.awk
+      content: |
+        BEGIN { print "loaded from search path" }
+input:
+  envs:
+    AWKPATH: modules
+  program_file: search_case.awk
+expect:
+  stdout: |
+    loaded from search path
+  exit_code: 0

@@ -1,0 +1,41 @@
+description: nextfile from BEGINFILE skips records but still runs ENDFILE
+upstream:
+  suite: gawk
+  id: test/beginfile2.sh
+  ref: gawk-5.4.0
+covers:
+  - BEGINFILE runs before records from each input file
+  - nextfile inside BEGINFILE skips record actions for that file
+  - ENDFILE runs for skipped and processed files
+setup:
+  files:
+    - path: first.txt
+      content: |
+        skip me
+    - path: second.txt
+      content: |
+        red
+        blue
+input:
+  program: |
+    BEGINFILE {
+      print "start:" FILENAME ":" ARGIND
+      if (FILENAME == "first.txt")
+        nextfile
+    }
+    { print "record:" FILENAME ":" FNR ":" $0 }
+    ENDFILE { print "end:" FILENAME ":" FNR }
+    END { print "total:" NR }
+  args:
+    - first.txt
+    - second.txt
+expect:
+  stdout: |
+    start:first.txt:1
+    end:first.txt:0
+    start:second.txt:2
+    record:second.txt:1:red
+    record:second.txt:2:blue
+    end:second.txt:2
+    total:2
+  exit_code: 0

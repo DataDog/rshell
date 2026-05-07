@@ -1,0 +1,22 @@
+description: command-line FS assignments remove backslash-newline before reading records
+upstream:
+  suite: gawk
+  id: test/cmdlinefsbacknl.sh
+  ref: gawk-5.4.0
+covers:
+  - variable assignments in file operands can contain backslash-newline
+  - command-line FS assignments affect field splitting for stdin
+input:
+  program: |
+    { print "fs:" FS ":" NF }
+  args:
+    - |-
+      FS=\
+      a
+    - "-"
+  stdin: |
+    xay
+expect:
+  stdout: |
+    fs:a:2
+  exit_code: 0

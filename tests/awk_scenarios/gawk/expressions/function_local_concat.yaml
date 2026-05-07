@@ -1,0 +1,27 @@
+description: function locals concatenate numeric values consistently across calls
+upstream:
+  suite: gawk
+  id: test/concat2.awk
+  ref: gawk-5.4.0
+covers:
+  - function-local variables can be assigned numeric values
+  - adjacent local variables concatenate through string conversion
+  - repeated function calls do not leak prior local values
+input:
+  program: |
+    function stamp(prefix, count, result) {
+      count = 4
+      prefix = 2
+      result = prefix count
+      return result
+    }
+    BEGIN {
+      for (i = 1; i <= 3; i++)
+        print stamp()
+    }
+expect:
+  stdout: |
+    24
+    24
+    24
+  exit_code: 0

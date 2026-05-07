@@ -1,0 +1,45 @@
+description: asort orders string values differently when IGNORECASE is enabled
+upstream:
+  suite: gawk
+  id: test/asort.awk
+  ref: gawk-5.4.0
+covers:
+  - asort rewrites the source array with one-based numeric indexes
+  - default string sorting is case-sensitive
+  - IGNORECASE changes asort string ordering
+input:
+  program: |
+    function fill(a) {
+      delete a
+      a[1] = "pear"
+      a[2] = "Apricot"
+      a[3] = "banana"
+      a[4] = "Cherry"
+    }
+
+    BEGIN {
+      IGNORECASE = 0
+      fill(fruit)
+      n = asort(fruit)
+      print "strict"
+      for (i = 1; i <= n; i++) print fruit[i]
+
+      IGNORECASE = 1
+      fill(fruit)
+      n = asort(fruit)
+      print "folded"
+      for (i = 1; i <= n; i++) print fruit[i]
+    }
+expect:
+  stdout: |
+    strict
+    Apricot
+    Cherry
+    banana
+    pear
+    folded
+    Apricot
+    banana
+    Cherry
+    pear
+  exit_code: 0

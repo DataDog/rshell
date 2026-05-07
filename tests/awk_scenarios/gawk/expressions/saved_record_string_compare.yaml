@@ -1,0 +1,27 @@
+description: saved record text can be compared against later records
+upstream:
+  suite: gawk
+  id: test/check_retest.awk
+  ref: gawk-5.4.0
+covers:
+  - the first record can be saved as a string value
+  - later records compare equal to the saved string after intervening input
+  - modulo expressions can select records for comparison
+input:
+  program: |
+    {
+      if (NR == 1)
+        saved = $0
+      if (NR % 2 == 0)
+        print (saved == $0 ? "repeat" : "changed") ":" NR
+    }
+  stdin: |
+    alpha
+    alpha
+    beta
+    alpha
+expect:
+  stdout: |
+    repeat:2
+    repeat:4
+  exit_code: 0

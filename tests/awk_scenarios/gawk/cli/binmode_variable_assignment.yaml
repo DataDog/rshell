@@ -1,0 +1,18 @@
+description: BINMODE can be assigned before BEGIN with -v
+upstream:
+  suite: gawk
+  id: test/binmode1.ok
+  ref: gawk-5.4.0
+covers:
+  - -v initializes BINMODE before BEGIN executes
+  - numeric BINMODE assignments are visible as awk variables
+input:
+  awk_args:
+    - -v
+    - BINMODE=3
+  program: |
+    BEGIN { print BINMODE }
+expect:
+  stdout: |
+    3
+  exit_code: 0

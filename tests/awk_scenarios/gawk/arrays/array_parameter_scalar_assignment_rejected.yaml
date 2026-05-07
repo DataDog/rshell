@@ -1,0 +1,27 @@
+description: an array parameter cannot be reassigned as a scalar in a deeper call
+upstream:
+  suite: gawk
+  id: test/arryref3.awk
+  ref: gawk-5.4.0
+covers:
+  - an array passed through multiple function parameters remains an array
+  - assigning a scalar to that aliased array parameter is a fatal error
+input:
+  program: |
+    function wrap(items) {
+      items["safe"] = "yes"
+      coerce(items)
+    }
+
+    function coerce(alias) {
+      alias = "scalar"
+    }
+
+    BEGIN {
+      wrap(list)
+    }
+expect:
+  stderr_contains:
+    - "fatal: attempt to use array"
+    - "in a scalar context"
+  exit_code: 2

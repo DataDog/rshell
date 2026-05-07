@@ -1,0 +1,30 @@
+description: a callee can update a global array while the caller holds it as a parameter
+upstream:
+  suite: gawk
+  id: test/arrymem1.awk
+  ref: gawk-5.4.0
+covers:
+  - array parameters alias the original global array
+  - a helper called without arguments can update the same global array
+  - the caller observes updates made through the global name
+input:
+  program: |
+    function outer(alias) {
+      alias["slot"] = "outer"
+      helper()
+      print "inside=" alias["slot"]
+    }
+
+    function helper() {
+      shared["slot"] = "helper"
+    }
+
+    BEGIN {
+      outer(shared)
+      print "outside=" shared["slot"]
+    }
+expect:
+  stdout: |
+    inside=helper
+    outside=helper
+  exit_code: 0

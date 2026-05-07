@@ -1,0 +1,25 @@
+description: anchors match the boundaries of a paragraph record
+upstream:
+  suite: gawk
+  id: test/anchor.awk
+  ref: gawk-5.4.0
+covers:
+  - an empty RS groups input into paragraph records
+  - ^ matches the beginning of the whole record
+  - $ matches the end of the whole record
+input:
+  program: |
+    BEGIN { RS = "" }
+    {
+      print /^start/ ? "starts" : "no-start"
+      print /end$/ ? "ends" : "no-end"
+    }
+  stdin: |
+    start one
+    middle
+    end
+expect:
+  stdout: |
+    starts
+    ends
+  exit_code: 0

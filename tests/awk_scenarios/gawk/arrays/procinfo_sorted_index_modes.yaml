@@ -1,0 +1,39 @@
+description: PROCINFO sorted_in orders array traversal by numeric and string index
+upstream:
+  suite: gawk
+  id: test/arraysort.awk
+  ref: gawk-5.4.0
+covers:
+  - PROCINFO sorted_in controls for-in traversal order
+  - numeric index ordering treats numeric-looking subscripts numerically
+  - string index ordering compares the original subscript strings
+input:
+  program: |
+    BEGIN {
+      values[5] = "five"
+      values["2x"] = "mixed"
+      values[1] = "one"
+      values["03"] = "leading"
+      values[-1] = "minus"
+
+      PROCINFO["sorted_in"] = "@ind_num_asc"
+      for (k in values) print "num[" k "]=" values[k]
+      print "--"
+
+      PROCINFO["sorted_in"] = "@ind_str_asc"
+      for (k in values) print "str[" k "]=" values[k]
+    }
+expect:
+  stdout: |
+    num[-1]=minus
+    num[1]=one
+    num[2x]=mixed
+    num[03]=leading
+    num[5]=five
+    --
+    str[-1]=minus
+    str[03]=leading
+    str[1]=one
+    str[2x]=mixed
+    str[5]=five
+  exit_code: 0

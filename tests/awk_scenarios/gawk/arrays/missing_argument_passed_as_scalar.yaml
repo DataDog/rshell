@@ -1,0 +1,29 @@
+description: an omitted argument passed onward can still be assigned as a local scalar
+upstream:
+  suite: gawk
+  id: test/aryprm9.awk
+  ref: gawk-5.4.0
+covers:
+  - an omitted function argument can be passed to another function
+  - the receiving function can assign that argument as a scalar
+  - repeated calls do not leak state between missing argument slots
+input:
+  program: |
+    BEGIN {
+      for (i = 0; i < 4; i++) relay()
+      print "calls=" calls
+    }
+
+    function relay(optional) {
+      target("tag", optional)
+    }
+
+    function target(label, slot, tmp) {
+      tmp = slot ""
+      slot = label
+      calls++
+    }
+expect:
+  stdout: |
+    calls=4
+  exit_code: 0

@@ -1,0 +1,38 @@
+description: asort orders a nested array and honors IGNORECASE
+upstream:
+  suite: gawk
+  id: test/aasort.awk
+  ref: gawk-5.4.0
+covers:
+  - asort can sort an array stored inside another array
+  - asort returns the number of sorted elements
+  - IGNORECASE changes string ordering for asort
+input:
+  program: |
+    function load() {
+      delete shelf["names"]
+      shelf["names"][1] = "ant"
+      shelf["names"][2] = "Bee"
+      shelf["names"][3] = "cat"
+    }
+
+    BEGIN {
+      load()
+      n = asort(shelf["names"])
+      for (i = 1; i <= n; i++) print shelf["names"][i]
+      print "--"
+      IGNORECASE = 1
+      load()
+      n = asort(shelf["names"])
+      for (i = 1; i <= n; i++) print shelf["names"][i]
+    }
+expect:
+  stdout: |
+    Bee
+    ant
+    cat
+    --
+    ant
+    Bee
+    cat
+  exit_code: 0

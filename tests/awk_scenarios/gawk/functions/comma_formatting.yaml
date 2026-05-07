@@ -1,0 +1,30 @@
+description: a user function can combine numeric formatting and repeated substitution
+upstream:
+  suite: gawk
+  id: test/addcomma.awk
+  ref: gawk-5.4.0
+covers:
+  - user-defined functions can call themselves recursively
+  - sprintf produces fixed-width fractional output
+  - sub updates the leftmost matching digit group inside a loop
+input:
+  program: |
+    function commas(value, text) {
+      if (value < 0) return "-" commas(-value)
+      text = sprintf("%.2f", value)
+      while (text ~ /[0-9][0-9][0-9][0-9]/)
+        sub(/[0-9][0-9][0-9][,.]/, ",&", text)
+      return text
+    }
+
+    BEGIN {
+      print commas(12)
+      print commas(1234.5)
+      print commas(-9876543.21)
+    }
+expect:
+  stdout: |
+    12.00
+    1,234.50
+    -9,876,543.21
+  exit_code: 0

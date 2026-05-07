@@ -1,0 +1,33 @@
+description: writing to the current input file does not corrupt the current record
+upstream:
+  suite: gawk
+  id: test/clobber.awk
+  ref: gawk-5.4.0
+covers:
+  - output redirection can target the same path as the current input file
+  - the already-read current record remains available after truncating the file
+  - closing and rereading the redirection sees the rewritten file contents
+setup:
+  files:
+    - path: number.txt
+      content: |
+        0041
+input:
+  program: |
+    {
+      next_value = sprintf("%04d", $1 + 1)
+      print next_value > FILENAME
+      print "seen:" next_value
+    }
+    END {
+      close(FILENAME)
+      getline reread < FILENAME
+      print "file:" reread
+    }
+  args:
+    - number.txt
+expect:
+  stdout: |
+    seen:0042
+    file:0042
+  exit_code: 0

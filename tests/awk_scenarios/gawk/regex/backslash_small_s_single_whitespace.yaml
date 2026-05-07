@@ -1,0 +1,24 @@
+description: backslash-small-s matches one whitespace character
+upstream:
+  suite: gawk
+  id: test/backsmalls1.awk
+  ref: gawk-5.4.0
+covers:
+  - \s matches an ordinary space
+  - \s matches a tab escape in a string
+  - anchored \s does not match a non-space character
+input:
+  program: |
+    BEGIN {
+      chars[1] = " "
+      chars[2] = "\t"
+      chars[3] = "x"
+      for (i = 1; i <= 3; i++)
+        print (chars[i] ~ /^\s$/ ? "whitespace" : "other")
+    }
+expect:
+  stdout: |
+    whitespace
+    whitespace
+    other
+  exit_code: 0

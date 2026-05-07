@@ -1,0 +1,33 @@
+description: nested arrays keep their shape across deletes and function calls
+upstream:
+  suite: gawk
+  id: test/aarray1.awk
+  ref: gawk-5.4.0
+covers:
+  - arrays can contain subarrays and scalar entries
+  - delete can remove scalar entries before a key is reused as a subarray
+  - function parameters can reference nested arrays
+input:
+  program: |
+    function bump(bucket) {
+      bucket["first"] += 10
+    }
+
+    BEGIN {
+      ledger["north"]["first"] = 3
+      ledger["north"]["second"] = 5
+      ledger["south"] = "pending"
+      print length(ledger), length(ledger["north"])
+      delete ledger["south"]
+      ledger["south"]["first"] = 8
+      ledger["south"]["second"] = 13
+      bump(ledger["north"])
+      print ledger["north"]["first"], ledger["north"]["second"]
+      print ledger["south"]["first"] + ledger["south"]["second"]
+    }
+expect:
+  stdout: |
+    2 2
+    13 5
+    21
+  exit_code: 0

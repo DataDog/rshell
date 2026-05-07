@@ -1,0 +1,15 @@
+description: assigning through a post-incremented field reference is rejected
+upstream:
+  suite: gawk
+  id: test/badassign1.awk
+  ref: gawk-5.4.0
+covers:
+  - field post-increment expressions are not valid assignment targets
+  - parse-time assignment target errors exit nonzero
+input:
+  program: |
+    BEGIN { i = 1; $i++ = 7 }
+expect:
+  stderr_contains:
+    - cannot assign a value to the result of a field post-increment expression
+  exit_code: 1

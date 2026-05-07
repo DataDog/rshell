@@ -1,0 +1,25 @@
+description: membership testing an array parameter prevents later scalar assignment
+upstream:
+  suite: gawk
+  id: test/aryprm1.awk
+  ref: gawk-5.4.0
+covers:
+  - the in operator treats a function parameter as an array
+  - assigning a scalar to that same parameter is a fatal error
+input:
+  program: |
+    function probe(slot) {
+      print "member=" ("ready" in slot)
+      slot = "scalar"
+    }
+
+    BEGIN {
+      probe(box)
+    }
+expect:
+  stdout: |
+    member=0
+  stderr_contains:
+    - "fatal: attempt to use array"
+    - "in a scalar context"
+  exit_code: 2

@@ -1,0 +1,32 @@
+description: nested calls update one array through both a global name and a parameter alias
+upstream:
+  suite: gawk
+  id: test/arryref2.awk
+  ref: gawk-5.4.0
+covers:
+  - array parameters remain aliases across nested function calls
+  - assignments through a global array name are visible through the parameter
+  - assignments through the parameter are visible after the call returns
+input:
+  program: |
+    function first(view) {
+      second(view)
+      view["after"] = "local"
+    }
+
+    function second(ref) {
+      ledger["global"] = "root"
+      ref["before"] = "param"
+    }
+
+    BEGIN {
+      first(ledger)
+      PROCINFO["sorted_in"] = "@ind_str_asc"
+      for (k in ledger) print k "=" ledger[k]
+    }
+expect:
+  stdout: |
+    after=local
+    before=param
+    global=root
+  exit_code: 0

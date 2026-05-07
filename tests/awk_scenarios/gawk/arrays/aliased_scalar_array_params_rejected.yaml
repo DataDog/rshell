@@ -1,0 +1,22 @@
+description: passing one variable as scalar and array parameters rejects the array use
+upstream:
+  suite: gawk
+  id: test/aryprm7.awk
+  ref: gawk-5.4.0
+covers:
+  - the same actual argument can be bound to multiple parameters
+  - scalar use through one parameter affects array use through another alias
+input:
+  program: |
+    function copy(left, right) {
+      right["copy"] = left
+    }
+
+    BEGIN {
+      copy(item, item)
+    }
+expect:
+  stderr_contains:
+    - "fatal: attempt to use scalar parameter"
+    - "as an array"
+  exit_code: 2

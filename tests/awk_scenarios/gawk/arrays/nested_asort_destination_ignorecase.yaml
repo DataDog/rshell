@@ -1,0 +1,34 @@
+description: asort sorts a nested source array into a nested destination with IGNORECASE
+upstream:
+  suite: gawk
+  id: test/arraysort2.awk
+  ref: gawk-5.4.0
+covers:
+  - asort accepts an array stored inside another array as its source
+  - asort writes sorted values to a separate nested destination array
+  - IGNORECASE affects the nested array sort order
+input:
+  program: |
+    function fill() {
+      delete stash["raw"]
+      stash["raw"]["c"] = "cello"
+      stash["raw"]["B"] = "Banjo"
+      stash["raw"]["a"] = "accordion"
+    }
+
+    BEGIN {
+      IGNORECASE = 1
+      fill()
+      n = asort(stash["raw"], stash["ordered"])
+      print "n=" n
+      for (i = 1; i <= n; i++) print i ":" stash["ordered"][i]
+      print "raw-c=" stash["raw"]["c"]
+    }
+expect:
+  stdout: |
+    n=3
+    1:accordion
+    2:Banjo
+    3:cello
+    raw-c=cello
+  exit_code: 0

@@ -1,0 +1,27 @@
+description: --characters-as-bytes treats a UTF-8 character as separate input bytes
+upstream:
+  suite: gawk
+  id: test/charasbytes.awk
+  ref: gawk-5.4.0
+covers:
+  - --characters-as-bytes changes string length from characters to bytes
+  - regex dot visits each byte of a multibyte input character
+input:
+  awk_args:
+    - --characters-as-bytes
+  envs:
+    LC_ALL: en_US.UTF-8
+  program: |
+    {
+      print length($0)
+      print gsub(/./, "x", $0)
+      print $0
+    }
+  stdin: |
+    é
+expect:
+  stdout: |
+    2
+    2
+    xx
+  exit_code: 0

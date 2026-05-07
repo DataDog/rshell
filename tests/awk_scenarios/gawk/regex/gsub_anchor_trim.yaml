@@ -1,0 +1,31 @@
+description: gsub with a beginning anchor removes only leading whitespace
+upstream:
+  suite: gawk
+  id: test/anchgsub.awk
+  ref: gawk-5.4.0
+covers:
+  - gsub honors the beginning-of-string anchor
+  - character classes can include space and tab
+  - replacement updates the current record when no target is supplied
+input:
+  program: |
+    BEGIN {
+      lines[1] = "  alpha"
+      lines[2] = sprintf("%cbeta", 9)
+      lines[3] = "gamma  "
+      for (i = 1; i <= 3; i++) {
+        $0 = lines[i]
+        trim()
+      }
+    }
+
+    function trim() {
+      gsub(/^[ \t]*/, "")
+      print "[" $0 "]"
+    }
+expect:
+  stdout: |
+    [alpha]
+    [beta]
+    [gamma  ]
+  exit_code: 0

@@ -1,0 +1,26 @@
+description: changing CONVFMT does not rename an existing numeric array subscript
+upstream:
+  suite: gawk
+  id: test/arynasty.awk
+  ref: gawk-5.4.0
+covers:
+  - numeric subscripts are converted to strings when the element is created
+  - later CONVFMT changes do not rewrite existing array indexes
+  - membership tests distinguish the stored subscript from a newly rounded spelling
+input:
+  program: |
+    BEGIN {
+      amount = 7.125
+      cache[amount] = "saved"
+      CONVFMT = "%.1f"
+
+      for (k in cache) print "key=" k, "value=" cache[k]
+      print "old", ("7.125" in cache)
+      print "rounded", ("7.1" in cache)
+    }
+expect:
+  stdout: |
+    key=7.125 value=saved
+    old 1
+    rounded 0
+  exit_code: 0

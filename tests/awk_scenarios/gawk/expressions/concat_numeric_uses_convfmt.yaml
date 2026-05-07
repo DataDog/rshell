@@ -1,0 +1,23 @@
+description: numeric concatenation uses CONVFMT while print uses OFMT
+upstream:
+  suite: gawk
+  id: test/concat5.awk
+  ref: gawk-5.4.0
+covers:
+  - print formats numeric values with OFMT
+  - concatenation converts numeric values through CONVFMT
+  - arithmetic before concatenation keeps the value numeric until string conversion
+input:
+  program: |
+    BEGIN {
+      OFMT = "%.10f"
+      amount = 2
+      amount += .25
+      print amount
+      print amount "kg"
+    }
+expect:
+  stdout: |
+    2.2500000000
+    2.25kg
+  exit_code: 0

@@ -1,0 +1,23 @@
+description: split uses CSV rules when --csv is active
+upstream:
+  suite: gawk
+  id: test/csv2.awk
+  ref: gawk-5.4.0
+covers:
+  - split observes CSV quoting with --csv
+  - split preserves trailing empty CSV fields
+input:
+  awk_args:
+    - --csv
+  program: |
+    BEGIN {
+      n = split("alpha,\"bravo,charlie\",", f)
+      print n ":" f[1] ":" f[2] ":" ((3 in f) ? "present" : "missing") ":" f[3]
+      n = split("\"one\"\"two\",three", f)
+      print n ":" f[1] ":" f[2]
+    }
+expect:
+  stdout: |
+    3:alpha:bravo,charlie:present:
+    2:one"two:three
+  exit_code: 0

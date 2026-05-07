@@ -1,0 +1,27 @@
+description: asort can copy and sort the special SYMTAB and FUNCTAB arrays
+upstream:
+  suite: gawk
+  id: test/asortsymtab.awk
+  ref: gawk-5.4.0
+covers:
+  - asort can use SYMTAB as a source array
+  - asort can use FUNCTAB as a source array
+  - sorting special symbol arrays returns a count matching the destination length
+input:
+  program: |
+    function helper() {
+      return "ok"
+    }
+
+    BEGIN {
+      local_value = 42
+      n = asort(SYMTAB, sorted_symbols)
+      print "symtab", (n == length(sorted_symbols)), (n > 0)
+      m = asort(FUNCTAB, sorted_functions)
+      print "functab", (m == length(sorted_functions)), (m > 0)
+    }
+expect:
+  stdout: |
+    symtab 1 1
+    functab 1 1
+  exit_code: 0

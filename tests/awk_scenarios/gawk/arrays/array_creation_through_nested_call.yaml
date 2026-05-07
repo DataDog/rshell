@@ -1,0 +1,27 @@
+description: nested function calls can create caller-visible array elements
+upstream:
+  suite: gawk
+  id: test/arrayprm3.awk
+  ref: gawk-5.4.0
+covers:
+  - array parameters remain references through nested function calls
+  - assigning through an inner function creates caller-visible elements
+  - uninitialized arrays can be materialized through function parameters
+input:
+  program: |
+    function outer(target) {
+      inner(target)
+    }
+
+    function inner(target) {
+      target[1] = "ready"
+    }
+
+    BEGIN {
+      outer(cache)
+      print cache[1]
+    }
+expect:
+  stdout: |
+    ready
+  exit_code: 0

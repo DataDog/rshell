@@ -1,0 +1,23 @@
+description: closing failed and unopened input redirections returns -1
+upstream:
+  suite: gawk
+  id: test/closebad.awk
+  ref: gawk-5.4.0
+covers:
+  - getline from a missing file redirection returns -1
+  - close returns -1 for a failed redirection
+  - close returns -1 for a redirection that was never opened
+input:
+  program: |
+    BEGIN {
+      name = "absent.data"
+      print getline row < name
+      print close(name)
+      print close("never-opened.data")
+    }
+expect:
+  stdout: |
+    -1
+    -1
+    -1
+  exit_code: 0

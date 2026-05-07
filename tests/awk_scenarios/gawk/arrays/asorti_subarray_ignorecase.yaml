@@ -1,0 +1,33 @@
+description: asorti orders nested array indexes and honors IGNORECASE
+upstream:
+  suite: gawk
+  id: test/aasorti.awk
+  ref: gawk-5.4.0
+covers:
+  - asorti can sort indexes from an array stored inside another array
+  - asorti writes sorted indexes into a destination array
+  - IGNORECASE changes string index ordering for asorti
+input:
+  program: |
+    BEGIN {
+      shelf["count"]["ant"] = 1
+      shelf["count"]["Bee"] = 2
+      shelf["count"]["cat"] = 3
+      n = asorti(shelf["count"], order)
+      for (i = 1; i <= n; i++) print order[i] ":" shelf["count"][order[i]]
+      print "--"
+      IGNORECASE = 1
+      delete order
+      n = asorti(shelf["count"], order)
+      for (i = 1; i <= n; i++) print order[i] ":" shelf["count"][order[i]]
+    }
+expect:
+  stdout: |
+    Bee:2
+    ant:1
+    cat:3
+    --
+    ant:1
+    Bee:2
+    cat:3
+  exit_code: 0

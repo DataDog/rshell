@@ -1,0 +1,23 @@
+description: split can create an array through an uninitialized function parameter
+upstream:
+  suite: gawk
+  id: test/arrayprm2.awk
+  ref: gawk-5.4.0
+covers:
+  - uninitialized actual parameters can become arrays
+  - split accepts a function parameter as its destination array
+  - array elements created through a parameter are visible to the caller
+input:
+  program: |
+    function fill(parts) {
+      return split("red blue", parts)
+    }
+
+    BEGIN {
+      n = fill(words)
+      print n, words[1], words[2]
+    }
+expect:
+  stdout: |
+    2 red blue
+  exit_code: 0

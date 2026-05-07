@@ -1,0 +1,34 @@
+description: array parameters can be mutated while caller arrays are iterated
+upstream:
+  suite: gawk
+  id: test/arrayparm.awk
+  ref: gawk-5.4.0
+covers:
+  - arrays are passed to functions by reference
+  - deleting caller array elements inside a function is visible after return
+  - scalar loop variables do not conflict with array parameters
+input:
+  program: |
+    function remember(name) {
+      touched[name] = name
+    }
+
+    function drain(values, key) {
+      for (key in values) {
+        remember(key)
+        delete values[key]
+      }
+    }
+
+    BEGIN {
+      todo["first"] = 1
+      todo["second"] = 1
+      drain(todo)
+      print ("first" in touched), ("second" in touched)
+      print length(todo)
+    }
+expect:
+  stdout: |
+    1 1
+    0
+  exit_code: 0

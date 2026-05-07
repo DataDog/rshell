@@ -1,0 +1,22 @@
+description: printf apostrophe flag applies locale grouping to integers and floats
+upstream:
+  suite: gawk
+  id: test/commas.awk
+  ref: gawk-5.4.0
+covers:
+  - printf accepts the apostrophe grouping flag for decimal integers
+  - the grouping flag also applies to fixed-point floating output
+  - field width is computed after locale separators are inserted
+input:
+  envs:
+    LC_ALL: en_US.UTF-8
+  program: |
+    BEGIN {
+      printf "%'d|%'0.2f\n", 24681357, 24681357
+      printf "%'10d\n", 1200
+    }
+expect:
+  stdout: |
+    24,681,357|24,681,357.00
+         1,200
+  exit_code: 0

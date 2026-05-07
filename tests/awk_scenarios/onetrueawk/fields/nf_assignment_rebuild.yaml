@@ -1,0 +1,31 @@
+description: assigning NF and high-numbered fields rebuilds records
+upstream:
+  suite: onetrueawk
+  id: testdir/t.NF
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - assigning NF truncates the visible field count
+  - assigning a field beyond NF extends the record
+  - record rebuilding uses the current OFS
+input:
+  program: |
+    {
+      OFS = "|"
+      print NF
+      NF = 2
+      print NF
+      print $0
+      $5 = "five"
+      print NF
+      print $0
+    }
+  stdin: |
+    one two three four
+expect:
+  stdout: |
+    4
+    2
+    one|two
+    5
+    one|two|||five
+  exit_code: 0

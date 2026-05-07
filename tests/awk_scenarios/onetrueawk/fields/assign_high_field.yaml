@@ -1,0 +1,23 @@
+description: assigning a high-numbered field extends NF and rebuilds the record
+upstream:
+  suite: onetrueawk
+  id: testdir/t.b.x
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - assigning a field beyond current NF creates empty intermediate fields
+  - NF updates to the highest assigned field
+  - $0 is rebuilt after field assignment
+input:
+  program: |
+    {
+      $6 = "last"
+      print $6
+      print NF, $0
+    }
+  stdin: |
+    a b c
+expect:
+  stdout: |
+    last
+    6 a b c   last
+  exit_code: 0

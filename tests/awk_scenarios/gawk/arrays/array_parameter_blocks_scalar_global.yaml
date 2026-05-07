@@ -1,0 +1,23 @@
+description: an array update through a parameter prevents scalar assignment through the global name
+upstream:
+  suite: gawk
+  id: test/arryref5.awk
+  ref: gawk-5.4.0
+covers:
+  - array indexing through a parameter marks the global argument as an array
+  - assigning a scalar through the global name is rejected
+input:
+  program: |
+    function mark(ref) {
+      ref["item"] = "array"
+      holder = "scalar"
+    }
+
+    BEGIN {
+      mark(holder)
+    }
+expect:
+  stderr_contains:
+    - "fatal: attempt to use array"
+    - "in a scalar context"
+  exit_code: 2

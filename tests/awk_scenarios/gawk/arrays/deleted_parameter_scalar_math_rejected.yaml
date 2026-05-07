@@ -1,0 +1,23 @@
+description: deleting an array parameter keeps it from being used as a scalar number
+upstream:
+  suite: gawk
+  id: test/aryprm2.awk
+  ref: gawk-5.4.0
+covers:
+  - delete on a parameter treats that parameter as an array
+  - numeric assignment to the deleted array parameter is rejected
+input:
+  program: |
+    function reset(slot) {
+      delete slot
+      slot += 1
+    }
+
+    BEGIN {
+      reset(box)
+    }
+expect:
+  stderr_contains:
+    - "fatal: attempt to use array"
+    - "in a scalar context"
+  exit_code: 2

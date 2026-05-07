@@ -1,0 +1,23 @@
+description: invalid Unicode escapes warn and become literal question marks
+upstream:
+  suite: gawk
+  id: test/cmdlinefsbacknl2.sh
+  ref: gawk-5.4.0
+covers:
+  - invalid large Unicode escapes emit warnings
+  - invalid Unicode escapes produce literal question marks in strings and regexps
+input:
+  envs:
+    LC_ALL: en_US.UTF-8
+  program: |
+    BEGIN {
+      print ("xy?z" ~ /xy\uFFFFFFFFz/)
+      print "\uFFFFFFFE"
+    }
+expect:
+  stdout: |
+    1
+    ?
+  stderr_contains:
+    - "invalid `\\u' escape sequence"
+  exit_code: 0

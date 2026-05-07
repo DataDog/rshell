@@ -1,0 +1,28 @@
+description: backslash-w matches GNU awk word characters
+upstream:
+  suite: gawk
+  id: test/backw.awk
+  ref: gawk-5.4.0
+covers:
+  - \w matches letters, digits, and underscore as one word run
+  - non-word punctuation does not match \w
+  - match reports the start and length of the first \w run
+input:
+  program: |
+    BEGIN {
+      words[1] = "abc_42"
+      words[2] = "++"
+      words[3] = "dash-name"
+      for (i = 1; i <= 3; i++) {
+        if (match(words[i], /\w+/))
+          print substr(words[i], RSTART, RLENGTH), RSTART, RLENGTH
+        else
+          print "none", 0, 0
+      }
+    }
+expect:
+  stdout: |
+    abc_42 1 6
+    none 0 0
+    dash 1 4
+  exit_code: 0

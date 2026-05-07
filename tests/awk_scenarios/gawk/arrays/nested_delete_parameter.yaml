@@ -1,0 +1,29 @@
+description: delete removes nested array elements through a function parameter
+upstream:
+  suite: gawk
+  id: test/aadelete2.awk
+  ref: gawk-5.4.0
+covers:
+  - arrays of arrays can be passed to functions by reference
+  - delete removes a nested element selected through another array
+  - deleted nested elements are absent from the containing subarray
+input:
+  program: |
+    function drop(table, keys) {
+      delete table[keys["outer"]][keys["inner"]]
+    }
+
+    BEGIN {
+      keys["outer"] = "fruit"
+      keys["inner"] = "ripe"
+      inventory["fruit"]["ripe"] = 7
+      inventory["fruit"]["green"] = 4
+      drop(inventory, keys)
+      print ("ripe" in inventory["fruit"]) ? "kept" : "deleted"
+      print inventory["fruit"]["green"]
+    }
+expect:
+  stdout: |
+    deleted
+    4
+  exit_code: 0

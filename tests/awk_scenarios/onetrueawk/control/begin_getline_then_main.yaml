@@ -1,0 +1,30 @@
+description: getline in BEGIN consumes records before main actions resume
+upstream:
+  suite: onetrueawk
+  id: testdir/t.beginnext
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - getline in BEGIN advances NR
+  - a failed loop condition can still consume the record it read
+  - normal actions resume with the next unread record
+input:
+  program: |
+    BEGIN {
+      while (getline && n++ < 2)
+        print "begin", $0
+      print "after", NR
+    }
+
+    { print "main", $0 }
+  stdin: |
+    one
+    two
+    three
+    four
+expect:
+  stdout: |
+    begin one
+    begin two
+    after 3
+    main four
+  exit_code: 0

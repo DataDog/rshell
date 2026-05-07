@@ -1,0 +1,22 @@
+description: adjacent strings and fields preserve literal punctuation
+upstream:
+  suite: gawk
+  id: test/concat1.awk
+  ref: gawk-5.4.0
+covers:
+  - field values concatenate with adjacent string literals
+  - literal semicolon characters inside strings are preserved
+  - concatenation output is independent for each input record
+input:
+  program: |
+    {
+      print "record=" $1 "; tail"
+    }
+  stdin: |
+    north
+    south
+expect:
+  stdout: |
+    record=north; tail
+    record=south; tail
+  exit_code: 0

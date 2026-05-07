@@ -1,0 +1,33 @@
+description: multiple parameters aliasing the same array share all updates
+upstream:
+  suite: gawk
+  id: test/aryprm8.awk
+  ref: gawk-5.4.0
+covers:
+  - the same array can be passed through multiple parameters
+  - writes through one alias are immediately visible through the other
+  - later writes replace earlier values for the shared element
+input:
+  program: |
+    function run(flag, bag) {
+      if (! flag) return
+      twist(bag, bag)
+      print bag["first"], bag["second"]
+    }
+
+    function twist(left, right) {
+      left["first"] = "left"
+      right["first"] = "right"
+      right["second"] = "right"
+      left["second"] = "left"
+      print left["first"], right["second"]
+    }
+
+    BEGIN {
+      run(1, box)
+    }
+expect:
+  stdout: |
+    right left
+    right left
+  exit_code: 0

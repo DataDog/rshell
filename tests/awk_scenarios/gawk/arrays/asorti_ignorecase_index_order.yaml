@@ -1,0 +1,45 @@
+description: asorti orders string indexes differently when IGNORECASE is enabled
+upstream:
+  suite: gawk
+  id: test/asorti.awk
+  ref: gawk-5.4.0
+covers:
+  - asorti writes sorted source indexes to a destination array
+  - default index sorting is case-sensitive
+  - IGNORECASE changes asorti index ordering
+input:
+  program: |
+    function fill(a) {
+      delete a
+      a["pear"] = 4
+      a["Apricot"] = 1
+      a["banana"] = 2
+      a["Cherry"] = 3
+    }
+
+    BEGIN {
+      IGNORECASE = 0
+      fill(score)
+      n = asorti(score, order)
+      print "strict"
+      for (i = 1; i <= n; i++) print order[i]
+
+      IGNORECASE = 1
+      fill(score)
+      n = asorti(score, order)
+      print "folded"
+      for (i = 1; i <= n; i++) print order[i]
+    }
+expect:
+  stdout: |
+    strict
+    Apricot
+    Cherry
+    banana
+    pear
+    folded
+    Apricot
+    banana
+    Cherry
+    pear
+  exit_code: 0

@@ -1,0 +1,34 @@
+description: --csv normalizes record terminators while preserving embedded line breaks
+upstream:
+  suite: gawk
+  id: test/csvodd.awk
+  ref: gawk-5.4.0
+covers:
+  - CRLF record terminators appear as newline RT values
+  - quoted embedded newlines stay inside fields
+  - a final CSV record without a line terminator is still processed
+input:
+  awk_args:
+    - --csv
+  program: |
+    function vis(s) {
+      gsub(/\r/, "\\r", s)
+      gsub(/\n/, "\\n", s)
+      return s
+    }
+    {
+      print NR ":" NF ":" vis($0) ":" vis(RT)
+      for (i = 1; i <= NF; i++)
+        printf "[%s]", vis($i)
+      print ""
+    }
+  stdin: "a,b\r\n\"line1\nline2\",z\r\n\"x\ry\",end"
+expect:
+  stdout: |
+    1:2:a,b:\n
+    [a][b]
+    2:2:"line1\nline2",z:\n
+    [line1\nline2][z]
+    3:2:"x\ry",end:
+    [x\ry][end]
+  exit_code: 0

@@ -1,0 +1,25 @@
+description: an unassigned expression used as an array subscript creates the empty-string key
+upstream:
+  suite: gawk
+  id: test/aryunasgn.awk
+  ref: gawk-5.4.0
+covers:
+  - an unassigned scalar used as a subscript becomes the empty-string key
+  - the empty-string key remains distinct from numeric zero
+  - membership and lookup use the empty-string spelling
+input:
+  program: |
+    BEGIN {
+      slots[unset] = "missing"
+      for (k in slots) {
+        print "len=" length(k), "empty=" (k == ""), "zero=" (k == 0)
+      }
+      print "blank=" slots[""]
+      print "zero=" slots[0]
+    }
+expect:
+  stdout: |
+    len=0 empty=1 zero=0
+    blank=missing
+    zero=
+  exit_code: 0

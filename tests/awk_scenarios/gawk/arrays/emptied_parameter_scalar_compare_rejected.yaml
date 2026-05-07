@@ -1,0 +1,25 @@
+description: deleting every element of a parameter array still leaves it unusable as a scalar
+upstream:
+  suite: gawk
+  id: test/aryprm3.awk
+  ref: gawk-5.4.0
+covers:
+  - iterating over a parameter as an array fixes its array type
+  - deleting all elements does not convert the parameter back to a scalar
+  - scalar comparison of the array parameter is rejected
+input:
+  program: |
+    function clear_then_test(items,    k) {
+      items["seen"] = 1
+      for (k in items) delete items[k]
+      if (items == "") print "empty"
+    }
+
+    BEGIN {
+      clear_then_test(box)
+    }
+expect:
+  stderr_contains:
+    - "fatal: attempt to use array"
+    - "in a scalar context"
+  exit_code: 2

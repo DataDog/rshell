@@ -1,0 +1,34 @@
+description: dynamic regexps preserve backslash-small-s repetition semantics
+upstream:
+  suite: gawk
+  id: test/backsmalls2.awk
+  ref: gawk-5.4.0
+covers:
+  - string-valued regexps can contain \s
+  - \s repetition operators distinguish empty and non-empty whitespace strings
+  - interval repetition works with \s in dynamic regexps
+input:
+  program: |
+    BEGIN {
+      samples[1] = ""
+      samples[2] = " "
+      samples[3] = "  "
+      pats[1] = "^\\s*$"
+      pats[2] = "^\\s+$"
+      pats[3] = "^\\s?$"
+      pats[4] = "^\\s{2}$"
+      for (p = 1; p <= 4; p++) {
+        hits = 0
+        for (s = 1; s <= 3; s++)
+          if (samples[s] ~ pats[p])
+            hits++
+        print pats[p], hits
+      }
+    }
+expect:
+  stdout: |
+    ^\s*$ 3
+    ^\s+$ 2
+    ^\s?$ 2
+    ^\s{2}$ 1
+  exit_code: 0

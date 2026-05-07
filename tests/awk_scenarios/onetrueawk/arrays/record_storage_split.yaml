@@ -1,0 +1,30 @@
+description: records stored in arrays can be split again during END processing
+upstream:
+  suite: onetrueawk
+  id: testdir/t.array
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - arrays can store full input records by numeric index
+  - END can iterate over stored record data
+  - split can parse stored records into a reusable array
+input:
+  program: |
+    { saved[NR] = $0 }
+
+    END {
+      for (i = 1; i <= NR; i++) {
+        print saved[i]
+        split(saved[i], fields)
+        print fields[2], fields[1]
+      }
+    }
+  stdin: |
+    8 cedar
+    13 maple
+expect:
+  stdout: |
+    8 cedar
+    cedar 8
+    13 maple
+    maple 13
+  exit_code: 0

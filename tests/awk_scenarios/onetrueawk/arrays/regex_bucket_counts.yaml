@@ -1,0 +1,24 @@
+description: multiple regex actions can update shared array buckets
+upstream:
+  suite: onetrueawk
+  id: testdir/t.array2
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - regex actions can update associative array counters
+  - negated regex matches populate alternate buckets
+  - END sees counters accumulated across all records
+input:
+  program: |
+    $2 ~ /^[a-l]/ { bucket["a-l"]++ }
+    $2 ~ /^[m-z]/ { bucket["m-z"]++ }
+    $2 !~ /^[a-z]/ { bucket["other"]++ }
+    END { print NR, bucket["a-l"], bucket["m-z"], bucket["other"] }
+  stdin: |
+    1 apple
+    2 pear
+    3 42
+    4 lemon
+expect:
+  stdout: |
+    4 2 1 1
+  exit_code: 0

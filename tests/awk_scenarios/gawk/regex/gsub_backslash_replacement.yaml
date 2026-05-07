@@ -1,0 +1,23 @@
+description: gsub can replace each input backslash with two literal backslashes
+upstream:
+  suite: gawk
+  id: test/backgsub.awk
+  ref: gawk-5.4.0
+covers:
+  - a regexp literal can match a single backslash
+  - replacement text can emit literal backslashes
+  - gsub returns the number of replacements while updating the record
+input:
+  program: |
+    {
+      changed = gsub(/\\/, "\\\\", $0)
+      print changed ":" $0
+    }
+  stdin: |
+    path\one\two
+    plain
+expect:
+  stdout: |
+    2:path\\one\\two
+    0:plain
+  exit_code: 0

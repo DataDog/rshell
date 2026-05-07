@@ -1,0 +1,34 @@
+description: typeof reports the array subscript class through its metadata argument
+upstream:
+  suite: gawk
+  id: test/arraytype.awk
+  ref: gawk-5.4.0
+covers:
+  - typeof reports arrays through its optional metadata argument
+  - integer-like subscripts classify arrays as cint or int
+  - deleting the last element resets the reported array type to null
+input:
+  program: |
+    BEGIN {
+      data[2] = "two"
+      print typeof(data, meta) ":" meta["array_type"]
+      delete data[2]
+      print typeof(data, meta) ":" meta["array_type"]
+
+      data["west"] = 4
+      print typeof(data, meta) ":" meta["array_type"]
+      delete data["west"]
+
+      data[-4] = 8
+      print typeof(data, meta) ":" meta["array_type"]
+      delete data
+      print typeof(data, meta) ":" meta["array_type"]
+    }
+expect:
+  stdout: |
+    array:cint
+    array:null
+    array:str
+    array:int
+    array:null
+  exit_code: 0

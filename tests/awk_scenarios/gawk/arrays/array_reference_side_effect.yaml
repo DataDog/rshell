@@ -1,0 +1,29 @@
+description: array references created in helper functions stay visible to callers
+upstream:
+  suite: gawk
+  id: test/arrayref.awk
+  ref: gawk-5.4.0
+covers:
+  - array parameters are references, not copies
+  - nested helper calls can create elements in the same array
+  - membership checks observe elements created through another function
+input:
+  program: |
+    function touch(target) {
+      helper(target)
+      print ("sentinel" in target)
+    }
+
+    function helper(target) {
+      target["sentinel"] = 1
+    }
+
+    BEGIN {
+      touch(shared)
+      print shared["sentinel"]
+    }
+expect:
+  stdout: |
+    1
+    1
+  exit_code: 0

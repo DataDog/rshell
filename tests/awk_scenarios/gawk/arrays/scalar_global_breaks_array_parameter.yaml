@@ -1,0 +1,23 @@
+description: a scalar assignment through a global name prevents array use through its parameter alias
+upstream:
+  suite: gawk
+  id: test/arryref4.awk
+  ref: gawk-5.4.0
+covers:
+  - assigning a scalar to a global marks the aliased parameter as scalar
+  - later array indexing through that parameter is rejected
+input:
+  program: |
+    function mark(ref) {
+      holder = "scalar"
+      ref["item"] = "array"
+    }
+
+    BEGIN {
+      mark(holder)
+    }
+expect:
+  stderr_contains:
+    - "fatal: attempt to use scalar parameter"
+    - "as an array"
+  exit_code: 2

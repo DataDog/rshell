@@ -1,0 +1,29 @@
+description: END can compute aggregates from records seen earlier
+upstream:
+  suite: onetrueawk
+  id: testdir/t.avg
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - actions can accumulate numeric sums
+  - END runs after input is exhausted
+  - aggregate values can be derived from counters
+input:
+  program: |
+    {
+      sum += $1
+      count += 1
+    }
+
+    END {
+      print "sum=", sum, "count=", count
+      print "avg=", sum / count
+    }
+  stdin: |
+    6
+    9
+    12
+expect:
+  stdout: |
+    sum= 27 count= 3
+    avg= 9
+  exit_code: 0

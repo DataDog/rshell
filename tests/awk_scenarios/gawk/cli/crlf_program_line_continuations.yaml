@@ -1,0 +1,17 @@
+description: CRLF program files still honor awk line continuations
+upstream:
+  suite: gawk
+  id: test/crlf.awk
+  ref: gawk-5.4.0
+covers:
+  - program files with CRLF line endings parse successfully
+  - backslash-newline continuations work in strings and regex constants
+input:
+  program_file: crlf_program.awk
+  program: "BEGIN {\r\n  print \\\r\n    \"one\"\r\n  print \"two \\\r\nlines\"\r\n  if (\"ab\" ~ /a\\\r\nb/) print \"regex\"\r\n}\r\n"
+expect:
+  stdout: |
+    one
+    two lines
+    regex
+  exit_code: 0

@@ -1,0 +1,21 @@
+description: parenthesized concatenation treats uninitialized variables as empty strings
+upstream:
+  suite: gawk
+  id: test/concat3.awk
+  ref: gawk-5.4.0
+covers:
+  - an uninitialized variable contributes an empty string to concatenation
+  - parenthesized concatenation participates in adjacent expression concatenation
+  - reading an uninitialized variable for concatenation leaves its string value empty
+input:
+  program: |
+    BEGIN {
+      text = text ("x" suffix)
+      print "[" text "]"
+      print "[" suffix "]"
+    }
+expect:
+  stdout: |
+    [x]
+    []
+  exit_code: 0

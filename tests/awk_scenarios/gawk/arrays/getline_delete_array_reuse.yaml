@@ -1,0 +1,51 @@
+description: an array can be deleted and repopulated while repeatedly reading a closed file
+upstream:
+  suite: gawk
+  id: test/arynocls.awk
+  ref: gawk-5.4.0
+covers:
+  - getline from a named file can be repeated after close
+  - delete resets an output array before repopulating it
+  - array parameters can be reused across repeated file scans
+setup:
+  files:
+    - path: numbers.txt
+      content: |
+        1
+        2
+        4
+input:
+  program: |
+    function count_file(path,    line, n) {
+      while ((getline line < path) > 0) n++
+      close(path)
+      return n
+    }
+
+    function merge_file(path, source, out,    line, n) {
+      delete out
+      while ((getline line < path) > 0) {
+        n++
+        out[n] = source[n] + line
+      }
+      close(path)
+      return n
+    }
+
+    BEGIN {
+      seed[1] = 10
+      seed[2] = 20
+      seed[3] = 30
+
+      print "count=" count_file("numbers.txt")
+      n = merge_file("numbers.txt", seed, total)
+      print "total=" n, total[1], total[3]
+      n = merge_file("numbers.txt", seed, total)
+      print "again=" n, total[2]
+    }
+expect:
+  stdout: |
+    count=3
+    total=3 11 34
+    again=3 22
+  exit_code: 0

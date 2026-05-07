@@ -1,0 +1,25 @@
+description: explicit counters advance alongside NR for each input record
+upstream:
+  suite: onetrueawk
+  id: testdir/t.0a
+  ref: 3c2e168a8f794ed61c93131b05fb998d79d155df
+covers:
+  - actions run once for each input record
+  - user variables retain values across records
+  - NR tracks the current input record number
+input:
+  program: |
+    {
+      seen = seen + 1
+      print seen, NR
+    }
+  stdin: |
+    alpha
+    beta
+    gamma
+expect:
+  stdout: |
+    1 1
+    2 2
+    3 3
+  exit_code: 0

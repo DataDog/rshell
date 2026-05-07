@@ -1,0 +1,22 @@
+description: command-line assignments preserve a terminal backslash as data
+upstream:
+  suite: gawk
+  id: test/cmdlinefsbacknl2.sh
+  ref: gawk-5.4.0
+covers:
+  - a command-line variable value may end with a single backslash
+  - a terminal backslash is not treated as a lost line continuation
+input:
+  awk_args:
+    - -v
+    - 's=\'
+  program: |
+    BEGIN {
+      print length(s)
+      print (s == "\\")
+    }
+expect:
+  stdout: |
+    1
+    1
+  exit_code: 0

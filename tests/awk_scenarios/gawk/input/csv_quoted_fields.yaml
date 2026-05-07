@@ -1,0 +1,27 @@
+description: --csv parses commas, empty fields, and doubled quotes inside records
+upstream:
+  suite: gawk
+  id: test/csv1.awk
+  ref: gawk-5.4.0
+covers:
+  - --csv treats commas inside quoted fields as data
+  - doubled quotes inside quoted fields become literal quotes
+  - empty CSV fields are preserved
+input:
+  awk_args:
+    - --csv
+  program: |
+    {
+      printf "%d:", NF
+      for (i = 1; i <= NF; i++)
+        printf "<%s>", $i
+      print ""
+    }
+  stdin: |
+    name,"two, words","he said ""yes"""
+    plain,,tail
+expect:
+  stdout: |
+    3:<name><two, words><he said "yes">
+    3:<plain><><tail>
+  exit_code: 0

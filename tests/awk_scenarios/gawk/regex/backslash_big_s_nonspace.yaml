@@ -1,0 +1,24 @@
+description: backslash-capital-S matches strings containing non-space characters
+upstream:
+  suite: gawk
+  id: test/backbigs1.awk
+  ref: gawk-5.4.0
+covers:
+  - \S matches a non-whitespace character
+  - strings made only of spaces do not satisfy \S
+  - \S can be used inside a regexp literal
+input:
+  program: |
+    BEGIN {
+      values[1] = "fern"
+      values[2] = "   "
+      values[3] = "two words"
+      for (i = 1; i <= 3; i++)
+        print (values[i] ~ /\S/ ? "has-nonspace" : "space-only")
+    }
+expect:
+  stdout: |
+    has-nonspace
+    space-only
+    has-nonspace
+  exit_code: 0

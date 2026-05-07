@@ -1,0 +1,26 @@
+description: concatenating across getline updates the searchable string value
+upstream:
+  suite: gawk
+  id: test/concat4.awk
+  ref: gawk-5.4.0
+covers:
+  - a record can be saved before getline advances input
+  - concatenation combines the saved record with the newly read record
+  - index searches the concatenated string rather than the original value
+input:
+  program: |
+    {
+      first = $0
+      print first, index(first, "z")
+      getline second
+      pair = first second
+      print pair, index(pair, "z")
+    }
+  stdin: |
+    alpha
+    zone
+expect:
+  stdout: |
+    alpha 0
+    alphazone 6
+  exit_code: 0

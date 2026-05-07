@@ -1,0 +1,23 @@
+description: a scalar assigned by a function cannot later be indexed as an array
+upstream:
+  suite: gawk
+  id: test/aryprm4.awk
+  ref: gawk-5.4.0
+covers:
+  - scalar assignment through a function parameter updates the caller variable
+  - later array indexing of that scalar variable is rejected
+input:
+  program: |
+    function set_label(x) {
+      x = "label"
+    }
+
+    BEGIN {
+      set_label(flag)
+      flag["item"] = 1
+    }
+expect:
+  stderr_contains:
+    - "fatal: attempt to use scalar"
+    - "as an array"
+  exit_code: 2
