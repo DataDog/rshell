@@ -14,7 +14,7 @@ Legend: ⏳ pending · 🔄 in progress · ✅ done · ⏭️ skipped (no high-v
 | 4  | function            | shell |             10 | 10            | ⏭️     | already comprehensive — 10 scenarios cover every variant of intentionally-blocked syntax |
 | 5  | empty_script        | shell |             11 | 11            | ⏭️     | already comprehensive — covers empty/comments/whitespace/CRLF/tabs combinations |
 | 6  | allowed_commands    | shell |             12 | 12            | ⏭️     | already comprehensive — covers allow_all, allow-list, blocked-in-pipe/subshell/cmdsubst, special builtins |
-| 7  | subshell            | shell |             12 | —             | ⏳     |       |
+| 7  | subshell            | shell |             12 | 12            | ⏭️     | already comprehensive — covers basic/nested/triple-nested-isolation, exit, var-isolation, pipe, redirect, &&/\|\| |
 | 8  | input_processing    | shell |             13 | —             | ⏳     |       |
 | 9  | blocked_redirects   | shell |             17 | —             | ⏳     |       |
 | 10 | allowed_redirects   | shell |             18 | —             | ⏳     |       |
@@ -75,7 +75,7 @@ Legend: ⏳ pending · 🔄 in progress · ✅ done · ⏭️ skipped (no high-v
 
 ## Summary
 
-- Targets processed: 6 / 64
+- Targets processed: 7 / 64
 - Tests added: 0 (scenario: 0, unit: 0)
 - Duplicate tests removed: 0 (scenario: 0, unit: 0)
 - Low-value tests removed: 0 (scenario: 0, unit: 0)
