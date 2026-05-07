@@ -71,11 +71,11 @@ Legend: ⏳ pending · 🔄 in progress · ✅ done · ⏭️ skipped (no high-v
 | 61 | tail | cmd | 213 | 213 | ⏭️ | 79 scenarios + 134 Go tests cover -n/-c (positive/negative/+N), multi-file, GNU compat |
 | 62 | sed | cmd | 261 | 261 | ⏭️ | 143 scenarios cover s/d/p/q commands, addresses, flags (-n/-e/-r/-E), regex, hold space |
 | 63 | printf | cmd | 301 | 301 | ⏭️ | 123 scenarios + 178 Go tests cover %s/%d/%f/%x/%c/%%, escapes, width/precision, %b |
-| 64 | find | cmd | 305 | — | ⏳ | |
+| 64 | find | cmd | 305 | 305 | ⏭️ | 219 scenarios + 86 Go tests cover -name/-type/-size/-mtime/-perm/-prune/-exec, expressions |
 
 ## Summary
 
-- Targets processed: 63 / 64
+- Targets processed: 64 / 64
 - Tests added: 8 (scenario: 8, unit: 0)
 - Duplicate tests removed: 13 (scenario: 13, unit: 0)
 - Low-value tests removed: 0 (scenario: 0, unit: 0)
