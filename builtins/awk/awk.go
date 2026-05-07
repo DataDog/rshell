@@ -50,6 +50,7 @@ func (s *stringList) Set(v string) error {
 func (s *stringList) Type() string { return "string" }
 
 func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
+	fs.SetInterspersed(false)
 	help := fs.BoolP("help", "h", false, "print usage and exit")
 	fieldSep := fs.StringP("field-separator", "F", "", "use a single-character input field separator")
 	var programFiles stringList

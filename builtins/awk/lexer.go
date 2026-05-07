@@ -315,7 +315,7 @@ func (l *lexer) scanRegex(start int) (token, error) {
 
 func canStartRegex(prev tokenKind) bool {
 	switch prev {
-	case tokEOF, tokNewline, tokLBrace, tokLParen, tokComma, tokSemicolon,
+	case tokEOF, tokNewline, tokLBrace, tokRBrace, tokLParen, tokComma, tokSemicolon,
 		tokAssign, tokPlus, tokMinus, tokStar, tokSlash, tokPercent, tokBang,
 		tokLT, tokGT, tokLE, tokGE, tokEQ, tokNE, tokAnd, tokOr, tokMatch,
 		tokNotMatch, tokPlusAssign, tokMinusAssign, tokStarAssign,
