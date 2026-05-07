@@ -210,7 +210,7 @@ func TestHelpListsFeaturesAndUnsupportedSummary(t *testing.T) {
 	assert.Contains(t, stdout, "pipes-redirections")
 	assert.Contains(t, stdout, "Not supported:")
 	assert.Contains(t, stdout, "arithmetic $((...))")
-	assert.Contains(t, stdout, "while/until")
+	assert.Contains(t, stdout, "case, select")
 	assert.Contains(t, stdout, "arbitrary output file redirects")
 }
 
