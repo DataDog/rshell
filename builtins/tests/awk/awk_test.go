@@ -115,6 +115,31 @@ func TestAwkAssociativeArrayElements(t *testing.T) {
 	assert.Equal(t, "2 1 2 1 \n", stdout)
 }
 
+func TestAwkArrayMembershipDeleteForInAndSplit(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "input.txt", "api 200\napi 500\nworker 200\n")
+	stdout, stderr, code := cmdRun(t, `awk '{ count[$1]++; split($0, fields); status[fields[2]]++ } END { delete status[500]; print ("api" in count), ("500" in status); for (k in count) print k, count[k]; delete count; print ("api" in count) }' input.txt`, dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "", stderr)
+	assert.Equal(t, "1 0\napi 2\nworker 1\n0\n", stdout)
+}
+
+func TestAwkSplitRegexAndCharacterSeparator(t *testing.T) {
+	dir := t.TempDir()
+	stdout, stderr, code := cmdRun(t, `awk 'BEGIN { n = split("a,b:c", fields, /[,:]/); print n, fields[1], fields[2], fields[3]; m = split("xy", chars, ""); print m, chars[1], chars[2]; print split("a  b", special, " "), split("a  b", literal, / /) }'`, dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "", stderr)
+	assert.Equal(t, "3 a b c\n2 x y\n2 3\n", stdout)
+}
+
+func TestAwkForWhileBreakAndContinue(t *testing.T) {
+	dir := t.TempDir()
+	stdout, stderr, code := cmdRun(t, `awk 'BEGIN { for (i = 1; i <= 5; i++) { if (i == 2) continue; if (i == 5) break; sum += i }; j = 0; while (j < 3) { j++; if (j == 2) continue; seen = seen j }; print sum, seen }'`, dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "", stderr)
+	assert.Equal(t, "8 13\n", stdout)
+}
+
 func TestAwkRejectsScalarArrayNameConflicts(t *testing.T) {
 	dir := t.TempDir()
 	for _, script := range []string{
@@ -225,6 +250,41 @@ func TestAwkLiteralFieldSeparatorBlankRecordNF(t *testing.T) {
 	assert.Equal(t, 0, code)
 	assert.Equal(t, "", stderr)
 	assert.Equal(t, "2\n0\n2\n", stdout)
+}
+
+func TestAwkRegexFieldSeparator(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "input.txt", "a,b:c\n")
+	stdout, stderr, code := cmdRun(t, `awk -F '[,:]' '{ print NF, $1, $2, $3 }' input.txt`, dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "", stderr)
+	assert.Equal(t, "3 a b c\n", stdout)
+}
+
+func TestAwkRangePatterns(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "input.txt", "ignore\nstart\nmiddle\nend\ntail\nstart end\nafter\n")
+	stdout, stderr, code := cmdRun(t, `awk '/start/,/end/ { print NR ":" $0 }' input.txt`, dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "", stderr)
+	assert.Equal(t, "2:start\n3:middle\n4:end\n6:start end\n", stdout)
+}
+
+func TestAwkFieldAssignmentAndRecordRebuild(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "input.txt", "a b c\n")
+	stdout, stderr, code := cmdRun(t, `awk 'BEGIN { OFS="|" } { $2 = toupper($2); print $0, NF; NF = 4; $4 = "z"; print $0, NF; $0 = "m n"; print $1, $2, NF }' input.txt`, dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "", stderr)
+	assert.Equal(t, "a|B|c|3\na|B|c|z|4\nm|n|2\n", stdout)
+}
+
+func TestAwkEnvironUsesRshellEnvironment(t *testing.T) {
+	dir := t.TempDir()
+	stdout, stderr, code := runScript(t, `FOO=script; awk 'BEGIN { print ENVIRON["FROM_ENV"], ENVIRON["FOO"], ("PATH" in ENVIRON), ("PWD" in ENVIRON) }'`, dir, interp.Env("FROM_ENV=provided"))
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "", stderr)
+	assert.Equal(t, "provided script 0 1\n", stdout)
 }
 
 func TestAwkStringNumericSemantics(t *testing.T) {
@@ -352,7 +412,6 @@ func TestAwkRejectsUnsafeFeatures(t *testing.T) {
 		`awk '{ system("sh") }' input.txt`,
 		`awk '{ print $1 > "out" }' input.txt`,
 		`awk '{ printf "%s", $1 > "out" }' input.txt`,
-		`awk '{ $1 = "x" }' input.txt`,
 		`awk '{ print getline }' input.txt`,
 		`awk '{ x = next }' input.txt`,
 		`awk '{ exit 0 }' input.txt`,

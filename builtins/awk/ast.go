@@ -47,9 +47,49 @@ type ifStmt struct {
 
 func (*ifStmt) stmtNode() {}
 
+type forInStmt struct {
+	varName   string
+	arrayName string
+	body      []stmt
+}
+
+func (*forInStmt) stmtNode() {}
+
+type forStmt struct {
+	init expr
+	cond expr
+	post expr
+	body []stmt
+}
+
+func (*forStmt) stmtNode() {}
+
+type whileStmt struct {
+	cond expr
+	body []stmt
+}
+
+func (*whileStmt) stmtNode() {}
+
 type nextStmt struct{}
 
 func (*nextStmt) stmtNode() {}
+
+type breakStmt struct{}
+
+func (*breakStmt) stmtNode() {}
+
+type continueStmt struct{}
+
+func (*continueStmt) stmtNode() {}
+
+type deleteStmt struct {
+	name  string
+	index expr
+	all   bool
+}
+
+func (*deleteStmt) stmtNode() {}
 
 type exprStmt struct {
 	x expr
@@ -119,6 +159,13 @@ type binaryExpr struct {
 }
 
 func (*binaryExpr) exprNode() {}
+
+type rangeExpr struct {
+	start expr
+	end   expr
+}
+
+func (*rangeExpr) exprNode() {}
 
 type assignExpr struct {
 	op    string

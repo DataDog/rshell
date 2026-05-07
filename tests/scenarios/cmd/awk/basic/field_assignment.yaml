@@ -1,0 +1,17 @@
+description: awk field assignment rebuilds records with OFS and $0 assignment resplits fields.
+setup:
+  files:
+    - path: input.txt
+      content: |+
+        a b c
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    awk 'BEGIN { OFS="|" } { $2 = toupper($2); print $0, NF; NF = 4; $4 = "z"; print $0, NF; $0 = "m n"; print $1, $2, NF }' input.txt
+expect:
+  stdout: |+
+    a|B|c|3
+    a|B|c|z|4
+    m|n|2
+  stderr: |+
+  exit_code: 0

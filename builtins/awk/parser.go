@@ -47,7 +47,6 @@ var unsupportedBuiltinFunctions = map[string]struct{}{
 	"rand":           {},
 	"rshift":         {},
 	"sin":            {},
-	"split":          {},
 	"sprintf":        {},
 	"sqrt":           {},
 	"srand":          {},
@@ -64,6 +63,7 @@ var supportedBuiltinFunctions = map[string]struct{}{
 	"index":   {},
 	"int":     {},
 	"length":  {},
+	"split":   {},
 	"substr":  {},
 	"tolower": {},
 	"toupper": {},
@@ -114,7 +114,12 @@ func (p *parser) parseRule() (rule, error) {
 		return rule{}, err
 	}
 	if p.at(tokComma) {
-		return rule{}, fmt.Errorf("range patterns are not supported")
+		p.advance()
+		end, err := p.parseExpression(0)
+		if err != nil {
+			return rule{}, err
+		}
+		pattern = &rangeExpr{start: pattern, end: end}
 	}
 	if p.at(tokLBrace) {
 		action, err := p.parseAction()
@@ -155,9 +160,23 @@ func (p *parser) parseStatement() (stmt, error) {
 	if p.atIdent("if") {
 		return p.parseIf()
 	}
+	if p.atIdent("for") {
+		return p.parseFor()
+	}
+	if p.atIdent("while") {
+		return p.parseWhile()
+	}
 	if p.atIdent("next") {
 		p.advance()
 		return &nextStmt{}, nil
+	}
+	if p.atIdent("break") {
+		p.advance()
+		return &breakStmt{}, nil
+	}
+	if p.atIdent("continue") {
+		p.advance()
+		return &continueStmt{}, nil
 	}
 	if p.atIdent("print") {
 		return p.parsePrint()
@@ -165,13 +184,11 @@ func (p *parser) parseStatement() (stmt, error) {
 	if p.atIdent("printf") {
 		return p.parsePrintf()
 	}
-	if p.atIdent("if") || p.atIdent("while") || p.atIdent("for") ||
-		p.atIdent("nextfile") || p.atIdent("exit") ||
-		p.atIdent("break") || p.atIdent("continue") {
+	if p.atIdent("if") || p.atIdent("nextfile") || p.atIdent("exit") {
 		return nil, fmt.Errorf("control flow statements are not supported")
 	}
 	if p.atIdent("delete") {
-		return nil, fmt.Errorf("arrays are not supported")
+		return p.parseDelete()
 	}
 	if p.atIdent("getline") {
 		return nil, fmt.Errorf("getline is not supported")
@@ -181,6 +198,97 @@ func (p *parser) parseStatement() (stmt, error) {
 		return nil, err
 	}
 	return &exprStmt{x: x}, nil
+}
+
+func (p *parser) parseFor() (stmt, error) {
+	p.advance()
+	if !p.match(tokLParen) {
+		return nil, fmt.Errorf("expected ( after for")
+	}
+	p.skipSeparators()
+	if p.cur().kind == tokIdent && p.peek(1).kind == tokIdent && p.peek(1).lit == "in" {
+		varName := p.cur().lit
+		if err := validateIdentifierReference(varName); err != nil {
+			return nil, err
+		}
+		p.advance()
+		p.advance()
+		if p.cur().kind != tokIdent {
+			return nil, fmt.Errorf("expected array name in for loop")
+		}
+		arrayName := p.cur().lit
+		if err := validateIdentifierReference(arrayName); err != nil {
+			return nil, err
+		}
+		p.advance()
+		p.skipSeparators()
+		if !p.match(tokRParen) {
+			return nil, fmt.Errorf("expected ) after for loop")
+		}
+		body, err := p.parseStatementGroup()
+		if err != nil {
+			return nil, err
+		}
+		return &forInStmt{varName: varName, arrayName: arrayName, body: body}, nil
+	}
+	init, err := p.parseOptionalForExpr(tokSemicolon)
+	if err != nil {
+		return nil, err
+	}
+	if !p.match(tokSemicolon) {
+		return nil, fmt.Errorf("expected ; in for loop")
+	}
+	cond, err := p.parseOptionalForExpr(tokSemicolon)
+	if err != nil {
+		return nil, err
+	}
+	if !p.match(tokSemicolon) {
+		return nil, fmt.Errorf("expected ; in for loop")
+	}
+	post, err := p.parseOptionalForExpr(tokRParen)
+	if err != nil {
+		return nil, err
+	}
+	if !p.match(tokRParen) {
+		return nil, fmt.Errorf("expected ) after for loop")
+	}
+	body, err := p.parseStatementGroup()
+	if err != nil {
+		return nil, err
+	}
+	return &forStmt{init: init, cond: cond, post: post, body: body}, nil
+}
+
+func (p *parser) parseOptionalForExpr(end tokenKind) (expr, error) {
+	p.skipNewlines()
+	if p.at(end) {
+		return nil, nil
+	}
+	x, err := p.parseExpression(0)
+	if err != nil {
+		return nil, err
+	}
+	p.skipNewlines()
+	return x, nil
+}
+
+func (p *parser) parseWhile() (stmt, error) {
+	p.advance()
+	if !p.match(tokLParen) {
+		return nil, fmt.Errorf("expected ( after while")
+	}
+	cond, err := p.parseExpression(0)
+	if err != nil {
+		return nil, err
+	}
+	if !p.match(tokRParen) {
+		return nil, fmt.Errorf("expected ) after while condition")
+	}
+	body, err := p.parseStatementGroup()
+	if err != nil {
+		return nil, err
+	}
+	return &whileStmt{cond: cond, body: body}, nil
 }
 
 func (p *parser) parseIf() (stmt, error) {
@@ -227,6 +335,29 @@ func (p *parser) parseStatementGroup() ([]stmt, error) {
 		return nil, err
 	}
 	return []stmt{st}, nil
+}
+
+func (p *parser) parseDelete() (stmt, error) {
+	p.advance()
+	if p.cur().kind != tokIdent {
+		return nil, fmt.Errorf("delete requires an array name")
+	}
+	name := p.cur().lit
+	if err := validateIdentifierReference(name); err != nil {
+		return nil, err
+	}
+	p.advance()
+	if !p.match(tokLBracket) {
+		return &deleteStmt{name: name, all: true}, nil
+	}
+	index, err := p.parseExpression(0)
+	if err != nil {
+		return nil, err
+	}
+	if !p.match(tokRBracket) {
+		return nil, fmt.Errorf("expected ] after array index")
+	}
+	return &deleteStmt{name: name, index: index}, nil
 }
 
 func (p *parser) parsePrint() (stmt, error) {
@@ -342,9 +473,6 @@ func (p *parser) parseExpression(minPrec int) (expr, error) {
 				}
 			}
 			if isAssignOp(op) {
-				if _, ok := left.(*fieldExpr); ok {
-					return nil, fmt.Errorf("field assignment is not supported")
-				}
 				if !isAssignableExpr(left) {
 					return nil, fmt.Errorf("assignment requires a variable")
 				}
@@ -498,6 +626,10 @@ func validateBuiltinCallArity(name string, argc int) error {
 		if argc != 2 {
 			return fmt.Errorf("index expects 2 arguments")
 		}
+	case "split":
+		if argc != 2 && argc != 3 {
+			return fmt.Errorf("split expects 2 or 3 arguments")
+		}
 	case "tolower", "toupper", "int":
 		if argc != 1 {
 			return fmt.Errorf("%s expects 1 argument", name)
@@ -508,7 +640,7 @@ func validateBuiltinCallArity(name string, argc int) error {
 
 func isAssignableExpr(x expr) bool {
 	switch x.(type) {
-	case *varExpr, *arrayRefExpr:
+	case *varExpr, *arrayRefExpr, *fieldExpr:
 		return true
 	default:
 		return false
@@ -591,6 +723,9 @@ func (p *parser) parseFieldRef() (expr, error) {
 }
 
 func (p *parser) binaryOp() (string, int, string, bool) {
+	if p.atIdent("in") {
+		return "in", precCompare, "left", true
+	}
 	switch p.cur().kind {
 	case tokAssign:
 		return "=", precAssign, "right", true
@@ -672,6 +807,14 @@ func (p *parser) cur() token {
 		return token{kind: tokEOF}
 	}
 	return p.toks[p.pos]
+}
+
+func (p *parser) peek(n int) token {
+	idx := p.pos + n
+	if idx >= len(p.toks) {
+		return token{kind: tokEOF}
+	}
+	return p.toks[idx]
 }
 
 func (p *parser) at(k tokenKind) bool {

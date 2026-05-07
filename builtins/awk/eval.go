@@ -9,10 +9,13 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"strconv"
 	"strings"
 )
 
 var errNextRecord = errors.New("next record")
+var errBreakLoop = errors.New("break loop")
+var errContinueLoop = errors.New("continue loop")
 
 func (rt *runtime) execStatements(stmts []stmt) error {
 	for _, st := range stmts {
@@ -64,8 +67,53 @@ func (rt *runtime) execStatements(stmts []stmt) error {
 					return err
 				}
 			}
+		case *forInStmt:
+			keys, err := rt.arrayKeys(s.arrayName)
+			if err != nil {
+				return err
+			}
+			for _, key := range keys {
+				if err := rt.setVar(s.varName, stringValue(key)); err != nil {
+					return err
+				}
+				if err := rt.execStatements(s.body); err != nil {
+					if errors.Is(err, errBreakLoop) {
+						break
+					}
+					if errors.Is(err, errContinueLoop) {
+						continue
+					}
+					return err
+				}
+			}
+		case *forStmt:
+			if err := rt.execFor(s); err != nil {
+				return err
+			}
+		case *whileStmt:
+			if err := rt.execWhile(s); err != nil {
+				return err
+			}
 		case *nextStmt:
 			return errNextRecord
+		case *breakStmt:
+			return errBreakLoop
+		case *continueStmt:
+			return errContinueLoop
+		case *deleteStmt:
+			if s.all {
+				if err := rt.deleteArray(s.name); err != nil {
+					return err
+				}
+				continue
+			}
+			key, err := rt.eval(s.index)
+			if err != nil {
+				return err
+			}
+			if err := rt.deleteArrayElem(s.name, key.String()); err != nil {
+				return err
+			}
 		case *exprStmt:
 			if _, err := rt.eval(s.x); err != nil {
 				return err
@@ -75,6 +123,59 @@ func (rt *runtime) execStatements(stmts []stmt) error {
 		}
 	}
 	return nil
+}
+
+func (rt *runtime) execFor(s *forStmt) error {
+	if s.init != nil {
+		if _, err := rt.eval(s.init); err != nil {
+			return err
+		}
+	}
+	for {
+		if s.cond != nil {
+			cond, err := rt.eval(s.cond)
+			if err != nil {
+				return err
+			}
+			if !cond.Bool() {
+				return nil
+			}
+		}
+		err := rt.execStatements(s.body)
+		if errors.Is(err, errBreakLoop) {
+			return nil
+		}
+		if err != nil && !errors.Is(err, errContinueLoop) {
+			return err
+		}
+		if s.post != nil {
+			if _, postErr := rt.eval(s.post); postErr != nil {
+				return postErr
+			}
+		}
+	}
+}
+
+func (rt *runtime) execWhile(s *whileStmt) error {
+	for {
+		cond, err := rt.eval(s.cond)
+		if err != nil {
+			return err
+		}
+		if !cond.Bool() {
+			return nil
+		}
+		err = rt.execStatements(s.body)
+		if errors.Is(err, errBreakLoop) {
+			return nil
+		}
+		if errors.Is(err, errContinueLoop) {
+			continue
+		}
+		if err != nil {
+			return err
+		}
+	}
 }
 
 func substrStart(n float64, length int) int {
@@ -170,6 +271,9 @@ func (rt *runtime) eval(x expr) (value, error) {
 }
 
 func (rt *runtime) evalCall(e *callExpr) (value, error) {
+	if e.name == "split" {
+		return rt.evalSplit(e)
+	}
 	args := make([]value, 0, len(e.args))
 	for _, arg := range e.args {
 		v, err := rt.eval(arg)
@@ -224,6 +328,58 @@ func (rt *runtime) evalCall(e *callExpr) (value, error) {
 	}
 }
 
+func (rt *runtime) evalSplit(e *callExpr) (value, error) {
+	if err := validateBuiltinCallArity(e.name, len(e.args)); err != nil {
+		return value{}, err
+	}
+	target, ok := e.args[1].(*varExpr)
+	if !ok {
+		return value{}, fmt.Errorf("split destination must be an array variable")
+	}
+	input, err := rt.eval(e.args[0])
+	if err != nil {
+		return value{}, err
+	}
+	sep := rt.getVar("FS").String()
+	charSplit := false
+	regexSplit := false
+	if len(e.args) == 3 {
+		if rx, ok := e.args[2].(*regexExpr); ok {
+			sep = rx.pattern
+			regexSplit = true
+		} else {
+			sepValue, err := rt.eval(e.args[2])
+			if err != nil {
+				return value{}, err
+			}
+			sep = sepValue.String()
+			charSplit = sep == ""
+		}
+	}
+	var parts []string
+	if charSplit {
+		parts = splitAwkChars(input.String())
+	} else if regexSplit || sep != " " {
+		parts, err = splitAwkRegex(input.String(), sep)
+		if err != nil {
+			return value{}, err
+		}
+	} else {
+		parts, err = splitAwkFields(input.String(), sep)
+		if err != nil {
+			return value{}, err
+		}
+	}
+	elems := make(map[string]value, len(parts))
+	for i, part := range parts {
+		elems[strconv.Itoa(i+1)] = inputStringValue(part)
+	}
+	if err := rt.replaceArray(target.name, elems); err != nil {
+		return value{}, err
+	}
+	return numberValue(float64(len(parts))), nil
+}
+
 func (rt *runtime) evalBinary(e *binaryExpr) (value, error) {
 	if e.op == "&&" {
 		left, err := rt.eval(e.left)
@@ -273,6 +429,16 @@ func (rt *runtime) evalBinary(e *binaryExpr) (value, error) {
 			matched = !matched
 		}
 		return boolValue(matched), nil
+	case "in":
+		arrayName, ok := e.right.(*varExpr)
+		if !ok {
+			return value{}, fmt.Errorf("right side of in requires an array variable")
+		}
+		ok, err := rt.hasArrayElem(arrayName.name, left.String())
+		if err != nil {
+			return value{}, err
+		}
+		return boolValue(ok), nil
 	}
 	right, err := rt.eval(e.right)
 	if err != nil {
@@ -382,9 +548,11 @@ func (rt *runtime) evalIncDec(e *incDecExpr) (value, error) {
 }
 
 type assignTarget struct {
-	name  string
-	key   string
-	array bool
+	name       string
+	key        string
+	array      bool
+	field      bool
+	fieldIndex int
 }
 
 func (rt *runtime) resolveAssignable(x expr) (assignTarget, value, error) {
@@ -405,6 +573,16 @@ func (rt *runtime) resolveAssignable(x expr) (assignTarget, value, error) {
 			return assignTarget{}, value{}, err
 		}
 		return assignTarget{name: v.name, key: keyString, array: true}, current, nil
+	case *fieldExpr:
+		index, err := rt.eval(v.index)
+		if err != nil {
+			return assignTarget{}, value{}, err
+		}
+		n := int(index.Number())
+		if n < 0 {
+			return assignTarget{}, value{}, fmt.Errorf("invalid field index")
+		}
+		return assignTarget{field: true, fieldIndex: n}, rt.field(n), nil
 	default:
 		return assignTarget{}, value{}, fmt.Errorf("expected variable")
 	}
@@ -413,6 +591,9 @@ func (rt *runtime) resolveAssignable(x expr) (assignTarget, value, error) {
 func (rt *runtime) setResolvedAssignable(target assignTarget, v value) error {
 	if target.array {
 		return rt.setArrayElem(target.name, target.key, v)
+	}
+	if target.field {
+		return rt.setField(target.fieldIndex, v)
 	}
 	return rt.setVar(target.name, v)
 }

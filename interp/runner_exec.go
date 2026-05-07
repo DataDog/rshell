@@ -547,6 +547,14 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 
 	if isKnown {
 		r.dispatchedCount++
+		envEach := func(fn func(name, value string) bool) {
+			r.writeEnv.Each(func(name string, vr expand.Variable) bool {
+				if !vr.IsSet() {
+					return true
+				}
+				return fn(name, vr.Str)
+			})
+		}
 		var runCmdWithStdin func(context.Context, string, string, []string, io.Reader) (uint8, error)
 		runCmdWithStdin = func(ctx context.Context, dir string, cmdName string, cmdArgs []string, childStdin io.Reader) (uint8, error) {
 			if !r.allowAllCommands && !r.allowedCommands[cmdName] {
@@ -560,6 +568,7 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 				Stdout:  r.stdout,
 				Stderr:  r.stderr,
 				WorkDir: func() string { return dir },
+				Env:     envEach,
 				HostPrefix: func() string {
 					// Return the sandbox's normalized prefix (filepath.Clean'd
 					// in SetHostPrefix) rather than the raw user-supplied
@@ -663,6 +672,7 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 			Stderr:       r.stderr,
 			InLoop:       r.inLoop,
 			LastExitCode: r.lastExit.code,
+			Env:          envEach,
 			WorkDir: func() string {
 				return HandlerCtx(r.handlerCtx(ctx, todoPos)).Dir
 			},

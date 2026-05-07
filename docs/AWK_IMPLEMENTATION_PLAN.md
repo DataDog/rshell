@@ -365,12 +365,12 @@ builtin useful for real aggregation and log processing. This includes the
 leftover Phase 2 candidates where they naturally depend on the same runtime
 machinery.
 
-- arrays, including `count[$1]++`
+- associative array element expressions, including `count[$1]++`
 - `split`, writing into awk arrays
 - `in`
 - `delete`
 - `for (k in array)`
-- `for` and `while`
+- C-style `for` and `while`
 - `break` and `continue`
 - range patterns such as `/start/,/end/`
 - regex `FS`, including values from `-F` and `FS = value`
@@ -378,7 +378,7 @@ machinery.
   `NF = value`
 - `ENVIRON`, populated from the rshell environment snapshot
 
-Recommended implementation order:
+Implementation order used by `codex/awk-phase-3`:
 
 1. Add associative arrays and array element expressions.
 2. Add `in`, `delete`, `for (k in array)`, and `split`.
@@ -393,6 +393,8 @@ Phase 4 candidates:
 - user-defined functions
 - additional POSIX awk builtins
 - carefully restricted `getline`, only if a safe design is approved
+- safe command pipes through rshell's controlled execution model, only if a
+  concrete non-host-escape design is approved
 - safe GNU awk compatibility extensions that do not violate rshell policy
 
 ## Open Design Questions

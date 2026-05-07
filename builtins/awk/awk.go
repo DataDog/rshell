@@ -12,16 +12,17 @@
 //	awk [OPTION]... -f program-file [FILE]...
 //
 // This implements a practical, intentionally restricted awk profile: program
-// loading from an inline argument or -f files, -F one-character field
+// loading from an inline argument or -f files, -F field
 // separators, -v scalar variables, BEGIN/main/END rules, print and printf,
-// scalar assignment, if/else, next, arithmetic/comparison/boolean expressions,
-// regex patterns and match operators, string concatenation, scalar built-in
-// functions, and read-only fields/built-in variables such as $0, $1, NF, NR,
-// FNR, FILENAME, FS, OFS, and ORS.
+// scalar and associative array assignment, if/else, for/while loops, next,
+// arithmetic/comparison/boolean expressions, regex patterns and match
+// operators, regex field separators, string concatenation, scalar built-in
+// functions, split, delete, ENVIRON, and field/built-in variables such as $0,
+// $1, NF, NR, FNR, FILENAME, FS, OFS, and ORS.
 //
 // Blocked or deferred features include system(), command pipes, output
-// redirection, getline, arrays, loops, user-defined functions, regex FS, and
-// field mutation/$0 rebuilding.
+// redirection, getline, user-defined functions, and many additional POSIX/GNU
+// awk builtins.
 package awk
 
 import (
@@ -93,7 +94,7 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 	help := fs.BoolP("help", "h", false, "print usage and exit")
 	var orderedOptions []orderedOption
 	fieldSep := fieldSeparatorOption{options: &orderedOptions}
-	fs.VarP(&fieldSep, "field-separator", "F", "use a single-character input field separator")
+	fs.VarP(&fieldSep, "field-separator", "F", "use an input field separator regular expression")
 	var programFiles stringList
 	fs.VarP(&programFiles, "file", "f", "read awk program from file")
 	assignments := assignmentOption{options: &orderedOptions}

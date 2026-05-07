@@ -13,9 +13,9 @@ import (
 	"io"
 	"os"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
-	"unicode/utf8"
 
 	"github.com/DataDog/rshell/builtins"
 )
@@ -198,6 +198,8 @@ type runtime struct {
 	varSizes   map[string]int
 	arraySizes map[arraySlot]int
 	varBytes   int
+	rangeOn    map[int]bool
+	initErr    error
 
 	record   string
 	fields   []string
@@ -219,14 +221,20 @@ func newRuntime(callCtx *builtins.CallContext, prog *program) *runtime {
 		arrays:     make(map[string]map[string]value),
 		varSizes:   make(map[string]int),
 		arraySizes: make(map[arraySlot]int),
+		rangeOn:    make(map[int]bool),
 	}
 	rt.vars["FS"] = stringValue(" ")
 	rt.vars["OFS"] = stringValue(" ")
 	rt.vars["ORS"] = stringValue("\n")
+	rt.initErr = rt.populateEnviron()
 	return rt
 }
 
 func (rt *runtime) run(ctx context.Context, files []string) builtins.Result {
+	if rt.initErr != nil {
+		rt.callCtx.Errf("awk: %v\n", rt.initErr)
+		return builtins.Result{Code: 1}
+	}
 	if err := rt.runRules(ctx, ruleBegin); err != nil {
 		rt.callCtx.Errf("awk: %v\n", err)
 		return builtins.Result{Code: 1}
@@ -263,6 +271,18 @@ func (rt *runtime) run(ctx context.Context, files []string) builtins.Result {
 		return builtins.Result{Code: 1}
 	}
 	return builtins.Result{}
+}
+
+func (rt *runtime) populateEnviron() error {
+	if rt.callCtx.Env == nil {
+		return nil
+	}
+	elems := make(map[string]value)
+	rt.callCtx.Env(func(name, value string) bool {
+		elems[name] = stringValue(value)
+		return true
+	})
+	return rt.replaceArray("ENVIRON", elems)
 }
 
 func (rt *runtime) applyOperandAssignment(arg string) (bool, error) {
@@ -355,7 +375,8 @@ func (rt *runtime) openInput(ctx context.Context, file string) (io.ReadCloser, e
 }
 
 func (rt *runtime) runRules(ctx context.Context, kind ruleKind) error {
-	for _, r := range rt.prog.rules {
+	for i := range rt.prog.rules {
+		r := &rt.prog.rules[i]
 		if err := ctx.Err(); err != nil {
 			return err
 		}
@@ -363,7 +384,7 @@ func (rt *runtime) runRules(ctx context.Context, kind ruleKind) error {
 			continue
 		}
 		if kind == ruleNormal && r.pattern != nil {
-			ok, err := rt.matchPattern(r.pattern)
+			ok, err := rt.matchPattern(i, r.pattern)
 			if err != nil {
 				return err
 			}
@@ -390,7 +411,42 @@ func (rt *runtime) runRules(ctx context.Context, kind ruleKind) error {
 	return nil
 }
 
-func (rt *runtime) matchPattern(x expr) (bool, error) {
+func (rt *runtime) matchPattern(ruleIndex int, x expr) (bool, error) {
+	if rx, ok := x.(*rangeExpr); ok {
+		return rt.matchRangePattern(ruleIndex, rx)
+	}
+	return rt.matchSimplePattern(x)
+}
+
+func (rt *runtime) matchRangePattern(ruleIndex int, x *rangeExpr) (bool, error) {
+	if rt.rangeOn[ruleIndex] {
+		end, err := rt.matchSimplePattern(x.end)
+		if err != nil {
+			return false, err
+		}
+		if end {
+			rt.rangeOn[ruleIndex] = false
+		}
+		return true, nil
+	}
+	start, err := rt.matchSimplePattern(x.start)
+	if err != nil {
+		return false, err
+	}
+	if !start {
+		return false, nil
+	}
+	end, err := rt.matchSimplePattern(x.end)
+	if err != nil {
+		return false, err
+	}
+	if !end {
+		rt.rangeOn[ruleIndex] = true
+	}
+	return true, nil
+}
+
+func (rt *runtime) matchSimplePattern(x expr) (bool, error) {
 	if rx, ok := x.(*regexExpr); ok {
 		re, err := compileRegex(rx.pattern)
 		if err != nil {
@@ -408,22 +464,68 @@ func (rt *runtime) matchPattern(x expr) (bool, error) {
 func (rt *runtime) setRecord(rec string) error {
 	rt.record = rec
 	fs := rt.getVar("FS").String()
-	if fs == " " {
-		rt.fields = splitAwkWhitespaceFields(rec)
-	} else {
-		if err := validateFS(fs); err != nil {
-			return err
-		}
-		if rec == "" {
-			rt.fields = nil
-		} else {
-			rt.fields = strings.Split(rec, fs)
-		}
+	fields, err := splitAwkFields(rec, fs)
+	if err != nil {
+		return err
 	}
+	rt.fields = fields
 	if len(rt.fields) > MaxFields {
 		return fmt.Errorf("record has too many fields")
 	}
 	return nil
+}
+
+func (rt *runtime) rebuildRecordFromFields() {
+	rt.record = strings.Join(rt.fields, rt.getVar("OFS").String())
+}
+
+func (rt *runtime) setField(n int, v value) error {
+	if n < 0 {
+		return fmt.Errorf("invalid field index")
+	}
+	if n == 0 {
+		return rt.setRecord(v.String())
+	}
+	if n > MaxFields {
+		return fmt.Errorf("record has too many fields")
+	}
+	for len(rt.fields) < n {
+		rt.fields = append(rt.fields, "")
+	}
+	rt.fields[n-1] = v.String()
+	rt.rebuildRecordFromFields()
+	return nil
+}
+
+func (rt *runtime) setNF(n int) error {
+	if n < 0 {
+		return fmt.Errorf("invalid NF value")
+	}
+	if n > MaxFields {
+		return fmt.Errorf("record has too many fields")
+	}
+	if n < len(rt.fields) {
+		rt.fields = rt.fields[:n]
+	} else {
+		for len(rt.fields) < n {
+			rt.fields = append(rt.fields, "")
+		}
+	}
+	rt.rebuildRecordFromFields()
+	return nil
+}
+
+func splitAwkFields(s, fs string) ([]string, error) {
+	if fs == " " {
+		return splitAwkWhitespaceFields(s), nil
+	}
+	if err := validateFS(fs); err != nil {
+		return nil, err
+	}
+	if s == "" {
+		return nil, nil
+	}
+	return splitAwkRegex(s, fs)
 }
 
 func splitAwkWhitespaceFields(rec string) []string {
@@ -445,6 +547,31 @@ func splitAwkWhitespaceFields(rec string) []string {
 
 func isAwkFieldBlank(b byte) bool {
 	return b == ' ' || b == '\t' || b == '\n'
+}
+
+func splitAwkChars(s string) []string {
+	if s == "" {
+		return nil
+	}
+	chars := make([]string, 0, len(s))
+	for _, r := range s {
+		chars = append(chars, string(r))
+	}
+	return chars
+}
+
+func splitAwkRegex(s, pattern string) ([]string, error) {
+	if s == "" {
+		return nil, nil
+	}
+	re, err := compileRegex(pattern)
+	if err != nil {
+		return nil, err
+	}
+	if re.MatchString("") {
+		return []string{s}, nil
+	}
+	return re.Split(s, -1), nil
 }
 
 func (rt *runtime) field(n int) value {
@@ -481,7 +608,7 @@ func (rt *runtime) setVar(name string, v value) error {
 	}
 	switch name {
 	case "NF":
-		return fmt.Errorf("assignment to NF is not supported")
+		return rt.setNF(int(v.Number()))
 	case "NR", "FNR", "FILENAME":
 		return fmt.Errorf("assignment to %s is not supported", name)
 	case "FS":
@@ -522,6 +649,18 @@ func (rt *runtime) getArrayElem(name, key string) (value, error) {
 	return v, nil
 }
 
+func (rt *runtime) hasArrayElem(name, key string) (bool, error) {
+	if err := rt.validateArrayName(name); err != nil {
+		return false, err
+	}
+	arr := rt.arrays[name]
+	if arr == nil {
+		return false, nil
+	}
+	_, ok := arr[key]
+	return ok, nil
+}
+
 func (rt *runtime) setArrayElem(name, key string, v value) error {
 	if err := rt.validateArrayName(name); err != nil {
 		return err
@@ -542,6 +681,75 @@ func (rt *runtime) setArrayElem(name, key string, v value) error {
 	rt.arraySizes[slot] = size
 	rt.arrays[name][key] = v
 	return nil
+}
+
+func (rt *runtime) replaceArray(name string, elems map[string]value) error {
+	if err := rt.deleteArray(name); err != nil {
+		return err
+	}
+	if rt.arrays[name] == nil {
+		rt.arrays[name] = make(map[string]value, len(elems))
+	}
+	for key, v := range elems {
+		if err := rt.setArrayElem(name, key, v); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (rt *runtime) deleteArrayElem(name, key string) error {
+	if err := rt.validateArrayName(name); err != nil {
+		return err
+	}
+	arr := rt.arrays[name]
+	if arr == nil {
+		return nil
+	}
+	slot := arraySlot{name: name, key: key}
+	if old := rt.arraySizes[slot]; old > 0 {
+		rt.varBytes -= old
+		if rt.varBytes < 0 {
+			rt.varBytes = 0
+		}
+	}
+	delete(rt.arraySizes, slot)
+	delete(arr, key)
+	return nil
+}
+
+func (rt *runtime) deleteArray(name string) error {
+	if err := rt.validateArrayName(name); err != nil {
+		return err
+	}
+	for slot, size := range rt.arraySizes {
+		if slot.name != name {
+			continue
+		}
+		rt.varBytes -= size
+		delete(rt.arraySizes, slot)
+	}
+	if rt.varBytes < 0 {
+		rt.varBytes = 0
+	}
+	delete(rt.arrays, name)
+	return nil
+}
+
+func (rt *runtime) arrayKeys(name string) ([]string, error) {
+	if err := rt.validateArrayName(name); err != nil {
+		return nil, err
+	}
+	arr := rt.arrays[name]
+	if arr == nil {
+		return nil, nil
+	}
+	keys := make([]string, 0, len(arr))
+	for key := range arr {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys, nil
 }
 
 func (rt *runtime) validateArrayName(name string) error {
@@ -570,12 +778,12 @@ func validateFS(fs string) error {
 	if fs == "" {
 		return fmt.Errorf("empty FS is not supported")
 	}
-	r, size := utf8.DecodeRuneInString(fs)
-	if r == utf8.RuneError && size == 0 {
-		return fmt.Errorf("empty FS is not supported")
+	re, err := compileRegex(fs)
+	if err != nil {
+		return err
 	}
-	if size != len(fs) {
-		return fmt.Errorf("multi-character and regex FS values are not supported")
+	if re.MatchString("") {
+		return fmt.Errorf("FS regular expression must not match the empty string")
 	}
 	return nil
 }
