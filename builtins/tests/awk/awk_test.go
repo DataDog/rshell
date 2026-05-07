@@ -276,6 +276,12 @@ func TestAwkOperandAssignments(t *testing.T) {
 	assert.Equal(t, 0, code)
 	assert.Equal(t, "", stderr)
 	assert.Equal(t, "foo a\n", stdout)
+
+	writeFile(t, dir, "1=x", "c\n")
+	stdout, stderr, code = cmdRun(t, `awk '{ print $0 }' 1=x`, dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "", stderr)
+	assert.Equal(t, "c\n", stdout)
 }
 
 func TestAwkAppliesFieldSeparatorOptionsInOrder(t *testing.T) {
@@ -307,6 +313,10 @@ func TestAwkRejectsUnsafeFeatures(t *testing.T) {
 		`awk '{ print getline }' input.txt`,
 		`awk '{ x = next }' input.txt`,
 		`awk '{ exit 0 }' input.txt`,
+		`awk 'BEGIN { BEGIN=1; print BEGIN }' input.txt`,
+		`awk 'BEGIN { END=1; print END }' input.txt`,
+		`awk -v BEGIN=x 'BEGIN { print 1 }' input.txt`,
+		`awk '{ print $0 }' BEGIN=x input.txt`,
 		`awk 'BEGIN { print 1 < 2 < 3 }' input.txt`,
 		`awk '{ print 1 / 0 }' input.txt`,
 		`awk -F '' '{ print $1 }' input.txt`,
