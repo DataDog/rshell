@@ -507,15 +507,29 @@ Scan all scenario tests for the target that have `skip_assert_against_bash: true
 grep -rl "skip_assert_against_bash: true" tests/scenarios/cmd/<target>/ tests/scenarios/shell/<target>/ 2>/dev/null
 ```
 
-For each flagged test, run the script in **both** shells and compare stdout, stderr, and exit code:
+For each flagged test, run the script in **both** shells and compare stdout, stderr, and exit code. **Mirror the scenario YAML's sandbox config on the CLI** so the diff reflects the engine's behaviour, not artificial CLI-default rejections:
+
+| Scenario YAML field | CLI flag to mirror it | Notes |
+|---------------------|-----------------------|-------|
+| no `allowed_commands` (the common case) | `--allow-all-commands` | Without this, the CLI defaults to `rshell:`-namespaced builtins only and almost every script fails with "command not allowed", masking the real divergence |
+| `allowed_commands: [...]` (restricted set) | `--allowed-commands <comma,list>` | Do **not** combine with `--allow-all-commands` |
+| `allowed_paths: [...]` | `--allowed-paths <tempdir>` | Substitute `$DIR` with a real tempdir |
+| `setup.files` | (create them in the tempdir first) | |
+
+**Exception:** scenarios under `tests/scenarios/shell/blocked_commands/` exist precisely to assert blocking. Do **not** add `--allow-all-commands` for those — the rejection *is* the test, and the diff should show "bash runs / our shell rejects" as the expected divergence.
 
 ```bash
-# Our shell
-go run . -c '<script>' >/tmp/rsh.out 2>/tmp/rsh.err; echo $? > /tmp/rsh.exit
+# Pick CLI flags based on the YAML — example for an unrestricted scenario:
+TMP=$(mktemp -d)
+# (create any setup.files under $TMP)
+
+# Our shell (mirrors YAML config; --allow-all-commands when YAML has no allowed_commands)
+go run ./cmd/rshell --allow-all-commands --allowed-paths "$TMP" -c '<script>' \
+  >/tmp/rsh.out 2>/tmp/rsh.err; echo $? > /tmp/rsh.exit
 
 # Bash (local or Docker)
 bash -c '<script>' >/tmp/bash.out 2>/tmp/bash.err; echo $? > /tmp/bash.exit
-# or: docker run --rm debian:bookworm-slim bash -c '<script>' …
+# or: docker run --rm -v "$TMP:$TMP" -w "$TMP" debian:bookworm-slim bash -c '<script>' …
 
 # Diff
 diff /tmp/rsh.out /tmp/bash.out
