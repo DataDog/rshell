@@ -9,6 +9,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 )
 
 // errNoSandbox is returned by changeDir when no AllowedPaths sandbox has
@@ -54,8 +55,15 @@ func (r *Runner) changeDir(absDir string) error {
 	// (execute) permission on. Stat alone does not check this, so verify
 	// access through the sandbox before committing the change. The
 	// 0x01 mode is the same execute bit accepted by AccessFile callers.
-	if err := r.sandbox.Access(cleaned, r.Dir, 0x01); err != nil {
-		return err
+	//
+	// Skipped on Windows: there are no POSIX execute bits, and
+	// allowedpaths.accessCheck always denies an execute check on Windows.
+	// Directory traversal is governed by ACLs that os.Root has already
+	// honoured at sandbox open, so the Stat above is a sufficient guard.
+	if runtime.GOOS != "windows" {
+		if err := r.sandbox.Access(cleaned, r.Dir, 0x01); err != nil {
+			return err
+		}
 	}
 
 	oldDir := r.Dir
