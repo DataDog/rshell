@@ -9,7 +9,7 @@ Legend: ⏳ pending · 🔄 in progress · ✅ done · ⏭️ skipped (no high-v
 | # | Target | Type | Tests (before) | Tests (after) | Status | Notes |
 |---|--------|------|---------------:|--------------:|--------|-------|
 | 1 | uname | cmd | 3 | 3 | ⏭️ | scenario tests can't mock `/proc`; Go tests cover the surface (28 tests with fake proc) |
-| 2 | allowed_commands | shell | 6 | — | ⏳ | |
+| 2 | allowed_commands | shell | 6 | 12 | ✅ | added 6 P2 tests (pipeline, subshell, cmd-sub, help-hint, special builtin, allowed pipeline); fixed missing skip-comments on 6 existing tests |
 | 3 | readonly | shell | 8 | — | ⏳ | |
 | 4 | ss | cmd | 8 | — | ⏳ | |
 | 5 | subshell | shell | 8 | — | ⏳ | |
@@ -74,8 +74,8 @@ Legend: ⏳ pending · 🔄 in progress · ✅ done · ⏭️ skipped (no high-v
 
 ## Summary
 
-- Targets processed: 1 / 63
-- Total tests added: 0
+- Targets processed: 2 / 63
+- Total tests added: 6
 - Duplicate tests removed: 0
 - `skip_assert_against_bash` flags removed: 0
 - Windows-specific assertions removed: 0

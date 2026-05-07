@@ -1,5 +1,6 @@
-skip_assert_against_bash: true
+# skip: allowed_commands is rshell-specific sandbox behaviour with no bash equivalent.
 description: A command not listed in allowed_commands is blocked.
+skip_assert_against_bash: true
 input:
   allowed_commands:
     - rshell:echo
