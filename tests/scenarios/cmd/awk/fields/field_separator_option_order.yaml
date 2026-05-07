@@ -1,0 +1,17 @@
+description: awk applies -F and -v FS options in command-line order.
+setup:
+  files:
+    - path: input.txt
+      content: |+
+        a:b,c
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    awk -v FS=: -F, '{ print $1, $2 }' input.txt
+    awk -F, -v FS=: '{ print $1, $2 }' input.txt
+expect:
+  stdout: |+
+    a:b c
+    a b,c
+  stderr: ""
+  exit_code: 0

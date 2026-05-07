@@ -194,6 +194,24 @@ func TestAwkVariablesTabFSAndMultipleFiles(t *testing.T) {
 	assert.Equal(t, "row:one.tsv:1:1:1\nrow:two.tsv:1:2:2\n", stdout)
 }
 
+func TestAwkAppliesFieldSeparatorOptionsInOrder(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "input.txt", "a:b,c\n")
+	stdout, stderr, code := cmdRun(t, `awk -v FS=: -F, '{ print $1, $2 }' input.txt; awk -F, -v FS=: '{ print $1, $2 }' input.txt`, dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "", stderr)
+	assert.Equal(t, "a:b c\na b,c\n", stdout)
+}
+
+func TestAwkRejectsNaNAndInfNumericStrings(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "input.txt", "NaN Inf Infinity\n")
+	stdout, stderr, code := cmdRun(t, `awk '{ print $1 + 1, $2 + 1, $3 + 1, ($1 == $1), ($2 == $2) }' input.txt`, dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "", stderr)
+	assert.Equal(t, "1 1 1 1 1\n", stdout)
+}
+
 func TestAwkRejectsUnsafeFeatures(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, dir, "input.txt", "a b\n")

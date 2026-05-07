@@ -49,13 +49,53 @@ func (s *stringList) Set(v string) error {
 }
 func (s *stringList) Type() string { return "string" }
 
+type orderedOptionKind int
+
+const (
+	orderedOptionFieldSeparator orderedOptionKind = iota
+	orderedOptionAssignment
+)
+
+type orderedOption struct {
+	kind  orderedOptionKind
+	value string
+}
+
+type fieldSeparatorOption struct {
+	options *[]orderedOption
+	value   string
+}
+
+func (f *fieldSeparatorOption) String() string { return f.value }
+func (f *fieldSeparatorOption) Set(v string) error {
+	f.value = v
+	*f.options = append(*f.options, orderedOption{kind: orderedOptionFieldSeparator, value: v})
+	return nil
+}
+func (f *fieldSeparatorOption) Type() string { return "string" }
+
+type assignmentOption struct {
+	options *[]orderedOption
+	values  []string
+}
+
+func (a *assignmentOption) String() string { return strings.Join(a.values, ",") }
+func (a *assignmentOption) Set(v string) error {
+	a.values = append(a.values, v)
+	*a.options = append(*a.options, orderedOption{kind: orderedOptionAssignment, value: v})
+	return nil
+}
+func (a *assignmentOption) Type() string { return "string" }
+
 func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 	fs.SetInterspersed(false)
 	help := fs.BoolP("help", "h", false, "print usage and exit")
-	fieldSep := fs.StringP("field-separator", "F", "", "use a single-character input field separator")
+	var orderedOptions []orderedOption
+	fieldSep := fieldSeparatorOption{options: &orderedOptions}
+	fs.VarP(&fieldSep, "field-separator", "F", "use a single-character input field separator")
 	var programFiles stringList
 	fs.VarP(&programFiles, "file", "f", "read awk program from file")
-	var assignments stringList
+	assignments := assignmentOption{options: &orderedOptions}
 	fs.VarP(&assignments, "assign", "v", "assign awk variable before execution")
 
 	return func(ctx context.Context, callCtx *builtins.CallContext, args []string) builtins.Result {
@@ -74,17 +114,16 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			return builtins.Result{Code: 1}
 		}
 		rt := newRuntime(callCtx, prog)
-		if fs.Changed("field-separator") {
-			if err := rt.setVar("FS", inputStringValue(DecodeAwkEscapes(*fieldSep))); err != nil {
-				callCtx.Errf("awk: %v\n", err)
-				return builtins.Result{Code: 1}
-			}
-		}
-		for _, assignment := range assignments {
-			name, value, ok := strings.Cut(assignment, "=")
-			if !ok || !validVarName(name) {
-				callCtx.Errf("awk: invalid -v assignment %q\n", assignment)
-				return builtins.Result{Code: 1}
+		for _, opt := range orderedOptions {
+			name := "FS"
+			value := opt.value
+			if opt.kind == orderedOptionAssignment {
+				var ok bool
+				name, value, ok = strings.Cut(opt.value, "=")
+				if !ok || !validVarName(name) {
+					callCtx.Errf("awk: invalid -v assignment %q\n", opt.value)
+					return builtins.Result{Code: 1}
+				}
 			}
 			if err := rt.setVar(name, inputStringValue(DecodeAwkEscapes(value))); err != nil {
 				callCtx.Errf("awk: %v\n", err)
