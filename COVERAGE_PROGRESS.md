@@ -9,7 +9,7 @@ Legend: ⏳ pending · 🔄 in progress · ✅ done · ⏭️ skipped (no high-v
 | # | Target | Type | Tests (before) | Tests (after) | Status | Notes |
 |---|--------|------|---------------:|--------------:|--------|-------|
 | 1 | break | cmd | 0 | 0 | ⏭️ | 69 break-related scenarios across loop/if/logic_ops dirs cover all behavior |
-| 2 | continue | cmd | 0 | — | ⏳ | covered transitively via for/while/until loop scenarios |
+| 2 | continue | cmd | 0 | 0 | ⏭️ | 62 continue-related scenarios across loop/if dirs cover all behavior |
 | 3 | readonly | shell | 8 | — | ⏳ | |
 | 4 | subshell | shell | 8 | — | ⏳ | |
 | 5 | empty_script | shell | 9 | — | ⏳ | |
@@ -75,7 +75,7 @@ Legend: ⏳ pending · 🔄 in progress · ✅ done · ⏭️ skipped (no high-v
 
 ## Summary
 
-- Targets processed: 1 / 64
+- Targets processed: 2 / 64
 - Tests added: 0 (scenario: 0, unit: 0)
 - Duplicate tests removed: 0 (scenario: 0, unit: 0)
 - Low-value tests removed: 0 (scenario: 0, unit: 0)
