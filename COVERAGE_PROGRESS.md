@@ -61,7 +61,7 @@ Legend: ⏳ pending · 🔄 in progress · ✅ done · ⏭️ skipped (no high-v
 | 51 | sort | cmd | 141 | 141 | ⏭️ | 56 scenarios + 85 Go tests cover -n/-r/-u/-k/-t/-h/-V/-c/-b/-d/-f, multi-file |
 | 52 | cut | cmd | 144 | 144 | ⏭️ | 53 scenarios cover -b/-c/-f/-d/-s/--complement/--output-delimiter, ranges, errors |
 | 53 | ip | cmd | 144 | 144 | ⏭️ | 41 scenarios + 103 Go tests cover ip route, addr, link subcommands and /proc/net parsing |
-| 54 | cat | cmd | 145 | — | ⏳ | |
+| 54 | cat | cmd | 145 | 145 | ⏭️ | 44 scenarios + 101 Go tests cover -n/-b/-s/-A/-E/-T/-v, multi-file, errors, hardening, GNU compat |
 | 55 | grep | cmd | 151 | — | ⏳ | |
 | 56 | uniq | cmd | 161 | — | ⏳ | |
 | 57 | testcmd | cmd | 168 | — | ⏳ | |
@@ -75,7 +75,7 @@ Legend: ⏳ pending · 🔄 in progress · ✅ done · ⏭️ skipped (no high-v
 
 ## Summary
 
-- Targets processed: 53 / 64
+- Targets processed: 54 / 64
 - Tests added: 8 (scenario: 8, unit: 0)
 - Duplicate tests removed: 13 (scenario: 13, unit: 0)
 - Low-value tests removed: 0 (scenario: 0, unit: 0)
