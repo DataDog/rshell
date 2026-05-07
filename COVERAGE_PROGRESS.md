@@ -28,7 +28,7 @@ Legend: ⏳ pending · 🔄 in progress · ✅ done · ⏭️ skipped (no high-v
 | 18 | redirections        | shell |             26 | 26            | ⏭️     | already comprehensive — covers /dev/null target, heredoc variants, delimiter quoting, dup, multi-heredoc |
 | 19 | uname               | cmd   |             27 | 27            | ⏭️     | already comprehensive — 24 Go tests + 3 scenarios cover every flag/combo/error/platform path |
 | 20 | comments            | shell |             27 | 27            | ⏭️     | already comprehensive — covers # in/outside quotes, after operators, with backslash, after redirect, in pipelines |
-| 21 | negation            | shell |             27 | —             | ⏳     |       |
+| 21 | negation            | shell |             27 | 27            | ⏭️     | already comprehensive — covers ! on simple cmds, pipelines, in if-cond, with &&/\|\|, in else, with cmd-subst |
 | 22 | line_continuation   | shell |             28 | —             | ⏳     |       |
 | 23 | while_clause        | shell |             28 | —             | ⏳     |       |
 | 24 | brace_group         | shell |             33 | —             | ⏳     |       |
@@ -75,7 +75,7 @@ Legend: ⏳ pending · 🔄 in progress · ✅ done · ⏭️ skipped (no high-v
 
 ## Summary
 
-- Targets processed: 20 / 64
+- Targets processed: 21 / 64
 - Tests added: 0 (scenario: 0, unit: 0)
 - Duplicate tests removed: 0 (scenario: 0, unit: 0)
 - Low-value tests removed: 0 (scenario: 0, unit: 0)
