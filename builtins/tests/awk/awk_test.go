@@ -268,6 +268,9 @@ func TestAwkRejectsScalarArrayNameConflicts(t *testing.T) {
 		`awk 'function f(x){ x = 1; x[1] = 2 } BEGIN { f(a) }'`,
 		`awk 'function f(a,b){ a = 2; b[1] = 1 } BEGIN { f(x,x) }'`,
 		`awk 'function f(x){ x = 1 } BEGIN { f(a); a[1] = 2 }'`,
+		`awk 'function f(x){ print x; x[1] = 2 } BEGIN { f(a) }'`,
+		`awk 'function f(x){ print x } BEGIN { f(a); a[1] = 2 }'`,
+		`awk 'function f(x){ print x; x[1] = 2 } BEGIN { f() }'`,
 	} {
 		_, stderr, code := cmdRun(t, script, dir)
 		assert.Equal(t, 1, code, script)

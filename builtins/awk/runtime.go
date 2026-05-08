@@ -896,6 +896,7 @@ func (rt *runtime) getVar(name string) value {
 		if local.valueSet {
 			return local.value
 		}
+		rt.markLocalScalarRead(local)
 		return unassignedValue()
 	}
 	switch name {
@@ -982,6 +983,18 @@ func (rt *runtime) setLocalScalar(local *localVar, v value) error {
 	local.array = nil
 	local.arraySizes = nil
 	return nil
+}
+
+func (rt *runtime) markLocalScalarRead(local *localVar) {
+	root := rootLocalVar(local)
+	if root == nil || rt.localIsArray(root) {
+		return
+	}
+	root.value = unassignedValue()
+	root.valueSet = true
+	if root.globalArrayName != "" {
+		rt.markGlobalScalarName(root.globalArrayName)
+	}
 }
 
 func (rt *runtime) isArray(name string) bool {
