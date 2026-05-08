@@ -560,12 +560,9 @@ func (rt *runtime) removeCommandPipeOrder(command string) {
 func (rt *runtime) closeAllCommandPipes(ctx context.Context) error {
 	for len(rt.pipeOrder) > 0 {
 		command := rt.pipeOrder[0]
-		status, ok, err := rt.closeCommandPipe(ctx, command)
+		_, _, err := rt.closeCommandPipe(ctx, command)
 		if err != nil {
 			return err
-		}
-		if ok && status != 0 {
-			return fmt.Errorf("command pipe %q exited with status %d", command, status)
 		}
 	}
 	return nil
@@ -973,6 +970,10 @@ func (rt *runtime) setLocalScalar(local *localVar, v value) error {
 	local.valueSize = size
 	local.value = v
 	local.valueSet = true
+	local.arrayAlias = nil
+	local.globalArrayName = ""
+	local.array = nil
+	local.arraySizes = nil
 	return nil
 }
 

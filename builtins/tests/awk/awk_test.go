@@ -265,6 +265,7 @@ func TestAwkRejectsScalarArrayNameConflicts(t *testing.T) {
 		`awk 'BEGIN { print ENVIRON }'`,
 		`awk 'BEGIN { FS[1] = 2 }'`,
 		`awk 'BEGIN { NF[1] = 2 }'`,
+		`awk 'function f(x){ x = 1; x[1] = 2 } BEGIN { f(a) }'`,
 	} {
 		_, stderr, code := cmdRun(t, script, dir)
 		assert.Equal(t, 1, code, script)
@@ -537,6 +538,16 @@ func TestAwkCommandPipes(t *testing.T) {
 	assert.Equal(t, 0, code)
 	assert.Equal(t, "", stderr)
 	assert.Equal(t, "auto-close\n", stdout)
+
+	stdout, stderr, code = cmdRun(t, `awk 'BEGIN { print "x" | "false" }'`, dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "", stderr)
+	assert.Equal(t, "", stdout)
+
+	stdout, stderr, code = cmdRun(t, `awk 'BEGIN { print "x" | "false"; print close("false") }'`, dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "", stderr)
+	assert.Equal(t, "1\n", stdout)
 
 	stdout, stderr, code = cmdRun(t, `awk 'BEGIN { print close("missing") }'`, dir)
 	assert.Equal(t, 0, code)
