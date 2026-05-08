@@ -1365,16 +1365,17 @@ func (re *awkRegex) FindAllStringIndex(s string, n int) [][]int {
 
 func normalizeAwkRegex(pattern string) (string, bool) {
 	var b strings.Builder
-	byteMode := false
+	byteMode := awkRegexNeedsByteMode(pattern)
 	for i := 0; i < len(pattern); i++ {
 		ch := pattern[i]
 		if ch != '\\' {
 			if ch >= 0x80 {
 				r, size := utf8.DecodeRuneInString(pattern[i:])
-				if r == utf8.RuneError && size == 1 {
-					if writeAwkRegexByteEscape(&b, ch) {
-						byteMode = true
+				if byteMode || (r == utf8.RuneError && size == 1) {
+					for j := i; j < i+size; j++ {
+						writeAwkRegexByteEscape(&b, pattern[j])
 					}
+					i += size - 1
 					continue
 				}
 				b.WriteString(pattern[i : i+size])
@@ -1394,9 +1395,7 @@ func normalizeAwkRegex(pattern string) (string, bool) {
 				i++
 				value = value*8 + int(pattern[i]-'0')
 			}
-			if writeAwkRegexByteEscape(&b, byte(value)) {
-				byteMode = true
-			}
+			writeAwkRegexByteEscape(&b, byte(value))
 			continue
 		}
 		i++
@@ -1405,17 +1404,41 @@ func normalizeAwkRegex(pattern string) (string, bool) {
 	return b.String(), byteMode
 }
 
-func writeAwkRegexByteEscape(b *strings.Builder, value byte) bool {
+func awkRegexNeedsByteMode(pattern string) bool {
+	for i := 0; i < len(pattern); i++ {
+		ch := pattern[i]
+		if ch == '\\' && i+1 < len(pattern) && isOctalDigit(rune(pattern[i+1])) {
+			value := 0
+			for digits := 0; digits < 3 && i+1 < len(pattern) && isOctalDigit(rune(pattern[i+1])); digits++ {
+				i++
+				value = value*8 + int(pattern[i]-'0')
+			}
+			if byte(value) >= 0x80 {
+				return true
+			}
+			continue
+		}
+		if ch >= 0x80 {
+			r, size := utf8.DecodeRuneInString(pattern[i:])
+			if r == utf8.RuneError && size == 1 {
+				return true
+			}
+			i += size - 1
+		}
+	}
+	return false
+}
+
+func writeAwkRegexByteEscape(b *strings.Builder, value byte) {
 	if value >= 0x80 {
 		const hex = "0123456789abcdef"
 		b.WriteString(`\x{`)
 		b.WriteByte(hex[value>>4])
 		b.WriteByte(hex[value&0x0f])
 		b.WriteByte('}')
-		return true
+		return
 	}
 	b.WriteByte(value)
-	return false
 }
 
 func encodeAwkRegexBytes(s string) (string, []int) {

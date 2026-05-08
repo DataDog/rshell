@@ -5,6 +5,7 @@ input:
     printf 'a\n141\n.\nx\n' | awk '/\141/ { print "a", $0 } /\056/ { print "dot", $0 }'
     printf '\377\n' | awk '/\377/ { print "byte" }'
     printf '\377\n' | awk 'BEGIN { r = "\377" } $0 ~ r { print "dynamic" }'
+    printf '\303\251\377\n' | awk 'BEGIN { r = "\303\251\377" } $0 ~ r { print "mixed" }'
 expect:
   stdout: |+
     a a
@@ -14,5 +15,6 @@ expect:
     dot x
     byte
     dynamic
+    mixed
   stderr: |+
   exit_code: 0
