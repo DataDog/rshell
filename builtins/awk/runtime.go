@@ -573,10 +573,21 @@ func splitAwkRegex(s, pattern string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	if re.MatchString("") {
+	matches := re.FindAllStringIndex(s, -1)
+	fields := make([]string, 0, len(matches)+1)
+	last := 0
+	for _, match := range matches {
+		if match[0] == match[1] {
+			continue
+		}
+		fields = append(fields, s[last:match[0]])
+		last = match[1]
+	}
+	if len(fields) == 0 {
 		return []string{s}, nil
 	}
-	return re.Split(s, -1), nil
+	fields = append(fields, s[last:])
+	return fields, nil
 }
 
 func (rt *runtime) field(n int) value {
