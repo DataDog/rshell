@@ -448,12 +448,15 @@ func (rt *runtime) evalLength(e *callExpr) (value, error) {
 	if len(e.args) == 0 {
 		return numberValue(float64(len([]rune(rt.field(0).String())))), nil
 	}
-	if arg, ok := e.args[0].(*varExpr); ok && rt.isArray(arg.name) {
-		keys, err := rt.arrayKeys(arg.name)
-		if err != nil {
-			return value{}, err
+	if arg, ok := e.args[0].(*varExpr); ok {
+		rt.ensureBuiltinArray(arg.name)
+		if rt.isArray(arg.name) {
+			keys, err := rt.arrayKeys(arg.name)
+			if err != nil {
+				return value{}, err
+			}
+			return numberValue(float64(len(keys))), nil
 		}
-		return numberValue(float64(len(keys))), nil
 	}
 	v, err := rt.eval(e.args[0])
 	if err != nil {
