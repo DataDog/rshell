@@ -10,12 +10,22 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"regexp"
 	"strings"
+	"unicode/utf8"
 )
 
 var errNextRecord = errors.New("next record")
 var errBreakLoop = errors.New("break loop")
 var errContinueLoop = errors.New("continue loop")
+
+type exitError struct {
+	code int
+}
+
+func (e *exitError) Error() string {
+	return "exit"
+}
 
 func (rt *runtime) execStatements(ctx context.Context, stmts []stmt) error {
 	for _, st := range stmts {
@@ -99,6 +109,17 @@ func (rt *runtime) execStatements(ctx context.Context, stmts []stmt) error {
 			}
 		case *nextStmt:
 			return errNextRecord
+		case *exitStmt:
+			code := rt.exitCode
+			if s.status != nil {
+				status, err := rt.eval(s.status)
+				if err != nil {
+					return err
+				}
+				code = int(status.Number())
+			}
+			rt.exitCode = code
+			return &exitError{code: code}
 		case *breakStmt:
 			return errBreakLoop
 		case *continueStmt:
@@ -110,11 +131,11 @@ func (rt *runtime) execStatements(ctx context.Context, stmts []stmt) error {
 				}
 				continue
 			}
-			key, err := rt.eval(s.index)
+			key, err := rt.evalArrayKey(s.indices)
 			if err != nil {
 				return err
 			}
-			if err := rt.deleteArrayElem(s.name, key.String()); err != nil {
+			if err := rt.deleteArrayElem(s.name, key); err != nil {
 				return err
 			}
 		case *exprStmt:
@@ -236,6 +257,12 @@ func (rt *runtime) eval(x expr) (value, error) {
 		return rt.getVar(e.name), nil
 	case *arrayRefExpr:
 		return rt.evalArrayRef(e)
+	case *compositeExpr:
+		key, err := rt.evalArrayKey(e.parts)
+		if err != nil {
+			return value{}, err
+		}
+		return stringValue(key), nil
 	case *fieldExpr:
 		v, err := rt.eval(e.index)
 		if err != nil {
@@ -268,6 +295,15 @@ func (rt *runtime) eval(x expr) (value, error) {
 		}
 	case *binaryExpr:
 		return rt.evalBinary(e)
+	case *ternaryExpr:
+		cond, err := rt.eval(e.cond)
+		if err != nil {
+			return value{}, err
+		}
+		if cond.Bool() {
+			return rt.eval(e.then)
+		}
+		return rt.eval(e.els)
 	case *assignExpr:
 		return rt.evalAssign(e)
 	case *incDecExpr:
@@ -282,6 +318,12 @@ func (rt *runtime) eval(x expr) (value, error) {
 func (rt *runtime) evalCall(e *callExpr) (value, error) {
 	if e.name == "split" {
 		return rt.evalSplit(e)
+	}
+	if e.name == "sub" || e.name == "gsub" {
+		return rt.evalSubstitution(e)
+	}
+	if e.name == "match" {
+		return rt.evalMatch(e)
 	}
 	args := make([]value, 0, len(e.args))
 	for _, arg := range e.args {
@@ -332,9 +374,191 @@ func (rt *runtime) evalCall(e *callExpr) (value, error) {
 	case "int":
 		v := args[0]
 		return numberValue(math.Trunc(v.Number())), nil
+	case "sprintf":
+		out, err := formatPrintf(args[0].String(), args[1:])
+		if err != nil {
+			return value{}, err
+		}
+		return stringValue(out), nil
 	default:
 		return value{}, fmt.Errorf("function calls are not supported")
 	}
+}
+
+func (rt *runtime) evalSubstitution(e *callExpr) (value, error) {
+	if err := validateBuiltinCallArity(e.name, len(e.args)); err != nil {
+		return value{}, err
+	}
+	re, err := rt.compileRegexArg(e.args[0])
+	if err != nil {
+		return value{}, err
+	}
+	repl, err := rt.eval(e.args[1])
+	if err != nil {
+		return value{}, err
+	}
+	var target assignTarget
+	var current value
+	if len(e.args) == 3 {
+		target, current, err = rt.resolveAssignable(e.args[2])
+		if err != nil {
+			return value{}, err
+		}
+	} else {
+		target = assignTarget{field: true, fieldIndex: 0}
+		current = rt.field(0)
+	}
+	next, count, err := substituteAwk(re, current.String(), repl.String(), e.name == "gsub")
+	if err != nil {
+		return value{}, err
+	}
+	if count == 0 {
+		return numberValue(0), nil
+	}
+	if err := rt.setResolvedAssignable(target, stringValue(next)); err != nil {
+		return value{}, err
+	}
+	return numberValue(float64(count)), nil
+}
+
+func (rt *runtime) evalMatch(e *callExpr) (value, error) {
+	if err := validateBuiltinCallArity(e.name, len(e.args)); err != nil {
+		return value{}, err
+	}
+	input, err := rt.eval(e.args[0])
+	if err != nil {
+		return value{}, err
+	}
+	re, err := rt.compileRegexArg(e.args[1])
+	if err != nil {
+		return value{}, err
+	}
+	match := re.FindStringIndex(input.String())
+	if match == nil {
+		if err := rt.setVar("RSTART", numberValue(0)); err != nil {
+			return value{}, err
+		}
+		if err := rt.setVar("RLENGTH", numberValue(-1)); err != nil {
+			return value{}, err
+		}
+		return numberValue(0), nil
+	}
+	start := runeLen(input.String()[:match[0]]) + 1
+	length := runeLen(input.String()[match[0]:match[1]])
+	if err := rt.setVar("RSTART", numberValue(float64(start))); err != nil {
+		return value{}, err
+	}
+	if err := rt.setVar("RLENGTH", numberValue(float64(length))); err != nil {
+		return value{}, err
+	}
+	return numberValue(float64(start)), nil
+}
+
+func (rt *runtime) compileRegexArg(x expr) (*regexp.Regexp, error) {
+	if rx, ok := x.(*regexExpr); ok {
+		return compileRegex(rx.pattern)
+	}
+	v, err := rt.eval(x)
+	if err != nil {
+		return nil, err
+	}
+	return compileRegex(v.String())
+}
+
+func substituteAwk(re *regexp.Regexp, input, replacement string, all bool) (string, int, error) {
+	var b strings.Builder
+	count := 0
+	last := 0
+	searchStart := 0
+	for searchStart <= len(input) {
+		loc := re.FindStringIndex(input[searchStart:])
+		if loc == nil {
+			break
+		}
+		start := searchStart + loc[0]
+		end := searchStart + loc[1]
+		if err := appendLimitedString(&b, input[last:start]); err != nil {
+			return "", 0, err
+		}
+		if err := appendAwkReplacement(&b, replacement, input[start:end]); err != nil {
+			return "", 0, err
+		}
+		count++
+		last = end
+		if !all {
+			break
+		}
+		if start == end {
+			if end >= len(input) {
+				searchStart = len(input) + 1
+				continue
+			}
+			_, size := utf8.DecodeRuneInString(input[end:])
+			if size == 0 {
+				size = 1
+			}
+			searchStart = end + size
+			continue
+		}
+		searchStart = end
+	}
+	if count == 0 {
+		return input, 0, nil
+	}
+	if err := appendLimitedString(&b, input[last:]); err != nil {
+		return "", 0, err
+	}
+	return b.String(), count, nil
+}
+
+func appendAwkReplacement(b *strings.Builder, replacement, matched string) error {
+	for i := 0; i < len(replacement); i++ {
+		switch replacement[i] {
+		case '&':
+			if err := appendLimitedString(b, matched); err != nil {
+				return err
+			}
+		case '\\':
+			if i+1 >= len(replacement) {
+				if err := appendLimitedString(b, `\`); err != nil {
+					return err
+				}
+				continue
+			}
+			next := replacement[i+1]
+			i++
+			if next == '&' || next == '\\' {
+				if err := appendLimitedString(b, string(next)); err != nil {
+					return err
+				}
+				continue
+			}
+			if err := appendLimitedString(b, `\`+string(next)); err != nil {
+				return err
+			}
+		default:
+			if err := appendLimitedString(b, replacement[i:i+1]); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func appendLimitedString(b *strings.Builder, s string) error {
+	if len(s) > MaxVariableBytes-b.Len() {
+		return fmt.Errorf("replacement output exceeds %d bytes", MaxVariableBytes)
+	}
+	b.WriteString(s)
+	return nil
+}
+
+func runeLen(s string) int {
+	n := 0
+	for range s {
+		n++
+	}
+	return n
 }
 
 func (rt *runtime) evalSplit(e *callExpr) (value, error) {
@@ -580,11 +804,10 @@ func (rt *runtime) resolveAssignable(x expr) (assignTarget, value, error) {
 		}
 		return assignTarget{name: v.name}, rt.getVar(v.name), nil
 	case *arrayRefExpr:
-		key, err := rt.eval(v.index)
+		keyString, err := rt.evalArrayKey(v.indices)
 		if err != nil {
 			return assignTarget{}, value{}, err
 		}
-		keyString := key.String()
 		current, err := rt.getArrayElem(v.name, keyString)
 		if err != nil {
 			return assignTarget{}, value{}, err
@@ -626,11 +849,29 @@ func (rt *runtime) currentResolvedAssignable(target assignTarget) (value, error)
 }
 
 func (rt *runtime) evalArrayRef(ref *arrayRefExpr) (value, error) {
-	key, err := rt.eval(ref.index)
+	key, err := rt.evalArrayKey(ref.indices)
 	if err != nil {
 		return value{}, err
 	}
-	return rt.getArrayElem(ref.name, key.String())
+	return rt.getArrayElem(ref.name, key)
+}
+
+func (rt *runtime) evalArrayKey(indices []expr) (string, error) {
+	if len(indices) == 0 {
+		return "", fmt.Errorf("array index is required")
+	}
+	parts := make([]string, len(indices))
+	for i, index := range indices {
+		v, err := rt.eval(index)
+		if err != nil {
+			return "", err
+		}
+		parts[i] = v.String()
+	}
+	if len(parts) == 1 {
+		return parts[0], nil
+	}
+	return strings.Join(parts, rt.getVar("SUBSEP").String()), nil
 }
 
 func boolValue(ok bool) value {

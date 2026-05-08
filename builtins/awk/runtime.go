@@ -206,6 +206,7 @@ type runtime struct {
 	filename string
 	nr       int
 	fnr      int
+	exitCode int
 }
 
 type arraySlot struct {
@@ -226,15 +227,24 @@ func newRuntime(callCtx *builtins.CallContext, prog *program) *runtime {
 	rt.vars["FS"] = stringValue(" ")
 	rt.vars["OFS"] = stringValue(" ")
 	rt.vars["ORS"] = stringValue("\n")
+	rt.vars["SUBSEP"] = stringValue("\034")
+	rt.vars["RSTART"] = numberValue(0)
+	rt.vars["RLENGTH"] = numberValue(-1)
 	return rt
 }
 
 func (rt *runtime) run(ctx context.Context, files []string) builtins.Result {
+	exited := false
 	if err := rt.runRules(ctx, ruleBegin); err != nil {
-		rt.callCtx.Errf("awk: %v\n", err)
-		return builtins.Result{Code: 1}
+		if code, ok := exitCodeFromError(err); ok {
+			rt.exitCode = code
+			exited = true
+		} else {
+			rt.callCtx.Errf("awk: %v\n", err)
+			return builtins.Result{Code: 1}
+		}
 	}
-	if rt.needsInput() {
+	if !exited && rt.needsInput() {
 		if len(files) == 0 {
 			files = []string{"-"}
 		}
@@ -250,22 +260,51 @@ func (rt *runtime) run(ctx context.Context, files []string) builtins.Result {
 			}
 			ranInput = true
 			if err := rt.runFile(ctx, file); err != nil {
+				if code, ok := exitCodeFromError(err); ok {
+					rt.exitCode = code
+					exited = true
+					break
+				}
 				rt.callCtx.Errf("awk: %s: %v\n", file, err)
 				return builtins.Result{Code: 1}
 			}
 		}
-		if !ranInput {
+		if !ranInput && !exited {
 			if err := rt.runFile(ctx, "-"); err != nil {
-				rt.callCtx.Errf("awk: -: %v\n", err)
-				return builtins.Result{Code: 1}
+				if code, ok := exitCodeFromError(err); ok {
+					rt.exitCode = code
+				} else {
+					rt.callCtx.Errf("awk: -: %v\n", err)
+					return builtins.Result{Code: 1}
+				}
 			}
 		}
 	}
 	if err := rt.runRules(ctx, ruleEnd); err != nil {
-		rt.callCtx.Errf("awk: %v\n", err)
-		return builtins.Result{Code: 1}
+		if code, ok := exitCodeFromError(err); ok {
+			rt.exitCode = code
+		} else {
+			rt.callCtx.Errf("awk: %v\n", err)
+			return builtins.Result{Code: 1}
+		}
 	}
-	return builtins.Result{}
+	return builtins.Result{Code: normalizeAwkExitCode(rt.exitCode)}
+}
+
+func exitCodeFromError(err error) (int, bool) {
+	exit, ok := err.(*exitError)
+	if ok {
+		return exit.code, true
+	}
+	return 0, false
+}
+
+func normalizeAwkExitCode(code int) uint8 {
+	code %= 256
+	if code < 0 {
+		code += 256
+	}
+	return uint8(code)
 }
 
 func (rt *runtime) ensureEnviron() {

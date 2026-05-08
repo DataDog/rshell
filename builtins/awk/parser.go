@@ -12,6 +12,7 @@ import (
 
 const (
 	precAssign  = 10
+	precTernary = 15
 	precOr      = 20
 	precAnd     = 30
 	precCompare = 40
@@ -36,23 +37,19 @@ var unsupportedBuiltinFunctions = map[string]struct{}{
 	"exp":            {},
 	"fflush":         {},
 	"gensub":         {},
-	"gsub":           {},
 	"isarray":        {},
 	"log":            {},
 	"lshift":         {},
-	"match":          {},
 	"mktime":         {},
 	"or":             {},
 	"patsplit":       {},
 	"rand":           {},
 	"rshift":         {},
 	"sin":            {},
-	"sprintf":        {},
 	"sqrt":           {},
 	"srand":          {},
 	"strftime":       {},
 	"strtonum":       {},
-	"sub":            {},
 	"system":         {},
 	"systime":        {},
 	"typeof":         {},
@@ -60,10 +57,14 @@ var unsupportedBuiltinFunctions = map[string]struct{}{
 }
 
 var supportedBuiltinFunctions = map[string]struct{}{
+	"gsub":    {},
 	"index":   {},
 	"int":     {},
 	"length":  {},
+	"match":   {},
 	"split":   {},
+	"sprintf": {},
+	"sub":     {},
 	"substr":  {},
 	"tolower": {},
 	"toupper": {},
@@ -170,6 +171,9 @@ func (p *parser) parseStatement() (stmt, error) {
 		p.advance()
 		return &nextStmt{}, nil
 	}
+	if p.atIdent("exit") {
+		return p.parseExit()
+	}
 	if p.atIdent("break") {
 		p.advance()
 		return &breakStmt{}, nil
@@ -184,7 +188,7 @@ func (p *parser) parseStatement() (stmt, error) {
 	if p.atIdent("printf") {
 		return p.parsePrintf()
 	}
-	if p.atIdent("if") || p.atIdent("nextfile") || p.atIdent("exit") {
+	if p.atIdent("if") || p.atIdent("nextfile") {
 		return nil, fmt.Errorf("control flow statements are not supported")
 	}
 	if p.atIdent("delete") {
@@ -198,6 +202,18 @@ func (p *parser) parseStatement() (stmt, error) {
 		return nil, err
 	}
 	return &exprStmt{x: x}, nil
+}
+
+func (p *parser) parseExit() (stmt, error) {
+	p.advance()
+	if p.at(tokRBrace) || p.at(tokEOF) || isSeparator(p.cur().kind) {
+		return &exitStmt{}, nil
+	}
+	status, err := p.parseExpression(0)
+	if err != nil {
+		return nil, err
+	}
+	return &exitStmt{status: status}, nil
 }
 
 func (p *parser) parseFor() (stmt, error) {
@@ -350,14 +366,11 @@ func (p *parser) parseDelete() (stmt, error) {
 	if !p.match(tokLBracket) {
 		return &deleteStmt{name: name, all: true}, nil
 	}
-	index, err := p.parseExpression(0)
+	indices, err := p.parseArrayIndices()
 	if err != nil {
 		return nil, err
 	}
-	if !p.match(tokRBracket) {
-		return nil, fmt.Errorf("expected ] after array index")
-	}
-	return &deleteStmt{name: name, index: index}, nil
+	return &deleteStmt{name: name, indices: indices}, nil
 }
 
 func (p *parser) parsePrint() (stmt, error) {
@@ -439,6 +452,25 @@ func (p *parser) parseExpression(minPrec int) (expr, error) {
 		return nil, err
 	}
 	for {
+		if p.at(tokQuestion) {
+			if precTernary < minPrec {
+				break
+			}
+			p.advance()
+			thenExpr, err := p.parseExpression(0)
+			if err != nil {
+				return nil, err
+			}
+			if !p.match(tokColon) {
+				return nil, fmt.Errorf("expected : in conditional expression")
+			}
+			elseExpr, err := p.parseExpression(precTernary)
+			if err != nil {
+				return nil, err
+			}
+			left = &ternaryExpr{cond: left, then: thenExpr, els: elseExpr}
+			continue
+		}
 		if p.at(tokInc) || p.at(tokDec) {
 			if precPostfix < minPrec {
 				break
@@ -537,6 +569,24 @@ func (p *parser) parsePrefix() (expr, error) {
 		if err != nil {
 			return nil, err
 		}
+		if p.match(tokComma) {
+			parts := []expr{x}
+			for {
+				p.skipSeparators()
+				part, err := p.parseExpression(0)
+				if err != nil {
+					return nil, err
+				}
+				parts = append(parts, part)
+				p.skipSeparators()
+				if p.match(tokRParen) {
+					return &compositeExpr{parts: parts}, nil
+				}
+				if !p.match(tokComma) {
+					return nil, fmt.Errorf("expected , or ) in expression list")
+				}
+			}
+		}
 		if !p.match(tokRParen) {
 			return nil, fmt.Errorf("expected )")
 		}
@@ -565,14 +615,30 @@ func (p *parser) parsePrefix() (expr, error) {
 
 func (p *parser) parseArrayRef(name string) (expr, error) {
 	p.advance()
-	index, err := p.parseExpression(0)
+	indices, err := p.parseArrayIndices()
 	if err != nil {
 		return nil, err
 	}
-	if !p.match(tokRBracket) {
-		return nil, fmt.Errorf("expected ] after array index")
+	return &arrayRefExpr{name: name, indices: indices}, nil
+}
+
+func (p *parser) parseArrayIndices() ([]expr, error) {
+	indices := []expr{}
+	for {
+		p.skipSeparators()
+		index, err := p.parseExpression(0)
+		if err != nil {
+			return nil, err
+		}
+		indices = append(indices, index)
+		p.skipSeparators()
+		if p.match(tokRBracket) {
+			return indices, nil
+		}
+		if !p.match(tokComma) {
+			return nil, fmt.Errorf("expected , or ] after array index")
+		}
 	}
-	return &arrayRefExpr{name: name, index: index}, nil
 }
 
 func (p *parser) parseFunctionCall(name string) (expr, error) {
@@ -629,6 +695,18 @@ func validateBuiltinCallArity(name string, argc int) error {
 	case "split":
 		if argc != 2 && argc != 3 {
 			return fmt.Errorf("split expects 2 or 3 arguments")
+		}
+	case "sub", "gsub":
+		if argc != 2 && argc != 3 {
+			return fmt.Errorf("%s expects 2 or 3 arguments", name)
+		}
+	case "match":
+		if argc != 2 {
+			return fmt.Errorf("match expects 2 arguments")
+		}
+	case "sprintf":
+		if argc < 1 {
+			return fmt.Errorf("sprintf expects at least 1 argument")
 		}
 	case "tolower", "toupper", "int":
 		if argc != 1 {

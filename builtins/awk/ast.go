@@ -75,6 +75,12 @@ type nextStmt struct{}
 
 func (*nextStmt) stmtNode() {}
 
+type exitStmt struct {
+	status expr
+}
+
+func (*exitStmt) stmtNode() {}
+
 type breakStmt struct{}
 
 func (*breakStmt) stmtNode() {}
@@ -84,9 +90,9 @@ type continueStmt struct{}
 func (*continueStmt) stmtNode() {}
 
 type deleteStmt struct {
-	name  string
-	index expr
-	all   bool
+	name    string
+	indices []expr
+	all     bool
 }
 
 func (*deleteStmt) stmtNode() {}
@@ -127,11 +133,17 @@ type varExpr struct {
 func (*varExpr) exprNode() {}
 
 type arrayRefExpr struct {
-	name  string
-	index expr
+	name    string
+	indices []expr
 }
 
 func (*arrayRefExpr) exprNode() {}
+
+type compositeExpr struct {
+	parts []expr
+}
+
+func (*compositeExpr) exprNode() {}
 
 type fieldExpr struct {
 	index expr
@@ -159,6 +171,14 @@ type binaryExpr struct {
 }
 
 func (*binaryExpr) exprNode() {}
+
+type ternaryExpr struct {
+	cond expr
+	then expr
+	els  expr
+}
+
+func (*ternaryExpr) exprNode() {}
 
 type rangeExpr struct {
 	start expr

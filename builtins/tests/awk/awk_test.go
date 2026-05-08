@@ -141,6 +141,37 @@ func TestAwkSplitRegexAndCharacterSeparator(t *testing.T) {
 	assert.Equal(t, "3 a b c\n2 x y\n2 3\n1 2 2 4\n3 a b c\n4 [] [a] [b] []\n3 [] [] []\n", stdout)
 }
 
+func TestAwkSubGsubMatchAndSprintf(t *testing.T) {
+	dir := t.TempDir()
+	stdout, stderr, code := cmdRun(t, `awk 'BEGIN { s = "abc123def"; print match(s, /[0-9]+/), RSTART, RLENGTH, substr(s, RSTART, RLENGTH); sub(/[0-9]+/, "<&>", s); print s; gsub(/[a-z]+/, "X", s); print s; print sprintf("%s:%03d", "id", 7) }'`, dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "", stderr)
+	assert.Equal(t, "4 4 3 123\nabc<123>def\nX<123>X\nid:007\n", stdout)
+}
+
+func TestAwkCompositeKeysAndTernary(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "input.txt", "a x 1\na y 2\na x 3\nb x 4\n")
+	stdout, stderr, code := cmdRun(t, `awk '{ count[$1, $2] += $3; label = ($3 > 2 ? "big" : "small"); classes[$1, label]++ } END { print count["a", "x"], count["a", "y"], count["b", "x"]; print classes["a", "small"], classes["a", "big"]; delete count["a", "x"]; print (("a", "x") in count), (("b", "x") in count), length(SUBSEP) }' input.txt`, dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "", stderr)
+	assert.Equal(t, "4 2 4\n2 1\n0 1 1\n", stdout)
+}
+
+func TestAwkExitRunsEndAndPreservesStatus(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "input.txt", "1\n2\n3\n")
+	stdout, stderr, code := cmdRun(t, `awk '{ if ($1 == 2) exit 7; print $1 } END { print "end", NR }' input.txt`, dir)
+	assert.Equal(t, 7, code)
+	assert.Equal(t, "", stderr)
+	assert.Equal(t, "1\nend 2\n", stdout)
+
+	stdout, stderr, code = cmdRun(t, `awk 'BEGIN { print "begin"; exit } { print } END { print "end" }' input.txt`, dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "", stderr)
+	assert.Equal(t, "begin\nend\n", stdout)
+}
+
 func TestAwkForWhileBreakAndContinue(t *testing.T) {
 	dir := t.TempDir()
 	stdout, stderr, code := cmdRun(t, `awk 'BEGIN { for (i = 1; i <= 5; i++) { if (i == 2) continue; if (i == 5) break; sum += i }; j = 0; while (j < 3) { j++; if (j == 2) continue; seen = seen j }; i = 0; for (; i < 3; i++) noinit = noinit i; for (i = 0; i < 3; i++); emptyFor = i; j = 0; while (j++ < 3); emptyWhile = j; print sum, seen, noinit, emptyFor, emptyWhile }'`, dir)
@@ -510,7 +541,6 @@ func TestAwkRejectsUnsafeFeatures(t *testing.T) {
 		`awk '{ printf "%s", $1 > "out" }' input.txt`,
 		`awk '{ print getline }' input.txt`,
 		`awk '{ x = next }' input.txt`,
-		`awk '{ exit 0 }' input.txt`,
 		`awk 'BEGIN { next }' input.txt`,
 		`awk 'BEGIN { print tolower(), toupper(), int() }' input.txt`,
 		`awk '{ print int() }' empty.txt`,

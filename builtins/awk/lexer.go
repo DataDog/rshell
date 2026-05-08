@@ -28,6 +28,8 @@ const (
 	tokRBracket
 	tokSemicolon
 	tokComma
+	tokQuestion
+	tokColon
 	tokDollar
 	tokAssign
 	tokPlus
@@ -130,6 +132,10 @@ func (l *lexer) next() (token, error) {
 		return token{kind: tokSemicolon, lit: ";", pos: start}, nil
 	case ',':
 		return token{kind: tokComma, lit: ",", pos: start}, nil
+	case '?':
+		return token{kind: tokQuestion, lit: "?", pos: start}, nil
+	case ':':
+		return token{kind: tokColon, lit: ":", pos: start}, nil
 	case '$':
 		return token{kind: tokDollar, lit: "$", pos: start}, nil
 	case '~':
@@ -327,7 +333,7 @@ func canStartRegex(prev tokenKind, prevLit string) bool {
 	}
 	switch prev {
 	case tokEOF, tokNewline, tokLBrace, tokRBrace, tokLParen, tokComma, tokSemicolon,
-		tokAssign, tokPlus, tokMinus, tokStar, tokSlash, tokPercent, tokBang,
+		tokQuestion, tokColon, tokAssign, tokPlus, tokMinus, tokStar, tokSlash, tokPercent, tokBang,
 		tokLT, tokGT, tokLE, tokGE, tokEQ, tokNE, tokAnd, tokOr, tokMatch,
 		tokNotMatch, tokPlusAssign, tokMinusAssign, tokStarAssign,
 		tokSlashAssign, tokPercentAssign:

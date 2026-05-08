@@ -14,11 +14,12 @@
 // This implements a practical, intentionally restricted awk profile: program
 // loading from an inline argument or -f files, -F field
 // separators, -v scalar variables, BEGIN/main/END rules, print and printf,
-// scalar and associative array assignment, if/else, for/while loops, next,
-// arithmetic/comparison/boolean expressions, regex patterns and match
-// operators, regex field separators, string concatenation, scalar built-in
-// functions, split, delete, ENVIRON, and field/built-in variables such as $0,
-// $1, NF, NR, FNR, FILENAME, FS, OFS, and ORS.
+// scalar and associative array assignment, composite array keys, if/else,
+// for/while loops, next, exit, arithmetic/comparison/boolean/ternary
+// expressions, regex patterns and match operators, regex field separators,
+// string concatenation, scalar built-in functions, split, sub, gsub, match,
+// sprintf, delete, ENVIRON, and field/built-in variables such as $0, $1, NF,
+// NR, FNR, FILENAME, FS, OFS, ORS, SUBSEP, RSTART, and RLENGTH.
 //
 // Blocked or deferred features include system(), command pipes, output
 // redirection, getline, user-defined functions, and many additional POSIX/GNU

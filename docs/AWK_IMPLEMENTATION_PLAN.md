@@ -390,12 +390,29 @@ Implementation order used by `codex/awk-phase-3`:
 
 Phase 4 candidates:
 
-- user-defined functions
-- additional POSIX awk builtins
-- carefully restricted `getline`, only if a safe design is approved
-- safe command pipes through rshell's controlled execution model, only if a
-  concrete non-host-escape design is approved
-- safe GNU awk compatibility extensions that do not violate rshell policy
+Phase 4 should make the builtin investigation-grade for LLM-generated awk
+programs without attempting a full GNU awk clone. Prioritize features that
+unlock common log, table, and small-report workflows:
+
+- regex text editing and extraction: `sub`, `gsub`, `match`, `RSTART`, and
+  `RLENGTH`
+- expression formatting: `sprintf`
+- composite array keys with `SUBSEP`, such as `count[$1, $2]++`
+- compact expression/control ergonomics: ternary `cond ? a : b`, `exit [code]`,
+  and, if it remains small, `do ... while`
+- user-defined functions with `return`; array parameters are preferred over a
+  scalar-only subset because practical helper functions often receive arrays
+- safe command output pipes such as `print ... | "sort"` and `close(cmd)`,
+  implemented only through rshell's controlled builtin execution model
+- restricted `getline` forms that read from the current input stream
+- focused utility builtins that support investigations: math/time/conversion
+  helpers such as `sqrt`, `log`, `exp`, `rand`, `srand`, `strtonum`, `systime`,
+  `strftime`, and `mktime`
+
+Defer or reject low-value or high-risk GNU awk compatibility surfaces:
+`system()`, unrestricted file redirection, general file/command `getline`,
+`PROCINFO`, `SYMTAB`, `FUNCTAB`, namespaces, `include`, `load`, `FIELDWIDTHS`,
+`FPAT`, CSV mode, i18n builtins, bitwise builtins, and broad introspection.
 
 ## Open Design Questions
 

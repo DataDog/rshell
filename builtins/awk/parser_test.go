@@ -26,7 +26,6 @@ func TestParseRejectsUnsafeFeatures(t *testing.T) {
 		`{ system("sh") }`,
 		`{ print $1 > "out" }`,
 		`{ "cmd" | getline }`,
-		`{ exit 1 }`,
 	} {
 		_, err := parseProgram(src)
 		require.Error(t, err, src)
