@@ -135,10 +135,10 @@ func TestAwkSplitRegexAndCharacterSeparator(t *testing.T) {
 
 func TestAwkForWhileBreakAndContinue(t *testing.T) {
 	dir := t.TempDir()
-	stdout, stderr, code := cmdRun(t, `awk 'BEGIN { for (i = 1; i <= 5; i++) { if (i == 2) continue; if (i == 5) break; sum += i }; j = 0; while (j < 3) { j++; if (j == 2) continue; seen = seen j }; print sum, seen }'`, dir)
+	stdout, stderr, code := cmdRun(t, `awk 'BEGIN { for (i = 1; i <= 5; i++) { if (i == 2) continue; if (i == 5) break; sum += i }; j = 0; while (j < 3) { j++; if (j == 2) continue; seen = seen j }; i = 0; for (; i < 3; i++) noinit = noinit i; print sum, seen, noinit }'`, dir)
 	assert.Equal(t, 0, code)
 	assert.Equal(t, "", stderr)
-	assert.Equal(t, "8 13\n", stdout)
+	assert.Equal(t, "8 13 012\n", stdout)
 }
 
 func TestAwkLoopsObserveContextCancellation(t *testing.T) {

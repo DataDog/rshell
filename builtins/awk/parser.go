@@ -205,7 +205,7 @@ func (p *parser) parseFor() (stmt, error) {
 	if !p.match(tokLParen) {
 		return nil, fmt.Errorf("expected ( after for")
 	}
-	p.skipSeparators()
+	p.skipNewlines()
 	if p.cur().kind == tokIdent && p.peek(1).kind == tokIdent && p.peek(1).lit == "in" {
 		varName := p.cur().lit
 		if err := validateIdentifierReference(varName); err != nil {
