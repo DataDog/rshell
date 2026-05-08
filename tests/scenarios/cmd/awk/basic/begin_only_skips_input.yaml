@@ -1,5 +1,5 @@
 description: awk does not read input files for BEGIN-only programs.
-skip_assert_against_bash: true
+oracle: gawk
 input:
   allowed_paths: ["$DIR"]
   script: |+

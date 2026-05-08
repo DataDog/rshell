@@ -1,5 +1,5 @@
 description: awk filters records with comparisons and regex match operators.
-skip_assert_against_bash: true
+oracle: gawk
 setup:
   files:
     - path: input.txt

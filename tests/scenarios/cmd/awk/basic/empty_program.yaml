@@ -1,5 +1,5 @@
 description: awk treats an empty program as a no-op.
-skip_assert_against_bash: true
+oracle: gawk
 input:
   allowed_paths: ["$DIR"]
   script: |+

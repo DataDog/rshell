@@ -1,5 +1,5 @@
 description: awk prints integer-valued numbers without exponent notation.
-skip_assert_against_bash: true
+oracle: gawk
 input:
   script: |+
     awk 'BEGIN { print 999999, 1000000, 123456789, 1000000.5; x=-0; print x, -1e-400 }'

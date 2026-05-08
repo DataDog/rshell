@@ -1,5 +1,5 @@
 description: awk -f dash reads the program from standard input.
-skip_assert_against_bash: true
+oracle: gawk
 setup:
   files:
     - path: prog.awk

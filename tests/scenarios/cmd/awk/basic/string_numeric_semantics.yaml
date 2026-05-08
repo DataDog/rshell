@@ -1,5 +1,5 @@
 description: awk preserves GNU awk string and numeric-string comparison semantics.
-skip_assert_against_bash: true
+oracle: gawk
 setup:
   files:
     - path: input.txt

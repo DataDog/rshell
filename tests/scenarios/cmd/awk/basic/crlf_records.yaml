@@ -1,5 +1,5 @@
 description: awk preserves carriage returns before newline record separators.
-skip_assert_against_bash: true
+oracle: gawk
 input:
   script: |+
     printf 'a\r\n' | awk '{ print $0 == "a", $0 == "a\r", $1 == "a", $1 == "a\r" }'

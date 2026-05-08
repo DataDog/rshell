@@ -1,5 +1,5 @@
 description: awk prints selected whitespace-separated fields.
-skip_assert_against_bash: true
+oracle: gawk
 setup:
   files:
     - path: input.txt
