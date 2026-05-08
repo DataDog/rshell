@@ -445,7 +445,7 @@ func scenarioUsesCommand(script, command string) (bool, error) {
 
 func isRshellSpecificAwkScenario(rel string) bool {
 	switch rel {
-	case "cmd/awk/errors/multichar_fs_rejected.yaml",
+	case "cmd/awk/basic/record_assignment_limit.yaml",
 		"cmd/awk/safety/print_redirect_rejected.yaml",
 		"cmd/awk/safety/system_rejected.yaml":
 		return true

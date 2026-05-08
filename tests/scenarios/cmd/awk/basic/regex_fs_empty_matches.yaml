@@ -1,4 +1,5 @@
 description: awk regex field separators ignore zero-width matches.
+oracle: gawk
 setup:
   files:
     - path: input.txt

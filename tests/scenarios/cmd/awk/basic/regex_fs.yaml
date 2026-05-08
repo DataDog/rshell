@@ -1,4 +1,5 @@
 description: awk supports regex field separators.
+oracle: gawk
 setup:
   files:
     - path: input.txt

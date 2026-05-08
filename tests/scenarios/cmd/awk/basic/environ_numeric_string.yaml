@@ -1,4 +1,5 @@
 description: awk treats numeric ENVIRON values as numeric strings.
+oracle: gawk
 input:
   envs:
     NUMERIC_ENV: "10"

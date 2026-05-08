@@ -513,6 +513,10 @@ func (rt *runtime) evalAssign(e *assignExpr) (value, error) {
 		return value{}, err
 	}
 	if e.op != "=" {
+		left, err = rt.currentResolvedAssignable(target)
+		if err != nil {
+			return value{}, err
+		}
 		switch e.op {
 		case "+=":
 			right = numberValue(left.Number() + right.Number())
@@ -610,6 +614,16 @@ func (rt *runtime) setResolvedAssignable(target assignTarget, v value) error {
 		return rt.setField(target.fieldIndex, v)
 	}
 	return rt.setVar(target.name, v)
+}
+
+func (rt *runtime) currentResolvedAssignable(target assignTarget) (value, error) {
+	if target.array {
+		return rt.getArrayElem(target.name, target.key)
+	}
+	if target.field {
+		return rt.field(target.fieldIndex), nil
+	}
+	return rt.getVar(target.name), nil
 }
 
 func (rt *runtime) evalArrayRef(ref *arrayRefExpr) (value, error) {

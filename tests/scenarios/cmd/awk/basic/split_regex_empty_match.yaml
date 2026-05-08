@@ -1,4 +1,5 @@
 description: awk split ignores empty regex separator matches while preserving non-empty separators.
+oracle: gawk
 input:
   script: |+
     awk 'BEGIN { n = split(" a b ", parts, / */); print n, "[" parts[1] "]", "[" parts[2] "]", "[" parts[3] "]", "[" parts[4] "]"; print split("abc", none, /x*/), none[1] }'

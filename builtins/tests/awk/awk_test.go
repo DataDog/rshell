@@ -107,6 +107,14 @@ func TestAwkBeginEndAndAggregation(t *testing.T) {
 	assert.Equal(t, "start\nsum 5\n", stdout)
 }
 
+func TestAwkCompoundAssignmentReadsCurrentTargetAfterRightSide(t *testing.T) {
+	dir := t.TempDir()
+	stdout, stderr, code := cmdRun(t, `awk 'BEGIN { print b += b += 1; b = 6; print b += b++; print b }'`, dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "", stderr)
+	assert.Equal(t, "2\n13\n13\n", stdout)
+}
+
 func TestAwkAssociativeArrayElements(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, dir, "input.txt", "api 200\napi 500\nworker 200\n")
