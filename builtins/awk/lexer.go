@@ -285,6 +285,15 @@ func (l *lexer) scanString(start int) (token, error) {
 			if l.pos >= len(l.src) {
 				return token{}, fmt.Errorf("unterminated string escape")
 			}
+			if isOctalDigit(l.src[l.pos]) {
+				value := 0
+				for digits := 0; digits < 3 && l.pos < len(l.src) && isOctalDigit(l.src[l.pos]); digits++ {
+					value = value*8 + int(l.src[l.pos]-'0')
+					l.pos++
+				}
+				b.WriteByte(byte(value))
+				continue
+			}
 			esc := l.src[l.pos]
 			l.pos++
 			b.WriteRune(decodeSimpleEscape(esc))
@@ -355,11 +364,24 @@ func DecodeAwkEscapes(s string) string {
 			b.WriteRune(r)
 			continue
 		}
+		if isOctalDigit(rune(s[0])) {
+			value := 0
+			for digits := 0; digits < 3 && len(s) > 0 && isOctalDigit(rune(s[0])); digits++ {
+				value = value*8 + int(s[0]-'0')
+				s = s[1:]
+			}
+			b.WriteByte(byte(value))
+			continue
+		}
 		esc, escSize := utf8.DecodeRuneInString(s)
 		s = s[escSize:]
 		b.WriteRune(decodeSimpleEscape(esc))
 	}
 	return b.String()
+}
+
+func isOctalDigit(ch rune) bool {
+	return ch >= '0' && ch <= '7'
 }
 
 func decodeSimpleEscape(esc rune) rune {
