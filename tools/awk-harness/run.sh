@@ -9,6 +9,7 @@ usage() {
 Usage: tools/awk-harness/run.sh TARGET
 
 Targets:
+  scenarios    Run shell scenarios marked oracle: gawk against GNU awk.
   rewritten    Run rshell-owned AWK scenario rewrites.
   install-gawk Build/install the pinned GNU awk oracle into the harness cache.
 
@@ -35,6 +36,9 @@ if [ -z "$target" ] || [ "$target" = "-h" ] || [ "$target" = "--help" ]; then
 fi
 
 case "$target" in
+	scenarios)
+		exec "$SCRIPT_DIR/run-scenarios.sh"
+		;;
 	rewritten)
 		exec "$SCRIPT_DIR/run-rewritten.sh"
 		;;

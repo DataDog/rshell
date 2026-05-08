@@ -31,11 +31,14 @@ import (
 )
 
 const dockerBashImage = "debian:bookworm-slim"
+const scenarioOracleGawk = "gawk"
+const defaultGawkVersion = "5.4.0"
 
 // scenario represents a single test scenario.
 type scenario struct {
 	Description           string `yaml:"description"`
 	SkipAssertAgainstBash bool   `yaml:"skip_assert_against_bash"` // true = skip bash comparison
+	Oracle                string `yaml:"oracle"`                   // set to "gawk" for scenarios compared against GNU awk
 	// Containerized enables container symlink resolution by setting
 	// HostPrefix to the test directory's host/ subdirectory.
 	Containerized bool     `yaml:"containerized"`
@@ -94,6 +97,12 @@ type expected struct {
 	StderrContains        []string `yaml:"stderr_contains"`
 	StderrContainsWindows []string `yaml:"stderr_contains_windows"`
 	ExitCode              int      `yaml:"exit_code"`
+}
+
+type scenarioRunResult struct {
+	stdout   string
+	stderr   string
+	exitCode int
 }
 
 // discoverScenarioFiles walks the scenarios directory and returns all YAML files
@@ -161,9 +170,8 @@ func setupTestDir(t *testing.T, sc scenario) string {
 	return dir
 }
 
-// runScenario executes a single test scenario against the shell interpreter
-// and asserts the expected output.
-func runScenario(t *testing.T, sc scenario) {
+// executeScenario runs a single scenario against the restricted shell interpreter.
+func executeScenario(t *testing.T, sc scenario) scenarioRunResult {
 	t.Helper()
 
 	dir := setupTestDir(t, sc)
@@ -241,7 +249,20 @@ func runScenario(t *testing.T, sc scenario) {
 		}
 	}
 
-	assertExpectations(t, sc, stdout.String(), stderr.String(), exitCode)
+	return scenarioRunResult{
+		stdout:   stdout.String(),
+		stderr:   stderr.String(),
+		exitCode: exitCode,
+	}
+}
+
+// runScenario executes a single test scenario against the shell interpreter
+// and asserts the expected output.
+func runScenario(t *testing.T, sc scenario) {
+	t.Helper()
+
+	result := executeScenario(t, sc)
+	assertExpectations(t, sc, result.stdout, result.stderr, result.exitCode)
 }
 
 // assertExpectations checks stdout, stderr, and exit code against the scenario expectations.
@@ -372,6 +393,194 @@ func shellQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
+func TestShellScenarioOracleMetadata(t *testing.T) {
+	scenariosDir := filepath.Join("scenarios")
+	groups := discoverScenarioFiles(t, scenariosDir)
+	require.NotEmpty(t, groups, "no scenario files found in %s", scenariosDir)
+
+	for _, paths := range groups {
+		for _, path := range paths {
+			sc := loadScenario(t, path)
+			rel, err := filepath.Rel(scenariosDir, path)
+			require.NoError(t, err)
+			rel = filepath.ToSlash(rel)
+
+			if sc.Oracle != "" && sc.Oracle != scenarioOracleGawk {
+				t.Errorf("%s has unsupported oracle %q", rel, sc.Oracle)
+			}
+
+			usesAwk, err := scenarioUsesCommand(sc.Input.Script, "awk")
+			require.NoError(t, err, "failed to parse script in %s", rel)
+			if usesAwk && sc.Oracle != scenarioOracleGawk && !isRshellSpecificAwkScenario(rel) {
+				t.Errorf("%s invokes awk but does not declare oracle: %s", rel, scenarioOracleGawk)
+			}
+		}
+	}
+}
+
+func scenarioUsesCommand(script, command string) (bool, error) {
+	parser := syntax.NewParser()
+	prog, err := parser.Parse(strings.NewReader(script), "")
+	if err != nil {
+		return false, err
+	}
+
+	usesCommand := false
+	syntax.Walk(prog, func(node syntax.Node) bool {
+		call, ok := node.(*syntax.CallExpr)
+		if !ok || len(call.Args) == 0 {
+			return true
+		}
+		if len(call.Args[0].Parts) != 1 {
+			return true
+		}
+		lit, ok := call.Args[0].Parts[0].(*syntax.Lit)
+		if ok && lit.Value == command {
+			usesCommand = true
+		}
+		return true
+	})
+	return usesCommand, nil
+}
+
+func isRshellSpecificAwkScenario(rel string) bool {
+	switch rel {
+	case "cmd/awk/errors/multichar_fs_rejected.yaml",
+		"cmd/awk/safety/print_redirect_rejected.yaml",
+		"cmd/awk/safety/system_rejected.yaml":
+		return true
+	default:
+		return false
+	}
+}
+
+func TestShellScenariosAgainstGawk(t *testing.T) {
+	gawkOracle := requireGawkOracle(t)
+
+	scenariosDir := filepath.Join("scenarios")
+	groups := discoverScenarioFiles(t, scenariosDir)
+	require.NotEmpty(t, groups, "no scenario files found in %s", scenariosDir)
+
+	type oracleScenario struct {
+		testName string
+		sc       scenario
+	}
+	var scenarios []oracleScenario
+	for group, paths := range groups {
+		for _, path := range paths {
+			sc := loadScenario(t, path)
+			if sc.Oracle != scenarioOracleGawk {
+				continue
+			}
+			name := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
+			scenarios = append(scenarios, oracleScenario{
+				testName: group + "/" + name,
+				sc:       sc,
+			})
+		}
+	}
+	if len(scenarios) == 0 {
+		t.Skipf("no scenarios marked oracle: %s", scenarioOracleGawk)
+	}
+
+	for _, oracleScenario := range scenarios {
+		t.Run(oracleScenario.testName, func(t *testing.T) {
+			rshellResult := executeScenario(t, oracleScenario.sc)
+			gawkResult := runScenarioWithGawkOracle(t, oracleScenario.sc, gawkOracle)
+
+			assert.Equal(t, gawkResult.exitCode, rshellResult.exitCode, "exit code mismatch against GNU awk oracle")
+			assert.Equal(t, gawkResult.stdout, rshellResult.stdout, "stdout mismatch against GNU awk oracle")
+			assert.Equal(t, gawkResult.stderr, rshellResult.stderr, "stderr mismatch against GNU awk oracle")
+		})
+	}
+}
+
+func requireGawkOracle(t *testing.T) string {
+	t.Helper()
+
+	gawkOracle := os.Getenv("GAWK_ORACLE")
+	if gawkOracle == "" {
+		t.Skip("skipping GNU awk comparison tests (set GAWK_ORACLE to a pinned gawk binary)")
+	}
+	gawkOracle, err := exec.LookPath(gawkOracle)
+	require.NoError(t, err, "GAWK_ORACLE must point to an executable")
+
+	version := os.Getenv("GAWK_VERSION")
+	if version == "" {
+		version = defaultGawkVersion
+	}
+	out, err := exec.Command(gawkOracle, "--version").Output()
+	require.NoError(t, err, "failed to run %s --version", gawkOracle)
+	firstLine := string(bytes.SplitN(out, []byte("\n"), 2)[0])
+	require.Contains(t, firstLine, "GNU Awk "+version, "GAWK_ORACLE must match the pinned GNU awk version")
+	return gawkOracle
+}
+
+func runScenarioWithGawkOracle(t *testing.T, sc scenario, gawkOracle string) scenarioRunResult {
+	t.Helper()
+
+	dir := setupTestDir(t, sc)
+	scriptDir := t.TempDir()
+	scriptPath := filepath.Join(scriptDir, "scenario.sh")
+	require.NoError(t, os.WriteFile(scriptPath, []byte(sc.Input.Script), 0644))
+
+	shimDir := filepath.Join(scriptDir, "bin")
+	require.NoError(t, os.MkdirAll(shimDir, 0755))
+	shimPath := filepath.Join(shimDir, "awk")
+	shim := "#!/bin/sh\nexec " + shellQuote(gawkOracle) + " \"$@\"\n"
+	require.NoError(t, os.WriteFile(shimPath, []byte(shim), 0755))
+
+	cmd := exec.Command("bash", scriptPath)
+	cmd.Dir = dir
+	cmd.Env = scenarioBashEnv(sc, shimDir)
+
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	exitCode := 0
+	if err := cmd.Run(); err != nil {
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) {
+			exitCode = exitErr.ExitCode()
+		} else {
+			t.Fatalf("failed to run GNU awk oracle scenario: %v", err)
+		}
+	}
+
+	return scenarioRunResult{
+		stdout:   stdout.String(),
+		stderr:   stderr.String(),
+		exitCode: exitCode,
+	}
+}
+
+func scenarioBashEnv(sc scenario, prependPath string) []string {
+	env := os.Environ()
+	if prependPath != "" {
+		pathValue := prependPath
+		if existingPath := os.Getenv("PATH"); existingPath != "" {
+			pathValue += string(os.PathListSeparator) + existingPath
+		}
+		env = setEnv(env, "PATH", pathValue)
+	}
+	for k, v := range sc.Input.Envs {
+		env = setEnv(env, k, v)
+	}
+	return env
+}
+
+func setEnv(env []string, key, value string) []string {
+	prefix := key + "="
+	for i, entry := range env {
+		if strings.HasPrefix(entry, prefix) {
+			env[i] = prefix + value
+			return env
+		}
+	}
+	return append(env, prefix+value)
+}
+
 func TestShellScenariosAgainstBash(t *testing.T) {
 	if os.Getenv("RSHELL_BASH_TEST") == "" {
 		t.Skip("skipping bash comparison tests (set RSHELL_BASH_TEST=1 to enable)")
@@ -401,7 +610,7 @@ func TestShellScenariosAgainstBash(t *testing.T) {
 	for group, paths := range groups {
 		for _, path := range paths {
 			sc := loadScenario(t, path)
-			if sc.SkipAssertAgainstBash {
+			if sc.SkipAssertAgainstBash || sc.Oracle == scenarioOracleGawk {
 				continue
 			}
 			name := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))

@@ -21,7 +21,9 @@ jobs:
       - name: Build rshell
         run: make build
       - name: Check rewritten AWK scenario metadata
-        run: go test ./tests -run TestAwkScenarioMetadata -count=1
+        run: go test ./tests -run 'Test(AwkScenarioMetadata|ShellScenarioOracleMetadata)$' -count=1
+      - name: Compare AWK shell scenarios against GNU awk
+        run: tools/awk-harness/run.sh scenarios
       - name: Run rewritten AWK scenarios against rshell awk
         env:
           RSHELL_BIN: ./rshell
