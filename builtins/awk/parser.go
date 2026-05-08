@@ -584,7 +584,7 @@ func (p *parser) parseExpression(minPrec int) (expr, error) {
 			if !p.match(tokColon) {
 				return nil, fmt.Errorf("expected : in conditional expression")
 			}
-			elseExpr, err := p.parseExpression(precTernary)
+			elseExpr, err := p.parseExpression(precAssign)
 			if err != nil {
 				return nil, err
 			}

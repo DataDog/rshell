@@ -882,7 +882,7 @@ func (rt *runtime) localIsArray(v *localVar) bool {
 		return false
 	}
 	if root.globalArrayName != "" {
-		return rt.isGlobalArray(root.globalArrayName)
+		return rt.isGlobalArray(root.globalArrayName) || isBuiltinArrayName(root.globalArrayName)
 	}
 	return root.array != nil
 }
@@ -959,6 +959,7 @@ func (rt *runtime) setVar(name string, v value) error {
 }
 
 func (rt *runtime) setLocalScalar(local *localVar, v value) error {
+	root := rootLocalVar(local)
 	size := len(v.String())
 	if size > MaxVariableBytes {
 		return fmt.Errorf("variable value exceeds %d bytes", MaxVariableBytes)
@@ -970,6 +971,12 @@ func (rt *runtime) setLocalScalar(local *localVar, v value) error {
 	local.valueSize = size
 	local.value = v
 	local.valueSet = true
+	if root != nil && root != local && !rt.localIsArray(root) {
+		root.valueSet = true
+		if root.globalArrayName != "" {
+			rt.markGlobalScalarName(root.globalArrayName)
+		}
+	}
 	local.arrayAlias = nil
 	local.globalArrayName = ""
 	local.array = nil
@@ -995,6 +1002,9 @@ func (rt *runtime) localArrayStorage(name string, create bool) (map[string]value
 		return nil, nil, "", false, nil
 	}
 	root := rootLocalVar(local)
+	if root.valueSet && root.array == nil {
+		return nil, nil, "", true, fmt.Errorf("cannot use scalar %s as array", name)
+	}
 	if root.globalArrayName != "" {
 		actual := root.globalArrayName
 		rt.ensureBuiltinArray(actual)
@@ -1005,9 +1015,6 @@ func (rt *runtime) localArrayStorage(name string, create bool) (map[string]value
 			rt.markArrayName(actual)
 		}
 		return rt.arrays[actual], root, actual, true, nil
-	}
-	if root.valueSet && root.array == nil {
-		return nil, nil, "", true, fmt.Errorf("cannot use scalar %s as array", name)
 	}
 	if root.array == nil && create {
 		root.array = make(map[string]value)
@@ -1276,6 +1283,13 @@ func (rt *runtime) validateArrayName(name string) error {
 		return fmt.Errorf("cannot use scalar %s as array", name)
 	}
 	return nil
+}
+
+func (rt *runtime) markGlobalScalarName(name string) {
+	if _, ok := rt.vars[name]; !ok {
+		rt.vars[name] = unassignedValue()
+		rt.varSizes[name] = 0
+	}
 }
 
 func isBuiltinScalarName(name string) bool {

@@ -485,12 +485,20 @@ func (rt *runtime) evalUserFunction(fn *functionDef, args []expr) (value, error)
 	for _, param := range fn.params {
 		frame.locals[param] = &localVar{}
 	}
+	globalAliases := make(map[string]*localVar)
 	rt.frames = append(rt.frames, frame)
 	defer rt.popFrame()
 	for i, arg := range callArgs {
 		local := rt.lookupLocal(fn.params[i])
 		local.arrayAlias = arg.arrayAlias
-		local.globalArrayName = arg.globalArrayName
+		if arg.globalArrayName != "" {
+			alias := globalAliases[arg.globalArrayName]
+			if alias == nil {
+				alias = &localVar{globalArrayName: arg.globalArrayName}
+				globalAliases[arg.globalArrayName] = alias
+			}
+			local.arrayAlias = alias
+		}
 		if arg.valueSet {
 			if err := rt.setLocalScalar(local, arg.value); err != nil {
 				return value{}, err
