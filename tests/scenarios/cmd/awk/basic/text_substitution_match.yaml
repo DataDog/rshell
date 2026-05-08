@@ -3,11 +3,15 @@ oracle: gawk
 input:
   script: |+
     awk 'BEGIN { s = "abc123def"; print match(s, /[0-9]+/), RSTART, RLENGTH, substr(s, RSTART, RLENGTH); sub(/[0-9]+/, "<&>", s); print s; gsub(/[a-z]+/, "X", s); print s; print sprintf("%s:%03d", "id", 7) }'
+    awk 'BEGIN { s = "abc"; gsub(/^/, "X", s); print s; s = "abc"; gsub(/$/, "X", s); print s; s = "abc"; gsub(/^|$/, "X", s); print s }'
 expect:
   stdout: |+
     4 4 3 123
     abc<123>def
     X<123>X
     id:007
+    Xabc
+    abcX
+    XabcX
   stderr: |+
   exit_code: 0

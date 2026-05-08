@@ -12,7 +12,6 @@ import (
 	"math"
 	"regexp"
 	"strings"
-	"unicode/utf8"
 )
 
 var errNextRecord = errors.New("next record")
@@ -652,49 +651,33 @@ func (rt *runtime) compileRegexArg(x expr) (*regexp.Regexp, error) {
 }
 
 func substituteAwk(re *regexp.Regexp, input, replacement string, all bool) (string, int, error) {
+	var matches [][]int
+	if all {
+		matches = re.FindAllStringIndex(input, -1)
+	} else if loc := re.FindStringIndex(input); loc != nil {
+		matches = [][]int{loc}
+	}
+	if len(matches) == 0 {
+		return input, 0, nil
+	}
+
 	var b strings.Builder
-	count := 0
 	last := 0
-	searchStart := 0
-	for searchStart <= len(input) {
-		loc := re.FindStringIndex(input[searchStart:])
-		if loc == nil {
-			break
-		}
-		start := searchStart + loc[0]
-		end := searchStart + loc[1]
+	for _, loc := range matches {
+		start := loc[0]
+		end := loc[1]
 		if err := appendLimitedString(&b, input[last:start]); err != nil {
 			return "", 0, err
 		}
 		if err := appendAwkReplacement(&b, replacement, input[start:end]); err != nil {
 			return "", 0, err
 		}
-		count++
 		last = end
-		if !all {
-			break
-		}
-		if start == end {
-			if end >= len(input) {
-				searchStart = len(input) + 1
-				continue
-			}
-			_, size := utf8.DecodeRuneInString(input[end:])
-			if size == 0 {
-				size = 1
-			}
-			searchStart = end + size
-			continue
-		}
-		searchStart = end
-	}
-	if count == 0 {
-		return input, 0, nil
 	}
 	if err := appendLimitedString(&b, input[last:]); err != nil {
 		return "", 0, err
 	}
-	return b.String(), count, nil
+	return b.String(), len(matches), nil
 }
 
 func appendAwkReplacement(b *strings.Builder, replacement, matched string) error {
