@@ -324,7 +324,7 @@ func (p *parser) parseIf() (stmt, error) {
 
 func (p *parser) parseStatementGroup() ([]stmt, error) {
 	p.skipNewlines()
-	if p.match(tokSemicolon) {
+	if p.at(tokSemicolon) {
 		return nil, nil
 	}
 	if p.match(tokLBrace) {
