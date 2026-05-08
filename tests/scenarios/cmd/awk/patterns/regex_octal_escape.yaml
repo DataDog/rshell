@@ -4,6 +4,7 @@ input:
   script: |+
     printf 'a\n141\n.\nx\n' | awk '/\141/ { print "a", $0 } /\056/ { print "dot", $0 }'
     printf '\377\n' | awk '/\377/ { print "byte" }'
+    printf '\377\n' | awk 'BEGIN { r = "\377" } $0 ~ r { print "dynamic" }'
 expect:
   stdout: |+
     a a
@@ -12,5 +13,6 @@ expect:
     dot .
     dot x
     byte
+    dynamic
   stderr: |+
   exit_code: 0

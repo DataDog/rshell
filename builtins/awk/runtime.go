@@ -1369,6 +1369,18 @@ func normalizeAwkRegex(pattern string) (string, bool) {
 	for i := 0; i < len(pattern); i++ {
 		ch := pattern[i]
 		if ch != '\\' {
+			if ch >= 0x80 {
+				r, size := utf8.DecodeRuneInString(pattern[i:])
+				if r == utf8.RuneError && size == 1 {
+					if writeAwkRegexByteEscape(&b, ch) {
+						byteMode = true
+					}
+					continue
+				}
+				b.WriteString(pattern[i : i+size])
+				i += size - 1
+				continue
+			}
 			b.WriteByte(ch)
 			continue
 		}
