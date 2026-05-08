@@ -173,6 +173,39 @@ jobs:
             ${{ matrix.corpus_path }}/testdata/fuzz/
           key: fuzz-corpus-${{ matrix.name }}-${{ github.sha }}
 
+  fuzz-awk:
+    name: Fuzz (awk)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
+        with:
+          go-version-file: .go-version
+
+      - name: Install pinned GNU awk oracle
+        run: tools/awk-harness/run.sh install-gawk
+
+      - name: Restore AWK fuzz corpus
+        uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        with:
+          path: |
+            tests/testdata/fuzz/
+          key: fuzz-corpus-awk-${{ github.sha }}
+          restore-keys: |
+            fuzz-corpus-awk-
+
+      - name: Fuzz (awk)
+        run: tools/awk-harness/run.sh fuzz
+
+      - name: Save AWK fuzz corpus
+        uses: actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        if: always()
+        with:
+          path: |
+            tests/testdata/fuzz/
+          key: fuzz-corpus-awk-${{ github.sha }}
+
   fuzz-differential:
     name: Fuzz Differential (${{ matrix.name }})
     runs-on: ubuntu-latest

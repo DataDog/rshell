@@ -24,8 +24,6 @@ jobs:
         run: go test ./tests -run 'Test(AwkScenarioMetadata|ShellScenarioOracleMetadata)$' -count=1
       - name: Compare AWK shell scenarios against GNU awk
         run: tools/awk-harness/run.sh scenarios
-      - name: Run AWK fuzz targets
-        run: tools/awk-harness/run.sh fuzz
       - name: Run rewritten AWK scenarios against rshell awk
         env:
           RSHELL_BIN: ./rshell
