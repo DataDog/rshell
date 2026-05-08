@@ -159,15 +159,17 @@ func TestAwkLoopsObserveContextCancellation(t *testing.T) {
 			prog, err := parser.Parse(strings.NewReader(script), "")
 			require.NoError(t, err)
 			var outBuf, errBuf bytes.Buffer
-			runner, err := interp.New(interp.StdIO(nil, &outBuf, &errBuf), interpoption.AllowAllCommands().(interp.RunnerOption))
+			runner, err := interp.New(
+				interp.StdIO(nil, &outBuf, &errBuf),
+				interpoption.AllowAllCommands().(interp.RunnerOption),
+				interp.MaxExecutionTime(500*time.Millisecond),
+			)
 			require.NoError(t, err)
 			defer runner.Close()
 
-			ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
-			defer cancel()
 			done := make(chan error, 1)
 			go func() {
-				done <- runner.Run(ctx, prog)
+				done <- runner.Run(context.Background(), prog)
 			}()
 
 			select {
