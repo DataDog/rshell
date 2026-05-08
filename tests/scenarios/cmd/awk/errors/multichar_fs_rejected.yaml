@@ -1,4 +1,5 @@
 description: awk rejects multi-character field separators in Phase 1.
+skip_assert_against_bash: true
 setup:
   files:
     - path: input.txt
@@ -13,4 +14,3 @@ expect:
   stderr: |+
     awk: multi-character and regex FS values are not supported
   exit_code: 1
-
