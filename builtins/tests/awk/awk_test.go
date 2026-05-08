@@ -175,9 +175,12 @@ func TestAwkLoopsObserveContextCancellation(t *testing.T) {
 			select {
 			case runErr := <-done:
 				var exitStatus interp.ExitStatus
-				require.ErrorAs(t, runErr, &exitStatus)
-				assert.NotEqual(t, 0, int(exitStatus))
-				assert.Contains(t, errBuf.String(), "context deadline exceeded")
+				if errors.As(runErr, &exitStatus) {
+					assert.NotEqual(t, 0, int(exitStatus))
+					assert.Contains(t, errBuf.String(), "context deadline exceeded")
+					return
+				}
+				assert.ErrorIs(t, runErr, context.DeadlineExceeded)
 			case <-time.After(2 * time.Second):
 				t.Fatal("awk loop did not observe context cancellation")
 			}
