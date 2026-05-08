@@ -179,7 +179,6 @@ gawk/text/numeric_subsep_composite_key.yaml
 gawk/text/print_records_verbatim.yaml
 gawk/text/repeated_sub_extracts_quoted_values.yaml
 gawk/text/substitution_refreshes_index_offsets.yaml
-gawk/text/unterminated_string_source_error.yaml
 gawk/text/valgrind_log_scanner_reports_loss.yaml
 onetrueawk/arrays/delete_composite_subscripts.yaml
 onetrueawk/arrays/delete_current_key.yaml
