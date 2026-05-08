@@ -29,6 +29,8 @@ package analysis
 var builtinPerCommandSymbols = map[string][]string{
 	"awk": {
 		"bufio.NewScanner",                // 🟢 line-by-line record reading; no write or exec capability.
+		"bytes.Buffer",                    // 🟢 in-memory command pipe buffer; no filesystem/network/exec side effects.
+		"bytes.NewReader",                 // 🟢 wraps buffered command-pipe bytes as stdin; pure in-memory, no I/O.
 		"context.Context",                 // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
 		"errors.Is",                       // 🟢 error comparison; pure function, no I/O.
 		"errors.New",                      // 🟢 creates a simple error value; pure function, no I/O.
@@ -52,6 +54,7 @@ var builtinPerCommandSymbols = map[string][]string{
 		"strings.Builder",                 // 🟢 efficient string concatenation; pure in-memory buffer, no I/O.
 		"strings.ContainsRune",            // 🟢 checks if a rune is in a string; pure function, no I/O.
 		"strings.Cut",                     // 🟢 splits a string around the first separator; pure function, no I/O.
+		"strings.Fields",                  // 🟢 splits a restricted command pipe string on whitespace; pure function, no I/O.
 		"strings.Index",                   // 🟢 substring search for awk index(); pure function, no I/O.
 		"strings.Join",                    // 🟢 concatenates a slice of strings with a separator; pure function, no I/O.
 		"strings.NewReader",               // 🟢 wraps a string as an io.Reader; pure in-memory, no I/O.

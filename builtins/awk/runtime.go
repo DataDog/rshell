@@ -7,6 +7,7 @@ package awk
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -25,6 +26,7 @@ const (
 	MaxRecordBytes   = 1 << 20
 	MaxFields        = 16_384
 	MaxVariableBytes = 1 << 20
+	MaxPipeBytes     = 5 << 20
 	maxFiniteFloat64 = 1.79769313486231570814527423731704357e+308
 )
 
@@ -202,6 +204,8 @@ type runtime struct {
 	environSet bool
 	frames     []callFrame
 	ctx        context.Context
+	pipes      map[string]*commandPipe
+	pipeOrder  []string
 
 	record   string
 	fields   []string
@@ -218,6 +222,13 @@ type arraySlot struct {
 
 type callFrame struct {
 	locals map[string]*localVar
+}
+
+type commandPipe struct {
+	command string
+	name    string
+	args    []string
+	buf     bytes.Buffer
 }
 
 type localVar struct {
@@ -239,6 +250,7 @@ func newRuntime(callCtx *builtins.CallContext, prog *program) *runtime {
 		varSizes:   make(map[string]int),
 		arraySizes: make(map[arraySlot]int),
 		rangeOn:    make(map[int]bool),
+		pipes:      make(map[string]*commandPipe),
 	}
 	rt.vars["FS"] = stringValue(" ")
 	rt.vars["OFS"] = stringValue(" ")
@@ -303,6 +315,10 @@ func (rt *runtime) run(ctx context.Context, files []string) builtins.Result {
 			rt.callCtx.Errf("awk: %v\n", err)
 			return builtins.Result{Code: 1}
 		}
+	}
+	if err := rt.closeAllCommandPipes(ctx); err != nil {
+		rt.callCtx.Errf("awk: %v\n", err)
+		return builtins.Result{Code: 1}
 	}
 	return builtins.Result{Code: normalizeAwkExitCode(rt.exitCode)}
 }
@@ -425,6 +441,145 @@ func (rt *runtime) openInput(ctx context.Context, file string) (io.ReadCloser, e
 		return nil, err
 	}
 	return f, nil
+}
+
+func (rt *runtime) writeCommandPipe(ctx context.Context, target expr, out string) error {
+	commandValue, err := rt.eval(target)
+	if err != nil {
+		return err
+	}
+	command := commandValue.String()
+	if command == "" {
+		return fmt.Errorf("expression for `|' redirection has null string value")
+	}
+	pipe, err := rt.commandPipe(command)
+	if err != nil {
+		return err
+	}
+	if len(out) > MaxPipeBytes-pipe.buf.Len() {
+		return fmt.Errorf("command pipe %q input exceeds %d bytes", command, MaxPipeBytes)
+	}
+	_, err = pipe.buf.WriteString(out)
+	if err != nil {
+		return err
+	}
+	return ctx.Err()
+}
+
+func (rt *runtime) commandPipe(command string) (*commandPipe, error) {
+	if pipe, ok := rt.pipes[command]; ok {
+		return pipe, nil
+	}
+	name, args, err := parseCommandPipe(command)
+	if err != nil {
+		return nil, err
+	}
+	if rt.callCtx.CommandAllowed != nil && !rt.callCtx.CommandAllowed(name) {
+		return nil, fmt.Errorf("command pipe %q is not allowed", name)
+	}
+	pipe := &commandPipe{command: command, name: name, args: args}
+	rt.pipes[command] = pipe
+	rt.pipeOrder = append(rt.pipeOrder, command)
+	return pipe, nil
+}
+
+func parseCommandPipe(command string) (string, []string, error) {
+	fields := strings.Fields(command)
+	if len(fields) == 0 {
+		return "", nil, fmt.Errorf("expression for `|' redirection has null string value")
+	}
+	name := fields[0]
+	if !validPipeCommandName(name) {
+		return "", nil, fmt.Errorf("command pipe %q uses unsupported command name", command)
+	}
+	for _, field := range fields {
+		if strings.ContainsRune(field, '\x00') || strings.ContainsRune(field, '\n') || strings.ContainsRune(field, '\r') {
+			return "", nil, fmt.Errorf("command pipe %q uses unsupported shell syntax", command)
+		}
+		for _, ch := range field {
+			if isCommandPipeShellSyntax(ch) {
+				return "", nil, fmt.Errorf("command pipe %q uses unsupported shell syntax", command)
+			}
+		}
+	}
+	return name, fields[1:], nil
+}
+
+func validPipeCommandName(name string) bool {
+	if name == "" {
+		return false
+	}
+	for _, ch := range name {
+		if ch >= 'a' && ch <= 'z' {
+			continue
+		}
+		if ch >= 'A' && ch <= 'Z' {
+			continue
+		}
+		if ch >= '0' && ch <= '9' {
+			continue
+		}
+		if ch == '_' || ch == '-' {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
+func isCommandPipeShellSyntax(ch rune) bool {
+	switch ch {
+	case '\'', '"', '\\', '`', '$', ';', '|', '&', '<', '>', '(', ')', '{', '}', '[', ']', '*', '?':
+		return true
+	default:
+		return false
+	}
+}
+
+func (rt *runtime) closeCommandPipe(ctx context.Context, command string) (uint8, bool, error) {
+	pipe, ok := rt.pipes[command]
+	if !ok {
+		return 0, false, nil
+	}
+	delete(rt.pipes, command)
+	rt.removeCommandPipeOrder(command)
+	status, err := rt.runCommandPipe(ctx, pipe)
+	return status, true, err
+}
+
+func (rt *runtime) removeCommandPipeOrder(command string) {
+	for i, candidate := range rt.pipeOrder {
+		if candidate == command {
+			copy(rt.pipeOrder[i:], rt.pipeOrder[i+1:])
+			rt.pipeOrder = rt.pipeOrder[:len(rt.pipeOrder)-1]
+			return
+		}
+	}
+}
+
+func (rt *runtime) closeAllCommandPipes(ctx context.Context) error {
+	for len(rt.pipeOrder) > 0 {
+		command := rt.pipeOrder[0]
+		status, ok, err := rt.closeCommandPipe(ctx, command)
+		if err != nil {
+			return err
+		}
+		if ok && status != 0 {
+			return fmt.Errorf("command pipe %q exited with status %d", command, status)
+		}
+	}
+	return nil
+}
+
+func (rt *runtime) runCommandPipe(ctx context.Context, pipe *commandPipe) (uint8, error) {
+	if rt.callCtx.RunCommandWithStdin == nil {
+		return 127, fmt.Errorf("command pipes are not available")
+	}
+	dir := ""
+	if rt.callCtx.WorkDir != nil {
+		dir = rt.callCtx.WorkDir()
+	}
+	return rt.callCtx.RunCommandWithStdin(ctx, dir, pipe.name, pipe.args, bytes.NewReader(pipe.buf.Bytes()))
 }
 
 func (rt *runtime) runRules(ctx context.Context, kind ruleKind) error {

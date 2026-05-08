@@ -12,5 +12,5 @@ input:
 expect:
   stdout: ""
   stderr: |+
-    awk: print redirection and command pipes are not supported
+    awk: print redirection is not supported
   exit_code: 1

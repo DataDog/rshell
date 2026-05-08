@@ -28,6 +28,32 @@ func runScript(t *testing.T, script, dir string, opts ...interp.RunnerOption) (s
 	return runScriptCtx(context.Background(), t, script, dir, opts...)
 }
 
+func runScriptRestricted(t *testing.T, script, dir string, opts ...interp.RunnerOption) (string, string, int) {
+	t.Helper()
+	parser := syntax.NewParser()
+	prog, err := parser.Parse(strings.NewReader(script), "")
+	require.NoError(t, err)
+	var outBuf, errBuf bytes.Buffer
+	allOpts := append([]interp.RunnerOption{interp.StdIO(nil, &outBuf, &errBuf)}, opts...)
+	runner, err := interp.New(allOpts...)
+	require.NoError(t, err)
+	defer runner.Close()
+	if dir != "" {
+		runner.Dir = dir
+	}
+	err = runner.Run(context.Background(), prog)
+	exitCode := 0
+	if err != nil {
+		var es interp.ExitStatus
+		if errors.As(err, &es) {
+			exitCode = int(es)
+		} else {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	}
+	return outBuf.String(), errBuf.String(), exitCode
+}
+
 func runScriptCtx(ctx context.Context, t *testing.T, script, dir string, opts ...interp.RunnerOption) (string, string, int) {
 	t.Helper()
 	parser := syntax.NewParser()
@@ -492,6 +518,35 @@ func TestAwkVariablesTabFSAndMultipleFiles(t *testing.T) {
 	assert.Equal(t, "row:one.tsv:1:1:1\nrow:two.tsv:1:2:2\n", stdout)
 }
 
+func TestAwkCommandPipes(t *testing.T) {
+	dir := t.TempDir()
+	stdout, stderr, code := cmdRun(t, `awk 'BEGIN { print "b" | "sort"; print "a" | "sort"; close("sort"); printf "%s\n", "pipe payload" | "cat"; close("cat") }'`, dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "", stderr)
+	assert.Equal(t, "a\nb\npipe payload\n", stdout)
+
+	stdout, stderr, code = cmdRun(t, `awk 'BEGIN { print "auto-close" | "cat" }'`, dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "", stderr)
+	assert.Equal(t, "auto-close\n", stdout)
+
+	stdout, stderr, code = cmdRun(t, `awk 'BEGIN { print close("missing") }'`, dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "", stderr)
+	assert.Equal(t, "-1\n", stdout)
+}
+
+func TestAwkCommandPipesRespectAllowedCommands(t *testing.T) {
+	dir := t.TempDir()
+	stdout, stderr, code := runScriptRestricted(t, `awk 'BEGIN { print "x" | "sort" }'`, dir,
+		interp.AllowedCommands([]string{"rshell:awk"}),
+		interp.AllowedPaths([]string{dir}),
+	)
+	assert.Equal(t, 1, code)
+	assert.Equal(t, "", stdout)
+	assert.Contains(t, stderr, `awk: command pipe "sort" is not allowed`)
+}
+
 func TestAwkOperandAssignments(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, dir, "one.txt", "a\n")
@@ -558,6 +613,7 @@ func TestAwkRejectsUnsafeFeatures(t *testing.T) {
 		`awk 'BEGIN { print 1 < 2 < 3 }' input.txt`,
 		`awk '{ print 1 / 0 }' input.txt`,
 		`awk -F '' '{ print $1 }' input.txt`,
+		`awk 'BEGIN { print "x" | "sort; cat" }' input.txt`,
 	} {
 		_, stderr, code := cmdRun(t, script, dir)
 		assert.Equal(t, 1, code, script)

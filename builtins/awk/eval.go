@@ -57,7 +57,8 @@ func (rt *runtime) execStatements(ctx context.Context, stmts []stmt) error {
 					vals = append(vals, v)
 				}
 			}
-			if err := rt.printValues(vals); err != nil {
+			out := rt.formatPrintValues(vals)
+			if err := rt.writeOutput(ctx, s.pipe, out); err != nil {
 				return err
 			}
 		case *printfStmt:
@@ -76,7 +77,9 @@ func (rt *runtime) execStatements(ctx context.Context, stmts []stmt) error {
 			if err != nil {
 				return err
 			}
-			rt.callCtx.Out(out)
+			if err := rt.writeOutput(ctx, s.pipe, out); err != nil {
+				return err
+			}
 		case *ifStmt:
 			cond, err := rt.eval(s.cond)
 			if err != nil {
@@ -249,13 +252,24 @@ func substrEnd(start, length int, count float64) int {
 }
 
 func (rt *runtime) printValues(vals []value) error {
+	rt.callCtx.Out(rt.formatPrintValues(vals))
+	return nil
+}
+
+func (rt *runtime) formatPrintValues(vals []value) string {
 	parts := make([]string, len(vals))
 	for i, v := range vals {
 		parts[i] = v.String()
 	}
-	rt.callCtx.Out(strings.Join(parts, rt.getVar("OFS").String()))
-	rt.callCtx.Out(rt.getVar("ORS").String())
-	return nil
+	return strings.Join(parts, rt.getVar("OFS").String()) + rt.getVar("ORS").String()
+}
+
+func (rt *runtime) writeOutput(ctx context.Context, pipe expr, out string) error {
+	if pipe == nil {
+		rt.callCtx.Out(out)
+		return nil
+	}
+	return rt.writeCommandPipe(ctx, pipe, out)
 }
 
 func (rt *runtime) eval(x expr) (value, error) {
@@ -351,6 +365,9 @@ func (rt *runtime) evalCall(e *callExpr) (value, error) {
 	if e.name == "length" {
 		return rt.evalLength(e)
 	}
+	if e.name == "close" {
+		return rt.evalClose(e)
+	}
 	args := make([]value, 0, len(e.args))
 	for _, arg := range e.args {
 		v, err := rt.eval(arg)
@@ -406,6 +423,24 @@ func (rt *runtime) evalCall(e *callExpr) (value, error) {
 		}
 		return value{}, fmt.Errorf("function %q not defined", e.name)
 	}
+}
+
+func (rt *runtime) evalClose(e *callExpr) (value, error) {
+	if err := validateBuiltinCallArity(e.name, len(e.args)); err != nil {
+		return value{}, err
+	}
+	command, err := rt.eval(e.args[0])
+	if err != nil {
+		return value{}, err
+	}
+	status, ok, err := rt.closeCommandPipe(rt.ctx, command.String())
+	if err != nil {
+		return value{}, err
+	}
+	if !ok {
+		return numberValue(-1), nil
+	}
+	return numberValue(float64(status)), nil
 }
 
 func (rt *runtime) evalLength(e *callExpr) (value, error) {

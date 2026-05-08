@@ -29,7 +29,6 @@ var unsupportedBuiltinFunctions = map[string]struct{}{
 	"asorti":         {},
 	"atan2":          {},
 	"bindtextdomain": {},
-	"close":          {},
 	"compl":          {},
 	"cos":            {},
 	"dcgettext":      {},
@@ -57,6 +56,7 @@ var unsupportedBuiltinFunctions = map[string]struct{}{
 }
 
 var supportedBuiltinFunctions = map[string]struct{}{
+	"close":   {},
 	"gsub":    {},
 	"index":   {},
 	"int":     {},
@@ -455,6 +455,14 @@ func (p *parser) parsePrint() (stmt, error) {
 	if p.at(tokRBrace) || p.at(tokEOF) || isSeparator(p.cur().kind) {
 		return ps, nil
 	}
+	if p.at(tokPipe) {
+		pipe, err := p.parseOutputPipe()
+		if err != nil {
+			return nil, err
+		}
+		ps.pipe = pipe
+		return ps, nil
+	}
 	old := p.stopPrintRedirect
 	p.stopPrintRedirect = true
 	defer func() { p.stopPrintRedirect = old }()
@@ -464,8 +472,16 @@ func (p *parser) parsePrint() (stmt, error) {
 			return nil, err
 		}
 		ps.args = append(ps.args, x)
-		if p.at(tokGT) || p.at(tokAppend) || p.at(tokPipe) {
-			return nil, fmt.Errorf("print redirection and command pipes are not supported")
+		if p.at(tokGT) || p.at(tokAppend) {
+			return nil, fmt.Errorf("print redirection is not supported")
+		}
+		if p.at(tokPipe) {
+			pipe, err := p.parseOutputPipe()
+			if err != nil {
+				return nil, err
+			}
+			ps.pipe = pipe
+			return ps, nil
 		}
 		if !p.match(tokComma) {
 			break
@@ -494,8 +510,16 @@ func (p *parser) parsePrintf() (stmt, error) {
 			return nil, err
 		}
 		ps.args = append(ps.args, x)
-		if p.at(tokGT) || p.at(tokAppend) || p.at(tokPipe) {
-			return nil, fmt.Errorf("print redirection and command pipes are not supported")
+		if p.at(tokGT) || p.at(tokAppend) {
+			return nil, fmt.Errorf("print redirection is not supported")
+		}
+		if p.at(tokPipe) {
+			pipe, err := p.parseOutputPipe()
+			if err != nil {
+				return nil, err
+			}
+			ps.pipe = pipe
+			return ps, nil
 		}
 		if parenthesized {
 			p.skipSeparators()
@@ -513,7 +537,27 @@ func (p *parser) parsePrintf() (stmt, error) {
 		}
 		p.skipSeparators()
 	}
+	if p.at(tokGT) || p.at(tokAppend) {
+		return nil, fmt.Errorf("print redirection is not supported")
+	}
+	if p.at(tokPipe) {
+		pipe, err := p.parseOutputPipe()
+		if err != nil {
+			return nil, err
+		}
+		ps.pipe = pipe
+	}
 	return ps, nil
+}
+
+func (p *parser) parseOutputPipe() (expr, error) {
+	if !p.match(tokPipe) {
+		return nil, fmt.Errorf("expected |")
+	}
+	old := p.stopPrintRedirect
+	p.stopPrintRedirect = false
+	defer func() { p.stopPrintRedirect = old }()
+	return p.parseExpression(0)
 }
 
 func (p *parser) skipNewlines() {
@@ -848,6 +892,10 @@ func validateBuiltinCallArity(name string, argc int) error {
 	case "sprintf":
 		if argc < 1 {
 			return fmt.Errorf("sprintf expects at least 1 argument")
+		}
+	case "close":
+		if argc != 1 {
+			return fmt.Errorf("close expects 1 argument")
 		}
 	case "tolower", "toupper", "int":
 		if argc != 1 {

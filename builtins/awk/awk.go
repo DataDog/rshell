@@ -22,8 +22,9 @@
 // array parameters, and field/built-in variables such as $0, $1, NF, NR, FNR,
 // FILENAME, FS, OFS, ORS, SUBSEP, RSTART, and RLENGTH.
 //
-// Blocked or deferred features include system(), command pipes, output
-// redirection, getline, and many additional POSIX/GNU awk builtins.
+// Output command pipes run only through rshell's controlled builtin execution
+// model. Blocked or deferred features include system(), output redirection,
+// getline, command-input pipes, and many additional POSIX/GNU awk builtins.
 package awk
 
 import (

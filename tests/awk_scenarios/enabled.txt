@@ -185,6 +185,7 @@ onetrueawk/fixtures/t_format4_sprintf_width_substr.yaml
 onetrueawk/fixtures/t_intest2_composite_membership.yaml
 onetrueawk/fixtures/t_longstr_literal_preserved.yaml
 onetrueawk/fixtures/t_monotone_optional_regex_chain.yaml
+onetrueawk/fixtures/t_pipe_print_to_command.yaml
 onetrueawk/fixtures/t_quote_field_with_literal_quotes.yaml
 onetrueawk/fixtures/t_sep_digit_field_separator.yaml
 onetrueawk/fixtures/t_seqno_record_numbers.yaml
@@ -257,6 +258,8 @@ onetrueawk/programs/p43_area_by_group_for_in.yaml
 onetrueawk/programs/p44_recursive_factorial_function.yaml
 onetrueawk/programs/p45_ofs_ors_print.yaml
 onetrueawk/programs/p46_adjacent_field_concatenation.yaml
+onetrueawk/programs/p48_array_totals_piped_sort.yaml
+onetrueawk/programs/p50_composite_key_piped_sort.yaml
 onetrueawk/programs/p5a_tabular_header_printf.yaml
 onetrueawk/programs/recursive_functions_and_array_params.yaml
 onetrueawk/programs/regular_expression_operator_matrix.yaml

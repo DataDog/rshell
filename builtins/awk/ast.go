@@ -36,12 +36,14 @@ type stmt interface {
 
 type printStmt struct {
 	args []expr
+	pipe expr
 }
 
 func (*printStmt) stmtNode() {}
 
 type printfStmt struct {
 	args []expr
+	pipe expr
 }
 
 func (*printfStmt) stmtNode() {}

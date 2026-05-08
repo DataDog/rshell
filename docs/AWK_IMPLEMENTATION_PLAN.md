@@ -245,7 +245,7 @@ The builtin must preserve rshell's no-write, no-host-exec safety model.
 Reject or defer:
 
 - `system()`
-- command pipes: `print | "cmd"` and `"cmd" | getline`
+- command-input pipes: `"cmd" | getline`
 - coprocesses
 - output redirection to files: `print > "file"` and `print >> "file"`
 - `getline` in all forms for Phase 1
@@ -253,6 +253,11 @@ Reject or defer:
 - network special files
 - any feature that executes host commands
 - any feature that writes, creates, modifies, or deletes files
+
+Output command pipes such as `print ... | "sort"` are permitted in Phase 4
+only through rshell's controlled builtin execution model. They do not invoke a
+host shell, and the command string is restricted to one allowed rshell builtin
+plus literal whitespace-separated arguments.
 
 All file reads must go through `callCtx.OpenFile`.
 
