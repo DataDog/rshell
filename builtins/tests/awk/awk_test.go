@@ -175,6 +175,14 @@ func TestAwkSubGsubMatchAndSprintf(t *testing.T) {
 	assert.Equal(t, "4 4 3 123\nabc<123>def\nX<123>X\nid:007\n", stdout)
 }
 
+func TestAwkByteModeMatchOffsetsUseRunePositions(t *testing.T) {
+	dir := t.TempDir()
+	stdout, stderr, code := cmdRun(t, `awk 'BEGIN { s = "\303\251"; print length(s), "[" s "]"; print match(s, /\251/), RSTART, RLENGTH, "[" substr(s, RSTART, RLENGTH) "]" }'`, dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "", stderr)
+	assert.Equal(t, "1 [\303\251]\n1 1 1 [\303\251]\n", stdout)
+}
+
 func TestAwkCompositeKeysAndTernary(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, dir, "input.txt", "a x 1\na y 2\na x 3\nb x 4\n")

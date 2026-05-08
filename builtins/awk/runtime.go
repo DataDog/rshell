@@ -1350,6 +1350,18 @@ func (re *awkRegex) FindStringIndex(s string) []int {
 	return []int{offsets[loc[0]], offsets[loc[1]]}
 }
 
+func (re *awkRegex) FindStringRuneIndex(s string) []int {
+	loc := re.FindStringIndex(s)
+	if loc == nil {
+		return nil
+	}
+	if !re.byteMode {
+		return []int{runeLen(s[:loc[0]]), runeLen(s[:loc[1]])}
+	}
+	start, end := runeRangeForByteRange(s, loc[0], loc[1])
+	return []int{start, end}
+}
+
 func (re *awkRegex) FindAllStringIndex(s string, n int) [][]int {
 	if !re.byteMode {
 		return re.re.FindAllStringIndex(s, n)
@@ -1361,6 +1373,61 @@ func (re *awkRegex) FindAllStringIndex(s string, n int) [][]int {
 		loc[1] = offsets[loc[1]]
 	}
 	return matches
+}
+
+func runeRangeForByteRange(s string, startByte, endByte int) (int, int) {
+	if startByte < 0 {
+		startByte = 0
+	}
+	if startByte > len(s) {
+		startByte = len(s)
+	}
+	if endByte < startByte {
+		endByte = startByte
+	}
+	if endByte > len(s) {
+		endByte = len(s)
+	}
+	if startByte == endByte {
+		idx := runeIndexForByteOffset(s, startByte)
+		return idx, idx
+	}
+	return runeIndexForByteOffset(s, startByte), runeIndexAfterByteOffset(s, endByte)
+}
+
+func runeIndexForByteOffset(s string, offset int) int {
+	if offset <= 0 {
+		return 0
+	}
+	runeIndex := 0
+	for i := 0; i < len(s); runeIndex++ {
+		_, size := utf8.DecodeRuneInString(s[i:])
+		next := i + size
+		if offset < next {
+			return runeIndex
+		}
+		if offset == next {
+			return runeIndex + 1
+		}
+		i = next
+	}
+	return runeIndex
+}
+
+func runeIndexAfterByteOffset(s string, offset int) int {
+	if offset <= 0 {
+		return 0
+	}
+	runeIndex := 0
+	for i := 0; i < len(s); runeIndex++ {
+		_, size := utf8.DecodeRuneInString(s[i:])
+		next := i + size
+		if offset <= next {
+			return runeIndex + 1
+		}
+		i = next
+	}
+	return runeIndex
 }
 
 func normalizeAwkRegex(pattern string) (string, bool) {

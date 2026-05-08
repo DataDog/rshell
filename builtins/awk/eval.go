@@ -617,7 +617,7 @@ func (rt *runtime) evalMatch(e *callExpr) (value, error) {
 	if err != nil {
 		return value{}, err
 	}
-	match := re.FindStringIndex(input.String())
+	match := re.FindStringRuneIndex(input.String())
 	if match == nil {
 		if err := rt.setVar("RSTART", numberValue(0)); err != nil {
 			return value{}, err
@@ -627,8 +627,8 @@ func (rt *runtime) evalMatch(e *callExpr) (value, error) {
 		}
 		return numberValue(0), nil
 	}
-	start := runeLen(input.String()[:match[0]]) + 1
-	length := runeLen(input.String()[match[0]:match[1]])
+	start := match[0] + 1
+	length := match[1] - match[0]
 	if err := rt.setVar("RSTART", numberValue(float64(start))); err != nil {
 		return value{}, err
 	}
