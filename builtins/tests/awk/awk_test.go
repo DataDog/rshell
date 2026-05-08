@@ -163,7 +163,7 @@ func TestAwkLoopsObserveContextCancellation(t *testing.T) {
 			require.NoError(t, err)
 			defer runner.Close()
 
-			ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+			ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 			defer cancel()
 			done := make(chan error, 1)
 			go func() {
