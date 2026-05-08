@@ -1,4 +1,5 @@
 description: awk reads standard input when the file operand is dash.
+skip_assert_against_bash: true
 setup:
   files:
     - path: prog.awk

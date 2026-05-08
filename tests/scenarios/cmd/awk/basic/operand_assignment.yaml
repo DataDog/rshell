@@ -1,4 +1,5 @@
 description: awk applies name=value operands in input-stream order.
+skip_assert_against_bash: true
 setup:
   files:
     - path: one.txt

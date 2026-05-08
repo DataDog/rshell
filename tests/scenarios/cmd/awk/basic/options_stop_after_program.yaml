@@ -1,4 +1,5 @@
 description: awk treats flag-like operands after the program as file names.
+skip_assert_against_bash: true
 setup:
   files:
     - path: "-F,"

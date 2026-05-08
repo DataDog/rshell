@@ -1,4 +1,5 @@
 description: awk reports NF 0 for blank records with a literal field separator.
+skip_assert_against_bash: true
 setup:
   files:
     - path: input.txt

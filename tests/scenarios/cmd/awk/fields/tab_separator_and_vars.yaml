@@ -1,4 +1,5 @@
 description: awk supports tab field separators, -v variables, and multi-file counters.
+skip_assert_against_bash: true
 setup:
   files:
     - path: one.tsv

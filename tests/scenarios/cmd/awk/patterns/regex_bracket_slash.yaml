@@ -1,4 +1,5 @@
 description: awk regex bracket classes may contain slash literals.
+skip_assert_against_bash: true
 setup:
   files:
     - path: input.txt

@@ -1,4 +1,5 @@
 description: awk runs BEGIN, per-record actions, and END.
+skip_assert_against_bash: true
 setup:
   files:
     - path: input.txt

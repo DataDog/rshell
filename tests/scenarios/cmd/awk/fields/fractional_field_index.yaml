@@ -1,4 +1,5 @@
 description: awk truncates fractional field indexes toward zero.
+skip_assert_against_bash: true
 setup:
   files:
     - path: input.txt

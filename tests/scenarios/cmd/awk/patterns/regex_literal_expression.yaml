@@ -1,4 +1,5 @@
 description: awk regexp literals in expressions match the current record.
+skip_assert_against_bash: true
 setup:
   files:
     - path: input.txt

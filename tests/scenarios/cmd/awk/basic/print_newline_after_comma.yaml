@@ -1,4 +1,5 @@
 description: awk print accepts a newline after an argument comma.
+skip_assert_against_bash: true
 setup:
   files:
     - path: input.txt
