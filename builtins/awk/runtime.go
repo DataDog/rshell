@@ -277,7 +277,7 @@ func (rt *runtime) ensureEnviron() {
 	elems := make(map[string]value)
 	if rt.callCtx.Env != nil {
 		rt.callCtx.Env(func(name, value string) bool {
-			elems[name] = stringValue(value)
+			elems[name] = inputStringValue(value)
 			return true
 		})
 	}
@@ -818,12 +818,9 @@ func validateFS(fs string) error {
 	if isSingleRune(fs) {
 		return nil
 	}
-	re, err := compileRegex(fs)
+	_, err := compileRegex(fs)
 	if err != nil {
 		return err
-	}
-	if re.MatchString("") {
-		return fmt.Errorf("FS regular expression must not match the empty string")
 	}
 	return nil
 }

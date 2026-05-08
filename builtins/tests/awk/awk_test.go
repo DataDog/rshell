@@ -331,10 +331,10 @@ func TestAwkFieldAssignmentAndRecordRebuild(t *testing.T) {
 
 func TestAwkEnvironUsesRshellEnvironment(t *testing.T) {
 	dir := t.TempDir()
-	stdout, stderr, code := runScript(t, `FOO=script; awk 'BEGIN { print ENVIRON["FROM_ENV"], ENVIRON["FOO"], ("PATH" in ENVIRON), ("PWD" in ENVIRON) }'`, dir, interp.Env("FROM_ENV=provided"))
+	stdout, stderr, code := runScript(t, `FOO=script; awk 'BEGIN { print ENVIRON["FROM_ENV"], ENVIRON["FOO"], ("PATH" in ENVIRON), ("PWD" in ENVIRON); print ENVIRON["NUMERIC_ENV"] < 2, ENVIRON["NUMERIC_ENV"] + 0, ENVIRON["NUMERIC_ENV"] == 10 }'`, dir, interp.Env("FROM_ENV=provided", "NUMERIC_ENV=10"))
 	assert.Equal(t, 0, code)
 	assert.Equal(t, "", stderr)
-	assert.Equal(t, "provided script 0 1\n", stdout)
+	assert.Equal(t, "provided script 0 1\n0 10 1\n", stdout)
 }
 
 func TestAwkLargeEnvironDoesNotConsumeVariableBudget(t *testing.T) {
@@ -353,6 +353,15 @@ func TestAwkStringNumericSemantics(t *testing.T) {
 	assert.Equal(t, 0, code)
 	assert.Equal(t, "", stderr)
 	assert.Equal(t, "1 1 1 0 124\n1 1 1 1\ntruthy 10\n11 0 0 1\ntruthy 123abc\n124 0 1 1\ntruthy -4.5x\n-3.5 0 1 1\ntruthy abc123\n1 0 0 0\n", stdout)
+}
+
+func TestAwkRegexFieldSeparatorAllowsZeroWidthMatches(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "input.txt", "abc\naxb\n")
+	stdout, stderr, code := cmdRun(t, `awk -F 'x*' '{ print NF, "[" $1 "]", "[" $2 "]" }' input.txt`, dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "", stderr)
+	assert.Equal(t, "1 [abc] []\n2 [a] [b]\n", stdout)
 }
 
 func TestAwkEmptyProgramIsNoOp(t *testing.T) {

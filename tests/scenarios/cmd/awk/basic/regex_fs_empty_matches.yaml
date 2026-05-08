@@ -1,0 +1,17 @@
+description: awk regex field separators ignore zero-width matches.
+setup:
+  files:
+    - path: input.txt
+      content: |+
+        abc
+        axb
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    awk -F 'x*' '{ print NF, "[" $1 "]", "[" $2 "]" }' input.txt
+expect:
+  stdout: |+
+    1 [abc] []
+    2 [a] [b]
+  stderr: |+
+  exit_code: 0
