@@ -26,8 +26,7 @@ Run the rewritten scenarios against rshell's `awk` adapter:
 
 ```bash
 tools/awk-harness/run.sh install-gawk
-make build
-RSHELL_BIN=./rshell AWK_UNDER_TEST=tools/awk-harness/rshell-awk tools/awk-harness/run.sh rewritten
+make test_awk_rewritten
 ```
 
 If `enabled.txt` is empty, the rewritten scenario run is skipped. Use
