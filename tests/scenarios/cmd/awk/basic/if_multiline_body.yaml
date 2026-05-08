@@ -1,4 +1,5 @@
 description: awk accepts newlines before if and else branch bodies.
+oracle: gawk
 setup:
   files:
     - path: input.txt

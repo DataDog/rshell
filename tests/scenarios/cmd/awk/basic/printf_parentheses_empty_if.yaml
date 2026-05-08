@@ -1,4 +1,5 @@
 description: awk supports parenthesized printf args, empty if bodies, and oversized substr lengths.
+oracle: gawk
 input:
   script: |+
     awk 'BEGIN {
