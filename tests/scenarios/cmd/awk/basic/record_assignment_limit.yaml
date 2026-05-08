@@ -1,0 +1,10 @@
+description: awk rejects record assignment that exceeds the record size limit.
+skip_assert_against_bash: true  # intentional divergence: rshell caps in-memory awk records.
+input:
+  script: |+
+    awk 'BEGIN { $0 = "x"; for (i = 0; i < 21; i++) $0 = $0 $0; print "unreachable" }'
+expect:
+  stdout: |+
+  stderr: |+
+    awk: record exceeds 1048576 bytes
+  exit_code: 1

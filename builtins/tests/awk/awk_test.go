@@ -329,6 +329,21 @@ func TestAwkFieldAssignmentAndRecordRebuild(t *testing.T) {
 	assert.Equal(t, "a|B|c|3\na|B|c|z|4\nm|n|2\n", stdout)
 }
 
+func TestAwkRecordAssignmentRespectsRecordLimit(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "large.txt", strings.Repeat("x", 1<<20)+"\n")
+	for _, script := range []string{
+		`awk 'BEGIN { $0 = "x"; for (i = 0; i < 21; i++) $0 = $0 $0; print "unreachable" }'`,
+		`awk '{ $1 = $0; $2 = $0; print "unreachable" }' large.txt`,
+		`awk '{ $1 = $0; NF = 2; print "unreachable" }' large.txt`,
+	} {
+		stdout, stderr, code := cmdRun(t, script, dir)
+		assert.Equal(t, 1, code, script)
+		assert.Equal(t, "", stdout, script)
+		assert.Contains(t, stderr, "record exceeds 1048576 bytes", script)
+	}
+}
+
 func TestAwkEnvironUsesRshellEnvironment(t *testing.T) {
 	dir := t.TempDir()
 	stdout, stderr, code := runScript(t, `FOO=script; awk 'BEGIN { print ENVIRON["FROM_ENV"], ENVIRON["FOO"], ("PATH" in ENVIRON), ("PWD" in ENVIRON); print ENVIRON["NUMERIC_ENV"] < 2, ENVIRON["NUMERIC_ENV"] + 0, ENVIRON["NUMERIC_ENV"] == 10 }'`, dir, interp.Env("FROM_ENV=provided", "NUMERIC_ENV=10"))

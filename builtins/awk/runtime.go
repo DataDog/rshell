@@ -461,6 +461,9 @@ func (rt *runtime) matchSimplePattern(x expr) (bool, error) {
 }
 
 func (rt *runtime) setRecord(rec string) error {
+	if err := validateRecordSize(rec); err != nil {
+		return err
+	}
 	rt.record = rec
 	fs := rt.getVar("FS").String()
 	fields, err := splitAwkFields(rec, fs)
@@ -474,8 +477,44 @@ func (rt *runtime) setRecord(rec string) error {
 	return nil
 }
 
-func (rt *runtime) rebuildRecordFromFields() {
-	rt.record = strings.Join(rt.fields, rt.getVar("OFS").String())
+func validateRecordSize(rec string) error {
+	if len(rec) > MaxRecordBytes {
+		return fmt.Errorf("record exceeds %d bytes", MaxRecordBytes)
+	}
+	return nil
+}
+
+func validateRebuiltRecordSize(fields []string, fieldCount, replacementIndex int, replacement, ofs string) error {
+	total := 0
+	for i := 0; i < fieldCount; i++ {
+		if i > 0 {
+			total += len(ofs)
+			if total > MaxRecordBytes {
+				return fmt.Errorf("record exceeds %d bytes", MaxRecordBytes)
+			}
+		}
+		field := ""
+		if i < len(fields) {
+			field = fields[i]
+		}
+		if replacementIndex == i+1 {
+			field = replacement
+		}
+		total += len(field)
+		if total > MaxRecordBytes {
+			return fmt.Errorf("record exceeds %d bytes", MaxRecordBytes)
+		}
+	}
+	return nil
+}
+
+func (rt *runtime) rebuildRecordFromFields() error {
+	ofs := rt.getVar("OFS").String()
+	if err := validateRebuiltRecordSize(rt.fields, len(rt.fields), 0, "", ofs); err != nil {
+		return err
+	}
+	rt.record = strings.Join(rt.fields, ofs)
+	return nil
 }
 
 func (rt *runtime) setField(n int, v value) error {
@@ -488,12 +527,16 @@ func (rt *runtime) setField(n int, v value) error {
 	if n > MaxFields {
 		return fmt.Errorf("record has too many fields")
 	}
+	s := v.String()
+	fieldCount := max(len(rt.fields), n)
+	if err := validateRebuiltRecordSize(rt.fields, fieldCount, n, s, rt.getVar("OFS").String()); err != nil {
+		return err
+	}
 	for len(rt.fields) < n {
 		rt.fields = append(rt.fields, "")
 	}
-	rt.fields[n-1] = v.String()
-	rt.rebuildRecordFromFields()
-	return nil
+	rt.fields[n-1] = s
+	return rt.rebuildRecordFromFields()
 }
 
 func (rt *runtime) setNF(n int) error {
@@ -503,6 +546,9 @@ func (rt *runtime) setNF(n int) error {
 	if n > MaxFields {
 		return fmt.Errorf("record has too many fields")
 	}
+	if err := validateRebuiltRecordSize(rt.fields, n, 0, "", rt.getVar("OFS").String()); err != nil {
+		return err
+	}
 	if n < len(rt.fields) {
 		rt.fields = rt.fields[:n]
 	} else {
@@ -510,8 +556,7 @@ func (rt *runtime) setNF(n int) error {
 			rt.fields = append(rt.fields, "")
 		}
 	}
-	rt.rebuildRecordFromFields()
-	return nil
+	return rt.rebuildRecordFromFields()
 }
 
 func splitAwkFields(s, fs string) ([]string, error) {
