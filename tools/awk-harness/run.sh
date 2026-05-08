@@ -9,6 +9,7 @@ usage() {
 Usage: tools/awk-harness/run.sh TARGET
 
 Targets:
+  fuzz         Run AWK fuzz targets against GNU awk.
   scenarios    Run shell scenarios marked oracle: gawk against GNU awk.
   rewritten    Run rshell-owned AWK scenario rewrites.
   install-gawk Build/install the pinned GNU awk oracle into the harness cache.
@@ -23,6 +24,9 @@ Oracle:
 
 Useful environment variables:
   AWK_HARNESS_CACHE=DIR         Cache oracle builds and scratch files.
+  RSHELL_AWK_FUZZTIME=D         Duration for each AWK fuzz target.
+  RSHELL_AWK_FUZZ_TIMEOUT=D     Per-process timeout for fuzzed AWK executions.
+  RSHELL_AWK_GO_TEST_TIMEOUT=D  Overall go test timeout for each AWK fuzz run.
   RSHELL_AWK_SCENARIO_TIMEOUT=D Duration or seconds for local rewritten tests.
   GAWK_ORACLE=/path/to/gawk     Trusted GNU awk binary used as oracle.
   GAWK_VERSION=VERSION          Pinned GNU awk oracle version (default: 5.4.0).
@@ -36,6 +40,9 @@ if [ -z "$target" ] || [ "$target" = "-h" ] || [ "$target" = "--help" ]; then
 fi
 
 case "$target" in
+	fuzz)
+		exec "$SCRIPT_DIR/run-fuzz.sh"
+		;;
 	scenarios)
 		exec "$SCRIPT_DIR/run-scenarios.sh"
 		;;

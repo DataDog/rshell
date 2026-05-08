@@ -56,6 +56,13 @@ make build
 RSHELL_BIN=./rshell AWK_UNDER_TEST=tools/awk-harness/rshell-awk tools/awk-harness/run.sh rewritten
 ```
 
+Run GNU awk differential fuzz targets for rshell's `awk` command path:
+
+```bash
+tools/awk-harness/run.sh install-gawk
+tools/awk-harness/run.sh fuzz
+```
+
 For a focused metadata check that does not execute scenarios:
 
 ```bash
@@ -77,6 +84,8 @@ RSHELL_BIN=/path/to/rshell RSHELL_ALLOWED_PATHS=/tmp,/var/tmp AWK_UNDER_TEST=too
 ## Targets
 
 - `install-gawk`: Build or reuse the pinned GNU awk oracle.
+- `fuzz`: Run AWK fuzz targets against rshell and compare behavior with the
+  pinned GNU awk oracle.
 - `rewritten`: Run enabled local scenario rewrites against `AWK_UNDER_TEST` and
   compare them with the pinned GNU awk oracle.
 
