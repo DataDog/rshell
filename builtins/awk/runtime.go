@@ -1315,18 +1315,57 @@ func isSingleRune(s string) bool {
 	return size == len(s)
 }
 
-func compileRegex(pattern string) (*regexp.Regexp, error) {
-	normalized := normalizeAwkRegex(pattern)
+type awkRegex struct {
+	re       *regexp.Regexp
+	byteMode bool
+}
+
+func compileRegex(pattern string) (*awkRegex, error) {
+	normalized, byteMode := normalizeAwkRegex(pattern)
 	re, err := regexp.Compile(normalized)
 	if err != nil {
 		return nil, fmt.Errorf("invalid regular expression %q: %v", pattern, err)
 	}
 	re.Longest()
-	return re, nil
+	return &awkRegex{re: re, byteMode: byteMode}, nil
 }
 
-func normalizeAwkRegex(pattern string) string {
+func (re *awkRegex) MatchString(s string) bool {
+	if !re.byteMode {
+		return re.re.MatchString(s)
+	}
+	encoded, _ := encodeAwkRegexBytes(s)
+	return re.re.MatchString(encoded)
+}
+
+func (re *awkRegex) FindStringIndex(s string) []int {
+	if !re.byteMode {
+		return re.re.FindStringIndex(s)
+	}
+	encoded, offsets := encodeAwkRegexBytes(s)
+	loc := re.re.FindStringIndex(encoded)
+	if loc == nil {
+		return nil
+	}
+	return []int{offsets[loc[0]], offsets[loc[1]]}
+}
+
+func (re *awkRegex) FindAllStringIndex(s string, n int) [][]int {
+	if !re.byteMode {
+		return re.re.FindAllStringIndex(s, n)
+	}
+	encoded, offsets := encodeAwkRegexBytes(s)
+	matches := re.re.FindAllStringIndex(encoded, n)
+	for _, loc := range matches {
+		loc[0] = offsets[loc[0]]
+		loc[1] = offsets[loc[1]]
+	}
+	return matches
+}
+
+func normalizeAwkRegex(pattern string) (string, bool) {
 	var b strings.Builder
+	byteMode := false
 	for i := 0; i < len(pattern); i++ {
 		ch := pattern[i]
 		if ch != '\\' {
@@ -1343,25 +1382,46 @@ func normalizeAwkRegex(pattern string) string {
 				i++
 				value = value*8 + int(pattern[i]-'0')
 			}
-			writeAwkRegexByteEscape(&b, byte(value))
+			if writeAwkRegexByteEscape(&b, byte(value)) {
+				byteMode = true
+			}
 			continue
 		}
 		i++
 		writeAwkRegexEscape(&b, pattern[i])
 	}
-	return b.String()
+	return b.String(), byteMode
 }
 
-func writeAwkRegexByteEscape(b *strings.Builder, value byte) {
+func writeAwkRegexByteEscape(b *strings.Builder, value byte) bool {
 	if value >= 0x80 {
 		const hex = "0123456789abcdef"
 		b.WriteString(`\x{`)
 		b.WriteByte(hex[value>>4])
 		b.WriteByte(hex[value&0x0f])
 		b.WriteByte('}')
-		return
+		return true
 	}
 	b.WriteByte(value)
+	return false
+}
+
+func encodeAwkRegexBytes(s string) (string, []int) {
+	var b strings.Builder
+	offsets := []int{0}
+	for i := 0; i < len(s); i++ {
+		before := b.Len()
+		if s[i] >= 0x80 {
+			b.WriteRune(rune(s[i]))
+		} else {
+			b.WriteByte(s[i])
+		}
+		for j := before + 1; j < b.Len(); j++ {
+			offsets = append(offsets, i)
+		}
+		offsets = append(offsets, i+1)
+	}
+	return b.String(), offsets
 }
 
 func writeAwkRegexEscape(b *strings.Builder, esc byte) {

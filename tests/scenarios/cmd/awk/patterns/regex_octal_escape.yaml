@@ -3,6 +3,7 @@ oracle: gawk
 input:
   script: |+
     printf 'a\n141\n.\nx\n' | awk '/\141/ { print "a", $0 } /\056/ { print "dot", $0 }'
+    printf '\377\n' | awk '/\377/ { print "byte" }'
 expect:
   stdout: |+
     a a
@@ -10,5 +11,6 @@ expect:
     dot 141
     dot .
     dot x
+    byte
   stderr: |+
   exit_code: 0

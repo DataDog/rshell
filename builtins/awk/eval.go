@@ -10,7 +10,6 @@ import (
 	"errors"
 	"fmt"
 	"math"
-	"regexp"
 	"strings"
 )
 
@@ -639,7 +638,7 @@ func (rt *runtime) evalMatch(e *callExpr) (value, error) {
 	return numberValue(float64(start)), nil
 }
 
-func (rt *runtime) compileRegexArg(x expr) (*regexp.Regexp, error) {
+func (rt *runtime) compileRegexArg(x expr) (*awkRegex, error) {
 	if rx, ok := x.(*regexExpr); ok {
 		return compileRegex(rx.pattern)
 	}
@@ -650,7 +649,7 @@ func (rt *runtime) compileRegexArg(x expr) (*regexp.Regexp, error) {
 	return compileRegex(v.String())
 }
 
-func substituteAwk(re *regexp.Regexp, input, replacement string, all bool) (string, int, error) {
+func substituteAwk(re *awkRegex, input, replacement string, all bool) (string, int, error) {
 	var matches [][]int
 	if all {
 		matches = re.FindAllStringIndex(input, -1)
