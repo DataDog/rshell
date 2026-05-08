@@ -10,6 +10,13 @@ if [ -z "${AWK_UNDER_TEST:-}" ]; then
 	die "AWK_UNDER_TEST must point to the awk binary under test; for rshell use RSHELL_BIN=./rshell AWK_UNDER_TEST=tools/awk-harness/rshell-awk"
 fi
 AWK_UNDER_TEST="$(resolve_awk_under_test)"
+if [ -n "${RSHELL_BIN:-}" ]; then
+	case "$RSHELL_BIN" in
+		/*) ;;
+		*/*) RSHELL_BIN="$(abs_path "$RSHELL_BIN")" ;;
+	esac
+	export RSHELL_BIN
+fi
 
 export GAWK_ORACLE="$oracle"
 export AWK_UNDER_TEST
