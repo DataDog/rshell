@@ -10,7 +10,6 @@ import (
 	"errors"
 	"fmt"
 	"math"
-	"strconv"
 	"strings"
 )
 
@@ -386,7 +385,7 @@ func (rt *runtime) evalSplit(e *callExpr) (value, error) {
 	}
 	elems := make(map[string]value, len(parts))
 	for i, part := range parts {
-		elems[strconv.Itoa(i+1)] = inputStringValue(part)
+		elems[fmt.Sprintf("%d", i+1)] = inputStringValue(part)
 	}
 	if err := rt.replaceArray(target.name, elems); err != nil {
 		return value{}, err

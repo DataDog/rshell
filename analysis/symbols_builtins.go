@@ -48,16 +48,14 @@ var builtinPerCommandSymbols = map[string][]string{
 		"regexp.Compile",                  // 🟢 compiles a regular expression; pure function, no I/O. Uses RE2 engine (linear-time, no backtracking).
 		"regexp.Regexp",                   // 🟢 compiled regular expression type; no I/O side effects. All matching methods are linear-time (RE2).
 		"strconv.FormatFloat",             // 🟢 float-to-string conversion for awk numeric output; pure function.
-		"strconv.Itoa",                    // 🟢 int-to-string conversion for awk split indexes; pure function.
 		"strconv.ParseFloat",              // 🟢 string-to-float conversion; pure function, no I/O.
-		"sort.Strings",                    // 🟢 sorts awk array keys for deterministic iteration; pure in-memory operation.
 		"strings.Builder",                 // 🟢 efficient string concatenation; pure in-memory buffer, no I/O.
 		"strings.ContainsRune",            // 🟢 checks if a rune is in a string; pure function, no I/O.
 		"strings.Cut",                     // 🟢 splits a string around the first separator; pure function, no I/O.
 		"strings.Index",                   // 🟢 substring search for awk index(); pure function, no I/O.
 		"strings.Join",                    // 🟢 concatenates a slice of strings with a separator; pure function, no I/O.
 		"strings.NewReader",               // 🟢 wraps a string as an io.Reader; pure in-memory, no I/O.
-		"strings.Split",                   // 🟢 splits a string by literal separator; pure function, no I/O.
+		"strings.Split",                   // 🟢 splits a string by separator into a slice; pure function, no I/O.
 		"strings.ToLower",                 // 🟢 converts string to lowercase for awk tolower(); pure function, no I/O.
 		"strings.ToUpper",                 // 🟢 converts string to uppercase for awk toupper(); pure function, no I/O.
 		"strings.TrimSpace",               // 🟢 removes leading/trailing whitespace; pure function.
@@ -635,7 +633,6 @@ var builtinAllowedSymbols = []string{
 	"regexp.QuoteMeta",                                    // 🟢 escapes all special regex characters in a string; pure function, no I/O.
 	"regexp.Regexp",                                       // 🟢 compiled regular expression type; no I/O side effects. All matching methods are linear-time (RE2).
 	"runtime.GOOS",                                        // 🟢 current OS name constant; pure constant, no I/O.
-	"sort.Strings",                                        // 🟢 sorts strings in-place; pure in-memory operation, no I/O.
 	"slices.Reverse",                                      // 🟢 reverses a slice in-place; pure function, no I/O.
 	"slices.SortFunc",                                     // 🟢 sorts a slice with a comparison function; pure function, no I/O.
 	"slices.SortStableFunc",                               // 🟢 stable sort with a comparison function; pure function, no I/O.

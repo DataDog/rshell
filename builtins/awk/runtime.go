@@ -13,7 +13,6 @@ import (
 	"io"
 	"os"
 	"regexp"
-	"sort"
 	"strconv"
 	"strings"
 	"unicode/utf8"
@@ -814,8 +813,20 @@ func (rt *runtime) arrayKeys(name string) ([]string, error) {
 	for key := range rt.arrays[name] {
 		keys = append(keys, key)
 	}
-	sort.Strings(keys)
+	sortStringKeys(keys)
 	return keys, nil
+}
+
+func sortStringKeys(keys []string) {
+	for i := 1; i < len(keys); i++ {
+		key := keys[i]
+		j := i - 1
+		for j >= 0 && keys[j] > key {
+			keys[j+1] = keys[j]
+			j--
+		}
+		keys[j+1] = key
+	}
 }
 
 func (rt *runtime) ensureBuiltinArray(name string) {
