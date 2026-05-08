@@ -1337,10 +1337,31 @@ func normalizeAwkRegex(pattern string) string {
 			b.WriteByte(ch)
 			continue
 		}
+		if isOctalDigit(rune(pattern[i+1])) {
+			value := 0
+			for digits := 0; digits < 3 && i+1 < len(pattern) && isOctalDigit(rune(pattern[i+1])); digits++ {
+				i++
+				value = value*8 + int(pattern[i]-'0')
+			}
+			writeAwkRegexByteEscape(&b, byte(value))
+			continue
+		}
 		i++
 		writeAwkRegexEscape(&b, pattern[i])
 	}
 	return b.String()
+}
+
+func writeAwkRegexByteEscape(b *strings.Builder, value byte) {
+	if value >= 0x80 {
+		const hex = "0123456789abcdef"
+		b.WriteString(`\x{`)
+		b.WriteByte(hex[value>>4])
+		b.WriteByte(hex[value&0x0f])
+		b.WriteByte('}')
+		return
+	}
+	b.WriteByte(value)
 }
 
 func writeAwkRegexEscape(b *strings.Builder, esc byte) {

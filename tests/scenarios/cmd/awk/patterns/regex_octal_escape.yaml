@@ -1,0 +1,14 @@
+description: awk regular expression literals support octal byte escapes.
+oracle: gawk
+input:
+  script: |+
+    printf 'a\n141\n.\nx\n' | awk '/\141/ { print "a", $0 } /\056/ { print "dot", $0 }'
+expect:
+  stdout: |+
+    a a
+    dot a
+    dot 141
+    dot .
+    dot x
+  stderr: |+
+  exit_code: 0
