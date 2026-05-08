@@ -127,10 +127,10 @@ func TestAwkArrayMembershipDeleteForInAndSplit(t *testing.T) {
 
 func TestAwkSplitRegexAndCharacterSeparator(t *testing.T) {
 	dir := t.TempDir()
-	stdout, stderr, code := cmdRun(t, `awk 'BEGIN { n = split("a,b:c", fields, /[,:]/); print n, fields[1], fields[2], fields[3]; m = split("xy", chars, ""); print m, chars[1], chars[2]; print split("a  b", special, " "), split("a  b", literal, / /); print split("abc", dotLiteral, "."), split("a.b", dotted, "."), split("a|b", pipeLiteral, "|"), split("abc", dotRegex, /./); print split("abc", nullRegex, //), nullRegex[1], nullRegex[2], nullRegex[3]; print split(" a b ", starRegex, / */), "[" starRegex[1] "]", "[" starRegex[2] "]", "[" starRegex[3] "]", "[" starRegex[4] "]" }'`, dir)
+	stdout, stderr, code := cmdRun(t, `awk 'BEGIN { n = split("a,b:c", fields, /[,:]/); print n, fields[1], fields[2], fields[3]; m = split("xy", chars, ""); print m, chars[1], chars[2]; print split("a  b", special, " "), split("a  b", literal, / /); print split("abc", dotLiteral, "."), split("a.b", dotted, "."), split("a|b", pipeLiteral, "|"), split("abc", dotRegex, /./); print split("abc", nullRegex, //), nullRegex[1], nullRegex[2], nullRegex[3]; print split(" a b ", starRegex, / */), "[" starRegex[1] "]", "[" starRegex[2] "]", "[" starRegex[3] "]", "[" starRegex[4] "]"; print split("aaa", longest, /a|aa/), "[" longest[1] "]", "[" longest[2] "]", "[" longest[3] "]" }'`, dir)
 	assert.Equal(t, 0, code)
 	assert.Equal(t, "", stderr)
-	assert.Equal(t, "3 a b c\n2 x y\n2 3\n1 2 2 4\n3 a b c\n4 [] [a] [b] []\n", stdout)
+	assert.Equal(t, "3 a b c\n2 x y\n2 3\n1 2 2 4\n3 a b c\n4 [] [a] [b] []\n3 [] [] []\n", stdout)
 }
 
 func TestAwkForWhileBreakAndContinue(t *testing.T) {

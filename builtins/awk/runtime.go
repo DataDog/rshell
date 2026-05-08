@@ -842,6 +842,7 @@ func compileRegex(pattern string) (*regexp.Regexp, error) {
 	if err != nil {
 		return nil, fmt.Errorf("invalid regular expression %q: %v", pattern, err)
 	}
+	re.Longest()
 	return re, nil
 }
 
