@@ -22,14 +22,14 @@ input:
     BEGIN {
       clear(table)
       fill(table)
-      for (key in table)
-        print key, table[key]
+      print "one", table["one"]
+      print "two", table["two"]
       clear(table)
       print length(table)
     }
 expect:
-  stdout_contains:
-    - one 1
-    - two 2
-    - "0"
+  stdout: |
+    one 1
+    two 2
+    0
   exit_code: 0

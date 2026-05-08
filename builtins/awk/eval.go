@@ -27,7 +27,18 @@ func (e *exitError) Error() string {
 	return "exit"
 }
 
+type returnError struct {
+	value value
+}
+
+func (e *returnError) Error() string {
+	return "return"
+}
+
 func (rt *runtime) execStatements(ctx context.Context, stmts []stmt) error {
+	prevCtx := rt.ctx
+	rt.ctx = ctx
+	defer func() { rt.ctx = prevCtx }()
 	for _, st := range stmts {
 		if err := ctx.Err(); err != nil {
 			return err
@@ -120,6 +131,15 @@ func (rt *runtime) execStatements(ctx context.Context, stmts []stmt) error {
 			}
 			rt.exitCode = code
 			return &exitError{code: code}
+		case *returnStmt:
+			if s.value == nil {
+				return &returnError{value: unassignedValue()}
+			}
+			v, err := rt.eval(s.value)
+			if err != nil {
+				return err
+			}
+			return &returnError{value: v}
 		case *breakStmt:
 			return errBreakLoop
 		case *continueStmt:
@@ -316,6 +336,9 @@ func (rt *runtime) eval(x expr) (value, error) {
 }
 
 func (rt *runtime) evalCall(e *callExpr) (value, error) {
+	if fn, ok := rt.prog.functions[e.name]; ok {
+		return rt.evalUserFunction(fn, e.args)
+	}
 	if e.name == "split" {
 		return rt.evalSplit(e)
 	}
@@ -324,6 +347,9 @@ func (rt *runtime) evalCall(e *callExpr) (value, error) {
 	}
 	if e.name == "match" {
 		return rt.evalMatch(e)
+	}
+	if e.name == "length" {
+		return rt.evalLength(e)
 	}
 	args := make([]value, 0, len(e.args))
 	for _, arg := range e.args {
@@ -337,12 +363,6 @@ func (rt *runtime) evalCall(e *callExpr) (value, error) {
 		return value{}, err
 	}
 	switch e.name {
-	case "length":
-		s := rt.field(0).String()
-		if len(args) == 1 {
-			s = args[0].String()
-		}
-		return numberValue(float64(len([]rune(s)))), nil
 	case "substr":
 		s := []rune(args[0].String())
 		start := substrStart(args[1].Number(), len(s))
@@ -381,7 +401,138 @@ func (rt *runtime) evalCall(e *callExpr) (value, error) {
 		}
 		return stringValue(out), nil
 	default:
-		return value{}, fmt.Errorf("function calls are not supported")
+		if _, ok := unsupportedBuiltinFunctions[e.name]; ok {
+			return value{}, fmt.Errorf("function calls are not supported")
+		}
+		return value{}, fmt.Errorf("function %q not defined", e.name)
+	}
+}
+
+func (rt *runtime) evalLength(e *callExpr) (value, error) {
+	if err := validateBuiltinCallArity(e.name, len(e.args)); err != nil {
+		return value{}, err
+	}
+	if len(e.args) == 0 {
+		return numberValue(float64(len([]rune(rt.field(0).String())))), nil
+	}
+	if arg, ok := e.args[0].(*varExpr); ok && rt.isArray(arg.name) {
+		keys, err := rt.arrayKeys(arg.name)
+		if err != nil {
+			return value{}, err
+		}
+		return numberValue(float64(len(keys))), nil
+	}
+	v, err := rt.eval(e.args[0])
+	if err != nil {
+		return value{}, err
+	}
+	return numberValue(float64(len([]rune(v.String())))), nil
+}
+
+type functionArg struct {
+	value           value
+	valueSet        bool
+	arrayAlias      *localVar
+	globalArrayName string
+}
+
+func (rt *runtime) evalUserFunction(fn *functionDef, args []expr) (value, error) {
+	if len(args) > len(fn.params) {
+		return value{}, fmt.Errorf("function %q called with too many arguments", fn.name)
+	}
+	callArgs := make([]functionArg, len(args))
+	for i, arg := range args {
+		v, err := rt.evalFunctionArg(arg)
+		if err != nil {
+			return value{}, err
+		}
+		callArgs[i] = v
+	}
+	frame := callFrame{locals: make(map[string]*localVar, len(fn.params))}
+	for _, param := range fn.params {
+		frame.locals[param] = &localVar{}
+	}
+	rt.frames = append(rt.frames, frame)
+	defer rt.popFrame()
+	for i, arg := range callArgs {
+		local := rt.lookupLocal(fn.params[i])
+		local.arrayAlias = arg.arrayAlias
+		local.globalArrayName = arg.globalArrayName
+		if arg.valueSet {
+			if err := rt.setLocalScalar(local, arg.value); err != nil {
+				return value{}, err
+			}
+		}
+	}
+	if rt.ctx == nil {
+		return value{}, fmt.Errorf("missing evaluation context")
+	}
+	err := rt.execStatements(rt.ctx, fn.body)
+	if ret, ok := err.(*returnError); ok {
+		return ret.value, nil
+	}
+	if err != nil {
+		return value{}, err
+	}
+	return unassignedValue(), nil
+}
+
+func (rt *runtime) evalFunctionArg(arg expr) (functionArg, error) {
+	if v, ok := arg.(*varExpr); ok {
+		return rt.evalVariableFunctionArg(v.name)
+	}
+	value, err := rt.eval(arg)
+	if err != nil {
+		return functionArg{}, err
+	}
+	return functionArg{value: value, valueSet: true}, nil
+}
+
+func (rt *runtime) evalVariableFunctionArg(name string) (functionArg, error) {
+	if local := rt.lookupLocal(name); local != nil {
+		arg := functionArg{}
+		if local.valueSet {
+			arg.value = local.value
+			arg.valueSet = true
+		}
+		root := rootLocalVar(local)
+		if rt.localIsArray(root) || !local.valueSet {
+			arg.arrayAlias = root
+		}
+		return arg, nil
+	}
+	if rt.isGlobalArray(name) {
+		return functionArg{globalArrayName: name}, nil
+	}
+	if v, ok := rt.vars[name]; ok {
+		return functionArg{value: v, valueSet: true}, nil
+	}
+	if isBuiltinArrayName(name) {
+		return functionArg{globalArrayName: name}, nil
+	}
+	if isBuiltinScalarName(name) {
+		return functionArg{value: rt.getVar(name), valueSet: true}, nil
+	}
+	return functionArg{globalArrayName: name}, nil
+}
+
+func (rt *runtime) popFrame() {
+	if len(rt.frames) == 0 {
+		return
+	}
+	frame := rt.frames[len(rt.frames)-1]
+	rt.frames = rt.frames[:len(rt.frames)-1]
+	for _, local := range frame.locals {
+		rt.varBytes -= local.valueSize
+		if local.arrayAlias != nil || local.globalArrayName != "" {
+			continue
+		}
+		for _, size := range local.arraySizes {
+			rt.varBytes -= size
+		}
+	}
+	if rt.varBytes < 0 {
+		rt.varBytes = 0
 	}
 }
 

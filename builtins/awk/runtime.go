@@ -200,6 +200,8 @@ type runtime struct {
 	varBytes   int
 	rangeOn    map[int]bool
 	environSet bool
+	frames     []callFrame
+	ctx        context.Context
 
 	record   string
 	fields   []string
@@ -212,6 +214,20 @@ type runtime struct {
 type arraySlot struct {
 	name string
 	key  string
+}
+
+type callFrame struct {
+	locals map[string]*localVar
+}
+
+type localVar struct {
+	value           value
+	valueSize       int
+	valueSet        bool
+	array           map[string]value
+	arraySizes      map[string]int
+	arrayAlias      *localVar
+	globalArrayName string
 }
 
 func newRuntime(callCtx *builtins.CallContext, prog *program) *runtime {
@@ -412,6 +428,9 @@ func (rt *runtime) openInput(ctx context.Context, file string) (io.ReadCloser, e
 }
 
 func (rt *runtime) runRules(ctx context.Context, kind ruleKind) error {
+	prevCtx := rt.ctx
+	rt.ctx = ctx
+	defer func() { rt.ctx = prevCtx }()
 	for i := range rt.prog.rules {
 		r := &rt.prog.rules[i]
 		if err := ctx.Err(); err != nil {
@@ -683,7 +702,50 @@ func (rt *runtime) field(n int) value {
 	return inputStringValue(rt.fields[n-1])
 }
 
+func (rt *runtime) currentFrame() *callFrame {
+	if len(rt.frames) == 0 {
+		return nil
+	}
+	return &rt.frames[len(rt.frames)-1]
+}
+
+func (rt *runtime) lookupLocal(name string) *localVar {
+	frame := rt.currentFrame()
+	if frame == nil {
+		return nil
+	}
+	return frame.locals[name]
+}
+
+func rootLocalVar(v *localVar) *localVar {
+	for v != nil && v.arrayAlias != nil {
+		v = v.arrayAlias
+	}
+	return v
+}
+
+func (rt *runtime) localIsArray(v *localVar) bool {
+	root := rootLocalVar(v)
+	if root == nil {
+		return false
+	}
+	if root.globalArrayName != "" {
+		return rt.isGlobalArray(root.globalArrayName)
+	}
+	return root.array != nil
+}
+
 func (rt *runtime) getVar(name string) value {
+	if local := rt.lookupLocal(name); local != nil {
+		root := rootLocalVar(local)
+		if rt.localIsArray(root) {
+			return unassignedValue()
+		}
+		if local.valueSet {
+			return local.value
+		}
+		return unassignedValue()
+	}
 	switch name {
 	case "NF":
 		return numberValue(float64(len(rt.fields)))
@@ -707,6 +769,13 @@ func (rt *runtime) getVar(name string) value {
 }
 
 func (rt *runtime) setVar(name string, v value) error {
+	if local := rt.lookupLocal(name); local != nil {
+		root := rootLocalVar(local)
+		if rt.localIsArray(root) {
+			return fmt.Errorf("cannot use array %s as scalar", name)
+		}
+		return rt.setLocalScalar(local, v)
+	}
 	if rt.isArray(name) {
 		return fmt.Errorf("cannot use array %s as scalar", name)
 	}
@@ -737,38 +806,123 @@ func (rt *runtime) setVar(name string, v value) error {
 	return nil
 }
 
+func (rt *runtime) setLocalScalar(local *localVar, v value) error {
+	size := len(v.String())
+	if size > MaxVariableBytes {
+		return fmt.Errorf("variable value exceeds %d bytes", MaxVariableBytes)
+	}
+	if rt.varBytes-local.valueSize+size > MaxVariableBytes {
+		return fmt.Errorf("variable storage limit exceeded (%d bytes total)", rt.varBytes-local.valueSize+size)
+	}
+	rt.varBytes = rt.varBytes - local.valueSize + size
+	local.valueSize = size
+	local.value = v
+	local.valueSet = true
+	return nil
+}
+
 func (rt *runtime) isArray(name string) bool {
+	if local := rt.lookupLocal(name); local != nil {
+		return rt.localIsArray(local)
+	}
+	return rt.isGlobalArray(name)
+}
+
+func (rt *runtime) isGlobalArray(name string) bool {
 	_, ok := rt.arrays[name]
 	return ok
 }
 
-func (rt *runtime) getArrayElem(name, key string) (value, error) {
+func (rt *runtime) localArrayStorage(name string, create bool) (map[string]value, *localVar, string, bool, error) {
+	local := rt.lookupLocal(name)
+	if local == nil {
+		return nil, nil, "", false, nil
+	}
+	root := rootLocalVar(local)
+	if root.globalArrayName != "" {
+		actual := root.globalArrayName
+		rt.ensureBuiltinArray(actual)
+		if err := rt.validateArrayName(actual); err != nil {
+			return nil, nil, "", true, err
+		}
+		if create || rt.arrays[actual] != nil {
+			rt.markArrayName(actual)
+		}
+		return rt.arrays[actual], root, actual, true, nil
+	}
+	if root.valueSet && root.array == nil {
+		return nil, nil, "", true, fmt.Errorf("cannot use scalar %s as array", name)
+	}
+	if root.array == nil && create {
+		root.array = make(map[string]value)
+		root.arraySizes = make(map[string]int)
+	}
+	return root.array, root, "", true, nil
+}
+
+func (rt *runtime) ensureLocalArray(name string) (map[string]value, *localVar, string, bool, error) {
+	elems, local, globalName, handled, err := rt.localArrayStorage(name, true)
+	if handled || err != nil {
+		return elems, local, globalName, handled, err
+	}
 	rt.ensureBuiltinArray(name)
 	if err := rt.validateArrayName(name); err != nil {
-		return value{}, err
+		return nil, nil, "", false, err
 	}
 	rt.markArrayName(name)
-	if v, ok := rt.arrays[name][key]; ok {
+	return rt.arrays[name], nil, name, false, nil
+}
+
+func (rt *runtime) getArrayElem(name, key string) (value, error) {
+	elems, local, globalName, handled, err := rt.ensureLocalArray(name)
+	if err != nil {
+		return value{}, err
+	}
+	if v, ok := elems[key]; ok {
 		return v, nil
 	}
 	v := unassignedValue()
-	if err := rt.setArrayElem(name, key, v); err != nil {
+	if handled {
+		if err := rt.setLocalArrayElem(local, globalName, key, v); err != nil {
+			return value{}, err
+		}
+		return v, nil
+	}
+	if err := rt.setGlobalArrayElem(name, key, v); err != nil {
 		return value{}, err
 	}
 	return v, nil
 }
 
 func (rt *runtime) hasArrayElem(name, key string) (bool, error) {
-	rt.ensureBuiltinArray(name)
-	if err := rt.validateArrayName(name); err != nil {
+	elems, _, _, handled, err := rt.localArrayStorage(name, true)
+	if err != nil {
 		return false, err
 	}
-	rt.markArrayName(name)
-	_, ok := rt.arrays[name][key]
+	if !handled {
+		rt.ensureBuiltinArray(name)
+		if err := rt.validateArrayName(name); err != nil {
+			return false, err
+		}
+		rt.markArrayName(name)
+		elems = rt.arrays[name]
+	}
+	_, ok := elems[key]
 	return ok, nil
 }
 
 func (rt *runtime) setArrayElem(name, key string, v value) error {
+	_, local, globalName, handled, err := rt.ensureLocalArray(name)
+	if err != nil {
+		return err
+	}
+	if handled {
+		return rt.setLocalArrayElem(local, globalName, key, v)
+	}
+	return rt.setGlobalArrayElem(name, key, v)
+}
+
+func (rt *runtime) setGlobalArrayElem(name, key string, v value) error {
 	rt.ensureBuiltinArray(name)
 	if err := rt.validateArrayName(name); err != nil {
 		return err
@@ -789,12 +943,32 @@ func (rt *runtime) setArrayElem(name, key string, v value) error {
 	return nil
 }
 
+func (rt *runtime) setLocalArrayElem(local *localVar, globalName, key string, v value) error {
+	if globalName != "" {
+		return rt.setGlobalArrayElem(globalName, key, v)
+	}
+	root := rootLocalVar(local)
+	if root.array == nil {
+		root.array = make(map[string]value)
+		root.arraySizes = make(map[string]int)
+	}
+	size := len(key) + len(v.String())
+	if size > MaxVariableBytes {
+		return fmt.Errorf("array element exceeds %d bytes", MaxVariableBytes)
+	}
+	old := root.arraySizes[key]
+	if rt.varBytes-old+size > MaxVariableBytes {
+		return fmt.Errorf("variable storage limit exceeded (%d bytes total)", rt.varBytes-old+size)
+	}
+	rt.varBytes = rt.varBytes - old + size
+	root.arraySizes[key] = size
+	root.array[key] = v
+	return nil
+}
+
 func (rt *runtime) replaceArray(name string, elems map[string]value) error {
 	if err := rt.deleteArray(name); err != nil {
 		return err
-	}
-	if rt.arrays[name] == nil {
-		rt.arrays[name] = make(map[string]value, len(elems))
 	}
 	for key, v := range elems {
 		if err := rt.setArrayElem(name, key, v); err != nil {
@@ -805,6 +979,32 @@ func (rt *runtime) replaceArray(name string, elems map[string]value) error {
 }
 
 func (rt *runtime) deleteArrayElem(name, key string) error {
+	elems, local, globalName, handled, err := rt.ensureLocalArray(name)
+	if err != nil {
+		return err
+	}
+	if handled {
+		if globalName != "" {
+			return rt.deleteGlobalArrayElem(globalName, key)
+		}
+		root := rootLocalVar(local)
+		if root.array == nil {
+			return nil
+		}
+		if old := root.arraySizes[key]; old > 0 {
+			rt.varBytes -= old
+			if rt.varBytes < 0 {
+				rt.varBytes = 0
+			}
+		}
+		delete(root.arraySizes, key)
+		delete(elems, key)
+		return nil
+	}
+	return rt.deleteGlobalArrayElem(name, key)
+}
+
+func (rt *runtime) deleteGlobalArrayElem(name, key string) error {
 	rt.ensureBuiltinArray(name)
 	if err := rt.validateArrayName(name); err != nil {
 		return err
@@ -823,6 +1023,31 @@ func (rt *runtime) deleteArrayElem(name, key string) error {
 }
 
 func (rt *runtime) deleteArray(name string) error {
+	_, local, globalName, handled, err := rt.ensureLocalArray(name)
+	if err != nil {
+		return err
+	}
+	if handled {
+		if globalName != "" {
+			return rt.deleteGlobalArray(globalName)
+		}
+		root := rootLocalVar(local)
+		for _, size := range root.arraySizes {
+			rt.varBytes -= size
+		}
+		if rt.varBytes < 0 {
+			rt.varBytes = 0
+		}
+		root.array = make(map[string]value)
+		root.arraySizes = make(map[string]int)
+		root.valueSet = false
+		root.valueSize = 0
+		return nil
+	}
+	return rt.deleteGlobalArray(name)
+}
+
+func (rt *runtime) deleteGlobalArray(name string) error {
 	rt.ensureBuiltinArray(name)
 	if err := rt.validateArrayName(name); err != nil {
 		return err
@@ -843,13 +1068,20 @@ func (rt *runtime) deleteArray(name string) error {
 }
 
 func (rt *runtime) arrayKeys(name string) ([]string, error) {
-	rt.ensureBuiltinArray(name)
-	if err := rt.validateArrayName(name); err != nil {
+	elems, _, _, handled, err := rt.localArrayStorage(name, true)
+	if err != nil {
 		return nil, err
 	}
-	rt.markArrayName(name)
-	keys := make([]string, 0, len(rt.arrays[name]))
-	for key := range rt.arrays[name] {
+	if !handled {
+		rt.ensureBuiltinArray(name)
+		if err := rt.validateArrayName(name); err != nil {
+			return nil, err
+		}
+		rt.markArrayName(name)
+		elems = rt.arrays[name]
+	}
+	keys := make([]string, 0, len(elems))
+	for key := range elems {
 		keys = append(keys, key)
 	}
 	sortStringKeys(keys)

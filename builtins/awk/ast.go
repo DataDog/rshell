@@ -6,7 +6,14 @@
 package awk
 
 type program struct {
-	rules []rule
+	rules     []rule
+	functions map[string]*functionDef
+}
+
+type functionDef struct {
+	name   string
+	params []string
+	body   []stmt
 }
 
 type ruleKind int
@@ -80,6 +87,12 @@ type exitStmt struct {
 }
 
 func (*exitStmt) stmtNode() {}
+
+type returnStmt struct {
+	value expr
+}
+
+func (*returnStmt) stmtNode() {}
 
 type breakStmt struct{}
 

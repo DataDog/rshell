@@ -18,12 +18,12 @@
 // for/while loops, next, exit, arithmetic/comparison/boolean/ternary
 // expressions, regex patterns and match operators, regex field separators,
 // string concatenation, scalar built-in functions, split, sub, gsub, match,
-// sprintf, delete, ENVIRON, and field/built-in variables such as $0, $1, NF,
-// NR, FNR, FILENAME, FS, OFS, ORS, SUBSEP, RSTART, and RLENGTH.
+// sprintf, delete, ENVIRON, user-defined functions with return and scalar or
+// array parameters, and field/built-in variables such as $0, $1, NF, NR, FNR,
+// FILENAME, FS, OFS, ORS, SUBSEP, RSTART, and RLENGTH.
 //
 // Blocked or deferred features include system(), command pipes, output
-// redirection, getline, user-defined functions, and many additional POSIX/GNU
-// awk builtins.
+// redirection, getline, and many additional POSIX/GNU awk builtins.
 package awk
 
 import (

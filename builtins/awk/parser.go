@@ -82,9 +82,21 @@ func parseProgram(src string) (*program, error) {
 		return nil, err
 	}
 	p := &parser{toks: toks}
-	prog := &program{}
+	prog := &program{functions: make(map[string]*functionDef)}
 	p.skipSeparators()
 	for !p.at(tokEOF) {
+		if p.atIdent("function") {
+			fn, err := p.parseFunctionDefinition()
+			if err != nil {
+				return nil, err
+			}
+			if _, exists := prog.functions[fn.name]; exists {
+				return nil, fmt.Errorf("function %q is already defined", fn.name)
+			}
+			prog.functions[fn.name] = fn
+			p.skipSeparators()
+			continue
+		}
 		r, err := p.parseRule()
 		if err != nil {
 			return nil, err
@@ -93,6 +105,55 @@ func parseProgram(src string) (*program, error) {
 		p.skipSeparators()
 	}
 	return prog, nil
+}
+
+func (p *parser) parseFunctionDefinition() (*functionDef, error) {
+	p.advance()
+	if p.cur().kind != tokIdent {
+		return nil, fmt.Errorf("expected function name")
+	}
+	name := p.cur().lit
+	if err := validateFunctionName(name); err != nil {
+		return nil, err
+	}
+	p.advance()
+	if !p.match(tokLParen) {
+		return nil, fmt.Errorf("expected ( after function name")
+	}
+	params := []string{}
+	seen := make(map[string]int)
+	p.skipSeparators()
+	if !p.match(tokRParen) {
+		for {
+			p.skipSeparators()
+			if p.cur().kind != tokIdent {
+				return nil, fmt.Errorf("expected function parameter")
+			}
+			param := p.cur().lit
+			if err := validateFunctionParameterName(name, param); err != nil {
+				return nil, err
+			}
+			if first, ok := seen[param]; ok {
+				return nil, fmt.Errorf("function %q parameter #%d, %q, duplicates parameter #%d", name, len(params)+1, param, first)
+			}
+			seen[param] = len(params) + 1
+			params = append(params, param)
+			p.advance()
+			p.skipSeparators()
+			if p.match(tokRParen) {
+				break
+			}
+			if !p.match(tokComma) {
+				return nil, fmt.Errorf("expected , or ) in function parameter list")
+			}
+		}
+	}
+	p.skipSeparators()
+	body, err := p.parseAction()
+	if err != nil {
+		return nil, err
+	}
+	return &functionDef{name: name, params: params, body: body}, nil
 }
 
 func (p *parser) parseRule() (rule, error) {
@@ -174,6 +235,9 @@ func (p *parser) parseStatement() (stmt, error) {
 	if p.atIdent("exit") {
 		return p.parseExit()
 	}
+	if p.atIdent("return") {
+		return p.parseReturn()
+	}
 	if p.atIdent("break") {
 		p.advance()
 		return &breakStmt{}, nil
@@ -214,6 +278,18 @@ func (p *parser) parseExit() (stmt, error) {
 		return nil, err
 	}
 	return &exitStmt{status: status}, nil
+}
+
+func (p *parser) parseReturn() (stmt, error) {
+	p.advance()
+	if p.at(tokRBrace) || p.at(tokEOF) || isSeparator(p.cur().kind) {
+		return &returnStmt{}, nil
+	}
+	x, err := p.parseExpression(0)
+	if err != nil {
+		return nil, err
+	}
+	return &returnStmt{value: x}, nil
 }
 
 func (p *parser) parseFor() (stmt, error) {
@@ -545,7 +621,7 @@ func (p *parser) parsePrefix() (expr, error) {
 		return &regexExpr{pattern: tok.lit}, nil
 	case tokIdent:
 		p.advance()
-		if p.at(tokLParen) {
+		if p.at(tokLParen) && (tokensAdjacent(tok, p.cur()) || isKnownBuiltinFunction(tok.lit)) {
 			return p.parseFunctionCall(tok.lit)
 		}
 		if tok.lit == "length" {
@@ -613,6 +689,21 @@ func (p *parser) parsePrefix() (expr, error) {
 	}
 }
 
+func tokensAdjacent(left, right token) bool {
+	return left.pos+len(left.lit) == right.pos
+}
+
+func isKnownBuiltinFunction(name string) bool {
+	if name == "system" {
+		return true
+	}
+	if _, ok := supportedBuiltinFunctions[name]; ok {
+		return true
+	}
+	_, ok := unsupportedBuiltinFunctions[name]
+	return ok
+}
+
 func (p *parser) parseArrayRef(name string) (expr, error) {
 	p.advance()
 	indices, err := p.parseArrayIndices()
@@ -642,18 +733,26 @@ func (p *parser) parseArrayIndices() ([]expr, error) {
 }
 
 func (p *parser) parseFunctionCall(name string) (expr, error) {
-	if _, ok := supportedBuiltinFunctions[name]; !ok {
-		if name == "system" {
-			return nil, fmt.Errorf("system() is not supported")
-		}
+	if msg, ok := unsupportedExpressionKeyword(name); ok {
+		return nil, fmt.Errorf("%s", msg)
+	}
+	if name == "system" {
+		return nil, fmt.Errorf("system() is not supported")
+	}
+	_, supportedBuiltin := supportedBuiltinFunctions[name]
+	if _, ok := unsupportedBuiltinFunctions[name]; ok {
 		return nil, fmt.Errorf("function calls are not supported")
 	}
 	p.advance()
 	args := []expr{}
 	p.skipSeparators()
 	if p.match(tokRParen) {
-		if err := validateBuiltinCallArity(name, len(args)); err != nil {
-			return nil, err
+		if supportedBuiltin {
+			if err := validateBuiltinCallArity(name, len(args)); err != nil {
+				return nil, err
+			}
+		} else if !validVarName(name) {
+			return nil, fmt.Errorf("invalid function name %q", name)
 		}
 		return &callExpr{name: name}, nil
 	}
@@ -672,10 +771,52 @@ func (p *parser) parseFunctionCall(name string) (expr, error) {
 			return nil, fmt.Errorf("expected , or ) in function call")
 		}
 	}
-	if err := validateBuiltinCallArity(name, len(args)); err != nil {
-		return nil, err
+	if supportedBuiltin {
+		if err := validateBuiltinCallArity(name, len(args)); err != nil {
+			return nil, err
+		}
+	} else if !validVarName(name) {
+		return nil, fmt.Errorf("invalid function name %q", name)
 	}
 	return &callExpr{name: name, args: args}, nil
+}
+
+func validateFunctionName(name string) error {
+	if !validVarName(name) {
+		return fmt.Errorf("invalid function name %q", name)
+	}
+	if _, ok := supportedBuiltinFunctions[name]; ok {
+		return fmt.Errorf("%q is a built-in function, it cannot be redefined", name)
+	}
+	if _, ok := unsupportedBuiltinFunctions[name]; ok {
+		return fmt.Errorf("%q is a built-in function, it cannot be redefined", name)
+	}
+	if name == "system" {
+		return fmt.Errorf("system() is not supported")
+	}
+	return nil
+}
+
+func validateFunctionParameterName(functionName, param string) error {
+	if !validVarName(param) {
+		return fmt.Errorf("invalid function parameter %q", param)
+	}
+	if functionName == param {
+		return fmt.Errorf("function %q cannot use function name as parameter name", functionName)
+	}
+	if isBuiltinScalarName(param) || isBuiltinArrayName(param) {
+		return fmt.Errorf("parameter %q uses a reserved awk variable name", param)
+	}
+	if _, ok := supportedBuiltinFunctions[param]; ok {
+		return fmt.Errorf("parameter %q uses a built-in function name", param)
+	}
+	if _, ok := unsupportedBuiltinFunctions[param]; ok {
+		return fmt.Errorf("parameter %q uses a built-in function name", param)
+	}
+	if msg, ok := unsupportedExpressionKeyword(param); ok {
+		return fmt.Errorf("%s", msg)
+	}
+	return nil
 }
 
 func validateBuiltinCallArity(name string, argc int) error {
@@ -745,7 +886,7 @@ func unsupportedExpressionKeyword(name string) (string, bool) {
 	switch name {
 	case "BEGIN", "END":
 		return "BEGIN and END are reserved patterns", true
-	case "if", "while", "for", "next", "nextfile", "exit", "break", "continue":
+	case "if", "while", "for", "next", "nextfile", "exit", "break", "continue", "return", "function":
 		return "control flow statements are not supported", true
 	case "delete":
 		return "arrays are not supported", true
