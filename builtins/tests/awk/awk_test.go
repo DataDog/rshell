@@ -337,6 +337,18 @@ func TestAwkFunctionParametersMayShadowOtherFunctionNames(t *testing.T) {
 	assert.Equal(t, "2\n1\n", stdout)
 }
 
+func TestAwkRejectsCallsThroughShadowingParameters(t *testing.T) {
+	dir := t.TempDir()
+	for _, script := range []string{
+		`awk 'function f(g){ return g() } function g(){ return 1 } BEGIN { print f(2) }'`,
+		`awk 'function f(g){ print g(1) } function g(x){ return x } BEGIN { f(2) }'`,
+	} {
+		_, stderr, code := cmdRun(t, script, dir)
+		assert.Equal(t, 1, code, script)
+		assert.Contains(t, stderr, "cannot be called as a function", script)
+	}
+}
+
 func TestAwkExplicitEmptyActionDoesNothing(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, dir, "input.txt", "alpha\n")

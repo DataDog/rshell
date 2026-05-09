@@ -1016,6 +1016,9 @@ func validateExprUserFunctionNameReferences(x expr, functions map[string]*functi
 	case *incDecExpr:
 		return validateExprUserFunctionNameReferences(e.x, functions, locals)
 	case *callExpr:
+		if _, ok := locals[e.name]; ok {
+			return fmt.Errorf("parameter %q cannot be called as a function", e.name)
+		}
 		return validateExprListUserFunctionNameReferences(e.args, functions, locals)
 	default:
 		return nil
