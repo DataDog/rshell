@@ -104,6 +104,9 @@ func parseProgram(src string) (*program, error) {
 		prog.rules = append(prog.rules, r)
 		p.skipSeparators()
 	}
+	if err := validateLoopControlStatements(prog); err != nil {
+		return nil, err
+	}
 	if err := validateUserFunctionNameReferences(prog); err != nil {
 		return nil, err
 	}
@@ -865,6 +868,54 @@ func validateFunctionParameterName(functionName, param string) error {
 	}
 	if msg, ok := unsupportedExpressionKeyword(param); ok {
 		return fmt.Errorf("%s", msg)
+	}
+	return nil
+}
+
+func validateLoopControlStatements(prog *program) error {
+	for _, r := range prog.rules {
+		if err := validateStmtListLoopControl(r.action, 0); err != nil {
+			return err
+		}
+	}
+	for _, fn := range prog.functions {
+		if err := validateStmtListLoopControl(fn.body, 0); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateStmtListLoopControl(stmts []stmt, loopDepth int) error {
+	for _, st := range stmts {
+		if err := validateStmtLoopControl(st, loopDepth); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateStmtLoopControl(st stmt, loopDepth int) error {
+	switch s := st.(type) {
+	case *ifStmt:
+		if err := validateStmtListLoopControl(s.thenStmts, loopDepth); err != nil {
+			return err
+		}
+		return validateStmtListLoopControl(s.elseStmts, loopDepth)
+	case *forInStmt:
+		return validateStmtListLoopControl(s.body, loopDepth+1)
+	case *forStmt:
+		return validateStmtListLoopControl(s.body, loopDepth+1)
+	case *whileStmt:
+		return validateStmtListLoopControl(s.body, loopDepth+1)
+	case *breakStmt:
+		if loopDepth == 0 {
+			return fmt.Errorf("break is not allowed outside a loop")
+		}
+	case *continueStmt:
+		if loopDepth == 0 {
+			return fmt.Errorf("continue is not allowed outside a loop")
+		}
 	}
 	return nil
 }

@@ -349,6 +349,33 @@ func TestAwkRejectsCallsThroughShadowingParameters(t *testing.T) {
 	}
 }
 
+func TestAwkRejectsLoopControlOutsideLexicalLoops(t *testing.T) {
+	dir := t.TempDir()
+	for _, tc := range []struct {
+		script string
+		err    string
+	}{
+		{`awk 'BEGIN { break }'`, "break is not allowed outside a loop"},
+		{`awk 'BEGIN { continue }'`, "continue is not allowed outside a loop"},
+		{`awk 'function f(){ break } BEGIN { for (i = 0; i < 2; i++) f() }'`, "break is not allowed outside a loop"},
+		{`awk 'function f(){ continue } BEGIN { for (i = 0; i < 2; i++) f() }'`, "continue is not allowed outside a loop"},
+		{`awk 'function f(){ if (1) { break } } BEGIN { print "unused" }'`, "break is not allowed outside a loop"},
+		{`awk 'function f(){ if (1) { continue } } BEGIN { print "unused" }'`, "continue is not allowed outside a loop"},
+	} {
+		_, stderr, code := cmdRun(t, tc.script, dir)
+		assert.Equal(t, 1, code, tc.script)
+		assert.Contains(t, stderr, tc.err, tc.script)
+	}
+}
+
+func TestAwkAllowsLoopControlInsideFunctionLexicalLoops(t *testing.T) {
+	dir := t.TempDir()
+	stdout, stderr, code := cmdRun(t, `awk 'function f(){ out = ""; for (i = 0; i < 4; i++) { if (i == 1) continue; if (i == 3) break; out = out i }; return out } BEGIN { print f() }'`, dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "", stderr)
+	assert.Equal(t, "02\n", stdout)
+}
+
 func TestAwkExplicitEmptyActionDoesNothing(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, dir, "input.txt", "alpha\n")
