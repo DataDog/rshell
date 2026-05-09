@@ -104,6 +104,9 @@ func parseProgram(src string) (*program, error) {
 		prog.rules = append(prog.rules, r)
 		p.skipSeparators()
 	}
+	if err := validateUserFunctionNameReferences(prog); err != nil {
+		return nil, err
+	}
 	return prog, nil
 }
 
@@ -862,6 +865,169 @@ func validateFunctionParameterName(functionName, param string) error {
 	}
 	if msg, ok := unsupportedExpressionKeyword(param); ok {
 		return fmt.Errorf("%s", msg)
+	}
+	return nil
+}
+
+func validateUserFunctionNameReferences(prog *program) error {
+	if len(prog.functions) == 0 {
+		return nil
+	}
+	for _, r := range prog.rules {
+		if err := validateExprUserFunctionNameReferences(r.pattern, prog.functions, nil); err != nil {
+			return err
+		}
+		if err := validateStmtListUserFunctionNameReferences(r.action, prog.functions, nil); err != nil {
+			return err
+		}
+	}
+	for _, fn := range prog.functions {
+		locals := make(map[string]struct{}, len(fn.params))
+		for _, param := range fn.params {
+			locals[param] = struct{}{}
+		}
+		if err := validateStmtListUserFunctionNameReferences(fn.body, prog.functions, locals); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateStmtListUserFunctionNameReferences(stmts []stmt, functions map[string]*functionDef, locals map[string]struct{}) error {
+	for _, st := range stmts {
+		if err := validateStmtUserFunctionNameReferences(st, functions, locals); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateStmtUserFunctionNameReferences(st stmt, functions map[string]*functionDef, locals map[string]struct{}) error {
+	switch s := st.(type) {
+	case *printStmt:
+		if err := validateExprListUserFunctionNameReferences(s.args, functions, locals); err != nil {
+			return err
+		}
+		return validateExprUserFunctionNameReferences(s.pipe, functions, locals)
+	case *printfStmt:
+		if err := validateExprListUserFunctionNameReferences(s.args, functions, locals); err != nil {
+			return err
+		}
+		return validateExprUserFunctionNameReferences(s.pipe, functions, locals)
+	case *ifStmt:
+		if err := validateExprUserFunctionNameReferences(s.cond, functions, locals); err != nil {
+			return err
+		}
+		if err := validateStmtListUserFunctionNameReferences(s.thenStmts, functions, locals); err != nil {
+			return err
+		}
+		return validateStmtListUserFunctionNameReferences(s.elseStmts, functions, locals)
+	case *forInStmt:
+		if err := validateNameNotUserFunction(s.varName, functions, locals); err != nil {
+			return err
+		}
+		if err := validateNameNotUserFunction(s.arrayName, functions, locals); err != nil {
+			return err
+		}
+		return validateStmtListUserFunctionNameReferences(s.body, functions, locals)
+	case *forStmt:
+		if err := validateExprUserFunctionNameReferences(s.init, functions, locals); err != nil {
+			return err
+		}
+		if err := validateExprUserFunctionNameReferences(s.cond, functions, locals); err != nil {
+			return err
+		}
+		if err := validateExprUserFunctionNameReferences(s.post, functions, locals); err != nil {
+			return err
+		}
+		return validateStmtListUserFunctionNameReferences(s.body, functions, locals)
+	case *whileStmt:
+		if err := validateExprUserFunctionNameReferences(s.cond, functions, locals); err != nil {
+			return err
+		}
+		return validateStmtListUserFunctionNameReferences(s.body, functions, locals)
+	case *exitStmt:
+		return validateExprUserFunctionNameReferences(s.status, functions, locals)
+	case *returnStmt:
+		return validateExprUserFunctionNameReferences(s.value, functions, locals)
+	case *deleteStmt:
+		if err := validateNameNotUserFunction(s.name, functions, locals); err != nil {
+			return err
+		}
+		return validateExprListUserFunctionNameReferences(s.indices, functions, locals)
+	case *exprStmt:
+		return validateExprUserFunctionNameReferences(s.x, functions, locals)
+	default:
+		return nil
+	}
+}
+
+func validateExprListUserFunctionNameReferences(exprs []expr, functions map[string]*functionDef, locals map[string]struct{}) error {
+	for _, x := range exprs {
+		if err := validateExprUserFunctionNameReferences(x, functions, locals); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateExprUserFunctionNameReferences(x expr, functions map[string]*functionDef, locals map[string]struct{}) error {
+	switch e := x.(type) {
+	case nil, *numberExpr, *stringExpr, *regexExpr:
+		return nil
+	case *varExpr:
+		return validateNameNotUserFunction(e.name, functions, locals)
+	case *arrayRefExpr:
+		if err := validateNameNotUserFunction(e.name, functions, locals); err != nil {
+			return err
+		}
+		return validateExprListUserFunctionNameReferences(e.indices, functions, locals)
+	case *compositeExpr:
+		return validateExprListUserFunctionNameReferences(e.parts, functions, locals)
+	case *fieldExpr:
+		return validateExprUserFunctionNameReferences(e.index, functions, locals)
+	case *groupedExpr:
+		return validateExprUserFunctionNameReferences(e.x, functions, locals)
+	case *unaryExpr:
+		return validateExprUserFunctionNameReferences(e.x, functions, locals)
+	case *binaryExpr:
+		if err := validateExprUserFunctionNameReferences(e.left, functions, locals); err != nil {
+			return err
+		}
+		return validateExprUserFunctionNameReferences(e.right, functions, locals)
+	case *ternaryExpr:
+		if err := validateExprUserFunctionNameReferences(e.cond, functions, locals); err != nil {
+			return err
+		}
+		if err := validateExprUserFunctionNameReferences(e.then, functions, locals); err != nil {
+			return err
+		}
+		return validateExprUserFunctionNameReferences(e.els, functions, locals)
+	case *rangeExpr:
+		if err := validateExprUserFunctionNameReferences(e.start, functions, locals); err != nil {
+			return err
+		}
+		return validateExprUserFunctionNameReferences(e.end, functions, locals)
+	case *assignExpr:
+		if err := validateExprUserFunctionNameReferences(e.left, functions, locals); err != nil {
+			return err
+		}
+		return validateExprUserFunctionNameReferences(e.right, functions, locals)
+	case *incDecExpr:
+		return validateExprUserFunctionNameReferences(e.x, functions, locals)
+	case *callExpr:
+		return validateExprListUserFunctionNameReferences(e.args, functions, locals)
+	default:
+		return nil
+	}
+}
+
+func validateNameNotUserFunction(name string, functions map[string]*functionDef, locals map[string]struct{}) error {
+	if _, ok := locals[name]; ok {
+		return nil
+	}
+	if _, ok := functions[name]; ok {
+		return fmt.Errorf("function %q cannot be used as a variable or array", name)
 	}
 	return nil
 }

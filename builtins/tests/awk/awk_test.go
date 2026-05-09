@@ -310,6 +310,33 @@ func TestAwkRejectsSpecialVariableFunctionParameters(t *testing.T) {
 	}
 }
 
+func TestAwkRejectsUserFunctionNamesAsVariables(t *testing.T) {
+	dir := t.TempDir()
+	for _, script := range []string{
+		`awk 'function f(){ return 1 } BEGIN { f = 3; print f }'`,
+		`awk 'function f(){ return 1 } BEGIN { print f }'`,
+		`awk 'function f(){ return 1 } BEGIN { print $f }'`,
+		`awk 'function f(){ return 1 } BEGIN { f[1] = 2 }'`,
+		`awk 'function f(){ return 1 } BEGIN { delete f }'`,
+		`awk 'function f(){ return 1 } BEGIN { for (f in a) print f }'`,
+		`awk 'function f(){ return 1 } BEGIN { for (k in f) print k }'`,
+		`awk 'BEGIN { f = 3 } function f(){ return 1 }'`,
+		`awk 'function g(){ f = 1 } function f(){ return 1 } BEGIN { g() }'`,
+	} {
+		_, stderr, code := cmdRun(t, script, dir)
+		assert.Equal(t, 1, code, script)
+		assert.Contains(t, stderr, "cannot be used as a variable or array", script)
+	}
+}
+
+func TestAwkFunctionParametersMayShadowOtherFunctionNames(t *testing.T) {
+	dir := t.TempDir()
+	stdout, stderr, code := cmdRun(t, `awk 'function f(g){ print g } function g(){ return 1 } BEGIN { f(2); print g() }'`, dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "", stderr)
+	assert.Equal(t, "2\n1\n", stdout)
+}
+
 func TestAwkExplicitEmptyActionDoesNothing(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, dir, "input.txt", "alpha\n")
