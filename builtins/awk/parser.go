@@ -835,6 +835,9 @@ func validateFunctionName(name string) error {
 	if _, ok := unsupportedBuiltinFunctions[name]; ok {
 		return fmt.Errorf("%q is a built-in function, it cannot be redefined", name)
 	}
+	if isReservedAwkVariableName(name) {
+		return fmt.Errorf("function name %q uses a reserved awk variable name", name)
+	}
 	if name == "system" {
 		return fmt.Errorf("system() is not supported")
 	}
@@ -848,7 +851,7 @@ func validateFunctionParameterName(functionName, param string) error {
 	if functionName == param {
 		return fmt.Errorf("function %q cannot use function name as parameter name", functionName)
 	}
-	if isBuiltinScalarName(param) || isBuiltinArrayName(param) {
+	if isReservedAwkVariableName(param) {
 		return fmt.Errorf("parameter %q uses a reserved awk variable name", param)
 	}
 	if _, ok := supportedBuiltinFunctions[param]; ok {

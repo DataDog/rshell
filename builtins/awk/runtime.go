@@ -1318,6 +1318,19 @@ func isBuiltinArrayName(name string) bool {
 	return name == "ENVIRON"
 }
 
+func isReservedAwkVariableName(name string) bool {
+	return isBuiltinScalarName(name) || isBuiltinArrayName(name) || isWritableSpecialScalarName(name)
+}
+
+func isWritableSpecialScalarName(name string) bool {
+	switch name {
+	case "FS", "OFS", "ORS", "SUBSEP", "RSTART", "RLENGTH":
+		return true
+	default:
+		return false
+	}
+}
+
 func validateFS(fs string) error {
 	if fs == " " {
 		return nil

@@ -278,6 +278,38 @@ func TestAwkRejectsScalarArrayNameConflicts(t *testing.T) {
 	}
 }
 
+func TestAwkRejectsSpecialVariableFunctionNames(t *testing.T) {
+	dir := t.TempDir()
+	for _, script := range []string{
+		`awk 'function FS(){ return 1 } BEGIN { print FS() }'`,
+		`awk 'function OFS(){ return 1 } BEGIN { print OFS() }'`,
+		`awk 'function ORS(){ return 1 } BEGIN { print ORS() }'`,
+		`awk 'function SUBSEP(){ return 1 } BEGIN { print SUBSEP() }'`,
+		`awk 'function RSTART(){ return 1 } BEGIN { print RSTART() }'`,
+		`awk 'function RLENGTH(){ return 1 } BEGIN { print RLENGTH() }'`,
+	} {
+		_, stderr, code := cmdRun(t, script, dir)
+		assert.Equal(t, 1, code, script)
+		assert.Contains(t, stderr, "reserved awk variable name", script)
+	}
+}
+
+func TestAwkRejectsSpecialVariableFunctionParameters(t *testing.T) {
+	dir := t.TempDir()
+	for _, script := range []string{
+		`awk 'function f(FS){ return FS } BEGIN { print f(1) }'`,
+		`awk 'function f(OFS){ return OFS } BEGIN { print f(1) }'`,
+		`awk 'function f(ORS){ return ORS } BEGIN { print f(1) }'`,
+		`awk 'function f(SUBSEP){ return SUBSEP } BEGIN { print f(1) }'`,
+		`awk 'function f(RSTART){ return RSTART } BEGIN { print f(1) }'`,
+		`awk 'function f(RLENGTH){ return RLENGTH } BEGIN { print f(1) }'`,
+	} {
+		_, stderr, code := cmdRun(t, script, dir)
+		assert.Equal(t, 1, code, script)
+		assert.Contains(t, stderr, "reserved awk variable name", script)
+	}
+}
+
 func TestAwkExplicitEmptyActionDoesNothing(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, dir, "input.txt", "alpha\n")
