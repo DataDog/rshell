@@ -172,6 +172,27 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 	fs.VarP(bytesFlag, "bytes", "c", "output the last N bytes instead of lines")
 
 	return func(ctx context.Context, callCtx *builtins.CallContext, files []string) builtins.Result {
+		// Validate all explicitly set mode flags upfront, BEFORE the
+		// --help short-circuit. GNU tail processes options left-to-right
+		// and validates each as it goes, so `tail -n xyz --help` exits
+		// with "invalid number of lines" rather than printing help; the
+		// shared args-trim in builtins/builtins.go relies on this
+		// ordering to safely honour `--help` after value-taking flags.
+		// GNU also rejects invalid values for flags that are later
+		// overridden by another mode flag (e.g. "tail -n xyz -c 1").
+		if linesFlag.pos > 0 {
+			if _, ok := parseCount(linesFlag.val); !ok {
+				callCtx.Errf("tail: invalid number of lines: '%s'\n", linesFlag.val)
+				return builtins.Result{Code: 1}
+			}
+		}
+		if bytesFlag.pos > 0 {
+			if _, ok := parseCount(bytesFlag.val); !ok {
+				callCtx.Errf("tail: invalid number of bytes: '%s'\n", bytesFlag.val)
+				return builtins.Result{Code: 1}
+			}
+		}
+
 		if *help {
 			callCtx.Out("Usage: tail [OPTION]... [FILE]...\n")
 			callCtx.Out("Print the last 10 lines of each FILE to standard output.\n")
@@ -191,9 +212,12 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			modeLabel = "bytes"
 		}
 
+		// Both explicit values are already validated above; the only
+		// remaining path is the implicit default "10" for linesFlag,
+		// which always parses.
 		cm, ok := parseCount(countStr)
 		if !ok {
-			callCtx.Errf("tail: invalid number of %s: %q\n", modeLabel, countStr)
+			callCtx.Errf("tail: invalid number of %s: '%s'\n", modeLabel, countStr)
 			return builtins.Result{Code: 1}
 		}
 		// GNU tail uses sticky offset semantics: once any -n or -c flag uses
@@ -747,10 +771,14 @@ func newModeFlag(seq *int, defaultVal string) *modeFlag {
 }
 
 func (f *modeFlag) String() string { return f.val }
+
+// Set always returns nil — value validation happens upfront in the
+// bound handler so that pflag.Parse never fails on a bad numeric value.
+// This lets the shared `--help` short-circuit in builtins/builtins.go
+// honour `tail --help -n nope` (printing help) while still letting
+// `tail -n nope --help` surface the validation error with GNU's exact
+// `tail: invalid number of lines: 'nope'` wording (no pflag wrap).
 func (f *modeFlag) Set(s string) error {
-	if _, ok := parseCount(s); !ok {
-		return errors.New("invalid count")
-	}
 	f.val = s
 	if len(s) > 0 && s[0] == '+' {
 		f.offsetSeen = true

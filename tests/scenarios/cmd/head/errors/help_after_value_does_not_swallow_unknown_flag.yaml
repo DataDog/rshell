@@ -1,11 +1,4 @@
-# GNU fails on `-n nope` (numeric validation in handler) with exit 1; rshell fails on
-# `--bogus` (unknown flag at parse time) also with exit 1. Both don't print help —
-# we lock in that the trim does NOT swallow `--bogus` here. The skip is for the
-# error-text divergence (different reason, same exit code); rshell's head doesn't
-# validate -n's numeric value through pflag.Var.Set yet, which is a separate
-# pre-existing issue out of scope for this PR.
-description: '`head -n nope --help --bogus` must keep failing instead of silently printing help. The args-trim in builtins/builtins.go is restricted to the case where `--help` is the very first argument; here `-n nope` precedes it, so the trim is skipped and pflag still surfaces `--bogus` as an unrecognized option. Without that restriction the trim would discard `--bogus`, the handler would short-circuit on `--help`, and an invalid earlier value would be silently swallowed.'
-skip_assert_against_bash: true
+description: '`head -n nope --help --bogus` surfaces the invalid `-n` value rather than silently printing help. head''s handler validates -n/-c values before checking `--help` (in builtins/head/head.go), and the trial-parse trim in builtins/builtins.go discards `--bogus` only after confirming the prefix parses cleanly. The net effect matches GNU byte-for-byte: `head: invalid number of lines: ''nope''` and exit 1.'
 input:
   script: |+
     head -n nope --help --bogus; echo "code:$?"
@@ -13,6 +6,5 @@ expect:
   stdout: |+
     code:1
   stderr: |+
-    head: unrecognized option '--bogus'
-    Try 'head --help' for more information.
+    head: invalid number of lines: 'nope'
   exit_code: 0

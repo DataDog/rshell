@@ -114,6 +114,27 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 	fs.VarP(bytesFlag, "bytes", "c", "print the first N bytes instead of lines")
 
 	return func(ctx context.Context, callCtx *builtins.CallContext, files []string) builtins.Result {
+		// Validate all explicitly set mode flags upfront, BEFORE the
+		// --help short-circuit. GNU head processes options left-to-right
+		// and validates each as it goes, so `head -n xyz --help` exits
+		// with "invalid number of lines" rather than printing help; the
+		// shared args-trim in builtins/builtins.go relies on this
+		// ordering to safely honor `--help` after value-taking flags.
+		// GNU also rejects invalid values for flags that are later
+		// overridden by another mode flag (e.g. "head -n xyz -c 1").
+		if linesFlag.pos > 0 {
+			if _, ok := parseCount(linesFlag.val); !ok {
+				callCtx.Errf("head: invalid number of lines: '%s'\n", linesFlag.val)
+				return builtins.Result{Code: 1}
+			}
+		}
+		if bytesFlag.pos > 0 {
+			if _, ok := parseCount(bytesFlag.val); !ok {
+				callCtx.Errf("head: invalid number of bytes: '%s'\n", bytesFlag.val)
+				return builtins.Result{Code: 1}
+			}
+		}
+
 		if *help {
 			callCtx.Out("Usage: head [OPTION]... [FILE]...\n")
 			callCtx.Out("Print the first 10 lines of each FILE to standard output.\n")
@@ -121,22 +142,6 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			fs.SetOutput(callCtx.Stdout)
 			fs.PrintDefaults()
 			return builtins.Result{}
-		}
-
-		// Validate all explicitly set mode flags upfront. GNU head rejects
-		// invalid values even for flags that are overridden by a later mode
-		// flag on the command line (e.g. "head -n xyz -c 1" fails).
-		if linesFlag.pos > 0 {
-			if _, ok := parseCount(linesFlag.val); !ok {
-				callCtx.Errf("head: invalid number of lines: %q\n", linesFlag.val)
-				return builtins.Result{Code: 1}
-			}
-		}
-		if bytesFlag.pos > 0 {
-			if _, ok := parseCount(bytesFlag.val); !ok {
-				callCtx.Errf("head: invalid number of bytes: %q\n", bytesFlag.val)
-				return builtins.Result{Code: 1}
-			}
 		}
 
 		// Bytes mode wins if -c/--bytes was parsed after -n/--lines. When neither
@@ -153,9 +158,12 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			modeLabel = "bytes"
 		}
 
+		// Both explicit -n/-c values are already validated above. The
+		// only remaining failure path is the implicit default "10" for
+		// the linesFlag when neither was set, which always parses.
 		count, ok := parseCount(countStr)
 		if !ok {
-			callCtx.Errf("head: invalid number of %s: %q\n", modeLabel, countStr)
+			callCtx.Errf("head: invalid number of %s: '%s'\n", modeLabel, countStr)
 			return builtins.Result{Code: 1}
 		}
 

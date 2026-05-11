@@ -1,4 +1,4 @@
-description: tail -n -9223372036854775808K (MinInt64 with suffix) exits 1 with an invalid count error (negation overflows).
+description: tail -n -9223372036854775808K (MinInt64 with suffix) exits 1 with an invalid-number-of-lines error (negation overflows).
 skip_assert_against_bash: true  # our error message differs from GNU tail's "Value too large" message
 input:
   allowed_paths: ["$DIR"]
@@ -6,5 +6,5 @@ input:
     tail -n -9223372036854775808K /dev/null
 expect:
   stdout: ""
-  stderr_contains: ["invalid count"]
+  stderr_contains: ["invalid number of lines"]
   exit_code: 1

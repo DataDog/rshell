@@ -6,20 +6,24 @@
 package builtins
 
 import (
+	"context"
 	"errors"
 	"testing"
 
 	"github.com/spf13/pflag"
 )
 
-func TestSafeHelpTrimIndex(t *testing.T) {
-	makeFS := func() *pflag.FlagSet {
-		fs := pflag.NewFlagSet("t", pflag.ContinueOnError)
+func TestTrialHelpTrimIndex(t *testing.T) {
+	// factory installs a representative set of flag shapes on each
+	// fresh FlagSet: bool no-arg long+short, single-char no-arg short,
+	// string value-taker. This mirrors how real builtins compose flags
+	// and exercises every classification path in trial parsing.
+	factory := func(fs *pflag.FlagSet) HandlerFunc {
 		fs.BoolP("help", "", false, "")
 		fs.BoolP("verbose", "v", false, "")
 		fs.BoolP("quiet", "q", false, "")
 		fs.StringP("name", "n", "", "")
-		return fs
+		return func(ctx context.Context, cc *CallContext, args []string) Result { return Result{} }
 	}
 
 	tests := []struct {
@@ -32,25 +36,42 @@ func TestSafeHelpTrimIndex(t *testing.T) {
 		{"--help after no-arg long", []string{"--verbose", "--help", "--bogus"}, 1, true},
 		{"--help after no-arg short", []string{"-q", "--help", "--bogus"}, 1, true},
 		{"--help after cluster of no-arg shorts", []string{"-qv", "--help", "--bogus"}, 1, true},
-		{"--help after value-taker is unsafe", []string{"-n", "5", "--help"}, 0, false},
-		{"--help after =value is unsafe", []string{"--verbose=true", "--help"}, 0, false},
-		{"--help after positional is unsafe", []string{"foo", "--help"}, 0, false},
+		// Value-takers are now safe: pflag accepts any string in Set,
+		// and builtins are expected to validate before --help fires.
+		{"--help after value-taker (long form)", []string{"-n", "5", "--help"}, 2, true},
+		{"--help after value-taker (any string)", []string{"-n", "nope", "--help"}, 2, true},
+		{"--help after =value (valid)", []string{"--name=foo", "--help"}, 1, true},
+		// `-n --help` — even though pflag would consume `--help` as
+		// `-n`'s value at parse time, the trim still recognises the
+		// literal token and stops there. The real parse will then see
+		// `--help` as the value of `-n` and the handler's pre-help
+		// validation catches the bogus value (GNU: "invalid number of
+		// lines: '-help'"). Either way the invocation errors.
+		{"--help follows value-taker with no value", []string{"-n", "--help", "--bogus"}, 1, true},
+		// Errors at parse time keep the suffix unstripped so the real
+		// parse surfaces the same error.
 		{"--help after unknown flag is unsafe", []string{"--bogus", "--help"}, 0, false},
+		{"--help after --bool=garbage is unsafe", []string{"--verbose=garbage", "--help"}, 0, false},
+		// `--` ends option parsing, so any `--help` after it is a
+		// positional. We must not trim.
 		{"--help after -- is unsafe", []string{"--", "--help"}, 0, false},
+		// Positionals before --help are fine for pflag (they're just
+		// collected) so trim is allowed.
+		{"--help after positional", []string{"foo", "--help"}, 1, true},
 		{"no --help in args", []string{"--verbose"}, 0, false},
 		{"empty args", nil, 0, false},
-		// Multi-byte UTF-8 in a shorthand cluster MUST not crash:
-		// `string(byte)` for byte ≥ 0x80 produces 2-byte UTF-8, and
-		// pflag.ShorthandLookup panics on inputs longer than one byte.
-		// Caught by FuzzPwdArgs/9386e59311458487.
+		// Multi-byte UTF-8 in a shorthand cluster MUST not crash: pflag
+		// would panic on a multi-byte ShorthandLookup, but trial.Parse
+		// errors cleanly with "unknown shorthand flag", which we return
+		// as (0, false). Regression for FuzzPwdArgs/9386e59311458487.
 		{"non-ASCII byte in cluster", []string{"-˞", "--help"}, 0, false},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			idx, ok := safeHelpTrimIndex(makeFS(), tt.args)
+			idx, ok := trialHelpTrimIndex("t", factory, tt.args)
 			if idx != tt.wantIdx || ok != tt.wantOK {
-				t.Errorf("safeHelpTrimIndex(%v) = (%d, %v), want (%d, %v)", tt.args, idx, ok, tt.wantIdx, tt.wantOK)
+				t.Errorf("trialHelpTrimIndex(%v) = (%d, %v), want (%d, %v)", tt.args, idx, ok, tt.wantIdx, tt.wantOK)
 			}
 		})
 	}
