@@ -42,8 +42,10 @@ var builtinPerCommandSymbols = map[string][]string{
 	"cd": {
 		"context.Context",          // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
 		"errors.As",                // 🟢 error type assertion; pure function, no I/O.
+		"errors.Is",                // 🟢 error sentinel comparison; pure function, no I/O.
 		"errors.New",               // 🟢 creates a simple error value; pure function, no I/O.
 		"fmt.Errorf",               // 🟢 error formatting; pure function, no I/O.
+		"io/fs.ErrPermission",      // 🟢 sentinel error for permission denied; pure constant.
 		"io/fs.ModeSymlink",        // 🟢 file mode bit constant for symlinks; pure constant.
 		"os.PathError",             // 🟢 error type wrapping path and operation; pure type, no I/O.
 		"path/filepath.Clean",      // 🟢 normalizes a path lexically (collapses ".", "..", duplicate separators); pure function, no I/O.
@@ -53,6 +55,7 @@ var builtinPerCommandSymbols = map[string][]string{
 		"path/filepath.Separator",  // 🟢 OS path separator constant ('/' or '\\'); pure constant, no I/O.
 		"path/filepath.VolumeName", // 🟢 returns the volume prefix of a path (e.g. "C:" on Windows, "" on Unix); pure function, no I/O.
 		"strings.HasPrefix",        // 🟢 pure function for prefix matching; no I/O.
+		"strings.HasSuffix",        // 🟢 pure function for suffix matching; no I/O.
 		"strings.IndexByte",        // 🟢 finds byte in string; pure function, no I/O.
 		"strings.TrimPrefix",       // 🟢 removes a leading prefix from a string; pure function, no I/O.
 	},
@@ -501,6 +504,7 @@ var builtinAllowedSymbols = []string{
 	"io.WriteString",                                      // 🟠 writes a string to a writer; no filesystem access, delegates to Write.
 	"io.Writer",                                           // 🟢 interface type for writing; no side effects.
 	"io/fs.DirEntry",                                      // 🟢 interface type for directory entries; no side effects.
+	"io/fs.ErrPermission",                                 // 🟢 sentinel error for permission denied; pure constant.
 	"io/fs.FileInfo",                                      // 🟢 interface type for file information; no side effects.
 	"io/fs.FileMode",                                      // 🟢 file permission bits type; pure type.
 	"io/fs.ModeCharDevice",                                // 🟢 file mode bit constant for character devices; pure constant.
@@ -572,6 +576,7 @@ var builtinAllowedSymbols = []string{
 	"strings.ContainsRune",                                // 🟢 checks if a rune is in a string; pure function, no I/O.
 	"strings.Fields",                                      // 🟢 splits a string on whitespace into a slice; pure function, no I/O.
 	"strings.HasPrefix",                                   // 🟢 pure function for prefix matching; no I/O.
+	"strings.HasSuffix",                                   // 🟢 pure function for suffix matching; no I/O.
 	"strings.IndexByte",                                   // 🟢 finds byte in string; pure function, no I/O.
 	"strings.Join",                                        // 🟢 concatenates a slice of strings with a separator; pure function, no I/O.
 	"strings.ReplaceAll",                                  // 🟢 replaces all occurrences of a substring; pure function, no I/O.

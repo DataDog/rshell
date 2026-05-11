@@ -94,6 +94,13 @@ const maxSymlinkHops = 40
 // errSymlinkLoop is returned when -P resolution exceeds maxSymlinkHops.
 var errSymlinkLoop = errors.New("too many levels of symbolic links")
 
+// errNotDirectory is returned by resolvePath when ".." processing
+// requires a directory but the prefix is not one (e.g. `cd file/..`).
+// The same sentinel exists in interp/cd_support.go for the final
+// ChangeDir validation; defining a local copy keeps cd.go free of an
+// interp dependency.
+var errNotDirectory = errors.New("not a directory")
+
 // errBoolSeqValue is returned by boolSeqFlag.Set when the user passes
 // an explicit value to -L / -P (e.g. `cd --physical=true`). Defined at
 // package scope so each invocation reuses the same error value rather
@@ -153,27 +160,40 @@ func makeFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			return builtins.Result{Code: 1}
 		}
 
-		// bash 5.2 treats an empty target as a no-op success: cd ""
-		// stays in place, HOME='' cd stays in place, OLDPWD='' cd -
-		// stays in place but still prints an empty line. We mirror
-		// that contract here without consulting the filesystem.
-		if target == "" {
-			if printResult {
-				callCtx.Out("\n")
-			}
-			return builtins.Result{}
-		}
+		// bash 5.2 treats an empty target as a *no-op cd to the
+		// current dir*: pwd is unchanged but $PWD and $OLDPWD are
+		// still refreshed so subsequent navigation (including cd -)
+		// sees consistent state. We mirror that by redirecting the
+		// empty target to cwd and letting ChangeDir update the
+		// env vars normally. The printResult branch below still
+		// prints just a newline for the `cd -` form so the visible
+		// output also matches bash.
+		emptyTarget := target == ""
 
 		// Convert the operand to an absolute candidate path. Relative
 		// paths are joined with the current working directory.
+		//
+		// We deliberately avoid filepath.Join: it Cleans the result,
+		// lexically collapsing ".." before resolvePath gets a chance
+		// to validate intermediate components. `cd no-such/..` must
+		// fail (the prefix doesn't exist) — Join would silently
+		// reduce it to cwd. Concatenate raw and let resolvePath walk.
 		cwd := callCtx.WorkDir()
 		absTarget := target
+		if emptyTarget {
+			absTarget = cwd
+		}
 		if !filepath.IsAbs(absTarget) {
 			if cwd == "" {
 				callCtx.Errf("cd: cannot resolve relative path: no working directory\n")
 				return builtins.Result{Code: 1}
 			}
-			absTarget = filepath.Join(cwd, absTarget)
+			sep := string(filepath.Separator)
+			if strings.HasSuffix(cwd, sep) {
+				absTarget = cwd + absTarget
+			} else {
+				absTarget = cwd + sep + absTarget
+			}
 		}
 
 		physical := physicalFlag.pos > logicalFlag.pos
@@ -189,7 +209,12 @@ func makeFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 		}
 
 		if printResult {
-			callCtx.Outf("%s\n", resolved)
+			if emptyTarget {
+				// bash prints just a newline for `OLDPWD= cd -`.
+				callCtx.Out("\n")
+			} else {
+				callCtx.Outf("%s\n", resolved)
+			}
 		}
 		return builtins.Result{}
 	}
@@ -236,47 +261,34 @@ func lookupEnv(callCtx *builtins.CallContext, name string) (string, bool) {
 	return callCtx.LookupEnvVar(name)
 }
 
-// resolvePath canonicalises absPath to the form that ChangeDir expects.
-// For -L (physical=false) the path is cleaned lexically: "." and ".." are
-// resolved without consulting the filesystem, so symlinks in the result
-// are preserved. For -P, intermediate symlinks are walked through the
-// sandbox-safe Lstat / Readlink callbacks before any ".." processing.
+// resolvePath canonicalises absPath to the form that ChangeDir expects
+// using bash's per-component validation rules.
+//
+// Both -L and -P walk the path component-by-component:
+//   - "." is skipped.
+//   - ".." is processed only after verifying the prefix accumulated so
+//     far is an existing directory (POSIX-required for cd; otherwise
+//     `cd no-such/..` or `cd file/..` would silently succeed via
+//     lexical filepath.Clean).
+//   - Named components are joined onto the accumulating prefix.
+//
+// For -P (physical) named components are additionally expanded through
+// the sandbox's symlink-safe Lstat / Readlink callbacks before ".." is
+// processed, capped at maxSymlinkHops to defeat cycles. For -L
+// (logical) symlinks are preserved in the result.
 //
 // Note: unlike pwd -P, cd does not apply CanonicalizeRootPrefix to the
 // resolved path. cd needs the working directory in the configured-root
 // form (e.g. /tmp/link) so subsequent sandbox operations resolve under
-// the same root; canonicalising would translate the path to the
-// host-canonical form (e.g. /var/data) which the sandbox would reject
-// as outside its configured roots. The trade-off is that cd -P cannot
-// resolve a symlink at the AllowedPaths root itself, only symlinks at
-// non-root components — a documented limitation.
+// the same root.
 func resolvePath(ctx context.Context, callCtx *builtins.CallContext, absPath string, physical bool) (string, error) {
-	if !physical {
-		return filepath.Clean(absPath), nil
-	}
-	return resolveSymlinks(ctx, callCtx, absPath)
-}
-
-// resolveSymlinks walks absPath component by component using callCtx's
-// sandbox-safe Lstat and Readlink callbacks, expanding symlinks before
-// processing dot-dot. The total number of symlink expansions is capped
-// at maxSymlinkHops to defeat cycles.
-//
-// When LstatFile fails for a component (typically because the path lies
-// above the AllowedPaths root and cannot be inspected through os.Root),
-// the component is treated as opaque and walking continues. This is the
-// same best-effort policy that pwd -P uses: components above the root
-// pass through unresolved, and only the symlinks we can actually inspect
-// get expanded.
-//
-// When LstatFile / ReadlinkFile are unavailable, the path is returned
-// after lexical cleaning — the best canonicalisation possible without
-// access to the filesystem.
-func resolveSymlinks(ctx context.Context, callCtx *builtins.CallContext, absPath string) (string, error) {
 	if !filepath.IsAbs(absPath) {
 		return "", fmt.Errorf("not an absolute path: %s", absPath)
 	}
-	if callCtx.LstatFile == nil || callCtx.ReadlinkFile == nil {
+	if callCtx.StatFile == nil || callCtx.LstatFile == nil || callCtx.ReadlinkFile == nil {
+		// Sandbox-less fallback: best-effort lexical cleaning. The
+		// outer ChangeDir validation still applies, so a missing or
+		// non-directory final target still errors.
 		return filepath.Clean(absPath), nil
 	}
 
@@ -313,18 +325,60 @@ func resolveSymlinks(ctx context.Context, callCtx *builtins.CallContext, absPath
 		case ".":
 			continue
 		case "..":
+			// POSIX/bash: validate the prefix accumulated so far is
+			// an existing directory before popping. Without this,
+			// `cd no-such/..` and `cd file/..` would silently
+			// succeed (they don't in bash). Use StatFile so the
+			// symlink target — not the link itself — is checked,
+			// matching bash's chdir-via-resolved-path semantics.
+			//
+			// Above-sandbox paths fail Stat with ErrPermission;
+			// treat them as opaque pass-throughs so a `cd ..` at
+			// the sandbox root or a path that briefly traverses
+			// above-root components still works. The final
+			// ChangeDir will reject any resulting outside-sandbox
+			// target.
+			info, err := callCtx.StatFile(ctx, out)
+			if err != nil {
+				if errors.Is(err, iofs.ErrPermission) {
+					out = parentDir(out)
+					continue
+				}
+				return "", err
+			}
+			if !info.IsDir() {
+				return "", &os.PathError{Op: "chdir", Path: out, Err: errNotDirectory}
+			}
 			out = parentDir(out)
 			continue
 		}
 
 		candidate := joinPath(out, comp)
-		info, err := callCtx.LstatFile(ctx, candidate)
-		if err != nil {
-			// Cannot stat through the sandbox — typically because the
-			// path is above the AllowedPaths root. Treat the component
-			// as opaque (not a symlink) and continue.
+
+		if !physical {
+			// -L: keep symlinks intact; don't stat per-append. The
+			// final ChangeDir's Stat will catch a missing or
+			// non-dir leaf.
 			out = candidate
 			continue
+		}
+
+		// -P: resolve symlinks before they become part of `out` so
+		// a subsequent ".." processes the resolved target.
+		info, err := callCtx.LstatFile(ctx, candidate)
+		if err != nil {
+			// Above-sandbox paths legitimately fail Lstat (e.g. the
+			// runner's cwd is /sandbox/... so the walker traverses
+			// /private, /var, /folders, ... before re-entering the
+			// sandbox). Treat them as opaque pass-throughs so cd -P
+			// to a sandbox-internal target still resolves. Missing
+			// in-sandbox components surface as ErrNotExist instead
+			// and bubble up as a hard error, matching bash.
+			if errors.Is(err, iofs.ErrPermission) {
+				out = candidate
+				continue
+			}
+			return "", err
 		}
 
 		if info.Mode()&iofs.ModeSymlink == 0 {
@@ -339,19 +393,15 @@ func resolveSymlinks(ctx context.Context, callCtx *builtins.CallContext, absPath
 
 		target, err := callCtx.ReadlinkFile(ctx, candidate)
 		if err != nil {
-			// Lstat said it's a symlink but readlink failed. Treat it
-			// as opaque rather than aborting resolution.
-			out = candidate
-			continue
+			return "", err
 		}
 
 		if filepath.IsAbs(target) {
 			cleanedTarget := filepath.Clean(target)
-			// Container-style sandboxes mount the host filesystem at a
-			// prefix (e.g. /mnt/host). Symlink targets stored on disk
-			// often refer to host-absolute paths without that prefix,
-			// so apply the prefix when set — otherwise the resolved
-			// path would not be reachable through the sandbox.
+			// Container-style sandboxes mount the host filesystem at
+			// a prefix (e.g. /mnt/host). Symlink targets stored on
+			// disk often refer to host-absolute paths without that
+			// prefix, so apply the prefix when set.
 			if callCtx.HostPrefix != nil {
 				if hp := callCtx.HostPrefix(); hp != "" && !strings.HasPrefix(cleanedTarget, hp+string(filepath.Separator)) && cleanedTarget != hp {
 					cleanedTarget = filepath.Join(hp, cleanedTarget)
@@ -360,9 +410,9 @@ func resolveSymlinks(ctx context.Context, callCtx *builtins.CallContext, absPath
 			out = rootPrefix(cleanedTarget)
 			rest = strings.TrimPrefix(cleanedTarget, out) + rest
 		} else {
-			// filepath.Clean normalises the relative target — collapsing
-			// "." segments and converting forward slashes to the host
-			// separator on Windows.
+			// filepath.Clean normalises the relative target —
+			// collapsing "." segments and converting forward
+			// slashes to the host separator on Windows.
 			rest = string(filepath.Separator) + filepath.Clean(target) + rest
 		}
 	}
