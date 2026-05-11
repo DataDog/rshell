@@ -44,7 +44,9 @@ func TestCdReportsVarStorageCapFailure(t *testing.T) {
 	// At the cap; cd's PWD/OLDPWD assignment must fail. Capture cd's
 	// own exit code via $? so we can assert it independent of the
 	// final-command exit code that the script reports overall.
-	fmt.Fprintf(&sb, "cd %s\necho CD_EXIT=$?\n", child)
+	// Use forward slashes so the shell parser doesn't interpret
+	// Windows backslashes as escape characters.
+	fmt.Fprintf(&sb, "cd %s\necho CD_EXIT=$?\n", filepath.ToSlash(child))
 
 	stdout, stderr, _ := runScript(t, sb.String(), dir,
 		interp.AllowedPaths([]string{dir}))
@@ -54,4 +56,3 @@ func TestCdReportsVarStorageCapFailure(t *testing.T) {
 	assert.Contains(t, stdout, "CD_EXIT=1",
 		"cd must surface a non-zero exit when its env update is rejected")
 }
-
