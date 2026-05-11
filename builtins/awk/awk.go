@@ -22,8 +22,9 @@
 // array parameters, and field/built-in variables such as $0, $1, NF, NR, FNR,
 // FILENAME, FS, OFS, ORS, SUBSEP, RSTART, and RLENGTH.
 //
-// Command pipes run only through rshell's controlled builtin execution model.
-// Blocked or deferred features include system(), file output redirection,
+// Command strings in awk pipes are parsed and executed by rshell under the
+// active sandbox. Blocked or deferred features include system(), awk file
+// output redirection,
 // ARGV/ARGC, BEGINFILE/ENDFILE,
 // nextfile, include/load, namespaces, FIELDWIDTHS/FPAT/CSV mode, introspection
 // variables such as PROCINFO/SYMTAB/FUNCTAB, indirect calls, and many
@@ -158,8 +159,8 @@ func printHelp(callCtx *builtins.CallContext, fs *builtins.FlagSet) {
 	callCtx.Out("  - getline, getline var, getline var < file, and \"cmd\" | getline var; file reads use rshell path policy and command strings run through rshell.\n\n")
 
 	callCtx.Out("Not supported:\n")
-	callCtx.Out("  - system() and host shell execution; awk command strings are interpreted by rshell, not by /bin/sh.\n")
-	callCtx.Out("  - File output redirection with > or >>; use shell redirection around awk instead when allowed.\n")
+	callCtx.Out("  - system(). Use supported awk command pipes/getline pipes instead; command strings run through rshell and its active sandbox.\n")
+	callCtx.Out("  - print/printf file output redirection with > or >> targets. Output command pipes are supported, but writing files from awk is not.\n")
 	callCtx.Out("  - ARGV/ARGC mutation, BEGINFILE/ENDFILE, nextfile, do/while, switch, include/load, namespaces, and indirect function calls.\n")
 	callCtx.Out("  - GNU awk CSV mode, FIELDWIDTHS, FPAT, PROCINFO, SYMTAB, FUNCTAB, typed regexps, and extension loading.\n")
 	callCtx.Out("  - Many GNU/POSIX utility builtins are intentionally absent, including gensub, asort/asorti, patsplit, strtonum, math/time/random, bitwise, typeof, and i18n functions.\n\n")
