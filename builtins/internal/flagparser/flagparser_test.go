@@ -23,6 +23,14 @@ func TestTrialHelpTrimIndex(t *testing.T) {
 		fs.BoolP("verbose", "v", false, "")
 		fs.BoolP("quiet", "q", false, "")
 		fs.StringP("name", "n", "", "")
+		fs.StringP("pattern", "e", "", "")
+	}
+	// registerFlagsNoIntersperse mirrors xargs/tr/read: pflag stops
+	// parsing flags as soon as it sees the first positional.
+	registerFlagsNoIntersperse := func(fs *pflag.FlagSet) {
+		fs.SetInterspersed(false)
+		fs.BoolP("help", "", false, "")
+		fs.BoolP("verbose", "v", false, "")
 	}
 
 	tests := []struct {
@@ -40,13 +48,16 @@ func TestTrialHelpTrimIndex(t *testing.T) {
 		{"--help after value-taker (long form)", []string{"-n", "5", "--help"}, 2, true},
 		{"--help after value-taker (any string)", []string{"-n", "nope", "--help"}, 2, true},
 		{"--help after =value (valid)", []string{"--name=foo", "--help"}, 1, true},
-		// `-n --help` — even though pflag would consume `--help` as
-		// `-n`'s value at parse time, the trim still recognises the
-		// literal token and stops there. The real parse will then see
-		// `--help` as the value of `-n` and the handler's pre-help
-		// validation catches the bogus value (GNU: "invalid number of
-		// lines: '-help'"). Either way the invocation errors.
-		{"--help follows value-taker with no value", []string{"-n", "--help", "--bogus"}, 1, true},
+		// `-n --help` — pflag consumes `--help` as `-n`'s value, so
+		// the trial parses but `help` is never set. We MUST NOT trim,
+		// otherwise the suffix `--bogus` would be silently dropped
+		// even though no help was actually requested.
+		{"--help consumed as value-taker's value", []string{"-n", "--help", "--bogus"}, 0, false},
+		// `grep -e --help --bogus`: `-e` makes `--help` its pattern
+		// value. Same reasoning — trial accepts but help.Changed is
+		// false, so we leave args alone and pflag fails on --bogus
+		// (matches GNU's `unrecognized option '--bogus'`).
+		{"-e value-taker swallows --help", []string{"-e", "--help", "--bogus"}, 0, false},
 		// Errors at parse time keep the suffix unstripped so the real
 		// parse surfaces the same error.
 		{"--help after unknown flag is unsafe", []string{"--bogus", "--help"}, 0, false},
@@ -74,6 +85,22 @@ func TestTrialHelpTrimIndex(t *testing.T) {
 			}
 		})
 	}
+
+	// SetInterspersed(false) — xargs/tr/read style. Anything after
+	// the first positional must NOT be treated as a flag, so a
+	// `--help` past a positional must not trigger the trim.
+	t.Run("SetInterspersed(false): --help after positional is positional", func(t *testing.T) {
+		idx, ok := TrialHelpTrimIndex("t", registerFlagsNoIntersperse, []string{"echo", "--help", "--bogus"})
+		if idx != 0 || ok {
+			t.Errorf("got (%d, %v), want (0, false)", idx, ok)
+		}
+	})
+	t.Run("SetInterspersed(false): leading --help still trims", func(t *testing.T) {
+		idx, ok := TrialHelpTrimIndex("t", registerFlagsNoIntersperse, []string{"--help", "echo", "--bogus"})
+		if idx != 0 || !ok {
+			t.Errorf("got (%d, %v), want (0, true)", idx, ok)
+		}
+	})
 }
 
 func TestRewriteError(t *testing.T) {

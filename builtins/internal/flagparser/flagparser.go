@@ -116,15 +116,22 @@ func RewriteError(err error, args []string) string {
 
 // TrialHelpTrimIndex returns the index of the first `--help` in args
 // if trial-parsing the prefix [0..helpIdx] with a fresh FlagSet
-// succeeds. This means every preceding option was acceptable to pflag
-// (no unknown flags, no missing arguments, no Var.Set errors), so the
-// suffix after `--help` is safely discardable and the builtin's
-// handler can short-circuit on `--help` — matching GNU coreutils'
-// left-to-right semantics.
+// (1) succeeds and (2) actually sets the `help` flag. The second
+// check matters because pflag can consume the `--help` token in ways
+// that don't set the flag:
 //
-// Returns (0, false) when no `--help` precedes a `--` separator or
-// when the prefix would fail to parse. In that case the caller
-// leaves args alone so the real fs.Parse reports the earlier error.
+//   - As the value of a preceding value-taker. `grep -e --help` makes
+//     `--help` the pattern for -e, not a help request; the trial parse
+//     accepts it but `Lookup("help").Changed` stays false.
+//   - As a positional, for FlagSets that called `SetInterspersed(false)`
+//     (xargs, tr, read). Anything after the first positional is left
+//     for the builtin's handler — `--help` included.
+//
+// If the trial both parses and sets `help`, the suffix after `--help`
+// is safely discardable and the builtin's handler can short-circuit —
+// matching GNU coreutils' left-to-right semantics. Otherwise we
+// return (0, false) so the real fs.Parse reports any later error and
+// the handler sees the full argv.
 //
 // registerFlags is invoked on a throw-away FlagSet to set up the
 // trial; it must be safe to call multiple times. Every builtin's
@@ -147,6 +154,10 @@ func TrialHelpTrimIndex(name string, registerFlags func(*pflag.FlagSet), args []
 	trial.SetOutput(io.Discard)
 	registerFlags(trial)
 	if trial.Parse(args[:helpIdx+1]) != nil {
+		return 0, false
+	}
+	helpFlag := trial.Lookup("help")
+	if helpFlag == nil || !helpFlag.Changed {
 		return 0, false
 	}
 	return helpIdx, true
