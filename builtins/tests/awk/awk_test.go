@@ -90,6 +90,23 @@ func writeFile(t *testing.T, dir, name, content string) {
 	require.NoError(t, os.WriteFile(filepath.Join(dir, name), []byte(content), 0644))
 }
 
+func TestAwkHelpDescribesSupportedAndUnsupportedProfile(t *testing.T) {
+	dir := t.TempDir()
+	stdout, stderr, code := cmdRun(t, `awk --help`, dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "", stderr)
+	assert.Contains(t, stdout, "Usage: awk [OPTION]... 'program' [FILE]...")
+	assert.Contains(t, stdout, "This is a practical rshell awk profile, not a full GNU awk clone.")
+	assert.Contains(t, stdout, "Supported profile:")
+	assert.Contains(t, stdout, "Output command pipes such as print x | \"sort\"")
+	assert.Contains(t, stdout, "Not supported:")
+	assert.Contains(t, stdout, "system(), getline, command-input pipes")
+	assert.Contains(t, stdout, "File output redirection with > or >>")
+	assert.Contains(t, stdout, "ARGV/ARGC mutation")
+	assert.Contains(t, stdout, "PROCINFO, SYMTAB, FUNCTAB")
+	assert.Contains(t, stdout, "gensub, asort/asorti, patsplit, strtonum")
+}
+
 func TestAwkPrintFields(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, dir, "input.txt", "alpha beta gamma\none two three\n")

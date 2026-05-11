@@ -23,8 +23,11 @@
 // FILENAME, FS, OFS, ORS, SUBSEP, RSTART, and RLENGTH.
 //
 // Output command pipes run only through rshell's controlled builtin execution
-// model. Blocked or deferred features include system(), output redirection,
-// getline, command-input pipes, and many additional POSIX/GNU awk builtins.
+// model. Blocked or deferred features include system(), getline,
+// command-input pipes, file output redirection, ARGV/ARGC, BEGINFILE/ENDFILE,
+// nextfile, include/load, namespaces, FIELDWIDTHS/FPAT/CSV mode, introspection
+// variables such as PROCINFO/SYMTAB/FUNCTAB, indirect calls, and many
+// additional POSIX/GNU awk builtins.
 package awk
 
 import (
@@ -141,7 +144,25 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 func printHelp(callCtx *builtins.CallContext, fs *builtins.FlagSet) {
 	callCtx.Out("Usage: awk [OPTION]... 'program' [FILE]...\n")
 	callCtx.Out("Pattern scanning and text processing.\n")
+	callCtx.Out("This is a practical rshell awk profile, not a full GNU awk clone.\n")
 	callCtx.Out("With no FILE, or when FILE is -, read standard input.\n\n")
+
+	callCtx.Out("Supported profile:\n")
+	callCtx.Out("  - Inline programs, -f program files, -F separators, -v assignments, FILE args, and - for stdin.\n")
+	callCtx.Out("  - BEGIN/main/END rules; regex, comparison, boolean, and range patterns.\n")
+	callCtx.Out("  - Fields and records: $0, $1..$NF, NF, NR, FNR, FILENAME, FS, OFS, ORS, SUBSEP, RSTART, RLENGTH.\n")
+	callCtx.Out("  - Scalars, associative arrays, composite keys, ENVIRON, arithmetic, comparisons, regex match, ternary, and string concatenation.\n")
+	callCtx.Out("  - if/else, for, for-in, while, break, continue, next, exit, and user-defined functions with return.\n")
+	callCtx.Out("  - print, printf, sprintf, length, substr, index, tolower, toupper, int, split, sub, gsub, match, delete, and close.\n")
+	callCtx.Out("  - Output command pipes such as print x | \"sort\", limited to rshell-controlled commands and simple arguments.\n\n")
+
+	callCtx.Out("Not supported:\n")
+	callCtx.Out("  - system(), getline, command-input pipes such as \"cmd\" | getline, and arbitrary shell syntax inside awk pipes.\n")
+	callCtx.Out("  - File output redirection with > or >>; use shell redirection around awk instead when allowed.\n")
+	callCtx.Out("  - ARGV/ARGC mutation, BEGINFILE/ENDFILE, nextfile, do/while, switch, include/load, namespaces, and indirect function calls.\n")
+	callCtx.Out("  - GNU awk CSV mode, FIELDWIDTHS, FPAT, PROCINFO, SYMTAB, FUNCTAB, typed regexps, and extension loading.\n")
+	callCtx.Out("  - Many GNU/POSIX utility builtins are intentionally absent, including gensub, asort/asorti, patsplit, strtonum, math/time/random, bitwise, typeof, and i18n functions.\n\n")
+
 	fs.SetOutput(callCtx.Stdout)
 	fs.PrintDefaults()
 }
