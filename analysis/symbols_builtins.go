@@ -50,6 +50,7 @@ var builtinPerCommandSymbols = map[string][]string{
 		"os.PathError",             // 🟢 error type wrapping path and operation; pure type, no I/O.
 		"path/filepath.Clean",      // 🟢 normalizes a path lexically (collapses ".", "..", duplicate separators); pure function, no I/O.
 		"path/filepath.Dir",        // 🟢 returns the directory component of a path; pure function, no I/O.
+		"path/filepath.FromSlash",  // 🟢 converts '/' to OS separator without otherwise normalising; pure function, no I/O.
 		"path/filepath.IsAbs",      // 🟢 reports whether a path is absolute; pure function, no I/O.
 		"path/filepath.Join",       // 🟢 lexically joins path components with the OS separator; pure function, no I/O.
 		"path/filepath.Separator",  // 🟢 OS path separator constant ('/' or '\\'); pure constant, no I/O.
@@ -547,6 +548,7 @@ var builtinAllowedSymbols = []string{
 	"os.PathError",                                        // 🟢 error type for filesystem path errors; pure type, no I/O.
 	"path/filepath.Clean",                                 // 🟢 normalizes a path lexically (collapses ".", "..", duplicate separators); pure function, no I/O.
 	"path/filepath.Dir",                                   // 🟢 returns the directory component of a path; pure function, no I/O.
+	"path/filepath.FromSlash",                             // 🟢 converts '/' to the OS separator without other normalisation; pure function, no I/O.
 	"path/filepath.IsAbs",                                 // 🟢 reports whether a path is absolute; pure function, no I/O.
 	"path/filepath.Join",                                  // 🟢 lexically joins path components with the OS separator; pure function, no I/O.
 	"path/filepath.Separator",                             // 🟢 OS path separator constant ('/' or '\\'); pure constant, no I/O.

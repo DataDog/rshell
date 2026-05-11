@@ -292,6 +292,13 @@ func resolvePath(ctx context.Context, callCtx *builtins.CallContext, absPath str
 		return filepath.Clean(absPath), nil
 	}
 
+	// On Windows the user may write `cd a/../b` (forward slashes); the
+	// component splitter below only recognises filepath.Separator. Normalise
+	// '/' to the OS separator without invoking filepath.Clean — Clean would
+	// collapse ".." lexically and defeat the per-component validation that
+	// is the whole point of this walker.
+	absPath = filepath.FromSlash(absPath)
+
 	out := rootPrefix(absPath)
 	rest := strings.TrimPrefix(absPath, out)
 
