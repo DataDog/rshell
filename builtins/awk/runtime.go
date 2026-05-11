@@ -341,10 +341,16 @@ func (rt *runtime) run(ctx context.Context, files []string) builtins.Result {
 func (rt *runtime) errorResult(err error) builtins.Result {
 	rt.callCtx.Errf("awk: %v\n", err)
 	code := uint8(1)
-	if strings.HasPrefix(err.Error(), "fatal: ") {
+	if isFatalError(err) {
 		code = 2
 	}
 	return builtins.Result{Code: code}
+}
+
+func isFatalError(err error) bool {
+	const prefix = "fatal: "
+	msg := err.Error()
+	return len(msg) >= len(prefix) && msg[:len(prefix)] == prefix
 }
 
 func exitCodeFromError(err error) (int, bool) {
