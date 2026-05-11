@@ -10,6 +10,8 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+
+	"mvdan.cc/sh/v3/expand"
 )
 
 // errNoSandbox is returned by changeDir when no AllowedPaths sandbox has
@@ -78,14 +80,18 @@ func (r *Runner) changeDir(absDir string) error {
 	}
 
 	r.Dir = cleaned
-	// Use setVarString so the new values count toward MaxVarBytes /
-	// MaxTotalVarsBytes the same way as a script-driven assignment.
-	// setVarString records storage-cap failures on the runner's exit
-	// state but does not return an error here; that's intentional —
-	// matching bash, the dir change is committed even if the env-var
-	// update could not be persisted.
-	r.setVarString("OLDPWD", oldDir)
-	r.setVarString("PWD", cleaned)
+	// Use setVarErr so storage-cap failures propagate up: setVarString
+	// only stashes the failure on r.exit.code, which then gets clobbered
+	// by the cd builtin's Result{}. Returning the error keeps cd
+	// reporting exit 1 (and aborting on total-storage exhaustion via
+	// the runner's exit handling) instead of silently leaving PWD or
+	// OLDPWD stale while r.Dir has moved.
+	if err := r.setVarErr("OLDPWD", expand.Variable{Set: true, Kind: expand.String, Str: oldDir}); err != nil {
+		return err
+	}
+	if err := r.setVarErr("PWD", expand.Variable{Set: true, Kind: expand.String, Str: cleaned}); err != nil {
+		return err
+	}
 	return nil
 }
 
