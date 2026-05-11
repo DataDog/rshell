@@ -160,7 +160,7 @@ func printHelp(callCtx *builtins.CallContext, fs *builtins.FlagSet) {
 
 	callCtx.Out("Not supported:\n")
 	callCtx.Out("  - system(). Use supported awk command pipes/getline pipes instead; command strings run through rshell and its active sandbox.\n")
-	callCtx.Out("  - print/printf file output redirection with > or >> targets. Output command pipes are supported, but writing files from awk is not.\n")
+	callCtx.Out("  - print/printf file output redirection to file targets, such as print x > \"file\" or printf ... >> \"file\". Output command pipes remain supported and their command strings follow normal rshell policy.\n")
 	callCtx.Out("  - ARGV/ARGC mutation, BEGINFILE/ENDFILE, nextfile, do/while, switch, include/load, namespaces, and indirect function calls.\n")
 	callCtx.Out("  - GNU awk CSV mode, FIELDWIDTHS, FPAT, PROCINFO, SYMTAB, FUNCTAB, typed regexps, and extension loading.\n")
 	callCtx.Out("  - Many GNU/POSIX utility builtins are intentionally absent, including gensub, asort/asorti, patsplit, strtonum, math/time/random, bitwise, typeof, and i18n functions.\n\n")

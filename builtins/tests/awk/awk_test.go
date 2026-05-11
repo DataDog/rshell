@@ -102,7 +102,7 @@ func TestAwkHelpDescribesSupportedAndUnsupportedProfile(t *testing.T) {
 	assert.Contains(t, stdout, "getline, getline var, getline var < file, and \"cmd\" | getline var")
 	assert.Contains(t, stdout, "Not supported:")
 	assert.Contains(t, stdout, "system(). Use supported awk command pipes/getline pipes instead")
-	assert.Contains(t, stdout, "print/printf file output redirection with > or >> targets")
+	assert.Contains(t, stdout, "print/printf file output redirection to file targets")
 	assert.Contains(t, stdout, "ARGV/ARGC mutation")
 	assert.Contains(t, stdout, "PROCINFO, SYMTAB, FUNCTAB")
 	assert.Contains(t, stdout, "gensub, asort/asorti, patsplit, strtonum")
