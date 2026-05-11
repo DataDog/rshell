@@ -40,6 +40,7 @@ var builtinPerCommandSymbols = map[string][]string{
 		"io.EOF",                          // 🟢 sentinel error value; pure constant.
 		"io.NopCloser",                    // 🟢 wraps a Reader with a no-op Close; no side effects.
 		"io.ReadCloser",                   // 🟢 interface type; no side effects.
+		"io.Reader",                       // 🟢 interface type for command-pipe stdin; no side effects.
 		"math/big.Float",                  // 🟢 arbitrary-precision float type used to convert large awk printf integers; pure in-memory arithmetic.
 		"math/big.Int",                    // 🟢 arbitrary-precision integer type used for large awk printf integers; pure in-memory arithmetic.
 		"math/big.NewInt",                 // 🟢 constructs an in-memory integer value; pure function, no I/O.
