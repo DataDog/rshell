@@ -658,7 +658,7 @@ func (rt *runtime) openCommandInput(ctx context.Context, command string) (*comma
 	}
 	var out limitedBuffer
 	out.max = MaxPipeBytes
-	status, err := rt.callCtx.RunScriptWithStdin(ctx, dir, command, strings.NewReader(""), &out)
+	status, err := rt.callCtx.RunScriptWithStdin(ctx, dir, command, rt.commandInputStdin(), &out)
 	if out.err != nil {
 		return nil, out.err
 	}
@@ -672,6 +672,13 @@ func (rt *runtime) openCommandInput(ctx context.Context, command string) (*comma
 	}
 	rt.commandInputs[command] = pipe
 	return pipe, nil
+}
+
+func (rt *runtime) commandInputStdin() io.Reader {
+	if rt.mainInput == nil && !rt.mainHadInput && rt.callCtx.Stdin != nil {
+		return rt.callCtx.Stdin
+	}
+	return strings.NewReader("")
 }
 
 type limitedBuffer struct {

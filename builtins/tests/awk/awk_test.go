@@ -692,6 +692,14 @@ func TestAwkCommandInputPipesUseNestedRshellScripts(t *testing.T) {
 	assert.Equal(t, "1 a\n1 b\n0 []\n0\n1 a\n", stdout)
 }
 
+func TestAwkCommandInputPipesInheritUnopenedStdin(t *testing.T) {
+	dir := t.TempDir()
+	stdout, stderr, code := cmdRun(t, `printf "outer\n" | awk 'BEGIN { "cat" | getline x; print "x=" x; getline y; print "y=" y }'`, dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "", stderr)
+	assert.Equal(t, "x=outer\ny=\n", stdout)
+}
+
 func TestAwkCommandPipesRespectAllowedCommands(t *testing.T) {
 	dir := t.TempDir()
 	stdout, stderr, code := runScriptRestricted(t, `awk 'BEGIN { print "x" | "sort" }'`, dir,
