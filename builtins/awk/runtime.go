@@ -210,6 +210,7 @@ type runtime struct {
 	inputIndex       int
 	mainInput        *recordSource
 	mainHadInput     bool
+	mainUsedStdin    bool
 	mainDefaultStdin bool
 	fileInputs       map[string]*recordSource
 	failedFileInputs map[string]bool
@@ -445,6 +446,9 @@ func (rt *runtime) openMainInput(ctx context.Context, file string) (bool, error)
 		return false, fmt.Errorf("%s: %v", file, err)
 	}
 	rt.mainHadInput = true
+	if file == "-" {
+		rt.mainUsedStdin = true
+	}
 	rt.filename = file
 	rt.fnr = 0
 	rt.mainInput = newRecordSource(file, rc)
@@ -675,7 +679,7 @@ func (rt *runtime) openCommandInput(ctx context.Context, command string) (*comma
 }
 
 func (rt *runtime) commandInputStdin() io.Reader {
-	if rt.mainInput == nil && !rt.mainHadInput && rt.callCtx.Stdin != nil {
+	if rt.callCtx.Stdin != nil && !rt.mainUsedStdin {
 		return rt.callCtx.Stdin
 	}
 	return strings.NewReader("")

@@ -700,6 +700,18 @@ func TestAwkCommandInputPipesInheritUnopenedStdin(t *testing.T) {
 	assert.Equal(t, "x=outer\ny=\n", stdout)
 }
 
+func TestAwkCommandInputPipesKeepStdinWhileReadingFiles(t *testing.T) {
+	dir := t.TempDir()
+	input := filepath.Join(dir, "input.txt")
+	require.NoError(t, os.WriteFile(input, []byte("file-record\n"), 0o644))
+	quotedInput := "'" + strings.ReplaceAll(input, "'", `'\''`) + "'"
+
+	stdout, stderr, code := cmdRun(t, `printf "s\n" | awk '{ "cat" | getline x; print "x=" x; print "rec=" $0 }' `+quotedInput, dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "", stderr)
+	assert.Equal(t, "x=s\nrec=file-record\n", stdout)
+}
+
 func TestAwkCommandPipesRespectAllowedCommands(t *testing.T) {
 	dir := t.TempDir()
 	stdout, stderr, code := runScriptRestricted(t, `awk 'BEGIN { print "x" | "sort" }'`, dir,
