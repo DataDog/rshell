@@ -3,10 +3,9 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2026-present Datadog, Inc.
 
-package builtins
+package flagparser
 
 import (
-	"context"
 	"errors"
 	"testing"
 
@@ -14,16 +13,16 @@ import (
 )
 
 func TestTrialHelpTrimIndex(t *testing.T) {
-	// factory installs a representative set of flag shapes on each
-	// fresh FlagSet: bool no-arg long+short, single-char no-arg short,
-	// string value-taker. This mirrors how real builtins compose flags
-	// and exercises every classification path in trial parsing.
-	factory := func(fs *pflag.FlagSet) HandlerFunc {
+	// registerFlags installs a representative set of flag shapes on
+	// each fresh FlagSet: bool no-arg long+short, single-char no-arg
+	// short, string value-taker. This mirrors how real builtins
+	// compose flags and exercises every classification path in trial
+	// parsing.
+	registerFlags := func(fs *pflag.FlagSet) {
 		fs.BoolP("help", "", false, "")
 		fs.BoolP("verbose", "v", false, "")
 		fs.BoolP("quiet", "q", false, "")
 		fs.StringP("name", "n", "", "")
-		return func(ctx context.Context, cc *CallContext, args []string) Result { return Result{} }
 	}
 
 	tests := []struct {
@@ -69,15 +68,15 @@ func TestTrialHelpTrimIndex(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			idx, ok := trialHelpTrimIndex("t", factory, tt.args)
+			idx, ok := TrialHelpTrimIndex("t", registerFlags, tt.args)
 			if idx != tt.wantIdx || ok != tt.wantOK {
-				t.Errorf("trialHelpTrimIndex(%v) = (%d, %v), want (%d, %v)", tt.args, idx, ok, tt.wantIdx, tt.wantOK)
+				t.Errorf("TrialHelpTrimIndex(%v) = (%d, %v), want (%d, %v)", tt.args, idx, ok, tt.wantIdx, tt.wantOK)
 			}
 		})
 	}
 }
 
-func TestRewritePflagError(t *testing.T) {
+func TestRewriteError(t *testing.T) {
 	tests := []struct {
 		name string
 		in   string
@@ -184,9 +183,9 @@ func TestRewritePflagError(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := rewritePflagError(errors.New(tt.in), tt.args)
+			got := RewriteError(errors.New(tt.in), tt.args)
 			if got != tt.want {
-				t.Errorf("rewritePflagError(%q, %v) = %q, want %q", tt.in, tt.args, got, tt.want)
+				t.Errorf("RewriteError(%q, %v) = %q, want %q", tt.in, tt.args, got, tt.want)
 			}
 		})
 	}

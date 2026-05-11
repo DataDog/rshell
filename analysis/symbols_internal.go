@@ -109,6 +109,17 @@ var internalPerPackageSymbols = map[string][]string{
 		"strings.Contains",         // 🟢 checks for ".." components in procPath safety guard; pure function, no I/O.
 		"strings.Fields",           // 🟢 splits whitespace-separated route lines; pure function, no I/O.
 	},
+	"flagparser": {
+		"github.com/spf13/pflag.ContinueOnError", // 🟢 pflag parsing-mode constant used to set up trial FlagSet; pure constant.
+		"github.com/spf13/pflag.FlagSet",         // 🟢 pflag FlagSet type used to trial-parse argv prefixes; pure type, no I/O.
+		"github.com/spf13/pflag.NewFlagSet",      // 🟢 constructs a throw-away FlagSet for trial-parsing; pure constructor, no I/O.
+		"io.Discard",                             // 🟢 silences trial.SetOutput so trial-parse failures don't leak to stderr; pure no-op writer.
+		"strings.Cut",                            // 🟢 splits pflag error/descriptor strings at separators; pure function, no I/O.
+		"strings.CutPrefix",                      // 🟢 matches pflag error prefixes when rewriting to GNU wording; pure function, no I/O.
+		"strings.HasPrefix",                      // 🟢 matches pflag error prefixes; pure function, no I/O.
+		"strings.HasSuffix",                      // 🟢 matches pflag error suffixes (e.g. "flag does not allow an argument"); pure function, no I/O.
+		"strings.LastIndex",                      // 🟢 finds the ", " separator in pflag flag descriptors; pure function, no I/O.
+	},
 	"procnetsocket": {
 		"bufio.NewScanner", // 🟢 line-by-line reading of /proc/net/{tcp,udp,unix}; no write capability.
 		"github.com/DataDog/rshell/builtins/internal/procpath.Default", // 🟢 canonical /proc filesystem root path constant; pure constant, no I/O.
@@ -174,6 +185,10 @@ var internalAllowedSymbols = []string{
 	"encoding/binary.LittleEndian", // 🟢 winnet: reads little-endian DWORD fields from DLL buffer; pure value, no I/O.
 	"errors.Is",                    // 🟢 procinfo: checks whether an error in a chain matches a target; pure function, no I/O.
 	"errors.New",                   // 🟢 creates a sentinel error; pure function, no I/O.
+	"github.com/spf13/pflag.ContinueOnError", // 🟢 flagparser: pflag parsing-mode constant; pure constant, no I/O.
+	"github.com/spf13/pflag.FlagSet",         // 🟢 flagparser: pflag FlagSet type used to trial-parse argv prefixes; pure type, no I/O.
+	"github.com/spf13/pflag.NewFlagSet",      // 🟢 flagparser: constructs a throw-away FlagSet for trial-parsing; pure constructor, no I/O.
+	"io.Discard",                             // 🟢 flagparser: silences trial.SetOutput so trial-parse failures don't leak to stderr; pure no-op writer.
 	"math/bits.OnesCount32",        // 🟢 procnet: counts set bits in a uint32 (popcount for prefix length); pure function, no I/O.
 	"math/bits.ReverseBytes32",     // 🟢 procnet: byte-swaps a uint32 to convert little-endian /proc mask to network byte order for CIDR validation; pure function, no I/O.
 	"fmt.Errorf",                   // 🟢 error formatting; pure function, no I/O.
@@ -206,7 +221,9 @@ var internalAllowedSymbols = []string{
 	"strings.Join",                 // 🟢 procnetsocket: reconstructs space-containing Unix socket paths from Fields tokens; pure function, no I/O.
 	"strings.Split",                // 🟢 procnetsocket: splits address:port fields on ":"; pure function, no I/O.
 	"strings.ToUpper",              // 🟢 procnetsocket: normalises hex state field to uppercase for map lookup; pure function, no I/O.
+	"strings.CutPrefix",            // 🟢 flagparser: trims known pflag error prefixes before rewriting; pure function, no I/O.
 	"strings.HasPrefix",            // 🟢 procinfo/diskstats: checks string prefix; pure function, no I/O.
+	"strings.HasSuffix",            // 🟢 flagparser: matches pflag error suffixes (e.g. "flag does not allow an argument"); pure function, no I/O.
 	"strings.Index",                // 🟢 procinfo: finds first occurrence of a substring; pure function, no I/O.
 	"strings.LastIndex",            // 🟢 procinfo: finds last occurrence of a substring; pure function, no I/O.
 	"strings.TrimRight",            // 🟢 procinfo: trims trailing characters; pure function, no I/O.
