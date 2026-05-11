@@ -245,19 +245,18 @@ The builtin must preserve rshell's no-write, no-host-exec safety model.
 Reject or defer:
 
 - `system()`
-- command-input pipes: `"cmd" | getline`
 - coprocesses
 - output redirection to files: `print > "file"` and `print >> "file"`
-- `getline` in all forms for Phase 1
 - dynamic extension loading
 - network special files
 - any feature that executes host commands
 - any feature that writes, creates, modifies, or deletes files
 
-Output command pipes such as `print ... | "sort"` are permitted in Phase 4
-only through rshell's controlled builtin execution model. They do not invoke a
-host shell, and the command string is restricted to one allowed rshell builtin
-plus literal whitespace-separated arguments.
+Output and input command pipes such as `print ... | "sort"` and
+`"printf \"b\\na\\n\" | sort" | getline line` are permitted in Phase 4 only
+through rshell's controlled builtin execution model. They do not invoke a host
+shell; command strings are parsed and executed by rshell, so the normal command
+allowlist, path policy, and parser restrictions still apply.
 
 All file reads must go through `callCtx.OpenFile`.
 
@@ -407,16 +406,18 @@ unlock common log, table, and small-report workflows:
   and, if it remains small, `do ... while`
 - user-defined functions with `return`; array parameters are preferred over a
   scalar-only subset because practical helper functions often receive arrays
-- safe command output pipes such as `print ... | "sort"` and `close(cmd)`,
-  implemented only through rshell's controlled builtin execution model
-- restricted `getline` forms that read from the current input stream
+- safe command pipes such as `print ... | "sort"`, `"cmd" | getline line`,
+  and `close(cmd)`, implemented only through rshell's controlled builtin
+  execution model
+- practical `getline` forms that read from the current input stream or from
+  files through `callCtx.OpenFile`
 - focused utility builtins that support investigations: math/time/conversion
   helpers such as `sqrt`, `log`, `exp`, `rand`, `srand`, `strtonum`, `systime`,
   `strftime`, and `mktime`
 
 Defer or reject low-value or high-risk GNU awk compatibility surfaces:
-`system()`, unrestricted file redirection, general file/command `getline`,
-`PROCINFO`, `SYMTAB`, `FUNCTAB`, namespaces, `include`, `load`, `FIELDWIDTHS`,
+`system()`, unrestricted file redirection, `PROCINFO`, `SYMTAB`, `FUNCTAB`,
+namespaces, `include`, `load`, `FIELDWIDTHS`,
 `FPAT`, CSV mode, i18n builtins, bitwise builtins, and broad introspection.
 
 ## Open Design Questions

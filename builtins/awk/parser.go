@@ -264,9 +264,6 @@ func (p *parser) parseStatement() (stmt, error) {
 	if p.atIdent("delete") {
 		return p.parseDelete()
 	}
-	if p.atIdent("getline") {
-		return nil, fmt.Errorf("getline is not supported")
-	}
 	x, err := p.parseExpression(0)
 	if err != nil {
 		return nil, err
@@ -604,13 +601,24 @@ func (p *parser) parseExpression(minPrec int) (expr, error) {
 			op := p.cur().lit
 			p.advance()
 			if !isAssignableExpr(left) {
-				return nil, fmt.Errorf("increment and decrement require variables")
+				return nil, fmt.Errorf("syntax error: increment and decrement require variables")
 			}
 			left = &incDecExpr{op: op, x: left}
 			continue
 		}
 		if p.stopPrintRedirect && (p.at(tokGT) || p.at(tokAppend) || p.at(tokPipe)) {
 			break
+		}
+		if p.at(tokPipe) && p.peek(1).kind == tokIdent && p.peek(1).lit == "getline" {
+			if precCompare < minPrec {
+				break
+			}
+			next, err := p.parseCommandGetline(left)
+			if err != nil {
+				return nil, err
+			}
+			left = next
+			continue
 		}
 		if op, prec, assoc, ok := p.binaryOp(); ok {
 			if prec < minPrec {
@@ -671,6 +679,9 @@ func (p *parser) parsePrefix() (expr, error) {
 		return &regexExpr{pattern: tok.lit}, nil
 	case tokIdent:
 		p.advance()
+		if tok.lit == "getline" {
+			return p.parseGetline(nil)
+		}
 		if p.at(tokLParen) && (tokensAdjacent(tok, p.cur()) || isKnownBuiltinFunction(tok.lit)) {
 			return p.parseFunctionCall(tok.lit)
 		}
@@ -736,6 +747,80 @@ func (p *parser) parsePrefix() (expr, error) {
 		return &incDecExpr{op: tok.lit, x: x, prefix: true}, nil
 	default:
 		return nil, fmt.Errorf("expected expression")
+	}
+}
+
+func (p *parser) parseCommandGetline(source expr) (expr, error) {
+	if !p.match(tokPipe) {
+		return nil, fmt.Errorf("expected |")
+	}
+	if !p.atIdent("getline") {
+		return nil, fmt.Errorf("expected getline")
+	}
+	p.advance()
+	return p.parseGetline(source)
+}
+
+func (p *parser) parseGetline(command expr) (expr, error) {
+	g := &getlineExpr{source: command}
+	if command != nil {
+		g.kind = getlineCommand
+	} else {
+		g.kind = getlineMain
+	}
+	if command == nil && p.at(tokLT) {
+		source, err := p.parseGetlineRedirection()
+		if err != nil {
+			return nil, err
+		}
+		g.kind = getlineFile
+		g.source = source
+		return g, nil
+	}
+	if p.canStartGetlineTarget() {
+		target, err := p.parseGetlineTarget()
+		if err != nil {
+			return nil, err
+		}
+		g.target = target
+	}
+	if command == nil && p.at(tokLT) {
+		source, err := p.parseGetlineRedirection()
+		if err != nil {
+			return nil, err
+		}
+		g.kind = getlineFile
+		g.source = source
+	}
+	return g, nil
+}
+
+func (p *parser) parseGetlineRedirection() (expr, error) {
+	if !p.match(tokLT) {
+		return nil, fmt.Errorf("expected <")
+	}
+	return p.parseExpression(precConcat + 1)
+}
+
+func (p *parser) canStartGetlineTarget() bool {
+	return p.at(tokIdent) || p.at(tokDollar)
+}
+
+func (p *parser) parseGetlineTarget() (expr, error) {
+	switch tok := p.cur(); tok.kind {
+	case tokIdent:
+		p.advance()
+		if err := validateIdentifierReference(tok.lit); err != nil {
+			return nil, err
+		}
+		if p.at(tokLBracket) {
+			return p.parseArrayRef(tok.lit)
+		}
+		return &varExpr{name: tok.lit}, nil
+	case tokDollar:
+		return p.parseFieldRef()
+	default:
+		return nil, fmt.Errorf("syntax error: getline requires an assignable target")
 	}
 }
 
@@ -1071,6 +1156,11 @@ func validateExprUserFunctionNameReferences(x expr, functions map[string]*functi
 			return fmt.Errorf("parameter %q cannot be called as a function", e.name)
 		}
 		return validateExprListUserFunctionNameReferences(e.args, functions, locals)
+	case *getlineExpr:
+		if err := validateExprUserFunctionNameReferences(e.target, functions, locals); err != nil {
+			return err
+		}
+		return validateExprUserFunctionNameReferences(e.source, functions, locals)
 	default:
 		return nil
 	}
@@ -1161,8 +1251,6 @@ func unsupportedExpressionKeyword(name string) (string, bool) {
 		return "control flow statements are not supported", true
 	case "delete":
 		return "arrays are not supported", true
-	case "getline":
-		return "getline is not supported", true
 	case "printf":
 		return "printf is not supported", true
 	case "print":

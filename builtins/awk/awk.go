@@ -22,9 +22,9 @@
 // array parameters, and field/built-in variables such as $0, $1, NF, NR, FNR,
 // FILENAME, FS, OFS, ORS, SUBSEP, RSTART, and RLENGTH.
 //
-// Output command pipes run only through rshell's controlled builtin execution
-// model. Blocked or deferred features include system(), getline,
-// command-input pipes, file output redirection, ARGV/ARGC, BEGINFILE/ENDFILE,
+// Command pipes run only through rshell's controlled builtin execution model.
+// Blocked or deferred features include system(), file output redirection,
+// ARGV/ARGC, BEGINFILE/ENDFILE,
 // nextfile, include/load, namespaces, FIELDWIDTHS/FPAT/CSV mode, introspection
 // variables such as PROCINFO/SYMTAB/FUNCTAB, indirect calls, and many
 // additional POSIX/GNU awk builtins.
@@ -154,10 +154,11 @@ func printHelp(callCtx *builtins.CallContext, fs *builtins.FlagSet) {
 	callCtx.Out("  - Scalars, associative arrays, composite keys, ENVIRON, arithmetic, comparisons, regex match, ternary, and string concatenation.\n")
 	callCtx.Out("  - if/else, for, for-in, while, break, continue, next, exit, and user-defined functions with return.\n")
 	callCtx.Out("  - print, printf, sprintf, length, substr, index, tolower, toupper, int, split, sub, gsub, match, delete, and close.\n")
-	callCtx.Out("  - Output command pipes such as print x | \"sort\", limited to rshell-controlled commands and simple arguments.\n\n")
+	callCtx.Out("  - Output command pipes such as print x | \"sort\" and rshell command strings such as print x | \"cat | sort\".\n")
+	callCtx.Out("  - getline, getline var, getline var < file, and \"cmd\" | getline var; file reads use rshell path policy and command strings run through rshell.\n\n")
 
 	callCtx.Out("Not supported:\n")
-	callCtx.Out("  - system(), getline, command-input pipes such as \"cmd\" | getline, and arbitrary shell syntax inside awk pipes.\n")
+	callCtx.Out("  - system() and host shell execution; awk command strings are interpreted by rshell, not by /bin/sh.\n")
 	callCtx.Out("  - File output redirection with > or >>; use shell redirection around awk instead when allowed.\n")
 	callCtx.Out("  - ARGV/ARGC mutation, BEGINFILE/ENDFILE, nextfile, do/while, switch, include/load, namespaces, and indirect function calls.\n")
 	callCtx.Out("  - GNU awk CSV mode, FIELDWIDTHS, FPAT, PROCINFO, SYMTAB, FUNCTAB, typed regexps, and extension loading.\n")

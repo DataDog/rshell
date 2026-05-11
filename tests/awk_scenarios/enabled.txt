@@ -7,6 +7,8 @@ gawk/arrays/delete_index.yaml
 gawk/arrays/delete_local_array_parameter.yaml
 gawk/arrays/delete_parameter_reuse.yaml
 gawk/arrays/empty_key_global_alias.yaml
+gawk/arrays/getline_delete_array_reuse.yaml
+gawk/arrays/getline_empty_array_element_redirection.yaml
 gawk/arrays/global_parameter_array_updates.yaml
 gawk/arrays/in_operator.yaml
 gawk/arrays/local_array_reuse_after_scalar_parameter.yaml
@@ -36,6 +38,7 @@ gawk/expressions/arithmetic_comparison.yaml
 gawk/expressions/concat_literal_punctuation.yaml
 gawk/expressions/concat_parenthesized_uninitialized.yaml
 gawk/expressions/conditional_operator.yaml
+gawk/expressions/concat_after_getline_index.yaml
 gawk/expressions/function_local_concat.yaml
 gawk/expressions/function_parameter_concatenation_copy.yaml
 gawk/expressions/leading_digit_exponent_fragment.yaml
@@ -62,6 +65,7 @@ gawk/functions/delete_array_inside_for_loop.yaml
 gawk/functions/delete_array_parameter_elements.yaml
 gawk/functions/delete_whole_array_parameter.yaml
 gawk/functions/function_semicolon_newline.yaml
+gawk/functions/getline_current_input.yaml
 gawk/functions/length_array_parameter.yaml
 gawk/functions/match_position.yaml
 gawk/functions/nested_function_stack_arrays.yaml
@@ -76,9 +80,22 @@ gawk/input/exit_end_status_override.yaml
 gawk/input/exit_expression_stops_begin.yaml
 gawk/input/function_call_arg_exit_begin.yaml
 gawk/input/function_call_arg_exit_record.yaml
+gawk/input/getline_after_marker_long_record.yaml
+gawk/input/getline_after_marker_variable.yaml
+gawk/input/getline_array_index_eof.yaml
+gawk/input/getline_begin_reads_argv_files.yaml
+gawk/input/getline_directory_error.yaml
+gawk/input/getline_eof_after_fs_change.yaml
+gawk/input/getline_field_increment_syntax.yaml
+gawk/input/getline_target_expression_stdin.yaml
 gawk/input/no_trailing_newline_regex.yaml
 gawk/input/nr_concat_builtin_records.yaml
 gawk/input/nr_concat_end_block.yaml
+gawk/io/close_current_filename_not_redirection.yaml
+gawk/io/close_missing_input_redirection.yaml
+gawk/io/end_block_close_reopens_file.yaml
+gawk/io/getline_extra_expression.yaml
+gawk/io/input_redirection_precedence.yaml
 gawk/io/paragraph_backslash_fs.yaml
 gawk/io/paragraph_split_uses_fs.yaml
 gawk/io/reparse_saved_record_fields.yaml
@@ -87,6 +104,7 @@ gawk/misc/begin_print_hello.yaml
 gawk/misc/byte_range_regex_c_locale.yaml
 gawk/misc/compound_assignment_subscript_side_effect.yaml
 gawk/misc/concat_uses_left_value_before_function_side_effect.yaml
+gawk/misc/getline_preserves_parameter_copy.yaml
 gawk/misc/in_operator_assignment_value.yaml
 gawk/misc/last_field_concat_once.yaml
 gawk/misc/nested_self_compound_assignment.yaml
@@ -175,10 +193,12 @@ gawk/string_regex/split_space_string_vs_regexp.yaml
 gawk/string_regex/strnum_string_format_preserved.yaml
 gawk/string_regex/strtod_hex_prefix_and_zero_strings.yaml
 gawk/text/index_updates_after_substitution.yaml
+gawk/text/getline_swaps_adjacent_lines.yaml
 gawk/text/numeric_subsep_composite_key.yaml
 gawk/text/print_records_verbatim.yaml
 gawk/text/repeated_sub_extracts_quoted_values.yaml
 gawk/text/substitution_refreshes_index_offsets.yaml
+gawk/text/utf8_index_after_getline_concat.yaml
 gawk/text/valgrind_log_scanner_reports_loss.yaml
 onetrueawk/arrays/delete_composite_subscripts.yaml
 onetrueawk/arrays/delete_current_key.yaml
@@ -191,6 +211,8 @@ onetrueawk/basic/begin_filename_and_end_nr.yaml
 onetrueawk/basic/comments_ignored.yaml
 onetrueawk/basic/pattern_action.yaml
 onetrueawk/basic/record_counter_nr.yaml
+onetrueawk/control/begin_getline_exit.yaml
+onetrueawk/control/begin_getline_then_main.yaml
 onetrueawk/control/division_loop_variants.yaml
 onetrueawk/control/for_each_field_reverse.yaml
 onetrueawk/control/infinite_for_next_record.yaml
@@ -329,6 +351,7 @@ onetrueawk/functions/split_regex_separator.yaml
 onetrueawk/functions/sub_ampersand_replacement.yaml
 onetrueawk/functions/sub_string_pattern.yaml
 onetrueawk/functions/substr_pattern_filters.yaml
+onetrueawk/input/getline_groups_records.yaml
 onetrueawk/output/custom_ofs.yaml
 onetrueawk/output/ofs_ors_print.yaml
 onetrueawk/output/printf_numeric_formats.yaml
@@ -341,6 +364,7 @@ onetrueawk/programs/expression_precedence_and_numeric_strings.yaml
 onetrueawk/programs/expression_result_numeric_conversion.yaml
 onetrueawk/programs/field_separator_option_variants.yaml
 onetrueawk/programs/gawk_backslash_gsub_and_reparse.yaml
+onetrueawk/programs/getline_variable_preserves_record.yaml
 onetrueawk/programs/interval_expression_boundaries.yaml
 onetrueawk/programs/large_string_fields_and_array_delete.yaml
 onetrueawk/programs/misc_record_rebuild_and_end_state.yaml

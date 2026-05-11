@@ -223,6 +223,12 @@ type CallContext struct {
 	// If nil, callers should fall back to RunCommand.
 	RunCommandWithStdin func(ctx context.Context, dir string, name string, args []string, stdin io.Reader) (uint8, error)
 
+	// RunScriptWithStdin executes an rshell script fragment within the shell's
+	// sandbox, with caller-provided stdin and stdout. Builtins use this for
+	// language features that accept command strings, so those strings are
+	// interpreted by rshell rather than by the host shell.
+	RunScriptWithStdin func(ctx context.Context, dir string, script string, stdin io.Reader, stdout io.Writer) (uint8, error)
+
 	// SetVar assigns a value to a shell variable in the calling shell's
 	// scope. Returns an error if the value exceeds the per-variable size
 	// limit or if the total variable-storage cap would be exceeded.

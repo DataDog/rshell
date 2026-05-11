@@ -340,6 +340,8 @@ func (rt *runtime) eval(x expr) (value, error) {
 		return rt.evalAssign(e)
 	case *incDecExpr:
 		return rt.evalIncDec(e)
+	case *getlineExpr:
+		return rt.evalGetline(e)
 	case *callExpr:
 		return rt.evalCall(e)
 	default:
@@ -435,10 +437,79 @@ func (rt *runtime) evalClose(e *callExpr) (value, error) {
 	if err != nil {
 		return value{}, err
 	}
-	if !ok {
-		return numberValue(-1), nil
+	if ok {
+		return numberValue(float64(status)), nil
 	}
-	return numberValue(float64(status)), nil
+	status, ok, err = rt.closeCommandInput(command.String())
+	if err != nil {
+		return value{}, err
+	}
+	if ok {
+		return numberValue(float64(status)), nil
+	}
+	if status, ok := rt.closeInputFile(command.String()); ok {
+		return numberValue(float64(status)), nil
+	}
+	rt.setErrnoString("close of redirection that was never opened")
+	return numberValue(-1), nil
+}
+
+func (rt *runtime) evalGetline(e *getlineExpr) (value, error) {
+	var target assignTarget
+	hasTarget := e.target != nil
+	if hasTarget {
+		resolved, _, err := rt.resolveAssignable(e.target)
+		if err != nil {
+			return value{}, err
+		}
+		target = resolved
+	}
+
+	rec, status, err := rt.readGetlineRecord(e)
+	if err != nil {
+		return value{}, err
+	}
+	if status != 1 {
+		return numberValue(float64(status)), nil
+	}
+	if hasTarget {
+		if err := rt.setResolvedAssignable(target, inputStringValue(rec)); err != nil {
+			return value{}, err
+		}
+		return numberValue(1), nil
+	}
+	if err := rt.setRecord(rec); err != nil {
+		return value{}, err
+	}
+	return numberValue(1), nil
+}
+
+func (rt *runtime) readGetlineRecord(e *getlineExpr) (string, int, error) {
+	switch e.kind {
+	case getlineMain:
+		rec, ok, err := rt.readMainRecord(rt.ctx)
+		if err != nil {
+			return "", 0, err
+		}
+		if !ok {
+			return "", 0, nil
+		}
+		return rec, 1, nil
+	case getlineFile:
+		source, err := rt.eval(e.source)
+		if err != nil {
+			return "", 0, err
+		}
+		return rt.getlineFileRecord(rt.ctx, source.String())
+	case getlineCommand:
+		source, err := rt.eval(e.source)
+		if err != nil {
+			return "", 0, err
+		}
+		return rt.getlineCommandRecord(rt.ctx, source.String())
+	default:
+		return "", 0, fmt.Errorf("unknown getline source")
+	}
 }
 
 func (rt *runtime) evalLength(e *callExpr) (value, error) {

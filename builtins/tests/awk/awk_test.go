@@ -99,8 +99,9 @@ func TestAwkHelpDescribesSupportedAndUnsupportedProfile(t *testing.T) {
 	assert.Contains(t, stdout, "This is a practical rshell awk profile, not a full GNU awk clone.")
 	assert.Contains(t, stdout, "Supported profile:")
 	assert.Contains(t, stdout, "Output command pipes such as print x | \"sort\"")
+	assert.Contains(t, stdout, "getline, getline var, getline var < file, and \"cmd\" | getline var")
 	assert.Contains(t, stdout, "Not supported:")
-	assert.Contains(t, stdout, "system(), getline, command-input pipes")
+	assert.Contains(t, stdout, "system()")
 	assert.Contains(t, stdout, "File output redirection with > or >>")
 	assert.Contains(t, stdout, "ARGV/ARGC mutation")
 	assert.Contains(t, stdout, "PROCINFO, SYMTAB, FUNCTAB")
@@ -675,6 +676,22 @@ func TestAwkCommandPipes(t *testing.T) {
 	assert.Equal(t, "-1\n", stdout)
 }
 
+func TestAwkCommandPipesRunNestedRshellScripts(t *testing.T) {
+	dir := t.TempDir()
+	stdout, stderr, code := cmdRun(t, `awk 'BEGIN { cmd = "cat | sort"; print "b" | cmd; print "a" | cmd; print close(cmd) }'`, dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "", stderr)
+	assert.Equal(t, "a\nb\n0\n", stdout)
+}
+
+func TestAwkCommandInputPipesUseNestedRshellScripts(t *testing.T) {
+	dir := t.TempDir()
+	stdout, stderr, code := cmdRun(t, `awk 'BEGIN { cmd = "printf \"b\\na\\n\" | sort"; print (cmd | getline first), first; print (cmd | getline second), second; print (cmd | getline third), "[" third "]"; print close(cmd); print (cmd | getline again), again }'`, dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "", stderr)
+	assert.Equal(t, "1 a\n1 b\n0 []\n0\n1 a\n", stdout)
+}
+
 func TestAwkCommandPipesRespectAllowedCommands(t *testing.T) {
 	dir := t.TempDir()
 	stdout, stderr, code := runScriptRestricted(t, `awk 'BEGIN { print "x" | "sort" }'`, dir,
@@ -683,7 +700,18 @@ func TestAwkCommandPipesRespectAllowedCommands(t *testing.T) {
 	)
 	assert.Equal(t, 1, code)
 	assert.Equal(t, "", stdout)
-	assert.Contains(t, stderr, `awk: command pipe "sort" is not allowed`)
+	assert.Contains(t, stderr, `rshell: sort: command not allowed`)
+}
+
+func TestAwkNestedCommandPipesRespectAllowedCommands(t *testing.T) {
+	dir := t.TempDir()
+	stdout, stderr, code := runScriptRestricted(t, `awk 'BEGIN { print "x" | "cat | sort" }'`, dir,
+		interp.AllowedCommands([]string{"rshell:awk", "rshell:cat"}),
+		interp.AllowedPaths([]string{dir}),
+	)
+	assert.Equal(t, 1, code)
+	assert.Equal(t, "", stdout)
+	assert.Contains(t, stderr, `rshell: sort: command not allowed`)
 }
 
 func TestAwkOperandAssignments(t *testing.T) {
@@ -733,7 +761,6 @@ func TestAwkRejectsUnsafeFeatures(t *testing.T) {
 		`awk '{ system("sh") }' input.txt`,
 		`awk '{ print $1 > "out" }' input.txt`,
 		`awk '{ printf "%s", $1 > "out" }' input.txt`,
-		`awk '{ print getline }' input.txt`,
 		`awk '{ x = next }' input.txt`,
 		`awk 'BEGIN { next }' input.txt`,
 		`awk 'BEGIN { print tolower(), toupper(), int() }' input.txt`,
@@ -752,7 +779,6 @@ func TestAwkRejectsUnsafeFeatures(t *testing.T) {
 		`awk 'BEGIN { print 1 < 2 < 3 }' input.txt`,
 		`awk '{ print 1 / 0 }' input.txt`,
 		`awk -F '' '{ print $1 }' input.txt`,
-		`awk 'BEGIN { print "x" | "sort; cat" }' input.txt`,
 	} {
 		_, stderr, code := cmdRun(t, script, dir)
 		assert.Equal(t, 1, code, script)

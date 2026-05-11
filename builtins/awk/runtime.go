@@ -193,19 +193,27 @@ func numericPrefix(s string) string {
 }
 
 type runtime struct {
-	callCtx    *builtins.CallContext
-	prog       *program
-	vars       map[string]value
-	arrays     map[string]map[string]value
-	varSizes   map[string]int
-	arraySizes map[arraySlot]int
-	varBytes   int
-	rangeOn    map[int]bool
-	environSet bool
-	frames     []callFrame
-	ctx        context.Context
-	pipes      map[string]*commandPipe
-	pipeOrder  []string
+	callCtx          *builtins.CallContext
+	prog             *program
+	vars             map[string]value
+	arrays           map[string]map[string]value
+	varSizes         map[string]int
+	arraySizes       map[arraySlot]int
+	varBytes         int
+	rangeOn          map[int]bool
+	environSet       bool
+	frames           []callFrame
+	ctx              context.Context
+	pipes            map[string]*commandPipe
+	pipeOrder        []string
+	inputArgs        []string
+	inputIndex       int
+	mainInput        *recordSource
+	mainHadInput     bool
+	mainDefaultStdin bool
+	fileInputs       map[string]*recordSource
+	failedFileInputs map[string]bool
+	commandInputs    map[string]*commandInputPipe
 
 	record   string
 	fields   []string
@@ -226,9 +234,19 @@ type callFrame struct {
 
 type commandPipe struct {
 	command string
-	name    string
-	args    []string
 	buf     bytes.Buffer
+}
+
+type commandInputPipe struct {
+	command string
+	source  *recordSource
+	status  uint8
+}
+
+type recordSource struct {
+	name string
+	rc   io.ReadCloser
+	sc   *bufio.Scanner
 }
 
 type localVar struct {
@@ -243,14 +261,17 @@ type localVar struct {
 
 func newRuntime(callCtx *builtins.CallContext, prog *program) *runtime {
 	rt := &runtime{
-		callCtx:    callCtx,
-		prog:       prog,
-		vars:       make(map[string]value),
-		arrays:     make(map[string]map[string]value),
-		varSizes:   make(map[string]int),
-		arraySizes: make(map[arraySlot]int),
-		rangeOn:    make(map[int]bool),
-		pipes:      make(map[string]*commandPipe),
+		callCtx:          callCtx,
+		prog:             prog,
+		vars:             make(map[string]value),
+		arrays:           make(map[string]map[string]value),
+		varSizes:         make(map[string]int),
+		arraySizes:       make(map[arraySlot]int),
+		rangeOn:          make(map[int]bool),
+		pipes:            make(map[string]*commandPipe),
+		fileInputs:       make(map[string]*recordSource),
+		failedFileInputs: make(map[string]bool),
+		commandInputs:    make(map[string]*commandInputPipe),
 	}
 	rt.vars["FS"] = stringValue(" ")
 	rt.vars["OFS"] = stringValue(" ")
@@ -262,6 +283,7 @@ func newRuntime(callCtx *builtins.CallContext, prog *program) *runtime {
 }
 
 func (rt *runtime) run(ctx context.Context, files []string) builtins.Result {
+	rt.inputArgs = append([]string{}, files...)
 	exited := false
 	if err := rt.runRules(ctx, ruleBegin); err != nil {
 		if code, ok := exitCodeFromError(err); ok {
@@ -273,38 +295,35 @@ func (rt *runtime) run(ctx context.Context, files []string) builtins.Result {
 		}
 	}
 	if !exited && rt.needsInput() {
-		if len(files) == 0 {
-			files = []string{"-"}
-		}
-		ranInput := false
-		for _, file := range files {
-			assigned, err := rt.applyOperandAssignment(file)
+		for {
+			rec, ok, err := rt.readMainRecord(ctx)
 			if err != nil {
-				rt.callCtx.Errf("awk: %v\n", err)
-				return builtins.Result{Code: 1}
-			}
-			if assigned {
-				continue
-			}
-			ranInput = true
-			if err := rt.runFile(ctx, file); err != nil {
 				if code, ok := exitCodeFromError(err); ok {
 					rt.exitCode = code
 					exited = true
 					break
 				}
-				rt.callCtx.Errf("awk: %s: %v\n", file, err)
+				rt.callCtx.Errf("awk: %v\n", err)
 				return builtins.Result{Code: 1}
 			}
-		}
-		if !ranInput && !exited {
-			if err := rt.runFile(ctx, "-"); err != nil {
+			if !ok {
+				break
+			}
+			if err := rt.setRecord(rec); err != nil {
+				rt.callCtx.Errf("awk: %v\n", err)
+				return builtins.Result{Code: 1}
+			}
+			if err := rt.runRules(ctx, ruleNormal); err != nil {
+				if errors.Is(err, errNextRecord) {
+					continue
+				}
 				if code, ok := exitCodeFromError(err); ok {
 					rt.exitCode = code
-				} else {
-					rt.callCtx.Errf("awk: -: %v\n", err)
-					return builtins.Result{Code: 1}
+					exited = true
+					break
 				}
+				rt.callCtx.Errf("awk: %v\n", err)
+				return builtins.Result{Code: 1}
 			}
 		}
 	}
@@ -320,6 +339,7 @@ func (rt *runtime) run(ctx context.Context, files []string) builtins.Result {
 		rt.callCtx.Errf("awk: %v\n", err)
 		return builtins.Result{Code: 1}
 	}
+	rt.closeAllInputs()
 	return builtins.Result{Code: normalizeAwkExitCode(rt.exitCode)}
 }
 
@@ -377,41 +397,88 @@ func (rt *runtime) needsInput() bool {
 	return false
 }
 
-func (rt *runtime) runFile(ctx context.Context, file string) error {
+func (rt *runtime) readMainRecord(ctx context.Context) (string, bool, error) {
+	for {
+		if rt.mainInput == nil {
+			ok, err := rt.openNextMainInput(ctx)
+			if err != nil || !ok {
+				return "", false, err
+			}
+		}
+		rec, ok, err := rt.mainInput.readRecord(ctx)
+		if err != nil {
+			return "", false, fmt.Errorf("%s: %v", rt.mainInput.name, err)
+		}
+		if ok {
+			rt.nr++
+			rt.fnr++
+			return rec, true, nil
+		}
+		rt.mainInput.close()
+		rt.mainInput = nil
+	}
+}
+
+func (rt *runtime) openNextMainInput(ctx context.Context) (bool, error) {
+	for rt.inputIndex < len(rt.inputArgs) {
+		arg := rt.inputArgs[rt.inputIndex]
+		rt.inputIndex++
+		assigned, err := rt.applyOperandAssignment(arg)
+		if err != nil {
+			return false, err
+		}
+		if assigned {
+			continue
+		}
+		return rt.openMainInput(ctx, arg)
+	}
+	if !rt.mainHadInput && !rt.mainDefaultStdin {
+		rt.mainDefaultStdin = true
+		return rt.openMainInput(ctx, "-")
+	}
+	return false, nil
+}
+
+func (rt *runtime) openMainInput(ctx context.Context, file string) (bool, error) {
 	rc, err := rt.openInput(ctx, file)
 	if err != nil {
-		return err
+		return false, fmt.Errorf("%s: %v", file, err)
 	}
-	defer rc.Close()
+	rt.mainHadInput = true
 	rt.filename = file
 	rt.fnr = 0
+	rt.mainInput = newRecordSource(file, rc)
+	return true, nil
+}
+
+func newRecordSource(name string, rc io.ReadCloser) *recordSource {
 	sc := bufio.NewScanner(rc)
 	sc.Split(scanAwkRecord)
 	sc.Buffer(make([]byte, 4096), MaxRecordBytes+1)
-	for sc.Scan() {
-		if err := ctx.Err(); err != nil {
-			return err
-		}
-		rec := sc.Text()
-		if len(rec) > MaxRecordBytes {
-			return fmt.Errorf("record exceeds %d bytes", MaxRecordBytes)
-		}
-		if err := rt.setRecord(rec); err != nil {
-			return err
-		}
-		rt.nr++
-		rt.fnr++
-		if err := rt.runRules(ctx, ruleNormal); err != nil {
-			if errors.Is(err, errNextRecord) {
-				continue
-			}
-			return err
-		}
+	return &recordSource{name: name, rc: rc, sc: sc}
+}
+
+func (src *recordSource) readRecord(ctx context.Context) (string, bool, error) {
+	if err := ctx.Err(); err != nil {
+		return "", false, err
 	}
-	if err := sc.Err(); err != nil {
-		return err
+	if !src.sc.Scan() {
+		if err := src.sc.Err(); err != nil {
+			return "", false, err
+		}
+		return "", false, nil
 	}
-	return nil
+	rec := src.sc.Text()
+	if len(rec) > MaxRecordBytes {
+		return "", false, fmt.Errorf("record exceeds %d bytes", MaxRecordBytes)
+	}
+	return rec, true, nil
+}
+
+func (src *recordSource) close() {
+	if src != nil && src.rc != nil {
+		src.rc.Close()
+	}
 }
 
 func scanAwkRecord(data []byte, atEOF bool) (int, []byte, error) {
@@ -470,70 +537,10 @@ func (rt *runtime) commandPipe(command string) (*commandPipe, error) {
 	if pipe, ok := rt.pipes[command]; ok {
 		return pipe, nil
 	}
-	name, args, err := parseCommandPipe(command)
-	if err != nil {
-		return nil, err
-	}
-	if rt.callCtx.CommandAllowed != nil && !rt.callCtx.CommandAllowed(name) {
-		return nil, fmt.Errorf("command pipe %q is not allowed", name)
-	}
-	pipe := &commandPipe{command: command, name: name, args: args}
+	pipe := &commandPipe{command: command}
 	rt.pipes[command] = pipe
 	rt.pipeOrder = append(rt.pipeOrder, command)
 	return pipe, nil
-}
-
-func parseCommandPipe(command string) (string, []string, error) {
-	fields := strings.Fields(command)
-	if len(fields) == 0 {
-		return "", nil, fmt.Errorf("expression for `|' redirection has null string value")
-	}
-	name := fields[0]
-	if !validPipeCommandName(name) {
-		return "", nil, fmt.Errorf("command pipe %q uses unsupported command name", command)
-	}
-	for _, field := range fields {
-		if strings.ContainsRune(field, '\x00') || strings.ContainsRune(field, '\n') || strings.ContainsRune(field, '\r') {
-			return "", nil, fmt.Errorf("command pipe %q uses unsupported shell syntax", command)
-		}
-		for _, ch := range field {
-			if isCommandPipeShellSyntax(ch) {
-				return "", nil, fmt.Errorf("command pipe %q uses unsupported shell syntax", command)
-			}
-		}
-	}
-	return name, fields[1:], nil
-}
-
-func validPipeCommandName(name string) bool {
-	if name == "" {
-		return false
-	}
-	for _, ch := range name {
-		if ch >= 'a' && ch <= 'z' {
-			continue
-		}
-		if ch >= 'A' && ch <= 'Z' {
-			continue
-		}
-		if ch >= '0' && ch <= '9' {
-			continue
-		}
-		if ch == '_' || ch == '-' {
-			continue
-		}
-		return false
-	}
-	return true
-}
-
-func isCommandPipeShellSyntax(ch rune) bool {
-	switch ch {
-	case '\'', '"', '\\', '`', '$', ';', '|', '&', '<', '>', '(', ')', '{', '}', '[', ']', '*', '?':
-		return true
-	default:
-		return false
-	}
 }
 
 func (rt *runtime) closeCommandPipe(ctx context.Context, command string) (uint8, bool, error) {
@@ -569,14 +576,180 @@ func (rt *runtime) closeAllCommandPipes(ctx context.Context) error {
 }
 
 func (rt *runtime) runCommandPipe(ctx context.Context, pipe *commandPipe) (uint8, error) {
-	if rt.callCtx.RunCommandWithStdin == nil {
+	if rt.callCtx.RunScriptWithStdin == nil {
 		return 127, fmt.Errorf("command pipes are not available")
 	}
 	dir := ""
 	if rt.callCtx.WorkDir != nil {
 		dir = rt.callCtx.WorkDir()
 	}
-	return rt.callCtx.RunCommandWithStdin(ctx, dir, pipe.name, pipe.args, bytes.NewReader(pipe.buf.Bytes()))
+	return rt.callCtx.RunScriptWithStdin(ctx, dir, pipe.command, bytes.NewReader(pipe.buf.Bytes()), rt.callCtx.Stdout)
+}
+
+func (rt *runtime) getlineFileRecord(ctx context.Context, name string) (string, int, error) {
+	src, ok := rt.fileInputs[name]
+	if !ok {
+		opened, err := rt.openFileInput(ctx, name)
+		if err != nil {
+			return "", 0, err
+		}
+		if opened == nil {
+			return "", -1, nil
+		}
+		src = opened
+	}
+	rec, ok, err := src.readRecord(ctx)
+	if err != nil {
+		rt.setErrno(err)
+		return "", -1, nil
+	}
+	if !ok {
+		return "", 0, nil
+	}
+	return rec, 1, nil
+}
+
+func (rt *runtime) openFileInput(ctx context.Context, name string) (*recordSource, error) {
+	if name == "" {
+		return nil, fmt.Errorf("fatal: expression for `<' redirection has null string value")
+	}
+	rc, err := rt.openInput(ctx, name)
+	if err != nil {
+		rt.failedFileInputs[name] = true
+		rt.setErrno(err)
+		return nil, nil
+	}
+	src := newRecordSource(name, rc)
+	rt.fileInputs[name] = src
+	delete(rt.failedFileInputs, name)
+	return src, nil
+}
+
+func (rt *runtime) getlineCommandRecord(ctx context.Context, command string) (string, int, error) {
+	pipe, ok := rt.commandInputs[command]
+	if !ok {
+		opened, err := rt.openCommandInput(ctx, command)
+		if err != nil {
+			return "", 0, err
+		}
+		pipe = opened
+	}
+	rec, ok, err := pipe.source.readRecord(ctx)
+	if err != nil {
+		rt.setErrno(err)
+		return "", -1, nil
+	}
+	if !ok {
+		return "", 0, nil
+	}
+	return rec, 1, nil
+}
+
+func (rt *runtime) openCommandInput(ctx context.Context, command string) (*commandInputPipe, error) {
+	if command == "" {
+		return nil, fmt.Errorf("fatal: expression for `|' redirection has null string value")
+	}
+	if rt.callCtx.RunScriptWithStdin == nil {
+		return nil, fmt.Errorf("command pipes are not available")
+	}
+	dir := ""
+	if rt.callCtx.WorkDir != nil {
+		dir = rt.callCtx.WorkDir()
+	}
+	var out limitedBuffer
+	out.max = MaxPipeBytes
+	status, err := rt.callCtx.RunScriptWithStdin(ctx, dir, command, strings.NewReader(""), &out)
+	if out.err != nil {
+		return nil, out.err
+	}
+	if err != nil {
+		return nil, err
+	}
+	pipe := &commandInputPipe{
+		command: command,
+		source:  newRecordSource(command, io.NopCloser(bytes.NewReader(out.buf.Bytes()))),
+		status:  status,
+	}
+	rt.commandInputs[command] = pipe
+	return pipe, nil
+}
+
+type limitedBuffer struct {
+	buf bytes.Buffer
+	max int
+	err error
+}
+
+func (w *limitedBuffer) Write(p []byte) (int, error) {
+	if w.err != nil {
+		return 0, w.err
+	}
+	if len(p) > w.max-w.buf.Len() {
+		remaining := w.max - w.buf.Len()
+		if remaining > 0 {
+			_, _ = w.buf.Write(p[:remaining])
+		}
+		w.err = fmt.Errorf("command pipe output exceeds %d bytes", w.max)
+		return len(p), w.err
+	}
+	n, err := w.buf.Write(p)
+	if err != nil {
+		w.err = err
+	}
+	return n, err
+}
+
+func (rt *runtime) closeCommandInput(command string) (uint8, bool, error) {
+	pipe, ok := rt.commandInputs[command]
+	if !ok {
+		return 0, false, nil
+	}
+	pipe.source.close()
+	delete(rt.commandInputs, command)
+	return pipe.status, true, nil
+}
+
+func (rt *runtime) closeInputFile(name string) (int, bool) {
+	if src, ok := rt.fileInputs[name]; ok {
+		src.close()
+		delete(rt.fileInputs, name)
+		return 0, true
+	}
+	if rt.failedFileInputs[name] {
+		delete(rt.failedFileInputs, name)
+		return -1, true
+	}
+	return 0, false
+}
+
+func (rt *runtime) closeAllInputs() {
+	if rt.mainInput != nil {
+		rt.mainInput.close()
+		rt.mainInput = nil
+	}
+	for name, src := range rt.fileInputs {
+		src.close()
+		delete(rt.fileInputs, name)
+	}
+	for command, pipe := range rt.commandInputs {
+		pipe.source.close()
+		delete(rt.commandInputs, command)
+	}
+}
+
+func (rt *runtime) setErrno(err error) {
+	if err == nil {
+		return
+	}
+	msg := err.Error()
+	if rt.callCtx.PortableErr != nil {
+		msg = rt.callCtx.PortableErr(err)
+	}
+	_ = rt.setVar("ERRNO", stringValue(msg))
+}
+
+func (rt *runtime) setErrnoString(msg string) {
+	_ = rt.setVar("ERRNO", stringValue(msg))
 }
 
 func (rt *runtime) runRules(ctx context.Context, kind ruleKind) error {
