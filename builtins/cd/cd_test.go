@@ -258,12 +258,16 @@ func TestCdOutsideSandboxFails(t *testing.T) {
 	assert.Contains(t, stderr, "permission denied")
 }
 
-func TestCdEmptyOperandRejected(t *testing.T) {
+// TestCdEmptyOperandIsNoop documents the bash 5.2 contract: `cd ""`
+// is a no-op success — pwd is unchanged, no error. Matches the
+// home_empty_is_noop / oldpwd_empty_dash_prints_blank scenarios that
+// exercise the env-var paths through the same code.
+func TestCdEmptyOperandIsNoop(t *testing.T) {
 	dir := canonicalTempDir(t)
-	_, stderr, code := cdRun(t, `cd ""`, dir)
-	assert.Equal(t, 1, code)
-	assert.Contains(t, stderr, "cd:")
-	assert.Contains(t, stderr, "invalid empty operand")
+	stdout, stderr, code := cdRun(t, `start=$(pwd); cd ""; [ "$(pwd)" = "$start" ] && echo same`, dir)
+	assert.Equal(t, 0, code, "stderr=%q", stderr)
+	assert.Equal(t, "", stderr)
+	assert.Equal(t, "same", trim(stdout))
 }
 
 func TestCdTooManyArgs(t *testing.T) {

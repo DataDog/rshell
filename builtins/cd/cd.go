@@ -153,6 +153,17 @@ func makeFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			return builtins.Result{Code: 1}
 		}
 
+		// bash 5.2 treats an empty target as a no-op success: cd ""
+		// stays in place, HOME='' cd stays in place, OLDPWD='' cd -
+		// stays in place but still prints an empty line. We mirror
+		// that contract here without consulting the filesystem.
+		if target == "" {
+			if printResult {
+				callCtx.Out("\n")
+			}
+			return builtins.Result{}
+		}
+
 		// Convert the operand to an absolute candidate path. Relative
 		// paths are joined with the current working directory.
 		cwd := callCtx.WorkDir()
@@ -186,26 +197,27 @@ func makeFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 
 // resolveOperand inspects the parsed positional arguments and returns the
 // target path string. printResult is true when the caller must print the
-// resolved path on success (the `cd -` form). An error is returned when
-// the required env var (HOME / OLDPWD) is unset.
+// resolved path on success (the `cd -` form). An error is returned only
+// when the required env var (HOME / OLDPWD) is *unset*.
+//
+// bash distinguishes "unset" from "set to empty" for both HOME and
+// OLDPWD: an empty value is accepted as a valid (no-op) target, only an
+// unset variable is rejected. The caller short-circuits on target == ""
+// so we do not synthesise an "empty path" sandbox call.
 func resolveOperand(args []string, callCtx *builtins.CallContext) (target string, printResult bool, err error) {
 	if len(args) == 0 {
 		// No-arg form: change to $HOME.
 		home, ok := lookupEnv(callCtx, "HOME")
-		if !ok || home == "" {
+		if !ok {
 			return "", false, errors.New("HOME not set")
 		}
 		return home, false, nil
 	}
 
 	operand := args[0]
-	if operand == "" {
-		// Empty operand is rejected by POSIX.
-		return "", false, errors.New("invalid empty operand")
-	}
 	if operand == "-" {
 		oldpwd, ok := lookupEnv(callCtx, "OLDPWD")
-		if !ok || oldpwd == "" {
+		if !ok {
 			return "", false, errors.New("OLDPWD not set")
 		}
 		return oldpwd, true, nil
