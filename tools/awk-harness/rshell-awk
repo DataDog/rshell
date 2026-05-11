@@ -3,7 +3,7 @@
 set -euo pipefail
 
 RSHELL_BIN="${RSHELL_BIN:-./rshell}"
-RSHELL_ALLOWED_PATHS="${RSHELL_ALLOWED_PATHS:-/}"
+RSHELL_ALLOWED_PATHS="${RSHELL_ALLOWED_PATHS:-$PWD}"
 
 die() {
 	printf '[rshell-awk] error: %s\n' "$*" >&2

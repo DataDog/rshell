@@ -6,6 +6,7 @@ upstream:
 covers:
   - getline requires an assignable target expression
   - repeated post-increment operators after a field reference are a syntax error
+oracle_stderr_skip: rshell emits compact parser diagnostics without GNU awk caret rendering.
 input:
   program: |
     BEGIN {

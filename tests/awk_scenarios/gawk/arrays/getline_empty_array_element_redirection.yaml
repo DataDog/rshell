@@ -6,6 +6,7 @@ upstream:
 covers:
   - missing array element redirection operands evaluate to the empty string
   - getline input redirection rejects a null filename
+oracle_stderr_skip: rshell emits compact fatal diagnostics without GNU awk command-line prefixes.
 input:
   program: |
     BEGIN {

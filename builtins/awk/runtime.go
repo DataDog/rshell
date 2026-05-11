@@ -291,8 +291,7 @@ func (rt *runtime) run(ctx context.Context, files []string) builtins.Result {
 			rt.exitCode = code
 			exited = true
 		} else {
-			rt.callCtx.Errf("awk: %v\n", err)
-			return builtins.Result{Code: 1}
+			return rt.errorResult(err)
 		}
 	}
 	if !exited && rt.needsInput() {
@@ -304,15 +303,13 @@ func (rt *runtime) run(ctx context.Context, files []string) builtins.Result {
 					exited = true
 					break
 				}
-				rt.callCtx.Errf("awk: %v\n", err)
-				return builtins.Result{Code: 1}
+				return rt.errorResult(err)
 			}
 			if !ok {
 				break
 			}
 			if err := rt.setRecord(rec); err != nil {
-				rt.callCtx.Errf("awk: %v\n", err)
-				return builtins.Result{Code: 1}
+				return rt.errorResult(err)
 			}
 			if err := rt.runRules(ctx, ruleNormal); err != nil {
 				if errors.Is(err, errNextRecord) {
@@ -323,8 +320,7 @@ func (rt *runtime) run(ctx context.Context, files []string) builtins.Result {
 					exited = true
 					break
 				}
-				rt.callCtx.Errf("awk: %v\n", err)
-				return builtins.Result{Code: 1}
+				return rt.errorResult(err)
 			}
 		}
 	}
@@ -332,16 +328,23 @@ func (rt *runtime) run(ctx context.Context, files []string) builtins.Result {
 		if code, ok := exitCodeFromError(err); ok {
 			rt.exitCode = code
 		} else {
-			rt.callCtx.Errf("awk: %v\n", err)
-			return builtins.Result{Code: 1}
+			return rt.errorResult(err)
 		}
 	}
 	if err := rt.closeAllCommandPipes(ctx); err != nil {
-		rt.callCtx.Errf("awk: %v\n", err)
-		return builtins.Result{Code: 1}
+		return rt.errorResult(err)
 	}
 	rt.closeAllInputs()
 	return builtins.Result{Code: normalizeAwkExitCode(rt.exitCode)}
+}
+
+func (rt *runtime) errorResult(err error) builtins.Result {
+	rt.callCtx.Errf("awk: %v\n", err)
+	code := uint8(1)
+	if strings.HasPrefix(err.Error(), "fatal: ") {
+		code = 2
+	}
+	return builtins.Result{Code: code}
 }
 
 func exitCodeFromError(err error) (int, bool) {
@@ -755,6 +758,9 @@ func (rt *runtime) setErrno(err error) {
 	msg := err.Error()
 	if rt.callCtx.PortableErr != nil {
 		msg = rt.callCtx.PortableErr(err)
+	}
+	if len(msg) > 0 && msg[0] >= 'a' && msg[0] <= 'z' {
+		msg = string(msg[0]-'a'+'A') + msg[1:]
 	}
 	_ = rt.setVar("ERRNO", stringValue(msg))
 }

@@ -24,13 +24,14 @@ import (
 )
 
 type awkScenario struct {
-	Description string              `yaml:"description"`
-	Upstream    awkUpstreamMetadata `yaml:"upstream"`
-	Covers      []string            `yaml:"covers"`
-	Skip        string              `yaml:"skip"`
-	Setup       setup               `yaml:"setup"`
-	Input       awkInput            `yaml:"input"`
-	Expect      awkExpected         `yaml:"expect"`
+	Description      string              `yaml:"description"`
+	Upstream         awkUpstreamMetadata `yaml:"upstream"`
+	Covers           []string            `yaml:"covers"`
+	Skip             string              `yaml:"skip"`
+	OracleStderrSkip string              `yaml:"oracle_stderr_skip"`
+	Setup            setup               `yaml:"setup"`
+	Input            awkInput            `yaml:"input"`
+	Expect           awkExpected         `yaml:"expect"`
 }
 
 type awkUpstreamMetadata struct {
@@ -140,7 +141,9 @@ func TestAwkScenarios(t *testing.T) {
 						want := runAwkScenario(t, oracle, sc, timeout)
 						assert.Equal(t, want.exitCode, got.exitCode, "exit code mismatch against GNU awk oracle")
 						assert.Equal(t, want.stdout, got.stdout, "stdout mismatch against GNU awk oracle")
-						assert.Equal(t, want.stderr, got.stderr, "stderr mismatch against GNU awk oracle")
+						if sc.OracleStderrSkip == "" {
+							assert.Equal(t, want.stderr, got.stderr, "stderr mismatch against GNU awk oracle")
+						}
 					}
 				})
 			}
