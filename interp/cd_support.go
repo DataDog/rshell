@@ -79,19 +79,26 @@ func (r *Runner) changeDir(absDir string) error {
 		oldDir = v.Str
 	}
 
-	r.Dir = cleaned
-	// Use setVarErr so storage-cap failures propagate up: setVarString
-	// only stashes the failure on r.exit.code, which then gets clobbered
-	// by the cd builtin's Result{}. Returning the error keeps cd
-	// reporting exit 1 (and aborting on total-storage exhaustion via
-	// the runner's exit handling) instead of silently leaving PWD or
-	// OLDPWD stale while r.Dir has moved.
+	// Apply env writes BEFORE committing r.Dir so a failed cd leaves
+	// shell state untouched (matches bash, which never mutates pwd on a
+	// failed cd). setVarErr can fail when the total variable storage
+	// cap is exhausted; if either write errors, restore any prior
+	// OLDPWD and return without touching r.Dir. Without this ordering
+	// a failed env write would leave subsequent relative file
+	// operations resolving from a new directory while $PWD/$OLDPWD
+	// still pointed elsewhere.
+	prevOLDPWD := r.writeEnv.Get("OLDPWD")
 	if err := r.setVarErr("OLDPWD", expand.Variable{Set: true, Kind: expand.String, Str: oldDir}); err != nil {
 		return err
 	}
 	if err := r.setVarErr("PWD", expand.Variable{Set: true, Kind: expand.String, Str: cleaned}); err != nil {
+		// Roll back OLDPWD to its pre-cd value via setVarRestore so
+		// the storage cap doesn't block the restore itself.
+		r.setVarRestore("OLDPWD", prevOLDPWD)
 		return err
 	}
+
+	r.Dir = cleaned
 	return nil
 }
 
