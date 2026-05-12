@@ -71,15 +71,36 @@ func RewriteError(err error, args []string) string {
 	if strings.HasPrefix(msg, "invalid argument ") &&
 		strings.HasSuffix(msg, "flag does not allow an argument") {
 		if d, ok := extractFlagDescriptor(msg); ok {
-			// `-X=value` for a no-arg shorthand: GNU getopt iterates
-			// shorthand chars and treats `=` as an unknown shorthand,
-			// emitting `invalid option -- '='`. pflag instead routes
-			// the value through Set, hitting our no-arg guard. Match
-			// GNU when the original argv used the shorthand=value form.
-			if shortFlagEqualsValueIn(d, args) {
-				return "invalid option -- '='"
+			// pflag's error doesn't tell us which form (long --foo=val
+			// or short -X=val) the user actually typed; both route
+			// through the same Set call. We need to know because GNU
+			// emits different wording: `option '--foo' doesn't allow
+			// an argument` for the long form vs `invalid option --
+			// '='` for the short form (where GNU getopt sees `=` as
+			// an invalid shorthand char following the registered one).
+			//
+			// pflag stops at the FIRST bad option in argv, so we scan
+			// left-to-right and use whichever form appears first. Only
+			// scan up to `--` (end-of-flags).
+			long := longFlagName(d)
+			short, hasShort := shortFlagFromDescriptor(d)
+			hasLong := strings.HasPrefix(long, "--")
+			longPrefix := long + "="
+			for _, a := range args {
+				if a == "--" {
+					break
+				}
+				if hasLong && strings.HasPrefix(a, longPrefix) {
+					return "option '" + long + "' doesn't allow an argument"
+				}
+				if hasShort && len(a) >= 3 && a[0] == '-' && a[1] != '-' && a[1] == short && a[2] == '=' {
+					return "invalid option -- '='"
+				}
 			}
-			return "option '" + longFlagName(d) + "' doesn't allow an argument"
+			// Neither form found in argv (shouldn't happen for a
+			// successful pflag failure but stay safe). Default to the
+			// long-form message.
+			return "option '" + long + "' doesn't allow an argument"
 		}
 	}
 
@@ -179,26 +200,6 @@ func recoverLongFlagToken(flag string, args []string) string {
 		}
 	}
 	return flag
-}
-
-// shortFlagEqualsValueIn reports whether args contains a token of the
-// form `-X=...` whose shorthand char X matches the shorthand encoded
-// in descriptor (e.g. `-h, --human-readable` → X=`h`). Used to detect
-// the GNU-getopt shorthand=value error class.
-func shortFlagEqualsValueIn(descriptor string, args []string) bool {
-	short, ok := shortFlagFromDescriptor(descriptor)
-	if !ok {
-		return false
-	}
-	for _, a := range args {
-		if a == "--" {
-			break
-		}
-		if len(a) >= 3 && a[0] == '-' && a[1] != '-' && a[1] == short && a[2] == '=' {
-			return true
-		}
-	}
-	return false
 }
 
 // shortFlagFromDescriptor extracts the single shorthand char from a

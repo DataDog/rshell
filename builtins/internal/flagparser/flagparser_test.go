@@ -183,6 +183,24 @@ func TestRewriteError(t *testing.T) {
 			want: "option '--all' doesn't allow an argument",
 		},
 		{
+			// Long form appears FIRST — even though a matching short form
+			// is also in argv, pflag failed on the long one. We must not
+			// report the (later-appearing) shorthand=value error.
+			name: "long --foo=val before -X=val: long-form error wins",
+			in:   `invalid argument "true" for "-h, --human-readable" flag: flag does not allow an argument`,
+			args: []string{"--human-readable=true", "-h=x"},
+			want: "option '--human-readable' doesn't allow an argument",
+		},
+		{
+			// Short form appears FIRST — even if a later --LONG=val
+			// exists in argv. (Not realistic for real builtins, but tests
+			// the left-to-right rule.)
+			name: "short -X=val before --LONG=val: short-form error wins",
+			in:   `invalid argument "true" for "-h, --human-readable" flag: flag does not allow an argument`,
+			args: []string{"-h=x", "--human-readable=true"},
+			want: "invalid option -- '='",
+		},
+		{
 			name: "no-arg with long-only descriptor",
 			in:   `invalid argument "true" for "--total" flag: flag does not allow an argument`,
 			args: []string{"--total=true"},
