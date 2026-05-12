@@ -220,7 +220,8 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			hasSep = true
 		}
 
-		// Parse key definitions.
+		// Parse key definitions. -k parsing errors are reported BEFORE
+		// --help to match GNU (e.g. `sort -k bad --help` exits 2).
 		globalOpts := keyOpts{
 			numeric:      *numeric,
 			humanNumeric: *humanNumeric,
@@ -242,8 +243,23 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			}
 		}
 
+		// === --help short-circuit. Sits AFTER --check/-t/-k validation
+		// (GNU exits non-zero for those even with --help) but BEFORE the
+		// global -dn/-dh/-hn conflict checks below (GNU treats those as
+		// deferred validation — `sort -d -n --help` prints help and
+		// exits 0). ===
+		if *help {
+			callCtx.Out("Usage: sort [OPTION]... [FILE]...\n")
+			callCtx.Out("Write sorted concatenation of all FILE(s) to standard output.\n")
+			callCtx.Out("With no FILE, or when FILE is -, read standard input.\n\n")
+			fs.SetOutput(callCtx.Stdout)
+			fs.PrintDefaults()
+			return builtins.Result{}
+		}
+
 		// Validate incompatible global flags: -d and -n cannot coexist
 		// unless every key has per-key opts that override the globals.
+		// GNU defers these until after --help, so we do too.
 		if globalOpts.dictOrder && globalOpts.numeric {
 			globalsUsed := len(keys) == 0
 			for _, k := range keys {
@@ -286,16 +302,6 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 				callCtx.Errf("sort: options '-hn' are incompatible\n")
 				return builtins.Result{Code: 2}
 			}
-		}
-
-		// === --help short-circuit (after GNU-style validations). ===
-		if *help {
-			callCtx.Out("Usage: sort [OPTION]... [FILE]...\n")
-			callCtx.Out("Write sorted concatenation of all FILE(s) to standard output.\n")
-			callCtx.Out("With no FILE, or when FILE is -, read standard input.\n\n")
-			fs.SetOutput(callCtx.Stdout)
-			fs.PrintDefaults()
-			return builtins.Result{}
 		}
 
 		// === rshell-specific rejections — kept AFTER --help. GNU sort
