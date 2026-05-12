@@ -84,6 +84,19 @@ jobs:
           - pkg: ./builtins/tests/ps/
             name: ps
             corpus_path: builtins/tests/ps
+          - pkg: ./builtins/df/
+            name: df
+            # df fuzz tests live in builtins/df/ (not builtins/tests/df/)
+            # because the test-helper functions (firstLine, requireSupported)
+            # are defined in df_test.go and only visible to files in the
+            # same directory.
+            corpus_path: builtins/df
+          - pkg: ./builtins/internal/diskstats/
+            name: diskstats
+            # The mountinfo parser is the most security-sensitive parser
+            # in df. Fuzzing it directly is much faster than going
+            # through the shell runner.
+            corpus_path: builtins/internal/diskstats
           - pkg: ./builtins/tests/xargs/
             name: xargs
             corpus_path: builtins/tests/xargs

@@ -1,0 +1,12 @@
+description: df rejects --all=true (no-arg flags use a NUL-byte NoOptDefVal sentinel that argv cannot forge, so any explicit value is rejected with "flag does not allow an argument").
+skip_assert_against_bash: true
+input:
+  script: |+
+    df --all=true; echo "code:$?"
+expect:
+  stdout_contains:
+    - "code:1"
+  stderr_contains:
+    - "df:"
+    - "does not allow an argument"
+  exit_code: 0

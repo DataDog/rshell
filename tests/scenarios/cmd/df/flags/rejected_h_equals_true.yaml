@@ -1,0 +1,12 @@
+description: df rejects -h=true (the short shorthand also goes through the unitFlag NUL-byte sentinel guard, so the explicit-value form fails just like the long form --human-readable=true).
+skip_assert_against_bash: true
+input:
+  script: |+
+    df -h=true; echo "code:$?"
+expect:
+  stdout_contains:
+    - "code:1"
+  stderr_contains:
+    - "df:"
+    - "does not allow an argument"
+  exit_code: 0

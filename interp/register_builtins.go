@@ -14,6 +14,7 @@ import (
 	"github.com/DataDog/rshell/builtins/cd"
 	continuecmd "github.com/DataDog/rshell/builtins/continue"
 	"github.com/DataDog/rshell/builtins/cut"
+	"github.com/DataDog/rshell/builtins/df"
 	"github.com/DataDog/rshell/builtins/du"
 	"github.com/DataDog/rshell/builtins/echo"
 	"github.com/DataDog/rshell/builtins/exit"
@@ -28,6 +29,7 @@ import (
 	printfcmd "github.com/DataDog/rshell/builtins/printf"
 	pscmd "github.com/DataDog/rshell/builtins/ps"
 	"github.com/DataDog/rshell/builtins/pwd"
+	readcmd "github.com/DataDog/rshell/builtins/read"
 	"github.com/DataDog/rshell/builtins/sed"
 	sortcmd "github.com/DataDog/rshell/builtins/sort"
 	"github.com/DataDog/rshell/builtins/ss"
@@ -52,6 +54,7 @@ func registerBuiltins() {
 			cd.Cmd,
 			cut.Cmd,
 			continuecmd.Cmd,
+			df.Cmd,
 			du.Cmd,
 			echo.Cmd,
 			exit.Cmd,
@@ -67,6 +70,7 @@ func registerBuiltins() {
 			printfcmd.Cmd,
 			pscmd.Cmd,
 			pwd.Cmd,
+			readcmd.Cmd,
 			sed.Cmd,
 			ss.Cmd,
 			strings_cmd.Cmd,

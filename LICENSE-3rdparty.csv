@@ -26,6 +26,7 @@ golang.org/x/mod,https://github.com/golang/mod,BSD-3-Clause,Copyright (c) 2009 T
 golang.org/x/net,https://github.com/golang/net,BSD-3-Clause,Copyright (c) 2009 The Go Authors. All rights reserved.
 golang.org/x/sync,https://github.com/golang/sync,BSD-3-Clause,Copyright (c) 2009 The Go Authors. All rights reserved.
 golang.org/x/sys,https://github.com/golang/sys,BSD-3-Clause,Copyright (c) 2009 The Go Authors. All rights reserved.
+golang.org/x/term,https://github.com/golang/term,BSD-3-Clause,Copyright (c) 2009 The Go Authors. All rights reserved.
 golang.org/x/time,https://github.com/golang/time,BSD-3-Clause,Copyright (c) 2009 The Go Authors. All rights reserved.
 golang.org/x/tools,https://github.com/golang/tools,BSD-3-Clause,Copyright (c) 2009 The Go Authors. All rights reserved.
 gopkg.in/yaml.v3,https://github.com/go-yaml/yaml,MIT AND Apache-2.0,"Copyright (c) 2006-2011 Kirill Simonov, 2011-2019 Canonical Ltd"

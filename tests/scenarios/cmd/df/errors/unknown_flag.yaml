@@ -1,0 +1,9 @@
+description: df rejects unknown flags with exit 1
+skip_assert_against_bash: true
+input:
+  script: |+
+    df --no-such-flag
+expect:
+  stdout: ""
+  stderr_contains: ["df:"]
+  exit_code: 1
