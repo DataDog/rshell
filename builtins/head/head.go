@@ -121,18 +121,17 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 		// shared args-trim in builtins/builtins.go relies on this
 		// ordering to safely honor `--help` after value-taking flags.
 		// GNU also rejects invalid values for flags that are later
-		// overridden by another mode flag (e.g. "head -n xyz -c 1").
-		if linesFlag.pos > 0 {
-			if _, ok := parseCount(linesFlag.val); !ok {
-				callCtx.Errf("head: invalid number of lines: '%s'\n", linesFlag.val)
-				return builtins.Result{Code: 1}
-			}
+		// overridden by another value (e.g. `head -n xyz -n 1`); the
+		// modeFlag.Set captures the FIRST invalid value rather than
+		// just whichever was set last, so this check reports the same
+		// value GNU would.
+		if linesFlag.pos > 0 && linesFlag.hasInvalid {
+			callCtx.Errf("head: invalid number of lines: '%s'\n", linesFlag.invalid)
+			return builtins.Result{Code: 1}
 		}
-		if bytesFlag.pos > 0 {
-			if _, ok := parseCount(bytesFlag.val); !ok {
-				callCtx.Errf("head: invalid number of bytes: '%s'\n", bytesFlag.val)
-				return builtins.Result{Code: 1}
-			}
+		if bytesFlag.pos > 0 && bytesFlag.hasInvalid {
+			callCtx.Errf("head: invalid number of bytes: '%s'\n", bytesFlag.invalid)
+			return builtins.Result{Code: 1}
 		}
 
 		if *help {
@@ -392,10 +391,18 @@ func parseCount(s string) (int64, bool) {
 // the counter and records the new value in pos. After pflag.Parse, comparing
 // pos fields reveals which flag appeared last on the command line — without
 // scanning raw args or inspecting individual characters of flag tokens.
+//
+// Set always returns nil so pflag.Parse never fails on a bad numeric value;
+// validation happens in the bound handler. To match GNU's left-to-right
+// option processing (which reports the FIRST invalid value, not whichever
+// happened to be set last), Set records the first invalid input it sees in
+// invalid/hasInvalid. The handler reports that value if hasInvalid is true.
 type modeFlag struct {
-	val string
-	seq *int // shared per-invocation counter; incremented on every Set call
-	pos int  // counter value when Set was last called; 0 means never set
+	val        string
+	seq        *int   // shared per-invocation counter; incremented on every Set call
+	pos        int    // counter value when Set was last called; 0 means never set
+	invalid    string // first value rejected by parseCount, if any
+	hasInvalid bool   // true if Set ever saw an invalid value
 }
 
 func newModeFlag(seq *int, defaultVal string) *modeFlag {
@@ -407,6 +414,12 @@ func (f *modeFlag) Set(s string) error {
 	f.val = s
 	*f.seq++
 	f.pos = *f.seq
+	if !f.hasInvalid {
+		if _, ok := parseCount(s); !ok {
+			f.invalid = s
+			f.hasInvalid = true
+		}
+	}
 	return nil
 }
 func (f *modeFlag) Type() string { return "string" }

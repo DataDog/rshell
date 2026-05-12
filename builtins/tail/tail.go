@@ -179,18 +179,17 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 		// shared args-trim in builtins/builtins.go relies on this
 		// ordering to safely honour `--help` after value-taking flags.
 		// GNU also rejects invalid values for flags that are later
-		// overridden by another mode flag (e.g. "tail -n xyz -c 1").
-		if linesFlag.pos > 0 {
-			if _, ok := parseCount(linesFlag.val); !ok {
-				callCtx.Errf("tail: invalid number of lines: '%s'\n", linesFlag.val)
-				return builtins.Result{Code: 1}
-			}
+		// overridden by another value (e.g. `tail -n xyz -n 1`); the
+		// modeFlag.Set captures the FIRST invalid value rather than
+		// just whichever was set last, so this check reports the same
+		// value GNU would.
+		if linesFlag.pos > 0 && linesFlag.hasInvalid {
+			callCtx.Errf("tail: invalid number of lines: '%s'\n", linesFlag.invalid)
+			return builtins.Result{Code: 1}
 		}
-		if bytesFlag.pos > 0 {
-			if _, ok := parseCount(bytesFlag.val); !ok {
-				callCtx.Errf("tail: invalid number of bytes: '%s'\n", bytesFlag.val)
-				return builtins.Result{Code: 1}
-			}
+		if bytesFlag.pos > 0 && bytesFlag.hasInvalid {
+			callCtx.Errf("tail: invalid number of bytes: '%s'\n", bytesFlag.invalid)
+			return builtins.Result{Code: 1}
 		}
 
 		if *help {
@@ -764,6 +763,8 @@ type modeFlag struct {
 	seq        *int
 	pos        int
 	offsetSeen bool
+	invalid    string // first value rejected by parseCount, if any
+	hasInvalid bool   // true if Set ever saw an invalid value
 }
 
 func newModeFlag(seq *int, defaultVal string) *modeFlag {
@@ -772,12 +773,17 @@ func newModeFlag(seq *int, defaultVal string) *modeFlag {
 
 func (f *modeFlag) String() string { return f.val }
 
-// Set always returns nil — value validation happens upfront in the
-// bound handler so that pflag.Parse never fails on a bad numeric value.
+// Set always returns nil — value validation happens in the bound
+// handler so that pflag.Parse never fails on a bad numeric value.
 // This lets the shared `--help` short-circuit in builtins/builtins.go
 // honour `tail --help -n nope` (printing help) while still letting
 // `tail -n nope --help` surface the validation error with GNU's exact
 // `tail: invalid number of lines: 'nope'` wording (no pflag wrap).
+//
+// To match GNU's left-to-right semantics for repeated flags
+// (`tail -n nope -n 1` errors on `nope`, not on `1`), Set captures the
+// FIRST invalid value it sees in invalid/hasInvalid. The handler
+// reports that value rather than whatever Set last assigned to val.
 func (f *modeFlag) Set(s string) error {
 	f.val = s
 	if len(s) > 0 && s[0] == '+' {
@@ -785,6 +791,12 @@ func (f *modeFlag) Set(s string) error {
 	}
 	*f.seq++
 	f.pos = *f.seq
+	if !f.hasInvalid {
+		if _, ok := parseCount(s); !ok {
+			f.invalid = s
+			f.hasInvalid = true
+		}
+	}
 	return nil
 }
 func (f *modeFlag) Type() string { return "string" }
