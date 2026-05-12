@@ -65,6 +65,20 @@
 //	~user       User-home expansion is a parser concern, not cd's.
 //	cdable_vars Bash extension that treats unknown directories as variable
 //	            names; off by default in bash too.
+//
+// Sandbox-spanning invariants (`-P` divergence from bash):
+//
+//	The per-component walker for `-P` mode only resolves symlinks whose
+//	parent component is inside `AllowedPaths`. Lstat against an
+//	above-sandbox path returns `ErrPermission`, which the walker treats
+//	as an opaque pass-through — so a sandbox-internal target reached
+//	through an above-sandbox symlink (e.g. on macOS where `/tmp` is a
+//	symlink to `/private/tmp`) is *not* resolved for that hop. The
+//	final `changeDir` still rejects results outside the sandbox, so
+//	this is a divergence from bash (which would resolve every hop),
+//	not a security weakening. Operators running cd in a container-style
+//	sandbox where the AllowedPaths root itself is a symlink should
+//	expect cd -P to behave like cd -L for that root segment.
 package cd
 
 import (
@@ -142,7 +156,12 @@ func makeFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 		}
 
 		if callCtx.ChangeDir == nil || callCtx.WorkDir == nil {
-			callCtx.Errf("cd: not supported in this runner\n")
+			// ChangeDir is intentionally nil for RunCommand-spawned
+			// children (find -exec, find -execdir, xargs) so a cd
+			// inside a sub-command cannot leak into the parent shell.
+			// Surface that to the user rather than leaving them
+			// guessing why cd "is not supported".
+			callCtx.Errf("cd: cannot change directory from inside find -exec/-execdir or xargs (child invocations are isolated)\n")
 			return builtins.Result{Code: 1}
 		}
 
