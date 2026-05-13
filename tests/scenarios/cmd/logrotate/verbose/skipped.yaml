@@ -1,0 +1,16 @@
+# skip: logrotate is a demo builtin with no bash equivalent.
+skip_assert_against_bash: true
+description: -v reports skipped files when -s threshold filters them out.
+setup:
+  files:
+    - path: small.log
+      content: "tiny\n"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    logrotate -v -s 1K small.log
+expect:
+  stdout: |+
+    logrotate: small.log: 5 bytes below threshold 1024, skipping
+  stderr: |+
+  exit_code: 0

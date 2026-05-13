@@ -1,0 +1,17 @@
+# skip: logrotate is a demo builtin with no bash equivalent.
+skip_assert_against_bash: true
+description: logrotate empties a single log file via the sandbox.
+setup:
+  files:
+    - path: app.log
+      content: "request 1\nrequest 2\nrequest 3\n"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    logrotate app.log
+    wc -c < app.log
+expect:
+  stdout: |+
+    0
+  stderr: |+
+  exit_code: 0

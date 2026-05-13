@@ -1,0 +1,17 @@
+# skip: logrotate is a demo builtin with no bash equivalent.
+skip_assert_against_bash: true
+description: -s SIZE leaves a file untouched when it is below the threshold.
+setup:
+  files:
+    - path: small.log
+      content: "tiny\n"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    logrotate -s 1K small.log
+    wc -c < small.log
+expect:
+  stdout: |+
+    5
+  stderr: |+
+  exit_code: 0
