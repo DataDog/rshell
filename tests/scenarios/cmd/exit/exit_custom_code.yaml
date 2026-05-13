@@ -1,8 +1,0 @@
-description: Exit with custom status code 17.
-input:
-  script: |+
-    exit 17
-expect:
-  stdout: ""
-  stderr: ""
-  exit_code: 17
