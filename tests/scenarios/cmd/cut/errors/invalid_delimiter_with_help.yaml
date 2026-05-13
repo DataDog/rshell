@@ -7,4 +7,5 @@ expect:
     code:1
   stderr: |+
     cut: the delimiter must be a single character
+    Try 'cut --help' for more information.
   exit_code: 0

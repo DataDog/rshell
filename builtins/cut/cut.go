@@ -115,9 +115,11 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 		// builtins/builtins.go relies on this ordering to safely honour
 		// `--help` after value-taking flags. Only validate when -d was
 		// actually set so `cut --help` (no -d, default "\t") still
-		// short-circuits cleanly.
+		// short-circuits cleanly. GNU appends `Try 'cut --help' for
+		// more information.` after this specific error.
 		if fs.Changed("delimiter") && len(*delimiter) != 1 {
 			callCtx.Errf("cut: the delimiter must be a single character\n")
+			callCtx.Errf("Try 'cut --help' for more information.\n")
 			return builtins.Result{Code: 1}
 		}
 
