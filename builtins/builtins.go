@@ -17,6 +17,8 @@ import (
 	"time"
 
 	"github.com/spf13/pflag"
+
+	"github.com/DataDog/rshell/builtins/internal/flagparser"
 )
 
 // ErrVarStorageExceeded is returned by CallContext.SetVar when the
@@ -96,8 +98,27 @@ func (c Command) Register() {
 		if normalize != nil {
 			args = normalize(args)
 		}
+		hasHelp := fs.Lookup("help") != nil
+		// Honor `--help` once it's reached in argv to match GNU coreutils.
+		// flagparser.TrialHelpTrimIndex trial-parses the prefix; if every
+		// preceding option parses cleanly the suffix is safely discardable
+		// and the builtin's handler short-circuits on `--help`. Builtins
+		// with handler-time validation (e.g. head/tail's numeric -n/-c
+		// checks) must validate BEFORE the `--help` short-circuit fires,
+		// otherwise an invalid value followed by `--help` would silently
+		// print help.
+		if hasHelp {
+			if idx, ok := flagparser.TrialHelpTrimIndex(name, func(trial *pflag.FlagSet) {
+				_ = factory(trial)
+			}, args); ok {
+				args = args[:idx+1]
+			}
+		}
 		if err := fs.Parse(args); err != nil {
-			callCtx.Errf("%s: %v\n", name, err)
+			callCtx.Errf("%s: %s\n", name, flagparser.RewriteError(err, args))
+			if hasHelp {
+				callCtx.Errf("Try '%s --help' for more information.\n", name)
+			}
 			return Result{Code: 1}
 		}
 		return handler(ctx, callCtx, fs.Args())

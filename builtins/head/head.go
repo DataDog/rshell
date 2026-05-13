@@ -114,6 +114,31 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 	fs.VarP(bytesFlag, "bytes", "c", "print the first N bytes instead of lines")
 
 	return func(ctx context.Context, callCtx *builtins.CallContext, files []string) builtins.Result {
+		// Validate all explicitly set mode flags upfront, BEFORE the
+		// --help short-circuit. GNU head processes options left-to-right
+		// and validates each as it goes, so `head -n xyz --help` exits
+		// with "invalid number of lines" rather than printing help; the
+		// shared args-trim in builtins/builtins.go relies on this
+		// ordering to safely honor `--help` after value-taking flags.
+		// GNU also rejects invalid values for flags that are later
+		// overridden by another value (e.g. `head -n xyz -n 1`); the
+		// modeFlag.Set captures the FIRST invalid value rather than
+		// just whichever was set last, so this check reports the same
+		// value GNU would.
+		//
+		// When BOTH -n and -c have invalid values, report whichever
+		// appeared first in argv (smaller invalidPos), again matching
+		// GNU's left-to-right rule. E.g. `head -c bad -n nope` reports
+		// the byte error; `head -n nope -c bad` reports the line one.
+		if reportLinesInvalidFirst(linesFlag, bytesFlag) {
+			callCtx.Errf("head: invalid number of lines: '%s'\n", linesFlag.invalid)
+			return builtins.Result{Code: 1}
+		}
+		if bytesFlag.hasInvalid {
+			callCtx.Errf("head: invalid number of bytes: '%s'\n", bytesFlag.invalid)
+			return builtins.Result{Code: 1}
+		}
+
 		if *help {
 			callCtx.Out("Usage: head [OPTION]... [FILE]...\n")
 			callCtx.Out("Print the first 10 lines of each FILE to standard output.\n")
@@ -121,22 +146,6 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			fs.SetOutput(callCtx.Stdout)
 			fs.PrintDefaults()
 			return builtins.Result{}
-		}
-
-		// Validate all explicitly set mode flags upfront. GNU head rejects
-		// invalid values even for flags that are overridden by a later mode
-		// flag on the command line (e.g. "head -n xyz -c 1" fails).
-		if linesFlag.pos > 0 {
-			if _, ok := parseCount(linesFlag.val); !ok {
-				callCtx.Errf("head: invalid number of lines: %q\n", linesFlag.val)
-				return builtins.Result{Code: 1}
-			}
-		}
-		if bytesFlag.pos > 0 {
-			if _, ok := parseCount(bytesFlag.val); !ok {
-				callCtx.Errf("head: invalid number of bytes: %q\n", bytesFlag.val)
-				return builtins.Result{Code: 1}
-			}
 		}
 
 		// Bytes mode wins if -c/--bytes was parsed after -n/--lines. When neither
@@ -153,9 +162,12 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			modeLabel = "bytes"
 		}
 
+		// Both explicit -n/-c values are already validated above. The
+		// only remaining failure path is the implicit default "10" for
+		// the linesFlag when neither was set, which always parses.
 		count, ok := parseCount(countStr)
 		if !ok {
-			callCtx.Errf("head: invalid number of %s: %q\n", modeLabel, countStr)
+			callCtx.Errf("head: invalid number of %s: '%s'\n", modeLabel, countStr)
 			return builtins.Result{Code: 1}
 		}
 
@@ -362,6 +374,20 @@ func readBytes(ctx context.Context, callCtx *builtins.CallContext, r io.Reader, 
 	return nil
 }
 
+// reportLinesInvalidFirst reports whether `head` should surface the
+// linesFlag invalid-value error rather than bytesFlag's. True when only
+// -n had an invalid value, or both did and -n came first in argv
+// (smaller invalidPos). Matches GNU's leftmost-bad-option rule.
+func reportLinesInvalidFirst(lines, bytes *modeFlag) bool {
+	if !lines.hasInvalid {
+		return false
+	}
+	if !bytes.hasInvalid {
+		return true
+	}
+	return lines.invalidPos < bytes.invalidPos
+}
+
 // parseCount parses a line or byte count string. A leading '+' is
 // accepted (treated as a positive sign by strconv.ParseInt, matching GNU
 // head behavior). Returns (count, true) on success, (0, false) on failure.
@@ -384,10 +410,22 @@ func parseCount(s string) (int64, bool) {
 // the counter and records the new value in pos. After pflag.Parse, comparing
 // pos fields reveals which flag appeared last on the command line — without
 // scanning raw args or inspecting individual characters of flag tokens.
+//
+// Set always returns nil so pflag.Parse never fails on a bad numeric value;
+// validation happens in the bound handler. To match GNU's left-to-right
+// option processing (which reports the FIRST invalid value, not whichever
+// happened to be set last), Set records the first invalid input it sees in
+// invalid/hasInvalid plus the seq value at the time (invalidPos). The
+// handler picks whichever mode flag has the smaller invalidPos so that
+// `head -c bad -n nope` reports the byte error and `head -n nope -c bad`
+// reports the line error.
 type modeFlag struct {
-	val string
-	seq *int // shared per-invocation counter; incremented on every Set call
-	pos int  // counter value when Set was last called; 0 means never set
+	val        string
+	seq        *int   // shared per-invocation counter; incremented on every Set call
+	pos        int    // counter value when Set was last called; 0 means never set
+	invalid    string // first value rejected by parseCount, if any
+	hasInvalid bool   // true if Set ever saw an invalid value
+	invalidPos int    // seq value when hasInvalid was first set; 0 means never set
 }
 
 func newModeFlag(seq *int, defaultVal string) *modeFlag {
@@ -399,6 +437,13 @@ func (f *modeFlag) Set(s string) error {
 	f.val = s
 	*f.seq++
 	f.pos = *f.seq
+	if !f.hasInvalid {
+		if _, ok := parseCount(s); !ok {
+			f.invalid = s
+			f.hasInvalid = true
+			f.invalidPos = *f.seq
+		}
+	}
 	return nil
 }
 func (f *modeFlag) Type() string { return "string" }

@@ -108,6 +108,21 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 	outputDelimiter := fs.String("output-delimiter", "", "use STRING as the output delimiter")
 
 	return func(ctx context.Context, callCtx *builtins.CallContext, files []string) builtins.Result {
+		// Validate -d's value BEFORE the --help short-circuit so that
+		// `cut -d xy --help` exits with "delimiter must be a single
+		// character" instead of printing help. GNU cut runs this check
+		// during option processing; the shared args-trim in
+		// builtins/builtins.go relies on this ordering to safely honour
+		// `--help` after value-taking flags. Only validate when -d was
+		// actually set so `cut --help` (no -d, default "\t") still
+		// short-circuits cleanly. GNU appends `Try 'cut --help' for
+		// more information.` after this specific error.
+		if fs.Changed("delimiter") && len(*delimiter) != 1 {
+			callCtx.Errf("cut: the delimiter must be a single character\n")
+			callCtx.Errf("Try 'cut --help' for more information.\n")
+			return builtins.Result{Code: 1}
+		}
+
 		if *help {
 			callCtx.Out("Usage: cut OPTION... [FILE]...\n")
 			callCtx.Out("Print selected parts of lines from each FILE to standard output.\n")
@@ -159,11 +174,9 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			}
 		}
 
-		// Delimiter must be exactly one byte (GNU cut behavior).
-		if len(*delimiter) != 1 {
-			callCtx.Errf("cut: the delimiter must be a single character\n")
-			return builtins.Result{Code: 1}
-		}
+		// Delimiter length was already validated above (before the
+		// --help short-circuit). When -d wasn't set, the default "\t"
+		// is a single byte and trivially satisfies the constraint.
 		delimByte := (*delimiter)[0]
 
 		// Parse the list.

@@ -1,12 +1,11 @@
 description: df rejects --help=true — even --help (which would short-circuit to print usage) falls through the noArgBool sentinel guard when given an explicit value, exactly matching GNU df.
-skip_assert_against_bash: true
 input:
   script: |+
     df --help=true; echo "code:$?"
 expect:
-  stdout_contains:
-    - "code:1"
-  stderr_contains:
-    - "df:"
-    - "does not allow an argument"
+  stdout: |+
+    code:1
+  stderr: |+
+    df: option '--help' doesn't allow an argument
+    Try 'df --help' for more information.
   exit_code: 0
