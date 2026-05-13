@@ -1,0 +1,16 @@
+# skip: logrotate is a demo builtin with no bash equivalent.
+skip_assert_against_bash: true
+description: -v reports the pre-rotation size and keep count.
+setup:
+  files:
+    - path: app.log
+      content: "hello\n"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    logrotate -v -k 3 app.log
+expect:
+  stdout: |+
+    logrotate: app.log: truncated 6 bytes (keep=3)
+  stderr: |+
+  exit_code: 0

@@ -1,0 +1,14 @@
+# skip: --help output format is implementation-specific.
+skip_assert_against_bash: true
+description: logrotate --help prints usage to stdout and exits 0.
+input:
+  script: |+
+    logrotate --help
+expect:
+  stdout_contains:
+    - "Usage: logrotate"
+    - "--size"
+    - "--keep"
+    - "--verbose"
+  stderr: |+
+  exit_code: 0

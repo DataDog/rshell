@@ -173,6 +173,12 @@ var builtinPerCommandSymbols = map[string][]string{
 		"os.O_RDONLY",      // 🟢 read-only file flag constant; cannot open files by itself.
 		"strconv.ParseInt", // 🟢 string-to-int conversion with base/bit-size; pure function, no I/O.
 	},
+	"logrotate": {
+		"context.Context",  // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
+		"errors.New",       // 🟢 creates a sentinel error value; pure function, no I/O.
+		"math.MaxInt64",    // 🟢 integer constant; no side effects.
+		"strconv.ParseInt", // 🟢 string-to-int conversion with base/bit-size; pure function, no I/O.
+	},
 	"ls": {
 		"context.Context",                    // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
 		"errors.New",                         // 🟢 creates a simple error value; pure function, no I/O.

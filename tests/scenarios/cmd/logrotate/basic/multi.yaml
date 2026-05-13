@@ -1,0 +1,25 @@
+# skip: logrotate is a demo builtin with no bash equivalent.
+skip_assert_against_bash: true
+description: logrotate processes every operand and reports exit 0 when all succeed.
+setup:
+  files:
+    - path: a.log
+      content: "alpha\n"
+    - path: b.log
+      content: "beta\n"
+    - path: c.log
+      content: "gamma\n"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    logrotate a.log b.log c.log
+    wc -c < a.log
+    wc -c < b.log
+    wc -c < c.log
+expect:
+  stdout: |+
+    0
+    0
+    0
+  stderr: |+
+  exit_code: 0

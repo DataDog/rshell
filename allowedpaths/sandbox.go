@@ -454,6 +454,66 @@ func (s *Sandbox) Truncate(path string, cwd string, size int64, create bool) err
 	return closeErr
 }
 
+// TruncateIfLarger opens path with O_WRONLY (and optionally O_CREATE),
+// fstats the resulting fd, and ftruncates to newSize only when the fd's
+// pre-truncation size is at least minSize. The fstat and ftruncate share
+// the same fd so the size check cannot race with a path swap: a file
+// substituted under the same path between resolve and open is caught by
+// the IsRegular check inherited from Truncate, and any size-based decision
+// is made against the inode that will actually be truncated.
+//
+// minSize == 0 is equivalent to Truncate(path, cwd, newSize, create) but
+// still returns the pre-truncation size so callers can report it. When
+// minSize > 0 and the file is smaller, the function returns
+// (sizeBefore, false, nil) without altering the file.
+//
+// All other safety properties — sandbox path resolution, non-regular
+// file rejection, write-symlink TOCTOU rejection, EINVAL for negative
+// sizes, deferred-close error semantics — match Truncate exactly.
+func (s *Sandbox) TruncateIfLarger(path, cwd string, minSize, newSize int64, create bool) (int64, bool, error) {
+	if newSize < 0 {
+		return 0, false, &os.PathError{Op: "truncate", Path: path, Err: syscall.EINVAL}
+	}
+
+	absPath := toAbs(path, cwd)
+
+	ar, relPath, ok := s.resolve(absPath)
+	if !ok {
+		return 0, false, &os.PathError{Op: "truncate", Path: path, Err: os.ErrPermission}
+	}
+
+	flag := os.O_WRONLY | syscall.O_NONBLOCK
+	if create {
+		flag |= os.O_CREATE
+	}
+	f, err := ar.root.OpenFile(relPath, flag, 0666)
+	if err != nil {
+		return 0, false, err
+	}
+	info, err := f.Stat()
+	if err != nil {
+		f.Close()
+		return 0, false, err
+	}
+	if !info.Mode().IsRegular() {
+		f.Close()
+		return 0, false, &os.PathError{Op: "truncate", Path: path, Err: errors.New("not a regular file")}
+	}
+	sizeBefore := info.Size()
+	if sizeBefore < minSize {
+		// Close-only path: nothing was written, so a Close error here
+		// cannot mask user-visible data loss. Drop it.
+		f.Close()
+		return sizeBefore, false, nil
+	}
+	truncErr := f.Truncate(newSize)
+	closeErr := f.Close()
+	if truncErr != nil {
+		return sizeBefore, false, truncErr
+	}
+	return sizeBefore, true, closeErr
+}
+
 // ReadDir implements the restricted directory-read policy.
 func (s *Sandbox) ReadDir(path string, cwd string) ([]fs.DirEntry, error) {
 	return s.readDirN(path, cwd, -1)

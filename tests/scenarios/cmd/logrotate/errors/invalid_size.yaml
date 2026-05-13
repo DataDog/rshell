@@ -1,0 +1,17 @@
+# skip: logrotate is a demo builtin with no bash equivalent.
+skip_assert_against_bash: true
+description: A non-numeric -s value is rejected with exit 1.
+setup:
+  files:
+    - path: app.log
+      content: ""
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    logrotate -s xyz app.log
+expect:
+  stdout: |+
+  stderr_contains:
+    - "logrotate:"
+    - "invalid size"
+  exit_code: 1

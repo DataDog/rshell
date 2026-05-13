@@ -159,6 +159,15 @@ type CallContext struct {
 	// Negative sizes are rejected.
 	Truncate func(ctx context.Context, path string, size int64, create bool) error
 
+	// TruncateIfLarger opens path through the sandbox, fstats the open
+	// fd, and ftruncates to newSize only when the pre-truncation size is
+	// at least minSize. The size check and truncate share a single fd so
+	// the threshold cannot race a path swap. Returns the pre-truncation
+	// size (always populated when the open succeeds) and a flag indicating
+	// whether ftruncate ran. When minSize == 0 the check is skipped and
+	// the file is always truncated.
+	TruncateIfLarger func(ctx context.Context, path string, minSize, newSize int64, create bool) (sizeBefore int64, truncated bool, err error)
+
 	// PortableErr normalizes an OS error to a POSIX-style message.
 	PortableErr func(err error) string
 

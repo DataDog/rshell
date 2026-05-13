@@ -1,0 +1,13 @@
+# skip: logrotate is a demo builtin with no bash equivalent.
+skip_assert_against_bash: true
+description: logrotate without operands rejects with exit 1.
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    logrotate
+expect:
+  stdout: |+
+  stderr_contains:
+    - "logrotate:"
+    - "missing file operand"
+  exit_code: 1

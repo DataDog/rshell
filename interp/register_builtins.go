@@ -23,6 +23,7 @@ import (
 	"github.com/DataDog/rshell/builtins/head"
 	"github.com/DataDog/rshell/builtins/help"
 	"github.com/DataDog/rshell/builtins/ip"
+	"github.com/DataDog/rshell/builtins/logrotate"
 	"github.com/DataDog/rshell/builtins/ls"
 	"github.com/DataDog/rshell/builtins/ping"
 	printfcmd "github.com/DataDog/rshell/builtins/printf"
@@ -63,6 +64,7 @@ func registerBuiltins() {
 			head.Cmd,
 			help.Cmd,
 			ip.Cmd,
+			logrotate.Cmd,
 			ls.Cmd,
 			ping.Cmd,
 			sortcmd.Cmd,
