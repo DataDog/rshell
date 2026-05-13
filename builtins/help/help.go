@@ -10,10 +10,11 @@
 // Usage: help [--all] [feature|command]
 //
 // With no arguments, list rshell features with descriptions, a concise
-// unsupported-feature summary, allowed commands, and a compact list of
-// not-allowed commands. When --all is given, disabled commands are shown as a
-// full description table. When a feature or command name is given, display
-// detailed help for that topic.
+// unsupported-feature summary, allowed commands, a compact list of
+// not-allowed commands, and the configured AllowedPaths sandbox roots (or a
+// notice when none are configured). When --all is given, disabled commands
+// are shown as a full description table. When a feature or command name is
+// given, display detailed help for that topic.
 //
 // Flags:
 //
@@ -179,8 +180,10 @@ func printFeatureTable(callCtx *builtins.CallContext, features []builtins.Featur
 
 // printAllowedPaths writes the configured AllowedPaths sandbox roots, one per
 // line. An empty list means no allowed paths are configured, which blocks all
-// filesystem access — surface that explicitly so operators can tell the
-// difference from "no information available".
+// user-controllable filesystem access — surface that explicitly so operators
+// can tell the difference from "no information available". A few builtins
+// (ss, ip route, df, ps) intentionally read kernel-state paths outside the
+// sandbox and are unaffected by this configuration.
 func printAllowedPaths(callCtx *builtins.CallContext) {
 	if callCtx.AllowedPathsList == nil {
 		return
@@ -188,7 +191,7 @@ func printAllowedPaths(callCtx *builtins.CallContext) {
 	paths := callCtx.AllowedPathsList()
 	callCtx.Out("\nAllowed paths:\n")
 	if len(paths) == 0 {
-		callCtx.Out("  (no allowed paths configured — all filesystem access blocked)\n")
+		callCtx.Out("  (no allowed paths configured — no filesystem paths are reachable)\n")
 		return
 	}
 	for _, p := range paths {

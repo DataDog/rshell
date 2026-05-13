@@ -7,5 +7,5 @@ input:
 expect:
   stdout_contains:
     - "Allowed paths:"
-  stderr: ""
+  stderr: |+
   exit_code: 0

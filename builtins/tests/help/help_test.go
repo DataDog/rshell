@@ -436,7 +436,7 @@ func TestHelpEmptyAllowedPathsShowsBlockedNotice(t *testing.T) {
 		interp.AllowedPaths(nil))
 	assert.Equal(t, 0, code)
 	assert.Contains(t, stdout, "Allowed paths:")
-	assert.Contains(t, stdout, "(no allowed paths configured — all filesystem access blocked)")
+	assert.Contains(t, stdout, "(no allowed paths configured — no filesystem paths are reachable)")
 }
 
 // --- Invariant: Help field only on NoFlags commands ---
