@@ -7,5 +7,6 @@ input:
 expect:
   stdout: ""
   stderr: |+
-    cd: unknown shorthand flag: 'x' in -x
+    cd: invalid option -- 'x'
+    Try 'cd --help' for more information.
   exit_code: 1

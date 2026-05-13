@@ -289,7 +289,7 @@ func TestCdUnknownLongFlag(t *testing.T) {
 	dir := canonicalTempDir(t)
 	_, stderr, code := cdRun(t, "cd --no-such-flag", dir)
 	assert.Equal(t, 1, code)
-	assert.Contains(t, stderr, "cd: unknown flag")
+	assert.Contains(t, stderr, "cd: unrecognized option")
 }
 
 func TestCdRejectsExplicitValue(t *testing.T) {

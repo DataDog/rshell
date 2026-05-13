@@ -7,5 +7,6 @@ input:
 expect:
   stdout: ""
   stderr: |+
-    cd: unknown flag: --no-such-flag
+    cd: unrecognized option '--no-such-flag'
+    Try 'cd --help' for more information.
   exit_code: 1
