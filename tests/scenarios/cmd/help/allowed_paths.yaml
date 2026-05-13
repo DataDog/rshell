@@ -1,0 +1,11 @@
+description: Help surfaces the configured AllowedPaths sandbox roots so operators can see which filesystem locations are reachable in this session. Uses stdout_contains because the absolute path resolves to the scenario tempdir.
+skip_assert_against_bash: true
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    help
+expect:
+  stdout_contains:
+    - "Allowed paths:"
+  stderr: ""
+  exit_code: 0

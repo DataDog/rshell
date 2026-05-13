@@ -140,6 +140,8 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			callCtx.Out("\nAll commands are allowed in this session.\n")
 		}
 
+		printAllowedPaths(callCtx)
+
 		callCtx.Out("\nRun 'help <feature|command>' for more information on a specific topic.\n")
 		return builtins.Result{}
 	}
@@ -172,6 +174,25 @@ func printFeatureTable(callCtx *builtins.CallContext, features []builtins.Featur
 	}
 	for _, feature := range features {
 		callCtx.Outf("%-*s  %s\n", maxLen, feature.Name, feature.Description)
+	}
+}
+
+// printAllowedPaths writes the configured AllowedPaths sandbox roots, one per
+// line. An empty list means no allowed paths are configured, which blocks all
+// filesystem access — surface that explicitly so operators can tell the
+// difference from "no information available".
+func printAllowedPaths(callCtx *builtins.CallContext) {
+	if callCtx.AllowedPathsList == nil {
+		return
+	}
+	paths := callCtx.AllowedPathsList()
+	callCtx.Out("\nAllowed paths:\n")
+	if len(paths) == 0 {
+		callCtx.Out("  (no allowed paths configured — all filesystem access blocked)\n")
+		return
+	}
+	for _, p := range paths {
+		callCtx.Outf("  %s\n", p)
 	}
 }
 

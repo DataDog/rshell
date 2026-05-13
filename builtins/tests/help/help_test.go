@@ -406,6 +406,39 @@ func TestHelpNoStderrOnSuccess(t *testing.T) {
 	assert.Empty(t, stderr)
 }
 
+// --- Allowed paths section ---
+
+func TestHelpListsConfiguredAllowedPaths(t *testing.T) {
+	tmp := t.TempDir()
+	stdout, _, code := runScript(t, "help", "",
+		interpoption.AllowAllCommands().(interp.RunnerOption),
+		interp.AllowedPaths([]string{tmp}))
+	assert.Equal(t, 0, code)
+	assert.Contains(t, stdout, "Allowed paths:")
+	assert.Contains(t, stdout, "  "+tmp)
+}
+
+func TestHelpListsMultipleAllowedPathsLinePerLine(t *testing.T) {
+	a := t.TempDir()
+	b := t.TempDir()
+	stdout, _, code := runScript(t, "help", "",
+		interpoption.AllowAllCommands().(interp.RunnerOption),
+		interp.AllowedPaths([]string{a, b}))
+	assert.Equal(t, 0, code)
+	assert.Contains(t, stdout, "Allowed paths:")
+	assert.Contains(t, stdout, "\n  "+a+"\n")
+	assert.Contains(t, stdout, "\n  "+b+"\n")
+}
+
+func TestHelpEmptyAllowedPathsShowsBlockedNotice(t *testing.T) {
+	stdout, _, code := runScript(t, "help", "",
+		interpoption.AllowAllCommands().(interp.RunnerOption),
+		interp.AllowedPaths(nil))
+	assert.Equal(t, 0, code)
+	assert.Contains(t, stdout, "Allowed paths:")
+	assert.Contains(t, stdout, "(no allowed paths configured — all filesystem access blocked)")
+}
+
 // --- Invariant: Help field only on NoFlags commands ---
 
 func TestHelpFieldOnlyOnNoFlagsCommands(t *testing.T) {
