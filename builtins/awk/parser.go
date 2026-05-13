@@ -26,7 +26,6 @@ const (
 var unsupportedBuiltinFunctions = map[string]struct{}{
 	"and":            {},
 	"asort":          {},
-	"asorti":         {},
 	"atan2":          {},
 	"bindtextdomain": {},
 	"compl":          {},
@@ -35,7 +34,6 @@ var unsupportedBuiltinFunctions = map[string]struct{}{
 	"dcngettext":     {},
 	"exp":            {},
 	"fflush":         {},
-	"gensub":         {},
 	"isarray":        {},
 	"log":            {},
 	"lshift":         {},
@@ -48,7 +46,6 @@ var unsupportedBuiltinFunctions = map[string]struct{}{
 	"sqrt":           {},
 	"srand":          {},
 	"strftime":       {},
-	"strtonum":       {},
 	"system":         {},
 	"systime":        {},
 	"typeof":         {},
@@ -56,18 +53,21 @@ var unsupportedBuiltinFunctions = map[string]struct{}{
 }
 
 var supportedBuiltinFunctions = map[string]struct{}{
-	"close":   {},
-	"gsub":    {},
-	"index":   {},
-	"int":     {},
-	"length":  {},
-	"match":   {},
-	"split":   {},
-	"sprintf": {},
-	"sub":     {},
-	"substr":  {},
-	"tolower": {},
-	"toupper": {},
+	"close":    {},
+	"asorti":   {},
+	"gensub":   {},
+	"gsub":     {},
+	"index":    {},
+	"int":      {},
+	"length":   {},
+	"match":    {},
+	"split":    {},
+	"sprintf":  {},
+	"strtonum": {},
+	"sub":      {},
+	"substr":   {},
+	"tolower":  {},
+	"toupper":  {},
 }
 
 type parser struct {
@@ -215,13 +215,28 @@ func (p *parser) parseStatementList() ([]stmt, error) {
 			return nil, err
 		}
 		stmts = append(stmts, st)
-		if !p.at(tokRBrace) && !p.at(tokEOF) && !isSeparator(p.cur().kind) {
+		if !p.at(tokRBrace) && !p.at(tokEOF) && !isSeparator(p.cur().kind) && !statementEndsBlock(st) {
 			return nil, fmt.Errorf("expected statement separator")
 		}
 		p.skipSeparators()
 	}
 	p.advance()
 	return stmts, nil
+}
+
+func statementEndsBlock(st stmt) bool {
+	switch s := st.(type) {
+	case *ifStmt:
+		return s.endsBlock
+	case *forStmt:
+		return s.endsBlock
+	case *forInStmt:
+		return s.endsBlock
+	case *whileStmt:
+		return s.endsBlock
+	default:
+		return false
+	}
 }
 
 func (p *parser) parseStatement() (stmt, error) {
@@ -320,11 +335,11 @@ func (p *parser) parseFor() (stmt, error) {
 		if !p.match(tokRParen) {
 			return nil, fmt.Errorf("expected ) after for loop")
 		}
-		body, err := p.parseStatementGroup()
+		body, braced, err := p.parseStatementGroup()
 		if err != nil {
 			return nil, err
 		}
-		return &forInStmt{varName: varName, arrayName: arrayName, body: body}, nil
+		return &forInStmt{varName: varName, arrayName: arrayName, body: body, endsBlock: braced}, nil
 	}
 	init, err := p.parseOptionalForExpr(tokSemicolon)
 	if err != nil {
@@ -347,11 +362,11 @@ func (p *parser) parseFor() (stmt, error) {
 	if !p.match(tokRParen) {
 		return nil, fmt.Errorf("expected ) after for loop")
 	}
-	body, err := p.parseStatementGroup()
+	body, braced, err := p.parseStatementGroup()
 	if err != nil {
 		return nil, err
 	}
-	return &forStmt{init: init, cond: cond, post: post, body: body}, nil
+	return &forStmt{init: init, cond: cond, post: post, body: body, endsBlock: braced}, nil
 }
 
 func (p *parser) parseOptionalForExpr(end tokenKind) (expr, error) {
@@ -379,11 +394,11 @@ func (p *parser) parseWhile() (stmt, error) {
 	if !p.match(tokRParen) {
 		return nil, fmt.Errorf("expected ) after while condition")
 	}
-	body, err := p.parseStatementGroup()
+	body, braced, err := p.parseStatementGroup()
 	if err != nil {
 		return nil, err
 	}
-	return &whileStmt{cond: cond, body: body}, nil
+	return &whileStmt{cond: cond, body: body, endsBlock: braced}, nil
 }
 
 func (p *parser) parseIf() (stmt, error) {
@@ -398,38 +413,42 @@ func (p *parser) parseIf() (stmt, error) {
 	if !p.match(tokRParen) {
 		return nil, fmt.Errorf("expected ) after if condition")
 	}
-	thenStmts, err := p.parseStatementGroup()
+	thenStmts, thenBraced, err := p.parseStatementGroup()
 	if err != nil {
 		return nil, err
 	}
 	save := p.pos
 	p.skipSeparators()
 	var elseStmts []stmt
+	endsBlock := thenBraced
 	if p.atIdent("else") {
 		p.advance()
-		elseStmts, err = p.parseStatementGroup()
+		var elseBraced bool
+		elseStmts, elseBraced, err = p.parseStatementGroup()
 		if err != nil {
 			return nil, err
 		}
+		endsBlock = elseBraced
 	} else {
 		p.pos = save
 	}
-	return &ifStmt{cond: cond, thenStmts: thenStmts, elseStmts: elseStmts}, nil
+	return &ifStmt{cond: cond, thenStmts: thenStmts, elseStmts: elseStmts, endsBlock: endsBlock}, nil
 }
 
-func (p *parser) parseStatementGroup() ([]stmt, error) {
+func (p *parser) parseStatementGroup() ([]stmt, bool, error) {
 	p.skipNewlines()
 	if p.at(tokSemicolon) {
-		return nil, nil
+		return nil, false, nil
 	}
 	if p.match(tokLBrace) {
-		return p.parseStatementList()
+		stmts, err := p.parseStatementList()
+		return stmts, true, err
 	}
 	st, err := p.parseStatement()
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
-	return []stmt{st}, nil
+	return []stmt{st}, false, nil
 }
 
 func (p *parser) parseDelete() (stmt, error) {
@@ -1199,12 +1218,24 @@ func validateBuiltinCallArity(name string, argc int) error {
 			return fmt.Errorf("%s expects 2 or 3 arguments", name)
 		}
 	case "match":
-		if argc != 2 {
-			return fmt.Errorf("match expects 2 arguments")
+		if argc != 2 && argc != 3 {
+			return fmt.Errorf("match expects 2 or 3 arguments")
 		}
 	case "sprintf":
 		if argc < 1 {
 			return fmt.Errorf("sprintf expects at least 1 argument")
+		}
+	case "gensub":
+		if argc != 3 && argc != 4 {
+			return fmt.Errorf("gensub expects 3 or 4 arguments")
+		}
+	case "strtonum":
+		if argc != 1 {
+			return fmt.Errorf("strtonum expects 1 argument")
+		}
+	case "asorti":
+		if argc != 1 && argc != 2 {
+			return fmt.Errorf("asorti expects 1 or 2 arguments")
 		}
 	case "close":
 		if argc != 1 {

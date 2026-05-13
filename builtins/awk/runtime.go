@@ -248,6 +248,7 @@ type recordSource struct {
 	name string
 	rc   io.ReadCloser
 	sc   *bufio.Scanner
+	rt   *runtime
 }
 
 type localVar struct {
@@ -275,6 +276,7 @@ func newRuntime(callCtx *builtins.CallContext, prog *program) *runtime {
 		commandInputs:    make(map[string]*commandInputPipe),
 	}
 	rt.vars["FS"] = stringValue(" ")
+	rt.vars["RS"] = stringValue("\n")
 	rt.vars["OFS"] = stringValue(" ")
 	rt.vars["ORS"] = stringValue("\n")
 	rt.vars["SUBSEP"] = stringValue("\034")
@@ -452,7 +454,7 @@ func (rt *runtime) openNextMainInput(ctx context.Context) (bool, error) {
 func (rt *runtime) openMainInput(ctx context.Context, file string) (bool, error) {
 	rc, err := rt.openInput(ctx, file)
 	if err != nil {
-		return false, fmt.Errorf("%s: %v", file, err)
+		return false, fmt.Errorf("fatal: cannot open file `%s' for reading: %v", file, err)
 	}
 	rt.mainHadInput = true
 	if file == "-" {
@@ -460,15 +462,26 @@ func (rt *runtime) openMainInput(ctx context.Context, file string) (bool, error)
 	}
 	rt.filename = file
 	rt.fnr = 0
-	rt.mainInput = newRecordSource(file, rc)
+	rt.mainInput = rt.newRecordSource(file, rc)
 	return true, nil
 }
 
-func newRecordSource(name string, rc io.ReadCloser) *recordSource {
+func (rt *runtime) newRecordSource(name string, rc io.ReadCloser) *recordSource {
+	src := &recordSource{name: name, rc: rc, rt: rt}
 	sc := bufio.NewScanner(rc)
-	sc.Split(scanAwkRecord)
+	sc.Split(func(data []byte, atEOF bool) (int, []byte, error) {
+		return scanAwkRecord(data, atEOF, src.recordSeparator())
+	})
 	sc.Buffer(make([]byte, 4096), MaxRecordBytes+1)
-	return &recordSource{name: name, rc: rc, sc: sc}
+	src.sc = sc
+	return src
+}
+
+func (src *recordSource) recordSeparator() string {
+	if src == nil || src.rt == nil {
+		return "\n"
+	}
+	return src.rt.getVar("RS").String()
 }
 
 func (src *recordSource) readRecord(ctx context.Context) (string, bool, error) {
@@ -494,11 +507,13 @@ func (src *recordSource) close() {
 	}
 }
 
-func scanAwkRecord(data []byte, atEOF bool) (int, []byte, error) {
-	for i, b := range data {
-		if b == '\n' {
-			return i + 1, data[:i], nil
-		}
+func scanAwkRecord(data []byte, atEOF bool, rs string) (int, []byte, error) {
+	if err := validateRS(rs); err != nil {
+		return 0, nil, err
+	}
+	sep := []byte(rs)
+	if i := indexBytes(data, sep); i >= 0 {
+		return i + len(sep), data[:i], nil
 	}
 	if atEOF {
 		if len(data) == 0 {
@@ -507,6 +522,25 @@ func scanAwkRecord(data []byte, atEOF bool) (int, []byte, error) {
 		return len(data), data, nil
 	}
 	return 0, nil, nil
+}
+
+func indexBytes(data, sep []byte) int {
+	if len(sep) == 0 {
+		return -1
+	}
+	for i := 0; i+len(sep) <= len(data); i++ {
+		matched := true
+		for j := range sep {
+			if data[i+j] != sep[j] {
+				matched = false
+				break
+			}
+		}
+		if matched {
+			return i
+		}
+	}
+	return -1
 }
 
 func (rt *runtime) openInput(ctx context.Context, file string) (io.ReadCloser, error) {
@@ -632,7 +666,7 @@ func (rt *runtime) openFileInput(ctx context.Context, name string) (*recordSourc
 		rt.setErrno(err)
 		return nil, nil
 	}
-	src := newRecordSource(name, rc)
+	src := rt.newRecordSource(name, rc)
 	rt.fileInputs[name] = src
 	delete(rt.failedFileInputs, name)
 	return src, nil
@@ -680,7 +714,7 @@ func (rt *runtime) openCommandInput(ctx context.Context, command string) (*comma
 	}
 	pipe := &commandInputPipe{
 		command: command,
-		source:  newRecordSource(command, io.NopCloser(bytes.NewReader(out.buf.Bytes()))),
+		source:  rt.newRecordSource(command, io.NopCloser(bytes.NewReader(out.buf.Bytes()))),
 		status:  status,
 	}
 	rt.commandInputs[command] = pipe
@@ -852,7 +886,7 @@ func (rt *runtime) matchRangePattern(ruleIndex int, x *rangeExpr) (bool, error) 
 
 func (rt *runtime) matchSimplePattern(x expr) (bool, error) {
 	if rx, ok := x.(*regexExpr); ok {
-		re, err := compileRegex(rx.pattern)
+		re, err := rt.compileRegex(rx.pattern)
 		if err != nil {
 			return false, err
 		}
@@ -871,7 +905,7 @@ func (rt *runtime) setRecord(rec string) error {
 	}
 	rt.record = rec
 	fs := rt.getVar("FS").String()
-	fields, err := splitAwkFields(rec, fs)
+	fields, err := rt.splitAwkFields(rec, fs)
 	if err != nil {
 		return err
 	}
@@ -964,7 +998,7 @@ func (rt *runtime) setNF(n int) error {
 	return rt.rebuildRecordFromFields()
 }
 
-func splitAwkFields(s, fs string) ([]string, error) {
+func (rt *runtime) splitAwkFields(s, fs string) ([]string, error) {
 	if fs == " " {
 		return splitAwkWhitespaceFields(s), nil
 	}
@@ -977,7 +1011,7 @@ func splitAwkFields(s, fs string) ([]string, error) {
 	if isSingleRune(fs) {
 		return strings.Split(s, fs), nil
 	}
-	return splitAwkRegex(s, fs)
+	return rt.splitAwkRegex(s, fs)
 }
 
 func splitAwkWhitespaceFields(rec string) []string {
@@ -1012,14 +1046,14 @@ func splitAwkChars(s string) []string {
 	return chars
 }
 
-func splitAwkRegex(s, pattern string) ([]string, error) {
+func (rt *runtime) splitAwkRegex(s, pattern string) ([]string, error) {
 	if s == "" {
 		return nil, nil
 	}
 	if pattern == "" {
 		return splitAwkChars(s), nil
 	}
-	re, err := compileRegex(pattern)
+	re, err := rt.compileRegex(pattern)
 	if err != nil {
 		return nil, err
 	}
@@ -1138,6 +1172,10 @@ func (rt *runtime) setVar(name string, v value) error {
 		return fmt.Errorf("assignment to %s is not supported", name)
 	case "FS":
 		if err := validateFS(v.String()); err != nil {
+			return err
+		}
+	case "RS":
+		if err := validateRS(v.String()); err != nil {
 			return err
 		}
 	}
@@ -1520,7 +1558,7 @@ func isReservedAwkVariableName(name string) bool {
 
 func isWritableSpecialScalarName(name string) bool {
 	switch name {
-	case "FS", "OFS", "ORS", "SUBSEP", "RSTART", "RLENGTH":
+	case "FS", "RS", "OFS", "ORS", "SUBSEP", "RSTART", "RLENGTH", "IGNORECASE":
 		return true
 	default:
 		return false
@@ -1544,6 +1582,16 @@ func validateFS(fs string) error {
 	return nil
 }
 
+func validateRS(rs string) error {
+	if rs == "" {
+		return fmt.Errorf("empty RS is not supported")
+	}
+	if !isSingleRune(rs) {
+		return fmt.Errorf("multi-character RS is not supported")
+	}
+	return nil
+}
+
 func isSingleRune(s string) bool {
 	if s == "" {
 		return false
@@ -1557,8 +1605,23 @@ type awkRegex struct {
 	byteMode bool
 }
 
+func (rt *runtime) compileRegex(pattern string) (*awkRegex, error) {
+	return compileRegexWithOptions(pattern, rt.ignoreCase())
+}
+
+func (rt *runtime) ignoreCase() bool {
+	return rt.getVar("IGNORECASE").Number() != 0
+}
+
 func compileRegex(pattern string) (*awkRegex, error) {
+	return compileRegexWithOptions(pattern, false)
+}
+
+func compileRegexWithOptions(pattern string, ignoreCase bool) (*awkRegex, error) {
 	normalized, byteMode := normalizeAwkRegex(pattern)
+	if ignoreCase {
+		normalized = "(?i:" + normalized + ")"
+	}
 	re, err := regexp.Compile(normalized)
 	if err != nil {
 		return nil, fmt.Errorf("invalid regular expression %q: %v", pattern, err)
@@ -1608,6 +1671,32 @@ func (re *awkRegex) FindAllStringIndex(s string, n int) [][]int {
 	for _, loc := range matches {
 		loc[0] = offsets[loc[0]]
 		loc[1] = offsets[loc[1]]
+	}
+	return matches
+}
+
+func (re *awkRegex) FindStringSubmatchIndex(s string) []int {
+	loc := re.FindAllStringSubmatchIndex(s, 1)
+	if len(loc) == 0 {
+		return nil
+	}
+	return loc[0]
+}
+
+func (re *awkRegex) FindAllStringSubmatchIndex(s string, n int) [][]int {
+	if !re.byteMode {
+		return re.re.FindAllStringSubmatchIndex(s, n)
+	}
+	encoded, offsets := encodeAwkRegexBytes(s)
+	matches := re.re.FindAllStringSubmatchIndex(encoded, n)
+	for _, locs := range matches {
+		for i := 0; i+1 < len(locs); i += 2 {
+			if locs[i] < 0 {
+				continue
+			}
+			locs[i] = offsets[locs[i]]
+			locs[i+1] = offsets[locs[i+1]]
+		}
 	}
 	return matches
 }

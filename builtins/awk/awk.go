@@ -17,10 +17,11 @@
 // scalar and associative array assignment, composite array keys, if/else,
 // for/while loops, next, exit, arithmetic/comparison/boolean/ternary
 // expressions, regex patterns and match operators, regex field separators,
-// string concatenation, scalar built-in functions, split, sub, gsub, match,
-// sprintf, delete, ENVIRON, user-defined functions with return and scalar or
+// string concatenation, scalar built-in functions, split, sub, gsub, gensub,
+// match, sprintf, strtonum, asorti, delete, ENVIRON, IGNORECASE,
+// user-defined functions with return and scalar or
 // array parameters, and field/built-in variables such as $0, $1, NF, NR, FNR,
-// FILENAME, FS, OFS, ORS, SUBSEP, RSTART, and RLENGTH.
+// FILENAME, FS, RS, OFS, ORS, SUBSEP, RSTART, and RLENGTH.
 //
 // Command strings in awk pipes are parsed and executed by rshell under the
 // active sandbox. Blocked or deferred features include system(), awk file
@@ -151,10 +152,10 @@ func printHelp(callCtx *builtins.CallContext, fs *builtins.FlagSet) {
 	callCtx.Out("Supported profile:\n")
 	callCtx.Out("  - Inline programs, -f program files, -F separators, -v assignments, FILE args, and - for stdin.\n")
 	callCtx.Out("  - BEGIN/main/END rules; regex, comparison, boolean, and range patterns.\n")
-	callCtx.Out("  - Fields and records: $0, $1..$NF, NF, NR, FNR, FILENAME, FS, OFS, ORS, SUBSEP, RSTART, RLENGTH.\n")
-	callCtx.Out("  - Scalars, associative arrays, composite keys, ENVIRON, arithmetic, comparisons, regex match, ternary, and string concatenation.\n")
+	callCtx.Out("  - Fields and records: $0, $1..$NF, NF, NR, FNR, FILENAME, FS, RS, OFS, ORS, SUBSEP, RSTART, RLENGTH.\n")
+	callCtx.Out("  - Scalars, associative arrays, composite keys, ENVIRON, IGNORECASE, arithmetic, comparisons, regex match, ternary, and string concatenation.\n")
 	callCtx.Out("  - if/else, for, for-in, while, break, continue, next, exit, and user-defined functions with return.\n")
-	callCtx.Out("  - print, printf, sprintf, length, substr, index, tolower, toupper, int, split, sub, gsub, match, delete, and close.\n")
+	callCtx.Out("  - print, printf, sprintf, length, substr, index, tolower, toupper, int, split, sub, gsub, gensub, match, strtonum, asorti, delete, and close.\n")
 	callCtx.Out("  - Output command pipes such as print x | \"sort\" and rshell command strings such as print x | \"cat | sort\".\n")
 	callCtx.Out("  - getline, getline var, getline var < file, and \"cmd\" | getline var; file reads use rshell path policy and command strings run through rshell.\n\n")
 
@@ -163,7 +164,7 @@ func printHelp(callCtx *builtins.CallContext, fs *builtins.FlagSet) {
 	callCtx.Out("  - print/printf file output redirection to file targets, such as print x > \"file\" or printf ... >> \"file\". Output command pipes remain supported and their command strings follow normal rshell policy.\n")
 	callCtx.Out("  - ARGV/ARGC mutation, BEGINFILE/ENDFILE, nextfile, do/while, switch, include/load, namespaces, and indirect function calls.\n")
 	callCtx.Out("  - GNU awk CSV mode, FIELDWIDTHS, FPAT, PROCINFO, SYMTAB, FUNCTAB, typed regexps, and extension loading.\n")
-	callCtx.Out("  - Many GNU/POSIX utility builtins are intentionally absent, including gensub, asort/asorti, patsplit, strtonum, math/time/random, bitwise, typeof, and i18n functions.\n\n")
+	callCtx.Out("  - Many GNU/POSIX utility builtins are intentionally absent, including asort, patsplit, math/time/random helpers, bitwise, typeof, and i18n functions.\n\n")
 
 	fs.SetOutput(callCtx.Stdout)
 	fs.PrintDefaults()

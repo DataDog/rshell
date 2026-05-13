@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"strconv"
 	"strings"
 )
 
@@ -277,7 +278,7 @@ func (rt *runtime) eval(x expr) (value, error) {
 	case *stringExpr:
 		return stringValue(e.value), nil
 	case *regexExpr:
-		re, err := compileRegex(e.pattern)
+		re, err := rt.compileRegex(e.pattern)
 		if err != nil {
 			return value{}, err
 		}
@@ -362,11 +363,17 @@ func (rt *runtime) evalCall(e *callExpr) (value, error) {
 	if e.name == "match" {
 		return rt.evalMatch(e)
 	}
+	if e.name == "gensub" {
+		return rt.evalGensub(e)
+	}
 	if e.name == "length" {
 		return rt.evalLength(e)
 	}
 	if e.name == "close" {
 		return rt.evalClose(e)
+	}
+	if e.name == "asorti" {
+		return rt.evalAsorti(e)
 	}
 	args := make([]value, 0, len(e.args))
 	for _, arg := range e.args {
@@ -411,6 +418,8 @@ func (rt *runtime) evalCall(e *callExpr) (value, error) {
 	case "int":
 		v := args[0]
 		return numberValue(math.Trunc(v.Number())), nil
+	case "strtonum":
+		return numberValue(parseAwkNumberLiteral(args[0].String())), nil
 	case "sprintf":
 		out, err := formatPrintf(args[0].String(), args[1:])
 		if err != nil {
@@ -691,6 +700,17 @@ func (rt *runtime) evalMatch(e *callExpr) (value, error) {
 	if err := validateBuiltinCallArity(e.name, len(e.args)); err != nil {
 		return value{}, err
 	}
+	var captures *varExpr
+	if len(e.args) == 3 {
+		var ok bool
+		captures, ok = e.args[2].(*varExpr)
+		if !ok {
+			return value{}, fmt.Errorf("match capture destination must be an array variable")
+		}
+		if err := rt.deleteArray(captures.name); err != nil {
+			return value{}, err
+		}
+	}
 	input, err := rt.eval(e.args[0])
 	if err != nil {
 		return value{}, err
@@ -699,7 +719,8 @@ func (rt *runtime) evalMatch(e *callExpr) (value, error) {
 	if err != nil {
 		return value{}, err
 	}
-	match := re.FindStringRuneIndex(input.String())
+	text := input.String()
+	match := re.FindStringRuneIndex(text)
 	if match == nil {
 		if err := rt.setVar("RSTART", numberValue(0)); err != nil {
 			return value{}, err
@@ -717,18 +738,98 @@ func (rt *runtime) evalMatch(e *callExpr) (value, error) {
 	if err := rt.setVar("RLENGTH", numberValue(float64(length))); err != nil {
 		return value{}, err
 	}
+	if captures != nil {
+		if err := rt.setMatchCaptures(captures.name, text, re); err != nil {
+			return value{}, err
+		}
+	}
 	return numberValue(float64(start)), nil
+}
+
+func (rt *runtime) setMatchCaptures(name, text string, re *awkRegex) error {
+	locs := re.FindStringSubmatchIndex(text)
+	for i := 0; i+1 < len(locs); i += 2 {
+		key := fmt.Sprintf("%d", i/2)
+		value := ""
+		if locs[i] >= 0 {
+			value = text[locs[i]:locs[i+1]]
+		}
+		if err := rt.setArrayElem(name, key, inputStringValue(value)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (rt *runtime) evalGensub(e *callExpr) (value, error) {
+	if err := validateBuiltinCallArity(e.name, len(e.args)); err != nil {
+		return value{}, err
+	}
+	re, err := rt.compileRegexArg(e.args[0])
+	if err != nil {
+		return value{}, err
+	}
+	repl, err := rt.eval(e.args[1])
+	if err != nil {
+		return value{}, err
+	}
+	how, err := rt.eval(e.args[2])
+	if err != nil {
+		return value{}, err
+	}
+	target := rt.field(0)
+	if len(e.args) == 4 {
+		target, err = rt.eval(e.args[3])
+		if err != nil {
+			return value{}, err
+		}
+	}
+	out, err := gensubAwk(re, target.String(), repl.String(), how)
+	if err != nil {
+		return value{}, err
+	}
+	return stringValue(out), nil
+}
+
+func (rt *runtime) evalAsorti(e *callExpr) (value, error) {
+	if err := validateBuiltinCallArity(e.name, len(e.args)); err != nil {
+		return value{}, err
+	}
+	source, ok := e.args[0].(*varExpr)
+	if !ok {
+		return value{}, fmt.Errorf("asorti source must be an array variable")
+	}
+	destName := source.name
+	if len(e.args) == 2 {
+		dest, ok := e.args[1].(*varExpr)
+		if !ok {
+			return value{}, fmt.Errorf("asorti destination must be an array variable")
+		}
+		destName = dest.name
+	}
+	keys, err := rt.arrayKeys(source.name)
+	if err != nil {
+		return value{}, err
+	}
+	elems := make(map[string]value, len(keys))
+	for i, key := range keys {
+		elems[fmt.Sprintf("%d", i+1)] = inputStringValue(key)
+	}
+	if err := rt.replaceArray(destName, elems); err != nil {
+		return value{}, err
+	}
+	return numberValue(float64(len(keys))), nil
 }
 
 func (rt *runtime) compileRegexArg(x expr) (*awkRegex, error) {
 	if rx, ok := x.(*regexExpr); ok {
-		return compileRegex(rx.pattern)
+		return rt.compileRegex(rx.pattern)
 	}
 	v, err := rt.eval(x)
 	if err != nil {
 		return nil, err
 	}
-	return compileRegex(v.String())
+	return rt.compileRegex(v.String())
 }
 
 func substituteAwk(re *awkRegex, input, replacement string, all bool) (string, int, error) {
@@ -759,6 +860,100 @@ func substituteAwk(re *awkRegex, input, replacement string, all bool) (string, i
 		return "", 0, err
 	}
 	return b.String(), len(matches), nil
+}
+
+func gensubAwk(re *awkRegex, input, replacement string, how value) (string, error) {
+	locs := re.FindAllStringSubmatchIndex(input, -1)
+	if len(locs) == 0 {
+		return input, nil
+	}
+	global := false
+	nth := int(how.Number())
+	howString := how.String()
+	if hasLeadingG(howString) {
+		global = true
+		nth = 1
+	}
+	if nth < 1 {
+		nth = 1
+	}
+
+	var b strings.Builder
+	last := 0
+	seen := 0
+	for _, loc := range locs {
+		if loc[0] == loc[1] && loc[0] == last && seen > 0 {
+			continue
+		}
+		seen++
+		replace := global || seen == nth
+		if !replace {
+			continue
+		}
+		if err := appendLimitedString(&b, input[last:loc[0]]); err != nil {
+			return "", err
+		}
+		if err := appendGensubReplacement(&b, replacement, input, loc); err != nil {
+			return "", err
+		}
+		last = loc[1]
+		if !global {
+			break
+		}
+	}
+	if last == 0 && !(global || seen >= nth) {
+		return input, nil
+	}
+	if err := appendLimitedString(&b, input[last:]); err != nil {
+		return "", err
+	}
+	return b.String(), nil
+}
+
+func hasLeadingG(s string) bool {
+	return len(s) > 0 && (s[0] == 'g' || s[0] == 'G')
+}
+
+func appendGensubReplacement(b *strings.Builder, replacement, input string, loc []int) error {
+	for i := 0; i < len(replacement); i++ {
+		switch replacement[i] {
+		case '&':
+			if err := appendSubmatch(b, input, loc, 0); err != nil {
+				return err
+			}
+		case '\\':
+			if i+1 >= len(replacement) {
+				if err := appendLimitedString(b, `\`); err != nil {
+					return err
+				}
+				continue
+			}
+			next := replacement[i+1]
+			i++
+			if next >= '0' && next <= '9' {
+				if err := appendSubmatch(b, input, loc, int(next-'0')); err != nil {
+					return err
+				}
+				continue
+			}
+			if err := appendLimitedString(b, string(next)); err != nil {
+				return err
+			}
+		default:
+			if err := appendLimitedString(b, replacement[i:i+1]); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func appendSubmatch(b *strings.Builder, input string, loc []int, group int) error {
+	i := group * 2
+	if i+1 >= len(loc) || loc[i] < 0 {
+		return nil
+	}
+	return appendLimitedString(b, input[loc[i]:loc[i+1]])
 }
 
 func appendAwkReplacement(b *strings.Builder, replacement, matched string) error {
@@ -793,6 +988,64 @@ func appendAwkReplacement(b *strings.Builder, replacement, matched string) error
 		}
 	}
 	return nil
+}
+
+func parseAwkNumberLiteral(s string) float64 {
+	text := strings.TrimSpace(s)
+	if text == "" {
+		return 0
+	}
+	sign := 1.0
+	if text[0] == '+' || text[0] == '-' {
+		if text[0] == '-' {
+			sign = -1
+		}
+		text = text[1:]
+	}
+	if len(text) > 2 && text[0] == '0' && (text[1] == 'x' || text[1] == 'X') {
+		if n, ok := parseUnsignedBase(text[2:], 16); ok {
+			return sign * float64(n)
+		}
+		return 0
+	}
+	if len(text) > 1 && text[0] == '0' && text[1] >= '0' && text[1] <= '7' {
+		if n, ok := parseUnsignedBase(text[1:], 8); ok {
+			return sign * float64(n)
+		}
+		return 0
+	}
+	if n, err := strconv.ParseFloat(text, 64); err == nil {
+		return sign * n
+	}
+	return 0
+}
+
+func parseUnsignedBase(s string, base int) (uint64, bool) {
+	if s == "" {
+		return 0, false
+	}
+	var n uint64
+	for i := 0; i < len(s); i++ {
+		digit, ok := digitValue(s[i])
+		if !ok || digit >= base {
+			return 0, false
+		}
+		n = n*uint64(base) + uint64(digit)
+	}
+	return n, true
+}
+
+func digitValue(ch byte) (int, bool) {
+	switch {
+	case ch >= '0' && ch <= '9':
+		return int(ch - '0'), true
+	case ch >= 'a' && ch <= 'f':
+		return int(ch-'a') + 10, true
+	case ch >= 'A' && ch <= 'F':
+		return int(ch-'A') + 10, true
+	default:
+		return 0, false
+	}
 }
 
 func appendLimitedString(b *strings.Builder, s string) error {
@@ -844,15 +1097,15 @@ func (rt *runtime) evalSplit(e *callExpr) (value, error) {
 		parts = splitAwkChars(input.String())
 	} else if regexSplit || sep != " " {
 		if regexSplit {
-			parts, err = splitAwkRegex(input.String(), sep)
+			parts, err = rt.splitAwkRegex(input.String(), sep)
 		} else {
-			parts, err = splitAwkFields(input.String(), sep)
+			parts, err = rt.splitAwkFields(input.String(), sep)
 		}
 		if err != nil {
 			return value{}, err
 		}
 	} else {
-		parts, err = splitAwkFields(input.String(), sep)
+		parts, err = rt.splitAwkFields(input.String(), sep)
 		if err != nil {
 			return value{}, err
 		}
@@ -959,7 +1212,7 @@ func (rt *runtime) evalBinary(e *binaryExpr) (value, error) {
 
 func (rt *runtime) matchRegexExpr(left value, rightExpr expr) (bool, error) {
 	if rx, ok := rightExpr.(*regexExpr); ok {
-		re, err := compileRegex(rx.pattern)
+		re, err := rt.compileRegex(rx.pattern)
 		if err != nil {
 			return false, err
 		}
@@ -969,7 +1222,7 @@ func (rt *runtime) matchRegexExpr(left value, rightExpr expr) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	re, err := compileRegex(right.String())
+	re, err := rt.compileRegex(right.String())
 	if err != nil {
 		return false, err
 	}

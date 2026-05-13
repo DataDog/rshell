@@ -398,8 +398,8 @@ Phase 4 should make the builtin investigation-grade for LLM-generated awk
 programs without attempting a full GNU awk clone. Prioritize features that
 unlock common log, table, and small-report workflows:
 
-- regex text editing and extraction: `sub`, `gsub`, `match`, `RSTART`, and
-  `RLENGTH`
+- regex text editing and extraction: `sub`, `gsub`, `gensub`, `match`,
+  capture arrays, `RSTART`, and `RLENGTH`
 - expression formatting: `sprintf`
 - composite array keys with `SUBSEP`, such as `count[$1, $2]++`
 - compact expression/control ergonomics: ternary `cond ? a : b`, `exit [code]`,
@@ -411,14 +411,18 @@ unlock common log, table, and small-report workflows:
   execution model
 - practical `getline` forms that read from the current input stream or from
   files through `callCtx.OpenFile`
-- focused utility builtins that support investigations: math/time/conversion
-  helpers such as `sqrt`, `log`, `exp`, `rand`, `srand`, `strtonum`, `systime`,
-  `strftime`, and `mktime`
+- focused utility builtins that support investigations, starting with
+  `strtonum` for `/proc/net/*` hex decoding and `asorti` for deterministic
+  reports
+- practical record splitting controls such as single-character `RS`,
+  including NUL for `/proc/*/cmdline` and `/proc/*/environ`, plus
+  `IGNORECASE` for case-insensitive log scans
 
 Defer or reject low-value or high-risk GNU awk compatibility surfaces:
 `system()`, unrestricted file redirection, `PROCINFO`, `SYMTAB`, `FUNCTAB`,
 namespaces, `include`, `load`, `FIELDWIDTHS`,
-`FPAT`, CSV mode, i18n builtins, bitwise builtins, and broad introspection.
+`FPAT`, CSV mode, math/time/random builtins, i18n builtins, bitwise builtins,
+and broad introspection.
 
 ## Open Design Questions
 

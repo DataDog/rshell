@@ -105,7 +105,8 @@ func TestAwkHelpDescribesSupportedAndUnsupportedProfile(t *testing.T) {
 	assert.Contains(t, stdout, "print/printf file output redirection to file targets")
 	assert.Contains(t, stdout, "ARGV/ARGC mutation")
 	assert.Contains(t, stdout, "PROCINFO, SYMTAB, FUNCTAB")
-	assert.Contains(t, stdout, "gensub, asort/asorti, patsplit, strtonum")
+	assert.Contains(t, stdout, "gensub, match, strtonum, asorti")
+	assert.Contains(t, stdout, "asort, patsplit")
 }
 
 func TestAwkPrintFields(t *testing.T) {
@@ -191,6 +192,22 @@ func TestAwkSubGsubMatchAndSprintf(t *testing.T) {
 	assert.Equal(t, 0, code)
 	assert.Equal(t, "", stderr)
 	assert.Equal(t, "4 4 3 123\nabc<123>def\nX<123>X\nid:007\n", stdout)
+}
+
+func TestAwkMatchCapturesGensubStrtonumAndAsorti(t *testing.T) {
+	dir := t.TempDir()
+	stdout, stderr, code := cmdRun(t, `printf 'cached_tables=31\n' | awk 'match($0, /cached_tables=([0-9]+)/, m) { print m[0], m[1] }'; awk 'BEGIN { print strtonum("0x1538"), strtonum("010"); print gensub(/.*trace_id=([0-9]+).*/, "\\1", 1, "trace_id=42"); a["b"] = 2; a["a"] = 1; print asorti(a, k), k[1], k[2] }'`, dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "", stderr)
+	assert.Equal(t, "cached_tables=31 31\n5432 8\n42\n2 a b\n", stdout)
+}
+
+func TestAwkIgnoreCaseAffectsRegexOperations(t *testing.T) {
+	dir := t.TempDir()
+	stdout, stderr, code := cmdRun(t, `printf 'TypeError\nok\n' | awk 'BEGIN { IGNORECASE = 1 } /typeerror/ { c++ } END { print c + 0 }'; awk 'BEGIN { IGNORECASE = 1; s = "TypeError"; sub(/type/, "Schema", s); print s; print split("AxxB", a, /X+/), a[1], a[2] }'`, dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "", stderr)
+	assert.Equal(t, "1\nSchemaError\n2 A B\n", stdout)
 }
 
 func TestAwkByteModeMatchOffsetsUseRunePositions(t *testing.T) {
@@ -474,6 +491,14 @@ func TestAwkRegexBracketClassCanContainSlash(t *testing.T) {
 	assert.Equal(t, "/\n", stdout)
 }
 
+func TestAwkRegexLiteralCanContainRepeatedEquals(t *testing.T) {
+	dir := t.TempDir()
+	stdout, stderr, code := cmdRun(t, `printf '=== WARM-UP ===\nplain\n' | awk '$0 ~ /===/ { print }'`, dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "", stderr)
+	assert.Equal(t, "=== WARM-UP ===\n", stdout)
+}
+
 func TestAwkRegexUnknownEscapesBecomeLiterals(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, dir, "input.txt", "5\nd\n")
@@ -518,6 +543,14 @@ func TestAwkRangePatterns(t *testing.T) {
 	assert.Equal(t, 0, code)
 	assert.Equal(t, "", stderr)
 	assert.Equal(t, "2:start\n3:middle\n4:end\n6:start end\n", stdout)
+}
+
+func TestAwkCompoundStatementsSeparateBeforeNextStatement(t *testing.T) {
+	dir := t.TempDir()
+	stdout, stderr, code := cmdRun(t, `awk 'BEGIN { if (1) { x = 1 } print x; for (i = 1; i <= 1; i++) { if (1) y = 2 } print y }'`, dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "", stderr)
+	assert.Equal(t, "1\n2\n", stdout)
 }
 
 func TestAwkFieldAssignmentAndRecordRebuild(t *testing.T) {
@@ -648,6 +681,16 @@ func TestAwkVariablesTabFSAndMultipleFiles(t *testing.T) {
 	assert.Equal(t, "row:one.tsv:1:1:1\nrow:two.tsv:1:2:2\n", stdout)
 }
 
+func TestAwkSingleCharacterRecordSeparator(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "nul.txt"), []byte("alpha\x00beta\x00"), 0o644))
+	writeFile(t, dir, "comma.txt", "x,y,z")
+	stdout, stderr, code := cmdRun(t, `awk -v RS='\0' '{ print NR ":" $0 }' nul.txt; awk -v RS=, '{ print NR ":" $0 }' comma.txt`, dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "", stderr)
+	assert.Equal(t, "1:alpha\n2:beta\n1:x\n2:y\n3:z\n", stdout)
+}
+
 func TestAwkCommandPipes(t *testing.T) {
 	dir := t.TempDir()
 	stdout, stderr, code := cmdRun(t, `awk 'BEGIN { print "b" | "sort"; print "a" | "sort"; close("sort"); printf "%s\n", "pipe payload" | "cat"; close("cat") }'`, dir)
@@ -753,6 +796,14 @@ func TestAwkOperandAssignments(t *testing.T) {
 	assert.Equal(t, 0, code)
 	assert.Equal(t, "", stderr)
 	assert.Equal(t, "c\n", stdout)
+}
+
+func TestAwkMissingInputFileIsFatal(t *testing.T) {
+	dir := t.TempDir()
+	stdout, stderr, code := cmdRun(t, `awk '{ print }' missing.txt`, dir)
+	assert.Equal(t, 2, code)
+	assert.Equal(t, "", stdout)
+	assert.Contains(t, stderr, "awk: fatal: cannot open file `missing.txt' for reading:")
 }
 
 func TestAwkAppliesFieldSeparatorOptionsInOrder(t *testing.T) {

@@ -162,11 +162,11 @@ func (l *lexer) next() (token, error) {
 		}
 		return token{kind: tokStar, lit: "*", pos: start}, nil
 	case '/':
-		if l.match('=') {
-			return token{kind: tokSlashAssign, lit: "/=", pos: start}, nil
-		}
 		if canStartRegex(l.last, l.lastLit) {
 			return l.scanRegex(start)
+		}
+		if l.match('=') {
+			return token{kind: tokSlashAssign, lit: "/=", pos: start}, nil
 		}
 		return token{kind: tokSlash, lit: "/", pos: start}, nil
 	case '%':

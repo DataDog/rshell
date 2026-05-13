@@ -52,6 +52,7 @@ type ifStmt struct {
 	cond      expr
 	thenStmts []stmt
 	elseStmts []stmt
+	endsBlock bool
 }
 
 func (*ifStmt) stmtNode() {}
@@ -60,22 +61,25 @@ type forInStmt struct {
 	varName   string
 	arrayName string
 	body      []stmt
+	endsBlock bool
 }
 
 func (*forInStmt) stmtNode() {}
 
 type forStmt struct {
-	init expr
-	cond expr
-	post expr
-	body []stmt
+	init      expr
+	cond      expr
+	post      expr
+	body      []stmt
+	endsBlock bool
 }
 
 func (*forStmt) stmtNode() {}
 
 type whileStmt struct {
-	cond expr
-	body []stmt
+	cond      expr
+	body      []stmt
+	endsBlock bool
 }
 
 func (*whileStmt) stmtNode() {}
