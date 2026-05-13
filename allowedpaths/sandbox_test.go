@@ -291,6 +291,102 @@ func TestSandboxTruncateMethodSymlinkEscapeRejected(t *testing.T) {
 	assert.Equal(t, "untouched", string(got), "symlink target must not be reachable for writes")
 }
 
+// TestSandboxTruncateIfLargerAboveThreshold verifies that a file at or
+// above minSize is truncated to newSize and the pre-size is reported.
+func TestSandboxTruncateIfLargerAboveThreshold(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "log.txt")
+	require.NoError(t, os.WriteFile(path, []byte("0123456789"), 0644))
+
+	sb, _, err := New([]string{dir})
+	require.NoError(t, err)
+	defer sb.Close()
+
+	sizeBefore, truncated, err := sb.TruncateIfLarger("log.txt", dir, 5, 0, false)
+	require.NoError(t, err)
+	assert.Equal(t, int64(10), sizeBefore)
+	assert.True(t, truncated)
+
+	info, err := os.Stat(path)
+	require.NoError(t, err)
+	assert.Equal(t, int64(0), info.Size())
+}
+
+// TestSandboxTruncateIfLargerBelowThreshold verifies that a file smaller
+// than minSize is left untouched and (size, false, nil) is returned.
+func TestSandboxTruncateIfLargerBelowThreshold(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "log.txt")
+	require.NoError(t, os.WriteFile(path, []byte("abc"), 0644))
+
+	sb, _, err := New([]string{dir})
+	require.NoError(t, err)
+	defer sb.Close()
+
+	sizeBefore, truncated, err := sb.TruncateIfLarger("log.txt", dir, 1024, 0, false)
+	require.NoError(t, err)
+	assert.Equal(t, int64(3), sizeBefore)
+	assert.False(t, truncated)
+
+	got, err := os.ReadFile(path)
+	require.NoError(t, err)
+	assert.Equal(t, "abc", string(got), "below-threshold file must not be modified")
+}
+
+// TestSandboxTruncateIfLargerZeroMinSize verifies that minSize == 0
+// is equivalent to Truncate: the file is always truncated.
+func TestSandboxTruncateIfLargerZeroMinSize(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "log.txt")
+	require.NoError(t, os.WriteFile(path, []byte("xyz"), 0644))
+
+	sb, _, err := New([]string{dir})
+	require.NoError(t, err)
+	defer sb.Close()
+
+	sizeBefore, truncated, err := sb.TruncateIfLarger("log.txt", dir, 0, 0, false)
+	require.NoError(t, err)
+	assert.Equal(t, int64(3), sizeBefore)
+	assert.True(t, truncated)
+
+	info, err := os.Stat(path)
+	require.NoError(t, err)
+	assert.Equal(t, int64(0), info.Size())
+}
+
+// TestSandboxTruncateIfLargerOutsideAllowedPath verifies that paths
+// outside the sandbox are rejected with permission denied before any I/O.
+func TestSandboxTruncateIfLargerOutsideAllowedPath(t *testing.T) {
+	allowed := t.TempDir()
+	outside := t.TempDir()
+	target := filepath.Join(outside, "log.txt")
+	require.NoError(t, os.WriteFile(target, []byte("untouched"), 0644))
+
+	sb, _, err := New([]string{allowed})
+	require.NoError(t, err)
+	defer sb.Close()
+
+	_, _, err = sb.TruncateIfLarger(target, allowed, 0, 0, false)
+	assert.ErrorIs(t, err, os.ErrPermission)
+
+	got, ferr := os.ReadFile(target)
+	require.NoError(t, ferr)
+	assert.Equal(t, "untouched", string(got))
+}
+
+// TestSandboxTruncateIfLargerNoCreate verifies that missing files surface
+// os.ErrNotExist when create=false.
+func TestSandboxTruncateIfLargerNoCreate(t *testing.T) {
+	dir := t.TempDir()
+
+	sb, _, err := New([]string{dir})
+	require.NoError(t, err)
+	defer sb.Close()
+
+	_, _, err = sb.TruncateIfLarger("missing.txt", dir, 0, 0, false)
+	assert.ErrorIs(t, err, fs.ErrNotExist)
+}
+
 func TestSandboxOpenReadStillWorks(t *testing.T) {
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "test.txt"), []byte("data"), 0644))

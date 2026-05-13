@@ -15,6 +15,11 @@
 // AllowedPaths sandbox; no rename-based rotation, compression, or config
 // parsing is performed.
 //
+// Threshold safety: the size check used by -s and the ftruncate share a
+// single open fd via callCtx.TruncateIfLarger, so an attacker with write
+// access to the directory cannot swap a small file under the same path
+// between a separate stat and truncate to fool the threshold gate.
+//
 // Accepted flags:
 //
 //	-s SIZE, --size=SIZE
@@ -79,7 +84,7 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			return builtins.Result{}
 		}
 
-		if callCtx.Truncate == nil {
+		if callCtx.TruncateIfLarger == nil {
 			callCtx.Errf("logrotate: filesystem capability not available\n")
 			return builtins.Result{Code: 1}
 		}
@@ -110,35 +115,21 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 				return builtins.Result{Code: 1}
 			}
 
-			// Stat first when we need the size (either for the threshold
-			// check or to report it under -v). When neither is in play we
-			// skip the stat so a missing file still rotates correctly via
-			// create=false (which surfaces ErrNotExist as a per-file error).
-			var sizeBefore int64
-			needStat := threshold > 0 || *verbose
-			if needStat {
-				if callCtx.StatFile == nil {
-					callCtx.Errf("logrotate: stat capability not available\n")
-					return builtins.Result{Code: 1}
-				}
-				info, err := callCtx.StatFile(ctx, file)
-				if err != nil {
-					callCtx.Errf("logrotate: %q: %s\n", file, callCtx.PortableErr(err))
-					failed = true
-					continue
-				}
-				sizeBefore = info.Size()
-				if threshold > 0 && sizeBefore < threshold {
-					if *verbose {
-						callCtx.Outf("logrotate: %s: %d bytes below threshold %d, skipping\n", file, sizeBefore, threshold)
-					}
-					continue
-				}
-			}
-
-			if err := callCtx.Truncate(ctx, file, 0, false); err != nil {
+			// One sandbox call: open, fstat, conditionally ftruncate, all
+			// on the same fd. This closes the path-stat to path-truncate
+			// TOCTOU window — the size used for the threshold decision is
+			// the size of the inode that will actually be truncated.
+			sizeBefore, truncated, err := callCtx.TruncateIfLarger(ctx, file, threshold, 0, false)
+			if err != nil {
 				callCtx.Errf("logrotate: %q: %s\n", file, callCtx.PortableErr(err))
 				failed = true
+				continue
+			}
+
+			if !truncated {
+				if *verbose {
+					callCtx.Outf("logrotate: %s: %d bytes below threshold %d, skipping\n", file, sizeBefore, threshold)
+				}
 				continue
 			}
 

@@ -611,6 +611,9 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 				Truncate: func(ctx context.Context, path string, size int64, create bool) error {
 					return r.sandbox.Truncate(path, dir, size, create)
 				},
+				TruncateIfLarger: func(ctx context.Context, path string, minSize, newSize int64, create bool) (int64, bool, error) {
+					return r.sandbox.TruncateIfLarger(path, dir, minSize, newSize, create)
+				},
 				PortableErr: allowedpaths.PortableErrMsg,
 				Now:         r.startTime,
 				FileIdentity: func(path string, info fs.FileInfo) (builtins.FileID, bool) {
@@ -719,6 +722,9 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 			},
 			Truncate: func(ctx context.Context, path string, size int64, create bool) error {
 				return r.sandbox.Truncate(path, HandlerCtx(r.handlerCtx(ctx, todoPos)).Dir, size, create)
+			},
+			TruncateIfLarger: func(ctx context.Context, path string, minSize, newSize int64, create bool) (int64, bool, error) {
+				return r.sandbox.TruncateIfLarger(path, HandlerCtx(r.handlerCtx(ctx, todoPos)).Dir, minSize, newSize, create)
 			},
 			PortableErr: allowedpaths.PortableErrMsg,
 			Now:         r.startTime,
