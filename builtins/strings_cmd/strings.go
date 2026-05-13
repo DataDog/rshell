@@ -161,6 +161,19 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 	separator := fs.StringP("output-separator", "s", "\n", "output separator between strings (default newline)")
 
 	return func(ctx context.Context, callCtx *builtins.CallContext, args []string) builtins.Result {
+		// Validate -n / --bytes BEFORE the --help short-circuit so
+		// that `strings -n 0 --help` exits with "invalid minimum
+		// string length" instead of printing help. GNU strings runs
+		// the bounds check during option processing; the shared
+		// args-trim in builtins/builtins.go relies on this ordering to
+		// safely honour `--help` after value-taking flags. The default
+		// (defaultMinLen=4) is in-range, so `strings --help` (no -n)
+		// still short-circuits cleanly.
+		if *minLen < 1 || *minLen > maxMinLen {
+			callCtx.Errf("strings: invalid minimum string length %d\n", *minLen)
+			return builtins.Result{Code: 1}
+		}
+
 		if *help {
 			callCtx.Out("Usage: strings [OPTION]... [FILE]...\n")
 			callCtx.Out("Print printable character sequences in files.\n")
@@ -168,12 +181,6 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			fs.SetOutput(callCtx.Stdout)
 			fs.PrintDefaults()
 			return builtins.Result{}
-		}
-
-		// Validate -n / --bytes.
-		if *minLen < 1 || *minLen > maxMinLen {
-			callCtx.Errf("strings: invalid minimum string length %d\n", *minLen)
-			return builtins.Result{Code: 1}
 		}
 
 		// format is already resolved: pflag called Set() on the custom flag values
