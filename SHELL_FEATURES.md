@@ -9,6 +9,7 @@ The in-shell `help` command mirrors these feature categories: run `help` for a c
 
 - ✅ `break` — exit the innermost `for` loop
 - ✅ `cat [-AbeEnstTuv] [FILE]...` — concatenate files to stdout; supports line numbering, blank squeezing, and non-printing character display
+- ✅ `cd [-LP] [-|DIRECTORY]` — change the shell's working directory; targets must lie inside `AllowedPaths`; with no operand changes to `$HOME`, with `-` swaps to `$OLDPWD` (printing the new path); `-L` (default) preserves symlinks, `-P` resolves them; `-e`, `-@`, `CDPATH`, `~user` not supported
 - ✅ `continue` — skip to the next iteration of the innermost `for` loop
 - ✅ `cut [-b LIST|-c LIST|-f LIST] [-d DELIM] [-s] [-n] [--complement] [--output-delimiter=STRING] [FILE]...` — remove sections from each line of files
 - ✅ `df [-hHkPTialx] [-t TYPE] [-x TYPE] [--total] [--no-sync]` — report file system disk space usage (Linux/macOS only; on Windows `df` exits 1 with `df: not supported on this platform` because mount enumeration goes through `/proc/self/mountinfo` on Linux and `getfsstat(2)` on macOS, neither of which has a Windows equivalent); Linux reads `/proc/self/mountinfo` directly via `os.Open`, bypassing `AllowedPaths`; positional `FILE` operands and `--sync`, `-B`, `--output` are not supported; mount table capped at 100 000 entries

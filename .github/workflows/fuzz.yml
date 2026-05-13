@@ -72,6 +72,12 @@ jobs:
             # pwd fuzz tests live in builtins/pwd/ alongside the pwd_test.go
             # helpers (pwdRun) — same rationale as ping above.
             corpus_path: builtins/pwd
+          - pkg: ./builtins/cd/
+            name: cd
+            # cd fuzz tests live in builtins/cd/ alongside cd_test.go (cdRun)
+            # because cd needs Runner.ChangeDir / LookupEnvVar wiring through
+            # interp.AllowedPaths — colocating keeps the helpers reusable.
+            corpus_path: builtins/cd
           - pkg: ./interp/tests/
             name: interp
             corpus_path: interp/tests

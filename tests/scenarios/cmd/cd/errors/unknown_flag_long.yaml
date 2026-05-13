@@ -1,0 +1,11 @@
+description: cd rejects an unknown long flag with exit 1 and a stderr diagnostic.
+skip_assert_against_bash: true
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    cd --no-such-flag
+expect:
+  stdout: ""
+  stderr: |+
+    cd: unknown flag: --no-such-flag
+  exit_code: 1

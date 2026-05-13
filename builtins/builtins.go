@@ -206,6 +206,21 @@ type CallContext struct {
 	// symlink, the input is returned unchanged.
 	CanonicalizeRootPrefix func(absPath string) string
 
+	// ChangeDir mutates the shell's working directory. The supplied path
+	// must be absolute. Implementations validate that the target exists,
+	// is a directory, and lies inside AllowedPaths; on any failure the
+	// previous working directory is preserved and an error is returned.
+	// On success, $OLDPWD is set to the previous directory and $PWD is
+	// set to absDir. Used exclusively by the cd builtin.
+	ChangeDir func(absDir string) error
+
+	// LookupEnvVar reads an environment variable from the shell's
+	// overlay environment. Returns (value, true) if the variable is
+	// set, ("", false) otherwise. The cd builtin uses this to resolve
+	// $HOME (no-arg form) and $OLDPWD (the `cd -` form) without
+	// requiring a full WriteEnviron handle on every CallContext.
+	LookupEnvVar func(name string) (string, bool)
+
 	// RunCommand executes a builtin command within the shell's sandbox.
 	// dir overrides the working directory for path resolution.
 	// Returns the command's exit code.
