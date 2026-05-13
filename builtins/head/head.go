@@ -125,11 +125,16 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 		// modeFlag.Set captures the FIRST invalid value rather than
 		// just whichever was set last, so this check reports the same
 		// value GNU would.
-		if linesFlag.pos > 0 && linesFlag.hasInvalid {
+		//
+		// When BOTH -n and -c have invalid values, report whichever
+		// appeared first in argv (smaller invalidPos), again matching
+		// GNU's left-to-right rule. E.g. `head -c bad -n nope` reports
+		// the byte error; `head -n nope -c bad` reports the line one.
+		if reportLinesInvalidFirst(linesFlag, bytesFlag) {
 			callCtx.Errf("head: invalid number of lines: '%s'\n", linesFlag.invalid)
 			return builtins.Result{Code: 1}
 		}
-		if bytesFlag.pos > 0 && bytesFlag.hasInvalid {
+		if bytesFlag.hasInvalid {
 			callCtx.Errf("head: invalid number of bytes: '%s'\n", bytesFlag.invalid)
 			return builtins.Result{Code: 1}
 		}
@@ -369,6 +374,20 @@ func readBytes(ctx context.Context, callCtx *builtins.CallContext, r io.Reader, 
 	return nil
 }
 
+// reportLinesInvalidFirst reports whether `head` should surface the
+// linesFlag invalid-value error rather than bytesFlag's. True when only
+// -n had an invalid value, or both did and -n came first in argv
+// (smaller invalidPos). Matches GNU's leftmost-bad-option rule.
+func reportLinesInvalidFirst(lines, bytes *modeFlag) bool {
+	if !lines.hasInvalid {
+		return false
+	}
+	if !bytes.hasInvalid {
+		return true
+	}
+	return lines.invalidPos < bytes.invalidPos
+}
+
 // parseCount parses a line or byte count string. A leading '+' is
 // accepted (treated as a positive sign by strconv.ParseInt, matching GNU
 // head behavior). Returns (count, true) on success, (0, false) on failure.
@@ -396,13 +415,17 @@ func parseCount(s string) (int64, bool) {
 // validation happens in the bound handler. To match GNU's left-to-right
 // option processing (which reports the FIRST invalid value, not whichever
 // happened to be set last), Set records the first invalid input it sees in
-// invalid/hasInvalid. The handler reports that value if hasInvalid is true.
+// invalid/hasInvalid plus the seq value at the time (invalidPos). The
+// handler picks whichever mode flag has the smaller invalidPos so that
+// `head -c bad -n nope` reports the byte error and `head -n nope -c bad`
+// reports the line error.
 type modeFlag struct {
 	val        string
 	seq        *int   // shared per-invocation counter; incremented on every Set call
 	pos        int    // counter value when Set was last called; 0 means never set
 	invalid    string // first value rejected by parseCount, if any
 	hasInvalid bool   // true if Set ever saw an invalid value
+	invalidPos int    // seq value when hasInvalid was first set; 0 means never set
 }
 
 func newModeFlag(seq *int, defaultVal string) *modeFlag {
@@ -418,6 +441,7 @@ func (f *modeFlag) Set(s string) error {
 		if _, ok := parseCount(s); !ok {
 			f.invalid = s
 			f.hasInvalid = true
+			f.invalidPos = *f.seq
 		}
 	}
 	return nil

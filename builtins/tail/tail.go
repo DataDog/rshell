@@ -183,11 +183,15 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 		// modeFlag.Set captures the FIRST invalid value rather than
 		// just whichever was set last, so this check reports the same
 		// value GNU would.
-		if linesFlag.pos > 0 && linesFlag.hasInvalid {
+		//
+		// When BOTH -n and -c have invalid values, report whichever
+		// appeared first in argv (smaller invalidPos), matching GNU's
+		// left-to-right rule.
+		if reportLinesInvalidFirst(linesFlag, bytesFlag) {
 			callCtx.Errf("tail: invalid number of lines: '%s'\n", linesFlag.invalid)
 			return builtins.Result{Code: 1}
 		}
-		if bytesFlag.pos > 0 && bytesFlag.hasInvalid {
+		if bytesFlag.hasInvalid {
 			callCtx.Errf("tail: invalid number of bytes: '%s'\n", bytesFlag.invalid)
 			return builtins.Result{Code: 1}
 		}
@@ -562,6 +566,20 @@ func skipBytes(ctx context.Context, callCtx *builtins.CallContext, r io.Reader, 
 	}
 }
 
+// reportLinesInvalidFirst reports whether `tail` should surface the
+// linesFlag invalid-value error rather than bytesFlag's. True when only
+// -n had an invalid value, or both did and -n came first in argv
+// (smaller invalidPos). Matches GNU's leftmost-bad-option rule.
+func reportLinesInvalidFirst(lines, bytes *modeFlag) bool {
+	if !lines.hasInvalid {
+		return false
+	}
+	if !bytes.hasInvalid {
+		return true
+	}
+	return lines.invalidPos < bytes.invalidPos
+}
+
 // parseCount parses a line or byte count string for tail.
 // A leading '+' activates offset mode (output starting from position N,
 // 1-based). Without '+', the value is the number of trailing lines/bytes
@@ -765,6 +783,7 @@ type modeFlag struct {
 	offsetSeen bool
 	invalid    string // first value rejected by parseCount, if any
 	hasInvalid bool   // true if Set ever saw an invalid value
+	invalidPos int    // seq value when hasInvalid was first set; 0 means never set
 }
 
 func newModeFlag(seq *int, defaultVal string) *modeFlag {
@@ -795,6 +814,7 @@ func (f *modeFlag) Set(s string) error {
 		if _, ok := parseCount(s); !ok {
 			f.invalid = s
 			f.hasInvalid = true
+			f.invalidPos = *f.seq
 		}
 	}
 	return nil
