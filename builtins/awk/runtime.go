@@ -291,6 +291,7 @@ func newRuntime(callCtx *builtins.CallContext, prog *program) *runtime {
 
 func (rt *runtime) run(ctx context.Context, files []string) builtins.Result {
 	rt.inputArgs = append([]string{}, files...)
+	defer rt.closeAllInputs()
 	exited := false
 	if err := rt.runRules(ctx, ruleBegin); err != nil {
 		if code, ok := exitCodeFromError(err); ok {
@@ -340,7 +341,6 @@ func (rt *runtime) run(ctx context.Context, files []string) builtins.Result {
 	if err := rt.closeAllCommandPipes(ctx); err != nil {
 		return rt.errorResult(err)
 	}
-	rt.closeAllInputs()
 	return builtins.Result{Code: normalizeAwkExitCode(rt.exitCode)}
 }
 
