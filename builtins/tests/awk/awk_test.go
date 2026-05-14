@@ -706,7 +706,12 @@ func TestAwkCommandPipes(t *testing.T) {
 	stdout, stderr, code = cmdRun(t, `awk 'BEGIN { print "b" | "cat"; print "a"; close("cat") }'`, dir)
 	assert.Equal(t, 0, code)
 	assert.Equal(t, "", stderr)
-	assert.Equal(t, "b\na\n", stdout)
+	assert.Equal(t, "a\nb\n", stdout)
+
+	stdout, stderr, code = cmdRun(t, `awk 'BEGIN { print "x" | "cat"; print "z"; print "y" | "cat" }'`, dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "", stderr)
+	assert.Equal(t, "x\ny\nz\n", stdout)
 
 	stdout, stderr, code = cmdRun(t, `awk 'BEGIN { print "a" | "wc -l"; printf ""; print "b" | "wc -l"; close("wc -l") }'`, dir)
 	assert.Equal(t, 0, code)

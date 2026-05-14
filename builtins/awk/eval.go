@@ -461,7 +461,7 @@ func (rt *runtime) evalClose(e *callExpr) (value, error) {
 	if err != nil {
 		return value{}, err
 	}
-	status, ok, err := rt.closeCommandPipe(rt.ctx, command.String())
+	status, ok, err := rt.closeCommandPipe(rt.ctx, command.String(), true)
 	if err != nil {
 		return value{}, err
 	}

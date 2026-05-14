@@ -208,6 +208,7 @@ type runtime struct {
 	pipes            map[string]*commandPipe
 	flushedPipes     map[string]uint8
 	pipeOrder        []string
+	stdoutBuf        bytes.Buffer
 	inputArgs        []string
 	inputIndex       int
 	mainInput        *recordSource
@@ -341,6 +342,7 @@ func (rt *runtime) run(ctx context.Context, files []string) builtins.Result {
 	if err := rt.closeAllCommandPipes(ctx); err != nil {
 		return rt.errorResult(err)
 	}
+	rt.flushStdoutBuffer()
 	return builtins.Result{Code: normalizeAwkExitCode(rt.exitCode)}
 }
 
@@ -595,7 +597,7 @@ func (rt *runtime) commandPipe(command string) (*commandPipe, error) {
 	return pipe, nil
 }
 
-func (rt *runtime) closeCommandPipe(ctx context.Context, command string) (uint8, bool, error) {
+func (rt *runtime) closeCommandPipe(ctx context.Context, command string, flushStdoutBefore bool) (uint8, bool, error) {
 	pipe, ok := rt.pipes[command]
 	if !ok {
 		if status, ok := rt.flushedPipes[command]; ok {
@@ -606,6 +608,9 @@ func (rt *runtime) closeCommandPipe(ctx context.Context, command string) (uint8,
 	}
 	delete(rt.pipes, command)
 	rt.removeCommandPipeOrder(command)
+	if flushStdoutBefore {
+		rt.flushStdoutBuffer()
+	}
 	status, err := rt.runCommandPipe(ctx, pipe)
 	return status, true, err
 }
@@ -623,7 +628,7 @@ func (rt *runtime) removeCommandPipeOrder(command string) {
 func (rt *runtime) closeAllCommandPipes(ctx context.Context) error {
 	for len(rt.pipeOrder) > 0 {
 		command := rt.pipeOrder[0]
-		_, _, err := rt.closeCommandPipe(ctx, command)
+		_, _, err := rt.closeCommandPipe(ctx, command, false)
 		if err != nil {
 			return err
 		}
@@ -633,13 +638,10 @@ func (rt *runtime) closeAllCommandPipes(ctx context.Context) error {
 
 func (rt *runtime) flushCommandPipesForStdout(ctx context.Context, remaining []stmt) error {
 	for _, command := range append([]string(nil), rt.pipeOrder...) {
-		if rt.commandPipeWillBeWrittenBeforeClose(command, remaining) {
+		if rt.commandPipeNextAction(command, remaining) != commandPipeActionNone {
 			continue
 		}
-		if pipe := rt.pipes[command]; pipe != nil && pipe.writes > 1 {
-			continue
-		}
-		status, ok, err := rt.closeCommandPipe(ctx, command)
+		status, ok, err := rt.closeCommandPipe(ctx, command, false)
 		if err != nil {
 			return err
 		}
@@ -650,8 +652,20 @@ func (rt *runtime) flushCommandPipesForStdout(ctx context.Context, remaining []s
 	return nil
 }
 
-func (rt *runtime) commandPipeWillBeWrittenBeforeClose(command string, stmts []stmt) bool {
-	return rt.stmtsCommandPipeAction(command, stmts, nil) == commandPipeActionWrite
+func (rt *runtime) shouldBufferStdoutForPipes(remaining []stmt) bool {
+	if rt.stdoutBuf.Len() > 0 {
+		return true
+	}
+	for _, command := range rt.pipeOrder {
+		if rt.commandPipeNextAction(command, remaining) != commandPipeActionNone {
+			return true
+		}
+	}
+	return false
+}
+
+func (rt *runtime) commandPipeNextAction(command string, stmts []stmt) commandPipeAction {
+	return rt.stmtsCommandPipeAction(command, stmts, nil)
 }
 
 type commandPipeAction int
@@ -837,12 +851,27 @@ func (rt *runtime) runCommandPipe(ctx context.Context, pipe *commandPipe) (uint8
 
 func (rt *runtime) writeStdoutString(ctx context.Context, s string, remaining []stmt) error {
 	if s != "" {
+		if rt.shouldBufferStdoutForPipes(remaining) {
+			_, err := rt.stdoutBuf.WriteString(s)
+			if err != nil {
+				return err
+			}
+			return ctx.Err()
+		}
 		if err := rt.flushCommandPipesForStdout(ctx, remaining); err != nil {
 			return err
 		}
 	}
 	rt.callCtx.Out(s)
 	return nil
+}
+
+func (rt *runtime) flushStdoutBuffer() {
+	if rt.stdoutBuf.Len() == 0 {
+		return
+	}
+	rt.callCtx.Out(rt.stdoutBuf.String())
+	rt.stdoutBuf.Reset()
 }
 
 func (rt *runtime) getlineFileRecord(ctx context.Context, name string) (string, int, error) {
