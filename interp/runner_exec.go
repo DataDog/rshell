@@ -34,8 +34,12 @@ func (r *Runner) stmt(ctx context.Context, st *syntax.Stmt) {
 
 func (r *Runner) stmtSync(ctx context.Context, st *syntax.Stmt) {
 	oldIn, oldOut, oldErr := r.stdin, r.stdout, r.stderr
+	redirCommand := ""
+	if st.Cmd != nil {
+		redirCommand = simpleCommandName(st.Cmd)
+	}
 	for _, rd := range st.Redirs {
-		cls, err := r.redir(ctx, rd)
+		cls, err := r.redir(ctx, rd, redirCommand)
 		if err != nil {
 			r.exit.code = 1
 			break
@@ -78,7 +82,12 @@ func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {
 	case *syntax.CallExpr:
 		args := cm.Args
 		r.lastExpandExit = exitStatus{}
+		prevAccessCommand := r.fileAccessCommand
+		if name := simpleCommandName(cm); name != "" {
+			r.fileAccessCommand = name
+		}
 		fields := r.fields(args...)
+		r.fileAccessCommand = prevAccessCommand
 		if len(fields) == 0 {
 			for _, as := range cm.Assigns {
 				prev := r.lookupVar(as.Name.Value)
@@ -578,35 +587,53 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 					return r.sandbox.CanonicalizeRootPrefix(absPath)
 				},
 				OpenFile: func(ctx context.Context, path string, flags int, mode os.FileMode) (io.ReadWriteCloser, error) {
-					f, err := r.sandbox.Open(path, dir, flags, mode)
+					f, err := r.observedSandboxOpen(ctx, cmdName, FileAccessSourceBuiltin, path, dir, flags, mode, func() (io.ReadWriteCloser, error) {
+						return r.sandbox.Open(path, dir, flags, mode)
+					})
 					if err != nil {
 						return nil, err
 					}
 					return allowedpaths.WithContextClose(ctx, f), nil
 				},
 				ReadDir: func(ctx context.Context, path string) ([]fs.DirEntry, error) {
-					return r.sandbox.ReadDir(path, dir)
+					return r.observedReadDir(ctx, cmdName, FileAccessSourceBuiltin, path, dir, func() ([]fs.DirEntry, error) {
+						return r.sandbox.ReadDir(path, dir)
+					})
 				},
 				OpenDir: func(ctx context.Context, path string) (fs.ReadDirFile, error) {
-					return r.sandbox.OpenDir(path, dir)
+					return r.observedOpenDir(ctx, cmdName, FileAccessSourceBuiltin, path, dir, func() (fs.ReadDirFile, error) {
+						return r.sandbox.OpenDir(path, dir)
+					})
 				},
 				IsDirEmpty: func(ctx context.Context, path string) (bool, error) {
-					return r.sandbox.IsDirEmpty(path, dir)
+					return r.observedIsDirEmpty(ctx, cmdName, FileAccessSourceBuiltin, path, dir, func() (bool, error) {
+						return r.sandbox.IsDirEmpty(path, dir)
+					})
 				},
 				ReadDirLimited: func(ctx context.Context, path string, offset, maxRead int) ([]fs.DirEntry, bool, error) {
-					return r.sandbox.ReadDirLimited(path, dir, offset, maxRead)
+					return r.observedReadDirLimited(ctx, cmdName, FileAccessSourceBuiltin, path, dir, func() ([]fs.DirEntry, bool, error) {
+						return r.sandbox.ReadDirLimited(path, dir, offset, maxRead)
+					})
 				},
 				StatFile: func(ctx context.Context, path string) (fs.FileInfo, error) {
-					return r.sandbox.Stat(path, dir)
+					return r.observedStat(ctx, cmdName, FileAccessSourceBuiltin, FileAccessOpStat, path, dir, fileAccessMetadataStat, func() (fs.FileInfo, error) {
+						return r.sandbox.Stat(path, dir)
+					})
 				},
 				LstatFile: func(ctx context.Context, path string) (fs.FileInfo, error) {
-					return r.sandbox.Lstat(path, dir)
+					return r.observedStat(ctx, cmdName, FileAccessSourceBuiltin, FileAccessOpLstat, path, dir, fileAccessMetadataLstat, func() (fs.FileInfo, error) {
+						return r.sandbox.Lstat(path, dir)
+					})
 				},
 				ReadlinkFile: func(ctx context.Context, path string) (string, error) {
-					return r.sandbox.Readlink(path, dir)
+					return r.observedReadlink(ctx, cmdName, FileAccessSourceBuiltin, path, dir, func() (string, error) {
+						return r.sandbox.Readlink(path, dir)
+					})
 				},
 				AccessFile: func(ctx context.Context, path string, mode uint32) error {
-					return r.sandbox.Access(path, dir, mode)
+					return r.observedAccess(ctx, cmdName, FileAccessSourceBuiltin, path, dir, mode, func() error {
+						return r.sandbox.Access(path, dir, mode)
+					})
 				},
 				PortableErr: allowedpaths.PortableErrMsg,
 				Now:         r.startTime,
@@ -684,35 +711,59 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 				return r.sandbox.CanonicalizeRootPrefix(absPath)
 			},
 			OpenFile: func(ctx context.Context, path string, flags int, mode os.FileMode) (io.ReadWriteCloser, error) {
-				f, err := r.open(ctx, path, flags, mode, false)
+				f, err := r.open(ctx, path, flags, mode, false, name, FileAccessSourceBuiltin)
 				if err != nil {
 					return nil, err
 				}
 				return allowedpaths.WithContextClose(ctx, f), nil
 			},
 			ReadDir: func(ctx context.Context, path string) ([]fs.DirEntry, error) {
-				return r.sandbox.ReadDir(path, HandlerCtx(r.handlerCtx(ctx, todoPos)).Dir)
+				cwd := HandlerCtx(r.handlerCtx(ctx, todoPos)).Dir
+				return r.observedReadDir(ctx, name, FileAccessSourceBuiltin, path, cwd, func() ([]fs.DirEntry, error) {
+					return r.sandbox.ReadDir(path, cwd)
+				})
 			},
 			OpenDir: func(ctx context.Context, path string) (fs.ReadDirFile, error) {
-				return r.sandbox.OpenDir(path, HandlerCtx(r.handlerCtx(ctx, todoPos)).Dir)
+				cwd := HandlerCtx(r.handlerCtx(ctx, todoPos)).Dir
+				return r.observedOpenDir(ctx, name, FileAccessSourceBuiltin, path, cwd, func() (fs.ReadDirFile, error) {
+					return r.sandbox.OpenDir(path, cwd)
+				})
 			},
 			IsDirEmpty: func(ctx context.Context, path string) (bool, error) {
-				return r.sandbox.IsDirEmpty(path, HandlerCtx(r.handlerCtx(ctx, todoPos)).Dir)
+				cwd := HandlerCtx(r.handlerCtx(ctx, todoPos)).Dir
+				return r.observedIsDirEmpty(ctx, name, FileAccessSourceBuiltin, path, cwd, func() (bool, error) {
+					return r.sandbox.IsDirEmpty(path, cwd)
+				})
 			},
 			ReadDirLimited: func(ctx context.Context, path string, offset, maxRead int) ([]fs.DirEntry, bool, error) {
-				return r.sandbox.ReadDirLimited(path, HandlerCtx(r.handlerCtx(ctx, todoPos)).Dir, offset, maxRead)
+				cwd := HandlerCtx(r.handlerCtx(ctx, todoPos)).Dir
+				return r.observedReadDirLimited(ctx, name, FileAccessSourceBuiltin, path, cwd, func() ([]fs.DirEntry, bool, error) {
+					return r.sandbox.ReadDirLimited(path, cwd, offset, maxRead)
+				})
 			},
 			StatFile: func(ctx context.Context, path string) (fs.FileInfo, error) {
-				return r.sandbox.Stat(path, HandlerCtx(r.handlerCtx(ctx, todoPos)).Dir)
+				cwd := HandlerCtx(r.handlerCtx(ctx, todoPos)).Dir
+				return r.observedStat(ctx, name, FileAccessSourceBuiltin, FileAccessOpStat, path, cwd, fileAccessMetadataStat, func() (fs.FileInfo, error) {
+					return r.sandbox.Stat(path, cwd)
+				})
 			},
 			LstatFile: func(ctx context.Context, path string) (fs.FileInfo, error) {
-				return r.sandbox.Lstat(path, HandlerCtx(r.handlerCtx(ctx, todoPos)).Dir)
+				cwd := HandlerCtx(r.handlerCtx(ctx, todoPos)).Dir
+				return r.observedStat(ctx, name, FileAccessSourceBuiltin, FileAccessOpLstat, path, cwd, fileAccessMetadataLstat, func() (fs.FileInfo, error) {
+					return r.sandbox.Lstat(path, cwd)
+				})
 			},
 			ReadlinkFile: func(ctx context.Context, path string) (string, error) {
-				return r.sandbox.Readlink(path, HandlerCtx(r.handlerCtx(ctx, todoPos)).Dir)
+				cwd := HandlerCtx(r.handlerCtx(ctx, todoPos)).Dir
+				return r.observedReadlink(ctx, name, FileAccessSourceBuiltin, path, cwd, func() (string, error) {
+					return r.sandbox.Readlink(path, cwd)
+				})
 			},
 			AccessFile: func(ctx context.Context, path string, mode uint32) error {
-				return r.sandbox.Access(path, HandlerCtx(r.handlerCtx(ctx, todoPos)).Dir, mode)
+				cwd := HandlerCtx(r.handlerCtx(ctx, todoPos)).Dir
+				return r.observedAccess(ctx, name, FileAccessSourceBuiltin, path, cwd, mode, func() error {
+					return r.sandbox.Access(path, cwd, mode)
+				})
 			},
 			PortableErr: allowedpaths.PortableErrMsg,
 			Now:         r.startTime,

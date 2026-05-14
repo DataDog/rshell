@@ -41,6 +41,8 @@ var interpAllowedSymbols = []string{
 	"io.Writer",                   // 🟢 interface type for writing; no side effects.
 	"io/fs.DirEntry",              // 🟢 interface type for directory entries; no side effects.
 	"io/fs.FileInfo",              // 🟢 interface type for file metadata; no side effects.
+	"io/fs.FileMode",              // 🟢 file mode bits type for metadata; pure type.
+	"io/fs.ModeSymlink",           // 🟢 symlink mode bit constant for metadata classification; pure constant.
 	"io/fs.ReadDirFile",           // 🟢 read-only directory handle interface; no write capability.
 	"maps.Insert",                 // 🟢 inserts all key-value pairs from one map into another; pure function.
 	"os.DirEntry",                 // 🟢 type alias for fs.DirEntry; no side effects.
@@ -50,6 +52,7 @@ var interpAllowedSymbols = []string{
 	"os.O_RDONLY",                 // 🟢 read-only file flag constant; pure constant.
 	"os.PathError",                // 🟢 error type wrapping path and operation; pure type.
 	"os.Pipe",                     // 🟠 creates an OS pipe pair; needed for shell pipelines.
+	"path/filepath.Clean",         // 🟢 normalizes path strings for reporting; pure function, no I/O.
 	"path/filepath.IsAbs",         // 🟢 checks if path is absolute; pure function, no I/O.
 	"path/filepath.Join",          // 🟢 joins path elements; pure function, no I/O.
 	"path/filepath.ListSeparator", // 🟢 OS-specific path list separator; pure constant.

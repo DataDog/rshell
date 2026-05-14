@@ -37,11 +37,16 @@ func (r *Runner) updateExpandOpts() {
 			}
 		}
 		ctx := r.handlerCtx(r.ectx, todoPos)
+		cwd := HandlerCtx(ctx).Dir
 		if r.readDirHandler != nil {
-			return r.readDirHandler(ctx, s)
+			return r.observedReadDir(ctx, r.fileAccessCommand, FileAccessSourceGlob, s, cwd, func() ([]fs.DirEntry, error) {
+				return r.readDirHandler(ctx, s)
+			})
 		}
 		// Fallback when a custom openHandler was set without a readDirHandler.
-		return r.sandbox.ReadDirForGlob(s, HandlerCtx(ctx).Dir)
+		return r.observedReadDir(ctx, r.fileAccessCommand, FileAccessSourceGlob, s, cwd, func() ([]fs.DirEntry, error) {
+			return r.sandbox.ReadDirForGlob(s, cwd)
+		})
 	}
 }
 
@@ -85,7 +90,7 @@ func (r *Runner) cmdSubst(w io.Writer, cs *syntax.CmdSubst) error {
 			return nil
 		}
 		path := r.literal(word)
-		f, err := r.open(r.ectx, path, os.O_RDONLY, 0, true)
+		f, err := r.open(r.ectx, path, os.O_RDONLY, 0, true, r.fileAccessCommand, FileAccessSourceCommandSubstitute)
 		if err != nil {
 			// r.open already printed the error; set exit status and
 			// return nil so the expand layer does not double-report.

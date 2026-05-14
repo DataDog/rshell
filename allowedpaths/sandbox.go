@@ -631,6 +631,22 @@ func (s *Sandbox) Readlink(path string, cwd string) (string, error) {
 	return target, nil
 }
 
+// ResolvePath returns a best-effort absolute path after applying the same
+// sandbox root and cross-root symlink resolution used by filesystem
+// operations. When preserveLast is true, the final path component is not
+// resolved if it is a symlink, matching lstat/readlink semantics.
+func (s *Sandbox) ResolvePath(path string, cwd string, preserveLast bool) (string, error) {
+	absPath := filepath.Clean(toAbs(path, cwd))
+	ar, relPath, ok := s.resolveRootFollowingSymlinks(absPath, preserveLast)
+	if !ok {
+		return "", &os.PathError{Op: "resolve", Path: path, Err: os.ErrPermission}
+	}
+	if relPath == "." {
+		return ar.absPath, nil
+	}
+	return filepath.Join(ar.absPath, relPath), nil
+}
+
 // SetHostPrefix overrides the mount prefix used to translate host-absolute
 // symlink targets inside containers.
 func (s *Sandbox) SetHostPrefix(prefix string) {

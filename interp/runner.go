@@ -9,6 +9,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 
 	"mvdan.cc/sh/v3/syntax"
@@ -47,8 +48,21 @@ func (r *Runner) stop(ctx context.Context) bool {
 	return false
 }
 
-func (r *Runner) open(ctx context.Context, path string, flags int, mode os.FileMode, print bool) (io.ReadWriteCloser, error) {
-	f, err := r.openHandler(r.handlerCtx(ctx, todoPos), path, flags, mode)
+func (r *Runner) open(ctx context.Context, path string, flags int, mode os.FileMode, print bool, command string, source FileAccessSource) (io.ReadWriteCloser, error) {
+	hctx := r.handlerCtx(ctx, todoPos)
+	cwd := HandlerCtx(hctx).Dir
+	event := r.beginFileAccess(ctx, command, source, FileAccessOpOpen, path, cwd, flags, mode, 0, fileAccessMetadataStat)
+	f, err := r.openHandler(hctx, path, flags, mode)
+	var (
+		info    fs.FileInfo
+		infoErr error
+	)
+	if err == nil {
+		if st, ok := f.(interface{ Stat() (fs.FileInfo, error) }); ok {
+			info, infoErr = st.Stat()
+		}
+	}
+	r.finishFileAccess(ctx, event, info, infoErr, err, fileAccessMetadataStat)
 	// TODO: support wrapped PathError returned from openHandler.
 	switch err.(type) {
 	case nil:

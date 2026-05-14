@@ -200,7 +200,7 @@ func (r *Runner) hdocReader(ctx context.Context, rd *syntax.Redirect) (*os.File,
 	return pr, nil
 }
 
-func (r *Runner) redir(ctx context.Context, rd *syntax.Redirect) (io.Closer, error) {
+func (r *Runner) redir(ctx context.Context, rd *syntax.Redirect, command string) (io.Closer, error) {
 	if rd.Hdoc != nil {
 		pr, err := r.hdocReader(ctx, rd)
 		if err != nil {
@@ -283,7 +283,7 @@ func (r *Runner) redir(ctx context.Context, rd *syntax.Redirect) (io.Closer, err
 		return nil, fmt.Errorf("unhandled redirect op: %v", rd.Op)
 	}
 
-	f, err := r.open(ctx, arg, os.O_RDONLY, 0, true)
+	f, err := r.open(ctx, arg, os.O_RDONLY, 0, true, command, FileAccessSourceInputRedirect)
 	if err != nil {
 		return nil, err
 	}

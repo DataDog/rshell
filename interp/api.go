@@ -94,6 +94,11 @@ type runnerConfig struct {
 	// New() and shared across subshells via runnerConfig value copy.
 	proc *builtins.ProcProvider
 
+	// fileAccessHooks, when configured, receives passive before/after events
+	// for filesystem operations performed by rshell. Hooks are observability
+	// only: they cannot authorize, deny, or alter file access.
+	fileAccessHooks FileAccessHooks
+
 	// usedNew is set by New() and checked in Reset() to ensure a Runner
 	// was properly constructed rather than zero-initialized.
 	usedNew bool
@@ -193,6 +198,16 @@ type runnerState struct {
 	// (including concurrent pipe subshells) via pointer, and must be
 	// accessed atomically.
 	globReadDirCount *atomic.Int64
+
+	// fileAccessSeq assigns stable before/after event ids for the current
+	// Run(). It is shared with subshells so concurrent pipeline stages do not
+	// produce colliding ids.
+	fileAccessSeq *atomic.Int64
+
+	// fileAccessCommand carries a best-effort command name while expanding a
+	// simple command, so glob and command-substitution file accesses can be
+	// attributed before the final expanded argv is known.
+	fileAccessCommand string
 }
 
 // A Runner interprets shell programs. It can be reused, but it is not safe for
@@ -586,6 +601,7 @@ func (r *Runner) Run(ctx context.Context, node syntax.Node) (retErr error) {
 	r.runStdout = r.stdout
 	r.startTime = time.Now()
 	r.globReadDirCount = &atomic.Int64{}
+	r.fileAccessSeq = &atomic.Int64{}
 	r.fillExpandConfig(ctx)
 	if err := validateNode(node); err != nil {
 		fmt.Fprintln(r.stderr, err)
@@ -802,19 +818,21 @@ func (r *Runner) subshell(background bool) *Runner {
 	r2 := &Runner{
 		runnerConfig: r.runnerConfig,
 		runnerState: runnerState{
-			Dir:              r.Dir,
-			Params:           r.Params,
-			stdin:            r.stdin,
-			stdout:           r.stdout,
-			stderr:           r.stderr,
-			runStdin:         r.runStdin,
-			runStdout:        r.runStdout,
-			inPipeline:       r.inPipeline,
-			filename:         r.filename,
-			exit:             r.exit,
-			lastExit:         r.lastExit,
-			startTime:        r.startTime,
-			globReadDirCount: r.globReadDirCount,
+			Dir:               r.Dir,
+			Params:            r.Params,
+			stdin:             r.stdin,
+			stdout:            r.stdout,
+			stderr:            r.stderr,
+			runStdin:          r.runStdin,
+			runStdout:         r.runStdout,
+			inPipeline:        r.inPipeline,
+			filename:          r.filename,
+			exit:              r.exit,
+			lastExit:          r.lastExit,
+			startTime:         r.startTime,
+			globReadDirCount:  r.globReadDirCount,
+			fileAccessSeq:     r.fileAccessSeq,
+			fileAccessCommand: r.fileAccessCommand,
 		},
 	}
 	r2.writeEnv = newOverlayEnviron(r.writeEnv, background)
