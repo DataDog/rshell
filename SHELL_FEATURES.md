@@ -109,6 +109,7 @@ The in-shell `help` command mirrors these feature categories: run `help` for a c
 - ✅ AllowedCommands — restricts which commands (builtins or external) may be executed; commands require the `rshell:` namespace prefix (e.g. `rshell:cat`); if not set, no commands are allowed
 - ✅ AllowedPaths filesystem sandboxing — restricts all file access to specified directories
 - ✅ File-access hooks — library callers can opt in to passive before/after metadata events for sandboxed file opens, directory reads, stat/lstat/readlink/access checks, input redirects, command substitution file shortcuts, and glob expansion
+- ✅ Command hooks — library callers can opt in to passive command-dispatch events with command name, arguments, allowed/known status, and exit code
 - ✅ Whole-run execution timeout — callers can bound a `Run()` call via `context.Context`, `interp.MaxExecutionTime`, or the CLI `--timeout` flag; the deadline applies to the entire script, not each individual command
 - ✅ ProcPath — overrides the proc filesystem path used by `ps` (default `/proc`; Linux-only; useful for testing/container environments)
 - ❌ External commands — blocked by default; requires an ExecHandler to be configured and the binary to be within AllowedPaths

@@ -784,6 +784,9 @@ func invokeCommand(ctx context.Context, callCtx *builtins.CallContext, o options
 		return exitSubCmdNotStart, true
 	}
 	if callCtx.CommandAllowed != nil && !callCtx.CommandAllowed(finalCmd) {
+		if callCtx.CommandDenied != nil {
+			callCtx.CommandDenied(ctx, finalCmd, finalArgs)
+		}
 		callCtx.Errf("xargs: %s: command not allowed\n", finalCmd)
 		return exitSubCmdNotStart, true
 	}

@@ -304,14 +304,17 @@ func evalExecLike(ec *evalContext, e *expr, name, replacement, dir string) evalR
 		return evalResult{}
 	}
 	cmd := strings.ReplaceAll(e.execCmd, "{}", replacement)
-	if ec.callCtx.CommandAllowed != nil && !ec.callCtx.CommandAllowed(cmd) {
-		ec.callCtx.Errf("find: %s: '%s': command not allowed\n", name, cmd)
-		ec.failed = true
-		return evalResult{}
-	}
 	args := make([]string, len(e.execArgs))
 	for i, a := range e.execArgs {
 		args[i] = strings.ReplaceAll(a, "{}", replacement)
+	}
+	if ec.callCtx.CommandAllowed != nil && !ec.callCtx.CommandAllowed(cmd) {
+		if ec.callCtx.CommandDenied != nil {
+			ec.callCtx.CommandDenied(ec.ctx, cmd, args)
+		}
+		ec.callCtx.Errf("find: %s: '%s': command not allowed\n", name, cmd)
+		ec.failed = true
+		return evalResult{}
 	}
 	exitCode, err := ec.callCtx.RunCommand(ec.ctx, dir, cmd, args)
 	if err != nil {

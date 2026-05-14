@@ -184,6 +184,10 @@ type CallContext struct {
 	// commands.
 	CommandAllowed func(name string) bool
 
+	// CommandDenied reports an attempted child-command dispatch that was
+	// rejected by CommandAllowed before RunCommand was invoked.
+	CommandDenied func(ctx context.Context, name string, args []string)
+
 	// WorkDir returns the shell's current working directory (absolute path).
 	// Used by builtins that need to compute absolute paths for sub-operations.
 	WorkDir func() string

@@ -510,6 +510,17 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 	// short-circuits dispatch.
 	isAllowed := r.allowAllCommands || r.allowedCommands[name]
 	fn, isKnown := builtins.Lookup(name)
+	if r.commandHooksEnabled() {
+		defer func() {
+			r.callCommandHook(ctx, r.commandHooks.After, CommandEvent{
+				Name:      name,
+				Args:      append([]string(nil), args[1:]...),
+				IsAllowed: isAllowed,
+				IsKnown:   isKnown,
+				ExitCode:  r.exit.code,
+			})
+		}()
+	}
 
 	span, ctx := telemetry.StartSpanFromContext(ctx, "command")
 	span.SetResourceName(name)
@@ -554,13 +565,27 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 	if isKnown {
 		r.dispatchedCount++
 		var runCmdWithStdin func(context.Context, string, string, []string, io.Reader) (uint8, error)
-		runCmdWithStdin = func(ctx context.Context, dir string, cmdName string, cmdArgs []string, childStdin io.Reader) (uint8, error) {
-			if !r.allowAllCommands && !r.allowedCommands[cmdName] {
-				return 127, fmt.Errorf("rshell: %s: command not allowed", cmdName)
+		runCmdWithStdin = func(ctx context.Context, dir string, cmdName string, cmdArgs []string, childStdin io.Reader) (code uint8, err error) {
+			isAllowed := r.allowAllCommands || r.allowedCommands[cmdName]
+			cmdFn, isKnown := builtins.Lookup(cmdName)
+			if r.commandHooksEnabled() {
+				defer func() {
+					r.callCommandHook(ctx, r.commandHooks.After, CommandEvent{
+						Name:      cmdName,
+						Args:      append([]string(nil), cmdArgs...),
+						IsAllowed: isAllowed,
+						IsKnown:   isKnown,
+						ExitCode:  code,
+					})
+				}()
 			}
-			cmdFn, ok := builtins.Lookup(cmdName)
-			if !ok {
-				return 127, fmt.Errorf("rshell: %s: unknown command", cmdName)
+			if !isAllowed {
+				code = 127
+				return code, fmt.Errorf("rshell: %s: command not allowed", cmdName)
+			}
+			if !isKnown {
+				code = 127
+				return code, fmt.Errorf("rshell: %s: unknown command", cmdName)
 			}
 			child := &builtins.CallContext{
 				Stdout:  r.stdout,
@@ -648,6 +673,7 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 				CommandAllowed: func(n string) bool {
 					return r.allowAllCommands || r.allowedCommands[n]
 				},
+				CommandDenied: r.notifyCommandDenied,
 				RunCommand: func(ctx context.Context, dir string, name string, args []string) (uint8, error) {
 					// Inherit the parent's overridden stdin so grandchildren
 					// dispatched via RunCommand (the no-stdin variant) stay
@@ -677,7 +703,8 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 				child.Stdin = r.stdin
 			}
 			result := cmdFn(ctx, child, cmdArgs)
-			return result.Code, nil
+			code = result.Code
+			return code, nil
 		}
 		runCmd := func(ctx context.Context, dir string, cmdName string, cmdArgs []string) (uint8, error) {
 			return runCmdWithStdin(ctx, dir, cmdName, cmdArgs, nil)
@@ -778,6 +805,7 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 			CommandAllowed: func(cmdName string) bool {
 				return r.allowAllCommands || r.allowedCommands[cmdName]
 			},
+			CommandDenied:       r.notifyCommandDenied,
 			RunCommand:          runCmd,
 			RunCommandWithStdin: runCmdWithStdin,
 			SetVar: func(name, value string) error {

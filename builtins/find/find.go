@@ -184,11 +184,16 @@ optLoop:
 	// Post-parse validation: check -exec/-execdir commands are allowed.
 	// Commands containing {} are skipped here — the substituted name is
 	// validated at eval-time when the replacement is known.
-	for _, cmd := range collectExecCmds(expression) {
+	for _, ex := range collectExecExprs(expression) {
+		cmd := ex.execCmd
 		if strings.Contains(cmd, "{}") {
 			continue
 		}
 		if callCtx.CommandAllowed != nil && !callCtx.CommandAllowed(cmd) {
+			args := append([]string(nil), ex.execArgs...)
+			if callCtx.CommandDenied != nil {
+				callCtx.CommandDenied(ctx, cmd, args)
+			}
 			callCtx.Errf("find: '%s': command not allowed\n", cmd)
 			return builtins.Result{Code: 1}
 		}
@@ -605,23 +610,23 @@ func walkPath(
 	return walkResult{failed: failed, quit: quit}
 }
 
-// collectExecCmds walks the expression tree and returns all -exec/-execdir command names.
-func collectExecCmds(e *expr) []string {
-	var cmds []string
-	collectExecCmdsInto(e, &cmds)
-	return cmds
+// collectExecExprs walks the expression tree and returns all -exec/-execdir expressions.
+func collectExecExprs(e *expr) []*expr {
+	var execs []*expr
+	collectExecExprsInto(e, &execs)
+	return execs
 }
 
-func collectExecCmdsInto(e *expr, cmds *[]string) {
+func collectExecExprsInto(e *expr, execs *[]*expr) {
 	if e == nil {
 		return
 	}
 	if e.kind == exprExecDir || e.kind == exprExec {
-		*cmds = append(*cmds, e.execCmd)
+		*execs = append(*execs, e)
 	}
-	collectExecCmdsInto(e.left, cmds)
-	collectExecCmdsInto(e.right, cmds)
-	collectExecCmdsInto(e.operand, cmds)
+	collectExecExprsInto(e.left, execs)
+	collectExecExprsInto(e.right, execs)
+	collectExecExprsInto(e.operand, execs)
 }
 
 // collectNewerRefs walks the expression tree and returns all -newer reference paths.

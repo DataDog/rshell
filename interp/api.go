@@ -99,6 +99,11 @@ type runnerConfig struct {
 	// only: they cannot authorize, deny, or alter file access.
 	fileAccessHooks FileAccessHooks
 
+	// commandHooks, when configured, receives passive events for command
+	// dispatch decisions. Hooks are observability only: they cannot authorize,
+	// deny, or alter command execution.
+	commandHooks CommandHooks
+
 	// usedNew is set by New() and checked in Reset() to ensure a Runner
 	// was properly constructed rather than zero-initialized.
 	usedNew bool
