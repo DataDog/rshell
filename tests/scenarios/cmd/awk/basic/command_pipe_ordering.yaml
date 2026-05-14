@@ -6,6 +6,7 @@ input:
     awk 'BEGIN { print "a" | "wc -l"; printf ""; print "b" | "wc -l"; close("wc -l") }'
     awk 'BEGIN { print "b" | "sort"; print "mid"; print "a" | "sort"; close("sort") }'
     awk 'BEGIN { for (i = 1; i <= 2; i++) { print i | "cat"; print "x" } close("cat") }'
+    awk 'function f(x) { print x | "sort"; print "s" } BEGIN { f("b"); f("a"); close("sort") }'
 expect:
   stdout: |+
     b
@@ -18,5 +19,9 @@ expect:
     x
     1
     2
+    s
+    s
+    a
+    b
   stderr: |+
   exit_code: 0

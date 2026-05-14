@@ -42,11 +42,14 @@ func (rt *runtime) execStatementsWithFuture(ctx context.Context, stmts []stmt, f
 	prevCtx := rt.ctx
 	rt.ctx = ctx
 	defer func() { rt.ctx = prevCtx }()
+	prevFuture := rt.futureStmts
+	defer func() { rt.futureStmts = prevFuture }()
 	for i, st := range stmts {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
 		remaining := stmtFuture(stmts[i+1:], future)
+		rt.futureStmts = remaining
 		switch s := st.(type) {
 		case *printStmt:
 			vals := make([]value, 0, len(s.args))
@@ -607,7 +610,7 @@ func (rt *runtime) evalUserFunction(fn *functionDef, args []expr) (value, error)
 	if rt.ctx == nil {
 		return value{}, fmt.Errorf("missing evaluation context")
 	}
-	err := rt.execStatements(rt.ctx, fn.body)
+	err := rt.execStatementsWithFuture(rt.ctx, fn.body, rt.futureStmts)
 	if ret, ok := err.(*returnError); ok {
 		return ret.value, nil
 	}

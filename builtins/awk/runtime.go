@@ -204,6 +204,7 @@ type runtime struct {
 	environSet       bool
 	frames           []callFrame
 	ctx              context.Context
+	futureStmts      []stmt
 	pipes            map[string]*commandPipe
 	flushedPipes     map[string]uint8
 	pipeOrder        []string
@@ -237,6 +238,7 @@ type callFrame struct {
 type commandPipe struct {
 	command string
 	buf     bytes.Buffer
+	writes  int
 }
 
 type commandInputPipe struct {
@@ -578,6 +580,7 @@ func (rt *runtime) writeCommandPipe(ctx context.Context, target expr, out string
 	if _, err := pipe.buf.WriteString(out); err != nil {
 		return err
 	}
+	pipe.writes++
 	return ctx.Err()
 }
 
@@ -633,6 +636,9 @@ func (rt *runtime) flushCommandPipesForStdout(ctx context.Context, remaining []s
 		if rt.commandPipeWillBeWrittenBeforeClose(command, remaining) {
 			continue
 		}
+		if pipe := rt.pipes[command]; pipe != nil && pipe.writes > 1 {
+			continue
+		}
 		status, ok, err := rt.closeCommandPipe(ctx, command)
 		if err != nil {
 			return err
@@ -645,90 +651,166 @@ func (rt *runtime) flushCommandPipesForStdout(ctx context.Context, remaining []s
 }
 
 func (rt *runtime) commandPipeWillBeWrittenBeforeClose(command string, stmts []stmt) bool {
-	for _, st := range stmts {
-		if stmtClosesCommandPipe(command, st) {
-			return false
-		}
-		if stmtWritesCommandPipe(command, st) {
-			return true
-		}
-	}
-	return false
+	return rt.stmtsCommandPipeAction(command, stmts, nil) == commandPipeActionWrite
 }
 
-func stmtWritesCommandPipe(command string, st stmt) bool {
+type commandPipeAction int
+
+const (
+	commandPipeActionNone commandPipeAction = iota
+	commandPipeActionWrite
+	commandPipeActionClose
+)
+
+func (rt *runtime) stmtsCommandPipeAction(command string, stmts []stmt, seen map[string]bool) commandPipeAction {
+	for _, st := range stmts {
+		if action := rt.stmtCommandPipeAction(command, st, seen); action != commandPipeActionNone {
+			return action
+		}
+	}
+	return commandPipeActionNone
+}
+
+func (rt *runtime) stmtCommandPipeAction(command string, st stmt, seen map[string]bool) commandPipeAction {
 	switch s := st.(type) {
 	case *printStmt:
-		return pipeExprMayBeCommand(s.pipe, command)
-	case *printfStmt:
-		return pipeExprMayBeCommand(s.pipe, command)
-	case *ifStmt:
-		return stmtsWriteCommandPipe(command, s.thenStmts) || stmtsWriteCommandPipe(command, s.elseStmts)
-	case *forInStmt:
-		return stmtsWriteCommandPipe(command, s.body)
-	case *forStmt:
-		return stmtsWriteCommandPipe(command, s.body)
-	case *whileStmt:
-		return stmtsWriteCommandPipe(command, s.body)
-	default:
-		return false
-	}
-}
-
-func stmtsWriteCommandPipe(command string, stmts []stmt) bool {
-	for _, st := range stmts {
-		if stmtWritesCommandPipe(command, st) {
-			return true
+		if action := rt.exprsCommandPipeAction(command, s.args, seen); action != commandPipeActionNone {
+			return action
 		}
+		return pipeExprCommandPipeAction(s.pipe, command)
+	case *printfStmt:
+		if action := rt.exprsCommandPipeAction(command, s.args, seen); action != commandPipeActionNone {
+			return action
+		}
+		return pipeExprCommandPipeAction(s.pipe, command)
+	case *ifStmt:
+		if action := rt.exprCommandPipeAction(command, s.cond, seen); action != commandPipeActionNone {
+			return action
+		}
+		return mergeBranchCommandPipeAction(
+			rt.stmtsCommandPipeAction(command, s.thenStmts, seen),
+			rt.stmtsCommandPipeAction(command, s.elseStmts, seen),
+		)
+	case *forInStmt:
+		return rt.stmtsCommandPipeAction(command, s.body, seen)
+	case *forStmt:
+		forParts := []expr{s.init, s.cond, s.post}
+		if action := rt.exprsCommandPipeAction(command, forParts, seen); action != commandPipeActionNone {
+			return action
+		}
+		return rt.stmtsCommandPipeAction(command, s.body, seen)
+	case *whileStmt:
+		if action := rt.exprCommandPipeAction(command, s.cond, seen); action != commandPipeActionNone {
+			return action
+		}
+		return rt.stmtsCommandPipeAction(command, s.body, seen)
+	case *deleteStmt:
+		return rt.exprsCommandPipeAction(command, s.indices, seen)
+	case *exitStmt:
+		return rt.exprCommandPipeAction(command, s.status, seen)
+	case *returnStmt:
+		return rt.exprCommandPipeAction(command, s.value, seen)
+	case *exprStmt:
+		return rt.exprCommandPipeAction(command, s.x, seen)
+	default:
+		return commandPipeActionNone
 	}
-	return false
 }
 
-func pipeExprMayBeCommand(pipe expr, command string) bool {
+func mergeBranchCommandPipeAction(left, right commandPipeAction) commandPipeAction {
+	if left == commandPipeActionWrite || right == commandPipeActionWrite {
+		return commandPipeActionWrite
+	}
+	if left == commandPipeActionClose || right == commandPipeActionClose {
+		return commandPipeActionClose
+	}
+	return commandPipeActionNone
+}
+
+func pipeExprCommandPipeAction(pipe expr, command string) commandPipeAction {
 	if pipe == nil {
-		return false
+		return commandPipeActionNone
 	}
 	if static, ok := staticStringExpr(pipe); ok {
-		return static == command
+		if static == command {
+			return commandPipeActionWrite
+		}
+		return commandPipeActionNone
 	}
-	return true
+	return commandPipeActionWrite
 }
 
-func stmtClosesCommandPipe(command string, st stmt) bool {
-	exprStmt, ok := st.(*exprStmt)
-	if !ok {
-		return false
+func (rt *runtime) exprsCommandPipeAction(command string, exprs []expr, seen map[string]bool) commandPipeAction {
+	for _, x := range exprs {
+		if action := rt.exprCommandPipeAction(command, x, seen); action != commandPipeActionNone {
+			return action
+		}
 	}
-	return exprClosesCommandPipe(command, exprStmt.x)
+	return commandPipeActionNone
 }
 
-func exprClosesCommandPipe(command string, x expr) bool {
+func (rt *runtime) exprCommandPipeAction(command string, x expr, seen map[string]bool) commandPipeAction {
+	if x == nil {
+		return commandPipeActionNone
+	}
 	switch e := x.(type) {
+	case *arrayRefExpr:
+		return rt.exprsCommandPipeAction(command, e.indices, seen)
+	case *compositeExpr:
+		return rt.exprsCommandPipeAction(command, e.parts, seen)
+	case *fieldExpr:
+		return rt.exprCommandPipeAction(command, e.index, seen)
+	case *groupedExpr:
+		return rt.exprCommandPipeAction(command, e.x, seen)
+	case *unaryExpr:
+		return rt.exprCommandPipeAction(command, e.x, seen)
+	case *binaryExpr:
+		if action := rt.exprCommandPipeAction(command, e.left, seen); action != commandPipeActionNone {
+			return action
+		}
+		return rt.exprCommandPipeAction(command, e.right, seen)
+	case *ternaryExpr:
+		if action := rt.exprCommandPipeAction(command, e.cond, seen); action != commandPipeActionNone {
+			return action
+		}
+		return mergeBranchCommandPipeAction(
+			rt.exprCommandPipeAction(command, e.then, seen),
+			rt.exprCommandPipeAction(command, e.els, seen),
+		)
+	case *assignExpr:
+		if action := rt.exprCommandPipeAction(command, e.left, seen); action != commandPipeActionNone {
+			return action
+		}
+		return rt.exprCommandPipeAction(command, e.right, seen)
+	case *incDecExpr:
+		return rt.exprCommandPipeAction(command, e.x, seen)
 	case *callExpr:
+		if action := rt.exprsCommandPipeAction(command, e.args, seen); action != commandPipeActionNone {
+			return action
+		}
 		if e.name == "close" && len(e.args) == 1 {
 			if static, ok := staticStringExpr(e.args[0]); ok && static == command {
-				return true
+				return commandPipeActionClose
 			}
 		}
-		for _, arg := range e.args {
-			if exprClosesCommandPipe(command, arg) {
-				return true
+		if fn, ok := rt.prog.functions[e.name]; ok {
+			if seen[e.name] {
+				return commandPipeActionNone
 			}
+			nextSeen := make(map[string]bool, len(seen)+1)
+			for name, active := range seen {
+				nextSeen[name] = active
+			}
+			nextSeen[e.name] = true
+			return rt.stmtsCommandPipeAction(command, fn.body, nextSeen)
 		}
-	case *groupedExpr:
-		return exprClosesCommandPipe(command, e.x)
-	case *unaryExpr:
-		return exprClosesCommandPipe(command, e.x)
-	case *binaryExpr:
-		return exprClosesCommandPipe(command, e.left) || exprClosesCommandPipe(command, e.right)
-	case *ternaryExpr:
-		return exprClosesCommandPipe(command, e.cond) || exprClosesCommandPipe(command, e.then) || exprClosesCommandPipe(command, e.els)
-	case *assignExpr:
-		return exprClosesCommandPipe(command, e.left) || exprClosesCommandPipe(command, e.right)
-	case *incDecExpr:
-		return exprClosesCommandPipe(command, e.x)
+	case *getlineExpr:
+		if action := rt.exprCommandPipeAction(command, e.target, seen); action != commandPipeActionNone {
+			return action
+		}
+		return rt.exprCommandPipeAction(command, e.source, seen)
 	}
-	return false
+	return commandPipeActionNone
 }
 
 func staticStringExpr(x expr) (string, bool) {
