@@ -1072,12 +1072,12 @@ func (rt *runtime) runRules(ctx context.Context, kind ruleKind) error {
 			}
 		}
 		if r.action == nil {
-			if err := rt.printValues([]value{rt.field(0)}); err != nil {
+			if err := rt.writeStdoutString(ctx, rt.formatPrintValues([]value{rt.field(0)}), rt.ruleFuture(kind, i+1)); err != nil {
 				return err
 			}
 			continue
 		}
-		if err := rt.execStatements(ctx, r.action); err != nil {
+		if err := rt.execStatementsWithFuture(ctx, r.action, rt.ruleFuture(kind, i+1)); err != nil {
 			if errors.Is(err, errNextRecord) {
 				if kind == ruleNormal {
 					return err
@@ -1088,6 +1088,30 @@ func (rt *runtime) runRules(ctx context.Context, kind ruleKind) error {
 		}
 	}
 	return nil
+}
+
+func (rt *runtime) ruleFuture(kind ruleKind, nextRule int) []stmt {
+	var future []stmt
+	future = rt.appendRuleActions(future, kind, nextRule)
+	switch kind {
+	case ruleBegin:
+		future = rt.appendRuleActions(future, ruleNormal, 0)
+		future = rt.appendRuleActions(future, ruleEnd, 0)
+	case ruleNormal:
+		future = rt.appendRuleActions(future, ruleNormal, 0)
+		future = rt.appendRuleActions(future, ruleEnd, 0)
+	}
+	return future
+}
+
+func (rt *runtime) appendRuleActions(dst []stmt, kind ruleKind, start int) []stmt {
+	for i := start; i < len(rt.prog.rules); i++ {
+		r := rt.prog.rules[i]
+		if r.kind == kind && r.action != nil {
+			dst = append(dst, r.action...)
+		}
+	}
+	return dst
 }
 
 func (rt *runtime) matchPattern(ruleIndex int, x expr) (bool, error) {
