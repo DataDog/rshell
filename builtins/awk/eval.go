@@ -1010,7 +1010,7 @@ func parseAwkNumberLiteral(s string) float64 {
 		}
 		return 0
 	}
-	if len(text) > 1 && text[0] == '0' && text[1] >= '0' && text[1] <= '7' {
+	if shouldParseAwkOctalPrefix(text) {
 		if n, ok := parseUnsignedBasePrefix(text[1:], 8); ok {
 			return sign * float64(n)
 		}
@@ -1024,6 +1024,24 @@ func parseAwkNumberLiteral(s string) float64 {
 		return sign * n
 	}
 	return 0
+}
+
+func shouldParseAwkOctalPrefix(s string) bool {
+	if len(s) <= 1 || s[0] != '0' || s[1] < '0' || s[1] > '7' {
+		return false
+	}
+	for i := 1; i < len(s); i++ {
+		ch := s[i]
+		switch {
+		case ch >= '0' && ch <= '7':
+			continue
+		case ch == '.' || ch == 'e' || ch == 'E' || ch == '8' || ch == '9':
+			return false
+		default:
+			return true
+		}
+	}
+	return true
 }
 
 func parseUnsignedBasePrefix(s string, base int) (uint64, bool) {

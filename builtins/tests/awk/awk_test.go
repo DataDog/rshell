@@ -196,10 +196,10 @@ func TestAwkSubGsubMatchAndSprintf(t *testing.T) {
 
 func TestAwkMatchCapturesGensubStrtonumAndAsorti(t *testing.T) {
 	dir := t.TempDir()
-	stdout, stderr, code := cmdRun(t, `printf 'cached_tables=31\n' | awk 'match($0, /cached_tables=([0-9]+)/, m) { print m[0], m[1] }'; awk 'BEGIN { print strtonum("0x1538"), strtonum("010"); print strtonum("123abc"), strtonum("-12.5ms"), strtonum("1e3rows"); print gensub(/.*trace_id=([0-9]+).*/, "\\1", 1, "trace_id=42"); a["b"] = 2; a["a"] = 1; print asorti(a, k), k[1], k[2]; a[1] = "abc"; print match(a[1], /(b)/, a), RSTART, RLENGTH, a[0], a[1] }'`, dir)
+	stdout, stderr, code := cmdRun(t, `printf 'cached_tables=31\n' | awk 'match($0, /cached_tables=([0-9]+)/, m) { print m[0], m[1] }'; awk 'BEGIN { print strtonum("0x1538"), strtonum("010"); print strtonum("123abc"), strtonum("-12.5ms"), strtonum("1e3rows"); print strtonum("012.3"), strtonum("012e2"), strtonum("0128"), strtonum("010"); print gensub(/.*trace_id=([0-9]+).*/, "\\1", 1, "trace_id=42"); a["b"] = 2; a["a"] = 1; print asorti(a, k), k[1], k[2]; a[1] = "abc"; print match(a[1], /(b)/, a), RSTART, RLENGTH, a[0], a[1] }'`, dir)
 	assert.Equal(t, 0, code)
 	assert.Equal(t, "", stderr)
-	assert.Equal(t, "cached_tables=31 31\n5432 8\n123 -12.5 1000\n42\n2 a b\n2 2 1 b b\n", stdout)
+	assert.Equal(t, "cached_tables=31 31\n5432 8\n123 -12.5 1000\n12.3 1200 128 8\n42\n2 a b\n2 2 1 b b\n", stdout)
 }
 
 func TestAwkIgnoreCaseAffectsRegexOperations(t *testing.T) {
