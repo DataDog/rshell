@@ -654,9 +654,6 @@ func (rt *runtime) runCommandPipe(ctx context.Context, pipe *commandPipe) (uint8
 }
 
 func (rt *runtime) writeStdoutString(ctx context.Context, s string) error {
-	if ctx == nil {
-		ctx = context.Background()
-	}
 	if s != "" {
 		if err := rt.flushCommandPipesForStdout(ctx); err != nil {
 			return err
