@@ -201,6 +201,9 @@ func (r *Runner) hdocReader(ctx context.Context, rd *syntax.Redirect) (*os.File,
 }
 
 func (r *Runner) redir(ctx context.Context, rd *syntax.Redirect, command string) (io.Closer, error) {
+	restoreAccessCommand := r.pushFileAccessCommand(command)
+	defer restoreAccessCommand()
+
 	if rd.Hdoc != nil {
 		pr, err := r.hdocReader(ctx, rd)
 		if err != nil {

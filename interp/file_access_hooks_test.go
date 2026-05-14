@@ -226,6 +226,75 @@ func TestFileAccessHooksAttributeInputRedirectToExpandedCommandName(t *testing.T
 	assert.Equal(t, FileAccessResultSuccess, after.Result)
 }
 
+func TestFileAccessHooksAttributeRedirectWordSubstitutionToExpandedCommandName(t *testing.T) {
+	dir := t.TempDir()
+	namefile := filepath.Join(dir, "namefile")
+	input := filepath.Join(dir, "input.txt")
+	require.NoError(t, os.WriteFile(namefile, []byte("input.txt"), 0o644))
+	require.NoError(t, os.WriteFile(input, []byte("needle\n"), 0o644))
+
+	var events []capturedFileAccessEvent
+	hooks := FileAccessHooks{
+		Before: func(_ context.Context, event FileAccessEvent) {
+			events = append(events, capturedFileAccessEvent{phase: "before", event: event})
+		},
+		After: func(_ context.Context, event FileAccessEvent) {
+			events = append(events, capturedFileAccessEvent{phase: "after", event: event})
+		},
+	}
+
+	require.NoError(t, runWithFileAccessHooks(t, dir, "cmd=cat; $cmd < $(<namefile)", hooks))
+	require.Len(t, events, 4)
+
+	nameBefore := events[0].event
+	nameAfter := events[1].event
+	assert.Equal(t, FileAccessSourceCommandSubstitute, nameBefore.Source)
+	assert.Equal(t, FileAccessOpOpen, nameBefore.Op)
+	assert.Equal(t, "cat", nameBefore.Command)
+	assert.Equal(t, "namefile", nameBefore.RequestedPath)
+	assert.Equal(t, namefile, nameBefore.AbsPath)
+	assert.Equal(t, nameBefore.ID, nameAfter.ID)
+	assert.Equal(t, FileAccessResultSuccess, nameAfter.Result)
+
+	redirectBefore := events[2].event
+	redirectAfter := events[3].event
+	assert.Equal(t, FileAccessSourceInputRedirect, redirectBefore.Source)
+	assert.Equal(t, FileAccessOpOpen, redirectBefore.Op)
+	assert.Equal(t, "cat", redirectBefore.Command)
+	assert.Equal(t, "input.txt", redirectBefore.RequestedPath)
+	assert.Equal(t, input, redirectBefore.AbsPath)
+	assert.Equal(t, redirectBefore.ID, redirectAfter.ID)
+	assert.Equal(t, FileAccessResultSuccess, redirectAfter.Result)
+}
+
+func TestFileAccessHooksDoNotAttributeUnquotedCommandNameSplitByIFS(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "one.txt"), []byte("one\n"), 0o644))
+
+	var events []capturedFileAccessEvent
+	hooks := FileAccessHooks{
+		Before: func(_ context.Context, event FileAccessEvent) {
+			events = append(events, capturedFileAccessEvent{phase: "before", event: event})
+		},
+		After: func(_ context.Context, event FileAccessEvent) {
+			events = append(events, capturedFileAccessEvent{phase: "after", event: event})
+		},
+	}
+
+	err := runWithFileAccessHooks(t, dir, "IFS=/; cmd=bin/echo; $cmd *.txt", hooks)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "exit status 127")
+	require.Len(t, events, 2)
+
+	before := events[0].event
+	after := events[1].event
+	assert.Equal(t, FileAccessSourceGlob, before.Source)
+	assert.Equal(t, FileAccessOpReadDir, before.Op)
+	assert.Empty(t, before.Command)
+	assert.Equal(t, before.ID, after.ID)
+	assert.Equal(t, FileAccessResultSuccess, after.Result)
+}
+
 func TestFileAccessHooksFireAfterOnOpenError(t *testing.T) {
 	dir := t.TempDir()
 

@@ -82,12 +82,9 @@ func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {
 	case *syntax.CallExpr:
 		args := cm.Args
 		r.lastExpandExit = exitStatus{}
-		prevAccessCommand := r.fileAccessCommand
-		if name := r.fileAccessCommandName(cm); name != "" {
-			r.fileAccessCommand = name
-		}
+		restoreAccessCommand := r.pushFileAccessCommand(r.fileAccessCommandName(cm))
 		fields := r.fields(args...)
-		r.fileAccessCommand = prevAccessCommand
+		restoreAccessCommand()
 		if len(fields) == 0 {
 			for _, as := range cm.Assigns {
 				prev := r.lookupVar(as.Name.Value)

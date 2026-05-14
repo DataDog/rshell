@@ -420,6 +420,14 @@ func (r *Runner) fileAccessCommandName(cm syntax.Command) string {
 	return name
 }
 
+func (r *Runner) pushFileAccessCommand(command string) func() {
+	prev := r.fileAccessCommand
+	r.fileAccessCommand = command
+	return func() {
+		r.fileAccessCommand = prev
+	}
+}
+
 func simpleWordLiteral(word *syntax.Word) string {
 	if word == nil {
 		return ""
@@ -474,7 +482,7 @@ func (r *Runner) staticCommandWordPartValue(part syntax.WordPart, splitAndGlob b
 			return "", false
 		}
 		value := r.lookupVar(part.Param.Value).String()
-		if splitAndGlob && unsafeUnquotedCommandValue(value) {
+		if splitAndGlob && r.unsafeUnquotedCommandValue(value) {
 			return "", false
 		}
 		return value, true
@@ -491,11 +499,22 @@ func simpleParamExp(param *syntax.ParamExp) bool {
 		param.Repl == nil && param.Names == 0 && param.Exp == nil
 }
 
-func unsafeUnquotedCommandValue(value string) bool {
+func (r *Runner) unsafeUnquotedCommandValue(value string) bool {
 	for _, r := range value {
 		switch r {
-		case ' ', '\t', '\n', '*', '?', '[':
+		case '*', '?', '[':
 			return true
+		}
+	}
+	ifs := " \t\n"
+	if vr := r.lookupVar("IFS"); vr.IsSet() {
+		ifs = vr.String()
+	}
+	for _, r := range value {
+		for _, sep := range ifs {
+			if r == sep {
+				return true
+			}
 		}
 	}
 	return false
