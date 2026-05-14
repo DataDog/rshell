@@ -1,0 +1,11 @@
+description: awk match capture arrays evaluate arguments before clearing and strtonum parses numeric prefixes.
+oracle: gawk
+input:
+  script: |+
+    awk 'BEGIN { a[1] = "abc"; print match(a[1], /(b)/, a), RSTART, RLENGTH, a[0], a[1]; print strtonum("123abc"), strtonum("-12.5ms"), strtonum("1e3rows") }'
+expect:
+  stdout: |+
+    2 2 1 b b
+    123 -12.5 1000
+  stderr: |+
+  exit_code: 0

@@ -707,9 +707,6 @@ func (rt *runtime) evalMatch(e *callExpr) (value, error) {
 		if !ok {
 			return value{}, fmt.Errorf("match capture destination must be an array variable")
 		}
-		if err := rt.deleteArray(captures.name); err != nil {
-			return value{}, err
-		}
 	}
 	input, err := rt.eval(e.args[0])
 	if err != nil {
@@ -718,6 +715,11 @@ func (rt *runtime) evalMatch(e *callExpr) (value, error) {
 	re, err := rt.compileRegexArg(e.args[1])
 	if err != nil {
 		return value{}, err
+	}
+	if captures != nil {
+		if err := rt.deleteArray(captures.name); err != nil {
+			return value{}, err
+		}
 	}
 	text := input.String()
 	match := re.FindStringRuneIndex(text)
@@ -1003,24 +1005,28 @@ func parseAwkNumberLiteral(s string) float64 {
 		text = text[1:]
 	}
 	if len(text) > 2 && text[0] == '0' && (text[1] == 'x' || text[1] == 'X') {
-		if n, ok := parseUnsignedBase(text[2:], 16); ok {
+		if n, ok := parseUnsignedBasePrefix(text[2:], 16); ok {
 			return sign * float64(n)
 		}
 		return 0
 	}
 	if len(text) > 1 && text[0] == '0' && text[1] >= '0' && text[1] <= '7' {
-		if n, ok := parseUnsignedBase(text[1:], 8); ok {
+		if n, ok := parseUnsignedBasePrefix(text[1:], 8); ok {
 			return sign * float64(n)
 		}
 		return 0
 	}
-	if n, err := strconv.ParseFloat(text, 64); err == nil {
+	prefix := numericPrefix(text)
+	if prefix == "" {
+		return 0
+	}
+	if n, err := strconv.ParseFloat(prefix, 64); err == nil {
 		return sign * n
 	}
 	return 0
 }
 
-func parseUnsignedBase(s string, base int) (uint64, bool) {
+func parseUnsignedBasePrefix(s string, base int) (uint64, bool) {
 	if s == "" {
 		return 0, false
 	}
@@ -1028,7 +1034,7 @@ func parseUnsignedBase(s string, base int) (uint64, bool) {
 	for i := 0; i < len(s); i++ {
 		digit, ok := digitValue(s[i])
 		if !ok || digit >= base {
-			return 0, false
+			return n, i > 0
 		}
 		n = n*uint64(base) + uint64(digit)
 	}
