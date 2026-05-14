@@ -205,6 +205,7 @@ type runtime struct {
 	frames           []callFrame
 	ctx              context.Context
 	pipes            map[string]*commandPipe
+	flushedPipes     map[string]uint8
 	pipeOrder        []string
 	inputArgs        []string
 	inputIndex       int
@@ -271,6 +272,7 @@ func newRuntime(callCtx *builtins.CallContext, prog *program) *runtime {
 		arraySizes:       make(map[arraySlot]int),
 		rangeOn:          make(map[int]bool),
 		pipes:            make(map[string]*commandPipe),
+		flushedPipes:     make(map[string]uint8),
 		fileInputs:       make(map[string]*recordSource),
 		failedFileInputs: make(map[string]bool),
 		commandInputs:    make(map[string]*commandInputPipe),
@@ -573,8 +575,7 @@ func (rt *runtime) writeCommandPipe(ctx context.Context, target expr, out string
 	if len(out) > MaxPipeBytes-pipe.buf.Len() {
 		return fmt.Errorf("command pipe %q input exceeds %d bytes", command, MaxPipeBytes)
 	}
-	_, err = pipe.buf.WriteString(out)
-	if err != nil {
+	if _, err := pipe.buf.WriteString(out); err != nil {
 		return err
 	}
 	return ctx.Err()
@@ -584,6 +585,7 @@ func (rt *runtime) commandPipe(command string) (*commandPipe, error) {
 	if pipe, ok := rt.pipes[command]; ok {
 		return pipe, nil
 	}
+	delete(rt.flushedPipes, command)
 	pipe := &commandPipe{command: command}
 	rt.pipes[command] = pipe
 	rt.pipeOrder = append(rt.pipeOrder, command)
@@ -593,6 +595,10 @@ func (rt *runtime) commandPipe(command string) (*commandPipe, error) {
 func (rt *runtime) closeCommandPipe(ctx context.Context, command string) (uint8, bool, error) {
 	pipe, ok := rt.pipes[command]
 	if !ok {
+		if status, ok := rt.flushedPipes[command]; ok {
+			delete(rt.flushedPipes, command)
+			return status, true, nil
+		}
 		return 0, false, nil
 	}
 	delete(rt.pipes, command)
@@ -622,6 +628,20 @@ func (rt *runtime) closeAllCommandPipes(ctx context.Context) error {
 	return nil
 }
 
+func (rt *runtime) flushCommandPipesForStdout(ctx context.Context) error {
+	for len(rt.pipeOrder) > 0 {
+		command := rt.pipeOrder[0]
+		status, ok, err := rt.closeCommandPipe(ctx, command)
+		if err != nil {
+			return err
+		}
+		if ok {
+			rt.flushedPipes[command] = status
+		}
+	}
+	return nil
+}
+
 func (rt *runtime) runCommandPipe(ctx context.Context, pipe *commandPipe) (uint8, error) {
 	if rt.callCtx.RunScriptWithStdin == nil {
 		return 127, fmt.Errorf("command pipes are not available")
@@ -631,6 +651,17 @@ func (rt *runtime) runCommandPipe(ctx context.Context, pipe *commandPipe) (uint8
 		dir = rt.callCtx.WorkDir()
 	}
 	return rt.callCtx.RunScriptWithStdin(ctx, dir, pipe.command, bytes.NewReader(pipe.buf.Bytes()), rt.callCtx.Stdout)
+}
+
+func (rt *runtime) writeStdoutString(ctx context.Context, s string) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := rt.flushCommandPipesForStdout(ctx); err != nil {
+		return err
+	}
+	rt.callCtx.Out(s)
+	return nil
 }
 
 func (rt *runtime) getlineFileRecord(ctx context.Context, name string) (string, int, error) {

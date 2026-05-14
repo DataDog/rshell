@@ -251,8 +251,7 @@ func substrEnd(start, length int, count float64) int {
 }
 
 func (rt *runtime) printValues(vals []value) error {
-	rt.callCtx.Out(rt.formatPrintValues(vals))
-	return nil
+	return rt.writeStdoutString(rt.ctx, rt.formatPrintValues(vals))
 }
 
 func (rt *runtime) formatPrintValues(vals []value) string {
@@ -265,8 +264,7 @@ func (rt *runtime) formatPrintValues(vals []value) string {
 
 func (rt *runtime) writeOutput(ctx context.Context, pipe expr, out string) error {
 	if pipe == nil {
-		rt.callCtx.Out(out)
-		return nil
+		return rt.writeStdoutString(ctx, out)
 	}
 	return rt.writeCommandPipe(ctx, pipe, out)
 }

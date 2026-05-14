@@ -703,10 +703,20 @@ func TestAwkCommandPipes(t *testing.T) {
 	assert.Equal(t, "", stderr)
 	assert.Equal(t, "auto-close\n", stdout)
 
+	stdout, stderr, code = cmdRun(t, `awk 'BEGIN { print "b" | "cat"; print "a"; close("cat") }'`, dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "", stderr)
+	assert.Equal(t, "b\na\n", stdout)
+
 	stdout, stderr, code = cmdRun(t, `awk 'BEGIN { print "x" | "false" }'`, dir)
 	assert.Equal(t, 0, code)
 	assert.Equal(t, "", stderr)
 	assert.Equal(t, "", stdout)
+
+	stdout, stderr, code = cmdRun(t, `awk 'BEGIN { print "x" | "false"; print "after"; print close("false") }'`, dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "", stderr)
+	assert.Equal(t, "after\n1\n", stdout)
 
 	stdout, stderr, code = cmdRun(t, `awk 'BEGIN { print "x" | "false"; print close("false") }'`, dir)
 	assert.Equal(t, 0, code)
