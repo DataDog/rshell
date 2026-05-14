@@ -295,6 +295,47 @@ func TestFileAccessHooksDoNotAttributeUnquotedCommandNameSplitByIFS(t *testing.T
 	assert.Equal(t, FileAccessResultSuccess, after.Result)
 }
 
+func TestFileAccessHooksAttributeInlineAssignmentSubstitutionToCommand(t *testing.T) {
+	dir := t.TempDir()
+	tokenfile := filepath.Join(dir, "tokenfile")
+	input := filepath.Join(dir, "input.txt")
+	require.NoError(t, os.WriteFile(tokenfile, []byte("token"), 0o644))
+	require.NoError(t, os.WriteFile(input, []byte("needle\n"), 0o644))
+
+	var events []capturedFileAccessEvent
+	hooks := FileAccessHooks{
+		Before: func(_ context.Context, event FileAccessEvent) {
+			events = append(events, capturedFileAccessEvent{phase: "before", event: event})
+		},
+		After: func(_ context.Context, event FileAccessEvent) {
+			events = append(events, capturedFileAccessEvent{phase: "after", event: event})
+		},
+	}
+
+	require.NoError(t, runWithFileAccessHooks(t, dir, "TOKEN=$(<tokenfile) cat input.txt", hooks))
+	require.Len(t, events, 4)
+
+	tokenBefore := events[0].event
+	tokenAfter := events[1].event
+	assert.Equal(t, FileAccessSourceCommandSubstitute, tokenBefore.Source)
+	assert.Equal(t, FileAccessOpOpen, tokenBefore.Op)
+	assert.Equal(t, "cat", tokenBefore.Command)
+	assert.Equal(t, "tokenfile", tokenBefore.RequestedPath)
+	assert.Equal(t, tokenfile, tokenBefore.AbsPath)
+	assert.Equal(t, tokenBefore.ID, tokenAfter.ID)
+	assert.Equal(t, FileAccessResultSuccess, tokenAfter.Result)
+
+	inputBefore := events[2].event
+	inputAfter := events[3].event
+	assert.Equal(t, FileAccessSourceBuiltin, inputBefore.Source)
+	assert.Equal(t, FileAccessOpOpen, inputBefore.Op)
+	assert.Equal(t, "cat", inputBefore.Command)
+	assert.Equal(t, "input.txt", inputBefore.RequestedPath)
+	assert.Equal(t, input, inputBefore.AbsPath)
+	assert.Equal(t, inputBefore.ID, inputAfter.ID)
+	assert.Equal(t, FileAccessResultSuccess, inputAfter.Result)
+}
+
 func TestFileAccessHooksFireAfterOnOpenError(t *testing.T) {
 	dir := t.TempDir()
 
