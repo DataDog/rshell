@@ -403,12 +403,21 @@ func fileAccessAbsPath(path string, cwd string) string {
 	return filepath.Clean(filepath.Join(cwd, path))
 }
 
-func simpleCommandName(cm syntax.Command) string {
+// fileAccessCommandName returns a best-effort command name for file-access
+// attribution without invoking shell expansion or its side effects.
+func (r *Runner) fileAccessCommandName(cm syntax.Command) string {
 	call, ok := cm.(*syntax.CallExpr)
 	if !ok || len(call.Args) == 0 {
 		return ""
 	}
-	return simpleWordLiteral(call.Args[0])
+	if name := simpleWordLiteral(call.Args[0]); name != "" {
+		return name
+	}
+	name, ok := r.staticCommandWordValue(call.Args[0], true)
+	if !ok {
+		return ""
+	}
+	return name
 }
 
 func simpleWordLiteral(word *syntax.Word) string {
@@ -424,4 +433,70 @@ func simpleWordLiteral(word *syntax.Word) string {
 		out += lit.Value
 	}
 	return out
+}
+
+func (r *Runner) staticCommandWordValue(word *syntax.Word, splitAndGlob bool) (string, bool) {
+	if word == nil {
+		return "", false
+	}
+	var out string
+	for _, part := range word.Parts {
+		value, ok := r.staticCommandWordPartValue(part, splitAndGlob)
+		if !ok {
+			return "", false
+		}
+		out += value
+	}
+	if out == "" {
+		return "", false
+	}
+	return out, true
+}
+
+func (r *Runner) staticCommandWordPartValue(part syntax.WordPart, splitAndGlob bool) (string, bool) {
+	switch part := part.(type) {
+	case *syntax.Lit:
+		return part.Value, true
+	case *syntax.SglQuoted:
+		return part.Value, true
+	case *syntax.DblQuoted:
+		var out string
+		for _, part := range part.Parts {
+			value, ok := r.staticCommandWordPartValue(part, false)
+			if !ok {
+				return "", false
+			}
+			out += value
+		}
+		return out, true
+	case *syntax.ParamExp:
+		if !simpleParamExp(part) || part.Param == nil {
+			return "", false
+		}
+		value := r.lookupVar(part.Param.Value).String()
+		if splitAndGlob && unsafeUnquotedCommandValue(value) {
+			return "", false
+		}
+		return value, true
+	default:
+		return "", false
+	}
+}
+
+func simpleParamExp(param *syntax.ParamExp) bool {
+	return param.Flags == nil &&
+		!param.Excl && !param.Length && !param.Width && !param.IsSet &&
+		param.NestedParam == nil && param.Index == nil &&
+		len(param.Modifiers) == 0 && param.Slice == nil &&
+		param.Repl == nil && param.Names == 0 && param.Exp == nil
+}
+
+func unsafeUnquotedCommandValue(value string) bool {
+	for _, r := range value {
+		switch r {
+		case ' ', '\t', '\n', '*', '?', '[':
+			return true
+		}
+	}
+	return false
 }

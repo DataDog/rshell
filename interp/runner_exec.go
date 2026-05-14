@@ -36,7 +36,7 @@ func (r *Runner) stmtSync(ctx context.Context, st *syntax.Stmt) {
 	oldIn, oldOut, oldErr := r.stdin, r.stdout, r.stderr
 	redirCommand := ""
 	if st.Cmd != nil {
-		redirCommand = simpleCommandName(st.Cmd)
+		redirCommand = r.fileAccessCommandName(st.Cmd)
 	}
 	for _, rd := range st.Redirs {
 		cls, err := r.redir(ctx, rd, redirCommand)
@@ -83,7 +83,7 @@ func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {
 		args := cm.Args
 		r.lastExpandExit = exitStatus{}
 		prevAccessCommand := r.fileAccessCommand
-		if name := simpleCommandName(cm); name != "" {
+		if name := r.fileAccessCommandName(cm); name != "" {
 			r.fileAccessCommand = name
 		}
 		fields := r.fields(args...)
