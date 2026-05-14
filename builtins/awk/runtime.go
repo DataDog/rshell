@@ -803,9 +803,13 @@ func (rt *runtime) exprCommandPipeAction(command string, x expr, seen map[string
 			return action
 		}
 		if e.name == "close" && len(e.args) == 1 {
-			if static, ok := staticStringExpr(e.args[0]); ok && static == command {
-				return commandPipeActionClose
+			if static, ok := staticStringExpr(e.args[0]); ok {
+				if static == command {
+					return commandPipeActionClose
+				}
+				return commandPipeActionNone
 			}
+			return commandPipeActionClose
 		}
 		if fn, ok := rt.prog.functions[e.name]; ok {
 			if seen[e.name] {

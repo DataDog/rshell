@@ -3,6 +3,7 @@ oracle: gawk
 input:
   script: |+
     awk 'BEGIN { print "b" | "cat"; print "a"; close("cat") }'
+    awk 'BEGIN { cmd = "cat"; print "b" | cmd; print "a"; close(cmd) }'
     awk 'BEGIN { print "x" | "cat"; print "z"; print "y" | "cat" }'
     awk 'BEGIN { cmd = "awk \"{ n++ } END { print n }\""; print "a" | cmd; printf ""; print "b" | cmd; close(cmd) }'
     awk 'BEGIN { print "b" | "sort"; print "mid"; print "a" | "sort"; close("sort") }'
@@ -11,6 +12,8 @@ input:
     awk 'function f(x) { print x | "sort"; print "s" } BEGIN { f("b"); f("a"); close("sort") }'
 expect:
   stdout: |+
+    a
+    b
     a
     b
     x
