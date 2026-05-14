@@ -628,9 +628,11 @@ func (rt *runtime) closeAllCommandPipes(ctx context.Context) error {
 	return nil
 }
 
-func (rt *runtime) flushCommandPipesForStdout(ctx context.Context) error {
-	for len(rt.pipeOrder) > 0 {
-		command := rt.pipeOrder[0]
+func (rt *runtime) flushCommandPipesForStdout(ctx context.Context, remaining []stmt) error {
+	for _, command := range append([]string(nil), rt.pipeOrder...) {
+		if rt.commandPipeWillBeWrittenBeforeClose(command, remaining) {
+			continue
+		}
 		status, ok, err := rt.closeCommandPipe(ctx, command)
 		if err != nil {
 			return err
@@ -640,6 +642,104 @@ func (rt *runtime) flushCommandPipesForStdout(ctx context.Context) error {
 		}
 	}
 	return nil
+}
+
+func (rt *runtime) commandPipeWillBeWrittenBeforeClose(command string, stmts []stmt) bool {
+	for _, st := range stmts {
+		if stmtClosesCommandPipe(command, st) {
+			return false
+		}
+		if stmtWritesCommandPipe(command, st) {
+			return true
+		}
+	}
+	return false
+}
+
+func stmtWritesCommandPipe(command string, st stmt) bool {
+	switch s := st.(type) {
+	case *printStmt:
+		return pipeExprMayBeCommand(s.pipe, command)
+	case *printfStmt:
+		return pipeExprMayBeCommand(s.pipe, command)
+	case *ifStmt:
+		return stmtsWriteCommandPipe(command, s.thenStmts) || stmtsWriteCommandPipe(command, s.elseStmts)
+	case *forInStmt:
+		return stmtsWriteCommandPipe(command, s.body)
+	case *forStmt:
+		return stmtsWriteCommandPipe(command, s.body)
+	case *whileStmt:
+		return stmtsWriteCommandPipe(command, s.body)
+	default:
+		return false
+	}
+}
+
+func stmtsWriteCommandPipe(command string, stmts []stmt) bool {
+	for _, st := range stmts {
+		if stmtWritesCommandPipe(command, st) {
+			return true
+		}
+	}
+	return false
+}
+
+func pipeExprMayBeCommand(pipe expr, command string) bool {
+	if pipe == nil {
+		return false
+	}
+	if static, ok := staticStringExpr(pipe); ok {
+		return static == command
+	}
+	return true
+}
+
+func stmtClosesCommandPipe(command string, st stmt) bool {
+	exprStmt, ok := st.(*exprStmt)
+	if !ok {
+		return false
+	}
+	return exprClosesCommandPipe(command, exprStmt.x)
+}
+
+func exprClosesCommandPipe(command string, x expr) bool {
+	switch e := x.(type) {
+	case *callExpr:
+		if e.name == "close" && len(e.args) == 1 {
+			if static, ok := staticStringExpr(e.args[0]); ok && static == command {
+				return true
+			}
+		}
+		for _, arg := range e.args {
+			if exprClosesCommandPipe(command, arg) {
+				return true
+			}
+		}
+	case *groupedExpr:
+		return exprClosesCommandPipe(command, e.x)
+	case *unaryExpr:
+		return exprClosesCommandPipe(command, e.x)
+	case *binaryExpr:
+		return exprClosesCommandPipe(command, e.left) || exprClosesCommandPipe(command, e.right)
+	case *ternaryExpr:
+		return exprClosesCommandPipe(command, e.cond) || exprClosesCommandPipe(command, e.then) || exprClosesCommandPipe(command, e.els)
+	case *assignExpr:
+		return exprClosesCommandPipe(command, e.left) || exprClosesCommandPipe(command, e.right)
+	case *incDecExpr:
+		return exprClosesCommandPipe(command, e.x)
+	}
+	return false
+}
+
+func staticStringExpr(x expr) (string, bool) {
+	switch e := x.(type) {
+	case *stringExpr:
+		return e.value, true
+	case *groupedExpr:
+		return staticStringExpr(e.x)
+	default:
+		return "", false
+	}
 }
 
 func (rt *runtime) runCommandPipe(ctx context.Context, pipe *commandPipe) (uint8, error) {
@@ -653,9 +753,9 @@ func (rt *runtime) runCommandPipe(ctx context.Context, pipe *commandPipe) (uint8
 	return rt.callCtx.RunScriptWithStdin(ctx, dir, pipe.command, bytes.NewReader(pipe.buf.Bytes()), rt.callCtx.Stdout)
 }
 
-func (rt *runtime) writeStdoutString(ctx context.Context, s string) error {
+func (rt *runtime) writeStdoutString(ctx context.Context, s string, remaining []stmt) error {
 	if s != "" {
-		if err := rt.flushCommandPipesForStdout(ctx); err != nil {
+		if err := rt.flushCommandPipesForStdout(ctx, remaining); err != nil {
 			return err
 		}
 	}

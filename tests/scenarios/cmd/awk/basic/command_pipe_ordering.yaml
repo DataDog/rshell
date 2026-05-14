@@ -4,10 +4,14 @@ input:
   script: |+
     awk 'BEGIN { print "b" | "cat"; print "a"; close("cat") }'
     awk 'BEGIN { print "a" | "wc -l"; printf ""; print "b" | "wc -l"; close("wc -l") }'
+    awk 'BEGIN { print "b" | "sort"; print "mid"; print "a" | "sort"; close("sort") }'
 expect:
   stdout: |+
     b
     a
     2
+    mid
+    a
+    b
   stderr: |+
   exit_code: 0

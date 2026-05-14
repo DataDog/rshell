@@ -38,7 +38,7 @@ func (rt *runtime) execStatements(ctx context.Context, stmts []stmt) error {
 	prevCtx := rt.ctx
 	rt.ctx = ctx
 	defer func() { rt.ctx = prevCtx }()
-	for _, st := range stmts {
+	for i, st := range stmts {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
@@ -57,7 +57,7 @@ func (rt *runtime) execStatements(ctx context.Context, stmts []stmt) error {
 				}
 			}
 			out := rt.formatPrintValues(vals)
-			if err := rt.writeOutput(ctx, s.pipe, out); err != nil {
+			if err := rt.writeOutput(ctx, s.pipe, out, stmts[i+1:]); err != nil {
 				return err
 			}
 		case *printfStmt:
@@ -76,7 +76,7 @@ func (rt *runtime) execStatements(ctx context.Context, stmts []stmt) error {
 			if err != nil {
 				return err
 			}
-			if err := rt.writeOutput(ctx, s.pipe, out); err != nil {
+			if err := rt.writeOutput(ctx, s.pipe, out, stmts[i+1:]); err != nil {
 				return err
 			}
 		case *ifStmt:
@@ -251,7 +251,7 @@ func substrEnd(start, length int, count float64) int {
 }
 
 func (rt *runtime) printValues(vals []value) error {
-	return rt.writeStdoutString(rt.ctx, rt.formatPrintValues(vals))
+	return rt.writeStdoutString(rt.ctx, rt.formatPrintValues(vals), nil)
 }
 
 func (rt *runtime) formatPrintValues(vals []value) string {
@@ -262,9 +262,9 @@ func (rt *runtime) formatPrintValues(vals []value) string {
 	return strings.Join(parts, rt.getVar("OFS").String()) + rt.getVar("ORS").String()
 }
 
-func (rt *runtime) writeOutput(ctx context.Context, pipe expr, out string) error {
+func (rt *runtime) writeOutput(ctx context.Context, pipe expr, out string, remaining []stmt) error {
 	if pipe == nil {
-		return rt.writeStdoutString(ctx, out)
+		return rt.writeStdoutString(ctx, out, remaining)
 	}
 	return rt.writeCommandPipe(ctx, pipe, out)
 }
