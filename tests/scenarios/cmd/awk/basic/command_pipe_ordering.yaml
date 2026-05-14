@@ -5,6 +5,7 @@ input:
     awk 'BEGIN { print "b" | "cat"; print "a"; close("cat") }'
     awk 'BEGIN { print "a" | "wc -l"; printf ""; print "b" | "wc -l"; close("wc -l") }'
     awk 'BEGIN { print "b" | "sort"; print "mid"; print "a" | "sort"; close("sort") }'
+    awk 'BEGIN { for (i = 1; i <= 2; i++) { print i | "cat"; print "x" } close("cat") }'
 expect:
   stdout: |+
     b
@@ -13,5 +14,9 @@ expect:
     mid
     a
     b
+    x
+    x
+    1
+    2
   stderr: |+
   exit_code: 0

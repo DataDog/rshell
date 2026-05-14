@@ -35,6 +35,10 @@ func (e *returnError) Error() string {
 }
 
 func (rt *runtime) execStatements(ctx context.Context, stmts []stmt) error {
+	return rt.execStatementsWithFuture(ctx, stmts, nil)
+}
+
+func (rt *runtime) execStatementsWithFuture(ctx context.Context, stmts []stmt, future []stmt) error {
 	prevCtx := rt.ctx
 	rt.ctx = ctx
 	defer func() { rt.ctx = prevCtx }()
@@ -42,6 +46,7 @@ func (rt *runtime) execStatements(ctx context.Context, stmts []stmt) error {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
+		remaining := stmtFuture(stmts[i+1:], future)
 		switch s := st.(type) {
 		case *printStmt:
 			vals := make([]value, 0, len(s.args))
@@ -57,7 +62,7 @@ func (rt *runtime) execStatements(ctx context.Context, stmts []stmt) error {
 				}
 			}
 			out := rt.formatPrintValues(vals)
-			if err := rt.writeOutput(ctx, s.pipe, out, stmts[i+1:]); err != nil {
+			if err := rt.writeOutput(ctx, s.pipe, out, remaining); err != nil {
 				return err
 			}
 		case *printfStmt:
@@ -76,7 +81,7 @@ func (rt *runtime) execStatements(ctx context.Context, stmts []stmt) error {
 			if err != nil {
 				return err
 			}
-			if err := rt.writeOutput(ctx, s.pipe, out, stmts[i+1:]); err != nil {
+			if err := rt.writeOutput(ctx, s.pipe, out, remaining); err != nil {
 				return err
 			}
 		case *ifStmt:
@@ -85,11 +90,11 @@ func (rt *runtime) execStatements(ctx context.Context, stmts []stmt) error {
 				return err
 			}
 			if cond.Bool() {
-				if err := rt.execStatements(ctx, s.thenStmts); err != nil {
+				if err := rt.execStatementsWithFuture(ctx, s.thenStmts, remaining); err != nil {
 					return err
 				}
 			} else if len(s.elseStmts) > 0 {
-				if err := rt.execStatements(ctx, s.elseStmts); err != nil {
+				if err := rt.execStatementsWithFuture(ctx, s.elseStmts, remaining); err != nil {
 					return err
 				}
 			}
@@ -102,7 +107,7 @@ func (rt *runtime) execStatements(ctx context.Context, stmts []stmt) error {
 				if err := rt.setVar(s.varName, stringValue(key)); err != nil {
 					return err
 				}
-				if err := rt.execStatements(ctx, s.body); err != nil {
+				if err := rt.execStatementsWithFuture(ctx, s.body, stmtFuture(s.body, remaining)); err != nil {
 					if errors.Is(err, errBreakLoop) {
 						break
 					}
@@ -113,11 +118,11 @@ func (rt *runtime) execStatements(ctx context.Context, stmts []stmt) error {
 				}
 			}
 		case *forStmt:
-			if err := rt.execFor(ctx, s); err != nil {
+			if err := rt.execFor(ctx, s, remaining); err != nil {
 				return err
 			}
 		case *whileStmt:
-			if err := rt.execWhile(ctx, s); err != nil {
+			if err := rt.execWhile(ctx, s, remaining); err != nil {
 				return err
 			}
 		case *nextStmt:
@@ -171,7 +176,20 @@ func (rt *runtime) execStatements(ctx context.Context, stmts []stmt) error {
 	return nil
 }
 
-func (rt *runtime) execFor(ctx context.Context, s *forStmt) error {
+func stmtFuture(remaining, future []stmt) []stmt {
+	if len(remaining) == 0 {
+		return future
+	}
+	if len(future) == 0 {
+		return remaining
+	}
+	out := make([]stmt, 0, len(remaining)+len(future))
+	out = append(out, remaining...)
+	out = append(out, future...)
+	return out
+}
+
+func (rt *runtime) execFor(ctx context.Context, s *forStmt, future []stmt) error {
 	if s.init != nil {
 		if _, err := rt.eval(s.init); err != nil {
 			return err
@@ -190,7 +208,7 @@ func (rt *runtime) execFor(ctx context.Context, s *forStmt) error {
 				return nil
 			}
 		}
-		err := rt.execStatements(ctx, s.body)
+		err := rt.execStatementsWithFuture(ctx, s.body, stmtFuture(s.body, future))
 		if errors.Is(err, errBreakLoop) {
 			return nil
 		}
@@ -205,7 +223,7 @@ func (rt *runtime) execFor(ctx context.Context, s *forStmt) error {
 	}
 }
 
-func (rt *runtime) execWhile(ctx context.Context, s *whileStmt) error {
+func (rt *runtime) execWhile(ctx context.Context, s *whileStmt, future []stmt) error {
 	for {
 		if err := ctx.Err(); err != nil {
 			return err
@@ -217,7 +235,7 @@ func (rt *runtime) execWhile(ctx context.Context, s *whileStmt) error {
 		if !cond.Bool() {
 			return nil
 		}
-		err = rt.execStatements(ctx, s.body)
+		err = rt.execStatementsWithFuture(ctx, s.body, stmtFuture(s.body, future))
 		if errors.Is(err, errBreakLoop) {
 			return nil
 		}
