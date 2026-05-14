@@ -3,9 +3,11 @@ oracle: gawk
 input:
   script: |+
     awk 'BEGIN { print "b" | "cat"; print "a"; close("cat") }'
+    awk 'BEGIN { print "a" | "wc -l"; printf ""; print "b" | "wc -l"; close("wc -l") }'
 expect:
   stdout: |+
     b
     a
+    2
   stderr: |+
   exit_code: 0

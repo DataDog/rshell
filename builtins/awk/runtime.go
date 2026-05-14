@@ -657,8 +657,10 @@ func (rt *runtime) writeStdoutString(ctx context.Context, s string) error {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	if err := rt.flushCommandPipesForStdout(ctx); err != nil {
-		return err
+	if s != "" {
+		if err := rt.flushCommandPipesForStdout(ctx); err != nil {
+			return err
+		}
 	}
 	rt.callCtx.Out(s)
 	return nil
