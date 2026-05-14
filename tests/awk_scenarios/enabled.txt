@@ -2,6 +2,7 @@ gawk/arrays/aliased_array_params_share_updates.yaml
 gawk/arrays/array_creation_through_nested_call.yaml
 gawk/arrays/array_parameter_delete_iteration.yaml
 gawk/arrays/array_reference_side_effect.yaml
+gawk/arrays/asorti_ignorecase_index_order.yaml
 gawk/arrays/associative_count.yaml
 gawk/arrays/delete_index.yaml
 gawk/arrays/delete_local_array_parameter.yaml
@@ -175,6 +176,7 @@ gawk/regex/sub_multibyte_repeated_substr.yaml
 gawk/string_regex/bracket_range_edge_cases.yaml
 gawk/string_regex/eight_bit_bracket_backtracking.yaml
 gawk/string_regex/escaped_punctuation_bracket_substitution.yaml
+gawk/string_regex/ignorecase_numeric_string_truth.yaml
 gawk/string_regex/ignorecase_posix_alnum_class.yaml
 gawk/string_regex/independent_regex_operator_precedence.yaml
 gawk/string_regex/letter_range_membership.yaml

@@ -1690,6 +1690,10 @@ func (rt *runtime) deleteGlobalArray(name string) error {
 }
 
 func (rt *runtime) arrayKeys(name string) ([]string, error) {
+	return rt.arrayKeysSorted(name, false)
+}
+
+func (rt *runtime) arrayKeysSorted(name string, ignoreCase bool) ([]string, error) {
 	elems, _, _, handled, err := rt.localArrayStorage(name, true)
 	if err != nil {
 		return nil, err
@@ -1706,20 +1710,46 @@ func (rt *runtime) arrayKeys(name string) ([]string, error) {
 	for key := range elems {
 		keys = append(keys, key)
 	}
-	sortStringKeys(keys)
+	sortStringKeys(keys, ignoreCase)
 	return keys, nil
 }
 
-func sortStringKeys(keys []string) {
+func sortStringKeys(keys []string, ignoreCase bool) {
 	for i := 1; i < len(keys); i++ {
 		key := keys[i]
+		sortKey := key
+		if ignoreCase {
+			sortKey = strings.ToLower(key)
+		}
 		j := i - 1
-		for j >= 0 && keys[j] > key {
+		for j >= 0 && compareAwkSortKeys(keys[j], key, sortKey, ignoreCase) > 0 {
 			keys[j+1] = keys[j]
 			j--
 		}
 		keys[j+1] = key
 	}
+}
+
+func compareAwkSortKeys(left, right, foldedRight string, ignoreCase bool) int {
+	compareLeft := left
+	compareRight := right
+	if ignoreCase {
+		compareLeft = strings.ToLower(left)
+		compareRight = foldedRight
+	}
+	if compareLeft < compareRight {
+		return -1
+	}
+	if compareLeft > compareRight {
+		return 1
+	}
+	if left < right {
+		return -1
+	}
+	if left > right {
+		return 1
+	}
+	return 0
 }
 
 func (rt *runtime) ensureBuiltinArray(name string) {
@@ -1822,7 +1852,7 @@ func (rt *runtime) compileRegex(pattern string) (*awkRegex, error) {
 }
 
 func (rt *runtime) ignoreCase() bool {
-	return rt.getVar("IGNORECASE").Number() != 0
+	return rt.getVar("IGNORECASE").Bool()
 }
 
 func compileRegex(pattern string) (*awkRegex, error) {

@@ -828,7 +828,7 @@ func (rt *runtime) evalAsorti(e *callExpr) (value, error) {
 		}
 		destName = dest.name
 	}
-	keys, err := rt.arrayKeys(source.name)
+	keys, err := rt.arrayKeysSorted(source.name, rt.ignoreCase())
 	if err != nil {
 		return value{}, err
 	}
