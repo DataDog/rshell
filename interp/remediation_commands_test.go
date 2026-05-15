@@ -16,6 +16,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/DataDog/rshell/builtins"
 	"github.com/DataDog/rshell/interp"
 )
 
@@ -28,7 +29,12 @@ func TestRemediationTruncateDelegatesShrinksOnly(t *testing.T) {
 		interp.AllowedPaths([]string{dir}),
 		interp.HostCommandHandler(func(ctx context.Context, args []string) error {
 			got = append([]string(nil), args...)
-			assert.Equal(t, dir, interp.HandlerCtx(ctx).Dir)
+			hc := interp.HandlerCtx(ctx)
+			assert.Equal(t, dir, hc.Dir)
+			require.Len(t, hc.ExtraFiles, 1)
+			info, err := hc.ExtraFiles[0].Stat()
+			require.NoError(t, err)
+			assert.Equal(t, int64(6), info.Size())
 			return nil
 		}),
 	)
@@ -36,7 +42,7 @@ func TestRemediationTruncateDelegatesShrinksOnly(t *testing.T) {
 	assert.Equal(t, 0, code)
 	assert.Equal(t, "", stdout)
 	assert.Equal(t, "", stderr)
-	assert.Equal(t, []string{"truncate", "-s", "3", "--", "app.log"}, got)
+	assert.Equal(t, []string{"truncate", "-s", "3", "--", builtins.HostExtraFilePath(0)}, got)
 }
 
 func TestRemediationTruncateDelegatesThroughExecHandlerByDefault(t *testing.T) {
@@ -48,7 +54,9 @@ func TestRemediationTruncateDelegatesThroughExecHandlerByDefault(t *testing.T) {
 		interp.AllowedPaths([]string{dir}),
 		interp.ExecHandler(func(ctx context.Context, args []string) error {
 			got = append([]string(nil), args...)
-			assert.Equal(t, dir, interp.HandlerCtx(ctx).Dir)
+			hc := interp.HandlerCtx(ctx)
+			assert.Equal(t, dir, hc.Dir)
+			require.Len(t, hc.ExtraFiles, 1)
 			return nil
 		}),
 	)
@@ -56,7 +64,7 @@ func TestRemediationTruncateDelegatesThroughExecHandlerByDefault(t *testing.T) {
 	assert.Equal(t, 0, code)
 	assert.Equal(t, "", stdout)
 	assert.Equal(t, "", stderr)
-	assert.Equal(t, []string{"truncate", "-s", "0", "--", "app.log"}, got)
+	assert.Equal(t, []string{"truncate", "-s", "0", "--", builtins.HostExtraFilePath(0)}, got)
 }
 
 func TestRemediationTruncatePreservesLeadingDashOperand(t *testing.T) {
@@ -68,6 +76,7 @@ func TestRemediationTruncatePreservesLeadingDashOperand(t *testing.T) {
 		interp.AllowedPaths([]string{dir}),
 		interp.HostCommandHandler(func(ctx context.Context, args []string) error {
 			got = append([]string(nil), args...)
+			require.Len(t, interp.HandlerCtx(ctx).ExtraFiles, 1)
 			return nil
 		}),
 	)
@@ -75,7 +84,7 @@ func TestRemediationTruncatePreservesLeadingDashOperand(t *testing.T) {
 	assert.Equal(t, 0, code)
 	assert.Equal(t, "", stdout)
 	assert.Equal(t, "", stderr)
-	assert.Equal(t, []string{"truncate", "-s", "0", "--", "--help"}, got)
+	assert.Equal(t, []string{"truncate", "-s", "0", "--", builtins.HostExtraFilePath(0)}, got)
 }
 
 func TestRemediationTruncateRejectsGrowth(t *testing.T) {
@@ -111,6 +120,29 @@ func TestRemediationTruncateRejectsRelativeSizeSyntax(t *testing.T) {
 
 	assert.Equal(t, 1, code)
 	assert.Contains(t, stderr, "invalid size")
+	assert.False(t, called)
+}
+
+func TestRemediationTruncateRejectsSymlinkEscapeBeforeHostExecution(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink escape behavior is platform-specific on Windows")
+	}
+	dir := t.TempDir()
+	outside := filepath.Join(t.TempDir(), "outside.log")
+	require.NoError(t, os.WriteFile(outside, []byte("abcdef"), 0644))
+	require.NoError(t, os.Symlink(outside, filepath.Join(dir, "escape.log")))
+	called := false
+
+	_, stderr, code := runScript(t, "truncate -s 0 escape.log", dir,
+		interp.AllowedPaths([]string{dir}),
+		interp.HostCommandHandler(func(ctx context.Context, args []string) error {
+			called = true
+			return nil
+		}),
+	)
+
+	assert.Equal(t, 1, code)
+	assert.Contains(t, stderr, "permission denied")
 	assert.False(t, called)
 }
 
@@ -224,6 +256,7 @@ func TestRemediationTeeDelegatesAppendWithStdin(t *testing.T) {
 		interp.AllowedPaths([]string{dir}),
 		interp.HostCommandHandler(func(ctx context.Context, args []string) error {
 			got = append([]string(nil), args...)
+			require.Len(t, interp.HandlerCtx(ctx).ExtraFiles, 1)
 			data, err := io.ReadAll(interp.HandlerCtx(ctx).Stdin)
 			require.NoError(t, err)
 			stdin = string(data)
@@ -234,7 +267,7 @@ func TestRemediationTeeDelegatesAppendWithStdin(t *testing.T) {
 	assert.Equal(t, 0, code)
 	assert.Equal(t, "", stdout)
 	assert.Equal(t, "", stderr)
-	assert.Equal(t, []string{"tee", "-a", "--", "output.txt"}, got)
+	assert.Equal(t, []string{"tee", "-a", "--", builtins.HostExtraFilePath(0)}, got)
 	assert.Equal(t, "payload\n", stdin)
 }
 
@@ -247,6 +280,7 @@ func TestRemediationTeePreservesLeadingDashOperand(t *testing.T) {
 		interp.AllowedPaths([]string{dir}),
 		interp.HostCommandHandler(func(ctx context.Context, args []string) error {
 			got = append([]string(nil), args...)
+			require.Len(t, interp.HandlerCtx(ctx).ExtraFiles, 1)
 			return nil
 		}),
 	)
@@ -254,7 +288,7 @@ func TestRemediationTeePreservesLeadingDashOperand(t *testing.T) {
 	assert.Equal(t, 0, code)
 	assert.Equal(t, "", stdout)
 	assert.Equal(t, "", stderr)
-	assert.Equal(t, []string{"tee", "--", "--help"}, got)
+	assert.Equal(t, []string{"tee", "--", builtins.HostExtraFilePath(0)}, got)
 }
 
 func TestRemediationTeeRejectsOutsideAllowedPathsBeforeHostExecution(t *testing.T) {
@@ -310,6 +344,7 @@ func TestRemediationLogrotateDelegatesExistingPath(t *testing.T) {
 		interp.AllowedPaths([]string{dir}),
 		interp.HostCommandHandler(func(ctx context.Context, args []string) error {
 			got = append([]string(nil), args...)
+			require.Len(t, interp.HandlerCtx(ctx).ExtraFiles, 1)
 			return nil
 		}),
 	)
@@ -317,7 +352,7 @@ func TestRemediationLogrotateDelegatesExistingPath(t *testing.T) {
 	assert.Equal(t, 0, code)
 	assert.Equal(t, "", stdout)
 	assert.Equal(t, "", stderr)
-	assert.Equal(t, []string{"logrotate", "--", "app.log"}, got)
+	assert.Equal(t, []string{"logrotate", "--", builtins.HostExtraFilePath(0)}, got)
 }
 
 func TestRemediationLogrotatePreservesLeadingDashOperand(t *testing.T) {
@@ -329,6 +364,7 @@ func TestRemediationLogrotatePreservesLeadingDashOperand(t *testing.T) {
 		interp.AllowedPaths([]string{dir}),
 		interp.HostCommandHandler(func(ctx context.Context, args []string) error {
 			got = append([]string(nil), args...)
+			require.Len(t, interp.HandlerCtx(ctx).ExtraFiles, 1)
 			return nil
 		}),
 	)
@@ -336,5 +372,28 @@ func TestRemediationLogrotatePreservesLeadingDashOperand(t *testing.T) {
 	assert.Equal(t, 0, code)
 	assert.Equal(t, "", stdout)
 	assert.Equal(t, "", stderr)
-	assert.Equal(t, []string{"logrotate", "--", "--help"}, got)
+	assert.Equal(t, []string{"logrotate", "--", builtins.HostExtraFilePath(0)}, got)
+}
+
+func TestRemediationLogrotateRejectsSymlinkEscapeBeforeHostExecution(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink escape behavior is platform-specific on Windows")
+	}
+	dir := t.TempDir()
+	outside := filepath.Join(t.TempDir(), "outside.log")
+	require.NoError(t, os.WriteFile(outside, []byte("payload\n"), 0644))
+	require.NoError(t, os.Symlink(outside, filepath.Join(dir, "escape.log")))
+	called := false
+
+	_, stderr, code := runScript(t, "logrotate escape.log", dir,
+		interp.AllowedPaths([]string{dir}),
+		interp.HostCommandHandler(func(ctx context.Context, args []string) error {
+			called = true
+			return nil
+		}),
+	)
+
+	assert.Equal(t, 1, code)
+	assert.Contains(t, stderr, "permission denied")
+	assert.False(t, called)
 }

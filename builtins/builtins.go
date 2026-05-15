@@ -141,6 +141,16 @@ type CallContext struct {
 	// OpenFile opens a file within the shell's path restrictions.
 	OpenFile func(ctx context.Context, path string, flags int, mode os.FileMode) (io.ReadWriteCloser, error)
 
+	// OpenFileForWrite opens a file for guarded write-style builtins within
+	// the shell's path restrictions. The open happens before any host
+	// delegation so the host command can receive a stable fd instead of a raw
+	// pathname.
+	OpenFileForWrite func(ctx context.Context, path string, append bool) (*os.File, error)
+
+	// OpenExistingFileForWrite opens an existing file for guarded host
+	// mutations that must not create, truncate, or append during validation.
+	OpenExistingFileForWrite func(ctx context.Context, path string) (*os.File, error)
+
 	// ReadDir reads a directory within the shell's path restrictions.
 	// Entries are returned sorted by name. Used by builtins like ls
 	// that need deterministic sorted output.
@@ -173,10 +183,6 @@ type CallContext struct {
 	// AccessFile checks whether the file at path is accessible with the given mode
 	// within the shell's path restrictions. Mode: 0x04=read, 0x02=write, 0x01=execute.
 	AccessFile func(ctx context.Context, path string, mode uint32) error
-
-	// CheckFileWrite validates that path can be used as a write target within
-	// the shell's path restrictions without opening or creating it.
-	CheckFileWrite func(ctx context.Context, path string) error
 
 	// PortableErr normalizes an OS error to a POSIX-style message.
 	PortableErr func(err error) string
@@ -269,6 +275,12 @@ type CallContext struct {
 	// which only dispatches other rshell builtins.
 	RunHostCommand func(ctx context.Context, name string, args []string) (uint8, error)
 
+	// RunHostCommandWithFiles is like RunHostCommand but passes additional
+	// sandbox-opened files through HandlerContext.ExtraFiles. Host handlers
+	// that execute via os/exec should wire these to Cmd.ExtraFiles so paths
+	// returned by HostExtraFilePath refer to the opened files.
+	RunHostCommandWithFiles func(ctx context.Context, name string, args []string, extraFiles []*os.File) (uint8, error)
+
 	// SetVar assigns a value to a shell variable in the calling shell's
 	// scope. Returns an error if the value exceeds the per-variable size
 	// limit or if the total variable-storage cap would be exceeded.
@@ -301,14 +313,41 @@ func (c *CallContext) Errf(format string, a ...any) {
 	fmt.Fprintf(c.Stderr, format, a...)
 }
 
+const hostExtraFileBaseFD = 3
+
+// HostExtraFilePath returns the argv path for an ExtraFiles entry. The first
+// extra file is exposed to host commands as /dev/fd/3, matching os/exec's
+// Cmd.ExtraFiles fd numbering on Unix-like platforms.
+func HostExtraFilePath(index int) string {
+	return fmt.Sprintf("/dev/fd/%d", hostExtraFileBaseFD+index)
+}
+
 // InvokeHostCommand runs a guarded host command and converts failures into a
 // shell Result suitable for builtins.
 func (c *CallContext) InvokeHostCommand(ctx context.Context, name string, args []string) Result {
-	if c.RunHostCommand == nil {
+	return c.InvokeHostCommandWithFiles(ctx, name, args, nil)
+}
+
+// InvokeHostCommandWithFiles runs a guarded host command with additional
+// sandbox-opened files and converts failures into a shell Result.
+func (c *CallContext) InvokeHostCommandWithFiles(ctx context.Context, name string, args []string, extraFiles []*os.File) Result {
+	for _, f := range extraFiles {
+		defer f.Close()
+	}
+
+	var (
+		code uint8
+		err  error
+	)
+	switch {
+	case c.RunHostCommandWithFiles != nil:
+		code, err = c.RunHostCommandWithFiles(ctx, name, args, extraFiles)
+	case len(extraFiles) == 0 && c.RunHostCommand != nil:
+		code, err = c.RunHostCommand(ctx, name, args)
+	default:
 		c.Errf("%s: host command execution not available\n", name)
 		return Result{Code: 127}
 	}
-	code, err := c.RunHostCommand(ctx, name, args)
 	if err != nil {
 		c.Errf("%s: %s\n", name, err)
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {

@@ -201,6 +201,7 @@ var builtinPerCommandSymbols = map[string][]string{
 	},
 	"logrotate": {
 		"context.Context", // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
+		"os.File",         // 🟠 *os.File type used only to pass sandbox-opened descriptors through the host handler; no constructors invoked.
 	},
 	"ls": {
 		"context.Context",                    // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
@@ -373,6 +374,7 @@ var builtinPerCommandSymbols = map[string][]string{
 	},
 	"tee": {
 		"context.Context", // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
+		"os.File",         // 🟠 *os.File type used only to pass sandbox-opened descriptors through the host handler; no constructors invoked.
 	},
 	"testcmd": {
 		"context.Context",     // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
@@ -391,6 +393,7 @@ var builtinPerCommandSymbols = map[string][]string{
 	},
 	"truncate": {
 		"context.Context",   // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
+		"os.File",           // 🟠 *os.File type used only to pass sandbox-opened descriptors through the host handler; no constructors invoked.
 		"strconv.FormatInt", // 🟢 int-to-string conversion; pure function, no I/O.
 		"strconv.ParseInt",  // 🟢 string-to-int conversion with overflow checking; pure function, no I/O.
 	},

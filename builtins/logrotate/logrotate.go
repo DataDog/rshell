@@ -8,6 +8,7 @@ package logrotate
 
 import (
 	"context"
+	"os"
 
 	"github.com/DataDog/rshell/builtins"
 )
@@ -38,10 +39,15 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			callCtx.Errf("logrotate: expected exactly one path\n")
 			return builtins.Result{Code: 1}
 		}
-		if _, err := callCtx.StatFile(ctx, args[0]); err != nil {
+		if callCtx.OpenExistingFileForWrite == nil {
+			callCtx.Errf("logrotate: file write is not available\n")
+			return builtins.Result{Code: 1}
+		}
+		f, err := callCtx.OpenExistingFileForWrite(ctx, args[0])
+		if err != nil {
 			callCtx.Errf("logrotate: %s: %s\n", args[0], callCtx.PortableErr(err))
 			return builtins.Result{Code: 1}
 		}
-		return callCtx.InvokeHostCommand(ctx, "logrotate", []string{"--", args[0]})
+		return callCtx.InvokeHostCommandWithFiles(ctx, "logrotate", []string{"--", builtins.HostExtraFilePath(0)}, []*os.File{f})
 	}
 }

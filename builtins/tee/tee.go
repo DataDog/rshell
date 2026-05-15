@@ -8,6 +8,7 @@ package tee
 
 import (
 	"context"
+	"os"
 
 	"github.com/DataDog/rshell/builtins"
 )
@@ -39,18 +40,21 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			callCtx.Errf("tee: expected exactly one file\n")
 			return builtins.Result{Code: 1}
 		}
-		if callCtx.CheckFileWrite == nil {
-			callCtx.Errf("tee: file write validation is not available\n")
+		if callCtx.OpenFileForWrite == nil {
+			callCtx.Errf("tee: file write is not available\n")
 			return builtins.Result{Code: 1}
 		}
-		if err := callCtx.CheckFileWrite(ctx, args[0]); err != nil {
+		f, err := callCtx.OpenFileForWrite(ctx, args[0], *appendFlag)
+		if err != nil {
 			callCtx.Errf("tee: %s: %s\n", args[0], callCtx.PortableErr(err))
 			return builtins.Result{Code: 1}
 		}
-		argv := []string{"--", args[0]}
+		files := []*os.File{f}
+		target := builtins.HostExtraFilePath(0)
+		argv := []string{"--", target}
 		if *appendFlag {
-			argv = []string{"-a", "--", args[0]}
+			argv = []string{"-a", "--", target}
 		}
-		return callCtx.InvokeHostCommand(ctx, "tee", argv)
+		return callCtx.InvokeHostCommandWithFiles(ctx, "tee", argv, files)
 	}
 }

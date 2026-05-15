@@ -8,6 +8,7 @@ package truncate
 
 import (
 	"context"
+	"os"
 	"strconv"
 
 	"github.com/DataDog/rshell/builtins"
@@ -53,20 +54,32 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			callCtx.Errf("truncate: expected exactly one file\n")
 			return builtins.Result{Code: 1}
 		}
-		info, err := callCtx.StatFile(ctx, args[0])
+		if callCtx.OpenExistingFileForWrite == nil {
+			callCtx.Errf("truncate: file write is not available\n")
+			return builtins.Result{Code: 1}
+		}
+		f, err := callCtx.OpenExistingFileForWrite(ctx, args[0])
 		if err != nil {
 			callCtx.Errf("truncate: %s: %s\n", args[0], callCtx.PortableErr(err))
 			return builtins.Result{Code: 1}
 		}
+		info, err := f.Stat()
+		if err != nil {
+			f.Close()
+			callCtx.Errf("truncate: %s: %s\n", args[0], callCtx.PortableErr(err))
+			return builtins.Result{Code: 1}
+		}
 		if !info.Mode().IsRegular() {
+			f.Close()
 			callCtx.Errf("truncate: %s: not a regular file\n", args[0])
 			return builtins.Result{Code: 1}
 		}
 		if size > info.Size() {
+			f.Close()
 			callCtx.Errf("truncate: cannot grow file\n")
 			return builtins.Result{Code: 1}
 		}
-		return callCtx.InvokeHostCommand(ctx, "truncate", []string{"-s", strconv.FormatInt(size, 10), "--", args[0]})
+		return callCtx.InvokeHostCommandWithFiles(ctx, "truncate", []string{"-s", strconv.FormatInt(size, 10), "--", builtins.HostExtraFilePath(0)}, []*os.File{f})
 	}
 }
 

@@ -596,6 +596,16 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 					}
 					return allowedpaths.WithContextClose(ctx, f), nil
 				},
+				OpenFileForWrite: func(ctx context.Context, path string, appendMode bool) (*os.File, error) {
+					flags := os.O_WRONLY | os.O_CREATE | os.O_TRUNC
+					if appendMode {
+						flags = os.O_WRONLY | os.O_CREATE | os.O_APPEND
+					}
+					return r.sandbox.OpenForWrite(path, dir, flags, 0666)
+				},
+				OpenExistingFileForWrite: func(ctx context.Context, path string) (*os.File, error) {
+					return r.sandbox.OpenExistingForWrite(path, dir)
+				},
 				ReadDir: func(ctx context.Context, path string) ([]fs.DirEntry, error) {
 					return r.sandbox.ReadDir(path, dir)
 				},
@@ -619,9 +629,6 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 				},
 				AccessFile: func(ctx context.Context, path string, mode uint32) error {
 					return r.sandbox.Access(path, dir, mode)
-				},
-				CheckFileWrite: func(ctx context.Context, path string) error {
-					return r.sandbox.CheckWriteTarget(path, dir)
 				},
 				PortableErr: allowedpaths.PortableErrMsg,
 				Now:         r.startTime,
@@ -666,7 +673,10 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 				},
 				RunCommandWithStdin: runCmdWithStdin,
 				RunHostCommand: func(ctx context.Context, hostName string, hostArgs []string) (uint8, error) {
-					return r.runHostCommand(ctx, todoPos, dir, cmdName, hostName, hostArgs)
+					return r.runHostCommand(ctx, todoPos, dir, cmdName, hostName, hostArgs, nil)
+				},
+				RunHostCommandWithFiles: func(ctx context.Context, hostName string, hostArgs []string, extraFiles []*os.File) (uint8, error) {
+					return r.runHostCommand(ctx, todoPos, dir, cmdName, hostName, hostArgs, extraFiles)
 				},
 				// Intentionally not exposing SetVar / GetVar in the
 				// child CallContext used for find -exec / -execdir
@@ -724,6 +734,16 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 				}
 				return allowedpaths.WithContextClose(ctx, f), nil
 			},
+			OpenFileForWrite: func(ctx context.Context, path string, appendMode bool) (*os.File, error) {
+				flags := os.O_WRONLY | os.O_CREATE | os.O_TRUNC
+				if appendMode {
+					flags = os.O_WRONLY | os.O_CREATE | os.O_APPEND
+				}
+				return r.sandbox.OpenForWrite(path, HandlerCtx(r.handlerCtx(ctx, todoPos)).Dir, flags, 0666)
+			},
+			OpenExistingFileForWrite: func(ctx context.Context, path string) (*os.File, error) {
+				return r.sandbox.OpenExistingForWrite(path, HandlerCtx(r.handlerCtx(ctx, todoPos)).Dir)
+			},
 			ReadDir: func(ctx context.Context, path string) ([]fs.DirEntry, error) {
 				return r.sandbox.ReadDir(path, HandlerCtx(r.handlerCtx(ctx, todoPos)).Dir)
 			},
@@ -747,9 +767,6 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 			},
 			AccessFile: func(ctx context.Context, path string, mode uint32) error {
 				return r.sandbox.Access(path, HandlerCtx(r.handlerCtx(ctx, todoPos)).Dir, mode)
-			},
-			CheckFileWrite: func(ctx context.Context, path string) error {
-				return r.sandbox.CheckWriteTarget(path, HandlerCtx(r.handlerCtx(ctx, todoPos)).Dir)
 			},
 			PortableErr: allowedpaths.PortableErrMsg,
 			Now:         r.startTime,
@@ -778,7 +795,10 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 			RunCommand:          runCmd,
 			RunCommandWithStdin: runCmdWithStdin,
 			RunHostCommand: func(ctx context.Context, hostName string, hostArgs []string) (uint8, error) {
-				return r.runHostCommand(ctx, todoPos, r.Dir, name, hostName, hostArgs)
+				return r.runHostCommand(ctx, todoPos, r.Dir, name, hostName, hostArgs, nil)
+			},
+			RunHostCommandWithFiles: func(ctx context.Context, hostName string, hostArgs []string, extraFiles []*os.File) (uint8, error) {
+				return r.runHostCommand(ctx, todoPos, r.Dir, name, hostName, hostArgs, extraFiles)
 			},
 			SetVar: func(name, value string) error {
 				if len(value) > MaxVarBytes {
@@ -836,7 +856,7 @@ func (r *Runner) exec(ctx context.Context, pos syntax.Pos, args []string) {
 	r.exit.fromHandlerError(r.execHandler(r.handlerCtx(ctx, pos), args))
 }
 
-func (r *Runner) runHostCommand(ctx context.Context, pos syntax.Pos, dir string, caller string, name string, args []string) (uint8, error) {
+func (r *Runner) runHostCommand(ctx context.Context, pos syntax.Pos, dir string, caller string, name string, args []string, extraFiles []*os.File) (uint8, error) {
 	if caller != name || !isGuardedHostCommand(caller) {
 		return 127, fmt.Errorf("rshell: %s: host command execution not available", name)
 	}
@@ -846,7 +866,7 @@ func (r *Runner) runHostCommand(ctx context.Context, pos syntax.Pos, dir string,
 	argv := make([]string, 0, len(args)+1)
 	argv = append(argv, name)
 	argv = append(argv, args...)
-	err := r.hostCommandHandler(r.handlerCtxWithDir(ctx, pos, dir), argv)
+	err := r.hostCommandHandler(r.handlerCtxWithDirFiles(ctx, pos, dir, extraFiles), argv)
 	if err == nil {
 		return 0, nil
 	}

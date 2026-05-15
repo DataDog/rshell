@@ -685,6 +685,10 @@ func WarningsWriter(w io.Writer) RunnerOption {
 // guarded remediation builtins. The handler receives argv after the builtin has
 // validated the PAR-shaped command contract. The runner still enforces
 // AllowedCommands before invoking this handler.
+// File-mutating guarded builtins pass sandbox-opened descriptors via
+// [HandlerContext.ExtraFiles]; handlers that execute host binaries should wire
+// those files to os/exec.Cmd.ExtraFiles so /dev/fd/3-style argv targets stay
+// bound to the validated file.
 //
 // When unset, guarded host commands use the configured ExecHandler, which
 // defaults to rejecting external execution with exit code 127.

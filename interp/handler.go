@@ -53,6 +53,11 @@ type HandlerContext struct {
 	Stdout io.Writer
 	// Stderr is the interpreter's current standard error writer.
 	Stderr io.Writer
+
+	// ExtraFiles contains additional files opened by guarded builtins for
+	// host-command execution. Handlers that exec host binaries can pass these
+	// through to os/exec.Cmd.ExtraFiles, where entry i is exposed as fd 3+i.
+	ExtraFiles []*os.File
 }
 
 // OpenHandlerFunc is a handler which opens files.

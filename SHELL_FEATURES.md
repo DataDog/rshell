@@ -25,7 +25,7 @@ The in-shell `help` command mirrors these feature categories: run `help` for a c
 - ✅ `ip route [show|list]` — show IPv4 routing table (Linux only; reads `/proc/net/route` directly via `os.Open`, bypassing `AllowedPaths`); at most 10 000 entries loaded; lines longer than 1 MiB abort parsing with an error (exit 1)
 - ✅ `ip route get ADDRESS` — show the route selected by longest-prefix-match for ADDRESS (Linux only); write ops (`add`, `del`, `flush`, `replace`, `change`, `save`, `restore`) are blocked; `-6` (IPv6 routing) is not supported
 - ✅ `kill [-9] PID` — guarded remediation command; sends SIGTERM or SIGKILL through the host command handler after validating a single positive PID
-- ✅ `logrotate PATH` — guarded remediation command; delegates one existing allowed path to the host command handler, usually a scenario-provided wrapper
+- ✅ `logrotate PATH` — guarded remediation command; delegates one existing allowed file descriptor to the host command handler, usually a scenario-provided wrapper
 - ✅ `sort [-rnhubfds] [-k KEYDEF] [-t SEP] [-c|-C] [FILE]...` — sort lines of text files; `-h`/`--human-numeric-sort` orders by SI suffix (none < K/k < M < G < T < P < E < Z < Y < R < Q) then by numeric value (single-letter suffixes only — `Ki`, `Mi`, etc. are not recognised); `-o`, `--compress-program`, and `-T` are rejected (filesystem write / exec)
 - ✅ `ss [-tuaxlans4689Hoehs] [OPTION]...` — display network socket statistics; reads kernel socket state directly via `os.Open` (bypassing `AllowedPaths`) from: Linux: `/proc/net/`; macOS: sysctl; Windows: iphlpapi.dll; `-F`/`--filter` (GTFOBins file-read), `-p`/`--processes` (PID disclosure), `-K`/`--kill`, `-E`/`--events`, and `-N`/`--net` are rejected
 - ✅ `ls [-1aAdFhlpRrSt] [--offset N] [--limit N] [FILE]...` — list directory contents; `--offset`/`--limit` are non-standard pagination flags (single-directory only, silently ignored with `-R` or multiple arguments, capped at 1,000 entries per call); offset operates on filesystem order (not sorted order) for O(n) memory
@@ -38,9 +38,9 @@ The in-shell `help` command mirrors these feature categories: run `help` for a c
 - ✅ `strings [-a] [-n MIN] [-t o|d|x] [-o] [-f] [-s SEP] [FILE]...` — print printable character sequences in files (default min length 4); offsets via `-t`/`-o`; filename prefix via `-f`; custom separator via `-s`
 - ✅ `systemctl start|stop|restart|reload UNIT` — guarded remediation command; delegates one lifecycle action and unit to the host command handler
 - ✅ `tail [-n N|-c N] [-q|-v] [-z] [FILE]...` — output the last part of files (default: last 10 lines); supports `+N` offset mode; `-f`/`--follow` is rejected
-- ✅ `tee [-a] FILE` — guarded remediation command; copies stdin to stdout and one file through the host command handler; only overwrite and append forms are supported
+- ✅ `tee [-a] FILE` — guarded remediation command; copies stdin to stdout and one sandbox-opened file descriptor through the host command handler; only overwrite and append forms are supported
 - ✅ `test EXPRESSION` / `[ EXPRESSION ]` — evaluate conditional expression (file tests, string/integer comparison, logical operators)
-- ✅ `truncate -s SIZE FILE` — guarded remediation command; shrinks one existing regular file to a non-negative byte size no larger than its current size, then delegates to the host command handler
+- ✅ `truncate -s SIZE FILE` — guarded remediation command; shrinks one existing regular file to a non-negative byte size no larger than its current size by delegating a sandbox-opened file descriptor to the host command handler
 - ✅ `tr [-cdsCt] SET1 [SET2]` — translate, squeeze, and/or delete characters from stdin
 - ✅ `true` — return exit code 0
 - ✅ `uname [-asnrvm]` — print system information (Linux only; reads from `/proc/sys/kernel/`, respects `--proc-path`)
@@ -116,7 +116,7 @@ The in-shell `help` command mirrors these feature categories: run `help` for a c
 
 - ✅ AllowedCommands — restricts which commands (builtins or external) may be executed; commands require the `rshell:` namespace prefix (e.g. `rshell:cat`); if not set, no commands are allowed
 - ✅ AllowedPaths filesystem sandboxing — restricts all file access to specified directories
-- ✅ Guarded host command handler — remediation builtins (`truncate`, `systemctl`, `kill`, `logrotate`, `tee`) validate their restricted contract before delegating to a caller-provided host command handler
+- ✅ Guarded host command handler — remediation builtins (`truncate`, `systemctl`, `kill`, `logrotate`, `tee`) validate their restricted contract before delegating to a caller-provided host command handler; file-mutating commands pass sandbox-opened descriptors via handler context extra files
 - ✅ Whole-run execution timeout — callers can bound a `Run()` call via `context.Context`, `interp.MaxExecutionTime`, or the CLI `--timeout` flag; the deadline applies to the entire script, not each individual command
 - ✅ ProcPath — overrides the proc filesystem path used by `ps` (default `/proc`; Linux-only; useful for testing/container environments)
 - ❌ External commands — blocked by default; require an ExecHandler and the command name must pass AllowedCommands

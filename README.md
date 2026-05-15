@@ -72,7 +72,7 @@ Every access path is default-deny:
 
 **ProcPath** (Linux-only) overrides the proc filesystem root used by the `ps` builtin (default `/proc`). This is a privileged option set at runner construction time by trusted caller code — scripts cannot influence it. Access to the proc path is intentionally not subject to `AllowedPaths` restrictions, since proc is a read-only virtual filesystem that does not expose host data under the normal file hierarchy.
 
-**Guarded host commands** (`truncate`, `systemctl`, `kill`, `logrotate`, and `tee`) validate a narrow rshell contract before invoking the host command handler. Their command shapes intentionally mirror the remediation primitives exposed by benchmark tooling; broader native command flags remain blocked by rshell argument validation or by the caller-provided handler.
+**Guarded host commands** (`truncate`, `systemctl`, `kill`, `logrotate`, and `tee`) validate a narrow rshell contract before invoking the host command handler. File-mutating commands hand the handler sandbox-opened descriptors instead of raw writable paths. Their command shapes intentionally mirror the remediation primitives exposed by benchmark tooling; broader native command flags remain blocked by rshell argument validation or by the caller-provided handler.
 
 ## Shell Features
 

@@ -95,6 +95,9 @@ func New(paths []string) (sb *Sandbox, warnings []byte, err error) {
 // isPathEscapeError reports whether err is the unexported "path escapes
 // from parent" error from os.Root. Stable per Hyrum's Law.
 func isPathEscapeError(err error) bool {
+	if err != nil && err.Error() == "path escapes from parent" {
+		return true
+	}
 	var pe *os.PathError
 	if errors.As(err, &pe) {
 		return pe.Err != nil && pe.Err.Error() == "path escapes from parent"
@@ -346,9 +349,8 @@ func (s *Sandbox) Open(path string, cwd string, flag int, perm os.FileMode) (io.
 }
 
 // OpenForWrite implements the restricted file-open policy for shell output
-// redirections. It is intentionally separate from Open so builtins keep their
-// read-only file capability unless they are explicitly given another one.
-func (s *Sandbox) OpenForWrite(path string, cwd string, flag int, perm os.FileMode) (io.ReadWriteCloser, error) {
+// redirections and guarded write-file style builtins.
+func (s *Sandbox) OpenForWrite(path string, cwd string, flag int, perm os.FileMode) (*os.File, error) {
 	switch flag {
 	case os.O_WRONLY | os.O_CREATE | os.O_TRUNC,
 		os.O_WRONLY | os.O_CREATE | os.O_APPEND:
@@ -372,7 +374,7 @@ func (s *Sandbox) OpenForWrite(path string, cwd string, flag int, perm os.FileMo
 	}
 	r, rel, ok := s.resolveFollowingSymlinks(absPath, false)
 	if !ok {
-		return nil, PortablePathError(err)
+		return nil, &os.PathError{Op: "open", Path: path, Err: os.ErrPermission}
 	}
 	f, err = r.OpenFile(rel, flag, perm)
 	if err != nil {
@@ -381,52 +383,32 @@ func (s *Sandbox) OpenForWrite(path string, cwd string, flag int, perm os.FileMo
 	return f, nil
 }
 
-// CheckWriteTarget validates that path is an AllowedPaths-governed write
-// target without opening or creating it. Existing targets must resolve within
-// the sandbox and be writable; missing targets are accepted only when their
-// parent directory resolves within the sandbox and is writable.
-func (s *Sandbox) CheckWriteTarget(path string, cwd string) error {
+// OpenExistingForWrite opens an existing file for write through the sandbox
+// without creating, truncating, or appending. It is used by guarded host
+// commands that need a stable fd for an already-existing mutation target.
+func (s *Sandbox) OpenExistingForWrite(path string, cwd string) (*os.File, error) {
 	absPath := toAbs(path, cwd)
 	ar, relPath, ok := s.resolve(absPath)
 	if !ok {
-		return &os.PathError{Op: "access", Path: path, Err: os.ErrPermission}
+		return nil, &os.PathError{Op: "open", Path: path, Err: os.ErrPermission}
 	}
 
-	_, err := ar.root.Stat(relPath)
-	if err != nil && isPathEscapeError(err) {
-		r, rel, ok := s.resolveFollowingSymlinks(absPath, false)
-		if !ok {
-			return &os.PathError{Op: "access", Path: path, Err: os.ErrPermission}
-		}
-		_, err = r.Stat(rel)
-	}
+	f, err := ar.root.OpenFile(relPath, os.O_WRONLY, 0)
 	if err == nil {
-		return s.Access(path, cwd, modeWrite)
+		return f, nil
 	}
-	if !errors.Is(err, fs.ErrNotExist) {
-		return PortablePathError(err)
+	if !isPathEscapeError(err) {
+		return nil, PortablePathError(err)
 	}
-
-	parent := filepath.Dir(absPath)
-	parentRoot, parentRel, ok := s.resolve(parent)
+	r, rel, ok := s.resolveFollowingSymlinks(absPath, false)
 	if !ok {
-		return &os.PathError{Op: "access", Path: path, Err: os.ErrPermission}
+		return nil, &os.PathError{Op: "open", Path: path, Err: os.ErrPermission}
 	}
-	info, err := parentRoot.root.Stat(parentRel)
-	if err != nil && isPathEscapeError(err) {
-		r, rel, ok := s.resolveFollowingSymlinks(parent, false)
-		if !ok {
-			return &os.PathError{Op: "access", Path: path, Err: os.ErrPermission}
-		}
-		info, err = r.Stat(rel)
-	}
+	f, err = r.OpenFile(rel, os.O_WRONLY, 0)
 	if err != nil {
-		return PortablePathError(err)
+		return nil, PortablePathError(err)
 	}
-	if !info.IsDir() {
-		return &os.PathError{Op: "access", Path: path, Err: errors.New("parent is not a directory")}
-	}
-	return s.Access(parent, cwd, modeWrite)
+	return f, nil
 }
 
 // ReadDir implements the restricted directory-read policy.
