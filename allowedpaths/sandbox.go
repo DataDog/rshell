@@ -365,7 +365,7 @@ func (s *Sandbox) OpenForWrite(path string, cwd string, flag int, perm os.FileMo
 		return nil, &os.PathError{Op: "open", Path: path, Err: os.ErrPermission}
 	}
 
-	if err := ar.rejectWriteSymlinks(relPath, true); err != nil {
+	if err := ar.validateWritePath(relPath, true); err != nil {
 		return nil, err
 	}
 
@@ -386,7 +386,7 @@ func (s *Sandbox) OpenExistingForWrite(path string, cwd string) (*os.File, error
 		return nil, &os.PathError{Op: "open", Path: path, Err: os.ErrPermission}
 	}
 
-	if err := ar.rejectWriteSymlinks(relPath, false); err != nil {
+	if err := ar.validateWritePath(relPath, false); err != nil {
 		return nil, err
 	}
 
@@ -397,7 +397,7 @@ func (s *Sandbox) OpenExistingForWrite(path string, cwd string) (*os.File, error
 	return f, nil
 }
 
-func (r *root) rejectWriteSymlinks(rel string, allowMissingFinal bool) error {
+func (r *root) validateWritePath(rel string, allowMissingFinal bool) error {
 	rel = filepath.Clean(rel)
 	if rel == "." {
 		return nil
@@ -406,6 +406,7 @@ func (r *root) rejectWriteSymlinks(rel string, allowMissingFinal bool) error {
 	components := strings.Split(rel, string(filepath.Separator))
 	partial := ""
 	for i, component := range components {
+		isFinal := i == len(components)-1
 		if component == "" || component == "." {
 			continue
 		}
@@ -417,13 +418,21 @@ func (r *root) rejectWriteSymlinks(rel string, allowMissingFinal bool) error {
 
 		info, err := r.root.Lstat(partial)
 		if err != nil {
-			if allowMissingFinal && i == len(components)-1 && errors.Is(err, fs.ErrNotExist) {
+			if allowMissingFinal && isFinal && errors.Is(err, fs.ErrNotExist) {
 				return nil
 			}
 			return PortablePathError(err)
 		}
 		if info.Mode()&fs.ModeSymlink != 0 {
 			return &os.PathError{Op: "open", Path: rel, Err: os.ErrPermission}
+		}
+		if isFinal {
+			if info.IsDir() {
+				return &os.PathError{Op: "open", Path: rel, Err: errors.New("is a directory")}
+			}
+			if !info.Mode().IsRegular() {
+				return &os.PathError{Op: "open", Path: rel, Err: os.ErrPermission}
+			}
 		}
 	}
 	return nil

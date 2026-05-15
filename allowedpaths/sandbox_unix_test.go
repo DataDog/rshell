@@ -279,6 +279,66 @@ func TestOpenExistingForWriteRejectsSymlinkTargetWithinAllowedPath(t *testing.T)
 	assert.Equal(t, "keep\n", string(data))
 }
 
+func TestOpenForWriteRejectsFIFOWithoutBlocking(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, syscall.Mkfifo(filepath.Join(dir, "pipe"), 0644))
+
+	sb, _, err := New([]string{dir})
+	require.NoError(t, err)
+	defer sb.Close()
+
+	type result struct {
+		f   *os.File
+		err error
+	}
+	done := make(chan result, 1)
+	go func() {
+		f, err := sb.OpenForWrite("pipe", dir, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
+		done <- result{f: f, err: err}
+	}()
+
+	select {
+	case res := <-done:
+		if res.f != nil {
+			require.NoError(t, res.f.Close())
+		}
+		assert.Nil(t, res.f)
+		assert.ErrorIs(t, res.err, os.ErrPermission)
+	case <-time.After(2 * time.Second):
+		t.Fatal("OpenForWrite blocked on FIFO")
+	}
+}
+
+func TestOpenExistingForWriteRejectsFIFOWithoutBlocking(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, syscall.Mkfifo(filepath.Join(dir, "pipe"), 0644))
+
+	sb, _, err := New([]string{dir})
+	require.NoError(t, err)
+	defer sb.Close()
+
+	type result struct {
+		f   *os.File
+		err error
+	}
+	done := make(chan result, 1)
+	go func() {
+		f, err := sb.OpenExistingForWrite("pipe", dir)
+		done <- result{f: f, err: err}
+	}()
+
+	select {
+	case res := <-done:
+		if res.f != nil {
+			require.NoError(t, res.f.Close())
+		}
+		assert.Nil(t, res.f)
+		assert.ErrorIs(t, res.err, os.ErrPermission)
+	case <-time.After(2 * time.Second):
+		t.Fatal("OpenExistingForWrite blocked on FIFO")
+	}
+}
+
 // TestAccessCombinedModes verifies that Access correctly checks
 // combined permission modes (read+write, read+exec, etc.).
 func TestAccessCombinedModes(t *testing.T) {

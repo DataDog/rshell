@@ -13,7 +13,9 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"syscall"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -236,6 +238,34 @@ func TestRedirStdoutToFileRejectsSymlinkTarget(t *testing.T) {
 	data, err := os.ReadFile(target)
 	require.NoError(t, err)
 	assert.Equal(t, "keep\n", string(data))
+}
+
+func TestRedirStdoutToFileRejectsFIFOWithoutBlocking(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("FIFOs are Unix-specific")
+	}
+	dir := t.TempDir()
+	require.NoError(t, syscall.Mkfifo(filepath.Join(dir, "pipe"), 0644))
+
+	type result struct {
+		stdout string
+		stderr string
+		code   int
+	}
+	done := make(chan result, 1)
+	go func() {
+		stdout, stderr, code := redirRun(t, "echo new > pipe", dir)
+		done <- result{stdout: stdout, stderr: stderr, code: code}
+	}()
+
+	select {
+	case res := <-done:
+		assert.Equal(t, 1, res.code)
+		assert.Equal(t, "", res.stdout)
+		assert.Contains(t, res.stderr, "permission denied")
+	case <-time.After(2 * time.Second):
+		t.Fatal("stdout redirect blocked on FIFO")
+	}
 }
 
 func TestRedirExplicitFd1ToFile(t *testing.T) {

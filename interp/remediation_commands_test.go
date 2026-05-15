@@ -11,7 +11,9 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"syscall"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -19,6 +21,29 @@ import (
 	"github.com/DataDog/rshell/builtins"
 	"github.com/DataDog/rshell/interp"
 )
+
+type remediationRunResult struct {
+	stdout string
+	stderr string
+	code   int
+}
+
+func runRemediationScriptWithoutBlocking(t *testing.T, script, dir string, opts ...interp.RunnerOption) remediationRunResult {
+	t.Helper()
+	done := make(chan remediationRunResult, 1)
+	go func() {
+		stdout, stderr, code := runScript(t, script, dir, opts...)
+		done <- remediationRunResult{stdout: stdout, stderr: stderr, code: code}
+	}()
+
+	select {
+	case res := <-done:
+		return res
+	case <-time.After(2 * time.Second):
+		t.Fatalf("%q blocked", script)
+		return remediationRunResult{}
+	}
+}
 
 func TestRemediationTruncateDelegatesShrinksOnly(t *testing.T) {
 	dir := t.TempDir()
@@ -170,6 +195,28 @@ func TestRemediationTruncateRejectsSymlinkTargetBeforeHostExecution(t *testing.T
 	data, err := os.ReadFile(target)
 	require.NoError(t, err)
 	assert.Equal(t, "abcdef", string(data))
+}
+
+func TestRemediationTruncateRejectsFIFOWithoutBlocking(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("FIFOs are Unix-specific")
+	}
+	dir := t.TempDir()
+	require.NoError(t, syscall.Mkfifo(filepath.Join(dir, "pipe"), 0644))
+	called := false
+
+	res := runRemediationScriptWithoutBlocking(t, "truncate -s 0 pipe", dir,
+		interp.AllowedPaths([]string{dir}),
+		interp.HostCommandHandler(func(ctx context.Context, args []string) error {
+			called = true
+			return nil
+		}),
+	)
+
+	assert.Equal(t, 1, res.code)
+	assert.Equal(t, "", res.stdout)
+	assert.Contains(t, res.stderr, "permission denied")
+	assert.False(t, called)
 }
 
 func TestExecHandlerOptionRunsAllowedExternalCommand(t *testing.T) {
@@ -388,6 +435,29 @@ func TestRemediationTeeRejectsSymlinkTargetBeforeHostExecution(t *testing.T) {
 	assert.Equal(t, "keep\n", string(data))
 }
 
+func TestRemediationTeeRejectsFIFOWithoutBlocking(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("FIFOs are Unix-specific")
+	}
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "input.txt"), []byte("payload\n"), 0644))
+	require.NoError(t, syscall.Mkfifo(filepath.Join(dir, "pipe"), 0644))
+	called := false
+
+	res := runRemediationScriptWithoutBlocking(t, "tee pipe < input.txt", dir,
+		interp.AllowedPaths([]string{dir}),
+		interp.HostCommandHandler(func(ctx context.Context, args []string) error {
+			called = true
+			return nil
+		}),
+	)
+
+	assert.Equal(t, 1, res.code)
+	assert.Equal(t, "", res.stdout)
+	assert.Contains(t, res.stderr, "permission denied")
+	assert.False(t, called)
+}
+
 func TestRemediationTeeWithoutHostHandlerDoesNotMutateTarget(t *testing.T) {
 	dir := t.TempDir()
 	existing := filepath.Join(dir, "existing.txt")
@@ -499,4 +569,26 @@ func TestRemediationLogrotateRejectsSymlinkTargetBeforeHostExecution(t *testing.
 	data, err := os.ReadFile(target)
 	require.NoError(t, err)
 	assert.Equal(t, "payload\n", string(data))
+}
+
+func TestRemediationLogrotateRejectsFIFOWithoutBlocking(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("FIFOs are Unix-specific")
+	}
+	dir := t.TempDir()
+	require.NoError(t, syscall.Mkfifo(filepath.Join(dir, "pipe"), 0644))
+	called := false
+
+	res := runRemediationScriptWithoutBlocking(t, "logrotate pipe", dir,
+		interp.AllowedPaths([]string{dir}),
+		interp.HostCommandHandler(func(ctx context.Context, args []string) error {
+			called = true
+			return nil
+		}),
+	)
+
+	assert.Equal(t, 1, res.code)
+	assert.Equal(t, "", res.stdout)
+	assert.Contains(t, res.stderr, "permission denied")
+	assert.False(t, called)
 }
