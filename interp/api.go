@@ -43,9 +43,18 @@ type runnerConfig struct {
 	// execHandler is responsible for executing programs. It must not be nil.
 	execHandler ExecHandlerFunc
 
+	// execHandlerConfigured is true when callers explicitly provided an
+	// ExecHandler. Guarded host commands default to this handler when no
+	// HostCommandHandler is set.
+	execHandlerConfigured bool
+
 	// hostCommandHandler executes host commands on behalf of guarded builtins
 	// such as truncate, systemctl, kill, logrotate, and tee.
 	hostCommandHandler ExecHandlerFunc
+
+	// hostCommandHandlerConfigured is true when callers explicitly provided a
+	// HostCommandHandler rather than inheriting the default no-exec handler.
+	hostCommandHandlerConfigured bool
 
 	// openHandler is a function responsible for opening files. It must not be nil.
 	openHandler OpenHandlerFunc
@@ -698,6 +707,7 @@ func HostCommandHandler(fn ExecHandlerFunc) RunnerOption {
 			return fmt.Errorf("HostCommandHandler: handler must not be nil")
 		}
 		r.hostCommandHandler = fn
+		r.hostCommandHandlerConfigured = true
 		return nil
 	}
 }
@@ -711,6 +721,7 @@ func ExecHandler(fn ExecHandlerFunc) RunnerOption {
 			return fmt.Errorf("ExecHandler: handler must not be nil")
 		}
 		r.execHandler = fn
+		r.execHandlerConfigured = true
 		return nil
 	}
 }

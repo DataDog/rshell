@@ -335,6 +335,30 @@ func TestRemediationTeeRejectsSymlinkEscapeBeforeHostExecution(t *testing.T) {
 	assert.NoFileExists(t, outside)
 }
 
+func TestRemediationTeeWithoutHostHandlerDoesNotMutateTarget(t *testing.T) {
+	dir := t.TempDir()
+	existing := filepath.Join(dir, "existing.txt")
+	missing := filepath.Join(dir, "missing.txt")
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "input.txt"), []byte("payload\n"), 0644))
+	require.NoError(t, os.WriteFile(existing, []byte("keep\n"), 0644))
+
+	_, stderr, code := runScript(t, "tee existing.txt < input.txt", dir,
+		interp.AllowedPaths([]string{dir}),
+	)
+	assert.Equal(t, 127, code)
+	assert.Contains(t, stderr, "unknown command")
+	data, err := os.ReadFile(existing)
+	require.NoError(t, err)
+	assert.Equal(t, "keep\n", string(data))
+
+	_, stderr, code = runScript(t, "tee missing.txt < input.txt", dir,
+		interp.AllowedPaths([]string{dir}),
+	)
+	assert.Equal(t, 127, code)
+	assert.Contains(t, stderr, "unknown command")
+	assert.NoFileExists(t, missing)
+}
+
 func TestRemediationLogrotateDelegatesExistingPath(t *testing.T) {
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "app.log"), []byte("payload\n"), 0644))

@@ -675,6 +675,7 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 				RunHostCommand: func(ctx context.Context, hostName string, hostArgs []string) (uint8, error) {
 					return r.runHostCommand(ctx, todoPos, dir, cmdName, hostName, hostArgs, nil)
 				},
+				HostCommandAvailable: r.hostCommandAvailable,
 				RunHostCommandWithFiles: func(ctx context.Context, hostName string, hostArgs []string, extraFiles []*os.File) (uint8, error) {
 					return r.runHostCommand(ctx, todoPos, dir, cmdName, hostName, hostArgs, extraFiles)
 				},
@@ -797,6 +798,7 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 			RunHostCommand: func(ctx context.Context, hostName string, hostArgs []string) (uint8, error) {
 				return r.runHostCommand(ctx, todoPos, r.Dir, name, hostName, hostArgs, nil)
 			},
+			HostCommandAvailable: r.hostCommandAvailable,
 			RunHostCommandWithFiles: func(ctx context.Context, hostName string, hostArgs []string, extraFiles []*os.File) (uint8, error) {
 				return r.runHostCommand(ctx, todoPos, r.Dir, name, hostName, hostArgs, extraFiles)
 			},
@@ -875,6 +877,16 @@ func (r *Runner) runHostCommand(ctx context.Context, pos syntax.Pos, dir string,
 		return uint8(status), nil
 	}
 	return 1, err
+}
+
+func (r *Runner) hostCommandAvailable(name string) bool {
+	if !isGuardedHostCommand(name) {
+		return false
+	}
+	if !r.allowAllCommands && !r.allowedCommands[name] {
+		return false
+	}
+	return r.hostCommandHandlerConfigured || r.execHandlerConfigured
 }
 
 func isGuardedHostCommand(name string) bool {

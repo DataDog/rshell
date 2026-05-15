@@ -44,6 +44,9 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			callCtx.Errf("tee: file write is not available\n")
 			return builtins.Result{Code: 1}
 		}
+		if callCtx.HostCommandAvailable != nil && !callCtx.HostCommandAvailable("tee") {
+			return callCtx.InvokeHostCommand(ctx, "tee", nil)
+		}
 		f, err := callCtx.OpenFileForWrite(ctx, args[0], *appendFlag)
 		if err != nil {
 			callCtx.Errf("tee: %s: %s\n", args[0], callCtx.PortableErr(err))

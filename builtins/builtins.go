@@ -275,6 +275,12 @@ type CallContext struct {
 	// which only dispatches other rshell builtins.
 	RunHostCommand func(ctx context.Context, name string, args []string) (uint8, error)
 
+	// HostCommandAvailable reports whether a guarded host command has an
+	// execution path configured. Builtins that must open write targets before
+	// delegation use this to avoid create/truncate side effects when the host
+	// command would only be rejected by the default no-exec handler.
+	HostCommandAvailable func(name string) bool
+
 	// RunHostCommandWithFiles is like RunHostCommand but passes additional
 	// sandbox-opened files through HandlerContext.ExtraFiles. Host handlers
 	// that execute via os/exec should wire these to Cmd.ExtraFiles so paths
