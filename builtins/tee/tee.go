@@ -39,6 +39,14 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			callCtx.Errf("tee: expected exactly one file\n")
 			return builtins.Result{Code: 1}
 		}
+		if callCtx.CheckFileWrite == nil {
+			callCtx.Errf("tee: file write validation is not available\n")
+			return builtins.Result{Code: 1}
+		}
+		if err := callCtx.CheckFileWrite(ctx, args[0]); err != nil {
+			callCtx.Errf("tee: %s: %s\n", args[0], callCtx.PortableErr(err))
+			return builtins.Result{Code: 1}
+		}
 		argv := []string{args[0]}
 		if *appendFlag {
 			argv = []string{"-a", args[0]}

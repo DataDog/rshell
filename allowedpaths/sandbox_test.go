@@ -104,6 +104,30 @@ func TestSandboxOpenForWriteRejectsOutsideAllowedPaths(t *testing.T) {
 	assert.ErrorIs(t, err, os.ErrPermission)
 }
 
+func TestSandboxCheckWriteTargetAllowsExistingAndMissingInsideAllowedPaths(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "existing.txt"), []byte("old\n"), 0644))
+
+	sb, _, err := New([]string{dir})
+	require.NoError(t, err)
+	defer sb.Close()
+
+	require.NoError(t, sb.CheckWriteTarget("existing.txt", dir))
+	require.NoError(t, sb.CheckWriteTarget("missing.txt", dir))
+}
+
+func TestSandboxCheckWriteTargetRejectsOutsideAllowedPaths(t *testing.T) {
+	dir := t.TempDir()
+	outside := t.TempDir()
+
+	sb, _, err := New([]string{dir})
+	require.NoError(t, err)
+	defer sb.Close()
+
+	err = sb.CheckWriteTarget(filepath.Join(outside, "evil.txt"), dir)
+	assert.ErrorIs(t, err, os.ErrPermission)
+}
+
 func TestReadDirLimited(t *testing.T) {
 	dir := t.TempDir()
 

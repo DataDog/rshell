@@ -174,6 +174,10 @@ type CallContext struct {
 	// within the shell's path restrictions. Mode: 0x04=read, 0x02=write, 0x01=execute.
 	AccessFile func(ctx context.Context, path string, mode uint32) error
 
+	// CheckFileWrite validates that path can be used as a write target within
+	// the shell's path restrictions without opening or creating it.
+	CheckFileWrite func(ctx context.Context, path string) error
+
 	// PortableErr normalizes an OS error to a POSIX-style message.
 	PortableErr func(err error) string
 

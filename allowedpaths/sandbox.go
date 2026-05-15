@@ -381,6 +381,54 @@ func (s *Sandbox) OpenForWrite(path string, cwd string, flag int, perm os.FileMo
 	return f, nil
 }
 
+// CheckWriteTarget validates that path is an AllowedPaths-governed write
+// target without opening or creating it. Existing targets must resolve within
+// the sandbox and be writable; missing targets are accepted only when their
+// parent directory resolves within the sandbox and is writable.
+func (s *Sandbox) CheckWriteTarget(path string, cwd string) error {
+	absPath := toAbs(path, cwd)
+	ar, relPath, ok := s.resolve(absPath)
+	if !ok {
+		return &os.PathError{Op: "access", Path: path, Err: os.ErrPermission}
+	}
+
+	_, err := ar.root.Stat(relPath)
+	if err != nil && isPathEscapeError(err) {
+		r, rel, ok := s.resolveFollowingSymlinks(absPath, false)
+		if !ok {
+			return &os.PathError{Op: "access", Path: path, Err: os.ErrPermission}
+		}
+		_, err = r.Stat(rel)
+	}
+	if err == nil {
+		return s.Access(path, cwd, modeWrite)
+	}
+	if !errors.Is(err, fs.ErrNotExist) {
+		return PortablePathError(err)
+	}
+
+	parent := filepath.Dir(absPath)
+	parentRoot, parentRel, ok := s.resolve(parent)
+	if !ok {
+		return &os.PathError{Op: "access", Path: path, Err: os.ErrPermission}
+	}
+	info, err := parentRoot.root.Stat(parentRel)
+	if err != nil && isPathEscapeError(err) {
+		r, rel, ok := s.resolveFollowingSymlinks(parent, false)
+		if !ok {
+			return &os.PathError{Op: "access", Path: path, Err: os.ErrPermission}
+		}
+		info, err = r.Stat(rel)
+	}
+	if err != nil {
+		return PortablePathError(err)
+	}
+	if !info.IsDir() {
+		return &os.PathError{Op: "access", Path: path, Err: errors.New("parent is not a directory")}
+	}
+	return s.Access(parent, cwd, modeWrite)
+}
+
 // ReadDir implements the restricted directory-read policy.
 func (s *Sandbox) ReadDir(path string, cwd string) ([]fs.DirEntry, error) {
 	return s.readDirN(path, cwd, -1)

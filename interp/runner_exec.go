@@ -620,6 +620,9 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 				AccessFile: func(ctx context.Context, path string, mode uint32) error {
 					return r.sandbox.Access(path, dir, mode)
 				},
+				CheckFileWrite: func(ctx context.Context, path string) error {
+					return r.sandbox.CheckWriteTarget(path, dir)
+				},
 				PortableErr: allowedpaths.PortableErrMsg,
 				Now:         r.startTime,
 				FileIdentity: func(path string, info fs.FileInfo) (builtins.FileID, bool) {
@@ -744,6 +747,9 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 			},
 			AccessFile: func(ctx context.Context, path string, mode uint32) error {
 				return r.sandbox.Access(path, HandlerCtx(r.handlerCtx(ctx, todoPos)).Dir, mode)
+			},
+			CheckFileWrite: func(ctx context.Context, path string) error {
+				return r.sandbox.CheckWriteTarget(path, HandlerCtx(r.handlerCtx(ctx, todoPos)).Dir)
 			},
 			PortableErr: allowedpaths.PortableErrMsg,
 			Now:         r.startTime,

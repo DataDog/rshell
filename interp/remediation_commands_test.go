@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -199,6 +200,50 @@ func TestRemediationTeeDelegatesAppendWithStdin(t *testing.T) {
 	assert.Equal(t, "", stderr)
 	assert.Equal(t, []string{"tee", "-a", "output.txt"}, got)
 	assert.Equal(t, "payload\n", stdin)
+}
+
+func TestRemediationTeeRejectsOutsideAllowedPathsBeforeHostExecution(t *testing.T) {
+	dir := t.TempDir()
+	outside := filepath.Join(t.TempDir(), "outside.txt")
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "input.txt"), []byte("payload\n"), 0644))
+	called := false
+
+	_, stderr, code := runScript(t, "tee "+outside+" < input.txt", dir,
+		interp.AllowedPaths([]string{dir}),
+		interp.HostCommandHandler(func(ctx context.Context, args []string) error {
+			called = true
+			return nil
+		}),
+	)
+
+	assert.Equal(t, 1, code)
+	assert.Contains(t, stderr, "permission denied")
+	assert.False(t, called)
+	assert.NoFileExists(t, outside)
+}
+
+func TestRemediationTeeRejectsSymlinkEscapeBeforeHostExecution(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink escape behavior is platform-specific on Windows")
+	}
+	dir := t.TempDir()
+	outside := filepath.Join(t.TempDir(), "outside.txt")
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "input.txt"), []byte("payload\n"), 0644))
+	require.NoError(t, os.Symlink(outside, filepath.Join(dir, "escape.txt")))
+	called := false
+
+	_, stderr, code := runScript(t, "tee escape.txt < input.txt", dir,
+		interp.AllowedPaths([]string{dir}),
+		interp.HostCommandHandler(func(ctx context.Context, args []string) error {
+			called = true
+			return nil
+		}),
+	)
+
+	assert.Equal(t, 1, code)
+	assert.Contains(t, stderr, "permission denied")
+	assert.False(t, called)
+	assert.NoFileExists(t, outside)
 }
 
 func TestRemediationLogrotateDelegatesExistingPath(t *testing.T) {
