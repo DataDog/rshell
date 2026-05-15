@@ -223,6 +223,8 @@ func (r *Runner) redir(ctx context.Context, rd *syntax.Redirect) (io.Closer, err
 
 	// Determine which fd this redirect targets (default: stdout for output ops).
 	orig := &r.stdout
+	origFileRedirect := &r.stdoutFileRedirect
+	redirectsStderr := false
 	if rd.N != nil {
 		switch rd.N.Value {
 		case "0":
@@ -235,6 +237,8 @@ func (r *Runner) redir(ctx context.Context, rd *syntax.Redirect) (io.Closer, err
 			// default (stdout)
 		case "2":
 			orig = &r.stderr
+			origFileRedirect = &r.stderrFileRedirect
+			redirectsStderr = true
 		default:
 			r.errf("%s: unsupported fd\n", rd.N.Value)
 			return nil, fmt.Errorf("%s: unsupported fd", rd.N.Value)
@@ -260,9 +264,11 @@ func (r *Runner) redir(ctx context.Context, rd *syntax.Redirect) (io.Closer, err
 				return nil, err
 			}
 			*orig = f
+			*origFileRedirect = true
 			return f, nil
 		}
 		*orig = io.Discard
+		*origFileRedirect = false
 		return nil, nil
 
 	case syntax.ClbOut:
@@ -271,6 +277,7 @@ func (r *Runner) redir(ctx context.Context, rd *syntax.Redirect) (io.Closer, err
 			return nil, fmt.Errorf(">| %s: file redirection is not supported", arg)
 		}
 		*orig = io.Discard
+		*origFileRedirect = false
 		return nil, nil
 
 	case syntax.RdrAll, syntax.AppAll:
@@ -283,18 +290,32 @@ func (r *Runner) redir(ctx context.Context, rd *syntax.Redirect) (io.Closer, err
 		}
 		r.stdout = io.Discard
 		r.stderr = io.Discard
+		r.stdoutFileRedirect = false
+		r.stderrFileRedirect = false
 		return nil, nil
 
 	case syntax.DplOut:
+		var (
+			target             io.Writer
+			targetFileRedirect bool
+		)
 		switch arg {
 		case "1":
-			*orig = r.stdout
+			target = r.stdout
+			targetFileRedirect = r.stdoutFileRedirect
 		case "2":
-			*orig = r.stderr
+			target = r.stderr
+			targetFileRedirect = r.stderrFileRedirect
 		default:
 			r.errf(">&%s: unsupported fd\n", arg)
 			return nil, fmt.Errorf(">&%s: unsupported fd", arg)
 		}
+		if redirectsStderr && targetFileRedirect {
+			r.errf("2>&%s: stderr file redirection via fd duplication is not supported\n", arg)
+			return nil, fmt.Errorf("2>&%s: stderr file redirection via fd duplication is not supported", arg)
+		}
+		*orig = target
+		*origFileRedirect = targetFileRedirect
 		return nil, nil
 
 	default:

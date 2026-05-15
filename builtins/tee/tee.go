@@ -47,6 +47,10 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 		if callCtx.HostCommandAvailable != nil && !callCtx.HostCommandAvailable("tee") {
 			return callCtx.InvokeHostCommand(ctx, "tee", nil)
 		}
+		if !builtins.HostExtraFilesSupported() {
+			callCtx.Errf("tee: host file descriptor handoff is not supported on this platform\n")
+			return builtins.Result{Code: 1}
+		}
 		f, err := callCtx.OpenFileForWrite(ctx, args[0], *appendFlag)
 		if err != nil {
 			callCtx.Errf("tee: %s: %s\n", args[0], callCtx.PortableErr(err))

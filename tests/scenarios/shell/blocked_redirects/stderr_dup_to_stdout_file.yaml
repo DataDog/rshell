@@ -1,0 +1,19 @@
+# skip: redirect restrictions are an rshell-specific security feature
+skip_assert_against_bash: true
+description: Stderr cannot be redirected to a file by duplicating it to file-backed stdout.
+setup:
+  files:
+    - path: output.txt
+      content: "keep\n"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    cat missing > output.txt 2>&1
+    echo status=$?
+    cat output.txt
+expect:
+  stdout: |+
+    status=1
+  stderr_contains:
+    - "stderr file redirection via fd duplication is not supported"
+  exit_code: 0

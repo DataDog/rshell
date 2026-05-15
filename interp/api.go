@@ -140,6 +140,9 @@ type runnerState struct {
 	stdout io.Writer
 	stderr io.Writer
 
+	stdoutFileRedirect bool
+	stderrFileRedirect bool
+
 	// runStdin / runStdout are the baselines captured at the start of Run()
 	// after any Run-level stdout wrapping. Telemetry uses them to decide
 	// whether a command's stdin/stdout was reassigned by a pipe or redirect.
@@ -853,19 +856,21 @@ func (r *Runner) subshell(background bool) *Runner {
 	r2 := &Runner{
 		runnerConfig: r.runnerConfig,
 		runnerState: runnerState{
-			Dir:              r.Dir,
-			Params:           r.Params,
-			stdin:            r.stdin,
-			stdout:           r.stdout,
-			stderr:           r.stderr,
-			runStdin:         r.runStdin,
-			runStdout:        r.runStdout,
-			inPipeline:       r.inPipeline,
-			filename:         r.filename,
-			exit:             r.exit,
-			lastExit:         r.lastExit,
-			startTime:        r.startTime,
-			globReadDirCount: r.globReadDirCount,
+			Dir:                r.Dir,
+			Params:             r.Params,
+			stdin:              r.stdin,
+			stdout:             r.stdout,
+			stderr:             r.stderr,
+			stdoutFileRedirect: r.stdoutFileRedirect,
+			stderrFileRedirect: r.stderrFileRedirect,
+			runStdin:           r.runStdin,
+			runStdout:          r.runStdout,
+			inPipeline:         r.inPipeline,
+			filename:           r.filename,
+			exit:               r.exit,
+			lastExit:           r.lastExit,
+			startTime:          r.startTime,
+			globReadDirCount:   r.globReadDirCount,
 		},
 	}
 	r2.writeEnv = newOverlayEnviron(r.writeEnv, background)

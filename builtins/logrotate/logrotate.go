@@ -43,6 +43,10 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			callCtx.Errf("logrotate: file write is not available\n")
 			return builtins.Result{Code: 1}
 		}
+		if !builtins.HostExtraFilesSupported() {
+			callCtx.Errf("logrotate: host file descriptor handoff is not supported on this platform\n")
+			return builtins.Result{Code: 1}
+		}
 		f, err := callCtx.OpenExistingFileForWrite(ctx, args[0])
 		if err != nil {
 			callCtx.Errf("logrotate: %s: %s\n", args[0], callCtx.PortableErr(err))

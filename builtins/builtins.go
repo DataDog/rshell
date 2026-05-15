@@ -12,6 +12,7 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"runtime"
 	"sort"
 	"syscall"
 	"time"
@@ -323,9 +324,16 @@ const hostExtraFileBaseFD = 3
 
 // HostExtraFilePath returns the argv path for an ExtraFiles entry. The first
 // extra file is exposed to host commands as /dev/fd/3, matching os/exec's
-// Cmd.ExtraFiles fd numbering on Unix-like platforms.
+// Cmd.ExtraFiles fd numbering on Unix-like platforms. Callers must only use
+// this when HostExtraFilesSupported reports true.
 func HostExtraFilePath(index int) string {
 	return fmt.Sprintf("/dev/fd/%d", hostExtraFileBaseFD+index)
+}
+
+// HostExtraFilesSupported reports whether host commands can receive files via
+// HandlerContext.ExtraFiles and address them with HostExtraFilePath.
+func HostExtraFilesSupported() bool {
+	return runtime.GOOS != "windows"
 }
 
 // InvokeHostCommand runs a guarded host command and converts failures into a
@@ -339,6 +347,10 @@ func (c *CallContext) InvokeHostCommand(ctx context.Context, name string, args [
 func (c *CallContext) InvokeHostCommandWithFiles(ctx context.Context, name string, args []string, extraFiles []*os.File) Result {
 	for _, f := range extraFiles {
 		defer f.Close()
+	}
+	if len(extraFiles) > 0 && !HostExtraFilesSupported() {
+		c.Errf("%s: host file descriptor handoff is not supported on this platform\n", name)
+		return Result{Code: 1}
 	}
 
 	var (

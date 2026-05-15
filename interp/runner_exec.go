@@ -34,6 +34,7 @@ func (r *Runner) stmt(ctx context.Context, st *syntax.Stmt) {
 
 func (r *Runner) stmtSync(ctx context.Context, st *syntax.Stmt) {
 	oldIn, oldOut, oldErr := r.stdin, r.stdout, r.stderr
+	oldOutFile, oldErrFile := r.stdoutFileRedirect, r.stderrFileRedirect
 	for _, rd := range st.Redirs {
 		cls, err := r.redir(ctx, rd)
 		if err != nil {
@@ -53,6 +54,7 @@ func (r *Runner) stmtSync(ctx context.Context, st *syntax.Stmt) {
 		r.exit.oneIf(wasOk)
 	}
 	r.stdin, r.stdout, r.stderr = oldIn, oldOut, oldErr
+	r.stdoutFileRedirect, r.stderrFileRedirect = oldOutFile, oldErrFile
 }
 
 func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {
