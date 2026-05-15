@@ -226,6 +226,59 @@ func TestAccessSymlinkEscapeBlocked(t *testing.T) {
 	assert.Error(t, err)
 }
 
+func TestOpenForWriteRejectsSymlinkTargetWithinAllowedPath(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "target.txt")
+	require.NoError(t, os.WriteFile(target, []byte("keep\n"), 0644))
+	require.NoError(t, os.Symlink("target.txt", filepath.Join(dir, "link.txt")))
+
+	sb, _, err := New([]string{dir})
+	require.NoError(t, err)
+	defer sb.Close()
+
+	f, err := sb.OpenForWrite("link.txt", dir, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
+	assert.Nil(t, f)
+	assert.ErrorIs(t, err, os.ErrPermission)
+
+	data, err := os.ReadFile(target)
+	require.NoError(t, err)
+	assert.Equal(t, "keep\n", string(data))
+}
+
+func TestOpenForWriteRejectsSymlinkParentWithinAllowedPath(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.Mkdir(filepath.Join(dir, "real"), 0755))
+	require.NoError(t, os.Symlink("real", filepath.Join(dir, "linkdir")))
+
+	sb, _, err := New([]string{dir})
+	require.NoError(t, err)
+	defer sb.Close()
+
+	f, err := sb.OpenForWrite(filepath.Join("linkdir", "new.txt"), dir, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
+	assert.Nil(t, f)
+	assert.ErrorIs(t, err, os.ErrPermission)
+	assert.NoFileExists(t, filepath.Join(dir, "real", "new.txt"))
+}
+
+func TestOpenExistingForWriteRejectsSymlinkTargetWithinAllowedPath(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "target.txt")
+	require.NoError(t, os.WriteFile(target, []byte("keep\n"), 0644))
+	require.NoError(t, os.Symlink("target.txt", filepath.Join(dir, "link.txt")))
+
+	sb, _, err := New([]string{dir})
+	require.NoError(t, err)
+	defer sb.Close()
+
+	f, err := sb.OpenExistingForWrite("link.txt", dir)
+	assert.Nil(t, f)
+	assert.ErrorIs(t, err, os.ErrPermission)
+
+	data, err := os.ReadFile(target)
+	require.NoError(t, err)
+	assert.Equal(t, "keep\n", string(data))
+}
+
 // TestAccessCombinedModes verifies that Access correctly checks
 // combined permission modes (read+write, read+exec, etc.).
 func TestAccessCombinedModes(t *testing.T) {

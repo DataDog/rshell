@@ -67,9 +67,11 @@ var allowedpathsAllowedSymbols = []string{
 	"strings.Split",                      // 🟢 splits a string by separator; pure function, no I/O.
 	"syscall.ByHandleFileInformation",    // 🟢 Windows file identity structure; pure type for file metadata.
 	"syscall.EISDIR",                     // 🟢 "is a directory" errno constant; pure constant.
+	"syscall.ELOOP",                      // 🟢 "too many levels of symbolic links" errno constant; used to normalize no-follow write-open rejections.
 	"syscall.Errno",                      // 🟢 system call error number type; pure type.
 	"syscall.GetFileInformationByHandle", // 🟠 Windows API for file identity (vol serial + file index); read-only syscall.
 	"syscall.Handle",                     // 🟢 Windows file handle type; pure type alias.
 	"syscall.O_NONBLOCK",                 // 🟢 non-blocking open flag; prevents blocking on FIFOs during access checks. Pure constant.
+	"syscall.O_NOFOLLOW",                 // 🟢 no-follow open flag; prevents terminal symlink writes when opening sandboxed write targets.
 	"syscall.Stat_t",                     // 🟢 file stat structure type; pure type for Unix file metadata.
 }

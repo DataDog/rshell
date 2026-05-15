@@ -85,3 +85,7 @@ func (r *root) accessCheck(rel string, checkRead, checkWrite, checkExec bool) (f
 
 	return info, nil
 }
+
+func (r *root) openFileNoFollow(rel string, flag int, perm os.FileMode) (*os.File, error) {
+	return r.root.OpenFile(rel, flag, perm)
+}

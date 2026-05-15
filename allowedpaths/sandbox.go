@@ -365,18 +365,11 @@ func (s *Sandbox) OpenForWrite(path string, cwd string, flag int, perm os.FileMo
 		return nil, &os.PathError{Op: "open", Path: path, Err: os.ErrPermission}
 	}
 
-	f, err := ar.root.OpenFile(relPath, flag, perm)
-	if err == nil {
-		return f, nil
+	if err := ar.rejectWriteSymlinks(relPath, true); err != nil {
+		return nil, err
 	}
-	if !isPathEscapeError(err) {
-		return nil, PortablePathError(err)
-	}
-	r, rel, ok := s.resolveFollowingSymlinks(absPath, false)
-	if !ok {
-		return nil, &os.PathError{Op: "open", Path: path, Err: os.ErrPermission}
-	}
-	f, err = r.OpenFile(rel, flag, perm)
+
+	f, err := ar.openFileNoFollow(relPath, flag, perm)
 	if err != nil {
 		return nil, PortablePathError(err)
 	}
@@ -393,22 +386,47 @@ func (s *Sandbox) OpenExistingForWrite(path string, cwd string) (*os.File, error
 		return nil, &os.PathError{Op: "open", Path: path, Err: os.ErrPermission}
 	}
 
-	f, err := ar.root.OpenFile(relPath, os.O_WRONLY, 0)
-	if err == nil {
-		return f, nil
+	if err := ar.rejectWriteSymlinks(relPath, false); err != nil {
+		return nil, err
 	}
-	if !isPathEscapeError(err) {
-		return nil, PortablePathError(err)
-	}
-	r, rel, ok := s.resolveFollowingSymlinks(absPath, false)
-	if !ok {
-		return nil, &os.PathError{Op: "open", Path: path, Err: os.ErrPermission}
-	}
-	f, err = r.OpenFile(rel, os.O_WRONLY, 0)
+
+	f, err := ar.openFileNoFollow(relPath, os.O_WRONLY, 0)
 	if err != nil {
 		return nil, PortablePathError(err)
 	}
 	return f, nil
+}
+
+func (r *root) rejectWriteSymlinks(rel string, allowMissingFinal bool) error {
+	rel = filepath.Clean(rel)
+	if rel == "." {
+		return nil
+	}
+
+	components := strings.Split(rel, string(filepath.Separator))
+	partial := ""
+	for i, component := range components {
+		if component == "" || component == "." {
+			continue
+		}
+		if partial == "" {
+			partial = component
+		} else {
+			partial = filepath.Join(partial, component)
+		}
+
+		info, err := r.root.Lstat(partial)
+		if err != nil {
+			if allowMissingFinal && i == len(components)-1 && errors.Is(err, fs.ErrNotExist) {
+				return nil
+			}
+			return PortablePathError(err)
+		}
+		if info.Mode()&fs.ModeSymlink != 0 {
+			return &os.PathError{Op: "open", Path: rel, Err: os.ErrPermission}
+		}
+	}
+	return nil
 }
 
 // ReadDir implements the restricted directory-read policy.

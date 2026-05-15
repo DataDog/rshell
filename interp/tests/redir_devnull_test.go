@@ -11,6 +11,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -211,6 +212,30 @@ func TestRedirAppendToFile(t *testing.T) {
 	data, err := os.ReadFile(filepath.Join(dir, "output.txt"))
 	require.NoError(t, err)
 	assert.Equal(t, "old\nnew\n", string(data))
+}
+
+func TestRedirStdoutToFileRejectsSymlinkTarget(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink behavior is platform-specific on Windows")
+	}
+	dir := t.TempDir()
+	target := filepath.Join(dir, "target.txt")
+	require.NoError(t, os.WriteFile(target, []byte("keep\n"), 0644))
+	require.NoError(t, os.Symlink("target.txt", filepath.Join(dir, "link.txt")))
+
+	stdout, stderr, code := redirRun(t, "echo new > link.txt", dir)
+	assert.Equal(t, 1, code)
+	assert.Equal(t, "", stdout)
+	assert.Contains(t, stderr, "permission denied")
+
+	stdout, stderr, code = redirRun(t, "echo new >> link.txt", dir)
+	assert.Equal(t, 1, code)
+	assert.Equal(t, "", stdout)
+	assert.Contains(t, stderr, "permission denied")
+
+	data, err := os.ReadFile(target)
+	require.NoError(t, err)
+	assert.Equal(t, "keep\n", string(data))
 }
 
 func TestRedirExplicitFd1ToFile(t *testing.T) {

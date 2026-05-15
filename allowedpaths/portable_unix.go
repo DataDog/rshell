@@ -104,6 +104,14 @@ func (r *root) accessCheck(rel string, checkRead, checkWrite, checkExec bool) (f
 	return info, nil
 }
 
+func (r *root) openFileNoFollow(rel string, flag int, perm os.FileMode) (*os.File, error) {
+	f, err := r.root.OpenFile(rel, flag|syscall.O_NOFOLLOW, perm)
+	if errors.Is(err, syscall.ELOOP) {
+		return nil, &os.PathError{Op: "open", Path: rel, Err: os.ErrPermission}
+	}
+	return f, err
+}
+
 // effectiveHasPerm checks whether the current process has the requested
 // permission by inspecting the file's owner/group/other permission class
 // that applies to the effective UID and GID of the running process.

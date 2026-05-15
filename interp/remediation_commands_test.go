@@ -146,6 +146,32 @@ func TestRemediationTruncateRejectsSymlinkEscapeBeforeHostExecution(t *testing.T
 	assert.False(t, called)
 }
 
+func TestRemediationTruncateRejectsSymlinkTargetBeforeHostExecution(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink behavior is platform-specific on Windows")
+	}
+	dir := t.TempDir()
+	target := filepath.Join(dir, "target.log")
+	require.NoError(t, os.WriteFile(target, []byte("abcdef"), 0644))
+	require.NoError(t, os.Symlink("target.log", filepath.Join(dir, "link.log")))
+	called := false
+
+	_, stderr, code := runScript(t, "truncate -s 0 link.log", dir,
+		interp.AllowedPaths([]string{dir}),
+		interp.HostCommandHandler(func(ctx context.Context, args []string) error {
+			called = true
+			return nil
+		}),
+	)
+
+	assert.Equal(t, 1, code)
+	assert.Contains(t, stderr, "permission denied")
+	assert.False(t, called)
+	data, err := os.ReadFile(target)
+	require.NoError(t, err)
+	assert.Equal(t, "abcdef", string(data))
+}
+
 func TestExecHandlerOptionRunsAllowedExternalCommand(t *testing.T) {
 	dir := t.TempDir()
 	var got []string
@@ -335,6 +361,33 @@ func TestRemediationTeeRejectsSymlinkEscapeBeforeHostExecution(t *testing.T) {
 	assert.NoFileExists(t, outside)
 }
 
+func TestRemediationTeeRejectsSymlinkTargetBeforeHostExecution(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink behavior is platform-specific on Windows")
+	}
+	dir := t.TempDir()
+	target := filepath.Join(dir, "target.txt")
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "input.txt"), []byte("payload\n"), 0644))
+	require.NoError(t, os.WriteFile(target, []byte("keep\n"), 0644))
+	require.NoError(t, os.Symlink("target.txt", filepath.Join(dir, "link.txt")))
+	called := false
+
+	_, stderr, code := runScript(t, "tee link.txt < input.txt", dir,
+		interp.AllowedPaths([]string{dir}),
+		interp.HostCommandHandler(func(ctx context.Context, args []string) error {
+			called = true
+			return nil
+		}),
+	)
+
+	assert.Equal(t, 1, code)
+	assert.Contains(t, stderr, "permission denied")
+	assert.False(t, called)
+	data, err := os.ReadFile(target)
+	require.NoError(t, err)
+	assert.Equal(t, "keep\n", string(data))
+}
+
 func TestRemediationTeeWithoutHostHandlerDoesNotMutateTarget(t *testing.T) {
 	dir := t.TempDir()
 	existing := filepath.Join(dir, "existing.txt")
@@ -420,4 +473,30 @@ func TestRemediationLogrotateRejectsSymlinkEscapeBeforeHostExecution(t *testing.
 	assert.Equal(t, 1, code)
 	assert.Contains(t, stderr, "permission denied")
 	assert.False(t, called)
+}
+
+func TestRemediationLogrotateRejectsSymlinkTargetBeforeHostExecution(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink behavior is platform-specific on Windows")
+	}
+	dir := t.TempDir()
+	target := filepath.Join(dir, "target.log")
+	require.NoError(t, os.WriteFile(target, []byte("payload\n"), 0644))
+	require.NoError(t, os.Symlink("target.log", filepath.Join(dir, "link.log")))
+	called := false
+
+	_, stderr, code := runScript(t, "logrotate link.log", dir,
+		interp.AllowedPaths([]string{dir}),
+		interp.HostCommandHandler(func(ctx context.Context, args []string) error {
+			called = true
+			return nil
+		}),
+	)
+
+	assert.Equal(t, 1, code)
+	assert.Contains(t, stderr, "permission denied")
+	assert.False(t, called)
+	data, err := os.ReadFile(target)
+	require.NoError(t, err)
+	assert.Equal(t, "payload\n", string(data))
 }
