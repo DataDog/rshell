@@ -66,7 +66,7 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			callCtx.Errf("truncate: cannot grow file\n")
 			return builtins.Result{Code: 1}
 		}
-		return callCtx.InvokeHostCommand(ctx, "truncate", []string{"-s", strconv.FormatInt(size, 10), args[0]})
+		return callCtx.InvokeHostCommand(ctx, "truncate", []string{"-s", strconv.FormatInt(size, 10), "--", args[0]})
 	}
 }
 

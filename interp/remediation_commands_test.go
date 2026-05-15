@@ -36,7 +36,7 @@ func TestRemediationTruncateDelegatesShrinksOnly(t *testing.T) {
 	assert.Equal(t, 0, code)
 	assert.Equal(t, "", stdout)
 	assert.Equal(t, "", stderr)
-	assert.Equal(t, []string{"truncate", "-s", "3", "app.log"}, got)
+	assert.Equal(t, []string{"truncate", "-s", "3", "--", "app.log"}, got)
 }
 
 func TestRemediationTruncateDelegatesThroughExecHandlerByDefault(t *testing.T) {
@@ -56,7 +56,26 @@ func TestRemediationTruncateDelegatesThroughExecHandlerByDefault(t *testing.T) {
 	assert.Equal(t, 0, code)
 	assert.Equal(t, "", stdout)
 	assert.Equal(t, "", stderr)
-	assert.Equal(t, []string{"truncate", "-s", "0", "app.log"}, got)
+	assert.Equal(t, []string{"truncate", "-s", "0", "--", "app.log"}, got)
+}
+
+func TestRemediationTruncatePreservesLeadingDashOperand(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "--help"), []byte("abcdef"), 0644))
+	var got []string
+
+	stdout, stderr, code := runScript(t, "truncate -s 0 -- --help", dir,
+		interp.AllowedPaths([]string{dir}),
+		interp.HostCommandHandler(func(ctx context.Context, args []string) error {
+			got = append([]string(nil), args...)
+			return nil
+		}),
+	)
+
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "", stdout)
+	assert.Equal(t, "", stderr)
+	assert.Equal(t, []string{"truncate", "-s", "0", "--", "--help"}, got)
 }
 
 func TestRemediationTruncateRejectsGrowth(t *testing.T) {
@@ -126,7 +145,24 @@ func TestRemediationSystemctlDelegatesLifecycleAction(t *testing.T) {
 	assert.Equal(t, 0, code)
 	assert.Equal(t, "", stdout)
 	assert.Equal(t, "", stderr)
-	assert.Equal(t, []string{"systemctl", "restart", "app.service"}, got)
+	assert.Equal(t, []string{"systemctl", "restart", "--", "app.service"}, got)
+}
+
+func TestRemediationSystemctlPreservesLeadingDashUnit(t *testing.T) {
+	dir := t.TempDir()
+	var got []string
+
+	stdout, stderr, code := runScript(t, "systemctl restart -- -app.service", dir,
+		interp.HostCommandHandler(func(ctx context.Context, args []string) error {
+			got = append([]string(nil), args...)
+			return nil
+		}),
+	)
+
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "", stdout)
+	assert.Equal(t, "", stderr)
+	assert.Equal(t, []string{"systemctl", "restart", "--", "-app.service"}, got)
 }
 
 func TestRemediationSystemctlRejectsUnsupportedAction(t *testing.T) {
@@ -198,8 +234,27 @@ func TestRemediationTeeDelegatesAppendWithStdin(t *testing.T) {
 	assert.Equal(t, 0, code)
 	assert.Equal(t, "", stdout)
 	assert.Equal(t, "", stderr)
-	assert.Equal(t, []string{"tee", "-a", "output.txt"}, got)
+	assert.Equal(t, []string{"tee", "-a", "--", "output.txt"}, got)
 	assert.Equal(t, "payload\n", stdin)
+}
+
+func TestRemediationTeePreservesLeadingDashOperand(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "input.txt"), []byte("payload\n"), 0644))
+	var got []string
+
+	stdout, stderr, code := runScript(t, "tee -- --help < input.txt", dir,
+		interp.AllowedPaths([]string{dir}),
+		interp.HostCommandHandler(func(ctx context.Context, args []string) error {
+			got = append([]string(nil), args...)
+			return nil
+		}),
+	)
+
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "", stdout)
+	assert.Equal(t, "", stderr)
+	assert.Equal(t, []string{"tee", "--", "--help"}, got)
 }
 
 func TestRemediationTeeRejectsOutsideAllowedPathsBeforeHostExecution(t *testing.T) {
@@ -262,5 +317,24 @@ func TestRemediationLogrotateDelegatesExistingPath(t *testing.T) {
 	assert.Equal(t, 0, code)
 	assert.Equal(t, "", stdout)
 	assert.Equal(t, "", stderr)
-	assert.Equal(t, []string{"logrotate", "app.log"}, got)
+	assert.Equal(t, []string{"logrotate", "--", "app.log"}, got)
+}
+
+func TestRemediationLogrotatePreservesLeadingDashOperand(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "--help"), []byte("payload\n"), 0644))
+	var got []string
+
+	stdout, stderr, code := runScript(t, "logrotate -- --help", dir,
+		interp.AllowedPaths([]string{dir}),
+		interp.HostCommandHandler(func(ctx context.Context, args []string) error {
+			got = append([]string(nil), args...)
+			return nil
+		}),
+	)
+
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "", stdout)
+	assert.Equal(t, "", stderr)
+	assert.Equal(t, []string{"logrotate", "--", "--help"}, got)
 }

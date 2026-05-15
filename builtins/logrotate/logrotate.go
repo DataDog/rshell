@@ -42,6 +42,6 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			callCtx.Errf("logrotate: %s: %s\n", args[0], callCtx.PortableErr(err))
 			return builtins.Result{Code: 1}
 		}
-		return callCtx.InvokeHostCommand(ctx, "logrotate", args)
+		return callCtx.InvokeHostCommand(ctx, "logrotate", []string{"--", args[0]})
 	}
 }

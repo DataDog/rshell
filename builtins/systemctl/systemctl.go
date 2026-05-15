@@ -44,6 +44,6 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			callCtx.Errf("systemctl: unsupported action: %s\n", args[0])
 			return builtins.Result{Code: 1}
 		}
-		return callCtx.InvokeHostCommand(ctx, "systemctl", args)
+		return callCtx.InvokeHostCommand(ctx, "systemctl", []string{args[0], "--", args[1]})
 	}
 }

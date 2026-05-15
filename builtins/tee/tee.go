@@ -47,9 +47,9 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			callCtx.Errf("tee: %s: %s\n", args[0], callCtx.PortableErr(err))
 			return builtins.Result{Code: 1}
 		}
-		argv := []string{args[0]}
+		argv := []string{"--", args[0]}
 		if *appendFlag {
-			argv = []string{"-a", args[0]}
+			argv = []string{"-a", "--", args[0]}
 		}
 		return callCtx.InvokeHostCommand(ctx, "tee", argv)
 	}
