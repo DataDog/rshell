@@ -7,5 +7,5 @@ input:
 expect:
   stdout: ""
   stderr: |+
-    > file redirection is not supported
+    >| file redirection is not supported
   exit_code: 2

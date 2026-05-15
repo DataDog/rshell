@@ -1,11 +1,16 @@
-# skip: redirect type is intentionally blocked in the restricted shell
-skip_assert_against_bash: true
-description: Append redirection (>>) is not supported.
+description: Append redirection (>>) appends inside allowed paths.
+setup:
+  files:
+    - path: output.txt
+      content: "old\n"
 input:
+  allowed_paths: ["$DIR"]
   script: |+
     echo hello >> output.txt
+    cat output.txt
 expect:
-  stdout: ""
+  stdout: |+
+    old
+    hello
   stderr: |+
-    >> file redirection is not supported
-  exit_code: 2
+  exit_code: 0

@@ -1,12 +1,12 @@
-# skip: file redirection is intentionally blocked in the restricted shell
-skip_assert_against_bash: true
-description: Append redirection with variable filename is blocked.
+description: Append redirection with variable filename writes inside allowed paths.
 input:
+  allowed_paths: ["$DIR"]
   script: |+
     F=file.txt
     echo hello >> "$F"
+    cat "$F"
 expect:
-  stdout: ""
+  stdout: |+
+    hello
   stderr: |+
-    >> file redirection is not supported
-  exit_code: 2
+  exit_code: 0

@@ -6,6 +6,6 @@ input:
     echo hello > /dev/null/../../../tmp/evil
 expect:
   stdout: ""
-  stderr: |+
-    > file redirection is not supported
-  exit_code: 2
+  stderr_contains:
+    - "permission denied"
+  exit_code: 1

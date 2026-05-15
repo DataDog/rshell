@@ -41,7 +41,11 @@ var allowedpathsAllowedSymbols = []string{
 	"os.Getgid",                          // 🟠 returns the numeric group id of the caller; read-only syscall.
 	"os.Getgroups",                       // 🟠 returns supplementary group ids; read-only syscall.
 	"os.Getuid",                          // 🟠 returns the numeric user id of the caller; read-only syscall.
+	"os.O_APPEND",                        // 🟢 append file flag constant; only accepted by the dedicated redirection write-open path.
+	"os.O_CREATE",                        // 🟢 create file flag constant; only accepted by the dedicated redirection write-open path.
 	"os.O_RDONLY",                        // 🟢 read-only file flag constant; pure constant.
+	"os.O_TRUNC",                         // 🟢 truncate file flag constant; only accepted by the dedicated redirection write-open path.
+	"os.O_WRONLY",                        // 🟢 write-only file flag constant; only accepted by the dedicated redirection write-open path.
 	"os.OpenRoot",                        // 🟠 opens a directory as a root for sandboxed file access; needed for sandbox.
 	"os.PathError",                       // 🟢 error type wrapping path and operation; pure type.
 	"os.Root",                            // 🟠 sandboxed directory root type; core of the filesystem sandbox.

@@ -10,7 +10,6 @@ import (
 	"context"
 	"errors"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -49,20 +48,6 @@ func runScriptInternal(t *testing.T, script, dir string, opts ...RunnerOption) (
 	if dir != "" {
 		runner.Dir = dir
 	}
-	runner.execHandler = func(ctx context.Context, args []string) error {
-		hc := HandlerCtx(ctx)
-		cmd := exec.Command(args[0], args[1:]...)
-		cmd.Dir = hc.Dir
-		cmd.Stdout = hc.Stdout
-		cmd.Stderr = hc.Stderr
-		if err := cmd.Run(); err != nil {
-			if exitErr, ok := err.(*exec.ExitError); ok {
-				return ExitStatus(exitErr.ExitCode())
-			}
-			return err
-		}
-		return nil
-	}
 
 	err = runner.Run(context.Background(), prog)
 	exitCode = 0
@@ -99,10 +84,9 @@ func TestAllowedPathsExecNonexistent(t *testing.T) {
 func TestAllowedPathsExecViaPathLookup(t *testing.T) {
 	dir := t.TempDir()
 	// "date" exists on PATH but /bin and /usr are not in AllowedPaths.
-	// The default noExecHandler must reject it. We avoid runScriptInternal
-	// because it overrides execHandler with a real exec.Command, bypassing
-	// the sandbox. We also cannot use a builtin name (find, grep, sed, etc.)
-	// because builtins are resolved before the exec handler is consulted.
+	// The default noExecHandler must reject it. We avoid a builtin name
+	// (find, grep, sed, etc.) because builtins are resolved before the exec
+	// handler is consulted.
 	parser := syntax.NewParser()
 	prog, err := parser.Parse(strings.NewReader("date"), "")
 	require.NoError(t, err)

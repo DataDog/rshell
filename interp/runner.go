@@ -19,9 +19,13 @@ import (
 var todoPos syntax.Pos // for handlerCtx callers where we don't yet have a position
 
 func (r *Runner) handlerCtx(ctx context.Context, pos syntax.Pos) context.Context {
+	return r.handlerCtxWithDir(ctx, pos, r.Dir)
+}
+
+func (r *Runner) handlerCtxWithDir(ctx context.Context, pos syntax.Pos, dir string) context.Context {
 	hc := HandlerContext{
 		Env:    &overlayEnviron{parent: r.writeEnv},
-		Dir:    r.Dir,
+		Dir:    dir,
 		Pos:    pos,
 		Stdout: r.stdout,
 		Stderr: r.stderr,
@@ -59,6 +63,20 @@ func (r *Runner) open(ctx context.Context, path string, flags int, mode os.FileM
 			r.errf("%v\n", err)
 		}
 	default: // handler's custom fatal error
+		r.exit.fatal(err)
+	}
+	return nil, err
+}
+
+func (r *Runner) openForWrite(ctx context.Context, path string, flags int, mode os.FileMode) (io.ReadWriteCloser, error) {
+	f, err := r.sandbox.OpenForWrite(path, HandlerCtx(r.handlerCtx(ctx, todoPos)).Dir, flags, mode)
+	switch err.(type) {
+	case nil:
+		return f, nil
+	case *os.PathError:
+		err = allowedpaths.PortablePathError(err)
+		r.errf("%v\n", err)
+	default:
 		r.exit.fatal(err)
 	}
 	return nil, err

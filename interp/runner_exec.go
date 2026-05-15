@@ -662,6 +662,9 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 					return runCmdWithStdin(ctx, dir, name, args, childStdin)
 				},
 				RunCommandWithStdin: runCmdWithStdin,
+				RunHostCommand: func(ctx context.Context, hostName string, hostArgs []string) (uint8, error) {
+					return r.runHostCommand(ctx, todoPos, dir, cmdName, hostName, hostArgs)
+				},
 				// Intentionally not exposing SetVar / GetVar in the
 				// child CallContext used for find -exec / -execdir
 				// grandchildren. find treats each invocation as a
@@ -768,6 +771,9 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 			LookupEnvVar:        r.lookupEnvVar,
 			RunCommand:          runCmd,
 			RunCommandWithStdin: runCmdWithStdin,
+			RunHostCommand: func(ctx context.Context, hostName string, hostArgs []string) (uint8, error) {
+				return r.runHostCommand(ctx, todoPos, r.Dir, name, hostName, hostArgs)
+			},
 			SetVar: func(name, value string) error {
 				if len(value) > MaxVarBytes {
 					return fmt.Errorf("%s: value too large (limit %d bytes)", name, MaxVarBytes)
@@ -822,6 +828,36 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 
 func (r *Runner) exec(ctx context.Context, pos syntax.Pos, args []string) {
 	r.exit.fromHandlerError(r.execHandler(r.handlerCtx(ctx, pos), args))
+}
+
+func (r *Runner) runHostCommand(ctx context.Context, pos syntax.Pos, dir string, caller string, name string, args []string) (uint8, error) {
+	if caller != name || !isGuardedHostCommand(caller) {
+		return 127, fmt.Errorf("rshell: %s: host command execution not available", name)
+	}
+	if !r.allowAllCommands && !r.allowedCommands[name] {
+		return 127, fmt.Errorf("rshell: %s: command not allowed", name)
+	}
+	argv := make([]string, 0, len(args)+1)
+	argv = append(argv, name)
+	argv = append(argv, args...)
+	err := r.hostCommandHandler(r.handlerCtxWithDir(ctx, pos, dir), argv)
+	if err == nil {
+		return 0, nil
+	}
+	var status ExitStatus
+	if errors.As(err, &status) {
+		return uint8(status), nil
+	}
+	return 1, err
+}
+
+func isGuardedHostCommand(name string) bool {
+	switch name {
+	case "kill", "logrotate", "systemctl", "tee", "truncate":
+		return true
+	default:
+		return false
+	}
 }
 
 // execIfChain runs an if/elif/else chain iteratively (rather than recursing

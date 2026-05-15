@@ -174,15 +174,73 @@ func TestRedirDevNullPreservesFailureExitCode(t *testing.T) {
 	assert.Equal(t, "1\n", stdout)
 }
 
-// --- Blocked redirects (still rejected) ---
+// --- File output redirects ---
 
-func TestRedirToFileStillBlocked(t *testing.T) {
+func TestRedirStdoutToFileCreates(t *testing.T) {
 	dir := t.TempDir()
-	// The validation should reject this
-	stdout, stderr, code := redirRunNoAllowed(t, "echo hello > /tmp/output.txt", dir)
-	assert.Equal(t, 2, code)
+	stdout, stderr, code := redirRun(t, "echo hello > output.txt", dir)
+	assert.Equal(t, 0, code)
 	assert.Equal(t, "", stdout)
-	assert.Contains(t, stderr, "file redirection is not supported")
+	assert.Equal(t, "", stderr)
+	data, err := os.ReadFile(filepath.Join(dir, "output.txt"))
+	require.NoError(t, err)
+	assert.Equal(t, "hello\n", string(data))
+}
+
+func TestRedirStdoutToFileOverwrites(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "output.txt"), []byte("old\n"), 0644))
+
+	stdout, stderr, code := redirRun(t, "echo new > output.txt", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "", stdout)
+	assert.Equal(t, "", stderr)
+	data, err := os.ReadFile(filepath.Join(dir, "output.txt"))
+	require.NoError(t, err)
+	assert.Equal(t, "new\n", string(data))
+}
+
+func TestRedirAppendToFile(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "output.txt"), []byte("old\n"), 0644))
+
+	stdout, stderr, code := redirRun(t, "echo new >> output.txt", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "", stdout)
+	assert.Equal(t, "", stderr)
+	data, err := os.ReadFile(filepath.Join(dir, "output.txt"))
+	require.NoError(t, err)
+	assert.Equal(t, "old\nnew\n", string(data))
+}
+
+func TestRedirExplicitFd1ToFile(t *testing.T) {
+	dir := t.TempDir()
+	stdout, stderr, code := redirRun(t, "echo hello 1>output.txt", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "", stdout)
+	assert.Equal(t, "", stderr)
+	data, err := os.ReadFile(filepath.Join(dir, "output.txt"))
+	require.NoError(t, err)
+	assert.Equal(t, "hello\n", string(data))
+}
+
+func TestRedirVariableTargetAllowedWhenPathAllowed(t *testing.T) {
+	dir := t.TempDir()
+	stdout, stderr, code := redirRun(t, "TARGET=output.txt; echo hello > $TARGET", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "", stdout)
+	assert.Equal(t, "", stderr)
+	data, err := os.ReadFile(filepath.Join(dir, "output.txt"))
+	require.NoError(t, err)
+	assert.Equal(t, "hello\n", string(data))
+}
+
+func TestRedirToFileWithoutAllowedPathsBlocked(t *testing.T) {
+	dir := t.TempDir()
+	stdout, stderr, code := redirRunNoAllowed(t, "echo hello > /tmp/output.txt", dir)
+	assert.Equal(t, 1, code)
+	assert.Equal(t, "", stdout)
+	assert.Contains(t, stderr, "permission denied")
 }
 
 func TestRedirStderrToFileStillBlocked(t *testing.T) {
@@ -190,15 +248,15 @@ func TestRedirStderrToFileStillBlocked(t *testing.T) {
 	stdout, stderr, code := redirRunNoAllowed(t, "echo hello 2> /tmp/errors.txt", dir)
 	assert.Equal(t, 2, code)
 	assert.Equal(t, "", stdout)
-	assert.Contains(t, stderr, "file redirection is not supported")
+	assert.Contains(t, stderr, "2> output fd redirection is not supported")
 }
 
-func TestRedirAppendToFileStillBlocked(t *testing.T) {
+func TestRedirAppendToFileWithoutAllowedPathsBlocked(t *testing.T) {
 	dir := t.TempDir()
 	stdout, stderr, code := redirRunNoAllowed(t, "echo hello >> /tmp/output.txt", dir)
-	assert.Equal(t, 2, code)
+	assert.Equal(t, 1, code)
 	assert.Equal(t, "", stdout)
-	assert.Contains(t, stderr, "file redirection is not supported")
+	assert.Contains(t, stderr, "permission denied")
 }
 
 func TestRedirAllToFileStillBlocked(t *testing.T) {
@@ -214,17 +272,17 @@ func TestRedirAllToFileStillBlocked(t *testing.T) {
 func TestRedirDevNullPathTraversalBlocked(t *testing.T) {
 	dir := t.TempDir()
 	stdout, stderr, code := redirRunNoAllowed(t, "echo hello > /dev/null/../../../tmp/evil", dir)
-	assert.Equal(t, 2, code)
+	assert.Equal(t, 1, code)
 	assert.Equal(t, "", stdout)
-	assert.Contains(t, stderr, "file redirection is not supported")
+	assert.Contains(t, stderr, "permission denied")
 }
 
 func TestRedirDevNullExtraSlashBlocked(t *testing.T) {
 	dir := t.TempDir()
 	stdout, stderr, code := redirRunNoAllowed(t, "echo hello > /dev//null", dir)
-	assert.Equal(t, 2, code)
+	assert.Equal(t, 1, code)
 	assert.Equal(t, "", stdout)
-	assert.Contains(t, stderr, "file redirection is not supported")
+	assert.Contains(t, stderr, "permission denied")
 }
 
 // --- Unsupported fd numbers ---
@@ -234,7 +292,7 @@ func TestRedirFd3Blocked(t *testing.T) {
 	stdout, stderr, code := redirRunNoAllowed(t, "echo hello 3>/dev/null", dir)
 	assert.Equal(t, 2, code)
 	assert.Equal(t, "", stdout)
-	assert.Contains(t, stderr, "file redirection is not supported")
+	assert.Contains(t, stderr, "3> output fd redirection is not supported")
 }
 
 func TestRedirDupFd3Blocked(t *testing.T) {
@@ -267,15 +325,4 @@ func TestRedirMultipleDevNull(t *testing.T) {
 	assert.Equal(t, 0, code)
 	assert.Equal(t, "", stdout)
 	assert.Equal(t, "", stderr)
-}
-
-// --- Variable in redirect target should be blocked ---
-
-func TestRedirVariableTargetBlocked(t *testing.T) {
-	dir := t.TempDir()
-	// $TARGET in redirect word makes it non-literal, so validation rejects it
-	stdout, stderr, code := redirRunNoAllowed(t, "TARGET=/dev/null; echo hello > $TARGET", dir)
-	assert.Equal(t, 2, code)
-	assert.Equal(t, "", stdout)
-	assert.Contains(t, stderr, "file redirection is not supported")
 }

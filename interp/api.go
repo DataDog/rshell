@@ -43,6 +43,10 @@ type runnerConfig struct {
 	// execHandler is responsible for executing programs. It must not be nil.
 	execHandler ExecHandlerFunc
 
+	// hostCommandHandler executes host commands on behalf of guarded builtins
+	// such as truncate, systemctl, kill, logrotate, and tee.
+	hostCommandHandler ExecHandlerFunc
+
 	// openHandler is a function responsible for opening files. It must not be nil.
 	openHandler OpenHandlerFunc
 
@@ -457,10 +461,12 @@ func (r *Runner) Reset() {
 			r.readDirHandler = func(ctx context.Context, path string) ([]os.DirEntry, error) {
 				return r.sandbox.ReadDirForGlob(path, HandlerCtx(ctx).Dir)
 			}
-			r.execHandler = noExecHandler(r.allowAllCommands || r.allowedCommands["help"])
 		}
 		if r.execHandler == nil {
 			r.execHandler = noExecHandler(r.allowAllCommands || r.allowedCommands["help"])
+		}
+		if r.hostCommandHandler == nil {
+			r.hostCommandHandler = r.execHandler
 		}
 	}
 	// Reset only the mutable state; config is preserved.
@@ -671,6 +677,36 @@ func WarningsWriter(w io.Writer) RunnerOption {
 			return fmt.Errorf("WarningsWriter: writer must not be nil")
 		}
 		r.warningsWriter = w
+		return nil
+	}
+}
+
+// HostCommandHandler configures the host-command execution capability used by
+// guarded remediation builtins. The handler receives argv after the builtin has
+// validated the PAR-shaped command contract. The runner still enforces
+// AllowedCommands before invoking this handler.
+//
+// When unset, guarded host commands use the configured ExecHandler, which
+// defaults to rejecting external execution with exit code 127.
+func HostCommandHandler(fn ExecHandlerFunc) RunnerOption {
+	return func(r *Runner) error {
+		if fn == nil {
+			return fmt.Errorf("HostCommandHandler: handler must not be nil")
+		}
+		r.hostCommandHandler = fn
+		return nil
+	}
+}
+
+// ExecHandler configures execution for allowed commands that are not registered
+// rshell builtins. AllowedCommands is still checked before this handler is
+// invoked; when unset, unregistered commands return exit code 127.
+func ExecHandler(fn ExecHandlerFunc) RunnerOption {
+	return func(r *Runner) error {
+		if fn == nil {
+			return fmt.Errorf("ExecHandler: handler must not be nil")
+		}
+		r.execHandler = fn
 		return nil
 	}
 }

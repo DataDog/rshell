@@ -66,6 +66,44 @@ func TestSandboxOpenRejectsWriteFlags(t *testing.T) {
 	f.Close()
 }
 
+func TestSandboxOpenForWriteAllowsRedirectFlags(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "test.txt"), []byte("old\n"), 0644))
+
+	sb, _, err := New([]string{dir})
+	require.NoError(t, err)
+	defer sb.Close()
+
+	f, err := sb.OpenForWrite("test.txt", dir, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
+	require.NoError(t, err)
+	_, err = f.Write([]byte("new\n"))
+	require.NoError(t, err)
+	require.NoError(t, f.Close())
+
+	f, err = sb.OpenForWrite("test.txt", dir, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0644)
+	require.NoError(t, err)
+	_, err = f.Write([]byte("tail\n"))
+	require.NoError(t, err)
+	require.NoError(t, f.Close())
+
+	data, err := os.ReadFile(filepath.Join(dir, "test.txt"))
+	require.NoError(t, err)
+	assert.Equal(t, "new\ntail\n", string(data))
+}
+
+func TestSandboxOpenForWriteRejectsOutsideAllowedPaths(t *testing.T) {
+	dir := t.TempDir()
+	outside := t.TempDir()
+
+	sb, _, err := New([]string{dir})
+	require.NoError(t, err)
+	defer sb.Close()
+
+	f, err := sb.OpenForWrite(filepath.Join(outside, "evil.txt"), dir, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
+	assert.Nil(t, f)
+	assert.ErrorIs(t, err, os.ErrPermission)
+}
+
 func TestReadDirLimited(t *testing.T) {
 	dir := t.TempDir()
 

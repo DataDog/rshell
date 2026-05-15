@@ -47,7 +47,11 @@ var interpAllowedSymbols = []string{
 	"os.File",                     // 🟠 file handle type; interpreter needs file I/O for redirects and pipes.
 	"os.FileMode",                 // 🟢 file permission bits type; pure type.
 	"os.Getwd",                    // 🟠 returns current working directory; read-only.
+	"os.O_APPEND",                 // 🟢 append file flag constant; used only for stdout append redirection through AllowedPaths.
+	"os.O_CREATE",                 // 🟢 create file flag constant; used only for stdout file redirection through AllowedPaths.
 	"os.O_RDONLY",                 // 🟢 read-only file flag constant; pure constant.
+	"os.O_TRUNC",                  // 🟢 truncate file flag constant; used only for stdout overwrite redirection through AllowedPaths.
+	"os.O_WRONLY",                 // 🟢 write-only file flag constant; used only for stdout file redirection through AllowedPaths.
 	"os.PathError",                // 🟢 error type wrapping path and operation; pure type.
 	"os.Pipe",                     // 🟠 creates an OS pipe pair; needed for shell pipelines.
 	"path/filepath.Clean",         // 🟢 normalizes a path lexically; pure function, no I/O.

@@ -24,6 +24,8 @@ import (
 	"github.com/DataDog/rshell/builtins/head"
 	"github.com/DataDog/rshell/builtins/help"
 	"github.com/DataDog/rshell/builtins/ip"
+	killcmd "github.com/DataDog/rshell/builtins/kill"
+	"github.com/DataDog/rshell/builtins/logrotate"
 	"github.com/DataDog/rshell/builtins/ls"
 	"github.com/DataDog/rshell/builtins/ping"
 	printfcmd "github.com/DataDog/rshell/builtins/printf"
@@ -34,10 +36,13 @@ import (
 	sortcmd "github.com/DataDog/rshell/builtins/sort"
 	"github.com/DataDog/rshell/builtins/ss"
 	"github.com/DataDog/rshell/builtins/strings_cmd"
+	"github.com/DataDog/rshell/builtins/systemctl"
 	"github.com/DataDog/rshell/builtins/tail"
+	"github.com/DataDog/rshell/builtins/tee"
 	"github.com/DataDog/rshell/builtins/testcmd"
 	"github.com/DataDog/rshell/builtins/tr"
 	truecmd "github.com/DataDog/rshell/builtins/true"
+	"github.com/DataDog/rshell/builtins/truncate"
 	"github.com/DataDog/rshell/builtins/uname"
 	"github.com/DataDog/rshell/builtins/uniq"
 	"github.com/DataDog/rshell/builtins/wc"
@@ -64,7 +69,9 @@ func registerBuiltins() {
 			head.Cmd,
 			help.Cmd,
 			ip.Cmd,
+			killcmd.Cmd,
 			ls.Cmd,
+			logrotate.Cmd,
 			ping.Cmd,
 			sortcmd.Cmd,
 			printfcmd.Cmd,
@@ -74,9 +81,12 @@ func registerBuiltins() {
 			sed.Cmd,
 			ss.Cmd,
 			strings_cmd.Cmd,
+			systemctl.Cmd,
 			tail.Cmd,
+			tee.Cmd,
 			testcmd.Cmd,
 			testcmd.BracketCmd,
+			truncate.Cmd,
 			tr.Cmd,
 			truecmd.Cmd,
 			uname.Cmd,

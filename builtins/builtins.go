@@ -260,6 +260,11 @@ type CallContext struct {
 	// If nil, callers should fall back to RunCommand.
 	RunCommandWithStdin func(ctx context.Context, dir string, name string, args []string, stdin io.Reader) (uint8, error)
 
+	// RunHostCommand executes a host command after the builtin has validated
+	// its restricted contract. This is intentionally separate from RunCommand,
+	// which only dispatches other rshell builtins.
+	RunHostCommand func(ctx context.Context, name string, args []string) (uint8, error)
+
 	// SetVar assigns a value to a shell variable in the calling shell's
 	// scope. Returns an error if the value exceeds the per-variable size
 	// limit or if the total variable-storage cap would be exceeded.
@@ -290,6 +295,24 @@ func (c *CallContext) Outf(format string, a ...any) {
 // Errf writes a formatted string to stderr.
 func (c *CallContext) Errf(format string, a ...any) {
 	fmt.Fprintf(c.Stderr, format, a...)
+}
+
+// InvokeHostCommand runs a guarded host command and converts failures into a
+// shell Result suitable for builtins.
+func (c *CallContext) InvokeHostCommand(ctx context.Context, name string, args []string) Result {
+	if c.RunHostCommand == nil {
+		c.Errf("%s: host command execution not available\n", name)
+		return Result{Code: 127}
+	}
+	code, err := c.RunHostCommand(ctx, name, args)
+	if err != nil {
+		c.Errf("%s: %s\n", name, err)
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return Result{Code: 1, Exiting: true}
+		}
+		return Result{Code: 1}
+	}
+	return Result{Code: code}
 }
 
 // IsBrokenPipe reports whether err is a broken-pipe (EPIPE) error,

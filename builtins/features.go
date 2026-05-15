@@ -69,19 +69,20 @@ var featureRegistry = []FeatureMeta{
 	},
 	{
 		Name:        "pipes-redirections",
-		Description: "Pipes, stdin/heredocs, /dev/null redirects, fd dup; no arbitrary file writes.",
+		Description: "Pipes, stdin/heredocs, stdout file redirects, /dev/null redirects, fd dup.",
 		Supported: []string{
 			"Pipelines with | pipe stdout from one command to the next.",
 			"Input redirection with < reads files through AllowedPaths.",
 			"Heredocs with <<DELIM and <<-DELIM.",
-			"Output redirection to /dev/null only: >/dev/null, 2>/dev/null, &>/dev/null, >>/dev/null, and &>>/dev/null.",
+			"Stdout file redirection with > and >> writes through AllowedPaths.",
+			"Output redirection to /dev/null: >/dev/null, 2>/dev/null, &>/dev/null, >>/dev/null, and &>>/dev/null.",
 			"File descriptor duplication between stdout and stderr with 2>&1 and >&2.",
 		},
 		Unsupported: []string{
-			"Writing, appending, or redirecting output to any file other than /dev/null.",
+			"Stderr file redirection to real files.",
 			"Pipe stdout and stderr together with |&.",
 			"Herestrings with <<<.",
-			"Read-write redirection with <> and input fd duplication with <&N.",
+			"Read-write redirection with <>, clobber redirection with >|, and input fd duplication with <&N.",
 		},
 	},
 	{
@@ -105,6 +106,7 @@ var featureRegistry = []FeatureMeta{
 		Supported: []string{
 			"AllowedCommands restricts executable commands; rshell commands use the rshell: namespace prefix.",
 			"AllowedPaths restricts filesystem access to configured directories.",
+			"Guarded remediation commands can invoke host commands through the host command handler after validating their restricted contract.",
 			"Whole-run timeouts can be set with context.Context, interp.MaxExecutionTime, or the CLI --timeout flag.",
 			"ProcPath overrides the proc filesystem used by ps on Linux.",
 		},
@@ -143,7 +145,7 @@ var unsupportedSummary = []string{
 	"Expansions: arithmetic $((...)), arrays, advanced ${...} operations, tilde expansion, process substitution, extended globbing.",
 	"Control flow: case, select, C-style for ((...)), and shell functions.",
 	"Execution: external commands by default, background jobs, coprocesses, time, [[...]], ((...)), declare/export/local/readonly/let.",
-	"I/O and environment: arbitrary output file redirects, |&, herestrings, read-write redirects, input fd duplication, host env inheritance.",
+	"I/O and environment: stderr file redirects, |&, herestrings, read-write redirects, input fd duplication, host env inheritance.",
 }
 
 var featureByName = buildFeatureIndex(featureRegistry)

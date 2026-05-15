@@ -24,6 +24,8 @@ The in-shell `help` command mirrors these feature categories: run `help` for a c
 - ✅ `ip [-o|-4|-6|--brief] addr|link [show] [dev IFNAME]` — show network interface addresses and link-layer info (read-only); write ops (`add`, `del`, `flush`, `set`), namespace ops (`netns`, `-n`), and batch mode (`-b`/`-B`/`--force`) are blocked
 - ✅ `ip route [show|list]` — show IPv4 routing table (Linux only; reads `/proc/net/route` directly via `os.Open`, bypassing `AllowedPaths`); at most 10 000 entries loaded; lines longer than 1 MiB abort parsing with an error (exit 1)
 - ✅ `ip route get ADDRESS` — show the route selected by longest-prefix-match for ADDRESS (Linux only); write ops (`add`, `del`, `flush`, `replace`, `change`, `save`, `restore`) are blocked; `-6` (IPv6 routing) is not supported
+- ✅ `kill [-9] PID` — guarded remediation command; sends SIGTERM or SIGKILL through the host command handler after validating a single positive PID
+- ✅ `logrotate PATH` — guarded remediation command; delegates one existing allowed path to the host command handler, usually a scenario-provided wrapper
 - ✅ `sort [-rnhubfds] [-k KEYDEF] [-t SEP] [-c|-C] [FILE]...` — sort lines of text files; `-h`/`--human-numeric-sort` orders by SI suffix (none < K/k < M < G < T < P < E < Z < Y < R < Q) then by numeric value (single-letter suffixes only — `Ki`, `Mi`, etc. are not recognised); `-o`, `--compress-program`, and `-T` are rejected (filesystem write / exec)
 - ✅ `ss [-tuaxlans4689Hoehs] [OPTION]...` — display network socket statistics; reads kernel socket state directly via `os.Open` (bypassing `AllowedPaths`) from: Linux: `/proc/net/`; macOS: sysctl; Windows: iphlpapi.dll; `-F`/`--filter` (GTFOBins file-read), `-p`/`--processes` (PID disclosure), `-K`/`--kill`, `-E`/`--events`, and `-N`/`--net` are rejected
 - ✅ `ls [-1aAdFhlpRrSt] [--offset N] [--limit N] [FILE]...` — list directory contents; `--offset`/`--limit` are non-standard pagination flags (single-directory only, silently ignored with `-R` or multiple arguments, capped at 1,000 entries per call); offset operates on filesystem order (not sorted order) for O(n) memory
@@ -34,8 +36,11 @@ The in-shell `help` command mirrors these feature categories: run `help` for a c
 - ✅ `read [-r] [-p PROMPT] [-d DELIM] [-n N] [-N N] [-t SECS] [NAME...]` — read one delimited chunk from stdin and assign each IFS-split field to a shell variable (defaulting to `REPLY` when no NAME is given); `-n`/`-N` are capped at 1 MiB; non-raw mode treats `\<newline>` as a line continuation (both characters are dropped) and `\<X>` for any other `X` (including the active custom delimiter under `-d`) as a literal `X` with the backslash removed — e.g. `printf 'a\,b,c' | read -d , x` assigns `x="a,b"`; `-p` is suppressed unless stdin is a terminal (matches bash); `-a` (array), `-s` (silent), `-u` (read from FD), `-e` (readline), and `-i` (initial text) are not implemented
 - ✅ `sed [-n] [-e SCRIPT] [-E|-r] [SCRIPT] [FILE]...` — stream editor for filtering and transforming text; uses RE2 regex engine; `-i`/`-f` rejected; `e`/`w`/`W`/`r`/`R` commands blocked
 - ✅ `strings [-a] [-n MIN] [-t o|d|x] [-o] [-f] [-s SEP] [FILE]...` — print printable character sequences in files (default min length 4); offsets via `-t`/`-o`; filename prefix via `-f`; custom separator via `-s`
+- ✅ `systemctl start|stop|restart|reload UNIT` — guarded remediation command; delegates one lifecycle action and unit to the host command handler
 - ✅ `tail [-n N|-c N] [-q|-v] [-z] [FILE]...` — output the last part of files (default: last 10 lines); supports `+N` offset mode; `-f`/`--follow` is rejected
+- ✅ `tee [-a] FILE` — guarded remediation command; copies stdin to stdout and one file through the host command handler; only overwrite and append forms are supported
 - ✅ `test EXPRESSION` / `[ EXPRESSION ]` — evaluate conditional expression (file tests, string/integer comparison, logical operators)
+- ✅ `truncate -s SIZE FILE` — guarded remediation command; shrinks one existing regular file to a non-negative byte size no larger than its current size, then delegates to the host command handler
 - ✅ `tr [-cdsCt] SET1 [SET2]` — translate, squeeze, and/or delete characters from stdin
 - ✅ `true` — return exit code 0
 - ✅ `uname [-asnrvm]` — print system information (Linux only; reads from `/proc/sys/kernel/`, respects `--proc-path`)
@@ -81,16 +86,18 @@ The in-shell `help` command mirrors these feature categories: run `help` for a c
 - ✅ `<` — input redirection (read-only, within AllowedPaths)
 - ✅ `<<DELIM` — heredoc
 - ✅ `<<-DELIM` — heredoc with tab stripping
+- ✅ `> FILE` — redirect stdout to FILE, creating/truncating within AllowedPaths
+- ✅ `>> FILE` — append stdout to FILE, creating within AllowedPaths
 - ✅ `>/dev/null`, `2>/dev/null` — redirect stdout or stderr to /dev/null (output is discarded; only `/dev/null` is allowed as target)
 - ✅ `&>/dev/null` — redirect both stdout and stderr to /dev/null
 - ✅ `>>/dev/null`, `&>>/dev/null` — append redirect to /dev/null (same effect as truncate)
 - ✅ `2>&1`, `>&2` — file descriptor duplication between stdout (1) and stderr (2)
 - ❌ `|&` — pipe stdout and stderr (bash extension)
 - ❌ `<<<` — herestring (bash extension)
-- ❌ `> FILE` — write/truncate to any file other than /dev/null
-- ❌ `>> FILE` — append to any file other than /dev/null
+- ❌ `2> FILE` — redirect stderr to a real file
 - ❌ `&> FILE` — redirect all to any file other than /dev/null
 - ❌ `&>> FILE` — append all to any file other than /dev/null
+- ❌ `>| FILE` — clobber redirection
 - ❌ `<>` — read-write
 - ❌ `<&N` — input file descriptor duplication
 
@@ -109,9 +116,10 @@ The in-shell `help` command mirrors these feature categories: run `help` for a c
 
 - ✅ AllowedCommands — restricts which commands (builtins or external) may be executed; commands require the `rshell:` namespace prefix (e.g. `rshell:cat`); if not set, no commands are allowed
 - ✅ AllowedPaths filesystem sandboxing — restricts all file access to specified directories
+- ✅ Guarded host command handler — remediation builtins (`truncate`, `systemctl`, `kill`, `logrotate`, `tee`) validate their restricted contract before delegating to a caller-provided host command handler
 - ✅ Whole-run execution timeout — callers can bound a `Run()` call via `context.Context`, `interp.MaxExecutionTime`, or the CLI `--timeout` flag; the deadline applies to the entire script, not each individual command
 - ✅ ProcPath — overrides the proc filesystem path used by `ps` (default `/proc`; Linux-only; useful for testing/container environments)
-- ❌ External commands — blocked by default; requires an ExecHandler to be configured and the binary to be within AllowedPaths
+- ❌ External commands — blocked by default; require an ExecHandler and the command name must pass AllowedCommands
 - ❌ Background execution: `cmd &`
 - ❌ Coprocesses: `coproc`
 - ❌ `time`

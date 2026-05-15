@@ -245,12 +245,30 @@ func (r *Runner) redir(ctx context.Context, rd *syntax.Redirect) (io.Closer, err
 	case syntax.RdrIn:
 		// done further below
 
-	case syntax.RdrOut, syntax.ClbOut, syntax.AppOut:
-		// Output redirects are only allowed to /dev/null (enforced at validation).
-		// Re-check at runtime after variable expansion for defense-in-depth.
+	case syntax.RdrOut, syntax.AppOut:
 		if !isDevNull(arg) {
-			r.errf("> %s: file redirection is only supported for /dev/null\n", arg)
-			return nil, fmt.Errorf("> %s: file redirection is only supported for /dev/null", arg)
+			if rd.N != nil && rd.N.Value != "1" {
+				r.errf("%s: unsupported fd\n", rd.N.Value)
+				return nil, fmt.Errorf("%s: unsupported fd", rd.N.Value)
+			}
+			flag := os.O_WRONLY | os.O_CREATE | os.O_TRUNC
+			if rd.Op == syntax.AppOut {
+				flag = os.O_WRONLY | os.O_CREATE | os.O_APPEND
+			}
+			f, err := r.openForWrite(ctx, arg, flag, 0666)
+			if err != nil {
+				return nil, err
+			}
+			*orig = f
+			return f, nil
+		}
+		*orig = io.Discard
+		return nil, nil
+
+	case syntax.ClbOut:
+		if !isDevNull(arg) {
+			r.errf(">| %s: file redirection is not supported\n", arg)
+			return nil, fmt.Errorf(">| %s: file redirection is not supported", arg)
 		}
 		*orig = io.Discard
 		return nil, nil

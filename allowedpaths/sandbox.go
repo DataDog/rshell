@@ -310,9 +310,10 @@ func IsDevNull(path string) bool {
 	return false
 }
 
-// Open implements the restricted file-open policy. The file is opened through
-// os.Root for atomic path validation. Only read-only access is permitted;
-// any write flags are rejected as a defense-in-depth measure.
+// Open implements the restricted file-open policy for builtin file reads. The
+// file is opened through os.Root for atomic path validation. Only read-only
+// access is permitted; any write flags are rejected as a defense-in-depth
+// measure.
 func (s *Sandbox) Open(path string, cwd string, flag int, perm os.FileMode) (io.ReadWriteCloser, error) {
 	if flag != os.O_RDONLY {
 		return nil, &os.PathError{Op: "open", Path: path, Err: os.ErrPermission}
@@ -333,6 +334,42 @@ func (s *Sandbox) Open(path string, cwd string, flag int, perm os.FileMode) (io.
 		return nil, PortablePathError(err)
 	}
 	// Symlink escapes this root — resolve across all roots.
+	r, rel, ok := s.resolveFollowingSymlinks(absPath, false)
+	if !ok {
+		return nil, PortablePathError(err)
+	}
+	f, err = r.OpenFile(rel, flag, perm)
+	if err != nil {
+		return nil, PortablePathError(err)
+	}
+	return f, nil
+}
+
+// OpenForWrite implements the restricted file-open policy for shell output
+// redirections. It is intentionally separate from Open so builtins keep their
+// read-only file capability unless they are explicitly given another one.
+func (s *Sandbox) OpenForWrite(path string, cwd string, flag int, perm os.FileMode) (io.ReadWriteCloser, error) {
+	switch flag {
+	case os.O_WRONLY | os.O_CREATE | os.O_TRUNC,
+		os.O_WRONLY | os.O_CREATE | os.O_APPEND:
+	default:
+		return nil, &os.PathError{Op: "open", Path: path, Err: os.ErrPermission}
+	}
+
+	absPath := toAbs(path, cwd)
+
+	ar, relPath, ok := s.resolve(absPath)
+	if !ok {
+		return nil, &os.PathError{Op: "open", Path: path, Err: os.ErrPermission}
+	}
+
+	f, err := ar.root.OpenFile(relPath, flag, perm)
+	if err == nil {
+		return f, nil
+	}
+	if !isPathEscapeError(err) {
+		return nil, PortablePathError(err)
+	}
 	r, rel, ok := s.resolveFollowingSymlinks(absPath, false)
 	if !ok {
 		return nil, PortablePathError(err)

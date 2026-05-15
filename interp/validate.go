@@ -209,16 +209,25 @@ func validateRedirect(rd *syntax.Redirect) error {
 			return fmt.Errorf("%s< input fd redirection is not supported", rd.N.Value)
 		}
 		return nil
-	case syntax.RdrOut, syntax.ClbOut:
+	case syntax.RdrOut:
+		// Output redirection is supported for stdout (default or fd 1).
+		// Stderr file redirection remains blocked except for /dev/null.
+		if rd.N == nil || rd.N.Value == "1" || redirectTargetIsDevNull(rd) {
+			return nil
+		}
+		return fmt.Errorf("%s> output fd redirection is not supported", rd.N.Value)
+	case syntax.ClbOut:
 		if redirectTargetIsDevNull(rd) {
 			return nil
 		}
-		return fmt.Errorf("> file redirection is not supported")
+		return fmt.Errorf(">| file redirection is not supported")
 	case syntax.AppOut:
-		if redirectTargetIsDevNull(rd) {
+		// Append redirection is supported for stdout (default or fd 1).
+		// Stderr file redirection remains blocked except for /dev/null.
+		if rd.N == nil || rd.N.Value == "1" || redirectTargetIsDevNull(rd) {
 			return nil
 		}
-		return fmt.Errorf(">> file redirection is not supported")
+		return fmt.Errorf("%s>> output fd redirection is not supported", rd.N.Value)
 	case syntax.RdrAll:
 		if redirectTargetIsDevNull(rd) {
 			return nil

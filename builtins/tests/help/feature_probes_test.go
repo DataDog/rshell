@@ -133,16 +133,17 @@ var featureProbes = map[string]map[string]string{
 	},
 	"pipes-redirections": {
 		// Supported
-		"Pipelines with | pipe stdout from one command to the next.":                                                 "echo x | cat",
-		"Input redirection with < reads files through AllowedPaths.":                                                 ": </dev/null",
-		"Heredocs with <<DELIM and <<-DELIM.":                                                                        "cat <<EOT\nx\nEOT\n",
-		"Output redirection to /dev/null only: >/dev/null, 2>/dev/null, &>/dev/null, >>/dev/null, and &>>/dev/null.": "echo x >/dev/null",
-		"File descriptor duplication between stdout and stderr with 2>&1 and >&2.":                                   "echo x 2>&1",
+		"Pipelines with | pipe stdout from one command to the next.":                                            "echo x | cat",
+		"Input redirection with < reads files through AllowedPaths.":                                            ": </dev/null",
+		"Heredocs with <<DELIM and <<-DELIM.":                                                                   "cat <<EOT\nx\nEOT\n",
+		"Stdout file redirection with > and >> writes through AllowedPaths.":                                    "echo x > out",
+		"Output redirection to /dev/null: >/dev/null, 2>/dev/null, &>/dev/null, >>/dev/null, and &>>/dev/null.": "echo x >/dev/null",
+		"File descriptor duplication between stdout and stderr with 2>&1 and >&2.":                              "echo x 2>&1",
 		// Unsupported
-		"Writing, appending, or redirecting output to any file other than /dev/null.": "echo x >/tmp/rshell-probe-should-not-write",
-		"Pipe stdout and stderr together with |&.":                                    "echo x |& cat",
-		"Herestrings with <<<.":                                                       "cat <<<x",
-		"Read-write redirection with <> and input fd duplication with <&N.":           "cat <&0",
+		"Stderr file redirection to real files.":   "echo x 2> err",
+		"Pipe stdout and stderr together with |&.": "echo x |& cat",
+		"Herestrings with <<<.":                    "cat <<<x",
+		"Read-write redirection with <>, clobber redirection with >|, and input fd duplication with <&N.": "cat <&0",
 	},
 	"quoting-expansion": {
 		// Supported

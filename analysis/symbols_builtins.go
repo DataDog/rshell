@@ -194,6 +194,14 @@ var builtinPerCommandSymbols = map[string][]string{
 		"os.O_RDONLY",      // 🟢 read-only file flag constant; cannot open files by itself.
 		"strconv.ParseInt", // 🟢 string-to-int conversion with base/bit-size; pure function, no I/O.
 	},
+	"kill": {
+		"context.Context",   // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
+		"strconv.FormatInt", // 🟢 int-to-string conversion; pure function, no I/O.
+		"strconv.ParseInt",  // 🟢 string-to-int conversion with overflow checking; pure function, no I/O.
+	},
+	"logrotate": {
+		"context.Context", // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
+	},
 	"ls": {
 		"context.Context",                    // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
 		"errors.New",                         // 🟢 creates a simple error value; pure function, no I/O.
@@ -344,6 +352,9 @@ var builtinPerCommandSymbols = map[string][]string{
 		"os.PathError",      // 🟢 error type for filesystem path errors; pure type, no I/O.
 		"strconv.FormatInt", // 🟢 int-to-string conversion; pure function, no I/O.
 	},
+	"systemctl": {
+		"context.Context", // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
+	},
 	"tail": {
 		"bufio.NewScanner",  // 🟢 line-by-line input reading (e.g. head, cat); no write or exec capability.
 		"context.Context",   // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
@@ -360,6 +371,9 @@ var builtinPerCommandSymbols = map[string][]string{
 		"strconv.ParseInt",  // 🟢 string-to-int conversion with base/bit-size; pure function, no I/O.
 		"strconv.ParseUint", // 🟢 string-to-unsigned-int conversion; pure function, no I/O.
 	},
+	"tee": {
+		"context.Context", // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
+	},
 	"testcmd": {
 		"context.Context",     // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
 		"io/fs.FileInfo",      // 🟢 interface type for file information; no side effects.
@@ -374,6 +388,11 @@ var builtinPerCommandSymbols = map[string][]string{
 		"fmt.Sprintf",      // 🟢 string formatting; pure function, no I/O.
 		"io.EOF",           // 🟢 sentinel error value; pure constant.
 		"strconv.ParseInt", // 🟢 string-to-int conversion with base/bit-size; pure function, no I/O.
+	},
+	"truncate": {
+		"context.Context",   // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
+		"strconv.FormatInt", // 🟢 int-to-string conversion; pure function, no I/O.
+		"strconv.ParseInt",  // 🟢 string-to-int conversion with overflow checking; pure function, no I/O.
 	},
 	"true": {
 		"context.Context", // 🟢 deadline/cancellation plumbing; pure interface, no side effects.

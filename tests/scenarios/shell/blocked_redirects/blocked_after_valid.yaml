@@ -1,13 +1,15 @@
-# skip: redirect type is intentionally blocked in the restricted shell
-skip_assert_against_bash: true
-description: Write redirect after valid commands still causes rejection.
+description: Write redirect after valid commands writes the target and execution continues.
 input:
+  allowed_paths: ["$DIR"]
   script: |+
     echo before
     echo data > output.txt
     echo after
+    cat output.txt
 expect:
-  stdout: ""
+  stdout: |+
+    before
+    after
+    data
   stderr: |+
-    > file redirection is not supported
-  exit_code: 2
+  exit_code: 0

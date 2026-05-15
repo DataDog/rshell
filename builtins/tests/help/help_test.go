@@ -211,7 +211,7 @@ func TestHelpListsFeaturesAndUnsupportedSummary(t *testing.T) {
 	assert.Contains(t, stdout, "Not supported:")
 	assert.Contains(t, stdout, "arithmetic $((...))")
 	assert.Contains(t, stdout, "case, select")
-	assert.Contains(t, stdout, "arbitrary output file redirects")
+	assert.Contains(t, stdout, "stderr file redirects")
 }
 
 func TestHelpShowsFeatureHelp(t *testing.T) {
