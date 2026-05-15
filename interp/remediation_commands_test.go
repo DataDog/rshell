@@ -219,6 +219,28 @@ func TestRemediationTruncateRejectsFIFOWithoutBlocking(t *testing.T) {
 	assert.False(t, called)
 }
 
+func TestRemediationTruncateRejectsTrailingSeparatorBeforeHostExecution(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "target.log")
+	require.NoError(t, os.WriteFile(target, []byte("abcdef"), 0644))
+	called := false
+
+	_, stderr, code := runScript(t, "truncate -s 0 target.log/", dir,
+		interp.AllowedPaths([]string{dir}),
+		interp.HostCommandHandler(func(ctx context.Context, args []string) error {
+			called = true
+			return nil
+		}),
+	)
+
+	assert.Equal(t, 1, code)
+	assert.Contains(t, stderr, "not a directory")
+	assert.False(t, called)
+	data, err := os.ReadFile(target)
+	require.NoError(t, err)
+	assert.Equal(t, "abcdef", string(data))
+}
+
 func TestExecHandlerOptionRunsAllowedExternalCommand(t *testing.T) {
 	dir := t.TempDir()
 	var got []string
@@ -458,6 +480,29 @@ func TestRemediationTeeRejectsFIFOWithoutBlocking(t *testing.T) {
 	assert.False(t, called)
 }
 
+func TestRemediationTeeRejectsTrailingSeparatorBeforeHostExecution(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "target.txt")
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "input.txt"), []byte("payload\n"), 0644))
+	require.NoError(t, os.WriteFile(target, []byte("keep\n"), 0644))
+	called := false
+
+	_, stderr, code := runScript(t, "tee target.txt/ < input.txt", dir,
+		interp.AllowedPaths([]string{dir}),
+		interp.HostCommandHandler(func(ctx context.Context, args []string) error {
+			called = true
+			return nil
+		}),
+	)
+
+	assert.Equal(t, 1, code)
+	assert.Contains(t, stderr, "not a directory")
+	assert.False(t, called)
+	data, err := os.ReadFile(target)
+	require.NoError(t, err)
+	assert.Equal(t, "keep\n", string(data))
+}
+
 func TestRemediationTeeWithoutHostHandlerDoesNotMutateTarget(t *testing.T) {
 	dir := t.TempDir()
 	existing := filepath.Join(dir, "existing.txt")
@@ -591,4 +636,26 @@ func TestRemediationLogrotateRejectsFIFOWithoutBlocking(t *testing.T) {
 	assert.Equal(t, "", res.stdout)
 	assert.Contains(t, res.stderr, "permission denied")
 	assert.False(t, called)
+}
+
+func TestRemediationLogrotateRejectsTrailingSeparatorBeforeHostExecution(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "target.log")
+	require.NoError(t, os.WriteFile(target, []byte("payload\n"), 0644))
+	called := false
+
+	_, stderr, code := runScript(t, "logrotate target.log/", dir,
+		interp.AllowedPaths([]string{dir}),
+		interp.HostCommandHandler(func(ctx context.Context, args []string) error {
+			called = true
+			return nil
+		}),
+	)
+
+	assert.Equal(t, 1, code)
+	assert.Contains(t, stderr, "not a directory")
+	assert.False(t, called)
+	data, err := os.ReadFile(target)
+	require.NoError(t, err)
+	assert.Equal(t, "payload\n", string(data))
 }

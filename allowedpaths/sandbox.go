@@ -301,6 +301,13 @@ func toAbs(path, cwd string) string {
 	return filepath.Join(cwd, path)
 }
 
+func hasTrailingPathSeparator(path string) bool {
+	if path == "" {
+		return false
+	}
+	return os.IsPathSeparator(path[len(path)-1])
+}
+
 // IsDevNull reports whether path refers to the platform's null device.
 func IsDevNull(path string) bool {
 	if path == "/dev/null" {
@@ -358,6 +365,10 @@ func (s *Sandbox) OpenForWrite(path string, cwd string, flag int, perm os.FileMo
 		return nil, &os.PathError{Op: "open", Path: path, Err: os.ErrPermission}
 	}
 
+	if hasTrailingPathSeparator(path) {
+		return nil, &os.PathError{Op: "open", Path: path, Err: errors.New("not a directory")}
+	}
+
 	absPath := toAbs(path, cwd)
 
 	ar, relPath, ok := s.resolve(absPath)
@@ -380,6 +391,10 @@ func (s *Sandbox) OpenForWrite(path string, cwd string, flag int, perm os.FileMo
 // without creating, truncating, or appending. It is used by guarded host
 // commands that need a stable fd for an already-existing mutation target.
 func (s *Sandbox) OpenExistingForWrite(path string, cwd string) (*os.File, error) {
+	if hasTrailingPathSeparator(path) {
+		return nil, &os.PathError{Op: "open", Path: path, Err: errors.New("not a directory")}
+	}
+
 	absPath := toAbs(path, cwd)
 	ar, relPath, ok := s.resolve(absPath)
 	if !ok {

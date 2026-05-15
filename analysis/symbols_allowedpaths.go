@@ -41,6 +41,7 @@ var allowedpathsAllowedSymbols = []string{
 	"os.Getgid",                          // 🟠 returns the numeric group id of the caller; read-only syscall.
 	"os.Getgroups",                       // 🟠 returns supplementary group ids; read-only syscall.
 	"os.Getuid",                          // 🟠 returns the numeric user id of the caller; read-only syscall.
+	"os.IsPathSeparator",                 // 🟢 checks whether a byte is a platform path separator; pure function, no I/O.
 	"os.O_APPEND",                        // 🟢 append file flag constant; only accepted by the dedicated redirection write-open path.
 	"os.O_CREATE",                        // 🟢 create file flag constant; only accepted by the dedicated redirection write-open path.
 	"os.O_RDONLY",                        // 🟢 read-only file flag constant; pure constant.

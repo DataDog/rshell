@@ -104,6 +104,24 @@ func TestSandboxOpenForWriteRejectsOutsideAllowedPaths(t *testing.T) {
 	assert.ErrorIs(t, err, os.ErrPermission)
 }
 
+func TestSandboxOpenForWriteRejectsTrailingSeparator(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "target.txt")
+	require.NoError(t, os.WriteFile(target, []byte("keep\n"), 0644))
+
+	sb, _, err := New([]string{dir})
+	require.NoError(t, err)
+	defer sb.Close()
+
+	f, err := sb.OpenForWrite("target.txt"+string(filepath.Separator), dir, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
+	assert.Nil(t, f)
+	assert.Contains(t, err.Error(), "not a directory")
+
+	data, err := os.ReadFile(target)
+	require.NoError(t, err)
+	assert.Equal(t, "keep\n", string(data))
+}
+
 func TestSandboxOpenExistingForWriteAllowsExistingInsideAllowedPaths(t *testing.T) {
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "existing.txt"), []byte("old\n"), 0644))
@@ -139,6 +157,24 @@ func TestSandboxOpenExistingForWriteRejectsMissingAndOutsideAllowedPaths(t *test
 	f, err = sb.OpenExistingForWrite(filepath.Join(outside, "evil.txt"), dir)
 	assert.Nil(t, f)
 	assert.ErrorIs(t, err, os.ErrPermission)
+}
+
+func TestSandboxOpenExistingForWriteRejectsTrailingSeparator(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "existing.txt")
+	require.NoError(t, os.WriteFile(target, []byte("keep\n"), 0644))
+
+	sb, _, err := New([]string{dir})
+	require.NoError(t, err)
+	defer sb.Close()
+
+	f, err := sb.OpenExistingForWrite("existing.txt"+string(filepath.Separator), dir)
+	assert.Nil(t, f)
+	assert.Contains(t, err.Error(), "not a directory")
+
+	data, err := os.ReadFile(target)
+	require.NoError(t, err)
+	assert.Equal(t, "keep\n", string(data))
 }
 
 func TestReadDirLimited(t *testing.T) {

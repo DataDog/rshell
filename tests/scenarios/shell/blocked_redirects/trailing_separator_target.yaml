@@ -1,0 +1,18 @@
+description: Output redirection rejects trailing slash file targets without mutating them.
+setup:
+  files:
+    - path: output.txt
+      content: "keep\n"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    echo new > output.txt/
+    echo status=$?
+    cat output.txt
+expect:
+  stdout: |+
+    status=1
+    keep
+  stderr_contains:
+    - "directory"
+  exit_code: 0

@@ -216,6 +216,26 @@ func TestRedirAppendToFile(t *testing.T) {
 	assert.Equal(t, "old\nnew\n", string(data))
 }
 
+func TestRedirStdoutToFileRejectsTrailingSeparator(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "output.txt")
+	require.NoError(t, os.WriteFile(target, []byte("keep\n"), 0644))
+
+	stdout, stderr, code := redirRun(t, "echo new > output.txt/", dir)
+	assert.Equal(t, 1, code)
+	assert.Equal(t, "", stdout)
+	assert.Contains(t, stderr, "not a directory")
+
+	stdout, stderr, code = redirRun(t, "echo new >> output.txt/", dir)
+	assert.Equal(t, 1, code)
+	assert.Equal(t, "", stdout)
+	assert.Contains(t, stderr, "not a directory")
+
+	data, err := os.ReadFile(target)
+	require.NoError(t, err)
+	assert.Equal(t, "keep\n", string(data))
+}
+
 func TestRedirStdoutToFileRejectsSymlinkTarget(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("symlink behavior is platform-specific on Windows")
