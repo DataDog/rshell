@@ -10,10 +10,11 @@
 // Usage: help [--all] [feature|command]
 //
 // With no arguments, list rshell features with descriptions, a concise
-// unsupported-feature summary, allowed commands, and a compact list of
-// not-allowed commands. When --all is given, disabled commands are shown as a
-// full description table. When a feature or command name is given, display
-// detailed help for that topic.
+// unsupported-feature summary, allowed commands, a compact list of
+// not-allowed commands, and the configured AllowedPaths sandbox roots (or a
+// notice when none are configured). When --all is given, disabled commands
+// are shown as a full description table. When a feature or command name is
+// given, display detailed help for that topic.
 //
 // Flags:
 //
@@ -140,6 +141,8 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			callCtx.Out("\nAll commands are allowed in this session.\n")
 		}
 
+		printAllowedPaths(callCtx)
+
 		callCtx.Out("\nRun 'help <feature|command>' for more information on a specific topic.\n")
 		return builtins.Result{}
 	}
@@ -172,6 +175,27 @@ func printFeatureTable(callCtx *builtins.CallContext, features []builtins.Featur
 	}
 	for _, feature := range features {
 		callCtx.Outf("%-*s  %s\n", maxLen, feature.Name, feature.Description)
+	}
+}
+
+// printAllowedPaths writes the configured AllowedPaths sandbox roots, one per
+// line. An empty list means no allowed paths are configured, which blocks all
+// user-controllable filesystem access — surface that explicitly so operators
+// can tell the difference from "no information available". A few builtins
+// (ss, ip route, df, ps) intentionally read kernel-state paths outside the
+// sandbox and are unaffected by this configuration.
+func printAllowedPaths(callCtx *builtins.CallContext) {
+	if callCtx.AllowedPathsList == nil {
+		return
+	}
+	paths := callCtx.AllowedPathsList()
+	callCtx.Out("\nAllowed paths:\n")
+	if len(paths) == 0 {
+		callCtx.Out("  (no allowed paths configured — no filesystem paths are reachable)\n")
+		return
+	}
+	for _, p := range paths {
+		callCtx.Outf("  %s\n", p)
 	}
 }
 

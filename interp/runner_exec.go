@@ -636,6 +636,12 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 				CommandAllowed: func(n string) bool {
 					return r.allowAllCommands || r.allowedCommands[n]
 				},
+				AllowedPathsList: func() []string {
+					if r.sandbox == nil {
+						return nil
+					}
+					return r.sandbox.Paths()
+				},
 				// ChangeDir is intentionally nil for RunCommand children
 				// (find -exec, find -execdir, xargs). bash forks a child
 				// process for each invocation, so cd inside such a child
@@ -751,6 +757,12 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 			},
 			CommandAllowed: func(cmdName string) bool {
 				return r.allowAllCommands || r.allowedCommands[cmdName]
+			},
+			AllowedPathsList: func() []string {
+				if r.sandbox == nil {
+					return nil
+				}
+				return r.sandbox.Paths()
 			},
 			ChangeDir:           r.changeDir,
 			LookupEnvVar:        r.lookupEnvVar,

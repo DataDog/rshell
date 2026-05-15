@@ -205,6 +205,12 @@ type CallContext struct {
 	// commands.
 	CommandAllowed func(name string) bool
 
+	// AllowedPathsList returns the resolved absolute paths of the
+	// configured AllowedPaths sandbox roots. An empty/nil slice means no
+	// allowed paths are configured, which blocks all filesystem access.
+	// Used by the help builtin to surface the active sandbox roots.
+	AllowedPathsList func() []string
+
 	// WorkDir returns the shell's current working directory (absolute path).
 	// Used by builtins that need to compute absolute paths for sub-operations.
 	WorkDir func() string

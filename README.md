@@ -74,7 +74,7 @@ Every access path is default-deny:
 
 ## Shell Features
 
-Inside rshell, run `help` to list supported feature categories, a concise unsupported-feature summary, and enabled commands. Use `help <feature|command>` for details about a specific rshell feature or command.
+Inside rshell, run `help` to list supported feature categories, a concise unsupported-feature summary, enabled commands, and the configured `AllowedPaths` sandbox roots (or a notice when none are configured). Use `help <feature|command>` for details about a specific rshell feature or command.
 
 See [SHELL_FEATURES.md](SHELL_FEATURES.md) for the complete list of supported and blocked features.
 
