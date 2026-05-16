@@ -11,7 +11,6 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"syscall"
 	"testing"
 	"time"
 
@@ -202,7 +201,7 @@ func TestRemediationTruncateRejectsFIFOWithoutBlocking(t *testing.T) {
 		t.Skip("FIFOs are Unix-specific")
 	}
 	dir := t.TempDir()
-	require.NoError(t, syscall.Mkfifo(filepath.Join(dir, "pipe"), 0644))
+	require.NoError(t, mkfifo(filepath.Join(dir, "pipe"), 0644))
 	called := false
 
 	res := runRemediationScriptWithoutBlocking(t, "truncate -s 0 pipe", dir,
@@ -463,7 +462,7 @@ func TestRemediationTeeRejectsFIFOWithoutBlocking(t *testing.T) {
 	}
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "input.txt"), []byte("payload\n"), 0644))
-	require.NoError(t, syscall.Mkfifo(filepath.Join(dir, "pipe"), 0644))
+	require.NoError(t, mkfifo(filepath.Join(dir, "pipe"), 0644))
 	called := false
 
 	res := runRemediationScriptWithoutBlocking(t, "tee pipe < input.txt", dir,
@@ -621,7 +620,7 @@ func TestRemediationLogrotateRejectsFIFOWithoutBlocking(t *testing.T) {
 		t.Skip("FIFOs are Unix-specific")
 	}
 	dir := t.TempDir()
-	require.NoError(t, syscall.Mkfifo(filepath.Join(dir, "pipe"), 0644))
+	require.NoError(t, mkfifo(filepath.Join(dir, "pipe"), 0644))
 	called := false
 
 	res := runRemediationScriptWithoutBlocking(t, "logrotate pipe", dir,

@@ -13,7 +13,6 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
-	"syscall"
 	"testing"
 	"time"
 
@@ -298,7 +297,7 @@ func TestRedirStdoutToFileRejectsFIFOWithoutBlocking(t *testing.T) {
 		t.Skip("FIFOs are Unix-specific")
 	}
 	dir := t.TempDir()
-	require.NoError(t, syscall.Mkfifo(filepath.Join(dir, "pipe"), 0644))
+	require.NoError(t, mkfifo(filepath.Join(dir, "pipe"), 0644))
 
 	type result struct {
 		stdout string
