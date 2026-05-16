@@ -44,7 +44,15 @@ func runRemediationScriptWithoutBlocking(t *testing.T, script, dir string, opts 
 	}
 }
 
+func requireHostExtraFilesSupported(t *testing.T) {
+	t.Helper()
+	if !builtins.HostExtraFilesSupported() {
+		t.Skip("host file descriptor handoff is not supported on this platform")
+	}
+}
+
 func TestRemediationTruncateDelegatesShrinksOnly(t *testing.T) {
+	requireHostExtraFilesSupported(t)
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "app.log"), []byte("abcdef"), 0644))
 	var got []string
@@ -70,6 +78,7 @@ func TestRemediationTruncateDelegatesShrinksOnly(t *testing.T) {
 }
 
 func TestRemediationTruncateDelegatesThroughExecHandlerByDefault(t *testing.T) {
+	requireHostExtraFilesSupported(t)
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "app.log"), []byte("abcdef"), 0644))
 	var got []string
@@ -92,6 +101,7 @@ func TestRemediationTruncateDelegatesThroughExecHandlerByDefault(t *testing.T) {
 }
 
 func TestRemediationTruncatePreservesLeadingDashOperand(t *testing.T) {
+	requireHostExtraFilesSupported(t)
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "--help"), []byte("abcdef"), 0644))
 	var got []string
@@ -112,6 +122,7 @@ func TestRemediationTruncatePreservesLeadingDashOperand(t *testing.T) {
 }
 
 func TestRemediationTruncateRejectsGrowth(t *testing.T) {
+	requireHostExtraFilesSupported(t)
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "app.log"), []byte("abc"), 0644))
 	called := false
@@ -219,6 +230,7 @@ func TestRemediationTruncateRejectsFIFOWithoutBlocking(t *testing.T) {
 }
 
 func TestRemediationTruncateRejectsTrailingSeparatorBeforeHostExecution(t *testing.T) {
+	requireHostExtraFilesSupported(t)
 	dir := t.TempDir()
 	target := filepath.Join(dir, "target.log")
 	require.NoError(t, os.WriteFile(target, []byte("abcdef"), 0644))
@@ -341,6 +353,7 @@ func TestRemediationKillRejectsInvalidPid(t *testing.T) {
 }
 
 func TestRemediationTeeDelegatesAppendWithStdin(t *testing.T) {
+	requireHostExtraFilesSupported(t)
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "input.txt"), []byte("payload\n"), 0644))
 	var got []string
@@ -366,6 +379,7 @@ func TestRemediationTeeDelegatesAppendWithStdin(t *testing.T) {
 }
 
 func TestRemediationTeePreservesLeadingDashOperand(t *testing.T) {
+	requireHostExtraFilesSupported(t)
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "input.txt"), []byte("payload\n"), 0644))
 	var got []string
@@ -386,6 +400,7 @@ func TestRemediationTeePreservesLeadingDashOperand(t *testing.T) {
 }
 
 func TestRemediationTeeRejectsOutsideAllowedPathsBeforeHostExecution(t *testing.T) {
+	requireHostExtraFilesSupported(t)
 	dir := t.TempDir()
 	outside := filepath.Join(t.TempDir(), "outside.txt")
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "input.txt"), []byte("payload\n"), 0644))
@@ -480,6 +495,7 @@ func TestRemediationTeeRejectsFIFOWithoutBlocking(t *testing.T) {
 }
 
 func TestRemediationTeeRejectsTrailingSeparatorBeforeHostExecution(t *testing.T) {
+	requireHostExtraFilesSupported(t)
 	dir := t.TempDir()
 	target := filepath.Join(dir, "target.txt")
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "input.txt"), []byte("payload\n"), 0644))
@@ -527,6 +543,7 @@ func TestRemediationTeeWithoutHostHandlerDoesNotMutateTarget(t *testing.T) {
 }
 
 func TestRemediationLogrotateDelegatesExistingPath(t *testing.T) {
+	requireHostExtraFilesSupported(t)
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "app.log"), []byte("payload\n"), 0644))
 	var got []string
@@ -547,6 +564,7 @@ func TestRemediationLogrotateDelegatesExistingPath(t *testing.T) {
 }
 
 func TestRemediationLogrotatePreservesLeadingDashOperand(t *testing.T) {
+	requireHostExtraFilesSupported(t)
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "--help"), []byte("payload\n"), 0644))
 	var got []string
@@ -638,6 +656,7 @@ func TestRemediationLogrotateRejectsFIFOWithoutBlocking(t *testing.T) {
 }
 
 func TestRemediationLogrotateRejectsTrailingSeparatorBeforeHostExecution(t *testing.T) {
+	requireHostExtraFilesSupported(t)
 	dir := t.TempDir()
 	target := filepath.Join(dir, "target.log")
 	require.NoError(t, os.WriteFile(target, []byte("payload\n"), 0644))
