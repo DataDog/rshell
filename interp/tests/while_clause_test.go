@@ -485,3 +485,44 @@ func TestWhileTrueOutputRespectsStdoutCap(t *testing.T) {
 	const generousUpperBound = 1 << 25
 	assert.Less(t, len(stdout), generousUpperBound, "stdout grew past the cap; runaway loop?")
 }
+
+// vuln-hunt S1 (2026-05-18-initial-audit): `until false` is the symmetric twin
+// of `while true`. The runner_exec.go loopCtx.Err() check at the top of every
+// iteration must propagate the parent ctx cancel through `until` exactly the
+// same way it does through `while` — TestWhileTrueRespectsContextCancellation
+// covers `while`, this covers `until`.
+func TestUntilFalseRespectsContextCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	timer := time.AfterFunc(50*time.Millisecond, cancel)
+	defer timer.Stop()
+	defer cancel()
+	start := time.Now()
+	_, _, _ = whileRunCtx(ctx, t, `until false; do :; done`)
+	assert.Less(t, time.Since(start), 5*time.Second, "until-loop did not terminate after ctx cancel")
+}
+
+// vuln-hunt S2 (2026-05-18-initial-audit): an infinite while loop placed
+// inside a paren subshell must still honour the outer ctx cancel. The
+// subshell uses a forked runner with shared ctx, so the cancel must
+// propagate through the subshell into the inner while's loopCtx.Err() check.
+func TestSubshellInfiniteWhileRespectsContextCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	timer := time.AfterFunc(50*time.Millisecond, cancel)
+	defer timer.Stop()
+	defer cancel()
+	start := time.Now()
+	_, _, _ = whileRunCtx(ctx, t, `( while true; do :; done )`)
+	assert.Less(t, time.Since(start), 5*time.Second, "subshell-wrapped while did not terminate after ctx cancel")
+}
+
+// vuln-hunt P1 (2026-05-18-initial-audit): `while ; do :; done` (empty
+// condition list) is a parser error and must never reach the runner — if it
+// did, the loop would have nothing to evaluate and could iterate forever.
+// This guards against a parser regression that would accept a syntactically
+// degenerate while.
+func TestWhileEmptyCondIsParserError(t *testing.T) {
+	parser := syntax.NewParser()
+	_, err := parser.Parse(strings.NewReader(`while ; do :; done`), "")
+	require.Error(t, err, "empty while-cond must be rejected by the parser")
+	assert.Contains(t, err.Error(), "while", "parser error should mention 'while'")
+}
