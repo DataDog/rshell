@@ -3,7 +3,6 @@
 # the parent, observable via $?. A regression where the subshell swallowed
 # the failure (e.g. via a stray r.exit reset) would let scripts mask
 # command-not-allowed errors from their callers.
-skip_assert_against_bash: true
 description: cmd-not-found inside a subshell propagates exit 127 to the parent.
 input:
   script: |+

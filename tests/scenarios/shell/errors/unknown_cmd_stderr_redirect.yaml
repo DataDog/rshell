@@ -4,7 +4,6 @@
 # stderr directly (bypassing the redirect chain) would silently leak the
 # attempted command name even when the script tried to suppress it — a
 # minor F-3 amplifier worth catching.
-skip_assert_against_bash: true
 description: A cmd-not-found stderr line is silenced by 2>/dev/null.
 input:
   script: |+
