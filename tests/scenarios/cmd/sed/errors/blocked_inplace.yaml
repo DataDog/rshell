@@ -6,5 +6,5 @@ input:
     echo "test" | sed -i 's/test/replaced/'
 expect:
   stdout: ""
-  stderr_contains: ["unknown shorthand flag"]
+  stderr_contains: ["invalid option"]
   exit_code: 1

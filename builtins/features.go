@@ -51,16 +51,17 @@ var featureRegistry = []FeatureMeta{
 	},
 	{
 		Name:        "control-flow",
-		Description: "for/if/&&/||/!/groups/subshells; no while/case/select/functions.",
+		Description: "for/while/until/if/&&/||/!/groups/subshells; no case/select/functions.",
 		Supported: []string{
 			"for VAR in WORDS; do CMDS; done.",
+			"while CONDITION; do CMDS; done — runs CMDS while the condition's last command exits 0.",
+			"until CONDITION; do CMDS; done — runs CMDS while the condition's last command exits non-zero.",
 			"if / elif / else conditionals.",
 			"AND/OR lists with && and ||, plus ! exit-code negation.",
 			"Brace groups with { CMDS; } and command separators with ; or newline.",
 			"Subshells with ( CMDS ); variable changes and exit are isolated from the parent shell.",
 		},
 		Unsupported: []string{
-			"while and until loops.",
 			"case and select statements.",
 			"C-style for loops: for (( ... )).",
 			"Shell functions: name() { ... }.",
@@ -140,7 +141,7 @@ var featureRegistry = []FeatureMeta{
 
 var unsupportedSummary = []string{
 	"Expansions: arithmetic $((...)), arrays, advanced ${...} operations, tilde expansion, process substitution, extended globbing.",
-	"Control flow: while/until, case, select, C-style for ((...)), and shell functions.",
+	"Control flow: case, select, C-style for ((...)), and shell functions.",
 	"Execution: external commands by default, background jobs, coprocesses, time, [[...]], ((...)), declare/export/local/readonly/let.",
 	"I/O and environment: arbitrary output file redirects, |&, herestrings, read-write redirects, input fd duplication, host env inheritance.",
 }

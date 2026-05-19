@@ -164,7 +164,7 @@ func TestPwdUnknownLongFlagRejected(t *testing.T) {
 	assert.Equal(t, 1, code)
 	assert.Equal(t, "", stdout)
 	assert.Contains(t, stderr, "pwd:")
-	assert.Contains(t, stderr, "unknown flag")
+	assert.Contains(t, stderr, "unrecognized option")
 }
 
 func TestPwdUnknownShortFlagRejected(t *testing.T) {

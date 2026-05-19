@@ -273,7 +273,7 @@ func TestDuUnknownFlag(t *testing.T) {
 	_, stderr, code := cmdRun(t, "du --no-such-flag .", dir)
 	assert.Equal(t, 1, code)
 	assert.Contains(t, stderr, "du:")
-	assert.Contains(t, stderr, "unknown flag")
+	assert.Contains(t, stderr, "unrecognized option")
 }
 
 // --- Security-sensitive flags must be rejected ---

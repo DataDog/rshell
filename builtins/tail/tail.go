@@ -172,6 +172,30 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 	fs.VarP(bytesFlag, "bytes", "c", "output the last N bytes instead of lines")
 
 	return func(ctx context.Context, callCtx *builtins.CallContext, files []string) builtins.Result {
+		// Validate all explicitly set mode flags upfront, BEFORE the
+		// --help short-circuit. GNU tail processes options left-to-right
+		// and validates each as it goes, so `tail -n xyz --help` exits
+		// with "invalid number of lines" rather than printing help; the
+		// shared args-trim in builtins/builtins.go relies on this
+		// ordering to safely honour `--help` after value-taking flags.
+		// GNU also rejects invalid values for flags that are later
+		// overridden by another value (e.g. `tail -n xyz -n 1`); the
+		// modeFlag.Set captures the FIRST invalid value rather than
+		// just whichever was set last, so this check reports the same
+		// value GNU would.
+		//
+		// When BOTH -n and -c have invalid values, report whichever
+		// appeared first in argv (smaller invalidPos), matching GNU's
+		// left-to-right rule.
+		if reportLinesInvalidFirst(linesFlag, bytesFlag) {
+			callCtx.Errf("tail: invalid number of lines: '%s'\n", linesFlag.invalid)
+			return builtins.Result{Code: 1}
+		}
+		if bytesFlag.hasInvalid {
+			callCtx.Errf("tail: invalid number of bytes: '%s'\n", bytesFlag.invalid)
+			return builtins.Result{Code: 1}
+		}
+
 		if *help {
 			callCtx.Out("Usage: tail [OPTION]... [FILE]...\n")
 			callCtx.Out("Print the last 10 lines of each FILE to standard output.\n")
@@ -191,9 +215,12 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			modeLabel = "bytes"
 		}
 
+		// Both explicit values are already validated above; the only
+		// remaining path is the implicit default "10" for linesFlag,
+		// which always parses.
 		cm, ok := parseCount(countStr)
 		if !ok {
-			callCtx.Errf("tail: invalid number of %s: %q\n", modeLabel, countStr)
+			callCtx.Errf("tail: invalid number of %s: '%s'\n", modeLabel, countStr)
 			return builtins.Result{Code: 1}
 		}
 		// GNU tail uses sticky offset semantics: once any -n or -c flag uses
@@ -539,6 +566,20 @@ func skipBytes(ctx context.Context, callCtx *builtins.CallContext, r io.Reader, 
 	}
 }
 
+// reportLinesInvalidFirst reports whether `tail` should surface the
+// linesFlag invalid-value error rather than bytesFlag's. True when only
+// -n had an invalid value, or both did and -n came first in argv
+// (smaller invalidPos). Matches GNU's leftmost-bad-option rule.
+func reportLinesInvalidFirst(lines, bytes *modeFlag) bool {
+	if !lines.hasInvalid {
+		return false
+	}
+	if !bytes.hasInvalid {
+		return true
+	}
+	return lines.invalidPos < bytes.invalidPos
+}
+
 // parseCount parses a line or byte count string for tail.
 // A leading '+' activates offset mode (output starting from position N,
 // 1-based). Without '+', the value is the number of trailing lines/bytes
@@ -740,6 +781,9 @@ type modeFlag struct {
 	seq        *int
 	pos        int
 	offsetSeen bool
+	invalid    string // first value rejected by parseCount, if any
+	hasInvalid bool   // true if Set ever saw an invalid value
+	invalidPos int    // seq value when hasInvalid was first set; 0 means never set
 }
 
 func newModeFlag(seq *int, defaultVal string) *modeFlag {
@@ -747,16 +791,32 @@ func newModeFlag(seq *int, defaultVal string) *modeFlag {
 }
 
 func (f *modeFlag) String() string { return f.val }
+
+// Set always returns nil — value validation happens in the bound
+// handler so that pflag.Parse never fails on a bad numeric value.
+// This lets the shared `--help` short-circuit in builtins/builtins.go
+// honour `tail --help -n nope` (printing help) while still letting
+// `tail -n nope --help` surface the validation error with GNU's exact
+// `tail: invalid number of lines: 'nope'` wording (no pflag wrap).
+//
+// To match GNU's left-to-right semantics for repeated flags
+// (`tail -n nope -n 1` errors on `nope`, not on `1`), Set captures the
+// FIRST invalid value it sees in invalid/hasInvalid. The handler
+// reports that value rather than whatever Set last assigned to val.
 func (f *modeFlag) Set(s string) error {
-	if _, ok := parseCount(s); !ok {
-		return errors.New("invalid count")
-	}
 	f.val = s
 	if len(s) > 0 && s[0] == '+' {
 		f.offsetSeen = true
 	}
 	*f.seq++
 	f.pos = *f.seq
+	if !f.hasInvalid {
+		if _, ok := parseCount(s); !ok {
+			f.invalid = s
+			f.hasInvalid = true
+			f.invalidPos = *f.seq
+		}
+	}
 	return nil
 }
 func (f *modeFlag) Type() string { return "string" }

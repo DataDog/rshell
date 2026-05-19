@@ -39,6 +39,27 @@ var builtinPerCommandSymbols = map[string][]string{
 		"io.ReadCloser",    // 🟢 interface type; no side effects.
 		"os.O_RDONLY",      // 🟢 read-only file flag constant; cannot open files by itself.
 	},
+	"cd": {
+		"context.Context",          // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
+		"errors.As",                // 🟢 error type assertion; pure function, no I/O.
+		"errors.Is",                // 🟢 error sentinel comparison; pure function, no I/O.
+		"errors.New",               // 🟢 creates a simple error value; pure function, no I/O.
+		"fmt.Errorf",               // 🟢 error formatting; pure function, no I/O.
+		"io/fs.ErrPermission",      // 🟢 sentinel error for permission denied; pure constant.
+		"io/fs.ModeSymlink",        // 🟢 file mode bit constant for symlinks; pure constant.
+		"os.PathError",             // 🟢 error type wrapping path and operation; pure type, no I/O.
+		"path/filepath.Clean",      // 🟢 normalizes a path lexically (collapses ".", "..", duplicate separators); pure function, no I/O.
+		"path/filepath.Dir",        // 🟢 returns the directory component of a path; pure function, no I/O.
+		"path/filepath.FromSlash",  // 🟢 converts '/' to OS separator without otherwise normalising; pure function, no I/O.
+		"path/filepath.IsAbs",      // 🟢 reports whether a path is absolute; pure function, no I/O.
+		"path/filepath.Join",       // 🟢 lexically joins path components with the OS separator; pure function, no I/O.
+		"path/filepath.Separator",  // 🟢 OS path separator constant ('/' or '\\'); pure constant, no I/O.
+		"path/filepath.VolumeName", // 🟢 returns the volume prefix of a path (e.g. "C:" on Windows, "" on Unix); pure function, no I/O.
+		"strings.HasPrefix",        // 🟢 pure function for prefix matching; no I/O.
+		"strings.HasSuffix",        // 🟢 pure function for suffix matching; no I/O.
+		"strings.IndexByte",        // 🟢 finds byte in string; pure function, no I/O.
+		"strings.TrimPrefix",       // 🟢 removes a leading prefix from a string; pure function, no I/O.
+	},
 	"continue": {
 		"context.Context", // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
 	},
@@ -53,6 +74,19 @@ var builtinPerCommandSymbols = map[string][]string{
 		"strconv.Atoi",      // 🟢 string-to-int conversion; pure function, no I/O.
 		"strings.IndexByte", // 🟢 finds byte in string; pure function, no I/O.
 		"strings.Split",     // 🟢 splits a string by separator into a slice; pure function, no I/O.
+	},
+	"df": {
+		"context.Context",    // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
+		"errors.Is",          // 🟢 error comparison via chain; pure function, no I/O.
+		"errors.New",         // 🟢 creates a sentinel error (unitFlag.Set rejects explicit values); pure function, no I/O.
+		"fmt.Sprintf",        // 🟢 string formatting; pure function, no I/O.
+		"math.Ceil",          // 🟢 ceiling of a float64; pure function, no I/O. Used for GNU-compatible round-up of human-readable sizes.
+		"strconv.FormatUint", // 🟢 uint-to-string conversion; pure function, no I/O.
+		"strings.Builder",    // 🟢 efficient string concatenation; pure in-memory buffer, no I/O.
+		"strings.Repeat",     // 🟢 returns a string of n repetitions; pure function, no I/O.
+		// Note: builtins/internal/diskstats symbols are exempt from this
+		// allowlist (internal packages are not checked by the
+		// builtinAllowedSymbols test).
 	},
 	"echo": {
 		"context.Context", // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
@@ -527,6 +561,7 @@ var builtinAllowedSymbols = []string{
 	"io.WriteString",                                      // 🟠 writes a string to a writer; no filesystem access, delegates to Write.
 	"io.Writer",                                           // 🟢 interface type for writing; no side effects.
 	"io/fs.DirEntry",                                      // 🟢 interface type for directory entries; no side effects.
+	"io/fs.ErrPermission",                                 // 🟢 sentinel error for permission denied; pure constant.
 	"io/fs.FileInfo",                                      // 🟢 interface type for file information; no side effects.
 	"io/fs.FileMode",                                      // 🟢 file permission bits type; pure type.
 	"io/fs.ModeCharDevice",                                // 🟢 file mode bit constant for character devices; pure constant.
@@ -571,6 +606,7 @@ var builtinAllowedSymbols = []string{
 	"os.PathError",                                        // 🟢 error type for filesystem path errors; pure type, no I/O.
 	"path/filepath.Clean",                                 // 🟢 normalizes a path lexically (collapses ".", "..", duplicate separators); pure function, no I/O.
 	"path/filepath.Dir",                                   // 🟢 returns the directory component of a path; pure function, no I/O.
+	"path/filepath.FromSlash",                             // 🟢 converts '/' to the OS separator without other normalisation; pure function, no I/O.
 	"path/filepath.IsAbs",                                 // 🟢 reports whether a path is absolute; pure function, no I/O.
 	"path/filepath.Join",                                  // 🟢 lexically joins path components with the OS separator; pure function, no I/O.
 	"path/filepath.Separator",                             // 🟢 OS path separator constant ('/' or '\\'); pure constant, no I/O.
@@ -583,6 +619,7 @@ var builtinAllowedSymbols = []string{
 	"slices.Reverse",                                      // 🟢 reverses a slice in-place; pure function, no I/O.
 	"slices.SortFunc",                                     // 🟢 sorts a slice with a comparison function; pure function, no I/O.
 	"slices.SortStableFunc",                               // 🟢 stable sort with a comparison function; pure function, no I/O.
+	"strings.Repeat",                                      // 🟢 returns a string of n repetitions; pure function, no I/O.
 	"strconv.Atoi",                                        // 🟢 string-to-int conversion; pure function, no I/O.
 	"strconv.ErrRange",                                    // 🟢 sentinel error value for overflow; pure constant.
 	"strconv.FormatBool",                                  // 🟢 bool-to-string conversion; pure function, no I/O.
@@ -600,6 +637,7 @@ var builtinAllowedSymbols = []string{
 	"strings.ContainsRune",                                // 🟢 checks if a rune is in a string; pure function, no I/O.
 	"strings.Fields",                                      // 🟢 splits a string on whitespace into a slice; pure function, no I/O.
 	"strings.HasPrefix",                                   // 🟢 pure function for prefix matching; no I/O.
+	"strings.HasSuffix",                                   // 🟢 pure function for suffix matching; no I/O.
 	"strings.IndexByte",                                   // 🟢 finds byte in string; pure function, no I/O.
 	"strings.Join",                                        // 🟢 concatenates a slice of strings with a separator; pure function, no I/O.
 	"strings.ReplaceAll",                                  // 🟢 replaces all occurrences of a substring; pure function, no I/O.

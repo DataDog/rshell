@@ -179,57 +179,32 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 	fs.MarkHidden("compress-program")
 
 	return func(ctx context.Context, callCtx *builtins.CallContext, files []string) builtins.Result {
-		if *help {
-			callCtx.Out("Usage: sort [OPTION]... [FILE]...\n")
-			callCtx.Out("Write sorted concatenation of all FILE(s) to standard output.\n")
-			callCtx.Out("With no FILE, or when FILE is -, read standard input.\n\n")
-			fs.SetOutput(callCtx.Stdout)
-			fs.PrintDefaults()
-			return builtins.Result{}
-		}
+		// === GNU-style validations: must run BEFORE the --help short-
+		// circuit so an invalid earlier option errors out even when
+		// `--help` is also specified. GNU sort processes options
+		// left-to-right; the shared args-trim in builtins/builtins.go
+		// relies on this ordering to safely honour `--help` after
+		// value-taking flags (e.g. `sort --check=bogus --help` must
+		// exit 2 with "invalid argument", not print help).
 
-		// Reject dangerous flags.
-		if fs.Changed("output") {
-			callCtx.Errf("sort: --output/-o is not supported (writes to filesystem)\n")
-			return builtins.Result{Code: 1}
-		}
-		if fs.Changed("temporary-directory") {
-			callCtx.Errf("sort: --temporary-directory is not supported (writes temp files)\n")
-			return builtins.Result{Code: 1}
-		}
-		if fs.Changed("compress-program") {
-			callCtx.Errf("sort: --compress-program is not supported (executes a binary)\n")
-			return builtins.Result{Code: 1}
-		}
-
-		// Resolve check mode from --check[=VALUE] and -C flags.
-		checkEnabled := false
-		checkSilent := false
+		// --check value validation + intra-flag conflict.
 		if fs.Changed("check") {
 			if checkFlag.hasInvalid {
 				callCtx.Errf("sort: invalid argument %q for '--check'\n", checkFlag.invalid)
 				return builtins.Result{Code: 2}
 			}
-			// Reject mixed diagnose/silent modes across repeated --check flags.
 			if checkFlag.conflict() {
 				callCtx.Errf("sort: options '-cC' are incompatible\n")
 				return builtins.Result{Code: 2}
 			}
-			checkEnabled = true
-			checkSilent = checkFlag.sawSilent
 		}
-		if *checkSilentShort {
-			// -C is equivalent to --check=silent. Reject only when
-			// --check was set to a diagnose mode (GNU compat).
-			if fs.Changed("check") && checkFlag.sawDiag {
-				callCtx.Errf("sort: options '-cC' are incompatible\n")
-				return builtins.Result{Code: 2}
-			}
-			checkEnabled = true
-			checkSilent = true
+		// -c + -C cross-flag conflict (GNU compat).
+		if *checkSilentShort && fs.Changed("check") && checkFlag.sawDiag {
+			callCtx.Errf("sort: options '-cC' are incompatible\n")
+			return builtins.Result{Code: 2}
 		}
 
-		// Validate -t flag: must be a single byte.
+		// -t flag: must be a single byte.
 		sep := byte(0)
 		hasSep := false
 		if fs.Changed("field-separator") {
@@ -245,7 +220,8 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			hasSep = true
 		}
 
-		// Parse key definitions.
+		// Parse key definitions. -k parsing errors are reported BEFORE
+		// --help to match GNU (e.g. `sort -k bad --help` exits 2).
 		globalOpts := keyOpts{
 			numeric:      *numeric,
 			humanNumeric: *humanNumeric,
@@ -267,8 +243,23 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			}
 		}
 
+		// === --help short-circuit. Sits AFTER --check/-t/-k validation
+		// (GNU exits non-zero for those even with --help) but BEFORE the
+		// global -dn/-dh/-hn conflict checks below (GNU treats those as
+		// deferred validation — `sort -d -n --help` prints help and
+		// exits 0). ===
+		if *help {
+			callCtx.Out("Usage: sort [OPTION]... [FILE]...\n")
+			callCtx.Out("Write sorted concatenation of all FILE(s) to standard output.\n")
+			callCtx.Out("With no FILE, or when FILE is -, read standard input.\n\n")
+			fs.SetOutput(callCtx.Stdout)
+			fs.PrintDefaults()
+			return builtins.Result{}
+		}
+
 		// Validate incompatible global flags: -d and -n cannot coexist
 		// unless every key has per-key opts that override the globals.
+		// GNU defers these until after --help, so we do too.
 		if globalOpts.dictOrder && globalOpts.numeric {
 			globalsUsed := len(keys) == 0
 			for _, k := range keys {
@@ -311,6 +302,37 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 				callCtx.Errf("sort: options '-hn' are incompatible\n")
 				return builtins.Result{Code: 2}
 			}
+		}
+
+		// === rshell-specific rejections — kept AFTER --help. GNU sort
+		// accepts these flags and prints help when --help is also set,
+		// so we mirror that ordering; we reject for safety only when
+		// no --help short-circuit fires. ===
+		if fs.Changed("output") {
+			callCtx.Errf("sort: --output/-o is not supported (writes to filesystem)\n")
+			return builtins.Result{Code: 1}
+		}
+		if fs.Changed("temporary-directory") {
+			callCtx.Errf("sort: --temporary-directory is not supported (writes temp files)\n")
+			return builtins.Result{Code: 1}
+		}
+		if fs.Changed("compress-program") {
+			callCtx.Errf("sort: --compress-program is not supported (executes a binary)\n")
+			return builtins.Result{Code: 1}
+		}
+
+		// Resolve check mode from --check[=VALUE] and -C flags. All
+		// validation already happened above, so these branches only
+		// set the runtime flags.
+		checkEnabled := false
+		checkSilent := false
+		if fs.Changed("check") {
+			checkEnabled = true
+			checkSilent = checkFlag.sawSilent
+		}
+		if *checkSilentShort {
+			checkEnabled = true
+			checkSilent = true
 		}
 
 		// Default to stdin when no files given.

@@ -6,6 +6,6 @@ input:
   script: |+
     ip --force addr show
 expect:
-  stderr: "ip: unknown flag: --force\n"
+  stderr: "ip: unrecognized option '--force'\nTry 'ip --help' for more information.\n"
   exit_code: 1
 skip_assert_against_bash: true

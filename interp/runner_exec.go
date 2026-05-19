@@ -116,7 +116,19 @@ func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {
 		}
 
 		defer func() {
+			// cd intentionally writes $PWD and $OLDPWD as part of
+			// its semantics. Reverting those after a successful cd
+			// would leave the env vars disagreeing with the shell's
+			// tracked working directory — bash skips the revert in
+			// the same case (e.g. `PWD=/bogus cd b` keeps PWD at
+			// the new dir afterwards). The skip is scoped to a
+			// successful cd so a cd that errored still gets its
+			// temp PWD assignment reverted normally.
+			isCd := len(fields) > 0 && fields[0] == "cd" && r.exit.ok()
 			for _, restore := range restores {
+				if isCd && (restore.name == "PWD" || restore.name == "OLDPWD") {
+					continue
+				}
 				r.setVarRestore(restore.name, restore.vr)
 			}
 		}()
@@ -624,6 +636,22 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 				CommandAllowed: func(n string) bool {
 					return r.allowAllCommands || r.allowedCommands[n]
 				},
+				AllowedPathsList: func() []string {
+					if r.sandbox == nil {
+						return nil
+					}
+					return r.sandbox.Paths()
+				},
+				// ChangeDir is intentionally nil for RunCommand children
+				// (find -exec, find -execdir, xargs). bash forks a child
+				// process for each invocation, so cd inside such a child
+				// can never propagate to the parent shell. We model the
+				// same isolation by making cd unavailable in this path —
+				// the cd handler returns "cd: not supported in this
+				// runner" rather than silently mutating the top-level
+				// r.Dir, which would have leaked the child's directory
+				// change back into the caller (the bug Codex flagged).
+				LookupEnvVar: r.lookupEnvVar,
 				RunCommand: func(ctx context.Context, dir string, name string, args []string) (uint8, error) {
 					// Inherit the parent's overridden stdin so grandchildren
 					// dispatched via RunCommand (the no-stdin variant) stay
@@ -730,6 +758,14 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 			CommandAllowed: func(cmdName string) bool {
 				return r.allowAllCommands || r.allowedCommands[cmdName]
 			},
+			AllowedPathsList: func() []string {
+				if r.sandbox == nil {
+					return nil
+				}
+				return r.sandbox.Paths()
+			},
+			ChangeDir:           r.changeDir,
+			LookupEnvVar:        r.lookupEnvVar,
 			RunCommand:          runCmd,
 			RunCommandWithStdin: runCmdWithStdin,
 			SetVar: func(name, value string) error {

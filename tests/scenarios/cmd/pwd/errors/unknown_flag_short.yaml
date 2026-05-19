@@ -6,5 +6,6 @@ input:
 expect:
   stdout: ""
   stderr: |+
-    pwd: unknown shorthand flag: 'x' in -x
+    pwd: invalid option -- 'x'
+    Try 'pwd --help' for more information.
   exit_code: 1

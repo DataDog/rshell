@@ -141,27 +141,23 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 	fs.Lookup("group").NoOptDefVal = "separate"
 
 	return func(ctx context.Context, callCtx *builtins.CallContext, args []string) builtins.Result {
-		if *help {
-			callCtx.Out("Usage: uniq [OPTION]... [INPUT]\n")
-			callCtx.Out("Filter adjacent matching lines from INPUT (or stdin),\n")
-			callCtx.Out("writing to standard output.\n\n")
-			fs.SetOutput(callCtx.Stdout)
-			fs.PrintDefaults()
-			return builtins.Result{}
-		}
-
+		// Validate value-taker inputs BEFORE the --help short-circuit
+		// so that `uniq -f nope --help` exits with "invalid number of
+		// fields to skip" instead of printing help. GNU uniq runs these
+		// checks during option processing; the shared args-trim in
+		// builtins/builtins.go relies on this ordering to safely honour
+		// `--help` after value-taking flags. Default values ("0") pass
+		// the checks so `uniq --help` (no flags) still short-circuits.
 		skipFields, ok := parseNonNegativeInt(*skipFieldsStr)
 		if !ok {
 			callCtx.Errf("uniq: %s: invalid number of fields to skip\n", *skipFieldsStr)
 			return builtins.Result{Code: 1}
 		}
-
 		skipChars, ok := parseNonNegativeInt(*skipCharsStr)
 		if !ok {
 			callCtx.Errf("uniq: %s: invalid number of bytes to skip\n", *skipCharsStr)
 			return builtins.Result{Code: 1}
 		}
-
 		checkChars := int64(-1)
 		if fs.Changed("check-chars") {
 			checkChars, ok = parseNonNegativeInt(*checkCharsStr)
@@ -169,6 +165,15 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 				callCtx.Errf("uniq: %s: invalid number of bytes to compare\n", *checkCharsStr)
 				return builtins.Result{Code: 1}
 			}
+		}
+
+		if *help {
+			callCtx.Out("Usage: uniq [OPTION]... [INPUT]\n")
+			callCtx.Out("Filter adjacent matching lines from INPUT (or stdin),\n")
+			callCtx.Out("writing to standard output.\n\n")
+			fs.SetOutput(callCtx.Stdout)
+			fs.PrintDefaults()
+			return builtins.Result{}
 		}
 
 		useAllRepeated := fs.Changed("all-repeated")

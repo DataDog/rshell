@@ -72,12 +72,31 @@ jobs:
             # pwd fuzz tests live in builtins/pwd/ alongside the pwd_test.go
             # helpers (pwdRun) — same rationale as ping above.
             corpus_path: builtins/pwd
+          - pkg: ./builtins/cd/
+            name: cd
+            # cd fuzz tests live in builtins/cd/ alongside cd_test.go (cdRun)
+            # because cd needs Runner.ChangeDir / LookupEnvVar wiring through
+            # interp.AllowedPaths — colocating keeps the helpers reusable.
+            corpus_path: builtins/cd
           - pkg: ./interp/tests/
             name: interp
             corpus_path: interp/tests
           - pkg: ./builtins/tests/ps/
             name: ps
             corpus_path: builtins/tests/ps
+          - pkg: ./builtins/df/
+            name: df
+            # df fuzz tests live in builtins/df/ (not builtins/tests/df/)
+            # because the test-helper functions (firstLine, requireSupported)
+            # are defined in df_test.go and only visible to files in the
+            # same directory.
+            corpus_path: builtins/df
+          - pkg: ./builtins/internal/diskstats/
+            name: diskstats
+            # The mountinfo parser is the most security-sensitive parser
+            # in df. Fuzzing it directly is much faster than going
+            # through the shell runner.
+            corpus_path: builtins/internal/diskstats
           - pkg: ./builtins/tests/xargs/
             name: xargs
             corpus_path: builtins/tests/xargs
