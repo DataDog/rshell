@@ -5,14 +5,18 @@
 
 // Blocked-attack regression tests added by the vuln-hunt campaign
 // 2026-05-18-initial-audit (target: cut).
+// Additional coverage: 2026-05-19-gpt-5.5-cyber-2.
 package cut_test
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -41,6 +45,22 @@ func TestVulnHuntBuiltinFileAccessBypass_SymlinkOutsideSandbox(t *testing.T) {
 	assert.NotEqual(t, 0, code, "symlink-out attack must fail")
 	assert.NotContains(t, stdout, "S3CR3T")
 	assert.NotEmpty(t, stderr)
+}
+
+// H13: direct absolute file operands outside AllowedPaths must not be readable
+// through cut's normal file-open path.
+func TestVulnHuntBuiltinFileAccessBypass_AbsolutePathOutsideSandbox(t *testing.T) {
+	allowed := t.TempDir()
+	secret := t.TempDir()
+	secretPath := filepath.Join(secret, "secret.txt")
+	require.NoError(t, os.WriteFile(secretPath, []byte("S3CR3T\n"), 0644))
+
+	stdout, stderr, code := testutil.RunScript(t,
+		"cut -b1- "+strconv.Quote(secretPath), allowed,
+		interp.AllowedPaths([]string{allowed}))
+	assert.NotEqual(t, 0, code, "absolute outside path must fail")
+	assert.NotContains(t, stdout, "S3CR3T")
+	assert.Contains(t, stderr, "cut:")
 }
 
 // H3: --output-delimiter accepts arbitrary strings. Newlines / NUL bytes /
@@ -110,4 +130,33 @@ func TestVulnHuntBuiltinIntegerOverflow_LargeUnboundedEnd(t *testing.T) {
 		"echo hello | cut -b1-99999999999", dir, interp.AllowedPaths([]string{dir}))
 	assert.Equal(t, 0, code)
 	assert.Equal(t, "hello\n", stdout)
+}
+
+// H18: /dev/zero is an infinite stream without newlines. The scanner's
+// MaxLineBytes cap must terminate cut promptly instead of waiting for EOF.
+func TestVulnHuntBuiltinSpecialFiles_DevZeroTerminatesAtLineCap(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("no /dev/zero on Windows")
+	}
+	dir := t.TempDir()
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	_, stderr, code := testutil.RunScriptCtx(ctx, t,
+		"cut -b1 /dev/zero", dir, interp.AllowedPaths([]string{"/dev"}))
+	require.NoError(t, ctx.Err(), "cut /dev/zero hung or timed out")
+	assert.Equal(t, 1, code)
+	assert.Contains(t, stderr, "cut:")
+}
+
+// H19: non-regular file operands must fail safely rather than being treated as
+// normal input streams.
+func TestVulnHuntBuiltinSpecialFiles_DirectoryAsFileErrors(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.Mkdir(filepath.Join(dir, "subdir"), 0755))
+
+	_, stderr, code := testutil.RunScript(t, "cut -b1 subdir", dir,
+		interp.AllowedPaths([]string{dir}))
+	assert.Equal(t, 1, code)
+	assert.Contains(t, stderr, "cut:")
 }
