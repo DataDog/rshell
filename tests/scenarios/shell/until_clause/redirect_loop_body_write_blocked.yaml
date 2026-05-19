@@ -1,0 +1,13 @@
+# vuln-hunt 2026-05-19-gpt-5.5-cyber-2 / until_clause
+# skip: redirect-to-file restriction is an rshell-specific sandbox feature.
+skip_assert_against_bash: true
+description: A write redirect attached to an until loop is rejected by the redirect allowlist.
+input:
+  script: |+
+    until false; do echo body; break; done > /tmp/until_loop_out.txt
+    echo unreachable
+expect:
+  stdout: |+
+  stderr: |+
+    > file redirection is not supported
+  exit_code: 2

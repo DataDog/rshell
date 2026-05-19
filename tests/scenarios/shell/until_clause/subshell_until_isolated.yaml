@@ -1,0 +1,12 @@
+# vuln-hunt 2026-05-19-gpt-5.5-cyber-2 / until_clause
+description: assignments inside an until loop in a subshell do not leak to the parent shell.
+input:
+  script: |+
+    x=outer
+    ( until false; do x=inner; break; done )
+    echo "$x"
+expect:
+  stdout: |+
+    outer
+  stderr: |+
+  exit_code: 0

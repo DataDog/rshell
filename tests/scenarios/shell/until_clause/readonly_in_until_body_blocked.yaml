@@ -1,0 +1,14 @@
+# vuln-hunt 2026-05-19-gpt-5.5-cyber-2 / until_clause
+# skip: readonly is intentionally blocked in the restricted shell
+skip_assert_against_bash: true
+description: readonly nested in an until body is rejected before loop execution.
+input:
+  script: |+
+    until false; do
+      readonly X=1
+      break
+    done
+expect:
+  stdout: ""
+  stderr: "readonly is not supported\n"
+  exit_code: 2

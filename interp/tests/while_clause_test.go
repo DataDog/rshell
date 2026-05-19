@@ -501,6 +501,21 @@ func TestUntilFalseRespectsContextCancellation(t *testing.T) {
 	assert.Less(t, time.Since(start), 5*time.Second, "until-loop did not terminate after ctx cancel")
 }
 
+func TestUntilExitsOnPreCancelledContext(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	stdout, _, _ := whileRunCtx(ctx, t, `until false; do echo x; done`)
+	assert.Empty(t, stdout, "no body iterations should run when ctx is pre-cancelled")
+}
+
+func TestUntilFalseOutputRespectsStdoutCap(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	stdout, _, _ := whileRunCtx(ctx, t, `until false; do echo x; done`)
+	const generousUpperBound = 1 << 25
+	assert.Less(t, len(stdout), generousUpperBound, "stdout grew past the cap; runaway until loop?")
+}
+
 // vuln-hunt S2 (2026-05-18-initial-audit): an infinite while loop placed
 // inside a paren subshell must still honour the outer ctx cancel. The
 // subshell uses a forked runner with shared ctx, so the cancel must
@@ -525,4 +540,11 @@ func TestWhileEmptyCondIsParserError(t *testing.T) {
 	_, err := parser.Parse(strings.NewReader(`while ; do :; done`), "")
 	require.Error(t, err, "empty while-cond must be rejected by the parser")
 	assert.Contains(t, err.Error(), "while", "parser error should mention 'while'")
+}
+
+func TestUntilEmptyCondIsParserError(t *testing.T) {
+	parser := syntax.NewParser()
+	_, err := parser.Parse(strings.NewReader(`until ; do :; done`), "")
+	require.Error(t, err, "empty until-cond must be rejected by the parser")
+	assert.Contains(t, err.Error(), "until", "parser error should mention 'until'")
 }

@@ -1,0 +1,15 @@
+# vuln-hunt 2026-05-19-gpt-5.5-cyber-2 / until_clause
+description: until loop with stdout redirected to /dev/null suppresses only the loop body output.
+input:
+  script: |+
+    i=
+    until [ "$i" = aa ]; do
+      i="${i}a"
+      echo body
+    done > /dev/null
+    echo done
+expect:
+  stdout: |+
+    done
+  stderr: |+
+  exit_code: 0
