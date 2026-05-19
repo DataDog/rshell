@@ -1,0 +1,14 @@
+# vuln-hunt 2026-05-19-gpt-5.5-cyber-2 / heredoc
+# skip: readonly is intentionally blocked in the restricted shell
+skip_assert_against_bash: true
+description: Unquoted heredoc command substitution cannot smuggle readonly.
+input:
+  script: |+
+    cat <<END
+    $(readonly X=1)
+    END
+expect:
+  stdout: ""
+  stderr: |+
+    readonly is not supported
+  exit_code: 2

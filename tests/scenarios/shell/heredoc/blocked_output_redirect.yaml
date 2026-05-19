@@ -1,0 +1,14 @@
+# vuln-hunt 2026-05-19-gpt-5.5-cyber-2 / heredoc
+# skip: rshell intentionally blocks output redirection to files
+skip_assert_against_bash: true
+description: Heredoc does not make blocked output redirection to a file writable.
+input:
+  script: |+
+    cat <<EOF > /tmp/evil
+    payload
+    EOF
+expect:
+  stdout: ""
+  stderr: |+
+    > file redirection is not supported
+  exit_code: 2

@@ -1,0 +1,13 @@
+# vuln-hunt 2026-05-19-gpt-5.5-cyber-2 / heredoc
+description: Heredoc writer stops cleanly when a pipeline reader exits early.
+input:
+  script: |+
+    cat <<EOF | head -n 1
+    first
+    second
+    EOF
+expect:
+  stdout: |+
+    first
+  stderr: ""
+  exit_code: 0

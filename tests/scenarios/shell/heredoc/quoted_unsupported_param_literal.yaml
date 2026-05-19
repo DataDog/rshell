@@ -1,0 +1,12 @@
+# vuln-hunt 2026-05-19-gpt-5.5-cyber-2 / heredoc
+description: Quoted heredoc keeps unsupported parameter expansion syntax literal.
+input:
+  script: |+
+    cat <<'END'
+    ${#SECRET}
+    END
+expect:
+  stdout: |+
+    ${#SECRET}
+  stderr: ""
+  exit_code: 0

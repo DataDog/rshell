@@ -1,0 +1,16 @@
+# vuln-hunt 2026-05-19-gpt-5.5-cyber-2 / heredoc
+description: Heredoc stdin is restored after the redirected statement.
+input:
+  script: |+
+    printf 'parent\n' | {
+      cat <<EOF
+    heredoc
+    EOF
+      cat
+    }
+expect:
+  stdout: |+
+    heredoc
+    parent
+  stderr: ""
+  exit_code: 0
