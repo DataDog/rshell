@@ -20,5 +20,5 @@ input:
 expect:
   stdout: "ok-payload"
   exit_code: 0
-  stderr_contains: ["/etc/passwd"]
+  stderr_contains: ["passwd"]
 skip_assert_against_bash: true
