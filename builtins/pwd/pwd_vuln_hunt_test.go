@@ -3,8 +3,9 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2026-present Datadog, Inc.
 
-// Blocked-attack regression tests added by the vuln-hunt campaign
-// 2026-05-18-initial-audit (target: pwd).
+// Blocked-attack regression tests added by vuln-hunt campaigns:
+//   - 2026-05-18-initial-audit (target: pwd)
+//   - 2026-05-19-gpt-5.5-cyber-2 (target: pwd)
 package pwd_test
 
 import (
@@ -68,4 +69,28 @@ func TestVulnHuntBuiltinFileAccessBypass_SymlinkTargetOutsideSandbox(t *testing.
 	assert.Equal(t, 0, code2)
 	assert.True(t, strings.HasSuffix(strings.TrimSpace(stdout2), "real-cwd"),
 		"pwd must return the logical cwd, got %q", stdout2)
+}
+
+func TestVulnHuntBuiltinFileAccessBypass_PhysicalSymlinkCwdDoesNotGrantRead(t *testing.T) {
+	if filepath.Separator == '\\' {
+		t.Skip("symlinks differ on Windows")
+	}
+	root := canonicalTempDir(t)
+	outside := canonicalTempDir(t)
+	secret := filepath.Join(outside, "secret.txt")
+	require.NoError(t, os.WriteFile(secret, []byte("outside-secret\n"), 0644))
+
+	link := filepath.Join(root, "cwd-link")
+	require.NoError(t, os.Symlink(outside, link))
+
+	stdout, stderr, code := testutil.RunScript(t, `
+physical=$(pwd -P)
+printf 'PHYSICAL=%s\n' "$physical"
+cat "$physical/secret.txt"
+`, link, interp.AllowedPaths([]string{root}))
+
+	assert.NotEqual(t, 0, code, "cat through pwd -P outside path must fail; stdout=%q stderr=%q", stdout, stderr)
+	assert.Contains(t, stdout, "PHYSICAL="+outside)
+	assert.NotContains(t, stdout, "outside-secret", "pwd -P must not turn an outside physical path into readable content")
+	assert.Contains(t, stderr, "cat:")
 }
