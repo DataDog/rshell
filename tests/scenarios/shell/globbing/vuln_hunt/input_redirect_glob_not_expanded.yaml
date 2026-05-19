@@ -1,0 +1,19 @@
+# skip: rshell intentionally treats redirect words as literal sandboxed paths here.
+skip_assert_against_bash: true
+description: Glob characters in input redirects are not expanded into multiple files.
+setup:
+  files:
+    - path: a.txt
+      content: "a\n"
+    - path: b.txt
+      content: "b\n"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    cat < *.txt
+    echo after
+expect:
+  stdout: |+
+    after
+  stderr_contains: ["*.txt"]
+  exit_code: 0
