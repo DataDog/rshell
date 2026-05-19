@@ -101,6 +101,7 @@ func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {
 			vr   expand.Variable
 		}
 		var restores []restoreVar
+		seenRestore := map[string]bool{}
 
 		for _, as := range cm.Assigns {
 			name := as.Name.Value
@@ -110,7 +111,13 @@ func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {
 			// Inline command vars are always exported.
 			vr.Exported = true
 
-			restores = append(restores, restoreVar{name, prev})
+			// Only the first prev for a given name is the true
+			// pre-command value; later ones capture the intermediate
+			// assigned by an earlier iteration of this loop.
+			if !seenRestore[name] {
+				restores = append(restores, restoreVar{name, prev})
+				seenRestore[name] = true
+			}
 
 			r.setVar(name, vr)
 		}

@@ -1,0 +1,21 @@
+description: |
+  vuln-hunt F-2 (2026-05-18-initial-audit, inline_var P3): when the same
+  variable name appears multiple times in an inline-command-var prefix
+  (e.g. `A=v1 A=v2 cmd`), the variable must be restored to its true
+  pre-command value, not to an intermediate value captured between
+  assignments. Covers both the two-assignment and three-assignment cases.
+input:
+  script: |+
+    A=orig
+    A=v1 A=v2 echo two-assign
+    echo "out=[$A]"
+    A=v1 A=v2 A=v3 echo three-assign
+    echo "out=[$A]"
+expect:
+  stdout: |+
+    two-assign
+    out=[orig]
+    three-assign
+    out=[orig]
+  stderr: ""
+  exit_code: 0
