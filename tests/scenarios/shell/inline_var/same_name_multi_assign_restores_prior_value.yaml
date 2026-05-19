@@ -3,7 +3,8 @@ description: |
   variable name appears multiple times in an inline-command-var prefix
   (e.g. `A=v1 A=v2 cmd`), the variable must be restored to its true
   pre-command value, not to an intermediate value captured between
-  assignments. Covers both the two-assignment and three-assignment cases.
+  assignments. Covers the two-assignment, three-assignment, interleaved
+  same/different-name, and never-set-before cases.
 input:
   script: |+
     A=orig
@@ -11,11 +12,19 @@ input:
     echo "out=[$A]"
     A=v1 A=v2 A=v3 echo three-assign
     echo "out=[$A]"
+    A=v1 B=vb A=v2 echo interleaved
+    echo "interleaved=[$A][$B]"
+    C=v1 C=v2 echo never-set
+    echo "never-set=[$C]"
 expect:
   stdout: |+
     two-assign
     out=[orig]
     three-assign
     out=[orig]
+    interleaved
+    interleaved=[orig][]
+    never-set
+    never-set=[]
   stderr: ""
   exit_code: 0
