@@ -6,9 +6,12 @@ input:
   script: |+
     IFS='\'
     s='a\b\c'
-    set -- $s
-    echo "$#-$1-$2-$3"
+    for x in $s; do
+      echo "$x"
+    done
 expect:
   stdout: |+
-    3-a-b-c
+    a
+    b
+    c
   exit_code: 0

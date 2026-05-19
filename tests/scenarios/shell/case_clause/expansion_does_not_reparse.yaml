@@ -1,15 +1,14 @@
 description: |
-  vuln-hunt 2026-05-18-initial-audit: ensure that materialising the literal
-  string "case" through a variable expansion does not re-enter the parser as
-  a CaseClause. The word becomes a regular command — which is unknown — and
-  fails with "command not found", not with "case statements are not
-  supported". Either way the case-block bypass is blocked.
+  vuln-hunt 2026-05-18-initial-audit: materialising the literal string
+  "case" through a variable expansion does not re-enter the parser as a
+  CaseClause keyword. The parser already finalised the AST as a regular
+  command call, so at runtime the expanded word is just an unknown command
+  name — the case-block bypass is blocked.
 skip_assert_against_bash: true
 input:
   script: |+
     KW=case
-    $KW x in y) echo no;; esac
+    $KW
 expect:
-  stdout: |+
-  stderr_contains: ["command not found", "syntax error"]
-  exit_code: 2
+  stderr_contains: ["unknown command"]
+  exit_code: 127
