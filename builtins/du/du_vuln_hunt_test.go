@@ -46,3 +46,23 @@ func TestVulnHuntBuiltinSpecialFiles_SymlinkCycleDetected(t *testing.T) {
 	_ = code
 	_ = stderr
 }
+
+// H1: -L must not turn an allowed symlink into an AllowedPaths escape. The
+// StatFile wrapper follows links, but the sandbox must reject targets outside
+// the configured root before du can report their metadata.
+func TestVulnHuntBuiltinFileAccessBypass_DereferenceSymlinkOutsideAllowedPathsBlocked(t *testing.T) {
+	if !canSymlink() {
+		t.Skip("symlinks unavailable")
+	}
+	allowed := t.TempDir()
+	outside := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(outside, "secret.txt"), []byte("secret-data\n"), 0o600))
+	require.NoError(t, os.Symlink(filepath.Join(outside, "secret.txt"), filepath.Join(allowed, "escape")))
+
+	stdout, stderr, code := cmdRun(t, "du -L -b escape", allowed)
+	assert.Equal(t, 1, code)
+	assert.Empty(t, stdout)
+	assert.Contains(t, stderr, "du: cannot access 'escape'")
+	assert.NotContains(t, stdout+stderr, "secret-data")
+	assert.NotContains(t, stdout+stderr, outside)
+}
