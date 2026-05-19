@@ -57,12 +57,20 @@ func TestVulnHuntBuiltinFileAccessBypass_DereferenceSymlinkOutsideAllowedPathsBl
 	allowed := t.TempDir()
 	outside := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(outside, "secret.txt"), []byte("secret-data\n"), 0o600))
+	require.NoError(t, os.Mkdir(filepath.Join(outside, "secret-dir"), 0o700))
 	require.NoError(t, os.Symlink(filepath.Join(outside, "secret.txt"), filepath.Join(allowed, "escape")))
+	require.NoError(t, os.Symlink(filepath.Join(outside, "secret-dir"), filepath.Join(allowed, "escape-dir")))
 
 	stdout, stderr, code := cmdRun(t, "du -L -b escape", allowed)
 	assert.Equal(t, 1, code)
 	assert.Empty(t, stdout)
 	assert.Contains(t, stderr, "du: cannot access 'escape'")
 	assert.NotContains(t, stdout+stderr, "secret-data")
+	assert.NotContains(t, stdout+stderr, outside)
+
+	stdout, stderr, code = cmdRun(t, "du -L -b escape-dir", allowed)
+	assert.Equal(t, 1, code)
+	assert.Empty(t, stdout)
+	assert.Contains(t, stderr, "du: cannot access 'escape-dir'")
 	assert.NotContains(t, stdout+stderr, outside)
 }
