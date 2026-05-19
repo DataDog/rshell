@@ -308,13 +308,18 @@ func TestBothStreamsCapMatchesEitherSentinel(t *testing.T) {
 // loop and verify stderr is capped at 10 MiB. The driving script is tiny — the
 // volume comes through stdin, sidestepping MaxScriptBytes (5 MiB).
 func TestStderrCapPoCRegression(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	// 90s timeout: the bash `while read` loop is per-line dispatch-bound, and the
+	// macOS / Windows GitHub-hosted runners under -race are slow enough that 30s
+	// wasn't enough to push 10 MiB through before the cap fired.
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
 
-	// Build ~12 MiB of input lines. Wide lines + fewer iterations minimise per-iteration
-	// interpreter overhead while still pushing stderr well past the 10 MiB cap.
-	const lineLen = 1024
-	const nLines = 12_000
+	// Build ~12 MiB of input lines. 8 KiB lines × 1500 iterations = ~12.3 MiB; cap fires
+	// around iteration 1300. Sweet spot between dispatch overhead (per-iteration) and
+	// per-byte copy cost of bash `read -r` (per-line) — empirically faster than either
+	// 1 KiB or 32 KiB lines under the race detector.
+	const lineLen = 8192
+	const nLines = 1500
 	line := strings.Repeat("x", lineLen) + "\n"
 	var input bytes.Buffer
 	for i := 0; i < nLines; i++ {
