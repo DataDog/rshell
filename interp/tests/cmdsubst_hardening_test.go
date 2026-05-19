@@ -310,9 +310,10 @@ func TestStderrCapPoCRegression(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	// Build ~12 MiB of input lines. Each line is 64 bytes + newline; 200_000 lines = ~13 MiB.
-	const lineLen = 64
-	const nLines = 200_000
+	// Build ~12 MiB of input lines. Wide lines + fewer iterations minimise per-iteration
+	// interpreter overhead while still pushing stderr well past the 10 MiB cap.
+	const lineLen = 1024
+	const nLines = 12_000
 	line := strings.Repeat("x", lineLen) + "\n"
 	var input bytes.Buffer
 	for i := 0; i < nLines; i++ {

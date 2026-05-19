@@ -34,7 +34,7 @@ The shell is supported on Linux, Windows and macOS.
 
 - **Per-stream output caps inside `Run()`.** The executor wraps `r.stdout` and `r.stderr` with a `limitWriter` at the start of every `Run()` call. The caps are:
   - **stdout: 10 MiB** — bytes beyond the limit are silently discarded; `Run()` returns `interp.ErrOutputLimitExceeded` after the script finishes.
-  - **stderr: 10 MiB** — symmetric with stdout; `Run()` returns `interp.ErrStderrLimitExceeded`. When both caps fire in the same run, `Run()` returns `errors.Join(ErrOutputLimitExceeded, ErrStderrLimitExceeded)` so `errors.Is` matches either sentinel.
+  - **stderr: 10 MiB** — symmetric with stdout. Applies to bytes the script emits during `Run()` execution; panic-recovery messages and pre-`Run()` sandbox warnings (which are bounded by design) bypass the cap. `Run()` returns `interp.ErrStderrLimitExceeded`. When both caps fire in the same run, `Run()` returns `errors.Join(ErrOutputLimitExceeded, ErrStderrLimitExceeded)` so `errors.Is` matches either sentinel.
   - **command substitution capture: 1 MiB** — output of `$(...)` / `` `...` `` beyond this is truncated silently inside `cmdSubst`.
 
   The caps protect consumers that buffer the runner's stdout/stderr (test harnesses, agent SDKs, log shippers) from memory-exhaustion DoS by malicious scripts. Builtins MUST treat the caps as a backstop, not a correctness mechanism (see `docs/RULES.md`).
