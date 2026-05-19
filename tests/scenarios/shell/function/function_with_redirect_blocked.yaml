@@ -1,0 +1,12 @@
+# vuln-hunt 2026-05-19-gpt-5.5-cyber-2 / function
+# skip: function declarations are intentionally blocked in the restricted shell
+skip_assert_against_bash: true
+description: Function declaration with blocked output redirection is rejected as a function.
+input:
+  script: |+
+    f() { echo leaked; } > /tmp/evil
+expect:
+  stdout: ""
+  stderr: |+
+    function declarations are not supported
+  exit_code: 2
