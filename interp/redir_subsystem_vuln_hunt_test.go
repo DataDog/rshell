@@ -14,13 +14,16 @@ package interp
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"mvdan.cc/sh/v3/syntax"
 )
 
 // recordingOpenHandler is a test double that records every call made to
@@ -83,4 +86,183 @@ func TestVulnHuntSubsystemInterpRedirectHandling_InputRedirectGoesThroughOpenHan
 		"input redirect must request read-only access; a writable flag would mean the redirect path widens the sandbox")
 	assert.Equal(t, fileBody, stdout.String(),
 		"cat output should match file body — proves the recorded handler also returned a working file")
+}
+
+type closeRecordingFile struct {
+	io.ReadWriteCloser
+	closed *int
+}
+
+func (f *closeRecordingFile) Close() error {
+	*f.closed++
+	return f.ReadWriteCloser.Close()
+}
+
+func TestVulnHuntSubsystemInterpRedirectHandling_FailedSecondRedirectClosesFirstAndRestoresStdio(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "first.txt"), []byte("should-not-print\n"), 0o600))
+
+	var stdout, stderr bytes.Buffer
+	r, err := New(
+		allowAllCommandsOpt(),
+		StdIO(nil, &stdout, &stderr),
+	)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = r.Close() })
+	r.Reset()
+	r.Dir = dir
+
+	closeCount := 0
+	r.openHandler = func(_ context.Context, path string, flag int, _ os.FileMode) (io.ReadWriteCloser, error) {
+		if path == "blocked.txt" {
+			return nil, &os.PathError{Op: "open", Path: path, Err: os.ErrPermission}
+		}
+		f, err := os.OpenFile(filepath.Join(dir, path), flag, 0)
+		if err != nil {
+			return nil, err
+		}
+		return &closeRecordingFile{ReadWriteCloser: f, closed: &closeCount}, nil
+	}
+
+	err = r.Run(context.Background(), parseScript(t, "cat < first.txt < blocked.txt\necho after\n"))
+	require.NoError(t, err, "stderr=%q", stderr.String())
+	assert.Equal(t, "after\n", stdout.String(),
+		"failed redirect must skip the cat command and restore stdout for the next statement")
+	assert.Contains(t, stderr.String(), "blocked.txt")
+	assert.Equal(t, 1, closeCount, "first redirect file must be closed when a later redirect fails")
+}
+
+func TestVulnHuntSubsystemInterpRedirectHandling_UnsupportedRedirectsAndProcSubstDoNotOpenFiles(t *testing.T) {
+	cases := []string{
+		"cat <&0\n",
+		"cat <> file.txt\n",
+		"cat <<< hello\n",
+		"cat <(echo secret)\n",
+		"echo hello 3>&1\n",
+		"echo hello >&-\n",
+	}
+	for _, script := range cases {
+		t.Run(script, func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			r, err := New(
+				allowAllCommandsOpt(),
+				StdIO(nil, &stdout, &stderr),
+			)
+			require.NoError(t, err)
+			t.Cleanup(func() { _ = r.Close() })
+			r.Reset()
+
+			openCalls := 0
+			r.openHandler = func(context.Context, string, int, os.FileMode) (io.ReadWriteCloser, error) {
+				openCalls++
+				return nil, errors.New("openHandler should not be called")
+			}
+
+			err = r.Run(context.Background(), parseScript(t, script))
+			require.Error(t, err)
+			var es ExitStatus
+			require.True(t, errors.As(err, &es), "expected validation exit status, got %v", err)
+			assert.Equal(t, ExitStatus(2), es)
+			assert.Equal(t, 0, openCalls, "unsupported redirect reached openHandler; stderr=%q stdout=%q", stderr.String(), stdout.String())
+			assert.Empty(t, stdout.String())
+		})
+	}
+}
+
+func TestVulnHuntSubsystemInterpRedirectHandling_RuntimeDevNullDefenseRejectsMutatedTarget(t *testing.T) {
+	dir := t.TempDir()
+	var stdout, stderr bytes.Buffer
+	r, err := New(
+		allowAllCommandsOpt(),
+		StdIO(nil, &stdout, &stderr),
+	)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = r.Close() })
+	r.Reset()
+
+	target := filepath.Join(dir, "created.txt")
+	_, err = r.redir(context.Background(), &syntax.Redirect{
+		Op:   syntax.RdrOut,
+		Word: &syntax.Word{Parts: []syntax.WordPart{&syntax.Lit{Value: target}}},
+	})
+	require.Error(t, err)
+	assert.Contains(t, stderr.String(), "file redirection is only supported")
+	_, statErr := os.Stat(target)
+	assert.True(t, errors.Is(statErr, os.ErrNotExist), "runtime redirect defense created file, stat err=%v", statErr)
+}
+
+func TestVulnHuntSubsystemInterpRedirectHandling_DevNullOutputDoesNotOpenFileHandler(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	r, err := New(
+		allowAllCommandsOpt(),
+		StdIO(nil, &stdout, &stderr),
+	)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = r.Close() })
+	r.Reset()
+
+	openCalls := 0
+	r.openHandler = func(context.Context, string, int, os.FileMode) (io.ReadWriteCloser, error) {
+		openCalls++
+		return nil, errors.New("openHandler should not be called for /dev/null output")
+	}
+
+	err = r.Run(context.Background(), parseScript(t, "echo hidden >/dev/null\necho visible\n"))
+	require.NoError(t, err, "stderr=%q", stderr.String())
+	assert.Equal(t, "visible\n", stdout.String())
+	assert.Empty(t, stderr.String())
+	assert.Equal(t, 0, openCalls, "/dev/null output redirect must use io.Discard, not openHandler")
+}
+
+func TestVulnHuntSubsystemInterpRedirectHandling_HeredocCommandSubstitutionUsesSandbox(t *testing.T) {
+	root := t.TempDir()
+	allowed := filepath.Join(root, "allowed")
+	outside := filepath.Join(root, "outside")
+	require.NoError(t, os.MkdirAll(allowed, 0o755))
+	require.NoError(t, os.MkdirAll(outside, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(outside, "secret.txt"), []byte("classified\n"), 0o600))
+
+	var stdout, stderr bytes.Buffer
+	r, err := New(
+		allowAllCommandsOpt(),
+		StdIO(nil, &stdout, &stderr),
+		AllowedPaths([]string{allowed}),
+	)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = r.Close() })
+	r.Dir = allowed
+
+	script := "cat <<EOF\n$(<../outside/secret.txt)\nEOF\necho after\n"
+	err = r.Run(context.Background(), parseScript(t, script))
+	require.NoError(t, err, "stderr=%q", stderr.String())
+	assert.NotContains(t, stdout.String(), "classified")
+	assert.NotContains(t, stderr.String(), "classified")
+	assert.Contains(t, stdout.String(), "after\n")
+	assert.NotEmpty(t, stderr.String(), "sandbox denial should be reported")
+}
+
+func TestVulnHuntSubsystemInterpRedirectHandling_QuotedHeredocStaysLiteral(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	r, err := New(
+		allowAllCommandsOpt(),
+		StdIO(nil, &stdout, &stderr),
+	)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = r.Close() })
+
+	script := "cat <<'EOF'\n$(echo should-not-run)\n~/literal\nEOF\n"
+	err = r.Run(context.Background(), parseScript(t, script))
+	require.NoError(t, err, "stderr=%q", stderr.String())
+	assert.Equal(t, "$(echo should-not-run)\n~/literal\n", stdout.String())
+	assert.Empty(t, stderr.String())
+}
+
+func TestVulnHuntSubsystemInterpRedirectHandling_NoDirectUserPathOpenInRedirectRuntime(t *testing.T) {
+	src, err := os.ReadFile("runner_redir.go")
+	require.NoError(t, err)
+	text := string(src)
+	assert.NotContains(t, text, "os.Open(")
+	assert.NotContains(t, text, "os.OpenFile(")
+	assert.True(t, strings.Contains(text, "os.Pipe()"),
+		"redirect runtime may use os.Pipe for heredocs but must not directly open user paths")
 }
