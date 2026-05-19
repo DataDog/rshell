@@ -266,10 +266,11 @@ func TestGlobalStderrCapPrecedenceOverExitCode(t *testing.T) {
 		"must not return ExitStatus when stderr cap was exceeded")
 }
 
-// TestBothStreamsCapReturnsJoinedError verifies that when a single Run() exceeds
-// both stdout and stderr caps, Run returns a joined error so errors.Is matches
-// either sentinel.
-func TestBothStreamsCapReturnsJoinedError(t *testing.T) {
+// TestBothStreamsCapMatchesEitherSentinel verifies that when a single Run()
+// exceeds both stdout and stderr caps, errors.Is matches either sentinel — so
+// callers that only care about ErrOutputLimitExceeded (or only ErrStderrLimitExceeded)
+// still see the limit firing without having to enumerate combined-error types.
+func TestBothStreamsCapMatchesEitherSentinel(t *testing.T) {
 	dir := t.TempDir()
 	content := strings.Repeat("A", 1<<20)
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "mb.txt"), []byte(content), 0644))
@@ -295,9 +296,9 @@ func TestBothStreamsCapReturnsJoinedError(t *testing.T) {
 
 	runErr := runner.Run(ctx, prog)
 	assert.ErrorIs(t, runErr, interp.ErrOutputLimitExceeded,
-		"joined error must match ErrOutputLimitExceeded")
+		"combined error must match ErrOutputLimitExceeded via errors.Is")
 	assert.ErrorIs(t, runErr, interp.ErrStderrLimitExceeded,
-		"joined error must match ErrStderrLimitExceeded")
+		"combined error must match ErrStderrLimitExceeded via errors.Is")
 	assert.LessOrEqual(t, outBuf.Len(), 10*1024*1024, "stdout must not exceed 10 MiB")
 	assert.LessOrEqual(t, errBuf.Len(), 10*1024*1024, "stderr must not exceed 10 MiB")
 }

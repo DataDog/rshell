@@ -512,12 +512,27 @@ var ErrOutputLimitExceeded = errors.New(fmt.Sprintf(
 // ErrStderrLimitExceeded is returned by Run when a script produces more stderr
 // than maxStderrBytes. Partial output up to the limit is still delivered to the
 // caller's writer. When both stdout and stderr caps fire in the same run, Run
-// returns errors.Join(ErrOutputLimitExceeded, ErrStderrLimitExceeded) so
-// errors.Is matches either sentinel.
+// returns a bothLimitsExceededError whose Is method matches either sentinel,
+// so callers can write errors.Is(err, ErrOutputLimitExceeded) or
+// errors.Is(err, ErrStderrLimitExceeded) without caring which fired.
 var ErrStderrLimitExceeded = errors.New(fmt.Sprintf(
 	"stderr limit exceeded: script produced more than %d MiB of output",
 	maxStderrBytes/(1024*1024),
 ))
+
+// bothLimitsExceededError is returned by Run when a single invocation exceeds
+// both the stdout and stderr caps. Its Is method satisfies errors.Is for
+// ErrOutputLimitExceeded and ErrStderrLimitExceeded so callers can detect
+// either condition without distinguishing the both-streams case.
+type bothLimitsExceededError struct{}
+
+func (bothLimitsExceededError) Error() string {
+	return "stdout and stderr limit exceeded: script produced more output than either cap allows"
+}
+
+func (bothLimitsExceededError) Is(target error) bool {
+	return target == ErrOutputLimitExceeded || target == ErrStderrLimitExceeded
+}
 
 // ExitStatus is a non-zero status code resulting from running a shell node.
 type ExitStatus uint8
@@ -621,8 +636,8 @@ func (r *Runner) Run(ctx context.Context, node syntax.Node) (retErr error) {
 	// Return the first of: a fatal/handler error, output cap exceeded, or the exit code.
 	// Fatal errors take precedence over the cap sentinels so that cancellation
 	// and handler failures are not masked when a cap is also hit. When both
-	// stdout and stderr caps fire, return a joined error so errors.Is matches
-	// either sentinel.
+	// stdout and stderr caps fire, return bothLimitsExceededError so errors.Is
+	// matches either sentinel.
 	if err := r.exit.err; err != nil {
 		return err
 	}
@@ -630,7 +645,7 @@ func (r *Runner) Run(ctx context.Context, node syntax.Node) (retErr error) {
 	stderrEx := stderrCap.isExceeded()
 	switch {
 	case stdoutEx && stderrEx:
-		return errors.Join(ErrOutputLimitExceeded, ErrStderrLimitExceeded)
+		return bothLimitsExceededError{}
 	case stdoutEx:
 		return ErrOutputLimitExceeded
 	case stderrEx:
