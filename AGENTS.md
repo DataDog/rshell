@@ -1,5 +1,3 @@
-@docs/RULES.md
-
 # Restricted Shell Interpreter
 
 ## Overview
@@ -38,6 +36,10 @@ The shell is supported on Linux, Windows and macOS.
 
 - **ALWAYS prioritise fixing the shell implementation to match bash behaviour over changing tests to match the current (incorrect) shell output.** Never "fix" a failing test by updating its expected output to match broken shell behaviour — fix the shell instead.
 - Only deviate from bash behaviour when the shell is intentionally different (e.g. sandbox restrictions, blocked commands, readonly enforcement).
+
+## Builtin Implementation
+
+@docs/RULES.md
 
 ## Testing
 
