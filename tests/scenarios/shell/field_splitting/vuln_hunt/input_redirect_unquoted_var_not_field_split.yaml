@@ -1,0 +1,23 @@
+# vuln-hunt 2026-05-19-codex / field_splitting.
+# skip: rshell treats the expanded redirect word as one path; bash reports an ambiguous redirect.
+skip_assert_against_bash: true
+description: Input redirect operands expanded from variables are not field-split into alternate paths.
+setup:
+  files:
+    - path: allowed/one.txt
+      content: |+
+        one
+    - path: allowed/two.txt
+      content: |+
+        two
+input:
+  allowed_paths: ["allowed"]
+  script: |+
+    TARGET='allowed/one.txt allowed/two.txt'
+    cat < $TARGET
+    echo after
+expect:
+  stdout: |+
+    after
+  stderr_contains: ["one.txt allowed/two.txt"]
+  exit_code: 0
