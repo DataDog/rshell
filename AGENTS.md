@@ -32,13 +32,6 @@ The shell is supported on Linux, Windows and macOS.
 
 - **`df` bypasses `AllowedPaths` for mount-table enumeration.** `df` delegates filesystem listing to `builtins/internal/diskstats`, which on Linux reads `/proc/self/mountinfo` directly via `os.Open` and then calls `unix.Statfs(2)` on every mount point returned by the kernel. On macOS it calls `unix.Getfsstat(2)`. The mount-point paths are kernel-controlled — never derived from user input — so the same trade-off as `ss` / `ip route` applies: operators cannot use `AllowedPaths` to hide individual mounts from `df`. `Statfs` returns metadata only (block / inode counts, filesystem type, block size); no file content is read.
 
-- **Per-stream output caps inside `Run()`.** The executor wraps `r.stdout` and `r.stderr` with a `limitWriter` at the start of every `Run()` call. The caps are:
-  - **stdout: 10 MiB** — bytes beyond the limit are silently discarded; `Run()` returns `interp.ErrOutputLimitExceeded` after the script finishes.
-  - **stderr: 10 MiB** — symmetric with stdout. Applies to bytes the script emits during `Run()` execution; panic-recovery messages and pre-`Run()` sandbox warnings (which are bounded by design) bypass the cap. `Run()` returns `interp.ErrStderrLimitExceeded`. When both caps fire in the same run, `Run()` returns a combined error whose `Is` method matches either sentinel, so `errors.Is(err, ErrOutputLimitExceeded)` and `errors.Is(err, ErrStderrLimitExceeded)` both report true.
-  - **command substitution capture: 1 MiB** — output of `$(...)` / `` `...` `` beyond this is truncated silently inside `cmdSubst`.
-
-  The caps protect consumers that buffer the runner's stdout/stderr (test harnesses, agent SDKs, log shippers) from memory-exhaustion DoS by malicious scripts. Builtins MUST treat the caps as a backstop, not a correctness mechanism (see `docs/RULES.md`).
-
 ## CRITICAL: Bug Fixes and Bash Compatibility
 
 - **ALWAYS prioritise fixing the shell implementation to match bash behaviour over changing tests to match the current (incorrect) shell output.** Never "fix" a failing test by updating its expected output to match broken shell behaviour — fix the shell instead.

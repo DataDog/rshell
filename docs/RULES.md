@@ -87,7 +87,7 @@ only the filesystem-accessing *functions* are forbidden.
 - Commands MUST limit memory consumption to prevent exhaustion attacks
 - Commands MUST NOT load entire files into memory when line-by-line or chunked processing is viable
 - Commands MUST handle very long lines (>1MB) without crashing or excessive memory use
-- Commands MUST respect the per-stream 10 MiB output cap (enforced by the executor on both stdout and stderr; command substitution capture is separately capped at 1 MiB). Bytes beyond the cap are silently discarded and `Run()` returns `ErrOutputLimitExceeded` / `ErrStderrLimitExceeded` to the caller. Builtins MUST NOT rely on this cap as a correctness mechanism — do not generate excess output.
+- Commands MUST respect the global 1MB output limit (enforced by executor, but don't generate excess)
 
 ### Input Validation & Error Handling
 - Commands MUST validate all numeric arguments (line counts, byte counts, field numbers) for overflow
