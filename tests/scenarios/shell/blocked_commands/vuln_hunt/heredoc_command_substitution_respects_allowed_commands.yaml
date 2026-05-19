@@ -1,0 +1,25 @@
+# vuln-hunt 2026-05-19-codex / blocked_commands.
+# skip: allowed_commands is rshell-specific sandbox behaviour with no bash equivalent.
+skip_assert_against_bash: true
+description: Command substitutions in a heredoc attached to a blocked command still obey AllowedCommands and do not leak file content.
+setup:
+  files:
+    - path: secret.txt
+      content: |+
+        SECRET
+input:
+  allowed_paths: ["$DIR"]
+  allowed_commands:
+    - rshell:echo
+  script: |+
+    denied <<EOF
+    $(cat secret.txt)
+    EOF
+    echo after
+expect:
+  stdout: |+
+    after
+  stderr_contains:
+    - "rshell: cat: command not allowed"
+    - "rshell: denied: command not allowed"
+  exit_code: 0
