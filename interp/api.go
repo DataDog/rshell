@@ -527,7 +527,8 @@ var ErrStderrLimitExceeded = errors.New(fmt.Sprintf(
 type bothLimitsExceededError struct{}
 
 func (bothLimitsExceededError) Error() string {
-	return "stdout and stderr limit exceeded: script produced more output than either cap allows"
+	return fmt.Sprintf("stdout and stderr limit exceeded: script produced more than %d MiB of output on each stream",
+		maxStdoutBytes/(1024*1024))
 }
 
 func (bothLimitsExceededError) Is(target error) bool {
