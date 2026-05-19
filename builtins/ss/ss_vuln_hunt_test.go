@@ -24,3 +24,26 @@ func TestVulnHuntSubsystemInvariantViolation_SSPathLikeOperandsNotOpened(t *test
 	assert.NotContains(t, stderr, pathOperand)
 	assert.NotContains(t, stderr, "attacker-controlled-proc-root")
 }
+
+func TestVulnHuntBuiltinFlagDrivenExploit_DangerousFlagsWithArgumentsRejected(t *testing.T) {
+	cases := []string{
+		"ss --filter=/etc/passwd",
+		"ss -F/etc/passwd",
+		"ss --net=/proc/1/ns/net",
+		"ss -N/proc/1/ns/net",
+		"ss --processes",
+		"ss --kill",
+		"ss --events",
+		"ss --resolve",
+		"ss --bpf",
+	}
+
+	for _, script := range cases {
+		t.Run(script, func(t *testing.T) {
+			stdout, stderr, code := cmdRun(t, script)
+			assert.Equal(t, 1, code)
+			assert.Empty(t, stdout)
+			assert.Contains(t, stderr, "ss:")
+		})
+	}
+}
