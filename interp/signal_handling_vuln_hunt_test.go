@@ -23,6 +23,7 @@ package interp
 import (
 	"bytes"
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -103,4 +104,35 @@ func TestVulnHuntSubsystemSignalHandling_ParentCtxCancelStopsPipeline(t *testing
 		"head should have captured the first line before closing the pipe")
 	assert.Less(t, elapsed, 2*time.Second,
 		"pipeline did not stop promptly after parent-ctx cancel: %s", elapsed)
+}
+
+// TestVulnHuntSubsystemSignalHandling_PipelineLeftPanicRecoveryUsesCappedStderrAndUnblocks
+// asserts that a panic in the left pipeline goroutine still closes the pipe,
+// unblocks the parent, and writes the panic diagnostic through the Run-level
+// stderr cap rather than a raw caller writer.
+func TestVulnHuntSubsystemSignalHandling_PipelineLeftPanicRecoveryUsesCappedStderrAndUnblocks(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	r, err := New(
+		allowAllCommandsOpt(),
+		StdIO(nil, &stdout, &stderr),
+		MaxExecutionTime(2*time.Second),
+	)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = r.Close() })
+
+	r.Reset()
+	r.execHandler = func(context.Context, []string) error {
+		panic(strings.Repeat("B", maxStderrBytes+1024))
+	}
+
+	start := time.Now()
+	err = r.Run(context.Background(), parseScript(t, "panic_left | cat"))
+	elapsed := time.Since(start)
+
+	require.EqualError(t, err, "internal error")
+	assert.Empty(t, stdout.String())
+	assert.LessOrEqual(t, stderr.Len(), maxStderrBytes,
+		"pipeline-left panic recovery must write through the stderr cap")
+	assert.Less(t, elapsed, time.Second,
+		"pipeline-left panic recovery did not unblock the parent promptly: %s", elapsed)
 }
