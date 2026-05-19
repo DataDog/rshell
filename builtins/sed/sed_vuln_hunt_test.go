@@ -8,11 +8,21 @@
 package sed_test
 
 import (
+	"bytes"
+	"context"
+	"errors"
+	"os"
+	"path/filepath"
+	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"mvdan.cc/sh/v3/syntax"
 
 	"github.com/DataDog/rshell/builtins/testutil"
+	"github.com/DataDog/rshell/internal/interpoption"
 	"github.com/DataDog/rshell/interp"
 )
 
@@ -60,4 +70,62 @@ func TestVulnHuntBuiltinIntegerOverflow_LargeAddress(t *testing.T) {
 			}
 		})
 	}
+}
+
+// Campaign: vuln-hunt/2026-05-19-codex. These are public-safe
+// blocked-attack regressions for sed.
+
+func TestVulnHuntBuiltinFileAccessBypass_SymlinkOperandOutsideAllowedPaths(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink creation requires platform-specific privileges on Windows")
+	}
+
+	allowed := t.TempDir()
+	secret := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(secret, "secret.txt"), []byte("secret words\n"), 0644))
+	require.NoError(t, os.Symlink(filepath.Join(secret, "secret.txt"), filepath.Join(allowed, "escape_link")))
+
+	stdout, stderr, code := testutil.RunScript(t,
+		"sed 's/secret/public/' escape_link", allowed,
+		interp.AllowedPaths([]string{allowed}))
+	assert.Equal(t, 1, code)
+	assert.Empty(t, stdout)
+	assert.Contains(t, stderr, "sed:")
+	assert.NotContains(t, stdout+stderr, "secret words")
+}
+
+func TestVulnHuntBuiltinResourceExhaustion_OutputLimitStopsPrintAmplification(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "big.txt"), []byte(strings.Repeat("x\n", 3_000_000)), 0644))
+
+	prog, err := syntax.NewParser().Parse(strings.NewReader("sed p big.txt"), "")
+	require.NoError(t, err)
+
+	var stdout, stderr bytes.Buffer
+	runner, err := interp.New(
+		interp.StdIO(nil, &stdout, &stderr),
+		interpoption.AllowAllCommands().(interp.RunnerOption),
+		interp.AllowedPaths([]string{dir}),
+	)
+	require.NoError(t, err)
+	defer runner.Close()
+	runner.Dir = dir
+
+	err = runner.Run(context.Background(), prog)
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, interp.ErrOutputLimitExceeded), "got %v", err)
+	assert.LessOrEqual(t, stdout.Len(), 10*1024*1024)
+	assert.Empty(t, stderr.String())
+}
+
+func TestVulnHuntBuiltinIntegerOverflow_GroupDepthCap(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "input.txt"), []byte("x\n"), 0644))
+	script := strings.Repeat("{", 300) + "p" + strings.Repeat("}", 300)
+
+	_, stderr, code := testutil.RunScript(t,
+		"sed '"+script+"' input.txt", dir,
+		interp.AllowedPaths([]string{dir}))
+	assert.Equal(t, 1, code)
+	assert.Contains(t, stderr, "group nesting depth limit exceeded")
 }
