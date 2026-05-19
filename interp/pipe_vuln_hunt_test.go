@@ -13,6 +13,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -36,6 +37,9 @@ func TestVulnHuntShellFeatureReadonlyBypass_PipelineStagesPreserveReadonly(t *te
 }
 
 func TestVulnHuntShellFeatureSignalContext_PipeWriterStopsAfterReaderExit(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("windows broken-pipe error format differs from unix; tested on linux/macos only")
+	}
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(
 		filepath.Join(dir, "big.txt"),

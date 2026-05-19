@@ -10,7 +10,7 @@ input:
   allowed_paths: ["allowed"]
   script: |+
     for i in 1; do
-      break < secret.txt
+      break < allowed/secret.txt
       echo TOP SECRET
     done
     echo done

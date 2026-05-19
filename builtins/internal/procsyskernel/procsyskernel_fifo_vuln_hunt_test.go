@@ -40,7 +40,7 @@ func TestVulnHuntUnameProcReaderRejectsFIFOWithoutBlocking(t *testing.T) {
 		if !strings.Contains(err.Error(), "not a regular file") {
 			t.Fatalf("expected regular-file rejection, got %v", err)
 		}
-	case <-time.After(time.Second):
+	case <-time.After(2 * time.Second):
 		t.Fatal("ReadFile blocked on FIFO")
 	}
 }

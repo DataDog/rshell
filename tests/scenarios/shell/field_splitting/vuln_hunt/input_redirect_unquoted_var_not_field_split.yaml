@@ -20,4 +20,5 @@ expect:
   stdout: |+
     after
   stderr_contains: ["one.txt allowed/two.txt"]
+  stderr_contains_windows: ["one.txt allowed\\two.txt"]
   exit_code: 0
