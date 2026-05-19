@@ -26,5 +26,5 @@ expect:
     interleaved=[orig][]
     never-set
     never-set=[]
-  stderr: ""
+  stderr: |+
   exit_code: 0
