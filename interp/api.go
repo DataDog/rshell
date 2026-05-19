@@ -509,6 +509,16 @@ var ErrOutputLimitExceeded = errors.New(fmt.Sprintf(
 	maxStdoutBytes/(1024*1024),
 ))
 
+// ErrStderrLimitExceeded is returned by Run when a script produces more stderr
+// than maxStderrBytes. Partial output up to the limit is still delivered to the
+// caller's writer. When both stdout and stderr caps fire in the same run, Run
+// returns errors.Join(ErrOutputLimitExceeded, ErrStderrLimitExceeded) so
+// errors.Is matches either sentinel.
+var ErrStderrLimitExceeded = errors.New(fmt.Sprintf(
+	"stderr limit exceeded: script produced more than %d MiB of output",
+	maxStderrBytes/(1024*1024),
+))
+
 // ExitStatus is a non-zero status code resulting from running a shell node.
 type ExitStatus uint8
 
@@ -570,15 +580,19 @@ func (r *Runner) Run(ctx context.Context, node syntax.Node) (retErr error) {
 			return r.exit.err
 		}
 	}
-	// Wrap stdout with a cap. Bytes beyond maxStdoutBytes are silently
-	// discarded so that builtins never see a write error mid-execution, but
-	// the exceeded flag is set so Run() can surface a well-defined error to
-	// the caller after the script finishes. Restore r.stdout on return so
-	// that repeated Run() calls without Reset() do not double-wrap the writer.
+	// Wrap stdout and stderr with per-stream caps. Bytes beyond the limit are
+	// silently discarded so that builtins never see a write error mid-execution,
+	// but the exceeded flag is set so Run() can surface a well-defined error to
+	// the caller after the script finishes. Restore the original writers on
+	// return so that repeated Run() calls without Reset() do not double-wrap.
 	prevStdout := r.stdout
 	stdoutCap := &limitWriter{w: prevStdout, limit: maxStdoutBytes}
 	r.stdout = stdoutCap
 	defer func() { r.stdout = prevStdout }()
+	prevStderr := r.stderr
+	stderrCap := &limitWriter{w: prevStderr, limit: maxStderrBytes}
+	r.stderr = stderrCap
+	defer func() { r.stderr = prevStderr }()
 	// Capture the stdin/stdout baseline at Run() start (after wrapping) so
 	// per-command telemetry can detect pipe and redirect reassignments
 	// without tripping on the Run-level limitWriter wrap.
@@ -604,14 +618,23 @@ func (r *Runner) Run(ctx context.Context, node syntax.Node) (retErr error) {
 	default:
 		return fmt.Errorf("node can only be File, Stmt, or Command: %T", node)
 	}
-	// Return the first of: a fatal/handler error, stdout cap exceeded, or the exit code.
-	// Fatal errors take precedence over ErrOutputLimitExceeded so that cancellation
-	// and handler failures are not masked when the cap is also hit.
+	// Return the first of: a fatal/handler error, output cap exceeded, or the exit code.
+	// Fatal errors take precedence over the cap sentinels so that cancellation
+	// and handler failures are not masked when a cap is also hit. When both
+	// stdout and stderr caps fire, return a joined error so errors.Is matches
+	// either sentinel.
 	if err := r.exit.err; err != nil {
 		return err
 	}
-	if stdoutCap.isExceeded() {
+	stdoutEx := stdoutCap.isExceeded()
+	stderrEx := stderrCap.isExceeded()
+	switch {
+	case stdoutEx && stderrEx:
+		return errors.Join(ErrOutputLimitExceeded, ErrStderrLimitExceeded)
+	case stdoutEx:
 		return ErrOutputLimitExceeded
+	case stderrEx:
+		return ErrStderrLimitExceeded
 	}
 	if code := r.exit.code; code != 0 {
 		return ExitStatus(code)
@@ -834,7 +857,7 @@ func classifyRunOutcome(err error) string {
 	switch {
 	case err == nil:
 		return "success"
-	case errors.Is(err, ErrOutputLimitExceeded):
+	case errors.Is(err, ErrOutputLimitExceeded), errors.Is(err, ErrStderrLimitExceeded):
 		return "output_limit"
 	case errors.Is(err, context.DeadlineExceeded):
 		return "timeout"

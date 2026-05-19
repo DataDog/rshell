@@ -151,6 +151,194 @@ func TestGlobalStdoutCapPrecedenceOverExitCode(t *testing.T) {
 		"must not return ExitStatus when stdout cap was exceeded")
 }
 
+// TestGlobalStderrCapReturnsError verifies that Run returns ErrStderrLimitExceeded
+// when a script exceeds the 10 MiB stderr cap. Regression test for the
+// rshell-vuln-hunt 2026-05-18 F-3 finding: previously only stdout was wrapped,
+// so a `while read; do echo >&2; done` loop driven by multi-MiB stdin could
+// emit arbitrarily large stderr until the 30s execution timeout fired.
+func TestGlobalStderrCapReturnsError(t *testing.T) {
+	dir := t.TempDir()
+
+	content := strings.Repeat("A", 1<<20)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "mb.txt"), []byte(content), 0644))
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	// cat the file 11 times to stderr — produces 11 MiB on stderr, exceeding the 10 MiB cap.
+	script := `for i in 1 2 3 4 5 6 7 8 9 10 11; do cat mb.txt >&2; done`
+	var errBuf bytes.Buffer
+	runner, err := interp.New(
+		interp.StdIO(nil, nil, &errBuf),
+		interp.AllowedPaths([]string{dir}),
+		interpoption.AllowAllCommands().(interp.RunnerOption),
+	)
+	require.NoError(t, err)
+	defer runner.Close()
+	runner.Dir = dir
+
+	prog, err := syntax.NewParser().Parse(strings.NewReader(script), "test")
+	require.NoError(t, err)
+
+	runErr := runner.Run(ctx, prog)
+	assert.ErrorIs(t, runErr, interp.ErrStderrLimitExceeded,
+		"Run must return ErrStderrLimitExceeded when stderr cap is exceeded")
+	assert.NotErrorIs(t, runErr, interp.ErrOutputLimitExceeded,
+		"stderr-only blowout must not surface the stdout sentinel")
+	assert.LessOrEqual(t, errBuf.Len(), 10*1024*1024,
+		"stderr must not exceed 10 MiB; got %d bytes", errBuf.Len())
+	assert.Greater(t, errBuf.Len(), 0, "expected non-empty stderr before cap")
+}
+
+// TestGlobalStderrCapMultipleRuns verifies that repeated Run() calls on the
+// same Runner without Reset() do not double-wrap the stderr writer. Mirrors
+// TestGlobalStdoutCapMultipleRuns.
+func TestGlobalStderrCapMultipleRuns(t *testing.T) {
+	dir := t.TempDir()
+	content := strings.Repeat("A", 1<<20) // 1 MiB
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "mb.txt"), []byte(content), 0644))
+
+	var errBuf bytes.Buffer
+	runner, err := interp.New(
+		interp.StdIO(nil, nil, &errBuf),
+		interp.AllowedPaths([]string{dir}),
+		interpoption.AllowAllCommands().(interp.RunnerOption),
+	)
+	require.NoError(t, err)
+	defer runner.Close()
+	runner.Dir = dir
+
+	parse := func(script string) *syntax.File {
+		t.Helper()
+		prog, parseErr := syntax.NewParser().Parse(strings.NewReader(script), "test")
+		require.NoError(t, parseErr)
+		return prog
+	}
+
+	ctx := context.Background()
+
+	errBuf.Reset()
+	ctx1, cancel1 := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel1()
+	err = runner.Run(ctx1, parse(`for i in 1 2 3 4 5 6 7 8 9; do cat mb.txt >&2; done`))
+	assert.NoError(t, err, "first run (9 MiB stderr) must not exceed cap")
+	assert.Equal(t, 9<<20, errBuf.Len(), "first run must deliver exactly 9 MiB on stderr")
+
+	errBuf.Reset()
+	ctx2, cancel2 := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel2()
+	err = runner.Run(ctx2, parse(`for i in 1 2 3 4 5 6 7 8 9; do cat mb.txt >&2; done`))
+	assert.NoError(t, err, "second run (9 MiB stderr) must not exceed cap")
+	assert.Equal(t, 9<<20, errBuf.Len(), "second run must deliver exactly 9 MiB (fresh cap)")
+}
+
+// TestGlobalStderrCapPrecedenceOverExitCode verifies that ErrStderrLimitExceeded
+// takes precedence over a non-zero exit code when both occur in the same Run()
+// call. Mirrors TestGlobalStdoutCapPrecedenceOverExitCode.
+func TestGlobalStderrCapPrecedenceOverExitCode(t *testing.T) {
+	dir := t.TempDir()
+	content := strings.Repeat("A", 1<<20)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "mb.txt"), []byte(content), 0644))
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	var errBuf bytes.Buffer
+	runner, err := interp.New(
+		interp.StdIO(nil, nil, &errBuf),
+		interp.AllowedPaths([]string{dir}),
+		interpoption.AllowAllCommands().(interp.RunnerOption),
+	)
+	require.NoError(t, err)
+	defer runner.Close()
+	runner.Dir = dir
+
+	prog, parseErr := syntax.NewParser().Parse(strings.NewReader(
+		`for i in 1 2 3 4 5 6 7 8 9 10 11; do cat mb.txt >&2; done; exit 1`,
+	), "test")
+	require.NoError(t, parseErr)
+
+	runErr := runner.Run(ctx, prog)
+	assert.ErrorIs(t, runErr, interp.ErrStderrLimitExceeded,
+		"ErrStderrLimitExceeded must take precedence over a non-zero exit code")
+	var es interp.ExitStatus
+	assert.False(t, errors.As(runErr, &es),
+		"must not return ExitStatus when stderr cap was exceeded")
+}
+
+// TestBothStreamsCapReturnsJoinedError verifies that when a single Run() exceeds
+// both stdout and stderr caps, Run returns a joined error so errors.Is matches
+// either sentinel.
+func TestBothStreamsCapReturnsJoinedError(t *testing.T) {
+	dir := t.TempDir()
+	content := strings.Repeat("A", 1<<20)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "mb.txt"), []byte(content), 0644))
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	var outBuf, errBuf bytes.Buffer
+	runner, err := interp.New(
+		interp.StdIO(nil, &outBuf, &errBuf),
+		interp.AllowedPaths([]string{dir}),
+		interpoption.AllowAllCommands().(interp.RunnerOption),
+	)
+	require.NoError(t, err)
+	defer runner.Close()
+	runner.Dir = dir
+
+	// 11 MiB on each stream — both exceed the 10 MiB cap.
+	prog, parseErr := syntax.NewParser().Parse(strings.NewReader(
+		`for i in 1 2 3 4 5 6 7 8 9 10 11; do cat mb.txt; cat mb.txt >&2; done`,
+	), "test")
+	require.NoError(t, parseErr)
+
+	runErr := runner.Run(ctx, prog)
+	assert.ErrorIs(t, runErr, interp.ErrOutputLimitExceeded,
+		"joined error must match ErrOutputLimitExceeded")
+	assert.ErrorIs(t, runErr, interp.ErrStderrLimitExceeded,
+		"joined error must match ErrStderrLimitExceeded")
+	assert.LessOrEqual(t, outBuf.Len(), 10*1024*1024, "stdout must not exceed 10 MiB")
+	assert.LessOrEqual(t, errBuf.Len(), 10*1024*1024, "stderr must not exceed 10 MiB")
+}
+
+// TestStderrCapPoCRegression reproduces the rshell-vuln-hunt F-3 attack:
+// drive multi-MiB through stdin into a `while read line; do echo "$line" >&2; done`
+// loop and verify stderr is capped at 10 MiB. The driving script is tiny — the
+// volume comes through stdin, sidestepping MaxScriptBytes (5 MiB).
+func TestStderrCapPoCRegression(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	// Build ~12 MiB of input lines. Each line is 64 bytes + newline; 200_000 lines = ~13 MiB.
+	const lineLen = 64
+	const nLines = 200_000
+	line := strings.Repeat("x", lineLen) + "\n"
+	var input bytes.Buffer
+	for i := 0; i < nLines; i++ {
+		input.WriteString(line)
+	}
+
+	var errBuf bytes.Buffer
+	runner, err := interp.New(
+		interp.StdIO(&input, nil, &errBuf),
+		interpoption.AllowAllCommands().(interp.RunnerOption),
+	)
+	require.NoError(t, err)
+	defer runner.Close()
+
+	prog, parseErr := syntax.NewParser().Parse(strings.NewReader(
+		`while read -r line; do echo "$line" >&2; done`,
+	), "test")
+	require.NoError(t, parseErr)
+
+	runErr := runner.Run(ctx, prog)
+	assert.ErrorIs(t, runErr, interp.ErrStderrLimitExceeded,
+		"PoC must trigger ErrStderrLimitExceeded")
+	assert.LessOrEqual(t, errBuf.Len(), 10*1024*1024,
+		"stderr buffer must be bounded at 10 MiB; got %d bytes", errBuf.Len())
+}
+
 func TestCmdSubstOutputCapped(t *testing.T) {
 	// Generate output exceeding 1 MiB inside command substitution.
 	// The output should be truncated, not cause OOM.
