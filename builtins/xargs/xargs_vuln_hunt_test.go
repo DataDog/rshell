@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -101,4 +102,49 @@ func TestVulnHuntBuiltinIntegerOverflow_LRangeEdges(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestVulnHuntBuiltinFlagDrivenExploit_DangerousGNUOptionsRejected(t *testing.T) {
+	dir := t.TempDir()
+	for _, script := range []string{
+		"echo a | xargs -p echo",
+		"echo a | xargs -P 2 echo",
+		"echo a | xargs --process-slot-var=SLOT echo",
+		"echo a | xargs --open-tty echo",
+		"echo a | xargs --show-limits echo",
+	} {
+		t.Run(script, func(t *testing.T) {
+			stdout, stderr, code := cmdRun(t, script, dir)
+			assert.NotEqual(t, 0, code)
+			assert.Empty(t, stdout)
+			assert.Contains(t, stderr, "xargs:")
+		})
+	}
+}
+
+func TestVulnHuntBuiltinFileAccessBypass_ArgFileSymlinkOutsideSandbox(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlinks are restricted on Windows")
+	}
+	allowed := t.TempDir()
+	forbidden := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(forbidden, "secret.txt"), []byte("S3CR3T\n"), 0o644))
+	require.NoError(t, os.Symlink(filepath.Join(forbidden, "secret.txt"), filepath.Join(allowed, "link")))
+
+	stdout, stderr, code := runScript(t, "xargs -a link echo", allowed,
+		interp.AllowedPaths([]string{allowed}))
+	assert.NotEqual(t, 0, code)
+	assert.NotContains(t, stdout, "S3CR3T")
+	assert.Contains(t, stderr, "xargs:")
+}
+
+func TestVulnHuntBuiltinCompositionAttack_ChildReadCannotMutateParentVariable(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "items.txt"), nil, 0o644))
+
+	stdout, stderr, code := cmdRun(t,
+		"printf 'payload\\n' | xargs -a items.txt read X; echo \"X=[$X]\"", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "X=[]\n", stdout)
+	assert.Contains(t, stderr, "read: variable access is not available")
 }
