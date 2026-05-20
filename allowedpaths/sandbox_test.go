@@ -122,6 +122,24 @@ func TestSandboxOpenForWriteRejectsTrailingSeparator(t *testing.T) {
 	assert.Equal(t, "keep\n", string(data))
 }
 
+func TestSandboxOpenForWriteRejectsFinalDotComponent(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "target.txt")
+	require.NoError(t, os.WriteFile(target, []byte("keep\n"), 0644))
+
+	sb, _, err := New([]string{dir})
+	require.NoError(t, err)
+	defer sb.Close()
+
+	f, err := sb.OpenForWrite("target.txt"+string(filepath.Separator)+".", dir, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
+	assert.Nil(t, f)
+	assert.Contains(t, err.Error(), "not a directory")
+
+	data, err := os.ReadFile(target)
+	require.NoError(t, err)
+	assert.Equal(t, "keep\n", string(data))
+}
+
 func TestSandboxValidateRedirectWritePreflightPath(t *testing.T) {
 	dir := t.TempDir()
 	outside := t.TempDir()
@@ -138,6 +156,9 @@ func TestSandboxValidateRedirectWritePreflightPath(t *testing.T) {
 	assert.ErrorIs(t, err, os.ErrPermission)
 
 	err = sb.ValidateRedirectWritePreflightPath("existing.txt"+string(filepath.Separator), dir)
+	assert.Contains(t, err.Error(), "not a directory")
+
+	err = sb.ValidateRedirectWritePreflightPath("existing.txt"+string(filepath.Separator)+".", dir)
 	assert.Contains(t, err.Error(), "not a directory")
 
 	err = sb.ValidateRedirectWritePreflightPath(".", dir)
@@ -191,6 +212,24 @@ func TestSandboxOpenExistingForWriteRejectsTrailingSeparator(t *testing.T) {
 	defer sb.Close()
 
 	f, err := sb.OpenExistingForWrite("existing.txt"+string(filepath.Separator), dir)
+	assert.Nil(t, f)
+	assert.Contains(t, err.Error(), "not a directory")
+
+	data, err := os.ReadFile(target)
+	require.NoError(t, err)
+	assert.Equal(t, "keep\n", string(data))
+}
+
+func TestSandboxOpenExistingForWriteRejectsFinalDotComponent(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "existing.txt")
+	require.NoError(t, os.WriteFile(target, []byte("keep\n"), 0644))
+
+	sb, _, err := New([]string{dir})
+	require.NoError(t, err)
+	defer sb.Close()
+
+	f, err := sb.OpenExistingForWrite("existing.txt"+string(filepath.Separator)+".", dir)
 	assert.Nil(t, f)
 	assert.Contains(t, err.Error(), "not a directory")
 

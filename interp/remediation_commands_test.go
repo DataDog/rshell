@@ -322,6 +322,29 @@ func TestRemediationTruncateRejectsTrailingSeparatorBeforeHostExecution(t *testi
 	assert.Equal(t, "abcdef", string(data))
 }
 
+func TestRemediationTruncateRejectsFinalDotBeforeHostExecution(t *testing.T) {
+	requireHostExtraFilesSupported(t)
+	dir := t.TempDir()
+	target := filepath.Join(dir, "target.log")
+	require.NoError(t, os.WriteFile(target, []byte("abcdef"), 0644))
+	called := false
+
+	_, stderr, code := runScript(t, "truncate -s 0 target.log/.", dir,
+		interp.AllowedPaths([]string{dir}),
+		interp.HostCommandHandler(func(ctx context.Context, args []string) error {
+			called = true
+			return nil
+		}),
+	)
+
+	assert.Equal(t, 1, code)
+	assert.Contains(t, stderr, "not a directory")
+	assert.False(t, called)
+	data, err := os.ReadFile(target)
+	require.NoError(t, err)
+	assert.Equal(t, "abcdef", string(data))
+}
+
 func TestExecHandlerOptionRunsAllowedExternalCommand(t *testing.T) {
 	dir := t.TempDir()
 	var got []string

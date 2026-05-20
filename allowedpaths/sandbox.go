@@ -308,6 +308,16 @@ func hasTrailingPathSeparator(path string) bool {
 	return os.IsPathSeparator(path[len(path)-1])
 }
 
+func hasFinalDotPathComponent(path string) bool {
+	for len(path) > 0 && os.IsPathSeparator(path[len(path)-1]) {
+		path = path[:len(path)-1]
+	}
+	if path == "" || path == "." || path[len(path)-1] != '.' {
+		return false
+	}
+	return len(path) == 1 || os.IsPathSeparator(path[len(path)-2])
+}
+
 // IsDevNull reports whether path refers to the platform's null device.
 func IsDevNull(path string) bool {
 	if path == "/dev/null" {
@@ -368,6 +378,9 @@ func (s *Sandbox) OpenForWrite(path string, cwd string, flag int, perm os.FileMo
 	if hasTrailingPathSeparator(path) {
 		return nil, &os.PathError{Op: "open", Path: path, Err: errors.New("not a directory")}
 	}
+	if hasFinalDotPathComponent(path) {
+		return nil, &os.PathError{Op: "open", Path: path, Err: errors.New("not a directory")}
+	}
 
 	absPath := toAbs(path, cwd)
 
@@ -391,6 +404,9 @@ func (s *Sandbox) ValidateRedirectWritePreflightPath(path string, cwd string) er
 	if hasTrailingPathSeparator(path) {
 		return &os.PathError{Op: "open", Path: path, Err: errors.New("not a directory")}
 	}
+	if hasFinalDotPathComponent(path) {
+		return &os.PathError{Op: "open", Path: path, Err: errors.New("not a directory")}
+	}
 
 	absPath := toAbs(path, cwd)
 	ar, relPath, ok := s.resolve(absPath)
@@ -406,6 +422,9 @@ func (s *Sandbox) ValidateRedirectWritePreflightPath(path string, cwd string) er
 // commands that need a stable fd for an already-existing mutation target.
 func (s *Sandbox) OpenExistingForWrite(path string, cwd string) (*os.File, error) {
 	if hasTrailingPathSeparator(path) {
+		return nil, &os.PathError{Op: "open", Path: path, Err: errors.New("not a directory")}
+	}
+	if hasFinalDotPathComponent(path) {
 		return nil, &os.PathError{Op: "open", Path: path, Err: errors.New("not a directory")}
 	}
 

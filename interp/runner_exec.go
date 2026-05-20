@@ -39,6 +39,7 @@ func (r *Runner) stmtSync(ctx context.Context, st *syntax.Stmt) {
 	var (
 		callExpr          *syntax.CallExpr
 		callCommandFields []string
+		callArgsStart     int
 		callFields        []string
 		callPrechecked    bool
 	)
@@ -66,7 +67,7 @@ func (r *Runner) stmtSync(ctx context.Context, st *syntax.Stmt) {
 	if r.exit.ok() {
 		if cm, ok := st.Cmd.(*syntax.CallExpr); ok && stmtHasPotentialFileWriteRedirect(st) {
 			callExpr = cm
-			callCommandFields = r.expandCallCommandFields(cm)
+			callCommandFields, callArgsStart = r.expandCallCommandPrefixFields(cm)
 			if len(callCommandFields) == 0 {
 				r.errf("%s\n", stdoutFileRedirectionWithoutCommandError)
 				r.exit.code = 2
@@ -88,7 +89,7 @@ func (r *Runner) stmtSync(ctx context.Context, st *syntax.Stmt) {
 	// has passed AllowedCommands. Otherwise a blocked command could still
 	// create or truncate files inside AllowedPaths.
 	if r.exit.ok() && callExpr != nil {
-		callFields = r.expandRemainingCallFields(callExpr, callCommandFields)
+		callFields = r.expandRemainingCallFields(callExpr, callCommandFields, callArgsStart)
 		callPrechecked = true
 		if len(callFields) == 0 {
 			r.errf("%s\n", stdoutFileRedirectionWithoutCommandError)
@@ -182,17 +183,25 @@ func (r *Runner) expandCallFields(cm *syntax.CallExpr) []string {
 }
 
 func (r *Runner) expandCallCommandFields(cm *syntax.CallExpr) []string {
-	r.lastExpandExit = exitStatus{}
-	if len(cm.Args) == 0 {
-		return nil
-	}
-	return r.fields(cm.Args[0])
+	fields, _ := r.expandCallCommandPrefixFields(cm)
+	return fields
 }
 
-func (r *Runner) expandRemainingCallFields(cm *syntax.CallExpr, commandFields []string) []string {
+func (r *Runner) expandCallCommandPrefixFields(cm *syntax.CallExpr) ([]string, int) {
+	r.lastExpandExit = exitStatus{}
+	for i, arg := range cm.Args {
+		fields := r.fields(arg)
+		if len(fields) > 0 {
+			return fields, i + 1
+		}
+	}
+	return nil, len(cm.Args)
+}
+
+func (r *Runner) expandRemainingCallFields(cm *syntax.CallExpr, commandFields []string, start int) []string {
 	fields := append([]string(nil), commandFields...)
-	if len(cm.Args) > 1 {
-		fields = append(fields, r.fields(cm.Args[1:]...)...)
+	if len(cm.Args) > start {
+		fields = append(fields, r.fields(cm.Args[start:]...)...)
 	}
 	return fields
 }

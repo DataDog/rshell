@@ -1,0 +1,12 @@
+description: Output redirection honors a command promoted after an empty first-word expansion.
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    empty=
+    $empty echo ok > output.txt
+    cat output.txt
+expect:
+  stdout: |+
+    ok
+  stderr: |+
+  exit_code: 0
