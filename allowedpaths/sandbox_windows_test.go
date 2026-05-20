@@ -165,6 +165,49 @@ func TestOpenForWriteRejectsWindowsSymlinkParentWithinAllowedPath(t *testing.T) 
 	assert.NoFileExists(t, filepath.Join(dir, "real", "new.txt"))
 }
 
+func TestOpenForWriteRejectsWindowsIntermediateSymlinkEscape(t *testing.T) {
+	dir := t.TempDir()
+	outside := t.TempDir()
+	target := filepath.Join(outside, "target.txt")
+	require.NoError(t, os.WriteFile(target, []byte("keep\n"), 0644))
+	if err := os.Symlink(outside, filepath.Join(dir, "linkdir")); err != nil {
+		t.Skipf("creating symlink: %v", err)
+	}
+
+	sb, _, err := New([]string{dir})
+	require.NoError(t, err)
+	defer sb.Close()
+
+	f, err := sb.OpenForWrite(filepath.Join("linkdir", "target.txt"), dir, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
+	assert.Nil(t, f)
+	assert.ErrorIs(t, err, os.ErrPermission)
+
+	data, err := os.ReadFile(target)
+	require.NoError(t, err)
+	assert.Equal(t, "keep\n", string(data))
+}
+
+func TestOpenExistingForWriteRejectsWindowsSymlinkParentWithinAllowedPath(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.Mkdir(filepath.Join(dir, "real"), 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "real", "target.txt"), []byte("keep\n"), 0644))
+	if err := os.Symlink("real", filepath.Join(dir, "linkdir")); err != nil {
+		t.Skipf("creating symlink: %v", err)
+	}
+
+	sb, _, err := New([]string{dir})
+	require.NoError(t, err)
+	defer sb.Close()
+
+	f, err := sb.OpenExistingForWrite(filepath.Join("linkdir", "target.txt"), dir)
+	assert.Nil(t, f)
+	assert.ErrorIs(t, err, os.ErrPermission)
+
+	data, err := os.ReadFile(filepath.Join(dir, "real", "target.txt"))
+	require.NoError(t, err)
+	assert.Equal(t, "keep\n", string(data))
+}
+
 func TestValidateRedirectWritePreflightPathRejectsWindowsSymlinkParentWithinAllowedPath(t *testing.T) {
 	dir := t.TempDir()
 	require.NoError(t, os.Mkdir(filepath.Join(dir, "real"), 0755))

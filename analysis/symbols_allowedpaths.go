@@ -15,7 +15,7 @@ package analysis
 // Internal module imports (github.com/DataDog/rshell/*) are auto-allowed
 // and do not appear here.
 //
-// The permanently banned packages (reflect, unsafe) apply here too.
+// The permanently banned packages (for example reflect) apply here too.
 var allowedpathsAllowedSymbols = []string{
 	"bytes.Buffer",                         // 🟢 in-memory byte buffer; collects sandbox warnings for deferred output.
 	"context.Context",                      // 🟢 context type used to signal cancellation; no I/O or side effects.
@@ -44,7 +44,9 @@ var allowedpathsAllowedSymbols = []string{
 	"os.IsPathSeparator",                   // 🟢 checks whether a byte is a platform path separator; pure function, no I/O.
 	"os.O_APPEND",                          // 🟢 append file flag constant; only accepted by the dedicated redirection write-open path.
 	"os.O_CREATE",                          // 🟢 create file flag constant; only accepted by the dedicated redirection write-open path.
+	"os.O_EXCL",                            // 🟢 exclusive-create file flag constant; preserved when the dedicated write-open path creates files.
 	"os.O_RDONLY",                          // 🟢 read-only file flag constant; pure constant.
+	"os.O_RDWR",                            // 🟢 read-write file flag constant; preserved by the dedicated write-open path.
 	"os.O_TRUNC",                           // 🟢 truncate file flag constant; only accepted by the dedicated redirection write-open path.
 	"os.O_WRONLY",                          // 🟢 write-only file flag constant; only accepted by the dedicated redirection write-open path.
 	"os.NewFile",                           // 🟠 wraps a sandbox-opened file descriptor after fd-relative openat validation; does not open paths itself.
@@ -67,6 +69,7 @@ var allowedpathsAllowedSymbols = []string{
 	"strings.HasPrefix",                    // 🟢 pure function for prefix matching; no I/O.
 	"strings.Join",                         // 🟢 joins string slices; pure function, no I/O.
 	"strings.Split",                        // 🟢 splits a string by separator; pure function, no I/O.
+	"unsafe.Sizeof",                        // 🔴 computes native Windows OBJECT_ATTRIBUTES struct size for NtCreateFile; no pointer arithmetic or memory dereference.
 	"golang.org/x/sys/unix.Close",          // 🟠 closes intermediate directory file descriptors opened during fd-relative write-path validation.
 	"golang.org/x/sys/unix.ELOOP",          // 🟢 symlink-loop errno constant; normalized to permission denied for no-follow write opens.
 	"golang.org/x/sys/unix.ENOTDIR",        // 🟢 not-a-directory errno constant; normalized when no-follow parent traversal rejects a symlink directory.
@@ -77,14 +80,58 @@ var allowedpathsAllowedSymbols = []string{
 	"golang.org/x/sys/unix.O_NONBLOCK",     // 🟢 non-blocking open flag; prevents blocking if a final component races to a FIFO.
 	"golang.org/x/sys/unix.O_RDONLY",       // 🟢 read-only open flag for parent directory traversal.
 	"golang.org/x/sys/unix.Openat",         // 🟠 fd-relative open used to keep no-symlink write validation tied to the opened parent directory.
-	"syscall.ByHandleFileInformation",      // 🟢 Windows file identity structure; pure type for file metadata.
-	"syscall.EISDIR",                       // 🟢 "is a directory" errno constant; pure constant.
-	"syscall.ELOOP",                        // 🟢 "too many levels of symbolic links" errno constant; used to normalize no-follow write-open rejections.
-	"syscall.Errno",                        // 🟢 system call error number type; pure type.
-	"syscall.FILE_FLAG_OPEN_REPARSE_POINT", // 🟢 Windows no-follow open flag; opens reparse points themselves so sandbox write opens can reject them without following.
-	"syscall.GetFileInformationByHandle",   // 🟠 Windows API for file identity (vol serial + file index); read-only syscall.
-	"syscall.Handle",                       // 🟢 Windows file handle type; pure type alias.
-	"syscall.O_NONBLOCK",                   // 🟢 non-blocking open flag; prevents blocking on FIFOs during access checks. Pure constant.
-	"syscall.O_NOFOLLOW",                   // 🟢 no-follow open flag; prevents terminal symlink writes when opening sandboxed write targets.
-	"syscall.Stat_t",                       // 🟢 file stat structure type; pure type for Unix file metadata.
+	"golang.org/x/sys/windows.CloseHandle", // 🟠 closes intermediate Windows directory handles opened during fd-relative write-path validation.
+	"golang.org/x/sys/windows.ERROR_INVALID_PARAMETER",          // 🟢 Windows errno constant; used to ignore unsupported truncation on special handles.
+	"golang.org/x/sys/windows.FILE_APPEND_DATA",                 // 🟢 Windows access right; preserves append-only semantics when opening sandboxed write handles.
+	"golang.org/x/sys/windows.FILE_ATTRIBUTE_NORMAL",            // 🟢 Windows file attribute constant for normal file creation.
+	"golang.org/x/sys/windows.FILE_ATTRIBUTE_READONLY",          // 🟢 Windows file attribute constant mirroring non-writable creation modes.
+	"golang.org/x/sys/windows.FILE_CREATE",                      // 🟢 Windows NtCreateFile disposition for exclusive creation.
+	"golang.org/x/sys/windows.FILE_DIRECTORY_FILE",              // 🟢 Windows NtCreateFile option requiring an intermediate component to be a directory.
+	"golang.org/x/sys/windows.FILE_GENERIC_READ",                // 🟠 Windows read access right for opening intermediate directories and read-write handles.
+	"golang.org/x/sys/windows.FILE_GENERIC_WRITE",               // 🟠 Windows write access right for sandboxed write handles.
+	"golang.org/x/sys/windows.FILE_LIST_DIRECTORY",              // 🟢 Windows directory-list access right for intermediate directory handles.
+	"golang.org/x/sys/windows.FILE_NON_DIRECTORY_FILE",          // 🟢 Windows NtCreateFile option requiring the final component not to be a directory.
+	"golang.org/x/sys/windows.FILE_OPEN",                        // 🟢 Windows NtCreateFile disposition for opening existing components.
+	"golang.org/x/sys/windows.FILE_OPEN_FOR_BACKUP_INTENT",      // 🟠 Windows option matching Go's root open behavior for traversing directories with ACLs.
+	"golang.org/x/sys/windows.FILE_OPEN_IF",                     // 🟢 Windows NtCreateFile disposition for create-if-missing write opens.
+	"golang.org/x/sys/windows.FILE_READ_ATTRIBUTES",             // 🟢 Windows access right needed so os.File.Stat works on returned handles.
+	"golang.org/x/sys/windows.FILE_READ_EA",                     // 🟢 Windows access right needed so os.File.Stat works on returned handles.
+	"golang.org/x/sys/windows.FILE_SHARE_DELETE",                // 🟢 Windows share mode matching Go's root open behavior for race-safe traversal.
+	"golang.org/x/sys/windows.FILE_SHARE_READ",                  // 🟢 Windows share mode allowing concurrent readers of sandbox-opened handles.
+	"golang.org/x/sys/windows.FILE_SHARE_WRITE",                 // 🟢 Windows share mode allowing concurrent writers of sandbox-opened handles.
+	"golang.org/x/sys/windows.FILE_SYNCHRONOUS_IO_NONALERT",     // 🟢 Windows option for synchronous file handles compatible with os.File.
+	"golang.org/x/sys/windows.FILE_WRITE_DATA",                  // 🟢 Windows access bit removed for append-only handles unless truncation is requested.
+	"golang.org/x/sys/windows.Handle",                           // 🟢 Windows file handle type; pure type alias.
+	"golang.org/x/sys/windows.IO_STATUS_BLOCK",                  // 🟢 Windows NtCreateFile status structure; pure type.
+	"golang.org/x/sys/windows.InvalidHandle",                    // 🟢 Windows invalid handle sentinel; pure constant.
+	"golang.org/x/sys/windows.NTStatus",                         // 🟢 Windows NT status error type; used for deterministic errno normalization.
+	"golang.org/x/sys/windows.NewNTUnicodeString",               // 🟠 converts one path component to the NT string form required by NtCreateFile.
+	"golang.org/x/sys/windows.NtCreateFile",                     // 🟠 fd-relative Windows open used with OBJ_DONT_REPARSE to avoid following reparse points on write paths.
+	"golang.org/x/sys/windows.OBJ_CASE_INSENSITIVE",             // 🟢 Windows object attribute matching normal case-insensitive path lookup.
+	"golang.org/x/sys/windows.OBJ_DONT_REPARSE",                 // 🟠 Windows object attribute that rejects reparse points during component traversal.
+	"golang.org/x/sys/windows.OBJECT_ATTRIBUTES",                // 🟢 Windows NtCreateFile object attributes structure; pure type.
+	"golang.org/x/sys/windows.STANDARD_RIGHTS_READ",             // 🟢 Windows access right needed so os.File.Stat works on returned handles.
+	"golang.org/x/sys/windows.STATUS_FILE_IS_A_DIRECTORY",       // 🟢 Windows NT status mapped to POSIX-style is-a-directory errors.
+	"golang.org/x/sys/windows.STATUS_NOT_A_DIRECTORY",           // 🟢 Windows NT status mapped to permission denial for no-follow parent traversal.
+	"golang.org/x/sys/windows.STATUS_OBJECT_NAME_COLLISION",     // 🟢 Windows NT status mapped to already-exists errors for exclusive creation.
+	"golang.org/x/sys/windows.STATUS_REPARSE_POINT_ENCOUNTERED", // 🟢 Windows NT status mapped to permission denial for no-follow reparse point rejection.
+	"golang.org/x/sys/windows.SYNCHRONIZE",                      // 🟢 Windows access right required for synchronous file handles.
+	"syscall.ByHandleFileInformation",                           // 🟢 Windows file identity structure; pure type for file metadata.
+	"syscall.EEXIST",                                            // 🟢 "file exists" errno constant; used to normalize Windows exclusive-create failures.
+	"syscall.EISDIR",                                            // 🟢 "is a directory" errno constant; pure constant.
+	"syscall.ELOOP",                                             // 🟢 "too many levels of symbolic links" errno constant; used to normalize no-follow write-open rejections.
+	"syscall.ENOTDIR",                                           // 🟢 "not a directory" errno constant; used to normalize no-follow parent traversal failures.
+	"syscall.Errno",                                             // 🟢 system call error number type; pure type.
+	"syscall.ERROR_FILE_NOT_FOUND",                              // 🟢 Windows errno constant returned for empty or missing path components.
+	"syscall.EINVAL",                                            // 🟢 invalid argument errno constant used when os.NewFile rejects an invalid Windows handle.
+	"syscall.FILE_TYPE_CHAR",                                    // 🟢 Windows file type constant; used to match Go truncation semantics for special handles.
+	"syscall.FILE_TYPE_PIPE",                                    // 🟢 Windows file type constant; used to match Go truncation semantics for special handles.
+	"syscall.Ftruncate",                                         // 🟠 truncates the already sandbox-opened Windows file handle when O_TRUNC is requested.
+	"syscall.GetFileInformationByHandle",                        // 🟠 Windows API for file identity (vol serial + file index); read-only syscall.
+	"syscall.GetFileType",                                       // 🟠 reads the type of an already-open Windows handle to preserve Go's O_TRUNC special-file behavior.
+	"syscall.Handle",                                            // 🟢 Windows file handle type; pure type alias.
+	"syscall.O_NONBLOCK",                                        // 🟢 non-blocking open flag; prevents blocking on FIFOs during access checks. Pure constant.
+	"syscall.O_NOFOLLOW",                                        // 🟢 no-follow open flag; prevents terminal symlink writes when opening sandboxed write targets.
+	"syscall.S_IWRITE",                                          // 🟢 Windows write permission bit used to translate Go create modes into file attributes.
+	"syscall.Stat_t",                                            // 🟢 file stat structure type; pure type for Unix file metadata.
 }
