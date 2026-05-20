@@ -41,37 +41,36 @@ func (r *Runner) stmtSync(ctx context.Context, st *syntax.Stmt) {
 		callFields     []string
 		callPrechecked bool
 	)
+	if err := r.preflightFileBackedFdDupRedirects(st.Redirs); err != nil {
+		r.errf("%s\n", err)
+		r.exit.code = 1
+	}
 	// Destructive stdout redirects must not be opened until the command name
 	// has passed AllowedCommands. Otherwise a blocked command could still
 	// create or truncate files inside AllowedPaths.
-	if cm, ok := st.Cmd.(*syntax.CallExpr); ok && stmtHasPotentialFileWriteRedirect(st) {
-		callExpr = cm
-		callFields = r.expandCallFields(cm)
-		callPrechecked = true
-		if len(callFields) == 0 {
-			r.errf("%s\n", stdoutFileRedirectionWithoutCommandError)
-			r.exit.code = 2
-		} else if !r.commandAllowed(callFields[0]) {
-			r.cmdCallFields(ctx, cm, callFields)
+	if r.exit.ok() {
+		if cm, ok := st.Cmd.(*syntax.CallExpr); ok && stmtHasPotentialFileWriteRedirect(st) {
+			callExpr = cm
+			callFields = r.expandCallFields(cm)
+			callPrechecked = true
+			if len(callFields) == 0 {
+				r.errf("%s\n", stdoutFileRedirectionWithoutCommandError)
+				r.exit.code = 2
+			} else if !r.commandAllowed(callFields[0]) {
+				r.cmdCallFields(ctx, cm, callFields)
+			}
 		}
 	}
 	if r.exit.ok() {
-		if err := r.preflightFileBackedFdDupRedirects(st.Redirs); err != nil {
-			r.errf("%s\n", err)
-			r.exit.code = 1
-		}
-	}
-	for _, rd := range st.Redirs {
-		if !r.exit.ok() {
-			break
-		}
-		cls, err := r.redir(ctx, rd)
-		if err != nil {
-			r.exit.code = 1
-			break
-		}
-		if cls != nil {
-			defer cls.Close()
+		for _, rd := range st.Redirs {
+			cls, err := r.redir(ctx, rd)
+			if err != nil {
+				r.exit.code = 1
+				break
+			}
+			if cls != nil {
+				defer cls.Close()
+			}
 		}
 	}
 	if r.exit.ok() && st.Cmd != nil {
