@@ -273,17 +273,20 @@ func TestRemediationSystemctlDelegatesLifecycleAction(t *testing.T) {
 	dir := t.TempDir()
 	var got []string
 
-	stdout, stderr, code := runScript(t, "systemctl restart app.service", dir,
-		interp.HostCommandHandler(func(ctx context.Context, args []string) error {
-			got = append([]string(nil), args...)
-			return nil
-		}),
-	)
+	for _, action := range []string{"restart", "start", "stop", "reload", "status"} {
+		got = nil
+		stdout, stderr, code := runScript(t, "systemctl "+action+" app.service", dir,
+			interp.HostCommandHandler(func(ctx context.Context, args []string) error {
+				got = append([]string(nil), args...)
+				return nil
+			}),
+		)
 
-	assert.Equal(t, 0, code)
-	assert.Equal(t, "", stdout)
-	assert.Equal(t, "", stderr)
-	assert.Equal(t, []string{"systemctl", "restart", "--", "app.service"}, got)
+		assert.Equal(t, 0, code)
+		assert.Equal(t, "", stdout)
+		assert.Equal(t, "", stderr)
+		assert.Equal(t, []string{"systemctl", action, "--", "app.service"}, got)
+	}
 }
 
 func TestRemediationSystemctlPreservesLeadingDashUnit(t *testing.T) {
@@ -303,6 +306,40 @@ func TestRemediationSystemctlPreservesLeadingDashUnit(t *testing.T) {
 	assert.Equal(t, []string{"systemctl", "restart", "--", "-app.service"}, got)
 }
 
+func TestRemediationSystemctlShowActiveStateDelegates(t *testing.T) {
+	dir := t.TempDir()
+	var got []string
+
+	stdout, stderr, code := runScript(t, "systemctl show --property=ActiveState --value app.service", dir,
+		interp.HostCommandHandler(func(ctx context.Context, args []string) error {
+			got = append([]string(nil), args...)
+			return nil
+		}),
+	)
+
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "", stdout)
+	assert.Equal(t, "", stderr)
+	assert.Equal(t, []string{"systemctl", "show", "--property=ActiveState", "--value", "--", "app.service"}, got)
+}
+
+func TestRemediationSystemctlShowActiveStatePreservesLeadingDashUnit(t *testing.T) {
+	dir := t.TempDir()
+	var got []string
+
+	stdout, stderr, code := runScript(t, "systemctl show --property ActiveState --value -- -app.service", dir,
+		interp.HostCommandHandler(func(ctx context.Context, args []string) error {
+			got = append([]string(nil), args...)
+			return nil
+		}),
+	)
+
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "", stdout)
+	assert.Equal(t, "", stderr)
+	assert.Equal(t, []string{"systemctl", "show", "--property=ActiveState", "--value", "--", "-app.service"}, got)
+}
+
 func TestRemediationSystemctlRejectsUnsupportedAction(t *testing.T) {
 	dir := t.TempDir()
 	called := false
@@ -317,6 +354,28 @@ func TestRemediationSystemctlRejectsUnsupportedAction(t *testing.T) {
 	assert.Equal(t, 1, code)
 	assert.Contains(t, stderr, "unsupported action")
 	assert.False(t, called)
+}
+
+func TestRemediationSystemctlRejectsUnsupportedShowShape(t *testing.T) {
+	dir := t.TempDir()
+	called := false
+
+	for _, script := range []string{
+		"systemctl show --property=SubState --value app.service",
+		"systemctl show --property=ActiveState app.service",
+		"systemctl restart --property=ActiveState --value app.service",
+	} {
+		_, stderr, code := runScript(t, script, dir,
+			interp.HostCommandHandler(func(ctx context.Context, args []string) error {
+				called = true
+				return nil
+			}),
+		)
+
+		assert.Equal(t, 1, code)
+		assert.NotEmpty(t, stderr)
+		assert.False(t, called)
+	}
 }
 
 func TestRemediationKillDelegatesForcePid(t *testing.T) {
