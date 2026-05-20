@@ -8,6 +8,7 @@ package systemctl
 
 import (
 	"context"
+	"strings"
 
 	"github.com/DataDog/rshell/builtins"
 )
@@ -20,7 +21,7 @@ var Cmd = builtins.Command{
 }
 
 func printUsage(callCtx *builtins.CallContext) {
-	callCtx.Out("Usage: systemctl ACTION UNIT\n")
+	callCtx.Out("Usage: systemctl [--json] ACTION UNIT\n")
 	callCtx.Out("       systemctl show --property=ActiveState --value UNIT\n")
 	callCtx.Out("Run start, stop, restart, reload, or status for UNIT.\n")
 }
@@ -28,6 +29,7 @@ func printUsage(callCtx *builtins.CallContext) {
 func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 	propertyFlag := fs.StringP("property", "p", "", "show a supported unit property")
 	valueFlag := fs.Bool("value", false, "print only the property value for show")
+	jsonFlag := fs.Bool("json", false, "print a structured remediation receipt")
 	helpFlag := fs.BoolP("help", "h", false, "print usage and exit")
 
 	return func(ctx context.Context, callCtx *builtins.CallContext, args []string) builtins.Result {
@@ -51,7 +53,11 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 				callCtx.Errf("systemctl: --property and --value are only supported with show\n")
 				return builtins.Result{Code: 1}
 			}
-			return callCtx.InvokeHostCommand(ctx, "systemctl", []string{args[0], "--", args[1]})
+			hostArgs := []string{args[0], "--", args[1]}
+			if *jsonFlag {
+				return runJSON(ctx, callCtx, args[0], args[1], hostArgs)
+			}
+			return callCtx.InvokeHostCommand(ctx, "systemctl", hostArgs)
 		case "show":
 			if len(args) != 2 {
 				callCtx.Errf("systemctl: expected show UNIT\n")
@@ -65,10 +71,60 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 				callCtx.Errf("systemctl: show requires --value\n")
 				return builtins.Result{Code: 1}
 			}
-			return callCtx.InvokeHostCommand(ctx, "systemctl", []string{"show", "--property=ActiveState", "--value", "--", args[1]})
+			hostArgs := activeStateArgs(args[1])
+			if *jsonFlag {
+				return runJSON(ctx, callCtx, "show", args[1], hostArgs)
+			}
+			return callCtx.InvokeHostCommand(ctx, "systemctl", hostArgs)
 		default:
 			callCtx.Errf("systemctl: unsupported action: %s\n", args[0])
 			return builtins.Result{Code: 1}
 		}
 	}
+}
+
+type receipt struct {
+	Unit        string `json:"unit"`
+	Action      string `json:"action"`
+	ActiveState string `json:"active_state"`
+	ExitCode    uint8  `json:"exit_code"`
+	Stdout      string `json:"stdout"`
+	Stderr      string `json:"stderr"`
+}
+
+func runJSON(ctx context.Context, callCtx *builtins.CallContext, action, unit string, hostArgs []string) builtins.Result {
+	actionHost, res, ok := callCtx.CaptureHostCommand(ctx, "systemctl", hostArgs)
+	if !ok {
+		return res
+	}
+	stateHost := actionHost
+	if action != "show" {
+		stateHost, res, ok = callCtx.CaptureHostCommand(ctx, "systemctl", activeStateArgs(unit))
+		if !ok {
+			return res
+		}
+	}
+	activeState := strings.TrimSpace(stateHost.Stdout)
+	exitCode := actionHost.Code
+	stderr := actionHost.Stderr
+	if actionHost.Code == 0 && stateHost.Code != 0 {
+		exitCode = stateHost.Code
+		stderr += stateHost.Stderr
+	}
+	outRes := callCtx.OutJSON(receipt{
+		Unit:        unit,
+		Action:      action,
+		ActiveState: activeState,
+		ExitCode:    exitCode,
+		Stdout:      actionHost.Stdout,
+		Stderr:      stderr,
+	})
+	if outRes.Code != 0 || outRes.Exiting {
+		return outRes
+	}
+	return builtins.Result{Code: exitCode}
+}
+
+func activeStateArgs(unit string) []string {
+	return []string{"show", "--property=ActiveState", "--value", "--", unit}
 }

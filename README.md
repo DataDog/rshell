@@ -74,6 +74,8 @@ Every access path is default-deny:
 
 **Guarded host commands** (`truncate`, `systemctl`, `kill`, `logrotate`, and `tee`) validate a narrow rshell contract before invoking the host command handler. File-mutating commands hand the handler sandbox-opened descriptors instead of raw writable paths. Their command shapes intentionally mirror the remediation primitives exposed by benchmark tooling; broader native command flags remain blocked by rshell argument validation or by the caller-provided handler.
 
+**Explicit remediation writes** can use `write_file [--mode overwrite|append] [--json] FILE` when a benchmark wants a command-shaped `write_file` action instead of redirection syntax. The command reads stdin and writes only through `AllowedPaths`.
+
 ## Shell Features
 
 Inside rshell, run `help` to list supported feature categories, a concise unsupported-feature summary, enabled commands, and the configured `AllowedPaths` sandbox roots (or a notice when none are configured). Use `help <feature|command>` for details about a specific rshell feature or command.

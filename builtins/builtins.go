@@ -7,6 +7,7 @@ package builtins
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -42,6 +43,14 @@ type Flag = pflag.Flag
 // HandlerFunc is the bound handler called by the framework after flags are
 // parsed. args contains only the positional (non-flag) arguments.
 type HandlerFunc func(ctx context.Context, callCtx *CallContext, args []string) Result
+
+// CapturedHostCommand is the output from a guarded host command run with
+// stdout/stderr captured instead of streamed to the shell's current fds.
+type CapturedHostCommand struct {
+	Code   uint8
+	Stdout string
+	Stderr string
+}
 
 // Command pairs a builtin name with its flag-declaring factory. MakeFlags
 // registers any flags on the provided FlagSet and returns the bound handler.
@@ -288,6 +297,12 @@ type CallContext struct {
 	// returned by HostExtraFilePath refer to the opened files.
 	RunHostCommandWithFiles func(ctx context.Context, name string, args []string, extraFiles []*os.File) (uint8, error)
 
+	// RunHostCommandWithFilesCapture is like RunHostCommandWithFiles, but
+	// captures stdout and stderr for builtins that need to return structured
+	// command receipts. It is optional so older direct CallContext tests can
+	// keep constructing only the capabilities they need.
+	RunHostCommandWithFilesCapture func(ctx context.Context, name string, args []string, extraFiles []*os.File) (CapturedHostCommand, error)
+
 	// SetVar assigns a value to a shell variable in the calling shell's
 	// scope. Returns an error if the value exceeds the per-variable size
 	// limit or if the total variable-storage cap would be exceeded.
@@ -313,6 +328,18 @@ func (c *CallContext) Out(s string) {
 // Outf writes a formatted string to stdout.
 func (c *CallContext) Outf(format string, a ...any) {
 	fmt.Fprintf(c.Stdout, format, a...)
+}
+
+// OutJSON writes v as a single compact JSON line to stdout.
+func (c *CallContext) OutJSON(v any) Result {
+	data, err := json.Marshal(v)
+	if err != nil {
+		c.Errf("json: %s\n", err)
+		return Result{Code: 1}
+	}
+	c.Out(string(data))
+	c.Out("\n")
+	return Result{}
 }
 
 // Errf writes a formatted string to stderr.
@@ -374,6 +401,36 @@ func (c *CallContext) InvokeHostCommandWithFiles(ctx context.Context, name strin
 		return Result{Code: 1}
 	}
 	return Result{Code: code}
+}
+
+// CaptureHostCommandWithFiles runs a guarded host command with additional
+// sandbox-opened files and captures stdout/stderr for structured receipts.
+func (c *CallContext) CaptureHostCommandWithFiles(ctx context.Context, name string, args []string, extraFiles []*os.File) (CapturedHostCommand, Result, bool) {
+	for _, f := range extraFiles {
+		defer f.Close()
+	}
+	if len(extraFiles) > 0 && !HostExtraFilesSupported() {
+		c.Errf("%s: host file descriptor handoff is not supported on this platform\n", name)
+		return CapturedHostCommand{}, Result{Code: 1}, false
+	}
+	if c.RunHostCommandWithFilesCapture == nil {
+		c.Errf("%s: host command capture is not available\n", name)
+		return CapturedHostCommand{}, Result{Code: 127}, false
+	}
+	output, err := c.RunHostCommandWithFilesCapture(ctx, name, args, extraFiles)
+	if err != nil {
+		c.Errf("%s: %s\n", name, err)
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return CapturedHostCommand{}, Result{Code: 1, Exiting: true}, false
+		}
+		return CapturedHostCommand{}, Result{Code: 1}, false
+	}
+	return output, Result{}, true
+}
+
+// CaptureHostCommand is CaptureHostCommandWithFiles without extra files.
+func (c *CallContext) CaptureHostCommand(ctx context.Context, name string, args []string) (CapturedHostCommand, Result, bool) {
+	return c.CaptureHostCommandWithFiles(ctx, name, args, nil)
 }
 
 // IsBrokenPipe reports whether err is a broken-pipe (EPIPE) error,

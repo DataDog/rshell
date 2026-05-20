@@ -100,6 +100,28 @@ func TestRemediationTruncateDelegatesThroughExecHandlerByDefault(t *testing.T) {
 	assert.Equal(t, []string{"truncate", "-s", "0", "--", builtins.HostExtraFilePath(0)}, got)
 }
 
+func TestRemediationTruncateJSONReportsSizes(t *testing.T) {
+	requireHostExtraFilesSupported(t)
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "app.log"), []byte("abcdef"), 0644))
+
+	stdout, stderr, code := runScript(t, "truncate --json -s 3 app.log", dir,
+		interp.AllowedPaths([]string{dir}),
+		interp.HostCommandHandler(func(ctx context.Context, args []string) error {
+			require.Equal(t, []string{"truncate", "-s", "3", "--", builtins.HostExtraFilePath(0)}, args)
+			require.Len(t, interp.HandlerCtx(ctx).ExtraFiles, 1)
+			return interp.HandlerCtx(ctx).ExtraFiles[0].Truncate(3)
+		}),
+	)
+
+	assert.Equal(t, 0, code)
+	assert.JSONEq(t, `{"path":"app.log","bytes_before":6,"bytes_after":3,"size_bytes":3,"exit_code":0,"stdout":"","stderr":""}`, stdout)
+	assert.Equal(t, "", stderr)
+	data, err := os.ReadFile(filepath.Join(dir, "app.log"))
+	require.NoError(t, err)
+	assert.Equal(t, "abc", string(data))
+}
+
 func TestRemediationTruncatePreservesLeadingDashOperand(t *testing.T) {
 	requireHostExtraFilesSupported(t)
 	dir := t.TempDir()
@@ -340,6 +362,30 @@ func TestRemediationSystemctlShowActiveStatePreservesLeadingDashUnit(t *testing.
 	assert.Equal(t, []string{"systemctl", "show", "--property=ActiveState", "--value", "--", "-app.service"}, got)
 }
 
+func TestRemediationSystemctlJSONReportsActiveState(t *testing.T) {
+	dir := t.TempDir()
+	var got [][]string
+
+	stdout, stderr, code := runScript(t, "systemctl --json restart app.service", dir,
+		interp.HostCommandHandler(func(ctx context.Context, args []string) error {
+			got = append(got, append([]string(nil), args...))
+			if len(args) > 1 && args[1] == "show" {
+				_, err := io.WriteString(interp.HandlerCtx(ctx).Stdout, "active\n")
+				return err
+			}
+			return nil
+		}),
+	)
+
+	assert.Equal(t, 0, code)
+	assert.JSONEq(t, `{"unit":"app.service","action":"restart","active_state":"active","exit_code":0,"stdout":"","stderr":""}`, stdout)
+	assert.Equal(t, "", stderr)
+	assert.Equal(t, [][]string{
+		{"systemctl", "restart", "--", "app.service"},
+		{"systemctl", "show", "--property=ActiveState", "--value", "--", "app.service"},
+	}, got)
+}
+
 func TestRemediationSystemctlRejectsUnsupportedAction(t *testing.T) {
 	dir := t.TempDir()
 	called := false
@@ -380,11 +426,14 @@ func TestRemediationSystemctlRejectsUnsupportedShowShape(t *testing.T) {
 
 func TestRemediationKillDelegatesForcePid(t *testing.T) {
 	dir := t.TempDir()
-	var got []string
+	var got [][]string
 
 	stdout, stderr, code := runScript(t, "kill -9 123", dir,
 		interp.HostCommandHandler(func(ctx context.Context, args []string) error {
-			got = append([]string(nil), args...)
+			got = append(got, append([]string(nil), args...))
+			if len(args) > 1 && args[1] == "-0" {
+				return interp.ExitStatus(1)
+			}
 			return nil
 		}),
 	)
@@ -392,7 +441,28 @@ func TestRemediationKillDelegatesForcePid(t *testing.T) {
 	assert.Equal(t, 0, code)
 	assert.Equal(t, "", stdout)
 	assert.Equal(t, "", stderr)
-	assert.Equal(t, []string{"kill", "-9", "123"}, got)
+	assert.Equal(t, [][]string{
+		{"kill", "-9", "123"},
+		{"kill", "-0", "123"},
+	}, got)
+}
+
+func TestRemediationKillJSONReportsTimedOut(t *testing.T) {
+	dir := t.TempDir()
+	var got [][]string
+
+	stdout, stderr, code := runScript(t, "kill --json --timeout 1ms 123", dir,
+		interp.HostCommandHandler(func(ctx context.Context, args []string) error {
+			got = append(got, append([]string(nil), args...))
+			return nil
+		}),
+	)
+
+	assert.Equal(t, 0, code)
+	assert.JSONEq(t, `{"pid":123,"force":false,"signal":"SIGTERM","timed_out":true,"exit_code":0,"stdout":"","stderr":""}`, stdout)
+	assert.Equal(t, "", stderr)
+	assert.NotEmpty(t, got)
+	assert.Equal(t, []string{"kill", "123"}, got[0])
 }
 
 func TestRemediationKillRejectsInvalidPid(t *testing.T) {
@@ -409,6 +479,37 @@ func TestRemediationKillRejectsInvalidPid(t *testing.T) {
 	assert.Equal(t, 1, code)
 	assert.Contains(t, stderr, "invalid pid")
 	assert.False(t, called)
+}
+
+func TestRemediationWriteFileJSONWritesAndReports(t *testing.T) {
+	dir := t.TempDir()
+
+	stdout, stderr, code := runScript(t, "write_file --json output.txt <<'EOF'\npayload\nEOF\n", dir,
+		interp.AllowedPaths([]string{dir}),
+	)
+
+	assert.Equal(t, 0, code)
+	assert.JSONEq(t, `{"path":"output.txt","mode":"overwrite","bytes_written":8,"bytes_after":8,"created":true,"exit_code":0,"stdout":"","stderr":""}`, stdout)
+	assert.Equal(t, "", stderr)
+	data, err := os.ReadFile(filepath.Join(dir, "output.txt"))
+	require.NoError(t, err)
+	assert.Equal(t, "payload\n", string(data))
+}
+
+func TestRemediationWriteFileAppendReportsExistingTarget(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "output.txt"), []byte("old\n"), 0644))
+
+	stdout, stderr, code := runScript(t, "write_file --json --mode append output.txt <<'EOF'\nnew\nEOF\n", dir,
+		interp.AllowedPaths([]string{dir}),
+	)
+
+	assert.Equal(t, 0, code)
+	assert.JSONEq(t, `{"path":"output.txt","mode":"append","bytes_written":4,"bytes_after":8,"created":false,"exit_code":0,"stdout":"","stderr":""}`, stdout)
+	assert.Equal(t, "", stderr)
+	data, err := os.ReadFile(filepath.Join(dir, "output.txt"))
+	require.NoError(t, err)
+	assert.Equal(t, "old\nnew\n", string(data))
 }
 
 func TestRemediationTeeDelegatesAppendWithStdin(t *testing.T) {
@@ -620,6 +721,29 @@ func TestRemediationLogrotateDelegatesExistingPath(t *testing.T) {
 	assert.Equal(t, "", stdout)
 	assert.Equal(t, "", stderr)
 	assert.Equal(t, []string{"logrotate", "--", builtins.HostExtraFilePath(0)}, got)
+}
+
+func TestRemediationLogrotateJSONReportsRotatedPath(t *testing.T) {
+	requireHostExtraFilesSupported(t)
+	dir := t.TempDir()
+	active := filepath.Join(dir, "app.log")
+	rotated := filepath.Join(dir, "app.log.1")
+	require.NoError(t, os.WriteFile(active, []byte("payload\n"), 0644))
+
+	stdout, stderr, code := runScript(t, "logrotate --json app.log", dir,
+		interp.AllowedPaths([]string{dir}),
+		interp.HostCommandHandler(func(ctx context.Context, args []string) error {
+			require.Equal(t, []string{"logrotate", "--", builtins.HostExtraFilePath(0)}, args)
+			require.NoError(t, os.Rename(active, rotated))
+			return os.WriteFile(active, nil, 0644)
+		}),
+	)
+
+	assert.Equal(t, 0, code)
+	assert.JSONEq(t, `{"path":"app.log","rotated_path":"app.log.1","bytes_before":8,"bytes_after":0,"exit_code":0,"stdout":"","stderr":""}`, stdout)
+	assert.Equal(t, "", stderr)
+	assert.FileExists(t, active)
+	assert.FileExists(t, rotated)
 }
 
 func TestRemediationLogrotatePreservesLeadingDashOperand(t *testing.T) {

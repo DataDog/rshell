@@ -27,16 +27,20 @@ func (r *Runner) handlerCtxWithDir(ctx context.Context, pos syntax.Pos, dir stri
 }
 
 func (r *Runner) handlerCtxWithDirFiles(ctx context.Context, pos syntax.Pos, dir string, extraFiles []*os.File) context.Context {
+	return r.handlerCtxWithDirFilesIO(ctx, pos, dir, extraFiles, r.stdin, r.stdout, r.stderr)
+}
+
+func (r *Runner) handlerCtxWithDirFilesIO(ctx context.Context, pos syntax.Pos, dir string, extraFiles []*os.File, stdin io.Reader, stdout, stderr io.Writer) context.Context {
 	hc := HandlerContext{
 		Env:        &overlayEnviron{parent: r.writeEnv},
 		Dir:        dir,
 		Pos:        pos,
-		Stdout:     r.stdout,
-		Stderr:     r.stderr,
+		Stdout:     stdout,
+		Stderr:     stderr,
 		ExtraFiles: extraFiles,
 	}
-	if r.stdin != nil { // do not leave hc.Stdin as a typed nil
-		hc.Stdin = r.stdin
+	if stdin != nil { // do not leave hc.Stdin as a typed nil
+		hc.Stdin = stdin
 	}
 	return context.WithValue(ctx, handlerCtxKey{}, hc)
 }

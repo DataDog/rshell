@@ -198,10 +198,20 @@ var builtinPerCommandSymbols = map[string][]string{
 		"context.Context",   // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
 		"strconv.FormatInt", // 🟢 int-to-string conversion; pure function, no I/O.
 		"strconv.ParseInt",  // 🟢 string-to-int conversion with overflow checking; pure function, no I/O.
+		"time.Duration",     // 🟢 duration type; pure integer alias, no I/O.
+		"time.Millisecond",  // 🟢 constant representing one millisecond; no side effects.
+		"time.NewTicker",    // 🟢 creates an in-memory timer channel for bounded polling; no I/O.
+		"time.NewTimer",     // 🟢 creates an in-memory timer channel for bounded polling; no I/O.
+		"time.Second",       // 🟢 constant representing one second; no side effects.
 	},
 	"logrotate": {
-		"context.Context", // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
-		"os.File",         // 🟠 *os.File type used only to pass sandbox-opened descriptors through the host handler; no constructors invoked.
+		"context.Context",    // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
+		"os.File",            // 🟠 *os.File type used only to pass sandbox-opened descriptors through the host handler; no constructors invoked.
+		"path/filepath.Base", // 🟢 returns the final path component; pure function, no I/O.
+		"path/filepath.Dir",  // 🟢 returns the directory component of a path; pure function, no I/O.
+		"path/filepath.Join", // 🟢 lexically joins path components with the OS separator; pure function, no I/O.
+		"sort.Strings",       // 🟢 sorts strings in memory; pure function, no I/O.
+		"strings.HasPrefix",  // 🟢 pure function for prefix matching; no I/O.
 	},
 	"ls": {
 		"context.Context",                    // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
@@ -354,7 +364,8 @@ var builtinPerCommandSymbols = map[string][]string{
 		"strconv.FormatInt", // 🟢 int-to-string conversion; pure function, no I/O.
 	},
 	"systemctl": {
-		"context.Context", // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
+		"context.Context",   // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
+		"strings.TrimSpace", // 🟢 removes leading/trailing whitespace; pure function.
 	},
 	"tail": {
 		"bufio.NewScanner",  // 🟢 line-by-line input reading (e.g. head, cat); no write or exec capability.
@@ -465,6 +476,11 @@ var builtinPerCommandSymbols = map[string][]string{
 		"unicode/utf8.UTFMax",     // 🟢 maximum number of bytes in a UTF-8 encoding; constant, no I/O.
 		"unicode/utf8.Valid",      // 🟢 checks if a byte slice is valid UTF-8; pure function, no I/O.
 	},
+	"write_file": {
+		"context.Context", // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
+		"io.LimitReader",  // 🟢 wraps stdin with an in-memory byte cap; no file/network side effects.
+		"io.ReadAll",      // 🟢 reads from the already-provided stdin reader; no new filesystem/network access.
+	},
 	"xargs": {
 		"bufio.NewReaderSize", // 🟢 buffered reader with caller-supplied size; pure wrapper, no I/O capability of its own.
 		"bufio.Reader",        // 🟢 buffered reader type; pure data, no side effects.
@@ -574,8 +590,10 @@ var builtinAllowedSymbols = []string{
 	"golang.org/x/sys/unix.SysctlRaw",                     // 🟠 macOS: reads kernel socket tables (read-only, no exec, no filesystem).
 	"golang.org/x/term.IsTerminal",                        // 🟠 platform-specific isatty check (TIOCGETA / GetConsoleMode); used to gate read -p prompt emission. Read-only inspection of the file descriptor; no I/O.
 	"io.EOF",                                              // 🟢 sentinel error value; pure constant.
+	"io.LimitReader",                                      // 🟢 wraps a Reader with a byte cap; no I/O beyond reads requested by caller.
 	"io.MultiReader",                                      // 🟢 combines multiple Readers into one sequential Reader; no I/O side effects.
 	"io.NopCloser",                                        // 🟢 wraps a Reader with a no-op Close; no side effects.
+	"io.ReadAll",                                          // 🟢 reads from an already-provided Reader; no new filesystem/network access.
 	"io.ReadCloser",                                       // 🟢 interface type; no side effects.
 	"io.ReadSeeker",                                       // 🟢 interface type combining Reader and Seeker; no side effects.
 	"io.Reader",                                           // 🟢 interface type; no side effects.
@@ -626,6 +644,7 @@ var builtinAllowedSymbols = []string{
 	"os.IsNotExist",                                       // 🟢 checks if error is "not exist"; pure function, no I/O.
 	"os.O_RDONLY",                                         // 🟢 read-only file flag constant; cannot open files by itself.
 	"os.PathError",                                        // 🟢 error type for filesystem path errors; pure type, no I/O.
+	"path/filepath.Base",                                  // 🟢 returns the final path component; pure function, no I/O.
 	"path/filepath.Clean",                                 // 🟢 normalizes a path lexically (collapses ".", "..", duplicate separators); pure function, no I/O.
 	"path/filepath.Dir",                                   // 🟢 returns the directory component of a path; pure function, no I/O.
 	"path/filepath.FromSlash",                             // 🟢 converts '/' to the OS separator without other normalisation; pure function, no I/O.
@@ -641,6 +660,7 @@ var builtinAllowedSymbols = []string{
 	"slices.Reverse",                                      // 🟢 reverses a slice in-place; pure function, no I/O.
 	"slices.SortFunc",                                     // 🟢 sorts a slice with a comparison function; pure function, no I/O.
 	"slices.SortStableFunc",                               // 🟢 stable sort with a comparison function; pure function, no I/O.
+	"sort.Strings",                                        // 🟢 sorts a string slice in memory; pure function, no I/O.
 	"strings.Repeat",                                      // 🟢 returns a string of n repetitions; pure function, no I/O.
 	"strconv.Atoi",                                        // 🟢 string-to-int conversion; pure function, no I/O.
 	"strconv.ErrRange",                                    // 🟢 sentinel error value for overflow; pure constant.
@@ -681,6 +701,8 @@ var builtinAllowedSymbols = []string{
 	"time.Hour",                                           // 🟢 constant representing one hour; no side effects.
 	"time.Millisecond",                                    // 🟢 constant representing one millisecond; no side effects.
 	"time.Minute",                                         // 🟢 constant representing one minute; no side effects.
+	"time.NewTicker",                                      // 🟢 creates an in-memory timer channel for bounded polling; no I/O.
+	"time.NewTimer",                                       // 🟢 creates an in-memory timer channel for bounded polling; no I/O.
 	"time.ParseDuration",                                  // 🟢 parses Go duration strings (e.g. "1s"); pure function, no I/O.
 	"time.Second",                                         // 🟢 constant representing one second; no side effects.
 	"time.Time",                                           // 🟢 time value type; pure data, no side effects.

@@ -46,6 +46,7 @@ import (
 	"github.com/DataDog/rshell/builtins/uname"
 	"github.com/DataDog/rshell/builtins/uniq"
 	"github.com/DataDog/rshell/builtins/wc"
+	"github.com/DataDog/rshell/builtins/write_file"
 	"github.com/DataDog/rshell/builtins/xargs"
 )
 
@@ -92,6 +93,7 @@ func registerBuiltins() {
 			uname.Cmd,
 			uniq.Cmd,
 			wc.Cmd,
+			write_file.Cmd,
 			xargs.Cmd,
 		} {
 			cmd.Register()

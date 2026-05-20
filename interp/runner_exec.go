@@ -6,6 +6,7 @@
 package interp
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -681,6 +682,9 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 				RunHostCommandWithFiles: func(ctx context.Context, hostName string, hostArgs []string, extraFiles []*os.File) (uint8, error) {
 					return r.runHostCommand(ctx, todoPos, dir, cmdName, hostName, hostArgs, extraFiles)
 				},
+				RunHostCommandWithFilesCapture: func(ctx context.Context, hostName string, hostArgs []string, extraFiles []*os.File) (builtins.CapturedHostCommand, error) {
+					return r.runHostCommandCapture(ctx, todoPos, dir, cmdName, hostName, hostArgs, extraFiles, childStdin)
+				},
 				// Intentionally not exposing SetVar / GetVar in the
 				// child CallContext used for find -exec / -execdir
 				// grandchildren. find treats each invocation as a
@@ -804,6 +808,9 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 			RunHostCommandWithFiles: func(ctx context.Context, hostName string, hostArgs []string, extraFiles []*os.File) (uint8, error) {
 				return r.runHostCommand(ctx, todoPos, r.Dir, name, hostName, hostArgs, extraFiles)
 			},
+			RunHostCommandWithFilesCapture: func(ctx context.Context, hostName string, hostArgs []string, extraFiles []*os.File) (builtins.CapturedHostCommand, error) {
+				return r.runHostCommandCapture(ctx, todoPos, r.Dir, name, hostName, hostArgs, extraFiles, r.stdin)
+			},
 			SetVar: func(name, value string) error {
 				if len(value) > MaxVarBytes {
 					return fmt.Errorf("%s: value too large (limit %d bytes)", name, MaxVarBytes)
@@ -861,6 +868,20 @@ func (r *Runner) exec(ctx context.Context, pos syntax.Pos, args []string) {
 }
 
 func (r *Runner) runHostCommand(ctx context.Context, pos syntax.Pos, dir string, caller string, name string, args []string, extraFiles []*os.File) (uint8, error) {
+	return r.runHostCommandWithIO(ctx, pos, dir, caller, name, args, extraFiles, r.stdin, r.stdout, r.stderr)
+}
+
+func (r *Runner) runHostCommandCapture(ctx context.Context, pos syntax.Pos, dir string, caller string, name string, args []string, extraFiles []*os.File, stdin io.Reader) (builtins.CapturedHostCommand, error) {
+	var stdout, stderr bytes.Buffer
+	code, err := r.runHostCommandWithIO(ctx, pos, dir, caller, name, args, extraFiles, stdin, &stdout, &stderr)
+	return builtins.CapturedHostCommand{
+		Code:   code,
+		Stdout: stdout.String(),
+		Stderr: stderr.String(),
+	}, err
+}
+
+func (r *Runner) runHostCommandWithIO(ctx context.Context, pos syntax.Pos, dir string, caller string, name string, args []string, extraFiles []*os.File, stdin io.Reader, stdout, stderr io.Writer) (uint8, error) {
 	if caller != name || !isGuardedHostCommand(caller) {
 		return 127, fmt.Errorf("rshell: %s: host command execution not available", name)
 	}
@@ -870,7 +891,7 @@ func (r *Runner) runHostCommand(ctx context.Context, pos syntax.Pos, dir string,
 	argv := make([]string, 0, len(args)+1)
 	argv = append(argv, name)
 	argv = append(argv, args...)
-	err := r.hostCommandHandler(r.handlerCtxWithDirFiles(ctx, pos, dir, extraFiles), argv)
+	err := r.hostCommandHandler(r.handlerCtxWithDirFilesIO(ctx, pos, dir, extraFiles, stdin, stdout, stderr), argv)
 	if err == nil {
 		return 0, nil
 	}

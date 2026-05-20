@@ -22,12 +22,13 @@ var Cmd = builtins.Command{
 }
 
 func printUsage(callCtx *builtins.CallContext) {
-	callCtx.Out("Usage: truncate -s SIZE FILE\n")
+	callCtx.Out("Usage: truncate -s SIZE [--json] FILE\n")
 	callCtx.Out("Shrink FILE to SIZE bytes.\n")
 }
 
 func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 	sizeFlag := fs.StringP("size", "s", "", "target byte size")
+	jsonFlag := fs.Bool("json", false, "print a structured remediation receipt")
 	helpFlag := fs.BoolP("help", "h", false, "print usage and exit")
 
 	return func(ctx context.Context, callCtx *builtins.CallContext, args []string) builtins.Result {
@@ -83,8 +84,47 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			callCtx.Errf("truncate: cannot grow file\n")
 			return builtins.Result{Code: 1}
 		}
-		return callCtx.InvokeHostCommandWithFiles(ctx, "truncate", []string{"-s", strconv.FormatInt(size, 10), "--", builtins.HostExtraFilePath(0)}, []*os.File{f})
+		hostArgs := []string{"-s", strconv.FormatInt(size, 10), "--", builtins.HostExtraFilePath(0)}
+		if *jsonFlag {
+			return runJSON(ctx, callCtx, args[0], size, info.Size(), hostArgs, f)
+		}
+		return callCtx.InvokeHostCommandWithFiles(ctx, "truncate", hostArgs, []*os.File{f})
 	}
+}
+
+type receipt struct {
+	Path        string `json:"path"`
+	BytesBefore int64  `json:"bytes_before"`
+	BytesAfter  int64  `json:"bytes_after"`
+	SizeBytes   int64  `json:"size_bytes"`
+	ExitCode    uint8  `json:"exit_code"`
+	Stdout      string `json:"stdout"`
+	Stderr      string `json:"stderr"`
+}
+
+func runJSON(ctx context.Context, callCtx *builtins.CallContext, path string, size int64, bytesBefore int64, hostArgs []string, f *os.File) builtins.Result {
+	host, res, ok := callCtx.CaptureHostCommandWithFiles(ctx, "truncate", hostArgs, []*os.File{f})
+	if !ok {
+		return res
+	}
+	afterInfo, err := callCtx.StatFile(ctx, path)
+	if err != nil {
+		callCtx.Errf("truncate: %s: %s\n", path, callCtx.PortableErr(err))
+		return builtins.Result{Code: 1}
+	}
+	outRes := callCtx.OutJSON(receipt{
+		Path:        path,
+		BytesBefore: bytesBefore,
+		BytesAfter:  afterInfo.Size(),
+		SizeBytes:   size,
+		ExitCode:    host.Code,
+		Stdout:      host.Stdout,
+		Stderr:      host.Stderr,
+	})
+	if outRes.Code != 0 || outRes.Exiting {
+		return outRes
+	}
+	return builtins.Result{Code: host.Code}
 }
 
 func isDecimalSize(s string) bool {
