@@ -196,8 +196,15 @@ var builtinPerCommandSymbols = map[string][]string{
 	},
 	"kill": {
 		"context.Context",   // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
-		"strconv.FormatInt", // 🟢 int-to-string conversion; pure function, no I/O.
+		"errors.Is",         // 🟢 error comparison; pure function, no I/O.
+		"fmt.Sprintf",       // 🟢 formats structured receipt stderr strings in memory; no I/O.
+		"os.ErrProcessDone", // 🟢 sentinel error for a finished process handle; pure constant.
+		"os.FindProcess",    // 🟠 obtains an OS process handle for the validated PID; needed for the guarded kill remediation command.
 		"strconv.ParseInt",  // 🟢 string-to-int conversion with overflow checking; pure function, no I/O.
+		"syscall.ESRCH",     // 🟢 POSIX "no such process" errno constant; pure constant.
+		"syscall.SIGKILL",   // 🟠 process termination signal; only used after kill validates a single positive PID.
+		"syscall.SIGTERM",   // 🟠 process termination signal; only used after kill validates a single positive PID.
+		"syscall.Signal",    // 🟠 signal type used for signal 0 liveness probing; no process mutation for signal 0.
 		"time.Duration",     // 🟢 duration type; pure integer alias, no I/O.
 		"time.Millisecond",  // 🟢 constant representing one millisecond; no side effects.
 		"time.NewTicker",    // 🟢 creates an in-memory timer channel for bounded polling; no I/O.
@@ -639,8 +646,10 @@ var builtinAllowedSymbols = []string{
 	"net.Interface",                                       // 🟢 OS network interface descriptor; read-only struct, no network connections.
 	"net.Interfaces",                                      // 🟠 read-only OS interface enumeration function; no network connections or writes.
 	"os.ErrDeadlineExceeded",                              // 🟢 sentinel error value for *os.File read/write deadline expiry; pure constant.
+	"os.ErrProcessDone",                                   // 🟢 sentinel error for a finished process handle; pure constant.
 	"os.File",                                             // 🟠 *os.File type, used for type-asserting callCtx.Stdin to access SetReadDeadline/Stat (e.g. read -t timeout, TTY detection); no constructors invoked.
 	"os.FileInfo",                                         // 🟢 file metadata interface returned by Stat; no I/O side effects.
+	"os.FindProcess",                                      // 🟠 obtains an OS process handle for the guarded kill builtin after strict PID validation.
 	"os.IsNotExist",                                       // 🟢 checks if error is "not exist"; pure function, no I/O.
 	"os.O_RDONLY",                                         // 🟢 read-only file flag constant; cannot open files by itself.
 	"os.PathError",                                        // 🟢 error type for filesystem path errors; pure type, no I/O.
@@ -692,10 +701,14 @@ var builtinAllowedSymbols = []string{
 	"syscall.EISDIR",                                      // 🟢 error number constant for "is a directory"; pure constant, no I/O.
 	"syscall.EPERM",                                       // 🟢 POSIX errno constant for operation not permitted; pure constant, no I/O.
 	"syscall.EPROTONOSUPPORT",                             // 🟢 POSIX errno constant for protocol not supported; pure constant, no I/O.
+	"syscall.ESRCH",                                       // 🟢 POSIX errno constant for "no such process"; pure constant, no I/O.
 	"syscall.ENOENT",                                      // 🟢 error constant for "no such file or directory"; pure constant, no I/O.
 	"syscall.Errno",                                       // 🟢 error type for system call error numbers; pure type, no I/O.
 	"syscall.GetFileInformationByHandle",                  // 🟠 Windows API to query file metadata by handle; read-only, no I/O side effects.
 	"syscall.Handle",                                      // 🟢 Windows file handle type; pure type alias, no I/O.
+	"syscall.SIGKILL",                                     // 🟠 POSIX kill signal used only by the guarded kill builtin for a validated PID.
+	"syscall.SIGTERM",                                     // 🟠 POSIX termination signal used only by the guarded kill builtin for a validated PID.
+	"syscall.Signal",                                      // 🟠 POSIX signal type; used for signal 0 liveness probing and validated kill signals.
 	"syscall.Stat_t",                                      // 🟢 file stat struct for extracting UID/GID/nlink; read-only type, no I/O.
 	"time.Duration",                                       // 🟢 duration type; pure integer alias, no I/O.
 	"time.Hour",                                           // 🟢 constant representing one hour; no side effects.

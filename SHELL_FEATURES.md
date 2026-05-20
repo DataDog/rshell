@@ -24,7 +24,7 @@ The in-shell `help` command mirrors these feature categories: run `help` for a c
 - ✅ `ip [-o|-4|-6|--brief] addr|link [show] [dev IFNAME]` — show network interface addresses and link-layer info (read-only); write ops (`add`, `del`, `flush`, `set`), namespace ops (`netns`, `-n`), and batch mode (`-b`/`-B`/`--force`) are blocked
 - ✅ `ip route [show|list]` — show IPv4 routing table (Linux only; reads `/proc/net/route` directly via `os.Open`, bypassing `AllowedPaths`); at most 10 000 entries loaded; lines longer than 1 MiB abort parsing with an error (exit 1)
 - ✅ `ip route get ADDRESS` — show the route selected by longest-prefix-match for ADDRESS (Linux only); write ops (`add`, `del`, `flush`, `replace`, `change`, `save`, `restore`) are blocked; `-6` (IPv6 routing) is not supported
-- ✅ `kill [-9] [--timeout DURATION] [--json] PID` — guarded remediation command; sends SIGTERM or SIGKILL through the host command handler after validating a single positive PID, then polls with `kill -0` until the PID exits or the timeout elapses
+- ✅ `kill [-9] [--timeout DURATION] [--json] PID` — guarded remediation command; sends SIGTERM or SIGKILL directly after validating a single positive PID, then polls until the PID exits or the timeout elapses
 - ✅ `logrotate [--json] PATH` — guarded remediation command; delegates one existing allowed file descriptor to the host command handler, usually a scenario-provided wrapper; `--json` reports before/after size and best-effort rotated path discovery
 - ✅ `sort [-rnhubfds] [-k KEYDEF] [-t SEP] [-c|-C] [FILE]...` — sort lines of text files; `-h`/`--human-numeric-sort` orders by SI suffix (none < K/k < M < G < T < P < E < Z < Y < R < Q) then by numeric value (single-letter suffixes only — `Ki`, `Mi`, etc. are not recognised); `-o`, `--compress-program`, and `-T` are rejected (filesystem write / exec)
 - ✅ `ss [-tuaxlans4689Hoehs] [OPTION]...` — display network socket statistics; reads kernel socket state directly via `os.Open` (bypassing `AllowedPaths`) from: Linux: `/proc/net/`; macOS: sysctl; Windows: iphlpapi.dll; `-F`/`--filter` (GTFOBins file-read), `-p`/`--processes` (PID disclosure), `-K`/`--kill`, `-E`/`--events`, and `-N`/`--net` are rejected
@@ -87,8 +87,8 @@ The in-shell `help` command mirrors these feature categories: run `help` for a c
 - ✅ `<` — input redirection (read-only, within AllowedPaths)
 - ✅ `<<DELIM` — heredoc
 - ✅ `<<-DELIM` — heredoc with tab stripping
-- ✅ `COMMAND > FILE` — redirect simple-command stdout to FILE, creating/truncating within AllowedPaths
-- ✅ `COMMAND >> FILE` — append simple-command stdout to FILE, creating within AllowedPaths
+- ✅ `COMMAND > FILE` — redirect simple-command stdout to FILE, creating/truncating within AllowedPaths unless file writes are disabled
+- ✅ `COMMAND >> FILE` — append simple-command stdout to FILE, creating within AllowedPaths unless file writes are disabled
 - ✅ `>/dev/null`, `2>/dev/null` — redirect stdout or stderr to /dev/null (output is discarded; only `/dev/null` is allowed as target)
 - ✅ `&>/dev/null` — redirect both stdout and stderr to /dev/null
 - ✅ `>>/dev/null`, `&>>/dev/null` — append redirect to /dev/null (same effect as truncate)
@@ -119,7 +119,8 @@ The in-shell `help` command mirrors these feature categories: run `help` for a c
 
 - ✅ AllowedCommands — restricts which commands (builtins or external) may be executed; commands require the `rshell:` namespace prefix (e.g. `rshell:cat`); if not set, no commands are allowed
 - ✅ AllowedPaths filesystem sandboxing — restricts all file access to specified directories
-- ✅ Guarded host command handler — remediation builtins (`truncate`, `systemctl`, `kill`, `logrotate`, `tee`) validate their restricted contract before delegating to a caller-provided host command handler; file-mutating commands pass sandbox-opened descriptors via handler context extra files
+- ✅ File write disable option — `DisableFileWrites()` / `--disable-file-writes` blocks file creation and mutation through redirects and write-style builtins while preserving read-only AllowedPaths access and `/dev/null` redirects
+- ✅ Guarded remediation commands — remediation builtins validate their restricted contract before host-affecting work; `kill` signals the target PID directly, while `truncate`, `systemctl`, `logrotate`, and `tee` delegate to a guarded host command handler. File-mutating commands pass sandbox-opened descriptors via handler context extra files. The CLI wires the controlled host-command path automatically; API callers can provide `HostCommandHandler`.
 - ✅ Structured remediation receipts — guarded remediation commands accept `--json` where command-specific receipts are useful, while preserving normal shell stdout/stderr behavior by default; captured host stdout/stderr in receipts is capped and reports `stdout_truncated` / `stderr_truncated` when the cap is hit
 - ✅ Whole-run execution timeout — callers can bound a `Run()` call via `context.Context`, `interp.MaxExecutionTime`, or the CLI `--timeout` flag; the deadline applies to the entire script, not each individual command
 - ✅ ProcPath — overrides the proc filesystem path used by `ps` (default `/proc`; Linux-only; useful for testing/container environments)

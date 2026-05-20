@@ -8,6 +8,7 @@ package kill
 
 import (
 	"context"
+	"fmt"
 	"strconv"
 	"time"
 
@@ -52,25 +53,25 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			callCtx.Errf("kill: invalid timeout: %s\n", timeoutFlag.String())
 			return builtins.Result{Code: 1}
 		}
-		argv := []string{strconv.FormatInt(pid, 10)}
-		if *forceFlag {
-			argv = []string{"-9", strconv.FormatInt(pid, 10)}
-		}
 		if *jsonFlag {
-			return runJSON(ctx, callCtx, pid, *forceFlag, *timeoutFlag, argv)
+			return runJSON(ctx, callCtx, pid, *forceFlag, *timeoutFlag)
 		}
-		res := callCtx.InvokeHostCommand(ctx, "kill", argv)
-		if res.Code != 0 || res.Exiting {
-			return res
+		if err := signalPID(pid, *forceFlag); err != nil {
+			callCtx.Errf("kill: %s\n", err)
+			return builtins.Result{Code: 1}
 		}
-		timedOut, waitRes, ok := waitForExit(ctx, callCtx, strconv.FormatInt(pid, 10), *timeoutFlag)
+		timedOut, waitErr, waitRes, ok := waitForExit(ctx, pid, *timeoutFlag)
 		if !ok {
 			return waitRes
+		}
+		if waitErr != nil {
+			callCtx.Errf("kill: %s\n", waitErr)
+			return builtins.Result{Code: 1}
 		}
 		if timedOut {
 			callCtx.Errf("kill: timed out waiting for pid %d to exit\n", pid)
 		}
-		return res
+		return builtins.Result{}
 	}
 }
 
@@ -86,43 +87,44 @@ type receipt struct {
 	StderrTruncated bool   `json:"stderr_truncated,omitempty"`
 }
 
-func runJSON(ctx context.Context, callCtx *builtins.CallContext, pid int64, force bool, timeout time.Duration, argv []string) builtins.Result {
-	host, res, ok := callCtx.CaptureHostCommand(ctx, "kill", argv)
-	if !ok {
-		return res
-	}
+func runJSON(ctx context.Context, callCtx *builtins.CallContext, pid int64, force bool, timeout time.Duration) builtins.Result {
+	exitCode := uint8(0)
+	stderr := ""
 	timedOut := false
-	if host.Code == 0 {
+	if err := signalPID(pid, force); err != nil {
+		exitCode = 1
+		stderr = fmt.Sprintf("kill: %s\n", err)
+	} else {
 		var waitRes builtins.Result
-		timedOut, waitRes, ok = waitForExit(ctx, callCtx, strconv.FormatInt(pid, 10), timeout)
+		var ok bool
+		var waitErr error
+		timedOut, waitErr, waitRes, ok = waitForExit(ctx, pid, timeout)
 		if !ok {
 			return waitRes
 		}
-	}
-	signal := "SIGTERM"
-	if force {
-		signal = "SIGKILL"
+		if waitErr != nil {
+			exitCode = 1
+			stderr = fmt.Sprintf("kill: %s\n", waitErr)
+		}
 	}
 	outRes := callCtx.OutJSON(receipt{
-		PID:             pid,
-		Force:           force,
-		Signal:          signal,
-		TimedOut:        timedOut,
-		ExitCode:        host.Code,
-		Stdout:          host.Stdout,
-		Stderr:          host.Stderr,
-		StdoutTruncated: host.StdoutTruncated,
-		StderrTruncated: host.StderrTruncated,
+		PID:      pid,
+		Force:    force,
+		Signal:   signalName(force),
+		TimedOut: timedOut,
+		ExitCode: exitCode,
+		Stdout:   "",
+		Stderr:   stderr,
 	})
 	if outRes.Code != 0 || outRes.Exiting {
 		return outRes
 	}
-	return builtins.Result{Code: host.Code}
+	return builtins.Result{Code: exitCode}
 }
 
-func waitForExit(ctx context.Context, callCtx *builtins.CallContext, pid string, timeout time.Duration) (bool, builtins.Result, bool) {
+func waitForExit(ctx context.Context, pid int64, timeout time.Duration) (bool, error, builtins.Result, bool) {
 	if timeout == 0 {
-		return false, builtins.Result{}, true
+		return false, nil, builtins.Result{}, true
 	}
 	timer := time.NewTimer(timeout)
 	defer timer.Stop()
@@ -130,27 +132,19 @@ func waitForExit(ctx context.Context, callCtx *builtins.CallContext, pid string,
 	defer ticker.Stop()
 
 	for {
-		alive, res, ok := processAlive(ctx, callCtx, pid)
-		if !ok {
-			return false, res, false
+		alive, err := pidAlive(pid)
+		if err != nil {
+			return false, err, builtins.Result{}, true
 		}
 		if !alive {
-			return false, builtins.Result{}, true
+			return false, nil, builtins.Result{}, true
 		}
 		select {
 		case <-ctx.Done():
-			return false, builtins.Result{Code: 1, Exiting: true}, false
+			return false, nil, builtins.Result{Code: 1, Exiting: true}, false
 		case <-timer.C:
-			return true, builtins.Result{}, true
+			return true, nil, builtins.Result{}, true
 		case <-ticker.C:
 		}
 	}
-}
-
-func processAlive(ctx context.Context, callCtx *builtins.CallContext, pid string) (bool, builtins.Result, bool) {
-	host, res, ok := callCtx.CaptureHostCommand(ctx, "kill", []string{"-0", pid})
-	if !ok {
-		return false, res, false
-	}
-	return host.Code == 0, builtins.Result{}, true
 }

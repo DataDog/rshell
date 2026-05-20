@@ -10,8 +10,10 @@ import (
 	"encoding/json"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -51,6 +53,50 @@ func requireHostExtraFilesSupported(t *testing.T) {
 	if !builtins.HostExtraFilesSupported() {
 		t.Skip("host file descriptor handoff is not supported on this platform")
 	}
+}
+
+type killHelperProcess struct {
+	cmd    *exec.Cmd
+	waited bool
+}
+
+func startKillHelperProcess(t *testing.T) *killHelperProcess {
+	t.Helper()
+	cmd := exec.Command(os.Args[0], "-test.run=TestKillHelperProcess")
+	cmd.Env = append(os.Environ(), "RSHELL_KILL_HELPER=1")
+	cmd.Stdout = io.Discard
+	cmd.Stderr = io.Discard
+	require.NoError(t, cmd.Start())
+	helper := &killHelperProcess{cmd: cmd}
+	t.Cleanup(func() {
+		if helper.waited || helper.cmd.Process == nil {
+			return
+		}
+		_ = helper.cmd.Process.Kill()
+		_ = helper.cmd.Wait()
+	})
+	return helper
+}
+
+func (p *killHelperProcess) waitForExit(t *testing.T) {
+	t.Helper()
+	done := make(chan error, 1)
+	go func() {
+		done <- p.cmd.Wait()
+	}()
+	select {
+	case <-done:
+		p.waited = true
+	case <-time.After(2 * time.Second):
+		t.Fatalf("kill helper process %d did not exit", p.cmd.Process.Pid)
+	}
+}
+
+func TestKillHelperProcess(t *testing.T) {
+	if os.Getenv("RSHELL_KILL_HELPER") != "1" {
+		return
+	}
+	select {}
 }
 
 func TestRemediationTruncateDelegatesShrinksOnly(t *testing.T) {
@@ -463,16 +509,14 @@ func TestRemediationSystemctlRejectsUnsupportedShowShape(t *testing.T) {
 	}
 }
 
-func TestRemediationKillDelegatesForcePid(t *testing.T) {
+func TestRemediationKillTerminatesProcessDirectly(t *testing.T) {
 	dir := t.TempDir()
-	var got [][]string
+	helper := startKillHelperProcess(t)
+	called := false
 
-	stdout, stderr, code := runScript(t, "kill -9 123", dir,
+	stdout, stderr, code := runScript(t, "kill -9 --timeout 0 "+strconv.Itoa(helper.cmd.Process.Pid), dir,
 		interp.HostCommandHandler(func(ctx context.Context, args []string) error {
-			got = append(got, append([]string(nil), args...))
-			if len(args) > 1 && args[1] == "-0" {
-				return interp.ExitStatus(1)
-			}
+			called = true
 			return nil
 		}),
 	)
@@ -480,28 +524,20 @@ func TestRemediationKillDelegatesForcePid(t *testing.T) {
 	assert.Equal(t, 0, code)
 	assert.Equal(t, "", stdout)
 	assert.Equal(t, "", stderr)
-	assert.Equal(t, [][]string{
-		{"kill", "-9", "123"},
-		{"kill", "-0", "123"},
-	}, got)
+	assert.False(t, called)
+	helper.waitForExit(t)
 }
 
-func TestRemediationKillJSONReportsTimedOut(t *testing.T) {
+func TestRemediationKillJSONReportsDirectResult(t *testing.T) {
 	dir := t.TempDir()
-	var got [][]string
+	helper := startKillHelperProcess(t)
 
-	stdout, stderr, code := runScript(t, "kill --json --timeout 1ms 123", dir,
-		interp.HostCommandHandler(func(ctx context.Context, args []string) error {
-			got = append(got, append([]string(nil), args...))
-			return nil
-		}),
-	)
+	stdout, stderr, code := runScript(t, "kill --json --timeout 0 "+strconv.Itoa(helper.cmd.Process.Pid), dir)
 
 	assert.Equal(t, 0, code)
-	assert.JSONEq(t, `{"pid":123,"force":false,"signal":"SIGTERM","timed_out":true,"exit_code":0,"stdout":"","stderr":""}`, stdout)
+	assert.JSONEq(t, `{"pid":`+strconv.Itoa(helper.cmd.Process.Pid)+`,"force":false,"signal":"SIGTERM","timed_out":false,"exit_code":0,"stdout":"","stderr":""}`, stdout)
 	assert.Equal(t, "", stderr)
-	assert.NotEmpty(t, got)
-	assert.Equal(t, []string{"kill", "123"}, got[0])
+	helper.waitForExit(t)
 }
 
 func TestRemediationKillRejectsInvalidPid(t *testing.T) {
@@ -549,6 +585,72 @@ func TestRemediationWriteFileAppendReportsExistingTarget(t *testing.T) {
 	data, err := os.ReadFile(filepath.Join(dir, "output.txt"))
 	require.NoError(t, err)
 	assert.Equal(t, "old\nnew\n", string(data))
+}
+
+func TestDisableFileWritesRemovesWriteCapabilitiesFromRemediationBuiltins(t *testing.T) {
+	tests := []struct {
+		name        string
+		script      string
+		errContains string
+		target      string
+		initial     string
+	}{
+		{
+			name:        "write_file",
+			script:      "write_file output.txt <<'EOF'\npayload\nEOF\n",
+			errContains: "write_file: file write is not available",
+			target:      "output.txt",
+		},
+		{
+			name:        "tee",
+			script:      "tee output.txt <<'EOF'\npayload\nEOF\n",
+			errContains: "tee: file write is not available",
+			target:      "output.txt",
+		},
+		{
+			name:        "truncate",
+			script:      "truncate -s 0 app.log",
+			errContains: "truncate: file write is not available",
+			target:      "app.log",
+			initial:     "keep\n",
+		},
+		{
+			name:        "logrotate",
+			script:      "logrotate app.log",
+			errContains: "logrotate: file write is not available",
+			target:      "app.log",
+			initial:     "keep\n",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			if tt.initial != "" {
+				require.NoError(t, os.WriteFile(filepath.Join(dir, tt.target), []byte(tt.initial), 0644))
+			}
+
+			stdout, stderr, code := runScript(t, tt.script, dir,
+				interp.AllowedPaths([]string{dir}),
+				interp.DisableFileWrites(),
+				interp.HostCommandHandler(func(ctx context.Context, args []string) error {
+					t.Fatalf("host command should not run with file writes disabled: %v", args)
+					return nil
+				}),
+			)
+
+			assert.Equal(t, 1, code)
+			assert.Equal(t, "", stdout)
+			assert.Contains(t, stderr, tt.errContains)
+			data, err := os.ReadFile(filepath.Join(dir, tt.target))
+			if tt.initial == "" {
+				require.ErrorIs(t, err, os.ErrNotExist)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tt.initial, string(data))
+		})
+	}
 }
 
 func TestRemediationTeeDelegatesAppendWithStdin(t *testing.T) {

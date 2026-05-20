@@ -154,6 +154,28 @@ func (r *Runner) commandAllowed(name string) bool {
 	return r.allowAllCommands || r.allowedCommands[name]
 }
 
+func (r *Runner) openFileForWriteCapability(dir func(context.Context) string) func(context.Context, string, bool) (*os.File, error) {
+	if r.disableFileWrites {
+		return nil
+	}
+	return func(ctx context.Context, path string, appendMode bool) (*os.File, error) {
+		flags := os.O_WRONLY | os.O_CREATE | os.O_TRUNC
+		if appendMode {
+			flags = os.O_WRONLY | os.O_CREATE | os.O_APPEND
+		}
+		return r.sandbox.OpenForWrite(path, dir(ctx), flags, 0666)
+	}
+}
+
+func (r *Runner) openExistingFileForWriteCapability(dir func(context.Context) string) func(context.Context, string) (*os.File, error) {
+	if r.disableFileWrites {
+		return nil
+	}
+	return func(ctx context.Context, path string) (*os.File, error) {
+		return r.sandbox.OpenExistingForWrite(path, dir(ctx))
+	}
+}
+
 func (r *Runner) expandCallFields(cm *syntax.CallExpr) []string {
 	r.lastExpandExit = exitStatus{}
 	return r.fields(cm.Args...)
@@ -717,16 +739,8 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 					}
 					return allowedpaths.WithContextClose(ctx, f), nil
 				},
-				OpenFileForWrite: func(ctx context.Context, path string, appendMode bool) (*os.File, error) {
-					flags := os.O_WRONLY | os.O_CREATE | os.O_TRUNC
-					if appendMode {
-						flags = os.O_WRONLY | os.O_CREATE | os.O_APPEND
-					}
-					return r.sandbox.OpenForWrite(path, dir, flags, 0666)
-				},
-				OpenExistingFileForWrite: func(ctx context.Context, path string) (*os.File, error) {
-					return r.sandbox.OpenExistingForWrite(path, dir)
-				},
+				OpenFileForWrite:         r.openFileForWriteCapability(func(context.Context) string { return dir }),
+				OpenExistingFileForWrite: r.openExistingFileForWriteCapability(func(context.Context) string { return dir }),
 				ReadDir: func(ctx context.Context, path string) ([]fs.DirEntry, error) {
 					return r.sandbox.ReadDir(path, dir)
 				},
@@ -859,16 +873,12 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 				}
 				return allowedpaths.WithContextClose(ctx, f), nil
 			},
-			OpenFileForWrite: func(ctx context.Context, path string, appendMode bool) (*os.File, error) {
-				flags := os.O_WRONLY | os.O_CREATE | os.O_TRUNC
-				if appendMode {
-					flags = os.O_WRONLY | os.O_CREATE | os.O_APPEND
-				}
-				return r.sandbox.OpenForWrite(path, HandlerCtx(r.handlerCtx(ctx, todoPos)).Dir, flags, 0666)
-			},
-			OpenExistingFileForWrite: func(ctx context.Context, path string) (*os.File, error) {
-				return r.sandbox.OpenExistingForWrite(path, HandlerCtx(r.handlerCtx(ctx, todoPos)).Dir)
-			},
+			OpenFileForWrite: r.openFileForWriteCapability(func(ctx context.Context) string {
+				return HandlerCtx(r.handlerCtx(ctx, todoPos)).Dir
+			}),
+			OpenExistingFileForWrite: r.openExistingFileForWriteCapability(func(ctx context.Context) string {
+				return HandlerCtx(r.handlerCtx(ctx, todoPos)).Dir
+			}),
 			ReadDir: func(ctx context.Context, path string) ([]fs.DirEntry, error) {
 				return r.sandbox.ReadDir(path, HandlerCtx(r.handlerCtx(ctx, todoPos)).Dir)
 			},
@@ -1036,7 +1046,7 @@ func (r *Runner) hostCommandAvailable(name string) bool {
 
 func isGuardedHostCommand(name string) bool {
 	switch name {
-	case "kill", "logrotate", "systemctl", "tee", "truncate":
+	case "logrotate", "systemctl", "tee", "truncate":
 		return true
 	default:
 		return false

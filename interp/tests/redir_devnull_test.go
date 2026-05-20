@@ -342,6 +342,28 @@ func TestRedirPreflightPreservesFailedEarlierRedirectShortCircuit(t *testing.T) 
 	}
 }
 
+func TestRedirPreflightRejectsSymlinkParentBeforeLaterExpansion(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink behavior is platform-specific on Windows")
+	}
+	dir := t.TempDir()
+	require.NoError(t, os.Mkdir(filepath.Join(dir, "real"), 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "real", "out.txt"), []byte("keep\n"), 0644))
+	require.NoError(t, os.Symlink("real", filepath.Join(dir, "link")))
+
+	stdout, stderr, code := redirRun(t, `echo hi > link/out.txt > "$(printf side | write_file side.txt >/dev/null; printf out2)" 2>&1`, dir)
+	assert.Equal(t, 1, code)
+	assert.Equal(t, "", stdout)
+	assert.NotEmpty(t, stderr)
+	_, err := os.Stat(filepath.Join(dir, "side.txt"))
+	require.ErrorIs(t, err, os.ErrNotExist)
+	_, err = os.Stat(filepath.Join(dir, "out2"))
+	require.ErrorIs(t, err, os.ErrNotExist)
+	data, err := os.ReadFile(filepath.Join(dir, "real", "out.txt"))
+	require.NoError(t, err)
+	assert.Equal(t, "keep\n", string(data))
+}
+
 func TestRedirDupStderrToOriginalStdoutBeforeFileRedirect(t *testing.T) {
 	dir := t.TempDir()
 
@@ -390,6 +412,70 @@ func TestRedirStdoutToFileCreates(t *testing.T) {
 	data, err := os.ReadFile(filepath.Join(dir, "output.txt"))
 	require.NoError(t, err)
 	assert.Equal(t, "hello\n", string(data))
+}
+
+func TestDisableFileWritesBlocksFileRedirectsButAllowsDevNull(t *testing.T) {
+	dir := t.TempDir()
+
+	stdout, stderr, code := redirRunWithOpts(t,
+		"echo hello > output.txt",
+		dir,
+		interp.AllowedPaths([]string{dir}),
+		interpoption.AllowAllCommands().(interp.RunnerOption),
+		interp.DisableFileWrites(),
+	)
+	assert.Equal(t, 1, code)
+	assert.Equal(t, "", stdout)
+	assert.Contains(t, stderr, "file writes disabled")
+	_, err := os.Stat(filepath.Join(dir, "output.txt"))
+	require.ErrorIs(t, err, os.ErrNotExist)
+
+	target := filepath.Join(dir, "existing.txt")
+	require.NoError(t, os.WriteFile(target, []byte("keep\n"), 0644))
+	stdout, stderr, code = redirRunWithOpts(t,
+		"echo hello >> existing.txt",
+		dir,
+		interp.AllowedPaths([]string{dir}),
+		interpoption.AllowAllCommands().(interp.RunnerOption),
+		interp.DisableFileWrites(),
+	)
+	assert.Equal(t, 1, code)
+	assert.Equal(t, "", stdout)
+	assert.Contains(t, stderr, "file writes disabled")
+	data, err := os.ReadFile(target)
+	require.NoError(t, err)
+	assert.Equal(t, "keep\n", string(data))
+
+	stdout, stderr, code = redirRunWithOpts(t,
+		"echo hello >/dev/null",
+		dir,
+		interp.AllowedPaths([]string{dir}),
+		interpoption.AllowAllCommands().(interp.RunnerOption),
+		interp.DisableFileWrites(),
+	)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "", stdout)
+	assert.Equal(t, "", stderr)
+}
+
+func TestDisableFileWritesShortCircuitsLaterRedirectExpansion(t *testing.T) {
+	dir := t.TempDir()
+
+	stdout, stderr, code := redirRunWithOpts(t,
+		`echo hi > blocked.txt > "$(printf later >&2; printf out2)"`,
+		dir,
+		interp.AllowedPaths([]string{dir}),
+		interpoption.AllowAllCommands().(interp.RunnerOption),
+		interp.DisableFileWrites(),
+	)
+	assert.Equal(t, 1, code)
+	assert.Equal(t, "", stdout)
+	assert.Contains(t, stderr, "file writes disabled")
+	assert.NotContains(t, stderr, "later")
+	_, err := os.Stat(filepath.Join(dir, "blocked.txt"))
+	require.ErrorIs(t, err, os.ErrNotExist)
+	_, err = os.Stat(filepath.Join(dir, "out2"))
+	require.ErrorIs(t, err, os.ErrNotExist)
 }
 
 func TestRedirStdoutToFileOverwrites(t *testing.T) {

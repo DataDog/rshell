@@ -164,3 +164,19 @@ func TestOpenForWriteRejectsWindowsSymlinkParentWithinAllowedPath(t *testing.T) 
 	assert.ErrorIs(t, err, os.ErrPermission)
 	assert.NoFileExists(t, filepath.Join(dir, "real", "new.txt"))
 }
+
+func TestValidateRedirectWritePreflightPathRejectsWindowsSymlinkParentWithinAllowedPath(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.Mkdir(filepath.Join(dir, "real"), 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "real", "out.txt"), []byte("keep\n"), 0644))
+	if err := os.Symlink("real", filepath.Join(dir, "linkdir")); err != nil {
+		t.Skipf("creating symlink: %v", err)
+	}
+
+	sb, _, err := New([]string{dir})
+	require.NoError(t, err)
+	defer sb.Close()
+
+	err = sb.ValidateRedirectWritePreflightPath(filepath.Join("linkdir", "out.txt"), dir)
+	assert.ErrorIs(t, err, os.ErrPermission)
+}

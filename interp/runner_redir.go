@@ -465,8 +465,15 @@ func (r *Runner) redirectOutputWouldFailBeforeOpen(ctx context.Context, rd *synt
 	if isDevNull(arg) {
 		return false
 	}
+	if r.disableFileWrites {
+		return true
+	}
 
 	dir := HandlerCtx(r.handlerCtx(ctx, todoPos)).Dir
+	if r.sandbox.ValidateRedirectWritePreflightPath(arg, dir) != nil {
+		return true
+	}
+
 	info, err := r.sandbox.Lstat(arg, dir)
 	if err == nil {
 		if info.Mode()&fs.ModeSymlink != 0 || info.IsDir() || !info.Mode().IsRegular() {

@@ -49,7 +49,7 @@ type runnerConfig struct {
 	execHandlerConfigured bool
 
 	// hostCommandHandler executes host commands on behalf of guarded builtins
-	// such as truncate, systemctl, kill, logrotate, and tee.
+	// such as truncate, systemctl, logrotate, and tee.
 	hostCommandHandler ExecHandlerFunc
 
 	// hostCommandHandlerConfigured is true when callers explicitly provided a
@@ -66,6 +66,11 @@ type runnerConfig struct {
 	// sandbox restricts file/directory access to allowed directories.
 	// nil (default) blocks all file access; populate via AllowedPaths option.
 	sandbox *allowedpaths.Sandbox
+
+	// disableFileWrites blocks all file-writing surfaces even when
+	// AllowedPaths would otherwise permit them. Read-only file access remains
+	// governed by sandbox.
+	disableFileWrites bool
 
 	// sandboxWarnings holds diagnostic messages about skipped AllowedPaths
 	// entries. Flushed to warningsWriter after all options are applied and
@@ -695,6 +700,19 @@ func WarningsWriter(w io.Writer) RunnerOption {
 			return fmt.Errorf("WarningsWriter: writer must not be nil")
 		}
 		r.warningsWriter = w
+		return nil
+	}
+}
+
+// DisableFileWrites blocks file creation and mutation through shell output
+// redirects and write-style builtins such as write_file, tee, truncate, and
+// logrotate. Read-only file access remains governed by [AllowedPaths].
+//
+// Redirects to /dev/null remain allowed because they discard output without
+// creating or mutating filesystem content.
+func DisableFileWrites() RunnerOption {
+	return func(r *Runner) error {
+		r.disableFileWrites = true
 		return nil
 	}
 }

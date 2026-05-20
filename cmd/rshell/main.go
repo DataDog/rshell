@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"strings"
 	"time"
 
@@ -34,12 +35,13 @@ func main() {
 
 func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	var (
-		command         string
-		allowedPaths    string
-		allowedCommands string
-		allowAllCmds    bool
-		timeout         time.Duration
-		procPath        string
+		command           string
+		allowedPaths      string
+		allowedCommands   string
+		allowAllCmds      bool
+		disableFileWrites bool
+		timeout           time.Duration
+		procPath          string
 	)
 
 	cmd := &cobra.Command{
@@ -81,10 +83,11 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 			}
 
 			execOpts := executeOpts{
-				allowedPaths:     paths,
-				allowedCommands:  cmds,
-				allowAllCommands: allowAllCmds,
-				procPath:         procPath,
+				allowedPaths:      paths,
+				allowedCommands:   cmds,
+				allowAllCommands:  allowAllCmds,
+				disableFileWrites: disableFileWrites,
+				procPath:          procPath,
 			}
 
 			if commandSet {
@@ -135,6 +138,7 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 	cmd.Flags().StringVarP(&allowedPaths, "allowed-paths", "p", "", "comma-separated list of directories the shell is allowed to access")
 	cmd.Flags().StringVar(&allowedCommands, "allowed-commands", "", "comma-separated list of namespaced commands (e.g. rshell:cat,rshell:find)")
 	cmd.Flags().BoolVar(&allowAllCmds, "allow-all-commands", false, "allow execution of all commands (builtins and external)")
+	cmd.Flags().BoolVar(&disableFileWrites, "disable-file-writes", false, "disable filesystem writes through redirects and write-style builtins")
 	cmd.Flags().DurationVar(&timeout, "timeout", 0, "maximum execution time for the entire shell run (e.g. 100ms, 5s, 1m)")
 	cmd.Flags().StringVar(&procPath, "proc-path", "", "path to the proc filesystem used by ps (default \"/proc\")")
 
@@ -202,10 +206,11 @@ func rejectLongCommand(rawArgs []string) error {
 
 // executeOpts holds options for the execute function.
 type executeOpts struct {
-	allowedPaths     []string
-	allowedCommands  []string
-	allowAllCommands bool
-	procPath         string
+	allowedPaths      []string
+	allowedCommands   []string
+	allowAllCommands  bool
+	disableFileWrites bool
+	procPath          string
 }
 
 func execute(ctx context.Context, script, name string, opts executeOpts, stdin io.Reader, stdout, stderr io.Writer) error {
@@ -220,6 +225,7 @@ func execute(ctx context.Context, script, name string, opts executeOpts, stdin i
 	// Build runner options.
 	runOpts := []interp.RunnerOption{
 		interp.StdIO(stdin, stdout, stderr),
+		interp.HostCommandHandler(runGuardedHostCommand),
 	}
 	if len(opts.allowedPaths) > 0 {
 		runOpts = append(runOpts, interp.AllowedPaths(opts.allowedPaths))
@@ -232,6 +238,9 @@ func execute(ctx context.Context, script, name string, opts executeOpts, stdin i
 	if opts.procPath != "" {
 		runOpts = append(runOpts, interp.ProcPath(opts.procPath))
 	}
+	if opts.disableFileWrites {
+		runOpts = append(runOpts, interp.DisableFileWrites())
+	}
 
 	runner, err := interp.New(runOpts...)
 	if err != nil {
@@ -240,4 +249,25 @@ func execute(ctx context.Context, script, name string, opts executeOpts, stdin i
 	defer runner.Close()
 
 	return runner.Run(ctx, prog)
+}
+
+func runGuardedHostCommand(ctx context.Context, args []string) error {
+	if len(args) == 0 {
+		return fmt.Errorf("host command handler called with no arguments")
+	}
+	hc := interp.HandlerCtx(ctx)
+	cmd := exec.CommandContext(ctx, args[0], args[1:]...)
+	cmd.Dir = hc.Dir
+	cmd.Stdin = hc.Stdin
+	cmd.Stdout = hc.Stdout
+	cmd.Stderr = hc.Stderr
+	cmd.ExtraFiles = hc.ExtraFiles
+	if err := cmd.Run(); err != nil {
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) {
+			return interp.ExitStatus(exitErr.ExitCode())
+		}
+		return err
+	}
+	return nil
 }

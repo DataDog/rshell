@@ -122,6 +122,28 @@ func TestSandboxOpenForWriteRejectsTrailingSeparator(t *testing.T) {
 	assert.Equal(t, "keep\n", string(data))
 }
 
+func TestSandboxValidateRedirectWritePreflightPath(t *testing.T) {
+	dir := t.TempDir()
+	outside := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "existing.txt"), []byte("keep\n"), 0644))
+
+	sb, _, err := New([]string{dir})
+	require.NoError(t, err)
+	defer sb.Close()
+
+	assert.NoError(t, sb.ValidateRedirectWritePreflightPath("existing.txt", dir))
+	assert.NoError(t, sb.ValidateRedirectWritePreflightPath("created.txt", dir))
+
+	err = sb.ValidateRedirectWritePreflightPath(filepath.Join(outside, "evil.txt"), dir)
+	assert.ErrorIs(t, err, os.ErrPermission)
+
+	err = sb.ValidateRedirectWritePreflightPath("existing.txt"+string(filepath.Separator), dir)
+	assert.Contains(t, err.Error(), "not a directory")
+
+	err = sb.ValidateRedirectWritePreflightPath(".", dir)
+	assert.Contains(t, err.Error(), "is a directory")
+}
+
 func TestSandboxOpenExistingForWriteAllowsExistingInsideAllowedPaths(t *testing.T) {
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "existing.txt"), []byte("old\n"), 0644))

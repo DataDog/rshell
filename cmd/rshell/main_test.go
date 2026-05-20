@@ -178,8 +178,34 @@ func TestHelp(t *testing.T) {
 	assert.Contains(t, stdout, "--allowed-paths")
 	assert.Contains(t, stdout, "--allowed-commands")
 	assert.Contains(t, stdout, "--allow-all-commands")
+	assert.Contains(t, stdout, "--disable-file-writes")
 	assert.Contains(t, stdout, "--timeout")
 	assert.NotContains(t, stdout, "--command", "-c/--command should be hidden from help")
+}
+
+func TestDisableFileWritesFlagBlocksRedirectAndAllowsDevNull(t *testing.T) {
+	dir := t.TempDir()
+
+	code, stdout, stderr := runCLI(t,
+		"--allow-all-commands",
+		"--disable-file-writes",
+		"-p", dir,
+		"-c", "echo hello > output.txt",
+	)
+	assert.Equal(t, 1, code)
+	assert.Equal(t, "", stdout)
+	assert.Contains(t, stderr, "file writes disabled")
+	_, err := os.Stat(filepath.Join(dir, "output.txt"))
+	require.ErrorIs(t, err, os.ErrNotExist)
+
+	code, stdout, stderr = runCLI(t,
+		"--allow-all-commands",
+		"--disable-file-writes",
+		"-c", "echo hello >/dev/null",
+	)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "", stdout)
+	assert.Equal(t, "", stderr)
 }
 
 // TestVersion verifies that --version exits 0 and prints the version.
@@ -285,6 +311,21 @@ func TestAllowAllCommandsFlag(t *testing.T) {
 	code, stdout, _ := runCLI(t, "--allow-all-commands", "-c", `echo hello`)
 	assert.Equal(t, 0, code)
 	assert.Equal(t, "hello\n", stdout)
+}
+
+func TestCLIExecutesGuardedHostCommand(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("test uses a Unix executable script as the fake host command")
+	}
+	dir := t.TempDir()
+	fakeSystemctl := filepath.Join(dir, "systemctl")
+	require.NoError(t, os.WriteFile(fakeSystemctl, []byte("#!/bin/sh\nprintf '%s\\n' \"$*\"\n"), 0o755))
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	code, stdout, stderr := runCLI(t, "--allow-all-commands", "-c", `systemctl show --property=ActiveState --value app.service`)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "show --property=ActiveState --value -- app.service\n", stdout)
+	assert.Equal(t, "", stderr)
 }
 
 func TestCommandLongFormRejected(t *testing.T) {

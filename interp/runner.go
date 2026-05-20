@@ -7,6 +7,7 @@ package interp
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -17,6 +18,8 @@ import (
 )
 
 var todoPos syntax.Pos // for handlerCtx callers where we don't yet have a position
+
+var errFileWritesDisabled = errors.New("file writes disabled")
 
 func (r *Runner) handlerCtx(ctx context.Context, pos syntax.Pos) context.Context {
 	return r.handlerCtxWithDir(ctx, pos, r.Dir)
@@ -78,6 +81,10 @@ func (r *Runner) open(ctx context.Context, path string, flags int, mode os.FileM
 }
 
 func (r *Runner) openForWrite(ctx context.Context, path string, flags int, mode os.FileMode) (io.ReadWriteCloser, error) {
+	if r.disableFileWrites {
+		r.errf("%s\n", errFileWritesDisabled)
+		return nil, errFileWritesDisabled
+	}
 	f, err := r.sandbox.OpenForWrite(path, HandlerCtx(r.handlerCtx(ctx, todoPos)).Dir, flags, mode)
 	switch err.(type) {
 	case nil:

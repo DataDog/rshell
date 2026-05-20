@@ -383,6 +383,24 @@ func (s *Sandbox) OpenForWrite(path string, cwd string, flag int, perm os.FileMo
 	return f, nil
 }
 
+// ValidateRedirectWritePreflightPath checks the no-follow path-shape
+// invariants that OpenForWrite enforces without opening, creating, truncating,
+// or appending to the target. This is only for preserving shell redirect
+// expansion order; callers must still use OpenForWrite for any actual write.
+func (s *Sandbox) ValidateRedirectWritePreflightPath(path string, cwd string) error {
+	if hasTrailingPathSeparator(path) {
+		return &os.PathError{Op: "open", Path: path, Err: errors.New("not a directory")}
+	}
+
+	absPath := toAbs(path, cwd)
+	ar, relPath, ok := s.resolve(absPath)
+	if !ok {
+		return &os.PathError{Op: "open", Path: path, Err: os.ErrPermission}
+	}
+
+	return ar.validateWritePath(relPath, true)
+}
+
 // OpenExistingForWrite opens an existing file for write through the sandbox
 // without creating, truncating, or appending. It is used by guarded host
 // commands that need a stable fd for an already-existing mutation target.
@@ -407,7 +425,7 @@ func (s *Sandbox) OpenExistingForWrite(path string, cwd string) (*os.File, error
 func (r *root) validateWritePath(rel string, allowMissingFinal bool) error {
 	rel = filepath.Clean(rel)
 	if rel == "." {
-		return nil
+		return &os.PathError{Op: "open", Path: rel, Err: errors.New("is a directory")}
 	}
 
 	components := strings.Split(rel, string(filepath.Separator))

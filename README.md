@@ -59,20 +59,22 @@ Every access path is default-deny:
 | Resource             | Default                             | Opt-in                                       |
 |----------------------|-------------------------------------|----------------------------------------------|
 | Command execution    | All commands blocked (exit code 127)| `AllowedCommands` with namespaced command list (e.g. `rshell:cat`) |
-| External commands    | Blocked (exit code 127)             | Provide an `ExecHandler`                     |
+| External commands    | Blocked (exit code 127)             | Provide an `ExecHandler`; the CLI also wires a guarded host-command path for remediation builtins |
 | Filesystem access    | Blocked                             | Configure `AllowedPaths` with directory list |
 | Environment variables| Empty (no host env inherited)       | Pass variables via the `Env` option          |
-| Output redirections  | File writes blocked unless `AllowedPaths` permits the target | Simple-command `COMMAND > FILE` / `COMMAND >> FILE`, `>/dev/null`, `2>/dev/null`, `&>/dev/null`, `2>&1` |
+| Output redirections  | File writes blocked unless `AllowedPaths` permits the target and file writes are enabled | Simple-command `COMMAND > FILE` / `COMMAND >> FILE`, `>/dev/null`, `2>/dev/null`, `&>/dev/null`, `2>&1` |
 
 **AllowedCommands** restricts which commands (builtins or external) the interpreter may execute. Commands must be specified with the `rshell:` namespace prefix (e.g. `rshell:cat`, `rshell:echo`). If not set, no commands are allowed.
 
 **AllowedPaths** restricts all file operations to specified directories using Go's `os.Root` API (`openat` syscalls), making it immune to symlink traversal, TOCTOU races, and `..` escape attacks. Configured directories that cannot be opened (missing, not a directory, no permission) are skipped with a diagnostic message; by default these messages are flushed once to the runner's stderr at construction time. Callers that need to keep stderr clean of sandbox diagnostics can route them to a dedicated sink with `WarningsWriter(io.Writer)` or retrieve them programmatically via `Runner.Warnings()`.
 
+**DisableFileWrites** blocks filesystem creation and mutation even inside `AllowedPaths`. The API option is `DisableFileWrites()` and the CLI flag is `--disable-file-writes`; read-only file access remains governed by `AllowedPaths`, and redirects to `/dev/null` are still allowed.
+
 > **Note:** The `ss`, `ip route`, and `df` builtins bypass `AllowedPaths` for their kernel-state reads. `ss` and `ip route` open `/proc/net/*` paths directly; `df` reads `/proc/self/mountinfo` (Linux) or calls `getfsstat(2)` (macOS), then issues `unix.Statfs(2)` against every kernel-reported mount point. These paths are hardcoded — never derived from user input — and `Statfs` returns metadata only (block / inode counts, filesystem type, block size). There is no sandbox-escape risk, but operators cannot use `AllowedPaths` to block `ss` from enumerating local sockets, `ip route` from reading the routing table, or `df` from reporting mount-table capacity — these reads succeed regardless of the configured path policy.
 
 **ProcPath** (Linux-only) overrides the proc filesystem root used by the `ps` builtin (default `/proc`). This is a privileged option set at runner construction time by trusted caller code — scripts cannot influence it. Access to the proc path is intentionally not subject to `AllowedPaths` restrictions, since proc is a read-only virtual filesystem that does not expose host data under the normal file hierarchy.
 
-**Guarded host commands** (`truncate`, `systemctl`, `kill`, `logrotate`, and `tee`) validate a narrow rshell contract before invoking the host command handler. File-mutating commands hand the handler sandbox-opened descriptors instead of raw writable paths. Their command shapes intentionally mirror the remediation primitives exposed by benchmark tooling; broader native command flags remain blocked by rshell argument validation or by the caller-provided handler.
+**Guarded remediation commands** validate a narrow rshell contract before doing host-affecting work. `kill` signals the requested PID directly after validating its single-pid shape. `truncate`, `systemctl`, `logrotate`, and `tee` delegate to a guarded host command handler; file-mutating commands hand the handler sandbox-opened descriptors instead of raw writable paths. When file writes are disabled, those builtins receive no write-open capability and fail before host delegation. The CLI wires that controlled host-command path automatically, while API callers can provide `HostCommandHandler` to integrate their own execution environment. Their command shapes intentionally mirror the remediation primitives exposed by benchmark tooling; broader native command flags remain blocked by rshell argument validation or by the caller-provided handler.
 
 **Explicit remediation writes** can use `write_file [--mode overwrite|append] [--json] FILE` when a benchmark wants a command-shaped `write_file` action instead of redirection syntax. The command reads stdin and writes only through `AllowedPaths`.
 
