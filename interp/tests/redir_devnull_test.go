@@ -292,6 +292,15 @@ func TestRedirDupStderrToDynamicDevNullWithCommandWordExpansion(t *testing.T) {
 	assert.Equal(t, "", stderr)
 }
 
+func TestRedirDupStderrToCommandSubstitutedDevNullWithCommandWordExpansion(t *testing.T) {
+	dir := t.TempDir()
+
+	stdout, stderr, code := redirRun(t, `$(printf cat) missing > "$(printf /dev/null)" 2>&1`, dir)
+	assert.Equal(t, 1, code)
+	assert.Equal(t, "", stdout)
+	assert.Equal(t, "", stderr)
+}
+
 func TestRedirDupStderrToOriginalStdoutBeforeFileRedirect(t *testing.T) {
 	dir := t.TempDir()
 

@@ -297,8 +297,8 @@ func (r *Runner) preflightKnownFileBackedFdDupRedirects(redirs []*syntax.Redirec
 
 // preflightSafeFileBackedFdDupRedirects expands only redirect targets that
 // cannot run command substitutions. It catches dynamic variable targets before
-// command-word expansion, while preserving command-policy checks before
-// side-effecting redirect-target expansions.
+// command-word expansion, while leaving side-effecting redirect-target
+// expansions for the later command-policy-gated preflight.
 func (r *Runner) preflightSafeFileBackedFdDupRedirects(redirs []*syntax.Redirect) (map[*syntax.Redirect]string, error) {
 	return r.preflightFileBackedFdDupRedirectsWithExpansion(redirs, fdDupPreflightSafeExpansion)
 }
@@ -344,7 +344,7 @@ func (r *Runner) preflightFileBackedFdDupRedirectsWithExpansion(redirs []*syntax
 			if !targetState.known && targetState.source != nil && mode != fdDupPreflightNoExpansion {
 				source := targetState.source
 				if mode == fdDupPreflightSafeExpansion && wordRunsCommands(source.Word) {
-					return redirectArgs, stderrFileDupToFileRedirectError(arg)
+					continue
 				}
 				expandedArg, ok := redirectArgs[targetState.source]
 				if !ok {
