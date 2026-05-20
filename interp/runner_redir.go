@@ -310,7 +310,10 @@ func (r *Runner) preflightFileBackedFdDupRedirectsWithExpansion(redirs []*syntax
 	for _, rd := range redirs {
 		switch rd.Op {
 		case syntax.RdrOut, syntax.AppOut:
-			state := preflightRedirectTargetState(rd)
+			state, ok := r.preflightRedirectTargetState(rd, mode, redirectArgs)
+			if !ok {
+				return redirectArgs, nil
+			}
 			if rd.N != nil && rd.N.Value == "2" {
 				stderrState = state
 			} else {
@@ -377,6 +380,28 @@ func (r *Runner) preflightFileBackedFdDupRedirectsWithExpansion(redirs []*syntax
 		}
 	}
 	return redirectArgs, nil
+}
+
+func (r *Runner) preflightRedirectTargetState(rd *syntax.Redirect, mode fdDupPreflightMode, redirectArgs map[*syntax.Redirect]string) (preflightFDState, bool) {
+	state := preflightRedirectTargetState(rd)
+	if state.known || state.source == nil || mode == fdDupPreflightNoExpansion {
+		return state, true
+	}
+	if mode == fdDupPreflightSafeExpansion && wordRunsCommands(rd.Word) {
+		return state, true
+	}
+	expandedArg, ok := redirectArgs[rd]
+	if !ok {
+		expandedArg = r.literal(rd.Word)
+		redirectArgs[rd] = expandedArg
+		if !r.exit.ok() {
+			return state, false
+		}
+	}
+	return preflightFDState{
+		known:        true,
+		fileRedirect: !isDevNull(expandedArg),
+	}, true
 }
 
 func preflightRedirectTargetState(rd *syntax.Redirect) preflightFDState {

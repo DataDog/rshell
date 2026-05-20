@@ -301,6 +301,18 @@ func TestRedirDupStderrToCommandSubstitutedDevNullWithCommandWordExpansion(t *te
 	assert.Equal(t, "", stderr)
 }
 
+func TestRedirDupStderrToDynamicDevNullPreservesRedirectExpansionOrder(t *testing.T) {
+	dir := t.TempDir()
+
+	stdout, stderr, code := redirRun(t, `echo ok > "$(printf first >&2; printf first.txt)" > "$(printf second >&2; printf /dev/null)" 2>&1`, dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "", stdout)
+	assert.Equal(t, "firstsecond", stderr)
+	data, err := os.ReadFile(filepath.Join(dir, "first.txt"))
+	require.NoError(t, err)
+	assert.Equal(t, "", string(data))
+}
+
 func TestRedirDupStderrToOriginalStdoutBeforeFileRedirect(t *testing.T) {
 	dir := t.TempDir()
 
