@@ -230,6 +230,24 @@ func TestRedirDupStderrToDynamicStdoutFileBlockedCommandRejectedBeforeRedirectEx
 	require.ErrorIs(t, err, os.ErrNotExist)
 }
 
+func TestRedirDupStderrToDynamicStdoutFileDynamicBlockedCommandRejectedBeforeRedirectExpansion(t *testing.T) {
+	dir := t.TempDir()
+
+	stdout, stderr, code := redirRunWithOpts(t,
+		`cmd=echo; $cmd x > "$(printf output.txt; printf side | write_file side.txt >/dev/null)" 2>&1`,
+		dir,
+		interp.AllowedPaths([]string{dir}),
+		interp.AllowedCommands([]string{"rshell:printf", "rshell:write_file"}),
+	)
+	assert.Equal(t, 127, code)
+	assert.Equal(t, "", stdout)
+	assert.Contains(t, stderr, "rshell: echo: command not allowed")
+	_, err := os.Stat(filepath.Join(dir, "output.txt"))
+	require.ErrorIs(t, err, os.ErrNotExist)
+	_, err = os.Stat(filepath.Join(dir, "side.txt"))
+	require.ErrorIs(t, err, os.ErrNotExist)
+}
+
 func TestRedirDupStderrToDynamicDevNull(t *testing.T) {
 	dir := t.TempDir()
 

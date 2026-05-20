@@ -14,7 +14,6 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"strings"
 	"sync"
 
 	"mvdan.cc/sh/v3/expand"
@@ -38,18 +37,25 @@ func (r *Runner) stmtSync(ctx context.Context, st *syntax.Stmt) {
 	oldIn, oldOut, oldErr := r.stdin, r.stdout, r.stderr
 	oldOutFile, oldErrFile := r.stdoutFileRedirect, r.stderrFileRedirect
 	var (
-		callExpr       *syntax.CallExpr
-		callFields     []string
-		callPrechecked bool
+		callExpr          *syntax.CallExpr
+		callCommandFields []string
+		callFields        []string
+		callPrechecked    bool
 	)
 
-	// If the simple command name is statically known, enforce AllowedCommands
-	// before redirect preflight can expand dynamic redirect targets.
+	// Destructive stdout redirects must not be opened until the command name
+	// has passed AllowedCommands. Expand only the command word here so argument
+	// substitutions still cannot run before fd-dup preflight rejects an
+	// unsupported redirect.
 	if r.exit.ok() {
 		if cm, ok := st.Cmd.(*syntax.CallExpr); ok && stmtHasPotentialFileWriteRedirect(st) {
 			callExpr = cm
-			if name, ok := staticCallName(cm); ok && !r.commandAllowed(name) {
-				r.call(ctx, cm.Args[0].Pos(), []string{name})
+			callCommandFields = r.expandCallCommandFields(cm)
+			if len(callCommandFields) == 0 {
+				r.errf("%s\n", stdoutFileRedirectionWithoutCommandError)
+				r.exit.code = 2
+			} else if !r.commandAllowed(callCommandFields[0]) {
+				r.call(ctx, cm.Args[0].Pos(), []string{callCommandFields[0]})
 			}
 		}
 	}
@@ -66,7 +72,7 @@ func (r *Runner) stmtSync(ctx context.Context, st *syntax.Stmt) {
 	// has passed AllowedCommands. Otherwise a blocked command could still
 	// create or truncate files inside AllowedPaths.
 	if r.exit.ok() && callExpr != nil {
-		callFields = r.expandCallFields(callExpr)
+		callFields = r.expandRemainingCallFields(callExpr, callCommandFields)
 		callPrechecked = true
 		if len(callFields) == 0 {
 			r.errf("%s\n", stdoutFileRedirectionWithoutCommandError)
@@ -124,58 +130,20 @@ func (r *Runner) expandCallFields(cm *syntax.CallExpr) []string {
 	return r.fields(cm.Args...)
 }
 
-func staticCallName(cm *syntax.CallExpr) (string, bool) {
+func (r *Runner) expandCallCommandFields(cm *syntax.CallExpr) []string {
+	r.lastExpandExit = exitStatus{}
 	if len(cm.Args) == 0 {
-		return "", false
+		return nil
 	}
-	return staticWordValue(cm.Args[0])
+	return r.fields(cm.Args[0])
 }
 
-func staticWordValue(word *syntax.Word) (string, bool) {
-	var buf strings.Builder
-	for _, part := range word.Parts {
-		value, ok := staticWordPartValue(part)
-		if !ok {
-			return "", false
-		}
-		buf.WriteString(value)
+func (r *Runner) expandRemainingCallFields(cm *syntax.CallExpr, commandFields []string) []string {
+	fields := append([]string(nil), commandFields...)
+	if len(cm.Args) > 1 {
+		fields = append(fields, r.fields(cm.Args[1:]...)...)
 	}
-	name := buf.String()
-	return name, name != ""
-}
-
-func staticWordPartValue(part syntax.WordPart) (string, bool) {
-	switch x := part.(type) {
-	case *syntax.Lit:
-		if containsGlobMeta(x.Value) {
-			return "", false
-		}
-		return x.Value, true
-	case *syntax.SglQuoted:
-		return x.Value, true
-	case *syntax.DblQuoted:
-		var buf strings.Builder
-		for _, part := range x.Parts {
-			value, ok := staticWordPartValue(part)
-			if !ok {
-				return "", false
-			}
-			buf.WriteString(value)
-		}
-		return buf.String(), true
-	default:
-		return "", false
-	}
-}
-
-func containsGlobMeta(value string) bool {
-	for _, r := range value {
-		switch r {
-		case '*', '?', '[':
-			return true
-		}
-	}
-	return false
+	return fields
 }
 
 func (r *Runner) cmdCall(ctx context.Context, cm *syntax.CallExpr) {
