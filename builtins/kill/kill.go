@@ -75,13 +75,15 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 }
 
 type receipt struct {
-	PID      int64  `json:"pid"`
-	Force    bool   `json:"force"`
-	Signal   string `json:"signal"`
-	TimedOut bool   `json:"timed_out"`
-	ExitCode uint8  `json:"exit_code"`
-	Stdout   string `json:"stdout"`
-	Stderr   string `json:"stderr"`
+	PID             int64  `json:"pid"`
+	Force           bool   `json:"force"`
+	Signal          string `json:"signal"`
+	TimedOut        bool   `json:"timed_out"`
+	ExitCode        uint8  `json:"exit_code"`
+	Stdout          string `json:"stdout"`
+	Stderr          string `json:"stderr"`
+	StdoutTruncated bool   `json:"stdout_truncated,omitempty"`
+	StderrTruncated bool   `json:"stderr_truncated,omitempty"`
 }
 
 func runJSON(ctx context.Context, callCtx *builtins.CallContext, pid int64, force bool, timeout time.Duration, argv []string) builtins.Result {
@@ -102,13 +104,15 @@ func runJSON(ctx context.Context, callCtx *builtins.CallContext, pid int64, forc
 		signal = "SIGKILL"
 	}
 	outRes := callCtx.OutJSON(receipt{
-		PID:      pid,
-		Force:    force,
-		Signal:   signal,
-		TimedOut: timedOut,
-		ExitCode: host.Code,
-		Stdout:   host.Stdout,
-		Stderr:   host.Stderr,
+		PID:             pid,
+		Force:           force,
+		Signal:          signal,
+		TimedOut:        timedOut,
+		ExitCode:        host.Code,
+		Stdout:          host.Stdout,
+		Stderr:          host.Stderr,
+		StdoutTruncated: host.StdoutTruncated,
+		StderrTruncated: host.StderrTruncated,
 	})
 	if outRes.Code != 0 || outRes.Exiting {
 		return outRes

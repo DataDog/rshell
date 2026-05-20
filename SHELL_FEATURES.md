@@ -118,7 +118,7 @@ The in-shell `help` command mirrors these feature categories: run `help` for a c
 - ✅ AllowedCommands — restricts which commands (builtins or external) may be executed; commands require the `rshell:` namespace prefix (e.g. `rshell:cat`); if not set, no commands are allowed
 - ✅ AllowedPaths filesystem sandboxing — restricts all file access to specified directories
 - ✅ Guarded host command handler — remediation builtins (`truncate`, `systemctl`, `kill`, `logrotate`, `tee`) validate their restricted contract before delegating to a caller-provided host command handler; file-mutating commands pass sandbox-opened descriptors via handler context extra files
-- ✅ Structured remediation receipts — guarded remediation commands accept `--json` where command-specific receipts are useful, while preserving normal shell stdout/stderr behavior by default
+- ✅ Structured remediation receipts — guarded remediation commands accept `--json` where command-specific receipts are useful, while preserving normal shell stdout/stderr behavior by default; captured host stdout/stderr in receipts is capped and reports `stdout_truncated` / `stderr_truncated` when the cap is hit
 - ✅ Whole-run execution timeout — callers can bound a `Run()` call via `context.Context`, `interp.MaxExecutionTime`, or the CLI `--timeout` flag; the deadline applies to the entire script, not each individual command
 - ✅ ProcPath — overrides the proc filesystem path used by `ps` (default `/proc`; Linux-only; useful for testing/container environments)
 - ❌ External commands — blocked by default; require an ExecHandler and the command name must pass AllowedCommands

@@ -11,7 +11,11 @@ import (
 	"errors"
 	"io/fs"
 	"os"
+	"path/filepath"
+	"strings"
 	"syscall"
+
+	"golang.org/x/sys/unix"
 )
 
 // IsErrIsDirectory reports whether err is an "is a directory" error.
@@ -110,6 +114,74 @@ func (r *root) openFileNoFollow(rel string, flag int, perm os.FileMode) (*os.Fil
 		return nil, &os.PathError{Op: "open", Path: rel, Err: os.ErrPermission}
 	}
 	return f, err
+}
+
+func (r *root) openFileValidatedNoFollow(rel string, flag int, perm os.FileMode, _ bool) (*os.File, error) {
+	rel = filepath.Clean(rel)
+	if rel == "." {
+		return nil, &os.PathError{Op: "open", Path: rel, Err: errors.New("is a directory")}
+	}
+
+	rootDir, err := r.root.Open(".")
+	if err != nil {
+		return nil, err
+	}
+	defer rootDir.Close()
+
+	rootFD := int(rootDir.Fd())
+	dirFD := rootFD
+	closeDirFD := func() {
+		if dirFD != rootFD {
+			_ = unix.Close(dirFD)
+			dirFD = rootFD
+		}
+	}
+	defer closeDirFD()
+
+	components := strings.Split(rel, string(filepath.Separator))
+	for _, component := range components[:len(components)-1] {
+		if component == "" || component == "." {
+			continue
+		}
+		fd, err := unix.Openat(dirFD, component, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
+		if err != nil {
+			return nil, noFollowOpenPathError(rel, err)
+		}
+		closeDirFD()
+		dirFD = fd
+	}
+
+	leaf := components[len(components)-1]
+	if leaf == "" || leaf == "." {
+		return nil, &os.PathError{Op: "open", Path: rel, Err: errors.New("is a directory")}
+	}
+
+	fd, err := unix.Openat(dirFD, leaf, flag|unix.O_NOFOLLOW|unix.O_CLOEXEC|unix.O_NONBLOCK, uint32(perm))
+	if err != nil {
+		return nil, noFollowOpenPathError(rel, err)
+	}
+	f := os.NewFile(uintptr(fd), rel)
+	info, err := f.Stat()
+	if err != nil {
+		_ = f.Close()
+		return nil, err
+	}
+	if info.IsDir() {
+		_ = f.Close()
+		return nil, &os.PathError{Op: "open", Path: rel, Err: errors.New("is a directory")}
+	}
+	if !info.Mode().IsRegular() {
+		_ = f.Close()
+		return nil, &os.PathError{Op: "open", Path: rel, Err: os.ErrPermission}
+	}
+	return f, nil
+}
+
+func noFollowOpenPathError(rel string, err error) error {
+	if errors.Is(err, unix.ELOOP) || errors.Is(err, unix.ENOTDIR) || errors.Is(err, unix.ENXIO) {
+		return &os.PathError{Op: "open", Path: rel, Err: os.ErrPermission}
+	}
+	return &os.PathError{Op: "open", Path: rel, Err: err}
 }
 
 // effectiveHasPerm checks whether the current process has the requested

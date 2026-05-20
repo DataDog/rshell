@@ -47,9 +47,11 @@ type HandlerFunc func(ctx context.Context, callCtx *CallContext, args []string) 
 // CapturedHostCommand is the output from a guarded host command run with
 // stdout/stderr captured instead of streamed to the shell's current fds.
 type CapturedHostCommand struct {
-	Code   uint8
-	Stdout string
-	Stderr string
+	Code            uint8
+	Stdout          string
+	Stderr          string
+	StdoutTruncated bool
+	StderrTruncated bool
 }
 
 // Command pairs a builtin name with its flag-declaring factory. MakeFlags

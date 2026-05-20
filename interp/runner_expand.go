@@ -50,6 +50,10 @@ func (r *Runner) updateExpandOpts() {
 // commands that produce unbounded output.
 const maxCmdSubstOutput = 1 << 20 // 1 MiB
 
+// maxHostCommandCaptureOutput is the maximum stdout/stderr bytes captured from
+// each guarded host command when a builtin builds a JSON receipt.
+const maxHostCommandCaptureOutput = 1 << 20 // 1 MiB
+
 // maxStdoutBytes is the maximum number of bytes a script can write to stdout
 // before further output is silently discarded. This caps total script output
 // to prevent memory exhaustion from runaway commands (e.g. infinite loops

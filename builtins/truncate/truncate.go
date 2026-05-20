@@ -93,13 +93,15 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 }
 
 type receipt struct {
-	Path        string `json:"path"`
-	BytesBefore int64  `json:"bytes_before"`
-	BytesAfter  int64  `json:"bytes_after"`
-	SizeBytes   int64  `json:"size_bytes"`
-	ExitCode    uint8  `json:"exit_code"`
-	Stdout      string `json:"stdout"`
-	Stderr      string `json:"stderr"`
+	Path            string `json:"path"`
+	BytesBefore     int64  `json:"bytes_before"`
+	BytesAfter      int64  `json:"bytes_after"`
+	SizeBytes       int64  `json:"size_bytes"`
+	ExitCode        uint8  `json:"exit_code"`
+	Stdout          string `json:"stdout"`
+	Stderr          string `json:"stderr"`
+	StdoutTruncated bool   `json:"stdout_truncated,omitempty"`
+	StderrTruncated bool   `json:"stderr_truncated,omitempty"`
 }
 
 func runJSON(ctx context.Context, callCtx *builtins.CallContext, path string, size int64, bytesBefore int64, hostArgs []string, f *os.File) builtins.Result {
@@ -113,13 +115,15 @@ func runJSON(ctx context.Context, callCtx *builtins.CallContext, path string, si
 		return builtins.Result{Code: 1}
 	}
 	outRes := callCtx.OutJSON(receipt{
-		Path:        path,
-		BytesBefore: bytesBefore,
-		BytesAfter:  afterInfo.Size(),
-		SizeBytes:   size,
-		ExitCode:    host.Code,
-		Stdout:      host.Stdout,
-		Stderr:      host.Stderr,
+		Path:            path,
+		BytesBefore:     bytesBefore,
+		BytesAfter:      afterInfo.Size(),
+		SizeBytes:       size,
+		ExitCode:        host.Code,
+		Stdout:          host.Stdout,
+		Stderr:          host.Stderr,
+		StdoutTruncated: host.StdoutTruncated,
+		StderrTruncated: host.StderrTruncated,
 	})
 	if outRes.Code != 0 || outRes.Exiting {
 		return outRes

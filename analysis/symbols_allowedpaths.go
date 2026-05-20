@@ -47,6 +47,7 @@ var allowedpathsAllowedSymbols = []string{
 	"os.O_RDONLY",                        // 🟢 read-only file flag constant; pure constant.
 	"os.O_TRUNC",                         // 🟢 truncate file flag constant; only accepted by the dedicated redirection write-open path.
 	"os.O_WRONLY",                        // 🟢 write-only file flag constant; only accepted by the dedicated redirection write-open path.
+	"os.NewFile",                         // 🟠 wraps a sandbox-opened file descriptor after fd-relative openat validation; does not open paths itself.
 	"os.OpenRoot",                        // 🟠 opens a directory as a root for sandboxed file access; needed for sandbox.
 	"os.PathError",                       // 🟢 error type wrapping path and operation; pure type.
 	"os.Root",                            // 🟠 sandboxed directory root type; core of the filesystem sandbox.
@@ -66,6 +67,16 @@ var allowedpathsAllowedSymbols = []string{
 	"strings.HasPrefix",                  // 🟢 pure function for prefix matching; no I/O.
 	"strings.Join",                       // 🟢 joins string slices; pure function, no I/O.
 	"strings.Split",                      // 🟢 splits a string by separator; pure function, no I/O.
+	"golang.org/x/sys/unix.Close",        // 🟠 closes intermediate directory file descriptors opened during fd-relative write-path validation.
+	"golang.org/x/sys/unix.ELOOP",        // 🟢 symlink-loop errno constant; normalized to permission denied for no-follow write opens.
+	"golang.org/x/sys/unix.ENOTDIR",      // 🟢 not-a-directory errno constant; normalized when no-follow parent traversal rejects a symlink directory.
+	"golang.org/x/sys/unix.ENXIO",        // 🟢 no-device errno constant; normalized when non-blocking write-open races to a FIFO.
+	"golang.org/x/sys/unix.O_CLOEXEC",    // 🟢 close-on-exec open flag; prevents leaking validation descriptors to child processes.
+	"golang.org/x/sys/unix.O_DIRECTORY",  // 🟢 directory-only open flag for parent component traversal.
+	"golang.org/x/sys/unix.O_NOFOLLOW",   // 🟢 no-follow open flag; rejects symlink parent/final components during write opens.
+	"golang.org/x/sys/unix.O_NONBLOCK",   // 🟢 non-blocking open flag; prevents blocking if a final component races to a FIFO.
+	"golang.org/x/sys/unix.O_RDONLY",     // 🟢 read-only open flag for parent directory traversal.
+	"golang.org/x/sys/unix.Openat",       // 🟠 fd-relative open used to keep no-symlink write validation tied to the opened parent directory.
 	"syscall.ByHandleFileInformation",    // 🟢 Windows file identity structure; pure type for file metadata.
 	"syscall.EISDIR",                     // 🟢 "is a directory" errno constant; pure constant.
 	"syscall.ELOOP",                      // 🟢 "too many levels of symbolic links" errno constant; used to normalize no-follow write-open rejections.

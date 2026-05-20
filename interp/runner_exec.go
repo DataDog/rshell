@@ -873,11 +873,15 @@ func (r *Runner) runHostCommand(ctx context.Context, pos syntax.Pos, dir string,
 
 func (r *Runner) runHostCommandCapture(ctx context.Context, pos syntax.Pos, dir string, caller string, name string, args []string, extraFiles []*os.File, stdin io.Reader) (builtins.CapturedHostCommand, error) {
 	var stdout, stderr bytes.Buffer
-	code, err := r.runHostCommandWithIO(ctx, pos, dir, caller, name, args, extraFiles, stdin, &stdout, &stderr)
+	stdoutCap := &limitWriter{w: &stdout, limit: maxHostCommandCaptureOutput}
+	stderrCap := &limitWriter{w: &stderr, limit: maxHostCommandCaptureOutput}
+	code, err := r.runHostCommandWithIO(ctx, pos, dir, caller, name, args, extraFiles, stdin, stdoutCap, stderrCap)
 	return builtins.CapturedHostCommand{
-		Code:   code,
-		Stdout: stdout.String(),
-		Stderr: stderr.String(),
+		Code:            code,
+		Stdout:          stdout.String(),
+		Stderr:          stderr.String(),
+		StdoutTruncated: stdoutCap.isExceeded(),
+		StderrTruncated: stderrCap.isExceeded(),
 	}, err
 }
 

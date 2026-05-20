@@ -376,13 +376,9 @@ func (s *Sandbox) OpenForWrite(path string, cwd string, flag int, perm os.FileMo
 		return nil, &os.PathError{Op: "open", Path: path, Err: os.ErrPermission}
 	}
 
-	if err := ar.validateWritePath(relPath, true); err != nil {
-		return nil, err
-	}
-
-	f, err := ar.openFileNoFollow(relPath, flag, perm)
+	f, err := ar.openFileValidatedNoFollow(relPath, flag, perm, true)
 	if err != nil {
-		return nil, PortablePathError(err)
+		return nil, err
 	}
 	return f, nil
 }
@@ -401,13 +397,9 @@ func (s *Sandbox) OpenExistingForWrite(path string, cwd string) (*os.File, error
 		return nil, &os.PathError{Op: "open", Path: path, Err: os.ErrPermission}
 	}
 
-	if err := ar.validateWritePath(relPath, false); err != nil {
-		return nil, err
-	}
-
-	f, err := ar.openFileNoFollow(relPath, os.O_WRONLY, 0)
+	f, err := ar.openFileValidatedNoFollow(relPath, os.O_WRONLY, 0, false)
 	if err != nil {
-		return nil, PortablePathError(err)
+		return nil, err
 	}
 	return f, nil
 }

@@ -7,10 +7,12 @@ package interp_test
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 
@@ -384,6 +386,43 @@ func TestRemediationSystemctlJSONReportsActiveState(t *testing.T) {
 		{"systemctl", "restart", "--", "app.service"},
 		{"systemctl", "show", "--property=ActiveState", "--value", "--", "app.service"},
 	}, got)
+}
+
+func TestRemediationSystemctlJSONCapsCapturedOutput(t *testing.T) {
+	dir := t.TempDir()
+	large := strings.Repeat("x", 2<<20)
+
+	stdout, stderr, code := runScript(t, "systemctl --json status app.service", dir,
+		interp.HostCommandHandler(func(ctx context.Context, args []string) error {
+			hc := interp.HandlerCtx(ctx)
+			if len(args) > 1 && args[1] == "show" {
+				_, err := io.WriteString(hc.Stdout, "active\n")
+				return err
+			}
+			if _, err := io.WriteString(hc.Stdout, large); err != nil {
+				return err
+			}
+			_, err := io.WriteString(hc.Stderr, large)
+			return err
+		}),
+	)
+
+	require.Equal(t, 0, code)
+	assert.Equal(t, "", stderr)
+
+	var got struct {
+		Stdout          string `json:"stdout"`
+		Stderr          string `json:"stderr"`
+		StdoutTruncated bool   `json:"stdout_truncated"`
+		StderrTruncated bool   `json:"stderr_truncated"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(stdout), &got))
+	assert.True(t, got.StdoutTruncated)
+	assert.True(t, got.StderrTruncated)
+	assert.NotEmpty(t, got.Stdout)
+	assert.NotEmpty(t, got.Stderr)
+	assert.Less(t, len(got.Stdout), len(large))
+	assert.Less(t, len(got.Stderr), len(large))
 }
 
 func TestRemediationSystemctlRejectsUnsupportedAction(t *testing.T) {

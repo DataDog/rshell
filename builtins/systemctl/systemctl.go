@@ -84,12 +84,14 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 }
 
 type receipt struct {
-	Unit        string `json:"unit"`
-	Action      string `json:"action"`
-	ActiveState string `json:"active_state"`
-	ExitCode    uint8  `json:"exit_code"`
-	Stdout      string `json:"stdout"`
-	Stderr      string `json:"stderr"`
+	Unit            string `json:"unit"`
+	Action          string `json:"action"`
+	ActiveState     string `json:"active_state"`
+	ExitCode        uint8  `json:"exit_code"`
+	Stdout          string `json:"stdout"`
+	Stderr          string `json:"stderr"`
+	StdoutTruncated bool   `json:"stdout_truncated,omitempty"`
+	StderrTruncated bool   `json:"stderr_truncated,omitempty"`
 }
 
 func runJSON(ctx context.Context, callCtx *builtins.CallContext, action, unit string, hostArgs []string) builtins.Result {
@@ -112,12 +114,14 @@ func runJSON(ctx context.Context, callCtx *builtins.CallContext, action, unit st
 		stderr += stateHost.Stderr
 	}
 	outRes := callCtx.OutJSON(receipt{
-		Unit:        unit,
-		Action:      action,
-		ActiveState: activeState,
-		ExitCode:    exitCode,
-		Stdout:      actionHost.Stdout,
-		Stderr:      stderr,
+		Unit:            unit,
+		Action:          action,
+		ActiveState:     activeState,
+		ExitCode:        exitCode,
+		Stdout:          actionHost.Stdout,
+		Stderr:          stderr,
+		StdoutTruncated: actionHost.StdoutTruncated || stateHost.StdoutTruncated,
+		StderrTruncated: actionHost.StderrTruncated || stateHost.StderrTruncated,
 	})
 	if outRes.Code != 0 || outRes.Exiting {
 		return outRes

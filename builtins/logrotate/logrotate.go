@@ -70,13 +70,15 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 }
 
 type receipt struct {
-	Path        string `json:"path"`
-	RotatedPath string `json:"rotated_path"`
-	BytesBefore int64  `json:"bytes_before"`
-	BytesAfter  int64  `json:"bytes_after"`
-	ExitCode    uint8  `json:"exit_code"`
-	Stdout      string `json:"stdout"`
-	Stderr      string `json:"stderr"`
+	Path            string `json:"path"`
+	RotatedPath     string `json:"rotated_path"`
+	BytesBefore     int64  `json:"bytes_before"`
+	BytesAfter      int64  `json:"bytes_after"`
+	ExitCode        uint8  `json:"exit_code"`
+	Stdout          string `json:"stdout"`
+	Stderr          string `json:"stderr"`
+	StdoutTruncated bool   `json:"stdout_truncated,omitempty"`
+	StderrTruncated bool   `json:"stderr_truncated,omitempty"`
 }
 
 type rotateCandidate struct {
@@ -99,13 +101,15 @@ func runJSON(ctx context.Context, callCtx *builtins.CallContext, path string, by
 	}
 	after := collectRotateCandidates(ctx, callCtx, path)
 	outRes := callCtx.OutJSON(receipt{
-		Path:        path,
-		RotatedPath: discoverRotatedPath(before, after),
-		BytesBefore: bytesBefore,
-		BytesAfter:  afterInfo.Size(),
-		ExitCode:    host.Code,
-		Stdout:      host.Stdout,
-		Stderr:      host.Stderr,
+		Path:            path,
+		RotatedPath:     discoverRotatedPath(before, after),
+		BytesBefore:     bytesBefore,
+		BytesAfter:      afterInfo.Size(),
+		ExitCode:        host.Code,
+		Stdout:          host.Stdout,
+		Stderr:          host.Stderr,
+		StdoutTruncated: host.StdoutTruncated,
+		StderrTruncated: host.StderrTruncated,
 	})
 	if outRes.Code != 0 || outRes.Exiting {
 		return outRes

@@ -89,3 +89,10 @@ func (r *root) accessCheck(rel string, checkRead, checkWrite, checkExec bool) (f
 func (r *root) openFileNoFollow(rel string, flag int, perm os.FileMode) (*os.File, error) {
 	return r.root.OpenFile(rel, flag, perm)
 }
+
+func (r *root) openFileValidatedNoFollow(rel string, flag int, perm os.FileMode, allowMissingFinal bool) (*os.File, error) {
+	if err := r.validateWritePath(rel, allowMissingFinal); err != nil {
+		return nil, err
+	}
+	return r.openFileNoFollow(rel, flag, perm)
+}
