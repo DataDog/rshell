@@ -302,6 +302,22 @@ func TestRedirStdoutToFilesShareOutputCap(t *testing.T) {
 	assert.Equal(t, int64(4*1024*1024), two.Size())
 }
 
+func TestRedirTargetCommandSubstitutionRunsOnce(t *testing.T) {
+	dir := t.TempDir()
+
+	stdout, stderr, code := redirRun(t, `echo data > "$(echo hit >> marker; echo output.txt)"`, dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "", stdout)
+	assert.Equal(t, "", stderr)
+
+	marker, err := os.ReadFile(filepath.Join(dir, "marker"))
+	require.NoError(t, err)
+	assert.Equal(t, "hit\n", string(marker))
+	output, err := os.ReadFile(filepath.Join(dir, "output.txt"))
+	require.NoError(t, err)
+	assert.Equal(t, "data\n", string(output))
+}
+
 func TestRedirDeniedCommandDoesNotCreateOrModifyFile(t *testing.T) {
 	dir := t.TempDir()
 	target := filepath.Join(dir, "output.txt")

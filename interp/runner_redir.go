@@ -276,14 +276,10 @@ func (r *Runner) preflightFileBackedFdDupRedirects(redirs []*syntax.Redirect) er
 	for _, rd := range redirs {
 		switch rd.Op {
 		case syntax.RdrOut, syntax.AppOut:
-			arg := r.literal(rd.Word)
-			if !r.exit.ok() {
-				return nil
-			}
 			if rd.N != nil && rd.N.Value == "2" {
-				stderrFileRedirect = !isDevNull(arg)
+				stderrFileRedirect = !redirectTargetIsDevNull(rd)
 			} else {
-				stdoutFileRedirect = !isDevNull(arg)
+				stdoutFileRedirect = !redirectTargetIsDevNull(rd)
 			}
 		case syntax.ClbOut:
 			if rd.N != nil && rd.N.Value == "2" {
@@ -292,18 +288,14 @@ func (r *Runner) preflightFileBackedFdDupRedirects(redirs []*syntax.Redirect) er
 				stdoutFileRedirect = false
 			}
 		case syntax.RdrAll, syntax.AppAll:
-			arg := r.literal(rd.Word)
-			if !r.exit.ok() {
-				return nil
-			}
-			if isDevNull(arg) {
+			if redirectTargetIsDevNull(rd) {
 				stdoutFileRedirect = false
 				stderrFileRedirect = false
 			}
 		case syntax.DplOut:
-			arg := r.literal(rd.Word)
-			if !r.exit.ok() {
-				return nil
+			arg, ok := literalRedirectTargetFD(rd)
+			if !ok {
+				continue
 			}
 			var targetFileRedirect bool
 			switch arg {
@@ -326,6 +318,22 @@ func (r *Runner) preflightFileBackedFdDupRedirects(redirs []*syntax.Redirect) er
 		}
 	}
 	return nil
+}
+
+func literalRedirectTargetFD(rd *syntax.Redirect) (string, bool) {
+	if rd.Word == nil || len(rd.Word.Parts) != 1 {
+		return "", false
+	}
+	lit, ok := rd.Word.Parts[0].(*syntax.Lit)
+	if !ok {
+		return "", false
+	}
+	switch lit.Value {
+	case "1", "2":
+		return lit.Value, true
+	default:
+		return "", false
+	}
 }
 
 func (r *Runner) redir(ctx context.Context, rd *syntax.Redirect) (io.Closer, error) {
