@@ -70,6 +70,7 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 		}
 		if timedOut {
 			callCtx.Errf("kill: timed out waiting for pid %d to exit\n", pid)
+			return builtins.Result{Code: 1}
 		}
 		return builtins.Result{}
 	}
@@ -105,6 +106,9 @@ func runJSON(ctx context.Context, callCtx *builtins.CallContext, pid int, force 
 		if waitErr != nil {
 			exitCode = 1
 			stderr = fmt.Sprintf("kill: %s\n", waitErr)
+		} else if timedOut {
+			exitCode = 1
+			stderr = fmt.Sprintf("kill: timed out waiting for pid %d to exit\n", pid)
 		}
 	}
 	outRes := callCtx.OutJSON(receipt{
