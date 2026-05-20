@@ -14,6 +14,11 @@ import (
 	"github.com/DataDog/rshell/allowedpaths"
 )
 
+const (
+	stdoutFileRedirectionOnCompoundCommandError = "stdout file redirection on compound commands is not supported"
+	stdoutFileRedirectionWithoutCommandError    = "stdout file redirection without a command is not supported"
+)
+
 // validateNode walks the AST and rejects shell constructs that are not
 // supported in the safe-shell interpreter.  It is called before execution
 // so that disallowed features are caught early with a clear error message.
@@ -90,9 +95,18 @@ func validateNode(node syntax.Node) error {
 				err = fmt.Errorf("background execution (&) is not supported")
 				return false
 			}
-			if n.Cmd != nil {
-				if _, ok := n.Cmd.(*syntax.CallExpr); !ok && stmtHasPotentialFileWriteRedirect(n) {
-					err = fmt.Errorf("stdout file redirection on compound commands is not supported")
+			if stmtHasPotentialFileWriteRedirect(n) {
+				if n.Cmd == nil {
+					err = fmt.Errorf(stdoutFileRedirectionWithoutCommandError)
+					return false
+				}
+				if cm, ok := n.Cmd.(*syntax.CallExpr); ok {
+					if len(cm.Args) == 0 {
+						err = fmt.Errorf(stdoutFileRedirectionWithoutCommandError)
+						return false
+					}
+				} else {
+					err = fmt.Errorf(stdoutFileRedirectionOnCompoundCommandError)
 					return false
 				}
 			}

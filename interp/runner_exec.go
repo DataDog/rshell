@@ -48,7 +48,10 @@ func (r *Runner) stmtSync(ctx context.Context, st *syntax.Stmt) {
 		callExpr = cm
 		callFields = r.expandCallFields(cm)
 		callPrechecked = true
-		if len(callFields) > 0 && !r.commandAllowed(callFields[0]) {
+		if len(callFields) == 0 {
+			r.errf("%s\n", stdoutFileRedirectionWithoutCommandError)
+			r.exit.code = 2
+		} else if !r.commandAllowed(callFields[0]) {
 			r.cmdCallFields(ctx, cm, callFields)
 		}
 	}

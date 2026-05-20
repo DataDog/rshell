@@ -1,0 +1,11 @@
+description: Commandless statements cannot redirect stdout to real files.
+skip_assert_against_bash: true
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    > output.txt
+expect:
+  stdout: |+
+  stderr: |+
+    stdout file redirection without a command is not supported
+  exit_code: 2

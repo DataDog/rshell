@@ -277,6 +277,41 @@ func TestRedirDeniedCommandDoesNotCreateOrModifyFile(t *testing.T) {
 	assert.Equal(t, "keep\n", string(data))
 }
 
+func TestRedirCommandlessFileOutputBlockedBeforeOpen(t *testing.T) {
+	tests := []struct {
+		name   string
+		script string
+	}{
+		{"bare_redirect", "> output.txt"},
+		{"assignment_redirect", "VAR=x > output.txt"},
+		{"expanded_empty_command", "cmd=; $cmd > output.txt"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			target := filepath.Join(dir, "output.txt")
+			require.NoError(t, os.WriteFile(target, []byte("keep\n"), 0644))
+
+			stdout, stderr, code := redirRunWithOpts(t, tt.script, dir, interp.AllowedPaths([]string{dir}))
+			assert.Equal(t, 2, code)
+			assert.Equal(t, "", stdout)
+			assert.Contains(t, stderr, "stdout file redirection without a command is not supported")
+			data, err := os.ReadFile(target)
+			require.NoError(t, err)
+			assert.Equal(t, "keep\n", string(data))
+		})
+	}
+
+	dir := t.TempDir()
+	stdout, stderr, code := redirRunWithOpts(t, "> created.txt", dir, interp.AllowedPaths([]string{dir}))
+	assert.Equal(t, 2, code)
+	assert.Equal(t, "", stdout)
+	assert.Contains(t, stderr, "stdout file redirection without a command is not supported")
+	_, err := os.Stat(filepath.Join(dir, "created.txt"))
+	assert.True(t, os.IsNotExist(err), "commandless redirect created redirected file")
+}
+
 func TestRedirCompoundCommandFileOutputBlockedBeforeOpen(t *testing.T) {
 	tests := []struct {
 		name   string

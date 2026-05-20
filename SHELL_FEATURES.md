@@ -87,12 +87,13 @@ The in-shell `help` command mirrors these feature categories: run `help` for a c
 - ✅ `<` — input redirection (read-only, within AllowedPaths)
 - ✅ `<<DELIM` — heredoc
 - ✅ `<<-DELIM` — heredoc with tab stripping
-- ✅ `> FILE` — redirect stdout to FILE, creating/truncating within AllowedPaths
-- ✅ `>> FILE` — append stdout to FILE, creating within AllowedPaths
+- ✅ `COMMAND > FILE` — redirect simple-command stdout to FILE, creating/truncating within AllowedPaths
+- ✅ `COMMAND >> FILE` — append simple-command stdout to FILE, creating within AllowedPaths
 - ✅ `>/dev/null`, `2>/dev/null` — redirect stdout or stderr to /dev/null (output is discarded; only `/dev/null` is allowed as target)
 - ✅ `&>/dev/null` — redirect both stdout and stderr to /dev/null
 - ✅ `>>/dev/null`, `&>>/dev/null` — append redirect to /dev/null (same effect as truncate)
 - ✅ `2>&1`, `>&2` — file descriptor duplication between stdout (1) and stderr (2)
+- ❌ `> FILE`, `VAR=x > FILE` — commandless stdout redirects to real files are blocked; use `write_file` or a simple command redirect
 - ❌ `{ ...; } > FILE`, `( ... ) > FILE`, `while ...; done > FILE` — compound-command stdout redirects to real files are blocked; use a simple command redirect or `/dev/null`
 - ❌ `|&` — pipe stdout and stderr (bash extension)
 - ❌ `<<<` — herestring (bash extension)
