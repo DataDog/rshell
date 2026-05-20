@@ -8,9 +8,12 @@ package interp
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 
@@ -272,6 +275,7 @@ type preflightFDState struct {
 	known        bool
 	fileRedirect bool
 	source       *syntax.Redirect
+	target       string
 }
 
 type fdDupPreflightMode int
@@ -282,16 +286,18 @@ const (
 	fdDupPreflightFullExpansion
 )
 
+const preflightAccessWrite = 0x02 // allowedpaths.Access write bit.
+
 // preflightFileBackedFdDupRedirects rejects unsupported fd duplication before
 // any earlier redirect in the same statement can create or truncate a file.
-func (r *Runner) preflightFileBackedFdDupRedirects(redirs []*syntax.Redirect) (map[*syntax.Redirect]string, error) {
-	return r.preflightFileBackedFdDupRedirectsWithExpansion(redirs, fdDupPreflightFullExpansion)
+func (r *Runner) preflightFileBackedFdDupRedirects(ctx context.Context, redirs []*syntax.Redirect) (map[*syntax.Redirect]string, error) {
+	return r.preflightFileBackedFdDupRedirectsWithExpansion(ctx, redirs, fdDupPreflightFullExpansion)
 }
 
 // preflightKnownFileBackedFdDupRedirects rejects statically known unsupported
 // fd duplication before command-word expansion can run substitutions.
-func (r *Runner) preflightKnownFileBackedFdDupRedirects(redirs []*syntax.Redirect) error {
-	_, err := r.preflightFileBackedFdDupRedirectsWithExpansion(redirs, fdDupPreflightNoExpansion)
+func (r *Runner) preflightKnownFileBackedFdDupRedirects(ctx context.Context, redirs []*syntax.Redirect) error {
+	_, err := r.preflightFileBackedFdDupRedirectsWithExpansion(ctx, redirs, fdDupPreflightNoExpansion)
 	return err
 }
 
@@ -299,19 +305,29 @@ func (r *Runner) preflightKnownFileBackedFdDupRedirects(redirs []*syntax.Redirec
 // cannot run command substitutions. It catches dynamic variable targets before
 // command-word expansion, while leaving side-effecting redirect-target
 // expansions for the later command-policy-gated preflight.
-func (r *Runner) preflightSafeFileBackedFdDupRedirects(redirs []*syntax.Redirect) (map[*syntax.Redirect]string, error) {
-	return r.preflightFileBackedFdDupRedirectsWithExpansion(redirs, fdDupPreflightSafeExpansion)
+func (r *Runner) preflightSafeFileBackedFdDupRedirects(ctx context.Context, redirs []*syntax.Redirect) (map[*syntax.Redirect]string, error) {
+	return r.preflightFileBackedFdDupRedirectsWithExpansion(ctx, redirs, fdDupPreflightSafeExpansion)
 }
 
-func (r *Runner) preflightFileBackedFdDupRedirectsWithExpansion(redirs []*syntax.Redirect, mode fdDupPreflightMode) (map[*syntax.Redirect]string, error) {
+func (r *Runner) preflightFileBackedFdDupRedirectsWithExpansion(ctx context.Context, redirs []*syntax.Redirect, mode fdDupPreflightMode) (map[*syntax.Redirect]string, error) {
 	stdoutState := preflightFDState{known: true, fileRedirect: r.stdoutFileRedirect}
 	stderrState := preflightFDState{known: true, fileRedirect: r.stderrFileRedirect}
 	redirectArgs := make(map[*syntax.Redirect]string)
-	for _, rd := range redirs {
+	lastDplOut := lastFdDupPreflightRedirect(redirs)
+	if lastDplOut < 0 {
+		return redirectArgs, nil
+	}
+	for i, rd := range redirs {
+		if i > lastDplOut {
+			break
+		}
 		switch rd.Op {
 		case syntax.RdrOut, syntax.AppOut:
 			state, ok := r.preflightRedirectTargetState(rd, mode, redirectArgs)
 			if !ok {
+				return redirectArgs, nil
+			}
+			if state.known && r.redirectOutputWouldFailBeforeOpen(ctx, rd, state.target) {
 				return redirectArgs, nil
 			}
 			if rd.N != nil && rd.N.Value == "2" {
@@ -360,6 +376,7 @@ func (r *Runner) preflightFileBackedFdDupRedirectsWithExpansion(redirs []*syntax
 				targetState = preflightFDState{
 					known:        true,
 					fileRedirect: !isDevNull(expandedArg),
+					target:       expandedArg,
 				}
 				if source == stdoutState.source {
 					stdoutState = targetState
@@ -382,6 +399,16 @@ func (r *Runner) preflightFileBackedFdDupRedirectsWithExpansion(redirs []*syntax
 	return redirectArgs, nil
 }
 
+func lastFdDupPreflightRedirect(redirs []*syntax.Redirect) int {
+	last := -1
+	for i, rd := range redirs {
+		if rd.Op == syntax.DplOut {
+			last = i
+		}
+	}
+	return last
+}
+
 func (r *Runner) preflightRedirectTargetState(rd *syntax.Redirect, mode fdDupPreflightMode, redirectArgs map[*syntax.Redirect]string) (preflightFDState, bool) {
 	state := preflightRedirectTargetState(rd)
 	if state.known || state.source == nil || mode == fdDupPreflightNoExpansion {
@@ -401,6 +428,7 @@ func (r *Runner) preflightRedirectTargetState(rd *syntax.Redirect, mode fdDupPre
 	return preflightFDState{
 		known:        true,
 		fileRedirect: !isDevNull(expandedArg),
+		target:       expandedArg,
 	}, true
 }
 
@@ -415,7 +443,58 @@ func preflightRedirectTargetState(rd *syntax.Redirect) preflightFDState {
 	return preflightFDState{
 		known:        true,
 		fileRedirect: !isDevNull(lit.Value),
+		target:       lit.Value,
 	}
+}
+
+// redirectOutputWouldFailBeforeOpen identifies redirects that would stop the
+// actual redirect loop before any later redirect word is expanded. The later
+// redir call still performs the authoritative sandboxed open.
+func (r *Runner) redirectOutputWouldFailBeforeOpen(ctx context.Context, rd *syntax.Redirect, arg string) bool {
+	if rd.N != nil {
+		switch rd.N.Value {
+		case "1":
+		case "2":
+			if !isDevNull(arg) {
+				return true
+			}
+		default:
+			return true
+		}
+	}
+	if isDevNull(arg) {
+		return false
+	}
+
+	dir := HandlerCtx(r.handlerCtx(ctx, todoPos)).Dir
+	info, err := r.sandbox.Lstat(arg, dir)
+	if err == nil {
+		if info.Mode()&fs.ModeSymlink != 0 || info.IsDir() || !info.Mode().IsRegular() {
+			return true
+		}
+		return r.sandbox.Access(arg, dir, preflightAccessWrite) != nil
+	}
+	if !redirectPathDoesNotExist(err) {
+		return true
+	}
+
+	parent := filepath.Dir(arg)
+	parentInfo, err := r.sandbox.Lstat(parent, dir)
+	if err != nil {
+		return true
+	}
+	if parentInfo.Mode()&fs.ModeSymlink != 0 || !parentInfo.IsDir() {
+		return true
+	}
+	return r.sandbox.Access(parent, dir, preflightAccessWrite) != nil
+}
+
+func redirectPathDoesNotExist(err error) bool {
+	if errors.Is(err, os.ErrNotExist) {
+		return true
+	}
+	var pathErr *os.PathError
+	return errors.As(err, &pathErr) && pathErr.Err != nil && pathErr.Err.Error() == "no such file or directory"
 }
 
 func literalRedirectTargetFD(rd *syntax.Redirect) (string, bool) {

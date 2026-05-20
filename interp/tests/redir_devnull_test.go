@@ -313,6 +313,35 @@ func TestRedirDupStderrToDynamicDevNullPreservesRedirectExpansionOrder(t *testin
 	assert.Equal(t, "", string(data))
 }
 
+func TestRedirPreflightPreservesFailedEarlierRedirectShortCircuit(t *testing.T) {
+	for _, tt := range []struct {
+		name   string
+		script string
+	}{
+		{
+			name:   "without_fd_dup",
+			script: `echo hi > ../blocked-out > "$(printf side | write_file side.txt >/dev/null; printf out2)"`,
+		},
+		{
+			name:   "before_fd_dup",
+			script: `target=../blocked-out; echo hi > "$target" > "$(printf side | write_file side.txt >/dev/null; printf out2)" 2>&1`,
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+
+			stdout, stderr, code := redirRun(t, tt.script, dir)
+			assert.Equal(t, 1, code)
+			assert.Equal(t, "", stdout)
+			assert.NotEmpty(t, stderr)
+			_, err := os.Stat(filepath.Join(dir, "side.txt"))
+			require.ErrorIs(t, err, os.ErrNotExist)
+			_, err = os.Stat(filepath.Join(dir, "out2"))
+			require.ErrorIs(t, err, os.ErrNotExist)
+		})
+	}
+}
+
 func TestRedirDupStderrToOriginalStdoutBeforeFileRedirect(t *testing.T) {
 	dir := t.TempDir()
 

@@ -41,9 +41,11 @@ var interpAllowedSymbols = []string{
 	"io.Writer",                   // 🟢 interface type for writing; no side effects.
 	"io/fs.DirEntry",              // 🟢 interface type for directory entries; no side effects.
 	"io/fs.FileInfo",              // 🟢 interface type for file metadata; no side effects.
+	"io/fs.ModeSymlink",           // 🟢 file mode bit constant for symlinks; pure constant.
 	"io/fs.ReadDirFile",           // 🟢 read-only directory handle interface; no write capability.
 	"maps.Insert",                 // 🟢 inserts all key-value pairs from one map into another; pure function.
 	"os.DirEntry",                 // 🟢 type alias for fs.DirEntry; no side effects.
+	"os.ErrNotExist",              // 🟢 sentinel error value indicating a file or directory does not exist; read-only constant, no I/O.
 	"os.File",                     // 🟠 file handle type; interpreter needs file I/O for redirects and pipes.
 	"os.FileMode",                 // 🟢 file permission bits type; pure type.
 	"os.Getwd",                    // 🟠 returns current working directory; read-only.
@@ -55,6 +57,7 @@ var interpAllowedSymbols = []string{
 	"os.PathError",                // 🟢 error type wrapping path and operation; pure type.
 	"os.Pipe",                     // 🟠 creates an OS pipe pair; needed for shell pipelines.
 	"path/filepath.Clean",         // 🟢 normalizes a path lexically; pure function, no I/O.
+	"path/filepath.Dir",           // 🟢 returns the directory component of a path; pure function, no I/O.
 	"path/filepath.IsAbs",         // 🟢 checks if path is absolute; pure function, no I/O.
 	"path/filepath.Join",          // 🟢 joins path elements; pure function, no I/O.
 	"path/filepath.ListSeparator", // 🟢 OS-specific path list separator; pure constant.

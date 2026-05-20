@@ -45,7 +45,7 @@ func (r *Runner) stmtSync(ctx context.Context, st *syntax.Stmt) {
 
 	if r.exit.ok() {
 		if cm, ok := st.Cmd.(*syntax.CallExpr); ok && len(cm.Args) > 0 && wordRunsCommands(cm.Args[0]) {
-			if _, err := r.preflightSafeFileBackedFdDupRedirects(st.Redirs); err != nil {
+			if _, err := r.preflightSafeFileBackedFdDupRedirects(ctx, st.Redirs); err != nil {
 				r.errf("%s\n", err)
 				r.exit.code = 1
 			}
@@ -53,7 +53,7 @@ func (r *Runner) stmtSync(ctx context.Context, st *syntax.Stmt) {
 	}
 
 	if r.exit.ok() {
-		if err := r.preflightKnownFileBackedFdDupRedirects(st.Redirs); err != nil {
+		if err := r.preflightKnownFileBackedFdDupRedirects(ctx, st.Redirs); err != nil {
 			r.errf("%s\n", err)
 			r.exit.code = 1
 		}
@@ -78,7 +78,7 @@ func (r *Runner) stmtSync(ctx context.Context, st *syntax.Stmt) {
 	var redirectArgs map[*syntax.Redirect]string
 	if r.exit.ok() {
 		var err error
-		redirectArgs, err = r.preflightFileBackedFdDupRedirects(st.Redirs)
+		redirectArgs, err = r.preflightFileBackedFdDupRedirects(ctx, st.Redirs)
 		if err != nil {
 			r.errf("%s\n", err)
 			r.exit.code = 1
