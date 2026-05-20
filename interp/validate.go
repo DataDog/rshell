@@ -90,6 +90,12 @@ func validateNode(node syntax.Node) error {
 				err = fmt.Errorf("background execution (&) is not supported")
 				return false
 			}
+			if n.Cmd != nil {
+				if _, ok := n.Cmd.(*syntax.CallExpr); !ok && stmtHasPotentialFileWriteRedirect(n) {
+					err = fmt.Errorf("stdout file redirection on compound commands is not supported")
+					return false
+				}
+			}
 
 		// Blocked pipe operators.
 		case *syntax.BinaryCmd:

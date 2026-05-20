@@ -93,6 +93,7 @@ The in-shell `help` command mirrors these feature categories: run `help` for a c
 - ✅ `&>/dev/null` — redirect both stdout and stderr to /dev/null
 - ✅ `>>/dev/null`, `&>>/dev/null` — append redirect to /dev/null (same effect as truncate)
 - ✅ `2>&1`, `>&2` — file descriptor duplication between stdout (1) and stderr (2)
+- ❌ `{ ...; } > FILE`, `( ... ) > FILE`, `while ...; done > FILE` — compound-command stdout redirects to real files are blocked; use a simple command redirect or `/dev/null`
 - ❌ `|&` — pipe stdout and stderr (bash extension)
 - ❌ `<<<` — herestring (bash extension)
 - ❌ `2> FILE` — redirect stderr to a real file

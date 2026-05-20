@@ -1,0 +1,11 @@
+description: Compound commands cannot redirect stdout to real files.
+skip_assert_against_bash: true
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    { echo new; } > output.txt
+expect:
+  stdout: |+
+  stderr: |+
+    stdout file redirection on compound commands is not supported
+  exit_code: 2

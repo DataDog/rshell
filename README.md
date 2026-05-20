@@ -62,7 +62,7 @@ Every access path is default-deny:
 | External commands    | Blocked (exit code 127)             | Provide an `ExecHandler`                     |
 | Filesystem access    | Blocked                             | Configure `AllowedPaths` with directory list |
 | Environment variables| Empty (no host env inherited)       | Pass variables via the `Env` option          |
-| Output redirections  | File writes blocked unless `AllowedPaths` permits the target | `> FILE`, `>> FILE`, `>/dev/null`, `2>/dev/null`, `&>/dev/null`, `2>&1` |
+| Output redirections  | File writes blocked unless `AllowedPaths` permits the target | Simple-command `> FILE` / `>> FILE`, `>/dev/null`, `2>/dev/null`, `&>/dev/null`, `2>&1` |
 
 **AllowedCommands** restricts which commands (builtins or external) the interpreter may execute. Commands must be specified with the `rshell:` namespace prefix (e.g. `rshell:cat`, `rshell:echo`). If not set, no commands are allowed.
 
