@@ -528,6 +528,18 @@ func TestRemediationKillTerminatesProcessDirectly(t *testing.T) {
 	helper.waitForExit(t)
 }
 
+func TestRemediationKillDefaultTimeoutConfirmsProcessExit(t *testing.T) {
+	dir := t.TempDir()
+	helper := startKillHelperProcess(t)
+
+	stdout, stderr, code := runScript(t, "kill "+strconv.Itoa(helper.cmd.Process.Pid), dir)
+
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "", stdout)
+	assert.Equal(t, "", stderr)
+	helper.waitForExit(t)
+}
+
 func TestRemediationKillJSONReportsDirectResult(t *testing.T) {
 	dir := t.TempDir()
 	helper := startKillHelperProcess(t)

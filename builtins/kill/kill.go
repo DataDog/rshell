@@ -136,7 +136,7 @@ func waitForExit(ctx context.Context, pid int, timeout time.Duration) (bool, err
 	defer ticker.Stop()
 
 	for {
-		alive, err := pidAlive(pid)
+		alive, err := pidAlive(ctx, pid)
 		if err != nil {
 			return false, err, builtins.Result{}, true
 		}

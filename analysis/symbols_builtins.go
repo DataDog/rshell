@@ -195,21 +195,29 @@ var builtinPerCommandSymbols = map[string][]string{
 		"strconv.ParseInt", // 🟢 string-to-int conversion with base/bit-size; pure function, no I/O.
 	},
 	"kill": {
-		"context.Context",   // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
-		"errors.Is",         // 🟢 error comparison; pure function, no I/O.
-		"fmt.Sprintf",       // 🟢 formats structured receipt stderr strings in memory; no I/O.
-		"os.ErrProcessDone", // 🟢 sentinel error for a finished process handle; pure constant.
-		"os.FindProcess",    // 🟠 obtains an OS process handle for the validated PID; needed for the guarded kill remediation command.
-		"strconv.Atoi",      // 🟢 string-to-int conversion with int-range overflow checking; pure function, no I/O.
-		"syscall.ESRCH",     // 🟢 POSIX "no such process" errno constant; pure constant.
-		"syscall.SIGKILL",   // 🟠 process termination signal; only used after kill validates a single positive PID.
-		"syscall.SIGTERM",   // 🟠 process termination signal; only used after kill validates a single positive PID.
-		"syscall.Signal",    // 🟠 signal type used for signal 0 liveness probing; no process mutation for signal 0.
-		"time.Duration",     // 🟢 duration type; pure integer alias, no I/O.
-		"time.Millisecond",  // 🟢 constant representing one millisecond; no side effects.
-		"time.NewTicker",    // 🟢 creates an in-memory timer channel for bounded polling; no I/O.
-		"time.NewTimer",     // 🟢 creates an in-memory timer channel for bounded polling; no I/O.
-		"time.Second",       // 🟢 constant representing one second; no side effects.
+		"context.Context",                      // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
+		"errors.Is",                            // 🟢 error comparison; pure function, no I/O.
+		"fmt.Errorf",                           // 🟢 error formatting for unexpected Windows wait states; pure function, no I/O.
+		"fmt.Sprintf",                          // 🟢 formats structured receipt stderr strings in memory; no I/O.
+		"golang.org/x/sys/windows.CloseHandle", // 🟠 closes a process handle opened only for zero-time liveness polling.
+		"golang.org/x/sys/windows.ERROR_INVALID_PARAMETER", // 🟢 Windows sentinel for a missing/invalid process id; pure constant.
+		"golang.org/x/sys/windows.OpenProcess",             // 🟠 opens a validated PID with SYNCHRONIZE only so kill can poll liveness without mutation.
+		"golang.org/x/sys/windows.SYNCHRONIZE",             // 🟢 Windows process access mask for waiting on process state; pure constant.
+		"golang.org/x/sys/windows.WAIT_OBJECT_0",           // 🟢 Windows wait result meaning the process handle is signaled/exited; pure constant.
+		"golang.org/x/sys/windows.WAIT_TIMEOUT",            // 🟢 Windows wait result meaning the process handle is still running; pure constant.
+		"golang.org/x/sys/windows.WaitForSingleObject",     // 🟠 zero-time wait used to read process liveness state; no process mutation.
+		"os.ErrProcessDone",                                // 🟢 sentinel error for a finished process handle; pure constant.
+		"os.FindProcess",                                   // 🟠 obtains an OS process handle for the validated PID; needed for the guarded kill remediation command.
+		"strconv.Atoi",                                     // 🟢 string-to-int conversion with int-range overflow checking; pure function, no I/O.
+		"syscall.ESRCH",                                    // 🟢 POSIX "no such process" errno constant; pure constant.
+		"syscall.SIGKILL",                                  // 🟠 process termination signal; only used after kill validates a single positive PID.
+		"syscall.SIGTERM",                                  // 🟠 process termination signal; only used after kill validates a single positive PID.
+		"syscall.Signal",                                   // 🟠 signal type used for signal 0 liveness probing; no process mutation for signal 0.
+		"time.Duration",                                    // 🟢 duration type; pure integer alias, no I/O.
+		"time.Millisecond",                                 // 🟢 constant representing one millisecond; no side effects.
+		"time.NewTicker",                                   // 🟢 creates an in-memory timer channel for bounded polling; no I/O.
+		"time.NewTimer",                                    // 🟢 creates an in-memory timer channel for bounded polling; no I/O.
+		"time.Second",                                      // 🟢 constant representing one second; no side effects.
 	},
 	"logrotate": {
 		"context.Context",    // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
@@ -595,6 +603,13 @@ var builtinAllowedSymbols = []string{
 	"golang.org/x/sys/unix.Poll",                          // 🟠 Unix poll(2) with timeout 0; non-consuming readability probe for read -t 0. Read-only descriptor state; no data transferred.
 	"golang.org/x/sys/unix.PollFd",                        // 🟢 PollFd struct passed to unix.Poll; pure data type, no I/O.
 	"golang.org/x/sys/unix.SysctlRaw",                     // 🟠 macOS: reads kernel socket tables (read-only, no exec, no filesystem).
+	"golang.org/x/sys/windows.CloseHandle",                // 🟠 closes Windows handles opened by guarded builtins; no data read/write or exec capability.
+	"golang.org/x/sys/windows.ERROR_INVALID_PARAMETER",    // 🟢 Windows sentinel error for invalid/missing process IDs; pure constant.
+	"golang.org/x/sys/windows.OpenProcess",                // 🟠 opens a validated PID with limited requested rights for guarded process polling.
+	"golang.org/x/sys/windows.SYNCHRONIZE",                // 🟢 Windows access-mask constant allowing wait-only process handles; pure constant.
+	"golang.org/x/sys/windows.WAIT_OBJECT_0",              // 🟢 Windows wait result for a signaled handle; pure constant.
+	"golang.org/x/sys/windows.WAIT_TIMEOUT",               // 🟢 Windows wait result for a still-unsignaled handle; pure constant.
+	"golang.org/x/sys/windows.WaitForSingleObject",        // 🟠 zero-time wait to read Windows handle state; no process mutation.
 	"golang.org/x/term.IsTerminal",                        // 🟠 platform-specific isatty check (TIOCGETA / GetConsoleMode); used to gate read -p prompt emission. Read-only inspection of the file descriptor; no I/O.
 	"io.EOF",                                              // 🟢 sentinel error value; pure constant.
 	"io.LimitReader",                                      // 🟢 wraps a Reader with a byte cap; no I/O beyond reads requested by caller.

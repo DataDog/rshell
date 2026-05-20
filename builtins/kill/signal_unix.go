@@ -8,9 +8,12 @@
 package kill
 
 import (
+	"context"
 	"errors"
 	"os"
 	"syscall"
+
+	"github.com/DataDog/rshell/builtins/internal/procinfo"
 )
 
 func signalPID(pid int, force bool) error {
@@ -25,19 +28,26 @@ func signalPID(pid int, force bool) error {
 	return proc.Signal(sig)
 }
 
-func pidAlive(pid int) (bool, error) {
+func pidAlive(ctx context.Context, pid int) (bool, error) {
 	proc, err := os.FindProcess(pid)
 	if err != nil {
 		return false, err
 	}
 	err = proc.Signal(syscall.Signal(0))
-	if err == nil {
-		return true, nil
-	}
 	if errors.Is(err, os.ErrProcessDone) || errors.Is(err, syscall.ESRCH) {
 		return false, nil
 	}
-	return false, err
+	if err != nil {
+		return false, err
+	}
+
+	infos, infoErr := procinfo.GetByPIDs(ctx, "", []int{pid})
+	if infoErr == nil {
+		if len(infos) == 0 || infos[0].State == "Z" {
+			return false, nil
+		}
+	}
+	return true, nil
 }
 
 func signalName(force bool) string {
