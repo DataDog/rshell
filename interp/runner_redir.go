@@ -268,56 +268,99 @@ func (r *Runner) cappedRedirectWriter(f writeCloser) writeCloser {
 	return w
 }
 
+type preflightFDState struct {
+	known        bool
+	fileRedirect bool
+	source       *syntax.Redirect
+}
+
 // preflightFileBackedFdDupRedirects rejects unsupported fd duplication before
 // any earlier redirect in the same statement can create or truncate a file.
-func (r *Runner) preflightFileBackedFdDupRedirects(redirs []*syntax.Redirect) error {
-	stdoutFileRedirect := r.stdoutFileRedirect
-	stderrFileRedirect := r.stderrFileRedirect
+func (r *Runner) preflightFileBackedFdDupRedirects(redirs []*syntax.Redirect) (map[*syntax.Redirect]string, error) {
+	stdoutState := preflightFDState{known: true, fileRedirect: r.stdoutFileRedirect}
+	stderrState := preflightFDState{known: true, fileRedirect: r.stderrFileRedirect}
+	redirectArgs := make(map[*syntax.Redirect]string)
 	for _, rd := range redirs {
 		switch rd.Op {
 		case syntax.RdrOut, syntax.AppOut:
+			state := preflightRedirectTargetState(rd)
 			if rd.N != nil && rd.N.Value == "2" {
-				stderrFileRedirect = !redirectTargetIsDevNull(rd)
+				stderrState = state
 			} else {
-				stdoutFileRedirect = !redirectTargetIsDevNull(rd)
+				stdoutState = state
 			}
 		case syntax.ClbOut:
 			if rd.N != nil && rd.N.Value == "2" {
-				stderrFileRedirect = false
+				stderrState = preflightFDState{known: true}
 			} else {
-				stdoutFileRedirect = false
+				stdoutState = preflightFDState{known: true}
 			}
 		case syntax.RdrAll, syntax.AppAll:
 			if redirectTargetIsDevNull(rd) {
-				stdoutFileRedirect = false
-				stderrFileRedirect = false
+				stdoutState = preflightFDState{known: true}
+				stderrState = preflightFDState{known: true}
 			}
 		case syntax.DplOut:
 			arg, ok := literalRedirectTargetFD(rd)
 			if !ok {
 				continue
 			}
-			var targetFileRedirect bool
+			var targetState preflightFDState
 			switch arg {
 			case "1":
-				targetFileRedirect = stdoutFileRedirect
+				targetState = stdoutState
 			case "2":
-				targetFileRedirect = stderrFileRedirect
+				targetState = stderrState
 			default:
 				continue
 			}
+			if !targetState.known && targetState.source != nil {
+				source := targetState.source
+				expandedArg, ok := redirectArgs[targetState.source]
+				if !ok {
+					expandedArg = r.literal(targetState.source.Word)
+					redirectArgs[targetState.source] = expandedArg
+					if !r.exit.ok() {
+						return redirectArgs, nil
+					}
+				}
+				targetState = preflightFDState{
+					known:        true,
+					fileRedirect: !isDevNull(expandedArg),
+				}
+				if source == stdoutState.source {
+					stdoutState = targetState
+				}
+				if source == stderrState.source {
+					stderrState = targetState
+				}
+			}
 			redirectsStderr := rd.N != nil && rd.N.Value == "2"
-			if redirectsStderr && targetFileRedirect {
-				return stderrFileDupToFileRedirectError(arg)
+			if redirectsStderr && targetState.fileRedirect {
+				return redirectArgs, stderrFileDupToFileRedirectError(arg)
 			}
 			if redirectsStderr {
-				stderrFileRedirect = targetFileRedirect
+				stderrState = targetState
 			} else {
-				stdoutFileRedirect = targetFileRedirect
+				stdoutState = targetState
 			}
 		}
 	}
-	return nil
+	return redirectArgs, nil
+}
+
+func preflightRedirectTargetState(rd *syntax.Redirect) preflightFDState {
+	if rd.Word == nil || len(rd.Word.Parts) != 1 {
+		return preflightFDState{source: rd}
+	}
+	lit, ok := rd.Word.Parts[0].(*syntax.Lit)
+	if !ok {
+		return preflightFDState{source: rd}
+	}
+	return preflightFDState{
+		known:        true,
+		fileRedirect: !isDevNull(lit.Value),
+	}
 }
 
 func literalRedirectTargetFD(rd *syntax.Redirect) (string, bool) {
@@ -336,7 +379,7 @@ func literalRedirectTargetFD(rd *syntax.Redirect) (string, bool) {
 	}
 }
 
-func (r *Runner) redir(ctx context.Context, rd *syntax.Redirect) (io.Closer, error) {
+func (r *Runner) redir(ctx context.Context, rd *syntax.Redirect, redirectArgs map[*syntax.Redirect]string) (io.Closer, error) {
 	if rd.Hdoc != nil {
 		pr, err := r.hdocReader(ctx, rd)
 		if err != nil {
@@ -355,7 +398,10 @@ func (r *Runner) redir(ctx context.Context, rd *syntax.Redirect) (io.Closer, err
 		return pr, nil
 	}
 
-	arg := r.literal(rd.Word)
+	arg, ok := redirectArgs[rd]
+	if !ok {
+		arg = r.literal(rd.Word)
+	}
 
 	// Determine which fd this redirect targets (default: stdout for output ops).
 	orig := &r.stdout

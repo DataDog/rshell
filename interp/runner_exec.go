@@ -41,7 +41,8 @@ func (r *Runner) stmtSync(ctx context.Context, st *syntax.Stmt) {
 		callFields     []string
 		callPrechecked bool
 	)
-	if err := r.preflightFileBackedFdDupRedirects(st.Redirs); err != nil {
+	redirectArgs, err := r.preflightFileBackedFdDupRedirects(st.Redirs)
+	if err != nil {
 		r.errf("%s\n", err)
 		r.exit.code = 1
 	}
@@ -63,7 +64,7 @@ func (r *Runner) stmtSync(ctx context.Context, st *syntax.Stmt) {
 	}
 	if r.exit.ok() {
 		for _, rd := range st.Redirs {
-			cls, err := r.redir(ctx, rd)
+			cls, err := r.redir(ctx, rd, redirectArgs)
 			if err != nil {
 				r.exit.code = 1
 				break

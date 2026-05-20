@@ -199,6 +199,28 @@ func TestRedirDupStderrToStdoutFileRejectedBeforeCommandExpansion(t *testing.T) 
 	require.ErrorIs(t, err, os.ErrNotExist)
 }
 
+func TestRedirDupStderrToDynamicStdoutFileRejectedBeforeCommandExpansion(t *testing.T) {
+	dir := t.TempDir()
+
+	stdout, stderr, code := redirRun(t, `TARGET=output.txt; echo "$(echo side | write_file side.txt)" > "$TARGET" 2>&1`, dir)
+	assert.Equal(t, 1, code)
+	assert.Equal(t, "", stdout)
+	assert.Contains(t, stderr, "stderr file redirection via fd duplication is not supported")
+	_, err := os.Stat(filepath.Join(dir, "output.txt"))
+	require.ErrorIs(t, err, os.ErrNotExist)
+	_, err = os.Stat(filepath.Join(dir, "side.txt"))
+	require.ErrorIs(t, err, os.ErrNotExist)
+}
+
+func TestRedirDupStderrToDynamicDevNull(t *testing.T) {
+	dir := t.TempDir()
+
+	stdout, stderr, code := redirRun(t, `TARGET=/dev/null; cat missing > "$TARGET" 2>&1`, dir)
+	assert.Equal(t, 1, code)
+	assert.Equal(t, "", stdout)
+	assert.Equal(t, "", stderr)
+}
+
 func TestRedirDupStderrToOriginalStdoutBeforeFileRedirect(t *testing.T) {
 	dir := t.TempDir()
 
