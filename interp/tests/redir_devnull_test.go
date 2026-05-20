@@ -248,6 +248,35 @@ func TestRedirAppendToFile(t *testing.T) {
 	assert.Equal(t, "old\nnew\n", string(data))
 }
 
+func TestRedirDeniedCommandDoesNotCreateOrModifyFile(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "output.txt")
+	require.NoError(t, os.WriteFile(target, []byte("keep\n"), 0644))
+
+	stdout, stderr, code := redirRunWithOpts(t, "nope > created.txt", dir, interp.AllowedPaths([]string{dir}))
+	assert.Equal(t, 127, code)
+	assert.Equal(t, "", stdout)
+	assert.Contains(t, stderr, "rshell: nope: command not allowed")
+	_, err := os.Stat(filepath.Join(dir, "created.txt"))
+	assert.True(t, os.IsNotExist(err), "denied command created redirected file")
+
+	stdout, stderr, code = redirRunWithOpts(t, "echo new > output.txt", dir, interp.AllowedPaths([]string{dir}))
+	assert.Equal(t, 127, code)
+	assert.Equal(t, "", stdout)
+	assert.Contains(t, stderr, "rshell: echo: command not allowed")
+	data, err := os.ReadFile(target)
+	require.NoError(t, err)
+	assert.Equal(t, "keep\n", string(data))
+
+	stdout, stderr, code = redirRunWithOpts(t, "cmd=echo; $cmd new >> output.txt", dir, interp.AllowedPaths([]string{dir}))
+	assert.Equal(t, 127, code)
+	assert.Equal(t, "", stdout)
+	assert.Contains(t, stderr, "rshell: echo: command not allowed")
+	data, err = os.ReadFile(target)
+	require.NoError(t, err)
+	assert.Equal(t, "keep\n", string(data))
+}
+
 func TestRedirStdoutToFileRejectsTrailingSeparator(t *testing.T) {
 	dir := t.TempDir()
 	target := filepath.Join(dir, "output.txt")

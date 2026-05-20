@@ -36,7 +36,26 @@ func (r *Runner) stmt(ctx context.Context, st *syntax.Stmt) {
 func (r *Runner) stmtSync(ctx context.Context, st *syntax.Stmt) {
 	oldIn, oldOut, oldErr := r.stdin, r.stdout, r.stderr
 	oldOutFile, oldErrFile := r.stdoutFileRedirect, r.stderrFileRedirect
+	var (
+		callExpr       *syntax.CallExpr
+		callFields     []string
+		callPrechecked bool
+	)
+	// Destructive stdout redirects must not be opened until the command name
+	// has passed AllowedCommands. Otherwise a blocked command could still
+	// create or truncate files inside AllowedPaths.
+	if cm, ok := st.Cmd.(*syntax.CallExpr); ok && stmtHasPotentialFileWriteRedirect(st) {
+		callExpr = cm
+		callFields = r.expandCallFields(cm)
+		callPrechecked = true
+		if len(callFields) > 0 && !r.commandAllowed(callFields[0]) {
+			r.cmdCallFields(ctx, cm, callFields)
+		}
+	}
 	for _, rd := range st.Redirs {
+		if !r.exit.ok() {
+			break
+		}
 		cls, err := r.redir(ctx, rd)
 		if err != nil {
 			r.exit.code = 1
@@ -47,7 +66,11 @@ func (r *Runner) stmtSync(ctx context.Context, st *syntax.Stmt) {
 		}
 	}
 	if r.exit.ok() && st.Cmd != nil {
-		r.cmd(ctx, st.Cmd)
+		if callPrechecked {
+			r.cmdCallFields(ctx, callExpr, callFields)
+		} else {
+			r.cmd(ctx, st.Cmd)
+		}
 	}
 	if st.Negated && !r.exit.exiting {
 		wasOk := r.exit.ok()
@@ -56,6 +79,86 @@ func (r *Runner) stmtSync(ctx context.Context, st *syntax.Stmt) {
 	}
 	r.stdin, r.stdout, r.stderr = oldIn, oldOut, oldErr
 	r.stdoutFileRedirect, r.stderrFileRedirect = oldOutFile, oldErrFile
+}
+
+func stmtHasPotentialFileWriteRedirect(st *syntax.Stmt) bool {
+	for _, rd := range st.Redirs {
+		switch rd.Op {
+		case syntax.RdrOut, syntax.AppOut:
+			if !redirectTargetIsDevNull(rd) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func (r *Runner) commandAllowed(name string) bool {
+	return r.allowAllCommands || r.allowedCommands[name]
+}
+
+func (r *Runner) expandCallFields(cm *syntax.CallExpr) []string {
+	r.lastExpandExit = exitStatus{}
+	return r.fields(cm.Args...)
+}
+
+func (r *Runner) cmdCall(ctx context.Context, cm *syntax.CallExpr) {
+	r.cmdCallFields(ctx, cm, r.expandCallFields(cm))
+}
+
+func (r *Runner) cmdCallFields(ctx context.Context, cm *syntax.CallExpr, fields []string) {
+	if len(fields) == 0 {
+		for _, as := range cm.Assigns {
+			prev := r.lookupVar(as.Name.Value)
+			prev.Local = false
+
+			vr := r.assignVal(prev, as, "")
+			r.setVarWithIndex(prev, as.Name.Value, as.Index, vr)
+		}
+		// If interpreting the last expansion like $(foo) failed, and the
+		// expansion and assignments otherwise succeeded, surface that exit code.
+		if r.exit.ok() {
+			r.exit = r.lastExpandExit
+		}
+		return
+	}
+
+	type restoreVar struct {
+		name string
+		vr   expand.Variable
+	}
+	var restores []restoreVar
+
+	for _, as := range cm.Assigns {
+		name := as.Name.Value
+		prev := r.lookupVar(name)
+
+		vr := r.assignVal(prev, as, "")
+		// Inline command vars are always exported.
+		vr.Exported = true
+
+		restores = append(restores, restoreVar{name, prev})
+
+		r.setVar(name, vr)
+	}
+
+	defer func() {
+		// cd intentionally writes $PWD and $OLDPWD as part of its semantics.
+		// Reverting those after a successful cd would leave the env vars
+		// disagreeing with the shell's tracked working directory; bash skips
+		// the revert in the same case. The skip is scoped to a successful cd
+		// so a cd that errored still gets its temp PWD assignment reverted.
+		isCd := fields[0] == "cd" && r.exit.ok()
+		for _, restore := range restores {
+			if isCd && (restore.name == "PWD" || restore.name == "OLDPWD") {
+				continue
+			}
+			r.setVarRestore(restore.name, restore.vr)
+		}
+	}()
+	if r.exit.ok() {
+		r.call(ctx, cm.Args[0].Pos(), fields)
+	}
 }
 
 func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {
@@ -79,65 +182,7 @@ func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {
 	case *syntax.Block:
 		r.stmts(ctx, cm.Stmts)
 	case *syntax.CallExpr:
-		args := cm.Args
-		r.lastExpandExit = exitStatus{}
-		fields := r.fields(args...)
-		if len(fields) == 0 {
-			for _, as := range cm.Assigns {
-				prev := r.lookupVar(as.Name.Value)
-				prev.Local = false
-
-				vr := r.assignVal(prev, as, "")
-				r.setVarWithIndex(prev, as.Name.Value, as.Index, vr)
-			}
-			// If interpreting the last expansion like $(foo) failed,
-			// and the expansion and assignments otherwise succeeded,
-			// we need to surface that last exit code.
-			if r.exit.ok() {
-				r.exit = r.lastExpandExit
-			}
-			break
-		}
-
-		type restoreVar struct {
-			name string
-			vr   expand.Variable
-		}
-		var restores []restoreVar
-
-		for _, as := range cm.Assigns {
-			name := as.Name.Value
-			prev := r.lookupVar(name)
-
-			vr := r.assignVal(prev, as, "")
-			// Inline command vars are always exported.
-			vr.Exported = true
-
-			restores = append(restores, restoreVar{name, prev})
-
-			r.setVar(name, vr)
-		}
-
-		defer func() {
-			// cd intentionally writes $PWD and $OLDPWD as part of
-			// its semantics. Reverting those after a successful cd
-			// would leave the env vars disagreeing with the shell's
-			// tracked working directory — bash skips the revert in
-			// the same case (e.g. `PWD=/bogus cd b` keeps PWD at
-			// the new dir afterwards). The skip is scoped to a
-			// successful cd so a cd that errored still gets its
-			// temp PWD assignment reverted normally.
-			isCd := len(fields) > 0 && fields[0] == "cd" && r.exit.ok()
-			for _, restore := range restores {
-				if isCd && (restore.name == "PWD" || restore.name == "OLDPWD") {
-					continue
-				}
-				r.setVarRestore(restore.name, restore.vr)
-			}
-		}()
-		if r.exit.ok() {
-			r.call(ctx, cm.Args[0].Pos(), fields)
-		}
+		r.cmdCall(ctx, cm)
 	case *syntax.BinaryCmd:
 		switch cm.Op {
 		case syntax.AndStmt, syntax.OrStmt:
@@ -517,7 +562,7 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 	// Evaluate both policy checks upfront so the span tags reflect the
 	// independent facts about the command name regardless of which gate
 	// short-circuits dispatch.
-	isAllowed := r.allowAllCommands || r.allowedCommands[name]
+	isAllowed := r.commandAllowed(name)
 	fn, isKnown := builtins.Lookup(name)
 
 	span, ctx := telemetry.StartSpanFromContext(ctx, "command")

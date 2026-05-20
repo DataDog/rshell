@@ -1,0 +1,23 @@
+description: Disallowed commands do not create, truncate, or append redirected files.
+skip_assert_against_bash: true
+setup:
+  files:
+    - path: output.txt
+      content: "keep\n"
+input:
+  allowed_paths: ["$DIR"]
+  allowed_commands: ["rshell:cat"]
+  script: |+
+    echo new > output.txt
+    cat output.txt
+    cmd=echo
+    $cmd later >> output.txt
+    cat output.txt
+expect:
+  stdout: |+
+    keep
+    keep
+  stderr: |+
+    rshell: echo: command not allowed
+    rshell: echo: command not allowed
+  exit_code: 0
