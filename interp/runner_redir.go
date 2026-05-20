@@ -277,6 +277,17 @@ type preflightFDState struct {
 // preflightFileBackedFdDupRedirects rejects unsupported fd duplication before
 // any earlier redirect in the same statement can create or truncate a file.
 func (r *Runner) preflightFileBackedFdDupRedirects(redirs []*syntax.Redirect) (map[*syntax.Redirect]string, error) {
+	return r.preflightFileBackedFdDupRedirectsWithExpansion(redirs, true)
+}
+
+// preflightKnownFileBackedFdDupRedirects rejects statically known unsupported
+// fd duplication before command-word expansion can run substitutions.
+func (r *Runner) preflightKnownFileBackedFdDupRedirects(redirs []*syntax.Redirect) error {
+	_, err := r.preflightFileBackedFdDupRedirectsWithExpansion(redirs, false)
+	return err
+}
+
+func (r *Runner) preflightFileBackedFdDupRedirectsWithExpansion(redirs []*syntax.Redirect, expandUnknown bool) (map[*syntax.Redirect]string, error) {
 	stdoutState := preflightFDState{known: true, fileRedirect: r.stdoutFileRedirect}
 	stderrState := preflightFDState{known: true, fileRedirect: r.stderrFileRedirect}
 	redirectArgs := make(map[*syntax.Redirect]string)
@@ -314,7 +325,7 @@ func (r *Runner) preflightFileBackedFdDupRedirects(redirs []*syntax.Redirect) (m
 			default:
 				continue
 			}
-			if !targetState.known && targetState.source != nil {
+			if !targetState.known && targetState.source != nil && expandUnknown {
 				source := targetState.source
 				expandedArg, ok := redirectArgs[targetState.source]
 				if !ok {

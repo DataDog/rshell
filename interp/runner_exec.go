@@ -43,6 +43,13 @@ func (r *Runner) stmtSync(ctx context.Context, st *syntax.Stmt) {
 		callPrechecked    bool
 	)
 
+	if r.exit.ok() {
+		if err := r.preflightKnownFileBackedFdDupRedirects(st.Redirs); err != nil {
+			r.errf("%s\n", err)
+			r.exit.code = 1
+		}
+	}
+
 	// Destructive stdout redirects must not be opened until the command name
 	// has passed AllowedCommands. Expand only the command word here so argument
 	// substitutions still cannot run before fd-dup preflight rejects an
