@@ -200,7 +200,7 @@ var builtinPerCommandSymbols = map[string][]string{
 		"fmt.Sprintf",       // 🟢 formats structured receipt stderr strings in memory; no I/O.
 		"os.ErrProcessDone", // 🟢 sentinel error for a finished process handle; pure constant.
 		"os.FindProcess",    // 🟠 obtains an OS process handle for the validated PID; needed for the guarded kill remediation command.
-		"strconv.ParseInt",  // 🟢 string-to-int conversion with overflow checking; pure function, no I/O.
+		"strconv.Atoi",      // 🟢 string-to-int conversion with int-range overflow checking; pure function, no I/O.
 		"syscall.ESRCH",     // 🟢 POSIX "no such process" errno constant; pure constant.
 		"syscall.SIGKILL",   // 🟠 process termination signal; only used after kill validates a single positive PID.
 		"syscall.SIGTERM",   // 🟠 process termination signal; only used after kill validates a single positive PID.

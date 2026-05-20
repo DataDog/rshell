@@ -9,8 +9,8 @@ package kill
 
 import "os"
 
-func signalPID(pid int64, _ bool) error {
-	proc, err := os.FindProcess(int(pid))
+func signalPID(pid int, _ bool) error {
+	proc, err := os.FindProcess(pid)
 	if err != nil {
 		return err
 	}
@@ -18,8 +18,8 @@ func signalPID(pid int64, _ bool) error {
 	return proc.Kill()
 }
 
-func pidAlive(pid int64) (bool, error) {
-	proc, err := os.FindProcess(int(pid))
+func pidAlive(pid int) (bool, error) {
+	proc, err := os.FindProcess(pid)
 	if err != nil {
 		return false, nil
 	}

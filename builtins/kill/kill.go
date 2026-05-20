@@ -44,7 +44,7 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			callCtx.Errf("kill: expected exactly one pid\n")
 			return builtins.Result{Code: 1}
 		}
-		pid, err := strconv.ParseInt(args[0], 10, 64)
+		pid, err := strconv.Atoi(args[0])
 		if err != nil || pid <= 0 {
 			callCtx.Errf("kill: invalid pid: %s\n", args[0])
 			return builtins.Result{Code: 1}
@@ -76,7 +76,7 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 }
 
 type receipt struct {
-	PID             int64  `json:"pid"`
+	PID             int    `json:"pid"`
 	Force           bool   `json:"force"`
 	Signal          string `json:"signal"`
 	TimedOut        bool   `json:"timed_out"`
@@ -87,7 +87,7 @@ type receipt struct {
 	StderrTruncated bool   `json:"stderr_truncated,omitempty"`
 }
 
-func runJSON(ctx context.Context, callCtx *builtins.CallContext, pid int64, force bool, timeout time.Duration) builtins.Result {
+func runJSON(ctx context.Context, callCtx *builtins.CallContext, pid int, force bool, timeout time.Duration) builtins.Result {
 	exitCode := uint8(0)
 	stderr := ""
 	timedOut := false
@@ -122,7 +122,7 @@ func runJSON(ctx context.Context, callCtx *builtins.CallContext, pid int64, forc
 	return builtins.Result{Code: exitCode}
 }
 
-func waitForExit(ctx context.Context, pid int64, timeout time.Duration) (bool, error, builtins.Result, bool) {
+func waitForExit(ctx context.Context, pid int, timeout time.Duration) (bool, error, builtins.Result, bool) {
 	if timeout == 0 {
 		return false, nil, builtins.Result{}, true
 	}

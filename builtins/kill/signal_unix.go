@@ -13,8 +13,8 @@ import (
 	"syscall"
 )
 
-func signalPID(pid int64, force bool) error {
-	proc, err := os.FindProcess(int(pid))
+func signalPID(pid int, force bool) error {
+	proc, err := os.FindProcess(pid)
 	if err != nil {
 		return err
 	}
@@ -25,8 +25,8 @@ func signalPID(pid int64, force bool) error {
 	return proc.Signal(sig)
 }
 
-func pidAlive(pid int64) (bool, error) {
-	proc, err := os.FindProcess(int(pid))
+func pidAlive(pid int) (bool, error) {
+	proc, err := os.FindProcess(pid)
 	if err != nil {
 		return false, err
 	}
