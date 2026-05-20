@@ -43,7 +43,13 @@ func pidAlive(ctx context.Context, pid int) (bool, error) {
 
 	infos, infoErr := procinfo.GetByPIDs(ctx, "", []int{pid})
 	if infoErr == nil {
-		if len(infos) == 0 || infos[0].State == "Z" {
+		if len(infos) == 0 {
+			if ctx.Err() != nil {
+				return true, nil
+			}
+			return false, nil
+		}
+		if infos[0].State == "Z" {
 			return false, nil
 		}
 	}
