@@ -14,6 +14,7 @@ input:
 expect:
   stdout: |+
     status=1
-  stderr_contains:
-    - "stderr file redirection via fd duplication is not supported"
+    keep
+  stderr: |+
+    2>&1: stderr file redirection via fd duplication is not supported
   exit_code: 0

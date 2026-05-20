@@ -154,13 +154,14 @@ func TestRedirDupStderrToStdout(t *testing.T) {
 func TestRedirDupStderrToStdoutFileRejected(t *testing.T) {
 	dir := t.TempDir()
 
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "output.txt"), []byte("keep\n"), 0644))
 	stdout, stderr, code := redirRun(t, "cat nonexistent > output.txt 2>&1", dir)
 	assert.Equal(t, 1, code)
 	assert.Equal(t, "", stdout)
 	assert.Contains(t, stderr, "stderr file redirection via fd duplication is not supported")
 	data, err := os.ReadFile(filepath.Join(dir, "output.txt"))
 	require.NoError(t, err)
-	assert.NotContains(t, string(data), "nonexistent")
+	assert.Equal(t, "keep\n", string(data))
 
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "append.txt"), []byte("keep\n"), 0644))
 	stdout, stderr, code = redirRun(t, "cat nonexistent >> append.txt 2>&1", dir)
@@ -170,6 +171,13 @@ func TestRedirDupStderrToStdoutFileRejected(t *testing.T) {
 	data, err = os.ReadFile(filepath.Join(dir, "append.txt"))
 	require.NoError(t, err)
 	assert.Equal(t, "keep\n", string(data))
+
+	stdout, stderr, code = redirRun(t, "cat nonexistent > created.txt 2>&1", dir)
+	assert.Equal(t, 1, code)
+	assert.Equal(t, "", stdout)
+	assert.Contains(t, stderr, "stderr file redirection via fd duplication is not supported")
+	_, err = os.Stat(filepath.Join(dir, "created.txt"))
+	require.ErrorIs(t, err, os.ErrNotExist)
 }
 
 func TestRedirDupStderrToOriginalStdoutBeforeFileRedirect(t *testing.T) {

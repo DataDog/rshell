@@ -126,3 +126,41 @@ func TestAccessExecAlwaysDeniedWindows(t *testing.T) {
 	// Windows has no POSIX execute bits — always denied.
 	assert.ErrorIs(t, sb.Access("data.txt", dir, 0x01), os.ErrPermission)
 }
+
+func TestOpenForWriteRejectsWindowsSymlinkTargetWithinAllowedPath(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "target.txt")
+	require.NoError(t, os.WriteFile(target, []byte("keep\n"), 0644))
+	if err := os.Symlink("target.txt", filepath.Join(dir, "link.txt")); err != nil {
+		t.Skipf("creating symlink: %v", err)
+	}
+
+	sb, _, err := New([]string{dir})
+	require.NoError(t, err)
+	defer sb.Close()
+
+	f, err := sb.OpenForWrite("link.txt", dir, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
+	assert.Nil(t, f)
+	assert.ErrorIs(t, err, os.ErrPermission)
+
+	data, err := os.ReadFile(target)
+	require.NoError(t, err)
+	assert.Equal(t, "keep\n", string(data))
+}
+
+func TestOpenForWriteRejectsWindowsSymlinkParentWithinAllowedPath(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.Mkdir(filepath.Join(dir, "real"), 0755))
+	if err := os.Symlink("real", filepath.Join(dir, "linkdir")); err != nil {
+		t.Skipf("creating symlink: %v", err)
+	}
+
+	sb, _, err := New([]string{dir})
+	require.NoError(t, err)
+	defer sb.Close()
+
+	f, err := sb.OpenForWrite(filepath.Join("linkdir", "new.txt"), dir, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
+	assert.Nil(t, f)
+	assert.ErrorIs(t, err, os.ErrPermission)
+	assert.NoFileExists(t, filepath.Join(dir, "real", "new.txt"))
+}

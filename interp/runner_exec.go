@@ -55,6 +55,12 @@ func (r *Runner) stmtSync(ctx context.Context, st *syntax.Stmt) {
 			r.cmdCallFields(ctx, cm, callFields)
 		}
 	}
+	if r.exit.ok() {
+		if err := r.preflightFileBackedFdDupRedirects(st.Redirs); err != nil {
+			r.errf("%s\n", err)
+			r.exit.code = 1
+		}
+	}
 	for _, rd := range st.Redirs {
 		if !r.exit.ok() {
 			break

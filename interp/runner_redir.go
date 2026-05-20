@@ -200,6 +200,70 @@ func (r *Runner) hdocReader(ctx context.Context, rd *syntax.Redirect) (*os.File,
 	return pr, nil
 }
 
+func stderrFileDupToFileRedirectError(target string) error {
+	return fmt.Errorf("2>&%s: stderr file redirection via fd duplication is not supported", target)
+}
+
+// preflightFileBackedFdDupRedirects rejects unsupported fd duplication before
+// any earlier redirect in the same statement can create or truncate a file.
+func (r *Runner) preflightFileBackedFdDupRedirects(redirs []*syntax.Redirect) error {
+	stdoutFileRedirect := r.stdoutFileRedirect
+	stderrFileRedirect := r.stderrFileRedirect
+	for _, rd := range redirs {
+		switch rd.Op {
+		case syntax.RdrOut, syntax.AppOut:
+			arg := r.literal(rd.Word)
+			if !r.exit.ok() {
+				return nil
+			}
+			if rd.N != nil && rd.N.Value == "2" {
+				stderrFileRedirect = !isDevNull(arg)
+			} else {
+				stdoutFileRedirect = !isDevNull(arg)
+			}
+		case syntax.ClbOut:
+			if rd.N != nil && rd.N.Value == "2" {
+				stderrFileRedirect = false
+			} else {
+				stdoutFileRedirect = false
+			}
+		case syntax.RdrAll, syntax.AppAll:
+			arg := r.literal(rd.Word)
+			if !r.exit.ok() {
+				return nil
+			}
+			if isDevNull(arg) {
+				stdoutFileRedirect = false
+				stderrFileRedirect = false
+			}
+		case syntax.DplOut:
+			arg := r.literal(rd.Word)
+			if !r.exit.ok() {
+				return nil
+			}
+			var targetFileRedirect bool
+			switch arg {
+			case "1":
+				targetFileRedirect = stdoutFileRedirect
+			case "2":
+				targetFileRedirect = stderrFileRedirect
+			default:
+				continue
+			}
+			redirectsStderr := rd.N != nil && rd.N.Value == "2"
+			if redirectsStderr && targetFileRedirect {
+				return stderrFileDupToFileRedirectError(arg)
+			}
+			if redirectsStderr {
+				stderrFileRedirect = targetFileRedirect
+			} else {
+				stdoutFileRedirect = targetFileRedirect
+			}
+		}
+	}
+	return nil
+}
+
 func (r *Runner) redir(ctx context.Context, rd *syntax.Redirect) (io.Closer, error) {
 	if rd.Hdoc != nil {
 		pr, err := r.hdocReader(ctx, rd)
@@ -311,8 +375,9 @@ func (r *Runner) redir(ctx context.Context, rd *syntax.Redirect) (io.Closer, err
 			return nil, fmt.Errorf(">&%s: unsupported fd", arg)
 		}
 		if redirectsStderr && targetFileRedirect {
-			r.errf("2>&%s: stderr file redirection via fd duplication is not supported\n", arg)
-			return nil, fmt.Errorf("2>&%s: stderr file redirection via fd duplication is not supported", arg)
+			err := stderrFileDupToFileRedirectError(arg)
+			r.errf("%s\n", err)
+			return nil, err
 		}
 		*orig = target
 		*origFileRedirect = targetFileRedirect

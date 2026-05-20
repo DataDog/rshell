@@ -9,6 +9,7 @@ import (
 	"errors"
 	"io/fs"
 	"os"
+	"path/filepath"
 	"syscall"
 )
 
@@ -87,12 +88,36 @@ func (r *root) accessCheck(rel string, checkRead, checkWrite, checkExec bool) (f
 }
 
 func (r *root) openFileNoFollow(rel string, flag int, perm os.FileMode) (*os.File, error) {
-	return r.root.OpenFile(rel, flag, perm)
+	// Keep no-follow on the same open that returns the writable handle;
+	// a separate pre-check can be raced by swapping in a reparse point.
+	f, err := r.root.OpenFile(rel, flag|syscall.FILE_FLAG_OPEN_REPARSE_POINT, perm)
+	if errors.Is(err, syscall.ELOOP) {
+		return nil, &os.PathError{Op: "open", Path: rel, Err: os.ErrPermission}
+	}
+	return f, err
 }
 
-func (r *root) openFileValidatedNoFollow(rel string, flag int, perm os.FileMode, allowMissingFinal bool) (*os.File, error) {
-	if err := r.validateWritePath(rel, allowMissingFinal); err != nil {
+func (r *root) openFileValidatedNoFollow(rel string, flag int, perm os.FileMode, _ bool) (*os.File, error) {
+	rel = filepath.Clean(rel)
+	if rel == "." {
+		return nil, &os.PathError{Op: "open", Path: rel, Err: errors.New("is a directory")}
+	}
+	f, err := r.openFileNoFollow(rel, flag, perm)
+	if err != nil {
+		return nil, PortablePathError(err)
+	}
+	info, err := f.Stat()
+	if err != nil {
+		_ = f.Close()
 		return nil, err
 	}
-	return r.openFileNoFollow(rel, flag, perm)
+	if info.IsDir() {
+		_ = f.Close()
+		return nil, &os.PathError{Op: "open", Path: rel, Err: errors.New("is a directory")}
+	}
+	if !info.Mode().IsRegular() {
+		_ = f.Close()
+		return nil, &os.PathError{Op: "open", Path: rel, Err: os.ErrPermission}
+	}
+	return f, nil
 }
