@@ -44,6 +44,15 @@ func (r *Runner) stmtSync(ctx context.Context, st *syntax.Stmt) {
 	)
 
 	if r.exit.ok() {
+		if cm, ok := st.Cmd.(*syntax.CallExpr); ok && len(cm.Args) > 0 && wordRunsCommands(cm.Args[0]) {
+			if _, err := r.preflightSafeFileBackedFdDupRedirects(st.Redirs); err != nil {
+				r.errf("%s\n", err)
+				r.exit.code = 1
+			}
+		}
+	}
+
+	if r.exit.ok() {
 		if err := r.preflightKnownFileBackedFdDupRedirects(st.Redirs); err != nil {
 			r.errf("%s\n", err)
 			r.exit.code = 1
@@ -126,6 +135,19 @@ func stmtHasPotentialFileWriteRedirect(st *syntax.Stmt) bool {
 		}
 	}
 	return false
+}
+
+func wordRunsCommands(word *syntax.Word) bool {
+	runsCommands := false
+	syntax.Walk(word, func(node syntax.Node) bool {
+		switch node.(type) {
+		case *syntax.CmdSubst, *syntax.ProcSubst:
+			runsCommands = true
+			return false
+		}
+		return true
+	})
+	return runsCommands
 }
 
 func (r *Runner) commandAllowed(name string) bool {

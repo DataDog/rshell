@@ -274,20 +274,36 @@ type preflightFDState struct {
 	source       *syntax.Redirect
 }
 
+type fdDupPreflightMode int
+
+const (
+	fdDupPreflightNoExpansion fdDupPreflightMode = iota
+	fdDupPreflightSafeExpansion
+	fdDupPreflightFullExpansion
+)
+
 // preflightFileBackedFdDupRedirects rejects unsupported fd duplication before
 // any earlier redirect in the same statement can create or truncate a file.
 func (r *Runner) preflightFileBackedFdDupRedirects(redirs []*syntax.Redirect) (map[*syntax.Redirect]string, error) {
-	return r.preflightFileBackedFdDupRedirectsWithExpansion(redirs, true)
+	return r.preflightFileBackedFdDupRedirectsWithExpansion(redirs, fdDupPreflightFullExpansion)
 }
 
 // preflightKnownFileBackedFdDupRedirects rejects statically known unsupported
 // fd duplication before command-word expansion can run substitutions.
 func (r *Runner) preflightKnownFileBackedFdDupRedirects(redirs []*syntax.Redirect) error {
-	_, err := r.preflightFileBackedFdDupRedirectsWithExpansion(redirs, false)
+	_, err := r.preflightFileBackedFdDupRedirectsWithExpansion(redirs, fdDupPreflightNoExpansion)
 	return err
 }
 
-func (r *Runner) preflightFileBackedFdDupRedirectsWithExpansion(redirs []*syntax.Redirect, expandUnknown bool) (map[*syntax.Redirect]string, error) {
+// preflightSafeFileBackedFdDupRedirects expands only redirect targets that
+// cannot run command substitutions. It catches dynamic variable targets before
+// command-word expansion, while preserving command-policy checks before
+// side-effecting redirect-target expansions.
+func (r *Runner) preflightSafeFileBackedFdDupRedirects(redirs []*syntax.Redirect) (map[*syntax.Redirect]string, error) {
+	return r.preflightFileBackedFdDupRedirectsWithExpansion(redirs, fdDupPreflightSafeExpansion)
+}
+
+func (r *Runner) preflightFileBackedFdDupRedirectsWithExpansion(redirs []*syntax.Redirect, mode fdDupPreflightMode) (map[*syntax.Redirect]string, error) {
 	stdoutState := preflightFDState{known: true, fileRedirect: r.stdoutFileRedirect}
 	stderrState := preflightFDState{known: true, fileRedirect: r.stderrFileRedirect}
 	redirectArgs := make(map[*syntax.Redirect]string)
@@ -325,8 +341,11 @@ func (r *Runner) preflightFileBackedFdDupRedirectsWithExpansion(redirs []*syntax
 			default:
 				continue
 			}
-			if !targetState.known && targetState.source != nil && expandUnknown {
+			if !targetState.known && targetState.source != nil && mode != fdDupPreflightNoExpansion {
 				source := targetState.source
+				if mode == fdDupPreflightSafeExpansion && wordRunsCommands(source.Word) {
+					return redirectArgs, stderrFileDupToFileRedirectError(arg)
+				}
 				expandedArg, ok := redirectArgs[targetState.source]
 				if !ok {
 					expandedArg = r.literal(targetState.source.Word)

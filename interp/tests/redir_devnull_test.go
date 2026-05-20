@@ -212,6 +212,19 @@ func TestRedirDupStderrToStdoutFileRejectedBeforeCommandWordExpansion(t *testing
 	require.ErrorIs(t, err, os.ErrNotExist)
 }
 
+func TestRedirDupStderrToDynamicStdoutFileRejectedBeforeCommandWordExpansion(t *testing.T) {
+	dir := t.TempDir()
+
+	stdout, stderr, code := redirRun(t, `target=output.txt; $(printf echo; printf side | write_file side.txt >/dev/null) hi > "$target" 2>&1`, dir)
+	assert.Equal(t, 1, code)
+	assert.Equal(t, "", stdout)
+	assert.Contains(t, stderr, "stderr file redirection via fd duplication is not supported")
+	_, err := os.Stat(filepath.Join(dir, "output.txt"))
+	require.ErrorIs(t, err, os.ErrNotExist)
+	_, err = os.Stat(filepath.Join(dir, "side.txt"))
+	require.ErrorIs(t, err, os.ErrNotExist)
+}
+
 func TestRedirDupStderrToDynamicStdoutFileRejectedBeforeCommandExpansion(t *testing.T) {
 	dir := t.TempDir()
 
@@ -265,6 +278,15 @@ func TestRedirDupStderrToDynamicDevNull(t *testing.T) {
 	dir := t.TempDir()
 
 	stdout, stderr, code := redirRun(t, `TARGET=/dev/null; cat missing > "$TARGET" 2>&1`, dir)
+	assert.Equal(t, 1, code)
+	assert.Equal(t, "", stdout)
+	assert.Equal(t, "", stderr)
+}
+
+func TestRedirDupStderrToDynamicDevNullWithCommandWordExpansion(t *testing.T) {
+	dir := t.TempDir()
+
+	stdout, stderr, code := redirRun(t, `TARGET=/dev/null; $(printf cat) missing > "$TARGET" 2>&1`, dir)
 	assert.Equal(t, 1, code)
 	assert.Equal(t, "", stdout)
 	assert.Equal(t, "", stderr)
